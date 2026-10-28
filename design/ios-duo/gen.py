@@ -89,7 +89,14 @@ body{margin:0;background:#141416;color:var(--fg);font-family:Inter,system-ui,san
 /* vertical bar (iOS 27.1): status, nav, tools, tabs share one 84 pt region */
 .vbar{position:absolute;top:0;right:0;bottom:0;width:84px;display:flex;flex-direction:column;align-items:center;padding:12px 0 16px;z-index:30}
 .vbar.over{background:none}
-.st{display:flex;flex-direction:column;align-items:center;gap:3px;height:62px;font-size:12px;font-weight:600;letter-spacing:.02em;color:#fff}
+.st{display:flex;flex-direction:column;align-items:center;gap:6px;height:88px;font-size:15px;font-weight:600;letter-spacing:.01em;color:#fff}
+.st .tm0{font-size:15px}
+.ring{position:relative;width:46px;height:46px;border-radius:50%;background:conic-gradient(from 0deg,#fff 83%,rgba(255,255,255,.18) 0);-webkit-mask:radial-gradient(circle,transparent 62%,#000 64%);mask:radial-gradient(circle,transparent 62%,#000 64%)}
+.ring em{position:absolute;left:0;right:0;top:-3px;text-align:center;font-style:normal;font-size:9px;font-weight:700}
+.ring .ic{position:absolute;left:50%;top:50%;transform:translate(-50%,-22%);width:16px;height:16px}
+.st .ring{-webkit-mask:none;mask:none;background:none}
+.st .ring::before{content:"";position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 200deg,#fff 83%,rgba(255,255,255,.18) 0);-webkit-mask:radial-gradient(circle,transparent 60%,#000 62%);mask:radial-gradient(circle,transparent 60%,#000 62%)}
+.st .ring em{top:6px;font-size:10px}
 .st .cam{width:12px;height:12px;border-radius:50%;background:#050506;box-shadow:inset 0 0 0 2px #17181b,0 0 0 1px rgba(255,255,255,.06);margin-bottom:4px}
 .st .cam.hidden{visibility:hidden}
 .st .sig{display:flex;gap:3px;align-items:flex-end;height:9px}
@@ -105,11 +112,12 @@ body{margin:0;background:#141416;color:var(--fg);font-family:Inter,system-ui,san
 .tools .nb{width:44px;height:44px;border-radius:22px}
 .tools .nb .ic{width:21px;height:21px}
 .vsp{flex:1}
-.tabs{width:56px;border-radius:28px;padding:6px 0;display:flex;flex-direction:column;gap:4px;align-items:center}
-.tabs i.tb{width:44px;height:44px;border-radius:22px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.62);position:relative}
-.tabs i.tb.on{background:rgba(255,255,255,.16);color:#fff}
-.tabs i.tb .ic{width:22px;height:22px}
-.tabs i.tb.on::after{content:"";position:absolute;bottom:5px;width:4px;height:4px;border-radius:50%;background:var(--ac)}
+.tabs{width:60px;border-radius:30px;padding:10px 0;display:flex;flex-direction:column;gap:10px;align-items:center}
+.tabs i.tb{width:48px;height:48px;border-radius:24px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.78);position:relative}
+.tabs i.tb.on{color:var(--ac)}
+.tabs i.tb .ic{width:24px;height:24px}
+.tabs i.tb.on .ic svg{fill:var(--ac);stroke:var(--ac)}
+.tabs i.tb .avp{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#5B6CF2,#E07A3F);display:block}
 .tabs i.tb b{position:absolute;top:4px;right:4px;background:var(--ac);color:#fff;font-size:9px;font-weight:700;min-width:15px;height:15px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px}
 /* horizontal bars (inner display, portrait) */
 .hbar{position:absolute;left:0;right:0;top:0;height:84px;z-index:30;padding:10px 20px 0}
@@ -119,9 +127,11 @@ body{margin:0;background:#141416;color:var(--fg);font-family:Inter,system-ui,san
 .hbar .nbar .ttl{font-size:17px;font-weight:700;flex:1;text-align:center}
 .tabsh{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);height:60px;border-radius:30px;padding:0 8px;display:flex;gap:4px;align-items:center;z-index:30}
 .tabsh i.tb{width:52px;height:48px;border-radius:24px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.62);position:relative}
-.tabsh i.tb.on{background:rgba(255,255,255,.16);color:#fff}
+.tabsh i.tb.on{color:var(--ac)}
+.tabsh i.tb.on .ic svg{fill:var(--ac);stroke:var(--ac)}
+.tabsh i.tb .avp{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#5B6CF2,#E07A3F);display:block}
 .tabsh i.tb .ic{width:22px;height:22px}
-.tabsh i.tb.on::after{content:"";position:absolute;bottom:4px;width:4px;height:4px;border-radius:50%;background:var(--ac)}
+
 /* icons */
 .ic{display:inline-flex;width:22px;height:22px;flex:none;vertical-align:middle}
 .ic svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
@@ -138,7 +148,7 @@ body{margin:0;background:#141416;color:var(--fg);font-family:Inter,system-ui,san
 .meta{display:flex;gap:9px;align-items:center;font-size:13px;color:rgba(243,242,239,.72);flex-wrap:wrap}
 .meta .pt{width:3px;height:3px;border-radius:50%;background:rgba(255,255,255,.35)}
 .tag{font-size:10.5px;font-weight:700;letter-spacing:.05em;padding:2px 6px;border-radius:5px;border:1.2px solid rgba(255,255,255,.35);color:rgba(255,255,255,.85)}
-.pill{display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 20px;border-radius:22px;background:var(--ac);color:#fff;font-weight:700;font-size:15px;box-shadow:0 10px 26px rgba(236,64,122,.35)}
+.pill{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;height:44px;padding:0 20px;border-radius:22px;background:var(--ac);color:#fff;font-weight:700;font-size:15px;box-shadow:0 10px 26px rgba(236,64,122,.35)}
 .pill.w{background:#F3F2EF;color:#111;box-shadow:0 10px 26px rgba(0,0,0,.35)}
 .pill.g{background:rgba(255,255,255,.10);color:#fff;box-shadow:none;font-weight:600}
 .pill .ic{width:18px;height:18px}
@@ -176,6 +186,27 @@ body{margin:0;background:#141416;color:var(--fg);font-family:Inter,system-ui,san
 .hero .veu.l{background:linear-gradient(90deg,rgba(13,13,13,.92) 0,rgba(13,13,13,.72) 32%,rgba(13,13,13,.12) 60%,rgba(13,13,13,0) 75%),linear-gradient(180deg,rgba(13,13,13,0) 55%,var(--bg) 100%)}
 .hero .txt{position:absolute;left:20px;bottom:18px;display:flex;flex-direction:column;gap:10px}
 .hero .logo{height:64px;width:auto;object-fit:contain;object-position:left}
+.hero.full{position:absolute;inset:0}
+.hero.full .logo{height:112px}
+.meta.big{font-size:18px;font-weight:600;color:rgba(243,242,239,.9)}
+.meta.big .pt{width:4px;height:4px}
+.sub.big{font-size:16.5px;line-height:1.5;max-width:600px}
+.pill.xl{height:56px;padding:0 30px;font-size:18px;border-radius:28px}
+.pill.xl .ic{width:22px;height:22px}
+.pill.wide{width:100%;justify-content:center}
+.dsc.xl{width:56px;height:56px;border-radius:28px;background:rgba(255,255,255,.12)}
+.dsc.xl .ic{width:24px;height:24px}
+.stars{display:flex;gap:8px;color:rgba(255,255,255,.38)}
+.stars .ic{width:30px;height:30px}
+.stars .ic.on{color:var(--ac)}.stars .ic.on svg{fill:var(--ac)}
+.dots{display:flex;gap:9px;align-items:center}
+.dots i{width:8px;height:8px;border-radius:4px;background:rgba(255,255,255,.55);display:block}
+.dots i.on{width:34px;background:#fff}
+.rate{display:inline-flex;align-items:center;gap:6px;font-size:16px;font-weight:600}
+.rate .lg{font-size:11px;font-weight:700;letter-spacing:.06em;padding:3px 6px;border-radius:5px;background:rgba(255,255,255,.14);color:rgba(243,242,239,.85)}
+.rate .lg.imdb{background:#F5C518;color:#111}
+.peek{position:absolute;left:0;right:0;bottom:0;padding:0 20px}
+.peek .h2{font-size:20px}
 .acts{display:flex;gap:10px;align-items:center}
 .lrow{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:14px}
 .lrow.foc{background:var(--foco)}
@@ -259,18 +290,19 @@ body{margin:0;background:#141416;color:var(--fg);font-family:Inter,system-ui,san
 
 
 def status(cam=True):
-    return (f'<div class="st"><span class="cam{"" if cam else " hidden"}"></span><span>9:41</span>'
-            '<span class="sig"><b style="height:4px"></b><b style="height:6px"></b><b style="height:8px"></b><b style="height:9px"></b></span><span class="bat"></span></div>')
+    return (f'<div class="st"><span class="cam{"" if cam else " hidden"}"></span><span class="tm0">9:41</span>'
+            f'<span class="ring"><em>83</em>{ic("wifi", "s")}</span></div>')
 
 
-TABS = [('house', 'home'), ('search', 'search'), ('tv', 'guide'), ('library', 'library'), ('settings', 'settings')]
+TABS = [('house', 'home'), ('search', 'search'), ('tv', 'guide'), ('library', 'library'), ('avatar', 'profile')]
 
 
 def tabs(active, cls='tabs', badge=None):
     out = f'<div class="{cls} gl">'
     for icon, key in TABS:
         b = f'<b>{badge[1]}</b>' if badge and badge[0] == key else ''
-        out += f'<i class="tb{" on" if key == active else ""}">{ic(icon)}{b}</i>'
+        glyph = '<span class="avp"></span>' if icon == 'avatar' else ic(icon)
+        out += f'<i class="tb{" on" if key == active else ""}">{glyph}{b}</i>'
     return out + '</div>'
 
 
@@ -346,27 +378,48 @@ def row(title, body, more='See all', extra=''):
 
 
 # ---------- HOME ----------
+SYN_FALLOUT = 'In a future, post-apocalyptic Los Angeles, citizens must live in underground bunkers to protect themselves from radiation, mutants and bandits.'
+
+
+def ratings(big=False):
+    return (f'<div class="meta{" big" if big else ""}" style="gap:14px"><span class="rate"><span class="lg imdb">IMDb</span>8.4</span><span class="rate"><span class="lg">TMDB</span>87</span>'
+            '<span class="rate"><span class="lg">Trakt</span>92%</span><span class="rate"><span class="lg">RT</span>93%</span><span class="rate"><span class="lg">MC</span>74</span></div>')
+
+
+def dots(n=8, on=5):
+    return '<div class="dots">' + ''.join(f'<i class="{"on" if i == on else ""}"></i>' for i in range(n)) + '</div>'
+
+
 def home_outer():
-    scr = ('<div class="scr">' + hero(400, FALLOUT, FALLOUT_LOGO)
-           + row('Continue watching', cards([5, 1, 7], 150, 84))
-           + row('Trending now', posters([0, 1, 2, 3], 96, 144))
-           + row('Because you watched Fallout', posters([8, 9, 10, 11], 96, 144)) + '</div>')
-    bar = vbar('home', nav=[('user-round', 'gl')], tools=['bell'])
-    return dev('outer', scr, '<b>Closed · outer display</b> · 466×678 pt · compact width<br>status, profile and tab bar share the vertical bar; hero and rows offset from it', bar=bar)
+    # closed: art edge to edge, logo and meta centred, full-width Continue pill, the next row peeking
+    scr = (f'<div class="scr full"><div class="hero full"><img class="bg" src="{f(FALLOUT)}" style="object-position:58% 20%">'
+           '<div class="veu" style="background:linear-gradient(180deg,rgba(13,13,13,0) 38%,rgba(13,13,13,.72) 62%,var(--bg) 82%)"></div></div>'
+           '<div style="position:absolute;left:20px;right:104px;top:296px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px">'
+           f'<img src="{f(FALLOUT_LOGO)}" style="height:84px;object-fit:contain">'
+           '<div class="meta big" style="justify-content:center;font-size:16px"><span>Series</span><span class="pt"></span><span>Sci-Fi</span><span class="pt"></span><span>2024</span><span class="pt"></span><span>2 seasons</span></div>'
+           '<div class="meta" style="justify-content:center;gap:12px"><span class="tag">RELEASED</span><span class="rate"><span class="lg imdb">IMDb</span>8.4</span><span class="qline"><i class="dot"></i>4K · DV · Atmos</span></div>'
+           f'<span class="pill xl wide" style="margin-top:6px">{ic("play")}Continue S1:E3</span>'
+           f'<div class="acts" style="gap:14px"><span class="dsc xl">{ic("plus")}</span><span class="dsc xl">{ic("layers")}</span><span class="dsc xl">{ic("clapperboard")}</span><span class="dsc xl">{ic("ellipsis")}</span></div></div>'
+           f'<div class="peek" style="bottom:-70px"><div class="rowh"><h2 class="h2">Continue watching</h2></div><div class="strip">{cards([5, 1, 7], 150, 84)}</div></div></div>')
+    bar = vbar('home', cam=True)
+    return dev('outer', scr, '<b>Closed · outer display</b> · 466×678 pt · art edge to edge under the side region<br>logo, meta and actions centred; the next row peeks from the bottom', bar=bar)
 
 
 def home_inner(pose='flat'):
-    # inner landscape: hero spans the fold (media may); every control stays in the left half
-    g = lambda idx, x: f'<div style="position:absolute;left:{x}px;top:0;display:flex;gap:12px">{posters(idx, 84, 126)}</div>'
-    scr = ('<div class="scr">' + hero(392, FALLOUT, FALLOUT_LOGO, left=True, wide=True)
-           + '<div class="sec" style="padding-top:14px"><div class="rowh"><h2 class="h2">Continue watching</h2><em>See all ' + ic('chevron-right', 's') + '</em></div>'
-           + f'<div style="position:relative;height:101px"><div style="position:absolute;left:0;top:0;display:flex;gap:12px">{cards([5, 1], 180, 101)}</div>'
-           + f'<div style="position:absolute;left:472px;top:0;display:flex;gap:12px">{cards([7, 3], 180, 101)}</div></div></div>'
-           + '<div class="sec"><div class="rowh"><h2 class="h2">Trending now</h2><em>See all ' + ic('chevron-right', 's') + '</em></div>'
-           + f'<div style="position:relative;height:126px">{g([0, 1, 2, 3], 0)}{g([4, 5, 6, 7], 472)}</div></div></div>')
-    bar = vbar('home', nav=[('user-round', 'gl')], tools=['bell'], cam=False)
-    cap = ('<b>Open · inner display</b> · 951×669 pt · regular width<br>same hierarchy, one more level visible: the hero crosses the fold (media may), '
-           'rows use an even column count so no poster straddles the centre')
+    # open: one hero across the whole inner display (media may cross the fold); text, actions and dots bottom-left
+    scr = (f'<div class="scr full"><div class="hero full"><img class="bg" src="{f(FALLOUT)}" style="object-position:50% 18%">'
+           '<div class="veu" style="background:linear-gradient(90deg,rgba(13,13,13,.78) 0,rgba(13,13,13,.45) 34%,rgba(13,13,13,0) 60%),linear-gradient(180deg,rgba(13,13,13,0) 45%,rgba(13,13,13,.7) 78%,var(--bg) 100%)"></div></div>'
+           '<div style="position:absolute;left:40px;bottom:78px;display:flex;flex-direction:column;gap:14px;max-width:640px">'
+           f'<img src="{f(FALLOUT_LOGO)}" style="height:124px;width:auto;object-fit:contain;object-position:left">'
+           '<div class="meta big"><span>Series</span><span class="pt"></span><span>Sci-Fi</span><span class="pt"></span><span>2 seasons</span><span class="pt"></span><span>2024</span></div>'
+           '<div class="meta" style="gap:12px"><span class="tag">RELEASED</span><span class="rate"><span class="lg imdb">IMDb</span>8.4</span><span class="rate"><span class="lg">Trakt</span>92%</span><span class="qline"><i class="dot"></i>4K · Dolby Vision · Atmos · 8.3 GB</span></div>'
+           f'<p class="sub big" style="margin:0">{SYN_FALLOUT}</p>'
+           f'<div class="acts" style="gap:12px"><span class="pill xl">{ic("play")}Continue S1:E3</span><span class="dsc xl">{ic("plus")}</span><span class="dsc xl">{ic("layers")}</span><span class="dsc xl">{ic("clapperboard")}</span><span class="dsc xl">{ic("ellipsis")}</span></div>'
+           + dots() + '</div>'
+           '<div class="peek" style="padding:0 40px;bottom:10px"><div class="rowh"><h2 class="h2" style="font-size:24px">Continue watching</h2></div></div></div>')
+    bar = vbar('home', cam=False)
+    cap = ('<b>Open · inner display</b> · 951×669 pt · hero fills the display and crosses the fold (media may)<br>'
+           'everything tappable stays in the left half; Continue watching peeks from the bottom')
     return dev('inner', scr, cap, pose=pose, bar=bar)
 
 
@@ -419,29 +472,48 @@ def ep_rows(n=4, foc=2, thumb=112):
     return out
 
 
+def stars(on=0):
+    return '<div class="stars">' + ''.join(ic('star', 'on' if i < on else '') for i in range(5)) + '</div>'
+
+
+def detail_actions(xl=True):
+    c = 'dsc xl' if xl else 'dsc'
+    return (f'<span class="{c}">{ic("layers")}</span><span class="{c}">{ic("clapperboard")}</span>'
+            f'<span class="{c}">{ic("eye-off")}</span><span class="{c}">{ic("plus")}</span><span class="{c}">{ic("share-2")}</span>')
+
+
 def detail_outer():
-    scr = ('<div class="scr">' + hero(330, FALLOUT, FALLOUT_LOGO)
-           + '<div class="sec" style="padding-top:12px"><div class="meta"><span class="badge" style="background:#F5C518;color:#111;padding:2px 5px;border-radius:4px">IMDb</span><span>8.4</span><span class="pt"></span><span>Trakt 92%</span><span class="pt"></span><span class="tag">TV-MA</span><span class="pt"></span><span>Prime</span></div>'
-           '<p class="sub" style="margin:10px 0 0">In a future, post-apocalyptic Los Angeles, citizens must live in underground bunkers to protect themselves from radiation, mutants and bandits.</p></div>'
-           '<div class="sec" style="padding-top:16px"><div class="rowh"><h2 class="h2">Episodes</h2><span>Season 1 · 8</span><em>' + ic('chevron-down', 's') + '</em></div>'
-           '<div style="display:flex;flex-direction:column;gap:2px;margin:0 -8px">' + ep_rows(3) + '</div></div></div>')
-    bar = vbar('home', nav=[('chevron-left', 'gl')], tools=['bookmark', 'share-2', 'star'])
-    return dev('outer', scr, '<b>Closed</b> · back on top of the bar, then Save / Share / Rate as symbols<br>hero, ratings and episodes stacked; episodes scroll under the bar inset', bar=bar)
+    # closed: art on top, logo and genres centred over it, full-width Continue pill, action circles, your rating
+    scr = (f'<div class="scr full"><div style="position:absolute;left:0;right:0;top:0;height:380px"><img class="bg" src="{f(FALLOUT)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:58% 20%">'
+           '<div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(13,13,13,0) 45%,rgba(13,13,13,.75) 78%,var(--bg) 100%)"></div></div>'
+           '<div style="position:absolute;left:20px;right:104px;top:248px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:11px">'
+           f'<img src="{f(FALLOUT_LOGO)}" style="height:80px;object-fit:contain">'
+           '<div class="meta big" style="justify-content:center;font-size:16px;color:var(--mut)"><span>Sci-Fi</span><span class="pt"></span><span>Drama</span><span class="pt"></span><span>2 seasons</span><span class="pt"></span><span>TV-MA</span></div>'
+           '<div class="meta" style="justify-content:center;gap:12px"><span class="rate"><span class="lg imdb">IMDb</span>8.4</span><span class="rate"><span class="lg">Trakt</span>92%</span><span class="rate"><span class="lg">RT</span>93%</span></div>'
+           f'<span class="pill xl wide" style="margin-top:4px">{ic("play")}Continue S1:E3</span>'
+           f'<div class="acts" style="gap:12px">{detail_actions()}</div>'
+           + stars() + '</div>'
+           f'<div class="peek" style="bottom:-58px"><div class="rowh"><h2 class="h2">Episodes</h2><span>Season 1 · 8</span></div><div class="strip">{cards([0, 1, 2], 150, 84, labels=False)}</div></div></div>')
+    bar = vbar('home', nav=[('chevron-left', 'gl')], cam=True, show_tabs=False)
+    return dev('outer', scr, '<b>Closed</b> · art on top, logo and genres centred, full-width Continue pill<br>Sources · Trailer · Mark watched · Library · Share as circles; your rating in stars; episodes peek below', bar=bar)
 
 
-def detail_inner(pose='book'):
-    left = ('<div class="pane" style="left:0;width:462px">' + hero(330, FALLOUT, FALLOUT_LOGO, left=True)
-            + '<div class="sec" style="padding-top:12px"><div class="meta"><span class="badge" style="background:#F5C518;color:#111;padding:2px 5px;border-radius:4px">IMDb</span><span>8.4</span><span class="pt"></span><span>Trakt 92%</span><span class="pt"></span><span class="tag">TV-MA</span><span class="pt"></span><span>Prime</span></div>'
-            '<p class="sub" style="margin:10px 0 0;max-width:400px">In a future, post-apocalyptic Los Angeles, citizens must live in underground bunkers to protect themselves from radiation, mutants and bandits.</p>'
-            '<div class="rowh" style="margin-top:16px"><h2 class="h2">Cast</h2></div><div class="strip" style="gap:12px">'
-            + ''.join(f'<div style="width:58px;text-align:center"><div class="poster" style="width:58px;height:58px;border-radius:50%"><img src="{f(CAST[i])}"></div><div class="psub" style="margin-top:5px;white-space:nowrap">{["Ella P.", "Aaron M.", "Walton G.", "Kyle M.", "Moisés A."][i]}</div></div>' for i in range(5))
-            + '</div></div></div>')
-    right = ('<div class="pane" style="left:489px;right:0;padding:66px 16px 0 10px">'
-             '<div class="rowh" style="padding:0 12px"><h2 class="h2">Episodes</h2><span class="seg" style="margin-left:6px"><span class="on">S1 <em>8</em></span><span>S2 <em>8</em></span></span><em>Mark season ' + ic('check', 's') + '</em></div>'
-             '<div style="display:flex;flex-direction:column;gap:2px">' + ep_rows(5, 2, 104) + '</div></div>')
-    scr = f'<div class="scr">{left}{right}</div>'
-    bar = vbar('home', nav=[('chevron-left', 'gl')], tools=['bookmark', 'share-2', 'star'], cam=False)
-    cap = ('<b>Open · book pose</b> · ArrangementView(.split): Detail | Episodes<br>the fold is active: the episode list sits entirely in the right half, no control lands in the curve')
+def detail_inner(pose='flat'):
+    # open: the reference layout at full width, with Nuvio's information and buttons
+    scr = (f'<div class="scr full"><div class="hero full"><img class="bg" src="{f(FALLOUT)}" style="object-position:72% 20%">'
+           '<div class="veu" style="background:linear-gradient(90deg,rgba(13,13,13,.94) 0,rgba(13,13,13,.86) 30%,rgba(13,13,13,.45) 55%,rgba(13,13,13,.1) 78%),linear-gradient(180deg,rgba(13,13,13,0) 60%,rgba(13,13,13,.55) 100%)"></div></div>'
+           '<div style="position:absolute;left:40px;top:70px;right:280px;display:flex;flex-direction:column;gap:14px">'
+           f'<img src="{f(FALLOUT_LOGO)}" style="height:150px;width:auto;object-fit:contain;object-position:left">'
+           '<div class="meta big" style="font-size:20px;gap:18px"><span>2 seasons</span><span>1h</span><span class="tag" style="font-size:12px">TV-MA</span></div>'
+           + ratings(big=True) +
+           '<div class="meta" style="font-size:16px;color:var(--mut)"><span>Sci-Fi</span><span class="pt"></span><span>Drama</span><span class="pt"></span><span>Adventure</span></div>'
+           '<div class="meta" style="font-size:16px"><span style="color:var(--mut)">Created by</span><span>Geneva Robertson-Dworet, Graham Wagner</span></div>'
+           f'<p class="sub big" style="margin:4px 0 0;max-width:760px;font-size:17px;color:rgba(243,242,239,.85)">{SYN_FALLOUT} Lucy, a vault dweller, leaves the safety of her shelter to find her kidnapped father; above ground she meets Maximus, a Brotherhood of Steel squire, and a ghoul bounty hunter who has survived the wasteland for two hundred years.</p>'
+           f'<div class="acts" style="gap:22px;margin-top:10px"><span class="pill xl" style="padding:0 40px">{ic("play")}Continue S1:E3</span>{stars()}<span style="flex:1"></span>{detail_actions()}</div></div>'
+           '<div class="peek" style="padding:0 40px;bottom:10px"><div class="rowh"><h2 class="h2" style="font-size:24px">Episodes</h2><span>Season 1 · 8</span></div></div></div>')
+    bar = vbar('home', nav=[('chevron-left', 'gl')], cam=False, show_tabs=False)
+    cap = ('<b>Open · flat</b> · the whole display: big logo, ratings from every service, creators, full synopsis<br>'
+           'Continue pill, your rating and the action circles on one line; Episodes peek below. In book pose the Episodes list takes the right half')
     return dev('inner', scr, cap, pose=pose, bar=bar)
 
 
@@ -722,7 +794,7 @@ def mac_home():
 PAGES = [
     ('01-home', 'Home', 'Compact width is the phone you know; regular width shows one more level. Same hierarchy, same tab bar, nothing tied to a pose.', [home_outer(), home_inner()]),
     ('02-search', 'Search', 'List-detail: the result list is the hierarchy on the outer display; the inner display shows the list and the selected title at once.', [search_outer(), search_inner()]),
-    ('03-detail', 'Detail', 'Detail | Episodes as a split arrangement. In the closed state the episodes are the next level down; open, they are the second pane.', [detail_outer(), detail_inner()]),
+    ('03-detail', 'Detail', 'Full-width detail: big logo, every rating, creators and the whole synopsis, then Continue, your rating and the action circles. Episodes follow below; in book pose they take the right half.', [detail_outer(), detail_inner()]),
     ('04-sources', 'Sources', 'The Sources sheet keeps Nuvio\'s island material. Closed, it gets a vertical bar; open and folded, it is placed trailing so it never rests in the fold.', [sources_outer(), sources_inner()]),
     ('05-player-poses', 'Player · closed and book', 'Immersive video under the side region when closed; video | Up next + Watch Together when open like a book.', [player_outer_land(), player_inner_book()]),
     ('06-player-tabletop', 'Player · tabletop and flat', 'Tabletop puts the picture on the raised half and every control on the flat half. Flat, the video fills the display and the controls overlay it.', [player_tabletop(), player_inner_flat()]),
