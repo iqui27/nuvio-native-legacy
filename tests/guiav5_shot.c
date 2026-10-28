@@ -67,7 +67,7 @@ int main(int argc,char **argv){
    go("parental-lista");rules_mode=0;focus=7;KEY(SDLK_DOWN);assert(focus==8);KEY(SDLK_UP);assert(focus==7);
    go("setup-categorias");query[0]=0;focus=2+9;KEY(SDLK_DOWN);assert(focus==2+11);focus=2+8;KEY(SDLK_DOWN);assert(focus==2+10);
    group_count=gc;build_groups();
-   int pc=picker_count;picker_count=10;go("multiview-escolher");assert(focus==-1);
+   int pc=picker_count;picker_count=10;go("multiview-escolher");assert(focus==900);
    focus=906;KEY(SDLK_DOWN);assert(focus==907);focus=900;KEY(SDLK_UP);assert(focus==900&&nav==-1);
    picker_count=0;G5Item first=mv_items[0];focus=-1;KEY(SDLK_RETURN);assert(!strcmp(screen,"multiview-escolher")&&!strcmp(mv_items[0].id,first.id));
    picker_count=pc;
@@ -123,10 +123,10 @@ int main(int argc,char **argv){
    /* Multiview: limits over the picker go back to the picker and its pick,
     * then to the layout and Add channel; a pick closes to the layout. */
    {int mc=mv_count,pc2=picker_count,md=mode;mode=4;picker_count=10;
-    go("grade");go("multiview-4");focus=803;go("multiview-escolher");mv_count=4;focus=905;activate(905);assert(!strcmp(screen,"multiview-limite"));
+    go("grade");go("multiview-4");focus=803;mv_target=4;go("multiview-escolher");mv_count=4;focus=905;activate(905);assert(!strcmp(screen,"multiview-limite"));
     KEY(SDLK_ESCAPE);assert(!strcmp(screen,"multiview-escolher")&&focus==905);
     KEY(SDLK_ESCAPE);assert(!strcmp(screen,"multiview-4")&&focus==803);
-    focus=803;go("multiview-escolher");mv_count=3;focus=901;activate(901);assert(!strcmp(screen,"multiview-4")&&focus==803);
+    focus=803;mv_target=3;go("multiview-escolher");mv_count=3;focus=901;activate(901);assert(!strcmp(screen,"multiview-4")&&focus==3);
     focus=801;activate(801);assert(!strcmp(screen,"multiview-3"));KEY(SDLK_ESCAPE);assert(gv_is(screen));
     mv_count=mc;picker_count=pc2;mode=md;}
 #undef KEY

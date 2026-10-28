@@ -37,6 +37,7 @@ int  guia_visivel(void);         // qualquer um dos dois
 // no canal que esta tocando).
 void guia_focar_id(const char *id);
 void guia_reordenar(void); // presentation only; retain cached channels and focus
+int guia_canal_esporte(const char *nome, const char *grupo);
 
 // Snapshot of all loaded categories, including hidden ones. Identity excludes
 // account names/order; stale profile sessions cannot change visibility.

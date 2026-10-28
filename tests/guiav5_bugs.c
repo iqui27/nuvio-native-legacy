@@ -11,10 +11,26 @@ TxtLinha test_source_text(TxtEstilo, const char *, int, int, int, int, float);
 #ifndef GUIAV5_UNDER_TEST
 #define GUIAV5_UNDER_TEST "../src/guiav5ui.c"
 #endif
+static char *category_fixture(const char *,const char *,const char *,const char *,int,int *);
+#define xtream_consultar category_fixture
 #include GUIAV5_UNDER_TEST
+#undef xtream_consultar
 #include <assert.h>
 
 static int failures;
+static int category_failure, category_calls;
+static char *category_fixture(const char *server,const char *user,const char *password,const char *request,int timeout,int *status){
+  (void)server;(void)user;(void)password;(void)timeout;*status=200;
+  if(strstr(request,"categories")){
+    category_calls++;
+    if(category_failure==1){*status=503;return NULL;}
+    if(category_failure==2)return strdup("{}");
+    if(category_failure==3)return strdup("[");
+    return strdup("[{\"category_id\":\"7\",\"category_name\":\"Drama\"}]");
+  }
+  return strdup("[{\"stream_id\":11,\"series_id\":12,\"name\":\"Fixture\",\"category_id\":\"7\"}]");
+}
+static void *failed_catalog(void *unused){(void)unused;return NULL;}
 #define CHECK(ok, name) do { if (!(ok)) { fprintf(stderr, "FAIL: %s\n", name); failures++; } else puts("PASS: " name); } while (0)
 
 int main(void) {
@@ -68,11 +84,63 @@ int main(void) {
   player_encerrar();
   snprintf(screen,sizeof screen,"grade");snprintf(gv_pagina,sizeof gv_pagina,"grade");
   gv_hh=208;guia_preview_rect(&x,&y,&w,&h);
-  CHECK(fabsf(w/h-16.0f/9)<.001f && h==172,
-        "compact guide exports its resized preview geometry");
+  CHECK(w==626 && h==208,
+        "compact guide exports its enlarged card preview geometry");
   gv_hh=GV_HERO_H;guia_preview_rect(&x,&y,&w,&h);
-  CHECK(fabsf(w/h-16.0f/9)<.001f && h==GV_HERO_H-36,
-        "expanded guide exports its preview geometry");
+  CHECK(w==626 && h==GV_HERO_H,
+        "expanded guide exports its enlarged card preview geometry");
+  /* Sports must remain usable without ESPN events or any EPG. */
+  stagingZerar();
+  int sports_source=sFonte(LTV_M3U,"sports-fixture","Fixture","");
+  const char *sports_groups[]={"SPORTS","Esportes","DAZN","ESPN","News"};
+  for(int i=0;i<5;i++){
+    char id[32];snprintf(id,sizeof id,"fixture-%d",i);
+    GCru c={0};c.id=id;c.nome=i==4?"CNN":"Live fixture";c.grupo=sports_groups[i];
+    c.logo=c.desc=c.epgId=c.tvgNome=c.url=c.ua=c.ref="";
+    sGrupoInfo(sports_source,c.grupo,1);sCanalAdd(sports_source,&c);sLtvF[sports_source].total++;
+  }
+  adotarStaging();estado=G_PRONTO;query[0]=0;
+  CHECK(gs_live(-1,NULL,NULL,NULL)==4,"Sports uses live SPORTS, Esportes, DAZN and ESPN groups without EPG");
+  snprintf(query,sizeof query,"unmatched fixture");
+  CHECK(gs_live(-1,NULL,NULL,NULL)==0,"Sports search has an explicit empty result");
+  query[0]=0;gs_page=0;focus=2700;
+  gs_activate();
+  CHECK(guia_pediu_preview(&it),"Sports live card uses guide playback pipeline");
+  source_loaded=0;draft.type=1;persist();
+  CHECK(!source_loaded,"saving source settings does not mark an unfetched catalog loaded");
+  snprintf(screen,sizeof screen,"vod-filmes");source_loaded=1;
+  operation=2;worker_ok=worker_cancel=0;worker_profile=profile;
+  snprintf(worker_account,sizeof worker_account,"%s",account);
+  assert(!pthread_create(&worker,NULL,failed_catalog,NULL));
+  atomic_store(&busy,1);atomic_store(&ready,1);
+  g5ui_update();
+  CHECK(!source_loaded&&!atomic_load(&busy),"failed VOD publication clears loaded flag for next open");
+  /* Exercise worker publication, fallback grouping and retry through real UI entry. */
+  assert(xtream_conta_definir("http://fixture.invalid","fixture","fixture"));
+  for(category_failure=1;category_failure<=3;category_failure++){
+    clear_catalog();memset(&draft,0,sizeof draft);draft.movies=draft.series=draft.live=1;
+    use_saved=0;category_calls=0;action[0]=0;
+    g5ui_open("vod-filmes");
+    assert(atomic_load(&busy));
+    while(!atomic_load(&ready))SDL_Delay(1);
+    g5ui_update();
+    CHECK(worker_ok&&count==3&&total==3&&source_loaded&&category_calls==3,
+          "category failure still publishes movie, series and live lists");
+    CHECK(count==3&&!strcmp(inventory[0].group,"Uncategorized")&&
+          !strcmp(inventory[1].group,"Uncategorized")&&!strcmp(inventory[2].group,"Uncategorized"),
+          "unavailable or malformed categories use Uncategorized");
+    int saved_failure=category_failure;category_failure=0;
+    g5ui_open("vod-filmes");
+    CHECK(atomic_load(&busy),"next VOD open retries missing category metadata");
+    if(atomic_load(&busy)){
+      while(!atomic_load(&ready))SDL_Delay(1);
+      g5ui_update();
+    }
+    CHECK(count==3&&source_loaded&&category_calls==6&&!strcmp(inventory[0].group,"Drama")&&
+          !strcmp(inventory[1].group,"Drama")&&!strcmp(inventory[2].group,"Drama"),
+          "category retry restores provider names without losing lists");
+    category_failure=saved_failure;
+  }
   SDL_Quit();
   return failures ? 1 : 0;
 }

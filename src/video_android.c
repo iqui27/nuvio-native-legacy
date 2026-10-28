@@ -687,6 +687,12 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeTela(JNIEnv 
   fflush(stdout);
 }
 
+JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioCap(JNIEnv *env, jclass cls,
+    jint truehd, jint dts, jint dtshd, jint eac3, jint ac3) {
+  (void)env; (void)cls;
+  stream_definir_audio_capacidades(truehd,dts,dtshd,eac3,ac3);
+}
+
 JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeDecoder4k(JNIEnv *env, jclass cls,
                                                                                   jint hevc, jint avc, jint vp9, jint av1) {
   (void)env; (void)cls;

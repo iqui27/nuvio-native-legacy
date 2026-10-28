@@ -2,7 +2,7 @@
 # Offline ratings proof: eight brands, neutral personal card, both scales/materials.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export OBJ=/tmp/nv21-obj-$(basename "$PWD")
+export OBJ=${TMPDIR:-/tmp}/nv21-obj-$(basename "$PWD")
 export NUVIO_DETAIL21_PROOF=1
 export NUVIO_SHOT_RATING_BRANDS=1
 export NUVIO_SHOT_BORDA=1

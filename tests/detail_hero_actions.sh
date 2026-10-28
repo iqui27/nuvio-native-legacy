@@ -7,7 +7,7 @@ mkdir -p "$out"
 bash tests/detail21.sh
 bash tests/detail_acoes_gap.sh
 bash tests/detail_eps.sh
-export OBJ=/tmp/nv21-obj-$(basename "$PWD")
+export OBJ=${TMPDIR:-/tmp}/nv21-obj-$(basename "$PWD")
 export NUVIO_DETAIL_SHOT=1 NUVIO_SHOT_IDIOMA=1 NUVIO_SHOT_TOPO=0
 export NUVIO_SHOT_ESCALA=2 NUVIO_SHOT_FUNDO=0
 NUVIO_SHOT_VIDRO=1 NUVIO_HERO_TOGETHER=1 bash tests/detalhe_glass_shot.sh "$out/glass" hero-actions
