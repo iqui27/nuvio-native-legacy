@@ -124,6 +124,9 @@ int fonteauto_pode_decidir(const FonteautoParcial *p) {
   // Um addon que ainda nao respondeu pode trazer um grupo melhor (o permitido):
   // espera por ele ate o prazo.
   if (p->grupo && p->pendenteGrupoMin < p->grupo[c]) return 0;
+  // Every pending add-on can only supply a worse group. The winner cannot
+  // change, even below the quality ceiling or outside the add-on order.
+  if (p->grupo && p->pendenteGrupoMin > p->grupo[c]) return 1;
   if (p->instantaneo) return 1;
   // ORDEM ESTRITA: a escolha sai assim que o add-on mais cedo na ordem que ja
   // tem fonte valida respondeu, sem esperar os de depois. So falta esperar um

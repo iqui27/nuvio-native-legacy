@@ -85,6 +85,7 @@ int fonteauto_primeira(const int *fila, int n, FonteVerificar verificar,
 //   - PRIMEIRA: nenhum addon instalado ANTES do da primeira candidata falta
 //     (a primeira da lista inteira nao pode mudar), e ela cabe no teto ou
 //     ninguem mais falta;
+//   - all pending add-ons can only supply groups below the current winner;
 //   - MELHOR: a melhor candidata presente e `boa` (dentro do teto, em cache,
 //     na resolucao do teto — 4K com teto automatico);
 //   - o prazo passou (prazoPassou).

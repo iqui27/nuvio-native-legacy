@@ -269,6 +269,80 @@ static void ordemAddons(void) {
   (void)bo;
 }
 
+// Fixed-delay fake add-ons, driven by a virtual clock: no network or sleeps.
+// Each source's score is already computed by streams.c for the selected mode.
+// A and B are allowed; C is a fallback and cannot displace either of them.
+static int timingPick(int priority, int fallbackDelay, int waitAll, int pendingGroup,
+                      int preferredPending, int *winner) {
+  const int delay[3] = {400, 800, fallbackDelay};
+  const long scores[4][3] = {
+    {20000, 30000, 90000},  // Balance: B wins despite C's higher score.
+    {30000, 20000, 90000},  // Maximum quality: A wins.
+    {10000, 35000, 90000},  // Start fast: B wins.
+    {0, 0, 0}             // Add-on order: A wins.
+  };
+  signed char group[3] = {0, 0, (signed char)pendingGroup};
+  unsigned char excluded[3], above[3] = {0}, good[3] = {0};
+  int addon[3] = {1, 2, 0};
+  FonteautoParcial p = {0};
+  p.modo = priority == 3 ? FONTEAUTO_PRIMEIRA : FONTEAUTO_MELHOR;
+  p.total = 3; p.preferida = -1; p.esperaTodos = waitAll;
+  p.pontos = scores[priority]; p.grupo = group; p.excluida = excluded;
+  p.acimaTeto = above; p.boa = good; p.addon = addon;
+  // An earlier installed fallback must not hold the add-on-order winner.
+  p.pendenteAntes = faltaAntes;
+  for (int ms = 0; ms <= 12000; ms += 10) {
+    p.algumPendente = 0; p.pendenteGrupoMin = 99;
+    for (int i = 0; i < 3; i++) {
+      excluded[i] = ms < delay[i];
+      if (excluded[i]) {
+        p.algumPendente = 1;
+        if (group[i] < p.pendenteGrupoMin) p.pendenteGrupoMin = group[i];
+      }
+    }
+    p.prefPendente = preferredPending && ms < delay[2];
+    p.prazoPassou = ms >= 5000;
+    if (fonteauto_pode_decidir(&p)) {
+      int fila[1];
+      CONFERE(fonteauto_fila_g(p.modo, 3, -1, p.pontos, above, excluded,
+                              group, 1, fila) == 1, "timing queue empty");
+      *winner = fila[0];
+      return ms;
+    }
+  }
+  return -1;
+}
+static void timing(void) {
+  const char *names[] = {"balance", "maximum-quality", "start-fast", "addon-order"};
+  for (int mode = 0; mode < 4; mode++) {
+    int winner = -1, full = -1, quick = -1;
+    int pick = timingPick(mode, 12000, 0, FR_GRUPO_OUTROS, 0, &winner);
+    int all = timingPick(mode, 12000, 1, FR_GRUPO_OUTROS, 0, &full);
+    int fast = timingPick(mode, 1000, 0, FR_GRUPO_OUTROS, 0, &quick);
+    int expected = mode == 0 || mode == 2 ? 1 : 0;
+    printf("timing %s: pick=%d ms, synthetic first-frame=%d ms "
+           "(probe=100, decoder=700), wait-all=%d ms, all-quick=%d ms, source=%d\n",
+           names[mode], pick, pick + 800, all, fast, winner);
+    CONFERE(pick == 800, "%s: fallback delayed immutable winner to %d ms", names[mode], pick);
+    CONFERE(all == 12000, "%s: explicit wait-all bypassed", names[mode]);
+    CONFERE(fast == 800, "%s: quick fallback delayed winner", names[mode]);
+    CONFERE(winner == expected && full == winner && quick == winner,
+            "%s: winner changed: %d/%d/%d", names[mode], winner, full, quick);
+  }
+  // Without group precedence the late higher score must still win after
+  // quick responses; a remembered pending add-on and wait-all still block.
+  int winner;
+  for (int mode = 0; mode < 4; mode++) {
+    int full;
+    int quick = timingPick(mode, 1000, 0, 0, 0, &winner);
+    CONFERE(timingPick(mode, 1000, 1, 0, 0, &full) == 1000 &&
+            quick == 1000 && winner == full && winner == (mode == 3 ? 0 : 2),
+            "%s: same-group quick winner changed", names[mode]);
+  }
+  CONFERE(timingPick(0, 12000, 0, FR_GRUPO_OUTROS, 1, &winner) == 12000,
+          "pending remembered source bypassed");
+}
+
 int main(void) {
   Cena c;
   int e, tocadas, i;
@@ -360,6 +434,7 @@ int main(void) {
   CONFERE(fonteauto_tentativas(FONTEAUTO_PRIMEIRA, 8) == 1, "primeira pede mais de 1");
   CONFERE(fonteauto_tentativas(FONTEAUTO_MELHOR, 8) == 8, "melhor mudou de 8");
 
+  timing();
   parcial();
   grupos();
   ordemAddons();
