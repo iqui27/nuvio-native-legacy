@@ -1559,6 +1559,10 @@ static void alternarOrigens(void) {
   remapear(1);
 }
 
+// First focusable picker: on a phone the Sort/Filter chips are hidden (system
+// bar owns them), so only the grid/list toggle takes D-pad focus.
+static int pickMin(void) { return bibFone() && modo != MODO_LISTAS && estado() != EST_ITENS ? bibViewStart() : 0; }
+
 static void subirParaFaixa(void) {
   if (faixaNoPicker) {
     foco.fileira = BIB_FIL_PICK; foco.coluna = pickSel;
@@ -1840,7 +1844,7 @@ static void biblioteca_evento_(const SDL_Event *e) {
     if (k == SDLK_LEFT) { sair = 1; return; }   // 1a aba: o app abre a barra
     if (k == SDLK_RIGHT && foco.coluna < BIB_N_MODOS - 1) { foco.coluna++; return; }
     if (k == SDLK_RIGHT) return;
-    if (k == SDLK_DOWN) { foco.fileira = BIB_FIL_PICK; foco.coluna = pickSel; return; }
+    if (k == SDLK_DOWN) { foco.fileira = BIB_FIL_PICK; pickSel = pickMin(); foco.coluna = pickSel; return; }
     if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
       int novo = foco.coluna;
       if (novo != modo) {
@@ -1873,9 +1877,10 @@ static void biblioteca_evento_(const SDL_Event *e) {
     return;
   }
   if (foco.fileira == BIB_FIL_PICK) {
+    if (pickSel < pickMin()) { pickSel = pickMin(); foco.coluna = pickSel; }   // phone: Sort/Filter chips are hidden
     if (k == SDLK_RIGHT && pickSel < bibNPicks() - 1) { pickSel++; foco.coluna = pickSel; return; }
-    if (k == SDLK_LEFT  && pickSel > 0) { pickSel--; foco.coluna = pickSel; return; }
-    if (k == SDLK_LEFT && botaoOrigens()) { focoBotaoOrig = 1; return; }
+    if (k == SDLK_LEFT  && pickSel > pickMin()) { pickSel--; foco.coluna = pickSel; return; }
+    if (k == SDLK_LEFT && botaoOrigens() && !pickMin()) { focoBotaoOrig = 1; return; }
     if (k == SDLK_LEFT)  { foco.fileira = BIB_FIL_MODO; foco.coluna = BIB_N_MODOS - 1; return; }
     if (k == SDLK_UP) { foco.fileira = BIB_FIL_MODO; foco.coluna = modo; return; }
     if (k == SDLK_DOWN) {
@@ -2309,22 +2314,25 @@ static int contagemModo(int a) {
   textoModo(a, num, sizeof num);
   return num[0] ? atoi(num) : -1;
 }
-// Phone portrait: tab labels a bit smaller so the five modes fit untruncated.
-// Phone: five real tab names do not fit at 17 pt; one shared factor shrinks
-// label, count and padding together so none is truncated (never above 1).
-static float fitFone(void) {
-  float w = BIB_SEG_PAD * 2.0f + BIB_SEG_ITEM_GAP * (BIB_N_MODOS - 1);
+// Phone: labels stay at their real size (11.5 pt, count 10 pt); only the item
+// padding shrinks (to a floor) so the five tab names fit on one line.
+static float textoFone(void) {
+  float w = 0;
   for (int a = 0; a < BIB_N_MODOS; a++) {
     char num[16];
-    w += (float)txt_linha(TXT_ROW_TITULO, ROT_MODO[a], 140, 140, 140, 255).w * (hpt(17.0f) / NV_FT_ROW_TITULO) + hpt(20.0f);
+    w += (float)txt_linha(TXT_ROW_TITULO, ROT_MODO[a], 140, 140, 140, 255).w * (hpt(13.0f) / NV_FT_ROW_TITULO);
     textoModo(a, num, sizeof num);
-    if (num[0]) w += 9.0f + (float)txt_linha(TXT_CAPTION2, num, 93, 93, 93, 255).w * (hpt(14.0f) / NV_FT_CAPTION2);
+    if (num[0]) w += 5.0f + (float)txt_linha(TXT_CAPTION2, num, 93, 93, 93, 255).w * (hpt(10.0f) / NV_FT_CAPTION2);
   }
-  return fminf(1.0f, hdrW() / w);
+  return w;
 }
-static float escM(void) { return bibFone() ? hpt(17.0f) * fitFone() / NV_FT_ROW_TITULO : BIB_ESC_MODO; }
-static float escN(void) { return bibFone() ? hpt(14.0f) * fitFone() / NV_FT_CAPTION2 : BIB_ESC_N; }
-static float padM(void) { return bibFone() ? hpt(10.0f) * fitFone() : BIB_SEG_ITEM_PADX; }
+static float escM(void) { return bibFone() ? hpt(13.0f) / NV_FT_ROW_TITULO : BIB_ESC_MODO; }
+static float escN(void) { return bibFone() ? hpt(10.0f) / NV_FT_CAPTION2 : BIB_ESC_N; }
+static float padM(void) {
+  if (!bibFone()) return BIB_SEG_ITEM_PADX;
+  float livre = hdrW() - BIB_SEG_PAD * 2.0f - BIB_SEG_ITEM_GAP * (BIB_N_MODOS - 1) - textoFone();
+  return fmaxf(hpt(2.0f), fminf(hpt(9.0f), livre / (2.0f * BIB_N_MODOS)));
+}
 static float larguraModo(int a) {
   char num[16];
   if (!bibRetrato()) {
@@ -2339,7 +2347,7 @@ static float larguraModo(int a) {
   }
   float w = (float)txt_linha(TXT_ROW_TITULO, ROT_MODO[a], 140, 140, 140, 255).w * escM();
   textoModo(a, num, sizeof num);
-  if (num[0]) w += 9.0f + (float)txt_linha(TXT_CAPTION2, num, 93, 93, 93, 255).w * escN();
+  if (num[0]) w += (bibFone() ? 5.0f : 9.0f) + (float)txt_linha(TXT_CAPTION2, num, 93, 93, 93, 255).w * escN();
   w += padM() * 2.0f;
   if (!bibRetrato()) return w;
   float cap = (hdrW() - BIB_SEG_PAD * 2.0f - BIB_SEG_ITEM_GAP * (BIB_N_MODOS - 1));
@@ -2439,14 +2447,14 @@ static void desenhaModos(void) {
       float util = r.w - padM() * 2.0f;
       if (num[0]) ln = txt_linha_corta(TXT_CAPTION2, num, tn, tn, tn, 255, util * .4f / escN());
       l = txt_linha_corta(TXT_ROW_TITULO, ROT_MODO[a], t, t, t, 255,
-                          (util - (num[0] ? 9.0f + (float)ln.w * escN() : 0.0f)) / escM() + 4.0f);
+                          (util - (num[0] ? (bibFone() ? 5.0f : 9.0f) + (float)ln.w * escN() : 0.0f)) / escM() + 4.0f);
     } else l = txt_linha(TXT_ROW_TITULO, ROT_MODO[a], t, t, t, 255);
     txtEsc(l, r.x + padM(), r.y + (r.h - (float)l.h * escM()) * 0.5f,
            escM(), 1.0f);
     if (num[0]) {
       // Na linha de BASE do nome (align-items: baseline), nao no meio dele.
       if (!bibRetrato()) ln = txt_linha(TXT_CAPTION2, num, tn, tn, tn, 255);
-      txtEsc(ln, r.x + padM() + (float)l.w * escM() + 9.0f,
+      txtEsc(ln, r.x + padM() + (float)l.w * escM() + (bibFone() ? 5.0f : 9.0f),
              r.y + (r.h + (float)l.h * escM()) * 0.5f - (float)ln.h * escN() - 1.0f,
              escN(), 1.0f);
     }
@@ -2871,16 +2879,17 @@ static void desenhaCartaz(const CatItem *ci, GfxRect base, float f, float a,
   if (ci && ajustes_selo_visto() && cat_visto(ci))
     badges_selo_visto(card.x, card.y, card.w, a * aArte);
   if (ci && bibFone()) {
-    // Phone: 15 pt semibold title, 13 pt dim "year · type" under it (mock).
+    // Phone: 11 pt semibold title, 9.5 pt dim "year · type" under it (mock).
     float pt = bibPt(), ty = base.y + base.h + 8.0f * pt;
-    float et = 15.0f * pt / NV_FT_HERO_SEC, em = 13.0f * pt / NV_FT_MINI;
+    // x0.83 / x0.67: measured on Duo D, the glyph atlas renders larger than nominal.
+    float et = 11.0f * 0.83f * pt / NV_FT_HERO_SEC, em = 9.5f * 0.67f * pt / NV_FT_MINI;
     char meta[96]; linhaMetaFone(ci, meta, sizeof meta);
     { char *sep = strstr(meta, " · ");   // does not fit the 78 pt column: keep the year
       if (sep && (float)txt_linha(TXT_MINI, meta, 0, 0, 0, 0).w * em > base.w) *sep = 0; }
     TxtLinha tl = txt_linha_corta(TXT_HERO_SEC, ci->titulo, 255, 255, 255, 255, base.w / et);
     txtEsc(tl, base.x, ty, et, a);
     TxtLinha m = txt_linha_corta(TXT_MINI, meta, 145, 147, 153, 255, base.w / em);
-    txtEsc(m, base.x, ty + 20.0f * pt, em, a);
+    txtEsc(m, base.x, ty + 15.0f * pt, em, a);
   } else if (ci) {
     float ty = base.y + base.h + BIB_TIT_GAP + 14.0f * f;
     if (f > 0.5f) {
@@ -3817,8 +3826,9 @@ static void desenhaCabecalho(void) {
       if (bibFone() && !temAberta && modo != MODO_LISTAS) {
         char n[64];
         snprintf(n, sizeof n, "%d %s", nFiltro, i18n(nFiltro == 1 ? "título" : "títulos"));
+        float ec = hpt(13.5f) / NV_FT_HERO_SEC;
         TxtLinha c = txt_linha(TXT_HERO_SEC, n, 145, 147, 153, 255);
-        txt_desenhar(c, hdrX() + (float)t.w + hpt(10.0f), ty - 6.0f + (float)(t.h - c.h) * 0.5f);
+        txtEsc(c, hdrX() + (float)t.w + hpt(10.0f), ty - 6.0f + ((float)t.h - (float)c.h * ec) * 0.5f, ec, 1.0f);
       } } }
 
   if (listasMinhas()) return;   // 6D: the list panel owns the right side
