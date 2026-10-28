@@ -92,6 +92,9 @@ add_executable(Nuvio MACOSX_BUNDLE ${NUVIO_SRC} "${CMAKE_CURRENT_LIST_DIR}/ios.m
 target_include_directories(Nuvio PRIVATE "${NUVIO_RAIZ}/src" "${CMAKE_BINARY_DIR}/inc" "${CMAKE_CURRENT_LIST_DIR}")
 target_compile_definitions(Nuvio PRIVATE NV_IOS NV_TOUCH_UI GLES_SILENCE_DEPRECATION)
 target_compile_options(Nuvio PRIVATE -O2 -Wno-unused-result -Wno-deprecated-declarations)
+# Deployment target is iOS 26 (PLANO.md): any newer API used without an
+# @available guard would crash at launch on iOS 26, so it fails the build.
+target_compile_options(Nuvio PRIVATE -Werror=unguarded-availability-new)
 set_source_files_properties("${CMAKE_CURRENT_LIST_DIR}/ios.m" PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
 
 set(NV_KEYS NV_SUPABASE_URL NV_SUPABASE_ANON_KEY NV_TV_LOGIN_BASE NV_TRAKT_CLIENT_ID

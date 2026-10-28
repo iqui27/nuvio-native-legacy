@@ -98,9 +98,11 @@ static void teclaVoltar(void) {
 static void abasDobrar(int abrir) {
   if (!abas || abasAbertas == abrir || !abas.selectedTab) return;
   abasAbertas = abrir;
-  [abas performBatchUpdates:^{
-    abas.compactTabIdentifiers = abrir ? nil : @[ abas.selectedTab.identifier ];
-  }];
+  NSArray<NSString *> *ids = abrir ? nil : @[ abas.selectedTab.identifier ];
+  // iOS 27 animates the change as one update; iOS 26 (deployment target)
+  // just sets it. Vertical bars only exist from 27.1, so 26 loses nothing.
+  if (@available(iOS 27.0, *)) [abas performBatchUpdates:^{ abas.compactTabIdentifiers = ids; }];
+  else abas.compactTabIdentifiers = ids;
 }
 
 // The screens the tabs lead to (and the sidebar over them): tabs, no Back.
