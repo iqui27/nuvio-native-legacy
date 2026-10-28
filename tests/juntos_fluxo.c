@@ -35,7 +35,8 @@ int recomenda_ativo(void) { return 1; }
 #endif
 const char *recomenda_meu_id(void) { return "host"; }
 const char *recomenda_vinculo_nome(void) { return "Host"; }
-int player_aberto(void) { return 1; }
+static int playerOpen = 1;
+int player_aberto(void) { return playerOpen; }
 int player_pausado(void) { return !playing; }
 int video_pronto(void) { return prepared; }
 int player_juntos_preparado(void) { return prepared && !failedVideo; }

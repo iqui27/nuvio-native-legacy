@@ -149,7 +149,7 @@ static struct {
   char conv[JUNTOS_CONVIDADOS_MAX][96];
 } prep;
 // abrir o titulo (convidado / proximo episodio)
-static int abrirPedido, escolhendo;
+static int abrirPedido, escolhendo, foraDoPlayer;
 static char abrirImdb[24], abrirTitulo[160], abrirPoster[512];
 static int abrirT, abrirE;
 static JsImpressao impSala;
@@ -280,6 +280,7 @@ static void zerar(void) {
   salaId[0] = codigo[0] = bilhete[0] = tituloSala[0] = urlCelular[0] = 0;
   pedindoBilhete = 0;
   fonteSolicitada = 0;
+  foraDoPlayer = 0;
   escolhendo = 0; abrirPedido = 0; fonteEscolhida = -1; salaDurConferida = 0; fonteVista = -1;
   memset(&prep, 0, sizeof prep);
   video_taxa_sync(1000);
@@ -658,6 +659,8 @@ static void eventos(void) {
       case JSV_EPISODIO: {
         snprintf(tituloSala, sizeof tituloSala, "%s", motor.sala.titulo);
         impSala = motor.sala.imp;
+        // Back retains room updates, but only explicit Rejoin may reopen playback.
+        if (foraDoPlayer) break;
         juntosui_sala_abriu();
         // A different movie can also have episode 0/0: compare room identity,
         // already checked by the motor, rather than just season/episode.
@@ -924,6 +927,7 @@ void juntos_escolher_titulo(const char *imdb, int t, int e, const char *titulo, 
 
 int juntos_reentrar(void) {
   if (!juntos_ativo() || !temMotor || !motor.sala.ep[0]) return 0;
+  foraDoPlayer = 0;
   pedirAbrir(motor.sala.ep, motor.sala.titulo, motor.sala.poster);
   if (fase == JF_PREPARADO) escolhendo = 0;
   if (juntos_precarregando()) juntosui_sala_abriu();
@@ -932,6 +936,10 @@ int juntos_reentrar(void) {
 
 int juntos_ao_voltar(void) {
   // Back leaves playback; membership ends only through Leave session.
+  if (juntos_ativo()) {
+    foraDoPlayer = 1;
+    abrirPedido = escolhendo = 0;
+  }
   return 0;
 }
 
