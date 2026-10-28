@@ -370,6 +370,9 @@ static float animFoco[MAX_FIL][MAX_CARDS];
 // cinza secundario quando nao e (dono, 14/10: "quando a fileira nao tiver
 // focada deixar o titulo da fileira em cinza") — a mesma mola do foco do card.
 static float animFocoFil[MAX_FIL];
+// Special hero copy follows the same fade duration as a normal Home title.
+static int heroEspecialCol[MAX_FIL];
+static float heroEspecialAlpha[MAX_FIL];
 // MICRO-ANIMACOES DE CARD (revela.h). Um registro por lugar da grade para a
 // arte chegando; um so para a luz do foco, porque so ha um card em foco; e o
 // instante em que cada fileira comecou a entrar (0 = ja entrou).
@@ -3616,6 +3619,8 @@ static void sincronizarFileiras(void) {
   prefsAplicadas = assin;
   memset(animFoco, 0, sizeof animFoco);
   memset(animFocoFil, 0, sizeof animFocoFil);
+  memset(heroEspecialCol, 0, sizeof heroEspecialCol);
+  memset(heroEspecialAlpha, 0, sizeof heroEspecialAlpha);
   memset(revArte, 0, sizeof revArte);
   memset(velX, 0, sizeof velX);
   memset(scrollX, 0, sizeof scrollX);
@@ -3779,8 +3784,9 @@ static void home_atualizar_(float dt, Uint32 agora) {
   // isso muda sem o catalogo mudar (um amigo novo chega do recomenda.c).
   for (int r = 0; r < nFileiras; r++) {
     if (fileiras[r].tipo != FILEIRA_SOCIAL) continue;
-    int focada = !focoHero && foco.fileira == r, c = foco.coluna;
-    amigosfil_atualizar(dt, focada, focada ? &c : NULL);
+    int focada = !focoHero && foco.fileira == r;
+    int c = focada ? foco.coluna : foco.colunaLembrada[r];
+    amigosfil_atualizar(dt, focada, &c);
     int nc = amigosfil_n_colunas();
     // A FILEIRA DO CATALOGO QUE RESPONDEU VAZIA (estado 1) continua sem
     // coluna quando nao ha amigo nenhum: o convite so mora no lugar reservado
@@ -4091,6 +4097,14 @@ static void home_atualizar_(float dt, Uint32 agora) {
   // meio de qualquer teste.
 
   for (int r = 0; r < nFileiras; r++) {
+    if (!focoHero && foco.fileira == r &&
+        (fileiras[r].tipo == FILEIRA_SOCIAL || fileiras[r].tipo == FILEIRA_CATALOGOS)) {
+      int changed = heroEspecialCol[r] != foco.coluna;
+      heroEspecialAlpha[r] = motionReduzido ? 1.0f :
+        anim_rampa(heroEspecialAlpha[r], changed ? 0.0f : 1.0f, dt, NV_HERO_FADE_MS * .5f);
+      if (motionReduzido || (changed && heroEspecialAlpha[r] <= 0.0f))
+        heroEspecialCol[r] = foco.coluna;
+    }
     int nAnim = fileiras[r].n + (fileiras[r].verTudo ? 1 : 0);
     if (nAnim > MAX_CARDS) nAnim = MAX_CARDS;
     for (int c = 0; c < nAnim; c++) {
@@ -5174,10 +5188,13 @@ static void desenhaHero(Uint32 agora, float saida) {
 
   sinW = homeTextoLargura(sinW);
   if(!focoHero && lay==HOME_LAYOUT_MODERNA && foco.fileira>=0 && foco.fileira<nFileiras && fileiras[foco.fileira].tipo==FILEIRA_SOCIAL) {
-    float x=homeConteudoX(),a=(1-saida)*heroVisivelToque();
+    float fade = heroEspecialAlpha[foco.fileira];
+    float x=homeConteudoX(),a=(1-saida)*heroVisivelToque()*fade;
+    aArte *= fade;
     const Fileira *s=&fileiras[foco.fileira];
-    const CatItem *p=(fileiraItemIndice(s, foco.coluna) >= 0)
-                    ?cat_item_exato(fileiraItemIndice(s, foco.coluna)):NULL;
+    int column = heroEspecialCol[foco.fileira];
+    const CatItem *p=(fileiraItemIndice(s, column) >= 0)
+                    ?cat_item_exato(fileiraItemIndice(s, column)):NULL;
     const char *arte=p?arte_hero_do_item(p):NULL;   // tela cheia: arte grande
     GLuint ta=arte?tex_obter_hero(arte):0;
     // O fundo social so onde a arte NAO cobre. Com a arte do titulo opaca por
@@ -5259,13 +5276,15 @@ static void desenhaHero(Uint32 agora, float saida) {
   // Dinamica nao tem destaque parado no topo e mostra o mesmo banner por tras
   // do cabecalho da fileira (dinArteColecao).
   if(!focoHero&&lay!=HOME_LAYOUT_DINAMICA&&foco.fileira>=0&&foco.fileira<nFileiras&&fileiras[foco.fileira].tipo==FILEIRA_CATALOGOS) {
-    const ColFolder *folder=col_folder(fileiras[foco.fileira].folders[foco.coluna]);
+    float fade = heroEspecialAlpha[foco.fileira];
+    const ColFolder *folder=col_folder(fileiras[foco.fileira].folders[heroEspecialCol[foco.fileira]]);
+    aArte *= fade;
     if(folder) {
       int details=ajustes_hero_pasta_detalhes();
       if(folder->editorial) {
         /* Art is authored for this rectangle, not cropped as a movie backdrop.
            The neutral canvas continues below it; no art behind the shelves. */
-        float x=homeConteudoX(),a=(1-saida)*heroVisivelToque();
+        float x=homeConteudoX(),a=(1-saida)*heroVisivelToque()*fade;
         GLuint art=tex_obter_hero(folder->hero);
         GfxRect header=heroArtworkOverlayRect(heroEditorialRect(folder->editorial,
                       folder->editorial==2 ? tex_aspecto(folder->hero) : 0.0f), r);
@@ -5309,7 +5328,7 @@ static void desenhaHero(Uint32 agora, float saida) {
         else gfx_rect(r,t,modoHero,0,0,0,0,0,0,0,aArte);
         gfx_tex_aspect_atual=0;}
       heroArteRect=r;
-      float x=homeConteudoX(),a=(1-saida)*heroVisivelToque();
+      float x=homeConteudoX(),a=(1-saida)*heroVisivelToque()*fade;
       if(details) {
         TxtLinha group=txt_linha(TXT_HERO_META,folder->group,201,206,218,255);
         txt_desenhar_alpha(group,x,NV_COLLECTION_HERO_GROUP_Y,a);
@@ -5923,15 +5942,7 @@ static void desenhaAtalhos(int r, float y) {
     alvoCard(x, cy, cw, ch, r, c);
     // O ANEL E OPCIONAL (Ajustes > Foco no cartaz). Sem ele o foco continua
     // dito pelo tamanho e pela animacao do cartaz — o que sai e so a borda.
-    if (!redonda && f > .01f && ajustes_borda_foco()) {
-      float menor = cw < ch ? cw : ch;
-      float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-      if (ajustes_vidro()) gfx_vidro_cartao(card, raio, f, 1.0f);
-      else
-      gfx_cor((GfxRect){x - NV_ANEL_FOCO, cy - NV_ANEL_FOCO,
-        cw + 2*NV_ANEL_FOCO, ch + 2*NV_ANEL_FOCO},
-        (raio * menor + NV_ANEL_FOCO) / (menor + 2*NV_ANEL_FOCO), ar, ag, ab, f);
-    }
+    if (!redonda && ajustes_borda_foco()) svd_aro_foco(card, raio, f, 1.0f);
     if (!redonda) gfx_cor(card, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G, NV_COR_ESQUELETO_B, 1);
     const ColFolder *folder=col_folder(fileiras[r].folders[c]);if(!folder)continue;
     const char *arte = col_capa(folder);
