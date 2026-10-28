@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 out=/Volumes/ExternalSSD/tmp/rev/j6-reviews
-export OBJ=/tmp/nv21-obj-$(basename "$PWD")
+export OBJ=${TMPDIR:-/tmp}/nv21-obj-$(basename "$PWD")
 export NUVIO_SHOT_TIME=1792971600 NUVIO_SHOT_SOURCE=1 NUVIO_SHOT_AMIGOS=1
 export NUVIO_PROOF_ASSETS=/Volumes/ExternalSSD/tmp/rev/j6-r4/assets
 mkdir -p "$out"/{reference,integration,before,after,music}

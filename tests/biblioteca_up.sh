@@ -2,7 +2,7 @@
 # Link the real 2.1 Library handlers with the existing native test objects.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-OBJ=/tmp/nv21-obj-$(basename "$PWD")
+OBJ=${TMPDIR:-/tmp}/nv21-obj-$(basename "$PWD")
 if [ ! -f "$OBJ/app.o" ]; then bash tests/detail21.sh; fi
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-biblioteca-up.XXXXXX")
 trap 'rm -rf "$work"' EXIT
