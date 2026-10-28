@@ -39,6 +39,7 @@ static int triTrocarPerfil;        // "Trocar de perfil" pedido na folha do perf
 static float triChipF[TRI_C_N], triSecF[AJ_MAX_SECOES + 1], triUtilF[AJ_N];
 static float triUtilRol, triUtilRolAlvo;   // rolagem das rotas utilitarias: o desenho acha o alvo, triAtualizar segue
 static float triSecRolX, triSecRolXAlvo;   // retrato: a faixa horizontal de secoes rola ate a secao em foco
+static float triSecRolY, triSecRolYAlvo;   // ilha 1: rola ate a secao em foco quando nao cabe (texto grande)
 static int ajPontUtil;                     // a rota utilitaria aceita o ponteiro (sem editor/modal, entrada feita)
 // Movimento por ilha (nada de fade da tela inteira ao trocar de ilha):
 static float triListaF;   // 1 com o foco na lista (a ilha 2 acende)
@@ -427,6 +428,10 @@ static void triAtualizar(float dt) {
   if (!(ajTelaCheia() && ajToqueLivre[AJT_FAIXA]))
 #endif
   triSecRolX = red ? triSecRolXAlvo : anim_mola(triSecRolX, triSecRolXAlvo, dt, NV_MOLA_FOCO);
+#ifdef NV_TOUCH_UI
+  if (!(ajTelaCheia() && ajToqueLivre[AJT_SECOES]))
+#endif
+  triSecRolY = red ? triSecRolYAlvo : anim_mola(triSecRolY, triSecRolYAlvo, dt, NV_MOLA_FOCO);
   if (triUtil != triUtilVisto) { triUtilVisto = triUtil; triUtilA = 0.0f; }
   triUtilA = red ? 1.0f : anim_rampa(triUtilA, 1.0f, dt, 220.0f);
   ajMovAtualizar(dt);

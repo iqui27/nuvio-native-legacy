@@ -123,13 +123,33 @@ static void triPontSecao(int i, int b) {
   if (triIlha == TRI_SECOES && i == triSecFoco) { triEntrar(i); return; }
   triFocarSecao(i);
 }
+// A altura das secoes com os rotulos de grupo (o mesmo passo do desenho).
+static float triSecoesAltura(void) {
+  float h = 0.0f; int j, g = -1;
+  for (j = 0; j <= nSecoes; j++) {
+    int gj = triParental(j) ? 2 : triGrupo(j);
+    if (gj != g) { if (g >= 0) h += 6.0f; g = gj; h += 10.0f + 15.0f + 6.0f; }
+    h += TRI_SEC_LN;
+  }
+  return h;
+}
 static void triIlhaSecoes(void) {
   GfxRect ilha = triSecR();
-  float y = ilha.y + 12.0f, ar, ag, ab;
+  float topo = ilha.y + 12.0f, base = ilha.y + ilha.h - 12.0f, y, ar, ag, ab, total, fy0 = -1.0f, fy1 = -1.0f, alvo;
   int j, g = -1;
   if (ilha.w <= 0.0f) return;
   ajustes_acento(&ar, &ag, &ab);
   ajIlha(ilha, 28.0f, 1, 0);
+  // Texto grande (ate 130%) ou tela baixa: as 12 entradas nao cabem; a ilha
+  // rola ate a secao em foco (triSecRolY, mola em triAtualizar) e, no
+  // celular, pelo dedo. Os alvos ficam recortados a parte visivel.
+  total = triSecoesAltura();
+#ifdef NV_TOUCH_UI
+  if (ajTelaCheia() && !uxEditor && !ajModalAberto())
+    triSecRolY = ajToqueRegistrar(AJT_SECOES, (GfxRect){ ilha.x, topo, ilha.w, base - topo }, &triSecRolY, total - (base - topo), triSecRolY, 0);
+#endif
+  y = topo - triSecRolY;
+  gfx_recorte(ilha.x, topo, ilha.w, base - topo);
   for (j = 0; j <= nSecoes; j++) {
     int gj = triParental(j) ? 2 : triGrupo(j), foco = triIlha == TRI_SECOES && j == triSecFoco;
     int aberta = !triUtil ? (!triParental(j) && j == secAtual) : triUtil == TRI_U_PARENTAL ? triParental(j) : 0;
@@ -144,7 +164,8 @@ static void triIlhaSecoes(void) {
       y += 10.0f + 15.0f + 6.0f;
     }
     r = (GfxRect){ ilha.x + 14.0f, y, ilha.w - 28.0f, TRI_SEC_LN };
-    ponteiro_alvo(r.x, r.y, r.w, r.h, triPontSecao, NULL, j, 0);
+    if (j == triSecFoco) { fy0 = y + triSecRolY; fy1 = fy0 + TRI_SEC_LN; }
+    ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, triPontSecao, NULL, j, 0);
     ajFocoLinha(r, 20.0f, f, 1);
     if (f > 0.01f) gfx_cor(r, 20.0f / r.h, ar, ag, ab, 0.14f * f);
     if (aberta && f < 0.99f) gfx_cor((GfxRect){ r.x + 7.0f, r.y + r.h * 0.5f - 2.5f, 5, 5 }, 0.5f, ar, ag, ab, 1.0f - f);
@@ -160,6 +181,15 @@ static void triIlhaSecoes(void) {
     }
     y += TRI_SEC_LN;
   }
+  gfx_sem_recorte();
+  alvo = triSecRolYAlvo;
+  if (fy0 >= 0.0f) {
+    if (fy1 - alvo > base) alvo = fy1 - base;
+    if (fy0 - alvo < topo) alvo = fy0 - topo;
+    // a 1.a secao de um grupo traz o rotulo do grupo junto
+    if (fy0 - alvo - topo < 31.0f + 6.0f) alvo = fmaxf(0.0f, fy0 - topo - 37.0f);
+  }
+  triSecRolYAlvo = fmaxf(0.0f, fminf(alvo, fmaxf(0.0f, total - (base - topo))));
 }
 
 // Retrato: a faixa horizontal de secoes (pilulas com icone e titulo) sob o

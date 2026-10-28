@@ -330,6 +330,47 @@ static void previaNaoAplica(void) {
     if (n >= 2) { tocar(v[n - 2]); confere(triUtil == TRI_U_PRESETS && valor[AJ_HERO_TRAILER] == 0, "Previa: so o toque em Aplicar aplica"); } }
   key(SDLK_ESCAPE); quadros(5); if (triUtil) key(SDLK_ESCAPE);
 }
+// Re-review 4, P1: at every supported Settings size (80/90/100%) x text size
+// (85..130%) every section of the sections island is reachable and fully
+// visible: by D-pad (the island follows the focus) and by touch (drag, tap).
+static const PonteiroAlvo *secaoVisivel(int j) {
+  const PonteiroAlvo *a = secao(j);
+  float lado = TRI_SEC_LN * ajustes_tamanho_ajustes();
+  if (!a || a->y < 0.0f || a->y + a->h > NV_LAYOUT_REAL_H + 0.5f || a->h < lado - 1.0f) return NULL;
+  return a;
+}
+static void escalas(void) {
+  int antesT = valor[AJ_TAMANHO_AJUSTES], antesE = valor[AJ_ESCALA_TEXTO];
+  char msg[200];
+  for (int t = 0; t < 3; t++) for (int e = 0; e < 6; e++) {
+    int pct = 80 + 10 * t, txt = (int)(ajustes_escala_texto() * 100.0f + 0.5f), pad = 1, toque = 0;
+    valor[AJ_TAMANHO_AJUSTES] = t; valor[AJ_ESCALA_TEXTO] = e; gfx_escala_txt_definir(ajustes_escala_texto());
+    txt = (int)(ajustes_escala_texto() * 100.0f + 0.5f);
+    // D-pad on the TV: Down from the first section to Parental control
+    layout_modo_definir(0); tela(1920, 1080);
+    triIniciar(); triFocarSecao(0); quadros(15);
+    for (int j = 0; j <= nSecoes; j++) {
+      if (triSecFoco != j || !secaoVisivel(j)) { pad = 0; printf("  Ajustes %d%% texto %d%%: secao %d em foco fora da tela\n", pct, txt, j); break; }
+      key(SDLK_DOWN); quadros(15);
+    }
+    if (pct == 100 && txt == 130) png("p1-secoes-130");
+    snprintf(msg, sizeof msg, "Escalas %d%% x texto %d%%: D-pad alcanca e mostra todas as secoes", pct, txt); confere(pad, msg);
+    // Touch on a landscape phone: drag the island until Parental control shows, tap it
+    layout_modo_definir(1); tela(2340, 1080); assert(!ajRetrato() && ajTelaCheia());
+    triIniciar(); triFocarSecao(0); quadros(15);
+    { const PonteiroAlvo *a0 = secao(0), *a;
+      for (int k = 0; k < 8 && !(a = secaoVisivel(nSecoes)) && a0; k++) {
+        float x = a0->x + a0->w * 0.5f;
+        arrastar(x, NV_LAYOUT_REAL_H - 140.0f, x, 300.0f);
+      }
+      a = secaoVisivel(nSecoes);
+      if (a) { tocar(a); toque = triUtil == TRI_U_PARENTAL; }
+      if (triUtil) { key(SDLK_ESCAPE); quadros(5); } }
+    snprintf(msg, sizeof msg, "Escalas %d%% x texto %d%%: toque alcanca Controle parental", pct, txt); confere(toque, msg);
+  }
+  valor[AJ_TAMANHO_AJUSTES] = antesT; valor[AJ_ESCALA_TEXTO] = antesE; gfx_escala_txt_definir(ajustes_escala_texto());
+  layout_modo_definir(0); tela(1920, 1080); sair = 0;
+}
 int main(int argc, char **argv) {
   char dir[1024];
   if (argc > 1) dirPng = argv[1];
@@ -354,6 +395,7 @@ int main(int argc, char **argv) {
   difJanela();
   inlineToque();
   previaNaoAplica();
+  escalas();
   if (!falhas) puts("PASS: three-island Settings P1s: portrait rail, utility targets, scrolling, parental chooser");
   return falhas ? 1 : 0;
 }

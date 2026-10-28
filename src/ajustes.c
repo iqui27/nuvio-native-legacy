@@ -2790,7 +2790,7 @@ static float scrollY = 0.0f;
 // aqui partia na velocidade maxima e o primeiro quadro ja saltava 12%.
 static float velY = 0.0f;
 #ifdef NV_TOUCH_UI
-enum { AJT_MENU, AJT_INDICE, AJT_LISTA, AJT_EDITOR, AJT_DIFS, AJT_SUB, AJT_FONTES, AJT_FILEIRAS, AJT_FAIXA, AJT_UTIL, AJT_N };
+enum { AJT_MENU, AJT_INDICE, AJT_LISTA, AJT_EDITOR, AJT_DIFS, AJT_SUB, AJT_FONTES, AJT_FILEIRAS, AJT_FAIXA, AJT_UTIL, AJT_SECOES, AJT_N };
 typedef struct { GfxRect r; float *offset, maximo, escala; int id, eixoX; } AjToqueRegiao;
 static AjToqueRegiao ajToqueRegioes[AJT_N];
 static int ajToqueN, ajToqueAtivo = -1, ajToqueLivre[AJT_N], ajToqueChave[AJT_N];
