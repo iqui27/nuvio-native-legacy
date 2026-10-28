@@ -1874,7 +1874,9 @@ static float extraTipo(TipoFileira t) {
        : t == FILEIRA_HEROI_DIVIDIDO ? NV_DIV_META_H : 0.0f;
 }
 static float alturaTotalFil(int r) {
-  return alturaFil(r) + (temRotulo(fileiras[r].tipo) && fileiras[r].tipo != FILEIRA_HEROI_DIVIDIDO
+  int rotulo = temRotulo(fileiras[r].tipo) ||
+    (fileiras[r].tipo == FILEIRA_CATALOGOS && fileiras[r].estiloCol == FILEIRA_REDONDA);
+  return alturaFil(r) + (rotulo && fileiras[r].tipo != FILEIRA_HEROI_DIVIDIDO
                          ? NV_POSTER_COPY_H : 0.0f) + extraTipo(fileiras[r].tipo);
 }
 static float alfaFileiraHome(int r, float y, float topo, float corte) {
@@ -5908,7 +5910,7 @@ static int navigationMove(SDL_Keycode key){
 }
 
 static void desenhaRedonda(const CatItem *ci, GLuint t, const char *caminho,
-                           float px, float py, float d, float f);
+                           GfxRect base, GfxRect disco, float f, const char *nome);
 
 static void desenhaAtalhos(int r, float y) {
   float w = larguraFil(r), h = alturaFil(r);
@@ -6063,7 +6065,8 @@ static void desenhaAtalhos(int r, float y) {
       }
     }
     if (redonda) {
-      desenhaRedonda(NULL, tex, gifDesenhando ? NULL : arte, x, cy, cw, f);
+      desenhaRedonda(NULL, tex, gifDesenhando ? NULL : arte,
+                     (GfxRect){x0, y, w, h}, card, f, folder->title);
       continue;
     }
     if (tex) {
@@ -7261,8 +7264,6 @@ static void desenhaHeroiCard(const CatItem *ci, int completo, const char *texto,
                              const char *caminho, GLuint t, float aArte,
                              float px, float py, float w, float h, float raio,
                              float f, float varre);   // o cartão da fileira Herói (#205)
-static void desenhaRedonda(const CatItem *ci, GLuint t, const char *caminho,
-                           float px, float py, float d, float f);
 
 // --- VITRINE DAS COLECOES (vertudo.c) -------------------------------------------
 // A exibicao "Vitrine" de uma colecao e a Home em miniatura: destaque no alto e
@@ -7335,10 +7336,10 @@ void home_vitrine_cartao(const CatItem *ci, GfxRect base, GfxRect card, float al
   int deitado = ajustes_posteres_deitados();
   const char *cam = arte_por_formato(ci, deitado);
   float raio = raioDe(card.w, card.h), og = gfx_opacidade_grupo;
-  GLuint t = cam ? tex_obter_larg(cam, card.w) : 0;
+  GLuint t = cam ? tex_obter_larg(cam, redonda ? base.w : card.w) : 0;
   gfx_opacidade_grupo = alfa;
   if (redonda) {
-    desenhaRedonda(ci, t, cam, card.x, card.y, card.w, foco);
+    desenhaRedonda(ci, t, cam, base, card, foco, NULL);
     gfx_opacidade_grupo = og;
     return;
   }
@@ -7384,24 +7385,24 @@ static void desenhaChipAmigos(const CatItem *ci, float px, float py, float w, fl
 // (o pacote do Xperience traz o nome assado nos ~20% de baixo; fora do disco) e
 // o nome centrado embaixo.
 static void desenhaRedonda(const CatItem *ci, GLuint t, const char *caminho,
-                           float px, float py, float d, float f) {
-  float pad = 5.0f * f, ar, ag, ab;
-  GfxRect disco = { px, py, d, d }, miolo = { px + pad, py + pad, d - pad * 2, d - pad * 2 };
-  ajustes_acento(&ar, &ag, &ab);
-  if (f > 0.01f && ajustes_borda_foco())
-    gfx_rect(disco, 0, GFX_DISCO, 0, 0, 0, 0, ar, ag, ab, f);
-  gfx_rect(miolo, 0, GFX_DISCO, 0, 0, 0, 0, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G,
+                           GfxRect base, GfxRect disco, float f, const char *nome) {
+  if (ajustes_borda_foco()) svd_aro_foco(disco, .5f, f, 1.0f);
+  gfx_rect(disco, 0, GFX_DISCO, 0, 0, 0, 0, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G,
            NV_COR_ESQUELETO_B, 1);
   if (t) {
     gfx_tex_aspect_atual = caminho ? tex_aspecto(caminho) : 0.0f;
     // Collection covers stay centered; catalog portraits keep their face crop.
-    gfx_rect(miolo, t, GFX_AVATAR, 0, 0.0f, ci ? 0.10f : 0.0f, 0, 1, 1, 1, 1);
+    gfx_rect(disco, t, GFX_AVATAR, 0, 0.0f, ci ? 0.10f : 0.0f, 0, 1, 1, 1, 1);
     gfx_tex_aspect_atual = 0.0f;
   }
   if (ci && ajustes_selo_visto() && cat_visto(ci)) badges_check_cartao(disco, 1, 1.0f);
-  if (ci && ci->titulo[0]) {
-    TxtLinha tn = txt_linha_corta(TXT_CAPTION2, ci->titulo, 245, 246, 250, 255, d);
-    txt_desenhar_alpha(tn, px + (d - tn.w) * 0.5f, py + d + NV_POSTER_COPY_PADT, 0.98f);
+  if (!nome && ci) nome = ci->titulo;
+  if (nome && nome[0]) {
+    // Keep truncation and baseline fixed while the shared focus spring grows the photo.
+    TxtLinha tn = txt_linha_corta(TXT_CAPTION2, nome, 245, 246, 250, 255, base.w);
+    txt_desenhar_alpha(tn, base.x + (base.w - tn.w) * .5f,
+                      base.y + base.h + NV_POSTER_COPY_PADT,
+                      .65f + .33f * anim_clamp(f, 0, 1));
   }
 }
 
@@ -7587,7 +7588,12 @@ static void pintarCartao(const CartaoFoco *k, float raio) {
   const int deitado = k->deitado, rotuloFora = k->rotuloFora;
   const float abre = k->abre, esc = k->esc, f = k->f, px = k->px, py = k->py, w = k->w, h = k->h;
   const float varreFoco = k->varre;
-  if (tipo == FILEIRA_REDONDA) { desenhaRedonda(cItem, t, caminho, px, py, w, f); return; }
+  if (tipo == FILEIRA_REDONDA) {
+    float d = larguraFil(r);
+    GfxRect base = {px + (w - d) * .5f, py + (h - d) * .5f, d, d};
+    desenhaRedonda(cItem, t, caminho, base, (GfxRect){px, py, w, h}, f, NULL);
+    return;
+  }
   // Hero A keeps the curated copy or synopsis; the row heading names its source.
   if (tipo == FILEIRA_HEROI) {
     const char *texto = NULL;
@@ -8461,7 +8467,8 @@ static void home_desenhar_(Uint32 agora) {
           // Pede pela largura REAL do card: e esta fileira que multiplica.
           // Com o teto unico de 640 cada poster custava 2,4 MB e o cache
           // estourava com ~40 texturas, despejando o que ainda estava na tela.
-          GLuint t = caminho ? tex_obter_larg(caminho, tipo == FILEIRA_PALCO ? lw : w) : 0;
+          GLuint t = caminho ? tex_obter_larg(caminho,
+            tipo == FILEIRA_PALCO || tipo == FILEIRA_REDONDA ? lw : w) : 0;
           // ARTE CHEGANDO: so esvanece quem foi visto esperando (revela.h).
           float aArte = revela_arte(&revArte[r][c], t != 0, agora);
           // ANEL DE FOCO: 4 px de #FFFFFF, POR FORA da arte.
