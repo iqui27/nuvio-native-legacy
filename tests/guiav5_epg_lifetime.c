@@ -75,7 +75,9 @@ static void schedule(const char *title) {
 int main(void) {
   schedule("Favoritos"); // A real key used as provider text must stay verbatim.
   GCanal channel = {.id="fixture", .nome="Fixture", .logo="", .base="", .epgId="fixture",
-    .tvgNome="", .cat=-1, .fonte=-1, .epg=epg_match_id("fixture")};
+    .tvgNome="", .cat=-1, .fonte=0, .epg=epg_match_id("fixture")};
+  /* Source validation requires a published source, including in this fixture. */
+  nLtvF=1;ltvF[0].tipo=LTV_ADDON;snprintf(ltvF[0].chave,sizeof ltvF[0].chave,"fixture");
   assert(channel.epg >= 0);
   canais = &channel; nCanais = 1; favLido = 1;
   snprintf(screen, sizeof screen, "grade");
@@ -83,6 +85,7 @@ int main(void) {
   assert(gv_n == 1 && gv_ch[0].np == 6);
   EpgProg *cached = gv_prog(&gv_ch[0]);
   assert(cached);
+  translations=0; /* Ignore snapshot UI labels; measure provider text below. */
   schedule("Replacement programme"); // Frees the original EPG arena.
   gv_snapshot(); // Still inside the two-second cache window.
   gv_label(TXT_ILHA_TITULO, cached->titulo, 0, 0, 500, 0);

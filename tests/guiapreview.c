@@ -120,14 +120,16 @@ int main(int argc,char **argv){
     if(target>=0){if(i%2)key(SDLK_RETURN);else point_activate(target,0);CHECK(!strcmp(screen,"vod-titulo")&&selected==positions[i],"large catalog title opens without activating navigation");}
   }
   count=12;
-  g5ui_open("grade");g5ui_open("vod-filmes");int item_base=focus;focus=item_base+6;quadro();key(SDLK_LEFT);
+  g5ui_open("grade");g5ui_open("vod-filmes");int item_base=focus;quadro();key(SDLK_LEFT);
   CHECK(focus==800&&nav<0,"VOD first-column Left reaches sidebar");
-  key(SDLK_RIGHT);CHECK(focus==item_base+6,"VOD sidebar Right restores exact item");
-  focus=item_base;key(SDLK_UP);CHECK(nav==3,"VOD Up reaches active tab");
+  key(SDLK_RIGHT);CHECK(focus==item_base,"VOD sidebar Right restores exact item");
+  focus=item_base;key(SDLK_UP);CHECK(focus==807&&nav<0,"VOD Up reaches hero actions");
+  key(SDLK_RIGHT);CHECK(focus==808,"VOD hero Right reaches TV Shows");
+  key(SDLK_UP);CHECK(nav==3,"VOD hero Up reaches active tab");
   key(SDLK_DOWN);CHECK(nav<0&&focus==item_base,"VOD tab Down restores content");
-  focus=item_base+5;key(SDLK_RIGHT);CHECK(focus==item_base+5&&!vod_sidebar,"VOD right edge never opens hidden controls");
-  focus=item_base+6;key(SDLK_LEFT);key(SDLK_DOWN);CHECK(vod_sidebar&&focus==801,"VOD sidebar stays in visible controls");
-  key(SDLK_RIGHT);CHECK(!vod_sidebar&&focus==item_base+6,"VOD sidebar preserves item after navigation");
+  focus=item_base+11;key(SDLK_RIGHT);CHECK(focus==item_base+11&&!vod_sidebar,"VOD right edge never opens hidden controls");
+  focus=item_base;key(SDLK_LEFT);key(SDLK_DOWN);CHECK(vod_sidebar&&focus==801,"VOD sidebar stays in visible controls");
+  key(SDLK_RIGHT);CHECK(!vod_sidebar&&focus==item_base,"VOD sidebar preserves item after navigation");
   CHECK(canalPorId(canais[0].id)!=NULL,"enabled source resolves channel");
   ltv_pref("fixture",1)->desligada=1;
   CHECK(canalPorId(canais[0].id)==NULL,"disabled source cannot resolve channel fallback");
@@ -152,7 +154,8 @@ int main(int argc,char **argv){
   }
   g5ui_open("grade");g5ui_open("vod-filmes");quadro();key(SDLK_LEFT);key(SDLK_ESCAPE);
   CHECK(!strcmp(screen,"vod-filmes")&&!vod_sidebar,"VOD Back closes sidebar only");
-  key(SDLK_ESCAPE);CHECK(!strcmp(screen,"grade"),"VOD Back returns one view level");
+  key(SDLK_ESCAPE);CHECK(!strcmp(screen,"vod-filmes")&&nav==3,"VOD Back reaches tab bar");
+  key(SDLK_ESCAPE);CHECK(!strcmp(screen,"grade"),"VOD tab Back returns one view level");
   gv_zone=0;key(SDLK_ESCAPE);CHECK(gv_side_open,"guide Back opens sidebar");
   key(SDLK_ESCAPE);CHECK(!gv_side_open&&g5ui_active(),"guide Back closes sidebar only");
   key(SDLK_ESCAPE);CHECK(!g5ui_active(),"guide Back exits after sidebar layer");
