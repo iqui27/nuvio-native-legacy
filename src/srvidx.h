@@ -44,6 +44,9 @@ typedef struct {
   char tipo;                 // 'm' movie, 's' series, 'e' episode
   unsigned char hdr;         // SRVIDX_HDR_* of the best version (0 unknown/SDR)
   unsigned char visto;       // the server says watched
+  long long vistoMs;         // and when (unix ms), 0 unknown
+  long long retomadoTicks;   // server resume position ('e', Jellyfin ticks), 0 none
+  long long duracaoTicks;    // RunTimeTicks ('e'), 0 unknown
   unsigned short altura;     // 2160/1080/720/480 of the best version, 0 unknown
   short ano;                 // 0 unknown
   short temporada, episodio; // 'e' only
@@ -93,6 +96,17 @@ typedef struct {
   char tipoSrv[12];    // "Jellyfin" / "Emby" / "Plex"
   int altura, hdr, local, visto;
 } SrvAchado;
+
+// Per-episode user data, for the episode list's watched badge and progress
+// bar (issue #617): temporada/episodio, the server's watched flag and when,
+// and the resume point as Jellyfin ticks (position * 10,000,000).
+typedef struct {
+  short temporada, episodio;
+  unsigned char visto;
+  long long vistoMs;
+  long long retomadoTicks;
+  long long duracaoTicks;    // RunTimeTicks, for resume %
+} SrvEp;
 // The four first digits of "2019 · 2 temporadas", 0 when absent.
 int  srvidx_ano_de(const char *meta);
 // 1 when the URL's host is on the local network (private IPv4, localhost,

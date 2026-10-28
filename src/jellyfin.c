@@ -6,6 +6,9 @@
 // the POST-only /QuickConnect/Initiate exist there). Older servers answer 404
 // on the item route and the title page stays with the row data.
 #include "jellyfin.h"
+#include "srvprefs.h"
+#include "srvsetup.h"
+#include "servidores.h"
 #include "dados.h"
 #include "js.h"
 #include "jsraiz.h"
@@ -13,6 +16,11 @@
 #include "perfis.h"
 #include "srvidx.h"
 #include <errno.h>
+
+// catalogue.c's watched history (issue #617: the server's UserData.Played
+// lands here so the watched badge reads it); tests stub it.
+extern void cat_historico_definir_tempo(const char *imdb, const char *tipo,
+                                        int visto, long long ms);
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdint.h>
@@ -133,7 +141,7 @@ const char *jf_prefixo(const JfConta *c) { return c && c->tipo == JF_TIPO_EMBY ?
 const char *jf_tipo_nome(int tipo) { return tipo == JF_TIPO_EMBY ? "Emby" : "Jellyfin"; }
 
 void jf_cabecalho_auth(const JfConta *c, char *dst, size_t tam) {
-  char dev[64], devId[96], tok[96];
+  char dev[64], devId[96], tok[JF_TOKEN_MAX];
   const char *nome = c && c->tipo == JF_TIPO_EMBY ? "X-Emby-Authorization" : "Authorization";
   campoAuth(dev, sizeof dev, c && c->dispositivoNome[0] ? c->dispositivoNome : jellyfin_backend_nome(jellyfin_backend()));
   campoAuth(devId, sizeof devId, c && c->dispositivoId[0] ? c->dispositivoId : "nuvio");
@@ -151,7 +159,7 @@ void jf_cabecalho_auth(const JfConta *c, char *dst, size_t tam) {
 static int pedir(const JfConta *c, const char *base, RedeJob *job, const char *metodo,
                  const char *caminho, const char *corpo, const char *operacao,
                  unsigned prazo, RedeResposta *r) {
-  char url[2048], auth[512], tokh[112];
+  char url[2048], auth[512 + JF_TOKEN_MAX], tokh[32 + JF_TOKEN_MAX];
   const char *cabs[5];
   int k = 0, emby = c && c->tipo == JF_TIPO_EMBY;
   RedePedido p;
@@ -166,7 +174,7 @@ static int pedir(const JfConta *c, const char *base, RedeJob *job, const char *m
   if (emby && c->token[0]) {
     // Emby also reads the token from its own header; harmless duplicate of
     // the Token= pair above, and what older Emby builds look for first.
-    snprintf(tokh, sizeof tokh, "X-Emby-Token: %.90s", c->token);
+    snprintf(tokh, sizeof tokh, "X-Emby-Token: %s", c->token);
     cabs[k++] = tokh;
   }
   if (corpo) cabs[k++] = "Content-Type: application/json";
@@ -272,10 +280,13 @@ int jf_qc_iniciar(const JfConta *c, RedeJob *job, char *segredo, size_t ns, char
   return segredo[0] && codigo[0] ? JF_OK : JF_ERR_FORMATO;
 }
 
+// Stock Jellyfin sends hex; AIOStreams sends URL-safe base64 ('-' and '_'),
+// which also goes unescaped in the ?secret= query.
 static int segredoValido(const char *s) {
   size_t n = 0;
   for (; s && *s; s++, n++)
-    if (!((*s >= '0' && *s <= '9') || (*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z'))) return 0;
+    if (!((*s >= '0' && *s <= '9') || (*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z') ||
+          *s == '-' || *s == '_')) return 0;
   return n > 0 && n <= 128;
 }
 
@@ -298,7 +309,7 @@ int jf_qc_conferir(const JfConta *c, RedeJob *job, const char *segredo) {
 // the buffer: it holds the access token.
 int jf_ler_autenticacao(JfConta *c, char *corpo, size_t n) {
   const char *ui, *uf;
-  char tok[96] = "", uid[64] = "", nome[96] = "", limpo[40];
+  char tok[JF_TOKEN_MAX + 1] = "", uid[64] = "", nome[96] = "", limpo[40];
   txtRaiz(corpo, corpo + n, "AccessToken", tok, sizeof tok);
   if (blocoRaiz(corpo, corpo + n, "User", &ui, &uf)) {
     txtRaiz(ui, uf, "Id", uid, sizeof uid);
@@ -713,9 +724,15 @@ static int linhaIndice(const char *ini, const char *fim, const char *serieForcad
   if (txtRaiz(ini, fim, "DateLastSaved", data, sizeof data)) e->atualizado = srvidx_iso(data);
   h = numRaiz(ini, fim, "Height", 0);
   e->altura = (unsigned short)(h >= 2000 ? 2160 : h >= 1000 ? 1080 : h >= 700 ? 720 : h > 0 ? 480 : 0);
-  if (blocoRaiz(ini, fim, "UserData", &bi, &bf)) e->visto = (unsigned char)boolRaiz(bi, bf, "Played", 0);
+  if (blocoRaiz(ini, fim, "UserData", &bi, &bf)) {
+    e->visto = (unsigned char)boolRaiz(bi, bf, "Played", 0);
+    data[0] = 0;
+    if (txtRaiz(bi, bf, "LastPlayedDate", data, sizeof data)) e->vistoMs = srvidx_iso(data) * 1000LL;
+    e->retomadoTicks = (long long)numRaiz(bi, bf, "PlaybackPositionTicks", 0);
+  }
   if (e->tipo == 'e') {
     double t = numRaiz(ini, fim, "ParentIndexNumber", -1), ix = numRaiz(ini, fim, "IndexNumber", -1);
+    e->duracaoTicks = (long long)numRaiz(ini, fim, "RunTimeTicks", 0);
     if (t < 0 || ix <= 0 || t > 999 || ix > 30000) return 0;
     e->temporada = (short)t; e->episodio = (short)ix;
     if (serieForcada && *serieForcada) copiar(e->serie, sizeof e->serie, serieForcada);
@@ -758,6 +775,13 @@ int jf_indice(const JfConta *c, RedeJob *job, int inicio, int limite, long long 
            "%sRecursive=true&IncludeItemTypes=Movie,Series&Fields=ProviderIds,DateLastSaved"
            "&EnableImages=false&EnableUserData=true&SortBy=DateCreated,SortName&SortOrder=Ascending"
            "&StartIndex=%d&Limit=%d%s%s", raiz, inicio, limite, iso[0] ? "&MinDateLastSaved=" : "", iso);
+  if (c->bibliotecas[0]) {
+    char ids[256]; copiar(ids, sizeof ids, c->bibliotecas);
+    for (char *p = ids; *p; p++) if (*p == '\n') *p = ',';
+    if (strspn(ids, "0123456789abcdefABCDEF-,") != strlen(ids)) return JF_ERR_ENTRADA;
+    size_t used = strlen(caminho);
+    if (snprintf(caminho + used, sizeof caminho - used, "&ParentIds=%s", ids) >= (int)(sizeof caminho - used)) return JF_ERR_ENTRADA;
+  }
   e = pedir(c, c->base, job, "GET", caminho, NULL, "library index", JF_PRAZO_LISTA_MS, &r);
   if (e) return e;
   n = jf_ler_indice(r.corpo, r.n_corpo, NULL, x, total);
@@ -990,7 +1014,9 @@ int jf_ler_playbackinfo(const JfConta *c, const char *itemLimpo, const char *cor
       s->fileIdx = -1;
       s->mp4 = metodo == JF_METODO_DIRETO && (!strcmp(cont, "mp4") || !strcmp(cont, "m4v"));
       s->tamanhoBytes = metodo == JF_METODO_DIRETO ? (uint64_t)numRaiz(p, f, "Size", 0) : 0;
-      s->tamanhoMB = (long)(s->tamanhoBytes / (1024u * 1024u));
+      // Display the original copy size; HLS playback bytes stay unknown.
+      double originalSize = numRaiz(p, f, "Size", 0);
+      s->tamanhoMB = originalSize > 0 ? (long)(originalSize / (1024u * 1024u)) : 0;
       snprintf(s->bingeGroup, sizeof s->bingeGroup, "%s|%s", c->tipo == JF_TIPO_EMBY ? "emby" : "jellyfin",
                jellyfin_metodo_nome(metodo));
       if (blocoRaiz(p, f, "MediaStreams", &msi, &msf))
@@ -1087,7 +1113,7 @@ typedef struct {
   int tipo;
   unsigned geracao;
   unsigned entrada;   // cancelEntrada when queued: a cancel BEFORE the worker starts must still win
-  char a[600];
+  char a[600 + JF_TOKEN_MAX];   // T_SAIR: base \n token \n device
   char b[288];
 } Tarefa;
 enum { T_VERIFICAR = 1, T_QC, T_SENHA, T_BIBLIOTECAS, T_FONTES, T_SAIR };
@@ -1220,7 +1246,7 @@ static void garantir(JfInst *I) {
 static void arquivo(JfInst *I, char *dst, size_t tam, int perfil) { snprintf(dst, tam, I->arqFmt, perfil); }
 
 static void linha(char *dst, size_t tam, size_t *k, const char *chave, const char *v) {
-  char limpo[600];
+  char limpo[600 + JF_TOKEN_MAX];
   size_t i = 0;
   for (; v && *v && i + 1 < sizeof limpo; v++) limpo[i++] = (*v == '\n' || *v == '\r') ? ' ' : *v;
   limpo[i] = 0;
@@ -1231,7 +1257,7 @@ static void linha(char *dst, size_t tam, size_t *k, const char *chave, const cha
 // 0600 and atomic rename: the token file is never world-readable on POSIX
 // backends (dados_gravar uses fopen's default mode).
 static int gravarConta(JfInst *I, const JfConta *c, int perfil) {
-  char nome[40], caminho[640], tmp[660], txt[2048];
+  char nome[40], caminho[640], tmp[660], txt[2048 + JF_TOKEN_MAX];
   size_t k = 0;
   int fd, ok = 0;
   arquivo(I, nome, sizeof nome, perfil);
@@ -1244,6 +1270,11 @@ static int gravarConta(JfInst *I, const JfConta *c, int perfil) {
   linha(txt, sizeof txt, &k, "unome", c->usuarioNome);
   linha(txt, sizeof txt, &k, "dev", c->dispositivoId);
   linha(txt, sizeof txt, &k, "token", c->token);
+  char selection[256]; copiar(selection, sizeof selection, c->bibliotecas);
+  for (char *p = selection; *p; p++) if (*p == '\n') *p = ',';
+  linha(txt, sizeof txt, &k, "libs", selection);
+  linha(txt, sizeof txt, &k, "connectUser", c->connectUser);
+  linha(txt, sizeof txt, &k, "connectKey", c->connectKey);
   if (k >= sizeof txt) { apagarSegredo(txt, sizeof txt); return 0; }
   snprintf(tmp, sizeof tmp, "%s.tmp", caminho);
   dados_fs_travar();
@@ -1323,6 +1354,10 @@ static void carregarLocked(JfInst *I) {
     lerCampo(txt, "unome", I->conta.usuarioNome, sizeof I->conta.usuarioNome);
     lerCampo(txt, "dev", I->conta.dispositivoId, sizeof I->conta.dispositivoId);
     lerCampo(txt, "token", I->conta.token, sizeof I->conta.token);
+    lerCampo(txt, "libs", I->conta.bibliotecas, sizeof I->conta.bibliotecas);
+    lerCampo(txt, "connectUser", I->conta.connectUser, sizeof I->conta.connectUser);
+    lerCampo(txt, "connectKey", I->conta.connectKey, sizeof I->conta.connectKey);
+    for (char *p = I->conta.bibliotecas; *p; p++) if (*p == ',') *p = '\n';
     apagarSegredo(txt, strlen(txt));
     free(txt);
   }
@@ -1420,7 +1455,7 @@ static void jfi_esquecer(JfInst *I) {
   avancarLocked(I);
   relatoriosDescartarLocked(I);
   if (I->conta.token[0] && I->conta.base[0]) {
-    char a[600];
+    char a[sizeof ((Tarefa *)0)->a];
     snprintf(a, sizeof a, "%s\n%s\n%s", I->conta.base, I->conta.token, I->conta.dispositivoId);
     enfileirarLocked(I, T_SAIR, a, "");
     apagarSegredo(a, sizeof a);
@@ -1428,6 +1463,7 @@ static void jfi_esquecer(JfInst *I) {
   arquivo(I, nome, sizeof nome, perfis_ativo());
   dados_apagar(nome);
   srvidx_apagar(perfis_ativo(), I->idxTipo);
+  servidores_cache_apagar(perfis_ativo(), I->tipo == JF_TIPO_EMBY ? 2 : 1);
   apagarSegredo(&I->conta, sizeof I->conta);
   carregarLocked(I);
   pthread_mutex_unlock(&I->trava);
@@ -1442,7 +1478,7 @@ static void jfi_esquecer_todos(JfInst *I) {
   avancarLocked(I);
   relatoriosDescartarLocked(I);
   for (i = 1; i <= 32; i++) { arquivo(I, nome, sizeof nome, i); dados_apagar(nome); }
-  for (i = 0; i <= 32; i++) srvidx_apagar(i, I->idxTipo);
+  for (i = 0; i <= 32; i++) { srvidx_apagar(i, I->idxTipo); servidores_cache_apagar(i, I->tipo == JF_TIPO_EMBY ? 2 : 1); }
   apagarSegredo(&I->conta, sizeof I->conta);
   carregarLocked(I);
   pthread_mutex_unlock(&I->trava);
@@ -1972,6 +2008,18 @@ static void indexar(JfInst *I, const Tarefa *t, RedeJob *j, const JfConta *c) {
     pthread_mutex_unlock(&I->trava);
     srvidx_limpar(&novo);
     if (e != JF_OK) break;
+    // WATCHED STATE BACK (#617): the per-user flag the server reports lands
+    // in the catalogue history (cat_visto's remote-known path); the person's
+    // own unmark still wins inside contapend.
+    pthread_mutex_lock(&I->trava);
+    { int i;
+      for (i = 0; i < I->idx.n; i++)
+        if (I->idx.v[i].visto && (I->idx.v[i].tipo == 'm' || I->idx.v[i].tipo == 's') &&
+            I->idx.v[i].imdb[0])
+          cat_historico_definir_tempo(I->idx.v[i].imdb, I->idx.v[i].tipo == 's' ? "series" : "movie",
+                                    // Watched without a date: keep any newer known mark (ms 0 = "now").
+                                    1, I->idx.v[i].vistoMs > 0 ? I->idx.v[i].vistoMs : 1); }
+    pthread_mutex_unlock(&I->trava);
     printf("[%s] index: %d title(s), %s pass\n", I->log, nAtual, incremental ? "incremental" : "full");
     // Deletions are invisible to an incremental pass: a count that disagrees
     // with the server's means rows to drop, so rebuild once.
@@ -2006,10 +2054,22 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   if (!j) return;
   itens = calloc((size_t)JF_ITENS_MAX, sizeof *itens);
   if (!itens) { fecharTarefa(I, j); return; }
-  nl = jf_bibliotecas(&c, j, libs, JF_FIL_MAX);
+  if (c.tipo == JF_TIPO_EMBY && c.connectKey[0] && c.connectUser[0]) {
+    EmConnectServidor server = {0};
+    copiar(server.id, sizeof server.id, c.servidorId); copiar(server.chave, sizeof server.chave, c.connectKey);
+    copiar(server.local, sizeof server.local, c.base);
+    e = em_connect_trocar(&c, &server, c.connectUser, j); apagarSegredo(&server, sizeof server);
+    if (e == JF_OK) {
+      pthread_mutex_lock(&I->trava);
+      if (aindaVale(I, t, j)) { I->conta = c; gravarConta(I, &c, I->perfilLido); }
+      pthread_mutex_unlock(&I->trava);
+    }
+  }
+  nl = e == JF_OK ? jf_bibliotecas(&c, j, libs, JF_FIL_MAX) : e;
   if (nl < 0) e = nl;
   por = jf_por_fileira(nl);
   for (i = 0; i < nl && e == JF_OK; i++) {
+    if (!srv_biblioteca_selecionada(c.bibliotecas, libs[i].id)) continue;
     int total, n = jf_itens(&c, j, libs[i].id, 0, por, itens + ni, por, &total);
     if (n < 0) { e = n; break; }
     if (!n) continue;
@@ -2393,6 +2453,72 @@ static void epsMarcarLocked(JfInst *I, const char *serie) {
   I->eps[alvo].ms = agoraMs();
 }
 
+// Per-episode user data (issue #617). Offline when the index already has the
+// episodes (a sources lookup fetched them); otherwise one
+// /Shows/<serie>/Episodes request feeds the index and the answer, the same
+// fetch-on-demand the source lookup does. Returns episodes filled, 0 none or
+// not a series the server has, -1 cancelled/request failed.
+static int jfi_episodios(JfInst *I, const char *id, SrvEp *out, int max) {
+  char item[SRVIDX_ITEM], tag[JFID_TAG + 1];
+  JfConta c;
+  RedeJob *j = NULL;
+  SrvIdx eps;
+  unsigned g;
+  int k, n = 0, buscar = 0, temSerie = 0;
+  if (!id || !out || max <= 0) return 0;
+  garantir(I);
+  pthread_mutex_lock(&I->trava);
+  conferirPerfilLocked(I);
+  k = idxAcharLocked(I, id, "series", NULL, 0, NULL, NULL);
+  if (k >= 0) {
+    copiar(item, sizeof item, I->idx.v[k].item);
+    temSerie = 1;
+    buscar = !epsRecentesLocked(I, item);   // #617: expiry refreshes, not only an empty cache
+    c = I->conta; g = I->geracao;
+    copiar(tag, sizeof tag, I->idxTag);
+    if (buscar) j = rede_job_criar(I->grupo);
+  }
+  pthread_mutex_unlock(&I->trava);
+  if (!temSerie) return 0;
+  if (buscar) {
+    char *txt = NULL;
+    int perfil = -1, e;
+    if (!j) return 0;
+    srvidx_iniciar(&eps);
+    e = jf_indice_episodios(&c, j, item, &eps);
+    pthread_mutex_lock(&I->trava);
+    if (g == I->geracao && rede_job_estado(j) == REDE_OK && !strcmp(tag, I->idxTag)) {
+      if (e >= 0) {
+        srvidx_juntar(&I->idx, &eps);
+        epsMarcarLocked(I, item);
+        txt = srvidx_serializar(&I->idx, tag);
+        perfil = I->perfilLido;
+      } else if (e == JF_ERR_AUTH) expirouLocked(I);
+    }
+    pthread_mutex_unlock(&I->trava);
+    srvidx_limpar(&eps);
+    if (txt && perfil >= 0) srvidx_gravar_texto(perfil, I->idxTipo, txt);
+    free(txt);
+    rede_job_soltar(j);
+    apagarSegredo(&c, sizeof c);
+    if (e < 0) return -1;
+  }
+  pthread_mutex_lock(&I->trava);
+  for (k = 0; k < I->idx.n && n < max; k++) {
+    const SrvIdxItem *e = &I->idx.v[k];
+    if (e->tipo != 'e' || strcmp(e->serie, item)) continue;
+    out[n].temporada = e->temporada;
+    out[n].episodio = e->episodio;
+    out[n].visto = e->visto;
+    out[n].vistoMs = e->vistoMs;
+    out[n].retomadoTicks = e->retomadoTicks;
+    out[n].duracaoTicks = e->duracaoTicks;
+    n++;
+  }
+  pthread_mutex_unlock(&I->trava);
+  return n;
+}
+
 // Sources for a REGULAR catalogue title this server has. Runs on the
 // extra-source thread of addons.c (it may block); every wait is a RedeJob of
 // the current generation. No index hit: no request at all.
@@ -2546,6 +2672,27 @@ static int jfi_ficha(JfInst *I, CatItem *item, CatEp *eps, int maxEps) {
   return ne;
 }
 
+unsigned jf_setup_conta(int emby, JfConta *out, int *perfil) {
+  JfInst *I = emby ? &instEm : &instJf;
+  garantir(I); pthread_mutex_lock(&I->trava); conferirPerfilLocked(I);
+  *out = I->conta; *perfil = I->perfilLido; unsigned g = I->geracao;
+  pthread_mutex_unlock(&I->trava); return g;
+}
+int jf_setup_aceitar(int emby, const JfConta *c, int perfil, unsigned generation) {
+  JfInst *I = emby ? &instEm : &instJf; int ok = 0;
+  pthread_mutex_lock(&I->trava);
+  if (perfil == perfis_ativo() && perfil == I->perfilLido && generation == I->geracao &&
+      c->tipo == I->tipo && c->token[0] && c->usuarioId[0] && c->servidorId[0]) {
+    int selectionChanged = strcmp(I->conta.bibliotecas, c->bibliotecas) != 0;
+    avancarLocked(I); I->conta = *c; gravarConta(I, c, perfil);
+    if (selectionChanged) { srvidx_limpar(&I->idx); I->idxTag[0] = 0; srvidx_apagar(perfil, I->idxTipo); }
+    idxConferirLocked(I);
+    definirEstadoLocked(I, JF_EST_CONECTADO, c->servidorNome);
+    enfileirarLocked(I, T_BIBLIOTECAS, "", ""); ok = 1;
+  }
+  pthread_mutex_unlock(&I->trava); return ok;
+}
+
 // ====================================================== public API (2 kinds)
 // jellyfin_* drives instance 0, emby_* instance 1: thin forwards, no logic.
 #define JF_API(P, I)                                                                         \
@@ -2579,6 +2726,7 @@ static int jfi_ficha(JfInst *I, CatItem *item, CatEp *eps, int maxEps) {
   void P##_reproducao_fim(const char *u, double p, double d) { jfi_reproducao_fim(I, u, p, d); } \
   int P##_relatorios_pendentes(void) { return jfi_relatorios_pendentes(I); }                  \
   int P##_tem(const char *id, const char *t, SrvAchado *a) { return jfi_tem(I, id, t, a); }   \
+  int P##_episodios(const char *id, SrvEp *o, int m) { return jfi_episodios(I, id, o, m); }      \
   int P##_indice_n(void) { return jfi_indice_n(I); }                                          \
   int P##_consultar(const char *id, const char *t, const char *ti, int ano, int (*cc)(void *), \
                     void *ctx, Stream **s) { return jfi_consultar(I, id, t, ti, ano, cc, ctx, s); }

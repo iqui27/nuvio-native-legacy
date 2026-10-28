@@ -21,7 +21,7 @@
 static int perfil = 1, logada = 1;
 static long long agora = 1759000000000LL;
 static long long relogio(void) { return agora; }
-static int switchAfterRead, gateHeld, trackerProfile;
+static int switchAfterRead, gateHeld, trackerProfile, trackerTvdb;
 static uint64_t generation;
 int perfis_ativo(void) {
   int p = perfil;
@@ -41,8 +41,10 @@ int perfis_sessao_travar(uint64_t g) {
 void perfis_sessao_destravar(void) { assert(gateHeld > 0); gateHeld--; }
 
 static int retry(const char *id, const char *type, const VistoPar *pairs,
-                 int n, int watched, int destinations, const int *seasons, int nt) {
+                 int n, int watched, int destinations, const int *seasons, int nt,
+                 const int *tvdbEps) {
   (void)id; (void)type; (void)pairs; (void)n; (void)watched; (void)seasons; (void)nt;
+  trackerTvdb = n && tvdbEps ? tvdbEps[0] : 0;
   trackerProfile = perfil;
   return destinations;
 }
@@ -199,6 +201,16 @@ int main(int argc, char **argv) {
       assert(contapend_reenviar() >= 0);
       assert(trackerProfile == 1 && contapend_pendentes() == 0);
       OK("retry never sends profile A's gesture with profile B's credentials");
+    } else if (!strcmp(argv[1], "identity")) {
+      int tvdb = 11209906;
+      contapend_reenviar_com(retry);
+      long long ms = contapend_gesto_alvos("tt21975436", "series", &pair,
+                                           &tvdb, 1, 1, VISTO_TRAKT, NULL, 0);
+      assert(ms);
+      reabrir();
+      assert(contapend_reenviar() >= 0);
+      assert(trackerTvdb == tvdb && contapend_pendentes() == 0);
+      OK("exact TVDB retry target survives journal reopen");
     } else {
       assert(!strcmp(argv[1], "progress"));
       assert(contapend_gesto("tt0903747", "series", &pair, 1, 1,

@@ -96,6 +96,16 @@ int main(void) {
   valor[AJ_HERO_SINOPSE_TAM] = 1;
   assert(ajustes_hero_sinopse_grande());
   valor[AJ_HERO_SINOPSE_TAM] = 0;
+  assert(!strcmp(CHAVE[AJ_HERO_TAMANHO], "heroSizeLocal") && somenteDesteAparelho(AJ_HERO_TAMANHO));
+  assert(OPCOES[AJ_HERO_TAMANHO].n == 3 && ajustes_hero_tamanho() == 0);
+  assert(ajustes_hero_escala_logo() == 1.0f && ajustes_hero_escala_info() == 1.0f);
+  valor[AJ_HERO_TAMANHO] = 1;
+  assert(ajustes_hero_escala_logo() == 1.25f && ajustes_hero_escala_info() == 1.15f && ajustes_hero_sinopse_grande());
+  valor[AJ_HERO_TAMANHO] = 2;
+  assert(ajustes_hero_escala_logo() == 1.5f && ajustes_hero_escala_info() == 1.3f);
+  valor[AJ_HERO_TAMANHO] = 9;
+  assert(ajustes_hero_tamanho() == 0 && !ajustes_hero_sinopse_grande());
+  valor[AJ_HERO_TAMANHO] = 0;
   // Home: layout e arte do destaque.
   assert(valor[AJ_HERO_FUNDO] == 0);          // Automatico
   assert(valor[AJ_HERO_ARTE_DIF] == 1);       // Desligado: mesma foto do card
@@ -203,6 +213,34 @@ int main(void) {
   assert(AJ_MIC_BUSCA == AJ_INTERFACE_MODO + 1);
   assert(AJ_MENU_TOPO == AJ_MIC_BUSCA + 1);
   assert(AJ_N > AJ_CONQ_DICAS && AJ_CONQ_LIGADO == AJ_MENU_TOPO + 1);
+  assert(AJ_GUIA_PREVIA_GRANDE == AJ_DET_ELENCO_VISTO + 1 && AJ_AUD_ORIGINAL == AJ_GUIA_PREVIA_GRANDE + 1);
+  assert(AJ_HERO_PASTA_DETALHES == AJ_LEG_ESTILO_LIGADO + 1);
+  assert(AJ_FONTE_OCULTAR_DV == AJ_GUIA_DIAS + 1 && AJ_TV_HOME == AJ_FONTE_OCULTAR_VIDEO + 1 && AJ_N == AJ_TV_HOME + 1);
+  assert(ajustes_tv_home() && valorPadrao[AJ_TV_HOME] == 0 && escopoDe(AJ_TV_HOME) == ESC_TV);
+  assert(!strcmp(CHAVE[AJ_TV_HOME], "androidTvHomeLocal"));
+  const char *capKeys[] = {"fonteOcultarDvLocal", "fonteOcultarAudioLocal", "fonteOcultarVideoLocal"};
+  for (int i=0;i<3;i++) {
+    int op=AJ_FONTE_OCULTAR_DV+i;
+    assert(valor[op]==2 && valorPadrao[op]==2 && escopoDe(op)==ESC_TV);
+    assert(!strcmp(CHAVE[op],capKeys[i]));
+  }
+  const int added[] = {AJ_AUD_ORIGINAL, AJ_AUDIO_NORMALIZAR, AJ_DEBRID_LIGADO, AJ_ADDONS_LIGADO, AJ_LEG_ESTILO_LIGADO};
+  const int defaults[] = {1, 1, 0, 0, 0};
+  const char *keys[] = {"audioOriginalLocal", "audioNormalizarLocal", "debridLigadoLocal", "addonsLigadosLocal", "legEstiloLigadoLocal"};
+  for (int i = 0; i < 5; i++) {
+    assert(valor[added[i]] == defaults[i] && valorPadrao[added[i]] == defaults[i]);
+    assert(escopoDe(added[i]) == ESC_PERFIL_LOCAL && !strcmp(CHAVE[added[i]], keys[i]));
+  }
+  assert(valor[AJ_HERO_PASTA_DETALHES] == 0 && ajustes_hero_pasta_detalhes());
+  // Guia TV v5: previa grande desligada de fabrica (vale o cartao do mock),
+  // por perfil neste aparelho (ESC_PERFIL_LOCAL), chave propria.
+  assert(valor[AJ_GUIA_PREVIA_GRANDE] == 1 && !ajustes_guia_previa_grande());
+  assert(!strcmp(CHAVE[AJ_GUIA_PREVIA_GRANDE], "guiaPreviaGrandeLocal"));
+  assert(somenteDesteAparelho(AJ_GUIA_PREVIA_GRANDE) && escopoDe(AJ_GUIA_PREVIA_GRANDE) == ESC_PERFIL_LOCAL);
+  ajustes_definir_guia_previa_grande(1);
+  assert(ajustes_guia_previa_grande());
+  ajustes_definir_guia_previa_grande(0);
+  assert(!ajustes_guia_previa_grande());
   assert(ajustes_conquistas() && ajustes_conquistas_aviso() && ajustes_conquistas_dicas());
   assert(AJ_MENU_TOPO == AJ_MIC_BUSCA + 1 && AJ_ABAS_ESTILO == AJ_CONQ_DICAS + 1 && AJ_TECLADO_ANDROID == AJ_ABAS_ESTILO + 1 && AJ_LEG_CONTORNO_COR == AJ_TECLADO_ANDROID + 1);
   assert(AJ_FALHA_PROVEDORES == AJ_LEG_CONTORNO_COR + 1 && AJ_RETOMADA_MORNA == AJ_FALHA_ADDON_LIMITE + 1 && AJ_MANTER_PRAZO == AJ_RETOMADA_MORNA + 1 && AJ_ESTAT_TAMANHO == AJ_MANTER_PRAZO + 1 && AJ_OCULTAR_FILMES_VISTOS == AJ_ESTAT_TAMANHO + 1 && AJ_ESTAT_LADO == AJ_OCULTAR_FILMES_VISTOS + 1 && AJ_DICASCONTROLE == AJ_ESTAT_LADO + 1 && AJ_HERO_GENERO == AJ_DICASCONTROLE + 1 && AJ_ABERTURA_ADDON == AJ_HERO_GENERO + 1 && AJ_HERO_SINOPSE == AJ_ABERTURA_ADDON + 1 && AJ_HERO_NOTAS == AJ_HERO_SINOPSE + 1 && AJ_HERO_ANO == AJ_HERO_NOTAS + 1 && AJ_HERO_DURACAO == AJ_HERO_ANO + 1 && AJ_CURADORIA_URL == AJ_HERO_DURACAO + 1 && AJ_ABERTURA_FUNDO == AJ_CURADORIA_URL + 1 && AJ_HERO_SINOPSE_TAM == AJ_ABERTURA_FUNDO + 1 && AJ_EP_TAMANHO == AJ_HERO_SINOPSE_TAM + 1 && AJ_AMIGOS_ESTILO == AJ_MURAL_TITULOS + 1 && AJ_FONTE_IDIOMA_AUDIO == AJ_AMIGOS_ESTILO + 1 &&
@@ -268,7 +306,7 @@ int main(void) {
   AJ_HDR_INTERFACE == AJ_AMPLIACAO_NITIDEZ + 1 &&
   AJ_LIMPAR_CACHE == AJ_HDR_INTERFACE + 1 &&
   AJ_TUNNELING == AJ_LIMPAR_CACHE + 1 && AJ_DV7 == AJ_TUNNELING + 1 &&
-  AJ_LOG_REDE == AJ_DV7 + 1 && AJ_N > AJ_LOG_REDE);
+  AJ_HDR10P_STRIP == AJ_DV7 + 1 && AJ_LOG_REDE == AJ_HDR10P_STRIP + 1 && AJ_N > AJ_LOG_REDE);
   assert(valor[AJ_LOG_REDE] == 1 && valorPadrao[AJ_LOG_REDE] == 1 &&
          uxValorPadrao(AJ_LOG_REDE) == 1 && !ajustes_log_rede()); // V_LIGA: 1 = Off
   // Comentarios do Trakt no painel de pausa: ligado de fabrica; fora do blob do web (como reacaoCreditosLocal).
@@ -446,7 +484,7 @@ int main(void) {
     if (level) for (int r = 0; r < 3; r++) gpun_relatar(30, 40, 16.667, 1, 1);
     if (level) for (int r = 0; r < 3; r++) gpun_relatar(34, 40, 16.667, 1, 1);
     assert(gpun_degrau() == level);
-    assert(ajustes_animacoes_reduzidas() == (level >= 3));
+    assert(!ajustes_animacoes_reduzidas()); // Only explicit Reduced may cut motion.
     assert(ajustes_vidro() == (level < 4));
     assert(ajustes_vidro_contorno());
     assert(ajustes_vidro_fosco() == (level < 2));

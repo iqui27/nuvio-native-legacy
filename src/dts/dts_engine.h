@@ -21,6 +21,7 @@ typedef struct { int alive, peak; long long bytes, peak_bytes; } DtsEngineRings;
 void dts_engine_rings(DtsEngineRings *out, int reset_peak);
 /* Output for the next open: 1 = AC3 5.1 640 kbps, 0 = stereo AAC (default). */
 void dts_engine_set_ac3(int on);
+void dts_engine_set_normalize(int on);
 /* Samsung remux only: ring of the single-connection reader, in MiB (8..32,
  * default 32), for rings allocated after the call. webOS never calls it. */
 void dts_engine_set_ring_mib(int mib);
@@ -47,6 +48,10 @@ int dts_engine_available(void);
 void dts_engine_dv(DtsEngine *, int enabled);
 /* Explicit opt-in before open: P7 conversion and webOS recovery. Default off. */
 void dts_engine_allow_p7(DtsEngine *, int enabled);
+/* Opt-in (#605): strip SMPTE ST 2094-40 (HDR10+) SEI from HEVC packets of
+ * the next open (raw BUFFERSTREAM feed), so TVs without HDR10+ decode it as
+ * plain HDR10. Static mastering display / content light SEI is kept. */
+void dts_engine_set_hdr10p_strip(int on);
 /* Open and seek return 0 on success, negative on error. */
 int dts_engine_open(DtsEngine *, const char *url, const char *headers,
                     int audio_stream, int core_only, double start_seconds);

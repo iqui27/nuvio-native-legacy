@@ -1,0 +1,1 @@
+# Timeout por teste em segundos (padrao: GUARDA_TIMEOUT, 90). Formato: tests/x.sh | segundos | motivo

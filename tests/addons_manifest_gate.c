@@ -6,6 +6,13 @@
 #include <assert.h>
 
 static int subtitleRequests;
+char *rede_baixar_medido(const char *url, int seconds,
+    const char *const *headers, RedeMedida *measure) {
+  int status = 0;
+  char *body = rede_baixar_st(url, seconds, headers, &status);
+  *measure = (RedeMedida){ .status = status };
+  return body;
+}
 char *rede_baixar_medido_controle(const char *url, int seconds,
     const char *const *headers, const RedeControle *control, RedeMedida *measure) {
   (void)seconds; (void)headers; (void)control;

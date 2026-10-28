@@ -24,6 +24,7 @@ typedef enum {
   MENU_INICIO,
   MENU_EXPLORAR,
   MENU_GUIA,
+  MENU_ESPORTES,
   MENU_BUSCAR,
   MENU_BIBLIOTECA,
   // AGENDA — o calendario das series acompanhadas. Fica DEPOIS da Biblioteca
@@ -40,6 +41,8 @@ typedef enum {
 // estado inicial ja e valido sem chamar (destino = MENU_INICIO, barra fora).
 int  menu_iniciar(void);
 void menu_servidores(int conectado);
+// Shared active-profile avatar, in the caller's coordinate layer.
+void menu_avatar(float x, float y, float size, float alpha);
 
 // Desliza a barra para dentro E entrega o foco a ela. Chamar com o menu ja
 // aberto nao faz nada, entao e seguro ligar direto no ESQUERDA da home.
@@ -57,6 +60,8 @@ int  menu_sobre(void);
 // 1 uma vez quando a pessoa ESCOLHEU algo na barra (destino, rodape, pasta;
 // o Spotlight nao, ele abre por cima) — ao contrario de Voltar/DIREITA por cima. Consome a flag.
 int  menu_escolheu(void);
+// Go to a destination as if it was confirmed in the sidebar (iOS tab bar).
+void menu_ir(int destino);
 
 // 1 enquanto a barra e dona do D-pad. Vira 0 no instante da escolha, ainda com
 // a animacao de saida rodando — e esse o sinal que o conteudo deve usar para

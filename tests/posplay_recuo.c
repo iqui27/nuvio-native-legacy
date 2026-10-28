@@ -17,6 +17,15 @@ static int pedir(void) {
 }
 int main(void) {
   assert(posplay_roteiro() == 0);
+  // The reused suite ends on a special with a post-credits scene. Restore
+  // this fixture's S5E3 before testing its S5E4 countdown.
+  CatItem c = {0}; CatEp eps[2] = {{0}};
+  strcpy(c.imdb, "tt0944947"); strcpy(c.tipo, "series");
+  c.temporada = 5; c.episodio = 3;
+  eps[0].temporada = eps[1].temporada = 5;
+  eps[0].episodio = 3; eps[1].episodio = 4;
+  cat_definir(&c, 1); cat_definir_episodios(0, eps, 2);
+  player_abrir(0, NULL); player_definir_episodio(5, 3);
   // #470: accepted neighbour-episode credits must count from card opening,
   // while 265 seconds of credits remain (Samsung reporter: 2309 / 2574).
   ajustes_shot_valor("proximoContagemLocal", 12);

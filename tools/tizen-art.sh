@@ -42,8 +42,31 @@ DESTINO="${NUVIO_ARTE_ESTAGIO:-build/art-pacote}"
 rm -rf "$DESTINO"
 mkdir -p "$DESTINO"
 
-for d in icones icones-app badges selos marcas prov editorial logo poster ep elenco texturas; do
-  [ -d "$ORIGEM/$d" ] && cp -R "$ORIGEM/$d" "$DESTINO/"
+# A LISTA SAI DO CODIGO, nao de memoria. Cada pasta que o app procura esta
+# escrita em src/*.c num caminho montado com dirArte:
+#     snprintf(cam, "%s/marcas/abertura.jpg", dirArte)   -> "marcas/"
+# e nas tabelas de arte dos novidades:  "poster/00.jpg", "elenco/07_0.jpg".
+# Foi assim que aiostreams/ ficou de fora (D9 do plano 2.1): a lista tinha 14
+# pastas escritas a mao e a do painel do AIOStreams, acrescentada depois,
+# entrou no codigo e nunca entrou no APK, no .wgt e no .tpk — os tres herdam
+# este estagio. Sem isso o painel abria com retangulo chapado no lugar do
+# backdrop e do logo.
+#
+# O filtro pelas pastas que existem em deploy/app/art descarta o resto dos
+# caminhos encontrados em src ("api/", "v1/", "find/", "emby/": URL de rede,
+# nao pasta de arte). `find -printf` e GNU; no Mac do build nao existe, e a
+# lista tem de sair nos dois.
+PASTAS=$(mktemp "${TMPDIR:-/tmp}/nuvio-pastas.XXXXXX")
+trap 'rm -f "$PASTAS"' EXIT
+for d in $(ls -d "$ORIGEM"/*/ 2>/dev/null | sed 's|/$||;s|^.*/||'); do
+  { grep -rhoE '"%s/[a-z0-9_-]+' src/*.c | tr -d '"' | sed 's|^%s/||;s|/.*||';
+    grep -rhoE '"[a-z0-9_-]+/' src/*.c | tr -d '"' | cut -d/ -f1; } \
+  | grep -qx "$d" && printf '%s\n' "$d" >> "$PASTAS" || true
+done
+[ -s "$PASTAS" ] || { echo "tizen-art.sh: nenhuma pasta de arte derivada de src — abortado" >&2; exit 1; }
+
+for d in $(cat "$PASTAS"); do
+  cp -R "$ORIGEM/$d" "$DESTINO/"
 done
 # Public trust roots only; never copy arbitrary PEM or token files.
 cp "$ORIGEM/discord-ca.pem" "$DESTINO/discord-ca.pem"

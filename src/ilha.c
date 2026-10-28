@@ -123,6 +123,7 @@ static int corpoPed, corpoSemSombra;
 static float corpoW, corpoH, corpoT, corpoV;
 static float corpoWa, corpoHa, corpoVw, corpoVh;   // o tamanho na mola (o pedido muda)
 static IlhaCorpo corpoFn;
+static GfxRect corpoR;   // the animated island rect the body is drawn into
 static void *corpoU;
 static Uint32 modalDesde;
 static int pedido, pedidoQual;
@@ -495,12 +496,13 @@ int ilha_retomar_focado(IlhaCartao *c) {
 static int nBotoes(void) {
   if (modalAtividade) return 1;
   if (modalAviso) return modalM.nBotoes < 1 ? 1 : modalM.nBotoes > ILHA_MODAL_BOTOES ? ILHA_MODAL_BOTOES : modalM.nBotoes;
-  return 3;
+  return modalQual == ILHA_JUNTOS ? 1 : 3;
 }
 static const char *rotuloBotao(int i) {
   if (modalAtividade) return i18n("Fechar");
   if (modalAviso) return modalM.botao[i];
   if (modalQual == ILHA_ESTREIA) return i == 0 ? i18n("Assistir") : i == 1 ? i18n("Depois") : i18n("Dispensar");
+  if (modalQual == ILHA_JUNTOS) return i18n("Voltar à sessão");
   if (i == 0) return modalQual == ILHA_AMIGO ? i18n("Ver também") : i18n("Retomar");
   if (i == 1) return i18n("Detalhes");
   return i18n("Dispensar");   // a mesma palavra do menu do cartao "Retomar agora"
@@ -512,7 +514,7 @@ static const char *iconeBotao(int i) {
   if (i == 1) return "aj_info";
   return NULL;
 }
-static int modalTemSalvos(void) { return !modalAtividade && (modalAviso ? modalM.salvos : 1); }
+static int modalTemSalvos(void) { return !modalAtividade && (modalAviso ? modalM.salvos : modalQual != ILHA_JUNTOS); }
 
 static void abrirCartao(int qual) {
 #ifdef NV_TOUCH_UI
@@ -689,12 +691,14 @@ void ilha_ancorar(float x, float y, int daDireita) {
   ancDef = 1; ancX = x; ancY = y; ancDir = daDireita;
 }
 
-// O relogio fica SEMPRE no canto de cima a DIREITA, em toda tela e estado (dono,
-// 03/10: ele mudava de lado conforme o que acontecia, e a opcao de lado saiu de
-// Ajustes). `guia` ficou so por compatibilidade com quem chama.
+// Server Library and Detail use the mock's left clock/profile island.
+// Other pages keep the existing right clock.
+static int clockProfile,clockSettings;
 void ilha_posicionar(int guia) {
-  (void)guia;
-  ilha_ancorar(NV_TELA_W - NV_ILHA_MARGEM_D / gfx_escala_txt(), NV_ILHA_Y / gfx_escala_txt(), 1);
+  clockSettings = guia == 3;
+  clockProfile = guia == 2 || clockSettings;
+  if (clockProfile) ilha_ancorar(48.0f / gfx_escala_txt(), 36.0f / gfx_escala_txt(), 0);
+  else ilha_ancorar(NV_TELA_W - nv_inset_d - NV_ILHA_MARGEM_D / gfx_escala_txt(), nv_inset_t + NV_ILHA_Y / gfx_escala_txt(), 1);
 }
 
 // COM SINAL: quem renova a atividade chama SDL_GetTicks DEPOIS de o quadro ter
@@ -1031,8 +1035,8 @@ static float larguraConteudo(int m, TxtLinha *t1, TxtLinha *t2) {
   float w;
   t1->w = t1->h = 0; t2->w = t2->h = 0;
   if (m == M_RELOGIO) {
-    *t1 = txt_linha(TXT_PG_RELOGIO, hora, 244, 245, 248, 255);
-    return (float)t1->w + (pontoEnquete ? 12.0f + PONTO_ENQ : 0.0f);
+    *t1 = txt_linha(clockSettings?TXT_ILHA_NOME:TXT_PG_RELOGIO, hora, 244, 245, 248, 255);
+    return (float)t1->w + (pontoEnquete ? 12.0f + PONTO_ENQ : 0.0f) + (clockProfile ? 54.0f : 0);
   }
   if (atvV2) {
     // v2: recuo de 30 dos dois lados (a diferenca para PAD_E/PAD_D entra aqui).
@@ -1084,6 +1088,10 @@ static void desenharConteudo(int m, GfxRect r, float a, Uint32 agora) {
       gfx_cor((GfxRect){ x + (float)t1.w + 12.0f, yc - PONTO_ENQ * 0.5f, PONTO_ENQ, PONTO_ENQ }, 0.5f, cr, cg, cb, a);
     }
     desempenho_linha(dsMostra, x + (float)t1.w + (pontoEnquete ? 12.0f + PONTO_ENQ : 0.0f), yc, a);
+    if (clockProfile) {
+      gfx_cor((GfxRect){x+cw-60,yc-20,1,40},0,1,1,1,.14f*a);
+      menu_avatar(x + cw - 36, yc - 18, 36, a);
+    }
     if (bh > 0.0f) desempenho_corpo(dsMostra, (GfxRect){ r.x, r.y + NV_ILHA_H, r.w, r.h - NV_ILHA_H }, a);
     return;
   }
@@ -1140,6 +1148,7 @@ typedef struct { TxtLinha hora, tit, meta; float ds; } LinhasCartao;
 // quando existe; na estreia sao duas partes ja traduzidas juntadas por " · ",
 // que nao e palavra.
 static void metaCartao(const IlhaCartao *c, int qual, char *b, size_t n) {
+  if (qual == ILHA_JUNTOS) { snprintf(b, n, "%s", c->pessoa); return; }
   if (qual == ILHA_AMIGO) { snprintf(b, n, i18n("%s · agora"), c->titulo); return; }
   if (qual == ILHA_ESTREIA) {
     char te[32] = "";
@@ -1160,7 +1169,7 @@ static float larguraCartao(const IlhaCartao *c, int qual, LinhasCartao *L) {
   // No cartao do amigo o nome vai em destaque e o titulo vira a meta.
   L->tit = qual == ILHA_AMIGO
          ? txt_linha_corta(TXT_ILHA_FORTE, c->pessoa, 240, 242, 246, 255, CT_TIT_MAX)
-         : txt_linha_corta(TXT_BODY, c->titulo, 240, 242, 246, 255, CT_TIT_MAX);
+         : txt_linha_corta(TXT_BODY, c->titulo, 240, 242, 246, 255, qual == ILHA_JUNTOS ? 500 : CT_TIT_MAX);
   metaCartao(c, qual, meta, sizeof meta);
   L->meta = txt_linha_corta(TXT_CAPTION2, meta, 176, 180, 190, 255, CT_TIT_MAX);
   w = (float)L->hora.w + CT_VAO * 2.0f + 1.5f +
@@ -1219,7 +1228,7 @@ static void desenharCartao(const IlhaCartao *c, int qual, GfxRect r, float a) {
     desenharLead(&duo, x, yc, a);
     x += ROSTO + MINI_W - DUO_SOBRE + VAO;
   } else {
-    gfx_icone((GfxRect){ x, yc - ICONE * 0.5f, ICONE, ICONE }, "aj_calendar", cr, cg, cb, a);
+    gfx_icone((GfxRect){ x, yc - ICONE * 0.5f, ICONE, ICONE }, qual == ILHA_JUNTOS ? "aj_users" : "aj_calendar", cr, cg, cb, a);
     x += ICONE + VAO;
   }
   xTexto = x;
@@ -1644,6 +1653,8 @@ static void desenharModal(GfxRect m, float a) {
       snprintf(mobile.linha, sizeof mobile.linha, i18n("T%dE%d · %s"), c->t, c->e, c->epNome);
     if (modalQual == ILHA_VIVO)
       snprintf(mobile.estado, sizeof mobile.estado, i18n("%d min restantes"), c->restanteMin < 1 ? 1 : c->restanteMin);
+    else if (modalQual == ILHA_JUNTOS)
+      snprintf(mobile.estado, sizeof mobile.estado, "%s", c->pessoa);
     else if (modalQual == ILHA_AMIGO)
       snprintf(mobile.estado, sizeof mobile.estado, i18n("%s · agora"), c->pessoa);
     else snprintf(mobile.estado, sizeof mobile.estado, "%s", c->quando);
@@ -1783,12 +1794,15 @@ static void desenharModal(GfxRect m, float a) {
     if (modalQual == ILHA_VIVO) {
       int mi = c->restanteMin < 1 ? 1 : c->restanteMin;
       snprintf(b, sizeof b, i18n("%d min restantes"), mi);
-    } else if (modalQual == ILHA_AMIGO) snprintf(b, sizeof b, i18n("%s · agora"), c->pessoa);
+    } else if (modalQual == ILHA_JUNTOS) snprintf(b, sizeof b, "%s", c->pessoa);
+    else if (modalQual == ILHA_AMIGO) snprintf(b, sizeof b, i18n("%s · agora"), c->pessoa);
     else if (c->quando[0]) snprintf(b, sizeof b, "%s · %s", i18n("Episódio novo"), c->quando);
     else snprintf(b, sizeof b, "%s", i18n("Episódio novo"));
     t = txt_linha(TXT_CAPTION, b, 200, 204, 212, 255);
     sy = ay + MD_ARTE_H + extraSin - (float)t.h;
-    if (modalQual == ILHA_ESTREIA || modalQual == ILHA_AMIGO) {
+    if (modalQual == ILHA_JUNTOS) {
+      txt_desenhar_alpha(t, cx, sy, a);
+    } else if (modalQual == ILHA_ESTREIA || modalQual == ILHA_AMIGO) {
       // O ponto: acento no episodio novo, vermelho de "agora" no amigo.
       if (modalQual == ILHA_AMIGO) gfx_cor((GfxRect){ cx, sy + (float)t.h * 0.5f - 5.0f, 10.0f, 10.0f }, 0.5f, 1.0f, 0.353f, 0.322f, a);
       else gfx_cor((GfxRect){ cx, sy + (float)t.h * 0.5f - 5.0f, 10.0f, 10.0f }, 0.5f, cr, cg, cb, a);
@@ -2003,6 +2017,7 @@ void ilha_corpo(float w, float h, IlhaCorpo corpo, void *u) {
   if (modalAberto) ilha_modal_fechar(1);
 }
 float ilha_corpo_t(void) { return corpoT; }
+GfxRect ilha_corpo_rect(void) { return corpoR; }
 void ilha_corpo_sem_sombra(void) { corpoSemSombra = 1; }
 
 // A hora da pilula em repouso, no lugar exato dela: com o corpo aberto e a
@@ -2065,13 +2080,13 @@ static void ilha_desenharCorpo_(Uint32 agora) {
   { int quer = corpoPed;
     float alvoC = quer ? 1.0f : 0.0f;
     corpoPed = 0;
-    if (gfx_efeitos_minimos()) { corpoT = alvoC; corpoV = 0.0f; }
+    if (anim_politica_reduzida || ajustes_animacoes_reduzidas() || gfx_efeitos_minimos()) { corpoT = alvoC; corpoV = 0.0f; }
     else if (gfx_efeitos_leves()) corpoT = molaIlhaWZ(&corpoV, corpoT, alvoC, dt, MODAL_MOLA_W * 1.5f, 1.0f);
     else corpoT = molaIlhaWZ(&corpoV, corpoT, alvoC, dt, MODAL_MOLA_W, MODAL_MOLA_Z);
     if (!quer && corpoT < 0.01f) { corpoT = 0.0f; corpoV = 0.0f; }
     // O TAMANHO PEDIDO MUDA com o painel aberto (botao posto ou tirado, a
     // edicao): anda na mola da pilula em vez de saltar. Nascendo, ja e o alvo.
-    if (corpoT <= 0.0f || corpoWa <= 0.0f || gfx_efeitos_minimos()) {
+    if (corpoT <= 0.0f || corpoWa <= 0.0f || anim_politica_reduzida || ajustes_animacoes_reduzidas() || gfx_efeitos_minimos()) {
       corpoWa = corpoW; corpoHa = corpoH; corpoVw = corpoVh = 0.0f;
     } else {
       corpoWa = molaIlha(&corpoVw, corpoWa, corpoW, dt);
@@ -2111,7 +2126,7 @@ static void ilha_desenharCorpo_(Uint32 agora) {
     else if (alvo == M_AVISO) mostraA = cur;                       // texto trocado no lugar
   }
 
-  alvoH = alvo == M_RELOGIO ? NV_ILHA_H : NV_ILHA_H_ABERTA;
+  alvoH = alvo == M_RELOGIO ? (clockSettings?56:NV_ILHA_H) : NV_ILHA_H_ABERTA;
   if (alvo == M_AVISO && avisoV2(&cur)) alvoH = V2_AV_H;
   if (alvo == M_ATIVIDADE && atvV2) alvoH = V2_ATV_H;
   if (alvo == M_CARTAO) { LinhasCartao L; alvoW = PAD_E + PAD_D + larguraCartao(&cartoes[cartaoVez], cartaoVez, &L); }
@@ -2214,9 +2229,9 @@ static void ilha_desenharCorpo_(Uint32 agora) {
       aPil = soHora ? 0.0f : 1.0f - corpoT * 10.0f;
       if (aPil < 0.0f) aPil = 0.0f;
       aHora = soHora && conteudoA > k3 ? conteudoA : k3;
-      // O painel e muito maior que o modal: o conteudo so entra com a forma
-      // quase assentada, senao ele aparece cortado pela borda que ainda cresce.
-      aMod = (corpoT - 0.78f) / 0.20f; aMod = aMod < 0.0f ? 0.0f : aMod > 1.0f ? 1.0f : aMod;
+      // O corpo entra junto com a forma (a ilha o recorta enquanto cresce):
+      // fade curto a partir de 30%, sem esperar a mola assentar.
+      aMod = (corpoT - 0.30f) / 0.35f; aMod = aMod < 0.0f ? 0.0f : aMod > 1.0f ? 1.0f : aMod;
       if (anim_politica_reduzida || ajustes_animacoes_reduzidas() || gfx_efeitos_minimos())
         aMod = corpoT >= 0.5f ? 1.0f : 0.0f;
     }
@@ -2249,7 +2264,10 @@ static void ilha_desenharCorpo_(Uint32 agora) {
                1.0f, 0, 0, 0.5f, 0, 0, 0, (0.34f + 0.16f * k) * A); }
     // At rest (no modal, no body) the island is the A27 top chrome: the same
     // material and tint as the bar and the avatar chip (gfx_chrome).
-    if (repouso) gfx_chrome(R, raio, A);
+    if (repouso && clockSettings) {
+      if(ajustes_vidro())gfx_vidro_miolo(R,raio,.045f,.047f,.058f,.80f,A);
+      else gfx_cor(R,raio,.045f,.047f,.058f,.96f*A);
+    } else if (repouso) gfx_chrome(R, raio, A);
     else if (ajustes_vidro()) gfx_vidro_material(R, raio, fundo, A);
     else {
       // MATERIAL SOLIDO: a pilula em repouso tem de LER como pilula em paginas
@@ -2292,6 +2310,7 @@ static void ilha_desenharCorpo_(Uint32 agora) {
     if (aMod > 0.0f && modalT > 0.0f) desenharModal(modalAlvo(r, dir), A * aMod);
     if (corpoT > 0.0f && corpoFn && modalT <= 0.0f) {
       horaNoLugar(x, dir, y, A * aHora);
+      corpoR = R;
       if (aMod > 0.0f) corpoFn((GfxRect){ dir ? x - corpoWa : x, y, corpoWa, corpoHa }, A * aMod, corpoU);
     }
     gfx_sem_recorte();

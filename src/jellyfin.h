@@ -81,6 +81,10 @@ const char *jellyfin_backend_nome(JfBackend b);
 
 enum { JF_TIPO_JELLYFIN = 0, JF_TIPO_EMBY = 1 };
 
+// Access tokens are opaque: stock Jellyfin/Emby send 32 hex, but compatible
+// servers (AIOStreams) mint encrypted URL-safe base64 of several hundred chars.
+#define JF_TOKEN_MAX 2048
+
 // One connection: everything needed to talk to the server as one user.
 typedef struct {
   int  tipo;               // JF_TIPO_*
@@ -90,7 +94,9 @@ typedef struct {
   char versao[24];
   char usuarioId[40];
   char usuarioNome[96];
-  char token[80];          // never logged
+  char token[JF_TOKEN_MAX]; // never logged
+  char bibliotecas[256];   // selected library IDs, newline-delimited; empty means all
+  char connectUser[64], connectKey[128]; // Emby exchange credentials, never logged
   char dispositivoId[80];  // per device + profile (Jellyfin binds tokens to it)
   char dispositivoNome[48];
 } JfConta;
@@ -107,7 +113,7 @@ typedef struct {
   char fonteId[64];        // MediaSourceId (Emby: "mediasource_<n>")
   char sessaoId[64];       // PlaySessionId
   int  metodo;             // JF_METODO_*
-  char url[2048];          // absolute, may carry api_key: never log
+  char url[2048 + JF_TOKEN_MAX]; // absolute, may carry api_key: never log
 } JfSessaoPlay;
 enum { JF_METODO_DIRETO = 0, JF_METODO_STREAM, JF_METODO_TRANSCODE };
 const char *jellyfin_metodo_nome(int metodo);   // DirectPlay/DirectStream/Transcode
@@ -181,6 +187,9 @@ long long jf_ticks(double seg);
 double jf_seg(long long ticks);
 
 // ------------------------------------------------------- app integration
+// Onboarding worker snapshots; acceptance checks both profile and generation.
+unsigned jf_setup_conta(int emby, JfConta *out, int *perfil);
+int jf_setup_aceitar(int emby, const JfConta *c, int perfil, unsigned generation);
 int  jellyfin_disponivel(void);     // strict HTTP present on this backend
 void jellyfin_carregar(void);       // reads the active profile's connection
 void jellyfin_perfil_trocou(void);  // cancels in-flight work, reloads
@@ -264,6 +273,11 @@ int  jellyfin_relatorios_pendentes(void);
 // -1 cancelled; the list is malloc'd for the caller.
 int  jellyfin_tem(const char *id, const char *tipo, SrvAchado *info);
 int  jellyfin_indice_n(void);
+// Per-episode user data of a series the server has (issue #617): watched flag
+// and instant, resume position in ticks. Offline when the episode index is
+// already in memory; otherwise one fetch feeds the index first. Returns
+// episodes filled, 0 none, -1 cancelled/failed.
+int  jellyfin_episodios(const char *id, SrvEp *out, int max);
 int  jellyfin_consultar(const char *id, const char *tipo, const char *titulo, int ano,
                         int (*cancelado)(void *), void *ctx, Stream **saida);
 
@@ -301,6 +315,7 @@ int  jellyfin_consultar(const char *id, const char *tipo, const char *titulo, in
   void P##_reproducao_fim(const char *url, double posSeg, double durSeg);                \
   int P##_relatorios_pendentes(void);                                                    \
   int P##_tem(const char *id, const char *tipo, SrvAchado *info);                        \
+  int P##_episodios(const char *id, SrvEp *out, int max);                                  \
   int P##_indice_n(void);                                                                \
   int P##_consultar(const char *id, const char *tipo, const char *titulo, int ano,       \
                     int (*cancelado)(void *), void *ctx, Stream **saida);

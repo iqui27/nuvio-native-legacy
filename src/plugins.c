@@ -846,7 +846,8 @@ static void ordenarScrapers(Scraper *lista, int n, int anime) {
   }
 }
 
-typedef void (*AvisoFn)(void *u, int k, const char *nome, int estado, const void *fontes, int n);
+typedef void (*AvisoFn)(void *u, int k, const char *nome, const char *id,
+                        int estado, const void *fontes, int n);
 typedef struct {
   Scraper *lista; int n, prox;
   char tmdb[24]; const char *tipo; int t, e;
@@ -905,7 +906,7 @@ static void rodarScrapers(Rodada *r) {
       if (r->capturada) __atomic_store_n(&r->incompleta, 1, __ATOMIC_RELEASE);
       if (!rodadaParou(r)) __atomic_add_fetch(&r->terminados, 1, __ATOMIC_RELAXED);
       printf("[plugins] %s: sem codigo\n", s->nome);
-      if (r->aviso && !rodadaParou(r)) r->aviso(r->avisoU, i, s->nome, 3, NULL, 0);
+      if (r->aviso && !rodadaParou(r)) r->aviso(r->avisoU, i, s->nome, s->id, 3, NULL, 0);
       continue;
     }
     memset(&p, 0, sizeof p);
@@ -931,7 +932,7 @@ static void rodarScrapers(Rodada *r) {
       if (n < 0) { if (r->capturada) __atomic_store_n(&r->incompleta, 1, __ATOMIC_RELEASE); n = 0; }
       r->res[i] = l; r->nRes[i] = n;
       if (r->aviso && __atomic_load_n(&r->cancel, __ATOMIC_ACQUIRE) != 1 && rede_job_estado(r->job) == REDE_OK)
-        r->aviso(r->avisoU, i, s->nome, n > 0 || !res.erro[0] ? 2 : 3, l, n);
+        r->aviso(r->avisoU, i, s->nome, s->id, n > 0 || !res.erro[0] ? 2 : 3, l, n);
       printf("[plugins] %s: %d fontes (%lu ms, pico %zu KB, %d fetch%s%s%s)\n", s->nome, n, res.ms,
              res.memPico / 1024, res.fetches, res.fetches == 1 ? "" : "es",
              res.erro[0] ? ", " : "", res.erro);
@@ -1014,7 +1015,7 @@ int plugins_consultar(const char *id, const char *tipo, int (*cancelado)(void *)
   if (!r.res || !r.nRes) { free(r.lista); free(r.res); free(r.nRes); rede_job_soltar(r.job); return 0; }
   pthread_mutex_init(&r.m, NULL);
   r.aviso = aviso; r.avisoU = avisoU;
-  if (aviso) for (k = 0; k < r.n; k++) aviso(avisoU, k, r.lista[k].nome, 1, NULL, 0);
+  if (aviso) for (k = 0; k < r.n; k++) aviso(avisoU, k, r.lista[k].nome, r.lista[k].id, 1, NULL, 0);
   printf("[plugins] %s %s (tmdb %s): %d scraper(s)\n", serie ? "serie" : "filme", id, r.tmdb, r.n);
   fflush(stdout);
 
@@ -1122,7 +1123,7 @@ int plugins_consulta_consultar(const PluginsConsulta *c, const char *id, const c
   r.nRes = calloc((size_t)r.n, sizeof *r.nRes);
   if (!r.res || !r.nRes) { free(r.lista); free(r.res); free(r.nRes); return -1; }
   pthread_mutex_init(&r.m, NULL); r.aviso = aviso; r.avisoU = avisoU;
-  if (aviso) for (int i = 0; i < r.n; i++) aviso(avisoU, i, r.lista[i].nome, 1, NULL, 0);
+  if (aviso) for (int i = 0; i < r.n; i++) aviso(avisoU, i, r.lista[i].nome, r.lista[i].id, 1, NULL, 0);
   unsigned long inicio = agoraMsPlug();
   r.prazoMs = r.n > 16 ? 3000 : PLUG_PRAZO_MS;
   pthread_t fios[PLUG_PARALELOS]; int criados = 0;

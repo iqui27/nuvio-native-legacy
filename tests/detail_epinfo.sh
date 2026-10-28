@@ -11,7 +11,7 @@ out=/Volumes/ExternalSSD/tmp/rev/epinfo
 mkdir -p "$out"
 sources=()
 for source in src/*.c src/dts/*.c; do
-  case "$source" in src/main.c|src/detail.c) continue;; esac
+  case "$source" in src/main.c|src/detail.c|src/rewatchui.c) continue;; esac
   sources+=("$source")
 done
 cc "${sources[@]}" tests/detail_epinfo_shot.c -Isrc -o "$NUVIO_DADOS/shot" \

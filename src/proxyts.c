@@ -1,4 +1,5 @@
 // PROXY DE TS DA LIVE TV. Ver proxyts.h para o porque.
+#include "mediaurl.h"
 #include "proxyts.h"
 #include <string.h>
 
@@ -59,7 +60,7 @@ extern int ajustes_livetv_resolucao(void);
 
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 static int sockOuvir = -1, porta;
-static char fonteAtual[4096];
+static char fonteAtual[NV_MEDIA_URL_MAX];
 // Cabecalhos do addon: os pendentes (proxima sessao) e os da sessao em curso.
 static char cabsPendentes[512], cabsAtual[512];
 static atomic_uint sessaoAtual, sessaoRedirecionada;
@@ -203,7 +204,7 @@ static int pxEnviar(int s, const void *b, size_t n) {
 
 typedef struct PxFluxo PxFluxo;
 typedef struct PxConexao {
-  int s; unsigned sessao; char fonte[4096]; volatile int cancelar;
+  int s; unsigned sessao; char fonte[NV_MEDIA_URL_MAX]; volatile int cancelar;
   PxFluxo *fluxo;
   struct PxConexao *proxima;
   uint64_t pos;
@@ -284,13 +285,13 @@ static void pxDormir(const PxConexao *c, int ms) {
 // e o endereco pedido. O redirecionamento da FONTE ja foi resolvido uma vez em
 // pxAtender (rede_url_final_cab), e e esse endereco que chega aqui.
 static int pxPlaylist(const char *url, const char *cabs, PxLista *l, char *final, size_t nf) {
-  char atual[4096];
+  char atual[NV_MEDIA_URL_MAX];
   int volta;
   snprintf(atual, sizeof atual, "%s", url);
   for (volta = 0; volta < 3; volta++) {
     long n = 0;
     int st = 0, er = 0;
-    char fin[4096];
+    char fin[NV_MEDIA_URL_MAX];
     char *b;
     fin[0] = 0;
     if (cabs && *cabs) {
@@ -368,7 +369,7 @@ static int pxEntregar(PxConexao *c, const void *b, size_t n) {
 static void pxHls(PxConexao *c, const char *urlLista, const char *cabs) {
   PxLista *lp = malloc(sizeof *lp);
   PxTabelas tab;
-  char base[4096];
+  char base[NV_MEDIA_URL_MAX];
   long ultimo = -1, segs = 0, bytes = 0;
   int falhas = 0;
   time_t desdeNovo = time(NULL), t0 = time(NULL);
@@ -627,7 +628,7 @@ static void *pxAtender(void *u) {
   // O QUE A FONTE E: um trecho do comeco decide entre TS continuo e playlist.
   { long n = 0;
     int st = 0, er = 0;
-    char fin[4096];
+    char fin[NV_MEDIA_URL_MAX];
     char *b;
     fin[0] = 0;
     if (cabs[0]) {

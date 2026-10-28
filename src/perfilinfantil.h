@@ -23,4 +23,21 @@ void perfil_infantil_esquecer(void);
 int  perfil_ajustes_travados(int idx);
 int  perfil_ajustes_travar(int idx, int travado);
 
+// O QUE O PERFIL INFANTIL BARRA (Começar, mock 3A: "Só classificação livre e
+// 10 anos; sem TV ao vivo"): app.c nao abre o guia de TV ao vivo e o Reproduzir
+// do detalhe so toca classificacao livre ou ate 10 anos. Sem classificacao
+// conhecida nao toca: a promessa e "so", nao "quase so".
+#include <ctype.h>
+#include <stdlib.h>
+#include <strings.h>
+static inline int perfil_infantil_classif_ok(const char *c) {
+  static const char *const LIVRE[] = { "L", "AL", "Livre", "G", "PG", "U", "TP", "ALL",
+                                       "TV-Y", "TV-Y7", "TV-Y7-FV", "TV-G", "TV-PG" };
+  if (!c || !*c) return 0;
+  if (isdigit((unsigned char)*c)) return atoi(c) <= 10;
+  for (size_t i = 0; i < sizeof LIVRE / sizeof *LIVRE; i++)
+    if (!strcasecmp(c, LIVRE[i])) return 1;
+  return 0;
+}
+
 #endif

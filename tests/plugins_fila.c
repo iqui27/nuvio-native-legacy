@@ -52,8 +52,8 @@ int stream_extrair(const char *json, const char *nome, Stream **out) {
   (void)nome; *out = !strcmp(json, "hit") ? calloc(1, sizeof **out) : NULL;
   return *out != NULL;
 }
-static void order(void *u, int k, const char *nome, int estado, const void *f, int n) {
-  (void)f; (void)n;
+static void order(void *u, int k, const char *nome, const char *id, int estado, const void *f, int n) {
+  (void)f; (void)n; (void)id;
   if (estado == 1) assert(!strcmp(nome, ((const char **)u)[k]));
 }
 

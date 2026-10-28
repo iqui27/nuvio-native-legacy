@@ -16,6 +16,11 @@ static void pfTextos(char *kick, size_t nk, const char *tit[1], char *corpo, siz
       else if (perfil_infantil_ativo()) snprintf(corpo, nc, "%s", i18n("Este é um perfil infantil: as ações de administrador não ficam disponíveis aqui."));
       else snprintf(corpo, nc, "%s", i18n("Cada perfil guarda os próprios ajustes de aparência, player e home. O que descreve a TV (4K, memória, rede, idioma da interface) vale para todos."));
       break;
+    case PF_LIMITES:
+      snprintf(kick, nk, "%s", i18n("Perfil · Administrador"));
+      tit[0] = i18n("Controle parental");
+      snprintf(corpo, nc, "%s", i18n("Escolha o perfil. O PIN de administrador é pedido uma vez por visita. Enquanto edita, nada muda no seu perfil."));
+      break;
     case PF_EDITAR:
       snprintf(kick, nk, "%s", i18n("Perfil · Administrador"));
       tit[0] = i18n("Editar ajustes de outro perfil");

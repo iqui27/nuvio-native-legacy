@@ -30,10 +30,7 @@
 // e no tmp.png uma da outra e falham ao acaso ("slot nao chegou ao estado",
 // fread/assert no PNG). Medido: 4 execucoes simultaneas, ~8 de 12 abortam.
 //
-// CARGA SO NAO QUEBRA ESTE TESTE: as esperas (400 x 5 ms = 2 s por estado)
-// cobrem de longe um decode de PNG 64x64, e com 24 lacos ocupados (load 24 em
-// 12 nucleos) 8 execucoes seguidas passaram. Se voltar a falhar sob carga,
-// procure primeiro outra execucao concorrente deste teste.
+// State waits are bounded; request age is changed under mtx, not a sleep.
 static char DIR_[128];
 #define DIR    DIR_
 
@@ -108,22 +105,28 @@ int main(void) {
     logo = bytesPng(verm, &nLogo);          // o logo que a rede entregou
     SDL_FreeSurface(azul); SDL_FreeSurface(verm); }
 
+  // Set the frame before the worker starts; request age changes under mtx.
+  quadroAtual = 10;
   dec = SDL_CreateThread(threadDecode, "tex-dec", NULL);
   assert(dec);
 
   // 1. O logo e pedido e o fio de rede entrega os bytes no item.
-  quadroAtual = 10;
   assert(tex_obter(LOGO) == 0);
   a = achar(LOGO); assert(a >= 0);
+  // The request must have a tick; SDL itself can still return 0 at startup.
+  for (int k = 0; k < 400 && !itens[a].ultimoPedido; k++) SDL_Delay(5);
+  assert(SDL_GetTicks());
   SDL_LockMutex(mtx);
   assert(tirarFila(fila, &filaIni, filaFim) == a);
   itens[a].bruto = logo; itens[a].nBruto = nLogo;
   // 2. ...e o card saiu da tela: 8 quadros e 200 ms sem ninguem desenha-lo.
+  // Backdate under the same mutex the decoder takes before popping.
+  itens[a].ultimoQuadro = quadroAtual;
+  itens[a].ultimoPedido = SDL_GetTicks() - (NV_TEX_STALE_MS + 20);
   quadroAtual += NV_TEX_STALE_FRAMES + 2;
-  itens[a].ultimoPedido = SDL_GetTicks();
+  assert(pedidoObsoleto(&itens[a]));
+  paraDecode(a);
   SDL_UnlockMutex(mtx);
-  SDL_Delay(NV_TEX_STALE_MS + 20);
-  SDL_LockMutex(mtx); paraDecode(a); SDL_UnlockMutex(mtx);
   esperar(a, VAZIO);
   // Quem desiste solta os bytes. Conferido so no fim, depois do sintoma: o
   // que importa mostrar e o cartaz errado, nao o campo.
@@ -131,7 +134,7 @@ int main(void) {
     printf("     bytes do logo no slot vago: %s\n", sobrou ? "SIM" : "nao");
 
   // 3. O cartaz de outro titulo entra no slot que ficou vago.
-  quadroAtual++;
+  SDL_LockMutex(mtx); quadroAtual++; SDL_UnlockMutex(mtx);
   assert(tex_obter(POSTER) == 0);
   b = achar(POSTER); assert(b == a);
   SDL_LockMutex(mtx);

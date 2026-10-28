@@ -21,11 +21,25 @@ void servidores_carregar(void);          // active profile's connections
 void servidores_perfil_trocou(void);     // cancels in-flight work, reloads
 void servidores_esquecer_todos(void);    // Nuvio account logout: every token file
 int  servidores_conectado(void);         // any server signed in
+int servidores_contem_item(const CatItem *item, int provider);
+int servidores_catalogo_copiar(CatItem *out, int max);
+int servidores_cache_gravar(int profile, int provider, const char *server, const CatItem *items, int n);
+int servidores_cache_ler(int profile, int provider, const char *server, CatItem *out, int max);
+void servidores_cache_apagar(int profile, int provider);
+long long servidores_cache_instante(int profile, int provider, const char *server);
 // Offline (index only): a server of this profile has this catalogue title
 // ("tt...", "tmdb:...", with or without :season:episode). The source cache
 // never keeps a list for such a title: server sources carry a token and a
 // play session, and "the server had nothing" is never remembered.
 int  servidores_tem(const char *id, const char *tipo);
+// 1 when a server of this profile reports the catalogue title as watched
+// (UserData.Played / viewCount). Offline, matching index only (issue #617).
+int  servidores_visto(const char *id, const char *tipo);
+// Per-episode watched/resume data of a series any server of this profile has
+// (issue #617). Each server's caller may block once fetching the episode
+// index; run on a network thread. Returns rows filled (merged, first hit
+// wins per season/episode), 0 none, -1 failed/cancelled.
+int  servidores_episodios(const char *id, SrvEp *out, int max);
 // Same, and what the title page says: the server's name, kind, best known
 // quality and whether it is on the LAN (LAN first when two servers have it).
 int  servidores_info(const char *id, const char *tipo, SrvAchado *info);

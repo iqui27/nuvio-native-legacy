@@ -11,12 +11,14 @@ static int uxTemPadrao(int op) {
 }
 
 static int uxValorPadrao(int op) {
+  if (op >= AJ_FONTE_OCULTAR_DV && op <= AJ_FONTE_OCULTAR_VIDEO) return !stream_incompat_padrao(op - AJ_FONTE_OCULTAR_DV);
   if (op == AJ_SALVOS_DEST) return ajustes_fonte_resolver(valorPadrao[op], trakt_ativo(), simkl_ativo());
   return uxTemPadrao(op) ? valorPadrao[op] : 0;
 }
 
 /* Fileiras tem uma fonte propria. valor[] e apenas seu espelho na tela. */
 static int uxValorAtual(int op) {
+  if (op >= AJ_FONTE_OCULTAR_DV && op <= AJ_FONTE_OCULTAR_VIDEO) return !ajustes_fonte_ocultar(op - AJ_FONTE_OCULTAR_DV);
   if (op < 0 || op >= AJ_N) return 0;
   if (ajFonte(op)) return ajFonteAtual(op);
   if (op == AJ_XTREAM_CONEXOES) return xtream_conexoes_modo();
@@ -192,6 +194,7 @@ static const char *uxSinonimos(int op) {
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA:
       return "legenda secundaria segunda dupla dual posicao topo junto empilhada tamanho cor fundo borda contorno estilo second subtitle position size color";
     case AJ_FONTE_IDIOMA_AUDIO: return "fonte automatica idioma audio dublado dublagem dual multi anime ingles japones preferir dub language";
+    case AJ_FONTE_OCULTAR_DV: case AJ_FONTE_OCULTAR_AUDIO: case AJ_FONTE_OCULTAR_VIDEO: return "sources fontes ocultar incompatível tv dolby vision profile perfil fallback truehd atmos dts dts-hd ac3 eac3 av1 hevc codec decoder resolução";
     case AJ_FONTE_PRIORIDADE: case AJ_FONTE_HDR: return "fonte automatica prioridade qualidade equilibrio fluidez hdr dolby vision dv hdr10 sdr cor escolha melhor resolucao addon aiostreams ordem primeira order first";
     case AJ_LOGO_APP: return "logo marca simbolo novo classico icone identidade nuvio tv retro play gradiente splash";
     case AJ_ABERTURA: return "abertura splash inicio animacao zoom esmaecer fade direto rapido logo entrada boot arranque";
@@ -209,6 +212,7 @@ static const char *uxSinonimos(int op) {
     case AJ_DTS_AC3: return "dts truehd convertido ac3 aac dolby digital 5.1 surround estereo audio som barra de som receiver arc earc conversao lg samsung desligado converted stereo off";
     case AJ_PS_CONTINUAR: return "continuar escolha perfil cartao card tela abertura inicial assistindo retomar remover esconder desligar quem esta assistindo continue watching profile picker";
     case AJ_DV_MKV: return "dolby vision dv dovi mkv matroska perfil 8 5 hdr hdr10 experimental imagem cores";
+    case AJ_HDR10P_STRIP: return "hdr10+ hdr10plus 2094-40 dinamico strip remover tirar hevc pq smpte hdr10 tv trava congela tela preta desligar philips";
     case AJ_CW_RETIDO_TAMBEM: return "continuar assistindo tambem ilha retomar agora fileira duplicar repetir aparecer dois lugares titulo continue watching also island resume";
     case AJ_HIST_CONTA: return "historico historico vistos progresso conta nuvio enviar scrobble simkl trakt perfil sincronizar sync history watched";
     case AJ_SOCIAL: return "social amigos amigo atividade recomendar recomendacoes friends activity recommend presenca desligar remover";
@@ -275,9 +279,11 @@ static const char *uxSinonimos(int op) {
     case AJ_TMDB_IDIOMA: return "idioma metadados titulo sinopse traducao tmdb";
     case AJ_HERO_GENERO: return "genero destaque hero logo titulo categoria esconder mostrar card genre";
     case AJ_HERO_SINOPSE: return "sinopse destaque hero texto descricao resumo esconder mostrar synopsis description";
+    case AJ_HERO_TAMANHO: return "tamanho destaque hero logo informacoes texto grande muito grande normal hero size logo info";
     case AJ_HERO_SINOPSE_TAM: return "sinopse tamanho destaque hero texto grande normal synopsis size";
     case AJ_HERO_NOTAS: return "nota notas imdb destaque hero avaliacao rating ratings esconder mostrar";
     case AJ_HERO_ANO: return "ano destaque hero lancamento year data esconder mostrar";
+    case AJ_HERO_PASTA_DETALHES: return "pasta colecao detalhes destaque hero folder collection details title";
     case AJ_HERO_DURACAO: return "duracao tempo destaque hero runtime minutos horas esconder mostrar";
     case AJ_HERO_TRAILER: return "trailer trailers destaque topo hero autoplay automatico";
     case AJ_FOCO_TRAILER: return "trailer trailers cartaz poster foco autoplay";
@@ -286,7 +292,7 @@ static const char *uxSinonimos(int op) {
     case AJ_HERO_TRAILER_SOM: case AJ_DET_TRAILER_SOM:
       return "trailer trailers som audio mudo silencio volume";
     case AJ_HERO_TRAILER_ESPERA: return "trailer trailers espera tempo demora atraso";
-    case AJ_LEG_FORCADA: return "legenda forcada forcadas forced letreiros placas audio idioma automatica subtitle";
+    case AJ_LEG_FORCADA: return "legenda forcada forcadas forced letreiros placas audio idioma automatica subtitle so os letreiros quando o audio ja e no seu idioma";
     case AJ_LEG_SYNC_AUTO: case AJ_LEG_SYNC_AUDIO: return "sincronia sincronizar legenda audio fala falas atraso automatico sync subtitle speech";
     case AJ_AVANCADAS: return "avancado avancada avancados avancadas tecnico tecnica opcoes ocultas mostrar esconder advanced";
     case AJ_LOGO_TRAILER: return "trailer trailers logo marca titulo oled queimar burn-in esconder canto";
@@ -305,6 +311,8 @@ static const char *uxSinonimos(int op) {
       return "lento lenta lentidao travando trava falha erro desempenho diagnostico rede internet";
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE:
       return "seekr miniatura barra tempo previa avanco retrocesso";
+    case AJ_GUIA_PREVIA_GRANDE:
+      return "guia tv previa preview grande pequena tamanho hero destaque video canto";
     default: return "";
   }
 }
@@ -437,6 +445,8 @@ int ajustes_buscar(const char *consulta, AjusteBuscaResultado *resultados, int c
     uxIndiceAcrescentar(indice, sizeof indice, titulo);
     uxIndiceAcrescentar(indice, sizeof indice, tituloPt);
     uxIndiceAcrescentar(indice, sizeof indice, aliases);
+    uxIndiceAcrescentar(indice, sizeof indice, aj4Rotulo(op));
+    uxIndiceAcrescentar(indice, sizeof indice, i18n(aj4Rotulo(op)));
     // 2.0.3: o nome de antes da linha (ROTULO NOVO), em portugues e traduzido.
     if (rotuloTecnico(op)) {
       uxIndiceAcrescentar(indice, sizeof indice, rotuloTecnico(op));
@@ -487,7 +497,7 @@ int ajustes_buscar(const char *consulta, AjusteBuscaResultado *resultados, int c
     else snprintf(caminho, sizeof caminho, "%s", i18n(item->secao));
     uxTextoCopiar(r->caminho, sizeof r->caminho, caminho);
     uxValorTexto(r->op, uxValorAtual(r->op), r->valor, sizeof r->valor);
-    r->avancado = uxAvancada(r->op);
+    r->avancado = !aj4Simples(r->op);
     r->bloqueado = inativa(r->op);
     { int k;
       for (k = 0; k < AJ_N_TELA; k++)

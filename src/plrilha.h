@@ -41,6 +41,8 @@ typedef struct {
   int video;                // 1 = video vivo atras (botao/isla translucidos, nunca opacos)
   int ancoraTopo;           // 1 = (centro) o corpo acompanha o TOPO da forma enquanto ela cresce ou encolhe, em vez de ficar centrado no tamanho final
   int centro;               // 1 = cartao SOZINHO no meio da tela (sem relogio nem medidor); so o corpo
+  GfxRect destino;           // optional final rectangle, in the island layer
+  int semContorno;           // borderless island material, including glass fallback
   int baixa;                // 1 = prioridade baixa: cede a qualquer outro pedido do quadro (a guia parental)
   int respira;              // 1 = o ponto que respira antes da frase (atividade: o canal sintonizando)
   int voltaRelogio;         // 1 = ao acabar, o corpo vira a pilula da HORA, segura um instante e so entao sai (guia parental). Relogio desligado: encolhe e some no lugar
@@ -80,6 +82,7 @@ int  plrilha_rect(GfxRect *r);
 // O pedido deste quadro tem corpo e ele ja esta assentado (para quem
 // precisa saber se o corpo esta de pe, como o foco do erro).
 float plrilha_corpo_alfa(void);
+int plrilha_centro_visivel(void);
 
 #ifdef NV_SHOT_HOOKS
 // Capturas: hora fixa (0 = a do relogio).

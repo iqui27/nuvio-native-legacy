@@ -90,8 +90,8 @@ static int salAleatorio(unsigned char sal[16]) {
   }
   return 1;
 }
-static int ler(unsigned char sal[16], unsigned char hash[32]) {
-  char *t = dados_ler(ARQ), sh[33], hh[65];
+static int lerArquivo(const char *file,unsigned char sal[16], unsigned char hash[32]) {
+  char *t = dados_ler(file), sh[33], hh[65];
   int i, ok = 0;
   if (!t) return 0;
   if (sscanf(t, "v1 %32s %64s", sh, hh) == 2 && strlen(sh) == 32 && strlen(hh) == 64) {
@@ -103,8 +103,8 @@ static int ler(unsigned char sal[16], unsigned char hash[32]) {
   return ok;
 }
 
-int admin_pin_definido(void) { unsigned char s[16], h[32]; return ler(s, h); }
-int admin_pin_definir(const char *pin) {
+static int definidoArquivo(const char *file) { unsigned char s[16], h[32]; return lerArquivo(file,s,h); }
+static int definirArquivo(const char *file,const char *pin) {
   unsigned char sal[16], h[32];
   char sh[33], hh[65], linha[128];
   if (!pinValido(pin)) return 0;
@@ -112,14 +112,28 @@ int admin_pin_definir(const char *pin) {
   derivar(sal, pin, h);
   hex(sal, 16, sh); hex(h, 32, hh);
   snprintf(linha, sizeof linha, "v1 %s %s\n", sh, hh);
-  return dados_gravar(ARQ, linha);
+  return dados_gravar(file, linha);
 }
-int admin_pin_conferir(const char *pin) {
+static int conferirArquivo(const char *file,const char *pin) {
   unsigned char sal[16], h[32], t[32];
   int i, d = 0;
-  if (!pinValido(pin) || !ler(sal, h)) return 0;
+  if (!pinValido(pin) || !lerArquivo(file,sal,h)) return 0;
   derivar(sal, pin, t);
   for (i = 0; i < 32; i++) d |= h[i] ^ t[i];
   return d == 0;
 }
-void admin_pin_esquecer(void) { dados_apagar(ARQ); }
+int admin_pin_definido(void) { return definidoArquivo(ARQ); }
+int admin_pin_definir(const char *pin) { return definirArquivo(ARQ,pin); }
+int admin_pin_conferir(const char *pin) { return conferirArquivo(ARQ,pin); }
+static int perfilArquivo(int profile,char file[48]) {
+  if(profile<1 || profile>32)return 0;
+  snprintf(file,48,"profile-pin-%d.txt",profile);return 1;
+}
+int admin_perfil_pin_definido(int profile) { char file[48];return perfilArquivo(profile,file) && definidoArquivo(file); }
+int admin_perfil_pin_definir(int profile,const char *pin) { char file[48];return perfilArquivo(profile,file) && definirArquivo(file,pin); }
+int admin_perfil_pin_conferir(int profile,const char *pin) { char file[48];return perfilArquivo(profile,file) && conferirArquivo(file,pin); }
+void admin_perfil_pin_remover(int profile) { char file[48];if(perfilArquivo(profile,file))dados_apagar(file); }
+void admin_pin_esquecer(void) {
+  dados_apagar(ARQ);
+  for(int p=1;p<=32;p++) { char file[48];perfilArquivo(p,file);dados_apagar(file); }
+}

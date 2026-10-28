@@ -416,7 +416,7 @@ namespace NuvioTpk
         async void Abrir(string url, string cabecalhos, int minha)
         {
             posMs = 0; acabou = false; Interlocked.Increment(ref posGer);
-            buscando = false; buscaPend = pausaPend = -1;
+            buscando = false; buscaPend = pausaPend = -1; preparoPausado = false;
             aspectoRecusado = false;
             try
             {
@@ -483,10 +483,12 @@ namespace NuvioTpk
                 AplicaVolume(p, "preparado");
                 NvVid.Evento(EV_PRONTO, dur, 0);
                 if (minha != Volatile.Read(ref sessao)) return;
-                p.Start();
-                windowMetrics.Invalidate();
-                AplicaVolume(p, "start");
-                NvVid.Evento(EV_TOCANDO, 0, 0);
+                if (!preparoPausado) {
+                    p.Start();
+                    windowMetrics.Invalidate();
+                    AplicaVolume(p, "start");
+                    NvVid.Evento(EV_TOCANDO, 0, 0);
+                }
                 if (volPedido)
                 {
                     await System.Threading.Tasks.Task.Delay(1500);
@@ -606,11 +608,12 @@ namespace NuvioTpk
 
         bool Liberar(ref Player p) { if (!Liberar(p)) return false; Volatile.Write(ref p, null); return true; }
 
-        bool buscando;
+        bool buscando, preparoPausado;
         int buscaPend = -1, pausaPend = -1;
 
         void Pausar(bool pausa)
         {
+            preparoPausado = pausa;
             var p = player;
             int minha = playerSessao;
             if (p == null) return;

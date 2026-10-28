@@ -1,0 +1,34 @@
+{
+  "url": "https://v3-cinemeta.strem.io/meta/series/tt21975436.json",
+  "observed_utc": "2026-10-16T06:13:02.232328+00:00",
+  "raw_bytes": 19319,
+  "raw_sha256": "d19a2cdff5c16e3f78b0b35a66e6e6f8a7d16187ddc879daafc3c1001c27b8e2",
+  "fixture": "Cinemeta reduced without changing selected episode objects",
+  "records": [
+    {
+      "season": 1,
+      "episode": 12,
+      "tvdb_id": 10364437,
+      "id": "tt21975436:1:12"
+    },
+    {
+      "season": 2,
+      "episode": 1,
+      "tvdb_id": 10567809,
+      "id": "tt21975436:2:1"
+    },
+    {
+      "season": 2,
+      "episode": 2,
+      "tvdb_id": 11209906,
+      "id": "tt21975436:2:2"
+    },
+    {
+      "season": 2,
+      "episode": 3,
+      "tvdb_id": 11209907,
+      "id": "tt21975436:2:3"
+    }
+  ],
+  "trakt_fixture": "Synthetic protocol-valid episode; S01E14 assumption comes from issue #512, not a live authenticated Trakt capture."
+}

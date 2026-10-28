@@ -75,13 +75,37 @@ class HttpStream : DataSource {
     override fun addTransferListener(t: TransferListener) {}
     override fun close() { c?.disconnect(); c = null }
 }
+object Log {
+    val messages = mutableListOf<String>()
+    fun i(tag: String, message: String) { messages.add(message) }
+}
 fun main(args: Array<String>) {
     val base = args[0]
     val upstream = object : DataSource.Factory {
         override fun createDataSource(): DataSource = HttpStream()
     }
+    val geracao = 42
+    val TAG = "fixture"
+    val requests = java.util.concurrent.atomic.AtomicInteger()
+    fun nativeLiveRequest(generation: Int) { check(generation == geracao); requests.incrementAndGet() }
+    val http = object : DataSource.Factory {
+        override fun createDataSource(): DataSource {
+            val stream = HttpStream()
+            return java.lang.reflect.Proxy.newProxyInstance(HttpDataSource::class.java.classLoader,
+                arrayOf(HttpDataSource::class.java)) { _, method, args ->
+                when (method.name) {
+                    "getResponseCode" -> 200
+                    "getResponseHeaders" -> mapOf("Content-Type" to listOf("video/mp2t"))
+                    else -> try { stream.javaClass.getMethod(method.name, *method.parameterTypes)
+                        .invoke(stream, *(args ?: emptyArray())) }
+                        catch (e: java.lang.reflect.InvocationTargetException) { throw e.cause!! }
+                }
+            } as HttpDataSource
+        }
+    }
+LIVE_HTTP
     val factory: DataSource.Factory = if (args.getOrNull(1) == "baseline") upstream
-        else LimitedDataSource.Factory(upstream)
+        else LimitedDataSource.Factory(liveHttp)
     fun spec(s: String) = DataSpec(Uri.parse(base + s))
     val a = factory.createDataSource()
     a.open(spec("/A"))
@@ -92,9 +116,22 @@ fun main(args: Array<String>) {
         a.close()
         closed.countDown()
     }
+    // A channel switch creates a new player's request and response guards.
+    requested.set(false)
+    response.set(false)
     val c = factory.createDataSource()
+    val requestDuringWait = java.util.concurrent.atomic.AtomicBoolean()
+    val waiting = thread {
+        Thread.sleep(60)
+        requestDuringWait.set(requests.get() != 1)
+    }
     c.open(spec("/C"))
+    waiting.join()
     check(closed.count == 0L) { "new stream opened before old HTTP close" }
+    check(!requestDuringWait.get() && requests.get() == 2) { "request clock started while waiting for connection gate" }
+    check(Log.messages.any { it.contains("status=200 contentType=video/mp2t") }) {
+        "successful limited HTTP response lost its status: ${Log.messages}"
+    }
     c.close(); closer.join()
     for (status in listOf(403, 458, 509)) {
         try { factory.createDataSource().open(spec("/$status")); error("expected HTTP $status") }
@@ -115,6 +152,11 @@ fun main(args: Array<String>) {
     println("PASS: delayed HTTP close, denied account, 403/458/509, Retry releases permit")
 }
 '''
+
+player_source = (kt / "NvPlayer.kt").read_text()
+start = player_source.index('            val requested =')
+end = player_source.index('            val limited =', start)
+fixture = fixture.replace('LIVE_HTTP', player_source[start:end])
 
 with tempfile.TemporaryDirectory(prefix="nuvio-conexlim-") as work:
     work = Path(work)

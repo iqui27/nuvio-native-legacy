@@ -28,13 +28,6 @@ void nv_identity_trakt_marcar(const char *id, double p, double d, double a, int 
   (void)p; (void)d; (void)a; (void)fim; trackerCalls++;
   snprintf(trackerId, sizeof trackerId, "%s", id ? id : "");
 }
-// The player now dispatches its frozen canonical target through this boundary.
-// Capture outbound identity without requiring a real authenticated Trakt account.
-int nv_identity_scrobble_alvo(int evento, const TraktScrobbleAlvo *alvo,
-                               double pos, double dur, double assistido, int fim) {
-  if (evento == SCR_EV_SAIU) nv_identity_trakt_marcar(alvo->id, pos, dur, assistido, fim);
-  return SCR_NADA;
-}
 void nv_identity_parental_pedir(const char *id) {
   parentalRequests++; snprintf(parentalId, sizeof parentalId, "%s", id ? id : "");
 }
@@ -62,7 +55,10 @@ int main(int argc, char **argv) {
   int bare = !strcmp(mode, "bare-source-series");
   int fresh = !strcmp(mode, "fresh-episode-source");
   int promote = !strcmp(mode, "pending-before-meta") || !strcmp(mode, "reordered-series") || fresh;
-  int expectedT = promote ? 1 : 0, expectedE = promote ? 2 : 0;
+  // An uncertain title keeps a requested episode. A confirmed movie and a
+  // source opened on the bare id still drop it.
+  int keepEpisode = !movie && !noPair && !bare;
+  int expectedT = (promote || keepEpisode) ? 1 : 0, expectedE = (promote || keepEpisode) ? 2 : 0;
   CatItem c = {0}, published[3] = {{0}};
   int t, e, failed = 0;
   setvbuf(stdout, NULL, _IONBF, 0);
@@ -106,6 +102,10 @@ int main(int argc, char **argv) {
     published[1] = published[0];
     snprintf(published[0].imdb, sizeof published[0].imdb, "tt0111161");
     cat_definir(published, 2);
+  } else if (!strcmp(mode, "colliding-movie-only")) {
+    snprintf(published[0].tipo, sizeof published[0].tipo, "movie");
+    snprintf(published[0].titulo, sizeof published[0].titulo, "Chasing Mavericks");
+    cat_definir(published, 1);
   } else if (promote || movie || noPair || bare) cat_definir(published, 1);
   else { fprintf(stderr, "unknown scenario %s\n", mode); return 2; }
   // A confirmed source has its own episode metadata. Without it the real

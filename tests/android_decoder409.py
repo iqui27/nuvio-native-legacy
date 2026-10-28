@@ -38,7 +38,7 @@ prefixo = prefixo.replace('        limitedSession = limitedNext\n', '')
 abrir = (prefixo
          + '        urlAtual = url; cabAtual = cabecalhos; inicioAtualMs = inicioMs\n'
          + '        geracaoNative = geracao; fracaoAtual = fracao; abriuEm = SystemClock.elapsedRealtime()\n'
-         + '        if (!reabrindo) retentou = false\n'
+         + '        if (!reabrindo) { retentou = false; preferirFfmpegAudio = false }\n'
          + '        val p = ExoPlayer(emptyList())\n'
          + '        player = p; processador = GanhoAudioProcessor(); aplicarGanho()\n'
          + '        ' + abrir[abrir.index('                p.playWhenReady ='):abrir.index('                p.prepare()')].strip() + '\n'
@@ -113,6 +113,7 @@ object Fixture {
     val liberacoesEmCurso = AtomicInteger(); var semRecriar = true
     var releaseMs = 0L; var releases = 0; val criados = mutableListOf<String>()
     var sessao = 1; var abriuEm = 0L; var retentou = true
+    var preferirFfmpegAudio = false
     var urlAtual = "url"; var cabAtual = ""; var inicioAtualMs = 0; var geracaoNative = 0; var fracaoAtual = 0
     var player: ExoPlayer? = null; var evento = -99
     var pausaPedida = false
@@ -121,6 +122,7 @@ object Fixture {
     var superficie: SurfaceView? = null
     fun semTravaDeFio(p: ExoPlayer) {}
     fun confirmarRetomada(g: Int, a: Boolean) {}
+    fun afrAplicar() {}
     val eventos = mutableListOf<Int>()
     fun ev(t: Int, a: Int = 0, b: Int = 0) { evento = b; eventos.add(t) }
     fun nativeErroTexto(texto: String) {}
@@ -147,6 +149,7 @@ object Fixture {
         principal.itens.clear(); SystemClock.agora = 100; pedidos.set(1); pedidoAtivo = 1
         liberacoesEmCurso.set(0); criados.clear(); releases = 0; semRecriar = true; releaseMs = 0
         Log.linhas.clear(); eventos.clear(); activity = Any(); ganhoPct = 100; player = null; processador = null
+        evento = -99; preferirFfmpegAudio = false
     }
 }
 fun main(args: Array<String>) {
@@ -169,7 +172,29 @@ fun main(args: Array<String>) {
         println("PASS descarte: release bloqueado fora da UI; contador e superficie apos terminar")
         return
     }
+    if (args[0] == "audio-fallback") {
+        for (code in listOf(4001, 4003)) {
+            f.reset(); f.abrir("same-source")
+            f.player = ExoPlayer(listOf(C.TRACK_TYPE_VIDEO, C.TRACK_TYPE_AUDIO))
+            SystemClock.agora = 6100 // Past the old five-second retry window.
+            val old = f.ouvinte(f.sessao)
+            old.onPlayerError(ExoPlaybackException(code, 1))
+            check(f.preferirFfmpegAudio && f.evento == -99)
+            f.principal.ate(6500)
+            check(f.criados == listOf("same-source", "same-source"))
+            check(f.preferirFfmpegAudio)
+            f.player = ExoPlayer(listOf(C.TRACK_TYPE_VIDEO, C.TRACK_TYPE_AUDIO))
+            f.ouvinte(f.sessao).onPlayerError(ExoPlaybackException(code, 1))
+            check(f.evento == C.TRACK_TYPE_AUDIO && f.principal.itens.isEmpty())
+            f.abrir("next-source"); check(!f.preferirFfmpegAudio)
+            old.onPlayerError(ExoPlaybackException(code, 1))
+            check(!f.preferirFfmpegAudio)
+        }
+        println("PASS audio fallback: late 4001/4003 retry once, same URL, reset on next source, stale callback ignored")
+        return
+    }
     if (args[0] == "renderer") {
+        f.preferirFfmpegAudio = true // Fallback already exhausted; check native error routing.
         // Ordem invertida: o indice do renderer NAO e o tipo.
         f.player = ExoPlayer(listOf(C.TRACK_TYPE_AUDIO, C.TRACK_TYPE_VIDEO))
         val ouv = f.ouvinte(f.sessao)
@@ -300,7 +325,7 @@ with tempfile.TemporaryDirectory(prefix='nuvio-decoder409-') as tmp:
                     '-jvm-target', '17', '-d', str(tmp / 'classes'), str(file),
                     str(root / 'android/app/src/main/java/space/nuvio/nativelegacy/GanhoMath.kt')], check=True)
     failed = 0
-    for case in ('renderer', 'release', 'descarte', 'ganho', 'pausa', 'retry-pausa'):
+    for case in ('audio-fallback', 'renderer', 'release', 'descarte', 'ganho', 'pausa', 'retry-pausa'):
         output = sys.argv[2:3] if case == 'pausa' and sys.argv[1:2] == ['--pausa-eventos'] else []
         failed += subprocess.run([java, '-cp', f'{tmp / "classes"}:{deps}', 'DecoderFixtureKt', case, *output]).returncode != 0
     raise SystemExit(bool(failed))

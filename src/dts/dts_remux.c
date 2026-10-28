@@ -39,6 +39,9 @@
 #include <stdatomic.h>
 static atomic_int audioOffsetMs;
 void dts_remux_set_audio_offset_ms(int ms) { atomic_store(&audioOffsetMs, audsync_offset_ms(ms)); }
+/* #605 exists in both builds so the callers need no ifdef. */
+static atomic_int gHdr10pStrip;
+void dts_remux_set_hdr10p_strip(int on) { atomic_store(&gHdr10pStrip, !!on); }
 
 #if !defined(NV_DTS_FFMPEG) || !(defined(NV_TPK) || defined(NV_DTS_REMUX_TEST))
 int dts_remux_available(void) { return 0; }
@@ -82,6 +85,7 @@ void dts_remux_set_queue_budget_mib(int mib) { (void)mib; }
 #include <pthread.h>
 #include <stdatomic.h>
 #include <sys/resource.h>
+#include "hdr10plus.h"
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include <libavutil/audio_fifo.h>
@@ -319,6 +323,22 @@ static int dts_remux_hevc_annexb(const uint8_t *hvccB, int hvccBN, int lenSize,
   memset(*out + k, 0, AV_INPUT_BUFFER_PADDING_SIZE);
   return k;
 }
+/* #605: HDR10+ dynamic SEI strip of one Annex-B HEVC packet. Allocates the
+ * output (AV_INPUT_BUFFER_PADDING_SIZE included, hevcFix pattern); returns
+ * the size written, 0 unchanged (nothing to strip), -1 malformed. */
+static int dts_remux_hdr10p_annexb(const uint8_t *d, int n, uint8_t **out) {
+  size_t w = 0;
+  *out = NULL;
+  if (n <= 0) return 0;
+  uint8_t *buf = av_malloc((size_t)n + AV_INPUT_BUFFER_PADDING_SIZE);
+  if (!buf) return -1;
+  if (nv_hdr10plus_annexb(d, (size_t)n, buf, (size_t)n, &w) < 0) { av_free(buf); return -1; }
+  if (!w || w == (size_t)n) { av_free(buf); return 0; }
+  memset(buf + w, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+  *out = buf;
+  return (int)w;
+}
+
 /* hvcC -> its NAL arrays in Annex B (what hevc_mp4toannexb prepends).
  * 1 done, 0 not an hvcC, -1 malformed. */
 static int hvccAnnexB(const uint8_t *x, int xn, uint8_t **out, int *outN, int *lenSize) {
@@ -1114,6 +1134,24 @@ static int emitVideo(DtsRemuxGen *g, int target, DtsRemuxStats *st, char *err, s
         p->buf = b; p->data = b->data; p->size = nn;
       }
       /* nn <= 0: left as is; the muxer's own filter converts it, as before */
+    }
+    /* #605: HDR10+ dynamic SEI out of the HEVC the TV decodes. Annex-B only
+     * (dts_remux_hevc_annexb above or the Matroska source itself); a packet
+     * the filters could not rewrite is left untouched, like hevcFix. */
+    if (atomic_load(&gHdr10pStrip) && g->src->vpar->codec_id == AV_CODEC_ID_HEVC &&
+        p->size >= 4 && !p->data[0] && !p->data[1] && (p->data[2] == 1 || (!p->data[2] && p->data[3] == 1))) {
+      uint8_t *nb = NULL;
+      int nn = dts_remux_hdr10p_annexb(p->data, p->size, &nb);
+      if (nn > 0) {
+        AVBufferRef *b = av_buffer_create(nb, (size_t)nn + AV_INPUT_BUFFER_PADDING_SIZE, av_buffer_default_free, NULL, 0);
+        if (!b) { av_free(nb); av_packet_free(&p); fail(err, errn, "Out of memory", 0); return -1; }
+        av_buffer_unref(&p->buf);
+        p->buf = b; p->data = b->data; p->size = nn;
+      } else if (nn < 0) {
+        static atomic_int warned;
+        if (!atomic_exchange(&warned, 1))
+          printf("[dts-tpk] HDR10+ strip: packet left untouched (malformed)\n");
+      }
     }
     int rr = writePkt(g, p, g->src->vtb, g->ov, st, 1);
     if (rr < 0) { fail(err, errn, g->wfail ? "Client closed" : "Mux video", rr); return g->wfail ? -2 : -1; }

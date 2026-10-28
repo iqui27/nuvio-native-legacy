@@ -1532,7 +1532,10 @@ static int perfilCab(char *dst, size_t tam, int viaNuvio) {
 static int bearerSessao(char *dst, size_t n) {
   char t[3000];
   int ok = sessao_token_copiar(t, sizeof t);
-  if (ok) ok = snprintf(dst, n, "Authorization: Bearer %s", t) < (int)n;
+  if (ok) {
+    ok = snprintf(dst, n, "Authorization: Bearer %s", t) < (int)n;
+    if (!ok) printf("[recomenda] auth unavailable: nuvio header buffer too small (%zu)\n", n);
+  } else printf("[recomenda] auth unavailable: nuvio session/refresh missing\n");
   memset(t, 0, sizeof t);
   return ok;
 }
@@ -3475,15 +3478,49 @@ int recomenda_cabecalhos(const char **cab, char *aut, size_t na, char *via, size
                          char *perfil, size_t np) {
   const char *tcab[4];
   char chave[160];
-  if (!recomenda_ativo() || perfis_precisa_escolher() || !cab || !aut || !via || !perfil) return 0;
+  if (!cab || !aut || !via || !perfil) return 0;
+  if (!recomenda_ativo()) {
+    printf("[recomenda] auth unavailable: service/social disabled\n"); return 0;
+  }
+  if (perfis_precisa_escolher()) {
+    printf("[recomenda] auth unavailable: profile selection pending\n"); return 0;
+  }
   if (trakt_ativo() && trakt_cabecalhos(tcab, aut, na, chave, sizeof chave)) {
     snprintf(via, nv, "X-Nuvio-Auth: trakt");
-  } else if (bearerSessao(aut, na)) {
+  } else {
+    printf("[recomenda] auth: trakt %s; trying nuvio session refresh\n",
+           trakt_ativo() ? "headers unavailable (profile session/credentials)" : "inactive (missing/expired/refresh pending)");
+    if (!bearerSessao(aut, na)) return 0;
     snprintf(via, nv, "X-Nuvio-Auth: nuvio");
-  } else return 0;
+  }
   cab[0] = aut; cab[1] = via; cab[2] = NULL; cab[3] = NULL;
   if (perfilCab(perfil, np, !strcmp(via, "X-Nuvio-Auth: nuvio"))) cab[2] = perfil;
   return 1;
+}
+
+// Capture locally under the same gate as account/profile changes. No refresh
+// or HTTP while holding the gate; queued callers retain these exact headers.
+int recomenda_cabecalhos_local(const char **cab, char *aut, size_t na, char *via, size_t nv,
+                               char *perfil, size_t np) {
+  uint64_t sessao = perfis_sessao_geracao();
+  const char *tcab[4];
+  char chave[160];
+  int ok = 0;
+  if (!recomenda_ativo() || !perfis_sessao_travar(sessao)) return 0;
+  perfil[0] = 0;
+  if (!perfis_precisa_escolher()) {
+    if (trakt_ativo() && trakt_cabecalhos(tcab, aut, na, chave, sizeof chave)) {
+      snprintf(via, nv, "X-Nuvio-Auth: trakt"); ok = 1;
+    } else if (bearerSessaoLocal(aut, na)) {
+      snprintf(via, nv, "X-Nuvio-Auth: nuvio"); ok = 1;
+    }
+    if (ok) {
+      cab[0] = aut; cab[1] = via; cab[2] = NULL; cab[3] = NULL;
+      if (perfilCab(perfil, np, !strcmp(via, "X-Nuvio-Auth: nuvio"))) cab[2] = perfil;
+    }
+  }
+  perfis_sessao_destravar();
+  return ok;
 }
 
 const char *recomenda_meu_nome(void) { return meuNome; }

@@ -31,7 +31,7 @@ static void dizer(const char *s) { (void)s; }
 code += src[a:b]
 a = src.index('static void abrirLista(int i) {')
 b = src.index('\n}', a) + 2
-code += '\nstatic int abertaPropria, edModo, ordemPega, ordemMudou, acaoSel;\n'
+code += '\nstatic int abertaPropria, edModo, ordemPega, ordemMudou, acaoSel, trilha, listaTab;\n'
 code += 'enum { ED_NADA }; static char recado[160]; static struct { int fileira, coluna; } foco;\n'
 code += src[a:b]
 code += r'''

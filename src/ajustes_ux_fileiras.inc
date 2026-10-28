@@ -138,7 +138,8 @@ static void ajSubFileira(int idx, char *b, size_t tam) {
 // Celula da tabela (Estado/Card/Tamanho): pilula 56 que acende com o foco.
 static void ajCelula(float x, float yc, float w, const char *t, float al, int foco) {
   TxtLinha l = ajTxtC(TXT_AJ_VALOR18, t, w - 32);
-  if (foco) ajNeutro((GfxRect){ x, yc - 28, w, 56 }, 28, 0.14f, 0.204f, 0.212f, 0.243f, 1);
+  if (foco && !gfx_foco_placa((GfxRect){ x, yc - 28, w, 56 }, .5f, 1, 1))
+    ajNeutro((GfxRect){ x, yc - 28, w, 56 }, 28, 0.14f, 0.204f, 0.212f, 0.243f, 1);
   txt_desenhar_alpha(l, x + 16, yc - l.h * 0.5f, foco ? 1.0f : al);
 }
 

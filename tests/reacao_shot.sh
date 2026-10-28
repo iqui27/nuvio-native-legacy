@@ -1,7 +1,7 @@
 #!/bin/bash
 export TMPDIR="${TMPDIR:-/tmp}"
 TMPDIR="${TMPDIR%/}"
-# Capturas do cartao "O que achou?" (reacao.c), em BMP. Nao entra na suite.
+# Headless PNG captures of the rating card; excluded from the regular suite.
 #
 #   bash tests/reacao_shot.sh /pasta/de/saida
 set -eu
@@ -14,6 +14,10 @@ trap 'rm -rf "$NUVIO_DADOS" ${TMPDIR:-/tmp}/nuvio-reacao-shot-bin ${TMPDIR:-/tmp
 sources=()
 for source in src/*.c src/dts/*.c; do
   [ "$source" = src/main.c ] && continue
+  case "$source" in
+    src/reacao.c|src/detail.c|src/notasui.c)
+      if [ -n "${NV_REACAO_BASELINE:-}" ]; then source="$NV_REACAO_BASELINE/${source#src/}"; fi;;
+  esac
   sources+=("$source")
 done
 cc "${sources[@]}" tests/reacao_shot.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-reacao-shot-bin \

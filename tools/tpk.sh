@@ -225,7 +225,8 @@ ctr_run --rm --platform "$TPK_PLATFORM" --env-file "$ENVF" $P2P_VOL $DTS_VOL \
   # p2pmotor_motor.c entra sempre aqui: o 4/5 NUNCA leva o motor (a UEP barra
   # .so de arquivo), entao ele e recompilado SEM -DNV_P2P_MOTOR (sem P2P_CFLAGS).
   # Quem cita NV_DTS_FFMPEG tambem: aqui sai sem ele (stub), e a .so do 4/5 nao leva FFmpeg.
-  SOURCES40=$({ grep -lE "NV_TPK40|NV_DTS_FFMPEG" src/*.c src/dts/*.c; echo src/p2pmotor_motor.c; } | sort -u | grep -v "src/video_tizen.c")
+  # Sources using rede_teto expand to rede_teto_ptr() under NV_TPK40 to avoid TLS.
+  SOURCES40=$({ grep -lE "NV_TPK40|NV_DTS_FFMPEG|rede_teto" src/*.c src/dts/*.c; echo src/p2pmotor_motor.c; } | sort -u | grep -v "src/video_tizen.c")
   make -s -f tools/native-objects.mk -j "$NUVIO_BUILD_JOBS" CC=gcc OBJDIR="$O40" SOURCES="$SOURCES40" \
     NATIVE_FLAGS="$FLAGS -DNV_TPK40 @/tmp/flags -I/deps/include -I/deps/include/SDL2"
   OBJ40=""

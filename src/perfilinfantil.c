@@ -1,4 +1,5 @@
 #include "perfilinfantil.h"
+#include "perfilregras.h"
 #include "perfis.h"
 #include "dados.h"
 #include <stdio.h>
@@ -102,6 +103,7 @@ int perfil_ajustes_travar(int idx, int ligado) {
 }
 
 void perfil_infantil_esquecer(void) {
+  perfil_regras_esquecer();
   memset(marcado, 0, sizeof marcado);
   lido = 1;
   dados_apagar(ARQ);

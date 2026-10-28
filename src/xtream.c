@@ -1,4 +1,5 @@
 #include "xtream.h"
+#include "ltvkind.h"
 #include "iptvid.h"
 int ajustes_livetv_formato(void);  // ajustes.h puxa SDL; o teste do xtream nao
 #include "rede.h"
@@ -302,30 +303,31 @@ static void urlenc(const char *s, char *dst, unsigned tam) {
 // que falam com ele: o do guia (lista) e o da grade curta (xtream_epg_curto).
 // Uma trava so para a rede do Xtream faz os dois esperarem a vez.
 static pthread_mutex_t travaRede = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t travaMetadata = PTHREAD_MUTEX_INITIALIZER;
 // Retry-After do ultimo pedido ao painel (s; 0 = nao veio). xtepg.c le depois
 // de um 429.
 
-static char *chamarSt(const char *acao, int prazo, int *status, NvPerfilSessao sessao) {
-  char srv[256], u[300], s[300], url[1100];
+static char *consultar(const char *srv, const char *user, const char *password,
+                       const char *acao, int prazo, int *status, NvPerfilSessao sessao, int background) {
+  pthread_mutex_t *network_lock=background?&travaMetadata:&travaRede;
+  int metadata_retry=0;
+  char u[300], s[300], url[1100];
   char *r;
   int st = 0;
   if (status) *status = 0;
-  pthread_mutex_lock(&trava);
-  if (!nv_perfil_sessao_travar(sessao)) { pthread_mutex_unlock(&trava); return NULL; }
-  carregarTravado();
-  snprintf(srv, sizeof srv, "%s", servidor);
-  urlenc(usuario, u, sizeof u);
-  urlenc(senha, s, sizeof s);
-  nv_perfil_sessao_destravar();
-  pthread_mutex_unlock(&trava);
-  if (!srv[0] || !u[0] || !s[0]) return NULL;
+  urlenc(user, u, sizeof u);
+  urlenc(password, s, sizeof s);
+  if (!srv || !srv[0] || !u[0] || !s[0]) return NULL;
   if (acao && acao[0])
     snprintf(url, sizeof url, "%s/player_api.php?username=%s&password=%s&action=%s",
              srv, u, s, acao);
   else
     snprintf(url, sizeof url, "%s/player_api.php?username=%s&password=%s", srv, u, s);
-  pthread_mutex_lock(&travaRede);
-  if (!nv_perfil_sessao_atual(sessao)) { pthread_mutex_unlock(&travaRede); return NULL; }
+  /* Apply the same list budget to direct and browser/proxy transports. */
+  if (!background && acao && (!strncmp(acao,"get_vod_",8) || !strncmp(acao,"get_series",10) ||
+               !strncmp(acao,"get_live_",9)) && prazo < 120) prazo = 120;
+  pthread_mutex_lock(network_lock);
+  if (!nv_perfil_sessao_atual(sessao)) { pthread_mutex_unlock(network_lock); return NULL; }
 #if XT_PROXY
   // SAMSUNG (#112): o Chromium do Tizen barra TODO `http://` que sai do app
   // (log D1 1647, 1.4.1: a lista morria aqui com o painel respondendo CORS),
@@ -344,17 +346,61 @@ static char *chamarSt(const char *acao, int prazo, int *status, NvPerfilSessao s
     char via[300];
     snprintf(via, sizeof via, "%s/v1/xtream", NV_REC_URL);
     r = rede_postar_st(via, prazo, cab, url, &st);
-    pthread_mutex_unlock(&travaRede);
+    pthread_mutex_unlock(network_lock);
     if (!nv_perfil_sessao_atual(sessao)) { free(r); return NULL; }
     if (status) *status = st;
     return r;
   }
 #endif
-  r = rede_baixar_st_retry(url, prazo, NULL, &st, &retryAfterUltimo);
-  pthread_mutex_unlock(&travaRede);
+  r = rede_baixar_st_retry(url, prazo, NULL, &st, background?&metadata_retry:&retryAfterUltimo);
+  pthread_mutex_unlock(network_lock);
   if (!nv_perfil_sessao_atual(sessao)) { free(r); return NULL; }
   if (status) *status = st;
   return r;
+}
+// Draft account (setup wizard): never persisted, same serialized transport.
+char *xtream_consultar(const char *srv, const char *user, const char *password,
+                       const char *acao, int prazo, int *status) {
+  return consultar(srv, user, password, acao, prazo, status, nv_perfil_sessao_ler(), 0);
+}
+char *xtream_consultar_metadata(const char *srv, const char *user, const char *password,
+                               const char *acao, int prazo, int *status) {
+  return consultar(srv,user,password,acao,prazo,status,nv_perfil_sessao_ler(),1);
+}
+static char *chamarSt(const char *acao, int prazo, int *status, NvPerfilSessao sessao) {
+  char srv[256], user[96], password[96];
+  char *r;
+  if (status) *status = 0;
+  pthread_mutex_lock(&trava);
+  if (!nv_perfil_sessao_travar(sessao)) { pthread_mutex_unlock(&trava); return NULL; }
+  carregarTravado();
+  snprintf(srv, sizeof srv, "%s", servidor);
+  snprintf(user, sizeof user, "%s", usuario);
+  snprintf(password, sizeof password, "%s", senha);
+  nv_perfil_sessao_destravar();
+  pthread_mutex_unlock(&trava);
+  r = consultar(srv, user, password, acao, prazo, status, sessao, 0);
+  memset(password, 0, sizeof password);
+  return r;
+}
+void xtream_dados_copiar(char *server,unsigned ns,char *user,unsigned nu,char *password,unsigned np){
+  pthread_mutex_lock(&trava);carregarTravado();
+  snprintf(server,ns,"%s",servidor);snprintf(user,nu,"%s",usuario);snprintf(password,np,"%s",senha);
+  pthread_mutex_unlock(&trava);
+}
+char *xtream_consultar_salvo(const char *action,int seconds,int *status){return chamarSt(action,seconds,status,nv_perfil_sessao_ler());}
+int xtream_vod_url(const char *id,const char *ext,int episode,char *out,unsigned cap) {
+  char user[300],password[300];
+  if(!id || !*id || !ext || !*ext)return 0;
+  for(const char *p=id;*p;p++)if(*p<'0'||*p>'9')return 0;
+  for(const char *p=ext;*p;p++)if(!((*p>='a'&&*p<='z')||(*p>='0'&&*p<='9')))return 0;
+  pthread_mutex_lock(&trava);carregarTravado();
+  urlenc(usuario,user,sizeof user);urlenc(senha,password,sizeof password);
+  int n=snprintf(out,cap,"%s/%s/%s/%s/%s.%s",servidor,episode?"series":"movie",user,password,id,ext);
+  int ok=servidor[0]&&user[0]&&password[0]&&n>0&&(unsigned)n<cap;
+  pthread_mutex_unlock(&trava);memset(password,0,sizeof password);
+  if(!ok && cap)out[0]=0;
+  return ok;
 }
 #define retryCanal (fonteFio()->retry)
 int xtream_ultimo_retry_after(void) { return retryCanal; }
@@ -543,7 +589,7 @@ int xtream_canais_cb_sessao(void (*cat)(const char *nome, int ordem, int n, void
         if (passo == 0) { contagens[ci >= 0 ? ci : nCat]++; total++; }
         else {
           XtreamItem it;
-          char arq[8];
+          char arq[8],streamType[32]="",ext[16]="mp4",vodUrl[2048]="";
           memset(&it, 0, sizeof it);
           snprintf(c.id, sizeof c.id, "xtream:%s", sid);
           c.logo[0] = c.epgId[0] = 0;
@@ -556,6 +602,10 @@ int xtream_canais_cb_sessao(void (*cat)(const char *nome, int ordem, int n, void
             if (strncmp(s, "http://", 7) && strncmp(s, "https://", 8)) *s = 0;
             memmove(c.logo, s, strlen(s) + 1); }
           js_texto(p, fim, "epg_channel_id", c.epgId, sizeof c.epgId);
+          js_texto(p,fim,"stream_type",streamType,sizeof streamType);
+          it.kind=ltv_kind(streamType,"",c.nome,"",c.epgId,0);
+          if(it.kind){js_texto(p,fim,"container_extension",ext,sizeof ext);xtream_vod_url(sid,ext[0]?ext:"mp4",it.kind==3,vodUrl,sizeof vodUrl);}
+          it.url=vodUrl;
           it.id = c.id; it.nome = c.nome; it.logo = c.logo; it.epgId = c.epgId;
           it.categoria = ci >= 0 ? cats[ci].nome : "Outros";
           it.catOrdem = ci >= 0 ? cats[ci].ordem : nCat;

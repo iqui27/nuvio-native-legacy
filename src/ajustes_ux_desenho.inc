@@ -175,12 +175,9 @@ static void ajIlhaMiolo(GfxRect r, float raioPx, float miolo) {
 // Superficie de FOCO de linha: um degrau mais clara (vidro 12%, solido #2B2D34).
 static void ajFocoLinha(GfxRect r, float raioPx, float f, float a) {
   if (f <= 0.01f) return;
+  if (gfx_foco_placa(r, raioPx / r.h, f, a)) return;
   if (ajVid()) {
-    float ar, ag, ab;
-    if (gfx_foco_placa(r, raioPx / r.h, f, a)) return;
     gfx_cor(r, raioPx / r.h, 1, 1, 1, 0.12f * f * a);
-    ajustes_acento(&ar, &ag, &ab);
-    gfx_vidro_aro(r, raioPx / r.h, 2.0f, ar, ag, ab, 0.96f * f * a);
   }
   else {
     gfx_rect((GfxRect){ r.x - 10, r.y + 2, r.w + 20, r.h + 26 }, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.30f * f * a);
@@ -765,13 +762,14 @@ static int ajLinhaFilha(int i) {
 // filhas recuadas (a mae esta logo acima, a frase explica o apagado).
 static int ajLinhaAviso(int i) {
   int op = TELA[i].op;
-  return inativa(op) && uxRequisito(op) >= 0 && (aj2FocoNaLista(i) || ajLinhaFilha(i));
+  return inativa(op) && (aj2FocoNaLista(i) || ajLinhaFilha(i));
 }
 static int uxLigarRequisitos(int op, int aplicar);
 static void ajAvisoTexto(int op, char *b, size_t n) {
   int req = uxRequisito(op);
   const char *nome = req >= 0 ? i18n(rotuloOpcao(req)) : "";
   int liga = uxLigarRequisitos(op, 0);
+  if (req < 0) { primeiraFrase(i18n(ajudaOpcaoBase(op)), b, n); return; }
   if (liga == 2) snprintf(b, n, i18n("Precisa ligar \"%s\" — OK liga as duas"), nome);
   else if (liga == 1) snprintf(b, n, i18n("Precisa ligar \"%s\" — OK liga"), nome);
   else snprintf(b, n, i18n("Depende de \"%s\" — OK mostra"), nome);
@@ -882,7 +880,7 @@ static void ajDesenharIndice(void) {
     // Na janela recortada so entram categorias inteiras: meia linha cortada
     // pelo recorte parece defeito, nao rolagem.
     if (indRecorte && (r.y < ilha.y + 7.0f || r.y + 58.0f > indFim + 1.0f)) { y += 62.0f; continue; }
-    if (foco) ajNeutro(r, 29.0f, 0.14f, 0.169f, 0.176f, 0.204f, 1);
+    if (foco) { if (!gfx_foco_placa(r, .5f, 1, 1)) ajNeutro(r, 29.0f, 0.14f, 0.169f, 0.176f, 0.204f, 1); }
     else if (sel) gfx_cor((GfxRect){ r.x + 7.0f, r.y + 26.5f, 5, 5 }, 0.5f, ar, ag, ab, 1);
     ajIcone(icone, r.x + 20.0f, r.y + 16.0f, 26.0f, al);
     { TxtLinha t = ajTxtC(TXT_AJ_ITEM, titulo, r.w - 82.0f);
@@ -1503,5 +1501,6 @@ static float ajEf(const char *icone, const char *s, float x, float y, float w, f
 #include "ajustes_ux_ilha.inc"
 #include "ajustes_ux_fileiras.inc"
 #include "ajustes_ux_guia.inc"
+#include "ajustes_ux_tour.inc"     // "O que o Nuvio faz?" (2.1)
 #include "ajustes_ux_apoio.inc"
 #include "ajustes_ux_secoes.inc"

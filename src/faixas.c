@@ -878,7 +878,7 @@ static void escolherLegenda(int i) {
       if (l) {
         /* A fonte e os 16 tamanhos agora sao nossos, nao do firmware webOS. */
         // F05: legsync carrega pelo mesmo legenda.c e guarda o documento.
-        video_escolher_legenda(-1); legsync_primaria_externa(l->url, l->idioma, l->provedor); legExterna = i;
+        video_escolher_legenda(-1); legsync_primaria_externa(l->url, legenda_idioma(l->idioma, l->arquivo), l->provedor); legExterna = i;
         if (!emTroca) pilExterna(l);
         legendasui_id_addon(l, legExternaId);
       }
@@ -2156,7 +2156,7 @@ void faixas_escolher_externa(const Legenda *l) {
   mkvass_parar();
   legOverlay = -1; legOverlayEsperando = -1; legOverlayRetomar = 0; legOverlayTV = 0;
   video_escolher_legenda(-1);
-  legsync_primaria_externa(l->url, l->idioma, l->provedor);   // F05: carrega e vira documento do AutoSync
+  legsync_primaria_externa(l->url, legenda_idioma(l->idioma, l->arquivo), l->provedor);   // F05: carrega e vira documento do AutoSync
   // emTroca = o AutoSync trocando sozinho: nao e escolha da pessoa.
   if (!emTroca) { pilExterna(l); lembrarAddon(l); }
   legendasui_id_addon(l, id);

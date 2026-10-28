@@ -51,6 +51,11 @@ typedef struct {
 // e exatamente o borrao que o dono viu comparando com o app web, onde o
 // navegador rasteriza no devicePixelRatio.
 static float escalaTxt = 1.0f;
+// Only provider text opts into verbatim glyphs; UI modes retain their policy.
+static int addonVerbatim;
+static char addonEmojiPath[600];
+static void addonEmojiFechar(void);
+static void addonLayoutFechar(void);
 // CAMADA AMPLIADA (gfx.h, "Tamanho da interface"). Dentro de uma camada com
 // gfx_escala() != 1 o texto e rasterizado em `corpo * escalaTxt * s` e a
 // linha guarda a medida dividida por esse fator: o layout da camada mede em
@@ -76,7 +81,8 @@ static float escalaTxt = 1.0f;
 // na C9. Cinco fatores vivos.
 #define TXT_NCAM 6
 static int camada;
-static char arabeBoldCaminho[600];   // face Bold real do Noto Naskh (#335), vazio ate txt_iniciar
+static char arabeBoldCaminho[600];   // Real Sans Arabic Bold (#335), set by txt_iniciar
+static char naskhBoldCaminho[600];   // Matching Bold for the Naskh fallback
 static int arabeCorpo;
 static void arabeBoldFechar(void);
 static int pisoCam[TXT_NCAM];
@@ -452,6 +458,13 @@ static const struct { int corpo, peso; } ESTILOS[TXT_NFONTES] = {
   { 28, PESO_REGULAR }, { 29, PESO_REGULAR }, { 30, PESO_REGULAR }, { 31, PESO_REGULAR },
   { 33, PESO_REGULAR }, { 34, PESO_REGULAR }, { 35, PESO_REGULAR }, { 39, PESO_REGULAR },
   { 20, PESO_REGULAR }, // TXT_SINOPSE_20
+  { 58, PESO_BOLD }, { 27, PESO_REGULAR }, { 28, PESO_MEDIUM },
+  { 16, PESO_BOLD }, { 17, PESO_REGULAR }, { 16, PESO_REGULAR },
+  { 24, PESO_MEDIUM },  // TXT_HERO_META_G
+  { 27, PESO_MEDIUM },  // TXT_HERO_META_GG
+  { 84, PESO_BOLD },    // TXT_FILMO_ANO
+  { 22, PESO_BOLD },    // TXT_PEN_ROW
+  { 19, PESO_REGULAR }, // TXT_PEN_VALUE
 };
 
 // CORPO E PESO de um estilo, para teste e diagnostico (o desenho nao usa:
@@ -574,6 +587,7 @@ static Uint32 decodifica(const unsigned char *p, int *n) {
 // entao este passe roda por quadro; e por isso que a saida rapida importa.
 static const char *semDecorativoSemGlifo(TTF_Font *fonte, TTF_Font *alt, TTF_Font *alt2,
                                          const char *s, char *dst, size_t tam) {
+  if (addonVerbatim) return s;
   const unsigned char *p = (const unsigned char *)s;
   size_t k = 0;
   int algum = 0;
@@ -706,7 +720,7 @@ static struct { unsigned long long h; unsigned n; unsigned char fam, estilo, var
 #define LG_MEM 4096
 #define LG_VIAS 4
 static struct { unsigned long long h; unsigned n; unsigned char fam, estilo, enf, var, ok, cam; int w; unsigned uso; } lgMem[LG_MEM];
-static unsigned lgRelogio;
+static unsigned lgRelogio, addonLayoutRevisao;
 // COBERTURA DAS FORMAS ARABES (bidi.c). Um bit por codepoint de FB50-FEFF, por
 // fonte: "ja perguntei" e "tem". Chaveado pelo ponteiro da fonte, esquecido junto
 // com as outras tabelas (a fonte pode ser fechada e reaberta).
@@ -715,7 +729,7 @@ static unsigned lgRelogio;
 #define AR_FONTES 8
 static struct { TTF_Font *f; unsigned char viu[(AR_N + 7) / 8], tem[(AR_N + 7) / 8]; } arMem[AR_FONTES];
 static TTF_Font *arLogada;
-static void fdEsquecer(void) { memset(fdMem, 0, sizeof fdMem); memset(lgMem, 0, sizeof lgMem); memset(arMem, 0, sizeof arMem); arLogada = NULL; }
+static void fdEsquecer(void) { addonLayoutRevisao++; memset(fdMem, 0, sizeof fdMem); memset(lgMem, 0, sizeof lgMem); memset(arMem, 0, sizeof arMem); arLogada = NULL; }
 
 // Fonte com que a linha `s` deve ser desenhada. Devolve a principal quando ela
 // da conta — que e o caso da esmagadora maioria das linhas.
@@ -1318,6 +1332,7 @@ int txt_iniciar(const char *dirRecursos, float escala) {
     if (bp) { snprintf(base, sizeof base, "%s", bp); SDL_free(bp); }
   }
 
+  snprintf(addonEmojiPath, sizeof addonEmojiPath, "%sfonts/addon-emoji.png", base);
   snprintf(caminhoPeso[TXT_FAMILIA_INTER][0], 512, "%sfonts/InterDisplay-Regular.ttf", base);
   snprintf(caminhoPeso[TXT_FAMILIA_INTER][1], 512, "%sfonts/InterDisplay-Medium.ttf", base);
   snprintf(caminhoPeso[TXT_FAMILIA_INTER][2], 512, "%sfonts/InterDisplay-Bold.ttf", base);
@@ -1355,11 +1370,8 @@ int txt_iniciar(const char *dirRecursos, float escala) {
     snprintf(caminhoPeso[TXT_FAMILIA_DROID][p], 512, "%s", "/usr/share/fonts/DroidSans.ttf");
 #endif
 
-  // Fontes de RESERVA (ver Escrita), em ordem de preferencia por escrita. Na TV
-  // sao as de sistema (LG e Droid, medidas no cmap de uma C9); no Mac, as do
-  // sistema que cobrem cada escrita — ali isto e so para a previa nao mentir; e
-  // por ultimo, para o CJK e o arabe, o subconjunto embarcado (o WASM da Samsung
-  // nao tem fonte de sistema nenhuma).
+  // Fallback fonts, in preference order per script. Arabic and Thai prefer
+  // bundled UI sans faces; CJK prefers TV system fonts before its subset.
   // Largura RES_CAND: as listas abaixo tem no maximo 7 caminhos, e o laco para
   // no NULL. Com um vetor menor que a lista o terminador era descartado em
   // silencio e a busca seguia lendo a linha de baixo.
@@ -1367,14 +1379,16 @@ int txt_iniciar(const char *dirRecursos, float escala) {
   snprintf(cjkEmbarcada, sizeof cjkEmbarcada, "%sfonts/DroidSansFallback-Subset.ttf", base);
   // Arabe: a Samsung nao traz fonte arabe (#253, #258). O recorte tem as formas
   // de apresentacao que o bidi.c produz (tools/fonte-arabe.py).
-  char arabeEmbarcada[600];
-  snprintf(arabeEmbarcada, sizeof arabeEmbarcada, "%sfonts/NotoNaskhArabic-Subset.ttf", base);
+  char arabeEmbarcada[600], naskhEmbarcada[600];
+  snprintf(arabeEmbarcada, sizeof arabeEmbarcada, "%sfonts/NotoSansArabic-Regular-Subset.ttf", base);
+  snprintf(naskhEmbarcada, sizeof naskhEmbarcada, "%sfonts/NotoNaskhArabic-Subset.ttf", base);
   // Tailandes (#369): nenhuma outra fonte embarcada tem os glifos U+0E01-0E5B, e
   // o DroidSansFallback-Subset e a Roboto/Inter tambem nao. Noto Sans Thai v2.002
   // Regular (OFL), inteira, 21 KB.
   char tailandesEmbarcada[600];
   snprintf(tailandesEmbarcada, sizeof tailandesEmbarcada, "%sfonts/NotoSansThai-Regular.ttf", base);
-  snprintf(arabeBoldCaminho, sizeof arabeBoldCaminho, "%sfonts/NotoNaskhArabic-Bold.ttf", base);
+  snprintf(arabeBoldCaminho, sizeof arabeBoldCaminho, "%sfonts/NotoSansArabic-Bold-Subset.ttf", base);
+  snprintf(naskhBoldCaminho, sizeof naskhBoldCaminho, "%sfonts/NotoNaskhArabic-Bold.ttf", base);
   { const char *cand[ESC_N][RES_CAND + 1] = {
       /* ESC_CJK (japones)  */ { "/usr/share/fonts/LG_Display_JP.ttf",
                                  "/usr/share/fonts/DroidSansFallback.ttf",
@@ -1400,13 +1414,14 @@ int txt_iniciar(const char *dirRecursos, float escala) {
                                  "/system/fonts/NotoSansCJK-Regular.ttc",
                                  "/system/fonts/NotoSansTC-Regular.otf",
                                  cjkEmbarcada, NULL },
-      /* ESC_ARABE          */ { "/usr/share/fonts/DroidNaskh-Regular.ttf",
+      /* ESC_ARABE          */ { arabeEmbarcada,
+                                 "/usr/share/fonts/DroidNaskh-Regular.ttf",
                                  "/usr/share/fonts/LG_Display_Urdu.ttf",
                                  "/System/Library/Fonts/Supplemental/GeezaPro.ttc",
                                  "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
                                  "/system/fonts/NotoNaskhArabic-Regular.ttf",
                                  "/system/fonts/NotoSansArabic-Regular.ttf",
-                                 arabeEmbarcada, NULL },
+                                 naskhEmbarcada, NULL },
       /* ESC_TAILANDES      */ { tailandesEmbarcada,
                                  "/system/fonts/NotoSansThai-Regular.ttf",
                                  "/system/fonts/NotoSansThaiUI-Regular.ttf",
@@ -1427,7 +1442,7 @@ int txt_iniciar(const char *dirRecursos, float escala) {
       for (int i = 0; cand[e][i] && n < RES_CAND; i++) {
         FILE *fr;
         if (soEmbarcada && cand[e][i] != cjkEmbarcada && cand[e][i] != arabeEmbarcada &&
-            cand[e][i] != tailandesEmbarcada) continue;
+            cand[e][i] != naskhEmbarcada && cand[e][i] != tailandesEmbarcada) continue;
         fr = fopen(cand[e][i], "rb");
         if (fr) { fclose(fr);
                   snprintf(caminhoReserva[e][n], sizeof caminhoReserva[e][n], "%s", cand[e][i]);
@@ -1454,6 +1469,8 @@ int txt_iniciar(const char *dirRecursos, float escala) {
 }
 
 void txt_encerrar(void) {
+  addonEmojiFechar();
+  addonLayoutFechar();
   for (int k = 0; k < TXT_NCAM; k++) importadasFechar(k);
   importadasRevisao = 0;
   arabeBoldFechar();
@@ -1482,7 +1499,7 @@ void txt_encerrar(void) {
 }
 
 // UMA LINHA, MAIS DE UMA FONTE. A linha com arabe vai inteira para a fonte de
-// reserva (fonteDe), e na Samsung a unica e a NotoNaskhArabic-Subset.ttf
+// reserva (fonteDe), preferindo a NotoSansArabic-Regular-Subset.ttf
 // embarcada, que NAO TEM LATIM: so espaco, digitos e ", . : !". Um "·" da linha
 // de meta, os parenteses, aspas «», o hifen, o "…" do corte e qualquer nome em
 // latim ("Breaking Bad") no meio da sinopse saiam como .notdef — os quadrados
@@ -1532,16 +1549,14 @@ static int corridasDe(TTF_Font *f, TTF_Font *a, TTF_Font *b, const char *s,
   return n;
 }
 
-// #335: negrito SINTETICO sobre arabe estraga a escrita. O Noto Naskh embarcado
-// so tem a face Regular, e o SDL_ttf engorda o bitmap ja rasterizado: as letras
-// ligadas (formas de apresentacao de bidi.c) se fundem e os pontos viram borrao.
-// Texto arabe fica no peso Regular; so o latim da mesma linha recebe o negrito.
+// #335: synthetic Arabic bold merges joined glyphs and blurs dots. Use the
+// real Arabic Bold face; Latin in mixed lines keeps its own emphasis.
 static int txtTemLatim(const char *s) {
   for (; s && *s; s++) if ((*s >= 'A' && *s <= 'Z') || (*s >= 'a' && *s <= 'z')) return 1;
   return 0;
 }
 
-// Face Bold REAL do Noto Naskh, aberta sob demanda e ajustada a altura da
+// Real Arabic Bold face, opened on demand and matched to the height of the
 // regular da linha (#440). Sem o arquivo: arabe sem negrito sintetico.
 // Cache por camada, corpo da linha e face regular.
 #define ARABE_BOLD_N 32
@@ -1549,18 +1564,20 @@ static struct { int corpo; TTF_Font *regular, *f; } arabeBoldCache[TXT_NCAM][ARA
 static TTF_Font *arabeBoldFace(TTF_Font *regular) {
   int i;
   if (!regular || !arabeBoldCaminho[0] || arabeCorpo < 4) return NULL;
+  const char *family = TTF_FontFaceFamilyName(regular);
+  const char *path = family && !strcmp(family, "Noto Sans Arabic") ? arabeBoldCaminho : naskhBoldCaminho;
   for (i = 0; i < ARABE_BOLD_N; i++) {
     if (arabeBoldCache[camada][i].corpo == arabeCorpo &&
         arabeBoldCache[camada][i].regular == regular) return arabeBoldCache[camada][i].f;
     if (!arabeBoldCache[camada][i].corpo) {
       arabeBoldCache[camada][i].corpo = arabeCorpo;   // tentou: f NULL = arquivo ausente
       arabeBoldCache[camada][i].regular = regular;
-      arabeBoldCache[camada][i].f = TTF_OpenFont(arabeBoldCaminho, arabeCorpo);
+      arabeBoldCache[camada][i].f = TTF_OpenFont(path, arabeCorpo);
       int corpo = arabeBoldCache[camada][i].f ?
           corpoNegrito(regular, arabeBoldCache[camada][i].f, arabeCorpo, 0xFEE1) : arabeCorpo;
       if (arabeBoldCache[camada][i].f && corpo != arabeCorpo && corpo >= 4) {
         TTF_CloseFont(arabeBoldCache[camada][i].f);
-        arabeBoldCache[camada][i].f = TTF_OpenFont(arabeBoldCaminho, corpo);
+        arabeBoldCache[camada][i].f = TTF_OpenFont(path, corpo);
       }
       if (arabeBoldCache[camada][i].f)
         printf("[leg] negrito arabe: face Bold real, %d px\n", corpo);
@@ -1592,6 +1609,10 @@ static void estiloVolta(TTF_Font *g, TTF_Font *f, int ant) {
 
 static int medirCorridas(TTF_Font *f, TTF_Font *a, TTF_Font *b, const char *s,
                          int extra, int *w) {
+#ifdef NV_ADDON_LAYOUT_TEST
+  extern void fonte_addon_measure(void);
+  fonte_addon_measure();
+#endif
   Corrida c[TXT_CORR_MAX];
   int n = corridasDe(f, a, b, s, c, TXT_CORR_MAX), i, soma = 0;
   if (n <= 1) { int h; return TTF_SizeUTF8(f, s, w, &h); }
@@ -1654,6 +1675,125 @@ static SDL_Surface *renderCorridas(TTF_Font *f, TTF_Font *a, TTF_Font *b,
     x += sf[i]->w;
     SDL_FreeSurface(sf[i]);
   }
+  return out;
+}
+
+// Color emoji are composed into the same cached surface as their text runs.
+#include <SDL2/SDL_image.h>
+#include "emoji_atlas.h"
+static SDL_Surface *addonAtlas;
+static int addonAtlasTried;
+static void addonEmojiFechar(void) {
+  SDL_FreeSurface(addonAtlas); addonAtlas = NULL; addonAtlasTried = 0;
+}
+// Longest match keeps regional-indicator pairs and variation selectors atomic.
+static int addonEmoji(const char *s, int *bytes) {
+  unsigned cp[3] = {0}; int ends[3] = {0}, count = 0;
+  const unsigned char *p = (const unsigned char *)s;
+  while (*p && count < 3) {
+    int nb;
+    cp[count] = decodifica(p, &nb); p += nb;
+    ends[count++] = (int)((const char *)p - s);
+  }
+  size_t low = 0, high = sizeof emojiKeys / sizeof *emojiKeys;
+  while (low < high) {
+    size_t mid = low + (high - low) / 2;
+    if (emojiKeys[mid][0] < cp[0]) low = mid + 1; else high = mid;
+  }
+  for (int len = count; len > 0; len--)
+    for (size_t i = low; i < sizeof emojiKeys / sizeof *emojiKeys && emojiKeys[i][0] == cp[0]; i++) {
+      int match = 1;
+      for (int j = 0; j < 3; j++) if (emojiKeys[i][j] != (j < len ? cp[j] : 0)) match = 0;
+      if (match) {
+        *bytes = ends[len - 1];
+        if (!strncmp(s + *bytes, "\xef\xb8\x8f", 3)) *bytes += 3;
+        return (int)i;
+      }
+    }
+  return -1;
+}
+
+static int addonRun(TxtEstilo style, const char *p, char *run, int *emoji) {
+  int nb;
+  *emoji = addonEmoji(p, &nb);
+  if (*emoji >= 0) { run[0] = 0; return nb; }
+  int n = 0;
+  while (p[n] && n < 2040) {
+    int k;
+    if (n && addonEmoji(p + n, &k) >= 0) break;
+    decodifica((const unsigned char *)p + n, &k);
+    if (n + k >= 2048) break;
+    memcpy(run + n, p + n, (size_t)k); n += k;
+  }
+  run[n] = 0;
+  (void)style;
+  return n;
+}
+
+// Both measurement and rasterization use these exact run widths/heights.
+static SDL_Surface *addonSurface(TxtEstilo style, const char *s, SDL_Color color,
+                                  TxtFamilia family, int draw, int *width, int *height) {
+  int w = 0, h = 0, pass;
+  SDL_Surface *out = NULL;
+  int em = (int)(corpoAtual(style) * ESC_T + .5f);
+  for (pass = 0; pass <= draw; pass++) {
+    int x = 0;
+    for (const char *p = s; *p;) {
+      char run[2048]; int id, n = addonRun(style, p, run, &id), rw = em, rh = em;
+      SDL_Surface *part = NULL;
+      if (!n) break;
+      if (id < 0) {
+        TTF_Font *f = fonteDe(family, style, run), *a, *b;
+        if (f) {
+          char vis[4096]; altDe(family, style, f, &a, &b);
+          const char *v = visualDe(f, run, vis, sizeof vis);
+          medirCorridas(f, a, b, v, 0, &rw);
+          // Run height includes every fallback face, even during measure-only.
+          Corrida c[TXT_CORR_MAX]; int nc = corridasDe(f, a, b, v, c, TXT_CORR_MAX);
+          int ascent = 0, below = 0;
+          for (int j = 0; j < nc; j++) {
+            int a = TTF_FontAscent(c[j].f), b = TTF_FontHeight(c[j].f) - a;
+            if (a > ascent) ascent = a;
+            if (b > below) below = b;
+          }
+          rh = ascent + below;
+          if (pass) {
+            part = renderCorridas(f, a, b, v, color, 0);
+            if (part) { rw = part->w; rh = part->h; }
+          }
+        }
+      }
+      if (!pass) { w += rw; if (rh > h) h = rh; }
+      else if (out) {
+        SDL_Rect dest = {x, (h - rh) / 2, rw, rh};
+        if (id >= 0) {
+          if (!addonAtlasTried) {
+            addonAtlasTried = 1;
+            SDL_Surface *loaded = IMG_Load(addonEmojiPath);
+            if (loaded) addonAtlas = SDL_ConvertSurfaceFormat(loaded, SDL_PIXELFORMAT_ARGB8888, 0);
+            SDL_FreeSurface(loaded);
+          }
+          if (addonAtlas) {
+            SDL_Rect src = {(id % EMOJI_COLUMNS) * 32, (id / EMOJI_COLUMNS) * 32, 32, 32};
+            SDL_BlitScaled(addonAtlas, &src, out, &dest);
+          }
+        } else if (part) SDL_BlitSurface(part, NULL, out, &dest);
+      }
+#ifdef NV_ADDON_LAYOUT_TEST
+      if (pass && out) {
+        extern void fonte_addon_box(int x, int y, int w, int h, int emoji);
+        fonte_addon_box(x, (h-rh)/2, rw, rh, id);
+      }
+#endif
+      SDL_FreeSurface(part); x += rw; p += n;
+    }
+    if (!pass && draw && w > 0 && h > 0) {
+      out = nv_superficie(0, w, h, 32, SDL_PIXELFORMAT_ARGB8888);
+      if (out) SDL_FillRect(out, NULL, 0);
+    }
+  }
+  if (width) *width = w;
+  if (height) *height = h;
   return out;
 }
 
@@ -1738,6 +1878,11 @@ static TxtLinha linhaCache(TxtEstilo estilo, const char *s, int r, int g, int b,
     if (!*s) return vazia;
   } else snprintf(pre, sizeof pre, "T%d|", (int)(*trk * 100.0f + (*trk < 0 ? -0.5f : 0.5f)));
 
+  if (addonVerbatim) {
+    unsigned textHash = 2166136261u;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) textHash = (textHash ^ *p) * 16777619u;
+    snprintf(pre, sizeof pre, "A%08x|", textHash);
+  }
   char chave[288];
   // A VARIANTE CJK entra na chave: o mesmo hanzi tem forma de japones, de chines
   // simplificado e de tradicional (ver Escrita), e trocar o idioma da interface
@@ -1850,6 +1995,11 @@ static TxtLinha linhaFamilia(TxtEstilo estilo, const char *s, int r, int g,
 // A superficie de uma linha ja limpa, no formato da textura.
 static SDL_Surface *rasterLinha(TxtEstilo estilo, const char *s, SDL_Color cor,
                                 TxtFamilia familia, int enfase) {
+  if (addonVerbatim) {
+    SDL_Surface *sf = addonSurface(estilo, s, cor, familia, 1, NULL, NULL);
+    SDL_Surface *cv = sf ? SDL_ConvertSurfaceFormat(sf, SDL_PIXELFORMAT_ABGR8888, 0) : NULL;
+    SDL_FreeSurface(sf); return cv;
+  }
   TTF_Font *fonte = fonteLegendaDe(estilo, s, familia), *alt1, *alt2;
   if (!fonte) return NULL;
   altDe(familia, estilo, fonte, &alt1, &alt2);
@@ -1950,7 +2100,7 @@ static int larguraLinhaMedir(TxtEstilo estilo, const char *s, TxtFamilia familia
                              int enfase);
 static int larguraLinha(TxtEstilo estilo, const char *s, TxtFamilia familia,
                         int enfase) {
-  unsigned long long h = 1469598103934665603ull;
+  unsigned long long h = 1469598103934665603ull ^ (unsigned)addonVerbatim;
   unsigned n = 0, slot;
   unsigned char var;
   int w;
@@ -1992,6 +2142,11 @@ static int larguraLinha(TxtEstilo estilo, const char *s, TxtFamilia familia,
 
 static int larguraLinhaMedir(TxtEstilo estilo, const char *s, TxtFamilia familia,
                              int enfase) {
+  if (addonVerbatim) {
+    int w = 0;
+    addonSurface(estilo, s, (SDL_Color){255,255,255,255}, familia, 0, &w, NULL);
+    return (int)(w / ESC_T + .5f);
+  }
   char limpo[1024], vis[1600];
   TTF_Font *fl = fonteDe(familia, estilo, s), *a1, *a2;
   if (!fl) return 0;
@@ -2021,6 +2176,142 @@ static int larguraLinhaMedir(TxtEstilo estilo, const char *s, TxtFamilia familia
   return (int)(w / ESC_T + 0.5f);
 }
 
+typedef struct { size_t start, len; float y, w, h; } AddonLine;
+typedef struct {
+  char *text;
+  AddonLine *line;
+  int count, style, family, layer, variant;
+  unsigned revision, use;
+  float width, height;
+} AddonLayout;
+// Only measured blocks live here; color and animation never invalidate layout.
+#define ADDON_LAYOUT_MAX 128
+static AddonLayout addonLayouts[ADDON_LAYOUT_MAX];
+static unsigned addonLayoutClock;
+static void addonLayoutFechar(void) {
+  for (int i=0;i<ADDON_LAYOUT_MAX;i++) {
+    free(addonLayouts[i].text); free(addonLayouts[i].line);
+  }
+  memset(addonLayouts,0,sizeof addonLayouts);
+}
+static AddonLayout *addonLayout(TxtEstilo style, const char *text, float width) {
+  camadaAtualizar(); importadasAtualizar();
+  int slot=0, variant=variacaoCjk();
+  for (int i=0;i<ADDON_LAYOUT_MAX;i++) {
+    AddonLayout *l=&addonLayouts[i];
+    if (l->text && l->style==style && l->family==fonteInterface &&
+        l->layer==camada && l->variant==variant && l->revision==addonLayoutRevisao &&
+        l->width==width && !strcmp(l->text,text)) {
+      l->use=++addonLayoutClock; return l;
+    }
+    if (l->use<addonLayouts[slot].use) slot=i;
+  }
+  AddonLayout *layout=&addonLayouts[slot];
+  free(layout->text); free(layout->line); memset(layout,0,sizeof *layout);
+  layout->text=strdup(text);
+  if (!layout->text) return NULL;
+  layout->style=style; layout->family=fonteInterface; layout->layer=camada;
+  layout->variant=variant; layout->width=width;
+  const char *s=layout->text;
+  float used=0;
+  addonVerbatim++;
+  const char *end = s + strlen(s);
+  while (end > s && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r' || end[-1] == '\n')) end--;
+  while (s < end) {
+    const char *hard = memchr(s, '\n', (size_t)(end - s));
+    const char *stop = hard ? hard : end;
+    do {
+      char line[2048]; size_t len = 0, word = 0;
+      const char *p = s;
+      while (p < stop) {
+        int nb, id = addonEmoji(p, &nb);
+        if (id < 0) decodifica((const unsigned char *)p, &nb);
+        if (len + nb >= sizeof line) break;
+        memcpy(line + len, p, (size_t)nb); line[len + nb] = 0;
+        int w = larguraLinha(style, line, fonteInterface, 0);
+        if (w > width && len) { line[len] = 0; break; }
+        if (*p == ' ' || *p == '\t') word = len + nb;
+        len += nb; p += nb;
+      }
+      if (p < stop && word && word < len) { len = word; p = s + len; }
+      line[len] = 0;
+      int w, h;
+      addonSurface(style, line[0] ? line : " ", (SDL_Color){255,255,255,255}, fonteInterface, 0, &w, &h);
+      float height = h / ESC_T;
+      float leading = height > 28 ? height + 2 : 28;
+      AddonLine *next=realloc(layout->line,(layout->count+1)*sizeof *next);
+      if (!next) { addonVerbatim--; free(layout->text); free(layout->line); memset(layout,0,sizeof *layout); return NULL; }
+      layout->line=next;
+      next[layout->count++]=(AddonLine){(size_t)(s-layout->text),len,used,w/ESC_T,height};
+      used += leading;
+      s = p;
+    } while (s < stop);
+    s = hard ? hard + 1 : end;
+  }
+  addonVerbatim--;
+  layout->height=used; layout->revision=addonLayoutRevisao;
+  layout->use=++addonLayoutClock;
+  return layout;
+}
+
+float txt_addon_altura(TxtEstilo style, const char *s, float width, int maxLines) {
+  if (!s || !*s || width<=0) return 0;
+  AddonLayout *l=addonLayout(style,s,width);
+  if (!l) return 0;
+  if (maxLines>0 && maxLines<l->count) return l->line[maxLines].y;
+  return l->height;
+}
+
+// Drawing reuses the measured line boundaries and tallest fallback glyph.
+float txt_addon_bloco(TxtEstilo style, const char *s, float x, float y, float width,
+                       int gray, float alpha, int *lines) {
+  if (lines) *lines=0;
+  if (!s || !*s || width<=0) return 0;
+  AddonLayout *layout=addonLayout(style,s,width);
+  if (!layout) return 0;
+  addonVerbatim++;
+  for (int i=0;i<layout->count;i++) {
+    AddonLine *l=&layout->line[i];
+    char line[2048]; memcpy(line,layout->text+l->start,l->len); line[l->len]=0;
+#ifdef NV_ADDON_LAYOUT_TEST
+    extern void fonte_addon_line(const char *text, float y, float w, float h, float limit);
+    fonte_addon_line(line,y+l->y,l->w,l->h,width);
+#endif
+    if (alpha>0 && line[0]) {
+#ifdef NV_ADDON_LAYOUT_TEST
+      extern void fonte_addon_visible(const char *text, float y, float h);
+      fonte_addon_visible(line,y+l->y,l->h);
+#endif
+      txt_desenhar_alpha(txt_linha_bruta(style,line,gray,gray,gray,255),x,y+l->y,alpha);
+    }
+  }
+  addonVerbatim--;
+  if (lines) *lines=layout->count;
+  return layout->height;
+}
+
+#ifdef NV_ADDON_LAYOUT_TEST
+int txt_addon_test_surface(TxtEstilo style, const char *s, int *width, int *height) {
+  camadaAtualizar(); addonVerbatim++;
+  SDL_Surface *surface = addonSurface(style,s,(SDL_Color){255,255,255,255},fonteInterface,1,width,height);
+  int color = 0;
+  if (surface) {
+    for (int y = 0; y < surface->h; y++) for (int x = 0; x < surface->w; x++) {
+      Uint8 r,g,b,a;
+      Uint32 pixel = ((Uint32 *)((char *)surface->pixels + y * surface->pitch))[x];
+      SDL_GetRGBA(pixel,surface->format,&r,&g,&b,&a);
+      if (a && (r != g || g != b)) color++;
+    }
+  }
+  SDL_FreeSurface(surface); addonVerbatim--;
+  return color;
+}
+#endif
+int txt_addon_emoji(const char *s, int *bytes) {
+  int id = addonEmoji(s, bytes);
+  return id >= 0;
+}
+
 int txt_largura_familia(TxtEstilo estilo, const char *s, TxtFamilia familia) {
   // Consultas de layout antes de txt_iniciar nao devem marcar fontes como
   // ausentes para sempre nem guardar uma largura zero no cache.
@@ -2033,6 +2324,10 @@ int txt_largura(TxtEstilo estilo, const char *s) {
 
 TxtLinha txt_linha(TxtEstilo estilo, const char *s, int r, int g, int b, int a) {
   return linhaFamilia(estilo, i18n(s), r, g, b, a, fonteInterface, 0);
+}
+
+TxtLinha txt_linha_bruta(TxtEstilo estilo, const char *s, int r, int g, int b, int a) {
+  return linhaFamilia(estilo, s, r, g, b, a, fonteInterface, 0);
 }
 
 TxtLinha txt_linha_familia(TxtEstilo estilo, const char *s, int r, int g,
@@ -2137,7 +2432,9 @@ float txt_tracking(TxtEstilo estilo, const char *s, int r, int g, int b,
     l = txt_linha(estilo, s, r, g, b, 255);
     larg = (float)txt_largura(estilo, s);
   } else l = linhaCache(estilo, s, r, g, b, 255, fonteInterface, 0, &tracking, &larg);
-  if (x >= 0.0f) txt_desenhar_alpha(l, x, y, alpha);
+  // Only the documented x = -1 probe skips drawing: 2.1 screens draw at
+  // negative virtual x when the large-text canvas is centred on the TV.
+  if (x != -1.0f) txt_desenhar_alpha(l, x, y, alpha);
   return larg;
 }
 
@@ -2192,10 +2489,7 @@ TxtLinha txt_linha_corta(TxtEstilo estilo, const char *s, int r, int g, int b,
 static TxtLinha cortaFamilia(TxtEstilo estilo, const char *s, int r, int g,
                              int b, int a, float maxW, TxtFamilia familia,
                              int enfase) {
-  // Traduzir ANTES de cortar: o corte mede a largura e insere as reticencias,
-  // e medir o portugues para desenhar o ingles poe as reticencias no lugar
-  // errado — ou corta um texto que caberia inteiro.
-  s = i18n(s);
+  // Callers translate UI keys before measuring; provider content stays verbatim.
   // Mede sem rasterizar: so a linha FINAL vira textura (ver larguraLinha).
   if (!s || !*s || (float)larguraLinha(estilo, s, familia, enfase) <= maxW)
     return linhaFamilia(estilo, s, r, g, b, a, familia, enfase);
@@ -2225,13 +2519,18 @@ static TxtLinha cortaFamilia(TxtEstilo estilo, const char *s, int r, int g,
 TxtLinha txt_linha_corta_familia(TxtEstilo estilo, const char *s, int r, int g,
                                  int b, int a, float maxW,
                                  TxtFamilia familia) {
-  return cortaFamilia(estilo, s, r, g, b, a, maxW, familia, 0);
+  return cortaFamilia(estilo, i18n(s), r, g, b, a, maxW, familia, 0);
 }
 
 TxtLinha txt_linha_corta_enfase(TxtEstilo estilo, const char *s, int r, int g,
                                 int b, int a, float maxW, TxtFamilia familia,
                                 int enfase) {
-  return cortaFamilia(estilo, s, r, g, b, a, maxW, familia, enfase);
+  return cortaFamilia(estilo, i18n(s), r, g, b, a, maxW, familia, enfase);
+}
+
+TxtLinha txt_linha_corta_bruta(TxtEstilo estilo, const char *s, int r, int g,
+                               int b, int a, float maxW) {
+  return cortaFamilia(estilo, s, r, g, b, a, maxW, fonteInterface, 0);
 }
 
 static void desenhaBlocoLinha(TxtEstilo estilo, const char *s, int r, int g, int b,
@@ -2332,9 +2631,9 @@ size_t txt_token_tam(const char *s) {
 
 static float txt_bloco_impl(TxtEstilo estilo, const char *s, int r, int g, int b,
                             float x, float y, float larg, float leading,
-                            float alpha, int maxLinhas, int reticencias) {
+                            float alpha, int maxLinhas, int reticencias, int traduz) {
   // Mesma razao do corte: a quebra de linha e feita no texto final.
-  s = i18n(s);
+  if (traduz) s = i18n(s);
   if (!s || !*s) return 0.0f;
   char linha[512]; linha[0] = 0;
   float usado = 0.0f;
@@ -2375,7 +2674,7 @@ static float txt_bloco_impl(TxtEstilo estilo, const char *s, int r, int g, int b
     memcpy(tentativa + nl, ini, np);
     tentativa[nl + np] = 0;
 
-    int mw = txt_largura(estilo, tentativa);
+    int mw = larguraLinha(estilo, tentativa, fonteInterface, 0);
     if (mw > larg && linha[0]) {
       if (reticencias && maxLinhas > 0 && nLinhas + 1 >= maxLinhas) {
         desenhaBlocoLinha(estilo, linha, r, g, b, x, y + usado, larg,
@@ -2384,7 +2683,7 @@ static float txt_bloco_impl(TxtEstilo estilo, const char *s, int r, int g, int b
       }
       // nao coube: fecha a linha atual e recomeca com a palavra
       if (alpha > 0.0f) {
-        TxtLinha l = txt_linha(estilo, linha, r, g, b, 255);
+        TxtLinha l = txt_linha_bruta(estilo, linha, r, g, b, 255);
         txt_desenhar_alpha(l, x, y + usado, alpha);
       }
       usado += leading; nLinhas++;
@@ -2394,7 +2693,7 @@ static float txt_bloco_impl(TxtEstilo estilo, const char *s, int r, int g, int b
       // cima ("... RELEASE ·" / "· NETFLIX"): quem separa ja ficou la. Some.
       if (np == 2 && (unsigned char)ini[0] == 0xC2 && (unsigned char)ini[1] == 0xB7)
         linha[0] = 0;
-      if (reticencias && txt_largura(estilo, linha) > larg) {
+      if (reticencias && larguraLinha(estilo, linha, fonteInterface, 0) > larg) {
         desenhaBlocoLinha(estilo, linha, r, g, b, x, y + usado, larg,
                           alpha, 1);
         return usado + leading;
@@ -2418,7 +2717,7 @@ static float txt_bloco_impl(TxtEstilo estilo, const char *s, int r, int g, int b
         return usado + leading;
       }
       if (linha[0] && alpha > 0.0f) {
-        TxtLinha l = txt_linha(estilo, linha, r, g, b, 255);
+        TxtLinha l = txt_linha_bruta(estilo, linha, r, g, b, 255);
         txt_desenhar_alpha(l, x, y + usado, alpha);
       }
       usado += leading; nLinhas++;
@@ -2432,7 +2731,7 @@ static float txt_bloco_impl(TxtEstilo estilo, const char *s, int r, int g, int b
                         alpha, 1);
     else {
       if (alpha > 0.0f) {
-        TxtLinha l = txt_linha(estilo, linha, r, g, b, 255);
+        TxtLinha l = txt_linha_bruta(estilo, linha, r, g, b, 255);
         txt_desenhar_alpha(l, x, y + usado, alpha);
       }
     }
@@ -2445,14 +2744,21 @@ float txt_bloco(TxtEstilo estilo, const char *s, int r, int g, int b,
                 float x, float y, float larg, float leading, float alpha,
                 int maxLinhas) {
   return txt_bloco_impl(estilo, s, r, g, b, x, y, larg, leading, alpha,
-                        maxLinhas, 0);
+                        maxLinhas, 0, 1);
 }
 
 float txt_bloco_corta(TxtEstilo estilo, const char *s, int r, int g, int b,
                       float x, float y, float larg, float leading,
                       float alpha, int maxLinhas) {
   return txt_bloco_impl(estilo, s, r, g, b, x, y, larg, leading, alpha,
-                        maxLinhas, 1);
+                        maxLinhas, 1, 1);
+}
+
+float txt_bloco_bruto(TxtEstilo estilo, const char *s, int r, int g, int b,
+                      float x, float y, float larg, float leading, float alpha,
+                      int maxLinhas) {
+  return txt_bloco_impl(estilo, s, r, g, b, x, y, larg, leading, alpha,
+                        maxLinhas, 0, 0);
 }
 
 // Quebra igual a txt_bloco, mas posiciona cada linha pela BORDA DIREITA. A

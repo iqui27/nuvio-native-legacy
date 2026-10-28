@@ -14,6 +14,7 @@
 #include <SDL2/SDL.h>
 #include <stdint.h>
 #include "streamfit.h"
+#include "mediaurl.h"
 #include "fontefalha.h"
 #include "fontefiltro.h"
 
@@ -28,12 +29,15 @@ typedef struct Stream {
   // 0 = URL do addon; servico nativo + 1 quando resolvida pelo failover.
   int debridServico;
   int urlP2P; // provenance da resolucao manual; nao e servico de debrid
+  uint64_t addonIdentidade; /* Installation identity; survives cache and list reorder. */
+  int appResolvido; /* URL obtained by the app; never confused with an addon HTTP link. */
   // 1024 e nao 512. MEDIDO: os links de reproducao do AIOStreams tem 525 a 547
   // caracteres (dois segmentos assinados), e com 512 TODOS eram cortados em
   // silencio. O servidor entao respondia com um MP4 de aviso de 120s que TOCA
   // NORMALMENTE — o app parecia funcionar e mostrava o cartao de erro. Nao ha
   // erro para detectar nesse caminho, so o tamanho do campo.
-  char url[4096];
+  // Complete signed URL; storage follows the lifetime of each list/value copy.
+  char url[NV_MEDIA_URL_MAX];
   int  altura;          // 2160, 1080, 720...
   int  dolbyVision;
   int  dolbyAtmos;
@@ -112,6 +116,7 @@ typedef struct Stream {
   // inferir cache de URL direta, nome do provedor ou ausencia de foraCache.
   // So serve ao indicador/filtro da folha, nao a politica de reproducao.
   int  emCache;
+  int conferencia;     // FA_*: actual probe result for this list, never inferred from a URL.
   // isCached:false tambem pode vir com URL direta ainda tocavel. A negativa
   // e visual: nao muda a elegibilidade operacional de foraCache. Uma consulta
   // nativa que confirme a disponibilidade limpa esta declaracao anterior.
@@ -171,6 +176,10 @@ void stream_canal_enriquecer(Stream *s);
 int stream_folha_recarregar(void);
 // Abertura animada da folha (0..1): o player apaga o OSD por baixo dela.
 float stream_folha_anim(void);
+// Watch Together: a strip with each TV's ready state under the tabs. Set by
+// juntosui; height 0 hides it.
+extern float (*stream_folha_sala_h)(void);
+extern void (*stream_folha_sala_desenhar)(float x, float y, float w, float a);
 
 // Substitui a lista do titulo corrente. Chamar quando os addons responderem.
 void stream_definir_lista(const Stream *lista, int n);
@@ -260,6 +269,7 @@ int  stream_proxima_sem_perda(int atual);
 // Primeira VOD nao tentada na ordem do addon, inclusive antes da atual.
 // Pula a atual e as ja falhadas; leitura protegida contra troca de lista.
 int  stream_proxima_vod(int atual);
+int  stream_incompativel(int indice);
 // Confere a proxima da ordem do addon fora do fio de desenho; -1 se acabou.
 // Devolve tambem quantas candidatas consumiram o orcamento (se nao NULL).
 int  stream_verificar_proxima_vod(int atual, int tentativas, int *conferidas);
@@ -327,6 +337,8 @@ void stream_vod_tocou(int indice);
 long stream_vod_falhou_ha(int indice);
 int  stream_automatico_excluir(int indice);
 int  stream_automatico_excluida(int indice); // Current-list retry exclusion.
+// A warning clip ends this provider's attempts for the current list.
+int  stream_automatico_excluir_aviso(int indice);
 // Exclui tambem as IRMAS da candidata (mesmo addon e mesmo rotulo), mas so
 // quando sobra outra candidata: quando o player nao conectou numa, as outras
 // costumam falhar igual.
@@ -367,6 +379,8 @@ int stream_primeira_boa_sessao(int tentativas, uint64_t sessao);
 // TOCAR ENQUANTO CONFERE (fonteantecipa.h): o indice da candidata que o player
 // ja pode abrir enquanto a conferencia dela roda, e o estado (FA_*). -1 = nada.
 int  stream_antecipada(int *estado);
+// Shared presentation state: checking overrides cache, a failed probe stays failed.
+int stream_fonte_estado(int indice);
 // Ate `max` URLs (256 bytes cada; so o host importa) das primeiras fontes que o
 // automatico tentaria, para aquecer.c abrir a conexao antes. Nunca resolve nada.
 int  stream_urls_para_aquecer(char dst[][256], int max);
@@ -393,8 +407,13 @@ long stream_pontos(const Stream *s);
 int  stream_e_mp4(const Stream *s);
 // R9b: o que a tela mostra (1/0; -1 = desconhecido, o padrao, nao penaliza).
 void stream_definir_tela(int hdr, int dv);
+/* Observed hardware capability, -1 when the backend has not reported it. */
+void stream_capacidades(int *hdr,int *dv,int *hevc,int *av1);
 // Android: -1 desconhecido, 0 sem decoder 3840x2160, 1 suportado. Nao filtra a folha manual.
 void stream_definir_decoder4k(int hevc, int avc, int vp9, int av1);
+// Effective playback support: decode, conversion or passthrough. -1 unknown.
+void stream_definir_audio_capacidades(int truehd, int dts, int dtshd, int eac3, int ac3);
+int stream_incompat_padrao(int regra);
 // Erro Media3 no automatico: nao repetir tamanho/codec nesta lista. `renderer`
 // diz de onde veio o erro: 0 video, 1 audio, 2 desconhecido. Erros de audio
 // (EAC3/AC4 sem suporte) nao bloqueiam codecs de video.
@@ -452,6 +471,12 @@ int  stream_canal_prazo_longo(int idx);
 
 // --- folha de fontes (a lista que sobe por cima do player/detalhe) ---
 void stream_folha_abrir(void);
+void stream_folha_servidor(int provider); // -1 all, 0 Plex, 1 Jellyfin, 2 Emby
+/* Open the same Sources sheet for guide-channel choices without replacing
+ * the playback source list. Publish rows through fontescanais.h. */
+void stream_folha_canais_abrir(const char *titulo);
+int stream_folha_canais_aberta(void);
+void stream_folha_canais_fechar(void);
 // Root feeds an actual movie/episode metadata runtime or measured media
 // duration for this exact target. Never supply PLR_DUR_PADRAO, a season's
 // total runtime or a guessed "45 minutes". 0/unknown clears provenance.
@@ -485,6 +510,8 @@ int  stream_detalhe_tecla_abre(const SDL_Event *e);
 // nada. tests/fontes_lista.sh prende isso; abrir a folha escreve a contagem no
 // log ("[fonte] folha: N de M na lista"), para o proximo relato dizer onde caiu.
 int  stream_folha_n(void);
+// Current sheet positions: 0 hidden, positive visible. No playback.
+void stream_inspecao_ordem(int *ranks,int capacidade);
 #ifdef NV_SHOT_HOOKS
 void stream_shot_folha(float *cartao, int *linhas, int *dobradas);   // capturas
 void stream_shot_foco(int *indice, int *dobrada);   // capturas
@@ -494,6 +521,8 @@ void stream_folha_atualizar(float dt, Uint32 agora);
 void stream_folha_desenhar(Uint32 agora);
 // Devolve 1 uma vez quando o usuario escolheu, com o indice em *escolhido.
 int  stream_folha_escolheu(int *escolhido);
+// Same explicit choice as OK in the source sheet; never resolves or plays here.
+int  stream_escolher_indice(int indice);
 
 // Captured at dispatch, so a delayed worker cannot adopt another profile's list.
 int stream_canal_primeira_viva_sessao(int tentativas, uint64_t sessao);

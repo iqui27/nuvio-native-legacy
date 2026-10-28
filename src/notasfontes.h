@@ -100,6 +100,10 @@ typedef struct {
 } NfResumo;
 // `fontes[i]` e `norm[i]` (0..100) descrevem as notas presentes.
 void nf_resumo(const int *fontes, const int *norm, int n, NfResumo *r);
+// Atalho do cartao de media da fileira "Notas" (2.1): entrega o resumo direto
+// das notas NATIVAS de extras (cru[f] = escala do site x 10; 0 = sem nota),
+// na ordem de leitura da linha do titulo. As mesmas regras de nf_resumo.
+void nf_resumo_cru(const int *cru, NfResumo *r);
 
 // --- encaixe da linha do titulo -----------------------------------------------
 // `larg[i]` e a largura de cada item (ja com o vao que o precede), `prio[i]` a

@@ -6,5 +6,5 @@ trap 'rm -rf "$work"' EXIT
 cc -std=gnu11 -O1 -g -pthread -Isrc -ffunction-sections -fdata-sections \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -Wl,-dead_strip \
   tests/addons_manifest_gate.c src/js.c src/jsw.c src/watchstate.c \
-  src/addonstats.c src/fontefalha.c src/idcanal.c src/linguas.c src/legextras.c -o "$work/test"
+  src/addonstats.c src/addonmodo.c src/fontefalha.c src/idcanal.c src/linguas.c src/legextras.c -o "$work/test"
 "$work/test"

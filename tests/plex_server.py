@@ -18,7 +18,7 @@ PORT = [0]
 
 lock = threading.Lock()
 state = {"polls": 0, "total_polls": 0, "events": [], "pins": 0, "sections_hits": 0, "probe_hits": 0,
-         "decisions": 0, "refuse": set(), "incr": 0}
+         "decisions": 0, "refuse": set(), "incr": 0, "leaves": 0}
 
 MOVIES = [
     {"ratingKey": "101", "type": "movie", "title": "Movie One", "year": 1999, "summary": "Overview one",
@@ -26,6 +26,8 @@ MOVIES = [
      "thumb": "/library/metadata/101/thumb/17", "art": "/library/metadata/101/art/17",
      "Genre": [{"tag": "Drama"}, {"tag": "Thriller"}],
      "updatedAt": 1700000101, "Media": [{"id": 1, "videoResolution": "1080", "container": "mkv"}],
+     # watched without lastViewedAt — the "unknown timestamp" case of #617
+     "viewCount": 1,
      "Guid": [{"id": "imdb://tt0000101"}, {"id": "tmdb://5101"}, {"id": "tvdb://301"}]},
     {"ratingKey": "102", "type": "movie", "title": "Movie Two", "year": 2005, "duration": 5400000,
      "thumb": "/library/metadata/102/thumb/17",
@@ -37,7 +39,11 @@ SHOWS = [
     {"ratingKey": "201", "type": "show", "title": "Show One", "year": 2020, "summary": "Show overview",
      "thumb": "/library/metadata/201/thumb/17",
      "Genre": [{"tag": "Comedy"}],
+     "viewCount": 3, "leafCount": 10, "viewedLeafCount": 1,
      "updatedAt": 1700000201, "Guid": [{"id": "imdb://tt0000201"}, {"id": "tmdb://7201"}]},
+    {"ratingKey": "202", "type": "show", "title": "Completed Show", "year": 2020,
+     "viewCount": 3, "leafCount": 10, "viewedLeafCount": 10,
+     "updatedAt": 1700000202, "Guid": [{"id": "imdb://tt0000202"}]},
 ]
 EPISODES = [
     {"ratingKey": "301", "type": "episode", "parentIndex": 1, "index": 1, "title": "Pilot", "duration": 2700000,
@@ -113,7 +119,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(200, {"probe": state["probe_hits"], "pins": state["pins"],
                                             "sections": state["sections_hits"],
                                             "polls": state["total_polls"],
-                                            "decisions": state["decisions"], "incr": state["incr"]})
+                                            "decisions": state["decisions"], "incr": state["incr"],
+                                            "leaves": state["leaves"]})
             if p == "/control/refuse":
                 with lock:
                     state["refuse"] = set(int(x) for x in q.get("media", [""])[0].split(",") if x)
@@ -189,6 +196,8 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/library/sections/2/all":
             return self.reply(200, self.page(SHOWS, q))
         if p == "/library/metadata/201/allLeaves":
+            with lock:
+                state["leaves"] += 1
             return self.reply(200, container(EPISODES))
         if p.startswith("/library/metadata/"):
             rk = p.rsplit("/", 1)[1]

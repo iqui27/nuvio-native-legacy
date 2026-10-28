@@ -438,7 +438,9 @@ static void gate(void) {
   perfil_infantil_esquecer();
   admin_pin_esquecer();
   pfEntrada();
-  focoIndice = 1; uxTopo = AJ2_T_PERFIL;
+  focoIndice = 1; aj4Topo = 2;
+  assert(uxEvento(SDLK_RETURN) && aj4Util == 4 && !pfTela);
+  aj4Acao = 1;
   assert(uxEvento(SDLK_RETURN) && pfTela == PF_MENU && ajModalAberto());
   pfExigirAdmin(PA_EDITAR, 2);
   assert(pfFase == 3 && !edPerfil);
@@ -504,6 +506,27 @@ static void infantil(void) {
     free(t); }
 }
 
+// Sources filters: the sheet springs in, focus and category lists animate, and
+// Back keeps the last body drawn until the shape settles closed.
+static void filtrosCiclo(void) {
+  const float dt = 1.0f / 60.0f;
+  frAberta = 0; ffAbrir();
+  assert(!teclado_aberto());
+  assert(frAberta == 6 && ffForma == 0.0f);
+  ffAtualizar(dt); assert(ffForma > 0.0f && ffForma < 1.0f);
+  for (int i = 0; i < 120; i++) ffAtualizar(dt);
+  assert(ffForma == 1.0f && ffFocoA[0] == 1.0f);
+  ffEvento(SDLK_DOWN); ffAtualizar(dt);
+  assert(ffFocoA[1] > 0.0f && ffFocoA[1] < 1.0f && ffFocoA[0] < 1.0f);
+  ffEvento(SDLK_RETURN); assert(ffCategoria == FONTEFILTRO_QUALIDADE);
+  ffAtualizar(dt); assert(ffCatA > 0.0f && ffCatA < 1.0f && ffFocoA[0] == 1.0f);
+  ffEvento(SDLK_ESCAPE); assert(ffCategoria == -1 && frAberta == 6);
+  ffEvento(SDLK_ESCAPE); assert(!frAberta && ffFechando);
+  ffAtualizar(dt); assert(ffFechando && ffForma > 0.0f && ffForma < 1.0f);
+  for (int i = 0; i < 120; i++) ffAtualizar(dt);
+  assert(!ffFechando && ffForma == 0.0f);
+}
+
 int main(void) {
   char dir[] = "/tmp/nuvio-aj-escopo-XXXXXX";
   assert(mkdtemp(dir));
@@ -520,6 +543,7 @@ int main(void) {
   pollOptoutIsolation();
   failureBackendIsolation();
   failureDialogIsolation();
+  filtrosCiclo();
   providerSharingIsolation();
   admin();
   infantil();

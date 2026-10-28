@@ -46,6 +46,11 @@ int main(void) {
   snprintf(fs[1].chave, sizeof fs[1].chave, "b"); fs[1].ini = 3; fs[1].n = 2;
   snprintf(fs[0].titulo, sizeof fs[0].titulo, "A"); snprintf(fs[1].titulo, sizeof fs[1].titulo, "B");
   cat_definir_tudo(it, 5, fs, 2);
+  // Sem addon nenhum a Home e a tela-vazia (homevazio_ativo), que engole o OK
+  // antes de ele virar "Ver tudo". Um addon de catalogo basta para desarma-la.
+  { AddonRemoto a = {0};
+    snprintf(a.nome, sizeof a.nome, "cat"); snprintf(a.url, sizeof a.url, "https://example.invalid"); a.ativo = 1;
+    addons_definir_lista(&a, 1); }
 
   assert(!ajustes_bib_home());
   quadro(); quadro();
@@ -56,7 +61,22 @@ int main(void) {
   quadro();
   conferir("on", "tt200 tt400");
   { const Fileira *b = naHome("library");
-    assert(b->tipo == FILEIRA_NORMAL && !strcmp(b->titulo, i18n("Biblioteca"))); }
+    assert(b->tipo == FILEIRA_NORMAL && !strcmp(b->titulo, i18n("Biblioteca")));
+    // #672: o card "Ver tudo" fecha a fileira, como nas de catalogo.
+    assert(b->verTudo && b->catTipo[0]); }
+
+  // #672: OK no "Ver tudo" pede a tela da Biblioteca (o roteador troca de
+  // tela), nao uma grade vertudo — a fileira nao vem de catalogo de addon.
+  focoHero = 0;
+  { int r; for (r = 0; r < nFileiras; r++)
+      if (!strcmp(fileiras[r].chave, "library")) break;
+    assert(r < nFileiras);
+    foco.fileira = r; foco.coluna = fileiras[r].n;
+    if (r < FOCUS_MAX_FILEIRAS) foco.nColunas[r] = fileiras[r].n + 1; }
+  { SDL_Event e = {0};
+    e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_RETURN; home_evento(&e);
+    e.type = SDL_KEYUP;   e.key.keysym.sym = SDLK_RETURN; home_evento(&e); }
+  assert(home_pediu_biblioteca() && !home_pediu_abrir());
 
   cat_definir_na_lista(0, 1);   // the Detail "+" on tt100
   quadro();

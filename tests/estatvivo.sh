@@ -6,5 +6,5 @@ set -eu
 cd "$(dirname "$0")/.."
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-estatvivo.XXXXXX")
 trap 'rm -rf "$work"' EXIT
-cc -Isrc tests/estatvivo.c src/estatvivo.c -o "$work/t" -O1 -g -Wall -Wextra
+cc -Isrc -I/opt/homebrew/include tests/estatvivo.c src/estatvivo.c -o "$work/t" -O1 -g -Wall -Wextra
 "$work/t"

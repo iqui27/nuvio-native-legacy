@@ -6,10 +6,11 @@
 // O QUE ESTA LIGADO DE VERDADE: o login do Trakt e do Simkl (o mesmo codigo de
 // Ajustes), o nome digitado no teclado da TV e o que ficou gravado em
 // comecar.txt. O QUE AINDA NAO: nome e cor so valem para a saudacao do resumo —
-// nao criam nem renomeiam o perfil da conta. Conta Stremio e AIOManager
-// aparecem apagados, com "Em breve". Nao ha "perfil infantil": o app nao tem
-// filtro de classificacao, e a tela nao promete o que nao cumpre (NOTAS.md,
-// pergunta 11).
+// nao criam nem renomeiam o perfil da conta. Conta Stremio (link de
+// autenticacao) e AIOManager (link digitado no celular) importam via
+// importarfluxo.h. O "Perfil infantil" do passo 1 e a marca de
+// perfilinfantil.h, que barra o guia de TV ao vivo e o Reproduzir acima de 10
+// anos (app.c).
 //
 // SAIDAS: Voltar no passo 1 pula o fluxo todo (grava feito, mais nada); Voltar
 // nos passos 2-4 volta um passo; Voltar segurado ou "Pular tudo" pulam de
@@ -30,6 +31,7 @@ void comecar_decidir(int loginNovo);
 void comecar_abrir(void);
 
 int  comecar_aberto(void);
+int  comecar_visivel(void);
 void comecar_evento(const SDL_Event *e);
 void comecar_atualizar(float dt, Uint32 agora);
 // Desenha a tela inteira, ou o fim do esmaecer de saida por cima do app.

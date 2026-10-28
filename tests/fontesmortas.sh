@@ -14,7 +14,7 @@ if [ "$#" -gt 0 ] && [ "$1" != retomar ]; then "$dir/teste" "$@"; else
   fi
   cc "${flags[@]}" -Wno-deprecated-declarations tests/fontesmortas_torrent.c \
     src/fontesmortas.c src/fontevolta.c src/fontefalha.c src/fontefiltro.c src/linguas.c \
-    src/fontesonda.c src/perfis.c src/sessao.c src/debrid.c -o "$dir/torrent"
+    src/fontesonda.c src/perfis.c src/admin.c src/sessao.c src/debrid.c -o "$dir/torrent"
   if [ "$#" -gt 0 ]; then "$dir/torrent" "$@"; else
     "$dir/torrent"
     "$dir/torrent" retomar

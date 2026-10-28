@@ -37,6 +37,7 @@ cc "${flags[@]}" "${sources[@]}" tests/player_identity524_guards.c "$dir/player.
   -o "$dir/test" "${libs[@]}"
 failed=0
 for scenario in still-unknown other-title profile-change profile-aba conflicting-copies \
+  colliding-movie-only \
   known-movie-conflict pending-before-meta reordered-series series-without-request \
   bare-source-series fresh-episode-source; do
   mkdir "$dir/$scenario"

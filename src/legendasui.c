@@ -465,7 +465,7 @@ static void escolher(int slot, const LegUiCand *c) {
   }
   idPrimario(prim);
   if (!strcmp(prim, c->id)) { avisar(i18n("Já é a principal")); return; }
-  legenda2_escolher(c->id, c->leg.url, c->idioma, c->origem);
+  legenda2_escolher(c->id, c->leg.url, legenda_idioma(c->idioma, c->leg.arquivo), c->origem);
 }
 
 static int ativoNoSlot(int slot, const LegUiCand *c) {
@@ -1219,7 +1219,7 @@ static VideoLegendaEstilo estiloSecundario(const VideoLegendaEstilo *e, TxtEstil
 void legendasui_desenhar_secundaria(const LegendasGeo *g) {
   LegendaCue cues[LEGENDA_SIMULTANEAS];
   Leg2Linha ln[LEG2_LINHAS];
-  const VideoLegendaEstilo *principal = player_leg_estilo();
+  const VideoLegendaEstilo *principal = player_leg_estilo_efetivo();
   VideoLegendaEstilo secundario;
   const VideoLegendaEstilo *e = &secundario;
   int n, i, nl = 0, r, gg, b, fundo, borda, posicao = ajustes_leg2_posicao();
@@ -1275,7 +1275,7 @@ void legendasui_desenhar_secundaria(const LegendasGeo *g) {
 float legendasui_altura_secundaria(const LegendasGeo *g) {
   LegendaCue cues[LEGENDA_SIMULTANEAS];
   Leg2Linha ln[LEG2_LINHAS];
-  const VideoLegendaEstilo *principal = player_leg_estilo();
+  const VideoLegendaEstilo *principal = player_leg_estilo_efetivo();
   VideoLegendaEstilo secundario;
   const VideoLegendaEstilo *e = &secundario;
   int n, i, nl = 0, r, gg, b, fundo, borda;

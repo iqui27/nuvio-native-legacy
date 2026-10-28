@@ -22,7 +22,5 @@ trap 'rm -f "$bin"' EXIT
 if [ "$#" -gt 0 ]; then
   "$bin" "$1"
 else
-  "$bin"
-  "$bin" down
-  "$bin" cost
+  "$bin" tvptr
 fi

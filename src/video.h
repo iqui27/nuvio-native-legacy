@@ -137,6 +137,8 @@ int video_live_progresso(double *pos, double *fim);
 int video_recuperando_live(void);
 // HLS target duration for this live session; zero for VOD/unknown.
 unsigned video_live_segmento_ms(void);
+// Elapsed since the current Android live HTTP request; zero during decoder release.
+unsigned video_live_pedido_ms(void);
 #endif
 // Afirmacao de Dolby Vision da FONTE escolhida (o addon descreve o arquivo).
 // Chamar ANTES de video_tocar/definir_fonte: e o que decide o hdrType que o
@@ -321,14 +323,15 @@ typedef struct {
   double bufferSeg;         // segundos de video baixados a frente; < 0 = nao sabe
   double bufferAlvoSeg;     // o que o player tenta manter; 0 = nao diz
   int bufferPct;            // 0..100; -1 = nao informa
-  int conexoes;             // abertas agora para o video; -1 = nao sabe
+  int conexoes;             // downloads ativos agora; -1 = nao sabe
+  int poolConexoes;         // pool desta abertura: paralelo ou unica; -1 = nao sabe
   int primeiroByteMs;       // do pedido ao 1o byte do ultimo trecho; -1
   long long quadrosPerdidos, quadros;   // -1 = o decodificador nao conta
   char host[96];            // host publico (sem caminho) do link FINAL; "" = nao sabe
 } VideoStats;
 static inline void video_stats_vazio(VideoStats *s) {
   s->bytes = -1; s->bufferSeg = -1.0; s->bufferAlvoSeg = 0.0; s->bufferPct = -1;
-  s->conexoes = -1; s->primeiroByteMs = -1; s->quadrosPerdidos = s->quadros = -1;
+  s->conexoes = s->poolConexoes = -1; s->primeiroByteMs = -1; s->quadrosPerdidos = s->quadros = -1;
   s->host[0] = 0;
 }
 void video_estatisticas(VideoStats *s);

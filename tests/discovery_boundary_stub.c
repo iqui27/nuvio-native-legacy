@@ -7,6 +7,10 @@ __attribute__((weak)) int rewatch_n_ativas(void) { return 0; }
 __attribute__((weak)) int rewatch_ativa_n(int i, char *id, size_t n) { (void)i; if(n) *id=0; return 0; }
 __attribute__((weak)) int rewatch_alvo(const char *id, const CatEp *eps, int n, int *t, int *e, int *pct) { (void)id;(void)eps;(void)n;(void)t;(void)e;(void)pct;return 0; }
 __attribute__((weak)) int rewatch_parcial_de(const char *id, int *t, int *e, int *pct) { (void)id;(void)t;(void)e;(void)pct;return 0; }
+// Fileira da caca (caca.h): descoberta.c chama para fontes "caca"; os testes
+// isolados nao tem caca.c, entao nenhuma fonte responde e a fileira fica vazia.
+__attribute__((weak)) int caca_por_chave(const char *chave) { (void)chave; return -1; }
+__attribute__((weak)) int caca_itens(int i, int soFaltam, void *dst, int max) { (void)i;(void)soFaltam;(void)dst;(void)max; return 0; }
 __attribute__((weak)) int cat_indice_titulo(const char *id, int i) { (void)id;(void)i;return -1; }
 __attribute__((weak)) const CatEp *cat_episodio(int i, int e) { (void)i;(void)e;return NULL; }
 __attribute__((weak)) int ajustes_fonte_biblioteca(void) { return 0; }

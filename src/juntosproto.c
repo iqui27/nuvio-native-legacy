@@ -68,6 +68,11 @@ static void lerMembro(const char *o, const char *f, JsMembro *m) {
   js_texto(o, f, "av", m->av, sizeof m->av);
   js_texto(o, f, "st", m->st, sizeof m->st);
   m->pct = (int)js_num(o, f, "pct", 0);
+  m->stats = (int)js_num(o, f, "stats", 0);
+  m->rtt = js_num(o, f, "rtt", 0);
+  m->offset = js_num(o, f, "offset", 0);
+  m->drift = js_num(o, f, "drift", 0);
+  m->altura = (int)js_num(o, f, "altura", 0);
   js_texto(o, f, "nivel", nv, sizeof nv);
   m->nivel = nv[0] == 'A' || nv[0] == 'B' ? nv[0] : 0;
   js_texto(o, f, "plat", m->plat, sizeof m->plat);
@@ -229,7 +234,8 @@ int jsp_aceitar(char *b, size_t n, const char *quem, int ok) {
 int jsp_sair(char *b, size_t n) { return fim_(snprintf(b, n, "{\"t\":\"sair\"}"), n); }
 
 int jsp_impressao(char *b, size_t n, const JsImpressao *i) {
-  char arq[260], bg[180], rot[140], h[64] = "", x[32] = "", by[40] = "", al[24] = "", du[40] = "";
+  char arq[sizeof i->arquivo * 6 + 8], bg[sizeof i->binge * 6 + 8], rot[sizeof i->rotulo * 6 + 8];
+  char h[64] = "", x[32] = "", by[40] = "", al[24] = "", du[40] = "";
   if (i->hash[0]) snprintf(h, sizeof h, "\"hash\":\"%.40s\",", i->hash);
   if (i->idx >= 0) snprintf(x, sizeof x, "\"idx\":%d,", i->idx);
   if (i->bytes > 0) snprintf(by, sizeof by, "\"bytes\":%lld,", i->bytes);

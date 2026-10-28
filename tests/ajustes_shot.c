@@ -128,7 +128,7 @@ static void captura(const char *nome, SDL_Window *win) {
     }
     if (getenv("NUVIO_AJ_QUADROS")) {   // a ilha do relogio, como o app poe
       ilha_relogio_visivel(ajustes_relogio_cabe());
-      ilha_posicionar(1);
+      ilha_posicionar(3);
       ilha_desenhar(SDL_GetTicks());
     }
     // NUVIO_SHOT_TXT=1: text lines rasterized per frame once the screen has
@@ -340,6 +340,8 @@ int main(int argc, char **argv) {
     ix = fopen(nome, "w");
     assert(ix);
     for (n = 0; ajustes_teste_cena_item(n, &op, &sec, &chave, &rot); n++) {
+      // Capture one requested preview without generating the entire catalogue.
+      if (getenv("NUVIO_SHOT_CENA") && strcmp(getenv("NUVIO_SHOT_CENA"), chave ? chave : "")) continue;
       unsigned char *pix = malloc(960 * 540 * 4);
       SDL_Surface *s;
       int q, y;
@@ -444,6 +446,24 @@ int main(int argc, char **argv) {
       if (quadrosCaptura != 60) snprintf(nome, sizeof nome, "%s-%s-q%d.png", saida, id, quadrosCaptura);
       else snprintf(nome, sizeof nome, "%s-%s.png", saida, id);
       captura(nome, w);
+      if (getenv("NUVIO_SHOT_MOTION")) {
+        const char *keys=getenv("NUVIO_SHOT_MOTION");
+        for(const char *k=keys;*k;k++)
+          tecla(*k=='d'?SDLK_DOWN:*k=='u'?SDLK_UP:*k=='l'?SDLK_LEFT:*k=='r'?SDLK_RIGHT:*k=='o'?SDLK_RETURN:SDLK_ESCAPE);
+        static const int frames[]={1,3,3,5,48};
+        int elapsed=0;
+        for(int f=0;f<5;f++) {
+          elapsed+=frames[f];quadrosCaptura=frames[f];
+          snprintf(nome,sizeof nome,"%s-%s-motion-%02d.png",saida,id,elapsed);
+          captura(nome,w);
+          if(getenv("NUVIO_SHOT_MOTION_CHECK")) {
+            float alpha[2]={0},dy[2]={0};
+            int both=ajustes_teste_pen_motion(alpha,dy);
+            assert(both==(elapsed<13) && "transition must draw both page titles with intermediate alpha and slide");
+            printf("Pencil motion frame %d: both=%d alpha=%.3f/%.3f dy=%.3f/%.3f\n",elapsed,both,alpha[0],alpha[1],dy[0],dy[1]);
+          }
+        }
+      }
       quadrosCaptura = 60;
       if (spot_aberto()) spot_fechar();
     }
@@ -554,6 +574,12 @@ int main(int argc, char **argv) {
     static const char *const n[] = { "trailers", "trailer-seletor", "ampliacao", "ampliacao-seletor" };
     ajustes_teste_ux_captura(i);
     snprintf(nome, sizeof nome, "%s-%s.png", saida, n[i - 21]);
+    captura(nome, w);
+  }
+  for (i = 25; i <= 27; i++) {
+    static const char *const n[] = { "tour", "tour-onde", "tour-fileira2" };
+    ajustes_teste_ux_captura(i);
+    snprintf(nome, sizeof nome, "%s-%s.png", saida, n[i - 25]);
     captura(nome, w);
   }
   if (!getenv("NUVIO_AJUSTES_UX")) {

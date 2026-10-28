@@ -1,5 +1,6 @@
 #include "arteurl.h"
 #include "descoberta.h"
+#include "caca.h"
 #include "dados.h"
 #include "idioma.h"
 #include "ajustes.h"
@@ -20,6 +21,7 @@
 #include "nuvem.h"
 #include "cwordem.h"
 #include "js.h"
+#include "metaep.h"
 #include "recomenda.h"
 #include "trakt.h"
 #include "simkl.h"
@@ -375,6 +377,17 @@ void desc_duracao_min(int min, char *dst, size_t tam) {
   if (min <= 0) { dst[0] = 0; return; }
   if (min < 60)      snprintf(dst, tam, i18n("%dmin"), min);
   else if (min % 60) snprintf(dst, tam, i18n("%dh %dmin"), min / 60, min % 60);
+  else               snprintf(dst, tam, i18n("%dh"), min / 60);
+}
+
+// Minutos -> a forma COMPACTA da pagina do titulo do mockup v2: "2h36",
+// "6h50". Aparece na linha de meta do hero e na ficha; o resto do app segue
+// com a forma longa ("2h 36min"), que e a das outras telas.
+void desc_duracao_min_curta(int min, char *dst, size_t tam) {
+  if (!dst || !tam) return;
+  if (min <= 0) { dst[0] = 0; return; }
+  if (min < 60)      snprintf(dst, tam, i18n("%dmin"), min);
+  else if (min % 60) snprintf(dst, tam, i18n("%dh%02d"), min / 60, min % 60);
   else               snprintf(dst, tam, i18n("%dh"), min / 60);
 }
 
@@ -2325,10 +2338,45 @@ static int aceitaSkip(const char *p, const char *f) {
 // com NV_ADDON_URL_MAX custariam ~900 KB. Por isso a comparacao e por PREFIXO
 // (nomeCatBase): com strcmp, a base cortada de um addon de URL longa nunca
 // casava com a inteira e o nome do catalogo dele nunca era achado (#201).
-static struct { char base[300], tipo[8], id[96], nome[96], extras[768]; } nomeCat[NOMECAT_MAX];
+static struct { char base[300], tipo[8], id[96], nome[96], extras[768], generos[768]; } nomeCat[NOMECAT_MAX];
 #define nomeCatBase(i, b) (!strncmp(nomeCat[i].base, (b), sizeof nomeCat[i].base - 1))
 static int nNomeCat, nomeCatProx;
 static pthread_mutex_t nomeCatTrava = PTHREAD_MUTEX_INITIALIZER;
+// Junta os `options` do extra `genre` DESTE catalogo em `dst`, separados por
+// '\t' (issue #656). So quando `options` e declarado: sem ele a escolha livre
+// de genero nao existe, e o filtro da conta continua valendo como antes.
+static void registrarGenerosCatalogo(const char *base, const char *tipo, const char *id,
+                                     const char *p, const char *f) {
+  char generos[768] = "";
+  for (const char *ex = js_array(p, f, "extra"); ex; ex = js_prox(js_fim(ex))) {
+    const char *end = js_fim(ex), *op;
+    char name[64] = "";
+    if (*ex != '{' || !js_texto_raiz_em(ex, end, "name", name, sizeof name) || strcmp(name, "genre")) continue;
+    size_t used = strlen(generos);
+    for (op = js_array(ex, end, "options"); op && op < end;) {
+      char v[128];
+      if (*op != '"' || !js_cadeia(op, v, sizeof v)) break;
+      const char *next = op + 1;
+      while (next < end && *next && *next != '"') {
+        if (*next == '\\' && next + 1 < end) next++;
+        next++;
+      }
+      op = next < end ? js_prox(next + 1) : NULL;
+      if (!v[0] || strchr(v, '\t')) continue;
+      size_t l = strlen(v);
+      if (used + l + 2 >= sizeof generos) break;
+      if (used) generos[used++] = '\t';
+      memcpy(generos + used, v, l + 1); used += l;
+    }
+    break;
+  }
+  pthread_mutex_lock(&nomeCatTrava);
+  for (int i = 0; i < nNomeCat; i++)
+    if (nomeCatBase(i, base) && !strcmp(nomeCat[i].tipo, tipo) && !strcmp(nomeCat[i].id, id)) {
+      snprintf(nomeCat[i].generos, sizeof nomeCat[i].generos, "%s", generos); break;
+    }
+  pthread_mutex_unlock(&nomeCatTrava);
+}
 // Required defaults belong to the manifest, not to an addon's hostname.
 static void registrarExtrasCatalogo(const char *base, const char *tipo, const char *id,
                                     const char *p, const char *f) {
@@ -2405,6 +2453,7 @@ static void registrarNomeCatalogo(const char *base, const char *tipo, const char
     if (nomeCatBase(i, base) && !strcmp(nomeCat[i].tipo, tipo) && !strcmp(nomeCat[i].id, id)) break;
   if (i == nNomeCat) { i = nomeCatProx; nomeCatProx = (nomeCatProx + 1) % NOMECAT_MAX; if (nNomeCat < NOMECAT_MAX) nNomeCat++; }
   nomeCat[i].extras[0] = 0;
+  nomeCat[i].generos[0] = 0;
   snprintf(nomeCat[i].base, sizeof nomeCat[i].base, "%s", base);
   snprintf(nomeCat[i].tipo, sizeof nomeCat[i].tipo, "%s", tipo);
   snprintf(nomeCat[i].id, sizeof nomeCat[i].id, "%s", id);
@@ -2438,6 +2487,42 @@ const char *desc_nome_catalogo(const char *base, const char *tipo, const char *i
   }
   pthread_mutex_unlock(&nomeCatTrava);
   return saida;
+}
+
+// OS GENEROS QUE O CATALOGO OFERECE (issue #656): os `options` do extra
+// `genre` do manifesto, na ordem declarada. Devolve quantos entram em `out`
+// (ate `max`, cada um com 128 colunas). 0 quando o catalogo nao declara
+// opcoes — o filtro da conta segue valendo, como antes.
+int desc_genero_obrigatorio(const char *base, const char *tipo, const char *id) {
+  int required = 0;
+  if (!base || !tipo || !id) return 0;
+  pthread_mutex_lock(&nomeCatTrava);
+  for (int i = 0; i < nNomeCat; i++)
+    if (nomeCatBase(i, base) && !strcmp(nomeCat[i].tipo, tipo) && !strcmp(nomeCat[i].id, id)) {
+      required = !strncmp(nomeCat[i].extras, "genre=", 6) || strstr(nomeCat[i].extras, "&genre=") != NULL;
+      break;
+    }
+  pthread_mutex_unlock(&nomeCatTrava);
+  return required;
+}
+int desc_genero_opcoes(const char *base, const char *tipo, const char *id,
+                       char (*out)[128], int max) {
+  char todos[768];
+  int n = 0;
+  if (!base || !base[0] || !tipo || !id || !out || max < 1) return 0;
+  todos[0] = 0;
+  pthread_mutex_lock(&nomeCatTrava);
+  for (int i = 0; i < nNomeCat; i++)
+    if (nomeCatBase(i, base) && !strcmp(nomeCat[i].tipo, tipo) && !strcmp(nomeCat[i].id, id)) {
+      snprintf(todos, sizeof todos, "%s", nomeCat[i].generos); break;
+    }
+  pthread_mutex_unlock(&nomeCatTrava);
+  for (char *p = todos, *t; n < max && p && *p; p = t ? t + 1 : NULL) {
+    t = strchr(p, '\t');
+    if (t) *t = 0;
+    snprintf(out[n++], 128, "%s", p);
+  }
+  return n;
 }
 
 // --- QUAIS CATALOGOS A COTA LE (issue #126) -----------------------------------
@@ -2648,6 +2733,7 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
       int exige = exigeBusca(p, f), guardar = 0;
       registrarNomeCatalogo(base, tipo, id, nome);
       registrarExtrasCatalogo(base, tipo, id, p, f);
+      registrarGenerosCatalogo(base, tipo, id, p, f);
       if (!ativo) { p = js_prox(f); continue; }
       // QUEM A COTA LE sai de escolherPelaCota; sem escolha (cabem todos, ou a
       // memoria faltou) vale a regra antiga, os primeiros ate encher. Catalogo
@@ -3972,6 +4058,8 @@ static void publicarMontagem(const CatItem *lote, int n, const CatFileira *fils,
 // publicar antes da remocao (e ser corrigida por ela). Os DELETE remotos sao
 // de quem chama. Devolve quantos cards sairam.
 // Dispatcher state uses its short mutex; no network wait is held here.
+static unsigned descUltimoOk;
+unsigned desc_ultimo_ok(void) { return descUltimoOk; }
 int desc_montando(void) {
   int pendente;
   pthread_mutex_lock(&listaTrava);
@@ -5463,8 +5551,35 @@ static void *montar(void *u) {
     }
     free(jfItens);
   }
+  // Explicit personal-server collection/playlist rows use the same pager as Library.
+  if (ajustes_jellyfin_ligado()) {
+    char keys[SRV_FIL_MAX][FIL_CHAVE]; char names[SRV_FIL_MAX][128]; int nk = 0;
+    for (int i = 0; i < fil_n() && nk < SRV_FIL_MAX; i++) {
+      const char *key = fil_chave(i);
+      if (!servidores_chave_fileira(key) || fil_estado(i) != FIL_NA_HOME ||
+          (!strstr(key, "_group_") && !strstr(key, "_list_") && !strstr(key, "_recent_") && strncmp(key, "jellyfin_", 9) && strncmp(key, "emby_", 5))) continue;
+      int exists = 0; for (int j = 0; j < nFilsLote; j++) if (!strcmp(filsLote[j].chave, key)) { exists = 1; break; }
+      if (exists) continue;
+      snprintf(keys[nk], sizeof keys[nk], "%s", key); snprintf(names[nk], sizeof names[nk], "%s", fil_titulo(i)); nk++;
+    }
+    CatItem *items = nk ? calloc(24, sizeof *items) : NULL;
+    for (int i = 0; items && i < nk && nFilsLote < CAT_FIL_MAX; i++) {
+      int total = 0, raw = 0, count = servidores_pagina(keys[i], 0, 24, items, 24, &total, &raw);
+      if (count <= 0) continue;
+      GARANTE(count); int begin = n;
+      for (int j = 0; j < count && n < cap; j++) if (items[j].imdb[0] && !jfid_e(items[j].imdb)) lote[n++] = items[j];
+      if (n == begin) continue;
+      CatFileira *row = &filsLote[nFilsLote++]; memset(row, 0, sizeof *row);
+      snprintf(row->chave, sizeof row->chave, "%s", keys[i]); snprintf(row->titulo, sizeof row->titulo, "%s", names[i]);
+      snprintf(row->tipo, sizeof row->tipo, "%s", "movie"); row->ini = begin; row->n = n - begin;
+    }
+    free(items);
+  }
 #undef GARANTE
 
+  // Trakt/Simkl lists arrive in this cycle, not in sync.c: the Library's
+  // "sincronizado ha N min" reads this instant.
+  if (n || nFilsLote > 0) descUltimoOk = SDL_GetTicks() | 1u;
   if (n || nFilsLote > 0) {
     // SO PUBLICA SE MUDOU. A mesma home montada de novo (ciclo de 5 min, sync
     // sem novidade) tem a mesma assinatura que a da tela; republicar seria
@@ -7557,22 +7672,36 @@ static int metaArquivosCompativeis(const char *arquivos, const char *catalogo) {
 // Inclui especiais (temporada 0) sem renumerar o par nem o id do video.
 static int parsearEpisodios(const char *corpo, CatEp *eps, int max) {
   int n = 0;
+  unsigned char parAmbiguo[VIDEOS_MAX] = {0};
   const char *p = metaContarEpisodios(corpo, NULL) ? js_array(corpo, NULL, "videos") : NULL;
   EpSet set = { 0 };
-  while (p && n < max) {
+  while (p) {
     const char *f = js_fim(p);
     int t = videoTemporada(p, f);
     int ne = t >= 0 ? (int)js_num(p, f, "episode", 0) : 0;
+    int tvdb = metaep_tvdb_video(p, f);
+    int novo = t >= 0 && (ne <= 0 || epSetNovo(&set, t, ne));
+    // Duplicate files for one displayed episode can disagree about identity.
+    // Keep the first source URL, but do not let either ID become a Trakt proof.
+    if (t >= 0 && !novo)
+      for (int i = 0; i < n; i++)
+        if (eps[i].temporada == t && eps[i].episodio == ne) {
+          if (!parAmbiguo[i] && eps[i].tvdbEp > 0 && tvdb > 0 && eps[i].tvdbEp != tvdb) {
+            eps[i].tvdbEp = 0; parAmbiguo[i] = 1;
+          } else if (!parAmbiguo[i] && eps[i].tvdbEp <= 0 && tvdb > 0)
+            eps[i].tvdbEp = tvdb;
+        }
     // Repeticao sai JA AQUI, antes do corte de `max`: descartada so depois de
     // ordenar, as vagas iam para copias dos primeiros episodios e o resto
     // da serie nem era lido. Fica o primeiro da resposta; sem numero de
     // episodio nao e repeticao.
-    if (t >= 0 && (ne <= 0 || epSetNovo(&set, t, ne))) {
+    if (novo && n < max) {
       CatEp *e = &eps[n];
       char d[24] = "";
       memset(e, 0, sizeof *e);
       e->temporada = t;
       e->episodio = ne;
+      e->tvdbEp = tvdb;
       { double rating = js_num(p, f, "imdbRating", 0.0);
         // Cinemeta videos use `rating`; other metadata providers use `imdbRating`.
         if (rating<=0) rating=js_num(p,f,"rating",0.0);
@@ -7602,6 +7731,16 @@ static int parsearEpisodios(const char *corpo, CatEp *eps, int max) {
     p = js_prox(f);
   }
   free(set.v);
+  // The same exact ID assigned to different source pairs is ambiguous. Keep
+  // both playable cards, but never translate or scrobble either by that ID.
+  { unsigned char ambiguo[VIDEOS_MAX] = {0};
+    for (int i = 0; i < n; i++) if (eps[i].tvdbEp > 0)
+      for (int j = i + 1; j < n; j++)
+        if (eps[j].tvdbEp == eps[i].tvdbEp &&
+            (eps[j].temporada != eps[i].temporada || eps[j].episodio != eps[i].episodio))
+          ambiguo[i] = ambiguo[j] = 1;
+    for (int i = 0; i < n; i++) if (ambiguo[i]) eps[i].tvdbEp = 0;
+  }
   for (int i = 1; i < n; i++) {
     CatEp k = eps[i];
     int j;
@@ -7743,8 +7882,10 @@ static void temporadasDosEps(const CatEp *eps, int n, TempsPub *tp) {
   }
 }
 
-static int publicarEpisodiosEx(const char *corpo, int alvoItem, const char *titulo,
-                               const char *sobre, int modo, TempsPub *tp, int cedo) {
+static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
+                                       const char *titulo, const char *sobre,
+                                       int modo, TempsPub *tp, int cedo,
+                                       int substituir) {
   CatEp *eps = malloc(sizeof(CatEp) * VIDEOS_MAX);
   int n = 0;
   if (!eps) return 0;
@@ -7761,8 +7902,27 @@ static int publicarEpisodiosEx(const char *corpo, int alvoItem, const char *titu
   alvoItem = epPublicacaoIniciar(alvoItem);
   if (n && alvoItem >= 0 && (!cedo || !cat_n_episodios(alvoItem))) {
     int antigos = cat_n_episodios(alvoItem);
-    CatEp *estavel = antigos > 0 && epPedidoAtual() ? malloc(sizeof(CatEp) * VIDEOS_MAX) : NULL;
-    if (estavel) {
+    CatItem atual;
+    int parcial = !cedo && cat_copiar_item(alvoItem, &atual) && atual.epsParciais;
+    int trocarTopologia = !cedo && (parcial || substituir);
+    CatEp *estavel = antigos > 0 && epPedidoAtual() && !trocarTopologia
+                   ? malloc(sizeof(CatEp) * VIDEOS_MAX) : NULL;
+    if (trocarTopologia) {
+      // A provisional list, or a complete list that lost source selection,
+      // must not contribute extra topology to the selected final list:
+      // continuous S1E13 and split S2E1 can be the same episode. Text/art
+      // enrichment was already applied above to matching final pairs.
+      descCatEpisodios(alvoItem, eps, n);
+      if (tp) temporadasDosEps(eps, n, tp);
+      if (cat_copiar_item(alvoItem, &atual)) {
+        atual.epsParciais = 0;
+        if (tp) {
+          atual.nTemporadas = tp->n;
+          memcpy(atual.temporadas, tp->t, sizeof(int) * (size_t)tp->n);
+        }
+        descCatAtualizar(cat_atualizar_item, alvoItem, &atual);
+      }
+    } else if (estavel) {
       int k = 0;
       // Mantem os pares e a ordem ja vistos; novos pares entram no fim.
       // ponytail: busca O(n²), limitada a 2400 pares; indexar se o teto crescer.
@@ -7813,9 +7973,25 @@ static int publicarEpisodiosEx(const char *corpo, int alvoItem, const char *titu
   return n;
 }
 
+static int publicarEpisodiosEx(const char *corpo, int alvoItem, const char *titulo,
+                               const char *sobre, int modo, TempsPub *tp, int cedo) {
+  return publicarEpisodiosEscolhidos(corpo, alvoItem, titulo, sobre, modo, tp,
+                                     cedo, 0);
+}
+
 static int publicarEpisodios(const char *corpo, int alvoItem, const char *titulo,
                              const char *sobre, int modo, TempsPub *tp) {
   return publicarEpisodiosEx(corpo, alvoItem, titulo, sobre, modo, tp, 0);
+}
+
+// A source selected as the better episode list owns the topology. This is
+// distinct from ordinary enrichment: merging the old numeric pairs would keep
+// both S1E13 and S2E1 when two providers number the same episode differently.
+static int publicarEpisodiosSubstituir(const char *corpo, int alvoItem,
+                                       const char *titulo, const char *sobre,
+                                       int modo, TempsPub *tp) {
+  return publicarEpisodiosEscolhidos(corpo, alvoItem, titulo, sobre, modo, tp,
+                                     0, 1);
 }
 
 // O Cinemeta as vezes conhece MENOS episodios que o addon de metadados do
@@ -7878,14 +8054,16 @@ static int episodiosDoAddon(int alvoItem, const char *serie, const char *titulo,
            "usando a lista do addon com os nomes do Cinemeta\n",
            titulo, melhorNome, melhor, nCine);
     fflush(stdout);
-    publicarEpisodios(melhorCorpo, alvoItem, titulo, corpoCine, DESC_MESCLA_TEXTO, tp);
+    publicarEpisodiosSubstituir(melhorCorpo, alvoItem, titulo, corpoCine,
+                                DESC_MESCLA_TEXTO, tp);
     arte_reserva_episodios(serie, melhorCorpo);
   } else if (melhor > nCine || (aplicar && melhor >= nCine)) {
     printf("[desc] %s: %s tem %d episodios contra %d do Cinemeta; usando a lista do addon\n",
            titulo, melhorNome, melhor, nCine);
     fflush(stdout);
-    publicarEpisodios(melhorCorpo, alvoItem, titulo, aplicar ? corpoCine : NULL,
-                      DESC_MESCLA_VAZIOS, tp);
+    publicarEpisodiosSubstituir(melhorCorpo, alvoItem, titulo,
+                                aplicar ? corpoCine : NULL,
+                                DESC_MESCLA_VAZIOS, tp);
     arte_reserva_episodios(serie, melhorCorpo);
     usouTexto = aplicar;
   } else if (aplicar) {
@@ -8470,9 +8648,9 @@ static int episodiosDoCatalogo(int alvoItem, const char *titulo, const char *ser
   }
   // Lista de arquivos que ficou (sabe mais episodios): o nome dela e nome de
   // arquivo, entao o do Cinemeta entra por cima nos episodios que os dois tem.
-  publicarEpisodios(mf->corpo[fonte], alvoItem, titulo,
-                    outro >= 0 ? mf->corpo[outro] : NULL,
-                    modo, tp);
+  publicarEpisodiosSubstituir(mf->corpo[fonte], alvoItem, titulo,
+                              outro >= 0 ? mf->corpo[outro] : NULL,
+                              modo, tp);
   arte_reserva_episodios(serie, mf->corpo[fonte]);
   // Lista de arquivos nao e "texto do addon" (como em episodiosDoAddon): com 1
   // o TMDB so preencheria vazios e os nomes de arquivo que sobraram ficariam.
@@ -9675,6 +9853,20 @@ void desc_vertudo_fonte_desde(const ColSource *s, int pagina) {
   ColSource copia;
   if (!s || !s->prov[0]) return;
   memset(&copia, 0, sizeof copia); copia = *s;
+  // A FILEIRA DA CACA (caca.h, "Fazer fileira"/"Fazer colecao"): os filmes ja
+  // estao na memoria do app, sem rede. catId = "-<chave>" so o que falta,
+  // "*<chave>" a cacada inteira.
+  if (!strcmp(s->prov, "caca")) {
+    int k = caca_por_chave(s->catId + (s->catId[0] ? 1 : 0)), n;
+    pthread_mutex_lock(&vtTrava);
+    vtFonte = copia;
+    vtProvedor = 3;
+    vtBase[0] = 0;
+    n = k >= 0 ? caca_itens(k, s->catId[0] == '-', vtItens, VT_MAX) : 0;
+    vtN = n; vtPagina = 1; vtFim = 1; vtErro = k < 0; vtGeracao++;
+    pthread_mutex_unlock(&vtTrava);
+    return;
+  }
   pthread_mutex_lock(&vtTrava);
   if (vtProvedor && !memcmp(&vtFonte, &copia, sizeof copia) && vtN > 0) {
     int preencher = ajustes_ocultar_filmes_vistos() && !vtProjetar() && !vtFim && !vtErro;
@@ -9834,7 +10026,9 @@ void desc_episodios_pendente(void) {
 // O meta vem do Cinemeta, a mesma fonte do resto do catalogo, e o item entra no
 // FIM do vetor (cat_acrescentar). O tipo do TMDB e o sufixo de episodio sao
 // preservados: movie e tv podem compartilhar o numero no TMDB, mas sao obras
-// diferentes. So sem tipo conhecido tenta filme e depois serie.
+// diferentes. Sem tipo conhecido vale desc_meta_tipos: serie com temporada
+// primeiro. Aceitar o filme antes foi o que gravou tt9054364 como
+// "Chasing Mavericks" (#524) — o /meta/movie desse id e outro filme.
 static char sobId[24];
 static long sobTmdb;          // quando > 0, o id do IMDb ainda precisa ser resolvido
 static char sobTipo[8];
@@ -9907,10 +10101,17 @@ static void *buscarTitulo(void *arg) {
     }
   }
 
-  for (passo = 0; passo < (sobTipo[0] ? 1 : 2) && achou < 0; passo++) {
-    const char *tipo = sobTipo[0] ? sobTipo : passo ? "series" : "movie";
+  const char *tiposPedido[2];
+  int nTipos = sobTipo[0] ? 1 : desc_meta_tipos("", tiposPedido);
+  if (sobTipo[0]) tiposPedido[0] = sobTipo;
+  for (passo = 0; passo < nTipos && achou < 0; passo++) {
+    const char *tipo = tiposPedido[passo];
+    int ultimo = passo == nTipos - 1;
     corpo = metaprov_meta(tipo, id, 20, NULL);   // Nuvio, depois Cinemeta
     if (!corpo) continue;
+    // Serie sem temporada nao prova o tipo (o filme cai no passo seguinte).
+    // Com temporada, o filme do mesmo id nao entra: e a colisao do #524.
+    if (!ultimo && !desc_meta_tem_temporadas(corpo)) { free(corpo); continue; }
     { const char *m = strstr(corpo, "\"meta\"");
       CatItem it;
       if (m && deMeta(m, NULL, tipo, &it) &&

@@ -113,7 +113,9 @@ static void padroesEValores(void) {
       assert(!uxTemPadrao(op));
     else {
       assert(uxTemPadrao(op));
-      assert(uxValorPadrao(op) == (op == AJ_SALVOS_DEST ? ajustes_fonte_resolver(valorPadrao[op], trakt_ativo(), simkl_ativo()) : valorPadrao[op]));
+      if (op >= AJ_FONTE_OCULTAR_DV && op <= AJ_FONTE_OCULTAR_VIDEO) /* Automatic: resolved per device. */
+        assert(uxValorPadrao(op) == !stream_incompat_padrao(op - AJ_FONTE_OCULTAR_DV));
+      else assert(uxValorPadrao(op) == (op == AJ_SALVOS_DEST ? ajustes_fonte_resolver(valorPadrao[op], trakt_ativo(), simkl_ativo()) : valorPadrao[op]));
     }
   }
   assert(!uxTemPadrao(-1) && !uxTemPadrao(AJ_N));

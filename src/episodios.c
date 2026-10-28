@@ -28,6 +28,7 @@
 #include "plrilha.h"
 #include "ctxmenu.h"
 #include "epcoment.h"
+#include "reacao.h"
 #include "movimento.h"
 #define NV_ESCALA_TELA   // o arquivo inteiro mede pela tela virtual (escala.h)
 #include "escala.h"
@@ -115,7 +116,7 @@ static int semMolaScroll;
 // este menu, entao ele precisa carregar a porta que tomou. Dentro da folha de
 // episodios a opcao nao existe — quem abriu a folha veio do player e ja tem
 // fonte tocando; oferece-la ali seria uma linha que nao leva a lugar nenhum.
-enum { VM_ESTE = 0, VM_ATE, VM_TEMP, VM_FONTES, VM_DAQUI, VM_SINOPSE, VM_COMENT, VM_N };
+enum { VM_ESTE = 0, VM_ATE, VM_TEMP, VM_FONTES, VM_DAQUI, VM_SINOPSE, VM_NOTA, VM_COMENT, VM_N };
 static int vmAcoes[VM_N], vmN; // linhas visiveis -> gesto (daqui em diante e opcional)
 // O MENU DA TEMPORADA (issue #108, "Pressing 'Season' brings up option to mark
 // all as watched"): o mesmo cartao, aberto pela ABA e nao por um episodio, com
@@ -199,6 +200,7 @@ static float    vmAnim, vmAnimV, vmFocoAnim[VM_N];
 // Quem abriu avisa a cada quadro (episodios_menu_ancora); sem ancora, o meio.
 static GfxRect  vmAncora;
 static int      vmTemAncora;
+static GfxRect  vmResumo;
 static GfxRect  vmCaixa;       // a caixa aberta do ultimo quadro (teste)
 static int      vmTemCaixa;
 
@@ -232,6 +234,9 @@ static void montarRotulos(void) {
     } else if (modo == VM_TEMP) {
       snprintf(vmRot[i], sizeof vmRot[i], quantos == 1 ? i18n("Temporada inteira (%d episódio)") : i18n("Temporada inteira (%d episódios)"), quantos);
       ic = "aj_list-video";
+    } else if (modo == VM_NOTA) {
+      snprintf(vmRot[i], sizeof vmRot[i], "%s", i18n("Sua nota"));
+      ic = "aj_star";
     } else if (modo == VM_COMENT) {
       snprintf(vmRot[i], sizeof vmRot[i], "%s", i18n("Comentários"));
       ic = "aj_message-square";
@@ -290,6 +295,7 @@ static void menuAbrir(int idx, int t, int e, const char *nome, int so) {
       }
   }
   vmAcoes[vmN++] = VM_TEMP;
+  if (so && e > 0) vmAcoes[vmN++] = VM_NOTA;
   if (so) vmAcoes[vmN++] = VM_FONTES;
   vmSinopse[0] = 0;
   if (e > 0) {
@@ -433,8 +439,8 @@ static int aplicarVisto(int modo, int visto) {
   for (int i = 0; i < mudou; i += SMK_LOTE_MAX) {
     int qtd = mudou - i;
     if (qtd > SMK_LOTE_MAX) qtd = SMK_LOTE_MAX;
-    visto_episodios(ci->imdb, ci->tipo[0] ? ci->tipo : "series", envio + i, qtd, visto,
-                    visto_destinos());
+    visto_episodios_item(vmIdx, ci->imdb, ci->tipo[0] ? ci->tipo : "series",
+                         envio + i, qtd, visto, visto_destinos());
   }
   return mudou;
 }
@@ -625,6 +631,7 @@ static void menuDesenhar(GfxRect area, float a0) {
   const char *meta;
   GfxRect m;
   vmTemCaixa = 0;
+  vmResumo = (GfxRect){0};
   if (!menuVisivel()) return;
   if (vmFeito && SDL_GetTicks() >= vmFeitoAte) { vmAberto = 0; vmFeito = 0; }
   if (vmPainel()) { painelDesenhar(a0); return; }
@@ -657,6 +664,15 @@ static void menuDesenhar(GfxRect area, float a0) {
     if (panelY<VM_BORDA) panelY=VM_BORDA;
     comentarios = (GfxRect){m.x + MW + 24, panelY, pw, ph};
   }
+  if (vmSo && !vmModoTemp && ajustes_home_layout() == HOME_LAYOUT_MODERNA) {
+    // One complete still/summary, actions, reviews: stable at either row edge.
+    float gap=24, summaryW=420, total=summaryW+gap+MW+gap+676;
+    float left=(area.w-total)*.5f;
+    float top=fmaxf(VM_BORDA,(area.h-fmaxf(mh,740))*.5f);
+    vmResumo=(GfxRect){left,top,summaryW,740};
+    m.x=left+summaryW+gap; m.y=top;
+    comentarios=(GfxRect){m.x+MW+gap,top,676,624};
+  }
   if (vmAberto && ponteiro_ativo() && a > .5f) {
     ponteiro_camada();
     if (!vmFeito) ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, ponteiroVmFora, 0, 0);
@@ -672,6 +688,7 @@ static void menuDesenhar(GfxRect area, float a0) {
   else if (vmFoco<0) meta = "← / →";
   else if (vmAcoes[vmFoco] == VM_COMENT) meta = extras_comentarios_ep_tmdb() ? "TMDB · reviews da série" : "Comentários do Trakt";
   else if (vmAcoes[vmFoco] == VM_SINOPSE) meta = "Ler sinopse";
+  else if (vmAcoes[vmFoco] == VM_NOTA) meta = "Sua nota";
   else meta = vmAcoes[vmFoco] != VM_DAQUI && vmVisto ? "Marcar como assistido" : "Desmarcar como assistido";
   float content=a;
   if (vmSo && !vmModoTemp) {
@@ -748,6 +765,9 @@ static void menuEvento(const SDL_Event *ev) {
     if (vmFoco<0) { vmFoco=0; return; }
     int modo = vmAcoes[vmFoco], v = modo == VM_DAQUI ? 0 : vmVisto;
     if (modo == VM_COMENT) { epcoment_entrar(); return; }
+    if (modo == VM_NOTA) {
+      reacao_episodio_abrir(cat_item(vmIdx), vmT, vmE); vmAberto = 0; return;
+    }
     if (modo == VM_FONTES) { vmFontesPed = 1; vmAberto = 0; return; }
     if (modo == VM_SINOPSE) { sinopse_abrir(vmNome, vmSinopse); vmAberto = 0; return; }
     menuFeito(aplicarVisto(modo, v), v);
@@ -1237,6 +1257,11 @@ int  episodios_menu_visivel(void) { return vmSo && menuVisivel(); }
 int  episodios_menu_painel(void) { return vmSo && menuVisivel() && vmPainel(); }
 void episodios_menu_atualizar(float dt) { if (vmSo) menuAtualizar(dt); }
 int  episodios_menu_caixa(GfxRect *r) { if (vmTemCaixa && r) *r = vmCaixa; return vmTemCaixa; }
+int episodios_menu_resumo(GfxRect *r) {
+  if (vmResumo.w <= 0 || !menuVisivel()) return 0;
+  if (r) *r=vmResumo;
+  return 1;
+}
 float episodios_menu_anim(void) { return vmAnim; }
 int  episodios_menu_foco(void) { return vmFoco; }
 int episodios_menu_trocou(int *t,int *e) {
@@ -1264,7 +1289,12 @@ static void episodios_menu_desenharCorpo_(void) {
   if (vmSo) {
     float scale = gfx_escala(), fitted = scale;
     GfxRect anchor = vmAncora;
-    if (!vmModoTemp && scale > 1.0f) {
+    int modern = !vmModoTemp && ajustes_home_layout() == HOME_LAYOUT_MODERNA;
+    if (modern) {
+      fitted=fminf(scale,(NV_LAYOUT_REAL_W-96.0f)/(420+24+vmLarg+24+676));
+      fitted=fminf(fitted,(NV_LAYOUT_REAL_H-96.0f)/fmaxf(menuAltura(),740));
+      gfx_escala_sair(fitted);
+    } else if (!vmModoTemp && scale > 1.0f) {
       // Fit complete controls beside the card; shrinking only the panel box
       // leaves its fixed-width rating chart and review contents overflowing.
       float right = vmTemAncora ? (anchor.x + anchor.w) * scale + 24.0f : 48.0f;
@@ -1280,6 +1310,9 @@ static void episodios_menu_desenharCorpo_(void) {
     if (vmTemCaixa && fitted != scale)
       vmCaixa = (GfxRect){vmCaixa.x * fitted / scale, vmCaixa.y * fitted / scale,
                           vmCaixa.w * fitted / scale, vmCaixa.h * fitted / scale};
+    if (vmResumo.w > 0 && fitted != scale)
+      vmResumo=(GfxRect){vmResumo.x*fitted/scale,vmResumo.y*fitted/scale,
+                         vmResumo.w*fitted/scale,vmResumo.h*fitted/scale};
     vmAncora = anchor;
     gfx_escala_sair(scale);
   }

@@ -70,6 +70,7 @@
 #define extras_relacionado_titulo fx_relacionado_titulo
 #define extras_relacionado_ano    fx_relacionado_ano
 #define extras_relacionado_poster fx_relacionado_poster
+#define desc_pedir_titulo_tmdb fx_collection_open
 #define extras_n_colecao        fx_n_colecao
 #define extras_colecao_nome     fx_colecao_nome
 #define extras_colecao_titulo   fx_colecao_titulo
@@ -138,7 +139,7 @@ MusEstado fx_mus_estado(const char *imdb, int temp, MusAlbum *out) {
     memset(out, 0, sizeof *out);
     snprintf(out->titulo, sizeof out->titulo, "Dune: Part Two (Original Motion Picture Soundtrack)");
     snprintf(out->artista, sizeof out->artista, "Hans Zimmer");
-    snprintf(out->capa, sizeof out->capa, "deploy/app/art/poster/07.jpg");
+    snprintf(out->capa, sizeof out->capa, "%s", getenv("NV_MUSICA_CAPA") ? getenv("NV_MUSICA_CAPA") : "deploy/app/art/poster/07.jpg");
     out->n = 3;
     out->faixa[0].n = 1; snprintf(out->faixa[0].titulo, sizeof out->faixa[0].titulo, "Dream of Arrakis"); out->faixa[0].dur = 65;
     out->faixa[1].n = 2; snprintf(out->faixa[1].titulo, sizeof out->faixa[1].titulo, "Ripples in the Sand"); out->faixa[1].dur = 190;
@@ -151,7 +152,12 @@ void fx_mus_url_celular(char *dst, unsigned tam, const char *imdb, const char *t
   (void)imdb; (void)titulo; (void)ano; (void)temp;
   snprintf(dst, tam, "https://rec.test/m/#id=tt0000001");
 }
-void fx_mus_pedir(const char *imdb, const char *t, int ano, int temp) { (void)imdb; (void)t; (void)ano; (void)temp; }
+static int musPedidos;
+void fx_mus_pedir(const char *imdb, const char *t, int ano, int temp) {
+  // O pedido sai so com id e titulo; registra para a prova de "a pagina pede".
+  if (imdb && imdb[0] && t && t[0]) musPedidos++;
+  (void)ano; (void)temp;
+}
 
 // --- DUBLE DE extras ---------------------------------------------------------
 void fx_pedir(const char *imdb, int serie, long tmdbId) {
@@ -199,6 +205,10 @@ const char *fx_relacionado_ano(int i) { return REL_ANO[i % 3]; }
 const char *fx_relacionado_poster(int i) { return REL_PO[i % 3]; }
 // COLECAO DE ENSAIO (#194): so a captura 18 liga. Tres partes, o proprio
 // filme entre elas, como o TMDB devolve.
+static long collectionTarget;
+void fx_collection_open(long id, const char *type) {
+  assert(!strcmp(type,"movie")); collectionTarget = id;
+}
 static int colecaoLigada;
 static const char *const COL_TIT[] = { "The Matrix", "The Matrix Reloaded", "The Matrix Revolutions" };
 static const char *const COL_ANO[] = { "1999", "2003", "2003" };
@@ -630,26 +640,38 @@ int main(int argc, char **argv) {
   }
 
   if (getenv("NV_MUSICA_ONLY")) {
-    SDL_Event ev = {0}; ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_DOWN;
+    SDL_Event ev = {0}; ev.type = SDL_KEYDOWN;
     abrir(1, SEC_MUSICAS, 0);
+    assert(musPedidos > 0);   // a pagina emite o pedido da trilha (imdb+temp)
     assert(secaoN(SEC_MUSICAS) == 1);
     for (int q = 0; q < 90; q++) { SDL_Delay(16); quadros(1); }
-    snprintf(nome, sizeof nome, "%s-musicas-movie.png", saida);
-    gravar(nome);
-    ev.key.keysym.sym = SDLK_RIGHT; detail_evento(&ev);
-    assert(musPagina == 1);
-    quadros(1);
-    snprintf(nome, sizeof nome, "%s-musicas-last-page.png", saida);
-    gravar(nome);
-    ev.key.keysym.sym = SDLK_LEFT; detail_evento(&ev);
-    assert(musPagina == 0);
+    snprintf(nome, sizeof nome, "%s-musicas-card.png", saida); gravar(nome);
+    int nivelAntes = nivel;
     ev.key.keysym.sym = SDLK_RETURN; detail_evento(&ev);
     ev.type = SDL_KEYUP; detail_evento(&ev);
-    for (int q = 0; q < 45; q++) { SDL_Delay(16); quadros(1); }
-    assert(mus_guardado(itens[1].imdb, 0));
-    snprintf(nome, sizeof nome, "%s-musicas-guardada.png", saida);
-    gravar(nome);
-    puts("PASS: Musicas section shows soundtrack and Guardar toggles");
+    assert(musicaui_aberta());
+    // OK opens a modal over this page: no level/page push, and the panel
+    // starts at the card and grows into an inset island.
+    assert(aberto && nivel == nivelAntes && foco.fileira == SEC_MUSICAS);
+    GfxRect card = musicaui_painel();
+    assert(card.w < 1100 && card.h < 400);
+    for (int i = 0; i < 600 && musicaui_painel().w < 1300; i++) { SDL_Delay(4); quadros(1); }
+    GfxRect meio = musicaui_painel();
+    assert(meio.w > card.w && meio.w < 1600);
+    snprintf(nome, sizeof nome, "%s-musicas-modal-mid.png", saida); gravar(nome);
+    for (int q = 0; q < 60; q++) { SDL_Delay(16); quadros(1); }
+    GfxRect m = musicaui_painel();
+    assert(m.x > 0 && m.y > 0 && m.w <= 1600 && m.h <= 900 && m.w > 1500);
+    snprintf(nome, sizeof nome, "%s-musicas-movie.png", saida); gravar(nome);
+    ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_DOWN; detail_evento(&ev);
+    ev.type = SDL_KEYUP; detail_evento(&ev);
+    for (int q = 0; q < 30; q++) { SDL_Delay(16); quadros(1); }
+    snprintf(nome, sizeof nome, "%s-musicas-foco.png", saida); gravar(nome);
+    ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_ESCAPE; detail_evento(&ev);
+    assert(!musicaui_aberta() && musicaui_visivel());
+    for (int i = 0; i < 600 && musicaui_visivel(); i++) { SDL_Delay(4); quadros(1); }
+    assert(!musicaui_visivel() && foco.fileira == SEC_MUSICAS && nivel == nivelAntes);
+    puts("PASS: Music card opens animated modal; Back closes it back onto the card");
     SDL_GL_DeleteContext(gl); SDL_DestroyWindow(janela); SDL_Quit(); return 0;
   }
 
@@ -844,27 +866,23 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-18-filme-colecao.png", saida);
   gravar(nome);
 
-  // --- 19. A TELA DE LISTA: OK no card, depois um BAIXO — a 2a parte em foco
-  //         e a 1a (o titulo aberto) com "Você está aqui".
-  { SDL_Event ev; memset(&ev, 0, sizeof ev);
-    // O OK da pagina age no SOLTAR (desce + sobe), como na TV.
-    ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_RETURN;
-    detail_evento(&ev);
-    ev.type = SDL_KEYUP;
-    detail_evento(&ev);
-    quadros(5);
-    ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_DOWN;
-    detail_evento(&ev); }
+  // Approved collection row opens parts directly, without the retired list.
+  assert(secaoN(SEC_COLECAO) == 3);
+  { SDL_Event ev = {0};
+    foco.coluna = parteAtualColecao();
+    ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_RETURN; detail_evento(&ev);
+    ev.type = SDL_KEYUP; detail_evento(&ev);
+    assert(!colListaAberta && aberto && foco.fileira == SEC_COLECAO);
+    foco.coluna = 1;
+    ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_RETURN; detail_evento(&ev);
+    ev.type = SDL_KEYUP; detail_evento(&ev);
+    assert(!colListaAberta && collectionTarget == fx_colecao_tmdb(1));
+  }
   quadros(90);
-  assert(colListaAberta && colListaFoco == 1);
   snprintf(nome, sizeof nome, "%s-19-filme-colecao-lista.png", saida);
   gravar(nome);
 
-  // --- 20. VOLTAR fecha a lista e devolve a pagina no mesmo card; e a
-  //         reserva SEM backdrop (so a escada sobre a superficie neutra).
-  { SDL_Event ev; memset(&ev, 0, sizeof ev);
-    ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_ESCAPE;
-    detail_evento(&ev); }
+  // Preserve collection focus and capture the missing-backdrop fallback.
   assert(!colListaAberta && aberto && foco.fileira == SEC_COLECAO);
   colecaoSemFundo = 1;
   quadros(60);

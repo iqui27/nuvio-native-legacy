@@ -92,8 +92,8 @@ static int b2_checks(void) {
   desenhaColecao(NV_DETP_X, 100, 0, 1);
   desenhaColecao(NV_DETP_X, 100, 1, 1);
   for (int i = 0; i < fx_n_comentarios(); i++)
-    cartaoComentario((GfxRect){NV_DETP_X + i * (COM_CARD_W + COM_CARD_GAP),
-                             100, COM_CARD_W, COM_CARD_H}, 20.0f / COM_CARD_H, 1);
+    gfx_cor((GfxRect){NV_DETP_X + i * (COM_CARD_W + COM_CARD_GAP),
+                     100, COM_CARD_W, COM_CARD_H}, 20.0f / COM_CARD_H,1,1,1,.06f);
   printf("%s: B2 tint-only collection/comments materials=%d\n",
          cardMaterial ? "FAIL" : "PASS", cardMaterial);
   fail += cardMaterial != 0;

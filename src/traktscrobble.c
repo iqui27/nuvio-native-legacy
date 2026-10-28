@@ -9,6 +9,21 @@
 // NuvioTV oficial.
 static int pausaAceita(double pct) { return pct >= 1.0 && pct < 80.0; }
 
+int scrobble_alvo_congelar(TraktScrobbleAlvo *out, int *pronto, const char *id,
+                           int listaFinal, int parFinalExiste, int tvdbEp) {
+  if (!out || !pronto) return 0;
+  if (*pronto) return out->id[0] != 0;
+  // A numeric pair is safe only while it exists in the final topology. An
+  // exact TVDB id captured from the provisional snapshot is already stable.
+  if ((!listaFinal || !parFinalExiste) && tvdbEp <= 0) return 0;
+  if (!id || !*id) return 0;
+  memset(out, 0, sizeof *out);
+  snprintf(out->id, sizeof out->id, "%s", id);
+  out->tvdbEp = tvdbEp > 0 ? tvdbEp : 0;
+  *pronto = 1;
+  return 1;
+}
+
 int scrobble_decidir(ScrobbleEstado *s, int evento, const char *id, double pct) {
   int mesmo;
   if (!id || !*id) return SCR_NADA;
@@ -81,6 +96,15 @@ void scrobble_corpo_ep(char *dst, size_t n, const char *id, double pct,
 
 void scrobble_corpo(char *dst, size_t n, const char *id, double pct) {
   scrobble_corpo_ep(dst, n, id, pct, NULL);
+}
+
+void scrobble_corpo_alvo(char *dst, size_t n, const TraktScrobbleAlvo *alvo, double pct) {
+  if (!alvo) { if (n) dst[0] = 0; return; }
+  if (alvo->tvdbEp <= 0) { scrobble_corpo(dst, n, alvo->id, pct); return; }
+  if (pct < 0.0) pct = 0.0;
+  if (pct > 100.0) pct = 100.0;
+  snprintf(dst, n, "{\"episode\":{\"ids\":{\"tvdb\":%d}},\"progress\":%.2f}",
+           alvo->tvdbEp, pct);
 }
 
 const char *scrobble_nome(int acao) {

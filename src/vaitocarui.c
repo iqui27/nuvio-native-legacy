@@ -5,6 +5,8 @@
 #include "idiomacod.h"
 #include "plrui.h"
 #include "text.h"
+#include "fonteantecipa.h"
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -16,6 +18,14 @@
 #define VAI_SEP     13.0f
 #define VAI_L2_H    26.0f
 #define VAI_RAIO    24.0f
+
+void vtui_estado_ponto(int estado, float x, float y, float a) {
+  float r, g, b;
+  vt_estado_cor(estado, &r, &g, &b);
+  if (estado == FA_CONFERINDO && !ajustes_animacoes_reduzidas())
+    a *= .72f + .28f * sinf((float)(SDL_GetTicks() % 1600) * (6.2831853f / 1600));
+  gfx_cor((GfxRect){x, y, 10, 10}, .5f, r, g, b, a);
+}
 
 float vtui_altura(const VaiTocar *vt) {
   float h;

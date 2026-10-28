@@ -91,6 +91,7 @@ const char *extras_comentario_ep_lingua(int i);
 //
 // `imdbSerie` aceita tanto "tt1234567" quanto o "tt1234567:2:4" que a lista de
 // episodios usa; a parte depois do primeiro ':' e ignorada.
+// temporada=episodio=0 opens the same paged feed for the whole title.
 void extras_pedir_comentarios_ep(const char *imdbSerie, int temporada, int episodio);
 int  extras_n_comentarios_ep(void);
 // Paged episode feed. Appends in the worker; repeated near-end requests coalesce.
@@ -142,6 +143,10 @@ int  extras_ep_nota(int t, int i);
 // credito de um ator (desc_pedir_titulo_tmdb).
 #define EX_COL_MAX 12
 const char *extras_colecao_nome(void);
+// Book author (TMDB crew Novel/Book/Author), "" when unknown; and whether the
+// collection row lists that author's adaptations (colecao_nome = the author).
+const char *extras_livro_autor(void);
+int  extras_colecao_do_autor(void);
 int  extras_n_colecao(void);
 const char *extras_colecao_titulo(int i);
 const char *extras_colecao_ano(int i);
@@ -168,6 +173,7 @@ int         extras_n_estudios(void);
 // Sai do `original_language` do TMDB, no mesmo corpo que a ficha ja baixa.
 // Serve ao ajuste "Áudio: Original" — ver linguas.h.
 const char *extras_idioma_original(void);
+const char *extras_titulo_original(void);
 
 const char *extras_estudio_nome(int i);
 const char *extras_estudio_logo(int i);
@@ -178,6 +184,8 @@ int         extras_estudio_rede(int i);
 // episodio ganha uma mascara e um check quando o dono ja viu. Sem isto, quem
 // acompanha uma serie nao tinha como saber onde parou olhando a lista.
 int  extras_ep_visto(int temporada, int episodio);
+// Resume % from a personal server for this episode (issue #617). 0 = none.
+int  extras_ep_progresso(int temporada, int episodio);
 // 1 apenas depois de receber o historico desta obra. Sem resposta nao inferir
 // que todos os episodios estao por assistir.
 int extras_progresso_pronto(void);

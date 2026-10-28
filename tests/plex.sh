@@ -22,12 +22,13 @@ if command -v sdl2-config >/dev/null; then
   # shellcheck disable=SC2207
   flags+=($(sdl2-config --cflags) -I"$(sdl2-config --prefix)/include")
 fi
-if [ "$(uname -s)" != Darwin ]; then flags+=(-ldl); fi
+flags+=(-ffunction-sections -fdata-sections)
+if [ "$(uname -s)" = Darwin ]; then flags+=(-Wl,-dead_strip); else flags+=(-ldl -Wl,--gc-sections); fi
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 if [ "${SANITIZE:-0}" = thread ]; then flags+=(-fsanitize=thread -fno-omit-frame-pointer); fi
 # plex.tv is the fake too: the override is compile-time only.
 flags+=("-DNV_PX_TV=\"$base\"")
-cc "${flags[@]}" tests/plex.c src/plex.c src/jellyfin.c src/srvidx.c src/rede.c src/redeurl.c src/js.c src/jsw.c \
+cc "${flags[@]}" tests/plex.c src/plex.c src/jellyfin.c src/servidores.c src/srvcache.c src/srvsetup_net.c src/srvidx.c src/rede.c src/redeurl.c src/js.c src/jsw.c \
   -o "$tmp/teste"
 "$tmp/teste" "$base" "$tmp/dados" > "$tmp/log" 2>&1 || { cat "$tmp/log"; exit 1; }
 # tests/servidores_log.sh collects every server test's log and scans it.

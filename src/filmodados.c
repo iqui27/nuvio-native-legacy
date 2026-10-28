@@ -29,7 +29,9 @@
 #define TMDB "https://api.themoviedb.org/3"
 #include "descoberta.h"
 static FdFicha ficha,remota;
-static unsigned rev;
+static unsigned rev,estadosCat,estadosEps;
+static unsigned long long estadosHist;
+static int estadosValidos;
 static unsigned long long pagina,resultadoGeracao;
 static pthread_mutex_t trava=PTHREAD_MUTEX_INITIALIZER;
 static int vivo,resultado,alvo=-1,preparado=-1,paresN,operacao;
@@ -78,14 +80,20 @@ static void *worker(void *v){Pedido *p=v;int ok=1;
 }
 static Pedido *novo(int op,int idx){pthread_mutex_lock(&trava);if(vivo||resultado){pthread_mutex_unlock(&trava);return NULL;}Pedido *p=calloc(1,sizeof *p);if(!p){pthread_mutex_unlock(&trava);return NULL;}p->s=ficha;p->idx=idx;p->op=op;p->geracao=cat_historico_geracao();p->pagina=pagina;p->ne=paresN;if(paresN>0)memcpy(p->eps,pares,paresN*sizeof *pares);if(op==2){p->ne=episodios[idx].n;if(p->ne>0)memcpy(p->eps,episodios[idx].eps,p->ne*sizeof *p->eps);}vivo=1;ficha.ocupado=1;resultado=0;pthread_mutex_unlock(&trava);return p;}
 static int lancar(Pedido *p){pthread_t t;if(!p)return 0;if(pthread_create(&t,NULL,worker,p)){free(p);pthread_mutex_lock(&trava);vivo=0;ficha.ocupado=0;pthread_mutex_unlock(&trava);return 0;}pthread_detach(t);return 1;}
-void fd_abrir(void){pthread_mutex_lock(&trava);pagina++;resultado=0;paresN=0;for(int i=0;i<FM_MAX;i++){free(episodios[i].eps);episodios[i].eps=NULL;episodios[i].n=episodios[i].carregado=0;}memset(&ficha,0,sizeof ficha);memset(marcas,0,sizeof marcas);rev=0;preparado=-1;pendenteTitulo=-1;pendenteSeguir=pendenteSobre=0;aviso[0]=0;pthread_mutex_unlock(&trava);fd_atualizar();}
+void fd_abrir(void){pthread_mutex_lock(&trava);pagina++;resultado=0;paresN=0;for(int i=0;i<FM_MAX;i++){free(episodios[i].eps);episodios[i].eps=NULL;episodios[i].n=episodios[i].carregado=0;}memset(&ficha,0,sizeof ficha);memset(marcas,0,sizeof marcas);rev=0;estadosValidos=0;preparado=-1;pendenteTitulo=-1;pendenteSeguir=pendenteSobre=0;aviso[0]=0;pthread_mutex_unlock(&trava);fd_atualizar();}
 static void contar(int avisar){FmConquista cq[FM_CQ_MAX];int nc=fm_conquistas(ficha.pessoa,pessoa_nome(),ficha.c,ficha.st,ficha.n,cq);if(!ajustes_conquistas())return;CqEstado s,before;cqd_carregar(&s);before=s;for(int i=0;i<nc;i++){FmConquista *c=cq+i;int up=cqregra_registrar(&s,c->chave,!strncmp(c->chave,"dir:",4)?CQ_FAM_DIRETOR:CQ_FAM_EXPLORADOR,pessoa_nome(),c->nivel,c->visto,c->total,(long)time(NULL));if(up&&!avisar)for(int j=0;j<s.n;j++)if(!strcmp(s.e[j].chave,c->chave))s.e[j].avisado=s.e[j].nivel;}if(memcmp(&before,&s,sizeof s)&&cqd_gravar(&s)&&avisar)conquistas_aviso_armar();}
 void fd_atualizar(void){int imported=0;pthread_mutex_lock(&trava);
   if(pessoa_pronta()&&rev!=pessoa_revisao()) {rev=pessoa_revisao();ficha.pessoa=pessoa_id();ficha.n=pessoa_n_creditos();memcpy(ficha.c,pessoa_creditos(),ficha.n*sizeof *ficha.c);ficha.pronto=1;nomeArquivo();memset(marcas,0,sizeof marcas);for(int i=0;i<ficha.n;i++){char path[280];nomeMarca(path,sizeof path,i);char *b=dados_ler(path);long id;int tv;Marca m={0};if(b&&sscanf(b,"%ld %d %d %d %10s %ld %ld",&id,&tv,&m.como,&m.release,m.em,m.falha,m.falha+1)==7&&id==ficha.c[i].tmdb&&tv==ficha.c[i].tv)marcas[i]=m;free(b);}imported=1;}
   int res=remota.pessoa==ficha.pessoa&&resultadoGeracao==cat_historico_geracao()?resultado:0,op=operacao,i=alvo;resultado=0;
   if(res){if(op==1||op==5){if(op==1)memcpy(ficha.c,remota.c,ficha.n*sizeof *ficha.c);else ficha.c[i]=remota.c[i];if(op==1)preparado=paresN>=0?i:-1;episodios[i].carregado=1;if(paresN>=0){free(episodios[i].eps);episodios[i].eps=paresN?malloc(paresN*sizeof *pares):NULL;episodios[i].n=episodios[i].eps?paresN:0;if(episodios[i].eps)memcpy(episodios[i].eps,pares,paresN*sizeof *pares);}}else if(op==3||op==4){ficha.seguindo=remota.seguindo;ficha.nf=remota.nf;ficha.np=remota.np;memcpy(ficha.familia,remota.familia,sizeof ficha.familia);memcpy(ficha.premios,remota.premios,sizeof ficha.premios);}ficha.erro=res<0;snprintf(aviso,sizeof aviso,"%s",res<0?"Não foi possível sincronizar. Tente novamente.":op==2?"Histórico sincronizado.":"");}ficha.ocupado=vivo;pthread_mutex_unlock(&trava);
+  // Catalog content includes movie history/progress; episode history has its own revision.
+  unsigned cat=cat_revisao_itens(),epsRev=vistoep_revisao();
+  unsigned long long hist=cat_historico_geracao();
+  if(!estadosValidos||imported||res||estadosCat!=cat||estadosEps!=epsRev||estadosHist!=hist){
   for(int k=0;k<ficha.n;k++){FmCredito *c=ficha.c+k;int idx=c->imdb[0]?cat_indice_por_imdb(c->imdb):-1;if(idx<0)for(int j=0;j<cat_n();j++){const CatItem *ci=cat_item(j);if(ci&&ci->tmdb==c->tmdb&&(!strcmp(ci->tipo,"series"))==c->tv){idx=j;snprintf(c->imdb,sizeof c->imdb,"%.15s",ci->imdb);break;}}
     long long ms=0;int hist=c->imdb[0]?cat_historico_estado_tempo(c->imdb,c->tv?"series":"movie",&ms):-1;int pct=hist==1?100:idx>=0?cat_item(idx)->progresso:0;int eps=-1;if(c->tv&&episodios[k].eps){eps=0;for(int e=0;e<episodios[k].n;e++)eps+=vistoep_estado(c->imdb,episodios[k].eps[e].temporada,episodios[k].eps[e].episodio)==1;}char date[11]="";if(ms>0){time_t t=(time_t)(ms/1000);struct tm tm;gmtime_r(&t,&tm);strftime(date,sizeof date,"%Y-%m-%d",&tm);}Marca *m=marcas+k;ficha.st[k]=fm_estado(c,pct,c->tv?eps:-1,date,m->como,m->em);
+  }
+  estadosCat=cat;estadosEps=epsRev;estadosHist=hist;estadosValidos=1;
   }if(imported||res==1)contar(!imported&&op==2);
   if(!vivo&&pendenteTitulo>=0){int k=pendenteTitulo;pendenteTitulo=-1;lancar(novo(1,k));}
   if(!vivo&&pendenteSeguir){pendenteSeguir=0;lancar(novo(3,-1));}
@@ -99,7 +107,7 @@ int fd_tentativas(int i){return i>=0&&i<ficha.n?fm_tentativas(marcas[i].falha,2,
 void fd_falhou(int i){Marca *m=marcas+i;m->falha[0]=m->falha[1];m->falha[1]=(long)time(NULL);gravar(i);}
 int fd_quiz(int i,FmQuiz *q){if(!fd_preparado(i))return 0;const char *dp[FM_MAX],*dc[FM_MAX],*dt[FM_MAX];int np=0,nc=0,nt=0;for(int k=0;k<ficha.n;k++){if(k==i)continue;FmCredito *c=ficha.c+k;if(c->personagem[0])dp[np++]=c->personagem;for(int j=0;j<c->nCom&&nc<FM_MAX;j++)dc[nc++]=c->com[j];for(int j=0;j<c->nKw&&nt<FM_MAX;j++)dt[nt++]=c->kw[j];}fm_quiz_montar(q,ficha.c+i,pessoa_nome(),0,dp,np,dc,nc,dt,nt,(unsigned)time(NULL));return q->nq>=2;}
 int fd_marcar(int i,int como,int release,int remover){if(!fd_preparado(i)||i<0||i>=ficha.n||!ficha.c[i].imdb[0]||(ficha.c[i].tv&&episodios[i].n<=0))return 0;Pedido *p=novo(2,i);if(!p)return 0;char today[11];hoje(today);fm_data_vista(ficha.c[i].lancamento,release,today,p->data,sizeof p->data);p->como=como;p->release=release;p->remover=remover;const char *cab[4];char aut[3200],key[200];p->tk=trakt_ativo()&&trakt_cabecalhos(cab,aut,sizeof aut,key,sizeof key);if(p->tk){snprintf(p->aut,sizeof p->aut,"%s",strstr(aut,"Bearer ")?strstr(aut,"Bearer ")+7:"");snprintf(p->key,sizeof p->key,"%s",strstr(key,": ")?strstr(key,": ")+2:"");}p->sm=simkl_ativo();if(p->sm)simklauth_credencial_copiar(p->token,sizeof p->token);
-  Marca old=marcas[i];marcas[i].como=remover?0:como;marcas[i].release=release;snprintf(marcas[i].em,sizeof marcas[i].em,"%s",p->data);if(!gravar(i)){marcas[i]=old;free(p);pthread_mutex_lock(&trava);vivo=0;ficha.ocupado=0;pthread_mutex_unlock(&trava);return 0;}FmCredito *c=ficha.c+i;if(c->tv){for(int j=0;j<p->ne;j++)vistoep_definir(c->imdb,p->eps[j].temporada,p->eps[j].episodio,!remover);contapend_episodios(c->imdb,"series",p->eps,p->ne,!remover);}else{cat_historico_definir_id(c->imdb,"movie",!remover);contapend_titulo(c->imdb,"movie",!remover);}int ok=lancar(p);if(ok)contapend_chutar();return ok;
+  Marca old=marcas[i];marcas[i].como=remover?0:como;marcas[i].release=release;snprintf(marcas[i].em,sizeof marcas[i].em,"%s",p->data);if(!gravar(i)){marcas[i]=old;free(p);pthread_mutex_lock(&trava);vivo=0;ficha.ocupado=0;pthread_mutex_unlock(&trava);return 0;}estadosValidos=0;FmCredito *c=ficha.c+i;if(c->tv){for(int j=0;j<p->ne;j++)vistoep_definir(c->imdb,p->eps[j].temporada,p->eps[j].episodio,!remover);contapend_episodios(c->imdb,"series",p->eps,p->ne,!remover);}else{cat_historico_definir_id(c->imdb,"movie",!remover);contapend_titulo(c->imdb,"movie",!remover);}int ok=lancar(p);if(ok)contapend_chutar();return ok;
 }
 void fd_seguir(void){pendenteSeguir=1;}
 void fd_sobre(void){pendenteSobre=1;}

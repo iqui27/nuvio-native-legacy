@@ -1598,6 +1598,21 @@ static int canalPublicadoValido(int epg) {
   return f == 0 || (f > 0 && f < nChaveFonteP && fontePorChave(chaveFonteP[f]) == f);
 }
 
+time_t epg_fim_url(const char *url) {
+  time_t end = 0; char hash[17];
+  if (!url || !url[0]) return 0;
+  hashUrl(url, hash, sizeof hash);
+  pthread_mutex_lock(&trava);
+  for (int i = 0; i < P.nCanais; i++) {
+    int f = P.canais[i].fonte;
+    if (f <= 0 || f >= nChaveFonteP || !P.canais[i].evN || strcmp(hash, hashFonteP[f]) || !canalPublicadoValido(i)) continue;
+    long last = P.canais[i].evIni + P.canais[i].evN - 1;
+    if (P.evs[last].fim > end) end = (time_t)P.evs[last].fim;
+  }
+  pthread_mutex_unlock(&trava);
+  return end;
+}
+
 static void pubProg(long m, EpgProg *p) {
   p->ini = (time_t)P.evs[m].ini; p->fim = (time_t)P.evs[m].fim; p->titulo = P.arena + P.evs[m].tit;
 }

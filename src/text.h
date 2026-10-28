@@ -200,6 +200,12 @@ typedef enum {
   TXT_SINOPSE_28, TXT_SINOPSE_29, TXT_SINOPSE_30, TXT_SINOPSE_31,
   TXT_SINOPSE_33, TXT_SINOPSE_34, TXT_SINOPSE_35, TXT_SINOPSE_39,
   TXT_SINOPSE_20, // 125% de 16px; append-only, preserva os estilos anteriores
+  TXT_MUS_TIT, TXT_MUS_ART, TXT_MUS_TRACK, TXT_MUS_KICK, TXT_MUS_17, TXT_MUS_16,
+  TXT_HERO_META_G,  // hero info Grande, 24/500
+  TXT_HERO_META_GG, // hero info Muito grande, 27/500
+  TXT_FILMO_ANO, // History chapter display, 84/700
+  TXT_PEN_ROW, // Pencil small-text optical compensation, 22/700.
+  TXT_PEN_VALUE, // Pencil values, 19/400.
   TXT_NFONTES
 } TxtEstilo;
 
@@ -288,6 +294,17 @@ void txt_encerrar(void);
 void txt_novo_quadro(void);
 
 TxtLinha txt_linha(TxtEstilo estilo, const char *s, int r, int g, int b, int a);
+// Verbatim add-on block with color emoji, unlimited wrapping and measured height.
+// Height of the first maxLines measured lines; zero means the full block.
+float txt_addon_altura(TxtEstilo style, const char *s, float width, int maxLines);
+float txt_addon_bloco(TxtEstilo style, const char *s, float x, float y, float width,
+                       int gray, float alpha, int *lines);
+int txt_addon_emoji(const char *s, int *bytes);
+#ifdef NV_ADDON_LAYOUT_TEST
+int txt_addon_test_surface(TxtEstilo style, const char *s, int *width, int *height);
+#endif
+// Render provider content verbatim; callers translate UI keys explicitly.
+TxtLinha txt_linha_bruta(TxtEstilo estilo, const char *s, int r, int g, int b, int a);
 
 // Igual a txt_linha, mas escolhe uma familia explicita. Usado pela legenda
 // para manter sua preferencia independente da interface. Familia indisponivel
@@ -313,6 +330,9 @@ TxtLinha txt_linha_corta_familia(TxtEstilo estilo, const char *s, int r, int g,
 TxtLinha txt_linha_corta_enfase(TxtEstilo estilo, const char *s, int r, int g,
                                 int b, int a, float maxW, TxtFamilia familia,
                                 int enfase);
+// Clip provider content verbatim, without treating it as a translation key.
+TxtLinha txt_linha_corta_bruta(TxtEstilo estilo, const char *s, int r, int g,
+                               int b, int a, float maxW);
 
 // Desenha no canto superior esquerdo (x,y).
 void txt_desenhar(TxtLinha l, float x, float y);
@@ -359,6 +379,9 @@ size_t txt_token_tam(const char *s);
 // Com alpha = 0, os blocos so medem: mesma quebra, sem rasterizacao nem GL.
 float txt_bloco(TxtEstilo estilo, const char *s, int r, int g, int b,
                 float x, float y, float larg, float leading, float alpha, int maxLinhas);
+// Wrap provider content without translating the text or individual lines.
+float txt_bloco_bruto(TxtEstilo estilo, const char *s, int r, int g, int b,
+                      float x, float y, float larg, float leading, float alpha, int maxLinhas);
 
 // Igual a txt_bloco, mas indica com reticencias quando `maxLinhas` omite texto.
 // Uma palavra maior que a linha tambem e cortada com reticencias sem estourar

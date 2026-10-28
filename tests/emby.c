@@ -51,6 +51,10 @@ int dados_gravar_leve(const char *nome, const char *conteudo) {
 }
 void dados_fs_travar(void) {}
 void dados_fs_liberar(void) {}
+void cat_historico_definir_tempo(const char *imdb, const char *tipo,
+                                 int visto, long long ms) {
+  (void)imdb; (void)tipo; (void)visto; (void)ms;
+}
 
 #define SERVER_ID "9f8e7d6c5b4a39281706f5e4d3c2b1a0"
 #define USER_ID "0a1b2c3d4e5f60718293a4b5c6d7e8f9"

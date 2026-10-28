@@ -8,7 +8,7 @@ trap 'rm -rf "$dir"' EXIT
 flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 cc ${flags[@]+"${flags[@]}"} src/catalogo.c src/cwordem.c tests/title_identity524.c src/cotacat.c \
-  src/js.c src/metaprov.c src/colecoes.c src/redeurl.c src/catordem.c src/artefontes.c \
+  src/js.c src/metaprov.c src/colecoes.c src/redeurl.c src/catordem.c src/artefontes.c tests/discovery_boundary_stub.c \
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -o "$dir/teste" -O1 -g -Wall -Wno-deprecated-declarations -Wno-macro-redefined -lpthread
 if [ "$#" -gt 0 ]; then "$dir/teste" "$1"; exit; fi
@@ -17,6 +17,7 @@ for scenario in tmdb-tv episode-id movie-control known-series-control uncertain-
   tmdb-series-alias tmdb-show-alias cached-opposite-movie cached-opposite-series \
   cached-uncertain cached-channel cached-show-control opposite-response-type \
   different-response-id missing-series-no-movie context-reset malformed-episode-control \
+  untyped-collision tmdb-only-enrichment \
   seed-opposite-movie seed-opposite-series seed-matching-show-control \
   seed-current-session seed-stale-session seed-cached-stale-session \
   native-tmdb-canonical-alias native-tmdb-wrong-id native-tmdb-wrong-type; do

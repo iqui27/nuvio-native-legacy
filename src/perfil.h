@@ -42,6 +42,8 @@ void perfil_abrir(void);
 // abre esta tela inteira. Sem chamador, o modo lateral era codigo morto
 // desenhando um terceiro estado que ninguem mais alcancava.
 void perfil_fechar(void);
+void perfil_suspender(void);
+void perfil_retomar(void);
 int  perfil_aberto(void);
 int  perfil_quer_sair(void);       // consome o pedido de voltar
 int  perfil_pediu_relogio(void);
@@ -72,6 +74,8 @@ int perfil_item_selecionado(PerfilDestaque *saida);
 // Retorna 1 uma vez apos OK no seletor do duelo ("Voce e Fulano"): `id`
 // recebe o pessoaId de socialvis para o app abrir o perfil do amigo.
 int perfil_pediu_amigo(char *id, size_t tam);
+// Retorna 1 uma vez apos OK no botao "Caca" do canto: o app abre a tela Caca.
+int perfil_pediu_caca(void);
 // Depois de perfil_abrir, na volta do perfil do amigo: reabre o duelo.
 void perfil_voltar_ao_duelo(void);
 

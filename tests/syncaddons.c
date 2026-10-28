@@ -186,8 +186,19 @@ char *sessao_rpc(const char *funcao, const char *corpo, int *st) {
   }
   return strdup("[]");
 }
-int  sessao_logada(void)          { return 1; }
-const char *sessao_usuario(void)  { return "conta-a"; }
+void diario_dono(const char *s) { (void)s; }
+void diario_esquecer(void) { }
+void perfil_infantil_esquecer(void) { }
+void trava_definir_conta(const char *s) { (void)s; }
+void trava_esquecer(void) { }
+void rewatch_esquecer(void) { }
+int rewatch_sujo(void) { return 0; }
+void rewatch_sujar(void) { }
+char *rewatch_blob_costurar(const char *s) { return s?strdup(s):NULL; }
+int rewatch_blob_ler(const char *s) { (void)s;return 0; }
+static int signedIn=1;
+int  sessao_logada(void)          { return signedIn; }
+const char *sessao_usuario(void)  { return signedIn?"conta-a":""; }
 int perfis_puxar_sessao(uint64_t s, const char *u, const char *t) { (void)s; (void)u; (void)t; return perfis_puxar(); }
 void perfis_invalidar_sessao(void) {}
 int sessao_token_copiar(char *t, size_t n) { snprintf(t, n, "fixture"); return 1; }
@@ -207,6 +218,9 @@ char *nuvem_addon_alternar(const char *q, int a, const char *jwt, unsigned prazo
 }
 #endif
 void ajustes_perfil_padrao(void) {}
+int ajustes_edicao_perfil(void) { return 0; }
+void ajustes_edicao_encerrar(void) {}
+int ajustes_migrar_escopo(void) { return 0; }
 void desc_abrir_sessao(void) {}
 void desc_sessao_preparada(void) {}
 void desc_sessao_passo(void) {}
@@ -368,7 +382,13 @@ int main(int argc, char **argv) {
   contaLer();
   printf("-- cenario %s%s%s (conta no inicio: %s)\n", cen, argc > 2 ? " " : "", argc > 2 ? argv[2] : "", conta);
 
-  if (!strcmp(cen, "cheio")) {
+  if (!strcmp(cen,"local-save")) {
+    confere("signed-out snapshot saved",contacache_gravar(CC_ADDONS_APLICADOS,1,"@local","[{\"url\":\"https://a.exemplo/manifest.json\",\"name\":\"AIOStreams\",\"enabled\":true}]"));
+  } else if (!strcmp(cen,"local-restore")) {
+    signedIn=0; sync_iniciar();
+    confere("signed-out install survives restart",nTv==1 && !strcmp(tv[0].url,"https://a.exemplo/manifest.json"));
+    confere("signed-out restore never pushes",pushes==0);
+  } else if (!strcmp(cen, "cheio")) {
     int i, total = argc > 2 ? atoi(argv[2]) : 100;
     cheio = 1; nContaN = total;
     for (i = 0; i < total; i++) contaN[i] = i;

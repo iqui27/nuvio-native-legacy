@@ -210,6 +210,8 @@ def achar_rotulo_sem_i18n(txt, linha_de, ctx_fn, re_desenho, re_nao_e_tela, nome
 NAO_E_TELA = ("printf", "fprintf", "puts", "fputs", "perror", "marco",
               "strcmp", "strncmp", "strcasecmp", "strstr", "strchr", "strrchr",
               "getenv", "setenv", "fopen", "unlink", "remove", "rename",
+              # Guide state route IDs, never rendered UI copy.
+              "g5ui_open", "go",
               "mkdir", "system", "dlopen", "dlsym", "js_", "jsw_", "rede_",
               "curl_", "SDL_Log",
               # motivo de log da fonte guardada (fontevolta.h): nunca tela
@@ -264,6 +266,8 @@ def contexto(txt, i):
 # "nao sei o que e": sem esta lista a ferramenta nao pode virar teste, e sem
 # virar teste ela nao impede a proxima regressao.
 IGNORAR = {
+    # Guide v5 internal screen routes, never rendered as labels.
+    "fontes-gerenciar", "parental-perfil-infantil", "vod-titulo",
     # Verified non-UI literals on the 2.1 feature branch:
     # fundo.c diagnostics; faixas/player/video_android speed and subtitle logs.
     # Verified diagnostics, protocol/file identifiers, and genre/token match data.
@@ -285,6 +289,7 @@ IGNORAR = {
     "ltv-fontes.txt", "ltv-fontes-p%d.txt",  # ltv.c: preference filenames, never UI labels
     "daqui em diante",  # episodios.c nomeModo: so no log [visto] menu, nunca rotulo
     "fechar",  # main.c: nome do evento de janela so no log "[ciclo] janela="
+    "ime-sem-osk",  # entrada_texto.c #642: motivo de terminar(), so no log [texto]
     # PR #567: motivos so de log ([fonte] lembrada / auto / link guardado).
     "lancamento sem grupo", "todos os add-ons permitidos responderam", "relogio para tras",
     # video_tpk.c: motivos de cartaoModo()/cartaoEncaixar(), so no log "[video] tpk cartao".
@@ -344,6 +349,8 @@ IGNORAR = {
     # vao para a tela.
     "guia-fontes", "guia-fileiras", "guia-legendas", "guia-vindo-do-whatsnew",
     "h-fileiras",
+    # Sports route and bounded metadata cache filename, never rendered labels.
+    "esportes-catalogo", "esportes-fileira-%d.json",
     # Palavra que a folha de Fontes PROCURA no nome/descricao do arquivo para
     # saber se ha audio em portugues (streams.c, idiomaDa). Dado de comparacao,
     # nunca texto desenhado.
@@ -467,6 +474,7 @@ IGNORAR = {
     # Keys of the Search "?!#" page (busca.c SIMBOLOS): accented letters and
     # punctuation typed into the query, never a screen label.
     "áàâãéêíóôõúçñü.,:;'\"!?-_&()/@#+=*·",
+    "perfil 5",  # DV release metadata in streams.c; parser vocabulary, never a UI label.
     # Release-language matching terms in fontenota.c; input data, never UI labels.
     "français", "inglês", "japonês", "română", "türkçe",
     # O MESMO CODIGO EM MAIUSCULA (fontepref.c). E o valor da tabela TERMOS,
@@ -661,6 +669,8 @@ def varrer():
                                 "ajustes_ux_desenho.inc", "ajustes_ux_ilha.inc",
                                 "registro_ilha.inc", "registro_envio.inc") if (src / nome).exists()
     ]
+    arquivos += sorted(src.glob("ajustes_pen*.inc"))
+    arquivos += [src / "ajustes_ux_v4.inc"]
     for arq in sorted(arquivos):
         if arq.name == "idioma.c":
             continue
@@ -726,7 +736,10 @@ def varrer():
             # obvio — e a chave saiu da tela em portugues no ingles inteiro.
             # Escrever i18n( E a declaracao de que aquilo e interface; depois
             # dela, adivinhar o idioma so serve para errar.
-            direto = (RE_DESENHO.search(ctx) is not None
+            pencil = arq.name.startswith("ajustes_pen")
+            if pencil and (s.startswith(("aj_", "pl_")) or s.endswith((".inc", ".txt", ".h")) or s in ("%s", "%ld MB", "%dx%d", "%s → %s", "−", "+") or s.startswith(("name=", "%95[", "%s%d"))):
+                continue
+            direto = (pencil or RE_DESENHO.search(ctx) is not None
                       or RE_I18N.search(ctx) is not None)
             if not direto and not PT.search(s):
                 continue
@@ -742,7 +755,7 @@ def varrer():
             # MONTAGEM: o formato tem de ser envolvido na origem, porque a
             # string final nunca casa com chave. Sem "%", o literal chega
             # inteiro na tela e basta a chave.
-            if "%" in s and "i18n" not in ctx.split("(")[0][-40:] and "i18n" not in ctx:
+            if not pencil and "%" in s and "i18n" not in ctx.split("(")[0][-40:] and "i18n" not in ctx:
                 if s not in IGNORAR:
                     faltando_i18n.setdefault(s, []).append(onde)
             elif s not in chaves and s not in IGNORAR:

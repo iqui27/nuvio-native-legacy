@@ -27,12 +27,17 @@ SERIES2 = "5e1e5e1e5e1e5e1e5e1e5e1e5e1e5e1e"     # IMDb + TVDB: matched
 PASSWORD = "pässwörd \"quoted\""
 
 lock = threading.Lock()
+# AIOStreams mints URL-safe base64 tokens of ~600 characters.
+QC_TOKEN = "qctoken" + "Ab0-_z9Y" * 75
+# Fake Quick Connect secret with the URL-safe characters AIOStreams uses.
+QC_SECRET = "-".join(["QcSecret_0123", "456789"])
+
 state = {
     "tokens": set(),
     "events": [],
     "polls": 0,
     "slow": 0.0,
-    "secret": "QcSecret0123456789",
+    "secret": QC_SECRET,
     "version": "10.10.3",
     "extra": [],            # movies added after the first index pass
     "gone": set(),          # movie numbers deleted on the server
@@ -86,7 +91,9 @@ def movie(i):
         "ImageTags": {"Primary": "ptag%d" % i, "Logo": "ltag"},
         "BackdropImageTags": ["btag%d" % i],
         "UserData": {"PlaybackPositionTicks": 36000000000, "PlayedPercentage": 50.0,
-                     "Played": False, "Key": mid},
+                     # 6: watched without a date — the "unknown timestamp" case of #617
+                     "Played": i in (5, 6), "Key": mid,
+                     "LastPlayedDate": "2026-09-15T12:00:00.0000000Z" if i == 5 else ""},
     }
 
 
@@ -180,12 +187,12 @@ class Handler(BaseHTTPRequestHandler):
             with lock:
                 ok = b.get("Secret") == state["secret"] and state["polls"] >= 2
                 if ok:
-                    state["tokens"].add("qctoken000000000000000000000001")
+                    state["tokens"].add(QC_TOKEN)
             if not ok:
                 return self.reply(401)
             return self.reply(200, {"User": {"Name": "ana", "Id": USER_ID, "ServerId": SERVER_ID},
                                     "SessionInfo": {"Id": "s1", "UserId": USER_ID},
-                                    "AccessToken": "qctoken000000000000000000000001", "ServerId": SERVER_ID})
+                                    "AccessToken": QC_TOKEN, "ServerId": SERVER_ID})
         if p == "/Users/AuthenticateByName" and method == "POST":
             b = self.body()
             if b.get("Username") != "ana" or b.get("Pw") != PASSWORD:
@@ -289,7 +296,10 @@ class Handler(BaseHTTPRequestHandler):
                                 "ParentIndexNumber": s, "IndexNumber": e, "RunTimeTicks": 26400000000,
                                 "SeriesId": m.group(1),
                                 "PremiereDate": "2019-0%d-1%dT00:00:00.0000000Z" % (s, e),
-                                "Overview": "ep", "ImageTags": {"Primary": "et"}})
+                                "Overview": "ep", "ImageTags": {"Primary": "et"},
+                                "UserData": {"Played": s == 1 and e <= 2, "PlaybackPositionTicks": 0,
+                                             "LastPlayedDate": "2026-09-10T10:00:00.0000000Z"
+                                             if s == 1 and e <= 2 else ""}})
             return self.reply(200, {"Items": eps, "TotalRecordCount": len(eps)})
         m = re.match(r"^/Items/([0-9a-f]{32})/PlaybackInfo$", p)
         if m and method == "POST":
@@ -311,7 +321,7 @@ class Handler(BaseHTTPRequestHandler):
                  "SupportsDirectStream": True, "SupportsTranscoding": True,
                  "MediaStreams": [{"Codec": "hevc", "Type": "Video", "Height": 2160, "VideoRangeType": "HDR10"},
                                   {"Codec": "eac3", "Type": "Audio", "Channels": 6}]},
-                {"Protocol": "File", "Id": "%032x" % 77, "Container": "avi", "Name": "Film - old",
+                {"Protocol": "File", "Id": "%032x" % 77, "Container": "avi", "Name": "Film - old", "Size": 1073741824,
                  "SupportsDirectPlay": False, "SupportsDirectStream": False, "SupportsTranscoding": True,
                  # 10.x servers embed the legacy name; 12.x embeds no token here.
                  "TranscodingUrl": "/videos/%s/master.m3u8?MediaSourceId=%032x&PlaySessionId=ps0001%s" % (
@@ -330,6 +340,16 @@ class Handler(BaseHTTPRequestHandler):
             with lock:
                 state["events"].append({"op": "release", "session": q.get("playSessionId", [""])[0]})
             return self.reply(204)
+        if p == "/UserItems/Resume" and method == "GET":
+            return self.reply(200, {"Items": [movie(5)], "TotalRecordCount": 1})
+        if p == "/Shows/NextUp" and method == "GET":
+            ep = {"Name": "S2E1", "Id": episode_id(2, 1), "Type": "Episode",
+                  "SeriesId": SERIES2, "SeriesName": "The Matched Show",
+                  "ParentIndexNumber": 2, "IndexNumber": 1, "RunTimeTicks": 26400000000,
+                  "UserData": {"PlaybackPositionTicks": 0, "Played": False,
+                               "LastPlayedDate": "2026-09-20T08:00:00.0000000Z"},
+                  "ProviderIds": {"IMDB": "tt0900001"}}
+            return self.reply(200, {"Items": [ep], "TotalRecordCount": 1})
         return self.reply(404)
 
     def control(self, p, q):

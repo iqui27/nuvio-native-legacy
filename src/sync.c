@@ -578,7 +578,7 @@ static void addonsRestaurar(void) {
   int perfil = perfis_ativo_addons();
   char *c;
   if (addonsRestauradosPerfil == perfil && !strcmp(addonsRestauradosUsuario, sessao_usuario())) return;
-  c = contacache_ler(CC_ADDONS_APLICADOS, perfil, sessao_usuario(), NULL);
+  c = contacache_ler(CC_ADDONS_APLICADOS, perfil, sessao_usuario()[0]?sessao_usuario():"@local", NULL);
   if (c) {
     static AddonRemoto local[SY_ADD_MAX], guardados[SY_ADD_MAX];
     static char url[SY_URL_LEITURA]; // drawing-thread cache restoration
@@ -1528,7 +1528,7 @@ void sync_iniciar(void) {
   // #360: pendencias de addons da versao anterior somem na primeira execucao,
   // com ou sem login — elas nunca mais seriam lidas nem enviadas.
   addonsEsquecer();
-  if (!sessao_logada()) return;
+  if (!sessao_logada()) { addonsRestaurar(); return; }
   // Cached sources are private to this session and do not touch the worker's
   // staging buffers. Restore them even while an old sync drains or backs off.
   addonsRestaurar();
@@ -2457,6 +2457,7 @@ void sync_esquecer_usuario(void) {
   stalker_fontes_invalidar(); m3u_fontes_invalidar(); xtream_fontes_invalidar();
   /* Credentials and caches of every native account/profile were removed. */   // mesma razao: usuario e senha sao a assinatura de quem saiu
   guia_fonte_esquecer("st"); guia_fonte_esquecer("xt");
+  extern void g5ui_forget(void);g5ui_forget();
   servidores_esquecer_todos();   // personal-server tokens of every profile on this TV
   trakt_esquecer();
   // Os ajustes por perfil guardados nesta TV (e as pendencias deles) sao da

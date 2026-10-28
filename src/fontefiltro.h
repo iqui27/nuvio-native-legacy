@@ -22,6 +22,7 @@ typedef struct {
   uint64_t tamanhoBytes;          /* Zero = desconhecido. */
   char grupo[80];
   int naoVod;                     /* Request scope; travels with this source. */
+  int ac3Explicito;               /* DD+ also sets DD; retain an explicit fallback. */
 } FonteFiltroDados;
 
 typedef struct {

@@ -86,6 +86,7 @@ typedef struct {
   char stApp[16]; int pctApp;
   char stEnviado[16]; int pctEnviado; double estadoEm;
   char fonte[12];
+  int altura; // public quality only, never a source URL
   // parada de posicao
   double ultPos, ultPosEm;
   // rajada de seek do D-pad

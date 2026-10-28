@@ -14,6 +14,9 @@ void *SDL_AndroidGetActivity(void);
 
 int xtream_url_limitada(const char *u) { (void)u; return 0; }
 int xtream_conexoes_limitadas(void) { return 0; }
+static int canalTeste;
+int player_eh_canal(void) { return canalTeste; }
+int video_taxa_efetiva(void) { return 100; }
 int xtream_conta_ler(XtreamConta *c) { memset(c, 0, sizeof *c); return 0; }
 int stream_kbps_atual(void) { return 0; }
 static int cap4k[4];
@@ -29,6 +32,8 @@ static JNIEnv env = &jni;
 static int chamadasNormais, chamadasPosicao, recebidoMs, recebidoGeracao, excecao, lancar;
 static int ausente, ausenteFracao, chamadasFracao, recebidoFracao;
 static int chamadasPausa, ultimoPausar, chamadasBusca, ultimoBuscar;
+static int lobbyPreload, chamadasPausadas;
+int juntos_precarregando(void) { return lobbyPreload; }
 static unsigned relogio = 100;
 void *SDL_AndroidGetJNIEnv(void) { return &env; }
 void *SDL_AndroidGetActivity(void) { return NULL; }
@@ -36,6 +41,8 @@ Uint32 SDL_GetTicks(void) { return relogio; }
 Uint64 SDL_GetTicks64(void) { return relogio; }
 SDL_mutex *SDL_CreateMutex(void) { return (SDL_mutex *)(uintptr_t)1; }
 const char *ling_audio(void) { return ""; }
+const char *ling_audio_preferido(void) { return ""; }
+int ajustes_audio_normalizar(void) { return 0; }
 void marco(const char *s) { (void)s; }
 void tex_pressao_reproducao(int l) { (void)l; }
 void vel_log(int cent, const char *estado) { (void)cent; (void)estado; }
@@ -53,7 +60,12 @@ static jmethodID JNICALL metodo(JNIEnv *e, jclass c, const char *nome, const cha
     if (ausenteFracao) { excecao = 1; return NULL; }
     return (jmethodID)(uintptr_t)5;
   }
+  if (!strcmp(nome, "abrirPausada")) {
+    assert(!strcmp(sig, "(Ljava/lang/String;Ljava/lang/String;IIIILjava/lang/String;)V"));
+    return (jmethodID)(uintptr_t)9;
+  }
   if (!strcmp(nome, "kbps")) return (jmethodID)(uintptr_t)8;
+  if (!strcmp(nome, "normalizar")) return (jmethodID)(uintptr_t)10;
   if (!strcmp(nome, "pausar")) return (jmethodID)(uintptr_t)6;
   if (!strcmp(nome, "buscar")) return (jmethodID)(uintptr_t)7;
   return (jmethodID)(uintptr_t)1;
@@ -66,7 +78,7 @@ static jboolean JNICALL temExcecao(JNIEnv *e) { (void)e; return excecao; }
 static void JNICALL limparExcecao(JNIEnv *e) { (void)e; excecao = 0; }
 static void JNICALL chamar(JNIEnv *e, jclass c, jmethodID m, ...) {
   (void)e; (void)c;
-  if (m == mParar || (uintptr_t)m == 8) return;
+  if (m == mParar || (uintptr_t)m == 8 || (uintptr_t)m == 10) return;
   if (m == mPausar) {
     va_list ap; va_start(ap, m); ultimoPausar = va_arg(ap, jint); va_end(ap);
     chamadasPausa++; return;
@@ -77,7 +89,12 @@ static void JNICALL chamar(JNIEnv *e, jclass c, jmethodID m, ...) {
   }
   va_list ap; va_start(ap, m);
   (void)va_arg(ap, jstring); (void)va_arg(ap, jstring);
-  if (m == mAbrirRetomada) {
+  if (m == mAbrirPausada) {
+    chamadasPausadas++;
+    recebidoMs = va_arg(ap, jint); recebidoFracao = va_arg(ap, jint);
+    recebidoGeracao = va_arg(ap, jint);
+    (void)va_arg(ap, jint); (void)va_arg(ap, jstring);
+  } else if (m == mAbrirRetomada) {
     chamadasFracao++;
     recebidoMs = va_arg(ap, jint); recebidoFracao = va_arg(ap, jint);
     recebidoGeracao = va_arg(ap, jint);
@@ -90,6 +107,23 @@ static void JNICALL chamar(JNIEnv *e, jclass c, jmethodID m, ...) {
   va_end(ap);
 }
 int main(int argc, char **argv) {
+  // Waiting for decoder release must not consume the live request deadline.
+  canalTeste = 1; ativo = 1; sessao = 42; liveRequestDesde = 0;
+  relogio = 9000;
+  assert(video_live_pedido_ms() == 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeLiveRequest(NULL, NULL, 41);
+  assert(video_live_pedido_ms() == 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeLiveRequest(NULL, NULL, 42);
+  assert(video_live_pedido_ms() == 0); // Same even tick must not underflow.
+  relogio += 12000;
+  assert(video_live_pedido_ms() == 12000);
+  relogio = 0;
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeLiveRequest(NULL, NULL, 42);
+  assert(video_live_pedido_ms() == 0);
+  relogio = 12;
+  assert(video_live_pedido_ms() == 12); // Tick zero is a valid request start.
+  assert(video_bufferando_ms() == 0); // Buffering has not begun.
+  canalTeste = 0; ativo = 0; relogio = 100;
   assert(argc == 2); // eventos produzidos pelo abrirMain real no teste JVM
   Java_space_nuvio_nativelegacy_NvPlayer_nativeDecoder4k(NULL, NULL, 1, 0, -1, 1);
   assert(cap4k[0] == 1 && cap4k[1] == 0 && cap4k[2] == -1 && cap4k[3] == 1);
@@ -101,6 +135,12 @@ int main(int argc, char **argv) {
   // IDs distintos so para o falso separar parar de abrir.
   Java_space_nuvio_nativelegacy_NvPlayer_nativeIniciar(&env, (jclass)(uintptr_t)3);
   mParar = (jmethodID)(uintptr_t)4;
+  lobbyPreload = 1;
+  assert(video_tocar_retomada("https://example.invalid/lobby.mp4", 12, 0));
+  assert(chamadasPausadas == 1 && pausaPedida && recebidoMs == 12000);
+  video_pausar(0);
+  assert(!pausaPedida); // Room Go releases the prepared player.
+  lobbyPreload = 0;
   assert(video_tocar_posicao("https://example.invalid/um.mp4", 612.345));
   assert(chamadasPosicao == 1 && recebidoMs == 612345 && chamadasNormais == 0);
   assert(video_retomada_inicial_estado() == 0);

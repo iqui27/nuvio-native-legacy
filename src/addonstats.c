@@ -16,6 +16,15 @@ typedef struct {
 } Reg;
 
 static Reg reg[ADDONSTATS_MAX];
+// ponytail: 16 recent installation/type scopes; least recently used scope evicted.
+#define AIO_SCOPES 16
+typedef struct {
+  char key[48], type[16];
+  uint64_t age; time_t retryAt; int count;
+  AddonAioRequest *request[ADDONSTATS_AIO_HISTORY];
+} AioHistory;
+static AioHistory aioHistory[AIO_SCOPES];
+static uint64_t aioAge;
 static int nReg;
 static int sujo;
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
@@ -35,6 +44,63 @@ static Reg *achar(const char *nome, int criar) {
   return &reg[nReg++];
 }
 
+static AioHistory *aio_find(const char *key,const char *type,int create) {
+  if(!key || !*key || !type || strlen(key)>=48 || strlen(type)>=16) return NULL;
+  int oldest=0;
+  for(int i=0;i<AIO_SCOPES;i++) {
+    if(!strcmp(aioHistory[i].key,key) && !strcmp(aioHistory[i].type,type)) return &aioHistory[i];
+    if(aioHistory[i].age<aioHistory[oldest].age) oldest=i;
+  }
+  if(!create) return NULL;
+  AioHistory *h=&aioHistory[oldest];
+  for(int i=0;i<h->count;i++) free(h->request[i]);
+  memset(h,0,sizeof *h); snprintf(h->key,sizeof h->key,"%s",key); snprintf(h->type,sizeof h->type,"%s",type);
+  return h;
+}
+void addonstats_aio_reset(void) {
+  pthread_mutex_lock(&trava);
+  for(int i=0;i<AIO_SCOPES;i++) { for(int j=0;j<aioHistory[i].count;j++) free(aioHistory[i].request[j]); }
+  memset(aioHistory,0,sizeof aioHistory); aioAge=0;
+  pthread_mutex_unlock(&trava);
+}
+void addonstats_aio_complete(const char *key,const char *type,const char *json,int http,int transport,unsigned long ms,int retryAfter) {
+  AddonAioRequest *r=calloc(1,sizeof *r); AioSnapshot *s=calloc(1,sizeof *s);
+  if(!r || !s) { free(r); free(s); return; }
+  r->completed=time(NULL); r->http=http; r->transport=transport; r->clientMs=ms;
+  r->playable=r->statistics=r->errors=-1;
+  if(http>=200 && http<300 && !transport && json) {
+    aio_resultados(s,json); r->valid=s->responseValid;
+    if(r->valid) {
+      r->playable=s->playable; r->statistics=s->estatisticas; r->errors=s->erros;
+      r->evidenceCount=s->evidencias; r->omitted=s->evidenceOmitted;
+      memcpy(r->evidence,s->evidencia,sizeof r->evidence);
+    }
+  }
+  r->state=transport?AIO_REQUEST_TRANSPORT_ERROR:http==401 || http==403?AIO_REQUEST_CONFIG_LOCKED:
+    http==429?AIO_REQUEST_RATE_LIMITED:http<200 || http>=300?AIO_REQUEST_HTTP_ERROR:
+    !r->valid?AIO_REQUEST_INVALID:r->errors>0?AIO_REQUEST_SOURCE_ERROR:r->playable==0?AIO_REQUEST_EMPTY:AIO_REQUEST_OK;
+  free(s);
+  pthread_mutex_lock(&trava);
+  AioHistory *h=aio_find(key,type,1);
+  if(h) {
+    h->age=++aioAge;
+    if(http==429) { int wait=retryAfter>0?retryAfter:60; if(wait>3600) wait=3600; h->retryAt=r->completed+wait; }
+    if(h->count==ADDONSTATS_AIO_HISTORY) { free(h->request[0]); memmove(h->request,h->request+1,sizeof h->request[0]*(--h->count)); }
+    h->request[h->count++]=r;
+  } else free(r);
+  pthread_mutex_unlock(&trava);
+}
+int addonstats_aio_history(const char *key,const char *type,AddonAioRequest *out,int max) {
+  pthread_mutex_lock(&trava); AioHistory *h=aio_find(key,type,0); int n=h?h->count:0;
+  if(n>max) n=max; if(n<0) n=0;
+  if(out) for(int i=0;i<n;i++) out[i]=*h->request[h->count-n+i];
+  pthread_mutex_unlock(&trava); return n;
+}
+int addonstats_aio_wait(const char *key,const char *type) {
+  pthread_mutex_lock(&trava); AioHistory *h=aio_find(key,type,0);
+  time_t now=time(NULL); int wait=h && h->retryAt>now?(int)(h->retryAt-now):0;
+  pthread_mutex_unlock(&trava); return wait;
+}
 void addonstats_registrar(const char *nome, unsigned ms, int respondeu) {
   Reg *r;
   pthread_mutex_lock(&trava);
@@ -146,6 +212,7 @@ int addonstats_serializar(char *dst, unsigned tam) {
 }
 
 void addonstats_zerar(void) {
+  addonstats_aio_reset();
   pthread_mutex_lock(&trava);
   nReg = 0; sujo = 0;
   pthread_mutex_unlock(&trava);

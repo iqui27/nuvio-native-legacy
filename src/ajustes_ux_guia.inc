@@ -646,7 +646,7 @@ static void guiaDesenharIndice(const GuiaVista *v, float a) {
       ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, il.y, il.y + il.h,
                           guiaPontIndice, guiaPontIndiceAbrir, j, 0);
 #endif
-    if (foco) ajNeutro(r, 27, 0.14f, 0.169f, 0.176f, 0.204f, a);
+    if (foco) { if (!gfx_foco_placa(r, .5f, 1, a)) ajNeutro(r, 27, 0.14f, 0.169f, 0.176f, 0.204f, a); }
     else if (at) gfx_cor((GfxRect){ r.x + 7, r.y + 24.5f, 5, 5 }, 0.5f, ar, ag, ab, a);
     ajIcone(ic, r.x + 18, r.y + 15, 24, (foco || at ? 1.0f : 0.55f) * a);
     { char n[16];
@@ -1097,7 +1097,6 @@ static void guiaAgir(int b) {
   if (bs[b] == GB_EXEMPLO) { guiaExemplo = GUIA_ENT[e].exemplo; guiaExT = 0; return; }
   if (bs[b] == GB_AJUSTES) { int op = GUIA_ENT[e].alvo; guiaFechar(); focarOpcao(op); return; }
   pediuTela = GUIA_ENT[e].tela;
-  guiaFechar();
 }
 static int guiaVoltar(SDL_Keycode k, const SDL_Event *e) {
   return k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE || e->key.keysym.scancode == NV_SCANCODE_BACK;

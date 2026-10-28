@@ -42,7 +42,7 @@
 // Context-menu batch size. Simkl list storage grows with its full response.
 #define LST_ITENS_MAX 120
 
-typedef enum { LST_TRAKT = 0, LST_SIMKL, LST_NUVIO, LST_FONTE_N } LstFonte;
+typedef enum { LST_TRAKT = 0, LST_SIMKL, LST_NUVIO, LST_SERVIDOR, LST_FONTE_N } LstFonte;
 
 typedef struct {
   int  fonte;             // LstFonte
@@ -65,7 +65,19 @@ typedef struct {
   int  comentarios;       // comment_count, -1 = nao informado
   int  privada;           // 1 = privacy diferente de "public"
   int  propria;           // veio de /users/me/lists
+  int trilhaTipo;
+  long trilhaAlvo;
+  char capas[4][256];
 } LstLista;
+
+// Small per-profile session previews, populated only when a list is opened.
+// No extra HTTP request per card; URLs only, no retained CatItem/GL texture.
+// `titulo`/`nota`: the first item and its curator note; `vistos` -1 = unknown.
+typedef struct { int n; char poster[4][512]; char titulo[128], nota[160]; int vistos; } LstPrevia;
+int lst_previa(const LstLista *l, LstPrevia *out);
+void lst_previa_registrar(const LstLista *l, const CatItem *itens, int n);
+void lst_previa_resumo(const LstLista *l, const char *nota, int vistos);
+void lst_previa_limpar(void);
 
 // --- ciclo de vida -----------------------------------------------------------
 // Le as fixadas do perfil ATIVO (perfis_ativo()) e reaplica as que vao para a
@@ -99,8 +111,12 @@ void lst_esquecer_conta(void);
 // fazer e volta na hora. Repetir a mesma fonte com resultado em maos nao
 // refaz o pedido.
 void lst_pedir(int fonte);
+void lst_pedir_servidores(int provider, int collections);
+int lst_servidor_chave(const CatItem *item, char *out, size_t n);
+int lst_servidor_entrar(const CatItem *item);
 // Procura nas listas PUBLICAS do Trakt. `termo` vazio pede /lists/trending.
 void lst_buscar(const char *termo);
+void lst_pedir_trilhas(void);
 // As FIXADAS do perfil, no lugar de uma fonte. Nao tem rede.
 void lst_pedir_fixadas(void);
 
@@ -151,6 +167,7 @@ void lst_abrir(const LstLista *l, const char *midia);
 int  lst_itens_n(void);
 int  lst_item(int i, CatItem *dst);
 int  lst_itens_carregando(void);
+int  lst_itens_erro(void);
 // O que a lista diz do item `i` alem do titulo: posicao, quando entrou, nota do
 // curador (ver DescItemLista). 0 quando o indice nao existe ou a fonte nao e o
 // Trakt (Simkl/Nuvio devolvem 1 com tudo vazio).

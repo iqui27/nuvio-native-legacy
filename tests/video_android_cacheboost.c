@@ -10,6 +10,7 @@ void *SDL_AndroidGetJNIEnv(void);
 void *SDL_AndroidGetActivity(void);
 #include "../src/video_android.c"
 // capmkv.c (capitulos do MKV) nao faz parte deste teste.
+int juntos_precarregando(void) { return 0; }
 int stream_kbps_atual(void) { return 0; }
 int xtream_url_limitada(const char *u) { (void)u; return 0; }
 int xtream_conexoes_limitadas(void) { return 0; }
@@ -36,6 +37,8 @@ Uint64 SDL_GetTicks64(void) { return relogio; }
 SDL_mutex *SDL_CreateMutex(void) { return (SDL_mutex *)(uintptr_t)1; }
 void marco(const char *s) { (void)s; }
 const char *ling_audio(void) { return ""; }
+const char *ling_audio_preferido(void) { return ""; }
+int ajustes_audio_normalizar(void) { return 0; }
 static int pressao = -1;   // last tex_pressao_reproducao() value
 void tex_pressao_reproducao(int l) { pressao = l; }
 
@@ -243,9 +246,9 @@ int main(void) {
   video_bombear();
   assert(!strcmp(registro, "A"));            // the trailer is never sped up
 
-  // Passthrough (TCL 06/10): the row is blocked with a reason; PCM frees it.
+  // Personal speed remains available: Kotlin switches passthrough to PCM.
   Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioEstado(&env, NULL, 2);
-  assert(video_velocidade_bloqueada());
+  assert(!video_velocidade_bloqueada());
   Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioEstado(&env, NULL, 1);
   assert(!video_velocidade_bloqueada());
   // The player MEASURED 1x after "ok": refused -> back to 1x in the pipeline,
@@ -271,9 +274,10 @@ int main(void) {
   assert(abrirSessao(0, 0));
   assert(strstr(registro, "B0"));
   { VideoStats st;
-    Java_space_nuvio_nativelegacy_NvPlayer_nativeStats(&env, NULL, 1000, 25000, 150000, 2, 12, 3, 100, NULL, 50000, 80, 1);
+    Java_space_nuvio_nativelegacy_NvPlayer_nativeStats(&env, NULL, 1000, 25000, 150000, 2, 4, 12, 3, 100, NULL, 50000, 80, 1);
     video_estatisticas(&st);
     assert(st.bytes == 1000 && st.bufferSeg == 25 && st.bufferAlvoSeg == 150 && st.quadrosPerdidos == 3);
+    assert(st.conexoes == 2 && st.poolConexoes == 4);
     assert(abrirSessao(0, 0));
     video_estatisticas(&st);
     assert(st.bytes == -1 && st.bufferSeg < 0);

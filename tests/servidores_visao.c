@@ -1,7 +1,6 @@
 // Server navigation uses the existing grid; no network or renderer needed.
 #include "../src/vertudo.c"
 #include <assert.h>
-
 Uint32 SDL_GetTicks(void) { return 0; }
 float ajustes_conteudo_x(void) { return 48; }
 int ajustes_menu_topo(void) { return 0; }

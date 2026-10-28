@@ -1573,7 +1573,8 @@ void avisos_lista_desenhar_ptr(float x, float y0, float w, float a, int focoLinh
     const char *acao = NULL;
     if (focar) ponteiro_alvo_faixa(x, y, w, rowH, clipY0, clipY1, focar, NULL, i, 0);
     if (f) {
-      if (ajustes_vidro()) { if (!gfx_foco_placa(row, 22.0f / row.h, 1.0f, a)) gfx_cor(row, 22.0f / row.h, 1, 1, 1, .12f * a); }
+      if (gfx_foco_placa(row, 22.0f / row.h, 1.0f, a)) { /* Shared accent plate. */ }
+      else if (ajustes_vidro()) gfx_cor(row, 22.0f / row.h, 1, 1, 1, .12f * a);
       else {
         gfx_rect((GfxRect){ row.x - 14.0f, row.y - 2.0f, row.w + 28.0f, row.h + 30.0f }, 0,
                  GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, .30f * a);
@@ -1628,7 +1629,8 @@ void avisos_lista_desenhar_ptr(float x, float y0, float w, float a, int focoLinh
     GfxRect row = { x, y, w, AVL_TODOS_H };
     if (focar) ponteiro_alvo_faixa(x, y, w, AVL_TODOS_H, clipY0, clipY1, focar, NULL, n, 0);
     if (f) {
-      if (ajustes_vidro()) { if (!gfx_foco_placa(row, 22.0f / row.h, 1.0f, a)) gfx_cor(row, 22.0f / row.h, 1, 1, 1, .12f * a); }
+      if (gfx_foco_placa(row, 22.0f / row.h, 1.0f, a)) { /* Shared accent plate. */ }
+      else if (ajustes_vidro()) gfx_cor(row, 22.0f / row.h, 1, 1, 1, .12f * a);
       else gfx_cor(row, 22.0f / row.h, .169f, .176f, .204f, a);
     }
     if (ajustes_vidro()) gfx_cor((GfxRect){ x + AVL_PADX, y + 16.0f, 52.0f, 52.0f }, 0.5f, 1, 1, 1, .08f * a);

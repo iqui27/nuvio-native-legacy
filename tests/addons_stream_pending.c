@@ -28,6 +28,11 @@ char *rede_baixar_st(const char *url, int seconds, const char *const *headers, i
   *status = 200;
   return rede_baixar(url, seconds);
 }
+char *rede_baixar_medido(const char *url, int seconds, const char *const *headers, RedeMedida *m) {
+  int st = 0; char *r = rede_baixar_st(url, seconds, headers, &st);
+  *m = (RedeMedida){ .status = st };
+  return r;
+}
 static void searchPending(void) {
   Stream *out = NULL;
   Resumo result = {0};

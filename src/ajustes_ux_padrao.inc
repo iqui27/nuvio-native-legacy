@@ -343,6 +343,7 @@
   0, /* clear cache action */
   0, /* tunneled playback: Off */
   1, /* experimental P7 conversion: Off until explicitly enabled */
+  1, /* #605: strip HDR10+ dynamic metadata: Desligado (V_LIGA 1) */
   1, /* log page on the local network (logrede.h): Desligado */
   2, /* player format style: Marks (V_PLR_FORMATO 2), the look the OSD always had */
   1, /* kids profile: Desligado (V_LIGA: 1); the state lives in perfilinfantil.c */
@@ -353,3 +354,15 @@
   1, /* player format position: Original, the top corner (V_PLR_FORMATO_POS 1) */
   0, /* show the audio codec in the format row: On (V_LIGA 0) */
   0, /* gradient smoothing: Automatic */
+  0, /* #641 display refresh-rate match (AFR): Off */
+  0, /* hero logo and information size: Normal */
+  0, /* title hero: Ready version */
+  0, /* cast history: On */
+  1, /* Guia TV v5: previa grande Desligada — vale o cartao pequeno do mock; ligar volta ao 800x450 de hoje */
+  1, /* Prefer original audio: off until explicitly chosen. */
+  1, /* PCM normalization: off until explicitly chosen. */
+  0, 0, 0, /* Debrid, add-ons and custom subtitle styling: enabled. */
+  0, /* Folder hero details: enabled. */
+  1, 0, 0, /* Guide: start on OK, muted, one day. */
+  2, 2, 2, /* Capability exclusions: automatic defaults, resolved per device; unknown stays off. */
+  0, /* Android TV home: enabled. */

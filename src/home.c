@@ -3,7 +3,6 @@
 // hero no topo, rail fixa à esquerda e fileiras horizontais de posters. A
 // infraestrutura nativa cuida de cache assíncrono, foco e transições.
 #include "home.h"
-#include "glance.h"
 #include "memlog.h"
 #include "perfis.h"
 #include "botoes.h"
@@ -102,6 +101,9 @@ int video_registro_negado(void); /* video.h: motivo do trailer bloqueado */
 #include "trailerapple.h"
 #include "trailerfonte.h"
 #include "ponteiro.h"
+static void navigationTarget(float,float,float,float,PonteiroFn,PonteiroFn,int,int);
+static int navigationMove(SDL_Keycode);
+#define ponteiro_alvo navigationTarget
 #include "amigosfil.h"
 #include "socialvis.h"
 #include "anos.h"
@@ -224,6 +226,11 @@ static void montarBiblioteca(Fileira *f) {
   }
   f->usaItens = 1;
   f->tipo = FILEIRA_NORMAL;
+  // "Ver tudo" no fim (#672): itens alem do teto da fileira nao apareceriam.
+  // O card nao chama vertudo_abrir (que pede um catalogo de addon); abre a
+  // Biblioteca inteira — veja o ramo noVerTudo no KEYUP.
+  f->verTudo = f->n > 0;
+  f->catTipo[0] = 'x';   // catTipo vazio casaria com um tipo de canal
   snprintf(f->titulo, sizeof f->titulo, "%s", i18n("Biblioteca"));
   snprintf(f->chave, sizeof f->chave, "library");
 }
@@ -301,6 +308,9 @@ int home_pediu_guia(char *id, int tam) {
   if (id && tam > 0) { snprintf(id, (size_t)tam, "%s", guiaId); guiaId[0] = 0; }
   return 1;
 }
+// "Ver tudo" da fileira da Biblioteca (#672): pede a tela inteira.
+static int pedidoBiblioteca;
+int home_pediu_biblioteca(void) { int v = pedidoBiblioteca; pedidoBiblioteca = 0; return v; }
 
 // Classifica somente os nomes públicos do catálogo. Nunca inspeciona a URL
 // (que pode conter tokens) nem inventa premiações ou disponibilidade.
@@ -360,6 +370,9 @@ static float animFoco[MAX_FIL][MAX_CARDS];
 // cinza secundario quando nao e (dono, 14/10: "quando a fileira nao tiver
 // focada deixar o titulo da fileira em cinza") — a mesma mola do foco do card.
 static float animFocoFil[MAX_FIL];
+// Special hero copy follows the same fade duration as a normal Home title.
+static int heroEspecialCol[MAX_FIL];
+static float heroEspecialAlpha[MAX_FIL];
 // MICRO-ANIMACOES DE CARD (revela.h). Um registro por lugar da grade para a
 // arte chegando; um so para a luz do foco, porque so ha um card em foco; e o
 // instante em que cada fileira comecou a entrar (0 = ja entrou).
@@ -555,9 +568,12 @@ static int dinPalcoSplit(void) {
 }
 static int palcoFundoDestino(void) {
   if (dinPalcoSplit() && fileiras[foco.fileira].tipo == FILEIRA_HEROI_DIVIDIDO) return PALCO_ARTE;
-  return (ajustes_home_layout() == HOME_LAYOUT_MODERNA || dinPalcoSplit()) && !focoHero &&
-         foco.fileira >= 0 && foco.fileira < nFileiras &&
-         fileiras[foco.fileira].tipo == FILEIRA_PALCO ? ajustes_palco_fundo() : PALCO_ATUAL;
+  if (!((ajustes_home_layout() == HOME_LAYOUT_MODERNA || dinPalcoSplit()) && !focoHero &&
+        foco.fileira >= 0 && foco.fileira < nFileiras &&
+        fileiras[foco.fileira].tipo == FILEIRA_PALCO)) return PALCO_ATUAL;
+  // #659: a fileira pode pedir um fundo proprio; sem escolha dela manda o global.
+  int p = fil_palco(fileiras[foco.fileira].chave);
+  return p >= 0 ? p : ajustes_palco_fundo();
 }
 // TROCA DESLIZADA (dono, 30/09: "a hero passando animado, tipo trocando a
 // imagem pro lado e a outra bem grudada nela"; ajuste "Transicao do destaque").
@@ -2458,10 +2474,14 @@ static void homeMarcarURL(const char *url, float largura) {
   tex_cache_marcar_larg(NV_CACHE_ARTE_GRUPO_HOME, url, largura, 1, 0);
 }
 
+static int referenciasArteFileira = -1, referenciasArteHero;
 static void homeAtualizarReferenciasArte(void) {
-  int r, i;
-  cachearte_limpar_referencias_grupo(NV_CACHE_ARTE_GRUPO_HOME);
-  for (r = 0; r < nFileiras; r++) {
+  // Register one row per frame. Returning from Search must not pin every
+  // row and every hero candidate synchronously on the event/draw thread.
+  if (referenciasArteFileira < 0) return;
+  int r = referenciasArteFileira, i;
+  if (r == 0) cachearte_limpar_referencias_grupo(NV_CACHE_ARTE_GRUPO_HOME);
+  if (r < nFileiras) {
     int limite = fileiras[r].n < 8 ? fileiras[r].n : 8;
     float largura = larguraFil(r);
     for (i = 0; i < limite; i++) {
@@ -2472,12 +2492,16 @@ static void homeAtualizarReferenciasArte(void) {
       homeMarcarURL(it->logo, largura * 0.65f);
       homeMarcarURL(it->backdrop, largura);
     }
+    referenciasArteFileira++;
+    return;
   }
-  // Pin the actual source selected for the large hero request, which can use a
-  // different backdrop URL and resolution from the row card.
+  // Hero references also advance one candidate per frame.
   heroSetGarantir();
-  for (i = 0; i < heroSetN; i++)
-    homeMarcarURL(arte_por_identidade(heroSet[i], 2), NV_TELA_W);
+  if (referenciasArteHero < heroSetN) {
+    homeMarcarURL(arte_por_identidade(heroSet[referenciasArteHero++], 2), NV_TELA_W);
+    return;
+  }
+  referenciasArteFileira = -1;
   cachearte_estatisticas_pedir();
 }
 
@@ -2519,52 +2543,10 @@ int home_iniciar(const char *dirArte) {
   return 1;
 }
 
-static int glanceHomeLinha, glanceHomeHero;
-static HomeItem glanceHomeAlvo;
-static int glanceHomeTotal(void) {
-  return glanceHomeHero ? 1 : (glanceHomeLinha >= 0 && glanceHomeLinha < nFileiras ? fileiras[glanceHomeLinha].n : 0);
-}
-static int glanceHomeItem(int i, CatItem *out) {
-  return cat_copiar_item(glanceHomeHero ? glanceHomeAlvo.indice : fileiraItemIndice(&fileiras[glanceHomeLinha], i), out);
-}
-static void glanceHomeFoco(int i) {
-  if (!glanceHomeHero) { foco.fileira = glanceHomeLinha; foco.coluna = i; foco.colunaLembrada[glanceHomeLinha] = i; }
-}
-static void glanceHomeDetalhes(int i) {
-  glanceHomeFoco(i);
-  if (glanceHomeHero) { itemFoco = glanceHomeAlvo; temItemFoco = 1; }
-  pedidoAbrir = 1;
-}
-static void previaHome(void) {
-  static const GlanceFonte f = {glanceHomeTotal, glanceHomeItem, glanceHomeFoco, glanceHomeDetalhes};
-  glanceHomeHero = focoHero; glanceHomeLinha = foco.fileira;
-  if (glanceHomeHero) { glanceHomeAlvo = itemFoco; glanceHomeAlvo.indice = heroAtual; }
-  glance_abrir(&f, focoHero ? 0 : foco.coluna);
-}
-
-
-// DESCER/SUBIR DE FILEIRA NA MESMA POSICAO DA TELA (issue #205: "quando
-// desce de uma fileira pra outra nao ir pro inicio da fileira, descer na
-// mesma posicao"). O focus_mover pousa na COLUNA LEMBRADA da fileira nova
-// (a que ela tinha quando a pessoa saiu dela), e o salto era um pulo para
-// o comeco da fileira de baixo. Aqui o pouso e refeito na coluna cujo
-// centro x esta mais perto do centro do cartaz que estava em foco — a
-// mesma regra do vertudo (vizinhoNaLinha): largura e rolagem diferentes
-// entre fileiras entram na conta, e nColunas limita o pouso ao que existe.
+// Logical rows own vertical navigation, including rows outside the viewport.
+// focus_mover restores the destination row's saved column.
 static int focoVertical(int dy) {
-  int rAntes = foco.fileira;
-  float cx = homeFileiraX(rAntes, foco.coluna) + larguraFil(rAntes) * 0.5f;
-  if (!focus_mover(&foco, 0, dy)) return 0;
-  int r = foco.fileira;
-  int melhor = foco.coluna;
-  if (fileiras[r].tipo == FILEIRA_HEROI_DIVIDIDO) return 1;   // o painel nao tem x de coluna
-  for (int c = 0; c < foco.nColunas[r]; c++) {
-    if (fabsf(homeFileiraX(r, c) + larguraFil(r) * 0.5f - cx) <
-        fabsf(homeFileiraX(r, melhor) + larguraFil(r) * 0.5f - cx)) melhor = c;
-  }
-  foco.coluna = melhor;
-  if (r < FOCUS_MAX_FILEIRAS) foco.colunaLembrada[r] = melhor;
-  return 1;
+  return focus_mover(&foco, 0, dy);
 }
 
 static void home_evento_(const SDL_Event *e) {
@@ -2640,7 +2622,7 @@ static void home_evento_(const SDL_Event *e) {
       if (focoHero) {
         okDesde = 0; okPressionando = 0; okLongDisparado = 0; okHold = 0.0f;
         if (dur >= NV_HOLD_MS) abrirMenuCartaz();
-        else previaHome();
+        else pedidoAbrir = 1;
         return;
       }
       int noVerTudo = (foco.fileira >= 0 && foco.fileira < nFileiras &&
@@ -2672,13 +2654,22 @@ static void home_evento_(const SDL_Event *e) {
           vertudo_colecao(col_folder(fileiras[foco.fileira].folders[foco.coluna]));
         }
       } else if (noVerTudo) {
-        vertudo_abrir(fileiras[foco.fileira].base, fileiras[foco.fileira].catTipo,
-                      fileiras[foco.fileira].catId, fileiras[foco.fileira].titulo);
+        if (!strcmp(fileiras[foco.fileira].chave, "library"))
+          pedidoBiblioteca = 1;   // a Biblioteca e tela propria, nao catalogo
+        else
+          vertudo_abrir(fileiras[foco.fileira].base, fileiras[foco.fileira].catTipo,
+                        fileiras[foco.fileira].catId, fileiras[foco.fileira].titulo);
       } else if (dur >= NV_HOLD_MS) {
         abrirMenuCartaz();
+      } else if (fileiras[foco.fileira].tipo == FILEIRA_CONTINUE ||
+                 fileiras[foco.fileira].tipo == FILEIRA_RETORNO ||
+                 !strcmp(fileiras[foco.fileira].chave, "continue_watching") ||
+                 !strcmp(fileiras[foco.fileira].chave, "upcoming_section")) {
+        if (ajustes_cw_ok_toca() && strcmp(fileiras[foco.fileira].chave, "upcoming_section"))
+          pedidoTocar = 1;
+        else pedidoAbrir = 1;
       } else {
-        // Short OK now opens quick glance, including Continue Watching.
-        previaHome();
+        pedidoAbrir = 1;
       }
       return;
     } }
@@ -2773,6 +2764,8 @@ static void home_evento_(const SDL_Event *e) {
       return;
     }
   }
+  // Hero, friends and horizontal row scrolling own their arrows.
+  if (k != SDLK_LEFT && k != SDLK_RIGHT && navigationMove(k)) return;
   if (k == SDLK_RIGHT) {
     // O `&&` aqui era um curto-circuito com efeito colateral: escrito como
     // `if (fileira == 0 && !focus_mover(...))`, o focus_mover so era chamado
@@ -2978,7 +2971,7 @@ static void sincronizarFileiras(void) {
   // que troca fils[].
   static unsigned ultCatRev, ultFilRev, ultColRev, ultFilLim, ultCwoRev, ultOrdemRev, ultRetRev, ultCfRev, ultOvRev, ultItensRev, ultCurRev;
   unsigned catRev = cat_revisao(), filRev = fil_revisao();
-  unsigned itensRev = cat_revisao_itens();
+  unsigned itensRev = cat_revisao_conteudo();
   int filLim = fil_limite();
   // A CURADORIA da fileira Herói entra na guarda: a recomendação chega DEPOIS
   // do catálogo (e volta a cada 30 min), e sem este termo o cartão só trocaria
@@ -3164,6 +3157,26 @@ static void sincronizarFileiras(void) {
         if (nm < teto && nm < MAX_CARDS) cw->itens[nm++] = idx;
       }
       if (nProxHome || tirou) { cw->usaItens = 1; cw->n = nm; }
+    }
+    if (fil_origem_de(cf->chave) == FIL_ORIGEM_SERVIDOR) {
+      Fileira *srv = &fileiras[destino];
+      int order = fil_servidor_ordem(cf->chave), hide = fil_servidor_ocultar_vistos(cf->chave);
+      if (order || hide) {
+        int n = 0, teto = srv->n;
+        for (int c = 0; c < cf->n && n < MAX_CARDS - 1; c++) {
+          const CatItem *it = cat_item(cf->ini + c);
+          if (!it || (hide && cat_visto(it))) continue;
+          srv->itens[n++] = cf->ini + c;
+        }
+        if (order) for (int c = 1; c < n; c++) {
+          int idx = srv->itens[c], j = c;
+          while (j > 0 && strcasecmp(cat_item(srv->itens[j-1])->titulo, cat_item(idx)->titulo) > 0) {
+            srv->itens[j] = srv->itens[j-1]; j--;
+          }
+          srv->itens[j] = idx;
+        }
+        srv->usaItens = 1; srv->n = n < teto ? n : teto;
+      }
     }
     snprintf(fileiras[destino].chave, sizeof fileiras[destino].chave,
              "%s", cf->chave);
@@ -3606,6 +3619,8 @@ static void sincronizarFileiras(void) {
   prefsAplicadas = assin;
   memset(animFoco, 0, sizeof animFoco);
   memset(animFocoFil, 0, sizeof animFocoFil);
+  memset(heroEspecialCol, 0, sizeof heroEspecialCol);
+  memset(heroEspecialAlpha, 0, sizeof heroEspecialAlpha);
   memset(revArte, 0, sizeof revArte);
   memset(velX, 0, sizeof velX);
   memset(scrollX, 0, sizeof scrollX);
@@ -3628,7 +3643,7 @@ static void sincronizarFileiras(void) {
         break;
       }
   expFileira = expColuna = -1; expAbre = 0.0f;
-  homeAtualizarReferenciasArte();
+  referenciasArteFileira = referenciasArteHero = 0;
   if (nFileiras < 1) return;
   {
     int cols[MAX_FIL], k;
@@ -3764,12 +3779,14 @@ static void home_atualizar_(float dt, Uint32 agora) {
   if (!telefoneui_ativo()) { toqueHomeLimpar(); toqueHeroCancelar(); }
 #endif
   sincronizarFileiras();
+  homeAtualizarReferenciasArte();
   // A FILEIRA DE AMIGOS tem tantas colunas quantos rostos (+ "Adicionar"), e
   // isso muda sem o catalogo mudar (um amigo novo chega do recomenda.c).
   for (int r = 0; r < nFileiras; r++) {
     if (fileiras[r].tipo != FILEIRA_SOCIAL) continue;
-    int focada = !focoHero && foco.fileira == r, c = foco.coluna;
-    amigosfil_atualizar(dt, focada, focada ? &c : NULL);
+    int focada = !focoHero && foco.fileira == r;
+    int c = focada ? foco.coluna : foco.colunaLembrada[r];
+    amigosfil_atualizar(dt, focada, &c);
     int nc = amigosfil_n_colunas();
     // A FILEIRA DO CATALOGO QUE RESPONDEU VAZIA (estado 1) continua sem
     // coluna quando nao ha amigo nenhum: o convite so mora no lugar reservado
@@ -4080,6 +4097,14 @@ static void home_atualizar_(float dt, Uint32 agora) {
   // meio de qualquer teste.
 
   for (int r = 0; r < nFileiras; r++) {
+    if (!focoHero && foco.fileira == r &&
+        (fileiras[r].tipo == FILEIRA_SOCIAL || fileiras[r].tipo == FILEIRA_CATALOGOS)) {
+      int changed = heroEspecialCol[r] != foco.coluna;
+      heroEspecialAlpha[r] = motionReduzido ? 1.0f :
+        anim_rampa(heroEspecialAlpha[r], changed ? 0.0f : 1.0f, dt, NV_HERO_FADE_MS * .5f);
+      if (motionReduzido || (changed && heroEspecialAlpha[r] <= 0.0f))
+        heroEspecialCol[r] = foco.coluna;
+    }
     int nAnim = fileiras[r].n + (fileiras[r].verTudo ? 1 : 0);
     if (nAnim > MAX_CARDS) nAnim = MAX_CARDS;
     for (int c = 0; c < nAnim; c++) {
@@ -4384,10 +4409,22 @@ static int heroNomeLogo(const CatItem *ci, const char *url, int loaded,
   return same && strncmp(ci->logoIdioma, language, 2) != 0;
 }
 
+// Hero size (Settings): 0 Normal, 1 Grande, 2 Muito grande. The logo and the
+// information lines scale together; the layout below measures everything.
+static float heroMetaLinha(void) { return NV_LD_HERO_META * ajustes_hero_escala_info(); }
+static float heroSecLinha(void) {
+  return (ajustes_hero_tamanho() ? fmaxf(NV_LD_HERO_SEC, BADGE_H) : NV_LD_HERO_SEC) * ajustes_hero_escala_info();
+}
+static TxtEstilo heroMetaEstilo(void) {
+  int t = ajustes_hero_tamanho();
+  return t == 2 ? TXT_HERO_META_GG : t == 1 ? TXT_HERO_META_G : TXT_HERO_META;
+}
 static float heroSinEntrelinha(void) {
+  if (ajustes_hero_tamanho() == 2) return 38.0f;
   return ajustes_hero_sinopse_grande() ? 32.0f : NV_LD_HERO_SIN;
 }
 static TxtEstilo heroSinEstilo(void) {
+  if (ajustes_hero_tamanho() == 2) return TXT_SINOPSE_28;
   return ajustes_hero_sinopse_grande() ? TXT_HERO_SIN_GRANDE : TXT_HERO_SIN;
 }
 
@@ -4421,8 +4458,8 @@ static HeroCopyLayout heroCopyLayout(float base, float hSin, int hasMeta,
     gap = fmaxf(0, gap - (sinopse_entrelinha(TXT_HERO_SIN, NV_LD_HERO_SIN) - NV_LD_HERO_SIN));
   p.synopsis = base - slotH * s - hSin;
   p.action = p.synopsis + hSin + btnGap;
-  p.secondary = p.synopsis - (hasSec ? (hSin > 0 ? gap : 0) + (fixed ? ANC(NV_LD_HERO_SEC) : NV_LD_HERO_SEC) : 0);
-  p.meta = p.secondary - (hasMeta ? ((hasSec || hSin > 0) ? gap : 0) + (fixed ? ANC(NV_LD_HERO_META) : NV_LD_HERO_META) : 0);
+  p.secondary = p.synopsis - (hasSec ? (hSin > 0 ? gap : 0) + (fixed ? ANC(heroSecLinha()) : heroSecLinha()) : 0);
+  p.meta = p.secondary - (hasMeta ? ((hasSec || hSin > 0) ? gap : 0) + (fixed ? ANC(heroMetaLinha()) : heroMetaLinha()) : 0);
   // A linha de AMIGOS (quem gostou / assistiu) fica logo acima da meta.
   p.friends = p.meta - (friendsH > 0 ? gap + friendsH : 0);
   p.caption = p.friends - (captionH > 0 ? gap + captionH : 0);
@@ -4444,6 +4481,7 @@ static HeroCopyLayout heroCopyTelefone(float base, float *hSin, int hasMeta,
                                        float slot, float *friendsH, float minLogo) {
   HeroCopyLayout p;
   *hSin = fminf(*hSin, 2.0f * heroSinEntrelinha());
+  if (ajustes_hero_tamanho()) minLogo = fmaxf(minLogo, logoH);
   for (;;) {
     p = heroCopyLayout(base, *hSin, hasMeta, hasSec, *captionH, logoH,
                        btnH, btnGap, minTop, slot, *friendsH);
@@ -4522,9 +4560,10 @@ static void desenhaPontosHero(float xDir, float yc, int n, int atual, float a) {
 // desenho e pelos pedidos antecipados (heroPedirLogo): o MESMO teto cai no
 // MESMO item do cache, sem promocao nem segundo decode.
 static float heroLogoMaxW(int lay, int cheio) {
-  if (lay == HOME_LAYOUT_PADRAO) return homeTextoLargura(NV_PAD_LOGO_MAX_W);
-  if (lay == HOME_LAYOUT_DINAMICA) return homeTextoLargura(NV_DIN_LOGO_MAX_W);
-  return homeTextoLargura(cheio ? NV_LOGO_HERO_CHEIO_MAX_W : NV_LOGO_HERO_MAX_W);
+  float e = ajustes_hero_escala_logo();
+  if (lay == HOME_LAYOUT_PADRAO) return homeTextoLargura(NV_PAD_LOGO_MAX_W * e);
+  if (lay == HOME_LAYOUT_DINAMICA) return homeTextoLargura(NV_DIN_LOGO_MAX_W * e);
+  return homeTextoLargura((cheio ? NV_LOGO_HERO_CHEIO_MAX_W : NV_LOGO_HERO_MAX_W) * e);
 }
 
 // O LOGO DO TITULO JUNTO COM A ARTE (07/10, TCL Android 2.0.2). O logo so era
@@ -4610,6 +4649,8 @@ static float desenhaCopiaHero(const CatItem *ci, int principal, float x,
                              float sinW, int sinLinhas, float aTexto,
                              float aCopy, float cin, float btnH, float btnGap,
                              float slot) {
+  logoH *= ajustes_hero_escala_logo();
+  sinW = fminf(homeLarguraUtil(), sinW * ajustes_hero_escala_info());
   int contHero = (ci && ci->progresso > 0 && ci->restanteMin > 0);
   int seguirHero = (ci && ci->progresso == 0 && (trakt_e_a_seguir(ci->imdb) || simkl_e_a_seguir(ci->imdb) || cwo_conta_a_seguir(ci->imdb)));
 
@@ -4690,8 +4731,8 @@ static float desenhaCopiaHero(const CatItem *ci, int principal, float x,
   int mostraNomeLogo = heroNomeLogo(ci, urlLogo && tex_falhou(urlLogo) ? NULL : urlLogo,
                                     tlogo != 0, desc_tmdb_idioma());
   int caption = mostraNomeLogo && urlLogo && !tex_falhou(urlLogo) && ci && ci->titulo[0];
-  float captionH = caption ? txt_bloco_corta(TXT_HERO_META, ci->titulo, 255, 255, 255,
-                                            -1, 0, sinW, NV_LD_HERO_META, 0, 1) : 0;
+  float captionH = caption ? txt_bloco_corta(heroMetaEstilo(), ci->titulo, 255, 255, 255,
+                                            -1, 0, sinW, heroMetaLinha(), 0, 1) : 0;
   // Padrão has a shorter banner: fit the logo into the measured remaining
   // space when every real information line exists, including a caption.
   float minTop = 24.0f;
@@ -4708,6 +4749,17 @@ static float desenhaCopiaHero(const CatItem *ci, int principal, float x,
   HeroCopyLayout copy = heroCopyLayout(base, hSin, metaLinha[0] != 0, temSec,
                                       captionH, logoH, btnH, btnGap, minTop, slot, friendsH);
   TxtLinha tituloTelefone = {0};
+  if (ajustes_hero_tamanho() && !heroCompactoTelefone()) {
+    // Keep the enlarged block above the same row boundary and below the header.
+    while (copy.logo + copy.logoHeight - minTop < logoH && sinopse[0] && sinLinhas > 1) {
+      sinLinhas--;
+      hSin = txt_bloco_corta(heroSinEstilo(), sinopse, 255, 255, 255, -1, 0,
+                             sinW, heroSinEntrelinha(), 0, sinLinhas);
+      hSin += txt_linha(heroSinEstilo(), "Ag", 255, 255, 255, 255).h - heroSinEntrelinha();
+      copy = heroCopyLayout(base, hSin, metaLinha[0] != 0, temSec,
+                            captionH, logoH, btnH, btnGap, minTop, slot, friendsH);
+    }
+  }
   if (vitTeto > 0.0f && !heroCompactoTelefone()) {
     // VITRINE DA COLECAO: o bloco nao sobe no cabecalho (anel, seletor). O
     // logo encolhe ate 88 px (o nome, ate a altura dele); faltando espaco a
@@ -4801,8 +4853,8 @@ static float desenhaCopiaHero(const CatItem *ci, int principal, float x,
   }
 
   if (caption && aCopy > 0.004f)
-    txt_bloco_corta(TXT_HERO_META, ci->titulo, 255, 255, 255, x, copy.caption,
-                    sinW, NV_LD_HERO_META, aCopy, 1);
+    txt_bloco_corta(heroMetaEstilo(), ci->titulo, 255, 255, 255, x, copy.caption,
+                    sinW, heroMetaLinha(), aCopy, 1);
 
   if (temAmigos && aCopy > 0.004f) {
     static const float ANEL[3] = { 0.04f, 0.045f, 0.055f };
@@ -4811,14 +4863,14 @@ static float desenhaCopiaHero(const CatItem *ci, int principal, float x,
     lx = x + svd_amigos_pilha(x, copy.friends, d, &amigos, amigos.n < 3 ? amigos.n : 3, 1, ANEL, aCopy) + 14.0f;
     amigostitulo_linha_destaque(&amigos, linha, sizeof linha);
     if (linha[0]) {
-      TxtLinha lf = txt_linha_corta(TXT_HERO_META, linha, 214, 217, 224, 255, sinW - (lx - x));
+      TxtLinha lf = txt_linha_corta(heroMetaEstilo(), linha, 214, 217, 224, 255, sinW - (lx - x));
       txt_desenhar_alpha(lf, lx, copy.friends + (d - lf.h) * 0.5f, aCopy);
     }
   }
 
   if (metaLinha[0] && aCopy > 0.004f) {
     float badgeW=ci?badges_desenhar(badges_provedor(ci->provNome),x,yMeta,150,24,aCopy):0;
-    TxtLinha lm = txt_linha_corta(TXT_HERO_META, metaLinha, 179, 179, 179, 255,
+    TxtLinha lm = txt_linha_corta(heroMetaEstilo(), metaLinha, 179, 179, 179, 255,
                                   sinW-badgeW);
     // META E SINOPSE TROCAM NA HORA, sem esvanecer com a arte. MEDIDO: no
     // quadro a 205 ms, com a arte antiga ainda a 85%, a linha de meta e a
@@ -4832,6 +4884,9 @@ static float desenhaCopiaHero(const CatItem *ci, int principal, float x,
   if (temSec && aCopy > 0.004f) {
     float cx = x;
     float a = aCopy;
+    float scale = ajustes_hero_escala_info();
+    float rowW = sinW / scale;
+    if (scale != 1.0f) gfx_transformar(x, ySec, scale, 0, 0);
     if (destaque[0]) {
       // .home-modern-hero-highlight: branco cheio, peso 600, tracking 0.04em.
       cx += txt_tracking(TXT_HERO_SEC, destaque, 255, 255, 255, cx, ySec, a,
@@ -4842,16 +4897,17 @@ static float desenhaCopiaHero(const CatItem *ci, int principal, float x,
       // O mesmo selo de 28 px da aba Salvos e do detalhe; classificacao nao
       // ganha uma caixa vermelha propria em cada superficie.
       float bw = badge_largura(selo);
-      if (cx + bw <= x + sinW)
-        cx += badge_desenhar(cx, ySec + (NV_LD_HERO_SEC - BADGE_H) * 0.5f,
+      if (cx + bw <= x + rowW)
+        cx += badge_desenhar(cx, ySec + (heroSecLinha() / scale - BADGE_H) * 0.5f,
                              selo, BADGE_NEUTRO, a) + 14.0f;
     }
     if (nota[0] && imdbRating > 0) {
       float bw = badge_imdb_largura(imdbRating);
-      if (cx + bw <= x + sinW)
-        badge_imdb(cx, ySec + (NV_LD_HERO_SEC - BADGE_H) * 0.5f,
+      if (cx + bw <= x + rowW)
+        badge_imdb(cx, ySec + (heroSecLinha() / scale - BADGE_H) * 0.5f,
                    imdbRating, 0, a);
     }
+    if (scale != 1.0f) gfx_sem_transformar();
   }
 
   if (sinopse[0] && (!(heroCompactoTelefone() || vitTeto > 0.0f) || hSin > 0.0f) && aCopy > 0.004f)
@@ -5132,10 +5188,13 @@ static void desenhaHero(Uint32 agora, float saida) {
 
   sinW = homeTextoLargura(sinW);
   if(!focoHero && lay==HOME_LAYOUT_MODERNA && foco.fileira>=0 && foco.fileira<nFileiras && fileiras[foco.fileira].tipo==FILEIRA_SOCIAL) {
-    float x=homeConteudoX(),a=(1-saida)*heroVisivelToque();
+    float fade = heroEspecialAlpha[foco.fileira];
+    float x=homeConteudoX(),a=(1-saida)*heroVisivelToque()*fade;
+    aArte *= fade;
     const Fileira *s=&fileiras[foco.fileira];
-    const CatItem *p=(fileiraItemIndice(s, foco.coluna) >= 0)
-                    ?cat_item_exato(fileiraItemIndice(s, foco.coluna)):NULL;
+    int column = heroEspecialCol[foco.fileira];
+    const CatItem *p=(fileiraItemIndice(s, column) >= 0)
+                    ?cat_item_exato(fileiraItemIndice(s, column)):NULL;
     const char *arte=p?arte_hero_do_item(p):NULL;   // tela cheia: arte grande
     GLuint ta=arte?tex_obter_hero(arte):0;
     // O fundo social so onde a arte NAO cobre. Com a arte do titulo opaca por
@@ -5217,12 +5276,15 @@ static void desenhaHero(Uint32 agora, float saida) {
   // Dinamica nao tem destaque parado no topo e mostra o mesmo banner por tras
   // do cabecalho da fileira (dinArteColecao).
   if(!focoHero&&lay!=HOME_LAYOUT_DINAMICA&&foco.fileira>=0&&foco.fileira<nFileiras&&fileiras[foco.fileira].tipo==FILEIRA_CATALOGOS) {
-    const ColFolder *folder=col_folder(fileiras[foco.fileira].folders[foco.coluna]);
+    float fade = heroEspecialAlpha[foco.fileira];
+    const ColFolder *folder=col_folder(fileiras[foco.fileira].folders[heroEspecialCol[foco.fileira]]);
+    aArte *= fade;
     if(folder) {
+      int details=ajustes_hero_pasta_detalhes();
       if(folder->editorial) {
         /* Art is authored for this rectangle, not cropped as a movie backdrop.
            The neutral canvas continues below it; no art behind the shelves. */
-        float x=homeConteudoX(),a=(1-saida)*heroVisivelToque();
+        float x=homeConteudoX(),a=(1-saida)*heroVisivelToque()*fade;
         GLuint art=tex_obter_hero(folder->hero);
         GfxRect header=heroArtworkOverlayRect(heroEditorialRect(folder->editorial,
                       folder->editorial==2 ? tex_aspecto(folder->hero) : 0.0f), r);
@@ -5231,12 +5293,14 @@ static void desenhaHero(Uint32 agora, float saida) {
         heroArteRect=header;
         int director=!strcasecmp(folder->group,"Directors");
         const char *section=director?"DIRETORES":!strcmp(folder->group,"Streaming")?"STREAMING":!strcmp(folder->group,"Themes")?"TEMAS":!strcmp(folder->group,"Genres")?"GÊNEROS":"COLEÇÕES";
-        txt_desenhar_alpha(txt_linha(TXT_HERO_META,section,190,193,200,255),x,122,a);
+        if(details) txt_desenhar_alpha(txt_linha(TXT_HERO_META,section,190,193,200,255),x,122,a);
         txt_bloco(TXT_TITULO1,folder->title,244,243,247,x,183,homeTextoLargura(860),72,a,2);
-        char caption[160];
-        snprintf(caption,sizeof caption,"%s  ·  %d %s",i18n(director?"Filmografia":"Seleção de cinema e séries"),folder->nSources,i18n(folder->nSources==1?"lista":"listas"));
-        txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,caption,190,193,200,255,homeTextoLargura(860)),x,358,a);
-        txt_desenhar_alpha(txt_linha(TXT_HERO_META,"OK para explorar",224,225,230,255),x,406,a);
+        if(details) {
+          char caption[160];
+          snprintf(caption,sizeof caption,"%s  ·  %d %s",i18n(director?"Filmografia":"Seleção de cinema e séries"),folder->nSources,i18n(folder->nSources==1?"lista":"listas"));
+          txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,caption,190,193,200,255,homeTextoLargura(860)),x,358,a);
+          txt_desenhar_alpha(txt_linha(TXT_HERO_META,"OK para explorar",224,225,230,255),x,406,a);
+        }
         return;
       }
       int ehDiretor=!strcasecmp(folder->group,"Directors");
@@ -5264,12 +5328,15 @@ static void desenhaHero(Uint32 agora, float saida) {
         else gfx_rect(r,t,modoHero,0,0,0,0,0,0,0,aArte);
         gfx_tex_aspect_atual=0;}
       heroArteRect=r;
-      float x=homeConteudoX(),a=(1-saida)*heroVisivelToque();
-      TxtLinha group=txt_linha(TXT_HERO_META,folder->group,201,206,218,255);
-      txt_desenhar_alpha(group,x,NV_COLLECTION_HERO_GROUP_Y,a);
+      float x=homeConteudoX(),a=(1-saida)*heroVisivelToque()*fade;
+      if(details) {
+        TxtLinha group=txt_linha(TXT_HERO_META,folder->group,201,206,218,255);
+        txt_desenhar_alpha(group,x,NV_COLLECTION_HERO_GROUP_Y,a);
+      }
       if (ehDiretor) {
         TxtLinha name=txt_linha_corta(TXT_TITULO1,folder->title,244,243,247,255,homeTextoLargura(780));
         txt_desenhar_alpha(name,x,NV_COLLECTION_HERO_LOGO_Y,a);
+        if(!details) return;
         const char *meta=diretor_meta(folder->title);
         if (meta[0])
           txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,meta,201,206,218,255,homeTextoLargura(780)),
@@ -5309,6 +5376,7 @@ static void desenhaHero(Uint32 agora, float saida) {
         txt_desenhar_alpha(name,x,NV_COLLECTION_HERO_LOGO_Y,a);
         fimTitulo=NV_COLLECTION_HERO_LOGO_Y+name.h;
       }
+      if(!details) return;
       char caption[96];snprintf(caption,sizeof caption,i18n("%d %s · OK para explorar"),folder->nSources,i18n(folder->nSources==1?"lista":"listas"));
       float yCap=NV_COLLECTION_HERO_CAPTION_Y;
       if(ehDiretor) {
@@ -5813,7 +5881,6 @@ static void alvoCard(float x, float y, float w, float h, int r, int c) {
     ancoraFoco = (GfxRect){ x, y, w, h };
     temAncoraFoco = 1;
   }
-  if (!ponteiro_ativo()) return;
   if (y < topo) { h -= topo - y; y = topo; }
   if (homeRetratoTelefone()) {
     float dir = fminf(x + w, homeConteudoDireita());
@@ -5821,6 +5888,23 @@ static void alvoCard(float x, float y, float w, float h, int r, int c) {
     if (w <= 0.0f || h <= 0.0f) return;
   }
   ponteiro_alvo(x, y, w, h, ponteiroCard, NULL, r, c);
+}
+static struct {GfxRect rect;int row,col;} navigation[512];
+static int navigationCount;
+#undef ponteiro_alvo
+static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,PonteiroFn activate,int r,int c){
+  if((fn==ponteiroCard||fn==ponteiroHero)&&w>0&&h>0&&navigationCount<512){navigation[navigationCount].rect=(GfxRect){x,y,w,h};navigation[navigationCount].row=fn==ponteiroHero?-1:r;navigation[navigationCount++].col=c;}
+  ponteiro_alvo(x,y,w,h,fn,activate,r,c);
+}
+#define ponteiro_alvo navigationTarget
+static int navigationMove(SDL_Keycode key){
+  if(key==SDLK_UP || key==SDLK_DOWN)return 0;
+  if(key!=SDLK_UP&&key!=SDLK_DOWN&&key!=SDLK_LEFT&&key!=SDLK_RIGHT)return 0;
+  GfxRect rects[512];int current=-1;
+  for(int i=0;i<navigationCount;i++){rects[i]=navigation[i].rect;if(navigation[i].row==(focoHero?-1:foco.fileira)&&navigation[i].col==(focoHero?0:foco.coluna))current=i;}
+  int next=focus_rect_nearest(rects,navigationCount,current,(key==SDLK_RIGHT)-(key==SDLK_LEFT),(key==SDLK_DOWN)-(key==SDLK_UP));
+  if(next<0||next==current)return 0;
+  if(navigation[next].row<0)ponteiroHero(0,0);else ponteiroCard(navigation[next].row,navigation[next].col);return 1;
 }
 
 static void desenhaRedonda(const CatItem *ci, GLuint t, const char *caminho,
@@ -5858,15 +5942,7 @@ static void desenhaAtalhos(int r, float y) {
     alvoCard(x, cy, cw, ch, r, c);
     // O ANEL E OPCIONAL (Ajustes > Foco no cartaz). Sem ele o foco continua
     // dito pelo tamanho e pela animacao do cartaz — o que sai e so a borda.
-    if (!redonda && f > .01f && ajustes_borda_foco()) {
-      float menor = cw < ch ? cw : ch;
-      float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-      if (ajustes_vidro()) gfx_vidro_cartao(card, raio, f, 1.0f);
-      else
-      gfx_cor((GfxRect){x - NV_ANEL_FOCO, cy - NV_ANEL_FOCO,
-        cw + 2*NV_ANEL_FOCO, ch + 2*NV_ANEL_FOCO},
-        (raio * menor + NV_ANEL_FOCO) / (menor + 2*NV_ANEL_FOCO), ar, ag, ab, f);
-    }
+    if (!redonda && ajustes_borda_foco()) svd_aro_foco(card, raio, f, 1.0f);
     if (!redonda) gfx_cor(card, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G, NV_COR_ESQUELETO_B, 1);
     const ColFolder *folder=col_folder(fileiras[r].folders[c]);if(!folder)continue;
     const char *arte = col_capa(folder);
@@ -6141,7 +6217,6 @@ static void shotTrailerPasso(int topo, float dt, Uint32 agora, int heroSetting, 
 #endif
 
 static void home_trailer_passo_(int topo, float dt, Uint32 agora) {
-  if (glance_aberto()) return;
   const CatItem *ci = NULL;
   int pronto;
   Uint32 decorrido;
@@ -7830,7 +7905,31 @@ static float desenhaTituloFil(int r, float y, const char *rot, int cr, int cg, i
   return x0 + tl->w;
 }
 
+// Register cached horizontal slices before draw can admit new requests.
+static void homeResidencia(void) {
+  tex_residencia_inicio(foco.fileira);
+  for (int r = 0; r < nFileiras; r++) {
+    TipoFileira tipo = fileiras[r].tipo;
+    if (tipo == FILEIRA_SOCIAL || tipo == FILEIRA_CATALOGOS || fileiraEhCanal(&fileiras[r])) continue;
+    float lw = larguraFil(r);
+    int deitado = editorial(tipo) || tipo == FILEIRA_LARGA || tipo == FILEIRA_HEROI ||
+      (tipo != FILEIRA_TOP10_NUM && tipo != FILEIRA_TOP10 && tipo != FILEIRA_CONTINUE &&
+       tipo != FILEIRA_POSTER_GRANDE && tipo != FILEIRA_HEROI_DIVIDIDO && ajustes_posteres_deitados());
+    for (int c = 0; c < fileiras[r].n; c++) {
+      float x = homeFileiraX(r, c);
+      if (x < -lw * 1.5f || x > NV_TELA_W + lw) continue;
+      int idx = fileiraItemIndice(&fileiras[r], c);
+      tex_residencia_marcar(arte_por_identidade(idx,
+        (tipo == FILEIRA_CONTINUE || tipo == FILEIRA_RETORNO) ? 3 : deitado), r);
+      // Expanded cards may have a second cached landscape variant.
+      if (!deitado) tex_residencia_marcar(arte_por_identidade(idx, 1), r);
+    }
+  }
+}
+
 static void home_desenhar_(Uint32 agora) {
+  navigationCount=0;
+  homeResidencia();
   // Nao conservar ponteiros para o catalogo de outro quadro/perfil quando
   // nenhuma tela de titulo publica um item (pasta, social ou estado vazio).
   temItemFoco = 0;
@@ -8567,7 +8666,8 @@ static void home_desenhar_(Uint32 agora) {
       fy += NV_LEGACY_ROW_HEAD_H + alturaTotalFil(r) + fileiraGap();
     }
     int dir = adiante.direcao < 0 ? -1 : 1, pediu = 0;
-    for (int passo = 1; primeira >= 0 && passo <= 3 && !pediu; passo++) {
+    for (int passo = 1; primeira >= 0 &&
+         passo <= tex_residencia_fileiras() && !pediu; passo++) {
       int r = (dir > 0 ? ultima : primeira) + passo * dir;
       if (r < 0 || r >= nFileiras) break;
       TipoFileira tipo = fileiras[r].tipo;
@@ -8767,7 +8867,7 @@ void home_abrir_sessao(void) {
   memset(&cartaoFoco, 0, sizeof cartaoFoco);
   itemFocoSessao = 0; itemFocoCatalogo = 0;
   sair = pedidoAbrir = pedidoTocar = pedidoMenu = pedidoRelogio = 0;
-  pedidoSocial = pedidoPessoaSocial = pedidoGuia = 0;
+  pedidoSocial = pedidoPessoaSocial = pedidoGuia = pedidoBiblioteca = 0;
   memset(&pessoaSocial, 0, sizeof pessoaSocial); guiaId[0] = 0;
   okDesde = 0; okPressionando = okLongDisparado = okConsumirSoltura = 0;
   okHold = 0.0f;

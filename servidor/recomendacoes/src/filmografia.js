@@ -1,7 +1,11 @@
+const UA = "NuvioLegacy/2.1 (https://github.com/nuvio-legacy)";
 // Same authenticated account/profile identity as the other personal routes.
 const positive = x => /^\d+$/.test(String(x)) && Number.isSafeInteger(Number(x)) && Number(x)>0;
 async function wikidata(id, language, fetchFn) {
-  const response=await fetchFn(`https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${id}&languages=${language}|en&format=json`);
+  // A Workers nao manda User-Agent nenhum e o Wikidata responde 403 a pedido
+  // sem ele; um 403 aqui nao pode derrubar a rota inteira (familia e premios
+  // vem vazios, o "seguindo" continua certo).
+  const response=await fetchFn(`https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${id}&languages=${language}|en&format=json`,{headers:{'user-agent':UA,accept:'application/json'}});
   if(!response.ok) throw new Error('wikidata');
   return (await response.json()).entities || {};
 }
@@ -29,7 +33,8 @@ export async function rotaFilmografiaPessoal(rota, metodo, env, quem, corpo, url
     const follow=await env.DB.prepare('SELECT seguindo FROM pessoa_seguida WHERE dono=? AND tmdb=?').bind(quem.id,Number(id)).first();
     const out={seguindo:follow?.seguindo || 0,familia:[],premios:[]};
     if(/^Q\d+$/.test(q || '')) {
-      const entities=await wikidata(q,language,fetchFn), claims=entities[q]?.claims || {};
+      try {
+        const entities=await wikidata(q,language,fetchFn), claims=entities[q]?.claims || {};
       const rows=[];
       for(const [property,kind] of [['P26','familia'],['P22','familia'],['P25','familia'],['P40','familia'],['P3373','familia'],['P166','premios']])
         for(const claim of (claims[property] || []).slice(0,12)) {
@@ -42,6 +47,7 @@ export async function rotaFilmografiaPessoal(rota, metodo, env, quem, corpo, url
         const nome=names[row.id]?.labels?.[language]?.value || names[row.id]?.labels?.en?.value;
         if(nome && out[row.kind].length<12) out[row.kind].push({nome,rel:'',ano:Number((row.claim.qualifiers?.P585?.[0]?.datavalue?.value?.time || '').slice(1,5)) || 0});
       }
+      } catch {}
     }
     return h.json(out);
   } catch { return h.erro('person data unavailable',502); }
