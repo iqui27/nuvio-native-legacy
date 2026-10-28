@@ -68,6 +68,26 @@ static void sportsux_proof(SDL_Window *w,const char *out){
   nEventosFav=count;nFavoritos=teams;esp_fixture_revision++;gs_collect();
   g5ui_open("esportes-ligas");quadro();focus=2070;
   snprintf(name,sizeof name,"%s-home",phase);capture(w,out,name);
+  /* Provider channels add a row without replacing any Sports section. Walk
+   * every section using D-pad/OK, then return to the same home focus. */
+  assert(gs_live(-1,NULL,NULL,NULL)>0);
+  const SDL_Keycode steps[]={SDLK_RIGHT,SDLK_RIGHT,SDLK_DOWN,SDLK_LEFT,SDLK_LEFT};
+  const int sections[]={0,1,2,5,4,3};
+  for(int i=0;i<6;i++){
+    if(i)gv_event(steps[i-1],0);
+    assert(focus==2070+sections[i]);
+    int visible=0;for(int j=0;j<num_focus;j++)if(next_focus[j]==focus)visible=1;
+    assert(visible);
+    gv_event(SDLK_RETURN,0);quadro();assert(!strcmp(screen,gs_pages[sections[i]]));
+    gv_event(SDLK_ESCAPE,0);quadro();assert(!strcmp(screen,"esportes-ligas")&&focus==2070+sections[i]);
+  }
+  gv_event(SDLK_DOWN,0);assert(focus==2076);
+  gv_event(SDLK_RETURN,0);quadro();assert(!strcmp(screen,"esportes-canais"));
+  focus=2021;gv_event(SDLK_DOWN,0);assert(focus>=2700&&focus<2706);
+  int first=focus;gv_event(SDLK_RIGHT,0);assert(focus==first+1);quadro();
+  snprintf(name,sizeof name,"%s-live-channels",phase);capture(w,out,name);
+  gv_event(SDLK_ESCAPE,0);quadro();assert(!strcmp(screen,"esportes-ligas")&&focus==2076);
+  gv_event(SDLK_UP,0);assert(focus==2073);
   /* Measure the same draw interval and counters as main.c, excluding swap. */
   for(int i=0;i<8;i++){
     rowCache[i].linha=i;rowCache[i].n=50;rowCache[i].estado=1;

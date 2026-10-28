@@ -36,13 +36,14 @@ static char ultimaUrl[1200];      // a url DO PAINEL (desfeito o proxy)
 static char ultimaPedida[4000];   // o endereco que a rede recebeu de fato
 static char ultimoCorpo[1200];    // o corpo do POST ao proxy (Tizen)
 static int ultimoPost;
+static int ultimoPrazo;
 // Build do teste do Tizen (-DNV_XTREAM_PROXY_TESTE): a chamada chega como
 // POST <NV_REC_URL>/v1/xtream com a url do painel crua no corpo.
 static char *responder(const char *url);
 // #158: o chamar() do xtream.c agora usa rede_baixar_st (corpo + status),
 // para o log e a tela saberem se foi 401, 403, 458, 429 ou pagina HTML.
 char *rede_baixar_st(const char *url, int segundos, const char *const *cab, int *status) {
-  (void)segundos; (void)cab;
+  ultimoPrazo=segundos; (void)cab;
   ultimoPost = 0;
   snprintf(ultimaPedida, sizeof ultimaPedida, "%s", url);
   snprintf(ultimaUrl, sizeof ultimaUrl, "%s", url);
@@ -55,7 +56,7 @@ char *rede_baixar_st_retry(const char *url, int segundos, const char *const *cab
 }
 char *rede_postar_st(const char *url, int segundos, const char *const *cab,
                      const char *corpo, int *status) {
-  (void)segundos;
+  ultimoPrazo=segundos;
   ultimoPost = 1;
   assert(cab && !strcmp(cab[0], "Content-Type: text/plain"));
   snprintf(ultimaPedida, sizeof ultimaPedida, "%s", url);
@@ -151,6 +152,13 @@ static int checkChannel(const XtreamItem *c,void *u) {
 }
 
 int main(void) {
+  int st=0;
+  char *list=xtream_consultar("http://fixture.invalid","fixture","fixture","get_vod_categories",15,&st);
+  free(list);assert(ultimoPrazo==120);
+  list=xtream_consultar("http://fixture.invalid","fixture","fixture","get_series",15,&st);
+  free(list);assert(ultimoPrazo==120);
+  list=xtream_consultar("http://fixture.invalid","fixture","fixture","",15,&st);
+  free(list);assert(ultimoPrazo==15);
   XtreamCanal c[16];
   char url[600];
   int n;

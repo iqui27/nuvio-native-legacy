@@ -10,7 +10,7 @@ char *rede_baixar(const char *url, int seconds) {
   (void)seconds;
   if (strstr(url, "manifest.json")) return NULL;   // re-sonda de manifesto: sem fixture
   assert(strstr(url, "https://exemplo.test/config"));
-  assert(strstr(url, "/stream/movie/tt1.json"));
+  assert(strstr(url, "/stream/movie/tt1.json?variant=fixture%2Fone&mode=full"));
   return strdup(resp[0]);
 }
 char *rede_baixar(const char *url, int seconds);
@@ -20,10 +20,17 @@ char *rede_baixar_st(const char *url, int seconds, const char *const *headers, i
   if (status) *status = body ? 200 : 0;
   return body;
 }
+int rede_pedir(const RedePedido *p,RedeResposta *r) {
+  assert(p->cabecalhos && !strcmp(p->cabecalhos[0],"User-Agent: AIO-NuvioLegacy"));
+  memset(r,0,sizeof *r); r->status=200; r->corpo=rede_baixar(p->url,10); r->n_corpo=r->corpo?strlen(r->corpo):0; return 0;
+}
+void rede_resposta_limpar(RedeResposta *r) { free(r->corpo); }
 const char *rede_ultimo_erro(void) { return ""; }
 static RedeMedida medidaFalsa;
 char *rede_baixar_medido(const char *url, int segundos, const char *const *cabecalhos, RedeMedida *m) {
-  (void)segundos; (void)cabecalhos; if (m) *m = medidaFalsa;
+  (void)segundos;
+  if(strstr(url,"/stream/")) assert(cabecalhos && cabecalhos[0] && !strcmp(cabecalhos[0],"User-Agent: AIO-NuvioLegacy"));
+  if (m) *m = medidaFalsa;
   return strstr(url, "exemplo.test") ? rede_baixar(url, 10) : NULL;   // sondas fora do fixture falham caladas
 }
 char *rede_baixar_medido_controle(const char *url, int segundos, const char *const *cabecalhos, const RedeControle *c, RedeMedida *m) {
@@ -44,13 +51,23 @@ unsigned fontecache_vod_geracao(void) { return 0; }
 const char *i18n(const char *s) { return s; }
 
 int main(void) {
+  const char *plain="{\"streams\":[{\"url\":\"https://video.test/a.mp4\",\"name\":\"1080p\",\"behaviorHints\":{\"filename\":\"movie.mkv\",\"videoSize\":8589934593,\"bingeGroup\":\"fixture\",\"proxyHeaders\":{\"request\":{\"X-Test\":\"keep\"}}}}]}";
+  const char *structured="{\"streams\":[{\"url\":\"https://video.test/a.mp4\",\"name\":\"1080p\",\"behaviorHints\":{\"filename\":\"movie.mkv\",\"videoSize\":8589934593,\"bingeGroup\":\"fixture\",\"proxyHeaders\":{\"request\":{\"X-Test\":\"keep\"}}},\"streamData\":{\"service\":{\"cached\":false},\"parsedFile\":{\"resolution\":\"1080p\"}}}]}";
+  Stream *plainList=NULL,*structuredList=NULL;
+  assert(stream_extrair(plain,"AIOStreams",&plainList)==1);
+  assert(stream_extrair(structured,"AIOStreams",&structuredList)==1);
+  assert(!strcmp(plainList[0].url,structuredList[0].url));
+  assert(plainList[0].tamanhoBytes==8589934593ULL && structuredList[0].tamanhoBytes==8589934593ULL);
+  assert(!strcmp(structuredList[0].bingeGroup,"fixture") && strstr(structuredList[0].cabecalhos,"X-Test: keep"));
+  assert(plainList[0].altura==structuredList[0].altura && structuredList[0].cacheNegado);
+  free(plainList); free(structuredList);
   static AddonRemoto remote[2];
   const char *manifest = "{\"id\":\"org.aiostreams\",\"name\":\"AIOStreams\","
                          "\"resources\":[\"stream\",\"catalog\"],\"catalogs\":[]}";
   for (int i = 0; i < 2; i++) {
     strcpy(remote[i].nome, "AIOStreams");
     snprintf(remote[i].url, sizeof remote[i].url,
-             "https://exemplo.test/config%d/manifest.json", i);
+             "https://exemplo.test/config%d/manifest.json?variant=fixture%%2Fone&mode=full", i);
     remote[i].ativo = 1;
   }
   assert(addons_definir_lista(remote, 2));

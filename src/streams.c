@@ -177,6 +177,18 @@ static int nAutomaticasExcluidas;
 static int decoder4k[4] = { -1, -1, -1, -1 }; // HEVC, AVC, VP9, AV1
 static int decoderFalhaAltura[4];             // apenas a lista atual
 static int excedeDecoder(const Stream *s);
+static int incompatRegra(const Stream *s);
+static int incompatOculta(const Stream *s);
+static _Atomic int incompatRevelada;
+static _Atomic int audioCap[5] = {-1,-1,-1,-1,-1}; // TrueHD, DTS core, DTS-HD, EAC3, AC3
+#if defined(__EMSCRIPTEN__) && !defined(NV_VIDAA)
+#include <emscripten.h>
+#elif defined(NV_TPK)
+#include "dts/dts_hls_tpk.h"
+#elif defined(NV_WEBOS)
+#include "webosver.h"
+#include "dts/dts_playback.h"
+#endif
 static pthread_mutex_t autoExclTrava = PTHREAD_MUTEX_INITIALIZER;
 // Trava entre a lista e os fios de verificacao (ver Lote, abaixo): a troca de
 // lista e as leituras/escritas dos fios em `lista[]` passam por ela.
@@ -378,6 +390,7 @@ static int fitLinhas(int i) {
   return r.razao == SF_BITRATE_ESTIMADO ? 2 : 1;
 }
 void stream_definir_alvo(const char *id) {
+  if (strcmp(alvoPedido, id ? id : "")) { incompatRevelada = 0; atomic_fetch_add(&folhaRevisao, 1); }
   snprintf(alvoPedido, sizeof alvoPedido, "%s", id ? id : "");
 }
 int stream_lista_do_alvo(const char *id) {
@@ -475,7 +488,7 @@ static int motivoForaDoAuto(int i, const FonteFiltroConfig *filtro) {
   if (!canalFolha && (filtro ? !fontefiltro_permite(filtro, &lista[i].filtro) : !stream_filtro_permite(&lista[i]))) return MOT_FILTRO;
   if (!lista[i].filtro.naoVod && lista[i].foraCache) return MOT_FORA_CACHE;
   if (ehInformativa(&lista[i])) return MOT_INFORMATIVA;
-  if (excedeDecoder(&lista[i])) return MOT_DECODER;
+  if (incompatOculta(&lista[i]) || excedeDecoder(&lista[i])) return MOT_DECODER;
   if (fontesmortas_idade(&lista[i]) >= 0) return MOT_MORTA;
   return MOT_FICA;
 }
@@ -1059,8 +1072,54 @@ static int fitPesadaAutoAlvo(const Stream *s, const char *alvo) {
 // a TV mostra HDR/Dolby Vision (video_tem_dolby_vision so existe com o
 // pipeline aberto), entao o padrao e -1 = desconhecido, e desconhecido NAO
 // penaliza: so um 0 explicito tira o formato da conta.
-static int telaHdr = -1, telaDv = -1;
-void stream_definir_tela(int hdr, int dv) { telaHdr = hdr; telaDv = dv; }
+static _Atomic int telaHdr = -1, telaDv = -1;
+static void incompatPlataforma(void) {
+#if defined(__EMSCRIPTEN__) && !defined(NV_VIDAA)
+  static int consultada;
+  if (!consultada) {
+    consultada = 1;
+    int ano = MAIN_THREAD_EM_ASM_INT({
+      try {
+        if (!window.webapis || !webapis.avplay) return 0;
+        var model = webapis.productinfo.getModel();
+        var match = /^(\d{2})_/.exec(model);
+        return match ? 2000 + Number(match[1]) : 1;
+      } catch(e) { return 0; }
+    });
+    if (ano) { telaDv = 0; audioCap[0] = 0; if (ano >= 2018) audioCap[1] = audioCap[2] = 0; }
+  }
+#elif defined(NV_TPK)
+  telaDv = 0;
+  // Native Samsung has a working conversion path on supported builds.
+  int convert = ajustes_dts_tpk_modo() != DTSTPK_DESLIGADO && dts_tpk_disponivel();
+  audioCap[0] = audioCap[1] = audioCap[2] = convert ? -1 : 0;
+#elif defined(NV_WEBOS)
+  int major = nv_webos_major();
+  static int convert = -1;
+  pthread_mutex_lock(&autoExclTrava);
+  if (convert < 0) convert = dts_playback_enabled();
+  pthread_mutex_unlock(&autoExclTrava);
+  audioCap[0] = convert ? -1 : 0;
+  // 2023/2024 DTS depends on model; keep it unknown. No guessed model support.
+  audioCap[1] = audioCap[2] = !convert && ((major >= 5 && major <= 7) || major >= 10) ? 0 : -1;
+#endif
+}
+void stream_definir_audio_capacidades(int truehd, int dts, int dtshd, int eac3, int ac3) {
+  pthread_mutex_lock(&autoExclTrava);
+  int a[] = {truehd,dts,dtshd,eac3,ac3}; for(int i=0;i<5;i++) audioCap[i]=a[i];
+  pthread_mutex_unlock(&autoExclTrava);
+  atomic_fetch_add(&folhaRevisao, 1);
+}
+int stream_incompat_padrao(int regra) {
+  incompatPlataforma();
+  pthread_mutex_lock(&autoExclTrava);
+  int r = regra == 0 ? telaDv == 0 : 0;
+  if (regra == 1) for (int i=0;i<5;i++) r |= audioCap[i] == 0;
+  if (regra == 2) for (int i=0;i<4;i++) r |= decoder4k[i] == 0;
+  pthread_mutex_unlock(&autoExclTrava);
+  return r;
+}
+void stream_definir_tela(int hdr, int dv) { telaHdr = hdr; telaDv = dv; atomic_fetch_add(&folhaRevisao, 1); }
 void stream_capacidades(int *hdr,int *dv,int *hevc,int *av1) {
   if(hdr)*hdr=telaHdr;if(dv)*dv=telaDv;
   pthread_mutex_lock(&autoExclTrava);
@@ -1078,6 +1137,7 @@ void stream_definir_decoder4k(int hevc, int avc, int vp9, int av1) {
   pthread_mutex_lock(&autoExclTrava);
   decoder4k[0] = hevc; decoder4k[1] = avc; decoder4k[2] = vp9; decoder4k[3] = av1;
   pthread_mutex_unlock(&autoExclTrava);
+  atomic_fetch_add(&folhaRevisao, 1);
 }
 static int codecDaFonte(const Stream *s) {
   uint64_t b = s->badges | badges_detectar(s->rotulo) |
@@ -1128,6 +1188,7 @@ void stream_automatico_erro_decoder(int indice, int codigo, int renderer) {
     pthread_mutex_lock(&autoExclTrava);
     if (!decoderFalhaAltura[c] || h < decoderFalhaAltura[c]) decoderFalhaAltura[c] = h;
     pthread_mutex_unlock(&autoExclTrava);
+    atomic_fetch_add(&folhaRevisao, 1);
     printf("[fonte] decoder: erro %d, automatico evita codec=%d a partir de %dp nesta lista\n", codigo, c, h);
   }
   pthread_mutex_unlock(&verTrava);
@@ -1146,8 +1207,55 @@ static int perfil8(const Stream *s) {
 static int perfil5(const Stream *s) {
   const char *c[3] = { s->rotulo, s->descricao, s->arquivo };
   for (int i = 0; i < 3; i++)
-    if (acha(c[i], "profile 5") || acha(c[i], "profile5") || acha(c[i], "dvhe.05")) return 1;
+    if (acha(c[i], "profile 5") || acha(c[i], "profile5") || acha(c[i], "perfil 5") ||
+        acha(c[i], "dvhe.05") || acha(c[i], "dvh1.05") || acha(c[i], "dvp5") || acha(c[i], "dv p5")) return 1;
   return 0;
+}
+
+static int dvSemFallback(const Stream *s) {
+  if (!s->dolbyVision || !perfil5(s)) return 0;
+  if (s->badges & (badges_bit("v-hdr10") | badges_bit("v-hdr10plus"))) return 0;
+  return !acha(s->rotulo,"hdr10") && !acha(s->descricao,"hdr10") && !acha(s->arquivo,"hdr10");
+}
+
+// A release name is not a track inventory. Keep unknown audio, and keep a
+// source whenever any advertised format may decode, convert or pass through.
+static int incompatRegra(const Stream *s) {
+  incompatPlataforma();
+  if (ajustes_fonte_ocultar(0) && telaDv == 0 && dvSemFallback(s)) return 1;
+  if (ajustes_fonte_ocultar(2) && excedeDecoder(s)) return 3;
+  if (!ajustes_fonte_ocultar(1)) return 0;
+  FonteFiltroDados d; stream_filtro_dados(s, &d);
+  uint64_t a = d.valores[FONTEFILTRO_AUDIO];
+  int seen = 0, possible = 0;
+  pthread_mutex_lock(&autoExclTrava);
+  if (a & (UINT64_C(1)<<8)) { seen=1; possible |= audioCap[0] != 0; }
+  if (a & (UINT64_C(1)<<7)) { seen=1; possible |= audioCap[1] != 0 || ((a & ((UINT64_C(1)<<3)|(UINT64_C(1)<<5))) && audioCap[2] != 0); }
+  if (a & (UINT64_C(1)<<1)) { seen=1; possible |= audioCap[3] != 0; }
+  if ((a & (UINT64_C(1)<<2)) && (!(a & (UINT64_C(1)<<1)) || d.ac3Explicito)) { seen=1; possible |= audioCap[4] != 0; }
+  pthread_mutex_unlock(&autoExclTrava);
+  if (a & ((UINT64_C(1)<<9)|(UINT64_C(1)<<10)|(UINT64_C(1)<<11))) possible=1;
+  return seen && !possible ? 2 : 0;
+}
+static int incompatContar(void) {
+  static pthread_mutex_t cacheTrava = PTHREAD_MUTEX_INITIALIZER;
+  static unsigned revision; static int valid, previous[8], count;
+  pthread_mutex_lock(&cacheTrava);
+  int settings[]={ajustes_fonte_ocultar(0),ajustes_fonte_ocultar(1),ajustes_fonte_ocultar(2),
+    audioCap[0],audioCap[1],audioCap[2],audioCap[3],audioCap[4]};
+  unsigned current=atomic_load(&folhaRevisao);
+  if (!valid || revision != current || memcmp(previous,settings,sizeof settings)) {
+    count=0; for(int i=0;i<n;i++) count += incompatRegra(&lista[i]) != 0;
+    revision=current; memcpy(previous,settings,sizeof settings); valid=1;
+  }
+  int result=count;
+  pthread_mutex_unlock(&cacheTrava);
+  return result;
+}
+static int incompatOculta(const Stream *s) {
+  if (incompatRevelada || !incompatRegra(s)) return 0;
+  // Never empty a completed list. A later compatible arrival restores filtering.
+  return n > 0 && incompatContar() < n;
 }
 
 #ifndef NV_STREAMS_LG
@@ -1814,7 +1922,7 @@ static int verificarUma(int i, Conferencia *c) {
     pthread_mutex_unlock(&verTrava);
     return 0;
   }
-  if (!fontefiltro_permite(&c->filtro, &lista[i].filtro) || (!lista[i].filtro.naoVod && lista[i].foraCache) || excedeDecoder(&lista[i]) || fontesmortas_idade(&lista[i]) >= 0) {
+  if (!fontefiltro_permite(&c->filtro, &lista[i].filtro) || (!lista[i].filtro.naoVod && lista[i].foraCache) || incompatOculta(&lista[i]) || excedeDecoder(&lista[i]) || fontesmortas_idade(&lista[i]) >= 0) {
     pthread_mutex_unlock(&verTrava); return 0;
   }
   snprintf(url, sizeof url, "%s", lista[i].url);
@@ -1945,7 +2053,7 @@ static int verificarOuParar(int i, void *u) {
   // A antecipada pode ter falhado no decoder enquanto esta URL era conferida.
   pthread_mutex_lock(&verTrava);
   if (!nv_perfil_sessao_atual(c->sessao) || listaGeracao != c->geracao) c->abortou = 1;
-  if (c->abortou || i >= n || excedeDecoder(&lista[i])) ok = 0;
+  if (c->abortou || i >= n || incompatOculta(&lista[i]) || excedeDecoder(&lista[i])) ok = 0;
   pthread_mutex_unlock(&verTrava);
   // A candidata que o player ja abriu (fonteantecipa.h): o veredito vai para o
   // fio principal, e um erro do player ANTES dele vale como "nao serviu".
@@ -2296,14 +2404,14 @@ static int falhaCandidatas(unsigned geracao, int escolhida, int primeira, FonteF
     // O addon pode estar dizendo "fora de cache no TB"; isso nao responde
     // pelo RD/PM/AD. Hash nativo passa apenas pelo resolvedor cache-only da
     // rota escolhida. URL direta fora de cache continua fora do automatico.
-    excl[q] = (unsigned char)(s->urlP2P || (s->foraCache && !s->infoHash[0]) || ehInformativa(s) || excedeDecoder(s) ||
+    excl[q] = (unsigned char)(s->urlP2P || (s->foraCache && !s->infoHash[0]) || ehInformativa(s) || incompatOculta(s) || excedeDecoder(s) ||
                  (!s->infoHash[0] && (automaticaExcluida(i) || fontesmortas_idade(s) >= 0)));
     grp[q] = (signed char)grupoDe(i);
     // Escolha explicita continua podendo tocar fora das regras do automatico.
     // As alternativas conservam os filtros; somente esta linha e preferida.
     if (i == escolhida) {
       pref = q; grp[q] = 0;
-      excl[q] = primeira ? 0 : (unsigned char)(s->urlP2P || excedeDecoder(s));
+      excl[q] = incompatOculta(s) || (!primeira && (s->urlP2P || excedeDecoder(s)));
     }
     rk[q] = fonteregra_ordem_rank(s->provedor);
     if (!excl[q]) livres++;
@@ -2509,7 +2617,7 @@ uint64_t stream_preparo_config_atual(void) {
     ajustes_fonte_hdr(), ajustes_dolby_vision(), ajustes_dv_mkv(), ajustes_dolby_atmos(),
     ajustes_tamanho_min_gb(), ajustes_tamanho_max_gb(), ajustes_buffer_preset(),
     ajustes_cache_seek_mb(), ajustes_fonte_conferir_varias(), ajustes_fonte_tocar_conferindo(),
-    ajustes_fonte_idioma_audio() };
+    ajustes_fonte_idioma_audio(), ajustes_fonte_ocultar(0), ajustes_fonte_ocultar(1), ajustes_fonte_ocultar(2) };
   unsigned versao = fonteregra_versao();
   uint64_t sessaoPerfil = nv_perfil_sessao_ler();
   uint64_t h = preparoMarca(UINT64_C(14695981039346656037), &cfg, sizeof cfg);
@@ -2623,7 +2731,7 @@ StreamPreparo *stream_preparo_criar_alvo(const Stream *fontes, int total, int pr
     int i = ordem[q]; const Stream *s = &fontes[i];
     pts[q] = pontosDoAlvo(s, alvo ? alvo : ""); acima[q] = acimaDoTetoAuto(s);
     excl[q] = !fontefiltro_permite(&p->filtro, &s->filtro) ||
-              s->urlP2P || (s->foraCache && !s->infoHash[0]) || ehInformativa(s) || excedeDecoder(s) ||
+              s->urlP2P || (s->foraCache && !s->infoHash[0]) || ehInformativa(s) || incompatRegra(s) || excedeDecoder(s) ||
               (!s->infoHash[0] && fontesmortas_idade(s) >= 0);
     grupo[q] = grupoDaFonte(&escopo, s); rank[q] = fonteregra_ordem_rank(s->provedor);
     if (i == preferidaNext && fonteregra_no_escopo(&escopo, ehPlugin(s))) pref = q;
@@ -2713,7 +2821,7 @@ int stream_preparo_renovar(StreamPreparo *p, int indice, int (*cancelado)(void *
   if (!p || !p->fontes || !fonte || indice < 0 || indice >= p->n ||
       !nv_perfil_sessao_atual(p->sessaoPerfil) || (cancelado && cancelado(ctx))) return 0;
   const Stream *s = &p->fontes[indice];
-  if (!fontefiltro_permite(&p->filtro, &s->filtro)) return 0;
+  if (incompatRegra(s) || !fontefiltro_permite(&p->filtro, &s->filtro)) return 0;
   char url[NV_MEDIA_URL_MAX] = "", fim[NV_MEDIA_URL_MAX], mime[96] = "";
   int ok = 0, fora = 0;
   long corpo = -1;
@@ -3649,6 +3757,7 @@ static int chipsOk(int i) {
   return 1;
 }
 static int passaChips(int i) {
+  if (incompatOculta(&lista[i])) return 0;
   if (!canalFolha && !stream_filtro_permite(&lista[i])) return 0;
   return chipsOk(i);
 }
@@ -3670,10 +3779,16 @@ static int chipsOcultos(char *nomes, size_t nn) {
   return k;
 }
 // A linha de aviso dos filtros (grupo 2) e o OK nela: tira os tres filtros.
-static void limparChips(void) { soMp4 = soCache = soDub = 0; rolagem = 0; velRol = 0; grupo = 1; foco = 0; }
+static void limparChips(void) { if (incompatContar()) { incompatRevelada=1; atomic_fetch_add(&folhaRevisao, 1); } soMp4 = soCache = soDub = 0; rolagem = 0; velRol = 0; grupo = 1; foco = 0; }
 static const char *fraseDicaChips(void) {
   static char frase[256];
   char nomes[128];
+  int hidden = incompatContar();
+  if (hidden) {
+    if (hidden == n && !incompatRevelada) return i18n("Todas as fontes podem ser incompatíveis com esta TV. Exibindo todas.");
+    snprintf(frase,sizeof frase,i18n(incompatRevelada ? "%d fontes incompatíveis exibidas nesta sessão" : "%d ocultas para esta TV"),hidden);
+    return frase;
+  }
   int k = chipsOcultos(nomes, sizeof nomes);
   if (!k) return NULL;
   snprintf(frase, sizeof frase, i18n("Fontes ocultas por %s: %d. Pressione para mostrar todas"), nomes, k);
@@ -4519,7 +4634,7 @@ static void folhaDados(void) {
   static int busy, valid;
   static struct FolhaChave {
     unsigned revisao, regras, mortas, memoria, abas;
-    int valores[30];
+    int valores[34];
     char audio[96], qualidade[32];
     FonteFalhaConfig falhas;
     int decoder[8];
@@ -4542,7 +4657,8 @@ static void folhaDados(void) {
     ajustes_fonte_regex_modo(), ajustes_fonte_usar_outros(), ajustes_fonte_ordem_uso(),
     ajustes_dolby_vision(), ajustes_dv_mkv(), ajustes_dolby_atmos(),
     ajustes_tamanho_min_gb(), ajustes_tamanho_max_gb(), ajustes_idioma(),
-    ondever_n(alvoPedido), fitN, filtroServidor};
+    ondever_n(alvoPedido), fitN, filtroServidor, incompatRevelada,
+    ajustes_fonte_ocultar(0), ajustes_fonte_ocultar(1), ajustes_fonte_ocultar(2)};
   memcpy(key.valores, v, sizeof v);
   snprintf(key.audio, sizeof key.audio, "%s", idiomaFiltroAudio());
   snprintf(key.qualidade, sizeof key.qualidade, "%s", ajustes_qualidade());
@@ -5197,7 +5313,9 @@ void stream_folha_evento(const SDL_Event *e) {
   }
   addonRolFim=k==SDLK_UP;
   // Left/Right switches providers even when a header target lies to the side.
-  if(k!=SDLK_LEFT && k!=SDLK_RIGHT && navigationMove(k))return;
+  int dicaVertical = fraseDicaChips() && (grupo==2 ||
+      (grupo==1 && foco==0 && k==SDLK_UP) || (grupo==0 && k==SDLK_DOWN));
+  if(k!=SDLK_LEFT && k!=SDLK_RIGHT && !dicaVertical && navigationMove(k))return;
   // ORDEM DO FOCO, de cima: fileira de botoes (grupo -1) -> abas de addon
   // (grupo 0) -> lista (grupo 1). CIMA na primeira linha vai as abas; CIMA
   // nas abas vai ao ultimo botao (Fechar, o mais perto do canto); BAIXO desce
@@ -5207,13 +5325,13 @@ void stream_folha_evento(const SDL_Event *e) {
   // grupo ele recomeca, senao descer do quarto botao caia na quarta linha.
   if(k==SDLK_UP) {
     if(grupo==1 && foco>0) foco--;
-    else if(grupo==1) grupo=chipsOcultos(NULL,0)?2:0;
+    else if(grupo==1) grupo=fraseDicaChips()?2:0;
     else if(grupo==2) grupo=0;
     else if(grupo==0) {grupo=-1;foco=nBotoes()-1;}
   }
   if(k==SDLK_DOWN) {
     if(grupo==-1) grupo=0;
-    else if(grupo==0) {grupo=chipsOcultos(NULL,0)?2:1;foco=0;}
+    else if(grupo==0) {grupo=fraseDicaChips()?2:1;foco=0;}
     else if(grupo==2) {grupo=1;foco=0;}
     else if(foco<nf-1) foco++;
   }
@@ -5339,7 +5457,7 @@ void stream_folha_atualizar(float dt, Uint32 agora) {
     } }
   montar(automaticaDaFolha());
   nf=nOrdem;
-  if(grupo==2 && !chipsOcultos(NULL,0)) grupo=0;
+  if(grupo==2 && !fraseDicaChips()) grupo=0;
   if(grupo==1 && foco>=nf) foco=nf>0?nf-1:0;
   {
     int linha = grupo==1 ? foco : -1;
@@ -6295,8 +6413,9 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       if (ptr) ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroFolhaDica, NULL, 0, 0);
       chipFolha(r, "", r.w-48.0f, NULL, grupo==2, 1, anim);
       int c = ajustes_tinta_foco();
+      if (incompatContar()) gfx_icone((GfxRect){r.x+12,r.y+10,18,18},"aj_eye-off",ai/255.f,ag,ab,anim);
       txt_bloco(TXT_HERO_META, dica, grupo==2?c:ai, grupo==2?c:(int)(ag*255),
-                grupo==2?c:(int)(ab*255), r.x+24.0f, r.y+6.0f, r.w-48.0f, 28.0f, anim, 0);
+                grupo==2?c:(int)(ab*255), r.x+(incompatContar()?38.0f:24.0f), r.y+6.0f, r.w-48.0f, 28.0f, anim, 0);
     } }
   if (folhaSala > 0.0f)
     stream_folha_sala_desenhar(lx-2.0f, FOLHA_ABAS_Y+oy+FOLHA_ABAS_H+6.0f+folhaDica, rw+4.0f, anim);

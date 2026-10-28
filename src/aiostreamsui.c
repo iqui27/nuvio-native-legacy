@@ -111,7 +111,11 @@ static int regraPertence(const AioRegra *r) {
   return regraSelecionada>=0 && regraSelecionada<10 && r->grupo==grupos[regraSelecionada] &&
     (r->grupo!=3 || seed==(regraSelecionada==4));
 }
-static int conectada(void) { return snap.configurada && !soManifesto; }
+static int conectada(void) { return snap.valida && !soManifesto; }
+static const char *configStatus(void) {
+  return snap.configurada && !soManifesto ? i18n("Configuração conectada") :
+    snap.configAccess==AIO_RESTRICTED ? i18n("Configuração restrita; streams disponíveis") : i18n("Somente manifesto");
+}
 // Footer actions below the rows keep the viewport (no snap back to the top).
 static float janelaCatalogos(void) { return janela(4,snap.catalogos,5,pagina==CATALOGOS); }
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
@@ -120,7 +124,7 @@ static unsigned entregaGeracao;
 static AioSnapshot entrega;
 static int entregaInstalar;
 static char entregaBase[2048];
-typedef struct { unsigned geracao; int instalar; char base[2048], host[256], id[128], tipo[32]; } Pedido;
+typedef struct { unsigned geracao; int instalar, diagnostic; char base[2048], host[256], id[128], tipo[32]; } Pedido;
 
 int aioui_detectar(int i) {
   return i >= 0 && (!strncasecmp(addons_nome(i),"AIOStreams",10) ||
@@ -134,13 +138,16 @@ static void qrAtual(void) {
 static void buscar(AioSnapshot *s, const char *u, const char *auth, int k, char **corpo) {
   RedeResposta r = {0}; const char *h[] = {"User-Agent: AIO-NuvioLegacy","Cache-Control: no-cache, no-store",auth,NULL};
   RedePedido p = {.url=u,.cabecalhos=h,.prazo_ms=12000,.max_bytes=1024*1024,.seguir=0};
-  rede_pedir(&p,&r); s->http[k]=r.status; s->ms[k]=(int)r.ms; s->retry[k]=r.retry_after_s;
+  rede_pedir(&p,&r); s->http[k]=r.status; s->ms[k]=(int)r.ms; s->retry[k]=r.status==429 && r.retry_after_s<=0?60:r.retry_after_s;
+  AioCapability *cap=k==0?&s->manifestAccess:k==2?&s->configAccess:k==5?&s->searchAccess:NULL;
+  if(cap) aio_capability(cap,r.status);
   if(r.erro==REDE_OK && r.status>=200 && r.status<300) { *corpo=r.corpo; r.corpo=NULL; }
   rede_resposta_limpar(&r);
 }
 static void *worker(void *arg) {
   Pedido *p=arg; AioSnapshot *s=calloc(1,sizeof *s); char *body=NULL, url[3072], auth[4096];
   if(s) {
+    s->estatisticas=s->erros=s->filtrados=-1;
     snprintf(s->host,sizeof s->host,"%s",p->host);
     buscar(s,p->base,NULL,0,&body);
     if(body) { aio_manifesto(s,body); free(body); body=NULL; }
@@ -150,7 +157,7 @@ static void *worker(void *arg) {
     if(s->valida && aio_autorizacao(p->base,auth,sizeof auth) && !strncmp(p->host,"https://",8)) {
       snprintf(url,sizeof url,"%s/api/v1/user",p->host); buscar(s,url,auth,2,&body);
       if(body) { aio_configuracao(s,body); memset(body,0,strlen(body)); free(body); body=NULL; }
-      if(p->id[0] && s->searchAtiva) {
+      if(p->diagnostic && p->id[0] && s->searchAtiva) {
         char encoded[512];
         if(nv_addon_id(encoded,sizeof encoded,p->id)) {
           snprintf(url,sizeof url,"%s/api/v1/search?type=%s&id=%s&format=true",p->host,p->tipo,encoded);
@@ -237,7 +244,7 @@ void aioui_abrir(int i) {
   abertura=0; saindo=0; paginaAnterior=-1; historyCount=0; navigationCount=0;
   aberto=1; geracao++; foco=0; lateral=0; entrada=pendente=0; indice=i; alvo[0]=0; proximaConsulta=0;
   regraSelecionada=linkSelecionado=-1; evidenciaSelecionada=0; soManifesto=0;
-  memset(&snap,0,sizeof snap); mensagem[0]=0;
+  memset(&snap,0,sizeof snap); snap.estatisticas=snap.erros=snap.filtrados=-1; mensagem[0]=0;
   perfil=perfis_ativo(); versao=addons_versao(); snprintf(usuario,sizeof usuario,"%s",sessao_usuario());
   snprintf(host,sizeof host,"%s",hosts[hostIdx]); base[0]=0;
   if(i>=0) {
@@ -683,7 +690,7 @@ static void setup(void) {
     }
     qrDesenhar(configure,716,640,141);
     texto(TXT_ILHA_NOME,i18n("Salvar e instalar no AIOStreams"),882,660,900,238);
-    bloco(i18n("Guarde seu UUID e senha. Depois volte com o link do manifesto."),882,700,620,2);
+    bloco(i18n("Conclua a instalação no celular e volte com o link do manifesto."),882,700,620,2);
     float x=716+botaoW(4,i18n("Tenho meu link de instalação"),"aj_arrow-right",716,808)+16;
     botaoW(5,i18n("Ver exemplo de conclusão"),"aj_check",x,808);
   } else if(pagina==IMPORTAR) {
@@ -712,7 +719,7 @@ static void setup(void) {
     gfx_icone((GfxRect){736,215,44,44},"aj_check",.65f,.84f,.83f,1);
     texto(TXT_ILHA_PERGUNTA,i18n("AIOStreams adicionado"),716,307,1040,240);
     texto(TXT_ILHA_SUB,snap.nome[0]?snap.nome:"AIOStreams",716,361,1040,174);
-    const char *checks[]={i18n("Manifesto"),conectada()?i18n("Configuração conectada"):i18n("Somente manifesto"),i18n("Credenciais ocultas")};
+    const char *checks[]={i18n("Manifesto"),configStatus(),i18n("Credenciais ocultas")};
     for(int i=0;i<3;i++) {
       gfx_icone((GfxRect){716,411+i*43,24,24},"aj_check",.65f,.84f,.83f,1);
       texto(TXT_ILHA_SUB,checks[i],756,411+i*43,1000,220);
@@ -849,7 +856,7 @@ static void workspace(void) {
   }
   gfx_cor((GfxRect){91,830,277,1},0,1,1,1,.08f);
   gfx_cor((GfxRect){108,850,254,34},.2f,.25f,.32f,.34f,.55f);
-  texto(TXT_ILHA_HORA,conectada()?i18n("Configuração conectada"):i18n("Somente manifesto"),118,860,234,192);
+  texto(TXT_ILHA_HORA,configStatus(),118,860,234,192);
   texto(TXT_ILHA_SUB,snap.nome[0]?snap.nome:"AIOStreams",108,891,252,174);
   texto(TXT_ILHA_TITULO,i18n(titulos[pagina]),453,184,1290,243);
   const char *intro=pagina==CATALOGOS?"CH+ / CH-: mover na Home":pagina==FONTES?"Addons, serviços, cache e P2P":pagina==LINKS?"Destinos externos e instalação":pagina==LEGENDAS?"Separadas das faixas dentro do vídeo":pagina==FILTROS?"Resumo somente leitura · Edite pelo celular":pagina==SAUDE?"Instância, latência e erros observados":"Sua configuração, com cada recurso no seu lugar.";
@@ -860,7 +867,7 @@ static void workspace(void) {
     for(int i=0;i<7;i++) if(!strcmp(host,hosts[i])) displayHost=nomes[i];
     texto(TXT_ILHA_NOME,displayHost,518,306,1160,236);
     gfx_cor((GfxRect){453,374,1353,1},0,.8f,.84f,.88f,.08f);
-    texto(TXT_ILHA_SUB,conectada()?i18n("Configuração conectada"):i18n("Somente manifesto"),518,350,1100,170);
+    texto(TXT_ILHA_SUB,configStatus(),518,350,1100,170);
     if(snap.valida) {
       gfx_cor((GfxRect){1690,313,116,34},.2f,.25f,.32f,.34f,.55f);
       gfx_icone((GfxRect){1700,322,16,16},"aj_check",.7f,.84f,.86f,1);
@@ -902,6 +909,9 @@ static void workspace(void) {
 
   if(pagina==CATALOGOS) {
     texto(TXT_ILHA_SECAO,i18n("Catálogos publicados pelo manifesto"),453,285,690,220);
+    char inventory[96];
+    snprintf(inventory,sizeof inventory,i18n("%d publicados · %d indisponíveis"),snap.catalogTotal,snap.catalogOmitted);
+    texto(TXT_ILHA_SUB,inventory,1140,285,290,170);
     // State column sized to its longest label so "Desligado" never truncates at 85%.
     float lw=fmaxf(t21_texto_linha(TXT_ILHA_NUM,i18n("Ligado"),180,180,180,255,400).w,
                    t21_texto_linha(TXT_ILHA_NUM,i18n("Desligado"),180,180,180,255,400).w);
@@ -1029,7 +1039,7 @@ static void workspace(void) {
       float alpha=itemInicio(i%2,i/2,&y);
       plrui_linha_foco((GfxRect){x,y,664.5f,96},T21_R_ROW,focoDe(i,0));
       texto(TXT_ILHA_NOME,i18n(gruposNome[i]),x+20,y+17,594,240);
-      texto(TXT_ILHA_SUB,conectada()?sub:i18n("Conecte a configuração para ver esta regra"),x+20,y+55,594,174);
+      texto(TXT_ILHA_SUB,snap.configurada && !soManifesto?sub:i18n("Conecte a configuração para ver esta regra"),x+20,y+55,594,174);
       gfx_icone((GfxRect){x+624,y+38,20,20},"aj_chevron-right",.68f,.73f,.76f,1);
       ponteiro_alvo(x,y,664.5f,96,pointer,click,i,0);
       gfx_opacidade_grupo=alpha;
@@ -1068,10 +1078,10 @@ static void workspace(void) {
   } else if(pagina==SAUDE) {
     char state[192]; snprintf(state,sizeof state,"%s · %s · %d ms",snap.versaoInstancia[0]?snap.versaoInstancia:i18n("Não informado"),snap.canal,snap.ms[1]);
     gfx_cor((GfxRect){453,286,980,112},.25f,.21f,.27f,.29f,.35f);
-    gfx_icone((GfxRect){475,325,28,28},"aj_circle-check",.65f,.84f,.83f,1);
+    gfx_icone((GfxRect){475,325,28,28},"aj_info",.65f,.84f,.83f,1);
     texto(TXT_ILHA_NOME_L,i18n("Status da instância"),550,310,670,236);
     texto(TXT_ILHA_SUB,state,550,350,670,174);
-    char total[24]; snprintf(total,sizeof total,"%d",snap.erros);
+    char total[24]; if(snap.erros<0) snprintf(total,sizeof total,"—"); else snprintf(total,sizeof total,"%d",snap.erros);
     texto(TXT_ILHA_NOME_L,total,1320,309,100,236);
     texto(TXT_ILHA_NUM,i18n("Saúde"),1320,366,100,174);
     const char *names[]={i18n("Manifesto"),i18n("Status da instância"),i18n("Configuração"),i18n("Consulta de fontes"),i18n("Legendas"),i18n("Inspeção do título")};
