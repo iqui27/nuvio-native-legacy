@@ -1,3 +1,5 @@
+// As fontes arabes vem do repositorio de ORIGEM numa tag fixa: a versao deste fork nao existe la (a url por NV_VERSAO daria 404).
+#define AT_FONTE_TAG "2.0.6"
 #include "assrender.h"
 #include "legfontes.h"
 
@@ -970,7 +972,7 @@ static void ass_garantir_naskh(void) {
     for (v = NV_VERSAO; *v; v++) if (!((*v >= '0' && *v <= '9') || *v == '.')) { pronto = 1; return; }
     tentativas++;
     mkdir(pasta, 0755);
-    snprintf(url, sizeof url, "https://raw.githubusercontent.com/iqui27/nuvio-native-legacy/v%s/deploy/app/fonts/NotoNaskhArabic-Regular.ttf", NV_VERSAO);
+    snprintf(url, sizeof url, "https://raw.githubusercontent.com/iqui27/nuvio-native-legacy/v%s/deploy/app/fonts/NotoNaskhArabic-Regular.ttf", AT_FONTE_TAG);
     buf = rede_baixar_bin(url, 20, &n);
     if (!buf || n < 100000 || n > 400000 || !assrender_bytes_sao_fonte((const unsigned char *)buf, 4)) {
       fprintf(stderr, "[libass] NotoNaskhArabic-Regular nao veio da tag v%s (%ld bytes)\n", NV_VERSAO, buf ? n : -1L);
@@ -984,7 +986,7 @@ static void ass_garantir_naskh(void) {
     fprintf(stderr, "[libass] NotoNaskhArabic-Regular baixada da tag v%s (%ld bytes)\n", NV_VERSAO, n);
     /* Negrito real (#335), de cortesia: sem ele o libass cai no "sem negrito"
      * para trilhas com arabe, que e o comportamento antigo seguro. */
-    snprintf(url, sizeof url, "https://raw.githubusercontent.com/iqui27/nuvio-native-legacy/v%s/deploy/app/fonts/NotoNaskhArabic-Bold.ttf", NV_VERSAO);
+    snprintf(url, sizeof url, "https://raw.githubusercontent.com/iqui27/nuvio-native-legacy/v%s/deploy/app/fonts/NotoNaskhArabic-Bold.ttf", AT_FONTE_TAG);
     snprintf(caminho, sizeof caminho, "%s/NotoNaskhArabic-Bold.ttf", pasta);
     buf = rede_baixar_bin(url, 20, &n);
     if (buf && n > 100000 && n < 400000 && assrender_bytes_sao_fonte((const unsigned char *)buf, 4)) {

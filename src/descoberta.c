@@ -8187,6 +8187,43 @@ static char *cinemetaMeta(const char *tipoItem, const char *tt, int *ehFilme) {
   return corpo;
 }
 
+// The IMDb id a title page found for an id from another space (tmdb:/tvdb:), kept so OpenSeek can ask the
+// owner's server by it later (it only knows IMDb ids). Without it, a friend who opened Law & Order from a Nuvio
+// row (tmdb:2734) got "not in the shared library" without the server ever being asked.
+static void imdbLembrar(const char *id, const char *tt) {
+  char base[64], chave[96];
+  idbase_copiar(id, base, sizeof base);
+  if (!tt || strncmp(tt, "tt", 2) || (strncmp(base, "tmdb:", 5) && strncmp(base, "tvdb:", 5))) return;
+  snprintf(chave, sizeof chave, "imdb-de/%s", base);
+  metaCacheGuardar(chave, tt);
+}
+
+int desc_imdb_para(const char *id, int serie, char *tt, size_t n) {
+  char base[64], chave[96], url[320], v[32] = "", *c;
+  long num;
+  if (n) tt[0] = 0;
+  if (!id || !*id || n < 4) return 0;
+  idbase_copiar(id, base, sizeof base);
+  if (idbase_e_imdb(base)) { snprintf(tt, n, "%s", base); return 1; }
+  if (strncmp(base, "tmdb:", 5) && strncmp(base, "tvdb:", 5)) return 0;
+  snprintf(chave, sizeof chave, "imdb-de/%s", base);
+  c = metaCacheObter(chave);
+  if (c) {
+    if (!strncmp(c, "tt", 2)) snprintf(tt, n, "%s", c);
+    free(c);
+    if (tt[0]) return 1;
+  }
+  num = strtol(base + 5, NULL, 10);
+  if (!strncmp(base, "tmdb:", 5) && num > 0 && desc_chave_tmdb_reserva()[0]) {
+    snprintf(url, sizeof url, "%s/%s/%ld/external_ids?api_key=%s", TMDB, serie ? "tv" : "movie", num, desc_chave_tmdb_reserva());
+    c = rede_baixar(url, 8);
+    if (c && js_texto_raiz_em(c, NULL, "imdb_id", v, sizeof v) && !strncmp(v, "tt", 2)) snprintf(tt, n, "%s", v);
+    free(c);
+  }
+  if (tt[0]) imdbLembrar(base, tt);
+  return tt[0] != 0;
+}
+
 // ARM: ver armids.h (o mesmo anime em cada site; tambem usado pelas fontes).
 
 // Vale perguntar ao ARM por este titulo? Id de site de anime, sempre. "tt",
@@ -8389,6 +8426,7 @@ static int metaCatalogoResolver(const CatItem *orig, MetaFontes *mf, int indice)
     if (!armFeito) { armFeito = 1; arm_consultar(id, orig->tipo, &arm); }
     snprintf(mf->tt, sizeof mf->tt, "%s", arm.imdb);
   }
+  if (!ehImdb) imdbLembrar(id, mf->tt);
   // c) o Cinemeta completa o que faltar (ou e a base, se nenhum addon serviu).
   // "tmdb:" sem IMDb na ficha: o catalogo do Nuvio resolve o proprio id (#555).
   cid = mf->tt[0] ? mf->tt : (!strncmp(id, "tmdb:", 5) ? id : "");
