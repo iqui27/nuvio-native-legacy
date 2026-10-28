@@ -46,6 +46,7 @@ static int arqDiscoTem(const char *dst);
 #include "artereserva.h"
 #include "artetamanho.h"
 #include "perfiltv.h"
+#include "ios.h"
 #include "posterprov.h"
 #include <stdint.h>
 #include "cachearte.h"
@@ -1213,7 +1214,12 @@ static float escalaBuf = 1.0f;
 // not multiply them by 4 (128 MB became 512 and the TCL hit the LMK at 720 MB).
 // Only the desktop preview (Mac retina) scales, so it mirrors the TV scene.
 static float escalaOrc(void) {
-#if defined(NV_ANDROID) || defined(NV_TPK) || defined(NV_WEBOS)
+#if defined(NV_ANDROID) || defined(NV_TPK) || defined(NV_WEBOS) || defined(NV_IOS)
+  // iOS too: the phone canvas (NV_TELA_W 1080) is wider than the portrait
+  // drawable (466 px in the simulator), so dw/NV_TELA_W = 0.43 and e*e shrank 96 MB
+  // to 17 MB. A Home screen alone has more hot bytes than that: nothing was
+  // evictable, uploads never fit, waiting surfaces filled the decode budget
+  // and fila-tex stayed stuck ~20 s after launch. The MB are physical RAM here.
   return 1.0f;
 #else
   return escalaBuf > 0.1f ? escalaBuf : 1.0f;
@@ -3309,7 +3315,9 @@ static long memTotalMB(void) {
   const char *ram = getenv("NUVIO_SHOT_RAM_MB");
   if (ram && atol(ram) > 0) return atol(ram);
 #endif
-#ifdef __EMSCRIPTEN__
+#if defined(NV_IOS)
+  return ios_ram_mb();
+#elif defined(__EMSCRIPTEN__)
   double gb = EM_ASM_DOUBLE({
     try {
       var m = (typeof navigator !== 'undefined') ? navigator.deviceMemory : 0;

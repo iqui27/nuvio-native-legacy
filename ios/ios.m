@@ -14,6 +14,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include "ios.h"
+#import <mach/mach.h>
 #include "menu.h"
 #include "detail.h"
 #include "idioma.h"
@@ -387,6 +388,18 @@ char *nv_host_http(const char *verbo, const char *url, const char *cabs,
   r[tam] = 0;
   if (n) *n = (long)tam;
   return r;
+}
+
+long ios_ram_mb(void) {
+  return (long)(NSProcessInfo.processInfo.physicalMemory / (1024ull * 1024ull));
+}
+
+// phys_footprint is what jetsam judges, not resident_size.
+double ios_rss_mb(void) {
+  task_vm_info_data_t v;
+  mach_msg_type_number_t n = TASK_VM_INFO_COUNT;
+  if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&v, &n) != KERN_SUCCESS) return 0.0;
+  return (double)v.phys_footprint / 1048576.0;
 }
 
 int main(int argc, char *argv[]) {
