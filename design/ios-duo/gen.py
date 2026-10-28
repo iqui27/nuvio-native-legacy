@@ -78,7 +78,7 @@ body{margin:0;background:#141416;color:var(--fg);font-family:Inter,system-ui,san
 .scr.full{right:0}
 .dev.port .scr{right:0}
 /* fold: division region. flat = inactive (hairline), book/tabletop = active band */
-.fold{position:absolute;left:475.5px;top:0;bottom:0;width:0;z-index:20;pointer-events:none}
+.fold{display:none}
 .fold::after{content:"";position:absolute;left:-.5px;top:0;bottom:0;width:1px;background:rgba(255,255,255,.07)}
 .fold.on{width:28px;margin-left:-14px;background:linear-gradient(90deg,rgba(0,0,0,0),rgba(0,0,0,.42) 35%,rgba(0,0,0,.62) 50%,rgba(0,0,0,.42) 65%,rgba(0,0,0,0))}
 .fold.on::after{left:13.5px;background:rgba(255,255,255,.10)}
@@ -454,10 +454,10 @@ def home_inner(pose='flat'):
            f'<p class="sub big" style="margin:0">{SYN_FALLOUT}</p>'
            f'<div class="acts" style="gap:12px"><span class="pill xl">{ic("play")}Continue S1:E3</span><span class="dsc xl">{ic("plus")}</span><span class="dsc xl">{ic("layers")}</span><span class="dsc xl">{ic("clapperboard")}</span><span class="dsc xl">{ic("ellipsis")}</span></div>'
            + dots() + '</div>'
-           '<div class="peek" style="padding:0 40px;bottom:10px"><div class="rowh"><h2 class="h2" style="font-size:24px">Continue watching</h2></div></div></div>')
+           f'<div class="peek" style="padding:0 40px;bottom:-64px"><div class="rowh"><h2 class="h2" style="font-size:24px">Continue watching</h2></div><div class="strip" style="gap:16px">{cards([5, 1, 7, 3, 4], 186, 105)}</div></div></div>')
     bar = vbar('home', cam=False)
-    cap = ('<b>Open · inner display</b> · 951×669 pt · hero fills the display and crosses the fold (media may)<br>'
-           'everything tappable stays in the left half; Continue watching peeks from the bottom')
+    cap = ('<b>Open · inner display</b> · 951×669 pt · one hero across the whole display<br>'
+           'Continue watching peeks from the bottom')
     return dev('inner', scr, cap, pose=pose, bar=bar)
 
 
@@ -551,7 +551,7 @@ def detail_inner(pose='flat'):
            '<div class="peek" style="padding:0 40px;bottom:10px"><div class="rowh"><h2 class="h2" style="font-size:24px">Episodes</h2><span>Season 1 · 8</span></div></div></div>')
     bar = vbar('home', nav=[('chevron-left', 'gl')], cam=False, show_tabs=False)
     cap = ('<b>Open · flat</b> · the whole display: big logo, ratings from every service, creators, full synopsis<br>'
-           'Continue pill, your rating and the action circles on one line; Episodes peek below. In book pose the Episodes list takes the right half')
+           'Continue pill, your rating and the action circles on one line; Episodes follow below')
     return dev('inner', scr, cap, pose=pose, bar=bar)
 
 
@@ -586,9 +586,9 @@ def sources_inner():
               + '<div class="sec"><p class="sub" style="margin:0;max-width:400px">In a future, post-apocalyptic Los Angeles, citizens must live in underground bunkers to protect themselves from radiation, mutants and bandits.</p></div><div class="dim" style="background:rgba(0,0,0,.3)"></div></div>')
     sheet = f'<div class="ilha" style="position:absolute;left:493px;width:370px;top:16px;bottom:0;border-radius:28px 28px 0 0">{sources_body(370, compact=False)}</div>'
     bar = vbar('home', nav=[('chevron-left', 'gl')], tools=['bookmark', 'share-2'], cam=False)
-    cap = ('<b>Open · book pose</b> · sheet placed trailing (preferredPlacement) so it rests in the right half, never in the fold<br>'
-           'trailing sheets on the inner display get their own Close / Refresh inside the sheet header')
-    return dev('inner', behind + sheet, cap, pose='book', bar=bar)
+    cap = ('<b>Open</b> · the Sources sheet slides in from the trailing edge over the detail<br>'
+           'Close / Refresh inside the sheet header; the detail stays readable behind it')
+    return dev('inner', behind + sheet, cap, bar=bar)
 
 
 # ---------- PLAYER ----------
@@ -608,23 +608,23 @@ def player_outer_land():
 
 
 def player_inner_book():
-    left = (f'<div class="pane" style="left:0;width:462px;background:#000"><img src="{f(FALLOUT)}" style="position:absolute;left:0;top:50%;transform:translateY(-50%);width:462px;height:260px;object-fit:cover">'
-            '<div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:260px">'
+    left = (f'<div class="pane" style="left:0;width:520px;background:#000"><img src="{f(FALLOUT)}" style="position:absolute;left:0;top:50%;transform:translateY(-50%);width:520px;height:292px;object-fit:cover">'
+            '<div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:292px">'
             f'<div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);display:flex;justify-content:center;gap:30px;align-items:center"><span class="pc gl">{ic("rotate-ccw")}</span><span class="pc big gl">{ic("pause")}</span><span class="pc gl">{ic("rotate-cw")}</span></div>'
-            + controls(462).replace('bottom:22px', 'bottom:14px') + '</div>'
+            + controls(520).replace('bottom:22px', 'bottom:14px') + '</div>'
             '<div style="position:absolute;left:20px;top:60px"><div class="kick" style="color:rgba(255,255,255,.7)">Fallout · S1:E3</div><div class="h3" style="font-size:17px">The Head</div></div></div>')
     chat = ''.join(f'<div style="display:flex;gap:10px;align-items:flex-start"><span class="av" style="width:28px;height:28px;font-size:12px;background:{c}">{n[0]}</span><div><div style="font-size:12.5px;font-weight:600">{n} <span style="color:var(--mut2);font-weight:400">· {t}</span></div><div class="sub" style="font-size:13px">{m}</div></div></div>'
                    for n, c, t, m in [('marina', '#5B6CF2', '22:10', 'the ghoul scene is coming'), ('pedro', '#2EA67B', '22:12', 'no spoilers!!'), ('ju', '#E07A3F', '22:13', 'subtitles PT-BR on the right pane, nice')])
-    right = ('<div class="pane" style="left:489px;right:0;padding:66px 16px 0 10px;display:flex;flex-direction:column">'
+    right = ('<div class="pane" style="left:520px;right:0;padding:66px 96px 0 10px;display:flex;flex-direction:column">'
              '<div class="seg" style="align-self:flex-start;margin-left:12px"><span class="on">Up next</span><span>Watch Together <em>3</em></span><span>Details</span></div>'
              '<div style="display:flex;flex-direction:column;gap:2px;margin-top:12px">' + ep_rows(3, 1, 104).replace('3 · The Head', '5 · The Past').replace('2 · The Target', '4 · The Ghouls').replace('1 · The End', '3 · The Head') + '</div>'
              '<div class="kick" style="margin:16px 12px 8px">Watch Together · room 7K3F</div><div style="display:flex;flex-direction:column;gap:10px;padding:0 12px">' + chat + '</div>'
              f'<div class="field" style="margin:12px 12px 0;height:40px">{ic("message-circle")}<span>Say something</span></div></div>')
     scr = f'<div class="scr">{left}{right}</div>'
     bar = vbar('home', nav=[('chevron-left', 'gl')], tools=['captions', 'audio-lines', 'picture-in-picture'], cam=False, show_tabs=False, over=True)
-    cap = ('<b>Open · book pose</b> · ArrangementView(.split.axes(.horizontal)): video | Up next + Watch Together<br>'
-           'video keeps its aspect in the left half; list, chat and composer live in the right half, away from the curve')
-    return dev('inner', scr, cap, pose='book', bar=bar)
+    cap = ('<b>Open</b> · video | Up next + Watch Together, one continuous screen<br>'
+           'the player keeps its aspect on the left; list, chat and composer on the right')
+    return dev('inner', scr, cap, bar=bar)
 
 
 def player_tabletop():
@@ -699,13 +699,12 @@ def library_outer():
 
 
 def library_inner():
-    g = lambda start, x: (f'<div style="position:absolute;left:{x}px;top:0;width:372px">{search_grid(4, 84, 126, 8, start)}</div>')
     scr = ('<div class="scr"><div style="padding:66px 20px 0"><div style="display:flex;align-items:center;gap:12px"><h1 class="h1" style="font-size:24px">Library</h1><span class="sub">142 titles</span>'
            '<span class="seg" style="margin-left:8px"><span class="on">All</span><span>Movies</span><span>Series</span><span>Lists <em>6</em></span></span></div>'
-           f'<div style="position:relative;height:460px;margin-top:14px">{g(2, 0)}{g(10, 472)}</div></div></div>')
+           f'<div style="margin-top:14px">{search_grid(9, 86, 129, 18, 2).replace("gap:10px", "gap:14px 16px")}</div></div></div>')
     bar = vbar('library', tools=['arrow-up-down', 'funnel'], cam=False)
-    cap = '<b>Open · book pose</b> · 4 + 4 columns, meeting at the fold with none on it<br>scrollable grid, so rows may pass under the curve as the user scrolls'
-    return dev('inner', scr, cap, pose='book', bar=bar)
+    cap = '<b>Open</b> · one continuous grid across the whole display, 9 columns<br>the grid scrolls on; Sort and Filter stay in the bar'
+    return dev('inner', scr, cap, bar=bar)
 
 
 # ---------- ONBOARDING / PROFILES ----------
@@ -741,8 +740,8 @@ def onboarding_inner():
              + f'</div><span class="pill g" style="margin-top:26px">Continue without an account {ic("chevron-right")}</span></div>')
     scr = f'<div class="scr">{left}{right}</div>'
     bar = vbar('home', show_tabs=False, tools=['languages', 'life-buoy'], cam=False)
-    cap = ('<b>Open · book pose</b> · the same step expands into two panes: sign-in left, "how it works" right<br>opening the device never restarts the flow; closing it collapses back to the single column')
-    return dev('inner', scr, cap, pose='book', bar=bar)
+    cap = ('<b>Open</b> · the same step expands into two panes: sign-in left, "how it works" right<br>opening the device never restarts the flow; closing it collapses back to the single column')
+    return dev('inner', scr, cap, bar=bar)
 
 
 PROFILES = [('Henrique', '#5B6CF2', 'H'), ('Marcela', '#E07A3F', 'M'), ('Kids', '#2EA67B', 'K'), ('Guests', '#8E5BF2', 'G')]
@@ -769,7 +768,7 @@ def profiles_inner():
            '<div style="margin-top:46px;width:100%">' + prof(118, 44, 5, font=38).replace('justify-content:center', 'justify-content:center;grid-template-columns:118px 118px 118px 118px 118px;column-gap:44px') + '</div>'
            f'<span class="pill g" style="margin-top:46px">{ic("pencil")}Manage profiles</span></div></div>')
     bar = vbar('home', show_tabs=False, tools=['lock'], cam=False)
-    cap = '<b>Open · flat</b> · one row of five; the fold is inactive so the centre avatar may sit on the midline<br>in book pose the row reflows to 2 + 3 around the division'
+    cap = '<b>Open</b> · one row of five across the display'
     return dev('inner', scr, cap, pose='flat', bar=bar)
 
 
@@ -809,7 +808,7 @@ def settings_inner():
     right = '<div class="pane" style="left:340px;right:0;padding:66px 20px 0 24px">' + subtitles_page() + '</div>'
     scr = f'<div class="scr">{left}{right}</div>'
     bar = vbar('settings', tools=['search'], cam=False)
-    cap = '<b>Open · flat</b> · NavigationSplitView: list | page; the same rows, one more level visible<br>in book pose the detail column narrows so its controls clear the curve'
+    cap = '<b>Open</b> · NavigationSplitView: list | page; the same rows, one more level visible'
     return dev('inner', scr, cap, pose='flat', bar=bar)
 
 
@@ -875,8 +874,8 @@ def drawer_inner():
            f'<div class="acts" style="gap:12px"><span class="pill xl">{ic("play")}Continue S1:E3</span><span class="dsc xl">{ic("plus")}</span><span class="dsc xl">{ic("ellipsis")}</span></div></div>'
            + sidebar_panel(0, 330) + '</div>')
     bar = vbar('home', cam=False)
-    cap = ('<b>Open · sidebar open</b> · the drawer sits inside the left half, never over the fold<br>Home reflows beside it instead of dimming: on regular width the sidebar can stay pinned, like the Apple TV layout')
-    return dev('inner', scr, cap, pose='book', bar=bar)
+    cap = ('<b>Open · sidebar open</b> · the drawer takes the left third; Home reflows beside it<br>on regular width the sidebar can stay pinned, like the Apple TV layout')
+    return dev('inner', scr, cap, bar=bar)
 
 
 # ---------- SIDE BAR OPTIONS ----------
@@ -944,14 +943,14 @@ def bar_options_page():
 
 # ---------- PAGES ----------
 PAGES = [
-    ('01-home', 'Home', 'Compact width is the phone you know; regular width shows one more level. Same hierarchy, same tab bar, nothing tied to a pose.', [home_outer(), home_inner()]),
+    ('01-home', 'Home', 'Compact width is the phone you know; open, one continuous screen with the same hierarchy and the same tab bar.', [home_outer(), home_inner()]),
     ('02-search', 'Search', 'List-detail: the result list is the hierarchy on the outer display; the inner display shows the list and the selected title at once.', [search_outer(), search_inner()]),
     ('03-detail', 'Detail', 'Full-width detail: big logo, every rating, creators and the whole synopsis, then Continue, your rating and the action circles. Episodes follow below; in book pose they take the right half.', [detail_outer(), detail_inner()]),
-    ('04-sources', 'Sources', 'The Sources sheet keeps Nuvio\'s island material. Closed, it gets a vertical bar; open and folded, it is placed trailing so it never rests in the fold.', [sources_outer(), sources_inner()]),
-    ('05-player-poses', 'Player · closed and book', 'Immersive video under the side region when closed; video | Up next + Watch Together when open like a book.', [player_outer_land(), player_inner_book()]),
-    ('06-player-tabletop', 'Player · tabletop and flat', 'Tabletop puts the picture on the raised half and every control on the flat half. Flat, the video fills the display and the controls overlay it.', [player_tabletop(), player_inner_flat()]),
+    ('04-sources', 'Sources', 'The Sources sheet keeps Nuvio\'s island material. Closed, it gets a vertical bar; open, it slides in from the trailing edge over the detail.', [sources_outer(), sources_inner()]),
+    ('05-player-poses', 'Player · closed and open', 'Immersive video under the side region when closed; video | Up next + Watch Together on one continuous screen when open.', [player_outer_land(), player_inner_book()]),
+    ('06-player-tabletop', 'Player · tabletop and open', 'On a table, folded like a laptop: picture on the raised half, every control on the flat half. Open, the video fills the display and the controls overlay it.', [player_tabletop(), player_inner_flat()]),
     ('07-guide', 'TV Guide', 'Grid first; the inner display adds the channel preview with Watch, Favourite and PiP next to it.', [guide_outer(), guide_inner()]),
-    ('08-library', 'Library', 'Three columns closed, 4 + 4 open: an even count so no poster straddles the fold.', [library_outer(), library_inner()]),
+    ('08-library', 'Library', 'Three columns closed, nine open: one continuous grid across the whole display.', [library_outer(), library_inner()]),
     ('09-onboarding', 'Sign-in', 'QR and code as on the TV. Opening the device expands the same step into two panes; it never asks the user to open it.', [onboarding_outer(), onboarding_inner()]),
     ('10-profiles', 'Profiles', 'Who is watching, on both displays. Touch ID in the side button for the PIN-locked profile (no Face ID on this device).', [profiles_outer(), profiles_inner()]),
     ('11-settings', 'Settings', 'A list that pushes pages when closed and becomes list | page when open.', [settings_outer(), settings_inner()]),
