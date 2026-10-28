@@ -91,6 +91,7 @@
 #include "detail.h"
 #include "musicaui.h"
 #include "menu.h"
+#include "ios.h"
 #include "busca.h"
 #include "spotlight.h"
 #include "biblioteca.h"
@@ -5283,6 +5284,11 @@ static void recuperarErroFonte(void) {
 
 void app_atualizar(float dt, Uint32 agora) {
   aioui_atualizar(dt, agora);
+#ifdef NV_IOS
+  // The host morphs its vertical bar from this (ios/ios.m): tabs on the root
+  // screens, Back + Detail actions on the title, nothing on login/player.
+  ios_quadro(app_tela_nome(), detail_aberto(), menu_destino());
+#endif
   if(tela!=TELA_LOGIN && tela!=TELA_ESCOLHA_PERFIL && perfil_regra_tempo(dt)) {
     if(player_aberto() || player_mini_ativo()) { player_sair();player_encerrar();video_parar(); }
     player_descartar_retido();fontevolta_esquecer("parental time limit");
@@ -6086,6 +6092,10 @@ void app_atualizar(float dt, Uint32 agora) {
   // aberta sobre a home e voltar para a home). Voltar/DIREITA nao passam aqui.
   // "Ver tudo" idem: a barra tambem abre por cima dela (coluna 0), e sem isto
   // a lista ficaria cobrindo a tela nova.
+#ifdef NV_IOS
+  { int d = ios_destino_pedido(); if (d >= 0) menu_ir(d); }
+  { int a = ios_acao_pedida(); if (a >= 0) detail_acao_barra(a); }
+#endif
   if (menu_escolheu()) {
     tituloDoPainel = 0;
     if (detail_aberto()) detail_fechar_seco();

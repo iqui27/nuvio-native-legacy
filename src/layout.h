@@ -29,6 +29,21 @@ void layout_tela_definir(int width, int height);
 void layout_modo_definir(int mobile);
 int layout_modo_mobile(void);
 
+// System insets per edge (start, top, end, bottom) in layout units: the iOS
+// vertical bar, the under-display camera, the home indicator. Art may run
+// under them; chrome and text keep out. Zero on every other target.
+#ifdef NV_TOUCH_UI
+extern float nv_inset_e, nv_inset_t, nv_inset_d, nv_inset_b;
+#else
+#define nv_inset_e 0.0f
+#define nv_inset_t 0.0f
+#define nv_inset_d 0.0f
+#define nv_inset_b 0.0f
+#endif
+// Insets as fractions of the drawable (0..1 of its width or height), so the
+// host does not need to know the canvas size.
+void layout_insets_definir(float e, float t, float d, float b);
+
 // O shell legacy usa uma rail de 72dp (144px no canvas 1080p) e inicia o
 // conteúdo 104px depois dela, como no CSS .home-main + --home-content-start.
 #define NV_LEGACY_RAIL_W        144.0f

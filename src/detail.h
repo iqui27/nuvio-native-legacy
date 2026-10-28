@@ -70,6 +70,10 @@ void detail_volta_notar(int novo);
 int  detail_pediu_assistido(void);
 int  detail_pediu_amigos(char *imdb, size_t tam); // OK na ilha de amigos: o imdb do titulo, uma vez
 int  detail_pediu_marcar(void);       // botao "+"
+// The Detail actions the iOS vertical bar carries (the bar morphs per screen):
+// the same requests the on-screen buttons and the "More" island make.
+enum { DETAIL_BARRA_FONTES, DETAIL_BARRA_TRAILER, DETAIL_BARRA_VISTO, DETAIL_BARRA_LISTA };
+void detail_acao_barra(int acao);
 int  detail_fonte_servidor(void); // consumes requested provider; -1 ordinary Sources
 int  detail_pediu_fontes_ep(int *temporada, int *episodio);
 int  detail_pediu_fontes(void);       // OK segurado, ou o botao "..."

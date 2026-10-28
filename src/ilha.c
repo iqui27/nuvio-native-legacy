@@ -698,7 +698,7 @@ void ilha_posicionar(int guia) {
   clockSettings = guia == 3;
   clockProfile = guia == 2 || clockSettings;
   if (clockProfile) ilha_ancorar(48.0f / gfx_escala_txt(), 36.0f / gfx_escala_txt(), 0);
-  else ilha_ancorar(NV_TELA_W - NV_ILHA_MARGEM_D / gfx_escala_txt(), NV_ILHA_Y / gfx_escala_txt(), 1);
+  else ilha_ancorar(NV_TELA_W - nv_inset_d - NV_ILHA_MARGEM_D / gfx_escala_txt(), nv_inset_t + NV_ILHA_Y / gfx_escala_txt(), 1);
 }
 
 // COM SINAL: quem renova a atividade chama SDL_GetTicks DEPOIS de o quadro ter
