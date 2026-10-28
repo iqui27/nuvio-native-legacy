@@ -7764,6 +7764,11 @@ int app_home_recebe_teclas(void) {
 }
 
 static int relogioCabe(void) {
+#ifdef NV_IOS
+  // TELEFONE EM PE: o iOS ja mostra a hora (e o Wi-Fi) no alto da barra do
+  // sistema; a pilula do relogio era a mesma hora uma segunda vez.
+  if (layout_modo_mobile() && NV_TELA_H > NV_TELA_W) return 0;
+#endif
   // AJUSTES NO GLASS UI (mockup de 03/10): o relogio fica no canto, em cima da
   // ilha de categorias — a tela nao tem mais titulo ali. Com folha, vinculo ou
   // teclado por cima ele some, como na home com um cartao na frente.

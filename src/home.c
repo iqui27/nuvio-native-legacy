@@ -838,12 +838,27 @@ static int heroCompactoTelefone(void) {
   return 0;
 #endif
 }
+// MEDIDAS DO MOCK EM PE (ios-01-home, iPhone Duo fechado, 466 pt de largura).
+// retPt: pontos do mock -> camada atual. retFator: o fator de camada
+// (gfx_escala_sair) em que um estilo de `corpo` px sai com corpo * pt/px pontos;
+// o glifo e rasterizado nele, nitido, sem esticar textura.
+#define RET_MOCK_W       466.0f
+#define RET_TIPO_G       (17.0f / 21.0f)  // meta e nota a 17 pt; rotulo da pilula a 20
+#define RET_TIPO_P       0.56f            // selos de 16 pt; titulo da fileira a 18
+#define RET_FIL_ESPIA_PT   5.0f   // do pe (menos o indicador) ao topo da fileira
+#define RET_TIT_ACIMA_PT  30.0f   // topo do titulo da fileira -> cartoes
+#define RET_DISCO_FIL_PT  41.0f   // pe dos discos -> topo do titulo da fileira
+#define RET_LOGO_W_PT    245.0f
+#define RET_LOGO_H_PT     60.0f
+static float retPt(float pt) { return pt * NV_LAYOUT_REAL_W / (RET_MOCK_W * gfx_escala()); }
+static float retFator(float ptPorPx) { return ptPorPx * NV_LAYOUT_REAL_W / RET_MOCK_W; }
 // Em pe a primeira fileira repousa no pe da tela, so o titulo e a ponta dos
 // cartoes a vista (mock ios-01-home); o destaque fica com o resto.
-#define RET_FIL_ESPIA 64.0f
-static float repousoRetrato(void) { return NV_TELA_H - ANC(nv_inset_b) - RET_FIL_ESPIA; }
+static float repousoRetrato(void) { return NV_TELA_H - ANC(nv_inset_b) - retPt(RET_FIL_ESPIA_PT); }
 static float alturaTextoHeroDin(void) {
-  if (homeRetratoTelefone()) return repousoRetrato() - 20.0f;
+  if (homeRetratoTelefone())
+    return repousoRetrato() + NV_LEGACY_ROW_HEAD_H + ANC(NV_DIN_TEXTO_BASE)
+         - retPt(RET_TIT_ACIMA_PT + RET_DISCO_FIL_PT);
   return ANC(NV_DIN_HERO_H) * (heroCompactoTelefone() ? 0.75f : 1.0f);
 }
 static float repousoFileirasDin(void) {
@@ -4569,6 +4584,7 @@ static void desenhaPontosHero(float xDir, float yc, int n, int atual, float a) {
 // MESMO item do cache, sem promocao nem segundo decode.
 static float heroLogoMaxW(int lay, int cheio) {
   float e = ajustes_hero_escala_logo();
+  if (homeRetratoTelefone()) return homeTextoLargura(retPt(RET_LOGO_W_PT) * e);
   if (lay == HOME_LAYOUT_PADRAO) return homeTextoLargura(NV_PAD_LOGO_MAX_W * e);
   if (lay == HOME_LAYOUT_DINAMICA) return homeTextoLargura(NV_DIN_LOGO_MAX_W * e);
   return homeTextoLargura((cheio ? NV_LOGO_HERO_CHEIO_MAX_W : NV_LOGO_HERO_MAX_W) * e);
@@ -4928,15 +4944,18 @@ static float desenhaCopiaHero(const CatItem *ci, int principal, float x,
 // TELEFONE EM PE (mock ios-01-home, tela fechada): logo, meta e selos
 // centrados na area de conteudo (tela menos a barra do sistema), a pilula
 // primaria do detalhe na largura dela e os quatro discos do detalhe embaixo.
-// Sem sinopse. Medidas fisicas do detalhe (NV_DETW2_*); alvo de toque >= 44 pt.
+// Sem sinopse. Os mesmos componentes do detalhe nas medidas do mock, em pt
+// (retPt); o texto no fator do tamanho dele (retFator). Toque >= 44 pt.
 enum { RET_PLAY, RET_LISTA, RET_FONTES, RET_TRAILER, RET_MAIS, RET_N };
 #define RET_ALVO_MIN   128.0f   // px reais: 44 pt no telefone mais estreito
-#define RET_DISCO_GAP   56.0f
-#define RET_PILULA_GAP  32.0f   // pilula -> discos
-#define RET_SELO_GAP    40.0f   // selos -> pilula
-#define RET_META_GAP    18.0f   // meta -> selos
-#define RET_LOGO_GAP    26.0f   // logo -> meta
-#define RET_LOGO_H     168.0f
+#define RET_BTN_PT      54.0f   // pilula e discos
+#define RET_DISCO_GAP_PT 13.0f
+#define RET_PILULA_GAP_PT 13.0f // pilula -> discos
+#define RET_PILULA_MARGEM_PT 16.0f
+#define RET_SELO_H_PT   20.0f   // faixa dos selos (o do IMDb tem 16)
+#define RET_SELO_GAP_PT 20.0f   // selos -> pilula
+#define RET_META_GAP_PT 14.0f   // meta -> selos
+#define RET_LOGO_GAP_PT 16.0f   // logo -> meta
 static GfxRect retAlvo[RET_N];
 static int retAlvoOk[RET_N];
 static int retFoco = -1, retSoAbre;
@@ -4956,12 +4975,19 @@ static void retAlvoDefinir(int i, GfxRect r, int ok) {
   if (r.h < m) { r.y -= (m - r.h) * 0.5f; r.h = m; }
   retAlvo[i] = r; retAlvoOk[i] = ok;
 }
+// Liga o fator `f` e devolve o que leva medidas da camada da home (fator `eh`)
+// para as dele; gfx_escala_sair(eh) volta.
+static float retEm(float f, float eh) { gfx_escala_sair(f); return eh / f; }
 
 static void desenhaCopiaRetrato(const CatItem *ci, int principal, float cx, float base,
                                 int lay, int cheio, float aTexto, float aCopy, float cin) {
   if (!ci) return;
-  const float a = aCopy, hBtn = NV_DETW2_BTN_H, dC = NV_DETW2_CIRC;
-  float pw = fmaxf(dC, NV_TELA_W - ANC(nv_inset_d) - 2.0f * homeConteudoX());
+  const float a = aCopy, eh = gfx_escala();
+  const float hBtn = retPt(RET_BTN_PT), dC = hBtn, gapD = retPt(RET_DISCO_GAP_PT);
+  const float fG = retFator(RET_TIPO_G), fP = retFator(RET_TIPO_P);
+  const float fMeta = fG * ajustes_hero_escala_info();   // o ajuste cresce a partir do mock
+  float pw = fmaxf(4.0f * dC + 3.0f * gapD,
+                   NV_TELA_W - ANC(nv_inset_d) - 2.0f * retPt(RET_PILULA_MARGEM_PT));
   int serie = !strcmp(ci->tipo, "series");
   int temEp = serie && ci->temporada > 0 && ci->episodio > 0;
   int soAbre = serie && !temEp;   // sem episodio conhecido o toque so abre a pagina
@@ -4996,21 +5022,32 @@ static void desenhaCopiaRetrato(const CatItem *ci, int principal, float cx, floa
       memmove(meta, r, strlen(r) + 1);
     }
   }
+  // Selos: classificacao e a marca do IMDb no fator pequeno (16 pt de altura),
+  // a nota ao lado no da meta, como no mock. Larguras em unidades da home.
   const char *selo = ci->classificacao[0] ? ci->classificacao : NULL;
   int nota = ajustes_hero_notas() ? imdbnota_obter(ci->imdb, ci->nota, serie) : 0;
-  float wSelo = selo ? badge_largura(selo) : 0.0f;
-  float wNota = nota > 0 ? badge_imdb_largura(nota) : 0.0f;
+  float wSelo = 0.0f, wMarca = 0.0f, kP, kG, kM;
+  TxtLinha ln = {0}, lm = {0};
+  kP = retEm(fP, eh);
+  if (selo) wSelo = badge_largura(selo) / kP;
+  if (nota > 0) wMarca = badge_imdb_marca(0, 0, 0.0f) / kP;
+  kG = retEm(fG, eh);
+  if (nota > 0) { char t[8]; badge_nota_texto(t, sizeof t, nota); ln = txt_linha(TXT_CAPTION2, t, 235, 235, 235, 255); }
+  kM = retEm(fMeta, eh);
+  if (meta[0]) lm = txt_linha_corta(TXT_HERO_META, meta, 235, 235, 235, 255, pw * kM);
+  gfx_escala_sair(eh);
+  const float gSelo = retPt(8.0f), gNota = retPt(5.0f);
+  float wNota = nota > 0 ? wMarca + gNota + (float)ln.w / kG : 0.0f;
   int temSelos = wSelo > 0.0f || wNota > 0.0f;
 
   // De baixo para cima: discos, pilula, selos, meta, logo.
   float yDisco = base - dC;
-  float yPil = yDisco - RET_PILULA_GAP - hBtn;
-  float ySelo = yPil - RET_SELO_GAP - BADGE_H;
-  float yFim = temSelos ? ySelo - RET_META_GAP : yPil - RET_SELO_GAP;
-  TxtLinha lm = {0};
-  if (meta[0]) lm = txt_linha_corta(heroMetaEstilo(), meta, 235, 235, 235, 255, pw);
-  float yMeta = yFim - (meta[0] ? (float)lm.h : 0.0f);
-  float baseLogo = (meta[0] ? yMeta : yFim) - RET_LOGO_GAP;
+  float yPil = yDisco - retPt(RET_PILULA_GAP_PT) - hBtn;
+  float hSelo = retPt(RET_SELO_H_PT);
+  float ySelo = yPil - retPt(RET_SELO_GAP_PT) - hSelo;
+  float yFim = temSelos ? ySelo - retPt(RET_META_GAP_PT) : yPil - retPt(RET_SELO_GAP_PT);
+  float yMeta = yFim - (meta[0] ? (float)lm.h / kM : 0.0f);
+  float baseLogo = (meta[0] ? yMeta : yFim) - retPt(RET_LOGO_GAP_PT);
 
   // Logo (o mesmo pedido e o mesmo cache do destaque largo), centrado.
   const char *urlLogo = (!principal || detail_aberto() || player_aberto())
@@ -5031,7 +5068,7 @@ static void desenhaCopiaRetrato(const CatItem *ci, int principal, float cx, floa
   if (tlogo && !mostraNome) {
     float ap = tex_aspecto(urlLogo);
     if (ap <= 0.0f) ap = 4.0f;
-    float h = RET_LOGO_H * ajustes_hero_escala_logo(), w = h * ap;
+    float h = retPt(RET_LOGO_H_PT) * ajustes_hero_escala_logo(), w = h * ap;
     float wMax = fminf(maxWLogo, pw);
     if (w > wMax) { w = wMax; h = w / ap; }
     gfx_tex_aspect_atual = 0.0f;
@@ -5043,11 +5080,22 @@ static void desenhaCopiaRetrato(const CatItem *ci, int principal, float cx, floa
   }
   if (a <= 0.004f) return;
 
-  if (meta[0]) txt_desenhar_alpha(lm, cx - lm.w * 0.5f, yMeta, a);
+  if (meta[0]) {
+    retEm(fMeta, eh);
+    txt_desenhar_alpha(lm, cx * kM - lm.w * 0.5f, yMeta * kM, a);
+    gfx_escala_sair(eh);
+  }
   if (temSelos) {
-    float x = cx - (wSelo + wNota + (wSelo > 0.0f && wNota > 0.0f ? 14.0f : 0.0f)) * 0.5f;
-    if (selo) x += badge_desenhar(x, ySelo, selo, BADGE_NEUTRO, a) + 14.0f;
-    if (wNota > 0.0f) badge_imdb(x, ySelo, nota, 0, a);
+    float x = cx - (wSelo + wNota + (wSelo > 0.0f && wNota > 0.0f ? gSelo : 0.0f)) * 0.5f;
+    float yc = ySelo + hSelo * 0.5f;
+    retEm(fP, eh);
+    if (selo) { badge_desenhar(x * kP, yc * kP - BADGE_H * 0.5f, selo, BADGE_NEUTRO, a); x += wSelo + gSelo; }
+    if (nota > 0) badge_imdb_marca(x * kP, yc * kP - BADGE_H * 0.5f, a);
+    if (nota > 0) {
+      retEm(fG, eh);
+      txt_desenhar_alpha(ln, (x + wMarca + gNota) * kG, yc * kG - ln.h * 0.5f, a);
+    }
+    gfx_escala_sair(eh);
   }
 
   // Primario: a superficie da pilula primaria do app (realce) com o triangulo
@@ -5060,18 +5108,21 @@ static void desenhaCopiaRetrato(const CatItem *ci, int principal, float cx, floa
     float t = (float)tb / 255.0f, s = rp.h / NV_DETW2_BTN_H;
     float iw = soAbre ? 0.0f : NV_DETW2_BTN_ICONE_W * s, ih = NV_DETW2_BTN_ICONE_H * s;
     float gi = soAbre ? 0.0f : NV_DETW2_BTN_GAPI * s;
+    retEm(fG, eh);
     TxtLinha lb = txt_linha_corta(TXT_DET_BOTAO, rot, tb, tb, tb, 255,
-                                  rp.w - NV_DETW2_BTN_PADX * 2 - iw - gi);
-    float x = rp.x + (rp.w - (iw + gi + lb.w)) * 0.5f;
+                                  (rp.w - NV_DETW2_BTN_PADX * 2 * s - iw - gi) * kG);
+    float lw = (float)lb.w / kG;
+    float x = rp.x + (rp.w - (iw + gi + lw)) * 0.5f;
+    txt_desenhar_alpha(lb, (x + iw + gi) * kG, (rp.y + rp.h * 0.5f) * kG - lb.h * 0.5f, a);
+    gfx_escala_sair(eh);
     if (!soAbre)
       gfx_rect((GfxRect){ x, rp.y + (rp.h - ih) * 0.5f, iw, ih }, 0, GFX_PLAY,
-               0, 0, 0, 0.0f, t, t, t, a);
-    txt_desenhar_alpha(lb, x + iw + gi, rp.y + (rp.h - lb.h) * 0.5f, a); }
+               0, 0, 0, 0.0f, t, t, t, a); }
 
   // Discos do detalhe: biblioteca, fontes, trailer, mais.
   { static const char *const ICONE[RET_N] = { NULL, "mais", "aj_layers", "aj_clapperboard", "aj_ellipsis" };
-    float x = cx - (4.0f * dC + 3.0f * RET_DISCO_GAP) * 0.5f;
-    for (int i = RET_LISTA; i < RET_N; i++, x += dC + RET_DISCO_GAP) {
+    float x = cx - (4.0f * dC + 3.0f * gapD) * 0.5f;
+    for (int i = RET_LISTA; i < RET_N; i++, x += dC + gapD) {
       float f = principal ? retMola[i] : 0.0f;
       GfxRect rc = { x, yDisco, dC, dC };
       if (principal) retAlvoDefinir(i, rc, a > 0.3f && cin < 0.005f);
@@ -8101,8 +8152,22 @@ static float desenhaTituloFil(int r, float y, const char *rot, int cr, int cg, i
     txt_desenhar(*tl, x0, y);
     return x0 + tl->w;
   }
-  *tl = txt_linha_corta(TXT_ROW_TITULO, rot, cr, cg, cb, 255, maxW);
-  if (desenhar) txt_desenhar(*tl, x0, y);
+  if (homeRetratoTelefone()) {
+    // EM PE o titulo segue o mock: 18 pt, o topo 30 pt acima dos cartoes,
+    // rasterizado no fator dele. `tl` volta em unidades da camada, com o
+    // centro no do titulo (a origem e o acento centram nele).
+    const float eh = gfx_escala(), yT = y + NV_LEGACY_ROW_HEAD_H - retPt(RET_TIT_ACIMA_PT);
+    const float kT = eh / retFator(RET_TIPO_P);
+    gfx_escala_sair(retFator(RET_TIPO_P));
+    *tl = txt_linha_corta(TXT_ROW_TITULO, rot, cr, cg, cb, 255, maxW * kT);
+    if (desenhar) txt_desenhar(*tl, x0 * kT, yT * kT);
+    gfx_escala_sair(eh);
+    tl->w = (int)((float)tl->w / kT + 0.5f);
+    tl->h = (int)((float)tl->h / kT + 2.0f * (yT - y) + 0.5f);
+  } else {
+    *tl = txt_linha_corta(TXT_ROW_TITULO, rot, cr, cg, cb, 255, maxW);
+    if (desenhar) txt_desenhar(*tl, x0, y);
+  }
   if (est == 3) {   // ACENTO
     const float bw = 10.0f + 44.0f * k, bh = 10.0f - 3.0f * k;
     const float bx = x0 + tl->w + 16.0f, cy = y + tl->h * 0.52f;
