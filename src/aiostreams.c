@@ -91,8 +91,13 @@ int aio_autorizacao(const char *url, char *dst, size_t n) {
   }
   dst[k] = 0; memset(credentials, 0, sizeof credentials); return 1;
 }
+void aio_capability(AioCapability *capability, int http) {
+  *capability = http == 401 || http == 403 ? AIO_RESTRICTED :
+    http >= 200 && http < 300 ? AIO_AVAILABLE : AIO_FAILED;
+}
 int aio_manifesto(AioSnapshot *s, const char *json) {
   char id[128] = "", name[96] = "";
+  s->manifestAccess = AIO_FAILED;
   s->valida = s->requerida = s->catalogos = s->recursos = 0;
   const char *end=json?js_fim(json):NULL;
   if (!json || *json != '{' || !end || end<=json || end[-1]!='}') return 0;
@@ -131,6 +136,7 @@ int aio_manifesto(AioSnapshot *s, const char *json) {
     if (c.id[0] && c.tipo[0]) { if (!c.nome[0]) strcpy(c.nome,c.id); s->catalogo[s->catalogos++] = c; }
     p = end;
   }
+  s->manifestAccess = AIO_AVAILABLE;
   s->valida = 1; return 1;
 }
 static int inventory(const char *u, const char *key, AioItem *v, int max) {
@@ -289,6 +295,7 @@ static void config_details(AioSnapshot *s,const char *u) {
 static int count_array(const char *a);
 void aio_configuracao(AioSnapshot *s, const char *json) {
   const char *u = member(member(json,"data"),"userData");
+  s->configAccess = AIO_FAILED;
   s->configurada = s->servicos = s->addons = 0; memset(s->regras,0,sizeof s->regras);
   s->detalhes=s->detalhesOmitidos=0;
   memset(s->detalhe,0,sizeof s->detalhe);
@@ -298,6 +305,7 @@ void aio_configuracao(AioSnapshot *s, const char *json) {
   const char *success=member(json,"success");
   if (success && strncmp(success,"true",4)) return;
   if (!u || *u != '{' || !value_end(u) || value_end(u)[-1]!='}') return;
+  s->configAccess = AIO_AVAILABLE;
   s->configurada = 1;
   s->servicos = inventory(u,"services",s->servico,32);
   s->addons = inventory(u,"presets",s->addon,AIO_MAX);
@@ -331,7 +339,9 @@ void aio_status(AioSnapshot *s,const char *json) {
   const char *u=member(json,"data"); if(!u) u=json;
   js_texto_raiz_em(u,u?js_fim(u):NULL,"version",s->versaoInstancia,sizeof s->versaoInstancia); safe(s->versaoInstancia);
   js_texto_raiz_em(u,u?js_fim(u):NULL,"channel",s->canal,sizeof s->canal); safe(s->canal);
-  s->searchAtiva=boolean(member(u,"settings"),"searchApiDisabled",1)==0;
+  int disabled=boolean(member(u,"settings"),"searchApiDisabled",-1);
+  s->searchAtiva=disabled==0;
+  if(disabled==1) s->searchAccess=AIO_DISABLED;
   s->p2pInstancia=boolean(member(u,"settings"),"allowP2P",-1);
 }
 static int count_array(const char *a) {
@@ -343,6 +353,7 @@ static int count_array(const char *a) {
 void aio_search(AioSnapshot *s,const char *json) {
   const char *u=member(json,"data");
   s->search=boolean(json,"success",0) && u;
+  s->searchAccess=s->search?AIO_AVAILABLE:AIO_FAILED;
   s->evidencias=0;
   if(!s->search) return;
   for(int kind=0;kind<2;kind++) {

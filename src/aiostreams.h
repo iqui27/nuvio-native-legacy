@@ -11,6 +11,7 @@
 #define AIO_LEGENDA 4
 #define AIO_META 8
 #define AIO_ADDONS 16
+typedef enum { AIO_UNKNOWN, AIO_AVAILABLE, AIO_RESTRICTED, AIO_DISABLED, AIO_FAILED } AioCapability;
 typedef struct { char nome[128], id[128], tipo[32]; } AioCatalogo;
 typedef struct { char nome[96]; int ativo, legenda; } AioItem;
 typedef struct { char nome[192], tipo[24], destino[2048], provedor[96]; int cache, altura, mp4, rank, decisao; unsigned long long identidade; } AioResultado;
@@ -18,6 +19,7 @@ typedef struct { char idioma[48], nome[128]; int forcada, sdh; } AioLegenda;
 typedef struct { int grupo; char nome[96], valor[256]; } AioRegra;
 typedef struct { char titulo[128], descricao[384]; int erro; } AioEvidencia;
 typedef struct {
+  AioCapability manifestAccess, searchAccess, configAccess, analyticsAccess;
   int valida, requerida, configurada, recursos, catalogos, servicos, addons;
   int resultados, links, p2p, regras[8], http[6], ms[6], retry[6];
   int legendas, detalhes, detalhesOmitidos, search, estatisticas, erros, filtrados, searchAtiva, p2pInstancia;
@@ -41,6 +43,7 @@ void aio_resultados(AioSnapshot *s, const char *json);
 void aio_status(AioSnapshot *s, const char *json);
 void aio_legendas(AioSnapshot *s, const char *json);
 void aio_search(AioSnapshot *s, const char *json);
+void aio_capability(AioCapability *capability, int http);
 unsigned long long aio_identidade(const char *s);
 #ifdef NV_SHOT_HOOKS
 void aio_shot(const AioSnapshot *s);
