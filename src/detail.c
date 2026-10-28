@@ -5266,7 +5266,8 @@ static float retMeta1(const CatItem *ci, const char *ano, const char *dur,
     x += l.w; algo = 1;
   }
   { unsigned char q[EX_NFONTES] = {0}; NotasPlano plano;
-    q[EX_IMDB] = q[EX_TOMATOES] = 1;
+    q[EX_IMDB] = (unsigned char)ajustes_nota_titulo(EX_IMDB);
+    q[EX_TOMATOES] = (unsigned char)ajustes_nota_titulo(EX_TOMATOES);
     notasui_planejar(&plano, notasDados()->cru, maxw - (x - x0), algo ? pontoW : 0.0f, q);
     if (plano.n > 0) {
       if (algo) { desenhaPonto(x + (NV_DETW2_SEP*0.4f), yc, 0.502f, aa); x += pontoW; }
@@ -5425,7 +5426,8 @@ static void heroFone(float a, float desloc) {
     retEm(f, eh);
     retMeta1(ci, ano, dur, cx * k - w1 * 0.5f, y1 * k, maxw, a, 1);
     { unsigned char q[EX_NFONTES] = {0}; NotasPlano plano;
-      q[EX_TRAKT] = q[EX_TMDB] = q[EX_METACRITIC] = 1;
+      for (int f = 0; f < EX_NFONTES; f++)
+        q[f] = (f != EX_IMDB && f != EX_TOMATOES) ? (unsigned char)ajustes_nota_titulo(f) : 0;
       retEm(f, eh);
       notasui_planejar(&plano, notasDados()->cru, maxw, 0.0f, q);
       if (plano.n > 0) {
