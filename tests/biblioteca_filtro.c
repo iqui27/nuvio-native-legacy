@@ -58,8 +58,7 @@ static void confereFonte(int esperado, int total) {
 }
 static void confere(int esperado) {
   reconstruir();
-  int esperadoSalvos = fonteBib == AJ_SALVOS_LOCAL ? 129 + extraLocal
-                        : (tipo == TIPO_FILME ? 8 : tipo == TIPO_SERIE ? 118 : 126);
+  int esperadoSalvos = 129 + extraLocal;
   int total = modo == MODO_PARAVER ? esperadoSalvos
                                   : (tipo == TIPO_FILME ? 8 : tipo == TIPO_SERIE ? 118 : 126);
   assert(contaModo[MODO_PARAVER] == esperadoSalvos);
@@ -84,6 +83,7 @@ int main(void) {
     snprintf(catalogoTeste[i].tipo, sizeof catalogoTeste[i].tipo, "%s", i < 8 ? "movie" : "series");
     catalogoTeste[i].naLista = 1;
     catalogoTeste[i].listaFontes = 7; // Fixture belongs to all three sources.
+    catalogoTeste[i].fontes = CAT_FONTE_NUVIO; // Presentation origin used below.
     catalogoTeste[i].naColecao = 1;
     if (i < 7) strcpy(catalogoTeste[i].meta, "2020");
   }
@@ -92,16 +92,16 @@ int main(void) {
   salvos_iniciar();
   modo = MODO_PARAVER; tipo = TIPO_TODOS;
 
-  // P1: so a fonte LOCAL/NUVIO recebe os salvos locais. Com Trakt/Simkl
-  // efetivos eles nao entram na aba nem contam, nem no painel de Salvos.
+  // Library All includes local saves regardless of the Settings write target.
+  // The separate Saved panel still follows that write target.
   fonteBib = AJ_SALVOS_TRAKT;
-  confere(126);
+  confere(129);
   { SalvosEntrada u[140]; int n = salvos_uniao(u, (int)(sizeof u / sizeof u[0]));
     int locais = 0, k;
     for (k = 0; k < n; k++) if (u[k].local >= 0) locais++;
     assert(n == 126 && locais == 0 && salvos_n() == 12); } // Hidden here, still persisted.
   fonteBib = AJ_SALVOS_SIMKL;
-  confere(126);
+  confere(129);
   fonteBib = AJ_SALVOS_LOCAL;
 
   ocultar = 0; confere(129);
@@ -117,9 +117,9 @@ int main(void) {
   // A tabela em exibicao de lista comeca mais baixo para caber o cabecalho
   // de colunas (mockup "biblioteca-lista-servidor"); a grade de cartazes
   // continua em 388.
-  assert(gradeY() == 388.0f + 42.0f && pickerY() == 312.0f);
+  assert(gradeY() == BIB_GRADE_Y_TITULOS + BIB_TL_CAB && pickerY() == 160.0f);
   exibicao = VIS_CARTAZ;
-  assert(gradeY() == 388.0f);
+  assert(gradeY() == BIB_GRADE_Y_TITULOS);
   exibicao = VIS_LISTA;
 
   // Mesmo criterio da Home: desconhecido/passado/ano atual ficam; futuro sai.
