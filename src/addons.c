@@ -2745,9 +2745,17 @@ static char *baixarStream(const AddonPedido *origin, const char *type, const cha
   char *corpo=NULL;
   if(aio) {
     if(addonstats_aio_wait(origin->estatistica,type)) return NULL;
+    RedeResposta response={0};
+#ifdef __EMSCRIPTEN__
+    // WGT's request API rejects buffered headers/redirects; use its existing transport.
+    response.corpo=rede_baixar_medido(url,segundos,headers,&m);
+    response.status=m.status; response.n_corpo=m.bytes>0?(size_t)m.bytes:0; response.ms=m.ms;
+    response.erro=m.limitado?REDE_LIMITE_CORPO:m.status?REDE_OK:REDE_TRANSPORTE;
+#else
     RedePedido request={.url=url,.cabecalhos=headers,.prazo_ms=(unsigned)segundos*1000u,.max_bytes=REDE_CORPO_PADRAO,.seguir=1};
-    RedeResposta response={0}; rede_pedir(&request,&response);
+    rede_pedir(&request,&response);
     m.status=response.status; m.bytes=(long)response.n_corpo; m.ms=response.ms;
+#endif
     if(!origin->statsSession || nv_perfil_sessao_travar(origin->statsSession)) {
       addonstats_aio_complete(origin->estatistica,type,response.corpo,response.status,response.erro,response.ms,response.retry_after_s);
       if(origin->statsSession) nv_perfil_sessao_destravar();

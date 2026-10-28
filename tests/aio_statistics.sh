@@ -13,3 +13,5 @@ for i in $(seq 50); do [ -s "$work/ports" ] && break; sleep 0.1; done
 { read -r plain; read -r tls; } < "$work/ports"
 cc -O1 -g -pthread -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -ffunction-sections -fdata-sections -Wl,-dead_strip tests/aio_network.c src/rede.c src/redeurl.c src/addonstats.c src/aiostreams.c src/js.c -DNV_ADDONSTATS_PURO -o "$work/network"
 "$work/network" "$plain" "$tls"
+cc -O1 -g -pthread -D__EMSCRIPTEN__ -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -ffunction-sections -fdata-sections -Wl,-dead_strip tests/aio_wgt.c src/addonstats.c src/aiostreams.c src/js.c -DNV_ADDONSTATS_PURO -o "$work/wgt"
+"$work/wgt"
