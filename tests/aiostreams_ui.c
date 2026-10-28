@@ -42,16 +42,19 @@ void fil_alternar(int i) { (void)i; }
 int fil_mover(int i,int d) { (void)i;(void)d;return 0; }
 void desc_remontar_fileiras(void) { }
 void desc_repetir(void) { }
-static int configFetches, noCache;
+static int configFetches, noCache, configDenied;
 int rede_pedir(const RedePedido *p,RedeResposta *r) {
   memset(r,0,sizeof *r); r->status=200; r->erro=REDE_OK;
   for(int i=0;p->cabecalhos[i];i++) if(strstr(p->cabecalhos[i],"no-cache")) noCache++;
   if(strstr(p->url,"/api/v1/user")) {
     configFetches++;
+    if(configDenied) { r->status=401; return 0; }
     r->corpo=strdup(configFetches==1?
       "{\"success\":true,\"data\":{\"userData\":{\"requiredKeywords\":[\"first\"]}}}":
       "{\"success\":true,\"data\":{\"userData\":{\"preferredLanguages\":[\"Portuguese\"]}}}");
-  } else if(strstr(p->url,"manifest.json")) r->corpo=strdup("{\"id\":\"aiostreams.test\",\"resources\":[]}");
+  } else if(strstr(p->url,"manifest.json")) r->corpo=strdup("{\"id\":\"aiostreams.test\",\"resources\":[\"stream\"]}");
+  else if(strstr(p->url,"/status")) r->corpo=strdup("{\"data\":{\"settings\":{\"searchApiDisabled\":false}}}");
+  else if(strstr(p->url,"/search?")) r->corpo=strdup("{\"success\":true,\"data\":{\"results\":[],\"statistics\":[]}}");
   else r->corpo=strdup("{}");
   return 0;
 }
@@ -135,6 +138,11 @@ int main(void) {
   // Footer focus keeps the scrolled viewport instead of resetting it.
   pagina=CATALOGOS; snap.catalogos=8; scrollFoco=11;
   assert(janelaCatalogos()==3);
+  snap.catalogos=500; foco=499; scrollFoco=499;
+  assert(nConteudo()==504 && janelaCatalogos()==495);
+  down.key.keysym.sym=SDLK_UP; aioui_evento(&down); assert(foco==498);
+  foco=499; down.key.keysym.sym=SDLK_RETURN; aioui_evento(&down);
+  assert(foco==499);
   // Link/subtitle windows follow the fractional spring, rows fade across one slot (no integer jump).
   scrollFoco=3.5f; float w=janela(2,8,3,1);
   assert(w>1.4f && w<1.6f && (int)w==1);
@@ -151,6 +159,16 @@ int main(void) {
     entregue=0;
   }
   assert(configFetches==2 && noCache==6);
+  configDenied=1;
+  Pedido *locked=calloc(1,sizeof *locked);
+  strcpy(locked->host,"https://example.invalid");
+  strcpy(locked->base,"https://example.invalid/stremio/sample/encrypted/manifest.json");
+  strcpy(locked->id,"tt1"); strcpy(locked->tipo,"movie"); locked->diagnostic=1;
+  worker(locked); snap=entrega; entregue=0;
+  assert(snap.valida && snap.http[2]==401 && snap.search && !snap.configurada);
+  assert(conectada()); // Config denial must not disconnect the installation.
+  assert(snap.manifestAccess==AIO_AVAILABLE && snap.searchAccess==AIO_AVAILABLE);
+  assert(snap.configAccess==AIO_RESTRICTED && snap.analyticsAccess==AIO_UNKNOWN);
   activeProfile=2; aioui_atualizar(0,100); assert(aioui_aberto());
   aioui_atualizar(.2f,300); assert(!aioui_aberto() && !base[0]);
   puts("aiostreams UI: setup, masked import, P2P, navigation and profile isolation passed");
