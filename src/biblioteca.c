@@ -279,9 +279,13 @@ static int bibTinta2(void) { return 205; }
 #define BIB_COLUNAS_MAX      8
 // Cartazes mantem o tamanho real (Escala de texto nao os muda): k compensa a tela
 // virtual da camada de texto (gfx_poster_k, 1 em 100%).
-#define BIB_CARD_W       (220.0f * gfx_poster_k())
-#define BIB_POSTER_H     (330.0f * gfx_poster_k())
-#define BIB_CARD_GAP      26.0f
+// iOS (mock ios-08): no iPhone fechado 4 colunas de 78 pt, no display interno
+// aberto 8 colunas de 92 pt com 24 pt de vao; as funcoes ficam apos bibRetrato.
+static float bibCartaoW(void);
+static float bibCartaoGap(void);
+#define BIB_CARD_W       bibCartaoW()
+#define BIB_POSTER_H     (bibCartaoW() * 1.5f)
+#define BIB_CARD_GAP     bibCartaoGap()
 #define BIB_TIT_GAP       10.0f
 #define BIB_LINHA_PASSO  (BIB_POSTER_H * (1.0f + BIB_FOCO_ESCALA * 0.5f) + BIB_TIT_GAP + 14.0f + 52.0f + 2.8f)
 #define BIB_FOCO_ESCALA    0.08f
@@ -581,12 +585,40 @@ static float paginaX(void) {
 }
 static int temOrigens(void) { return estado() != EST_ITENS && modo != MODO_ASSISTIDOS; }
 static int bibRetrato(void);
+static int bibFone(void);
+static int bibAmplo(void);
+static float bibPt(void);
+static float bibCartaoW(void);
+static float bibCartaoGap(void);
+static int bibColunasMax(void);
+// Grade do mock iOS: so a grade de cartazes (nao lista, nao pagina do Trakt).
+static int modoLinha(void);
+static int bibGradeIos(void) {
+  return (bibFone() || bibAmplo()) && estado() != EST_LISTAS && !modoLinha() &&
+         !(temAberta && aberta.fonte == LST_TRAKT);
+}
+// Origem e largura da grade do mock em unidades da camada: a grade corre por
+// baixo da barra (recuos nao a empurram); aberto, a lacuna entre as colunas 4
+// e 5 cai na dobra (centrada nos 951 pt).
+static float bibGradeIosW(void) {
+  int n = bibColunasMax();
+  return n * bibCartaoW() + (n - 1) * bibCartaoGap();
+}
+static float bibGradeIosX(void) {
+  if (bibFone()) return 40.0f * bibPt();
+  return ((float)NV_TELA_W - bibGradeIosW()) * 0.5f;
+}
 // The "Origens" chip exists where the title grid has the panel beside it.
 static int botaoOrigens(void) { return temOrigens() && !bibRetrato(); }
 // The panel takes its column only while open (layout snaps; drawing animates).
-static int origensNaGrade(void) { return temOrigens() && (origensAbertas || !botaoOrigens()); }
+static int bibFone(void);
+static int bibAmplo(void);
+// Mock do iPhone: a grade e a tela toda, sem painel de origens ao lado.
+static int origensIos(void) { return bibFone() || bibAmplo(); }
+static int origensNaGrade(void) { return temOrigens() && !origensIos() && (origensAbertas || !botaoOrigens()); }
 static int modoLinha(void);
 static float bibX(void) {
+  if (bibGradeIos()) return bibGradeIosX();
   if (temAberta && aberta.fonte == LST_TRAKT && !trilha) return paginaX() + 560;
   if (botaoOrigens() && modoLinha()) return paginaX() + ANC(364.0f) * animOrig;
   return paginaX() + (origensNaGrade() ? (modo == MODO_LISTAS ? 364.0f : ANC(364.0f)) : 0.0f);
@@ -601,6 +633,7 @@ static float bibDireita(void) {
   return x + w;
 }
 static float bibW(void) {
+  if (bibGradeIos()) return bibGradeIosW();
   if (temAberta && aberta.fonte == LST_TRAKT && !trilha)
     return fmaxf(320, bibDireita() - bibX() - 448);
   if (listasMinhas()) return bibDireita() - bibX() - lmPainel() - 36;
@@ -620,6 +653,36 @@ static int bibRetrato(void) {
   return 0;
 #endif
 }
+// iPhone retrato (fechado) e display interno aberto (largo), por LARGURA e nao
+// por "e Duo". Fora do touch UI (TV, Android paisagem, tablet) devolvem 0 e
+// tudo segue com as constantes de sempre.
+static int bibFone(void) {
+#ifdef NV_TOUCH_UI
+  return layout_modo_mobile() && NV_TELA_H > NV_TELA_W;
+#else
+  return 0;
+#endif
+}
+static int bibAmplo(void) {
+#if defined(NV_TOUCH_UI) && (defined(NV_IOS) || defined(NV_BIB_AMPLO))
+  return layout_modo_mobile() && NV_TELA_W > NV_TELA_H && NV_TELA_W < NV_TELA_H * 1.6f;
+#else
+  return 0;
+#endif
+}
+// pt do mock -> unidades da camada ativa (466 pt fechado, 951 pt aberto).
+static float bibPt(void) { return (float)NV_TELA_W / (bibAmplo() ? 951.0f : 466.0f); }
+static float bibCartaoW(void) {
+  if (bibFone()) return 78.0f * bibPt();
+  if (bibAmplo()) return 92.0f * bibPt();
+  return 220.0f * gfx_poster_k();
+}
+static float bibCartaoGap(void) {
+  if (bibFone()) return 8.0f * bibPt();
+  if (bibAmplo()) return 24.0f * bibPt();
+  return 26.0f;
+}
+static int bibColunasMax(void) { return bibFone() ? 4 : bibAmplo() ? 8 : 7; }
 static float bibHS(void) { return fmaxf(1.0f, escala_min(BIB_TOPO_ESCALA_MIN)); }
 static float bibRel(void) { return bibHS() / gfx_escala_txt(); }
 static float hdrX(void) { return paginaX() / bibRel(); }
@@ -666,7 +729,7 @@ static float pickerY(void) {
 // o passo e a largura util dividida pelas colunas: 250,6 nos 1728.
 static int colunasCartaz(void) {
   int n = (int)((bibW() + BIB_CARD_GAP) / (BIB_CARD_W + BIB_CARD_GAP));
-  return n < 1 ? 1 : n > 7 ? 7 : n;
+  return n < 1 ? 1 : n > bibColunasMax() ? bibColunasMax() : n;
 }
 static int colunasLista(void) {
 #ifdef NV_TOUCH_UI
@@ -4109,7 +4172,7 @@ static void biblioteca_desenhar_(Uint32 agora) {
     }
     desenhaResumo();
     gfx_escala_sair(headerScale); }
-  if (origensNaGrade() || (temOrigens() && animOrig > 0.002f)) desenhaOrigens();
+  if (!origensIos() && (origensNaGrade() || (temOrigens() && animOrig > 0.002f))) desenhaOrigens();
   desenhaVistaAnterior(agora);
   nVistaAtual = 0; vistaModo = modo; vistaExibicao = exibicao;
   if (modo == MODO_ASSISTIDOS && modoLinha()) {
