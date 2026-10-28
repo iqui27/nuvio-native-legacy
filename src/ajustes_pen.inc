@@ -1,7 +1,7 @@
 /* The approved Pencil pages bind to the original setting IDs. */
 #include "juntosui.h"
 typedef struct { int op; const char *title,*help,*icon; int toggle; } AjPenRow;
-typedef struct { const char *title; int x,w,n; AjPenRow rows[7]; } AjPenColumn;
+typedef struct { const char *title; int x,w,n; AjPenRow rows[10]; } AjPenColumn;
 typedef struct { const char *title,*section; int part,total; AjPenColumn cols[2]; } AjPenPage;
 #include "ajustes_pen_avancados.inc"
 #include "ajustes_pen_principais.inc"
@@ -347,7 +347,7 @@ static int ajPenEvent(SDL_Keycode key) {
       if(ajPenRow==5) { ajPenOpen(AJ_PEN_SECONDARY);return 1; }
       if(ajPenRow==7) { ajPenOpen(40);return 1; }
     }
-    if(row->toggle && nValores(op)==2 && OPCOES[op].tipo==OP_ESCOLHA && !inativa(op) && ajPenPage!=AJ_PEN_TOUR) { definirValorDireto(op,!uxValorAtual(op));return 1; }
+    if(row->toggle && (nValores(op)==2 || (op>=AJ_FONTE_OCULTAR_DV && op<=AJ_FONTE_OCULTAR_VIDEO)) && OPCOES[op].tipo==OP_ESCOLHA && !inativa(op) && ajPenPage!=AJ_PEN_TOUR) { definirValorDireto(op,!uxValorAtual(op));return 1; }
     if(!ajOpcaoDisponivel(op))return 1;
     if(OPCOES[op].tipo==OP_LEITURA)return 1;
     if(inativa(op)) {

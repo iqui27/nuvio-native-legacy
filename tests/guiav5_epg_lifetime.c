@@ -77,8 +77,9 @@ int main(void) {
   GCanal channel = {.id="fixture", .nome="Fixture", .logo="", .base="", .epgId="fixture",
     .tvgNome="", .cat=-1, .fonte=0, .epg=epg_match_id("fixture")};
   /* Published guide channels must belong to an enabled source. */
-  nLtvF=1;ltvF[0].tipo=LTV_M3U;strcpy(ltvF[0].chave,"fixture");
   assert(channel.epg >= 0);
+  nLtvF=1;ltvF[0].tipo=LTV_M3U;ltvF[0].base="";
+  snprintf(ltvF[0].chave,sizeof ltvF[0].chave,"fixture");
   canais = &channel; nCanais = 1; favLido = 1;
   snprintf(screen, sizeof screen, "grade");
   gv_snapshot();

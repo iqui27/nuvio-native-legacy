@@ -69,11 +69,11 @@ int main(void) {
   player_encerrar();
   snprintf(screen,sizeof screen,"grade");snprintf(gv_pagina,sizeof gv_pagina,"grade");
   gv_hh=208;guia_preview_rect(&x,&y,&w,&h);
-  CHECK(fabsf(w/h-16.0f/9)<.001f && h==172,
-        "compact guide exports its resized preview geometry");
+  CHECK(w==626 && h==208,
+        "compact guide exports its enlarged card preview geometry");
   gv_hh=GV_HERO_H;guia_preview_rect(&x,&y,&w,&h);
-  CHECK(fabsf(w/h-16.0f/9)<.001f && h==GV_HERO_H-36,
-        "expanded guide exports its preview geometry");
+  CHECK(w==626 && h==GV_HERO_H,
+        "expanded guide exports its enlarged card preview geometry");
   /* Sports must remain usable without ESPN events or any EPG. */
   stagingZerar();
   int sports_source=sFonte(LTV_M3U,"sports-fixture","Fixture","");
