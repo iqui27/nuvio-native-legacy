@@ -761,6 +761,7 @@ static void puxarCredenciais(void) {
     char prov[48], cred[900];
     if (!js_texto(p, f, "provider", prov, sizeof prov)) continue;
     if (!js_bruto(p, f, "credential_json", cred, sizeof cred)) continue;
+    if (cred[0] == '"' && !js_texto(p, f, "credential_json", cred, sizeof cred)) continue;
     if (!strcmp(prov, "trakt")) {
       // O credential_json pode vir como OBJETO ou como string JSON — o web
       // trata os dois. Aqui basta procurar a chave dentro do texto cru.
