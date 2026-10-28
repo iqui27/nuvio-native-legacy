@@ -87,6 +87,13 @@ static void vod_free(VodCatalog *v){for(int i=0;i<2;i++){free(v->json[i]);free(v
 static void vod_rebuild(void);
 static unsigned vod_revision;
 static G5Item vod_info,vod_info_pending;
+static struct {
+  pthread_t thread;
+  atomic_int busy,ready;
+  char server[256],user[96],password[96],action[160],account[96];
+  int profile,ref,ok;
+  unsigned revision;
+} metadata;
 static int vod_info_ref=-1,vod_info_request=-1;
 static Uint32 vod_info_since;
 static unsigned vod_info_revision;
@@ -209,10 +216,6 @@ static void *load(void *unused){
       memset(&tested,0,sizeof tested);worker_ok=b&&status>=200&&status<300&&xtream_conta_parse(b,&tested)&&tested.auth==1&&xtream_conta_aviso(&tested,time(NULL))!=XA_EXPIRADA&&xtream_conta_aviso(&tested,time(NULL))!=XA_DESATIVADA;
       if(b){erase(b,strlen(b));free(b);}}
     else{staging=calloc(G5_CAP,sizeof *staging);if(staging){staging_count=load_playlist(staging,G5_CAP);worker_ok=staging_count>=0;}}
-  }else if(operation==5){
-    int status=0;char *body=xtream_consultar(work_draft.server,work_draft.user,work_draft.password,action,15,&status);
-    memset(&vod_info_pending,0,sizeof vod_info_pending);
-    if(body&&status==200){const char *end=body+strlen(body);while(end>body&&isspace((unsigned char)end[-1]))end--;g5_parse_xtream_item(body,end,G5_MOVIE,&vod_info_pending);worker_ok=1;}free(body);
   }else{
     staging=calloc(G5_CAP,sizeof *staging);
     if(staging){
@@ -254,7 +257,28 @@ static void *load(void *unused){
   }
   atomic_store_explicit(&ready,1,memory_order_release);return NULL;
 }
+static void *load_metadata(void *unused){
+  (void)unused;int status=0;
+  char *body=xtream_consultar(metadata.server,metadata.user,metadata.password,metadata.action,15,&status);
+  erase(metadata.password,sizeof metadata.password);
+  memset(&vod_info_pending,0,sizeof vod_info_pending);metadata.ok=body&&status==200;
+  if(metadata.ok){const char *end=body+strlen(body);while(end>body&&isspace((unsigned char)end[-1]))end--;g5_parse_xtream_item(body,end,G5_MOVIE,&vod_info_pending);}free(body);
+  atomic_store_explicit(&metadata.ready,1,memory_order_release);return NULL;
+}
 static int start(int op){
+  if(op==5){
+    if(atomic_load(&metadata.busy)||atomic_load(&busy)||!ltv_fonte_ligada("xt"))return 0;
+    snprintf(metadata.server,sizeof metadata.server,"%s",draft.server);
+    snprintf(metadata.user,sizeof metadata.user,"%s",draft.user);
+    snprintf(metadata.password,sizeof metadata.password,"%s",draft.password);
+    if(use_saved)xtream_dados_copiar(metadata.server,sizeof metadata.server,metadata.user,sizeof metadata.user,metadata.password,sizeof metadata.password);
+    snprintf(metadata.action,sizeof metadata.action,"%s",action);
+    snprintf(metadata.account,sizeof metadata.account,"%s",account);
+    metadata.profile=profile;metadata.ref=vod_info_request;metadata.revision=vod_info_revision;
+    atomic_store(&metadata.busy,1);
+    if(pthread_create(&metadata.thread,NULL,load_metadata,NULL)){atomic_store(&metadata.busy,0);erase(metadata.password,sizeof metadata.password);return 0;}
+    return 1;
+  }
   if(atomic_load(&busy)||(!ltv_fonte_ligada(draft.type?"g5m3u":"xt")&&op!=3))return 0;
   work_draft=draft;work_phone=phone_stage==1||phone_stage==4;
   if(use_saved&&work_draft.type==0)xtream_dados_copiar(work_draft.server,sizeof work_draft.server,work_draft.user,sizeof work_draft.user,work_draft.password,sizeof work_draft.password);
@@ -1552,6 +1576,10 @@ void g5ui_update(void){
   context();
   if(gv_is(screen))gv_tick();
   gs_tick();
+  if(atomic_load_explicit(&metadata.ready,memory_order_acquire)){
+    pthread_join(metadata.thread,NULL);atomic_store(&metadata.ready,0);atomic_store(&metadata.busy,0);
+    if(metadata.ok&&metadata.profile==profile&&!strcmp(metadata.account,account)&&metadata.revision==vod_revision){vod_info=vod_info_pending;vod_info_ref=metadata.ref;}
+  }
   if(lease.expires&&lease.expires<=time(NULL)){erase(&lease,sizeof lease);if(player_id_canal()[0])player_encerrar();dirty=1;}
   if(catalog_fetch_pending&&!atomic_load(&busy)){catalog_fetch_pending=0;action[0]=0;start(2);}
   if(atomic_load_explicit(&ready,memory_order_acquire)){
@@ -1559,7 +1587,6 @@ void g5ui_update(void){
     pthread_join(worker,NULL);atomic_store(&busy,0);atomic_store(&ready,0);erase(&work_draft,sizeof work_draft);
     if(!worker_cancel&&worker_profile==profile&&!strcmp(worker_account,account)){
       if(operation==1)test_ok=worker_ok;
-      if(operation==5){action[0]=0;if(worker_ok&&vod_info_revision==vod_revision){vod_info=vod_info_pending;vod_info_ref=vod_info_request;}}
       if(operation==3){
         if(worker_ok){if(pin_settings==1)go("parental-ajustes");else if(pin_settings==2){rules.hide_adult=0;save_rules();go("setup-categorias");}
           else{g5_grant(&lease,profile,locked_item.source,locked_item.id,time(NULL),lease_seconds,1);if(locked_item.kind==G5_LIVE)g5ui_close();else go(previous[0]?previous:"vod-filmes");}}
@@ -1580,13 +1607,13 @@ void g5ui_update(void){
     free(staging);staging=NULL;vod_free(&vod_pending);
     if(phone_fetch&&!start(2)){phone_stage=0;celular_status("{\"s\":\"err\"}");}
   }
-  if(!strncmp(screen,"vod-",4)&&strcmp(screen,"vod-titulo")&&strcmp(screen,"vod-serie-temporadas")&&vod_size&&!atomic_load(&busy)){
+  if(!strncmp(screen,"vod-",4)&&strcmp(screen,"vod-titulo")&&strcmp(screen,"vod-serie-temporadas")&&vod_size&&!atomic_load(&busy)&&!atomic_load(&metadata.busy)){
     int ref=vod_order[vod_hero<vod_size?vod_hero:0];
     if(vod_info_request!=ref||vod_info_revision!=vod_revision){vod_info_request=ref;vod_info_since=SDL_GetTicks();vod_info_revision=vod_revision;}
     else if(vod_info_since&&SDL_GetTicks()-vod_info_since>350){
       G5Item *it=vod_item(ref);vod_info_since=0;
       if(it&&!restricted(it)&&!strcmp(it->source,"xtream")&&xtream_configurado()){
-        snprintf(action,sizeof action,it->kind==G5_SERIES?"get_series_info&series_id=%s":"get_vod_info&vod_id=%s",it->id);start(5);
+        snprintf(action,sizeof action,it->kind==G5_SERIES?"get_series_info&series_id=%s":"get_vod_info&vod_id=%s",it->id);start(5);action[0]=0;
       }
     }
   }

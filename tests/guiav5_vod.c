@@ -2,7 +2,24 @@
 #ifndef GUIAV5_UNDER_TEST
 #define GUIAV5_UNDER_TEST "../src/guiav5ui.c"
 #endif
+#include "xtream.h"
+#include <assert.h>
+#include <pthread.h>
+#include <string.h>
+static pthread_mutex_t metadata_lock=PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t metadata_cond=PTHREAD_COND_INITIALIZER;
+static int metadata_entered,metadata_release;
+static char *slow_metadata(const char *server,const char *user,const char *password,const char *action,int seconds,int *status){
+  (void)server;(void)user;(void)password;(void)action;(void)seconds;
+  pthread_mutex_lock(&metadata_lock);metadata_entered=1;pthread_cond_broadcast(&metadata_cond);
+  while(!metadata_release)pthread_cond_wait(&metadata_cond,&metadata_lock);
+  assert(!strcmp(action,"get_vod_info&vod_id=3"));
+  pthread_mutex_unlock(&metadata_lock);*status=200;
+  return strdup("{\"info\":{\"plot\":\"Background result\"}}");
+}
+#define xtream_consultar slow_metadata
 #include GUIAV5_UNDER_TEST
+#undef xtream_consultar
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 #include <sys/stat.h>
@@ -67,6 +84,25 @@ int main(int argc,char **argv){
   key(SDLK_RIGHT);assert(focus==VOD_ITEM+3);g5ui_update();frame(window);
   assert(focus==VOD_ITEM+3);key(SDLK_LEFT);assert(focus==VOD_ITEM+2);
   atomic_store(&busy,0);g5ui_update();frame(window);assert(focus==VOD_ITEM+2);
+  /* Hold a real metadata worker inside the provider call while activating UI. */
+  snprintf(action,sizeof action,"get_vod_info&vod_id=3");assert(start(5));
+  pthread_mutex_lock(&metadata_lock);
+  while(!metadata_entered)pthread_cond_wait(&metadata_cond,&metadata_lock);
+  pthread_mutex_unlock(&metadata_lock);
+  key(SDLK_RETURN);assert(!strcmp(screen,"vod-titulo")&&selected==2);
+  focus=0;key(SDLK_RETURN);assert(playing);playing=0;
+  go("vod-filmes");focus=807;key(SDLK_RETURN);assert(!strcmp(screen,"vod-titulo"));
+  go("vod-filmes");focus=809;key(SDLK_RETURN);assert(playing);playing=0;
+  go("vod-filmes");focus=803;key(SDLK_RETURN);assert(!strcmp(screen,"fontes-gerenciar"));
+  /* Foreground work must get its own worker while metadata remains stalled. */
+  action[0]=0;
+  assert(start(3));assert(operation==3&&atomic_load(&busy));
+  while(!atomic_load(&ready))SDL_Delay(1);
+  g5ui_update();assert(!atomic_load(&busy));
+  pthread_mutex_lock(&metadata_lock);metadata_release=1;pthread_cond_broadcast(&metadata_cond);pthread_mutex_unlock(&metadata_lock);
+  while(!atomic_load(&metadata.ready))SDL_Delay(1);
+  g5ui_update();assert(!atomic_load(&metadata.busy)&&!atomic_load(&busy));
+  go("vod-filmes");focus=VOD_ITEM+2;frame(window);
   int initial=focus;key(SDLK_RIGHT);assert(focus==initial+1);frame(window);
   assert(poster_focus(focus)>0);key(SDLK_DOWN);assert(focus==VOD_ITEM+15);frame(window);assert(vod_row_at(vod_position())==1);
   key(SDLK_UP);assert(focus==VOD_ITEM+3);key(SDLK_UP);assert(focus==807&&nav<0);
@@ -105,7 +141,7 @@ int main(int argc,char **argv){
   vod_select(4299,0);assert(selected==0&&!strcmp(inventory[selected].name,"Movie 4299")&&count==1);
   go("vod-filmes");snprintf(query,sizeof query,"Movie 4299");vod_filter();assert(vod_size==1);
   query[0]=0;rules.hide_locked=1;rules.ask_unrated=1;vod_filter();assert(vod_size==0);
-  puts("PASS: six category rows, movie/series order, poster focus, hero actions, Back, scrolling, fallback and uncapped lazy records");
+  puts("PASS: six category rows, movie/series order, poster focus, activation during stalled metadata, concurrent foreground worker, hero actions, Back, scrolling, fallback and uncapped lazy records");
 #endif
   return 0;
 }
