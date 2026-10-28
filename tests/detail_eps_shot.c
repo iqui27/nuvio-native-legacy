@@ -33,6 +33,8 @@
 #include "nvtmp.h"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
+#include <errno.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -103,6 +105,17 @@ static float fx_kicker(const char *s, float x, float y, int r, int g, int b, flo
 static float fx_titulo_bloco(TxtEstilo estilo, const char *s, int r, int g, int b,
                             float x, float y, float larg, float leading,
                             float alpha, int maxLinhas);
+#include "episodios.h"
+static float fxSummaryRight, fxSummaryScale;
+static void fx_summary_transform(float x, float y, float scale, float dx, float dy) {
+  GfxRect summary;
+  if (episodios_menu_resumo(&summary) && fabsf(x-summary.x*gfx_escala_ui()) < .1f) {
+    fxSummaryScale = gfx_escala();
+    fxSummaryRight = (x + 420*scale + dx) * gfx_escala();
+  }
+  gfx_transformar(x,y,scale,dx,dy);
+}
+#define gfx_transformar fx_summary_transform
 #define txt_bloco fx_titulo_bloco
 #define gfx_icone fx_icone
 #define plrui_kicker fx_kicker
@@ -135,6 +148,7 @@ static void rwRemoto(const char *id,const char *chave,int ocultar) { (void)id; (
 #undef tirarremoto_executar
 #undef SDL_GetTicks
 #undef gfx_rect_furos
+#undef gfx_transformar
 #include "menu.h"
 #include "intro.h"
 #include "ilha.h"
@@ -645,7 +659,8 @@ static void episodeShots(const char *out) {
     for (int i = 0; i < 40; i++) { SDL_Delay(10); fxTick += 16; quadros(1); }
     parado = 1; fxTick = 10000;
     GfxRect card = {100, 100, epCardW(), epCardH()};
-    assert(card.w == 420 && card.h == 530 && epThumbH() == 236);
+    assert(card.w == (layout ? 640 : 420));
+    assert(card.h == (layout ? 414 : 530) && epThumbH() == (layout ? 414 : 236));
     for (int focused = 0; focused < 2; focused++) {
       memset(animFoco, 0, sizeof animFoco);
       animFoco[SEC_EPISODIOS][0] = focused;
@@ -662,8 +677,10 @@ static void episodeShots(const char *out) {
           int p = ((1079-y)*1920+x)*4;
           if (abs(rest[p]-pixels[p]) <= 2 && abs(rest[p+1]-pixels[p+1]) <= 2 &&
               abs(rest[p+2]-pixels[p+2]) <= 2) continue;
-          // Approved focus scales only the thumbnail by 5%; text stays fixed.
-          assert(x >= 88 && x < 532 && y >= 93 && y < 343);
+          // Focus and dimming stay inside each card's thumbnail bounds.
+          float pad=layout ? card.w*FOCO_ZOOM*.5f+4 : 12;
+          assert(x >= card.x-pad && x < card.x+card.w+pad &&
+                 y >= card.y-pad && y < card.y+epThumbH()+pad);
           changed++;
         }
         assert(changed > 100);
@@ -679,6 +696,8 @@ static void episodeShots(const char *out) {
   free(rest); free(pixels);
   puts("PASS: approved episode PNGs and thumbnail-only focus changes");
 }
+
+#include "detail_epsmoderno_shot.inc"
 
 int main(int argc, char **argv) {
   const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-deteps");
@@ -744,6 +763,7 @@ int main(int argc, char **argv) {
   if (getenv("NUVIO_SHOT_ESCALA_TEXTO")) gfx_escala_txt_definir(atof(getenv("NUVIO_SHOT_ESCALA_TEXTO")));
   if (getenv("NUVIO_SHOT_VIDRO")) ajustes_definir_vidro(atoi(getenv("NUVIO_SHOT_VIDRO")));
   montarCatalogo();
+  if (getenv("NV_EPSMODERNO_SHOTS")) { epsModernoShots(saida); return 0; }
   if (getenv("NV_674_SHOTS")) {
     itens[0].progresso = 0;
     cat_definir_tudo(itens, 2, &filEnsaio, 1);

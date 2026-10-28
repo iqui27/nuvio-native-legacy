@@ -62,10 +62,10 @@ int main(void) {
       assert(fabsf(xItem(SEC_EPISODIOS, i + 1) - xItem(SEC_EPISODIOS, i) -
                    epCardPasso()) < 0.01f);
   }
-  // Refined uses the same card size setting as Modern.
+  // Dynamic retains its original 32 px card spacing.
   gravar("homeLayoutLocal 2\nepTamanhoLocal 1\n");
   assert(epApple());
-  assert(fabsf((epCardPasso() - epCardW()) - 28.0f) < 0.01f);
+  assert(fabsf((epCardPasso() - epCardW()) - 32.0f) < 0.01f);
   gravar("");
 
   // Focus traverses intermediate spring values before settling.

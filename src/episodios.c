@@ -200,6 +200,7 @@ static float    vmAnim, vmAnimV, vmFocoAnim[VM_N];
 // Quem abriu avisa a cada quadro (episodios_menu_ancora); sem ancora, o meio.
 static GfxRect  vmAncora;
 static int      vmTemAncora;
+static GfxRect  vmResumo;
 static GfxRect  vmCaixa;       // a caixa aberta do ultimo quadro (teste)
 static int      vmTemCaixa;
 
@@ -630,6 +631,7 @@ static void menuDesenhar(GfxRect area, float a0) {
   const char *meta;
   GfxRect m;
   vmTemCaixa = 0;
+  vmResumo = (GfxRect){0};
   if (!menuVisivel()) return;
   if (vmFeito && SDL_GetTicks() >= vmFeitoAte) { vmAberto = 0; vmFeito = 0; }
   if (vmPainel()) { painelDesenhar(a0); return; }
@@ -661,6 +663,15 @@ static void menuDesenhar(GfxRect area, float a0) {
     if (panelY+ph>area.h-VM_BORDA) panelY=area.h-VM_BORDA-ph;
     if (panelY<VM_BORDA) panelY=VM_BORDA;
     comentarios = (GfxRect){m.x + MW + 24, panelY, pw, ph};
+  }
+  if (vmSo && !vmModoTemp && ajustes_home_layout() == HOME_LAYOUT_MODERNA) {
+    // One complete still/summary, actions, reviews: stable at either row edge.
+    float gap=24, summaryW=420, total=summaryW+gap+MW+gap+676;
+    float left=(area.w-total)*.5f;
+    float top=fmaxf(VM_BORDA,(area.h-fmaxf(mh,740))*.5f);
+    vmResumo=(GfxRect){left,top,summaryW,740};
+    m.x=left+summaryW+gap; m.y=top;
+    comentarios=(GfxRect){m.x+MW+gap,top,676,624};
   }
   if (vmAberto && ponteiro_ativo() && a > .5f) {
     ponteiro_camada();
@@ -1246,6 +1257,11 @@ int  episodios_menu_visivel(void) { return vmSo && menuVisivel(); }
 int  episodios_menu_painel(void) { return vmSo && menuVisivel() && vmPainel(); }
 void episodios_menu_atualizar(float dt) { if (vmSo) menuAtualizar(dt); }
 int  episodios_menu_caixa(GfxRect *r) { if (vmTemCaixa && r) *r = vmCaixa; return vmTemCaixa; }
+int episodios_menu_resumo(GfxRect *r) {
+  if (vmResumo.w <= 0 || !menuVisivel()) return 0;
+  if (r) *r=vmResumo;
+  return 1;
+}
 float episodios_menu_anim(void) { return vmAnim; }
 int  episodios_menu_foco(void) { return vmFoco; }
 int episodios_menu_trocou(int *t,int *e) {
@@ -1273,7 +1289,12 @@ static void episodios_menu_desenharCorpo_(void) {
   if (vmSo) {
     float scale = gfx_escala(), fitted = scale;
     GfxRect anchor = vmAncora;
-    if (!vmModoTemp && scale > 1.0f) {
+    int modern = !vmModoTemp && ajustes_home_layout() == HOME_LAYOUT_MODERNA;
+    if (modern) {
+      fitted=fminf(scale,(NV_LAYOUT_REAL_W-96.0f)/(420+24+vmLarg+24+676));
+      fitted=fminf(fitted,(NV_LAYOUT_REAL_H-96.0f)/fmaxf(menuAltura(),740));
+      gfx_escala_sair(fitted);
+    } else if (!vmModoTemp && scale > 1.0f) {
       // Fit complete controls beside the card; shrinking only the panel box
       // leaves its fixed-width rating chart and review contents overflowing.
       float right = vmTemAncora ? (anchor.x + anchor.w) * scale + 24.0f : 48.0f;
@@ -1289,6 +1310,9 @@ static void episodios_menu_desenharCorpo_(void) {
     if (vmTemCaixa && fitted != scale)
       vmCaixa = (GfxRect){vmCaixa.x * fitted / scale, vmCaixa.y * fitted / scale,
                           vmCaixa.w * fitted / scale, vmCaixa.h * fitted / scale};
+    if (vmResumo.w > 0 && fitted != scale)
+      vmResumo=(GfxRect){vmResumo.x*fitted/scale,vmResumo.y*fitted/scale,
+                         vmResumo.w*fitted/scale,vmResumo.h*fitted/scale};
     vmAncora = anchor;
     gfx_escala_sair(scale);
   }
