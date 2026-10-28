@@ -140,6 +140,36 @@ int main(int argc, char **argv) {
   assert(nBotoes()==3 && acaoEm(1)==ACAO_LISTA);
   maisDisponiveis(available); assert(available[DMAIS_NOTA]);
   servidoresDisponiveis=0;
+  // The spatial spring must run even under reduced motion, restoring policy.
+  float velocity=0;
+  anim_politica_reduzida=1;
+  float moving=det_mola(&velocity,0,1,1.f/60,22);
+  assert(moving>0 && moving<1 && anim_politica_reduzida==1);
+  anim_politica_reduzida=0;
+  // Hero reveal: entering More focuses Rate, optional Together, then More last.
+  for (int servers=0; servers<2; servers++)
+  for (eligible=0; eligible<2; eligible++) {
+    servidoresDisponiveis=servers; maisAcoes=0;
+    nivel=0; botao=1; focoVersao=focoAmigos=0; focoServidor=-1;
+    aberto=1; saindo=0; carro=0;
+    press(SDLK_RIGHT);
+    assert(maisAcoes && botao==2 && acaoEm(botao)==ACAO_NOTA);
+    press(SDLK_RETURN); assert(reacao_aberta());
+    press(SDLK_ESCAPE); assert(botao==2 && !saindo);
+    press(SDLK_RIGHT);
+    if (eligible) { assert(acaoEm(botao)==ACAO_JUNTOS); press(SDLK_RIGHT); }
+    assert(acaoEm(botao)==ACAO_MAIS && botao==nBotoes()-1);
+    press(SDLK_RETURN); assert(detmais_aberto());
+    press(SDLK_ESCAPE); assert(!detmais_aberto() && acaoEm(botao)==ACAO_MAIS && !saindo);
+    while (botao>1) press(SDLK_LEFT);
+    assert(!maisAcoes && nBotoes()==3);
+    ponteiroDetalhe(-1,2); assert(maisAcoes && acaoEm(botao)==ACAO_NOTA);
+    ponteiroDetalhe(-1,1);
+    assert(!maisAcoes && nBotoes()==3);
+    detmais_zerar();
+  }
+  eligible=0; servidoresDisponiveis=0; botao=0;
+  puts("PASS: hero reveal navigation, eligibility, rating, menu Back and pointer focus");
   // Existing per-source settings govern both cards and their summary.
   FILE *ratings=fopen(path,"w"); assert(ratings);
   fputs("notaTituloImdb 1\nnotaTituloTomates 0\nmdblist_show_tomatoes 0\n",ratings); fclose(ratings);

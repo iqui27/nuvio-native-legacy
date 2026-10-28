@@ -411,6 +411,9 @@ void stream_definir_tela(int hdr, int dv);
 void stream_capacidades(int *hdr,int *dv,int *hevc,int *av1);
 // Android: -1 desconhecido, 0 sem decoder 3840x2160, 1 suportado. Nao filtra a folha manual.
 void stream_definir_decoder4k(int hevc, int avc, int vp9, int av1);
+// Effective playback support: decode, conversion or passthrough. -1 unknown.
+void stream_definir_audio_capacidades(int truehd, int dts, int dtshd, int eac3, int ac3);
+int stream_incompat_padrao(int regra);
 // Erro Media3 no automatico: nao repetir tamanho/codec nesta lista. `renderer`
 // diz de onde veio o erro: 0 video, 1 audio, 2 desconhecido. Erros de audio
 // (EAC3/AC4 sem suporte) nao bloqueiam codecs de video.

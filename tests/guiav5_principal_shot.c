@@ -8,7 +8,10 @@
  * passa por aqui. Nao entra na suite (tools/testa-tudo.sh pula *_shot.sh).
  */
 #include "../src/guia.c"
-#include "../src/guiav5ui.c"
+#ifndef GUIAV5_UNDER_TEST
+#define GUIAV5_UNDER_TEST "../src/guiav5ui.c"
+#endif
+#include GUIAV5_UNDER_TEST
 #include "gfx.h"
 #include "text.h"
 #include "tex_cache.h"
@@ -183,6 +186,101 @@ int main(int argc, char **argv) {
   assert(ajustes_idioma() == 0);
   context();
   semear();
+  if (getenv("NUVIO_SHOT_POLIR")) {
+    int baseline = getenv("GUIAPOLIR_BASELINE") != NULL;
+    g5ui_open("grade"); gv_zone=5; focus=1105; gv_go("ajustes");
+    capture(window, dir, "options-first");
+    if (!baseline) {
+      assert(focus==1940 && gv_gfolha_visto);
+      const int down[]={1942,1944,1945,1947,1948,1939};
+      for(unsigned i=0;i<sizeof down/sizeof *down;i++) {
+        gv_event(SDLK_DOWN,0); assert(focus==down[i]); quadro();
+      }
+      gv_event(SDLK_DOWN,0); assert(focus==1939);
+      gv_event(SDLK_LEFT,0); assert(focus==1938);
+      gv_event(SDLK_UP,0); assert(focus==1948);
+      gv_event(SDLK_RIGHT,0); assert(focus==1948);
+      const int up[]={1947,1945,1944,1942,1940};
+      for(unsigned i=0;i<sizeof up/sizeof *up;i++) {
+        gv_event(SDLK_UP,0); assert(focus==up[i]); quadro();
+      }
+      gv_event(SDLK_UP,0); assert(focus==1940);
+      gv_event(SDLK_LEFT,0); assert(focus==1940 && !gv_side_open);
+      gv_event(SDLK_ESCAPE,0); assert(!strcmp(screen,"grade") && focus==1105);
+      gv_go("ajustes");
+#ifndef GUIAPOLIR_BASELINE_CODE
+      focus=1943;gv_activate();assert(ajustes_guia_previa_destacar());
+      focus=1944;gv_activate();assert(!ajustes_guia_previa_destacar());
+      focus=1945;gv_activate();assert(!ajustes_guia_previa_sem_som());
+      gv_activate();assert(ajustes_guia_previa_sem_som());
+      focus=1947;gv_activate();assert(ajustes_guia_dias()==3);
+      focus=1946;gv_activate();assert(ajustes_guia_dias()==1);
+#endif
+    }
+    gv_voltar(); gv_zone=5; focus=1105; gv_event(SDLK_RIGHT,0);
+    capture(window, dir, "home-multiview");
+    if(!baseline) assert(focus==1106);
+    g5ui_open("multiview-2"); focus=0;
+    capture(window, dir, "multiview-slot");
+    if(!baseline) {
+      SDL_Event e={.type=SDL_KEYDOWN};
+      #define MV_KEY(k) do{e.key.keysym.sym=(k);g5ui_event(&e);}while(0)
+      MV_KEY(SDLK_RIGHT);assert(focus==1);
+      MV_KEY(SDLK_UP);assert(focus==801);
+      MV_KEY(SDLK_RETURN);assert(mode==3);
+      focus=0;MV_KEY(SDLK_RIGHT);assert(focus==1);
+      MV_KEY(SDLK_DOWN);assert(focus==2);
+      MV_KEY(SDLK_LEFT);assert(focus==0);
+      focus=802;MV_KEY(SDLK_RETURN);assert(mode==4);
+      focus=0;MV_KEY(SDLK_DOWN);assert(focus==2);
+      MV_KEY(SDLK_RIGHT);assert(focus==3);
+      MV_KEY(SDLK_UP);assert(focus==1);
+      MV_KEY(SDLK_RETURN);assert(!strcmp(screen,"multiview-escolher") && focus==900);
+      MV_KEY(SDLK_RIGHT);assert(focus==900);
+      MV_KEY(SDLK_DOWN);assert(focus==901);
+      capture(window,dir,"multiview-picker");
+      MV_KEY(SDLK_ESCAPE);assert(!strcmp(screen,"multiview-4") && focus==1);
+      focus=803;MV_KEY(SDLK_RETURN);assert(!strcmp(screen,"multiview-escolher"));
+      MV_KEY(SDLK_RETURN);assert(!strcmp(screen,"multiview-4") && mv_count==2 && focus==1);
+      focus=804;MV_KEY(SDLK_RETURN);assert(mv_main==1 && mv_focus);
+      float x,y,w,h;g5ui_multiview_rect(&x,&y,&w,&h);assert(x==976 && y==238);
+      CatItem it;assert(g5ui_multiview_channel(&it) && !strcmp(it.imdb,mv_items[1].id));
+      focus=803;MV_KEY(SDLK_RETURN);MV_KEY(SDLK_DOWN);MV_KEY(SDLK_RETURN);assert(mv_count==3);
+      focus=803;MV_KEY(SDLK_RETURN);MV_KEY(SDLK_DOWN);MV_KEY(SDLK_DOWN);MV_KEY(SDLK_RETURN);assert(mv_count==4);
+      focus=803;MV_KEY(SDLK_RETURN);assert(!strcmp(screen,"multiview-limite") && focus==810);
+      capture(window,dir,"multiview-limit");
+      MV_KEY(SDLK_RETURN);assert(mode==4 && !strcmp(screen,"multiview-4") && focus==803);
+      focus=2;MV_KEY(SDLK_RETURN);assert(!strcmp(screen,"multiview-escolher"));
+      MV_KEY(SDLK_RETURN);assert(mv_count==4 && !strcmp(mv_items[2].id,picker_items[0].id));
+      MV_KEY(SDLK_ESCAPE);assert(!strcmp(screen,"grade") && focus==1106);
+      g5ui_open("multiview-4");focus=3;MV_KEY(SDLK_RETURN);MV_KEY(SDLK_RETURN);
+      assert(mv_count==4 && mv_items[3].id[0] && !mv_items[1].id[0]);
+      focus=804;MV_KEY(SDLK_RETURN);assert(mv_main==3);
+      focus=803;MV_KEY(SDLK_RETURN);MV_KEY(SDLK_RETURN);assert(mv_items[1].id[0]);
+      focus=801;MV_KEY(SDLK_RETURN);assert(mode==3 && mv_main==0);
+      focus=806;MV_KEY(SDLK_RETURN);assert(!strcmp(screen,"grade") && focus==1106);
+      #undef MV_KEY
+    }
+    g5ui_open("grade"); gv_zone=0;
+    ajustes_definir_guia_previa_grande(0);capture(window,dir,"preview-card");
+    GfxRect card=gv_preview_rect();
+    ajustes_definir_guia_previa_grande(1);capture(window,dir,"preview-large");
+    GfxRect large=gv_preview_rect();
+    if(!baseline) {
+      assert(card.w==626 && large.w>card.w && large.x-GV_MX>=640);
+#ifndef GUIAPOLIR_BASELINE_CODE
+      ajustes_definir_guia_previa_destacar(1);ajustes_definir_guia_previa_sem_som(0);ajustes_definir_guia_dias(3);
+      ajustes_iniciar();
+      assert(ajustes_guia_previa_destacar() && !ajustes_guia_previa_sem_som() && ajustes_guia_dias()==3);
+      guia_definir_preview(1);gv_tick();SDL_Delay(620);gv_tick();
+      CatItem preview;assert(guia_pediu_preview(&preview) && !strcmp(preview.imdb,"c1"));
+      ajustes_definir_guia_previa_destacar(0);pedPreview=0;gv_tick();SDL_Delay(620);gv_tick();
+      assert(!guia_pediu_preview(&preview));
+#endif
+    }
+    puts("PASS: guide options rows, settings, multiview navigation and preview shots");
+    return 0;
+  }
   /* Back returns one level with focus restored; a closing sheet fades out. */
   g5ui_open("grade");gv_zone=5;focus=1104;gv_go("busca");assert(spot_aberto()&&!strcmp(screen,"grade"));
   spot_fechar();assert(focus==1104);

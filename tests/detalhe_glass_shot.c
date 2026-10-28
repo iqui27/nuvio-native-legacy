@@ -28,6 +28,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#define juntos_disponivel heroTogetherFixture
+int heroTogetherFixture(void) { return getenv("NUVIO_HERO_TOGETHER") != NULL; }
 #define extras_pedir            fx_pedir
 #define extras_carregando       fx_carregando
 #define extras_n_temporadas     fx_n_temporadas
@@ -827,6 +829,44 @@ int main(int argc, char **argv) {
       socialvis_definir_perfil_extra("nuvio:mari", &p); }
   }
 
+  if (quer(argc,argv,"hero-actions")) {
+    abrir(0,0,0,1);
+    gravar("collapsed");
+    SDL_Event e={0}; e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_RIGHT;
+    detail_evento(&e);
+    assert(acaoEm(botao)==ACAO_NOTA);
+    for (int k=0;k<50;k++) { SDL_Delay(16); quadros(1); }
+    gravar("expanded-rate");
+    while (acaoEm(botao)!=ACAO_MAIS) detail_evento(&e);
+    for (int k=0;k<30;k++) { SDL_Delay(16); quadros(1); }
+    gravar("more-focused");
+    e.key.keysym.sym=SDLK_RETURN; detail_evento(&e);
+    e.type=SDL_KEYUP; detail_evento(&e);
+    assert(detmais_aberto());
+    // Fixed frame times use the real renderer; no screenshot-only geometry.
+    const int frames[]={0,2,5,12,50};
+    int f=0;
+    for (int k=0;k<=50;k++) {
+      SDL_Delay(16); quadros(1);
+      if (k==frames[f]) {
+        char name[32]; snprintf(name,sizeof name,"morph-%d",f+1); gravar(name);
+        if (++f==5) break;
+      }
+    }
+    gravar("menu-open");
+    e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_ESCAPE; detail_evento(&e);
+    assert(!detmais_aberto() && acaoEm(botao)==ACAO_MAIS);
+    for (int k=0;k<75;k++) { SDL_Delay(16); quadros(1); }
+    assert(detmais_visivel()<.003f);
+    gravar("menu-closed");
+    e.key.keysym.sym=SDLK_LEFT;
+    while (botao>1) detail_evento(&e);
+    for (int k=0;k<50;k++) { SDL_Delay(16); quadros(1); }
+    assert(!maisAcoes && acoesVis<.003f);
+    gravar("collapsed-again");
+    puts("PASS: hero reveal and reverse morph, focus restored to More");
+    return 0;
+  }
   if (quer(argc,argv,"video")) {
     static const struct { const char *name; int movie,row,col; } shots[]={
       {"hero",1,-1,0},{"notas",1,SEC_NOTAS,0},{"trailers",1,SEC_TRAILERS,1},
