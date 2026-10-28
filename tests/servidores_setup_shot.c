@@ -129,6 +129,40 @@ static void capture(const char *dir, const char *name) {
 static void key(SDL_Keycode k);
 #include "servidores_review.inc"
 static void key(SDL_Keycode k){reviewDraw();SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=k;srvsetup_evento(&e);}
+// Sample above the labels, where only the visible step highlight fills the track.
+static int stepHighlightX(void) {
+  unsigned char pixels[1920 * 4];
+  reviewDraw(); glFinish();
+  glReadPixels(0, 1079 - (int)(ANC(316) + 10), 1920, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+  for (int x = (int)px(200) + 5; x < (int)px(200) + 1000; x++)
+    if (pixels[x*4] > 45 || pixels[x*4+1] > 45 || pixels[x*4+2] > 45) return x;
+  assert(!"missing visible step highlight");
+  return -1;
+}
+static void stepHighlightProof(void) {
+  opened = 1; provider = 1; worker.alive = 0;
+  int endpoints[2];
+  for (int i = 0; i < 2; i++) {
+    change(i ? USERS : DISCOVER);
+    for (int f = 0; f < 90; f++) { shotTime += 16; srvsetup_atualizar(shotTime); }
+    endpoints[i] = stepHighlightX();
+  }
+  assert(endpoints[1] > endpoints[0]);
+  for (int direction = 0; direction < 2; direction++) {
+    int previous = endpoints[1-direction];
+    change(direction ? USERS : DISCOVER);
+    for (int f = 0; f < 4; f++) {
+      shotTime += 16; srvsetup_atualizar(shotTime);
+      int x = stepHighlightX();
+      assert(x > endpoints[0] && x < endpoints[1] && "step highlight must interpolate visibly");
+      assert(direction ? x > previous : x < previous);
+      previous = x;
+    }
+    for (int f = 0; f < 90; f++) { shotTime += 16; srvsetup_atualizar(shotTime); }
+    assert(stepHighlightX() == endpoints[direction]);
+  }
+  puts("PASS: visible step-highlight x interpolates across intermediate frames in both directions");
+}
 // Reap the worker a step started; the sandbox has no network, so it ends fast.
 static void settle(void) {
   for (int i = 0; i < 30; i++) { shotTime += 16; srvsetup_atualizar(shotTime); }
@@ -379,7 +413,9 @@ int main(int argc,char **argv){
   if (getenv("NUVIO_SHOT_FLOW")) return flowProof(argv[1]);
   if (getenv("NUVIO_SHOT_BEHIND")) { profile=perfis_ativo(); behindProof(argv[1]); stepMotion(argv[1]); return 0; }
   const char *filter=getenv("NUVIO_SHOT_SCREEN");
-  opened=1;profile=perfis_ativo();provider=0;codeSince=1000;change(CHOOSE);if(!filter) capture(argv[1],"setup-escolher");
+  opened=1;profile=perfis_ativo();provider=0;codeSince=1000;
+  if (getenv("NUVIO_ESSENCE")) stepHighlightProof();
+  change(CHOOSE);if(!filter) capture(argv[1],"setup-escolher");
   key(SDLK_RIGHT);assert(selected==1);key(SDLK_LEFT);assert(selected==0);key(SDLK_ESCAPE);assert(!opened);
   struct {int state,p;const char *name;} scenes[]={
     {CODE,0,"setup-plex-pin"},{CODE,1,"setup-jellyfin-quickconnect"},{CONNECT_CODE,2,"setup-emby-connect"},

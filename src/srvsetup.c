@@ -914,7 +914,7 @@ void srvsetup_desenhar(Uint32 now) {
     const char *steps[] = {i18n("Escolher serviço"),i18n("Conectar"),i18n("Entrar"),i18n("Bibliotecas"),i18n("Pronto")};
     if (screen != MANAGE) {
       float x = px(200), y = ANC(screen==CHOOSE?335:316), at = stepAnim < 0 ? stepOf(screen) : stepAnim;
-      float width = plrui_seg(steps, NULL, 5, at, 0, x, y, 1);
+      float width = plrui_seg(steps, NULL, 5, at, 1, x, y, 1);
       plrui_trilho((GfxRect){x,y+54,width,3},anim_clamp(at/4,0,1),-1,-1,-1,.9f);
     }
   }
