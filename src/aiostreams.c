@@ -97,6 +97,7 @@ void aio_capability(AioCapability *capability, int http) {
 }
 int aio_manifesto(AioSnapshot *s, const char *json) {
   char id[128] = "", name[96] = "";
+  s->catalogTotal=s->catalogOmitted=0;
   s->manifestAccess = AIO_FAILED;
   s->valida = s->requerida = s->catalogos = s->recursos = 0;
   const char *end=json?js_fim(json):NULL;
@@ -124,7 +125,7 @@ int aio_manifesto(AioSnapshot *s, const char *json) {
     const char *end = value_end(p); if (!end || end <= p) break; p = end;
   }
   a = member(json, "catalogs"); p = a && *a == '[' ? a+1 : NULL;
-  while (p && s->catalogos < AIO_MAX) {
+  while (p) {
     while (isspace((unsigned char)*p) || *p == ',') p++;
     if (*p != '{') break;
     const char *end = js_fim(p); if (!end) break;
@@ -133,7 +134,12 @@ int aio_manifesto(AioSnapshot *s, const char *json) {
     js_texto_raiz_em(p,end,"name",c.nome,sizeof c.nome);
     js_texto_raiz_em(p,end,"type",c.tipo,sizeof c.tipo);
     safe(c.id); safe(c.nome); safe(c.tipo);
-    if (c.id[0] && c.tipo[0]) { if (!c.nome[0]) strcpy(c.nome,c.id); s->catalogo[s->catalogos++] = c; }
+    if (c.id[0] && c.tipo[0]) {
+      s->catalogTotal++;
+      if (!c.nome[0]) strcpy(c.nome,c.id);
+      if(s->catalogos<AIO_CATALOG_MAX) s->catalogo[s->catalogos++] = c;
+      else s->catalogOmitted++;
+    }
     p = end;
   }
   s->manifestAccess = AIO_AVAILABLE;

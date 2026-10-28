@@ -138,6 +138,11 @@ int main(void) {
   // Footer focus keeps the scrolled viewport instead of resetting it.
   pagina=CATALOGOS; snap.catalogos=8; scrollFoco=11;
   assert(janelaCatalogos()==3);
+  snap.catalogos=500; foco=499; scrollFoco=499;
+  assert(nConteudo()==504 && janelaCatalogos()==495);
+  down.key.keysym.sym=SDLK_UP; aioui_evento(&down); assert(foco==498);
+  foco=499; down.key.keysym.sym=SDLK_RETURN; aioui_evento(&down);
+  assert(foco==499);
   // Link/subtitle windows follow the fractional spring, rows fade across one slot (no integer jump).
   scrollFoco=3.5f; float w=janela(2,8,3,1);
   assert(w>1.4f && w<1.6f && (int)w==1);

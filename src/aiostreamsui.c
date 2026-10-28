@@ -908,6 +908,9 @@ static void workspace(void) {
 
   if(pagina==CATALOGOS) {
     texto(TXT_ILHA_SECAO,i18n("Catálogos publicados pelo manifesto"),453,285,690,220);
+    char inventory[96];
+    snprintf(inventory,sizeof inventory,i18n("%d publicados · %d indisponíveis"),snap.catalogTotal,snap.catalogOmitted);
+    texto(TXT_ILHA_SUB,inventory,1140,285,290,170);
     // State column sized to its longest label so "Desligado" never truncates at 85%.
     float lw=fmaxf(t21_texto_linha(TXT_ILHA_NUM,i18n("Ligado"),180,180,180,255,400).w,
                    t21_texto_linha(TXT_ILHA_NUM,i18n("Desligado"),180,180,180,255,400).w);

@@ -3,6 +3,7 @@
 #define NV_AIOSTREAMS_H
 #include <stddef.h>
 #define AIO_MAX 128
+#define AIO_CATALOG_MAX 512 // Independent of Home request limits.
 #define AIO_DETAIL_MAX 2048
 #define AIO_GROUPS 9
 #define AIO_ID_PREFIX "com.aiostreams."
@@ -31,7 +32,8 @@ typedef struct {
   char nome[96], versao[40], host[256], resumo[8][256];
   int regraCache, regraUncached;
   char resolucaoObrigatoria[128], resolucaoExcluida[128], idiomaPreferido[128];
-  AioCatalogo catalogo[AIO_MAX];
+  int catalogTotal, catalogOmitted;
+  AioCatalogo catalogo[AIO_CATALOG_MAX];
   AioItem servico[32], addon[AIO_MAX];
   AioResultado resultado[AIO_MAX];
 } AioSnapshot;
