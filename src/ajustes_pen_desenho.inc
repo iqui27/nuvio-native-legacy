@@ -231,3 +231,188 @@ static void ajPenHome(void) {
   if(av)ajPenChip("Opções técnicas","aj_terminal",1584,912,214,aj4Linha==13 && aj4Topo<0,1,13);
   ajPenRodape("Ajustes",1,3);
 }
+
+/* iPhone Duo closed (portrait phone): the Settings hub and its pages as one
+   island card list, sized in physical pt. Drawn on the same virtual canvas;
+   values and actions stay owned by the TV renderer above. */
+static int ajFone(void) {
+#ifdef NV_TOUCH_UI
+  return layout_modo_mobile() && NV_LAYOUT_REAL_H > NV_LAYOUT_REAL_W;
+#else
+  return 0;
+#endif
+}
+static float ajPt(float pt) { return pt*NV_LAYOUT_REAL_W/(466*gfx_escala()); }
+/* Text at pt px height: the layer factor makes the rasteriser draw at that size. */
+static float ajFT(const char *s,TxtEstilo st,float nn,float pt,float x,float y,float maxW,float a,int right) {
+  if(!s || !s[0])return 0;
+  float eh=gfx_escala(),f=pt/nn*NV_LAYOUT_REAL_W/466,k=eh/f;
+  gfx_escala_sair(f);
+  TxtLinha t=ajTxtC(st,s,maxW*k);
+  float w=t.w/k;
+  txt_desenhar_alpha(t,right?x*k-t.w:x*k,(y+ajPenDy)*k-ajPenDy,a);
+  gfx_escala_sair(eh);
+  return w;
+}
+static float ajFoneRol,ajFoneRolMax,ajFoneEsc=1;
+static int ajFonePag=-2,ajFoneUlt=-1;
+static int ajFoneToque(const PonteiroRolagem *e) {
+  if(e->fase==PONT_ROL_INICIO)return 1;
+  if(e->fase==PONT_ROL_MOVER) {
+    ajFoneRol-=e->delta/ajFoneEsc;
+    if(ajFoneRol<0)ajFoneRol=0;
+    if(ajFoneRol>ajFoneRolMax)ajFoneRol=ajFoneRolMax;
+  }
+  return 0;
+}
+static void ajFoneFundo(void) {
+  GfxRect s={0,0,NV_VTELA_W,NV_VTELA_H};
+  gfx_cor(s,0,.0424f,.0531f,.0638f,1);
+  gfx_luz_canto(s,0,NV_VTELA_H*.35f,NV_VTELA_W*.8f,NV_VTELA_W*.9f,.1883f,.1818f,.3155f,.5f);
+}
+static void ajFoneTopo(float L,float R,float T,int pagina,const char *titulo) {
+  float y=T+ajPt(10);
+  if(pagina) {
+    GfxRect b={L,y-ajPt(4),ajPt(36),ajPt(36)};
+    ajNeutro(b,ajPt(18),.09f,.18f,.19f,.21f,1);
+    ajIcone("aj_arrow-left",b.x+ajPt(9),b.y+ajPt(9),ajPt(18),1);
+    aj4Alvo((GfxRect){b.x-ajPt(4),b.y-ajPt(4),ajPt(44),ajPt(44)},5,0);
+    ajFT(titulo,TXT_G28B,28,22,L+ajPt(48),y,R-L-ajPt(48+44),1,0);
+  } else ajFT(titulo,TXT_G28B,28,22,L,y+ajPt(2),R-L-ajPt(44),1,0);
+  GfxRect q={R-ajPt(36),y-ajPt(4),ajPt(36),ajPt(36)};
+  int foco=aj4Topo==0;
+  if(foco)ajPilulaAcento(q,ajPt(18),1);else ajNeutro(q,ajPt(18),.07f,.14f,.15f,.17f,1);
+  if(foco)ajIconeT("aj_search",q.x+ajPt(9),q.y+ajPt(9),ajPt(18),1);else ajIcone("aj_search",q.x+ajPt(9),q.y+ajPt(9),ajPt(18),.85f);
+  aj4Alvo((GfxRect){q.x-ajPt(4),q.y-ajPt(4),ajPt(44),ajPt(44)},0,0);
+#ifndef NV_IOS
+  char hora[32];ajCenaHora(hora,sizeof hora);
+  ajFT(hora,TXT_G18M,18,15,q.x-ajPt(10),y+ajPt(2),ajPt(70),.7f,1);
+#endif
+}
+static void ajFoneLinha(float L,float R,float y,float h,const char *icone,const char *nome,const char *valor,int foco,int zona,int row,int ultima) {
+  GfxRect r={L,y,R-L,h};
+  if(foco)ajNeutro((GfxRect){L+ajPt(6),y+ajPt(2),R-L-ajPt(12),h-ajPt(4)},ajPt(14),.14f,.169f,.176f,.204f,1);
+  ajIcone(icone,L+ajPt(16),y+(h-ajPt(20))/2,ajPt(20),foco?1:.78f);
+  float vx=R-ajPt(16)-ajPt(12);
+  float vw=0;
+  if(valor && valor[0])vw=ajFT(valor,TXT_G18R,18,13,vx-ajPt(6),y+h/2-ajPt(8),(R-L)*.4f,.55f,1)+ajPt(6);
+  ajFT(nome,TXT_G18M,18,16,L+ajPt(52),y+h/2-ajPt(10),vx-vw-(L+ajPt(52))-ajPt(8),1,0);
+  ajIcone("aj_chevron-right",vx,y+(h-ajPt(14))/2,ajPt(14),.45f);
+  if(!ultima)gfx_cor((GfxRect){L+ajPt(52),y+h-1,R-L-ajPt(52)-ajPt(16),1},0,1,1,1,.08f);
+  aj4Alvo(r,zona,row);
+}
+static void ajFoneLista(void) {
+  ajFoneFundo();
+  float esc=gfx_escala(),L=ajPt(16),R=NV_VTELA_W-nv_inset_d/esc-ajPt(16),RB=NV_VTELA_W,T=nv_inset_t/esc;
+  ajFoneTopo(L,R,T,0,"Ajustes");
+  static const char *const nome[14]={"Reproduzir","Áudio e legendas","Minha tela","Perfil e serviços","Presets","Diferente do padrão","Regras da TV","O que o Nuvio faz?",NULL,"TV ao vivo e guia","Controle parental","Desempenho","Sobre e ajuda","Opções técnicas"};
+  static const char *const icone[14]={"aj_play","aj_languages","aj_layout-grid","aj_users","aj_sparkles","aj_rotate-ccw","aj_shield","aj_sparkles",NULL,"aj_tv","aj_lock","aj_cpu","aj_info","aj_terminal"};
+  static const int valueOps[]={AJ_QUALIDADE,AJ_AUD_LINGUA,AJ_HOME_LAYOUT,AJ_PERFIL_ATIVO};
+  int ordem[13],n=0;
+  static const int base[]={0,1,2,3,9,10,11,12,7,4,5,6};
+  for(int i=0;i<12;i++)ordem[n++]=base[i];
+  if(lig(AJ_AVANCADAS))ordem[n++]=13;
+  float h=ajPt(48),y0=T+ajPt(62);
+  ajNeutro((GfxRect){L,y0,RB-L+ajPt(18),h*n},ajPt(18),.07f,.11f,.12f,.14f,1);
+  for(int k=0;k<n;k++) {
+    int id=ordem[k];char val[160]="";
+    if(id<4) {
+      snprintf(val,sizeof val,"%s",textoValor(valueOps[id]));
+      if(id==3)snprintf(val,sizeof val,"%s",pfNome(perfis_ativo()));
+      if(id==1 && !strcmp(ling_opcao_codigo(uxValorAtual(AJ_AUD_LINGUA)),"pt"))snprintf(val,sizeof val,"%s",i18n("Português (Brasil)"));
+    } else if(id==9)snprintf(val,sizeof val,i18n("%s · %d canais"),textoValor(AJ_IPTV_CONTA),ajPenChannels());
+    else if(id==11)snprintf(val,sizeof val,"%s",textoValor(AJ_GPU_EFEITOS));
+    else if(id==5)snprintf(val,sizeof val,"%d",aj4Diferencas(aj4Opcoes));
+    ajFoneLinha(L,RB,y0+k*h,h,icone[id],nome[id],val,aj4Linha==id && aj4Topo<0,1,id,k==n-1);
+  }
+}
+static void ajFoneValor(const AjPenRow *row,int col,int i,char *val,size_t n) {
+  snprintf(val,n,"%s",row->op>=0?textoValor(row->op):row->op==-3?i18n(admin_perfil_pin_definido(perfis_ativo())?"PIN definido":"Definir um PIN"):row->op==-6?pfNome(ajPenParentProfile()):row->op==-4?i18n("Livre e até 10 anos"):i18n("Abrir"));
+  if((row->op==AJ_AUD_LINGUA || row->op==AJ_LEG_LINGUA) && !strcmp(ling_opcao_codigo(uxValorAtual(row->op)),"pt"))snprintf(val,n,"%s",i18n("Português (Brasil)"));
+  if(row->op>=0 && OPCOES[row->op].tipo==OP_ACAO && !val[0])snprintf(val,n,"%s",i18n("Abrir"));
+  if(ajPenPage==39 && i==5 && col==1)val[0]=0;
+  if(ajPenPage==40 && col==1 && i==4)val[0]=0;
+  if(ajPenPage==41 && row->op==AJ_IPTV_CONTA)snprintf(val,n,"%d",iptv_contas(NULL,0));
+  if(ajPenPage==38 && (row->op==AJ_FALHA_PROVEDORES || row->op==AJ_FALHA_ADDONS))snprintf(val,n,i18n(row->op==AJ_FALHA_PROVEDORES?"%d provedores":"%d addons"),ajPenFailures(row->op==AJ_FALHA_PROVEDORES));
+  if(ajPenPage==36 && row->op==AJ_DET_META_EXT) {
+    int count=0;for(int op=AJ_TMDB_ARTE;op<=AJ_TMDB_CW;op++)if(lig(op))count++;
+    snprintf(val,n,i18n("%d ajustes"),count);
+  }
+  if(row->op<=-10 && row->op>=-13)ajPenParentText(-10-row->op,perfil_regra(ajPenParentProfile(),-10-row->op),val,n);
+  if(row->op==-4)ajPenParentText(PR_FILMES,perfil_regra(ajPenParentProfile(),PR_FILMES),val,n);
+  if(ajPenPage==28 && row->op==AJ_LEG1_RESTAURAR)val[0]=0;
+  if(ajPenPage==28 && row->op==AJ_LEG1_ATRASO && i==5)snprintf(val,n,i18n("%+.3f s"),uxValorAtual(row->op)/1000.0);
+}
+static void ajFonePagina(void) {
+  const AjPenPage *page=ajPenCurrent();
+  ajFoneFundo();
+  float esc=gfx_escala(),L=ajPt(16),R=NV_VTELA_W-nv_inset_d/esc-ajPt(16),RB=NV_VTELA_W,T=nv_inset_t/esc;
+  ajFoneEsc=esc;
+  float top=T+ajPt(56),bottom=NV_VTELA_H,hr=ajPt(52),hk=ajPt(30);
+  /* total content height */
+  float total=0;int rows=0;
+  for(int c=0;c<2;c++)if(page->cols[c].n){total+=hk+page->cols[c].n*hr;rows+=page->cols[c].n;}
+  ajFoneRolMax=fmaxf(0,total+ajPt(24)-(bottom-top));
+  if(ajFonePag!=ajPenPage) { ajFonePag=ajPenPage;ajFoneRol=0;ajFoneUlt=-1; }
+  /* keyboard focus keeps the row in view */
+  if(ajPenRow!=ajFoneUlt && aj4Topo<0) {
+    float yy=0;int idx=0;
+    for(int c=0;c<2;c++) {
+      if(!page->cols[c].n)continue;
+      yy+=hk;
+      if(ajPenRow>=idx && ajPenRow<idx+page->cols[c].n) {
+        float ry=yy+(ajPenRow-idx)*hr;
+        if(ry<ajFoneRol)ajFoneRol=ry-hk;
+        else if(ry+hr>ajFoneRol+(bottom-top))ajFoneRol=ry+hr-(bottom-top)+ajPt(12);
+      }
+      yy+=page->cols[c].n*hr;idx+=page->cols[c].n;
+    }
+    if(ajFoneRol<0)ajFoneRol=0;if(ajFoneRol>ajFoneRolMax)ajFoneRol=ajFoneRolMax;
+    ajFoneUlt=ajPenRow;
+  }
+  ponteiro_rolagem(ajFoneToque);
+  GfxRecorteAnt ant=gfx_recorte_dentro(0,top,NV_VTELA_W,bottom-top);
+  float y=top-ajFoneRol;int index=0;
+  for(int c=0;c<2;c++) {
+    const AjPenColumn *col=&page->cols[c];if(!col->n)continue;
+    if(col->title && col->title[0])ajFT(col->title,TXT_AJ_MINI14,14,11,L+ajPt(4),y+ajPt(10),RB-L,.45f,0);
+    y+=hk;
+    float py=y;
+    ajPenPanel(L,py,RB-L+ajPt(18),col->n*hr,0);
+    for(int i=0;i<col->n;i++,index++) {
+      const AjPenRow *row=&col->rows[i];float ry=y+i*hr;
+      int visible=ry+hr>top && ry<bottom;
+      if(!visible)continue;
+      int foco=index==ajPenRow && aj4Topo<0;
+      int ok=row->op>=0?ajOpcaoDisponivel(row->op):row->op!=-1;
+      float a=ok?1:.45f;
+      if(foco)ajNeutro((GfxRect){L+ajPt(6),ry+ajPt(2),RB-L-ajPt(12),hr-ajPt(4)},ajPt(14),.14f,.169f,.176f,.204f,1);
+      ajIcone(row->icon,L+ajPt(16),ry+(hr-ajPt(20))/2,ajPt(20),foco?1:.75f);
+      float rx=RB-ajPt(16),tx=L+ajPt(52);
+      int help=row->help && row->help[0];
+      float ty=ry+(help?ajPt(9):(hr-ajPt(16))/2-ajPt(2));
+      if(row->toggle && row->op!=-1) {
+        int on=row->op<=-10 && row->op>=-13?perfil_regra(ajPenParentProfile(),-10-row->op):row->op==-2?perfil_ajustes_travados(ajPenParentProfile()):uxValorAtual(row->op)==0;
+        if(ajPenPage==AJ_PEN_PARENTAL && row->op==AJ_ENQUETES)on=!on;
+        float r=.20f,g=.21f,b=.24f;if(on)ajustes_acento(&r,&g,&b);
+        float sw=ajPt(40),sh=ajPt(24),sx=rx-sw,sy=ry+(hr-sh)/2;
+        gfx_cor((GfxRect){sx,sy,sw,sh},.5f,r,g,b,1);
+        gfx_cor((GfxRect){sx+ajPt(2)+(on?ajPt(16):0),sy+ajPt(2),ajPt(20),ajPt(20),},.5f,1,1,1,1);
+        ajFT(row->title,TXT_G18M,18,16,tx,ty,sx-tx-ajPt(10),a,0);
+      } else {
+        char val[160];ajFoneValor(row,c,i,val,sizeof val);
+        float vx=rx-ajPt(14)-ajPt(4),vw=0;
+        if(val[0])vw=ajFT(val,TXT_G18R,18,13,vx,ry+(hr-ajPt(14))/2-ajPt(1),(RB-L)*.38f,.55f,1)+ajPt(8);
+        ajIcone("aj_chevron-right",rx-ajPt(14),ry+(hr-ajPt(14))/2,ajPt(14),.45f);
+        ajFT(row->title,TXT_G18M,18,16,tx,ty,vx-vw-tx-ajPt(6),a,0);
+      }
+      if(help)ajFT(row->help,TXT_AJ_MINI14,14,11,tx,ty+ajPt(21),rx-tx-ajPt(54),.4f,0);
+      if(i<col->n-1)gfx_cor((GfxRect){tx,ry+hr-1,rx-tx,1},0,1,1,1,.08f);
+      GfxRect t={L,fmaxf(ry,top),RB-L,fminf(ry+hr,bottom)-fmaxf(ry,top)};
+      if(t.h>ajPt(8))aj4Alvo(t,8,index);
+    }
+    y+=col->n*hr;
+  }
+  gfx_recorte_voltar(ant);
+  ajFoneTopo(L,R,T,1,page->title);
+}

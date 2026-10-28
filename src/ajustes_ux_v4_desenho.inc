@@ -530,6 +530,11 @@ static void aj4PerfilDesenhar(void) {
 #include "ajustes_pen_components.inc"
 static void ajPenDrawPage(void) {
   aj4SeloAviso=0;
+  if(ajFone() && !iptvForm.tipo && ajPenParentEditor<0 && !uxEditor && !aj4Util && !aj4Review) {
+    int p=ajPenPage;
+    if(focoIndice) { ajFoneLista();return; }
+    if(p!=AJ_PEN_SOURCES && p!=AJ_PEN_COMPONENTS && p!=AJ_PEN_RULES && p!=AJ_PEN_TOUR && !(p>=AJ_PEN_PROVIDER && p<=AJ_PEN_ADDON_FAILURES) && ajPenCurrent()) { ajFonePagina();return; }
+  }
   if(iptvForm.tipo)ajDesenharTela();
   else if(ajPenParentEditor>=0)ajPenParentChoice();
   else if(uxEditor)ajPenEditor();
