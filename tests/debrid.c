@@ -307,6 +307,24 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
   *st = 404; return dup2s("{}");
 }
 
+// PUT de edicao (Airlock): grava url, Authorization e corpo para o teste conferir
+static int   colocarChamadas, colocarSt = 200;
+static const char *colocarResp = "{\"success\":true,\"error\":null,\"detail\":\"ok\",\"data\":{}}";
+static char  colocarUrl[300], colocarAuth[260], colocarCorpo[200];
+char *rede_colocar_st(const char *url, int s, const char *const *cab,
+                      const char *corpo, int *st) {
+  int k;
+  (void)s;
+  colocarChamadas++;
+  snprintf(colocarUrl, sizeof colocarUrl, "%s", url);
+  snprintf(colocarCorpo, sizeof colocarCorpo, "%s", corpo);
+  colocarAuth[0] = 0;
+  for (k = 0; cab && cab[k]; k++)
+    if (!strncmp(cab[k], "Authorization:", 14)) snprintf(colocarAuth, sizeof colocarAuth, "%s", cab[k]);
+  *st = colocarSt;
+  return dup2s(colocarResp);
+}
+
 // o parser puxa badges; duble
 unsigned long long badges_detectar(const char *t) { (void)t; return 0; }
 unsigned long long badges_bit(const char *id) { (void)id; return 0; }
@@ -1064,6 +1082,42 @@ static void contas(void) {
   OK("contas RD/TB/PM: fixtures active/expired/badkey, cache, offline, play e troca de chave");
 }
 
+static void airlock(void) {
+  char det[160] = "";
+  // sem chave nao ha PUT nenhum
+  debrid_esquecer();
+  colocarChamadas = 0;
+  assert(!debrid_tb_airlock(0, 42, 1, det, sizeof det) && !det[0]);
+  assert(colocarChamadas == 0);
+  debrid_definir_chave("torbox", K_TB);
+  // torrent: liga; a edicao leva so o id e `airlocked`, com o Bearer da chave
+  colocarChamadas = 0;
+  assert(debrid_tb_airlock(0, 42, 1, det, sizeof det) == 1 && !det[0]);
+  assert(colocarChamadas == 1);
+  assert(!strcmp(colocarUrl, "https://api.torbox.app/v1/api/torrents/edittorrent"));
+  assert(!strcmp(colocarCorpo, "{\"torrent_id\":42,\"airlocked\":true}"));
+  assert(!strcmp(colocarAuth, "Authorization: Bearer " K_TB));
+  // usenet: desliga, com o id proprio do usenet
+  assert(debrid_tb_airlock(1, 7, 0, det, sizeof det) == 1 && !det[0]);
+  assert(colocarChamadas == 2);
+  assert(!strcmp(colocarUrl, "https://api.torbox.app/v1/api/usenet/editusenetdownload"));
+  assert(!strcmp(colocarCorpo, "{\"usenet_download_id\":7,\"airlocked\":false}"));
+  assert(!strcmp(colocarAuth, "Authorization: Bearer " K_TB));
+  // recusa do plano (HTTP 403): 0 e a frase do TorBox em detalhe
+  colocarSt = 403;
+  colocarResp = "{\"success\":false,\"error\":\"PLAN_RESTRICTED_FEATURE\",\"detail\":\"Upgrade your plan\"}";
+  assert(debrid_tb_airlock(0, 42, 1, det, sizeof det) == 0);
+  assert(!strcmp(det, "Upgrade your plan"));
+  // 2xx com success:false tambem e recusa
+  colocarSt = 200;
+  colocarResp = "{\"success\":false,\"error\":\"DOWNLOAD_NOT_CACHED\",\"detail\":\"Torrent is not cached.\"}";
+  assert(debrid_tb_airlock(0, 42, 1, det, sizeof det) == 0);
+  assert(!strcmp(det, "Torrent is not cached."));
+  colocarResp = "{\"success\":true,\"error\":null,\"detail\":\"ok\",\"data\":{}}";
+  debrid_esquecer();
+  OK("Airlock do TorBox: torrent/usenet, sem chave, recusa de plano e success:false");
+}
+
 int main(void) {
   unsigned scope = debrid_tb_geracao();
   debrid_abrir_sessao(100);
@@ -1113,6 +1167,7 @@ int main(void) {
   negativaParcial();
   servicoEspecifico();
   parser();
+  airlock();
 
   fflush(stdout);
   assert(dup2(velho, 1) >= 0);
@@ -1164,6 +1219,7 @@ int main(void) {
   assert(strstr(capt, "[debrid] Premiumize: conta sem plano para a API; fora pelo resto da sessao"));
   // a linha que se procura no D1 quando alguem diz "o P2P nao toca"
   assert(strstr(capt, "[debrid] TorBox: deadbeef baixando no TorBox (37%, estado=downloading)"));
+  assert(strstr(capt, "[partes] TorBox airlock on (torrent): HTTP 403, error=PLAN_RESTRICTED_FEATURE"));
   OK("corpo do 403 no log, sem a chave");
 
   puts("debrid: tudo ok");

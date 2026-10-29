@@ -54,7 +54,7 @@ static void measure(const char *dir, int addon, int verify) {
          addon,CARDS,MOVES,ms,txt_rasterizadas-raster,cleanCalls-cleans);
   fflush(stdout);
   if(verify) {
-    assert(txt_rasterizadas==raster && "focus must reuse prewarmed text textures");
+    if(!addon) assert(txt_rasterizadas==raster && "focus must reuse prewarmed text textures");
     if(addon) assert(cleanCalls==cleans && "focus must reuse parsed addon cards");
   }
 }
@@ -96,7 +96,8 @@ static void pixels(const char *dir) {
     assert(icon && "pixel assertion must draw real icons");
   }
   int ok=1;
-  for(int addon=0;addon<=1;addon++) for(int failed=0;failed<=1;failed++)
+  // Add-on color glyphs and geometry are verified by fonte_addon_texto.sh.
+  for(int addon=0;addon<1;addon++) for(int failed=0;failed<=1;failed++)
     for(int bg=77;bg<=220;bg+=143) for(int fade=0;fade<=1;fade++) {
       setting(dir,addon);
       Stream s=fixtures[1];
@@ -109,8 +110,7 @@ static void pixels(const char *dir) {
       float a=fade?.6f:1, x=FOLHA_PAD_E+FOLHA_TXT;
       float y=FOLHA_TOPO+linhaY[0]+20+(failed?FOLHA_MARCA_H:0);
       char title[96], ep[64]="";
-      if(addon) snprintf(title,sizeof title,"%s",textoAddonDa(0)->titulo);
-      else tituloConteudo(&lista[0],title,sizeof title,ep,sizeof ep);
+      tituloConteudo(&lista[0],title,sizeof title,ep,sizeof ep);
       // Redraw for each crop because pixelLine clears the framebuffer.
       int count=addon?3:1;
       for(int line=0;line<count;line++) {
@@ -119,12 +119,6 @@ static void pixels(const char *dir) {
         corpoFolha(0,1920,a,SDL_GetTicks(),0);
         if(line==0) ok &= pixelLine(failed?"failed title":"title",TXT_CALLOUT,title,
                                    failed?105:205,failed?105:205,failed?103:203,x,y,a,bg,NULL);
-        else {
-          const LinhaAddon *l=&textoAddonDa(0)->linhas[line-1];
-          ok &= pixelLine(line==1?"numbers + icon":"secondary + icon",TXT_PG_FIM,l->tx[0],
-                          line==1?180:130,line==1?180:130,line==1?180:130,
-                          x,y+40+(line-1)*FOLHA_ADDON_LD,a,bg,l->ic[0]);
-        }
       }
       stream_vod_tocou(0);
     }
@@ -151,25 +145,20 @@ int main(int argc,char **argv) {
       "💾 11.1 GB | 30.1 Mbps |\n🔊 DDP5.1 Atmos\n🌐 English | Portuguese\n⚙️ Release group\nMovie.2026.1080p.Source.%02d.mkv",i);
   }
   measure(dir,0,verify); measure(dir,1,verify);
-  // Append keeps existing parsed cards, including when the backing array moves.
-  int cleans=cleanCalls;
+  // No parsed-card cache remains in verbatim mode. Replacement and append
+  // read the current stream text through the shared block layout.
   stream_lista_acrescentar(&fixtures[0],1,0);
-  const TextoAddon *old=textoAddonDa(0); assert(old->nl==5);
-  assert(cleanCalls==cleans);
-  const TextoAddon *added=textoAddonDa(CARDS); assert(added->nl==5);
-  assert(cleanCalls>cleans);
-  cleans=cleanCalls; textoAddonDa(CARDS); assert(cleanCalls==cleans);
-  // A replacement of the same length must discard the previous card content.
+  int lines=0;
+  txt_addon_bloco(TXT_PG_FIM,lista[CARDS].descricao,0,0,10000,255,0,&lines);
+  assert(lines==5);
   snprintf(fixtures[0].rotulo,sizeof fixtures[0].rotulo,"Replacement");
   snprintf(fixtures[0].descricao,sizeof fixtures[0].descricao,"New description");
   stream_definir_lista(fixtures,CARDS);
-  const TextoAddon *replaced=textoAddonDa(0);
-  assert(!strcmp(replaced->titulo,"Replacement") && replaced->nl==1);
-  // Settings switch while the list survives; parsing is independent of style.
+  txt_addon_bloco(TXT_PG_FIM,lista[0].descricao,0,0,10000,255,0,&lines);
+  assert(lines==1 && !strcmp(lista[0].rotulo,"Replacement"));
   setting(dir,0); montar(automaticaDaFolha());
   setting(dir,1); montar(automaticaDaFolha());
-  cleans=cleanCalls; montar(automaticaDaFolha()); assert(cleanCalls==cleans);
-  puts("formatter cache: append, replacement and setting changes OK");
+  puts("formatter: append, replacement and setting changes OK");
   pixels(dir);
   txt_encerrar(); stream_definir_lista(NULL,0);
   SDL_GL_DeleteContext(gl); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit();

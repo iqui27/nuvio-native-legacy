@@ -152,6 +152,10 @@ int main(void) {
     return 2;
   }
 
+  CONFERE(strstr(CAB[0], "https://github.com/iqui27/nuvio-native-legacy") &&
+          strstr(CAB_WQ[0], "https://github.com/iqui27/nuvio-native-legacy"),
+          "Wikimedia User-Agent needs a public contact URL");
+
   // --- 1. sparqlCampo PEGA A VARIAVEL CERTA ---------------------------------
   // O documento tem "value" em toda variavel. Um js_texto cru devolveria o
   // primeiro deles para qualquer pergunta — e a bilheteria apareceria como
@@ -180,6 +184,12 @@ int main(void) {
     snprintf(s, sizeof s, "%s", "[olhando pela janela] Voce sabe.");
     limparWiki(s, sizeof s);
     CONFERE(!strcmp(s, "Voce sabe."), "rubrica: \"%s\"", s); }
+
+  {
+    SfFrase episode[2];
+    int n=extrairFalas("== Season 1 ==\n=== Pilot [1.1] ===\n: '''House''': Everybody lies, especially when they say otherwise.\n",episode,2);
+    CONFERE(n==1 && !strcmp(episode[0].quem,"House · S1:E1"),"episode credit was lost");
+  }
 
   // --- 3. EXTRACAO DAS FALAS, NOS DOIS FORMATOS -----------------------------
   { SfFrase c[32];

@@ -42,6 +42,8 @@ void perfil_abrir(void);
 // abre esta tela inteira. Sem chamador, o modo lateral era codigo morto
 // desenhando um terceiro estado que ninguem mais alcancava.
 void perfil_fechar(void);
+void perfil_suspender(void);
+void perfil_retomar(void);
 int  perfil_aberto(void);
 int  perfil_quer_sair(void);       // consome o pedido de voltar
 int  perfil_pediu_relogio(void);
@@ -56,6 +58,10 @@ void perfil_definir_erro(const char *mensagem);
 void perfil_definir_estado(PerfilEstado estado, const char *mensagem);
 PerfilEstado perfil_estado(void);
 int  perfil_pediu_atualizar(void);
+// Botao Conquistas do cabecalho (resumo): OK nele pede a tela de conquistas;
+// quem a abre e o roteador. O segundo diz se o foco esta nele (testes).
+int  perfil_pediu_conquistas(void);
+int  perfil_foco_conquistas(void);
 
 void perfil_evento(const SDL_Event *e);
 void perfil_atualizar(float dt, Uint32 agora);
@@ -68,6 +74,8 @@ int perfil_item_selecionado(PerfilDestaque *saida);
 // Retorna 1 uma vez apos OK no seletor do duelo ("Voce e Fulano"): `id`
 // recebe o pessoaId de socialvis para o app abrir o perfil do amigo.
 int perfil_pediu_amigo(char *id, size_t tam);
+// Retorna 1 uma vez apos OK no botao "Caca" do canto: o app abre a tela Caca.
+int perfil_pediu_caca(void);
 // Depois de perfil_abrir, na volta do perfil do amigo: reabre o duelo.
 void perfil_voltar_ao_duelo(void);
 

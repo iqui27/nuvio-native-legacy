@@ -39,8 +39,8 @@ int main(void) {
     }
   }
   montarCarga(actual, sizeof actual, url, 0, "", "", "window_id_dummy", 3, 320);
-  assert(strstr(actual, "\"bufferMaxLevel\":67108864"));
-  for (int freeMb = -1; freeMb <= 255; freeMb += 256) {
+  assert(strstr(actual, "\"bufferMaxLevel\":134217728"));
+  for (int freeMb = -1; freeMb <= 167; freeMb += 168) {
     montarCarga(actual, sizeof actual, url, 0, "", "", "window_id_dummy", 3, freeMb);
     assert(!strcmp(actual, automatic));
   }

@@ -1,7 +1,7 @@
 // #205: no estilo LUZ da escolha de perfil (psestilos.c), a linha de horizonte
 // — a barra comprida e fina de luz embaixo do bloco de perfis/continuar
 // assistindo — sai da tela. O dono pediu so a barra; todo o resto do estilo
-// (a luz do perfil, a do vizinho, os veus e o grao) continua no lugar.
+// (a luz do perfil, a do vizinho e os veus) continua no lugar.
 //
 // Sem janela, sem SDL e sem rede: os dubles gravam cada gfx_rect/gfx_cor
 // chamado por psestilos_desenhar e o teste olha o que foi pedido a GPU
@@ -46,6 +46,8 @@ GLuint tex_obter_larg_qualquer(const char *c, float l) { (void)c; (void)l; retur
 float tex_aspecto(const char *c) { (void)c; return 1.0f; }
 
 // O grao de filme nasce de uma textura GL: aqui os nomes so precisam existir.
+#undef glTexImage2D
+int perftv_enabled, perftv_uploads;
 void glGenTextures(GLsizei n, GLuint *t) { assert(n == 1 && t); *t = 1; }
 void glBindTexture(GLenum a, GLuint b) { (void)a; (void)b; }
 void glTexParameteri(GLenum a, GLenum b, GLint c) { (void)a; (void)b; (void)c; }
@@ -96,7 +98,7 @@ int main(void) {
   confere("o fundo escuro da tela continua", nCores >= 1 && cores[0].w >= 1900.0f);
   confere("a luz do perfil em foco continua", temModo(GFX_SOMBRA));
   confere("os veus de borda continuam", temModo(GFX_VEU_TOPO) && temModo(GFX_VEU_BAIXO));
-  confere("o grao de filme continua", temModo(GFX_TEXTO));
+  confere("Light has no coarse film grain (#657)", !temModo(GFX_TEXTO));
 
   puts("PASS: psestilos_luz_barra");
   return 0;

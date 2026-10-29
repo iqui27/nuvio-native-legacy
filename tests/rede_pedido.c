@@ -149,6 +149,16 @@ int main(int argc, char **argv) {
   p = pedido("/cross307"); p.metodo = "POST"; p.corpo = "hello"; p.n_corpo = 5; p.cabecalhos = cab;
   assert(!rede_pedir(&p, &r) && r.erro == REDE_REDIRECT && !r.corpo);
   rede_resposta_limpar(&r);
+  // mesmo_host: another port of the same host is followed, another host is not.
+  p = pedido("/cross"); p.mesmo_host = 1;
+  assert(rede_pedir(&p, &r) && r.status == 200);
+  rede_resposta_limpar(&r);
+  p = pedido("/otherhost"); p.mesmo_host = 1;
+  assert(!rede_pedir(&p, &r) && r.erro == REDE_REDIRECT && !r.corpo);
+  rede_resposta_limpar(&r);
+  p = pedido("/otherhost");
+  assert(rede_pedir(&p, &r) && r.status == 200);
+  rede_resposta_limpar(&r);
   p = pedido("/same"); p.seguir = 0;
   assert(rede_pedir(&p, &r) && r.status == 302);
   rede_resposta_limpar(&r);

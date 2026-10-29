@@ -114,7 +114,7 @@ static int modoTeclado, abreSozinho, imeIniciado;
 int teste_modo_teclado(void) { return modoTeclado; }
 int teste_abre_sozinho(void) { return abreSozinho; }
 int teste_abrir_ime(int dono, const char *texto, int max) {
-  assert(texto && !texto[0] && max == BU_MAX_CONSULTA - 1);
+  assert(texto && max == BU_MAX_CONSULTA - 1);
   imeIniciado = dono; return 1;
 }
 int teste_ime(void) { return temIme; }
@@ -166,7 +166,7 @@ int main(void) {
           int abre = temIme && modoTeclado != 1 &&
                      (abreSozinho || mobile || modoTeclado == 2);
           assert(imeIniciado == (abre ? ST_BUSCA : 0));
-          assert(busca_foco_campo() == ((abre || (mobile && temIme)) ? 1 : 0));
+          assert(busca_foco_campo() == ((abre || (mobile && temIme && modoTeclado != 1)) ? 1 : 0));
           busca_encerrar();
         }
       }

@@ -54,6 +54,11 @@ int         ajustes_idioma_ingles(void) { return 0; }
 int ajustes_idioma(void) { return 0; }
 int ajustes_cw_minimo(void) { return 1; }
 int   ajustes_cw_concluido(void)         { return 90; }  // factory "watched" threshold
+int ajustes_cw_proximo(void) { return 1; }
+int trakt_e_a_seguir(const char *id) { (void)id; return 0; }
+int trakt_cw_concluiu(const char *id, long long ms) { (void)id; (void)ms; return 0; }
+int prog_oculto_vence(const char *id, long long ms) { (void)id; (void)ms; return 0; }
+int prog_oculto_soltar(const char *id, long long ms) { (void)id; (void)ms; return 0; }
 unsigned recomenda_geracao(void)         { return 0; }   // social generation: no social layer here
 int   ajustes_cw_ordem(void)               { return 0; }   // Padrao (issue #127)
 int   ajustes_cw_mostrar_nao_exibidos(void) { return 1; }
@@ -271,6 +276,7 @@ char *rede_baixar(const char *u, int t) {
     if (strstr(u, rotas[r].trecho)) return rotas[r].resp ? strdup(rotas[r].resp) : NULL;
   if (strstr(u, "cinemeta")) {
     if (strstr(u, "/meta/series/tt0388629.json") && cineSerie) return strdup(cineSerie);
+    if (strstr(u, "/meta/series/tt21975436.json") && cineSerie) return strdup(cineSerie);
     if (strstr(u, "/meta/movie/tt13293588.json"))  return strdup(META_FILME_ERRADO);
     if (strstr(u, "/meta/series/tt13293588.json")) return strdup(cineSerie ? cineSerie : META_SERIE);
     if (strstr(u, "/meta/movie/tt0111161.json"))   return strdup(META_FILME_OK);
@@ -353,6 +359,22 @@ int main(void) {
   assert(e[0].temporada == 1 && e[0].episodio == 1 && !strcmp(e[0].vid, "a:1"));
   assert(e[1].temporada == 1 && e[1].episodio == 2);
   assert(e[2].temporada == 2 && e[2].episodio == 1);
+  // Um ID repetido em tres pares distintos e ambiguo nos tres. A limpeza nao
+  // pode zerar os dois primeiros e, por isso, deixar o terceiro sobreviver.
+  n = parsearEpisodios("{\"videos\":["
+                       "{\"id\":\"a\",\"season\":1,\"episode\":1,\"ids\":{\"tvdb\":900}},"
+                       "{\"id\":\"b\",\"season\":1,\"episode\":2,\"ids\":{\"tvdb\":900}},"
+                       "{\"id\":\"c\",\"season\":2,\"episode\":1,\"ids\":{\"tvdb\":900}}]}", e, 16);
+  assert(n == 3 && e[0].tvdbEp == 0 && e[1].tvdbEp == 0 && e[2].tvdbEp == 0);
+  n = parsearEpisodios("{\"videos\":["
+                       "{\"id\":\"a\",\"season\":2,\"episode\":1},"
+                       "{\"id\":\"b\",\"season\":2,\"episode\":1,\"ids\":{\"tvdb\":50}}]}", e, 16);
+  assert(n == 1 && e[0].tvdbEp == 50);
+  n = parsearEpisodios("{\"videos\":["
+                       "{\"id\":\"a\",\"season\":2,\"episode\":1,\"ids\":{\"tvdb\":50}},"
+                       "{\"id\":\"b\",\"season\":2,\"episode\":1,\"ids\":{\"tvdb\":51}},"
+                       "{\"id\":\"c\",\"season\":2,\"episode\":1,\"ids\":{\"tvdb\":50}}]}", e, 16);
+  assert(n == 1 && e[0].tvdbEp == 0);
   // Sem "episode" (todos 0): nao sao repeticoes, nenhum some.
   n = parsearEpisodios("{\"videos\":[{\"id\":\"x\",\"season\":1,\"name\":\"X\"},"
                        "{\"id\":\"y\",\"season\":1,\"name\":\"Y\"},"
@@ -439,6 +461,72 @@ int main(void) {
     snprintf(ok + k, sizeof ok - k, "]}");
     assert(desc_meta_n_episodios(ok) == 12);
     assert(parsearEpisodios(ok, e, 16) == 12);
+  }
+  // A lista adiantada e somente um fallback visual. Quando a fonte canonica
+  // chega, sua topologia substitui a provisoria: S1E2 e S2E1 abaixo carregam
+  // o mesmo TVDB, mas apenas o par final deve continuar visivel.
+  {
+    const char *cedo = "{\"videos\":["
+      "{\"id\":\"tt111:1:1\",\"season\":1,\"episode\":1,\"name\":\"One early\",\"ids\":{\"tvdb\":101}},"
+      "{\"id\":\"tt111:1:2\",\"season\":1,\"episode\":2,\"name\":\"Thirteen\",\"ids\":{\"tvdb\":102}}]}";
+    const char *final = "{\"videos\":["
+      "{\"id\":\"tt111:1:1\",\"season\":1,\"episode\":1,\"name\":\"One final\",\"ids\":{\"tvdb\":101}},"
+      "{\"id\":\"tt111:2:1\",\"season\":2,\"episode\":1,\"name\":\"Season two\",\"ids\":{\"tvdb\":102}}]}";
+    TempsPub tp = {0};
+    catalogoCom("tt111", "series", "Alternate numbering");
+    snprintf(epAlvoId, sizeof epAlvoId, "%s", "tt111");
+    assert(publicarEpisodiosEx(cedo, 0, "Alternate numbering", NULL, 0, &tp, 1) == 2);
+    assert(cat_n_episodios(0) == 2 && cat_item(0)->epsParciais);
+    assert(publicarEpisodiosEx(final, 0, "Alternate numbering", cedo,
+                              DESC_MESCLA_VAZIOS, &tp, 0) == 2);
+    assert(cat_n_episodios(0) == 2 && !cat_item(0)->epsParciais);
+    assert(cat_episodio(0, 0)->temporada == 1 && cat_episodio(0, 0)->episodio == 1);
+    assert(cat_episodio(0, 1)->temporada == 2 && cat_episodio(0, 1)->episodio == 1);
+    assert(cat_episodio(0, 1)->tvdbEp == 102);
+    // Resposta final vazia conserva a lista provisoria/final ja utilizavel.
+    assert(publicarEpisodiosEx("{\"videos\":[]}", 0, "Alternate numbering",
+                              NULL, 0, &tp, 0) == 0);
+    assert(cat_n_episodios(0) == 2);
+  }
+  // Kaiju No. 8: Cinemeta's complete-looking 23-episode S1 must still be
+  // replaced when the selected metadata addon proves a 35-episode S1/S2
+  // topology. Keeping both numeric layouts scatters duplicate episodes.
+  {
+    char cine[8192], addon[12288];
+    size_t a = (size_t)snprintf(cine, sizeof cine,
+      "{\"meta\":{\"id\":\"tt21975436\",\"type\":\"series\","
+      "\"name\":\"Kaiju No. 8\",\"videos\":[");
+    size_t b = (size_t)snprintf(addon, sizeof addon,
+      "{\"meta\":{\"id\":\"tt21975436\",\"type\":\"series\","
+      "\"name\":\"Kaiju No. 8\",\"videos\":[");
+    for (int i = 1; i <= 23; i++)
+      a += (size_t)snprintf(cine + a, sizeof cine - a,
+        "%s{\"season\":1,\"episode\":%d,\"ids\":{\"tvdb\":%d}}",
+        i > 1 ? "," : "", i, 1000 + i);
+    for (int i = 1; i <= 35; i++) {
+      int t = i <= 12 ? 1 : 2, e = i <= 12 ? i : i - 12;
+      b += (size_t)snprintf(addon + b, sizeof addon - b,
+        "%s{\"season\":%d,\"episode\":%d,\"ids\":{\"tvdb\":%d}}",
+        i > 1 ? "," : "", t, e, 1000 + i);
+    }
+    snprintf(cine + a, sizeof cine - a, "]}}");
+    snprintf(addon + b, sizeof addon - b, "]}}");
+    nFake = 0; nRotas = 0; addonMeta = 1; addonTipo = "/series/";
+    fakeMetaExterno = 0; fakeSoCinemeta = 0; fakeIdioma = "en-US";
+    cineSerie = cine; addonResp = addon;
+    limparCacheMeta();
+    catalogoCom("tt21975436", "series", "Kaiju No. 8");
+    abrir();
+    assert(cat_n_episodios(0) == 35);
+    int velho = 0, novo = 0;
+    for (int i = 0; i < cat_n_episodios(0); i++) {
+      const CatEp *x = cat_episodio(0, i);
+      velho += x->temporada == 1 && x->episodio == 13;
+      novo += x->temporada == 2 && x->episodio == 1 && x->tvdbEp == 1013;
+    }
+    assert(!velho && novo == 1);
+    addonMeta = 0; addonResp = NULL; cineSerie = NULL; nRotas = 0;
+    limparCacheMeta();
   }
   // Samsung 2.0.4: One Piece renumerado por um addon de fontes.
   {

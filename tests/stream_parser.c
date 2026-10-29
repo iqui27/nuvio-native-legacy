@@ -1,10 +1,49 @@
 // Parser isolado: permite ASan sem carregar o inicializador de SDL do macOS.
 #include "streams.h"
+#include "mediaurl.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-int main(void) {
+#include <time.h>
+static unsigned long agoraMs(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return t.tv_sec*1000ul+t.tv_nsec/1000000ul;}
+static void regression(int fresh) {
+  size_t len = fresh ? 5001 : (8u << 20);
+  char *url = malloc(len + 1), *json = malloc(len + 256), saved[9000];
+  assert(url && json);
+  Stream *v = NULL;
+  for (int i = 0; i < (fresh ? 2000 : 1); i++) {
+    memset(url, 'a', len + 1);
+    int head = snprintf(url, 64, "https://example.invalid/%08d/", i);
+    url[head] = 'a'; url[len] = 0;
+    snprintf(json, len + 256, "{\"streams\":[{\"url\":\"https://example.invalid/before\"},{\"url\":\"%s\"},{\"url\":\"https://example.invalid/after\"}]}", url);
+    int count = stream_extrair(json, "fixture", &v);
+    if (count != (fresh ? 3 : 2)) {
+      fprintf(stderr, "FAIL: %s iteration %d count=%d\n", fresh ? "discarded lists exhaust storage" : "rejected source drops alternatives", i, count);
+      exit(1);
+    }
+    assert(strstr(v[0].url, "/before") && strstr(v[count-1].url, "/after"));
+    if (fresh) {
+      assert(!strcmp(nv_media_url(v[1].url), url));
+      if (!i) snprintf(saved, sizeof saved, "%s", v[1].url);
+    }
+    free(v);
+  }
+  free(url); free(json);
+  if (fresh) assert(strlen(nv_media_url(saved)) == 5001);
+  puts(fresh ? "PASS: discarded lists and retained copy" : "PASS: rejected source preserves alternatives");
+}
+int main(int argc, char **argv) {
+  if (argc > 1) { regression(!strcmp(argv[1], "fresh")); return 0; }
+  regression(0); regression(1);
+  // The documented per-source bound is exact, with no truncation on rejection.
+  { char url[NV_MEDIA_URL_MAX + 1], copy[NV_MEDIA_URL_MAX];
+    memset(url, 'x', sizeof url); url[NV_MEDIA_URL_MAX - 1] = 0;
+    assert(nv_media_url_guardar(url, copy, sizeof copy));
+    assert(!strcmp(url, copy));
+    url[NV_MEDIA_URL_MAX - 1] = 'x'; url[NV_MEDIA_URL_MAX] = 0;
+    assert(!nv_media_url_guardar(url, copy, sizeof copy));
+  }
   char json[32000];size_t n=0;
   n+=snprintf(json+n,sizeof json-n,"{\"streams\":[");
   for(int i=0;i<100;i++) n+=snprintf(json+n,sizeof json-n,
@@ -14,6 +53,31 @@ int main(void) {
   Stream *v=NULL;int count=stream_extrair(json,"fixture",&v);
   assert(count==100 && v[99].mp4 && v[99].dolbyVision && v[99].altura==2160);
   assert(!v[0].dolbyVision);free(v);
+  // Signed media URLs must survive parsing, value copies and transport expansion.
+  { char url[6000], copied[NV_MEDIA_URL_MAX], probe[NV_MEDIA_URL_MAX];
+    const size_t lengths[] = {4094, 4095, 4096, 5001, 5999};
+    for (size_t i = 0; i < sizeof lengths / sizeof *lengths; i++) {
+      memset(url, 'a', sizeof url);
+      memcpy(url, "https://example.invalid/", 24);
+      const char *tail = "/manifest.json/?token=exact%2F";
+      strcpy(url + lengths[i] - strlen(tail), tail);
+      snprintf(json, sizeof json, "{\"streams\":[{\"url\":\"%s\",\"name\":\"4K\"}]}", url);
+      count=stream_extrair(json,"fixture",&v);
+      assert(count==1 && v[0].altura==2160);
+      snprintf(copied, sizeof copied, "%s", v[0].url);
+      free(v);
+      assert(!strcmp(nv_media_url(copied), url));
+      assert(nv_media_url_guardar(nv_media_url(copied), probe, sizeof probe));
+      assert(!strcmp(nv_media_url(probe), url));
+    }
+    assert(nv_media_url_guardar(url, copied, sizeof copied));
+    assert(!nv_media_url_guardar(url, probe, 4096));
+    // Escaped JSON slashes decode before the URL is registered.
+    snprintf(json, sizeof json, "{\"streams\":[{\"url\":\"https:\\/\\/example.invalid/%s\"}]}", url + 24);
+    count=stream_extrair(json,"fixture",&v);
+    assert(count==1 && !strcmp(nv_media_url(v[0].url), url));
+    free(v);
+  }
   count=stream_extrair("{\"streams\":[]}","fixture",&v);assert(count==0);free(v);
   count=stream_extrair("{\"streams\":["
     "{\"infoHash\":\"abc\",\"fileIdx\":1e99},"
@@ -101,5 +165,29 @@ int main(void) {
   for (int i = 3; i < 9; i++) assert(!v[i].notWebReady);
   assert(!strcmp(v[8].url, "https://example.invalid/media.mp4"));
   free(v);
+  // #205: as buscas por stream nao podem varrer a resposta inteira. Com os
+  // strstr soltos, 3000 fontes mistas custavam ~750 ms aqui (quadratico);
+  // limitadas ao proprio objeto caem para ~100 ms. O teto de 500 ms passa com
+  // folga na maquina mais lenta e ainda reprova a versao quadratica.
+  { char *grande=malloc(8<<20); size_t g=0; assert(grande);
+    g+=snprintf(grande+g,(8<<20)-g,"{\"streams\":[");
+    for(int i=0;i<3000;i++){
+      if(i%2)
+        g+=snprintf(grande+g,(8<<20)-g,"%s{\"infoHash\":\"h%08x\",\"fileIdx\":%d,\"name\":\"\\u26a1 AIOStreams FHD\",\"clientResolve\":{\"isCached\":true},\"behaviorHints\":{\"bingeGroup\":\"g%d\",\"videoSize\":2147483648}}",i?",":"",i,i%7,i);
+      else
+        g+=snprintf(grande+g,(8<<20)-g,"%s{\"url\":\"https://example.invalid/%d\",\"name\":\"[RD+] Torrentio FHD\",\"title\":\"T %d\",\"description\":\"1.5 GB\",\"behaviorHints\":{\"bingeGroup\":\"g%d\",\"videoSize\":1610612736}}",i?",":"",i,i,i);
+    }
+    snprintf(grande+g,(8<<20)-g,"]}");
+    unsigned long t0=agoraMs();
+    count=stream_extrair(grande,"fixture",&v);
+    unsigned long ms=agoraMs()-t0;
+    assert(count==3000);
+    assert(v[1].emCache && !strcmp(v[1].bingeGroup,"g1") && v[1].fileIdx==1);
+    assert(v[2998].emCache && v[2998].tamanhoMB==1536);
+    assert(!strcmp(v[2998].bingeGroup,"g2998"));
+    free(v); free(grande);
+    fprintf(stderr,"3000 streams: %lums\n",ms);
+    assert(ms<500);
+  }
   puts("PASS: parser isolado, cache explicito, notWebReady ancorado e externalUrl sem midia oculto.");
 }

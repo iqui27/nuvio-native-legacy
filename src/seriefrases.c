@@ -340,7 +340,7 @@ static int secaoDeFala(const char *t) {
 // Devolve quantos achou.
 static int extrairFalas(const char *wikitexto, SfFrase *saida, int max) {
   const char *p = wikitexto;
-  char secao[SF_QUEM] = "";
+  char secao[SF_QUEM] = "", episodio[24] = "";
   // secaoValida acompanha o cabecalho de NIVEL 2, e uma subsecao NAO o
   // reescreve. MEDIDO na pagina do Breaking Bad: ela e um indice, e a unica
   // coisa parecida com dialogo esta em `=== Dialogue ===` DENTRO de
@@ -366,6 +366,13 @@ static int extrairFalas(const char *wikitexto, SfFrase *saida, int max) {
       while (*q == ' ') q++;
       j = strlen(q);
       while (j > 0 && (q[j - 1] == '=' || q[j - 1] == ' ')) q[--j] = 0;
+      // Episode headings on Wikiquote commonly end in [season.episode].
+      // Keep that known credit in the existing cache field with the speaker.
+      if (nivel<=2) episodio[0]=0;
+      const char *mark=strchr(q,'[');
+      int season=0,episode=0;
+      if (mark && sscanf(mark,"[%d.%d]",&season,&episode)==2 && season>0 && episode>0)
+        snprintf(episodio,sizeof episodio,"S%d:E%d",season,episode);
       limparWiki(q, SF_QUEM);
       if (nivel <= 2) {
         snprintf(secao, sizeof secao, "%s", q);
@@ -410,7 +417,9 @@ static int extrairFalas(const char *wikitexto, SfFrase *saida, int max) {
       if (strlen(q) < 25 || strlen(q) > SF_TEXTO - 1) continue;
       if (strchr(q, '|') || !strncmp(q, "File:", 5)) continue;
       snprintf(saida[n].texto, SF_TEXTO, "%s", q);
-      snprintf(saida[n].quem, SF_QUEM, "%s", quem);
+      snprintf(saida[n].quem, SF_QUEM, "%.*s%s%s",
+               (int)(SF_QUEM-1-strlen(episodio)-(episodio[0] && quem[0] ? 4 : 0)),quem,
+               episodio[0] && quem[0] ? " · " : "",episodio);
       n++;
     }
   }
@@ -549,12 +558,12 @@ static const char *CONSULTA =
 // proposito — e cabecalho de protocolo, nao texto de tela, e em portugues o
 // tests/i18n.sh o acusava de string sem i18n().
 static const char *const CAB[] = {
-  "User-Agent: NuvioTV/1.0 (TV app; contact via the project repository)",
+  "User-Agent: NuvioTV/1.0 (https://github.com/iqui27/nuvio-native-legacy)",
   "Accept: application/sparql-results+json",
   NULL
 };
 static const char *const CAB_WQ[] = {
-  "User-Agent: NuvioTV/1.0 (TV app; contact via the project repository)",
+  "User-Agent: NuvioTV/1.0 (https://github.com/iqui27/nuvio-native-legacy)",
   NULL
 };
 

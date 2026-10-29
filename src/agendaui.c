@@ -341,7 +341,7 @@ void agendaui_despertador(GfxRect r, int ligado, float cr, float cg, float cb,
 // linha, e o texto/largura/estilo so mudam quando ele anda.
 #define AGQ_CACHE 8
 typedef struct {
-  unsigned hash; float larg; int estilo, max, familia, idioma, n;
+  unsigned hash; float larg, escala; int estilo, max, familia, idioma, n;
   char linhas[AG_SIN_MAX][512];
   size_t restoOff;   // deslocamento de `resto` dentro de `s`
   int vivo;
@@ -365,7 +365,7 @@ static int agQuebra(TxtEstilo estilo, const char *s, float larg, int max,
   h = agqHash(s);
   for (i = 0; i < AGQ_CACHE; i++) {
     AgQuebra *c = &agqCache[i];
-    if (c->vivo && c->hash == h && c->larg == larg && c->estilo == (int)estilo &&
+    if (c->vivo && c->hash == h && c->larg == larg && c->escala == gfx_escala() && c->estilo == (int)estilo &&
         c->max == max && c->familia == (int)txt_fonte_interface() &&
         c->idioma == ajustes_idioma()) {
       int k;
@@ -377,7 +377,8 @@ static int agQuebra(TxtEstilo estilo, const char *s, float larg, int max,
   n = agQuebraCru(estilo, s, larg, max, linhas, resto, r, g, b);
   { AgQuebra *c = &agqCache[agqProx]; int k;
     agqProx = (agqProx + 1) % AGQ_CACHE;
-    c->vivo = 1; c->hash = h; c->larg = larg; c->estilo = (int)estilo; c->max = max;
+    c->vivo = 1; c->hash = h; c->larg = larg; c->escala = gfx_escala();
+    c->estilo = (int)estilo; c->max = max;
     c->familia = txt_fonte_interface(); c->idioma = ajustes_idioma(); c->n = n;
     for (k = 0; k < n; k++) memcpy(c->linhas[k], linhas[k], strlen(linhas[k]) + 1);
     // `resto` pode ser o literal "" (nada sobrou): guardar o fim de `s`.
@@ -1992,7 +1993,8 @@ static void painelFlutuante(GfxRect r, float ar, float ag, float ab, float a) {
 static void pilulaFoco(GfxRect lr, float ar, float ag, float ab, float a) {
   (void)ar; (void)ag; (void)ab;
   float rf = 0.5f > 22.0f / lr.h ? 22.0f / lr.h : 0.5f;
-  if (ajustes_vidro()) { if (!gfx_foco_placa(lr, rf, 1.0f, a)) gfx_cor(lr, rf, 1, 1, 1, .12f * a); }
+  if (gfx_foco_placa(lr, rf, 1.0f, a)) return;
+  if (ajustes_vidro()) gfx_cor(lr, rf, 1, 1, 1, .12f * a);
   else gfx_cor(lr, rf, .17f, .176f, .204f, a);
 }
 // Tinta do texto sobre a linha em foco: clara, a superficie nao e realce.

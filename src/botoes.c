@@ -2,6 +2,15 @@
 #include "ajustes.h"
 #include "anim.h"
 #include "text.h"
+#include "plrui.h"
+
+static int semAro;
+void botao_pilula_sem_aro(GfxRect r, const char *rotulo, const char *icone,
+                         float foco, int primario, int alinhar, float a) {
+  semAro = 1;
+  botao_pilula(r, rotulo, icone, foco, primario, alinhar, a);
+  semAro = 0;
+}
 
 // Superficie de repouso do primario: o cinza do painel flutuante (0.055/0.058/
 // 0.068) um degrau acima, tingido para o azul do mesmo jeito. Nunca #000 nem
@@ -66,9 +75,10 @@ int botao_superficie(GfxRect r, float foco, float a) {
   float fr, fg, fb, ti = botao_cor_foco(&fr, &fg, &fb);
   if (ajustes_vidro()) {
     // Acao principal: em repouso o vidro leva a lavagem e o aro do realce (e
-    // assim o tema continua visivel); em foco, a pilula CHEIA no realce.
+    // assim o tema continua visivel); em foco, a mesma pilula de vidro do
+    // Play do detalhe (realce coloridos = vidro com lavagem; branco = cheia).
     gfx_vidro_painel_acento(r, 0.5f, 0.55f, a);
-    vidroFoco(r, foco, a);
+    gfx_vidro_pilula_cheia(r, 0.5f, foco, a);
     return gfx_vidro_tinta(foco);
   }
   botao_luz(r, foco, a);
@@ -88,7 +98,12 @@ void botao_pilula(GfxRect r, const char *rotulo, const char *icone,
   float temIcone = (icone && icone[0]) ? 1.0f : 0.0f;
   float grupo, x0, padx = primario ? BOTAO_PAD_X : BOTAO_PAD_X2;
 
-  if (vidro) {
+  if (semAro) {
+    if (vidro) gfx_vidro_painel_sem_aro(r, raio, 0.55f, a);
+    else gfx_cor(r, raio, BT_REP_R, BT_REP_G, BT_REP_B, a);
+    plrui_pilula_foco(r, foco * a);
+    c = emFoco ? plrui_tinta() : BT_TEXTO_REP;
+  } else if (vidro) {
     // O mesmo vidro nos dois tamanhos: a hierarquia continua sendo a altura
     // (72 x 56) e a lavagem do realce so vai no primario. O foco e a pilula
     // cheia no realce (branca no tema padrao) com a tinta que contrasta.
@@ -111,7 +126,7 @@ void botao_pilula(GfxRect r, const char *rotulo, const char *icone,
     gfx_cor(r, raio, anim_mistura(BT_REP_R, fr, foco),
             anim_mistura(BT_REP_G, fg, foco), anim_mistura(BT_REP_B, fb, foco),
             (0.82f + 0.18f * foco) * a);
-    if (foco < 0.99f)
+    if (!gfx_vidro_sem_aro && foco < 0.99f)
       gfx_anel(r, raio, 1.5f, 1, 1, 1, 0.22f * (1.0f - foco) * a);
   }
 

@@ -981,6 +981,12 @@ static void abrir(const char *caminho, int largAlvo) {
     telaW = b[6] | (b[7] << 8);
     telaH = b[8] | (b[9] << 8);
   }
+#ifdef NV_ANDROID
+  /* Low-RAM TVs keep the same first-frame artwork without an animation worker. */
+  if (gif_js_memoria_gb() < 3.0) {
+    free(b); recusado = 1; return;
+  }
+#endif
   gif_tamanho_saida(telaW, telaH, largAlvo, &fioW, &fioH);
   fio = gif_fio_abrir(b, n, fioW, fioH);      // dono de `b` daqui em diante
   if (!fio) {

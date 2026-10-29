@@ -475,6 +475,20 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-lista-epg.bmp", saida);
   capturaTela(nome, w, 1);
 
+  // Capture the same guide with the option on/off, without a network stream.
+  // NUVIO_SHOT_PREVIA=<dir> writes PNGs using the real fallback renderer.
+  if (getenv("NUVIO_SHOT_PREVIA")) {
+    ajustes_definir_guia_previa_grande(1);
+    snprintf(nome, sizeof nome, "%s/preview-opcao-on.png",
+             getenv("NUVIO_SHOT_PREVIA"));
+    capturaTela(nome, w, 1);
+    ajustes_definir_guia_previa_grande(0);
+    snprintf(nome, sizeof nome, "%s/preview-opcao-off.png",
+             getenv("NUVIO_SHOT_PREVIA"));
+    capturaTela(nome, w, 1);
+    return 0;
+  }
+
   focoLin = 1; focoCol = 1; focoAnelOk = 0;      // GE TV, sem grade
   // A mesma conta de rolagem de guia_atualizar, ja assentada.
   { float maxY = listaAltura() + G_L_FADE - (G_L_BASE - G_L_TOPO);

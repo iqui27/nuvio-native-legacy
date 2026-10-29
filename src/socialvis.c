@@ -6,6 +6,8 @@
 #include "artemetahub.h"
 #include "recomenda.h"
 #include "perfis.h"
+#include "ajustes.h"
+#include "simkl.h"
 #include "dados.h"
 #include "idioma.h"
 #include <SDL2/SDL.h>
@@ -292,6 +294,7 @@ static int svAcaoDe(const RecEvento *r) {
     case REC_ACAO_REACAO:   return SV_REACAO;
     case REC_ACAO_SALVO:    return SV_SALVO;
     case REC_ACAO_NOTA:     return SV_AVALIOU;
+    case REC_ACAO_JUNTO:    return SV_JUNTO;
     default:                return SV_ATIVIDADE;
   }
 }
@@ -317,6 +320,7 @@ static void svDeRecEvento(const RecEvento *r, SvEvento *e) {
   e->restanteMin = -1;
   e->quando = r->quando;
   e->nota = r->acao == REC_ACAO_NOTA ? r->nota : 0;
+  snprintf(e->com, sizeof e->com, "%s", r->acao == REC_ACAO_JUNTO ? r->com : "");
   e->eps = r->eps;
   // "Terminou e gostou": a reacao que o servidor juntou ao "terminou".
   if (r->acao == REC_ACAO_FIM && r->temReacFim) e->reacao = r->reacFim;
@@ -696,7 +700,7 @@ void socialvis_atualizar(void) {
   refazer();
 }
 
-unsigned socialvis_revisao(void) { return rev; }
+unsigned socialvis_revisao(void) { return rev + simkl_vistos_revisao(); }
 int socialvis_n_amigos(void) { return nAmigos; }
 const SvAmigo *socialvis_amigo(int i) { return (i >= 0 && i < nAmigos) ? &amigos[i] : NULL; }
 int socialvis_amigo_indice(const char *id) { return id ? achaAmigo(id) : -1; }
@@ -785,6 +789,9 @@ int socialvis_perfil(const char *id, SvPerfil *p) {
         p->a = base;
         break;
       }
+  // Perfil desta TV ("perfil:<N>", #643): a permissao e o socialLocal dele.
+  if (!strncmp(id, "perfil:", 7) && atoi(id + 7) > 0)
+    p->compartilha = ajustes_social_perfil(atoi(id + 7));
   if (p->estado == SV_PERFIL_NEGADO || p->compartilha == 0) {
     p->a.agora = p->a.nTit = 0;
     p->nAssistindo = p->nGostou = 0;
@@ -802,6 +809,37 @@ int socialvis_perfil(const char *id, SvPerfil *p) {
       if (e->acao == SV_AGORA) p->a.agora = 1;
       for (j = 0; j < p->a.nTit; j++) if (!strcmp(p->a.tit[j].imdb, e->imdb)) repetido = 1;
       if (!repetido && p->a.nTit < SV_TIT_MAX) p->a.tit[p->a.nTit++] = *e;
+    }
+  }
+  // Issue #643: a profile of this TV ("perfil:<N>") also merges its own Simkl
+  // history, by original watched date, with whatever other sources gave.
+  if (!strncmp(id, "perfil:", 7) && atoi(id + 7) > 0) {
+    SimklVisto v[24];
+    int nv = simkl_vistos_perfil(atoi(id + 7), v, 24);
+    for (i = 0; i < nv && p->a.nTit < SV_TIT_MAX; i++) {
+      SvEvento *e;
+      int j, repetido = 0;
+      for (j = 0; j < p->a.nTit; j++)
+        if (!strcmp(p->a.tit[j].imdb, v[i].imdb) &&
+            p->a.tit[j].temporada == v[i].temporada &&
+            p->a.tit[j].episodio == v[i].episodio) { repetido = 1; break; }
+      if (repetido) continue;
+      e = &p->a.tit[p->a.nTit++];
+      memset(e, 0, sizeof *e);
+      snprintf(e->pessoaId, sizeof e->pessoaId, "%s", id);
+      e->fonte = SV_FONTE_SIMKL; e->acao = SV_FIM; e->pct = -1; e->restanteMin = -1;
+      snprintf(e->imdb, sizeof e->imdb, "%s", v[i].imdb);
+      snprintf(e->tipo, sizeof e->tipo, "%s", v[i].tipo);
+      snprintf(e->titulo, sizeof e->titulo, "%s", v[i].titulo);
+      snprintf(e->poster, sizeof e->poster, "%s", v[i].poster);
+      e->temporada = v[i].temporada; e->episodio = v[i].episodio; e->quando = v[i].quando;
+    }
+    // Fundiu: a fileira volta a ser "mais novo primeiro" entre as fontes.
+    for (i = 1; i < p->a.nTit; i++) {
+      SvEvento t = p->a.tit[i];
+      int j;
+      for (j = i; j > 0 && p->a.tit[j - 1].quando < t.quando; j--) p->a.tit[j] = p->a.tit[j - 1];
+      p->a.tit[j] = t;
     }
   }
   // An unqualified rating does not prove a positive reaction. Only explicitly
@@ -1011,6 +1049,7 @@ const char *socialvis_verbo(const SvEvento *ev) {
     case SV_ABANDONO: return i18n("parou de ver");
     case SV_AVALIOU:  return i18n("avaliou");
     case SV_MANDOU:   return i18n("te mandou");
+    case SV_JUNTO:    return i18n("assistiu junto");
     default:          return "";
   }
 }
@@ -1047,6 +1086,10 @@ void socialvis_status(const SvEvento *ev, char *dst, size_t tam) {
     case SV_SALVO:   snprintf(dst, tam, "%s", i18n("Salvou para ver")); break;
     case SV_AVALIOU: snprintf(dst, tam, "%s", i18n("Avaliou")); break;
     case SV_MANDOU:  snprintf(dst, tam, "%s", i18n("Te mandou")); break;
+    case SV_JUNTO:
+      if (ev->com[0]) snprintf(dst, tam, i18n("Assistiu junto com %s"), ev->com);
+      else snprintf(dst, tam, "%s", i18n("Assistiu junto"));
+      break;
     default:         snprintf(dst, tam, "%s", i18n("Assistiu")); break;
   }
   if (ep[0] && ev->acao != SV_AGORA) {

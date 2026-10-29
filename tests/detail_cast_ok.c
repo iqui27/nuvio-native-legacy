@@ -2,6 +2,7 @@
 #include <assert.h>
 #include "dados.h"
 #include "addons.h"
+#include "glance.h"
 #include <SDL2/SDL_image.h>
 #include "gl_compat.h"
 #define pessoa_pedir capture_person
@@ -86,6 +87,10 @@ int main(void) {
     nav.key.keysym.sym = SDLK_RETURN;
     home_evento(&nav);
     nav.type = SDL_KEYUP; home_evento(&nav);
+    assert(glance_aberto());
+    nav.type = SDL_KEYDOWN; nav.key.keysym.sym = SDLK_RIGHT;
+    glance_evento(&nav);
+    nav.key.keysym.sym = SDLK_RETURN; glance_evento(&nav);
     assert(home_pediu_abrir());
     detail_abrir(&selected);
     nav.type = SDL_KEYDOWN; nav.key.keysym.sym = SDLK_DOWN;
@@ -114,7 +119,7 @@ int main(void) {
       for (int tabs = 0; tabs < 2; tabs++) {
         collection_count = tabs ? 2 : 0;
         abaInfo = 0;
-        assert((secaoN(SEC_ABAS_INFO) > 0) == (series && tabs));
+        assert(secaoN(SEC_ABAS_INFO) == 0); // Detail 2.1 keeps cast in its own section.
         assert(secaoN(SEC_ELENCO) == title.nElenco);
         for (int carousel = 0; carousel <= (layout == HOME_LAYOUT_DINAMICA); carousel++) {
           carro = carousel;

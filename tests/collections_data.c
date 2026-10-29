@@ -73,8 +73,8 @@ char *rede_baixar(const char *url,int timeout) {
       pthread_mutex_unlock(&fakeLock);
     }
     const char *id = korean ? "101" : strstr(url, "with_origin_country=TR") ? "202" : "999";
-    char body[256];
-    snprintf(body, sizeof body, "{\"results\":[{\"id\":%s,\"name\":\"Country %s\",\"poster_path\":\"/fixture.jpg\"}],\"page\":1,\"total_pages\":1}", id, id);
+    char body[512];
+    snprintf(body, sizeof body, "{\"results\":[{\"id\":900,\"title\":\"Wrong movie\",\"media_type\":\"movie\",\"poster_path\":\"/movie.jpg\"},{\"id\":%s,\"name\":\"Country %s\",\"media_type\":\"tv\",\"poster_path\":\"/fixture.jpg\"}],\"page\":1,\"total_pages\":1}", id, id);
     return strdup(body);
   }
   if (strstr(url, "https://collection.invalid/")) {
@@ -103,6 +103,17 @@ char *rede_baixar(const char *url,int timeout) {
     while(!releaseSlow)pthread_cond_wait(&fakeCond,&fakeLock);
     pthread_mutex_unlock(&fakeLock);
     return strdup("{\"metas\":[{\"id\":\"ttold\",\"name\":\"OLD\",\"poster\":\"old.jpg\"}]}");
+  }
+  if (strstr(url, "/catalog/movie/top10") || strstr(url, "/catalog/series/mixed")) {
+    char body[3000] = "{\"metas\":[";
+    for (int j = 0; j < 20; j++) {
+      char item[140];
+      snprintf(item, sizeof item, "%s{\"id\":\"ttrank%02d\",\"name\":\"Rank %d\",\"type\":\"%s\",\"poster\":\"p.jpg\"}",
+               j ? "," : "", j, j, strstr(url, "/mixed") && j % 2 ? "series" : "movie");
+      strcat(body, item);
+    }
+    strcat(body, "]}");
+    return strdup(body);
   }
   if(strstr(url,"/error/"))return NULL;
   if(strstr(url,"/empty/"))return strdup("{\"metas\":[]}");
@@ -207,5 +218,33 @@ int main(void) {
   CatItem initial[1]; DescColecaoResultado result;
   assert(desc_colecao_inicial(&folder->sources[0], "", nv_perfil_sessao_ler(), initial, 1, &result));
   assert(result.n == 1 && !strcmp(initial[0].imdb, "tmdb:101"));
+  // #666: collection tabs preserve declared type, rank order and Top 10 cap.
+  ColSource ranked = {0};
+  snprintf(ranked.base, sizeof ranked.base, "https://example.invalid");
+  snprintf(ranked.type, sizeof ranked.type, "movie");
+  snprintf(ranked.catId, sizeof ranked.catId, "top10");
+  CatItem ranks[40];
+  assert(desc_colecao_inicial(&ranked, ranked.base, nv_perfil_sessao_ler(), ranks, 20, &result));
+  fprintf(stderr, "Top 10 initial count: %d (expected 10)\n", result.n);
+  assert(result.n == 10 && !result.mais);
+  desc_vertudo_abrir(ranked.base, ranked.type, ranked.catId); waitDone();
+  assert(desc_vertudo_n() == 10 && desc_vertudo_fim());
+  for (int j = 0; j < 10; j++) {
+    char id[32]; snprintf(id, sizeof id, "ttrank%02d", j);
+    assert(!strcmp(ranks[j].imdb, id));
+    assert(desc_vertudo_item(j, &i) && !strcmp(i.imdb, id));
+  }
+  before = calls; desc_vertudo_mais(); waitDone(); assert(calls == before);
+  snprintf(ranked.type, sizeof ranked.type, "series");
+  snprintf(ranked.catId, sizeof ranked.catId, "mixed");
+  assert(desc_colecao_inicial(&ranked, ranked.base, nv_perfil_sessao_ler(), ranks, 20, &result));
+  assert(result.n == 10);
+  desc_vertudo_abrir(ranked.base, ranked.type, ranked.catId); waitDone();
+  assert(desc_vertudo_n() == 10);
+  for (int j = 0; j < 10; j++) {
+    char id[32]; snprintf(id, sizeof id, "ttrank%02d", j * 2 + 1);
+    assert(!strcmp(ranks[j].tipo, "series") && !strcmp(ranks[j].imdb, id));
+    assert(desc_vertudo_item(j, &i) && !strcmp(i.tipo, "series") && !strcmp(i.imdb, id));
+  }
   puts("collections data: PASS (retry, empty, stale tabs, encoded folder/Home/search/Vitrine catalogs, raw skip, types, addon identity)");
 }

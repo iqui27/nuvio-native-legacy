@@ -179,6 +179,16 @@ void nf_resumo(const int *fontes, const int *norm, int n, NfResumo *o) {
   if (nc && np) { o->temDiff = 1; o->diff = o->publico - o->criticos; }
 }
 
+void nf_resumo_cru(const int *cru, NfResumo *o) {
+  int f[NF_MAX], n[NF_MAX], m = 0, pos;
+  for (pos = 0; pos < EX_NFONTES; pos++) {
+    int fonte = nf_na_posicao(pos);
+    if (fonte < 0 || cru[fonte] <= 0) continue;
+    f[m] = fonte; n[m] = nf_norm100(fonte, cru[fonte]); m++;
+  }
+  nf_resumo(f, n, m, o);
+}
+
 // --- encaixe -----------------------------------------------------------------
 int nf_encaixar(const float *larg, const int *prio, int n, float disp,
                 unsigned char *manter) {

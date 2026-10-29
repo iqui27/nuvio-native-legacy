@@ -2,6 +2,7 @@
 #include "app_id.h"
 #include "arranque.h"
 #include "swapint.h"
+#include "quadroc.h"
 #include "streams.h"
 #ifdef NV_DTS_DEBUG
 #include "dts/dts_engine.h"
@@ -28,6 +29,10 @@
 #endif
 #ifdef NV_ANDROID
 #include "android.h"
+#endif
+#ifdef NV_IOS
+#include "ios.h"
+#include <SDL2/SDL_syswm.h>   // the UIKit framebuffer id (iosFramebufferTela)
 #endif
 #include <stdio.h>
 #include <locale.h>
@@ -85,6 +90,7 @@
 #include "traktauth.h"
 #include "simklauth.h"
 #include "app.h"
+#include "conquistas.h"
 #include "registro.h"
 #include "desempenho.h"
 #include "atualizacao.h"
@@ -215,7 +221,7 @@ static void aoSinalTerminar(int sig) {
 #endif
 #include "layout.h"
 #include "plugins.h"
-#include "plex.h"
+#include "servidores.h"
 #include "esmaecer.h"
 #include "descanso.h"
 
@@ -436,6 +442,14 @@ static long tamanhoDe(const char *caminho) {
 static Uint32 soltarEm = 0;
 static SDL_Keycode soltarTecla = 0;
 
+// RELOGIO DO QUADRO (row 30 do mapa): `pior=` e `swap=` mediam o tempo entre
+// dois quadros pelo relogio de alta resolucao. Quando o app suspende, o laco
+// para no meio e o relogio segue: o primeiro quadro de volta entregava a
+// SUSPENSAO inteira como se fosse um quadro (4191 s, 881 s, 54 s, 30 s em seis
+// registros), e a triagem passava a procurar jank que nunca existiu.
+// Quem suspende/volta marca aqui; o laco zera o relogio uma vez (quadroc.h).
+static QuadroRelogio quadroRel = { 0, 0, 0, 0.0 };
+
 // BUTTONUP adiado de um "clicar:x,y:hold".
 static Uint32 soltarMouseEm = 0;
 static SDL_Event soltarMouse;
@@ -611,9 +625,27 @@ static int resolucaoTvJanela(Uint32 agora, Uint32 inicio, int w, int h, int pedi
   return 1;
 #endif
 }
+#ifdef NV_IOS
+// The screen on iOS is the framebuffer SDL's GL view owns; the core's binds of
+// "0" are redirected to it (gl_compat.h). Read after the context exists and
+// again on every resize, in case SDL rebuilt its view.
+static void iosFramebufferTela(SDL_Window *w) {
+  SDL_SysWMinfo wm;
+  SDL_VERSION(&wm.version);
+  if (w && SDL_GetWindowWMInfo(w, &wm) && wm.subsystem == SDL_SYSWM_UIKIT) {
+    if (nv_gl_fb_tela != wm.info.uikit.framebuffer)
+      printf("[ios] framebuffer da tela = %u (antes %u)\n", wm.info.uikit.framebuffer, nv_gl_fb_tela);
+    nv_gl_fb_tela = wm.info.uikit.framebuffer;
+    ios_hospedar((void *)wm.info.uikit.window);
+  }
+}
+#endif
 #ifdef NV_TOUCH_UI
 static void interfaceViewport(SDL_Window *win, int *width, int *height, int *modo) {
   int novoW = 0, novoH = 0;
+#ifdef NV_IOS
+  iosFramebufferTela(win);
+#endif
   int novoModo = layout_modo_mobile();
   SDL_GL_GetDrawableSize(win, &novoW, &novoH);
   if (novoW <= 0 || novoH <= 0 ||
@@ -1046,7 +1078,7 @@ int main(int argc, char **argv) {
   // Antes de qualquer fio: ver nv_blindar_formatos em sdlcompat.h (issue #65).
   nv_blindar_formatos();
 
-#ifdef __APPLE__
+#if defined(__APPLE__) && !defined(NV_IOS)
   // Perfil de compatibilidade: e o unico do macOS que ainda aceita GLSL 1.20 e
   // as funcoes fixas que o GLES2 tem como core.
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
@@ -1376,6 +1408,9 @@ int main(int argc, char **argv) {
   NV_ETAPA("SDL_GL_CreateContext");
   arranque_etapa("SDL_GL_CreateContext");
   SDL_GLContext ctx = SDL_GL_CreateContext(win);
+#ifdef NV_IOS
+  iosFramebufferTela(win);
+#endif
 #if NV_ARRANQUE_REDE
   if (!ctx) {
     printf("[arranque] SDL_GL_CreateContext falhou: %s\n", SDL_GetError()); fflush(stdout);
@@ -1421,6 +1456,9 @@ int main(int argc, char **argv) {
     win = SDL_CreateWindow(windowTitle, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                            pedeW, pedeH, flags);
     ctx = win ? SDL_GL_CreateContext(win) : NULL;
+#ifdef NV_IOS
+    iosFramebufferTela(win);
+#endif
   }
   if (!ctx) { printf("[android] sem contexto GL: %s\n", SDL_GetError()); SDL_Quit(); return 2; }
 #endif
@@ -1471,7 +1509,7 @@ int main(int argc, char **argv) {
   // O cursor do Magic Remote e desenhado pelo app (ponteiro.c). Depois do
   // contexto: o log de arranque dele le a janela corrente.
   ponteiro_iniciar();
-#ifdef __APPLE__
+#if defined(__APPLE__) && !defined(NV_IOS)
   // Sem vsync no Mac. O SDL2 do Homebrew virou uma camada sobre o SDL3
   // (sdl2-compat), e nela o SwapWindow fica preso esperando um sinal de vsync
   // que nunca chega quando a janela nao esta em primeiro plano — o app trava no
@@ -1633,6 +1671,7 @@ int main(int argc, char **argv) {
   // no lugar em que o splash do sistema a deixou.
   logoapp_iniciar(dirArte);
   abertura_iniciar(dirArte);
+  conquistas_arte_dir(dirArte);
   ajustes_texturas_dir(dirArte);   // materiais CC0 do tema Textura (recorte fraco)
 #ifdef __EMSCRIPTEN__
   // O ARRANQUE CEDE AO NAVEGADOR EM DOIS PONTOS (24/09/2026). Do topo do main
@@ -1743,9 +1782,10 @@ int main(int argc, char **argv) {
   // ligacao como mais uma origem da busca de fontes.
   plugins_iniciar();
   plugins_ligar_aos_addons();
-  plex_ligar_aos_addons();   // Plex: server file as one more source on matching titles
+  servidores_ligar_aos_addons();   // Jellyfin/Emby/Plex: the server copy, first, on matching titles
   // Ajustes tambem sao do USUARIO, nao do pacote.
   ajustes_dir(dirDados);
+  ajustes_migrar_escopo();   // 2.1: cada perfil parte do que esta TV usa hoje (uma vez, com backup)
   // Icone do app (apoiadores): a arte vem do pacote; o alias do launcher do
   // Android e a abertura do .wgt seguem o que ficou gravado (idempotente).
   iconeapp_iniciar(dirArte);
@@ -1812,7 +1852,6 @@ int main(int argc, char **argv) {
   // devia — um quadro pesado de GPU aparece como swap grande, um quadro pesado
   // de CPU aparece na fase que o causou.
   double perFreq = (double)SDL_GetPerformanceFrequency();
-  Uint64 ultQuadro = SDL_GetPerformanceCounter();
   double fEv=0, fBomb=0, fUpd=0, fDes=0, fSwap=0, fAux=0, fClr=0;
   int fUplN=0, pUplN=0; long fUplB=0, pUplB=0;
   double pEv=0, pBomb=0, pUpd=0, pDes=0, pSwap=0, pAux=0, pClr=0;
@@ -1909,6 +1948,7 @@ int main(int argc, char **argv) {
         if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST || e.window.event == SDL_WINDOWEVENT_HIDDEN) {
           player_ciclo_evento(SDL_APP_WILLENTERBACKGROUND);
           ponteiro_evento(&e, app_evento);
+          quadroc_suspendeu(&quadroRel);   // suspendeu: o relogio para de valer
         }
 #ifdef NV_TOUCH_UI
         if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
@@ -1961,7 +2001,7 @@ int main(int argc, char **argv) {
         fflush(stdout);
       }
       player_ciclo_evento(e.type);
-      if (e.type == SDL_APP_DIDENTERFOREGROUND) atualizacao_retomou();
+      if (e.type == SDL_APP_DIDENTERFOREGROUND) { atualizacao_retomou(); quadroc_suspendeu(&quadroRel); }
       // PONTEIRO (Magic Remote, issue #99): mouse, rodinha e os avisos 484/485
       // de cursor do webOS ficam la; o que ele traduz em tecla chega a
       // app_evento como se viesse do D-pad.
@@ -2048,8 +2088,7 @@ int main(int argc, char **argv) {
     // varios segundos e uma animacao daria um salto. Piso nao existe mais —
     // quadro curto tem de ser um dt curto.
     Uint64 cQuadro = SDL_GetPerformanceCounter();
-    double dtms = (double)(cQuadro - ultQuadro) * 1000.0 / perFreq;
-    ultQuadro = cQuadro;
+    double dtms = quadroc_quadro(&quadroRel, cQuadro, perFreq, agora);
     if (dtms < 0.0) dtms = 0.0;
     perfTvFrame(agora, dtms);
     // FPS REGRESSION SCENES (fpscena.h), opt-in: a `fps-cena` file in the data
@@ -2240,6 +2279,8 @@ int main(int argc, char **argv) {
     video_tpk_zoom_roi_definir(ajustes_trailer_zoom_tpk());   // #241: Ajustes > Trailers
 #endif
     texto_sistema_mic_modo(ajustes_mic_busca());              // Ajustes > Tela inicial > Barra lateral
+    gpun_ampliar_app(resolucaoDaTv() && ajustes_ampliar_app() &&
+                     (ajustes_720p() || ajustes_1080p()));
     gpun_quadro_inicio();
     glClearColor(NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
     if (!nvPrimeiroQuadroFeito) arranque_etapa("primeiro glClear");

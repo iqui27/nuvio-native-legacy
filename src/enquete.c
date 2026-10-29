@@ -182,7 +182,7 @@ static int lerCorpo(const char *r, Resp *out) {
 
 static void executar(const Op *op) {
   const char *cab[4];
-  char aut[400], via[40], pf[40], url[300], corpo[200], id[100];
+  char aut[3200], via[40], pf[40], url[300], corpo[200], id[100];
   Resp r;
   int st = 0;
   char *txt;
@@ -435,7 +435,11 @@ static void aplicar(const Resp *r) {
   }
   // OP_BUSCAR
   buscando = 0;
-  if (!r->ok) { proxima = agoraAtual + 60000u; return; }   // sem rede: tenta daqui a 1 min
+  if (!r->ok) {
+    // Missing identity or rejected credentials: wait five minutes, not one.
+    proxima = agoraAtual + ((!r->status || r->status == 401) ? 300000u : 60000u);
+    return;
+  }
   proxima = agoraAtual + REBUSCA_MS;
   { int local = !ajustes_enquetes(), pf = perfilAtual(), v = 0;
     if (pendente(pf, &v)) { if (v != r->optout) enfileirar(OP_OPTOUT, NULL, v); }

@@ -9,7 +9,7 @@ TMPDIR="${TMPDIR%/}"
 # nao cabem no mesmo #include):
 #   tests/cwordem.c       — a regra pura (src/cwordem.c): ordem por modo,
 #                           estreias, conjunto de futuros;
-#   tests/cwordem_desc.c  — montarContinuar com um "Trakt" falso: a ordem que
+#   tests/cwordem_desc.c tests/discovery_boundary_stub.c  — montarContinuar com um "Trakt" falso: a ordem que
 #                           sai em cada modo e o showUnairedNextUp;
 #   tests/cwordem_home.c tests/amigosfil_stub.c  — a HOME parte a retomada e poe "Proximos episodios"
 #                           logo abaixo dela so em "Separar futuros".
@@ -21,15 +21,15 @@ out=${TMPDIR:-/tmp}
 cc ${flags[@]+"${flags[@]}"} src/cwordem.c src/cwretido.c tests/cwordem.c -Isrc \
   -o "$out/nuvio-cwordem-tests" -O1 -g -Wall -Wextra
 "$out/nuvio-cwordem-tests"
-cc ${flags[@]+"${flags[@]}"} src/catalogo.c src/progresso.c src/cwordem.c src/cwretido.c tests/cwordem_desc.c \
+cc ${flags[@]+"${flags[@]}"} src/catalogo.c src/progresso.c src/cwordem.c src/cwretido.c tests/cwordem_desc.c tests/discovery_boundary_stub.c \
   src/cotacat.c src/js.c src/metaprov.c src/colecoes.c src/redeurl.c src/catordem.c \
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -o "$out/nuvio-cwordem-desc-tests" -O1 -g \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined -Wno-unused-function
 "$out/nuvio-cwordem-desc-tests"
 cc ${flags[@]+"${flags[@]}"} src/catalogo.c src/progresso.c src/focus.c src/ajustes.c src/ajlog.c src/posterprov.c src/redeurl.c src/colecoes.c \
-  src/js.c src/metaprov.c src/catordem.c src/fileiras.c src/artehero.c src/cwordem.c src/cwretido.c src/fonteregra.c src/regexjs.c src/curadoria.c tests/cwordem_home.c tests/amigosfil_stub.c \
-  -Isrc -DCURADORIA_TESTE -o "$out/nuvio-cwordem-home-tests" -O1 -g -ffunction-sections -fdata-sections \
+  src/js.c src/metaprov.c src/catordem.c src/fileiras.c src/homefil.c src/artehero.c src/cwordem.c src/cwretido.c src/fonteregra.c src/regexjs.c src/curadoria.c tests/cwordem_home.c tests/amigosfil_stub.c tests/home_boundary_stub.c \
+  -Isrc -DNV_SHOT_HOOKS -DCURADORIA_TESTE -o "$out/nuvio-cwordem-home-tests" -O1 -g -ffunction-sections -fdata-sections \
   -Wl,-dead_strip -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -Wno-deprecated-declarations -Wno-macro-redefined
 "$out/nuvio-cwordem-home-tests"

@@ -1,0 +1,1 @@
+Distinct Lucide symbols for the 16 supported sports; generic defaults, not team or league marks. Lucide ISC license: ../lucide/LICENSE. Runtime uses esp_<sport>.png through the shared icon renderer. Rebuild with tools/icones-esportes.sh.

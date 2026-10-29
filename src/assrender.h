@@ -24,6 +24,11 @@ void assrender_definir_texto_estilo(const PlainAssStyle *style);
 int  assrender_atualizar(const char *corpo, size_t tamanho, unsigned geracao);
 void assrender_limpar(void);
 void assrender_limpar_fontes(void);
+/* Private, validated subtitle font. NULL restores the bundled fallback. */
+/* Admission and local preference commit are serialized with a rare selector
+ * rebuild. The callback must not acquire other app locks or perform network IO. */
+int assrender_fonte_local_transacao(const char *caminho, int (*confirmar)(void *), void *u);
+int assrender_fonte_local_ativa(const char *caminho);
 /* Esvazia o cache de glifos/bitmaps do libass (aviso de memoria, #415). */
 void assrender_aliviar(void);
 

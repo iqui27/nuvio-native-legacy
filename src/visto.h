@@ -37,11 +37,20 @@ int visto_destinos(void);
 // argumento invalido. `destinos` e uma mascara de VISTO_*.
 int visto_episodios(const char *imdb, const char *tipo, const VistoPar *pares,
                     int n, int visto, int destinos);
+int visto_episodios_item(int indice, const char *imdb, const char *tipo,
+                        const VistoPar *pares, int n, int visto, int destinos);
 // Async actions freeze their original tracker authentication at enqueue;
 // late workers never use the destination profile's accounts.
 // O mesmo, SINCRONO — para o teste e para quem ja esta num fio.
 int visto_episodios_ja(const char *imdb, const char *tipo, const VistoPar *pares,
                        int n, int visto, int destinos);
+
+// QUEM QUER SABER de cada lote de episodios marcado/desmarcado na TV (player,
+// folha de episodios, agenda), no fio de quem chamou visto_episodios, antes da
+// rede. Um ouvinte so (a trava de serie, travarede.c); NULL desliga. Ponteiro
+// e nao chamada direta para visto.c continuar compilando sozinho nos testes.
+typedef void (*VistoOuvinte)(const char *imdb, const VistoPar *pares, int n, int visto);
+void visto_ao_marcar(VistoOuvinte fn);
 
 // Whole title (movie or series), persisted before dispatch to every destination.
 // `temporadas` (numeros) so importa para desmarcar serie no Simkl.

@@ -7,8 +7,11 @@
 #include <string.h>
 
 static int lg = IDIOMA_EN;
+// O formato do relogio (Ajustes > Aparencia), como no src/ajustes.c.
+static int r12 = 0;
 int ajustes_idioma(void) { return lg; }
 int ajustes_idioma_ingles(void) { return lg == IDIOMA_EN; }
+int ajustes_relogio_12h(void) { return r12; }
 
 static int falhas;
 #define CONFERE(c, ...) do { if (!(c)) { printf("FALHOU: " __VA_ARGS__); printf("\n"); falhas++; } } while (0)
@@ -28,6 +31,20 @@ int main(void) {
   CONFERE(!strcmp(fim, "Ends at 13:45"), "en: \"%s\"", fim);
   relogio_fim(fim, sizeof fim, agora, -5);
   CONFERE(!strcmp(fim, "Ends at 10:10"), "en, falta negativa: \"%s\"", fim);
+
+  // O RELATO DA TIZEN: com o relogio em 12 h ligado, a frase tem de sair em
+  // 12 h tambem ("9:10 PM"), e nao no 24 h fixo do strftime.
+  r12 = 0;
+  relogio_fim(fim, sizeof fim, agora, 11 * 3600);
+  CONFERE(!strcmp(fim, "Ends at 21:10"), "en, relogio em 24 h: \"%s\"", fim);
+  relogio_fim_ilha(fim, sizeof fim, agora, 11 * 3600);
+  CONFERE(!strcmp(fim, "ends at 21:10"), "en, pilula em 24 h: \"%s\"", fim);
+  r12 = 1;
+  relogio_fim(fim, sizeof fim, agora, 11 * 3600);
+  CONFERE(!strcmp(fim, "Ends at 9:10 PM"), "en, relogio em 12 h: \"%s\"", fim);
+  relogio_fim_ilha(fim, sizeof fim, agora, 11 * 3600);
+  CONFERE(!strcmp(fim, "ends at 9:10 PM"), "en, pilula em 12 h: \"%s\"", fim);
+  r12 = 0;
 
   // O DEFEITO, como era: fim[32] em russo deixava so o primeiro digito.
   lg = IDIOMA_RU;

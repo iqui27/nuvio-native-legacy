@@ -47,7 +47,7 @@ static int linha(int op) {
 }
 static void tocar(int op) {
   int i=linha(op);assert(visivel(i) && focavel(i));
-  ajPonteiroItem(i,0);assert(focoOp==op);key(SDLK_RETURN);
+  ajPonteiroItem(i,0);if(focoOp!=op)fprintf(stderr,"Pointer expected %s, got %d (editor %d op %d)\n",CHAVE[op],focoOp,uxEditor,uxOp);assert(focoOp==op);key(SDLK_RETURN);
 }
 static void salvarTeclado(const char *t) {
   assert(teclado_aberto());teclado_teste_texto(t);teclado_teste_foco(0,0);
@@ -75,6 +75,7 @@ static void raiz(void) {
   for(int i=0;i<6 && (uxEditor || iptvForm.tipo || teclado_aberto());i++) {
     key(SDLK_ESCAPE);ajustes_atualizar(0.016f,SDL_GetTicks());
   }
+  if(uxEditor || iptvForm.tipo)fprintf(stderr,"Root stuck editor=%d op=%d form=%d legal=%d\n",uxEditor,uxOp,iptvForm.tipo,registro_legal_aberto());
   assert(!uxEditor && !iptvForm.tipo);
 }
 static void lista(int tipo){raiz();tocar(listaOp(tipo));assert(uxEditor && uxOp==listaOp(tipo));}
@@ -176,7 +177,7 @@ int main(int argc,char **argv) {
   tocar(AJ_IPTV_ORDEM);perfis_invalidar_sessao();key(SDLK_RETURN);assert(!frAberta);
   puts("PASS: guide-order setting and account arrow controls preserve selection/credentials and reject stale profiles");
   raiz();tocar(AJ_EPG_MEMORIA);key(SDLK_RIGHT);key(SDLK_RETURN);
-  assert(valor[AJ_EPG_MEMORIA]==1 && somenteDesteAparelho(AJ_EPG_MEMORIA) && !dePerfil(AJ_EPG_MEMORIA));
+  assert(valor[AJ_EPG_MEMORIA]==1 && somenteDesteAparelho(AJ_EPG_MEMORIA) && dePerfil(AJ_EPG_MEMORIA) && escopoDe(AJ_EPG_MEMORIA)==ESC_PERFIL_LOCAL);
   tocar(AJ_EPG_MEMORIA);key(SDLK_RIGHT);key(SDLK_RETURN);assert(valor[AJ_EPG_MEMORIA]==2);
   tocar(AJ_GUIA_CATEGORIAS);assert(uxEditor && !uxNCategorias);key(SDLK_RETURN);assert(!categoriaGravacoes);ajToqueConfirmar(0,0);assert(!uxEditor && !categoriaGravacoes);
   nCategoriasTeste=2;

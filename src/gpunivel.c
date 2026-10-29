@@ -27,6 +27,12 @@
 #endif
 #endif
 
+// Match android.c's logcat tag; also keep the session file via stdout.
+#ifdef NV_ANDROID
+#include <android/log.h>
+#define printf(...) (__android_log_print(ANDROID_LOG_INFO, "nuvio", __VA_ARGS__), printf(__VA_ARGS__))
+#endif
+
 #define GPUN_NIVEL_AUTO_MAX 2   // Effects only; resolution is independent.
 #define GPUN_ARQ "gpu-nivel.txt"
 static int nivel = 0, adaptativo = 0, decidido = 0;
@@ -228,10 +234,9 @@ void gpun_ampliar_app(int app) {
   // Automatic/4K falling back to a 1080 target is the same opt-in 1080->4K path.
   // The caller supplies panel eligibility via ajustes_ampliar_app(). A 4K panel
   // may grant only 1080p (C9); drawable size must not veto its 720p upscaler.
-  ampliarApp = app && upscaleSgsr;
-  // Caminho identidade (sem alvo interno ou drawable 720 nativo): nao ha
-  // ampliacao pelo app, qualquer que seja a escolha gravada — o log diz o
-  // modo efetivo.
+  int novo = app && upscaleSgsr;
+  if (novo == ampliarApp) return;
+  ampliarApp = novo;
   if ((!forca720 && !alvo1080) || (forca720 && telaW <= 1280 && telaH <= 720))
     printf("[gpu-nivel] ampliar=tv upscale=bilinear %dx%d -> %dx%d\n",
            telaW, telaH, telaW, telaH);
@@ -487,8 +492,8 @@ void gpun_redimensionar(int w, int h) {
 #endif
 }
 
-static int upscaleNitido(void) {
-  return ampliarApp && intW > 0 && intH > 0 &&
+int gpun_ampliacao_ativa(void) {
+  return ampliarApp && !intFalhou && intW > 0 && intH > 0 &&
          telaW > intW && telaH > intH;
 }
 
@@ -497,7 +502,7 @@ static int upscaleNitido(void) {
 // 1 SGSR, 2 SGSR sharp (+RCAS), 3 FSR 1 (EASU+RCAS), 4 Lanczos, 5 Bilinear.
 enum { UP_BILINEAR, UP_NITIDA, UP_SGSR, UP_EASU, UP_LANCZOS };
 static int upEtapa(void) {
-  if (!upscaleNitido()) return UP_BILINEAR;
+  if (!gpun_ampliacao_ativa()) return UP_BILINEAR;
   switch (upAlgo) {
     case 1: case 2: return UP_SGSR;
     case 3: return UP_EASU;
@@ -507,7 +512,7 @@ static int upEtapa(void) {
   return telaW % intW || telaH % intH ? UP_SGSR : UP_NITIDA;
 }
 static int upRcas(void) {
-  return upscaleNitido() && (upAlgo == 2 || upAlgo == 3) && upNitidez > 0 && !rcasFalhou;
+  return gpun_ampliacao_ativa() && (upAlgo == 2 || upAlgo == 3) && upNitidez > 0 && !rcasFalhou;
 }
 static const char *upscaleAlgoNome(void) {
   static const char *N[] = { "bilinear", "sharp-bilinear", "sgsr", "easu", "lanczos" };
@@ -518,10 +523,10 @@ static const char *upscaleAlgoNome(void) {
 void gpun_ampliacao(int algo, int nitidez) {
   if (algo == upAlgo && nitidez == upNitidez) return;
   upAlgo = algo; upNitidez = nitidez;
-  if (intFbo) {
-    printf("[gpu-nivel] upscale=%s nitidez=%d\n", upscaleAlgoNome(), upNitidez);
-    fflush(stdout);
-  }
+  printf("[gpu-nivel] choice=%d upscale=%s nitidez=%d app=%d target=%dx%d drawable=%dx%d active=%d\n",
+         upAlgo, upscaleAlgoNome(), upNitidez, ampliarApp, intW, intH, telaW, telaH,
+         gpun_ampliacao_ativa());
+  fflush(stdout);
 }
 
 static int intPreparar(void) {

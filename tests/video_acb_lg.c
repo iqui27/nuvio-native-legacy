@@ -13,6 +13,15 @@ static int fake_sleep(const struct timespec *, struct timespec *);
 /* The official native HTTP payload reads device buffering preferences. */
 int ajustes_buffer_preset(void) { return 0; }
 long memlog_livre_mb(void) { return 4096; }
+/* No HTTP or decoder is started by native dispatcher fixtures. */
+static DtsBufferInfo movie_snapshot;
+static int movie_active, movie_stops;
+static unsigned movie_stop_session;
+int moviebuffer_url(const char *s,const char *h,int m,char *o,size_t n) {
+  (void)s;(void)h;(void)m;(void)o;(void)n;return 0;
+}
+int moviebuffer_info(DtsBufferInfo *out) { *out=movie_snapshot;return movie_active; }
+void moviebuffer_stop(void) { movie_stops++;movie_stop_session=sessao;movie_active=0; }
 static DtsPlaybackStatus pump_status;
 static const char *pump_events[8];
 static int pump_read, pump_count;

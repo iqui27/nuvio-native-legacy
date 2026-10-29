@@ -172,6 +172,8 @@ static int prepareMode(DtsPlayback *p, int stream, int core, double target,int r
   pthread_mutex_lock(&p->lock);
   p->suppress_events = 1;
   p->status.prepared = 0; p->status.media_id[0] = 0;
+  p->status.buffer = (DtsBufferInfo){0};
+  p->status.buffered_until = 0;
   p->load_complete = 0;
   pthread_mutex_unlock(&p->lock);
   dts_pipeline_destroy(p->pipeline); p->pipeline = NULL;
@@ -319,6 +321,19 @@ static void reportRate(DtsPlayback *p, DtsRate *rate, double presented,
   else if (!pause) p->starved = 0;
   memset(rate, 0, sizeof *rate); rate->start = now;
 }
+static void reportBuffer(DtsPlayback *p, double audio_pts, double video_pts) {
+  DtsBufferInfo b;
+  dts_engine_buffer_info(p->engine, &b);
+  pthread_mutex_lock(&p->lock);
+  if(p->stop || p->status.failed || !p->status.prepared || p->seek_dirty || p->audio_dirty) {
+    p->status.buffer = (DtsBufferInfo){0};
+    p->status.buffered_until = 0;
+  } else {
+    p->status.buffer = b;
+    p->status.buffered_until = fmax(0, fmin(audio_pts, video_pts));
+  }
+  pthread_mutex_unlock(&p->lock);
+}
 static void *run(void *user) {
   DtsPlayback *p = user;
   DtsFrame frame;
@@ -448,6 +463,7 @@ static void *run(void *user) {
     }
     /* Native volume is optional. Reapply after each Load completion. */
     if (volume_dirty) (void)dts_pipeline_volume(p->pipeline, volume);
+    reportBuffer(p, fed_audio, fed_video);
     /* Native load completion needs preroll even when opened paused. */
     if (paused && !seek_preroll && (complete || position > preroll + 2.0)) {
       cpu_window = clockSeconds(CLOCK_MONOTONIC); cpu_used = 0;
@@ -615,6 +631,9 @@ static void *run(void *user) {
 done:
   /* Ignore closing callbacks after terminal failure, too. */
   pthread_mutex_lock(&p->lock); p->suppress_events = 1; pthread_mutex_unlock(&p->lock);
+  pthread_mutex_lock(&p->lock);
+  p->status.buffer = (DtsBufferInfo){0};p->status.buffered_until = 0;
+  pthread_mutex_unlock(&p->lock);
   dts_subtitles_destroy(p->subtitle_decoder); p->subtitle_decoder = NULL;
   dts_pipeline_destroy(p->pipeline);
   p->pipeline = NULL;
@@ -692,6 +711,7 @@ void dts_playback_pause(DtsPlayback *p, int paused) {
 void dts_playback_seek(DtsPlayback *p, double seconds) {
   if (!p || !isfinite(seconds) || seconds >= 9e9) return;
   pthread_mutex_lock(&p->lock); p->target = seconds < 0 ? 0 : seconds; p->seek_dirty = 1;
+  p->status.buffer = (DtsBufferInfo){0};p->status.buffered_until = 0;
   pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
 }
 void dts_playback_audio(DtsPlayback *p, int stream) {
@@ -699,6 +719,7 @@ void dts_playback_audio(DtsPlayback *p, int stream) {
   pthread_mutex_lock(&p->lock);
   if (!p->seek_dirty) p->target = p->presented;
   p->audio_stream = stream; p->audio_dirty = 1;
+  p->status.buffer = (DtsBufferInfo){0};p->status.buffered_until = 0;
   pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
 }
 void dts_playback_close(DtsPlayback *p) {

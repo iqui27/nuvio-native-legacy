@@ -197,15 +197,95 @@ char *metaprov_meta_com(const char *tipo, const char *id, int seg_cine,
   return c;
 }
 
+// Validate the entire response before either positive or negative caching.
+// The shared metadata readers intentionally tolerate incomplete JSON.
+static const char *cineJson(const char *p, int depth, const char **meta, int *error) {
+  const char *q;
+  char close;
+  if (depth > 64) return NULL;
+  p = pulaEsp(p);
+  if (*p == '"') {
+    for (p++; *p && *p != '"'; p++) {
+      if ((unsigned char)*p < 32) return NULL;
+      if (*p == '\\') {
+        p++;
+        if (!*p) return NULL;
+        if (*p == 'u') {
+          for (int i = 0; i < 4; i++) {
+            p++;
+            if (!*p || !strchr("0123456789abcdefABCDEF", *p)) return NULL;
+          }
+        } else if (!strchr("\"\\/bfnrt", *p)) return NULL;
+      }
+    }
+    return *p == '"' ? p + 1 : NULL;
+  }
+  if (*p == '{' || *p == '[') {
+    close = *p == '{' ? '}' : ']';
+    p = pulaEsp(p + 1);
+    if (*p == close) return p + 1;
+    for (;;) {
+      if (close == '}') {
+        if (*p != '"' || !(q = cineJson(p, depth + 1, NULL, NULL))) return NULL;
+        int isMeta = meta && q - p == 6 && !memcmp(p, "\"meta\"", 6);
+        if (error && q - p == 7 && !memcmp(p, "\"error\"", 7)) *error = 1;
+        p = pulaEsp(q);
+        if (*p != ':') return NULL;
+        p = pulaEsp(p + 1);
+        if (isMeta) *meta = p;
+      }
+      if (!(p = cineJson(p, depth + 1, NULL, NULL))) return NULL;
+      p = pulaEsp(p);
+      if (*p == close) return p + 1;
+      if (*p != ',') return NULL;
+      p = pulaEsp(p + 1);
+    }
+  }
+  if (!strncmp(p, "null", 4) || !strncmp(p, "true", 4)) return p + 4;
+  if (!strncmp(p, "false", 5)) return p + 5;
+  if (*p == '-') p++;
+  if (*p == '0') p++;
+  else {
+    if (*p < '1' || *p > '9') return NULL;
+    do { p++; } while (*p >= '0' && *p <= '9');
+  }
+  if (*p == '.') {
+    p++;
+    if (*p < '0' || *p > '9') return NULL;
+    do { p++; } while (*p >= '0' && *p <= '9');
+  }
+  if (*p == 'e' || *p == 'E') {
+    p++;
+    if (*p == '+' || *p == '-') p++;
+    if (*p < '0' || *p > '9') return NULL;
+    do { p++; } while (*p >= '0' && *p <= '9');
+  }
+  return p;
+}
+
 char *metaprov_meta_cinemeta_com(const char *tipo, const char *id, int seg,
-                                 MetaprovGet get, void *ctx) {
+                                 MetaprovGet get, void *ctx, MetaprovCineResult *result) {
   char url[400], *c;
   int st = 0;
+  if (result) *result = METAPROV_CINE_RETRY;
   if (!get) get = metaprov_get_rede;
   if (!tipo || !id || !id[0]) return NULL;
   metaprov_url_meta(url, sizeof url, METAPROV_CINEMETA, tipo, id, NULL);
   c = get(url, seg, &st, ctx);
-  if (c && !metaprov_meta_valido(c)) { free(c); c = NULL; }
+  if (c && st >= 200 && st < 300) {
+    int error = 0;
+    const char *meta = NULL, *root = pulaEsp(c);
+    const char *end = *root == '{' ? cineJson(root, 0, &meta, &error) : NULL;
+    if (!end || *pulaEsp(end) || error || !meta || *meta != '{') {
+      free(c); return NULL;
+    }
+    if (*pulaEsp(meta + 1) == '}') {
+      if (result) *result = METAPROV_CINE_ABSENT;
+      free(c); c = NULL;
+    } else if (!metaprov_meta_valido(c)) {
+      free(c); c = NULL;
+    } else if (result) *result = METAPROV_CINE_FOUND;
+  } else { free(c); c = NULL; }
   return c;
 }
 

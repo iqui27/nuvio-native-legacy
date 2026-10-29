@@ -53,6 +53,9 @@ const char   *perfis_dono(void);        // uuid de get_sync_owner; "" se nao vei
 // ContaPerfil ativo. Persistido em disco: reescolher a cada arranque seria uma
 // pergunta que o app ja sabe responder.
 int  perfis_ativo(void);                // profile_index; 1 quando nada escolhido
+// O ADMINISTRADOR (2.1): o perfil principal da conta (is_primary), ou o 1 quando
+// a conta nao traz nenhum. Nao e escolhivel.
+int  perfis_principal(void);
 // O perfil de onde SAEM OS ADDONS: igual a perfis_ativo(), exceto quando o
 // perfil herda os do primario (uses_primary_plugins), e ai e 1.
 int  perfis_ativo_addons(void);

@@ -27,6 +27,9 @@ void novidades20_dir(const char *dirArte);
 // grava a marca da 1.8.0 (o cartao dela nao aparece mais) e abre o guia se a
 // 2.0 ainda nao foi vista.
 void novidades20_primeira_vez(void);
+// Mesma gravacao da primeira_vez (fila antiga vista, marca da 2.0), SEM abrir
+// o guia: quem conduz o primeiro uso e o Comecar da 2.1 (comecar.h).
+void novidades20_suprimir(void);
 int  novidades20_aberto(void);
 // `novo` = 1: instalacao nova (a tela final oferece o Guia de uso primeiro).
 void novidades20_abrir(int novo);

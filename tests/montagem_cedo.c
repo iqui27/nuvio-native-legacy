@@ -145,6 +145,12 @@ int addons_travar_lista(unsigned versao, int perfil) { (void)versao; (void)perfi
 void addons_destravar_lista(void) {}
 const char *addons_base_por_id(const char *id) { return id && !strcmp(id, AID) ? baseAtual() : ""; }
 void  addons_manifesto_lido(int i, const char *c) { (void)i; (void)c; }
+void ws_destino(const char *b, const char *u, int p, char out[20]) {
+  (void)b; (void)u; (void)p; strcpy(out, "fixture");
+}
+void addons_manifesto_lido_base(int i, const char *b, const char *d, unsigned v, const char *c) {
+  (void)b; (void)d; (void)v; addons_manifesto_lido(i, c);
+}
 int addons_identidade_recebida(const char *base, unsigned versao, NvPerfilSessao sessao,
                               const char *corpo) {
   (void)corpo;

@@ -47,7 +47,16 @@
 // perfis_ativo() no momento do gesto. Devolve quantas entradas mudaram.
 int  contapend_episodios(const char *imdb, const char *tipo,
                          const VistoPar *pares, int n, int visto);
+// O MESMO, num perfil que nao e o ativo: a trava de serie no modo Juntos marca
+// o episodio para os outros perfis-membro que estavam no sofa (trava.h). A
+// conta aceita `p_profile_id` de qualquer perfil da mesma conta (o token e da
+// CONTA; o PIN e so uma porta no cliente) — ver STATUS-trava.md secao 1.
+int  contapend_episodios_perfil(int perfil, const char *imdb, const char *tipo,
+                                const VistoPar *pares, int n, int visto);
 int  contapend_titulo(const char *imdb, const char *tipo, int visto);
+// O mesmo, para OUTRO perfil da conta (Trava em modo Juntos).
+int  contapend_episodios_perfil(int perfil, const char *imdb, const char *tipo,
+                                const VistoPar *pares, int n, int visto);
 // "+" / tirar da lista. `nome`/`poster` so servem ao item novo na conta.
 int  contapend_lista(const char *imdb, const char *tipo, const char *nome,
                      const char *poster, int salvo);
@@ -55,6 +64,9 @@ int  contapend_lista(const char *imdb, const char *tipo, const char *nome,
 // Persist local watched intent even without a Nuvio account. Destinations are
 // retried independently; seasons are retained for safe Simkl series removal.
 long long contapend_gesto(const char *id, const char *tipo, const VistoPar *pares, int n,
+                          int visto, int destinos, const int *temporadas, int nt);
+long long contapend_gesto_alvos(const char *id, const char *tipo,
+                          const VistoPar *pares, const int *tvdbEps, int n,
                           int visto, int destinos, const int *temporadas, int nt);
 // Check queued intent after acquiring the profile write gate.
 int contapend_gesto_atual(const char *id, int t, int e, long long ms);
@@ -73,7 +85,8 @@ int  contapend_enviar(void);
 int contapend_reenviar_overrides(const char *id, long long ms);
 int  contapend_reenviar(void); // Retry pending Trakt/Simkl for the active profile.
 void contapend_reenviar_com(int (*f)(const char *, const char *, const VistoPar *,
-                                     int, int, int, const int *, int));
+                                     int, int, int, const int *, int,
+                                     const int *));
 // Dispara contapend_enviar num fio, se nenhum estiver no ar (se estiver, ele
 // repete uma volta ao terminar).
 void contapend_chutar(void);

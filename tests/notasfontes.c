@@ -169,6 +169,50 @@ int main(void) {
     assert(!nf_grade_celula(0, 10, 1700, 400, &cw, &ch));
     assert(nf_grade_celula(1, 30, 700, 400, &cw, &ch) && 30 * cw + 29 * 4 <= 700.01f); }
 
+  // --- resumo direto das notas nativas (cartao da media da fileira Notas) ----
+  { NfResumo r;
+    // As cinco do cenario de captura: IMDb 80, Tomatoes 92, Metacritic 78,
+    // Trakt 85, Letterboxd 39 (3.9/5 -> 78). A agregada zerada nao entra.
+    int cru[EX_NFONTES] = { 0 };
+    cru[EX_IMDB] = 80; cru[EX_TOMATOES] = 920; cru[EX_METACRITIC] = 780;
+    cru[EX_TRAKT] = 850; cru[EX_LETTERBOXD] = 39;
+    nf_resumo_cru(cru, &r);
+    assert(r.n == 5);
+    assert(r.media == 83);                       // 413/5 = 82.6, rounded
+    assert(r.criticos == 85 && r.publico == 81); // {92,78} e {80,85,78}
+    assert(r.temDiff && r.diff == -4);
+    assert(r.min == 78 && r.fonteMin == EX_METACRITIC);
+    assert(r.max == 92 && r.fonteMax == EX_TOMATOES);
+    // The eight-source legacy card: 82 overall, critics 78, audience 85.
+    // Include sources absent from the five individual tiles, plus MDBList.
+    cru[EX_IMDB]=82; cru[EX_TOMATOES]=950; cru[EX_METACRITIC]=770;
+    cru[EX_METAUSER]=820; cru[EX_TRAKT]=870; cru[EX_TMDB]=860;
+    cru[EX_LETTERBOXD]=43; cru[EX_EBERT]=25; cru[EX_MDBSCORE]=1000;
+    nf_resumo_cru(cru,&r);
+    assert(r.n==8 && r.media==82);
+    assert(r.criticos==78 && r.publico==85 && r.temDiff && r.diff==7);
+    assert(r.min==63 && r.fonteMin==EX_EBERT);
+    assert(r.max==95 && r.fonteMax==EX_TOMATOES);
+    // Round halves up, and preserve source order when scores tie.
+    memset(cru,0,sizeof cru); cru[EX_IMDB]=100;
+    cru[EX_TOMATOES]=810;
+    nf_resumo_cru(cru,&r);
+    assert(r.media==91 && r.criticos==81 && r.publico==100 && r.diff==19);
+    cru[EX_IMDB]=80;
+    nf_resumo_cru(cru,&r);
+    assert(r.media==81 && r.diff==-1);
+    cru[EX_TOMATOES]=800;
+    nf_resumo_cru(cru,&r);
+    assert(r.min==80 && r.max==80 && r.fonteMin==EX_IMDB && r.fonteMax==EX_IMDB);
+    // A nota agregada do MDBList nunca entra na conta, nem sozinha.
+    memset(cru, 0, sizeof cru); cru[EX_MDBSCORE] = 740;
+    nf_resumo_cru(cru, &r);
+    assert(r.n == 0 && !r.temDiff);
+    // Sem nenhuma nota o resumo nao existe (o cartao fica oculto).
+    memset(cru, 0, sizeof cru);
+    nf_resumo_cru(cru, &r);
+    assert(r.n == 0); }
+
   puts("notasfontes: PASS (escalas, texto, ordem, cores, resumo, encaixe, grade)");
   return 0;
 }

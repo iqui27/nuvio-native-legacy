@@ -19,6 +19,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+// This SDL keyboard fixture models the older webOS bridge without crash injection.
+int texto_teste_webos_major(void) { return 4; }
+void texto_teste_crash_outro(void) { abort(); }
+
 // Como main.c: observar ANTES do app, depois o app.
 static void entregar(SDL_Event *e) { texto_sistema_observar(e); spot_evento(e); }
 static void bombear(void) {

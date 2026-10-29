@@ -58,6 +58,7 @@ void debrid_contexto_sair(void);
 // realdebrid/real-debrid, torbox e premiumize (com ou sem hifen). Uma chave
 // por servico; chamar de novo para outro servico NAO apaga a anterior.
 void debrid_definir_chave(const char *servico, const char *chave);
+void debrid_habilitar(int ligado); // Device-local switch; credentials remain intact.
 int  debrid_ativo(void);          // ha chave de um servico que sabemos resolver
 // "https://host" da API de cada servico com chave que pode resolver (aquecer.c).
 int  debrid_origens(const char **origens, int max);
@@ -169,6 +170,11 @@ const char *debrid_sem_plano_nome(int mascara);
 //                         link do CDN.
 //   debrid_tb_adicionar:  BLOQUEIA. Poe o torrent na conta SO se ja estiver em
 //                         cache; devolve o id ou -1.
+//   debrid_tb_airlock:    BLOQUEIA. PUT de edicao do item (torrent ou usenet) so
+//                         com `airlocked`: 1 liga o Airlock (fora da purga de 30
+//                         dias), 0 desliga. 1 = feito; 0 = recusado ou sem
+//                         resposta, e `detalhe` (pode ser NULL) recebe a frase do
+//                         TorBox (cota do plano, por exemplo).
 // Changes only with account session or effective TorBox key, never a search.
 unsigned debrid_tb_geracao(void);
 int   debrid_tb_disponivel(void);
@@ -178,5 +184,6 @@ int   debrid_tb_disponivel(void);
 char *debrid_tb_mylist(int usenet, int id, int pagina, int fresco, int *st);
 int   debrid_tb_link(int usenet, int id, int arquivo, char *url, unsigned n);
 int   debrid_tb_adicionar(const char *hash);
+int   debrid_tb_airlock(int usenet, int item, int ligar, char *detalhe, unsigned n);
 
 #endif

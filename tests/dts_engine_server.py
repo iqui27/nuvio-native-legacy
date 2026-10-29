@@ -28,8 +28,10 @@ class Handler(BaseHTTPRequestHandler):
         slow = self.path.startswith('/slow/')
         parallel = self.path.startswith('/parallel/')
         prefetch = self.path.startswith('/prefetch/')
+        telemetry = self.path.startswith('/telemetry/')
         path = self.path.removeprefix('/slow') if slow else self.path.removeprefix('/parallel')
         if prefetch: path = self.path.removeprefix('/prefetch')
+        if telemetry: path = self.path.removeprefix('/telemetry')
         if retry: path = self.path[retry.end()-1:]
         if slow: time.sleep(.05)
         target = root / path.removeprefix('/')
@@ -57,6 +59,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parallel: time.sleep(.12)
         if prefetch: time.sleep(.8 if lo == 8*1024*1024 else .02)
+        if telemetry and lo == 4*1024*1024-1: time.sleep(2)
         if lo >= total:
             with lock: active -= 1
             self.send_response(416); self.send_header('Content-Range', f'bytes */{total}'); self.send_header('Content-Length', '0'); self.end_headers(); return

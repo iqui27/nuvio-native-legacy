@@ -1,0 +1,13 @@
+# Falhas JA existentes (nao sao regressao). Formato, uma por linha, separado por "|":
+#   tests/nome.sh | rc esperado | assinatura (trecho EXATO que precisa aparecer na saida) | motivo
+# Nome exato (sem glob). Mesmo teste com OUTRO rc ou SEM a assinatura = regressao.
+# Teste inexistente = FALHA. Teste que passou a passar = aviso "corrigido, tire da lista".
+# So entram aqui testes que sao trava de alguma issue no mapa.json.
+tests/fontecache_vod.sh|1|"_addonstats_registrar", referenced from|link do teste nao inclui addonstats
+tests/heroidentidade.sh|1|"_ajlog_mudou", referenced from|link do teste nao inclui ajlog
+tests/player.sh|134|Assertion failed: (!player_controles_visiveis())|player_regression.c:161
+tests/tizen-despedida.sh|1|Cannot find module 'playwright'|falta playwright no Mac
+tests/tpk-escolha.sh|1|"_ling_do_nome", referenced from|link do teste nao inclui ling
+tests/tpk-roi.sh|1|"_ling_tipo_legenda", referenced from|link do teste nao inclui ling
+tests/trailer-hero-contract.sh|1|AssertionError [ERR_ASSERTION]: detalhe: OK no cartao sem fonte|contrato do trailer na Samsung
+# fonte_qualidade (ate a decisao do DV P5) nao e trava de nenhuma issue hoje; se virar, entre aqui com rc e assinatura.

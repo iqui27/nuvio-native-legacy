@@ -15,6 +15,9 @@ void nv_identity_desc_garantir(int ix) { (void)ix; }
 void nv_identity_intro_pedir(const char *id, long tmdb, int t, int e, double a, double p) {
   (void)id; (void)tmdb; (void)t; (void)e; (void)a; (void)p;
 }
+void nv_identity_intro_mapeado(const char *id, long tmdb, int t, int e, int it, int ie, double a, double p) {
+  (void)it; (void)ie; nv_identity_intro_pedir(id, tmdb, t, e, a, p);
+}
 void nv_identity_trakt_marcar(const char *id, double p, double d, double a, int fim) {
   (void)p; (void)d; (void)a; (void)fim;
   snprintf(statsId, sizeof statsId, "%s", id);
@@ -76,7 +79,7 @@ int main(int argc, char **argv) {
   }
   player_episodio_atual(&t, &e);
   printf("player episode %d:%d; catalog type=%s\n", t, e, cat_item(0)->tipo);
-  if (!movie && (t != (lateClose ? 0 : expectedT) || e != (lateClose ? 0 : defaultSeries ? 1 : 2))) failed = 1;
+  if (!movie && (t != expectedT || e != (defaultSeries ? 1 : 2))) failed = 1;
   // Advance the fake pipeline against real monotonic time. This satisfies
   // the production watched-proof guard rather than changing its globals.
   for (int i = 0; i < 24; i++) {

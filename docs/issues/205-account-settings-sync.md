@@ -226,6 +226,7 @@ fundoDinamicaLocal
 fundoDinamicaCorLocal
 detEspacoLocal
 focoAcentoLocal
+pausaComentariosLocal
 ```
 
 Three credential-free preference stores travel with the section, encoded as hexadecimal to preserve tabs/newlines exactly with the existing JSON reader:

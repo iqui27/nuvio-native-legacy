@@ -1,5 +1,6 @@
 #include "metaep.h"
 #include "js.h"
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -23,36 +24,113 @@ static void ids_do_video(const char *video, const char *fim, MetaEpInfo *out) {
   const char *ids = strstr(video, "\"ids\"");
   const char *ini;
   const char *fids;
-  if (!ids || ids >= fim) return;
-  ini = strchr(ids, '{');
-  if (!ini || ini >= fim) return;
-  fids = js_fim(ini);
-  if (!fids || fids > fim) return;
-  id_num_ou_texto(ini, fids, "tvdb", out->tvdb, sizeof out->tvdb);
-  id_num_ou_texto(ini, fids, "tmdb", out->tmdb, sizeof out->tmdb);
-  id_num_ou_texto(ini, fids, "trakt", out->trakt, sizeof out->trakt);
+  char direto[sizeof out->tvdb] = "", aninhado[sizeof out->tvdb] = "";
+  id_num_ou_texto(video, fim, "tvdb_id", direto, sizeof direto);
+  if (ids && ids < fim) {
+    ini = strchr(ids, '{');
+    if (ini && ini < fim) {
+      fids = js_fim(ini);
+      if (fids && fids <= fim) {
+        id_num_ou_texto(ini, fids, "tvdb", aninhado, sizeof aninhado);
+        id_num_ou_texto(ini, fids, "tmdb", out->tmdb, sizeof out->tmdb);
+        id_num_ou_texto(ini, fids, "trakt", out->trakt, sizeof out->trakt);
+      }
+    }
+  }
+  // Two disagreeing declarations are not proof of either episode.
+  if (direto[0] && aninhado[0] && strcmp(direto, aninhado)) return;
+  snprintf(out->tvdb, sizeof out->tvdb, "%s", direto[0] ? direto : aninhado);
+}
+
+static int id_inteiro(const char *s) {
+  unsigned long long v = 0;
+  if (!s || *s < '1' || *s > '9') return 0;
+  for (; *s; s++) {
+    if (*s < '0' || *s > '9') return 0;
+    v = v * 10 + (unsigned)(*s - '0');
+    if (v > INT_MAX) return 0;
+  }
+  return (int)v;
+}
+
+int metaep_tvdb_video(const char *video, const char *fim) {
+  MetaEpInfo info;
+  if (!video) return 0;
+  if (!fim) fim = video + strlen(video);
+  memset(&info, 0, sizeof info);
+  ids_do_video(video, fim, &info);
+  return id_inteiro(info.tvdb);
 }
 
 int metaep_buscar(const char *corpo, int t, int e, MetaEpInfo *out) {
   const char *p;
+  MetaEpInfo achado;
+  int encontrou = 0;
+  unsigned conflito = 0;
   if (!corpo || t < 0 || e <= 0 || js_videos_temporadas_falsas(corpo)) return 0;
+  memset(&achado, 0, sizeof achado);
   p = js_array(corpo, NULL, "videos");
   while (p) {
     const char *f = js_fim(p);
     int tv = metaep_temporada(p, f);
     int ev = (int)js_num(p, f, "episode", 0);
     if (tv == t && ev == e) {
-      if (out) {
-        memset(out, 0, sizeof *out);
-        out->temporada = tv;
-        out->episodio = ev;
-        ids_do_video(p, f, out);
+      MetaEpInfo atual;
+      memset(&atual, 0, sizeof atual);
+      atual.temporada = tv;
+      atual.episodio = ev;
+      ids_do_video(p, f, &atual);
+      if (!encontrou) achado = atual;
+      else {
+#define MESCLAR_ID(campo, bit) do { \
+        if (!(conflito & (bit)) && achado.campo[0] && atual.campo[0] && \
+            strcmp(achado.campo, atual.campo)) { \
+          achado.campo[0] = 0; conflito |= (bit); \
+        } else if (!(conflito & (bit)) && !achado.campo[0] && atual.campo[0]) \
+          snprintf(achado.campo, sizeof achado.campo, "%s", atual.campo); \
+      } while (0)
+        MESCLAR_ID(tvdb, 1u); MESCLAR_ID(tmdb, 2u); MESCLAR_ID(trakt, 4u);
+#undef MESCLAR_ID
       }
-      return 1;
+      encontrou = 1;
     }
     p = js_prox(f);
   }
-  return 0;
+  if (encontrou && out) *out = achado;
+  return encontrou;
+}
+
+int metaep_buscar_tvdb(const char *corpo, int tvdb, MetaEpInfo *out) {
+  const char *p;
+  MetaEpInfo achado;
+  int encontrou = 0;
+  if (!corpo || tvdb <= 0 || js_videos_temporadas_falsas(corpo)) return 0;
+  memset(&achado, 0, sizeof achado);
+  p = js_array(corpo, NULL, "videos");
+  while (p) {
+    const char *f = js_fim(p);
+    if (metaep_tvdb_video(p, f) == tvdb) {
+      MetaEpInfo atual;
+      memset(&atual, 0, sizeof atual);
+      atual.temporada = metaep_temporada(p, f);
+      atual.episodio = (int)js_num(p, f, "episode", 0);
+      if (atual.temporada < 0 || atual.episodio <= 0) return 0;
+      ids_do_video(p, f, &atual);
+      if (encontrou && (achado.temporada != atual.temporada ||
+                        achado.episodio != atual.episodio)) return 0;
+      achado = atual;
+      encontrou = 1;
+    }
+    p = js_prox(f);
+  }
+  if (encontrou) {
+    MetaEpInfo porPar;
+    if (!metaep_buscar(corpo, achado.temporada, achado.episodio, &porPar) ||
+        id_inteiro(porPar.tvdb) != tvdb) return 0;
+    achado = porPar;
+  }
+  if (encontrou && out) *out = achado;
+  return encontrou;
 }
 
 int metaep_existe(const char *corpo, int t, int e) {

@@ -4,6 +4,8 @@
 float gfx_poster_k(void) { return 1.0f; }
 float gfx_escala_tela_txt(void) { return 1.0f; }
 float gfx_escala_txt(void) { return 1.0f; }
+float gfx_escala_txt_entrar(void) { return 1.0f; }
+void gfx_escala_sair(float previous) { (void)previous; }
 void ajustes_area_conteudo(float left, float right, float *x, float *w) {
   if (x) *x = left;
   if (w) *w = 1920 - left - right;

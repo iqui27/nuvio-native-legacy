@@ -179,6 +179,7 @@ int audioesc_escolher_binge(const AudioCand *c, int n, const AudioLembrada *m, c
 }
 
 int audioesc_escolher(const AudioCand *c, int n, int *origem) {
-  return audioesc_escolher_binge(c, n, temLembrada ? &lembrada : NULL, bingeAtual(), ling_audio(),
-                                 ling_audio2(), ling_original(), origem);
+  return audioesc_escolher_binge(c, n, temLembrada ? &lembrada : NULL, bingeAtual(),
+                                 ling_audio_preferido(), ling_prefere_original()?ling_audio():ling_audio2(),
+                                 ling_prefere_original()?ling_audio2():ling_original(), origem);
 }

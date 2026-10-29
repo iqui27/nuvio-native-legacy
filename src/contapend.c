@@ -16,17 +16,18 @@
 #include <string.h>
 
 typedef int (*CpEnvio)(const char *, const char *, const VistoPar *, int, int,
-                       int, const int *, int);
+                       int, const int *, int, const int *);
 static CpEnvio cpEnvio;
 static int contapend_reenviar_existe(void) { return cpEnvio != NULL; }
 void contapend_reenviar_com(int (*f)(const char *, const char *, const VistoPar *,
-                                     int, int, int, const int *, int)) {
+                                     int, int, int, const int *, int,
+                                     const int *)) {
   cpEnvio = f;
 }
 #include <time.h>
 
 // Mesmo prototipo que contalib.c e app.c usam; mora em catalogo.c.
-extern void cat_historico_definir_id(const char *imdb, const char *tipo, int visto);
+extern void cat_historico_definir_tempo(const char *imdb, const char *tipo, int visto, long long ms);
 
 // Lote por RPC de vistos. O web manda ate 5000 num corpo so; 200 deixa o corpo
 // abaixo de ~30 KB e uma falha custa pouco para repetir.
@@ -45,6 +46,7 @@ typedef struct {
   char id[24];
   char tipo[8];
   int  temp, ep;       // 0/0 = titulo inteiro (season/episode nulos)
+  int  tvdbEp;         // exact Trakt episode target; 0 = use numeric pair
   long long ms;        // quando a pessoa fez o gesto
   long long confMs;
   char nome[160];
@@ -137,9 +139,10 @@ static void gravar(void) {
   for (i = 0; i < nEnt; i++) {
     const Ent *e = &ents[i];
     int k = snprintf(p, tam - (size_t)(p - buf),
-                     "%c\t%c\t%d\t%d\t%s\t%s\t%d\t%d\t%lld\t%lld\t%s\t%s\t%d\n",
+                     "%c\t%c\t%d\t%d\t%s\t%s\t%d\t%d\t%lld\t%lld\t%s\t%s\t%d\t%d\n",
                      e->sup, e->op, e->conf, e->perfil, e->id, e->tipo,
-                     e->temp, e->ep, e->ms, e->confMs, e->nome, e->poster, e->destinos);
+                     e->temp, e->ep, e->ms, e->confMs, e->nome, e->poster,
+                     e->destinos, e->tvdbEp);
     if (k < 0 || (size_t)k >= tam - (size_t)(p - buf)) break;
     p += k;
   }
@@ -170,12 +173,12 @@ static void lerArquivo(void) {
   b = dados_ler(arq);
   if (!b) return;
   for (linha = b; linha && *linha;) {
-    char *fim = strchr(linha, '\n'), *c[13];
+    char *fim = strchr(linha, '\n'), *c[14];
     int k = 0;
     if (fim) *fim = 0;
     c[k++] = linha;
     { char *q;
-      for (q = linha; *q && k < 13; q++) if (*q == '\t') { *q = 0; c[k++] = q + 1; } }
+      for (q = linha; *q && k < 14; q++) if (*q == '\t') { *q = 0; c[k++] = q + 1; } }
     if (k >= 10 && (c[0][0] == 'V' || c[0][0] == 'L') &&
         (c[1][0] == '+' || c[1][0] == '-') && c[4][0] && caber(nEnt + 1)) {
       Ent *e = &ents[nEnt];
@@ -193,6 +196,8 @@ static void lerArquivo(void) {
       if (k > 10) snprintf(e->nome, sizeof e->nome, "%s", c[10]);
       if (k > 11) snprintf(e->poster, sizeof e->poster, "%s", c[11]);
       e->destinos = k > 12 ? atoi(c[12]) : (e->conf ? 0 : VISTO_CONTA);
+      e->tvdbEp = k > 13 ? atoi(c[13]) : 0;
+      if (e->tvdbEp < 0) e->tvdbEp = 0;
       if (e->perfil > 0) nEnt++;
     }
     linha = fim ? fim + 1 : NULL;
@@ -271,6 +276,7 @@ static int registrar(char sup, int perfil, const char *id, const char *tipo,
   x->destinos = VISTO_CONTA;
   x->confMs = 0;
   x->ms = ms;
+  x->tvdbEp = 0;
   limpo(x->tipo, sizeof x->tipo, tipo && tipo[0] ? tipo : (sup == 'V' && e > 0 ? "series" : "movie"));
   if (strcmp(x->tipo, "series") && strcmp(x->tipo, "movie"))
     snprintf(x->tipo, sizeof x->tipo, "%s",
@@ -284,8 +290,13 @@ static int registrar(char sup, int perfil, const char *id, const char *tipo,
 
 int contapend_episodios(const char *imdb, const char *tipo,
                         const VistoPar *pares, int n, int visto) {
+  return contapend_episodios_perfil(perfis_ativo(), imdb, tipo, pares, n, visto);
+}
+
+int contapend_episodios_perfil(int perfil, const char *imdb, const char *tipo,
+                               const VistoPar *pares, int n, int visto) {
   char id[24];
-  int i, k = 0, perfil = perfis_ativo();
+  int i, k = 0;
   long long ms = contapend_agora_ms();
   idVisto(imdb, id, sizeof id);
   if (!id[0] || !pares || n < 1 || perfil < 1 || !sessao_logada()) return 0;
@@ -333,7 +344,8 @@ int contapend_lista(const char *imdb, const char *tipo, const char *nome,
   return k;
 }
 
-long long contapend_gesto(const char *imdb, const char *tipo, const VistoPar *pares, int n,
+long long contapend_gesto_alvos(const char *imdb, const char *tipo,
+                    const VistoPar *pares, const int *tvdbEps, int n,
                     int visto, int destinos, const int *temporadas, int nt) {
   char id[24], temps[160] = "";
   int i, k = 0, perfil = perfis_ativo();
@@ -362,11 +374,19 @@ long long contapend_gesto(const char *imdb, const char *tipo, const VistoPar *pa
     if (p >= 0) {
       ents[p].destinos = destinos & (VISTO_TRAKT | VISTO_SIMKL | VISTO_CONTA);
       ents[p].conf = !ents[p].destinos;
+      ents[p].tvdbEp = tvdbEps && tvdbEps[i] > 0 ? tvdbEps[i] : 0;
     }
   }
   if (k) gravar();
   pthread_mutex_unlock(&trava);
   return k ? ms : 0;
+}
+
+long long contapend_gesto(const char *imdb, const char *tipo,
+                          const VistoPar *pares, int n, int visto,
+                          int destinos, const int *temporadas, int nt) {
+  return contapend_gesto_alvos(imdb, tipo, pares, NULL, n, visto, destinos,
+                               temporadas, nt);
 }
 
 int contapend_estado(const char *imdb, const char *tipo, int t, int e, long long remotoMs, int remoto) {
@@ -915,7 +935,8 @@ static int reenviar(const char *id, long long ms) {
         p = *fim == ',' ? fim + 1 : fim;
       }
       int ok = cpEnvio(snap[i].id, snap[i].tipo, &par, snap[i].ep > 0,
-                       snap[i].op == '+', bits, temps, nt);
+                       snap[i].op == '+', bits, temps, nt,
+                       snap[i].ep > 0 ? &snap[i].tvdbEp : NULL);
       if (ok) confirmar(usu, &snap[i], 1, ok);
       if (ok != bits) falhou = 1;
     }
@@ -1053,8 +1074,8 @@ int contapend_aplicar_local(void) {
         printf("[visto] marcado por conta-jornal-importacao pos=0 dur=0 assistido=0s id=%s\n", copia[i].id);
         fflush(stdout);
       }
-      cat_historico_definir_id(copia[i].id, copia[i].tipo,
-                               contapend_estado(copia[i].id, copia[i].tipo, 0, 0, copia[i].ms, copia[i].op == '+'));
+      cat_historico_definir_tempo(copia[i].id, copia[i].tipo,
+        contapend_estado(copia[i].id, copia[i].tipo, 0, 0, copia[i].ms, copia[i].op == '+'), copia[i].ms);
     }
     k++;
   }

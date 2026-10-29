@@ -82,6 +82,7 @@ static void rgNeutro(GfxRect r, float raioPx, float vidA, float sr, float sg, fl
 #define RG_CHIP_SOL 0.141f, 0.149f, 0.173f   // #24262C
 #define RG_CART_SOL 0.106f, 0.110f, 0.129f   // #1B1C21
 static void rgFocoLinha(GfxRect r, float raioPx) {
+  if (gfx_foco_placa(r, raioPx / r.h, 1, 1)) return;
   if (rgVid()) gfx_cor(r, raioPx / r.h, 1, 1, 1, 0.12f);
   else {
     gfx_rect((GfxRect){ r.x - 10, r.y + 2, r.w + 20, r.h + 26 }, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.30f);

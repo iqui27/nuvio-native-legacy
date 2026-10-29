@@ -4,6 +4,7 @@
 #include "js.h"
 #include "dados.h"
 #include "ajustes.h"
+#include "perfilregras.h"
 #include "descoberta.h"   /* desc_chave_tmdb_reserva */
 #include <pthread.h>
 #include <stdatomic.h>
@@ -638,6 +639,7 @@ int ondever_estado(const char *nome) {
 }
 
 int ondever_abrir(const char *nome) {
+  if(perfil_regra_compras())return ONDE_INFO;
   int e = ondever_estado(nome);
   char id[96] = "";
   const char *loja = idNaLoja(nome);

@@ -21,6 +21,7 @@
 #define NV_GUIA_H
 #include <SDL2/SDL.h>
 #include "catalogo.h"
+#include "guiav5.h"
 #include "epg.h"
 #include <stdint.h>
 #include "gfx.h"   /* GfxRect de guia_logo_desenhar */
@@ -36,6 +37,7 @@ int  guia_visivel(void);         // qualquer um dos dois
 // no canal que esta tocando).
 void guia_focar_id(const char *id);
 void guia_reordenar(void); // presentation only; retain cached channels and focus
+int guia_canal_esporte(const char *nome, const char *grupo);
 
 // Snapshot of all loaded categories, including hidden ones. Identity excludes
 // account names/order; stale profile sessions cannot change visibility.
@@ -77,6 +79,19 @@ void guia_alternar_favorito(const char *id);
 int  guia_programa_faixa(const char *id, time_t de, time_t ate, EpgProg *out, int cap);
 int  guia_programa_proximo(const char *id, time_t t, int k, EpgProg *p);
 int  guia_programa_agora(const char *id, time_t t, EpgProg *p);
+// Faixa de programas de um canal (agora + futuros), para as telas v5.
+int  guia_programas(const char *id, time_t t, EpgProg *out, int max);
+/* Hooks of the v5 main-guide screens (guiav5ui.c): ask the app to play,
+ * preview or leave, reusing the pedido pipeline the app already polls. */
+int  guia_pedir_canal_id(const char *id);
+int  guia_pedir_preview_id(const char *id);
+void guia_fechar(void);
+// TRUE while the live preview session is running with a frame.
+int  guia_preview_no_ar(void);
+int  guia_preview_ligado(void);
+void guia_definir_preview(int ligado);
+// The id of the channel playing in the guide preview, or "".
+const char *guia_preview_id(void);
 
 void guia_evento(const SDL_Event *e);
 // 1 enquanto a recarga pedida pelo painel de addons de canais ainda corre com
@@ -141,6 +156,7 @@ int  guia_fonte_do_canal(const char *id, char *chave, size_t n);
 // O diagnostico grava formato/modo/proxy na fonte do canal testado (M8), e o
 // player le o modo da fonte ao abrir o canal (padrao = o dos Ajustes).
 void guia_fonte_gravar_diag(const char *id, int formato, int modo, int proxy);
+int  guia_proxy_do_canal(const char *id, int padrao);
 int  guia_modo_do_canal(const char *id, int padrao);   // VERDE no guia completo
 int  guia_item_do_canal(const char *id, const char *nome, const char *base, CatItem *it);
 
@@ -169,7 +185,26 @@ int  guia_buscar_canais(const char *alvoNorm, int *indices, int max);
 // Le a lista do cache do guia (a ultima publicada) se a sessao ainda nao tem
 // lista. Nao vai a rede. O Spotlight chama ao abrir.
 void guia_preparar_busca(void);
+int  guia_canal_numero(int i);   /* provider number of channel i, 0 outside */
+/* Source i for the guide's health sheets: name, LTV_SAUDE_* state, channels,
+ * channels with EPG, cached list and list time. 0 past the last source. */
+typedef struct { const char *nome; int saude, canais, comGuia, deCache; long long atualizada; } GuiaFonteSaude;
+int  guia_fonte_saude(int i, GuiaFonteSaude *o);
+int guia_fonte_ligada(int i);
+int guia_fonte_playback_permitida(const char *base);
+int guia_fonte_alternar(int i);
+int guia_vod_item(int i,G5Item *out);
+const char *guia_vod_origem(const char *source);
 int  guia_canal_campos(int i, const char **id, const char **nome, const char **logo,
                        const char **cat, const char **base);
+/* Unfiltered metadata for the authenticated parental rule editor only. */
+int guia_canal_regra_campos(int i,const char **id,const char **nome,const char **logo,const char **cat,const char **base);
+
+// Bounded programme search for the Sports catalog, on the UI thread.
+unsigned guia_busca_revisao(void);
+int guia_busca_elegivel(int indice);
+int guia_busca_carregando(void);
+const char *guia_busca_conta(int indice);
+int guia_busca_programas(int indice, time_t de, time_t ate, int pular, EpgProg *out, int cap);
 
 #endif

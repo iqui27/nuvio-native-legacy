@@ -1,3 +1,4 @@
+#include "mediaurl.h"
 #include "mkvass.h"
 
 #include "rede.h"
@@ -368,7 +369,7 @@ typedef struct {
 struct MkvassPreparo {
   pthread_mutex_t trava;
   pthread_cond_t  sinal;
-  char     url[4096];       // mesmo limite de Stream.url e video_url_atual
+  char     url[NV_MEDIA_URL_MAX];       // mesmo limite de Stream.url e video_url_atual
   int      faixa;
   unsigned geracao;
   int      estado;
@@ -386,7 +387,7 @@ struct MkvassPreparo {
   // `paralelos`: conexoes extras que o servidor aceita (cai para 1 no primeiro
   // freio). `varreCh`: janela da varredura (cai pela metade a cada prazo
   // estourado). `ultHttp`/`ultCurl`: a ultima falha, para o log e o aviso.
-  char     urlFinal[4096];
+  char     urlFinal[NV_MEDIA_URL_MAX];
   int      paralelos;
   long     varreCh;
   int      ultHttp, ultCurl;
@@ -402,9 +403,9 @@ struct MkvassPreparo {
   // Inicio do arquivo lido pela pre-busca, para a sonda (mkvass_cabecalho).
   unsigned char *cab;
   long     cabN;
-  char     cabUrl[4096];
+  char     cabUrl[NV_MEDIA_URL_MAX];
   LegendaDocumento *referencia;
-  char refUrl[4096];
+  char refUrl[NV_MEDIA_URL_MAX];
   int refFaixa;
   unsigned referencias;
   int isolado;

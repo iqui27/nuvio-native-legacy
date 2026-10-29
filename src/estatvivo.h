@@ -62,7 +62,7 @@ typedef struct {
   double bufSeg, bufMb, bufAlvo;
   int bufPct, bufOrigem;
   // CONEXOES E SERVIDOR.
-  int conexoes, primeiroByteMs, servOrigem;
+  int conexoes, poolConexoes, primeiroByteMs, servOrigem;
   char host[96];
   // ERROS E RECONEXOES (do app). reconHora/reconMin: a hora da ultima.
   int erros, reconexoes, reconHora, reconMin;

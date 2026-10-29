@@ -7,8 +7,12 @@ cd "$(dirname "$0")/.."
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-estatvivo-shot.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 sources=()
-for source in src/*.c src/dts/*.c; do [ "$source" != src/main.c ] && sources+=("$source"); done
-cc "${sources[@]}" tests/estatvivo_shot.c -Isrc -o "$work/shot" -DESTATVIVO_TESTE \
+for source in src/*.c src/dts/*.c; do
+  [ "$source" = src/main.c ] || [ "$source" = src/estatvivoui.c ] || sources+=("$source")
+done
+cc -c src/estatvivoui.c -Isrc -o "$work/ui.o" -DESTATVIVO_TESTE -Dtxt_linha=estatconex_linha -Dtxt_bloco=estatconex_bloco \
+  -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -Wno-deprecated-declarations
+cc "${sources[@]}" "$work/ui.o" tests/estatvivo_shot.c -Isrc -o "$work/shot" -DESTATVIVO_TESTE \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined

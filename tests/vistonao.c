@@ -86,12 +86,14 @@ char *contacache_ler(const char *s, int p, const char *u, long *q) {
   (void)s; (void)p; (void)u; (void)q; return NULL;
 }
 void cat_historico_definir_id(const char *i, const char *t, int v) { (void)i; (void)t; (void)v; }
+void cat_historico_definir_tempo(const char *i, const char *t, int v, long long ms) { (void)ms; cat_historico_definir_id(i, t, v); }
 // O catalogo, que contalib.c pede para a BIBLIOTECA (nao usada aqui).
 const char *i18n(const char *s) { return s; }
 int cat_n(void) { return 0; }
 const CatItem *cat_item(int i) { (void)i; return NULL; }
 int cat_indice_por_imdb(const char *imdb) { (void)imdb; return -1; }
 void cat_definir_na_lista(int i, int n) { (void)i; (void)n; }
+void cat_marcar_fonte(int i, int f) { (void)i; (void)f; }
 int cat_acrescentar_lote(const CatItem *v, int q, int *s) { (void)v; (void)q; (void)s; return 0; }
 
 // A CONTA: aceita tudo com 200 e conta os deletes. O que ela DEVOLVE no pull e
@@ -408,3 +410,5 @@ int main(int argc, char **argv) {
   printf("\nok  desmarcar ganha do Trakt, da conta e de fechar o app\n");
   return 0;
 }
+
+int ajustes_fonte_biblioteca(void) { return 0; }

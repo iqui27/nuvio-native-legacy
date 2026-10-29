@@ -40,6 +40,27 @@ int main(void) {
   homeCom(HOME_LAYOUT_DINAMICA, 1);
   fileiras[2].tipo = FILEIRA_NORMAL;
   assert(layoutHome() == HOME_LAYOUT_DINAMICA && palcoFundoDestino() == 1);
-  puts("dinpalco: Stage/Split use Moderna geometry, hide upper rows; Stage follows setting, Split keeps artwork; Gray default");
+
+  // #659: a escolha da fileira vence o ajuste global; PALCO_PADRAO volta a ele.
+  fil_registrar("cat_palco", "Popular", "Addon", "movie", 6);
+  snprintf(fileiras[2].chave, sizeof fileiras[2].chave, "cat_palco");
+  fileiras[2].tipo = FILEIRA_PALCO;
+  testePalcoFundo = PALCO_CORTINA;
+  assert(fil_palco("cat_palco") == PALCO_PADRAO &&
+         palcoFundoDestino() == PALCO_CORTINA);
+  assert(fil_definir_palco("cat_palco", PALCO_AURA) &&
+         fil_palco("cat_palco") == PALCO_AURA &&
+         palcoFundoDestino() == PALCO_AURA);
+  assert(fil_definir_palco("cat_palco", PALCO_MONUMENTO) &&
+         palcoFundoDestino() == PALCO_MONUMENTO);
+  assert(fil_definir_palco("cat_palco", PALCO_PADRAO) &&
+         palcoFundoDestino() == PALCO_CORTINA);
+  // A fileira ao lado, sem escolha, continua no global.
+  fil_registrar("cat_sem", "Sem escolha", "Addon", "movie", 6);
+  snprintf(fileiras[2].chave, sizeof fileiras[2].chave, "cat_sem");
+  assert(palcoFundoDestino() == PALCO_CORTINA);
+  // Fileira fixa do app nao aceita fundo proprio.
+  assert(!fil_definir_palco("continue_watching", PALCO_AURA));
+  puts("dinpalco: Stage/Split use Moderna geometry, hide upper rows; Stage follows setting, Split keeps artwork; Gray default; #659 per-row stage background overrides global");
   return 0;
 }

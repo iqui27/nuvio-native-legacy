@@ -1,11 +1,8 @@
 // MARCADORES DE ABERTURA, RESUMO E CREDITOS.
 //
-// A fonte e o TheIntroDB (api.theintrodb.org/v4/media), e a troca foi feita por
-// uma razao concreta: o servico anterior (api.introdb.app) e indexado POR
-// EPISODIO — sem `season` e `episode` ele nao responde. Filme, portanto, nao
-// tinha marcador nenhum e caia na estimativa proporcional do posplay.c. O app
-// web tem a mesma limitacao, pelo mesmo motivo (skipIntroRepository.js exige os
-// dois numeros antes de chamar).
+// TheIntroDB (api.theintrodb.org/v4/media) e a fonte principal. IntroDB
+// (api.introdb.app/segments) e outro servico: preenche apenas tipos ausentes,
+// sem substituir TheIntroDB, AniSkip ou capitulos do arquivo.
 //
 // v4 accepts imdb_id or tmdb_id for lookup; responses carry tvdb_id only.
 // Movies need no season/episode. TV coordinates use the provider's numbering.
@@ -24,6 +21,11 @@
 // intro_ativo.
 typedef struct { double inicio,fim; int tipo; int ani; } IntroTrecho; // ani 1 = veio do AniSkip
 enum { INTRO_ABERTURA=1, INTRO_RESUMO=2, INTRO_CREDITOS=3, INTRO_PREVIA=4 };
+// Origem das marcas de um episodio (pagina do titulo, 2.1).
+enum { INTRO_O_NENHUMA=0, INTRO_O_THEINTRODB=1, INTRO_O_ANISKIP=2, INTRO_O_CAPITULOS=4 }; // bits das origens presentes
+// Marcas ja conhecidas de um episodio nesta sessao: bit0 abertura, bit1 resumo,
+// bit2 creditos, bit3 previa. 0 = nenhuma em memoria (nao pergunta a rede).
+int  intro_marcas(const char *imdb,int temporada,int episodio,int *origem);
 // `temporada` e `episodio` ZERO = filme: a consulta sai so com o imdb.
 void intro_pedir(const char *imdb,int temporada,int episodio);
 // Igual a intro_pedir, mas diz a duracao (s) dos episodios E-1 e E+1 quando o
@@ -35,6 +37,13 @@ void intro_pedir_vizinhos(const char *imdb,int temporada,int episodio,double dur
 // tmdb 0: imdb_id com a numeracao do Cinemeta. A duracao vai depois, sozinha,
 // quando o player a informar (intro_definir_duracao).
 void intro_pedir_ids(const char *imdb,long tmdb,int temporada,int episodio,double durAnt,double durProx);
+// O backup IntroDB usa o par original do catalogo/IMDb, mesmo quando a fonte
+// principal recebe o par confirmado pelo TMDB. Nunca reutilizar o par remapeado.
+void intro_pedir_ids_mapeados(const char *imdb,long tmdb,int t,int e,int imdbT,int imdbE,double durAnt,double durProx);
+// Contrato do backup: URL /segments e objetos em segundos (ou ms). Retorna
+// -1 para identidade/resposta invalida; zero para resposta valida sem trechos.
+int intro_montar_url_backup(char *url,size_t n,const char *imdb,int t,int e);
+int intro_extrair_backup(const char *json,const char *imdb,int t,int e,IntroTrecho *out,int max);
 // Evidencia local: corpo TMDB ja baixado; Animation + ja/JP, sem GET novo.
 // Se chegar depois do pedido, refaz uma vez ao reconhecer anime.
 void intro_registrar_tmdb(const char *id,long tmdb,const char *json);
@@ -58,6 +67,8 @@ long intro_kitsu_mal(const char *json);
 // tipo, o que o TheIntroDB/AniSkip trouxe, tenha chegado antes ou depois. n=0
 // limpa. Zerados por intro_desligar.
 void intro_definir_capitulos(const IntroTrecho *v,int n);
+// Novo arquivo do mesmo episodio: descarta capitulos e preserva os trechos da rede.
+void intro_trocar_fonte(void);
 void intro_desligar(void);
 int  intro_ativo(double posSeg,double *fim,int *tipo);
 // Segundo em que os creditos comecam, ou 0 quando nao ha marcador. Serve ao
@@ -151,5 +162,7 @@ int  intro_trechos(IntroTrecho *saida,int max);
 int  intro_creditos_limitados(IntroTrecho *saida,int max);
 #ifdef NV_SHOT_HOOKS
 void intro_shot_definir(const IntroTrecho *v,int n);   // capturas: trechos fixos
+// capturas: marcas lembradas de um episodio (o que a pagina do titulo le)
+void intro_shot_marcas(const char *imdb,int t,int e,const IntroTrecho *v,int n,int origem);
 #endif
 #endif

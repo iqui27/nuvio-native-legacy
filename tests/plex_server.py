@@ -17,25 +17,33 @@ PIN_ID = 123456
 PORT = [0]
 
 lock = threading.Lock()
-state = {"polls": 0, "total_polls": 0, "events": [], "pins": 0, "sections_hits": 0, "probe_hits": 0}
+state = {"polls": 0, "total_polls": 0, "events": [], "pins": 0, "sections_hits": 0, "probe_hits": 0,
+         "decisions": 0, "refuse": set(), "incr": 0, "leaves": 0}
 
 MOVIES = [
     {"ratingKey": "101", "type": "movie", "title": "Movie One", "year": 1999, "summary": "Overview one",
      "rating": 7.8, "contentRating": "R", "duration": 7200000, "viewOffset": 3600000,
      "thumb": "/library/metadata/101/thumb/17", "art": "/library/metadata/101/art/17",
      "Genre": [{"tag": "Drama"}, {"tag": "Thriller"}],
+     "updatedAt": 1700000101, "Media": [{"id": 1, "videoResolution": "1080", "container": "mkv"}],
+     # watched without lastViewedAt — the "unknown timestamp" case of #617
+     "viewCount": 1,
      "Guid": [{"id": "imdb://tt0000101"}, {"id": "tmdb://5101"}, {"id": "tvdb://301"}]},
     {"ratingKey": "102", "type": "movie", "title": "Movie Two", "year": 2005, "duration": 5400000,
      "thumb": "/library/metadata/102/thumb/17",
-     "Guid": [{"id": "tmdb://5102"}]},
+     "updatedAt": 1700000102, "Guid": [{"id": "tmdb://5102"}]},
     {"ratingKey": "103", "type": "movie", "title": "No External Id", "year": 2010, "duration": 5400000,
-     "Guid": []},
+     "updatedAt": 1700000103, "Guid": []},
 ]
 SHOWS = [
     {"ratingKey": "201", "type": "show", "title": "Show One", "year": 2020, "summary": "Show overview",
      "thumb": "/library/metadata/201/thumb/17",
      "Genre": [{"tag": "Comedy"}],
-     "Guid": [{"id": "imdb://tt0000201"}, {"id": "tmdb://7201"}]},
+     "viewCount": 3, "leafCount": 10, "viewedLeafCount": 1,
+     "updatedAt": 1700000201, "Guid": [{"id": "imdb://tt0000201"}, {"id": "tmdb://7201"}]},
+    {"ratingKey": "202", "type": "show", "title": "Completed Show", "year": 2020,
+     "viewCount": 3, "leafCount": 10, "viewedLeafCount": 10,
+     "updatedAt": 1700000202, "Guid": [{"id": "imdb://tt0000202"}]},
 ]
 EPISODES = [
     {"ratingKey": "301", "type": "episode", "parentIndex": 1, "index": 1, "title": "Pilot", "duration": 2700000,
@@ -59,6 +67,13 @@ def media_for(rk):
          "audioCodec": "aac", "videoCodec": "h264", "videoResolution": "720", "container": "mp4",
          "Part": [{"id": 902, "key": "/library/parts/902/1700000001/file.mp4", "size": 999,
                    "container": "mp4"}]},
+        # DTS: no TV backend here opens it; never offered as direct play.
+        {"id": 503, "duration": 7200000, "width": 3840, "height": 2160, "audioChannels": 8,
+         "audioCodec": "dca", "videoCodec": "hevc", "videoResolution": "4k", "container": "mkv",
+         "Part": [{"id": 903, "key": "/library/parts/903/1700000002/file.mkv", "size": 4242,
+                   "container": "mkv",
+                   "Stream": [{"id": 5, "streamType": 1, "codec": "hevc"},
+                              {"id": 6, "streamType": 2, "codec": "dca", "channels": 8, "selected": True}]}]},
     ]}
 
 
@@ -103,7 +118,13 @@ class Handler(BaseHTTPRequestHandler):
                 with lock:
                     return self.reply(200, {"probe": state["probe_hits"], "pins": state["pins"],
                                             "sections": state["sections_hits"],
-                                            "polls": state["total_polls"]})
+                                            "polls": state["total_polls"],
+                                            "decisions": state["decisions"], "incr": state["incr"],
+                                            "leaves": state["leaves"]})
+            if p == "/control/refuse":
+                with lock:
+                    state["refuse"] = set(int(x) for x in q.get("media", [""])[0].split(",") if x)
+                return self.reply(200, {})
             return self.reply(404)
         cid = self.headers.get("X-Plex-Client-Identifier", "")
         if p.startswith("/api/v2/"):
@@ -160,11 +181,23 @@ class Handler(BaseHTTPRequestHandler):
                 {"key": "1", "type": "movie", "title": "Movies"},
                 {"key": "2", "type": "show", "title": "TV Shows"},
                 {"key": "3", "type": "artist", "title": "Music"}]}})
+        if p in ("/library/all", "/playlists"):
+            kind = "collection" if p == "/library/all" else "playlist"
+            return self.reply(200, self.page([{"ratingKey": "4001" if kind == "collection" else "5001",
+                "type": kind, "title": "Fixture collection"}], q))
+        if p == "/playlists/5002/items":
+            items = [dict(EPISODES[1], grandparentRatingKey="201", grandparentTitle="Show One"),
+                     {"ratingKey": "999", "type": "track"}, MOVIES[0]]
+            return self.reply(200, self.page(items, q))
+        if p in ("/library/collections/4001/children", "/playlists/5001/items"):
+            return self.reply(200, self.page(MOVIES[:2], q))
         if p == "/library/sections/1/all":
             return self.reply(200, self.page(MOVIES, q))
         if p == "/library/sections/2/all":
             return self.reply(200, self.page(SHOWS, q))
         if p == "/library/metadata/201/allLeaves":
+            with lock:
+                state["leaves"] += 1
             return self.reply(200, container(EPISODES))
         if p.startswith("/library/metadata/"):
             rk = p.rsplit("/", 1)[1]
@@ -183,6 +216,22 @@ class Handler(BaseHTTPRequestHandler):
                 state["events"].append({"state": q.get("state", [""])[0], "time": q.get("time", [""])[0],
                                         "rk": q.get("ratingKey", [""])[0], "dur": q.get("duration", [""])[0]})
             return self.reply(200, {})
+        if p == "/video/:/transcode/universal/decision":
+            # The profile must come in the header, and the item by path.
+            extra = self.headers.get("X-Plex-Client-Profile-Extra", "")
+            if "add-direct-play-profile" not in extra or "dca" in extra or "truehd" in extra:
+                return self.reply(400)
+            if not q.get("path", [""])[0].startswith("/library/metadata/"):
+                return self.reply(400)
+            mi = int(q.get("mediaIndex", ["0"])[0])
+            with lock:
+                state["decisions"] += 1
+                refused = mi in state["refuse"]
+            code = 3000 if refused else 1000
+            return self.reply(200, {"MediaContainer": {
+                "size": 1, "directPlayDecisionCode": code,
+                "directPlayDecisionText": "App cannot direct play this item." if refused else "Direct play OK.",
+                "Metadata": [{"Media": [{"Part": [{"decision": "transcode" if refused else "directplay"}]}]}]}})
         if p == "/video/:/transcode/universal/stop":
             with lock:
                 state["events"].append({"state": "transcode-stop", "session": q.get("session", [""])[0]})
@@ -190,6 +239,11 @@ class Handler(BaseHTTPRequestHandler):
         return self.reply(404)
 
     def page(self, items, q):
+        if "updatedAt>>" in q:
+            since = int(q["updatedAt>>"][0])
+            items = [x for x in items if x.get("updatedAt", 0) > since]
+            with lock:
+                state["incr"] += 1
         start = int(q.get("X-Plex-Container-Start", ["0"])[0])
         size = int(q.get("X-Plex-Container-Size", ["50"])[0])
         return container(items[start:start + size], total=len(items))

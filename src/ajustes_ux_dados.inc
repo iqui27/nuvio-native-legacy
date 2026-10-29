@@ -11,13 +11,16 @@ static int uxTemPadrao(int op) {
 }
 
 static int uxValorPadrao(int op) {
+  if (op >= AJ_FONTE_OCULTAR_DV && op <= AJ_FONTE_OCULTAR_VIDEO) return !stream_incompat_padrao(op - AJ_FONTE_OCULTAR_DV);
   if (op == AJ_SALVOS_DEST) return ajustes_fonte_resolver(valorPadrao[op], trakt_ativo(), simkl_ativo());
   return uxTemPadrao(op) ? valorPadrao[op] : 0;
 }
 
 /* Fileiras tem uma fonte propria. valor[] e apenas seu espelho na tela. */
 static int uxValorAtual(int op) {
+  if (op >= AJ_FONTE_OCULTAR_DV && op <= AJ_FONTE_OCULTAR_VIDEO) return !ajustes_fonte_ocultar(op - AJ_FONTE_OCULTAR_DV);
   if (op < 0 || op >= AJ_N) return 0;
+  if (ajFonte(op)) return ajFonteAtual(op);
   if (op == AJ_XTREAM_CONEXOES) return xtream_conexoes_modo();
   if (op == AJ_SALVOS_DEST) return ajustes_fonte_biblioteca();
   if(op==AJ_GUIA_CATEGORIAS || op==AJ_IPTV_ACOES || op==AJ_IPTV_EXCLUIR)return 0;
@@ -37,9 +40,14 @@ static int uxDiferente(int op) {
  * Audio/legenda, inclusive "Da conta", continuam no conjunto dePerfil: a
  * escolha e guardada por perfil nesta TV, sem prometer que ja sincronizou. */
 static const char *uxEscopoValor(int op, int v) {
-  if (op == AJ_TEMA && v >= AJ_TEMA_DINAMICA) return "Só nesta TV";
-  if (op == AJ_TMDB_IDIOMA && v == 0) return "Só nesta TV";
-  return op >= 0 && op < AJ_N && dePerfil(op) ? "Conta/perfil" : "Só nesta TV";
+  if (op == AJ_TEMA && v >= AJ_TEMA_DINAMICA) return "Só este perfil, nesta TV";
+  if (op == AJ_TMDB_IDIOMA && v == 0) return "Só este perfil, nesta TV";
+  switch (escopoDe(op)) {   // 2.1: tres escopos
+    case ESC_PERFIL_CONTA: return "Conta/perfil";
+    case ESC_PERFIL_LOCAL: return "Só este perfil, nesta TV";
+    case ESC_TV: return "Todos os perfis desta TV";
+    default: return "Só nesta TV";
+  }
 }
 
 static const char *uxEscopo(int op) {
@@ -103,7 +111,8 @@ static void uxValorTexto(int op, int v, char *buf, size_t tam) {
     snprintf(buf,tam,"%s",s);return;
   }
   o = &OPCOES[op];
-  if (o->tipo == OP_ACAO) texto = i18n("Abrir");
+  if (ajFonte(op)) texto = ajFonteNome(op, v);
+  else if (o->tipo == OP_ACAO) texto = i18n("Abrir");
   else if (o->tipo == OP_LEITURA) texto = i18n("Ver detalhes");
   else if (op == AJ_FILTRO_TAM_MAX && v == 0) texto = i18n("Sem limite de tamanho");
   else if (op == AJ_HERO_TRAILER_ESPERA) {
@@ -185,6 +194,7 @@ static const char *uxSinonimos(int op) {
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA:
       return "legenda secundaria segunda dupla dual posicao topo junto empilhada tamanho cor fundo borda contorno estilo second subtitle position size color";
     case AJ_FONTE_IDIOMA_AUDIO: return "fonte automatica idioma audio dublado dublagem dual multi anime ingles japones preferir dub language";
+    case AJ_FONTE_OCULTAR_DV: case AJ_FONTE_OCULTAR_AUDIO: case AJ_FONTE_OCULTAR_VIDEO: return "sources fontes ocultar incompatível tv dolby vision profile perfil fallback truehd atmos dts dts-hd ac3 eac3 av1 hevc codec decoder resolução";
     case AJ_FONTE_PRIORIDADE: case AJ_FONTE_HDR: return "fonte automatica prioridade qualidade equilibrio fluidez hdr dolby vision dv hdr10 sdr cor escolha melhor resolucao addon aiostreams ordem primeira order first";
     case AJ_LOGO_APP: return "logo marca simbolo novo classico icone identidade nuvio tv retro play gradiente splash";
     case AJ_ABERTURA: return "abertura splash inicio animacao zoom esmaecer fade direto rapido logo entrada boot arranque";
@@ -202,6 +212,7 @@ static const char *uxSinonimos(int op) {
     case AJ_DTS_AC3: return "dts truehd convertido ac3 aac dolby digital 5.1 surround estereo audio som barra de som receiver arc earc conversao lg samsung desligado converted stereo off";
     case AJ_PS_CONTINUAR: return "continuar escolha perfil cartao card tela abertura inicial assistindo retomar remover esconder desligar quem esta assistindo continue watching profile picker";
     case AJ_DV_MKV: return "dolby vision dv dovi mkv matroska perfil 8 5 hdr hdr10 experimental imagem cores";
+    case AJ_HDR10P_STRIP: return "hdr10+ hdr10plus 2094-40 dinamico strip remover tirar hevc pq smpte hdr10 tv trava congela tela preta desligar philips";
     case AJ_CW_RETIDO_TAMBEM: return "continuar assistindo tambem ilha retomar agora fileira duplicar repetir aparecer dois lugares titulo continue watching also island resume";
     case AJ_HIST_CONTA: return "historico historico vistos progresso conta nuvio enviar scrobble simkl trakt perfil sincronizar sync history watched";
     case AJ_SOCIAL: return "social amigos amigo atividade recomendar recomendacoes friends activity recommend presenca desligar remover";
@@ -221,6 +232,8 @@ static const char *uxSinonimos(int op) {
     case AJ_BUSCA_NUVIO: return "busca pesquisa nuvio catalogo resultados primeiro ultimo desligar ocultar mover baixo aiometadata addon search results first last disable";
     case AJ_BUSCA_ORIGEM: return "busca pesquisa fonte origem de from rotulo legenda grupo resultados ocultar esconder mostrar source label caption";
     case AJ_BUSCA_CINEMETA: return "busca pesquisa cinemeta catalogo nuvio addon excluir desligar resultados procurar search";
+    case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS: return "conquistas conquista selos emblemas trilhas progresso perfil aviso creditos secretas dica achievements badges";
+    case AJ_DIARIO_NUVEM: return "diario nuvem conta guardar copia backup salvar historico trocar tv restaurar privado cloud journal";
     case AJ_ENQUETES: return "enquete enquetes votacao votar pesquisa opiniao notificacao notificacoes aviso convite ilha relogio poll";
     case AJ_LEG_LINGUA2: return "idioma legenda secundaria segunda dupla dual second subtitle subtitles";
     case AJ_TRAILER_ZOOM_TPK: return "trailer zoom barras pretas tarja ampliar recorte tela preta samsung experimental";
@@ -270,6 +283,7 @@ static const char *uxSinonimos(int op) {
     case AJ_HERO_SINOPSE_TAM: return "sinopse tamanho destaque hero texto grande normal synopsis size";
     case AJ_HERO_NOTAS: return "nota notas imdb destaque hero avaliacao rating ratings esconder mostrar";
     case AJ_HERO_ANO: return "ano destaque hero lancamento year data esconder mostrar";
+    case AJ_HERO_PASTA_DETALHES: return "pasta colecao detalhes destaque hero folder collection details title";
     case AJ_HERO_DURACAO: return "duracao tempo destaque hero runtime minutos horas esconder mostrar";
     case AJ_HERO_TRAILER: return "trailer trailers destaque topo hero autoplay automatico";
     case AJ_FOCO_TRAILER: return "trailer trailers cartaz poster foco autoplay";
@@ -278,7 +292,7 @@ static const char *uxSinonimos(int op) {
     case AJ_HERO_TRAILER_SOM: case AJ_DET_TRAILER_SOM:
       return "trailer trailers som audio mudo silencio volume";
     case AJ_HERO_TRAILER_ESPERA: return "trailer trailers espera tempo demora atraso";
-    case AJ_LEG_FORCADA: return "legenda forcada forcadas forced letreiros placas audio idioma automatica subtitle";
+    case AJ_LEG_FORCADA: return "legenda forcada forcadas forced letreiros placas audio idioma automatica subtitle so os letreiros quando o audio ja e no seu idioma";
     case AJ_LEG_SYNC_AUTO: case AJ_LEG_SYNC_AUDIO: return "sincronia sincronizar legenda audio fala falas atraso automatico sync subtitle speech";
     case AJ_AVANCADAS: return "avancado avancada avancados avancadas tecnico tecnica opcoes ocultas mostrar esconder advanced";
     case AJ_LOGO_TRAILER: return "trailer trailers logo marca titulo oled queimar burn-in esconder canto";
@@ -297,6 +311,8 @@ static const char *uxSinonimos(int op) {
       return "lento lenta lentidao travando trava falha erro desempenho diagnostico rede internet";
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE:
       return "seekr miniatura barra tempo previa avanco retrocesso";
+    case AJ_GUIA_PREVIA_GRANDE:
+      return "guia tv previa preview grande pequena tamanho hero destaque video canto";
     default: return "";
   }
 }
@@ -316,9 +332,11 @@ static const char *uxCaminhoAntigo(int op) {
     case AJ_JF_LIGADO: case AJ_JF_SERVIDOR: case AJ_JF_ENTRAR: case AJ_JF_SAIR:
     case AJ_EM_SERVIDOR: case AJ_EM_ENTRAR: case AJ_EM_SAIR:
     case AJ_PX_ENTRAR: case AJ_PX_SERVIDOR: case AJ_PX_SAIR:
-    case AJ_PERFIL_ATIVO: case AJ_SYNC: case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_SAIR:
+    case AJ_PERFIL_ATIVO: case AJ_SYNC: case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_SAIR:
     case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_SALVOS_DEST: case AJ_CW_FONTE: case AJ_CW_PROXIMO: case AJ_ENQUETES:
     case AJ_HIST_CONTA: case AJ_SOCIAL:
+    case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS:
+    case AJ_DIARIO_NUVEM:
       return "Contas e serviços";
     case AJ_FONTE_MANUAL: case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_PRIORIDADE: case AJ_FONTE_TOCAR_CONFERINDO: case AJ_FONTE_AQUECER: case AJ_FONTE_CONFERIR_VARIAS: case AJ_FONTE_PREPARAR: case AJ_FONTE_PRECARREGAR:
     case AJ_FONTE_GRUPO: case AJ_FONTE_GRUPO_SESSOES:

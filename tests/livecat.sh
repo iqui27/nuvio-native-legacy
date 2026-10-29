@@ -21,6 +21,7 @@ cc tests/livecat_guia.c src/guiafiltro.c src/livecat.c src/dados.c src/ltv.c src
 # Run both integration regressions even when one fails (FAIL-before evidence).
 NUVIO_DADOS="$tmp/guide" "$tmp/guia" || rc=1
 NUVIO_DADOS="$tmp/guide" "$tmp/guia" restart || rc=1
+NUVIO_DADOS="$tmp/bulk" "$tmp/guia" bulk || rc=1
 if [ "${1:-}" = --guide-only ]; then exit "$rc"; fi
 sources=()
 for source in src/*.c src/dts/*.c; do
