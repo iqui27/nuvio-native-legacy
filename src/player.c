@@ -1565,6 +1565,7 @@ static float aspectoQuadro(void) {
 
 typedef struct { float x, y, w, h; } PlrRect;
 static PlrRect miniDestino(void);
+static void janelaMandar(PlrRect r);
 // ANIMACAO DA JANELA DE VIDEO entre dois retangulos (tela cheia <-> preview
 // do guia). Em degraus espacados, como o recuo do painel de creditos: cada
 // degrau e uma mensagem ao pipeline, entao ha PLR_ENC_PASSOS delas em
@@ -1738,10 +1739,7 @@ static void aplicarAspecto(void) {
   // No PiP todo recalculo cai na miniatura — o videoInfo da fonte nova num
   // zap, por exemplo, chega DEPOIS do video_janela do canto e sem esta
   // guarda reexpandiria o plano para a tela cheia com a moldura la embaixo.
-  if (mini) { PlrRect o = miniDestino();
-              video_janela((int)(o.x + 0.5f), (int)(o.y + 0.5f),
-                           (int)(o.w + 0.5f), (int)(o.h + 0.5f));
-              return; }
+  if (mini) { janelaMandar(miniDestino()); return; }
 
 #ifdef NV_TPK
   // Source lookup may still expose the previous live channel's dimensions.
@@ -2259,9 +2257,7 @@ static void tocarFonteInterno(const char *url) {
   }
   // No PiP a fonte nova retoca o mesmo canto — o destino de tela cheia do
   // aplicarAspecto so vale com a tela aberta.
-  if (mini) { PlrRect r = miniDestino();
-              video_janela((int)(r.x + 0.5f), (int)(r.y + 0.5f),
-                           (int)(r.w + 0.5f), (int)(r.h + 0.5f)); }
+  if (mini) janelaMandar(miniDestino());
   else aplicarAspecto();
 }
 #ifdef NV_ANDROID
@@ -3156,9 +3152,14 @@ int player_retomar_retido(const char *imdb, int t, int e) {
 // O destino em miniatura: a caixa e 16:9 e a proporcao do quadro e respeitada
 // DENTRO dela — um canal 4:3 letterboxa na caixa em vez de esticar.
 static PlrRect miniGuiaCaixa = { 1040.0f, 108.0f, 800.0f, 450.0f };
+static int miniGuiaPreencher;
+void player_mini_guia_preencher(int on) { miniGuiaPreencher = on; }
 static PlrRect miniDestino(void) {
   PlrRect o = { PLR_PIP_X, PLR_PIP_Y, PLR_PIP_W, PLR_PIP_H };
-  if (miniGuia) o = miniGuiaCaixa;
+  if (miniGuia) {
+    o = miniGuiaCaixa;
+    if (miniGuiaPreencher && video_recorte_fonte()) return o;
+  }
   float vw = (float)video_largura(), vh = (float)video_altura();
   if (vw > 1.0f && vh > 1.0f) {
     float ca = vw / vh, ba = o.w / o.h;
@@ -3200,6 +3201,16 @@ static PlrRect telaCheia(void) {
   return o;
 }
 static void janelaMandar(PlrRect r) {
+  if (mini && miniGuia && miniGuiaPreencher && video_recorte_fonte()) {
+    int vw=video_largura(),vh=video_altura(),sw=vw,sh=vh;
+    if(vw>1&&vh>1&&r.w>1&&r.h>1){
+      if((float)vw/vh>r.w/r.h)sw=(int)(vh*r.w/r.h);
+      else sh=(int)(vw*r.h/r.w);
+      video_janela_fonte((vw-sw)/2,(vh-sh)/2,sw,sh,
+        (int)(r.x+.5f),(int)(r.y+.5f),(int)(r.w+.5f),(int)(r.h+.5f));
+      return;
+    }
+  }
   video_janela((int)(r.x + 0.5f), (int)(r.y + 0.5f), (int)(r.w + 0.5f), (int)(r.h + 0.5f));
 }
 static void janelaAnimar(PlrRect de, PlrRect para) {
@@ -3323,8 +3334,7 @@ void player_mini_desenhar(Uint32 agora) {
   r = miniDestino();
   if (janAtiva) { lx = r.x; ly = r.y; lw = r.w; lh = r.h; }
   if (r.x != lx || r.y != ly || r.w != lw || r.h != lh) {
-    video_janela((int)(r.x + 0.5f), (int)(r.y + 0.5f),
-                 (int)(r.w + 0.5f), (int)(r.h + 0.5f));
+    janelaMandar(r);
     lx = r.x; ly = r.y; lw = r.w; lh = r.h;
   }
   // No guia quem desenha e o guia (furo no preview, selo, bordas).
