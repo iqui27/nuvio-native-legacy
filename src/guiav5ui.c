@@ -7,6 +7,8 @@
 #include "dados.h"
 #include "rede.h"
 #include "js.h"
+#include "jsw.h"
+#include "admin.h"
 #include "idioma.h"
 #include "ajustes.h"
 #include "teclado.h"
@@ -87,6 +89,15 @@ static int vod_focus_ids[64],vod_focus_next;
 static void vod_free(VodCatalog *v){for(int i=0;i<2;i++){free(v->json[i]);free(v->categories[i]);}free(v->refs);free(v->rows);memset(v,0,sizeof *v);}
 static void vod_rebuild(void);
 static unsigned vod_revision;
+static int vod_lazy, vod_failed, vod_cache_checked;
+static char vod_cache_key[65], vod_work_key[65], vod_request_id[64];
+static int vod_request_kind;
+static char vod_done[2][G5_GROUPS][64];
+static int vod_done_count[2];
+static void vod_begin(void);
+static void vod_tick(void);
+static void vod_load_worker(void);
+static void vod_index(VodCatalog *v,int mixed);
 static G5Item vod_info,vod_info_pending;
 static struct {
   pthread_t thread;
@@ -141,7 +152,7 @@ static const char *alphabet="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY
 static void erase(void *p,size_t n){volatile unsigned char *s=p;while(n--)*s++=0;}
 static void filename(char *out,size_t n,const char *what){snprintf(out,n,"guiav5-%s-p%d.json",what,perfis_ativo());}
 static void save_rules(void);
-static void clear_catalog(void){free(inventory);free(series_catalog);inventory=series_catalog=NULL;count=total=series_count=0;source_loaded=categories_missing=0;vod_selected_slot=-1;vod_revision++;vod_free(&vod_data);free(vod_order);free(vod_layout);vod_order=NULL;vod_layout=NULL;vod_size=vod_rows=0;}
+static void clear_catalog(void){free(inventory);free(series_catalog);inventory=series_catalog=NULL;count=total=series_count=0;source_loaded=categories_missing=0;vod_lazy=vod_failed=vod_cache_checked=0;memset(vod_done_count,0,sizeof vod_done_count);vod_selected_slot=-1;vod_revision++;vod_free(&vod_data);free(vod_order);free(vod_layout);vod_order=NULL;vod_layout=NULL;vod_size=vod_rows=0;}
 static void gs_reset(void);
 static void context(void){
   int p=perfis_ativo();const char *owner=sessao_usuario();if(!owner)owner="";
@@ -210,8 +221,9 @@ static int load_playlist(G5Item *out,int cap){
 }
 static void *load(void *unused){
   (void)unused;worker_ok=worker_categories_missing=0;staging_count=staging_total=0;
-  vod_free(&vod_pending);
-  if(operation==3){pin_result=perfis_verificar_pin(worker_profile,pin_value);erase(pin_value,sizeof pin_value);worker_ok=pin_result==1;}
+  if(operation!=6&&operation!=7&&operation!=8)vod_free(&vod_pending);
+  if(operation==6||operation==7||operation==8){vod_load_worker();}
+  else if(operation==3){pin_result=perfis_verificar_pin(worker_profile,pin_value);erase(pin_value,sizeof pin_value);worker_ok=pin_result==1;}
   else if(operation==1){
     if(work_draft.type==0){int status=0;char *b=xtream_consultar(work_draft.server,work_draft.user,work_draft.password,"",15,&status);
       memset(&tested,0,sizeof tested);worker_ok=b&&status>=200&&status<300&&xtream_conta_parse(b,&tested)&&tested.auth==1&&xtream_conta_aviso(&tested,time(NULL))!=XA_EXPIRADA&&xtream_conta_aviso(&tested,time(NULL))!=XA_DESATIVADA;
@@ -283,6 +295,15 @@ static int start(int op){
   if(atomic_load(&busy)||(!ltv_fonte_ligada(draft.type?"g5m3u":"xt")&&op!=3))return 0;
   work_draft=draft;work_phone=phone_stage==1||phone_stage==4;
   if(use_saved&&work_draft.type==0)xtream_dados_copiar(work_draft.server,sizeof work_draft.server,work_draft.user,sizeof work_draft.user,work_draft.password,sizeof work_draft.password);
+  if(op==6||op==7||op==8){
+    vod_free(&vod_pending);
+    snprintf(vod_work_key,sizeof vod_work_key,"%s",vod_cache_key);
+    for(int k=0;k<2;k++){
+      vod_pending.json[k]=vod_data.json[k]?strdup(vod_data.json[k]):NULL;
+      vod_pending.categories[k]=vod_data.categories[k]?strdup(vod_data.categories[k]):NULL;
+      if((vod_data.json[k]&&!vod_pending.json[k])||(vod_data.categories[k]&&!vod_pending.categories[k])){vod_free(&vod_pending);vod_failed=1;return 0;}
+    }
+  }
   operation=op;worker_profile=profile;snprintf(worker_account,sizeof worker_account,"%s",account);worker_cancel=0;
   atomic_store(&ready,0);atomic_store(&busy,1);
   if(pthread_create(&worker,NULL,load,NULL)){atomic_store(&busy,0);snprintf(message,sizeof message,"%s",i18n("Não foi possível conectar"));return 0;}
@@ -382,6 +403,7 @@ void g5ui_open(const char *name){context();if(gv_is(screen)&&!gv_is(name))gv_dei
   if(!strncmp(name,"setup-",6)&&!draft.live&&!draft.movies&&!draft.series){draft.live=draft.movies=draft.series=draft.epg=1;}
   if((!strcmp(name,"setup-credenciais")||!strcmp(name,"fontes-gerenciar"))&&use_saved)load_saved_credentials();
   if(!strncmp(name,"vod-",4)&&!episodes_mode&&!atomic_load(&busy))merge_mixed_vod();
+  if(!strncmp(name,"vod-",4)&&draft.type==0&&xtream_configurado()&&!phone_stage){vod_begin();return;}
   if(!strncmp(name,"vod-",4)&&(!source_loaded||categories_missing)&&!atomic_load(&busy)){
     if(draft.type==0 && xtream_configurado()){
       use_saved=1;action[0]=0;if(!committed)draft.movies=draft.series=1;start(2);
@@ -876,10 +898,9 @@ static int vod_add_row(VodCatalog *v,int kind,const char *id,const char *name){
   snprintf(row->id,sizeof row->id,"%s",id);snprintf(row->name,sizeof row->name,"%s",name);
   return v->nrows++;
 }
-static void vod_rebuild(void){
-  vod_revision++;
-  VodCatalog *v=&vod_data;free(v->refs);free(v->rows);v->refs=NULL;v->rows=NULL;v->count=v->nrows=0;
-  int capacity=count;for(int k=0;k<2;k++)if(v->json[k])for(const char *p=js_raiz_array(v->json[k]);p;){const char *end=js_fim(p);if(!end)break;capacity++;p=js_prox(end);}
+static void vod_index(VodCatalog *v,int mixed){
+  free(v->refs);free(v->rows);v->refs=NULL;v->rows=NULL;v->count=v->nrows=0;
+  int capacity=mixed?count:0;for(int k=0;k<2;k++)if(v->json[k])for(const char *p=js_raiz_array(v->json[k]);p;){const char *end=js_fim(p);if(!end)break;capacity++;p=js_prox(end);}
   v->refs=calloc(capacity?capacity:1,sizeof *v->refs);if(!v->refs)return;
   for(int k=0;k<2;k++){
     for(const char *p=v->categories[k]?js_raiz_array(v->categories[k]):NULL;p;){const char *end=js_fim(p);if(!end)break;
@@ -894,18 +915,23 @@ static void vod_rebuild(void){
       if(row>=0&&id[0]&&name[0])v->refs[v->count++]=(VodRef){p,end,-1,row};p=js_prox(end);
     }
   }
-  for(int i=0;i<count;i++){
+  for(int i=0;mixed&&i<count;i++){
     G5Item *it=&inventory[i];if(it->kind==G5_LIVE)continue;
     if(!strcmp(it->source,"xtream")&&((it->kind==G5_MOVIE&&v->json[0])||(it->kind==G5_SERIES&&v->json[1])))continue;
     int row=vod_add_row(v,it->kind,it->group,it->group[0]?it->group:i18n("Outros"));
     if(row>=0)v->refs[v->count++]=(VodRef){NULL,NULL,i,row};
   }
   for(int i=0;i<v->count;i++)v->rows[v->refs[i].row].count++;
-  free(vod_order);free(vod_layout);vod_order=calloc(v->count?v->count:1,sizeof *vod_order);vod_layout=calloc(v->nrows?v->nrows:1,sizeof *vod_layout);
+}
+static void vod_rebuild(void){
+  vod_revision++;
+  VodCatalog *v=&vod_data;if(!vod_lazy||!v->refs)vod_index(v,1);
+  free(vod_order);free(vod_layout);vod_order=calloc(v->count+v->nrows+1,sizeof *vod_order);vod_layout=calloc(v->nrows?v->nrows:1,sizeof *vod_layout);
   vod_size=vod_rows=0;vod_hero=0;vod_scroll=vod_scroll_v=0;
 }
 static G5Item *vod_item(int ref){
   static G5Item decoded[24];static int keys[24],cursor;static unsigned generation;
+  if(ref==-1){static G5Item placeholder;memset(&placeholder,0,sizeof placeholder);placeholder.kind=G5_MOVIE;placeholder.age=-1;snprintf(placeholder.name,sizeof placeholder.name,"%s",i18n("Carregando…"));return &placeholder;}
   if(ref<0||ref>=vod_data.count)return NULL;
   VodRef *r=&vod_data.refs[ref];if(r->item>=0)return r->item<count?&inventory[r->item]:NULL;
   /* Parse a few visible records, never expand the full catalog into G5Items. */
@@ -937,13 +963,17 @@ static void vod_filter(void){
       if(query[0]||rules.hide_locked||rules.kids){G5Item *it=vod_item(i);if(!it||!match_query(it->name)||((rules.hide_locked||rules.kids)&&restricted(it)))continue;}
       vod_order[vod_size++]=i;
     }
+    int loaded=0,k=row->kind==G5_SERIES;
+    for(int i=0;i<vod_done_count[k];i++)loaded|=!strcmp(vod_done[k][i],row->id);
+    if(vod_lazy&&!loaded&&vod_size==start&&!query[0]&&ltv_fonte_ligada("xt"))vod_order[vod_size++]=-1;
     if(vod_size>start){VodRow *out=&vod_layout[vod_rows++];float scroll=out->scroll,velocity=out->velocity;*out=*row;out->start=start;out->count=vod_size-start;out->scroll=scroll;out->velocity=velocity;}
   }
 }
 static int vod_position(void){int id=focus>=VOD_ITEM?focus:vod_return_focus;int p=id-VOD_ITEM;return p>=0&&p<vod_size?p:0;}
 static int vod_row_at(int position){for(int r=0;r<vod_rows;r++)if(position>=vod_layout[r].start&&position<vod_layout[r].start+vod_layout[r].count)return r;return 0;}
+#include "guiav5_vodload.inc"
 static void vod_select(int position,int play){
-  if(position<0||position>=vod_size)return;G5Item *it=vod_item(vod_order[position]);if(!it)return;
+  if(position<0||position>=vod_size||vod_order[position]<0)return;G5Item *it=vod_item(vod_order[position]);if(!it)return;
   if(vod_data.refs[vod_order[position]].item>=0){int i=vod_data.refs[vod_order[position]].item;select_item(i);}
   else{
     G5Item copy=*it;
@@ -954,8 +984,10 @@ static void vod_select(int position,int play){
 }
 static void vod_navigate(SDL_Keycode k){
   int p=vod_position(),r=vod_row_at(p),col=p-vod_layout[r].start;
+  if(focus==810){if(k==SDLK_DOWN)focus=vod_size?807:VOD_ITEM;else if(k==SDLK_UP)nav=3;return;}
   if(focus==807||focus==808||focus==809){
-    if(k==SDLK_UP)nav=3;
+    if(k==SDLK_UP&&vod_failed)focus=810;
+    else if(k==SDLK_UP)nav=3;
     else if(k==SDLK_DOWN)focus=vod_item_focus(vod_return_focus);
     else if(k==SDLK_RIGHT)focus=focus==809?807:808;
     else if(k==SDLK_LEFT)focus=focus==808?807:809;
@@ -1006,11 +1038,24 @@ static void catalog(void){
   gfx_sem_transformar();gfx_opacidade_grupo=sidebar_alpha;sem_foco=saved_sem;
   float left=64+352*gv_side,area=1856-left,cw=186,gap=34,stride=cw+gap;
   int loading=(atomic_load(&busy)&&operation!=5)||!strcmp(screen,"vod-carregando"),empty=!vod_size||!strcmp(screen,"vod-sem-catalogo")||!strcmp(screen,"vod-vazio");
-  if(loading||empty){
-    const char *s=loading?"Carregando catálogo…":query[0]||!strcmp(screen,"vod-vazio")?"Nenhum resultado":"Esta fonte não tem catálogo VOD";
+  if(empty){
+    if(loading){
+      float pulse=.075f+.035f*(1+sinf(SDL_GetTicks()*.004f));
+      panel(left-16,190,area+16,300);
+      gfx_cor((GfxRect){left+20,232,area*.48f,34},.2f,1,1,1,pulse);
+      gfx_cor((GfxRect){left+20,300,area*.70f,22},.2f,1,1,1,pulse);
+      label(TXT_ILHA_SUB,i18n("Carregando catálogo…"),left+20,365,area-40,1);
+      for(int c=0;c<(int)(area/stride);c++){
+        gfx_cor((GfxRect){left+10+c*stride,560,cw,270},.07f,1,1,1,pulse);
+        gfx_cor((GfxRect){left+10+c*stride,848,cw*.8f,20},.2f,1,1,1,pulse);
+      }
+      return;
+    }
+    const char *s=vod_failed?"Falha na conexão":loading?"Carregando catálogo…":query[0]||!strcmp(screen,"vod-vazio")?"Nenhum resultado":"Esta fonte não tem catálogo VOD";
     label(TXT_HEADLINE,i18n(s),left,420,area,0);label(TXT_ILHA_CORPO,i18n("Seu provedor define o conteúdo disponível."),left,490,area,1);
-    button(0,i18n(query[0]?"Limpar busca":"Adicionar fonte"),"aj_plus",left,620,500,64,0);return;
+    button(vod_failed?810:0,i18n(vod_failed?"Tentar novamente":query[0]?"Limpar busca":"Adicionar fonte"),vod_failed?"aj_refresh-cw":"aj_plus",left,620,500,64,0);return;
   }
+  if(vod_failed)button(810,i18n("Tentar novamente"),"aj_refresh-cw",left,158,280,40,0);
   if(search)button(804,query[0]?query:i18n("Buscar canais, filmes e séries"),"aj_search",left,190,area,64,1);
   else{
     G5Item hero_copy=*vod_item(vod_order[vod_hero]);
@@ -1065,7 +1110,14 @@ static void catalog(void){
     int first=(int)(row->scroll/stride);if(first<0)first=0;
     for(int c=first;c<row->count;c++){
       float x=left+10+c*stride-row->scroll;if(x>left+area)break;
-      int p=row->start+c,id=VOD_ITEM+p;G5Item *it=vod_item(vod_order[p]);if(!it)continue;int locked=restricted(it),focused=focus==id&&nav<0&&!vod_sidebar&&!sem_foco;
+      int p=row->start+c,id=VOD_ITEM+p;
+      if(vod_order[p]<0){
+        float pulse=.075f+.035f*(1+sinf(SDL_GetTicks()*.004f));
+        gfx_cor((GfxRect){x,y+66,cw,270},.07f,1,1,1,pulse);
+        if(!vod_sidebar)reg_focus(id,x,y+58,cw,312);
+        continue;
+      }
+      G5Item *it=vod_item(vod_order[p]);if(!it)continue;int locked=restricted(it),focused=focus==id&&nav<0&&!vod_sidebar&&!sem_foco;
       int slot=0;while(slot<64&&vod_focus_ids[slot]!=id)slot++;
       if(slot==64){slot=vod_focus_next++%64;vod_focus_ids[slot]=id;vod_focus[slot]=0;}
       float f=vod_focus[slot]=anim_mola(vod_focus[slot],focused?1:0,gv_dt,T21_FOCO);
@@ -1429,6 +1481,7 @@ static void activate(int id){
     snprintf(action,sizeof action,"get_series_info&series_id=%s",inventory[selected].id);start(4);return;
   }
   if(!strncmp(screen,"vod-",4)){
+    if(id==810){vod_failed=0;memset(vod_done_count,0,sizeof vod_done_count);source_loaded=0;vod_begin();return;}
     if(id==800){episodes_mode=0;catalog_group[0]=0;go("vod-filmes");}else if(id==801){episodes_mode=0;catalog_group[0]=0;go("vod-series");}else if(id==802||id==804){go("vod-busca");input(5,"Buscar",query,0);}
     else if(id==808){vod_sidebar=0;go(!strcmp(screen,"vod-series")?"vod-filmes":"vod-series");}
     else if(id==803)go("fontes-gerenciar");else if(id==805){catalog_group[0]=0;focus=VOD_ITEM;}else if(id==806)go("setup-tipo");else if((id==807||id==809)&&vod_size)vod_select(vod_hero,id==809);else if(id>=820&&id<820+group_count){snprintf(catalog_group,sizeof catalog_group,"%s",groups[id-820]);focus=VOD_ITEM;}else if(id>=VOD_ITEM&&id<VOD_ITEM+vod_size)vod_select(id-VOD_ITEM,0);else if(query[0])query[0]=0;else go("setup-tipo");
@@ -1592,12 +1645,27 @@ void g5ui_update(void){
     int phone_fetch=0;
     pthread_join(worker,NULL);atomic_store(&busy,0);atomic_store(&ready,0);erase(&work_draft,sizeof work_draft);
     if(!worker_cancel&&worker_profile==profile&&!strcmp(worker_account,account)){
+      if(operation==6||operation==7||operation==8){
+        if(worker_ok||operation==6){
+          int old_focus=focus;float old_scroll=vod_scroll;
+          vod_free(&vod_data);vod_data=vod_pending;memset(&vod_pending,0,sizeof vod_pending);
+          vod_rebuild();focus=old_focus;vod_scroll=old_scroll;
+          source_loaded=operation!=8;vod_failed=!worker_ok;
+          if(operation==7&&vod_done_count[vod_request_kind]<G5_GROUPS)
+            snprintf(vod_done[vod_request_kind][vod_done_count[vod_request_kind]++],64,"%s",vod_request_id);
+          for(int r=0;r<vod_data.nrows&&group_count<G5_GROUPS;r++){
+            const char *name=vod_data.rows[r].name;int found=0;
+            for(int g=0;g<group_count;g++)found|=!strcmp(groups[g],name);
+            if(!found){snprintf(groups[group_count],64,"%s",name);group_on[group_count++]=!adult_group(name);}
+          }
+        }else vod_failed=1;
+      }
       if(operation==1)test_ok=worker_ok;
       if(operation==3){
         if(worker_ok){if(pin_settings==1)go("parental-ajustes");else if(pin_settings==2){rules.hide_adult=0;save_rules();go("setup-categorias");}
           else{g5_grant(&lease,profile,locked_item.source,locked_item.id,time(NULL),lease_seconds,1);if(locked_item.kind==G5_LIVE)g5ui_close();else go(previous[0]?previous:"vod-filmes");}}
         else{go("parental-pin");snprintf(message,sizeof message,"%s",i18n(pin_result==0?"PIN incorreto":"Não foi possível verificar o PIN"));}
-      }else if(staging&&worker_ok){if(operation==4){free(series_catalog);series_catalog=inventory;series_count=count;parent_series=selected;}else free(inventory);inventory=staging;staging=NULL;count=staging_count;total=staging_total;build_groups();source_loaded=1;
+      }else if(staging&&worker_ok&&operation!=6&&operation!=7&&operation!=8){if(operation==4){free(series_catalog);series_catalog=inventory;series_count=count;parent_series=selected;}else free(inventory);inventory=staging;staging=NULL;count=staging_count;total=staging_total;build_groups();source_loaded=1;
         if(operation==2){categories_missing=worker_categories_missing;vod_selected_slot=-1;vod_free(&vod_data);vod_data=vod_pending;memset(&vod_pending,0,sizeof vod_pending);merge_mixed_vod();vod_rebuild();}
         if(operation==4){episodes_mode=1;selected=0;go("vod-serie-temporadas");}
         if(committed)dirty=1;
@@ -1613,8 +1681,10 @@ void g5ui_update(void){
     free(staging);staging=NULL;vod_free(&vod_pending);
     if(phone_fetch&&!start(2)){phone_stage=0;celular_status("{\"s\":\"err\"}");}
   }
+  vod_tick();
   if(!strncmp(screen,"vod-",4)&&strcmp(screen,"vod-titulo")&&strcmp(screen,"vod-serie-temporadas")&&vod_size&&!atomic_load(&busy)&&!atomic_load(&metadata.busy)){
     int ref=vod_order[vod_hero<vod_size?vod_hero:0];
+    if(ref>=0){
     if(vod_info_request!=ref||vod_info_revision!=vod_revision){vod_info_request=ref;vod_info_since=SDL_GetTicks();vod_info_revision=vod_revision;}
     else if(vod_info_since&&SDL_GetTicks()-vod_info_since>350){
       G5Item *it=vod_item(ref);vod_info_since=0;
@@ -1622,6 +1692,7 @@ void g5ui_update(void){
         snprintf(action,sizeof action,it->kind==G5_SERIES?"get_series_info&series_id=%s":"get_vod_info&vod_id=%s",it->id);start(5);action[0]=0;
       }
     }
+  }
   }
   if(edit>=0&&!teclado_aberto()){
     int r=teclado_resultado();int field=edit;edit=-1;

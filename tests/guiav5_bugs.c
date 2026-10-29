@@ -154,12 +154,13 @@ int main(void) {
   atomic_store(&busy,1);atomic_store(&ready,1);
   g5ui_update();
   CHECK(!source_loaded&&!atomic_load(&busy),"failed VOD publication clears loaded flag for next open");
-  /* Exercise worker publication, fallback grouping and retry through real UI entry. */
+  /* Setup import still accepts panels without category endpoints. Browser loading
+   * uses category-sized requests, covered by vodcarga.c. */
   assert(xtream_conta_definir("http://fixture.invalid","fixture","fixture"));
   for(category_failure=1;category_failure<=3;category_failure++){
     clear_catalog();memset(&draft,0,sizeof draft);draft.movies=draft.series=draft.live=1;
     use_saved=0;category_calls=0;action[0]=0;
-    g5ui_open("vod-filmes");
+    assert(start(2));
     assert(atomic_load(&busy));
     while(!atomic_load(&ready))SDL_Delay(1);
     g5ui_update();
@@ -169,8 +170,8 @@ int main(void) {
           !strcmp(inventory[1].group,"Uncategorized")&&!strcmp(inventory[2].group,"Uncategorized"),
           "unavailable or malformed categories use Uncategorized");
     int saved_failure=category_failure;category_failure=0;
-    g5ui_open("vod-filmes");
-    CHECK(atomic_load(&busy),"next VOD open retries missing category metadata");
+    assert(start(2));
+    CHECK(atomic_load(&busy),"setup import retries missing category metadata");
     if(atomic_load(&busy)){
       while(!atomic_load(&ready))SDL_Delay(1);
       g5ui_update();
