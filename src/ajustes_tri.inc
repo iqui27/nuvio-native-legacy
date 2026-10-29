@@ -4,8 +4,8 @@
 // Uma geracao so, sobre o nucleo 2.0.3 que le o catalogo TELA[]:
 //   ilha 1  as secoes do catalogo (SEC), nos tres blocos Assistir / Telas /
 //           Conta e sistema, mais a rota "Controle parental";
-//   ilha 2  a lista inteira da secao (focar / focavel / maisAberto /
-//           ajDesenharLinha), com "Mais opcoes · N" abrindo no lugar;
+//   ilha 2  grouped section rows and one-level topic submenus, using the same
+//           focar / focavel / maisAberto / ajDesenharLinha catalog routes;
 //   ilha 3  o inspetor (previa real, ajuda, Vale para / Padrao) ou o editor.
 // D-pad: ↑↓ na ilha, → entra, ← sai, OK abre ou alterna, Voltar sobe um nivel.
 // O valor so muda com OK (revisao de 02/10/2026, mantida).
@@ -80,6 +80,7 @@ static int triDisponivel(int op) {
   return 1;
 }
 static void triIniciar(void) {
+  triSubmenu = -1;
   triIlha = TRI_SECOES; triChip = 0; triUtil = TRI_U_NADA; triUtilVolta = 0;
   triLinha = triAcao = 0; triTrocarPerfil = 0; triUtilRol = triUtilRolAlvo = 0;
   triSecFoco = secAtual; triSecaoDeixada = -1;
@@ -87,24 +88,29 @@ static void triIniciar(void) {
 // Foco direto numa opcao (busca, atalhos, tour): a lista da secao dela.
 static void triFocar(int op) {
   (void)op;
+  triSubmenu = triDono(focoItem);
   triUtil = TRI_U_NADA; triIlha = TRI_LISTA; triSecFoco = secAtual; focoIndice = 0;
 }
 // O foco numa secao da ilha 1, sem entrar (D-pad, ponteiro e os testes).
 static void triFocarSecao(int i) {
   if (i < 0 || i > nSecoes) return;
+  triSubmenu = -1;
   triUtil = TRI_U_NADA; triIlha = TRI_SECOES; focoIndice = 1; triSecFoco = i;
   if (!triParental(i)) focarSecao(i);
 }
 static void triIrSecoes(void) {
+  triSubmenu = -1;
   triIlha = TRI_SECOES; focoIndice = 1; triSecFoco = secAtual; triSecaoDeixada = secAtual; sairArmado = 0; uxRetornarOp = -1;
 }
 static void triEntrar(int s) {
+  triSubmenu = -1;
   if (triParental(s)) { triUtil = TRI_U_PARENTAL; triLinha = triAcao = 0; triIlha = TRI_LISTA; focoIndice = 0; triUtilRol = triUtilRolAlvo = 0; return; }
   focarSecao(s);
   if (s != triSecaoDeixada) focar(primeiroDaSecao(s));   // secao nova: a 1.ª linha
   triSecaoDeixada = -1; focoIndice = 0; triIlha = TRI_LISTA;
 }
 static void triUtilAbrir(int u) {
+  triSubmenu = -1;
   triUtil = u; triLinha = triAcao = 0; triIlha = TRI_LISTA; focoIndice = 0; triUtilRol = triUtilRolAlvo = 0;
   if (u == TRI_U_DIF) { uxListarDiferencas(); uxDifFoco = 0; uxIndice = 1; }
 }
@@ -206,6 +212,19 @@ static void triPontUtilAcao(int i, int b) {
 static void triPontParentalValor(int v, int b) { (void)b; if (ajPenParentEditor < 0) return; ajPenParentDraft = v; }
 
 
+// Topic navigation shares the existing list, controls and page animation.
+static void triSubEntrar(int item) {
+  if (!triTopico(item)) return;
+  triSubmenu = item;
+  for (int i = item + 1; i < secFim(secAtual) && TELA[i].tipo == IT_OPC; i++)
+    if (focavel(i)) { focar(i); break; }
+  scrollY = velY = 0; paginaA = 0;
+}
+static void triSubVoltar(void) {
+  int item = triSubmenu;
+  triSubmenu = -1; focar(item);
+  scrollY = velY = 0; paginaA = 0;
+}
 // --- EVENTOS -------------------------------------------------------------------------
 static int triNavLista(int dir) {
   int i;
@@ -231,6 +250,7 @@ static int triChipEvento(SDL_Keycode k) {
 static void triSecoesIr(int dir) {
   int s = triSecFoco + dir;
   if (s < 0 || s > nSecoes) return;
+  triSubmenu = -1;
   triSecFoco = s; if (!triParental(s)) focarSecao(s);
 }
 static int triSecoesEvento(SDL_Keycode k) {
@@ -244,12 +264,12 @@ static int triSecoesEvento(SDL_Keycode k) {
   }
   if (uxVoltar(k) || k == SDLK_LEFT) { sair = 1; return 1; }
   if (k == SDLK_UP) {
-    if (triSecFoco > 0) { triSecFoco--; if (!triParental(triSecFoco)) focarSecao(triSecFoco); }
+    if (triSecFoco > 0) { triSubmenu = -1; triSecFoco--; if (!triParental(triSecFoco)) focarSecao(triSecFoco); }
     else triIlha = TRI_CHIPS;
     return 1;
   }
   if (k == SDLK_DOWN) {
-    if (triSecFoco < nSecoes) { triSecFoco++; if (!triParental(triSecFoco)) focarSecao(triSecFoco); }
+    if (triSecFoco < nSecoes) { triSubmenu = -1; triSecFoco++; if (!triParental(triSecFoco)) focarSecao(triSecFoco); }
     return 1;
   }
   if (uxOk(k) || k == SDLK_RIGHT) { triEntrar(triSecFoco); return 1; }
@@ -257,9 +277,14 @@ static int triSecoesEvento(SDL_Keycode k) {
 }
 static int triListaEvento(SDL_Keycode k) {
   if (k == SDLK_UP || k == SDLK_DOWN || k == SDLK_LEFT || k == SDLK_PAGEUP || k == SDLK_PAGEDOWN) uxRetornarOp = -1;
-  if (uxVoltar(k) || k == SDLK_LEFT) { triIrSecoes(); return 1; }
+  if (uxVoltar(k) || k == SDLK_LEFT) {
+    if (triSubmenu >= 0) triSubVoltar(); else triIrSecoes();
+    return 1;
+  }
+  if ((uxOk(k) || k == SDLK_RIGHT) && triTopico(focoItem)) { triSubEntrar(focoItem); return 1; }
   if (k == SDLK_UP || k == SDLK_DOWN) {
     if (!triNavLista(k == SDLK_DOWN ? 1 : -1) && k == SDLK_UP) {
+      if (triSubmenu >= 0) { triSubVoltar(); return 1; }
       if (ajRetrato()) triIrSecoes();   // a faixa de secoes fica entre a lista e os chips
       else { triIlha = TRI_CHIPS; focoIndice = 1; triSecFoco = secAtual; }
     }

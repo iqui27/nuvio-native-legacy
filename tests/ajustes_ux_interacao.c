@@ -134,6 +134,7 @@ int main(void) {
     if (TELA[i].tipo != IT_OPC ||
         (TELA[i].op != AJ_VIDRO && TELA[i].op != AJ_VIDRO_CONTORNO)) continue;
     valor[AJ_AVANCADAS] = 1;   // global advanced toggle Desligado
+    focarOpcao(TELA[i].op);   // opens the containing topic, without advanced mode
     assert(visivel(i) && focavel(i));
   }
   assert(inativa(AJ_VIDRO_CONTORNO));
@@ -207,7 +208,8 @@ int main(void) {
   key(SDLK_ESCAPE); assert(!uxEditor); assert(valor[AJ_HOME_LAYOUT] == original); igual(antes); free(antes);
   abrir(AJ_HOME_LAYOUT); key(SDLK_DOWN); key(SDLK_RETURN);
   assert(!uxEditor && valor[AJ_HOME_LAYOUT] != original);
-  antes = arquivo(); key(SDLK_LEFT); assert(focoIndice && triIlha == TRI_SECOES); igual(antes); free(antes);
+  antes = arquivo(); key(SDLK_LEFT); assert(triSubmenu < 0 && triIlha == TRI_LISTA);
+  key(SDLK_LEFT); assert(focoIndice && triIlha == TRI_SECOES); igual(antes); free(antes);
 
   // Número só aplica o candidato final, sem gravar cada passo.
   original = valor[AJ_LARGURA_DP]; antes = arquivo(); abrir(AJ_LARGURA_DP);
@@ -279,10 +281,11 @@ int main(void) {
   key(SDLK_ESCAPE); assert(focoOp == AJ_HERO_CHEIO && !focoIndice);
 
   // 2.1: moving in the list forgets the pending return (as in 2.0.3); Back then
-  // goes up one level, to the sections island.
+  // goes up one level to the topic row, then to the sections island.
   focarOpcao(AJ_HERO_CHEIO); key(SDLK_RETURN);
   assert(focoOp == AJ_HOME_LAYOUT && uxRetornarOp == AJ_HERO_CHEIO);
   key(SDLK_DOWN); assert(uxRetornarOp == -1);
+  key(SDLK_ESCAPE); assert(triSubmenu < 0 && triIlha == TRI_LISTA && !sair);
   key(SDLK_ESCAPE); assert(focoIndice && triIlha == TRI_SECOES && !sair);
   valor[AJ_HOME_LAYOUT] = 0;
 

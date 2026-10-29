@@ -58,6 +58,16 @@ static void percorrer(void) {
     for (int passos = 0; passos <= AJ_N_TELA; passos++) {
       int item = focoItem;
       if (focoOp >= 0) visto[focoOp] = 1;
+      if (triTopico(item)) {
+        key(SDLK_RETURN); assert(triSubmenu == item);
+        for (int step = 0; step < AJ_N_TELA; step++) {
+          int child = focoItem;
+          if (focoOp >= 0) visto[focoOp] = 1;
+          key(SDLK_DOWN);
+          if (child == focoItem) break;
+        }
+        key(SDLK_ESCAPE); assert(triSubmenu < 0 && focoItem == item);
+      }
       key(SDLK_DOWN);
       if (focoItem == item) break;
     }

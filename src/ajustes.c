@@ -2363,6 +2363,24 @@ static int grupoAberto[AJ_MAX_SECOES];
 // leva a uma avancada). Dura a sessao; nao vai para o disco.
 static int maisAberto[AJ_MAX_SECOES];
 static int maisItem[AJ_MAX_SECOES];   // indice em TELA do IT_MAIS da categoria (-1 = nao tem)
+#define AJ_TRI_POLISH 1
+static int triSubmenu = -1;         // TELA topic index; presentation only
+static int triTopico(int i) {
+  if (i < 0 || i >= AJ_N_TELA || TELA[i].tipo != IT_ROT) return 0;
+  int end = i + 1;
+  while (end < AJ_N_TELA && TELA[end].tipo == IT_OPC) end++;
+  return end - i - 1 >= 8;
+}
+static int triDono(int i) {
+  if (i < 0 || i >= AJ_N_TELA || TELA[i].tipo != IT_OPC) return -1;
+  while (--i >= 0 && TELA[i].tipo == IT_OPC) {}
+  return triTopico(i) ? i : -1;
+}
+static int triMostrar(int i) {
+  if (triSubmenu >= 0)
+    return i > triSubmenu && TELA[i].tipo == IT_OPC && triDono(i) == triSubmenu;
+  return TELA[i].tipo != IT_OPC || triDono(i) < 0;
+}
 
 static void montarTela(void) {
   int i, s = -1, g = -1, depois = 0;
@@ -7812,7 +7830,7 @@ static int visivel(int i) {
   return 1;
 }
 static int focavel(int i) {
-  return (TELA[i].tipo == IT_GRP || TELA[i].tipo == IT_OPC || TELA[i].tipo == IT_MAIS) && visivel(i);
+  return (TELA[i].tipo == IT_GRP || TELA[i].tipo == IT_OPC || TELA[i].tipo == IT_MAIS || triTopico(i)) && triMostrar(i) && visivel(i);
 }
 static void focar(int i) {
   if (i < 0 || i >= AJ_N_TELA) return;
@@ -7833,6 +7851,7 @@ static int primeiroDaSecao(int s) {
 }
 static void focarSecao(int s) {
   if (s < 0 || s >= nSecoes) return;
+  triSubmenu = -1;
   { int i = uxUltimoItem[s];
     focar(i > secIni[s] && i < secFim(s) && focavel(i) ? i : primeiroDaSecao(s)); }
 }
@@ -8690,7 +8709,7 @@ static float yDoItem(int item) {
   for (i = secIni[s]; i < item && i < secFim(s); i++) y += alturaItem(i);
   return y;
 }
-static float alturaFoco(int i) { return TELA[i].tipo == IT_GRP ? AJ_GRUPO_H : TELA[i].tipo == IT_MAIS ? alturaItem(i) : ajLinhaH(i); }
+static float alturaFoco(int i) { return triTopico(i) ? alturaItem(i) : TELA[i].tipo == IT_GRP ? AJ_GRUPO_H : TELA[i].tipo == IT_MAIS ? alturaItem(i) : ajLinhaH(i); }
 
 // Tecla dentro da folha de fileiras.
 //
