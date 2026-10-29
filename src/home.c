@@ -366,6 +366,10 @@ static void publicarItemFoco(void) {
   temItemFoco = 1;
 }
 static float animFoco[MAX_FIL][MAX_CARDS];
+#ifdef NV_FICHA_EXPLORATION
+// Shot harness only. No persisted preference or production entry point.
+static int fichaExploration;
+#endif
 // O TITULO DA FILEIRA acende (branco) quando a fileira e a focada e volta ao
 // cinza secundario quando nao e (dono, 14/10: "quando a fileira nao tiver
 // focada deixar o titulo da fileira em cinza") — a mesma mola do foco do card.
@@ -1011,7 +1015,11 @@ static float larguraDe(TipoFileira t) {
                                 ? NV_DIN_DEST_W * gfx_poster_k() : NV_DESTAQUE_EDITORIAL_W * gfx_poster_k();
     case FILEIRA_TOP10_NUM: return (NV_CARD_W * gfx_poster_k()) * escalaPosterTelefone();
     case FILEIRA_LINHA_TEMPO: return (NV_CARD_W * gfx_poster_k());
-    case FILEIRA_FICHA:    return NV_FICHA_W * gfx_poster_k();
+    case FILEIRA_FICHA:
+#ifdef NV_FICHA_EXPLORATION
+      if (fichaExploration) return (fichaExploration == 3 ? 390.0f : NV_CARD_H * 2.0f / 3.0f) * gfx_poster_k();
+#endif
+      return NV_FICHA_W * gfx_poster_k();
     case FILEIRA_PALCO:    return (NV_CARD_W * gfx_poster_k()) * NV_PALCO_ESC;
     case FILEIRA_POSTER_GRANDE: return (NV_POSTER_G_W * gfx_poster_k());
     case FILEIRA_HEROI_DIVIDIDO: return divArteH() * 2.0f / 3.0f;
@@ -1870,6 +1878,9 @@ static float alturaFil(int r) {
 // foi o mesmo defeito que o titulo de fileira ja tinha tido sobre os cards.
 // A Linha do tempo leva a faixa dos anos; o Palco, o nome do titulo do centro.
 static float extraTipo(TipoFileira t) {
+#ifdef NV_FICHA_EXPLORATION
+  if (t == FILEIRA_FICHA && fichaExploration == 3) return 128.0f;
+#endif
   return t == FILEIRA_LINHA_TEMPO ? NV_TEMPO_FAIXA_H : t == FILEIRA_PALCO ? 70.0f
        : t == FILEIRA_HEROI_DIVIDIDO ? NV_DIV_META_H : 0.0f;
 }
@@ -4651,6 +4662,10 @@ static float desenhaCopiaHero(const CatItem *ci, int principal, float x,
                              float sinW, int sinLinhas, float aTexto,
                              float aCopy, float cin, float btnH, float btnGap,
                              float slot) {
+#ifdef NV_FICHA_EXPLORATION
+  // These studies put all reading beside/inside the selected artwork.
+  if (fichaExploration == 1 || fichaExploration == 3) return base;
+#endif
   logoH *= ajustes_hero_escala_logo();
   sinW = fminf(homeLarguraUtil(), sinW * ajustes_hero_escala_info());
   int contHero = (ci && ci->progresso > 0 && ci->restanteMin > 0);
@@ -6796,6 +6811,9 @@ static void desenhaFicha(const CatItem *it, float px, float py, float w, float h
     if (linhas > 0) sinopse_bloco(TXT_ILHA_TEXTO, it->sinopse, 243, 242, 239, tx, y, tw, 28.0f, 0.66f * a, linhas);
   }
 }
+#ifdef NV_FICHA_EXPLORATION
+#include "home_ficha_exploration.inc"
+#endif
 // PÔSTER GRANDE (14/10, dono: "o pôster só que do tamanho do grande, tipo o
 // 3:4 grande. Ele teria mais informação. Com o overlay ao invés de preto com a
 // cor predominante. A letra seguiria o contraste"): a ficha de texto na BASE do
@@ -7956,6 +7974,12 @@ static void home_desenhar_(Uint32 agora) {
       !vazioQr && palcoFundoAlpha > 0.004f) {
     gfx_opacidade_grupo = palcoFundoModo == PALCO_ATUAL ? palcoFundoAlpha : 1.0f;
     desenhaHero(agora, pd);
+#ifdef NV_FICHA_EXPLORATION
+    if ((fichaExploration == 1 || fichaExploration == 3) && !focoHero) {
+      const CatItem *ci = cat_item_exato(heroAtual);
+      if (ci) fichaStudyLogo(ci, homeConteudoX(), 120, 430, 120, 1);
+    }
+#endif
     gfx_opacidade_grupo = 1.0f;
   }
   if (ajustes_hero_ligado() && !vazioQr && heroVisivelToque() > 0.25f) {
@@ -8163,7 +8187,11 @@ static void home_desenhar_(Uint32 agora) {
         txt_desenhar(n, x, y + (tl.h - n.h) * .5f);
         txt_desenhar(t, x + n.w, y + (tl.h - t.h) * .5f);
       } else if (foco.fileira == r && !focoHero && tipo != FILEIRA_SOCIAL &&
-                 tipo != FILEIRA_HEROI && tipo != FILEIRA_HEROI_DIVIDIDO) {
+                 tipo != FILEIRA_HEROI && tipo != FILEIRA_HEROI_DIVIDIDO
+#ifdef NV_FICHA_EXPLORATION
+                 && !(tipo == FILEIRA_FICHA && fichaExploration)
+#endif
+                 ) {
         char pos[32];
         if (foco.coluna < fileiras[r].n)
           snprintf(pos, sizeof pos, "%d / %d", foco.coluna + 1, fileiras[r].n);
@@ -8198,6 +8226,13 @@ static void home_desenhar_(Uint32 agora) {
         continue;
       }
 
+#ifdef NV_FICHA_EXPLORATION
+      if (tipo == FILEIRA_FICHA && fichaExploration) {
+        desenhaFichaExploration(r, cardY, lh);
+        y += NV_LEGACY_ROW_HEAD_H + alturaTotalFil(r) + fileiraGap();
+        continue;
+      }
+#endif
       if (tipo == FILEIRA_PALCO) palcoPasso(r, agora);
       // CARD "VER TUDO" no fim da fileira. Desenhado antes do laco dos cartazes
       // para nao herdar as variaveis dele; ele nao e um titulo e nao usa arte.
