@@ -1954,6 +1954,7 @@ void gfx_tex_esquecer(GLuint tex) {
   if (tex) vidroEsquecerFonte(tex);
 }
 
+int    gfx_n_text = 0;
 int    gfx_n_rect = 0, gfx_n_prog = 0, gfx_n_bind = 0, gfx_n_outros = 0;
 double gfx_ms_rect = 0.0, gfx_ms_outros = 0.0;
 // PREENCHIMENTO SUBMETIDO no quadro, em telas cheias (1920x1080 = 1,0).
@@ -2321,6 +2322,7 @@ static void vidroFuro(GfxRect r) {
 static void vidroAplicar(Programa *P, GfxRect r);
 void gfx_novo_quadro(void) {
   gfx_quadro_n++;
+  gfx_n_text = 0;
   gfx_n_rect = gfx_n_prog = gfx_n_bind = gfx_n_outros = 0;
   gfx_ms_rect = gfx_ms_outros = 0.0;
   gfx_fill = 0.0; gfx_fill_vis = 0.0; gfx_n_cheio = 0; gfx_n_cheio_mistura = 0;
@@ -2666,6 +2668,7 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
   Uint64 t0 = SDL_GetPerformanceCounter();
 #endif
   gfx_n_rect++;
+  if(modo==GFX_TEXTO)gfx_n_text++;
   vidroDesenho(r, tex, modo, foco, parx, pary, raio, cr, cg, cb, ca);
   { float area = (r.w * r.h) / (NV_TELA_W * NV_TELA_H) *
                  (subAtual[2] - subAtual[0]) * (subAtual[3] - subAtual[1]);

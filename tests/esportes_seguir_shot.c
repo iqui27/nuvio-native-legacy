@@ -30,5 +30,16 @@ int main(int argc,char **argv){
   gv_ok_segurado();quadro();focus=2040+gs_selected.nParticipantes;gv_event(SDLK_RETURN,0);
   assert(esportes_segue_jogo(&gs_selected));capture(w,out,"follow-game-action");
   gv_event(SDLK_RETURN,0);assert(!esportes_segue_jogo(&gs_selected));
-  puts("PASS native team picker, paging, My teams filter, highlight, and game follow action");return 0;
+  gv_event(SDLK_ESCAPE,0);quadro();focus=2202;gv_event(SDLK_RETURN,0);gv_tecla_solta(SDLK_RETURN);quadro();
+  assert(!strcmp(screen,"esportes-evento")&&focus==2088&&gs_follow_action&&gs_follow_state);
+  assert(!gs_follow_state(&gs_selected));
+  gv_event(SDLK_RIGHT,0);assert(focus==2089);gv_event(SDLK_RETURN,0);quadro();
+  assert(esportes_segue_jogo(&gs_selected)&&gs_follow_state(&gs_selected));
+  int reminded=0;
+  for(int i=0;i<lembrete_n();i++)if(!strncmp(lembrete_item(i)->base,"sports|",7)&&lembrete_item(i)->ini==gs_selected.inicio)reminded=1;
+  assert(reminded);capture(w,out,"event-following");
+  gv_event(SDLK_RETURN,0);assert(!esportes_segue_jogo(&gs_selected));
+  gv_event(SDLK_ESCAPE,0);quadro();assert(!strcmp(screen,"esportes-liga")&&focus==2202);
+  setenv("ESPEVENTO_PROOF","after",1);event_proof(w,out);
+  puts("PASS native team picker, paging, My teams filter, highlight, event follow toggle, and auto reminders");return 0;
 }

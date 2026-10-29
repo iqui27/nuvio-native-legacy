@@ -27,7 +27,7 @@
 #undef ordem
 
 static void fixture(void){
-  esportes_abrir_sessao();gs_started=1;esportesui_recursos("deploy/app/art");
+  esportes_abrir_sessao();gs_started=1;gs_start();esportesui_recursos("deploy/app/art");
   catalogo=calloc(9,sizeof *catalogo);nCatalogo=9;catalogoIdioma=ajustes_idioma();catalogoFeitos=0xffff;
   for(int i=0;i<9;i++){
     catalogo[i].modalidade=0;
@@ -38,7 +38,10 @@ static void fixture(void){
   for(int i=0;i<8;i++){
     EspEvento *e=&eventos[i];snprintf(e->id,sizeof e->id,"event%d",i);
     strcpy(e->modalidade,"soccer");strcpy(e->ligaId,"league0");strcpy(e->liga,"Brasileirão");
-    strcpy(e->nome,"Flamengo × Palmeiras");strcpy(e->local,"Maracanã");
+    strcpy(e->nome,"Flamengo × Palmeiras");strcpy(e->local,"Maracanã");strcpy(e->cidade,"Rio de Janeiro");
+    strcpy(e->detalhe,i==0?"37′ · 1º tempo":i==1?"Encerrado":"Agendado");
+    strcpy(e->participantes[0].cor,"C32832");strcpy(e->participantes[1].cor,"16805A");
+    strcpy(e->emissoras[0],"SporTV");e->nEmissoras=1;
     e->nParticipantes=2;e->estado=i==0?1:i==1?2:0;e->inicio=time(NULL)+(i==0?-20:i==1?-180:120*i)*60;e->fim=e->inicio+7200;
     strcpy(e->participantes[0].id,"fla");strcpy(e->participantes[0].nome,"Flamengo");strcpy(e->participantes[0].curto,"Flamengo");strcpy(e->participantes[0].pontos,"2");
     strcpy(e->participantes[1].id,"pal");strcpy(e->participantes[1].nome,"Palmeiras");strcpy(e->participantes[1].curto,"Palmeiras");strcpy(e->participantes[1].pontos,"1");
@@ -179,6 +182,7 @@ static void sportsux_proof(SDL_Window *w,const char *out){
   assert(!esportes_favorito(&saved,0));gv_event(SDLK_ESCAPE,0);quadro();assert(gs_n==0);
   puts("PASS Sports UX: exact card steps, paced repeat, rows, visible focus, Settings dispatch, profile save/reopen, favorite/unfavorite");
 }
+#include "espevento_shot.inc"
 #ifndef SPORTS_V5_MAIN
 #define SPORTS_V5_MAIN main
 #endif
@@ -189,6 +193,7 @@ int SPORTS_V5_MAIN(int argc,char **argv){
   SDL_Window *w=SDL_CreateWindow("Sports v5 proof",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,1920,1080,SDL_WINDOW_OPENGL|SDL_WINDOW_SHOWN);assert(w&&SDL_GL_CreateContext(w));
   glViewport(0,0,1920,1080);gfx_tamanho_alvo(1920,1080);assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));tex_iniciar(64);gfx_icones_dir("deploy/app/art");
   dados_iniciar(getenv("NUVIO_DADOS"));dados_gravar("ajustes.txt","idioma 0\nidiomaAutoLocal 0\nselected_theme 2\nescalaTextoLocal 2\nescalaTextoVersaoLocal 1\n");ajustes_dir(getenv("NUVIO_DADOS"));ajustes_definir_vidro(0);context();semear();fixture();
+  if(getenv("ESPEVENTO_PROOF")){event_proof(w,out);return 0;}
   if(getenv("SPORTSUX_PROOF")){sportsux_proof(w,out);return 0;}
   g5ui_open("esportes-ligas");quadro();assert(gs_count==9&&gs_n==9);capture(w,out,"sports-home");
   g5ui_open("esportes-hoje");quadro();assert(gs_n>0);capture(w,out,"sports-games-crests");
@@ -197,7 +202,8 @@ int SPORTS_V5_MAIN(int argc,char **argv){
   focus=2061;gs_activate();quadro();assert(gs_page==1);focus=2500;gs_activate();assert(gs_league==6&&!strcmp(screen,"esportes-liga"));gs_back();quadro();assert(gs_page==1&&focus==2500);
   gs_page=0;focus=2500;gs_activate();quadro();capture(w,out,"league");
   focus=2200;gv_ok_segurado();quadro();assert(!strcmp(screen,"esportes-onde-assistir")&&gs_selected.nParticipantes==2);gs_back();quadro();assert(focus==2200);
-  focus=2200;gs_activate();assert(stream_folha_canais_aberta());
+  focus=2200;gs_activate();assert(!strcmp(screen,"esportes-evento")&&!stream_folha_canais_aberta());
+  gs_back();esportesui_fontes(&eventos[0]);
   for(int i=0;i<80;i++)esportesui_fontes_passo();
   const FontesCanais *sources=fontescanais_estado();assert(sources->n==1&&!strcmp(sources->canais[0].nome,"SporTV"));
   capture(w,out,"match-sources");stream_folha_canais_fechar();

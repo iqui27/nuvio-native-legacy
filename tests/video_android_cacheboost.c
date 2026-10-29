@@ -11,6 +11,7 @@ void *SDL_AndroidGetActivity(void);
 #include "../src/video_android.c"
 // capmkv.c (capitulos do MKV) nao faz parte deste teste.
 int juntos_precarregando(void) { return 0; }
+int player_eh_canal(void) { return 0; }
 int stream_kbps_atual(void) { return 0; }
 int xtream_url_limitada(const char *u) { (void)u; return 0; }
 int xtream_conexoes_limitadas(void) { return 0; }

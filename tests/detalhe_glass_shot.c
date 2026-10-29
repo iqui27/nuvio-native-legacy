@@ -209,7 +209,17 @@ static time_t detailShotTime(time_t *result) {
 #define servidores_info fx_servidor_info
 #define plrui_dicas server_hints
 #define reacao_detalhe_dica server_rating_hint
+#ifdef NV_CHIPFONTE2_PROOF
+#include "chipfonte2_probe.h"
+#endif
 #include NV_DETAIL_SOURCE
+#ifdef NV_CHIPFONTE2_PROOF
+#undef txt_linha
+#undef txt_linha_corta
+#undef txt_desenhar_alpha
+#undef vtui_estado_ponto
+#include "chipfonte2_fixture.h"
+#endif
 #ifdef NV_LEGACY_PROOF
 // Compatibility only for unexecuted 2.1-specific capture scenarios.
 static Uint32 heroDesde, secVisto[N_SECOES];
@@ -799,6 +809,9 @@ int main(int argc, char **argv) {
   { char ar[1024]; if (realpath("deploy/app/art", ar)) extras_carregar(ar); }
   montarCatalogo();
 #include "chipfonte_shots.inc"
+#ifdef NV_CHIPFONTE2_PROOF
+#include "chipfonte2_shots.inc"
+#endif
   cacheFrases();
 #ifdef NV_SHOT_HOOKS
   if (getenv("NUVIO_C9_CACHE")) return vc_run();

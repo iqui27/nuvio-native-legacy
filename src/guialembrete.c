@@ -80,11 +80,11 @@ void glem_passo(float dt, Uint32 agora) {
       snprintf(aNome, sizeof aNome, "%s", l->nome);
       snprintf(aTitulo, sizeof aTitulo, "%s", l->titulo);
       snprintf(aBase, sizeof aBase, "%s", l->base);
-      if(!strncmp(l->base,"sports|",7)) {
-        snprintf(aTexto,sizeof aTexto,"%s",aTitulo);aCanal[0]=aBase[0]=0;
-      } else snprintf(aTexto, sizeof aTexto, i18n("%s começa agora no %s"), aTitulo, aNome);
+      int sport=!strncmp(aCanal,"sport:",6)||!strncmp(aBase,"sports|",7);
+      if(sport){snprintf(aTexto,sizeof aTexto,"%s · %s",aTitulo,aNome);aCanal[0]=aBase[0]=0;}
+      else snprintf(aTexto, sizeof aTexto, i18n("%s começa agora no %s"), aTitulo, aNome);
       lembrete_marcar_avisado(i);
-      abrir(vendoCanal(aCanal) ? 2 : 1, agora);
+      abrir(sport||vendoCanal(aCanal) ? 2 : 1, agora);
       printf("[lembrete] aviso: %s (%s)\n", aTitulo, vendoCanal(aCanal) ? "ja no canal" : "cartao");
       fflush(stdout);
     } }

@@ -2,12 +2,16 @@
 # Capture all hero sizes with glass off, using the existing local-art harness.
 set -eu
 cd "$(dirname "$0")/.."
-output=/Volumes/ExternalSSD/tmp/rev/herotamanho-png
-fixtures=/Volumes/ExternalSSD/tmp/rev/imersiva/v2/assets/fixtures
+output="${1:-/Volumes/ExternalSSD/tmp/rev/herotamanho-png}"
 mkdir -p "$output"
 shot_data=$(mktemp -d "${TMPDIR:-/tmp}/herotamanho-shot.XXXXXX")
 trap 'rm -rf "$shot_data"' EXIT
 export NUVIO_DADOS="$shot_data"
+fixtures="$shot_data/fixtures"
+mkdir -p "$fixtures"
+sips -s format png deploy/app/art/00.jpg --out "$fixtures/bg.png" >/dev/null
+cp deploy/app/art/logo/00.png "$fixtures/wide.png"
+cp deploy/app/art/logo/01.png "$fixtures/tall.png"
 sources=()
 for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c) continue;; esac
