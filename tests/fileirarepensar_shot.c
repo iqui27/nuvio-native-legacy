@@ -1,5 +1,4 @@
-// Native 1080p design exploration. Private switch exists only in this binary.
-#define NV_FICHA_EXPLORATION 1
+// Production Ficha renderer and real input/update paths, with a frozen catalog.
 #include "../src/home.c"
 #include "nvtmp.h"
 #include "gl_compat.h"
@@ -8,14 +7,15 @@
 
 static SDL_Window *window;
 static const char *output;
+static int shotW = 1920, shotH = 1080;
 static void capture(const char *name) {
   char path[1024];
-  unsigned char *pixels = malloc(1920 * 1080 * 4);
-  SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
+  unsigned char *pixels = malloc(shotW * shotH * 4);
+  SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, shotW, shotH, 32, SDL_PIXELFORMAT_RGBA32);
   assert(pixels && s);
-  glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-  for (int y = 0; y < 1080; y++)
-    memcpy((char *)s->pixels + y * s->pitch, pixels + (1079 - y) * 1920 * 4, 1920 * 4);
+  glReadPixels(0, 0, shotW, shotH, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+  for (int y = 0; y < shotH; y++)
+    memcpy((char *)s->pixels + y * s->pitch, pixels + (shotH - 1 - y) * shotW * 4, shotW * 4);
   snprintf(path, sizeof path, "%s/%s.png", output, name);
   assert(IMG_SavePNG(s, path) == 0);
   SDL_FreeSurface(s); free(pixels);
@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG | IMG_INIT_WEBP);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
-  window = SDL_CreateWindow("Nuvio row exploration", SDL_WINDOWPOS_CENTERED,
+  window = SDL_CreateWindow("Nuvio production Ficha", SDL_WINDOWPOS_CENTERED,
            SDL_WINDOWPOS_CENTERED, 1920, 1080, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
   assert(window && SDL_GL_CreateContext(window)); SDL_GL_SetSwapInterval(0);
   glViewport(0, 0, 1920, 1080); gfx_tamanho_alvo(1920, 1080);
@@ -99,26 +99,64 @@ int main(int argc, char **argv) {
   assert(fil_definir_tipo("study.a24", FIL_TIPO_CARTAZ));
   frames(120); focusRow();
   assert(foco.coluna == 0 && fileiras[foco.fileira].tipo == FILEIRA_FICHA);
-  shot("current");
-  for (int variant = 1; variant <= 3; variant++) {
-    fichaExploration = variant;
-    // Rebuild geometry through the same home invalidation path as row styles.
-    fil_definir_tipo("study.top_rated", FIL_TIPO_CARTAZ); frames(1);
-    fil_definir_tipo("study.top_rated", FIL_TIPO_FICHA); frames(1);
-    focusRow();
-    key(SDLK_RIGHT); frames(120);
-    assert(foco.coluna == 1);
-    char name[64]; snprintf(name, sizeof name, "v%d-frame0", variant); shot(name);
-    key(SDLK_LEFT); frames(2);
-    assert(foco.coluna == 0);
-    snprintf(name, sizeof name, "v%d-frame1", variant); shot(name);
-    printf("[study] v%d midpoint focus=%.3f\n", variant, animFoco[foco.fileira][0]);
-    frames(118); // Full spring and hero transition finish; never truncate motion.
-    assert(animFoco[foco.fileira][0] > .999f);
-    GfxRect b; assert(home_ancora_foco(&b));
-    assert(b.x >= 0 && b.y >= 0 && b.x+b.w <= 1920 && b.y+b.h <= 1080);
-    snprintf(name, sizeof name, "v%d", variant); shot(name);
-    printf("[study] v%d settled %.0f,%.0f %.0fx%.0f\n", variant, b.x,b.y,b.w,b.h);
-  }
+  shot("tv-first");
+  int row = foco.fileira;
+  GfxRect b; HomeItem item;
+  assert(home_ancora_foco(&b) && home_item_focado(&item));
+  assert(fabsf(b.w - larguraFil(row) - fichaExtraW(row)) < .1f);
+  assert(item.rect.w == b.w && item.indice == 0);
+  assert(home_cartao_foco_por_cima(0)); // Same expanded card above the context veil.
+  assert(fichaCopyKey.ready && fichaCopy.tex);
+  GLuint copy = fichaCopy.tex;
+  frames(8); assert(fichaCopy.tex == copy);
+  // Four real animation samples; run the remaining spring to completion.
+  key(SDLK_RIGHT); frames(120);
+  shot("animation-0");
+  key(SDLK_LEFT); frames(2); shot("animation-1");
+  assert(animFoco[row][0] > .01f && animFoco[row][0] < .99f);
+  frames(3); shot("animation-2");
+  frames(115); shot("animation-3");
+  assert(animFoco[row][0] > .999f && animFoco[row][1] < .001f);
+  key(SDLK_UP); frames(120); shot("tv-unfocused");
+  assert(focoHero && animFoco[row][0] < .001f);
+  key(SDLK_DOWN); frames(120); assert(foco.fileira == row && foco.coluna == 0);
+  for (int c = 1; c <= 6; c++) { key(SDLK_RIGHT); frames(120); }
+  assert(foco.coluna == 6); shot("tv-middle");
+  assert(home_ancora_foco(&b) && b.x + b.w <= homeConteudoDireita() + .5f);
+  // Rapid reversals never reset either spring.
+  key(SDLK_RIGHT); frames(2); key(SDLK_LEFT); frames(1);
+  assert(animFoco[row][6] > 0 && animFoco[row][6] < 1 && animFoco[row][7] > 0);
+  frames(120);
+  for (int c = 7; c <= 11; c++) { key(SDLK_RIGHT); frames(120); }
+  assert(foco.coluna == 11 && home_ancora_foco(&b));
+  assert(b.x >= 0 && b.x + b.w <= homeConteudoDireita() + .5f);
+  shot("tv-last");
+  // Portrait layout uses the same production renderer and pointer targets.
+  shotW = 1080; shotH = 1920;
+  SDL_SetWindowSize(window, shotW, shotH);
+  layout_tela_definir(shotW, shotH); layout_modo_definir(1);
+  gfx_tamanho_alvo(shotW, shotH); glViewport(0, 0, shotW, shotH);
+  assert(homeRetratoTelefone());
+  key(SDLK_HOME); focusRow();
+  while (foco.coluna > 0) key(SDLK_LEFT);
+  frames(120); shot("phone-first");
+  assert(home_ancora_foco(&b) && b.w <= homeLarguraUtil() + .1f);
+  ponteiroCard(row, 2); frames(120);
+  assert(foco.coluna == 2 && home_item_focado(&item) && item.indice == 2);
+  assert(home_ancora_foco(&b) && b.x + b.w <= homeConteudoDireita() + .5f);
+  shot("phone-touch");
+  // Drag ownership survives a running focus animation.
+  toqueLivreX[row] = 1; scrollX[row] = 300;
+  frames(3); assert(fabsf(scrollX[row] - 300) < .01f);
+  toqueHomeRetomarFoco(); frames(120);
+  assert(foco.coluna >= 0 && foco.coluna < 12);
+  // Missing artwork, long UTF-8 copy and a late catalog revision.
+  int idx = fileiraItemIndice(&fileiras[row], foco.coluna);
+  snprintf(items[idx].titulo, sizeof items[idx].titulo, "%s",
+           "A very long title — 日本語 — a production fallback that must stay inside its card");
+  items[idx].poster[0] = items[idx].sinopse[0] = 0; items[idx].nota = 0;
+  cat_definir_tudo(items, 12, rows, 2); frames(120); shot("phone-fallback");
+  assert(home_ancora_foco(&b) && b.x + b.w <= homeConteudoDireita() + .5f);
+  printf("Production V1: focus, animation, bounds, touch, cache and fallbacks passed.\n");
   SDL_Quit(); return 0;
 }

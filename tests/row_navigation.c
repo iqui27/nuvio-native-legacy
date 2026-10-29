@@ -30,6 +30,9 @@ int main(void) {
   e.type = SDL_KEYDOWN;
   // The hero remains visible while preceding rows leave the viewport.
   // Rebuild targets after each key, as rendering does, at both scroll speeds.
+  for (int style = 0; style < 2; style++) {
+    for (int r = 0; r < nFileiras; r++)
+      fileiras[r].tipo = style ? FILEIRA_FICHA : FILEIRA_NORMAL;
   for (int moving = 0; moving < 2; moving++) {
     foco.fileira = foco.coluna = 0;
     focoHero = 0;
@@ -49,6 +52,7 @@ int main(void) {
         return 1;
       }
     }
+  }
   }
   row_navigation_library();
   row_navigation_detail();

@@ -150,6 +150,30 @@ float sinopse_bloco(TxtEstilo o, const char *t, int r, int g, int b, float x, fl
 static void homeCom(int layout, int heroLigado) { testeLayout = layout; testeHero = heroLigado; }
 
 int main(void) {
+  // Ficha reserves only a poster at rest. Expansion pushes neighbours and
+  // scroll keeps the entire selected card visible, including the last item.
+  {
+    homeCom(HOME_LAYOUT_MODERNA, 1);
+    fileiras[0] = (Fileira){.tipo = FILEIRA_FICHA, .n = 12, .escala = 1.0f};
+    memset(animFoco[0], 0, sizeof animFoco[0]);
+    assert(fabsf(larguraFil(0) - alturaFil(0) * 2.0f / 3.0f) < .01f);
+    float extra = fichaExtraW(0);
+    assert(extra > 400.0f);
+    for (int c = 0; c < 12; c++) {
+      memset(animFoco[0], 0, sizeof animFoco[0]);
+      animFoco[0][c] = 1;
+      scrollX[0] = alvoScrollFil(0, c, 0, 0);
+      float x = homeFileiraX(0, c);
+      assert(x >= homeConteudoX() - .01f);
+      assert(x + larguraFil(0) + extra <= homeConteudoDireita() + .01f);
+    }
+    // Interrupted transfer: both springs keep their current width.
+    animFoco[0][11] = .6f; animFoco[0][10] = .4f;
+    assert(fabsf(fichaOffset(0, 12) - extra) < .01f);
+    assert(fabsf(fichaOffset(0, 11) - extra * .4f) < .01f);
+    memset(animFoco[0], 0, sizeof animFoco[0]);
+    scrollX[0] = 0;
+  }
   // HEROI DIVIDIDO: painel deitado a esquerda (~45% da largura util), a fila de
   // cartazes a direita dele, e o painel segue o foco da fileira.
   {
@@ -471,12 +495,10 @@ int main(void) {
       }
     }
     espacoTit = 1.0f; espacoFil = 1.0f; homeCom(HOME_LAYOUT_MODERNA, 0); }
-  // #205 cardexp (dono, 14/10): espacamento da referencia da Apple TV — o
-  // titulo sai de cima dos cards e as fileiras respiram — e o card da ficha
-  // menor, para nao transbordar o cartaz/fileira (NV_FICHA_W).
+  // Row headings and neighbouring shelves retain their breathing room.
   assert(NV_LEGACY_ROW_HEAD_H >= 64.0f);
   assert(NV_FILEIRA_GAP >= 80.0f);
-  assert(NV_FICHA_W <= 540.0f);
+  assert(NV_FICHA_INFO_W == 470.0f);
   // PÔSTER GRANDE P/M/G (dono: "esse estilo de fileira pode ter 3 tamanhos
   // tb"): a mesma forma em tres tamanhos, crescendo sem tirar o card da tela.
   // O M e o de sempre (fator 1, 3:4); no menor a altura cai, e o maior nunca
