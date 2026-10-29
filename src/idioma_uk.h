@@ -4546,6 +4546,7 @@
   T("Meu repositório", "Мій репозиторій"),
   T("Meu servidor", "Мій сервер"),
   T("Meus addons", "Мої аддони"),
+  T("Meus times", "Мої команди"),
   T("Microfone: ditado  ·  Teclado: o do sistema", "Мікрофон: диктування  ·  Клавіатура: системна"),
   T("Midnight’s", "Опівночі"),
   T("Minha lista e Continuar", "Мій список і Продовжити"),

@@ -4547,6 +4547,7 @@
   T("Meu repositório", "Mit arkiv"),
   T("Meu servidor", "Min server"),
   T("Meus addons", "Mine tilføjelser"),
+  T("Meus times", "Mine hold"),
   T("Microfone: ditado  ·  Teclado: o do sistema", "Mikrofon: diktering  ·  Tastatur: systemets"),
   T("Midnight’s", "midnat"),
   T("Minha lista e Continuar", "Min liste og Fortsæt"),

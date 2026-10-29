@@ -90,6 +90,20 @@ int esportes_ligas_ler(const char *json, EspLiga *out, int cap) {
   }
   return n;
 }
+int esportes_times_ler(const char *json,EspParticipante *out,int cap) {
+  const char *s=array(json,NULL,"sports"),*l=s?array(s,js_fim(s),"leagues"):NULL;
+  int n=0;
+  for(const char *p=array(l?l:json,l?js_fim(l):NULL,"teams");p&&n<cap;) {
+    const char *end=js_fim(p);if(!end||end<=p)break;
+    const char *t=objeto(p,end,"team");if(!t)t=p;
+    EspParticipante a={0};texto(t,end,"id",a.id,sizeof a.id);
+    texto(t,end,"displayName",a.nome,sizeof a.nome);texto(t,end,"abbreviation",a.sigla,sizeof a.sigla);
+    imagem(t,end,a.logo,sizeof a.logo);
+    if(slug(a.id)&&a.nome[0])out[n++]=a;
+    p=js_prox(end);
+  }
+  return n;
+}
 int esportes_noticias_ler(const char *json,EspNoticia *out,int cap) {
   int n=0;
   for(const char *p=array(json,NULL,"articles");p && n<cap;) {

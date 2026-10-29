@@ -43,6 +43,22 @@ int esportes_habilitado(int modalidade);
 int esportes_habilitar(int modalidade, int ligado);
 int esportes_favorito(const EspEvento *ev, int participante);
 int esportes_alternar_favorito(const EspEvento *ev, int participante);
+/* Idempotent follow setters: 1 on success, 0 on invalid input/storage failure.
+ * Event identity includes sport and league. All calls belong to the UI thread. */
+int esportes_seguir_time(const EspEvento *ev, int participante, int seguir);
+int esportes_segue_time(const EspEvento *ev, int participante);
+int esportes_seguir_jogo(const EspEvento *ev, int seguir);
+int esportes_segue_jogo(const EspEvento *ev);
+int esportes_segue_evento(const EspEvento *ev);
+int esportes_jogos_seguidos_n(void);
+const EspEvento *esportes_jogo_seguido(int i);
+void esportes_seguir_lembretes(void);
+/* ESPN roster, independent of games currently loaded. */
+#define ESP_MAX_TIMES 1024
+int esportes_times_ler(const char *json, EspParticipante *out, int cap);
+void esportes_pedir_times(int modalidade, const EspLiga *liga);
+int esportes_times_n(void);
+const EspParticipante *esportes_time(int i);
 /* Combined favorites feed; loaded independently of the selected league. */
 void esportes_pedir_favoritos(int atualizar);
 int esportes_favoritos_times(void);

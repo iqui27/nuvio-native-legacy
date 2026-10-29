@@ -4546,6 +4546,7 @@
   T("Meu repositório", "Depozitul meu"),
   T("Meu servidor", "Serverul meu"),
   T("Meus addons", "Addons-urile mele"),
+  T("Meus times", "Echipele mele"),
   T("Microfone: ditado  ·  Teclado: o do sistema", "Microfon: dictare  ·  Tastatură: cea a sistemului"),
   T("Midnight’s", "Miezul nopții"),
   T("Minha lista e Continuar", "Lista mea și Continuă"),

@@ -179,7 +179,10 @@ static void sportsux_proof(SDL_Window *w,const char *out){
   assert(!esportes_favorito(&saved,0));gv_event(SDLK_ESCAPE,0);quadro();assert(gs_n==0);
   puts("PASS Sports UX: exact card steps, paced repeat, rows, visible focus, Settings dispatch, profile save/reopen, favorite/unfavorite");
 }
-int main(int argc,char **argv){
+#ifndef SPORTS_V5_MAIN
+#define SPORTS_V5_MAIN main
+#endif
+int SPORTS_V5_MAIN(int argc,char **argv){
   const char *out=argc>1?argv[1]:"/Volumes/ExternalSSD/tmp/rev/esportes619";mkdir(out,0755);
   assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));IMG_Init(IMG_INIT_PNG|IMG_INIT_JPG);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2);SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);

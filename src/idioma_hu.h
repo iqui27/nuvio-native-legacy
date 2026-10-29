@@ -4547,6 +4547,7 @@
   T("Meu repositório", "Saját tárolóm"),
   T("Meu servidor", "A szerverem"),
   T("Meus addons", "A kiegészítéseim"),
+  T("Meus times", "Csapataim"),
   T("Microfone: ditado  ·  Teclado: o do sistema", "Mikrofon: diktálás  ·  Billentyűzet: a rendszeré"),
   T("Midnight’s", "Éjfél"),
   T("Minha lista e Continuar", "Saját lista és Folytatás"),

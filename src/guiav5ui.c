@@ -1790,7 +1790,7 @@ static int gv_is(const char *s){
     "erros","vazio","fontes-erro","esportes-ligas","esportes-liga","esportes-favoritos",
     "esportes-ajustes","esportes-onde-assistir","esportes-noticias","esportes-hoje",
     "esportes-proximos","esportes-resultados","esportes-modalidades","esportes-catalogo",
-    "esportes-visibilidade","esportes-modalidades-config","esportes-artigo","esportes-canais",NULL};
+    "esportes-visibilidade","esportes-modalidades-config","esportes-artigo","esportes-canais","esportes-times",NULL};
   for(int i=0;ss[i];i++)if(!strcmp(s,ss[i]))return 1;
   return 0;
 }

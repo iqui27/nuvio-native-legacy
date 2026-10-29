@@ -7516,6 +7516,9 @@ void app_atualizar(float dt, Uint32 agora) {
   if (sessao_logada() && tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL) {
     char lid[80], lnome[120], lbase[600];
     CatItem it;
+    { static Uint32 sportsRemindersAt;
+      if(!sportsRemindersAt || agora-sportsRemindersAt>=1000u){sportsRemindersAt=agora?agora:1;esportes_abrir_sessao();esportes_pedir_favoritos(0);esportes_passo();esportes_seguir_lembretes();}
+    }
     glem_passo(dt, agora);
     // "Assistir" no cartao: o canal em tela cheia, de onde a pessoa estiver.
     if (aguardandoFonte != 2 && glem_pediu_assistir(lid, sizeof lid, lnome, sizeof lnome,

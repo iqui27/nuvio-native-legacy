@@ -4547,6 +4547,7 @@
   T("Meu repositório", "مستودعي"),
   T("Meu servidor", "خادمي"),
   T("Meus addons", "إضافاتي"),
+  T("Meus times", "فرقي"),
   T("Microfone: ditado  ·  Teclado: o do sistema", "الميكروفون: الإملاء  ·  لوحة المفاتيح: لوحة النظام"),
   T("Midnight’s", "Midnight’s"),
   T("Minha lista e Continuar", "قائمتي والمتابعة"),

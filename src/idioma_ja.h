@@ -4547,6 +4547,7 @@
   T("Meu repositório", "マイリポジトリ"),
   T("Meu servidor", "私のサーバー"),
   T("Meus addons", "私のアドオン"),
+  T("Meus times", "マイチーム"),
   T("Microfone: ditado  ·  Teclado: o do sistema", "マイク：音声入力  ·  キーボード：システムのもの"),
   T("Midnight’s", "ミッドナイト"),
   T("Minha lista e Continuar", "マイリストと続きを見る"),

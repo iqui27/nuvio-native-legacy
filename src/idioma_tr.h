@@ -4547,6 +4547,7 @@
   T("Meu repositório", "Deponuz"),
   T("Meu servidor", "Sunucum"),
   T("Meus addons", "Eklentilerim"),
+  T("Meus times", "Takımlarım"),
   T("Microfone: ditado  ·  Teclado: o do sistema", "Mikrofon: dikte  ·  Klavye: sistemin klavyesi"),
   T("Midnight’s", "Gece yarısı"),
   T("Minha lista e Continuar", "Listem ve Devam et"),

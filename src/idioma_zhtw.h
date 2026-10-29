@@ -4547,6 +4547,7 @@
   T("Meu repositório", "我的儲存庫"),
   T("Meu servidor", "我的伺服器"),
   T("Meus addons", "我的插件"),
+  T("Meus times", "我的球隊"),
   T("Microfone: ditado  ·  Teclado: o do sistema", "麥克風：聽寫  ·  鍵盤：系統鍵盤"),
   T("Midnight’s", "午夜的"),
   T("Minha lista e Continuar", "我的清單和繼續觀看"),

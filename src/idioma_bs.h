@@ -4547,6 +4547,7 @@
   T("Meu repositório", "Moj repozitorij"),
   T("Meu servidor", "Moj server"),
   T("Meus addons", "Moji dodaci"),
+  T("Meus times", "Moji timovi"),
   T("Microfone: ditado  ·  Teclado: o do sistema", "Mikrofon: diktiranje  ·  Tastatura: sistemska"),
   T("Midnight’s", "Ponoćni"),
   T("Minha lista e Continuar", "Moja lista i Nastavi"),

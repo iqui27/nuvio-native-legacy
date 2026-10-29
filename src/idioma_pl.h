@@ -4547,6 +4547,7 @@
   T("Meu repositório", "Moje repozytorium"),
   T("Meu servidor", "Mój serwer"),
   T("Meus addons", "Moje dodatki"),
+  T("Meus times", "Moje drużyny"),
   T("Microfone: ditado  ·  Teclado: o do sistema", "Mikrofon: dyktowanie  ·  Klawiatura: systemowa"),
   T("Midnight’s", "Północ"),
   T("Minha lista e Continuar", "Moja lista i Kontynuuj"),

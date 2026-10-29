@@ -1,5 +1,6 @@
 /* PR #619 supplies metadata, artwork, profile preferences and Sources matching.
  * This adapter keeps guide v5 geometry, focus, motion and Back navigation. */
+static int gs_choosing;
 static int gs_sport=-1,gs_league=-1,gs_page;
 typedef struct { char page[48],query[140];int focus,offset,sport,league; } GSStep;
 static GSStep gs_history[12];static int gs_depth;
@@ -13,13 +14,15 @@ static int gs_collection_sport=-2;
 static time_t gs_collection_minute;
 static SDL_Keycode gs_key;static Uint32 gs_repeat_at;
 static void gs_reset(void){
+  gs_choosing=0;
   if(gs_started)esportesui_fechar();
   gs_started=gs_depth=gs_page=gs_n=gs_count=0;gs_sport=gs_league=-1;
   gs_revision=~0u;gs_collection_page[0]=0;gs_key=0;
 }
-static const char *gs_sections[]={"Notícias","Ao vivo / Jogos de hoje","Próximos jogos","Resultados","Por liga","Favoritos"};
-static const char *gs_icons[]={"aj_scroll-text","aj_activity","aj_calendar","aj_trophy","aj_rows-3","aj_star"};
-static const char *gs_pages[]={"esportes-noticias","esportes-hoje","esportes-proximos","esportes-resultados","esportes-modalidades","esportes-favoritos"};
+static const char *gs_sections[]={"Meus times","Ao vivo / Jogos de hoje","Próximos jogos","Resultados","Por liga","Notícias"};
+static const char *gs_icons[]={"aj_star","aj_activity","aj_calendar","aj_trophy","aj_rows-3","aj_scroll-text"};
+static const char *gs_pages[]={"esportes-favoritos","esportes-hoje","esportes-proximos","esportes-resultados","esportes-modalidades","esportes-noticias"};
+static int gs_team_arrow(SDL_Keycode k);
 static void gs_start(void){
   if(gs_started)return;
   esportesui_iniciar();gs_started=1;esportes_noticias_pedir(0);
@@ -38,6 +41,7 @@ static void gs_back(void){
       gv_go(s.page);
     }
     focus=s.focus;gs_page=s.offset;gs_sport=s.sport;gs_league=s.league;snprintf(query,sizeof query,"%s",s.query);
+    if(!strcmp(screen,"esportes-ligas"))gs_choosing=0;
     esportes_catalogo_iniciar(gs_sport,0);
   }else{gs_page=0;gs_sport=-1;query[0]=0;gv_go(!strcmp(screen,"esportes-ligas")?"grade":"esportes-ligas");}
 }
@@ -56,7 +60,7 @@ static int gs_accept(const EspEvento *e){
   if(!strcmp(screen,"esportes-hoje"))return e->estado==1||gs_today(e->inicio);
   if(!strcmp(screen,"esportes-proximos"))return e->estado==0&&e->inicio>time(NULL);
   if(!strcmp(screen,"esportes-resultados"))return e->estado==2;
-  if(!strcmp(screen,"esportes-favoritos"))return (esportes_favorito(e,0)||esportes_favorito(e,1))&&
+  if(!strcmp(screen,"esportes-favoritos"))return esportes_segue_evento(e)&&
     (e->estado==1||(e->estado==0&&e->inicio>=time(NULL)-6*3600));
   return 1;
 }
@@ -88,6 +92,7 @@ static void gs_collect(void){
     for(int i=0;i<esportes_eventos_n();i++)gs_add(esportes_evento(i));
     for(int i=0;i<esportes_catalogo_n();i++)
       for(int j=0;j<esportes_catalogo_eventos_n(i);j++)gs_add(esportes_catalogo_evento(i,j));
+    for(int i=0;i<esportes_jogos_seguidos_n();i++)gs_add(esportes_jogo_seguido(i));
   }else if(!strcmp(screen,"esportes-liga")){
     for(int i=0;i<esportes_eventos_n();i++)gs_add(esportes_evento(i));
   }else{
@@ -118,10 +123,11 @@ static int gs_arrow(SDL_Keycode k,int repeat){
   Uint32 now=SDL_GetTicks();
   if(!repeat||k!=gs_key){gs_key=k;gs_repeat_at=now+(repeat?120:300);}
   else{if((Sint32)(now-gs_repeat_at)<0)return 1;gs_repeat_at=now+120;}
+  if(gs_team_arrow(k))return 1;
   if(focus>=1100&&focus<=1105&&k==SDLK_DOWN){gv_zone=0;focus=2001;return 1;}
   if(gv_overlay()){
     int first=!strcmp(screen,"esportes-ajustes")?2030:2040;
-    int n=first==2030?5:gs_selected.nParticipantes;
+    int n=first==2030?5:gs_selected.nParticipantes+1;
     if(focus>=first&&focus<first+n){
       if(k==SDLK_UP&&focus>first)focus--;
       if(k==SDLK_DOWN&&focus<first+n-1)focus++;
@@ -200,7 +206,7 @@ static void gv_sports_header(const char *title,const char *sub,const char *unuse
   (void)unused;
   gv_label(TXT_ILHA_TITULO,title,GV_MX,214,920,0);
   if(sub&&*sub)gv_label(TXT_ILHA_CORPO,sub,GV_MX,272,920,1);
-  gv_button(2001,i18n("Favoritos"),"aj_star",GV_MX+GV_MW-410,190,210,0,1);
+  gv_button(2001,i18n("Meus times"),"aj_star",GV_MX+GV_MW-410,190,210,0,1);
   gv_button(2002,i18n("Ajustes"),"aj_sliders-horizontal",GV_MX+GV_MW-188,190,188,0,1);
 }
 static void gs_empty(float y){
@@ -235,6 +241,8 @@ static int gs_live(int nth,const char **id,const char **name,const char **group)
   }
   return n;
 }
+#include "guiav5_esportes_seguir.inc"
+
 static void gs_hold(int id,int unused){(void)unused;focus=id;int i=gs_page*3+id-2200;if(i>=0&&i<gs_n){gs_selected=gs_games[i];gs_open("esportes-onde-assistir");}}
 static void gv_sports_screen(void){
   if(!gv_overlay())gs_prepare();
@@ -253,10 +261,11 @@ static void gv_sports_screen(void){
     gv_label(TXT_ILHA_SUB,i18n("Fundos ilustrativos do esporte. ESPN fornece apenas informações; os canais vêm das suas contas IPTV."),x,838,1056,1);return;
   }
   if(!strcmp(screen,"esportes-onde-assistir")){
-    gv_dim(0,.42f);float x=gv_sheet_base(520,230,1080,560);
+    gv_dim(0,.42f);float x=gv_sheet_base(520,180,1080,700);
     gv_label(TXT_TITULO2,i18n("Favoritos"),x,270,960,0);
     gv_label(TXT_ILHA_SUB,gs_selected.nome,x,330,960,1);
     for(int p=0;p<gs_selected.nParticipantes;p++)gv_opt(2040+p,"aj_star",gs_selected.participantes[p].nome,i18n(esportes_favorito(&gs_selected,p)?"Remover dos favoritos":"Adicionar aos favoritos"),x,392+p*100,1016,86);
+    gv_opt(2040+gs_selected.nParticipantes,"pl_bell",gs_selected.nome,i18n(esportes_segue_jogo(&gs_selected)?"Seguindo":"Seguir"),x,392+gs_selected.nParticipantes*100,1016,86);
     return;
   }
   const char *title=i18n("Esportes"),*sub="";
@@ -266,13 +275,14 @@ static void gv_sports_screen(void){
   if(!strcmp(screen,"esportes-visibilidade"))title=i18n("Ligas visíveis");
   if(!strcmp(screen,"esportes-modalidades-config"))title=i18n("Esportes neste perfil");
   if(!strcmp(screen,"esportes-canais"))title=i18n("Canais ao vivo");
+  if(!strcmp(screen,"esportes-times"))title=i18n("Escolher times");
   gv_sports_header(title,sub,NULL);
   int live=gs_live(-1,NULL,NULL,NULL);
   if(!strcmp(screen,"esportes-ligas")){
     for(int i=0;i<6;i++){
-      char count[96];int n=i==0?esportes_noticias_n():i==4?gs_count:i==5?esportes_favoritos_times():gs_n;
+      char count[96];int n=i==0?esportes_favoritos_times():i==4?gs_count:i==5?esportes_noticias_n():gs_n;
       if(i>=1&&i<=3){n=0;for(int e=0;e<gs_n;e++)if(i==1?(gs_games[e].estado==1||gs_today(gs_games[e].inicio)):i==2?(gs_games[e].estado==0&&gs_games[e].inicio>time(NULL)):gs_games[e].estado==2)n++;}
-      snprintf(count,sizeof count,"%d · %s",n,i18n(i==4?"Ligas":i==5?"Times":"Itens carregados"));
+      snprintf(count,sizeof count,"%d · %s",n,i18n(i==4?"Ligas":i==0?"Times":"Itens carregados"));
       float x=GV_MX+(i%3)*486,y=340+(i/3)*264;
       gs_card(2070+i,i18n(gs_sections[i]),count,gs_icons[i],x,y);
       if(i>=1&&i<=3)for(int e=0;e<gs_n;e++){
@@ -300,12 +310,14 @@ static void gv_sports_screen(void){
     if(!live)gs_empty(410);
     gs_pager(live,6);return;
   }
+  if(!strcmp(screen,"esportes-favoritos")||!strcmp(screen,"esportes-liga"))gv_button(2022,i18n("Escolher times"),"aj_plus",GV_MX+472,314,300,0,1);
+  if(!strcmp(screen,"esportes-times")){gs_team_draw();return;}
   if(!strcmp(screen,"esportes-favoritos")&&!gs_n){
     float x=gv_sheet_base(GV_MX,412,GV_MW,300);
     gfx_icone((GfxRect){x,450,48,48},"aj_star",.8f,.8f,.8f,1);
     gv_label(TXT_ILHA_NOME,i18n(esportes_favoritos_times()?"Nenhum jogo ao vivo ou próximo":"Escolha seus times favoritos"),x+76,448,1100,0);
-    gv_label(TXT_ILHA_SUB,i18n("Segure OK em um jogo para salvar ou remover um time neste perfil."),x+76,500,1200,1);
-    gv_button(2022,i18n("Escolher times"),"aj_plus",x+76,586,300,0,0);return;
+    gv_label(TXT_ILHA_SUB,i18n("Escolha seus times favoritos"),x+76,500,1200,1);
+    return;
   }
   if(!strcmp(screen,"esportes-artigo")){
     const EspNoticia *a=esportes_noticia(gs_article);if(!a)return;
@@ -346,6 +358,7 @@ static void gv_sports_screen(void){
   for(int j=0;j<3&&gs_page*3+j<gs_n;j++){
     GfxRect r={GV_MX+j*486,412,466,314};int id=2200+j;
     esportesui_cartao(&gs_games[gs_page*3+j],r,gv_btn_foc(id));
+    gs_follow_badge(&gs_games[gs_page*3+j],r);
     ponteiro_alvo(r.x,r.y,r.w,r.h,point_focus,point_activate,id,0);ponteiro_alvo_segurar(gs_hold);gv_registra(id,r.x,r.y,r.w,r.h);
   }
   if(!gs_n)gs_empty(420);
@@ -362,9 +375,9 @@ static int gs_activate(void){
   if(focus==2002){gs_open("esportes-ajustes");return 1;}
   if(focus==2020){gs_back();return 1;}
   if(focus==2021){input(5,"Buscar esportes",query,0);return 1;}
-  if(focus==2022){gs_sport=-1;gs_open("esportes-modalidades");return 1;}
+  if(focus==2022){gs_choosing=1;if(!strcmp(screen,"esportes-liga")&&gs_league>=0){const EspLiga *l=esportes_catalogo_liga(gs_league);gs_open("esportes-times");esportes_pedir_times(gs_sport,l);}else{gs_sport=-1;gs_open("esportes-modalidades");}return 1;}
   if(focus==2060||focus==2061){gs_page+=focus==2060?-1:1;if(gs_page<0)gs_page=0;focus=2020;return 1;}
-  if(focus>=2070&&focus<2076){int k=focus-2070;gs_open(gs_pages[k]);if(k==0)esportes_noticias_pedir(0);return 1;}
+  if(focus>=2070&&focus<2076){gs_choosing=0;int k=focus-2070;gs_open(gs_pages[k]);if(k==5)esportes_noticias_pedir(0);return 1;}
   if(!strcmp(screen,"esportes-ajustes")){
     if(focus==2030)gs_open("esportes-modalidades-config");
     else if(focus==2031)gs_open("esportes-visibilidade");
@@ -377,7 +390,10 @@ static int gs_activate(void){
     if(focus>=2040&&focus<2040+gs_selected.nParticipantes){
       if(!esportes_alternar_favorito(&gs_selected,focus-2040))glem_aviso_curto(i18n("Não foi possível salvar"));
       gs_revision=~0u;
-    }return 1;
+    }else if(focus==2040+gs_selected.nParticipantes){
+      if(!esportes_seguir_jogo(&gs_selected,!esportes_segue_jogo(&gs_selected)))glem_aviso_curto(i18n("Não foi possível salvar"));
+    }
+    esportes_seguir_lembretes();return 1;
   }
   if(focus>=2400&&focus<2416){
     int m=focus-2400;
@@ -392,7 +408,12 @@ static int gs_activate(void){
     int k=gs_indices[pos],m=esportes_catalogo_modalidade(k);const EspLiga *l=esportes_catalogo_liga(k);if(!l)return 1;
     if(!strcmp(screen,"esportes-visibilidade")){
       if(!esportes_liga_habilitar(m,l->id,!esportes_liga_habilitada(m,l->id)))glem_aviso_curto(i18n("Não foi possível salvar"));
-    }else{gs_open("esportes-liga");gs_league=k;gs_sport=m;esportes_catalogo_suspender();esportes_pedir_eventos(m,l,0);gs_refresh=SDL_GetTicks();}
+    }else{gs_open(gs_choosing?"esportes-times":"esportes-liga");gs_league=k;gs_sport=m;esportes_catalogo_suspender();if(gs_choosing)esportes_pedir_times(m,l);else esportes_pedir_eventos(m,l,0);gs_refresh=SDL_GetTicks();}
+    return 1;
+  }
+  if(focus>=2800&&focus<2806&&!strcmp(screen,"esportes-times")){
+    gs_team_collect();int at=gs_page*6+focus-2800;
+    if(at<gs_team_n){EspEvento e=gs_team_event(gs_team_ids[at]);if(!esportes_seguir_time(&e,0,!esportes_segue_time(&e,0)))glem_aviso_curto(i18n("Não foi possível salvar"));}
     return 1;
   }
   if(focus>=2600&&focus<2606){gs_article=gs_page*6+focus-2600;gs_open("esportes-artigo");return 1;}
