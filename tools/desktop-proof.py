@@ -68,6 +68,10 @@ for name in ['mac-home-1280.png', 'mac-home-narrow.png', 'mock-vs-app.png', 'mac
     assert (out / name).read_bytes().startswith(b'\x89PNG\r\n\x1a\n'), name
 assert '1280' in run('sips', '-g', 'pixelWidth', str(out / 'mac-home-1280.png'))
 assert '800' in run('sips', '-g', 'pixelHeight', str(out / 'mac-home-1280.png'))
+for name in ['mac-video.png', 'windows-video.png']:
+    brightness = float(run('magick', str(out / name), '-colorspace', 'gray', '-format', '%[fx:mean]', 'info:'))
+    assert brightness > .03, (name, 'black playback frame')
+assert 'tela=busca' in (out / 'mac-scene.log').read_text(errors='replace')
 for root in [app / 'Contents/Resources/art', out / 'Nuvio-win64/art']:
     assert (root / 'marcas').is_dir()
     assert not (root / 'catalogo-rede.bin').exists()
