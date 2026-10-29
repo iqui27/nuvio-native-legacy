@@ -12,7 +12,7 @@ _Static_assert(AJS_HOME == 4 && AJS_CONTAS == 8, "triGrupo segue a ordem dos SEC
 #define TRI_SEC_W     400.0f
 #define TRI_INSP_W    480.0f
 #define TRI_SEC_LN     54.0f
-#define TRI_LISTA_CAB  70.0f
+#define TRI_LISTA_CAB  104.0f
 #define TRI_FAIXA_H    64.0f   // retrato: a faixa horizontal de secoes, entre o cabecalho e a lista
 
 // Onde o conteudo comeca: depois da rail fixa (Padrao e Moderna, como a home
@@ -153,7 +153,8 @@ static void triIlhaSecoes(void) {
   for (j = 0; j <= nSecoes; j++) {
     int gj = triParental(j) ? 2 : triGrupo(j), foco = triIlha == TRI_SECOES && j == triSecFoco;
     int aberta = !triUtil ? (!triParental(j) && j == secAtual) : triUtil == TRI_U_PARENTAL ? triParental(j) : 0;
-    float f = triSecF[j], al = (foco || aberta) ? 1.0f : 0.72f;
+    int primaria = j < 8;
+    float f = triSecF[j], al = (foco || aberta) ? 1.0f : primaria ? 0.86f : 0.62f;
     const char *titulo = triParental(j) ? "Controle parental" : TELA[secIni[j]].titulo;
     const char *icone = triParental(j) ? "aj_shield" : TELA[secIni[j]].icone;
     GfxRect r;
@@ -167,10 +168,13 @@ static void triIlhaSecoes(void) {
     if (j == triSecFoco) { fy0 = y + triSecRolY; fy1 = fy0 + TRI_SEC_LN; }
     ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, triPontSecao, NULL, j, 0);
     ajFocoLinha(r, 20.0f, f, 1);
-    if (f > 0.01f) gfx_cor(r, 20.0f / r.h, ar, ag, ab, 0.14f * f);
     if (aberta && f < 0.99f) gfx_cor((GfxRect){ r.x + 7.0f, r.y + r.h * 0.5f - 2.5f, 5, 5 }, 0.5f, ar, ag, ab, 1.0f - f);
-    ajIcone(icone, r.x + 20.0f, r.y + (r.h - 26.0f) * 0.5f, 26.0f, al);
-    { TxtLinha t = ajTxtC(foco ? TXT_V2_LN_B : TXT_V2_LN, titulo, r.w - 62.0f - 20.0f - 56.0f);
+    float iconH = primaria ? 26.0f : 22.0f;
+    ajIcone(icone, r.x + 20.0f + (26.0f - iconH) * 0.5f, r.y + (r.h - iconH) * 0.5f, iconH, al);
+    { float width = r.w - 62.0f - 48.0f;
+      int style = primaria || foco ? TXT_W20_24B : TXT_AJ_SUB;
+      if (primaria && txt_largura(style, i18n(titulo)) > width) style = TXT_ILHA_SECAO;
+      TxtLinha t = ajTxtC(style, titulo, width);
       txt_desenhar_alpha(t, r.x + 62.0f, r.y + (r.h - t.h) * 0.5f, al); }
     if (!triParental(j)) {
       char c[16]; int nOp; TxtLinha t;
@@ -219,7 +223,7 @@ static void triFaixaSecoes(void) {
     TxtLinha t = f > 0.5f ? ajTxtT(TXT_V2_SEG, titulo) : ajTxt(TXT_V2_SEG, titulo);
     float w = 20.0f + 26.0f + 10.0f + t.w + 20.0f;
     GfxRect r = { x, y, w, TRI_FAIXA_H - 8.0f };
-    if (foco) { fx0 = x + triSecRolX; fx1 = fx0 + w; }
+    if (foco || (triIlha != TRI_SECOES && aberta)) { fx0 = x + triSecRolX; fx1 = fx0 + w; }
     ponteiro_alvo(r.x, r.y, r.w, r.h, triPontSecao, NULL, j, 0);
     if (f > 0.01f) ajPilulaAcento(r, r.h * 0.5f, f);
     if (f < 0.99f) ajNeutro(r, r.h * 0.5f, (aberta ? 0.16f : 0.08f) * (1.0f - f), AJ_CHIP_SOL, 1.0f - f);
@@ -235,13 +239,27 @@ static void triFaixaSecoes(void) {
 
 // --- ILHA 2: a lista da secao ---------------------------------------------------------------
 static void triListaCabecalho(GfxRect ilha, const char *titulo, const char *sub, float a) {
-  TxtLinha t = ajTxtC(TXT_V3_GRP, titulo, ilha.w - 60.0f);
-  float x = ilha.x + 30.0f, y = ilha.y + 26.0f;
+  TxtLinha t = ajTxtC(TXT_V2_LN_B, titulo, ilha.w - 60.0f);
+  float x = ilha.x + 30.0f, y = ilha.y + 22.0f;
   txt_desenhar_alpha(t, x, y, a);
   if (sub && sub[0]) {
-    TxtLinha s = ajTxtC(TXT_V2_24, sub, ilha.w - 60.0f - t.w - 16.0f);
-    txt_desenhar_alpha(s, x + t.w + 16.0f, y + t.h - s.h - 3.0f, 0.5f * a);
+    TxtLinha s = ajTxtC(TXT_V2_18, sub, ilha.w - 60.0f);
+    txt_desenhar_alpha(s, x, y + t.h + 8.0f, 0.55f * a);
   }
+}
+static void triLinhaUtil(GfxRect r, float f, float a, const char *icone, const char *titulo, const char *apoio,
+                         const char *valor, int chevron, int ligado);
+static void triPontSubVoltar(int i, int b) {
+  (void)i; (void)b;
+  if (triSubmenu >= 0 && !uxEditor) triSubVoltar();
+}
+static void triTopicoDesenhar(int item, float y, float a) {
+  GfxRect fr = triListaR(), r = {fr.x + 18, y + AJ2_LN_GAP, fr.w - 36, AJ2_LN_H};
+  int n = 0;
+  for (int i = item + 1; i < secFim(secAtual) && TELA[i].tipo == IT_OPC; i++) if (visivel(i)) n++;
+  char count[48]; snprintf(count, sizeof count, i18n("%d opções"), n);
+  triLinhaUtil(r, animItem[item], a, "aj_sliders-horizontal", TELA[item].titulo, NULL, count, 1, -1);
+  if (ajPontLista) ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, AJ_TOPO, AJ_BASE, ajPonteiroItem, NULL, item, 0);
 }
 static void triLista(void) {
   GfxRect ilha = triIlha2R(), fr = triListaR();
@@ -256,7 +274,14 @@ static void triLista(void) {
   if (nAv == 1) snprintf(sub, sizeof sub, i18n("%d opções · 1 técnica"), nOp);
   else if (nAv) snprintf(sub, sizeof sub, i18n("%d opções · %d técnicas"), nOp, nAv);
   else snprintf(sub, sizeof sub, i18n("%d opções"), nOp);
-  triListaCabecalho(ilha, s->titulo, sub, k);
+  if (triSubmenu >= 0) {
+    GfxRect back = {ilha.x + 18, ilha.y + 18, 56, 56};
+    char crumb[240]; snprintf(crumb, sizeof crumb, "%s / %s", i18n(s->titulo), i18n(TELA[triSubmenu].titulo));
+    triListaCabecalho((GfxRect){ilha.x + 56, ilha.y, ilha.w - 56, ilha.h}, TELA[triSubmenu].titulo, crumb, k);
+    ajNeutro(back, 28, 0.08f, AJ_CHIP_SOL, k);
+    ajIcone("aj_arrow-left", back.x + 16, back.y + 16, 24, k);
+    if (ajPontLista) ponteiro_alvo(back.x, back.y, back.w, back.h, NULL, triPontSubVoltar, 0, 0);
+  } else triListaCabecalho(ilha, s->titulo, sub, k);
   if (ajustes_animacoes_reduzidas()) dy = 0.0f;
 #ifdef NV_TOUCH_UI
   if (ajTelaCheia() && ajPontLista) {
@@ -271,7 +296,9 @@ static void triLista(void) {
     float h = ajAlturaItem(i);
     if (h <= 0.0f) continue;
     if (y + h >= topo - 4 && y <= base + 4) {
-      if (TELA[i].tipo == IT_ROT) {
+      if (triTopico(i)) {
+        triTopicoDesenhar(i, y, k);
+      } else if (TELA[i].tipo == IT_ROT) {
         ajDesenharGrupo(i, y, ajMascara(y + 20.0f + 15.6f, topo, base) * k);
       } else if (TELA[i].tipo == IT_MAIS) {
         float yy = y + 14.0f + AJ2_LN_GAP;
@@ -304,18 +331,17 @@ static void triLinhaUtil(GfxRect r, float f, float a, const char *icone, const c
   float yc = r.y + r.h * 0.5f, xd = r.x + r.w - 22.0f, aT = a;
   TxtLinha t;
   if (a <= 0.004f) return;
-  ajFocoLinha(r, 18.0f, f, a);
-  if (f > 0.01f) { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab); gfx_cor(r, 18.0f / r.h, ar, ag, ab, 0.14f * f * a); }
+  ajFocoLinha(r, 20.0f, f, a);
   if (icone) ajIcone(icone, r.x + 20.0f, yc - 13.0f, 26.0f, (f > 0.5f ? 0.9f : 0.6f) * aT);
   if (chevron) { aj2Chevron(xd, yc, (f > 0.5f ? 0.7f : 0.32f) * aT); xd -= 22.0f + 12.0f; }
   if (ligado >= 0) { xd -= aj2PilulaEstado(-1, xd, yc, ligado, aT) + 12.0f; }
   if (valor && valor[0]) {
-    t = ajTxtC(TXT_V3_VAL, valor, r.w * 0.4f);
+    t = ajTxtC(TXT_V2_24, valor, r.w * 0.4f);
     txt_desenhar_alpha(t, xd - t.w, yc - t.h * 0.5f, (f > 0.5f ? 0.95f : 0.72f) * aT);
     xd -= t.w + 16.0f;
   }
   { float tx = r.x + (icone ? 62.0f : 22.0f), maxW = xd - tx - 10.0f;
-    TxtLinha tt = ajTxtC(f > 0.5f ? TXT_V3_LN_B : TXT_V3_LN, titulo, maxW);
+    TxtLinha tt = ajTxtC(TXT_V2_LN, titulo, maxW);
     if (apoio && apoio[0]) {
       TxtLinha s = ajTxtC(TXT_V2_18, apoio, maxW);
       float th = tt.h + 4.0f + s.h;
@@ -674,8 +700,11 @@ static void triRodape(void) {
   else if (triUtil) { d[0] = (AjDica){ "OK", "Abrir" }; d[1] = (AjDica){ "↑ ↓", "Navegar" }; d[2] = (AjDica){ "Voltar", "Sair" }; nd = 3; }
   else if (triIlha == TRI_SECOES) { d[0] = (AjDica){ "OK", "Entrar" }; d[1] = (AjDica){ "↑ ↓", "Navegar" }; d[2] = (AjDica){ "Voltar", "Sair" }; nd = 3; }
   else if (triIlha == TRI_CHIPS) { d[0] = (AjDica){ "OK", "Abrir" }; d[1] = (AjDica){ "← →", "Escolher" }; d[2] = (AjDica){ "↓", "Seções" }; nd = 3; }
-  else nd = ajDicasDe(focoOp, d);
+  else if (triTopico(focoItem)) { d[0] = (AjDica){ "OK", "Abrir" }; d[1] = (AjDica){ "↑ ↓", "Navegar" }; d[2] = (AjDica){ "Voltar", "Categorias" }; nd = 3; }
+  else { nd = ajDicasDe(focoOp, d); if (triSubmenu >= 0) d[nd - 1] = (AjDica){ "Voltar", "Voltar" }; }
   aj2DicasLinha(d, nd, x, yc, TXT_V2_KBD18, 34, 38, 10, TXT_V2_24, 8, 22, 1, 1);
+  // Portrait reserves the footer for controls; the fixed header shows context.
+  if (ajRetrato()) return;
   // A direita: onde a pessoa esta ("Reproducao · Imagem e som · 3 de 46").
   rota[0] = 0;
   if (triUtil == TRI_U_PRESETS) snprintf(rota, sizeof rota, "%s · %s", i18n("Ajustes"), i18n("Predefinições"));
@@ -686,7 +715,7 @@ static void triRodape(void) {
     int i, pos = 0, n = 0;
     const char *bl = uxBloco(focoOp);
     for (i = secIni[secAtual] + 1; i < secFim(secAtual); i++)
-      if (TELA[i].tipo == IT_OPC && visivel(i)) { n++; if (i == focoItem) pos = n; }
+      if (TELA[i].tipo == IT_OPC && triMostrar(i) && visivel(i)) { n++; if (i == focoItem) pos = n; }
     if (bl[0]) snprintf(rota, sizeof rota, i18n("%s · %s · %d de %d"), i18n(TELA[secIni[secAtual]].titulo), i18n(bl), pos, n);
     else snprintf(rota, sizeof rota, i18n("%s · %d de %d"), i18n(TELA[secIni[secAtual]].titulo), pos, n);
   } else snprintf(rota, sizeof rota, "%s · %s", i18n("Ajustes"), i18n(triParental(triSecFoco) && triIlha == TRI_SECOES ? "Controle parental" : TELA[secIni[secAtual]].titulo));
