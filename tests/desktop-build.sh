@@ -10,4 +10,6 @@ mkdir -p "$OUT"
 bash tools/build-local.sh > "$OUT/local-build.log" 2>&1 || { tail -30 "$OUT/local-build.log"; exit 1; }
 bash tools/android.sh --debug-only > "$OUT/android-build.log" 2>&1 || { tail -30 "$OUT/android-build.log"; exit 1; }
 cp build/android/*-android-debug.apk "$OUT/"
-echo 'desktop regression: local Mac build and offline Android arm64/armv7 debug APK OK (C MKV core, no P2P engine)'
+bash tools/mac-pacote.sh > "$OUT/mac-build.log" 2>&1 || { tail -40 "$OUT/mac-build.log"; exit 1; }
+bash tools/windows.sh > "$OUT/windows-build.log" 2>&1 || { tail -40 "$OUT/windows-build.log"; exit 1; }
+echo 'desktop build: local Mac, offline Android arm64/armv7, bundled macOS mpv app/DMG and Windows ZIP OK'

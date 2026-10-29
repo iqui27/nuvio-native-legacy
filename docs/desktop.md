@@ -3,7 +3,7 @@
 From the repository root on macOS:
 
 ```sh
-brew install sevenzip mingw-w64
+brew install sevenzip mingw-w64 mpv
 NUVIO_PROPERTIES=/absolute/path/to/local.properties bash tools/mac-pacote.sh
 NUVIO_PROPERTIES=/absolute/path/to/local.properties bash tools/windows.sh
 ```
@@ -15,7 +15,8 @@ removed on exit, and never included in either archive. Desktop version is 2.1;
 TV version metadata and TV build scripts are unchanged.
 
 Outputs default to `/Volumes/ExternalSSD/tmp/rev/desktop/`: `Nuvio.app`,
-`Nuvio-mac-universal.dmg`, `Nuvio-win64.zip`, and `windows-dlls.txt`.
+`Nuvio-mac-arm64.dmg` (or `Nuvio-mac-universal.dmg` when all dependencies have both slices),
+`Nuvio-win64.zip`, and `windows-dlls.txt`.
 Override `NUVIO_DESKTOP_OUT` and optionally `NUVIO_DESKTOP_CACHE` to change those
 locations. SDL2, SDL_image and SDL_ttf binaries come from official libsdl.org
 releases, verified against pinned SHA-256 digests before extraction. macOS uses
@@ -26,8 +27,11 @@ use SDL. All runtime libraries accompany the package. Third-party licenses accom
 The distribution art is staged through the same allowlist as the TV packages;
 personal catalog, cache, account and settings files are excluded.
 
-The Mac application supports macOS 11 or newer, Intel and Apple silicon. It is
-ad-hoc signed, not notarized: Gatekeeper may require Finder's Open command.
+The Mac application's architectures and minimum macOS version follow the complete
+Homebrew libmpv dependency closure, recorded in `mac-mpv-deps.json`. A normal
+Apple silicon Homebrew installation produces an arm64 application. The package
+script never advertises an Intel slice without matching playback libraries.
+It is ad-hoc signed, not notarized: Gatekeeper may require Finder's Open command.
 Drag the application from the disk image to Applications. On Windows x64, extract
 the entire ZIP before opening `Nuvio.exe`; keep DLLs, fonts and art alongside it.
 Windows requires an OpenGL 2.1 driver. No installer or administrator rights are
@@ -43,16 +47,34 @@ Cmd+Ctrl+F also works on Mac while typing. Mouse uses the existing pointer/wheel
 handling. SDL-compatible gamepads use D-pad, A to select and B/Back to go Back;
 controllers can be connected or disconnected while running.
 
-## Current desktop limitations
+## Desktop playback and layout
 
-The existing Mac player in `src/video.c` is a stub, not a desktop decoder.
-Windows deliberately uses that same path: navigation, login and catalog browsing
-remain available; in-app video playback is unavailable on both desktops. A real
-desktop playback backend must be implemented before advertising playback.
-The TV playback backends are unchanged. Windows also omits the TV phone-entry
-and remote log HTTP servers and media relays. System libjpeg/libwebp acceleration
-is optional; SDL_image decodes packaged PNG/JPEG art and provides fallback image
-loading. P2P native engines and libass are not bundled.
+Desktop releases use libmpv's OpenGL render API in the SDL context. Video fills
+the existing alpha holes beneath player controls and trailer overlays. Seeking,
+audio track changes, embedded subtitles and external subtitle files use the
+existing player interface. HDR sources may be tone-mapped to SDR.
+
+macOS packages include Homebrew libmpv and its recursive non-system dylib closure,
+relinked to paths inside `Contents/Frameworks` and signed before the application.
+Windows packages include the checksum-verified development build from
+`shinchiro/mpv-winbuild-cmake` and its `mpv-2.dll`. The TV, iOS and Android playback
+paths retain their platform implementations; local UI-only builds retain their
+simulation backend.
+
+The default window is 1280×800 and resizable. Wide windows use a persistent
+sidebar and toolbar search; narrow windows use the existing touch portrait
+layout. Keyboard and SDL gamepad navigation remain available alongside mouse
+hover, click and wheel input. No control-hint bar is shown.
+
+Windows omits the TV phone-entry and remote log HTTP servers and media relays.
+System libjpeg/libwebp acceleration is optional; SDL_image provides fallback
+image loading. P2P native engines are not bundled.
+
+For deterministic screenshots, `NUVIO_UI_PREVIEW=1` opens the existing offline
+home preview without account synchronization. `python3 tools/desktop-capture.py`
+creates isolated fixture data outside the application, captures wide/narrow
+windows and compares the wide window with the approved mock. This mode is
+opt-in and does not include a catalog or account data in release packages.
 
 For a deliberately unconfigured diagnostic build only, set
 `NUVIO_DESKTOP_ENV_MODE=--allow-unconfigured`. Its login screen reports missing
