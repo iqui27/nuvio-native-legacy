@@ -114,6 +114,7 @@ static float aspectoTeste=2;
 static char ultimoIcone[40];
 static GfxRect caixaIcone;
 void gfx_icone(GfxRect r,const char *n,float cr,float cg,float cb,float ca) { (void)cr;(void)cg;(void)cb;(void)ca;assert(r.w>0 && r.h>0);icones++;snprintf(ultimoIcone,sizeof ultimoIcone,"%s",n);caixaIcone=r; }
+void gfx_mini_liberar(GfxMini *m) { memset(m,0,sizeof *m); }
 float gfx_escala(void) { return 1; }
 float gfx_escala_entrar(void) { return 1; }
 void gfx_escala_sair(float v) { (void)v; }
@@ -139,6 +140,9 @@ TxtLinha txt_linha_corta(TxtEstilo e,const char *s,int r,int g,int b,int a,float
   assert(w>0);TxtLinha t=txt_linha(e,s,r,g,b,a);if(t.w>w)t.w=(int)w;return t;
 }
 void txt_desenhar(TxtLinha t,float x,float y) { (void)t;(void)x;(void)y; }
+float txt_bloco(TxtEstilo e,const char *s,int r,int g,int b,float x,float y,float w,float ld,float a,int n) {
+  (void)e;(void)s;(void)r;(void)g;(void)b;(void)x;(void)y;(void)ld;(void)a;assert(w>0&&n>0);return 24;
+}
 GLuint tex_obter_larg(const char *url,float w) { assert(url[0] && w>0);if(!imagemPronta)return 0;imagens++;if(strstr(url,"-low.jpg"))baixos++;if(strstr(url,"-high.jpg"))altos++;return 1; }
 float tex_aspecto(const char *url) { (void)url;return aspectoTeste; }
 static int darkLogo,monoLogo;

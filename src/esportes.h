@@ -1,6 +1,7 @@
 #ifndef NV_ESPORTES_H
 #define NV_ESPORTES_H
 #include <stddef.h>
+#include <stdint.h>
 #include <time.h>
 
 #define ESP_MAX_LIGAS 1024
@@ -11,11 +12,13 @@ typedef struct { const char *id, *nome; } EspModalidade;
 typedef struct { char id[80], nome[160], logo[512]; } EspLiga;
 typedef struct {
   char id[80], nome[120], curto[100], sigla[20], logo[512], pontos[32];
+  char cor[8], corAlternativa[8];
 } EspParticipante;
 typedef struct {
   char id[100], nome[256], liga[160], ligaId[80], modalidade[32];
-  char local[160], detalhe[120], sessao[48];
+  char local[160], cidade[120], detalhe[120], sessao[48];
   time_t inicio, fim;
+  uint64_t obtido; /* Provider fetch time in nanoseconds; zero for legacy snapshots. */
   int estado; /* 0 scheduled, 1 live, 2 finished, 3 postponed/cancelled */
   int nParticipantes, nEmissoras;
   EspParticipante participantes[ESP_MAX_PARTICIPANTES];
@@ -43,6 +46,22 @@ int esportes_habilitado(int modalidade);
 int esportes_habilitar(int modalidade, int ligado);
 int esportes_favorito(const EspEvento *ev, int participante);
 int esportes_alternar_favorito(const EspEvento *ev, int participante);
+/* Idempotent follow setters: 1 on success, 0 on invalid input/storage failure.
+ * Event identity includes sport and league. All calls belong to the UI thread. */
+int esportes_seguir_time(const EspEvento *ev, int participante, int seguir);
+int esportes_segue_time(const EspEvento *ev, int participante);
+int esportes_seguir_jogo(const EspEvento *ev, int seguir);
+int esportes_segue_jogo(const EspEvento *ev);
+int esportes_segue_evento(const EspEvento *ev);
+int esportes_jogos_seguidos_n(void);
+const EspEvento *esportes_jogo_seguido(int i);
+void esportes_seguir_lembretes(void);
+/* ESPN roster, independent of games currently loaded. */
+#define ESP_MAX_TIMES 1024
+int esportes_times_ler(const char *json, EspParticipante *out, int cap);
+void esportes_pedir_times(int modalidade, const EspLiga *liga);
+int esportes_times_n(void);
+const EspParticipante *esportes_time(int i);
 /* Combined favorites feed; loaded independently of the selected league. */
 void esportes_pedir_favoritos(int atualizar);
 int esportes_favoritos_times(void);

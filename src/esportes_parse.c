@@ -90,6 +90,20 @@ int esportes_ligas_ler(const char *json, EspLiga *out, int cap) {
   }
   return n;
 }
+int esportes_times_ler(const char *json,EspParticipante *out,int cap) {
+  const char *s=array(json,NULL,"sports"),*l=s?array(s,js_fim(s),"leagues"):NULL;
+  int n=0;
+  for(const char *p=array(l?l:json,l?js_fim(l):NULL,"teams");p&&n<cap;) {
+    const char *end=js_fim(p);if(!end||end<=p)break;
+    const char *t=objeto(p,end,"team");if(!t)t=p;
+    EspParticipante a={0};texto(t,end,"id",a.id,sizeof a.id);
+    texto(t,end,"displayName",a.nome,sizeof a.nome);texto(t,end,"abbreviation",a.sigla,sizeof a.sigla);
+    imagem(t,end,a.logo,sizeof a.logo);
+    if(slug(a.id)&&a.nome[0])out[n++]=a;
+    p=js_prox(end);
+  }
+  return n;
+}
 int esportes_noticias_ler(const char *json,EspNoticia *out,int cap) {
   int n=0;
   for(const char *p=array(json,NULL,"articles");p && n<cap;) {
@@ -123,7 +137,11 @@ static void competicao(const char *p, const char *fim, EspEvento *e) {
   texto(p, fim, "endDate", date, sizeof date); if (date[0]) e->fim = (time_t)(js_ms_iso(date) / 1000);
   estado(p, fim, e);
   a = objeto(p, fim, "venue");
-  if (a) texto(a, js_fim(a), "fullName", e->local, sizeof e->local);
+  if (a) {
+    texto(a, js_fim(a), "fullName", e->local, sizeof e->local);
+    const char *address=objeto(a,js_fim(a),"address");
+    if(address)texto(address,js_fim(address),"city",e->cidade,sizeof e->cidade);
+  }
   a = objeto(p, fim, "type");
   if (a) texto(a, js_fim(a), "abbreviation", e->sessao, sizeof e->sessao);
   for (a = array(p, fim, "competitors"); a && e->nParticipantes < 2; ) {
@@ -138,6 +156,8 @@ static void competicao(const char *p, const char *fim, EspEvento *e) {
       texto(t, js_fim(t), "shortDisplayName", v->curto, sizeof v->curto);
       if (!v->curto[0]) texto(t, js_fim(t), "shortName", v->curto, sizeof v->curto);
       texto(t, js_fim(t), "abbreviation", v->sigla, sizeof v->sigla);
+      texto(t, js_fim(t), "color", v->cor, sizeof v->cor);
+      texto(t, js_fim(t), "alternateColor", v->corAlternativa, sizeof v->corAlternativa);
       texto(t,js_fim(t),"logoDark",v->logo,sizeof v->logo);
       if (!v->logo[0]) texto(t,js_fim(t),"logo",v->logo,sizeof v->logo);
       if (!v->logo[0]) imagem(t,js_fim(t),v->logo,sizeof v->logo);
@@ -177,7 +197,8 @@ static void competicao(const char *p, const char *fim, EspEvento *e) {
   }
 }
 static void acrescentar(const char *p, const char *fim, const char *comp,
-                        const char *mod, const EspLiga *l, EspEvento *out, int *n, int cap) {
+                        const char *mod, const EspLiga *l, EspEvento *out, int *n, int cap,
+                        const char *summary) {
   if (*n >= cap) return;
   EspEvento e = {0}; char parent[48] = "", cid[48] = "";
   texto(p, fim, "id", parent, sizeof parent);
@@ -202,10 +223,25 @@ static void acrescentar(const char *p, const char *fim, const char *comp,
   if (e.nParticipantes == 2 && (!strcmp(mod, "tennis") || !strcmp(mod, "mma")))
     snprintf(e.nome, sizeof e.nome, "%s × %s", e.participantes[0].nome, e.participantes[1].nome);
   if (!strcmp(mod, "racing") || !strcmp(mod, "golf")) e.nParticipantes = 0;
+  if (summary) {
+    if (!e.nome[0]) {
+      if (e.nParticipantes == 2)
+        snprintf(e.nome, sizeof e.nome, "%s × %s", e.participantes[0].nome, e.participantes[1].nome);
+      else snprintf(e.nome, sizeof e.nome, "%s", l->nome);
+    }
+    const char *info = objeto(summary, NULL, "gameInfo");
+    if (info) competicao(info, js_fim(info), &e);
+  }
   if (e.id[0] && e.nome[0] && e.inicio > 0) out[(*n)++] = e;
 }
 int esportes_eventos_ler(const char *json, const char *mod, const EspLiga *l, EspEvento *out, int cap) {
   int n = 0;
+  const char *header = objeto(json, NULL, "header");
+  if (header) {
+    const char *end = js_fim(header), *c = array(header, end, "competitions");
+    if (c) acrescentar(header, end, c, mod, l, out, &n, cap, json);
+    return n;
+  }
   for (const char *p = array(json, NULL, "events"); p && n < cap; ) {
     const char *end = js_fim(p); if (!end) break;
     const char *c = array(p, end, "competitions");
@@ -214,16 +250,16 @@ int esportes_eventos_ler(const char *json, const char *mod, const EspLiga *l, Es
         const char *ge = js_fim(g); if (!ge) break;
         for (c = array(g, ge, "competitions"); c && n < cap; ) {
           const char *ce = js_fim(c); if (!ce) break;
-          acrescentar(p, end, c, mod, l, out, &n, cap); c = js_prox(ce);
+          acrescentar(p, end, c, mod, l, out, &n, cap, NULL); c = js_prox(ce);
         }
         g = js_prox(ge);
       }
     } else if (c) {
       do { const char *ce = js_fim(c); if (!ce) break;
-        acrescentar(p, end, c, mod, l, out, &n, cap);
+        acrescentar(p, end, c, mod, l, out, &n, cap, NULL);
         c = js_prox(ce);
       } while (c && n < cap && (!strcmp(mod, "racing") || !strcmp(mod, "mma")));
-    } else acrescentar(p, end, NULL, mod, l, out, &n, cap);
+    } else acrescentar(p, end, NULL, mod, l, out, &n, cap, NULL);
     p = js_prox(end);
   }
   return n;

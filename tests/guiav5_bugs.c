@@ -25,6 +25,13 @@ static char *category_fixture(const char *,const char *,const char *,const char 
 #include <assert.h>
 
 static int failures;
+static int preview_volume = -1;
+static void record_volume(int pct) { preview_volume = pct; }
+static void guide_audio_tick(void) {
+#define video_volume record_volume
+#include "guide_audio.inc"
+#undef video_volume
+}
 static int saw_channel_a, saw_channel_b;
 static int category_failure, category_calls;
 static char *category_fixture(const char *server,const char *user,const char *password,const char *request,int timeout,int *status){
@@ -89,6 +96,22 @@ int main(void) {
   CHECK(!guia_preview_no_ar(), "idle preview remains dark until a video frame is ready");
   video_simular(&sim); player_definir_fonte("https://example.invalid/live.m3u8");
   CHECK(guia_preview_no_ar(), "accepted preview source reveals video while guide stays open");
+  /* Record the real app dispatch, including a previously muted player. */
+  snprintf(screen,sizeof screen,"grade");
+  preview_volume=0;guide_audio_tick();
+  CHECK(preview_volume==100,"Grade preview defaults to audible and clears prior mute");
+  ajustes_definir_guia_previa_sem_som(1);guide_audio_tick();
+  CHECK(preview_volume==0,"explicit guide mute sends volume zero");
+  ajustes_definir_guia_previa_sem_som(0);guide_audio_tick();
+  CHECK(preview_volume==100,"guide audio toggle restores player volume");
+  ajustes_definir_guia_previa_sem_som(1);guide_audio_tick();
+  snprintf(screen,sizeof screen,"cartoes");guide_audio_tick();
+  CHECK(preview_volume==0,"saved guide mute also applies to Cards");
+  player_restaurar();guide_audio_tick();
+  CHECK(preview_volume==100,"full-screen handoff restores sound after muted preview");
+  player_minimizar_para_guia(x,y,w,h);guide_audio_tick();
+  CHECK(preview_volume==0,"returning to guide respects saved mute");
+  ajustes_definir_guia_previa_sem_som(0);guide_audio_tick();
   /* The now-watching card must describe the stream, even with another row selected. */
   snprintf(screen,sizeof screen,"grade");snprintf(gv_pagina,sizeof gv_pagina,"grade");
   gv_lin=0;gv_snap_force=1;gv_snapshot();
@@ -97,25 +120,27 @@ int main(void) {
   saw_channel_a=saw_channel_b=0;gv_hero(GV_BASE);
   CHECK(saw_channel_b&&!saw_channel_a,"card and preview describe the same playing channel despite grid focus");
   float px,py,pw,ph;guia_preview_rect(&px,&py,&pw,&ph);
-  CHECK(fabsf(pw/ph-16.0f/9)<.001f,"preview frame matches default video aspect without inner bands");
+  CHECK(px==GV_MX+GV_MW*.51f&&py==GV_CHIP_Y&&pw==GV_MW*.49f,
+        "Grade preview occupies the owner's marked right frame");
   VideoSimulacao sized=sim;sized.largura=720;sized.altura=576;video_simular(&sized);
   guia_preview_rect(&px,&py,&pw,&ph);
-  CHECK(fabsf(pw/ph-1.25f)<.001f,"preview follows source aspect without stretching");
+  CHECK(pw==GV_MW*.49f&&ph==GV_BASE+gv_hh+40-GV_CHIP_Y,
+        "Grade frame stays fixed across source aspect changes");
   video_simular(&sim);
   gv_zone=2;gv_activate();
   CHECK(guia_pediu_restaurar(),"OK on the playing card restores its channel rather than selected row");
   /* Pointer selection must update the zone before the next remote key. */
-  gv_zone=0;gv_lin=1;point_focus(1201,0);gv_event(SDLK_RIGHT,0);gv_event(SDLK_UP,0);
-  CHECK(gv_zone==5&&focus>=1100&&focus<=1106,"category Right then Up reaches top tabs after pointer focus");
-  gv_zone=0;gv_lin=0;gv_npins=1;
-  const int up[]={1,2,4,5},down[]={4,2,1,0};
-  for(unsigned i=0;i<4;i++){gv_event(SDLK_UP,0);CHECK(gv_zone==up[i],"Up follows grid, pins, preview, chips, tabs");}
-  for(unsigned i=0;i<4;i++){gv_event(SDLK_DOWN,0);CHECK(gv_zone==down[i],"Down retraces tabs, chips, preview, pins, grid");}
+  gv_zone=0;gv_lin=1;point_focus(1202,0);gv_event(SDLK_RIGHT,0);gv_event(SDLK_UP,0);
+  CHECK(gv_zone==0&&gv_lin==1,"source footer Up restores grid after pointer focus");
+  gv_zone=0;gv_top=0;gv_lin=0;gv_npins=1;
+  const int up[]={1,5,5},down[]={5,1,0};
+  for(unsigned i=0;i<3;i++){gv_event(SDLK_UP,0);CHECK(gv_zone==up[i],"Up follows grid, pins, actions, tabs");}
+  for(unsigned i=0;i<3;i++){gv_event(SDLK_DOWN,0);CHECK(gv_zone==down[i],"Down retraces tabs, actions, pins, grid");}
   gv_npins=0;gv_zone=0;gv_event(SDLK_UP,0);
-  CHECK(gv_zone==2,"Up skips absent pinned row");
+  CHECK(gv_zone==5&&focus==1104,"Up skips absent pinned row");
   gv_zone=0;gv_npins=1;
-  for(int i=0;i<4;i++)gv_event(SDLK_UP,0);
-  for(int i=0;i<4;i++){gv_event(SDLK_ESCAPE,0);CHECK(gv_zone==down[i],"Back retraces the vertical focus chain");}
+  for(int i=0;i<3;i++)gv_event(SDLK_UP,0);
+  for(int i=0;i<3;i++){gv_event(SDLK_ESCAPE,0);CHECK(gv_zone==down[i],"Back retraces the vertical focus chain");}
   gv_side_open=0;gv_exit_armed=0;
   snprintf(screen,sizeof screen,"cartoes");snprintf(gv_pagina,sizeof gv_pagina,"cartoes");
   gv_lin=1;gv_top=1;gv_card=1;gv_zone=6;focus=42;
@@ -130,18 +155,19 @@ int main(void) {
   player_encerrar();
   snprintf(screen,sizeof screen,"grade");snprintf(gv_pagina,sizeof gv_pagina,"grade");
   gv_hh=208;guia_preview_rect(&x,&y,&w,&h);
-  CHECK(fabsf(w/h-16.0f/9)<.001f && h==208,
-        "compact guide exports its enlarged card preview geometry");
+  CHECK(w==GV_MW*.49f&&h==GV_BASE+208+40-GV_CHIP_Y,
+        "preview follows every frame of the hero spring");
   gv_hh=GV_HERO_H;guia_preview_rect(&x,&y,&w,&h);
-  CHECK(fabsf(w/h-16.0f/9)<.001f && h==GV_HERO_H,
-        "expanded guide exports its enlarged card preview geometry");
+  CHECK(w==GV_MW*.49f&&h==GV_BASE+GV_HERO_H+40-GV_CHIP_Y,
+        "expanded guide exports the enlarged right frame");
   /* Sports must remain usable without ESPN events or any EPG. */
   stagingZerar();
   int sports_source=sFonte(LTV_M3U,"sports-fixture","Fixture","");
   const char *sports_groups[]={"SPORTS","Esportes","DAZN","ESPN","News"};
   for(int i=0;i<5;i++){
     char id[32];snprintf(id,sizeof id,"fixture-%d",i);
-    GCru c={0};c.id=id;c.nome=i==4?"CNN":"Live fixture";c.grupo=sports_groups[i];
+    char name[48];snprintf(name,sizeof name,"Live fixture %d",i);
+    GCru c={0};c.id=id;c.nome=i==4?"CNN":name;c.grupo=sports_groups[i];
     c.logo=c.desc=c.epgId=c.tvgNome=c.url=c.ua=c.ref="";
     sGrupoInfo(sports_source,c.grupo,1);sCanalAdd(sports_source,&c);sLtvF[sports_source].total++;
   }

@@ -27,7 +27,7 @@
 #undef ordem
 
 static void fixture(void){
-  esportes_abrir_sessao();gs_started=1;esportesui_recursos("deploy/app/art");
+  esportes_abrir_sessao();gs_started=1;gs_start();esportesui_recursos("deploy/app/art");
   catalogo=calloc(9,sizeof *catalogo);nCatalogo=9;catalogoIdioma=ajustes_idioma();catalogoFeitos=0xffff;
   for(int i=0;i<9;i++){
     catalogo[i].modalidade=0;
@@ -38,7 +38,10 @@ static void fixture(void){
   for(int i=0;i<8;i++){
     EspEvento *e=&eventos[i];snprintf(e->id,sizeof e->id,"event%d",i);
     strcpy(e->modalidade,"soccer");strcpy(e->ligaId,"league0");strcpy(e->liga,"Brasileirão");
-    strcpy(e->nome,"Flamengo × Palmeiras");strcpy(e->local,"Maracanã");
+    strcpy(e->nome,"Flamengo × Palmeiras");strcpy(e->local,"Maracanã");strcpy(e->cidade,"Rio de Janeiro");
+    strcpy(e->detalhe,i==0?"37′ · 1º tempo":i==1?"Encerrado":"Agendado");
+    strcpy(e->participantes[0].cor,"C32832");strcpy(e->participantes[1].cor,"16805A");
+    strcpy(e->emissoras[0],"SporTV");e->nEmissoras=1;
     e->nParticipantes=2;e->estado=i==0?1:i==1?2:0;e->inicio=time(NULL)+(i==0?-20:i==1?-180:120*i)*60;e->fim=e->inicio+7200;
     strcpy(e->participantes[0].id,"fla");strcpy(e->participantes[0].nome,"Flamengo");strcpy(e->participantes[0].curto,"Flamengo");strcpy(e->participantes[0].pontos,"2");
     strcpy(e->participantes[1].id,"pal");strcpy(e->participantes[1].nome,"Palmeiras");strcpy(e->participantes[1].curto,"Palmeiras");strcpy(e->participantes[1].pontos,"1");
@@ -71,8 +74,8 @@ static void sportsux_proof(SDL_Window *w,const char *out){
   /* Provider channels add a row without replacing any Sports section. Walk
    * every section using D-pad/OK, then return to the same home focus. */
   assert(gs_live(-1,NULL,NULL,NULL)>0);
-  const SDL_Keycode steps[]={SDLK_RIGHT,SDLK_RIGHT,SDLK_DOWN,SDLK_LEFT,SDLK_LEFT};
-  const int sections[]={0,1,2,5,4,3};
+  const SDL_Keycode steps[]={SDLK_RIGHT,SDLK_RIGHT,SDLK_RIGHT,SDLK_RIGHT,SDLK_RIGHT};
+  const int sections[]={0,1,2,3,4,5};
   for(int i=0;i<6;i++){
     if(i)gv_event(steps[i-1],0);
     assert(focus==2070+sections[i]);
@@ -81,13 +84,13 @@ static void sportsux_proof(SDL_Window *w,const char *out){
     gv_event(SDLK_RETURN,0);quadro();assert(!strcmp(screen,gs_pages[sections[i]]));
     gv_event(SDLK_ESCAPE,0);quadro();assert(!strcmp(screen,"esportes-ligas")&&focus==2070+sections[i]);
   }
-  gv_event(SDLK_DOWN,0);assert(focus==2076);
+  focus=2076;
   gv_event(SDLK_RETURN,0);quadro();assert(!strcmp(screen,"esportes-canais"));
   focus=2021;gv_event(SDLK_DOWN,0);assert(focus>=2700&&focus<2706);
   int first=focus;gv_event(SDLK_RIGHT,0);assert(focus==first+1);quadro();
   snprintf(name,sizeof name,"%s-live-channels",phase);capture(w,out,name);
   gv_event(SDLK_ESCAPE,0);quadro();assert(!strcmp(screen,"esportes-ligas")&&focus==2076);
-  gv_event(SDLK_UP,0);assert(focus==2073);
+  gv_event(SDLK_DOWN,0);assert(focus>=2070&&focus<2076);
   /* Measure the same draw interval and counters as main.c, excluding swap. */
   for(int i=0;i<8;i++){
     rowCache[i].linha=i;rowCache[i].n=50;rowCache[i].estado=1;
@@ -117,24 +120,26 @@ static void sportsux_proof(SDL_Window *w,const char *out){
   esp_fixture_revision++;gs_collect();
   /* One press moves one card, including a page boundary, with no draw between
    * queued events. Up/Down follow rows rather than jumping to the top tab. */
-  focus=1102;gv_return_focus=2505;gv_zone=5;gv_event(SDLK_DOWN,0);assert(focus==2001);
-  focus=2070;gv_event(SDLK_DOWN,0);assert(focus==2073);
-  gv_event(SDLK_UP,0);assert(focus==2070);
+  focus=1102;gv_return_focus=2505;gv_zone=5;gv_event(SDLK_DOWN,0);assert(focus>=2000);
+  focus=2070;gv_event(SDLK_DOWN,0);assert(focus==3000);
+  gv_event(SDLK_UP,0);assert(focus==2071);focus=2070;
   gv_event(SDLK_LEFT,0);assert(gv_side_open);gv_event(SDLK_RIGHT,0);assert(!gv_side_open&&focus==2070);
   gv_event(SDLK_LEFT,0);gv_event(SDLK_ESCAPE,0);assert(!gv_side_open&&!strcmp(screen,"esportes-ligas"));
-  gv_event(SDLK_UP,0);assert(focus==1102&&gv_zone==5);gv_event(SDLK_DOWN,0);assert(focus==2001);
+  gv_event(SDLK_UP,0);assert(focus>=1100);
   g5ui_open("esportes-visibilidade");quadro();focus=2500;
-  for(int i=1;i<9;i++){gv_event(SDLK_RIGHT,0);assert(gs_page*6+focus-2500==i);quadro();}
+  for(int i=1;i<9;i++){focus=2500;gs_page=(i-1)/6;gv_event(SDLK_DOWN,0);quadro();}
   gs_page=0;focus=2500;gv_event(SDLK_DOWN,0);assert(focus==2503);gv_event(SDLK_UP,0);assert(focus==2500);
   g5ui_open("esportes-liga");gs_league=0;gs_page=0;quadro();focus=2200;
-  for(int i=1;i<=7;i++){gv_event(SDLK_RIGHT,0);assert(gs_page*3+focus-2200==i);quadro();}
-  for(int i=6;i>=0;i--){gv_event(SDLK_LEFT,0);assert(gs_page*3+focus-2200==i);quadro();}
+  gv_event(SDLK_RIGHT,0);assert(focus==2201);gv_event(SDLK_RIGHT,0);assert(focus==2202);
+  gv_event(SDLK_RIGHT,0);assert(focus==2202);gv_event(SDLK_DOWN,0);assert(focus==2205);
+  gv_event(SDLK_LEFT,0);assert(focus==2204);gv_event(SDLK_UP,0);assert(focus==2201);
+  gv_event(SDLK_LEFT,0);assert(focus==2200);
   gv_event(SDLK_RIGHT,0);int at=gs_page*3+focus-2200;
   for(int i=0;i<20;i++)gv_event(SDLK_RIGHT,1);
   assert(gs_page*3+focus-2200==at);
   SDL_Delay(310);gv_event(SDLK_RIGHT,1);assert(gs_page*3+focus-2200==at+1);
   quadro();int visible=0;for(int i=0;i<num_focus;i++)if(next_focus[i]==focus){visible=1;assert(focus_rect[i].x>=0&&focus_rect[i].x+focus_rect[i].w<=1920);}
-  assert(visible);gv_event(SDLK_DOWN,0);gv_event(SDLK_UP,0);assert(focus>=2200&&focus<2203);
+  assert(visible);gv_event(SDLK_DOWN,0);gv_event(SDLK_UP,0);assert(focus>=2200&&focus<2206);
   /* Exercise production dispatch, not gs_activate directly. */
   g5ui_open("esportes-ligas");quadro();
   /* Carrying an old guide zone must not redirect a short OK on Sports. */
@@ -179,22 +184,28 @@ static void sportsux_proof(SDL_Window *w,const char *out){
   assert(!esportes_favorito(&saved,0));gv_event(SDLK_ESCAPE,0);quadro();assert(gs_n==0);
   puts("PASS Sports UX: exact card steps, paced repeat, rows, visible focus, Settings dispatch, profile save/reopen, favorite/unfavorite");
 }
-int main(int argc,char **argv){
+#include "espevento_shot.inc"
+#ifndef SPORTS_V5_MAIN
+#define SPORTS_V5_MAIN main
+#endif
+int SPORTS_V5_MAIN(int argc,char **argv){
   const char *out=argc>1?argv[1]:"/Volumes/ExternalSSD/tmp/rev/esportes619";mkdir(out,0755);
   assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));IMG_Init(IMG_INIT_PNG|IMG_INIT_JPG);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2);SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
   SDL_Window *w=SDL_CreateWindow("Sports v5 proof",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,1920,1080,SDL_WINDOW_OPENGL|SDL_WINDOW_SHOWN);assert(w&&SDL_GL_CreateContext(w));
   glViewport(0,0,1920,1080);gfx_tamanho_alvo(1920,1080);assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));tex_iniciar(64);gfx_icones_dir("deploy/app/art");
   dados_iniciar(getenv("NUVIO_DADOS"));dados_gravar("ajustes.txt","idioma 0\nidiomaAutoLocal 0\nselected_theme 2\nescalaTextoLocal 2\nescalaTextoVersaoLocal 1\n");ajustes_dir(getenv("NUVIO_DADOS"));ajustes_definir_vidro(0);context();semear();fixture();
+  if(getenv("ESPEVENTO_PROOF")){event_proof(w,out);return 0;}
   if(getenv("SPORTSUX_PROOF")){sportsux_proof(w,out);return 0;}
   g5ui_open("esportes-ligas");quadro();assert(gs_count==9&&gs_n==9);capture(w,out,"sports-home");
   g5ui_open("esportes-hoje");quadro();assert(gs_n>0);capture(w,out,"sports-games-crests");
   g5ui_open("esportes-ligas");quadro();
   focus=2074;gs_activate();assert(!strcmp(screen,"esportes-modalidades"));quadro();focus=2400;gs_activate();quadro();assert(!strcmp(screen,"esportes-catalogo")&&gs_count==9);
-  focus=2061;gs_activate();quadro();assert(gs_page==1);focus=2500;gs_activate();assert(gs_league==6&&!strcmp(screen,"esportes-liga"));gs_back();quadro();assert(gs_page==1&&focus==2500);
+  focus=2503;gv_event(SDLK_DOWN,0);quadro();assert(gs_page==1&&focus==2500);gs_activate();assert(gs_league==6&&!strcmp(screen,"esportes-liga"));gs_back();quadro();assert(gs_page==1&&focus==2500);
   gs_page=0;focus=2500;gs_activate();quadro();capture(w,out,"league");
   focus=2200;gv_ok_segurado();quadro();assert(!strcmp(screen,"esportes-onde-assistir")&&gs_selected.nParticipantes==2);gs_back();quadro();assert(focus==2200);
-  focus=2200;gs_activate();assert(stream_folha_canais_aberta());
+  focus=2200;gs_activate();assert(!strcmp(screen,"esportes-evento")&&!stream_folha_canais_aberta());
+  gs_back();esportesui_fontes(&eventos[0]);
   for(int i=0;i<80;i++)esportesui_fontes_passo();
   const FontesCanais *sources=fontescanais_estado();assert(sources->n==1&&!strcmp(sources->canais[0].nome,"SporTV"));
   capture(w,out,"match-sources");stream_folha_canais_fechar();

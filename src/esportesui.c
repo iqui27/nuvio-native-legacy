@@ -179,7 +179,7 @@ void esportesui_iniciar(void) {
   esportes_catalogo_iniciar(-1,0);
   esportes_pedir_favoritos(0);montar(); revisao = esportes_revisao();
 }
-void esportesui_fechar(void) { stream_folha_canais_fechar();ctxhold_cancelar(&eventoHold);esportes_cancelar(); procurando = entradaTexto = 0; limparToque(); }
+void esportesui_fechar(void) { esportesui_cache_limpar();stream_folha_canais_fechar();ctxhold_cancelar(&eventoHold);esportes_cancelar(); procurando = entradaTexto = 0; limparToque(); }
 int esportesui_quer_sair(void) { int v = sair; sair = 0; return v; }
 int esportesui_pediu_relogio(void) { int v = pediuRelogio; pediuRelogio = 0; return v; }
 int esportesui_pediu_canal(char *id, unsigned n) { return fontescanais_consumir(id,n); }
@@ -505,34 +505,88 @@ static const char *logoLiga(const EspEvento *e,int m) {
   }
   return "";
 }
-static void linhaEvento(const EspEvento *e, GfxRect r, int selecionado) {
-  plrui_cartao(r,20,1);if(selecionado)plrui_linha_foco(r,20,1);
-  int m=modalidadeEvento(e);fundoCartao(r,m,selecionado);
-  float pad=22,x=r.x+pad,w=r.w-2*pad;
-  char data[48],meta[400];horario(e->inicio,data,sizeof data);
-  const char *estado=e->estado==1?i18n("Ao vivo"):e->estado==2?i18n("Encerrado"):e->estado==3?e->detalhe:data;
-  snprintf(meta,sizeof meta,"%s%s%s",estado,e->sessao[0]?" · ":"",e->sessao);
-  const char *marca=logoLiga(e,m);float cab=48;
-  logo(marca,m,(GfxRect){x,r.y+12,34,34});
-  txt(TXT_CAPTION2,meta,x+cab,r.y+20,w-cab,230);
-  if(e->nParticipantes==2) {
-    float metade=w*.5f,sz=fminf(160,metade-24);
-    for(int i=0;i<2;i++) {
-      const EspParticipante *p=&e->participantes[i];float px=x+i*metade;
-      logo(p->logo,m,(GfxRect){px+(metade-sz)*.5f,r.y+52,sz,sz});
-      const char *nome=p->curto[0]?p->curto:p->nome;
-      float placar=e->estado==1 || e->estado==2?(strlen(p->pontos)>3?96:55):0;
-      txt(TXT_BODY,nome,px+5,r.y+224,metade-10-placar,245);
-      if(placar)txt(placar>55?TXT_CAPTION2:TXT_BODY,p->pontos,px+metade-placar,r.y+224,placar-5,245);
+#include "esportes_resultado.inc"
+static void conteudoEvento(const EspEvento *e,GfxRect r) {
+  int m=modalidadeEvento(e);
+  float x=r.x+22,w=r.w-44;
+  const char *state=i18n(e->estado==1?"Ao vivo":e->estado==2?"Encerrado":e->estado==3?e->detalhe:"Em breve");
+  float ar,ag,ab;ajustes_acento(&ar,&ag,&ab);
+  GfxRect chip={r.x+r.w-132,r.y+16,110,30};
+  gfx_cor(chip,.5f,e->estado==1?ar:1,e->estado==1?ag:1,e->estado==1?ab:1,e->estado==1?.18f:.07f);
+  txt(TXT_ILHA_APOIO,state,chip.x+12,chip.y+6,86,230);
+  const char *mark=logoLiga(e,m);
+  logo(mark,m,(GfxRect){x,r.y+16,28,28});
+  txt(TXT_ILHA_APOIO,e->liga,x+38,r.y+22,w-160,190);
+  if(e->nParticipantes==2){
+    double score[2];int numeric=esp_score(e->participantes[0].pontos,&score[0])&&esp_score(e->participantes[1].pontos,&score[1]);
+    for(int i=0;i<2;i++){
+      const EspParticipante *p=&e->participantes[i];float y=r.y+64+i*76,cr,cg,cb;
+      esp_team_color(p,&cr,&cg,&cb);
+      gfx_cor((GfxRect){x,y,68,68},.5f,cr*.18f+.07f,cg*.18f+.075f,cb*.18f+.086f,1);
+      logo(p->logo,m,(GfxRect){x+2,y+2,64,64});
+      int dim=e->estado==2&&numeric&&score[i]<score[1-i];
+      float scoreWidth=e->estado==1||e->estado==2?70:0;
+      txt_bloco(TXT_ILHA_NOME,p->nome,dim?172:243,dim?174:242,dim?178:239,x+80,y+8,w-88-scoreWidth,1.08f,1,2);
+      if(scoreWidth)txt(strlen(p->pontos)>3?TXT_ILHA_NOME:TXT_ILHA_TITULO,p->pontos,r.x+r.w-86,y+8,64,dim?172:245);
     }
-    txt(TXT_BODY,"×",r.x+r.w*.5f-10,r.y+118,24,245);
-  } else {
-    logo(marca,m,(GfxRect){x,r.y+72,78,78});
-    txt(TXT_BODY,e->nome,x+96,r.y+84,w-96,245);
-  }
-  txt(TXT_CAPTION2,e->local[0]?e->local:e->liga,x,r.y+r.h-38,w,220);
+  }else txt_bloco(TXT_ILHA_NOME,e->nome,243,242,239,x,r.y+82,w,1.2f,1,3);
+  char date[48];horario(e->inicio,date,sizeof date);
+  txt(TXT_ILHA_SUB,e->estado==1?e->detalhe:e->estado==3?e->detalhe:date,x+(e->estado==1?18:0),r.y+r.h-65,w-18,230);
+  txt(TXT_ILHA_APOIO,e->local,x,r.y+r.h-32,w,154);
 }
-void esportesui_cartao(const EspEvento *ev,GfxRect rect,int focused){linhaEvento(ev,rect,focused);}
+static void linhaEvento(const EspEvento *e,GfxRect r,int selecionado){
+  plrui_cartao(r,20,1);if(selecionado)plrui_linha_foco(r,20,1);
+  conteudoEvento(e,r);
+}
+/* Only visible cards are rendered. Cache pixels, not borrowed text/texture handles:
+ * text eviction cannot invalidate a card. Focus and page motion stay live. */
+typedef struct {
+  GfxMini image;EspEvento event;unsigned revision,missing;Uint32 retry;
+  float scale,textScale;int idioma,quality,glass,clock,ready;
+} EspCardCache;
+static EspCardCache cardCache[12];static unsigned cardNext;
+void esportesui_cache_limpar(void){
+  for(int i=0;i<12;i++){gfx_mini_liberar(&cardCache[i].image);cardCache[i].ready=0;}
+}
+void esportesui_cartao(const EspEvento *ev,GfxRect rect,int focused,int slot){
+  static struct {float focus;Uint32 drawn;} motion[32];
+  slot=(unsigned)slot%32;
+  if(gfx_mini_ativo()){linhaEvento(ev,rect,focused);return;}
+  float scale=gfx_escala(),textScale=gfx_escala_txt();
+  int w=(int)ceilf(rect.w*scale),h=(int)ceilf(rect.h*scale);
+  EspCardCache *c=NULL;
+  for(int i=0;i<12;i++)if(cardCache[i].ready&&!memcmp(&cardCache[i].event,ev,sizeof *ev)){c=&cardCache[i];break;}
+  if(!c)c=&cardCache[cardNext++%12];
+  int dirty=!c->ready||memcmp(&c->event,ev,sizeof *ev)||c->revision!=esportes_revisao()||
+    c->scale!=scale||c->textScale!=textScale||c->idioma!=ajustes_idioma()||
+    c->quality!=esportes_fundo_qualidade()||c->glass!=ajustes_vidro()||c->clock!=ajustes_relogio_12h()||
+    c->image.w!=w||c->image.h!=h;
+  if(c->missing && SDL_GetTicks()-c->retry>=250)dirty=1;
+  if(dirty){
+    if(!gfx_mini_alvo(&c->image,w,h)){linhaEvento(ev,rect,focused);return;}
+    unsigned missing=tex_n_falta;int pending=txt_pendentes;
+    float opacity=gfx_opacidade_grupo;gfx_opacidade_grupo=1;
+    gfx_mini_comecar(&c->image,0,0,scale);
+    conteudoEvento(ev,(GfxRect){0,0,rect.w,rect.h});
+    gfx_mini_terminar();gfx_opacidade_grupo=opacity;
+    c->event=*ev;c->revision=esportes_revisao();c->scale=scale;c->textScale=textScale;
+    c->idioma=ajustes_idioma();c->quality=esportes_fundo_qualidade();c->glass=ajustes_vidro();c->clock=ajustes_relogio_12h();
+    c->missing=tex_n_falta!=missing||txt_pendentes!=pending;c->retry=SDL_GetTicks();c->ready=1;
+  }
+  Uint32 now=SDL_GetTicks();float dt=fminf((now-motion[slot].drawn)/1000.f,.05f);motion[slot].drawn=now;
+  motion[slot].focus+=(focused-motion[slot].focus)*(1-expf(-14*dt));
+  float f=motion[slot].focus,k=1+.08f*f;
+  GfxRect raised={rect.x-(k-1)*rect.w*.5f,rect.y-(k-1)*rect.h*.5f,rect.w*k,rect.h*k};
+  if(f>.002f)gfx_sombra_sob((GfxRect){raised.x-14,raised.y-4,raised.w+28,raised.h+32},1,0,.5f,0,0,0,.45f*f,raised,20,1);
+  plrui_cartao(raised,20,1);
+  if(f>.002f)plrui_linha_foco(raised,20,f);
+  gfx_mini_desenhar(&c->image,raised,20,1);
+  if(ev->estado==1){
+    float ar,ag,ab;ajustes_acento(&ar,&ag,&ab);
+    float pulse=.65f+.25f*sinf(now*.004f);
+    gfx_cor((GfxRect){raised.x+22*k,raised.y+(rect.h-58)*k,7*k,7*k},.5f,ar,ag,ab,pulse);
+  }
+}
 void esportesui_logo(const char *url,int sport,GfxRect rect){logo(url,sport,rect);}
 int esportesui_fundo(GfxRect rect,int sport,int focused){return fundoCartao(rect,sport,focused);}
 static void menuModalidades(void) {

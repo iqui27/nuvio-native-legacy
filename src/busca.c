@@ -224,6 +224,10 @@ static void toqueBuscaLimpar(void) {
   memset(toqueLivreX, 0, sizeof toqueLivreX);
 }
 static void toqueBuscaRetomarFoco(void);
+#ifdef NV_TOUCH_UI
+static int retTec;
+static int retFiltro;
+#endif
 #endif
 // Velocidade da mola de 2a ordem da rolagem (anim_mola2): partida macia e
 // cauda exponencial, a MESMA curva que a home mede. A de 1a ordem que estava
@@ -978,6 +982,9 @@ int busca_iniciar(void) {
   focoRec = 0; nRecLayout = 0;
   okPress = okLongo = 0; okDesde = 0;
   campoFoco = buTecladoNativo() ? 1 : 0; animFocoCampo = animMic = 0.0f;
+#ifdef NV_TOUCH_UI
+  retTec = 0; retFiltro = 0;
+#endif
   // "Do sistema" no ajuste Teclado: abre o IME logo ao entrar na busca.
   if (st_ime_disponivel() && st_teclado_modo() != 1 &&
       (st_abre_sozinho() || buTelefone() || st_teclado_modo() == 2)) {
@@ -1079,6 +1086,9 @@ static int menuNoResultado(void) {
   return ctxlista_abrir(itemFoco.indice, itemFoco.rect, arte);
 }
 
+#ifdef NV_TOUCH_UI
+static int retMover(SDL_Keycode key);
+#endif
 static void busca_evento_(const SDL_Event *e) {
   pediuRelogio = 0;
   buInterfaceAtualizar();
@@ -1252,6 +1262,9 @@ static void busca_evento_(const SDL_Event *e) {
     return;
   }
 
+#ifdef NV_TOUCH_UI
+  if (buRetratoTelefone() && retMover(k)) return;
+#endif
   switch (k) {
     case SDLK_TAB: voltarCampo(); break;
     case SDLK_LEFT:
@@ -1356,7 +1369,97 @@ static float filTopo(int r) {
 }
 
 #ifdef NV_TOUCH_UI
+// RETRATO DE TELEFONE (iOS M2, mock ios-02-search): medidas em pt do mock (466 pt).
+// Texto desenhado no fator proprio da camada (gfx_escala_sair), como a Home.
+#define RET_MOCK_W 466.0f
+#define RET_ALVO_MIN 128.0f
+#define RET_MAX_CEL (BU_MAX_FILEIRAS * BU_MAX_POR_FIL)
+static float retPt(float pt) { return pt * NV_LAYOUT_REAL_W / (RET_MOCK_W * gfx_escala()); }
+static float retFator(float ptPorPx) { return ptPorPx * NV_LAYOUT_REAL_W / RET_MOCK_W; }
+static float retEm(float f, float eh) { gfx_escala_sair(f); return eh / f; }
+static int retTec = 0;       // teclado do app aberto
+static int retFiltro = 0;    // 0 Todos, 1 Filmes, 2 Series, 3 Pessoas
+static int retN;
+static int retR[RET_MAX_CEL], retC[RET_MAX_CEL];
+static const char *const RET_CHIPS[4] = { "Todos", "Filmes", "Séries", "Pessoas" };
+
+// Texto de `pt` pontos num estilo de `px` px base; x e yCentro na camada atual; devolve a largura.
+static float retTxt(TxtEstilo st, float px, float pt, const char *s, float x, float yCentro,
+                    float maxW, int centrado, int r, int g, int b, float a) {
+  float eh = gfx_escala(), f = retFator(pt / px), k = retEm(f, eh);
+  TxtLinha ln = txt_linha_corta(st, s, r, g, b, 255, maxW * k);
+  float w = ln.w / k;
+  txt_desenhar_alpha(ln, (centrado ? x - w * 0.5f : x) * k, (yCentro - ln.h / k * 0.5f) * k, a);
+  gfx_escala_sair(eh);
+  return w;
+}
+static float retLargTxt(TxtEstilo st, float px, float pt, const char *s) {
+  float eh = gfx_escala(), f = retFator(pt / px), k = retEm(f, eh);
+  TxtLinha ln = txt_linha(st, s, 255, 255, 255, 255);
+  float w = ln.w / k;
+  gfx_escala_sair(eh);
+  return w;
+}
+static float retAreaTopo(void) { return retPt(208.0f); }
+static float retTecTopo(void) {
+  int linhas = kbFil + 1;
+  float h = retPt(20.0f) + linhas * retPt(44.0f) + (linhas - 1) * retPt(5.0f);
+  return NV_TELA_H - ANC(nv_inset_b) - h;
+}
+static float retAreaBase(void) { return retTec ? retTecTopo() : NV_TELA_H; }
+static int retPassa(int r, int c) {
+  const CatItem *ci;
+  if (fil[r].melhor && nFil > 1) return 0;
+  if (fil[r].pessoas) return retFiltro == 0 || retFiltro == 3;
+  if (retFiltro == 3) return 0;
+  ci = cat_item(fil[r].itens[c]);
+  if (!ci) return 0;
+  if (retFiltro == 1) return strcmp(ci->tipo, "series") != 0;
+  if (retFiltro == 2) return strcmp(ci->tipo, "series") == 0;
+  return 1;
+}
+static void retMonta(void) {
+  retN = 0;
+  for (int r = 0; r < nFil; r++)
+    for (int c = 0; c < fil[r].n && retN < RET_MAX_CEL; c++)
+      if (retPassa(r, c)) { retR[retN] = r; retC[retN] = c; retN++; }
+}
+static int retFoco(void) {
+  retMonta();
+  for (int i = 0; i < retN; i++)
+    if (retR[i] == focoRes.fileira && retC[i] == focoRes.coluna) return i;
+  if (retN) { focoRes.fileira = retR[0]; focoRes.coluna = retC[0]; }
+  else if (painel == 1) voltarCampo();
+  return 0;
+}
+static int retMover(SDL_Keycode key) {
+  int i = retFoco(), next = i;
+  if (!retN) return 1;
+  switch (key) {
+    case SDLK_LEFT: if (i % 3) next--; else voltarCampo(); break;
+    case SDLK_RIGHT: if (i % 3 < 2 && i + 1 < retN) next++; break;
+    case SDLK_UP: if (i >= 3) next -= 3; else voltarCampo(); break;
+    case SDLK_DOWN: if (i / 3 < (retN - 1) / 3) next = (i + 3 < retN ? i + 3 : retN - 1); break;
+    default: return 0;
+  }
+  focoRes.fileira = retR[next]; focoRes.coluna = retC[next];
+  return 1;
+}
+static float retPasso(void) { return retPt(204.0f); }
+static float retMaxY(void) {
+  float h;
+  retMonta();
+  h = retPt(35.0f) + ((retN + 2) / 3) * retPasso() + retPt(24.0f);
+  return fmaxf(0.0f, h - (retAreaBase() - retAreaTopo()));
+}
+static void retChip(int i, int b) { (void)b; retFiltro = i; retFoco(); scrollY = scrollAlvo = 0.0f; velY = 0.0f; }
+static void retCampo(int a, int b) { retTec = 1; focarCampoPonteiro(a, b); }
+static void retToque(int a, int b) { (void)a; (void)b; retTec = 0; }
+#endif
+
+#ifdef NV_TOUCH_UI
 static float toqueBuscaMaxY(void) {
+  if (buRetratoTelefone()) return retMaxY();
   float fim = nFil > 0 ? filTopo(nFil - 1) + filAlt(nFil - 1)
                       : recentesVisiveis() ? sugDesloc - BU_SECAO_GAP : 0.0f;
   return fmaxf(0.0f, fim - BU_RES_AREA_H);
@@ -1371,6 +1474,22 @@ static float toqueBuscaMaxX(int r) {
 }
 static int toqueBuscaRolar(const PonteiroRolagem *e) {
   if (!buTelefone()) { toqueBuscaLimpar(); return 0; }
+  if (buRetratoTelefone()) {  // retrato: so vertical, grade de 3 colunas
+    if (e->fase == PONT_ROL_INICIO) {
+      if (e->y < retAreaTopo() || e->y >= retAreaBase() || e->x >= NV_TELA_W) return 0;
+      toqueLivreY = 1; velY = 0.0f; scrollAlvo = scrollY;
+      ctxhold_cancelar(&holdRes);
+      retTec = 0;
+      return 1;
+    }
+    if (e->fase == PONT_ROL_MOVER || e->fase == PONT_ROL_INERCIA) {
+      float antes = scrollY;
+      scrollY = anim_clamp(scrollY - e->delta, 0.0f, retMaxY());
+      scrollAlvo = scrollY;
+      return fabsf(scrollY - antes) > 0.001f;
+    }
+    return 1;
+  }
   if (e->fase == PONT_ROL_INICIO) {
     if (e->x < BU_RES_X || e->x >= BU_DIR || e->y < BU_RES_Y - 20.0f ||
         e->y >= BU_RES_Y + BU_RES_AREA_H || (nFil < 1 && !recentesVisiveis())) return 0;
@@ -1403,6 +1522,7 @@ static int toqueBuscaRolar(const PonteiroRolagem *e) {
 }
 static void toqueBuscaRetomarFoco(void) {
   if (!buTelefone()) { toqueBuscaLimpar(); return; }
+  if (buRetratoTelefone()) { toqueBuscaLimpar(); return; }
   if (toqueLivreY && nFil > 0) {
     float ponto = scrollY + BU_RES_AREA_H * 0.35f;
     int r = 0;
@@ -1517,6 +1637,17 @@ static void busca_atualizar_(float dt, Uint32 agora) {
   // Rola so o necessario para a fileira em foco caber inteira na area util —
   // rolagem proporcional ao indice esconderia a primeira fileira antes de o
   // usuario ter chegado nela.
+#ifdef NV_TOUCH_UI
+  if (buRetratoTelefone()) {
+    int i = retFoco();
+    if (painel == 1 && retN && !toqueLivreY) {
+      float top = retPt(35.0f) + (i / 3) * retPasso();
+      float height = retAreaBase() - retAreaTopo();
+      if (top < scrollAlvo) scrollAlvo = top;
+      if (top + retPasso() > scrollAlvo + height) scrollAlvo = top + retPasso() - height;
+    }
+  } else
+#endif
   if (painel == 1 && nFil > 0) {
     int r = focoRes.fileira;
     float topo = filTopo(r);
@@ -1650,6 +1781,154 @@ static void buArte(GfxRect r, const char *url, float raioPx, float a) {
   else
     gfx_cor(r, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G, NV_COR_ESQUELETO_B, a);
 }
+
+#ifdef NV_TOUCH_UI
+// Retrato de telefone (mock ios-02-search): titulo, campo, chips, grade 3 colunas, teclado.
+static void retCelula(int i, float x, float y, float w, Uint32 agora, float y0, float y1) {
+  int r = retR[i], c = retC[i];
+  float f = c < BU_MAX_POR_FIL ? animRes[r][c] : 0.0f;
+  float entra = filEntraEm[r] ? revela_entra(filEntraEm[r], revela_onda_atraso(i % 3, 0), agora) : 1.0f;
+  float grupo = gfx_opacidade_grupo, esc = 1.0f + 0.05f * f;
+  int ehPess = fil[r].pessoas;
+  float h = ehPess ? w : w * 1.5f;
+  GfxRect p = { x - w * (esc - 1.0f) * 0.5f, y - h * (esc - 1.0f) * 0.5f + (1.0f - entra) * NV_ENTRA_DY,
+                w * esc, h * esc };
+  const char *tit, *sub = "";
+  if (ehPess) {
+    tit = pess[fil[r].itens[c]].nome;
+  } else {
+    const CatItem *ci = cat_item(fil[r].itens[c]);
+    if (!ci) return;
+    tit = ci->titulo; sub = ci->meta;
+  }
+  ponteiro_alvo_faixa(x, y, w, retPasso() - retPt(10.0f), y0, y1, ponteiroResultado, NULL, r, c);
+  gfx_opacidade_grupo = grupo * entra;
+  if (ehPess) {
+    { const char *ft = pess[fil[r].itens[c]].foto;
+      if (ft[0] && !tex_falhou(ft)) buArte(p, ft, p.h * 0.5f, 1.0f);
+      else {
+        gfx_cor(p, 0.5f, 0.20f, 0.205f, 0.225f, 1.0f);
+        gfx_icone((GfxRect){ p.x + p.w * 0.25f, p.y + p.h * 0.25f, p.w * 0.5f, p.h * 0.5f }, "aj_user-round", 0.78f, 0.79f, 0.82f, 1.0f);
+      } }
+  } else {
+    const CatItem *ci = cat_item(fil[r].itens[c]);
+    const char *arte = posterprov_card_addon(ci->origem, ci->imdb, ci->tmdb, ci->tipo, ci->poster);
+    GLuint tex;
+    float raio = retPt(10.0f) / p.h, aArte;
+    if (!arte[0]) arte = ci->backdrop[0] ? ci->backdrop : NULL;
+    tex = arte ? tex_obter_larg(arte, p.w) : 0;
+    aArte = revela_arte(&revRes[r][c], tex != 0, agora);
+    if (tex) {
+      if (aArte < 0.999f) gfx_cor(p, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G, NV_COR_ESQUELETO_B, 1.0f);
+      gfx_tex_aspect_atual = tex_aspecto(arte);
+      gfx_rect(p, tex, GFX_CARD, 0.0f, 0.0f, 0.0f, raio, 0, 0, 0, aArte);
+      gfx_tex_aspect_atual = 0.0f;
+    } else if (arte && !tex_falhou(arte))
+      gfx_esqueleto(p, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G, NV_COR_ESQUELETO_B, 1.0f);
+    else gfx_cor(p, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G, NV_COR_ESQUELETO_B, 1.0f);
+    if (painel == 1 && focus_indice(&focoRes, r, c)) {
+      itemFoco.indice = fil[r].itens[c]; itemFoco.rect = p;
+      itemFoco.arte = ci->backdrop[0] ? ci->backdrop : ci->poster;
+      itemFoco.titulo = ci->titulo; itemFoco.genero = ci->genero; itemFoco.meta = ci->meta;
+      temItemFoco = 1;
+    }
+  }
+  retTxt(TXT_ILHA_NOME, 24.0f, 13.0f, tit, x, y + h + retPt(14.0f), w, 0, 243, 242, 239, anim_mistura(0.85f, 1.0f, f));
+  if (sub[0]) retTxt(TXT_ILHA_META, 19.0f, 11.5f, sub, x, y + h + retPt(31.0f), w, 0, 243, 242, 239, 0.5f);
+  gfx_opacidade_grupo = grupo;
+}
+
+static void desenhaBuscaRetrato(Uint32 agora) {
+  float cw = NV_TELA_W - ANC(nv_inset_d), mg = retPt(20.0f), ar, ag, ab;
+  float areaT = retAreaTopo(), areaB = retAreaBase();
+  GfxRect c = { mg, retPt(111.0f), cw - 2.0f * mg, retPt(45.0f) };
+  float x, ico = retPt(20.0f);
+  ajustes_acento(&ar, &ag, &ab);
+  temItemFoco = 0;
+  retMonta();
+  // Titulo
+  retTxt(TXT_ILHA_TITULO, 40.0f, 30.0f, i18n("Buscar"), mg, retPt(82.0f), cw - 2.0f * mg, 0, 243, 242, 239, 1.0f);
+  // Campo
+  ajustes_ui_ilha(c, c.h * 0.5f, 0);
+  ponteiro_alvo(c.x, c.y, c.w, fmaxf(c.h, retPt(44.0f)), retCampo, NULL, 1, 0);
+  { float ci = 0.62f + 0.30f * animCampo;
+    gfx_icone((GfxRect){ c.x + retPt(14.0f), c.y + (c.h - ico) * 0.5f, ico, ico }, "menu_search", ci, ci, ci + 0.01f, 1.0f); }
+  x = c.x + retPt(14.0f) + ico + retPt(10.0f);
+  if (nConsulta) {
+    x += retTxt(TXT_ILHA_NOME, 24.0f, 17.0f, consulta, x, c.y + c.h * 0.5f, c.x + c.w - x - retPt(14.0f), 0, 243, 242, 239, 1.0f);
+  } else {
+    retTxt(TXT_ILHA_NOME, 24.0f, 17.0f, i18n("Títulos, pessoas"), x, c.y + c.h * 0.5f, c.x + c.w - x - retPt(14.0f), 0, 243, 242, 239, 0.42f);
+  }
+  if (painel == 0 && (nConsulta > 0 || campoFoco == 1) && (agora / 500) % 2 == 0)
+    gfx_cor((GfxRect){ nConsulta ? x + retPt(2.0f) : x, c.y + (c.h - retPt(22.0f)) * 0.5f, retPt(1.5f), retPt(22.0f) },
+            0.5f, ar, ag, ab, 1.0f);
+  // Chips
+  x = mg;
+  for (int i = 0; i < 4; i++) {
+    const char *s = i18n(RET_CHIPS[i]);
+    float w = retLargTxt(TXT_ILHA_GENERO, 17.0f, 14.0f, s) + retPt(28.0f), h = retPt(30.0f);
+    GfxRect b = { x, retPt(170.0f), w, h };
+    float m = ANC(RET_ALVO_MIN), k = i == retFiltro ? 1.0f : 0.0f;
+    GfxRect t = b;
+    if (t.w < m) { t.x -= (m - t.w) * 0.5f; t.w = m; }
+    if (t.h < m) { t.y -= (m - t.h) * 0.5f; t.h = m; }
+    ponteiro_alvo(t.x, t.y, t.w, t.h, NULL, retChip, i, 0);
+    buNeutro(b, h * 0.5f, 0.07f, 1.0f - k);
+    buPilulaAcento(b, h * 0.5f, k);
+    retTxt(TXT_ILHA_GENERO, 17.0f, 14.0f, s, b.x + w * 0.5f, b.y + h * 0.5f, w, 1,
+           k > 0.5f ? ajustes_tinta_foco() : 243, k > 0.5f ? ajustes_tinta_foco() : 242,
+           k > 0.5f ? ajustes_tinta_foco() : 239, 1.0f);
+    x += w + retPt(8.0f);
+  }
+  // Resultados
+  gfx_recorte(0, areaT, NV_TELA_W, areaB - areaT);
+  if (retN == 0) {
+    const char *t1 = nConsulta >= 2 ? "Nenhum título recebido" : "O que vamos assistir?";
+    const char *t2 = nConsulta >= 2 ? "Os resultados dos addons aparecem aqui."
+                                    : "Digite ao menos 2 letras de um filme ou série.";
+    float my = areaT + (areaB - areaT) * 0.42f;
+    retTxt(TXT_ILHA_SECAO, 22.0f, 18.0f, i18n(t1), cw * 0.5f, my, cw - 2.0f * mg, 1, 243, 242, 239, 1.0f);
+    retTxt(TXT_ILHA_GENERO, 17.0f, 13.0f, i18n(t2), cw * 0.5f, my + retPt(24.0f), cw - 2.0f * mg, 1, 243, 242, 239, 0.55f);
+  } else {
+    char hd[96];
+    float colW = retPt(107.0f), gap = (cw - 2.0f * mg - 3.0f * colW) * 0.5f, y0 = areaT + retPt(35.0f) - scrollY;
+    snprintf(hd, sizeof hd, "%s · %d", i18n("RESULTADOS"), retN);
+    retTxt(TXT_ILHA_GENERO, 17.0f, 12.0f, hd, mg, areaT + retPt(16.0f) - scrollY, cw - 2.0f * mg, 0, 243, 242, 239, 0.55f);
+    for (int i = 0; i < retN; i++) {
+      float y = y0 + (i / 3) * retPasso();
+      if (y > areaB || y + retPasso() < areaT) continue;
+      retCelula(i, mg + (i % 3) * (colW + gap), y, colW, agora, areaT, areaB);
+    }
+  }
+  gfx_sem_recorte();
+  // Teclado
+  if (retTec) {
+    int linhas = kbFil + 1;
+    float pad = retPt(10.0f), kh = retPt(44.0f), kg = retPt(5.0f), top = retTecTopo();
+    GfxRect ilha = { retPt(8.0f), top, cw - retPt(16.0f), NV_TELA_H - ANC(nv_inset_b) - top };
+    char rot[8];
+    ajustes_ui_ilha(ilha, retPt(16.0f), 0);
+    for (int f = 0; f < linhas; f++) {
+      int n = KB_COLUNAS[f];
+      float kw = (ilha.w - 2.0f * pad - (n - 1) * kg) / n;
+      for (int cc = 0; cc < n; cc++) {
+        float k = animTecla[f][cc], tom;
+        const char *s;
+        GfxRect t = { ilha.x + pad + cc * (kw + kg), top + pad * 0.5f + f * (kh + kg), kw, kh };
+        ponteiro_alvo(t.x, t.y, t.w, t.h, ponteiroTecla, NULL, f, cc);
+        buNeutro(t, retPt(9.0f), 0.07f, 1.0f - k);
+        buPilulaAcento(t, retPt(9.0f), k);
+        if (f < kbFil) { snprintf(rot, sizeof rot, "%s", kbTeclas[f * BU_KB_COLS + cc]); s = rot; }
+        else s = cc == 0 ? i18n("espaço") : cc == 1 ? i18n("apagar") : cc == 2 ? i18n("limpar")
+               : cc == 3 ? (pagSim ? "abc" : "?!#") : (layoutCir ? "ABC" : "\xd0\x90\xd0\x91\xd0\x92");
+        tom = anim_mistura(243.0f, (float)ajustes_tinta_foco(), k);
+        if (f < kbFil) retTxt(TXT_G26B, 26.0f, 17.0f, s, t.x + kw * 0.5f, t.y + kh * 0.5f, kw, 1, (int)tom, (int)tom, (int)tom, 1.0f);
+        else retTxt(TXT_AJ_SEG, 20.0f, 11.0f, s, t.x + kw * 0.5f, t.y + kh * 0.5f, kw, 1, (int)tom, (int)tom, (int)tom, 1.0f);
+      }
+    }
+  }
+}
+#endif
 
 // Ilha do campo: lupa, texto 28/500, cursor no acento; com teclado/voz do
 // sistema (Android) o campo e alvo de foco e o microfone/celular entram no fim.
@@ -2086,6 +2365,9 @@ static void busca_desenhar_(Uint32 agora) {
   if (buTelefone()) ponteiro_rolagem(toqueBuscaRolar);
 #endif
   desenhaFundo();
+#ifdef NV_TOUCH_UI
+  if (buRetratoTelefone()) { desenhaBuscaRetrato(agora); return; }
+#endif
   if (!buResultadosPagina()) {
     desenhaCampo(agora);
     desenhaTeclado();

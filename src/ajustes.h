@@ -349,6 +349,7 @@ int ajustes_guia_previa_destacar(void);
 void ajustes_definir_guia_previa_destacar(int ligado);
 int ajustes_guia_previa_sem_som(void);
 void ajustes_definir_guia_previa_sem_som(int ligado);
+int ajustes_livetv_agrupar(void);
 int ajustes_guia_dias(void);
 void ajustes_definir_guia_dias(int dias);
 void  ajustes_livetv_aplicar_proxy(int ligado);   // proxy de TS da Live TV (proxyts.c)
@@ -422,6 +423,8 @@ float ajustes_ui_botao(const char *rot, const char *icone, float x, float y, int
 float ajustes_ui_dicas(const char *const *teclas, const char *const *rotulos, int n, float x, float y, int desenha);
 void  ajustes_ui_neutro(GfxRect r, float raioPx, float vidA);
 void  ajustes_ui_foco_linha(GfxRect r, float raioPx);
+// Shared Settings switch; `on` is animated progress, 0..1.
+float ajustes_ui_interruptor(float xDir, float yc, float on, float a);
 float ajustes_ui_antes_depois(const char *rot, int a, int b, const char *unid, int max,
                               float x, float y, float w, int compacto, float cr, float cg, float cb);
 void  ajustes_ui_grafico_memoria(float x, float y, float w, float h);
@@ -705,6 +708,7 @@ int   ajustes_cw_ordem(void);
 int   ajustes_dts_ac3(void);             // 1 = DTS convertido em AC3 5.1 (LG, e padrao no .tpk); 0 = AAC estereo (.tpk: ou desligado)
 int   ajustes_dts_tpk_modo(void);        // .tpk: DTSTPK_HLS, ou DTSTPK_DESLIGADO com a conversao desligada
 int   ajustes_ps_continuar(void);        // #303: 0 = sem o cartao "continuar" na escolha de perfil
+int   ajustes_ps_tamanho(void);         // 2.1: 0 pequeno, 1 medio (padrao), 2 grande — os avatares da escolha de perfil
 int   ajustes_hist_conta(void);          // 1 = this profile's history goes to the Nuvio account (per profile, default on)
 int   ajustes_amigos_estilo(void); // 0 Feed, 1 Live, 2 Stories, 3 Presence, 4 Poster, 5 Classic
 int   ajustes_social(void);              // 1 = friends/social features on (per profile, default on)

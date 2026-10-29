@@ -3,6 +3,9 @@
 #include <SDL2/SDL.h>
 #include "catalogo.h"
 #include "guiav5.h"
+#include "esportes.h"
+/* Optional espseguir slot; NULL removes the Follow action. */
+void g5ui_sports_follow(void (*action)(const EspEvento *),int (*state)(const EspEvento *));
 void g5ui_open(const char *screen);
 void g5ui_close(void);
 void g5ui_forget(void);

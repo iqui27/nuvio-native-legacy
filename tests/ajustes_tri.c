@@ -25,7 +25,7 @@ int main(void) {
   // Down/Up move the section and the list follows; Right enters, Left/Back leave.
   triSecFoco = 0; focarSecao(0);
   key(SDLK_DOWN); assert(triSecFoco == 1 && secAtual == 1 && focoIndice);
-  key(SDLK_RIGHT); assert(triIlha == TRI_LISTA && !focoIndice && secAtual == 1 && focoOp >= 0);
+  key(SDLK_RIGHT); assert(triIlha == TRI_LISTA && !focoIndice && secAtual == 1 && focavel(focoItem));
   key(SDLK_LEFT); assert(triIlha == TRI_SECOES && focoIndice && triSecFoco == 1);
   key(SDLK_RETURN); assert(triIlha == TRI_LISTA);
   key(SDLK_ESCAPE); assert(triIlha == TRI_SECOES && triSecFoco == 1 && !sair);
@@ -40,8 +40,8 @@ int main(void) {
   // Right in the list never changes a value.
   triEntrar(0); { int v = valor[focoOp]; key(SDLK_RIGHT); assert(valor[focoOp] == v && triIlha == TRI_LISTA); }
 
-  // Every available option of every section is reachable by Down alone once
-  // "Mais opcoes" is open, and Back from any row returns to its section.
+  // Every available option is reachable through the category and its topics
+  // once More options is open. Back restores the originating topic row.
   for (int s = 0; s < nSecoes; s++) {
     unsigned char seen[AJ_N] = {0};
     int steps = 0;
@@ -50,6 +50,16 @@ int main(void) {
     for (;;) {
       int item = focoItem;
       if (focoOp >= 0) seen[focoOp] = 1;
+      if (triTopico(item)) {
+        key(SDLK_RETURN); assert(triSubmenu == item);
+        for (int childSteps = 0; childSteps < AJ_N_TELA; childSteps++) {
+          int child = focoItem;
+          if (focoOp >= 0) seen[focoOp] = 1;
+          key(SDLK_DOWN);
+          if (child == focoItem) break;
+        }
+        key(SDLK_ESCAPE); assert(triSubmenu < 0 && focoItem == item);
+      }
       key(SDLK_DOWN);
       if (focoItem == item || ++steps > AJ_N_TELA) break;
     }

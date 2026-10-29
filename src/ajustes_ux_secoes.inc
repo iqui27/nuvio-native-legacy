@@ -246,7 +246,7 @@ static int ajCenaSecao(int op) {
     case AJ_LIVETV_DIAG: case AJ_LIVETV_RES: case AJ_LIVETV_ESPERA: case AJ_LIVETV_FORMATO: case AJ_LIVETV_MODO:
     case AJ_LIVETV_PROXY:
       return AJC_TV_PROBLEMAS;
-    case AJ_LIVETV_SUGERIR:
+    case AJ_LIVETV_SUGERIR: case AJ_LIVETV_AGRUPAR:
       return AJC_TV_PROVEDOR;
     case AJ_PERFIL_ATIVO: case AJ_SYNC:
     case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_SAIR:

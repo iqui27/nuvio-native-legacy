@@ -189,35 +189,65 @@ int main(int argc, char **argv) {
   assert(ajustes_idioma() == 0);
   context();
   semear();
+#ifdef NV_SHOT_HOOKS
+  if (getenv("NUVIO_SHOT_VARIANTS")) {
+    G5Item entries[32];G5Playlist parser;g5_playlist_init(&parser,entries,32);
+    FILE *f=fopen("tests/fixtures/channel-variants.m3u","rb");assert(f);
+    char bytes[71];size_t n;
+    while((n=fread(bytes,1,sizeof bytes,f)))assert(g5_playlist_feed(&parser,bytes,n));
+    fclose(f);assert(g5_playlist_finish(&parser)==13);
+    stagingZerar();sTeto=30000;
+    int source=sFonteChave("fixture",LTV_M3U,"Playlist","");
+    for(int i=0;i<parser.count;i++){
+      char id[80];snprintf(id,sizeof id,"m3u:fixture:%s",entries[i].id);
+      GCru c={.id=id,.nome=entries[i].name,.epgId=entries[i].epg,.grupo="Channels",.url=entries[i].url,.tipo="channel"};
+      assert(sCanalAdd(source,&c));
+    }
+    adotarStaging();estado=G_PRONTO;nFav=0;favAplicar();
+    assert(ajustes_livetv_agrupar());
+    ajustes_shot_valor("liveTvGroupVariantsLocal",1);guia_reordenar();
+    g5ui_open("grade");gv_snap_force=1;gv_snapshot();gv_zone=0;gv_lin=0;
+    capture(window,dir,"before");
+    ajustes_shot_valor("liveTvGroupVariantsLocal",0);guia_reordenar();
+    gv_snap_force=1;gv_snapshot();
+    assert(gv_total_n==9);capture(window,dir,"after");
+    tex_encerrar();txt_encerrar();gfx_encerrar();SDL_DestroyWindow(window);SDL_Quit();return 0;
+  }
+#endif
   if (getenv("NUVIO_SHOT_POLIR")) {
     int baseline = getenv("GUIAPOLIR_BASELINE") != NULL;
     g5ui_open("grade"); gv_zone=5; focus=1105; gv_go("ajustes");
     capture(window, dir, "options-first");
     if (!baseline) {
       assert(focus==1940 && gv_gfolha_visto);
-      const int down[]={1942,1944,1945,1947,1948,1939};
+      const int down[]={1942,1944,1945,1947,1948,1949,1937,1938,1939};
       for(unsigned i=0;i<sizeof down/sizeof *down;i++) {
         gv_event(SDLK_DOWN,0); assert(focus==down[i]); quadro();
       }
       gv_event(SDLK_DOWN,0); assert(focus==1939);
-      gv_event(SDLK_LEFT,0); assert(focus==1938);
-      gv_event(SDLK_UP,0); assert(focus==1948);
-      gv_event(SDLK_RIGHT,0); assert(focus==1948);
-      const int up[]={1947,1945,1944,1942,1940};
+      gv_event(SDLK_LEFT,0); assert(focus==1939);
+      gv_event(SDLK_UP,0); assert(focus==1938);
+      gv_event(SDLK_RIGHT,0); assert(focus==1938);
+      const int up[]={1937,1949,1948,1947,1945,1944,1942,1940};
       for(unsigned i=0;i<sizeof up/sizeof *up;i++) {
         gv_event(SDLK_UP,0); assert(focus==up[i]); quadro();
       }
-      gv_event(SDLK_UP,0); assert(focus==1940);
+      gv_event(SDLK_UP,0); assert(focus==1936);
+      gv_event(SDLK_DOWN,0); assert(focus==1940);
       gv_event(SDLK_LEFT,0); assert(focus==1940 && !gv_side_open);
       gv_event(SDLK_ESCAPE,0); assert(!strcmp(screen,"grade") && focus==1105);
       gv_go("ajustes");
 #ifndef GUIAPOLIR_BASELINE_CODE
+      focus=1944;gv_activate();
       focus=1943;gv_activate();assert(ajustes_guia_previa_destacar());
       focus=1944;gv_activate();assert(!ajustes_guia_previa_destacar());
+      gv_voltar();
       focus=1945;gv_activate();assert(!ajustes_guia_previa_sem_som());
       gv_activate();assert(ajustes_guia_previa_sem_som());
+      focus=1947;gv_activate();
       focus=1947;gv_activate();assert(ajustes_guia_dias()==3);
       focus=1946;gv_activate();assert(ajustes_guia_dias()==1);
+      gv_voltar();
 #endif
     }
     gv_voltar(); gv_zone=5; focus=1105; gv_event(SDLK_RIGHT,0);

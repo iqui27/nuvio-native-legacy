@@ -312,9 +312,7 @@ static void ajDesenharMais(int item, float y, float f, float a) {
   float yc = y + AJ2_LN_H * 0.5f, xDir = ln.x + ln.w - 22.0f, aTx = a * aj2TextoLista, x;
   TxtLinha r, v;
   if (a <= 0.004f) return;
-  ajFocoLinha(ln, 14.0f, f, aTx);
-  if (f > 0.01f) { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab); gfx_cor(ln, 14.0f / ln.h, ar, ag, ab, 0.14f * f * aTx); }
-  if (f < 0.99f) gfx_anel(ln, 14.0f / ln.h, 1.5f, 1, 1, 1, 0.16f * (1.0f - f) * aTx);
+  ajFocoLinha(ln, 20.0f, f, aTx);
   if (aTx <= 0.004f) return;
   ajIcone("aj_sliders-horizontal", ln.x + 20.0f, yc - 12.0f, 24.0f, (f > 0.5f ? 0.9f : 0.6f) * aTx);
   snprintf(rot, sizeof rot, "%s · %d", i18n("Mais opções"), n);
@@ -327,7 +325,8 @@ static void ajDesenharMais(int item, float y, float f, float a) {
 }
 
 static float ajAlturaItem(int i) {
-  if (!visivel(i)) return 0.0f;
+  if (!triMostrar(i) || !visivel(i)) return 0.0f;
+  if (triTopico(i)) return AJ2_LN_GAP + AJ2_LN_H;
   switch (TELA[i].tipo) {
     case IT_SEC: return 0.0f;
     case IT_ROT: return AJ2_GRUPO_H;
@@ -415,7 +414,7 @@ static void ajPonteiroItem(int i, int b) {
   if (i == focoItem && !focoIndice && !uxCabLayout) return;
   focar(i);
   focoIndice = 0;
-  if(TELA[i].tipo==IT_OPC) triFocar(TELA[i].op);
+  triFocar(TELA[i].op);
 }
 static void ajDesenharFolha(void) {
   GfxRect fr = aj2ListaR();
