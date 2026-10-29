@@ -50,10 +50,8 @@ static void key(SDL_Keycode k) {
 static void tourNavigation(void) {
   const float dt = 1.0f / 60;
   anim_politica_reduzida = 0;
-  aj4Iniciar(); focoIndice = 1; aj4Linha = 7; sair = 0;
+  triIniciar(); triIlha = TRI_CHIPS; triChip = TRI_C_TOUR; sair = 0;
   key(SDLK_RETURN);
-  assert(ajPenPage==AJ_PEN_TOUR);
-  ajPenRow=12;key(SDLK_RETURN);
   assert(tourAberto && tourVis == 0);
   tourAtualizar(dt);
   assert(tourVis > 0 && tourVis < 1 && tourFocoA[0] > 0 && tourFocoA[0] < 1);
@@ -85,7 +83,7 @@ static void tourNavigation(void) {
   tourAtualizar(dt);
   assert(tourBtnA > 0 && tourBtnA < 1);
   key(SDLK_ESCAPE);
-  assert(!tourAberto && focoIndice && aj4Linha == 7 && !sair);
+  assert(!tourAberto && focoIndice && triIlha == TRI_CHIPS && triChip == TRI_C_TOUR && !sair);
   float previous = tourVis;
   tourAtualizar(dt);
   assert(tourVis > 0 && tourVis < previous);
@@ -94,8 +92,8 @@ static void tourNavigation(void) {
 
   // Back during Where-it-is exit must not escape Settings or lose its route.
   for (int nextFrame = 0; nextFrame < 2; nextFrame++) {
-    aj4Iniciar(); focoIndice = 1; aj4Linha = 7; sair = 0;
-    key(SDLK_RETURN);ajPenRow=12;key(SDLK_RETURN);
+    triIniciar(); triIlha = TRI_CHIPS; triChip = TRI_C_TOUR; sair = 0;
+    key(SDLK_RETURN);
     for (int frame = 0; frame < 60; frame++) tourAtualizar(dt);
     key(SDLK_RIGHT); key(SDLK_RIGHT); key(SDLK_RIGHT); key(SDLK_RIGHT);
     assert(tourFoco == 2 && tourBtn == 0 && tourDisponivel(2));
@@ -104,22 +102,24 @@ static void tourNavigation(void) {
     if (nextFrame) tourAtualizar(dt);
     key(SDLK_ESCAPE);
     tourAtualizar(dt);
-    assert(!sair && !tourPend && !tourAberto && !uxEditor && !focoIndice);
-    assert(aj4Atual == aj4Secao(AJ_SEEKR_LIGADO) && aj4Grupo == aj4GrupoDe(AJ_SEEKR_LIGADO));
-    assert(aj4Grupos && tourVis > 0 && tourVis < 1);
-    key(SDLK_ESCAPE);
-    assert(focoIndice && !sair);
+    // 2.1: the pending "Where it is" lands on the row first; that Back then
+    // goes up one level, to the sections island, never out of Settings.
+    assert(!sair && !tourPend && !tourAberto && !uxEditor && focoIndice);
+    assert(secAtual == uxSecaoDe(AJ_SEEKR_LIGADO) && triIlha == TRI_SECOES && triSecFoco == secAtual);
+    assert(tourVis > 0 && tourVis < 1);
+    key(SDLK_RIGHT);
+    assert(!focoIndice && focoOp == AJ_SEEKR_LIGADO && !sair);
   }
 
   // Editor Back restores the exact destination row while the tour fades out.
-  aj4Iniciar(); focoIndice = 1; aj4Linha = 7;
-  key(SDLK_RETURN);ajPenRow=12;key(SDLK_RETURN);
+  triIniciar(); triIlha = TRI_CHIPS; triChip = TRI_C_TOUR;
+  key(SDLK_RETURN);
   for (int frame = 0; frame < 60; frame++) tourAtualizar(dt);
   tourLigar(2); tourAtualizar(dt);
   assert(uxEditor && uxOp == AJ_SEEKR_LIGADO);
-  int row = aj4Linha;
+  int row = focoItem;
   key(SDLK_ESCAPE);
-  assert(!uxEditor && !focoIndice && aj4Linha == row && aj4Opcoes[row] == AJ_SEEKR_LIGADO);
+  assert(!uxEditor && !focoIndice && focoItem == row && focoOp == AJ_SEEKR_LIGADO);
   anim_politica_reduzida = 1;
   tourAbrir(); tourAtualizar(dt); assert(tourVis == 1);
   key(SDLK_ESCAPE); tourAtualizar(dt); assert(tourVis == 0);
@@ -137,13 +137,11 @@ int main(void) {
     for (int i = 0; i < n; i++) if (tourOp(i) == required[k]) found = 1;
     assert(found && "required functional tour card missing");
   }
-  aj4Iniciar(); focoIndice = 1; aj4Linha = 7;
-  aj4Evento(SDLK_RETURN);
-  assert(ajPenPage==AJ_PEN_TOUR && !tourAberto);
-  ajPenRow=12;ajPenEvent(SDLK_RETURN);
-  assert(tourAberto && "Pencil overview must retain the functional tour");
+  triIniciar(); triIlha = TRI_CHIPS; triChip = TRI_C_TOUR;
+  triEvento(SDLK_RETURN);
+  assert(tourAberto && "the header chip must open the functional tour");
   tourSair();
-  assert(focoIndice && aj4Linha == 7);
+  assert(focoIndice && triIlha == TRI_CHIPS && triChip == TRI_C_TOUR);
   for (int i = 0; i < n; i++) {
     int op = tourOp(i);
     if (op < 0) {
@@ -172,12 +170,12 @@ int main(void) {
     tourAtualizar(0);
     int target = op == AJ_XTREAM_SERVIDOR ? AJ_IPTV_LISTA_XTREAM : op;
     assert(!tourAberto && !focoIndice);
-    assert(aj4Atual == aj4Secao(target) && aj4Opcoes[aj4Linha] == target);
+    assert(secAtual == uxSecaoDe(target) && focoOp == target);
     assert(!uxEditor);
     int before = valor[op];
     tourLigar(i); tourAtualizar(0);
-    if (op == AJ_PERFIL_ATIVO) { assert(aj4Util == 4); aj4Util = 0; }
-    else assert(aj4Opcoes[aj4Linha] == target && uxOp == target && uxEditor);
+    if (op == AJ_PERFIL_ATIVO) { assert(pfTela == PF_MENU); pfFechar(); }
+    else assert(focoOp == target && uxOp == target && uxEditor);
     assert(valor[op] == before);
     uxCancelar();
   }

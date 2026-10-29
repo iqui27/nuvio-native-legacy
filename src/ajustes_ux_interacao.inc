@@ -316,15 +316,14 @@ static void uxCategoriaAlternar(int i) {
   if(i>=0 && i<uxNCategorias)uxCategorias[i].oculta=!uxCategorias[i].oculta;
 }
 static int uxEvento(SDL_Keycode k) {
-  if (aj4RTL()) {
+  if (triRTL()) {
     if (k == SDLK_LEFT) k = SDLK_RIGHT;
     else if (k == SDLK_RIGHT) k = SDLK_LEFT;
   }
   if (!uxEditor) {
     if(iptvForm.tipo && uxVoltar(k)) { ajIptvVoltar();return 1; }
-    return aj4Evento(k);
+    return triEvento(k);
   }
-  if(!uxRestaurar && !uxAvisoRisco && ajPenLanguageMove(k))return 1;
   int layoutOculto = !ajLayoutSelecionavel() && (uxCabLayout || uxTopo == AJ2_T_LAYOUT ||
                        (uxEditor && uxOp == AJ_LAYOUT_AJUSTES));
   uxLayoutDisponibilidade();

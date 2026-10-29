@@ -196,9 +196,9 @@ static const Item TELA[] = {
     MAIS(),
     ROT("Cores e vidro"), OPC(AJ_VIDRO_OPAC), OPC(AJ_VIDRO_FOSCO), OPC(AJ_VIDRO_QUALIDADE),
 
-  // NOTAS (decisao do dono, 07/10): so as onze "Notas no titulo". Os oito
-  // AJ_MDB_* (qual nota o MDBList baixa) sairam da tela e continuam no enum e na
-  // conta: ligar uma nota liga o par dela e o MDBList por baixo (notaLigarPar).
+  // NOTAS (decisao do dono, 07/10): as onze "Notas no titulo" ficam a vista.
+  // Os oito AJ_MDB_* (qual fonte o MDBList baixa) ficam em Mais opcoes (2.1: nada
+  // some da tela); ligar uma nota ainda liga o par dela e o MDBList (notaLigarPar).
   SEC("Página do título", "O que aparece, notas e dados do título", "aj_file-text"),
     ROT("O que aparece"),
       OPC(AJ_DET_VEU), OPC(AJ_DET_DATA_CHEIA), OPC(AJ_DET_BLUR_NAO_VISTOS), OPC(AJ_EP_TAMANHO), OPC(AJ_DET_TOPO), OPC(AJ_DET_ELENCO_VISTO),
@@ -210,6 +210,8 @@ static const Item TELA[] = {
       OPC(AJ_TMDB_LIGADO),
     MAIS(),
     ROT("Notas"), OPC(AJ_MDB_LIGADO),
+      OPC(AJ_MDB_IMDB), OPC(AJ_MDB_TRAKT), OPC(AJ_MDB_TMDB), OPC(AJ_MDB_TOMATES),
+      OPC(AJ_MDB_AUDIENCIA), OPC(AJ_MDB_META), OPC(AJ_MDB_LETTER), OPC(AJ_MDB_MAL),
     ROT("Dados do título"),
       OPC(AJ_TMDB_ARTE), OPC(AJ_TMDB_BASICO),
       OPC(AJ_TMDB_FICHA), OPC(AJ_TMDB_DATAS), OPC(AJ_TMDB_ELENCO),
@@ -262,6 +264,7 @@ static const Item TELA[] = {
   SEC("Esta TV", "Resolução, imagens, efeitos e diagnóstico", "aj_monitor-cog"),
 OPC(AJ_RESOLUCAO), OPC(AJ_GPU_EFEITOS), OPC(AJ_AMPLIAR_UI), OPC(AJ_AMPLIACAO_ALGO), OPC(AJ_AMPLIACAO_NITIDEZ), OPC(AJ_HDR_INTERFACE), OPC(AJ_QUALIDADE_IMG),
     OPC(AJ_NAV_RAPIDA), OPC(AJ_MEDIDOR), OPC(AJ_DIAGNOSTICO), OPC(AJ_VELOCIDADE), OPC(AJ_ESPACO),
+    OPC(AJ_AVANCADAS),
 #ifdef NV_ANDROID
     OPC(AJ_TV_HOME), OPC(AJ_LIMPAR_CACHE),
 #endif

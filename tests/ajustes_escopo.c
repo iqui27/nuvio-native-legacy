@@ -40,8 +40,8 @@ static void escopos(void) {
   assert(ajustes_escopo(AJ_LIVETV_RES) == 1 && ajustes_escopo(AJ_FONTE_UI) == 1 && ajustes_escopo(AJ_GPU_EFEITOS) == 1);
   assert(ajustes_escopo(AJ_TEMA) == 2 && ajustes_escopo(AJ_HERO) == 2);
   assert(ajustes_escopo(AJ_AUDIO_OFFSET) == 1 && ajustes_escopo(AJ_DV7) == 1 && ajustes_escopo(AJ_P2P_DESTINO) == 1);
-  assert(!strcmp(ajSelo(AJ_VIDRO), "Este perfil"));
-  assert(!strcmp(ajSelo(AJ_IDIOMA), "Esta TV"));
+  // 2.1: o alcance saiu da linha (o inspetor diz "Vale para"); so os selos de plataforma ficam.
+  assert(!ajSelo(AJ_VIDRO) && !ajSelo(AJ_IDIOMA));
 }
 
 static void blobIgnoraLocal(void) {
@@ -438,9 +438,7 @@ static void gate(void) {
   perfil_infantil_esquecer();
   admin_pin_esquecer();
   pfEntrada();
-  focoIndice = 1; aj4Topo = 2;
-  assert(uxEvento(SDLK_RETURN) && aj4Util == 4 && !pfTela);
-  aj4Acao = 1;
+  focarOpcao(AJ_PERFIL_ATIVO);
   assert(uxEvento(SDLK_RETURN) && pfTela == PF_MENU && ajModalAberto());
   pfExigirAdmin(PA_EDITAR, 2);
   assert(pfFase == 3 && !edPerfil);

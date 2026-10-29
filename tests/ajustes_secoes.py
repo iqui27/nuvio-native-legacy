@@ -26,11 +26,8 @@ opcoes = [n.strip() for n in corpo.split(",") if n.strip() and n.strip() != "AJ_
 RETIRADAS = {
     "AJ_RELOGIO_POS",  # 1.8: clock island is always top-right (inativa() == 1)
     "AJ_DESCOBRIR",    # 2.0.3: the web Discover screen does not exist on the TV (inativa() == 1)
-    "AJ_AVANCADAS",    # 2.0.3: lives in the "Avancadas" pill at the top of the index
-    # 2.0.3 (owner, 07/10): which ratings MDBList fetches follows "Notas no
-    # titulo"; turning a rating on turns its pair on (notaLigarPar in ajustes.c).
-    "AJ_MDB_TRAKT", "AJ_MDB_IMDB", "AJ_MDB_TMDB", "AJ_MDB_LETTER",
-    "AJ_MDB_TOMATES", "AJ_MDB_AUDIENCIA", "AJ_MDB_META", "AJ_MDB_MAL",
+    # 2.1: AJ_AVANCADAS (Esta TV) and the eight AJ_MDB_* sources (Pagina do
+    # titulo > Mais opcoes) are rows again; tests/ajustes_catalogo21.sh.
     # 2.0.5 (owner, 12/10): profundidade virou o reflexo do foco do GFX_CARD,
     # com um controle so (AJ_PROF_BRILHO). Os outros AJ_PROF_* (borda, cobertura
     # e os cinco por tipo de cartao) sairam da tela de proposito; os slots ficam

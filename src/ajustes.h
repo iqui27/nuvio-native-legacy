@@ -649,7 +649,8 @@ int   ajustes_cache_seek_mb(void);           // F07: seek cache limit in MB for 
 #ifdef AJUSTES_TESTE
 void  ajustes_teste_escala(int percentual); // fixture only; does not persist
 // Last frame: two distinct Pencil titles drawn with intermediate alpha and slide.
-int   ajustes_teste_pen_motion(float *alpha, float *dy);
+int   ajustes_teste_transicao(void);   // 1 enquanto a lista da secao nova entra (2.1, tres ilhas)
+float ajustes_teste_movimento(void);   // andamento do movimento das ilhas (nav21)
 #endif
 // Fundo atras dos paineis (Aparencia › Fundo): 0 Arte, 1 Arte borrada, 2 Frost.
 int   ajustes_fundo(void);

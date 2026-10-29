@@ -200,6 +200,10 @@ static const char *ajVisualIcone(int op) {
     case AJ_IDIOMA: return "aj_languages";
     case AJ_AUD_LINGUA: case AJ_AUD_LINGUA2: case AJ_AUD_ORIGINAL: case AJ_AUDIO_NORMALIZAR: return "aj_audio-lines";
     case AJ_GUIA_PREVIA_GRANDE: return "aj_tv";
+    case AJ_GUIA_PREVIA_DESTACAR: return "aj_picture-in-picture";
+    case AJ_GUIA_PREVIA_SOM: return "aj_volume-2";
+    case AJ_GUIA_DIAS: return "aj_calendar-days";
+    case AJ_FONTE_OCULTAR_DV: case AJ_FONTE_OCULTAR_AUDIO: case AJ_FONTE_OCULTAR_VIDEO: return "aj_eye-off";
     case AJ_DET_TOPO: return "aj_panel-top";
     case AJ_DET_ELENCO_VISTO: return "aj_users";
     case AJ_DEBRID_LIGADO: return "aj_key";
