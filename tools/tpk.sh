@@ -70,9 +70,32 @@ fi
 
 tpk_sdk
 
+# libass PATCHED for the TV (tools/tpk/libass-nv/patches): ARMv7 NEON bitmap
+# engine, blur threads, dialogue opacity. The patches are applied HERE, on the host (the
+# build image has no `patch`), to a fresh copy of the 0.17.5 tarball in
+# $CACHE/src/libass-nv; deps.sh builds a copy of that tree. The stamp is the
+# hash of the patches: change a patch and libass (only libass) is rebuilt.
+# Extra CFLAGS for libass only (tools/tpk/libass-nv/cflags, plan Step 2) are part of the stamp.
+NV_ASS_STAMP=$(cat tools/tpk/libass-nv/patches/*.patch tools/tpk/libass-nv/cflags | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1)
+if [ "$(cat "$CACHE/src/libass-nv/.nv-stamp" 2>/dev/null)" != "$NV_ASS_STAMP" ]; then
+  echo "[deps] libass 0.17.5 + tools/tpk/libass-nv/patches"
+  mkdir -p "$CACHE/src"
+  [ -f "$CACHE/src/libass-0.17.5.tar.xz" ] ||
+    { curl -fsSL https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.xz -o "$CACHE/src/libass-0.17.5.tar.xz.tmp" &&
+      mv "$CACHE/src/libass-0.17.5.tar.xz.tmp" "$CACHE/src/libass-0.17.5.tar.xz"; }
+  rm -rf "$CACHE/src/libass-nv"; mkdir -p "$CACHE/src/libass-nv"
+  tar xJf "$CACHE/src/libass-0.17.5.tar.xz" -C "$CACHE/src/libass-nv" --strip-components=1
+  for p in tools/tpk/libass-nv/patches/*.patch; do
+    patch -d "$CACHE/src/libass-nv" -p1 -s --forward < "$p" || { echo "libass patch falhou: $p" >&2; exit 1; }
+  done
+  tr -d '\n' < tools/tpk/libass-nv/cflags > "$CACHE/src/libass-nv/.nv-cflags"
+  printf "%s" "$NV_ASS_STAMP" > "$CACHE/src/libass-nv/.nv-stamp"
+fi
+
 if [ ! -f "$CACHE/prefix/lib/libSDL2.a" ] || [ ! -f "$CACHE/prefix/lib/libSDL2_ttf.a" ] ||
    [ ! -f "$CACHE/prefix/lib/libwebp.a" ] || [ ! -f "$CACHE/prefix/lib/.sdlimage-webp" ] ||
-   [ ! -f "$CACHE/prefix/lib/libass.a" ] || [ ! -f "$CACHE/prefix/lib/.ttf-freetype-externo" ]; then
+   [ ! -f "$CACHE/prefix/lib/libass.a" ] || [ ! -f "$CACHE/prefix/lib/.ttf-freetype-externo" ] ||
+   [ "$(cat "$CACHE/prefix/lib/.libass-nv" 2>/dev/null)" != "$NV_ASS_STAMP" ]; then
   echo "[deps] SDL2/SDL2_image/SDL2_ttf estaticos (demora na primeira vez)"
   mkdir -p "$CACHE/src"
   for u in https://github.com/libsdl-org/SDL/releases/download/release-2.30.9/SDL2-2.30.9.tar.gz \
@@ -164,11 +187,16 @@ ctr_run --rm --platform "$TPK_PLATFORM" --env-file "$ENVF" $P2P_VOL $DTS_VOL \
   # nova ao env.sh, acrescente-a aqui TAMBEM.
   for k in NV_SUPABASE_URL NV_SUPABASE_ANON_KEY NV_TV_LOGIN_BASE NV_TRAKT_CLIENT_ID \
            NV_TRAKT_CLIENT_SECRET NV_SIMKL_CLIENT_ID NV_SIMKL_APP NV_TMDB_API_KEY NV_SEEKR_API_KEY \
-           NV_REC_URL NV_DISCORD_CLIENT_ID NV_VERSAO; do
+           NV_REC_URL NV_DISCORD_CLIENT_ID NV_GDRIVE_CLIENT_ID NV_GDRIVE_CLIENT_SECRET NV_VERSAO; do
     eval "v=\${$k:-}"
     # No arquivo de resposta o gcc tira aspas e barras como o shell: a aspa
-    # da string C tem de ir escapada (-DX=\"valor\").
-    v=$(printf "%s" "$v" | sed "s/[\\\\\"]/\\\\&/g")
+    # da string C tem de ir escapada (-DX=\"valor\"). Espaco tambem: no arquivo
+    # de resposta um espaco cru separa argumentos (uma chave colada com espaco
+    # virava "arquivo inexistente" e o make saia com 2). (Sem aspa simples aqui:
+    # este trecho vive dentro do sh -c '...'.)
+    # Nenhuma chave tem espaco nas pontas: um colado no segredo LOCAL_PROPERTIES
+    # e tirado aqui (e o que sobrar no meio vai escapado).
+    v=$(printf "%s" "$v" | sed "s/^[[:space:]]*//;s/[[:space:]]*\$//" | sed "s/[\\\\\" ]/\\\\&/g")
     printf "%s\n" "-D$k=\\\"$v\\\""
   done > /tmp/flags
   # p2pmotor_motor.c usa dladdr (Dl_info), que o glibc so declara com _GNU_SOURCE, e o

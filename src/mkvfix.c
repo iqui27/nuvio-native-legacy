@@ -614,12 +614,184 @@ static int enviar(int sock, const void *b, size_t n, Sess *s) {
   return 1;
 }
 
+// --- assperf "Read subs from local relay" (so .tpk) --------------------------
+//
+// Os bytes que este servidor entrega ao player sao o arquivo inteiro; os blocos
+// da legenda ASS vem neles, a frente do playhead. MfTap acompanha o fluxo de
+// UMA conexao: acha um Cluster (ID + Timestamp logo depois, senao era falso),
+// anda pelos filhos pulando o video sem copiar, e junta so os BlockGroup /
+// SimpleBlock da faixa que o mkvass colhe (mkvass_relay_faixa). Cada um vai a
+// mkvass_relay_bloco, que o casa com o indice. Pedido que comeca no meio de um
+// Cluster (seek) ou byte fora de ordem: volta a procurar o proximo Cluster.
+// Nunca muda um byte do que vai ao player e nunca pede nada ao CDN.
+#ifdef NV_TPK
+#include "mkvass.h"
+#define MT_CLUSTER   0x1F43B675u
+#define MT_BLOCO_MAX (1L << 20)
+enum { MT_PROCURA, MT_TAMCLUSTER, MT_CAB, MT_PULA, MT_JUNTA };
+typedef struct {
+  int64_t pos;              // posicao absoluta do proximo byte
+  int estado, faixa, ligado;
+  int64_t clPos, clFim;     // Cluster atual; clFim -1 = tamanho desconhecido
+  int clHdr, temTs, precisaTs;
+  unsigned long clTs;
+  unsigned char cab[16]; int cabN;
+  int64_t elPos, pular;
+  uint32_t janela;
+  int junta;                // 1 Timestamp, 2 bloco
+  int espiou;               // bloco: a faixa ja foi conferida
+  int hdrN;                 // bytes de cabecalho no inicio de buf
+  unsigned char *buf; long bufN, bufCap, bufTam;
+} MfTap;
+
+static void mtProcurar(MfTap *t) { t->estado = MT_PROCURA; t->janela = 0; t->cabN = 0; t->temTs = 0; }
+
+static int mtGuardar(MfTap *t, const unsigned char *b, long n) {
+  if (t->bufN + n > t->bufCap) {
+    long nc = t->bufCap ? t->bufCap : 4096;
+    unsigned char *nv;
+    while (nc < t->bufN + n) nc *= 2;
+    nv = realloc(t->buf, (size_t)nc);
+    if (!nv) return 0;
+    t->buf = nv; t->bufCap = nc;
+  }
+  memcpy(t->buf + t->bufN, b, (size_t)n); t->bufN += n;
+  return 1;
+}
+
+// A faixa do bloco em buf (cabecalho + o que ja chegou dos dados). -1 = ainda
+// nao da para saber; -2 = nao e bloco legivel.
+static long mtFaixaDo(const MfTap *t, uint32_t id) {
+  const unsigned char *d = t->buf + t->hdrN;
+  long n = t->bufN - t->hdrN;
+  int w;
+  if (id == 0xA0u) {   // BlockGroup: o Block (A1) costuma ser o primeiro filho
+    int ui = 0, us = 0; int64_t sz;
+    if (n < 2) return -1;
+    if (lerId(d, n, &ui) != 0xA1u) return -2;
+    sz = lerTam(d + ui, n - ui, &us);
+    if (sz == -2 && n < 9) return -1;
+    if (sz < 0) return -2;
+    d += ui + us; n -= ui + us;
+  }
+  if (n < 1) return -1;
+  w = largura(d[0]);
+  if (w > 8) return -2;
+  if (n < w) return -1;
+  { long v = d[0] & (0xFF >> w);
+    for (int i = 1; i < w; i++) v = (v << 8) | d[i];
+    return v; }
+}
+
+static void mtAlimentar(MfTap *t, int64_t pos, const unsigned char *b, size_t n) {
+  size_t i = 0;
+  int faixa = mkvass_relay_faixa();
+  if (!faixa) { t->ligado = 0; t->pos = pos + (int64_t)n; return; }
+  if (!t->ligado || t->pos != pos || faixa != t->faixa) {
+    // Ligou agora, pulou bytes ou trocou de faixa: procura o proximo Cluster.
+    t->ligado = 1; t->faixa = faixa; t->pos = pos; t->bufN = 0; mtProcurar(t);
+  }
+  while (i < n) {
+    switch (t->estado) {
+    case MT_PROCURA:
+      while (i < n) {
+        t->janela = (t->janela << 8) | b[i++]; t->pos++;
+        if (t->janela == MT_CLUSTER) { t->clPos = t->pos - 4; t->cabN = 0; t->estado = MT_TAMCLUSTER; break; }
+      }
+      break;
+    case MT_TAMCLUSTER: {
+      int w, us = 0; int64_t sz;
+      t->cab[t->cabN++] = b[i++]; t->pos++;
+      w = largura(t->cab[0]);
+      if (w > 8) { mtProcurar(t); break; }
+      if (t->cabN < w) break;
+      sz = lerTam(t->cab, t->cabN, &us);
+      if (sz == -2) { mtProcurar(t); break; }
+      t->clHdr = 4 + w; t->clFim = sz < 0 ? -1 : t->clPos + t->clHdr + sz;
+      t->temTs = 0; t->precisaTs = 1; t->cabN = 0; t->estado = MT_CAB;
+      break; }
+    case MT_CAB: {
+      int wi, ws, us = 0, ui = 0, dentro; uint32_t id; int64_t sz;
+      if (!t->cabN) t->elPos = t->pos;
+      t->cab[t->cabN++] = b[i++]; t->pos++;
+      wi = largura(t->cab[0]);
+      if (wi > 4) { mtProcurar(t); break; }
+      if (t->cabN < wi + 1) break;
+      ws = largura(t->cab[wi]);
+      if (ws > 8) { mtProcurar(t); break; }
+      if (t->cabN < wi + ws) break;
+      id = lerId(t->cab, t->cabN, &ui);
+      sz = lerTam(t->cab + wi, ws, &us);
+      t->cabN = 0;
+      if (id == MT_CLUSTER) {
+        if (sz == -2) { mtProcurar(t); break; }
+        t->clPos = t->elPos; t->clHdr = wi + ws; t->clFim = sz < 0 ? -1 : t->clPos + t->clHdr + sz;
+        t->temTs = 0; t->precisaTs = 1;
+        break;
+      }
+      dentro = t->clFim < 0 || t->elPos < t->clFim;
+      if (sz < 0) { mtProcurar(t); break; }
+      if (!dentro) {
+        // Fora de Cluster (Cues, Tags...): passa por cima, o proximo e outro Cluster.
+        t->pular = sz; t->estado = sz ? MT_PULA : MT_CAB; break;
+      }
+      if (t->precisaTs && id != 0xE7u && id != 0xBFu && id != 0xECu) { mtProcurar(t); break; }   // Cluster falso
+      if (t->elPos + wi + ws + sz > (t->clFim < 0 ? INT64_MAX : t->clFim)) { mtProcurar(t); break; }
+      if (id == 0xE7u) {
+        if (sz < 1 || sz > 8) { mtProcurar(t); break; }
+        t->junta = 1; t->bufN = 0; t->hdrN = 0; t->bufTam = (long)sz; t->estado = MT_JUNTA;
+      } else if ((id == 0xA3u || id == 0xA0u) && t->temTs && wi + ws + sz <= MT_BLOCO_MAX) {
+        t->junta = 2; t->bufN = 0; t->espiou = 0;
+        if (!mtGuardar(t, t->cab, wi + ws)) { t->pular = sz; t->estado = MT_PULA; break; }
+        t->hdrN = wi + ws; t->bufTam = (long)(wi + ws + sz);
+        t->estado = MT_JUNTA;
+      } else if (id == 0xA3u || id == 0xA0u || id == 0xA7u || id == 0xABu || id == 0xECu ||
+                 id == 0xAFu || id == 0xBFu || id == 0x5854u || id == 0xA1u) {
+        t->pular = sz; t->estado = sz ? MT_PULA : MT_CAB;
+      } else mtProcurar(t);
+      break; }
+    case MT_PULA: {
+      int64_t k = t->pular < (int64_t)(n - i) ? t->pular : (int64_t)(n - i);
+      i += (size_t)k; t->pos += k; t->pular -= k;
+      if (!t->pular) t->estado = MT_CAB;
+      break; }
+    case MT_JUNTA: {
+      long falta = t->bufTam - t->bufN, k = falta < (long)(n - i) ? falta : (long)(n - i);
+      if (!mtGuardar(t, b + i, k)) { t->pular = falta; t->estado = MT_PULA; t->bufN = 0; break; }
+      i += (size_t)k; t->pos += k;
+      if (t->junta == 2 && !t->espiou) {
+        long fx = mtFaixaDo(t, t->buf[0]);   // buf[0] e o ID de um byte: A0 ou A3
+        if (fx == -2 || (fx >= 0 && fx != t->faixa)) {   // nao e da faixa: o resto e pulado
+          t->pular = t->bufTam - t->bufN; t->bufN = 0;
+          t->estado = t->pular ? MT_PULA : MT_CAB;
+          break;
+        }
+        if (fx >= 0) t->espiou = 1;
+      }
+      if (t->bufN < t->bufTam) break;
+      if (t->junta == 1) {
+        unsigned long v = 0;
+        for (long q = 0; q < t->bufN; q++) v = (v << 8) | t->buf[q];
+        t->clTs = v; t->temTs = 1; t->precisaTs = 0;
+      } else {
+        mkvass_relay_bloco(t->clPos, t->clHdr, t->clTs, t->temTs, t->elPos, t->buf, t->bufN);
+      }
+      t->bufN = 0; t->estado = MT_CAB;
+      break; }
+    }
+  }
+}
+#endif
+
 typedef struct {
   int sock;
   Sess *s;
   int64_t ini, fim, prox;     // bytes [ini, fim] pedidos; prox = o proximo a mandar
   int cabFeito, head, parcial, falhouEnvio;
   unsigned nr;
+#ifdef NV_TPK
+  MfTap tap;
+#endif
 } Envio;
 
 static int enviarCab(Envio *e) {
@@ -656,6 +828,9 @@ static int ralo(void *u, const char *dados, size_t n) {
       if (e->s->oculta[i] >= e->prox && e->s->oculta[i] < e->prox + (int64_t)k)
         tmp[e->s->oculta[i] - e->prox] = MKVFIX_TIPO_ESCONDIDA;
     if (!enviar(e->sock, tmp, k, e->s)) { e->falhouEnvio = 1; return 0; }
+#ifdef NV_TPK
+    mtAlimentar(&e->tap, e->prox, tmp, k);
+#endif
     e->prox += (int64_t)k; dados += k; n -= k;
   }
   return e->prox <= e->fim;
@@ -788,6 +963,9 @@ static void *atender(void *u) {
              tocou == 2 ? " (subtitle tracks hidden)" : tocou ? " (SeekHead rewritten)" : e.falhouEnvio ? " (player closed)" : "");
     fflush(stdout); }
 sai:
+#ifdef NV_TPK
+  free(e.tap.buf);
+#endif
   shutdown(sock, SHUT_RDWR);
   close(sock);
   if (s) sessSoltar(s);

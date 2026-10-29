@@ -41,6 +41,11 @@ typedef struct {
   long cpN;
   int  hvccNal62, bamN, nalTam, entradaInteira;
   unsigned long bamTipo;
+  // Video (25/10, subtitle correction per frame rate): DefaultDuration (ns per
+  // frame, 0 = not in the file) and Colour > TransferCharacteristics (16 PQ,
+  // 18 HLG; 0 = not stated).
+  unsigned long long quadroNs;
+  int  transferencia;
 } MkvFaixa;
 
 // O que a ultima sonda (mkv_faixas_e_caps / mkv_faixas_do_trecho) viu. Estado

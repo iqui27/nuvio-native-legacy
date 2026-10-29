@@ -464,10 +464,12 @@ void posplay_atualizar(float dt, Uint32 agora, double posSeg, double durSeg,
   } else {
     // FILME: a regra inteira mora em posplay_regra_filme, logo acima, que o
     // teste chama sem player nem rede. Aqui entra so a DURACAO ESTAVEL — ver
-    // durEstavel.
+    // durEstavel. Um cat_item so: entre duas chamadas a troca do catalogo pode
+    // publicar n = 0 e a segunda dar NULL.
+    const CatItem *ciPos = cat_item(idx);
     deveAparecer = durEstavel >= PP_DUR_ESTAVEL_S &&
                    (posplay_regra_filme(posSeg, durSeg, creditosSeg) ||
-                    (cat_item(idx) && cat_item(idx)->posCreditos && durSeg - posSeg <= PP_FIM_TOL_S));
+                    (ciPos && ciPos->posCreditos && durSeg - posSeg <= PP_FIM_TOL_S));
   }
 
   // Saiu da zona (o dono voltou o filme): a dispensa perde a validade e o

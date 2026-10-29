@@ -1,0 +1,31 @@
+[Script Info]
+; libass NEON32 check: typeset signs (blur, be, clips, drawings, 3D, masks)
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Sign,Roboto,72,&H00FFFFFF,&H000000FF,&H00202020,&H80000000,0,0,0,0,100,100,0,0,1,3,2,5,10,10,10,1
+Style: Mask,Roboto,20,&H00F5F5F5,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
+Style: Inbox,Inter Display,64,&H00303030,&H000000FF,&H00FFFFFF,&H00000000,1,0,0,0,100,100,2,0,1,4,0,5,10,10,10,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:06.00,Mask,,0,0,0,,{\pos(300,120)\blur1.5\p1}m 0 0 l 1320 0 1320 840 0 840{\p0}
+Dialogue: 1,0:00:00.00,0:00:06.00,Mask,,0,0,0,,{\pos(340,160)\1c&H00FFFFFF&\bord6\3c&H00D0A060&\blur0.8\p1}b 0 60 0 0 60 0 l 1180 0 b 1240 0 1240 60 1240 60 l 1240 700 b 1240 760 1180 760 1180 760 l 60 760 b 0 760 0 700 0 700{\p0}
+Dialogue: 2,0:00:00.00,0:00:06.00,Inbox,,0,0,0,,{\pos(960,300)\blur0.6\bord5\fsp4}INBOX
+Dialogue: 2,0:00:00.00,0:00:03.00,Sign,,0,0,0,,{\pos(960,520)\blur2\frz-7\fscx110}Shirogane Miyuki
+Dialogue: 2,0:00:03.00,0:00:06.00,Sign,,0,0,0,,{\pos(960,520)\blur4.5\be2\frx20\fry-15}Fujiwara Chika
+Dialogue: 3,0:00:00.00,0:00:06.00,Sign,,0,0,0,,{\pos(400,800)\blur10\3c&H0000FFFF&\bord8\t(0,6000,\blur25)}glow
+Dialogue: 3,0:00:00.00,0:00:06.00,Sign,,0,0,0,,{\pos(1500,820)\be1\bord2}be1 {\be5}be5 {\be12}be12
+Dialogue: 4,0:00:00.00,0:00:06.00,Sign,,0,0,0,,{\pos(960,950)\clip(400,900,1100,1000)\blur1}Rectangular clip line that is cut
+Dialogue: 4,0:00:00.00,0:00:06.00,Sign,,0,0,0,,{\pos(960,660)\clip(m 600 600 l 1300 620 1200 720 650 700)\blur3}Vector clip text
+Dialogue: 4,0:00:00.00,0:00:06.00,Sign,,0,0,0,,{\pos(960,740)\iclip(m 800 700 l 1100 700 1100 780 800 780)\bord4\shad6\blur1.2}Inverse clip text
+Dialogue: 5,0:00:00.00,0:00:06.00,Sign,,0,0,0,,{\move(100,100,1700,300)\fad(400,400)\blur0.7\bord3}moving sign
+Dialogue: 5,0:00:00.00,0:00:06.00,Sign,,0,0,0,,{\pos(1650,600)\frz33\fscx60\fscy140\blur0.3\shad4\4c&H00FF0000&}rotated
+Dialogue: 6,0:00:00.00,0:00:06.00,Mask,,0,0,0,,{\pos(1500,150)\1c&H000080FF&\blur6\p2}m 0 0 b 200 -100 400 100 300 300 b 200 500 -100 300 0 0{\p0}
+Dialogue: 6,0:00:01.00,0:00:05.00,Sign,,0,0,0,,{\an7\pos(50,400)\fs30\bord1\blur0.5\q2}Plain line one\NPlain line two with {\i1}italic{\i0} and {\b1}bold{\b0}
+Dialogue: 7,0:00:00.00,0:00:06.00,Sign,,0,0,0,,{\pos(960,540)\fs200\alpha&HC0&\blur40\bord0}HUGE

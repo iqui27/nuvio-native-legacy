@@ -257,14 +257,14 @@ static const char PAGINA[] =
 "#log{padding:8px 12px 40px;white-space:pre-wrap;word-break:break-word}"
 ".l{padding:1px 0}.f{color:var(--fonte)}.d{color:var(--diag)}.n{color:var(--next)}.e{color:var(--erro)}.a{color:var(--abrir)}.h{color:#fff;font-weight:700;margin-top:10px;border-top:1px solid #333}.x{display:none}"
 "</style></head><body><header><b>Nuvio log</b>"
-"<button id=b1 class=on>Source picking</button><button id=b2>Won't open</button><button id=b3>Error while playing</button><button id=b0>Everything</button>"
+"<button id=b1 class=on>Source picking</button><button id=b2>Won't open</button><button id=b3>Error while playing</button><button id=b0>Everything</button><button id=b4>Previous session</button>"
 "<input id=q placeholder='Search (e.g. REFUSED, track #, T7)'>"
 "<button id=ba class=on>Auto-scroll</button><button id=bc>Clear</button>"
 "<a class=b id=dl href='/fonte.txt?baixar=1'>Download</a><span id=st></span>"
 "</header>"
 "<div id=log></div><script>"
 "var de=-1,f=1,auto=1,q='',gen=0,L=document.getElementById('log'),S=document.getElementById('st');"
-"var ARQ=['/log.txt','/fonte.txt','/abrir.txt','/tocar.txt'],BT=[b0,b1,b2,b3];"
+"var ARQ=['/log.txt','/fonte.txt','/abrir.txt','/tocar.txt','/anterior.txt'],BT=[b0,b1,b2,b3,b4];"
 "function cls(t){return /=====/.test(t)?'h':/REFUSED|FAILED|failed AFTER|NOT CHANGED/.test(t)?'e':/\\[abrir-diag\\]|\\[tocar-diag\\]/.test(t)?'a':/\\[fonte-diag\\]/.test(t)?'d':/next/i.test(t)?'n':/(falh|erro|error|fail|refused)/i.test(t)?'e':/\\[fonte/.test(t)?'f':''}"
 "function vis(d){return !q||d.textContent.toLowerCase().indexOf(q)>=0}"
 "function add(txt){var fr=document.createDocumentFragment();txt.split('\\n').forEach(function(t){if(!t)return;"
@@ -275,9 +275,9 @@ static const char PAGINA[] =
 "if(r.headers.get('X-Novo')==='1')L.textContent='';if(x!==null)de=+x;return r.text()}).then(function(t){if(g!==gen)return;if(t)add(t);"
 "S.textContent=(L.childNodes.length?L.childNodes.length+' lines':'no lines yet')+' • live • '+new Date().toLocaleTimeString()})"
 ".catch(function(){S.textContent='TV not answering, retrying…'}).then(function(){if(g===gen)setTimeout(puxar,1500)})}"
-"function modo(v){f=v;for(var i=0;i<4;i++)BT[i].classList.toggle('on',i===v);"
+"function modo(v){f=v;for(var i=0;i<BT.length;i++)BT[i].classList.toggle('on',i===v);"
 "dl.href=ARQ[v]+'?baixar=1';gen++;de=-1;L.textContent='';S.textContent='loading…';puxar()}"
-"b0.onclick=function(){modo(0)};b1.onclick=function(){modo(1)};b2.onclick=function(){modo(2)};b3.onclick=function(){modo(3)};"
+"b0.onclick=function(){modo(0)};b1.onclick=function(){modo(1)};b2.onclick=function(){modo(2)};b3.onclick=function(){modo(3)};b4.onclick=function(){modo(4)};"
 "ba.onclick=function(){auto=!auto;ba.classList.toggle('on',auto)};bc.onclick=function(){L.textContent=''};"
 "document.getElementById('q').oninput=function(e){q=e.target.value.toLowerCase();filtrar()};"
 "puxar();"
@@ -382,7 +382,15 @@ static void atender(int c) {
     responderTexto(c, 200, "text/html; charset=utf-8", NULL, PAGINA, sizeof PAGINA - 1);
     return;
   }
-  if (!strncmp(caminho, "/log.txt", 8) || !strncmp(caminho, "/fonte.txt", 10) ||
+  /* PREVIOUS SESSION (owner 27/10): the log of the session before this one,
+   * rotated at start (nuvio-anterior.log; avisos.c, AV_LOG_ANTERIOR). After a
+   * crash it is the crashed session's log. Whole file, no filter. */
+  { int anterior = !strncmp(caminho, "/anterior.txt", 13);
+    if (anterior) {
+      const char *a = getenv("NUVIO_LOG_ANTERIOR");
+      snprintf(arq, sizeof arq, "%s", a && *a ? a : "/tmp/nuvio-anterior.log");
+    }
+  if (anterior || !strncmp(caminho, "/log.txt", 8) || !strncmp(caminho, "/fonte.txt", 10) ||
       !strncmp(caminho, "/abrir.txt", 10) || !strncmp(caminho, "/tocar.txt", 10)) {
     const char *qs = strchr(caminho, '?'), *v;
     long de = -1, fim = 0, max = LR_PASSO;
@@ -391,21 +399,23 @@ static void atender(int c) {
     size_t n = 0;
     char *txt, extra[200];
     if (qs && (v = strstr(qs, "de="))) de = strtol(v + 3, NULL, 10);
-    if (qs && ((v = strstr(qs, "?f=")) || (v = strstr(qs, "&f=")))) { filtrar = atoi(v + 3); if (filtrar < 0 || filtrar > 3) filtrar = 0; }
+    if (!anterior && qs && ((v = strstr(qs, "?f=")) || (v = strstr(qs, "&f=")))) { filtrar = atoi(v + 3); if (filtrar < 0 || filtrar > 3) filtrar = 0; }
     if (qs && strstr(qs, "baixar=1")) { baixar = 1; de = -1; max = filtrar ? LR_FILTRO_LER : LR_BAIXAR; }
     else if (de < 0) max = filtrar ? LR_FILTRO_LER : LR_INICIO;
     if (!arq[0] || !(txt = lerTrecho(arq, de, max, filtrar, &fim, &novo, &n))) {
       static const char sem[] = "[logrede] no log file on this build yet\n";
-      responderTexto(c, 200, "text/plain; charset=utf-8", "X-Fim: 0\r\n", de < 0 ? sem : "", de < 0 ? sizeof sem - 1 : 0);
+      static const char semAnt[] = "[logrede] no previous session log on this TV yet\n";
+      const char *m = anterior ? semAnt : sem;
+      responderTexto(c, 200, "text/plain; charset=utf-8", "X-Fim: 0\r\n", de < 0 ? m : "", de < 0 ? strlen(m) : 0);
       return;
     }
     if (baixar) snprintf(extra, sizeof extra, "X-Fim: %ld\r\nX-Novo: %d\r\nContent-Disposition: attachment; filename=\"%s\"\r\n",
-                         fim, novo, NOMES_ARQ[filtrar]);
+                         fim, novo, anterior ? "nuvio-previous-session.txt" : NOMES_ARQ[filtrar]);
     else snprintf(extra, sizeof extra, "X-Fim: %ld\r\nX-Novo: %d\r\n", fim, novo);
     responderTexto(c, 200, "text/plain; charset=utf-8", extra, txt, n);
     free(txt);
     return;
-  }
+  } }
   responderTexto(c, 404, "text/plain", NULL, "", 0);
 }
 

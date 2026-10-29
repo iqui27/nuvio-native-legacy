@@ -107,6 +107,10 @@ static void lerTexto(const unsigned char *p, long n, char *dst, size_t tam) {
 #define ID_FLAGHEARING 0x55ABUL      // FlagHearingImpaired: SDH (#287)
 #define ID_AUDIO       0xE1UL        // Audio (mestre dentro da TrackEntry)
 #define ID_CHANNELS    0x9FUL        // Audio > Channels
+#define ID_DEFAULTDUR  0x23E383UL    // TrackEntry > DefaultDuration (ns por quadro)
+#define ID_VIDEO       0xE0UL        // TrackEntry > Video
+#define ID_COLOUR      0x55B0UL      // Video > Colour
+#define ID_TRANSFER    0x55BAUL      // Colour > TransferCharacteristics
 #define ID_BLOCKADDMAP 0x41E4UL      // BlockAdditionMapping (Dolby Vision config)
 #define ID_BLOCKADDTYPE 0x41E7UL     // BlockAddIDType: 'dvcC' / 'dvvC'
 #define ID_BLOCKADDDATA 0x41EDUL     // BlockAddIDExtraData: the DOVI record
@@ -170,6 +174,35 @@ static int lerTracks(const unsigned char *p, long n, MkvFaixa *saida, int max) {
           else if (fid == ID_CODECID) lerTexto(v, ftam, f.codec, sizeof f.codec);
           else if (fid == ID_CODECPRIV) { f.cpN = ftam; lerHvcc(v, ftam, &f); }
           else if (fid == ID_FLAGFORCED) f.forcado = lerUint(v, ftam) != 0;
+          else if (fid == ID_DEFAULTDUR) f.quadroNs = (unsigned long long)lerUint(v, ftam);
+          // Video > Colour > TransferCharacteristics: PQ/HLG = HDR (correcao da legenda).
+          else if (fid == ID_VIDEO) {
+            long r = 0;
+            while (r < ftam) {
+              int ai = 0, at = 0;
+              unsigned long aid = lerId(v + r, ftam - r, &ai);
+              long atam;
+              if (!aid) break;
+              atam = lerTam(v + r + ai, ftam - r - ai, &at);
+              if (atam < 0 || r + ai + at + atam > ftam) break;
+              r += ai + at;
+              if (aid == ID_COLOUR) {
+                long c = 0;
+                while (c < atam) {
+                  int ci = 0, ct = 0;
+                  unsigned long cid = lerId(v + r + c, atam - c, &ci);
+                  long ctam;
+                  if (!cid) break;
+                  ctam = lerTam(v + r + c + ci, atam - c - ci, &ct);
+                  if (ctam < 0 || c + ci + ct + ctam > atam) break;
+                  c += ci + ct;
+                  if (cid == ID_TRANSFER) f.transferencia = (int)lerUint(v + r + c, ctam);
+                  c += ctam;
+                }
+              }
+              r += atam;
+            }
+          }
           else if (fid == ID_FLAGHEARING) f.sdh = lerUint(v, ftam) != 0;
           // Channels mora um nivel abaixo, em Audio. O .tpk nao tem outra
           // fonte para "5.1" (o Tizen.Multimedia.Player so da o idioma, #206).

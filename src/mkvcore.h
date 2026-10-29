@@ -5,7 +5,7 @@
 #include "mkv.h"
 
 // Layouts mirrored in rust/mkvcore/src/lib.rs (const asserts there).
-_Static_assert(sizeof(MkvFaixa) == (sizeof(long) == 8 ? 160 : 148), "MkvFaixa layout");
+_Static_assert(sizeof(MkvFaixa) == (sizeof(long) == 8 ? 176 : 168), "MkvFaixa layout");
 _Static_assert(sizeof(MkvCap) == 72, "MkvCap layout");
 
 // What the C acharTracks left in file-scope statics.

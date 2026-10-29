@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <locale.h>
 #include "video.h"
+#include "logrede.h"   // nv_tpk_log_net: logrede_limpar
 #include "player.h"
 #include "cdnlink.h"
 #include "streams.h"
@@ -240,6 +241,22 @@ void nv_tpk_log(const char *linha) {
   printf("[host] %s\n", linha ? linha : "");
   tpkdesp_linha(linha);
   video_tpk_log_host(linha);
+  fflush(stdout);
+}
+
+// Linha de erro do .NET (tizen-tpk/NetLog.cs) com o tempo de sessao, a mesma
+// base dos registros de falha do queda.c ("t=" = SDL_GetTicks). A mensagem de
+// uma excecao pode trazer URL com token, chave, senha ou cookie (a de rede
+// traz a URL inteira): passa por logrede_limpar, as mesmas regras da pagina
+// de log, ANTES de chegar ao log. Linha longa e cortada (o buffer e fixo e a
+// limpeza so encurta).
+__attribute__((visibility("default")))
+void nv_tpk_log_net(const char *linha) {
+  char b[1024];
+  Uint32 t = SDL_GetTicks();
+  snprintf(b, sizeof b, "%s", linha ? linha : "");
+  logrede_limpar(b);
+  printf("[net t=%u.%03us] %s\n", (unsigned)(t / 1000), (unsigned)(t % 1000), b);
   fflush(stdout);
 }
 

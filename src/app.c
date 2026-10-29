@@ -163,6 +163,7 @@
 #include "video.h"
 #ifdef NV_TPK
 void video_tpk_cdn_arquivo(const char *url, int usenet, int item, int file);
+#include "tpkborda.h"
 #endif
 #include "addons.h"
 #include "legauto.h"
@@ -6813,6 +6814,9 @@ void app_atualizar(float dt, Uint32 agora) {
   }
 #endif
   player_atualizar(dt, agora);
+#ifdef NV_TPK
+  tpkborda_quadro();   // premult do GLView so enquanto o libass desenha (tpkborda.c)
+#endif
   // A barra por cima da pagina: o trailer do fundo fica mudo enquanto ela
   // esta aberta (detail_sob_menu). O pedido de barra da pagina e lido em
   // app_evento, no mesmo evento da ESQUERDA, e abre por cima dela.

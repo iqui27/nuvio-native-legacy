@@ -187,6 +187,16 @@ int    video_reconectando(void);
 // the target instead of the stale position.
 int      video_busca_em_voo(void);
 unsigned video_busca_falhas(void);
+// SUBTITLE CLOCK (owner 25/10). The host reads the TV's position with a query
+// that takes 50-600 ms and stamps the MIDDLE of it (CLOCK_MONOTONIC, s); half
+// the duration is the uncertainty. 1 = there is a reading; *seq changes with
+// every new one. Same transform as video_pos (converted stream offset).
+int      video_pos_amostra(double *pos, double *carimbo, double *incerteza, unsigned *seq);
+// 1 from a seek until the first real reading of where the TV landed (the TV
+// seeks to a keyframe, seconds before the target). Subtitles hide meanwhile.
+int      video_pos_incerta(void);
+// Frame rate and HDR of the playing file (MKV header); 0 = unknown.
+int      video_tpk_quadro(double *fps, int *hdr);
 #endif
 int    video_tocando(void);
 // Pausa comprovada pelo backend da sessao atual, nao a intencao local de
