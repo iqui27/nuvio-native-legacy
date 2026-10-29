@@ -126,6 +126,8 @@ void esportes_abrir_sessao(void) {
         if(e.fim>time(NULL)){lastGame=nJogosSeguidos;jogosSeguidos[nJogosSeguidos++]=e;}
       }
     }
+    else if(!strncmp(l,"game-fetch=",11) && lastGame>=0)
+      jogosSeguidos[lastGame].obtido=(uint64_t)strtoull(l+11,NULL,10);
     else if(!strncmp(l,"game-data=",10) && lastGame>=0) {
       EspEvento e=jogosSeguidos[lastGame];int used=0;
       if(sscanf(l+10,"%d|%d|%d|%n",&e.estado,&e.nParticipantes,&e.nEmissoras,&used)!=3 || !used || e.estado<0 || e.estado>3 || e.nParticipantes<0 || e.nParticipantes>ESP_MAX_PARTICIPANTES || e.nEmissoras<0 || e.nEmissoras>ESP_MAX_EMISSORAS)continue;
@@ -159,6 +161,7 @@ static int gravar(void) {
   for(int i=0;i<nJogosSeguidos;i++) {
     EspEvento *e=&jogosSeguidos[i];
     usado+=(size_t)snprintf(buf+usado,cap-usado,"game=%s|%s|%s|%lld|%lld|%s\n",e->modalidade,e->ligaId,e->id,(long long)e->inicio,(long long)e->fim,e->nome);
+    usado+=(size_t)snprintf(buf+usado,cap-usado,"game-fetch=%llu\n",(unsigned long long)e->obtido);
     usado+=(size_t)snprintf(buf+usado,cap-usado,"game-data=%d|%d|%d|",e->estado,e->nParticipantes,e->nEmissoras);
     char *fields[32];size_t caps[32];int n=jogoCampos(e,fields,caps);
     const char *hex="0123456789abcdef";
@@ -247,8 +250,17 @@ static void *buscar(void *arg) {
     if (espaco) chave = (unsigned)strtoul(espaco + 1, NULL, 16);
     if (nl && chave == hash(j->url) && idade >= 0 && idade < ((j->tipo == 1 || j->tipo == 5) ? 86400 : 60)) corpo = nl + 1;
   }
+  struct timespec fetched={0};
+  if(corpo){
+    long long seconds;unsigned key;long nanos=0;
+    if(sscanf(cache,"%lld %x %ld",&seconds,&key,&nanos)>=2){
+      fetched.tv_sec=(time_t)seconds;
+      fetched.tv_nsec=nanos>=0&&nanos<1000000000?nanos:0;
+    }
+  }
   char *baixado = NULL;
   if (!corpo) {
+    clock_gettime(CLOCK_REALTIME,&fetched);
     RedeMedida medida = {0}; RedeControle controle = {2 * 1024 * 1024, NULL};
     baixado = rede_baixar_medido_controle(j->url, 8, NULL, &controle, &medida);
     if (medida.status == 200 && baixado) corpo = baixado;
@@ -271,11 +283,12 @@ static void *buscar(void *arg) {
       j->eventos = calloc(ESP_MAX_EVENTOS, sizeof *j->eventos);
       if (j->eventos) j->n = esportes_eventos_ler(corpo, esportes_modalidade(j->modalidade)->id, &j->liga, j->eventos, ESP_MAX_EVENTOS);
       j->erro = !j->eventos || (j->tipo==9 ? !j->n || strcmp(j->eventos[0].id,j->time) : !strstr(corpo, "\"events\""));
+      for(int i=0;i<j->n;i++)j->eventos[i].obtido=(uint64_t)fetched.tv_sec*1000000000u+(uint64_t)fetched.tv_nsec;
       if (j->n) qsort(j->eventos, (size_t)j->n, sizeof *j->eventos, ordem);
     }
     if (baixado && !j->erro) {
       size_t n = strlen(corpo) + 48; char *s = malloc(n);
-      if (s) { snprintf(s, n, "%lld %08x\n%s", (long long)time(NULL), hash(j->url), corpo); dados_gravar_leve(j->arquivo, s); free(s); }
+      if (s) { snprintf(s, n, "%lld %08x %ld\n%s", (long long)fetched.tv_sec, hash(j->url), fetched.tv_nsec, corpo); dados_gravar_leve(j->arquivo, s); free(s); }
     }
   } else j->erro = 1;
   printf("[esportes] ESPN %s: %d itens, erro=%d\n", j->tipo == 1 ? "ligas" : "eventos", j->n, j->erro);
@@ -366,6 +379,7 @@ void esportes_passo(void) {
       erro = j->erro;
       if (!j->erro && j->tipo == 1) { free(ligas); ligas = j->ligas; j->ligas = NULL; nLigas = j->n; }
       else if (!j->erro) {
+        atualizarSeguidos(j);
         if (!eventos) eventos = calloc(ESP_MAX_EVENTOS, sizeof *eventos);
         if (eventos) {
           /* Keep the old cards visible until the replacement arrives. A new
@@ -491,14 +505,7 @@ static EspJob *proximoFavorito(void) {
   favoritoAtivo=0;favoritosCompleto=1;return NULL;
 }
 static void publicarFavoritos(const EspJob *j) {
-  int changed=0;
-  for(int k=0;k<j->n;k++){
-    int i=jogoIndice(&j->eventos[k]);if(i<0)continue;
-    jogosSeguidos[i]=j->eventos[k];
-    if(jogosSeguidos[i].fim<=jogosSeguidos[i].inicio)jogosSeguidos[i].fim=jogosSeguidos[i].inicio+3*3600;
-    changed=1;
-  }
-  if(changed)gravar();
+  atualizarSeguidos(j);
   if(!eventosFav)eventosFav=calloc(ESP_MAX_EVENTOS,sizeof *eventosFav);
   if(!eventosFav){erroFav=1;return;}
   if(j->tipo==3) {
@@ -685,6 +692,7 @@ static void catalogoPublicar(EspJob *j) {
     EspRowCache *r=rowObter(j->indice);if(!r)return;
     if(j->erro){r->estado=-1;r->desde=time(NULL);}
     else {
+      atualizarSeguidos(j);
       if(!r->eventos)r->eventos=calloc(ESP_MAX_EVENTOS,sizeof *r->eventos);
       if(!r->eventos){r->estado=-1;r->desde=time(NULL);return;}
       if(!j->dia)r->n=0;

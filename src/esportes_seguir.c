@@ -6,6 +6,13 @@
 #include <stdio.h>
 #include <string.h>
 static void reminder(const EspEvento *e,int update){
+  if(!e)return;
+  for(int i=0;i<esportes_jogos_seguidos_n();i++){
+    const EspEvento *saved=esportes_jogo_seguido(i);
+    if(!strcmp(saved->id,e->id)&&!strcmp(saved->ligaId,e->ligaId)&&!strcmp(saved->modalidade,e->modalidade)&&saved->obtido>=e->obtido){
+      e=saved;break;
+    }
+  }
   if(!esportes_segue_evento(e)||e->estado!=0||e->inicio<=time(NULL))return;
   char key[300],id[80],base[600];
   snprintf(key,sizeof key,"%s|%s|%s",e->modalidade,e->ligaId,e->id);

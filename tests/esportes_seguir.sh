@@ -4,8 +4,20 @@ cd "$(dirname "$0")/.."
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-follow.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 cc -std=gnu11 -Isrc -O1 -g -Wall -Wextra -Werror \
-  src/esportes.c src/esportes_parse.c src/esportes_seguir.c src/lembrete.c src/dados.c src/js.c src/buscanorm.c \
+  src/esportes_parse.c src/esportes_seguir.c src/lembrete.c src/dados.c src/js.c src/buscanorm.c \
   tests/esportes_seguir.c -pthread -lm -o "$work/test"
+if [ "${1:-}" = stale ]; then
+  rc=0
+  for case in stale-cancel stale-kickoff; do
+    "$work/test" "$work/$case" game-write
+    "$work/test" "$work/$case" "$case" || rc=1
+  done
+  exit "$rc"
+fi
+for case in stale-cancel stale-kickoff; do
+  "$work/test" "$work/$case" game-write
+  "$work/test" "$work/$case" "$case"
+done
 "$work/test" "$work/data" write
 "$work/test" "$work/data" read
 "$work/test" "$work/game-restart" game-write

@@ -1,6 +1,7 @@
 #ifndef NV_ESPORTES_H
 #define NV_ESPORTES_H
 #include <stddef.h>
+#include <stdint.h>
 #include <time.h>
 
 #define ESP_MAX_LIGAS 1024
@@ -17,6 +18,7 @@ typedef struct {
   char id[100], nome[256], liga[160], ligaId[80], modalidade[32];
   char local[160], cidade[120], detalhe[120], sessao[48];
   time_t inicio, fim;
+  uint64_t obtido; /* Provider fetch time in nanoseconds; zero for legacy snapshots. */
   int estado; /* 0 scheduled, 1 live, 2 finished, 3 postponed/cancelled */
   int nParticipantes, nEmissoras;
   EspParticipante participantes[ESP_MAX_PARTICIPANTES];

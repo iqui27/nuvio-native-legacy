@@ -1,6 +1,6 @@
 /* Follow persistence uses real disk storage and a second process on restart. */
 #define _POSIX_C_SOURCE 200809L
-#include "esportes.h"
+#include "../src/esportes.c"
 #include "lembrete.h"
 #include "dados.h"
 #include "rede.h"
@@ -53,6 +53,38 @@ int main(int argc,char **argv){
   if(!strcmp(argv[2],"game-write")){
     assert(esportes_seguir_jogo(&e,1));return 0;
   }
+  if(!strncmp(argv[2],"stale-",6)){
+    assert(esportes_segue_jogo(&e));
+    /* Both loaded surfaces retain a scheduled snapshot while summary refreshes. */
+    eventos=calloc(1,sizeof *eventos);assert(eventos);
+    eventos[0]=*esportes_jogo_seguido(0);nEventos=1;
+    catalogo=calloc(1,sizeof *catalogo);assert(catalogo);nCatalogo=1;
+    rowCache[0].linha=0;rowCache[0].n=1;
+    rowCache[0].eventos=calloc(1,sizeof *eventos);assert(rowCache[0].eventos);
+    rowCache[0].eventos[0]=eventos[0];
+    esportes_seguir_lembretes();assert(lembrete_n()==1);
+    providerStart=eventos[0].inicio+86400;
+    providerState=!strcmp(argv[2],"stale-cancel");
+    drain();assert(requests==1);
+    esportes_seguir_lembretes();
+    if(providerState){
+      assert(!lembrete_n());
+      esportes_seguir_lembretes();assert(!lembrete_n());
+    }else{
+      assert(lembrete_n()==1&&lembrete_item(0)->ini==providerStart);
+    }
+    /* A later publication of an older fetch must not replace the refresh. */
+    EspJob older={0};older.eventos=eventos;older.n=1;
+    atualizarSeguidos(&older);
+    assert(esportes_jogo_seguido(0)->inicio==providerStart);
+    assert(esportes_jogo_seguido(0)->estado==(providerState?3:0));
+    /* A genuinely newer provider snapshot may reschedule/reinstate the game. */
+    eventos[0].obtido=esportes_jogo_seguido(0)->obtido+1;
+    eventos[0].inicio=providerStart+3600;eventos[0].fim=eventos[0].inicio+7200;
+    atualizarSeguidos(&older);esportes_seguir_lembretes();
+    assert(lembrete_n()==1&&lembrete_item(0)->ini==eventos[0].inicio);
+    puts("PASS stale loaded event/catalog snapshots versus refreshed summary");return 0;
+  }
   if(!strncmp(argv[2],"game-",5)){
     assert(!esportes_favoritos_times()&&esportes_segue_jogo(&e));
     const EspEvento *saved=esportes_jogo_seguido(0);assert(saved);
@@ -68,8 +100,9 @@ int main(int argc,char **argv){
       saved=esportes_jogo_seguido(0);assert(saved->inicio==providerStart&&!strcmp(saved->local,"Updated stadium"));
       assert(saved->nParticipantes==2&&!strcmp(saved->participantes[0].nome,"Flamengo"));
       esportes_seguir_lembretes();assert(lembrete_n()==1&&lembrete_item(0)->ini==providerStart);
+      uint64_t fetched=saved->obtido;assert(fetched);
       generation++;esportes_abrir_sessao();
-      saved=esportes_jogo_seguido(0);assert(saved&&saved->inicio==providerStart);
+      saved=esportes_jogo_seguido(0);assert(saved&&saved->inicio==providerStart&&saved->obtido==fetched);
       lembrete_carregar(profile);assert(lembrete_n()==1&&lembrete_item(0)->ini==providerStart);
       providerState=1;esportes_pedir_favoritos(1);drain();
       assert(esportes_jogo_seguido(0)->estado==3);

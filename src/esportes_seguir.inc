@@ -14,6 +14,18 @@ static int jogoIndice(const EspEvento *e){
   if(e)for(int i=0;i<nJogosSeguidos;i++)if(!strcmp(e->id,jogosSeguidos[i].id)&&!strcmp(e->ligaId,jogosSeguidos[i].ligaId)&&!strcmp(e->modalidade,jogosSeguidos[i].modalidade))return i;
   return -1;
 }
+/* All provider surfaces update the followed snapshot by fetch time, not publish order. */
+static void atualizarSeguidos(const EspJob *j){
+  int changed=0;
+  for(int k=0;k<j->n;k++){
+    int i=jogoIndice(&j->eventos[k]);
+    if(i<0 || j->eventos[k].obtido<=jogosSeguidos[i].obtido)continue;
+    jogosSeguidos[i]=j->eventos[k];
+    if(jogosSeguidos[i].fim<=jogosSeguidos[i].inicio)jogosSeguidos[i].fim=jogosSeguidos[i].inicio+3*3600;
+    changed=1;
+  }
+  if(changed)gravar();
+}
 int esportes_segue_jogo(const EspEvento *e){return jogoIndice(e)>=0;}
 int esportes_segue_evento(const EspEvento *e){return esportes_segue_jogo(e)||esportes_favorito(e,0)||esportes_favorito(e,1);}
 int esportes_jogos_seguidos_n(void){return nJogosSeguidos;}
