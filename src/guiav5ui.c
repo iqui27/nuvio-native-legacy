@@ -2185,7 +2185,7 @@ static GVCh *gv_canal_cartao(void){return gv_card>=gv_off&&gv_card<gv_off+gv_n?&
 static GVCh *gv_hero_channel(GVCh *selected){
   static GVCh watching;static int index=-1;
   if(!guia_preview_no_ar())return selected;
-  const char *id=player_id_canal(),*cid,*name,*logo,*group,*base;
+  const char *id=guia_canal_grupo_id(player_id_canal()),*cid,*name,*logo,*group,*base;
   if(!guia_canal_campos(index,&cid,&name,&logo,&group,&base)||strcmp(cid,id)){
     for(index=0;guia_canal_regra_campos(index,NULL,NULL,NULL,NULL,NULL);index++)
       if(guia_canal_campos(index,&cid,&name,&logo,&group,&base)&&!strcmp(cid,id))break;
@@ -2386,7 +2386,7 @@ static void gv_row(float y,GVCh *c,int foc,int pass){
     if(pr.w<60)continue;   /* a sliver at the edge: no lone ellipsis */
     int f=pf==p&&!gv_overlay(),past=p->fim<=now;
     int tc=past&&!f?150:243;
-    float bell=lembrete_achar(c->id,p->ini,p->titulo)>=0&&pr.w>90?30:0;
+    float bell=guia_lembrete_achar(c->id,p->ini,p->titulo)>=0&&pr.w>90?30:0;
     {TxtLinha l=txt_linha_corta_bruta(TXT_ILHA_CORPO,p->titulo,tc,tc,tc,255,pr.w-40-bell);
      txt_desenhar(l,pr.x+20,y+12);}
     char hi[8],hf[8],q[32];gv_hora(p->ini,hi,8);gv_hora(p->fim,hf,8);snprintf(q,sizeof q,"%s–%s",hi,hf);
@@ -2779,7 +2779,7 @@ static void gv_busca_resultado(const SpotTVResultado *r){
   for(int i=0;guia_canal_regra_campos(i,NULL,NULL,NULL,NULL,NULL);i++){
     const char *id;
     if(!guia_canal_campos(i,&id,NULL,NULL,NULL,NULL))continue;
-    if(!strcmp(id,r->id)){gv_lin=pos;break;}pos++;
+    if(!strcmp(id,guia_canal_grupo_id(r->id))){gv_lin=pos;break;}pos++;
   }
   gv_tfoc=r->tipo==SPOT_TV_PROGRAMA?r->inicio:0;
   if(gv_tfoc>time(NULL))gv_tdesl=(int)((gv_tfoc-gv_tbase())/1800)*30;
@@ -2945,7 +2945,7 @@ static void gv_filtrar(const char *grupo,const char *pagina){
 static int gv_lembrete(GVCh *c,EpgProg *p){
   if(!c||!p||p->ini<=time(NULL))return 0;
   char msg[200];
-  int r=lembrete_alternar(c->id,c->nome,p->titulo,c->base,p->ini,p->fim);
+  int r=guia_lembrete_alternar(c->id,c->nome,p->titulo,c->base,p->ini,p->fim);
   if(r==1)snprintf(msg,sizeof msg,i18n("Lembrete marcado: %s"),p->titulo);
   else if(r==0)snprintf(msg,sizeof msg,"%s",i18n("Lembrete cancelado"));
   else snprintf(msg,sizeof msg,"%s",i18n("Não cabe mais lembrete"));
@@ -2954,7 +2954,7 @@ static int gv_lembrete(GVCh *c,EpgProg *p){
 }
 static void gv_assistir(const char *id){
   if(!id||!id[0])return;
-  if(player_mini_no_guia_ativo()&&!strcmp(id,player_id_canal()))guia_pedir_canal_id(id);
+  if(player_mini_no_guia_ativo()&&!strcmp(guia_canal_grupo_id(id),guia_canal_grupo_id(player_id_canal())))guia_pedir_canal_id(id);
   else guia_pedir_preview_id(id);
 }
 static int gv_activate(void){

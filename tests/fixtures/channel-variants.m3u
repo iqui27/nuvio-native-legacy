@@ -1,0 +1,27 @@
+#EXTM3U
+#EXTINF:-1 tvg-id="hbo.br" group-title="Movies",HBO HD+
+https://example.invalid/hbo-hd.ts
+#EXTINF:-1 tvg-id="hbo.br" group-title="Movies",HBO FHD¹
+https://example.invalid/hbo-fhd1.ts
+#EXTINF:-1 tvg-id="hbo.br" group-title="Movies",HBO FHD²
+https://example.invalid/hbo-fhd2.ts
+#EXTINF:-1 tvg-id="hbo.br" group-title="Movies",HBO H265¹
+https://example.invalid/hbo-h265.ts
+#EXTINF:-1 tvg-id="hbo2.br" group-title="Movies",HBO 2 HD
+https://example.invalid/hbo2.ts
+#EXTINF:-1 tvg-id="hbo-family.br" group-title="Movies",HBO Family HD
+https://example.invalid/family.ts
+#EXTINF:-1 tvg-id="band-bahia.br" group-title="Local",BAND BAHIA HD¹
+https://example.invalid/bahia.ts
+#EXTINF:-1 tvg-id="band-litoral.br" group-title="Local",BAND LITORAL HD¹
+https://example.invalid/litoral.ts
+#EXTINF:-1 tvg-id="sportv.br" group-title="Sports",SporTV
+https://example.invalid/sportv.ts
+#EXTINF:-1 tvg-id="sportv2.br" group-title="Sports",SporTV 2
+https://example.invalid/sportv2.ts
+#EXTINF:-1 group-title="Local",Canção HD BACKUP 2
+https://example.invalid/cancao-hd.ts
+#EXTINF:-1 group-title="Local",CANCAO FHD ALT 3
+https://example.invalid/cancao-fhd.ts
+#EXTINF:-1 tvg-id="different.br" group-title="Movies",HBO HD
+https://example.invalid/different.ts

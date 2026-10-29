@@ -134,6 +134,27 @@ static void concluir_job(void) {
 }
 
 // ---- Stubs do caminho alcançado por processarFonteJob/escolherFonte* ----
+const char *i18n(const char *s){return s;}
+int stalker_e_id(const char *id){return id&&!strncmp(id,"stalker:",8);}
+int stream_atual(void){return fonteAtual;}
+const char *guia_canal_origem(void){return "";}
+const char *guia_canal_tipo(void){return "channel";}
+int guia_variantes(const char *id,GuiaVariante *out,int max){(void)id;(void)out;(void)max;return 0;}
+AddonsConsulta *addons_consulta_capturar(void){return NULL;}
+int addons_consulta_atual(const AddonsConsulta *q){(void)q;return 0;}
+void addons_consulta_liberar(AddonsConsulta *q){(void)q;}
+int addons_consultar_sessao(const char *id,const char *tipo,const char *base,int fios,int (*cancelado)(void *),void *ctx,Stream **out,uint64_t sessao){
+  (void)id;(void)tipo;(void)base;(void)fios;(void)cancelado;(void)ctx;(void)sessao;*out=NULL;return 0;
+}
+void player_definir_retomada_fonte(double pos){(void)pos;}
+void player_erro_fonte_motivo(const char *motivo,const char *ajuda){(void)motivo;(void)ajuda;errosPlayer++;}
+void video_definir_cabecalhos(const char *s){(void)s;}
+int stream_vod_renovar(const AddonsConsulta *q,const char *id,const char *tipo,int idx,unsigned ger,int (*cancelado)(void *),void *ctx,Stream *out){
+  (void)q;(void)id;(void)tipo;(void)idx;(void)ger;(void)cancelado;(void)ctx;(void)out;return -1;
+}
+int stream_vod_renovada_aplicar(int idx,unsigned ger,const Stream *s,uint64_t sessao){
+  (void)ger;(void)sessao;if(idx<0||idx>=listaN)return 0;lista[idx]=*s;return 1;
+}
 
 int stalker_resolver(const char *id, char *url, unsigned n) {
   pthread_mutex_lock(&resolverBarreira.trava);

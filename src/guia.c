@@ -292,6 +292,8 @@ typedef struct {
   short epgMetodo;      // EPG_M_* do casamento
   unsigned char sug;    // sem genero da fonte nem da heuristica: candidato a secao do Jev
   const char *grupoOriginal; // fallback before suggestions; persist this in source cache
+  int varianteGrupo, varianteProxima; // Published indexes + 1; zero means ungrouped.
+  const char *nomeGrupo;
 } GCanal;
 
 typedef struct {
@@ -817,21 +819,32 @@ static void favMigrar(void) {
   }
 }
 
+static void variantesMontar(void);
+static int varianteRaiz(int i) { return canais[i].varianteGrupo ? canais[i].varianteGrupo - 1 : i; }
+static int varianteVisivel(int i) { return varianteRaiz(i) == i; }
+static const char *canalNome(const GCanal *c) { return c->nomeGrupo ? c->nomeGrupo : c->nome; }
 static void favAplicar(void) {
+  for (int i = 0; i < nCanais; i++) canais[i].fav = favIndiceCanal(&canais[i]) >= 0;
   for (int i = 0; i < nCanais; i++)
-    canais[i].fav = favIndiceCanal(&canais[i]) >= 0;
+    if (canais[i].fav) canais[varianteRaiz(i)].fav = 1;
 }
 
 static void vistaMontar(void);
 static void favAlternar(GCanal *c) {
-  int i = favIndiceCanal(c);
-  if (i >= 0) { memmove(&fav[i], &fav[i + 1], (size_t)(nFav - i - 1) * sizeof fav[0]); nFav--; c->fav = 0; }
-  else if (nFav < G_MAX_FAV) {
+  int raiz = varianteRaiz((int)(c-canais)), i, tinha = 0;
+  for (int j = 0; j < nCanais; j++) if (varianteRaiz(j) == raiz && favIndiceCanal(&canais[j]) >= 0) tinha = 1;
+  if (tinha) {
+    for (int j = 0; j < nCanais; j++) if (varianteRaiz(j) == raiz)
+      while ((i = favIndiceCanal(&canais[j])) >= 0) {
+        memmove(&fav[i], &fav[i + 1], (size_t)(nFav - i - 1) * sizeof fav[0]); nFav--;
+      }
+  } else if (nFav < G_MAX_FAV) {
     snprintf(fav[nFav].chave, sizeof fav[nFav].chave, "%s", chaveDo(c));
     snprintf(fav[nFav].id, sizeof fav[nFav].id, "%s", c->id);
     nFav++; c->fav = 1;
   }
   favGravar();
+  favAplicar();
   nFavOrd = 0;
   for (i = 0; i < nCanais && nFavOrd < G_MAX_FAV; i++)
     if (canais[i].fav) favOrd[nFavOrd++] = i;
@@ -1068,6 +1081,7 @@ static int *vis;  static int nVis, capVis;
 static int *zapL; static int nZapL, capZapL;
 
 #include "guia_grupos.inc"
+#include "guia_variantes.inc"
 #include "guia_categorias.inc"
 
 static int mostraFav(void) {
@@ -1080,7 +1094,11 @@ static int linhaCatDe(int l) {  // indice em cats[], -1 = favoritos
 }
 static int linhaN(int l) {
   if (l < 0 || l >= nLinhas()) return 0;
-  return linhaEhFav(l) ? nFavOrd : catN[linhaCatDe(l)];
+  if (linhaEhFav(l)) return nFavOrd;
+  if (!variantesAtivas) return catN[linhaCatDe(l)];
+  int n = 0, cat = linhaCatDe(l);
+  for (int i = catIni[cat]; i < catIni[cat] + catN[cat]; i++) n += varianteVisivel(i);
+  return n;
 }
 // "Esportes · Xtream" em Todas quando ha mais de uma fonte (decisao 2: grupos
 // de mesmo nome de fontes diferentes sao linhas diferentes, e a tela diz qual).
@@ -1098,7 +1116,11 @@ static const char *linhaNome(int l) {
 static GCanal *linhaItem(int l, int c) {
   if (c < 0 || c >= linhaN(l)) return NULL;
   if (linhaEhFav(l)) return &canais[favOrd[c]];
-  return &canais[catIni[linhaCatDe(l)] + c];
+  if (!variantesAtivas) return &canais[catIni[linhaCatDe(l)] + c];
+  int cat = linhaCatDe(l);
+  for (int i = catIni[cat]; i < catIni[cat] + catN[cat]; i++)
+    if (varianteVisivel(i) && !c--) return &canais[i];
+  return NULL;
 }
 
 static int vetorCabe(int **v, int *cap, int n) {
@@ -1119,16 +1141,19 @@ static void vistaMontar(void) {
   categoriasGarantir();
   nFavOrd=0;
   for(i=0;i<nCanais && nFavOrd<G_MAX_FAV;i++)
-    if(canais[i].fav && fonteVisivel(canais[i].fonte) && !categoriaOculta(canais[i].cat))favOrd[nFavOrd++]=i;
+    if(varianteVisivel(i) && canais[i].fav && fonteVisivel(canais[i].fonte) && !categoriaOculta(canais[i].cat))favOrd[nFavOrd++]=i;
   nVis = 0; nZapL = 0;
   if (!vetorCabe(&vis, &capVis, nCats) || !vetorCabe(&zapL, &capZapL, nCanais)) return;
   if (filtro != G_FILTRO_FAV)
     for (i = 0; i < nCats; i++)
-      if (catN[i] > 0 && fonteVisivel(cats[i].fonte) && !categoriaOculta(i) && (filtro < 0 || cats[i].fonte == filtro)) vis[nVis++] = i;
+      if (catN[i] > 0 && fonteVisivel(cats[i].fonte) && !categoriaOculta(i) && (filtro < 0 || cats[i].fonte == filtro)) {
+        for (int j = catIni[i]; j < catIni[i] + catN[i]; j++)
+          if (varianteVisivel(j)) { vis[nVis++] = i; break; }
+      }
   if (filtro == G_FILTRO_FAV) for (i = 0; i < nFavOrd; i++) zapL[nZapL++] = favOrd[i];
   else
     for (i = 0; i < nCanais; i++)
-      if (fonteVisivel(canais[i].fonte) && !categoriaOculta(canais[i].cat) && (filtro < 0 || canais[i].fonte == filtro)) zapL[nZapL++] = i;
+      if (varianteVisivel(i) && fonteVisivel(canais[i].fonte) && !categoriaOculta(canais[i].cat) && (filtro < 0 || canais[i].fonte == filtro)) zapL[nZapL++] = i;
 }
 
 static void filtroDefinir(int f) {
@@ -2159,7 +2184,7 @@ static void *fioGuia(void *u) {
       char id[96];
       G5Item *g = &cargaG5[i];
       snprintf(id, sizeof id, "g5live:%s", g->id);
-      GCru c = { id, g->name, g->poster, "", g->epg, "", "", "", "", g->group, "tv", i + 1, 0 };
+      GCru c = { id, g->name, g->poster, "", g->epg, "", g->url, "", "", g->group, "tv", i + 1, 0 };
       if (sCanalAdd(fl, &c)) ok = 1;
     }
   }
@@ -2253,6 +2278,7 @@ static void logosEmprestar(void) {
 // linha seja uma janela contigua, e refaz Favoritos, contas e a vista. Roda ao
 // publicar e ao desligar um addon no painel (que tira canais sem esperar o fio).
 static void empacotar(void) {
+  free(canalIndice);canalIndice=NULL;canalIndiceCap=0;
   canaisRevisao++;
   grupoNContas = iptv_contas(grupoContas, IPTV_MAX_CONTAS);
   for(int f=0;f<nLtvF;f++)grupoOrdFonte[f]=fonteOrdem(f);
@@ -2317,6 +2343,7 @@ static void empacotar(void) {
   for (i = 0; i < nCanais; i++) if (canais[i].fonte >= 0 && canais[i].fonte < nLtvF) ltvF[canais[i].fonte].nCanais++;
   for (i = 0; i < nCats; i++) if (cats[i].fonte >= 0 && cats[i].fonte < nLtvF) ltvF[cats[i].fonte].nGrupos++;
   logosEmprestar();
+  variantesMontar();
   favAplicar();
   nFavOrd = 0;
   for (i = 0; i < nCanais && nFavOrd < G_MAX_FAV; i++)
@@ -2903,6 +2930,14 @@ static void canalParaItem(const GCanal *c, CatItem *dst);
 static GCanal *canalPorId(const char *id) {
   int i;
   if (!id || !id[0]) return NULL;
+  if (canalIndiceCap) {
+    unsigned slot=ltv_hash(id)&(canalIndiceCap-1);
+    while ((i=canalIndice[slot]-1)>=0) {
+      if (!strcmp(canais[i].id,id) && fonteAtiva(canais[i].fonte)) return &canais[i];
+      slot=(slot+1)&(canalIndiceCap-1);
+    }
+    return NULL;
+  }
   for (i = 0; i < nCanais; i++) if (fonteAtiva(canais[i].fonte) && !strcmp(canais[i].id, id)) return &canais[i];
   return NULL;
 }
@@ -2928,7 +2963,23 @@ int guia_variantes(const char *id, GuiaVariante *out, int max) {
   GCanal *c = canalPorId(id);
   char base[160], outra[160];
   int i, j, k, n = 0;
-  if (!c || !fonteAtiva(c->fonte) || max < 1 || !xtream_e_id(c->id) || !gLiberado(c)) return 0;
+  if (!c || !fonteAtiva(c->fonte) || max < 1 || !gLiberado(c)) return 0;
+  if (c->varianteGrupo) {
+    GCanal *best=varianteMelhor(c);
+    int root=varianteRaiz((int)(c-canais));
+    for(int pass=0;pass<2;pass++)
+      for(i=root;i>=0&&n<max;i=canais[i].varianteProxima-1) {
+        GCanal *v=&canais[i];
+        if((pass==0)!=(v==best)||!gLiberado(v))continue;
+        int at=n;
+        while(at>1 && varianteScore(v) > varianteAlturaScore(out[at-1].altura)) {out[at]=out[at-1];at--;}
+        snprintf(out[at].id,sizeof out[at].id,"%s",v->id);
+        snprintf(out[at].nome,sizeof out[at].nome,"%s",v->nome);
+        out[at].altura=nv_res_do_texto(v->nome);n++;
+      }
+    goto reservas;
+  }
+  if (!xtream_e_id(c->id)) return 0;
   nv_nome_base(c->nome, base, sizeof base);
   snprintf(out[n].id, sizeof out[n].id, "%s", c->id);
   snprintf(out[n].nome, sizeof out[n].nome, "%s", c->nome);
@@ -2939,16 +2990,19 @@ int guia_variantes(const char *id, GuiaVariante *out, int max) {
     if (&canais[i] == c || canais[i].fonte != c->fonte ||
         guiafiltro_canal_oculto_fonte(&fltLive, ltvF[canais[i].fonte].chave, canais[i].id) || !xtream_e_id(canais[i].id)) continue;
     nv_nome_base(canais[i].nome, outra, sizeof outra);
-    if (strcmp(base, outra)) continue;
+    if (strcmp(base, outra) || !gLiberado(&canais[i])) continue;
+    if(c->epgId && canais[i].epgId && c->epgId[0] && canais[i].epgId[0] && strcasecmp(c->epgId,canais[i].epgId))continue;
     snprintf(out[n].id, sizeof out[n].id, "%s", canais[i].id);
     snprintf(out[n].nome, sizeof out[n].nome, "%s", canais[i].nome);
     out[n].altura = nv_res_do_texto(canais[i].nome);
     n++;
   }
   // Reservas que o filtro "Preferir 4K" escondeu, da maior para a menor.
+reservas:
   for (i = 0, k = n; i < nAlts; i++) {
     int altura;
-    if (strcmp(alts[i].dono, c->id) || guiafiltro_canal_oculto_fonte(&fltLive, ltvF[c->fonte].chave, alts[i].id)) continue;
+    if (strcmp(alts[i].dono, c->id) || guiafiltro_canal_oculto_fonte(&fltLive, ltvF[c->fonte].chave, alts[i].id) ||
+        !g5ui_channel_allowed(alts[i].id,alts[i].nome,c->cat>=0?cats[c->cat].nome:"",c->base)) continue;
     altura = nv_res_do_texto(alts[i].nome);
     // Keep the best reserves while scanning, before applying the caller's cap.
     for (j = k; j < n && out[j].altura >= altura; j++) {}
@@ -3038,7 +3092,7 @@ static char pedidoBase[600], pedidoTipo[16];
 // entries of the same channel (two sources, favorites) share the id but not
 // the GCanal*, and canalPorId() always returns the first.
 static int previewFocoEh(const char *id) {
-  return previewId[0] && id && id[0] && !strcmp(previewId, id);
+  return previewId[0] && id && id[0] && !strcmp(guia_canal_grupo_id(previewId), guia_canal_grupo_id(id));
 }
 
 static void previewPedir(GCanal *c) {
@@ -3162,13 +3216,17 @@ void guia_focar_id(const char *id) {
   int l, c, volta;
   if (!id || !*id) return;
   snprintf(focoPend, sizeof focoPend, "%s", id);
+  GCanal *target=canalPorId(id);
+  GCanal *root=target?&canais[varianteRaiz((int)(target-canais))]:NULL;
   // Canal fora da fonte filtrada (o overlay focando o canal no ar, que veio de
   // outra fonte): o filtro volta para Todas e o foco acha o canal.
   for (volta = 0; volta < 2; volta++) {
     for (l = 0; l < nLinhas(); l++)
       for (c = 0; c < linhaN(l); c++)
-        if (!strcmp(linhaItem(l, c)->id, id)) { focoLin = l; focoCol = c; return; }
-    if (filtro == G_FILTRO_TODAS || !canalPorId(id)) return;
+        if (linhaItem(l,c)==root || !strcmp(linhaItem(l,c)->id,id)) {
+          focoLin = l; focoCol = c; return;
+        }
+    if (filtro == G_FILTRO_TODAS || !target) return;
     filtroDefinir(G_FILTRO_TODAS);
   }
 }
@@ -3279,6 +3337,8 @@ int guia_pediu_canal(CatItem *saida) {
 
 // --- navegacao ------------------------------------------------------------------
 static void canalParaItem(const GCanal *c, CatItem *dst) {
+  const char *name=canalNome(&canais[varianteRaiz((int)(c-canais))]);
+  c=varianteMelhor(c);
   memset(dst, 0, sizeof *dst);
   snprintf(dst->imdb,    sizeof dst->imdb,    "%s", c->id);
   // O CatItem tipo so conhece dois nomes de canal (ver player.c, home.c e os
@@ -3287,7 +3347,7 @@ static void canalParaItem(const GCanal *c, CatItem *dst) {
   // cru para a consulta de stream esta em GCanal.tipo / guia_canal_tipo().
   snprintf(dst->tipo,    sizeof dst->tipo,    "%s",
            !strcasecmp(c->tipo, "tv") ? "tv" : "channel");
-  snprintf(dst->titulo,  sizeof dst->titulo,  "%s", c->nome);
+  snprintf(dst->titulo,  sizeof dst->titulo,  "%s", name);
   snprintf(dst->poster,  sizeof dst->poster,  "%s", c->logo);
   snprintf(dst->backdrop,sizeof dst->backdrop,"%s", c->logo);
   snprintf(dst->sinopse, sizeof dst->sinopse, "%s", c->desc);
@@ -3343,7 +3403,7 @@ static void acaoOk(void) {
   EpgProg p;
   if (c && programaFocado(c, &p) && p.ini > time(NULL)) {
     char msg[200];
-    int r = lembrete_alternar(c->id, c->nome, p.titulo, c->base, p.ini, p.fim);
+    int r = guia_lembrete_alternar(c->id, c->nome, p.titulo, c->base, p.ini, p.fim);
     if (r == 1) snprintf(msg, sizeof msg, i18n("Lembrete marcado: %s"), p.titulo);
     else if (r == 0) snprintf(msg, sizeof msg, "%s", i18n("Lembrete cancelado"));
     else snprintf(msg, sizeof msg, "%s", i18n("Não cabe mais lembrete"));
@@ -3377,7 +3437,7 @@ static void pedirCanal(GCanal *c) {
   // OK NO CANAL QUE JA TOCA (no preview, ou atras da faixa): tela cheia com o
   // MESMO fluxo, sem recarregar nada. Qualquer outro canal abre pelo caminho
   // de sempre — o player_abrir da sessao nova solta o preview.
-  if (!strcmp(c->id, player_id_canal()) &&
+  if (!strcmp(guia_canal_grupo_id(c->id), guia_canal_grupo_id(player_id_canal())) &&
       (player_mini_no_guia_ativo() || player_aberto())) {
     // Na faixa, o segundo OK (no canal que toca) abre o guia completo, como o
     // AZUL — o caminho de quem nao tem tecla colorida.
@@ -3405,6 +3465,7 @@ static void pedirCanal(GCanal *c) {
 // no ar fora da vista (veio de outra fonte): o zap anda na lista inteira.
 static int zapAlvo(const char *idAtual, int dir, CatItem *saida, int aplicar) {
   int i, alvo = -1, n = nZapL, inteira = 0, idx;
+  idAtual=guia_canal_grupo_id(idAtual);
   if (!saida || estado != G_PRONTO || nCanais < 1) return 0;
   for (i = 0; i < n; i++)
     if (!strcmp(canais[zapL[i]].id, idAtual ? idAtual : "")) { alvo = i; break; }
@@ -3417,7 +3478,7 @@ static int zapAlvo(const char *idAtual, int dir, CatItem *saida, int aplicar) {
   // toques) e 0 devolve o proprio canal (recarregar a fonte).
   alvo = aovivo_ordem(n, alvo, dir);
   idx = inteira ? alvo : zapL[alvo];
-  for (i = 0; i < n && !gLiberado(&canais[idx]); i++) {   // Guide v5 locks: skip
+  for (i = 0; i < n && (!varianteVisivel(idx) || !gLiberado(&canais[idx])); i++) {   // Guide v5 locks: skip
     alvo = aovivo_ordem(n, alvo, dir < 0 ? -1 : 1);
     idx = inteira ? alvo : zapL[alvo];
   }
@@ -3439,7 +3500,7 @@ int guia_zap_ver(const char *idAtual, int dir, CatItem *saida) {
 // CANAL DE LISTA M3U (M9): o id e "m3u:<chave da fonte>:<hash>" e a URL, o
 // User-Agent e o Referer ficam no canal (arena), nunca no log. 1 = achou.
 int guia_e_m3u(const char *id) {
-  const GCanal *c = id && (!strncmp(id,"m3u:",4) || !strncmp(id,"nvm3u:",6)) ? canalPorId(id) : NULL;
+  const GCanal *c = id && (!strncmp(id,"m3u:",4) || !strncmp(id,"nvm3u:",6) || !strncmp(id,"g5live:",7)) ? canalPorId(id) : NULL;
   return c && c->fonte>=0 && c->fonte<nLtvF && ltvF[c->fonte].tipo==LTV_M3U && c->url && c->url[0];
 }
 int guia_m3u_canal(const char *id, char *url, size_t nu, char *ua, size_t nua, char *ref, size_t nr) {
@@ -3502,6 +3563,7 @@ int guia_info_canal(const char *id, int *numero, int *total, char *cat, size_t n
   if (estado != G_PRONTO || nCanais < 1 || !id || !id[0]) return 0;
   for (i = 0; i < nCanais; i++) if (!strcmp(canais[i].id, id)) break;
   if (i >= nCanais) return 0;
+  i=varianteRaiz(i);
   // O NUMERO DO PROVEDOR (decisao 7): tvg-chno / num do Xtream, ou a posicao
   // na fonte. O total e o da fonte.
   if (numero) *numero = canais[i].numero;
@@ -3511,7 +3573,9 @@ int guia_info_canal(const char *id, int *numero, int *total, char *cat, size_t n
 }
 
 int guia_e_favorito(const char *id) {
-  if (!favLido) favLer();
+  if (!favLido) { favLer(); favAplicar(); }
+  GCanal *c = canalPorId(id);
+  if (c) return canais[varianteRaiz((int)(c-canais))].fav;
   return id && id[0] && favIndice(id) >= 0;
 }
 
@@ -3541,7 +3605,9 @@ int guia_programas(const char *id, time_t t, EpgProg *out, int max) {
 // As telas v5 do guia principal pedem por id, nao por ponteiro interno.
 int guia_pedir_canal_id(const char *id) {
   GCanal *c = canalPorId(id);
-  if (!c || !guia_busca_elegivel((int)(c-canais))) return 0;
+  if (!c) return 0;
+  c=&canais[varianteRaiz((int)(c-canais))];
+  if (!guia_busca_elegivel((int)(c-canais))) return 0;
   pedirCanal(c);
   return pediuCanal;
 }
@@ -5646,7 +5712,7 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
     // PROGRAMA DO FUTURO: a linha diz o que o OK faz aqui — lembrar, nao
     // assistir — e se o lembrete ja esta marcado.
     if (tem && !noAr && p.ini > agoraT) {
-      int marcado = lembrete_achar(c->id, p.ini, p.titulo) >= 0;
+      int marcado = guia_lembrete_achar(c->id, p.ini, p.titulo) >= 0;
       TxtLinha t = txt_linha(TXT_DET_META, marcado ? i18n("Lembrete marcado  ·  OK cancela")
                                                    : i18n("OK avisa quando começar"),
                              marcado ? 236 : 196, marcado ? 237 : 198, marcado ? 242 : 206, 255);
@@ -6683,7 +6749,7 @@ static void desenharLinhaLista(GCanal *c, float y, int focada, float a,
         float tx = b.x + 14.0f;
         // SINO do lembrete no canto direito da celula. A grade que mudou o
         // horario do programa leva o lembrete junto (ver lembrete.h).
-        int li = ps[k].ini > agoraT ? lembrete_achar(c->id, ps[k].ini, ps[k].titulo) : -1;
+        int li = ps[k].ini > agoraT ? guia_lembrete_achar(c->id, ps[k].ini, ps[k].titulo) : -1;
         float sinoW = li >= 0 && b.w > 64.0f ? 30.0f : 0.0f;
         TxtLinha t = txt_linha_corta_bruta(textoRetrato ? TXT_V2_ROT : TXT_CW_TITULO, ps[k].titulo, ct, ct, ct, 255,
                                      b.x + b.w - 14.0f - tx - sinoW);
@@ -7129,10 +7195,7 @@ static void desenharBanda(float a, Uint32 agora) {
     } }
 
   { TxtLinha t = txt_linha(TXT_G30B, "Guia de canais", 243, 242, 239, 255);
-    const char *k[3] = { "OK", "OK", "Voltar" },
-      *r[3] = { "Troca de canal", "Guia completo", "Fechar" };
-    txt_desenhar_alpha(t, G_AREA_X, topo - 2.0f, a);
-    plrui_dicas(k, r, 3, G_AREA_DIR, topo - 2.0f + (float)t.h * 0.5f, 1, a); }
+    txt_desenhar_alpha(t, G_AREA_X, topo - 2.0f, a); }
   desenharReguaEm(a, ini, yR);
 
   gCel = G_B_CEL;
@@ -7885,44 +7948,6 @@ void guia_desenhar(Uint32 agora) {
              NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, a);
   }
 
-  // (A gaveta de categorias vem depois da barra de ajuda, por cima de tudo.)
-
-  // Barra de ajuda — a resposta ao "explicar no componente como abrir o
-  // overlay": as teclas que o dono precisa lembrar ficam escritas na tela.
-  // No modo lista ESQUERDA/DIREITA ganharam funcao (a janela de tempo) e a
-  // barra tem de dizer. O amarelo nao aparece aqui de proposito: o controle
-  // segmentado do cabecalho e o caminho que se ve, e a barra ja esta longa.
-#ifdef NV_ANDROID
-#define GUIA_FECHA_L i18n("OK troca de canal  ·  segure OK = favorito  ·  \xe2\x86\x90\xe2\x86\x92 adianta a grade  ·  segure \xe2\x86\x91\xe2\x86\x93 pula seção  ·  Voltar ou CH+ fecha")
-#define GUIA_FECHA_G i18n("OK troca de canal  ·  segure OK = favorito  ·  segure \xe2\x86\x91\xe2\x86\x93 pula seção  ·  Voltar ou CH+ fecha")
-#else
-#define GUIA_FECHA_L i18n("OK troca de canal  ·  segure OK = favorito  ·  \xe2\x86\x90\xe2\x86\x92 adianta a grade  ·  segure \xe2\x86\x91\xe2\x86\x93 pula seção  ·  Voltar ou Azul fecha")
-#define GUIA_FECHA_G i18n("OK troca de canal  ·  segure OK = favorito  ·  segure \xe2\x86\x91\xe2\x86\x93 pula seção  ·  Voltar ou Azul fecha")
-#endif
-  { const char *dica = modoLista
-      ? (overlay
-         ? GUIA_FECHA_L
-         : i18n("OK assiste  ·  segure OK = opções  ·  \xe2\x86\x90\xe2\x86\x92 adianta a grade  ·  \xe2\x86\x91 fontes  ·  Voltar sai"))
-      : (overlay
-         ? GUIA_FECHA_G
-         : i18n("OK assiste  ·  segure OK = opções  ·  \xe2\x86\x91 fontes  ·  segure \xe2\x86\x91\xe2\x86\x93 pula seção  ·  Voltar sai"));
-    if (dicaDesde && SDL_GetTicks() - dicaDesde < G_DICA_MS)
-      dica = i18n("← no primeiro canal: opções do guia");
-    TxtLinha t = txt_linha_corta_bruta(TXT_CAPTION, dica, 128, 130, 138, 255,
-                                 G_AREA_W);
-    txt_desenhar_alpha(t, G_AREA_X, NV_TELA_H - 48.0f, a);
-    // O VERDE do diagnostico da Live TV, na ponta direita quando cabe — so na
-    // LG, que tem a tecla. No Android e no navegador o caminho e o botao
-    // Diagnostico da barra de cima.
-#if !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__) && !defined(NV_TPK)
-    if (!overlay) {
-      TxtLinha v = txt_linha(TXT_CAPTION, i18n("Verde: diagnóstico da Live TV"), 128, 130, 138, 255);
-      if ((float)t.w + 48.0f + (float)v.w <= G_AREA_W)
-        txt_desenhar_alpha(v, G_AREA_X + G_AREA_W - (float)v.w, NV_TELA_H - 48.0f, a);
-    }
-#endif
-    }
-
   if ((estado == G_PRONTO || estado == G_BAIXANDO) && nLtvF > 0) {
     desenharFontes(a);
     if (filtro == G_FILTRO_FAV && !nFavOrd) {
@@ -7968,8 +7993,8 @@ int guia_buscar_canais(const char *alvoNorm, int *indices, int max) {
   // cacheLer); o fio de carga mexe em sCanais. Ter canal basta.
   if (nCanais < 1) return 0;
   for (i = 0; i < nCanais && n < max; i++) {
-    busca_normalizar(canais[i].nome, nome, sizeof nome);
-    if (gLiberado(&canais[i]) && strstr(nome, alvoNorm)) indices[n++] = i;
+    busca_normalizar(canalNome(&canais[i]), nome, sizeof nome);
+    if (varianteVisivel(i) && gLiberado(&canais[i]) && strstr(nome, alvoNorm)) indices[n++] = i;
   }
   return n;
 }
@@ -8011,8 +8036,10 @@ int guia_fonte_alternar(int i){
 int guia_canal_campos(int i, const char **id, const char **nome, const char **logo,
                       const char **cat, const char **base) {
   if (i < 0 || i >= nCanais) return 0;
-  if(!fonteAtiva(canais[i].fonte)||!gLiberado(&canais[i]))return 0;
-  return guia_canal_regra_campos(i,id,nome,logo,cat,base);
+  if(!varianteVisivel(i)||!fonteAtiva(canais[i].fonte)||!gLiberado(&canais[i]))return 0;
+  int ok = guia_canal_regra_campos(i,id,nome,logo,cat,base);
+  if (nome) *nome = canalNome(&canais[i]);
+  return ok;
 }
 /* Only the PIN-authenticated parental editor may use the unfiltered inventory. */
 int guia_canal_regra_campos(int i,const char **id,const char **nome,const char **logo,const char **cat,const char **base){
@@ -8088,7 +8115,7 @@ void guia_recarregar(int limparLista) {
 }
 
 int guia_busca_elegivel(int i) {
-  if (i < 0 || i >= nCanais) return 0;
+  if (i < 0 || i >= nCanais || !varianteVisivel(i)) return 0;
   const GCanal *c = &canais[i];
   if (c->fonte < 0 || c->fonte >= nLtvF) return 0;
   return fonteVisivel(c->fonte) && fonteAtiva(c->fonte) && gLiberado(c) && !categoriaOculta(c->cat) &&

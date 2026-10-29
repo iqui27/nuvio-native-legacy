@@ -770,6 +770,7 @@ typedef enum {
   AJ_FONTE_OCULTAR_DV, AJ_FONTE_OCULTAR_AUDIO, AJ_FONTE_OCULTAR_VIDEO, // Device-local, append-only.
   AJ_TV_HOME, // Device-local, append-only; enabled by default.
   AJ_PS_TAMANHO, // Device-local profile avatar size; append-only.
+  AJ_LIVETV_AGRUPAR, // Profile-local, append-only; enabled by default.
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1936,6 +1937,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Ocultar vídeo incompatível", V_AUTO_LIGA, 3),
   ESC("Mostrar na tela inicial do Android TV", V_LIGA, 2),
   ESC("Tamanho dos perfis", V_PS_TAMANHO, 3),
+  ESC("Agrupar variantes dos canais", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2283,6 +2285,7 @@ static const char *CHAVE[] = {
   "fonteOcultarDvLocal", "fonteOcultarAudioLocal", "fonteOcultarVideoLocal",
   "androidTvHomeLocal",
   "psTamanhoLocal",
+  "liveTvGroupVariantsLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2567,7 +2570,7 @@ static int ajIptvLinhaVisivel(int op) {
   if(op==AJ_IPTV_CANCELAR || op==AJ_IPTV_NOME || op==AJ_IPTV_ATIVA)return iptvForm.tipo!=0;
   int tipo=ajIptvCampoTipo(op);
   if(tipo)return iptvForm.tipo==tipo && (!iptvForm.nova || op!=AJ_XTREAM_CONTA);
-  if(op==AJ_GUIA_CATEGORIAS || op==AJ_EPG_MEMORIA || op==AJ_GUIA_ORDEM || op==AJ_IPTV_ORDEM || op==AJ_GUIA_FONTE || op==AJ_GUIA_RECARREGAR || op==AJ_EPG_PAIS ||
+  if(op==AJ_LIVETV_AGRUPAR || op==AJ_GUIA_CATEGORIAS || op==AJ_EPG_MEMORIA || op==AJ_GUIA_ORDEM || op==AJ_IPTV_ORDEM || op==AJ_GUIA_FONTE || op==AJ_GUIA_RECARREGAR || op==AJ_EPG_PAIS ||
      op==AJ_LIVETV_DIAG || op==AJ_LIVETV_RES || op==AJ_LIVETV_ESPERA ||
      op==AJ_LIVETV_FORMATO || op==AJ_LIVETV_MODO || op==AJ_LIVETV_PROXY)
     return !iptvForm.tipo;
@@ -3862,6 +3865,7 @@ int ajustes_guia_previa_destacar(void) { return valor[AJ_GUIA_PREVIA_DESTACAR] =
 void ajustes_definir_guia_previa_destacar(int l) { valor[AJ_GUIA_PREVIA_DESTACAR] = l ? 0 : 1; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
 int ajustes_guia_previa_sem_som(void) { return valor[AJ_GUIA_PREVIA_SOM] == 0; }
 void ajustes_definir_guia_previa_sem_som(int l) { valor[AJ_GUIA_PREVIA_SOM] = l ? 0 : 1; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
+int ajustes_livetv_agrupar(void) { return lig(AJ_LIVETV_AGRUPAR); }
 int ajustes_guia_dias(void) { return valor[AJ_GUIA_DIAS] ? 3 : 1; }
 void ajustes_definir_guia_dias(int dias) { valor[AJ_GUIA_DIAS] = dias == 3; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
 void  ajustes_livetv_aplicar_proxy(int l) { valor[AJ_LIVETV_PROXY] = l ? 0 : 1; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
@@ -6241,7 +6245,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_URL_LISTA: case AJ_URL_M3U_ADD: case AJ_URL_XMLTV_ADD: case AJ_URL_REM: /* por perfil, em ltv-urls-p<N>.txt */
     case AJ_LIVETV_RES: case AJ_LIVETV_FORMATO: case AJ_LIVETV_ESPERA:
     case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY: /* rede e provedor desta casa: o web nao tem */
-    case AJ_LIVETV_SUGERIR:
+    case AJ_LIVETV_SUGERIR: case AJ_LIVETV_AGRUPAR:
     case AJ_GUIA_PREVIA_DESTACAR: case AJ_GUIA_PREVIA_SOM: case AJ_GUIA_DIAS:
     case AJ_GUIA_PREVIA_GRANDE: /* tamanho do preview do guia: so este port tem */
     case AJ_HOME_LAYOUT:    /* a Dinamica nao tem par na conta (selected_layout) */
@@ -8453,6 +8457,7 @@ static const char *ajudaOpcaoBase(int op) {
       return "Mostra esta nota na linha do título, com a marca e a escala do próprio site. Se a linha não couber, saem primeiro as menos importantes. A aba de notas continua mostrando todas.";
     case AJ_GUIA_PREVIA_DESTACAR: return "Quando a prévia do canal começa no Guia de TV: ao destacar ou só ao selecionar. Ao destacar é mais rápido; ao selecionar poupa rede e evita a prévia enquanto você só passa pela lista.";
     case AJ_GUIA_PREVIA_SOM: return "A prévia do canal no Guia de TV toca sem som. Desligado, o áudio do canal entra junto com a prévia.";
+    case AJ_LIVETV_AGRUPAR: return "Mostra um canal por linha e reúne as qualidades e codecs na lista de fontes. Desligue para mostrar cada variante separadamente.";
     case AJ_GUIA_DIAS: return "Quantos dias de programação o Guia de TV carrega e guarda. Um dia é mais leve e abre mais rápido; três dias deixam ver o que vem nos próximos dias.";
     default: return "Use as setas laterais para escolher. A preferência é aplicada ao alterar o valor.";
   }
@@ -10061,6 +10066,7 @@ static int definirValorDireto(int op, int novo) {
     if (!ok) { valor[op] = antes; valor[AJ_LEG2_POSICAO] = posicaoAntes; memoriaEscolhida = memoriaAntes; bibliotecaFonteEscolhida = bibliotecaAntes; return 0; } }
   if ((op == AJ_DV_MKV || op == AJ_DV7) && antes != 0 && novo == 0) video_dv_guard_reiniciar();
   if (op == AJ_LIVETV_SUGERIR) guia_sugestoes_mudaram();
+  if (op == AJ_LIVETV_AGRUPAR) guia_reordenar();
   if (op == AJ_FIL_LIMITE) {
     fil_ajustar_limite(novo);
     valor[op] = fil_limite_gravado();

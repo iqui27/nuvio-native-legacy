@@ -22,6 +22,7 @@
 
 typedef struct Stream {
   char rotulo[192];     // Nome curto da fonte
+  char canalVariante[80]; // Provider channel ID, for successful live variant recall.
   char provedor[96];
   // Origem real da instancia do addon, sem URL/token nem inferencia pelo nome.
   char addonChave[FONTEFALHA_CHAVE];

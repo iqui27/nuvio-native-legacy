@@ -34,6 +34,7 @@ int g5_parse_xtream_item(const char *p,const char *end,int kind,G5Item *out){
   snprintf(it.source,sizeof it.source,"xtream");
   number_id(p,end,kind==G5_SERIES?"series_id":"stream_id",it.id,sizeof it.id);
   js_texto(p,end,"name",it.name,sizeof it.name);
+  js_texto(p,end,"epg_channel_id",it.epg,sizeof it.epg);
   number_id(p,end,"category_id",it.group,sizeof it.group);
   js_texto(p,end,kind==G5_SERIES?"cover":"stream_icon",it.poster,sizeof it.poster);
   if(!it.poster[0])js_texto(p,end,"movie_image",it.poster,sizeof it.poster);

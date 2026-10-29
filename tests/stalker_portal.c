@@ -1,4 +1,3 @@
-#include "stub_perfisessao.h"
 // Stalker (src/stalker.c): normalizacao do portal e varredura de rotas (#237),
 // sem rede e sem disco. O prefixo de caminho colado ("/meuportal/c/") tem de
 // ficar; "/c/" e barras finais, nao.

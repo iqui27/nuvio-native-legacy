@@ -159,7 +159,8 @@ int main(void) {
   const char *sports_groups[]={"SPORTS","Esportes","DAZN","ESPN","News"};
   for(int i=0;i<5;i++){
     char id[32];snprintf(id,sizeof id,"fixture-%d",i);
-    GCru c={0};c.id=id;c.nome=i==4?"CNN":"Live fixture";c.grupo=sports_groups[i];
+    char name[48];snprintf(name,sizeof name,"Live fixture %d",i);
+    GCru c={0};c.id=id;c.nome=i==4?"CNN":name;c.grupo=sports_groups[i];
     c.logo=c.desc=c.epgId=c.tvgNome=c.url=c.ua=c.ref="";
     sGrupoInfo(sports_source,c.grupo,1);sCanalAdd(sports_source,&c);sLtvF[sports_source].total++;
   }
