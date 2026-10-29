@@ -11,10 +11,11 @@ typedef struct { const char *id, *nome; } EspModalidade;
 typedef struct { char id[80], nome[160], logo[512]; } EspLiga;
 typedef struct {
   char id[80], nome[120], curto[100], sigla[20], logo[512], pontos[32];
+  char cor[8], corAlternativa[8];
 } EspParticipante;
 typedef struct {
   char id[100], nome[256], liga[160], ligaId[80], modalidade[32];
-  char local[160], detalhe[120], sessao[48];
+  char local[160], cidade[120], detalhe[120], sessao[48];
   time_t inicio, fim;
   int estado; /* 0 scheduled, 1 live, 2 finished, 3 postponed/cancelled */
   int nParticipantes, nEmissoras;

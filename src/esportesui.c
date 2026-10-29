@@ -179,7 +179,7 @@ void esportesui_iniciar(void) {
   esportes_catalogo_iniciar(-1,0);
   esportes_pedir_favoritos(0);montar(); revisao = esportes_revisao();
 }
-void esportesui_fechar(void) { stream_folha_canais_fechar();ctxhold_cancelar(&eventoHold);esportes_cancelar(); procurando = entradaTexto = 0; limparToque(); }
+void esportesui_fechar(void) { esportesui_cache_limpar();stream_folha_canais_fechar();ctxhold_cancelar(&eventoHold);esportes_cancelar(); procurando = entradaTexto = 0; limparToque(); }
 int esportesui_quer_sair(void) { int v = sair; sair = 0; return v; }
 int esportesui_pediu_relogio(void) { int v = pediuRelogio; pediuRelogio = 0; return v; }
 int esportesui_pediu_canal(char *id, unsigned n) { return fontescanais_consumir(id,n); }
@@ -505,8 +505,10 @@ static const char *logoLiga(const EspEvento *e,int m) {
   }
   return "";
 }
+#include "esportes_resultado.inc"
 static void linhaEvento(const EspEvento *e, GfxRect r, int selecionado) {
   plrui_cartao(r,20,1);if(selecionado)plrui_linha_foco(r,20,1);
+  if(e->estado==2&&e->nParticipantes==2){resultadoEvento(e,r);return;}
   int m=modalidadeEvento(e);fundoCartao(r,m,selecionado);
   float pad=22,x=r.x+pad,w=r.w-2*pad;
   char data[48],meta[400];horario(e->inicio,data,sizeof data);
@@ -532,7 +534,41 @@ static void linhaEvento(const EspEvento *e, GfxRect r, int selecionado) {
   }
   txt(TXT_CAPTION2,e->local[0]?e->local:e->liga,x,r.y+r.h-38,w,220);
 }
-void esportesui_cartao(const EspEvento *ev,GfxRect rect,int focused){linhaEvento(ev,rect,focused);}
+/* Six visible cards at most. Cache pixels, not borrowed text/texture handles:
+ * text eviction cannot invalidate a card. Focus and page motion stay live. */
+typedef struct {
+  GfxMini image;EspEvento event;unsigned revision,missing;Uint32 retry;
+  float scale,textScale;int idioma,quality,glass,clock,ready,focused;
+} EspCardCache;
+static EspCardCache cardCache[6];static unsigned cardNext;
+void esportesui_cache_limpar(void){
+  for(int i=0;i<6;i++){gfx_mini_liberar(&cardCache[i].image);cardCache[i].ready=0;}
+}
+void esportesui_cartao(const EspEvento *ev,GfxRect rect,int focused){
+  if(gfx_mini_ativo()){linhaEvento(ev,rect,focused);return;}
+  float scale=gfx_escala(),textScale=gfx_escala_txt();
+  int w=(int)ceilf(rect.w*scale),h=(int)ceilf(rect.h*scale);
+  EspCardCache *c=NULL;
+  for(int i=0;i<6;i++)if(cardCache[i].ready&&!memcmp(&cardCache[i].event,ev,sizeof *ev)){c=&cardCache[i];break;}
+  if(!c)c=&cardCache[cardNext++%6];
+  int dirty=!c->ready||memcmp(&c->event,ev,sizeof *ev)||c->revision!=esportes_revisao()||
+    c->scale!=scale||c->textScale!=textScale||c->idioma!=ajustes_idioma()||
+    c->quality!=esportes_fundo_qualidade()||c->glass!=ajustes_vidro()||c->clock!=ajustes_relogio_12h()||
+    c->image.w!=w||c->image.h!=h||c->focused!=focused;
+  if(c->missing && SDL_GetTicks()-c->retry>=250)dirty=1;
+  if(dirty){
+    if(!gfx_mini_alvo(&c->image,w,h)){linhaEvento(ev,rect,focused);return;}
+    unsigned missing=tex_n_falta;int pending=txt_pendentes;
+    float opacity=gfx_opacidade_grupo;gfx_opacidade_grupo=1;
+    gfx_mini_comecar(&c->image,0,0,scale);
+    linhaEvento(ev,(GfxRect){0,0,rect.w,rect.h},focused);
+    gfx_mini_terminar();gfx_opacidade_grupo=opacity;
+    c->event=*ev;c->revision=esportes_revisao();c->scale=scale;c->textScale=textScale;
+    c->idioma=ajustes_idioma();c->quality=esportes_fundo_qualidade();c->glass=ajustes_vidro();c->clock=ajustes_relogio_12h();
+    c->focused=focused;c->missing=tex_n_falta!=missing||txt_pendentes!=pending;c->retry=SDL_GetTicks();c->ready=1;
+  }
+  gfx_mini_desenhar(&c->image,rect,20,1);
+}
 void esportesui_logo(const char *url,int sport,GfxRect rect){logo(url,sport,rect);}
 int esportesui_fundo(GfxRect rect,int sport,int focused){return fundoCartao(rect,sport,focused);}
 static void menuModalidades(void) {
