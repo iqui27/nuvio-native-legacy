@@ -208,6 +208,7 @@ int extras_progresso_serie(int *vistosEp, int *exibidos);
 // Vazio ("" ou 0) quando ainda nao chegou ou o TMDB nao tem o campo. Quem
 // desenha deve OMITIR a linha nesse caso, nunca escrever um valor de reserva:
 // ver a nota sobre a classificacao cravada em descoberta.c.
+int extras_status_titulo(const char *imdb, char *dst, unsigned cap);
 const char *extras_ficha_status(void);          // "Released", "Post Production"
 int         extras_ficha_duracao(void);         // minutos; 0 = nao ha
 const char *extras_ficha_paises(void);          // "United States of America, Canada"

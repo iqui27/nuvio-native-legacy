@@ -234,7 +234,7 @@ static float ajTopoLista(void);
 #define AJ_TOPO        ajTopoLista()
 // 2.0.2: o cabecalho da pagina da categoria (o cartao da grade crescido), acima
 // da arte e da lista; o titulo saiu de dentro da ilha da lista.
-#define AJ_CAB_PAGINA  (ajRetrato() && !telefoneui_ativo() ? 224.0f : 136.0f)
+#define AJ_CAB_PAGINA  (ajRetrato() ? 224.0f : 136.0f)
 static float triListaBase(void);   // ajustes_tri_desenho.inc
 #define AJ_BASE        triListaBase()
 #define AJ_A3_CAB        8.0f   // 2.1: a lista comeca logo abaixo do cabecalho da ilha

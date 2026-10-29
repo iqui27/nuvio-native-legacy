@@ -48,6 +48,7 @@
 #include "buscasrec.h"
 #include "buscanorm.h"
 #include "botoes.h"
+#include "fundo.h"
 #include "sistexto.h"
 #include "ponteiro.h"
 #include "celbotao.h"
@@ -2327,7 +2328,9 @@ static void desenhaResultados(Uint32 agora) {
 }
 
 static void desenhaFundoDireto(void) {
-  ajustes_ui_fundo();
+  if (buRetratoTelefone())
+    fundo_desenhar_modo(FUNDO_FROST, (GfxRect){0,0,NV_TELA_W,NV_TELA_H}, 0, NULL, 1);
+  else ajustes_ui_fundo();
   gfx_veu_css_base((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H },
                    0, 1.0f, 1.0f, 0.60f, 0.45f);
 }
@@ -2337,7 +2340,7 @@ static void desenhaFundo(void) {
   static unsigned long long modos;
   float ac[3]; ajustes_acento(&ac[0], &ac[1], &ac[2]);
   // Cache only the static backdrop. Live ambient light keeps its own clock.
-  if (nv_ambiente_forca > 0 || gfx_snap_ativo() || gfx_mini_ativo()) {
+  if (buRetratoTelefone() || nv_ambiente_forca > 0 || gfx_snap_ativo() || gfx_mini_ativo()) {
     gfx_mini_liberar(&fundoBusca);
     desenhaFundoDireto(); return;
   }

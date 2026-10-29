@@ -2137,6 +2137,18 @@ int extras_comentario_nota(int i) {
   return (i >= 0 && i < nComent) ? coment[i].nota : 0;
 }
 
+int extras_status_titulo(const char *imdb, char *dst, unsigned cap) {
+  if (!dst || !cap) return 0;
+  dst[0] = 0;
+  pthread_mutex_lock(&trava);
+  if (imdb && !strcmp(imdb, idPedido)) snprintf(dst, cap, "%s", fichaStatus);
+  pthread_mutex_unlock(&trava);
+  if (!dst[0]) {
+    ExResumo resumo;
+    if (extras_resumo_obter(imdb, &resumo)) snprintf(dst, cap, "%s", resumo.status);
+  }
+  return dst[0] != 0;
+}
 const char *extras_ficha_status(void)        { return fichaStatus; }
 const char *extras_agenda_status(void)       { return agStatus; }
 const char *extras_agenda_data(void)         { return agDataProx; }
