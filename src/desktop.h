@@ -54,7 +54,7 @@ static inline int desktop_event(SDL_Event *e, SDL_Window *window, int typing) {
   }
   if (e->type == SDL_KEYDOWN || e->type == SDL_KEYUP) {
     SDL_Keycode k = e->key.keysym.sym;
-    int full = k == SDLK_f && (!typing || ((e->key.keysym.mod & KMOD_GUI) && (e->key.keysym.mod & KMOD_CTRL)));
+    int full = k == SDLK_F11 || (k == SDLK_f && (e->key.keysym.mod & KMOD_GUI) && (e->key.keysym.mod & KMOD_CTRL));
     if (full) {
       if (e->type == SDL_KEYDOWN && !e->key.repeat)
         SDL_SetWindowFullscreen(window, SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN_DESKTOP ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);

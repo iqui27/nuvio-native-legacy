@@ -1172,6 +1172,28 @@ static void trocarTela(Tela nova) {
   }
 }
 
+#ifdef NV_DESKTOP_UI
+// Offline proof uses the production routers, never an alternate renderer.
+void app_desktop_preview(const char *screen) {
+  if (!uiPreview) return;
+  if (!strcmp(screen,"filmography")) {
+    detail_fechar_seco();menu_fechar();
+    const ColFolder *folder=col_folder(0); if(folder) vertudo_colecao(folder); return;
+  }
+  detail_fechar_seco(); vertudo_fechar_seco(); conquistas_ocultar(); menu_fechar();
+  if (!strcmp(screen,"home")) { menu_ir(MENU_INICIO); trocarTela(TELA_HOME); home_ir_topo(); }
+  else if (!strcmp(screen,"search")) { menu_ir(MENU_BUSCAR); trocarTela(TELA_BUSCA); }
+  else if (!strcmp(screen,"library")) { menu_ir(MENU_BIBLIOTECA); trocarTela(TELA_BIBLIOTECA); }
+  else if (!strcmp(screen,"lists")) { trocarTela(TELA_BIBLIOTECA); biblioteca_abrir_listas(); }
+  else if (!strcmp(screen,"settings")) { menu_ir(MENU_AJUSTES); trocarTela(TELA_AJUSTES); }
+  else if (!strcmp(screen,"guide")) { trocarTela(TELA_GUIA); }
+  else if (!strcmp(screen,"sports")) { trocarTela(TELA_ESPORTES); }
+  else if (!strcmp(screen,"achievements")) { conquistas_abrir(); }
+  else if (!strcmp(screen,"collapse")) menu_desktop_alternar();
+  else if (!strcmp(screen,"expand")) menu_desktop_expandir();
+  else if (!strcmp(screen,"streaming")) menu_ir(MENU_STREAMING);
+}
+#endif
 static void abrirTelaFilha(Tela nova) {
   if(nova==tela)return;
   if(nova==TELA_GUIA && perfil_infantil_ativo()){trocarTela(nova);return;}
@@ -4486,6 +4508,16 @@ static int relogioPedidoPagina(void) {
 }
 
 void app_evento(const SDL_Event *e) {
+#ifdef NV_DESKTOP_UI
+  if (e->type == SDL_KEYDOWN && (e->key.keysym.mod & (KMOD_GUI | KMOD_CTRL))) {
+    if (e->key.keysym.sym == SDLK_b) { if (!e->key.repeat) menu_desktop_alternar(); return; }
+    if (e->key.keysym.sym == SDLK_f) {
+      if (detail_aberto()) detail_fechar();
+      if (tela != TELA_BUSCA) menu_ir(MENU_BUSCAR);
+      menu_fechar(); SDL_StartTextInput(); return;
+    }
+  }
+#endif
   if (musicaui_visivel()) {
     if (e->type == SDL_APP_WILLENTERBACKGROUND || e->type == SDL_APP_TERMINATING || e->type == SDL_QUIT)
       musicaui_fechar();

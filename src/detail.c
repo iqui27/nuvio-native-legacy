@@ -444,7 +444,7 @@ static void toqueDetalheLimpar(void) {
 }
 static void toqueDetalheSincronizarModo(void) {
   static int mobileAntes;
-  int mobile = telefoneui_ativo();
+  int mobile = layout_rolagem_livre();
   if (!mobile) {
     toqueDetalheLimpar();
     toquePessoaOffset = 0;
@@ -1246,7 +1246,7 @@ static void recalcularLayout(void) {
     if (r==SEC_TEMPORADAS && !epModerno()) {
       // Retrato do telefone: o heroi e mais alto que o da TV; a faixa de
       // temporadas/episodios desce pelo mesmo tanto (zero na TV).
-      epDyFone = fone ? fmaxf(0, y - serieGrupo(0)) : 0;
+      epDyFone = fone || layout_desktop_ativo() ? fmaxf(0, y - serieGrupo(0)) : 0;
       topoSec[r]=serieGrupo(0)+epDyFone;
       conteudoSec[r]=(epApple() ? 1160 : NV_DETP_TEMP_Y)+epDyFone;
       topoSec[SEC_EPISODIOS]=serieGrupo(1)+epDyFone;
@@ -5655,13 +5655,14 @@ static void heroWeb(float a, float desloc) {
   // NV_DET21_FIM, just above the first section kicker.
   float yVers = 716.0f;
   if (!detalheRetrato() && !heroServidor()) {
-    float y = ANC(NV_DET21_FIM);
+    float y = ANC(layout_desktop_ativo() ? 900.0f : NV_DET21_FIM);
 
     float hP = (pessoal[0] ? 30.0f : 0.0f) + (srvLinha[0] ? 30.0f : 0.0f);
     if (hP > 0.0f) { yRetom = y - hP; y = yRetom - 8.0f; }
     yMeta1 = y - NV_DETW2_M1_H;
     ySin = yMeta1 - NV_DET21_GAP - hSin;
-    yAcoes = ySin - NV_DET21_GAP - NV_DET21_BTN_H - hVai;
+    float sourceHeight = layout_desktop_ativo() && topoVersao() && topoFonteDisponivel() ? fmaxf(hVai, 56) : hVai;
+    yAcoes = ySin - NV_DET21_GAP - NV_DET21_BTN_H - sourceHeight;
     yVers = yAcoes + NV_DET21_BTN_H + 12;
   }
 
@@ -9179,6 +9180,9 @@ static void desenhaPessoa(float a) {
       { float fp = i == pessoaFoco ? 1.0f : 0.0f;
         foco_anel(r, raioCartaz(PES_CARD_W, PES_CARD_H), fp, a);
         r = foco_zoom(r, fp); }
+#ifdef NV_DESKTOP_UI
+      gfx_recorte(x0, topo, NV_TELA_W - x0, area);
+#endif
       if (t) {
         gfx_tex_aspect_atual = tex_aspecto(po);
         gfx_rect(r, t, GFX_CARD, i == pessoaFoco ? 1.0f : 0.0f, 0, 0,

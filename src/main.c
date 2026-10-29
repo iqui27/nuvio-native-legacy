@@ -1,6 +1,7 @@
 // Bootstrap: janela, contexto GL, loop e telemetria. Toda a UI vive nos modulos.
 #include "app_id.h"
 #include "desktop.h"
+#include "desktop_native.h"
 #include "arranque.h"
 #include "swapint.h"
 #include "quadroc.h"
@@ -488,6 +489,22 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
     char *dp = strchr(linha, ':');
     if (dp && !strcmp(dp + 1, "hold")) { *dp = 0; segurar = 1; }
 #ifdef NV_DESKTOP_RELEASE
+#ifdef NV_DESKTOP_UI
+    if (dp && !strncmp(linha,"preview:",8)) { app_desktop_preview(dp+1); continue; }
+    if (dp && !strncmp(linha,"wheel:",6)) {
+      SDL_Event wheel={0}; float dx,dy; int x,y;
+      if(sscanf(dp+1,"%d,%d,%f,%f",&x,&y,&dx,&dy)==4) {
+        wheel.type=SDL_MOUSEWHEEL;wheel.wheel.which=NV_DESKTOP_PIXEL_WHEEL;
+        wheel.wheel.windowID=SDL_GetWindowID(SDL_GL_GetCurrentWindow());
+        wheel.wheel.mouseX=x;wheel.wheel.mouseY=y;wheel.wheel.preciseX=dx;wheel.wheel.preciseY=dy;
+        ponteiro_evento(&wheel,entregar);
+      }
+      continue;
+    }
+    if (dp && !strncmp(linha,"input:",6)) {
+      SDL_Event text={0};text.type=SDL_TEXTINPUT;snprintf(text.text.text,sizeof text.text.text,"%s",dp+1);entregar(&text);continue;
+    }
+#endif
     if (dp && !strncmp(linha, "janela:", 7)) {
       int w, h;
       SDL_Window *window = SDL_GL_GetCurrentWindow();
@@ -1406,7 +1423,7 @@ int main(int argc, char **argv) {
   // e MOUSEBUTTONDOWN/UP botao 1 no clique. Por isso aqui ele fica ligado, e a
   // seta desenhada e a do proprio sistema (ponteiro.c nao desenha outra).
   // No Mac o cursor do sistema continua escondido e o app desenha o seu.
-#ifdef NV_SEM_WEBOS
+#if defined(NV_SEM_WEBOS) && !defined(NV_DESKTOP_UI)
   SDL_ShowCursor(SDL_DISABLE);
 #else
   SDL_ShowCursor(SDL_ENABLE);
@@ -1562,13 +1579,18 @@ int main(int argc, char **argv) {
   // O cursor do Magic Remote e desenhado pelo app (ponteiro.c). Depois do
   // contexto: o log de arranque dele le a janela corrente.
   ponteiro_iniciar();
+  desktop_native_init(win);
 #if defined(__APPLE__) && !defined(NV_IOS)
   // Sem vsync no Mac. O SDL2 do Homebrew virou uma camada sobre o SDL3
   // (sdl2-compat), e nela o SwapWindow fica preso esperando um sinal de vsync
   // que nunca chega quando a janela nao esta em primeiro plano — o app trava no
   // primeiro quadro. No aparelho o SDL2 e o de verdade e o vsync fica ligado,
   // que e o que mantem os 60fps estaveis la.
+  #ifdef NV_DESKTOP_UI
+  SDL_GL_SetSwapInterval(1);
+#else
   SDL_GL_SetSwapInterval(0);
+#endif
 #else
   SDL_GL_SetSwapInterval(1);
 #endif
@@ -1975,7 +1997,7 @@ int main(int argc, char **argv) {
       }
 #endif
 #ifdef NV_DESKTOP_RELEASE
-      if (desktop_event(&e, win, texto_sistema_aberto())) continue;
+      if (desktop_event(&e, win, texto_sistema_aberto() || !strcmp(app_tela_nome(), "busca"))) continue;
 #endif
 #ifdef NV_DESKTOP_UI
       // Returning the pointer to content also returns keyboard ownership.
@@ -1984,7 +2006,7 @@ int main(int argc, char **argv) {
         int janelaW, janelaH;
         SDL_GetWindowSize(win, &janelaW, &janelaH);
         int x = e.type == SDL_MOUSEMOTION ? e.motion.x : e.button.x;
-        if (janelaW > 0 && x * NV_TELA_W / janelaW >= NV_DESKTOP_SIDEBAR_W) menu_fechar();
+        if (janelaW > 0 && x * NV_TELA_W / janelaW >= NV_DESKTOP_RAIL_W) menu_fechar();
       }
 #endif
       ponteiro_diag(&e);
@@ -2380,7 +2402,9 @@ int main(int argc, char **argv) {
     t0 = NV_T0();
     txt_novo_quadro();
     ponteiro_quadro(agora);
+    desktop_native_sidebar(0);
     app_desenhar(agora);
+    desktop_native_finish();
     if (perftv_enabled) snprintf(perfScreen, sizeof perfScreen, "%s", perfTvScreen());
     // A abertura (#213) cobre os primeiros quadros, com a home montando por baixo.
     if (abertura_ativa()) {
@@ -2429,6 +2453,16 @@ int main(int argc, char **argv) {
 #endif
 #ifndef __EMSCRIPTEN__
     { unsigned wait = player_frame_wait(playerUi, SDL_GetTicks() - frameStarted);
+#ifdef NV_DESKTOP_UI
+      if (!playerUi) {
+        SDL_DisplayMode display;
+        int hz = SDL_GetCurrentDisplayMode(SDL_GetWindowDisplayIndex(win), &display) == 0 && display.refresh_rate > 0 ? display.refresh_rate : 60;
+        unsigned target = 1000u / hz, elapsed = SDL_GetTicks() - frameStarted;
+        wait = elapsed < target ? target - elapsed : 0;
+      }
+      if (getenv("NUVIO_DESKTOP_FRAME_LOG") && (Sint32)(SDL_GetTicks() - nv_desktop_wheel_until) < 0)
+        printf("[desktop-scroll] t=%u work_ms=%u wait_ms=%u\n",SDL_GetTicks(),SDL_GetTicks()-frameStarted,wait);
+#endif
       if (wait) SDL_Delay(wait); }
 #else
     (void)frameStarted;

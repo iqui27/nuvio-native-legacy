@@ -97,7 +97,7 @@ static int buTecladoNativo(void) {
          (buTelefone() || st_abre_sozinho());
 }
 static int buResultadosPagina(void);
-static int buUmaColuna(void) { return buRetrato() || buTecladoNativo(); }
+static int buUmaColuna(void) { return layout_desktop_ativo() || buRetrato() || buTecladoNativo(); }
 static float buCampoH(void) { return buTecladoNativo() ? 104.0f : 76.0f; }
 static float buMargem(void) { return buTelefone() ? 48.0f : ANC(BU_MARG); }
 static float buX(void)   { return ANC(ajustes_rail_largura_fixa()) + buMargem(); }
@@ -299,6 +299,7 @@ static int  kbTemLayout;                   // a tecla de layout aparece?
 static int  pagSim;                        // 1 = pagina de acentos e sinais (?!#)
 static int  KB_COLUNAS[BU_KB_MAX_FIL + 1] = { 6, 6, 6, 6, 6, 6, 3 };
 static float buResY(void) {
+  if (layout_desktop_ativo()) return ANC(NV_DESKTOP_TOOLBAR_H + 48);
   if (buResultadosPagina()) return buTopoEsq();
   if (buTecladoNativo()) return buTopoEsq() + BU_CAMPO_H + 44.0f;
   if (!buRetrato()) return ANC(64.0f);
@@ -991,6 +992,7 @@ int busca_iniciar(void) {
     campoFoco = 1;
     st_ime_abrir(ST_BUSCA, consulta, BU_MAX_CONSULTA - 1);
   }
+  if (layout_desktop_ativo()) SDL_StartTextInput();
   refiltrar();
   return 1;
 }
@@ -1089,6 +1091,16 @@ static int menuNoResultado(void) {
 #ifdef NV_TOUCH_UI
 static int retMover(SDL_Keycode key);
 #endif
+static int desktopTexto(const SDL_Event *e) {
+  if (!layout_desktop_ativo()) return 0;
+  if (e->type == SDL_TEXTINPUT) { painel = 0; campoAcrescentar(e->text.text); return 1; }
+  if (e->type == SDL_KEYDOWN && !(e->key.keysym.mod & (KMOD_CTRL | KMOD_ALT | KMOD_GUI))) {
+    if (e->key.keysym.sym == SDLK_BACKSPACE) { campoApagar(); return 1; }
+    // SDL_TEXTINPUT owns letters, punctuation and composed Unicode.
+    if (e->key.keysym.sym >= SDLK_SPACE && e->key.keysym.sym <= SDLK_z) return 1;
+  }
+  return 0;
+}
 static void busca_evento_(const SDL_Event *e) {
   pediuRelogio = 0;
   buInterfaceAtualizar();
@@ -1096,6 +1108,7 @@ static void busca_evento_(const SDL_Event *e) {
 #ifdef NV_TOUCH_UI
   if (buTelefone() && e->type == SDL_KEYDOWN) toqueBuscaRetomarFoco();
 #endif
+  if (desktopTexto(e)) { refiltrar(); return; }
   if (st_evento(e)) return;   // teclado da TV: o valor inteiro vem por sistexto
   // TEXTO DE TECLADO FISICO OU IME (#176): o que nao e ASCII (cirilico, ș, ț,
   // ă...) chega como SDL_TEXTINPUT. O ASCII fica com o SDL_KEYDOWN abaixo — o
@@ -1473,7 +1486,7 @@ static float toqueBuscaMaxX(int r) {
   return fmaxf(0.0f, fim - (BU_DIR - BU_RES_X));
 }
 static int toqueBuscaRolar(const PonteiroRolagem *e) {
-  if (!buTelefone()) { toqueBuscaLimpar(); return 0; }
+  if (!layout_rolagem_livre()) { toqueBuscaLimpar(); return 0; }
   if (buRetratoTelefone()) {  // retrato: so vertical, grade de 3 colunas
     if (e->fase == PONT_ROL_INICIO) {
       if (e->y < retAreaTopo() || e->y >= retAreaBase() || e->x >= NV_TELA_W) return 0;
@@ -1513,7 +1526,7 @@ static int toqueBuscaRolar(const PonteiroRolagem *e) {
       if (toqueFileira < 0 || toqueFileira >= nFil) return 0;
       s = &scrollX[toqueFileira]; maximo = toqueBuscaMaxX(toqueFileira);
     }
-    antes = *s; *s = anim_clamp(*s - e->delta, 0.0f, maximo);
+    antes = *s; *s = layout_scroll_delta(*s, e->delta, 0.0f, maximo);
     if (e->eixoY) scrollAlvo = scrollY;
     return fabsf(*s - antes) > 0.001f;
   }
@@ -1521,7 +1534,7 @@ static int toqueBuscaRolar(const PonteiroRolagem *e) {
   return 1;
 }
 static void toqueBuscaRetomarFoco(void) {
-  if (!buTelefone()) { toqueBuscaLimpar(); return; }
+  if (!layout_rolagem_livre()) { toqueBuscaLimpar(); return; }
   if (buRetratoTelefone()) { toqueBuscaLimpar(); return; }
   if (toqueLivreY && nFil > 0) {
     float ponto = scrollY + BU_RES_AREA_H * 0.35f;
@@ -1653,7 +1666,7 @@ static void busca_atualizar_(float dt, Uint32 agora) {
     float topo = filTopo(r);
     float base = topo + filAlt(r);
 #ifdef NV_TOUCH_UI
-    if (!buTelefone() || !toqueLivreY) {
+    if (!layout_rolagem_livre() || !toqueLivreY) {
 #endif
       if (topo - scrollAlvo < 0.0f)             scrollAlvo = topo;
       if (base - scrollAlvo > BU_RES_AREA_H)    scrollAlvo = base - BU_RES_AREA_H;
@@ -1674,12 +1687,12 @@ static void busca_atualizar_(float dt, Uint32 agora) {
     if (esq - alvoX < 0.0f) alvoX = esq;
     if (alvoX < 0.0f) alvoX = 0.0f;
 #ifdef NV_TOUCH_UI
-    if (!buTelefone() || !toqueLivreX[r])
+    if (!layout_rolagem_livre() || !toqueLivreX[r])
 #endif
       scrollX[r] = anim_mola2(&velX[r], scrollX[r], alvoX, dt, NV_MOLA2_SCROLL);
   } else {
 #ifdef NV_TOUCH_UI
-    if (!buTelefone() || !toqueLivreY)
+    if (!layout_rolagem_livre() || !toqueLivreY)
 #endif
     scrollAlvo = 0.0f;
   }
@@ -1690,7 +1703,7 @@ static void busca_atualizar_(float dt, Uint32 agora) {
       scrollX[r] = anim_clamp(scrollX[r], 0.0f, toqueBuscaMaxX(r));
     scrollAlvo = anim_clamp(scrollAlvo, 0.0f, toqueBuscaMaxY());
   }
-  if (buTelefone() && toqueLivreY) scrollY = scrollAlvo = anim_clamp(scrollY, 0.0f, toqueBuscaMaxY());
+  if (layout_rolagem_livre() && toqueLivreY) scrollY = scrollAlvo = layout_scroll_assentar(scrollY, 0.0f, toqueBuscaMaxY(), dt);
   else
 #endif
     scrollY = anim_mola2(&velY, scrollY, scrollAlvo, dt, NV_MOLA2_SCROLL);
@@ -2339,7 +2352,7 @@ static void desenhaFundo(void) {
   static unsigned long long modos;
   float ac[3]; ajustes_acento(&ac[0], &ac[1], &ac[2]);
   // Cache only the static backdrop. Live ambient light keeps its own clock.
-  if (nv_ambiente_forca > 0 || gfx_snap_ativo() || gfx_mini_ativo()) {
+  if (layout_desktop_ativo() || nv_ambiente_forca > 0 || gfx_snap_ativo() || gfx_mini_ativo()) {
     gfx_mini_liberar(&fundoBusca);
     desenhaFundoDireto(); return;
   }
@@ -2364,18 +2377,18 @@ static void desenhaFundo(void) {
 static void busca_desenhar_(Uint32 agora) {
   buInterfaceAtualizar();
 #ifdef NV_TOUCH_UI
-  if (buTelefone()) ponteiro_rolagem(toqueBuscaRolar);
+  if (layout_rolagem_livre()) ponteiro_rolagem(toqueBuscaRolar);
 #endif
   desenhaFundo();
 #ifdef NV_TOUCH_UI
   if (buRetratoTelefone()) { desenhaBuscaRetrato(agora); return; }
 #endif
-  if (!buResultadosPagina()) {
+  if (!layout_desktop_ativo() && !buResultadosPagina()) {
     desenhaCampo(agora);
     desenhaTeclado();
   }
   desenhaResultados(agora);
-  if (buResultadosPagina()) {
+  if (!layout_desktop_ativo() && buResultadosPagina()) {
     // Overlay the search action; reserve no row or keyboard space for it.
     GfxRect b = { BU_DIR - 64.0f, buTopoEsq(), 64.0f, 64.0f };
     ajustes_ui_ilha(b, 32.0f, 0);

@@ -54,6 +54,9 @@ int  app_no_login(void);
 
 // Porta de teste: abre o titulo (imdb) como se viesse de uma recomendacao.
 void app_abrir_titulo(const char *imdb);
+#ifdef NV_DESKTOP_UI
+void app_desktop_preview(const char *screen);
+#endif
 // Porta de teste: a funcao que app_atualizar chama antes de entregar a URL
 // guardada ao player (tocarFonteGuardada). 1 = o player recebeu a URL.
 int app_teste_tocar_guardada(void);

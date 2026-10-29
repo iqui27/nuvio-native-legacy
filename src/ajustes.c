@@ -4047,7 +4047,7 @@ float ajustes_raio_poster_px(void)    { return (float)valor[AJ_RAIO_DP] * 2.0f; 
 // A regra do web, e nao dois layouts: o conteudo tem sempre 104 de recuo e a
 // rail acrescenta os 144 dela quando esta fixa.
 float ajustes_conteudo_x(void) {
-  if (layout_desktop_ativo()) return NV_DESKTOP_SIDEBAR_W + 60.0f;
+  if (layout_desktop_ativo()) return NV_DESKTOP_RAIL_W + 48.0f;
   return ajustes_rail_largura_fixa() + NV_CONTENT_PAD;
 }
 // A RAIL FIXA segue a pilula de icones que o menu desenha (menu.c, layouts
@@ -4056,7 +4056,7 @@ float ajustes_conteudo_x(void) {
 // O menu desenha numa escala FIXA (90 %, menu.c), que nao segue o Tamanho da
 // interface: a borda ja esta em px da tela REAL.
 float ajustes_rail_largura_fixa(void) {
-  if (layout_desktop_ativo()) return NV_DESKTOP_SIDEBAR_W;
+  if (layout_desktop_ativo()) return NV_DESKTOP_RAIL_W;
   float borda;
   // Layout Dinamica: a barra e a pilula da Apple TV (menu.c), sem rail fixa.
   if (ajustes_home_layout() == HOME_LAYOUT_DINAMICA) return 0.0f;

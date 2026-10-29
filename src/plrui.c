@@ -205,10 +205,12 @@ static float dicas(const char *const *teclas, const char *const *rotulos, int n,
 
 float plrui_dicas(const char *const *teclas, const char *const *rotulos, int n,
                   float x, float yc, int alinhaDir, float a) {
+  if (layout_desktop_ativo()) return 0;
   return dicas(teclas, rotulos, n, x, yc, alinhaDir, a, 0);
 }
 float plrui_dicas_video(const char *const *teclas, const char *const *rotulos, int n,
                         float x, float yc, int alinhaDir, float a) {
+  if (layout_desktop_ativo()) return 0;
   return dicas(teclas, rotulos, n, x, yc, alinhaDir, a, 1);
 }
 

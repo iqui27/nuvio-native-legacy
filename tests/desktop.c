@@ -52,7 +52,10 @@ int main(void) {
   assert(!desktop_event(&e, w, 0)); assert(e.key.keysym.sym == SDLK_AC_BACK);
   e.key.keysym.sym = SDLK_f;
   assert(!desktop_event(&e, w, 1));
+  assert(!desktop_event(&e, w, 0)); // Typing f must never enter fullscreen.
+  e.key.keysym.sym = SDLK_F11;
   assert(desktop_event(&e, w, 0)); assert(SDL_GetWindowFlags(w) & SDL_WINDOW_FULLSCREEN_DESKTOP);
+  e.key.keysym.sym = SDLK_f;
   e.key.keysym.mod = KMOD_GUI | KMOD_CTRL;
   assert(desktop_event(&e, w, 1)); assert(!(SDL_GetWindowFlags(w) & SDL_WINDOW_FULLSCREEN_DESKTOP));
 

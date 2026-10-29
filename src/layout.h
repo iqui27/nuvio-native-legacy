@@ -7,6 +7,11 @@
 // Body 29 / Caption 25. Corpo nunca abaixo de 29.
 #ifndef NV_LAYOUT_H
 #define NV_LAYOUT_H
+#include <math.h>
+#ifdef NV_DESKTOP_UI
+#include <SDL2/SDL.h>
+extern Uint32 nv_desktop_wheel_until;
+#endif
 
 #if defined(NV_DESKTOP_UI) && !defined(NV_TOUCH_UI)
 #error "NV_DESKTOP_UI requires NV_TOUCH_UI for resizable geometry"
@@ -40,7 +45,41 @@ int layout_modo_mobile(void);
 #define NV_DESKTOP_BREAKPOINT 1000
 #define NV_DESKTOP_SCALE 1.5f
 #define NV_DESKTOP_SIDEBAR_W 336.0f
-#define NV_DESKTOP_TOOLBAR_H 72.0f
+#define NV_DESKTOP_TOOLBAR_H 84.0f
+// Continuous pointer input is shared with touch; geometry stays platform-specific.
+static inline int layout_rolagem_livre(void) {
+#ifdef NV_DESKTOP_UI
+  return 1;
+#else
+  return layout_modo_mobile();
+#endif
+}
+#ifdef NV_DESKTOP_UI
+extern float nv_desktop_sidebar;
+#define NV_DESKTOP_RAIL_W nv_desktop_sidebar
+#else
+#define NV_DESKTOP_RAIL_W NV_DESKTOP_SIDEBAR_W
+#endif
+// Desktop bounce is visual displacement only; navigation keeps its bounds.
+static inline float layout_scroll_delta(float value, float delta, float lo, float hi) {
+#ifdef NV_DESKTOP_UI
+  float next = value - delta;
+  if (next < lo) return fmaxf(lo - 72, value - delta * .32f);
+  if (next > hi) return fminf(hi + 72, value - delta * .32f);
+  return next;
+#else
+  return fmaxf(lo, fminf(hi, value - delta));
+#endif
+}
+static inline float layout_scroll_assentar(float value, float lo, float hi, float dt) {
+#ifdef NV_DESKTOP_UI
+  if ((Sint32)(SDL_GetTicks() - nv_desktop_wheel_until) < 0) return value;
+  float bound = fmaxf(lo, fminf(hi, value));
+  return bound + (value - bound) * expf(-18 * dt);
+#else
+  (void)dt; return fmaxf(lo, fminf(hi, value));
+#endif
+}
 void layout_janela_definir(int width, int height);
 static inline int layout_desktop_ativo(void) {
 #ifdef NV_DESKTOP_UI

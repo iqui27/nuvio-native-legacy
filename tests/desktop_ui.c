@@ -9,6 +9,8 @@ int ajustes_menu_explorar(void) { return 1; }
 int ajustes_menu_guia(void) { return 1; }
 int ajustes_menu_agenda(void) { return 1; }
 int ajustes_menu_perfil(void) { return 1; }
+int esportes_modalidades_n(void) { return 1; }
+int esportes_habilitado(int sport) { (void)sport; return 1; }
 int ajustes_menu_topo(void) { return 0; }
 int ajustes_rail_recolhida(void) { return 0; }
 float gfx_escala_ui_base(void) { return 1; }
@@ -24,6 +26,9 @@ static void key(SDL_Keycode k) {
   e.type = SDL_KEYDOWN; e.key.keysym.sym = k;
   menu_evento(&e);
 }
+static char sidebarSaved[4];
+int dados_gravar(const char *name, const char *value) { (void)name; snprintf(sidebarSaved,sizeof sidebarSaved,"%s",value); return 1; }
+char *dados_ler(const char *name) { (void)name; return strdup(sidebarSaved); }
 int main(void) {
   layout_tela_definir(2560, 1600);
   layout_janela_definir(1280, 800);
@@ -35,21 +40,26 @@ int main(void) {
   menu_servidores(1);
   int order[NV_MENU_FOCOS_TV];
   int n = tvOrdem(order);
-  assert(n == 14);
+  assert(n == 12);
   assert(order[4] == MENU_LISTAS && order[5] == MENU_CONQUISTAS);
-  assert(order[6] == MENU_FONTES && order[8] == MENU_JUNTOS);
-  assert(order[0] == MENU_INICIO && order[1] == MENU_BUSCAR);
+  assert(order[6] == MENU_JUNTOS && order[8] == MENU_STREAMING);
+  assert(order[0] == MENU_BUSCAR && order[1] == MENU_INICIO);
   assert(order[n - 2] == MENU_AJUSTES && order[n - 1] == MENU_RODAPE);
-  assert(tvPastas(NULL) == 3); // Streaming stays visible without menu focus.
+  assert(tvPastas(NULL) == 0); // Services open only through the Streaming entry.
   float ys[NV_MENU_FOCOS_TV];
   desktopLayout(ys);
   assert(ys[MENU_INICIO] == 142 && ys[MENU_AJUSTES] == 1068 && ys[MENU_RODAPE] == 1124);
-  menu_abrir(); key(SDLK_DOWN);
+  menu_desktop_alternar(); assert(desktopCollapsed && sidebarSaved[0]=='1');
+  desktopCollapsed=0; desktopRestaurar(); assert(desktopCollapsed && nv_desktop_sidebar==120);
+  menu_desktop_expandir(); assert(!desktopCollapsed && sidebarSaved[0]=='0');
+  menu_abrir(); key(SDLK_UP);
   assert(linha == MENU_BUSCAR);
   key(SDLK_RIGHT);
   assert(menu_destino() == MENU_BUSCAR && !menu_aberto() && menu_visivel());
   menu_abrir(); key(SDLK_AC_BACK);
   assert(!menu_aberto() && menu_destino() == MENU_BUSCAR);
+  desktopEscolher(MENU_STREAMING,0); assert(tvPastas(NULL)==3);
+  n=tvOrdem(order);assert(order[9]==MENU_ST0 && order[10]==MENU_ST0+1 && order[12]==MENU_FONTES);
   desktopEscolher(MENU_ST0 + 1, 0);
   assert(menu_pediu_colecao() == 5 && !menu_aberto());
   desktopEscolher(MENU_RODAPE, 0);
@@ -64,10 +74,10 @@ int main(void) {
   menu_ir(MENU_LISTAS); assert(menu_mudou_destino());
 
   layout_janela_definir(1000, 500);
-  assert(layout_desktop_ativo() && nv_layout_w == 1500);
+  assert(layout_desktop_ativo() && nv_layout_w == 2400);
   menu_abrir(); linha = MENU_ST0 + 2;
   desktopAtualizar(); desktopLayout(ys);
-  assert(tvRolar > 0 && ys[linha] + 56 - tvRolar <= nv_layout_h - 142);
+  assert(ys[linha] + 56 - tvRolar <= nv_layout_h - 142);
   linha = MENU_INICIO; desktopAtualizar();
   assert(tvRolar == 0);
   menu_fechar();
@@ -75,7 +85,7 @@ int main(void) {
   layout_janela_definir(800, 900);
   assert(!layout_desktop_ativo() && layout_modo_mobile());
   assert(nv_layout_w == 1080 && nv_layout_h == 1215);
-  assert(tvPastas(NULL) == 0); // Existing narrow drawer stays collapsed.
+  desktopStreaming=0; assert(tvPastas(NULL) == 0); // Existing narrow drawer stays collapsed.
   layout_tela_definir(1800, 1600);
   layout_janela_definir(900, 800);
   assert(layout_modo_mobile() && nv_layout_w == 1215 && nv_layout_h == 1080);

@@ -1836,11 +1836,11 @@ int g5ui_provider_epg(void){return !committed||draft.epg;}
 #define GV_SB_W 360.0f
 #define GV_MX (48.0f+384.0f*gv_side)
 #define GV_MW (1824.0f-384.0f*gv_side)
-#define GV_TOP_Y 24.0f
+#define GV_TOP_Y (layout_desktop_ativo()?64.0f:24.0f)
 #define GV_TOP_H 56.0f
-#define GV_CHIP_Y 96.0f
+#define GV_CHIP_Y (layout_desktop_ativo()?136.0f:96.0f)
 #define GV_CHIP_H 56.0f
-#define GV_BASE 168.0f        /* topo da sidebar e do heroi (256 com faixa de erro) */
+#define GV_BASE (layout_desktop_ativo()?208.0f:168.0f)        /* topo da sidebar e do heroi (256 com faixa de erro) */
 #define GV_HERO_H 360.0f
 #define GV_SOURCE_Y 1046.0f
 #define GV_SOURCE_H 30.0f
@@ -2606,8 +2606,8 @@ static void gv_vazio(void){
     txt_bloco(TXT_ILHA_CORPO,i18n(ds[i]),154,156,158,x+32,GV_BASE+344,400,32,1,3);
     gv_button(1700+i,i18n(bs[i]),NULL,x+32,GV_BASE+466,320,0,0);
   }
-  gfx_icone((GfxRect){GV_MX,GV_BASE+600,28,28},"aj_smartphone",.7f,.71f,.72f,1);
-  gv_label(TXT_ILHA_CORPO,i18n("Digitar um endereço longo é lento: escolha “Digitar no celular” na próxima tela."),GV_MX+40,GV_BASE+606,1200,1);
+  if(!layout_desktop_ativo()) gfx_icone((GfxRect){GV_MX,GV_BASE+600,28,28},"aj_smartphone",.7f,.71f,.72f,1);
+  if(!layout_desktop_ativo()) gv_label(TXT_ILHA_CORPO,i18n("Digitar um endereço longo é lento: escolha “Digitar no celular” na próxima tela."),GV_MX+40,GV_BASE+606,1200,1);
 }
 /* --- faixa de erro das fontes (fontes-erro) -------------------------------- */
 /* The first source that failed or fell back to its cached list. */

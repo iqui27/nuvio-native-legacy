@@ -13,6 +13,28 @@
 // Icones derivados dos SVGs originais do sidebar, com alpha e recortes reais.
 #include "horafmt.h"
 #include "menu.h"
+#include "layout.h"
+#include "desktop_native.h"
+#include "busca.h"
+#ifdef NV_DESKTOP_UI
+#include "esportes.h"
+#endif
+#ifdef NV_DESKTOP_UI
+#include "dados.h"
+static int desktopCollapsed;
+static void desktopRecolher(int collapsed) {
+  desktopCollapsed = collapsed;
+  dados_gravar("desktop-sidebar.txt", desktopCollapsed ? "1\n" : "0\n");
+}
+void menu_desktop_alternar(void) { desktopRecolher(!desktopCollapsed); }
+void menu_desktop_expandir(void) { desktopRecolher(0); }
+static void desktopRestaurar(void) {
+  char *saved = dados_ler("desktop-sidebar.txt");
+  desktopCollapsed = saved && saved[0] == '1'; free(saved);
+  nv_desktop_sidebar = desktopCollapsed ? 120.0f : NV_DESKTOP_SIDEBAR_W;
+}
+static void desktopToggle(int a, int b) { (void)a; (void)b; menu_desktop_alternar(); }
+#endif
 #include "ilha.h"
 #include "iconeapp.h"
 #include "perfis.h"
@@ -135,7 +157,7 @@ static float menuEscala(void) {
 // Rotulos e ordem conferidos na referencia.
 static const char *ROTULOS[MENU_N] = { "Início", "Explorar", "Guia TV", "Esportes", "Busca", "Biblioteca", "Agenda", "Perfil e Stats", "Ajustes", "Servidores pessoais"
 #ifdef NV_DESKTOP_UI
-  , "Listas", "Conquistas", "Fontes e addons", "Assistir Juntos"
+  , "Listas", "Conquistas", "Fontes e addons", "Assistir Juntos", "Streaming"
 #endif
 };
 
@@ -432,6 +454,9 @@ static void desenhaBarra(float e, float a, int focos, float entrada) {
 }
 
 int menu_iniciar(void) {
+#ifdef NV_DESKTOP_UI
+  desktopRestaurar();
+#endif
 #ifdef NV_TOUCH_UI
   tvToqueLimpar();
 #endif
@@ -486,7 +511,11 @@ const char *menu_rotulo(int d) {
 // esta olhando, e desfazer a escolha no caminho de volta seria surpresa.
 static int tvPastaDoFoco(int foco);
 static int tvPastasTotal(const int **v);
+static int desktopStreaming;
 static void escolher(void) {
+#ifdef NV_DESKTOP_UI
+  if (linha == MENU_STREAMING) { desktopStreaming = !desktopStreaming; return; }
+#endif
   escolheu = 1;
   if (linha >= MENU_ST0) {
     // Pasta de Streaming (layout Dinamica): abre a colecao, sem trocar de aba.
@@ -595,7 +624,12 @@ void menu_atualizar(float dt, Uint32 agora) {
     linha = destino;
   }
   if (!aberto) buscaOk = buscaLongo = 0;
-  if (layout_desktop_ativo()) { desktopAtualizar(); return; }
+  if (layout_desktop_ativo()) {
+#ifdef NV_DESKTOP_UI
+    nv_desktop_sidebar = anim_mola(nv_desktop_sidebar, desktopCollapsed ? 120.0f : NV_DESKTOP_SIDEBAR_W, dt, 14.0f);
+#endif
+    desktopAtualizar(); return;
+  }
   if (tvAtivo()) { tvAtualizar(dt); return; }
   if (topo()) topoAtualizar(dt);
   // Recolhido e assentado nao custa nada: nem mola, nem laco pelos destinos.
@@ -645,7 +679,7 @@ static void icone(int d, float cx, float cy, float s, float r, float g, float b,
   // manter o icone real evita inventar um glifo SDF e duplicar o de Busca.
   static const char *nomes[MENU_N] = {"menu_home", "portal", "menu_guide", "menu_sports", "menu_search", "menu_library", "menu_agenda", "menu_profile", "menu_settings", "aj_server"
 #ifdef NV_DESKTOP_UI
-    , "mt_agenda", "mt_perfil", "aj_server", "mt_perfil"
+    , "mt_agenda", "mt_perfil", "aj_server", "mt_perfil", "mt_biblioteca"
 #endif
   };
   if (d < 0 || d >= MENU_N) return;
@@ -658,7 +692,7 @@ static void icone(int d, float cx, float cy, float s, float r, float g, float b,
 static void iconeTraco(int d, float cx, float cy, float s, float r, float g, float b, float a) {
   static const char *nomes[MENU_N] = {"mt_inicio", "mt_explorar", "mt_guia", "menu_sports", "mt_busca", "mt_biblioteca", "mt_agenda", "mt_perfil", "mt_ajustes", "aj_server"
 #ifdef NV_DESKTOP_UI
-    , "mt_agenda", "mt_perfil", "aj_server", "mt_perfil"
+    , "mt_agenda", "mt_perfil", "aj_server", "mt_perfil", "mt_biblioteca"
 #endif
   };
   if (d < 0 || d >= MENU_N) return;
@@ -959,7 +993,7 @@ static const int TV_ORDEM[MENU_N] = {
   MENU_INICIO, MENU_BUSCAR, MENU_EXPLORAR, MENU_GUIA, MENU_ESPORTES, MENU_AGENDA,
   MENU_BIBLIOTECA, MENU_SERVIDORES, MENU_PERFIL, MENU_AJUSTES
 #ifdef NV_DESKTOP_UI
-  , MENU_LISTAS, MENU_CONQUISTAS, MENU_FONTES, MENU_JUNTOS
+  , MENU_LISTAS, MENU_CONQUISTAS, MENU_FONTES, MENU_JUNTOS, MENU_STREAMING
 #endif
 };
 static const char *tvRotulo(int d) { return menu_rotulo(d); }
@@ -975,7 +1009,8 @@ static int tvPastasTotal(const int **v) {
 // Streaming stays collapsed until focus or a mobile swipe passes Settings.
 static int tvPastas(const int **v) {
   int n = tvPastasTotal(v);
-  return layout_desktop_ativo() || linha >= MENU_ST0 ? n : 0;
+  if (layout_desktop_ativo()) return desktopStreaming ? n : 0;
+  return linha >= MENU_ST0 ? n : 0;
 }
 static int tvPastaDoFoco(int foco) {
   const int *v;
@@ -987,10 +1022,16 @@ static int tvOrdem(int *lista) {
   int n = 0, i, np = tvPastas(&v);
 #ifdef NV_DESKTOP_UI
   if (layout_desktop_ativo()) {
-    static const int order[] = {MENU_INICIO, MENU_BUSCAR, MENU_GUIA, MENU_BIBLIOTECA,
-      MENU_LISTAS, MENU_CONQUISTAS, MENU_FONTES, MENU_ESPORTES, MENU_JUNTOS};
-    for (unsigned k = 0; k < sizeof order / sizeof *order; k++) lista[n++] = order[k];
-    for (i = 0; i < np; i++) lista[n++] = MENU_ST0 + i;
+    static const int order[] = {MENU_BUSCAR, MENU_INICIO, MENU_BIBLIOTECA, MENU_GUIA,
+      MENU_LISTAS, MENU_CONQUISTAS, MENU_JUNTOS, MENU_ESPORTES, MENU_STREAMING, MENU_FONTES};
+    for (unsigned k = 0; k < sizeof order / sizeof *order; k++) {
+      if (order[k] == MENU_ESPORTES) {
+        int enabled=0; for(int sport=0;sport<esportes_modalidades_n();sport++) enabled |= esportes_habilitado(sport);
+        if(!enabled) continue;
+      }
+      lista[n++] = order[k];
+      if (order[k] == MENU_STREAMING) for (i = 0; i < np; i++) lista[n++] = MENU_ST0 + i;
+    }
     lista[n++] = MENU_AJUSTES; lista[n++] = MENU_RODAPE;
     return n;
   }
@@ -1229,35 +1270,48 @@ void menu_avatar(float x, float y, float size, float alpha) {
 // Its visibility is independent of keyboard ownership (aberto).
 static void desktopFocar(int d, int b) { ponteiroLinha(d, b); }
 static void desktopEscolher(int d, int b) {
+#ifdef NV_DESKTOP_UI
+  if (d == MENU_STREAMING) { desktopStreaming = !desktopStreaming; if (desktopStreaming) menu_desktop_expandir(); return; }
+#endif
   desktopFocar(d, b);
   escolher();
 }
+#ifdef NV_DESKTOP_UI
+int menu_desktop_streaming(void) { return desktopStreaming; }
+void menu_desktop_servico(int index) { desktopEscolher(MENU_ST0+index,0); }
+void menu_desktop_perfil(void) { desktopEscolher(MENU_RODAPE,0); }
+#endif
 static void desktopBusca(int a, int b) { (void)a; (void)b; menu_ir(MENU_BUSCAR); }
 void menu_desktop_busca_desenhar(void) {
   if (!layout_desktop_ativo()) return;
   float ant = gfx_escala();
   gfx_escala_sair(1.0f);
-  GfxRect r = {NV_TELA_W - 414.0f, 16.0f, 390.0f, 46.0f};
+  // Content headers start below this reserved area; Home artwork stays full bleed.
+#ifdef NV_DESKTOP_UI
+  float tx = NV_DESKTOP_RAIL_W + 18;
+  gfx_icone((GfxRect){tx, 24, 28, 28}, "mt_biblioteca", .8f,.8f,.82f,1);
+  ponteiro_alvo(tx - 10, 12, 52, 56, NULL, desktopToggle, 0, 0);
+#endif
+  GfxRect r = {NV_TELA_W - 414.0f, 13.0f, 390.0f, 46.0f};
   gfx_vidro_folha(r, .5f, 1.0f);
   iconeTraco(MENU_BUSCAR, r.x + 26, r.y + r.h * .5f, 26, .95f, .95f, .95f, .7f);
-  TxtLinha l = txt_linha(TXT_DET_META2, menu_rotulo(MENU_BUSCAR), 220, 220, 224, 255);
+  const char *query = menu_destino() == MENU_BUSCAR ? busca_consulta() : "";
+  TxtLinha l = txt_linha_corta(TXT_DET_META2, *query ? query : menu_rotulo(MENU_BUSCAR), 220, 220, 224, 255, r.w - 70);
   txt_desenhar(l, r.x + 54, r.y + (r.h - l.h) * .5f);
   ponteiro_alvo(r.x, r.y, r.w, r.h, NULL, desktopBusca, 0, 0);
   gfx_escala_sair(ant);
 }
 static float desktopLayout(float *ys) {
   int lista[NV_MENU_FOCOS_TV], n = tvOrdem(lista);
-  float y = 142.0f;
+  float y = 96.0f;
   for (int i = 0; i < NV_MENU_FOCOS_TV; i++) ys[i] = -1;
   for (int i = 0; i < n; i++) {
     int d = lista[i];
     if (d == MENU_AJUSTES || d == MENU_RODAPE) continue;
-    if (d == MENU_ST0
 #ifdef NV_DESKTOP_UI
-        || d == MENU_FONTES
+    if (d == MENU_LISTAS || d == MENU_STREAMING) y += 24;
 #endif
-       ) y += 40;
-    ys[d] = y; y += 56;
+    ys[d] = y; y += 46;
   }
   ys[MENU_AJUSTES] = NV_TELA_H - 132;
   ys[MENU_RODAPE] = NV_TELA_H - 76;
@@ -1268,7 +1322,7 @@ static void desktopAtualizar(void) {
   float base = NV_TELA_H - 142;
   if (aberto && linha != MENU_AJUSTES && linha != MENU_RODAPE &&
       linha >= 0 && linha < NV_MENU_FOCOS_TV && ys[linha] >= 0) {
-    if (ys[linha] - tvRolar < 142) tvRolar = ys[linha] - 142;
+    if (ys[linha] - tvRolar < 96) tvRolar = ys[linha] - 96;
     if (ys[linha] + 56 - tvRolar > base) tvRolar = ys[linha] + 56 - base;
   }
   tvRolar = anim_clamp(tvRolar, 0, fmaxf(0, total - base));
@@ -1279,27 +1333,30 @@ static void desktopDesenhar(void) {
   desktopLayout(ys);
   const int *pastas;
   tvPastasTotal(&pastas);
-  const float w = NV_DESKTOP_SIDEBAR_W;
+  const float w = NV_DESKTOP_RAIL_W;
+  int collapsed = w < 180;
+  int dark = desktop_native_dark();
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+  gfx_sem_recorte();
+  gfx_furo((GfxRect){0, 0, w, NV_TELA_H});
+  desktop_native_sidebar(w / NV_TELA_W);
+  return; // AppKit owns the material's controls and crisp system typography.
+#else
   gfx_cor((GfxRect){0, 0, w, NV_TELA_H}, 0, .071f, .075f, .086f, 1);
-  txt_tracking(TXT_MINI, "NUVIO", 130, 132, 138, 32, 112, 1, 1.5f);
+#endif
   ponteiro_alvo(0, 0, w, NV_TELA_H, NULL, NULL, 0, 0);
   for (int i = 0; i < n; i++) {
     int d = lista[i];
     int footer = d == MENU_AJUSTES || d == MENU_RODAPE;
     float y = ys[d] - (footer ? 0 : tvRolar);
     if (footer) gfx_sem_recorte();
-    else gfx_recorte(0, 142, w, fmaxf(0, NV_TELA_H - 284));
-    if (d == MENU_ST0
-#ifdef NV_DESKTOP_UI
-        || d == MENU_FONTES
-#endif
-       )
-      txt_tracking(TXT_MINI, "STREAMING", 130, 132, 138, 32, y - 30, 1, 1.5f);
-    if (!footer && (y + 56 < 142 || y >= NV_TELA_H - 142)) continue;
-    GfxRect r = {18, y, w - 36, 53};
-    int foco = aberto && linha == d;
+    else gfx_recorte(0, 96, w, fmaxf(0, NV_TELA_H - 238));
+
+    if (!footer && (y + 56 < 96 || y >= NV_TELA_H - 142)) continue;
+    GfxRect r = {12, y, w - 24, 43};
+    int foco = (aberto && linha == d) || (ponteiro_ativo() && ponteiro_x() >= r.x && ponteiro_x() < r.x+r.w && ponteiro_y() >= r.y && ponteiro_y() < r.y+r.h);
     if (d == destino || foco) gfx_cor(r, .25f, 1, 1, 1, foco ? .14f : .10f);
-    int c = foco || d == destino ? 243 : 185;
+    int c = dark ? (foco || d == destino ? 243 : 185) : (foco || d == destino ? 28 : 70);
     const char *rot;
     if (d == MENU_RODAPE) {
       const ContaPerfil *p = perfis_item_ativo();
@@ -1312,12 +1369,23 @@ static void desktopDesenhar(void) {
         tvCirculoPasta(p, 48, y + r.h * .5f, 1);
       } else {
         rot = tvRotulo(d);
-        iconeTraco(d, 48, y + r.h * .5f, 26, c / 255.0f, c / 255.0f, c / 255.0f, 1);
+        float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+        iconeTraco(d, 42, y + r.h * .5f, 26, ar, ag, ab, 1);
       }
     }
-    TxtLinha l = txt_linha_corta(TXT_DET_META2, rot, c, c, c, 255, w - 104);
-    txt_desenhar(l, 80, y + (r.h - l.h) * .5f);
-    float top = footer ? r.y : fmaxf(r.y, 142);
+    if (!collapsed) {
+#ifdef NV_DESKTOP_UI
+      if (d == MENU_LISTAS) {
+        const char *section = menu_rotulo(MENU_BIBLIOTECA);
+        TxtLinha title = txt_linha(TXT_MINI, section, dark ? 140 : 90, dark ? 140 : 90, dark ? 145 : 95, 255);
+        txt_desenhar(title, 24, y - 24);
+      }
+#endif
+      int primary = d == MENU_INICIO || d == MENU_BUSCAR || d == MENU_BIBLIOTECA || d == MENU_GUIA;
+      TxtLinha l = txt_linha_corta(primary ? TXT_ILHA_SEG : TXT_DET_META2, i18n(rot), c, c, c, 255, w - 90);
+      txt_desenhar(l, 72, y + (r.h - l.h) * .5f);
+    }
+    float top = footer ? r.y : fmaxf(r.y, 96);
     float bottom = footer ? r.y + r.h : fminf(r.y + r.h, NV_TELA_H - 142);
     if (bottom > top) ponteiro_alvo(r.x, top, r.w, bottom - top, desktopFocar, desktopEscolher, d, 0);
   }

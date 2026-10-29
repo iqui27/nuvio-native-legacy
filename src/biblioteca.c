@@ -743,9 +743,10 @@ static float bibControleMax(void) {
 // paisagem, quando abas + chips nao cabem na largura (ver bibFaixaQuebra).
 static int bibFaixaQuebra(void);
 static int bibCompacto(void) { return !temAberta && !bibRetrato(); }
-static float bibSubida(void) { return bibCompacto() ? BIB_SUBIDA : 0.0f; }
+static float bibSubida(void) { return bibCompacto() ? BIB_SUBIDA - (layout_desktop_ativo() ? NV_DESKTOP_TOOLBAR_H + 32 - BIB_LINHA1_Y : 0) : 0.0f; }
 // Tabs row top, in header units: centred on the menu pill when there is one.
 static float faixaY(void) {
+  if (layout_desktop_ativo()) return (NV_DESKTOP_TOOLBAR_H + 32) / bibHS();
   float px, py, pw, ph;
   if (!bibCompacto()) return 232.0f / bibHS();
   if (menu_pilula_rect(&px, &py, &pw, &ph)) return (py + ph * 0.5f) / bibHS() - BIB_SEG_H * 0.5f;
@@ -860,7 +861,7 @@ static float toqueBibliotecaMax(void) {
   return linhas > 0 ? fmaxf(0.0f, gradeY() + (linhas - 1) * passoLinha() + alturaLinha() - BIB_GRADE_BASE) : 0.0f;
 }
 static int toqueBibliotecaRolar(const PonteiroRolagem *e) {
-  if (!layout_modo_mobile()) { toqueLivre = 0; return 0; }
+  if (!layout_rolagem_livre()) { toqueLivre = 0; return 0; }
   if (e->fase == PONT_ROL_INICIO) {
     if (!e->eixoY || e->x < bibX() || e->x >= bibX() + bibW() || e->y < gradeY() || e->y >= BIB_GRADE_BASE || nCelulas < 1 || teclado_aberto()) return 0;
     toqueLivre = 1; velY = 0.0f; okDesde = 0;
@@ -868,14 +869,14 @@ static int toqueBibliotecaRolar(const PonteiroRolagem *e) {
   }
   if (e->fase == PONT_ROL_MOVER || e->fase == PONT_ROL_INERCIA) {
     float antes = scrollY;
-    scrollY = anim_clamp(scrollY - e->delta, 0.0f, toqueBibliotecaMax());
+    scrollY = layout_scroll_delta(scrollY, e->delta, 0.0f, toqueBibliotecaMax());
     if (estado() == EST_ITENS && scrollY >= toqueBibliotecaMax() - 2.0f * passoLinha()) lst_itens_mais();
     return fabsf(scrollY - antes) > 0.001f;
   }
   return 1;
 }
 static void toqueBibliotecaRetomarFoco(void) {
-  if (layout_modo_mobile() && toqueLivre && nCelulas > 0) {
+  if (layout_rolagem_livre() && toqueLivre && nCelulas > 0) {
     int r = (int)((scrollY + (BIB_GRADE_BASE - gradeY()) * 0.35f) / passoLinha());
     int i = r * colunas() + foco.coluna;
     if (i >= nCelulas) i = nCelulas - 1;
@@ -2073,7 +2074,7 @@ static void biblioteca_atualizar_(float dt, Uint32 agora) {
   listasAuth = auth;
   int linhas, r, c, ini = gradeIni();
 #ifdef NV_TOUCH_UI
-  if (!layout_modo_mobile()) toqueLivre = 0;
+  if (!layout_rolagem_livre()) toqueLivre = 0;
 #endif
   animTela = anim_mola(animTela, sair ? 0 : 1, dt, NV_MOLA_TELA);
   animVista = anim_rampa(animVista, 1, dt, 160);
@@ -2177,7 +2178,7 @@ static void biblioteca_atualizar_(float dt, Uint32 agora) {
   }
   if (alvo < 0.0f) alvo = 0.0f;
 #ifdef NV_TOUCH_UI
-  if (toqueLivre) scrollY = anim_clamp(scrollY, 0.0f, toqueBibliotecaMax());
+  if (toqueLivre) scrollY = layout_scroll_assentar(scrollY, 0.0f, toqueBibliotecaMax(), dt);
   else
 #endif
     scrollY = anim_mola2(&velY, scrollY, alvo, dt, NV_MOLA2_SCROLL);
@@ -2831,7 +2832,7 @@ static void desenhaVazio(void) {
                       botao_largura(label, "aj_rotate-cw", 0), BOTAO_H_SECUNDARIO};
     botao_pilula(button, label, "aj_rotate-cw", animEstado, 0, 1, 1);
     ponteiro_alvo(button.x, button.y, button.w, button.h, ponteiroRetry, NULL, 0, 0);
-  } else txt_bloco_corta(TXT_CAPTION2, dica, 150, 153, 162, panel.x + T21_SHEET_PAD,
+  } else if (!layout_desktop_ativo()) txt_bloco_corta(TXT_CAPTION2, dica, 150, 153, 162, panel.x + T21_SHEET_PAD,
                          panel.y + panel.h - 72, panel.w - 2 * T21_SHEET_PAD, 28, 1, 2);
 }
 

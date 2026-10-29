@@ -1,4 +1,5 @@
 #include "layout.h"
+#include <math.h>
 
 int layout_modo_resolver(int preferencia, int automaticoMobile) {
   if (preferencia == 0) return 0;
@@ -15,6 +16,8 @@ static int telaH = (int)NV_TELA_BASE_H;
 static int modoMobile;
 #ifdef NV_DESKTOP_UI
 static int janelaW = NV_DESKTOP_WINDOW_W, janelaH = NV_DESKTOP_WINDOW_H;
+float nv_desktop_sidebar = NV_DESKTOP_SIDEBAR_W;
+Uint32 nv_desktop_wheel_until;
 #endif
 float nv_inset_e, nv_inset_t, nv_inset_d, nv_inset_b;
 static float insetFr[4];
@@ -23,8 +26,9 @@ static void layoutAtualizar(void) {
 #ifdef NV_DESKTOP_UI
   modoMobile = janelaW < NV_DESKTOP_BREAKPOINT;
   if (!modoMobile) {
-    nv_layout_w = janelaW * NV_DESKTOP_SCALE;
-    nv_layout_h = janelaH * NV_DESKTOP_SCALE;
+    float scale = fmaxf(NV_DESKTOP_SCALE, 1200.0f / janelaH);
+    nv_layout_w = janelaW * scale;
+    nv_layout_h = janelaH * scale;
   } else
 #endif
   if (modoMobile) {

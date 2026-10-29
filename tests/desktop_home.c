@@ -23,6 +23,7 @@ int main(void) {
   layout_janela_definir(1440, 900);
   art = heroArtworkRect(HOME_LAYOUT_DINAMICA, 0);
   assert(art.x == 336 && art.w == 1824 && nv_layout_h == 1350);
+  assert(fabsf(art.h-1350*.6075f)<.001f);
   puts("PASS: real desktop Home artwork, row rest position, content bounds, continue cards");
   return 0;
 }

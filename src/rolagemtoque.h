@@ -23,7 +23,7 @@ static inline float toquerol_clamp(float v, float minimo, float maximo) {
 /* A screen may retain touch state while the mode selector is open. TV resumes
  * its selected-item scrolling as soon as that state is read again. */
 static inline int toquerol_livre(ToqueRolagem *r) {
-  if (!layout_modo_mobile()) r->livre = 0;
+  if (!layout_rolagem_livre()) r->livre = 0;
   return r->livre;
 }
 static inline void toquerol_vincular(ToqueRolagem *r, GfxRect regiao,
@@ -39,7 +39,7 @@ static inline void toquerol_vincular(ToqueRolagem *r, GfxRect regiao,
 }
 static inline void toquerol_limpar(ToqueRolagem *r) { r->livre = 0; }
 static inline int toquerol_evento(ToqueRolagem *r, const PonteiroRolagem *e) {
-  if (!layout_modo_mobile()) { r->livre = 0; return 0; }
+  if (!layout_rolagem_livre()) { r->livre = 0; return 0; }
   if (!r->offset) return 0;
   if (e->fase == PONT_ROL_INICIO) {
     float x = e->x / r->escala, y = e->y / r->escala;

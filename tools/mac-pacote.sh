@@ -19,7 +19,7 @@ ARCHES=($(python3 -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]
 MIN_MACOS=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["minimum_macos"])' "$WORK/mpv.json")
 BINARIES=()
 for arch in "${ARCHES[@]}"; do
-  cc src/*.c src/dts/*.c -o "$WORK/Nuvio-$arch" -O1 -arch "$arch" \
+  cc src/*.c src/dts/*.c src/desktop_mac.m -framework Cocoa -o "$WORK/Nuvio-$arch" -O1 -arch "$arch" \
     -mmacosx-version-min="$MIN_MACOS" -DNV_DESKTOP_RELEASE -DNV_DESKTOP_MPV -DNV_DESKTOP_UI -DNV_TOUCH_UI -include "$WORK/env.h" \
     -I "$WORK/include" -I "$WORK/include/SDL2" -I src/vendor/jpeg62 \
     -F "$APP/Contents/Frameworks" -framework SDL2 -framework SDL2_image -framework SDL2_ttf \
