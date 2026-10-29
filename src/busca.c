@@ -1086,6 +1086,9 @@ static int menuNoResultado(void) {
   return ctxlista_abrir(itemFoco.indice, itemFoco.rect, arte);
 }
 
+#ifdef NV_TOUCH_UI
+static int retMover(SDL_Keycode key);
+#endif
 static void busca_evento_(const SDL_Event *e) {
   pediuRelogio = 0;
   buInterfaceAtualizar();
@@ -1259,6 +1262,9 @@ static void busca_evento_(const SDL_Event *e) {
     return;
   }
 
+#ifdef NV_TOUCH_UI
+  if (buRetratoTelefone() && retMover(k)) return;
+#endif
   switch (k) {
     case SDLK_TAB: voltarCampo(); break;
     case SDLK_LEFT:
@@ -1418,6 +1424,27 @@ static void retMonta(void) {
     for (int c = 0; c < fil[r].n && retN < RET_MAX_CEL; c++)
       if (retPassa(r, c)) { retR[retN] = r; retC[retN] = c; retN++; }
 }
+static int retFoco(void) {
+  retMonta();
+  for (int i = 0; i < retN; i++)
+    if (retR[i] == focoRes.fileira && retC[i] == focoRes.coluna) return i;
+  if (retN) { focoRes.fileira = retR[0]; focoRes.coluna = retC[0]; }
+  else if (painel == 1) voltarCampo();
+  return 0;
+}
+static int retMover(SDL_Keycode key) {
+  int i = retFoco(), next = i;
+  if (!retN) return 1;
+  switch (key) {
+    case SDLK_LEFT: if (i % 3) next--; else voltarCampo(); break;
+    case SDLK_RIGHT: if (i % 3 < 2 && i + 1 < retN) next++; break;
+    case SDLK_UP: if (i >= 3) next -= 3; else voltarCampo(); break;
+    case SDLK_DOWN: if (i / 3 < (retN - 1) / 3) next = (i + 3 < retN ? i + 3 : retN - 1); break;
+    default: return 0;
+  }
+  focoRes.fileira = retR[next]; focoRes.coluna = retC[next];
+  return 1;
+}
 static float retPasso(void) { return retPt(204.0f); }
 static float retMaxY(void) {
   float h;
@@ -1425,7 +1452,7 @@ static float retMaxY(void) {
   h = retPt(35.0f) + ((retN + 2) / 3) * retPasso() + retPt(24.0f);
   return fmaxf(0.0f, h - (retAreaBase() - retAreaTopo()));
 }
-static void retChip(int i, int b) { (void)b; retFiltro = i; scrollY = scrollAlvo = 0.0f; velY = 0.0f; }
+static void retChip(int i, int b) { (void)b; retFiltro = i; retFoco(); scrollY = scrollAlvo = 0.0f; velY = 0.0f; }
 static void retCampo(int a, int b) { retTec = 1; focarCampoPonteiro(a, b); }
 static void retToque(int a, int b) { (void)a; (void)b; retTec = 0; }
 #endif
@@ -1516,9 +1543,6 @@ static void toqueBuscaRetomarFoco(void) {
 #endif
 
 static void busca_atualizar_(float dt, Uint32 agora) {
-#ifdef NV_TOUCH_UI
-  float sy0 = scrollY;
-#endif
   buInterfaceAtualizar();
   // TECLADO/VOZ DO SISTEMA (sistexto.h): o texto vem inteiro e substitui o campo.
   { char t[BU_MAX_CONSULTA * 2];
@@ -1613,6 +1637,17 @@ static void busca_atualizar_(float dt, Uint32 agora) {
   // Rola so o necessario para a fileira em foco caber inteira na area util —
   // rolagem proporcional ao indice esconderia a primeira fileira antes de o
   // usuario ter chegado nela.
+#ifdef NV_TOUCH_UI
+  if (buRetratoTelefone()) {
+    int i = retFoco();
+    if (painel == 1 && retN && !toqueLivreY) {
+      float top = retPt(35.0f) + (i / 3) * retPasso();
+      float height = retAreaBase() - retAreaTopo();
+      if (top < scrollAlvo) scrollAlvo = top;
+      if (top + retPasso() > scrollAlvo + height) scrollAlvo = top + retPasso() - height;
+    }
+  } else
+#endif
   if (painel == 1 && nFil > 0) {
     int r = focoRes.fileira;
     float topo = filTopo(r);
@@ -1661,8 +1696,6 @@ static void busca_atualizar_(float dt, Uint32 agora) {
     scrollY = anim_mola2(&velY, scrollY, scrollAlvo, dt, NV_MOLA2_SCROLL);
 #ifdef NV_TOUCH_UI
   if (buTelefone()) scrollY = anim_clamp(scrollY, 0.0f, toqueBuscaMaxY());
-  // retrato: o foco nao arrasta a rolagem (so o dedo)
-  if (buRetratoTelefone()) { scrollY = anim_clamp(sy0, 0.0f, retMaxY()); scrollAlvo = scrollY; velY = 0.0f; }
 #endif
 }
 

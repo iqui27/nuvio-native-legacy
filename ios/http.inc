@@ -4,13 +4,41 @@
 @public
   char *body;
   size_t length, capacity, limit;
-  BOOL exceeded;
+  BOOL exceeded, isolated;
+  unsigned redirects;
   NSHTTPURLResponse *response;
   NSError *failure;
   dispatch_semaphore_t done;
 }
 @end
 @implementation NuvioHTTPReceiver
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task
+ willPerformHTTPRedirection:(NSHTTPURLResponse *)redirect newRequest:(NSURLRequest *)request
+ completionHandler:(void (^)(NSURLRequest *))complete {
+  (void)session;
+  NSURL *from = redirect.URL, *to = request.URL;
+  NSNumber *fromPort = from.port ?: @([from.scheme.lowercaseString isEqualToString:@"https"] ? 443 : 80);
+  NSNumber *toPort = to.port ?: @([to.scheme.lowercaseString isEqualToString:@"https"] ? 443 : 80);
+  BOOL cross = ![from.scheme.lowercaseString isEqual:to.scheme.lowercaseString] ||
+               ![from.host.lowercaseString isEqual:to.host.lowercaseString] || ![fromPort isEqual:toPort];
+  BOOL safe = [request.HTTPMethod isEqualToString:@"GET"] || [request.HTTPMethod isEqualToString:@"HEAD"];
+  if (++redirects > 5 || (![to.scheme.lowercaseString isEqualToString:@"http"] &&
+                         ![to.scheme.lowercaseString isEqualToString:@"https"]) ||
+      ([from.scheme.lowercaseString isEqualToString:@"https"] && ![to.scheme.lowercaseString isEqualToString:@"https"]) ||
+      (cross && (!safe || request.HTTPBody || request.HTTPBodyStream))) {
+    failure = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorHTTPTooManyRedirects userInfo:nil];
+    complete(nil); [task cancel]; return;
+  }
+  isolated |= cross;
+  // A fresh request prevents Foundation from restoring stripped headers.
+  NSMutableURLRequest *next = isolated ? [NSMutableURLRequest requestWithURL:to] : [request mutableCopy];
+  next.HTTPMethod = request.HTTPMethod;
+  next.timeoutInterval = request.timeoutInterval;
+  next.cachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
+  if (isolated) next.HTTPShouldHandleCookies = NO;
+  else next.allHTTPHeaderFields = task.originalRequest.allHTTPHeaderFields;
+  complete(next);
+}
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task
  didReceiveResponse:(NSURLResponse *)r completionHandler:(void (^)(NSURLSessionResponseDisposition))complete {
   (void)session; (void)task;
@@ -46,8 +74,9 @@
 }
 @end
 
-char *nv_host_http_limit(const char *verbo, const char *url, const char *cabs,
+char *nv_host_http_limit_cancel(const char *verbo, const char *url, const char *cabs,
                          const char *corpo, int prazoMs, size_t maxBytes,
+                         int (*parar)(void *), void *context,
                          int *status, int *retryAfter, long *n, char *erro, size_t nErro) {
   if (status) *status = 0;
   if (retryAfter) *retryAfter = 0;
@@ -75,14 +104,26 @@ char *nv_host_http_limit(const char *verbo, const char *url, const char *cabs,
   NSURLSessionConfiguration *config = [NSURLSessionConfiguration ephemeralSessionConfiguration];
   config.HTTPMaximumConnectionsPerHost = 6;
   config.waitsForConnectivity = NO;
+  config.timeoutIntervalForResource = req.timeoutInterval;
   NSURLSession *session = [NSURLSession sessionWithConfiguration:config delegate:receiver delegateQueue:nil];
-  [[session dataTaskWithRequest:req] resume];
-  dispatch_semaphore_wait(receiver->done, DISPATCH_TIME_FOREVER);
+  NSURLSessionDataTask *task = [session dataTaskWithRequest:req];
+  dispatch_time_t deadline = dispatch_time(DISPATCH_TIME_NOW, (int64_t)(prazoMs > 0 ? prazoMs : 20000) * NSEC_PER_MSEC);
+  BOOL stopped = NO;
+  [task resume];
+  while (dispatch_semaphore_wait(receiver->done, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_MSEC))) {
+    if ((parar && parar(context)) || dispatch_time(DISPATCH_TIME_NOW, 0) >= deadline) {
+      stopped = YES;
+      [task cancel];
+      // Completion serializes delegate writes before the buffer is freed.
+      dispatch_semaphore_wait(receiver->done, DISPATCH_TIME_FOREVER);
+      break;
+    }
+  }
   [session finishTasksAndInvalidate];
   if (status) *status = (int)receiver->response.statusCode;
   NSString *ra = receiver->response.allHeaderFields[@"Retry-After"];
   if (retryAfter && ra) *retryAfter = ra.intValue;
-  if (receiver->exceeded || receiver->failure || !receiver->response) {
+  if (stopped || receiver->exceeded || receiver->failure || !receiver->response) {
     if (receiver->exceeded && n) *n = -1;
     if (erro) snprintf(erro, nErro, "%s", receiver->exceeded ? "body limit exceeded" :
                        receiver->failure ? receiver->failure.localizedDescription.UTF8String : "sem resposta");
@@ -94,6 +135,13 @@ char *nv_host_http_limit(const char *verbo, const char *url, const char *cabs,
   receiver->body[receiver->length] = 0;
   if (n) *n = (long)receiver->length;
   return receiver->body;
+}
+
+char *nv_host_http_limit(const char *verbo, const char *url, const char *cabs,
+                         const char *corpo, int prazoMs, size_t maxBytes,
+                         int *status, int *retryAfter, long *n, char *erro, size_t nErro) {
+  return nv_host_http_limit_cancel(verbo, url, cabs, corpo, prazoMs, maxBytes, NULL, NULL,
+                                   status, retryAfter, n, erro, nErro);
 }
 
 char *nv_host_http(const char *verbo, const char *url, const char *cabs,

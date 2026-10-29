@@ -247,7 +247,8 @@ unsigned rede_pedido_capacidades(void) {
  * comum vai pelo NSURLSession do hospedeiro (nv_host_http), que segue
  * redirects sozinho; o que ele nao cumpre (corpo em fluxo, janela, 3xx
  * devolvido, mesmo host, TLS pessoal) continua indisponivel. */
-static int pedidoHost(const PedidoCtx *c, RedeResposta *r) {
+static int pedidoHostParar(void *context) { return pedidoParar((PedidoCtx *)context); }
+static int pedidoHost(PedidoCtx *c, RedeResposta *r) {
   const RedePedido *p = c->p;
   char erro[200], *cabs = NULL, *corpo = NULL;
   size_t n = 1;
@@ -266,10 +267,13 @@ static int pedidoHost(const PedidoCtx *c, RedeResposta *r) {
   if (p->n_corpo && !(corpo = strndup((const char *)p->corpo, p->n_corpo))) {
     free(cabs); r->erro = REDE_MEMORIA; return 0;
   }
-  r->corpo = nv_host_http_limit(p->metodo ? p->metodo : "GET", p->url, cabs, corpo,
-                          (int)(c->prazo - c->inicio), c->tetoCorpo, &st, &retry, &bytes, erro, sizeof erro);
+  if (pedidoParar(c)) { free(cabs); free(corpo); return 0; }
+  r->corpo = nv_host_http_limit_cancel(p->metodo ? p->metodo : "GET", p->url, cabs, corpo,
+                          (int)(c->prazo - pedidoAgoraMs()), c->tetoCorpo,
+                          pedidoHostParar, c, &st, &retry, &bytes, erro, sizeof erro);
   free(cabs); free(corpo);
   r->status = st; r->retry_after_s = retry;
+  if (pedidoParar(c)) { free(r->corpo); r->corpo = NULL; return 0; }
   if (!r->corpo) { r->erro = bytes == -1 ? REDE_LIMITE_CORPO : REDE_TRANSPORTE; return 0; }
   r->n_corpo = (size_t)bytes; r->bytes_fio = (uint64_t)bytes;
   r->erro = REDE_OK;

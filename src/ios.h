@@ -47,6 +47,11 @@ char *nv_host_http(const char *verbo, const char *url, const char *cabs,
 char *nv_host_http_limit(const char *verbo, const char *url, const char *cabs,
                          const char *corpo, int prazoMs, size_t maxBytes,
                          int *status, int *retryAfter, long *n, char *erro, size_t nErro);
+// Bounded receipt with caller cancellation checked during an active transfer.
+char *nv_host_http_limit_cancel(const char *verbo, const char *url, const char *cabs,
+                         const char *corpo, int prazoMs, size_t maxBytes,
+                         int (*parar)(void *), void *context,
+                         int *status, int *retryAfter, long *n, char *erro, size_t nErro);
 // rede.c keeps the Android name for the host path; on iOS it resolves here.
 #define android_http nv_host_http
 

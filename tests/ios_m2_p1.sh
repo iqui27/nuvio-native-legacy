@@ -17,7 +17,9 @@ host = Path('ios/ios.m').read_text()
 if Path('ios/http.inc').exists():
     transport = Path('ios/http.inc').read_text()
     pedido = Path('src/rede_pedido.inc').read_text()
-    assert 'c->tetoCorpo, &st' in pedido
+    assert 'c->tetoCorpo' in pedido
+    if 'nv_host_http_limit_cancel' in transport:
+        transport = '#define NV_HTTP_CANCEL_TEST 1\n' + transport
     assert 'bytes == -1 ? REDE_LIMITE_CORPO' in pedido
 else:
     transport = host[host.index('char *nv_host_http('):host.index('long ios_ram_mb(')]
@@ -32,8 +34,11 @@ PY
 cc -fobjc-arc -fblocks "$work/http.m" -framework Foundation -o "$work/http"
 http_rc=0
 "$work/http" "$(<"$work/port")" || http_rc=$?
+if [ "${1:-}" = http ]; then exit "$http_rc"; fi
 # Reuse the existing GL harness, adding real pointer and D-pad assertions.
 export NUVIO_M2_CONTROLS=1
 library_rc=0
 bash tests/biblioteca_retrato.sh || library_rc=$?
-[ "$http_rc" = 0 ] && [ "$library_rc" = 0 ]
+search_rc=0
+bash tests/busca_toque_modo.sh || search_rc=$?
+[ "$http_rc" = 0 ] && [ "$library_rc" = 0 ] && [ "$search_rc" = 0 ]
