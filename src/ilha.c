@@ -2229,9 +2229,8 @@ static void ilha_desenharCorpo_(Uint32 agora) {
       aPil = soHora ? 0.0f : 1.0f - corpoT * 10.0f;
       if (aPil < 0.0f) aPil = 0.0f;
       aHora = soHora && conteudoA > k3 ? conteudoA : k3;
-      // O corpo entra junto com a forma (a ilha o recorta enquanto cresce):
-      // fade curto a partir de 30%, sem esperar a mola assentar.
-      aMod = (corpoT - 0.30f) / 0.35f; aMod = aMod < 0.0f ? 0.0f : aMod > 1.0f ? 1.0f : aMod;
+      // Reveal during the final 40% of growth; reverse on the same spring.
+      aMod = fminf(anim_clamp(corpoT, 0.0f, 1.0f), anim_suave((corpoT - 0.60f) / 0.40f));
       if (anim_politica_reduzida || ajustes_animacoes_reduzidas() || gfx_efeitos_minimos())
         aMod = corpoT >= 0.5f ? 1.0f : 0.0f;
     }
