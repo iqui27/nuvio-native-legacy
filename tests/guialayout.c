@@ -21,7 +21,8 @@ int main(void){
     c.grupo="News";c.logo=c.desc=c.epgId=c.tvgNome=c.url=c.ua=c.ref="";
     sGrupoInfo(f,c.grupo,1);sCanalAdd(f,&c);sLtvF[f].total++;
     if(!i)for(int j=0;j<10;j++){
-      char id[16];snprintf(id,sizeof id,"extra-%d",j);c.id=id;
+      char id[16],name[32];snprintf(id,sizeof id,"extra-%d",j);c.id=id;
+      snprintf(name,sizeof name,"Extra channel %d",j);c.nome=name;
       sCanalAdd(f,&c);sLtvF[f].total++;
     }
   }

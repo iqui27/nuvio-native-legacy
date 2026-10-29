@@ -423,6 +423,8 @@ float ajustes_ui_botao(const char *rot, const char *icone, float x, float y, int
 float ajustes_ui_dicas(const char *const *teclas, const char *const *rotulos, int n, float x, float y, int desenha);
 void  ajustes_ui_neutro(GfxRect r, float raioPx, float vidA);
 void  ajustes_ui_foco_linha(GfxRect r, float raioPx);
+// Shared Settings switch; `on` is animated progress, 0..1.
+float ajustes_ui_interruptor(float xDir, float yc, float on, float a);
 float ajustes_ui_antes_depois(const char *rot, int a, int b, const char *unid, int max,
                               float x, float y, float w, int compacto, float cr, float cg, float cb);
 void  ajustes_ui_grafico_memoria(float x, float y, float w, float h);

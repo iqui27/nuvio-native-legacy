@@ -21,6 +21,7 @@
 #include "plrui.h"
 #include "badges.h"
 #include "ponteiro.h"
+#include "rolagemtoque.h"
 #include "buscanorm.h"
 #include "spotlight.h"
 #include "tela21.h"
@@ -1987,7 +1988,8 @@ static void gv_button(int id,const char *text,const char *icon,float x,float y,f
 static int gv_sem_veu;      /* the screen draws the one veil under the sheets */
 static void gv_dim(float top,float a){
   if(gv_sem_veu)return;
-  gfx_cor((GfxRect){0,top,1920,1080-top},0,0,0,0,fminf(a,T21_VEIL)*gv_veu_t);
+  int options=!strcmp(screen,"ajustes")||(!strcmp(gv_sai,"ajustes")&&gv_sai_t>0);
+  gfx_cor((GfxRect){0,top,options?NV_LAYOUT_REAL_W:1920,(options?NV_LAYOUT_REAL_H:1080)-top},0,0,0,0,fminf(a,T21_VEIL)*gv_veu_t);
 }
 
 /* --- barra de cima: Guia TV + abas Grade/Cartoes/Esportes/Filmes e series --- */
@@ -2639,35 +2641,153 @@ static void gv_canal_opcoes_sheet(void){
    const char *q=gv_quali(c->nome);if(q[0])gv_badge(q,rx+(float)l.w+16,736);}
   txt_bloco(TXT_ILHA_SUB,i18n("Etiquetas do provedor viram selos. O nome original fica para casar o guia."),154,156,158,rx,790,700,26,1,2);
 }
+/* Options owns its list navigation and nested pickers; the guide stays behind it. */
+static int gv_aj_sub,gv_aj_source_off;
+static float gv_aj_scroll;
+static GfxRect gv_aj_body;
+#ifdef NV_TOUCH_UI
+static ToqueRolagem gv_aj_touch;
+static int gv_aj_rolar(const PonteiroRolagem *e){return !strcmp(screen,"ajustes")&&toquerol_evento(&gv_aj_touch,e);}
+#endif
+static float gv_aj_scale(void){return layout_modo_mobile()?1.6f:1;}
+static void gv_aj_target(int id,GfxRect r){
+  if(!gv_reg)return;
+  if(id!=1936){
+    float bottom=fminf(r.y+r.h,gv_aj_body.y+gv_aj_body.h);
+    r.y=fmaxf(r.y,gv_aj_body.y);r.h=bottom-r.y;if(r.h<=0)return;
+  }
+  float k=gv_aj_scale();r.x*=k;r.y*=k;r.w*=k;r.h*=k;
+  ponteiro_alvo(r.x,r.y,r.w,r.h,point_focus,point_activate,id,0);gv_registra(id,r.x,r.y,r.w,r.h);
+}
+static const int gv_aj_ids[]={1936,1940,1942,1944,1945,1947,1948,1949,1937,1938,1939};
+static const char *gv_aj_title(int sub){
+  return i18n(sub==1942?"Tamanho da prévia":sub==1944?"Quando iniciar a prévia":sub==1947?"Alcance do guia":sub==1937?"Gerenciar fontes":sub==1949?"Saúde do EPG":"Opções da grade");
+}
+static int gv_aj_selected(int sub){
+  return sub==1942?(ajustes_guia_previa_grande()?1942:1941):sub==1944?(ajustes_guia_previa_destacar()?1943:1944):sub==1947?(ajustes_guia_dias()==3?1947:1946):sub==1937?1955:1975;
+}
+static void gv_aj_back(void){
+  focus=gv_aj_sub;gv_aj_sub=0;gv_gfolha.ok=0;
+#ifdef NV_TOUCH_UI
+  toquerol_limpar(&gv_aj_touch);
+#endif
+}
+static void gv_aj_open(int id){
+  gv_aj_sub=id;gv_aj_source_off=0;gv_aj_scroll=0;focus=gv_aj_selected(id);
+#ifdef NV_TOUCH_UI
+  toquerol_limpar(&gv_aj_touch);
+#endif
+  GuiaFonteSaude source;if((id==1937||id==1949)&&guia_fonte_saude(0,&source))focus=1985;
+  gv_gfolha.ok=0;
+}
+static void gv_aj_row(int id,const char *icon,const char *title,const char *caption,const char *value,int toggle,int selected,float x,float y,float w){
+  GfxRect r={x,y,w,64};int f=gv_btn_foc(id);
+  if(f)plrui_linha_foco(gv_foco_folha(r),T21_R_ROW,1);
+  gfx_icone((GfxRect){x+18,y+19,26,26},icon,.953f,.949f,.937f,f?1:.65f);
+  float tail=toggle>=0?78:value?fminf(w*.36f,280):48;
+  float tw=w-92-tail;
+  TxtLinha t=txt_linha_corta_bruta(TXT_ILHA_NOME,title,243,242,239,255,tw);
+  if(layout_modo_mobile()&&!caption&&txt_linha_bruta(TXT_ILHA_NOME,title,243,242,239,255).w>tw)
+    txt_bloco_bruto(TXT_ILHA_NOME,title,243,242,239,x+60,y+6,tw,26,1,2);
+  else txt_desenhar(t,x+60,y+(caption?9:(64-t.h)/2));
+  if(caption)gv_label(TXT_ILHA_APOIO,caption,x+60,y+38,tw,1);
+  if(toggle>=0){
+    static float on[9],velocity[9];static int ready;
+    int i=id==1940?0:id==1945?1:id>=1985&&id<1991?3+id-1985:2;
+    if(!ready){on[0]=guia_preview_ligado();on[1]=ajustes_guia_previa_sem_som();on[2]=ajustes_vidro();ready=1;}
+    if(gv_reg)on[i]=anim_mola2(&velocity[i],on[i],toggle,gv_dt,T21_FOCO);
+    ajustes_ui_interruptor(x+w-20,y+32,on[i],1);
+  }else{
+    if(value){TxtLinha v=txt_linha_corta_bruta(TXT_ILHA_SUB,value,154,156,158,255,tail-34);txt_desenhar(v,x+w-48-v.w,y+(64-v.h)/2);}
+    if(selected||!gv_aj_sub||gv_aj_sub==1937||gv_aj_sub==1949)
+      gfx_icone((GfxRect){x+w-36,y+22,20,20},selected?"aj_check":"aj_chevron-right",.75f,.76f,.78f,1);
+  }
+  gv_aj_target(id,r);
+}
 static void gv_ajustes_sheet(void){
   gv_dim(0,.42f);
-  float x=gv_sheet_base(360,190,1440,800);
-  gv_sheet_head(x,222,i18n("Opções da grade"),i18n("A prévia é opcional. Imagens do programa continuam padrão em TVs com 1 GB."));
-  struct {const char *nome,*sub;} rows[]={
-    {"Prévia ao vivo no guia","Sem som por padrão. Uma prévia por vez."},
-    {"Tamanho da prévia","Grande ocupa a lateral direita do destaque, com o véu preto. Como o guia de hoje."},
-    {"Quando iniciar a prévia","Escolha quando um vídeo começa."},
-    {"Prévia sem som","Nenhum som enquanto navega."},
-    {"Alcance do guia","Menos dias usam menos memória."},
-    {"Material Glass",""},
-  };
-  for(int i=0;i<6;i++){
-    float y=336+i*88;
-    gv_label(TXT_ILHA_NOME,i18n(rows[i].nome),x,y,800,0);
-    if(rows[i].sub[0])gv_label(TXT_ILHA_SUB,i18n(rows[i].sub),x,y+34,800,1);
-    float bx=x+1376;
-    if(i==0)gv_button(1940,guia_preview_ligado()?i18n("Ativada"):i18n("Desativada"),NULL,bx-190,y,190,guia_preview_ligado(),1);
-    if(i==1){int big=ajustes_guia_previa_grande();gv_button(1941,i18n("Cartão"),NULL,bx-330,y,160,!big,1);gv_button(1942,i18n("Grande"),NULL,bx-160,y,160,big,1);}
-    if(i==2){int auto_start=ajustes_guia_previa_destacar();gv_button(1943,i18n("Ao destacar"),NULL,bx-490,y,230,auto_start,1);gv_button(1944,i18n("Ao selecionar"),NULL,bx-250,y,250,!auto_start,1);}
-    if(i==3){int muted=ajustes_guia_previa_sem_som();gv_button(1945,i18n(muted?"Ativada":"Desativada"),NULL,bx-190,y,190,muted,1);}
-    if(i==4){int days=ajustes_guia_dias();gv_button(1946,i18n("Um dia"),NULL,bx-410,y,190,days==1,1);gv_button(1947,i18n("Três dias"),NULL,bx-210,y,210,days==3,1);}
-    if(i==5)gv_button(1948,ajustes_vidro()?i18n("Ativada"):i18n("Desativada"),NULL,bx-190,y,190,ajustes_vidro(),1);
-    if(i<5)gfx_cor((GfxRect){x,y+72,1376,1},0,1,1,1,.08f);
+  float k=gv_aj_scale(),sw=NV_LAYOUT_REAL_W/k,sh=NV_LAYOUT_REAL_H/k;
+  float w=fminf(1040,sw-(nv_inset_e+nv_inset_d)/k-48);
+  float h=fminf(1000,sh-(nv_inset_t+nv_inset_b)/k-48);
+  float x=(sw+(nv_inset_e-nv_inset_d)/k-w)/2,y=(sh+(nv_inset_t-nv_inset_b)/k-h)/2;
+  t21_ilha_folha((GfxRect){x,y,w,h},T21_R_MODAL,1);
+  x+=32;w-=64;
+  plrui_kicker(i18n("Guia TV"),x,y+30,154,156,158,1);
+  gv_label(TXT_ILHA_TITULO,gv_aj_title(gv_aj_sub),x,y+64,w-80,0);
+  /* Header disc is the only action above the list: Up reaches it, Back closes. */
+  GfxRect back={x+w-56,y+30,56,56};
+  if(gv_btn_foc(1936))plrui_pilula_foco(gv_foco_folha(back),1);else plrui_botao_repouso(back,1);
+  float ink=gv_btn_foc(1936)?ajustes_tinta_foco()/255.0f:.953f;
+  gfx_icone((GfxRect){back.x+16,back.y+16,24,24},gv_aj_sub?"aj_arrow-left":"aj_x",ink,ink,ink,1);
+  if(gv_reg)ponteiro_camada();
+  gv_aj_target(1936,back);
+  gv_aj_body=(GfxRect){x,y+124,w,h-144};
+  float end=gv_aj_sub?(gv_aj_sub==1937||gv_aj_sub==1949?852:410):980;
+  float limit=fmaxf(0,end-124-gv_aj_body.h),fy=-1;
+  if(!gv_aj_sub){
+    const float rows[]={0,162,232,302,372,504,574,706,776,846,916};
+    for(int i=1;i<11;i++)if(gv_aj_ids[i]==focus)fy=rows[i];
+  }else if(gv_aj_sub==1942||gv_aj_sub==1944||gv_aj_sub==1947){
+    int first=gv_aj_sub==1942?1941:gv_aj_sub==1944?1943:1946;
+    if(focus==first||focus==first+1)fy=194+(focus-first)*76;
+  }else if(focus>=1985&&focus<1991)fy=194+(focus-1985)*76;
+  else if(focus==1955||focus==1975)fy=688;
+  else if(focus==1956||focus==1957)fy=788;
+  int reveal=1;
+#ifdef NV_TOUCH_UI
+  toquerol_vincular(&gv_aj_touch,gv_aj_body,k,0,limit,1,&gv_aj_scroll);
+  reveal=!toquerol_livre(&gv_aj_touch);
+  if(gv_reg)ponteiro_rolagem(gv_aj_rolar);
+#endif
+  if(reveal&&fy>=0){
+    gv_aj_scroll=fmaxf(gv_aj_scroll,fy+64-124-gv_aj_body.h);
+    gv_aj_scroll=fminf(gv_aj_scroll,fy-124);
   }
-  gv_button(1949,i18n("Saúde do EPG"),"aj_calendar",x,898,320,0,0);
-  gv_button(1937,i18n("Gerenciar fontes"),"aj_settings-2",x+336,898,340,0,0);
-  gv_button(1938,i18n("Controle parental"),"aj_shield-check",x+692,898,350,0,0);
-  gv_button(1939,i18n("Multiview"),"aj_layout-dashboard",x+1058,898,270,0,0);
+  gv_aj_scroll=fmaxf(0,fminf(gv_aj_scroll,limit));
+  GfxRecorteAnt clip=gfx_recorte_dentro(x,gv_aj_body.y,w,gv_aj_body.h);
+  y-=gv_aj_scroll;
+  if(gv_aj_sub){
+    gv_label(TXT_ILHA_SUB,i18n("Opções da grade"),x,y+124,w,1);
+    gfx_cor((GfxRect){x,y+165,w,1},0,1,1,1,.08f);
+    int sub=gv_aj_sub,sel=gv_aj_selected(sub);
+    if(sub==1942||sub==1944||sub==1947){
+      const char *a=sub==1942?"Cartão":sub==1944?"Ao destacar":"Um dia";
+      const char *b=sub==1942?"Grande":sub==1944?"Ao selecionar":"Três dias";
+      int first=sub==1942?1941:sub==1944?1943:1946;
+      gv_aj_row(first,"aj_monitor",i18n(a),NULL,NULL,-1,sel==first,x,y+194,w);
+      gv_aj_row(first+1,"aj_monitor",i18n(b),NULL,NULL,-1,sel==first+1,x,y+270,w);
+      if(sub!=1942)gv_label(TXT_ILHA_SUB,i18n(sub==1947?"Menos dias usam menos memória.":"Escolha quando um vídeo começa."),x+18,y+374,w-36,1);
+    }else{
+      GuiaFonteSaude source;int n=0;
+      for(;n<6&&guia_fonte_saude(gv_aj_source_off+n,&source);n++){
+        char status[120];snprintf(status,sizeof status,i18n("%d de %d canais com guia"),source.comGuia,source.canais);
+        gv_aj_row(1985+n,sub==1937?"aj_tv-minimal-play":"aj_calendar",source.nome,status,NULL,sub==1937?guia_fonte_ligada(gv_aj_source_off+n):-1,0,x,y+194+n*76,w);
+      }
+      if(!n)gv_label(TXT_ILHA_SUB,i18n("Nenhuma fonte"),x+18,y+212,w-36,1);
+      if(sub==1937){
+        gv_aj_row(1955,"aj_plus",i18n("Adicionar fonte"),NULL,NULL,-1,0,x,y+688,w);
+      }else gv_aj_row(1975,"aj_plus",i18n("Adicionar XMLTV"),NULL,NULL,-1,0,x,y+688,w);
+      if(gv_aj_source_off)gv_aj_row(1956,"aj_arrow-left",i18n("Anterior"),NULL,NULL,-1,0,x,y+788,200);
+      if(guia_fonte_saude(gv_aj_source_off+6,&source))gv_aj_row(1957,"aj_chevron-right",i18n("Próximo"),NULL,NULL,-1,0,x+w-200,y+788,200);
+    }
+    gfx_recorte_voltar(clip);return;
+  }
+  plrui_kicker(i18n("Prévia"),x+18,y+132,154,156,158,1);
+  gv_aj_row(1940,"aj_tv-minimal-play",i18n("Prévia ao vivo no guia"),NULL,NULL,guia_preview_ligado(),0,x,y+162,w);
+  gv_aj_row(1942,"aj_monitor",i18n("Tamanho da prévia"),NULL,i18n(ajustes_guia_previa_grande()?"Grande":"Cartão"),-1,0,x,y+232,w);
+  gv_aj_row(1944,"aj_play",i18n("Quando iniciar a prévia"),NULL,i18n(ajustes_guia_previa_destacar()?"Ao destacar":"Ao selecionar"),-1,0,x,y+302,w);
+  gv_aj_row(1945,"aj_volume-2",i18n("Prévia sem som"),NULL,NULL,ajustes_guia_previa_sem_som(),0,x,y+372,w);
+  gfx_cor((GfxRect){x+18,y+454,w-36,1},0,1,1,1,.08f);
+  plrui_kicker(i18n("Aparência"),x+18,y+474,154,156,158,1);
+  gv_aj_row(1947,"aj_calendar-days",i18n("Alcance do guia"),i18n("Menos dias usam menos memória."),i18n(ajustes_guia_dias()==3?"Três dias":"Um dia"),-1,0,x,y+504,w);
+  gv_aj_row(1948,"aj_palette",i18n("Material Glass"),NULL,NULL,ajustes_vidro(),0,x,y+574,w);
+  gfx_cor((GfxRect){x+18,y+656,w-36,1},0,1,1,1,.08f);
+  plrui_kicker(i18n("Guia"),x+18,y+676,154,156,158,1);
+  gv_aj_row(1949,"aj_calendar",i18n("Saúde do EPG"),NULL,NULL,-1,0,x,y+706,w);
+  gv_aj_row(1937,"aj_settings-2",i18n("Gerenciar fontes"),NULL,NULL,-1,0,x,y+776,w);
+  gv_aj_row(1938,"aj_shield-check",i18n("Controle parental"),NULL,NULL,-1,0,x,y+846,w);
+  gv_aj_row(1939,"aj_layout-dashboard",i18n("Multiview"),NULL,NULL,-1,0,x,y+916,w);
+  gfx_recorte_voltar(clip);
 }
 static void gv_pastas_sheet(void){
   gv_dim(0,.42f);
@@ -2817,7 +2937,10 @@ static void gv_como(const char *nome,void (*f)(void)){
 static void gv_folha(void){if(gv_sports())gv_sports_screen();else gv_draw_sheet(!strcmp(screen,"fontes-erro"));}
 static void gv_folha_em(float t){
   float og=gfx_opacidade_grupo;gfx_opacidade_grupo=og*t;
-  if(t<1)gfx_transformar(960,540,anim_mistura(T21_SHEET_SCALE,1,t),0,0);
+  if(!strcmp(screen,"ajustes")){
+    float k=gv_aj_scale(),s=anim_mistura(T21_SHEET_SCALE,1,t);
+    gfx_transformar(0,0,k*s,NV_LAYOUT_REAL_W*(1-s)/2,NV_LAYOUT_REAL_H*(1-s)/2);
+  }else if(t<1)gfx_transformar(960,540,anim_mistura(T21_SHEET_SCALE,1,t),0,0);
   gv_folha();gfx_sem_transformar();gfx_opacidade_grupo=og;
 }
 static void gv_fantasma(void){gv_reg=0;gv_folha_em(anim_suave(gv_sai_t));}
@@ -2879,7 +3002,7 @@ static void gv_screen(void){
     /* error strip above the veil, after the sheet: the sheet takes first focus */
     if(err){gv_reg=1;gv_strip();gv_reg=0;}
   }
-  if(gv_lista()&&!gv_side_open&&num_focus){int ok=0;for(int i=0;i<num_focus;i++)if(next_focus[i]==focus)ok=1;
+  if(strcmp(screen,"ajustes")&&gv_lista()&&!gv_side_open&&num_focus){int ok=0;for(int i=0;i<num_focus;i++)if(next_focus[i]==focus)ok=1;
     if(!ok){focus=next_focus[0];if(topo)for(int i=0;i<num_focus;i++)if(next_focus[i]>=2000){focus=next_focus[i];break;}}}
   if(gv_side_open&&ov){gv_reg=0;gv_sidebar(base);}
   if(!gv_gfolha_visto)gv_gfolha.ok=0;
@@ -2899,6 +3022,11 @@ static void gv_go(const char *name){
     snprintf(gv_pagina,sizeof gv_pagina,"%s",name);gv_npilha=0;
   }
   go(name);
+  if(!strcmp(name,"ajustes")){gv_aj_sub=0;gv_aj_scroll=0;gv_gfolha.ok=0;
+#ifdef NV_TOUCH_UI
+    toquerol_limpar(&gv_aj_touch);
+#endif
+  }
   focus=!strcmp(name,"ajustes")?1940:-1;
   if((gv_zone==5||gv_zone==4)&&!gv_overlay_nome(name))focus=f0;   /* a tab keeps its focus */
   if(!strcmp(name,"dock"))gv_zone=1;
@@ -2917,7 +3045,7 @@ static void gv_deixa(void){
  * no agora. Folhas abertas assim ficam sobre a pagina corrente. */
 static void gv_abrir(const char *name){
   gv_npilha=0;gv_saida[0]=0;
-  if(gv_overlay_nome(name)){gv_folha_t=0;if(!strcmp(name,"ajustes"))focus=1940;return;}
+  if(gv_overlay_nome(name)){gv_folha_t=0;if(!strcmp(name,"ajustes")){gv_aj_sub=0;gv_gfolha.ok=0;focus=1940;}return;}
   snprintf(gv_pagina,sizeof gv_pagina,"%s",name);
   gv_pag_t=0;gv_tdesl=0;gv_tfoc=0;gv_tmin=0;gv_pfoco=-1;
   gv_zone=!strcmp(name,"cartoes")?6:0;gv_side_open=0;gv_exit_armed=0;
@@ -2926,6 +3054,7 @@ static void gv_abrir(const char *name){
  * guia que a abriu, ou para a pagina do guia; o foco volta para onde estava.
  * A folha que fecha encolhe e some sobre o que fica (gv_sai). */
 static void gv_voltar(void){
+  if(!strcmp(screen,"ajustes")&&gv_aj_sub){gv_aj_back();return;}
   int ov=gv_overlay();
   if(ov){snprintf(gv_sai,sizeof gv_sai,"%s",screen);gv_sai_t=1;}
   if(ov&&gv_npilha){GVNivel n=gv_pilha[--gv_npilha];go(n.nome);focus=n.foco;gv_folha_t=1;return;}
@@ -2970,6 +3099,17 @@ static int gv_activate(void){
     return 1;}
   if(gv_sheet()||!strncmp(screen,"epg-",4)){
     if(!strcmp(screen,"ajustes")){
+      if(focus==1936){gv_voltar();return 1;}
+      if(!gv_aj_sub&&(focus==1942||focus==1944||focus==1947||focus==1937||focus==1949)){gv_aj_open(focus);return 1;}
+      if(gv_aj_sub==1937||gv_aj_sub==1949){
+        if(focus>=1985&&focus<1991){
+          if(gv_aj_sub==1937){guia_fonte_alternar(gv_aj_source_off+focus-1985);gv_snap_force=1;}
+          else epg_recarregar();
+        }else if(focus==1955)g5ui_open("setup-tipo");
+        else if(focus==1975)gv_go("epg-verificando");
+        else if(focus==1956||focus==1957){gv_aj_source_off+=focus==1956?-6:6;focus=1985;gv_gfolha.ok=0;}
+        return 1;
+      }
       if(focus==1940)guia_definir_preview(!guia_preview_ligado());
       else if(focus==1942)ajustes_definir_guia_previa_grande(1);
       else if(focus==1941)ajustes_definir_guia_previa_grande(0);
@@ -3095,21 +3235,31 @@ static void gv_side_enter(void){
   gv_side_open=1;gv_zone=3;if(!gv_sb_tem(gv_sb))gv_sb=3;
 }
 static void gv_side_leave(void){gv_side_open=0;gv_zone=gv_return_zone;focus=gv_return_focus;}
-/* Options use rows, never the page's zone/sidebar shortcuts. */
+/* Options has one vertical focus target per row, including each picker. */
 static void gv_ajustes_move(SDL_Keycode k){
-  static const int ids[][4]={{1940},{1941,1942},{1943,1944},{1945},{1946,1947},{1948},{1949,1937,1938,1939}};
-  static const int sizes[]={1,2,2,1,2,1,4};
-  static const float centers[][4]={{1281},{1126,1296},{1001,1251},{1281},{1061,1271},{1281},{160,506,867,1193}};
-  int row=0,col=0;
-  for(int r=0;r<7;r++)for(int c=0;c<sizes[r];c++)if(ids[r][c]==focus){row=r;col=c;}
-  if(k==SDLK_LEFT||k==SDLK_RIGHT){int c=col+(k==SDLK_LEFT?-1:1);if(c>=0&&c<sizes[row])col=c;}
+#ifdef NV_TOUCH_UI
+  toquerol_limpar(&gv_aj_touch);
+#endif
+  int ids[12],n=0;
+  if(!gv_aj_sub){memcpy(ids,gv_aj_ids,sizeof gv_aj_ids);n=sizeof gv_aj_ids/sizeof *gv_aj_ids;}
   else{
-    int r=row+(k==SDLK_UP?-1:1);if(r<0||r>6)return;
-    float x=centers[row][col],best=1e9f;int pick=0;
-    for(int c=0;c<sizes[r];c++){float d=fabsf(centers[r][c]-x);if(d<best){best=d;pick=c;}}
-    row=r;col=pick;
+    ids[n++]=1936;
+    if(gv_aj_sub==1942||gv_aj_sub==1944||gv_aj_sub==1947){
+      int first=gv_aj_sub==1942?1941:gv_aj_sub==1944?1943:1946;ids[n++]=first;ids[n++]=first+1;
+    }else{
+      GuiaFonteSaude source;
+      for(int i=0;i<6&&guia_fonte_saude(gv_aj_source_off+i,&source);i++)ids[n++]=1985+i;
+      ids[n++]=gv_aj_sub==1937?1955:1975;
+      if(gv_aj_source_off)ids[n++]=1956;
+      if(guia_fonte_saude(gv_aj_source_off+6,&source))ids[n++]=1957;
+    }
   }
-  focus=ids[row][col];
+  if(k==SDLK_LEFT||k==SDLK_RIGHT){
+    if(k==SDLK_RIGHT&&focus==1956&&ids[n-1]==1957)focus=1957;
+    else if(k==SDLK_LEFT&&focus==1957&&gv_aj_source_off)focus=1956;
+    return;
+  }
+  for(int i=0;i<n;i++)if(ids[i]==focus){int next=i+(k==SDLK_UP?-1:1);if(next>=0&&next<n)focus=ids[next];return;}
 }
 static void gv_point_focus(int id){
   if(gv_overlay()||gv_sports())return;

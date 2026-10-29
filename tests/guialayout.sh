@@ -6,6 +6,15 @@ trap 'rm -rf "$work"' EXIT
 node tests/guialayout_html5.cjs
 export NUVIO_DADOS="$work/dados"
 mkdir -p "$NUVIO_DADOS"
+# guiav5_bugs.c exercises the app's production preview audio dispatch.
+python3 - "$work/guide_audio.inc" <<'PY'
+from pathlib import Path
+import sys
+source = Path('src/app.c').read_text()
+start = source.index('  {static int last_volume=-1,last_active,was_muted;')
+end = source.index('  if (guia_pediu_parar_preview()', start)
+Path(sys.argv[1]).write_text(source[start:end])
+PY
 sources=()
 for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/guia.c|src/guiav5ui.c) continue;; esac
@@ -22,7 +31,7 @@ for source in "${sources[@]}"; do
   fi
   objects+=("$object")
 done
-cc "${flags[@]}" tests/guialayout.c "${objects[@]}" -o "$work/test" \
+cc "${flags[@]}" -I"$work" tests/guialayout.c "${objects[@]}" -o "$work/test" \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
 "$work/test"
 video_objects=()
