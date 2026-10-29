@@ -25,6 +25,7 @@ int main(int argc, char **argv) {
     snprintf(item->titulo, sizeof item->titulo, "%s", titles[i]);
     snprintf(item->backdrop, sizeof item->backdrop, "%s/%02d.jpg", argv[2], images[i]);
     snprintf(item->backdropCatalogo, sizeof item->backdropCatalogo, "%s", item->backdrop);
+    snprintf(item->backdropTmdb, sizeof item->backdropTmdb, "%s", item->backdrop);
     snprintf(item->poster, sizeof item->poster, "%s/poster/%02d.jpg", argv[2], images[i]);
     snprintf(item->logo, sizeof item->logo, "%s/logo/%02d.png", argv[2], images[i]);
     snprintf(item->imdb, sizeof item->imdb, "tt%07d", 12637874 + i);
@@ -44,6 +45,7 @@ int main(int argc, char **argv) {
   }
   snprintf(items[0].backdrop, sizeof items[0].backdrop, "%s/design/glass-ilha/arte.jpg", argv[3]);
   snprintf(items[0].backdropCatalogo, sizeof items[0].backdropCatalogo, "%s", items[0].backdrop);
+  snprintf(items[0].backdropTmdb, sizeof items[0].backdropTmdb, "%s", items[0].backdrop);
   snprintf(items[0].logo, sizeof items[0].logo, "%s/logo/00.png", argv[2]);
   snprintf(rows[0].chave, sizeof rows[0].chave, "continue_watching");
   snprintf(rows[0].titulo, sizeof rows[0].titulo, "Continue watching");

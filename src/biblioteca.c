@@ -2057,6 +2057,13 @@ static void pollEscrita(void) {
   }
 }
 
+void biblioteca_abrir_listas(void) {
+  modo = MODO_LISTAS; listaTab = 0; fonte = FONTE_TRAKT; origensAbertas = 0;
+  recado[0] = 0; flipDe = animOrig;
+  pedirFonte();
+  foco.fileira = BIB_FIL_MODO; foco.coluna = modo;
+}
+
 static void biblioteca_atualizar_(float dt, Uint32 agora) {
   static int listasAuth;
   int auth = trakt_ativo() && !trakt_recusada();

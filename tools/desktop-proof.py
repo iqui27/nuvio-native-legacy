@@ -20,7 +20,7 @@ def run(*args):
 
 def deps(binary):
     return [line.strip().split(' (compatibility')[0]
-            for line in run('otool', '-L', str(binary)).splitlines()[1:]]
+            for line in run('otool', '-L', str(binary)).splitlines() if line.startswith('\t')]
 
 
 info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
@@ -36,7 +36,11 @@ assert (frameworks / 'libmpv.2.dylib').is_file()
 for binary in [app / 'Contents/MacOS/Nuvio', *frameworks.glob('*.dylib'),
                *[frameworks / f'{n}.framework/Versions/A/{n}' for n in ['SDL2', 'SDL2_image', 'SDL2_ttf']]]:
     assert architectures <= set(run('lipo', '-archs', str(binary)).split()), binary
+    weak = set(re.findall(r'cmd LC_LOAD_WEAK_DYLIB\s+cmdsize \d+\s+name (.*?) \(offset',
+                          run('otool', '-l', str(binary))))
     for dep in deps(binary):
+        if dep in weak and dep.startswith('@rpath/') and not (frameworks / dep.removeprefix('@rpath/')).exists():
+            continue  # Optional SDL_image AVIF/WebP acceleration.
         assert not dep.startswith(('/opt/homebrew/', '/usr/local/')), (binary, dep)
         if dep.startswith('@loader_path/'):
             assert (binary.parent / dep.removeprefix('@loader_path/')).exists(), (binary, dep)
@@ -93,7 +97,8 @@ system = set('kernel32.dll user32.dll gdi32.dll ole32.dll oleaut32.dll shell32.d
              'avrt.dll dwmapi.dll dxgi.dll d3d11.dll d3d9.dll d3d12.dll dxva2.dll '
              'powrprof.dll hid.dll winhttp.dll mfplat.dll mf.dll mfuuid.dll '
              'propsys.dll ksuser.dll oleacc.dll shcore.dll userenv.dll ncrypt.dll '
-             'wintrust.dll imagehlp.dll msimg32.dll dnsapi.dll dsound.dll '.split())
+             'wintrust.dll imagehlp.dll msimg32.dll dnsapi.dll dsound.dll '
+             'uxtheme.dll dwrite.dll bcryptprimitives.dll avicap32.dll d2d1.dll '.split())
 pkg = Path(archive_dir.name) / 'Nuvio-win64'
 bundled = {p.name.lower() for p in pkg.glob('*.dll')}
 imports = {}

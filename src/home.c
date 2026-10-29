@@ -2649,7 +2649,11 @@ static void home_evento_(const SDL_Event *e) {
       if (focoHero) {
         okDesde = 0; okPressionando = 0; okLongDisparado = 0; okHold = 0.0f;
         if (dur >= NV_HOLD_MS) abrirMenuCartaz();
-        else pedidoAbrir = 1;
+        else if (layout_desktop_ativo()) {
+          const CatItem *ci = cat_item_exato(heroAtual);
+          if (ci && (strcmp(ci->tipo, "series") || ci->episodio > 0)) pedidoTocar = 1;
+          else pedidoAbrir = 1;
+        } else pedidoAbrir = 1;
         return;
       }
       int noVerTudo = (foco.fileira >= 0 && foco.fileira < nFileiras &&
@@ -6033,7 +6037,15 @@ static void desenhaHero(Uint32 agora, float saida) {
       // OK ABRE A PAGINA DO TITULO — e o rotulo diz isso. "Reproduzir" seria a
       // promessa de comecar o filme, e quem aperta acaba numa pagina: o rotulo
       // tem de descrever o que a tecla FAZ, nao o que seria bonito escrever.
+      char desktopRot[96];
       const char *rot = i18n("Ver título");
+      if (layout_desktop_ativo() && ci && (strcmp(ci->tipo, "series") || ci->episodio > 0)) {
+        const char *verb = i18n(ci->progresso > 0 ? "Continuar" : "Assistir");
+        if (ci->temporada > 0 && ci->episodio > 0)
+          snprintf(desktopRot, sizeof desktopRot, i18n("%s T%d:E%d"), verb, ci->temporada, ci->episodio);
+        else snprintf(desktopRot, sizeof desktopRot, "%s", verb);
+        rot = desktopRot;
+      }
       // Em cinema o botao e o contador nao se desenham (o itemFoco la embaixo
       // segue valendo: a tecla que devolve a UI nao pode abrir o titulo errado).
       float aBtn = aBotao * (1.0f - cin) * heroVisivelToque();
@@ -6059,6 +6071,17 @@ static void desenhaHero(Uint32 agora, float saida) {
         // O botao pode ficar abaixo do alvo amplo do destaque. Seu proprio
         // retangulo mantem o toque correto, sem cobrir a primeira fileira.
         alvoAcaoHero(bt, saida, cin, aBtn);
+        if (layout_desktop_ativo()) {
+          retSoAbre = !ci || (!strcmp(ci->tipo, "series") && ci->episodio <= 0);
+          ponteiro_alvo(bt.x, bt.y, bt.w, bt.h, ponteiroHero, retAtivar, RET_PLAY, 0);
+          for (int j = 0; j < 2; j++) {
+            GfxRect disc = {bt.x + bt.w + 18 + j * (bh + 14), by, bh, bh};
+            gfx_vidro_folha(disc, .5f, aBtn);
+            TxtLinha icon = txt_linha(TXT_ILHA_NOME, j ? "…" : "+", 243, 242, 239, 255);
+            txt_desenhar_alpha(icon, disc.x + (disc.w - icon.w) * .5f, disc.y + (disc.h - icon.h) * .5f, aBtn);
+            ponteiro_alvo(disc.x, disc.y, disc.w, disc.h, ponteiroHero, retAtivar, j ? RET_MAIS : RET_LISTA, 0);
+          }
+        }
 #endif
 
         // Raio = metade da ALTURA: o raio do gfx_cor e fracao da altura do

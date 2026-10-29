@@ -1862,7 +1862,10 @@ int main(int argc, char **argv) {
   trakt_carregar(dirArte);
   desc_tmdb(dirArte);
   desc_espera_addons_definir(esperaAddonsDaConta);
-  desc_iniciar();
+#if defined(NV_DESKTOP_RELEASE) || defined(NV_LINUX_DESKTOP)
+  if (!getenv("NUVIO_UI_PREVIEW") || strcmp(getenv("NUVIO_UI_PREVIEW"), "1"))
+#endif
+    desc_iniciar();
   // RESOLUCAO DE LAYOUT, e nao metade: o snapshot e o fundo parado atras do
   // painel de Salvos (app.c), e a esquerda dele e uma faixa de 1120 px da home
   // a 42 % de brilho — na metade, o texto das fileiras amolecia no instante em

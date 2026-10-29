@@ -133,7 +133,11 @@ static float menuEscala(void) {
 // "Inicio" sem acento era erro de portugues NA TELA. E "Busca", nao "Buscar":
 // os outros tres sao substantivos (Biblioteca, Ajustes) e o verbo destoava.
 // Rotulos e ordem conferidos na referencia.
-static const char *ROTULOS[MENU_N] = { "Início", "Explorar", "Guia TV", "Esportes", "Busca", "Biblioteca", "Agenda", "Perfil e Stats", "Ajustes", "Servidores pessoais" };
+static const char *ROTULOS[MENU_N] = { "Início", "Explorar", "Guia TV", "Esportes", "Busca", "Biblioteca", "Agenda", "Perfil e Stats", "Ajustes", "Servidores pessoais"
+#ifdef NV_DESKTOP_UI
+  , "Listas", "Conquistas", "Fontes e addons", "Assistir juntos"
+#endif
+};
 
 // ITEM ESCONDIDO (#162): Explorar, Guia, Agenda e Perfil somem da barra quando
 // desligados nos Ajustes. Inicio, Busca, Biblioteca e Ajustes ficam sempre —
@@ -556,7 +560,7 @@ void menu_evento(const SDL_Event *e) {
   // 03/10): escolher ali fecharia a pagina so por sair da barra.
   if (k == SDLK_RIGHT && sobre) { menu_fechar(); return; }
   if (k == SDLK_RIGHT || k == SDLK_RETURN || k == SDLK_KP_ENTER) { escolher(); return; }
-  if (tvAtivo()) {
+  if (tvAtivo() || layout_desktop_ativo()) {
     // Ordem da barra da Apple TV: cabecalho (perfil), Buscar, Inicio, ...
     int lista[NV_MENU_FOCOS_TV], n = tvOrdem(lista), p = 0, i;
     for (i = 0; i < n; i++) if (lista[i] == linha) p = i;
@@ -644,7 +648,11 @@ static void icone(int d, float cx, float cy, float s, float r, float g, float b,
 // Os icones da barra CLASSICA: os de traco do mockup (tools/icones-menu.sh).
 // A Dinamica continua chamando icone(), com os menu_*.png de sempre.
 static void iconeTraco(int d, float cx, float cy, float s, float r, float g, float b, float a) {
-  static const char *nomes[MENU_N] = {"mt_inicio", "mt_explorar", "mt_guia", "menu_sports", "mt_busca", "mt_biblioteca", "mt_agenda", "mt_perfil", "mt_ajustes", "aj_server"};
+  static const char *nomes[MENU_N] = {"mt_inicio", "mt_explorar", "mt_guia", "menu_sports", "mt_busca", "mt_biblioteca", "mt_agenda", "mt_perfil", "mt_ajustes", "aj_server"
+#ifdef NV_DESKTOP_UI
+    , "mt_agenda", "mt_perfil", "aj_server", "mt_perfil"
+#endif
+  };
   if (d < 0 || d >= MENU_N) return;
   gfx_icone((GfxRect){cx-s*.5f, cy-s*.5f, s, s}, nomes[d], r, g, b, a);
 }
@@ -942,6 +950,9 @@ static int tvAtivo(void) { return ajustes_home_layout() == HOME_LAYOUT_DINAMICA;
 static const int TV_ORDEM[MENU_N] = {
   MENU_INICIO, MENU_BUSCAR, MENU_EXPLORAR, MENU_GUIA, MENU_ESPORTES, MENU_AGENDA,
   MENU_BIBLIOTECA, MENU_SERVIDORES, MENU_PERFIL, MENU_AJUSTES
+#ifdef NV_DESKTOP_UI
+  , MENU_LISTAS, MENU_CONQUISTAS, MENU_FONTES, MENU_JUNTOS
+#endif
 };
 static const char *tvRotulo(int d) { return menu_rotulo(d); }
 // Focos na ordem de navegacao: cabecalho (trocar de usuario) e os visiveis.
@@ -966,6 +977,16 @@ static int tvPastaDoFoco(int foco) {
 static int tvOrdem(int *lista) {
   const int *v;
   int n = 0, i, np = tvPastas(&v);
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) {
+    static const int order[] = {MENU_INICIO, MENU_BUSCAR, MENU_GUIA, MENU_BIBLIOTECA,
+      MENU_LISTAS, MENU_CONQUISTAS, MENU_FONTES, MENU_ESPORTES, MENU_JUNTOS};
+    for (unsigned k = 0; k < sizeof order / sizeof *order; k++) lista[n++] = order[k];
+    for (i = 0; i < np; i++) lista[n++] = MENU_ST0 + i;
+    lista[n++] = MENU_AJUSTES; lista[n++] = MENU_RODAPE;
+    return n;
+  }
+#endif
   if (!layout_desktop_ativo()) lista[n++] = MENU_RODAPE;
   for (i = 0; i < MENU_N; i++)
     if (mostra(TV_ORDEM[i]) && (!layout_desktop_ativo() || TV_ORDEM[i] != MENU_AJUSTES)) lista[n++] = TV_ORDEM[i];
@@ -1223,7 +1244,11 @@ static float desktopLayout(float *ys) {
   for (int i = 0; i < n; i++) {
     int d = lista[i];
     if (d == MENU_AJUSTES || d == MENU_RODAPE) continue;
-    if (d == MENU_ST0) y += 40;
+    if (d == MENU_ST0
+#ifdef NV_DESKTOP_UI
+        || d == MENU_FONTES
+#endif
+       ) y += 40;
     ys[d] = y; y += 56;
   }
   ys[MENU_AJUSTES] = NV_TELA_H - 132;
@@ -1256,7 +1281,11 @@ static void desktopDesenhar(void) {
     float y = ys[d] - (footer ? 0 : tvRolar);
     if (footer) gfx_sem_recorte();
     else gfx_recorte(0, 142, w, fmaxf(0, NV_TELA_H - 284));
-    if (d == MENU_ST0)
+    if (d == MENU_ST0
+#ifdef NV_DESKTOP_UI
+        || d == MENU_FONTES
+#endif
+       )
       txt_tracking(TXT_MINI, "STREAMING", 130, 132, 138, 32, y - 30, 1, 1.5f);
     if (!footer && (y + 56 < 142 || y >= NV_TELA_H - 142)) continue;
     GfxRect r = {18, y, w - 36, 53};

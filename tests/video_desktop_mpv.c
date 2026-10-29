@@ -94,7 +94,15 @@ int main(int argc, char **argv) {
   while (video_n_legenda()!=2 && SDL_GetTicks64()<until) frame();
   assert(video_n_legenda()==2);
   video_janela_fonte(0,0,320,90,0,0,1920,1080);
-  glClearColor(0,0,0,0); glClear(GL_COLOR_BUFFER_BIT); video_desktop_render(320,180);
+  glDisable(GL_SCISSOR_TEST);
+  glClearColor(0,0,0,0); glClear(GL_COLOR_BUFFER_BIT);
+  glEnable(GL_SCISSOR_TEST); glScissor(0,0,1,1);
+  glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE);
+  video_desktop_render(320,180);
+  assert(glIsEnabled(GL_SCISSOR_TEST));
+  GLboolean mask[4]; glGetBooleanv(GL_COLOR_WRITEMASK,mask);
+  assert(!mask[0] && !mask[1] && !mask[2] && !mask[3]);
+  glDisable(GL_SCISSOR_TEST); glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
   glReadPixels(20,20,1,1,GL_RGBA,GL_UNSIGNED_BYTE,bottom);
   assert(bottom[0]>150 && bottom[2]<80); // source crop fills destination
   video_velocidade(150); assert(video_velocidade_atual()==150);

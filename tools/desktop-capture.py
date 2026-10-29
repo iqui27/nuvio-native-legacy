@@ -38,31 +38,42 @@ def photo(name):
     Path('/tmp/nuvio-shot-req').write_text('1\n')
     wait_for(source.exists)
     dest = OUT / name
-    run('magick', str(source), '-resize', '1280x800>', str(dest))
+    size = '669x951!' if name == 'mac-home-narrow.png' else '1280x800!'
+    run('magick', str(source), '-resize', size, str(dest))
     return dest
 
 
 DATA.mkdir(parents=True, exist_ok=True)
+# Existing tours must not cover the scene under test.
+import re
+for header in (ROOT / 'src').glob('novidades*.h'):
+    for name in re.findall(r'"(novidades[^"/]*\.txt)"', header.read_text()):
+        (DATA / name).write_text('1\n')
 ART.parent.mkdir(parents=True, exist_ok=True)
 if not ART.exists():
     shutil.copytree(OUT / 'Nuvio.app/Contents/Resources/art', ART)
+(ART / 'addons.txt').write_text('Offline fixture\thttps://example.invalid/manifest.json\t0\t0\t0\n')
 fonts = ART.parent / 'fonts'
 if not fonts.exists():
     shutil.copytree(ROOT / 'deploy/app/fonts', fonts)
 (DATA / 'ajustes.txt').write_text('idioma 1\nidiomaAutoLocal 0\nhomeLayoutLocal 2\ntrailerHero 1\n')
+(DATA / 'fileirasui-p1.txt').write_text('limite 7\nordem 1\nmigracao 197\nhero continue_watching\nlinha social_activity\t1\t0\t1\t0\tFriends watching\nlinha continue_watching\t0\t0\t1\t0\tContinue watching\nlinha desktop_trending\t0\t0\t1\t0\tTrending now\n')
+(DATA / 'ajustes-p1.txt').write_text('socialLocal 1\nheroDifferentFromCard 1\nselected_theme 5\n')
 fixture = OUT / 'desktop-scene'
 run('cc', '-std=c11', '-Isrc', 'tools/desktop-scene.c', '-o', str(fixture))
 run(str(fixture), str(DATA / 'catalogo-rede.bin'), str(ART), str(MOCK))
 for path in ('/tmp/nuvio-video', '/tmp/nuvio-key', '/tmp/nuvio-shot-req'):
     Path(path).unlink(missing_ok=True)
 log = OUT / 'mac-scene.log'
-env = dict(os.environ, NUVIO_DADOS=str(DATA), NUVIO_UI_PREVIEW='1')
+env = dict(os.environ, NUVIO_DADOS=str(DATA), NUVIO_UI_PREVIEW='1', NUVIO_MPV_DIAG='1')
 with log.open('w') as output:
     process = subprocess.Popen([str(APP), str(ART)], env=env, stdout=output,
                                stderr=subprocess.STDOUT, start_new_session=True)
     try:
         wait_for(lambda: 'primeiro quadro na tela' in log.read_text(errors='replace'))
-        time.sleep(4)
+        time.sleep(1)
+        key('left')
+        key('right')
         key('janela:1280,800')
         photo('mac-home-1280.png')
         key('janela:669,951')
@@ -71,7 +82,7 @@ with log.open('w') as output:
         clip = OUT / 'sintel-trailer.mp4'
         if clip.exists():
             Path('/tmp/nuvio-video').write_text(str(clip) + '\n')
-            time.sleep(4)
+            time.sleep(12)
             photo('mac-video.png')
     finally:
         process.terminate()

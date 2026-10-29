@@ -35,7 +35,9 @@ int main(void) {
   menu_servidores(1);
   int order[NV_MENU_FOCOS_TV];
   int n = tvOrdem(order);
-  assert(n == MENU_N + 4);
+  assert(n == 14);
+  assert(order[4] == MENU_LISTAS && order[5] == MENU_CONQUISTAS);
+  assert(order[6] == MENU_FONTES && order[8] == MENU_JUNTOS);
   assert(order[0] == MENU_INICIO && order[1] == MENU_BUSCAR);
   assert(order[n - 2] == MENU_AJUSTES && order[n - 1] == MENU_RODAPE);
   assert(tvPastas(NULL) == 3); // Streaming stays visible without menu focus.

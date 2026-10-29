@@ -6258,6 +6258,12 @@ void app_atualizar(float dt, Uint32 agora) {
       // perfil completo" e apertar OK, dois passos para chegar onde o rotulo ja
       // prometia. trocarTela(TELA_PERFIL) ja chama perfil_abrir + pedirPerfil.
       case MENU_PERFIL:     trocarTela(TELA_PERFIL);     break;
+#ifdef NV_DESKTOP_UI
+      case MENU_LISTAS:     trocarTela(TELA_BIBLIOTECA); biblioteca_abrir_listas(); break;
+      case MENU_CONQUISTAS: conquistas_abrir(); break;
+      case MENU_FONTES:     addonsui_abrir(); trocarTela(TELA_ADDONS); break;
+      case MENU_JUNTOS:     juntosui_abrir_folha(-1, 0, 0); break;
+#endif
       case MENU_AJUSTES:    trocarTela(TELA_AJUSTES);    break;
       default:              trocarTela(TELA_HOME);       break;
     }
