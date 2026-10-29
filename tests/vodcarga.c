@@ -90,6 +90,6 @@ int main(void){
   clear_catalog();atomic_store(&fail_items,1);g5ui_open("vod-filmes");
   while(atomic_load(&busy))pump();
   assert(!vod_data.count&&vod_failed);
-  assert(!atomic_load(&full_lists));
+  assert(atomic_load(&full_lists)>0&&"failed scoped requests must try full-list fallback");
   puts("VOD category fixture: PASS");return 0;
 }

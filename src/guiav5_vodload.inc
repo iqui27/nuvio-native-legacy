@@ -90,12 +90,14 @@ static void vod_load_worker(void){
       }
     }
   }
-  vod_index(&vod_pending,0);
+  vod_index(&vod_pending,1);
   printf("[vod-load] phase=%s http=%d categories=%d items=%d ok=%d ms=%u\n",operation==8?"cache":operation==6?"categories":"items",status,categories,items,worker_ok,SDL_GetTicks()-began);
 }
 static void vod_begin(void){
   if(atomic_load(&busy))return;
-  use_saved=1;vod_lazy=1;
+  use_saved=1;
+  if(vod_cache_checked&&!vod_lazy){if(!source_loaded||categories_missing){action[0]=0;start(2);}return;}
+  vod_lazy=1;
   if(!committed)draft.movies=draft.series=1;
   char server[256],user[96],password[96],identity[700];
   xtream_dados_copiar(server,sizeof server,user,sizeof user,password,sizeof password);
