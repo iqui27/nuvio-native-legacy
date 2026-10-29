@@ -24,7 +24,8 @@ typedef struct {
   EspLiga *ligas;
   EspEvento *eventos;
   EspNoticia *noticias;
-  char url[500], arquivo[160], time[80], idioma[8];
+  EspParticipante *times;
+  char url[500], arquivo[160], time[100], idioma[8];
 } EspJob;
 static EspLiga *ligas;
 static EspEvento *eventos;
@@ -36,6 +37,9 @@ static EspJob *noticiasJob(void);
 static unsigned geracao, revisao, desligados;
 static char favoritos[128][200];
 static int nFavoritos, fundoQualidade;
+static EspEvento jogosSeguidos[64];
+static int nJogosSeguidos, nTimes;
+static EspParticipante *times;
 static char (*ligasOcultas)[120];
 static int nOcultas;
 typedef struct { EspLiga liga; int modalidade; } EspFileira;
@@ -74,7 +78,7 @@ static unsigned hash(const char *s) {
 }
 static void soltar(EspJob *j) {
   if (!j) return;
-  free(j->ligas); free(j->eventos); free(j->noticias); free(j);
+  free(j->ligas); free(j->eventos); free(j->noticias); free(j->times); free(j);
 }
 void esportes_cancelar(void) {
   geracao++;soltar(fila);fila=NULL;
@@ -82,16 +86,32 @@ void esportes_cancelar(void) {
   geracaoFav++;soltar(filaFav);filaFav=NULL;favoritoAtivo=0;
   catalogoAtivo=0;catalogoGeracao++;noticiasPedido=0;
 }
+/* Encode text fields, preserving provider punctuation and line breaks. */
+static int jogoCampos(EspEvento *e,char **fields,size_t *caps) {
+  int n=0;
+#define FIELD(v) do{fields[n]=(v);caps[n++]=sizeof(v);}while(0)
+  FIELD(e->liga);FIELD(e->local);FIELD(e->cidade);FIELD(e->detalhe);FIELD(e->sessao);
+  for(int i=0;i<ESP_MAX_PARTICIPANTES;i++){
+    EspParticipante *p=&e->participantes[i];
+    FIELD(p->id);FIELD(p->nome);FIELD(p->curto);FIELD(p->sigla);
+    FIELD(p->logo);FIELD(p->pontos);FIELD(p->cor);FIELD(p->corAlternativa);
+  }
+  for(int i=0;i<ESP_MAX_EMISSORAS;i++)FIELD(e->emissoras[i]);
+#undef FIELD
+  return n;
+}
 void esportes_abrir_sessao(void) {
   NvPerfilSessao atual = nv_perfil_sessao_ler();
   if (arquivo[0] && atual == perfil) return;
   esportes_cancelar();limparCatalogo();free(ligasOcultas);ligasOcultas=NULL;nOcultas=0; perfil = atual; desligados = 0; nFavoritos = fundoQualidade = 0;
   free(ligas); ligas = NULL; free(eventos); eventos = NULL;
+  free(times);times=NULL;nTimes=nJogosSeguidos=0;
   free(eventosFav);eventosFav=NULL;nEventosFav=erroFav=0;favoritosDesde=0;
   nLigas = nEventos = erro = nNoticias = noticiasEstado = 0;noticiasDesde=0; eventosModalidade=eventosIdioma=-1;eventosLiga[0]=0;revisao++;
   snprintf(arquivo, sizeof arquivo, "esportes-%08x-p%d.txt", hash(sessao_usuario()), perfis_ativo());
   char *buf = dados_ler(arquivo), *salvar = NULL;
   if (!buf) return;
+  int lastGame=-1;
   for (char *l = strtok_r(buf, "\n", &salvar); l; l = strtok_r(NULL, "\n", &salvar)) {
     if(!strncmp(l,"bg-quality=",11)) {int q=atoi(l+11);if(q>=0 && q<=2)fundoQualidade=q;}
     else if (!strncmp(l, "off=", 4)) desligados = (unsigned)strtoul(l + 4, NULL, 16);
@@ -99,17 +119,60 @@ void esportes_abrir_sessao(void) {
       void *novo=realloc(ligasOcultas,(size_t)(nOcultas+1)*sizeof *ligasOcultas);
       if(novo){ligasOcultas=novo;snprintf(ligasOcultas[nOcultas++],120,"%s",l+11);}
     }
+    else if(!strncmp(l,"game=",5) && nJogosSeguidos<64) {
+      lastGame=-1;EspEvento e={0};long long ini,fim;
+      if(sscanf(l+5,"%31[^|]|%79[^|]|%99[^|]|%lld|%lld|%255[^\n]",e.modalidade,e.ligaId,e.id,&ini,&fim,e.nome)==6) {
+        e.inicio=(time_t)ini;e.fim=(time_t)fim;
+        if(e.fim>time(NULL)){lastGame=nJogosSeguidos;jogosSeguidos[nJogosSeguidos++]=e;}
+      }
+    }
+    else if(!strncmp(l,"game-fetch=",11) && lastGame>=0)
+      jogosSeguidos[lastGame].obtido=(uint64_t)strtoull(l+11,NULL,10);
+    else if(!strncmp(l,"game-data=",10) && lastGame>=0) {
+      EspEvento e=jogosSeguidos[lastGame];int used=0;
+      if(sscanf(l+10,"%d|%d|%d|%n",&e.estado,&e.nParticipantes,&e.nEmissoras,&used)!=3 || !used || e.estado<0 || e.estado>3 || e.nParticipantes<0 || e.nParticipantes>ESP_MAX_PARTICIPANTES || e.nEmissoras<0 || e.nEmissoras>ESP_MAX_EMISSORAS)continue;
+      char *fields[32];size_t caps[32];int n=jogoCampos(&e,fields,caps),i;
+      char *p=l+10+used;
+      for(i=0;i<n;i++) {
+        char *end=strchr(p,'|');if(!end)break;
+        size_t len=(size_t)(end-p)/2,k;
+        if((end-p)%2 || len>=caps[i])break;
+        for(k=0;k<len;k++){
+          unsigned value;if(!isxdigit((unsigned char)p[k*2])||!isxdigit((unsigned char)p[k*2+1])||sscanf(p+k*2,"%2x",&value)!=1 || !value)break;
+          fields[i][k]=(char)value;
+        }
+        if(k!=len)break;
+        fields[i][len]=0;p=end+1;
+      }
+      if(i==n)jogosSeguidos[lastGame]=e;
+    }
     else if (!strncmp(l, "fav=", 4) && strlen(l + 4) < sizeof favoritos[0] && nFavoritos < 128)
       snprintf(favoritos[nFavoritos++], sizeof favoritos[0], "%s", l + 4);
   }
   free(buf);
+  if(nJogosSeguidos)esportes_pedir_favoritos(1);
 }
 static int gravar(void) {
-  size_t cap=64+(size_t)nFavoritos*205+(size_t)nOcultas*135;
+  size_t cap=64+(size_t)nFavoritos*205+(size_t)nOcultas*135+(size_t)nJogosSeguidos*(640+2*sizeof(EspEvento));
   char *buf=calloc(1,cap);if(!buf)return 0;
   size_t usado=(size_t)snprintf(buf,cap,"off=%x\nbg-quality=%d\n",desligados,fundoQualidade);
   for(int i=0;i<nFavoritos;i++)usado+=(size_t)snprintf(buf+usado,cap-usado,"fav=%s\n",favoritos[i]);
   for(int i=0;i<nOcultas;i++)usado+=(size_t)snprintf(buf+usado,cap-usado,"league-off=%s\n",ligasOcultas[i]);
+  for(int i=0;i<nJogosSeguidos;i++) {
+    EspEvento *e=&jogosSeguidos[i];
+    usado+=(size_t)snprintf(buf+usado,cap-usado,"game=%s|%s|%s|%lld|%lld|%s\n",e->modalidade,e->ligaId,e->id,(long long)e->inicio,(long long)e->fim,e->nome);
+    usado+=(size_t)snprintf(buf+usado,cap-usado,"game-fetch=%llu\n",(unsigned long long)e->obtido);
+    usado+=(size_t)snprintf(buf+usado,cap-usado,"game-data=%d|%d|%d|",e->estado,e->nParticipantes,e->nEmissoras);
+    char *fields[32];size_t caps[32];int n=jogoCampos(e,fields,caps);
+    const char *hex="0123456789abcdef";
+    for(int f=0;f<n;f++){
+      for(const unsigned char *p=(const unsigned char *)fields[f];*p;p++){
+        buf[usado++]=hex[*p>>4];buf[usado++]=hex[*p&15];
+      }
+      buf[usado++]='|';
+    }
+    buf[usado++]='\n';buf[usado]=0;
+  }
   int ok = nv_perfil_sessao_atual(perfil) && dados_gravar(arquivo, buf);
   free(buf); return ok;
 }
@@ -163,6 +226,8 @@ int esportes_alternar_favorito(const EspEvento *e, int p) {
   }
   esportes_pedir_favoritos(1);revisao++; return 1;
 }
+#include "esportes_seguir.inc"
+
 static int ordem(const void *a, const void *b) {
   const EspEvento *x = a, *y = b;
   int gx = x->estado == 1 ? 0 : x->estado == 0 ? 1 : 2;
@@ -185,15 +250,28 @@ static void *buscar(void *arg) {
     if (espaco) chave = (unsigned)strtoul(espaco + 1, NULL, 16);
     if (nl && chave == hash(j->url) && idade >= 0 && idade < ((j->tipo == 1 || j->tipo == 5) ? 86400 : 60)) corpo = nl + 1;
   }
+  struct timespec fetched={0};
+  if(corpo){
+    long long seconds;unsigned key;long nanos=0;
+    if(sscanf(cache,"%lld %x %ld",&seconds,&key,&nanos)>=2){
+      fetched.tv_sec=(time_t)seconds;
+      fetched.tv_nsec=nanos>=0&&nanos<1000000000?nanos:0;
+    }
+  }
   char *baixado = NULL;
   if (!corpo) {
+    clock_gettime(CLOCK_REALTIME,&fetched);
     RedeMedida medida = {0}; RedeControle controle = {2 * 1024 * 1024, NULL};
     baixado = rede_baixar_medido_controle(j->url, 8, NULL, &controle, &medida);
     if (medida.status == 200 && baixado) corpo = baixado;
     printf("[esportes] fetch tipo=%d modalidade=%d liga=%s HTTP=%d corpo=%s\n",j->tipo,j->modalidade,j->liga.id,medida.status,baixado?"ok":"ausente");
   }
   if (corpo) {
-    if(j->tipo==7) {
+    if(j->tipo==8) {
+      j->times=calloc(ESP_MAX_TIMES,sizeof *j->times);
+      if(j->times)j->n=esportes_times_ler(corpo,j->times,ESP_MAX_TIMES);
+      j->erro=!j->times || !strstr(corpo,"\"teams\"");
+    } else if(j->tipo==7) {
       j->noticias=calloc(ESP_MAX_NOTICIAS,sizeof *j->noticias);
       if(j->noticias)j->n=esportes_noticias_ler(corpo,j->noticias,ESP_MAX_NOTICIAS);
       j->erro=!j->noticias || !strstr(corpo,"\"articles\"");
@@ -204,26 +282,37 @@ static void *buscar(void *arg) {
     } else {
       j->eventos = calloc(ESP_MAX_EVENTOS, sizeof *j->eventos);
       if (j->eventos) j->n = esportes_eventos_ler(corpo, esportes_modalidade(j->modalidade)->id, &j->liga, j->eventos, ESP_MAX_EVENTOS);
-      j->erro = !j->eventos || !strstr(corpo, "\"events\"");
+      j->erro = !j->eventos || (j->tipo==9 ? !j->n || strcmp(j->eventos[0].id,j->time) : !strstr(corpo, "\"events\""));
+      for(int i=0;i<j->n;i++)j->eventos[i].obtido=(uint64_t)fetched.tv_sec*1000000000u+(uint64_t)fetched.tv_nsec;
       if (j->n) qsort(j->eventos, (size_t)j->n, sizeof *j->eventos, ordem);
     }
     if (baixado && !j->erro) {
       size_t n = strlen(corpo) + 48; char *s = malloc(n);
-      if (s) { snprintf(s, n, "%lld %08x\n%s", (long long)time(NULL), hash(j->url), corpo); dados_gravar_leve(j->arquivo, s); free(s); }
+      if (s) { snprintf(s, n, "%lld %08x %ld\n%s", (long long)fetched.tv_sec, hash(j->url), fetched.tv_nsec, corpo); dados_gravar_leve(j->arquivo, s); free(s); }
     }
   } else j->erro = 1;
   printf("[esportes] ESPN %s: %d itens, erro=%d\n", j->tipo == 1 ? "ligas" : "eventos", j->n, j->erro);
   free(baixado); free(cache);
   pthread_mutex_lock(&trava);
-  if (j->tipo==3 || j->tipo==4) resultadoFav=j;else resultado=j;
+  if (j->tipo==3 || j->tipo==4 || j->tipo==9) resultadoFav=j;else resultado=j;
   pthread_mutex_unlock(&trava);
-  atomic_store_explicit((j->tipo==3 || j->tipo==4)?&prontoFav:&pronto,1,memory_order_release);return NULL;
+  atomic_store_explicit((j->tipo==3 || j->tipo==4 || j->tipo==9)?&prontoFav:&pronto,1,memory_order_release);return NULL;
 }
 static void agendar(EspJob *j) {
   if (!j) { erro = 1; return; }
   geracao++; j->geracao = geracao; j->perfil = perfil;
   soltar(fila); fila = j; erro = 0;
 }
+void esportes_pedir_times(int m,const EspLiga *l) {
+  if(!esportes_modalidade(m)||!l||!seguirId(l->id))return;
+  free(times);times=NULL;nTimes=0;revisao++;
+  EspJob *j=calloc(1,sizeof *j);if(!j){erro=1;return;}
+  j->tipo=8;j->modalidade=m;j->liga=*l;
+  snprintf(j->url,sizeof j->url,"https://site.api.espn.com/apis/site/v2/sports/%s/%s/teams?limit=%d&lang=%s",esportes_modalidade(m)->id,l->id,ESP_MAX_TIMES,idioma_iso(ajustes_idioma()));
+  snprintf(j->arquivo,sizeof j->arquivo,"esportes-times-cache.json");agendar(j);
+}
+int esportes_times_n(void){return nTimes;}
+const EspParticipante *esportes_time(int i){return i>=0&&i<nTimes?&times[i]:NULL;}
 void esportes_pedir_ligas(int m, int atualizar) {
   if (!esportes_habilitado(m)) return;
   EspJob *j = calloc(1, sizeof *j); if (!j) { erro = 1; return; }
@@ -273,7 +362,13 @@ void esportes_passo(void) {
   if (atomic_load_explicit(&pronto, memory_order_acquire)) {
     pthread_mutex_lock(&trava); EspJob *j = resultado; resultado = NULL; pthread_mutex_unlock(&trava);
     atomic_store_explicit(&pronto, 0, memory_order_release); ocupado = 0;
-    if(j && j->tipo==7) {
+    if(j && j->tipo==8) {
+      if(j->geracao==geracao && j->perfil==perfil && nv_perfil_sessao_atual(perfil)) {
+        erro=j->erro;
+        if(!erro){free(times);times=j->times;j->times=NULL;nTimes=j->n;}
+        revisao++;
+      }
+    } else if(j && j->tipo==7) {
       if(j->geracao==geracao && j->perfil==perfil && nv_perfil_sessao_atual(perfil)) {
         noticiasEstado=j->erro?-1:1;
         if(!j->erro){nNoticias=j->n;memcpy(noticias,j->noticias,(size_t)nNoticias*sizeof *noticias);noticiasDesde=time(NULL);}
@@ -284,6 +379,7 @@ void esportes_passo(void) {
       erro = j->erro;
       if (!j->erro && j->tipo == 1) { free(ligas); ligas = j->ligas; j->ligas = NULL; nLigas = j->n; }
       else if (!j->erro) {
+        atualizarSeguidos(j);
         if (!eventos) eventos = calloc(ESP_MAX_EVENTOS, sizeof *eventos);
         if (eventos) {
           /* Keep the old cards visible until the replacement arrives. A new
@@ -355,7 +451,7 @@ static int idSeguro(const char *id) {
 }
 static int favoritoAtual(const EspEvento *e) {
   int m=modalidadeDe(e->modalidade);
-  return m>=0 && esportes_habilitado(m) && (esportes_favorito(e,0)||esportes_favorito(e,1));
+  return m>=0 && esportes_habilitado(m) && esportes_segue_evento(e);
 }
 static int eventoDisponivel(const EspEvento *e,time_t agora) {
   return e->estado==1 || (e->estado==0 && e->inicio>=agora-6*3600);
@@ -374,7 +470,9 @@ void esportes_pedir_favoritos(int atualizar) {
 }
 static void urlFavorito(EspJob *j) {
   const char *mod=esportes_modalidade(j->modalidade)->id;
-  if(j->tipo==3) {
+  if(j->tipo==9) {
+    snprintf(j->url,sizeof j->url,"https://site.api.espn.com/apis/site/v2/sports/%s/%s/summary?event=%s&lang=%s",mod,j->liga.id,j->time,j->idioma);
+  } else if(j->tipo==3) {
     snprintf(j->url,sizeof j->url,"https://site.api.espn.com/apis/site/v2/sports/%s/%s/teams/%s/schedule?fixture=true&lang=%s",mod,!strcmp(mod,"soccer")?"all":j->liga.id,j->time,j->idioma);
   } else if(j->dia) {
     time_t t=time(NULL)+(j->dia-1)*86400;struct tm tm;char dia[16];
@@ -383,16 +481,20 @@ static void urlFavorito(EspJob *j) {
   } else snprintf(j->url,sizeof j->url,"https://site.api.espn.com/apis/site/v2/sports/%s/%s/scoreboard?limit=%d&lang=%s",mod,j->liga.id,ESP_MAX_EVENTOS,j->idioma);
 }
 static EspJob *proximoFavorito(void) {
-  while(favoritoAtivo && favoritoCursor<nFavoritos) {
-    const char *chave=favoritos[favoritoCursor++];char mod[32],ligaId[80],timeId[80],extra;
-    if(sscanf(chave,"%31[^|]|%79[^|]|%79[^|]%c",mod,ligaId,timeId,&extra)!=3 ||
+  while(favoritoAtivo && favoritoCursor<nFavoritos+nJogosSeguidos) {
+    int game=favoritoCursor>=nFavoritos;
+    const EspEvento *saved=game?&jogosSeguidos[favoritoCursor-nFavoritos]:NULL;
+    const char *chave=game?NULL:favoritos[favoritoCursor];favoritoCursor++;
+    char mod[32],ligaId[80],timeId[100],extra;
+    if(game){snprintf(mod,sizeof mod,"%s",saved->modalidade);snprintf(ligaId,sizeof ligaId,"%s",saved->ligaId);snprintf(timeId,sizeof timeId,"%s",saved->id);}
+    else if(sscanf(chave,"%31[^|]|%79[^|]|%79[^|]%c",mod,ligaId,timeId,&extra)!=3 ||
        !idSeguro(ligaId)||!idSeguro(timeId))continue;
     int m=modalidadeDe(mod);if(m<0 || !esportes_habilitado(m))continue;
     EspJob *j=calloc(1,sizeof *j);if(!j){erroFav=1;return NULL;}
-    j->tipo=(!strcmp(mod,"tennis")||!strcmp(mod,"mma"))?4:3;
+    j->tipo=game?9:(!strcmp(mod,"tennis")||!strcmp(mod,"mma"))?4:3;
     j->modalidade=m;j->geracao=geracaoFav;j->perfil=perfil;j->atualizar=favoritoAtualizar;
     snprintf(j->liga.id,sizeof j->liga.id,"%s",ligaId);
-    snprintf(j->liga.nome,sizeof j->liga.nome,"%s",ligaId);
+    snprintf(j->liga.nome,sizeof j->liga.nome,"%s",game?saved->liga:ligaId);
     for(int k=0;k<nLigas;k++)if(!strcmp(ligas[k].id,ligaId)){j->liga=ligas[k];break;}
     snprintf(j->time,sizeof j->time,"%s",timeId);
     snprintf(j->idioma,sizeof j->idioma,"%s",idioma_iso(idiomaFav));
@@ -403,6 +505,7 @@ static EspJob *proximoFavorito(void) {
   favoritoAtivo=0;favoritosCompleto=1;return NULL;
 }
 static void publicarFavoritos(const EspJob *j) {
+  atualizarSeguidos(j);
   if(!eventosFav)eventosFav=calloc(ESP_MAX_EVENTOS,sizeof *eventosFav);
   if(!eventosFav){erroFav=1;return;}
   if(j->tipo==3) {
@@ -589,6 +692,7 @@ static void catalogoPublicar(EspJob *j) {
     EspRowCache *r=rowObter(j->indice);if(!r)return;
     if(j->erro){r->estado=-1;r->desde=time(NULL);}
     else {
+      atualizarSeguidos(j);
       if(!r->eventos)r->eventos=calloc(ESP_MAX_EVENTOS,sizeof *r->eventos);
       if(!r->eventos){r->estado=-1;r->desde=time(NULL);return;}
       if(!j->dia)r->n=0;

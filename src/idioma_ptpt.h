@@ -4550,6 +4550,7 @@
   T("Meu repositório", "O meu repositório"),
   T("Meu servidor", "O meu servidor"),
   T("Meus addons", "Meus addons"),
+  T("Meus times", "As minhas equipas"),
   T("Microfone: ditado  ·  Teclado: o do sistema", "Microfone: ditado  ·  Teclado: o do sistema"),
   T("Midnight’s", "Meia-noite"),
   T("Minha lista e Continuar", "A minha lista e Continuar"),

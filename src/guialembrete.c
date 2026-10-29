@@ -41,7 +41,7 @@ static int vendoCanal(const char *id) {
 }
 
 static void abrir(int m, Uint32 agora) {
-  modo = ultimoModo = m; desde = agora; foco = 0;
+  modo = ultimoModo = m; desde = agora; foco = aCanal[0]?0:1;
 }
 
 void glem_aviso_curto(const char *texto) {
@@ -81,8 +81,8 @@ void glem_passo(float dt, Uint32 agora) {
       snprintf(aNome, sizeof aNome, "%s", l->nome);
       snprintf(aTitulo, sizeof aTitulo, "%s", l->titulo);
       snprintf(aBase, sizeof aBase, "%s", l->base);
-      int sport=!strncmp(aCanal,"sport:",6);
-      if(sport){snprintf(aTexto,sizeof aTexto,"%s · %s",aTitulo,aNome);aCanal[0]=0;}
+      int sport=!strncmp(aCanal,"sport:",6)||!strncmp(aBase,"sports|",7);
+      if(sport){snprintf(aTexto,sizeof aTexto,"%s · %s",aTitulo,aNome);aCanal[0]=aBase[0]=0;}
       else snprintf(aTexto, sizeof aTexto, i18n("%s começa agora no %s"), aTitulo, aNome);
       lembrete_marcar_avisado(i);
       abrir(sport||vendoCanal(aCanal) ? 2 : 1, agora);
@@ -100,7 +100,7 @@ int glem_evento(const SDL_Event *e) {
   }
   if (modo != 1 || e->type != SDL_KEYDOWN) return 0;
   k = e->key.keysym.sym;
-  if (k == SDLK_LEFT || k == SDLK_RIGHT) { foco = !foco; desde = SDL_GetTicks(); return 1; }
+  if (k == SDLK_LEFT || k == SDLK_RIGHT) { if(aCanal[0])foco = !foco; desde = SDL_GetTicks(); return 1; }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
     engolirOkUp = 1;
     if (foco == 0) pedAssistir = 1;
@@ -181,13 +181,14 @@ static void glem_desenharCorpo_(Uint32 agora) {
     txt_bloco_corta(TXT_G28B, aTexto, 243, 242, 239, x, y, W - 60.0f, lead, a, 2);
     y += hT + 22.0f;
     { float bx = x;
-      if (modo == 1 && a > 0.99f) {   // so assentado (sem o deslize da entrada)
+      if (modo == 1 && a > 0.99f && aCanal[0]) {   // so assentado (sem o deslize da entrada)
         float w0 = plrui_botao_largura("Assistir", "pl_play-f");
         ponteiro_alvo(bx, y, w0, 60.0f, ponteiroFoco, NULL, 0, 0);
         ponteiro_alvo(bx + w0 + 12.0f, y, plrui_botao_largura("Dispensar", NULL), 60.0f,
                       ponteiroFoco, NULL, 1, 0);
       }
-      bx += plrui_botao(bx, y, "Assistir", "pl_play-f", foco == 0 ? 1.0f : 0.0f, a) + 12.0f;
+      if(aCanal[0])bx += plrui_botao(bx, y, "Assistir", "pl_play-f", foco == 0 ? 1.0f : 0.0f, a) + 12.0f;
+      else if(modo==1 && a>.99f)ponteiro_alvo(bx,y,plrui_botao_largura("Dispensar",NULL),60.0f,ponteiroFoco,NULL,1,0);
       plrui_botao(bx, y, "Dispensar", NULL, foco == 1 ? 1.0f : 0.0f, a); }
     y += 60.0f + 22.0f;
     if (resta < 0.0f) resta = 0.0f;

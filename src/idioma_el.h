@@ -4550,6 +4550,7 @@
   T("Meu repositório", "Το αποθετήριό μου"),
   T("Meu servidor", "Ο διακομιστής μου"),
   T("Meus addons", "Τα πρόσθετά μου"),
+  T("Meus times", "Οι ομάδες μου"),
   T("Microfone: ditado  ·  Teclado: o do sistema", "Μικρόφωνο: υπαγόρευση  ·  Πληκτρολόγιο: του συστήματος"),
   T("Midnight’s", "Τα μεσάνυχτα"),
   T("Minha lista e Continuar", "Η λίστα μου και Συνέχεια"),

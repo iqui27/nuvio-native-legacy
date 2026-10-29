@@ -4550,6 +4550,7 @@
   T("Meu repositório", "Kho của tôi"),
   T("Meu servidor", "Máy chủ của tôi"),
   T("Meus addons", "Tiện ích bổ sung của tôi"),
+  T("Meus times", "Đội của tôi"),
   T("Microfone: ditado  ·  Teclado: o do sistema", "Micro: đọc chính tả  ·  Bàn phím: của hệ thống"),
   T("Midnight’s", "Nửa đêm"),
   T("Minha lista e Continuar", "Danh sách của tôi và Xem tiếp"),

@@ -4550,6 +4550,7 @@
   T("Meu repositório", "Repositori saya"),
   T("Meu servidor", "Server saya"),
   T("Meus addons", "Tambahan saya"),
+  T("Meus times", "Tim saya"),
   T("Microfone: ditado  ·  Teclado: o do sistema", "Mikrofon: dikte  ·  Keyboard: bawaan sistem"),
   T("Midnight’s", "Tengah malam"),
   T("Minha lista e Continuar", "Daftarku dan Lanjutkan"),

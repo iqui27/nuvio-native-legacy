@@ -4550,6 +4550,7 @@
   T("Meu repositório", "我的仓库"),
   T("Meu servidor", "我的服务器"),
   T("Meus addons", "我的插件"),
+  T("Meus times", "我的球队"),
   T("Microfone: ditado  ·  Teclado: o do sistema", "麦克风：听写  ·  键盘：系统键盘"),
   T("Midnight’s", "午夜的"),
   T("Minha lista e Continuar", "我的列表和继续观看"),

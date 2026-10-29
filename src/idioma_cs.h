@@ -4550,6 +4550,7 @@
   T("Meu repositório", "Můj repozitář"),
   T("Meu servidor", "Můj server"),
   T("Meus addons", "Moje doplňky"),
+  T("Meus times", "Moje týmy"),
   T("Microfone: ditado  ·  Teclado: o do sistema", "Mikrofon: diktování  ·  Klávesnice: systémová"),
   T("Midnight’s", "Půlnoční"),
   T("Minha lista e Continuar", "Můj seznam a Pokračovat"),

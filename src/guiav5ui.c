@@ -1792,7 +1792,7 @@ static int gv_is(const char *s){
     "erros","vazio","fontes-erro","esportes-ligas","esportes-liga","esportes-favoritos",
     "esportes-ajustes","esportes-onde-assistir","esportes-noticias","esportes-hoje",
     "esportes-proximos","esportes-resultados","esportes-modalidades","esportes-catalogo",
-    "esportes-visibilidade","esportes-modalidades-config","esportes-artigo","esportes-canais","esportes-evento",NULL};
+    "esportes-visibilidade","esportes-modalidades-config","esportes-artigo","esportes-canais","esportes-times","esportes-evento",NULL};
   for(int i=0;ss[i];i++)if(!strcmp(s,ss[i]))return 1;
   return 0;
 }
@@ -3041,7 +3041,7 @@ static int gv_activate(void){
 /* OK segurado (NV_HOLD, segurar.h): opcoes do canal; no dock, desafixa. */
 static Uint32 gv_ok_desde;static int gv_ok_longo;
 static void gv_ok_segurado(void){
-  if(gv_sports()&&focus>=2200&&focus<2203){
+  if(gv_sports()&&focus>=2200&&focus<2206){
     int i=gs_page*3+focus-2200;if(i<gs_n){gs_selected=gs_games[i];gs_open("esportes-onde-assistir");}return;
   }
   if(gv_zone==1){GVCh *c=gv_canal_focado();if(c){guia_alternar_favorito(c->id);gv_snap_force=1;if(gv_pin>0&&gv_pin>=gv_npins-1)gv_pin--;}return;}
@@ -3168,7 +3168,7 @@ static int gv_event(SDL_Keycode k,int repeat){
       }return 1;
     }
     if(ok&&!repeat){
-      if(gv_sports()&&focus>=2200&&focus<2203){gv_ok_desde=SDL_GetTicks();if(!gv_ok_desde)gv_ok_desde=1;gv_ok_longo=0;return 1;}
+      if(gv_sports()&&focus>=2200&&focus<2206){gv_ok_desde=SDL_GetTicks();if(!gv_ok_desde)gv_ok_desde=1;gv_ok_longo=0;return 1;}
       return gv_activate();
     }
     if(!strcmp(screen,"vazio")||!gv_total_n||gv_sports())return 1;

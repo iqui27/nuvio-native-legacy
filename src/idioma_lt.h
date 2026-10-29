@@ -4550,6 +4550,7 @@
   T("Meu repositório", "Mano saugykla"),
   T("Meu servidor", "Mano serveris"),
   T("Meus addons", "Mano priedai"),
+  T("Meus times", "Mano komandos"),
   T("Microfone: ditado  ·  Teclado: o do sistema", "Mikrofonas: diktavimas  ·  Klaviatūra: sistemos"),
   T("Midnight’s", "Vidurnaktis"),
   T("Minha lista e Continuar", "Mano sąrašas ir Tęsti"),

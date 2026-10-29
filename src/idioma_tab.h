@@ -4549,6 +4549,7 @@
   { "Meu repositório", "My repository" },
   { "Meu servidor", "My server" },
   { "Meus addons", "My addons" },
+  { "Meus times", "My teams" },
   { "Microfone: ditado  ·  Teclado: o do sistema", "Mic: dictation  ·  Keyboard: the system one" },
   { "Midnight’s", "Midnight’s" },
   { "Minha lista e Continuar", "My list and Continue" },

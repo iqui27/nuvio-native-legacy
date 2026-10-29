@@ -4550,6 +4550,7 @@
   T("Meu repositório", "Mitt arkiv"),
   T("Meu servidor", "Min server"),
   T("Meus addons", "Mina tillägg"),
+  T("Meus times", "Mina lag"),
   T("Microfone: ditado  ·  Teclado: o do sistema", "Mikrofon: diktering  ·  Tangentbord: systemets"),
   T("Midnight’s", "Midnatt"),
   T("Minha lista e Continuar", "Min lista och Fortsätt"),

@@ -4550,6 +4550,7 @@
   T("Meu repositório", "Mijn repository"),
   T("Meu servidor", "Mijn server"),
   T("Meus addons", "Mijn add-ons"),
+  T("Meus times", "Mijn teams"),
   T("Microfone: ditado  ·  Teclado: o do sistema", "Microfoon: dicteren  ·  Toetsenbord: dat van het systeem"),
   T("Midnight’s", "Middernacht"),
   T("Minha lista e Continuar", "Mijn lijst en Verder kijken"),
