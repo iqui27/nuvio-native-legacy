@@ -1,0 +1,177 @@
+[
+  {
+    "id": "tt0141842",
+    "name": "The Sopranos",
+    "year": "1999",
+    "genres": [
+      "Crime",
+      "Drama"
+    ],
+    "rating": "9.2",
+    "description": "New Jersey mob boss Tony Soprano deals with personal and professional issues in his home and business life that affect his mental state, leading him to seek professional psychiatric counseling.",
+    "poster": "tests/fixtures/fileirarepensar/tt0141842-poster.jpg",
+    "backdrop": "tests/fixtures/fileirarepensar/tt0141842-backdrop.jpg",
+    "logo": "tests/fixtures/fileirarepensar/tt0141842-logo.png"
+  },
+  {
+    "id": "tt34440854",
+    "name": "The Wonderfools",
+    "year": "2026",
+    "genres": [
+      "Action",
+      "Adventure",
+      "Comedy"
+    ],
+    "rating": "7.6",
+    "description": "A group of awkward townies who unexpectedly gain superpowers and fight villains threatening the peace of Haeseong city.",
+    "poster": "tests/fixtures/fileirarepensar/tt34440854-poster.jpg",
+    "backdrop": "tests/fixtures/fileirarepensar/tt34440854-backdrop.jpg",
+    "logo": "tests/fixtures/fileirarepensar/tt34440854-logo.png"
+  },
+  {
+    "id": "tt7366338",
+    "name": "Chernobyl",
+    "year": "2019",
+    "genres": [
+      "Drama",
+      "History",
+      "Thriller"
+    ],
+    "rating": "9.3",
+    "description": "In April 1986, the city of Chernobyl in the Soviet Union suffers one of the worst nuclear disasters in the history of mankind. Consequently, many heroes put their lives on the line in the following days, weeks and months.",
+    "poster": "tests/fixtures/fileirarepensar/tt7366338-poster.jpg",
+    "backdrop": "tests/fixtures/fileirarepensar/tt7366338-backdrop.jpg",
+    "logo": "tests/fixtures/fileirarepensar/tt7366338-logo.png"
+  },
+  {
+    "id": "tt27042206",
+    "name": "The Good Bad Mother",
+    "year": "2023",
+    "genres": [
+      "Comedy",
+      "Crime",
+      "Drama"
+    ],
+    "rating": "8.4",
+    "description": "A tragic accident leaves an ambitious prosecutor with the mind of a child, forcing him and his mother to embark on a journey to heal their relationship.",
+    "poster": "tests/fixtures/fileirarepensar/tt27042206-poster.jpg",
+    "backdrop": "tests/fixtures/fileirarepensar/tt27042206-backdrop.jpg",
+    "logo": "tests/fixtures/fileirarepensar/tt27042206-logo.png"
+  },
+  {
+    "id": "tt0903747",
+    "name": "Breaking Bad",
+    "year": "2008",
+    "genres": [
+      "Crime",
+      "Drama",
+      "Thriller"
+    ],
+    "rating": "9.5",
+    "description": "A chemistry teacher diagnosed with inoperable lung cancer turns to manufacturing and selling methamphetamine with a former student to secure his family's future.",
+    "poster": "tests/fixtures/fileirarepensar/tt0903747-poster.jpg",
+    "backdrop": "tests/fixtures/fileirarepensar/tt0903747-backdrop.jpg",
+    "logo": "tests/fixtures/fileirarepensar/tt0903747-logo.png"
+  },
+  {
+    "id": "tt0944947",
+    "name": "Game of Thrones",
+    "year": "2011",
+    "genres": [
+      "Drama",
+      "Fantasy"
+    ],
+    "rating": "9.2",
+    "description": "Nine noble families vie for control of Westeros and the Iron Throne, while an ancient threat beyond The Wall begins to stir.",
+    "poster": "tests/fixtures/fileirarepensar/tt0944947-poster.jpg",
+    "backdrop": "tests/fixtures/fileirarepensar/tt0944947-backdrop.jpg",
+    "logo": "tests/fixtures/fileirarepensar/tt0944947-logo.png"
+  },
+  {
+    "id": "tt1475582",
+    "name": "Sherlock",
+    "year": "2010",
+    "genres": [
+      "Crime",
+      "Drama",
+      "Mystery"
+    ],
+    "rating": "9.0",
+    "description": "In modern-day London, brilliant but eccentric detective Sherlock Holmes teams with war veteran Dr. John Watson to crack baffling crimes, outwit formidable foes, and aid Scotland Yard with razor-sharp deduction.",
+    "poster": "tests/fixtures/fileirarepensar/tt1475582-poster.jpg",
+    "backdrop": "tests/fixtures/fileirarepensar/tt1475582-backdrop.jpg",
+    "logo": "tests/fixtures/fileirarepensar/tt1475582-logo.png"
+  },
+  {
+    "id": "tt0306414",
+    "name": "The Wire",
+    "year": "2002",
+    "genres": [
+      "Crime",
+      "Drama",
+      "Thriller"
+    ],
+    "rating": "9.3",
+    "description": "The Baltimore drug scene, as seen through the eyes of drug dealers and law enforcement.",
+    "poster": "tests/fixtures/fileirarepensar/tt0306414-poster.jpg",
+    "backdrop": "tests/fixtures/fileirarepensar/tt0306414-backdrop.jpg",
+    "logo": "tests/fixtures/fileirarepensar/tt0306414-logo.png"
+  },
+  {
+    "id": "tt0411008",
+    "name": "Lost",
+    "year": "2004",
+    "genres": [
+      "Adventure",
+      "Drama",
+      "Fantasy"
+    ],
+    "rating": "8.3",
+    "description": "The survivors of a plane crash are forced to work together in order to survive on a seemingly deserted tropical island.",
+    "poster": "tests/fixtures/fileirarepensar/tt0411008-poster.jpg",
+    "backdrop": "tests/fixtures/fileirarepensar/tt0411008-backdrop.jpg",
+    "logo": "tests/fixtures/fileirarepensar/tt0411008-logo.png"
+  },
+  {
+    "id": "tt0108778",
+    "name": "Friends",
+    "year": "1994",
+    "genres": [
+      "Comedy",
+      "Romance"
+    ],
+    "rating": "8.8",
+    "description": "The personal and professional lives of six friends living in the Manhattan borough of New York City.",
+    "poster": "tests/fixtures/fileirarepensar/tt0108778-poster.jpg",
+    "backdrop": "tests/fixtures/fileirarepensar/tt0108778-backdrop.jpg",
+    "logo": "tests/fixtures/fileirarepensar/tt0108778-logo.png"
+  },
+  {
+    "id": "tt0386676",
+    "name": "The Office",
+    "year": "2005",
+    "genres": [
+      "Comedy"
+    ],
+    "rating": "9.0",
+    "description": "A mockumentary on a group of typical office workers, where the workday consists of ego clashes, inappropriate behavior, tedium and romance.",
+    "poster": "tests/fixtures/fileirarepensar/tt0386676-poster.jpg",
+    "backdrop": "tests/fixtures/fileirarepensar/tt0386676-backdrop.jpg",
+    "logo": "tests/fixtures/fileirarepensar/tt0386676-logo.png"
+  },
+  {
+    "id": "tt2861424",
+    "name": "Rick and Morty",
+    "year": "2013",
+    "genres": [
+      "Animation",
+      "Adventure",
+      "Comedy"
+    ],
+    "rating": "9.0",
+    "description": "The fractured domestic lives of a nihilistic mad scientist and his anxious grandson are further complicated by their inter-dimensional misadventures.",
+    "poster": "tests/fixtures/fileirarepensar/tt2861424-poster.jpg",
+    "backdrop": "tests/fixtures/fileirarepensar/tt2861424-backdrop.jpg",
+    "logo": "tests/fixtures/fileirarepensar/tt2861424-logo.png"
+  }
+]
