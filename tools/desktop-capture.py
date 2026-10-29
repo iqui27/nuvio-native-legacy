@@ -68,7 +68,7 @@ with log.open('w') as output:
         key('janela:669,951')
         photo('mac-home-narrow.png')
         key('janela:1280,800')
-        clip = OUT / 'desktop-proof.mkv'
+        clip = OUT / 'sintel-trailer.mp4'
         if clip.exists():
             Path('/tmp/nuvio-video').write_text(str(clip) + '\n')
             time.sleep(4)

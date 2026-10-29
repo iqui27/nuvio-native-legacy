@@ -943,7 +943,7 @@ static void voltarAoPainel(void) {
     spainel_voltar_titulo();
   }
 }
-#ifdef NV_LINUX_DESKTOP
+#if defined(NV_LINUX_DESKTOP) || defined(NV_DESKTOP_RELEASE)
 static int uiPreview;
 #endif
 static int sair = 0;
@@ -3944,7 +3944,7 @@ int app_iniciar(const char *dirArte) {
   perfis_ao_abrir_sessao(perfilEncerrarSessao);
   cat_cache_perfis(1);
   snprintf(perfilDirArte, sizeof perfilDirArte, "%s", dirArte ? dirArte : "");
-#ifdef NV_LINUX_DESKTOP
+#if defined(NV_LINUX_DESKTOP) || defined(NV_DESKTOP_RELEASE)
   const char *preview = getenv("NUVIO_UI_PREVIEW");
   uiPreview = preview && !strcmp(preview, "1");
 #endif
@@ -4040,7 +4040,7 @@ int app_iniciar(const char *dirArte) {
   recomenda_ao_mudar_alcance(atividade_definir_permitido);
   // Sem conta, o app abre no login. Com sessao gravada ele nem passa por ela —
   // pedir o codigo de novo a cada arranque seria o mesmo que nao ter gravado.
-#ifdef NV_LINUX_DESKTOP
+#if defined(NV_LINUX_DESKTOP) || defined(NV_DESKTOP_RELEASE)
   if (uiPreview) {
     tela = TELA_HOME;
     printf("[linux] UI preview: no account sync or video playback\n");
@@ -5494,7 +5494,7 @@ void app_atualizar(float dt, Uint32 agora) {
   // unica saida honesta. Continuar na home mostraria o catalogo de exemplo do
   // pacote como se fosse o da pessoa.
   if (!sessao_logada()
-#ifdef NV_LINUX_DESKTOP
+#if defined(NV_LINUX_DESKTOP) || defined(NV_DESKTOP_RELEASE)
       && !uiPreview
 #endif
      ) {

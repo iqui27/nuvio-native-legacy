@@ -486,6 +486,15 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
     int segurar = 0;
     char *dp = strchr(linha, ':');
     if (dp && !strcmp(dp + 1, "hold")) { *dp = 0; segurar = 1; }
+#ifdef NV_DESKTOP_RELEASE
+    if (dp && !strncmp(linha, "janela:", 7)) {
+      int w, h;
+      SDL_Window *window = SDL_GL_GetCurrentWindow();
+      if (window && sscanf(dp + 1, "%d,%d", &w, &h) == 2 && w >= 320 && h >= 320)
+        SDL_SetWindowSize(window, w, h);
+      continue;
+    }
+#endif
     // "abrir:tt0121955" abre o titulo direto (app.c). Porta de teste, como
     // "guia".
     if (dp && !strncmp(linha, "abrir:", 6)) { app_abrir_titulo(dp + 1); continue; }
@@ -790,7 +799,11 @@ static void videoSeSolicitado(void) {
       if (pthread_create(&t, NULL, p2pTesteFio, NULL) == 0) pthread_detach(t);
       else { atomic_store(&p2pTesteEstado, 0); p2pmotor_segurar(0); }
     }
+#ifdef NV_DESKTOP_RELEASE
+    else { player_abrir(0, url); }
+#else
     else { video_tocar(url); video_janela(0, 0, 1920, 1080); }
+#endif
   }
   fclose(f);
   consomeOuBloqueia(pedidoVideo(), &bloqueado);
@@ -1102,6 +1115,9 @@ int main(int argc, char **argv) {
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
   Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI;
+#ifdef NV_DESKTOP_MPV
+  SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
+#endif
 #else
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
@@ -2345,6 +2361,9 @@ int main(int argc, char **argv) {
     gfx_ambiente_descarregar();   // quadro sem desenho por cima: a luz ainda sai
     gpun_ampliacao(ajustes_ampliacao_algo(), ajustes_ampliacao_nitidez());
     gpun_quadro_fim();
+#ifdef NV_DESKTOP_MPV
+    video_desktop_render(dw, dh);
+#endif
     fDes = NV_DT(t0);
     fGfxMs = gfx_ms_rect; fTexMs = tex_ms_busca;
     fNRect = gfx_n_rect; fNProg = gfx_n_prog; fNBind = gfx_n_bind; fNBusca = tex_n_busca;
@@ -2369,6 +2388,9 @@ int main(int argc, char **argv) {
     }
     if (!nvPrimeiroQuadroFeito) arranque_etapa("primeiro SwapWindow");
     SDL_GL_SwapWindow(win);
+#ifdef NV_DESKTOP_MPV
+    video_desktop_swap();
+#endif
 #ifndef __EMSCRIPTEN__
     { unsigned wait = player_frame_wait(playerUi, SDL_GetTicks() - frameStarted);
       if (wait) SDL_Delay(wait); }
@@ -2742,6 +2764,9 @@ int main(int argc, char **argv) {
   tex_encerrar();
   txt_encerrar();
   gfx_encerrar();
+#ifdef NV_DESKTOP_MPV
+  video_encerrar();
+#endif
   SDL_GL_DeleteContext(ctx);
   SDL_DestroyWindow(win);
   IMG_Quit();
