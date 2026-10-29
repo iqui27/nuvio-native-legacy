@@ -79,6 +79,9 @@ int   st_ime_abrir(int dono, const char *inicial, int max);
 // e-mail ou o de senha (sem sugestao, sem aprender o que foi digitado).
 enum { ST_IME_TEXTO = 0, ST_IME_EMAIL = 1, ST_IME_SENHA = 2 };
 void  st_ime_tipo(int tipo);
+// 1 = um campo de SENHA pode abrir o teclado do sistema (o host do .tpk sabe pôr o
+// teclado da Samsung em modo senha, sem previsão). 0 = a senha fica na grade do app.
+int   st_ime_senha_ok(void);
 // Comeca o ditado (permissao, reconhecedor do app, ou os degraus de reserva).
 int   st_voz_iniciar(int dono);
 // Fecha o teclado e para a voz, se forem desse dono.

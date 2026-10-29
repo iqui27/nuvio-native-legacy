@@ -7,6 +7,8 @@
 //     microfone); Concluido com o campo vazio confirma; o app fechar esconde;
 //   - cursor (Esquerda/Direita): a posicao em caracteres vira o trecho antes
 //     dele, UTF-8 inteiro; no fim, ou de outro dono, nao ha trecho;
+//   - SENHA: so com o host que sabe o modo senha (registro com o tipo) a senha
+//     vai ao teclado da Samsung; o tipo vale para uma abertura so;
 //   - o teclado nao subir: a grade e o microfone voltam nesta sessao.
 //   bash tests/tpk_teclado_sistema.sh
 #include "sistexto.h"
@@ -17,6 +19,8 @@
 
 typedef void (*Fn)(void);
 typedef void (*FnTexto)(const char *atual);
+typedef void (*FnTextoTipo)(const char *atual, int tipo);
+void nv_tpk_voz_registrar_texto_tipo(FnTextoTipo abrir);
 void nv_tpk_voz_registrar(Fn iniciar, Fn parar, int microfone);
 void nv_tpk_voz_registrar_texto(FnTexto abrir);
 void nv_tpk_texto_valor(const char *v);
@@ -31,7 +35,9 @@ static int iniciou, parou, abriuTexto;
 static char textoAberto[256];
 static void hIniciar(void) { iniciou++; }
 static void hParar(void) { parou++; }
+static int abriuTipo, ultimoTipo = -1;
 static void hAbrirTexto(const char *atual) { abriuTexto++; snprintf(textoAberto, sizeof textoAberto, "%s", atual); }
+static void hAbrirTipo(const char *atual, int tipo) { abriuTipo++; ultimoTipo = tipo; hAbrirTexto(atual); }
 
 // O laco do app: quadro + eventos para quem tem o campo.
 static int ler(int dono, char *t, size_t n) {
@@ -107,18 +113,33 @@ int main(void) {
   assert(parou == 1 && !texto_sistema_aberto() && st_estado() == ST_PARADO);
   assert(ler(ST_SPOT, t, sizeof t) == ST_NADA);
 
+  // SENHA. Host antigo (so o abridor sem tipo): sem modo senha, a senha fica na
+  // grade do app. Host novo (com o tipo): vai ao teclado da Samsung como senha.
+  assert(!st_ime_senha_ok());
+  nv_tpk_voz_registrar_texto_tipo(hAbrirTipo);
+  assert(st_ime_senha_ok());
+  st_ime_tipo(ST_IME_SENHA);
+  assert(st_ime_abrir(ST_TECLADO, "", 64) && abriuTexto == 4 && abriuTipo == 1 && ultimoTipo == ST_IME_SENHA);
+  nv_tpk_texto_fim(0);
+  assert(ler(ST_TECLADO, t, sizeof t) == ST_CANCELOU);
+  // O tipo vale para UMA abertura: a seguinte e texto comum.
+  assert(st_ime_abrir(ST_BUSCA, "dune", 64) && abriuTipo == 2 && ultimoTipo == ST_IME_TEXTO);
+  assert(abriuTexto == 5 && !strcmp(textoAberto, "dune"));
+  nv_tpk_texto_fim(0);
+  ler(ST_BUSCA, t, sizeof t);
+
   // O teclado nao subiu (prazo de 3 s no host): a grade e o microfone voltam.
-  assert(st_ime_abrir(ST_BUSCA, "", 64) && abriuTexto == 4);
+  assert(st_ime_abrir(ST_BUSCA, "", 64) && abriuTexto == 6);
   nv_tpk_texto_fim(-1);
   r = ler(ST_BUSCA, t, sizeof t);
   assert(r == ST_CANCELOU && st_estado() == ST_PARADO);
   assert(!st_ime_disponivel() && !st_teclado_so_sistema() && st_voz_disponivel());
-  assert(!st_ime_abrir(ST_BUSCA, "", 64) && abriuTexto == 4);
+  assert(!st_ime_abrir(ST_BUSCA, "", 64) && abriuTexto == 6 && !st_ime_senha_ok());
   // O microfone continua abrindo o teclado da Samsung pelo caminho dele.
-  assert(st_voz_iniciar(ST_BUSCA) && iniciou == 1 && abriuTexto == 4);
+  assert(st_voz_iniciar(ST_BUSCA) && iniciou == 1 && abriuTexto == 6);
   st_fechar(ST_BUSCA);
 
   SDL_Quit();
-  puts("PASS: tpk_teclado_sistema (Do sistema: teclado da Samsung, sem grade nem microfone; cursor)");
+  puts("PASS: tpk_teclado_sistema (Do sistema: teclado da Samsung, sem grade nem microfone; cursor; senha so com modo senha)");
   return 0;
 }

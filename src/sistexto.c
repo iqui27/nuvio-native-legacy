@@ -146,6 +146,13 @@ int st_cursor_prefixo(int d, const char *texto, char *dst, size_t n) {
 
 static int proximoTipo;
 void st_ime_tipo(int tipo) { proximoTipo = tipo; }
+int st_ime_senha_ok(void) {
+#ifdef NV_TPK
+  return !pelaPlataforma() || texto_sistema_senha_segura();
+#else
+  return 1;
+#endif
+}
 
 int st_ime_abrir(int d, const char *inicial, int max) {
   int ok = 0, tipo = proximoTipo;
@@ -160,8 +167,10 @@ int st_ime_abrir(int d, const char *inicial, int max) {
   // O tipo vai nos bits altos do max: a assinatura JNI fica a mesma.
   ok = android_st_teclado(inicial ? inicial : "", (max & 0xFFFF) | (tipo << 16));
 #else
-  (void)max; (void)tipo;
-  if (pelaPlataforma()) { texto_sistema_abrir(inicial ? inicial : "", 0); ok = texto_sistema_aberto(); }
+  (void)max;
+  // O tipo segue ao host do .tpk (senha = teclado da Samsung em modo senha).
+  if (pelaPlataforma()) { texto_sistema_tipo(tipo); texto_sistema_abrir(inicial ? inicial : "", 0); ok = texto_sistema_aberto(); }
+
   else ok = 1;
 #endif
   estado = ok ? ST_DIGITANDO : ST_PARADO;

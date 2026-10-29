@@ -212,12 +212,24 @@ void nv_tpk_voz_registrar(FnVoz iniciar, FnVoz parar, int microfone) {
 // cursor voltam por nv_tpk_texto_valor / nv_tpk_texto_cursor / nv_tpk_texto_fim.
 typedef void (*FnVozTexto)(const char *atual);
 static FnVozTexto vAbrirTexto;
+// O mesmo abridor COM o tipo do campo (0 texto, 1 e-mail, 2 senha): o host poe o
+// teclado da Samsung em modo senha, sem previsao. Simbolo NOVO, e nao um
+// argumento a mais no antigo: a .so atualizada sozinha (#181) roda sob um host
+// antigo, que so registra o de cima; ai a senha fica na grade do app.
+typedef void (*FnVozTextoTipo)(const char *atual, int tipo);
+static FnVozTextoTipo vAbrirTextoTipo;
 static int abertoPeloHost;   // o que esta aberto e o teclado de digitar do host
 static int vTextoFalhou;     // o teclado nao subiu nesta sessao: a grade do app assume
 __attribute__((visibility("default")))
 void nv_tpk_voz_registrar_texto(FnVozTexto abrir) {
   vAbrirTexto = abrir;
   printf("[texto] host registrou o teclado do sistema para digitar (release)\n");
+  fflush(stdout);
+}
+__attribute__((visibility("default")))
+void nv_tpk_voz_registrar_texto_tipo(FnVozTextoTipo abrir) {
+  vAbrirTextoTipo = abrir;
+  printf("[texto] host registrou o teclado do sistema para digitar, com o tipo do campo\n");
   fflush(stdout);
 }
 __attribute__((visibility("default")))
@@ -335,10 +347,21 @@ int texto_sistema_voz_pelo_teclado(void) {
 #endif
 }
 
+static int proximoTipo;
+void texto_sistema_tipo(int tipo) { proximoTipo = tipo; }
+
+int texto_sistema_senha_segura(void) {
+#if defined(NV_TPK)
+  return vAbrirTextoTipo != NULL && texto_sistema_teclado_pelo_host();
+#else
+  return 1;
+#endif
+}
+
 int texto_sistema_teclado_pelo_host(void) {
 #if defined(NV_TPK)
   // Canario (Texto.cs, hAbrir) ja entrega o teclado por TS_TECLADO.
-  return !hAbrir && vAbrirTexto != NULL && !vTextoFalhou;
+  return !hAbrir && (vAbrirTexto || vAbrirTextoTipo) && !vTextoFalhou;
 #else
   return 0;
 #endif
@@ -352,7 +375,8 @@ const char *texto_sistema_valor(void) {
 }
 
 void texto_sistema_abrir(const char *atual, int voz) {
-  int tem = texto_sistema_disponivel(), peloMic = 0, peloHost = 0;
+  int tem = texto_sistema_disponivel(), peloMic = 0, peloHost = 0, tipo = proximoTipo;
+  proximoTipo = 0;
 #if defined(NV_TPK)
   // Botao de microfone (Voz.cs): a voz e o teclado da Samsung, sem o teclado
   // do sistema registrado para digitar.
@@ -376,10 +400,15 @@ void texto_sistema_abrir(const char *atual, int voz) {
 #if defined(NV_TPK)
   abertoPeloMic = peloMic || peloHost;
   abertoPeloHost = peloHost;
-  if (peloMic) vIniciar(); else if (peloHost) vAbrirTexto(valor); else hAbrir(valor, voz);
+  if (peloMic) vIniciar();
+  else if (peloHost && vAbrirTextoTipo) vAbrirTextoTipo(valor, tipo);
+  else if (peloHost) vAbrirTexto(valor);
+  else hAbrir(valor, voz);
 #elif defined(__EMSCRIPTEN__)
+  (void)tipo;
   EM_ASM({ try { window.nvTexto.abrir(UTF8ToString($0), $1); } catch (e) { console.warn("[texto] " + e); } }, valor, voz);
 #else
+  (void)tipo;
   // #642: na webOS 26 esta chamada pode derrubar o processo; a falha vira
   // TS_EV_ERRO e o teclado do app fica como unico daqui em diante.
   if (sdlImeVazio(

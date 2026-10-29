@@ -29,6 +29,12 @@
 // ou o painel fechado pelo teclado confirma; Voltar cancela. Se o teclado nao
 // subir em 3 s o C desiste dele nesta sessao e a grade do app volta.
 //
+// TIPO DO CAMPO: o C diz se e texto, e-mail ou SENHA. Senha abre o teclado da
+// Samsung no layout de senha e sem previsao (o teclado nao aprende a senha), e o
+// campo escondido e limpo ao fechar. Registro novo (nv_tpk_voz_registrar_texto_
+// tipo); com uma libnuvio.so antiga, que nao o tem, fica o registro sem tipo e o
+// C novo, ao contrario, nunca manda senha a um host sem ele (fica na grade).
+//
 // ESQUERDA/DIREITA: o campo escondido move o cursor com as setas, tanto no
 // microfone quanto ao digitar, e as setas NAO seguem para o app embaixo. O
 // cursor e a propriedade "primaryCursorPosition" do DALi, lida e escrita pelo
@@ -38,7 +44,7 @@
 // sem a propriedade: as setas seguem como antes.
 //
 // Ponte (src/entrada_texto.c): C -> host iniciar()/parar() (fio do C; aqui vao
-// ao fio principal) e abrirTexto(atual); host -> C nv_tpk_texto_valor(texto
+// ao fio principal) e abrirTexto(atual, tipo); host -> C nv_tpk_texto_valor(texto
 // inteiro), nv_tpk_texto_cursor(posicao), nv_tpk_texto_fim(1) com texto,
 // nv_tpk_texto_fim(0) sem texto/Voltar.
 //
@@ -57,22 +63,27 @@ namespace NuvioTpk
     {
         [DllImport("libnuvio.so")] static extern void nv_tpk_voz_registrar(IntPtr iniciar, IntPtr parar, int microfone);
         [DllImport("libnuvio.so")] static extern void nv_tpk_voz_registrar_texto(IntPtr abrir);
+        [DllImport("libnuvio.so")] static extern void nv_tpk_voz_registrar_texto_tipo(IntPtr abrir);
         [DllImport("libnuvio.so")] static extern void nv_tpk_texto_valor(string valor);
         [DllImport("libnuvio.so")] static extern void nv_tpk_texto_cursor(int posicao);
         [DllImport("libnuvio.so")] static extern void nv_tpk_texto_fim(int confirmou);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnSemArgs();
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnAbrirTexto(IntPtr atual);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnAbrirTextoTipo(IntPtr atual, int tipo);
+        const int TipoEmail = 1, TipoSenha = 2;   // ST_IME_* (src/sistexto.h)
 
         readonly Action<string> log;
         // Referencias vivas: o C guarda os ponteiros.
         readonly FnSemArgs fIniciar, fParar;
         readonly FnAbrirTexto fAbrirTexto;
+        readonly FnAbrirTextoTipo fAbrirTextoTipo;
 
         TextField campo;
         InputMethodContext imf;
         bool aberto, viuPainel;
         bool modoTexto;   // aberto para DIGITAR (teclado do sistema), nao para o microfone
+        int tipoAplicado;   // tipo do campo ja posto no TextField (0 = o padrao do DALi)
         Tizen.NUI.Timer prazo, relogioCursor;
         int sessao, aberturaPendente, ultimoCursor = -2;
         int indiceCursor = -2;   // propriedade do cursor no DALi; -2 = ainda nao procurada
@@ -92,18 +103,20 @@ namespace NuvioTpk
             fParar = () => principal(Parar);
             // Digitar no teclado da Samsung (ajuste Teclado "Do sistema"): o texto
             // atual e copiado AGORA, no fio do C, antes do buffer dele mudar.
-            fAbrirTexto = p =>
+            fAbrirTextoTipo = (p, tipo) =>
             {
                 string atual = PtrToUtf8(p);
                 int minha = Volatile.Read(ref sessao);
                 Interlocked.Exchange(ref aberturaPendente, 1);
-                principal(() => { if (minha == Volatile.Read(ref sessao)) Iniciar(atual); });
+                principal(() => { if (minha == Volatile.Read(ref sessao)) Iniciar(atual, tipo); });
             };
+            fAbrirTexto = p => fAbrirTextoTipo(p, 0);
             // Native IME crashes/hangs cannot be caught by C#. Never touch it
             // before the user requests the optional microphone keyboard (#558).
             nv_tpk_voz_registrar(Marshal.GetFunctionPointerForDelegate(fIniciar),
                                  Marshal.GetFunctionPointerForDelegate(fParar), -1);
-            nv_tpk_voz_registrar_texto(Marshal.GetFunctionPointerForDelegate(fAbrirTexto));
+            try { nv_tpk_voz_registrar_texto_tipo(Marshal.GetFunctionPointerForDelegate(fAbrirTextoTipo)); }
+            catch (EntryPointNotFoundException) { nv_tpk_voz_registrar_texto(Marshal.GetFunctionPointerForDelegate(fAbrirTexto)); }
             Log("microphone registered; Samsung IME deferred until requested");
         }
 
@@ -149,6 +162,7 @@ namespace NuvioTpk
         {
             try
             {
+                tipoAplicado = 0;   // campo novo: o tipo padrao do DALi
                 campo = new TextField
                 {
                     Size2D = new Size2D(2, 2),
@@ -196,7 +210,7 @@ namespace NuvioTpk
 
         // atual == null: botao de microfone (campo limpo). Senao: digitar no teclado
         // do sistema, com o texto que o campo do app ja tem.
-        void Iniciar(string atual = null)
+        void Iniciar(string atual = null, int tipo = 0)
         {
             Interlocked.Exchange(ref aberturaPendente, 0);
             if (aberto) return;
@@ -214,6 +228,9 @@ namespace NuvioTpk
                 // Antes de abrir: TextChanged nao apaga a busca do app. No microfone o
                 // campo comeca limpo; ao digitar, comeca com o texto do app.
                 modoTexto = atual != null;
+                // Antes de ativar o IME: senha nunca abre num campo comum. Falhar
+                // aqui e o "nao subiu" (-1): a grade do app assume.
+                AplicarTipo(modoTexto ? tipo : 0);
                 campo.Text = atual ?? "";   // o DALi poe o cursor no fim do texto
                 ultimoCursor = -2;
                 cursorFalhou = false;
@@ -242,6 +259,22 @@ namespace NuvioTpk
                 aberto = true;
                 Terminar(false, true);
             }
+        }
+
+        // Layout do teclado da Samsung e previsao, so quando o tipo muda.
+        void AplicarTipo(int tipo)
+        {
+            if (tipo == tipoAplicado) return;
+            var m = new InputMethod
+            {
+                PanelLayout = tipo == TipoSenha ? InputMethod.PanelLayoutType.Password
+                            : tipo == TipoEmail ? InputMethod.PanelLayoutType.Email
+                            : InputMethod.PanelLayoutType.Normal,
+            };
+            campo.InputMethodSettings = m.OutputMap;
+            imf.TextPrediction = tipo != TipoSenha;
+            tipoAplicado = tipo;
+            Log("tipo do campo " + tipo);
         }
 
         // Concluido / painel fechado (confirmou) ou Voltar. No microfone so entrega com
@@ -386,6 +419,8 @@ namespace NuvioTpk
             PararRelogioCursor();
             try { imf?.HideInputPanel(); imf?.Deactivate(); } catch { }
             try { FocusManager.Instance.ClearFocus(); } catch { }
+            // A senha nao fica no campo escondido (aberto ja e false: nada vai ao C).
+            if (tipoAplicado == TipoSenha) try { campo.Text = ""; } catch { }
             campo.Focusable = false;
         }
     }

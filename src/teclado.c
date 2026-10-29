@@ -143,7 +143,11 @@ static int semCel;
 // com cada combinacao.
 static int forcaIme = -1, forcaVoz = -1, forcaCel = -1;
 void teclado_teste_modos(int ime, int voz, int cel) { forcaIme = ime; forcaVoz = voz; forcaCel = cel; }
-static int imeOk(void) { return forcaIme >= 0 ? forcaIme : st_ime_disponivel(); }
+static int ehSenha;
+// Campo de senha onde o teclado do sistema nao sabe o modo senha (host antigo do
+// .tpk): a senha nao vai a um campo comum com previsao, fica na grade do app.
+static int senhaSemIme(void) { return ehSenha && !st_ime_senha_ok(); }
+static int imeOk(void) { return forcaIme >= 0 ? forcaIme : st_ime_disponivel() && !senhaSemIme(); }
 // No .tpk a voz e o botao de microfone das BUSCAS (teclado da Samsung, Voz.cs):
 // o teclado modal (chaves, nomes) fica sem o "Falar".
 static int vozOk(void) {
@@ -268,7 +272,7 @@ static char  tituloAtual[96], dicaAtual[160];
 static int   celRecebido;
 // SENHA (#216): o campo mostra pontos, nunca o texto. A modal fica na tela e
 // a tela vira foto.
-static int   mascarar, tipoIme, ehSenha, aceitaUtf8, abriuComValor;
+static int   mascarar, tipoIme, aceitaUtf8, abriuComValor;
 // O que foi digitado aparece em CAIXAS (codigo curto) ou num campo de texto.
 // So o campo de texto e alvo de foco: as caixas nao tem estado de foco
 // desenhado, e um foco que nao se ve e um foco perdido.
@@ -279,7 +283,7 @@ static int campoCaixas(void) {
 // coluna) e Esquerda/Direita nele andam o cursor; Direita no fim volta a grade.
 static int teCursorApp(void) {
 #if defined(NV_TPK) && !defined(NV_TPK40)
-  return !st_teclado_so_sistema() && !imeOk() && !campoCaixas();
+  return !imeOk() && !campoCaixas();
 #else
   return 0;
 #endif
@@ -467,6 +471,12 @@ void teclado_tipo(int tipo) {
   // 13 colunas (a-m / n-z / 0-9@._ / -+) + atalhos: 6 fileiras, a altura
   // do teclado padrao, em vez de 8 de 6 colunas.
   if (tipo == TECLADO_TIPO_EMAIL) teMontar(1);
+  // Senha sem o modo senha do teclado do sistema: nada de abrir o IME pendente,
+  // e o foco desce para a grade (a barra ficou so com o campo).
+  if (senhaSemIme()) {
+    pendIme = 0;
+    if (fileira < 0) { fileira = 0; coluna = 0; }
+  }
   // Onde o teclado do sistema abre sozinho (Android), ele ja vem aberto: quem
   // toca no campo de e-mail quer o teclado do aparelho, nao a grade.
   if (aberto && imeOk() && (modoTeclado() == 2 || (semCel && st_abre_sozinho() && modoTeclado() == 0))) {
@@ -691,7 +701,7 @@ static int colunasDe(int f);
 // .tpk com "Teclado: Do sistema": a grade do app fica escondida e o foco nunca
 // entra nela. Excecao: texto que chegou do celular, que a pessoa confere e
 // conclui na tecla "Concluir".
-static int semGrade(void) { return st_teclado_so_sistema() && !celRecebido; }
+static int semGrade(void) { return st_teclado_so_sistema() && !celRecebido && !senhaSemIme(); }
 static void sairBarra(void) {
   int f = voltaF, c = voltaC;
   if (semGrade()) { barraAntes = coluna; return; }
