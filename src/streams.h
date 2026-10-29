@@ -65,6 +65,7 @@ typedef struct Stream {
   int filtroLido;       // 1 = classificado pelo parser; 0 = origem sintetica
   char descricao[2048];
   char arquivo[512];
+  char container[24]; // declared original container, never reused for transformed output
   // O QUE O ADDON DECLARA COMO "a mesma fonte" entre episodios:
   // behaviorHints.bingeGroup, a convencao do Stremio. Quem manda o campo
   // resolve o casamento entre episodios SEM heuristica nenhuma — e o proprio

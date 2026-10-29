@@ -181,6 +181,7 @@ object NvPlayer {
     @JvmStatic external fun nativeTela(hdr: Int, dv: Int)
     @JvmStatic external fun nativeAudioCap(truehd: Int, dts: Int, dtshd: Int, eac3: Int, ac3: Int)
     @JvmStatic external fun nativeHdr(hdr: String, dv: Int, atmos: Int)
+    @JvmStatic external fun nativeInfo(codec: String, container: String, fps: Float, kbps: Int)
     @JvmStatic external fun nativeErroTexto(texto: String)
     @JvmStatic external fun nativeAudioLog(texto: String)
     @JvmStatic external fun nativeRetomada(geracao: Int, aceita: Int)
@@ -1789,6 +1790,9 @@ object NvPlayer {
             perdidos = quadrosPerdidos
         }
         try {
+            val video = p.videoFormat
+            nativeInfo(video?.sampleMimeType ?: "", video?.containerMimeType ?: "",
+                video?.frameRate ?: 0f, (video?.bitrate ?: 0).coerceAtLeast(0) / 1000)
             nativeStats(if (e.usado) e.bytes.get() else -1L, buf,
                 bufferAlvoMs,
                 if (e.usado) e.conexoes.get().coerceAtLeast(0) else -1,

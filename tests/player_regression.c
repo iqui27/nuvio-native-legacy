@@ -60,7 +60,7 @@ static int saidaVisto(double pos, double dur, double cred, double assistido, dou
 // Fonte simulada pronta: com a fonte ainda abrindo, BAIXO expande o cartao
 // (8bf0ae88) em vez de esconder os controles, que e o que estes casos testam.
 static void comFonte(void) {
-  static const VideoSimulacao sim={.aceita=1,.pronto=1};
+  static const VideoSimulacao sim={.aceita=1,.pronto=1,.duracao=3600};
   video_simular(&sim);player_definir_fonte("https://example.invalid/e.mp4");
 }
 // Serie com fonte pronta (cca9acf95): Play, Proximo, Recarregar, Legendas.
@@ -145,10 +145,10 @@ static void testar(void) {
   assert(!v[0].url[0] && !strcmp(v[0].infoHash,"abc"));      // torrent puro
   assert(v[1].mp4 && v[1].dolbyVision && v[1].altura==2160); // flags do "title"
   free(v);
-  char longa[4500];memset(longa,'a',sizeof longa);memcpy(longa,"https://example.invalid/",24);longa[4090]=0;
+  char longa[NV_MEDIA_URL_MAX + 100];memset(longa,'a',sizeof longa);memcpy(longa,"https://example.invalid/",24);longa[4090]=0;
   snprintf(json,sizeof json,"{\"streams\":[{\"url\":\"%s\",\"name\":\"DV/HDR 4K MP4\"}]}",longa);
   n=stream_extrair(json,"Fixture",&v);assert(n==1 && strlen(v[0].url)==4090 && v[0].dolbyVision);free(v);
-  longa[4090]='a';longa[4400]=0;
+  longa[4090]='a';longa[NV_MEDIA_URL_MAX]=0;
   snprintf(json,sizeof json,"{\"streams\":[{\"url\":\"%s\"}]}",longa);
   n=stream_extrair(json,"Fixture",&v);assert(n==0);free(v);
   CatItem c={0};snprintf(c.tipo,sizeof c.tipo,"series");snprintf(c.titulo,sizeof c.titulo,"Silo");
@@ -269,7 +269,8 @@ static void testar(void) {
   player_encerrar();video_simular(NULL);
   strcpy(c.tipo,"movie");cat_definir(&c,1);player_abrir(0,NULL);
   player_definir_episodio(2,4);assert(!player_linha_episodio()[0]);
-  for(int i=0;i<10;i++)teclaPlayer(SDLK_RIGHT);
+  // Sources precedes the new Options action; select it explicitly.
+  for(int i=0;i<4;i++)teclaPlayer(SDLK_RIGHT);
   teclaPlayer(SDLK_RETURN);assert(player_pediu_fontes() && !episodios_aberto());
   player_encerrar();strcpy(c.tipo,"series");
 
@@ -297,9 +298,10 @@ static void testar(void) {
     // episodio nao chega, e descartar ali custaria uma busca por quadro.
     player_definir_episodio(2,4);
     assert(stream_n()==1);
-    // A pessoa desceu para o E5: a lista do E4 nao serve mais.
+    // An open player retains its source while app.c resolves the next target.
+    // Ownership still prevents the E4 list from being used for E5.
     player_definir_episodio(2,5);
-    assert(stream_n()==0 && !stream_lista_do_alvo("tt0000101:2:4"));
+    assert(stream_n()==1 && !stream_lista_do_alvo("tt0000101:2:5"));
     player_encerrar(); }
   c.imdb[0]=0;cat_definir(&c,1);cat_definir_episodios(0,eps,40);
 
@@ -356,13 +358,12 @@ static void testar(void) {
   assert(!player_regra_proximo(1200,1500,1100));   /* 400s left: still refused */
   assert(!player_regra_concluiu(0,0,0));      // sem duracao nao ha o que concluir
 
-  // Ordem da rail: Inicio, Explorar, Guia TV, Busca. Um DOWN para em Explorar,
-  // o Guia fica a dois e Buscar a tres. A ordem e a assercao dos itens novos.
+  // Rail order includes Sports between TV Guide and Search. A ordem e a assercao dos itens novos.
   menu_iniciar();menu_abrir();teclaMenu(SDLK_DOWN);teclaMenu(SDLK_RETURN);
   assert(menu_destino()==MENU_EXPLORAR && menu_mudou_destino() && !menu_mudou_destino());
   menu_abrir();teclaMenu(SDLK_DOWN);teclaMenu(SDLK_RETURN);
   assert(menu_destino()==MENU_GUIA && menu_mudou_destino());
-  menu_abrir();teclaMenu(SDLK_DOWN);teclaMenu(SDLK_RETURN);
+  menu_abrir();teclaMenu(SDLK_DOWN);teclaMenu(SDLK_DOWN);teclaMenu(SDLK_RETURN);
   assert(menu_destino()==MENU_BUSCAR && menu_mudou_destino());
   menu_abrir();teclaMenu(SDLK_DOWN);teclaMenu(SDLK_ESCAPE);
   assert(!menu_aberto() && menu_destino()==MENU_BUSCAR);

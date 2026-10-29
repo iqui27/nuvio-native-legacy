@@ -1012,6 +1012,8 @@ int jf_ler_playbackinfo(const JfConta *c, const char *itemLimpo, const char *cor
       copiar(s->url, sizeof s->url, sp->url);
       copiar(s->provedor, sizeof s->provedor, nomeSrv);
       s->fileIdx = -1;
+      txtRaiz(p, f, "Path", s->arquivo, sizeof s->arquivo);
+      copiar(s->container, sizeof s->container, cont);
       s->mp4 = metodo == JF_METODO_DIRETO && (!strcmp(cont, "mp4") || !strcmp(cont, "m4v"));
       s->tamanhoBytes = metodo == JF_METODO_DIRETO ? (uint64_t)numRaiz(p, f, "Size", 0) : 0;
       // Display the original copy size; HLS playback bytes stay unknown.
