@@ -63,6 +63,28 @@ int main(int argc, char **argv) {
       else if (scene == 1 || scene == 2) { triFocarSecao(scene == 1 ? 4 : 5); triEntrar(secAtual); }
       else focarOpcao(ops[scene]);
       quadros(90);
+      if (portrait && scene == 0) {
+        const PonteiroAlvo *targets;
+        int count = ponteiro_teste_lista(&targets), found = 0;
+        assert(fabsf(triSecR().x + triSecR().w - NV_VTELA_W) < 0.1f);
+        for (int i = 0; i < count; i++) if (targets[i].ativar == triPontSecaoAbrir && targets[i].a == 0) {
+          assert(fabsf(targets[i].x + targets[i].w - NV_LAYOUT_REAL_W) < 1.0f);
+          targets[i].ativar(0, 0); found = 1; break;
+        }
+        assert(found && triIlha == TRI_LISTA && !focoIndice);
+        quadros(60);
+        count = ponteiro_teste_lista(&targets); found = 0;
+        for (int i = 0; i < count; i++) if (targets[i].ativar == triPontSubVoltar) {
+          targets[i].ativar(0, 0); found = 1; break;
+        }
+        assert(found && triIlha == TRI_SECOES && focoIndice);
+        quadros(60);
+      }
+      if (portrait && scene == 1) {
+        GfxRect rows = triListaR();
+        assert(fabsf(rows.x + 18.0f - triIlha2R().x) < 0.1f);
+        assert(fabsf(rows.x + rows.w - 18.0f - NV_VTELA_W) < 0.1f);
+      }
       char name[100]; snprintf(name, sizeof name, "%s-%s", portrait ? "phone" : "tv", names[scene]); png(name);
     }
   }
@@ -97,8 +119,8 @@ int main(int argc, char **argv) {
   }
   assert(found && triSubmenu < 0);
   layout_modo_definir(1); tela(1080,1920); focarOpcao(AJ_LEG1_TAMANHO); quadros(90);
-  assert(triSecRolX > 0 && triSubmenu >= 0);
-  puts("PASS: submenu enter/Back/Left, editor cancellation, exact return row, category focus chain, deep links, pointer targets, portrait rail, 220ms animation");
+  assert(triIlha == TRI_LISTA && !focoIndice && triSubmenu >= 0);
+  puts("PASS: submenu enter/Back/Left, editor cancellation, exact return row, category focus chain, deep links, pointer targets, portrait pages, 220ms animation");
 #endif
   return 0;
 }

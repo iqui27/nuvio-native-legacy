@@ -79,7 +79,14 @@ static void addonLayoutFechar(void);
 // (topo 1,02, grade 0,85, menu 0,78, camadas ESCALA_INI 0,723): com tres casas
 // elas se despejavam a cada quadro e o texto do selo "Assistido" sumia/piscava
 // na C9. Cinco fatores vivos.
+// Telefone (touch): Detail + folha de fontes somam 6+ fatores no mesmo quadro
+// (0,68 0,85 1,09 1,14 1,46 1,85); com 5 casas elas se despejam a cada quadro e
+// a folha nunca ganha texto. Doze casas.
+#ifdef NV_TOUCH_UI
+#define TXT_NCAM 12
+#else
 #define TXT_NCAM 6
+#endif
 static int camada;
 static char arabeBoldCaminho[600];   // Real Sans Arabic Bold (#335), set by txt_iniciar
 static char naskhBoldCaminho[600];   // Matching Bold for the Naskh fallback
