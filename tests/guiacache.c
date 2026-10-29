@@ -46,6 +46,12 @@ int addons_consultar_sessao(const char *id, const char *tipo, const char *base, 
 const char *ajustes_epg_pais(void) { return ""; }
 int ajustes_idioma(void) { return 0; }
 int ajustes_livetv_sugerir(void) { return 0; }
+int ajustes_livetv_agrupar(void){return 1;}
+int g5ui_channel_allowed(const char *id,const char *name,const char *group,const char *source){return 1;}
+int g5ui_channel_hidden(const char *id,const char *name,const char *group,const char *source){return 0;}
+int g5ui_m3u_channels(G5Item *out,int cap){return 0;}
+int g5ui_provider_epg(void){return 0;}
+const char *g5ui_xmltv(void){return "";}
 const char *ajustes_tmdb_idioma(void) { return "pt-BR"; }
 int xtream_e_id(const char *id) {
 #ifdef GUIAFILTRO_LOADER

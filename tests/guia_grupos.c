@@ -4,6 +4,10 @@
 #include <assert.h>
 #include <unistd.h>
 int ajustes_livetv_sugerir(void){return 0;}
+#ifndef CHANNEL_VARIANTS_TEST
+int ajustes_livetv_agrupar(void){return 1;}
+int g5ui_channel_hidden(const char *id,const char *name,const char *group,const char *source){return 0;}
+#endif
 const char *livecat_secao(const char *n,int *r){(void)n;*r=0;return NULL;}
 int xtream_e_id(const char *id){return id && !strncmp(id,"xtream:",7);}
 static int perfilTeste=1,falharGravacao,ordem,fonteEscolhida;
@@ -104,4 +108,5 @@ int main(int argc,char **argv) {
   source=sFonteChave("xta0000000b",LTV_XTREAM,"A","");
   assert(!sCategoriaOculta(source,"Hidden"));
   puts("PASS: packed source groups, both order modes, labels/rename/focus, staged visibility, failed-save rollback, hidden drawer, profile guard, legacy favorites/mode and source cache");
+  return 0;
 }

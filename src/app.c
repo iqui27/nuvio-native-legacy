@@ -366,7 +366,8 @@ static _Atomic int fonteEscolhida = -2;   // release/acquire entre verificacao e
 // nenhum fio de rede le player_id_canal(), que pode mudar durante um zap.
 static _Atomic unsigned stalkerGeracao;
 enum { FJOB_IDLE, FJOB_RUNNING, FJOB_DONE };
-enum { FJOB_NONE, FJOB_ADDON, FJOB_CANAL, FJOB_STALKER, FJOB_PREPARO, FJOB_PROXIMA_VOD, FJOB_FALHA, FJOB_PREPARO_FALHA, FJOB_RENOVAR_VOD };
+enum { FJOB_NONE, FJOB_ADDON, FJOB_CANAL, FJOB_STALKER, FJOB_PREPARO, FJOB_PROXIMA_VOD, FJOB_FALHA, FJOB_PREPARO_FALHA, FJOB_RENOVAR_VOD, FJOB_VARIANTES };
+#define XT_VARIANTES_MAX 128
 typedef struct {
   FonteFalhaConfig politica;
   DebridContexto debrid;
@@ -426,6 +427,9 @@ typedef struct {
   AddonsConsulta *consulta;
   Stream renovada;
   char tipoVod[16];
+  GuiaVariante variantes[XT_VARIANTES_MAX];int nVariantes,nFontesVariantes;
+  char varianteBase[600],varianteTipo[16];
+  Stream *fontesVariantes;
 } FonteJob;
 static FonteJob fonteJob;
 static _Atomic unsigned preparoGeracao;
@@ -728,6 +732,30 @@ static void *escolherFonteCanal(void *u) {
   atomic_store_explicit(&job->estado, FJOB_DONE, memory_order_release);
   return NULL;
 }
+/* Resolve a UI-thread snapshot; network workers never read the guide arrays. */
+static void *escolherVariantes(void *u) {
+  FonteJob *job=u;Stream *all=NULL;int count=0;
+  for(int i=0;i<job->nVariantes&&!fonteJobCancelado(job);i++){
+    GuiaVariante *v=&job->variantes[i];Stream *found=NULL;int n=0;
+    if(stalker_e_id(v->id)){
+      found=calloc(1,sizeof *found);
+      if(found&&stalker_resolver_sessao(v->id,found->url,sizeof found->url,job->sessaoPerfil)){
+        snprintf(found->provedor,sizeof found->provedor,"stalker");found->fileIdx=-1;n=1;
+      }
+    }else n=addons_consultar_sessao(v->id,job->varianteTipo,job->varianteBase,4,fonteJobCancelado,job,&found,job->sessaoPerfil);
+    if(n>0&&n<=4096-count){
+      Stream *next=realloc(all,(size_t)(count+n)*sizeof *next);
+      if(next){all=next;for(int k=0;k<n;k++){
+        snprintf(found[k].canalVariante,sizeof found[k].canalVariante,"%s",v->id);
+        char label[192];snprintf(label,sizeof label,"%.100s · %.80s",v->nome,found[k].rotulo);
+        snprintf(found[k].rotulo,sizeof found[k].rotulo,"%s",label);
+      }memcpy(all+count,found,(size_t)n*sizeof *found);count+=n;}
+    }
+    free(found);
+  }
+  job->fontesVariantes=all;job->nFontesVariantes=count;job->resultado=count?0:-1;
+  atomic_store_explicit(&job->estado,FJOB_DONE,memory_order_release);return NULL;
+}
 static void *escolherFonteStalker(void *u) {
   FonteJob *job = u;
   char url[NV_MEDIA_URL_MAX];
@@ -796,6 +824,12 @@ static int iniciarFonteJob(int tipo, unsigned geracao, const char *id, int renov
   job->renovar = 0;
   job->preparoRodada = 0;
   job->consulta = NULL;
+  job->fontesVariantes=NULL;job->nFontesVariantes=job->nVariantes=0;
+  if(tipo==FJOB_VARIANTES){
+    job->nVariantes=guia_variantes(id,job->variantes,XT_VARIANTES_MAX);
+    snprintf(job->varianteBase,sizeof job->varianteBase,"%s",guia_canal_origem());
+    snprintf(job->varianteTipo,sizeof job->varianteTipo,"%s",guia_canal_tipo());
+  }
   if (tipo == FJOB_RENOVAR_VOD) {
     const CatItem *c = cat_item(player_indice());
     if (!c || !(job->consulta = addons_consulta_capturar())) return -1;
@@ -842,6 +876,7 @@ static int iniciarFonteJob(int tipo, unsigned geracao, const char *id, int renov
   }
   atomic_store_explicit(&job->estado, FJOB_RUNNING, memory_order_release);
   if (pthread_create(&fioFonte, NULL,
+                     tipo == FJOB_VARIANTES ? escolherVariantes :
                      tipo == FJOB_RENOVAR_VOD ? renovarFonteVod :
                      tipo == FJOB_STALKER ? escolherFonteStalker :
                      tipo == FJOB_CANAL ? escolherFonteCanal :
@@ -1615,7 +1650,6 @@ static int montarCanalStalker(const char *id, const char *url) {
 // guia_variantes). A da resolucao escolhida vai primeiro; se nao abrir, o
 // watchdog passa para a seguinte. Em Automatica o canal escolhido vai primeiro
 // e as variantes ficam de reserva.
-#define XT_VARIANTES_MAX 3
 static int resolverCanalXtream(void) {
   static Stream s[3 * XT_VARIANTES_MAX];
   GuiaVariante v[XT_VARIANTES_MAX], ord[XT_VARIANTES_MAX];
@@ -1628,8 +1662,11 @@ static int resolverCanalXtream(void) {
     snprintf(v[0].id, sizeof v[0].id, "%s", player_id_canal());
     v[0].nome[0] = 0; v[0].altura = 0; nv = 1;
   }
-  for (j = 0; j < nv; j++) if (nv_res_preferida(v[j].altura, alvo)) ord[no++] = v[j];
-  for (j = 0; j < nv; j++) if (!nv_res_preferida(v[j].altura, alvo)) ord[no++] = v[j];
+  if (ajustes_livetv_agrupar()) { memcpy(ord,v,(size_t)nv*sizeof *v);no=nv; }
+  else {
+    for (j = 0; j < nv; j++) if (nv_res_preferida(v[j].altura, alvo)) ord[no++] = v[j];
+    for (j = 0; j < nv; j++) if (!nv_res_preferida(v[j].altura, alvo)) ord[no++] = v[j];
+  }
   for (j = 0; j < no; j++)
     for (i = 0; i < k && n < (int)(sizeof s / sizeof *s); i++) {
       char url[NV_MEDIA_URL_MAX];
@@ -1645,6 +1682,7 @@ static int resolverCanalXtream(void) {
           snprintf(s[n].rotulo, sizeof s[n].rotulo, "Xtream (%s, proxy) · %s", f, ord[j].nome);
         else snprintf(s[n].rotulo, sizeof s[n].rotulo, "Xtream (%s, proxy)", f);
         snprintf(s[n].provedor, sizeof s[n].provedor, "%s", "xtream");
+        snprintf(s[n].canalVariante, sizeof s[n].canalVariante, "%s", ord[j].id);
         s[n].altura = ord[j].altura;
         s[n].fileIdx = -1;
         n++;
@@ -1654,6 +1692,7 @@ static int resolverCanalXtream(void) {
         snprintf(s[n].rotulo, sizeof s[n].rotulo, "Xtream (%s) · %s", f, ord[j].nome);
       else snprintf(s[n].rotulo, sizeof s[n].rotulo, "Xtream (%s)", f);
       snprintf(s[n].provedor, sizeof s[n].provedor, "%s", "xtream");
+      snprintf(s[n].canalVariante, sizeof s[n].canalVariante, "%s", ord[j].id);
       s[n].altura = ord[j].altura;
       s[n].fileIdx = -1;
       n++;
@@ -1671,20 +1710,24 @@ static int resolverCanalXtream(void) {
 // TS, cabecalhos em todo pedido, fonte direto de reserva) e o caminho de canal
 // de addon (urlCanal). A URL pode ter usuario e senha: nunca vai para o log.
 static int resolverCanalM3u(void) {
-  static Stream s;
-  char ua[256], ref[256];
-  memset(&s, 0, sizeof s);
-  if (!guia_m3u_canal(player_id_canal(), s.url, sizeof s.url, ua, sizeof ua, ref, sizeof ref)) return -1;
-  { size_t u = 0;
-    if (ua[0]) u += (size_t)snprintf(s.cabecalhos + u, sizeof s.cabecalhos - u, "User-Agent: %s\n", ua);
-    if (ref[0]) snprintf(s.cabecalhos + u, sizeof s.cabecalhos - u, "Referer: %s\n", ref); }
-  snprintf(s.rotulo, sizeof s.rotulo, "%s", "M3U");
-  snprintf(s.provedor, sizeof s.provedor, "%s", "m3u");
-  s.mp4 = strstr(s.url, ".mp4") != NULL;
-  s.fileIdx = -1;
-  stream_definir_lista(&s, 1);
-  printf("[livetv] m3u: 1 fonte%s%s\n", ua[0] ? ", com User-Agent" : "", ref[0] ? ", com Referer" : "");
-  fflush(stdout);
+  static Stream sources[XT_VARIANTES_MAX];
+  GuiaVariante variants[XT_VARIANTES_MAX];
+  int count=guia_variantes(player_id_canal(),variants,XT_VARIANTES_MAX),n=0;
+  if(count<1){snprintf(variants[0].id,sizeof variants[0].id,"%s",player_id_canal());variants[0].nome[0]=0;count=1;}
+  memset(sources,0,sizeof sources);
+  for(int i=0;i<count;i++){
+    Stream *s=&sources[n];char ua[256],ref[256];
+    if(!guia_m3u_canal(variants[i].id,s->url,sizeof s->url,ua,sizeof ua,ref,sizeof ref))continue;
+    size_t u=0;
+    if(ua[0])u+=(size_t)snprintf(s->cabecalhos+u,sizeof s->cabecalhos-u,"User-Agent: %s\n",ua);
+    if(ref[0])snprintf(s->cabecalhos+u,sizeof s->cabecalhos-u,"Referer: %s\n",ref);
+    snprintf(s->rotulo,sizeof s->rotulo,"M3U · %s",variants[i].nome);
+    snprintf(s->provedor,sizeof s->provedor,"m3u");
+    snprintf(s->canalVariante,sizeof s->canalVariante,"%s",variants[i].id);
+    s->altura=nv_res_do_texto(variants[i].nome);s->mp4=strstr(s->url,".mp4")!=NULL;s->fileIdx=-1;n++;
+  }
+  if(!n)return -1;
+  stream_definir_lista(sources,n);
   return 0;
 }
 
@@ -1830,6 +1873,7 @@ static void processarFonteJob(void) {
   if (!nv_perfil_sessao_atual(job->sessaoPerfil)) {
     fontefalha_sessao_liberar(job->falha); job->falha = NULL;
     addons_consulta_liberar(job->consulta); job->consulta = NULL;
+    free(job->fontesVariantes);job->fontesVariantes=NULL;
     goto iniciarPendente;
   }
   if (tipo == FJOB_PREPARO || tipo == FJOB_PREPARO_FALHA) {
@@ -1936,6 +1980,13 @@ static void processarFonteJob(void) {
     } else if (aplicar) {
       fonteEscolhida = -1;
     }
+  } else if (tipo == FJOB_VARIANTES) {
+    if(aplicar){
+      stream_definir_lista(job->fontesVariantes,job->nFontesVariantes);
+      fonteEscolhida=job->nFontesVariantes?0:-1;
+      canalFontePrazo=CANAL_FONTE_PRAZO_MS;
+    }
+    free(job->fontesVariantes);job->fontesVariantes=NULL;
   } else if (aplicar) {
     fonteEscolhida = tipo == FJOB_PROXIMA_VOD && job->listaGeracao != stream_lista_geracao()
                       ? -1 : resultado;
@@ -3703,6 +3754,11 @@ static void tocarCanal(const CatItem *it) {
   if (!stalker_e_id(it->imdb) && !xtream_e_id(it->imdb) && !guia_e_m3u(it->imdb) && !m3u_e_id(it->imdb) && strncmp(it->imdb, "g5live:", 7)) {
     // So o addon que publicou o canal responde por ele; ver alvoBase em
     // addons.c e o que o FrostView fora do ar custava.
+    if(guia_tem_variantes(it->imdb)) {
+      aguardandoFonte=2;fontePedidoGeracao=novaGeracaoFonte();fonteEscolhida=-2;
+      if(pedirFonteJob(FJOB_VARIANTES,fontePedidoGeracao,it->imdb,0)<0)fonteEscolhida=-1;
+      return;
+    }
     addons_definir_origem(guia_canal_origem());
     addons_buscar(it->imdb, guia_canal_tipo());
     addons_definir_origem(NULL);
@@ -6561,7 +6617,7 @@ void app_atualizar(float dt, Uint32 agora) {
       // Nenhuma viva NAO e motivo para desistir: pode ter sido lentidao de
       // rede, e a primeira da lista com o watchdog de sempre e melhor que uma
       // tela de erro. Por isso o fallback.
-      if(!strncmp(player_id_canal(),"g5live:",7)){
+      if(!strncmp(player_id_canal(),"g5live:",7) && !guia_e_m3u(player_id_canal())){
         char url[4096];fonteEscolhida=g5ui_live(player_id_canal(),url,sizeof url)?montarCanalStalker(player_id_canal(),url):-1;
         canalFontePrazo=CANAL_FONTE_PRAZO_MS;
       } else if (xtream_e_id(player_id_canal())) {
@@ -6570,6 +6626,9 @@ void app_atualizar(float dt, Uint32 agora) {
       } else if (guia_e_m3u(player_id_canal())) {
         fonteEscolhida = resolverCanalM3u();
         canalFontePrazo = CANAL_FONTE_PRAZO_MS;
+      } else if(guia_tem_variantes(player_id_canal()) && !m3u_e_id(player_id_canal())){
+        if(pedirFonteJob(FJOB_VARIANTES,geracao,player_id_canal(),0)<0)fonteEscolhida=-1;
+        canalFontePrazo=CANAL_FONTE_PRAZO_MS;
       } else if (stalker_e_id(player_id_canal()) || m3u_e_id(player_id_canal())) {
         // UMA fonte, e ela acabou de nascer: nao ha lista para conferir nem
         // ranking para aplicar. O create_link bloqueia centenas de ms, entao
@@ -6956,7 +7015,7 @@ void app_atualizar(float dt, Uint32 agora) {
       // Com teto: `stalkerTentativas` impede que um portal fora do ar vire um
       // laco de create_link a cada 12 s para sempre. O teto zera quando o canal
       // troca (canalFonteIdx = -1 em tocarCanal).
-      if (stalker_e_id(player_id_canal()) || m3u_e_id(player_id_canal())) {
+      if ((stalker_e_id(player_id_canal()) && !guia_tem_variantes(player_id_canal())) || m3u_e_id(player_id_canal())) {
         if (stalkerRenovando) return;
         if (stalkerTentativas < CANAL_STALKER_TENTATIVAS) {
           unsigned geracao = novaGeracaoFonte();
@@ -7089,6 +7148,14 @@ void app_atualizar(float dt, Uint32 agora) {
   lembrarAutomatica();
   bingeDaFonteAtual();
   lembrarTocando();
+  if(player_id_canal()[0] && video_pronto() && !video_falhou() && !player_fonte_falhou()) {
+    static unsigned generation;static int index=-1;
+    int current=stream_atual();const Stream *s=stream_item(current);
+    if(s && (generation!=stream_lista_geracao() || index!=current)) {
+      generation=stream_lista_geracao();index=current;
+      guia_variante_tocou(s->canalVariante[0]?s->canalVariante:player_id_canal());
+    }
+  }
   atualizarMotivoInicio();
   // O OK na explicacao da ilha: sai do player e cai em Ajustes > Fontes e addons
   // > Escolha da fonte, na linha da espera. A pessoa pediu: e o unico caso em

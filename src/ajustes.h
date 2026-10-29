@@ -349,6 +349,7 @@ int ajustes_guia_previa_destacar(void);
 void ajustes_definir_guia_previa_destacar(int ligado);
 int ajustes_guia_previa_sem_som(void);
 void ajustes_definir_guia_previa_sem_som(int ligado);
+int ajustes_livetv_agrupar(void);
 int ajustes_guia_dias(void);
 void ajustes_definir_guia_dias(int dias);
 void  ajustes_livetv_aplicar_proxy(int ligado);   // proxy de TS da Live TV (proxyts.c)

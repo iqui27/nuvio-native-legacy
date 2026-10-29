@@ -145,8 +145,13 @@ void guia_preview_rect(float *x, float *y, float *w, float *h);
 // O CatItem do canal de um lembrete (e a origem para a busca de fonte): o do
 // guia quando a lista esta carregada, senao so id + nome guardados. 0 sem id.
 typedef struct { char id[80]; char nome[140]; int altura; } GuiaVariante;
-// O canal e as outras resolucoes dele na lista Xtream (ver guia.c); 0 = nao e Xtream.
+// Group variants preserve provider IDs and labels; preferred successful source first.
 int  guia_variantes(const char *id, GuiaVariante *out, int max);
+const char *guia_canal_grupo_id(const char *id);
+void guia_variante_tocou(const char *id);
+int guia_tem_variantes(const char *id);
+int guia_lembrete_achar(const char *id,time_t ini,const char *titulo);
+int guia_lembrete_alternar(const char *id,const char *nome,const char *titulo,const char *base,time_t ini,time_t fim);
 // Canais da fileira em foco para o diagnostico da Live TV; `bases` (opcional)
 // recebe o addon de cada um, `grupo` o nome da fileira.
 int  guia_canais_para_teste(GuiaVariante *out, char bases[][600], int max, char *grupo, size_t ng);
