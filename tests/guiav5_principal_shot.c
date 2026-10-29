@@ -189,6 +189,31 @@ int main(int argc, char **argv) {
   assert(ajustes_idioma() == 0);
   context();
   semear();
+#ifdef NV_SHOT_HOOKS
+  if (getenv("NUVIO_SHOT_VARIANTS")) {
+    G5Item entries[32];G5Playlist parser;g5_playlist_init(&parser,entries,32);
+    FILE *f=fopen("tests/fixtures/channel-variants.m3u","rb");assert(f);
+    char bytes[71];size_t n;
+    while((n=fread(bytes,1,sizeof bytes,f)))assert(g5_playlist_feed(&parser,bytes,n));
+    fclose(f);assert(g5_playlist_finish(&parser)==13);
+    stagingZerar();sTeto=30000;
+    int source=sFonteChave("fixture",LTV_M3U,"Playlist","");
+    for(int i=0;i<parser.count;i++){
+      char id[80];snprintf(id,sizeof id,"m3u:fixture:%s",entries[i].id);
+      GCru c={.id=id,.nome=entries[i].name,.epgId=entries[i].epg,.grupo="Channels",.url=entries[i].url,.tipo="channel"};
+      assert(sCanalAdd(source,&c));
+    }
+    adotarStaging();estado=G_PRONTO;nFav=0;favAplicar();
+    assert(ajustes_livetv_agrupar());
+    ajustes_shot_valor("liveTvGroupVariantsLocal",1);guia_reordenar();
+    g5ui_open("grade");gv_snap_force=1;gv_snapshot();gv_zone=0;gv_lin=0;
+    capture(window,dir,"before");
+    ajustes_shot_valor("liveTvGroupVariantsLocal",0);guia_reordenar();
+    gv_snap_force=1;gv_snapshot();
+    assert(gv_total_n==9);capture(window,dir,"after");
+    tex_encerrar();txt_encerrar();gfx_encerrar();SDL_DestroyWindow(window);SDL_Quit();return 0;
+  }
+#endif
   if (getenv("NUVIO_SHOT_POLIR")) {
     int baseline = getenv("GUIAPOLIR_BASELINE") != NULL;
     g5ui_open("grade"); gv_zone=5; focus=1105; gv_go("ajustes");

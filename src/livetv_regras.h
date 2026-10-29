@@ -73,18 +73,25 @@ static inline int nv_res_preferida(int altura, int alvo) {
 // NOME-BASE do canal: o nome sem as marcas de resolucao e de codec, em
 // minusculas e com espacos simples. "RO| CINEMAX FHD" e "RO| Cinemax HD" dao
 // "ro| cinemax"; e assim que as variantes de um mesmo canal Xtream se acham.
-static inline void nv_nome_base(const char *nome, char *dst, size_t n) {
+static inline void nv_dobrar(const char *s, char *d, size_t n);
+static inline void nv_nome_limpo(const char *nome, char *dst, size_t n) {
   static const char *const MARCAS[] = {
     "4k", "uhd", "2160p", "2160", "fhd", "fullhd", "1080p", "1080i", "1080",
     "hd+", "hd", "720p", "720", "sd", "576p", "576", "480p", "480",
-    "hevc", "h265", "h.265", "h264", "h.264", "50fps", "60fps", NULL
+    "hevc", "h265", "h.265", "h264", "h.264", "50fps", "60fps", "alt", "backup", NULL
   };
   size_t u = 0;
   const char *p = nome ? nome : "";
-  int espaco = 0;
+  int espaco = 0, variante = 0;
   if (!n) return;
   while (*p && u + 1 < n) {
     int k, pulou = 0;
+    if ((unsigned char)p[0] == 0xc2 && ((unsigned char)p[1] == 0xb9 ||
+        (unsigned char)p[1] == 0xb2 || (unsigned char)p[1] == 0xb3)) { p += 2; continue; }
+    if (variante && isdigit((unsigned char)*p)) {
+      const char *end = p; while (isdigit((unsigned char)*end)) end++;
+      if (!*end || !isalnum((unsigned char)*end)) { p = end; espaco = 1; continue; }
+    }
     if (p == nome || !isalnum((unsigned char)p[-1])) {
       for (k = 0; MARCAS[k]; k++) {
         size_t m = strlen(MARCAS[k]);
@@ -93,17 +100,24 @@ static inline void nv_nome_base(const char *nome, char *dst, size_t n) {
         }
       }
     }
-    if (pulou) { espaco = 1; continue; }
-    if (*p == ' ' || *p == '\t' || *p == '-' || *p == '_' || *p == '(' || *p == ')' ||
+    if (pulou) { espaco = 1; variante = 1; continue; }
+    if (*p == '+' || *p == ' ' || *p == '\t' || *p == '-' || *p == '_' || *p == '(' || *p == ')' ||
         *p == '[' || *p == ']') {
       espaco = 1; p++; continue;
     }
     if (espaco && u) dst[u++] = ' ';
     espaco = 0;
-    if (u + 1 < n) dst[u++] = (char)tolower((unsigned char)*p);
+    if (u + 1 < n) dst[u++] = *p;
+    variante = 0;
     p++;
   }
   dst[u] = 0;
+}
+
+static inline void nv_nome_base(const char *nome, char *dst, size_t n) {
+  char limpo[512];
+  nv_nome_limpo(nome, limpo, sizeof limpo);
+  nv_dobrar(limpo, dst, n);
 }
 
 // --- busca do guia ---------------------------------------------------------------

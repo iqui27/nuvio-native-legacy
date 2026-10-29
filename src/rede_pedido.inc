@@ -241,6 +241,45 @@ static int pedidoCabsValidos(const char *const *cab, size_t teto) {
 unsigned rede_pedido_capacidades(void) {
   return REDE_CAP_CORPO | REDE_CAP_JOB | REDE_CAP_REDIRECT | REDE_CAP_INTERVALO;
 }
+#ifdef NV_IOS
+/* iOS nao tem libcurl: sem isto todo rede_pedir voltava REDE_INDISPONIVEL em
+ * 0 ms (as fontes do AIOStreams ficavam em "All 0"). O pedido bufferizado
+ * comum vai pelo NSURLSession do hospedeiro (nv_host_http), que segue
+ * redirects sozinho; o que ele nao cumpre (corpo em fluxo, janela, 3xx
+ * devolvido, mesmo host, TLS pessoal) continua indisponivel. */
+static int pedidoHostParar(void *context) { return pedidoParar((PedidoCtx *)context); }
+static int pedidoHost(PedidoCtx *c, RedeResposta *r) {
+  const RedePedido *p = c->p;
+  char erro[200], *cabs = NULL, *corpo = NULL;
+  size_t n = 1;
+  unsigned k;
+  int st = 0, retry = 0;
+  long bytes = 0;
+  if (p->receber_corpo || p->janela_corpo_ms || p->intervalo || !p->seguir ||
+      p->mesmo_host || p->tls_pessoal || p->ca_arquivo ||
+      (p->n_corpo && strnlen((const char *)p->corpo, p->n_corpo) != p->n_corpo)) {
+    r->erro = REDE_INDISPONIVEL; return 0;
+  }
+  for (k = 0; p->cabecalhos && p->cabecalhos[k]; k++) n += strlen(p->cabecalhos[k]) + 1;
+  if (!(cabs = (char *)malloc(n))) { r->erro = REDE_MEMORIA; return 0; }
+  cabs[0] = 0;
+  for (k = 0; p->cabecalhos && p->cabecalhos[k]; k++) { strcat(cabs, p->cabecalhos[k]); strcat(cabs, "\n"); }
+  if (p->n_corpo && !(corpo = strndup((const char *)p->corpo, p->n_corpo))) {
+    free(cabs); r->erro = REDE_MEMORIA; return 0;
+  }
+  if (pedidoParar(c)) { free(cabs); free(corpo); return 0; }
+  r->corpo = nv_host_http_limit_cancel(p->metodo ? p->metodo : "GET", p->url, cabs, corpo,
+                          (int)(c->prazo - pedidoAgoraMs()), c->tetoCorpo,
+                          pedidoHostParar, c, &st, &retry, &bytes, erro, sizeof erro);
+  free(cabs); free(corpo);
+  r->status = st; r->retry_after_s = retry;
+  if (pedidoParar(c)) { free(r->corpo); r->corpo = NULL; return 0; }
+  if (!r->corpo) { r->erro = bytes == -1 ? REDE_LIMITE_CORPO : REDE_TRANSPORTE; return 0; }
+  r->n_corpo = (size_t)bytes; r->bytes_fio = (uint64_t)bytes;
+  r->erro = REDE_OK;
+  return 1;
+}
+#endif
 int rede_pedir(const RedePedido *p, RedeResposta *r) {
   PedidoCtx c;
   void *curl = NULL, *lista = NULL;
@@ -272,6 +311,9 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
   c.inicio = pedidoAgoraMs();
   c.prazo = c.inicio + (p->prazo_ms ? p->prazo_ms : 15000);
   if (pedidoParar(&c)) goto fim;
+#ifdef NV_IOS
+  ok = pedidoHost(&c, r); goto fim;
+#endif
   if (!abrir() || !curl_cleanup || !curl_getinfo || !slist_append || !slist_free) {
     r->erro = REDE_INDISPONIVEL; goto fim;
   }

@@ -1,5 +1,6 @@
 // O aviso do lembrete de programa — ver guialembrete.h.
 #include "guialembrete.h"
+#include "guia.h"
 #include "plrui.h"
 #include "ilha.h"
 #include "lembrete.h"
@@ -35,7 +36,7 @@ void glem_abrir_sessao(void) {
 }
 
 static int vendoCanal(const char *id) {
-  return id[0] && !strcmp(player_id_canal(), id) &&
+  return id[0] && !strcmp(guia_canal_grupo_id(player_id_canal()), guia_canal_grupo_id(id)) &&
          (player_aberto() || player_mini_ativo());
 }
 

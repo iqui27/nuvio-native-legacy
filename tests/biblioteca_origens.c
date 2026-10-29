@@ -151,6 +151,14 @@ int main(void) {
   key(SDLK_RETURN);
   assert(!origensAbertas && !origensNaGrade() && bibX() == paginaX() && colunas() > colsAberto);
   assert(focoBotaoOrig && !focoOrigem);
+  // Preferences now write asynchronously; wait for disk before reloading.
+  for (int i = 0; i < 1000; i++) {
+    char *saved = dados_ler(arquivoPref());
+    int ready = saved && strstr(saved, "origens\t0");
+    free(saved);
+    if (ready) break;
+    SDL_Delay(1);
+  }
   prefPerfil = -2; lerPref();
   assert(!origensAbertas);
   perfilTeste = 2; lerPref();
@@ -179,10 +187,8 @@ int main(void) {
   assert(animOrig == 1.0f && velOrig == 0.0f);
   anim_politica_reduzida = 0;
   key(SDLK_DOWN); assert(focoOrigem);
-  key(SDLK_UP); assert(!focoOrigem && focoBotaoOrig);
-  key(SDLK_RIGHT); assert(!focoBotaoOrig && pickSel == 0);
-  key(SDLK_UP); assert(foco.fileira == BIB_FIL_MODO);
-  key(SDLK_DOWN); key(SDLK_DOWN);
+  key(SDLK_UP); assert(!focoOrigem && !focoBotaoOrig && foco.fileira == BIB_FIL_MODO);
+  key(SDLK_DOWN); assert(focoOrigem);
   for (int i = 0; i < BIB_N_ORIG + 1; i++) key(SDLK_DOWN);
   key(SDLK_RETURN);
   assert(origem == BIB_N_ORIG + 1);
@@ -192,10 +198,9 @@ int main(void) {
   assert(modo == MODO_LISTAS && fonte == FONTE_TRAKT);
   key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
   assert(fonte == FONTE_TRAKT);
-  listaTab = 1;   // 6D "Minhas listas" has no Source chip; Seguindo keeps it
+  listaTab = 1;
   const char *rot, *val;
-  pickerTexto(0, &rot, &val);
-  assert(!strcmp(val, "Trakt"));
+  assert(!strcmp(rotuloOrigem(fonte, 1), "Trakt"));
   // Reject stale pointer/state values before they become a list source.
   const int invalid[] = {-1, BIB_N_FONTES, INT_MAX, INT_MIN};
   for (unsigned i = 0; i < sizeof invalid / sizeof invalid[0]; i++) {
@@ -203,8 +208,7 @@ int main(void) {
     key(SDLK_RETURN);
     assert(fonte == FONTE_TRAKT);
     fonte = invalid[i];
-    pickerTexto(0, &rot, &val);
-    assert(!strcmp(val, "Trakt"));
+    assert(!strcmp(rotuloOrigem(fonte, 1), "Trakt"));
     fonte = FONTE_TRAKT;
     origem = invalid[i];
     modo = MODO_ASSISTIDOS;
@@ -213,8 +217,7 @@ int main(void) {
     modo = MODO_LISTAS;
   }
   for (fonte = 0; fonte < BIB_N_FONTES; fonte++) {
-    pickerTexto(0, &rot, &val);
-    assert(!strcmp(val, ROT_FONTE[fonte]));
+    assert(!strcmp(rotuloOrigem(fonte, 1), ROT_FONTE[fonte]));
   }
   modo = MODO_ASSISTIDOS;
   for (origem = 0; origem < BIB_N_ORIG; origem++) {

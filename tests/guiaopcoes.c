@@ -35,6 +35,17 @@ static void swipe(void){
   e.type=SDL_FINGERMOTION;e.tfinger.y=.3f;ponteiro_evento(&e,deliver);
   e.type=SDL_FINGERUP;ponteiro_evento(&e,deliver);
 }
+static void guide_layout(void){
+  const PonteiroAlvo *targets;int n=ponteiro_teste_lista(&targets);
+  GfxRect options={0},sources={0};
+  for(int i=0;i<n;i++){
+    GfxRect r={targets[i].x,targets[i].y,targets[i].w,targets[i].h};
+    if(targets[i].a==1105)options=r;
+    if(targets[i].a==1200)sources=r;
+  }
+  check(options.y==96&&options.h==56,"Guide actions use the buttons row");
+  check(sources.y==1046&&sources.h==30,"Guide sources use the compact footer");
+}
 static int landscape(SDL_Window *w,const char *dir){
   GfxRect close=target(1936);
   check(visible(close),"landscape header/close stays inside safe area");
@@ -80,7 +91,17 @@ int main(int argc,char **argv){
   ponteiro_iniciar();ponteiro_teste_janela(shot_w,shot_h);ponteiro_teste_toque(phone!=0);
   gfx_escala_txt_definir(1);ajustes_definir_vidro(1);context();semear();
   ajustes_definir_guia_previa_grande(1);ajustes_definir_guia_dias(3);
-  g5ui_open("grade");gv_zone=5;focus=1105;settle(w);key(SDLK_RETURN);
+  ponteiro_teste_toque(1); /* Collect action hit targets even with the TV cursor hidden. */
+  g5ui_open("grade");gv_zone=5;focus=1105;settle(w);
+  if(!phone&&baseline!=3){
+    guide_layout();options_frame(w,dir,"guide");
+    if(baseline==2){SDL_Quit();return failures?1:0;}
+    if(failures){SDL_Quit();return 1;}
+  }
+  ponteiro_teste_toque(phone!=0);
+  point_focus(1105,0);point_activate(1105,0);settle(w);
+  check(!strcmp(screen,"ajustes")&&focus==1940&&target(1936).w>0,"Options button opens the redesigned modal");
+  if(baseline==3||failures){SDL_Quit();return failures?1:0;}
   assert(!strcmp(screen,"ajustes"));
   if(phone==2){settle(w);int rc=landscape(w,dir);SDL_Quit();return rc;}
   Uint32 start=SDL_GetTicks();const unsigned times[]={0,80,160,320};
