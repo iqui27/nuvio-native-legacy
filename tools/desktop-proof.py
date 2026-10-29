@@ -74,9 +74,16 @@ with zipfile.ZipFile(out / 'Nuvio-win64.zip') as z:
     assert z.testzip() is None
     names = z.namelist()
     for name in ['Nuvio.exe', 'SDL2.dll', 'SDL2_image.dll', 'SDL2_ttf.dll',
-                 'libcurl-x64.dll', 'libwinpthread-1.dll', 'mpv-2.dll', 'README.md']:
+                 'libcurl-x64.dll', 'libwinpthread-1.dll', 'mpv-2.dll', 'libmpv-2.dll',
+                 'vulkan-1.dll', 'README.md']:
         assert f'Nuvio-win64/{name}' in names
     assert not any(n.endswith('local.properties') or '/.env' in n or n.endswith('/env.h') for n in names)
+    # Inspect the deliverable itself, including transitive DLL bytes.
+    archive_dir = tempfile.TemporaryDirectory(prefix='nuvio-zip-proof-', dir=out)
+    for name in names:
+        relative = Path(name)
+        assert not relative.is_absolute() and '..' not in relative.parts, name
+    z.extractall(archive_dir.name)
 
 system = set('kernel32.dll user32.dll gdi32.dll ole32.dll oleaut32.dll shell32.dll '
              'advapi32.dll imm32.dll version.dll winmm.dll setupapi.dll msvcrt.dll '
@@ -87,7 +94,7 @@ system = set('kernel32.dll user32.dll gdi32.dll ole32.dll oleaut32.dll shell32.d
              'powrprof.dll hid.dll winhttp.dll mfplat.dll mf.dll mfuuid.dll '
              'propsys.dll ksuser.dll oleacc.dll shcore.dll userenv.dll ncrypt.dll '
              'wintrust.dll imagehlp.dll msimg32.dll dnsapi.dll dsound.dll '.split())
-pkg = out / 'Nuvio-win64'
+pkg = Path(archive_dir.name) / 'Nuvio-win64'
 bundled = {p.name.lower() for p in pkg.glob('*.dll')}
 imports = {}
 for binary in [pkg / 'Nuvio.exe', *sorted(pkg.glob('*.dll'))]:
@@ -98,5 +105,6 @@ for binary in [pkg / 'Nuvio.exe', *sorted(pkg.glob('*.dll'))]:
     missing = [d for d in dependencies if d.lower() not in system | bundled and not d.lower().startswith(('api-ms-win-', 'ext-ms-win-'))]
     assert not missing, (binary.name, missing)
 assert any('mpv' in d.lower() for d in imports['Nuvio.exe'])
+archive_dir.cleanup()
 (out / 'dll-imports.json').write_text(json.dumps(imports, indent=2) + '\n')
 print('desktop artifacts: mpv closure, architectures, signatures, DMG, PNGs, ZIP and Windows imports OK')
