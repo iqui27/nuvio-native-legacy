@@ -1,5 +1,5 @@
 #!/bin/bash
-# One native target: baseline/current proof, TV/portrait, existing guide checks.
+# One native target: landscape FAIL/PASS, TV/portrait, existing guide checks.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 out=${1:-/Volumes/ExternalSSD/tmp/rev/guiaopcoes}
@@ -8,7 +8,7 @@ trap 'rm -rf "$work"' EXIT
 export NUVIO_DADOS="$work/data"
 mkdir -p "$NUVIO_DADOS" "$out"
 # Compile shared sources once; only the included UI changes for baseline proof.
-git show "${GUIAOPCOES_BASELINE:-56b8983187218037c79f10e4df8f7cda41734f47}:src/guiav5ui.c" > "$work/baseline.c"
+git show "${GUIAOPCOES_BASELINE:-f254bbf54}:src/guiav5ui.c" > "$work/baseline.c"
 python3 - "$work" <<'PY'
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -25,19 +25,24 @@ for version in ('before','after'):
     extra=['-DGUIAV5_UNDER_TEST="'+str(work/'baseline.c')+'"'] if version=='before' else []
     subprocess.run(['cc',*flags,*extra,'tests/guiaopcoes.c',*objects,'-o',str(work/version),'-L/opt/homebrew/lib','-lSDL2','-lSDL2_image','-lSDL2_ttf','-lz','-framework','OpenGL'],check=True)
 PY
-for version in before after; do
-  for device in tv phone; do
-    dir="$out/$version-$device"
-    mkdir -p "$dir"
-    phone=0; [[ $device == phone ]] && phone=1
-    baseline=0; [[ $version == before ]] && baseline=1
-    "$work/$version" "$dir" "$phone" "$baseline"
-  done
+mkdir -p "$out/before-landscape"
+if "$work/before" "$out/before-landscape" 2 0 > "$out/before-landscape/fail.log" 2>&1; then
+  echo 'FAIL: landscape regression must fail before the fix' >&2; exit 1
+fi
+rg 'FAIL: landscape header/close|FAIL: landscape D-pad|FAIL: landscape swipe' "$out/before-landscape/fail.log"
+for device in tv phone landscape; do
+  dir="$out/after-$device"
+  mkdir -p "$dir"
+  phone=0
+  [[ $device == phone ]] && phone=1
+  [[ $device == landscape ]] && phone=2
+  "$work/after" "$dir" "$phone" 0
 done
-for dir in "$out"/before-tv "$out"/before-phone "$out"/after-tv "$out"/after-phone; do
+cp "$out/after-landscape/after-landscape.png" "$out/after-landscape.png"
+for dir in "$out"/after-tv "$out"/after-phone; do
   /opt/homebrew/bin/magick "$dir"/opening-{0,1,2,3}.png +append "$dir/opening-strip.png"
 done
-echo 'PASS: before/after TV and portrait PNGs, opening strips at 0/80/160/320 ms'
+echo 'PASS: landscape FAIL/PASS, TV/portrait PNGs, opening strips at 0/80/160/320 ms'
 bash tests/guiav5.sh
 bash tests/guiav5_bugs.sh
 bash tests/guiav5_epg_lifetime.sh

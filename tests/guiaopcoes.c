@@ -5,6 +5,7 @@
 
 static int shot_w, shot_h;
 static void options_frame(SDL_Window *window, const char *dir, const char *name) {
+  ponteiro_quadro(SDL_GetTicks());
   txt_novo_quadro();tex_novo_quadro();tex_bombear(8);gfx_novo_quadro();
   glClearColor(.045f,.047f,.051f,1);glClear(GL_COLOR_BUFFER_BIT);
   g5ui_draw();
@@ -16,13 +17,57 @@ static void options_frame(SDL_Window *window, const char *dir, const char *name)
     char file[1024];snprintf(file,sizeof file,"%s/%s.png",dir,name);assert(!IMG_SavePNG(s,file));
     SDL_FreeSurface(s);free(p);
   }
-  SDL_GL_SwapWindow(window);SDL_PumpEvents();
+  ponteiro_desenhar();SDL_GL_SwapWindow(window);SDL_PumpEvents();
 }
 static void settle(SDL_Window *w){Uint32 until=SDL_GetTicks()+380;do{options_frame(w,NULL,NULL);SDL_Delay(8);}while(SDL_GetTicks()<until);}
 static void key(SDL_Keycode k){SDL_Event e={.type=SDL_KEYDOWN};e.key.keysym.sym=k;assert(g5ui_event(&e));e.type=SDL_KEYUP;g5ui_event(&e);}
+static GfxRect target(int id){
+  for(int i=0;i<num_focus;i++)if(next_focus[i]==id)return focus_rect[i];
+  return (GfxRect){0};
+}
+static int failures;
+static void check(int ok,const char *message){if(!ok){fprintf(stderr,"FAIL: %s\n",message);failures++;}}
+static int visible(GfxRect r){return r.w>0&&r.x>=nv_inset_e&&r.y>=nv_inset_t&&r.x+r.w<=NV_LAYOUT_REAL_W-nv_inset_d+1&&r.y+r.h<=NV_LAYOUT_REAL_H-nv_inset_b+1;}
+static void deliver(const SDL_Event *e){g5ui_event(e);}
+static void swipe(void){
+  SDL_Event e={.type=SDL_FINGERDOWN};e.tfinger.fingerId=1;e.tfinger.x=.5f;e.tfinger.y=.82f;
+  ponteiro_evento(&e,deliver);
+  e.type=SDL_FINGERMOTION;e.tfinger.y=.3f;ponteiro_evento(&e,deliver);
+  e.type=SDL_FINGERUP;ponteiro_evento(&e,deliver);
+}
+static int landscape(SDL_Window *w,const char *dir){
+  GfxRect close=target(1936);
+  check(visible(close),"landscape header/close stays inside safe area");
+  for(int i=0;i<9;i++){
+    key(SDLK_DOWN);settle(w);GfxRect r=target(focus);
+    check(visible(r)&&r.h>=102&&r.y>=close.y+close.h,"landscape D-pad reveals focused row below pinned header");
+  }
+  check(focus==1939,"landscape reaches lower actions");
+  check(fabsf(target(1936).y-close.y)<1,"landscape scrolling keeps header pinned");
+  options_frame(w,dir,"after-landscape");
+  for(int i=0;i<9;i++){key(SDLK_UP);settle(w);}
+  for(int i=0;i<4;i++){swipe();settle(w);}
+  const PonteiroAlvo *v;int n=ponteiro_teste_lista(&v),bottom=0;
+  for(int i=0;i<n;i++){
+    GfxRect r={v[i].x,v[i].y,v[i].w,v[i].h};
+    check(visible(r),"landscape touch targets stay inside safe area");
+    if(v[i].a!=1936)check(r.y>=close.y+close.h,"scrolling content cannot hit pinned header");
+    if(v[i].a==1939)bottom=1;
+  }
+  check(bottom,"landscape swipe reaches lower actions");
+  key(SDLK_UP);settle(w);check(focus==1936&&visible(target(1936)),"D-pad resumes after touch scroll");
+  key(SDLK_DOWN);settle(w);check(focus==1940&&visible(target(1940)),"focus reveals first row after touch scroll");
+  focus=1937;settle(w);key(SDLK_RETURN);settle(w);
+  key(SDLK_DOWN);settle(w);check(visible(target(focus)),"source submenu scrolls focused action into view");
+  key(SDLK_ESCAPE);settle(w);check(focus==1937&&visible(target(focus)),"Back reveals parent row");
+  key(SDLK_ESCAPE);settle(w);key(SDLK_RETURN);settle(w);
+  check(focus==1940&&visible(target(1940)),"reopening resets scroll");
+  if(!failures)puts("PASS: landscape safe area, pinned header, focus reveal, touch scroll, submenu and reopen");
+  return failures?1:0;
+}
 int main(int argc,char **argv){
   assert(argc==4);const char *dir=argv[1];int phone=atoi(argv[2]),baseline=atoi(argv[3]);
-  shot_w=phone?390:1920;shot_h=phone?844:1080;
+  shot_w=phone==2?844:phone?390:1920;shot_h=phone==2?390:phone?844:1080;
   assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));IMG_Init(IMG_INIT_PNG|IMG_INIT_JPG);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2);SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
   SDL_Window *w=SDL_CreateWindow("Guide options",0,0,shot_w,shot_h,SDL_WINDOW_OPENGL|SDL_WINDOW_SHOWN);assert(w&&SDL_GL_CreateContext(w));
@@ -31,10 +76,13 @@ int main(int argc,char **argv){
   assert(gfx_iniciar()&&txt_iniciar("deploy/app",1));tex_iniciar(64);gfx_icones_dir("deploy/app/art");
   dados_iniciar(getenv("NUVIO_DADOS"));dados_gravar("ajustes.txt","idioma 0\nidiomaAutoLocal 0\nescalaTextoLocal 2\nescalaTextoVersaoLocal 1\n");
   ajustes_dir(getenv("NUVIO_DADOS"));layout_modo_definir(phone);gfx_tamanho_alvo(shot_w,shot_h);
+  if(phone==2)layout_insets_definir(.04f,.025f,.02f,.04f);
+  ponteiro_iniciar();ponteiro_teste_janela(shot_w,shot_h);ponteiro_teste_toque(phone!=0);
   gfx_escala_txt_definir(1);ajustes_definir_vidro(1);context();semear();
   ajustes_definir_guia_previa_grande(1);ajustes_definir_guia_dias(3);
   g5ui_open("grade");gv_zone=5;focus=1105;settle(w);key(SDLK_RETURN);
   assert(!strcmp(screen,"ajustes"));
+  if(phone==2){settle(w);int rc=landscape(w,dir);SDL_Quit();return rc;}
   Uint32 start=SDL_GetTicks();const unsigned times[]={0,80,160,320};
   for(int i=0;i<4;i++){
     while(SDL_GetTicks()-start<times[i]){options_frame(w,NULL,NULL);SDL_Delay(2);}
