@@ -270,7 +270,7 @@ static void *buscar(void *arg) {
     } else {
       j->eventos = calloc(ESP_MAX_EVENTOS, sizeof *j->eventos);
       if (j->eventos) j->n = esportes_eventos_ler(corpo, esportes_modalidade(j->modalidade)->id, &j->liga, j->eventos, ESP_MAX_EVENTOS);
-      j->erro = !j->eventos || !strstr(corpo, "\"events\"");
+      j->erro = !j->eventos || (j->tipo==9 ? !j->n || strcmp(j->eventos[0].id,j->time) : !strstr(corpo, "\"events\""));
       if (j->n) qsort(j->eventos, (size_t)j->n, sizeof *j->eventos, ordem);
     }
     if (baixado && !j->erro) {
@@ -457,7 +457,7 @@ void esportes_pedir_favoritos(int atualizar) {
 static void urlFavorito(EspJob *j) {
   const char *mod=esportes_modalidade(j->modalidade)->id;
   if(j->tipo==9) {
-    snprintf(j->url,sizeof j->url,"https://site.api.espn.com/apis/site/v2/sports/%s/%s/scoreboard?event=%s&lang=%s",mod,j->liga.id,j->time,j->idioma);
+    snprintf(j->url,sizeof j->url,"https://site.api.espn.com/apis/site/v2/sports/%s/%s/summary?event=%s&lang=%s",mod,j->liga.id,j->time,j->idioma);
   } else if(j->tipo==3) {
     snprintf(j->url,sizeof j->url,"https://site.api.espn.com/apis/site/v2/sports/%s/%s/teams/%s/schedule?fixture=true&lang=%s",mod,!strcmp(mod,"soccer")?"all":j->liga.id,j->time,j->idioma);
   } else if(j->dia) {

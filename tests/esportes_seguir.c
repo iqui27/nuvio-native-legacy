@@ -23,9 +23,15 @@ int ajustes_idioma(void){return 1;}
 char *rede_baixar_medido_controle(const char *u,int s,const char *const *h,const RedeControle *c,RedeMedida *m){
   (void)s;(void)h;(void)c;
   if(!providerStart){m->status=503;return NULL;}
-  assert(strstr(u,"/soccer/bra.1/scoreboard?event=game-1&"));requests++;
+  requests++;
+  /* ESPN ignores event= on scoreboards: the off-date target is absent. */
+  if(strstr(u,"/scoreboard?")){
+    m->status=200;return strdup("{\"events\":[{\"id\":\"unrelated-today\",\"name\":\"Other game\",\"date\":\"2026-10-29T20:00Z\"}]}");
+  }
+  assert(strstr(u,"/soccer/bra.1/summary?event=game-1&"));
   char date[40],json[1400];struct tm tm;gmtime_r(&providerStart,&tm);strftime(date,sizeof date,"%Y-%m-%dT%H:%M:%SZ",&tm);
-  snprintf(json,sizeof json,"{\"events\":[{\"id\":\"game-1\",\"name\":\"Updated game\",\"date\":\"%s\",\"status\":{\"type\":{\"state\":\"pre\",\"name\":\"%s\"}},\"venue\":{\"fullName\":\"Updated stadium\"},\"competitors\":[{\"team\":{\"id\":\"fla\",\"displayName\":\"Flamengo\"}},{\"team\":{\"id\":\"pal\",\"displayName\":\"Palmeiras\"}}]}]}",date,providerState?"STATUS_CANCELED":"STATUS_SCHEDULED");
+  /* Real summary shape: no events array, header name/date, or competition venue. */
+  snprintf(json,sizeof json,"{\"gameInfo\":{\"venue\":{\"fullName\":\"Updated stadium\"}},\"header\":{\"id\":\"game-1\",\"competitions\":[{\"id\":\"game-1\",\"date\":\"%s\",\"status\":{\"type\":{\"state\":\"pre\",\"name\":\"%s\"}},\"competitors\":[{\"team\":{\"id\":\"fla\",\"displayName\":\"Flamengo\"}},{\"team\":{\"id\":\"pal\",\"displayName\":\"Palmeiras\"}}]}]}}",date,providerState?"STATUS_CANCELED":"STATUS_SCHEDULED");
   m->status=200;return strdup(json);
 }
 static void drain(void){
@@ -60,7 +66,11 @@ int main(int argc,char **argv){
       providerStart=saved->inicio+86400;
       drain();assert(requests==1);
       saved=esportes_jogo_seguido(0);assert(saved->inicio==providerStart&&!strcmp(saved->local,"Updated stadium"));
+      assert(saved->nParticipantes==2&&!strcmp(saved->participantes[0].nome,"Flamengo"));
       esportes_seguir_lembretes();assert(lembrete_n()==1&&lembrete_item(0)->ini==providerStart);
+      generation++;esportes_abrir_sessao();
+      saved=esportes_jogo_seguido(0);assert(saved&&saved->inicio==providerStart);
+      lembrete_carregar(profile);assert(lembrete_n()==1&&lembrete_item(0)->ini==providerStart);
       providerState=1;esportes_pedir_favoritos(1);drain();
       assert(esportes_jogo_seguido(0)->estado==3);
       esportes_seguir_lembretes();assert(!lembrete_n());
