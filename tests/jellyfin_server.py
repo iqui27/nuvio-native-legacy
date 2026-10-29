@@ -281,8 +281,15 @@ class Handler(BaseHTTPRequestHandler):
                 {"Name": "Actor One", "Id": "%032x" % 1, "Role": "Lead", "Type": "Actor", "PrimaryImageTag": "a1"},
                 {"Name": "Actor Two", "Id": "%032x" % 2, "Role": "Friend", "Type": "Actor"},
                 {"Name": "Dir Ector", "Id": "%032x" % 3, "Type": "Director"}]
-            obj["MediaSources"] = [{"Id": "ffffffffffffffffffffffffffffffff", "Name": "nested name",
-                                    "RunTimeTicks": 1}]
+            obj["ProviderIds"] = {"Imdb": "tt0900001" if iid == SERIES else "tt0001002"}
+            if int(iid, 16) >= 0xE9000000 and int(iid, 16) < 0xE9010000:
+                episode = int(iid, 16) - 0xE9000000
+                obj.update({"Type": "Episode", "SeriesId": SERIES,
+                            "ParentIndexNumber": episode // 100, "IndexNumber": episode % 100})
+                obj["ProviderIds"] = {"Imdb": "tt9999999"}  # Episode id must not win over show id.
+            obj["MediaSources"] = [{"Id": iid, "Name": "nested name", "RunTimeTicks": 1,
+                                    "MediaStreams": [{"Type": "Subtitle", "Index": 3, "Codec": "srt", "Language": "eng",
+                                                      "IsExternal": True, "Path": "/srv/private/movie.en.srt"}]}]
             return self.reply(200, obj)
         m = re.match(r"^/Shows/([0-9a-f]{32})/Episodes$", p)
         if m:

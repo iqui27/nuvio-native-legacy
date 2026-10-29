@@ -220,8 +220,8 @@ int servidores_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, i
     f = m == 0 ? jellyfin_fileiras_copiar(itens + ni, maxItens - ni, fils + nf, maxFils - nf, &n)
       : m == 1 ? emby_fileiras_copiar(itens + ni, maxItens - ni, fils + nf, maxFils - nf, &n)
                : plex_fileiras_copiar(itens + ni, maxItens - ni, fils + nf, maxFils - nf, &n);
-    // Home only receives catalogue identities (D9). Keep the module's full
-    // snapshot, including private items, for the server view.
+    // Server libraries retain private items too; their opaque ids keep them
+    // out of addon metadata and social activity while allowing local browsing.
     { int r, w = 0, ff = 0;
       for (r = 0; r < f; r++) {
         CatFileira fila = fils[nf + r];
@@ -231,7 +231,7 @@ int servidores_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, i
           snprintf(fila.titulo, sizeof fila.titulo, "%s · %s", i18n("Próximos episódios"), fils[nf + r].titulo);
         for (k = 0; k < fila.n; k++) {
           CatItem *it = &itens[ni + fila.ini + k];
-          if (!it->imdb[0] || jfid_e(it->imdb)) continue;
+          if (!it->imdb[0]) continue;
           if (w != fila.ini + k) itens[ni + w] = *it;
           w++;
         }
@@ -277,7 +277,7 @@ int servidores_continuar(CatItem *out, int max) {
           : m == 1 ? emby_atividade("resume", lote, max) : plex_atividade("resume", lote, max);
     for (int i = 0; i < k; i++) {
       int j;
-      if (jfid_e(lote[i].imdb) || !lote[i].imdb[0] || lote[i].progresso <= 0) continue;
+      if (!lote[i].imdb[0] || lote[i].progresso <= 0) continue;
       for (j = 0; j < n; j++)
         if (!strcmp(out[j].imdb, lote[i].imdb) && !strcmp(out[j].tipo, lote[i].tipo)) break;
       if (j == n && n < max) out[n++] = lote[i];

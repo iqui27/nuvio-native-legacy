@@ -1186,6 +1186,10 @@ typedef struct {
   int exigeCab;
 } LegExtras;
 static LegExtras legExt;
+static int (*legServidor)(const char *, Legenda *, int, char *, size_t);
+void addons_legendas_servidor(int (*resolver)(const char *, Legenda *, int, char *, size_t)) {
+  legServidor = resolver;
+}
 // A busca com extras soma resultados a lista anterior ao terminar.
 static int legManter;
 // Hash ja medido, para a mesma fonte nao ir de novo ao CDN a cada busca.
@@ -1729,14 +1733,36 @@ static void *buscarLegendas(void *u) {
     B.geracao = legGeracao; B.sessao = legSessao;
     B.manter = legManter;
     pthread_mutex_unlock(&legTrava);
-    prepararExtras(&B);
+    // Server URLs must not enter the addon hash/extras path.
+    if (!legServidor) prepararExtras(&B);
     episodioPedido(B.id, &B.temporada, &B.episodio);
     B.nGrupos = gruposIdioma(B.grupos);
     for (i = 0; i < B.nGrupos; i++) {
       snprintf(B.gruposTexto[i], sizeof B.gruposTexto[i], "%s", B.grupos[i]);
       B.grupos[i] = B.gruposTexto[i];
     }
-    B.origens = capturarPedidos(B.sessao, &B.nLotes, NULL);
+    LegExtras selected;
+    pthread_mutex_lock(&legTrava); selected = legExt; pthread_mutex_unlock(&legTrava);
+    Legenda *server = legServidor && !strcmp(selected.id, B.id) && selected.video[0]
+      ? calloc(LEG_MAX, sizeof *server) : NULL;
+    char serverId[64] = "";
+    int ns = server ? legServidor(selected.video, server, LEG_MAX, serverId, sizeof serverId) : -1;
+    if (ns >= 0) {
+      B.extras[0] = 0;
+      snprintf(B.id, sizeof B.id, "%s", serverId);
+      episodioPedido(B.id, &B.temporada, &B.episodio);
+      int current = nv_perfil_sessao_travar(B.sessao);
+      pthread_mutex_lock(&legTrava);
+      if (current && B.geracao == legGeracao && !legParar) {
+        memcpy(legs, server, (size_t)ns * sizeof *server); nLegs = ns;
+      }
+      pthread_mutex_unlock(&legTrava);
+      if (current) nv_perfil_sessao_destravar();
+      B.manter = 1;
+    }
+    free(server);
+    if (legServidor && ns < 0 && !jfid_e(B.id)) prepararExtras(&B);
+    B.origens = B.id[0] && !jfid_e(B.id) ? capturarPedidos(B.sessao, &B.nLotes, NULL) : NULL;
     B.lotes = calloc((size_t)(B.nLotes > 0 ? B.nLotes : 1), sizeof *B.lotes);
     if (!B.lotes) printf("[legendas] candidatos: memoria indisponivel\n");
 
@@ -2361,9 +2387,9 @@ static void dispararLegendas(int juntar);
 void addons_buscar_legendas(const char *imdb, const char *tipo) {
   int serie, juntar = 0;
   char id[64], tp[16];
-  if (!nAddon || !imdb || !*imdb || jfid_e(imdb)) return;   // never send server ids to addons
+  if (!imdb || !*imdb) return; // Clear stale lists; worker never sends opaque ids to addons.
   serie = tipo && !strcmp(tipo, "series");
-  if (serie && !idbase_tem_episodio(imdb))
+  if (serie && !jfid_e(imdb) && !idbase_tem_episodio(imdb))
     snprintf(id, sizeof id, idbase_e_imdb(imdb) ? "%s:1:1" : "%s:1", imdb);
   else
     snprintf(id, sizeof id, "%s", imdb);
@@ -2374,6 +2400,7 @@ void addons_buscar_legendas(const char *imdb, const char *tipo) {
     pthread_mutex_unlock(&legTrava);
     return;
   }
+  if (strcmp(id, legId)) memset(&legExt, 0, sizeof legExt);
   snprintf(legId, sizeof legId, "%s", id);
   snprintf(legTipo, sizeof legTipo, "%s", tp);
   legGeracao++; legSessao = nv_perfil_sessao_ler();
@@ -2393,9 +2420,9 @@ void addons_legendas_fonte(const char *imdb, const char *tipo, const char *arqui
   int serie, juntar, manter;
   char id[64], tp[16];
   LegExtras novo;
-  if (!nAddon || !imdb || !*imdb || jfid_e(imdb)) return;
+  if (!imdb || !*imdb) return;
   serie = tipo && !strcmp(tipo, "series");
-  if (serie && !idbase_tem_episodio(imdb))
+  if (serie && !jfid_e(imdb) && !idbase_tem_episodio(imdb))
     snprintf(id, sizeof id, idbase_e_imdb(imdb) ? "%s:1:1" : "%s:1", imdb);
   else
     snprintf(id, sizeof id, "%s", imdb);

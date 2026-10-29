@@ -116,6 +116,14 @@ static char *fixture(const char *name) {
   return body;
 }
 
+static int serverFixture(const char *url, Legenda *out, int max, char *id, size_t tam) {
+  assert(!strcmp(url, "https://server.invalid/PRIVATE_TOKEN") && max >= 1);
+  memset(out, 0, sizeof *out);
+  strcpy(out->url, "https://server.invalid/subtitle.srt");
+  strcpy(out->provedor, "Emby"); out->addonIndice = -11;
+  snprintf(id, tam, "tt7654321:2:3");
+  return 1;
+}
 int main(void) {
   // Adapted from 2a7858b24: public Subtitle Sync manifest compatibility,
   // with synthetic episode responses and no configured provider requests.
@@ -338,5 +346,27 @@ int main(void) {
     }
   }
 
+  // #735: selected server item's identity replaces the old stream target.
+  {
+    memset(&legExt, 0, sizeof legExt);
+    strcpy(legExt.id, "em:12345678.1001");
+    strcpy(legExt.video, "https://server.invalid/PRIVATE_TOKEN");
+    strcpy(legExt.arquivo, "Old.Release.mkv"); legExt.tamanho = 1000000;
+    addons_legendas_servidor(serverFixture);
+    responses[0] = "{\"subtitles\":[{\"lang\":\"eng\",\"url\":\"https://fixture.invalid/current.srt\",\"season\":2,\"episode\":3}]}";
+    int before = requests, ranges = trechos;
+    nLegs = 1; strcpy(legs[0].id, "stale");
+    run(1, "em:12345678.1001", "series");
+    assert(requests == before + 1 && trechos == ranges && nLegs == 2);
+    assert(strstr(ultimaUrl[0], "/subtitles/series/tt7654321:2:3.json"));
+    assert(!strstr(ultimaUrl[0], "filename=") && !strcmp(legs[0].provedor, "Emby"));
+    run(0, "em:12345678.1001", "series"); assert(nLegs == 1);
+    addons_legendas_servidor(NULL);
+    run(1, "em:12345678.2002", "movie"); assert(nLegs == 1 || nLegs == 0);
+    // Public entry clears an old title even when no addon is installed.
+    fioLegVivo = 1; nAddon = 0;
+    addons_buscar_legendas("em:12345678.2003", "movie");
+    assert(nLegs == 0 && !strcmp(legId, "em:12345678.2003")); fioLegVivo = 0;
+  }
   puts("addon subtitles: provider fairness, real origin, ordered languages, empty/missing/HTTP and episode checks ok");
 }

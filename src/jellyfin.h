@@ -40,6 +40,7 @@
 #define NV_JELLYFIN_H
 #include <stddef.h>
 #include "catalogo.h"
+#include "addons.h"
 #include "jfid.h"
 #include "rede.h"
 #include "srvidx.h"
@@ -170,6 +171,13 @@ int jf_ler_detalhe(const JfConta *c, const char *corpo, size_t n, CatItem *out);
 int jf_ler_episodios(const JfConta *c, const char *corpo, size_t n, CatEp *out, int max);
 int jf_ler_playbackinfo(const JfConta *c, const char *itemLimpo, const char *corpo, size_t n,
                         JfPlayback *out);
+// Server-indexed text subtitles, delivered through the server extraction endpoint.
+int jf_ler_legendas(const JfConta *c, const char *item, const char *fonte,
+                    const char *corpo, size_t n, Legenda *out, int max);
+int jf_legenda_id(const char *corpo, size_t n, char *id, size_t tam);
+// Blocking, on subtitle worker. Only a registered playback URL can select credentials.
+int jellyfin_legendas(const char *url, Legenda *out, int max, char *id, size_t tam);
+int emby_legendas(const char *url, Legenda *out, int max, char *id, size_t tam);
 int jf_perfil_dispositivo(JfBackend b, char *json, size_t tam);
 // Token in player URLs: "ApiKey=" for Jellyfin 10.8+ and 12.x (12.0 refuses
 // the legacy "api_key=" in the query), "api_key=" for Emby and Jellyfin <10.8.

@@ -9,8 +9,16 @@
 #define desc_vertudo_carregando shot_carregando
 #define desc_vertudo_mais shot_mais
 #define desc_vertudo_filtro shot_filtro
+#define desc_vertudo_filtro_desde shot_filtro_desde
 #include "../src/vertudo.c"
 #include "dados.h"
+#include "home.h"
+#include "jellyfin.h"
+#include "faixas.h"
+#include "legendasui.h"
+#include "video.h"
+#include "player.h"
+#include "plrilha.h"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 
@@ -44,6 +52,9 @@ int shot_bibliotecas(CatFileira *out, int max) {
   }
   return 4;
 }
+void shot_filtro_desde(const char *base, const char *type, const char *key, const char *genre, int page) {
+  (void)page; shot_filtro(base, type, key, genre);
+}
 void shot_filtro(const char *base, const char *type, const char *key, const char *genre) {
   (void)base; (void)type; (void)genre;
   const char *names[] = {"Widow's Bay", "The Prestige", "One Battle After Another", "From", "Frequency", "Nobody", "The Devil Wears Prada", "The Drama"};
@@ -57,6 +68,7 @@ void shot_filtro(const char *base, const char *type, const char *key, const char
     snprintf(it->titulo, sizeof it->titulo, "%s", groups ? (const char *[]){"Open Movies", "Animation", "Science Fiction"}[i] : lists ? (const char *[]){"Weekend", "Family", "Favorites"}[i] : names[i]);
     snprintf(it->poster, sizeof it->poster, "deploy/app/art/poster/%02d.jpg", i + 1);
     snprintf(it->meta, sizeof it->meta, "%d", 2008 + i);
+    snprintf(it->genero, sizeof it->genero, "%s", i % 2 ? "Drama" : "Action");
   }
 }
 static void key(SDL_Keycode code) {
@@ -64,13 +76,18 @@ static void key(SDL_Keycode code) {
   vertudo_evento(&e);
   e.type = SDL_KEYUP; vertudo_evento(&e);
 }
+static int scene;
 static void capture(const char *dir, const char *name) {
   static Uint32 now = 1000;
   for (int i = 0; i < 90; i++, now += 16) {
     SDL_PumpEvents(); txt_novo_quadro(); tex_novo_quadro(); tex_bombear(8); gfx_novo_quadro();
     vertudo_atualizar(1.0f / 60, now);
     glBindFramebuffer(GL_FRAMEBUFFER, target); glViewport(0, 0, 1920, 1080);
-    glClear(GL_COLOR_BUFFER_BIT); vertudo_desenhar(now); glFinish();
+    glClear(GL_COLOR_BUFFER_BIT);
+    if (scene == 1) { home_atualizar(1.f / 60, now); home_desenhar(now); }
+    else if (scene == 2) { faixas_atualizar(1.f / 60, now); faixas_desenhar(now); plrilha_desenhar(now); }
+    else vertudo_desenhar(now);
+    glFinish();
   }
   unsigned char *pixels = malloc(1920 * 1080 * 4); assert(pixels);
   glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
@@ -100,6 +117,10 @@ int main(int argc, char **argv) {
   gfx_tamanho_alvo(1920, 1080); assert(gfx_iniciar()); assert(txt_iniciar("deploy/app", 1));
   tex_iniciar(64); gfx_icones_dir("deploy/app/art");
   vertudo_servidores("jellyfin_movies"); capture(argv[1], "server-grid");
+  assert(servidorGeneroN == 2);
+  key(SDLK_DOWN); key(SDLK_RIGHT); key(SDLK_RIGHT); key(SDLK_RETURN);
+  capture(argv[1], "server-genre"); assert(servidorGenero == 1 && servidorN == 4);
+  vertudo_servidores("jellyfin_movies"); capture(argv[1], "server-grid-reset");
   key(SDLK_DOWN); for (int i = 0; i < 5; i++) key(SDLK_RETURN);
   capture(argv[1], "server-4k-filter");
   vertudo_servidores("jellyfin_collections"); capture(argv[1], "server-collections");
@@ -112,6 +133,36 @@ int main(int argc, char **argv) {
   assert(dados_gravar("ajustes.txt", "idioma 1\njellyfinLocal 0\nvidroLocal 0\nbordaFocoCartaz 1\n"));
   ajustes_dir(dados_dir());
   vertudo_servidores("jellyfin_movies"); capture(argv[1], "server-grid-glass");
+  // Real home renderer: private server IDs stay in each independent library row.
+  static CatItem homeItems[24]; CatFileira rows[3] = {0};
+  const char *rowNames[] = {"Movies · Emby", "Shows · Jellyfin", "Family · Emby"};
+  const char *rowKeys[] = {"emby_11", "jellyfin_22", "emby_33"};
+  for (int r = 0; r < 3; r++) {
+    strcpy(rows[r].titulo, rowNames[r]); strcpy(rows[r].chave, rowKeys[r]);
+    strcpy(rows[r].tipo, r == 1 ? "series" : "movie"); rows[r].ini = r * 8; rows[r].n = 8;
+    for (int i = 0; i < 8; i++) {
+      homeItems[r * 8 + i] = fixtures[i];
+      snprintf(homeItems[r * 8 + i].imdb, sizeof homeItems[0].imdb, "em:12345678.%d", r * 8 + i + 1);
+      strcpy(homeItems[r * 8 + i].tipo, rows[r].tipo);
+    }
+  }
+  cat_definir_tudo(homeItems, 24, rows, 3);
+  assert(home_iniciar("deploy/app/art")); scene = 1;
+  capture(argv[1], "server-home-hero");
+  assert(home_fileiras_n() >= 3);
+  for (int i = 0; i < 3; i++) {
+    SDL_Event down = {0}; down.type = SDL_KEYDOWN; down.key.keysym.sym = SDLK_DOWN; home_evento(&down);
+    down.type = SDL_KEYUP; home_evento(&down);
+    capture(argv[1], "server-home");
+  }
+  // Feed server MediaStreams through the real parser and subtitle picker.
+  Legenda subs[3]; JfConta account = {0}; account.tipo = JF_TIPO_EMBY;
+  strcpy(account.base, "http://fixture.invalid");
+  const char *media = "{\"MediaSources\":[{\"Id\":\"media_1\",\"MediaStreams\":[{\"Type\":\"Subtitle\",\"Index\":2,\"Codec\":\"srt\",\"Language\":\"eng\",\"DisplayTitle\":\"English SRT\",\"IsExternal\":true,\"Path\":\"/private/The.Prestige.en.srt\"},{\"Type\":\"Subtitle\",\"Index\":3,\"Codec\":\"ass\",\"Language\":\"eng\",\"DisplayTitle\":\"English ASS\",\"IsExternal\":true,\"Path\":\"/private/The.Prestige.en.ass\"},{\"Type\":\"Subtitle\",\"Index\":4,\"Codec\":\"subrip\",\"Language\":\"por\",\"DisplayTitle\":\"Portuguese\"}]}]}";
+  assert(jf_ler_legendas(&account, "1", "media_1", media, strlen(media), subs, 3) == 3);
+  player_abrir(0, NULL); addons_shot_legendas(subs, 3);
+  VideoSimulacao sim = {0}; sim.pronto = 1; sim.duracao = 7200; sim.legAtual = -1; video_simular(&sim);
+  faixas_abrir_em(1); scene = 2; capture(argv[1], "server-subtitles");
   tex_encerrar(); txt_encerrar();
   SDL_GL_DeleteContext(context); SDL_DestroyWindow(window); SDL_Quit();
   return 0;

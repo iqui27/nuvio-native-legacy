@@ -582,9 +582,25 @@ int jf_itens(const JfConta *c, RedeJob *job, const char *bib, int inicio, int li
 static int jf_itensEx(const JfConta *c, RedeJob *job, const char *bib, int inicio, int limite,
              CatItem *out, int max, int *total, int *raw) {
   RedeResposta r;
-  char caminho[512], limpo[40], raiz[96];
-  int n, e;
+  char caminho[1024], limpo[40], raiz[96], library[40], genre[385] = "";
+  int n, e, order = 0;
   if (total) *total = 0;
+  // Internal pager suffix: library|sort|genre. Only a fixed sort and an
+  // encoded genre reach the server; credentials remain in the request headers.
+  const char *filter = bib ? strchr(bib, '|') : NULL;
+  if (filter) {
+    size_t len = (size_t)(filter - bib);
+    if (!len || len >= sizeof library || filter[1] < '0' || filter[1] > '3' || filter[2] != '|') return JF_ERR_ENTRADA;
+    memcpy(library, bib, len); library[len] = 0; bib = library; order = filter[1] - '0';
+    const unsigned char *s = (const unsigned char *)filter + 3; size_t pos = 0;
+    for (; *s && pos + 3 < sizeof genre; s++) {
+      if ((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z') || (*s >= '0' && *s <= '9') || *s == '-' || *s == '_')
+        genre[pos++] = (char)*s;
+      else { snprintf(genre + pos, sizeof genre - pos, "%%%02X", *s); pos += 3; }
+    }
+    if (*s) return JF_ERR_ENTRADA;
+    genre[pos] = 0;
+  }
   if (!jfid_hex_limpo(bib, limpo, 32) || inicio < 0 || limite <= 0) return JF_ERR_ENTRADA;
   if (limite > 100) limite = 100;
   // Emby takes the user in the path; Jellyfin 10.9+ in the query.
@@ -592,9 +608,11 @@ static int jf_itensEx(const JfConta *c, RedeJob *job, const char *bib, int inici
   else snprintf(raiz, sizeof raiz, "/Items?userId=%s&", c->usuarioId);
   snprintf(caminho, sizeof caminho,
            "%sParentId=%s&Recursive=true&IncludeItemTypes=Movie,Series"
-           "&SortBy=DateCreated,SortName&SortOrder=Descending&Fields=Overview,Genres,ProviderIds"
+           "&SortBy=%s&SortOrder=%s&Genres=%s&Fields=Overview,Genres,ProviderIds"
            "&EnableImageTypes=Primary,Backdrop,Logo&ImageTypeLimit=1&EnableUserData=true"
-           "&StartIndex=%d&Limit=%d", raiz, limpo, inicio, limite);
+           "&StartIndex=%d&Limit=%d", raiz, limpo,
+           (const char *[]){"DateCreated,SortName", "SortName", "ProductionYear,SortName", "CommunityRating,SortName"}[order],
+           order == 1 ? "Ascending" : "Descending", genre, inicio, limite);
   e = pedir(c, c->base, job, "GET", caminho, NULL, "library items", JF_PRAZO_LISTA_MS, &r);
   if (e) return e;
   n = jf_ler_itensEx(c, r.corpo, r.n_corpo, out, max, total, raw);
@@ -962,6 +980,66 @@ static int fonteIdValido(const char *id) {
       return 0;
   }
   return n > 0 && n < 64;
+}
+
+int jf_legenda_id(const char *corpo, size_t n, char *id, size_t tam) {
+  if (!id || !tam) return 0;
+  char imdb[12], tipo[24] = "";
+  long tmdb, tvdb;
+  jf_ler_ids(corpo, corpo + n, imdb, &tmdb, &tvdb);
+  id[0] = 0;
+  if (imdb[0]) copiar(id, tam, imdb);
+  else if (tmdb > 0) snprintf(id, tam, "tmdb:%ld", tmdb);
+  else return 0;
+  txtRaiz(corpo, corpo + n, "Type", tipo, sizeof tipo);
+  if (!strcmp(tipo, "Episode")) {
+    int t = (int)numRaiz(corpo, corpo + n, "ParentIndexNumber", -1);
+    int e = (int)numRaiz(corpo, corpo + n, "IndexNumber", 0);
+    size_t k = strlen(id);
+    if (t < 0 || e <= 0) { id[0] = 0; return 0; }
+    snprintf(id + k, tam - k, ":%d:%d", t, e);
+  }
+  return id[0] != 0;
+}
+
+int jf_ler_legendas(const JfConta *c, const char *item, const char *fonte,
+                    const char *corpo, size_t nCorpo, Legenda *out, int max) {
+  const char *ai, *af, *p;
+  char limpo[40]; int n = 0;
+  if (!c || !jfid_hex_limpo(item, limpo, 32) || !fonteIdValido(fonte)) return 0;
+  if (!blocoRaiz(corpo, corpo + nCorpo, "MediaSources", &ai, &af)) return 0;
+  for (p = elemento(ai + 1, af); p && n < max; p = elemento(depoisElemento(p), af)) {
+    const char *f = depoisElemento(p), *si, *sf;
+    char fid[64] = "";
+    txtRaiz(p, f, "Id", fid, sizeof fid);
+    if (strcmp(fid, fonte) || !blocoRaiz(p, f, "MediaStreams", &si, &sf)) continue;
+    for (const char *s = elemento(si + 1, sf); s && n < max; s = elemento(depoisElemento(s), sf)) {
+      const char *end = depoisElemento(s); char tipo[24] = "", codec[24] = "", path[1024] = "";
+      int index = (int)numRaiz(s, end, "Index", -1);
+      txtRaiz(s, end, "Type", tipo, sizeof tipo); txtRaiz(s, end, "Codec", codec, sizeof codec);
+      if (strcmp(tipo, "Subtitle") || index < 0 ||
+          (strcmp(codec, "subrip") && strcmp(codec, "srt") && strcmp(codec, "ass") &&
+           strcmp(codec, "ssa") && strcmp(codec, "webvtt") && strcmp(codec, "vtt"))) continue;
+      Legenda *l = &out[n]; memset(l, 0, sizeof *l);
+      const char *ext = !strcmp(codec, "ass") || !strcmp(codec, "ssa") ? "ass" : "srt";
+      int k = snprintf(l->url, sizeof l->url, "%s%s/Videos/%s/%s/Subtitles/%d/Stream.%s",
+                       c->base, jf_prefixo(c), limpo, fonte, index, ext);
+      if (k < 0 || (size_t)k + strlen(c->token) + 16 >= sizeof l->url) continue;
+      jf_anexar_apikey(c, l->url, sizeof l->url);
+      txtRaiz(s, end, "Language", l->idioma, sizeof l->idioma);
+      txtRaiz(s, end, "DisplayTitle", l->rotulo, sizeof l->rotulo);
+      if (!l->rotulo[0]) snprintf(l->rotulo, sizeof l->rotulo, "%s · %s", l->idioma, codec);
+      txtRaiz(s, end, "Path", path, sizeof path);
+      const char *name = strrchr(path, '/'); name = name ? name + 1 : path;
+      const char *win = strrchr(name, '\\'); if (win) name = win + 1;
+      copiar(l->arquivo, sizeof l->arquivo, name);
+      copiar(l->provedor, sizeof l->provedor, jf_tipo_nome(c->tipo));
+      snprintf(l->id, sizeof l->id, "%s:%s:%d", limpo, fonte, index);
+      l->addonIndice = -10 - c->tipo;
+      n++;
+    }
+  }
+  return n;
 }
 
 // Parses a PlaybackInfo answer. `itemLimpo` is the (hex) item id asked for.
@@ -2070,6 +2148,9 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   nl = e == JF_OK ? jf_bibliotecas(&c, j, libs, JF_FIL_MAX) : e;
   if (nl < 0) e = nl;
   por = jf_por_fileira(nl);
+  // Reserve one row for Next Up within the fixed memory budget.
+  if (nl > 0 && por * nl > JF_ITENS_MAX - JF_POR_FILEIRA)
+    por = (JF_ITENS_MAX - JF_POR_FILEIRA) / nl;
   for (i = 0; i < nl && e == JF_OK; i++) {
     if (!srv_biblioteca_selecionada(c.bibliotecas, libs[i].id)) continue;
     int total, n = jf_itens(&c, j, libs[i].id, 0, por, itens + ni, por, &total);
@@ -2085,8 +2166,9 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   // NextUp episodes need the series index to become catalogue identities.
   if (e == JF_OK) indexar(I, t, j, &c);
   // Optional NextUp: an unsupported endpoint must not hide libraries.
-  if (e == JF_OK && nf < JF_FIL_MAX) {
-    int n = jfi_atividade(I, "nextup", itens + ni, JF_POR_FILEIRA);
+  if (e == JF_OK && nf < JF_FIL_MAX && ni < JF_ITENS_MAX) {
+    int room = JF_ITENS_MAX - ni;
+    int n = jfi_atividade(I, "nextup", itens + ni, room < JF_POR_FILEIRA ? room : JF_POR_FILEIRA);
     if (n > 0) {
       memset(&fils[nf], 0, sizeof fils[nf]);
       snprintf(fils[nf].chave, sizeof fils[nf].chave, "%snextup", I->prefixoFila);
@@ -2605,6 +2687,55 @@ static int jfi_consultar(JfInst *I, const char *id, const char *tipo, const char
   apagarSegredo(&c, sizeof c);
   rede_job_soltar(j);
   return n;
+}
+
+static int jfi_legendas(JfInst *I, const char *url, Legenda *out, int max, char *id, size_t tam) {
+  JfConta c; JfSessaoPlay sp = {0}; RedeJob *j = NULL; unsigned g;
+  RedeResposta r = {0}; int n = -1;
+  pthread_mutex_lock(&I->trava);
+  conferirPerfilLocked(I); g = I->geracao;
+  if (I->estado == JF_EST_CONECTADO && I->grupo && url && url[0])
+    for (int k = 0; k < JF_SESSOES; k++)
+      if (I->sessoes[k].ativo && !strcmp(url, I->sessoes[k].s.url)) {
+        sp = I->sessoes[k].s; c = I->conta; j = rede_job_criar(I->grupo); break;
+      }
+  pthread_mutex_unlock(&I->trava);
+  if (!j) return -1;
+  char rota[200]; id[0] = 0;
+  if (c.tipo == JF_TIPO_EMBY) snprintf(rota, sizeof rota, "/Users/%s/Items/%s?Fields=MediaSources,MediaStreams,ProviderIds", c.usuarioId, sp.itemId);
+  else snprintf(rota, sizeof rota, "/Items/%s?userId=%s&Fields=MediaSources,MediaStreams,ProviderIds", sp.itemId, c.usuarioId);
+  if (!pedir(&c, c.base, j, "GET", rota, NULL, "subtitle streams", JF_PRAZO_LISTA_MS, &r)) {
+    n = jf_ler_legendas(&c, sp.itemId, sp.fonteId, r.corpo, r.n_corpo, out, max);
+    jf_legenda_id(r.corpo, r.n_corpo, id, tam);
+    // Episodes use the parent show's provider identity, with this episode's coordinates.
+    char serie[40] = "";
+    int t = (int)numRaiz(r.corpo, r.corpo + r.n_corpo, "ParentIndexNumber", -1);
+    int e = (int)numRaiz(r.corpo, r.corpo + r.n_corpo, "IndexNumber", 0);
+    txtRaiz(r.corpo, r.corpo + r.n_corpo, "SeriesId", serie, sizeof serie);
+    rede_resposta_limpar(&r);
+    char limpo[40];
+    if (t >= 0 && e > 0 && jfid_hex_limpo(serie, limpo, 32)) {
+      if (c.tipo == JF_TIPO_EMBY) snprintf(rota, sizeof rota, "/Users/%s/Items/%s", c.usuarioId, limpo);
+      else snprintf(rota, sizeof rota, "/Items/%s?userId=%s", limpo, c.usuarioId);
+      if (!pedir(&c, c.base, j, "GET", rota, NULL, "subtitle identity", JF_PRAZO_LISTA_MS, &r)) {
+        char parent[64];
+        if (jf_legenda_id(r.corpo, r.n_corpo, parent, sizeof parent)) snprintf(id, tam, "%s:%d:%d", parent, t, e);
+        rede_resposta_limpar(&r);
+      }
+    }
+  } else n = 0; // Registered source, failed request: never reuse the previous title.
+  pthread_mutex_lock(&I->trava);
+  conferirPerfilLocked(I);
+  if (g != I->geracao || rede_job_estado(j) != REDE_OK) { n = 0; id[0] = 0; }
+  pthread_mutex_unlock(&I->trava);
+  rede_job_soltar(j); apagarSegredo(&c, sizeof c);
+  return n;
+}
+int jellyfin_legendas(const char *url, Legenda *out, int max, char *id, size_t tam) {
+  return jfi_legendas(&instJf, url, out, max, id, tam);
+}
+int emby_legendas(const char *url, Legenda *out, int max, char *id, size_t tam) {
+  return jfi_legendas(&instEm, url, out, max, id, tam);
 }
 
 // The page where an already signed-in Jellyfin app approves a Quick Connect

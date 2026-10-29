@@ -17,8 +17,8 @@
 #define HV_QR 340.0f
 int homevazio_ativo(int fileiras) {
   if (sessao_logada() && sync_estado() != SYNC_PRONTO && !sync_ultimo_ok()) return 0;
-  if (!addons_n()) return 1;
   if (fileiras || desc_montando()) return 0;
+  if (!addons_n()) return 1;
   for (int i = 0; i < addons_n(); i++)
     if (addons_tem_catalogo(i)) return 0;
   return 1;
