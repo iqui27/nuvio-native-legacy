@@ -14,6 +14,7 @@
 //
 //   bash tests/perfilsel.sh --capturas
 #include "perfilsel.h"
+#include "perfisedit.h"
 #include "nvtmp.h"
 #include "perfis.h"
 #include "dados.h"
@@ -22,6 +23,7 @@
 #include "tex_cache.h"
 #include "catalogo.h"
 #include "ajustes.h"
+#include "layout.h"
 #include "gpunivel.h"
 #include "progresso.h"
 #include <SDL2/SDL.h>
@@ -34,6 +36,12 @@
 
 static SDL_Window *win;
 static int capturaQuadros = 90;
+static int shotW = 1920, shotH = 1080;
+static int shotSettings;
+#ifdef AJUSTES_TESTE
+extern int ajustes_teste_cena_item(int i, int *op, int *sec, const char **key, const char **label);
+extern int ajustes_teste_focar_opcao(int op);
+#endif
 
 static const char *shotPath(const char *nome) {
   static char caminho[768];
@@ -47,16 +55,16 @@ static const char *shotPath(const char *nome) {
 }
 
 static void salvarTela(const char *nome) {
-  unsigned char *pix = malloc(1920 * 1080 * 4);
+  unsigned char *pix = malloc((size_t)shotW * shotH * 4);
   SDL_Surface *s;
   int y;
   assert(pix);
-  glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pix);
-  s = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
+  glReadPixels(0, 0, shotW, shotH, GL_RGBA, GL_UNSIGNED_BYTE, pix);
+  s = SDL_CreateRGBSurfaceWithFormat(0, shotW, shotH, 32, SDL_PIXELFORMAT_RGBA32);
   assert(s);
-  for (y = 0; y < 1080; y++)
+  for (y = 0; y < shotH; y++)
     memcpy((char *)s->pixels + y * s->pitch,
-           pix + (1079 - y) * 1920 * 4, 1920 * 4);
+           pix + (shotH - 1 - y) * shotW * 4, (size_t)shotW * 4);
   assert(SDL_SaveBMP(s, nome) == 0);
   SDL_FreeSurface(s); free(pix);
 }
@@ -90,7 +98,8 @@ static void ajustesDeTeste(int reduzidas) {
   snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dados_dir());
   f = fopen(caminho, "w");
   assert(f);
-  fprintf(f, "animacoes %d\n", reduzidas);
+  fprintf(f, "performanceAutoVersaoLocal 1\nanimacoes %d\n", reduzidas);
+  if (shotH > shotW) fprintf(f, "interfaceModoLocal 1\n");
   // Convencoes das capturas: NUVIO_SHOT_FONTE=3 (Montserrat, a da TV),
   // NUVIO_PERFILSEL_FUNDO (0 mural, 1 listras, 2 arte do perfil) e
   // NUVIO_PERFILSEL_VIDRO (0 vidro, 1 solido).
@@ -100,8 +109,12 @@ static void ajustesDeTeste(int reduzidas) {
     fprintf(f, "perfilFundoLocal %d\n", atoi(getenv("NUVIO_PERFILSEL_FUNDO")));
   if (getenv("NUVIO_PERFILSEL_VIDRO"))
     fprintf(f, "vidroLocal %d\n", atoi(getenv("NUVIO_PERFILSEL_VIDRO")));
+  // 2.1: tamanho dos avatares (0/1/2). Sem a variavel, Medio (o de sempre).
+  if (getenv("NUVIO_PERFILSEL_TAMANHO"))
+    fprintf(f, "psTamanhoLocal %d\n", atoi(getenv("NUVIO_PERFILSEL_TAMANHO")));
   fclose(f);
   ajustes_dir(dados_dir());
+  gfx_tamanho_alvo(shotW, shotH);
 }
 
 // 90 quadros: tempo de sobra para a mola do foco assentar (120 ms medidos) e
@@ -111,9 +124,11 @@ static void captura(const char *nome) {
   for (i = 0; i < capturaQuadros; i++) {
     SDL_PumpEvents();
     txt_novo_quadro(); tex_novo_quadro(); tex_bombear(6); gfx_novo_quadro();
-    perfilsel_atualizar(1.0f / 60.0f, SDL_GetTicks());
+    if (shotSettings) ajustes_atualizar(1.0f / 60.0f, SDL_GetTicks());
+    else perfilsel_atualizar(1.0f / 60.0f, SDL_GetTicks());
     glClearColor(0.051f, 0.051f, 0.051f, 1); glClear(GL_COLOR_BUFFER_BIT);
-    perfilsel_desenhar(SDL_GetTicks());
+    if (shotSettings) ajustes_desenhar(SDL_GetTicks());
+    else perfilsel_desenhar(SDL_GetTicks());
     // GL_BACK ainda e valido neste ponto. Depois do SwapWindow o back buffer
     // pode ser descartado, portanto a captura do frame final fica aqui.
     if (i == capturaQuadros - 1) salvarTela(shotPath(nome));
@@ -186,11 +201,12 @@ static void verificaPressaoSustentada(void) {
 
 static void verificaReducedMotion(void) {
   PerfilSelTesteEstado e;
+  int selected = perfis_indice_sugerido();
   perfilsel_teste_estado(&e);
   tecla(SDLK_RIGHT);
   perfilsel_atualizar(0.04f, SDL_GetTicks());
   perfilsel_teste_estado(&e);
-  assert(e.foco[5] == 1.0f);
+  assert(e.foco[selected < perfis_n() - 1 ? selected + 1 : selected] == 1.0f);
   for (int i = 0; i < 6; i++) assert(fabsf(e.luz[i] - e.luz_alvo[i]) < 0.0001f);
   assert(e.mural_tempo == 0.0f && e.burst_tempo == 0.0f);
   tecla(SDLK_LEFT);
@@ -201,17 +217,20 @@ int main(void) {
   const char *arte = "deploy/app/art";
   SDL_GLContext gl;
 
+  if (getenv("NUVIO_PERFILSEL_PHONE")) { shotW = 390; shotH = 844; }
+  layout_tela_definir(shotW, shotH);
+  layout_modo_definir(shotH > shotW);
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
   win = SDL_CreateWindow("Nuvio: revisao da escolha de perfil",
                          SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                         1920, 1080, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
+                         shotW, shotH, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
   assert(win);
   gl = SDL_GL_CreateContext(win); assert(gl);
   SDL_GL_SetSwapInterval(0);
-  glViewport(0, 0, 1920, 1080); gfx_tamanho_alvo(1920, 1080);
+  glViewport(0, 0, shotW, shotH); gfx_tamanho_alvo(shotW, shotH);
   assert(gfx_iniciar());
   assert(txt_iniciar("deploy/app", 1));
   tex_iniciar(64);
@@ -420,6 +439,33 @@ int main(void) {
     ajustesDeTeste(0);
   }
 
+  // 2.1: O CARTAO "+" NO FIM DA FILEIRA, OS BOTOES DO RODAPE (Adicionar /
+  // Gerenciar) E O MODAL DE GERENCIAR — acoes, paleta de cores e a
+  // confirmacao de remover. Nada e enviado: sem rede, o modal so desenha.
+  captura(nvt("/nuvio-perfilsel-221.bmp"));
+  tecla(SDLK_DOWN);
+  captura(nvt("/nuvio-perfilsel-rodape.bmp"));
+  tecla(SDLK_RIGHT);   // Gerenciar perfis
+  tecla(SDLK_RETURN);
+  assert(perfisedit_aberto());
+  captura(nvt("/nuvio-perfilsel-gerenciar.bmp"));
+  tecla(SDLK_RETURN);   // Henrique: Renomear / Cor / Remover
+  captura(nvt("/nuvio-perfilsel-acoes.bmp"));
+  tecla(SDLK_DOWN); tecla(SDLK_RETURN);   // Cor
+  captura(nvt("/nuvio-perfilsel-cor.bmp"));
+  tecla(SDLK_BACKSPACE);
+  tecla(SDLK_DOWN); tecla(SDLK_RETURN);   // Remover: confirmacao
+  captura(nvt("/nuvio-perfilsel-remover.bmp"));
+  tecla(SDLK_BACKSPACE); tecla(SDLK_BACKSPACE);   // acoes -> lista
+  tecla(SDLK_ESCAPE);   // fecha o modal
+  tecla(SDLK_UP);       // volta `a fileira (o ESC devolve ao rodape)
+  { int k; for (k = 0; k < 4; k++) tecla(SDLK_RIGHT); }
+  captura(nvt("/nuvio-perfilsel-221-mais.bmp"));
+  tecla(SDLK_RETURN);   // o "+" abre o teclado do nome
+  captura(nvt("/nuvio-perfilsel-221-nome.bmp"));
+  tecla(SDLK_ESCAPE);   // teclado cancelado: volta a lista do modal
+  tecla(SDLK_ESCAPE);   // fecha o modal
+
   // AMBIENTE DO PERFIL (2.0, variante A): Henrique e Infantil tem arte, Alvaro
   // nao. So roda com NUVIO_PERFILSEL_FUNDO=2.
   if (ajustes_ps_fundo() == 2) {
@@ -469,6 +515,35 @@ int main(void) {
     assert(e.amb_atual == 3 && e.amb_fonte == 2 && e.amb_t == 1.0f);
   }
 
+  // 2.1: TAMANHO GRANDE DOS AVATARES (Ajustes › Tamanho dos perfis): o teto
+  // da conta so aperta com POUCOS perfis — com 2, o Medio para em 288 e o Grande
+  // abre ate 351. E a fileira subida, com o cartao "+" acompanhando.
+  setenv("NUVIO_PERFILSEL_TAMANHO", "2", 1);
+  perfis_esquecer(); dados_iniciar(NULL);
+  escreverCache("1\t0\t1\t0\t#1E88E5\tHenrique\t\tdeploy/app/art/03.jpg\n"
+                  "2\t0\t0\t1\t#E53935\tÁlvaro\t\tdeploy/app/art/05.jpg\n", 1);
+  perfis_carregar_ativo();
+  ajustesDeTeste(0);
+  perfilsel_iniciar();
+  captura(nvt("/nuvio-perfilsel-grande.bmp"));
+  // E o PEQUENO, no mesmo cenario: o piso desce junto.
+  setenv("NUVIO_PERFILSEL_TAMANHO", "0", 1);
+  ajustesDeTeste(0);
+  perfilsel_iniciar();
+  captura(nvt("/nuvio-perfilsel-pequeno.bmp"));
+
+#ifdef AJUSTES_TESTE
+  { int op, sec, i; const char *key, *label;
+    ajustes_iniciar();
+    for (i = 0; ajustes_teste_cena_item(i, &op, &sec, &key, &label); i++) {
+      if (strcmp(key, "psTamanhoLocal")) continue;
+      assert(ajustes_teste_focar_opcao(op));
+      shotSettings = 1;
+      captura(nvt("/nuvio-perfilsel-settings.bmp"));
+      break;
+    }
+  }
+#endif
   tex_encerrar(); txt_encerrar(); gfx_encerrar();
   SDL_GL_DeleteContext(gl); SDL_DestroyWindow(win); SDL_Quit();
   printf("PASS: capturas em %s/nuvio-perfilsel-*.bmp (dados de teste, sem conta real).\n", nvt_dir());
