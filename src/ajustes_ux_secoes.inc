@@ -186,7 +186,7 @@ static int ajCenaSecao(int op) {
     case AJ_TITULO_FIL: case AJ_PALCO_FUNDO:
       return AJC_APA_FILEIRAS;
     case AJ_MENU_TOPO: case AJ_RAIL_MODERNA: case AJ_RAIL: case AJ_MENU_EXPLORAR: case AJ_MENU_GUIA: case AJ_MENU_AGENDA:
-    case AJ_MENU_PERFIL: case AJ_RAIL_BLUR: case AJ_DESCOBRIR: case AJ_MIC_BUSCA:
+    case AJ_MENU_ESPORTES: case AJ_MENU_PERFIL: case AJ_RAIL_BLUR: case AJ_DESCOBRIR: case AJ_MIC_BUSCA:
       return AJC_HOME_BARRA;
     case AJ_PS_FUNDO: case AJ_PS_CONTINUAR: return AJC_HOME_PERFIL;
     case AJ_DET_VEU: case AJ_DET_DATA_CHEIA: case AJ_DET_BLUR_NAO_VISTOS: case AJ_EP_TAMANHO: return AJC_TIT_APARECE;
@@ -435,9 +435,10 @@ static void ajcHomeFileiras(int A) {
 }
 // Barra lateral: o menu do app, com os itens que as opcoes ligam e desligam.
 static void ajcHomeBarra(int A) {
-  static const struct { const char *ico, *nome; int op; } IT[7] = {
+  static const struct { const char *ico, *nome; int op; } IT[8] = {
     { "aj_house", "Início", -1 }, { "aj_search", "Buscar", AJ_DESCOBRIR }, { "aj_compass", "Explorar", AJ_MENU_EXPLORAR },
-    { "aj_tv-minimal-play", "Guia TV", AJ_MENU_GUIA }, { "aj_calendar", "Agenda", AJ_MENU_AGENDA },
+    { "aj_tv-minimal-play", "Guia TV", AJ_MENU_GUIA }, { "menu_sports", "Esportes", AJ_MENU_ESPORTES },
+    { "aj_calendar", "Agenda", AJ_MENU_AGENDA },
     { "aj_user-round", "Perfil", AJ_MENU_PERFIL }, { "aj_settings-2", "Ajustes", -1 } };
   int larga = !ajustes_rail_recolhida() || ajustes_rail_moderna(), i;
   float rw = larga ? 200 : 64;
@@ -447,8 +448,8 @@ static void ajcHomeBarra(int A) {
   CACC(rw + 70, 236, 104, 30, 1);
   if (ajustes_rail_moderna_blur() && ajustes_rail_moderna()) ajcBorrada(ajArte(AJA_FUNDO, A), CR(28, 24, rw, 312), 26 * ajc.s, 1);
   CVID(28, 24, rw, 312, 26);
-  for (i = 0; i < 7; i++) {
-    float iy = 44 + i * 40, al = IT[i].op == AJ_DESCOBRIR || IT[i].op < 0 ? 1.0f : ON(IT[i].op);
+  for (i = 0; i < 8; i++) {
+    float iy = 44 + i * 35, al = IT[i].op == AJ_DESCOBRIR || IT[i].op < 0 ? 1.0f : ON(IT[i].op);
     if (i == 0) gfx_cor(CR(36, iy - 6, rw - 16, 32), 0.5f, 1, 1, 1, 0.14f);
     CICON(IT[i].ico, 48, iy, 20, 0.85f * al);
     if (larga) ajcTxt(IT[i].nome, 13, i == 0, 80, iy + 2, rw - 70, (i == 0 ? 1.0f : 0.75f) * al);

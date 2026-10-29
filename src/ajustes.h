@@ -47,6 +47,7 @@ int  ajustes_menu_explorar(void);
 int  ajustes_menu_guia(void);
 int  ajustes_menu_agenda(void);
 int  ajustes_menu_perfil(void);
+int  ajustes_menu_esportes(void);
 // "Trailer do cartaz em foco" (#124; tres modos desde 08/10/2026). Na conta
 // continua o booleano do web (focusedPosterBackdropTrailerEnabled): true =
 // qualquer modo ligado. O modo seguro devolve DESLIGADO.
