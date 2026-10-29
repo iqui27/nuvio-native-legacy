@@ -68,7 +68,7 @@ static void arrastar(float x0, float y0, float x1, float y1) {
 }
 static const PonteiroAlvo *secao(int a) {
   const PonteiroAlvo *v; int n = ponteiro_teste_lista(&v);
-  for (int i = 0; i < n; i++) if (v[i].focar == triPontSecao && v[i].a == a) return &v[i];
+  for (int i = 0; i < n; i++) if ((v[i].focar == triPontSecao || v[i].ativar == triPontSecaoAbrir) && v[i].a == a) return &v[i];
   return NULL;
 }
 static int visivelEm(const PonteiroAlvo *a, float topo, float base) { return a && a->y >= topo - 1.0f && a->y + a->h <= base + 1.0f; }
@@ -90,7 +90,7 @@ static const PonteiroAlvo *linha(GfxRect r, int a) {
   return NULL;
 }
 
-// P1-1: portrait keeps a visible, navigable section rail.
+// Portrait uses a grouped section list and opens each section as a page.
 static void retrato(void) {
   const PonteiroAlvo *v; int n, secoes = 0; float y0 = -1; int mesmaLinha = 1;
   layout_modo_definir(1); tela(1080, 1920);
@@ -98,12 +98,11 @@ static void retrato(void) {
   triIniciar(); triSecFoco = 0; focarSecao(0);
   quadros(30); png("p1-retrato-faixa");
   n = ponteiro_teste_lista(&v);
-  for (int i = 0; i < n; i++) if (v[i].focar == triPontSecao) { secoes++; if (y0 < 0) y0 = v[i].y; else if (v[i].y != y0) mesmaLinha = 0; }
-  confere(secoes >= 3, "Retrato: a faixa de secoes registra alvos");
-  confere(secoes >= 3 && mesmaLinha, "Retrato: as secoes ficam numa faixa horizontal");
-  key(SDLK_RIGHT); confere(triIlha == TRI_SECOES && triSecFoco == 1 && secAtual == 1, "Retrato: Direita troca a secao na faixa");
-  key(SDLK_LEFT); confere(triIlha == TRI_SECOES && triSecFoco == 0 && !sair, "Retrato: Esquerda volta a secao anterior");
-  key(SDLK_DOWN); confere(triIlha == TRI_LISTA && secAtual == 0 && focoOp >= 0, "Retrato: Baixo entra na lista");
+  for (int i = 0; i < n; i++) if (v[i].ativar == triPontSecaoAbrir) { secoes++; if (y0 < 0) y0 = v[i].y; else if (v[i].y != y0) mesmaLinha = 0; }
+  confere(secoes >= 3 && !mesmaLinha, "Portrait: sections register vertical list targets");
+  key(SDLK_DOWN); confere(triIlha == TRI_SECOES && triSecFoco == 1 && secAtual == 1, "Portrait: Down selects next section");
+  key(SDLK_UP); confere(triIlha == TRI_SECOES && triSecFoco == 0 && !sair, "Portrait: Up selects previous section");
+  key(SDLK_RIGHT); confere(triIlha == TRI_LISTA && secAtual == 0 && focoOp >= 0, "Portrait: Right opens section page");
   quadros(30); png("p1-retrato-lista");
   key(SDLK_UP); confere(triIlha == TRI_SECOES && triSecFoco == 0, "Retrato: Cima da 1a linha volta a faixa");
   key(SDLK_UP); confere(triIlha == TRI_CHIPS, "Retrato: Cima da faixa vai aos chips");
@@ -111,14 +110,14 @@ static void retrato(void) {
   quadros(30);
   n = ponteiro_teste_lista(&v);
   // A click focuses and the pointer delivers OK right after (ponteiro.c): one click opens.
-  { const PonteiroAlvo *alvo = NULL; for (int i = 0; i < n; i++) if (v[i].focar == triPontSecao && v[i].a == 2) alvo = &v[i];
+  { const PonteiroAlvo *alvo = NULL; for (int i = 0; i < n; i++) if (v[i].ativar == triPontSecaoAbrir && v[i].a == 2) alvo = &v[i];
     confere(alvo != NULL, "Retrato: a 3a secao tem alvo");
     if (alvo) { clicar(alvo); confere(triIlha == TRI_LISTA && secAtual == 2 && triSecFoco == 2, "Retrato: toque na secao abre a lista dela"); } }
-  // the last section is far to the right: the rail scrolls to it
-  triIrSecoes(); for (int i = 0; i < nSecoes; i++) key(SDLK_RIGHT); quadros(40); png("p1-retrato-faixa-fim");
+  // The grouped list scrolls vertically to its last section.
+  triIrSecoes(); for (int i = 0; i < nSecoes; i++) key(SDLK_DOWN); quadros(40); png("p1-retrato-faixa-fim");
   n = ponteiro_teste_lista(&v);
-  { const PonteiroAlvo *alvo = NULL; for (int i = 0; i < n; i++) if (v[i].focar == triPontSecao && v[i].a == nSecoes) alvo = &v[i];
-    confere(triSecFoco == nSecoes && alvo && alvo->x + alvo->w <= NV_LAYOUT_REAL_W - 40.0f, "Retrato: a faixa rola ate a ultima secao"); }
+  { const PonteiroAlvo *alvo = NULL; for (int i = 0; i < n; i++) if (v[i].ativar == triPontSecaoAbrir && v[i].a == nSecoes) alvo = &v[i];
+    confere(triSecFoco == nSecoes && alvo && alvo->y + alvo->h <= TRI_BASE * ajustes_tamanho_ajustes(), "Portrait: grouped list scrolls to last section"); }
   layout_modo_definir(0); tela(1920, 1080);
   sair = 0;
 }
@@ -199,16 +198,16 @@ static void escolhaSemInspetor(void) {
 static void toque(void) {
   const PonteiroAlvo *a, *v[64]; int n;
   layout_modo_definir(1); tela(1080, 1920); assert(ajRetrato() && ajTelaCheia());
-  triIniciar(); triSecFoco = 0; focarSecao(0); quadros(30);
+  triIniciar(); triSecRolY = triSecRolYAlvo = 0; triSecFoco = 0; focarSecao(0); quadros(30);
   a = secao(nSecoes);
-  confere(a && a->x + a->w > NV_LAYOUT_REAL_W, "Toque: antes do arrasto a ultima secao esta fora da tela");
+  confere(!a || a->y > secao(0)->y, "Touch: sections run vertically before dragging");
   a = secao(0); assert(a);
-  // swipes until the last pill is on screen (a long rail takes a few), at most 8
-  { float y = a->y + a->h * 0.5f; int k;
-    for (k = 0; k < 8; k++) { a = secao(nSecoes); if (a && a->x + a->w <= NV_LAYOUT_REAL_W) break; arrastar(900.0f, y, 150.0f, y); } }
+  // Swipe the grouped list until its final section is visible.
+  { int k;
+    for (k = 0; k < 8; k++) { a = secao(nSecoes); if (a && a->y + a->h <= TRI_BASE * ajustes_tamanho_ajustes()) break; arrastar(540.0f, 1500.0f, 540.0f, 500.0f); } }
   png("p1-retrato-faixa-arrastada");
   a = secao(nSecoes);
-  confere(a && a->x >= 0.0f && a->x + a->w <= NV_LAYOUT_REAL_W, "Toque: o arrasto na faixa traz a ultima secao para a tela");
+  confere(a && a->y >= 0.0f && a->y + a->h <= TRI_BASE * ajustes_tamanho_ajustes(), "Touch: vertical drag reveals last section");
   if (a) { clicar(a); confere(triUtil == TRI_U_PARENTAL, "Toque: a ultima secao abre pelo toque"); }
   // parental: the last control by touch
   quadros(20);

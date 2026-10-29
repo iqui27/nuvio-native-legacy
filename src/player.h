@@ -268,6 +268,7 @@ void player_toque_modal_guarda(int (*pode)(void));
 // crescendo. `player_janela_animando` devolve 1 e o retangulo do degrau
 // enquanto a janela anda — o guia fura ali durante o encolher.
 void player_mini_no_guia(float x, float y, float w, float h);
+void player_mini_guia_preencher(int on);
 int  player_mini_no_guia_ativo(void);
 void player_minimizar_para_guia(float x, float y, float w, float h);
 int  player_janela_animando(float *x, float *y, float *w, float *h);

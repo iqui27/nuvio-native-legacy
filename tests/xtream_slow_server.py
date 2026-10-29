@@ -9,7 +9,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
+    def do_POST(self):
+        self.do_GET()
+
     def do_GET(self):
+        if self.path == "/idle":
+            time.sleep(5)
         self.send_response(200)
         self.send_header("Content-Length", "19")
         self.end_headers()

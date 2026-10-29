@@ -842,16 +842,35 @@ static int heroCompactoTelefone(void) {
   return 0;
 #endif
 }
+// MEDIDAS DO MOCK EM PE (ios-01-home, iPhone Duo fechado, 466 pt de largura).
+// retPt: pontos do mock -> camada atual. retFator: o fator de camada
+// (gfx_escala_sair) em que um estilo de `corpo` px sai com corpo * pt/px pontos;
+// o glifo e rasterizado nele, nitido, sem esticar textura.
+#define RET_MOCK_W       466.0f
+#define RET_TIPO_G       (17.0f / 21.0f)  // meta e nota a 17 pt; rotulo da pilula a 20
+#define RET_TIPO_P       0.56f            // selos de 16 pt; titulo da fileira a 18
+#define RET_FIL_ESPIA_PT   5.0f   // do pe (menos o indicador) ao topo da fileira
+#define RET_TIT_ACIMA_PT  30.0f   // topo do titulo da fileira -> cartoes
+#define RET_DISCO_FIL_PT  41.0f   // pe dos discos -> topo do titulo da fileira
+#define RET_LOGO_W_PT    245.0f
+#define RET_LOGO_H_PT     60.0f
+static float retPt(float pt) { return pt * NV_LAYOUT_REAL_W / (RET_MOCK_W * gfx_escala()); }
+static float retFator(float ptPorPx) { return ptPorPx * NV_LAYOUT_REAL_W / RET_MOCK_W; }
+// Em pe a primeira fileira repousa no pe da tela, so o titulo e a ponta dos
+// cartoes a vista (mock ios-01-home); o destaque fica com o resto.
+static float repousoRetrato(void) { return NV_TELA_H - ANC(nv_inset_b) - retPt(RET_FIL_ESPIA_PT); }
 static float alturaTextoHeroDin(void) {
-  if (homeRetratoTelefone()) return ANC(600.0f);
+  if (homeRetratoTelefone())
+    return repousoRetrato() + NV_LEGACY_ROW_HEAD_H + ANC(NV_DIN_TEXTO_BASE)
+         - retPt(RET_TIT_ACIMA_PT + RET_DISCO_FIL_PT);
   return ANC(NV_DIN_HERO_H) * (heroCompactoTelefone() ? 0.75f : 1.0f);
 }
 static float repousoFileirasDin(void) {
-  if (homeRetratoTelefone()) return ANC(620.0f);
+  if (homeRetratoTelefone()) return repousoRetrato();
   return ANC(NV_DIN_REPOUSO_FIL) * (heroCompactoTelefone() ? 0.75f : 1.0f);
 }
 static float empurraHeroModerna(void) {
-  if (homeRetratoTelefone()) return 620.0f - ANC(NV_SHELF_TOP);
+  if (homeRetratoTelefone()) return repousoRetrato() - ANC(NV_SHELF_TOP);
   return heroCompactoTelefone()
        ? (ANC(NV_SHELF_TOP) + ANC(NV_HOME_HERO_EMPURRA)) * 0.75f - ANC(NV_SHELF_TOP)
        : ANC(NV_HOME_HERO_EMPURRA);
@@ -4391,6 +4410,10 @@ int home_streaming_barra(const int **pastas) {
 // topo: 1 com o destaque inteiro na tela, 0 depois de ~140 px de rolagem.
 float home_topo_fracao(void) {
   float f;
+#ifdef NV_IOS
+  // Em pe a barra vertical do sistema ja diz onde se esta e leva as abas.
+  if (homeRetratoTelefone()) return 0.0f;
+#endif
   // Barra no topo (#461): so com o foco no destaque, como a pilula na pagina rolada.
   if (ajustes_home_layout() != HOME_LAYOUT_DINAMICA) return ajustes_menu_topo() ? (float)focoHero : 1.0f;
   f = 1.0f + dinHeroY() / 140.0f;
@@ -4574,6 +4597,7 @@ static void desenhaPontosHero(float xDir, float yc, int n, int atual, float a) {
 // MESMO item do cache, sem promocao nem segundo decode.
 static float heroLogoMaxW(int lay, int cheio) {
   float e = ajustes_hero_escala_logo();
+  if (homeRetratoTelefone()) return homeTextoLargura(retPt(RET_LOGO_W_PT) * e);
   if (lay == HOME_LAYOUT_PADRAO) return homeTextoLargura(NV_PAD_LOGO_MAX_W * e);
   if (lay == HOME_LAYOUT_DINAMICA) return homeTextoLargura(NV_DIN_LOGO_MAX_W * e);
   return homeTextoLargura((cheio ? NV_LOGO_HERO_CHEIO_MAX_W : NV_LOGO_HERO_MAX_W) * e);
@@ -4931,6 +4955,233 @@ static float desenhaCopiaHero(const CatItem *ci, int principal, float x,
     txt_bloco_corta(heroSinEstilo(), sinopse, 255, 255, 255, x, ySin, sinW,
                     heroSinEntrelinha(), aCopy, sinLinhas);
   return copy.action;
+}
+
+#ifdef NV_TOUCH_UI
+// TELEFONE EM PE (mock ios-01-home, tela fechada): logo, meta e selos
+// centrados na area de conteudo (tela menos a barra do sistema), a pilula
+// primaria do detalhe na largura dela e os quatro discos do detalhe embaixo.
+// Sem sinopse. Os mesmos componentes do detalhe nas medidas do mock, em pt
+// (retPt); o texto no fator do tamanho dele (retFator). Toque >= 44 pt.
+enum { RET_PLAY, RET_LISTA, RET_FONTES, RET_TRAILER, RET_MAIS, RET_N };
+#define RET_ALVO_MIN   128.0f   // px reais: 44 pt no telefone mais estreito
+#define RET_BTN_PT      54.0f   // pilula e discos
+#define RET_DISCO_GAP_PT 13.0f
+#define RET_PILULA_GAP_PT 13.0f // pilula -> discos
+#define RET_PILULA_MARGEM_PT 16.0f
+#define RET_SELO_H_PT   20.0f   // faixa dos selos (o do IMDb tem 16)
+#define RET_SELO_GAP_PT 20.0f   // selos -> pilula
+#define RET_META_GAP_PT 14.0f   // meta -> selos
+#define RET_LOGO_GAP_PT 16.0f   // logo -> meta
+static GfxRect retAlvo[RET_N];
+static int retAlvoOk[RET_N];
+static int retFoco = -1, retSoAbre;
+static float retMola[RET_N];
+static Uint32 retTick;
+static int pedidoAcaoDetalhe = -1;
+static void ponteiroHero(int a, int b);
+
+static GfxRect retEscala(GfxRect r, float s) {
+  float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f;
+  r.w *= s; r.h *= s; r.x = cx - r.w * 0.5f; r.y = cy - r.h * 0.5f;
+  return r;
+}
+static void retAlvoDefinir(int i, GfxRect r, int ok) {
+  float m = ANC(RET_ALVO_MIN);
+  if (r.w < m) { r.x -= (m - r.w) * 0.5f; r.w = m; }
+  if (r.h < m) { r.y -= (m - r.h) * 0.5f; r.h = m; }
+  retAlvo[i] = r; retAlvoOk[i] = ok;
+}
+// Liga o fator `f` e devolve o que leva medidas da camada da home (fator `eh`)
+// para as dele; gfx_escala_sair(eh) volta.
+static float retEm(float f, float eh) { gfx_escala_sair(f); return eh / f; }
+
+static void desenhaCopiaRetrato(const CatItem *ci, int principal, float cx, float base,
+                                int lay, int cheio, float aTexto, float aCopy, float cin) {
+  if (!ci) return;
+  const float a = aCopy, eh = gfx_escala();
+  const float hBtn = retPt(RET_BTN_PT), dC = hBtn, gapD = retPt(RET_DISCO_GAP_PT);
+  const float fG = retFator(RET_TIPO_G), fP = retFator(RET_TIPO_P);
+  const float fMeta = fG * ajustes_hero_escala_info();   // o ajuste cresce a partir do mock
+  float pw = fmaxf(4.0f * dC + 3.0f * gapD,
+                   NV_TELA_W - ANC(nv_inset_d) - 2.0f * retPt(RET_PILULA_MARGEM_PT));
+  int serie = !strcmp(ci->tipo, "series");
+  int temEp = serie && ci->temporada > 0 && ci->episodio > 0;
+  int soAbre = serie && !temEp;   // sem episodio conhecido o toque so abre a pagina
+  if (principal) {
+    Uint32 t = SDL_GetTicks();
+    float dt = retTick ? (float)(Uint32)(t - retTick) * 0.001f : 0.0f;
+    retTick = t;
+    if (!focoHero) retFoco = -1;
+    for (int i = 0; i < RET_N; i++)
+      retMola[i] = ajustes_animacoes_reduzidas() ? (float)(retFoco == i)
+                 : anim_mola(retMola[i], retFoco == i ? 1.0f : 0.0f, fminf(dt, 0.08f), NV_MOLA_FOCO);
+    retSoAbre = soAbre;
+  }
+
+  // Rotulo do primario: o mesmo do detalhe ("Continuar T1:E3" / "Assistir").
+  char rot[96];
+  const char *verbo = i18n(ci->progresso > 0 ? "Continuar" : "Assistir");
+  if (temEp) snprintf(rot, sizeof rot, i18n("%s T%d:E%d"), verbo, ci->temporada, ci->episodio);
+  else snprintf(rot, sizeof rot, "%s", soAbre ? i18n("Ver título") : verbo);
+
+  // Meta sem o episodio quando a pilula ja o diz.
+  char meta[288];
+  hero_meta_linha(ci, meta, sizeof meta);
+  if (temEp) {
+    char cab[192];
+    snprintf(cab, sizeof cab, "S%d E%d%s%s", ci->temporada, ci->episodio,
+             ci->nomeEpisodio[0] ? "  \xe2\x80\xa2  " : "", ci->nomeEpisodio);
+    size_t n = strlen(cab);
+    if (!strncmp(meta, cab, n)) {
+      const char *r = meta + n;
+      if (!strncmp(r, "  \xe2\x80\xa2  ", 7)) r += 7;
+      memmove(meta, r, strlen(r) + 1);
+    }
+  }
+  // Selos: classificacao e a marca do IMDb no fator pequeno (16 pt de altura),
+  // a nota ao lado no da meta, como no mock. Larguras em unidades da home.
+  const char *selo = ci->classificacao[0] ? ci->classificacao : NULL;
+  int nota = ajustes_hero_notas() ? imdbnota_obter(ci->imdb, ci->nota, serie) : 0;
+  float wSelo = 0.0f, wMarca = 0.0f, kP, kG, kM;
+  TxtLinha ln = {0}, lm = {0};
+  kP = retEm(fP, eh);
+  if (selo) wSelo = badge_largura(selo) / kP;
+  if (nota > 0) wMarca = badge_imdb_marca(0, 0, 0.0f) / kP;
+  kG = retEm(fG, eh);
+  if (nota > 0) { char t[8]; badge_nota_texto(t, sizeof t, nota); ln = txt_linha(TXT_CAPTION2, t, 235, 235, 235, 255); }
+  kM = retEm(fMeta, eh);
+  if (meta[0]) lm = txt_linha_corta(TXT_HERO_META, meta, 235, 235, 235, 255, pw * kM);
+  gfx_escala_sair(eh);
+  const float gSelo = retPt(8.0f), gNota = retPt(5.0f);
+  float wNota = nota > 0 ? wMarca + gNota + (float)ln.w / kG : 0.0f;
+  int temSelos = wSelo > 0.0f || wNota > 0.0f;
+
+  // De baixo para cima: discos, pilula, selos, meta, logo.
+  float yDisco = base - dC;
+  float yPil = yDisco - retPt(RET_PILULA_GAP_PT) - hBtn;
+  float hSelo = retPt(RET_SELO_H_PT);
+  float ySelo = yPil - retPt(RET_SELO_GAP_PT) - hSelo;
+  float yFim = temSelos ? ySelo - retPt(RET_META_GAP_PT) : yPil - retPt(RET_SELO_GAP_PT);
+  float yMeta = yFim - (meta[0] ? (float)lm.h / kM : 0.0f);
+  float baseLogo = (meta[0] ? yMeta : yFim) - retPt(RET_LOGO_GAP_PT);
+
+  // Logo (o mesmo pedido e o mesmo cache do destaque largo), centrado.
+  const char *urlLogo = (!principal || detail_aberto() || player_aberto())
+                      ? artehero_logo_sessao(ci) : artehero_logo_sessao_observar(ci);
+  float maxWLogo = heroLogoMaxW(lay, cheio);
+  GLuint tlogo = urlLogo ? tex_obter_logo_larg_qualquer(urlLogo, maxWLogo) : 0;
+  if (principal) {
+    if (!heroTempo.id[0]) heroTempoInicio(heroAtual);
+    if (!strcmp(heroTempo.id, ci->imdb)) {
+      titulo_tempo_logo(&heroTempo, "hero", urlLogo, tlogo, aTexto * heroEntra > 0.05f);
+      if (aCopy > 0.05f) titulo_tempo_info(&heroTempo, "hero", ci, 0);
+    }
+    if (urlLogo) corviva_definir_logo(urlLogo, CORVIVA_HOME);
+  }
+  int mostraNome = heroNomeLogo(ci, urlLogo && tex_falhou(urlLogo) ? NULL : urlLogo,
+                                tlogo != 0, desc_tmdb_idioma());
+  float aLogo = aTexto * heroEntra * (1.0f - cin);
+  if (tlogo && !mostraNome) {
+    float ap = tex_aspecto(urlLogo);
+    if (ap <= 0.0f) ap = 4.0f;
+    float h = retPt(RET_LOGO_H_PT) * ajustes_hero_escala_logo(), w = h * ap;
+    float wMax = fminf(maxWLogo, pw);
+    if (w > wMax) { w = wMax; h = w / ap; }
+    gfx_tex_aspect_atual = 0.0f;
+    gfx_rect((GfxRect){ cx - w * 0.5f, baseLogo - h, w, h }, tlogo,
+             tex_marca_escura(urlLogo) ? GFX_MARCA : GFX_TEXTO, 0, 0, 0, 0, 1, 1, 1, aLogo);
+  } else if (ci->titulo[0]) {
+    TxtLinha tit = txt_linha_corta(TXT_TITULO2, ci->titulo, 255, 255, 255, 255, pw);
+    txt_desenhar_alpha(tit, cx - tit.w * 0.5f, baseLogo - (float)tit.h, aLogo);
+  }
+  if (a <= 0.004f) return;
+
+  if (meta[0]) {
+    retEm(fMeta, eh);
+    txt_desenhar_alpha(lm, cx * kM - lm.w * 0.5f, yMeta * kM, a);
+    gfx_escala_sair(eh);
+  }
+  if (temSelos) {
+    float x = cx - (wSelo + wNota + (wSelo > 0.0f && wNota > 0.0f ? gSelo : 0.0f)) * 0.5f;
+    float yc = ySelo + hSelo * 0.5f;
+    retEm(fP, eh);
+    if (selo) { badge_desenhar(x * kP, yc * kP - BADGE_H * 0.5f, selo, BADGE_NEUTRO, a); x += wSelo + gSelo; }
+    if (nota > 0) badge_imdb_marca(x * kP, yc * kP - BADGE_H * 0.5f, a);
+    if (nota > 0) {
+      retEm(fG, eh);
+      txt_desenhar_alpha(ln, (x + wMarca + gNota) * kG, yc * kG - ln.h * 0.5f, a);
+    }
+    gfx_escala_sair(eh);
+  }
+
+  // Primario: a superficie da pilula primaria do app (realce) com o triangulo
+  // e o rotulo do Play do detalhe, grupo centrado.
+  { float f = principal ? retMola[RET_PLAY] : 0.0f;
+    GfxRect rp = { cx - pw * 0.5f, yPil, pw, hBtn };
+    if (principal) retAlvoDefinir(RET_PLAY, rp, a > 0.3f && cin < 0.005f);
+    rp = retEscala(rp, 1.0f + (NV_DETW2_FOCO_SX - 1.0f) * f);
+    int tb = botao_superficie(rp, 1.0f, a);
+    float t = (float)tb / 255.0f, s = rp.h / NV_DETW2_BTN_H;
+    float iw = soAbre ? 0.0f : NV_DETW2_BTN_ICONE_W * s, ih = NV_DETW2_BTN_ICONE_H * s;
+    float gi = soAbre ? 0.0f : NV_DETW2_BTN_GAPI * s;
+    retEm(fG, eh);
+    TxtLinha lb = txt_linha_corta(TXT_DET_BOTAO, rot, tb, tb, tb, 255,
+                                  (rp.w - NV_DETW2_BTN_PADX * 2 * s - iw - gi) * kG);
+    float lw = (float)lb.w / kG;
+    float x = rp.x + (rp.w - (iw + gi + lw)) * 0.5f;
+    txt_desenhar_alpha(lb, (x + iw + gi) * kG, (rp.y + rp.h * 0.5f) * kG - lb.h * 0.5f, a);
+    gfx_escala_sair(eh);
+    if (!soAbre)
+      gfx_rect((GfxRect){ x, rp.y + (rp.h - ih) * 0.5f, iw, ih }, 0, GFX_PLAY,
+               0, 0, 0, 0.0f, t, t, t, a); }
+
+  // Discos do detalhe: biblioteca, fontes, trailer, mais.
+  { static const char *const ICONE[RET_N] = { NULL, "mais", "aj_layers", "aj_clapperboard", "aj_ellipsis" };
+    float x = cx - (4.0f * dC + 3.0f * gapD) * 0.5f;
+    for (int i = RET_LISTA; i < RET_N; i++, x += dC + gapD) {
+      float f = principal ? retMola[i] : 0.0f;
+      GfxRect rc = { x, yDisco, dC, dC };
+      if (principal) retAlvoDefinir(i, rc, a > 0.3f && cin < 0.005f);
+      rc = retEscala(rc, 1.0f + (NV_DETW2_FOCO_SY - 1.0f) * f);
+      botao_disco(rc, i == RET_LISTA && ci->naLista ? "check" : ICONE[i], f, a);
+    } }
+}
+
+// Toque num botao do destaque em pe: o mesmo foco do toque no destaque, o
+// item publicado na hora (a abertura parte da arte) e o pedido da acao.
+static void retFocar(int i, int b) {
+  (void)b;
+  ponteiroHero(0, 0);
+  retFoco = i;
+}
+static void retAtivar(int i, int b) {
+  const CatItem *ci = cat_item_exato(heroAtual);
+  retFocar(i, b);
+  if (!ci) return;
+  itemFoco.indice = heroAtual;
+  itemFoco.rect = heroArteRect;
+  itemFoco.arte = arteDoItem(ci, NULL);
+  itemFoco.titulo = ci->titulo;
+  itemFoco.genero = ci->genero;
+  itemFoco.meta = ci->meta;
+  publicarItemFoco();
+  pedidoAcaoDetalhe = -1;
+  switch (i) {
+    case RET_PLAY:    if (retSoAbre) pedidoAbrir = 1; else pedidoTocar = 1; break;
+    case RET_LISTA:   pedidoAbrir = 1; pedidoAcaoDetalhe = DETAIL_BARRA_LISTA; break;
+    case RET_FONTES:  pedidoAbrir = 1; pedidoAcaoDetalhe = DETAIL_BARRA_FONTES; break;
+    case RET_TRAILER: pedidoAbrir = 1; pedidoAcaoDetalhe = DETAIL_BARRA_TRAILER; break;
+    default:          abrirMenuCartaz(); break;
+  }
+}
+#endif
+int home_pediu_acao_detalhe(void) {
+#ifdef NV_TOUCH_UI
+  int v = pedidoAcaoDetalhe; pedidoAcaoDetalhe = -1; return v;
+#else
+  return -1;
+#endif
 }
 
 // `saida` = 0..1 de quanto o detalhe ja tomou a tela. So o TEXTO do hero sai
@@ -5731,6 +5982,21 @@ static void desenhaHero(Uint32 agora, float saida) {
   float x = homeConteudoX();
   float xAnterior = x + dAnt * r.w;
   float xAtual = x + dAtu * r.w;
+#ifdef NV_TOUCH_UI
+  if (homeRetratoTelefone()) {
+    // Em pe: o bloco centrado na area de conteudo, sem "Ver titulo" e sem pontos.
+    float cx = (NV_TELA_W - ANC(nv_inset_d)) * 0.5f;
+    if (deslizando && cAnt && (cAnt != ci || toqueHero.estado))
+      desenhaCopiaRetrato(cAnt, 0, cx + dAnt * r.w, base, lay, cheio, aTexto, aCopy, cin);
+    if (!(toqueHero.estado && toqueHero.alvo < 0))
+      desenhaCopiaRetrato(ci, !toqueHero.estado, cx + dAtu * r.w, base, lay, cheio,
+                          aTexto, aCopy, cin);
+    if (toqueHero.estado || saida > 0.001f) memset(retAlvoOk, 0, sizeof retAlvoOk);
+    if (toqueHero.estado) return;
+    heroPublicarFoco(ci, aTexto);
+    return;
+  }
+#endif
   // TROCA DESLIZADA: o bloco do titulo que sai anda junto com a arte dele, e o
   // do que entra vem colado atras, na mesma distancia (a largura da arte).
   if (deslizando && cAnt && (cAnt != ci
@@ -7910,8 +8176,22 @@ static float desenhaTituloFil(int r, float y, const char *rot, int cr, int cg, i
     txt_desenhar(*tl, x0, y);
     return x0 + tl->w;
   }
-  *tl = txt_linha_corta(TXT_ROW_TITULO, rot, cr, cg, cb, 255, maxW);
-  if (desenhar) txt_desenhar(*tl, x0, y);
+  if (homeRetratoTelefone()) {
+    // EM PE o titulo segue o mock: 18 pt, o topo 30 pt acima dos cartoes,
+    // rasterizado no fator dele. `tl` volta em unidades da camada, com o
+    // centro no do titulo (a origem e o acento centram nele).
+    const float eh = gfx_escala(), yT = y + NV_LEGACY_ROW_HEAD_H - retPt(RET_TIT_ACIMA_PT);
+    const float kT = eh / retFator(RET_TIPO_P);
+    gfx_escala_sair(retFator(RET_TIPO_P));
+    *tl = txt_linha_corta(TXT_ROW_TITULO, rot, cr, cg, cb, 255, maxW * kT);
+    if (desenhar) txt_desenhar(*tl, x0 * kT, yT * kT);
+    gfx_escala_sair(eh);
+    tl->w = (int)((float)tl->w / kT + 0.5f);
+    tl->h = (int)((float)tl->h / kT + 2.0f * (yT - y) + 0.5f);
+  } else {
+    *tl = txt_linha_corta(TXT_ROW_TITULO, rot, cr, cg, cb, 255, maxW);
+    if (desenhar) txt_desenhar(*tl, x0, y);
+  }
   if (est == 3) {   // ACENTO
     const float bw = 10.0f + 44.0f * k, bh = 10.0f - 3.0f * k;
     const float bx = x0 + tl->w + 16.0f, cy = y + tl->h * 0.52f;
@@ -7970,6 +8250,9 @@ static void home_desenhar_(Uint32 agora) {
   desenhaFundo(agora);
   float pd = detail_progresso();
   const int vazioQr = homevazio_ativo(nFileiras);   // sem add-ons: o cartao com o QR no lugar da Home
+#ifdef NV_TOUCH_UI
+  memset(retAlvoOk, 0, sizeof retAlvoOk);
+#endif
   if ((ajustes_hero_ligado() || dinPalcoSplit() || palcoFundoModo != PALCO_ATUAL) &&
       !vazioQr && palcoFundoAlpha > 0.004f) {
     gfx_opacidade_grupo = palcoFundoModo == PALCO_ATUAL ? palcoFundoAlpha : 1.0f;
@@ -7993,6 +8276,13 @@ static void home_desenhar_(Uint32 agora) {
                     ponteiroHero,
 #endif
                     NULL, 0, 0);
+#ifdef NV_TOUCH_UI
+    // Os botoes do destaque em pe ficam por cima do alvo amplo dele.
+    for (int i = 0; i < RET_N; i++)
+      if (retAlvoOk[i])
+        ponteiro_alvo(retAlvo[i].x, retAlvo[i].y, retAlvo[i].w, retAlvo[i].h,
+                      retFocar, retAtivar, i, 0);
+#endif
   }
 
   // ABERTURA DO DETALHE: as fileiras DESCEM e apagam; a arte de fundo fica.

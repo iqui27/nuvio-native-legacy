@@ -72,15 +72,16 @@ static const Fil FILS[] = {
 #define NF (getenv("NV_COL") ? 3 : (int)(sizeof FILS / sizeof *FILS))
 
 static SDL_Window *janela;
+static int shotW = 1920, shotH = 1080;
 static const char *dirDados;
 static double fillUlt, fillVisUlt, modoUlt[GFX_NMODOS]; static int rectUlt;
 
 static void gravar(const char *bmp) {
-  unsigned char *pix = malloc(1920 * 1080 * 4);
-  SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
+  unsigned char *pix = malloc(shotW * shotH * 4);
+  SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, shotW, shotH, 32, SDL_PIXELFORMAT_RGBA32);
   int y;
   assert(pix && s);
-  glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pix);
+  glReadPixels(0, 0, shotW, shotH, GL_RGBA, GL_UNSIGNED_BYTE, pix);
   // NV_TRAILER_CARTAZ: o PLANO DE VIDEO simulado sob a UI, como a TV compoe o
   // framebuffer pre-multiplicado (final = ui + video * (1 - alfa da UI)). O
   // "video" e uma grade colorida de tela cheia: onde ela aparece e o furo.
@@ -100,8 +101,8 @@ static void gravar(const char *bmp) {
       q[3] = 255;
     }
   }
-  for (y = 0; y < 1080; y++)
-    memcpy((char *)s->pixels + y * s->pitch, pix + (1079 - y) * 1920 * 4, 1920 * 4);
+  for (y = 0; y < shotH; y++)
+    memcpy((char *)s->pixels + y * s->pitch, pix + (shotH - 1 - y) * shotW * 4, shotW * 4);
   if (getenv("NV_HERO_FOCUS")) assert(IMG_SavePNG(s, bmp) == 0);
   else assert(SDL_SaveBMP(s, bmp) == 0);
   SDL_FreeSurface(s);
@@ -195,6 +196,12 @@ static void ajusta(int layout, int vidro) {
   if (getenv("NV_AJ")) fprintf(a, "%s\n", getenv("NV_AJ"));   // ex.: "heroSectionEnabled 1"
   fclose(a);
   ajustes_dir(dirDados);
+  if (getenv("NV_HERO_PHONE")) {
+    layout_tela_definir(shotW, shotH);
+    layout_modo_definir(1);
+    gfx_tamanho_alvo(shotW, shotH);
+    assert(layout_modo_mobile());
+  }
   // Migrations may override vidroLocal; screenshots use the real settings action.
   ajustes_definir_vidro(vidro);
   assert(ajustes_vidro() == vidro);
@@ -221,6 +228,7 @@ int main(int argc, char **argv) {
     fprintf(stderr, "recuse: NUVIO_DADOS tem de ser a pasta temporaria do teste\n");
     return 1;
   }
+  if (getenv("NV_HERO_PHONE")) { shotW = 390; shotH = 844; }
   (void)argc;
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
@@ -229,14 +237,14 @@ int main(int argc, char **argv) {
   // O furo do trailer so existe no ALFA do quadro: sem canal alfa ele some.
   if (getenv("NV_TRAILER_CARTAZ")) SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
   janela = SDL_CreateWindow("Nuvio: layouts da home", SDL_WINDOWPOS_CENTERED,
-                            SDL_WINDOWPOS_CENTERED, 1920, 1080,
+                            SDL_WINDOWPOS_CENTERED, shotW, shotH,
                             SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
   assert(janela);
   gl = SDL_GL_CreateContext(janela);
   assert(gl);
   SDL_GL_SetSwapInterval(0);
-  glViewport(0, 0, 1920, 1080);
-  gfx_tamanho_alvo(1920, 1080);
+  glViewport(0, 0, shotW, shotH);
+  gfx_tamanho_alvo(shotW, shotH);
   assert(gfx_iniciar());
   // NV_EFEITOS=1 leves, 2 minimos (os niveis de gpunivel.h sem o 720p).
   if (getenv("NV_EFEITOS")) {

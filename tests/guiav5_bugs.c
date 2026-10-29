@@ -25,20 +25,34 @@ static char *category_fixture(const char *,const char *,const char *,const char 
 #include <assert.h>
 
 static int failures;
+static int preview_volume = -1;
+static void record_volume(int pct) { preview_volume = pct; }
+static void guide_audio_tick(void) {
+#define video_volume record_volume
+#include "guide_audio.inc"
+#undef video_volume
+}
 static int saw_channel_a, saw_channel_b;
 static int category_failure, category_calls;
 static char *category_fixture(const char *server,const char *user,const char *password,const char *request,int timeout,int *status){
   (void)server;(void)user;(void)password;(void)timeout;*status=200;
   if(strstr(request,"categories")){
     category_calls++;
+    if(category_failure==4)return strdup("[{\"category_id\":\"7\",\"category_name\":\"Drama\"}]");
     if(category_failure==1){*status=503;return NULL;}
     if(category_failure==2)return strdup("{}");
     if(category_failure==3)return strdup("[");
     return strdup("[{\"category_id\":\"7\",\"category_name\":\"Drama\"}]");
   }
+  if(category_failure==4&&strstr(request,"category_id=")){*status=503;return NULL;}
   return strdup("[{\"stream_id\":11,\"series_id\":12,\"name\":\"Fixture\",\"category_id\":\"7\"}]");
 }
 static void *failed_catalog(void *unused){(void)unused;return NULL;}
+static void finish_catalog(void){
+  Uint32 began=SDL_GetTicks();
+  while(atomic_load(&busy)&&SDL_GetTicks()-began<3000){g5ui_update();SDL_Delay(1);}
+  assert(!atomic_load(&busy));
+}
 #define CHECK(ok, name) do { if (!(ok)) { fprintf(stderr, "FAIL: %s\n", name); failures++; } else puts("PASS: " name); } while (0)
 
 int main(void) {
@@ -82,6 +96,22 @@ int main(void) {
   CHECK(!guia_preview_no_ar(), "idle preview remains dark until a video frame is ready");
   video_simular(&sim); player_definir_fonte("https://example.invalid/live.m3u8");
   CHECK(guia_preview_no_ar(), "accepted preview source reveals video while guide stays open");
+  /* Record the real app dispatch, including a previously muted player. */
+  snprintf(screen,sizeof screen,"grade");
+  preview_volume=0;guide_audio_tick();
+  CHECK(preview_volume==100,"Grade preview defaults to audible and clears prior mute");
+  ajustes_definir_guia_previa_sem_som(1);guide_audio_tick();
+  CHECK(preview_volume==0,"explicit guide mute sends volume zero");
+  ajustes_definir_guia_previa_sem_som(0);guide_audio_tick();
+  CHECK(preview_volume==100,"guide audio toggle restores player volume");
+  ajustes_definir_guia_previa_sem_som(1);guide_audio_tick();
+  snprintf(screen,sizeof screen,"cartoes");guide_audio_tick();
+  CHECK(preview_volume==0,"saved guide mute also applies to Cards");
+  player_restaurar();guide_audio_tick();
+  CHECK(preview_volume==100,"full-screen handoff restores sound after muted preview");
+  player_minimizar_para_guia(x,y,w,h);guide_audio_tick();
+  CHECK(preview_volume==0,"returning to guide respects saved mute");
+  ajustes_definir_guia_previa_sem_som(0);guide_audio_tick();
   /* The now-watching card must describe the stream, even with another row selected. */
   snprintf(screen,sizeof screen,"grade");snprintf(gv_pagina,sizeof gv_pagina,"grade");
   gv_lin=0;gv_snap_force=1;gv_snapshot();
@@ -90,25 +120,27 @@ int main(void) {
   saw_channel_a=saw_channel_b=0;gv_hero(GV_BASE);
   CHECK(saw_channel_b&&!saw_channel_a,"card and preview describe the same playing channel despite grid focus");
   float px,py,pw,ph;guia_preview_rect(&px,&py,&pw,&ph);
-  CHECK(fabsf(pw/ph-16.0f/9)<.001f,"preview frame matches default video aspect without inner bands");
+  CHECK(px==GV_MX+GV_MW*.51f&&py==GV_CHIP_Y&&pw==GV_MW*.49f,
+        "Grade preview occupies the owner's marked right frame");
   VideoSimulacao sized=sim;sized.largura=720;sized.altura=576;video_simular(&sized);
   guia_preview_rect(&px,&py,&pw,&ph);
-  CHECK(fabsf(pw/ph-1.25f)<.001f,"preview follows source aspect without stretching");
+  CHECK(pw==GV_MW*.49f&&ph==GV_BASE+gv_hh+40-GV_CHIP_Y,
+        "Grade frame stays fixed across source aspect changes");
   video_simular(&sim);
   gv_zone=2;gv_activate();
   CHECK(guia_pediu_restaurar(),"OK on the playing card restores its channel rather than selected row");
   /* Pointer selection must update the zone before the next remote key. */
-  gv_zone=0;gv_lin=1;point_focus(1201,0);gv_event(SDLK_RIGHT,0);gv_event(SDLK_UP,0);
-  CHECK(gv_zone==5&&focus>=1100&&focus<=1106,"category Right then Up reaches top tabs after pointer focus");
-  gv_zone=0;gv_lin=0;gv_npins=1;
-  const int up[]={1,2,4,5},down[]={4,2,1,0};
-  for(unsigned i=0;i<4;i++){gv_event(SDLK_UP,0);CHECK(gv_zone==up[i],"Up follows grid, pins, preview, chips, tabs");}
-  for(unsigned i=0;i<4;i++){gv_event(SDLK_DOWN,0);CHECK(gv_zone==down[i],"Down retraces tabs, chips, preview, pins, grid");}
+  gv_zone=0;gv_lin=1;point_focus(1202,0);gv_event(SDLK_RIGHT,0);gv_event(SDLK_UP,0);
+  CHECK(gv_zone==0&&gv_lin==1,"source footer Up restores grid after pointer focus");
+  gv_zone=0;gv_top=0;gv_lin=0;gv_npins=1;
+  const int up[]={1,5,5},down[]={5,1,0};
+  for(unsigned i=0;i<3;i++){gv_event(SDLK_UP,0);CHECK(gv_zone==up[i],"Up follows grid, pins, actions, tabs");}
+  for(unsigned i=0;i<3;i++){gv_event(SDLK_DOWN,0);CHECK(gv_zone==down[i],"Down retraces tabs, actions, pins, grid");}
   gv_npins=0;gv_zone=0;gv_event(SDLK_UP,0);
-  CHECK(gv_zone==2,"Up skips absent pinned row");
+  CHECK(gv_zone==5&&focus==1104,"Up skips absent pinned row");
   gv_zone=0;gv_npins=1;
-  for(int i=0;i<4;i++)gv_event(SDLK_UP,0);
-  for(int i=0;i<4;i++){gv_event(SDLK_ESCAPE,0);CHECK(gv_zone==down[i],"Back retraces the vertical focus chain");}
+  for(int i=0;i<3;i++)gv_event(SDLK_UP,0);
+  for(int i=0;i<3;i++){gv_event(SDLK_ESCAPE,0);CHECK(gv_zone==down[i],"Back retraces the vertical focus chain");}
   gv_side_open=0;gv_exit_armed=0;
   snprintf(screen,sizeof screen,"cartoes");snprintf(gv_pagina,sizeof gv_pagina,"cartoes");
   gv_lin=1;gv_top=1;gv_card=1;gv_zone=6;focus=42;
@@ -123,18 +155,19 @@ int main(void) {
   player_encerrar();
   snprintf(screen,sizeof screen,"grade");snprintf(gv_pagina,sizeof gv_pagina,"grade");
   gv_hh=208;guia_preview_rect(&x,&y,&w,&h);
-  CHECK(fabsf(w/h-16.0f/9)<.001f && h==208,
-        "compact guide exports its enlarged card preview geometry");
+  CHECK(w==GV_MW*.49f&&h==GV_BASE+208+40-GV_CHIP_Y,
+        "preview follows every frame of the hero spring");
   gv_hh=GV_HERO_H;guia_preview_rect(&x,&y,&w,&h);
-  CHECK(fabsf(w/h-16.0f/9)<.001f && h==GV_HERO_H,
-        "expanded guide exports its enlarged card preview geometry");
+  CHECK(w==GV_MW*.49f&&h==GV_BASE+GV_HERO_H+40-GV_CHIP_Y,
+        "expanded guide exports the enlarged right frame");
   /* Sports must remain usable without ESPN events or any EPG. */
   stagingZerar();
   int sports_source=sFonte(LTV_M3U,"sports-fixture","Fixture","");
   const char *sports_groups[]={"SPORTS","Esportes","DAZN","ESPN","News"};
   for(int i=0;i<5;i++){
     char id[32];snprintf(id,sizeof id,"fixture-%d",i);
-    GCru c={0};c.id=id;c.nome=i==4?"CNN":"Live fixture";c.grupo=sports_groups[i];
+    char name[48];snprintf(name,sizeof name,"Live fixture %d",i);
+    GCru c={0};c.id=id;c.nome=i==4?"CNN":name;c.grupo=sports_groups[i];
     c.logo=c.desc=c.epgId=c.tvgNome=c.url=c.ua=c.ref="";
     sGrupoInfo(sports_source,c.grupo,1);sCanalAdd(sports_source,&c);sLtvF[sports_source].total++;
   }
@@ -148,38 +181,48 @@ int main(void) {
   source_loaded=0;draft.type=1;persist();
   CHECK(!source_loaded,"saving source settings does not mark an unfetched catalog loaded");
   snprintf(screen,sizeof screen,"vod-filmes");source_loaded=1;
-  operation=2;worker_ok=worker_cancel=0;worker_profile=profile;
+  operation=2;worker_ok=worker_cancel=0;worker_profile=profile;worker_generation=catalog_generation;
   snprintf(worker_account,sizeof worker_account,"%s",account);
-  assert(!pthread_create(&worker,NULL,failed_catalog,NULL));
+  assert(!pthread_create(&worker,NULL,failed_catalog,NULL));pthread_detach(worker);
   atomic_store(&busy,1);atomic_store(&ready,1);
   g5ui_update();
   CHECK(!source_loaded&&!atomic_load(&busy),"failed VOD publication clears loaded flag for next open");
-  /* Exercise worker publication, fallback grouping and retry through real UI entry. */
+  /* Browser entry must retain full-list fallback for broken category endpoints. */
   assert(xtream_conta_definir("http://fixture.invalid","fixture","fixture"));
-  for(category_failure=1;category_failure<=3;category_failure++){
+  for(category_failure=1;category_failure<=4;category_failure++){
     clear_catalog();memset(&draft,0,sizeof draft);draft.movies=draft.series=draft.live=1;
     use_saved=0;category_calls=0;action[0]=0;
     g5ui_open("vod-filmes");
     assert(atomic_load(&busy));
-    while(!atomic_load(&ready))SDL_Delay(1);
-    g5ui_update();
-    CHECK(worker_ok&&count==3&&total==3&&source_loaded&&category_calls==3,
+    finish_catalog();
+    CHECK(worker_ok&&count==3&&total==3&&source_loaded&&category_calls>=3,
           "category failure still publishes movie, series and live lists");
-    CHECK(count==3&&!strcmp(inventory[0].group,"Uncategorized")&&
-          !strcmp(inventory[1].group,"Uncategorized")&&!strcmp(inventory[2].group,"Uncategorized"),
+    CHECK(category_failure==4||(count==3&&!strcmp(inventory[0].group,"Uncategorized")&&
+          !strcmp(inventory[1].group,"Uncategorized")&&!strcmp(inventory[2].group,"Uncategorized")),
           "unavailable or malformed categories use Uncategorized");
     int saved_failure=category_failure;category_failure=0;
+    int calls_before=category_calls;
     g5ui_open("vod-filmes");
-    CHECK(atomic_load(&busy),"next VOD open retries missing category metadata");
-    if(atomic_load(&busy)){
-      while(!atomic_load(&ready))SDL_Delay(1);
-      g5ui_update();
-    }
-    CHECK(count==3&&source_loaded&&category_calls==6&&!strcmp(inventory[0].group,"Drama")&&
+    CHECK(saved_failure==4||atomic_load(&busy),"browser retries missing category metadata");
+    finish_catalog();
+    CHECK(count==3&&source_loaded&&category_calls>=calls_before&&!strcmp(inventory[0].group,"Drama")&&
           !strcmp(inventory[1].group,"Drama")&&!strcmp(inventory[2].group,"Drama"),
           "category retry restores provider names without losing lists");
     category_failure=saved_failure;
   }
+  category_failure=0;clear_catalog();stagingZerar();
+  for(int i=0;i<2;i++){
+    int f=sFonte(LTV_M3U,i?"list-b":"list-a",i?"List B":"List A","");
+    mixedVodAdd(f,G5_MOVIE,"same-id",i?"List B title":"List A title","http://fixture.invalid/movie.mp4","","Drama");
+  }
+  adotarStaging();estado=G_PRONTO;
+  g5ui_open("vod-filmes");finish_catalog();
+  int found[2]={0};
+  for(int i=0;i<vod_data.count;i++){
+    G5Item *item=vod_item(i);
+    found[0]+=!strcmp(item->name,"List A title");found[1]+=!strcmp(item->name,"List B title");
+  }
+  CHECK(found[0]==1&&found[1]==1,"lazy publication keeps both lists with identical item IDs");
   SDL_Quit();
   return failures ? 1 : 0;
 }

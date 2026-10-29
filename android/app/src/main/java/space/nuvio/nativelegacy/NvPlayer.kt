@@ -304,8 +304,23 @@ object NvPlayer {
         } catch (e: UnsatisfiedLinkError) { Log.w(TAG, "cache sem lib: $e") }
     }
 
+    private var volumePct = 100
+    private fun relatarPreviewAudio() {
+        val p = player ?: return
+        if (!temJanela) return
+        var count = 0
+        var selected = -1
+        for (g in p.currentTracks.groups) if (g.type == C.TRACK_TYPE_AUDIO) {
+            for (i in 0 until g.length) {
+                if (g.isTrackSelected(i)) selected = count
+                count++
+            }
+        }
+        relatarAudio(sessao, "preview muted=${volumePct == 0} volume=${p.volume} audioTracks=$count selected=$selected")
+    }
+
     private fun aplicarGanho() {
-        player?.volume = GanhoMath.volumePlayer(ganhoPct)
+        player?.volume = volumePct / 100f * GanhoMath.volumePlayer(ganhoPct)
         processador?.ganho = GanhoMath.reforco(ganhoPct)
     }
 
@@ -1188,7 +1203,11 @@ object NvPlayer {
             }
         }
     }
-    @JvmStatic fun volume(pct: Int) { principal.post { player?.volume = pct.coerceIn(0, 100) / 100f } }
+    @JvmStatic fun volume(pct: Int) { principal.post {
+        volumePct = pct.coerceIn(0, 100)
+        aplicarGanho()
+        relatarPreviewAudio()
+    } }
     // F07: cache limit for the NEXT opens (MB, 0 = off) and the session volume
     // 0..200 (above 100 only while the audio is PCM).
     // #338: buffer size in MiB (0 Auto; C already clamped it to free RAM), sticky, read at open.
@@ -1492,6 +1511,7 @@ object NvPlayer {
             liberar()
             // O C envia ganho/pausa depois de abrir; a espera nao pode apaga-los.
             ganhoPct = 100
+            volumePct = 100
             if (!reabrindo) pausaPedida = pausado
         }
         // MStar/Amlogic: o overlay e o decoder antigos precisam sair antes do novo.
@@ -1566,6 +1586,7 @@ object NvPlayer {
             // A guide window may arrive while this open waits for decoder release.
             // liberar() cleared the previous session; calculate the new request now.
             if (temJanela) calcularJanela() else aplicarEncaixe()
+            relatarPreviewAudio()
 
             if (preparada == null) {
                 val mediaItem = itemMidia(url)
@@ -2254,6 +2275,7 @@ object NvPlayer {
         override fun onTracksChanged(tracks: Tracks) {
             if (!atual(minha)) return
             publicarFaixas(tracks)
+            relatarPreviewAudio()
             for (g in tracks.groups) if (g.type == C.TRACK_TYPE_AUDIO) {
                 for (i in 0 until g.length) if (g.isTrackSelected(i)) {
                     val f = g.getTrackFormat(i)

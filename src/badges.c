@@ -420,7 +420,7 @@ float badge_desenhar(float x, float y, const char *texto, BadgeEstilo estilo, fl
   txt_desenhar_alpha(l, x + BADGE_PADX, y + (BADGE_H - (float)l.h) * 0.5f, a);
   return p.w;
 }
-static void notaTexto(char *dst, size_t n, int nota) {
+void badge_nota_texto(char *dst, size_t n, int nota) {
   // Separador decimal pelo idioma: "8,4" em portugues, "8.4" em ingles — em
   // ingles a virgula le como milhar interrompido (ver recomenda.c).
   snprintf(dst, n, idioma_ponto_decimal(ajustes_idioma()) ? "%d.%d" : "%d,%d", nota / 10, nota % 10);
@@ -433,24 +433,30 @@ static float imdbMarcaLargura(void) {
 float badge_imdb_largura(int nota) {
   char t[8]; TxtLinha l;
   if (nota <= 0) return 0.0f;
-  notaTexto(t, sizeof t, nota);
+  badge_nota_texto(t, sizeof t, nota);
   l = txt_linha(TXT_CAPTION2, t, 0, 0, 0, 255);
   return imdbMarcaLargura() + BADGE_IMDB_GAP + (float)l.w;
 }
 float badge_imdb(float x, float y, int nota, int escuro, float a) {
-  char t[8]; TxtLinha l, lm; GfxRect m;
+  char t[8]; TxtLinha l;
   int c = escuro ? ajustes_tinta_foco() : 235;
   if (nota <= 0) return 0.0f;
-  notaTexto(t, sizeof t, nota);
+  badge_nota_texto(t, sizeof t, nota);
   l = txt_linha(TXT_CAPTION2, t, c, c, c, 255);
+  float mw = badge_imdb_marca(x, y, a);
+  txt_desenhar_alpha(l, x + mw + BADGE_IMDB_GAP, y + (BADGE_H - (float)l.h) * 0.5f, a);
+  return mw + BADGE_IMDB_GAP + (float)l.w;
+}
+float badge_imdb_marca(float x, float y, float a) {
+  TxtLinha lm; GfxRect m;
   m.x = x; m.y = y; m.w = imdbMarcaLargura(); m.h = BADGE_H;
+  if (a <= 0.0f) return m.w;
   // #F5C518 e o amarelo da marca; o texto e preto porque e assim que ela
   // existe — nao segue o realce nem a tinta da linha.
   gfx_cor(m, BADGE_IMDB_R / BADGE_H, 0.961f, 0.773f, 0.094f, a);
   lm = txt_linha(TXT_MINI, "IMDb", 10, 10, 10, 255);
   txt_desenhar_alpha(lm, m.x + (m.w - (float)lm.w) * 0.5f, m.y + (m.h - (float)lm.h) * 0.5f, a);
-  txt_desenhar_alpha(l, x + m.w + BADGE_IMDB_GAP, y + (BADGE_H - (float)l.h) * 0.5f, a);
-  return m.w + BADGE_IMDB_GAP + (float)l.w;
+  return m.w;
 }
 
 // CHECK DE ASSISTIDO (U4, 205): UM desenhador para todos os estilos de cartao.

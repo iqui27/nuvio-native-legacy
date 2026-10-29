@@ -633,7 +633,7 @@ static void desenhaBotoes(float x, float y, float w, float h, float a) {
     rolaBotoes = rolagemBotoes(h);
     scroll = rolaBotoes;
   }
-  gfx_recorte(x - 8.0f, y - 6.0f, w + 16.0f, h + 12.0f);
+  GfxRecorteAnt clip = gfx_recorte_dentro(x - 8.0f, y - 6.0f, w + 16.0f, h + 12.0f);
   for (i = 0; i <= n; i++) {
     GfxRect r = { x + (float)(i % CC_COLS) * (bw + CC_GAP), y + (float)(i / CC_COLS) * (CC_BOTAO_H + CC_GAP) - scroll,
                   bw, CC_BOTAO_H };
@@ -653,7 +653,7 @@ static void desenhaBotoes(float x, float y, float w, float h, float a) {
     if (aberta && a > 0.5f && ponteiro_ativo())
       ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, y, y + h, ptFoco, ptOk, i, 0);
   }
-  gfx_sem_recorte();
+  gfx_recorte_voltar(clip);
 }
 
 // O SELETOR: 2 fileiras de 9 discos (claros em cima, profundos embaixo, a
@@ -695,7 +695,7 @@ static void desenhaEdicao(float x, float y, float w, float h, float a) {
   if (!toquerol_livre(&toqueCentral))
 #endif
   rolaEd = alvo;
-  gfx_recorte(x - 8.0f, y, w + 16.0f, h);
+  GfxRecorteAnt clip = gfx_recorte_dentro(x - 8.0f, y, w + 16.0f, h);
   for (j = 0; j < m; j++) {
     const CentralItem *c = central_catalogo(it[j]);
     int op = ajustes_rapido_op(c->chave), tem = centrallista_tem(&lista, it[j]);
@@ -722,7 +722,7 @@ static void desenhaEdicao(float x, float y, float w, float h, float a) {
       ponteiro_alvo(r.x, r.y, r.w, r.h, ptFoco, ptOk, j, 1);
     }
   }
-  gfx_sem_recorte();
+  gfx_recorte_voltar(clip);
 }
 
 // Teclas do rodape (a peca das dicas de Ajustes, com alfa para entrar junto).
