@@ -91,7 +91,7 @@ with log.open('w') as output:
         key('clicar:1100,25')
         time.sleep(3)
         photo('mac-search.png')
-        assert 'tela=busca' in log.read_text(errors='replace'), 'Toolbar search click failed'
+        wait_for(lambda: 'tela=busca' in log.read_text(errors='replace'), timeout=10)
         key('mover:75,114')
         key('clicar:75,114')
         key('janela:669,951')
