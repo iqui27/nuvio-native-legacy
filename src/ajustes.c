@@ -2276,7 +2276,7 @@ static const char *CHAVE[] = {
   "audioNormalizarLocal",
   "debridLigadoLocal", "addonsLigadosLocal", "legEstiloLigadoLocal",
   "heroFolderDetailsLocal",
-  "guiaPreviaDestacarLocal", "guiaPreviaSomLocal", "guiaDiasLocal",
+  "guiaPreviaDestacarLocal", "guiaPreviaSomV2Local", "guiaDiasLocal",
   "fonteOcultarDvLocal", "fonteOcultarAudioLocal", "fonteOcultarVideoLocal",
   "androidTvHomeLocal",
 };
@@ -4970,6 +4970,8 @@ void ajustes_dir(const char *dir) {
   memoriaEscolhida = 0;
   bibliotecaFonteEscolhida = 0;
   valor[AJ_ESCALA_TEXTO] = valorPadrao[AJ_ESCALA_TEXTO];
+  // V2 discards the old persisted mute default; later explicit choices survive.
+  valor[AJ_GUIA_PREVIA_SOM] = valorPadrao[AJ_GUIA_PREVIA_SOM];
   valor[AJ_TAMANHO_UI] = UI_SIZE_AUTO;
   fonteregra_carregar();
   fanartCarregar();
@@ -6461,6 +6463,9 @@ static int perfilLerVetor(int perfil, int *v, char *tem) {
   t = dados_ler(nome);
   if (!t) return 0;
   int focoAntigo = -1;
+  // Missing V2 means this profile still carries the old mute default.
+  v[AJ_GUIA_PREVIA_SOM] = valorPadrao[AJ_GUIA_PREVIA_SOM];
+  tem[AJ_GUIA_PREVIA_SOM] = 1;
   for (l = t; l && *l; ) {
     char chave[64], *fim = strchr(l, '\n');
     int x, i;
