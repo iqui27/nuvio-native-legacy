@@ -2100,7 +2100,10 @@ int main(int argc, char **argv) {
       static Uint32 fpsProcurar;
       static char *fpsBase;
       int tk;
-      if (!fpsIni && agora > 8000u && agora - fpsProcurar >= 1000u) {
+      // Probe only where a scripted scene can start. Profile/Guide used to
+      // open fps-cena on the UI thread every second, outside frame phase timers.
+      if (!fpsIni && (app_home_recebe_teclas() || player_aberto()) &&
+          agora > 8000u && agora - fpsProcurar >= 1000u) {
         char *so = dados_ler("fps-cena");
         fpsProcurar = agora;
         if (so) {
