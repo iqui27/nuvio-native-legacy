@@ -6112,6 +6112,7 @@ void app_atualizar(float dt, Uint32 agora) {
       if (!saiuPorEsquerda && !saiuPorCima && juntosui_voltar_filme()) {
         menu_fechar();
       } else if ((saiuPorEsquerda || saiuPorCima) && sidebar_permitida()) {
+        if (tela == TELA_BIBLIOTECA) biblioteca_retomar();
         menu_abrir();
       } else if (tela == TELA_CACA && cacaDoPerfil) {
         trocarTela(TELA_PERFIL);

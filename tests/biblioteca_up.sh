@@ -11,10 +11,10 @@ if [ -n "${BIB_UP_REV:-}" ]; then
 fi
 sources=()
 for source in src/*.c src/dts/*.c; do
-  case "$source" in src/main.c|src/biblioteca.c) continue;; esac
+  case "$source" in src/main.c|src/app.c|src/biblioteca.c) continue;; esac
   sources+=("$source")
 done
-cc -DNV_TOUCH_UI "${flags[@]+${flags[@]}}" -O1 -g tests/biblioteca_up.c "${sources[@]}" -Isrc \
+cc -DNV_TOUCH_UI "${flags[@]+${flags[@]}}" -O1 -g tests/biblioteca_up.c tests/biblioteca_up_router.c "${sources[@]}" -Isrc \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -L/opt/homebrew/lib \
   -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined -o "$work/test"
