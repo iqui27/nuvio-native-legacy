@@ -83,6 +83,15 @@ int main(void) {
   dados_iniciar(dir); snprintf(dirAjustes, sizeof dirAjustes, "%s", dir); player_dir(dir); fontefalha_dir(dir);
   ajustes_iniciar(); assert(gravar());
   percorrer();
+  assert(visto[AJ_MENU_ESPORTES]);
+  assert(somenteDesteAparelho(AJ_MENU_ESPORTES));
+  assert(ajustes_menu_esportes());
+  focarOpcao(AJ_MENU_ESPORTES); key(SDLK_RETURN);
+  assert(!ajustes_menu_esportes());
+  ajustes_dir(dir);
+  assert(!ajustes_menu_esportes());
+  focarOpcao(AJ_MENU_ESPORTES); key(SDLK_RETURN);
+  assert(ajustes_menu_esportes());
 
   int falhas = 0, rotas = 0;
   for (int c = 0; c < N(CAT21); c++) {

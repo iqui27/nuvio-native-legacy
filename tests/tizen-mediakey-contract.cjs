@@ -36,7 +36,8 @@ const elems = { canvas, diag };
 
 const context = {
   console,
-  setTimeout, clearTimeout,
+  setTimeout: () => 0, clearTimeout: () => {},
+  performance: { now: () => 1 },
   // The 3s PThread-pool meter and the (disabled) log-batch timer are not
   // relevant to key mapping; a real timer would keep the test process alive.
   setInterval: () => 0, clearInterval: () => {},
@@ -46,6 +47,7 @@ const context = {
   devicePixelRatio: 1,
   KeyboardEvent: FakeKeyboardEvent,
   document: {
+    addEventListener: () => {},
     getElementById: id => elems[id] || null,
     createElement: () => new Alvo('tmp'),
   },
@@ -71,7 +73,7 @@ vm.runInContext(scriptMatch[1], context);
   function fireMediaKey(keyCode) {
     const received = [];
     canvas.addEventListener('keydown', ev => received.push(ev));
-    context.dispatchEvent(new FakeKeyboardEvent('keydown', { keyCode }));
+    context.dispatchEvent(new FakeKeyboardEvent('keydown', { keyCode, isTrusted: true }));
     return received;
   }
 
@@ -85,18 +87,25 @@ vm.runInContext(scriptMatch[1], context);
 
   context.window.nvPlayerAberto = 1;
 
-  check('MediaPlayPause (10252, QN90D single play/pause key) maps to Enter', () => {
+  check('MediaPlayPause (10252, QN90D single play/pause key) maps to Pause', () => {
     const got = fireMediaKey(10252);
     assert.equal(got.length, 1, 'expected exactly one synthetic keydown on canvas');
-    assert.equal(got[0].keyCode, 13, 'expected Enter (13), which player_evento() treats as play/pause');
+    assert.equal(got[0].keyCode, 19, 'expected Pause (19), independent of focused action');
   });
 
-  check('MediaPlay (415) maps to Enter', () => {
-    assert.equal(fireMediaKey(415)[0].keyCode, 13);
+  check('MediaPlay (415) maps to Pause', () => {
+    assert.equal(fireMediaKey(415)[0].keyCode, 19);
   });
 
-  check('MediaPause (19) maps to Enter', () => {
-    assert.equal(fireMediaKey(19)[0].keyCode, 13);
+  check('MediaPause (19) maps to Pause', () => {
+    assert.equal(fireMediaKey(19)[0].keyCode, 19);
+  });
+
+  check('Info (457) maps to the playback panel key', () => {
+    const got = fireMediaKey(457);
+    assert.equal(got.length, 1);
+    assert.equal(got[0].keyCode, 73);
+    assert.equal(got[0].key, 'i');
   });
 
   check('MediaStop (413) maps to Escape', () => {

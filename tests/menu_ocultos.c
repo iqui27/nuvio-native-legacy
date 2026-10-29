@@ -33,11 +33,14 @@ int main(void) {
   assert(mkdtemp(dir));
   snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dir);
   f = fopen(caminho, "w"); assert(f);
-  fputs("menuGuiaLocal 1\nmenuAgendaLocal 1\n", f);
+  fputs("menuGuiaLocal 1\nmenuAgendaLocal 1\nmenuEsportesLocal 1\n", f);
   fclose(f);
   ajustes_dir(dir);
   assert(ajustes_menu_explorar() && !ajustes_menu_guia());
   assert(!ajustes_menu_agenda() && ajustes_menu_perfil());
+  assert(!ajustes_menu_esportes());
+  ajustes_dir(dir); // Persisted value survives a fresh disk load.
+  assert(!ajustes_menu_esportes());
 
   menu_iniciar();
   assert(descer(1) == MENU_EXPLORAR);

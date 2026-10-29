@@ -368,3 +368,4 @@
   0, /* Android TV home: enabled. */
   1, /* Profile picker avatar size: Medium. */
   0, /* Group channel variants: enabled. */
+  0, /* Sports menu entry: enabled. */

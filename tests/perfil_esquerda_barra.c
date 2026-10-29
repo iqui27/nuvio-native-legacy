@@ -60,8 +60,8 @@ int main(void) {
   com_amigos(2);                          // friends-only: no days, no cards, 2 friends
   abrir_com_dados(0, 0);
   assert(secao == 2 && rostosCabem() == 2);
-  tecla(SDLK_RIGHT);                      // second face
-  tecla(SDLK_LEFT);                       // back to the first face: still inside
+  tecla(SDLK_DOWN);                       // second friend row
+  tecla(SDLK_UP);                         // back to the first row: still inside
   assert(!perfil_quer_sair() && amigo == 0);
   tecla(SDLK_LEFT);                       // first face, nothing to the left: the edge
   assert(perfil_quer_sair());

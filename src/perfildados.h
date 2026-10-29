@@ -47,6 +47,7 @@ typedef struct PerfilDados {
   int diasAtivosAno;
   int primeiroDiaSemana;     // 0=domingo..6=sabado
   int nDias;
+  int diaHoje;               // 1-based day in this snapshot month; 0 when unknown.
   unsigned short atividade[PERFIL_MAX_DIAS];
 
   int nGeneros;

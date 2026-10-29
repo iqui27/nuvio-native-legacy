@@ -49,6 +49,8 @@ void menu_avatar(float x, float y, float size, float alpha);
 void menu_abrir(void);
 // Fecha sem escolher: o destaque volta para o destino atual.
 void menu_fechar(void);
+// Input within the last 150 ms; defer background catalog work, not motion.
+int menu_ocupado(Uint32 agora);
 // ABRE POR CIMA DE UMA CAMADA que continua viva embaixo (a pagina do titulo):
 // DIREITA/Voltar so devolvem o foco a ela; OK num destino (mesmo o atual) fica
 // em menu_escolheu para o app fechar a camada e navegar. `semRailFixa` 1 quando

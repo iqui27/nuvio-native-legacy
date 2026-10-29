@@ -234,7 +234,7 @@ static float ajTopoLista(void);
 #define AJ_TOPO        ajTopoLista()
 // 2.0.2: o cabecalho da pagina da categoria (o cartao da grade crescido), acima
 // da arte e da lista; o titulo saiu de dentro da ilha da lista.
-#define AJ_CAB_PAGINA  (ajRetrato() && !telefoneui_ativo() ? 224.0f : 136.0f)
+#define AJ_CAB_PAGINA  (ajRetrato() ? 224.0f : 136.0f)
 static float triListaBase(void);   // ajustes_tri_desenho.inc
 #define AJ_BASE        triListaBase()
 #define AJ_A3_CAB        8.0f   // 2.1: a lista comeca logo abaixo do cabecalho da ilha
@@ -771,6 +771,7 @@ typedef enum {
   AJ_TV_HOME, // Device-local, append-only; enabled by default.
   AJ_PS_TAMANHO, // Device-local profile avatar size; append-only.
   AJ_LIVETV_AGRUPAR, // Profile-local, append-only; enabled by default.
+  AJ_MENU_ESPORTES, // Device-local menu visibility; append-only, enabled by default.
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1938,6 +1939,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Mostrar na tela inicial do Android TV", V_LIGA, 2),
   ESC("Tamanho dos perfis", V_PS_TAMANHO, 3),
   ESC("Agrupar variantes dos canais", V_LIGA, 2),
+  ESC("Esportes", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2286,6 +2288,7 @@ static const char *CHAVE[] = {
   "androidTvHomeLocal",
   "psTamanhoLocal",
   "liveTvGroupVariantsLocal",
+  "menuEsportesLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3908,6 +3911,7 @@ int  ajustes_menu_explorar(void)      { return lig(AJ_MENU_EXPLORAR); }
 int  ajustes_menu_guia(void)          { return lig(AJ_MENU_GUIA); }
 int  ajustes_menu_agenda(void)        { return lig(AJ_MENU_AGENDA); }
 int  ajustes_menu_perfil(void)        { return lig(AJ_MENU_PERFIL); }
+int  ajustes_menu_esportes(void)      { return lig(AJ_MENU_ESPORTES); }
 int  ajustes_gpu_efeitos(void) { return valor[AJ_GPU_EFEITOS]; }
 int  ajustes_itens_fileira(void) {
   static const int N[] = { 12, 18, 24 };
@@ -6349,7 +6353,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PROXIMO_AUTO: case AJ_PULAR_CREDITOS: case AJ_PROXIMO_CONTAGEM: /* idem: local desta TV */
     case AJ_PLR_FORMATO: case AJ_PLR_FORMATO_POS: case AJ_PLR_CODEC: /* o web nao tem a fileira de formato */
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE: /* o web nao tem o Seekr */
-    case AJ_MENU_EXPLORAR: case AJ_MENU_GUIA: case AJ_MENU_AGENDA: case AJ_MENU_PERFIL:
+    case AJ_MENU_EXPLORAR: case AJ_MENU_GUIA: case AJ_MENU_AGENDA: case AJ_MENU_PERFIL: case AJ_MENU_ESPORTES:
     // Linha do titulo: o web nao tem, e nenhuma conta pode desliga-las aqui.
     case AJ_NT_IMDB: case AJ_NT_TOMATES: case AJ_NT_AUDIENCIA: case AJ_NT_META:
     case AJ_NT_METAUSER: case AJ_NT_TRAKT: case AJ_NT_TMDB: case AJ_NT_LETTER:
@@ -8421,7 +8425,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_ENVIAR_LOG: return "Manda os últimos 200 KB do registro desta sessão (sem senhas nem chaves) para quem faz o app. Use quando algo estiver errado agora.";
     case AJ_ENVIO_AUTO: return "Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.";
     case AJ_DIAGNOSTICO: return "Testa manifestos, fontes e artes dos addons, mede os tempos e aplica um perfil seguro de Qualidade ou Desempenho. O teste não marca títulos como assistidos.";
-    case AJ_MENU_EXPLORAR: case AJ_MENU_GUIA: case AJ_MENU_AGENDA: case AJ_MENU_PERFIL:
+    case AJ_MENU_EXPLORAR: case AJ_MENU_GUIA: case AJ_MENU_AGENDA: case AJ_MENU_PERFIL: case AJ_MENU_ESPORTES:
       return "Desligado, o item some da barra lateral. Nada é apagado: ligue de novo para ele voltar.";
     case AJ_VELOCIDADE: return "Mede a velocidade dos seus addons e das fontes nesta TV e diz até quantos GB por filme e por episódio tocam sem travar. Não muda nenhum ajuste.";
 
@@ -11145,7 +11149,7 @@ static const struct { float w, h; } AJ_FIL_FORMA[FIL_TIPO_N] = {
   { NV_DESTAQUE_QUADRADO_W * 1.25f, NV_DESTAQUE_QUADRADO_H * 1.25f }, // 4:3 MEDIO
   { NV_DESTAQUE_QUADRADO_W * 1.5f,  NV_DESTAQUE_QUADRADO_H * 1.5f },  // 4:3 GRANDE
   { 212.0f, 322.0f + NV_TEMPO_FAIXA_H }, // LINHA DO TEMPO — cartaz + a faixa dos anos
-  { NV_FICHA_W, 322.0f },                // CARTAZ COM FICHA
+  { NV_CARD_H * 2.0f / 3.0f + NV_FICHA_INFO_W, NV_CARD_H }, // Expanded Ficha
   { 212.0f * NV_PALCO_ESC, 322.0f * NV_PALCO_ESC }, // PALCO — o cartaz do centro
   { NV_REDONDA_D, NV_REDONDA_D },        // REDONDA — o disco da pessoa
   { 1440.0f, 1440.0f * NV_HEROI_ASPECT }, // HEROI — o cartao unico da fileira

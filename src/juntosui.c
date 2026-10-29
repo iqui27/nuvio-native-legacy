@@ -1500,7 +1500,7 @@ static void desenharSala(void) {
       xd -= BOTAO_GAP;
     }
   }
-  texto(TXT_CAPTION, i18n("Setas para mover · OK para escolher · Voltar para retornar"), L, B - 64, 170, a, R - L);
+
   desenharConvite(R, T + 180, acoesY - 24, 1);
   custoCamada(3);
 }

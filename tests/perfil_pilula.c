@@ -29,15 +29,15 @@ int main(void) {
   assert(rNumero(0).y == PF_NUM_Y);
   assert(rCartao(0).y == PF_CARD_Y);
   // Header, numbers and cards keep the mockup's spacing: only the whole block moved.
-  assert(PF_NUM_Y - PF_TOPO == 212.0f - 56.0f);
-  assert(PF_CARD_Y - PF_NUM_Y == 356.0f - 212.0f);
+  assert(fabsf(PF_NUM_Y - PF_TOPO - (212.0f - 56.0f)) < .01f);
+  assert(fabsf(PF_CARD_Y - PF_NUM_Y - (392.0f - 212.0f)) < .01f);
   // And the block still ends above the footer notice.
-  assert(rCartao(0).y + rCartao(0).h < PF_AVISO_Y);
+  assert(rCartao(0).y + rCartao(0).h == PF_CONTEUDO_H);
 
   layout(1);   // any other layout: the top left is free
   assert(!menu_pilula_rect(&px, &py, &pw, &ph));
   assert(pfDy() == 0.0f);
-  assert(PF_TOPO == 56.0f && PF_NUM_Y == 212.0f && PF_CARD_Y == 356.0f);
+  assert(PF_TOPO == 56.0f && PF_NUM_Y == 212.0f && PF_CARD_Y == 392.0f);
 
   puts("PASS: perfil_pilula");
   return 0;

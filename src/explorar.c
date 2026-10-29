@@ -664,11 +664,6 @@ static void desenharFundo(void) {
            tempo * 0.35f, 0, 0, ar, ag, ab, 1.0f);
 }
 
-static void desenharDica(const char *s) {
-  TxtLinha l = txt_linha(TXT_CAPTION2, s, 140, 146, 162, 255);
-  txt_desenhar(l, EX_DIR - l.w, EX_DICA_Y);
-}
-
 static void desenharTitulo(const char *sub) {
   float x = ajustes_conteudo_x();
   // Layout Dinamica: o nome da tela esta na pilula da barra (menu.h).
@@ -885,7 +880,7 @@ static void desenharClimas(void) {
       }
     }
   }
-  desenharDica(i18n("Setas   Escolher um clima   ·   OK   Abrir"));
+
 }
 
 // --- desenho: clima aberto -------------------------------------------------------
@@ -977,7 +972,7 @@ static void desenharClima(void) {
     rotuloEspacado(s, x0, y, a);
     fileiraClima(1, y + 38.0f, caN[0] > 0 ? EX_CB_W : EX_CA_W, caN[0] > 0 ? EX_CB_H : EX_CA_H, a);
   }
-  desenharDica(i18n("OK   Puxar o fio   ·   Voltar   Climas"));
+
 }
 
 // --- desenho: vizinhanca --------------------------------------------------------
@@ -1419,8 +1414,7 @@ static void desenharViz(void) {
   desenharTrilha(1.0f);
   desenharHero(a);
   desenharGrupos(a);
-  desenharDica(i18n(nTrilha > 1 ? "OK   Descer pela toca   ·   Voltar   Subir um degrau"
-                                : "OK   Descer pela toca   ·   Voltar   Sair da toca"));
+
 }
 
 // --- ciclo ------------------------------------------------------------------------

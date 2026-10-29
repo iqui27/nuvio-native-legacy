@@ -360,6 +360,7 @@ static int simStatsDef;
 void video_simular_estatisticas(const VideoStats *s) {
   if (s) { simStats = *s; simStatsDef = 1; } else simStatsDef = 0;
 }
+void video_informacoes(VideoInfo *s) { *s = SIM.info; }
 void video_estatisticas(VideoStats *s) {
   if (simStatsDef) { *s = simStats; return; }
   video_stats_vazio(s);
@@ -611,6 +612,7 @@ static int       vidW = 1920, vidH = 1080, vidTaxa = 30;
 static int       expSrcW, expSrcH;
 static void      expJanelaAplicar(void);
 static long      vidBits;
+static VideoInfo vidInfo;
 static char      vidVarredura[24] = "progressive";
 // hdrType real informado pelo uMS para a camada que chegou ao decoder. Isto
 // vence o rotulo do addon: um arquivo marcado HDR-DV pode entregar apenas a
@@ -1038,6 +1040,8 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
     nv_seek_ok(&seekRetry);
   }
   if (strstr(p, "sourceInfo")) {
+    const char *vt = js_array(p, NULL, "videoTrackInfo");
+    if (vt && *vt == '{') js_texto(vt, js_fim(vt), "codec", vidInfo.codec, sizeof vidInfo.codec);
     { const char *q = strstr(p, "\"seekable\":");
       srcSeekable = q ? (strncmp(q + 11, "true", 4) == 0) : -1;
       q = strstr(p, "\"trickable\":");
@@ -1231,6 +1235,8 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
 
   if (strstr(p, "videoInfo")) {
     viuVideo = 1;   // fecha o prazo do recuo de DV
+    vidInfo.fps = js_num(p, NULL, "frameRate", 0);
+    vidInfo.kbps = (int)(js_num(p, NULL, "bitRate", 0) / 1000);
     double v;
     v = numeroDe(p, "\"width\":");      if (v > 0) vidW = (int)v;
     v = numeroDe(p, "\"height\":");     if (v > 0) vidH = (int)v;
@@ -2680,6 +2686,7 @@ static int tocarInterno(const char *url, int comDV) {
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; vidAtmos = 0;
   legUrlAtual[0] = 0; mkvPendente = 0;
   snprintf(vidHdr, sizeof vidHdr, "none");
+  memset(&vidInfo, 0, sizeof vidInfo);
   seiX0 = seiX1 = seiX2 = seiY0 = seiY1 = seiY2 = 0;
   seiBrancoX = seiBrancoY = seiMinLum = seiMaxLum = seiMaxCLL = seiMaxFALL = 0;
   vuiPrim = vuiTrans = vuiMatriz = 2;
@@ -3737,6 +3744,7 @@ int  video_tem_dolby_vision(void) {
 }
 // hdrType cru do pipeline, para a tela poder dizer "HDR10" quando for HDR10 em
 // vez de calar. "none" quando o fluxo e SDR ou ainda nao se sabe.
+void video_informacoes(VideoInfo *s) { *s = vidInfo; }
 const char *video_hdr(void)       { return vidHdr; }
 int  video_largura(void)          { return vidW; }
 int  video_altura(void)           { return vidH; }

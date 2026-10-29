@@ -298,11 +298,28 @@ static void escolherAudioPreferido(void) {
 // audio, 1 = legenda) e no fim nv_tpk_video_faixas_fim. O contador so sobe no
 // fim, com a lista inteira escrita: o app nunca le faixa pela metade.
 static VideoFaixa novasA[MAX_FAIXAS], novasL[MAX_FAIXAS];
+static pthread_mutex_t infoTrava = PTHREAD_MUTEX_INITIALIZER;
+static VideoInfo infoTpk;
+void video_informacoes(VideoInfo *s) {
+  pthread_mutex_lock(&infoTrava); *s = infoTpk; pthread_mutex_unlock(&infoTrava);
+}
 static int nNovasA, nNovasL;
 __attribute__((visibility("default")))
 void nv_tpk_video_faixa(int tipo, int idx, const char *lingua) {
   VideoFaixa *f;
   const char *l = lingua ? lingua : "";
+  // Extended host metadata shares the existing string bridge, no new ABI entry.
+  if (tipo == 2) {
+    pthread_mutex_lock(&infoTrava);
+    snprintf(infoTpk.codec, sizeof infoTpk.codec, "%s", l);
+    pthread_mutex_unlock(&infoTrava);
+    return;
+  }
+  if (tipo == 3) {
+    for (int i = 0; i < nNovasA; i++) if (novasA[i].numero == idx)
+      sscanf(l, "%d|%23s", &novasA[i].canais, novasA[i].codec);
+    return;
+  }
   if (tipo == 0) { if (nNovasA >= MAX_FAIXAS) return; f = &novasA[nNovasA++]; }
   else           { if (nNovasL >= MAX_FAIXAS) return; f = &novasL[nNovasL++]; }
   memset(f, 0, sizeof *f);
@@ -467,6 +484,9 @@ void nv_tpk_video_evento(int tipo, int a, int b) {
                      atomic_store(&temErroDetalhe, 1);
                      reconErroCod = a; reconErroPend = 1; tocando = 0;
                      printf("[video] tpk: player error 0x%08x (%d)\n", (unsigned)a, b); break;
+    case 13: // output fps / video bitrate from StreamInfo, on the session worker
+      pthread_mutex_lock(&infoTrava); infoTpk.fps = a > 0 ? a : 0; infoTpk.kbps = b > 0 ? b / 1000 : 0;
+      pthread_mutex_unlock(&infoTrava); break;
     case EV_TAMANHO: largura = a; altura = b; break;
     case EV_BUFFER:
       bufPct = a < 0 ? 0 : a > 100 ? 100 : a;
@@ -863,6 +883,7 @@ static int trilhaPelaOrdem(void);
 static int videoConvertivel(void);
 
 int video_tocar(const char *u) {
+  pthread_mutex_lock(&infoTrava); memset(&infoTpk, 0, sizeof infoTpk); pthread_mutex_unlock(&infoTrava);
   cdn.arquivo = 0;
   parado = 0; resgateAte = 0;
   if (cv.ativo || cv.sondando) dts_tpk_fechar();
@@ -2329,7 +2350,7 @@ void video_legenda_externa(const char *u) { (void)u; }
 void video_legenda_estilo(const VideoLegendaEstilo *e) { if (e && hEscolher) hEscolher(2, e->atrasoMs); }
 int  video_tem_atmos(void) { return 0; }
 int  video_tem_dolby_vision(void) { return 0; }
-const char *video_hdr(void) { return "none"; }
+const char *video_hdr(void) { return "desconhecido"; }
 // Numeric host error is useful evidence even when no textual cause is exposed.
 // Formatting happens on the app thread; the callback only publishes atomics.
 const char *video_erro_texto(void) {

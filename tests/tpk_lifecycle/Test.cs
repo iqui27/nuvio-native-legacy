@@ -196,8 +196,8 @@ namespace Tizen.Multimedia {
     public class Display {}
     public class MediaUriSource { public MediaUriSource(string s) {} }
     public class Info { public int Selected {get;set;} public int GetCount()=>1; public string GetLanguageCode(int i)=>"eng"; }
-    public class Props { public int Channels=2, SampleRate=48000; public Props Size=>this; public int Width=1920, Height=1080; }
-    public class Stream { public int GetDuration()=>60000; public Props GetVideoProperties()=>new Props(); public Props GetAudioProperties()=>new Props(); }
+    public class Props { public int Channels=2, SampleRate=48000, Fps=24, BitRate=4200000; public Props Size=>this; public int Width=1920, Height=1080; }
+    public class Stream { public string GetVideoCodec()=>"H264"; public string GetAudioCodec()=>"AAC"; public int GetDuration()=>60000; public Props GetVideoProperties()=>new Props(); public Props GetAudioProperties()=>new Props(); }
     public class Settings { public PlayerDisplayMode Mode {get;set;} public void SetRoi(Rectangle r) {} }
     public class Event : EventArgs { public int Error,Percent,Duration; public string Reason,Text; }
     public class Player {

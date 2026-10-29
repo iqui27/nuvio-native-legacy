@@ -16,6 +16,7 @@
 #include "celbotao.h"
 #include "central.h"
 #include "estatvivoui.h"
+#include "playinfo.h"
 #include "teclado.h"
 #include "ponteiro.h"
 #include "app.h"
@@ -4567,6 +4568,8 @@ void app_evento(const SDL_Event *e) {
   if (e->type == SDL_KEYDOWN && e->key.keysym.sym == SDLK_F9 && stream_folha_aberta() &&
       !registro_aberto()) { stream_folha_evento(e); return; }
 #endif
+  if (player_aberto() && !stream_folha_aberta() && !faixas_aberta() &&
+      !central_aberta() && !registro_aberto() && playinfo_event(e)) return;
   if (registro_evento(e)) return;
   // O painel de envio do registro (Ajustes > Enviar registro, ou o "Enviar
   // agora" do painel): modal, come o teclado enquanto aberto.
@@ -7547,7 +7550,7 @@ void app_atualizar(float dt, Uint32 agora) {
     case TELA_AJUSTES:    ajustes_atualizar(dt, agora);    break;
     case TELA_DIAGNOSTICO: diagnostico_atualizar(dt, agora); break;
     case TELA_LIVETV_DIAG: livetvdiag_atualizar(dt, agora); break;
-    default:              home_painel_aberto(spainel_aberto());
+    default:              home_painel_aberto(spainel_aberto() || menu_aberto());
                           home_atualizar(dt, agora);       break;
   }
   // TRAILER NO DESTAQUE: so com a home na frente de tudo. A lista e a mesma
@@ -7853,6 +7856,7 @@ static void desenharTelas(Uint32 agora) {
     central_desenhar(agora);
     if (!registro_aberto() && addonguia_aberto()) { ponteiro_camada(); addonguia_desenhar(); }
     plrilha_desenhar(agora);
+    playinfo_draw(agora);
     if (episodios_aberto() && sinopse_aberta()) sinopse_desenhar();
   }
   gfx_osd_mult = 1.0f;

@@ -514,6 +514,7 @@ void aioui_atualizar(float dt,Uint32 agora) {
 // Rendering is fixed-cost per visible page: no network, JSON, regex or allocation.
 static void texto(TxtEstilo e,const char *s,float x,float y,float w,int cor) {
   float escala=gfx_escala_txt();
+  if(e==TXT_ILHA_SUB)e=TXT_ILHA_SUB_L;
   TXT_INI();
   TxtLinha t=txt_linha_corta(e,s,cor,cor,cor,255,w/escala);
   txt_desenhar(t,x/escala,y/escala);
@@ -1115,6 +1116,16 @@ static void workspace(void) {
     botao(snap.links+2,i18n("Fontes e serviços"),875,866,480);
   }
 }
+int aioui_addons_mover(int f,int dx,int dy) {
+  if(f<addons_n() && dy && (dy<0?f>0:f+1<addons_n())) return f+dy;
+  for(int i=0;i<navigationCount;i++)if(navigationIds[i]==f) {
+    int next=focus_rect_nearest(navigationRects,navigationCount,i,dx,dy);
+    if(next!=i)return navigationIds[next];
+  }
+  // Rows outside the rendered window still page through the same list.
+  if(f<addons_n() && dy)return dy<0?(f>0?f-1:f):f+1;
+  return f;
+}
 static void addonPointer(int i,int b) { (void)b; addonsui_ponteiro(i,0); }
 static void addonClick(int i,int b) {
   addonPointer(i,b); SDL_Event e={0}; e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_RETURN; addonsui_evento(&e);
@@ -1122,6 +1133,7 @@ static void addonClick(int i,int b) {
 static void addonsPainel(float x,float y,float w,float h) { painel(x,y,w,h); }
 static void addonsDesenhar(int f);
 void aioui_addons_desenhar(int f) {
+  navigationCount=0;
   int semAro=gfx_vidro_sem_aro; gfx_vidro_sem_aro=1;
   addonsDesenhar(f);
   gfx_vidro_sem_aro=semAro;
@@ -1148,8 +1160,8 @@ static void addonsDesenhar(int f) {
     if(aioui_detectar(i)) {
       GLuint logo=tex_obter(arteLogo); if(logo) gfx_rect((GfxRect){477,y+24,43,43},logo,GFX_MARCA,0,0,0,0,1,1,1,1);
     } else gfx_icone((GfxRect){477,y+28,28,28},"aj_puzzle",.85f,.88f,.9f,1);
-    texto(TXT_ILHA_NOME,addons_nome(i),535,y+17,1190,242);
-    texto(TXT_ILHA_SUB,aioui_detectar(i)?i18n("Abrir painel"):addons_ativo(i)?i18n("Ativado"):i18n("Desativado"),535,y+53,1190,174);
+    texto(TXT_ILHA_NOME_L,addons_nome(i),535,y+17,1190,242);
+    texto(TXT_ILHA_SUB_L,aioui_detectar(i)?i18n("Abrir painel"):addons_ativo(i)?i18n("Ativado"):i18n("Desativado"),535,y+53,1190,174);
     ponteiro_alvo(453,y,1340,94,addonPointer,addonClick,i,0);
   }
   GfxRect r={453,866,350,56};
@@ -1161,7 +1173,7 @@ static void addonsDesenhar(int f) {
   r.x=1187; r.w=606;
   botao_pilula(r,i18n("Conectar ou importar sua configuração"),NULL,addonsFoco[n+2],0,0,1);
   ponteiro_alvo(r.x,r.y,r.w,r.h,addonPointer,addonClick,n+2,0);
-  texto(TXT_ILHA_SUB,i18n("Setas: navegar    OK: abrir    Voltar: retornar"),92,1020,1450,160);
+
 }
 static void desenhar(Uint32 agora);
 void aioui_desenhar(Uint32 agora) {
@@ -1200,12 +1212,7 @@ static void desenhar(Uint32 agora) {
   if(deslocamento) gfx_sem_transformar();
   deslocamento=0;
   gfx_opacidade_grupo=alpha*entry;
-  const char *keys[]={"↑ ↓", "OK", "Voltar"};
-  const char *labels[]={i18n("Navegar"),i18n("Abrir"),i18n("Voltar")};
-  plrui_dicas(keys,labels,3,92,1020,0,.7f);
-  const char *rodape=i18n(pagina<=PRONTO?"Configuração no celular":"Credenciais ocultas");
-  TxtLinha fim=t21_texto_linha(TXT_ILHA_SUB,rodape,243,242,239,255,1000);
-  t21_texto_desenhar(fim,1828-fim.w,1020,.46f);
+
   if(mensagem[0]) texto(TXT_ILHA_SUB,mensagem,453,934,1340,215);
   gfx_opacidade_grupo=alpha;
   if(teclado_aberto()) teclado_desenhar(agora);

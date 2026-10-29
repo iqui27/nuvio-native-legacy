@@ -82,6 +82,7 @@
 #if defined(__EMSCRIPTEN__) && !defined(NV_VIDAA)
 
 #include "video.h"
+#include "js.h"
 #include "mediaurl.h"
 #include "avroi.h"
 #include "video_reconexao.h"
@@ -550,6 +551,28 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
   // Devolve o JSON cru. Quem interpreta e o C, uma vez por titulo. Enquanto o
   // formato exato nao estiver visto numa TV, isto serve de DIAGNOSTICO: a linha
   // sai no log e o proximo passo e escrito com o dado na mao, nao com palpite.
+  // Cached track metadata only: no synchronous AVPlay call while opening the panel.
+  if (op === "playinfo") {
+    if (!dst || dstTam < 8) return 0;
+    var output = {};
+    (S.trilhas || []).forEach(function (t) {
+      if (("" + t.type).toUpperCase() !== "VIDEO") return;
+      var x = t.extra_info || {};
+      if (typeof x === "string") { try { x = JSON.parse(x); } catch (e) { x = {}; } }
+      output.codec = x.fourCC || x.codec || "";
+      output.fps = parseFloat(x.frame_rate || x.framerate || 0) || 0;
+      output.kbps = (parseInt(x.bit_rate || x.bitrate || 0, 10) || 0) / 1000;
+    });
+    (S.trilhas || []).forEach(function (t) {
+      if (("" + t.type).toUpperCase() !== "AUDIO" || (t.index | 0) !== (a | 0)) return;
+      var x = t.extra_info || {};
+      if (typeof x === "string") { try { x = JSON.parse(x); } catch (e) { x = {}; } }
+      output.audio = x.fourCC || x.codec || "";
+      output.channels = parseInt(x.channels || x.channel || 0, 10) || 0;
+    });
+    stringToUTF8(JSON.stringify(output), dst, dstTam);
+    return 1;
+  }
   if (op === "infofluxo") {
     var p9 = pl();
     if (!p9 || !S.pronto || !dst || dstTam < 8) return 0;
@@ -1648,6 +1671,19 @@ double video_buffer_fim(void) { return 0; }
 // SAMSUNG (.wgt): o AVPlay so da a PORCENTAGEM do buffering
 // (onbufferingprogress, 100 no onbufferingcomplete); nada de bytes, segundos,
 // conexoes ou quadros. O host e o do link pedido.
+void video_informacoes(VideoInfo *s) {
+  char buf[256] = ""; memset(s, 0, sizeof *s);
+  int selected = audioAtual >= 0 && audioAtual < nAudio ? faixaAudio[audioAtual].numero : -1;
+  if (avChamar("playinfo", NULL, selected, 0, 0, 0, buf, sizeof buf) < 1) return;
+  if (audioAtual >= 0 && audioAtual < nAudio) {
+    js_texto(buf, NULL, "audio", faixaAudio[audioAtual].codec, sizeof faixaAudio[audioAtual].codec);
+    int channels = (int)js_num(buf, NULL, "channels", 0);
+    if (channels > 0) faixaAudio[audioAtual].canais = channels;
+  }
+  js_texto(buf, NULL, "codec", s->codec, sizeof s->codec);
+  s->fps = js_num(buf, NULL, "fps", 0);
+  s->kbps = (int)js_num(buf, NULL, "kbps", 0);
+}
 void video_estatisticas(VideoStats *s) {
   video_stats_vazio(s);
   if (urlAtual[0]) s->bufferPct = bufPct < 0 ? 0 : bufPct > 100 ? 100 : bufPct;

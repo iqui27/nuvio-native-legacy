@@ -236,6 +236,11 @@ namespace NuvioTpk
                 }
                 catch (Exception e) { Log("propriedades de audio: " + e.Message); }
             }
+            try {
+                var ap = p.StreamInfo.GetAudioProperties();
+                NvVid.Faixa(3, selA >= 0 ? selA : 0,
+                    ap.Channels.ToString(CultureInfo.InvariantCulture) + "|" + (p.StreamInfo.GetAudioCodec() ?? ""));
+            } catch { }
             if (soAudio) { NvVid.FaixasFim(selA, -1); return nA; }
             // #269: SubtitleTrackInfo lanca InvalidOperation fora de Ready/Playing/Paused
             // (player solto ou ainda em Idle). Sem estado valido nao ha lista: segue sem legenda.
@@ -478,7 +483,11 @@ namespace NuvioTpk
                 if (minha != Volatile.Read(ref sessao)) return;
                 int dur = 0;
                 try { dur = p.StreamInfo.GetDuration(); } catch { }
-                try { var v = p.StreamInfo.GetVideoProperties(); NvVid.Evento(EV_TAMANHO, v.Size.Width, v.Size.Height); } catch { }
+                try { var v = p.StreamInfo.GetVideoProperties();
+                    NvVid.Evento(EV_TAMANHO, v.Size.Width, v.Size.Height);
+                    NvVid.Evento(13, v.Fps, v.BitRate);
+                    NvVid.Faixa(2, 0, p.StreamInfo.GetVideoCodec() ?? "");
+                } catch { }
                 int nAudio = Faixas(p);
                 AplicaVolume(p, "preparado");
                 NvVid.Evento(EV_PRONTO, dur, 0);

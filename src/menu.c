@@ -145,6 +145,7 @@ static int mostra(int i) {
     case MENU_SERVIDORES: return servidorConectado;
     case MENU_EXPLORAR: return ajustes_menu_explorar();
     case MENU_GUIA:     return ajustes_menu_guia();
+    case MENU_ESPORTES: return ajustes_menu_esportes();
     case MENU_AGENDA:   return ajustes_menu_agenda();
     case MENU_PERFIL:   return ajustes_menu_perfil();
     default:            return 1;
@@ -169,6 +170,12 @@ static int visiveis(void) {
 #define NV_MENU_ST_MAX      24
 #define MENU_ST0            NV_MENU_FOCOS
 #define NV_MENU_FOCOS_TV   (NV_MENU_FOCOS + NV_MENU_ST_MAX)
+
+static Uint32 menuEntradaEm;
+// Background catalog work waits for input to settle; animations keep ticking.
+int menu_ocupado(Uint32 agora) {
+  return menuEntradaEm && agora - menuEntradaEm < 150u;
+}
 
 static int   pediuTrocar = 0;
 static int   aberto  = 0;
@@ -297,6 +304,7 @@ static void ponteiroLinha(int i, int b) {
   tvToqueLimpar();
 #endif
   if (!aberto) menu_abrir();
+  if (linha != i) menuEntradaEm = SDL_GetTicks();
   linha = i;
 }
 static void ponteiroFora(int a, int b) { (void)a; (void)b; menu_fechar(); }
@@ -406,13 +414,9 @@ static void desenhaBarra(float e, float a, int focos, float entrada) {
             tb = anim_mistura(NV_MENU_FG_B, 1.0f, bw);
       iconeTraco(i, icx, cy, NV_MENU_ICONE, tr, tg, tb, op * a);
       if (aRot > 0.01f) {
-        // Texto ja rasterizado nao muda de cor: troca no meio da mola, e a
-        // opacidade anda com ela.
-        int emFoco = f > 0.5f;
-        TxtLinha l = emFoco
-          ? txt_linha_corta(TXT_BODY, ROTULOS[i], 255, 255, 255, 255, NV_MENU_ROTULO_MAX)
-          : txt_linha_corta(TXT_BODY, ROTULOS[i], 243, 242, 239, 255, NV_MENU_ROTULO_MAX);
-        txt_desenhar_alpha(l, g.x + NV_MENU_ROTULO_X, cy - l.h * 0.5f, aRot * op);
+        // Reuse one white texture; ink and opacity follow the focus spring.
+        TxtLinha l = txt_linha_corta(TXT_BODY, ROTULOS[i], 255, 255, 255, 255, NV_MENU_ROTULO_MAX);
+        txt_desenhar_tom(l, g.x + NV_MENU_ROTULO_X, cy - l.h * 0.5f, tr, tg, tb, aRot * op);
       } }
   }
   // O fio do rodape: na rail um traco de 40 centrado no icone (a 10 %);
@@ -428,6 +432,7 @@ int menu_iniciar(void) {
 #ifdef NV_TOUCH_UI
   tvToqueLimpar();
 #endif
+  menuEntradaEm = 0;
   aberto = 0; destino = MENU_INICIO; linha = MENU_INICIO; mudou = 0;
   desliza = 0.0f; expande = 0.0f; expandeV = 0.0f;
   for (int i = 0; i < MENU_N; i++) animFoco[i] = 0.0f;
@@ -436,6 +441,7 @@ int menu_iniciar(void) {
 
 void menu_abrir(void) {
   if (aberto) return;
+  menuEntradaEm = SDL_GetTicks();
 #ifdef NV_TOUCH_UI
   tvToqueLimpar();
 #endif
@@ -447,7 +453,7 @@ void menu_abrir(void) {
   buscaOk = buscaLongo = 0;
   sobre = semRail = 0;   // abertura comum; menu_abrir_sobre liga depois
 }
-void menu_fechar(void) { aberto = 0; linha = destino; }
+void menu_fechar(void) { menuEntradaEm = SDL_GetTicks(); aberto = 0; linha = destino; }
 void menu_abrir_sobre(int semRailFixa) {
   if (aberto) return;
   menu_abrir();
@@ -527,6 +533,7 @@ void menu_evento(const SDL_Event *e) {
   tvToqueLimpar();
 #endif
   SDL_Keycode k = e->key.keysym.sym;
+  menuEntradaEm = SDL_GetTicks();
   // OK em Buscar so arma; a repeticao do firmware (OK segurado manda KEYDOWNs
   // separados) nao rearma.
   if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && linha == MENU_BUSCAR) {
@@ -1395,9 +1402,7 @@ static void tvDesenhar(void) {
       // foto), nada de pilula pesada.
       if (atual && f < 0.99f) gfx_cor(pill, 0.5f, 1.0f, 1.0f, 1.0f, 0.12f * (1.0f - f) * ac);
       if (f > 0.01f) gfx_cor(tvPillFoco(pill, f), 0.5f, FR, FG, FB, f * ac);
-      { int emFoco = f > 0.5f;
-        int c = emFoco ? TINTA_FOCO : 235;
-        const char *rot;
+      { const char *rot;
         float ccx = pill.x + TV_COL_CX;
         if (d < MENU_ST0) {
           tvChip(ccx, cy, f, ac);
@@ -1408,9 +1413,10 @@ static void tvDesenhar(void) {
           tvCirculoPasta(pf, ccx, cy, ac);
           rot = pf ? pf->title : "";
         }
-        { TxtLinha l = txt_linha_corta(TXT_TV_ROTULO, rot, c, c, c, 255,
+        { TxtLinha l = txt_linha_corta(TXT_TV_ROTULO, rot, 255, 255, 255, 255,
                                        pill.w - TV_ROT_X - 16.0f);
-          txt_desenhar_alpha(l, pill.x + TV_ROT_X, cy - l.h * 0.5f, ac); } }
+          float ink = anim_mistura(235.0f, TINTA_FOCO, limita01(f)) / 255.0f;
+          txt_desenhar_tom(l, pill.x + TV_ROT_X, cy - l.h * 0.5f, ink, ink, ink, ac); } }
       ac = ac0;
       if (aberto && ponteiro_ativo() && y >= Q.y - 1.0f && y + TV_LINHA_H <= Q.y + Q.h + 1.0f)
         ponteiro_alvo(Q.x, y, Q.w, TV_LINHA_H, ponteiroLinha, NULL, d, 0);
@@ -1504,9 +1510,22 @@ static const char *topoRotulo(int i) {
 typedef struct { int n, ordem[NV_MENU_FOCOS], cortado; float ws[NV_MENU_FOCOS], vao, pad, rotMax, larg; } TopoTira;
 
 static void topoMedir(TopoTira *t) {
+  static TopoTira cache;
+  static float scale, width, clock;
+  static int language = -1, family = -1;
   int k, nl = 0, ni = 0;
   float txt = 0.0f, disp, fixo;
+  float nextScale = NV_MENU_ESCALA, nextWidth = NV_TELA_W, nextClock = TOPO_RELOGIO;
   t->n = topoLista(t->ordem);
+  // Focus and capsule animation never change label metrics. Rebuild only
+  // after visibility, viewport, scale, language or interface font changes.
+  if (cache.n == t->n && scale == nextScale && width == nextWidth && clock == nextClock &&
+      language == ajustes_idioma() && family == (int)txt_fonte_interface() &&
+      !memcmp(cache.ordem, t->ordem, t->n * sizeof *t->ordem)) {
+    *t = cache; return;
+  }
+  scale = nextScale; width = nextWidth; clock = nextClock;
+  language = ajustes_idioma(); family = txt_fonte_interface();
   for (k = 0; k < t->n; k++) {
     if (t->ordem[k] == MENU_BUSCAR) ni++;
     else { txt += (float)txt_largura(TOPO_TXT, topoRotulo(t->ordem[k])); nl++; }
@@ -1528,6 +1547,9 @@ static void topoMedir(TopoTira *t) {
              : 2.0f * t->pad + txt_linha_corta(TOPO_TXT, topoRotulo(t->ordem[k]), 255, 255, 255, 255, t->rotMax).w;
     t->larg += t->ws[k];
   }
+  // A text-budget miss is temporary, never cache incomplete geometry.
+  if (!txt_pendentes) cache = *t;
+  else cache.n = 0;
 }
 
 // x da pilula k na tira (0 = inicio dela): tab_pill_x deles.
@@ -1569,7 +1591,10 @@ static void topoAtualizar(float dt) {
   TopoTira t;
   int pousa = anim_politica_reduzida || ajustes_animacoes_reduzidas();
   tvPilAlfa = anim_mola(tvPilAlfa, tvPilAlvo, dt, TV_MOLA_PILULA);
+  float previousScale = gfx_escala();
+  gfx_escala_sair(NV_MENU_ESCALA);
   topoMedir(&t);
+  gfx_escala_sair(previousScale);
   topoCapsulaPasso(&topoSel, &t, topoIndice(t.ordem, t.n, destino), pousa, dt);
   topoCapsulaPasso(&topoFoc, &t, aberto ? topoIndice(t.ordem, t.n, linha) : -1, pousa, dt);
 }
@@ -1578,7 +1603,10 @@ void menu_topo_geo(MenuTopoGeo *o) {
   TopoTira t;
   float e = NV_MENU_ESCALA, x0;
   int k;
+  float previousScale = gfx_escala();
+  gfx_escala_sair(NV_MENU_ESCALA);
   topoMedir(&t);
+  gfx_escala_sair(previousScale);
   memset(o, 0, sizeof *o);
   x0 = floorf((NV_TELA_W - t.larg) * 0.5f);
   o->n = t.n; o->cortado = t.cortado;
