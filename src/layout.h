@@ -8,6 +8,10 @@
 #ifndef NV_LAYOUT_H
 #define NV_LAYOUT_H
 
+#if defined(NV_DESKTOP_UI) && !defined(NV_TOUCH_UI)
+#error "NV_DESKTOP_UI requires NV_TOUCH_UI for resizable geometry"
+#endif
+
 #define NV_TELA_BASE_W   1920.0f
 #define NV_TELA_BASE_H   1080.0f
 #ifdef NV_TOUCH_UI
@@ -28,6 +32,23 @@ int layout_modo_resolver(int preferencia, int automaticoMobile);
 void layout_tela_definir(int width, int height);
 void layout_modo_definir(int mobile);
 int layout_modo_mobile(void);
+
+// Desktop geometry uses window points, not Retina drawable pixels. Narrow
+// windows reuse the touch canvas; wide windows keep the approved Mac sidebar.
+#define NV_DESKTOP_WINDOW_W 1280
+#define NV_DESKTOP_WINDOW_H 800
+#define NV_DESKTOP_BREAKPOINT 1000
+#define NV_DESKTOP_SCALE 1.5f
+#define NV_DESKTOP_SIDEBAR_W 336.0f
+#define NV_DESKTOP_TOOLBAR_H 72.0f
+void layout_janela_definir(int width, int height);
+static inline int layout_desktop_ativo(void) {
+#ifdef NV_DESKTOP_UI
+  return !layout_modo_mobile();
+#else
+  return 0;
+#endif
+}
 
 // System insets per edge (start, top, end, bottom) in layout units: the iOS
 // vertical bar, the under-display camera, the home indicator. Art may run

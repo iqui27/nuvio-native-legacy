@@ -7590,7 +7590,9 @@ void app_atualizar(float dt, Uint32 agora) {
   novidades202_atualizar(dt, agora);
   resolver_atualizar(dt, agora);
   novcartao_atualizar(dt, agora);
+#ifndef NV_DESKTOP_UI
   dicascontrole_home_livre(app_home_recebe_teclas(), dt);
+#endif
   dicascontrole_atualizar(dt, agora);
   telemetria_atualizar(dt, agora);
   recintro_atualizar(dt, agora);
@@ -7737,8 +7739,9 @@ static void desenharAtrasDoPainel(void *ctx) {
     if (layout_modo_mobile() && NV_TELA_H > NV_TELA_W) pilula = -1.0f;
 #endif
     menu_pilula_mostrar(pilula);
-    CAMADA_SE(menu_aberto());
+    CAMADA_SE(menu_aberto() && !layout_desktop_ativo());
     menu_desenhar(agora);
+    if (!detail_aberto() && !vertudo_aberta() && !ctx_aberto()) menu_desktop_busca_desenhar();
   }
   // Palco: o holofote escurece a home e a barra, nunca um menu ou a pagina.
   if (tela == TELA_HOME && !detail_aberto() && !vertudo_aberta() && !ctx_aberto() && !menu_aberto())
@@ -7892,6 +7895,7 @@ int app_home_recebe_teclas(void) {
 }
 
 static int relogioCabe(void) {
+  if (layout_desktop_ativo()) return 0;
 #ifdef NV_IOS
   // TELEFONE EM PE: o iOS ja mostra a hora (e o Wi-Fi) no alto da barra do
   // sistema; a pilula do relogio era a mesma hora uma segunda vez.

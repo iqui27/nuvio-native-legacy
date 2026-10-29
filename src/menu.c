@@ -47,6 +47,7 @@ static float tvAumento(void) {
   return ajustes_home_layout() == HOME_LAYOUT_DINAMICA && gfx_escala_ui_base() <= 0.9f + 0.001f ? 1.2f : 1.0f;
 }
 static float menuEscala(void) {
+  if (layout_desktop_ativo()) return 1.0f;
   return NV_MENU_ESCALA_BASE * (ajustes_home_layout() == HOME_LAYOUT_MODERNA ? NV_MENU_MODERNA_AUMENTO : 1.0f) * tvAumento() * fminf(gfx_escala_ui_base(), 1.0f) * gfx_escala_txt();
 }
 #define NV_MENU_ESCALA (menuEscala())
@@ -209,6 +210,8 @@ static void iconeTraco(int d, float cx, float cy, float s, float r, float g, flo
 static void topoAtualizar(float dt);
 static void topoDesenhar(void);
 static void topoMover(int dir);
+static void desktopDesenhar(void);
+static void desktopAtualizar(void);
 
 static int padrao(void) { return ajustes_home_layout() == HOME_LAYOUT_PADRAO; }
 static int topo(void) { return ajustes_menu_topo(); }   // #461: barra no topo
@@ -584,6 +587,7 @@ void menu_atualizar(float dt, Uint32 agora) {
     linha = destino;
   }
   if (!aberto) buscaOk = buscaLongo = 0;
+  if (layout_desktop_ativo()) { desktopAtualizar(); return; }
   if (tvAtivo()) { tvAtualizar(dt); return; }
   if (topo()) topoAtualizar(dt);
   // Recolhido e assentado nao custa nada: nem mola, nem laco pelos destinos.
@@ -759,7 +763,7 @@ static void menu_desenharCorpo_(Uint32 agora);
 // tela virtual dele.
 void menu_desenhar(Uint32 agora) {
   /* Settings owns the Pencil rail; the expanded menu keeps its normal shell. */
-  if(destino==MENU_AJUSTES && !aberto && desliza<.002f && expande<=.004f)return;
+  if(!layout_desktop_ativo() && destino==MENU_AJUSTES && !aberto && desliza<.002f && expande<=.004f)return;
   float ant = gfx_escala();
   gfx_escala_sair(NV_MENU_ESCALA);   // fator FIXO, nao o do Tamanho da interface
   menu_desenharCorpo_(agora);
@@ -770,6 +774,7 @@ static void menu_desenharCorpo_(Uint32 agora) {
   if (layout_modo_mobile() && !aberto && !ponteiro_borda_registrada()) return;
 #endif
   (void)agora;
+  if (layout_desktop_ativo()) { desktopDesenhar(); return; }
   if (tvAtivo()) { tvDesenhar(); return; }
   if (topo()) { topoDesenhar(); return; }
   // Rail fixa sempre presente, como no shell legacy: a pilula estreita, so
@@ -951,7 +956,7 @@ static int tvPastasTotal(const int **v) {
 // Streaming stays collapsed until focus or a mobile swipe passes Settings.
 static int tvPastas(const int **v) {
   int n = tvPastasTotal(v);
-  return linha >= MENU_ST0 ? n : 0;
+  return layout_desktop_ativo() || linha >= MENU_ST0 ? n : 0;
 }
 static int tvPastaDoFoco(int foco) {
   const int *v;
@@ -961,9 +966,11 @@ static int tvPastaDoFoco(int foco) {
 static int tvOrdem(int *lista) {
   const int *v;
   int n = 0, i, np = tvPastas(&v);
-  lista[n++] = MENU_RODAPE;
-  for (i = 0; i < MENU_N; i++) if (mostra(TV_ORDEM[i])) lista[n++] = TV_ORDEM[i];
+  if (!layout_desktop_ativo()) lista[n++] = MENU_RODAPE;
+  for (i = 0; i < MENU_N; i++)
+    if (mostra(TV_ORDEM[i]) && (!layout_desktop_ativo() || TV_ORDEM[i] != MENU_AJUSTES)) lista[n++] = TV_ORDEM[i];
   for (i = 0; i < np; i++) lista[n++] = MENU_ST0 + i;
+  if (layout_desktop_ativo()) { lista[n++] = MENU_AJUSTES; lista[n++] = MENU_RODAPE; }
   return n;
 }
 // O conteudo do painel em coordenadas PROPRIAS (0 = topo do painel, antes da
@@ -1010,7 +1017,7 @@ static GfxRect tvPilula(void) {
 
 int menu_pilula_rect(float *x, float *y, float *w, float *h) {
   GfxRect r;
-  if (!tvAtivo()) { if (x) *x = 0; if (y) *y = 0; if (w) *w = 0; if (h) *h = 0; return 0; }
+  if (!tvAtivo() || layout_desktop_ativo()) { if (x) *x = 0; if (y) *y = 0; if (w) *w = 0; if (h) *h = 0; return 0; }
   r = tvPilula();
   // O retangulo devolvido INCLUI a seta, que fica a esquerda da pilula. Em
   // pixels da tela REAL: a pilula e camada ampliada (escala.h), e quem pergunta
@@ -1022,7 +1029,7 @@ int menu_pilula_rect(float *x, float *y, float *w, float *h) {
     if (h) *h = r.h * e; }
   return 1;
 }
-int menu_pilula_titulo(void) { return tvAtivo(); }
+int menu_pilula_titulo(void) { return tvAtivo() && !layout_desktop_ativo(); }
 float menu_pilula_alfa(void) {
   if (!tvAtivo()) return 0.0f;
   { float a = tvPilAlfa * (1.0f - tvAbre); return a < 0.0f ? 0.0f : a; }
@@ -1187,6 +1194,97 @@ static void tvAvatar(GfxRect av, float alfa) {
 
 void menu_avatar(float x, float y, float size, float alpha) {
   tvAvatar((GfxRect){x, y, size, size}, alpha);
+}
+
+// Desktop keeps the same destinations and confirmation path as the TV menu.
+// Its visibility is independent of keyboard ownership (aberto).
+static void desktopFocar(int d, int b) { ponteiroLinha(d, b); }
+static void desktopEscolher(int d, int b) {
+  desktopFocar(d, b);
+  escolher();
+}
+static void desktopBusca(int a, int b) { (void)a; (void)b; menu_ir(MENU_BUSCAR); }
+void menu_desktop_busca_desenhar(void) {
+  if (!layout_desktop_ativo()) return;
+  float ant = gfx_escala();
+  gfx_escala_sair(1.0f);
+  GfxRect r = {NV_TELA_W - 414.0f, 16.0f, 390.0f, 46.0f};
+  gfx_vidro_folha(r, .5f, 1.0f);
+  iconeTraco(MENU_BUSCAR, r.x + 26, r.y + r.h * .5f, 26, .95f, .95f, .95f, .7f);
+  TxtLinha l = txt_linha(TXT_DET_META2, menu_rotulo(MENU_BUSCAR), 220, 220, 224, 255);
+  txt_desenhar(l, r.x + 54, r.y + (r.h - l.h) * .5f);
+  ponteiro_alvo(r.x, r.y, r.w, r.h, NULL, desktopBusca, 0, 0);
+  gfx_escala_sair(ant);
+}
+static float desktopLayout(float *ys) {
+  int lista[NV_MENU_FOCOS_TV], n = tvOrdem(lista);
+  float y = 142.0f;
+  for (int i = 0; i < NV_MENU_FOCOS_TV; i++) ys[i] = -1;
+  for (int i = 0; i < n; i++) {
+    int d = lista[i];
+    if (d == MENU_AJUSTES || d == MENU_RODAPE) continue;
+    if (d == MENU_ST0) y += 40;
+    ys[d] = y; y += 56;
+  }
+  ys[MENU_AJUSTES] = NV_TELA_H - 132;
+  ys[MENU_RODAPE] = NV_TELA_H - 76;
+  return y;
+}
+static void desktopAtualizar(void) {
+  float ys[NV_MENU_FOCOS_TV], total = desktopLayout(ys);
+  float base = NV_TELA_H - 142;
+  if (aberto && linha != MENU_AJUSTES && linha != MENU_RODAPE &&
+      linha >= 0 && linha < NV_MENU_FOCOS_TV && ys[linha] >= 0) {
+    if (ys[linha] - tvRolar < 142) tvRolar = ys[linha] - 142;
+    if (ys[linha] + 56 - tvRolar > base) tvRolar = ys[linha] + 56 - base;
+  }
+  tvRolar = anim_clamp(tvRolar, 0, fmaxf(0, total - base));
+}
+static void desktopDesenhar(void) {
+  int lista[NV_MENU_FOCOS_TV], n = tvOrdem(lista);
+  float ys[NV_MENU_FOCOS_TV];
+  desktopLayout(ys);
+  const int *pastas;
+  tvPastasTotal(&pastas);
+  const float w = NV_DESKTOP_SIDEBAR_W;
+  gfx_cor((GfxRect){0, 0, w, NV_TELA_H}, 0, .071f, .075f, .086f, 1);
+  txt_tracking(TXT_MINI, "NUVIO", 130, 132, 138, 32, 112, 1, 1.5f);
+  ponteiro_alvo(0, 0, w, NV_TELA_H, NULL, NULL, 0, 0);
+  for (int i = 0; i < n; i++) {
+    int d = lista[i];
+    int footer = d == MENU_AJUSTES || d == MENU_RODAPE;
+    float y = ys[d] - (footer ? 0 : tvRolar);
+    if (footer) gfx_sem_recorte();
+    else gfx_recorte(0, 142, w, fmaxf(0, NV_TELA_H - 284));
+    if (d == MENU_ST0)
+      txt_tracking(TXT_MINI, "STREAMING", 130, 132, 138, 32, y - 30, 1, 1.5f);
+    if (!footer && (y + 56 < 142 || y >= NV_TELA_H - 142)) continue;
+    GfxRect r = {18, y, w - 36, 53};
+    int foco = aberto && linha == d;
+    if (d == destino || foco) gfx_cor(r, .25f, 1, 1, 1, foco ? .14f : .10f);
+    int c = foco || d == destino ? 243 : 185;
+    const char *rot;
+    if (d == MENU_RODAPE) {
+      const ContaPerfil *p = perfis_item_ativo();
+      tvAvatar((GfxRect){34, y + (r.h - 30) * .5f, 30, 30}, 1);
+      rot = p ? p->nome : "Sua conta";
+    } else {
+      if (d >= MENU_ST0) {
+        const ColFolder *p = col_folder(pastas[d - MENU_ST0]);
+        rot = p ? p->title : "";
+        tvCirculoPasta(p, 48, y + r.h * .5f, 1);
+      } else {
+        rot = tvRotulo(d);
+        iconeTraco(d, 48, y + r.h * .5f, 26, c / 255.0f, c / 255.0f, c / 255.0f, 1);
+      }
+    }
+    TxtLinha l = txt_linha_corta(TXT_DET_META2, rot, c, c, c, 255, w - 104);
+    txt_desenhar(l, 80, y + (r.h - l.h) * .5f);
+    float top = footer ? r.y : fmaxf(r.y, 142);
+    float bottom = footer ? r.y + r.h : fminf(r.y + r.h, NV_TELA_H - 142);
+    if (bottom > top) ponteiro_alvo(r.x, top, r.w, bottom - top, desktopFocar, desktopEscolher, d, 0);
+  }
+  gfx_sem_recorte();
 }
 
 // Escurece SO o lado esquerdo: faixas verticais de cor chapada com o alfa

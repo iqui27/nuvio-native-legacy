@@ -41,6 +41,8 @@ typedef enum {
 // estado inicial ja e valido sem chamar (destino = MENU_INICIO, barra fora).
 int  menu_iniciar(void);
 void menu_servidores(int conectado);
+// Persistent desktop chrome; search opens the existing Search destination.
+void menu_desktop_busca_desenhar(void);
 // Shared active-profile avatar, in the caller's coordinate layer.
 void menu_avatar(float x, float y, float size, float alpha);
 

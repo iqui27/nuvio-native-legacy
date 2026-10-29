@@ -101,6 +101,7 @@ int video_registro_negado(void); /* video.h: motivo do trailer bloqueado */
 #include "trailerapple.h"
 #include "trailerfonte.h"
 #include "ponteiro.h"
+#include "menu.h"
 static void navigationTarget(float,float,float,float,PonteiroFn,PonteiroFn,int,int);
 static int navigationMove(SDL_Keycode);
 #define ponteiro_alvo navigationTarget
@@ -796,6 +797,7 @@ static float escalaDoAjuste(void) {
 // arquivo sempre usou: tests/homelayouts_shot.sh compara o quadro byte a byte.
 // Focused Stage/Split share Moderna geometry; the saved layout stays Dinamica.
 static int layoutHome(void) {
+  if (layout_desktop_ativo()) return HOME_LAYOUT_DINAMICA;
   return dinPalcoSplit() ? HOME_LAYOUT_MODERNA : ajustes_home_layout();
 }
 static int homeRetratoTelefone(void) {
@@ -813,6 +815,7 @@ static float homeConteudoX(void) {
   return ANC(ajustes_conteudo_x());
 }
 static float homeMargemDireita(void) {
+  if (layout_desktop_ativo()) return ANC(40.0f);
   return homeRetratoTelefone() ? homeConteudoX() : ANC(NV_HOME_SAFE_RIGHT);
 }
 static float homeConteudoDireita(void) { return NV_TELA_W - homeMargemDireita(); }
@@ -856,12 +859,14 @@ static float retFator(float ptPorPx) { return ptPorPx * NV_LAYOUT_REAL_W / RET_M
 // cartoes a vista (mock ios-01-home); o destaque fica com o resto.
 static float repousoRetrato(void) { return NV_TELA_H - ANC(nv_inset_b) - retPt(RET_FIL_ESPIA_PT); }
 static float alturaTextoHeroDin(void) {
+  if (layout_desktop_ativo()) return ANC(705.0f);
   if (homeRetratoTelefone())
     return repousoRetrato() + NV_LEGACY_ROW_HEAD_H + ANC(NV_DIN_TEXTO_BASE)
          - retPt(RET_TIT_ACIMA_PT + RET_DISCO_FIL_PT);
   return ANC(NV_DIN_HERO_H) * (heroCompactoTelefone() ? 0.75f : 1.0f);
 }
 static float repousoFileirasDin(void) {
+  if (layout_desktop_ativo()) return ANC(729.0f);
   if (homeRetratoTelefone()) return repousoRetrato();
   return ANC(NV_DIN_REPOUSO_FIL) * (heroCompactoTelefone() ? 0.75f : 1.0f);
 }
@@ -889,6 +894,7 @@ static float heroVisivelToque(void) {
 // Onde a fileira EM FOCO ancora o titulo dela. E tambem a referencia do
 // esvanecer das de cima (o `fade` de home_desenhar).
 static float topoFileiras(void) {
+  if (layout_desktop_ativo()) return ANC(NV_DESKTOP_TOOLBAR_H + 32.0f);
   int heroOn = ajustes_hero_ligado();
   if (homeRetratoTelefone() && !heroOn) return ANC(NV_DIN_TOPO_FIL);
   switch (layoutHome()) {
@@ -929,7 +935,7 @@ static float empurraHero(void) {
   if (homeRetratoTelefone() && !heroOn) return 0.0f;
   switch (layoutHome()) {
     case HOME_LAYOUT_PADRAO:   return 0.0f;
-    case HOME_LAYOUT_DINAMICA: return heroOn ? repousoFileirasDin() - ANC(NV_DIN_TOPO_FIL) : 0.0f;
+    case HOME_LAYOUT_DINAMICA: return heroOn ? repousoFileirasDin() - topoFileiras() : 0.0f;
     default:                   return empurraHeroModerna();
   }
 }
@@ -1024,7 +1030,7 @@ static float larguraDe(TipoFileira t) {
       return layoutHome() == HOME_LAYOUT_PADRAO
         ? escalaCartazPadrao() * NV_PAD_CARTAZ_W * gfx_poster_k()
         : escalaDoAjuste() * escalaPosterTelefone() * NV_CARD_W * gfx_poster_k();
-    case FILEIRA_CONTINUE: return NV_DESTAQUE_W * gfx_poster_k();
+    case FILEIRA_CONTINUE: return (layout_desktop_ativo() ? 300.0f : NV_DESTAQUE_W) * gfx_poster_k();
     // Opção editorial já existente: card panorâmico 16:9.
     case FILEIRA_DESTAQUE: return layoutHome() == HOME_LAYOUT_DINAMICA
                                 ? NV_DIN_DEST_W * gfx_poster_k() : NV_DESTAQUE_EDITORIAL_W * gfx_poster_k();
@@ -1558,7 +1564,7 @@ static float alturaDe(TipoFileira t) {
       return layoutHome() == HOME_LAYOUT_PADRAO
         ? escalaCartazPadrao() * NV_PAD_CARTAZ_H * gfx_poster_k()
         : escalaDoAjuste() * escalaPosterTelefone() * NV_CARD_H * gfx_poster_k();
-    case FILEIRA_CONTINUE: return NV_DESTAQUE_H * gfx_poster_k();
+    case FILEIRA_CONTINUE: return (layout_desktop_ativo() ? 169.0f : NV_DESTAQUE_H) * gfx_poster_k();
     case FILEIRA_DESTAQUE: return layoutHome() == HOME_LAYOUT_DINAMICA
                                 ? NV_DIN_DEST_H * gfx_poster_k() : NV_DESTAQUE_EDITORIAL_H * gfx_poster_k();
     case FILEIRA_TOP10_NUM: return (NV_CARD_H * gfx_poster_k()) * escalaPosterTelefone();
@@ -4714,7 +4720,7 @@ static float desenhaCopiaHero(const CatItem *ci, int principal, float x,
 
   // "Mostrar sinopse no destaque" desligado: hSin fica 0 e o layout (heroCopyLayout)
   // recolhe o espaco — o que esta embaixo sobe, sem buraco.
-  const char *sinopse = (ci && ci->sinopse[0] && ajustes_hero_sinopse()) ? ci->sinopse : "";
+  const char *sinopse = (ci && ci->sinopse[0] && ajustes_hero_sinopse() && !layout_desktop_ativo()) ? ci->sinopse : "";
 
   float hSin = sinopse[0] ? txt_bloco_corta(heroSinEstilo(), sinopse, 255, 255, 255, -1, 0,
                                             sinW, heroSinEntrelinha(), 0.0f, sinLinhas)
@@ -5175,6 +5181,9 @@ int home_pediu_acao_detalhe(void) {
 // nao como troca de tela.
 static void ponteiroHero(int a, int b);
 static GfxRect heroArtworkRect(int lay, int cheio) {
+  if (layout_desktop_ativo())
+    return (GfxRect){ANC(NV_DESKTOP_SIDEBAR_W), dinHeroY(),
+                     NV_TELA_W - ANC(NV_DESKTOP_SIDEBAR_W), ANC(729.0f)};
   if (lay == HOME_LAYOUT_PADRAO) return padBannerRect();
   GfxRect r = lay == HOME_LAYOUT_DINAMICA
             ? (GfxRect){0, dinHeroY(), NV_TELA_W, ANC(NV_DIN_ARTE_H)}
@@ -5234,7 +5243,7 @@ static void heroTrailerAtualizaRect(GfxRect r, float saida) {
     trailer_rect(r);
 }
 static void alvoAcaoHero(GfxRect r, float saida, float cin, float alpha) {
-  if (!telefoneui_ativo()) return;
+  if (!telefoneui_ativo() && !layout_desktop_ativo()) return;
   float primeira = topoFileiras() - scrollY;
   if (homeRetratoTelefone() && (r.x < homeConteudoX() || r.x + r.w > homeConteudoDireita())) return;
   if (saida <= 0.001f && cin <= 0.005f && alpha > 0.25f &&
@@ -5439,6 +5448,7 @@ static void desenhaHero(Uint32 agora, float saida) {
     btnH = NV_HERO_BOTAO_COMPACTO_H; btnGap = 22.0f;
   }
 
+  if (layout_desktop_ativo()) { logoH = 126.0f; sinW = 700.0f; sinLinhas = 0; }
   sinW = homeTextoLargura(sinW);
   if(!focoHero && lay==HOME_LAYOUT_MODERNA && foco.fileira>=0 && foco.fileira<nFileiras && fileiras[foco.fileira].tipo==FILEIRA_SOCIAL) {
     float fade = heroEspecialAlpha[foco.fileira];
@@ -6114,6 +6124,7 @@ static void desenhaFundo(Uint32 agora) {
 // mesmos efeitos colaterais de uma tecla (relogio do destaque, pergunta de
 // sair desarmada). O OK do clique chega depois, pelo caminho de sempre.
 static void ponteiroCard(int r, int c) {
+  if (layout_desktop_ativo()) menu_fechar();
   if (r < 0 || r >= nFileiras || c < 0 || c >= foco.nColunas[r]) return;
 #ifdef NV_TOUCH_UI
   toqueHomeLimpar();
@@ -6125,6 +6136,7 @@ static void ponteiroCard(int r, int c) {
 }
 static void ponteiroHero(int a, int b) {
   (void)a; (void)b;
+  if (layout_desktop_ativo()) menu_fechar();
 #ifdef NV_TOUCH_UI
   toqueHomeLimpar();
 #endif
@@ -6150,7 +6162,7 @@ static void alvoCard(float x, float y, float w, float h, int r, int c) {
     temAncoraFoco = 1;
   }
   if (y < topo) { h -= topo - y; y = topo; }
-  if (homeRetratoTelefone()) {
+  if (homeRetratoTelefone() || layout_desktop_ativo()) {
     float dir = fminf(x + w, homeConteudoDireita());
     x = fmaxf(x, homeConteudoX()); w = dir - x;
     if (w <= 0.0f || h <= 0.0f) return;
@@ -8244,8 +8256,9 @@ static void home_desenhar_(Uint32 agora) {
   if (ajustes_hero_ligado() && !vazioQr && heroVisivelToque() > 0.25f) {
     float heroBaixo = layoutHome() == HOME_LAYOUT_DINAMICA
                     ? dinHeroY() + alturaTextoHeroDin() : corteFileiras();
+    float heroX = layout_desktop_ativo() ? ANC(NV_DESKTOP_SIDEBAR_W) : 0;
     if (heroBaixo > 0.0f)
-      ponteiro_alvo(0, 0, NV_TELA_W, heroBaixo,
+      ponteiro_alvo(heroX, 0, NV_TELA_W - heroX, heroBaixo,
 #ifdef NV_TOUCH_UI
                     toqueHero.estado ? NULL : ponteiroHero,
 #else
@@ -8291,9 +8304,9 @@ static void home_desenhar_(Uint32 agora) {
   // fileira que saia por cima aparecia atravessada no bloco do hero em vez de
   // sumir. O hero nao rola: so o conteudo dele muda com o foco.
   const float corte = corteFileiras();
-  // Sem prateleira nem contorno na Dinamica (dono, 30/09): as fileiras ficam
-  // direto sobre o fundo e o cartao rola ate a beira da tela, como nos outros.
-  gfx_recorte(0.0f, corte, NV_TELA_W, NV_TELA_H - corte);
+  // Desktop rows clip at the persistent sidebar.
+  float recorteX = layout_desktop_ativo() ? ANC(NV_DESKTOP_SIDEBAR_W) : 0;
+  gfx_recorte(recorteX, corte, NV_TELA_W - recorteX, NV_TELA_H - corte);
   const float topoFil = topoFileiras();
   float y = topoFil - scrollY + descida + bordaPag.x;
   // NENHUMA FILEIRA. Nao e o arranque (ali a home mostra o catalogo do pacote

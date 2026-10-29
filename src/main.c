@@ -56,6 +56,7 @@
 #include "perftv.h"
 #include "vertudo.h"
 #include "ctxmenu.h"
+#include "menu.h"
 #include "estatvivoui.h"
 #include "gputempo.h"
 #include "text.h"
@@ -604,7 +605,9 @@ static int capW = (int)NV_TELA_BASE_W, capH = (int)NV_TELA_BASE_H;
 // Mobile uses the device viewport. Its dimensions and GPU samples cannot
 // decide the remembered TV resolution or trigger a TV 4K fallback.
 static int resolucaoDaTv(void) {
-#ifdef NV_TOUCH_UI
+#ifdef NV_DESKTOP_UI
+  return 0;
+#elif defined(NV_TOUCH_UI)
   return !layout_modo_mobile();
 #else
   return 1;
@@ -655,13 +658,20 @@ static void iosFramebufferTela(SDL_Window *w) {
 #ifdef NV_TOUCH_UI
 static void interfaceViewport(SDL_Window *win, int *width, int *height, int *modo) {
   int novoW = 0, novoH = 0;
+  float canvasW = NV_TELA_W, canvasH = NV_TELA_H;
 #ifdef NV_IOS
   iosFramebufferTela(win);
+#endif
+#ifdef NV_DESKTOP_UI
+  int janelaW, janelaH;
+  SDL_GetWindowSize(win, &janelaW, &janelaH);
+  layout_janela_definir(janelaW, janelaH);
 #endif
   int novoModo = layout_modo_mobile();
   SDL_GL_GetDrawableSize(win, &novoW, &novoH);
   if (novoW <= 0 || novoH <= 0 ||
-      (novoW == *width && novoH == *height && novoModo == *modo)) return;
+      (novoW == *width && novoH == *height && novoModo == *modo &&
+       canvasW == NV_TELA_W && canvasH == NV_TELA_H)) return;
   resolucaoTvViewportMudou(SDL_GetTicks(), novoModo != *modo);
   *width = novoW; *height = novoH; *modo = novoModo;
   layout_tela_definir(novoW, novoH);
@@ -1306,6 +1316,10 @@ int main(int argc, char **argv) {
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
   }
 #endif
+#ifdef NV_DESKTOP_UI
+  pedeW = NV_DESKTOP_WINDOW_W; pedeH = NV_DESKTOP_WINDOW_H;
+  flags = (flags & ~SDL_WINDOW_FULLSCREEN_DESKTOP) | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+#endif
   NV_ETAPA("SDL_CreateWindow");
   arranque_etapa("SDL_CreateWindow");
   win = SDL_CreateWindow(windowTitle, SDL_WINDOWPOS_CENTERED,
@@ -1558,6 +1572,9 @@ int main(int argc, char **argv) {
   int dw = 0, dh = 0, jw = 0, jh = 0;
   SDL_GL_GetDrawableSize(win, &dw, &dh);
   SDL_GetWindowSize(win, &jw, &jh);
+#ifdef NV_DESKTOP_UI
+  layout_janela_definir(jw, jh);
+#endif
   ajustes_ui_saida(dw, dh);
   if (resolucaoDaTv() && ajustes_ampliar_app() && (ajustes_720p() || ajustes_1080p()))
     printf("[gpu-nivel] app output requested=%dx%d drawable=%dx%d%s\n",
@@ -1950,6 +1967,16 @@ int main(int argc, char **argv) {
 #endif
 #ifdef NV_DESKTOP_RELEASE
       if (desktop_event(&e, win, texto_sistema_aberto())) continue;
+#endif
+#ifdef NV_DESKTOP_UI
+      // Returning the pointer to content also returns keyboard ownership.
+      if (layout_desktop_ativo() && !menu_sobre() &&
+          (e.type == SDL_MOUSEMOTION || e.type == SDL_MOUSEBUTTONDOWN)) {
+        int janelaW, janelaH;
+        SDL_GetWindowSize(win, &janelaW, &janelaH);
+        int x = e.type == SDL_MOUSEMOTION ? e.motion.x : e.button.x;
+        if (janelaW > 0 && x * NV_TELA_W / janelaW >= NV_DESKTOP_SIDEBAR_W) menu_fechar();
+      }
 #endif
       ponteiro_diag(&e);
       // PROTECAO DE OLED (esmaecer.h): toda acao da pessoa acorda a tela, e a
