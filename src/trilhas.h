@@ -14,6 +14,8 @@ int  trilhas_abrir(const char *chave);
 // A partir do titulo em cena (detail.c): 1 se ele pertence a uma trilha.
 int  trilhas_abrir_titulo(const char *imdb, const char *tipo);
 int  trilhas_aberta(void);
+int  trilhas_foco(void);
+int  trilhas_poster(const CqPasso *p, char *url, size_t tam);
 void trilhas_evento(const SDL_Event *e);
 void trilhas_desenhar(Uint32 agora);
 

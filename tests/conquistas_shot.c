@@ -374,6 +374,20 @@ int main(int argc, char **argv) {
     cat_historico_definir_id("tt0019729", "movie", 1);
     conquistas_abrir();
     captura(prefixo, "list", 60);
+    // Optional real downloaded posters; production poster resolution is tested headlessly.
+    const char *posters=getenv("NUVIO_TRAIL_POSTERS");
+    if (posters) {
+      const CqTrilha *t=cqd_trilha_buscar("oscar-melhor-filme");
+      CatItem items[8]={0};
+      for(int j=0;j<8;j++) {
+        CatItem item={0};
+        snprintf(item.imdb,sizeof item.imdb,"%s",t->p[j].imdb);
+        snprintf(item.tipo,sizeof item.tipo,"movie");
+        snprintf(item.poster,sizeof item.poster,"%s/%s.jpg",posters,t->p[j].imdb);
+        items[j]=item;
+      }
+      cat_definir(items,8);
+    }
     assert(conquistas_abrir_trilha("trilha:oscar-melhor-filme"));
     assert(trilhas_vistos() == 2 && trilhas_passo() == 2);
     captura(prefixo, "detail-history", 30);

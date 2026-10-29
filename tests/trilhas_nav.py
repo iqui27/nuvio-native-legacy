@@ -24,7 +24,10 @@ code = r'''
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-typedef struct { const char *imdb; } CqPasso;
+typedef struct { const char *imdb, *titulo; int ano; } CqPasso;
+typedef struct { char imdb[24],poster[160]; } CatItem;
+static int arte_metahub_preencher(CatItem *s) { strcpy(s->poster,"poster"); return 1; }
+static void desc_pedir_titulo_semente(const char *id,long tmdb,const char *tipo,const char *titulo,const char *ano,const char *poster);
 #define N_SECOES 4
 static int achievements, trail, film, discovery, requested, cached, drawn, layerActive;
 static int emblemaDaTrilha, idx, saindo, pedAbrir = -1, pediuMenu, carro, carCheia;
@@ -55,6 +58,9 @@ static void abrirPorIndice(int i) {
 ''' + restore_state + r'''
 }
 static void desc_pedir_titulo(const char *id) { (void)id; discovery = 1; }
+static void desc_pedir_titulo_semente(const char *id,long tmdb,const char *tipo,const char *titulo,const char *ano,const char *poster) {
+  (void)tmdb;(void)tipo;(void)titulo;(void)ano;(void)poster; desc_pedir_titulo(id);
+}
 static void openFilm(void) { CqPasso passo;
 ''' + open_trail + r'''
 static void backFilm(void) {
