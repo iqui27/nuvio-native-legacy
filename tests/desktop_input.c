@@ -10,14 +10,16 @@
 #define desktop_native_dark test_native_dark
 #define desktop_native_swipes test_native_swipes
 #include "../src/ponteiro.c"
-static int opens, saved, focuses, arrows, moves;
+static int opens, saved, focuses, arrows, moves, contexts;
 static float pixels;
 static int allowSwipes=1;
 void test_native_init(SDL_Window *w) { (void)w; }
-void test_native_sidebar(float x) { (void)x; }
+void test_native_sidebar(float x,float reveal) { (void)x;(void)reveal; }
 int test_native_dark(void) { return 1; }
 int test_native_swipes(void) { return allowSwipes; }
 void menu_desktop_expandir(void) { opens++; }
+void menu_desktop_revelar(void) { opens++; }
+void menu_desktop_hover(float x) { (void)x; }
 void spainel_abrir(void) { saved++; }
 float gfx_escala(void) { return 1; }
 void gfx_escala_sair(float x) { (void)x; }
@@ -25,6 +27,7 @@ float gfx_opacidade_grupo=1;
 void gfx_sem_recorte(void) {}
 void gfx_cor(GfxRect r,float radius,float a,float b,float c,float d) { (void)r;(void)radius;(void)a;(void)b;(void)c;(void)d; }
 static void focus(int a,int b) { (void)a;(void)b;focuses++; }
+static void context(int a,int b) { (void)a;(void)b;contexts++; }
 static void deliver(const SDL_Event *e) { if(e->type==SDL_KEYDOWN) arrows++; }
 static int scrolling(const PonteiroRolagem *e) { if(e->fase==PONT_ROL_MOVER){pixels+=e->delta;moves++;} return 1; }
 static void wheel(int x,int y,float dx,float dy) {
@@ -38,7 +41,7 @@ int main(void) {
   ponteiro_quadro(SDL_GetTicks());
   ponteiro_alvo(100,100,500,500,focus,NULL,0,0);ponteiro_rolagem(scrolling);fecharQuadro();
   SDL_Event e={0};e.type=SDL_MOUSEMOTION;e.motion.x=200;e.motion.y=200;ponteiro_evento(&e,deliver);
-  assert(focuses==0);
+  assert(focuses==1 && !arrows && moves==0);
   wheel(200,200,0,-.25f);wheel(200,200,0,-.25f);
   assert(moves==2 && fabsf(pixels+.75f)<.001f && !inRolagem && !arrows);
   nv_desktop_wheel_until=SDL_GetTicks()+100;
@@ -49,7 +52,14 @@ int main(void) {
   SDL_Delay(190);wheel(1275,200,-60,0);assert(saved==1);
   SDL_Delay(190);allowSwipes=0;wheel(10,200,40,0);assert(opens==1 && moves==3);
   e.type=SDL_MOUSEBUTTONDOWN;e.button.x=200;e.button.y=200;e.button.button=SDL_BUTTON_LEFT;
-  ponteiro_evento(&e,deliver);assert(focuses==1 && arrows==1);
-  puts("PASS: hover preserves focus; fractional pixels; no Mac double momentum; left/right edges; disabled swipe preference; click activation");
+  ponteiro_evento(&e,deliver);assert(focuses==2 && arrows==1);
+  e.button.button=SDL_BUTTON_RIGHT;ponteiro_evento(&e,deliver);
+  assert(focuses==3 && arrows==2 && !ponteiro_ok_longo());
+  ponteiro_quadro(SDL_GetTicks());
+  ponteiro_alvo(100,100,500,500,focus,NULL,0,0);
+  ponteiro_alvo_segurar(context);fecharQuadro();
+  ponteiro_evento(&e,deliver);
+  assert(contexts==1 && focuses==3 && arrows==2);
+  puts("PASS: hover updates focus without scrolling; fractional pixels; no Mac double momentum; left/right edges; disabled swipe preference; click activation");
   SDL_Quit();return 0;
 }

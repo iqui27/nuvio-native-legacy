@@ -23,6 +23,13 @@
 #define NV_TXT_TELA   // NV_TELA_W/H = tela virtual da escala de texto (escala.h)
 #include "escala.h"
 #include "detail.h"
+// Desktop content clears the pinned sidebar; the backdrop remains full bleed.
+#ifdef NV_DESKTOP_UI
+#undef NV_DETP_X
+#define NV_DETP_X (layout_desktop_ativo()?ANC(ajustes_conteudo_x()):96.0f)
+#undef NV_DETW2_X
+#define NV_DETW2_X (layout_desktop_ativo()?ANC(ajustes_conteudo_x()):96.0f)
+#endif
 #include "srvidx.h"
 #include "biblioteca.h"
 #include "detail_acoes.h"
@@ -414,11 +421,12 @@ static GfxRect detalheEscala(GfxRect r,float f,float escala) {
 // C.13: every tile takes the user's "Foco no cartaz" (focoprof.h). On: the
 // mock's spring growth plus the white ring; off: no ring, the shared 6 %.
 static float detalheFocoEscala(float escala) {
-  return ajustes_borda_foco() ? escala : FOCO_ZOOM;
+  return layout_desktop_ativo() ? .025f : ajustes_borda_foco() ? escala : FOCO_ZOOM;
 }
 static GfxRect detalheFoco(GfxRect r,float raio,float f,float escala,float a) {
   r=detalheEscala(r,f,detalheFocoEscala(escala));
-  if (f>.005f && ajustes_borda_foco()) gfx_anel(r,raio,1,1,1,1,f*a);
+  if (layout_desktop_ativo()) foco_anel(r,raio,f,a);
+  else if (f>.005f && ajustes_borda_foco()) gfx_anel(r,raio,1,1,1,1,f*a);
   return r;
 }
 static float corpoAlpha(float entrada) { return entrada; }
@@ -1231,7 +1239,8 @@ static void recalcularLayout(void) {
   }
   if (!changed) return;
   ready=1; lastSeries=ehSerie(); lastScale=scale; lastFone=fone;
-  float y=heroServidor() ? NV_TELA_H + 60 : fone ? retPt(636) : ANC(NV_DET21_FIM + 56);
+  float y=heroServidor() ? NV_TELA_H + 60 : fone ? retPt(636) :
+    layout_desktop_ativo() ? NV_TELA_H * .66f + 56 : ANC(NV_DET21_FIM + 56);
   const int *order=ordemSecoes();
   for (int r=0;r<N_SECOES;r++) {
     topoSec[r]=conteudoSec[r]=y; dxSec[r]=0; wSec[r]=1728;
@@ -1246,7 +1255,7 @@ static void recalcularLayout(void) {
     if (r==SEC_TEMPORADAS && !epModerno()) {
       // Retrato do telefone: o heroi e mais alto que o da TV; a faixa de
       // temporadas/episodios desce pelo mesmo tanto (zero na TV).
-      epDyFone = fone || layout_desktop_ativo() ? fmaxf(0, y - serieGrupo(0)) : 0;
+      epDyFone = layout_desktop_ativo() ? y - serieGrupo(0) : fone ? fmaxf(0, y - serieGrupo(0)) : 0;
       topoSec[r]=serieGrupo(0)+epDyFone;
       conteudoSec[r]=(epApple() ? 1160 : NV_DETP_TEMP_Y)+epDyFone;
       topoSec[SEC_EPISODIOS]=serieGrupo(1)+epDyFone;
@@ -2073,7 +2082,7 @@ static void carPasso(int d) {
 // cartaz da fileira <-> cartao (abrir/fechar, t).
 static GfxRect carBuraco(float *raioPx) {
   GfxRect c = { CAR_X, CAR_Y, NV_TELA_W - 2.0f * CAR_X, NV_TELA_H - CAR_Y - CAR_BAIXO };
-  float k = cartao, s = suave(t), r;
+  float k = layout_desktop_ativo() ? 0 : cartao, s = suave(t), r;
   GfxRect h = { c.x * k, c.y * k, NV_TELA_W + (c.w - NV_TELA_W) * k, NV_TELA_H + (c.h - NV_TELA_H) * k };
   r = CAR_RAIO * k;
   if (s < 0.9999f) {
@@ -5187,7 +5196,7 @@ static void esqueletoSinopse(float x, float y, float a) {
 // bloco inteiro — sem tocar nas medidas do resto da pagina.
 #pragma push_macro("NV_DETW2_X")
 #undef NV_DETW2_X
-#define NV_DETW2_X ((heroServidor() ? ANC(96.0f) : 96.0f) + heroDx)
+#define NV_DETW2_X ((layout_desktop_ativo()?ANC(ajustes_conteudo_x()):heroServidor()?ANC(96.0f):96.0f) + heroDx)
 // Unknown language is not evidence of a mismatch. Keep a loaded logo clean;
 // only a confirmed foreign image needs a caption. Missing images keep text.
 static int mostrarNomeLogo(const CatItem *ci, const char *url, int loaded,
@@ -5655,7 +5664,7 @@ static void heroWeb(float a, float desloc) {
   // NV_DET21_FIM, just above the first section kicker.
   float yVers = 716.0f;
   if (!detalheRetrato() && !heroServidor()) {
-    float y = ANC(layout_desktop_ativo() ? 900.0f : NV_DET21_FIM);
+    float y = layout_desktop_ativo() ? NV_TELA_H * .66f : ANC(NV_DET21_FIM);
 
     float hP = (pessoal[0] ? 30.0f : 0.0f) + (srvLinha[0] ? 30.0f : 0.0f);
     if (hP > 0.0f) { yRetom = y - hP; y = yRetom - 8.0f; }
@@ -8455,6 +8464,13 @@ static float desenhaFrases(float x, float y, float a) {
 // c (nivel 1) — as mesmas variaveis que as setas mexem em detail_evento.
 static void ponteiroDetalhe(int r, int c) {
   if (corpoSobArte()) return;
+#ifdef NV_DESKTOP_UI
+  // Hover updates identity without asking the document or row to scroll.
+  if (ponteiro_mouse()) {
+    toqueDetalhe.livre=1; velY=0;
+    if(r>=0 && r<N_SECOES) toqueSec[r].livre=1;
+  }
+#endif
   if (r==-4) { nivel=0; focoVersao=1; focoAmigos=0; focoServidor=-1; return; }
   focoVersao=0;
   if (r == -2) { ponteiroServidor(c,0); return; }

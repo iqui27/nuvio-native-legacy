@@ -103,6 +103,7 @@ void ponteiro_desenhar(void);
 // Vale a pena registrar alvos? Cursor na tela ou dispositivo de toque. No
 // Android os alvos existem antes do primeiro dedo, sem desenhar cursor.
 int  ponteiro_ativo(void);
+int  ponteiro_mouse(void); // Last input is a visible mouse, not keyboard navigation.
 
 void ponteiro_alvo(float x, float y, float w, float h,
                    PonteiroFn focar, PonteiroFn ativar, int a, int b);

@@ -22,6 +22,10 @@
 // tecla nem abre no KEYDOWN; assim o toque curto continua abrindo o detalhe e
 // o modal recebe apenas o foco D-pad depois de estar visivel.
 void ctx_abrir(int indice);
+#ifdef NV_DESKTOP_UI
+void ctx_desktop_ancorar(float x, float y);
+int ctx_desktop_pedido(int *action); // 0 title, 1 play, 2 trailer; returns catalog index
+#endif
 // Fecha a UI e descarta copias/pedidos do perfil anterior. Escritas ja
 // despachadas continuam nos seus proprios workers, com o dono original.
 void ctx_abrir_sessao(void);

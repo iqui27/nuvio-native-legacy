@@ -149,6 +149,8 @@ int ponteiro_teste_lista(const PonteiroAlvo **v) { if (v) *v = lista[pronto]; re
 
 float ponteiro_x(void) { return px; }
 float ponteiro_y(void) { return py; }
+static int mouseInput=1;
+int ponteiro_mouse(void) { return mouseInput; }
 int ponteiro_ativo(void) {
 #ifdef NV_DESKTOP_UI
   return 1;
@@ -373,13 +375,10 @@ static void rastro(const char *o_que, const PonteiroAlvo *al, int n) {
 }
 
 static void mover(void) {
-#ifdef NV_DESKTOP_UI
-  return; // Hover never moves keyboard focus or scrolls the page.
-#endif
   const PonteiroAlvo *v = lista[pronto];
   int i = ponteiro_achar(v, nLista[pronto], px, py);
   if (i < 0 || mesmo(&hover, &v[i])) return;
-  if (conteudoMexeuEm && agoraMs() - conteudoMexeuEm < PONT_ASSENTA_MS) return;
+  if (!layout_desktop_ativo() && conteudoMexeuEm && agoraMs() - conteudoMexeuEm < PONT_ASSENTA_MS) return;
   guardar(&hover, &v[i]);
   if (v[i].focar) { rastro("foco", &v[i], nLista[pronto]); v[i].focar(v[i].a, v[i].b); }
 }
@@ -757,8 +756,12 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
       if (e->motion.which == SDL_TOUCH_MOUSEID) return 1;
       converter(e->motion.windowID, e->motion.x, e->motion.y);
       primeiro(0, "movimento", e->motion.x, e->motion.y);
+#ifdef NV_DESKTOP_UI
+      if(layout_desktop_ativo()) menu_desktop_hover(e->motion.x);
+#endif
       if (tremorDaSeta(agora)) return 1;
       ultimoMov = agora;
+      mouseInput=1;
       reaparecer();
       mover();
       return 1;
@@ -768,9 +771,25 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
       invalidarToque();
       converter(e->button.windowID, e->button.x, e->button.y);
       primeiro(1, "clique", e->button.x, e->button.y);
+      mouseInput=1;
       ultimoMov = agora;
       reaparecer();
       if (e->button.button == SDL_BUTTON_RIGHT) {
+#ifdef NV_DESKTOP_UI
+        if(layout_desktop_ativo()) {
+          const PonteiroAlvo *v=lista[pronto];
+          int i=ponteiro_achar(v,nLista[pronto],px,py);
+          if(i>=0 && v[i].segurar) { v[i].segurar(v[i].a,v[i].b);return 1; }
+          if(i>=0 && v[i].focar) {
+            v[i].focar(v[i].a,v[i].b);
+            tecla(entregar,SDL_KEYDOWN,SDLK_RETURN);
+            okLongoToque=1;
+            tecla(entregar,SDL_KEYUP,SDLK_RETURN);
+            okLongoToque=0;
+          }
+          return 1;
+        }
+#endif
         // Nao ha botao direito no Magic Remote; no Mac ele e o Voltar, que e
         // o que falta para testar sem teclado.
         tecla(entregar, SDL_KEYDOWN, SDLK_AC_BACK); voltarPendente = 1;
@@ -846,7 +865,7 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
       if (edge) {
         edgeDelta += dxp * scale;
         if (edgeDelta * edge > 48 * units) {
-          if (edge > 0) menu_desktop_expandir(); else spainel_abrir();
+          if (edge > 0) menu_desktop_revelar(); else spainel_abrir();
           edge = 0;
         }
         return 1;
@@ -935,6 +954,7 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
           (k == SDLK_UP || k == SDLK_DOWN || k == SDLK_LEFT || k == SDLK_RIGHT)) {
         // Toda seta rearma a janela, mesmo com o cursor ja escondido: quem
         // navega de seta em seta nao pode ver o cursor voltar entre elas.
+        mouseInput=0;
         esconder("seta");
         escondidoSeta = 1; setaEm = agora; setaAncora = 0;
       }
@@ -1071,12 +1091,7 @@ void ponteiro_desenhar(void) {
   SDL_Cursor *cursor=clickable ? hand : arrow;
   if(SDL_GetCursor()!=cursor) SDL_SetCursor(cursor);
   SDL_ShowCursor(SDL_ENABLE);
-  if (visivel && clickable) {
-    PonteiroAlvo *r = &lista[escreve][hit];
-    float ant = gfx_escala(); gfx_escala_sair(1);
-    gfx_cor((GfxRect){r->x, r->y, r->w, r->h}, .12f, 1, 1, 1, .07f);
-    gfx_escala_sair(ant);
-  }
+  // Components draw their own hover surface inside the image, never captions.
   fecharQuadro(); return;
 #endif
   float g, d, sobre;

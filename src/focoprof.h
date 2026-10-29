@@ -11,6 +11,7 @@
 #include "gfx.h"
 #include "ajustes.h"
 #include "layout.h"
+#include "ponteiro.h"
 
 #define FOCO_ZOOM 0.06f   // o mesmo 6 % da Home com o anel desligado
 
@@ -18,7 +19,7 @@
 static inline GfxRect foco_zoom(GfxRect r, float f) {
   float s;
   if (ajustes_borda_foco() || f <= 0.0f) return r;
-  s = FOCO_ZOOM * f;
+  s = (layout_desktop_ativo() ? .025f : FOCO_ZOOM) * f;
   return (GfxRect){ r.x - r.w * s * 0.5f, r.y - r.h * s * 0.5f,
                     r.w * (1.0f + s), r.h * (1.0f + s) };
 }
@@ -26,6 +27,13 @@ static inline GfxRect foco_zoom(GfxRect r, float f) {
 // Anel de foco. `raio` na convencao do gfx_cor (fracao do MENOR lado).
 static inline void foco_anel(GfxRect r, float raio, float f, float a) {
   float menor = r.w < r.h ? r.w : r.h, ar, ag, ab;
+  if (layout_desktop_ativo()) {
+    if (f > .01f && !ponteiro_mouse()) {
+      ajustes_acento(&ar,&ag,&ab);
+      gfx_anel(r,raio,2.0f / gfx_escala(),ar,ag,ab,.4f*f*a);
+    }
+    return;
+  }
   if (f <= 0.01f || !ajustes_borda_foco()) return;
   if (ajustes_vidro()) { gfx_vidro_cartao(r, raio, f, a); return; }
   ajustes_acento(&ar, &ag, &ab);

@@ -972,7 +972,7 @@ static int saiuPorEsquerda, saiuPorCima;   // a ultima tecla foi ESQUERDA ou CIM
 // um canal minimizado. Manter a regra aqui evita que cada tela invente sua
 // propria nocao de PiP/Guia.
 static int sidebar_permitida(void) {
-  return tela != TELA_GUIA && !player_mini_ativo();
+  return (layout_desktop_ativo() || tela != TELA_GUIA) && !player_mini_ativo();
 }
 #ifdef NV_TOUCH_UI
 static int sidebarToquePode(void) {
@@ -1134,6 +1134,13 @@ static int routeCount, routeOpening;
 static void trocarTela(Tela nova) {
   tituloDoPainel = 0;
   if (nova == tela) return;
+#ifdef NV_DESKTOP_UI
+  // Child overlays keep the current parent; page destinations select themselves.
+  if(nova==TELA_ESPORTES) menu_definir_destino(MENU_ESPORTES);
+  else if(nova==TELA_GUIA) menu_definir_destino(MENU_GUIA);
+  else if(nova==TELA_BUSCA) menu_definir_destino(MENU_BUSCAR);
+  else if(nova==TELA_BIBLIOTECA && menu_destino()!=MENU_LISTAS && menu_destino()!=MENU_SERVIDORES) menu_definir_destino(MENU_BIBLIOTECA);
+#endif
   if (nova == TELA_GUIA && perfil_infantil_ativo()) {   // perfilinfantil.h: sem TV ao vivo
     glem_aviso_curto(i18n("Perfil infantil: sem TV ao vivo"));
     return;
@@ -1184,11 +1191,11 @@ void app_desktop_preview(const char *screen) {
   if (!strcmp(screen,"home")) { menu_ir(MENU_INICIO); trocarTela(TELA_HOME); home_ir_topo(); }
   else if (!strcmp(screen,"search")) { menu_ir(MENU_BUSCAR); trocarTela(TELA_BUSCA); }
   else if (!strcmp(screen,"library")) { menu_ir(MENU_BIBLIOTECA); trocarTela(TELA_BIBLIOTECA); }
-  else if (!strcmp(screen,"lists")) { trocarTela(TELA_BIBLIOTECA); biblioteca_abrir_listas(); }
+  else if (!strcmp(screen,"lists")) { menu_definir_destino(MENU_LISTAS); trocarTela(TELA_BIBLIOTECA); biblioteca_abrir_listas(); }
   else if (!strcmp(screen,"settings")) { menu_ir(MENU_AJUSTES); trocarTela(TELA_AJUSTES); }
   else if (!strcmp(screen,"guide")) { trocarTela(TELA_GUIA); }
   else if (!strcmp(screen,"sports")) { trocarTela(TELA_ESPORTES); }
-  else if (!strcmp(screen,"achievements")) { conquistas_abrir(); }
+  else if (!strcmp(screen,"achievements")) { menu_definir_destino(MENU_CONQUISTAS); conquistas_abrir(); }
   else if (!strcmp(screen,"collapse")) menu_desktop_alternar();
   else if (!strcmp(screen,"expand")) menu_desktop_expandir();
   else if (!strcmp(screen,"streaming")) menu_ir(MENU_STREAMING);
@@ -6283,7 +6290,13 @@ void app_atualizar(float dt, Uint32 agora) {
       case MENU_BIBLIOTECA: trocarTela(TELA_BIBLIOTECA); break;
       case MENU_SERVIDORES: trocarTela(TELA_BIBLIOTECA); srvsetup_abrir(-2); break;
       case MENU_AGENDA:     trocarTela(TELA_AGENDA);     break;
-      case MENU_ESPORTES:   trocarTela(TELA_GUIA); g5ui_open("esportes-ligas"); break;
+      case MENU_ESPORTES:
+#ifdef NV_DESKTOP_UI
+        trocarTela(TELA_ESPORTES);
+#else
+        trocarTela(TELA_GUIA); g5ui_open("esportes-ligas");
+#endif
+        break;
       // DIRETO PARA A TELA, e nao mais para o painel lateral. O item do menu
       // se chama "Perfil e Stats" e abria um resumo de tres botoes por cima da
       // home — para ver as estatisticas de verdade era preciso descer ate "Ver
@@ -7553,6 +7566,15 @@ void app_atualizar(float dt, Uint32 agora) {
   guia_atualizar(dt, agora);
   if (player_aberto()) epg_passo();
   ctx_atualizar(dt, agora);
+#ifdef NV_DESKTOP_UI
+  { int action,index=ctx_desktop_pedido(&action);
+    if(index>=0) {
+      abrirPorIndice(index);
+      if(action==1) detail_pedir_reproduzir();
+      if(action==2) { homeAcaoDet=DETAIL_BARRA_TRAILER;homeAcaoDetEm=agora; }
+    }
+  }
+#endif
   // Titulo escolhido na grade: abre o detalhe, como se tivesse vindo da home.
   { int idx = vertudo_pediu_abrir();
     if (idx >= 0) {
@@ -7759,7 +7781,7 @@ static void desenharAtrasDoPainel(void *ctx) {
   // significa "nao pinte a faixa", no de fora significava "nao exista".
   // Com a pagina do titulo aberta, so a barra aberta POR CIMA dela
   // (menu_sobre), ate recolher; a rail fixa nao aparece na pagina.
-  if (menu_visivel() && sidebar_permitida() && (!detail_aberto() || menu_sobre())) {
+  if (menu_visivel() && sidebar_permitida() && (layout_desktop_ativo() || !detail_aberto() || menu_sobre())) {
     // Layout Dinamica: a pilula da barra fica no canto das telas do menu, no
     // lugar do titulo delas (que nao e desenhado: menu_pilula_titulo). Na
     // home some com a pagina rolada. Telas fora do menu (Addons, Social,
@@ -7779,7 +7801,7 @@ static void desenharAtrasDoPainel(void *ctx) {
     menu_pilula_mostrar(pilula);
     CAMADA_SE(menu_aberto() && !layout_desktop_ativo());
     menu_desenhar(agora);
-    if (!detail_aberto() && !vertudo_aberta() && !ctx_aberto()) menu_desktop_busca_desenhar();
+    if (!ctx_aberto()) menu_desktop_busca_desenhar();
   }
   // Palco: o holofote escurece a home e a barra, nunca um menu ou a pagina.
   if (tela == TELA_HOME && !detail_aberto() && !vertudo_aberta() && !ctx_aberto() && !menu_aberto())

@@ -400,6 +400,18 @@ static void consome(const char *caminho) {
 // resolucao de um segundo, e duas rajadas de tecla no mesmo segundo seriam
 // tratadas como a mesma. No caminho normal (arquivo do proprio app) o consumo
 // funciona e nada disto entra em jogo.
+static const char *capturePath(const char *path) {
+#ifdef NV_DESKTOP_UI
+  const char *directory=getenv("NV_CAPTURA_DIR");
+  if (getenv("NV_CAPTURA") && directory) {
+    static char paths[4][1024];static unsigned slot;
+    char *result=paths[slot++%4];
+    snprintf(result,1024,"%s/%s",directory,strrchr(path,'/')+1);
+    return result;
+  }
+#endif
+  return path;
+}
 static int pedidoNovo(const char *caminho, time_t *bloqueado) {
   struct stat st;
 #ifdef __EMSCRIPTEN__
@@ -471,8 +483,8 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
     soltarEm = 0;
   }
   static time_t bloqueadoKey;
-  if (!pedidoNovo("/tmp/nuvio-key", &bloqueadoKey)) return;
-  FILE *f = fopen("/tmp/nuvio-key", "r");
+  if (!pedidoNovo(capturePath("/tmp/nuvio-key"), &bloqueadoKey)) return;
+  FILE *f = fopen(capturePath("/tmp/nuvio-key"), "r");
   if (!f) return;
   // A tecla injetada tambem conta como gente no controle: sem isto a tela de
   // descanso entrava 2 min depois da ultima tecla DE VERDADE, no meio de uma
@@ -491,18 +503,19 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
 #ifdef NV_DESKTOP_RELEASE
 #ifdef NV_DESKTOP_UI
     if (dp && !strncmp(linha,"preview:",8)) { app_desktop_preview(dp+1); continue; }
+    if (dp && !strncmp(linha,"appearance:",11)) { desktop_native_appearance(dp+1); continue; }
     if (dp && !strncmp(linha,"wheel:",6)) {
       SDL_Event wheel={0}; float dx,dy; int x,y;
       if(sscanf(dp+1,"%d,%d,%f,%f",&x,&y,&dx,&dy)==4) {
         wheel.type=SDL_MOUSEWHEEL;wheel.wheel.which=NV_DESKTOP_PIXEL_WHEEL;
         wheel.wheel.windowID=SDL_GetWindowID(SDL_GL_GetCurrentWindow());
         wheel.wheel.mouseX=x;wheel.wheel.mouseY=y;wheel.wheel.preciseX=dx;wheel.wheel.preciseY=dy;
-        ponteiro_evento(&wheel,entregar);
+        SDL_PushEvent(&wheel);
       }
       continue;
     }
     if (dp && !strncmp(linha,"input:",6)) {
-      SDL_Event text={0};text.type=SDL_TEXTINPUT;snprintf(text.text.text,sizeof text.text.text,"%s",dp+1);entregar(&text);continue;
+      SDL_Event text={0};text.type=SDL_TEXTINPUT;snprintf(text.text.text,sizeof text.text.text,"%s",dp+1);SDL_PushEvent(&text);continue;
     }
 #endif
     if (dp && !strncmp(linha, "janela:", 7)) {
@@ -542,26 +555,26 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
     // papel do Magic Remote (issue #99), em coordenadas da janela — que na TV
     // sao as do layout. Passam por ponteiro_evento como um evento de mouse de
     // verdade, entao o hit-test e o mesmo do controle.
-    if (dp && (!strncmp(linha, "mover:", 6) || !strncmp(linha, "clicar:", 7))) {
-      int mx = 0, my = 0, clicar = linha[0] == 'c';
+    if (dp && (!strncmp(linha, "mover:", 6) || !strncmp(linha, "clicar:", 7) || !strncmp(linha,"direito:",8))) {
+      int mx = 0, my = 0, clicar = linha[0] == 'c' || linha[0]=='d';
       if (sscanf(dp + 1, "%d,%d", &mx, &my) == 2) {
         SDL_Event m; SDL_zero(m);
         m.type = SDL_MOUSEMOTION; m.motion.x = mx; m.motion.y = my;
 #ifdef NV_DESKTOP_RELEASE
       m.motion.windowID = SDL_GetWindowID(SDL_GL_GetCurrentWindow());
 #endif
-        ponteiro_evento(&m, entregar);
+        if (getenv("NV_CAPTURA")) SDL_PushEvent(&m); else ponteiro_evento(&m, entregar);
         if (clicar) {
           SDL_zero(m);
-          m.type = SDL_MOUSEBUTTONDOWN; m.button.button = SDL_BUTTON_LEFT;
+          m.type = SDL_MOUSEBUTTONDOWN; m.button.button = linha[0]=='d'?SDL_BUTTON_RIGHT:SDL_BUTTON_LEFT;
 #ifdef NV_DESKTOP_RELEASE
         m.button.windowID = SDL_GetWindowID(SDL_GL_GetCurrentWindow());
 #endif
           m.button.x = mx; m.button.y = my;
-          ponteiro_evento(&m, entregar);
+          if (getenv("NV_CAPTURA")) SDL_PushEvent(&m); else ponteiro_evento(&m, entregar);
           m.type = SDL_MOUSEBUTTONUP;
           if (strstr(dp + 1, ":hold")) { soltarMouseEm = SDL_GetTicks() + NV_HOLD_MS + 120; soltarMouse = m; }
-          else ponteiro_evento(&m, entregar);
+          else if (getenv("NV_CAPTURA")) SDL_PushEvent(&m); else ponteiro_evento(&m, entregar);
         }
       }
       continue;
@@ -610,16 +623,16 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
     if (!k) continue;
     SDL_Event e; SDL_zero(e);
     e.type = SDL_KEYDOWN; e.key.keysym.sym = k;
-    entregar(&e);
+    if (getenv("NV_CAPTURA")) SDL_PushEvent(&e); else entregar(&e);
 
     // O par KEYUP existe porque parte da interface so decide quando a tecla
     // SOBE — o toque curto contra a pressao longa do OK, por exemplo. Mandar
     // so o KEYDOWN deixava essas acoes mudas.
     if (segurar) { soltarEm = SDL_GetTicks() + NV_HOLD_MS + 120; soltarTecla = k; }
-    else { e.type = SDL_KEYUP; entregar(&e); }
+    else { e.type = SDL_KEYUP; if (getenv("NV_CAPTURA")) SDL_PushEvent(&e); else entregar(&e); }
   }
   fclose(f);
-  consomeOuBloqueia("/tmp/nuvio-key", &bloqueadoKey);
+  consomeOuBloqueia(capturePath("/tmp/nuvio-key"), &bloqueadoKey);
 }
 
 // Tamanho do buffer de onde a captura le. Definido no arranque, junto com o
@@ -746,7 +759,7 @@ static const char *pedidoVideo(void) {
   if (!p[0]) snprintf(p, sizeof p, "%s/nuvio-video", dados_dir());
   return p;
 #else
-  return "/tmp/nuvio-video";
+  return capturePath("/tmp/nuvio-video");
 #endif
 }
 
@@ -844,8 +857,8 @@ static void videoSeSolicitado(void) {
 
 static void capturaSeSolicitado(void) {
   static time_t bloqueado;
-  if (!pedidoNovo("/tmp/nuvio-shot-req", &bloqueado)) return;
-  consomeOuBloqueia("/tmp/nuvio-shot-req", &bloqueado);
+  if (!pedidoNovo(capturePath("/tmp/nuvio-shot-req"), &bloqueado)) return;
+  consomeOuBloqueia(capturePath("/tmp/nuvio-shot-req"), &bloqueado);
 
   // Le o DRAWABLE inteiro, nao 1920x1080 fixo: em tela retina o buffer e maior
   // que a janela, e ler o tamanho da janela captura so um quarto da imagem.
@@ -874,12 +887,12 @@ static void capturaSeSolicitado(void) {
   cab[34] = n & 255; cab[35] = (n >> 8) & 255; cab[36] = (n >> 16) & 255; cab[37] = (n >> 24) & 255;
 
   // grava num temporario e so entao renomeia: quem le nunca pega arquivo pela metade
-  FILE *f = fopen("/tmp/.nuvio-shot.tmp", "wb");
+  FILE *f = fopen(capturePath("/tmp/.nuvio-shot.tmp"), "wb");
   if (f) {
     fwrite(cab, 1, 54, f);
     fwrite(px, 1, n, f);
     fclose(f);
-    rename("/tmp/.nuvio-shot.tmp", "/tmp/nuvio-shot.bmp");
+    rename(capturePath("/tmp/.nuvio-shot.tmp"), capturePath("/tmp/nuvio-shot.bmp"));
     printf("captura: /tmp/nuvio-shot.bmp (%u bytes)\n", tam);
   }
   free(px);
@@ -1126,6 +1139,12 @@ int main(int argc, char **argv) {
   // nao usa SDL_Delay: cede pelo rAF (nv_ceder_quadro).
   SDL_SetHint(SDL_HINT_EMSCRIPTEN_ASYNCIFY, "0");
 #endif
+#ifdef NV_DESKTOP_UI
+  if (getenv("NV_CAPTURA")) {
+    SDL_SetHint(SDL_HINT_MAC_BACKGROUND_APP, "1");
+    SDL_SetHint(SDL_HINT_WINDOW_NO_ACTIVATION_WHEN_SHOWN, "1");
+  }
+#endif
   NV_ETAPA("SDL_Init");
   arranque_etapa("SDL_Init");
   if (SDL_Init(SDL_INIT_VIDEO) != 0) { printf("SDL_Init: %s\n", SDL_GetError()); return 1; }
@@ -1342,6 +1361,7 @@ int main(int argc, char **argv) {
 #ifdef NV_DESKTOP_UI
   pedeW = NV_DESKTOP_WINDOW_W; pedeH = NV_DESKTOP_WINDOW_H;
   flags = (flags & ~SDL_WINDOW_FULLSCREEN_DESKTOP) | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+  if (getenv("NV_CAPTURA")) flags |= SDL_WINDOW_HIDDEN;
 #endif
   NV_ETAPA("SDL_CreateWindow");
   arranque_etapa("SDL_CreateWindow");
@@ -2402,7 +2422,7 @@ int main(int argc, char **argv) {
     t0 = NV_T0();
     txt_novo_quadro();
     ponteiro_quadro(agora);
-    desktop_native_sidebar(0);
+    desktop_native_sidebar(0,0);
     app_desenhar(agora);
     desktop_native_finish();
     if (perftv_enabled) snprintf(perfScreen, sizeof perfScreen, "%s", perfTvScreen());

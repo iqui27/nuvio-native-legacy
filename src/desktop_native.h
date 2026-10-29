@@ -18,16 +18,18 @@ static inline void desktop_native_init(SDL_Window *window) {
 #define NV_DESKTOP_PIXEL_WHEEL 0x4e565057u
 #if defined(NV_DESKTOP_UI) && defined(__APPLE__)
 void desktop_native_init(SDL_Window *window);
-void desktop_native_sidebar(float fraction);
+void desktop_native_sidebar(float fraction, float reveal);
 void desktop_native_finish(void);
+void desktop_native_appearance(const char *name);
 int desktop_native_dark(void);
 int desktop_native_swipes(void);
 #else
 #if !defined(NV_DESKTOP_UI) || !defined(_WIN32)
 static inline void desktop_native_init(SDL_Window *window) { (void)window; }
 #endif
-static inline void desktop_native_sidebar(float fraction) { (void)fraction; }
+static inline void desktop_native_sidebar(float fraction, float reveal) { (void)fraction; (void)reveal; }
 static inline void desktop_native_finish(void) {}
+static inline void desktop_native_appearance(const char *name) { (void)name; }
 static inline int desktop_native_dark(void) { return 1; }
 static inline int desktop_native_swipes(void) { return 1; }
 #endif

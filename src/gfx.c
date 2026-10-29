@@ -13,6 +13,7 @@
 #include "gpunivel.h"
 #include "ajustes.h"
 #include "esmaecer.h"
+#include "ponteiro.h"
 
 // A MISTURA, com o estado lembrado. gfx_rect desliga a mistura num desenho
 // opaco e a devolve ao que estava — nao a "ligada" — porque quem gera o
@@ -2488,6 +2489,13 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
   int comAmb = 0, veuAmb = 0, opaco = 0, cheia, clearCor, duplo = 0;
   float din[4] = { 0.0f, 0.0f, 0.0f, 0.0f }, dinResto = -1.0f;
   if ((int)modo < 0 || (int)modo >= GFX_NMODOS) return;
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo() && modo == GFX_ANEL && pary == 0) {
+    if (ponteiro_mouse()) return;
+    parx=2.0f/(fmaxf(1,r.h)*gfx_escala());
+    ajustes_acento(&cr,&cg,&cb); ca*=.4f;
+  }
+#endif
   if (modo == GFX_VIDRO && !progs[modo].prog) return;   // gfx_vidro so chega aqui com o programa pronto
   if (modo >= GFX_COPIA_EASU && !progs[modo].prog) {
     // Opt-in upscaler: link on first use; a failed link falls back to the bilinear copy.
@@ -2731,7 +2739,7 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
   if (P->forcarCover >= 0) glUniform1f(P->forcarCover, gfx_card_forcar_cover_atual);
   if (P->veuTela >= 0)     glUniform1f(P->veuTela, gfx_card_veu_tela_atual);
   if (P->heroiVeu >= 0) glUniform4fv(P->heroiVeu, 1, gfx_card_heroi_veu_atual);
-  if (P->borda >= 0)  glUniform1f(P->borda, gfx_borda_foco_atual);
+  if (P->borda >= 0)  glUniform1f(P->borda, layout_desktop_ativo() ? 0 : gfx_borda_foco_atual);
   if (P->varre >= 0)  glUniform1f(P->varre, gfx_varre_atual);
   // Depois da arte (gfx_veu_na_arte) a lista so serve para gfx_veu_base pular
   // os mesmos veus: nenhum outro GFX_CARD do card (miniatura) ganha veu.
@@ -4448,6 +4456,13 @@ float gfx_foco_placa_alfa(float cr, float cg, float cb) {
 }
 int gfx_foco_placa(GfxRect r, float raio, float foco, float a) {
   float f = foco < 0.0f ? 0.0f : (foco > 1.0f ? 1.0f : foco), cr, cg, cb;
+  if (layout_desktop_ativo()) {
+    if (f > .01f && !ponteiro_mouse()) {
+      ajustes_acento(&cr,&cg,&cb);
+      gfx_anel(r,raio,2/gfx_escala(),cr,cg,cb,f*a);
+    }
+    return 1;
+  }
   if (!ajustes_foco_acento()) return 0;
   if (f <= 0.01f || a <= 0.001f) return 1;
   ajustes_acento(&cr, &cg, &cb);
@@ -4466,6 +4481,7 @@ int gfx_foco_placa(GfxRect r, float raio, float foco, float a) {
 void gfx_vidro_cartao(GfxRect r, float raio, float foco, float a) {
   float f = foco < 0.0f ? 0.0f : (foco > 1.0f ? 1.0f : foco), cr, cg, cb;
   if (f <= 0.01f || a <= 0.001f) return;
+  if (layout_desktop_ativo()) return;
   ajustes_acento(&cr, &cg, &cb);
   // "Contorno do vidro" DESLIGADO: sem fio no cartao, so um halo fraco por fora
   // (a arte cobre o interior, entao o realce fica de fora, na mesma ordem de
@@ -4480,6 +4496,11 @@ void gfx_vidro_cartao(GfxRect r, float raio, float foco, float a) {
 void gfx_vidro_pilula_cheia(GfxRect r, float raio, float foco, float a) {
   float f = foco < 0.0f ? 0.0f : (foco > 1.0f ? 1.0f : foco), cr, cg, cb;
   if (f <= 0.01f || a <= 0.001f) return;
+  if (layout_desktop_ativo()) {
+    gfx_cor(r,raio,1,1,1,.08f*f*a);
+    if (!ponteiro_mouse()) gfx_anel(r,raio,2/gfx_escala(),1,1,1,f*a);
+    return;
+  }
   ajustes_acento(&cr, &cg, &cb);
   // Coloured accents supply their own frost, including Library tabs/chips
   // without a glass backing. 0.92 preserves >= 90 % of solid accent chroma.
@@ -4500,7 +4521,7 @@ void gfx_vidro_pilula_cheia(GfxRect r, float raio, float foco, float a) {
 // Texto sobre a pilula cheia: a tinta que contrasta com o realce (escura sobre
 // realce claro, branca sobre escuro); fora do foco, o cinza claro de sempre.
 int gfx_vidro_tinta(float foco) {
-  if (foco < 0.5f) return 235;
+  if (layout_desktop_ativo() || foco < 0.5f) return 235;
   return ajustes_acento_tinta(NULL, NULL, NULL) < 0.5f ? 20 : 255;
 }
 // Superficie de um painel/pilula NA COR DO REALCE (acao principal em repouso):

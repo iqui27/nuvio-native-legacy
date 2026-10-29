@@ -48,9 +48,12 @@ int main(void) {
   assert(tvPastas(NULL) == 0); // Services open only through the Streaming entry.
   float ys[NV_MENU_FOCOS_TV];
   desktopLayout(ys);
-  assert(ys[MENU_INICIO] == 142 && ys[MENU_AJUSTES] == 1068 && ys[MENU_RODAPE] == 1124);
+  assert(ys[MENU_INICIO] == 164.5f && ys[MENU_AJUSTES] == 1068 && ys[MENU_RODAPE] == 1124);
   menu_desktop_alternar(); assert(desktopCollapsed && sidebarSaved[0]=='1');
-  desktopCollapsed=0; desktopRestaurar(); assert(desktopCollapsed && nv_desktop_sidebar==120);
+  desktopCollapsed=0; desktopRestaurar(); assert(desktopCollapsed && nv_desktop_sidebar==0);
+  menu_desktop_hover(3); assert(desktopOverlay && desktopCollapsed);
+  menu_desktop_hover(500); assert(!desktopOverlay && desktopCollapsed);
+  menu_desktop_revelar(); assert(desktopOverlay && desktopCollapsed);
   menu_desktop_expandir(); assert(!desktopCollapsed && sidebarSaved[0]=='0');
   menu_abrir(); key(SDLK_UP);
   assert(linha == MENU_BUSCAR);
@@ -72,6 +75,12 @@ int main(void) {
   menu_ir(MENU_JUNTOS); assert(menu_mudou_destino());
   menu_ir(MENU_LISTAS); assert(menu_mudou_destino());
   menu_ir(MENU_LISTAS); assert(menu_mudou_destino());
+  menu_ir(MENU_ESPORTES); assert(menu_destino()==MENU_ESPORTES && menu_mudou_destino());
+  menu_fechar(); assert(menu_destino()==MENU_ESPORTES);
+  menu_ir(MENU_BIBLIOTECA); assert(menu_destino()==MENU_BIBLIOTECA && menu_mudou_destino());
+  // Opening a child overlay does not choose Home; closing/reopening navigation
+  // must retain the page that owns it.
+  menu_abrir_sobre(0); menu_fechar(); assert(menu_destino()==MENU_BIBLIOTECA);
 
   layout_janela_definir(1000, 500);
   assert(layout_desktop_ativo() && nv_layout_w == 2400);

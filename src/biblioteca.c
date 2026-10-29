@@ -2451,6 +2451,7 @@ static void ponteiroBotaoOrig(int a, int b) {
   (void)a; (void)b;
   if (botaoOrigens()) { focoOrigem = 0; foco.fileira = BIB_FIL_PICK; focoBotaoOrig = 1; }
 }
+static void desktopOrigemAbrir(int a,int b) { ponteiroBotaoOrig(a,b); alternarOrigens(); }
 static void ponteiroRetry(int a, int b) { (void)a; (void)b; estadoFoco = 1; }
 static void ponteiroAcao(int a, int b) {
 #ifdef NV_TOUCH_UI
@@ -3878,10 +3879,19 @@ static void desenhaCabecalho(void) {
     // Reserve the clock's resting width even before its first rendered frame.
     float right = fminf(hdrDir(), (NV_LAYOUT_REAL_W - NV_ILHA_MARGEM_D - ilha_relogio_largura()) / bibHS() - 24);
     float width = fmaxf(80, right - tabsRight - 80);
-    TxtLinha label = txt_linha_corta(TXT_ILHA_TITULO, i18n(name), 243, 242, 239, 255, width);
+    TxtLinha label = txt_linha_corta(layout_desktop_ativo()?TXT_AJ_SEG:TXT_ILHA_TITULO, i18n(name), 243, 242, 239, 255, width);
     float labelY = BIB_FAIXA_Y + (BIB_SEG_H - label.h) * .5f + (1 - alpha) * 10;
-    txt_desenhar_alpha(label, right - label.w, labelY, alpha);
-    origemMarca((GfxRect){right - label.w - 52, labelY + (label.h - 40) * .5f, 40, 40}, icon, logo, alpha);
+    if(layout_desktop_ativo()) {
+      GfxRect popup={right-label.w-88,BIB_FAIXA_Y+6,label.w+88,BIB_SEG_H-12};
+      gfx_cor(popup,.22f,1,1,1,.07f*alpha);
+      origemMarca((GfxRect){popup.x+12,popup.y+(popup.h-22)*.5f,22,22},icon,logo,alpha);
+      txt_desenhar_alpha(label,popup.x+44,labelY,alpha);
+      gfx_icone((GfxRect){right-24,popup.y+(popup.h-16)*.5f,16,16},"aj_chevron-down",.7f,.7f,.72f,alpha);
+      ponteiro_alvo(popup.x,popup.y,popup.w,popup.h,NULL,desktopOrigemAbrir,0,0);
+    } else {
+      txt_desenhar_alpha(label, right - label.w, labelY, alpha);
+      origemMarca((GfxRect){right - label.w - 52, labelY + (label.h - 40) * .5f, 40, 40}, icon, logo, alpha);
+    }
     float x = hdrDir();
     char status[96];
     // "sincronizado ha 3 min" do mockup. Trakt/Simkl chegam pelo ciclo de

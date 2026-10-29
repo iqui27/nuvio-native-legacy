@@ -14,16 +14,20 @@ int main(void) {
   focoHero = 1;
   scrollY = -empurraHero();
   GfxRect art = heroArtworkRect(HOME_LAYOUT_DINAMICA, 0);
-  assert(art.x == 336 && art.y == 0 && art.w == 1584 && art.h == 729);
-  assert(topoFileiras() - scrollY == 729);
+  assert(art.x == 0 && art.y == 0 && art.w == 1920 && art.h == 1200);
+  assert(topoFileiras() - scrollY == art.h * .94f);
+  scrollY+=600; art=heroArtworkRect(HOME_LAYOUT_DINAMICA,0);
+  assert(art.y==-600 && topoFileiras()-scrollY==528);
+  scrollY+=600; art=heroArtworkRect(HOME_LAYOUT_DINAMICA,0);
+  assert(art.y+art.h==0 && topoFileiras()-scrollY==-72);
   assert(homeConteudoX() == 396 && homeConteudoDireita() == 1880);
   assert(homeLarguraUtil() == 1484);
   assert(larguraDe(FILEIRA_CONTINUE) == 300 && alturaDe(FILEIRA_CONTINUE) == 169);
-  assert(heroBaseCopia(HOME_LAYOUT_DINAMICA, art, 0, 0) < 729);
+  assert(heroBaseCopia(HOME_LAYOUT_DINAMICA, art, 0, 0) < 1200);
   layout_janela_definir(1440, 900);
   art = heroArtworkRect(HOME_LAYOUT_DINAMICA, 0);
-  assert(art.x == 336 && art.w == 1824 && nv_layout_h == 1350);
-  assert(fabsf(art.h-1350*.6075f)<.001f);
+  assert(art.x == 0 && art.w == 2160 && nv_layout_h == 1350);
+  assert(fabsf(art.h-1350)<.001f);
   puts("PASS: real desktop Home artwork, row rest position, content bounds, continue cards");
   return 0;
 }

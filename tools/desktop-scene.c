@@ -12,10 +12,10 @@ int main(int argc, char **argv) {
     char user[64];
     int profile, language;
     char metadataLanguage[16];
-  } header = {0x4E56434B, 10, sizeof(CatItem), sizeof(CatFileira), 13, 2,
+  } header = {0x4E56434B, 10, sizeof(CatItem), sizeof(CatFileira), 13, 4,
               "", 1, 1, "en-US"};
   static CatItem items[13];
-  CatFileira rows[2] = {{0}};
+  CatFileira rows[4] = {{0}};
   const char *titles[] = {"Fallout", "Shōgun", "Andor", "Dune: Part Two", "Slow Horses",
                          "Fallout", "Dune: Part Two", "Severance", "Dune", "From",
                          "Tron: Legacy", "Nobody", "The Devil Wears Prada"};
@@ -61,6 +61,11 @@ int main(int argc, char **argv) {
   for (int i = 0; i < 2; i++) snprintf(rows[i].tipo, sizeof rows[i].tipo, "series");
   rows[0].ini = 0; rows[0].n = 5;
   rows[1].ini = 5; rows[1].n = 8;
+  for(int i=2;i<4;i++) {
+    rows[i]=rows[1];
+    snprintf(rows[i].chave,sizeof rows[i].chave,"desktop_more_%d",i);
+    snprintf(rows[i].titulo,sizeof rows[i].titulo,"%s",i==2?"Popular series":"More to explore");
+  }
   FILE *file = fopen(argv[1], "wb");
   if (!file) return 1;
   int ok = fwrite(&header, sizeof header, 1, file) == 1 &&

@@ -49,6 +49,8 @@ void menu_desktop_busca_desenhar(void);
 #ifdef NV_DESKTOP_UI
 void menu_desktop_alternar(void);
 void menu_desktop_expandir(void);
+void menu_desktop_hover(float windowX);
+void menu_desktop_revelar(void);
 void menu_desktop_servico(int index);
 void menu_desktop_perfil(void);
 int menu_desktop_streaming(void);

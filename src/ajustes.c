@@ -4029,7 +4029,7 @@ int ajustes_meta_so_cinemeta(void)    { return lig(AJ_DET_SO_CINEMETA); }
 int   ajustes_expandir_poster(void)   { return lig(AJ_EXPANDIR); }
 float ajustes_expandir_poster_atraso(void) { return (float)valor[AJ_EXPANDIR_ATRASO]; }
 int   ajustes_navegacao_horizontal_rapida(void) { return lig(AJ_NAV_RAPIDA); }
-int   ajustes_borda_foco(void) { return lig(AJ_BORDA_FOCO); }
+int   ajustes_borda_foco(void) { return layout_desktop_ativo() ? 0 : lig(AJ_BORDA_FOCO); }
 
 int   ajustes_profundidade(void)      { return lig(AJ_PROF); }
 float ajustes_profundidade_borda(void)     { return valor[AJ_PROF_BORDA] / 100.0f; }
@@ -4047,7 +4047,7 @@ float ajustes_raio_poster_px(void)    { return (float)valor[AJ_RAIO_DP] * 2.0f; 
 // A regra do web, e nao dois layouts: o conteudo tem sempre 104 de recuo e a
 // rail acrescenta os 144 dela quando esta fixa.
 float ajustes_conteudo_x(void) {
-  if (layout_desktop_ativo()) return NV_DESKTOP_RAIL_W + 48.0f;
+  if (layout_desktop_ativo()) return NV_DESKTOP_RAIL_W + fmaxf(96.0f, NV_TELA_W * .05f);
   return ajustes_rail_largura_fixa() + NV_CONTENT_PAD;
 }
 // A RAIL FIXA segue a pilula de icones que o menu desenha (menu.c, layouts

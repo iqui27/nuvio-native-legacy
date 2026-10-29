@@ -9,10 +9,16 @@ import subprocess
 
 OUT = Path('/Volumes/ExternalSSD/tmp/rev/desktop')
 PROOF = OUT / 'polish'
-SCREENS = ('home', 'detail', 'sidebar-expanded', 'sidebar-collapsed', 'streaming', 'search-typing',
+SCREENS = ('hero-scroll-0','hero-scroll-50','hero-scroll-100','context-menu','sidebar-edge-reveal','detail-scrolled','home', 'detail', 'detail-from-library', 'continue-hover', 'continue-menu', 'library-popup', 'sidebar-expanded', 'sidebar-collapsed', 'streaming', 'search-typing',
            'library', 'lists', 'filmography', 'filmography-scrolled', 'settings', 'guide',
            'sports', 'achievements', 'player-overlay')
 images = []
+for directory,prefix in (('sidebar-frames','sidebar'),('native-sidebar-frames','native-sidebar')):
+    for cycle in range(20):
+        for phase in ('open','close'):
+            for frame in range(3):
+                path=PROOF / directory / f'{prefix}-{cycle:02}-{phase}-{frame}-1280x800.png'
+                assert path.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'),path
 for width, height in ((1280, 800), (1920, 1080)):
     for screen in SCREENS:
         path = PROOF / f'{screen}-{width}x{height}.png'
@@ -25,6 +31,10 @@ for appearance in ('Aqua', 'DarkAqua'):
     path = PROOF / f'native-{appearance}.png'
     assert path.read_bytes().startswith(b'\x89PNG\r\n\x1a\n')
     images.append(str(path))
+    for corner in ("0,0","w-1,0","0,h-1","w-1,h-1"):
+        alpha=subprocess.check_output(["magick",str(path),"-format",f"%[fx:p{{{corner}}}.a]","info:"],text=True)
+        assert float(alpha)<.1,(path,corner,alpha)
+assert (PROOF/'native-Aqua.png').read_bytes() != (PROOF/'native-DarkAqua.png').read_bytes(), 'Appearance proofs must differ'
 log = (PROOF / 'runtime.log').read_text(errors='replace')
 assert '[desktop-native]' in log
 assert 'material=Sidebar transparent=1' in log

@@ -38,6 +38,12 @@
 #include "colecoes.h"
 #include "listas.h"
 #include "home.h"
+#ifdef NV_DESKTOP_UI
+static float desktopX,desktopY;
+static int desktopIndex=-1,desktopAction;
+void ctx_desktop_ancorar(float x,float y) { desktopX=x;desktopY=y; }
+int ctx_desktop_pedido(int *action) { int i=desktopIndex;desktopIndex=-1;*action=desktopAction;return i; }
+#endif
 #include "ctxinfo.h"
 #include "rewatch.h"
 #include "rewatchui.h"
@@ -254,7 +260,11 @@ static int observarHold(void *u, SDL_Event *e) {
 // juntava contava UMA linha para o contrato e escrevia sete — e o teto de sete
 // era exatamente o que deixava o Destaque 4:3 e a faixa com titulo de fora do
 // menu. Agora elas moram em estLin[FIL_TIPO_N], do tamanho do enum.
+#ifdef NV_DESKTOP_UI
+#define CTX_MAX 16
+#else
 #define CTX_MAX 10
+#endif
 static struct { const char *rot; int acao; } ops[CTX_MAX];
 static int nOps;
 static float focoAnim[CTX_MAX];
@@ -262,7 +272,7 @@ static int holdObservador;
 enum { OP_LISTA = 1, OP_ASSISTIDO, OP_TIRAR_CONTINUAR, OP_RECOMENDAR, OP_DISPENSAR,
        OP_ESTILO, OP_CATEGORIA, OP_DETALHES, OP_L_ABRIR, OP_L_FIXAR, OP_L_HOME,
        OP_F_MENU, OP_F_FIXAR, OP_F_SUBIR, OP_F_DESCER, OP_F_OCULTAR, OP_F_VISTOS,
-       OP_ADD_LISTA, OP_REWATCH, OP_TRAVA, OP_PICK_LISTA = 50,   // OP_PICK_LISTA + k = a k-esima lista da pessoa
+       OP_ADD_LISTA, OP_REWATCH, OP_TRAVA, OP_DESKTOP_PLAY, OP_DESKTOP_TRAILER, OP_DESKTOP_COPY, OP_PICK_LISTA = 50,   // OP_PICK_LISTA + k = a k-esima lista da pessoa
        OP_EXTRA = 100 };   // OP_EXTRA + k = extras[k] (modo social)
 // "Mover para categoria" pedido no modo painel: o IMDb do titulo, consumido
 // uma vez pelo painel (ctx_pediu_categoria), que abre a escolha dele.
@@ -518,7 +528,12 @@ static void montar(void) {
   // na extensao ao lado do menu (ctxinfo.h).
   // Sem IMDb nao ha endpoint remoto suportado para esta acao. Nao oferecer
   // um botao que so aparentaria funcionar e inventaria estado local.
-  if (detalhesOk && !doPainel && ci->imdb[0]) juntar("Ver detalhes", OP_DETALHES);
+  if (layout_desktop_ativo() && ci->imdb[0]) {
+    juntar(ci->progresso>0?"Continuar":"Assistir",OP_DESKTOP_PLAY);
+    juntar("Ver título",OP_DETALHES);
+    juntar("Trailer",OP_DESKTOP_TRAILER);
+    juntar("Copiar",OP_DESKTOP_COPY);
+  } else if (detalhesOk && !doPainel && ci->imdb[0]) juntar("Ver detalhes", OP_DETALHES);
   if (ci->imdb[0]) {
     // O MESMO VERBO DO PAINEL E DO BOTAO "+". Estava "Adicionar à biblioteca",
     // e "Biblioteca" e o nome de uma TELA — a pessoa lia o rotulo, ia ate a
@@ -760,6 +775,9 @@ static void abrirComum(int indice) {
   holdPronto = 0;
   esperandoSoltura = !ponteiro_ok_longo();   // dedo ja entregou o par completo
   idx = indice; foco = 0; aberto = 1;
+#ifdef NV_DESKTOP_UI
+  if(layout_desktop_ativo()) { desktopX=ponteiro_x();desktopY=ponteiro_y();esperandoSoltura=0; }
+#endif
   dispensarOp = dispensarPend; dispensarPend = 0;
   detalhesOk = detalhesPend; detalhesPend = 0;
   temCartaz = 0; cartazFixo = 0;
@@ -1178,7 +1196,20 @@ static void aplicar(void) {
       // bloco a cada republicacao da descoberta.
       if (recenviar_abrir(ci)) aberto = 0;
       break;
+    case OP_DESKTOP_PLAY:
+    case OP_DESKTOP_TRAILER:
+    case OP_DESKTOP_COPY:
+#ifdef NV_DESKTOP_UI
+      if(acao==OP_DESKTOP_COPY) {
+        char link[192];snprintf(link,sizeof link,"https://www.imdb.com/title/%s/",ci->imdb);
+        SDL_SetClipboardText(link);
+      } else { desktopIndex=atual;desktopAction=acao==OP_DESKTOP_PLAY?1:2; }
+#endif
+      aberto=0;break;
     case OP_DETALHES:
+#ifdef NV_DESKTOP_UI
+      if(layout_desktop_ativo()) { desktopIndex=atual;desktopAction=0; } else
+#endif
       home_pedir_abrir();
       aberto = 0;
       pagina = 0;
@@ -2189,8 +2220,55 @@ void ctx_inline_desenhar(float x, float y, float w, float faixaH, float a) {
 
 static void ctx_desenharCorpo_(Uint32 agora);
 // Camada ampliada (escala.h): o corpo desenha na tela virtual.
+static void desktopOpcao(int i,int b) { ponteiroCtxOpcao(i,b); aplicar(); }
+static void desktopPopover(void) {
+  float a=anim_clamp(anim,0,1);
+  if(a<.001f) return;
+  static float lastX=-1,lastY=-1;
+  float pointerX=ponteiro_x()/gfx_escala(),pointerY=ponteiro_y()/gfx_escala();
+  int moved=pointerX!=lastX || pointerY!=lastY;
+  lastX=pointerX;lastY=pointerY;
+  float w=380,h=16+nOps*40;
+#ifdef NV_DESKTOP_UI
+  float x=anim_clamp(desktopX/gfx_escala(),12,NV_TELA_W-w-12);
+  float y=anim_clamp(desktopY/gfx_escala(),64,NV_TELA_H-h-12);
+#else
+  float x=12,y=64;
+#endif
+  gfx_sem_recorte();
+  if(aberto) {
+    ponteiro_alvo(0,0,NV_TELA_W,NV_TELA_H,NULL,ponteiroCtxFora,0,0);
+    ponteiro_alvo(x,y,w,h,NULL,NULL,0,0);
+  }
+  gfx_transformar(x,y,.96f+.04f*a,0,0);
+  gfx_rect((GfxRect){x-12,y-6,w+24,h+24},0,GFX_SOMBRA,0,0,0,.06f,0,0,0,.45f*a);
+  gfx_vidro_folha((GfxRect){x,y,w,h},16/h,a);
+  for(int i=0;i<nOps;i++) {
+    GfxRect r={x+6,y+8+i*40,w-12,38};
+    const char *icon="aj_ellipsis";
+    switch(ops[i].acao) {
+      case OP_DESKTOP_PLAY: icon="aj_play";break;
+      case OP_DETALHES: icon="aj_info";break;
+      case OP_DESKTOP_TRAILER: icon="aj_film";break;
+      case OP_DESKTOP_COPY: icon="aj_link";break;
+      case OP_LISTA: icon="aj_plus";break;
+      case OP_ASSISTIDO: icon="aj_eye";break;
+    }
+    if(aberto && moved && ponteiro_ativo() && ponteiro_x()/gfx_escala()>=r.x && ponteiro_x()/gfx_escala()<r.x+r.w &&
+       ponteiro_y()/gfx_escala()>=r.y && ponteiro_y()/gfx_escala()<r.y+r.h) foco=i;
+    if(foco==i) gfx_cor(r,.18f,1,1,1,.12f*a);
+    gfx_icone((GfxRect){r.x+10,r.y+9,20,20},icon,.9f,.91f,.93f,a);
+    TxtLinha label=txt_linha_corta(TXT_MINI,ops[i].rot,243,242,239,255,r.w-52);
+    txt_desenhar_alpha(label,r.x+42,r.y+(r.h-label.h)*.5f,a);
+    if(aberto) ponteiro_alvo(r.x,r.y,r.w,r.h,ponteiroCtxOpcao,desktopOpcao,i,0);
+  }
+  gfx_sem_transformar();
+}
 void ctx_desenhar(Uint32 agora) {
   ESCALA_INI();
+  if(layout_desktop_ativo() && pagina!=1 && pagina!=2 && !doLista) {
+    desktopPopover();ESCALA_FIM();return;
+  }
   ctx_desenharCorpo_(agora);
   // Depois do corpo: o veu de 94% do menu apagaria o seletor que esta sumindo.
   if (estSaindo && anim >= 0.01f && !(modoInline() && pagina == 0)) desenhaEstilos(anim);
