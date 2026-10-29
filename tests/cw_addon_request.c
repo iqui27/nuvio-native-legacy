@@ -32,6 +32,21 @@ char *rede_baixar(const char *url, int seconds) {
 char *rede_baixar_st(const char *url, int seconds, const char *const *h, int *status) {
   (void)h; *status = 200; return rede_baixar(url, seconds);
 }
+char *rede_baixar_medido(const char *url, int seconds, const char *const *headers, RedeMedida *m) {
+  int status = 0;
+  char *body = rede_baixar_st(url, seconds, headers, &status);
+  *m = (RedeMedida){ .status = status };
+  return body;
+}
+int rede_pedir(const RedePedido *request, RedeResposta *response) {
+  (void)request; (void)response;
+  assert(0 && "fixture does not configure AIO providers");
+  return 0;
+}
+void rede_resposta_limpar(RedeResposta *response) {
+  free(response->corpo); free(response->cabecalhos);
+  memset(response, 0, sizeof *response);
+}
 int main(void) {
   nAddon = 2; memset(addon, 0, sizeof addon);
   for (int i = 0; i < nAddon; i++) {

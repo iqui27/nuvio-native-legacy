@@ -40,6 +40,7 @@ static void descCatEpisodios(int i, const CatEp *eps, int n) {
   // The list is visible now; a provisional one must already read as not final.
   if (provisorio) assert(!cat_episodios_finais(i, ID));
 }
+#define DESC_MESCLA_TEXTO 1
 #include "publish.inc"
 
 static void reset(void) {

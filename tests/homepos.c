@@ -17,6 +17,7 @@ int contalib_tem_conta(void) { return 0; }
 int trakt_ativo(void) { return 0; }
 int simkl_ativo(void) { return 0; }
 unsigned addons_versao(void) { return 0; }
+void gfx_mini_liberar(GfxMini *m) { memset(m, 0, sizeof *m); }
 float gfx_escala(void) { return 1.0f; }
 float gfx_escala_txt(void) { return 1.0f; }
 float gfx_escala_tela_txt(void) { return 1.0f; }

@@ -5,7 +5,7 @@
 #include <string.h>
 #include <time.h>
 
-static int cwTocarT, cwTocarE, cwEspera, requests, metadata;
+static int cwTocarT, cwTocarE, cwEspera, cwRewatch, requests, metadata;
 static CatItem cwEsperaItem;
 static unsigned cwEsperaDesde;
 #define CW_ESPERA_MS 15000u
