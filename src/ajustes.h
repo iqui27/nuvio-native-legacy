@@ -402,6 +402,8 @@ float ajustes_ui_botao(const char *rot, const char *icone, float x, float y, int
 float ajustes_ui_dicas(const char *const *teclas, const char *const *rotulos, int n, float x, float y, int desenha);
 void  ajustes_ui_neutro(GfxRect r, float raioPx, float vidA);
 void  ajustes_ui_foco_linha(GfxRect r, float raioPx);
+// Cursor de texto dos campos: `x` = borda entre os caracteres, `cy` = meio da linha.
+void  ajustes_ui_cursor(float x, float cy, float h, Uint32 agora, float a);
 float ajustes_ui_antes_depois(const char *rot, int a, int b, const char *unid, int max,
                               float x, float y, float w, int compacto, float cr, float cg, float cb);
 void  ajustes_ui_grafico_memoria(float x, float y, float w, float h);

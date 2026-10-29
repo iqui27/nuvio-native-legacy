@@ -2217,6 +2217,26 @@ float ajustes_ui_dicas(const char *const *teclas, const char *const *rotulos, in
 }
 void ajustes_ui_neutro(GfxRect r, float raioPx, float vidA) { ajNeutro(r, raioPx, vidA, 0.106f, 0.110f, 0.129f, 1); }
 void ajustes_ui_foco_linha(GfxRect r, float raioPx) { ajFocoLinha(r, raioPx, 1, 1); }
+// CURSOR DE TEXTO dos campos (Busca, Spotlight, teclado modal). O antigo (2 px,
+// piscar seco 50% apagado) sumia entre letras e apos Esquerda/Direita caia na
+// fase apagada. Agora: 3 px no acento, mais alto que as letras (sobra em cima
+// e embaixo, o que o separa do texto mesmo com o acento branco); ACESO enquanto
+// o x muda (mover ou digitar) e, 700 ms parado, pulsa suave entre 100% e 25%,
+// sem sumir. Sem contorno escuro (feio, e nao acompanhava o pulso). So um
+// campo tem cursor por vez.
+void ajustes_ui_cursor(float x, float cy, float h, Uint32 agora, float a) {
+  static float ultX = -1e9f;
+  static Uint32 desde;
+  float ar, ag, ab, op = 1.0f;
+  h += 12.0f;
+  if (fabsf(x - ultX) > 0.5f) { ultX = x; desde = agora; }
+  if (!ajustes_animacoes_reduzidas() && agora - desde > 700)
+    op = 0.625f + 0.375f * cosf((float)((agora - desde - 700) % 1000) * 0.0062831853f);
+  ajustes_acento(&ar, &ag, &ab);
+  // O raio do gfx_cor e fracao da ALTURA: 0.5 numa barra fina vira um pingo
+  // (era o que o cursor antigo desenhava). Ponta redonda = meia LARGURA.
+  gfx_cor((GfxRect){ x - 1.5f, cy - h * 0.5f, 3.0f, h }, 1.5f / h, ar, ag, ab, op * a);
+}
 // "Rotulo ........ a → b unidade" com a barra de cada valor na mesma escala.
 float ajustes_ui_antes_depois(const char *rot, int a, int b, const char *unid, int max,
                               float x, float y, float w, int compacto, float cr, float cg, float cb) {

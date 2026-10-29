@@ -110,3 +110,42 @@ size_t busca_apagar_ultimo(char *s, size_t n) {
   s[n] = 0;
   return n;
 }
+
+size_t busca_byte_cursor(const char *s, int cur) {
+  size_t b = 0;
+  if (cur < 0) return strlen(s);
+  while (s[b] && cur > 0) {
+    b++;
+    while (((unsigned char)s[b] & 0xC0) == 0x80) b++;
+    cur--;
+  }
+  return b;
+}
+
+size_t busca_inserir(char *s, size_t n, size_t cap, int *cur, const char *t) {
+  size_t k = strlen(t), b = busca_byte_cursor(s, *cur);
+  if (n + k + 1 > cap) return n;
+  memmove(s + b + k, s + b, n - b + 1);
+  memcpy(s + b, t, k);
+  if (*cur >= 0) *cur += busca_codepoints(t);
+  return n + k;
+}
+
+size_t busca_apagar_antes(char *s, size_t n, int *cur) {
+  size_t b, a;
+  if (*cur < 0) return busca_apagar_ultimo(s, n);
+  if (*cur == 0) return n;
+  a = b = busca_byte_cursor(s, *cur);
+  while (a > 0 && ((unsigned char)s[--a] & 0xC0) == 0x80) {}
+  memmove(s + a, s + b, n - b + 1);
+  (*cur)--;
+  return n - (b - a);
+}
+
+int busca_cursor_mover(const char *s, int *cur, int d) {
+  int total = busca_codepoints(s), c = *cur < 0 || *cur > total ? total : *cur;
+  if (d < 0) { if (c == 0) return 0; c--; }
+  else { if (c >= total) return 0; c++; }
+  *cur = c >= total ? -1 : c;
+  return 1;
+}

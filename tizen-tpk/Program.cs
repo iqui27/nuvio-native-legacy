@@ -968,6 +968,11 @@ namespace NuvioTpk
             }
             if (avisoRotulo != null && k.State == Key.StateType.Down) FechaAviso();
             if (telaParado != null && k.State == Key.StateType.Down && (k.KeyPressedName == "XF86Back" || k.KeyPressedName == "Escape")) { Sair("stalled screen back"); return; }
+#if !NV_TEXTO
+            // Teclado da Samsung aberto (microfone ou digitar): Esquerda/Direita movem o
+            // cursor do texto e nao seguem para o app embaixo (Voz.cs).
+            try { if (voz != null && voz.Tecla(k)) return; } catch { }
+#endif
             nv_tpk_tecla(k.KeyPressedName, k.State == Key.StateType.Down ? 1 : 0);
         }
 
