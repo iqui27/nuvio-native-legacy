@@ -4470,6 +4470,7 @@
   T("Melhor fonte prefere 4K, Dolby Vision e MP4. Se a escolhida não abrir, tenta outras. Não espera o addon mais lento.", "A Legjobb forrás a 4K-t, a Dolby Visiont és az MP4-et részesíti előnyben. Ha a választott nem nyílik meg, másokat próbál. Nem vár a leglassabb bővítményre."),
   T("Melhor fonte: prefere 4K, Dolby Vision e MP4 e confere uma fonte por vez. Primeira da lista: toca a primeira que o addon mandou e não confere nenhuma outra — para quem já filtra e ordena no AIOStreams.", "Legjobb forrás: előnyben részesíti a 4K-t, a Dolby Visiont és az MP4-et, és egyszerre egy forrást ellenőriz. Első a listában: az elsőt játssza le, amit a bővítmény küldött, és mást nem ellenőriz — azoknak, akik már az AIOStreamsben szűrnek és rendeznek."),
   T("Melhor para esta TV", "A legjobb ehhez a tévéhez"),
+  T("Melhor para este iPhone", ""),
   T("Melhor para esta TV primeiro, grupos por qualidade e filtros Só MP4, Em cache e Dublado.", "Elöl A legjobb ehhez a tévéhez, csoportok minőség szerint, és a Csak MP4, Gyorsítótárban és Szinkronizált szűrők."),
   T("Melhor qualidade", "Legjobb minőség"),
   T("Melhor resultado", "Legjobb találat"),

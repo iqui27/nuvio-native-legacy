@@ -4469,6 +4469,7 @@
   { "Melhor fonte prefere 4K, Dolby Vision e MP4. Se a escolhida não abrir, tenta outras. Não espera o addon mais lento.", "Best source prefers 4K, Dolby Vision and MP4. If the chosen one won't open, it tries others. It doesn't wait for the slowest add-on." },
   { "Melhor fonte: prefere 4K, Dolby Vision e MP4 e confere uma fonte por vez. Primeira da lista: toca a primeira que o addon mandou e não confere nenhuma outra — para quem já filtra e ordena no AIOStreams.", "Best source: prefers 4K, Dolby Vision and MP4 and checks one source at a time. First in list: plays the first one the addon sent and checks no other — for people who already filter and sort in AIOStreams." },
   { "Melhor para esta TV", "Best for this TV" },
+  { "Melhor para este iPhone", "Best for this iPhone" },
   { "Melhor para esta TV primeiro, grupos por qualidade e filtros Só MP4, Em cache e Dublado.", "Best for this TV first, groups by quality and the MP4 only, Cached and Dubbed filters." },
   { "Melhor qualidade", "Best quality" },
   { "Melhor resultado", "Top result" },
