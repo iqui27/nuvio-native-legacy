@@ -42,6 +42,14 @@ static void measure(const char *dir, int addon, int verify) {
   rolagem=0;
   // Warm shared selected labels without warming all selected card titles.
   for(int j=0;j<4;j++) frame();
+  // Warm navigation-only header/empty-state labels as well as card text.
+  for(int j=0;j<MOVES;j++) {
+    SDL_Event e={0}; e.type=SDL_KEYDOWN;
+    e.key.keysym.sym=j<CARDS-1?SDLK_DOWN:SDLK_UP;
+    stream_folha_evento(&e); frame();
+  }
+  grupo=1; foco=0; focoVisto=0; linhaAnt=-1; abreAnt=0; abreFoco=1; rolagem=0;
+  for(int j=0;j<4;j++) frame();
   int raster=txt_rasterizadas, cleans=cleanCalls;
   Uint64 start=SDL_GetPerformanceCounter();
   for(int j=0;j<MOVES;j++) {
