@@ -6,7 +6,11 @@ set -e
 P=/w/prefix; mkdir -p $P
 HOST=
 # Autoconf must not try to execute ARM32 probes on the ARM64 build host.
-[ "${NUVIO_TPK_CROSS:-0}" != 1 ] || HOST=--host=arm-linux-gnueabi
+if [ "${NUVIO_TPK_CROSS:-0}" = 1 ]; then
+  # PATH's gcc targets ARM32; generators must run on the build machine.
+  export CC_BUILD="/usr/bin/gcc -B/usr/bin/" CC_FOR_BUILD="/usr/bin/gcc -B/usr/bin/"
+  HOST="--build=$($CC_BUILD -dumpmachine) --host=arm-linux-gnueabi"
+fi
 cd /w/src/SDL2-2.30.9
 [ -f $P/lib/libSDL2.a ] || { ./configure $HOST -q --prefix=$P --enable-static --disable-shared --disable-audio --disable-video-x11 --disable-video-wayland --disable-video-kmsdrm --disable-video-vulkan --disable-video-opengl --disable-video-opengles --disable-joystick --disable-haptic --disable-sensor --disable-hidapi --disable-pulseaudio --disable-alsa --disable-dbus --disable-ime --disable-ibus --disable-fcitx --disable-libudev --disable-video-rpi --disable-render --disable-sndio --disable-pipewire --disable-jack --disable-esd --disable-arts --disable-nas --disable-oss && make -j6 >/dev/null && make install >/dev/null; } || exit 1
 export PKG_CONFIG_PATH=$P/lib/pkgconfig PATH=$P/bin:$PATH
@@ -22,7 +26,7 @@ cd /w/src/SDL2_image-2.8.2
 # copias dos simbolos FT_* no link e o libass chamaria uma versao diferente da que
 # o resto do app usa. Sem zlib/png/bz2/brotli/harfbuzz: o app so abre TTF/OTF.
 cd /w/src/freetype-2.13.3
-[ -f $P/lib/libfreetype.a ] || { ./configure $HOST -q --prefix=$P --enable-static --disable-shared --without-zlib --without-bzip2 --without-png --without-brotli --without-harfbuzz && make -j6 >/dev/null && make install >/dev/null; } || exit 1
+[ -f $P/lib/libfreetype.a ] || { rm -f objs/apinames; ./configure $HOST -q --prefix=$P --enable-static --disable-shared --without-zlib --without-bzip2 --without-png --without-brotli --without-harfbuzz && make -j6 >/dev/null && make install >/dev/null; } || exit 1
 cd /w/src/SDL2_ttf-2.22.0
 [ -f $P/lib/libSDL2_ttf.a ] && [ -f $P/lib/.ttf-freetype-externo ] || { make distclean >/dev/null 2>&1; touch aclocal.m4; touch configure Makefile.in; ./configure $HOST -q --prefix=$P --enable-static --disable-shared --disable-freetype-builtin --disable-harfbuzz && make -j6 >/dev/null && make install >/dev/null && touch $P/lib/.ttf-freetype-externo; } || exit 1
 # libass (mesma receita do webOS, tools/build-ass-arm.sh): sem fontconfig, sem
