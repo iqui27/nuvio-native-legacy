@@ -666,6 +666,14 @@ static int bibFone(void) {
   return 0;
 #endif
 }
+// Only iOS supplies replacement Sort/Filter buttons in the system bar.
+static int bibControlesSistema(void) {
+#ifdef NV_IOS
+  return bibFone();
+#else
+  return 0;
+#endif
+}
 static int bibAmplo(void) {
 #if defined(NV_TOUCH_UI) && (defined(NV_IOS) || defined(NV_BIB_AMPLO))
   return layout_modo_mobile() && NV_TELA_W > NV_TELA_H && NV_TELA_W < NV_TELA_H * 1.6f;
@@ -815,7 +823,7 @@ static float gradeY(void) {
   // the same way (y * bibRel() climbed into the chips at 85 %).
   y = !temAberta ? ANC(y) : y * bibRel();
   // Phone: no chip row or summary line, the grid starts right under the tabs.
-  if (bibFone() && modo != MODO_LISTAS && !temAberta)
+  if (bibControlesSistema() && modo != MODO_LISTAS && !temAberta)
     y = (faixaY() + BIB_SEG_H) * bibRel() + 16.0f * bibPt();
   if (modo == MODO_ASSISTIDOS && modoLinha()) y += 44;
   return paginaLista() && !trilha ? 160.0f : y;   // under the 6B column kicker
@@ -1559,9 +1567,8 @@ static void alternarOrigens(void) {
   remapear(1);
 }
 
-// First focusable picker: on a phone the Sort/Filter chips are hidden (system
-// bar owns them), so only the grid/list toggle takes D-pad focus.
-static int pickMin(void) { return bibFone() && modo != MODO_LISTAS && estado() != EST_ITENS ? bibViewStart() : 0; }
+// Skip chips only when the system bar supplies replacement controls.
+static int pickMin(void) { return bibControlesSistema() && modo != MODO_LISTAS && estado() != EST_ITENS ? bibViewStart() : 0; }
 
 static void subirParaFaixa(void) {
   if (faixaNoPicker) {
@@ -2577,7 +2584,7 @@ static void desenhaPicker(int p, float f) {
               cor / 255.0f, cor / 255.0f, cor / 255.0f, 1);
     return;
   }
-  if (bibFone() && modo != MODO_LISTAS) return;   // phone: Sort/Filter live in the system bar
+  if (bibControlesSistema() && modo != MODO_LISTAS) return;
   ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroPicker, NULL, p, 0);
   if (modo == MODO_LISTAS) {
     if (p < 4) return; // The shared segmented control owns labels and focus.

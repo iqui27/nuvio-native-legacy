@@ -266,15 +266,12 @@ static int pedidoHost(const PedidoCtx *c, RedeResposta *r) {
   if (p->n_corpo && !(corpo = strndup((const char *)p->corpo, p->n_corpo))) {
     free(cabs); r->erro = REDE_MEMORIA; return 0;
   }
-  r->corpo = nv_host_http(p->metodo ? p->metodo : "GET", p->url, cabs, corpo,
-                          (int)(c->prazo - c->inicio), &st, &retry, &bytes, erro, sizeof erro);
+  r->corpo = nv_host_http_limit(p->metodo ? p->metodo : "GET", p->url, cabs, corpo,
+                          (int)(c->prazo - c->inicio), c->tetoCorpo, &st, &retry, &bytes, erro, sizeof erro);
   free(cabs); free(corpo);
   r->status = st; r->retry_after_s = retry;
-  if (!r->corpo) { r->erro = REDE_TRANSPORTE; return 0; }
+  if (!r->corpo) { r->erro = bytes == -1 ? REDE_LIMITE_CORPO : REDE_TRANSPORTE; return 0; }
   r->n_corpo = (size_t)bytes; r->bytes_fio = (uint64_t)bytes;
-  if (r->n_corpo > c->tetoCorpo) {
-    free(r->corpo); r->corpo = NULL; r->n_corpo = 0; r->erro = REDE_LIMITE_CORPO; return 0;
-  }
   r->erro = REDE_OK;
   return 1;
 }

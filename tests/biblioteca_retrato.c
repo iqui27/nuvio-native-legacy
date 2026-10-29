@@ -215,6 +215,33 @@ int main(int argc, char **argv) {
     }
     for (int i = 0; i < n; i++) { (void)i; }
   }
+  if (!aberto && getenv("NUVIO_M2_CONTROLS")) {
+    const PonteiroAlvo *v;
+    int n = alvos(&v), found = 0;
+    // The first four pickers must expose touch targets on non-iOS phones.
+    for (int i = 0; i < n; i++) {
+      if (v[i].a != 0 || v[i].w <= 0) continue;
+      if (!v[i].focar) continue;
+      v[i].focar(v[i].a, v[i].b);
+      int row, col, action;
+      biblioteca_teste_foco(&row, &col, &action);
+      if (row == 1 && col == 0) {
+        found = 1;
+        for (int p = 1; p < 4; p++) {
+          seta(SDLK_RIGHT);
+          biblioteca_teste_foco(&row, &col, &action);
+          CONFERE(row == 1 && col == p, "portrait: D-pad reaches every filter");
+        }
+        for (int p = 2; p >= 0; p--) {
+          seta(SDLK_LEFT);
+          biblioteca_teste_foco(&row, &col, &action);
+          CONFERE(row == 1 && col == p, "portrait: D-pad returns through filters to Sort");
+        }
+        break;
+      }
+    }
+    CONFERE(found, "portrait: Sort exposes a touch target");
+  }
   if (saida) {
     char p[1024];
     snprintf(p, sizeof p, "%s/biblioteca-%s.png", saida, aberto ? "aberto" : "fechado");

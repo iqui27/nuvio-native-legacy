@@ -335,65 +335,9 @@ int ios_insets(float *left, float *top, float *right, float *bottom) {
   return 1;
 }
 
-char *nv_host_http(const char *verbo, const char *url, const char *cabs,
-                   const char *corpo, int prazoMs, int *status, int *retryAfter, long *n,
-                   char *erro, size_t nErro) {
-  if (status) *status = 0;
-  if (retryAfter) *retryAfter = 0;
-  if (n) *n = 0;
-  if (erro && nErro) erro[0] = 0;
-  NSURL *u = [NSURL URLWithString:[NSString stringWithUTF8String:url ? url : ""]];
-  if (!u) { if (erro) snprintf(erro, nErro, "url invalida"); return NULL; }
-  NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:u];
-  req.HTTPMethod = [NSString stringWithUTF8String:verbo && *verbo ? verbo : "GET"];
-  req.timeoutInterval = (prazoMs > 0 ? prazoMs : 20000) / 1000.0;
-  req.cachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
-  if (cabs) {
-    for (NSString *linha in [[NSString stringWithUTF8String:cabs] componentsSeparatedByString:@"\n"]) {
-      NSRange dp = [linha rangeOfString:@":"];
-      if (dp.location == NSNotFound) continue;
-      NSString *k = [[linha substringToIndex:dp.location] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
-      NSString *v = [[linha substringFromIndex:dp.location + 1] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
-      if (k.length) [req setValue:v forHTTPHeaderField:k];
-    }
-  }
-  if (corpo) req.HTTPBody = [NSData dataWithBytes:corpo length:strlen(corpo)];
-
-  static NSURLSession *sessao;
-  static dispatch_once_t uma;
-  dispatch_once(&uma, ^{
-    NSURLSessionConfiguration *c = [NSURLSessionConfiguration ephemeralSessionConfiguration];
-    c.HTTPMaximumConnectionsPerHost = 6;
-    c.waitsForConnectivity = NO;
-    sessao = [NSURLSession sessionWithConfiguration:c];
-  });
-
-  __block NSData *dados = nil;
-  __block NSHTTPURLResponse *resp = nil;
-  __block NSError *falha = nil;
-  dispatch_semaphore_t fim = dispatch_semaphore_create(0);
-  [[sessao dataTaskWithRequest:req completionHandler:^(NSData *d, NSURLResponse *r, NSError *e) {
-    dados = d; falha = e;
-    if ([r isKindOfClass:NSHTTPURLResponse.class]) resp = (NSHTTPURLResponse *)r;
-    dispatch_semaphore_signal(fim);
-  }] resume];
-  dispatch_semaphore_wait(fim, DISPATCH_TIME_FOREVER);
-
-  if (falha || !resp) {
-    if (erro) snprintf(erro, nErro, "%s", falha ? falha.localizedDescription.UTF8String : "sem resposta");
-    return NULL;
-  }
-  if (status) *status = (int)resp.statusCode;
-  NSString *ra = resp.allHeaderFields[@"Retry-After"];
-  if (retryAfter && ra) *retryAfter = ra.intValue;
-  size_t tam = dados ? dados.length : 0;
-  char *r = (char *)malloc(tam + 1);
-  if (!r) { if (erro) snprintf(erro, nErro, "sem memoria"); return NULL; }
-  if (tam) memcpy(r, dados.bytes, tam);
-  r[tam] = 0;
-  if (n) *n = (long)tam;
-  return r;
-}
+#include <limits.h>
+#include <errno.h>
+#include "http.inc"
 
 long ios_ram_mb(void) {
   return (long)(NSProcessInfo.processInfo.physicalMemory / (1024ull * 1024ull));

@@ -11,10 +11,14 @@ trap 'rm -rf "$NUVIO_DADOS"' EXIT
 sources=()
 for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c) continue;; esac
-  sources+=("$source")
+  if [ "$source" = src/biblioteca.c ] && [ -n "${NUVIO_BIB_SOURCE:-}" ]; then
+    sources+=("$NUVIO_BIB_SOURCE")
+  else
+    sources+=("$source")
+  fi
 done
 if ! cc "${sources[@]}" tests/biblioteca_retrato.c -Isrc -o "$NUVIO_DADOS/teste" \
-  -O1 -g -DNV_SHOT_HOOKS -DNV_TOUCH_UI -DNV_BIB_AMPLO -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
+  -O0 -g -DNV_SHOT_HOOKS -DNV_TOUCH_UI -DNV_BIB_AMPLO -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined \
   >"$NUVIO_DADOS/build.log" 2>&1; then
