@@ -1,5 +1,6 @@
 // Bootstrap: janela, contexto GL, loop e telemetria. Toda a UI vive nos modulos.
 #include "app_id.h"
+#include "desktop.h"
 #include "arranque.h"
 #include "swapint.h"
 #include "quadroc.h"
@@ -24,7 +25,7 @@
 // o alvo Tizen (WASM) precisa pular exatamente os mesmos. Nomear a condicao
 // evita ter de lembrar de dois simbolos em cada ponto - sem isto o primeiro
 // build para o navegador ainda tentava abrir libwayland-client.so.0.
-#if defined(__APPLE__) || defined(NV_LINUX_DESKTOP) || defined(__EMSCRIPTEN__) || defined(NV_TPK) || defined(NV_ANDROID)
+#if defined(__APPLE__) || defined(_WIN32) || defined(NV_LINUX_DESKTOP) || defined(__EMSCRIPTEN__) || defined(NV_TPK) || defined(NV_ANDROID)
 #define NV_SEM_WEBOS 1
 #endif
 #ifdef NV_ANDROID
@@ -42,7 +43,7 @@
 // SIGTERM tratado pelo app: webOS e desktop (Mac/Linux). No .tpk o host .NET e
 // dono do sinal, no Android o sistema mata sem SIGTERM util e no Tizen/WASM nao
 // ha sinal. Os desktops entram para o handler ser exercitavel por teste no Mac.
-#if !defined(__EMSCRIPTEN__) && !defined(NV_TPK) && !defined(NV_ANDROID)
+#if !defined(__EMSCRIPTEN__) && !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(_WIN32)
 #define NV_SINAL_TERMINAR 1
 #include <signal.h>
 #endif
@@ -1016,6 +1017,9 @@ int main(int argc, char **argv) {
     }
   }
   setvbuf(stdout, NULL, _IOLBF, 0);
+#ifdef NV_DESKTOP_RELEASE
+  desktop_start();
+#endif
   arranque_etapa("main");
   arranque_relatar();
 #ifdef NV_DTS_DEBUG
@@ -1041,6 +1045,12 @@ int main(int argc, char **argv) {
     if (base) { snprintf(dirBuf, sizeof dirBuf, "%sart", base); SDL_free(base); dirArte = dirBuf; }
     else dirArte = "/tmp/art";
   }
+#ifdef _WIN32
+  // Resource callers split parent directories on '/', including fonts beside art.
+  if (dirArte != dirBuf) snprintf(dirBuf, sizeof dirBuf, "%s", dirArte);
+  for (char *p = dirBuf; *p; p++) if (*p == '\\') *p = '/';
+  dirArte = dirBuf;
+#endif
 
   // O compositor do webOS engole o BACK e abre a barra de apps — a menos que a
   // surface declare que o app quer a tecla. Quem faz essa declaracao e o
@@ -1073,6 +1083,11 @@ int main(int argc, char **argv) {
   NV_ETAPA("SDL_Init");
   arranque_etapa("SDL_Init");
   if (SDL_Init(SDL_INIT_VIDEO) != 0) { printf("SDL_Init: %s\n", SDL_GetError()); return 1; }
+#ifdef NV_DESKTOP_RELEASE
+  SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER);
+  for (int i = 0; i < SDL_NumJoysticks(); i++)
+    if (SDL_IsGameController(i)) SDL_GameControllerOpen(i);
+#endif
 #ifdef __EMSCRIPTEN__
   emscripten_set_visibilitychange_callback(NULL, EM_TRUE, cicloWgt);
 #endif
@@ -1080,7 +1095,7 @@ int main(int argc, char **argv) {
   // Antes de qualquer fio: ver nv_blindar_formatos em sdlcompat.h (issue #65).
   nv_blindar_formatos();
 
-#if defined(__APPLE__) && !defined(NV_IOS)
+#if (defined(__APPLE__) && !defined(NV_IOS)) || defined(_WIN32)
   // Perfil de compatibilidade: e o unico do macOS que ainda aceita GLSL 1.20 e
   // as funcoes fixas que o GLES2 tem como core.
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
@@ -1917,6 +1932,9 @@ int main(int argc, char **argv) {
         continue;
       }
 #endif
+#ifdef NV_DESKTOP_RELEASE
+      if (desktop_event(&e, win, texto_sistema_aberto())) continue;
+#endif
       ponteiro_diag(&e);
       // PROTECAO DE OLED (esmaecer.h): toda acao da pessoa acorda a tela, e a
       // tecla que acorda so acorda — nao age.
@@ -1943,6 +1961,18 @@ int main(int argc, char **argv) {
       // Teclado do sistema (entrada_texto.h): ve o texto ANTES de qualquer tela.
       texto_sistema_observar(&e);
       if (e.type == SDL_WINDOWEVENT) {
+#if defined(NV_DESKTOP_RELEASE) && !defined(NV_TOUCH_UI)
+        if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+          SDL_GL_GetDrawableSize(win, &dw, &dh);
+          if (dw > 0 && dh > 0) {
+            gpun_redimensionar(dw, dh);
+            glViewport(0, 0, dw, dh);
+            gfx_tamanho_alvo(dw, dh);
+            video_escala_definir(dw, dh);
+            capW = dw; capH = dh;
+          }
+        }
+#endif
         // A perda de foco cancela a selecao do relogio e qualquer OK armado;
         // app_evento consome estes avisos antes de entregar teclas as paginas.
         if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST || e.window.event == SDL_WINDOWEVENT_HIDDEN)

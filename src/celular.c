@@ -3,7 +3,7 @@
 #include "posterprov.h"
 #include <string.h>
 
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__) || defined(_WIN32)
 int  celular_disponivel(void) { return 0; }
 int  celular_abrir(const char *t) { (void)t; return 0; }
 int  celular_abrir_link(const char *t,const char *d) { (void)t;(void)d;return 0; }

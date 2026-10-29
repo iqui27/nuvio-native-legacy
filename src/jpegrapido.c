@@ -185,7 +185,7 @@ SDL_Surface *jpeg_rapido_carregar(const char *caminho, int largMax,
   free(dados);
   return s;
 }
-#elif defined(NV_IOS)
+#elif defined(NV_IOS) || defined(_WIN32)
 // iOS: no libjpeg in the SDK and nothing to dlopen. NULL sends every JPEG to
 // IMG_Load (stb) at full size, as the Mac does when the brew libjpeg is absent.
 // A downscaled decoder (ImageIO with kCGImageSourceThumbnailMaxPixelSize)

@@ -108,7 +108,7 @@ void logrede_limpar(char *linha) {
   cortarLongas(linha);
 }
 
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__) || defined(_WIN32)
 void logrede_configurar(int ligado, const char *arquivo) { (void)ligado; (void)arquivo; }
 const char *logrede_url(void) { return ""; }
 #else

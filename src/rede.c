@@ -2054,6 +2054,9 @@ static int abrirReal(void) {
   h = dlopen("libcurl.so.5", RTLD_NOW);
   if (!h) h = dlopen("libcurl.so.4", RTLD_NOW);
 #endif
+#ifdef _WIN32
+  if (!h) h = dlopen("libcurl-x64.dll", RTLD_NOW);
+#endif
   if (!h) h = dlopen("libcurl.4.dylib", RTLD_NOW);   // Mac
   if (!h) h = dlopen("libcurl.dylib", RTLD_NOW);
   if (!h) { printf("[rede] sem libcurl: %s\n", dlerror());

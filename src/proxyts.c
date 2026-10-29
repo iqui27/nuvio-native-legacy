@@ -15,7 +15,7 @@ int proxyts_candidata(const char *url, int mp4) {
   return 1;
 }
 
-#if defined(__EMSCRIPTEN__) || defined(NV_ANDROID)
+#if defined(__EMSCRIPTEN__) || defined(NV_ANDROID) || defined(_WIN32)
 void proxyts_definir_cabecalhos(const char *c) { (void)c; }
 int  proxyts_redirecionou(void) { return 0; }
 int  proxyts_disponivel(void) { return 0; }

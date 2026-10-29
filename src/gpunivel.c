@@ -221,7 +221,7 @@ int gpun_upscale_suportado(void) {
 #endif
   const char *gpu = (const char *)glGetString(GL_RENDERER);
   if (!gpu || strstr(gpu, "Mali-4")) return 0;
-#if !defined(__APPLE__) || defined(NV_GLES_NO_MAC)
+#if (!defined(__APPLE__) && !defined(_WIN32)) || defined(NV_GLES_NO_MAC)
   GLint range[2], precision = 0;
   glGetShaderPrecisionFormat(GL_FRAGMENT_SHADER, GL_HIGH_FLOAT, range, &precision);
   if (!precision) return 0;

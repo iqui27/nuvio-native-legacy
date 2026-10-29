@@ -102,7 +102,14 @@ static void espacoSomar(const char *p, const char *ignorar, int grupo,
                          unsigned fundo, uint64_t *totais) {
   struct stat st;
   if(fundo>32 || (ignorar && !strcmp(p,ignorar)) || lstat(p,&st)!=0) return;
-  if(S_ISREG(st.st_mode)) { totais[grupo<0 ? 7 : grupo]+=(uint64_t)st.st_blocks*512; return; }
+  if(S_ISREG(st.st_mode)) {
+#ifdef _WIN32
+    totais[grupo<0 ? 7 : grupo]+=(uint64_t)st.st_size;
+#else
+    totais[grupo<0 ? 7 : grupo]+=(uint64_t)st.st_blocks*512;
+#endif
+    return;
+  }
   if(!S_ISDIR(st.st_mode)) return;
   DIR *d=opendir(p); struct dirent *e;
   if(!d) return;
