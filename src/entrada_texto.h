@@ -71,6 +71,13 @@ int  texto_sistema_voz_pelo_teclado(void);
 // (registrou o abridor de texto e nao falhou nesta sessao). Quem decide usar e o
 // ajuste Teclado em "Do sistema" (sistexto.c). 0 em toda outra plataforma.
 int  texto_sistema_teclado_pelo_host(void);
+// Tipo do PROXIMO texto_sistema_abrir (consumido nele), os ST_IME_* de
+// sistexto.h: 0 texto, 1 e-mail, 2 senha. So o .tpk o leva ao host.
+void texto_sistema_tipo(int tipo);
+// 1 = um campo de SENHA pode ir ao teclado do sistema daqui. No .tpk so com o
+// host que abre o teclado da Samsung em modo senha (sem previsao); senao a senha
+// fica na grade do app. 1 em toda outra plataforma (nada muda la).
+int  texto_sistema_senha_segura(void);
 // Cursor do campo do host, em CARACTERES (nao bytes); -1 = no fim ou desconhecido.
 // So o .tpk informa; em toda outra plataforma e sempre -1.
 int  texto_sistema_cursor(void);
