@@ -5760,17 +5760,20 @@ static void heroWeb(float a, float desloc) {
     compact.idiomas[0] = compact.tamanho[0] = 0;
     vt_chip_texto(&compact, texto, sizeof texto);
     float yV = yVers + sobe + dyV, aV = a * kV;
-    TxtLinha quality = txt_linha(TXT_ILHA_SUB, texto, 225, 227, 232, 255);
-    float qualityW = quality.w + 48;
-    plrui_material_plano((GfxRect){NV_DETW2_X,yV,qualityW,56},28,aV);
-    txt_desenhar_alpha(quality,NV_DETW2_X+24,yV+(56-quality.h)*.5f,aV);
+    TxtLinha quality = txt_linha(TXT_ILHA_APOIO, texto, 160, 162, 166, 255);
+    float qualityW = quality.w;
     int ink=versaoFoco>.5f ? ajustes_tinta_foco() : 225;
-    TxtLinha source = txt_linha_corta(TXT_ILHA_SUB,vaiTocar.provedor[0] ? vaiTocar.provedor : i18n("Fontes"),
-                                     ink,ink,ink,255,larguraTextoHero()-qualityW-84);
-    versaoRect = (GfxRect){NV_DETW2_X+qualityW+12,yV,source.w+72,56};
+    char fonte[320];
+    snprintf(fonte,sizeof fonte,"%s%s%s",vaiTocar.provedor[0] ? vaiTocar.provedor : i18n("Fontes"),
+             vaiTocar.tamanho[0] ? " · " : "",vaiTocar.tamanho);
+    TxtLinha source = txt_linha_corta(TXT_ILHA_SUB,fonte,
+                                     ink,ink,ink,255,larguraTextoHero()-qualityW-96);
+    versaoRect = (GfxRect){NV_DETW2_X+qualityW+24,yV,source.w+72,56};
     botao_pilula_sem_aro(versaoRect,"",NULL,versaoFoco,0,0,aV);
-    gfx_icone((GfxRect){versaoRect.x+16,yV+16,24,24},"aj_layers",ink/255.f,ink/255.f,ink/255.f,aV);
-    txt_desenhar_alpha(source,versaoRect.x+52,yV+(56-source.h)*.5f,aV);
+    vtui_estado_ponto(vaiTocar.estado,versaoRect.x+23,yV+23,aV);
+    float sourceY = yV+(56-source.h)*.5f;
+    txt_desenhar_alpha(quality,NV_DETW2_X,sourceY+source.h-quality.h,aV);
+    txt_desenhar_alpha(source,versaoRect.x+52,sourceY,aV);
     if (aV>.3f) ponteiro_alvo(versaoRect.x,versaoRect.y,versaoRect.w,versaoRect.h,ponteiroDetalhe,NULL,-4,0);
   }
   if (pessoal[0]) {
