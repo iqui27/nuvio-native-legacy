@@ -197,7 +197,7 @@ static int alvo_nivel(const CqEntrada *e, int n) {
 #define COL_W    470.0f
 #define TABS_Y   ANC(262.0f)
 #define GRADE_Y  (TABS_Y + PILULA_H + 26.0f)
-#define PASSO_Y  224.0f
+#define PASSO_Y  248.0f
 #define RODAPE_Y (GRADE_Y + PASSO_Y * LINHAS_VISIVEIS + 20.0f)   // footer text, then key hints
 #define RODAPE_H 164.0f
 static void origem(void) {
@@ -227,7 +227,7 @@ static float larg_pilula(const char *s, const char *ic) {
 
 
 #define CARD_W   ((gradeW - (colunas - 1) * 20.0f) / colunas)
-#define CARD_H   200.0f
+#define CARD_H   224.0f
 #define COL_X    (MG + gradeW + 40.0f)
 
 static const char *const tabs[A_N] = { "Todas", "Ganhas", "Em andamento", "Secretas", "Comunidade" };
@@ -501,7 +501,7 @@ static void superficie(GfxRect r, float raioPx, float f, float a, Tinta *pri, Ti
 // Pilula de aba/chip/botao. sel = aba escolhida; apagada = nao faz nada hoje.
 static void pilula(GfxRect r, const char *s, const char *ic, float foc, int sel, int apagada, float a) {
   (void)sel;
-  botao_pilula(r, s, ic, foc, 0, 0, a * (apagada ? .45f : 1));
+  botao_pilula_sem_aro(r, s, ic, foc, 0, 0, a * (apagada ? .45f : 1));
 }
 
 // 3D object badge of one achievement (family x tier art). Returns 0 until the
@@ -618,13 +618,13 @@ static void desenha_card(GfxRect r, const CqEntrada *e, float foc, float a) {
   bloco(TXT_ILHA_NOME_L, e->nome, p, x, r.y + 48.0f, w, 30.0f, a, 2);   // long names wrap at 100 %
   if (e->total > 0) snprintf(b, sizeof b, i18n("Nível %d de 5 · %d de %d"), e->nivel, e->vistos, e->total);
   else snprintf(b, sizeof b, i18n("Nível %d de 5"), e->nivel);
-  texto(TXT_V2_18, b, x, r.y + 116.0f, w, s, a);
+  bloco(TXT_ILHA_SUB_L, b, s, x, r.y + 110.0f, w, 26.0f, a, 2);
   // Barra de progresso e os cinco pontos de nivel.
   f = e->total > 0 ? (float)e->vistos / (float)e->total : 0.0f;
   if (f > 1.0f) f = 1.0f;
-  plrui_trilho((GfxRect){r.x + 20, r.y + 152, barW, 5}, f, fr, fg, fb, a);
+  plrui_trilho((GfxRect){r.x + 20, r.y + 172, barW, 5}, f, fr, fg, fb, a);
   for (i = 0; i < CQ_NIVEIS; i++) {
-    GfxRect q = {r.x + 20 + i * 18, r.y + 174, 12, 12};
+    GfxRect q = {r.x + 20 + i * 18, r.y + 198, 12, 12};
     float nivelA = ajustes_animacoes_reduzidas() ? 1 : anim_atraso(tempo, i, T21_STAGGER_MS, T21_ENTER_MS);
     plrui_trilho(q, i < e->nivel ? nivelA : 0, fr, fg, fb, a);
   }
@@ -632,7 +632,7 @@ static void desenha_card(GfxRect r, const CqEntrada *e, float foc, float a) {
     char rb[64];
     if (raridade_txt(e->chave, rb, sizeof rb)) snprintf(b, sizeof b, "%s · %s", nome_nivel_arte(e->nivel), rb);
     else snprintf(b, sizeof b, "%s", nome_nivel_arte(e->nivel));
-    texto_dir(TXT_V2_18, b, r.x + CARD_W - 20.0f, r.y + 168.0f, barW - CQ_NIVEIS * 18.0f - 12.0f, mudo, a);
+    texto_dir(TXT_ILHA_SUB, b, r.x + CARD_W - 20.0f, r.y + 188.0f, barW - CQ_NIVEIS * 18.0f - 12.0f, mudo, a);
   }
 }
 
@@ -720,7 +720,7 @@ static void desenha_mapa(float a) {
     texto(TXT_ILHA_TITULO, b, x, p.y + 126.0f * k, 110.0f, PRI, a);
     texto(TXT_V2_18, rot[i], x, p.y + 178.0f * k, 112.0f, SEC, a);
   }
-  texto(TXT_V2_18, "Em breve, com o nosso servidor.", p.x + 24.0f, p.y + 218.0f * k, COL_W - 48.0f, AMBAR, a);
+
 }
 
 static void desenha_hub(float a) {
@@ -768,11 +768,7 @@ static void desenha_hub(float a) {
     }
     desenha_retomar(a);
     desenha_mapa(a);
-    bloco(TXT_V2_18, "Emblemas premiam o que você descobriu, não quanto tempo ficou na frente da tela. Sem prazo, sem sequência para manter. Tudo isso se desliga em Ajustes.",
-          MUDO, ox + MG, oy + RODAPE_Y, fminf(900.0f, gradeW), 28.0f, a, 2);
-    { static const char *const tec[3] = { "← ↑ ↓ →", "OK", "Voltar" };
-      const char *rot[3] = { i18n("Navegar"), i18n("Ver emblema"), i18n("Sair") };
-      plrui_dicas(tec, rot, 3, ox + MG, oy + RODAPE_Y + 100.0f, 0, a); }
+
   }
   pilula(r_voltar(), i18n("Voltar"), NULL, qf(B_VOLTAR), 0, 0, a);
   for (i = 0; i < n; i++) alvo(it[i].r, it[i].id);
@@ -903,11 +899,10 @@ static void desenha_detalhe(float a) {
     }
     l = txt_linha(TXT_ILHA_NOME, NIVEL[i], PRI.r, PRI.g, PRI.b, 255);
     txt_desenhar_alpha(l, rx + (48.0f / sc), yy, cA);
-    texto(TXT_V2_18, regra, rx + (48.0f / sc) + (float)l.w + (14.0f / sc), yy + (5.0f / sc), rw - (48.0f / sc) - (float)l.w - (14.0f / sc) - (190.0f / sc), MUDO, cA);
-    texto_dir(TXT_V2_18, estado, rx + rw, yy + (5.0f / sc), (180.0f / sc), feito ? PRI : MUDO, cA);
+    texto(TXT_ILHA_SUB_L, regra, rx + (48.0f / sc) + (float)l.w + (14.0f / sc), yy + (5.0f / sc), rw - (48.0f / sc) - (float)l.w - (14.0f / sc) - (190.0f / sc), MUDO, cA);
+    texto_dir(TXT_ILHA_SUB_L, estado, rx + rw, yy + (5.0f / sc), (180.0f / sc), feito ? PRI : MUDO, cA);
   }
-  bloco(TXT_V2_18, "Filme que você já viu antes de abrir a trilha conta para os níveis 1 a 4.", MUDO,
-        rx, y0 + (336.0f / sc) + 5.0f * passo + (12.0f / sc), rw, (26.0f / sc), cA, 2);
+
   if (cqd_trilha_buscar(e->chave)) {
     r = r_trilha();
     pilula(r, i18n("Ir à trilha"), "aj_play", qf(B_DET_TRILHA), 0, 0, cA);
@@ -1021,7 +1016,7 @@ void conquistas_aviso_desenhar(void) {
     Tinta kc = { (int)(fr * 255.0f), (int)(fg * 255.0f), (int)(fb * 255.0f) };
     texto(TXT_V2_KICK, i18n("Conquista nova"), r.x + 140.0f, r.y + 26.0f, 320.0f, kc, a);
   }
-  texto_dir(TXT_V2_18, i18n("Voltar fecha"), r.x + r.w - 28.0f, r.y + 24.0f, 200.0f, MUDO, a);
+
   texto(TXT_ILHA_NOME, avTitulo, r.x + 140.0f, r.y + 56.0f, 610.0f, PRI, a);
   texto(TXT_V2_18, avSub, r.x + 140.0f, r.y + 94.0f, 610.0f, SEC, a);
   if (!ajustes_animacoes_reduzidas()) {

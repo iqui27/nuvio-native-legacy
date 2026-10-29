@@ -918,16 +918,6 @@ static void desenharLinha(const LuiLinha *l, int idx, int sel, float x, float y,
     gfx_icone((GfxRect){ dir - 24.0f, y + (LU_LN_H - 24.0f) * 0.5f, 24.0f, 24.0f }, "pl_chevron-right", 1, 1, 1, (sel ? 0.9f : 0.5f) * aL);
     if (pont && l->tipo != LR_MAIS) ponteiro_alvo(dir - 40.0f, y, 40.0f, LU_LN_H, ponteiroLinha, ponteiroMenuAbrir, idx, 0);
     dir -= 24.0f + 10.0f;
-    // Dono, 11/10: a linha em foco diz que segurar abre mais ("hold to more"),
-    // na mesma pilula de tecla do rodape.
-    if (sel && !menu && l->tipo != LR_MAIS) {
-      const char *k[1] = { "Segure OK" }, *r[1] = { "Mais opções" };
-      dir -= plrui_dicas(k, r, 1, dir, y + LU_LN_H * 0.5f, 1, 0.8f * aL) + 12.0f;
-    }
-  } else if ((mais || ver) && sel && !menu && l->tipo == LR_CAND) {
-    // Na lista inteira o segurar tambem abre o menu da linha: a mesma dica.
-    const char *k[1] = { "Segure OK" }, *r[1] = { "Mais opções" };
-    dir -= plrui_dicas(k, r, 1, dir, y + LU_LN_H * 0.5f, 1, 0.8f * aL) + 12.0f;
   }
   if (l->tipo == LR_SYNC && sel) {
     // The chosen action between < > discs; a disc dims with nothing beyond it.
@@ -1096,31 +1086,6 @@ void legendasui_corpo(GfxRect c, float a) {
     if (aviso[0] && (Sint32)(avisoAte - SDL_GetTicks()) > 0) {
       TxtLinha l = txt_linha_corta(TXT_ILHA_APOIO, aviso, 255, 214, 120, 255, w - 20.0f);
       txt_desenhar_alpha(l, x0 + 10.0f, yc - (float)l.h * 0.5f, a);
-    } else {
-      char q[32];
-      // "Segure OK" saiu daqui: a linha em foco ja diz (Mais opcoes).
-      const char *k[3] = { "OK", "\xe2\x86\x92", "Voltar" };
-      const char *rt[3] = { "Usar", "Estilo", mais || ver ? "Voltar" : "Fechar" };
-      const char *km[2] = { "OK", "Voltar" }, *rm[2] = { "Usar", "Fechar" };
-      int naSync = nLinhasV && linhas[foco].tipo == LR_SYNC, nf = 0, pf = 0;
-      // The AutoSync row is not a choice: it is left out of "N de M", which
-      // disappears on it, and the hints say what OK does there.
-      for (i = 0; i < nLinhasV; i++) if (linhas[i].tipo != LR_SYNC) { nf++; if (i <= foco) pf = nf; }
-      if (!naSync) {
-        snprintf(q, sizeof q, i18n("%d de %d"), nf ? pf : 0, nf);
-        { TxtLinha l = txt_linha(TXT_ILHA_APOIO, q, 243, 242, 239, 115);
-          txt_desenhar_alpha(l, x0 + 10.0f, yc - (float)l.h * 0.5f, a); }
-        if (menu) plrui_dicas(km, rm, 2, x0 + w - 10.0f, yc, 1, a);
-        else plrui_dicas(k, rt, 3, x0 + w - 10.0f, yc, 1, a);
-      } else {
-        const char *rot[4], *ks[3] = { "OK", "\xe2\x86\x90 \xe2\x86\x92", "Voltar" };
-        int n = nAcoes(linhas[foco].slot, rot, 4);
-        const char *rs[3] = { n ? rot[syncAcao < n ? syncAcao : 0] : "", "Op\xc3\xa7\xc3\xa3o", "Fechar" };
-        if (n == 1) { const char *k2[2] = { "OK", "Voltar" }, *r2[2] = { rot[0], "Fechar" };
-          plrui_dicas(k2, r2, 2, x0 + w - 10.0f, yc, 1, a); }
-        else if (n) plrui_dicas(ks, rs, 3, x0 + w - 10.0f, yc, 1, a);
-        else plrui_dicas(ks + 2, rs + 2, 1, x0 + w - 10.0f, yc, 1, a);
-      }
     } }
   if (menu) {
     // The island clips its body; the side menu extends outside that rectangle.

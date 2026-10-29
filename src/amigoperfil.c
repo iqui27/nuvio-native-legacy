@@ -160,17 +160,11 @@ void amigoperfil_atualizar(float dt, Uint32 agora) {
     }
 }
 
-// Cartaz com o aro de foco da home por fora.
+// Same borderless poster lift as the approved TV rows.
 static void cartaz(GfxRect r, const char *url, float f, float a) {
-  float raio = NV_RAIO_CARD;
-  if (f > 0.01f) {
-    float ar, ag, ab, menor = r.w;
-    GfxRect b = { r.x - NV_ANEL_FOCO, r.y - NV_ANEL_FOCO, r.w + 2 * NV_ANEL_FOCO, r.h + 2 * NV_ANEL_FOCO };
-    ajustes_acento(&ar, &ag, &ab);
-    if (ajustes_vidro()) gfx_vidro_cartao(r, raio, f, a);
-    else gfx_cor(b, (raio * menor + NV_ANEL_FOCO) / (menor + 2 * NV_ANEL_FOCO), ar, ag, ab, f * a);
-  }
-  svd_poster(r, url, raio * r.w / r.h, a);
+  GfxRect lifted={r.x-r.w*.04f*f,r.y-r.h*.04f*f,r.w*(1+.08f*f),r.h*(1+.08f*f)};
+  if(f>.01f)gfx_rect(lifted,0,GFX_SOMBRA,1,0,0,NV_RAIO_CARD,0,0,0,.45f*f*a);
+  svd_poster(lifted, url, NV_RAIO_CARD * r.w / r.h, a);
 }
 
 // `estilo` e o MESMO para os quatro rotulos (ver a grade): um corpo por cartao
@@ -309,21 +303,21 @@ void amigoperfil_desenhar(Uint32 agora) {
     // duas pessoas. O tamanho da amostra vai junto do numero.
     { int q;
       float rotW = 0.0f;
-      TxtLinha tit = txt_linha(TXT_MINI, i18n("Comparação"), 168, 166, 178, 255);
+      TxtLinha tit = txt_linha(TXT_ILHA_NOME, i18n("Comparação"), 180, 180, 188, 255);
       txt_desenhar_alpha(tit, lx, y, a);
       y += (float)tit.h + 6.0f;
       for (q = 0; q < SV_CMP_N; q++) {
-        TxtLinha l = txt_linha(TXT_CAPTION, socialvis_cmp_rotulo(q), 150, 148, 160, 255);
+        TxtLinha l = txt_linha(TXT_ILHA_SUB_L, socialvis_cmp_rotulo(q), 170, 170, 180, 255);
         if ((float)l.w > rotW) rotW = (float)l.w;
       }
       rotW += 20.0f;
       for (q = 0; q < SV_CMP_N; q++) {
         char val[96];
         int ok = 0;
-        TxtLinha l = txt_linha(TXT_CAPTION, socialvis_cmp_rotulo(q), 150, 148, 160, 255), v;
+        TxtLinha l = txt_linha(TXT_ILHA_SUB_L, socialvis_cmp_rotulo(q), 170, 170, 180, 255), v;
         socialvis_cmp_texto(q, &perf.cmp[q], val, sizeof val, &ok);
-        v = ok ? txt_linha_corta(TXT_CAPTION, val, 246, 246, 250, 255, lw - rotW)
-               : txt_linha_corta(TXT_CAPTION, val, 128, 126, 138, 255, lw - rotW);
+        v = ok ? txt_linha_corta(TXT_ILHA_SUB_L, val, 246, 246, 250, 255, lw - rotW)
+               : txt_linha_corta(TXT_ILHA_SUB_L, val, 160, 160, 172, 255, lw - rotW);
         txt_desenhar_alpha(l, lx, y, a);
         txt_desenhar_alpha(v, lx + rotW, y, a);
         y += (float)l.h + 2.0f;
@@ -522,7 +516,6 @@ void amigoperfil_desenhar(Uint32 agora) {
     if (layout_modo_mobile()) gfx_sem_recorte();
 #endif
   }
-  { TxtLinha t = txt_linha(TXT_MINI, i18n("OK · abrir o título   ·   Voltar · fechar"), 150, 148, 160, 255);
-    txt_desenhar_alpha(t, lx, NV_TELA_H - 44.0f, a * 0.9f); }
+
 }
 

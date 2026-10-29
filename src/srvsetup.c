@@ -816,10 +816,6 @@ static void plexRow(int i, float y) {
   txt_desenhar(txt_linha_corta(TXT_ILHA_NOME,s->nome,243,243,243,255,width),px(308),sy(y+20));
   txt_desenhar(txt_linha_corta(TXT_ILHA_SUB_L,sub,155,155,155,255,width),px(308),sy(y+60));
 }
-static float dicaChip(const char *key, const char *label, float x, float y) {
-  const char *localized = i18n(label);
-  return x + (plrui_dicas(&key, &localized, 1, px(x), ANC(y) + 15, 0, 1) + 22) * 1624 / contentW;
-}
 static void syncLabel(int p, char *out, size_t n) {
   if(!lastSync[p]) { snprintf(out,n,"%s",i18n("sem sincronizar"));return; }
   time_t stamp=(time_t)lastSync[p];struct tm local;char date[40];
@@ -1159,7 +1155,7 @@ void srvsetup_desenhar(Uint32 now) {
       pointerTarget((GfxRect){px(x),sy(498),150,184},5+i);
     }
     button(4,"Usuário e senha",1052,710,260);
-    text(TXT_ILHA_SUB_L,"Só usuários visíveis são exibidos. Usuários ocultos podem digitar seu nome.",1052,796,145,740);
+
   } else if(screen==READY) {
     panel(200,386,750,492,-1); text(TXT_V2_GRUPO,"Tudo em seu lugar",232,420,243,680);
     const char *labels[]={"Biblioteca","Continuar assistindo","Fontes"};
@@ -1203,12 +1199,6 @@ void srvsetup_desenhar(Uint32 now) {
   if(message[0] && screen!=ERROR_SCREEN && screen!=ROWS) text(TXT_ILHA_CORPO,message,200,920,215,1624);
   if (bodyDrawing) gfx_sem_recorte();
   bodyDrawing = 0;
-  if (screen != ROWS) {
-    float hx = dicaChip("OK","Escolher",200,1014);
-    dicaChip("Voltar","Voltar",hx,1014);
-    TxtLinha nota = txt_linha(TXT_ILHA_SUB_L, i18n("Conexão salva só nesta TV e neste perfil"), 145,145,145,255);
-    txt_desenhar(nota,px(1824)-nota.w,ANC(1018));
-  }
   gfx_sem_transformar();
   if (previousPage.tex && !gfx_mini_ativo())
     gfx_mini_desenhar(&previousPage, (GfxRect){-anim_saida(page) * NV_ENTRA_DY * 2 * pageDir,0,NV_TELA_W,NV_TELA_H}, 0, 1 - anim_saida(page));

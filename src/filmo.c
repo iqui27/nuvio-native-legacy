@@ -116,14 +116,14 @@ static float anoPasso(void) { return na>1&&na<=21?1590.0f/(na-1):ANO_S; }
 static float py(float y) { return aba==0 ? ANC(y) : 60+(y-60)*linhaK(); }
 static float compacta(float full,float small){return full+(small-full)*compactoT;}
 static GfxRect area(GfxRect r) { return (GfxRect){px(r.x), py(r.y), r.w * colunaK(), r.h * linhaK()}; }
-static void material(GfxRect r,float radius,int modal,float a) { plrui_material(area(r),radius,modal,a); }
+static void material(GfxRect r,float radius,int modal,float a) { (void)modal;plrui_material_plano(area(r),radius,a); }
 static void trilho(GfxRect r,float v,float cr,float cg,float cb,float a) { plrui_trilho(area(r),v,cr,cg,cb,a); }
 static int gradeCols(void) { return (int)((paginaW() + 24) / ((220 * gfx_poster_k() + 24) * gfx_escala_txt())); }
 static float gradePasso(void) { return 330 * gfx_poster_k() + 100; }
 static int gradeLinhas(void) { return aba==1 && zona==4 && ANC(T21_SAFE_B) > 330 + 2 * gradePasso() ? 2 : 1; }
 static const char *abas[]={"História","Filmografia","Sobre","Conquistas"};
 static void texto(const char *s,float x,float y,float w,TxtEstilo font,int cor){TxtLinha l=txt_linha_corta(font,i18n(s),cor,cor,cor,255,w*colunaK());txt_desenhar_alpha(l,px(x),py(y),alpha);}
-static void bloco(const char *s,float x,float y,float w,int n){txt_bloco(TXT_ILHA_SUB,i18n(s),190,195,205,px(x),py(y),w*colunaK(),29,alpha,n);}
+static void bloco(const char *s,float x,float y,float w,int n){txt_bloco(TXT_ILHA_SUB_L,i18n(s),190,195,205,px(x),py(y),w*colunaK(),32,alpha,n);}
 // Shared borderless glass, with the same accent focus spring as other pills.
 static void repouso(GfxRect r, float a) {
   if (ajustes_vidro()) gfx_vidro_painel_sem_aro(r, .5f, .55f, a);
@@ -241,11 +241,11 @@ static void cartaz(int idx,float x,float y,float w,float h,int foco) {
   else if(s->estado==FM_ANDA)trilho((GfxRect){x+8,y+h-12,w-16,5},s->pct/100.f,-1,-1,-1,alpha);
   float legenda=28;
   TxtLinha label=txt_linha_corta(TXT_ILHA_NOME,c->titulo,235,235,235,255,r.w);
-  if(aba==0)legenda=txt_bloco(TXT_LOG_19B,c->titulo,235,235,235,r.x,r.y+r.h+12,r.w,18,alpha*e,2);
+  if(aba==0)legenda=txt_bloco(TXT_ILHA_NOME,c->titulo,235,235,235,r.x,r.y+r.h+12,r.w,28,alpha*e,2);
   else txt_desenhar_alpha(label,r.x,r.y+r.h+12,alpha*e);
   char papel[80];fm_rotulo(c,papel,sizeof papel,i18n);
   if(c->ano)snprintf(b,sizeof b,"%d · %s",c->ano,papel);else snprintf(b,sizeof b,"%s",papel);
-  label=txt_linha_corta(aba==0?TXT_ILHA_HORA:TXT_ILHA_SUB,b,150,150,150,255,r.w);
+  label=txt_linha_corta(TXT_ILHA_SUB,b,170,170,178,255,r.w);
   txt_desenhar_alpha(label,r.x,r.y+r.h+14+legenda,alpha*e);
 }
 // Mock's layered hero, tinted by the portrait palette (theme accent until it decodes).
@@ -500,4 +500,4 @@ static float gesto;
 static int toqueRolar(const PonteiroRolagem *e){if(camada==5){if(e->fase==PONT_ROL_MOVER&&e->delta){bioPagina+=e->delta<0?1:-1;if(bioPagina<0)bioPagina=0;}return 1;}if(camada||!(aba==0||aba==1))return 0;if(e->fase==PONT_ROL_INICIO){gesto=0;return e->eixoY==(aba==1)&&e->y>=550;}if(e->fase==PONT_ROL_MOVER||e->fase==PONT_ROL_INERCIA){gesto-=e->delta;int step=(int)(gesto/(aba==1?350:-81));if(step){gesto-=step*(aba==1?350:81);if(aba==1){int max=(ni+gradeCols()-1)/gradeCols()-gradeLinhas();if(max<0)max=0;topo+=step;if(topo<0)topo=0;if(topo>max)topo=max;zona=4;col=topo*gradeCols();}else{int j=0;while(j<na&&anos[j]!=ano)j++;j+=step;if(j<0)j=0;if(j>=na)j=na-1;if(j>=0)ano=anos[j];}}return 1;}return 1;}
 static void alvoToque(float x,float y,float w,float h,int z,int c){GfxRect r=area((GfxRect){x,y,w,h});if(h==60)r.h=60;ponteiro_alvo(r.x+paginaX(),r.y,r.w,r.h,toqueFoco,NULL,z,c);}
 static void registrarToque(void){if(camada){ponteiro_camada();return;}float c=compactoT;if(c<.5f)for(int i=0;i<3;i++)ponteiro_alvo(acoesR[i].x+paginaX(),acoesR[i].y,acoesR[i].w,acoesR[i].h,toqueFoco,NULL,0,i);float tabX=72;for(int i=0;i<4;i++){float tw=txt_largura(TXT_ILHA_SEG,i18n(abas[i]))+40;if(contTxt[i][0])tw+=9+txt_largura(TXT_ILHA_NUM,contTxt[i]);alvoToque(tabX,compacta(HERO_ABAS,130),tw/colunaK(),54/linhaK(),1,i);tabX+=(tw+4)/colunaK();}if(aba==0){FmMarco m[10];FmCap caps[6];const FdFicha *d=fd_ficha();int nm=fm_marcos(d->c,d->n,m,10),nc=fm_capitulos(d->c,d->n,m,nm,caps,6)+(ruidoN(d)>0);for(int i=0;i<nc;i++)alvoToque(chipX[i],CONTEUDO_Y,chipW[i],60,2,i);int start=(int)(anoScroll/anoPasso()+.5f);for(int i=start;i<na&&i<start+21;i++)alvoToque(170+i*anoPasso()-anoScroll-38,500,76,80,3,anos[i]);for(int i=0;i<ni&&i<5;i++)alvoToque(676+i*(HIST_POSTER_W+24)*gfx_escala_txt(),622,HIST_POSTER_W/colunaK(),HIST_POSTER_H/linhaK(),4,i);if(ni>5)alvoToque(1640,970,botao_largura(i18n("Ver todos"),NULL,0)/colunaK(),60,4,5);ponteiro_rolagem(toqueRolar);}else if(aba==1){float y=compacta(CONTEUDO_Y,230);for(int i=0;i<5;i++)alvoToque(72+i*345,y,325,60,2,i);for(int i=topo*gradeCols();i<ni&&i<(topo+gradeLinhas())*gradeCols();i++)alvoToque(72+(i%gradeCols())*(220*gfx_poster_k()+24)/colunaK(),60+(py(y)+100+(i/gradeCols())*gradePasso()-scroll-60)/linhaK(),220*gfx_poster_k()/colunaK(),330*gfx_poster_k()/linhaK(),4,i);ponteiro_rolagem(toqueRolar);}else if(aba==2)alvoToque(100,775,580,60,2,0);}
-void filmo_desenhar(float a){navigationCount=0;TXT_INI();alpha=a*entrada;preparar();const FdFicha *d=fd_ficha();gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.043f,.047f,.055f,alpha);heroi(alpha);gfx_transformar(0,0,1,paginaX(),0);header(d);if(!d->pronto)t21_estado(area((GfxRect){72,465,1750,430}),d->erro?T21_ERROR:T21_LOADING,"aj_user",i18n(d->erro?"Serviço indisponível":"Carregando…"),NULL,NULL,tempo,alpha);else if(aba==0)historia(d);else if(aba==1)grade(d);else if(aba==2)sobre(d);else conquistas(d);if(camada){ESCALA_INI();GfxRect sheet=area((GfxRect){1090,50,770,980});ESCALA_FIM();ilha_corpo(sheet.w,sheet.h,corpoFilmo,NULL);}{TxtLinha l=txt_linha_corta(TXT_ILHA_SUB,i18n(fd_aviso()),180,180,180,255,1150*colunaK());txt_desenhar_alpha(l,px(72),ANC(T21_SAFE_B)-l.h/2,alpha);}const char *keys[]={"← →","PgUp PgDn","OK","Voltar"},*labels[]={i18n("Ano"),i18n("Capítulos"),i18n("Abrir opções"),i18n("Voltar")};plrui_dicas(keys,labels,4,px(72),ANC(T21_SAFE_B),0,alpha);gfx_sem_transformar();registrarToque();TXT_FIM();conquistas_aviso_desenhar();}
+void filmo_desenhar(float a){navigationCount=0;TXT_INI();alpha=a*entrada;preparar();const FdFicha *d=fd_ficha();gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.043f,.047f,.055f,alpha);heroi(alpha);gfx_transformar(0,0,1,paginaX(),0);header(d);if(!d->pronto)t21_estado(area((GfxRect){72,465,1750,430}),d->erro?T21_ERROR:T21_LOADING,"aj_user",i18n(d->erro?"Serviço indisponível":"Carregando…"),NULL,NULL,tempo,alpha);else if(aba==0)historia(d);else if(aba==1)grade(d);else if(aba==2)sobre(d);else conquistas(d);if(camada){ESCALA_INI();GfxRect sheet=area((GfxRect){1090,50,770,980});ESCALA_FIM();ilha_corpo(sheet.w,sheet.h,corpoFilmo,NULL);}gfx_sem_transformar();registrarToque();TXT_FIM();conquistas_aviso_desenhar();}
