@@ -802,7 +802,7 @@ void novidades180_desenhar(Uint32 agora) {
   if (vid()) {
     const float *l0 = CENAS[cenaAntiga].luz, *l1 = CENAS[cena].luz;
     float k = cenaAntiga != cena ? s : 1.0f;
-    gfx_cor(card, N180_RAIO / card.h, 0.055f, 0.059f, 0.071f, 0.94f * a);
+    gfx_vidro_ou_solido(card, N180_RAIO / card.h, GFX_VIDRO_DENS_MODAL, a, 0.055f, 0.059f, 0.071f, 0.94f);
     gfx_luz_canto(card, N180_RAIO / card.h, card.w * 0.20f, -card.h * 0.20f, card.h * 0.62f,
                   anim_mistura(l0[0], l1[0], k), anim_mistura(l0[1], l1[1], k), anim_mistura(l0[2], l1[2], k),
                   anim_mistura(l0[3], l1[3], k) * 2.2f * a);

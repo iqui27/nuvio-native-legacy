@@ -10,6 +10,7 @@
 char *rede_baixar_bin(const char *url,int segundos,long *n) {
   (void)url;(void)segundos;(void)n;return NULL;
 }
+const char *i18n(const char *s) { return s; }
 static LegendaCue corpus[120];
 static int casos;
 static void criarCorpus(void) {
@@ -236,6 +237,21 @@ int main(void) {
   criarCorpus();
   janela();
   LegendaDocumento *ref=documento("embedded","en",0,1,LEGENDA_DOC_COMPLETO,11,0);assert(ref);
+  {
+    LegendaCue ruim[120]; memcpy(ruim, corpus, sizeof ruim);
+    LegendaDocumentoInfo info={.sessao=11,.flags=LEGENDA_DOC_COMPLETO};
+    for (int i = 0; i < 120; i++) {
+      if (i % 17 == 0) { ruim[i].inicio += 1.2; ruim[i].fim += 1.2; }
+      snprintf(ruim[i].texto, sizeof ruim[i].texto, "Traducao diferente numero %d", i);
+    }
+    snprintf(info.idioma, sizeof info.idioma, "ro");
+    snprintf(info.origem, sizeof info.origem, "Addon");
+    snprintf(info.identidade, sizeof info.identidade, "external-ro");
+    LegendaDocumento *doc=legenda_documento_de_cues(ruim,120,&info);
+    AutoSyncResultado r=autosync_comparar(doc,ref,NULL,NULL,NULL);
+    assert(r.estado==AUTOSYNC_ACCEPTED&&r.tipo==AUTOSYNC_T_OFFSET&&abs(r.offsetMs)<=25);
+    legenda_documento_liberar(doc); casos++;
+  }
   const int offsets[]={250,-250,1000,-1000,5000,-5000,30000,-30000};
   for(int m=0;m<2;m++)for(int i=0;i<8;i++) {
     LegendaDocumento *doc=documento("external","pt",offsets[i]/1000.0,1,LEGENDA_DOC_COMPLETO,11,0);

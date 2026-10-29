@@ -121,17 +121,11 @@ static void logSaida(void) {
 
 // A cara (#205). Padrao Detalhada: sem o player dizendo, a tela e a de sempre.
 static int apresDetalhada = 1, apresDetalhe;
-char dvtelaLogo[600], dvtelaTitulo[160], dvtelaEp[220];
 
 int dvt_variante(int aberturaDetalhada, int detalheTecla) {
   return aberturaDetalhada || detalheTecla ? DVT_VAR_DETALHADA : DVT_VAR_CINEMA;
 }
-void dvtela_apresentacao(int aberturaDetalhada, const char *logo, const char *titulo, const char *linhaEp) {
-  apresDetalhada = aberturaDetalhada;
-  snprintf(dvtelaLogo, sizeof dvtelaLogo, "%s", logo ? logo : "");
-  snprintf(dvtelaTitulo, sizeof dvtelaTitulo, "%s", titulo ? titulo : "");
-  snprintf(dvtelaEp, sizeof dvtelaEp, "%s", linhaEp ? linhaEp : "");
-}
+void dvtela_apresentacao(int aberturaDetalhada) { apresDetalhada = aberturaDetalhada; }
 int dvtela_variante(void) { return dvt_variante(apresDetalhada, apresDetalhe); }
 
 void dvtela_entrar(Uint32 agora) {

@@ -47,7 +47,7 @@
 #include <SDL2/SDL.h>
 
 enum { TS_TECLADO = 1, TS_VOZ = 2 };
-enum { TS_EV_TEXTO = 1, TS_EV_FIM = 2 };
+enum { TS_EV_TEXTO = 1, TS_EV_FIM = 2, TS_EV_ERRO = 3 };
 
 // Bits TS_*. 0 = use o teclado do app. TS_VOZ so onde ESTE modulo inicia a
 // voz (hoje: o botao de microfone do .tpk e do .wgt). No Android o ditado
@@ -81,5 +81,6 @@ void texto_sistema_quadro(void);
 // PONTES (chamadas por quem fala com o IME de fora do SDL: o JS do .wgt via
 // texto_sistema_quadro, o host .NET do .tpk). Seguras de qualquer fio.
 void texto_sistema_ponte_valor(const char *valor);
+// 1 confirms, 0 cancels, -1 reports a keyboard startup failure.
 void texto_sistema_ponte_fim(int confirmou);
 #endif

@@ -51,7 +51,47 @@ class CacheMidia private constructor(
 
         fun raiz(dirCache: File) = File(dirCache, "nv-seek")
 
+        // WARM RESUME (#492): the kept cache of the last title (CacheSessao.Vaga).
+        private const val VIGIA_MS = 5L * 60L * 1000L
+        private var raizVaga: File? = null
+        private val vaga = CacheSessao.Vaga<CacheMidia> { it.liberar() }
+
+        // Player closed: keep this session's cache for `titulo` instead of
+        // deleting it (when it is healthy, has bytes and the disk has room).
+        fun guardar(c: CacheMidia, titulo: String, chave: String) {
+            val sadio = !c.estado.desligado && c.cache.cacheSpace > 0
+            val livre = try { c.pasta.usableSpace } catch (e: SecurityException) { 0L }
+            val ficou = vaga.guardar(c, if (sadio) titulo else "", chave, c.pedidoMb, System.currentTimeMillis(), livre)
+            if (ficou) { raizVaga = c.pasta.parentFile?.parentFile; Log.i(TAG, "kept for the next open: $titulo (${c.usadoMb()} MB)"); vigiar() }
+        }
+
+        // A VOD opens: the kept cache, rebound to this session, or null.
+        fun pegar(titulo: String, chave: String, pedidoMb: Int, aoFalhar: (Boolean) -> Unit): CacheMidia? {
+            val livre = try { raizVaga?.usableSpace ?: 0L } catch (_: SecurityException) { 0L }
+            vaga.vencer(System.currentTimeMillis(), livre)
+            val c = vaga.pegar(titulo, chave, pedidoMb, System.currentTimeMillis()) ?: return null
+            c.estado.aoFalhar = aoFalhar
+            Log.i(TAG, "reusing the kept cache: $titulo (${c.usadoMb()} MB)")
+            return c
+        }
+
+        // Another title, setting off, profile switch.
+        fun descartar(motivo: String) { if (vaga.largar()) Log.i(TAG, "kept cache dropped: $motivo") }
+
+        private fun vigiar() {
+            fio.schedule({
+                val livre = try { raizVaga?.usableSpace ?: 0L } catch (e: SecurityException) { 0L }
+                if (vaga.vencer(System.currentTimeMillis(), livre)) Log.i(TAG, "kept cache dropped: time or space")
+                else if (vaga.titulo() != null) vigiar()
+            }, VIGIA_MS, TimeUnit.MILLISECONDS)
+        }
+
         // App start: crash leftovers of earlier processes, off the main thread.
+        fun limparTudo(dirCache: File) {
+            fio.schedule({ raiz(dirCache).deleteRecursively() },
+                ESPERA_LIBERAR_MS + 100, TimeUnit.MILLISECONDS)
+        }
+
         fun limparSobras(dirCache: File) {
             fio.execute {
                 val n = CacheSessao.limparSobras(raiz(dirCache), boot)

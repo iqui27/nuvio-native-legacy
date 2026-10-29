@@ -52,8 +52,13 @@ static int ehSegurar(int modo, int pagina) {
   return pagina == 2 || pagina == 3;
 }
 
-static int aberto, pagina, modoTeste = -1, secoTeste, compAberto = -1;
-static float entrada, espera, tempo;
+#ifndef NV_VERSAO
+#define NV_VERSAO "dev"
+#endif
+#define OCIOSO_S 1.5f // Home quieta e desenhada antes de abrir sozinho
+
+static int aberto, pagina, modoTeste = -1, secoTeste, compAberto = -1, automatico;
+static float entrada, espera, tempo, ocioso;
 static int compPedido; // ja mandou abrir o componente nesta dica
 
 int dicascontrole_modo(void) {
@@ -131,21 +136,40 @@ static void compFechar(int comp) {
   }
 }
 void dicascontrole_abrir(void) {
-  aberto = 1; pagina = 0; entrada = 0; tempo = 0; espera = 0;
+  aberto = 1; automatico = 0; pagina = 0; entrada = 0; tempo = 0; espera = 0;
   compAberto = -1; compPedido = 0;
 }
-void dicascontrole_depois_novidades(void) {
-  if (dicascontrole_ocupado()) return;
-  char *visto = dados_ler(DICASCONTROLE_ARQUIVO);
-  if (visto) { free(visto); return; }
-  espera = .36f; // Let the outgoing What's New card finish its fade first.
+// Marker holds the app version that last showed the tips (per device).
+static int jaVisto(void) {
+  char *v = dados_ler(DICASCONTROLE_ARQUIVO);
+  char atual[64];
+  snprintf(atual, sizeof atual, "%s\n", NV_VERSAO);
+  int igual = v && !strcmp(v, atual);
+  free(v);
+  return igual;
+}
+void dicascontrole_depois_novidades(void) {}
+// Called every frame with "Home idle, nothing else open"; opens once per
+// install/version after the screen stayed quiet for OCIOSO_S. The marker is
+// read once per idle entry (-1 = ainda nao conferido), nao a cada quadro.
+void dicascontrole_home_livre(int livre, float dt) {
+  static int visto = -1;
+  if (!livre || dicascontrole_ocupado()) { ocioso = 0; visto = -1; return; }
+  if (visto < 0) visto = jaVisto();
+  if (visto) return;
+  ocioso += dt;
+  if (ocioso >= OCIOSO_S) { ocioso = 0; dicascontrole_abrir(); automatico = 1; }
 }
 static void concluir(int a, int b) {
   (void)a; (void)b;
   if (!aberto) return;
   if (compAberto >= 0) { compFechar(compAberto); compAberto = -1; }
-  aberto = 0;
-  dados_gravar(DICASCONTROLE_ARQUIVO, "1\n");
+  aberto = 0; automatico = 0;
+  {
+    char v[64];
+    snprintf(v, sizeof v, "%s\n", NV_VERSAO);
+    dados_gravar(DICASCONTROLE_ARQUIVO, v);
+  }
   ponteiro_cancelar_toque();
 }
 static void ir(int p, int b) {
@@ -157,6 +181,7 @@ static void ir(int p, int b) {
 void dicascontrole_evento(const SDL_Event *e) {
   if (!aberto || e->type != SDL_KEYDOWN || e->key.repeat) return;
   SDL_Keycode k = e->key.keysym.sym;
+  if (automatico) { concluir(0, 0); return; } // any key closes, none reaches Home
   if (k == SDLK_LEFT) ir(pagina - 1, 0);
   else if (k == SDLK_RIGHT) ir(pagina + 1, 0);
   else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE ||
@@ -261,23 +286,45 @@ static void forma(float cx, float cy, float r, int s, float a) {
   }
 }
 
-// A TECLA: cinza apagada quando nao e a da dica; acesa no acento quando e.
-// `prensa` 0..1 encolhe ela (a prensa do toque e o fim do segurar).
+// A TECLA: apagada some no corpo do controle (sem preenchimento, so o rotulo
+// fraco); acesa vira o acento com halo e aro firme, inconfundivel mesmo em
+// corpo claro. `prensa` 0..1 encolhe ela (a prensa do toque e o fim do segurar).
+static float corpoLum = 0;   // luminancia do corpo do controle sendo desenhado
+static struct { char rot[16]; int on; } tlog[8];
+static int tlogN = -1;       // >=0: teste esta gravando as teclas desenhadas
 static void tecla(GfxRect r, const char *s, int on, float prensa, float a) {
   float ar, ag, ab;
   ajustes_acento(&ar, &ag, &ab);
   float encolhe = on ? prensa * .08f : 0;
   GfxRect k = {r.x + r.w * encolhe, r.y + r.h * encolhe,
                r.w * (1 - 2 * encolhe), r.h * (1 - 2 * encolhe)};
+  int claro = corpoLum > .5f;
   if (on) {
-    GfxRect halo = {k.x - 8, k.y - 8, k.w + 16, k.h + 16};
-    gfx_anel(halo, .45f, 2, ar, ag, ab, .5f * a);
+    gfx_anel((GfxRect){k.x - 8, k.y - 8, k.w + 16, k.h + 16}, .45f, 3, ar, ag, ab, .6f * a);
+    gfx_anel((GfxRect){k.x - 3, k.y - 3, k.w + 6, k.h + 6}, .45f, 3,
+             claro ? .1f : 1, claro ? .1f : 1, claro ? .12f : 1, .9f * a);
+    gfx_cor(k, .45f, ar, ag, ab, a);
   }
-  gfx_cor(k, .45f, on ? ar : .16f, on ? ag : .17f, on ? ab : .20f, a);
+  if (tlogN >= 0 && tlogN < 8) {
+    snprintf(tlog[tlogN].rot, sizeof tlog[0].rot, "%s", s);
+    tlog[tlogN++].on = on;
+  }
   if (r.w < 56) return;   // remoto encolhido no canto: a tecla acesa basta, sem rotulo cortado
-  TxtLinha l = txt_linha_corta(TXT_CAPTION, i18n(s), on ? ajustes_tinta_foco() : 243,
-                             on ? ajustes_tinta_foco() : 242, on ? ajustes_tinta_foco() : 239, 255, r.w - 10);
-  txt_desenhar_alpha(l, r.x + (r.w - l.w) * .5f, r.y + (r.h - l.h) * .5f, on ? a : .55f * a);
+  float t = ajustes_tinta_foco();
+  TxtLinha l = txt_linha_corta(TXT_CAPTION, i18n(s), on ? t : claro ? 40 : 243,
+                             on ? t : claro ? 42 : 242, on ? t : claro ? 48 : 239, 255, r.w - 10);
+  txt_desenhar_alpha(l, r.x + (r.w - l.w) * .5f, r.y + (r.h - l.h) * .5f, on ? a : .6f * a);
+}
+// Teste: grava as teclas desenhadas no proximo quadro (rotulo + acesa).
+void dicascontrole_teste_gravar(int ligar) { tlogN = ligar ? 0 : -1; }
+int dicascontrole_teste_teclas(const char **rot, int *on, int max) {
+  int n = tlogN < max ? tlogN : max;
+  for (int i = 0; i < n; i++) { rot[i] = tlog[i].rot; on[i] = tlog[i].on; }
+  return n;
+}
+// Bandeja do rocker CH: as duas teclas dentro de uma pilula so, como no controle real.
+static void rockerCH(GfxRect a1, GfxRect a2, float r, float g, float b, float a) {
+  gfx_cor((GfxRect){a1.x, a1.y, a1.w, a2.y + a2.h - a1.y}, .22f, r, g, b, a);
 }
 // A ONDA do toque: dois aneis crescendo e sumindo (barato, sem blur).
 static void onda(GfxRect r, float p, float a) {
@@ -341,6 +388,8 @@ static void remotoLG(float x, float y, float s, int tk, float prensa, float a) {
   gfx_cor(vol, .22f, .16f, .17f, .20f, a);
   texto("+", TXT_CAPTION, vol.x, vol.y + 20 * s, vol.w, .5f * a);
   texto("−", TXT_CAPTION, vol.x, vol.y + vol.h - 62 * s, vol.w, .5f * a);
+  corpoLum = .12f;
+  rockerCH((GfxRect){x + 142 * s, y + 372 * s, 86 * s, 88 * s}, (GfxRect){x + 142 * s, y + 470 * s, 86 * s, 88 * s}, .16f, .17f, .20f, a);
   tecla((GfxRect){x + 142 * s, y + 372 * s, 86 * s, 88 * s}, "CH+", tk == TK_CHMAIS, prensa, a);
   tecla((GfxRect){x + 142 * s, y + 470 * s, 86 * s, 88 * s}, "CH-", tk == TK_CHMENOS, prensa, a);
 }
@@ -369,6 +418,8 @@ static void remotoSAM(float x, float y, float s, int tk, float prensa, float a) 
   gfx_cor(vol, .22f, .16f, .17f, .20f, a);
   texto("+", TXT_CAPTION, vol.x, vol.y + 20 * s, vol.w, .5f * a);
   texto("−", TXT_CAPTION, vol.x, vol.y + vol.h - 62 * s, vol.w, .5f * a);
+  corpoLum = .1f;
+  rockerCH((GfxRect){x + 122 * s, y + 352 * s, 84 * s, 94 * s}, (GfxRect){x + 122 * s, y + 454 * s, 84 * s, 94 * s}, .16f, .17f, .20f, a);
   tecla((GfxRect){x + 122 * s, y + 352 * s, 84 * s, 94 * s}, "CH+", tk == TK_CHMAIS, prensa, a);
   tecla((GfxRect){x + 122 * s, y + 454 * s, 84 * s, 94 * s}, "CH-", tk == TK_CHMENOS, prensa, a);
   GfxRect solar = {x + 24 * s, y + 570 * s, 182 * s, 30 * s};
@@ -399,6 +450,8 @@ static void remotoGTV(float x, float y, float s, int tk, float prensa, float a) 
   gfx_cor(vol, .22f, .82f, .83f, .85f, a);
   texto("+", TXT_CAPTION, vol.x, vol.y + 20 * s, vol.w, .5f * a);
   texto("−", TXT_CAPTION, vol.x, vol.y + vol.h - 62 * s, vol.w, .5f * a);
+  corpoLum = .93f;
+  rockerCH((GfxRect){x + 128 * s, y + 330 * s, 84 * s, 90 * s}, (GfxRect){x + 128 * s, y + 430 * s, 84 * s, 90 * s}, .82f, .83f, .85f, a);
   tecla((GfxRect){x + 128 * s, y + 330 * s, 84 * s, 90 * s}, "CH+", tk == TK_CHMAIS, prensa, a);
   tecla((GfxRect){x + 128 * s, y + 430 * s, 84 * s, 90 * s}, "CH-", tk == TK_CHMENOS, prensa, a);
   gfx_cor((GfxRect){x + 74 * s, y + 544 * s, 42 * s, 42 * s}, .5f, .82f, .83f, .85f, a); // power

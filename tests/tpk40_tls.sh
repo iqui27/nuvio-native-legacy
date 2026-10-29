@@ -18,16 +18,17 @@ TMPDIR="${TMPDIR%/}"
 # Precisa do Docker e das duas .so: sem eles, avisa e sai 0 (nao e porteiro
 # da suite leve; e a conferencia de release do .tpk 4/5).
 set -eu
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." && source tools/ctr.sh
+source tools/tpk/sdk.sh
 COMUM=build/tpk/libnuvio.so
 TPK40=build/tpk/libnuvio-tpk40.so
-if ! docker info >/dev/null 2>&1 || ! docker image inspect nuvio-tpk-sdk >/dev/null 2>&1; then
-  echo "pulado: sem Docker ou sem a imagem nuvio-tpk-sdk"; exit 0; fi
+if ! ctr_check_system 2>/dev/null || ! ctr_image_exists "$TPK_IMAGE" 2>/dev/null; then
+  echo "pulado: sem Apple Container ou sem a imagem nuvio-tpk-sdk"; exit 0; fi
 if [ ! -f "$COMUM" ] || [ ! -f "$TPK40" ]; then
   echo "pulado: rode bash tools/tpk.sh antes ($COMUM / $TPK40)"; exit 0; fi
 
 # Imprime, para cada .so: PT_TLS? relocs de TLS? __tls_get_addr? DT_HASH?
-docker run --rm --platform linux/arm/v5 -v "$PWD/build/tpk":/t nuvio-tpk-sdk sh -c '
+ctr_run --rm --platform "$TPK_PLATFORM" -v "$PWD/build/tpk":/t "$TPK_IMAGE" sh -c '
   for f in libnuvio.so libnuvio-tpk40.so; do
     L=/t/$f
     tls=$(readelf -lW "$L" | grep -cE "^\s*TLS\s" || true)
@@ -49,7 +50,7 @@ grep -q "^libnuvio-tpk40.so pt_tls=0 relocs_tls=0 tls_get_addr=0 dt_hash=1 " "${
 grep -qE "^libnuvio.so pt_tls=1 relocs_tls=[1-9]" "${TMPDIR:-/tmp}/nv-tpk40-tls.txt" ||
   { echo "FALHA: libnuvio.so comum deveria continuar com PT_TLS (rede.c); a NV_TPK40 vazou?"; falhou=1; }
 # As duas exportam a mesma interface nv_tpk_*.
-docker run --rm --platform linux/arm/v5 -v "$PWD/build/tpk":/t nuvio-tpk-sdk sh -c '
+ctr_run --rm --platform "$TPK_PLATFORM" -v "$PWD/build/tpk":/t "$TPK_IMAGE" sh -c '
   objdump -T /t/libnuvio.so | grep -oE " nv_tpk[a-z0-9_]*" | sort > /tmp/a
   objdump -T /t/libnuvio-tpk40.so | grep -oE " nv_tpk[a-z0-9_]*" | sort > /tmp/b
   diff /tmp/a /tmp/b' || { echo "FALHA: as duas .so exportam nv_tpk_* diferentes"; falhou=1; }

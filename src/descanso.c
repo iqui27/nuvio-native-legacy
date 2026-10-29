@@ -10,6 +10,7 @@
 #include "gfx.h"
 #include "layout.h"
 #include "text.h"
+#include "sinopse.h"
 #include "tex_cache.h"
 #include "catalogo.h"
 #include "agenda.h"
@@ -336,7 +337,7 @@ static void desenharVitrine(unsigned agora, float a) {
                                      : c->progresso > 0 ? i18n("Continuar assistindo")
                                      : i18n("No seu catálogo"), 190, 194, 204, 255);
     lMeta = txt_linha_corta(TXT_HERO_META, meta, 226, 228, 234, 255, DESC_TEXTO_W);
-    lSin = sin[0] ? txt_linha_corta(TXT_HERO_SIN, sin, 200, 204, 212, 255, DESC_TEXTO_W)
+    lSin = sin[0] ? txt_linha_corta(sinopse_estilo(TXT_HERO_SIN), sin, 200, 204, 212, 255, DESC_TEXTO_W)
                   : (TxtLinha){ 0 };
     if (okHome) lOk = txt_linha(TXT_CAPTION2, i18n("OK para abrir"), 240, 242, 246, 255);
     // De baixo para cima: dica, sinopse, meta, titulo, origem.

@@ -39,6 +39,23 @@ int main(void) {
   }
   printf("ultimo quadro: %d linhas rasterizadas (esperado 0)\n", txt_rasterizadas - r0);
   assert(txt_rasterizadas - r0 == 0);
+  // Library frame on a TV where "Tamanho da interface" resolves to 85% (>= 75"
+  // panels) with the default 85% text scale: header 1.02, grid 0.85, menu 0.78
+  // and the ESCALA_INI layers (toast, island, context menu) 0.723 are four live
+  // factors in ONE frame. With three slots they evicted each other every frame
+  // and the "Watched" badge text never fit the raster budget on the C9.
+  gfx_escala_ui_definir(0.85f); gfx_escala_txt_definir(0.85f);
+  for (q = 0; q < 6; q++) {
+    txt_novo_quadro();
+    r0 = txt_rasterizadas;
+    desenhaEm(1.02f, "Library", "14 titles");
+    desenhaEm(0.85f, "Watched", "Anatomy of a Fall");
+    desenhaEm(0.78f, "Settings", "Back");
+    desenhaEm(0.723f, "10:34", "Home");
+  }
+  printf("biblioteca 85%%: %d linhas rasterizadas no ultimo quadro (esperado 0)\n", txt_rasterizadas - r0);
+  assert(txt_rasterizadas - r0 == 0);
+  gfx_escala_ui_definir(1.0f); gfx_escala_txt_definir(1.0f);
   // A fifth factor reuses the least used slot and still renders.
   txt_novo_quadro();
   { float ant = gfx_escala(); gfx_escala_sair(1.5f);

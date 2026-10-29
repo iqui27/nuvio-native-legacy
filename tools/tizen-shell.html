@@ -374,14 +374,20 @@
 
     // Erro nao capturado vira linha de log. Sem isto uma excecao no arranque
     // some e so sobra a tela preta.
+    function fatal(text) {
+      mostrar(text, 1);
+      mostrar("Close and reopen Nuvio to recover. If this repeats, save this diagnostic.", 1);
+      if (painel) { painel.hidden = false; pintar(); }
+    }
     window.addEventListener("error", function (ev) {
+      if (window.__nvHeapErro && window.__nvHeapErro(ev.message) === 'dup') { ev.preventDefault(); return; }
       var t = "ERRO: " + (ev.message || ev.type) +
               " @ " + (ev.filename || "?") + ":" + (ev.lineno || 0);
-      console.log("[NV-ERRO] " + t); mostrar(t, 1);
+      console.log("[NV-ERRO] " + t); fatal(t);
     });
     window.addEventListener("unhandledrejection", function (ev) {
       var t2 = "ERRO promessa: " + (ev.reason && ev.reason.message ? ev.reason.message : ev.reason);
-      console.log("[NV-ERRO] " + t2); mostrar(t2, 1);
+      console.log("[NV-ERRO] " + t2); fatal(t2);
     });
 
     // CAO DE GUARDA DO ARRANQUE.
@@ -408,11 +414,114 @@
     }, 25000);
   })();
 
+  // HEAP DO WASM ESCOLHIDO AQUI, NAO PELO GLUE (#205). Samsung 2020 de 1 GB
+  // (deviceMemory=1, Chromium 69) abortava no arranque com "WebAssembly.
+  // Memory(): could not allocate memory": o heap compartilhado de 256 MiB nao
+  // cabe, e cada um dos 20 workers do pool repetia o erro (~17 linhas iguais,
+  // [fios] livres=20 vivos=0). O wasm e ligado com o MINIMO de 160 MiB
+  // (tools/tizen.sh) e a memoria compartilhada nasce aqui, do maior degrau que
+  // o aparelho aceita para o menor; o glue a usa como esta (Module.wasmMemory)
+  // e repassa a mesma aos workers. O pool acompanha o degrau (Module.nvPool,
+  // lido pelo PTHREAD_POOL_SIZE do link): menos heap, menos workers.
+  //   - deviceMemory <= 1 comeca em 192 MiB: o 256 ja falhou nesse porte.
+  //   - falhou DEPOIS (o worker nao conseguiu a memoria que o fio principal
+  //     conseguiu): grava o degrau seguinte em nv-heap-teto e recarrega UMA vez
+  //     por degrau; sem degrau abaixo, mostra a mensagem. Os erros repetidos
+  //     dos workers viram uma acao so.
+  // NV-MEM-INICIO
+  var NV_HEAP_DEGRAUS = [256, 192, 160];
+  var NV_HEAP_POOL = { 256: 20, 192: 12, 160: 8 };
+  function nvEscolherHeap(W, devMem, teto) {
+    var max = (devMem > 0 && devMem <= 1) ? 192 : 256, erro = null;
+    if (teto > 0 && teto < max) max = teto;
+    for (var i = 0; i < NV_HEAP_DEGRAUS.length; i++) {
+      var mib = NV_HEAP_DEGRAUS[i];
+      if (mib > max) continue;
+      try {
+        return { mib: mib, pool: NV_HEAP_POOL[mib],
+                 mem: new W.Memory({ initial: mib * 16, maximum: mib * 16, shared: true }) };
+      } catch (e) { erro = e; }
+    }
+    return { mib: 0, erro: erro };
+  }
+  function nvHeapAbaixo(mib) {
+    for (var i = 0; i < NV_HEAP_DEGRAUS.length; i++)
+      if (NV_HEAP_DEGRAUS[i] < mib) return NV_HEAP_DEGRAUS[i];
+    return 0;
+  }
+  // 'dup' = ja tratado, ignore; 'baixar' = recarregar com o degrau abaixo;
+  // 'mostrar' = sem degrau, mostrar a mensagem; null = erro de outra coisa.
+  function nvAcaoErroHeap(msg, st) {
+    if (!/could not allocate memory|WebAssembly\.Memory/.test(String(msg))) return null;
+    if (st.tratado) return 'dup';
+    st.tratado = true;
+    return nvHeapAbaixo(st.mib) ? 'baixar' : 'mostrar';
+  }
+  // NV-MEM-FIM
+  var nvHeap = { mib: 0, tratado: false };
+  (function () {
+    var teto = 0;
+    try { teto = parseInt(localStorage.getItem('nv-heap-teto') || '0', 10) || 0; } catch (e) {}
+    var r = nvEscolherHeap(WebAssembly, navigator.deviceMemory || 0, teto);
+    nvHeap.mib = r.mib; nvHeap.mem = r.mem; nvHeap.pool = r.pool;
+    if (r.mem) {
+      console.log("[mem] heap=" + r.mib + " MiB pool=" + r.pool + " deviceMemory=" + (navigator.deviceMemory || "?"));
+    } else {
+      console.log("[mem] sem heap: " + (r.erro && r.erro.message));
+    }
+    function aviso() {
+      var d = document.createElement("div");
+      d.style.cssText = "position:absolute;top:0;left:0;right:0;bottom:0;z-index:6;background:#0E0F12;" +
+        "color:#fff;font:28px sans-serif;padding:120px 160px;line-height:1.5";
+      d.textContent = "Nuvio could not start: this TV has too little free memory (WebAssembly heap " +
+        "unavailable, deviceMemory=" + (navigator.deviceMemory || "?") + " GB). Close other apps or " +
+        "restart the TV and open Nuvio again. / O Nuvio nao conseguiu abrir: memoria livre insuficiente " +
+        "nesta TV. Feche outros apps ou reinicie a TV e abra de novo.";
+      document.body.appendChild(d);
+      var ab = document.getElementById("abertura");
+      if (ab && ab.parentNode) ab.parentNode.removeChild(ab);
+    }
+    // Chamado pelo ouvinte de "error" do arranque (e logo abaixo, quando nem o
+    // menor degrau coube: o glue ainda falha uma vez, e essa vira 'dup').
+    window.__nvHeapErro = function (msg) {
+      var a = nvAcaoErroHeap(msg, nvHeap);
+      if (a === 'baixar') {
+        try {
+          localStorage.setItem('nv-heap-teto', String(nvHeapAbaixo(nvHeap.mib)));
+          location.reload();
+        } catch (e) { a = 'mostrar'; aviso(); }
+      } else if (a === 'mostrar') aviso();
+      return a;
+    };
+    if (!r.mem) window.__nvHeapErro("could not allocate memory");
+  })();
+
   var Module = {
     // argv[1] e a pasta de arte. main() deriva fonts/ dela derrubando o ultimo
     // componente, entao /app/art => /app/fonts, que e onde o --preload-file
     // monta as fontes.
     arguments: ["/app/art"],
+    // Memoria e pool escolhidos no bloco NV-MEM acima (undefined = o glue tenta
+    // o minimo de 160 MiB sozinho e o erro unico vira a mensagem na tela).
+    wasmMemory: nvHeap.mem,
+    nvPool: nvHeap.pool,
+    preRun: [function () {
+      try {
+        if (webapis.productinfo.isUdPanelSupported()) {
+          ENV.NUVIO_PANEL_SIZE = "3840x2160";
+          ENV.NUVIO_PANEL_SOURCE = "Tizen productinfo UHD panel";
+        }
+      } catch (_) { /* Native/system display fallback remains available. */ }
+      try {
+        var duid = webapis.productinfo.getDuid();
+        if (duid) ENV.NUVIO_DEVICE_ID = "samsung:" + duid;
+      } catch (_) { /* No model fallback: identical TVs must remain separate. */ }
+      try {
+        var model = webapis.productinfo.getModel();
+        ENV.NUVIO_TV_MODEL = model;
+        console.log("[tv] modelo=" + model);
+      } catch (_) { /* Unknown panel keeps the 100% fallback. */ }
+    }],
     canvas: (function () { return document.getElementById("canvas"); })(),
     // O QUE O RUNTIME JA SABIA E NINGUEM PERGUNTAVA. O Emscripten anuncia o
     // andamento do preload por aqui, em texto ("Downloading data... (8/28 MB)").
@@ -501,10 +610,10 @@
       var c = document.getElementById("canvas");
       if (c) c.focus();
     }
-    function terminar(confirmou) {
+    function terminar(confirmou, falhou) {
       if (!t.aberto) return;
       t.aberto = false;
-      t.fim = confirmou ? 1 : 0;
+      t.fim = falhou ? 2 : confirmou ? 1 : 0;
       var el = campo();
       if (el) el.blur();
       devolverFoco();
@@ -523,8 +632,8 @@
         try { el.focus(); } catch (e) { console.warn("[texto] wgt: focus: " + e); }
       }
       if (!el || document.activeElement !== el) {
-        console.warn("[texto] wgt: campo nao recebeu foco");
-        terminar(0); return;   // C ja abriu a sessao: devolve o cancelamento.
+        console.warn("[voice] keyboard startup failed: input did not receive focus");
+        terminar(0, true); return;   // C ja abriu a sessao: devolve o cancelamento.
       }
       try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) {}
       console.log("[texto] wgt: campo focado (voz=" + (voz ? 1 : 0) + ")");
@@ -656,19 +765,20 @@
   // Traduzir aqui e melhor que ensinar o C a conhecer 10009: o codigo de voltar
   // ja existe e e o mesmo dos outros dois alvos; o que faltava era a tecla
   // chegar. Escape porque as telas ja o aceitam ao lado de AC_BACK.
-  window.addEventListener("keydown", function (ev) {
-    if (imeAberto()) return;
-    if (ev.keyCode !== 10009) return;
-    ev.preventDefault();
-    ev.stopPropagation();
-    var alvo = document.getElementById("canvas") || window;
-    ["keydown", "keyup"].forEach(function (t) {
-      alvo.dispatchEvent(new KeyboardEvent(t, {
+  ["keydown", "keyup"].forEach(function (tipo) {
+    window.addEventListener(tipo, function (ev) {
+      if (imeAberto()) return;
+      if (ev.keyCode !== 10009) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      var alvo = document.getElementById("canvas") || window;
+      // Preserve the physical release; repeats must not clear the Back guard.
+      alvo.dispatchEvent(new KeyboardEvent(tipo, {
         key: "Escape", code: "Escape", keyCode: 27, which: 27,
-        bubbles: true, cancelable: true
+        repeat: ev.repeat, bubbles: true, cancelable: true
       }));
-    });
-  }, true);
+    }, true);
+  });
 
   // TECLAS DE MIDIA DO CONTROLE SAMSUNG -> as teclas que player.c ja entende.
   //

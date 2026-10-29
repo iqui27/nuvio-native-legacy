@@ -14,6 +14,13 @@ char *config414_baixar(const char *url, int timeout) {
   return strdup("{\"metas\":[{\"id\":\"tt0000001\",\"name\":\"Offline title\",\"poster\":\"offline.jpg\"}]}");
 }
 
+char *config414_baixar_st(const char *url, int timeout, const char *const *headers, int *status) {
+  (void)headers;
+  char *body = config414_baixar(url, timeout);
+  *status = body ? 200 : 0;
+  return body;
+}
+
 static void esperar(void) {
   for (int i = 0; i < 2000 && desc_vertudo_carregando(); i++) usleep(1000);
   assert(!desc_vertudo_carregando());
@@ -82,7 +89,7 @@ int main(int argc, char **argv) {
       openSource(); esperar();
       assert(desc_vertudo_erro());
       tabFocus = 1; tabCursor = cabN();
-      tecla(SDLK_RETURN);
+      tecla(SDLK_RETURN); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);   // abre o seletor e escolhe
       assert(lay == VT_LAY_LINHA && tabCursor == cabN() && desc_vertudo_erro());
       falhar = 0;
       if (estilo == VT_AB_MENU && !pasta) {

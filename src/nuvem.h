@@ -60,6 +60,9 @@ char *nuvem_rpc_com(const char *funcao, const char *corpoJson,
 char *nuvem_tabela(const char *tabela, const char *consulta,
                    const char *bearer, int *status);
 
+// Update only enabled on an existing addon row; never insert or replace a list.
+char *nuvem_addon_alternar(const char *consulta, int ativo, const char *bearer, unsigned prazo_ms, int *status);
+
 // Escapa um valor para entrar numa consulta de URL. Sem isto um id com "+" ou
 // "&" quebraria o filtro em silencio e a leitura voltaria a tabela inteira ou
 // vazia — nenhum dos dois se parece com erro.

@@ -6,6 +6,7 @@
 #include "catalogo.h"
 #include "descoberta.h"
 #include <assert.h>
+unsigned addons_versao(void) { return 0; }
 #include <stdio.h>
 #include <string.h>
 

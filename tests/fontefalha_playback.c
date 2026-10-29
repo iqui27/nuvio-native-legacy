@@ -8,9 +8,19 @@ static int fake_join(pthread_t, void **);
 #define pthread_create fake_create
 #define pthread_join fake_join
 #include "../src/app.c"
+#include "stub_m3u.h"
 #undef pthread_create
 #undef pthread_join
 #include <assert.h>
+int xtream_url_limitada(const char *url) { (void)url; return 0; }
+
+long memlog_livre_mb(void) { return 1024; }
+int memlog_pode_reabrir(long (*livre)(void), void (*aliviar)(void)) { (void)livre; (void)aliviar; return 1; }
+void tex_aliviar(void) {}
+void txt_aliviar(void) {}
+void mkvass_parar(void) {}
+void assrender_aliviar(void) {}
+void memlog_devolver(void) {}
 
 static Uint32 agora;
 static unsigned lista = 41;
@@ -43,6 +53,7 @@ int player_aberto(void) { return aberto; }
 int player_mini_ativo(void) { return mini; }
 int player_quer_sair(void) { return sair; }
 const char *player_id_canal(void) { return ""; }
+const char *player_tipo_canal(void) { return ""; }
 int player_carregando(void) { return carregando; }
 int player_fonte_falhou(void) { return playerFalhou; }
 void player_voltar_a_esperar(void) {
@@ -66,7 +77,9 @@ unsigned video_bufferando_ms(void) { return (unsigned)bufferMs; }
 double video_pos(void) { return posicao; }
 double video_buffer_fim(void) { return bufferFim; }
 const char *video_url_atual(void) { return ""; }
+#ifndef I613_APP
 const char *video_erro_texto(void) { return "fixture playback error"; }
+#endif
 int stream_atual(void) { return 0; }
 unsigned stream_lista_geracao(void) { return lista; }
 int stream_n(void) { return 2; }
@@ -76,19 +89,35 @@ void stream_vod_falhou(int i) { (void)i; mortas++; }
 int stream_automatico_excluir(int i) { (void)i; mortas++; return 1; }
 int stream_automatico_excluir_irmas(int i) { (void)i; irmas++; return 1; }
 int stream_proxima_vod(int i) { (void)i; legadas++; return 1; }
-int ajustes_fonte_repor(void) { return 0; }
+int ajustes_fonte_repor(void) { return 2; }
 int debrid_servico_disponivel(int servico) { return servico == 0 || servico == 1; }
 const char *i18n(const char *s) { return s; }
 void marco(const char *s) { (void)s; }
 uint64_t badges_bit(const char *s) { (void)s; return 0; }
 int player_indice(void) { return 0; }
 void player_episodio_atual(int *t, int *e) { *t = *e = 0; }
+#ifndef I613_APP
+AddonsConsulta *addons_consulta_capturar(void) { return NULL; }
+int addons_consulta_atual(const AddonsConsulta *c) { (void)c; return 0; }
+void addons_consulta_liberar(AddonsConsulta *c) { (void)c; }
+int stream_vod_renovar(const AddonsConsulta *c, const char *id, const char *tipo,
+                       int i, unsigned g, int (*cancelado)(void *), void *ctx, Stream *s) {
+  (void)c; (void)id; (void)tipo; (void)i; (void)g; (void)cancelado; (void)ctx; (void)s;
+  assert(!"legacy failover must not renew VOD implicitly"); return 0;
+}
+int stream_vod_renovada_aplicar(int i, unsigned g, const Stream *s, uint64_t sessao) {
+  (void)i; (void)g; (void)s; (void)sessao; return 0;
+}
+void video_definir_cabecalhos(const char *s) { (void)s; }
 const CatItem *cat_item(int i) { (void)i; return NULL; }
+#endif
 int cat_id_stream(int i, int t, int e, char *url, unsigned n) {
   (void)i; (void)t; (void)e; (void)n; url[0] = 0; return 0;
 }
 void stream_definir_lista(const Stream *s, int n) { (void)s; (void)n; assert(!"VOD policy must not replace list"); }
+#ifndef I613_APP
 void stream_definir_atual(int i) { (void)i; assert(!"VOD consumer opens in the later UI phase"); }
+#endif
 int stream_automatico_disponivel(int i) { (void)i; return 1; }
 Uint32 stream_idade_ms(void) { return 0; }
 int stalker_resolver(const char *id, char *url, unsigned n) {
@@ -98,9 +127,59 @@ int stream_canal_primeira_viva(int n) { (void)n; assert(!"VOD policy must not di
 int stream_canal_prazo_longo(int i) { (void)i; return 0; }
 int stream_automatico_canal(void) { assert(!"VOD policy must not dispatch channel"); return -1; }
 int stream_primeira_boa(int n) { (void)n; legadas++; assert(!"VOD policy must bypass legacy selection"); return -1; }
-int stream_verificar_proxima_vod(int i, int n, int *conferidas) {
-  (void)i; (void)n; (void)conferidas; legadas++; assert(!"VOD policy must bypass legacy fallback"); return -1;
+int stream_primeira_boa_sessao(int n, uint64_t sessao) {
+  (void)sessao; return stream_primeira_boa(n);
 }
+int stream_filtro_permite(const Stream *s) { (void)s; return 1; }
+void stream_filtro_dados(const Stream *s, FonteFiltroDados *dados) {
+  *dados = s ? s->filtro : (FonteFiltroDados){0};
+}
+int stream_verificar_proxima_vod(int i, int n, int *conferidas) {
+  (void)i; (void)n; legadas++; *conferidas = 1; return 1;
+}
+int stream_verificar_proxima_vod_sessao(int i, int n, int *conferidas, uint64_t sessao) {
+  (void)sessao; return stream_verificar_proxima_vod(i, n, conferidas);
+}
+int stream_canal_primeira_viva_sessao(int n, uint64_t sessao) {
+  (void)sessao; return stream_canal_primeira_viva(n);
+}
+int stalker_resolver_sessao(const char *id, char *url, unsigned n, uint64_t sessao) {
+  (void)sessao; return stalker_resolver(id, url, n);
+}
+uint64_t perfis_sessao_geracao(void) { return 1; }
+int perfis_sessao_atual(uint64_t geracao) { return geracao == 1; }
+int perfis_sessao_travar(uint64_t geracao) { return geracao == 1; }
+void perfis_sessao_destravar(void) {}
+int perfis_ativo(void) { return 1; }
+const char *sessao_usuario(void) { return ""; }
+void debrid_contexto_capturar(DebridContexto *c) { if (c) memset(c, 0, sizeof *c); }
+void debrid_contexto_entrar(const DebridContexto *c) { (void)c; }
+void debrid_contexto_sair(void) {}
+unsigned fonteregra_versao(void) { return 0; }
+int detail_aberto(void) { return 0; }
+int detail_indice(void) { return 0; }
+int detail_ep_foco(int *t, int *e) { if (t) *t = 0; if (e) *e = 0; return 0; }
+int stream_lista_do_alvo(const char *id) { (void)id; return 1; }
+int ajustes_fonte_preparar(void) { return 0; }
+int ajustes_fonte_precarregar(void) { return 0; }
+int ajustes_fonte_manual(void) { return 0; }
+int ajustes_fonte_primeira(void) { return 0; }
+int ajustes_fonte_escopo(void) { return 0; }
+int ajustes_fonte_regex_modo(void) { return 0; }
+int ajustes_fonte_usar_outros(void) { return 0; }
+int ajustes_fonte_ordem_uso(void) { return 0; }
+int ajustes_fonte_prioridade(void) { return 0; }
+int ajustes_fonte_hdr(void) { return 0; }
+int ajustes_fonte_conferir_varias(void) { return 0; }
+int ajustes_fonte_tocar_conferindo(void) { return 0; }
+int ajustes_dolby_vision(void) { return 0; }
+int ajustes_dv_mkv(void) { return 0; }
+int ajustes_dolby_atmos(void) { return 0; }
+int ajustes_tamanho_min_gb(void) { return 0; }
+int ajustes_tamanho_max_gb(void) { return 0; }
+int ajustes_buffer_preset(void) { return 0; }
+int ajustes_cache_seek_mb(void) { return 0; }
+const char *ajustes_qualidade(void) { return ""; }
 int rede_url_final_tipo(const char *url, int seg, const char *const *cab,
                         char *fim, unsigned tam, int *status,
                         char *mime, unsigned mimeTam, long *corpo) {
@@ -128,6 +207,15 @@ int stream_falha_verificar(FonteFalhaSessao *s, unsigned ger, int escolhida,
   snprintf(url, n, "https://resolved.invalid/%d/%d.mp4", r.servico, r.indice);
   assert(fontefalha_url_registrar(s, url)); *idx = r.indice; *serv = r.servico;
   return estado;
+}
+int stream_falha_aplicar_sessao(int idx, unsigned ger, int serv, const char *url, uint64_t sessao) {
+  (void)sessao; return stream_falha_aplicar(idx, ger, serv, url);
+}
+int stream_falha_renovar(int indice, unsigned ger, int servico,
+                         int (*cancelado)(void *), void *ctx, char *url, unsigned tam) {
+  (void)indice; (void)ger; (void)servico; (void)cancelado; (void)ctx; (void)tam;
+  if (url) url[0] = 0;
+  return 0;
 }
 int stream_falha_aplicar(int idx, unsigned ger, int serv, const char *url) {
   assert(ger == lista); assert(idx >= 0 && idx < 2); assert(url && *url);
@@ -296,8 +384,22 @@ static void escolhaManualContaPrimeiroLink(void) {
   assert(fontefalha_tentativas(fonteFalha) == 1 && !aberturas && !legadas);
   assert(fontefalha_definir_provedores(0));
 }
+static void autoplayPostOpenRetry(void) {
+  resetar(); fontefalha_sessao_liberar(fonteFalha); fonteFalha = NULL;
+  fonteVODTentativas = 1; tocou = 1; posicao = 42.0; falhou = 1;
+  tentarProximaFonteVOD();
+  assert(aberturas == 1 && paradas == 1 && retomada == 42.0);
+  assert(!mortas && !irmas && !worker && fonteVODTentativas == 1);
+  // Retry fails before another frame: the original post-open status survives.
+  tocou = 0; falhou = 1;
+  tentarProximaFonteVOD();
+  assert(irmas == 0 && mortas == 1 && worker);
+  concluirWorker(); processarFonteJob();
+  assert(fonteEscolhida == 1 && fonteVODAutomatica);
+}
 int main(int argc, char **argv) {
   assert(argc == 2); fontefalha_dir(argv[1]); assert(!fontefalha_ativa());
+  autoplayPostOpenRetry();
   erroRetomaAntesDeParar(); ultimoQuadroSobreviveAoBackendZerado(); seekParaInicioRetomaZero();
   amostrasInvalidasNaoSubstituemQuadro(); prazoDeAbertura();
   sinaisQueNaoTrocamFonte(); respostaObsoletaNaoGastaSessaoAtual();

@@ -25,7 +25,7 @@ static void pronto(int i, unsigned long uso, unsigned long quadro) {
   itens[i].estado = PRONTO; itens[i].uso = uso; itens[i].ultimoQuadro = quadro;
   itens[i].w = 1024; itens[i].h = 10;
   snprintf(itens[i].caminho, sizeof itens[i].caminho, "a%d", i);
-  bytesUsados += bytesTextura(1024, 10);
+  bytesUsados += bytesTextura(&itens[i]);
 }
 
 int main(void) {
@@ -56,9 +56,9 @@ int main(void) {
   orcamento = 1; podar();
   assert(itens[0].estado == PRONTO && itens[1].estado == PRONTO && itens[2].estado == PRONTO);
   assert(tex_despejos == 0);
-  assert(despejar(1) == 1);
-  assert(tex_despejos == 1 && tex_despejos_quentes == 1);
-  puts("ok  so quentes: podar segura, slotLivre forca e conta");
+  assert(despejar(1) == -1);
+  assert(tex_despejos == 0 && tex_despejos_quentes == 0);
+  puts("ok  hot artwork survives forced eviction too");
 
   // 4. O QUADRO ANTERIOR ainda e quente (o bombear roda antes de o quadro
   //    avancar); dois atras nao e.

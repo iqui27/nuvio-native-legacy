@@ -10,7 +10,8 @@
 #include "../src/rede.c"
 static int androidErro;
 char *android_http(const char *v, const char *u, const char *c, const char *b, int p,
-                   int *st, long *n, char *erro, size_t ne) {
+                   int *st, int *retryAfter, long *n, char *erro, size_t ne) {
+  if (retryAfter) *retryAfter = 0;
   (void)v; (void)u; (void)c; (void)b; (void)p; (void)n;
   if (androidErro) { snprintf(erro, ne, "falha de transporte"); *st = 0; return NULL; }
   *st = 200; return strdup("{}");

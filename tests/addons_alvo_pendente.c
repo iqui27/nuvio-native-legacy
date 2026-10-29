@@ -13,6 +13,7 @@ int main(void) {
   strcpy(old.url, "https://example.invalid/old.mp4");
   strcpy(old.provedor, "Fixture");
   nAddon = 1; fioVivo = 1; progLigado = 1;
+  addons_capturar_escopo(&fioEscopo);   // the in-flight worker owns the current session scope
   strcpy(alvoId, "tt90000413"); strcpy(alvoTipo, "movie");
   stream_definir_alvo(alvoId); stream_definir_lista(&old, 1);
   progPub[0] = (Chegada){0, malloc(sizeof old), 1};

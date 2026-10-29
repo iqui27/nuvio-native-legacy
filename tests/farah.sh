@@ -1,7 +1,7 @@
 #!/bin/bash
 set -eu
 cd "$(dirname "$0")/.."
-export TMPDIR="${TMPDIR:-/Volumes/ExternalSSD/tmp}"
+export TMPDIR="${TMPDIR:-/tmp}"
 bin=$(mktemp "$TMPDIR/nuvio-farah.XXXXXX")
 trap 'rm -f "$bin"' EXIT
 flags=()

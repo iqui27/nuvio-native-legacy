@@ -46,6 +46,7 @@ else
   rsync -az --delete "$TMP"/ "$HOST:$DEST/"
   # O openrsync do macOS ignora --chmod no diretorio raiz: garante no destino.
   ssh "$HOST" "chmod 755 '$DEST' && chmod -R a+rX '$DEST'"
+  # Note: docker calls below run on REMOTE ZimaOS Linux server via ssh, not locally
   ssh "$HOST" bash -s -- "$NOME" "$PORTA" "$DEST" <<'REMOTO'
 set -euo pipefail
 nome="$1"; porta="$2"; dest="$3"

@@ -31,6 +31,8 @@ typedef struct {
   char id[JSP_ID], nome[JSP_NOME], av[256];
   char st[16];        // entrando procurando carregando pronto tocando pausado semfonte erro ausente
   int pct;
+  int stats, altura;
+  double rtt, offset, drift;
   char nivel;         // 'A', 'B' ou 0
   char plat[12];
   char fonte[12];     // mesma parecida diferente nenhuma

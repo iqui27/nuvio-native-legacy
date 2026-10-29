@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA" />
+    <uses-permission android:name="com.android.providers.tv.permission.WRITE_EPG_DATA" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Para a auto-atualizacao instalar o APK baixado (fase seguinte). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -14,6 +16,7 @@
     <!-- Android 11+: sem isto resolveActivity nao enxerga a tela de voz do
          sistema e o ditado do Spotlight diria "sem reconhecedor" em toda TV. -->
     <queries>
+        <provider android:authorities="android.media.tv" />
         <intent>
             <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
         </intent>
@@ -29,6 +32,17 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- #501: players de video instalados (lista do ajuste Player) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="video/*" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="video/*" />
+            <data android:scheme="http" />
+        </intent>
     </queries>
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -40,11 +54,15 @@
         android:icon="@mipmap/ic_launcher"
         android:banner="@drawable/banner"
         android:allowBackup="false"
+        android:enableOnBackInvokedCallback="false"
         android:largeHeap="true"
         android:usesCleartextTraffic="true"
         android:hasCode="true"
         android:extractNativeLibs="true"
         android:theme="@style/Tema.Nuvio">
+
+        <service android:name=".TvHomeJob" android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="true" />
 
         <!-- configChanges cobre TODA mudanca que a Activity aguenta sem nascer de
              novo. O nucleo C nao sobrevive a uma recriacao: medido no emulador
@@ -60,7 +78,25 @@
             android:screenOrientation="landscape"
             android:launchMode="singleTask"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|smallestScreenSize|screenLayout|uiMode|navigation|density|locale|layoutDirection|fontScale|colorMode|touchscreen|mcc|mnc|fontWeightAdjustment|grammaticalGender"
-            android:resizeableActivity="false" />
+            android:resizeableActivity="false">
+            <!-- Links externos, docs/deeplink.md. O filtro fica na atividade
+                 (nao nos aliases de icone, que so existem para o launcher). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nuvio-legacy" />
+                <data android:scheme="stremio" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="www.imdb.com" android:pathPrefix="/title/" />
+                <data android:host="m.imdb.com" />
+                <data android:host="imdb.com" />
+            </intent-filter>
+        </activity>
 
         <!-- ICONE DO APP (apoiadores, src/iconeapp.h). A entrada do launcher NAO
              e mais a NuvioActivity e sim um activity-alias por icone; so um fica

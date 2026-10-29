@@ -164,6 +164,56 @@ static void lookahead(void) {
   assert(fonteregra_regex_testar(certo, "Film BluRay") == 0);                     // sem resolucao
 }
 
+// Filtro so com texto nao ASCII ("日本語" com Exigir): conta como configurado e
+// filtra. Antes exigia letra ou digito ASCII e o filtro ficava desligado em
+// silencio (Exigir deixava tudo passar). O oficial (/[a-z0-9]/i) tambem nao o
+// liga, mas la isso desliga o auto-play; aqui ele tocaria qualquer fonte.
+static void naoAscii(void) {
+  FonteRegraCfg c = cfg(FR_ESCOPO_TODAS, FR_REGEX_EXIGIR, 1);
+  fonteregra_limpar(0); fonteregra_limpar(1);
+  assert(fonteregra_regex_testar("日本語", "Film 日本語 1080p") == 1);
+  assert(fonteregra_regex_testar("日本語", "Film English 1080p") == 0);
+  assert(fonteregra_regex_testar("[ñÑ]", "Espa\xC3\xB1ol") == 1);
+  assert(fonteregra_regex_testar("🇪🇸|🇲🇽", "Pelicula 🇲🇽") == 1);
+  assert(fonteregra_definir_regex("日本語") == 1);
+  assert(fonteregra_regex_estado() == 1);
+  assert(fonteregra_ativa(&c));
+  assert(fonteregra_grupo(&c, "A", 0, "Film 日本語 1080p") == 0);
+  assert(fonteregra_grupo(&c, "A", 0, "Film English 1080p") == -1);   // Exigir filtra
+  assert(fonteregra_definir_regex("") == 0);
+  // Sem letra, digito nem texto nao ASCII continua "nao configurado".
+  assert(fonteregra_regex_testar("|||", "a") == -1);
+  assert(fonteregra_regex_testar("^$", "a") == -1);
+}
+
+// Preferir: as flags do padrao ((?s), (?m), (?i)) valem tambem para cada condicao
+// compilada sozinha. Antes so o "(?i)" era refeito, e "x\nA" (A so depois de uma
+// quebra de linha) falhava a condicao do A mesmo com (?s).
+static void flagsNasCondicoes(void) {
+  FonteRegraCfg c = cfg(FR_ESCOPO_TODAS, FR_REGEX_PREFERIR, 1);
+  fonteregra_limpar(0); fonteregra_limpar(1);
+  // dotAll: o ponto atravessa a quebra de linha, entao A esta em "x\nA".
+  assert(fonteregra_definir_regex("(?s)^(?=.*A)(?=.*B)") == 1);
+  assert(fonteregra_grupo(&c, "T", 0, "x\nA B") == 0);     // cumpre as duas
+  assert(fonteregra_grupo(&c, "T", 0, "x\nA") == 1);       // so a do A (falta o B)
+  assert(fonteregra_grupo(&c, "T", 0, "x\nB") == 1);       // so a do B
+  assert(fonteregra_grupo(&c, "T", 0, "x\ny") == 2);       // nenhuma
+  // multiline: o "^" casa depois de cada quebra de linha.
+  assert(fonteregra_definir_regex("(?m)^(?=.*A)(?=.*B)") == 1);
+  assert(fonteregra_grupo(&c, "T", 0, "x\nA B") == 0);
+  assert(fonteregra_grupo(&c, "T", 0, "x\nA y") == 1);     // A na 2a linha, falta o B
+  assert(fonteregra_grupo(&c, "T", 0, "x\ny") == 2);
+  // as duas juntas, na ordem que for, e com (?i) misturado.
+  assert(fonteregra_definir_regex("(?i)(?ms)^(?=.*A)(?![\\s\\S]*CAM)(?=.*B)") == 1);
+  assert(fonteregra_grupo(&c, "T", 0, "x\na b") == 0);
+  assert(fonteregra_grupo(&c, "T", 0, "x\na") == 1);
+  assert(fonteregra_grupo(&c, "T", 0, "x\na b CAM") == 1);
+  // Sem flags continua como era: o ponto nao atravessa a quebra de linha.
+  assert(fonteregra_definir_regex("^(?=.*A)(?=.*B)") == 1);
+  assert(fonteregra_grupo(&c, "T", 0, "x\nA B") == 2);
+  assert(fonteregra_definir_regex("") == 0);
+}
+
 static void grupos(void) {
   FonteRegraCfg c;
   // Nada configurado: tudo grupo 0 (a escolha de antes).
@@ -419,6 +469,8 @@ int main(void) {
   traducao();
   regex();
   lookahead();
+  naoAscii();
+  flagsNasCondicoes();
   grupos();
   distancia();
   pr489();

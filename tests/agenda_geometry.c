@@ -3,6 +3,8 @@
 #include <assert.h>
 
 float gfx_escala_ui(void) { return 1.0f; }
+float gfx_escala_ui_base(void) { return 1.0f; }
+float gfx_escala_txt(void) { return 1.0f; }
 float ajustes_rail_largura_fixa(void) { return 144.0f; }
 int agenda_n(void) { return 0; }
 const AgItem *agenda_lista(int i) { (void)i; return NULL; }

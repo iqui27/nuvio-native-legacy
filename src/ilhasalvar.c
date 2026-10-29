@@ -30,6 +30,12 @@ static int pendenteEntrar;
 
 int ilhasalvar_pergunta_aberta(void) { return perguntaAberta; }
 
+void ilhasalvar_abrir_sessao(void) {
+  perguntaAberta = pendenteEntrar = nOpcao = 0;
+  perguntaDesde = 0;
+  memset(opcao, 0, sizeof opcao); memset(&pendente, 0, sizeof pendente);
+}
+
 static int jaFoiPerguntado(void) {
   char *s = dados_ler(ARQ_PERGUNTADO);
   if (s) { free(s); return 1; }
@@ -39,8 +45,8 @@ static int jaFoiPerguntado(void) {
 }
 
 const char *ilhasalvar_destino(void) {
-  if (ajustes_salvos_no_trakt() && trakt_ativo()) return i18n("Watchlist do Trakt");
-  if (ajustes_salvos_no_simkl() && simkl_ativo()) return i18n("Plan to Watch do Simkl");
+  if (ajustes_fonte_biblioteca() == AJ_SALVOS_TRAKT) return i18n("Watchlist do Trakt");
+  if (ajustes_fonte_biblioteca() == AJ_SALVOS_SIMKL) return i18n("Plan to Watch do Simkl");
   return i18n("Lista do Nuvio");
 }
 
@@ -49,8 +55,8 @@ typedef struct { CatItem ci; int entrou; } SalvarCtx;
 static void gravarLista(const CatItem *ci, int entrar) {
   salvos_definir(ci, entrar);
   atividade_salvo(ci, entrar);
-  if (ajustes_salvos_no_trakt() && trakt_ativo()) trakt_watchlist_tipo(ci->imdb, ci->tipo, entrar);
-  else if (ajustes_salvos_no_simkl() && simkl_ativo()) simkl_lista_tipo(ci->imdb, ci->tipo, entrar);
+  if (ajustes_fonte_biblioteca() == AJ_SALVOS_TRAKT) trakt_watchlist_tipo(ci->imdb, ci->tipo, entrar);
+  else if (ajustes_fonte_biblioteca() == AJ_SALVOS_SIMKL) simkl_lista_tipo(ci->imdb, ci->tipo, entrar);
   cat_definir_na_lista_imdb(ci->imdb, entrar);
   if (entrar) {
     if (ajustes_salvos_no_trakt() && trakt_ativo()) cat_marcar_fonte_imdb(ci->imdb, CAT_FONTE_TRAKT);

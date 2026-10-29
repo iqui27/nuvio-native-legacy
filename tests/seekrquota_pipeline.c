@@ -6,6 +6,7 @@
 #include <SDL2/SDL.h>
 #include <assert.h>
 #include <stdio.h>
+int perftv_enabled, perftv_uploads;
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -14,6 +15,9 @@ static time_t tempo(time_t *p) { if (p) *p = agora; return agora; }
 #define time tempo
 #include "../src/seekr.c"
 #undef time
+
+// Ajustes nao entra nesta bancada: relogio de 12 h desligado (tests/guia_logos.c).
+int ajustes_relogio_12h(void) { return 0; }
 
 void gfx_tex_esquecer(GLuint t) { (void)t; }
 static pthread_mutex_t redeTrava = PTHREAD_MUTEX_INITIALIZER;

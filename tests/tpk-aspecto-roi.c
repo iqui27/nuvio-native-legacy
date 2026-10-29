@@ -60,6 +60,10 @@ int main(void) {
   nv_tpk_video_evento(6,1920,1080);
   video_janela_fonte(480,270,960,540,0,0,1920,1080);
   nj=0; video_parar(); video_recorte_reaplicar(); assert(nj==0);
+  assert(video_largura()==0 && video_altura()==0);
+  // A pending live open cannot use the previous stream's source crop.
+  video_janela_fonte(0,0,1280,720,0,0,1920,1080);
+  confere("stopped stream stays full-frame",0,0,1920,1080);
   // The trailer's legacy gate remains separate from the player.
   video_tocar("http://test/trailer"); video_tpk_trailer_marcar(1);
   nv_tpk_video_evento(6,1920,1080);

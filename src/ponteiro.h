@@ -75,6 +75,9 @@ typedef struct {
 } PonteiroAlvo;
 
 void ponteiro_iniciar(void);
+// Nova abertura de perfil: cancela entrada da tela anterior e espera seus
+// novos alvos. Conserva dispositivo, cursor do sistema e calibracao da janela.
+void ponteiro_abrir_sessao(void);
 // Cancela o gesto de dedo no fio de eventos, antes de uma soltura do sistema.
 void ponteiro_cancelar_toque(void);
 // Cancela somente uma ativacao pendente do alvo com este foco. Gestos de

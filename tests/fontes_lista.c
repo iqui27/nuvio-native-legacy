@@ -105,6 +105,57 @@ static void conferirFolhaCheia(const Stream *l, int n, const char *cenario) {
   printf("fontes_lista: %s: %d de %d na folha\n", cenario, stream_folha_n(), N_TOTAL);
 }
 
+// #552: classify the parsed hostname, never userinfo or a hostname prefix.
+static void conferirHostP2P(void) {
+  static const struct { const char *url; int p2p; } cases[] = {
+    {"http://LOCALHOST:11470/hash/0", 1},
+    {"https://LocalHost/hash/0", 1},
+    {"http://localhost", 1},
+    {"http://127.0.0.1:11470/hash/0", 1},
+    {"http://127.255.1.2/hash/0", 1},
+    {"http://0.0.0.0?hash=0", 1},
+    {"http://[::1]:11470/hash/0", 1},
+    {"http://[0:0:0:0:0:0:0:1]/hash/0", 1},
+    {"http://user:pass@LOCALHOST:11470/hash/0", 1},
+    {"http://user:pass@[::1]:11470/hash/0", 1},
+    {"HTTPS://user:pass@127.5.6.7:11470/hash/0", 1},
+    {"http://localhost.example.org/hash/0", 0},
+    {"http://LOCALHOST.example.org:80/hash/0", 0},
+    {"http://127.0.0.1.example.org/hash/0", 0},
+    {"http://0.0.0.0.example.org/hash/0", 0},
+    {"http://0.0.0.01/hash/0", 0},
+    {"http://localhost@remote.example.org/hash/0", 0},
+    {"http://127.0.0.1:pass@remote.example.org/hash/0", 0},
+    {"HTTP://remote.example.org:80/hash/0", 0},
+    {"https://remote.example.org?next=@localhost", 0},
+    {"https://remote.example.org/#@localhost", 0},
+    {"http://128.0.0.1/hash/0", 0},
+    {"http://[::10]/hash/0", 0},
+    {"httpx://remote.example.org/hash/0", 1},
+    {"ftp://remote.example.org/hash/0", 1}
+  };
+  for (int ligado = 0; ligado <= 1; ligado++) {
+    ajustes_definir_p2p_ligado(ligado);
+    for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+      Stream s;
+      direta(&s, "hostname", 0, 1080, 0);
+      snprintf(s.url, sizeof s.url, "%s", cases[i].url);
+      s.notWebReady = 1;
+      int hidden = !ligado && cases[i].p2p;
+      for (int incremental = 0; incremental <= 1; incremental++) {
+        stream_definir_lista(NULL, 0);
+        if (incremental) stream_lista_acrescentar(&s, 1, 0);
+        else stream_definir_lista(&s, 1);
+        if (stream_n() != !hidden || stream_torrents_para_p2p() != hidden) {
+          fprintf(stderr, "hostname classification failed: %s (P2P=%d, incremental=%d)\n",
+                  cases[i].url, ligado, incremental);
+          exit(1);
+        }
+      }
+    }
+  }
+}
+
 int main(void) {
   Stream l[N_TOTAL];
   char dir[NVT_MAX]; nvt_set(dir, sizeof dir, "/nuvio-fontes-lista-XXXXXX");
@@ -179,8 +230,8 @@ int main(void) {
   assert(!ajustes_p2p_url()[0]);
   puts("fontes_lista: P2P so mantem os torrents ligado e com endereco");
 
-  // J5.3: nem a URL direta marcada notWebReady entra com P2P desligado,
-  // mesmo com debrid. Conferir resposta inteira e chegada incremental.
+  // #552: URL http(s) marcada notWebReady e oferecida com P2P desligado (os
+  // players nativos a tocam); so o torrent sem url e o servidor local pedem P2P. Conferir resposta inteira e chegada incremental.
   char json[4096];
   FILE *f = fopen("tests/fixtures/streams_notwebready.json", "r");
   assert(f);
@@ -189,26 +240,55 @@ int main(void) {
   fclose(f); json[bytes] = 0;
   Stream *v = NULL;
   int count = stream_extrair(json, "fixture", &v);
-  assert(count == 9);
+  assert(count == 10);
   debrid_definir_chave("torbox", "chave-de-teste");
+  // #505: as duas fontes notWebReady descartadas com o P2P desligado contam
+  // para a dica "ligue o P2P" — nunca uma folha vazia calada. Sem debrid e
+  // com um endereco P2P configurado a dica existe (o valor real e o de
+  // stream_torrents_para_p2p; aqui ele devolve 0 porque o debrid esta ativo).
+  debrid_esquecer();
+  assert(ajustes_definir_p2p_url("192.168.1.5"));
+  ajustes_definir_p2p_ligado(0);
+  stream_definir_lista(v, count);
+  assert(stream_torrents_para_p2p() == 2);
+  // Lumio-like infoHash-only notWebReady stream: connected debrid resolves it
+  // (offered, not a P2P need); only the local-engine URL still needs P2P.
+  debrid_definir_chave("torbox", "chave-de-teste");
+  stream_definir_lista(v, count);
+  assert(stream_n() == 9 && stream_torrents_para_p2p() == 1);
+  Stream onlyP2P[2];
+  int p2pCount = 0;
+  for (int i = 0; i < count; i++)
+    if (!v[i].url[0] || strstr(v[i].url, "127.0.0.1")) onlyP2P[p2pCount++] = v[i];
+  assert(p2pCount == 2);
+  stream_definir_lista(onlyP2P, p2pCount);
+  assert(stream_n() == 1 && stream_torrents_para_p2p() == 1);
+  stream_definir_lista(NULL, 0);
+  assert(stream_torrents_para_p2p() == 0);
+  stream_lista_acrescentar(onlyP2P, p2pCount, 0);
+  assert(stream_n() == 1 && stream_torrents_para_p2p() == 1);
+  stream_definir_lista(l, n);
+  assert(stream_torrents_para_p2p() == 0);
   for (int ligado = 0; ligado <= 1; ligado++) {
     assert(ajustes_definir_p2p_url("192.168.1.5"));
     ajustes_definir_p2p_ligado(ligado);
     stream_definir_lista(v, count);
-    assert(stream_n() == (ligado ? 9 : 7));
+    assert(stream_n() == (ligado ? 10 : 9));
+    assert(stream_torrents_para_p2p() == (ligado ? 0 : 1));
     for (int i = 0; i < stream_n(); i++)
-      assert(ligado || !stream_item(i)->notWebReady);
+      assert(ligado || stream_item(i)->infoHash[0] || (stream_item(i)->url[0] && !strstr(stream_item(i)->url, "127.0.0.1")));
     stream_definir_lista(NULL, 0);
     stream_lista_acrescentar(v, count, 0);
-    assert(stream_n() == (ligado ? 9 : 7));
+    assert(stream_n() == (ligado ? 10 : 9));
     for (int i = 0; i < stream_n(); i++)
-      assert(ligado || !stream_item(i)->notWebReady);
+      assert(ligado || stream_item(i)->infoHash[0] || (stream_item(i)->url[0] && !strstr(stream_item(i)->url, "127.0.0.1")));
     stream_folha_abrir();
-    assert(stream_folha_n() == (ligado ? 9 : 7));
-    assert(ligado || !stream_item(stream_automatico())->notWebReady);
+    assert(stream_folha_n() == (ligado ? 10 : 9));
+    assert(ligado || !strstr(stream_item(stream_automatico())->url, "127.0.0.1"));
     tecla(SDLK_ESCAPE);
   }
   free(v);
-  puts("fontes_lista: notWebReady so oferecido com P2P ativo, externalUrl oculto");
+  conferirHostP2P();
+  puts("fontes_lista: notWebReady com url http oferecido, so P2P-puro exige P2P, externalUrl oculto");
   return 0;
 }

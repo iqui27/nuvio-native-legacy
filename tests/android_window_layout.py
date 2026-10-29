@@ -25,7 +25,7 @@ for signature in ('larguraLogica(): Float', 'alturaLogica(): Float', 'aplicarJan
     methods.append(source[start:end])
 fixture = r'''
 object Gravity { const val TOP = 48; const val START = 8388611 }
-object Counts { var allocations = 0; var assignments = 0; var recreations = 0 }
+object Counts { var allocations = 0; var assignments = 0; var recreations = 0; var lastDelay = 0L }
 object FrameLayout {
     class LayoutParams(var width: Int, var height: Int) {
         init { Counts.allocations++ }
@@ -47,12 +47,14 @@ class Surface {
 object PlayerFixture {
     const val TELA_W = 1920; const val TELA_H = 1080
     const val RECRIA_ESPERA_MS = 350L
+    const val RECRIA_ESPERA_HDR_MS = 600L
     var camada: Layer? = Layer(1920, 1080)
     var superficie: Surface? = Surface()
     var jx = 0; var jy = 0; var jw = 1920; var jh = 1080
     var ultHdr = "none"
+    var estavelEmitido = false
     var interfaceMobile = false
-    fun recriarSuperficie(delay: Long) { check(delay == 350L); Counts.recreations++ }
+    fun recriarSuperficie(delay: Long) { check(delay == 350L || delay == 600L); Counts.lastDelay = delay; Counts.recreations++ }
     fun apply() = aplicarJanela()
 METHOD
 }
@@ -87,12 +89,13 @@ fun main() {
     check(lp.leftMargin == 10 && lp.width == 200)
     p.superficie = null; p.apply()
     check(Counts.assignments == 7 && Counts.recreations == 7)
-    // HDR/DV (TCL 2160p DV, 11/10): mudanca de TAMANHO nao pode recriar a
-    // superficie. Cada recriacao no HDR obriga o Media3 a soltar a saida do
-    // decoder e religa o DispLink; o aspecto salvo aplicado apos o primeiro
-    // quadro e cada troca manual recriavam ~12 vezes em 30 s, com o fio
-    // principal parado no glClear (pior quadro 6612.7 ms). No HDR a recriacao
-    // fica so nas transicoes de modo (hdrNaSuperficie), fora daqui.
+    // HDR/DV (TCL 2160p DV, 11/10): mudanca de TAMANHO antes da superficie
+    // estavel nao pode recriar a superficie. Cada recriacao no HDR obriga o
+    // Media3 a soltar a saida do decoder e religa o DispLink; o aspecto salvo
+    // aplicado apos o primeiro quadro e cada troca manual recriavam ~12 vezes
+    // em 30 s, com o fio principal parado no glClear (pior quadro 6612.7 ms).
+    // Antes de estavel a recriacao fica so nas transicoes de modo
+    // (hdrNaSuperficie); DEPOIS dela, uma por mudanca (600 ms).
     p.superficie = Surface(); p.ultHdr = "DolbyVision"
     val recriacoesHdr = Counts.recreations
     p.jx = -189; p.jy = -80; p.jw = 2300; p.jh = 1242; p.apply()
@@ -103,12 +106,19 @@ fun main() {
     check(Counts.assignments == 9 && Counts.recreations == recriacoesHdr)
     p.ultHdr = "HDR10"; p.jw = 2083; p.jh = 1125; p.apply()
     check(Counts.assignments == 10 && Counts.recreations == recriacoesHdr)
+    // Superficie estavel (14/10): troca de aspecto no HDR recria UMA vez, com a
+    // espera longa. Sem isso o plano da TCL fica preso na geometria de
+    // abertura e a troca Crop -> Ajuste nao aparece no filme rodando.
+    p.estavelEmitido = true
+    p.jw = 2084; p.apply()
+    check(Counts.assignments == 11 && Counts.recreations == recriacoesHdr + 1)
+    check(Counts.lastDelay == 600L)
     p.ultHdr = "none"   // SDR continua recriando: a TCL prende a geometria do plano
     p.jw = 2300; p.apply()
-    check(Counts.assignments == 11 && Counts.recreations == recriacoesHdr + 1)
+    check(Counts.assignments == 12 && Counts.recreations == recriacoesHdr + 2)
     p.ultHdr = ""        // HDR ainda desconhecido: recria como SDR, como sempre
     p.jw = 1920; p.apply()
-    check(Counts.assignments == 12 && Counts.recreations == recriacoesHdr + 2)
+    check(Counts.assignments == 13 && Counts.recreations == recriacoesHdr + 3)
     // Switch modes on the same layer, then rotate/resize. Fullscreen logical
     // requests must cover every physical pixel in TV and Mobile alike.
     for (case in listOf(

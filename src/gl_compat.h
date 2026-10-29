@@ -10,7 +10,24 @@
 
 // NV_GLES_NO_MAC: o teste tests/fundo_assado.sh compila o nucleo no Mac
 // contra o GLES2 do ANGLE (o dialeto e as regras de FBO da TV), nao o GL 2.1.
-#if defined(__APPLE__) && !defined(NV_GLES_NO_MAC)
+#ifdef __APPLE__
+  #include <TargetConditionals.h>
+#endif
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+  // iOS: the real GLES2, same dialect as the TVs (deprecated by Apple, still shipped).
+  #define GLES_SILENCE_DEPRECATION 1
+  #include <OpenGLES/ES2/gl.h>
+  #include <OpenGLES/ES2/glext.h>
+  #define NV_GLSL_PREFIXO "precision mediump float;\n"
+  // There is no framebuffer 0 on iOS: the screen is the FBO SDL's GL view owns
+  // (SDL_SysWMinfo.info.uikit.framebuffer, read by main.c after the context).
+  // Every "back to the screen" bind in the core goes through here.
+  extern unsigned nv_gl_fb_tela;
+  static inline void nvBindFramebufferTela(GLenum alvo, GLuint fb) {
+    glBindFramebuffer(alvo, fb ? fb : (GLuint)nv_gl_fb_tela);
+  }
+  #define glBindFramebuffer nvBindFramebufferTela
+#elif defined(__APPLE__) && !defined(NV_GLES_NO_MAC)
   #define GL_SILENCE_DEPRECATION 1
   #include <OpenGL/gl.h>
   #include <OpenGL/glext.h>
@@ -39,5 +56,21 @@
   #include <GLES2/gl2.h>
   #define NV_GLSL_PREFIXO "precision mediump float;\n"
 #endif
+
+#include "perftv.h"
+// Count submitted pixel uploads (including text/mip levels), not allocations.
+// Inline wrappers leave only a flag branch when measurement is off.
+static inline void nvPerfTexImage2D(GLenum target, GLint level, GLint internal,
+    GLsizei w, GLsizei h, GLint border, GLenum format, GLenum type, const void *pixels) {
+  if (perftv_enabled && pixels) perftv_uploads++;
+  glTexImage2D(target, level, internal, w, h, border, format, type, pixels);
+}
+static inline void nvPerfTexSubImage2D(GLenum target, GLint level, GLint x, GLint y,
+    GLsizei w, GLsizei h, GLenum format, GLenum type, const void *pixels) {
+  if (perftv_enabled && pixels) perftv_uploads++;
+  glTexSubImage2D(target, level, x, y, w, h, format, type, pixels);
+}
+#define glTexImage2D nvPerfTexImage2D
+#define glTexSubImage2D nvPerfTexSubImage2D
 
 #endif

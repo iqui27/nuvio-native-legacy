@@ -294,6 +294,7 @@ void debrid_esquecer(void) {}
 void extras_definir_chave(const char *c) { (void)c; }
 void fontepref_esquecer(void) {}
 void legmem_esquecer(void) {}
+void audiomem_esquecer(void) {}
 void homeestado_esquecer(void) {}
 void mapa_esquecer(void) {}
 void prog_esquecer_tudo(void) {}
@@ -301,6 +302,30 @@ void perfilcont_esquecer(void) {}
 void recomenda_esquecer(void) {}
 void salvos_esquecer(void) {}
 void stalker_esquecer(void) {}
+int sessao_token_copiar(char *j, size_t nj) { snprintf(j, nj, "tok"); return 1; }
+uint64_t perfis_sessao_geracao(void) { return 0; }
+int perfis_sessao_atual(uint64_t g) { return !g; }
+int perfis_sessao_travar(uint64_t g) { return !g; }
+void perfis_sessao_destravar(void) {}
+void perfis_invalidar_sessao(void) {}
+int perfis_puxar_sessao(uint64_t s, const char *u, const char *t) { (void)s;(void)u;(void)t; return perfis_puxar(); }
+int sessao_identidade_local_copiar(char *u, size_t nu, char *j, size_t nj) {
+  snprintf(u, nu, "%s", sessao_usuario()); return sessao_token_copiar(j, nj);
+}
+void sessao_token_recusado(const char *t) { (void)t; }
+char *nuvem_rpc_com(const char *f, const char *c, const char *b, int *s) { return sessao_rpc(f, c, s); }
+char *nuvem_tabela(const char *f, const char *c, const char *b, int *s) { return sessao_tabela(f, c, s); }
+void debrid_conta_iniciar(void *p) { (void)p; }
+void debrid_conta_definir(const char *j) { (void)j; }
+void debrid_aplicar_chaves_conta(void) {}
+void desc_abrir_sessao(void) {}
+void desc_sessao_passo(void) {}
+int desc_sessao_preparada(void) { return 1; }
+void extras_abrir_sessao(void) {}
+void ajustes_perfil_padrao(void) {}
+void recomenda_esquecer_conta(void) {}
+int syncprog_puxar_sessao(int p, uint64_t s) { (void)p;(void)s; return 0; }
+int syncprog_empurrar_sessao(int p, uint64_t s) { (void)p;(void)s; return 0; }
 int  syncprog_aplicar(int *c) { (void)c; return 0; }
 int  syncprog_empurrar(void) { return 0; }
 void syncprog_esquecer(void) {}

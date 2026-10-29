@@ -6,7 +6,7 @@ TMPDIR="${TMPDIR%/}"
 #
 # NUVIO_DTS_TARGET picks the build:
 #   webos (default) cross build with the LG SDK (tools/Dockerfile); output unchanged.
-#   tpk             Samsung .tpk (tools/tpk.sh). Native build INSIDE the nuvio-tpk-sdk ARM
+#   tpk             Samsung .tpk (tools/tpk.sh). ARM32 build inside the selected SDK
 #                   container, from the source tree tpk.sh already downloaded and checked on the
 #                   host (NUVIO_DTS_SRC; the container has no curl). Adds what the Samsung loopback
 #                   converter needs: TrueHD/MLP
@@ -39,6 +39,10 @@ if [ "$TARGET" = tpk ]; then
   mkdir -p "$BUILD/obj"
   cd "$BUILD/obj"
   set -- --cc="$CC"
+  if [ "${NUVIO_TPK_CROSS:-0}" = 1 ]; then
+    set -- "$@" --enable-cross-compile --arch=arm --target-os=linux \
+      --cross-prefix=arm-linux-gnueabi-
+  fi
 else
   CC=${CC:-arm-webos-linux-gnueabi-gcc}
   archive="$BUILD/ffmpeg-$VERSION.tar.xz"

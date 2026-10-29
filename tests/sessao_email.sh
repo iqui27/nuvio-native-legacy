@@ -46,7 +46,7 @@ flags=(-O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -pthrea
        "-DNV_SUPABASE_URL=\"http://127.0.0.1:$porta\"" "-DNV_SUPABASE_ANON_KEY=\"anon-falsa\"")
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 bin="$dir/teste"
-cc "${flags[@]}" src/sessao.c src/nuvem.c src/rede.c src/redeurl.c src/js.c src/jsw.c tests/sessao_email.c -o "$bin"
+cc "${flags[@]}" src/sessao.c src/nuvem.c src/rede.c src/redeurl.c src/js.c src/jsw.c tests/sessao_email.c tests/sessao_boundary_stub.c -o "$bin"
 roda() {  # modo frase
   echo "$1" > "$dir/modo"; : > "$dir/pedidos"
   local d; d="$(mktemp -d "$dir/dados.XXXX")"

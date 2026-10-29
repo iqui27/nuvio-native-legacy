@@ -33,7 +33,8 @@
 #define NV_ADDONURL_H
 
 #define NV_ADDON_URL_MAX    2048
-#define NV_ADDON_PEDIDO_MAX (NV_ADDON_URL_MAX + 1024)
+// Base plus a fully percent-encoded 1024-byte channel ID and resource path.
+#define NV_ADDON_PEDIDO_MAX (NV_ADDON_URL_MAX + 3 * 1024 + 128)
 
 // O snprintf que escreveu em `buf` coube inteiro? `w` e o retorno dele.
 #define NV_COUBE(w, buf) ((w) >= 0 && (size_t)(w) < sizeof(buf))

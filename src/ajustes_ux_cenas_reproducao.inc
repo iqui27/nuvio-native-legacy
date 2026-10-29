@@ -63,7 +63,6 @@ static void rDv(int op) {   // HDR10 fixo x Dolby Vision cena a cena
   ajcSelo("HDR10", 135, 236, 14, k > 0.5f ? 0 : 1, 1);
   ajcSelo("DV", 456, 236, 14, k > 0.5f ? 1 : 0, 1);
   ajc_icone("aj_chevron-right", 320, 136, 20, 0.5f);
-  ajcChaveCanto(k);
 }
 static void rAtmos(int op) {   // sons como objetos no espaco (ligado) x dois canais (desligado)
   float k = ajcLig(op), t = ajc_t();
@@ -81,7 +80,6 @@ static void rAtmos(int op) {   // sons como objetos no espaco (ligado) x dois ca
     ajc_bolinha(cx, cy, 24, C.ar, C.ag, C.ab, k * 0.2f);
   }
   ajcSelo("ATMOS", 276, 268, 14, k, 1);
-  ajcChaveCanto(k);
 }
 
 // --- escolha da fonte ----------------------------------------------------------------
@@ -90,10 +88,6 @@ static void rManual(int op) {   // Play -> lista aberta (ligado) ou video direto
   int i, s = ajc_passo(0.9f, 3);
   if (ajc_reduzido()) ap = 1;
   ajc_cartaz(36, 50, 150, 220, 1, 1);
-  ajc_acento_ret(52, 224, 100, 30, 15, 1);
-  ajc_icone_tinta("aj_play", 76, 239, 14, 1);
-  ajc_ret(92, 236, 44, 6, 3, ajTinta() / 255.0f, ajTinta() / 255.0f, ajTinta() / 255.0f, 0.9f);
-  if (f > 0.18f && f < 0.4f) ajc_foco(52, 224, 100, 30, 15, 1);
   ajc_icone("aj_chevron-right", 214, 160, 22, 0.5f);
   if (k > 0.01f) {
     ajc_vidro(236, 40, 372, 232, 18, ap * k);
@@ -106,13 +100,17 @@ static void rManual(int op) {   // Play -> lista aberta (ligado) ou video direto
     ajc_foco(252, 56 + s * 68, 340, 56, 12, ap * k);
   }
   if (k < 0.99f) { ajc_video(236, 56, 372, 210, 14, ap * (1 - k)); ajc_play(422, 161, 44, ap * (1 - k) * 0.9f); }
-  ajcChaveCanto(k);
 }
 static void rPrioridade(void) {   // Equilibrio / Qualidade / Comecar rapido
   static const char *Q[3] = { "4K", "1080p", "720p" };
-  static const char *IC[3] = { "aj_sliders-horizontal", "aj_star", "aj_zap" };
   static const float VEL[3] = { 0.22f, 0.55f, 0.95f };
-  int v = rInt(AJ_FONTE_PRIORIDADE, 2), pick = v == 1 ? 0 : v == 0 ? 1 : 2, i;
+  int v = rInt(AJ_FONTE_PRIORIDADE, 3), pick = v == 1 ? 0 : v == 0 ? 1 : 2, i;
+  if (v == 3) {
+    for (i = 0; i < 3; i++) rLinha(40, rYL(i) + 10, 470, 52, Q[i], NULL, i + 3, i == 0 ? 1 : 0.55f);
+    ajc_foco(40, rYL(0) + 10, 470, 52, 12, 1);
+    ajc_ladrilho("aj_list-video", 570, 140, 64, 1, 1);
+    return;
+  }
   float p = 0.55f + 0.45f * ajc_onda(2.2f);
   for (i = 0; i < 3; i++) {
     float y = rYL(i) + 10;
@@ -121,8 +119,6 @@ static void rPrioridade(void) {   // Equilibrio / Qualidade / Comecar rapido
     ajc_progresso(308, y + 23.5f, 80, VEL[i], i == pick ? 1.0f : 0.5f);
     if (i == pick) ajc_foco(40, y, 470, 52, 12, p);
   }
-  ajc_ladrilho(IC[v], 570, 140, 64, 1, 1);
-  ajc_foco(538, 108, 64, 64, 18, p);
 }
 static void rPrazo(void) {   // a linha do tempo dos add-ons e o corte
   static const int PZ[7] = { 0, 3, 5, 8, 15, 30, -1 };
@@ -212,29 +208,17 @@ static void rRegexPadrao(void) {   // o campo do padrao sendo digitado
   int n = (int)(ajc_fase(5.0f) * 1.3f * (float)strlen(TX)), i;
   if (n > (int)strlen(TX) || ajc_reduzido()) n = (int)strlen(TX);
   memcpy(b, TX, (size_t)n); b[n] = 0;
-  ajc_painel(40, 60, 440, 54, 14, 1);
-  ajc_foco(40, 60, 440, 54, 14, 1);
-  ajc_icone("aj_pencil", 66, 87, 20, 0.7f);
+  ajc_icone("aj_search", 66, 87, 28, 0.7f);
   ajcTexto(b, 22, 1, 92, 72, 1);
-  if (ajc_onda(0.8f) > 0.5f) ajc_acento_ret(94 + ajcLargura(b, 22, 1), 70, 3, 32, 1.5f, 1);
-  ajc_ladrilho("aj_smartphone", 540, 87, 64, 0, 1);
-  ajc_icone("aj_keyboard", 540, 87, 28, 0.9f);
   for (i = 0; i < 3; i++) { rLinha(40, 150 + i * 56, 560, 46, "4K", NULL, i, i == 1 ? 0.35f : 1.0f);
     if (i != 1) ajc_foco(40, 150 + i * 56, 560, 46, 12, 0.5f); }
 }
 static void rRegexModelo(void) {   // os modelos prontos, o atual no acento
   static const char *L[7] = { NULL, "ESP", "PT", "EN", "MULTI", "DUAL", "4K|Remux" };
   int v = rInt(AJ_FONTE_REGEX_MODELO, 6), i;
-  float x[7] = { 40, 130, 220, 310, 400, 40, 160 }, y[7] = { 130, 130, 130, 130, 130, 200, 200 };
-  float p = 0.55f + 0.45f * ajc_onda(2.2f);
-  ajc_painel(40, 40, 560, 54, 14, 1);
   ajc_icone("aj_wand", 68, 67, 20, 0.8f);
   if (v > 0) ajcTexto(L[v], 22, 1, 100, 52, 1); else ajc_barra(100, 63, 180, 0.5f);
-  for (i = 0; i < 7; i++) {
-    if (!L[i]) { ajc_ladrilho("aj_pencil", x[i] + 24, y[i] + 14, 44, v == 0, 1); if (v == 0) ajc_foco(x[i] + 2, y[i] - 8, 44, 44, 12, p); continue; }
-    ajcSelo(L[i], x[i], y[i], 16, v == i ? 1 : 0, 1);
-    if (v == i) ajc_foco(x[i] - 2, y[i] - 2, ajcLargura(L[i], 16, 1) + 26, 34, 17, p);
-  }
+  for (i = 0; i < 3; i++) rLinha(40, 130 + i * 62, 560, 52, "4K", NULL, i, i == v % 3 ? 1 : 0.3f);
 }
 static void rEscopo(void) {   // de onde o automatico pode tocar
   int v = rInt(AJ_FONTE_ESCOPO, 2), i;
@@ -252,7 +236,7 @@ static void rEscopo(void) {   // de onde o automatico pode tocar
     else { float p = i ? 1 - f : f;
       ajc_bolinha(x + (i ? 0 : 200) + (i ? -1 : 1) * (p * 130 + 6), 160, 12, C.ar, C.ag, C.ab, 1 - p * 0.5f); }
   }
-  ajc_ladrilho("aj_play", 320, 160, 64, 1, 1);
+  ajc_icone("aj_play", 320, 160, 32, 1);
 }
 static void rPermitidos(int op) {   // quais add-ons/plugins o automatico usa primeiro
   int plug = op == AJ_FONTE_PLUGINS_PERM, n = plug ? 3 : 4, i, s = ajc_passo(1.5f, n);
@@ -265,8 +249,7 @@ static void rPermitidos(int op) {   // quais add-ons/plugins o automatico usa pr
     ajc_ret(54, y + 11, 30, 30, plug ? 15 : 8, r, g, b, 1);
     ajc_icone(IC, 69, y + 26, 16, 0.9f);
     ajc_barra(96, y + 20, 100, 0.7f);
-    ajc_bolinha(300, y + 26, 22, marcado ? C.ar : 0.3f, marcado ? C.ag : 0.3f, marcado ? C.ab : 0.34f, 1);
-    if (marcado) ajc_icone_tinta("aj_check", 300, y + 26, 13, 1);
+    if (marcado) ajc_icone("aj_check", 300, y + 26, 22, 1);
     if (i == s) ajc_foco(40, y, 290, 52, 12, 1);
   }
   ajc_icone("aj_chevron-right", 366, 150, 26, 0.55f);
@@ -330,13 +313,12 @@ static void rOutros(int op) {   // permitidos vazios: usa os outros (ligado) ou 
     ajc_icone("aj_x", 372, 160, 16, 0.5f * s);
   }
   ajc_ladrilho("aj_play", 320, 290, 40, 0, 0.5f);
-  ajcChaveCanto(k);
 }
 
 // --- como o automatico escolhe e prepara -----------------------------------------------
 static void rAuto(void) {   // Melhor fonte (confere e escolhe) x Primeira da lista (toca na hora)
   static const char *Q[4] = { "1080p", "4K", "720p", "4K" };
-  int primeira = valor[AJ_FONTE_AUTO] == 1, i, s = ajc_passo(0.5f, 8);
+  int primeira = ajustes_fonte_primeira(), i, s = ajc_passo(0.5f, 8);
   float f = ajc_fase(4.0f);
   for (i = 0; i < 4; i++) {
     float y = rYL(i) + 6, al = 1;
@@ -367,7 +349,6 @@ static void rTocarConferindo(int op) {   // conferir e tocar em paralelo (ligado
   rLane(190, "aj_play", ini, 0.95f, f, 1);
   if (k > 0.5f) ajc_ret(110, 135, 480 * 0.4f, 3, 1.5f, C.ar, C.ag, C.ab, 0.8f);
   ajc_icone(k > 0.5f ? "aj_zap" : "aj_clock", 320, 270, 30, 0.8f);
-  ajcChaveCanto(k);
 }
 static void rConferirVarias(int op) {   // 3 conferencias de uma vez (ligado) x uma por vez
   float k = ajcLig(op), f = ajc_fase(5.0f) * 1.1f;
@@ -382,15 +363,12 @@ static void rConferirVarias(int op) {   // 3 conferencias de uma vez (ligado) x 
   }
   ajc_icone("aj_clock", 580, 270, 24, 0.5f);
   ajc_ret(60, 268, k > 0.5f ? 140 : 380, 6, 3, C.ar, C.ag, C.ab, 0.9f);
-  ajcChaveCanto(k);
 }
 static void rAquecer(int op) {   // abrir a conexao antes do Play
   float k = ajcLig(op), f = ajc_fase(5.0f), w = rK(((k > 0.5f) ? (f - 0.1f) : (f - 0.6f)) / 0.2f), vid = rK((f - (k > 0.5f ? 0.65f : 0.9f)) / 0.08f);
   int i;
   if (ajc_reduzido()) { w = 1; vid = 1; }
   ajc_cartaz(24, 70, 96, 140, 1, 1);
-  ajc_acento_ret(34, 176, 60, 20, 10, 1);
-  if (f > 0.58f && f < 0.7f) ajc_foco(34, 176, 60, 20, 10, 1);
   for (i = 0; i < 3; i++) {
     float y = 70 + i * 52;
     ajc_ret(122, 140, 70, 3, 1.5f, 1, 1, 1, 0.12f);
@@ -407,16 +385,11 @@ static void rAquecer(int op) {   // abrir a conexao antes do Play
   ajc_video(436, 106, 168, 88, 8, vid);
   ajc_play(520, 150, 30, 1 - vid);
   ajc_icone("aj_wifi", 300, 250, 26, 0.3f + 0.6f * w);
-  ajcChaveCanto(k);
 }
 static void rPreparar(int op) {   // o arquivo ja escolhido e posto no debrid antes do Play
   float k = ajcLig(op), f = ajc_fase(5.0f), m = rK(((k > 0.5f) ? (f - 0.1f) : (f - 0.6f)) / 0.25f), vid = rK((f - (k > 0.5f ? 0.65f : 0.92f)) / 0.07f);
   if (ajc_reduzido()) { m = 1; vid = 1; }
   ajc_cartaz(24, 60, 140, 200, 3, 1);
-  ajc_acento_ret(40, 218, 90, 28, 14, 1);
-  ajc_icone_tinta("aj_play", 62, 232, 13, 1);
-  ajc_ret(80, 229, 38, 6, 3, ajTinta() / 255.0f, ajTinta() / 255.0f, ajTinta() / 255.0f, 0.9f);
-  if (f > 0.58f && f < 0.7f) ajc_foco(40, 218, 90, 28, 14, 1);
   ajc_ret(176, 158, 150, 4, 2, 1, 1, 1, 0.12f);
   ajc_ladrilho("aj_package", 176 + 150 * m, 160, 40, 1, m > 0 && m < 1 ? 1 : 0);
   ajc_neutro(340, 90, 150, 140, 22, 1);
@@ -426,7 +399,29 @@ static void rPreparar(int op) {   // o arquivo ja escolhido e posto no debrid an
   ajc_video(515, 125, 100, 52, 6, vid);
   ajc_play(565, 151, 22, 1 - vid);
   ajc_icone("aj_zap", 565, 215, 22, vid * 0.9f);
-  ajcChaveCanto(k);
+}
+// MEMORIA DA FONTE: tres episodios, tres fontes cada. Ligado, a mesma linha
+// (a lembrada / o mesmo grupo) e a escolhida em todos; desligado, cada episodio
+// cai numa diferente. As linhas filhas mostram o estado da mae.
+static void rMemoria(int op) {
+  static const int SOLTA[3] = { 0, 2, 1 };
+  int mae = op == AJ_FONTE_GRUPO_SESSOES ? AJ_FONTE_GRUPO : op == AJ_LINK_PRAZO ? AJ_LINK_REUSAR : op;
+  float k = ajcLig(mae);
+  int s = ajc_passo(1.2f, 3), e, i;
+  const char *ic = op == AJ_LINK_REUSAR ? "aj_link"
+                 : op == AJ_LINK_PRAZO ? "aj_clock"
+                 : op == AJ_FONTE_GRUPO ? "aj_layers" : "aj_rotate-ccw-clock";
+  char b[8];
+  for (e = 0; e < 3; e++) {
+    float x = 24 + e * 196, al = e <= s ? 1.0f : 0.35f;
+    int alvo = k > 0.5f ? 1 : SOLTA[e];
+    snprintf(b, sizeof b, "E%d", e + 1);
+    ajcSelo(b, x, 34, 12, e == s ? 1.0f : 0.0f, al);
+    for (i = 0; i < 3; i++) rLinha(x, 76 + i * 62, 180, 50, i == 1 ? "1080p" : "4K", NULL, i + 1, al);
+    if (e <= s) ajc_foco(x, 76 + alvo * 62, 180, 50, 12, al);
+  }
+  ajc_ladrilho(ic, 40, 300, 40, k > 0.5f, 1);
+  if (op == AJ_LINK_PRAZO) ajcTexto(textoValor(op), 16, 1, 72, 290, 0.9f);
 }
 static void rOrdemFontes(void) {
   int addon = rInt(AJ_FONTE_ORDEM_ADDON, 1);
@@ -472,7 +467,6 @@ static void rSelosCores(int op) {
     for (j = 0; j < 3; j++) x += rSeloCor(T[i * 3 + j], x + (j ? 0 : 0), 92 + i * 90, 20, 2 + i * 3 + j, k, 1) + 14;
   }
   ajc_icone("aj_palette", 320, 270, 30, 0.35f + 0.6f * k);
-  ajcChaveCanto(k);
 }
 static void rCartaoPacote(float x, float y, float w, float h, int estilo, float a) {
   int j;
@@ -518,10 +512,19 @@ static void rPacoteRem(void) {   // um pacote sai e os outros fecham o espaco
 }
 
 // --- som e video desta TV ---------------------------------------------------------------
-static void rDts(void) {   // DTS -> estereo (2 caixas) ou 5.1 (6 caixas)
+static void rDts(void) {   // DTS -> estereo (2 caixas) ou 5.1 (6 caixas); .tpk desligado: so a TV
   int s51 = valor[AJ_DTS_AC3] == 1, i;
   float o = ajc_onda(1.2f);
   ajcSelo("DTS", 90, 26, 16, 0, 1);
+#ifdef NV_TPK
+  if (valor[AJ_DTS_AC3] == 0) {   // Desligado: o DTS chega a TV como no master, sem som
+    ajc_tv(250, 110, 140, 78, 1);
+    ajc_ret(256, 116, 128, 66, 6, 0.06f, 0.06f, 0.08f, 1);
+    ajc_icone("aj_volume-2", 305, 262, 30, 0.35f);
+    ajc_icone("aj_x", 340, 262, 22, 0.6f);
+    return;
+  }
+#endif
   ajc_icone("aj_chevron-right", 190, 43, 24, 0.7f);
   ajcSelo(s51 ? "5.1" : "AAC", 232, 26, 16, 1, 1);
   ajc_tv(250, 110, 140, 78, 1);
@@ -546,7 +549,6 @@ static void rDvMkv(int op) {   // arquivo MKV em Dolby Vision: a TV recebe DV ou
   ajc_icone("aj_chevron-right", 208, 150, 28, 0.55f);
   rTelaHdr(250, 70, 350, 197, k, k > 0.5f ? 0.35f + 0.5f * o : 0.4f, 1);
   ajcSelo(k > 0.5f ? "DV" : "HDR10", 392, 286, 14, k > 0.5f ? 1 : 0, 1);
-  ajcChaveCanto(k);
 }
 static void rProporcao(int op) {   // o mesmo video 4:3 nos 9 modos de ocupar a tela 16:9
   static const float W[9] = { 240, 240, 320, 320, 270, 300, 380, 240, 320 };
@@ -582,7 +584,6 @@ static void rClassif(int op) {   // a ilha desce no comeco do filme com a classi
   ajc_ret(168, 32 - 70 * (1 - d), 44, 44, 10, 0.94f, 0.48f, 0.18f, d);
   ajcTexto("14", 22, 1, 177, 41 - 70 * (1 - d), d);
   { int j; for (j = 0; j < 3; j++) { ajc_barra(232, 34 + j * 14 - 70 * (1 - d), 160 - j * 30, d * 0.7f); ajc_bolinha(430 + j * 18, 54 - 70 * (1 - d), 10 + j * 0, 1, 1, 1, d * (0.3f + 0.25f * j)); } }
-  ajcChaveCanto(k);
 }
 static void rSaida(void) {   // sair no meio: o video vai para a ilha da Home ou para a pagina do titulo
   float k = ajc_onda(4.0f);
@@ -599,7 +600,6 @@ static void rSaida(void) {   // sair no meio: o video vai para a ilha da Home ou
     ajc_veu(0, 0, 460, 360, 2, 0.95f * k);
     ajc_ret(34, 64, 210, 30, 8, 1, 1, 1, 0.92f * k);
     ajc_barras(34, 112, 300, 3, k);
-    ajc_acento_ret(34, 232, 112, 34, 17, k);
     ajc_icone("aj_corner-up-left", 170, 250, 28, k);
   }
   // o video comeca na tela inteira (0,0) e encolhe ate o destino
@@ -607,27 +607,26 @@ static void rSaida(void) {   // sair no meio: o video vai para a ilha da Home ou
     ajc_video(vx, vy, vw, vh, 14 * k, 1 - (v ? 0.8f * k : 0));
     ajc_foco(vx, vy, vw, vh, 14, k * 0.8f); }
 }
-static void rManter(int op) {   // o video fica pronto na ilha por 2 minutos
+static void rManter(int op) {   // paused player for the chosen duration
   float k = ajcLig(op), f = ajc_fase(5.0f), cd = k > 0.5f ? 1 - f : 0;
   ajc_vidro(120, 100, 400, 130, 26, 0.35f + 0.65f * k);
   ajc_video(142, 120, 160, 90, 12, k);
   ajc_ret(142, 120, 160, 90, 12, 0.07f, 0.07f, 0.09f, 0.6f * (1 - k));
   ajc_icone("aj_pause", 222, 165, 34, 0.95f * k + 0.3f * (1 - k));
-  ajcTexto("2:00", 26, 1, 330, 126, k);
+  { char b[16]; unsigned ms = ajustes_manter_video_ms();
+    if (ms) snprintf(b, sizeof b, "%u:00", ms / 60000u);
+    else snprintf(b, sizeof b, "%s", i18n("Sem limite"));
+    ajcTexto(b, 26, 1, 330, 126, k);
+  }
   ajc_progresso(330, 168, 160, cd, k);
-  ajc_acento_ret(330, 186, 90, 26, 13, k * (0.6f + 0.4f * ajc_onda(1.4f)));
-  ajc_icone_tinta("aj_play", 375, 199, 13, k);
   if (k < 0.5f) ajc_icone("aj_x", 320, 165, 90, 0.5f);
   ajc_icone("aj_memory-stick", 320, 290, 30, 0.45f);
-  ajcChaveCanto(k);
 }
 
 // --- miniaturas na barra de tempo (Seekr) -------------------------------------------------
 static void rSeekrBase(float cur) {
   ajc_video(0, 0, 640, 360, 0, 0.55f);
   ajc_veu(0, 260, 640, 100, 0, 0.75f);
-  ajc_progresso(40, 318, 560, cur, 1);
-  ajc_bolinha(40 + 560 * cur, 320.5f, 14, 1, 1, 1, 1);
 }
 static void rSeekr(int op) {
   float cur = 0.15f + 0.7f * ajc_onda(5.0f), k = ajcLig(op), cx = 40 + 560 * cur;
@@ -640,9 +639,8 @@ static void rSeekr(int op) {
       if (k > 0.5f) {
         ajc_cartaz(cx - 70, 196, 140, 80, 4 + (int)(cur * 5), 1);
         ajc_foco(cx - 70, 196, 140, 80, 10, 1);
-        ajcTexto(b, 15, 1, cx - 20, 284, 1);
-      } else { ajc_vidro(cx - 30, 284, 60, 24, 12, 1); ajcTexto(b, 14, 1, cx - 19, 287, 1); }
-      ajcChaveCanto(k);
+        ajcTextoVivo(b, 15, 1, cx - 20, 284, 1);
+      } else { ajc_vidro(cx - 30, 284, 60, 24, 12, 1); ajcTextoVivo(b, 14, 1, cx - 19, 287, 1); }
       return;
     case AJ_SEEKR_FITA: {   // a fita de quadros (ligada) x um quadro por vez
       int i;
@@ -656,20 +654,11 @@ static void rSeekr(int op) {
         }
         ajc_foco(266, 160, 108, 66, 4, 1);
         if (k <= 0.5f) ajc_icone("aj_loader", 320, 193, 26, 0.95f); }
-      ajcChaveCanto(k);
       return; }
     case AJ_SEEKR_CHAVE: {
-      static const char *TX = "************";
-      char c[16];
-      int n = (int)(ajc_fase(4.5f) * 1.3f * 12.0f);
-      if (n > 12 || ajc_reduzido()) n = 12;
-      memcpy(c, TX, (size_t)n); c[n] = 0;
-      ajc_ladrilho("aj_key-round", 90, 150, 76, 1, 1);
-      ajc_painel(150, 120, 410, 60, 16, 1);
-      ajc_foco(150, 120, 410, 60, 16, 1);
-      { int i; for (i = 0; i < n; i++) ajc_bolinha(184 + i * 26, 150, 14, 1, 1, 1, 0.9f); }
-      if (ajc_onda(0.8f) > 0.5f) ajc_acento_ret(180 + n * 26, 134, 3, 32, 1.5f, 1);
-      ajc_ret(150, 220, 300, 8, 4, 1, 1, 1, 0.1f);
+      ajc_icone("aj_key-round", 170, 170, 76, 1);
+      ajc_icone("aj_chevron-right", 320, 170, 30, 0.5f);
+      ajc_cartaz(400, 110, 160, 90, 4, 1);
       return; }
     case AJ_SEEKR_TESTAR: {
       float f = ajc_fase(3.6f), p = rK(f / 0.6f), ok = f > 0.65f ? 1.0f : 0.0f;
@@ -683,12 +672,7 @@ static void rSeekr(int op) {
       return; }
     default: {   // AJ_SEEKR_AJUSTE: a miniatura mostra a cena de alguns segundos antes/depois
       int off = valor[AJ_SEEKR_AJUSTE];
-      float d = (off < -60 ? -60 : off > 60 ? 60 : off) * 3.2f, x0 = 60, W = 520;
       snprintf(b, sizeof b, "%+d s", off);
-      ajc_ret(x0, 270, W, 6, 3, 1, 1, 1, 0.16f);
-      ajc_bolinha(x0 + W * 0.5f, 273, 18, 1, 1, 1, 1);
-      ajc_bolinha(x0 + W * 0.5f + d * 0.8f, 273, 12, C.ar, C.ag, C.ab, 1);
-      ajc_ret(x0 + W * 0.5f + (d < 0 ? d * 0.8f : 0), 271, fabsf(d * 0.8f), 4, 2, C.ar, C.ag, C.ab, 0.8f);
       ajc_cartaz(110, 70, 170, 96, 4, 1);
       ajc_cartaz(360, 70, 170, 96, 4 + (off ? 1 : 0), 1);
       ajc_icone("aj_image", 195, 118, 30, 0.8f);
@@ -720,7 +704,6 @@ static void rP2p(int op) {
         ajc_icone("aj_user-round", px, py, 18, 0.7f + 0.3f * k);
         ajc_bolinha(px + (320 - px) * q * 0.8f, py + (160 - py) * q * 0.8f, 10, C.ar, C.ag, C.ab, k * (1 - q * 0.5f));
       }
-      ajcChaveCanto(k);
       return; }
     case AJ_P2P_URL: {
       static const char *TX = "192.168.1.20:8080";
@@ -735,6 +718,12 @@ static void rP2p(int op) {
       ajcTexto(b, 22, 1, 208, 126, 1);
       if (ajc_onda(0.8f) > 0.5f) ajc_acento_ret(210 + ajcLargura(b, 22, 1), 123, 3, 32, 1.5f, 1);
       ajc_ret(150, 200, 300, 8, 4, 1, 1, 1, 0.1f);
+      return; }
+    case AJ_P2P_DESTINO: {   // #205: interno ou pendrive USB
+      float k = rInt(op, 1) ? 1.0f : 0.0f;
+      ajc_icone("aj_database", 180, 150, 36, 0.9f);
+      ajc_ret(250, 140, 220, 56, 12, 1, 1, 1, 0.12f + 0.18f * k);
+      ajcTexto(textoValor(op), 22, 1, 250, 158, 1);
       return; }
     case AJ_P2P_LIMITE: {   // #334: a barra do disco e o teto que o P2P nao passa (0 = Automatico)
       static const float TETO[] = { 0.18f, 0.28f, 0.42f, 0.62f, 0.86f };
@@ -771,7 +760,7 @@ static void rPercentual(void) {
   ajc_acento_ret(m, 236, 600 - m, 12, 6, 0.45f);
   ajc_ret(m - 1.5f, 214, 3, 56, 1.5f, 1, 1, 1, 0.9f);
   snprintf(t, sizeof t, "%d%%", (int)(pc + 0.5f));
-  ajcSelo(t, m - ajcLargura(t, 16, 1) * 0.5f - 11, 176, 16, 1, 1);
+  ajcSeloVivo(t, m - ajcLarguraViva(t, 16, 1) * 0.5f - 11, 176, 16, 1, 1);
   ajc_bolinha(cx, 242, 22, 1, 1, 1, 1);
   ajc_ladrilho("aj_check", 560, 80, 64, visto > 0.5f, 0.3f + 0.7f * visto);
   ajc_cartaz(440, 48, 64, 64, 3, 0.9f);
@@ -801,6 +790,10 @@ static int ajcNovaReproducao(int sec, int op) {
     case AJ_FONTE_CONFERIR_VARIAS: rConferirVarias(op); return 1;
     case AJ_FONTE_AQUECER: rAquecer(op); return 1;
     case AJ_FONTE_PREPARAR: rPreparar(op); return 1;
+    case AJ_FONTE_PRECARREGAR: rPreparar(op); return 1;
+    case AJ_FONTE_GRUPO: case AJ_FONTE_GRUPO_SESSOES:
+    case AJ_LINK_REUSAR: case AJ_LINK_PRAZO:
+      rMemoria(op); return 1;
     case AJ_FONTE_ORDEM_ADDON: rOrdemFontes(); return 1;
     case AJ_FONTE_TEXTO: rTexto(); return 1;
     case AJ_SELOS_CORES: rSelosCores(op); return 1;
@@ -817,7 +810,7 @@ static int ajcNovaReproducao(int sec, int op) {
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_FITA: case AJ_SEEKR_CHAVE: case AJ_SEEKR_TESTAR: case AJ_SEEKR_AJUSTE:
       rSeekr(op); return 1;
 #ifndef __EMSCRIPTEN__
-    case AJ_P2P_LIGADO: case AJ_P2P_URL: case AJ_P2P_TESTAR: case AJ_P2P_LIMITE: rP2p(op); return 1;
+    case AJ_P2P_LIGADO: case AJ_P2P_URL: case AJ_P2P_TESTAR: case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: rP2p(op); return 1;
 #endif
     default: return 0;
   }

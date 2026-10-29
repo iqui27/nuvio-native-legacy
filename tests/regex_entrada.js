@@ -32,8 +32,10 @@ function filtro(t) {
 // linhas.
 function oficial(pattern, text) {
   let inc;
-  // O filtro so liga com letra/digito ou caractere nao ASCII (o oficial exige ASCII; aqui "日本語" e "[ñÑ]" filtram):
-  // no C isso e -1 ("invalido ou nao configurado").
+  // O oficial so liga o filtro quando ha letra/digito ASCII (isRegexSelectionConfigured):
+  // no C isso e -1 ("invalido ou nao configurado"). UMA DIFERENCA DE PROPOSITO: texto
+  // nao ASCII ("[ñÑ]", "日本語") tambem liga o filtro aqui (ver temLetraOuDigito em
+  // fonteregra.c): no oficial isso desliga o auto-play, aqui o filtro ficaria mudo.
   if (!/[a-z0-9]|[^\x00-\x7f]/i.test(pattern)) return -1;
   // "(?i)" no inicio: o C aceita (Java/Python); o V8 so aceita "(?i:...)". Compara
   // com o padrao sem o grupo de flags, que e o que o C executa.

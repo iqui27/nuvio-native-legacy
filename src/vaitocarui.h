@@ -13,6 +13,9 @@ float vtui_altura(const VaiTocar *vt);
 // Pinta a faixa com o canto superior esquerdo em (x, y) e `larg` de largura.
 void vtui_desenhar(const VaiTocar *vt, float x, float y, float larg, float a);
 
+// Shared 10px source status dot; only checking pulses (unless motion is reduced).
+void vtui_estado_ponto(int estado, float x, float y, float a);
+
 // Chips A/R/C sob a meta do card do episodio. `marcas` = bits VT_T_* conhecidos
 // (0 = nada em cache: nao pinta chip nenhum). Chip cheio = marca existe;
 // tracejado = o episodio e conhecido mas nao tem aquela marca. Devolve a

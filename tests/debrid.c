@@ -11,6 +11,7 @@
 // chaves pode aparecer no que o app imprime. As mensagens de progresso do
 // proprio teste saem por stderr, que nao e capturado.
 #include "../src/debrid.h"
+#include "../src/idbase.h"
 #include "../src/streams.h"
 #include "../src/rede.h"
 #include <assert.h>
@@ -84,7 +85,15 @@ static int   pmSemPlano;
 // (1 = "true") e se o mylist diz que o torrent ainda esta baixando.
 static int   tbSoCache = -1, tbBaixando;
 
-static char *dup2s(const char *s) { return strdup(s); }
+static int arquivosEspeciais, arquivoAnime;
+static char *dup2s(const char *s) {
+  char *c = strdup(s);
+  if (arquivosEspeciais) {
+    char *p = c;
+    while ((p = strstr(p, "S02"))) { p[2] = '0'; p += 3; }
+  }
+  return c;
+}
 
 // --- AllDebrid. Modos: o que o upload responde, a sequencia de statusCode que o
 // status devolve, e o que cada rota recebeu (para provar a ORDEM e a auth).
@@ -252,6 +261,7 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
   if (strstr(url, "api.alldebrid.com")) return adResp(url, cab, NULL, st);
   if (strstr(url, "real-debrid.com")) {
     assert(strstr(url, "torrents/info/ABC123"));
+    if (arquivoAnime) return strdup("{\"files\":[{\"id\":1,\"path\":\"[SubsPlease] Mushoku Tensei - 05 (1080p).mkv\",\"bytes\":1900000000}],\"status\":\"downloaded\",\"links\":[\"https://real-debrid.com/d/LINK1\"]}");
     return dup2s("{\"id\":\"ABC123\",\"status\":\"downloaded\",\"files\":["
       "{\"id\":1,\"path\":\"/Show.S02E04.1080p.mkv\",\"bytes\":2000000000,\"selected\":0},"
       "{\"id\":2,\"path\":\"/Show.S02E05.1080p.mkv\",\"bytes\":1900000000,\"selected\":0},"
@@ -297,6 +307,24 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
   *st = 404; return dup2s("{}");
 }
 
+// PUT de edicao (Airlock): grava url, Authorization e corpo para o teste conferir
+static int   colocarChamadas, colocarSt = 200;
+static const char *colocarResp = "{\"success\":true,\"error\":null,\"detail\":\"ok\",\"data\":{}}";
+static char  colocarUrl[300], colocarAuth[260], colocarCorpo[200];
+char *rede_colocar_st(const char *url, int s, const char *const *cab,
+                      const char *corpo, int *st) {
+  int k;
+  (void)s;
+  colocarChamadas++;
+  snprintf(colocarUrl, sizeof colocarUrl, "%s", url);
+  snprintf(colocarCorpo, sizeof colocarCorpo, "%s", corpo);
+  colocarAuth[0] = 0;
+  for (k = 0; cab && cab[k]; k++)
+    if (!strncmp(cab[k], "Authorization:", 14)) snprintf(colocarAuth, sizeof colocarAuth, "%s", cab[k]);
+  *st = colocarSt;
+  return dup2s(colocarResp);
+}
+
 // o parser puxa badges; duble
 unsigned long long badges_detectar(const char *t) { (void)t; return 0; }
 unsigned long long badges_bit(const char *id) { (void)id; return 0; }
@@ -331,6 +359,17 @@ static void realDebrid(void) {
   assert(!strcmp(corpoSelectRD, "files=1"));   // filme: maior video, sample.txt fora
   OK("Real-Debrid: filme escolhe o maior video");
 
+  {
+    int t, e;
+    idbase_episodio("kitsu:41370:5", &t, &e);
+    debrid_definir_episodio(t, e);
+    arquivoAnime = 1;
+    assert(debrid_resolver("DEADBEEF", -1, url, sizeof url));
+    assert(!strcmp(corpoSelectRD, "files=1"));
+    arquivoAnime = 0;
+    OK("Kitsu absent season selects ordinary anime filename in debrid");
+  }
+
   // A URL RESOLVIDA E CREDENCIAL: quem tem o "/d/QQ/" baixa na conta de quem
   // pediu. Este teste linka o rede_url_publica DE VERDADE (src/redeurl.c) em
   // vez de um stub — com stub, uma regressao que passasse a imprimir o link
@@ -342,6 +381,29 @@ static void realDebrid(void) {
     assert(strstr(pub, "x.download.real-debrid.com"));  // o host fica: e o que diagnostica
     assert(strstr(pub, "/...")); }
   OK("o link do Real-Debrid nao vai inteiro para o log");
+}
+
+static void especiais(void) {
+  static const char *const servicos[] = {"realdebrid", "torbox", "premiumize"};
+  static const char *const chaves[] = {K_RD, K_TB, K_PM};
+  arquivosEspeciais = 1;
+  for (int i = 0; i < 3; i++) {
+    char url[4096] = "";
+    debrid_esquecer(); debrid_definir_chave(servicos[i], chaves[i]);
+    debrid_definir_episodio(0, 5); debrid_nova_busca();
+    assert(debrid_resolver("DEADBEEF", -1, url, sizeof url));
+    if (i == 0) assert(strstr(corpoSelectRD, "files=2"));
+    if (i == 1) assert(strstr(urlRequestdl, "file_id=1"));
+    if (i == 2) assert(strstr(url, "/dl/BBB"));
+    arquivosEspeciais = 0; debrid_esquecer();
+    debrid_definir_chave(servicos[i], chaves[i]); debrid_definir_episodio(0, 5);
+    assert(!debrid_resolver("DEADBEEF", -1, url, sizeof url));
+    debrid_nova_busca();
+    assert(debrid_resolver("DEADBEEF", 1, url, sizeof url)); // indice publicado continua valido
+    arquivosEspeciais = 1;
+  }
+  arquivosEspeciais = 0; debrid_esquecer();
+  OK("#556: debrid escolhe S00E05 em vez do maior arquivo do pacote");
 }
 
 static void torbox(void) {
@@ -1020,7 +1082,61 @@ static void contas(void) {
   OK("contas RD/TB/PM: fixtures active/expired/badkey, cache, offline, play e troca de chave");
 }
 
+static void airlock(void) {
+  char det[160] = "";
+  // sem chave nao ha PUT nenhum
+  debrid_esquecer();
+  colocarChamadas = 0;
+  assert(!debrid_tb_airlock(0, 42, 1, det, sizeof det) && !det[0]);
+  assert(colocarChamadas == 0);
+  debrid_definir_chave("torbox", K_TB);
+  // torrent: liga; a edicao leva so o id e `airlocked`, com o Bearer da chave
+  colocarChamadas = 0;
+  assert(debrid_tb_airlock(0, 42, 1, det, sizeof det) == 1 && !det[0]);
+  assert(colocarChamadas == 1);
+  assert(!strcmp(colocarUrl, "https://api.torbox.app/v1/api/torrents/edittorrent"));
+  assert(!strcmp(colocarCorpo, "{\"torrent_id\":42,\"airlocked\":true}"));
+  assert(!strcmp(colocarAuth, "Authorization: Bearer " K_TB));
+  // usenet: desliga, com o id proprio do usenet
+  assert(debrid_tb_airlock(1, 7, 0, det, sizeof det) == 1 && !det[0]);
+  assert(colocarChamadas == 2);
+  assert(!strcmp(colocarUrl, "https://api.torbox.app/v1/api/usenet/editusenetdownload"));
+  assert(!strcmp(colocarCorpo, "{\"usenet_download_id\":7,\"airlocked\":false}"));
+  assert(!strcmp(colocarAuth, "Authorization: Bearer " K_TB));
+  // recusa do plano (HTTP 403): 0 e a frase do TorBox em detalhe
+  colocarSt = 403;
+  colocarResp = "{\"success\":false,\"error\":\"PLAN_RESTRICTED_FEATURE\",\"detail\":\"Upgrade your plan\"}";
+  assert(debrid_tb_airlock(0, 42, 1, det, sizeof det) == 0);
+  assert(!strcmp(det, "Upgrade your plan"));
+  // 2xx com success:false tambem e recusa
+  colocarSt = 200;
+  colocarResp = "{\"success\":false,\"error\":\"DOWNLOAD_NOT_CACHED\",\"detail\":\"Torrent is not cached.\"}";
+  assert(debrid_tb_airlock(0, 42, 1, det, sizeof det) == 0);
+  assert(!strcmp(det, "Torrent is not cached."));
+  colocarResp = "{\"success\":true,\"error\":null,\"detail\":\"ok\",\"data\":{}}";
+  debrid_esquecer();
+  OK("Airlock do TorBox: torrent/usenet, sem chave, recusa de plano e success:false");
+}
+
 int main(void) {
+  unsigned scope = debrid_tb_geracao();
+  debrid_abrir_sessao(100);
+  assert(debrid_tb_geracao() != scope);
+  scope = debrid_tb_geracao();
+  debrid_nova_busca();
+  assert(debrid_tb_geracao() == scope);
+  debrid_definir_chave("torbox", K_TB);
+  assert(debrid_tb_geracao() != scope);
+  scope = debrid_tb_geracao();
+  debrid_definir_chave("torbox", K_TB);
+  assert(debrid_tb_geracao() == scope);
+  debrid_definir_chave_local("torbox", "replacement");
+  assert(debrid_tb_geracao() != scope);
+  debrid_definir_chave_local("torbox", "");
+  scope = debrid_tb_geracao();
+  debrid_esquecer();
+  assert(debrid_tb_geracao() != scope);
+  puts("PASS TorBox generation follows session/key changes, not searches");
   static char capt[200000];
   const char *arq = getenv("NUVIO_DEBRID_TEST_LOG");
   int velho, f; FILE *lido; size_t lidos;
@@ -1036,6 +1152,7 @@ int main(void) {
   assert(dup2(f, 1) >= 0);
 
   semChaves();
+  especiais();
   realDebrid();
   torbox();
   torbox403();
@@ -1050,6 +1167,7 @@ int main(void) {
   negativaParcial();
   servicoEspecifico();
   parser();
+  airlock();
 
   fflush(stdout);
   assert(dup2(velho, 1) >= 0);
@@ -1101,6 +1219,7 @@ int main(void) {
   assert(strstr(capt, "[debrid] Premiumize: conta sem plano para a API; fora pelo resto da sessao"));
   // a linha que se procura no D1 quando alguem diz "o P2P nao toca"
   assert(strstr(capt, "[debrid] TorBox: deadbeef baixando no TorBox (37%, estado=downloading)"));
+  assert(strstr(capt, "[partes] TorBox airlock on (torrent): HTTP 403, error=PLAN_RESTRICTED_FEATURE"));
   OK("corpo do 403 no log, sem a chave");
 
   puts("debrid: tudo ok");

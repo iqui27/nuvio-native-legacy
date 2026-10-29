@@ -22,11 +22,14 @@ const char *i18n(const char *s) { return s; }
 const char *ling_nome(const char *c) { return c; }
 int ling_casa(const char *c, const char *p) { return c && p && !strcmp(c, p); }
 const char *ling_audio(void) { return ""; }
+const char *ling_audio2(void) { return ""; }
+const char *ling_original(void) { return ""; }
 int ling_tipo_legenda(const char *s, int f, int d) { (void)s; (void)f; (void)d; return 0; }
 const char *ling_tipo_legenda_rotulo(int t) { (void)t; return ""; }
 const char *ling_do_nome(const char *nome) { (void)nome; return NULL; }
 int ling_letreiro(const char *nome, int forcado) { (void)nome; (void)forcado; return 0; }
 void mkvass_aceitar_texto(int sim) { (void)sim; }
+void mkvass_aceitar_imagem(int sim) { (void)sim; }
 void intro_definir_capitulos(const IntroTrecho *v, int n) { (void)v; (void)n; }
 char *rede_baixar_trecho_st(const char *url, int segundos, long long ini, long long fim,
                             long *tam, int *status, int *erro, char *final, unsigned tamFinal) {
@@ -91,13 +94,13 @@ int mkvass_cabecalho(const char *url, unsigned char **buf, long *n) {
 // --- the converter: always there, HLS ---------------------------------------
 static int abriuConversor;
 int proxyts_e_url(const char *u) { (void)u; return 0; }
+int ajustes_dts_tpk_modo(void) { return DTSTPK_HLS; }
 int ajustes_dts_ac3(void) { return 1; }
 int dts_tpk_disponivel(void) { return 1; }
 const char *dts_tpk_modo_nome(int m) { (void)m; return "HLS"; }
-const char *dts_tpk_corpo_nome(int c) { (void)c; return "chunked"; }
 int dts_tpk_abrir(const char *url, const char *headers, int audio_ordinal, int stereo_aac,
-                  int modo, int corpo, double inicio, char *out, size_t n) {
-  (void)url; (void)headers; (void)audio_ordinal; (void)stereo_aac; (void)modo; (void)corpo; (void)inicio;
+                  int modo, double inicio, char *out, size_t n) {
+  (void)url; (void)headers; (void)audio_ordinal; (void)stereo_aac; (void)modo; (void)inicio;
   abriuConversor++;
   snprintf(out, n, "http://127.0.0.1:1/tok/v.m3u8");
   return 1;
@@ -110,6 +113,7 @@ double dts_tpk_duracao(void) { return 7200; }
 int dts_tpk_modo(void) { return DTSTPK_HLS; }
 double dts_tpk_inicio_stream(void) { return -1; }
 const char *dts_tpk_caminho(void) { return "DTS core only"; }
+int dts_tpk_prebuffer_ms(void) { return 0; }
 int dts_tpk_sem_indice(void) { return 0; }
 int dts_tpk_e_url(const char *u) { return u && strstr(u, "127.0.0.1") != NULL; }
 int video_faixa_dts(const VideoFaixa *f) { return f && !strncmp(f->codec, "A_DTS", 5); }
@@ -157,15 +161,16 @@ int main(void) {
   cabPronto = 1;
   video_tocar("http://h/a.mkv");
   ok(abriuConversor == 1 && dts_tpk_e_url(ultUrl), "A: opens the converted stream directly");
-  ok(video_n_legenda() == 2 && nTexto() == 2, "A: menu has the 2 text subtitles, no PGS");
-  ok(video_n_legenda() == 2 && video_legenda(0)->numero == 0 && video_legenda(1)->numero == 1,
-     "A: each subtitle has its own numero");
-  ok(video_n_legenda() == 2 && video_legenda(0)->ordinalMkv == 1 && video_legenda(1)->ordinalMkv == 2,
-     "A: mkvass ordinals count the PGS track (1, 2)");
-  ok(video_n_legenda() == 2 && !strcmp(video_legenda(1)->codec, "S_TEXT/UTF8"), "A: codec of the SRT entry");
+  ok(video_n_legenda() == 3 && nTexto() == 2, "A: menu has the file's 3 subtitles (PGS is drawn by the app)");
+  ok(video_n_legenda() == 3 && video_legenda(0)->numero == 0 && video_legenda(1)->numero == 1 &&
+     video_legenda(2)->numero == 2, "A: each subtitle has its own numero");
+  ok(video_n_legenda() == 3 && video_legenda(0)->ordinalMkv == 0 && video_legenda(1)->ordinalMkv == 1 &&
+     video_legenda(2)->ordinalMkv == 2, "A: mkvass ordinals follow the file order (PGS 0, ASS 1, SRT 2)");
+  ok(video_n_legenda() == 3 && !strcmp(video_legenda(0)->codec, "S_HDMV/PGS") &&
+     !strcmp(video_legenda(2)->codec, "S_TEXT/UTF8"), "A: codec of the PGS and SRT entries");
   playerPronto(1, 0);   // the converted player: one AC3, no subtitles
   bombear(3);
-  ok(video_n_legenda() == 2 && video_n_audio() == 1, "A: player's own list does not replace the file's");
+  ok(video_n_legenda() == 3 && video_n_audio() == 1, "A: player's own list does not replace the file's");
   video_escolher_legenda(1);
   ok(video_legenda_atual() == 1 && nLegsHost == 0, "A: choosing a subtitle stays in the app (nothing to the player)");
   playerPronto(1, 0);   // the host re-reads the audio (#165)
@@ -185,11 +190,11 @@ int main(void) {
   cabPronto = 1;
   { Uint32 t0 = SDL_GetTicks(); while (!abriuConversor && SDL_GetTicks() - t0 < 3000) bombear(1); }
   ok(abriuConversor == 1 && dts_tpk_e_url(ultUrl), "B: switches to the converted stream");
-  ok(video_n_legenda() == 2 && video_legenda_atual() == 1 && !strcmp(video_legenda(1)->codec, "S_TEXT/UTF8") &&
-     !strcmp(video_legenda(1)->idioma, "por"), "B: the same subtitle (por SRT) is still chosen after the switch");
+  ok(video_n_legenda() == 3 && video_legenda_atual() == 2 && !strcmp(video_legenda(2)->codec, "S_TEXT/UTF8") &&
+     !strcmp(video_legenda(2)->idioma, "por"), "B: the same subtitle (por SRT) is still chosen after the switch");
   playerPronto(1, 0);
   bombear(3);
-  ok(video_legenda_atual() == 1 && video_n_legenda() == 2, "B: and after the converted player answers");
+  ok(video_legenda_atual() == 2 && video_n_legenda() == 3, "B: and after the converted player answers");
   video_parar();
 
   printf(falhas ? "tpk-dts-legendas: %d FAIL(S)\n" : "tpk-dts-legendas: ok\n", falhas);

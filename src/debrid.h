@@ -20,6 +20,8 @@
 #ifndef NV_DEBRID_H
 #define NV_DEBRID_H
 
+#include <stdint.h>
+
 // IDs estaveis para a ordem e o orcamento locais de cada servico. Acrescentar
 // novos servicos no fim: estes numeros podem ficar nos ajustes do aparelho.
 enum { DEBRID_RD = 0, DEBRID_TB = 1, DEBRID_PM = 2, DEBRID_AD = 3, DEBRID_N = 4 };
@@ -29,10 +31,34 @@ int debrid_servico_por_nome(const char *nome); // nome/slug do servico; -1 se de
 // Tem chave efetiva e nao foi recusado nesta busca nem esta sem plano.
 int debrid_servico_disponivel(int servico);
 
+// Conta lida pelo sync: uma resposta e um conjunto completo, inclusive os
+// provedores ausentes. O worker preenche a copia; so a sessao que a pediu a
+// publica. Nunca transportar a chave em log, URL de diagnostico ou i18n.
+typedef struct { char chave[4][200]; } DebridConta;
+void debrid_conta_iniciar(DebridConta *conta);
+void debrid_conta_definir(DebridConta *conta, const char *servico, const char *chave);
+int  debrid_aplicar_chaves_conta(const DebridConta *conta, uint64_t sessao);
+void debrid_aplicar_chaves_locais(const DebridConta *conta);
+void debrid_abrir_sessao(uint64_t sessao);
+
+// Capturar ao despachar um trabalho, antes de trocar de perfil. Todas as
+// chamadas HTTP dele leem estas chaves e este episodio, nunca os da pessoa
+// que entrou enquanto o worker estava na rede. Contexto vive ate sair().
+typedef struct {
+  char chave[4][200];
+  int temporada, episodio;
+  uint64_t sessao;
+  unsigned busca;
+} DebridContexto;
+void debrid_contexto_capturar(DebridContexto *contexto);
+void debrid_contexto_entrar(const DebridContexto *contexto);
+void debrid_contexto_sair(void);
+
 // Chave vinda da conta. `servico` e o sufixo de "debrid:<servico>":
 // realdebrid/real-debrid, torbox e premiumize (com ou sem hifen). Uma chave
 // por servico; chamar de novo para outro servico NAO apaga a anterior.
 void debrid_definir_chave(const char *servico, const char *chave);
+void debrid_habilitar(int ligado); // Device-local switch; credentials remain intact.
 int  debrid_ativo(void);          // ha chave de um servico que sabemos resolver
 // "https://host" da API de cada servico com chave que pode resolver (aquecer.c).
 int  debrid_origens(const char **origens, int max);
@@ -131,5 +157,33 @@ const char *debrid_sem_plano_frase(int mascara);
 // NULL nos outros casos — quem chama usa a frase longa de cima. Para a frase
 // curta da ilha ("Seu TorBox está sem plano...").
 const char *debrid_sem_plano_nome(int mascara);
+
+// ARQUIVOS DE UMA FONTE NO TORBOX (partes.h). Nao dependem da busca em curso;
+// a chave e a efetiva do TorBox na hora da chamada. Nenhuma URL vai para log.
+//   debrid_tb_disponivel: 1 ha chave que pode usar a API, 0 sem chave,
+//                         -1 conta sem plano para a API.
+//   debrid_tb_mylist:     BLOQUEIA. GET torrents/mylist ou usenet/mylist
+//                         (id <= 0 = todos os itens; fresco = bypass_cache,
+//                         sem ele vem a copia em cache do TorBox, mais
+//                         rapida). Corpo (free) ou NULL; *st recebe o HTTP.
+//   debrid_tb_link:       BLOQUEIA. requestdl de um arquivo; 1 = `url` e o
+//                         link do CDN.
+//   debrid_tb_adicionar:  BLOQUEIA. Poe o torrent na conta SO se ja estiver em
+//                         cache; devolve o id ou -1.
+//   debrid_tb_airlock:    BLOQUEIA. PUT de edicao do item (torrent ou usenet) so
+//                         com `airlocked`: 1 liga o Airlock (fora da purga de 30
+//                         dias), 0 desliga. 1 = feito; 0 = recusado ou sem
+//                         resposta, e `detalhe` (pode ser NULL) recebe a frase do
+//                         TorBox (cota do plano, por exemplo).
+// Changes only with account session or effective TorBox key, never a search.
+unsigned debrid_tb_geracao(void);
+int   debrid_tb_disponivel(void);
+// Uma pagina de DEBRID_TB_PAGINA itens (o teto do TorBox): conta com mais
+// itens que isso precisa de mais paginas (`pagina` 0, 1, ...).
+#define DEBRID_TB_PAGINA 1000
+char *debrid_tb_mylist(int usenet, int id, int pagina, int fresco, int *st);
+int   debrid_tb_link(int usenet, int id, int arquivo, char *url, unsigned n);
+int   debrid_tb_adicionar(const char *hash);
+int   debrid_tb_airlock(int usenet, int item, int ligar, char *detalhe, unsigned n);
 
 #endif

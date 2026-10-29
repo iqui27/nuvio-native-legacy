@@ -12,6 +12,18 @@
 // sondar). Sem erro ou erro de decodificacao/formato: 0.
 int fontesonda_erro_conexao(const char *erroTexto);
 
+// POR QUE A FONTE NAO ABRIU, so pelo texto de erro do player (nunca a URL).
+// Diz de quem e o problema: FS_CAUSA_HTTP = o servidor da fonte recusou o link
+// (addon/debrid; *http recebe o status, 0 = nao se sabe qual), FS_CAUSA_REDE =
+// conexao/tempo esgotado ate a fonte, FS_CAUSA_FORMATO = formato/decoder (pode
+// ser o app ou a TV), FS_CAUSA_NENHUMA = nao da para dizer.
+// Codigos lidos: uMS "<40000+status> server error" (40404 = HTTP 404) e Media3
+// 2001/2002 rede, 2004-2006 HTTP, 3xxx/4xxx formato/decoder.
+enum { FS_CAUSA_NENHUMA, FS_CAUSA_HTTP, FS_CAUSA_REDE, FS_CAUSA_FORMATO };
+int fontesonda_causa(const char *erroTexto, int *http);
+// One safe failure line: classified reason, HTTP status and host only.
+void fontesonda_recusa(const char *url, const char *erroTexto, int sincrona);
+
 // Monta "[fonte] sonda apos recusa: status=<n> redirecionamentos=<n>
 // host_final=<host> tipo=<mime> tempo=<ms> <veredito>". `url` e a URL final
 // (ou a de origem quando a sonda nao chegou a resposta); so o host entra.

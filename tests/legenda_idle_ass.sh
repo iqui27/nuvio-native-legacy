@@ -6,7 +6,7 @@ trap 'rm -rf "$work"' EXIT
 flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 cc "${flags[@]}" -DNV_ASS_LIBASS -include tests/ass_pisca_gl.h -Isrc \
-  tests/legenda_idle_ass.c src/assrender.c src/bidi.c \
+  tests/legenda_idle_ass.c src/assrender.c tests/ass_render_stub.c src/bidi.c \
   $(pkg-config --cflags --libs libass sdl2) -pthread -lm \
   -Wno-deprecated-declarations -Wno-macro-redefined -o "$work/test"
 # sdl2-compat finds SDL3 beside the executable under ASan on macOS.

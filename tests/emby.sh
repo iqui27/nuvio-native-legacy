@@ -23,13 +23,15 @@ if command -v sdl2-config >/dev/null; then
   flags+=($(sdl2-config --cflags) -I"$(sdl2-config --prefix)/include")
 fi
 if [ "$(uname -s)" != Darwin ]; then flags+=(-ldl); fi
-if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
-if [ "${SANITIZE:-0}" = thread ]; then flags+=(-fsanitize=thread -fno-omit-frame-pointer); fi
-cc "${flags[@]}" tests/emby.c src/jellyfin.c src/plex.c src/servidores.c src/rede.c src/redeurl.c src/js.c src/jsw.c \
+if [ "${SANITIZE:-${NV_SANITIZERS:-0}}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
+if [ "${SANITIZE:-0}" = thread -o "${NV_TSAN:-0}" = 1 ]; then flags+=(-fsanitize=thread -fno-omit-frame-pointer); fi
+cc "${flags[@]}" tests/emby.c src/jellyfin.c src/srvidx.c src/plex.c src/servidores.c src/rede.c src/redeurl.c src/js.c src/jsw.c \
   -o "$tmp/teste"
 "$tmp/teste" "$base" "$tmp/dados" > "$tmp/log" 2>&1 || { cat "$tmp/log"; exit 1; }
+# tests/servidores_log.sh collects every server test's log and scans it.
+if [ -n "${NV_SRV_LOG:-}" ]; then cat "$tmp/log" >> "$NV_SRV_LOG"; fi
 # Logs carry operation/status/latency only: no token, private path, e-mail or address.
-if grep -nE 'embytoken|emby p.ssword|/srv/private|tok-fixture|X-Emby' "$tmp/log"; then
+if grep -nE 'embytoken|emby p.ssword|/srv/private|tok-fixture|X-Emby|api_key|ApiKey|Token=' "$tmp/log"; then
   echo 'secret leaked into the log' >&2; exit 1
 fi
 grep -c '^\[emby\]' "$tmp/log" | sed 's/^/emby log lines: /'

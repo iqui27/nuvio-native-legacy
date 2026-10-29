@@ -241,7 +241,7 @@ void sintro_desenhar(Uint32 agora) {
   dx = (1.0f - a) * (NV_TELA_W - SI_X);
   x = SI_X + dx + SI_PAD;
   { GfxRect p = { SI_X + dx, SI_Y, SI_W, SI_H };
-    gfx_cor(p, 0.035f, 0.075f, 0.078f, 0.088f, 0.98f * a); }
+    gfx_vidro_ou_solido(p, 0.035f, GFX_VIDRO_DENS_MODAL, a, 0.075f, 0.078f, 0.088f, 0.98f); }
   gfx_recorte(SI_X + dx, SI_Y, SI_W, SI_H);
 
   // Na maquete o lugar deste rotulo e o nome do titulo aberto atras do cartao.

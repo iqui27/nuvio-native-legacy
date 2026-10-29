@@ -89,6 +89,8 @@ namespace NuvioTpk
         public delegate IntPtr ErroDel();
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         public delegate void TeclaDel(string nome, int apertou);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate void CicloDel(int memoria);
 
         // Guardados em campos estaticos: seguram o delegate vivo (o GC nao o
         // recolhe) e o ponteiro nativo e estavel pela vida do processo.
@@ -97,6 +99,7 @@ namespace NuvioTpk
         public static QuadroDel Quadro;
         public static ErroDel Erro;
         public static TeclaDel Tecla;
+        public static CicloDel Ciclo;
 
         public static bool Pronto => Iniciar != null && Config != null && Quadro != null && Erro != null && Tecla != null;
     }
@@ -282,8 +285,15 @@ namespace NuvioTpk
 
         protected override void OnPause()
         {
+            NvLib.Ciclo?.Invoke(0);
             video?.PausarPeloSistema();
             base.OnPause();
+        }
+
+        protected override void OnLowMemory(Tizen.Applications.LowMemoryEventArgs e)
+        {
+            NvLib.Ciclo?.Invoke(1);
+            base.OnLowMemory(e);
         }
 
         // #411: as mesmas teclas do host 6+ (#196), por nome, sem trocar o
@@ -734,6 +744,8 @@ namespace NuvioTpk
             NvLib.Quadro = Marshal.GetDelegateForFunctionPointer<NvLib.QuadroDel>(pQd);
             NvLib.Erro = Marshal.GetDelegateForFunctionPointer<NvLib.ErroDel>(pErr);
             NvLib.Tecla = Marshal.GetDelegateForFunctionPointer<NvLib.TeclaDel>(pTec);
+            IntPtr pCiclo = resolve("nv_tpk_ciclo");
+            if (pCiclo != IntPtr.Zero) NvLib.Ciclo = Marshal.GetDelegateForFunctionPointer<NvLib.CicloDel>(pCiclo);
             // Os pontos de entrada de video/log (chamados de Video.cs) tambem
             // passam a apontar para o mesmo codigo nativo. Na rota memfd isto e
             // redundante (a lib esta no link map e o DllImport ja resolveria),

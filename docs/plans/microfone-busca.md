@@ -108,6 +108,19 @@ não tem o host do teclado e fica sem botão. O ajuste só aparece no `.tpk` de 
 - `ajustes_secoes.sh`: **rc 1 preexistente**, reproduzido com os arquivos do HEAD anterior
   à correção: sete opções `AJ_PROF_*` ausentes do catálogo. Não relacionado ao teclado.
 
+## Release 2.0.7 — #585
+
+On native Tizen, Automatic keeps the microphone button whenever the host is
+registered. The TV's `feature/microphone` flag does not detect the remote's
+microphone, so a negative response must not hide the Samsung keyboard entry
+point. On still forces the button; Off still hides it. WGT detection is unchanged.
+The existing settings help describes WGT capability detection; native Tizen
+uses host registration instead.
+
+The remote's microphone button opens system search outside the Samsung
+keyboard. Open Nuvio's on-screen microphone button first, then dictate while
+the Samsung keyboard has focus. This does not remap the remote's system key.
+
 ## Falta na TV
 
 Se o teclado da Samsung sobe sobre o app (mais provável no 8/9, que desenha na janela

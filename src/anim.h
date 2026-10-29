@@ -112,6 +112,37 @@ static inline float anim_rampa(float p, float alvo, float dt, float ms) {
   return p;
 }
 
+// Entry clock in seconds, delay/duration in ms. Only the first eight items
+// stagger; later items share the eighth delay. Reduced motion skips the clock.
+static inline float anim_atraso(float segundos, int item, float atrasoMs, float ms) {
+  if (anim_politica_reduzida) return 1.0f;
+  int i = item < 0 ? 0 : item > 7 ? 7 : item;
+  float dt = fmaxf(0.0f, segundos - i * atrasoMs / 1000.0f);
+  return ms > 0 ? anim_rampa(0, 1, dt, ms) : 1.0f;
+}
+
+// PILULA QUE ABRE: dois canais ORDENADOS, largura e rotulo. ABRINDO, a
+// largura vai primeiro e o rotulo so entra com ela pronta; FECHANDO, o
+// rotulo sai primeiro e a largura encolhe depois. O rotulo e desenhado
+// INTEIRO — nunca cortado pela largura em crescimento, que fazia o texto
+// chegar palavra por palavra, como digitado (detail.c, "Assistir do comeco").
+// *rotulo e 0 enquanto *largura nao chegou a 1: e isso que impede o corte.
+static inline void anim_expande(float *largura, float *rotulo, float alvo,
+                                float dt, float msLargura, float msRotulo) {
+  if (anim_politica_reduzida) { *largura = alvo; *rotulo = alvo; return; }
+  if (alvo > 0.5f) {
+    if (*largura < 1.0f)
+      *largura = anim_rampa(*largura, 1.0f, dt, msLargura);
+    else
+      *rotulo = anim_rampa(*rotulo, 1.0f, dt, msRotulo);
+  } else {
+    if (*rotulo > 0.0f)
+      *rotulo = anim_rampa(*rotulo, 0.0f, dt, msRotulo);
+    else
+      *largura = anim_rampa(*largura, 0.0f, dt, msLargura);
+  }
+}
+
 // RETORNO DE BORDA: a seta que bate no fim (ultimo cartao, topo da pagina) nao
 // move o foco, e sem resposta nenhuma o controle parece ter falhado. Aqui um
 // deslocamento curto na direcao da tecla, que volta a zero com mola.

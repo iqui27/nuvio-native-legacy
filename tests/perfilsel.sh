@@ -26,7 +26,7 @@ if [ "${1:-}" = --capturas ] || [ "${1:-}" = --capturas-b ] ||
   [ "${1:-}" = --capturas-compacto ] && efeitos=compacto
   fontes=()
   for f in src/*.c src/dts/*.c; do [ "$f" != src/main.c ] && fontes+=("$f"); done
-  cc "${fontes[@]}" tests/perfilsel_visual.c -DNV_PERFILSEL_TEST -Isrc -o ${TMPDIR:-/tmp}/nuvio-perfilsel-shot \
+  cc "${fontes[@]}" tests/perfilsel_visual.c -DNV_PERFILSEL_TEST -DNV_TOUCH_UI -DAJUSTES_TESTE -Isrc -o "${NUVIO_PERFILSEL_BIN:-${TMPDIR:-/tmp}/nuvio-perfilsel-shot}" \
     -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
     -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
     -Wno-deprecated-declarations -Wno-macro-redefined
@@ -37,14 +37,14 @@ if [ "${1:-}" = --capturas ] || [ "${1:-}" = --capturas-b ] ||
   # cai em ~/.nuvio, os dados REAIS de quem roda o teste. Aconteceu.
   NUVIO_DADOS="$D" NUVIO_TESTE_DIR="$D" \
     NUVIO_PERFILSEL_VARIANTE="$variante" NUVIO_PERFILSEL_EFEITOS="$efeitos" \
-    ${TMPDIR:-/tmp}/nuvio-perfilsel-shot
+    "${NUVIO_PERFILSEL_BIN:-${TMPDIR:-/tmp}/nuvio-perfilsel-shot}"
   exit 0
 fi
 flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 # So perfis.c, js.c e jsw.c: a regra nao depende de SDL, de rede nem da tela, e
 # linkar o app inteiro aqui tornaria o teste lento e fragil.
-cc ${flags[@]+"${flags[@]}"} src/perfis.c src/js.c src/jsw.c tests/perfilsel.c \
+cc ${flags[@]+"${flags[@]}"} src/perfis.c src/admin.c src/js.c src/jsw.c tests/perfilsel.c \
   -Isrc -o ${TMPDIR:-/tmp}/nuvio-perfilsel-tests -O1 -g \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined
 

@@ -11,6 +11,8 @@
 #include "sistexto.h"
 #include "descoberta.h"
 #include "entrada_texto.h"
+#include "arteurl.h"
+#include "ajustes.h"
 #ifdef NV_ANDROID
 #include "android.h"
 #endif
@@ -30,7 +32,9 @@ static const char AVISO_MIC_CONTROLE[] = "Aperte o microfone do controle e fale.
 static int micTeclado;
 
 #define ST_FILA 16
-static char  fila[ST_FILA][600];
+// One event tag plus a complete poster template and terminator.
+#define ST_EVENTO_MAX (NV_ARTE_URL_MAX + 1)
+static char  fila[ST_FILA][ST_EVENTO_MAX];
 static int   filaIni, filaN;
 
 static int modoTeste = -1;
@@ -44,11 +48,19 @@ static int teste(void) {
 // imetv: SDL_StartTextInput do SDL da LG, MEDIDO na C9 com microfone no
 // teclado; <input> escondido no .wgt; host .NET no .tpk canario). Este modulo
 // so traduz os avisos dele para a mesma fila do Android (st_evento).
+int st_teclado_modo(void) {
+#ifdef NV_TECLADO_SIS
+  return ajustes_teclado_android();
+#else
+  return st_abre_sozinho() ? ajustes_teclado_android() : 0;   // teste() faz o papel do Android
+#endif
+}
+int st_teclado_do_app(void) { return !st_abre_sozinho() && st_teclado_modo() == 1; }
 int st_ime_disponivel(void) {
 #ifdef NV_ANDROID
   return 1;
 #else
-  return teste() || (texto_sistema_disponivel() & TS_TECLADO) != 0;
+  return !st_teclado_do_app() && (teste() || (texto_sistema_disponivel() & TS_TECLADO) != 0);
 #endif
 }
 int st_voz_disponivel(void) {
@@ -81,7 +93,7 @@ const char *st_aviso(void) { return aviso; }
 static int proximo(char *dst, size_t n);
 // O que sobrou de uma entrada anterior (a fala que terminou depois de a tela
 // fechar) nao pode cair no campo novo.
-static void descartar(void) { char ev[600]; int k = 0; while (k++ < 64 && proximo(ev, sizeof ev)) {} }
+static void descartar(void) { char ev[ST_EVENTO_MAX]; int k = 0; while (k++ < 64 && proximo(ev, sizeof ev)) {} }
 
 static int proximoTipo;
 void st_ime_tipo(int tipo) { proximoTipo = tipo; }
@@ -112,7 +124,13 @@ int st_ime_abrir(int d, const char *inicial, int max) {
 
 int st_voz_iniciar(int d) {
   int ok = 0;
-  if (!st_voz_disponivel()) return 0;
+  if (!st_voz_disponivel()) {
+    dono = d; estado = ST_PARADO;
+    aviso = "Esta TV não tem reconhecimento de voz. Use o microfone do teclado do sistema.";
+    printf("[voice] unavailable: no registered voice backend (owner=%d)\n", d);
+    fflush(stdout);
+    return 0;
+  }
   descartar();
   micTeclado = 0;
   dono = d; aviso = ""; nivel = 0.0f;
@@ -133,7 +151,7 @@ int st_voz_iniciar(int d) {
   }
 #endif
   if (!ok) aviso = "O ditado não respondeu. Tente de novo ou digite.";
-  printf("[texto] voz: %s (dono %d, idioma %s)\n", ok ? "pedida" : "falhou", d, desc_tmdb_idioma());
+  printf("[voice] %s (owner=%d, language=%s)\n", ok ? "requested" : "startup failed", d, desc_tmdb_idioma());
   fflush(stdout);
   return ok;
 }
@@ -192,7 +210,7 @@ int st_ler(int d, char *dst, size_t n) {
 }
 
 int st_ler_valor(int d, char *dst, size_t n, int *valorRecebido) {
-  char ev[600];
+  char ev[ST_EVENTO_MAX];
   int r = ST_NADA, k;
   if (valorRecebido) *valorRecebido = 0;
   if (n) dst[0] = 0;
@@ -227,7 +245,10 @@ int st_ler_valor(int d, char *dst, size_t n, int *valorRecebido) {
         break;
       case 'I': printf("[texto] android: %s\n", v); fflush(stdout); break;
       case 'E':
-        printf("[texto] voz terminou: %s\n", v);
+        micTeclado = 0;
+        printf("[voice] failed: %s\n", !strcmp(v, "nada") ? "no speech recognized"
+               : !strcmp(v, "negada") ? "microphone permission denied"
+               : !strcmp(v, "ocupado") ? "recognizer busy" : v);
         fflush(stdout);
         aviso = !strcmp(v, "nada") ? "Não entendi. Tente de novo."
               : !strcmp(v, "negada") ? "Sem permissão do microfone."
@@ -242,10 +263,12 @@ int st_ler_valor(int d, char *dst, size_t n, int *valorRecebido) {
 
 int st_evento(const SDL_Event *e) {
   if (e->type == texto_sistema_evento()) {
-    char ev[600];
+    char ev[ST_EVENTO_MAX];
     if (e->user.code == TS_EV_TEXTO) {
       snprintf(ev, sizeof ev, "T%s", texto_sistema_valor());
       st_teste_evento(ev);
+    } else if (e->user.code == TS_EV_ERRO) {
+      st_teste_evento("Ekeyboard startup failed");
     } else if (e->user.code == TS_EV_FIM) {
       if (e->user.data1) { snprintf(ev, sizeof ev, "D%s", texto_sistema_valor()); st_teste_evento(ev); }
       else st_teste_evento("X");

@@ -13,9 +13,10 @@
 //   Menor   a linha da hora com o fps, e uma segunda linha compacta embaixo;
 //   Grande  a ilha cresce abaixo da hora com o painel inteiro (grafico do pior
 //           quadro, memoria, texturas, cache).
-// Quem desenha a ilha decide quando ha lugar: com aviso, atividade, modal ou
-// voo na ilha o medidor some (Minimo ao lado de um cartao, se couber) e volta
-// quando ela fica livre. Abaixo de 45 fps (o corte de [gpu-modos] lento) o
+// Quem desenha a ilha decide quando ha lugar: com aviso, atividade, modal,
+// voo na ilha ou o trailer tocando (destaque da home, pagina do titulo) o
+// medidor some (Minimo ao lado de um cartao, se couber) e volta quando ela
+// fica livre. Abaixo de 45 fps (o corte de [gpu-modos] lento) o
 // ponto e o numero ficam ambar — e a unica cor.
 #ifndef NV_DESEMPENHO_H
 #define NV_DESEMPENHO_H

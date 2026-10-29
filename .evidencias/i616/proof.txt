@@ -1,0 +1,27 @@
+Issue #616, baseline 688f08e5361c9897fe3ca4f307e68cef26b49a6d.
+
+Before production changes: bash tests/i616.sh exited 1.
+All six explicit portrait cases (catalog/collection, Moderna/Padrao/Dinamica)
+rendered 318.0x182.9. Picker anchor changed when preview bounds changed.
+
+After production changes: bash tests/i616.sh exited 0.
+Moderna: 212.0x322.0, Padrao: 260.0x390.0, Dinamica: 212.0x322.0.
+Catalog and collection geometry match; Automatic remains landscape.
+Picker list offset stays fixed across focus moves at 100%, 125%, 150% UI scale.
+
+bash tests/i616_shot.sh exited 0, including production host compile/link.
+Uses existing estiloanim_shot.c hidden-window renderer and local artwork.
+The capture-only network object replaces curl_perform with a failure stub;
+no network transfer occurs. The production host build uses unmodified transport.
+
+Before: picker maximum drift 386.3 virtual px; Poster 318.0x182.9,
+art deploy/app/art/03.jpg.
+After: picker maximum drift 0.0 virtual px; Poster 212.0x322.0,
+art deploy/app/art/poster/03.jpg.
+
+before.png / after.png: Poster focused after traversing preview styles.
+before.png-stage.png / after.png-stage.png: Stage focused during traversal;
+after picker remains at its opening position and the focused row is visible.
+
+Host compiler emits existing ATOMIC_VAR_INIT deprecation warning in perfis.c.
+Device validation and platform packaging were not run. No install/deploy/push.

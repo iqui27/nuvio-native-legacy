@@ -31,11 +31,13 @@ with tempfile.TemporaryDirectory() as d:
     subprocess.run(['cc', str(p), '-o', d+'/test'], check=True)
     subprocess.run([d+'/test'], check=True)
 assert 'VT_AB_TOPO' in s
-assert 'ponteiro_alvo(' in function('botaoEstiloAbas')
-assert 'aj_layout-list' in function('botaoEstiloAbas')
-assert 'focoAbaFonte(' in function('botaoEstiloAbas')
+# Style toggle is a segment of the single layout switcher (no loose button).
+assert 'botaoEstiloAbas' not in s
+assert 'ponteiro_alvo(' in function('botaoExibicao')
+assert 'aj_layout-list' in function('botaoExibicao')
+assert 'gfx_vidro_pilula_cheia(' in function('botaoExibicao')  # focus = white glass pill (direction A)
 assert 'alternarEstiloAbas();' in s
-assert 'tabCursor<na+1' in s
+assert 'tabCursor<na+(nAbas()>0)' in s
 assert 'if(est==VT_AB_TOPO)' in s
 defines = {k: float(re.search(r'#define '+k+r'\s+(\d+\.\d+)f', s).group(1)) for k in ('VT_AB_Y','VT_AB_H')}
 content = float(re.search(r'#define VT_TOPO\s+\(collection \? (\d+\.\d+)f', s).group(1))

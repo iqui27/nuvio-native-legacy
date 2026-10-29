@@ -9,7 +9,7 @@ set -eu
 cd "$(dirname "$0")/.."
 flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
-cc ${flags[@]+"${flags[@]}"} src/perfis.c src/js.c src/jsw.c tests/perfis21.c \
+cc ${flags[@]+"${flags[@]}"} src/perfis.c src/admin.c src/js.c src/jsw.c tests/perfis21.c \
   -Isrc -o ${TMPDIR:-/tmp}/nuvio-perfis21-tests -O1 -g \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined
 

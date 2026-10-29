@@ -148,7 +148,7 @@ static int faltasLembrandoSemTrava(const char *texto) {
 }
 
 // "^(?=A)(?!B)(?=C)" -> as partes "(?=A)", "(?!B)", "(?=C)". Flags em linha
-// no inicio ("(?i)") sao puladas. Colchete como no JS: o primeiro "]" fecha.
+// no inicio ("(?i)", "(?s)", "(?m)") sao puladas, e o tamanho delas vai em *pref. Colchete como no JS: o primeiro "]" fecha.
 // Devolve quantas (2 ou mais), ou 0 se o padrao nao e so isso (um lookaround
 // quantificado, texto solto, "|" no topo...): ai ele vale como uma condicao so.
 static int partes(const char *p, const char **ini, size_t *tam, int max, size_t *pre) {
@@ -491,15 +491,20 @@ void fonteregra_perfil_guardar(int perfil) {
 
 int fonteregra_perfil_restaurar(int perfil) {
   char nome[40], *t;
+  int tinhaCopia;
   if (perfil <= 0) return 0;
   nomePerfil(nome, sizeof nome, perfil);
-  if (!(t = dados_ler(nome))) return 0;
+  t = dados_ler(nome);
+  tinhaCopia = t != NULL;
   pthread_mutex_lock(&trava);
-  lerSemTrava(t);
+  // Primeira visita: as listas, a ordem e o texto do perfil que saiu nao
+  // sao os padroes deste. A leitura vazia tambem libera a regex compilada,
+  // avanca a versao e atualiza a copia de trabalho usada no proximo boot.
+  lerSemTrava(t ? t : "");
   gravarSemTrava(ARQ);
   pthread_mutex_unlock(&trava);
   free(t);
-  return 1;
+  return tinhaCopia;
 }
 
 void fonteregra_perfil_esquecer(void) {

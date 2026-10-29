@@ -183,6 +183,8 @@ int main(int argc, char **argv) {
   gfx_icones_dir(abs);
   tex_iniciar(64);
   ajustes_iniciar();
+  // NUVIO_SHOT_VIDRO=1 captures the Glass UI material (default: solid).
+  if (getenv("NUVIO_SHOT_VIDRO")) { ajustes_teste_vidro_env(); ajustes_definir_vidro(atoi(getenv("NUVIO_SHOT_VIDRO"))); }
   dados_iniciar("deploy/app/art");
   dd = dados_dir();
   if (!dd || !strstr(dd, "nuvio-trocaarte-dados")) {

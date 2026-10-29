@@ -14,6 +14,7 @@
 // Roda a decisao REAL de faixas.c com o mundo falso de tests/legmemoria.c.
 #define main legmemoria_roteiro
 #include "legmemoria.c"
+int xtream_url_limitada(const char *url) { (void)url; return 0; }
 #undef main
 
 static void addonsDoEpisodio(const char *ep) {

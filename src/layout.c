@@ -1,11 +1,20 @@
 #include "layout.h"
 
+int layout_modo_resolver(int preferencia, int automaticoMobile) {
+  if (preferencia == 0) return 0;
+  if (preferencia == 1) return 1;
+  return automaticoMobile != 0;
+}
+
+
 #ifdef NV_TOUCH_UI
 float nv_layout_w = NV_TELA_BASE_W;
 float nv_layout_h = NV_TELA_BASE_H;
 static int telaW = (int)NV_TELA_BASE_W;
 static int telaH = (int)NV_TELA_BASE_H;
 static int modoMobile;
+float nv_inset_e, nv_inset_t, nv_inset_d, nv_inset_b;
+static float insetFr[4];
 
 static void layoutAtualizar(void) {
   if (modoMobile) {
@@ -16,6 +25,15 @@ static void layoutAtualizar(void) {
     nv_layout_w = NV_TELA_BASE_W;
     nv_layout_h = NV_TELA_BASE_H;
   }
+  nv_inset_e = insetFr[0] * nv_layout_w;
+  nv_inset_t = insetFr[1] * nv_layout_h;
+  nv_inset_d = insetFr[2] * nv_layout_w;
+  nv_inset_b = insetFr[3] * nv_layout_h;
+}
+
+void layout_insets_definir(float e, float t, float d, float b) {
+  insetFr[0] = e; insetFr[1] = t; insetFr[2] = d; insetFr[3] = b;
+  layoutAtualizar();
 }
 
 void layout_tela_definir(int width, int height) {
@@ -35,5 +53,6 @@ int layout_modo_mobile(void) { return modoMobile; }
 void layout_tela_definir(int width, int height) { (void)width; (void)height; }
 void layout_modo_definir(int mobile) { (void)mobile; }
 int layout_modo_mobile(void) { return 0; }
+void layout_insets_definir(float e, float t, float d, float b) { (void)e; (void)t; (void)d; (void)b; }
 #endif
 

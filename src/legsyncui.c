@@ -22,6 +22,10 @@ const char *legsync_acao_rotulo(int a) {
   return "";
 }
 
+void legsync_audio_offset_texto(int ms, char *dst, unsigned tam) {
+  snprintf(dst, tam, "%+d ms", ms);
+}
+
 static void segundos(int ms, char *dst, unsigned tam) {
   snprintf(dst, tam, "%+.2f s", ms / 1000.0);
   plrui_decimal(dst);
@@ -71,11 +75,14 @@ static void textoBase(const LegSyncVisao *v, char *dst, unsigned tam) {
       snprintf(dst, tam, "%s", i18n("Pronta: compara com a legenda incorporada do arquivo")); return;
     case LEGSYNC_LENDO:      snprintf(dst, tam, i18n("Lendo a legenda incorporada\xe2\x80\xa6 %d%%"), v->progresso); return;
     case LEGSYNC_ANALISANDO: snprintf(dst, tam, "%s", i18n("Analisando\xe2\x80\xa6")); return;
-    case LEGSYNC_ACEITA:     segundos(v->offsetAutoMs, s, sizeof s);
+    case LEGSYNC_ACEITA:     segundos(-v->offsetAutoMs, s, sizeof s);   // user sign: + = later
                              snprintf(dst, tam, i18n("Sincronizada: %s"), s); return;
     case LEGSYNC_OUVINDO:    snprintf(dst, tam, i18n("Ouvindo as falas\xe2\x80\xa6 %d%%"), v->progresso); return;
     case LEGSYNC_RECUSADA:
       if ((a = motivoAudioTexto(v->motivo)) != NULL) { snprintf(dst, tam, "%s", a); return; }
+      if (v->motivo == LEGSYNC_M_REGION_DISAGREEMENT) {
+        snprintf(dst, tam, "%s", i18n("N\xc3\xa3o deu para sincronizar: tempos n\xc3\xa3o batem em todo o filme")); return;
+      }
       snprintf(dst, tam, "%s", i18n("Sem confian\xc3\xa7" "a suficiente; nada foi alterado")); return;
     case LEGSYNC_PAUSADA:    snprintf(dst, tam, "%s", i18n("Pausada pela busca no v\xc3\xad" "deo; retoma sozinha")); return;
     case LEGSYNC_DESFEITA:   snprintf(dst, tam, "%s", i18n("Corre\xc3\xa7\xc3\xa3o desfeita; o atraso manual continua")); return;
@@ -115,7 +122,12 @@ void legsync_texto_simples(const LegSyncVisao *v, char *dst, unsigned tam) {
   if (v->fase == LEGSYNC_INDISPONIVEL && v->motivo == LEGSYNC_M_SEM_TEXTO) {
     textoBase(v, dst, tam); return;
   }
-  if (v->autoFase == 3) { snprintf(dst, tam, "%s", i18n("N\xc3\xa3o deu para sincronizar")); return; }
+  if (v->autoFase == 3) {
+    if (v->motivo == LEGSYNC_M_REGION_DISAGREEMENT)
+      snprintf(dst, tam, "%s", i18n("N\xc3\xa3o deu para sincronizar: tempos n\xc3\xa3o batem em todo o filme"));
+    else snprintf(dst, tam, "%s", i18n("N\xc3\xa3o deu para sincronizar"));
+    return;
+  }
   if (v->fase == LEGSYNC_ACEITA || v->autoFase == 2) {
     if (v->autoTrocou && v->autoNome[0]) snprintf(dst, tam, i18n("N\xc3\xa3o deu para sincronizar \xe2\x80\x94 usando %s"), v->autoNome);
     else snprintf(dst, tam, "%s", i18n("Sincronizada"));
@@ -144,11 +156,15 @@ int legsync_pilula_final(const LegSyncVisao *v, const char *provedor, char *dst,
   const char *p = provedor && *provedor ? provedor : "";
   if (!dst || !tam) return 0;
   if (v && v->fase == LEGSYNC_ACEITA) {
-    segundos(v->offsetAutoMs, s, sizeof s);
+    segundos(-v->offsetAutoMs, s, sizeof s);   // user sign: + = later
     snprintf(dst, tam, i18n("Legenda sincronizada \xc2\xb7 %s \xc2\xb7 %s"), p, s);
     return 1;
   }
-  snprintf(dst, tam, i18n("Legenda aplicada \xc2\xb7 %s \xc2\xb7 n\xc3\xa3o sincronizada"), p);
+  if (v && v->motivo == LEGSYNC_M_REGION_DISAGREEMENT)
+    snprintf(dst, tam, i18n("Legenda aplicada \xc2\xb7 %s \xc2\xb7 n\xc3\xa3o sincronizada (tempos n\xc3\xa3o batem em todo o filme)"), p);
+  else if (v && (v->motivo == LEGSYNC_M_SEM_REFERENCIA || v->motivo == LEGSYNC_M_SEM_TEXTO))
+    snprintf(dst, tam, i18n("Legenda aplicada \xc2\xb7 %s \xc2\xb7 n\xc3\xa3o sincronizada (sem legenda embutida para comparar)"), p);
+  else snprintf(dst, tam, i18n("Legenda aplicada \xc2\xb7 %s \xc2\xb7 n\xc3\xa3o sincronizada"), p);
   return 0;
 }
 

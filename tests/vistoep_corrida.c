@@ -10,6 +10,10 @@
 #include <stdatomic.h>
 #include <stdio.h>
 
+uint64_t perfis_sessao_geracao(void) { return 0; }
+int perfis_sessao_travar(uint64_t g) { return !g; }
+void perfis_sessao_destravar(void) {}
+
 static atomic_int fim;
 
 static void *escrever(void *u) {

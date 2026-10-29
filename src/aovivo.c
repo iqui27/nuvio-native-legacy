@@ -49,15 +49,23 @@ void aovivo_selecionar(time_t t, const EpgProg *l, int n, int *iAg, int *iPx) {
 #define AV_JANELA_N 24
 int aovivo_epg_montar(int epgIdx, const char *xtId, time_t t, AoVivoEpg *o) {
   EpgProg l[AV_JANELA_N];
-  int n = 0, ag, px;
+  int n = 0;
   if (!o) return 0;
   memset(o, 0, sizeof *o);
   if (epgIdx >= 0) n = epg_faixa(epgIdx, t - 4 * 3600, t + 12 * 3600, l, AV_JANELA_N);
   else if (xtId && xtId[0] && xtream_e_id(xtId))
     n = xtepg_faixa(xtId, t - 4 * 3600, t + 12 * 3600, l, AV_JANELA_N);
+  return aovivo_epg_de_faixa(l, n, t, o);
+}
+// A mesma montagem a partir de uma faixa ja lida (a do guia, com a cascata de
+// casamento e o fuso da fonte: guia_programa_faixa).
+int aovivo_epg_de_faixa(const EpgProg *l, int n, time_t t, AoVivoEpg *o) {
+  int ag, px;
+  if (!o) return 0;
+  memset(o, 0, sizeof *o);
   if (n > AV_JANELA_N) n = AV_JANELA_N;
   if (n < 1) return 0;
-  aovivo_selecionar(t, l, n, &ag, &px);
+  aovivo_selecionar(t, (EpgProg *)l, n, &ag, &px);
   if (ag >= 0) {
     o->temAgora = 1;
     snprintf(o->agoraTit, sizeof o->agoraTit, "%s", l[ag].titulo ? l[ag].titulo : "");

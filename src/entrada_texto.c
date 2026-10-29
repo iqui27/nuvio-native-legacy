@@ -53,13 +53,113 @@
 // (release, Voz.cs), e devolve por nv_tpk_texto_valor/nv_tpk_texto_fim. Host
 // antigo nao registra: texto_sistema_disponivel() da 0 e fica o teclado do app.
 #include "entrada_texto.h"
+#include "arteurl.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #endif
+#if defined(NV_WEBOS) || defined(NV_TEXTO_SDL_TESTE)
+#include <signal.h>
+#include <setjmp.h>
+#endif
+#ifdef NV_WEBOS
+#include "webosver.h"
+#endif
 
-#define TS_MAX 256
+// #642 (webOS 26): a chamada de IME do SDL de fabrica pode derrubar o app
+// inteiro (teclado do sistema abre = crash). A protecao abaixo apanha o sinal
+// dentro da chamada e desliga o teclado do sistema nesta sessao: a grade do
+// app assume (texto_sistema_disponivel -> 0) e o IME nao e chamado de novo.
+// O mesmo vale para o teclado que nunca aparece (180 quadros sem OSK).
+#if defined(NV_WEBOS) || defined(NV_TEXTO_SDL_TESTE)
+static sigjmp_buf saltaIme;
+// Armado POR FIO: um sinal em outro fio nunca pode saltar para a pilha deste
+// fio (o saltaIme e daqui); a falha alheia cai no tratador anterior (queda.c).
+static __thread volatile sig_atomic_t imeArmado;
+static volatile sig_atomic_t imeQuebrou;
+static const int imeSinais[5] = { SIGSEGV, SIGBUS, SIGABRT, SIGILL, SIGFPE };
+static struct sigaction imeVelho[5];
+static void sinalIme(int s, siginfo_t *si, void *ctx) {
+  if (imeArmado) { imeArmado = 0; imeQuebrou = 1; siglongjmp(saltaIme, 1); }
+  // Falha fora da chamada (outro fio, instalacao ou restauracao dos
+  // tratadores): repassa ao tratador que estava. Devolver aqui faria a falha
+  // se repetir para sempre, pois SA_NODEFER nao bloqueia o sinal.
+  {
+    int k;
+    for (k = 0; k < 5; k++) if (imeSinais[k] == s) {
+      struct sigaction *v = &imeVelho[k];
+      if ((v->sa_flags & SA_SIGINFO) && v->sa_sigaction) { v->sa_sigaction(s, si, ctx); return; }
+      if (!(v->sa_flags & SA_SIGINFO) && v->sa_handler &&
+          v->sa_handler != SIG_DFL && v->sa_handler != SIG_IGN) { v->sa_handler(s); return; }
+    }
+    signal(s, SIG_DFL);
+    raise(s);
+  }
+}
+static void notaQueda(void) {
+  printf("[texto] chamada de IME do sistema falhou (#642): o teclado do app assume\n");
+  fflush(stdout);
+}
+// O timeout de 180 quadros so condena o IME no webOS 26 (onde ele morre de
+// verdade). Nas versoes antigas o teclado pode so demorar: a sessao cai para
+// o teclado do app desta vez, mas TS_TECLADO volta a ser oferecido depois.
+static int imeSemOskMata(void) {
+#ifdef NV_TEXTO_SDL_TESTE
+  extern int texto_teste_webos_major(void);
+  return texto_teste_webos_major() >= 26;
+#else
+  return nv_webos_major() >= 26;
+#endif
+}
+static int sdlImeVazio(void (*fn)(void)) {
+  struct sigaction novo;
+  int k;
+  if (imeQuebrou) return -1;
+  // O salto fica valido ANTES de instalar os tratadores e e desarmado antes
+  // de restaura-los: nunca ha siglongjmp para um buffer vencido.
+  if (sigsetjmp(saltaIme, 1) == 0) {
+    memset(&novo, 0, sizeof novo);
+    novo.sa_sigaction = sinalIme;
+    sigemptyset(&novo.sa_mask);
+    novo.sa_flags = SA_SIGINFO | SA_NODEFER;
+    for (k = 0; k < 5; k++) sigaction(imeSinais[k], &novo, &imeVelho[k]);
+    imeArmado = 1;
+    fn();
+    imeArmado = 0;
+  } else { notaQueda(); }
+  for (k = 0; k < 5; k++) sigaction(imeSinais[k], &imeVelho[k], NULL);
+  return imeQuebrou ? -1 : 0;
+}
+static SDL_Window *imeWin;
+static int imeMostra;
+static void medeMostra(void) { imeMostra = imeWin ? (int)SDL_IsScreenKeyboardShown(imeWin) : 0; }
+static int sdlImeMostra(SDL_Window *w) {
+  imeWin = w; imeMostra = 0;
+  return sdlImeVazio(medeMostra) < 0 ? -1 : imeMostra;
+}
+static int imeQuebrado(void) { return imeQuebrou; }
+#ifdef NV_TEXTO_SDL_TESTE
+void texto_sistema_teste_reset(void) { imeQuebrou = 0; }
+// NUVIO_TEXTO_CRASH=1: falha no fio que chama. =2: o teste injeta a falha em
+// OUTRO fio (o SDL da webOS pode mexer no compositor fora do fio principal,
+// #642): a queda alheia tem de seguir para o tratador anterior, nao saltar.
+extern void texto_teste_crash_outro(void);
+static void crashTeste(void) {
+  const char *e = getenv("NUVIO_TEXTO_CRASH");
+  if (e && *e == '2') { texto_teste_crash_outro(); return; }
+  raise(SIGSEGV);
+}
+static int querCrash(void) { const char *e = getenv("NUVIO_TEXTO_CRASH"); return e && (*e == '1' || *e == '2'); }
+#endif
+#else
+static int sdlImeVazio(void (*fn)(void)) { fn(); return 0; }
+static int sdlImeMostra(SDL_Window *w) { return w ? (int)SDL_IsScreenKeyboardShown(w) : 0; }
+#define imeQuebrado() 0
+#endif
+
+#define TS_MAX NV_ARTE_URL_MAX
 
 static int aberto, viuTeclado, quadrosAberto;
 static Uint32 tipoEv;
@@ -116,7 +216,7 @@ static int vModo = TS_MIC_AUTO;
 static int micPermitido(void) {
   int tem, mic;
 #ifdef NV_TPK
-  tem = vIniciar != NULL; mic = vMic;
+  tem = vIniciar != NULL; mic = -1; // #585: TV microphone capability does not detect the remote's mic.
 #else
   // O shell responde uma vez (o <input> e o getCapability nao mudam).
   static int wTem = -1, wMic = -1;
@@ -165,7 +265,7 @@ static void terminar(int confirmou, const char *porque) {
   aberto = 0;
   printf("[texto] teclado do sistema fechou (%s%s)\n", porque, confirmou ? ", confirmou" : "");
   fflush(stdout);
-  avisar(TS_EV_FIM, confirmou);
+  avisar(confirmou < 0 ? TS_EV_ERRO : TS_EV_FIM, confirmou > 0);
 }
 
 int texto_sistema_disponivel(void) {
@@ -175,9 +275,9 @@ int texto_sistema_disponivel(void) {
   return (EM_ASM_INT({ return (typeof window !== "undefined" && window.nvTexto) ? 1 : 0; }) ? TS_TECLADO : 0)
        | (micPermitido() ? TS_VOZ : 0);
 #elif defined(NV_ANDROID) || defined(NV_TEXTO_SDL_TESTE)
-  return TS_TECLADO;
+  return imeQuebrado() ? 0 : TS_TECLADO;
 #elif defined(__linux__)
-  return SDL_HasScreenKeyboardSupport() ? TS_TECLADO : 0;
+  return !imeQuebrado() && SDL_HasScreenKeyboardSupport() ? TS_TECLADO : 0;
 #else
   return 0;
 #endif
@@ -234,7 +334,15 @@ void texto_sistema_abrir(const char *atual, int voz) {
 #elif defined(__EMSCRIPTEN__)
   EM_ASM({ try { window.nvTexto.abrir(UTF8ToString($0), $1); } catch (e) { console.warn("[texto] " + e); } }, valor, voz);
 #else
-  SDL_StartTextInput();
+  // #642: na webOS 26 esta chamada pode derrubar o processo; a falha vira
+  // TS_EV_ERRO e o teclado do app fica como unico daqui em diante.
+  if (sdlImeVazio(
+#ifdef NV_TEXTO_SDL_TESTE
+        querCrash() ? crashTeste : SDL_StartTextInput
+#else
+        SDL_StartTextInput
+#endif
+      ) < 0) terminar(-1, "ime-caiu");
 #endif
 }
 
@@ -246,7 +354,7 @@ void texto_sistema_fechar(void) {
 #elif defined(__EMSCRIPTEN__)
   EM_ASM({ try { window.nvTexto.fechar(); } catch (e) {} });
 #else
-  SDL_StopTextInput();
+  sdlImeVazio(SDL_StopTextInput);
 #endif
   terminar(0, "app");
 }
@@ -317,7 +425,7 @@ void texto_sistema_quadro(void) {
       texto_sistema_ponte_valor(v);
     }
     fim = EM_ASM_INT({ var t = window.nvTexto; return t ? t.fim : -1; });
-    if (fim >= 0) { EM_ASM({ window.nvTexto.fim = -1; }); texto_sistema_ponte_fim(fim); }
+    if (fim >= 0) { EM_ASM({ window.nvTexto.fim = -1; }); texto_sistema_ponte_fim(fim == 2 ? -1 : fim); }
   }
 #endif
   SDL_AtomicLock(&trava);
@@ -330,22 +438,30 @@ void texto_sistema_quadro(void) {
     printf("[texto] valor do sistema: %d bytes\n", (int)strlen(valor));
     avisar(TS_EV_TEXTO, 0);
   }
-  if (fim >= 0) { terminar(fim, "sistema"); return; }
-#if !defined(NV_TPK) && !defined(__EMSCRIPTEN__) && defined(__linux__)
+  if (fim >= 0) { terminar(fim == 2 ? -1 : fim, "system"); return; }
+#if !defined(NV_TPK) && !defined(__EMSCRIPTEN__) && (defined(__linux__) || defined(NV_TEXTO_SDL_TESTE))
   // LG/Android: fechou por fora (Voltar no teclado da TV)? So depois de o
   // teclado ter sido visto aberto, e com folga para ele subir.
   {
     SDL_Window *w = SDL_GetKeyboardFocus();
-    int mostra = w ? (int)SDL_IsScreenKeyboardShown(w) : 0;
+    int mostra = sdlImeMostra(w);
+    if (mostra < 0) { terminar(-1, "ime-caiu"); return; }
     if (mostra && !viuTeclado) {
       viuTeclado = 1;
       printf("[texto] teclado do sistema na tela (quadro %d)\n", quadrosAberto);
       fflush(stdout);
     }
-    if (viuTeclado && !mostra) { SDL_StopTextInput(); terminar(0, "osk-oculto"); }
+    if (viuTeclado && !mostra) { sdlImeVazio(SDL_StopTextInput); terminar(0, "osk-oculto"); }
     else if (!viuTeclado && quadrosAberto == 180) {
       printf("[texto] 180 quadros e SDL_IsScreenKeyboardShown ainda 0 (janela=%p)\n", (void *)w);
       fflush(stdout);
+#if defined(NV_WEBOS) || defined(NV_TEXTO_SDL_TESTE)
+      // #642: 3 s sem o teclado = IME morto nesta sessao (webOS 26). Falha
+      // declarada: o dono larga o sistema e a grade do app assume. So o
+      // webOS 26 condena o IME para sempre; nas antigas ele pode demorar.
+      if (imeSemOskMata()) { imeQuebrou = 1; notaQueda(); }
+      terminar(-1, "ime-sem-osk");
+#endif
     }
   }
 #endif
@@ -360,6 +476,6 @@ void texto_sistema_ponte_valor(const char *v) {
 
 void texto_sistema_ponte_fim(int confirmou) {
   SDL_AtomicLock(&trava);
-  pendFim = confirmou ? 1 : 0;
+  pendFim = confirmou < 0 ? 2 : confirmou ? 1 : 0;
   SDL_AtomicUnlock(&trava);
 }

@@ -649,7 +649,7 @@ void recenviar_atualizar(float dt, Uint32 agora) {
     }
     troca = red ? 1.0f : anim_mola(troca, 1.0f, dt, NV_MOLA_FOCO * 0.5f);
 #ifdef NV_TOUCH_UI
-    if (!toque.livre)
+    if (!toquerol_livre(&toque))
 #endif
       rolar = red ? (float)topo : anim_mola(rolar, (float)topo, dt, NV_MOLA_FOCO * 0.7f); }
 }
@@ -659,13 +659,7 @@ void recenviar_atualizar(float dt, Uint32 agora) {
 // A ilha: o material da folha de Fontes e do menu do cartaz (vidro com a
 // opacidade e o Frost configurados, ou o solido equivalente).
 static void ilhaMaterial(GfxRect p, float a) {
-  float raio = RE_RAIO / (p.h > 1.0f ? p.h : 1.0f);
-  if (ajustes_vidro()) {
-    gfx_rect((GfxRect){p.x-18.0f,p.y-8.0f,p.w+36.0f,p.h+40.0f},
-             0,GFX_SOMBRA,1.0f,0,0,.5f,0,0,0,.38f*a);
-    gfx_vidro_folha(p,raio,a);
-    gfx_luz_canto(p, raio, p.w * .22f, -p.h * .40f, p.w * .62f, 1, 1, 1, .06f * a);
-  } else plrui_material(p, RE_RAIO, 1, a);
+  plrui_material(p, RE_RAIO, 1, a);
 }
 
 // O ROSTO de 52: a foto, ou o disco na cor do id com a inicial em 20/700
@@ -774,7 +768,7 @@ static void ponteiroLinha(int i, int b) {
 int recenviar_teste_foco(int *pag) { if (pag) *pag = pagina; return foco; }
 #ifdef NV_TOUCH_UI
 static void toqueRetomar(void) {
-  if (toque.livre && nLinhas() > 0) {
+  if (toquerol_livre(&toque) && nLinhas() > 0) {
     float ponto = rolar * toquePasso + toque.regiao.h * 0.35f, y = 0.0f;
     int i;
     for (i = 0; i + 1 < nLinhas(); i++) {
@@ -796,7 +790,7 @@ static void desenhaLista(float x, float y, float w, float a) {
   int reg = aberto && anim > 0.99f && anim < 1.01f && troca > 0.99f &&
             !teclado_aberto() &&
 #ifdef NV_TOUCH_UI
-            (toque.livre ||
+            (toquerol_livre(&toque) ||
 #endif
             (rolar > (float)topo - 0.01f && rolar < (float)topo + 0.01f)
 #ifdef NV_TOUCH_UI
@@ -989,6 +983,7 @@ static void recenviar_desenharCorpo_(Uint32 agora) {
 
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0,
           (ajustes_vidro() ? 0.34f : 0.46f) * anim);
+  gfx_vidro_cobrir();
   // A ILHA no tamanho da mola, centrada; entra subindo 40 px.
   cx = NV_TELA_W * 0.5f;
   cy = NV_TELA_H * 0.5f + (1.0f - a) * 40.0f;

@@ -12,6 +12,7 @@ int ajustes_menu_guia(void) { return 1; }
 int ajustes_menu_agenda(void) { return 1; }
 int ajustes_menu_perfil(void) { return 1; }
 int ajustes_rail_recolhida(void) { return 0; }
+float gfx_escala_ui(void) { return 1.0f; }
 
 static ContaPerfil conta;
 static float aspectoNoDesenho = -1.0f;

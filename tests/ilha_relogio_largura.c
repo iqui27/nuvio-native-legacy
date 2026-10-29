@@ -17,6 +17,11 @@ float gfx_tex_aspect_atual;
 float gfx_card_forcar_cover_atual;
 int txt_pendentes;
 int anim_politica_reduzida;
+// Control Center hold fill (central.c), sem segurar aqui.
+float central_segurar_progresso(Uint32 a) { (void)a; return 0.0f; }
+void  central_segurar_desenhar(GfxRect r, float ra, float a, Uint32 ag) {
+  (void)r; (void)ra; (void)a; (void)ag;
+}
 static float escalaUi = 1.0f;
 float gfx_escala_ui(void) { return escalaUi; }
 static int medidor = 0;
@@ -28,6 +33,8 @@ int txt_largura(TxtEstilo e, const char *s) { (void)e; return (int)strlen(s) * 1
 TxtLinha txt_linha(TxtEstilo e, const char *s, int r, int g, int b, int a) {
   TxtLinha l;
   (void)e; (void)r; (void)g; (void)b; (void)a;
+  // Idle UI frames must not be mistaken for the hardware video's frame rate.
+  if (strstr(s, "fps")) assert(strcmp(s, "5 UI fps") == 0);
   memset(&l, 0, sizeof l);
   l.w = (int)strlen(s) * 10; l.h = 18;
   return l;
@@ -41,7 +48,7 @@ int main(void) {
   medidor = DS_MINIMO;
   assert(desempenho_forma() == DS_DESLIGADO);   // sem amostra: nada muda
   assert(fabsf(ilha_relogio_largura() - base) < 0.01f);
-  desempenho_amostra(60.0f, 3.2f, 0, 120, 64.0f, 4, 0, 0, 220.0f);
+  desempenho_amostra(5.0f, 3.2f, 0, 120, 64.0f, 4, 0, 0, 220.0f);
   // Minimo: a linha inteira (fps + pior quadro + RAM) entra na reserva.
   assert(desempenho_forma() == DS_MINIMO);
   dw = desempenho_linha_w(DS_MINIMO);

@@ -129,7 +129,7 @@ int main(void) {
       "\"poster_card_width_dp\":{\"type\":\"int\",\"value\":132},"
       "\"continue_watching_card_style\":{\"type\":\"string\",\"value\":\"WIDE\"}}}}");
     n = ajustes_mesclar_blob(BASE, &saida);
-    confere("tres chaves reescritas", n, 3);
+    confere("three web keys plus portable section", n, 4);
     if (saida) {
       confere("booleano local sobe",
               strstr(saida, "\"hero_section_enabled\":{\"type\":\"boolean\",\"value\":true}") != NULL, 1);
@@ -157,8 +157,11 @@ int main(void) {
     n = ajustes_mesclar_blob(
       "{\"features\":{\"layout_settings\":{"
       "\"hero_section_enabled\":{\"type\":\"boolean\",\"value\":true}}}}", &saida);
-    confere("sem diferenca -> nada a subir", n, 0);
-    confere("e sem saida alocada", saida == NULL, 1);
+    confere("portable section seeded", n, 1);
+    char *same = NULL;
+    confere("same complete snapshot needs no push", ajustes_mesclar_blob(saida, &same), 0);
+    confere("no duplicate output", same == NULL, 1);
+    free(saida); saida = NULL;
 
     // Blob vazio/ausente: sem base nao ha costura (a trava 1 do empurrarAjustes).
     confere("sem base -> 0", ajustes_mesclar_blob(NULL, &saida), 0);
@@ -171,7 +174,8 @@ int main(void) {
       "{\"features\":{\"layout_settings\":{"
       "\"resolucaoUi\":{\"type\":\"int\",\"value\":0},"
       "\"texturas_mb\":{\"type\":\"int\",\"value\":0}}}}", &saida);
-    confere("ajuste de aparelho fica local", n, 0);
+    confere("only portable section added", n, 1);
+    confere("device value untouched", saida && strstr(saida, "\"resolucaoUi\":{\"type\":\"int\",\"value\":0}") != NULL, 1);
     free(saida); }
 
   // --- TRAILER DO CARTAZ EM FOCO: TRES MODOS AQUI, UM BOOLEANO NA CONTA -----
@@ -209,14 +213,14 @@ int main(void) {
     // O ultimo caso deixou No card: true da conta mantem o modo; sobe true.
     ajustes_aplicar_blob(CONTA_LIGADO);
     confere("conta true mantem No card", ajustes_trailer_cartaz(), AJ_TRAILER_CARTAZ_CARD);
-    confere("No card sobe true", ajustes_mesclar_blob(CONTA_DESLIGADO, &saida), 1);
+    confere("card mode plus portable section", ajustes_mesclar_blob(CONTA_DESLIGADO, &saida), 2);
     confere("  e o valor e true", saida && strstr(saida, "\"value\":true") != NULL, 1);
     free(saida); saida = NULL;
     ajustes_aplicar_blob(CONTA_DESLIGADO);
     confere("conta false -> Desligado", ajustes_trailer_cartaz(), AJ_TRAILER_CARTAZ_DESLIGADO);
     ajustes_aplicar_blob(CONTA_LIGADO);
     confere("conta true sobre Desligado -> Tela cheia", ajustes_trailer_cartaz(), AJ_TRAILER_CARTAZ_CHEIA);
-    confere("Tela cheia igual a conta true: nada sobe", ajustes_mesclar_blob(CONTA_LIGADO, &saida), 0);
+    confere("same web trailer seeds portable section", ajustes_mesclar_blob(CONTA_LIGADO, &saida), 1);
     free(saida);
     unlink(cam); rmdir(dir); }
 
@@ -243,8 +247,8 @@ int main(void) {
     ajustes_aplicar_blob(CONTA_JADE);
     confere("JADE da conta nao desfaz o dinamico", ajustes_cor_viva(), 1);
     n = ajustes_mesclar_blob(CONTA_JADE, &saida);
-    confere("dinamico nao sobe (nada a costurar)", n, 0);
-    confere("e o JADE da conta fica", saida == NULL, 1);
+    confere("dynamic theme stored in C section", n, 1);
+    confere("web JADE preserved", saida && strstr(saida, "\"value\":\"JADE\"") != NULL, 1);
     free(saida); saida = NULL;
     // Tema FIXO aqui: a conta volta a mandar, e a subida volta a valer.
     f = fopen(cam, "w");
@@ -258,7 +262,7 @@ int main(void) {
     n = ajustes_mesclar_blob(
       "{\"features\":{\"theme_settings\":{"
       "\"selected_theme\":{\"type\":\"string\",\"value\":\"OCEAN\"}}}}", &saida);
-    confere("tema fixo sobe", n, 1);
+    confere("fixed web theme plus portable section", n, 2);
     confere("...como JADE", saida && strstr(saida, "\"value\":\"JADE\"") != NULL, 1);
     free(saida);
     snprintf(cam, sizeof cam, "rm -rf '%s'", dir);

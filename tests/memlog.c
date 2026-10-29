@@ -46,8 +46,9 @@ int main(void) {
   assert(!strcmp(logbuf, "[mem] load mem=230.0/300.0MB\n"));
   *logbuf = 0;
   meminfo = "MemAvailable: 153600 kB\n"; // 150 MB exatos nao avisam.
+  assert(!memlog_pouca_memoria());
   memlog_amostra(s, sizeof s); assert(!*logbuf);
-  meminfo = "MemAvailable: 153599 kB\n";
+  meminfo = "MemAvailable: 153599 kB\n"; assert(memlog_pouca_memoria());
   memlog_amostra(s, sizeof s);
   assert(strstr(logbuf, "[mem] aviso MemAvailable<150MB mem=230.0/150.0MB\n"));
   *logbuf = 0;

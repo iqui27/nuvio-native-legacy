@@ -57,6 +57,25 @@ int main(void) {
   valor[AJ_TRAILER_FONTE] = 3;
   assert(ajustes_trailer_fonte() == 0);
 
+  // VETO INVISIVEL (herotrailer, 2.0.5): a linha "Trailer no destaque" fica
+  // Ligada e a home nao toca nada — SEGURO ou a GPU vetada tiram o efetivo sem
+  // mexer no gravado. ajustes_trailer_hero_vetado() diz qual e o veto para a
+  // ajuda da linha e para o log do portao.
+  valor[AJ_HERO_TRAILER] = 0;              // Ligado (V_LIGA: 0 = ligado)
+  valor[AJ_FOCO_TRAILER] = AJ_TRAILER_CARTAZ_DESLIGADO;
+  assert(ajustes_trailer_hero() == 1);
+  assert(ajustes_trailer_hero_vetado() == 0);
+  ajustes_trailer_hero_vetar("Mali-450");
+  assert(ajustes_trailer_hero() == 0);
+  assert(ajustes_trailer_hero_vetado() == 2);
+  // Desligado de verdade: o veto nao conta (a linha diz Desligado, pronto).
+  valor[AJ_HERO_TRAILER] = 1;
+  assert(ajustes_trailer_hero_vetado() == 0);
+  // O cartaz em foco ligado sozinho tambem acusa o veto.
+  valor[AJ_FOCO_TRAILER] = AJ_TRAILER_CARTAZ_CHEIA;
+  assert(ajustes_trailer_hero_vetado() == 2);
+  valor[AJ_FOCO_TRAILER] = AJ_TRAILER_CARTAZ_DESLIGADO;
+
   unlink(caminho);
   rmdir(dir);
   printf("ajustes_trailer_fonte: ok\n");

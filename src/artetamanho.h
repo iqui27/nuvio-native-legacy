@@ -37,4 +37,16 @@
 // teto maior que a maior variante, `limite` <= 0, `saida` pequena).
 int arte_tamanho_url(const char *url, int limite, char *saida, size_t tam);
 
+// Tizen: o card pede o fundo small (480x270) do metahub? No Padrao ate o teto
+// 640 (#72); na qualidade Alta so ate 480, que e o que o small realmente cobre.
+int arte_tamanho_fundo_pequeno(int limite, int qualidadeAlta);
+
+// Qualidade de imagem (0 Baixa, 1 Padrao, 2 Alta). Na Alta, TMDB w342 sobe a
+// w500/w780 e w780 a w1280 quando o teto do pedido e maior que o guardado.
+void arte_tamanho_qualidade(int nivel);
+
+// Largura do cartaz do TMDB quando nao ha teto de pedido (reserva): 342, ou 780
+// na Alta.
+int arte_tamanho_poster_w(void);
+
 #endif

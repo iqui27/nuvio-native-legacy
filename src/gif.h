@@ -41,6 +41,10 @@ int gif_pode_animar(void);
 #define GIF_SEM_TETO ((size_t)-1)
 size_t gif_orcamento_para(double memGB);
 size_t gif_custo(int quadros, int telaW, int telaH, int nominalMs);
+// Camera lenta para caber no orcamento (#589): 1.0 se ja cabe (ou sem teto);
+// custo/orc ate GIF_ESTICA_MAX; 0.0 = pesado demais, fica o primeiro quadro.
+#define GIF_ESTICA_MAX 2.0
+double gif_estica(size_t custo, size_t orc);
 
 // Chamar UMA VEZ POR QUADRO de tela (main.c). Solta a animacao corrente
 // quando ninguem pediu gif_textura ha mais de NV_GIF_OCIOSO_MS: e o que

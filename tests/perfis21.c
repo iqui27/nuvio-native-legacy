@@ -28,6 +28,9 @@
 #include "nvtmp.h"
 void servidores_perfil_trocou(void) {}
 void plugins_perfil_mudou(void) {}
+void trava_invalidar_autorizacoes(void) {}
+int perfil_regra_tempo(float seconds) { (void)seconds; return 0; }
+void audiomem_definir_perfil(int p) { (void)p; }
 
 // --- pasta de dados de mentira (o mesmo molde do tests/perfilsel.c) ----------
 static const char *pasta(void) {
@@ -68,9 +71,17 @@ static int addonsDoPrincipal = 1;
 int ajustes_addons_do_principal(void) { return addonsDoPrincipal; }
 
 const char *sessao_usuario(void) { return "usuario-de-teste"; }
+int sessao_identidade_local_copiar(char *usuario, size_t nUsuario, char *jwt, size_t nJwt) {
+  snprintf(usuario, nUsuario, "%s", sessao_usuario());
+  snprintf(jwt, nJwt, "test-token");
+  return 1;
+}
+void sessao_token_recusado(const char *tok) { (void)tok; assert(0); }
+char *sessao_rpc(const char *funcao, const char *corpoJson, int *status);
 const char *nuvem_url(void) { return "https://exemplo.invalido"; }
 char *nuvem_rpc_com(const char *f, const char *c, const char *b, int *s) {
-  (void)f; (void)c; (void)b; if (s) *s = 0; return NULL;
+  if (b) { assert(!strcmp(b, "test-token")); return sessao_rpc(f, c, s); }
+  if (s) *s = 0; return NULL;
 }
 
 // O "servidor" da vez. pushCorpo guarda o corpo de sync_push_profiles e

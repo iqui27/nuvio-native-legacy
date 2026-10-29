@@ -8,6 +8,10 @@
 #include "../src/cacheboost.h"
 #include "../src/dts/dts_overlay.h"
 int cacheboost_ganho_estado(void) { return 0; }
+int dados_gravar(const char *nome, const char *conteudo) {
+  (void)nome; (void)conteudo;
+  return 1;
+}
 int dts_overlay_draw(DtsPlayback *p, double seconds, float x, float y,
                      float w, float h, int video_w, int video_h, float alpha) {
   (void)p; (void)seconds; (void)x; (void)y; (void)w; (void)h; (void)video_w; (void)video_h; (void)alpha;

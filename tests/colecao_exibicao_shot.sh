@@ -26,8 +26,9 @@ if ! cc "${sources[@]}" tests/colecao_exibicao_shot.c -Isrc -o "$NUVIO_DADOS/sho
   exit 1
 fi
 grep -E "colecao_exibicao|vertudo\.c" "$NUVIO_DADOS/build.log" || true
-"$NUVIO_DADOS/shot" "$saida/c"
-for f in "$saida"/c-*.bmp; do
+prefix="${NUVIO_SHOT_PREFIX:-c}"
+"$NUVIO_DADOS/shot" "$saida/$prefix"
+for f in "$saida"/"$prefix"-*.bmp; do
   [ -e "$f" ] || continue
   sips -s format png "$f" --out "${f%.bmp}.png" >/dev/null 2>&1 && rm -f "$f"
 done

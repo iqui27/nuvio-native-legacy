@@ -111,9 +111,10 @@ RPS=${MKVASS_TESTE_RPS:-12}
 # pausa e o retorno da leitura ainda acontecem, so que em milissegundos.
 # Janela da VARREDURA em 30 s (padrao 120) para a fixture de 120 s poder
 # provar que os bytes lidos sao proporcionais a janela, nao ao arquivo.
-cc -Isrc -DMKVASS_VARRE_JANELA_SEG=30.0 -DMKVASS_RANGES_POR_SEG=$RPS -DMKVASS_TESTE_ESCALA=${MKVASS_TESTE_ESCALA:-3}.0 \
+. tests/mkvcore_flag.sh
+cc ${MKVCORE_CC[@]+"${MKVCORE_CC[@]}"} -Isrc -DMKVASS_VARRE_JANELA_SEG=30.0 -DMKVASS_RANGES_POR_SEG=$RPS -DMKVASS_TESTE_ESCALA=${MKVASS_TESTE_ESCALA:-3}.0 \
   -DMKVASS_PAUSA_CDN_INI_MS=150L -DMKVASS_PAUSA_CDN_MAX_MS=600L \
-  -DMKVASS_RECUO_INI_MS=20L -DMKVASS_RECUO_MAX_MS=160L tests/mkvass.c src/mkvass.c src/assrender.c src/legenda.c src/rede.c src/redeurl.c src/dados.c src/mkv.c \
+  -DMKVASS_RECUO_INI_MS=20L -DMKVASS_RECUO_MAX_MS=160L tests/mkvass.c src/mkvass.c src/imgsub.c src/pgs.c src/assrender.c src/legenda.c src/rede.c src/redeurl.c src/dados.c src/mkv.c \
   -o ${TMPDIR:-/tmp}/nuvio-mkvass-tests -O1 -g -Wall -I/opt/homebrew/include \
   -Wno-deprecated-declarations
 mkdir -p "$DIR/dados"
@@ -142,3 +143,6 @@ PYHASH
   [ -n "$SC" ] || { echo "mkvass.sh: nenhum sidecar completo para conferir no libass"; exit 1; }
   ${TMPDIR:-/tmp}/nuvio-ass-tempos-test "$DIR/ref.ass" "$SC"
 fi
+
+# #483: Tracks alem da janela da sonda (remux remontado).
+bash tests/mkv_tracks_relayout.sh

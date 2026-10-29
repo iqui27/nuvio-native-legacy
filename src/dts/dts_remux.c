@@ -1,6 +1,7 @@
-/* DTS / TrueHD -> Dolby Digital remux for the Samsung .tpk. See dts_remux.h.
+/* DTS / TrueHD -> Dolby Digital remux for the Samsung .tpk. See dts_remux.h and
+ * docs/features/dts/README.md.
  *
- * Design rules kept here:
+ * What the PC prototype proved on the host, kept here:
  *  - VIDEO is never decoded: packets go to the muxer byte for byte. Matroska
  *    stores PTS only and there is no software video decoder to learn the
  *    reorder depth, so DTS = min(pts[n..n+LOOK]) - LOOK*frame, from an 8-packet
@@ -34,6 +35,14 @@
 /* Real code only in the Samsung .tpk build with FFmpeg (and the host smoke
  * test). webOS also defines NV_DTS_FFMPEG but never remuxes: stubs there keep
  * its binary as it was. */
+#include "../audsync.h"
+#include <stdatomic.h>
+static atomic_int audioOffsetMs;
+void dts_remux_set_audio_offset_ms(int ms) { atomic_store(&audioOffsetMs, audsync_offset_ms(ms)); }
+/* #605 exists in both builds so the callers need no ifdef. */
+static atomic_int gHdr10pStrip;
+void dts_remux_set_hdr10p_strip(int on) { atomic_store(&gHdr10pStrip, !!on); }
+
 #if !defined(NV_DTS_FFMPEG) || !(defined(NV_TPK) || defined(NV_DTS_REMUX_TEST))
 int dts_remux_available(void) { return 0; }
 DtsRemux *dts_remux_open(const char *u, const char *h, int t, int s, double g, volatile int *c, char *err, size_t n) {
@@ -41,12 +50,17 @@ DtsRemux *dts_remux_open(const char *u, const char *h, int t, int s, double g, v
   if (err && n) snprintf(err, n, "converter not built");
   return NULL;
 }
+DtsRemux *dts_remux_new(volatile int *c) { (void)c; return NULL; }
+int dts_remux_probe(DtsRemux *r, const char *u, const char *h, int t, int s, double g, char *err, size_t n) {
+  (void)r; (void)u; (void)h; (void)t; (void)s; (void)g;
+  if (err && n) snprintf(err, n, "converter not built");
+  return -1;
+}
 const DtsRemuxInfo *dts_remux_info(const DtsRemux *r) { (void)r; return NULL; }
 double dts_remux_segment_start(const DtsRemux *r, int s) { (void)r; (void)s; return 0; }
 double dts_remux_segment_duration(const DtsRemux *r, int s) { (void)r; (void)s; return 0; }
 int dts_remux_segment_at(const DtsRemux *r, double t) { (void)r; (void)t; return -1; }
 double dts_remux_keyframe_before(const DtsRemux *r, double t) { (void)r; return t; }
-void dts_remux_resegment(DtsRemux *r, double t) { (void)r; (void)t; }
 void dts_remux_cancel(DtsRemux *r) { (void)r; }
 void dts_remux_close(DtsRemux *r) { (void)r; }
 DtsRemuxGen *dts_remux_gen_new(DtsRemux *r, char *err, size_t n) {
@@ -71,6 +85,7 @@ void dts_remux_set_queue_budget_mib(int mib) { (void)mib; }
 #include <pthread.h>
 #include <stdatomic.h>
 #include <sys/resource.h>
+#include "hdr10plus.h"
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include <libavutil/audio_fifo.h>
@@ -85,10 +100,15 @@ void dts_remux_set_queue_budget_mib(int mib) { (void)mib; }
 #define MAX_GAP_S 5              /* longer audio holes skip ahead instead of padding */
 #define TS_OFFSET_S 10           /* fixed output offset (design 2.2-4) */
 #define VQ_MAX_BYTES (192u << 20)
-#define AQ_MAX_BYTES (16u << 20)  /* ~200 s of AC3 5.1 640 kb/s; audio runs seconds, not minutes, ahead */
-#define AQ_MAX_PKTS  16384
-#define VQ_MAX_PKTS  (1 << 18)
-#define QUEUE_BUDGET_MIB 192      /* video + audio queued, all generators together (dts_remux_set_queue_budget_mib) */
+#define AQ_MAX_BYTES (16u << 20)
+#define AQ_MAX_PKTS 16384
+#define VQ_MAX_PKTS (1 << 18)
+#define QUEUE_BUDGET_MIB 192
+/* Encoded audio waiting for its video: in a sane file well under a segment.
+ * Audio interleaved this far ahead of its video (or video gone while the audio
+ * goes on) fails the run instead of growing until the TV runs out of memory:
+ * 60 s is 4.8 MB of AC3 640k. */
+#define AQ_MAX_S 60
 #define ENGINES_MAX 8
 #define UNSET INT64_MIN
 #define GRID_LAZY (INT64_MIN + 1) /* b48: the grid starts at the first audio (seek by time) */
@@ -119,32 +139,37 @@ static void logInit(void) { av_log_set_callback(avLog); }
 
 typedef struct { AVPacket *p; int seg; } QPkt;
 typedef struct { QPkt *v; int n, cap; size_t bytes; } Q;
-static atomic_size_t gQueued;                       /* bytes in every generator's queues */
+
+static atomic_size_t gQueued;
 static atomic_size_t gBudget = (size_t)QUEUE_BUDGET_MIB << 20;
 void dts_remux_set_queue_budget_mib(int mib) {
   if (mib >= 32 && mib <= 512) atomic_store(&gBudget, (size_t)mib << 20);
 }
-/* 0 = room for `add` bytes in `q` (cap for the queue's kind); else the reason, as text. */
 static const char *qFull(const Q *q, size_t add, int video) {
-  switch (dtsQcapAdmit(q->bytes, q->n, add, video ? VQ_MAX_BYTES : AQ_MAX_BYTES, video ? VQ_MAX_PKTS : AQ_MAX_PKTS,
-                       &gQueued, atomic_load(&gBudget))) {
-    case DTS_QCAP_BYTES:  return video ? "Video queue full (audio missing?)" : "Audio queue full (video missing?)";
-    case DTS_QCAP_PKTS:   return video ? "Video queue: too many packets" : "Audio queue: too many packets";
+  switch (dtsQcapAdmit(q->bytes, q->n, add, video ? VQ_MAX_BYTES : AQ_MAX_BYTES,
+                       video ? VQ_MAX_PKTS : AQ_MAX_PKTS, &gQueued, atomic_load(&gBudget))) {
+    case DTS_QCAP_BYTES: return video ? "Video queue full (audio missing?)" : "Audio queue full (video missing?)";
+    case DTS_QCAP_PKTS: return "Queue packet limit reached";
     case DTS_QCAP_BUDGET: return "Queue memory budget reached";
     default: return NULL;
   }
 }
-
-static int qPush(Q *q, AVPacket *p, int seg) {
+static int qPush(Q *q, AVPacket *p, int seg, int video) {
+  if (qFull(q, (size_t)p->size, video)) return -1;
+  /* Reserve atomically: parallel generators must not both admit the last bytes. */
+  size_t total = atomic_load(&gQueued), add = (size_t)p->size;
+  do {
+    size_t budget = atomic_load(&gBudget);
+    if (total > budget || add > budget - total) return -1;
+  } while (!atomic_compare_exchange_weak(&gQueued, &total, total + add));
   if (q->n == q->cap) {
     int cap = q->cap ? q->cap * 2 : 64;
     QPkt *v = realloc(q->v, (size_t)cap * sizeof *v);
-    if (!v) return -1;
+    if (!v) { atomic_fetch_sub(&gQueued, add); return -1; }
     q->v = v; q->cap = cap;
   }
   q->v[q->n].p = p; q->v[q->n].seg = seg; q->n++;
   q->bytes += (size_t)p->size;
-  atomic_fetch_add(&gQueued, (size_t)p->size);
   return 0;
 }
 static AVPacket *qPop(Q *q) {
@@ -165,6 +190,7 @@ struct DtsRemux {
   char *url, *headers;
   DtsEngine *probe;                 /* reader of dts_remux_open, handed to the 1st generator */
   int vs, as, mov, stereo_aac;
+  int audio_offset_ms;             /* stable across this source's segments and seeks */
   AVCodecParameters *vpar, *apar;
   AVRational vtb, atb, vfps;
   char lang[16];
@@ -297,6 +323,22 @@ static int dts_remux_hevc_annexb(const uint8_t *hvccB, int hvccBN, int lenSize,
   memset(*out + k, 0, AV_INPUT_BUFFER_PADDING_SIZE);
   return k;
 }
+/* #605: HDR10+ dynamic SEI strip of one Annex-B HEVC packet. Allocates the
+ * output (AV_INPUT_BUFFER_PADDING_SIZE included, hevcFix pattern); returns
+ * the size written, 0 unchanged (nothing to strip), -1 malformed. */
+static int dts_remux_hdr10p_annexb(const uint8_t *d, int n, uint8_t **out) {
+  size_t w = 0;
+  *out = NULL;
+  if (n <= 0) return 0;
+  uint8_t *buf = av_malloc((size_t)n + AV_INPUT_BUFFER_PADDING_SIZE);
+  if (!buf) return -1;
+  if (nv_hdr10plus_annexb(d, (size_t)n, buf, (size_t)n, &w) < 0) { av_free(buf); return -1; }
+  if (!w || w == (size_t)n) { av_free(buf); return 0; }
+  memset(buf + w, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+  *out = buf;
+  return (int)w;
+}
+
 /* hvcC -> its NAL arrays in Annex B (what hevc_mp4toannexb prepends).
  * 1 done, 0 not an hvcC, -1 malformed. */
 static int hvccAnnexB(const uint8_t *x, int xn, uint8_t **out, int *outN, int *lenSize) {
@@ -397,29 +439,51 @@ static void buildSegments(DtsRemux *r, double target) {
   }
 }
 
+DtsRemux *dts_remux_new(volatile int *cancel) {
+  DtsRemux *r = calloc(1, sizeof *r);
+  if (!r) return NULL;
+  pthread_mutex_init(&r->lock, NULL);
+  r->vs = r->as = -1;
+  r->extCancel = cancel;
+  r->audio_offset_ms = atomic_load(&audioOffsetMs);
+  return r;
+}
+
+static int isCancelled(DtsRemux *r) {
+  int c;
+  pthread_mutex_lock(&r->lock);
+  c = r->cancelled || (r->extCancel && *r->extCancel);
+  pthread_mutex_unlock(&r->lock);
+  return c;
+}
+
 DtsRemux *dts_remux_open(const char *url, const char *headers, int ordinal, int stereoAac,
                          double segTarget, volatile int *cancel, char *err, size_t errn) {
-  DtsRemux *r;
+  DtsRemux *r = dts_remux_new(cancel);
+  if (!r) { fail(err, errn, "Out of memory", 0); return NULL; }
+  if (dts_remux_probe(r, url, headers, ordinal, stereoAac, segTarget, err, errn) < 0) { dts_remux_close(r); return NULL; }
+  return r;
+}
+
+int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordinal, int stereoAac,
+                    double segTarget, char *err, size_t errn) {
   AVFormatContext *ic;
-  int rr, nAudio = 0, ordAs = -1, ordPedido = -1, primeiro = -1, primeiroOrd = -1;
+  int nAudio = 0, ordAs = -1, ordPedido = -1, primeiro = -1, primeiroOrd = -1;
   pthread_once(&logOnce, logInit);
   atomic_store(&logBudget, 40);
   if (err && errn) err[0] = 0;
-  if (!url || !*url) { fail(err, errn, "No source", 0); return NULL; }
-  r = calloc(1, sizeof *r);
-  if (!r) { fail(err, errn, "Out of memory", 0); return NULL; }
-  pthread_mutex_init(&r->lock, NULL);
-  r->extCancel = cancel;
+  if (!r) { fail(err, errn, "No converter", 0); return -1; }
+  if (!url || !*url) { fail(err, errn, "No source", 0); return -1; }
   r->stereo_aac = stereoAac;
-  r->vs = r->as = -1;
   r->url = strdup(url); r->headers = strdup(headers ? headers : "");
   r->probe = dts_engine_create();
   if (!r->url || !r->headers || !r->probe) { fail(err, errn, "Out of memory", 0); goto bad; }
-  dts_engine_set_cancel(r->probe, cancel);
-  registerEngine(r, r->probe);
-  if (cancel && *cancel) { fail(err, errn, "Cancelled", 0); goto bad; }
+  registerEngine(r, r->probe);   /* cancelled already: cancels it at once */
+  if (isCancelled(r)) { fail(err, errn, "Cancelled", 0); goto bad; }
   if (dts_engine_open_demux(r->probe, r->url, r->headers) < 0) {
-    fail(err, errn, dts_engine_error(r->probe), 0); goto bad;
+    if (isCancelled(r)) fail(err, errn, "Cancelled", 0);
+    else fail(err, errn, dts_engine_error(r->probe), 0);
+    goto bad;
   }
   ic = dts_engine_avformat(r->probe);
   r->mov = ic->iformat && strstr(ic->iformat->name, "mov") != NULL;
@@ -500,8 +564,8 @@ DtsRemux *dts_remux_open(const char *url, const char *headers, int ordinal, int 
     in->mp4 = r->mov;
     /* Matroska parses Cues only on the first seek (design 2.2-6). */
     int64_t t0 = V->start_time != AV_NOPTS_VALUE ? V->start_time : 0;
-    rr = avformat_seek_file(ic, r->vs, INT64_MIN, t0, t0, AVSEEK_FLAG_BACKWARD);
-    if (rr < 0 && cancel && *cancel) { fail(err, errn, "Cancelled", 0); goto bad; }
+    avformat_seek_file(ic, r->vs, INT64_MIN, t0, t0, AVSEEK_FLAG_BACKWARD);
+    if (isCancelled(r)) { fail(err, errn, "Cancelled", 0); goto bad; }
     int n = avformat_index_get_entries_count(V);
     r->kf = n > 0 ? malloc((size_t)n * sizeof *r->kf) : NULL;
     for (int i = 0; i < n && r->kf; i++) {
@@ -523,10 +587,15 @@ DtsRemux *dts_remux_open(const char *url, const char *headers, int ordinal, int 
     in->n_segments = r->nseg;
     in->size_bytes = dts_engine_size(r->probe);
   }
-  return r;
+  return 0;
 bad:
-  dts_remux_close(r);
-  return NULL;
+  /* The reader goes now (its connection with it); the caller closes r. */
+  if (r->probe) {
+    DtsEngine *e = r->probe;
+    r->probe = NULL;
+    dts_engine_cancel(e); unregisterEngine(r, e); dts_engine_destroy(e);
+  }
+  return -1;
 }
 
 const DtsRemuxInfo *dts_remux_info(const DtsRemux *r) { return r ? &r->info : NULL; }
@@ -552,14 +621,6 @@ double dts_remux_keyframe_before(const DtsRemux *r, double t) {
   int k = floorIdx(r->kf, r->nkf, want);
   double s = (k >= 0 ? r->kf[k] : r->kf[0]) * av_q2d(r->vtb);
   return s < 0 ? 0 : s;
-}
-
-void dts_remux_resegment(DtsRemux *r, double target) {
-  if (!r || r->nkf < 1) return;
-  free(r->segTs); free(r->segB48); free(r->segS);
-  r->segTs = r->segB48 = NULL; r->segS = NULL;
-  buildSegments(r, target > 0.5 ? target : 6.0);
-  r->info.n_segments = r->nseg;
 }
 
 void dts_remux_cancel(DtsRemux *r) {
@@ -631,7 +692,6 @@ DtsRemuxGen *dts_remux_gen_new(DtsRemux *r, char *err, size_t errn) {
     double t0 = now_s(CLOCK_MONOTONIC);
     g->eng = dts_engine_create();
     if (!g->eng) { fail(err, errn, "Out of memory", 0); free(g); return NULL; }
-    dts_engine_set_cancel(g->eng, r->extCancel);
     registerEngine(r, g->eng);
     if (dts_engine_open_demux(g->eng, r->url, r->headers) < 0) {
       fail(err, errn, dts_engine_error(g->eng), 0); dts_remux_gen_free(g); return NULL;
@@ -767,11 +827,14 @@ static int drainEncoder(DtsRemuxGen *g, char *err, size_t errn) {
     if (rr == AVERROR(EAGAIN)) return 0;
     if (rr == AVERROR_EOF) { g->encEof = 1; return 0; }
     if (rr < 0) { fail(err, errn, "Audio encode", rr); return -1; }
+    if ((int64_t)(g->aq.n + 1) * g->frame > (int64_t)AQ_MAX_S * 48000) {
+      av_packet_unref(g->op); fail(err, errn, "Audio queue over 60 s (video missing?)", 0); return -1;
+    }
     { const char *why = qFull(&g->aq, (size_t)g->op->size, 0);
-      if (why) { av_packet_unref(g->op); fail(err, errn, why, 0); return -1; } }
+      if (why) { fail(err, errn, why, 0); return -1; } }
     AVPacket *p = av_packet_clone(g->op);
     av_packet_unref(g->op);
-    if (!p || qPush(&g->aq, p, tagAudio(g, p->pts)) < 0) { av_packet_free(&p); fail(err, errn, "Out of memory", 0); return -1; }
+    if (!p || qPush(&g->aq, p, tagAudio(g, p->pts), 0) < 0) { av_packet_free(&p); fail(err, errn, "Out of memory", 0); return -1; }
   }
 }
 
@@ -998,13 +1061,18 @@ static int videoPacket(DtsRemuxGen *g, AVPacket *p, char *err, size_t errn) {
   AVPacket *c = av_packet_alloc();
   if (!c) { fail(err, errn, "Out of memory", 0); return -1; }
   av_packet_move_ref(c, p);
-  if (qPush(&g->vq, c, g->vseg) < 0) { av_packet_free(&c); fail(err, errn, "Out of memory", 0); return -1; }
+  if (qPush(&g->vq, c, g->vseg, 1) < 0) { av_packet_free(&c); fail(err, errn, "Out of memory", 0); return -1; }
   return 0;
 }
 
 static int writePkt(DtsRemuxGen *g, AVPacket *p, AVRational tb, AVStream *os, DtsRemuxStats *st, int video) {
   int rr;
   av_packet_rescale_ts(p, tb, os->time_base);
+  if (!video && g->src->audio_offset_ms) {
+    int64_t shift = av_rescale_q(g->src->audio_offset_ms, (AVRational){1, 1000}, os->time_base);
+    if (p->pts != AV_NOPTS_VALUE) p->pts += shift;
+    if (p->dts != AV_NOPTS_VALUE) p->dts += shift;
+  }
   p->stream_index = os->index;
   rr = av_interleaved_write_frame(g->oc, p);
   av_packet_free(&p);
@@ -1066,6 +1134,24 @@ static int emitVideo(DtsRemuxGen *g, int target, DtsRemuxStats *st, char *err, s
         p->buf = b; p->data = b->data; p->size = nn;
       }
       /* nn <= 0: left as is; the muxer's own filter converts it, as before */
+    }
+    /* #605: HDR10+ dynamic SEI out of the HEVC the TV decodes. Annex-B only
+     * (dts_remux_hevc_annexb above or the Matroska source itself); a packet
+     * the filters could not rewrite is left untouched, like hevcFix. */
+    if (atomic_load(&gHdr10pStrip) && g->src->vpar->codec_id == AV_CODEC_ID_HEVC &&
+        p->size >= 4 && !p->data[0] && !p->data[1] && (p->data[2] == 1 || (!p->data[2] && p->data[3] == 1))) {
+      uint8_t *nb = NULL;
+      int nn = dts_remux_hdr10p_annexb(p->data, p->size, &nb);
+      if (nn > 0) {
+        AVBufferRef *b = av_buffer_create(nb, (size_t)nn + AV_INPUT_BUFFER_PADDING_SIZE, av_buffer_default_free, NULL, 0);
+        if (!b) { av_free(nb); av_packet_free(&p); fail(err, errn, "Out of memory", 0); return -1; }
+        av_buffer_unref(&p->buf);
+        p->buf = b; p->data = b->data; p->size = nn;
+      } else if (nn < 0) {
+        static atomic_int warned;
+        if (!atomic_exchange(&warned, 1))
+          printf("[dts-tpk] HDR10+ strip: packet left untouched (malformed)\n");
+      }
     }
     int rr = writePkt(g, p, g->src->vtb, g->ov, st, 1);
     if (rr < 0) { fail(err, errn, g->wfail ? "Client closed" : "Mux video", rr); return g->wfail ? -2 : -1; }

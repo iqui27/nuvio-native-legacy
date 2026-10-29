@@ -33,12 +33,18 @@ static void caso(const char *nome, const char *id, const int (*iv)[2], int n) {
   epg_teste_limpar();
   assert(epg_xml_processar(xml) > 0);
   free(xml);
-  memset(canais, 0, sizeof canais);
-  snprintf(canais[0].nome, sizeof canais[0].nome, "Canal Qualquer");
+  if (!canais) canais = calloc(1, sizeof *canais);
+  assert(canais);
+  memset(canais, 0, sizeof *canais);
+  canais[0].id = canais[0].base = canais[0].epgId = canais[0].tvgNome = "";
+  canais[0].nome = "Canal Qualquer";
   canais[0].epg = epg_match_id(id);
   assert(canais[0].epg >= 0);
   nCanais = 1;
+  if(!cats)cats=calloc(1,sizeof *cats);assert(cats);nCats=capCats=1;
+  cats[0]=(GCat){.nome="Programs",.fonte=0};nLtvF=1;ltvF[0].tipo=LTV_ADDON;ltvF[0].base="";strcpy(ltvF[0].chave,"fixture");
   buscaFazer("show");
+  while(buscaPendente.ativa)buscaPasso();
   printf("%s: %d programa(s)\n", nome, buscaNP);
   if (buscaNP != n) { printf("  FALHOU: esperava %d\n", n); falhas++; }
   for (k = 1; k <= n; k++) {

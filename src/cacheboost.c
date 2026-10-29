@@ -143,8 +143,21 @@ double cacheboost_volume_db(int pct) {
   return 20.0 * log10((double)pct / 100.0);
 }
 
+int cacheboost_buffer_mb(int opcao, long livreMb) {
+  int pedido = opcao >= 1 && opcao <= 3 ? 32 << opcao : 0, mb = pedido;
+  // DTS keeps one active 4 MiB range in addition to the queued buffer.
+  while (mb && (livreMb < 0 || livreMb - mb - 4 < CB_BUFFER_PISO_MB)) mb = mb > 64 ? mb / 2 : 0;
+  if (mb != pedido)
+    printf("[buffer] %d MiB pedido, %d MiB usado (livre %ld MiB, piso %d)\n", pedido, mb, livreMb, CB_BUFFER_PISO_MB);
+  return mb;
+}
+
 #ifndef NV_ANDROID
 void cacheboost_backend_ganho(int pct) { (void)pct; }
 void cacheboost_backend_cache(int mb) { (void)mb; }
-void cacheboost_backend_buffer(int preset) { (void)preset; }
+void cacheboost_backend_titulo(const char *id) { (void)id; }
+void cacheboost_backend_descartar(void) { }
+static volatile int bufferMb;
+void cacheboost_backend_buffer(int mb) { bufferMb = mb; }
+int cacheboost_backend_buffer_mb(void) { return bufferMb; }
 #endif

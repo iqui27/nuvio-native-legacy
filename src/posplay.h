@@ -27,6 +27,7 @@
 void posplay_atualizar(float dt, Uint32 agora, double posSeg, double durSeg,
                        int ehSerie, int idxCatalogo, int janelaSerie);
 int  posplay_visivel(void);
+int  posplay_aguarda_escolha(void); // pending choice/Next; false after dismissal
 int  posplay_sobre_video(void);   // 1 = cartao de proximo episodio sobre o video cheio
 // A regra do FILME sozinha, sem estado: 1 quando os relacionados devem subir.
 // `creditosSeg` e o marcador (0 = nenhum). Nunca antes da metade da duracao;
@@ -57,6 +58,12 @@ void posplay_fechar(void);
 // Recuo manual: cancela contagem e pedido automatico, mantendo o OK manual.
 // A contagem volta a valer ao sair da janela final ou abrir outro titulo.
 void posplay_recuar(void);
+// Inicio de busca explicita: revoga Next pendente e suspende novo preparo
+// ate a confirmacao pelo player. Nao marca recuo nem altera o OK manual.
+void posplay_busca_usuario(void);
+// Troca explicita pela barra: descarta contagem/pedido antigo, conservando o
+// worker independente. O roteador adota Next do mesmo alvo ou cancela outro.
+void posplay_troca_manual(void);
 // Seek automatico em voo: suspende so a contagem/pedido automatico. OK segue
 // disponivel; o player libera quando o video progride ou termina de verdade.
 void posplay_aguardar_busca(int aguardar);

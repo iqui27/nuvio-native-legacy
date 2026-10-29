@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns="http://www.w3.org/ns/widgets"
+        xmlns:tizen="http://tizen.org/ns/widgets"
+        id="http://nuvio.tv/tizen3lite"
+        version="2.0.8"
+        viewmodes="maximized">
+
+  <!-- Experimental asm.js package for the 2017 Tizen 3.0 web engine (M47).
+       It must never replace the normal WASM package: NuvioTV003 is separate. -->
+  <tizen:application id="NuvioTV003.NuvioLite"
+                     package="NuvioTV003"
+                     required_version="3.0"/>
+  <tizen:profile name="tv"/>
+
+  <name>Nuvio Lite Tizen 3</name>
+  <icon src="icon.png"/>
+  <content src="index.html"/>
+  <tizen:content-security-policy>
+    default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: *;
+    connect-src *; img-src * data: blob:; media-src *;
+  </tizen:content-security-policy>
+
+  <access origin="*" subdomains="true"/>
+  <tizen:allow-navigation>*</tizen:allow-navigation>
+
+  <tizen:privilege name="http://tizen.org/privilege/internet"/>
+  <tizen:privilege name="http://developer.samsung.com/privilege/productinfo"/>
+  <tizen:privilege name="http://tizen.org/privilege/appmanager.launch"/>
+  <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+  <tizen:privilege name="http://tizen.org/privilege/tv.audio"/>
+
+  <tizen:setting background-support="disable"
+                 screen-orientation="landscape"
+                 context-menu="disable"
+                 background-vibration="disable"
+                 encryption="disable"
+                 hwkey-event="enable"/>
+</widget>

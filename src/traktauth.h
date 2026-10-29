@@ -20,6 +20,7 @@
 // login da conta.
 #ifndef NV_TRAKTAUTH_H
 #define NV_TRAKTAUTH_H
+#include <stddef.h>
 
 typedef enum {
   TRA_PARADO = 0,
@@ -41,6 +42,7 @@ TraEstado   traktauth_estado(void);
 const char *traktauth_codigo(void);    // user_code, para exibir
 const char *traktauth_url(void);       // verification_url
 const char *traktauth_erro(void);
+int traktauth_aguardando(void);
 
 void traktauth_cancelar(void);
 
@@ -62,8 +64,15 @@ int  traktauth_carregar_perfil(int perfil);
 // gravando no arquivo do perfil que o pediu, nunca no novo.
 int  traktauth_trocar_perfil(int perfil);
 int  traktauth_perfil(void);
+// O token guardado NESTA TV para o perfil `p` (trakt-p<N>.txt), sem carregar
+// nem trocar nada. 1 quando ha token e ele nao venceu no papel (o refresh e so
+// do perfil ativo; vencido = 0 e o log diz). Trava de serie, modo Juntos.
+int  traktauth_token_de(int p, char *tok, size_t tam);
 
 // Esquece o vinculo de TODOS os perfis (chamado ao sair da conta).
 void traktauth_esquecer(void);
+// Disconnect only this profile; keep the local opt-out across account sync.
+void traktauth_desconectar(void);
+int traktauth_desconectado(void);
 
 #endif

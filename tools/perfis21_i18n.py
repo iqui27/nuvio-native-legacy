@@ -16,7 +16,7 @@ NOVAS = {
     "tr": "Profil ekle", "ptpt": "Adicionar perfil", "sv": "Lägg till profil",
     "da": "Tilføj profil", "no": "Legg til profil", "cs": "Přidat profil",
     "sk": "Pridať profil", "sl": "Dodaj profil", "hu": "Profil hozzáadása",
-    "lt": "Pridėti profilį", "bs": "Dodaj profil", "sr": "Додај профил",
+    "lt": "Pridėti profilį", "bs": "Dodaj profil", "sr": "Dodaj profil", "ar": "إضافة ملف شخصي",
     "bg": "Добави профил", "el": "Προσθήκη προφίλ", "id": "Tambah profil",
     "vi": "Thêm hồ sơ", "ja": "プロフィールを追加", "zhcn": "添加用户",
     "zhtw": "新增個人檔",
@@ -32,7 +32,7 @@ NOVAS = {
     "no": "Administrer profiler", "cs": "Spravovat profily",
     "sk": "Spravovať profily", "sl": "Upravljaj profile",
     "hu": "Profilok kezelése", "lt": "Tvarkyti profilius",
-    "bs": "Upravljaj profilima", "sr": "Управљај профилима",
+    "bs": "Upravljaj profilima", "sr": "Upravljaj profilima", "ar": "إدارة الملفات الشخصية",
     "bg": "Управление на профилите", "el": "Διαχείριση προφίλ",
     "id": "Kelola profil", "vi": "Quản lý hồ sơ", "ja": "プロフィールを管理",
     "zhcn": "管理用户", "zhtw": "管理個人檔",
@@ -59,7 +59,8 @@ NOVAS = {
     "hu": "%s eltávolítása? Az előrehaladása kikerül a fiókból.",
     "lt": "Pašalinti %s? Jo pažanga dingsta iš paskyros.",
     "bs": "Ukloniti %s? Njegov napredak izlazi iz računa.",
-    "sr": "Уклонити %s? Његов напредак излази из налога.",
+    "sr": "Ukloniti %s? Njegov napredak izlazi iz naloga.",
+    "ar": "هل تريد حذف %s؟ سيُحذف تقدمه من الحساب.",
     "bg": "Премахване на %s? Напредъкът му излиза от акаунта.",
     "el": "Αφαίρεση του %s; Η πρόοδός του φεύγει από τον λογαριασμό.",
     "id": "Hapus %s? Progresnya keluar dari akun.",
@@ -78,7 +79,7 @@ NOVAS = {
     "sv": "Profilstorlek", "da": "Profilstørrelse", "no": "Profilstørrelse",
     "cs": "Velikost profilů", "sk": "Veľkosť profilov",
     "sl": "Velikost profilov", "hu": "Profilok mérete",
-    "lt": "Profilių dydis", "bs": "Veličina profila", "sr": "Величина профила",
+    "lt": "Profilių dydis", "bs": "Veličina profila", "sr": "Veličina profila", "ar": "حجم الملفات الشخصية",
     "bg": "Размер на профилите", "el": "Μέγεθος προφίλ",
     "id": "Ukuran profil", "vi": "Kích thước hồ sơ", "ja": "プロフィールのサイズ",
     "zhcn": "用户尺寸", "zhtw": "個人檔大小",
@@ -105,7 +106,8 @@ NOVAS = {
     "hu": "Az avatarok mérete a profilkiválasztó képernyőn: kicsi, közepes (a megszokott) vagy nagy.",
     "lt": "Avatarų dydis profilio pasirinkimo ekrane: mažas, vidutinis (kaip visada) arba didelis.",
     "bs": "Veličina avatara na ekranu izbora profila: mali, srednji (kao uvijek) ili veliki.",
-    "sr": "Величина аватара на екрану избора профила: мали, средњи (као увек) или велики.",
+    "sr": "Veličina avatara na ekranu izbora profila: mali, srednji (kao uvek) ili veliki.",
+    "ar": "حجم الصور الرمزية في شاشة اختيار الملف الشخصي: صغير أو متوسط (المعتاد) أو كبير.",
     "bg": "Размер на аватарите на екрана за избор на профил: малък, среден (както винаги) или голям.",
     "el": "Μέγεθος των avatar στην οθόνη επιλογής προφίλ: μικρό, μεσαίο (ως συνήθως) ή μεγάλο.",
     "id": "Ukuran avatar di layar profil: kecil, sedang (seperti biasa) atau besar.",
@@ -118,7 +120,7 @@ NOVAS = {
 
 IDIOMAS = ("ro", "uk", "ru", "fr", "de", "es", "it", "nl", "pl", "tr", "ptpt", "sv",
            "da", "no", "cs", "sk", "sl", "hu", "lt", "bs", "sr", "bg", "el", "id",
-           "vi", "ja", "zhcn", "zhtw")
+           "vi", "ja", "zhcn", "zhtw", "ar")
 
 LINHA_TAB = '  {{ "{k}", "{v}" }},\n'
 LINHA_IRMA = '  T("{k}", "{v}"),\n'

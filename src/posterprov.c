@@ -161,11 +161,32 @@ int posterprov_extra_normalizar(const char *entrada, char *out, size_t n) {
 }
 
 // ---------------------------------------------------------------- modelo
-static int marcador(const char *p, size_t k) {
-  return (k == 6 && !strncmp(p, "{imdb}", 6)) || (k == 6 && !strncmp(p, "{tmdb}", 6)) ||
-         (k == 6 && !strncmp(p, "{type}", 6)) || (k == 11 && !strncmp(p, "{tipo_tmdb}", 11)) ||
-         (k == 9 && !strncmp(p, "{imdb_id}", 9)) || (k == 9 && !strncmp(p, "{tmdb_id}", 9)) ||
-         (k == 4 && !strncmp(p, "{id}", 4));
+// Decode only template punctuation; credentials and other escapes stay byte-identical.
+static int modelo_decodificar(const char *src, char *out) {
+  size_t k = 0;
+  if (!src || strlen(src) >= PP_MODELO_MAX) return 0;
+  while (*src) {
+    if (src[0] == '%' && src[1] == '7' && src[2]) {
+      int c = minusc((unsigned char)src[2]);
+      if (c == 'b' || c == 'c' || c == 'd') {
+        out[k++] = c == 'b' ? '{' : c == 'c' ? '|' : '}';
+        src += 3;
+        continue;
+      }
+    }
+    out[k++] = *src++;
+  }
+  out[k] = 0;
+  return 1;
+}
+
+static int marcador_simples(const char *p, size_t k) {
+  if (k > 2 && p[k - 2] == '?') k--;  // Optional markers use the same names.
+  return (k == 6 && !strncmp(p, "{imdb", 5)) || (k == 6 && !strncmp(p, "{tmdb", 5)) ||
+         (k == 6 && !strncmp(p, "{type", 5)) || (k == 11 && !strncmp(p, "{tipo_tmdb", 10)) ||
+         (k == 9 && !strncmp(p, "{imdb_id", 8)) || (k == 9 && !strncmp(p, "{tmdb_id", 8)) ||
+         (k == 4 && !strncmp(p, "{id", 3)) || (k == 7 && !strncmp(p, "{shape", 6)) ||
+         (k == 9 && !strncmp(p, "{id_type", 8)) || (k == 10 && !strncmp(p, "{typed_id", 9));
 }
 // Pior caso de cada marcador montado (posterprov_montar_url): {imdb} vira o
 // Ident.tt (ate 23), {tmdb} um long (ate 19 digitos), {type} "series" (6),
@@ -173,28 +194,56 @@ static int marcador(const char *p, size_t k) {
 // maior deles (23). So posterprov_modelo_cabe() usa: ver o .h.
 #define PP_MAX_IMDB 23
 #define PP_MAX_TMDB 19
-static size_t montado_max(const char *p, size_t k) {
-  if ((k == 6 && !strncmp(p, "{imdb}", 6)) || (k == 9 && !strncmp(p, "{imdb_id}", 9)) ||
-      (k == 4 && !strncmp(p, "{id}", 4))) return PP_MAX_IMDB;
-  if ((k == 6 && !strncmp(p, "{tmdb}", 6)) || (k == 9 && !strncmp(p, "{tmdb_id}", 9))) return PP_MAX_TMDB;
+static size_t montado_simples_max(const char *p, size_t k) {
+  if (k > 2 && p[k - 2] == '?') k--;
+  if ((k == 6 && !strncmp(p, "{imdb", 5)) || (k == 9 && !strncmp(p, "{imdb_id", 8)) ||
+      (k == 4 && !strncmp(p, "{id", 3))) return PP_MAX_IMDB;
+  if ((k == 6 && !strncmp(p, "{tmdb", 5)) || (k == 9 && !strncmp(p, "{tmdb_id", 8))) return PP_MAX_TMDB;
+  if (k == 9) return 4;                                   // {id_type}: imdb/tmdb
+  if (k == 10) return PP_MAX_TMDB + 7;                     // {typed_id}: series-N
+  if (k == 7) return 9;                                   // {shape}: landscape
   if (k == 6) return 6;                                   // {type}: "series"
   return 5;                                               // {tipo_tmdb}: "movie"
 }
+// Validate every alternative and reserve the longest possible expansion.
+static size_t marcador_max(const char *p, size_t k) {
+  const char *end = p + k - 1;
+  size_t max = 0;
+  if (end[-1] == '?') end--;
+  for (p++; p < end;) {
+    const char *bar = memchr(p, '|', (size_t)(end - p));
+    size_t len = (size_t)((bar ? bar : end) - p);
+    char part[32];
+    if (!len || len + 3 > sizeof part) return 0;
+    part[0] = '{'; memcpy(part + 1, p, len); part[len + 1] = '}';
+    // Optional applies to the whole token, never an individual alternative.
+    if (memchr(p, '?', len) || !marcador_simples(part, len + 2)) return 0;
+    size_t n = montado_simples_max(part, len + 2);
+    if (n > max) max = n;
+    if (!bar) return max;
+    p = bar + 1;
+  }
+  return 0;
+}
+
 // Regras de sintaxe; com `pior` nao nulo, soma tambem o tamanho montado no
 // pior caso.
 static int modelo_sintaxe(const char *modelo, size_t *pior_out) {
   const char *p;
+  char decoded[PP_MODELO_MAX];
   int achou = 0;
   size_t pior = 0;
-  if (!modelo || strlen(modelo) >= PP_MODELO_MAX) return 0;
+  if (!modelo_decodificar(modelo, decoded)) return 0;
+  modelo = decoded;
   if (strncmp(modelo, "http://", 7) && strncmp(modelo, "https://", 8)) return 0;
   for (p = modelo; *p; p++) {
     if ((unsigned char)*p <= ' ' || (unsigned char)*p == 0x7f) return 0;
     if (*p == '}') return 0;                 // '}' sem '{'
     if (*p == '{') {
       const char *f = strchr(p, '}');
-      if (!f || !marcador(p, (size_t)(f - p + 1))) return 0;
-      pior += montado_max(p, (size_t)(f - p + 1));
+      size_t max = f ? marcador_max(p, (size_t)(f - p + 1)) : 0;
+      if (!max) return 0;
+      pior += max;
       achou = 1;
       p = f;
     } else {
@@ -249,8 +298,8 @@ static int chave_rpdb_valida(const char *k) {
   return 1;
 }
 
-int posterprov_montar_url(const PosterProvCfg *c, const char *imdb, long tmdb,
-                          const char *tipo, char *out, size_t n) {
+static int montar_formato(const PosterProvCfg *c, const char *imdb, long tmdb,
+                          const char *tipo, int landscape, char *out, size_t n) {
   Ident d;
   int w = -1;
   if (out && n) out[0] = 0;
@@ -292,25 +341,42 @@ int posterprov_montar_url(const PosterProvCfg *c, const char *imdb, long tmdb,
                      c->chave, d.serie ? "series" : "movie", d.tm);
       break;
     case PP_MODELO: {
-      const char *p = c->modelo;
+      char decoded[PP_MODELO_MAX];
+      const char *p = decoded;
       size_t k = 0;
-      if (!posterprov_modelo_valido(p)) return 0;
+      if (!modelo_decodificar(c->modelo, decoded) || !posterprov_modelo_valido(p)) return 0;
       while (*p) {
-        char v[24] = "";
+        char v[32] = "";
         size_t lv, adv = 1;
         if (*p == '{') {
           adv = (size_t)(strchr(p, '}') - p + 1);   // sintaxe ja validada
-          if (!strncmp(p, "{imdb}", 6) || !strncmp(p, "{imdb_id}", 9)) {
-            if (!d.tt[0]) return 0;
-            snprintf(v, sizeof v, "%s", d.tt);
-          } else if (!strncmp(p, "{tmdb}", 6) || !strncmp(p, "{tmdb_id}", 9)) {
-            if (d.tm <= 0) return 0;
-            snprintf(v, sizeof v, "%ld", d.tm);
-          } else if (!strncmp(p, "{id}", 4)) {
-            if (d.tt[0]) snprintf(v, sizeof v, "%s", d.tt);
-            else snprintf(v, sizeof v, "%ld", d.tm);
-          } else if (!strncmp(p, "{type}", 6)) { snprintf(v, sizeof v, "%s", d.serie ? "series" : "movie"); }
-          else { snprintf(v, sizeof v, "%s", d.serie ? "tv" : "movie"); }
+          int opcional = p[adv - 2] == '?';
+          const char *part = p + 1;
+          const char *end = p + adv - 1 - opcional;
+          while (part < end && !v[0]) {
+            const char *bar = memchr(part, '|', (size_t)(end - part));
+            size_t len = (size_t)((bar ? bar : end) - part);
+            if (len >= 4 && !strncmp(part, "imdb", 4)) {
+              snprintf(v, sizeof v, "%s", d.tt);
+            } else if (len >= 4 && !strncmp(part, "tmdb", 4)) {
+              if (d.tm > 0) snprintf(v, sizeof v, "%ld", d.tm);
+            } else if (len == 7 && !strncmp(part, "id_type", len)) {
+              snprintf(v, sizeof v, "%s", d.tt[0] ? "imdb" : "tmdb");
+            } else if (len == 8 && !strncmp(part, "typed_id", len)) {
+              if (d.tt[0]) snprintf(v, sizeof v, "%s", d.tt);
+              else snprintf(v, sizeof v, "%s-%ld", d.serie ? "series" : "movie", d.tm);
+            } else if (len == 2 && !strncmp(part, "id", len)) {
+              if (d.tt[0]) snprintf(v, sizeof v, "%s", d.tt);
+              else snprintf(v, sizeof v, "%ld", d.tm);
+            } else if (len == 5 && !strncmp(part, "shape", len)) {
+              snprintf(v, sizeof v, "%s", landscape ? "landscape" : "poster");
+            } else if (len == 4 && !strncmp(part, "type", len)) {
+              snprintf(v, sizeof v, "%s", d.serie ? "series" : "movie");
+            } else { snprintf(v, sizeof v, "%s", d.serie ? "tv" : "movie"); }
+            if (!bar) break;
+            part = bar + 1;
+          }
+          if (!v[0] && !opcional) return 0;
           lv = strlen(v);
           if (k + lv + 1 > n) return 0;
           memcpy(out + k, v, lv); k += lv;
@@ -329,6 +395,11 @@ int posterprov_montar_url(const PosterProvCfg *c, const char *imdb, long tmdb,
   }
   if (w < 0 || (size_t)w >= n || w >= PP_URL_MAX) { out[0] = 0; return 0; }
   return 1;
+}
+
+int posterprov_montar_url(const PosterProvCfg *c, const char *imdb, long tmdb,
+                          const char *tipo, char *out, size_t n) {
+  return montar_formato(c, imdb, tmdb, tipo, 0, out, n);
 }
 
 const char *posterprov_redigir(const char *url, char *out, size_t n) {
@@ -459,23 +530,33 @@ const char *posterprov_card_addon(const char *origem, const char *imdb, long tmd
 
 const char *posterprov_card(const char *imdb, long tmdb, const char *tipo,
                             const char *orig) {
+  return posterprov_card_formato(NULL, imdb, tmdb, tipo, orig, 0);
+}
+
+const char *posterprov_card_formato(const char *origem, const char *imdb, long tmdb,
+                                    const char *tipo, const char *orig, int landscape) {
   uint32_t k;
   Slot *s;
   const char *r = orig;
-  if (cfg.prov == PP_DESLIGADO) return orig;
+  if (cfg.prov == PP_DESLIGADO || posterprov_addon_vence(origem, orig)) return orig;
+  if (landscape) {
+    char decoded[PP_MODELO_MAX];
+    if (cfg.prov != PP_MODELO || !modelo_decodificar(cfg.modelo, decoded) ||
+        (!strstr(decoded, "{shape}") && !strstr(decoded, "{shape?}"))) return orig;
+  }
   pthread_mutex_lock(&trava);
   if (disjuntorAte) {
     if (agora() < disjuntorAte) { pthread_mutex_unlock(&trava); return orig; }
     disjuntorAte = 0;                              // meia-abertura: tenta de novo
     seguidas = PP_SEGUIDAS_MAX - 1;                // uma falha reabre
   }
-  k = hash_item(imdb, tmdb, tipo);
+  k = hash_item(imdb, tmdb, tipo) ^ (landscape ? 0x80000000u : 0);
   if (falhou_tem(k)) { pthread_mutex_unlock(&trava); return orig; }
   s = &slots[k % PP_SLOTS];
   if (s->chave != k) {
     memset(s, 0, sizeof *s);
     s->chave = k;
-    if (!posterprov_montar_url(&cfg, imdb, tmdb, tipo, s->url, sizeof s->url)) s->url[0] = 0;
+    if (!montar_formato(&cfg, imdb, tmdb, tipo, landscape, s->url, sizeof s->url)) s->url[0] = 0;
   }
   if (!s->url[0]) { pthread_mutex_unlock(&trava); return orig; }   // provedor nao entende o item
   if (!s->ok && hookEstado) {

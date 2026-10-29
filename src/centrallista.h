@@ -14,7 +14,7 @@
 #define NV_CENTRALLISTA_H
 #include <stddef.h>
 
-#define CENTRAL_MAX 8
+#define CENTRAL_MAX 27   // One slot per catalog tile; checked against CATALOGO.
 
 // `curto`: o nome no botao (o rotulo inteiro de Ajustes nao cabe num botao de
 // ~120 px; o inteiro continua na lista de edicao). Chave em portugues, i18n.

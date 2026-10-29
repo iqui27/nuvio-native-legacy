@@ -104,9 +104,13 @@ const char *dvtela_nome_saida(int saida);
 enum { DVT_VAR_DETALHADA = 0, DVT_VAR_CINEMA };
 // Pura: a cara pela regra do ajuste e pela tecla da pessoa.
 int  dvt_variante(int aberturaDetalhada, int detalheTecla);
-// Por quadro, do player: o ajuste, o logo do titulo ("" = so o nome em texto)
-// e a linha do episodio (so serie). Strings copiadas.
-void dvtela_apresentacao(int aberturaDetalhada, const char *logo, const char *titulo, const char *linhaEp);
+// Por quadro, do player: o ajuste (ou a tecla que abriu o cartao na abertura normal).
+void dvtela_apresentacao(int aberturaDetalhada);
+// Os dois encaixes da abertura normal (desenharCinema, player.c) na cara Cinema: a
+// marca acima do logo (topo = topo do logo) e UMA linha de passo na pilha de linhas.
+// canto: 0 = Centro (x e o meio), 1 = Canto (x e a borda). a = o veu da abertura.
+void  dvtela_abertura_marca(int canto, float x, float topo, float a);
+float dvtela_abertura_linha(int canto, float x, float y, float a);   // devolve o deslocamento
 int  dvtela_variante(void);   // a cara de agora (DVT_VAR_*)
 
 // Desenho (dvtelaui.c), por cima de tudo do player e da ilha.
@@ -122,6 +126,8 @@ float dvtela_previa_largura(void);
 float dvtela_previa_altura(void);
 
 #ifdef NV_SHOT_HOOKS
+void dvtela_abertura_zonas(float marca[4], float linha[4]);  /* x y w h */   // capturas: onde o DV desenhou
+void dvtela_abertura_zona_linha(float y, float w);
 void dvtela_shot_relogio(Uint32 ms);   // capturas: o brilho do passo parado num instante
 #endif
 

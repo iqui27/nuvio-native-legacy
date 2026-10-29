@@ -12,9 +12,10 @@ enum { DTS_QCAP_OK = 0, DTS_QCAP_BYTES, DTS_QCAP_PKTS, DTS_QCAP_BUDGET };
 
 static inline int dtsQcapAdmit(size_t qBytes, int qN, size_t add, size_t maxBytes, int maxN,
                                const atomic_size_t *total, size_t budget) {
-  if (qBytes + add > maxBytes) return DTS_QCAP_BYTES;
+  if (qBytes > maxBytes || add > maxBytes - qBytes) return DTS_QCAP_BYTES;
   if (qN >= maxN) return DTS_QCAP_PKTS;
-  if (atomic_load(total) + add > budget) return DTS_QCAP_BUDGET;
+  size_t used = atomic_load(total);
+  if (used > budget || add > budget - used) return DTS_QCAP_BUDGET;
   return DTS_QCAP_OK;
 }
 #endif

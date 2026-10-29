@@ -2,15 +2,15 @@
 # Opt-in emulator build: NUVIO_TPK_ARCH=x86_64 bash tools/tpk.sh
 # Only NuvioTpk; no ARM hosts, P2P engine or release update artifacts.
 set -euo pipefail
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/../.." && source tools/ctr.sh
 RAIZ="$PWD"
 CACHE="${NUVIO_TPK_CACHE:-$HOME/.cache/nuvio-tpk}/x86_64"
 SAIDA="$RAIZ/build/tpk-x64"
 mkdir -p "$SAIDA" "$CACHE"
 
-docker info >/dev/null 2>&1 || { echo "Docker stopped: open Docker/OrbStack" >&2; exit 1; }
-docker image inspect nuvio-tpk-sdk-x64 >/dev/null 2>&1 ||
-  docker build --platform linux/amd64 -f tools/tpk/Dockerfile.x64 -t nuvio-tpk-sdk-x64 tools/tpk/
+ctr_check_system || { echo "Apple Container not running: run 'container system start'" >&2; exit 1; }
+ctr_image_exists nuvio-tpk-sdk-x64 ||
+  ctr_build --platform linux/amd64 -f tools/tpk/Dockerfile.x64 -t nuvio-tpk-sdk-x64 tools/tpk/
 
 if [ ! -f "$CACHE/prefix/lib/libSDL2.a" ] || [ ! -f "$CACHE/prefix/lib/libSDL2_ttf.a" ] ||
    [ ! -f "$CACHE/prefix/lib/libwebp.a" ] || [ ! -f "$CACHE/prefix/lib/.sdlimage-webp" ] ||
@@ -29,16 +29,16 @@ if [ ! -f "$CACHE/prefix/lib/libSDL2.a" ] || [ ! -f "$CACHE/prefix/lib/libSDL2_t
     [ -d "$CACHE/src/$d" ] || { curl -fsSL "$u" | tar x -C "$CACHE/src"; }
   done
   cp tools/tpk/deps.sh "$CACHE/deps.sh"
-  docker run --rm --platform linux/amd64 -v "$CACHE:/w" nuvio-tpk-sdk-x64 sh /w/deps.sh
+  ctr_run --rm --platform linux/amd64 -v "$CACHE:/w" nuvio-tpk-sdk-x64 sh /w/deps.sh
 fi
 
 echo "[1/3] libnuvio.so (x86_64, glibc <= 2.28)"
 ENVF=$(mktemp "${TMPDIR:-/tmp}/nuvio-tpk-x64-env.XXXXXXXX")
 trap 'rm -f "$ENVF"' EXIT
 tools/env.sh --env-file "$ENVF"
-docker run --rm --platform linux/amd64 --env-file "$ENVF" \
+ctr_run --rm --platform linux/amd64 --env-file "$ENVF" \
   -e NUVIO_BUILD_JOBS="${NUVIO_BUILD_JOBS:-6}" \
-  -e NUVIO_SDK_ID="$(docker image inspect --format '{{.Id}}' nuvio-tpk-sdk-x64):$CACHE" \
+  -e NUVIO_SDK_ID="$(ctr_image_inspect nuvio-tpk-sdk-x64):$CACHE" \
   -e NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-}" -e NV_TPK_SEM_ASS="${NV_TPK_SEM_ASS:-}" \
   -v "$RAIZ:/work" -v "$CACHE/prefix:/deps" -w /work nuvio-tpk-sdk-x64 sh -c '
   set -e

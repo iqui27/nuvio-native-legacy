@@ -1,6 +1,7 @@
 // #421: a escolha real mantem a TV durante a colheita; ASS nao muda.
 #include "../src/faixas.c"
 #include <assert.h>
+int xtream_url_limitada(const char *url) { (void)url; return 0; }
 static VideoFaixa faixa;
 static int nativa, ordinal;
 const VideoFaixa *video_legenda(int i) { assert(i == 2); return &faixa; }
@@ -40,6 +41,7 @@ int addons_legendas_prontas(void) { return 0; }
 int addons_legendas_copiar(Legenda *dst, int max, unsigned *g, int *p) { (void)dst; (void)max; (void)g; (void)p; return 0; }
 int ajustes_legenda_forcada_auto(void) { return 0; }
 void legenda_desligar(void) {}
+void legenda_pre_descartar(const char *motivo) { (void)motivo; }
 void legendasui_atualizar(float dt) { (void)dt; }
 void legendasui_id_addon(const Legenda *l, char out[24]) { (void)l; out[0] = 0; }
 const char *ling_legenda(void) { return ""; }
@@ -101,7 +103,14 @@ int main(void) {
   strcpy(faixa.codec, "S_TEXT/ASS");
   assert(vaiOverlay(&faixa)); overlayAssumir(2, 7);
   assert(nativa == -1 && !legOverlayTV);
-  strcpy(faixa.codec, "S_HDMV/PGS"); assert(!vaiOverlay(&faixa));
+  strcpy(faixa.codec, "S_HDMV/PGS");
+#ifdef NV_TPK
+  // .tpk decodifica PGS em software: vai para o overlay, sem segurar a TV.
+  assert(vaiOverlay(&faixa)); overlayAssumir(2, 7);
+  assert(nativa == -1 && !legOverlayTV);
+#else
+  assert(!vaiOverlay(&faixa));
+#endif
 #ifndef NV_ANDROID
   // 1o cue da faixa de texto: nativa desligada (handoff), SEM toast.
   strcpy(faixa.codec, "S_TEXT/UTF8"); overlayAssumir(2, 7); toasts = 0;

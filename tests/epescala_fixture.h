@@ -1,0 +1,15 @@
+// Offline episode comments for the real menu and rating renderer.
+#define extras_pedir_comentarios_ep epescala_request
+#define extras_comentarios_ep_do epescala_matches
+#define extras_n_comentarios_ep epescala_count
+#define extras_comentarios_ep_carregando epescala_loading
+#define extras_comentarios_ep_tem_mais epescala_loading
+#define extras_notas_ep epescala_ratings
+#define extras_comentarios_ep_tmdb epescala_loading
+#define extras_comentario_ep_usuario epescala_user
+#define extras_comentario_ep_texto epescala_text
+#define extras_comentario_ep_data epescala_date
+#define extras_comentario_ep_curtidas epescala_likes
+#define extras_comentario_ep_nota epescala_score
+#define extras_comentario_ep_respostas epescala_replies
+#define extras_comentario_ep_spoiler epescala_spoiler

@@ -12,7 +12,7 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in
     src/main.c|src/vertudo.c) continue;;
     src/descoberta.c)
-      cc "${flags[@]}" -Drede_baixar=config414_baixar -c "$source" -o "$work/descoberta.o"
+      cc "${flags[@]}" -Drede_baixar=config414_baixar -Drede_baixar_st=config414_baixar_st -c "$source" -o "$work/descoberta.o"
       sources+=("$work/descoberta.o");;
     *) sources+=("$source");;
   esac

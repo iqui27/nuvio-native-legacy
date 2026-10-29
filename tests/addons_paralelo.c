@@ -1,4 +1,5 @@
 // Legenda automatica: busca nos addons em PARALELO, lista publicada a cada resposta, cancelamento.
+#include "stub_perfisessao.h"
 #include "../src/addons.c"
 #include <assert.h>
 #include <unistd.h>

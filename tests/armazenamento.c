@@ -6,6 +6,11 @@
 #include <unistd.h>
 #include <utime.h>
 #include "../src/dados.c"
+#ifdef NV_ANDROID
+const char *nv_android_cache_dir(void) { return ""; }
+int nv_android_cache_name(const char *name) { (void)name; return 0; }
+void nv_android_cache_touch(const char *path) { (void)path; }
+#endif
 
 #ifndef NV_ESPACO_IMPLEMENTADO
 static void espacoLimpar(const char *d, const char *v) { (void)d; (void)v; }

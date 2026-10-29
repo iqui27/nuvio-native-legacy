@@ -320,6 +320,39 @@ int main(void) {
   }
   puts("ok  encerramento aguarda callback de poda antes de destruir a trava");
 
+  // #676: bounded recovery, visible work first, and low-RAM limits.
+  prepararApi();
+  orcMemTotal = 1236;
+  orcAuto = 128;
+  tex_definir_orcamento_mb(160);
+  assert(orcMB == 128);
+  assert(tetoDoHeroi() == 1280);
+  { char resized[600];
+    assert(arte_tamanho_url("https://image.tmdb.org/t/p/original/art.jpg",
+                            tetoDoHeroi(), resized, sizeof resized));
+    assert(strstr(resized, "/w1280/")); }
+  tex_pressao_memoria(80);
+  pressaoAte = SDL_GetTicks() - 1;
+  assert(pressaoAtiva() && pressaoPct == 50);
+  pressaoAte = SDL_GetTicks() - 5001;
+  assert(pressaoAtiva() && pressaoPct == 75);
+  pressaoAte = SDL_GetTicks() - 5001;
+  assert(!pressaoAtiva() && pressaoPct == 100);
+  quadroAtual = 100;
+  itens[0].estado = DECODIFICADO;
+  itens[0].ultimoQuadro = quadroAtual;
+  itens[0].sup = SDL_CreateRGBSurfaceWithFormat(0, 8, 8, 32, SDL_PIXELFORMAT_ABGR8888);
+  assert(itens[0].sup);
+  soltarCpu(0);
+  assert(itens[0].sup && itens[0].estado == DECODIFICADO);
+  SDL_FreeSurface(itens[0].sup); itens[0].sup = NULL;
+  { int ids[] = {1, 2, 3};
+    encher(f, &ini, &fim, ids, 3);
+    itens[1].ultimoQuadro = itens[3].ultimoQuadro = 1;
+    itens[2].ultimoQuadro = quadroAtual;
+    assert(tirarFila(f, &ini, fim) == 2); }
+  limparApi();
+  puts("ok  #676: low-RAM budget, sized hero, gradual recovery, visible work first");
   puts("texfila: tudo ok");
   return 0;
 }

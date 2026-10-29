@@ -13,10 +13,15 @@
 #ifndef NV_AGENDAVISO_H
 #define NV_AGENDAVISO_H
 #include <SDL2/SDL.h>
+#include "agenda.h"
+// Consume an explicit OK on a movie notice; Back only dismisses.
+int agendaviso_tomar_filme(AgItem *saida);
 
 // Abre se houver lembrete vencido ainda nao avisado. Chamar com a home de pe e
 // nenhum outro cartao aberto, como atualizacao_mostrar_se_houver.
 void agendaviso_mostrar_se_houver(void);
+// Descarta apenas o cartao da sessao anterior, sem marcar seus lembretes.
+void agendaviso_abrir_sessao(void);
 int  agendaviso_aberto(void);
 void agendaviso_evento(const SDL_Event *e);
 void agendaviso_atualizar(float dt, Uint32 agora);

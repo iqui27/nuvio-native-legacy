@@ -107,6 +107,22 @@ static void profundo(float h, float c, float out[3]) {
   lchParaSrgb(L, c, h, out);
   while (corviva_contraste(out, BRANCO_A) < 4.6f && L > 0.3f) { L -= 0.004f; lchParaSrgb(L, c, h, out); }
 }
+// AMPLITUDE (dono, 14/10/2026: "o tom dos botoes nao casa com as cores da
+// logo, temos que deixar mais amplo as cores"): o croma saida de 0,17 no
+// teto — a logo vermelha de Stranger Things (C ~0,25) virava um tijolo
+// abafado. Agora o croma do bruto e mantido (x1,15, teto 0,24): o MATIZ e a
+// SATURACAO da cor dominante ficam, e a garantia de contraste nao sai do
+// lugar — o L continua sendo o da busca (profundo/claro) e nao o do bruto.
+#define CV_C_MIN 0.08f
+#define CV_C_MAX 0.24f
+// CLARO: amarelos (matiz 70-115) com tinta escura. L sobe (nao desce) ate a
+// tinta escura #121316 ler a >= 4,5:1 — a mesma folga do profundo, para o
+// croma novo (ate 0,16) nao derrubar a regra.
+static void claro(float h, float c, float out[3]) {
+  float L = 0.86f;
+  lchParaSrgb(L, c, h, out);
+  while (corviva_contraste(out, TINTA_ESC) < 4.5f && L < 0.97f) { L += 0.004f; lchParaSrgb(L, c, h, out); }
+}
 static float grausDe(float h) { float g = h / CV_GRAU; return g < 0.0f ? g + 360.0f : g; }
 void corviva_da_arte(const float bruto[3], float out[3]) {
   float L, C, h, c, g;
@@ -114,10 +130,10 @@ void corviva_da_arte(const float bruto[3], float out[3]) {
   (void)L;
   if (C < 0.04f) { memcpy(out, BRANCO_ACENTO, sizeof BRANCO_ACENTO); return; }
   c = C * 1.15f;
-  if (c < 0.08f) c = 0.08f;
-  if (c > 0.17f) c = 0.17f;
+  if (c < CV_C_MIN) c = CV_C_MIN;
+  if (c > CV_C_MAX) c = CV_C_MAX;
   g = grausDe(h);
-  if (g >= 70.0f && g <= 115.0f) lchParaSrgb(0.86f, c < 0.13f ? c : 0.13f, h, out);
+  if (g >= 70.0f && g <= 115.0f) claro(h, c > 0.16f ? 0.16f : c, out);
   else profundo(h, c, out);
 }
 void corviva_tokens(const float fill[3], CorvivaTokens *t) {
@@ -435,13 +451,13 @@ int corviva_extrair(const unsigned char *px, int w, int h, int pitch,
         if (d > 180.0f) d = 360.0f - d;
         if (c2 >= 0.04f && d >= 20.0f && d <= 60.0f) {
           hb = h2; cb = c2 * 1.15f;
-          if (cb < 0.08f) cb = 0.08f;
-          if (cb > 0.17f) cb = 0.17f;
+          if (cb < CV_C_MIN) cb = CV_C_MIN;
+          if (cb > CV_C_MAX) cb = CV_C_MAX;
           break;
         }
       }
       if (corviva_contraste(p->acento, TINTA_ESC) > corviva_contraste(p->acento, BRANCO_A))
-        lchParaSrgb(0.80f, cb < 0.13f ? cb : 0.13f, hb, B);
+        lchParaSrgb(0.80f, cb > 0.16f ? 0.16f : cb, hb, B);
       else profundo(hb, cb, B);
       corviva_srgb_para_oklab(p->acento, la);
       corviva_srgb_para_oklab(B, lb);
@@ -606,6 +622,14 @@ void corviva_acento(float *r, float *g, float *b) {
   if (g) *g = nv_acento_viva[1];
   if (b) *b = nv_acento_viva[2];
 }
+// A cor do LOGO do titulo em cena, a mesma fonte que a Imersiva usa com "Cor da
+// logo" (corviva_quadro: logo de cor, senao a arte). 0 = ainda sem paleta.
+int corviva_logo_acento(float *r, float *g, float *b) {
+  const CorvivaPaleta *p = (temLogo && cenaLogo.ok) ? &cenaLogo : (temCena && cena.ok) ? &cena : NULL;
+  if (!p) return 0;
+  *r = p->acento[0]; *g = p->acento[1]; *b = p->acento[2];
+  return 1;
+}
 int corviva_retargets(void) { return retargets; }
 
 void corviva_quadro(float dt, int modo, int usarLogo, int reduzido) {
@@ -664,12 +688,25 @@ void corviva_quadro(float dt, int modo, int usarLogo, int reduzido) {
       T->forca = modo == CORVIVA_TEXTURA_SUTIL ? 0.35f : 1.0f;
       corviva_textura_tinta(f->txY[0], f->txY[1], f->acento, T->forca,
                             &T->tintaBranca, &T->veu, &T->contraste);
+      // (14/10, dono: "os com textura tem alguns que sao muito bons e outros
+      // nao") O RECORTE CHAPADO e o que nao presta: p90 - p10 de luminancia
+      // abaixo de 0,12 nao tem material nenhum (glifo liso, faixa unica) e a
+      // pilula sai como cor lisa com o tema fazendo nada. Ajustes troca estes
+      // pelo MATERIAL CC0 embutido (ajustes_textura_quadro).
+      T->fraca = (f->txY[1] - f->txY[0]) < 0.12f;
     } }
   fonteOk = modo != CORVIVA_DESLIGADA && temCena && fonte->ok;
   if (!fonteOk && modo != CORVIVA_DESLIGADA && temLogo && cenaLogo.ok) {
     fonte = &cenaLogo; fonteOk = 1;   // arte P&B com logo colorido
   }
   memcpy(novo[0], fonteOk ? fonte->acento : BRANCO, sizeof novo[0]);
+  if (fonteOk && modo == CORVIVA_SIMPLES_CLARO) {
+    float L, C, h;
+    lchDe(novo[0], &L, &C, &h);
+    // Lift lightness and halve chroma without rotating hue; gamut mapping
+    // only lowers chroma further. Existing tokens select contrasting ink.
+    lchParaSrgb(L + (1.0f - L) * 0.65f, C * 0.45f, h, novo[0]);
+  }
   memcpy(novo[1], FUNDO, sizeof novo[1]);   // o estilizado (base tingida) saiu
   for (k = 0; k < 3; k++) memcpy(novo[2 + k], fonteOk ? fonte->grad[k] : BRANCO, sizeof novo[0]);
   for (k = 0; k < 4; k++) memcpy(novo[5 + k], temCena ? cena.regiao[k] : FUNDO, sizeof novo[0]);

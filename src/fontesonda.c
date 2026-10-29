@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
+#include <stdlib.h>
 #include <ctype.h>
 
 int fontesonda_erro_conexao(const char *t) {
@@ -11,6 +12,35 @@ int fontesonda_erro_conexao(const char *t) {
          strcasestr(t, "connect") || strcasestr(t, "timed out") ||
          strcasestr(t, "timeout") || strcasestr(t, "network") ||
          strcasestr(t, "unreachable") || strcasestr(t, "dns");
+}
+
+int fontesonda_causa(const char *t, int *http) {
+  const char *h;
+  long n = -1;
+  int android;
+  if (http) *http = 0;
+  if (!t || !*t) return FS_CAUSA_NENHUMA;
+  if (isdigit((unsigned char)*t)) n = strtol(t, NULL, 10);
+  android = strcasestr(t, "player error") != NULL;
+  if (strcasestr(t, "server error") && n >= 40400 && n <= 40599) {
+    if (http) *http = (int)(n - 40000);
+    return FS_CAUSA_HTTP;
+  }
+  if ((h = strcasestr(t, "http ")) && isdigit((unsigned char)h[5]) && isdigit((unsigned char)h[6]) &&
+      isdigit((unsigned char)h[7]) && h[5] >= '4' && h[5] <= '5') {
+    if (http) *http = (int)strtol(h + 5, NULL, 10);
+    return FS_CAUSA_HTTP;
+  }
+  if (android && n >= 2004 && n <= 2006) {
+    if (http) *http = n == 2005 ? 404 : n == 2006 ? 403 : 0;
+    return FS_CAUSA_HTTP;
+  }
+  if ((android && (n == 2000 || n == 2001 || n == 2002 || n == 2008)) ||
+      fontesonda_erro_conexao(t)) return FS_CAUSA_REDE;
+  if ((android && n >= 3000 && n < 5000) || strcasestr(t, "unsupported") ||
+      strcasestr(t, "codec") || strcasestr(t, "decoder") || strcasestr(t, "format"))
+    return FS_CAUSA_FORMATO;
+  return FS_CAUSA_NENHUMA;
 }
 
 // Host apenas: sem esquema, usuario, porta, caminho, query ou fragmento.
@@ -33,6 +63,17 @@ static void soHost(const char *url, char *h, unsigned tam) {
   n = (unsigned)(fim - p);
   if (n > tam - 1) n = tam - 1;
   memcpy(h, p, n); h[n] = 0;
+}
+
+void fontesonda_recusa(const char *url, const char *erroTexto, int sincrona) {
+  char host[128]; int http = 0;
+  int causa = fontesonda_causa(erroTexto, &http);
+  const char *motivos[] = {"backend rejected source (no classified error)",
+                          "HTTP refusal", "network/TLS/timeout", "format/decoder"};
+  soHost(url, host, sizeof host);
+  printf("[fonte] playback failure: reason=%s synchronous=%d http=%d host=%s\n",
+         motivos[causa], sincrona, http, host[0] ? host : "-");
+  fflush(stdout);
 }
 
 const char *fontesonda_linha(char *dst, unsigned tam, const char *url, int status,

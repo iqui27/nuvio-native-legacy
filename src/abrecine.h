@@ -21,6 +21,7 @@ typedef struct {
   Uint32 fim;      // quando o player deu a fonte por aberta
   float veu;       // 1 = a tela cinema cobre; cai a 0 (crossfade) so com imagem real
   float foco;      // 0 = a arte nitida do detalhe, 1 = recuada (desfocada e escura)
+  int calado;      // 1 = sem OSD desde a abertura ate a primeira tecla (inclusive DV pausado)
 } AbreCine;
 
 // Por quadro. abrindo = o player espera a fonte/o primeiro quadro; imagem = o
@@ -31,6 +32,11 @@ void abrecine_passo(AbreCine *a, int abrindo, int imagem, int detalhadaPadrao,
 // 1 = desenhar a tela cinema neste quadro (e esconder o cartao da ilha).
 int abrecine_cinema(const AbreCine *a);
 int abrecine_demorando(const AbreCine *a, Uint32 agora);
+// O OSD do player fica fora desde a abertura (o filme entra suave, sem controles)
+// ate a PESSOA apertar uma tecla com a fonte ja aberta; tecla durante a abertura
+// nao conta. 1 = manter os controles escondidos neste quadro.
+int abrecine_osd_calado(const AbreCine *a);
+void abrecine_acordou(AbreCine *a, int carregando);
 // Tecla durante a abertura: Para cima/Para baixo na cinema vira detalhada.
 // 1 = consumiu a tecla.
 int abrecine_tecla(AbreCine *a, SDL_Keycode k);

@@ -3,7 +3,11 @@
 #include "horafmt.h"
 #include "socialvis.h"
 #include "catalogo.h"
+#include "artemetahub.h"
 #include "recomenda.h"
+#include "perfis.h"
+#include "ajustes.h"
+#include "simkl.h"
 #include "dados.h"
 #include "idioma.h"
 #include <SDL2/SDL.h>
@@ -49,7 +53,13 @@ static int temGeracao;
 // sem hora (ver socialvis.h). A assinatura e o titulo + acao + episodio do
 // evento mais novo da pessoa; mudou, e novidade. Fica em amigos-vistos.txt
 // (uma linha "id\tassinatura"), gravado so quando muda.
-#define SV_ARQ_VISTOS "amigos-vistos.txt"
+static const char *arquivoVistos(void) {
+  static char nome[48];
+  if (perfis_ativo() == 1) return "amigos-vistos.txt";
+  snprintf(nome, sizeof nome, "amigos-vistos-p%d.txt", perfis_ativo());
+  return nome;
+}
+#define SV_ARQ_VISTOS arquivoVistos()
 typedef struct { char id[96]; unsigned ass; } SvVisto;
 static SvVisto vistos[SV_AMIGOS_MAX * 2];
 static int nVistos, vistosLidos;
@@ -600,6 +610,42 @@ static void agrupar(void) {
   ordenar(amigos, nAmigos, sizeof *amigos, ordemAmigo);
 }
 
+// The unified feed can contain more titles than discovery's social batch.
+// Seed those titles together so Friends focus has a catalog item for the hero.
+// This performs no network I/O: the shared image resolver owns throttling,
+// fallback and negative caching, just as it does for other catalog rows.
+static void completarArteFeed(void) {
+  CatItem *novos = NULL;
+  int nNovos = 0;
+  for (int i = 0; i < nBrutos; i++) {
+    SvEvento *e = &brutos[i];
+    int k = cat_indice_por_imdb(e->imdb);
+    const CatItem *it = k >= 0 ? cat_item(k) : NULL;
+    if (!it) {
+      for (int j = 0; j < nNovos; j++)
+        if (!strcmp(novos[j].imdb, e->imdb)) { it = &novos[j]; break; }
+    }
+    if (!it && !strncmp(e->imdb, "tt", 2)) {
+      if (!novos) novos = calloc((size_t)nBrutos, sizeof *novos);
+      if (!novos) break;
+      CatItem *d = &novos[nNovos++];
+      snprintf(d->imdb, sizeof d->imdb, "%s", e->imdb);
+      snprintf(d->tipo, sizeof d->tipo, "%s", e->tipo);
+      snprintf(d->titulo, sizeof d->titulo, "%s", e->titulo);
+      snprintf(d->poster, sizeof d->poster, "%s", e->poster);
+      snprintf(d->backdrop, sizeof d->backdrop, "%s", e->arte);
+      arte_metahub_preencher(d);
+      it = d;
+    }
+    if (it) {
+      if (!e->poster[0]) snprintf(e->poster, sizeof e->poster, "%s", it->poster);
+      if (!e->arte[0]) snprintf(e->arte, sizeof e->arte, "%s", it->backdrop);
+    }
+  }
+  if (nNovos) cat_acrescentar_lote(novos, nNovos, NULL);
+  free(novos);
+}
+
 static void refazer(void) {
   unsigned h;
   if (temExterno) {
@@ -611,6 +657,7 @@ static void refazer(void) {
     if (n >= 0) { nBrutos = n; nCtts = recomenda_contatos(ctts, REC_CONTATOS_MAX); dasRecomendacoes(); }
     else svDoQueExiste();
   }
+  completarArteFeed();
   agrupar();
   h = fnv(2166136261u, amigos, sizeof *amigos * (size_t)nAmigos);
   h = fnv(h, feed, sizeof *feed * (size_t)nFeed);
@@ -622,11 +669,10 @@ static void refazer(void) {
 static void conferirIdentidade(void) {
   unsigned g = recomenda_geracao();
   if (temGeracao && g != geracaoVista) {
-    dados_apagar(SV_ARQ_VISTOS); // Also close any race with the final old-account UI frame.
     free(externo); externo = NULL; nExterno = temExterno = 0;
     free(extras); extras = NULL; nExtras = 0;
     nBrutos = nFeed = nAmigos = nCtts = nVistos = 0;
-    memset(vistos, 0, sizeof vistos); vistosLidos = 1;
+    memset(vistos, 0, sizeof vistos); vistosLidos = 0;
     perfilPedido[0] = 0;
     catRevUlt = ~0u; recNUlt = -1; hashUlt = 0; refeitoEm = 0;
     rev++;
@@ -654,7 +700,7 @@ void socialvis_atualizar(void) {
   refazer();
 }
 
-unsigned socialvis_revisao(void) { return rev; }
+unsigned socialvis_revisao(void) { return rev + simkl_vistos_revisao(); }
 int socialvis_n_amigos(void) { return nAmigos; }
 const SvAmigo *socialvis_amigo(int i) { return (i >= 0 && i < nAmigos) ? &amigos[i] : NULL; }
 int socialvis_amigo_indice(const char *id) { return id ? achaAmigo(id) : -1; }
@@ -743,6 +789,9 @@ int socialvis_perfil(const char *id, SvPerfil *p) {
         p->a = base;
         break;
       }
+  // Perfil desta TV ("perfil:<N>", #643): a permissao e o socialLocal dele.
+  if (!strncmp(id, "perfil:", 7) && atoi(id + 7) > 0)
+    p->compartilha = ajustes_social_perfil(atoi(id + 7));
   if (p->estado == SV_PERFIL_NEGADO || p->compartilha == 0) {
     p->a.agora = p->a.nTit = 0;
     p->nAssistindo = p->nGostou = 0;
@@ -760,6 +809,37 @@ int socialvis_perfil(const char *id, SvPerfil *p) {
       if (e->acao == SV_AGORA) p->a.agora = 1;
       for (j = 0; j < p->a.nTit; j++) if (!strcmp(p->a.tit[j].imdb, e->imdb)) repetido = 1;
       if (!repetido && p->a.nTit < SV_TIT_MAX) p->a.tit[p->a.nTit++] = *e;
+    }
+  }
+  // Issue #643: a profile of this TV ("perfil:<N>") also merges its own Simkl
+  // history, by original watched date, with whatever other sources gave.
+  if (!strncmp(id, "perfil:", 7) && atoi(id + 7) > 0) {
+    SimklVisto v[24];
+    int nv = simkl_vistos_perfil(atoi(id + 7), v, 24);
+    for (i = 0; i < nv && p->a.nTit < SV_TIT_MAX; i++) {
+      SvEvento *e;
+      int j, repetido = 0;
+      for (j = 0; j < p->a.nTit; j++)
+        if (!strcmp(p->a.tit[j].imdb, v[i].imdb) &&
+            p->a.tit[j].temporada == v[i].temporada &&
+            p->a.tit[j].episodio == v[i].episodio) { repetido = 1; break; }
+      if (repetido) continue;
+      e = &p->a.tit[p->a.nTit++];
+      memset(e, 0, sizeof *e);
+      snprintf(e->pessoaId, sizeof e->pessoaId, "%s", id);
+      e->fonte = SV_FONTE_SIMKL; e->acao = SV_FIM; e->pct = -1; e->restanteMin = -1;
+      snprintf(e->imdb, sizeof e->imdb, "%s", v[i].imdb);
+      snprintf(e->tipo, sizeof e->tipo, "%s", v[i].tipo);
+      snprintf(e->titulo, sizeof e->titulo, "%s", v[i].titulo);
+      snprintf(e->poster, sizeof e->poster, "%s", v[i].poster);
+      e->temporada = v[i].temporada; e->episodio = v[i].episodio; e->quando = v[i].quando;
+    }
+    // Fundiu: a fileira volta a ser "mais novo primeiro" entre as fontes.
+    for (i = 1; i < p->a.nTit; i++) {
+      SvEvento t = p->a.tit[i];
+      int j;
+      for (j = i; j > 0 && p->a.tit[j - 1].quando < t.quando; j--) p->a.tit[j] = p->a.tit[j - 1];
+      p->a.tit[j] = t;
     }
   }
   // An unqualified rating does not prove a positive reaction. Only explicitly

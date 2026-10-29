@@ -18,7 +18,13 @@ if [ "$(uname -s)" = Darwin ]; then
 else
   strip=(-Wl,--gc-sections)
 fi
-"${CC:-cc}" tests/ajustes_creditos.c src/js.c -Isrc "${sdl[@]}" \
-  -D_GNU_SOURCE -O2 -g -ffunction-sections -fdata-sections "${strip[@]}" \
-  -o "$dir/teste"
+sources=()
+for source in src/*.c src/dts/*.c; do
+  case "$source" in src/main.c|src/ajustes.c) continue;; esac
+  sources+=("$source")
+done
+"${CC:-cc}" "${sources[@]}" tests/ajustes_creditos.c -Isrc "${sdl[@]}" \
+  -D_GNU_SOURCE -O1 -g -ffunction-sections -fdata-sections "${strip[@]}" \
+  -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
+  -Wno-deprecated-declarations -Wno-macro-redefined -o "$dir/teste"
 "$dir/teste" "$dir/data"

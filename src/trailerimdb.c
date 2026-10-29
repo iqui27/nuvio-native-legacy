@@ -3,6 +3,9 @@
 #include "js.h"
 #include "dados.h"
 #include "ajustes.h"
+#include "perfiltv.h"
+#include "tex_cache.h"
+#include "memlog.h"
 #include <SDL2/SDL.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -214,11 +217,17 @@ const char *trailerimdb_url(const char *imdb, const char **nome) {
   e = achar(imdb);
   if (e && valido(e) && e->n) {
     // O teto dos Ajustes: a maior definicao que nao passa dele; sem nenhuma
-    // abaixo do teto, a menor que ha.
-    int teto = ajustes_trailer_qualidade(), i, k = e->n - 1;
-    for (i = 0; i < e->n; i++) if (!teto || e->alt[i] <= teto) { k = i; break; }
-    r = e->url[k];
-    if (nome) *nome = e->nome;
+    // abaixo do teto, a menor que ha. Automatico: ver ptv_trailer_indice.
+    long mem = 0;
+    int k;
+    tex_orcamento_info(NULL, &mem, NULL, NULL);
+    // Android fraco: o teto de 720p e duro, 1080p unico nao toca.
+    k = (memlog_android_fraco() ? ptv_trailer_indice_duro : ptv_trailer_indice)(
+        ptv_plataforma(), mem, ajustes_trailer_qualidade(), e->alt, e->n);
+    if (k >= 0) {
+      r = e->url[k];
+      if (nome) *nome = e->nome;
+    }
   }
   destrancar();
   return r;

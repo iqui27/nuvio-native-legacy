@@ -46,6 +46,12 @@ typedef struct {
   int  tocou;
 } ProgRegistro;
 
+// A confirmed local checkpoint remains resumable even early in a long movie.
+static inline int prog_inicio_continuar(const ProgRegistro *r, int pctMinimo) {
+  return r->posSeg * 100.0 >= r->durSeg * pctMinimo ||
+         (pctMinimo == 1 && r->tocou == 1 && r->posSeg >= 30.0);
+}
+
 // Chave no formato do web (toProgressKey): "%s_s%de%d" quando temporada >= 0 e
 // episodio > 0; senao so o contentId. `contentId` pode vir com ":temp:ep" no
 // fim (id composto do Trakt) — e cortado.

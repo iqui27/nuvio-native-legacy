@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920,height=1080,user-scalable=no">
+<title>Nuvio Lite Tizen 3</title>
+<style>
+  html, body { margin:0; padding:0; width:100%; height:100%; background:transparent;
+               overflow:hidden; }
+  #avPlayerObject { position:absolute;top:0;left:0;width:100%;height:100%;z-index:0; }
+  #canvas { position: absolute; z-index:1; top:50%; left:50%;
+            transform: translate(-50%, -50%);
+            width: 100vw !important; height: 56.25vw !important;
+            max-width: 177.78vh !important; max-height: 100vh !important;
+            display:block; background:transparent; outline:none; }
+</style>
+</head>
+<body>
+<object id="avPlayerObject" type="application/avplayer"></object>
+<canvas id="canvas" width="1920" height="1080" tabindex="0"
+        oncontextmenu="event.preventDefault()"></canvas>
+<input id="nvTextoCampo" type="text" autocomplete="off" autocorrect="off"
+       spellcheck="false" aria-hidden="true" tabindex="-1"
+       style="position:fixed;left:0;bottom:0;width:2px;height:2px;opacity:0.01;
+              border:0;padding:0;margin:0;color:transparent;background:transparent;
+              caret-color:transparent;pointer-events:none;z-index:0">
+<script>
+  // M47 has no createImageBitmap/OffscreenCanvas. Reuse the existing main-thread
+  // image decoder with an Image element and Blob URL; no worker or shared heap.
+  if (typeof window.createImageBitmap === 'undefined') {
+    window.createImageBitmap = function (blob) {
+      return new Promise(function (resolve, reject) {
+        var url = URL.createObjectURL(blob), image = new Image();
+        image.onload = function () { URL.revokeObjectURL(url); resolve(image); };
+        image.onerror = function () { URL.revokeObjectURL(url); reject(new Error('Image decode failed')); };
+        image.src = url;
+      });
+    };
+  }
+  // Cooperative fibers share one JS event loop. These operations need no
+  // cross-thread synchronization; shared-memory workers remain disabled.
+  if (typeof window.Atomics === 'undefined') {
+    window.Atomics = {
+      load: function (a, i) { return a[i]; },
+      or: function (a, i, v) { var old = a[i]; a[i] = old | v; return old; },
+      compareExchange: function (a, i, expected, value) {
+        var old = a[i]; if (old === expected) a[i] = value; return old;
+      },
+      notify: function () { return 0; }
+    };
+  }
+  // SDK load is TV-only; desktop smoke intentionally has no AVPlay substitute.
+  if (/Tizen/i.test(navigator.userAgent)) {
+    document.write('<script src="$WEBAPIS/webapis/webapis.js"><\/script>');
+  }
+  var Module = {
+    canvas: document.getElementById('canvas'),
+    arguments: ['/app/art'],
+    print: function (t) { try { console.log(t); } catch (e) {} },
+    printErr: function (t) { try { console.error(t); } catch (e) {} },
+    onRuntimeInitialized: function () { window.nvLiteRuntime = true; }
+  };
+  // Preserve the standard Samsung text bridge and remote mappings in ES5.
+  (function () {
+    var t = { seq: 0, valor: "", fim: -1, aberto: false, microfone: -1 };
+    try {
+      if (window.tizen && tizen.systeminfo && tizen.systeminfo.getCapability)
+        t.microfone = tizen.systeminfo.getCapability("http://tizen.org/feature/microphone") ? 1 : 0;
+    } catch (e) { console.log("[texto] wgt: feature/microphone: " + e); }
+    console.log("[texto] wgt: feature/microphone = " + t.microfone);
+    var campo = function () { return document.getElementById("nvTextoCampo"); };
+    function devolverFoco() {
+      var c = document.getElementById("canvas");
+      if (c) c.focus();
+    }
+    function terminar(confirmou, falhou) {
+      if (!t.aberto) return;
+      t.aberto = false;
+      t.fim = falhou ? 2 : confirmou ? 1 : 0;
+      var el = campo();
+      if (el) el.blur();
+      devolverFoco();
+    }
+    function ler() {
+      var el = campo();
+      if (!el || !t.aberto) return;
+      if (el.value !== t.valor) { t.valor = el.value; t.seq++; }
+    }
+    t.abrir = function (atual, voz) {
+      var el = campo();
+      t.valor = atual || ""; t.fim = -1; t.aberto = true;
+      t.seq++;
+      if (el) {
+        el.value = t.valor;
+        try { el.focus(); } catch (e) { console.warn("[texto] wgt: focus: " + e); }
+      }
+      if (!el || document.activeElement !== el) {
+        console.warn("[voice] keyboard startup failed: input did not receive focus");
+        terminar(0, true); return;   // C ja abriu a sessao: devolve o cancelamento.
+      }
+      try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) {}
+      console.log("[texto] wgt: campo focado (voz=" + (voz ? 1 : 0) + ")");
+    };
+    t.fechar = function () {
+      if (!t.aberto) return;
+      t.aberto = false;
+      var el = campo();
+      if (el) el.blur();
+      devolverFoco();
+    };
+    window.nvTexto = t;
+    window.addEventListener("load", function () {
+      var el = campo();
+      if (!el) return;
+      el.addEventListener("input", ler);
+      el.addEventListener("compositionend", ler);
+      el.addEventListener("change", ler);
+      el.addEventListener("blur", function () { ler(); terminar(t.valor.trim() ? 1 : 0); });
+      ["keydown", "keyup", "keypress"].forEach(function (tipo) {
+        el.addEventListener(tipo, function (ev) {
+          if (!t.aberto) return;
+          ev.stopPropagation();
+          if (tipo !== "keydown") return;
+          if (ev.keyCode === 65376 || ev.keyCode === 13) { ev.preventDefault(); ler(); terminar(1); }
+          else if (ev.keyCode === 65385 || ev.keyCode === 27) { ev.preventDefault(); ler(); terminar(0); }
+        });
+      });
+    });
+    window.addEventListener("keydown", function (ev) {
+      if (!t.aberto || ev.keyCode !== 10009) return;
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      ler(); terminar(0);
+    }, true);
+  })();
+
+  try {
+    if (window.tizen && tizen.tvinputdevice) {
+      ["MediaPlay", "MediaPause", "MediaPlayPause", "MediaStop",
+       "MediaRewind", "MediaFastForward", "ChannelUp", "ChannelDown",
+       "ColorF0Red", "ColorF1Green", "ColorF2Yellow", "ColorF3Blue", "Search"]
+        .forEach(function (k) {
+          try { tizen.tvinputdevice.registerKey(k); } catch (e) {}
+        });
+    }
+  } catch (e) {}
+
+  function imeAberto() { return window.nvTexto && window.nvTexto.aberto; }
+
+  ["keydown", "keyup"].forEach(function (tipo) {
+    window.addEventListener(tipo, function (ev) {
+      if (imeAberto()) return;
+      if (ev.keyCode !== 10009) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      var alvo = document.getElementById("canvas") || window;
+      // Preserve the physical release and repeat marker for the Back guard.
+      alvo.dispatchEvent(new KeyboardEvent(tipo, {
+        key: "Escape", code: "Escape", keyCode: 27, which: 27,
+        repeat: ev.repeat, bubbles: true, cancelable: true
+      }));
+    }, true);
+  });
+
+  var MEDIA_TECLA = {
+    10252: { key: "Pause", code: "Pause", keyCode: 19 },  // MediaPlayPause
+    415:   { key: "Pause", code: "Pause", keyCode: 19 },  // MediaPlay
+    19:    { key: "Pause", code: "Pause", keyCode: 19 },  // MediaPause
+    413:   { key: "Escape", code: "Escape", keyCode: 27 }, // MediaStop
+    412:   { key: "ArrowLeft", code: "ArrowLeft", keyCode: 37 },  // MediaRewind
+    417:   { key: "ArrowRight", code: "ArrowRight", keyCode: 39 } // MediaFastForward
+  };
+  window.addEventListener("keydown", function (ev) {
+    if (imeAberto()) return;
+    if (!ev.isTrusted) return;
+    var alvoTecla = MEDIA_TECLA[ev.keyCode];
+    if (!alvoTecla) return;
+    if (!window.nvPlayerAberto) { ev.preventDefault(); ev.stopPropagation(); return; }
+    ev.preventDefault();
+    ev.stopPropagation();
+    var alvo = document.getElementById("canvas") || window;
+    ["keydown", "keyup"].forEach(function (t) {
+      alvo.dispatchEvent(new KeyboardEvent(t, {
+        key: alvoTecla.key, code: alvoTecla.code,
+        keyCode: alvoTecla.keyCode, which: alvoTecla.keyCode,
+        bubbles: true, cancelable: true
+      }));
+    });
+  }, true);
+
+  function mostrarPainelDOM() {
+    var p = document.getElementById("diag");
+    if (!p) return;
+    p.hidden = !p.hidden;
+    if (!p.hidden && window.__nvPintar) window.__nvPintar();
+  }
+  window.addEventListener("keydown", function (ev) {
+    if (imeAberto()) return;
+    var vermelha = (ev.keyCode === 403 || ev.key === "F1");
+    var verde    = (ev.keyCode === 404 || ev.key === "F2");
+    var canal    = (ev.keyCode === 427 || ev.key === "F3");
+    var canalMenos = (ev.keyCode === 428 || ev.key === "F4");
+    if (!vermelha && !verde && !canal && !canalMenos) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (canal) {
+      var alvoS = document.getElementById("canvas") || window;
+      alvoS.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "F7", code: "F7", keyCode: 118, which: 118,
+        bubbles: true, cancelable: true
+      }));
+      return;
+    }
+    if (canalMenos) {
+      var alvoM = document.getElementById("canvas") || window;
+      alvoM.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "F8", code: "F8", keyCode: 119, which: 119,
+        bubbles: true, cancelable: true
+      }));
+      return;
+    }
+    if (verde || !window.__nvPrimeiroQuadro) { mostrarPainelDOM(); return; }
+    var alvo = document.getElementById("canvas") || window;
+    ["keydown", "keyup"].forEach(function (t) {
+      alvo.dispatchEvent(new KeyboardEvent(t, {
+        key: "F9", code: "F9", keyCode: 120, which: 120,
+        bubbles: true, cancelable: true
+      }));
+    });
+  }, true);
+
+  window.addEventListener("keyup", function (ev) {
+    if (imeAberto()) return;
+    var mais = (ev.keyCode === 427 || ev.key === "F3");
+    var menos = (ev.keyCode === 428 || ev.key === "F4");
+    if (!mais && !menos) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    var alvoS = document.getElementById("canvas") || window;
+    alvoS.dispatchEvent(new KeyboardEvent("keyup", mais ? {
+      key: "F7", code: "F7", keyCode: 118, which: 118,
+      bubbles: true, cancelable: true
+    } : {
+      key: "F8", code: "F8", keyCode: 119, which: 119,
+      bubbles: true, cancelable: true
+    }));
+  }, true);
+
+  window.addEventListener("keydown", function (ev) {
+    if (imeAberto()) return;
+    if (!ev.isTrusted) return;
+    var f = ev.keyCode === 10225 ? "F6" : ev.keyCode === 405 ? "F5" : null;
+    if (!f) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    var alvo = document.getElementById("canvas") || window;
+    var code = f === "F6" ? 117 : 116;
+    ["keydown", "keyup"].forEach(function (t) {
+      alvo.dispatchEvent(new KeyboardEvent(t, {
+        key: f, code: f, keyCode: code, which: code,
+        bubbles: true, cancelable: true
+      }));
+    });
+  }, true);
+  (function () {
+    var vistos = {};
+    window.addEventListener("keydown", function (ev) {
+      if (!ev.isTrusted || ev.keyCode < 300 || vistos[ev.keyCode]) return;
+      vistos[ev.keyCode] = 1;
+      var t = "[tecla] wgt keyCode=" + ev.keyCode + " key=" + ev.key;
+      console.log(t);
+      if (window.__nvDiag) window.__nvDiag(t);
+    }, true);
+  })();
+
+  window.addEventListener("load", function () {
+    var c = document.getElementById("canvas");
+    if (c) c.focus();
+  });
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

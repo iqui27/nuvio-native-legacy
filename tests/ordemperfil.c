@@ -12,6 +12,9 @@
 
 const char *addons_base_por_id(const char *id) { (void)id; return ""; }
 int addons_n(void) { return 0; }
+unsigned addons_versao(void) { return 0; }
+int addons_travar_lista(unsigned version, int profile) { (void)version; (void)profile; return 1; }
+void addons_destravar_lista(void) {}
 int addons_base_desligada(const char *b) { (void)b; return 0; }
 const char *addons_base(int i) { (void)i; return ""; }
 const char *addons_id_manifesto(int i) { (void)i; return ""; }

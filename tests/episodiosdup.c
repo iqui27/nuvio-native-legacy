@@ -4,10 +4,13 @@
 //
 //   bash tests/episodiosdup.sh
 int ajustes_social(void) { return 1; }
+int ajustes_fonte_biblioteca(void) { return 0; }
+int ajustes_nota_episodio(int fonte) { (void)fonte; return 0; }
 int ajustes_hist_conta(void) { return 1; }
 int ajustes_busca_cinemeta(void) { return 1; }
 int ajustes_busca_nuvio(void) { return 0; }   // #311: Primeiro (padrao)
 int ajustes_ocultar_nao_lancados(void) { return 0; }   // #369: descoberta.c le o ajuste
+int ajustes_ocultar_filmes_vistos(void) { return 0; }    // #366: descoberta.c le o ajuste
 // FALTA DE MEMORIA NO CRESCIMENTO DO CONJUNTO (EpSet): com `callocFalha` ligado,
 // todo calloc de mais de 1024 itens (so o crescimento do conjunto pede isso
 // neste teste) responde NULL. O primeiro, de 1024, passa.
@@ -22,6 +25,7 @@ static void *callocDoTeste(size_t n, size_t tam) {
 #undef calloc
 Uint32 SDL_GetTicks(void) { return 0; }
 #include "../src/progresso.h"
+#include "../src/metaep.h"
 #include <assert.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -31,6 +35,12 @@ void addons_lista_travar(void) {}
 void addons_lista_destravar(void) {}
 void ws_destino(const char *b, const char *u, int p, char out[20]) {
   (void)b; (void)u; (void)p; out[0] = 0;
+}
+int addons_identidade_recebida(const char *b, unsigned v, NvPerfilSessao s, const char *c) {
+  (void)b; (void)v; (void)s; (void)c; return 1;
+}
+int addons_manifesto_recebido(const char *b, unsigned v, NvPerfilSessao s, const char *c) {
+  return addons_identidade_recebida(b, v, s, c);
 }
 void addons_manifesto_lido_base(int i, const char *b, const char *d,
                                unsigned v, const char *c) {
@@ -44,6 +54,11 @@ int         ajustes_idioma_ingles(void) { return 0; }
 int ajustes_idioma(void) { return 0; }
 int ajustes_cw_minimo(void) { return 1; }
 int   ajustes_cw_concluido(void)         { return 90; }  // factory "watched" threshold
+int ajustes_cw_proximo(void) { return 1; }
+int trakt_e_a_seguir(const char *id) { (void)id; return 0; }
+int trakt_cw_concluiu(const char *id, long long ms) { (void)id; (void)ms; return 0; }
+int prog_oculto_vence(const char *id, long long ms) { (void)id; (void)ms; return 0; }
+int prog_oculto_soltar(const char *id, long long ms) { (void)id; (void)ms; return 0; }
 unsigned recomenda_geracao(void)         { return 0; }   // social generation: no social layer here
 int   ajustes_cw_ordem(void)               { return 0; }   // Padrao (issue #127)
 int   ajustes_cw_mostrar_nao_exibidos(void) { return 1; }
@@ -51,6 +66,13 @@ const char *i18n(const char *s)         { return s; }
 const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nomePt; }
 static const char *fakeDados = "";
 const char *dados_dir(void)             { return fakeDados; }
+char *dados_caminho(char *dst, unsigned tam, const char *nome) {
+  snprintf(dst, tam, "%s/%s", fakeDados, nome); return dst;
+}
+void addons_catalogo_chave(const char *id, const char *base, const char *tipo,
+                           const char *catalogo, char *dst, unsigned tam) {
+  (void)base; snprintf(dst, tam, "%s:%s:%s", id, tipo, catalogo);
+}
 const char *sessao_usuario(void)        { return ""; }
 static int fakePerfil = 1;
 int         perfis_ativo(void)          { return fakePerfil; }
@@ -254,6 +276,7 @@ char *rede_baixar(const char *u, int t) {
     if (strstr(u, rotas[r].trecho)) return rotas[r].resp ? strdup(rotas[r].resp) : NULL;
   if (strstr(u, "cinemeta")) {
     if (strstr(u, "/meta/series/tt0388629.json") && cineSerie) return strdup(cineSerie);
+    if (strstr(u, "/meta/series/tt21975436.json") && cineSerie) return strdup(cineSerie);
     if (strstr(u, "/meta/movie/tt13293588.json"))  return strdup(META_FILME_ERRADO);
     if (strstr(u, "/meta/series/tt13293588.json")) return strdup(cineSerie ? cineSerie : META_SERIE);
     if (strstr(u, "/meta/movie/tt0111161.json"))   return strdup(META_FILME_OK);
@@ -270,6 +293,9 @@ char *rede_baixar(const char *u, int t) {
   if (strstr(u, "themoviedb.org/3/tv/555/season/")) return strdup("{\"episodes\":[]}");
   if (strstr(u, "themoviedb.org/3/movie/278?") && tmdbFilme) return strdup(tmdbFilme);
   return NULL;   // outros addons: fora do teste
+}
+char *rede_baixar_st(const char *u, int t, const char *const *c, int *status) {
+  (void)c; if (status) *status = 200; return rede_baixar(u, t);
 }
 char *rede_baixar_com(const char *u, int t, const char *const *c) {
   (void)c; return rede_baixar(u, t); }
@@ -333,25 +359,189 @@ int main(void) {
   assert(e[0].temporada == 1 && e[0].episodio == 1 && !strcmp(e[0].vid, "a:1"));
   assert(e[1].temporada == 1 && e[1].episodio == 2);
   assert(e[2].temporada == 2 && e[2].episodio == 1);
+  // Um ID repetido em tres pares distintos e ambiguo nos tres. A limpeza nao
+  // pode zerar os dois primeiros e, por isso, deixar o terceiro sobreviver.
+  n = parsearEpisodios("{\"videos\":["
+                       "{\"id\":\"a\",\"season\":1,\"episode\":1,\"ids\":{\"tvdb\":900}},"
+                       "{\"id\":\"b\",\"season\":1,\"episode\":2,\"ids\":{\"tvdb\":900}},"
+                       "{\"id\":\"c\",\"season\":2,\"episode\":1,\"ids\":{\"tvdb\":900}}]}", e, 16);
+  assert(n == 3 && e[0].tvdbEp == 0 && e[1].tvdbEp == 0 && e[2].tvdbEp == 0);
+  n = parsearEpisodios("{\"videos\":["
+                       "{\"id\":\"a\",\"season\":2,\"episode\":1},"
+                       "{\"id\":\"b\",\"season\":2,\"episode\":1,\"ids\":{\"tvdb\":50}}]}", e, 16);
+  assert(n == 1 && e[0].tvdbEp == 50);
+  n = parsearEpisodios("{\"videos\":["
+                       "{\"id\":\"a\",\"season\":2,\"episode\":1,\"ids\":{\"tvdb\":50}},"
+                       "{\"id\":\"b\",\"season\":2,\"episode\":1,\"ids\":{\"tvdb\":51}},"
+                       "{\"id\":\"c\",\"season\":2,\"episode\":1,\"ids\":{\"tvdb\":50}}]}", e, 16);
+  assert(n == 1 && e[0].tvdbEp == 0);
   // Sem "episode" (todos 0): nao sao repeticoes, nenhum some.
   n = parsearEpisodios("{\"videos\":[{\"id\":\"x\",\"season\":1,\"name\":\"X\"},"
                        "{\"id\":\"y\",\"season\":1,\"name\":\"Y\"},"
                        "{\"id\":\"z\",\"season\":1,\"name\":\"Z\"}]}", e, 16);
   assert(n == 3);
+  // The Blacklist: an addon videos[] with season = running index, episode 1 and
+  // a year-only date made 22 fake one-episode seasons. Never parsed/counted.
+  {
+    char bad[4096];
+    size_t k = (size_t)snprintf(bad, sizeof bad, "{\"videos\":[");
+    int i;
+    for (i = 1; i <= 22; i++)
+      k += (size_t)snprintf(bad + k, sizeof bad - k,
+        "%s{\"id\":\"tt2741602:%d:1\",\"season\":%d,\"episode\":1,\"released\":\"2013-01-01T00:00:00.000Z\"}",
+        i > 1 ? "," : "", i, i);
+    snprintf(bad + k, sizeof bad - k, "]}");
+    assert(desc_meta_n_episodios(bad) == 0);
+    assert(parsearEpisodios(bad, e, 16) == 0);
+    assert(js_videos_temporadas_falsas(bad));
+    assert(!metaep_existe(bad, 1, 1));
+    assert(!metaep_proximo(bad, 1, 1, NULL));
+    char date[40];
+    assert(!metaep_lancamento(bad, 1, 1, date, sizeof date));
+  }
+  // Sparse addon-only catalogs keep every episode, even without Cinemeta.
+  {
+    char sparse[2048];
+    size_t k = (size_t)snprintf(sparse, sizeof sparse,
+      "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\",\"name\":\"Sparse\",\"videos\":[");
+    for (int i = 1; i <= 5; i++)
+      k += (size_t)snprintf(sparse + k, sizeof sparse - k,
+        "%s{\"id\":\"sparse:%d:1\",\"season\":%d,\"episode\":1,\"released\":\"202%d-02-%02d\"}",
+        i > 1 ? "," : "", i, i, i, i);
+    snprintf(sparse + k, sizeof sparse - k, "]}}");
+    assert(desc_meta_n_episodios(sparse) == 5);
+    assert(parsearEpisodios(sparse, e, 16) == 5);
+    assert(!js_videos_temporadas_falsas(sparse));
+    assert(metaep_existe(sparse, 5, 1));
+    MetaEpInfo next;
+    assert(metaep_proximo(sparse, 1, 1, &next));
+    assert(next.temporada == 2 && next.episodio == 1);
+    char date[40];
+    assert(metaep_lancamento(sparse, 5, 1, date, sizeof date));
+    assert(!strcmp(date, "2025-02-05"));
+    nFake = 1; nRotas = 0;
+    fake[0] = (FakeAddon){ "Sparse", "https://sparse.test", "org.sparse", "tt", 0 };
+    rota("sparse.test/meta/series/tt13293588.json", sparse);
+    rota("cinemeta", NULL);
+    limparCacheMeta();
+    catalogoDe("tt13293588", "series", "Sparse", "org.sparse");
+    abrir();
+    assert(cat_n_episodios(0) == 5 && cat_item(0)->nTemporadas == 5);
+    for (int i = 0; i < 5; i++) {
+      char id[32], date[16];
+      snprintf(id, sizeof id, "sparse:%d:1", i + 1);
+      snprintf(date, sizeof date, "202%d-02-%02d", i + 1, i + 1);
+      const CatEp *ep = cat_episodio(0, i);
+      assert(ep->temporada == i + 1 && ep->episodio == 1);
+      assert(!strcmp(ep->vid, id) && !strcmp(ep->dataIso, date));
+    }
+    nFake = 0; nRotas = 0;
+    limparCacheMeta();
+  }
+  // Missing dates and genuine episode numbers do not prove fake seasons.
+  for (int dated = 0; dated < 2; dated++) {
+    char sparse[2048];
+    size_t k = (size_t)snprintf(sparse, sizeof sparse, "{\"videos\":[");
+    for (int i = 1; i <= 5; i++)
+      k += (size_t)snprintf(sparse + k, sizeof sparse - k,
+        "%s{\"season\":%d,\"episode\":%d%s}", i > 1 ? "," : "", i,
+        dated ? 2 : 1, dated ? ",\"released\":\"2020-01-01\"" : "");
+    snprintf(sparse + k, sizeof sparse - k, "]}");
+    assert(desc_meta_n_episodios(sparse) == 5);
+    assert(parsearEpisodios(sparse, e, 16) == 5);
+  }
+  // A real short-season series (6 seasons, 2 episodes each) stays intact.
+  {
+    char ok[4096];
+    size_t k = (size_t)snprintf(ok, sizeof ok, "{\"videos\":[");
+    int i;
+    for (i = 0; i < 12; i++)
+      k += (size_t)snprintf(ok + k, sizeof ok - k,
+        "%s{\"season\":%d,\"episode\":%d}", i ? "," : "", i / 2 + 1, i % 2 + 1);
+    snprintf(ok + k, sizeof ok - k, "]}");
+    assert(desc_meta_n_episodios(ok) == 12);
+    assert(parsearEpisodios(ok, e, 16) == 12);
+  }
+  // A lista adiantada e somente um fallback visual. Quando a fonte canonica
+  // chega, sua topologia substitui a provisoria: S1E2 e S2E1 abaixo carregam
+  // o mesmo TVDB, mas apenas o par final deve continuar visivel.
+  {
+    const char *cedo = "{\"videos\":["
+      "{\"id\":\"tt111:1:1\",\"season\":1,\"episode\":1,\"name\":\"One early\",\"ids\":{\"tvdb\":101}},"
+      "{\"id\":\"tt111:1:2\",\"season\":1,\"episode\":2,\"name\":\"Thirteen\",\"ids\":{\"tvdb\":102}}]}";
+    const char *final = "{\"videos\":["
+      "{\"id\":\"tt111:1:1\",\"season\":1,\"episode\":1,\"name\":\"One final\",\"ids\":{\"tvdb\":101}},"
+      "{\"id\":\"tt111:2:1\",\"season\":2,\"episode\":1,\"name\":\"Season two\",\"ids\":{\"tvdb\":102}}]}";
+    TempsPub tp = {0};
+    catalogoCom("tt111", "series", "Alternate numbering");
+    snprintf(epAlvoId, sizeof epAlvoId, "%s", "tt111");
+    assert(publicarEpisodiosEx(cedo, 0, "Alternate numbering", NULL, 0, &tp, 1) == 2);
+    assert(cat_n_episodios(0) == 2 && cat_item(0)->epsParciais);
+    assert(publicarEpisodiosEx(final, 0, "Alternate numbering", cedo,
+                              DESC_MESCLA_VAZIOS, &tp, 0) == 2);
+    assert(cat_n_episodios(0) == 2 && !cat_item(0)->epsParciais);
+    assert(cat_episodio(0, 0)->temporada == 1 && cat_episodio(0, 0)->episodio == 1);
+    assert(cat_episodio(0, 1)->temporada == 2 && cat_episodio(0, 1)->episodio == 1);
+    assert(cat_episodio(0, 1)->tvdbEp == 102);
+    // Resposta final vazia conserva a lista provisoria/final ja utilizavel.
+    assert(publicarEpisodiosEx("{\"videos\":[]}", 0, "Alternate numbering",
+                              NULL, 0, &tp, 0) == 0);
+    assert(cat_n_episodios(0) == 2);
+  }
+  // Kaiju No. 8: Cinemeta's complete-looking 23-episode S1 must still be
+  // replaced when the selected metadata addon proves a 35-episode S1/S2
+  // topology. Keeping both numeric layouts scatters duplicate episodes.
+  {
+    char cine[8192], addon[12288];
+    size_t a = (size_t)snprintf(cine, sizeof cine,
+      "{\"meta\":{\"id\":\"tt21975436\",\"type\":\"series\","
+      "\"name\":\"Kaiju No. 8\",\"videos\":[");
+    size_t b = (size_t)snprintf(addon, sizeof addon,
+      "{\"meta\":{\"id\":\"tt21975436\",\"type\":\"series\","
+      "\"name\":\"Kaiju No. 8\",\"videos\":[");
+    for (int i = 1; i <= 23; i++)
+      a += (size_t)snprintf(cine + a, sizeof cine - a,
+        "%s{\"season\":1,\"episode\":%d,\"ids\":{\"tvdb\":%d}}",
+        i > 1 ? "," : "", i, 1000 + i);
+    for (int i = 1; i <= 35; i++) {
+      int t = i <= 12 ? 1 : 2, e = i <= 12 ? i : i - 12;
+      b += (size_t)snprintf(addon + b, sizeof addon - b,
+        "%s{\"season\":%d,\"episode\":%d,\"ids\":{\"tvdb\":%d}}",
+        i > 1 ? "," : "", t, e, 1000 + i);
+    }
+    snprintf(cine + a, sizeof cine - a, "]}}");
+    snprintf(addon + b, sizeof addon - b, "]}}");
+    nFake = 0; nRotas = 0; addonMeta = 1; addonTipo = "/series/";
+    fakeMetaExterno = 0; fakeSoCinemeta = 0; fakeIdioma = "en-US";
+    cineSerie = cine; addonResp = addon;
+    limparCacheMeta();
+    catalogoCom("tt21975436", "series", "Kaiju No. 8");
+    abrir();
+    assert(cat_n_episodios(0) == 35);
+    int velho = 0, novo = 0;
+    for (int i = 0; i < cat_n_episodios(0); i++) {
+      const CatEp *x = cat_episodio(0, i);
+      velho += x->temporada == 1 && x->episodio == 13;
+      novo += x->temporada == 2 && x->episodio == 1 && x->tvdbEp == 1013;
+    }
+    assert(!velho && novo == 1);
+    addonMeta = 0; addonResp = NULL; cineSerie = NULL; nRotas = 0;
+    limparCacheMeta();
+  }
   // Samsung 2.0.4: One Piece renumerado por um addon de fontes.
   {
-    size_t cap = 2u << 20, k;
+    size_t cap = 8u << 20, k;
     char *cine = malloc(cap), *arq = malloc(cap);
     int i, caso, via;
     assert(cine && arq);
-    for (caso = 0; caso < 5; caso++) {
+    for (caso = 0; caso < 6; caso++) {
       // 18 temporadas/1180 vs 1/1200; depois 89%, 90%, 100% de
       // cobertura em uma temporada; por fim 98% com perda de temporadas.
       // Quatro variantes por arquivo.
-      int nc = caso && caso < 4 ? 100 : 1180, na = caso && caso < 4 ? 120 : 1200;
+      int nc = caso && caso < 4 ? 100 : 1180, na = caso == 5 ? 10843 : (caso && caso < 4 ? 120 : 1200);
       k = (size_t)snprintf(cine, cap, "{\"meta\":{\"id\":\"tt0388629\",\"type\":\"series\",\"name\":\"One Piece\",\"videos\":[");
       for (i = 0; i < nc; i++) {
-        int t = caso ? 1 : i % 18 + 1, ep = caso ? i + 1 : i / 18 + 1;
+        int t = caso && caso != 5 ? 1 : i % 18 + 1, ep = caso && caso != 5 ? i + 1 : i / 18 + 1;
         if (caso == 4 && i >= nc - 17) { t = i - (nc - 17) + 2; ep = 1; }
         k += (size_t)snprintf(cine + k, cap - k,
           "%s{\"id\":\"tt0388629:%d:%d\",\"season\":%d,\"episode\":%d,\"name\":\"C%d\"}",
@@ -360,12 +550,20 @@ int main(void) {
       snprintf(cine + k, cap - k, "]}}");
       k = (size_t)snprintf(arq, cap, "{\"meta\":{\"id\":\"tt0388629\",\"type\":\"series\",\"name\":\"One Piece\",\"videos\":[");
       for (i = 0; i < na * 4; i++) {
-        int ep = i % na + 1;
+        int ep = i % na + 1, t = 1;
+        // Field logs 95009/95369/95816: 10843 distinct file episodes
+        // replace 1180 catalog episodes, then get truncated to 2400.
+        // Full pair coverage must not make an oversized replacement safe.
+        if (caso == 5) {
+          int j = i % na;
+          t = j < nc ? j % 18 + 1 : 1;
+          ep = j < nc ? j / 18 + 1 : j + 1;
+        }
         if (caso == 1 && ep > 89) ep += 100;
         if (caso == 2 && ep > 90) ep += 100;
         k += (size_t)snprintf(arq + k, cap - k,
-          "%s{\"id\":\"file%d\",\"season\":1,\"episode\":%d,\"name\":\"One.Piece.%d.mkv\"}",
-          i ? "," : "", i, ep, ep);
+          "%s{\"id\":\"file%d\",\"season\":%d,\"episode\":%d,\"name\":\"One.Piece.%d.mkv\"}",
+          i ? "," : "", i, t, ep, ep);
       }
       snprintf(arq + k, cap - k, "]}}");
       assert(k < cap - 8);
@@ -384,9 +582,9 @@ int main(void) {
         abrir();
         printf("One Piece caso=%d catalogo-primeiro=%d: %d episodios, %d temporadas\n",
                caso, via, cat_n_episodios(0), cat_item(0)->nTemporadas);
-        assert(cat_n_episodios(0) == (caso < 2 || caso == 4 ? nc : na));
+        assert(cat_n_episodios(0) == (caso < 2 || caso >= 4 ? nc : na));
         assert(cat_item(0)->nTemporadas == (caso && caso < 4 ? 1 : 18));
-        if (caso < 2 || caso == 4) {
+        if (caso < 2 || caso >= 4) {
           assert(!strcmp(cat_episodio(0, 0)->vid, "tt0388629:1:1"));
           assert(!strstr(cat_episodio(0, nc - 1)->nome, ".mkv"));
         }

@@ -20,6 +20,7 @@ void amigoperfil_atualizar(float dt, Uint32 agora);
 void amigoperfil_desenhar(Uint32 agora);
 // 1 uma vez quando a pessoa pediu para sair (Voltar).
 int  amigoperfil_quer_sair(void);
+int  amigoperfil_pediu_relogio(void);
 // 1 uma vez com o IMDb do cartaz em que a pessoa deu OK.
 int  amigoperfil_pediu_titulo(char *imdb, size_t tam);
 // TESTE (#99): a fileira em foco (-1 = nenhuma) e, em *coluna, o cartaz.

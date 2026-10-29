@@ -11,7 +11,7 @@
 #define CC_VERSAO "NVCONTA 1"
 #define CC_PERFIS 32
 
-static const char *const SUPERFICIES[] = { CC_ADDONS_APLICADOS, CC_ADDONS, CC_COLECOES, CC_BIBLIOTECA, CC_VISTOS };
+static const char *const SUPERFICIES[] = { CC_ADDONS_TOGGLES, CC_ADDONS_APLICADOS, CC_ADDONS, CC_COLECOES, CC_BIBLIOTECA, CC_VISTOS };
 #define CC_N_SUP ((int)(sizeof SUPERFICIES / sizeof SUPERFICIES[0]))
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 static unsigned geracao;

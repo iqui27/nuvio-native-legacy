@@ -1,0 +1,1045 @@
+{
+  "success": true,
+  "data": {
+    "userData": {
+      "requiredResolutions": [
+        "2160p",
+        "1080p"
+      ],
+      "includedResolutions": [
+        "2160p",
+        "1080p"
+      ],
+      "excludedResolutions": [
+        "2160p",
+        "1080p"
+      ],
+      "preferredResolutions": [
+        "2160p",
+        "1080p"
+      ],
+      "requiredQualities": [
+        "BluRay REMUX",
+        "WEB-DL"
+      ],
+      "includedQualities": [
+        "BluRay REMUX",
+        "WEB-DL"
+      ],
+      "excludedQualities": [
+        "BluRay REMUX",
+        "WEB-DL"
+      ],
+      "preferredQualities": [
+        "BluRay REMUX",
+        "WEB-DL"
+      ],
+      "requiredVisualTags": [
+        "HDR",
+        "DV"
+      ],
+      "includedVisualTags": [
+        "HDR",
+        "DV"
+      ],
+      "excludedVisualTags": [
+        "HDR",
+        "DV"
+      ],
+      "preferredVisualTags": [
+        "HDR",
+        "DV"
+      ],
+      "requiredAudioTags": [
+        "Atmos",
+        "DTS"
+      ],
+      "includedAudioTags": [
+        "Atmos",
+        "DTS"
+      ],
+      "excludedAudioTags": [
+        "Atmos",
+        "DTS"
+      ],
+      "preferredAudioTags": [
+        "Atmos",
+        "DTS"
+      ],
+      "requiredLanguages": [
+        "Portuguese",
+        "English",
+        "Spanish",
+        "French",
+        "German",
+        "Italian",
+        "Japanese",
+        "Korean",
+        "Chinese",
+        "Arabic",
+        "Hindi",
+        "Dutch",
+        "Polish",
+        "Turkish",
+        "Swedish",
+        "Finnish",
+        "Norwegian",
+        "Danish",
+        "Greek",
+        "Czech"
+      ],
+      "includedLanguages": [
+        "Portuguese",
+        "English",
+        "Spanish",
+        "French",
+        "German",
+        "Italian",
+        "Japanese",
+        "Korean",
+        "Chinese",
+        "Arabic",
+        "Hindi",
+        "Dutch",
+        "Polish",
+        "Turkish",
+        "Swedish",
+        "Finnish",
+        "Norwegian",
+        "Danish",
+        "Greek",
+        "Czech"
+      ],
+      "excludedLanguages": [
+        "Portuguese",
+        "English",
+        "Spanish",
+        "French",
+        "German",
+        "Italian",
+        "Japanese",
+        "Korean",
+        "Chinese",
+        "Arabic",
+        "Hindi",
+        "Dutch",
+        "Polish",
+        "Turkish",
+        "Swedish",
+        "Finnish",
+        "Norwegian",
+        "Danish",
+        "Greek",
+        "Czech"
+      ],
+      "preferredLanguages": [
+        "Portuguese",
+        "English",
+        "Spanish",
+        "French",
+        "German",
+        "Italian",
+        "Japanese",
+        "Korean",
+        "Chinese",
+        "Arabic",
+        "Hindi",
+        "Dutch",
+        "Polish",
+        "Turkish",
+        "Swedish",
+        "Finnish",
+        "Norwegian",
+        "Danish",
+        "Greek",
+        "Czech"
+      ],
+      "requiredSubtitles": [
+        "Portuguese",
+        "English"
+      ],
+      "includedSubtitles": [
+        "Portuguese",
+        "English"
+      ],
+      "excludedSubtitles": [
+        "Portuguese",
+        "English"
+      ],
+      "preferredSubtitles": [
+        "Portuguese",
+        "English"
+      ],
+      "requiredStreamTypes": [
+        "debrid",
+        "p2p"
+      ],
+      "includedStreamTypes": [
+        "debrid",
+        "p2p"
+      ],
+      "excludedStreamTypes": [
+        "debrid",
+        "p2p"
+      ],
+      "preferredStreamTypes": [
+        "debrid",
+        "p2p"
+      ],
+      "requiredEncodes": [
+        "HEVC",
+        "AVC"
+      ],
+      "includedEncodes": [
+        "HEVC",
+        "AVC"
+      ],
+      "excludedEncodes": [
+        "HEVC",
+        "AVC"
+      ],
+      "preferredEncodes": [
+        "HEVC",
+        "AVC"
+      ],
+      "requiredAudioChannels": [
+        "7.1",
+        "5.1"
+      ],
+      "includedAudioChannels": [
+        "7.1",
+        "5.1"
+      ],
+      "excludedAudioChannels": [
+        "7.1",
+        "5.1"
+      ],
+      "preferredAudioChannels": [
+        "7.1",
+        "5.1"
+      ],
+      "requiredReleaseGroups": [
+        "Cinema",
+        "Archive"
+      ],
+      "includedReleaseGroups": [
+        "Cinema",
+        "Archive"
+      ],
+      "excludedReleaseGroups": [
+        "Cinema",
+        "Archive"
+      ],
+      "preferredReleaseGroups": [
+        "Cinema",
+        "Archive"
+      ],
+      "size": {
+        "global": {
+          "movies": [
+            0,
+            30
+          ],
+          "series": [
+            0,
+            30
+          ],
+          "anime": [
+            0,
+            30
+          ]
+        },
+        "resolution": {
+          "2160p": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          },
+          "1440p": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          },
+          "1080p": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          },
+          "720p": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          },
+          "576p": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          },
+          "480p": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          },
+          "360p": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          },
+          "240p": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          },
+          "144p": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          },
+          "Unknown": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          }
+        }
+      },
+      "bitrate": {
+        "global": {
+          "movies": [
+            0,
+            30
+          ],
+          "series": [
+            0,
+            30
+          ],
+          "anime": [
+            0,
+            30
+          ]
+        },
+        "resolution": {
+          "2160p": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          },
+          "1440p": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          },
+          "1080p": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          },
+          "720p": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          },
+          "576p": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          },
+          "480p": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          },
+          "360p": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          },
+          "240p": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          },
+          "144p": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          },
+          "Unknown": {
+            "movies": [
+              1,
+              20
+            ],
+            "series": [
+              1,
+              20
+            ],
+            "anime": [
+              1,
+              20
+            ]
+          }
+        },
+        "useMetadataRuntime": true
+      },
+      "services": [
+        {
+          "id": "torbox",
+          "enabled": true,
+          "credentials": {}
+        },
+        {
+          "id": "realdebrid",
+          "enabled": false,
+          "credentials": {}
+        }
+      ],
+      "presets": [
+        {
+          "type": "torrentio",
+          "instanceId": "0",
+          "enabled": true,
+          "options": {
+            "resources": [
+              "stream",
+              "catalog"
+            ],
+            "timeout": 15000
+          }
+        },
+        {
+          "type": "comet",
+          "instanceId": "1",
+          "enabled": true,
+          "options": {
+            "resources": [
+              "stream",
+              "catalog"
+            ],
+            "timeout": 15000
+          }
+        },
+        {
+          "type": "mediafusion",
+          "instanceId": "2",
+          "enabled": true,
+          "options": {
+            "resources": [
+              "stream",
+              "catalog"
+            ],
+            "timeout": 15000
+          }
+        },
+        {
+          "type": "webstreamr",
+          "instanceId": "3",
+          "enabled": true,
+          "options": {
+            "resources": [
+              "stream",
+              "catalog"
+            ],
+            "timeout": 15000
+          }
+        }
+      ],
+      "excludedKeywords": [
+        "remux",
+        "extended cut"
+      ],
+      "excludedRegexPatterns": [
+        "(?i)sample",
+        "(?i)cam"
+      ],
+      "excludedStreamExpressions": [
+        {
+          "expression": "resolution >= 1080",
+          "enabled": true
+        }
+      ],
+      "requiredKeywords": [
+        "remux",
+        "extended cut"
+      ],
+      "requiredRegexPatterns": [
+        "(?i)sample",
+        "(?i)cam"
+      ],
+      "requiredStreamExpressions": [
+        {
+          "expression": "resolution >= 1080",
+          "enabled": true
+        }
+      ],
+      "includedKeywords": [
+        "remux",
+        "extended cut"
+      ],
+      "includedRegexPatterns": [
+        "(?i)sample",
+        "(?i)cam"
+      ],
+      "includedStreamExpressions": [
+        {
+          "expression": "resolution >= 1080",
+          "enabled": true
+        }
+      ],
+      "preferredKeywords": [
+        "remux",
+        "extended cut"
+      ],
+      "preferredRegexPatterns": [
+        {
+          "name": "Cinema",
+          "pattern": "(?i)remux"
+        }
+      ],
+      "preferredStreamExpressions": [
+        {
+          "expression": "resolution >= 1080",
+          "enabled": true
+        }
+      ],
+      "rankedRegexPatterns": [
+        {
+          "pattern": "(?i)hdr",
+          "name": "HDR",
+          "score": 10
+        }
+      ],
+      "rankedStreamExpressions": [
+        {
+          "expression": "cached == true",
+          "enabled": true,
+          "score": 20
+        }
+      ],
+      "regexOverrides": [
+        {
+          "pattern": "(?i)sample",
+          "disabled": true
+        }
+      ],
+      "selOverrides": [
+        {
+          "expression": "size > 0",
+          "disabled": false
+        }
+      ],
+      "excludeSeederRange": [
+        10,
+        10000
+      ],
+      "includeSeederRange": [
+        10,
+        10000
+      ],
+      "requiredSeederRange": [
+        10,
+        10000
+      ],
+      "excludeAgeRange": [
+        10,
+        10000
+      ],
+      "includeAgeRange": [
+        10,
+        10000
+      ],
+      "requiredAgeRange": [
+        10,
+        10000
+      ],
+      "seederRangeTypes": [
+        "p2p",
+        "cached"
+      ],
+      "ageRangeTypes": [
+        "usenet"
+      ],
+      "excludeCached": false,
+      "excludeUncached": true,
+      "excludeCachedFromServices": [
+        "torbox"
+      ],
+      "excludeUncachedMode": "and",
+      "excludeSeasonPacks": true,
+      "enableSeadex": true,
+      "sortCriteria": {
+        "global": [
+          {
+            "key": "cached",
+            "direction": "desc"
+          },
+          {
+            "key": "resolution",
+            "direction": "desc"
+          },
+          {
+            "key": "size",
+            "direction": "asc"
+          }
+        ],
+        "cached": [
+          {
+            "key": "cached",
+            "direction": "desc"
+          },
+          {
+            "key": "resolution",
+            "direction": "desc"
+          },
+          {
+            "key": "size",
+            "direction": "asc"
+          }
+        ],
+        "uncached": [
+          {
+            "key": "cached",
+            "direction": "desc"
+          },
+          {
+            "key": "resolution",
+            "direction": "desc"
+          },
+          {
+            "key": "size",
+            "direction": "asc"
+          }
+        ],
+        "movies": [
+          {
+            "key": "cached",
+            "direction": "desc"
+          },
+          {
+            "key": "resolution",
+            "direction": "desc"
+          },
+          {
+            "key": "size",
+            "direction": "asc"
+          }
+        ],
+        "series": [
+          {
+            "key": "cached",
+            "direction": "desc"
+          },
+          {
+            "key": "resolution",
+            "direction": "desc"
+          },
+          {
+            "key": "size",
+            "direction": "asc"
+          }
+        ],
+        "anime": [
+          {
+            "key": "cached",
+            "direction": "desc"
+          },
+          {
+            "key": "resolution",
+            "direction": "desc"
+          },
+          {
+            "key": "size",
+            "direction": "asc"
+          }
+        ],
+        "cachedMovies": [
+          {
+            "key": "cached",
+            "direction": "desc"
+          },
+          {
+            "key": "resolution",
+            "direction": "desc"
+          },
+          {
+            "key": "size",
+            "direction": "asc"
+          }
+        ],
+        "uncachedMovies": [
+          {
+            "key": "cached",
+            "direction": "desc"
+          },
+          {
+            "key": "resolution",
+            "direction": "desc"
+          },
+          {
+            "key": "size",
+            "direction": "asc"
+          }
+        ],
+        "cachedSeries": [
+          {
+            "key": "cached",
+            "direction": "desc"
+          },
+          {
+            "key": "resolution",
+            "direction": "desc"
+          },
+          {
+            "key": "size",
+            "direction": "asc"
+          }
+        ],
+        "uncachedSeries": [
+          {
+            "key": "cached",
+            "direction": "desc"
+          },
+          {
+            "key": "resolution",
+            "direction": "desc"
+          },
+          {
+            "key": "size",
+            "direction": "asc"
+          }
+        ],
+        "cachedAnime": [
+          {
+            "key": "cached",
+            "direction": "desc"
+          },
+          {
+            "key": "resolution",
+            "direction": "desc"
+          },
+          {
+            "key": "size",
+            "direction": "asc"
+          }
+        ],
+        "uncachedAnime": [
+          {
+            "key": "cached",
+            "direction": "desc"
+          },
+          {
+            "key": "resolution",
+            "direction": "desc"
+          },
+          {
+            "key": "size",
+            "direction": "asc"
+          }
+        ]
+      },
+      "formatter": {
+        "id": "custom",
+        "selectedSaved": "cinema",
+        "definitions": {
+          "custom": {
+            "name": "{stream.name}",
+            "description": "{stream.size}"
+          },
+          "saved": {
+            "cinema": {
+              "name": "{stream.name}",
+              "description": "{stream.size}"
+            }
+          }
+        }
+      },
+      "resultLimits": {
+        "global": 10,
+        "service": 10,
+        "addon": 10,
+        "resolution": 10,
+        "quality": 10,
+        "streamType": 10,
+        "indexer": 10,
+        "releaseGroup": 10,
+        "mode": "independent"
+      },
+      "proxy": {
+        "id": "mediaflow",
+        "enabled": true,
+        "proxiedServices": [
+          "torbox"
+        ],
+        "proxiedAddons": [
+          "torrentio"
+        ]
+      },
+      "appliedTemplates": [
+        {
+          "id": "cinema",
+          "version": "1.0",
+          "ignored": false
+        }
+      ],
+      "digitalReleaseFilter": {
+        "enabled": true
+      },
+      "yearMatching": {
+        "enabled": true
+      },
+      "titleMatching": {
+        "enabled": true
+      },
+      "seasonEpisodeMatching": {
+        "enabled": true
+      },
+      "episodeTitleMatching": {
+        "enabled": true
+      },
+      "languageInference": {
+        "enabled": true
+      },
+      "autoPlay": {
+        "enabled": true
+      },
+      "areYouStillThere": {
+        "enabled": true
+      },
+      "preloadStreams": {
+        "enabled": true
+      },
+      "statistics": {
+        "enabled": true
+      },
+      "dynamicAddonFetching": {
+        "enabled": true
+      },
+      "groups": {
+        "enabled": true
+      },
+      "deduplicator": {
+        "enabled": true
+      },
+      "cacheAndPlay": {
+        "enabled": true
+      },
+      "failover": {
+        "enabled": true
+      },
+      "serviceWrap": {
+        "enabled": true
+      },
+      "remuxDb": {
+        "enabled": true
+      },
+      "precacheNextEpisode": true,
+      "precacheSingleStream": false,
+      "precacheSelector": "resolution >= 1080",
+      "externalDownloads": false,
+      "autoRemoveDownloads": true,
+      "checkOwned": true,
+      "hideErrors": false,
+      "posterService": "none",
+      "manifestNotice": "significant",
+      "linkedAccounts": {
+        "pushBehaviour": "ask"
+      },
+      "catalogModifications": [
+        {
+          "id": "cinema",
+          "type": "movie",
+          "name": "Cinema",
+          "enabled": true,
+          "shuffle": true,
+          "showOnHome": true
+        }
+      ],
+      "newCatalogsDisabled": [
+        "archive"
+      ],
+      "upstreamCatalogOrder": [
+        "cinema"
+      ],
+      "mergedCatalogs": [
+        {
+          "id": "all",
+          "name": "Cinema",
+          "type": "movie",
+          "catalogIds": [
+            "cinema"
+          ],
+          "mergeMethod": "interleave"
+        }
+      ]
+    }
+  }
+}

@@ -258,7 +258,10 @@ int main(void) {
     r = correlacao(nit, bor);
     printf("borrada x arte nitida: correlacao das formas %.2f, detalhe %.2f -> %.2f niveis/px\n", r, gn, gb);
     if (r < 0.80) { printf("FALHA: a borrada nao tem as formas da arte\n"); falhas++; }
-    if (gb > gn * 0.25) { printf("FALHA: a borrada nao esta desfocada\n"); falhas++; }
+    // +1.0: o dither da Borrada (fundo.c, o mesmo nv_dither do Frost) soma
+    // ruido de +-1/255 por pixel — ate ~0,5 niveis/px de media no detalhe —
+    // sem trazer detalhe nenhum de volta (as formas seguem na correlacao).
+    if (gb > gn * 0.25 + 1.0) { printf("FALHA: a borrada nao esta desfocada\n"); falhas++; }
     if (getenv("FUNDO_PNG")) salvar(getenv("FUNDO_PNG"));
   }
 

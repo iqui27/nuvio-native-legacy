@@ -573,7 +573,7 @@ static void cenaHome(int s) {
     { TxtLinha t = txt(TXT_G18R, "Um pedaço da fileira de cima aparece aqui");
       GfxRect r = { 520, 300, t.w + 44, 44 };
       sIlha(r, 22); txtMeio(t, r.x + 22, r.y, 44, 1); }
-    gfx_cor((GfxRect){ 0, 0, 96, 720 }, 0, 0.039f, 0.043f, 0.055f, 0.86f);
+    gfx_vidro_ou_solido((GfxRect){ 0, 0, 96, 720 }, 0, GFX_VIDRO_DENS, 1.0f, 0.039f, 0.043f, 0.055f, 0.86f);
     gfx_cor((GfxRect){ 95, 0, 1, 720 }, 0, 1, 1, 1, 0.10f);
     for (i = 0; i < 5; i++) {
       GfxRect r = { 33, 360 - 2.5f * 56 + i * 56 - 15, 30, 30 };

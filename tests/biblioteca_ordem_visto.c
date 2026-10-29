@@ -24,6 +24,7 @@ int main(void) {
     snprintf(v[i].tipo, sizeof v[i].tipo, "movie");
     snprintf(v[i].meta, sizeof v[i].meta, "20%02d", 10 + i);
     v[i].naLista = 1;
+    v[i].listaFontes = 1u << AJ_SALVOS_LOCAL;
   }
   cat_definir(v, 6);
   cat_historico_definir_id("tt770001", "movie", 1);

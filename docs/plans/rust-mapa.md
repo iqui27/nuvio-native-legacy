@@ -170,7 +170,7 @@ Feito: `rust/mkvcore` (no_std, staticlib, sem dependências, `panic=abort`, hand
 |---|---|---|
 | Android arm64-v8a / armeabi-v7a (`tools/android.sh`) | **ligada** (padrão) | `NUVIO_RUST_MKVCORE=0` volta ao C |
 | Mac (`tools/mac.sh`) | **ligada** (padrão) | idem |
-| webOS ARM (`tools/arm.sh`) | **desligada** | falta `rustup target add armv7-unknown-linux-gnueabi` (e `.a` na linha de link do SDK) |
+| webOS ARM (`tools/arm.sh`) | **ON — 2026-10-19** | Offline `armv7-unknown-linux-gnueabi` links with the SDK softfp ABI; all modes default to Rust, `NUVIO_RUST_MKVCORE=0` keeps C. Required GLIBC remains 2.12; binary 57,987,068 → 58,191,988 bytes. See `docs/issues/rust-mkvcore-webos-abi.md`. |
 | Samsung `.tpk` 4/5 e 6+ (`tools/tpk.sh`) | **desligada** | mesmo alvo: `rustup target add armv7-unknown-linux-gnueabi` |
 | Samsung `.wgt` WASM (`tools/tizen.sh`) | **desligada** | falta `rustup target add wasm32-unknown-emscripten` |
 

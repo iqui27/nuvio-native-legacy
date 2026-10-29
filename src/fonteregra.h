@@ -103,6 +103,8 @@ int  fonteregra_modelo_atual(void);            // o modelo igual ao padrao em us
 
 // --- perfil e conta ---------------------------------------------------------
 void fonteregra_perfil_guardar(int perfil);
+// Sem copia, restaura listas/ordem/regex vazias; 0 indica primeira visita,
+// nunca permite herdar o estado vivo do perfil anterior.
 int  fonteregra_perfil_restaurar(int perfil);
 void fonteregra_perfil_esquecer(void);
 // Le do blob da conta (so as chaves que existem). Devolve quantas mudaram.

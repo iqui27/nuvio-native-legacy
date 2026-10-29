@@ -3,6 +3,8 @@
 #include "../src/proxyts.c"
 #include <assert.h>
 
+int ajustes_livetv_resolucao(void) { return 0; }
+
 #define TAM_SEG (188 * 5)
 static pthread_mutex_t fixtureTrava = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t fixtureCond = PTHREAD_COND_INITIALIZER;

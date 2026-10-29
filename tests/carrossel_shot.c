@@ -31,6 +31,7 @@
 #include "agenda.h"
 #include "artehero.h"
 #include "catalogo.h"
+#include "addons.h"
 #include "colecoes.h"
 #include "corviva.h"
 #include "ctxmenu.h"
@@ -231,6 +232,11 @@ int main(int argc, char **argv) {
   ajusta(2, getenv("NUVIO_SHOT_VIDRO") && !strcmp(getenv("NUVIO_SHOT_VIDRO"), "1"));
   assert(home_iniciar("deploy/app/art"));
 
+  // A Home exige um addon ligado mesmo quando o catalogo e um fixture local
+  // (homelayouts_shot.c): sem ele o homevazio toma a tela e as capturas saem
+  // todas com o QR de "Sua Home está vazia".
+  { AddonRemoto addon = { .nome = "Fixture", .url = "http://127.0.0.1:1/manifest.json", .ativo = 1 };
+    assert(addons_definir_lista(&addon, 1)); }
   memset(itens, 0, sizeof itens);
   memset(fils, 0, sizeof fils);
   for (k = 0; k < NF; k++) {
@@ -288,11 +294,12 @@ int main(int argc, char **argv) {
              getenv("NV_COL_FORMA") ? getenv("NV_COL_FORMA") : "",
              getenv("NV_COL_FORMA") ? "\"," : "");
     snprintf(js, sizeof js,
-      "{\"collections\":[{\"id\":\"cs\",\"title\":\"Streaming\",\"backdropImageUrl\":\"deploy/app/art/07.jpg\",\"folders\":["
+      "{\"collections\":[{\"id\":\"cs\",\"title\":\"%s\",\"backdropImageUrl\":\"deploy/app/art/07.jpg\",\"folders\":["
       "{\"id\":\"a\",\"title\":\"Com hero e capa\",\"heroBackdropUrl\":\"deploy/app/art/03.jpg\",\"coverImageUrl\":\"deploy/app/art/poster/12.jpg\",%s},"
       "{\"id\":\"b\",\"title\":\"So capa\",\"coverImageUrl\":\"deploy/app/art/05.jpg\",%s},"
       "{\"id\":\"c\",\"title\":\"So fundo da colecao\",%s},"
       "{\"id\":\"d\",\"title\":\"Com hero sem capa\",\"heroBackdropUrl\":\"deploy/app/art/09.jpg\",%s}]}]}",
+      getenv("NV_COL_ORDEM") ? "Coleção" : "Streaming",
       fonte, fonte, fonte, fonte);
     // NV_COL_PACOTE=1: o pacote traz as pastas "a" e "b" com arte PROPRIA
     // (caminho absoluto: localiza nao mexe), para a captura de "Arte das
@@ -359,6 +366,23 @@ int main(int argc, char **argv) {
       quadros(40, NULL);
       ctx_abrir_fileira(fils[alvo].chave, fils[alvo].titulo);
       quadros(60, NULL); FOTO("estilos");
+      goto fim;
+    }
+    // NV_COL_ORDEM=1 (com NV_COL=1): a fileira de colecao em foco, segurando
+    // OK abre o modal de estilo dela — e a linha "Ordem" das pastas (2.0.5)
+    // em foco, com o ciclo de uma troca e o OK que aplica.
+    if (getenv("NV_COL_ORDEM")) {
+      for (r = 0; r < 14; r++) { tecla(SDLK_DOWN); quadros(6, NULL); }
+      FOTO("colecao-foco");
+      segurarOk();
+      quadros(60, NULL); FOTO("colecao-estilo");
+      teclaCtx(SDLK_DOWN); teclaCtx(SDLK_DOWN); teclaCtx(SDLK_DOWN); teclaCtx(SDLK_DOWN);
+      quadros(50, NULL); FOTO("colecao-ordem");
+      teclaCtx(SDLK_RIGHT);
+      quadros(40, NULL); FOTO("colecao-ordem-ano");
+      teclaCtx(SDLK_RIGHT);   // Alfabética: as pastas do fixture (Com hero e capa,
+      teclaCtx(SDLK_RETURN); // So capa...) trocam de lugar na fileira ao aplicar
+      quadros(50, NULL); FOTO("colecao-aplicada");
       goto fim;
     }
     // ABRIR: OK (keydown + keyup na home), quadros a cada 3.

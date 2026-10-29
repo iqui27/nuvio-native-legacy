@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='nuvio-dts-default-build-') as temporary
         repository = base / mode
         tools = repository / 'tools'
         tools.mkdir(parents=True)
-        for name in ('arm.sh', 'env.sh', 'tizen-config.xml'):
+        for name in ('arm.sh', 'ctr.sh', 'env.sh', 'tizen-config.xml'):
             shutil.copy2(ROOT / 'tools' / name, tools / name)
         (tools / 'p2p-motor').mkdir()
         shutil.copy2(ROOT / 'tools/p2p-motor/pasta.sh', tools / 'p2p-motor/pasta.sh')
@@ -85,7 +85,7 @@ else:
             env.pop(name, None)
         env.update(NUVIO_CONTAINER_RUNTIME=str(runtime), NUVIO_TV_IP='fixture.invalid',
                    NUVIO_TV_PASS='fixture', FIXTURE_MODE=mode, FIXTURE_REMOTE=str(remote),
-                   NUVIO_P2P_MOTOR='none', PATH=str(commands) + os.pathsep + env['PATH'])
+                   NUVIO_P2P_MOTOR='none', NUVIO_RUST_MKVCORE='0', PATH=str(commands) + os.pathsep + env['PATH'])
         if mode == 'disabled':
             env['NUVIO_DTS_FFMPEG'] = '0'
         result = subprocess.run(['bash', 'tools/arm.sh'], cwd=repository, env=env,

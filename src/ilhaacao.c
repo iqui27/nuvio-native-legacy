@@ -12,6 +12,10 @@ static void *ultCtx;
 
 int ilhaacao_tem_desfazer(void) { return ultFn != NULL; }
 
+void ilhaacao_abrir_sessao(void) {
+  free(ultCtx); ultCtx = NULL; ultFn = NULL;
+}
+
 void ilhaacao_feita(const IlhaAcao *a) {
   static IlhaModal m;
   if (!a || !a->frase || !a->frase[0]) return;

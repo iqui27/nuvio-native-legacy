@@ -3,6 +3,12 @@
 // (antes rasterizavam cada prefixo tentado). Fora da suite: requer GL.
 #include "gfx.h"
 #include "text.h"
+#include "legfontes.h"
+#include "player.h"
+#include <SDL2/SDL_ttf.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/stat.h>
 #include <SDL2/SDL.h>
 #include <assert.h>
 #include <stdio.h>
@@ -52,6 +58,61 @@ int main(void) {
   TxtLinha c = txt_linha_corta(TXT_DET_SIN, sin, 255, 255, 255, 255, 600.0f);
   printf("corta: w=%d (<=600), %d rasterizadas\n", c.w, txt_rasterizadas - r0);
   assert(c.w > 0 && c.w <= 600 && txt_rasterizadas - r0 <= 2);
+  // A private imported face must reach both measuring and rasterizing. The
+  // real SDL_ttf face is the independent metric oracle, not the registry label.
+  char dir[] = "/tmp/nuvio-font-render-XXXXXX", staged[512];
+  assert(mkdtemp(dir)); player_dir(dir);
+  const char *sampleFont = getenv("NV_TEST_FONT");
+  if (!sampleFont) sampleFont = "deploy/app/fonts/JetBrainsMonoNL-Regular.ttf";
+  snprintf(staged, sizeof staged, "%s/fontes-importadas/entrada-ab.tmp", dir);
+  FILE *src = fopen(sampleFont, "rb"), *dst = fopen(staged, "wb");
+  assert(src && dst);
+  char bytes[8192]; size_t z;
+  while ((z = fread(bytes, 1, sizeof bytes, src))) assert(fwrite(bytes, 1, z, dst) == z);
+  assert(!ferror(src)); fclose(src); assert(!fclose(dst));
+  assert(legfontes_importar(0, "entrada-ab.tmp"));
+  assert(legfontes_escolher(1, 0));
+  const char *sample = "iiiiWWWW0123";
+  int size, weight, expected, height;
+  txt_estilo_medidas(TXT_LEG_120, &size, &weight);
+  TTF_Font *face = TTF_OpenFont(legfontes_caminho(0), size); assert(face);
+  assert(!TTF_SizeUTF8(face, sample, &expected, &height)); TTF_CloseFont(face);
+  int builtin = txt_largura_familia(TXT_LEG_120, sample, TXT_FAMILIA_INTER);
+  assert(expected > 0 && expected != builtin);
+  txt_novo_quadro();
+  assert(txt_largura_familia(TXT_LEG_120, sample, TXT_FAMILIA_IMPORTADA1) == expected);
+  assert(txt_largura_familia(TXT_LEG_120, sample, TXT_FAMILIA_IMPORTADA2) == expected);
+  assert(txt_linha_familia(TXT_LEG_120, sample, 255, 255, 255, 255, TXT_FAMILIA_IMPORTADA1).w == expected);
+  assert(txt_linha_familia(TXT_LEG_120, sample, 255, 255, 255, 255, TXT_FAMILIA_IMPORTADA2).w == expected);
+  // Exercise the actual player preference transaction, not a replacement
+  // callback: failed builtin/Restore writes retain both imported selections
+  // and live style; successful actions clear only the primary override.
+  player_leg_estilo_carregar();
+  VideoLegendaEstilo previous = *player_leg_estilo();
+  int touched = player_leg_estilo_tocado(PLR_LEG_FONTE);
+  snprintf(staged, sizeof staged, "%s/player.txt.tmp", dir); assert(!mkdir(staged, 0700));
+  assert(!player_leg_fonte_definir(TXT_FAMILIA_INTER));
+  assert(!player_leg_estilo_restaurar());
+  assert(!memcmp(&previous, player_leg_estilo(), sizeof previous));
+  assert(player_leg_estilo_tocado(PLR_LEG_FONTE) == touched);
+  assert(legfontes_selecionada(0) == 0 && legfontes_selecionada(1) == 0);
+  assert(!rmdir(staged));
+  assert(player_leg_fonte_definir(TXT_FAMILIA_INTER));
+  assert(legfontes_selecionada(0) == -1 && legfontes_selecionada(1) == 0);
+  assert(legfontes_escolher(0, 0));
+  assert(player_leg_estilo_restaurar());
+  assert(legfontes_selecionada(0) == -1 && legfontes_selecionada(1) == 0);
+  assert(legfontes_escolher(0, 0));
+  // Removal invalidates all custom width/glyph/texture caches and restores a
+  // bundled fallback even when the allocator later reuses a face pointer.
+  assert(legfontes_remover(0)); txt_novo_quadro();
+  assert(txt_largura_familia(TXT_LEG_120, sample, TXT_FAMILIA_IMPORTADA1) == builtin);
+  assert(txt_linha_familia(TXT_LEG_120, sample, 255, 255, 255, 255, TXT_FAMILIA_IMPORTADA2).w == builtin);
+  snprintf(staged, sizeof staged, "%s/fontes-legenda.txt", dir); assert(!unlink(staged));
+  snprintf(staged, sizeof staged, "%s/player.txt", dir); assert(!unlink(staged));
+  snprintf(staged, sizeof staged, "%s/fontes-importadas", dir); assert(!rmdir(staged)); assert(!rmdir(dir));
+  puts("imported subtitle font: real face metrics, both slots, raster and delete fallback passed");
+  puts("imported subtitle font: actual player builtin/Restore transaction passed");
   puts("ok");
   return 0;
 }

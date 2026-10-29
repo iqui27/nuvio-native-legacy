@@ -5,9 +5,11 @@
 const fs = require("fs");
 const path = require("path");
 const assert = require("assert");
-const html = fs.readFileSync(path.join(__dirname, "../tools/tizen-shell.html"), "utf8");
-const ini = html.indexOf("  // TECLADO DA SAMSUNG PARA DIGITAR E PARA O BOTAO DE MICROFONE DAS BUSCAS");
-assert(ini > 0, "bloco do nvTexto nao achado no shell");
+const shell = process.argv[2] || "tools/tizen-shell.html";
+const html = fs.readFileSync(path.join(__dirname, "..", shell), "utf8");
+const ini = shell === "tools/tizen3-lite-shell.html" ? html.indexOf("<script>") + 8
+  : html.indexOf("  // TECLADO DA SAMSUNG PARA DIGITAR E PARA O BOTAO DE MICROFONE DAS BUSCAS");
+assert(ini > 0, "shell script missing");
 // Inclui TODOS os tradutores de teclas que vem depois da ponte.
 const codigo = html.slice(ini, html.indexOf("</script>", ini));
 
@@ -67,8 +69,8 @@ function montar(capacidade, foco = "normal") {
   janela.nvPlayerAberto = 1;
   janela.__nvPintar = () => pintou++;
   const console = { log: s => logs.push(s), warn: s => logs.push(s) };
-  new Function("window", "document", "console", "tizen", "KeyboardEvent", "setInterval", codigo)(
-    janela, document, console, tizen, Evento, () => 0);
+  new Function("window", "document", "console", "tizen", "KeyboardEvent", "setInterval", "navigator", codigo)(
+    janela, document, console, tizen, Evento, () => 0, { userAgent: "desktop" });
   janela.dispatchEvent(new Evento("load"));
   for (const tipo of ["keydown", "keyup"]) canvas.addEventListener(tipo, ev => recebidas.push([tipo, ev.keyCode]));
   const tecla = (alvo, keyCode, tipo = "keydown", key) => {
@@ -86,6 +88,17 @@ function teste(nome, f) {
   try { f(); console.log("PASS: " + nome); }
   catch (e) { falhas++; console.error("FAIL: " + nome + ": " + e.message); }
 }
+
+teste("Samsung Return and media reach SDL", () => {
+  const m = montar(true);
+  for (const [key, translated] of [[10009, 27], [10252, 19], [415, 19],
+    [19, 19], [413, 27], [412, 37], [417, 39]]) {
+    m.recebidas.length = 0;
+    m.tecla("canvas", key);
+    if (key === 10009) m.tecla("canvas", key, "keyup");
+    assert.deepStrictEqual(m.recebidas, [["keydown", translated], ["keyup", translated]]);
+  }
+});
 
 teste("sem Tizen (PC/VIDAA) preserva a ponte de texto da integracao", () => {
   const m = montar(undefined);
@@ -112,11 +125,11 @@ for (const foco of ["ausente", "recusa", "lanca"]) teste("falha de campo/foco ca
   const m = montar(true, foco);
   if (foco === "ausente") m.tirarCampo();
   m.t.abrir("", 1);
-  assert.strictEqual(m.t.fim, 0, "C precisa receber fim=0");
+  assert.strictEqual(m.t.fim, 2, "C must receive a startup failure");
   assert.strictEqual(m.t.aberto, false);
   assert.strictEqual(m.document.activeElement, m.canvas);
   m.t.fechar();
-  assert.strictEqual(m.t.fim, 0);
+  assert.strictEqual(m.t.fim, 2);
 });
 
 // Cada tradutor de captura, incluindo keyup de CH+ e aliases do desktop.
@@ -181,6 +194,7 @@ teste("atalhos, log e aliases intactos fora do IME (tambem sem Tizen)", () => {
     function par(k, traduzida, key) {
       m.recebidas.length = 0;
       m.tecla("canvas", k, "keydown", key);
+      if (k === 10009) m.tecla("canvas", k, "keyup", key);
       assert.deepStrictEqual(m.recebidas, [["keydown", traduzida], ["keyup", traduzida]]);
     }
     par(10009, 27); par(403, 120); par(112, 120, "F1");

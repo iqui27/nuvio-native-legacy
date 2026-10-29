@@ -10,6 +10,18 @@ static int fake_sleep(const struct timespec *, struct timespec *);
 #include "../src/video.c"
 #undef nanosleep
 
+/* The official native HTTP payload reads device buffering preferences. */
+int ajustes_buffer_preset(void) { return 0; }
+long memlog_livre_mb(void) { return 4096; }
+/* No HTTP or decoder is started by native dispatcher fixtures. */
+static DtsBufferInfo movie_snapshot;
+static int movie_active, movie_stops;
+static unsigned movie_stop_session;
+int moviebuffer_url(const char *s,const char *h,int m,char *o,size_t n) {
+  (void)s;(void)h;(void)m;(void)o;(void)n;return 0;
+}
+int moviebuffer_info(DtsBufferInfo *out) { *out=movie_snapshot;return movie_active; }
+void moviebuffer_stop(void) { movie_stops++;movie_stop_session=sessao;movie_active=0; }
 static DtsPlaybackStatus pump_status;
 static const char *pump_events[8];
 static int pump_read, pump_count;
@@ -17,6 +29,8 @@ void dts_playback_status(DtsPlayback *p, DtsPlaybackStatus *out) { (void)p;*out=
 int dts_playback_event(DtsPlayback *p,char *out,size_t n) { (void)p;if (pump_read==pump_count)return 0;snprintf(out,n,"%s",pump_events[pump_read++]);return 1; }
 /* Unused source-changing paths remain linked by the real event dispatcher. */
 void dts_playback_close(DtsPlayback *p) { (void)p;assert(0); }
+void dts_playback_pause(DtsPlayback *p,int paused) { (void)p;(void)paused;assert(0); }
+void mkvass_aceitar_imagem(int sim) { (void)sim; }
 void dts_playback_seek(DtsPlayback *p,double t) { (void)p;(void)t;assert(0); }
 void dts_playback_audio(DtsPlayback *p,int stream) { (void)p;(void)stream;assert(0); }
 void dts_playback_subtitle(DtsPlayback *p,int stream) { (void)p;(void)stream;assert(0); }
@@ -73,7 +87,32 @@ static int fake_native_audio(LSHandle *h,const char *uri,const char *payload,
   assert(!strcmp(uri,"luna://com.webos.media/selectTrack"));
   assert(strstr(payload,"\"type\":\"audio\""));native_audio_calls++;return 1;
 }
+static int startup_selects, startup_plays, startup_subscribes;
+static const char *fake_load_payload(LSMessage *m) { (void)m;return "{\"returnValue\":true,\"mediaId\":\"live-test\"}"; }
+static int fake_startup_call(LSHandle *h,const char *uri,const char *payload,
+                             Filtro cb,void *ctx,unsigned long *token,void *error) {
+  (void)h;(void)payload;(void)cb;(void)ctx;(void)token;(void)error;
+  if (strstr(uri,"/selectTrack")) startup_selects++;
+  if (strstr(uri,"/subscribe")) startup_subscribes++;
+  if (strstr(uri,"/play")) {
+    assert(startup_subscribes == 1);
+    startup_plays++;
+  }
+  return 1;
+}
 int main(void) {
+  /* #625: successful load must start playback before track discovery.
+   * TS and HLS both use this callback; native default tracks need no selection. */
+  lsPayload=fake_load_payload;lsCall=fake_startup_call;
+  bus=(LSHandle *)(uintptr_t)1;protetorLigado=1;
+  for (int mode=0;mode<=2;mode++) {
+    modoLoad=mode;midia[0]=0;
+    startup_selects=startup_plays=startup_subscribes=0;
+    aoCarregar(NULL,NULL,(void *)(uintptr_t)sessao);
+    assert(startup_selects == 0);
+    assert(startup_plays == 1 && startup_subscribes == 1);
+  }
+  midia[0]=0;
   /* OLED A1: LG rejects DTS and returns an empty string, followed by a video
    * array. That video must never become a fake H264 audio track. */
   eventoPayload("{\"sourceInfo\":{\"programInfo\":[{\"numAudioTracks\":0,\"audioTrackInfo\":\"\",\"videoTrackInfo\":[{\"codec\":\"H264\"}],\"subtitleTrackInfo\":\"\"}]}}",sessao);

@@ -28,7 +28,7 @@ void tex_definir_orcamento_auto_mb(int mb) {
   if (fixedBudget == 1 || fixedBudget == 2) return;
   autoBudget = mb > cacheCap ? cacheCap : mb;
   if (!fixedBudget) live.texMb = autoBudget;
-  if (manualOnCandidate && mb == 300) { live.texMb = 128; fixedBudget = 3; }
+  if (manualOnCandidate && mb == 192) { live.texMb = 128; fixedBudget = 3; }
 }
 int tex_orcamento_auto_mb(void) { return autoBudget; }
 void tex_definir_orcamento_mb(int mb) {
@@ -114,12 +114,12 @@ static void actualMatchesResult(void) {
 int main(void) {
   PtvPerfil pf;
   reset();
-  assert(live.texMb == 128 && cacheCap == 300);
-  assert(aplicarCandidato() && live.texMb == 300);
+  assert(live.texMb == 128 && cacheCap == 192);
+  assert(aplicarCandidato() && live.texMb == 192);
   sample(1000, 950);
   concluirComparacao();
   assert(d.aplicacao == DA_RUIDO && live.texMb == 128 && !saved[0]);
-  assert(d.perfCand.texMb == 300);
+  assert(d.perfCand.texMb == 192);
   actualMatchesResult();
   puts("ok  Android 128 -> 300 without gain restores actual 128");
 
@@ -148,7 +148,7 @@ int main(void) {
 
   reset();
   cacheCap = 160; /* runtime cache rejects part of requested budget */
-  assert(aplicarCandidato() && d.perfCand.texMb == 300 && live.texMb == 160);
+  assert(aplicarCandidato() && d.perfCand.texMb == 192 && live.texMb == 160);
   sample(1000, 800);
   concluirComparacao();
   assert(d.aplicacao == DA_MANTIDO);
@@ -174,7 +174,7 @@ int main(void) {
   puts("ok  limited candidate also restores hidden automatic budget");
 
   reset();
-  assert(aplicarCandidato() && live.texMb == 300);
+  assert(aplicarCandidato() && live.texMb == 192);
   sample(1000, 800);
   fixedBudget = 3; live.texMb = 128; /* user chose 128 during retest */
   concluirComparacao();
@@ -199,16 +199,16 @@ int main(void) {
   assert(aplicarCandidato());
   sample(1000, 800);
   concluirComparacao();
-  assert(d.aplicacao == DA_MANTIDO && live.texMb == 300);
-  pf = approved(); assert(pf.texMb == 300);
+  assert(d.aplicacao == DA_MANTIDO && live.texMb == 192);
+  pf = approved(); assert(pf.texMb == 192);
   live.texMb = autoBudget = 128;
   diagnostico_recuperar_checkpoint();
-  assert(live.texMb == 300);
+  assert(live.texMb == 192);
   fixedBudget = 3; live.texMb = autoBudget = 128;
   diagnostico_recuperar_checkpoint();
-  assert(live.texMb == 128 && autoBudget == 300);
+  assert(live.texMb == 128 && autoBudget == 192);
   tex_definir_orcamento_mb(0);
-  assert(live.texMb == 300);
+  assert(live.texMb == 192);
   puts("ok  approved 300 survives restart; manual 128 continues to override it");
 
   reset();
@@ -229,7 +229,7 @@ int main(void) {
   writeCancel = 1;
   concluirComparacao();
   pf = approved();
-  assert(d.aplicacao == DA_MANTIDO && live.texMb == 300 && pf.texMb == 300);
+  assert(d.aplicacao == DA_MANTIDO && live.texMb == 192 && pf.texMb == 192);
   assert(!atomic_load(&d.experimento) && !checkpoint[0]);
   assert(!atomic_load(&d.cancelado) && atomic_load(&d.passesProntos));
   assert(botaoVisivel(B_RESTAURAR));
@@ -256,7 +256,7 @@ int main(void) {
 
   reset();
   checkpointCancel = 1;
-  assert(aplicarCandidato() && live.texMb == 300);
+  assert(aplicarCandidato() && live.texMb == 192);
   assert(!rollbackWon && !atomic_load(&d.cancelado));
   cancelWorker(NULL); /* timeout retries after preparation releases its owner */
   assert(rollbackWon && d.aplicacao == DA_CANCELADO && atomic_load(&d.cancelado));
@@ -280,7 +280,7 @@ int main(void) {
   concluirComparacao();
   assert(!rollbackWon && d.aplicacao == DA_MANTIDO);
   assert(!atomic_load(&d.experimento) && saved[0] && !checkpoint[0]);
-  assert(live.texMb == 300 && autoBudget == 300);
+  assert(live.texMb == 192 && autoBudget == 192);
   assert(!atomic_load(&d.cancelado) && atomic_load(&d.passesProntos));
   puts("ok  commit ownership also protects the profile read from timeout");
 
@@ -293,7 +293,7 @@ int main(void) {
   restaurarManual();
   pf = approved();
   assert(!strcmp(aplicacaoNome(d.aplicacao), "restaurada_sessao"));
-  assert(live.texMb == 128 && autoBudget == 128 && pf.texMb == 300);
+  assert(live.texMb == 128 && autoBudget == 128 && pf.texMb == 192);
   assert(botaoVisivel(B_RESTAURAR));
   failProfile = 0;
   restaurarManual();
@@ -308,7 +308,7 @@ int main(void) {
   failDelete = 1;
   restaurarManual();
   pf = approved();
-  assert(d.aplicacao == DA_RESTAURADO_SESSAO && live.texMb == 128 && pf.texMb == 300);
+  assert(d.aplicacao == DA_RESTAURADO_SESSAO && live.texMb == 128 && pf.texMb == 192);
   failDelete = 0;
   restaurarManual();
   assert(d.aplicacao == DA_RESTAURADO_MANUAL && !saved[0]);

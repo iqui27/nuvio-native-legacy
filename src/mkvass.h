@@ -42,6 +42,7 @@
 #ifndef NV_MKVASS_H
 #define NV_MKVASS_H
 #include "legenda.h"
+#include <stddef.h>
 // Snapshot local ASS com indice >= 8000 pontos: nunca abre rede nem toca o overlay.
 // So devolve um intervalo cujos pontos indexados foram TODOS colhidos.
 LegendaDocumento *mkvass_referencia(const char *url, uint64_t sessao,
@@ -135,6 +136,23 @@ long mkvass_pausas_cdn(void);
 #endif
 typedef int (*MkvassEscolher)(const char *const *idiomas, int n);
 int  mkvass_prebuscar(const char *url, MkvassEscolher escolher, double fracInicio);
+// Pre-busca independente do proximo episodio. Colhe pelo mesmo parser, com
+// os mesmos limites/teto de Ranges, sem trocar a faixa/fontes atuais. O
+// contexto da escolha e copiado (ate 4096 bytes); use bytes autocontidos,
+// sem ponteiros emprestados. Criar/fase/adotar/cancelar pertencem ao fio da UI.
+typedef struct MkvassPreparo MkvassPreparo;
+typedef int (*MkvassEscolherCom)(const char *const *idiomas, int n, const void *contexto);
+MkvassPreparo *mkvass_preparo_criar(const char *url, MkvassEscolherCom escolher,
+                                  const void *contexto, size_t tamanhoContexto,
+                                  double fracInicio);
+int mkvass_preparo_fase(MkvassPreparo *preparo);
+// Somente depois de fechar o video anterior. URL e fracao devem ser as que
+// foram capturadas. Sucesso consome o handle (NULL) e conserva o worker,
+// cabecalho, fontes e blocos colhidos; a escolha por ordinal adota como sempre.
+// Falha conserva o handle para cancelamento/fallback. Nunca espera HTTP.
+int mkvass_preparo_adotar(MkvassPreparo **preparo, const char *url, double fracInicio);
+void mkvass_preparo_cancelar(MkvassPreparo **preparo);
+
 // 0 = nenhuma pre-busca; 1 = correndo; 2 = acabou (pronta, desistiu ou nao
 // havia faixa ASS a colher). Apenas diagnostico; nao segura o video.
 int  mkvass_prebusca_fase(void);
@@ -163,6 +181,8 @@ int  mkvass_estado(void);
 // Android conserva padrao 0: Media3 ja entrega o texto ao overlay.
 // Desligavel para testes/consumidores que precisem somente de ASS.
 void mkvass_aceitar_texto(int sim);
+// Faixas de imagem (S_HDMV/PGS): colhe os blocos e decodifica para o imgsub.
+void mkvass_aceitar_imagem(int sim);
 // 1 quando o estado e um dos no-go.
 int  mkvass_nogo(void);
 // 1 quando a colheita e por VARREDURA dos Clusters (o indice nao apontava os

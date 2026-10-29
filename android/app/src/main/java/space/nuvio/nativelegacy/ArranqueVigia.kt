@@ -150,7 +150,7 @@ class ArranqueVigia(private val act: NuvioActivity) {
         return sb.toString()
     }
 
-    private fun arquivoLog() = File(act.filesDir, "dados/nuvio.log")
+    private fun arquivoLog() = File(act.cacheDir, "logs/nuvio.log")
 
     private fun fimDoLog(max: Int): String = try {
         RandomAccessFile(arquivoLog(), "r").use { f ->

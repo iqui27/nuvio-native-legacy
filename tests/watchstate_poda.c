@@ -73,6 +73,10 @@ char *dados_ler(const char *n) { char *s; (void)n; pthread_mutex_lock(&tr); s = 
 int dados_apagar(const char *n) { (void)n; pthread_mutex_lock(&tr); free(disco); disco = NULL; pthread_mutex_unlock(&tr); return 1; }
 int perfis_ativo(void) { return perfil; }
 int perfis_ativo_addons(void) { return perfil; }
+uint64_t perfis_sessao_geracao(void) { return !strcmp(conta, "outra-conta") ? 3 : (uint64_t)perfil; }
+int perfis_sessao_atual(uint64_t g) { return g == perfis_sessao_geracao(); }
+int perfis_sessao_travar(uint64_t g) { return perfis_sessao_atual(g); }
+void perfis_sessao_destravar(void) {}
 
 // addons.c pede estes ao mudar a lista; nenhum muda o que se confere aqui.
 void fontecache_vod_limpar(void) {}

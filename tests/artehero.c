@@ -42,7 +42,141 @@ static const char *fundoSalvo(const char *id) {
   return !strcmp(id, "tt7") ? escolhaSalva : NULL;
 }
 
+static int falhouMetahubGrande(const char *u) {
+  return u && strstr(u, "images.metahub.space/background/large/") != NULL;
+}
+
+static int falhouFundoMetahub(const char *u) {
+  return u && strstr(u, "https://images.metahub.space/background/") == u;
+}
+
+static void metahubQualidade(void) {
+  const char *medio = "https://images.metahub.space/background/medium/tt27165187/img";
+  const char *pequeno = "https://images.metahub.space/background/small/tt27165187/img";
+  const char *grande = "https://images.metahub.space/background/large/tt27165187/img";
+  static const char *intactas[] = {
+    "https://images.metahub.space/background/large/tt27165187/img",
+    "https://images.metahub.space/background/original/tt27165187/img",
+    "https://images.metahub.space/background/big/tt27165187/img",
+    "https://images.metahub.space/poster/medium/tt27165187/img",
+    "https://images.metahub.space/logo/medium/tt27165187/img",
+    "https://episodes.metahub.space/tt27165187/1/1/w1280.jpg",
+    "https://images.metahub.space.example/background/medium/tt27165187/img",
+    "https://example.com/images.metahub.space/background/medium/tt27165187/img",
+    "https://images.metahub.space/background/medium/tt27165187/img?token=custom",
+    "https://images.metahub.space/background/medium/tt27165187/img#custom",
+    "http://images.metahub.space/background/medium/tt27165187/img",
+    "https://images.metahub.space/background/medium/custom/img"
+  };
+  for (int q = 0; q <= 2; q++) {
+    int alta = q == 2;
+#ifdef __EMSCRIPTEN__
+    alta = 0;   // navegador mantem o limite contra OOM
+#endif
+    const char *esperada = alta ? grande : medio;
+    CatItem c = item(medio, "https://example.com/poster.jpg", "tt27165187");
+    artehero_qualidade(q);
+    assert(!strcmp(artehero_url(&c), esperada));
+    assert(!strcmp(artehero_url_fonte(&c, ARTEHERO_CATALOGO), esperada));
+    assert(!strcmp(artehero_url_fonte(&c, ARTEHERO_METAHUB), esperada));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_AUTO, 0), esperada));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_METAHUB, 0), esperada));
+    // A mesma foto maior nao passa a contar como "outra arte".
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_METAHUB, 1), alta
+      ? "https://nuvio.invalid/arte/tmdbalt/original/tt27165187"
+      : q == 0 ? "https://nuvio.invalid/arte/tmdbalt/w780/tt27165187"
+               : "https://nuvio.invalid/arte/tmdbalt/w1280/tt27165187"));
+    assert(!strcmp(artehero_url_card(&c), medio));
+    assert(!strcmp(artehero_url_card_fonte(&c, ARTEHERO_METAHUB, 0), medio));
+    assert(!strcmp(artehero_url_metahub_fundo(&c), medio));
+    snprintf(c.backdrop, sizeof c.backdrop, "%s", pequeno);
+    assert(!strcmp(artehero_url(&c), alta ? grande : pequeno));
+    assert(!strcmp(artehero_url_fonte(&c, ARTEHERO_CATALOGO), alta ? grande : pequeno));
+    assert(!strcmp(artehero_url_card(&c), pequeno));
+    c.backdrop[0] = 0;
+    assert(!strcmp(artehero_url(&c), esperada));
+
+    // Addon vence a fonte escolhida e "outra arte", mas o card nao sobe.
+    snprintf(c.origem, sizeof c.origem, "addon.example");
+    snprintf(c.backdropCatalogo, sizeof c.backdropCatalogo, "%s", medio);
+    artehero_fundo_addon(1);
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_APPLE, 1), esperada));
+    assert(!strcmp(artehero_url_card_fonte(&c, ARTEHERO_APPLE, 1), medio));
+    artehero_fundo_addon(0);
+
+    // Uma escolha salva conserva a foto e a persistencia; so a largura muda.
+    snprintf(c.imdb, sizeof c.imdb, "tt7");
+    escolhaSalva = pequeno;
+    artehero_definir_escolha(fundoSalvo, NULL);
+    assert(!strcmp(artehero_url_escolhida(&c), alta ? grande : pequeno));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_APPLE, 1), alta ? grande : pequeno));
+    assert(escolhaSalva == pequeno);
+    escolhaSalva = medio;
+    assert(!strcmp(artehero_url_escolhida(&c), esperada));
+    assert(escolhaSalva == medio);
+    artehero_definir_escolha(NULL, NULL);
+    escolhaSalva = NULL;
+
+    // Nenhuma regra nova para host parecido, URL customizada, logo ou still.
+    for (size_t i = 0; i < sizeof intactas / sizeof intactas[0]; i++) {
+      snprintf(c.backdrop, sizeof c.backdrop, "%s", intactas[i]);
+      assert(!strcmp(artehero_url(&c), intactas[i]));
+      assert(!strcmp(artehero_url_escolha_grande(intactas[i]), intactas[i]));
+    }
+
+    // Grande conhecida como falha nunca tira a foto menor que ja servia.
+    artehero_definir_falhou(falhouMetahubGrande);
+    c = item(medio, "https://example.com/poster.jpg", "tt27165187");
+    assert(!strcmp(artehero_url(&c), medio));
+    assert(!strcmp(artehero_url_fonte(&c, ARTEHERO_CATALOGO), medio));
+    assert(!strcmp(artehero_url_fonte(&c, ARTEHERO_METAHUB), medio));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_AUTO, 0), medio));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_METAHUB, 0), medio));
+    snprintf(c.backdrop, sizeof c.backdrop, "%s", pequeno);
+    assert(!strcmp(artehero_url(&c), pequeno));
+    assert(!strcmp(artehero_url_escolha_grande(pequeno), pequeno));
+    assert(!strcmp(artehero_url_card(&c), pequeno));
+    snprintf(c.origem, sizeof c.origem, "addon.example");
+    snprintf(c.backdropCatalogo, sizeof c.backdropCatalogo, "%s", medio);
+    artehero_fundo_addon(1);
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_APPLE, 1), medio));
+    artehero_fundo_addon(0);
+    snprintf(c.imdb, sizeof c.imdb, "tt7");
+    escolhaSalva = medio;
+    artehero_definir_escolha(fundoSalvo, NULL);
+    assert(!strcmp(artehero_url_escolhida(&c), medio));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_APPLE, 1), medio));
+    assert(escolhaSalva == medio);
+    escolhaSalva = pequeno;
+    assert(!strcmp(artehero_url_escolhida(&c), pequeno));
+    assert(escolhaSalva == pequeno);
+    artehero_definir_escolha(NULL, NULL);
+    escolhaSalva = NULL;
+    c = item("", "https://example.com/poster.jpg", "tt27165187");
+    assert(!strcmp(artehero_url(&c), medio));
+    assert(!strcmp(artehero_url_fonte(&c, ARTEHERO_METAHUB), medio));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_METAHUB, 0), medio));
+    // Se os dois tamanhos falharam, a reserva continua sendo o cartaz.
+    artehero_definir_falhou(falhouFundoMetahub);
+    assert(!strcmp(artehero_url(&c), c.poster));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_METAHUB, 0), c.poster));
+    // A escolha manual tambem cede a reserva existente so quando ela falha.
+    snprintf(c.imdb, sizeof c.imdb, "tt7");
+    snprintf(c.backdrop, sizeof c.backdrop, "https://example.com/backup.jpg");
+    escolhaSalva = medio;
+    artehero_definir_escolha(fundoSalvo, NULL);
+    assert(!artehero_url_escolhida(&c));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_METAHUB, 0), c.backdrop));
+    artehero_definir_escolha(NULL, NULL);
+    escolhaSalva = NULL;
+    artehero_definir_falhou(NULL);
+  }
+  artehero_qualidade(1);
+  puts("ok  Metahub: alta nativa usa a mesma foto grande; card, navegador e reservas preservados");
+}
+
 int main(void) {
+  metahubQualidade();
   // Escolhas Apple antigas precisam sair da chave do arquivo antigo em disco.
   { CatItem c = item("", "", "tt7");
     const char *antiga = "https://nuvio.invalid/arte/apple/1920/tt7/m/2015/Silo%20Teste";
@@ -126,7 +260,7 @@ int main(void) {
                    "https://media.trakt.tv/images/shows/000/1/fanarts/full/x.jpg.webp")); }
   artehero_qualidade(1);
   puts("ok  alta: TMDB -> original, Trakt medium -> full");
-  // Metahub ja e 1920 e tem um tamanho so: passa intacta.
+  // Na qualidade Padrao o Metahub conserva a URL que o catalogo trouxe.
   { const char *u = "https://images.metahub.space/background/medium/tt6723592/img";
     CatItem c = item(u, "", "tt6723592");
     assert(!strcmp(artehero_url(&c), u)); }

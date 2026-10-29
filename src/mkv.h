@@ -134,6 +134,16 @@ double mkv_creditos_ultimo(const MkvCap *caps, int n);
 int mkv_capitulos_alem(const char *url, const unsigned char *cab, long cabN,
                        MkvCap *caps, int maxCaps, int *status);
 
+// O Tracks que a sonda NAO alcancou (#483): remux remontado (mkvpropedit)
+// com Attachments grande ou o primeiro Cluster na frente deixa o Tracks fora
+// do trecho, toda legenda sai "codec=?" e a faixa ASS volta ao renderizador
+// da TV — texto simples, falas caindo. Quando o SeekHead do cabecalho diz
+// onde o Tracks mora, UM pedido busca o elemento inteiro. Le DEPOIS de
+// mkv_faixas_e_caps / mkv_faixas_do_trecho (usa o SeekHead que elas leram);
+// devolve 0 sem tocar a rede quando o SeekHead nao aponta ou o Tracks ja veio
+// inteiro. BLOQUEIA: chamar de fio proprio.
+int mkv_tracks_alem(const char *url, MkvFaixa *saida, int max, int *status);
+
 // Capitulo de ABERTURA pelo nome ("Opening", "OP", "Intro", "Abertura"): [ini,
 // fim) vai ate o inicio do capitulo seguinte. 0 = nao ha.
 int mkv_intro_nomeada(const MkvCap *caps, int n, double *ini, double *fim);
@@ -161,10 +171,13 @@ double mkv_previa_nomeada(const MkvCap *caps, int n);
 //   MKV_CASA_NUMERO   todo trackNum e o TrackNumber de uma legenda do arquivo
 //                     (a leitura antiga; fica como segunda tentativa, nunca
 //                     misturada com a primeira);
+//   MKV_CASA_SEM_IMAGEM  a TV omitiu as legendas de imagem (PGS/VobSub): as de
+//                     texto batem em contagem, pelo ordinal do arquivo ou
+//                     renumeradas entre as de texto;
 //   MKV_CASA_NADA     nenhuma das duas fecha: nada e casado. Idioma errado e
 //                     pior que idioma nenhum, e codec errado manda a faixa
 //                     errada para o overlay.
-enum { MKV_CASA_NADA = 0, MKV_CASA_ORDINAL = 1, MKV_CASA_NUMERO = 2 };
+enum { MKV_CASA_NADA = 0, MKV_CASA_ORDINAL = 1, MKV_CASA_NUMERO = 2, MKV_CASA_SEM_IMAGEM = 3 };
 int mkv_casar_legendas(const MkvFaixa *fx, int n, const int *tvNum, int nTv,
                        int *idxFx);
 

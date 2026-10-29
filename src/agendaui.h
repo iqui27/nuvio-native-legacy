@@ -19,6 +19,7 @@ void agendaui_evento(const SDL_Event *e);
 void agendaui_atualizar(float dt, Uint32 agora);
 void agendaui_desenhar(Uint32 agora);
 int  agendaui_quer_sair(void);   // 1 quando o Back deve fechar a tela
+int  agendaui_pediu_relogio(void);
 // IMDb do titulo que o menu de contexto (segurar OK) pediu para abrir, ou
 // NULL. Consumido uma vez — o mesmo contrato de avisos_pediu_abrir.
 const char *agendaui_pediu_abrir(void);

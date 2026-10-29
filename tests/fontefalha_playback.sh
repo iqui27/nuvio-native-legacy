@@ -18,7 +18,7 @@ fi
 # CPU-only SDK type shims may be supplied; no SDL player/runtime is linked.
 if [ -n "${CFLAGS:-}" ]; then read -r -a extra <<< "$CFLAGS"; flags+=("${extra[@]}"); fi
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
-cc "${flags[@]}" tests/fontefalha_playback.c src/fontefalha.c src/fonteantecipa.c \
+cc "${flags[@]}" tests/fontefalha_playback.c src/fontefalha.c src/fontefiltro.c src/linguas.c src/fonteantecipa.c \
   src/inicio.c src/fontesonda.c \
   "${linker[@]}" -lm -o "$dir/teste"
 "$dir/teste" "$dir"

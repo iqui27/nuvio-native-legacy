@@ -19,6 +19,6 @@ fi
 # functions are exercised by this worker regression.
 if [ -n "${CFLAGS:-}" ]; then read -r -a extra <<< "$CFLAGS"; flags+=("${extra[@]}"); fi
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
-cc "${flags[@]}" tests/fontefalha_worker.c src/fontefalha.c src/fonteauto.c \
+cc "${flags[@]}" tests/fontefalha_worker.c src/fontefalha.c src/fonteauto.c src/limpa.c src/dobra.c src/fontenota.c src/linguas.c src/fontefiltro.c \
   "${linker[@]}" -lm -o "$dir/teste"
 "$dir/teste" "$dir"

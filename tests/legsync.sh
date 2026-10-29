@@ -22,7 +22,12 @@ elif [ "${SANITIZE:-0}" = thread ]; then flags+=(-fsanitize=thread -fno-omit-fra
 # LS_RITMO=0: sem o teto de 8 Ranges/s (o teste le do disco).
 cc "${flags[@]}" -DLS_RITMO=0 -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -O1 -g -Wall -Wextra src/legsync.c src/legsyncui.c src/legenda2.c src/legref.c src/autosync.c src/audsync.c src/audvad.c src/legenda.c \
   src/assrender.c tests/legsync.c -pthread -lm -o "$D/t"
+if [ "${LEGREF_SESSION:-0}" = 1 ]; then
+  LEGREF_SESSION=1 "$D/t" "$FX"
+  exit
+fi
 "$D/t" "$FX"
+LEGREF_SESSION=1 "$D/t" "$FX"
 
 if [ -z "${TCL_CASO:-}" ] && [ -z "${AUTOSYNC_PGS:-}" ]; then
   for caso in 1 2 3; do TCL_CASO=$caso "$D/t" "$FX"; done

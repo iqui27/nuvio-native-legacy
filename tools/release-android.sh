@@ -8,6 +8,7 @@
 #                             que a auto-atualizacao procura em releases/latest
 #                             (atualizacao.c: sufixo "-android.apk"; debug e
 #                             preview nao casam).
+#   Nuvio-<v>-android-lite-armv7.apk / -arm64.apk (one ABI, no P2P motor)
 #   SHA256SUMS-android        juntar ao SHA256SUMS da LG/Samsung
 #
 # O que ele RECUSA (sai com erro):
@@ -48,7 +49,7 @@ echo "== release-android $VER (commit $(git rev-parse --short HEAD)) -> $OUT"
 
 # Release sem conta/sync instala e so mostra "0 addons" na TV (01/10/2026,
 # worktree em /private/tmp sem o local.properties do caminho padrao).
-NUVIO_REQUIRE_CORE=1 bash tools/android.sh --release-only
+NUVIO_APK_LITE=0 NUVIO_REQUIRE_CORE=1 bash tools/android.sh --release-only
 A="build/android/Nuvio-$VER-android.apk"
 [ -f "$A" ] || { echo "release-android: faltou $A (o android.sh nao gerou o release)" >&2; exit 1; }
 
@@ -88,11 +89,20 @@ else
 fi
 
 cp "$A" "$OUT/"
+for arch in armv7 arm64; do
+LITE="build/android/Nuvio-$VER-android-lite-$arch.apk"
+[ -f "$LITE" ] || { echo "release-android: missing $LITE" >&2; exit 1; }
+CERT=$("$BT/apksigner" verify --print-certs "$LITE" 2>/dev/null | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+[ "$CERT" = "$CERT_SHA256" ] || { echo "release-android: lite signing certificate mismatch" >&2; exit 1; }
+VN=$("$BT/aapt2" dump badging "$LITE" 2>/dev/null | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)
+[ "$VN" = "$VER" ] || { echo "release-android: lite version mismatch" >&2; exit 1; }
+cp "$LITE" "$OUT/"
+done
 ( cd "$OUT" &&
-  if command -v shasum >/dev/null 2>&1; then shasum -a 256 Nuvio-*-android.apk
-  else sha256sum Nuvio-*-android.apk; fi > SHA256SUMS-android )
+  if command -v shasum >/dev/null 2>&1; then shasum -a 256 Nuvio-*-android*.apk
+  else sha256sum Nuvio-*-android*.apk; fi > SHA256SUMS-android )
 python3 tools/release.py --check-tree
 echo
 echo "== pronto, sem publicar:"
-ls -la "$OUT"/Nuvio-*-android.apk "$OUT/SHA256SUMS-android"
+ls -la "$OUT"/Nuvio-*-android*.apk "$OUT/SHA256SUMS-android"
 echo "Release completa (LG + Android + Samsung + SHA256SUMS + Homebrew): bash tools/release.sh $VER"

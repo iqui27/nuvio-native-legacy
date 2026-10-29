@@ -95,6 +95,22 @@ int main(void) {
   assert(!player_retido() && paradas == p + 1);
   puts("ok teto de 120 s libera pipeline");
 
+  // Both options ON: keep-alive wins; once released, the saved source survives.
+  assert(ajustes_retomada_morna());
+  { char cam[600]; const char *d = getenv("NUVIO_DADOS");
+    snprintf(cam, sizeof cam, "%s/ajustes.txt", d);
+    FILE *f = fopen(cam, "w"); assert(f);
+    fputs("manterVideoLocal 0\nmanterVideoPrazoLocal 4\nretomadaMornaLocal 0\n", f); fclose(f); ajustes_dir(d);
+  }
+  assert(ajustes_manter_video_ms() == 0 && ajustes_manter_video() && ajustes_retomada_morna());
+  abrir("movie"); guardar(); p = paradas;
+  player_validar_retido(SDL_GetTicks() + 86400000u);
+  assert(player_retido() && paradas == p); // unlimited has no timer expiry
+  player_ciclo_evento(SDL_APP_LOWMEMORY); assert(!player_retido() && paradas == p + 1);
+  abrir("movie"); guardar(); p = paradas;
+  player_ciclo_evento(SDL_APP_WILLENTERBACKGROUND); assert(!player_retido() && paradas == p + 1);
+  puts("ok sem limite nao vence; descarte por ciclo/memoria libera");
+
   abrir("movie"); guardar(); p = paradas;
   perfis_definir_ativo(2); player_validar_retido(SDL_GetTicks());
   assert(!player_retido() && paradas == p + 1); perfis_definir_ativo(1);

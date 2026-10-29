@@ -15,8 +15,11 @@
 // ONDE ESCREVE. dados_dir() tem de ser a pasta descartavel que
 // tests/conquistas_shot.sh exporta (NUVIO_DADOS); fora dela o teste recusa rodar.
 #include "conquistas.h"
+#include "trilhas.h"
+#include "trilhasdados.h"
 #include "conquistasdados.h"
 #include "conquistasregra.h"
+#include "catalogo.h"
 #include "perfil.h"
 #include "ajustes.h"
 #include "dados.h"
@@ -33,7 +36,17 @@
 #include <OpenGL/gl.h>
 #endif
 
+#include "j4_proof.h"
 static GLuint fbo, fboTex;
+static void proof_reset(void) {
+  conquistas_teste_esquecer(); conquistas_abrir();
+  SDL_Event e={0}; e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_DOWN;
+  conquistas_evento(&e); assert(conquistas_foco() >= 100);
+}
+static void proof_focus(void) { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_RIGHT;conquistas_evento(&e); }
+static void proof_close(void) { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_ESCAPE;conquistas_evento(&e); }
+static void proof_step(float dt) { conquistas_atualizar(dt,SDL_GetTicks()); }
+static void proof_draw(void) { conquistas_desenhar(SDL_GetTicks()); }
 
 static void evento(int tipo, SDL_Keycode k) {
   SDL_Event e;
@@ -51,6 +64,15 @@ static void voltar(void) {
   SDL_Delay(300);
 }
 
+// Voltar da TRILHA: o evento tem de ir para trilhas_evento, nao para conquistas.
+static void trilha_voltar(void) {
+  SDL_Event e;
+  memset(&e, 0, sizeof e);
+  e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_ESCAPE;
+  trilhas_evento(&e);
+  SDL_Delay(300);
+}
+
 static void quadro(float dt) {
   txt_novo_quadro();
   tex_novo_quadro();
@@ -62,7 +84,7 @@ static void quadro(float dt) {
   // Fundo de mentira: a tela do app por baixo (importa para o aviso).
   gfx_cor((GfxRect){ 200, 200, 900, 560 }, 0.02f, 0.02f, 0.30f, 0.50f, 1.0f);
   gfx_cor((GfxRect){ 1100, 500, 600, 400 }, 0.02f, 0.40f, 0.20f, 0.30f, 1.0f);
-  if (conquistas_aberto()) conquistas_desenhar(SDL_GetTicks());
+  if (trilhas_aberta()) trilhas_desenhar(SDL_GetTicks());
   else conquistas_desenhar(SDL_GetTicks());   // o esmaecer de saida
   conquistas_aviso_desenhar();
 }
@@ -93,6 +115,12 @@ static void captura(const char *prefixo, const char *nome, int quadros) {
   adiantar(quadros);
   SDL_Delay(200);   // os icones sobem por tex_bombear: da tempo aos fios de decode
   adiantar(10);
+  snprintf(caminho, sizeof caminho, "%s-%s.png", prefixo, nome);
+  gravar(caminho);
+}
+
+static void gravar_nome(const char *prefixo, const char *nome) {
+  char caminho[700];
   snprintf(caminho, sizeof caminho, "%s-%s.png", prefixo, nome);
   gravar(caminho);
 }
@@ -133,7 +161,7 @@ static void conferir_layout(const char *onde) {
   assert(n > 0);
   for (i = 0; i < n; i++) {
     if (rs[i].x < 0 || rs[i].y < 0 || rs[i].x + rs[i].w > 1920.5f || rs[i].y + rs[i].h > 1080.5f ||
-        rs[i].w < 40 || rs[i].h < 40) {
+        rs[i].w < 40 || rs[i].h < ((ids[i] >= 10 && ids[i] < 15) ? 44 * ajustes_escala_texto() - .5f : 40)) {
       printf("FALHA (%s): alvo %d fora da tela ou pequeno (%.0f,%.0f %.0fx%.0f)\n", onde, ids[i], rs[i].x, rs[i].y, rs[i].w, rs[i].h);
       exit(1);
     }
@@ -251,8 +279,10 @@ static void regras_perfil(const char *prefixo) {
     perfil_tecla(SDLK_RETURN);
     assert(perfil_pediu_conquistas());
     assert(!perfil_pediu_conquistas());
-    // Esquerda escapa da tela inteira.
+    // Left visits Hunt before leaving the header.
     assert(!perfil_quer_sair());
+    perfil_tecla(SDLK_LEFT);
+    assert(!perfil_foco_conquistas() && !perfil_quer_sair());
     perfil_tecla(SDLK_LEFT);
     assert(perfil_quer_sair());
   }
@@ -268,8 +298,11 @@ static void regras_perfil(const char *prefixo) {
       assert(perfil_foco_conquistas());
       perfil_tecla(SDLK_RETURN);
       assert(perfil_pediu_conquistas() && !perfil_pediu_atualizar());
-      perfil_tecla(SDLK_DOWN);
-      assert(!perfil_foco_conquistas());
+      // Down opens profile controls without tracker data; reopen the summary
+      // to exercise its retry action independently of that newer page.
+      perfil_tecla(SDLK_ESCAPE);
+      assert(!perfil_aberto());
+      perfil_abrir();
       perfil_tecla(SDLK_RETURN);
       assert(perfil_pediu_atualizar() == (estados[j] != PERFIL_ESTADO_CARREGANDO));
     }
@@ -333,10 +366,24 @@ int main(int argc, char **argv) {
   assert(txt_iniciar("deploy/app", 1));
   tex_iniciar(64);
   gfx_tex_esquecer(0);
-  gfx_icones_dir("deploy/app/art");
+  char *art=realpath("deploy/app/art",NULL);assert(art);gfx_icones_dir(art);conquistas_arte_dir(art);free(art);
 
   assert(ajustes_conquistas() && ajustes_conquistas_aviso());
+  if (getenv("NUVIO_TRAILS_ONLY")) {
+    cat_historico_definir_id("tt0018578", "movie", 1);
+    cat_historico_definir_id("tt0019729", "movie", 1);
+    conquistas_abrir();
+    captura(prefixo, "list", 60);
+    assert(conquistas_abrir_trilha("trilha:oscar-melhor-filme"));
+    assert(trilhas_vistos() == 2 && trilhas_passo() == 2);
+    captura(prefixo, "detail-history", 30);
+    tex_encerrar(); txt_encerrar(); gfx_encerrar();
+    SDL_GL_DeleteContext(gl); SDL_DestroyWindow(w); SDL_Quit();
+    puts("PASS: trail list and detail with real history progress");
+    return 0;
+  }
   semear();
+  j4_proof("achievements",proof_reset,proof_focus,proof_step,proof_draw,proof_close);
 
   // ---- Hub: layout, varredura D-pad, captura.
   conquistas_teste_esquecer();
@@ -351,6 +398,24 @@ int main(int argc, char **argv) {
   tecla(SDLK_DOWN);   // do primeiro filtro ao primeiro cartao
   assert(conquistas_foco() >= 100);
   captura(prefixo, "hub", 60);
+  // Hub cards on the shared material, glass off and on, then the neutral focus
+  // spring moving one card right (0/50/100/150/250 ms, factory glass).
+  { static const int ms[] = { 0, 50, 100, 150, 250 };
+    int g, vidro = ajustes_vidro(), t = 0;
+    char nome[32];
+    for (g = 0; g < 2; g++) {
+      ajustes_definir_vidro(g);
+      snprintf(nome, sizeof nome, "hub-g%d", g);
+      captura(prefixo, nome, 20);
+    }
+    ajustes_definir_vidro(vidro);
+    adiantar(20);
+    tecla(SDLK_RIGHT);
+    for (i = 0; i < 5; i++) {
+      adiantar(ms[i] * 60 / 1000 - t); t = ms[i] * 60 / 1000;
+      snprintf(nome, sizeof nome, "foco-%03d", ms[i]);
+      gravar_nome(prefixo, nome);
+    } }
 
   // ---- Aba "Em andamento" (so o que ainda falta).
   conquistas_teste_esquecer();
@@ -389,7 +454,43 @@ int main(int argc, char **argv) {
     conferir_layout("detalhe");
     captura(prefixo, "detalhe", 30);
     voltar();
-    assert(conquistas_vista() == CONQUISTAS_VISTA_HUB && conquistas_foco() == antes); }
+    assert(conquistas_vista() == CONQUISTAS_VISTA_HUB && conquistas_foco() == antes);
+    // Sheet-open motion strip: 0/50/100/150/250/400 ms after OK, glass on.
+    ajustes_definir_vidro(1);
+    adiantar(40);
+    tecla(SDLK_RETURN);
+    { static const int ms[] = { 0, 50, 100, 150, 250, 400 };
+      int i, t = 0;
+      for (i = 0; i < 6; i++) {
+        char nome[32];
+        int alvo = ms[i] * 60 / 1000;
+        adiantar(alvo - t); t = alvo;
+        snprintf(nome, sizeof nome, "abrir-%03d", ms[i]);
+        gravar_nome(prefixo, nome);
+      }
+      // Sheet-close strip: same instants after Voltar.
+      adiantar(40);
+      voltar();
+      for (i = 0, t = 0; i < 6; i++) {
+        char nome[32];
+        int alvo = ms[i] * 60 / 1000;
+        adiantar(alvo - t); t = alvo;
+        snprintf(nome, sizeof nome, "fechar-%03d", ms[i]);
+        gravar_nome(prefixo, nome);
+      } }
+    assert(conquistas_vista() == CONQUISTAS_VISTA_HUB);
+    // Sheet stills at 85 and 100 %, glass off and on.
+    { int sc, g;
+      for (sc = 85; sc <= 100; sc += 15) for (g = 0; g < 2; g++) {
+        char nome[32];
+        ajustes_definir_vidro(g); gfx_escala_txt_definir(sc / 100.0f);
+        tecla(SDLK_RETURN);
+        assert(conquistas_vista() == CONQUISTAS_VISTA_DETALHE);
+        snprintf(nome, sizeof nome, "detalhe-%d-g%d", sc, g);
+        captura(prefixo, nome, 40);
+        voltar(); adiantar(40);
+      }
+      ajustes_definir_vidro(0); gfx_escala_txt_definir(.85f); } }
   // Voltar no hub fecha a tela.
   voltar();
   assert(!conquistas_aberto());
@@ -460,6 +561,87 @@ int main(int argc, char **argv) {
   conquistas_aviso_fechar();
   conquistas_teste_esquecer();
   (void)ids; (void)rs;
+
+  // ---- Trilha (2.1): abrir, progresso real do historico, retomada e
+  // caminho contextual. Sem historico a trilha nao inventa nada.
+  {
+    conquistas_teste_esquecer();
+    trilhas_teste_esquecer();
+    assert(conquistas_abrir_trilha("trilha:oscar-melhor-filme"));
+    assert(trilhas_aberta());
+    assert(!strcmp(trilhas_titulo(), "Oscar de Melhor Filme"));
+    assert(trilhas_passos() == 98);
+    assert(trilhas_vistos() == 0 && trilhas_passo() == 0);
+    captura(prefixo, "trilha", 30);
+    // Chave desconhecida: nao abre.
+    trilha_voltar();
+    assert(!conquistas_abrir_trilha("trilha:nao-existe"));
+    assert(!trilhas_aberta());
+    // Dois passos no historico: o progresso e real e a retomada cai no 3o.
+    cat_historico_definir_id("tt0018578", "movie", 1);
+    cat_historico_definir_id("tt0019729", "movie", 1);
+    assert(trilhas_abrir("trilha:oscar-melhor-filme"));
+    assert(trilhas_vistos() == 2 && trilhas_passo() == 2);
+    captura(prefixo, "trilha-retomada", 30);
+    trilha_voltar();
+    // O "Retomar" do hub leva a trilha mais adiantada.
+    conquistas_teste_esquecer();
+    conquistas_abrir();
+    adiantar(2);
+    { unsigned long x = 999;
+      static const SDL_Keycode T[4] = { SDLK_LEFT, SDLK_RIGHT, SDLK_UP, SDLK_DOWN };
+      for (i = 0; i < 600 && conquistas_foco() != 4; i++) { x = x * 1103515245UL + 12345UL; tecla(T[(x >> 16) & 3]); } }
+    assert(conquistas_foco() == 4);   // B_RETOMAR
+    tecla(SDLK_RETURN);
+    assert(trilhas_aberta() && trilhas_passo() == 2);
+    trilha_voltar();
+    assert(!trilhas_aberta());
+    // O "Ir a trilha" do detalhe do emblema: no cartao do Oscar, o foco nasce
+    // no botao porque a trilha existe (no cartao sem trilha, nasce no Voltar).
+    conquistas_teste_esquecer();
+    conquistas_abrir();
+    adiantar(2);
+    { unsigned long x = 555;
+      static const SDL_Keycode T[4] = { SDLK_LEFT, SDLK_RIGHT, SDLK_UP, SDLK_DOWN };
+      for (i = 0; i < 600 && conquistas_foco() != 109; i++) { x = x * 1103515245UL + 12345UL; tecla(T[(x >> 16) & 3]); } }
+    assert(conquistas_foco() == 109);   // C_CARD0 + 9: o Oscar e o 10o cartao
+    tecla(SDLK_RETURN);
+    assert(conquistas_vista() == CONQUISTAS_VISTA_DETALHE);
+    assert(conquistas_foco() == 5);   // B_FECHAR, integration sheet default
+    tecla(SDLK_DOWN);
+    assert(conquistas_foco() == 6);   // B_DET_TRILHA
+    tecla(SDLK_RETURN);
+    assert(trilhas_aberta());
+    trilha_voltar();
+    // Contextual, do titulo em cena: o passo e o do filme aberto.
+    assert(trilhas_abrir_titulo("tt0018578", "movie"));
+    assert(trilhas_aberta() && trilhas_passo() == 0);
+    captura(prefixo, "trilha-contexto", 30);
+    // Every step remains visible while navigating the entire catalog.
+    SDL_Event te = {0}; te.type = SDL_KEYDOWN; te.key.keysym.sym = SDLK_RIGHT;
+    for (int j = 0; j < 97; j++) trilhas_evento(&te);
+    assert(trilhas_passo() == 97 && trilhas_primeiro_visivel() == 90);
+    captura(prefixo, "trilha-final", 30);
+    te.key.keysym.sym = SDLK_RETURN; trilhas_evento(&te);
+    CqPasso pedido;
+    assert(trilhas_pediu_titulo(&pedido) && !strcmp(pedido.imdb, "tt30144839"));
+    assert(!trilhas_pediu_titulo(&pedido) && !trilhas_aberta());
+    trilhas_voltar_do_titulo();
+    assert(trilhas_aberta() && trilhas_passo() == 97 && trilhas_vistos() == 2);
+    te.key.keysym.sym = SDLK_UP; trilhas_evento(&te);
+    te.key.keysym.sym = SDLK_RETURN; trilhas_evento(&te);
+    assert(trilhas_pediu_titulo(&pedido) && !strcmp(pedido.imdb, "tt0020629"));
+    trilhas_voltar_do_titulo();
+    // Marking uses the explicit watched action, never OK on a poster.
+    te.key.keysym.sym = SDLK_DOWN; trilhas_evento(&te);
+    trilhas_evento(&te);
+    te.key.keysym.sym = SDLK_RIGHT; trilhas_evento(&te);
+    te.key.keysym.sym = SDLK_RETURN; trilhas_evento(&te);
+    assert(trilhas_vistos() == 3 && cat_historico_estado_id("tt0020629", "movie") == 1);
+    trilha_voltar();
+    assert(!trilhas_aberta());
+    trilhas_teste_esquecer();
+  }
 
   // ---- Perfil: o botao do cabecalho.
   regras_perfil(prefixo);

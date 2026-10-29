@@ -32,6 +32,6 @@ cc "${flags[@]}" -DFONTESMORTAS_ORCAMENTO \
   -Dstream_falha_verificar=teste_stream_falha_verificar \
   -c tests/fontesmortas.c -o "$dir/streams.o"
 cc "${flags[@]}" tests/fontesmortas_orcamento.c "$dir/streams.o" src/fontesmortas.c src/fonteantecipa.c \
-  src/fontefalha.c "${linker[@]}" -o "$dir/teste"
+  src/fontefalha.c src/fontefiltro.c src/fontenota.c src/linguas.c "${linker[@]}" -o "$dir/teste"
 "$dir/teste"
 "$dir/teste" sucesso

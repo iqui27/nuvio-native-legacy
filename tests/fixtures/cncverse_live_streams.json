@@ -1,0 +1,24 @@
+{
+ "streams": [
+  {
+   "name": "✨ | support the project!",
+   "title": "Click to donate this project ❤️\n(you can hide this in the app settings)",
+   "externalUrl": "https://cncverse.pages.dev"
+  },
+  {
+   "name": "[CNC] HD · PlayFyProvider",
+   "title": "Sun TV HD\nJIO TV (IND)\nAudio: Multi",
+   "url": "https://example.invalid/proxy/hls/sun-tv-hd/master.m3u8",
+   "behaviorHints": {
+    "notWebReady": true,
+    "bingeGroup": "cnc-playfy",
+    "proxyHeaders": {
+     "request": {
+      "User-Agent": "okhttp/4.12.0",
+      "Referer": "https://example.invalid/"
+     }
+    }
+   }
+  }
+ ]
+}

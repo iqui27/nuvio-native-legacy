@@ -9,6 +9,7 @@ void wsenvio_podar(void) {}
 void wsenvio_podar_addon(const char *base) { (void)base; }
 #include <string.h>
 #include <unistd.h>
+#include "stub_perfisessao.h"
 #include "../src/fontecache.c"
 
 // Regional provider discovery has its own harness; keep this cache fixture
@@ -45,6 +46,11 @@ const char *rede_url_publica(const char *url, char *d, unsigned tam) {
   snprintf(d, tam, "%s", url); return d;
 }
 const char *rede_ultimo_erro(void) { return ""; }
+char *rede_baixar(const char *url, int timeout);
+char *rede_baixar_st(const char *url, int seconds, const char *const *headers, int *status) {
+  (void)headers; char *body = rede_baixar(url, seconds);
+  if (status) *status = body ? 200 : 0; return body;
+}
 char *rede_baixar(const char *url, int timeout) {
   (void)timeout;
   assert(strstr(url, "/stream/") && strstr(url, ".json"));
@@ -67,9 +73,13 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
   return fontesRede;
 }
 void stream_definir_alvo(const char *id) { snprintf(pedidoAlvo, sizeof pedidoAlvo, "%s", id); }
+void stream_folha_canal(int sim) { (void)sim; }
+void stream_filtro_tipo(const char *tipo) { (void)tipo; }
 // F11: Jellyfin targets are routed away from addons; not exercised here.
 #include "jellyfin.h"
 int servidores_fontes_pedir(const char *alvo) { (void)alvo; return 0; }
+int servidores_tem(const char *id, const char *tipo) { (void)id; (void)tipo; return 0; }
+void servidores_rotular(Stream *l, int n) { (void)l; (void)n; }
 int servidores_fontes_colher(const char *alvo, Stream **l, int *n) {
   (void)alvo; if (l) *l = NULL; if (n) *n = 0; return JF_FONTES_FALHOU; }
 uint64_t badges_detectar(const char *m) { (void)m; return 0; }
@@ -81,6 +91,7 @@ void stream_definir_lista_idade(const Stream *l, int n, Uint32 idade) {
   idadeLista = idade;
   snprintf(listaAlvo, sizeof listaAlvo, "%s", pedidoAlvo);
 }
+void stream_preparar_dica_p2p(const Stream *l, int n) { (void)l; (void)n; }
 void stream_definir_lista(const Stream *l, int n) { stream_definir_lista_idade(l, n, 0); }
 // #221: a busca real publica por addon; a lista cresce sem ser trocada.
 void stream_lista_acrescentar(const Stream *l, int n, int o) {
@@ -230,3 +241,6 @@ int main(void) {
   puts("fontecache VOD: PASS (HTTP, TTL, conta/perfil/episodio/config, respostas tardias, memoria)");
   return 0;
 }
+
+// This fixture simulates account sync; the new owner marks add-on toggles dirty.
+void sync_sujar_addons(const char *url) { (void)url; }

@@ -11,6 +11,7 @@
 
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
 
 enum { IDIOMA_PT = 0, IDIOMA_EN = 1, IDIOMA_RO = 2, IDIOMA_UK = 3, IDIOMA_RU = 4,
        IDIOMA_FR = 5, IDIOMA_DE = 6, IDIOMA_ES = 7,
@@ -21,7 +22,9 @@ enum { IDIOMA_PT = 0, IDIOMA_EN = 1, IDIOMA_RO = 2, IDIOMA_UK = 3, IDIOMA_RU = 4
        IDIOMA_SV = 13, IDIOMA_DA = 14, IDIOMA_NO = 15, IDIOMA_CS = 16, IDIOMA_SK = 17,
        IDIOMA_SL = 18, IDIOMA_HU = 19, IDIOMA_LT = 20, IDIOMA_BS = 21, IDIOMA_SR = 22,
        IDIOMA_BG = 23, IDIOMA_EL = 24, IDIOMA_ID = 25, IDIOMA_VI = 26, IDIOMA_JA = 27,
-       IDIOMA_ZHCN = 28, IDIOMA_ZHTW = 29, IDIOMA_N = 30 };
+       IDIOMA_ZHCN = 28, IDIOMA_ZHTW = 29,
+       IDIOMA_AR = 30,
+       IDIOMA_N = 31 };
 
 // Codigo ISO 639-1 do idioma da interface ("pt", "en", "ro", "uk", "ru", "fr",
 // "de", "es", "it", "nl"... "ja", "zh"). O portugues europeu tambem e "pt", o
@@ -58,15 +61,36 @@ static inline const char *idioma_iso(int idioma) {
     case IDIOMA_VI: return "vi";
     case IDIOMA_JA: return "ja";
     case IDIOMA_ZHCN: case IDIOMA_ZHTW: return "zh";
+    case IDIOMA_AR: return "ar";
     default:        return "pt";   // IDIOMA_PT e IDIOMA_PTPT
   }
 }
 
 // 1 = a interface escreve o decimal com PONTO ("8.4"); 0 = com virgula ("8,4").
-// Ingles, japones e chines usam ponto; os demais 27 usam virgula.
+// Ingles, japones, chines e arabe (com algarismos ocidentais) usam ponto; os
+// demais idiomas usam virgula.
 static inline int idioma_ponto_decimal(int idioma) {
   return idioma == IDIOMA_EN || idioma == IDIOMA_JA || idioma == IDIOMA_ZHCN ||
-         idioma == IDIOMA_ZHTW;
+         idioma == IDIOMA_ZHTW || idioma == IDIOMA_AR;
+}
+
+// Integer grouping follows the selected UI locale, independent of LC_NUMERIC.
+static inline void idioma_inteiro(int idioma, int valor, char *out, unsigned cap) {
+  char raw[32];
+  const char *sep = idioma_ponto_decimal(idioma) ? "," : ".";
+  switch (idioma) {
+    case IDIOMA_FR: case IDIOMA_RU: case IDIOMA_UK: case IDIOMA_PL:
+    case IDIOMA_SV: case IDIOMA_NO: case IDIOMA_CS: case IDIOMA_SK:
+    case IDIOMA_HU: case IDIOMA_LT: sep=" "; break;
+    default: break;
+  }
+  snprintf(raw,sizeof raw,"%d",valor);
+  unsigned n=(unsigned)strlen(raw), pos=0;
+  for (unsigned i=0;i<n && pos+1<cap;i++) {
+    if (i && raw[i-1]!='-' && (n-i)%3==0 && pos+2<cap) out[pos++]=*sep;
+    out[pos++]=raw[i];
+  }
+  if (cap) out[pos]=0;
 }
 
 // Troca, NO LUGAR, o ponto decimal de um texto ja montado por virgula quando o
@@ -122,6 +146,7 @@ static inline const char *idioma_mes_curto(int idioma, int m0) {
   static const char *EL[] = { "Ιαν","Φεβ","Μαρ","Απρ","Μαΐ","Ιουν","Ιουλ","Αυγ","Σεπ","Οκτ","Νοε","Δεκ" };
   static const char *ID[] = { "Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des" };
   static const char *VI[] = { "thg 1","thg 2","thg 3","thg 4","thg 5","thg 6","thg 7","thg 8","thg 9","thg 10","thg 11","thg 12" };
+  static const char *AR[] = { "يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر" };
   static const char *CJK[] = { "1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月" };
   if (m0 < 0 || m0 > 11) return "";
   switch (idioma) {
@@ -152,6 +177,7 @@ static inline const char *idioma_mes_curto(int idioma, int m0) {
     case IDIOMA_ID: return ID[m0];
     case IDIOMA_VI: return VI[m0];
     case IDIOMA_JA: case IDIOMA_ZHCN: case IDIOMA_ZHTW: return CJK[m0];
+    case IDIOMA_AR: return AR[m0];
     default:        return PT[m0];
   }
 }

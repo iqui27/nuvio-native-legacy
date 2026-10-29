@@ -12,14 +12,18 @@ int addons_n(void) { return 0; }
 int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 const char *addons_base(int i) { (void)i; return ""; }
 const char *addons_id_manifesto(int i) { (void)i; return ""; }
+int addons_travar_lista(unsigned v, int p) { (void)v; (void)p; return 0; }
+void addons_destravar_lista(void) {}
 const char *sessao_usuario(void) { return "account-home"; }
+// Stub do mesmo porteiro de tests/home_layout.c: a regra mora em descoberta.c,
+// que nao entra nesta montagem sem rede.
 
 #define GRUPO(id,pasta) "{\"id\":\"" id "\",\"title\":\"Same title\",\"folders\":[{\"id\":\"" pasta "\",\"title\":\"Folder\",\"sources\":[{\"addonBaseUrl\":\"https://collection.invalid\",\"type\":\"movie\",\"catalogId\":\"" pasta "\"}]}]}"
 static const char *duas = "{\"collections\":[" GRUPO("c1","f1") "," GRUPO("c2","f2") "]}";
 
 int main(void) {
   fil_definir_limite(3);
-  ajustes_aplicar_blob("{\"continueWatchingEnabled\":true}");
+  assert(ajustes_shot_valor("continueWatchingEnabled", 0));
   assert(colfileiras_receber(duas) == 2);
   colfileiras_sincronizar();
   catordem_ler("{\"items\":[{\"is_collection\":true,\"collection_id\":\"c2\",\"order\":0},{\"is_collection\":true,\"collection_id\":\"c1\",\"order\":1}]}");
@@ -75,7 +79,8 @@ int main(void) {
   col_esquecer_perfil();
   fil_esquecer(); catordem_esquecer();
   fil_definir_limite(40);
-  ajustes_aplicar_blob("{\"continueWatchingEnabled\":true,\"homeLayout\":\"classic\"}");
+  assert(ajustes_shot_valor("continueWatchingEnabled", 0));
+  assert(ajustes_shot_valor("homeLayoutLocal", HOME_LAYOUT_PADRAO));
   static CatItem incItems[19]; static CatFileira incRows[19];
   static char incKeys[17][64];
   for (int i = 0; i < 17; i++)
@@ -164,7 +169,7 @@ int main(void) {
   fil_remover(0);
   cat_definir_tudo(incItems, 2, incRows, 2); sincronizarFileiras();
   assert(!naHome(incKeys[0]) && posicao("continue_watching") == 11);
-  ajustes_aplicar_blob("{\"continueWatchingEnabled\":false}"); sincronizarFileiras();
+  assert(ajustes_shot_valor("continueWatchingEnabled", 1)); sincronizarFileiras();
   assert(!naHome("continue_watching") && !naHome(incKeys[1]));
   puts("ok #392: CW stays in its saved slot from its first frame through 17 arrivals");
   puts("ok #233: real Home/editor order, hidden collection, empty snapshot, equal titles and catalogue-only quota");

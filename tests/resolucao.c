@@ -31,6 +31,7 @@ int main(void) {
   ResAuto a;
   int i;
   assert(mkdtemp(dir));
+  assert(setenv("NUVIO_DADOS", dir, 1) == 0);
   dados_iniciar(dir);
 
   // 1. Migration: old 0 (the old default, 1080p) is Automatic; 4K and 720p
@@ -47,15 +48,57 @@ int main(void) {
   assert(!strcmp(V_RESOLUCAO[RES_4K], "4K (experimental)"));
   assert(!strcmp(V_RESOLUCAO[RES_720], "720p (leve)"));
   puts("ok  lista: Automatica primeiro, padrao de fabrica");
+  assert(OPCOES[AJ_GPU_EFEITOS].n == 4);
+  assert(!strcmp(V_GPU_EF[1], "Completos") && !strcmp(V_GPU_EF[2], "Leves"));
+  assert(!strcmp(V_GPU_EF[3], "Mínimos") && !inativa(AJ_GPU_EFEITOS));
+  int resRow = -1, effectsRow = -1;
+  for (int row = 0; row < AJ_N_TELA; row++) if (TELA[row].tipo == IT_OPC) {
+    if (TELA[row].op == AJ_RESOLUCAO) resRow = row;
+    if (TELA[row].op == AJ_GPU_EFEITOS) effectsRow = row;
+  }
+  assert(resRow >= 0 && effectsRow == resRow + 1);
+  // Legacy 720p + Automatic migrates once and persists to disk.
+  assert(carregar(dir, "resolucaoUi 3\ngpuEfeitosLocal 0\n") == RES_720);
+  assert(ajustes_gpu_efeitos() == 3);
+  { char *m = dados_ler("efeitos720-205.txt"); assert(m); free(m); }
+  valor[AJ_GPU_EFEITOS] = 0; ajustes_dir(dir);
+  assert(ajustes_gpu_efeitos() == 3);
+  valor[AJ_GPU_EFEITOS] = 1; assert(gravar());
+  valor[AJ_GPU_EFEITOS] = 0; ajustes_dir(dir);
+  assert(ajustes_gpu_efeitos() == 1);
+  puts("ok  legacy 720p Automatic migrates once; later Full persists");
+  for (int p = 0; p < 4; p++) {
+    char saved[80]; snprintf(saved, sizeof saved, "resolucaoUi 3\ngpuEfeitosLocal %d\n", p);
+    assert(carregar(dir, saved) == RES_720 && ajustes_gpu_efeitos() == p);
+  }
+  puts("ok  effects appended, visible beside resolution, saved 720p choices preserved");
 
   // 3. Disk: old key migrates; the new key wins over the old one.
   assert(carregar(dir, "resolucao_ui 0\n") == RES_AUTO && !ajustes_4k() && !ajustes_720p());
   assert(carregar(dir, "resolucao_ui 1\n") == RES_4K && ajustes_4k());
   assert(carregar(dir, "resolucao_ui 2\n") == RES_720 && ajustes_720p());
-  assert(carregar(dir, "resolucao_ui 1\nresolucaoUi 1\n") == RES_1080 && !ajustes_4k());
-  assert(carregar(dir, "resolucaoUi 0\nresolucao_ui 2\n") == RES_AUTO);
+  assert(carregar(dir, "resolucao_ui 1\nresolucaoUi 1\n") == RES_1080 && ajustes_1080p() && !ajustes_4k());
+  assert(carregar(dir, "resolucaoUi 0\nresolucao_ui 2\n") == RES_AUTO && !ajustes_1080p());
   assert(carregar(dir, "idioma 0\n") == RES_AUTO);
   puts("ok  ajustes.txt: resolucao_ui migra, resolucaoUi vence");
+  dados_apagar("efeitos720-205.txt");
+  assert(carregar(dir, "resolucao_ui 2\ngpuEfeitosLocal 0\n") == RES_720);
+  assert(ajustes_gpu_efeitos() == 3);
+  dados_apagar("efeitos720-205.txt");
+  assert(carregar(dir, "resolucaoUi 1\ngpuEfeitosLocal 0\n") == RES_1080);
+  assert(ajustes_gpu_efeitos() == 0);
+  dados_apagar("efeitos720-205.txt");
+  assert(carregar(dir, "resolucaoUi 3\ngpuEfeitosLocal 1\n") == RES_720);
+  assert(ajustes_gpu_efeitos() == 1);
+  dados_apagar("efeitos720-205.txt");
+  { char caminho[700];
+    snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dir);
+    assert(!unlink(caminho));
+    ajustes_dir(dir); // New installs mark migration before any user choice.
+    assert(carregar(dir, "resolucaoUi 3\ngpuEfeitosLocal 0\n") == RES_720);
+    assert(ajustes_gpu_efeitos() == 0);
+  }
+  puts("ok  old resolution key migrates; 1080p, explicit Full and new choices stay");
 
   // 4. The 4K watch: 4 bad reports in a row (GPU clock) = fallback, once.
   memset(&v, 0, sizeof v);

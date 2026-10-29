@@ -20,22 +20,29 @@ enum = re.search(r"typedef enum \{(.*?)\n\} OpcaoId;", fonte, re.S)
 if not enum:
     sys.exit("FALHA: enum OpcaoId nao encontrado em " + args.fonte)
 corpo = re.sub(r"//[^\n]*", "", enum.group(1))
+corpo = re.sub(r"^\s*#[^\n]*", "", corpo, flags=re.M)  # #ifdef NV_ANDROID slots
 opcoes = [n.strip() for n in corpo.split(",") if n.strip() and n.strip() != "AJ_N"]
 # Retired from the screen on purpose; the enum slot stays (positional valor[]/CHAVE[]).
 RETIRADAS = {
     "AJ_RELOGIO_POS",  # 1.8: clock island is always top-right (inativa() == 1)
     "AJ_DESCOBRIR",    # 2.0.3: the web Discover screen does not exist on the TV (inativa() == 1)
-    "AJ_AVANCADAS",    # 2.0.3: lives in the "Avancadas" pill at the top of the index
-    # 2.0.3 (owner, 07/10): which ratings MDBList fetches follows "Notas no
-    # titulo"; turning a rating on turns its pair on (notaLigarPar in ajustes.c).
-    "AJ_MDB_TRAKT", "AJ_MDB_IMDB", "AJ_MDB_TMDB", "AJ_MDB_LETTER",
-    "AJ_MDB_TOMATES", "AJ_MDB_AUDIENCIA", "AJ_MDB_META", "AJ_MDB_MAL",
+    # 2.1: AJ_AVANCADAS (Esta TV) and the eight AJ_MDB_* sources (Pagina do
+    # titulo > Mais opcoes) are rows again; tests/ajustes_catalogo21.sh.
     # 2.0.5 (owner, 12/10): profundidade virou o reflexo do foco do GFX_CARD,
     # com um controle so (AJ_PROF_BRILHO). Os outros AJ_PROF_* (borda, cobertura
     # e os cinco por tipo de cartao) sairam da tela de proposito; os slots ficam
     # no enum para o valor[] salvo manter os indices (migracao profundidade-205).
     "AJ_PROF_BORDA", "AJ_PROF_COBERTURA", "AJ_PROF_POSTERS", "AJ_PROF_CW",
     "AJ_PROF_EPS", "AJ_PROF_ELENCO", "AJ_PROF_TRAILERS",
+    # 2.0.5 (#509): o som do trailer virou UM ajuste ("Som do trailer");
+    # o slot de "Som do trailer na pagina do titulo" fica no enum pelo valor[]
+    # salvo, e a migracao do carregar adota a escolha antiga.
+    "AJ_DET_TRAILER_SOM",
+    # 2.0.6 (#535): edited inside another row's editor, not as rows of their
+    # own (uxOpcaoNaTela in ajustes_ux_desenho.inc): the per-provider limits
+    # in "Ordem dos provedores", size/groups in "Filtros de fontes".
+    "AJ_FALHA_RD_LIMITE", "AJ_FALHA_TB_LIMITE", "AJ_FALHA_PM_LIMITE", "AJ_FALHA_AD_LIMITE",
+    "AJ_FILTRO_TAM_MAX", "AJ_FILTRO_GRUPOS",
 }
 opcoes = [op for op in opcoes if op not in RETIRADAS]
 

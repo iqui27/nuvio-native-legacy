@@ -37,11 +37,13 @@ int ajustes_social(void) { return 1; }
 int ajustes_hist_conta(void) { return 1; }
 int ajustes_busca_cinemeta(void) { return 1; }
 int ajustes_busca_nuvio(void) { return 0; }   // #311: Primeiro (padrao)
+int ajustes_ocultar_filmes_vistos(void) { return 0; }    // #366: descoberta.c le o ajuste
 #include "../src/descoberta.c"
 Uint32 SDL_GetTicks(void) { return 0; }
 #include <assert.h>
 #include <stdio.h>
 #include <unistd.h>
+#define NV_TEST_SERVIDORES_APENAS
 #include "jellyfin_stub.inc"
 
 // --- DUBLES: so fazem descoberta.c linkar (o conjunto de tests/cateps.c) -----
@@ -57,6 +59,19 @@ const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nom
 const char *dados_dir(void)             { return ""; }
 const char *sessao_usuario(void)        { return ""; }
 int         perfis_ativo(void)          { return 1; }
+// A conta nao esta ligada nesta fixture: sessao fixa 0 (tests/stub_perfisessao.h).
+#include "stub_perfisessao.h"
+// Fronteiras opcionais de descoberta.c: sem retrato da lista a poda e adiada,
+// nunca fabricada; a poda de catalogos nao existe nesta fixture.
+int addons_copiar_identidades(AddonIdentidade *saida, int max, unsigned versao, int perfil) {
+  (void)saida; (void)max; (void)versao; (void)perfil; return -1;
+}
+int addons_travar_lista(unsigned versao, int perfil) { (void)versao; (void)perfil; return 0; }
+void addons_destravar_lista(void) {}
+int fil_podar_catalogos_de(const char *const *ids, const char *const *bases, int n,
+                           int perfil, unsigned versao) {
+  (void)ids; (void)bases; (void)n; (void)perfil; (void)versao; return 0;
+}
 char *dados_ler(const char *nome)                 { (void)nome; return NULL; }
 int   dados_gravar(const char *nome, const char *c) { (void)nome; (void)c; return 1; }
 int   dados_apagar(const char *nome)              { (void)nome; return 1; }
@@ -127,6 +142,13 @@ int   trakt_lista(const char *q, CatItem *s, int m) { (void)q; (void)s; (void)m;
 int   trakt_lista_cresc(const char *q, CatItem **s, int m) { (void)q; (void)s; (void)m; return 0; }
 // O servico social proprio (recomenda.c) fica fora deste teste: a uniao e so o que o Trakt trouxe.
 int   recomenda_social_mesclar(CatItem *i, int nTrakt, int max) { (void)i; (void)max; return nTrakt; }
+// As variantes de sessao validam a identidade e delegam ao duble acima.
+int recomenda_social_mesclar_sessao(CatItem *i, int nTrakt, int max, uint64_t s) {
+  return perfis_sessao_atual(s) ? recomenda_social_mesclar(i, nTrakt, max) : 0;
+}
+int trakt_enfeitar_lote_sessao(CatItem *s, int n, uint64_t sessao) {
+  return perfis_sessao_atual(sessao) ? trakt_enfeitar_lote(s, n) : 0;
+}
 int   trakt_social(CatItem *s, int m)      { (void)s; (void)m; return 0; }
 int   trakt_e_a_seguir(const char *id)     { (void)id; return 0; }
 int   trakt_progresso_ocultar(const char *i, int o) { (void)i; (void)o; return 0; }

@@ -18,6 +18,7 @@
 #include "ajustes.h"
 #include "anim.h"
 #include "botoes.h"
+#include "corviva.h"
 #include "gfx.h"
 #include "idioma.h"
 #include "layout.h"
@@ -78,8 +79,8 @@ static const char *nomeCodec(const char *c) {
 
 // O vidro escuro das ilhas: miolo quase opaco e um fio claro na borda.
 static void vidro(GfxRect r, float raioPx, float a) {
-  gfx_cor(r, raioPx / r.h, 0.070f, 0.073f, 0.082f, 0.92f * a);
-  gfx_anel(r, raioPx / r.h, 1.0f, 1, 1, 1, 0.09f * a);
+  gfx_vidro_ou_solido(r, raioPx / r.h, GFX_VIDRO_DENS, a, 0.070f, 0.073f, 0.082f, 0.92f);
+  if (!ajustes_vidro()) gfx_anel(r, raioPx / r.h, 1.0f, 1, 1, 1, 0.09f * a);
 }
 
 // O FUNDO NUMA PASSADA SO, COM RUIDO (dono, C9 OLED, 08/10: "o gradiente do
@@ -290,7 +291,7 @@ static void cartao(const DvtelaEstado *e, const Molas *m, Uint32 agora, float a,
   gfx_sombra_sob((GfxRect){ c.x - 60, c.y - 20, c.w + 120, c.h + 110 }, 1.0f, 0, 0.10f, 0, 0, 0,
                  0.55f * a, c, C_RAIO, 0.92f * a);
   vidro(c, C_RAIO, a);
-  gfx_luz_canto(c, C_RAIO / c.h, c.w * 0.82f, -c.h * 0.10f, c.h * 1.1f, ar, ag, ab, 0.10f * a);
+  if (!ajustes_vidro()) gfx_luz_canto(c, C_RAIO / c.h, c.w * 0.82f, -c.h * 0.10f, c.h * 1.1f, ar, ag, ab, 0.10f * a);
 
   ajustes_ui_kicker(i18n("Dolby Vision em MKV"), tx, ty, a);
   { TxtLinha l = txt_linha_corta(TXT_NOV_TITULO, i18n("Ligando o Dolby Vision"), 243, 242, 239, 255, COL_W);
@@ -323,86 +324,79 @@ static void cartao(const DvtelaEstado *e, const Molas *m, Uint32 agora, float a,
   ilustracao(e, m, cx0 + C_W - C_PAD - IL_W, cy0 + C_PAD, IL_W, C_H - 2.0f * C_PAD - 70.0f, agora, a);
 }
 
-// A CARA CINEMA (#205): a mesma da abertura normal (desenharCinema) — arte
-// recuada numa passada so, logo parado no meio, linha do episodio e trilho fino
-// no acento — com a marca Dolby Vision acima do logo e UMA linha de passo sob
-// o trilho, dos sinais reais da maquina. Sem lista, sem URL, sem nome de addon.
-extern char dvtelaLogo[600], dvtelaTitulo[160], dvtelaEp[220];
-static void cinema(const DvtelaEstado *e, const Molas *m, Uint32 agora, float v) {
-  GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
-  float cy = NV_TELA_H * 0.46f, base, lh = 120.0f, y, r, g, b, luz = m->luz, entra = 1.0f;
-  float t = (float)(agora - e->entrouEm) / 1000.0f, tw = 200.0f, x0 = NV_TELA_W * 0.5f - tw * 0.5f;
-  int reduz = ajustes_animacoes_reduzidas(), i, n = 0;
-  float prog = 0.0f;
-  GLuint tb = 0, lg = 0;
-  if (!reduz && t < 0.4f && t >= 0.0f) entra = t / 0.4f;
-  if (arteUrl[0]) {
-    GLuint ts = tex_obter_larg(arteUrl, 480);
-    if (ts) tb = gfx_desfocado(ts, arteUrl);
-  }
-  // Opaco desde o primeiro quadro (atras pode estar o HDR10 da TV): a mesma
-  // passada do desenharCinema, com o ruido do dither.
-  if (tb) gfx_rect(tela, tb, GFX_SNAP, 0.55f, 2.0f, 0.0f, 0.0f, 0, 0, 0, v);
-  else gfx_cor(tela, 0.0f, 0.0f, 0.0f, 0.0f, v);
-  if (dvtelaLogo[0]) lg = tex_obter_larg_qualquer(dvtelaLogo, 640);
-  if (lg) {
-    float ar = tex_aspecto(dvtelaLogo), lw = 640.0f;
-    lh = ar > 0.0f ? lw / ar : 200.0f;
-    if (lh > 220.0f) { lh = 220.0f; lw = lh * ar; }
-    gfx_rect((GfxRect){ NV_TELA_W * 0.5f - lw * 0.5f, cy - lh * 0.5f, lw, lh }, lg,
-             tex_marca_escura(dvtelaLogo) ? GFX_MARCA : GFX_TEXTO, 0, 0, 0, 0, .96f, .96f, .97f, v * entra);
-    base = cy + lh * 0.5f;
-  } else {
-    TxtLinha l = txt_linha_corta(TXT_TITULO2, dvtelaTitulo, 255, 255, 255, 255, 1400.0f);
-    lh = (float)l.h;
-    txt_desenhar_alpha(l, NV_TELA_W * 0.5f - l.w * 0.5f, cy - l.h * 0.5f, v * entra);
-    base = cy + l.h * 0.5f;
-  }
+// A CARA CINEMA (#205) E A DA ABERTURA NORMAL: desenharCinema (player.c) desenha
+// arte, logo, anel e linhas — Centro ou Canto, com os ajustes de sempre — e chama
+// estes dois encaixes. So a marca Dolby Vision e a UMA linha de passo sao daqui;
+// ambas nascem e somem com a mola da tela, entao a troca entre a abertura normal
+// e a do DV nunca mexe no resto.
+#ifdef NV_SHOT_HOOKS
+static GfxRect zonaMarca, zonaLinha, zonaMarcaAnt, zonaLinhaAnt;
+void dvtela_abertura_zonas(float marca[4], float linha[4]) {
+  marca[0] = zonaMarca.x; marca[1] = zonaMarca.y; marca[2] = zonaMarca.w; marca[3] = zonaMarca.h;
+  linha[0] = zonaLinha.x; linha[1] = zonaLinha.y; linha[2] = zonaLinha.w; linha[3] = zonaLinha.h;
+  // On a fade-out frame nothing draws; compare against the last active zone.
+  if (marca[2] <= 0) memcpy(marca, &zonaMarcaAnt, sizeof zonaMarcaAnt);
+  if (linha[2] <= 0) memcpy(linha, &zonaLinhaAnt, sizeof zonaLinhaAnt);
+}
+#define ZONA(z, r) do { (z) = (r); if ((r).w > 0) (z##Ant) = (r); } while (0)
+#else
+#define ZONA(z, r) ((void)0)
+#endif
 
-  // A MARCA: DOLBY VISION espacada entre dois fios, acima do logo. Acende no
-  // acento quando o perfil aparece no arquivo.
+// A marca: DOLBY VISION espacada entre fios, acima do logo (topo = o topo dele).
+// Centro: x e o meio, fios dos dois lados. Canto: x e a borda do logo, um fio so.
+// Acende no acento quando o perfil aparece no arquivo.
+void dvtela_abertura_marca(int canto, float x, float topo, float a) {
+  float r, g, b, luz = molas.luz;
+  a *= dvtela_alfa();
+  ZONA(zonaMarca, ((GfxRect){ 0, 0, 0, 0 }));
+  if (a < 0.004f) return;
   ajustes_acento(&r, &g, &b);
   { TxtLinha l = txt_linha(TXT_V3_SELO, "DOLBY VISION", 243, 242, 239, 255);
-    float mx = NV_TELA_W * 0.5f, my = cy - lh * 0.5f - 52.0f, aw = (0.62f + 0.38f * luz) * v * entra;
+    float mx = canto ? x : x - l.w * 0.5f, my = topo - 52.0f, aw = (0.62f + 0.38f * luz) * a;
+    ZONA(zonaMarca, ((GfxRect){ mx - 76.0f, my - 22.0f, l.w + 152.0f, l.h + 44.0f }));
     if (luz > 0.01f)
-      gfx_rect((GfxRect){ mx - l.w * 0.5f - 60.0f, my - 22.0f, l.w + 120.0f, l.h + 44.0f }, 0, GFX_SOMBRA,
-               1.0f, 0, 0, 0.5f, r, g, b, 0.22f * luz * v * entra);
-    txt_desenhar_alpha(l, mx - l.w * 0.5f, my, aw);
-    gfx_cor((GfxRect){ mx - l.w * 0.5f - 76.0f, my + l.h * 0.5f, 56.0f, 1.0f }, 0.5f, 1, 1, 1, 0.35f * aw);
-    gfx_cor((GfxRect){ mx + l.w * 0.5f + 20.0f, my + l.h * 0.5f, 56.0f, 1.0f }, 0.5f, 1, 1, 1, 0.35f * aw); }
-
-  if (dvtelaEp[0]) {
-    TxtLinha l = txt_linha_corta(TXT_ILHA_SUB, dvtelaEp, 243, 242, 239, 170, 1100.0f);
-    txt_desenhar_alpha(l, NV_TELA_W * 0.5f - l.w * 0.5f, base + 14.0f, v * entra);
-  }
-
-  // O trilho enche com os passos de verdade (molas do feito), nunca por relogio.
-  for (i = 0; i < DVT_PASSOS; i++) {
-    if (i == DVT_PASSO_AUDIO && !e->audioTrocado) continue;
-    n++; prog += m->feito[i];
-  }
-  prog = anim_clamp((prog + 0.15f) / (float)(n + 0.15f), 0.0f, 1.0f);
-  y = base + 64.0f;
-  gfx_cor((GfxRect){ x0, y, tw, 3.0f }, 0.5f, 1, 1, 1, 0.16f * v * entra);
-  gfx_cor((GfxRect){ x0, y, tw * prog, 3.0f }, 0.5f, r, g, b, 0.9f * v * entra);
-
-  // UMA linha calma, so com o sinal real; a dica de 60 s troca por "so mais um instante".
-  { char lin[96];
-    const char *p;
-    if (e->passo >= DVT_PASSO_IMAGEM) p = i18n("Preparando a imagem");
-    else if (e->passo >= DVT_PASSO_ABRIR) p = i18n("Abrindo a fonte");
-    else if (e->audioTrocado && e->passo >= DVT_PASSO_AUDIO)
-      { snprintf(lin, sizeof lin, i18n("Áudio %s trocado por %s"), nomeCodec(e->audioDe), nomeCodec(e->audioPara)); p = lin; }
-    else if (e->perfil > 0) { snprintf(lin, sizeof lin, i18n("Dolby Vision perfil %d"), e->perfil); p = lin; }
-    else p = i18n("Lendo o arquivo");
-    { TxtLinha l = txt_linha(TXT_G21B, p, 243, 242, 239, 255);
-      txt_desenhar_alpha(l, NV_TELA_W * 0.5f - l.w * 0.5f, y + 18.0f, 0.92f * v * entra); }
-    if (dvtela_dica_alfa() > 0.01f) {
-      TxtLinha l = txt_linha(TXT_G19M, i18n("Só mais um instante…"), 243, 242, 239, 255);
-      txt_desenhar_alpha(l, NV_TELA_W * 0.5f - l.w * 0.5f, y + 52.0f, 0.62f * dvtela_dica_alfa() * v);
-    } }
-  (void)agora;
+      gfx_rect((GfxRect){ mx - 60.0f, my - 22.0f, l.w + 120.0f, l.h + 44.0f }, 0, GFX_SOMBRA,
+               1.0f, 0, 0, 0.5f, r, g, b, 0.22f * luz * a);
+    txt_desenhar_alpha(l, mx, my, aw);
+    gfx_cor((GfxRect){ mx + l.w + 20.0f, my + l.h * 0.5f, 56.0f, 1.0f }, 0.5f, 1, 1, 1, 0.35f * aw);
+    if (!canto) gfx_cor((GfxRect){ mx - 76.0f, my + l.h * 0.5f, 56.0f, 1.0f }, 0.5f, 1, 1, 1, 0.35f * aw); }
 }
+
+// UMA linha de passo, so com o sinal real, na pilha de linhas sob/ao lado do anel
+// (x e o meio no Centro e a borda no Canto). Devolve o quanto empurra as de baixo,
+// pesado pela mola, para elas escorregarem em vez de pular.
+float dvtela_abertura_linha(int canto, float x, float y, float a) {
+  const DvtelaEstado *e = dvtela_estado();
+  char lin[96];
+  const char *p;
+  float k = dvtela_alfa();
+  a *= k;
+  ZONA(zonaLinha, ((GfxRect){ 0, 0, 0, 0 }));
+  if (a < 0.004f) return 34.0f * k;
+  if (e->passo >= DVT_PASSO_IMAGEM) p = i18n("Preparando a imagem");
+  else if (e->passo >= DVT_PASSO_ABRIR) p = i18n("Abrindo a fonte");
+  else if (e->audioTrocado && e->passo >= DVT_PASSO_AUDIO)
+    { snprintf(lin, sizeof lin, i18n("Áudio %s trocado por %s"), nomeCodec(e->audioDe), nomeCodec(e->audioPara)); p = lin; }
+  else if (e->perfil > 0) { snprintf(lin, sizeof lin, i18n("Dolby Vision perfil %d"), e->perfil); p = lin; }
+  else p = i18n("Lendo o arquivo");
+  { TxtLinha l = txt_linha(TXT_G19M, p, 243, 242, 239, 255);
+    float lx = canto ? x : x - l.w * 0.5f;
+    txt_desenhar_alpha(l, lx, y, 0.92f * a);
+    ZONA(zonaLinha, ((GfxRect){ lx, y, (float)l.w, (float)l.h })); }
+  return 34.0f * k;
+}
+
+// When the DV status sits below existing loading lines, its exclusion band
+// still covers the same region so switching cannot report false movement.
+void dvtela_abertura_zona_linha(float y, float w) {
+#ifdef NV_SHOT_HOOKS
+  zonaLinha = (GfxRect){ 0, y, w > 0 ? w : NV_TELA_W, 34.0f };
+#else
+  (void)y; (void)w;
+#endif
+}
+
 
 void dvtela_desenhar(Uint32 agora) {
   const DvtelaEstado *e = dvtela_estado();
@@ -420,30 +414,16 @@ void dvtela_desenhar(Uint32 agora) {
     molasZerar(&molas);
   }
 
-  if (dvtela_variante() == DVT_VAR_CINEMA) {
-    // A cinema nao tem botao: so o anteparo do ponteiro (o player por baixo nao o recebe).
+  { // Both variants use the player's loading presentation.
+    // A cinema nao tem botao nem desenho proprio (o player desenha, com os encaixes
+    // acima): so o anteparo do ponteiro (o player por baixo nao o recebe).
     dvtPont = 0;
-    cinema(e, &molas, agora, a);
     if (e->ativa) {
       ponteiro_camada();
       if (a >= 0.999f) { ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, NULL, 0, 0); dvtPont = 1; }
     }
     return;
   }
-  fundo(a);
-  dvtPont = 0;
-  if (e->ativa) {
-    ponteiro_camada();   // o player por baixo nao recebe o ponteiro
-    if (a >= 0.999f) {
-      ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, NULL, 0, 0);   // anteparo
-      dvtPont = 1;
-    }
-  }
-  { ESCALA_SE_COUBER_INI(C_W, C_H);
-    float sobe = (1.0f - a) * 18.0f;
-    cartao(e, &molas, agora, a, (NV_TELA_W - C_W) * 0.5f, (NV_TELA_H - C_H) * 0.5f + sobe,
-           dvtela_dica_alfa(), dvtela_foco_botao(), dvtPont);
-    ESCALA_SE_COUBER_FIM(); }
 }
 
 // A PREVIA DAS NOVIDADES (novidades_cartao.h): o MESMO cartao, desenhado por

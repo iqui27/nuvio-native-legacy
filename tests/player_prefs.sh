@@ -26,3 +26,5 @@ export NUVIO_DADOS="$DADOS"
 export NUVIO_ARTE_TESTE="$ARTE"
 ${TMPDIR:-/tmp}/nuvio-player-prefs-tests escrever
 ${TMPDIR:-/tmp}/nuvio-player-prefs-tests ler
+${TMPDIR:-/tmp}/nuvio-player-prefs-tests migrar
+${TMPDIR:-/tmp}/nuvio-player-prefs-tests migrado

@@ -3,6 +3,7 @@
 #include "colecoes.h"
 #include "catordem.h"
 #include "fileiras.h"
+#include "addons.h"
 #include <assert.h>
 #include <pthread.h>
 #include <stdatomic.h>
@@ -15,6 +16,27 @@ int addons_n(void) { return 1; }
 int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 const char *addons_base(int i) { (void)i; return "https://fixture.example"; }
 const char *addons_id_manifesto(int i) { (void)i; return "addon.demo"; }
+void addons_catalogo_chave(const char *id, const char *base, const char *type,
+                           const char *catalog, char *dst, unsigned size) {
+  (void)base; snprintf(dst, size, "%s_%s_%s", id, type, catalog);
+}
+// This fixture's installed addon is static. Authoritative list publication
+// is covered by fileiras_removidas; any borrowed scope here must be exact.
+static pthread_mutex_t addonListLock = PTHREAD_MUTEX_INITIALIZER;
+static _Thread_local unsigned addonListDepth;
+unsigned addons_versao(void) { return 1; }
+int addons_travar_lista(unsigned versao, int perfil) {
+  assert(versao == addons_versao() && perfil == 1);
+  assert(!addonListDepth);
+  assert(!pthread_mutex_lock(&addonListLock));
+  addonListDepth = 1;
+  return 1;
+}
+void addons_destravar_lista(void) {
+  assert(addonListDepth == 1);
+  addonListDepth = 0;
+  assert(!pthread_mutex_unlock(&addonListLock));
+}
 static const char *usuario = "account-A";
 const char *sessao_usuario(void) { return usuario; }
 char *dados_caminho(char *dst, unsigned n, const char *nome) {

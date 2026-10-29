@@ -4,6 +4,7 @@
 #include "ajustes.h"
 #include "layout.h"
 #include "menu.h"
+#include "text.h"
 #include "biblioteca.h"
 #include "agendaui.h"
 #include "busca.h"
@@ -55,6 +56,11 @@ int main(void) {
   nvt_set(dir, sizeof dir, "/nuvio-menu-topo-XXXXXX"); assert(mkdtemp(dir));
   assert(setenv("NUVIO_DADOS", dir, 1) == 0);
   dados_iniciar(dir);
+  // Larguras reais dos rotulos: a fonte precisa de um contexto GL (os glifos).
+  SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");
+  assert(SDL_Init(SDL_INIT_VIDEO) == 0);
+  assert(SDL_GL_CreateContext(SDL_CreateWindow("t", 0, 0, 64, 64, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN)));
+  assert(txt_iniciar("deploy/app", 1));
   snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dir);
 
   // Padrao: a rail de sempre.
@@ -79,8 +85,23 @@ int main(void) {
   assert(!menu_aberto() && !menu_escolheu() && menu_destino() == MENU_INICIO);
 
   abrir(MENU_INICIO);
-  tecla(SDLK_LEFT); tecla(SDLK_RETURN);       // sem volta na ponta esquerda
-  assert(menu_destino() == MENU_INICIO);
+  tecla(SDLK_LEFT); tecla(SDLK_LEFT);         // a esquerda do Inicio e o circulo do perfil; dali nao passa
+  tecla(SDLK_RETURN);
+  assert(menu_escolheu() && menu_pediu_trocar() && menu_destino() == MENU_INICIO);
+
+  // A pilula abraca o conteudo: nenhum rotulo cortado e bem menos que a tela,
+  // nos idiomas de rotulo mais longo (pt, en, de, ru, fr).
+  { static const int idiomas[] = { 0, 1, 6, 4, 5 };
+    for (int j = 0; j < 5; j++) {
+      char cfg[160];
+      MenuTopoGeo g;
+      snprintf(cfg, sizeof cfg, "homeLayoutLocal 0\nmodernSidebar 0\nmenuTopoLocal 1\nmenuExplorarLocal 0\nmenuGuiaLocal 0\nmenuAgendaLocal 0\nmenuPerfilLocal 0\nidioma %d\n", idiomas[j]);
+      gravar(cfg);
+      menu_topo_geo(&g);
+      printf("topo idioma %d: largura %.0f cortado %d\n", idiomas[j], g.trilha[2], g.cortado);
+      assert(g.cortado == 0 && g.trilha[2] > 600.0f && g.trilha[2] < 1300.0f);
+    }
+    gravar("homeLayoutLocal 0\nmodernSidebar 0\nmenuTopoLocal 1\n"); }
 
   abrir(MENU_INICIO);
   tecla(SDLK_ESCAPE);

@@ -2,6 +2,48 @@ name: Bug report
 description: Something doesn't work as expected
 labels: ["bug"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Before you file
+
+        Playback problems are usually on the add-on or debrid side, not in this app.
+        Please do these four quick checks first — most of them take under a minute.
+
+        1. **Play the same title with the same source in another player**
+           (Stremio, the official Nuvio app, VLC, Kodi). If it fails there too,
+           the add-on, the debrid service or the connection is at fault: ask the
+           add-on author or your debrid's support, not this app.
+        2. **"Not cached", no sources, 404, expired link** = add-on or debrid side.
+           Nothing in this app can fix a source that no longer exists.
+        3. **Try another source, then another title**, and run the internet
+           speed test on the TV: **Settings › This TV › Speed test** reports
+           the largest file your connection can handle. If the file you are
+           playing is bigger than that, the connection is the limit — pick a
+           smaller source, that is not a bug in this app.
+        4. **Send the log** and keep the code it shows: **Settings › About and help
+           › Send log**, then **Send**. When it finishes, the screen shows a
+           **6-character code** — that is the one we need.
+
+        Thanks! A clean report is fixed much faster.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Quick checks — tick all five
+      description: If any of these fails, the issue belongs to the add-on author or the debrid service.
+      options:
+        - label: I played the same title with the same source in another player (Stremio / official Nuvio / VLC) and it only breaks in Nuvio Legacy.
+          required: true
+        - label: I tried another source, and then another title.
+          required: true
+        - label: I ran the internet speed test on the TV (**Settings › This TV › Speed test**), and the file I am playing is smaller than the recommended size.
+          required: true
+        - label: This is not "not cached", no sources, 404 or an expired link.
+          required: true
+        - label: I sent the log from **Settings › About and help › Send log** and I have the 6-character code.
+          required: true
+    validations:
+      required: true
   - type: dropdown
     id: platform
     attributes:
@@ -24,9 +66,9 @@ body:
   - type: input
     id: version
     attributes:
-      label: Nuvio version
-      description: Settings › About shows it.
-      placeholder: "e.g. 1.5.3 (high cache)"
+      label: App version
+      description: Settings › About and help shows it.
+      placeholder: "e.g. 2.0.7"
     validations:
       required: true
   - type: textarea
@@ -39,6 +81,10 @@ body:
   - type: input
     id: log
     attributes:
-      label: Log
-      description: Right after it happens, use Settings › Account › Send log and write the time here.
-      placeholder: "e.g. sent at 21:40"
+      label: Log code
+      description: >-
+        The 6-character code from Settings › About and help › Send log. Send the
+        log right after the problem happens, while the code is still on screen.
+      placeholder: "e.g. K3P9QM"
+    validations:
+      required: true

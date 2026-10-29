@@ -33,11 +33,19 @@ char *rede_baixar_com(const char *url, int s, const char *const *cab) {
 char *rede_baixar(const char *url, int s) {
   (void)s;
   if (strstr(url, "/meta/")) {
+    // #595: Trakt confirms E2; an unavailable/stale metadata service must
+    // neither remove it nor silently advance it to E3.
+    if (strstr(url, "tt2000002")) {
+      const char *mode = getenv("TRAKT_META");
+      if (mode && !strcmp(mode, "missing")) return NULL;
+      if (mode && !strcmp(mode, "stale"))
+        return strdup("{\"name\":\"So Trakt\",\"videos\":[{\"season\":1,\"episode\":3}]}");
+    }
     const char *t = strchr(strstr(url, "/meta/") + 6, '/');
     char id[24] = "", *o = malloc(600);
     if (t) snprintf(id, sizeof id, "%.9s", t + 1);
     snprintf(o, 600, "{\"imdbRating\":\"7.9\",\"name\":\"x\",\"description\":\"d\",\"runtime\":\"40 min\","
-      "\"videos\":[{\"id\":\"%s:1:2\",\"name\":\"e\",\"released\":\"2026-01-01T00:00:00.000Z\"}]}", id);
+      "\"videos\":[{\"id\":\"%s:1:2\",\"season\":1,\"episode\":2,\"name\":\"e\",\"released\":\"2026-01-01T00:00:00.000Z\"}]}", id);
     return o;
   }
   return NULL;

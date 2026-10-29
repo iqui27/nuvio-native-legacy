@@ -53,6 +53,7 @@
     if (morto) {
       setTimeout(function () { if (eu.onerror) eu.onerror({ message: 'teste: worker morto' }); }, 30);
       this.postMessage = function () {};
+      this.terminate = function () {};
       return;
     }
     var w = new Original(boot, { eval: true });

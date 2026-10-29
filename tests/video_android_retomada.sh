@@ -23,5 +23,10 @@ cc "${flags[@]}" -ffunction-sections -fdata-sections tests/video_android_retomad
   src/video_modo.c src/capmkv.c src/mkv.c tests/capmkv_stub.c \
   $( [ "$(uname)" = Darwin ] && echo -Wl,-dead_strip || echo -Wl,--gc-sections ) \
   -lpthread -lm -o "$dir/test"
-python3 tests/android_decoder409.py --pausa-eventos "$dir/pausa-eventos"
+if [ "${JNI_ONLY:-0}" = 1 ]; then
+  # Simulated EV_PAUSADO acknowledgement for backend-only regression checks.
+  printf '3\n' > "$dir/pausa-eventos"
+else
+  python3 tests/android_decoder409.py --pausa-eventos "$dir/pausa-eventos"
+fi
 "$dir/test" "$dir/pausa-eventos"

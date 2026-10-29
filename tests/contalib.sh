@@ -17,6 +17,6 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 # src/vistoep.c ENTRA porque contalib passou a mandar a linha de episodio para
 # o mapa de episodios vistos, em vez de descarta-la.
 cc ${flags[@]+"${flags[@]}"} src/contalib.c src/js.c src/vistoep.c tests/contalib.c \
-  -Isrc -o ${TMPDIR:-/tmp}/nuvio-contalib-tests -O1 -g \
+  -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -o ${TMPDIR:-/tmp}/nuvio-contalib-tests -O1 -g \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined -lpthread
 ${TMPDIR:-/tmp}/nuvio-contalib-tests

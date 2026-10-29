@@ -23,7 +23,11 @@ s = 'void testeTrocaSlot(void);\n' + s.replace('  if (d.viewers', '  testeTrocaS
 (work / 'watchstate_envio.c').write_text(s)
 s = Path('src/descoberta.c').read_text()
 s += '''
-void testeLerManifesto(void) { Decl d; lerManifesto(0, &d, 1, NULL, NULL); }
+void testeLerManifesto(void) {
+  Decl d;
+  descSessaoVincular(nv_perfil_sessao_ler());
+  lerManifesto(0, addons_base(0), &d, 1, 1, NULL, NULL, addons_versao());
+}
 int catordem_n(void) { return 0; }
 const char *catordem_chave(int i) { (void)i; return ""; }
 int catordem_oculta(const char *c, const char *d) { (void)c; (void)d; return 0; }

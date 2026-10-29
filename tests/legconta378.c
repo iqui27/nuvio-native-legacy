@@ -121,6 +121,16 @@ int main(void) {
   confere("so secundaria: secundaria it, principal e audio vazios",
           !strcmp(ling_legenda2(), "it") && !ling_legenda()[0] && !ling_audio()[0]);
 
+  printf("-- segundo idioma de audio (secondary_preferred_audio_language)\n");
+  ling_local_legenda(""); ling_local_legenda2(""); ling_local_audio(""); ling_local_audio2("");
+  ajustes_idiomas_da_conta("{\"features\":{\"player_settings\":{"
+    "\"preferred_audio_language\":\"es\",\"secondary_preferred_audio_language\":\"en\"}}}");
+  confere("conta: audio es, segundo en", !strcmp(ling_audio(), "es") && !strcmp(ling_audio2(), "en"));
+  ajustes_idiomas_da_conta("{}");
+  confere("blob sem a chave: segundo vazio", !ling_audio2()[0]);
+  ajustes_idiomas_da_conta("{\"features\":{\"player_settings\":{\"secondary_preferred_audio_language\":\"DEVICE\"}}}");
+  confere("sentinela DEVICE: segundo vazio", !ling_audio2()[0]);
+
   printf("-- o log separa o que a conta diz do que vale\n");
   ling_local_legenda("es");
   ajustes_idiomas_da_conta(blob("en"));           // a linha sai daqui (grep no .sh)

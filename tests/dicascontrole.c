@@ -46,27 +46,29 @@ static void state(int first) {
   assert(!dicascontrole_ocupado());
   dicascontrole_teste_seco(1);   // sem GL nesta parte: so a maquina de estados
   dicascontrole_atualizar(1, 0); assert(!dicascontrole_aberto());
-  dados_gravar("novidades-20-guia.txt", "1\n");
+  // AUTO-SHOW GATE: once per install and per version, only on a quiet Home.
   if (first) {
-    novcartao_decidir(1, 0, 0); assert(novcartao_aberto());
+    for (int i = 0; i < 300; i++) { dicascontrole_home_livre(0, .05f); dicascontrole_atualizar(.05f, 0); }
+    assert(!dicascontrole_ocupado());                    // modal/profile picker up: never
+    for (int i = 0; i < 20; i++) dicascontrole_home_livre(1, .05f);
+    dicascontrole_home_livre(0, .05f);                   // a modal appeared: timer resets
+    for (int i = 0; i < 20; i++) dicascontrole_home_livre(1, .05f);
     assert(!dicascontrole_ocupado());
-    key(SDLK_ESCAPE, novcartao_evento);
-    assert(!novcartao_aberto() && dicascontrole_ocupado() && !dicascontrole_aberto());
-    dicascontrole_atualizar(.18f, 0); assert(!dicascontrole_aberto());
-    settle(); assert(dicascontrole_aberto() && !app_central_pode());
-    assert(dicascontrole_pagina() == 0);
-    key(SDLK_RIGHT, app_evento); assert(dicascontrole_pagina() == 1);
-    key(SDLK_LEFT, app_evento); assert(dicascontrole_pagina() == 0);
-    key(SDLK_LEFT, app_evento); assert(dicascontrole_pagina() == 0);
-    for (int i = 0; i < 8; i++) key(SDLK_RIGHT, app_evento);
-    assert(dicascontrole_pagina() == 3);
-    key(SDLK_RETURN, app_evento); assert(!dicascontrole_aberto());
+    for (int i = 0; i < 20; i++) dicascontrole_home_livre(1, .05f);
+    assert(dicascontrole_aberto());                      // fresh install: shows
+    key(SDLK_RIGHT, app_evento);                         // any key dismisses, swallowed
+    assert(!dicascontrole_aberto() && dicascontrole_pagina() == 0);
     settle();
-    char *s = dados_ler(DICASCONTROLE_ARQUIVO); assert(s && !strcmp(s, "1\n")); free(s);
+    char *s = dados_ler(DICASCONTROLE_ARQUIVO); assert(s && !strcmp(s, "dev" "\n")); free(s);
   } else {
-    novcartao_decidir(1, 0, 0); assert(!novcartao_aberto());
-    novcartao_abrir(); key(SDLK_ESCAPE, novcartao_evento);
-    settle(); assert(!dicascontrole_ocupado());
+    for (int i = 0; i < 300; i++) dicascontrole_home_livre(1, .05f);
+    assert(!dicascontrole_ocupado());                    // same version, 2nd launch: no
+    dados_gravar(DICASCONTROLE_ARQUIVO, "0.0.0\n");      // version bump: again
+    dicascontrole_home_livre(0, .05f);                   // marker re-read on re-entry
+    for (int i = 0; i < 40; i++) dicascontrole_home_livre(1, .05f);
+    assert(dicascontrole_aberto());
+    key(SDLK_ESCAPE, app_evento); settle(); assert(!dicascontrole_ocupado());
+    char *s = dados_ler(DICASCONTROLE_ARQUIVO); assert(s && !strcmp(s, "dev" "\n")); free(s);
   }
   for (int i = 0; i < 3; i++) { dicascontrole_depois_novidades(); settle(); assert(!dicascontrole_ocupado()); }
   settings(); key(SDLK_ESCAPE, app_evento); settle(); assert(!dicascontrole_ocupado());
@@ -82,15 +84,7 @@ static void state(int first) {
   dicascontrole_abrir(); assert(dicascontrole_aberto());
   for (int i = 0; dicascontrole_aberto() && i < 2000; i++) dicascontrole_atualizar(.05f, 0);
   assert(!dicascontrole_aberto()); settle(); assert(!dicascontrole_ocupado());
-  char *s = dados_ler(DICASCONTROLE_ARQUIVO); assert(s && !strcmp(s, "1\n")); free(s);
-  if (first) {
-    dados_apagar(DICASCONTROLE_ARQUIVO);
-    novidades20_abrir(0);
-    key(SDLK_ESCAPE, novidades20_evento); key(SDLK_RIGHT, novidades20_evento); key(SDLK_RETURN, novidades20_evento);
-    assert(!novidades20_aberto() && dicascontrole_ocupado());
-    settle(); assert(dicascontrole_aberto());
-    key(SDLK_ESCAPE, dicascontrole_evento); settle();
-  }
+  char *s = dados_ler(DICASCONTROLE_ARQUIVO); assert(s && !strcmp(s, "dev" "\n")); free(s);
   puts("PASS: dismissal, auto-advance, page bounds, modal routing, Settings replay, marker");
 }
 
@@ -216,6 +210,20 @@ static void shots(const char *out) {
     gfx_tex_esquecer(0);
     glBindFramebuffer(GL_FRAMEBUFFER,fbo); glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,tex,0);
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
+    if (m!=DICAS_TOQUE) {   // a tecla ACESA e a que a pagina cita, e so ela
+      static const char *const quer[]={"CH+","CH-","CH+","OK"};
+      valor[AJ_IDIOMA]=IDIOMA_PT+1; dicascontrole_abrir();
+      for (int p=0;p<4;p++) {
+        if (p) { key(SDLK_RIGHT,dicascontrole_evento); }
+        for(int i=0;i<30;i++) frame();
+        const char *rot[8]; int on[8]; dicascontrole_teste_gravar(1); frame();
+        int n=dicascontrole_teste_teclas(rot,on,8); dicascontrole_teste_gravar(0);
+        int acesas=0; assert(n>=3 && dicascontrole_pagina()==p);
+        for(int i=0;i<n;i++) if(on[i]) { acesas++; assert(!strcmp(rot[i],quer[p])); }
+        assert(acesas==1);
+      }
+      key(SDLK_ESCAPE,dicascontrole_evento); frame(); settle();
+    }
     for (int idi=0;idi<IDIOMA_N;idi++) {
       valor[AJ_IDIOMA]=idi+1; assert(ajustes_idioma()==idi);
       dicascontrole_abrir();
@@ -242,6 +250,7 @@ static void shots(const char *out) {
       settle();
     }
   }
+  puts("PASS: lit key matches page text in every remote");
   puts("PASS: components open and close cleanly in all modes and languages");
   touch();
   width=1920; height=1080; layout_tela_definir(width,height); gfx_tamanho_alvo(width,height);

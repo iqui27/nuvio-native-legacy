@@ -48,6 +48,12 @@ int  ptv_gpu_utgard_atual(void);
 // Orcamento automatico pela RAM (MemTotal na LG, deviceMemory no Tizen). 0 =
 // RAM desconhecida.
 int ptv_tex_auto_mb(PtvPlataforma p, long memMB);
+// Artwork pipeline budgets, MiB unless named otherwise. See docs/cache-capas.md.
+typedef struct {
+  int fileiras, decodeMb, reservaDecodeMb, corpoMb, discoMb;
+  int uploadKiB, uploadMs;
+} PtvCache;
+PtvCache ptv_cache(PtvPlataforma p, long memMB);
 // O MAXIMO que a RAM permite (Ajustes, NV_TEX_MB_FIXO e o otimizador). No
 // Tizen e o proprio automatico: medido, teto maior decodifica mais devagar.
 int ptv_tex_teto_mb(PtvPlataforma p, long memMB);
@@ -57,6 +63,9 @@ int ptv_heroi_max(PtvPlataforma p, long memMB);
 
 // Os padroes do aparelho: o que vale no arranque com Ajustes em Automatico.
 void ptv_padrao(PtvPlataforma p, long memMB, PtvPerfil *out);
+// Indice da definicao do trailer IMDb a tocar; teto 0 = Automatico (720p em Samsung <= 2 GB).
+int ptv_trailer_indice(PtvPlataforma p, long memMB, int teto, const int *alt, int n);
+int ptv_trailer_indice_duro(PtvPlataforma p, long memMB, int teto, const int *alt, int n);
 
 // O CANDIDATO do diagnostico para o modo pedido, SEMPRE dentro dos tetos
 // acima. `texTravadoMb` > 0 = o orcamento foi escolhido pela pessoa (Ajustes)

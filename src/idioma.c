@@ -111,6 +111,9 @@ static const char *const TAB_ZHCN[] = {
 static const char *const TAB_ZHTW[] = {
 #include "idioma_zhtw.h"
 };
+static const char *const TAB_AR[] = {
+#include "idioma_ar.h"
+};
 #undef T
 // Uma tabela com o numero errado de linhas desalinharia TODAS as traducoes
 // depois dela — falha na compilacao, nao em silencio na tela.
@@ -170,6 +173,8 @@ _Static_assert(sizeof TAB_ZHCN / sizeof *TAB_ZHCN == sizeof TAB / sizeof *TAB,
                "idioma_zhcn.h: uma linha por entrada de idioma_tab.h (tools/idiomas.py --sincronizar)");
 _Static_assert(sizeof TAB_ZHTW / sizeof *TAB_ZHTW == sizeof TAB / sizeof *TAB,
                "idioma_zhtw.h: uma linha por entrada de idioma_tab.h (tools/idiomas.py --sincronizar)");
+_Static_assert(sizeof TAB_AR / sizeof *TAB_AR == sizeof TAB / sizeof *TAB,
+               "idioma_ar.h: uma linha por entrada de idioma_tab.h (tools/idiomas.py --sincronizar)");
 
 // A traducao da entrada `i` no idioma `lg` (nunca IDIOMA_PT). Valor vazio cai no
 // ingles: uma entrada nova ainda sem traducao aparece em ingles, nao em branco.
@@ -204,6 +209,7 @@ static const char *traduzida(int i, int lg) {
     case IDIOMA_JA: r = TAB_JA[i]; break;
     case IDIOMA_ZHCN: r = TAB_ZHCN[i]; break;
     case IDIOMA_ZHTW: r = TAB_ZHTW[i]; break;
+    case IDIOMA_AR: r = TAB_AR[i]; break;
     default: break;
   }
   return r && *r ? r : TAB[i].en;

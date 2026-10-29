@@ -31,7 +31,7 @@ fn on_panic(_: &core::panic::PanicInfo) -> ! {
 
 /// Link-only personality symbol for compiler_builtins' ARM32 EHABI and
 /// aarch64 Android unwind tables. With panic=abort it is never called.
-#[cfg(not(test))]
+#[cfg(all(not(test), not(feature = "external-personality")))]
 #[no_mangle]
 pub extern "C" fn rust_eh_personality() {}
 
@@ -75,11 +75,12 @@ pub struct NvMkvScan {
     tracks_cortado: c_int,
     tk_achado: c_int,
     n_caps: c_int,
-    reservado: c_int,
+    tracks_nao_visto: c_int,
     tk_tam: i64,
     tk_disp: i64,
     seg_ini: i64,
     pos_chapters: i64,
+    pos_tracks: i64,
 }
 
 /// The fields of `MkvDiag` that come from scanning the first Cluster.
@@ -98,7 +99,7 @@ pub struct NvDiagOut {
 const LONG8: bool = core::mem::size_of::<c_long>() == 8;
 const _: () = assert!(core::mem::size_of::<MkvFaixa>() == if LONG8 { 160 } else { 148 });
 const _: () = assert!(core::mem::size_of::<MkvCap>() == 72);
-const _: () = assert!(core::mem::size_of::<NvMkvScan>() == 48);
+const _: () = assert!(core::mem::size_of::<NvMkvScan>() == 56);
 const _: () = assert!(core::mem::size_of::<NvDiagOut>() == 32);
 
 impl MkvFaixa {
@@ -493,7 +494,7 @@ fn ler_capitulos(p: &[u8], saida: *mut MkvCap, max: c_int, prof: u32) -> c_int {
 
 // --- SeekHead / walk to Tracks ----------------------------------------------------
 
-fn ler_seek_head(p: &[u8], seg_ini: i64, pos_chapters: &mut i64) {
+fn ler_seek_head(p: &[u8], seg_ini: i64, pos_chapters: &mut i64, pos_tracks: &mut i64) {
     filhos(p, |id, v| {
         if id != ID_SEEK {
             return;
@@ -507,9 +508,14 @@ fn ler_seek_head(p: &[u8], seg_ini: i64, pos_chapters: &mut i64) {
                 pos = ler_uint(fv) as i64;
             }
         });
-        if alvo == u64::from(ID_CHAPTERS) && pos >= 0 {
-            // Absolute position; an overflowing one is "not said".
+        if pos < 0 {
+            return;
+        }
+        // Absolute position; an overflowing one is "not said".
+        if alvo == u64::from(ID_CHAPTERS) {
             *pos_chapters = seg_ini.checked_add(pos).unwrap_or(-1);
+        } else if alvo == u64::from(ID_TRACKS) {
+            *pos_tracks = seg_ini.checked_add(pos).unwrap_or(-1);
         }
     });
 }
@@ -526,9 +532,9 @@ fn achar_tracks(
     let mut o: i64 = 0;
     let mut n_faixas: c_int = 0;
     while o < n {
-        let Some((id, d, tam, hdr)) = cabeca_bruta(p, o) else { return 0 };
+        let Some((id, d, tam, hdr)) = cabeca_bruta(p, o) else { break };
         if tam == TAM_INVALIDO {
-            return 0;
+            break;
         }
         o = d;
         if id == ID_SEGMENT || tam == TAM_DESCONHECIDO {
@@ -537,10 +543,10 @@ fn achar_tracks(
                 sc.seg_ini = o;
                 continue;
             }
-            return 0;
+            break;
         }
         if id == ID_SEEKHEAD && o.saturating_add(tam) <= n {
-            ler_seek_head(sub(p, o, tam), sc.seg_ini, &mut sc.pos_chapters);
+            ler_seek_head(sub(p, o, tam), sc.seg_ini, &mut sc.pos_chapters, &mut sc.pos_tracks);
         }
         if id == ID_TRACKS {
             let disp = n - o;
@@ -554,7 +560,7 @@ fn achar_tracks(
             }
             // Chapters come AFTER Tracks: do not return on the first hit.
             if caps.is_null() || tam > disp {
-                return n_faixas;
+                break;
             }
             o += tam;
             continue;
@@ -565,17 +571,24 @@ fn achar_tracks(
             // the SeekHead read.
             if tam > disp {
                 sc.pos_chapters = o - hdr;
-                return n_faixas;
+                break;
             }
             sc.n_caps = ler_capitulos(sub(p, o, tam), caps, max_caps, 0);
             sc.pos_chapters = -1;
-            return n_faixas;
+            break;
         }
         if o.saturating_add(tam) > n {
-            return n_faixas;
+            break;
         }
         o += tam;
     }
+    // #483: Tracks past the window (remux edited by mkvpropedit): the walk
+    // stopped at a big element (Attachments, first Cluster) with n_faixas == 0,
+    // or Tracks came truncated — and every faixa stayed "codec=?", which left
+    // the embedded ASS to the TV (plain text, lines dropped). The SeekHead
+    // knows where Tracks is; the C side fetches it in one Range.
+    sc.tracks_nao_visto =
+        c_int::from(sc.pos_tracks >= 0 && (n_faixas == 0 || sc.tracks_cortado != 0));
     n_faixas
 }
 
@@ -866,11 +879,12 @@ pub unsafe extern "C" fn nv_mkvcore_achar_tracks(
         tracks_cortado: 0,
         tk_achado: 0,
         n_caps: 0,
-        reservado: 0,
+        tracks_nao_visto: 0,
         tk_tam: 0,
         tk_disp: 0,
         seg_ini: 0,
         pos_chapters: -1,
+        pos_tracks: -1,
     };
     let r = if p.is_null() || saida.is_null() {
         0
@@ -928,6 +942,51 @@ pub unsafe extern "C" fn nv_mkvcore_cap_cabecalho(p: *const u8, n: c_long, hdr: 
         unsafe { ptr::write(hdr, d as c_int) };
     }
     tam
+}
+
+/// Data size of the element at `p` when it is `quer` (-1: not it / unknown
+/// size); `hdr` receives the header length. Generic `nv_mkvcore_cap_cabecalho`.
+///
+/// # Safety
+/// For positive `n`, non-NULL `p` must denote one readable allocation of `n`
+/// bytes, immutable for the call; its address plus `n` must not wrap.
+/// `hdr` must be NULL or an aligned writable int, disjoint from `p`.
+#[no_mangle]
+pub unsafe extern "C" fn nv_mkvcore_elem_cabecalho(
+    p: *const u8,
+    n: c_long,
+    quer: c_ulong,
+    hdr: *mut c_int,
+) -> i64 {
+    // SAFETY: forwarded contract.
+    let b = unsafe { buf(p, n) };
+    let Some((id, d, tam)) = cabeca(b, 0) else { return -1 };
+    if u64::from(id) != quer as u64 {
+        return -1;
+    }
+    if !hdr.is_null() {
+        // SAFETY: NULL checked.
+        unsafe { ptr::write(hdr, d as c_int) };
+    }
+    tam
+}
+
+/// `lerTracks` on the data of a Tracks element.
+///
+/// # Safety
+/// For positive `n`, non-NULL `p` must denote one readable allocation of `n`
+/// bytes, immutable for the call; its address plus `n` must not wrap.
+/// Non-NULL `saida` must be aligned, writable for `max` `MkvFaixa` when
+/// positive, and disjoint from `p`.
+#[no_mangle]
+pub unsafe extern "C" fn nv_mkvcore_ler_tracks(
+    p: *const u8,
+    n: c_long,
+    saida: *mut MkvFaixa,
+    max: c_int,
+) -> c_int {
+    // SAFETY: forwarded contract.
+    ler_tracks(unsafe { buf(p, n) }, saida, max)
 }
 
 /// `lerCapitulos` on the data of a Chapters element.

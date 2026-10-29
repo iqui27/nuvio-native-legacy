@@ -616,12 +616,10 @@ static int rodapeVisivel(void) {
 }
 
 // --- FUNDOS NOVOS (2.0): Filmes, Luz, Projetor (psestilos.h) -----------------
-// O fundo que vale agora. "Filmes" numa TV que caiu para efeitos minimos (nivel
-// de GPU 2) vira "Luz": a parede sao dezenas de cartazes de tela inteira.
+// Keep the selected background when automatic GPU adaptation changes effects.
+// psestilos already omits decorative light and extra veils on lighter tiers.
 static int modoFundo(void) {
-  int m = ajustes_ps_fundo();
-  if (m == PS_FUNDO_FILMES && gfx_efeitos_minimos()) return PS_FUNDO_LUZ;
-  return m;
+  return ajustes_ps_fundo();
 }
 
 static const char *muralUrls[PS_MURAL_MAX];
@@ -854,8 +852,11 @@ static float ambDesenhar(float a) {
   return cob;
 }
 
+static void gifReset(void);
+
 void perfilsel_iniciar(void) {
   int i;
+  gifReset();
 #ifdef NV_TOUCH_UI
   psToqueX = 0.0f; psToqueLivre = 0;
 #endif
@@ -1063,7 +1064,7 @@ void perfilsel_evento(const SDL_Event *e) {
 #ifdef NV_TOUCH_UI
   if (psToqueLivre && psToquePasso > 0.0f && m > 0) {
     foco = (int)((psToqueX + (NV_TELA_W - 2.0f * NV_MARGEM_X) * 0.35f) / psToquePasso);
-    if (foco >= m) foco = m - 1;
+    if (foco >= nFila()) foco = nFila() - 1;
   }
   psToqueLivre = 0;
 #endif
@@ -1303,6 +1304,13 @@ static const ContaPerfil *gifDono;
 static int    gifAnima = -1;
 static GLuint gifTex;
 
+static void gifReset(void) {
+  gifDono = NULL;
+  gifAnima = -1;
+  gifTex = 0;
+  gif_parar();
+}
+
 // O circulo do perfil: soquete escuro, cor da conta por cima e, quando ha,
 // a foto. Tres camadas e nao uma porque a cor precisa DIMINUIR fora do foco
 // sem virar um buraco preto sobre a arte de fundo — o soquete e o que garante
@@ -1312,31 +1320,30 @@ static void disco(GfxRect a, const ContaPerfil *p, float f, float alfa,
   float cr = 0.12f, cg = 0.53f, cb = 0.90f;
   float vivo = 0.55f + 0.45f * f;
   GLuint foto;
-  int emGif = 0;
   corDe(p->corHex, &cr, &cg, &cb);
   corLegivel(&cr, &cg, &cb);
   gfx_rect(a, 0, GFX_DISCO, 0, 0, 0, 0, 0.09f, 0.09f, 0.10f, alfa);
   gfx_rect(a, 0, GFX_DISCO, 0, 0, 0, 0, cr, cg, cb, vivo * alfa);
   foto = p->avatarUrl[0] ? tex_obter_larg(p->avatarUrl, a.w) : 0;
+  // Static avatars also end the previous focus session (#660).
+  if (focado && gifDono != p) { gifReset(); gifDono = p; }
   if (focado && gif_pode_animar() && !ajustes_animacoes_reduzidas()
       && p->avatarUrl[0] && strstr(p->avatarUrl, ".gif")) {
     // O arquivo e pedido a cada quadro em que este perfil e o foco — fora
     // dele nenhum download comeca (ver a nota de gif_pode_animar em gif.h).
     const char *arq = tex_arquivo(p->avatarUrl);
-    if (gifDono != p) { gifDono = p; gifAnima = -1; gifTex = 0; gif_parar(); }
     if (gifAnima < 0 && arq) gifAnima = gif_animado(arq);
     if (arq && gifAnima > 0) {
       // A cada desenho: o relogio e de gif.c, e sem quadro vencido a chamada
       // nao sobe nada (1.4.7; o passo de 67 ms prendia o GIF a 15 fps).
       GLuint m = gif_textura(arq, (int)a.w);
       if (m) gifTex = m;
-      if (gifTex) { foto = gifTex; emGif = 1; }
+      if (gifTex) foto = gifTex;
     }
   }
   if (foto) {
-    // O GIF vem na proporcao dele: o aspecto registrado e da foto parada,
-    // que nao vale para o quadro animado. Zero deixa a moldura decidir.
-    gfx_tex_aspect_atual = emGif ? 0 : tex_aspecto(p->avatarUrl);
+    // Both decoders preserve the source aspect; share the static cover crop (#621).
+    gfx_tex_aspect_atual = tex_aspecto(p->avatarUrl);
     gfx_rect(a, foto, GFX_AVATAR, 0, 0, 0, 0, 1, 1, 1, vivo * alfa);
     gfx_tex_aspect_atual = 0;
   } else {
@@ -1411,10 +1418,9 @@ static TxtLinha pinTitulo(const char *nome) {
   char t[128];
   snprintf(t, sizeof t, i18n("PIN de %s"), nome && nome[0] ? nome : i18n("perfil"));
 #ifdef NV_TOUCH_UI
-  return txt_linha_corta(TXT_TITULO3, t, 255, 255, 255, 255, fmaxf(1.0f, NV_TELA_W - 96.0f));
-#else
-  return txt_linha(TXT_TITULO3, t, 255, 255, 255, 255);
+  if (layout_modo_mobile()) return txt_linha_corta(TXT_TITULO3, t, 255, 255, 255, 255, fmaxf(1.0f, NV_TELA_W - 96.0f));
 #endif
+  return txt_linha(TXT_TITULO3, t, 255, 255, 255, 255);
 }
 
 static void desenhaPin(void) {
@@ -1502,7 +1508,10 @@ void perfilsel_desenhar(Uint32 agora) {
   ponteiro_camada();
   ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, NULL, 0, 0);
 
-  desenhaFundo();
+  // Filmes/Luz/Projetor (psestilos) abrem pintando a tela inteira opaca: o
+  // preto daqui seria um glClear coberto por outro, sem mudar um pixel.
+  { int m0 = modoFundo();
+    if (m0 != PS_FUNDO_FILMES && m0 != PS_FUNDO_LUZ && m0 != PS_FUNDO_PROJETOR) desenhaFundo(); }
 
   // A tela inteira SOBE alguns pixels ao aparecer. E o mesmo gesto do resto do
   // app (mola NV_MOLA_TELA) e o que impede a troca de login/home para esta tela
@@ -1674,7 +1683,7 @@ void perfilsel_desenhar(Uint32 agora) {
     gfx_cor((GfxRect){ av.x + av.w * 0.5f - d * 0.10f, av.y + av.h * 0.5f - 2.5f,
                        d * 0.20f, 5.0f }, 0.5f, ar, ag, ab, (0.80f + 0.20f * f) * a);
     gfx_cor((GfxRect){ av.x + av.w * 0.5f - 2.5f, av.y + av.h * 0.5f - d * 0.10f,
-                       5.0f, d * 0.20f }, 0.5f, ar, ag, ab, (0.80f + 0.20f * f) * a);
+                       5.0f, d * 0.20f }, 2.5f / (d * 0.20f), ar, ag, ab, (0.80f + 0.20f * f) * a);
     rot = txt_linha_corta(d >= 230.0f ? TXT_TITULO3 : TXT_HEADLINE, "Adicionar perfil",
                           c, c, c + 6 > 255 ? 255 : c + 6, 255, d + vao * 0.9f);
     sombra = txt_linha_corta(d >= 230.0f ? TXT_TITULO3 : TXT_HEADLINE, "Adicionar perfil",
@@ -1697,7 +1706,7 @@ void perfilsel_desenhar(Uint32 agora) {
     float bw = 0.0f, bx;
     int b;
     for (b = 0; b < 2; b++) {
-      l[b] = txt_linha(TXT_TITULO3, ROT[b], 247, 248, 250, 255);
+      l[b] = txt_linha(TXT_ILHA_NOME, ROT[b], 247, 248, 250, 255);
       bw += (float)l[b].w + 76.0f;
     }
     bw += 24.0f;   // o vao entre os dois
@@ -1710,14 +1719,11 @@ void perfilsel_desenhar(Uint32 agora) {
       if (vivo && f > 0.02f) {
         float ar, ag, ab;
         ajustes_acento(&ar, &ag, &ab);
-        gfx_cor(r, NV_RAIO_PILL, NV_COR_FOCO_R, NV_COR_FOCO_G, NV_COR_FOCO_B, f * a);
-        gfx_anel_fora(r, NV_RAIO_PILL, 0.0f, NV_ANEL_FOCO * f, ar, ag, ab, f * a);
+        gfx_cor(r, NV_RAIO_PILL, ar, ag, ab, f * a);
       } else gfx_cor(r, NV_RAIO_PILL, 1.0f, 1.0f, 1.0f,
                      (vivo ? 0.10f : 0.05f) * a);
-      { TxtLinha t = txt_linha(TXT_TITULO3, ROT[b],
-                              vivo ? (int)(214.0f + 41.0f * f) : 140,
-                              vivo ? (int)(216.0f + 39.0f * f) : 142,
-                              vivo ? (int)(224.0f + 31.0f * f) : 148, 255);
+      { int tinta = vivo && f > 0.5f ? ajustes_tinta_foco() : vivo ? 224 : 140;
+        TxtLinha t = txt_linha(TXT_ILHA_NOME, ROT[b], tinta, tinta, tinta, 255);
         txt_desenhar_alpha(t, r.x + (r.w - (float)t.w) * 0.5f,
                            r.y + (r.h - (float)t.h) * 0.5f, a); }
       if (vivo && !preparando && pinDe < 0)

@@ -66,7 +66,7 @@ static const char *dirDados;
 
 typedef struct {
   double upd, des, gpu, fill, fillVis, fillGpu, fillGpuMist;
-  int rects, progs, binds, cheios, cheiosMist, txtRast, upl;
+  int rects, progs, binds, cheios, cheiosMist, txtRast, upl, vidCap, vidPas;
   double txtMs;
   double modo[GFX_NMODOS];
 } Quadro;
@@ -138,7 +138,6 @@ static void quadro(SDL_Window *w, Quadro *q, Uint32 agora) {
   tex_novo_quadro();
   gfx_sem_recorte();
   gfx_ambiente_preparar();
-  fundo_fosco_quadro();   // main.c: vidro fosco
   glClearColor(NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT);
   gfx_ambiente(1.0f);
@@ -159,6 +158,7 @@ static void quadro(SDL_Window *w, Quadro *q, Uint32 agora) {
     q->rects = gfx_n_rect; q->progs = gfx_n_prog; q->binds = gfx_n_bind;
     q->cheios = gfx_n_cheio; q->cheiosMist = gfx_n_cheio_mistura;
     q->txtRast = txt_rasterizadas; q->txtMs = txt_ms; q->upl = tex_upl_n;
+    q->vidCap = gfx_vidro_capturas; q->vidPas = gfx_vidro_passadas;
     for (k = 0; k < GFX_NMODOS; k++) q->modo[k] = gfx_fill_modo[k];
   }
   SDL_GL_SwapWindow(w);
@@ -313,6 +313,9 @@ static void relatar(const char *cen, const char *rotulo, Quadro *qs, int n) {
          (double)sc / n, (double)scm / n, sr / n, sp / n, sb / n, st);
   // O que a GPU pinta de fato (gfx.h, gfx_fill_gpu) e a parte com mistura.
   printf("[%s] %-10s gpu-fill=%.2fx mist=%.2fx\n", cen, rotulo, sfg / n, sfm / n);
+  { long vc = 0, vp = 0; int qc = 0;
+    for (i = 0; i < n; i++) { vc += qs[i].vidCap; vp += qs[i].vidPas; qc += qs[i].vidCap > 0; }
+    printf("[%s] %-10s vidro: capturas=%ld passadas=%ld quadros-com-captura=%d/%d\n", cen, rotulo, vc, vp, qc, n); }
   printf("[%s] %-10s fill por modo:", cen, rotulo);
   for (k = 0; k < GFX_NMODOS; k++) if (sm[k] / n >= 0.005) printf(" %d=%.2f", k, sm[k] / n);
   printf("\n");

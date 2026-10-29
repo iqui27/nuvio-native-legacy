@@ -771,7 +771,17 @@ AutoSyncResultado autosync_alinhar(const LegendaDocumento *doc,const LegendaDocu
     }
   }
   r.casadas=md.casadas;r.cobertura=md.cobertura;r.regioes=md.tercos;r.erroMs=(int)lround(md.erro);
+  if(m==AUTOSYNC_REGION_DISAGREEMENT&&!janela&&np==1&&pc[0].t.p==1&&!ambiguo&&
+     pk.score>=AS_MIN_SCORE&&pk.score-pk.alternativo>=AS_MIN_MARGEM&&
+     md.cobertura>=AS_MIN_COBERTURA&&md.casadas>=AS_MIN_CASADAS&&
+     md.erro<=AS_SEG_ERRO*cfg.toleranciaMs&&
+     fabs(pc[0].t.q-pk.q)<=1.0&&fabs(pc[0].t.q)*1000<=cfg.raioBuscaMs) {
+    /* Traducao com outro corte: o portao por segmento recusa, mas o pico
+     * global e a cobertura ja provam um offset unico. */
+    m=AUTOSYNC_OK;md.tercos=nseg;
+  }
   if(m!=AUTOSYNC_OK){r.motivo=m;goto fim;}
+  r.regioes=md.tercos;
   /* 4. Mapa, ancoras e o score final sobre a legenda JA corrigida. */
   mapa=calloc(1,sizeof *mapa);
   if(!mapa){r.motivo=AUTOSYNC_MEMORY;goto fim;}

@@ -1,0 +1,35 @@
+{
+  "baseline_commit": "b93f0fc71c446aad32e593c09b5318c36ad23b23",
+  "baseline_rc": 134,
+  "final_rc": 0,
+  "baseline_episodes": [
+    343,
+    3.779
+  ],
+  "baseline_cast": [
+    337,
+    3.03
+  ],
+  "final_episodes": [
+    118,
+    1.429
+  ],
+  "final_cast": [
+    169,
+    1.61
+  ],
+  "baseline_over_cast": 4630,
+  "final_over_cast": 0,
+  "frames": 5120,
+  "text_scale": 100,
+  "png_sha256": {
+    "episode-before-episodes.png": "5db946d98d370536eb2f8d3e2f299cd81a47ee3654bf2918e7f8846ac9c8abb3",
+    "episode-before-ring-scroll.png": "fd6178b45b4a6635c6988c1e5ad50b4535eef272e2178aeed38774f552bdeb9f",
+    "episode-before-zoom-scroll.png": "90039d1140e9a6bba3aa671a7bc0668a28dd6069025358ad5c9f0d0c5e26c9f0",
+    "episode-after-episodes.png": "47e01678221f79bd7bbbcc82d49ca8a5db8be333d6454a429a991a27fc03a8bc",
+    "episode-after-ring-scroll.png": "a89a0f799978e52064567b1d6fbfffd9a9468e663e5d94e79f28e254475b1fd9",
+    "episode-after-zoom-scroll.png": "d84f35f1a77d7dbc194c6835e4a055eb0c29870380bb87495f63e895f6d7c434",
+    "episode-before-frost.png": "dcc4e7ad9fc5270b6929fea85a6472dedf8e777847051f8934a35fd54febc265",
+    "episode-after-frost.png": "9d17f07e3f024b4d3eb393e6a8286f794e4c0b5d201e5bbeef3700a667690c08"
+  }
+}

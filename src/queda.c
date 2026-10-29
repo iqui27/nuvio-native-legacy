@@ -20,8 +20,6 @@ int  queda_relatar_em(const char *arquivo, FILE *saida) { (void)arquivo; (void)s
 #include <sys/ucontext.h>
 #endif
 
-#define QD_PILHA_N   192          // palavras da pilha copiadas
-#define QD_MAPAS_MAX 24000        // bytes de /proc/self/maps copiados
 #define QD_ALT_TAM   (64 * 1024)  // pilha alternativa: estouro de pilha tambem e SIGSEGV
 
 static char qdArq[512];
@@ -59,39 +57,13 @@ static void qdRegs(void *ctx, uintptr_t *pc, uintptr_t *lr, uintptr_t *sp, uintp
 #endif
 }
 
-static void qdGravar(const char *arq, int sig, siginfo_t *si, uintptr_t pc, uintptr_t lr, uintptr_t sp) {
-  int fd = open(arq, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-  if (fd >= 0) {
-    qdCampo(fd, "sinal=", (uintptr_t)sig);
-    qdCampo(fd, " codigo=", (uintptr_t)(si ? si->si_code : 0));
-    qdCampo(fd, " addr=", (uintptr_t)(si ? si->si_addr : 0));
-    qdCampo(fd, " pc=", pc); qdCampo(fd, " lr=", lr); qdCampo(fd, " sp=", sp);
-    qdTexto(fd, "\npilha=");
-    // A pilha crua: quem le separa depois o que cai dentro de codigo. Sem sp
-    // (alvo sem registradores) nao ha o que copiar. Alinhado a palavra.
-    if (sp && !(sp & (sizeof(uintptr_t) - 1)))
-      for (int i = 0; i < QD_PILHA_N; i++) { qdHex(fd, ((uintptr_t *)sp)[i]); qdTexto(fd, " "); }
-    qdTexto(fd, "\nmapas:\n");
-    { int m = open("/proc/self/maps", O_RDONLY);
-      if (m >= 0) {
-        char b[2048]; long total = 0; ssize_t n;
-        while (total < QD_MAPAS_MAX && (n = read(m, b, sizeof b)) > 0) {
-          ssize_t o = 0;
-          while (o < n) { ssize_t w = write(fd, b + o, (size_t)(n - o)); if (w <= 0) break; o += w; }
-          total += n;
-        }
-        close(m);
-      } }
-    close(fd);
-  }
-}
+static int qdGravarE(const char *arquivo, int sig, siginfo_t *si, void *ctx);
 
 static void qdTratar(int sig, siginfo_t *si, void *ctx) {
-  uintptr_t pc, lr, sp, fp;
-  qdRegs(ctx, &pc, &lr, &sp, &fp);
-  (void)fp;
-  qdGravar(qdArq, sig, si, pc, lr, sp);
-  if (qdEsp[0] && strcmp(qdEsp, qdArq)) qdGravar(qdEsp, sig, si, pc, lr, sp);
+  // Reuse the bounded, relevant-map capture: the old 24 KiB maps prefix
+  // omitted late-loaded firmware libraries and falsely reported an unknown PC.
+  qdGravarE(qdArq, sig, si, ctx);
+  if (qdEsp[0] && strcmp(qdEsp, qdArq)) qdGravarE(qdEsp, sig, si, ctx);
   qdTexto(1, "[queda] sinal fatal: relato gravado\n");
   // SA_RESETHAND ja devolveu a acao padrao: voltar repete a falha e o sistema
   // mata o processo como mataria sem nos (e gera o crash report dele).
@@ -213,7 +185,7 @@ static void qdTid(int fd) {
 }
 
 // Grava o relato. 0 = nao gravou (codigo gerenciado ou sem arquivo).
-static int qdGravarE(int sig, siginfo_t *si, void *ctx) {
+static int qdGravarE(const char *arquivo, int sig, siginfo_t *si, void *ctx) {
   uintptr_t pc, lr, sp, fp, pilhaFim = 0;
   int fd, gerenciado = 0;
   QdLeitor l;
@@ -248,7 +220,7 @@ static int qdGravarE(int sig, siginfo_t *si, void *ctx) {
     if (prox <= fp) break;
     fp = prox;
   }
-  fd = open(qdArq, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+  fd = open(arquivo, O_WRONLY | O_CREAT | O_TRUNC, 0644);
   if (fd < 0) return 0;
   qdCampo(fd, "sinal=", (uintptr_t)sig);
   qdCampo(fd, " codigo=", (uintptr_t)(si ? si->si_code : 0));
@@ -319,7 +291,7 @@ static void qdTratarE(int sig, siginfo_t *si, void *ctx) {
   // Um relato so: o primeiro fio a cair grava; os outros (e a repeticao da
   // falha depois do debuggerd) so seguem a cadeia.
   if (!__atomic_exchange_n(&qdGravou, 1, __ATOMIC_ACQ_REL)) {
-    if (qdGravarE(sig, si, ctx) && qdAntes) qdAntes();
+    if (qdGravarE(qdArq, sig, si, ctx) && qdAntes) qdAntes();
   }
   qdEncadear(sig, si, ctx);
 }

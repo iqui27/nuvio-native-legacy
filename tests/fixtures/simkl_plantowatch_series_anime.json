@@ -1,0 +1,41 @@
+{
+  "shows": [
+    {
+      "status": "plantowatch",
+      "next_to_watch": "S01E01",
+      "show": {
+        "title": "Shogun",
+        "year": 2024,
+        "ids": { "simkl": 1889783, "imdb": "tt2788316" }
+      }
+    }
+  ],
+  "anime": [
+    {
+      "status": "plantowatch",
+      "show": {
+        "title": "Eiga Doraemon: Shin Nobita no Nippon Tanjo",
+        "anime_type": "movie",
+        "year": 2016,
+        "ids": { "simkl": 55001, "imdb": "tt4788602" }
+      }
+    },
+    {
+      "status": "plantowatch",
+      "anime": {
+        "title": "Frieren e a Jornada para o Além",
+        "anime_type": "tv",
+        "year": 2023,
+        "ids": { "simkl": 2219366, "mal": 52991, "imdb": "tt22248376" }
+      }
+    },
+    {
+      "status": "plantowatch",
+      "anime": {
+        "title": "Sem imdb, tem de sair fora",
+        "year": 2024,
+        "ids": { "simkl": 999 }
+      }
+    }
+  ]
+}

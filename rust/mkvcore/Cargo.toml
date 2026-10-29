@@ -11,6 +11,10 @@ description = "EBML/NAL core of src/mkv.c (phase 1 Rust pilot, docs/plans/rust-m
 [lib]
 crate-type = ["staticlib"]
 
+[features]
+# Another Rust archive (the DV7 converter) already supplies std personality.
+external-personality = []
+
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 missing_docs = "deny"

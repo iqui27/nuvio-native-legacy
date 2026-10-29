@@ -22,7 +22,7 @@ case "${SANITIZE:-0}" in
 esac
 if [ "$(uname -s)" != Darwin ]; then flags+=(-ldl); fi
 cc "${flags[@]}" src/qjs.c src/pluginjs.c src/plugrede.c src/htmlq.c src/rede.c src/redeurl.c \
-  src/stream_parse.c src/badges.c src/js.c tests/pluginjs.c -o "$tmp/t" 2>&1 | grep -E "error|undefined" && exit 1
+  src/stream_parse.c src/fontefiltro.c src/linguas.c src/badges.c src/js.c tests/pluginjs.c -o "$tmp/t" 2>&1 | grep -E "error|undefined" && exit 1
 "$tmp/t" "$base" | tee "$tmp/log"
 grep -q 'pluginjs: ok' "$tmp/log"
 echo "pluginjs.sh: ok"

@@ -11,7 +11,7 @@
 //   - two generation guards: the SESSION (media; legenda2_reiniciar) and the
 //     SELECTION (every choose/turn-off). A late download is published only if
 //     both still match, so a file for the previous episode/choice never shows;
-//   - its own offset (manual + optional automatic from AutoSync), applied
+//   - its own persisted manual offset + optional automatic from AutoSync, applied
 //     exactly once in legenda2_cues, and AutoSync's time map for framerate /
 //     cut corrections (legenda2_definir_tempo);
 //   - explicit states: loading, active, failed, unsupported. A selection is
@@ -47,8 +47,10 @@ typedef int (*Leg2Baixador)(const char *url, long maxBytes, unsigned prazoMs,
                             int (*parar)(void *), void *u, char **corpo, long *n);
 void legenda2_definir_baixador(Leg2Baixador b);   // NULL = default
 
-// New media session: cancels any download, drops the document, offset back to
-// zero. Called when faixas resets (new playback).
+// New media session: cancels downloads, drops the document and resets AutoSync.
+// A bound manual delay stays persisted, like the primary subtitle's style.
+// Without a persistence binding the original manual-reset contract is kept.
+// Called when faixas resets (new playback).
 void legenda2_reiniciar(void);
 uint64_t legenda2_sessao(void);
 
@@ -65,11 +67,26 @@ Leg2Estado legenda2_estado(void);
 // until legenda2_estado() says so.
 const char *legenda2_identidade(void);
 
-// Offsets in ms, positive = earlier (same sign as legenda_cues).
+// Manual offset in ms from the UI's point of view: positive = subtitle later.
+// AutoSync (offAuto) stays in lookup space (positive = earlier); legenda2_cues
+// subtracts the manual part before the lookup. The manual getter/setter use a
+// mutex-protected mirror. The app binds its one persisted Settings value below;
+// the standalone loader needs no Settings dependency. Manual and combined
+// offsets are bounded to LEG_ATRASO_MANUAL_MAX; AutoSync itself remains bounded
+// to 30 seconds and is cleared on selection/session reset.
 int  legenda2_offset_manual(void);
 void legenda2_definir_offset_manual(int ms);
-void legenda2_definir_offset_auto(int ms);   // AutoSync (F05); 0 = none
+void legenda2_definir_offset_auto(int ms);   // AutoSync (F05), lookup space; 0 = none
 int  legenda2_offset_total(void);
+
+// Optional UI-thread persistence binding. Read the initial saved value before
+// calling this; NULL writer restores unbound/session-only behavior. The writer
+// returns nonzero on success and runs OUTSIDE the subtitle mutex. Failed saves
+// leave the published manual value unchanged. Rebinding supersedes an old save.
+typedef int (*Leg2SalvarAtraso)(int ms);
+void legenda2_vincular_atraso(int ms, Leg2SalvarAtraso salvar);
+// Publish a successful Settings load/save, without writing or calling back.
+void legenda2_atualizar_offset_manual(int ms);
 
 // Cues of the second document at `posSeg`, with the total offset applied
 // once. 0 when nothing is active.

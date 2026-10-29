@@ -1,7 +1,7 @@
 #!/bin/bash
 # Roda todos os testes leves de tests/, pulando os que nao servem de porteiro:
 #   *_shot / cinematic / director  -> precisam de arte e de GL, nao de logica
-#   webp-tizen                     -> sobe um servidor e NUNCA sai (trava tudo)
+#   webp-tizen, webp-vidaa-st      -> sobem um servidor e NUNCA saem (trava tudo)
 #   tizen-clock                    -> depende do relogio do alvo
 #   fluidez_perf_player            -> idem, custo de desenho do player por estado
 #   fluidez_perf_guia              -> idem, custo de desenho do Guia de TV por estado
@@ -26,12 +26,16 @@ falhou=0
 passaram=0
 pulados=0
 semProva=0
+# cache_contrato.sh and nav21.sh are required gates; never exclude them.
+# nav21 compiles the native host and renders every fixture in the foreground.
 for f in tests/*.sh; do
   n=$(basename "$f")
   case "$n" in
-    *_shot.sh|cinematic.sh|director.sh|webp-tizen.sh|tizen-clock.sh|salvospainel_perf.sh|fluidez_perf_player.sh|fluidez_perf_guia.sh) pulados=$((pulados + 1)); continue;;
+    *_shot.sh|cinematic.sh|director.sh|webp-tizen.sh|webp-vidaa-st.sh|tizen-clock.sh|salvospainel_perf.sh|fluidez_perf_player.sh|fluidez_perf_guia.sh) pulados=$((pulados + 1)); continue;;
   esac
-  if bash "$f" >"$LOGS/$n.log" 2>&1; then
+  limit=${TEST_TIMEOUT:-120}
+  [ "$n" = nav21.sh ] && limit=${NAV21_TIMEOUT:-360}
+  if timeout -k 5 "$limit" bash "$f" >"$LOGS/$n.log" 2>&1; then
     # SKIP (ex.: p2pmotor_real.sh sem o motor compilado) sai com 0 mas NAO
     # provou nada: nao conta como passou.
     if grep -Eq '(^|[^A-Za-z])SKIP([^A-Za-z]|$)' "$LOGS/$n.log"; then
@@ -45,7 +49,8 @@ for f in tests/*.sh; do
     fi
     passaram=$((passaram + 1))
   else
-    echo "FALHA $n"; tail -15 "$LOGS/$n.log"; falhou=$((falhou + 1))
+    rc=$?
+    echo "FALHA $n (rc=$rc)"; tail -15 "$LOGS/$n.log"; falhou=$((falhou + 1))
   fi
 done
 if [ "$san" = 1 ]; then

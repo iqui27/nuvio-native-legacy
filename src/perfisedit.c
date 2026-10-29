@@ -30,7 +30,7 @@ static const char *CORES[16] = {
 #define PEX_LARG       820.0f
 #define PEX_PAD         44.0f
 #define PEX_TITULO_Y    52.0f
-#define PEX_LINHA_H     84.0f
+#define PEX_LINHA_H     80.0f
 #define PEX_LINHA_GAP   10.0f
 #define PEX_COR_LADO    60.0f
 #define PEX_COR_GAP     16.0f
@@ -365,7 +365,7 @@ static void inicialDe(const char *nome, char *dst, size_t tam) {
 
 static void linhaDe(GfxRect r, int focada) {
   if (focada) plrui_linha_foco(r, 20.0f, anim);
-  else gfx_cor(r, 20.0f / r.h, 1.0f, 1.0f, 1.0f, 0.06f * anim);
+
 }
 
 void perfisedit_desenhar(Uint32 agora) {
@@ -379,20 +379,20 @@ void perfisedit_desenhar(Uint32 agora) {
   // Camada modal: o toque embaixo nao escolhe perfil nenhum.
   ponteiro_camada();
   ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, NULL, 0, 0);
-  gfx_cor(tela, 0.0f, 0.02f, 0.02f, 0.025f, 0.88f * a);
+  gfx_cor(tela, 0.0f, 0, 0, 0, (ajustes_vidro() ? 0.30f : 0.42f) * a);
 
   linhas = m + (podeAdicionar() ? 1 : 0);
   if (est == PEX_COR) h = 300.0f;
   else if (est == PEX_CONFIRMA) h = 380.0f;
   else if (est == PEX_SALVANDO || est == PEX_ERRO) h = 260.0f;
-  else h = PEX_TITULO_Y + 64.0f + (float)linhas * (PEX_LINHA_H + PEX_LINHA_GAP) + PEX_PAD;
+  else h = PEX_TITULO_Y + 64.0f + (float)(est == PEX_ACAO ? (podeRemover() ? 3 : 2) : linhas) * (PEX_LINHA_H + PEX_LINHA_GAP) + PEX_PAD;
   modal.x = (NV_TELA_W - PEX_LARG) * 0.5f;
   modal.y = (NV_TELA_H - h) * 0.5f;
   modal.w = PEX_LARG;
   modal.h = h;
   { GfxRect sombra = { modal.x - 30.0f, modal.y - 14.0f, modal.w + 60.0f, modal.h + 60.0f };
     gfx_rect(sombra, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.60f * a); }
-  plrui_material(modal, 24.0f, 1, a);
+  plrui_material(modal, 32.0f, 1, a);
 
   if (est == PEX_SALVANDO || est == PEX_ERRO) {
     const char *msg = est == PEX_SALVANDO ? "Salvando..."

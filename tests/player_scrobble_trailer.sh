@@ -28,11 +28,12 @@ done
 cc "${flags[@]}" "${renomes[@]}" -c src/descoberta.c -o "$dir/descoberta.o"
 # Relogio controlado so no player: nao intercepta libc/SDL/sanitizadores.
 cc "${flags[@]}" -DNV_SHOT_HOOKS -Dtrakt_scrobble=nv_cnt_trakt_scrobble -Dsimkl_scrobble=nv_cnt_simkl_scrobble -Dclock_gettime=nv_test_clock_gettime -c src/player.c -o "$dir/player.o"
+cc "${flags[@]}" -Drede_pedir=nv_base_rede_pedir -c src/rede.c -o "$dir/rede.o"
 sources=()
 for source in src/*.c src/dts/*.c; do
-  case "$source" in src/main.c|src/video.c|src/trakt.c|src/visto.c|src/ajustes.c|src/trailer.c|src/player.c|src/descoberta.c) continue;; esac
+  case "$source" in src/main.c|src/video.c|src/trakt.c|src/visto.c|src/ajustes.c|src/trailer.c|src/player.c|src/descoberta.c|src/rede.c) continue;; esac
   sources+=("$source")
 done
-cc "${flags[@]}" -DNV_SHOT_HOOKS "${sources[@]}" "${1:-tests/player_scrobble_trailer.c}" "$dir/video.o" "$dir/trakt.o" "$dir/visto.o" "$dir/ajustes.o" "$dir/descoberta.o" "$dir/player.o" \
+cc "${flags[@]}" -DNV_SHOT_HOOKS "${sources[@]}" "${1:-tests/player_scrobble_trailer.c}" "$dir/video.o" "$dir/trakt.o" "$dir/visto.o" "$dir/ajustes.o" "$dir/descoberta.o" "$dir/player.o" "$dir/rede.o" \
   -o "$dir/test" -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
 "$dir/test"

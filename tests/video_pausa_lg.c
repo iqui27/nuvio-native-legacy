@@ -30,12 +30,21 @@
 #include "../src/video.c"
 
 static int pedidos, aceita = 1, assinaturas, respostas;
-static char resposta[256];
+static char resposta[256], edgeColor[256];
+static int seekRequests;
+static double seekPosition;
+
 static Filtro screensaverCallback;
 static int fakeCall(LSHandle *h, const char *uri, const char *carga, Filtro cb,
                     void *ctx, unsigned long *tok, void *erro) {
   (void)h; (void)uri; (void)carga; (void)cb; (void)ctx; (void)tok; (void)erro;
+  if (strstr(uri, "setSubtitleCharacterEdgeColor"))
+    snprintf(edgeColor, sizeof edgeColor, "%s", carga);
   pedidos++;
+  if (strstr(uri, "/seek")) {
+    seekRequests++;
+    seekPosition = js_num(carga, NULL, "position", -1);
+  }
   if (strstr(uri, "registerScreenSaverRequest")) {
     assinaturas++; screensaverCallback = cb;
   } else if (strstr(uri, "responseScreenSaverRequest")) {
@@ -134,6 +143,15 @@ int main(void) {
   evento("{\"paused\":true}", 7); assert(!video_pausa_confirmada());
   aceita = 0; video_pausar(1); assert(!video_pausa_confirmada());
   puts("video_pausa_lg: intencao, ack, geracao, play, erro e unload ok");
+  {
+    VideoLegendaEstilo style = {120, 0, 0, 3, 1};
+    aceita = 1; ligado = 1; style.corBorda = 2;
+    video_legenda_estilo(&style);
+    assert(strstr(edgeColor, "\"charEdgeColor\":\"yellow\""));
+    style.corBorda = -1; video_legenda_estilo(&style);
+    assert(strstr(edgeColor, "\"charEdgeColor\":\"black\""));
+    puts("PASS native LG outline color and default fallback");
+  }
 
   // Registro no caminho real de um load valido, nunca no caminho de erro LS2.
   aceita = 1; sessao = 17; bus = (LSHandle *)(uintptr_t)1;
@@ -203,4 +221,31 @@ int main(void) {
   antes = respostas;
   screensaverCallback(NULL, (LSMessage *)active, NULL); assert(respostas == antes);
   puts("video_screensaver_lg: load, assinatura, timestamp, pausas, fim, erro e ciclo ok");
+
+  // A reload seek refused by firmware must retry the reload position, even
+  // when the previous manual seek differs or the reload starts at zero.
+  // The screensaver cycle above closed LS2 (video_encerrar): reopen it.
+  __atomic_store_n(&encerrando, 0, __ATOMIC_RELEASE); bus = (LSHandle *)(uintptr_t)1;
+  const double reloadPositions[] = {1800.0, 0.0, 0.5};
+  for (unsigned i = 0; i < sizeof reloadPositions / sizeof reloadPositions[0]; ++i) {
+    video_parar();
+    ligado = 1; pronto = 0; acb = 0;
+    snprintf(midia, sizeof midia, "fixture-reload");
+    seekAlvo = 420.0;
+    posAoCarregar = reloadPositions[i];
+    recarregarPausa = 0;
+    int before = seekRequests;
+    evento("{\"loadCompleted\":true}", sessao);
+    assert(seekRequests == before + 1);
+    assert(seekPosition == reloadPositions[i] * 1000.0);
+    evento("{\"errorCode\":700,\"errorText\":\"seek Failure\"}", sessao);
+    assert(seekRetryEm && !falhou);
+    seekRetryEm = SDL_GetTicks() | 1;
+    SDL_Delay(2);
+    video_bombear();
+    assert(seekRequests == before + 2);
+    assert(seekPosition == reloadPositions[i] * 1000.0);
+    assert(!falhou);
+  }
+  puts("video_reload_lg: refused seeks retry the reload position, including zero");
 }

@@ -19,6 +19,6 @@ cp tests/livetvdiag_servidor.py "$M/servidor.py"
 python3 "$M/servidor.py" 8765 & SRV=$!
 trap 'kill $SRV 2>/dev/null; rm -rf "$M"' EXIT
 sleep 0.5
-cc ${flags[@]+"${flags[@]}"} -Wall src/rede.c src/redeurl.c src/stream_parse.c src/js.c src/badges.c tests/proxyts.c -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
+cc ${flags[@]+"${flags[@]}"} -Wall src/rede.c src/redeurl.c src/stream_parse.c src/fontefiltro.c src/linguas.c src/js.c src/badges.c tests/proxyts.c -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lz -o "${TMPDIR:-/tmp}/nuvio-proxyts" -Wno-deprecated-declarations
 "${TMPDIR:-/tmp}/nuvio-proxyts"

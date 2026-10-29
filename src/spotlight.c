@@ -180,6 +180,7 @@ static int   modoAjustes;
 // MODO GUIA (spot_abrir_guia): o "Buscar no guia" do Guia de uso. E um modo
 // Ajustes (so local, sem historico) com os recursos do guia na frente.
 static int   modoGuia;
+static int   modoTV;
 static char  consultaRealce[SP_MAX_TXT * 2];   // o termo realcado no modo guia
 static int   retornoAjustesValido;
 static char  retornoAjustesConsulta[SP_MAX_TXT];
@@ -222,7 +223,7 @@ static int toqueSpotRolar(const PonteiroRolagem *e) {
     if (toqueNoTeclado) { okPress = okLongo = 0; return 1; }
   } else if (toqueNoTeclado) return toquerol_evento(&toqueTeclado, e);
   int r = toquerol_evento(&toqueSpot, e);
-  if (toqueSpot.livre) { scrollAlvo = scrollY; velY = 0.0f; okPress = okLongo = 0; }
+  if (toquerol_livre(&toqueSpot)) { scrollAlvo = scrollY; velY = 0.0f; okPress = okLongo = 0; }
   return r;
 }
 #endif
@@ -410,21 +411,21 @@ static int tituloDoUsuario(const CatItem *ci) {
   return ci->naLista || ci->naColecao || ci->progresso > 0 || ci->retomadoMs > 0;
 }
 static void montarTitulos(const char *alvo) {
-  int nAlvos = desc_busca_n_alvos(), capacidade = 64 + nAlvos * 12;
+  int nAlvos = desc_busca_n_alvos(), capacidade = 64 + nAlvos * DESC_BUSCA_POR_ALVO;
   Cand c[capacidade];
+  CatItem *novos = NULL;
   int nc = 0, r, i, ordem = 0;
   char nome[320];
   // REDE primeiro na ORDEM (o addon ja ranqueou), local depois; o placar
   // decide o resto. Remoto que nao contem o texto (o addon casou por outro
   // campo) ainda entra, abaixo de qualquer casamento de nome.
   { int a;
-    // #405: 12 por alvo, como a Busca. Todos participam do ranking antes
+    // #405: a mesma janela da Busca. Todos participam do ranking antes
     // do teto global de 64: um exato no ultimo alvo nao pode ser descartado.
     for (a = 0; a < nAlvos; a++) {
       int nRem = desc_busca_alvo_n(a, consulta);
-      CatItem novos[12];
-      int posNovo[12], idxNovos[12], nNovos = 0;
-      for (i = 0; i < nRem && i < 12; i++) {
+      int posNovo[DESC_BUSCA_POR_ALVO], idxNovos[DESC_BUSCA_POR_ALVO], nNovos = 0;
+      for (i = 0; i < nRem && i < DESC_BUSCA_POR_ALVO; i++) {
         CatItem it;
         int idx, k, dup = 0;
         // Sem ID, cada montagem reinseriria o resultado e mudaria a revisao.
@@ -438,7 +439,13 @@ static void montarTitulos(const char *alvo) {
         c[nc].pont += 6 - (a < 6 ? a : 6);   // primeiro addon desempata
         c[nc].ordem = ordem++;
         if (idx >= 0) c[nc++].idx = idx;
-        else if (nNovos < 12) { novos[nNovos] = it; posNovo[nNovos++] = nc; c[nc++].idx = -1; }
+        else if (nNovos < DESC_BUSCA_POR_ALVO) {
+          // Um lote reutilizado entre alvos, so quando ha titulo novo. Nao
+          // levar centenas de KiB para a pilha da interface a cada montagem.
+          if (!novos) novos = malloc(sizeof(CatItem) * DESC_BUSCA_POR_ALVO);
+          if (!novos) continue;
+          novos[nNovos] = it; posNovo[nNovos++] = nc; c[nc++].idx = -1;
+        }
       }
       // Os que nao estao no catalogo entram numa troca de bloco so (o porque
       // esta em refiltrar, busca.c: cat_acrescentar por item copia tudo).
@@ -447,6 +454,7 @@ static void montarTitulos(const char *alvo) {
         for (i = 0; i < nNovos; i++) c[posNovo[i]].idx = i < entraram ? idxNovos[i] : -1;
       }
     } }
+  free(novos);
   // Salvos podem estar fora das fileiras. O bonus pessoal (15) vence a
   // ordem dos addons (0..6), mas nao a classe de casamento do nome (20).
   // Nao usamos nota como popularidade: CatItem nao tem esse dado.
@@ -626,6 +634,8 @@ static void montarCanais(const char *alvo) {
     snprintf(l->chave, sizeof l->chave, "k|%.90s", id);
   }
 }
+
+#include "spotlight_tv.inc"
 
 static void montarCatalogos(const char *alvo) {
   int r, achou = 0, i;
@@ -882,7 +892,9 @@ static void remontar(void) {
   snprintf(montada, sizeof montada, "%s", consulta);
   nLin = 0;
   busca_normalizar(consulta, alvo, sizeof alvo);
-  if (modoGuia) {
+  if (modoTV) {
+    montarTV(alvo);
+  } else if (modoGuia) {
     montarGuia(consulta);
   } else if (modoAjustes) {
     montarAjustes(consulta);
@@ -940,10 +952,10 @@ static void remontar(void) {
     for (i = 0; i < nLin; i++) if (!strcmp(lin[i].chave, chaveFoco)) { focoL = i; break; }
   if (focoL < 0) for (i = 0; i < nLin; i++) if (focavel(lin[i].tipo)) { focoL = i; break; }
   if (focoL < 0 && painel == P_LISTA) painel = P_CAMPO;
-  ultimoRemoto = !modoAjustes && busca_codepoints(alvo) >= 2 ? remotoTotal() : -1;
-  ultimoBuscando = modoAjustes ? 0 : desc_buscando();
-  ultimaGeracao = modoAjustes ? 0 : desc_busca_geracao();
-  ultimaGerPessoa = modoAjustes ? 0 : spotpessoa_geracao();
+  ultimoRemoto = !modoTV && !modoAjustes && busca_codepoints(alvo) >= 2 ? remotoTotal() : -1;
+  ultimoBuscando = modoTV || modoAjustes ? 0 : desc_buscando();
+  ultimaGeracao = modoTV || modoAjustes ? 0 : desc_busca_geracao();
+  ultimaGerPessoa = modoTV || modoAjustes ? 0 : spotpessoa_geracao();
 }
 
 static int temResultados(void) {
@@ -956,7 +968,7 @@ static int temResultados(void) {
 // registrarConsulta) — abriu um resultado, fechou com resultado na tela, ou
 // o ditado trouxe o texto. Nunca por letra.
 static void registrar(void) {
-  if (modoAjustes) return;
+  if (modoAjustes || modoTV) return;
   if (nConsulta >= 2 && temResultados()) buscasrec_registrar(consulta);
 }
 
@@ -1001,7 +1013,7 @@ static void entrarLista(void);
 
 // --- Teclado e voz do sistema (sistexto.h) ----------------------------------------
 static void abrirTecladoSis(void) {
-  if (spTelefone()) { kbAberto = 0; painel = P_CAMPO; }
+  kbAberto = 0; painel = P_CAMPO;
   st_ime_abrir(ST_SPOT, consulta, SP_MAX_TXT - 1);
 }
 static void ditar(void) { if (ditadoDisponivel()) st_voz_iniciar(ST_SPOT); }
@@ -1032,6 +1044,8 @@ static void lerSistema(void) {
   if (r == ST_PEDE_TECLADO) { painel = P_CAMPO; abrirTecladoSis(); return; }
   if (r == ST_TEXTO || r == ST_FIM) campoDefinir(t, voz || r == ST_FIM);
   if (r == ST_FIM) {
+    st_fechar(ST_SPOT);
+    kbAberto = 0;
     registrar();
     // Fim da fala ou "Concluir": o proximo passo provavel e escolher.
     if (temResultados()) entrarLista(); else painel = P_CAMPO;
@@ -1041,6 +1055,7 @@ static void lerSistema(void) {
 
 // --- Ciclo de vida -------------------------------------------------------------------
 void spot_abrir(int voz) {
+  modoTV = 0;
   modoAjustes = 0;
   modoGuia = 0;
   retornoAjustesValido = 0;
@@ -1053,7 +1068,7 @@ static void spotAbrirBase(int voz, int tecladoAuto) {
   toquerol_limpar(&toqueTeclado); kbRol = 0.0f; toqueNoTeclado = 0;
 #endif
   kbMontar();
-  if (!modoAjustes) guia_preparar_busca();
+  if (!modoAjustes && !modoTV) guia_preparar_busca();
   aberto = 1;
   painel = P_CAMPO; kbF = 0; kbC = 0;
   kbAberto = 0; kbAnim = 0.0f; spBW = SP_BW_BASE;
@@ -1084,13 +1099,14 @@ static void spotAbrirBase(int voz, int tecladoAuto) {
   fflush(stdout);
   if (voz && ditadoDisponivel()) { painel = P_MIC; ditar(); }
   else if (tecladoAuto && imeDisponivel() && !(st_abre_sozinho() && ajustes_teclado_android() == 1) &&
-           (st_abre_sozinho() || spTelefone())) abrirTecladoSis();
+           (st_abre_sozinho() || spTelefone() || st_teclado_modo() == 2)) abrirTecladoSis();
 }
 
 // Abre a caixa SEM pedir o teclado do sistema: e a abertura que a
 // demonstracao das Dicas do controle usa (dicascontrole.c), onde o IME do
 // Android tomaria o foco e cobriria a apresentacao.
 void spot_abrir_demo(void) {
+  modoTV = 0;
   modoAjustes = 0;
   modoGuia = 0;
   retornoAjustesValido = 0;
@@ -1098,13 +1114,25 @@ void spot_abrir_demo(void) {
 }
 
 void spot_abrir_guia(void) {
+  modoTV = 0;
   modoAjustes = 1;
   modoGuia = 1;
   retornoAjustesValido = 0;
   spotAbrirBase(0, 1);
 }
 
+void spot_abrir_tv(const G5Item *(*catalogo)(int, int *), void (*abrir)(const SpotTVResultado *)) {
+  modoTV = 1; modoAjustes = modoGuia = retornoAjustesValido = 0;
+  tvCatalogo = catalogo; tvAbrir = abrir;
+  esportes_abrir_sessao();
+  esportes_catalogo_iniciar(-1, 0);
+  esportes_pedir_favoritos(0);
+  tvLimpar();
+  spotAbrirBase(0, 1);
+}
+
 void spot_abrir_ajustes(int voz) {
+  modoTV = 0;
   modoAjustes = 1;
   modoGuia = 0;
   retornoAjustesValido = 0;
@@ -1115,6 +1143,7 @@ void spot_reabrir_ajustes(void) {
   int i;
   char chave[sizeof retornoAjustesChave];
   if (!retornoAjustesValido) return;
+  modoTV = 0;
   snprintf(chave, sizeof chave, "%s", retornoAjustesChave);
   modoAjustes = 1;
   spotAbrirBase(0, 0);
@@ -1168,6 +1197,17 @@ static void acionar(int i) {
   Linha *l;
   if (i < 0 || i >= nLin) return;
   l = &lin[i];
+  if (modoTV) {
+    if (!focavel(l->tipo) || l->ref < 0 || l->ref >= tvN) return;
+    const SpotTVItem *it = &tvItens[l->ref];
+    SpotTVResultado r = { .tipo = it->tipo, .indice = it->indice, .inicio = it->inicio };
+    snprintf(r.id, sizeof r.id, "%s", it->id);
+    snprintf(r.nome, sizeof r.nome, "%s", it->nome);
+    spot_fechar();
+    if (tvAbrir) tvAbrir(&r);
+    if (r.tipo == SPOT_TV_ESPORTE) tvAbrirEsporte(r.id);
+    return;
+  }
   memset(&pedido, 0, sizeof pedido);
   switch (l->tipo) {
     case L_RECENTE:
@@ -1310,7 +1350,7 @@ void spot_evento(const SDL_Event *e) {
   if (!aberto) return;
 #ifdef NV_TOUCH_UI
   if (toquerol_navegacao(e)) toquerol_limpar(&toqueTeclado);
-  if (toquerol_navegacao(e) && toqueSpot.livre) {
+  if (toquerol_navegacao(e) && toquerol_livre(&toqueSpot)) {
     for (int i = 0; i < nLin; i++)
       if (focavel(lin[i].tipo) && lin[i].y + lin[i].h > scrollY) { focoL = i; painel = P_LISTA; break; }
     toquerol_limpar(&toqueSpot);
@@ -1361,7 +1401,9 @@ void spot_evento(const SDL_Event *e) {
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || e->key.keysym.scancode == NV_SCANCODE_BACK) {
     if (ouvindo()) { st_fechar(ST_SPOT); painel = P_CAMPO; return; }
     if (kbAberto || painel == P_LISTA || painel == P_TECLADO || painel == P_CEL) {
-      kbAberto = 0; painel = P_CAMPO; return;
+      kbAberto = 0; painel = P_CAMPO;
+      if (st_abre_sozinho() && imeDisponivel() && st_teclado_modo() != 1) abrirTecladoSis();
+      return;
     }
     if (nConsulta > 0) { registrar(); nConsulta = 0; consulta[0] = 0; remontar(); return; }
     spot_fechar(); return;
@@ -1481,10 +1523,11 @@ void spot_atualizar(float dt, Uint32 agora) {
   lerSistema();
   // A RESPOSTA DA REDE CHEGA DEPOIS DA TECLA: remonta quando a contagem do termo
   // corrente muda ou quando a busca termina (o aviso "Buscando..." sai).
-  if (!modoAjustes) spotpessoa_atualizar(agora);
-  if (strcmp(montada, consulta) ||
-      (!modoAjustes && cat_revisao_itens() != ultimaRevCatalogo)) remontar();
-  else if (!modoAjustes && nConsulta >= 2) {
+  if (!modoTV && !modoAjustes) spotpessoa_atualizar(agora);
+  int tvMudou = modoTV && tvPasso();
+  if (tvMudou || strcmp(montada, consulta) ||
+      (!modoTV && !modoAjustes && cat_revisao_itens() != ultimaRevCatalogo)) remontar();
+  else if (!modoTV && !modoAjustes && nConsulta >= 2) {
     int n = remotoTotal(), b = desc_buscando(), g = desc_busca_geracao();
     if (n != ultimoRemoto || b != ultimoBuscando || g != ultimaGeracao ||
         spotpessoa_geracao() != ultimaGerPessoa) remontar();
@@ -1496,7 +1539,7 @@ void spot_atualizar(float dt, Uint32 agora) {
 #ifdef NV_TOUCH_UI
   if (spTelefone() && kbAberto) {
     float maximo = fmaxf(0.0f, spTeclasH() - spTecladoVisivel());
-    if (!toqueTeclado.livre && painel == P_TECLADO) {
+    if (!toquerol_livre(&toqueTeclado) && painel == P_TECLADO) {
       float top = kbF * SP_KB_PASSO, bottom = top + SP_TECLA;
       if (top < kbRol) kbRol = top;
       if (bottom > kbRol + spTecladoVisivel()) kbRol = bottom - spTecladoVisivel();
@@ -1525,7 +1568,7 @@ void spot_atualizar(float dt, Uint32 agora) {
   // Rolagem: so o necessario para a linha focada caber (com o cabecalho do
   // grupo dela visivel, quando ele e a linha de cima).
 #ifdef NV_TOUCH_UI
-  if (toqueSpot.livre) { scrollAlvo = scrollY; velY = 0.0f; }
+  if (toquerol_livre(&toqueSpot)) { scrollAlvo = scrollY; velY = 0.0f; }
   else
 #endif
   if (painel == P_LISTA && focoL >= 0) {
@@ -1536,7 +1579,7 @@ void spot_atualizar(float dt, Uint32 agora) {
   } else if (painel != P_LISTA) scrollAlvo = 0.0f;
   if (scrollAlvo < 0.0f) scrollAlvo = 0.0f;
 #ifdef NV_TOUCH_UI
-  if (!toqueSpot.livre)
+  if (!toquerol_livre(&toqueSpot))
 #endif
   {
     scrollY = anim_mola2(&velY, scrollY, scrollAlvo, dt, NV_MOLA2_SCROLL);
@@ -1658,6 +1701,7 @@ static void desenhaCampo(float dy, float a, Uint32 agora) {
   } else {
     const char *ph = ouve ? i18n(st_estado() == ST_PERMISSAO ? "Permita o microfone para falar…" : "Ouvindo…")
                    : av[0] ? i18n(av)
+                   : modoTV ? i18n("Buscar canais, filmes e séries")
                    : modoAjustes ? i18n(modoGuia ? "Buscar no guia" : "Buscar nos ajustes")
                    : i18n(comMic ? "Buscar ou falar: filmes, séries, pessoas, canais"
                                  : "Buscar filmes, séries, pessoas e canais");
@@ -1962,11 +2006,12 @@ static void desenhaLinha(int i, float x, float y, float a) {
   }
   if (ponteiro_ativo()) {
 #ifdef NV_TOUCH_UI
+    if (layout_modo_mobile())
     ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, toqueSpot.regiao.y,
                        toqueSpot.regiao.y + toqueSpot.regiao.h, focarLinha, NULL, i, 0);
-#else
-    ponteiro_alvo(r.x, r.y, r.w, r.h, focarLinha, NULL, i, 0);
+    else
 #endif
+    ponteiro_alvo(r.x, r.y, r.w, r.h, focarLinha, NULL, i, 0);
   }
   // Foco: SUPERFICIE UM DEGRAU MAIS CLARA (Glass UI, a .row.foco do mockup):
   // branco a 12 % no vidro, cinza opaco no solido, raio 22. Sem contorno e sem
@@ -1974,7 +2019,8 @@ static void desenhaLinha(int i, float x, float y, float a) {
   // inverte: o nome vai de 88 % a cheio.
   if (f > 0.01f) {
     float rr = 22.0f / r.h;
-    if (vidro) gfx_cor(r, rr, 1, 1, 1, .12f * f * a);
+    if (gfx_foco_placa(r, rr, f, a)) { /* Shared accent plate. */ }
+    else if (vidro) gfx_cor(r, rr, 1, 1, 1, .12f * f * a);
     else gfx_cor(r, rr, .17f, .176f, .204f, f * a);
   }
   a1 = anim_mistura(.88f, 1.0f, f);

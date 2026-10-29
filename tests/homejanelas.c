@@ -39,7 +39,35 @@ int ajustes_cw_do_episodio_mais_alto(void) { return 1; }
 int trakt_ativo(void) { return 1; }
 int vistoep_estado(const char *i, int s, int e) { (void)i; (void)s; (void)e; return -1; }
 int ajustes_ocultar_nao_lancados(void) { return 0; }   // #369: descoberta.c le o ajuste
+int ajustes_ocultar_filmes_vistos(void) { return 0; }    // #366: descoberta.c le o ajuste
 #include "../src/descoberta.c"
+unsigned cat_revisao_itens(void) { return 0; }
+int ajustes_fonte_biblioteca(void) { return 0; }
+int ajustes_nota_episodio(int source) { (void)source; return 0; }
+int ajustes_tmdb_elenco(void) { return 0; }
+int addons_identidade_recebida(const char *b, unsigned v, uint64_t s, const char *c) {
+  (void)b; (void)v; (void)s; (void)c; return 1;
+}
+int addons_manifesto_recebido(const char *b, unsigned v, uint64_t s, const char *c) {
+  (void)b; (void)v; (void)s; (void)c; return 1;
+}
+void addons_catalogo_chave(const char *id, const char *base, const char *type,
+                          const char *catalogue, char *dst, unsigned size) {
+  (void)base; snprintf(dst, size, "%s_%s_%s", id, type, catalogue);
+}
+const CatEp *cat_episodio(int item, int ep) { (void)item; (void)ep; return NULL; }
+int cat_gravar_cache_se_sessao(const char *d, const char *u, int p, uint64_t s) {
+  (void)d; (void)u; (void)p; (void)s; return 1;
+}
+int cat_indice_por_imdb_tipo(const char *id, const char *type) { (void)id; (void)type; return -1; }
+int cat_indice_titulo(const char *id, int preferred) { (void)id; (void)preferred; return -1; }
+char *dados_caminho(char *dst, unsigned size, const char *name) {
+  snprintf(dst, size, "/tmp/nuvio-homejanelas-%s", name); return dst;
+}
+int cat_visto(const CatItem *item) { (void)item; return 0; }
+int cat_copiar_por_id(const char *id, const char *tipo, CatItem *item) {
+  (void)id; (void)tipo; (void)item; return 0;
+}
 #include "jellyfin_stub.inc"
 int contalib_sementes_a_seguir(ContaSemente *s, int m, int a) { (void)s; (void)m; (void)a; return 0; }
 unsigned recomenda_geracao(void) { return 1; }
@@ -144,7 +172,10 @@ void cat_definir_tudo(const CatItem *l, int q, const CatFileira *f, int n) {
   pthread_mutex_unlock(&pubTravaT);
 }
 void cat_republicar_fileiras(const CatFileira *f, int n) {
+  static CatItem current[CONT_MAX];
+  int count = cat_copiar_fileira("continue_watching", current, CONT_MAX, NULL);
   pthread_mutex_lock(&pubTravaT); pubFileiras(f, n); pthread_mutex_unlock(&pubTravaT);
+  if (count) cat_trocar_continuar(current, count);
 }
 int cat_n(void) { return nPub; }
 /* This fixture seeds either a complete package or an empty catalogue. */
@@ -217,6 +248,9 @@ char *rede_baixar(const char *url, int t) {
   return strdup(buf);
 }
 char *rede_baixar_com(const char *u, int t, const char *const *c) { (void)c; return rede_baixar(u, t); }
+char *rede_baixar_st(const char *u, int t, const char *const *c, int *status) {
+  if (status) *status = 200; return rede_baixar_com(u, t, c);
+}
 
 // ------------------------------------------------------------- o Trakt
 int trakt_continuar(CatItem *s, int m) {
@@ -345,7 +379,25 @@ int   ajustes_salvos_no_simkl(void)        { return 0; }
 int   trakt_enfeitar_lote(CatItem *s, int n) { (void)s; (void)n; return 0; }
 int   trakt_lista(const char *q, CatItem *s, int m) { (void)q; (void)s; (void)m; return 0; }
 int   trakt_lista_cresc(const char *q, CatItem **s, int m) { (void)q; (void)s; (void)m; return 0; }
-void  cat_trocar_continuar(const CatItem *l, int q) { (void)l; (void)q; }
+void cat_trocar_continuar(const CatItem *items, int count) {
+  pthread_mutex_lock(&pubTravaT);
+  int row = -1;
+  for (int i = 0; i < nPubFils; i++)
+    if (!strcmp(pubFils[i].chave, "continue_watching")) { row = i; break; }
+  if (count > 0) {
+    assert(nPub + count <= (int)(sizeof pub / sizeof *pub));
+    if (row < 0) {
+      assert(nPubFils < CAT_FIL_MAX); row = nPubFils++;
+      memset(&pubFils[row], 0, sizeof pubFils[row]);
+      snprintf(pubFils[row].chave, sizeof pubFils[row].chave, "continue_watching");
+    }
+    memcpy(pub + nPub, items, sizeof *items * (size_t)count);
+    pubFils[row].ini = nPub; pubFils[row].n = count; nPub += count;
+  } else if (row >= 0) {
+    memmove(pubFils + row, pubFils + row + 1, sizeof *pubFils * (size_t)(--nPubFils - row));
+  }
+  pthread_mutex_unlock(&pubTravaT);
+}
 // trakt_lista devolve 0 aqui: nada para mesclar.
 int   cat_mesclar_listas(const CatItem *v, int q) { (void)v; (void)q; return 0; }
 const char *nuvem_trakt_cliente(void)      { return ""; }
@@ -424,7 +476,7 @@ int main(void) {
                         "{\"addon_id\":\"ultramax\",\"type\":\"movie\",\"catalog_id\":\"u100\",\"order\":1}"
                         "]}}]") >= 0);
     baseFixture = "https://ultramax.test";
-    n = lerManifesto(0, d, 32, &real, &prom);
+    n = lerManifesto(0, baseFixture, d, 32, ativoFixture, &real, &prom, 0);
     for (i = 0; i < n; i++) {
       if (!strcmp(d[i].id, "u150")) tem150 = 1;
       if (!strcmp(d[i].id, "u100")) tem100 = 1;
@@ -453,7 +505,7 @@ int main(void) {
   { static Decl d[32];
     int real = -1, prom = -1, n, alvos = desc_busca_n_alvos();
     ativoFixture = 0;
-    n = lerManifesto(0, d, 32, &real, &prom);
+    n = lerManifesto(0, baseFixture, d, 32, ativoFixture, &real, &prom, 0);
     ativoFixture = 1;
     baseFixture = BASE;
     assert(n == 0);

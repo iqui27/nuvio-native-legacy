@@ -59,11 +59,19 @@ static void rail_shot_aplicar(void) {
   // owner's real Android TV. Without them this file would silently reset the
   // language and font the shot itself had written.
   if (getenv("NUVIO_SHOT_EN")) fputs("idioma 1\n", f);
+  if (getenv("NUVIO_SHOT_PT")) fputs("idioma 0\nbordaFocoCartaz 1\n", f);
   if (getenv("NUVIO_SHOT_FONTE")) fprintf(f, "fonteInterface %d\n", atoi(getenv("NUVIO_SHOT_FONTE")));
   { const char *o = getenv("NUVIO_RAIL_OCULTOS");
     if (o && *o == '1') fputs("menuGuiaLocal 1\nmenuAgendaLocal 1\n", f); }
+  if (getenv("NUVIO_SHOT_ACCENT")) fprintf(f, "selected_theme %d\n", atoi(getenv("NUVIO_SHOT_ACCENT")));
+  if (getenv("NUVIO_SHOT_LAYOUT")) fprintf(f, "homeLayoutLocal %d\n", atoi(getenv("NUVIO_SHOT_LAYOUT")));
   fclose(f);
   ajustes_dir(dir);
+  // Settings reload must not erase the capture's requested text scale.
+  { const char *scale = getenv("NUVIO_SHOT_ESCALA_TEXTO");
+    if (scale && *scale) gfx_escala_txt_definir((float)atof(scale)); }
+  { const char *glass = getenv("NUVIO_SHOT_VIDRO");
+    if (glass && *glass) ajustes_definir_vidro(*glass != '0'); }
 }
 
 // Pinta a rail por cima do quadro ja desenhado, com `destino` aceso.
@@ -78,11 +86,11 @@ static void rail_shot_desenhar(int destino) {
   if (!rail_shot_ligado()) { rail_shot_relogio(); return; }
   menu_definir_destino(destino);
   { const char *m = getenv("NUVIO_RAIL");
-    if (m && !strcmp(m, "dinamica")) {   // the pill fades in like app.c asks for it
-      int k;
-      menu_pilula_mostrar(1.0f);
-      for (k = 0; k < 30; k++) menu_atualizar(1.0f / 60.0f, SDL_GetTicks());
-    } }
+    int k;
+    // The pill (Dinamica) and the rail (Padrao/Moderna) fade in like app.c
+    // asks for them: a few updates before the first paint, or nothing shows.
+    if (m && !strcmp(m, "dinamica")) menu_pilula_mostrar(1.0f);
+    for (k = 0; k < 30; k++) menu_atualizar(1.0f / 60.0f, SDL_GetTicks()); }
   menu_desenhar(SDL_GetTicks());
   rail_shot_relogio();
 }

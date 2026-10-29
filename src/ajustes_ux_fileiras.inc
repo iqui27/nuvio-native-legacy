@@ -138,7 +138,8 @@ static void ajSubFileira(int idx, char *b, size_t tam) {
 // Celula da tabela (Estado/Card/Tamanho): pilula 56 que acende com o foco.
 static void ajCelula(float x, float yc, float w, const char *t, float al, int foco) {
   TxtLinha l = ajTxtC(TXT_AJ_VALOR18, t, w - 32);
-  if (foco) ajNeutro((GfxRect){ x, yc - 28, w, 56 }, 28, 0.14f, 0.204f, 0.212f, 0.243f, 1);
+  if (foco && !gfx_foco_placa((GfxRect){ x, yc - 28, w, 56 }, .5f, 1, 1))
+    ajNeutro((GfxRect){ x, yc - 28, w, 56 }, 28, 0.14f, 0.204f, 0.212f, 0.243f, 1);
   txt_desenhar_alpha(l, x + 16, yc - l.h * 0.5f, foco ? 1.0f : al);
 }
 
@@ -214,6 +215,11 @@ static void ajFilToqueChip(int chip, int b) {
   if (!layout_modo_mobile() || !filAberta || filPegou) return;
   filNaBarra = 1; filBarra = chip;
 }
+static void ajFilToqueModo(int a, int b) {
+  (void)a; (void)b;
+  if (!layout_modo_mobile() || !filAberta || filAba || !filPegou || filNaBarra) return;
+  eventoFileiras(SDLK_RIGHT);
+}
 #endif
 
 static void desenhaFileiras(void) {
@@ -245,6 +251,20 @@ static void desenhaFileiras(void) {
     snprintf(n0, sizeof n0, "%d", fil_n_na_home());
     snprintf(n1, sizeof n1, "%d", fil_n() - fil_n_na_home() - fil_n_fila());
     rot[0] = a0; rot[1] = a1; num[0] = n0; num[1] = n1;
+#ifdef NV_TOUCH_UI
+    // Com uma fileira na mao, ofereca o modo de movimento no lugar do refresh.
+    if (layout_modo_mobile() && filPegou && !filAba) {
+      const char *r = filPegou == 2 ? "Bloco do addon" : "Só a fileira";
+      float max = fmaxf(56.0f, cw - ajSegLargura(rot, num, 2) - 38.0f);
+      float w = fminf(txt_largura(TXT_AJ_SEG, i18n(r)) + 44.0f, max);
+      TxtLinha t = ajTxtC(TXT_AJ_SEG, r, w - 44.0f);
+      bx -= w;
+      ajNeutro((GfxRect){bx, by, w, 56}, 28, 0.14f, AJ_CHIP_SOL, 1);
+      txt_desenhar_alpha(t, bx + 22.0f, by + (56 - t.h) * 0.5f, 1);
+      ponteiro_alvo(bx, by, w, 56, NULL, ajFilToqueModo, 0, 0);
+    } else
+#endif
+    {
     // Atualizar tudo: disco 56 com o icone.
     bx -= 56;
 #ifdef NV_TOUCH_UI
@@ -252,6 +272,7 @@ static void desenhaFileiras(void) {
 #endif
     if (fAtualizar) { ajPilulaAcento((GfxRect){ bx, by, 56, 56 }, 28, 1); ajIconeT("aj_rotate-cw", bx + 17, by + 17, 22, 1); }
     else { ajNeutro((GfxRect){ bx, by, 56, 56 }, 28, 0.08f, AJ_CHIP_SOL, 1); ajIcone("aj_rotate-cw", bx + 17, by + 17, 22, 0.85f); }
+    }
     if (filAba == 1) {
       const char *r = filForaAgrupada ? (ajRetrato() ? "Addon" : "Por addon") : (ajRetrato() ? "A–Z" : "Alfabética");
       TxtLinha t = fAgrupar ? ajTxtT(TXT_AJ_SEG, r) : ajTxt(TXT_AJ_SEG, r);
@@ -302,7 +323,7 @@ static void desenhaFileiras(void) {
   }
   // ROLAGEM: a primeira linha desenhada (filTopo) acompanha o foco.
 #ifdef NV_TOUCH_UI
-  if (!ajToqueLivre[AJT_FILEIRAS])
+  if (!layout_modo_mobile() || !ajToqueLivre[AJT_FILEIRAS])
 #endif
   { float area = base - topo, h = 0;
     int f = filFoco < n ? filFoco : n - 1, j;

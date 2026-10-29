@@ -72,7 +72,7 @@ void amtui_evento(const SDL_Event *e) {
   if (!aberta || e->type != SDL_KEYDOWN) return;
 #ifdef NV_TOUCH_UI
   if (toquerol_navegacao(e)) {
-    if (toque.livre) {
+    if (toquerol_livre(&toque)) {
       foco = (int)((rolagem + toque.regiao.h * 0.35f) / AMTUI_LIN_H);
       if (foco >= lista.n) foco = lista.n - 1;
     }
@@ -122,7 +122,7 @@ void amtui_desenhar(Uint32 agora) {
 #ifdef NV_TOUCH_UI
   toquerol_vincular(&toque, (GfxRect){ x, y0 + AMTUI_TOPO, AMTUI_W, areaH }, gfx_escala(), 0.0f, maxY, 1, &rolagem);
   ponteiro_rolagem(toqueRolar);
-  if (!toque.livre)
+  if (!toquerol_livre(&toque))
 #endif
     rolagem = ajustes_animacoes_reduzidas() ? alvo : anim_mola2(&rolagemVel, rolagem, alvo, dt, NV_MOLA2_SCROLL);
 

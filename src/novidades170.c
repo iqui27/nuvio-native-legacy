@@ -353,8 +353,7 @@ static void ilhaSuperficie(GfxRect R, float raio, float k, float a) {
   gfx_rect((GfxRect){ R.x - 16.0f - 24.0f * k, R.y - 6.0f - 10.0f * k,
                       R.w + 32.0f + 48.0f * k, R.h + 34.0f + 50.0f * k }, 0, GFX_SOMBRA,
            1.0f, 0, 0, 0.5f, 0, 0, 0, (0.34f + 0.16f * k) * a);
-  if (ajustes_vidro()) gfx_vidro_painel(R, raio, 0.80f + 0.08f * k, a);
-  else gfx_cor(R, raio, 0.055f, 0.058f, 0.068f, (0.86f + 0.08f * k) * a);
+  gfx_vidro_ou_solido(R, raio, GFX_VIDRO_DENS + 0.08f * k, a, 0.055f, 0.058f, 0.068f, 0.86f + 0.08f * k);
   gfx_luz_canto(R, raio, R.w * 0.25f, -R.h * 0.9f, R.w * 0.85f, 1, 1, 1, 0.07f * a);
 }
 
@@ -537,8 +536,7 @@ static void cenaIlha(float x, float y, float t, float a) {
     float raio = (rIni + (rFim - rIni) * ec) / (F.h > 1.0f ? F.h : 1.0f);
     float ac = anim_clamp((e - 0.45f) / 0.55f, 0.0f, 1.0f);
     if (volta) ac = anim_clamp((e - 0.6f) / 0.4f, 0.0f, 1.0f);
-    if (ajustes_vidro()) gfx_vidro_folha(F, raio, a);
-    else gfx_cor(F, raio, 0.055f, 0.058f, 0.068f, 0.94f * a);
+    gfx_vidro_ou_solido(F, raio, GFX_VIDRO_DENS_MODAL, a, 0.055f, 0.058f, 0.068f, 0.94f);
     recorteDentro(F);
     painelSalvos(P, a * ac);
     recorteVolta();
@@ -794,11 +792,8 @@ static void cenaSpot(float x, float y, float t, float a) {
   { float raio = rr(30.0f, P);
     gfx_rect((GfxRect){ P.x - 40.0f, P.y - 34.0f, P.w + 80.0f, 300.0f }, 0, GFX_SOMBRA,
              1.0f, 0, 0, 0.5f, ar, ag, ab, 0.10f * a);
-    if (ajustes_vidro()) { gfx_cor(P, raio, 0.03f, 0.032f, 0.04f, 0.55f * a); gfx_vidro_folha(P, raio, a); }
-    else {
-      gfx_cor(P, raio, 0.058f, 0.062f, 0.074f, 0.94f * a);
-      gfx_luz_canto(P, raio, P.w * 0.18f, -40.0f, 560.0f, ar, ag, ab, 0.07f * a);
-    }
+    gfx_vidro_ou_solido(P, raio, GFX_VIDRO_DENS_MODAL, a, 0.058f, 0.062f, 0.074f, 0.94f);
+    if (!ajustes_vidro()) gfx_luz_canto(P, raio, P.w * 0.18f, -40.0f, 560.0f, ar, ag, ab, 0.07f * a);
     gfx_vidro_aro(P, raio, 1.5f, 1.0f, 1.0f, 1.0f, 0.10f * a); }
 
   // ---- o campo: a lupa, o que ja foi digitado e o cursor.
@@ -1435,7 +1430,7 @@ static void novidades170_desenharCorpo_(Uint32 agora) {
   dy = (1.0f - a) * 34.0f;
   y0 = N170_Y + dy;
   card = (GfxRect){ N170_X, y0, N170_W, N170_H };
-  gfx_cor(card, N170_RAIO / N170_H, 0.050f, 0.053f, 0.062f, 0.96f * a);
+  gfx_vidro_ou_solido(card, N170_RAIO / N170_H, GFX_VIDRO_DENS_MODAL, a, 0.050f, 0.053f, 0.062f, 0.96f);
   gfx_rect(card, 0, GFX_ANEL, 0, 1.2f / N170_H, 0, N170_RAIO / N170_H, 1, 1, 1, 0.06f * a);
   gfx_luz_canto(card, N170_RAIO / N170_H, N170_PAD + N170_PV_W * 0.5f, -120.0f, 820.0f,
                 ar, ag, ab, 0.10f * a);

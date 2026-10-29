@@ -8,6 +8,7 @@
 // atualizacoes, corviva_quadro (UMA vez, antes do desenho) e so entao o
 // desenho — que e quem pede a cor do quadro seguinte.
 #include "ajustes.h"
+#include "addons.h"
 #include "nvtmp.h"
 #include "artehero.h"
 #include "catalogo.h"
@@ -104,8 +105,11 @@ static void tema(int t) {
   assert(a);
   // 12 Da arte, 14 gradiente, 15 imersiva, 22 textura, 23 sutil; idioma 0 = pt.
   fprintf(a, "idioma 0\nselected_theme %d\ntrailerHero 1\ncorDaLogoLocal %d\n", t, corDaLogo);
+  if (getenv("NUVIO_ARTEPASTEL_LIGHT") && atoi(getenv("NUVIO_ARTEPASTEL_LIGHT")))
+    fprintf(a, "artToneLocal 1\n");
   fclose(a);
   ajustes_dir(dirDados);
+  if (getenv("NUVIO_ARTEPASTEL_SHOT")) gfx_escala_txt_definir(ajustes_escala_texto());
 }
 
 int main(int argc, char **argv) {
@@ -145,10 +149,12 @@ int main(int argc, char **argv) {
   tema(12);
   assert(home_iniciar("deploy/app/art"));
 
+  AddonRemoto addon = { .nome = "Fixture", .url = "http://127.0.0.1:1/manifest.json", .ativo = 1 };
+  assert(addons_definir_lista(&addon, 1));
   memset(itens, 0, sizeof itens);
   for (i = 0; i < NT; i++) {
     CatItem *c = &itens[i];
-    snprintf(c->imdb, sizeof c->imdb, "tt90000%02d", i);
+    snprintf(c->imdb, sizeof c->imdb, getenv("NUVIO_ARTEPASTEL_SHOT") ? "local-art-%02d" : "tt90000%02d", i);
     snprintf(c->tipo, sizeof c->tipo, "movie");
     snprintf(c->titulo, sizeof c->titulo, "%s", TITULOS[i].nome);
     snprintf(c->genero, sizeof c->genero, "Filme · Drama");
@@ -171,9 +177,20 @@ int main(int argc, char **argv) {
 
   // Foco na fileira, primeiro card: o destaque e o do card focado.
   tecla(SDLK_DOWN);
-  quadros(120, NULL);
+  quadros(240, NULL);
   snprintf(bmp, sizeof bmp, "%s-1-home-dinamica-vermelho.bmp", saida);
   quadros(1, bmp);
+
+  if (getenv("NUVIO_ARTEPASTEL_SHOT")) {
+    HomeItem hi;
+    assert(home_item_focado(&hi));
+    detail_abrir(&hi);
+    detalhe = 1;
+    quadros(150, NULL);
+    snprintf(bmp, sizeof bmp, "%s-detail.bmp", saida);
+    quadros(1, bmp);
+    return 0;
+  }
 
   // Um para a direita: o mar. Meia transicao (~250 ms depois do assentar) e
   // a chegada.

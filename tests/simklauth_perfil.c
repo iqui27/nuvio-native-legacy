@@ -5,6 +5,7 @@
 // troca nao deixa token, autorizar no 2 grava so o do 2, sair apaga todos.
 // Disco e rede sao dubles em memoria; tokens de mentira.
 #include "simklauth.h"
+#include "sync.h"
 #include <assert.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -56,6 +57,20 @@ static int contem(const char *n, const char *t) {
 const char *nuvem_simkl_cliente(void) { return "cliente-teste"; }
 const char *nuvem_simkl_app(void)     { return "nuvio"; }
 void nuvem_url_escapar(const char *v, char *d, unsigned t) { snprintf(d, t, "%s", v); }
+uint64_t perfis_sessao_geracao(void) { return 1; }
+int perfis_sessao_atual(uint64_t g) { return g == 1; }
+int perfis_sessao_travar(uint64_t g) { return g == 1; }
+void perfis_sessao_destravar(void) {}
+const char *sessao_usuario(void) { return ""; }
+int sessao_identidade_local_copiar(char *u, size_t nu, char *jwt, size_t nj) {
+  if (nu) u[0] = 0;
+  if (nj) jwt[0] = 0;
+  return 0;
+}
+int sync_credencial_pedido(SyncCredencialPedido *p) { (void)p; return 0; }
+int sync_empurrar_credencial_pedido(const SyncCredencialPedido *p, const char *prov, const char *j) {
+  (void)p; (void)prov; (void)j; assert(0); return 0;
+}
 int  sync_empurrar_credencial(const char *p, const char *j) { (void)p; (void)j; return 0; }
 const char *i18n(const char *s) { return s; }
 const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nomePt; }

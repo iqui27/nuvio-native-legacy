@@ -43,7 +43,8 @@ static void *outro(void *p) {
 #ifdef NV_ANDROID
 static int androidChamadas, androidAlt, androidHttp, androidFalhaAlt;
 char *android_http(const char *v, const char *u, const char *c, const char *b, int p,
-                   int *st, long *n, char *erroTxt, size_t ne) {
+                   int *st, int *retryAfter, long *n, char *erroTxt, size_t ne) {
+  if (retryAfter) *retryAfter = 0;
   (void)v; (void)c; (void)b; (void)p;
   androidChamadas++;
   if (!strcmp(u, NEW)) {
@@ -61,13 +62,13 @@ int main(void) {
   curl_perform = perform; curl_getinfo = info; slist_append = append; slist_free = free;
 #ifdef NV_ANDROID
   androidHttp = 401;
-  r = viaAndroid("GET", OLD, 5, NULL, NULL, &st, NULL, "teste");
+  r = viaAndroid("GET", OLD, 5, NULL, NULL, &st, NULL, NULL, "teste");
   assert(!r && androidChamadas == 1 && androidAlt == 0);
   androidHttp = 0; androidFalhaAlt = 1; androidChamadas = 0;
-  r = viaAndroid("GET", OLD, 5, NULL, NULL, &st, NULL, "teste");
+  r = viaAndroid("GET", OLD, 5, NULL, NULL, &st, NULL, NULL, "teste");
   assert(!r && androidChamadas == 2 && androidAlt == 1);
   androidFalhaAlt = 0; androidChamadas = androidAlt = 0;
-  r = viaAndroid("GET", OLD, 5, NULL, NULL, &st, NULL, "teste");
+  r = viaAndroid("GET", OLD, 5, NULL, NULL, &st, NULL, NULL, "teste");
   assert(r && st == 200 && androidChamadas == 2 && androidAlt == 1); free(r);
   curlRuim = 1; pthread_create(&fio, NULL, outro, NULL); pthread_join(fio, NULL);
   assert(androidChamadas == 3 && androidAlt == 2);

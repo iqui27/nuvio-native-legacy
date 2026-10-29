@@ -7,7 +7,7 @@ cd "$(dirname "$0")/../.."
 RAIZ="$PWD"
 SAIDA="${1:?passe o caminho do AAR de saida}"; shift
 [[ "$SAIDA" = /* ]] || SAIDA="$RAIZ/$SAIDA"
-ABIS=("$@"); [ ${#ABIS[@]} -gt 0 ] || ABIS=(arm64-v8a armeabi-v7a)
+if [ "$#" -gt 0 ]; then ABIS=("$@"); else ABIS=(arm64-v8a armeabi-v7a); fi
 case "$(uname -s)" in
   Linux) HOST=linux-x86_64; SDK_DEFAULT="$HOME/Android/Sdk" ;;
   Darwin) HOST=darwin-x86_64; SDK_DEFAULT="$HOME/Library/Android/sdk" ;;
@@ -58,15 +58,17 @@ COMUM=(--target-os=android --enable-static --disable-shared --disable-doc
   --enable-swresample --extra-ldexeflags=-pie --disable-v4l2-m2m --disable-vulkan
   --enable-pic --disable-autodetect)
 for decoder in "${DECODERS[@]}"; do COMUM+=("--enable-decoder=$decoder"); done
-SUBSTITUIR=()
+AAR_ARGS=("$ORIGINAL" "$SAIDA" "$EST/lib")
 for abi in "${ABIS[@]}"; do
   case "$abi" in
-    arm64-v8a) ARCH=aarch64; CPU=armv8-a; TRIPLE=aarch64-linux-android21; ASM=() ;;
-    x86_64) ARCH=x86_64; CPU=x86-64; TRIPLE=x86_64-linux-android21; ASM=(--disable-asm) ;;
+    arm64-v8a) ARCH=aarch64; CPU=armv8-a; TRIPLE=aarch64-linux-android21 ;;
+    x86_64) ARCH=x86_64; CPU=x86-64; TRIPLE=x86_64-linux-android21 ;;
     armeabi-v7a|x86) continue ;;
     *) echo "ffmpeg-android.sh: ABI desconhecida: $abi" >&2; exit 1 ;;
   esac
-  SUBSTITUIR+=("$abi")
+  AAR_ARGS+=("$abi")
+  FF_OPTS=("${COMUM[@]}")
+  if [ "$abi" = x86_64 ]; then FF_OPTS+=(--disable-asm); fi
   LIB="$EST/lib/$abi/libffmpegJNI.so"
   if [ ! -s "$LIB" ]; then
     echo "== FFmpeg JNI 1.8.0+1 $abi, paginas 16 KB"
@@ -80,7 +82,7 @@ for abi in "${ABIS[@]}"; do
         --ranlib="$TC/bin/llvm-ranlib" --strip="$TC/bin/llvm-strip" \
         --extra-cflags='-fPIC -D__BIONIC_NO_PAGE_SIZE_MACRO' \
         --extra-ldflags='-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384' \
-        "${ASM[@]}" "${COMUM[@]}"
+        "${FF_OPTS[@]}"
       make -j"$JOBS"
       make install-libs
     ) > "$EST/ffmpeg-$abi.log" 2>&1 || { tail -50 "$EST/ffmpeg-$abi.log"; exit 1; }
@@ -103,7 +105,7 @@ for abi in "${ABIS[@]}"; do
   cmp "$EST/lib/$abi/original.symbols" "$EST/lib/$abi/libffmpegJNI.symbols" || { echo "ffmpeg-android.sh: interface JNI mudou: $abi" >&2; exit 1; }
 done
 # Copia todas as entradas do AAR publicado; troca apenas os JNI pedidos.
-python3 - "$ORIGINAL" "$SAIDA" "$EST/lib" "${SUBSTITUIR[@]}" <<'PY'
+python3 - "${AAR_ARGS[@]}" <<'PY'
 import importlib.util
 from pathlib import Path
 import copy, sys, zipfile

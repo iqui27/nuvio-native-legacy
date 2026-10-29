@@ -117,6 +117,20 @@ const call = (op, text = '', a = 0, b = 0, c = 0, d = 0, dst = 0, size = 0) =>
     assert.equal(call('pausar', '', 0), 1);
     assert.equal(call('pausa_confirmada'), 0);
   });
+  check('ROI distinguishes a missing API from transient rejection', () => {
+    const av = context.webapis.avplay;
+    const originalRoi = av.setVideoRoi;
+    try {
+      av.setVideoRoi = undefined;
+      assert.equal(call('roi', '', 0, 0, 3840, 2160), -1);
+      av.setVideoRoi = () => { throw new Error('temporarily unavailable'); };
+      assert.equal(call('roi', '', 0, 0, 3840, 2160), 0);
+      av.setVideoRoi = () => {};
+      assert.equal(call('roi', '', 0, 0, 3840, 2160), 1);
+    } finally {
+      av.setVideoRoi = originalRoi;
+    }
+  });
   // #426: the hardware plane needs a presentation update after a paused
   // crop, even when C deduplicates the unchanged destination rectangle.
   // This proves the bridge contract; only a TV can prove the frozen frame redraw.

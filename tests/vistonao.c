@@ -19,6 +19,7 @@
 // la ele FALHA nas assercoes — e a prova de que o defeito existe. Com
 // src/vistonao.c presente, o .sh liga TEM_VISTONAO e o juiz entra.
 #include "vistoep.h"
+#include <stdint.h>
 #include "contapend.h"
 #include "contalib.h"
 #include "catalogo.h"
@@ -46,6 +47,10 @@ static int perfil = 1, logada = 0;
 static long long agora = 1759000000000LL;   // 27/09/2025 19:06:40 UTC
 static long long relogio(void) { return agora; }
 int perfis_ativo(void) { return perfil; }
+int perfis_sessao_travar(uint64_t g) { return g == 0; }
+uint64_t perfis_sessao_geracao(void) { return 0; }
+int perfis_sessao_atual(uint64_t g) { return !g; }
+void perfis_sessao_destravar(void) {}
 int sessao_logada(void) { return logada; }
 const char *sessao_usuario(void) { return logada ? "u-123" : ""; }
 const char *dados_cliente_id(void) { return "cliente-teste"; }
@@ -294,7 +299,7 @@ int main(int argc, char **argv) {
   confere("T2E9 e E10 seguem desmarcados", t2Vistos(), 8);
 
   // ------------------------------------------------------------ conta
-  printf("\nconta Nuvio: a linha volta DEPOIS de o delete ser confirmado e podado:\n");
+  printf("\nconta Nuvio: a linha volta DEPOIS de o delete ser confirmado e da poda:\n");
   reabrir();
   logada = 1;
   { static const char *CONTA_ANTES =
@@ -315,11 +320,13 @@ int main(int argc, char **argv) {
     contalib_ler_vistos(CONTA_ANTES);
     contalib_aplicar_vistos();
     confere("com a entrada no jornal, a linha nao re-marca", vistoep_estado(SILO, 2, 6), 0);
-    // O ciclo seguinte poda o que foi confirmado antes dele (sync.c).
+    // Watched intent survives pruning: confirmation cannot make a stale pull win.
     agora += 10 * 60000;
     contapend_podar(agora);
-    confere("o jornal ja nao segura a linha (entrada podada)",
-            contapend_visto_oculto(SILO, 2, 6, 1758000000000LL), 0);
+    reabrir();
+    contapend_aplicar_local();  // Sync restores the map from retained intent.
+    confere("confirmed watched intent survives pruning and restart",
+            contapend_visto_oculto(SILO, 2, 6, 1758000000000LL), 1);
     // ... e a linha AINDA vem (copia guardada, pagina velha, delete que o
     // servidor aceitou e nao aplicou).
     contalib_ler_vistos(CONTA_ANTES);
@@ -403,3 +410,5 @@ int main(int argc, char **argv) {
   printf("\nok  desmarcar ganha do Trakt, da conta e de fechar o app\n");
   return 0;
 }
+
+int ajustes_fonte_biblioteca(void) { return 0; }

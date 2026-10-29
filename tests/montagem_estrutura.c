@@ -41,6 +41,7 @@ int ajustes_hist_conta(void) { return 1; }
 int ajustes_busca_cinemeta(void) { return 1; }
 int ajustes_busca_nuvio(void) { return 0; }   // #311: Primeiro (padrao)
 int ajustes_ocultar_nao_lancados(void) { return 0; }   // #369: descoberta.c le o ajuste
+int ajustes_ocultar_filmes_vistos(void) { return 0; }    // #366: descoberta.c le o ajuste
 #include "../src/descoberta.c"
 #include "jellyfin_stub.inc"
 #include "nvtmp.h"

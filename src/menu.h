@@ -24,6 +24,7 @@ typedef enum {
   MENU_INICIO,
   MENU_EXPLORAR,
   MENU_GUIA,
+  MENU_ESPORTES,
   MENU_BUSCAR,
   MENU_BIBLIOTECA,
   // AGENDA — o calendario das series acompanhadas. Fica DEPOIS da Biblioteca
@@ -32,12 +33,16 @@ typedef enum {
   MENU_AGENDA,
   MENU_PERFIL,
   MENU_AJUSTES,
+  MENU_SERVIDORES,
   MENU_N
 } MenuDestino;
 
 // Zera destino e animacao. So e necessario se o app reinicializar a UI; o
 // estado inicial ja e valido sem chamar (destino = MENU_INICIO, barra fora).
 int  menu_iniciar(void);
+void menu_servidores(int conectado);
+// Shared active-profile avatar, in the caller's coordinate layer.
+void menu_avatar(float x, float y, float size, float alpha);
 
 // Desliza a barra para dentro E entrega o foco a ela. Chamar com o menu ja
 // aberto nao faz nada, entao e seguro ligar direto no ESQUERDA da home.
@@ -55,6 +60,8 @@ int  menu_sobre(void);
 // 1 uma vez quando a pessoa ESCOLHEU algo na barra (destino, rodape, pasta;
 // o Spotlight nao, ele abre por cima) — ao contrario de Voltar/DIREITA por cima. Consome a flag.
 int  menu_escolheu(void);
+// Go to a destination as if it was confirmed in the sidebar (iOS tab bar).
+void menu_ir(int destino);
 
 // 1 enquanto a barra e dona do D-pad. Vira 0 no instante da escolha, ainda com
 // a animacao de saida rodando — e esse o sinal que o conteudo deve usar para
@@ -101,9 +108,17 @@ int  menu_pediu_spotlight(void);
 // interface; tudo o que esta API devolve ja vem em px da tela REAL.
 #define NV_MENU_MODERNA_X 48.0f   // px da tela REAL
 float menu_barra_borda(void);
-// Barra no topo: posicao FRACIONARIA da capsula de selecao (indice na ordem dos
-// itens visiveis); desliza entre dois indices em ~180 ms. So os testes leem.
-float menu_topo_pos(void);
+// Barra no topo: a geometria da tira como desenhada agora, em px da tela REAL
+// (retangulos x, y, w, h). `sel`/`foc` sao as capsulas de selecao e de foco
+// (x, w, alfa); `foco[k]` e quanto a de foco cobre a pilula k (a tinta do
+// rotulo); `cortado` 1 se algum rotulo nao coube inteiro. So os testes leem.
+#define MENU_TOPO_MAX 16
+typedef struct {
+  int n, cortado, busca[MENU_TOPO_MAX];
+  float y, h, x[MENU_TOPO_MAX], w[MENU_TOPO_MAX], foco[MENU_TOPO_MAX];
+  float trilha[4], avatar[4], sel[3], foc[3];
+} MenuTopoGeo;
+void menu_topo_geo(MenuTopoGeo *g);
 
 // --- PILULA DO LAYOUT DINAMICA (barra estilo Apple TV) ----------------------
 // No layout Dinamica da home nao ha rail: fechada, a barra e uma pilula
@@ -131,6 +146,11 @@ int   menu_pilula_rect(float *x, float *y, float *w, float *h);
 int   menu_pilula_titulo(void);
 float menu_pilula_alfa(void);
 void  menu_pilula_mostrar(float alvo);
+// 0 enquanto a BARRA DA APPLE TV esta aberta: o cabecalho do painel ja mostra
+// o relogio e a ilha do canto desenharia a mesma hora duas vezes (captura da
+// TCL: 11:29 sobre 11:29). So o layout Dinamica; na rail classica a ilha
+// continua ao lado (menu_aberto nao a esconde la).
+int   menu_relogio_cabe(void);
 
 void menu_evento(const SDL_Event *e);
 void menu_atualizar(float dt, Uint32 agora);

@@ -1,0 +1,10 @@
+{
+  "meta": {
+    "name": "Kaiju No. 8",
+    "imdbRating": "8.1",
+    "videos": [
+      {"id":"tvdb:432088:1:12","season":1,"episode":12,"name":"S1 finale","released":"2024-06-29T00:00:00.000Z","ids":{"tvdb":10591234,"tmdb":5123401,"trakt":9912345}},
+      {"id":"tvdb:432088:2:1","season":2,"episode":1,"name":"Season 2 premiere","released":"2025-07-19T00:00:00.000Z","ids":{"tvdb":10600123,"tmdb":5234501,"trakt":9923456}}
+    ]
+  }
+}

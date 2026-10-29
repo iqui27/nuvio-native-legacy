@@ -29,8 +29,8 @@ typedef struct {
   char ordenar[48];    // sort_by do TMDB / sort_by da lista Trakt
   char ordem[8];       // sort_how do Trakt: "asc" | "desc"
   long traktLista;     // id da lista no Trakt
-  int traktPropria;    // lista vinda de /users/me/lists
-  char filtros[384];   // objeto "filters" cru; o montador da URL traduz
+  int traktPropria;
+  char filtros[1024];  // Web snapshots include every null default (~500 bytes).
 } ColSource;
 typedef struct {
   char id[96], title[128], group[64], cover[512], hero[512], logo[512];
@@ -89,8 +89,12 @@ int col_carregar(const char *dir);
    #18. Guardadas aqui, elas sao REINJETADAS depois de cada reconstrucao.
 
    Substitui o conjunto inteiro (n=0 limpa). Devolve quantas ficaram. */
-#define COL_EXTRA_MAX 24
+#define COL_EXTRA_MAX 48
 int col_extra_definir(const ColFolder *v, int n);
+/* O mesmo, mas so para as pastas extras do grupo `groupId` (o resto fica).
+   col_extra_definir e este com "listas_fixadas" (listas.c); a Caca usa os
+   seus (caca.c). Cada pasta recebe o groupId passado. */
+int col_extra_definir_grupo(const char *groupId, const ColFolder *v, int n);
 // Colecoes da CONTA (sync_pull_collections), no shape do collectionsStore.js do
 // web: collections[{id,title,backdropImageUrl,folders[{id,title,coverImageUrl,
 // heroBackdropUrl,titleLogoUrl,hideTitle,sources[{provider,addonBaseUrl,type,
@@ -100,6 +104,9 @@ int col_extra_definir(const ColFolder *v, int n);
 // Missing/null/truncated replies retain the current snapshot. Returns folders;
 // callers use col_revisao(), including deletions and unchanged nonempty pulls.
 int col_definir_json(const char *json);
+// Retira referencias de addon comprovadamente desinstalado; pasta sem fonte
+// sai. Fontes TMDB/Trakt e as demais de uma pasta mista permanecem.
+int col_podar_fontes_addon(int (*ausente)(const char *id, const char *base));
 // Pure validation, safe on the sync worker before caching an account reply.
 int col_resposta_valida(const char *json);
 // TROCA DE PERFIL: tira da tela as colecoes do perfil anterior (as da conta e
@@ -135,6 +142,14 @@ void col_chave_pasta(const ColFolder *pasta, char *dst, unsigned n);
 int col_grupo_chave(const char *chave, int *indices, int max);
 int col_grupo_forma_chave(const char *chave);
 int col_grupo(const char *nome, int *indices, int max);
+// A ORDEM DAS PASTAS da fileira de um grupo, pela escolha da fileira
+// (fil_ordem, fileiras.h): recebe os indices como col_grupo_chave os devolve e
+// os ordena NO LUGAR. FIL_ORD_LISTA nao mexe em nada. O ANO e o do TITULO da
+// pasta (nv_ano_meta) — a pasta nao tem campo de data; sem ano vai para o fim,
+// na ordem que ja estava. A semente fixa o embaralhado: a montagem da home
+// passa a dela e o teste a sua, para o aleatorio ser estavel de um quadro para
+// o outro e reproduzivel.
+void col_ordenar_pastas(int *indices, int n, int ordem, unsigned semente);
 // addonId dominante do grupo (1) ou "" quando as fontes sao de addons
 // diferentes / nao sao de addon (0). Ver a definicao.
 int col_grupo_addon(const char *nome, char *dst, unsigned n);

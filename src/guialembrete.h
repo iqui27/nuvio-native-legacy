@@ -18,6 +18,7 @@
 #define GLEM_CURTO_MS   4500u
 
 void glem_passo(float dt, Uint32 agora);
+void glem_abrir_sessao(void);  // descarta avisos e pedidos do perfil anterior
 int  glem_evento(const SDL_Event *e);   // 1 = consumiu
 void glem_desenhar(Uint32 agora);
 int  glem_cartao_aberto(void);

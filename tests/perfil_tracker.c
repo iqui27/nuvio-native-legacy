@@ -9,6 +9,7 @@
 #define sessao_usuario teste_sessao_usuario
 #define perfis_ativo teste_perfis_ativo
 #include "../src/app.c"
+#include "stub_m3u.h"
 #include <assert.h>
 
 static int tkLigado, skLigado, tkOk, skOk, tkChamadas, skChamadas;

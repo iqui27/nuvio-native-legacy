@@ -59,6 +59,7 @@ typedef enum {
 
 // Recarrega do disco se o perfil mudou. Chamada sozinha pelas funcoes abaixo.
 void selospacote_iniciar(void);
+void selospacote_recarregar(void); // account device snapshot restored on disk
 
 // Blob de ajustes da CONTA (o JSON inteiro). Extrai os pacotes da conta, guarda
 // no disco e sinaliza mudanca. Sem a chave no blob, a conta fica sem pacotes.

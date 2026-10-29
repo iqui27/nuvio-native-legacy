@@ -66,8 +66,9 @@ int main(void) {
   rota("/tv/335918/external_ids?", tv);
   catalogoDe("tt21874046", "series", "Original", "cinemeta");
   sobTmdb = 335918;
-  snprintf(sobTipo, sizeof sobTipo, "tv");
+  snprintf(sobTipo, sizeof sobTipo, "series");
   sobTemSemente = 0; sobIndice = -1; sobFioVivo = 1;
+  sobSessao = nv_perfil_sessao_ler(); // Same request ownership as pedirTmdb.
   buscarTitulo(NULL);
   assert(sobIndice == 1 && !sobFioVivo);
   assert(!strcmp(cat_item(1)->imdb, "tmdb:335918"));

@@ -63,6 +63,10 @@ static void comFonte(void) {
   static const VideoSimulacao sim={.aceita=1,.pronto=1};
   video_simular(&sim);player_definir_fonte("https://example.invalid/e.mp4");
 }
+// Serie com fonte pronta (cca9acf95): Play, Proximo, Recarregar, Legendas.
+static void paraLegendas(void) {
+  teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RIGHT);
+}
 static void testar(void) {
   // #205 NAO PODE REGREDIR O #100. Aqui em cima porque nao dependem de estado.
   assert(saidaVisto(2400, 2700, 2400, 2400, 0));    // aceitou o proximo nos creditos (88,9%)
@@ -170,7 +174,7 @@ static void testar(void) {
   assert(strstr(player_linha_episodio(), ajustes_idioma_ingles() ? "S2E4" : "T2E4"));
   assert(strstr(player_linha_episodio(),"Episódio 24"));
   assert(player_proximo_episodio()&&player_proximo_episodio()->temporada==2&&player_proximo_episodio()->episodio==5);
-  teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RETURN);
+  paraLegendas();teclaPlayer(SDLK_RETURN);
   assert(player_pediu_faixas()==2); /* Play, legendas (ordem do Glass UI): sem saltos. */
   assert(player_controles_visiveis());
   teclaPlayer(SDLK_DOWN);assert(!player_controles_visiveis());
@@ -187,13 +191,13 @@ static void testar(void) {
   // — o OK seguinte alterna de novo em vez de abrir a folha de legendas.
   // Sessao sem URL tambem nao tem video proprio (registro 1518).
   player_abrir(0,NULL);assert(!player_tem_video());player_definir_episodio(2,4);comFonte();
-  teclaPlayer(SDLK_RIGHT);      // foco em Legendas
+  paraLegendas();      // foco em Legendas
   teclaPlayer(SDLK_DOWN);assert(!player_controles_visiveis());
   teclaPlayer(SDLK_RETURN);assert(player_controles_visiveis());
   teclaPlayer(SDLK_RETURN);assert(player_pediu_faixas()==0);
   // A tecla fisica Play/Pause (SDLK_PAUSE, traduzida pela casca da Samsung)
   // com os controles EM PE e o foco em Legendas: alterna, nao abre a folha.
-  teclaPlayer(SDLK_RIGHT);
+  paraLegendas();
   teclaPlayer(SDLK_PAUSE);teclaPlayer(SDLK_RETURN);assert(player_pediu_faixas()==0);
   player_encerrar();
   // #122: o texto que o AVPlay entrega no onsubtitlechange vira texto puro
@@ -233,7 +237,7 @@ static void testar(void) {
   assert(!player_so_barra());
   teclaPlayer(SDLK_RETURN);assert(player_controles_visiveis());   // OK no Play: alterna
   { float p1=player_posicao_seg();
-    teclaPlayer(SDLK_RIGHT);
+    paraLegendas();
     assert(!player_foco_na_barra()&&player_posicao_seg()==p1);
     teclaPlayer(SDLK_RETURN);assert(player_pediu_faixas()==2); }   // Legendas
   // Escondido de novo por BAIXO e revelado por BAIXO: fileira, nao barra.

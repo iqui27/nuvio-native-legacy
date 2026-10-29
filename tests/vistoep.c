@@ -11,6 +11,10 @@
 #include <stdio.h>
 #include <string.h>
 
+uint64_t perfis_sessao_geracao(void) { return 0; }
+int perfis_sessao_travar(uint64_t g) { return !g; }
+void perfis_sessao_destravar(void) {}
+
 // /shows/<id>/progress/watched, com o `completed` explicito por episodio.
 static const char *PROG =
 "{\"aired\":15,\"completed\":4,\"seasons\":["

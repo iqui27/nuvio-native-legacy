@@ -3,8 +3,10 @@
 // CUSTO, a mesma regra da ilha.c: uma sombra do tamanho da ilha, o miolo, a
 // luz de canto, o texto do cabecalho e o corpo de quem pediu. Nada de tela
 // cheia (o veu de cima do aviso sozinho e o unico, e so sem o OSD).
+#include "central.h"
 #include "horafmt.h"
 #include "plrilha.h"
+#include "tela21.h"
 #include "plrui.h"
 #include "ajustes.h"
 #include "anim.h"
@@ -57,6 +59,8 @@ static float dsA;
 #ifdef NV_SHOT_HOOKS
 static time_t horaFixa;
 void plrilha_shot_hora(time_t t) { horaFixa = t; }
+static GfxRect shotCentro;
+int plrilha_shot_centro(GfxRect *r) { *r = shotCentro; return r->w > 0; }
 static float shotTxtX, shotFimX;
 static int shotTemFim;
 void plrilha_shot_linha(float *t, float *f, int *tf) { *t = shotTxtX; *f = shotFimX; *tf = shotTemFim; }
@@ -93,6 +97,7 @@ static char cenT[200], cenD[80], cenI[32], cenUT[200], cenUD[80], cenUI[32];
 static int temCen;
 static float cenA, cenCorpoA, cenW, cenH, cenVW, cenVH;
 static Uint32 cenQuadro;
+int plrilha_centro_visivel(void) { return cenA >= .01f || temCen; }
 // Quanto a pilula da HORA segura depois que um corpo com `voltaRelogio` acaba,
 // antes de encolher e sair (o corpo vira o relogio e ai some).
 #define HORA_SEGURA_MS 800u
@@ -125,7 +130,11 @@ void plrilha_velocidade(int cent) { velCent = cent > 0 ? cent : VEL_NORMAL; }
 static char titulo[256];
 void plrilha_titulo(const char *t) { snprintf(titulo, sizeof titulo, "%s", t ? t : ""); }
 
-void plrilha_esconder(void) { escondida = 1; }
+// Sem pedido com corpo NO QUADRO o ultimo nao vale mais (ver plrilha_desenhar):
+// quem esconde a ilha antes dos pedidos (estatisticas) impediria ate a troca
+// de um corpo pelo outro — a ilha nova nasceria com o cabecalho dela sobre o
+// corpo antigo um quadro inteiro.
+void plrilha_esconder(void) { escondida = 1; temUlt = 0; corpoA = 0.0f; }
 
 int plrilha_direita(void) {
   return 1;   // sempre a direita (dono, 03/10)
@@ -275,18 +284,31 @@ static void cartaoCentro(Uint32 agora) {
     cenCorpoA = anim_mola(cenCorpoA, quer ? 1.0f : 0.0f, dt, quer ? 10.0f : 26.0f);
   }
   temCen = 0;
+#ifdef NV_SHOT_HOOKS
+  shotCentro = (GfxRect){0};
+#endif
   if (cenA < 0.01f) { cenA = cenCorpoA = 0.0f; cenW = cenH = 0.0f; cenVW = cenVH = 0.0f; return; }
   { const PlrIlhaPedido *c = &cenUlt;
     float w = cenW < 8.0f ? 8.0f : cenW, h = cenH < 8.0f ? 8.0f : cenH;
     GfxRect R = { (NV_TELA_W - w) * 0.5f, (NV_TELA_H - h) * 0.5f, w, h };
     GfxRect F = { (NV_TELA_W - c->w) * 0.5f, (NV_TELA_H - c->h) * 0.5f, c->w, c->h };
+    if (c->destino.w > 0) {
+      F = c->destino;
+      R.x = F.x + (F.w - w) * .5f;
+      R.y = F.y + (F.h - h) * .5f;
+    }
+#ifdef NV_SHOT_HOOKS
+    shotCentro = R;
+#endif
     if (c->ancoraTopo) F.y = R.y;   // o conteudo desce/sobe com a forma (nao salta para o centro novo)
     // O raio acompanha a forma como na ilha: da pilula (meia altura) ao do corpo.
     float cresce = anim_clamp((h - PIL_H) / 120.0f, 0.0f, 1.0f);
     float raio = RAIO_CORPO * cresce + h * 0.5f * (1.0f - cresce);
     if (raio > h * 0.5f) raio = h * 0.5f;
     if (raio > w * 0.5f) raio = w * 0.5f;
-    plrui_material(R, raio, c->modal, cenA);
+    if (c->semContorno) t21_ilha_folha(R, raio, cenA);
+    else if (c->video) plrui_material_video(R, raio, cenA);
+    else plrui_material_s(R, raio, c->modal, cenA, c->semSombra);
     gfx_recorte(R.x, R.y, R.w, R.h);
     // O corpo fica no tamanho final e o recorte da forma o corta (centrado, ou
     // preso ao topo da forma com `ancoraTopo`).
@@ -313,6 +335,7 @@ static void plrilha_desenharCorpo_(Uint32 agora) {
   dir = plrilha_direita();
 
   if (temPed && ped.w > 0.0f) { copiar(&ult, &ped, ultTexto, ultDir, ultIcone); temUlt = 1; }
+  else if (!corpoA) temUlt = 0;   // escondida neste quadro zerou o ultimo
   p = temPed ? &ped : &vazio;
   corpo = temPed && ped.w > 0.0f;
   // VOLTA AO RELOGIO: o corpo que pediu `voltaRelogio` acabou. Com o relogio
@@ -322,7 +345,8 @@ static void plrilha_desenharCorpo_(Uint32 agora) {
   if (prevVolta && !temPed && ajustes_relogio_ligado()) horaAte = agora + HORA_SEGURA_MS;
   prevVolta = temPed && ped.w > 0.0f && ped.voltaRelogio;
   if (temPed || !ajustes_relogio_ligado()) horaAte = 0;
-  quer = !escondida && (temPed || relA > 0.01f || (horaAte && (int)(horaAte - agora) > 0));
+  quer = !escondida && (temPed || relA > 0.01f || central_segurar_progresso(agora) > 0.0f ||
+                       (horaAte && (int)(horaAte - agora) > 0));
 
   // O que a linha da pilula mostra: o pedido, ou (encolhendo depois de um
   // corpo) a linha dele ate o corpo apagar — a hora volta com a forma.
@@ -372,7 +396,9 @@ static void plrilha_desenharCorpo_(Uint32 agora) {
     // ele mesmo, na camada da folha, quando a ilha o chama abaixo.
     if (p->ponteiroOk && !corpo && A > 0.99f && fabsf(W - alvoW) < 1.0f && fabsf(H - alvoH) < 1.0f)
       ponteiro_alvo(R.x, R.y, R.w, R.h, p->ponteiroOk, NULL, 0, 0);
-    plrui_material(R, raioPx, (temUlt ? ult.modal : 0), A);
+    if (temUlt && ult.video) plrui_material_video(R, raioPx, A);
+    else plrui_material_s(R, raioPx, (temUlt ? ult.modal : 0), A, temUlt ? ult.semSombra : 0);
+    central_segurar_desenhar(R, raioPx / (R.h > 1.0f ? R.h : 1.0f), A, agora);
     gfx_recorte(R.x, R.y, R.w, R.h);
     { float cabH = h < CAB_H ? h : CAB_H;
       float yc = R.y + cabH * 0.5f;

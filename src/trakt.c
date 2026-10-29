@@ -1,4 +1,5 @@
 #include "trakt.h"
+#include "perfisessao.h"
 #include "vistoep.h"
 #include "ajustes.h"
 #include "artemetahub.h"
@@ -13,6 +14,10 @@
 #include "cwordem.h"
 #include "traktscrobble.h"
 #include "traktult.h"
+#include "metaep.h"
+#include "simkl.h"
+
+extern int simkl_e_a_seguir(const char *) NV_PERFIL_OPCIONAL;
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -21,34 +26,66 @@
 #include <limits.h>
 #include <stdint.h>
 #include <math.h>
+#include "provedorhttp.h"
 
 
 static char token[128], cliente[80];
-static int  ligado;
+static _Atomic int ligado;
 // Sessao confirmada morta (401 e o refresh tambem recusado): nenhum pedido
 // autenticado sai ate um token novo (trakt_definir) — cada um era um 401 no log.
-static int  sessaoMorta;
+static _Atomic int sessaoMorta;
 // Cabecalho e geracao pertencem a mesma credencial. Trocar/desvincular o
 // Trakt no mesmo perfil tambem invalida respostas sem apagar provas da conta.
 static pthread_mutex_t travaCred = PTHREAD_MUTEX_INITIALIZER;
 static unsigned long long credGeracao = 1;
 static char filmesAtiv[40];
 static unsigned long long filmesAtivMapa;
-typedef struct { unsigned long long mapa, credencial; } HistoricoPedido;
+typedef struct {
+  unsigned long long mapa, credencial;
+  uint64_t sessao;
+  char aut[200], chave[140];
+} HistoricoPedido;
+// The request owns its authentication. A response must also own the opening
+// that issued it; profile A -> B -> A is not the same opening.
 static HistoricoPedido historicoPedido(void) {
-  HistoricoPedido p;
+  HistoricoPedido p = {0};
+  p.sessao = nv_perfil_sessao_ler();
+  if (!nv_perfil_sessao_travar(p.sessao)) return p;
   p.mapa = cat_historico_geracao();
   pthread_mutex_lock(&travaCred);
   p.credencial = credGeracao;
+  if (ligado && !sessaoMorta) {
+    snprintf(p.aut, sizeof p.aut, "Authorization: Bearer %s", token);
+    snprintf(p.chave, sizeof p.chave, "trakt-api-key: %s", cliente);
+  }
   pthread_mutex_unlock(&travaCred);
+  nv_perfil_sessao_destravar();
   return p;
 }
-static int historicoPedidoAtual(HistoricoPedido p) {
-  int atual;
+// Lock order is profile opening -> credential -> leaf cache. Never HTTP.
+static int pedidoCredTravar(HistoricoPedido p) {
+  if (!nv_perfil_sessao_travar(p.sessao)) return 0;
   pthread_mutex_lock(&travaCred);
-  atual = p.credencial == credGeracao && p.mapa == cat_historico_geracao();
+  if (p.credencial != credGeracao) {
+    pthread_mutex_unlock(&travaCred); nv_perfil_sessao_destravar(); return 0;
+  }
+  return 1;
+}
+static int pedidoTravar(HistoricoPedido p) {
+  if (!pedidoCredTravar(p)) return 0;
+  if (p.mapa != cat_historico_geracao()) {
+    pthread_mutex_unlock(&travaCred); nv_perfil_sessao_destravar(); return 0;
+  }
+  return 1;
+}
+static void pedidoDestravar(void) {
   pthread_mutex_unlock(&travaCred);
-  return atual;
+  nv_perfil_sessao_destravar();
+}
+static int historicoPedidoAtual(HistoricoPedido p) {
+  if (!pedidoTravar(p)) return 0;
+  pedidoDestravar();
+  return 1;
 }
 unsigned long long trakt_credencial_geracao(void) {
   unsigned long long g;
@@ -57,17 +94,19 @@ unsigned long long trakt_credencial_geracao(void) {
 }
 int trakt_historico_aplicar(const char *id, const char *tipo, int visto,
                             unsigned long long mapa, unsigned long long credencial) {
-  HistoricoPedido p = { mapa, credencial };
-  int atual;
-  pthread_mutex_lock(&travaCred);
-  atual = p.credencial == credGeracao &&
-    cat_historico_definir_se_geracao(id, tipo, visto, p.mapa);
-  pthread_mutex_unlock(&travaCred);
+  HistoricoPedido p = { .mapa = mapa, .credencial = credencial,
+                         .sessao = nv_perfil_sessao_ler() };
+  if (!pedidoTravar(p)) return 0;
+  int atual = cat_historico_definir_se_geracao(id, tipo, visto, p.mapa);
+  pedidoDestravar();
   return atual;
 }
 static int historicoDefinirPedido(const char *id, const char *tipo, int visto,
                                    HistoricoPedido p) {
-  return trakt_historico_aplicar(id, tipo, visto, p.mapa, p.credencial);
+  if (!pedidoTravar(p)) return 0;
+  int atual = cat_historico_definir_se_geracao(id, tipo, visto, p.mapa);
+  pedidoDestravar();
+  return atual;
 }
 
 // Estado da ultima escrita iniciada pelo menu. O corpo de um POST nao e prova
@@ -99,18 +138,43 @@ static int estadoLer(const volatile int *estado) {
   return __atomic_load_n(estado, __ATOMIC_ACQUIRE);
 }
 
+// Request ownership follows the calling thread to rede's URL-only 401
+// notification. pthread keys also work on older Tizen loaders without TLS.
+typedef struct { uint64_t sessao; unsigned long long credencial; } DonoHttp;
+static pthread_once_t donoHttpUmaVez = PTHREAD_ONCE_INIT;
+static pthread_key_t donoHttpChave;
+static int donoHttpPronto;
+static void donoHttpCriar(void) { donoHttpPronto = pthread_key_create(&donoHttpChave, free) == 0; }
+static void donoHttpDefinir(HistoricoPedido p) {
+  pthread_once(&donoHttpUmaVez, donoHttpCriar);
+  if (!donoHttpPronto) return;
+  DonoHttp *d = pthread_getspecific(donoHttpChave);
+  if (!d) {
+    d = malloc(sizeof *d);
+    if (!d || pthread_setspecific(donoHttpChave, d)) { free(d); return; }
+  }
+  d->sessao = p.sessao; d->credencial = p.credencial;
+}
+
+// A dispatched action may finish for the outgoing profile using only the
+// copied token; its completion must never publish into a different opening.
+static int cabecalhosCongelados(HistoricoPedido p, const char **cab,
+                                char *aut, size_t nAut, char *chave, size_t nChave) {
+  if (!p.aut[0]) return 0;
+  donoHttpDefinir(p);
+  snprintf(aut, nAut, "%s", p.aut); snprintf(chave, nChave, "%s", p.chave);
+  cab[0] = aut; cab[1] = "trakt-api-version: 2"; cab[2] = chave; cab[3] = NULL;
+  return 1;
+}
+
 static int cabecalhosPedido(HistoricoPedido p, const char **cab,
                             char *aut, size_t nAut, char *chave, size_t nChave) {
-  int atual;
-  pthread_mutex_lock(&travaCred);
-  atual = ligado && !sessaoMorta && p.credencial == credGeracao && p.mapa == cat_historico_geracao();
-  if (atual) {
-    snprintf(aut, nAut, "Authorization: Bearer %s", token);
-    snprintf(chave, nChave, "trakt-api-key: %s", cliente);
-    cab[0] = aut; cab[1] = "trakt-api-version: 2"; cab[2] = chave; cab[3] = NULL;
-  }
-  pthread_mutex_unlock(&travaCred);
-  return atual;
+  if (!p.aut[0] || !historicoPedidoAtual(p)) return 0;
+  donoHttpDefinir(p);
+  snprintf(aut, nAut, "%s", p.aut);
+  snprintf(chave, nChave, "%s", p.chave);
+  cab[0] = aut; cab[1] = "trakt-api-version: 2"; cab[2] = chave; cab[3] = NULL;
+  return 1;
 }
 
 // API pequena e interna ao port: a declaracao fica no consumidor porque o
@@ -122,6 +186,7 @@ int trakt_operacao_estado(int tipo) {
 }
 
 int trakt_ativo(void) { return ligado; }
+int trakt_aguardando(void) { return provedorEspera(); }
 
 void trakt_sessao_morta(void) {
   pthread_mutex_lock(&travaCred);
@@ -156,13 +221,26 @@ static void avisoHttp401(const char *url) {
   // pedia remontagem da home. O fallback honesto ja existe em socialPorSeguidos.
   if (!strstr(url, "api.trakt.tv") || strstr(url, "/oauth/") ||
       strstr(url, "/activities")) return;
-  if (ligado && !estadoLer(&credRecusada)) {
+  trakt_http_recusada();
+}
+
+void trakt_http_recusada(void) {
+  pthread_once(&donoHttpUmaVez, donoHttpCriar);
+  if (!donoHttpPronto) return;
+  DonoHttp *d = pthread_getspecific(donoHttpChave);
+  if (!d || !nv_perfil_sessao_travar(d->sessao)) return;
+  pthread_mutex_lock(&travaCred);
+  if (d->credencial == credGeracao && ligado && !estadoLer(&credRecusada)) {
     estadoEscrever(&credRecusada, 1);
     printf("[trakt] HTTP 401: credencial recusada — renovacao pendente\n");
     fflush(stdout);
   }
+  pthread_mutex_unlock(&travaCred);
+  nv_perfil_sessao_destravar();
 }
 int trakt_recusada(void) { return estadoLer(&credRecusada); }
+static pthread_once_t aviso401UmaVez = PTHREAD_ONCE_INIT;
+static void aviso401Registrar(void) { rede_avisar_401(avisoHttp401); }
 
 // As tabelas da ultima leitura (definidas mais abaixo, junto de quem as
 // preenche). Os contadores ficam aqui porque trakt_esquecer os zera.
@@ -172,26 +250,33 @@ static int nUlt, nProxIds, nPlay;
 // ninguem toma outra trava com ela na mao, e nunca atravessa uma chamada de rede.
 static pthread_mutex_t playTrava = PTHREAD_MUTEX_INITIALIZER;
 static void proxMemLimpar(void);   // memoria do "a seguir" (mais abaixo)
+static void escritasAbrirSessao(void);
+static void escritasEsquecerOperacoes(void);
 
-void trakt_esquecer(void) {
+void trakt_abrir_sessao(void) {
   pthread_mutex_lock(&travaCred);
   if (!++credGeracao) ++credGeracao;
   filmesAtiv[0] = 0;
-  sessaoMorta = 0;
-  token[0] = 0;
-  cliente[0] = 0;
-  ligado = 0;
-  pthread_mutex_unlock(&travaCred);
-  // E O QUE A ULTIMA LEITURA DEIXOU. Esquecer vale tambem na TROCA DE PERFIL
-  // (traktauth_trocar_perfil), e ai o "a seguir" e os ids de playback do perfil
-  // anterior continuariam respondendo trakt_e_a_seguir/trakt_playback_remover
-  // para os cards do perfil novo. Zerar contadores so encurta uma varredura que
-  // o fio da descoberta esteja fazendo — nunca a faz passar do fim.
   nUlt = nProxIds = 0;
   pthread_mutex_lock(&playTrava); nPlay = 0; pthread_mutex_unlock(&playTrava);
   proxMemLimpar();
+  pthread_mutex_unlock(&travaCred);
+  escritasAbrirSessao();
   estadoEscrever(&credRecusada, 0);
   trakt_social_reavaliar();
+}
+
+void trakt_esquecer(void) {
+  int listaPendente = estadoLer(&listaEstado) == TK_OP_PENDENTE;
+  int histPendente = estadoLer(&historicoEstado) == TK_OP_PENDENTE;
+  trakt_abrir_sessao();
+  if (listaPendente) estadoEscrever(&listaEstado, TK_OP_FALHA);
+  if (histPendente) estadoEscrever(&historicoEstado, TK_OP_FALHA);
+  pthread_mutex_lock(&travaCred);
+  sessaoMorta = 0;
+  token[0] = cliente[0] = 0;
+  ligado = 0;
+  pthread_mutex_unlock(&travaCred);
   printf("[trakt] credencial esquecida\n");
 }
 
@@ -217,13 +302,16 @@ int trakt_definir(const char *tk, const char *cli) {
   if (cli && *cli) snprintf(cliente, sizeof cliente, "%s", cli);
   ligado = token[0] && cliente[0];
   int ativo = ligado;
-  pthread_mutex_unlock(&travaCred);
+  nUlt = nProxIds = 0;
+  pthread_mutex_lock(&playTrava); nPlay = 0; pthread_mutex_unlock(&playTrava);
   proxMemLimpar();
+  escritasEsquecerOperacoes();
+  pthread_mutex_unlock(&travaCred);
   // Token NOVO limpa a marca de recusa — e o mesmo caminho por onde a
   // renovacao (traktauth) e o pareamento novo chegam.
   estadoEscrever(&credRecusada, 0);
   trakt_social_reavaliar();
-  rede_avisar_401(avisoHttp401);
+  pthread_once(&aviso401UmaVez, aviso401Registrar);
   printf("[trakt] credencial da conta: %s\n",
          ativo ? "ativa" : "sem client id do aplicativo (ver tools/env.sh)");
   return ativo;
@@ -232,28 +320,21 @@ int trakt_definir(const char *tk, const char *cli) {
 
 int trakt_cabecalhos(const char **cab, char *aut, size_t nAut,
                      char *chave, size_t nChave) {
-  pthread_mutex_lock(&travaCred);
-  if (!ligado || sessaoMorta) { pthread_mutex_unlock(&travaCred); return 0; }
-  snprintf(aut, nAut, "Authorization: Bearer %s", token);
-  snprintf(chave, nChave, "trakt-api-key: %s", cliente);
-  cab[0] = aut; cab[1] = "trakt-api-version: 2"; cab[2] = chave; cab[3] = NULL;
-  pthread_mutex_unlock(&travaCred);
-  return 1;
+  HistoricoPedido pedido = historicoPedido();
+  return cabecalhosPedido(pedido, cab, aut, nAut, chave, nChave);
 }
 
 // A chave do APLICATIVO, venha ela de onde vier. Duas fontes e nesta ordem:
 // o `cliente` deste modulo (vinculo desta TV, ou art/trakt.txt) e, faltando
 // ele, a chave compilada no pacote que nuvem.c guarda. A segunda e a que
 // interessa aqui: e a unica que existe em quem nunca vinculou conta nenhuma.
-static const char *chaveApp(void) {
-  if (cliente[0]) return cliente;
-  return nuvem_trakt_cliente();
-}
-
 int trakt_cabecalhos_publicos(const char **cab, char *chave, size_t nChave) {
-  const char *k = chaveApp();
-  if (!k || !k[0]) return 0;
-  snprintf(chave, nChave, "trakt-api-key: %s", k);
+  pthread_mutex_lock(&travaCred);
+  const char *k = cliente[0] ? cliente : nuvem_trakt_cliente();
+  int ok = k && k[0];
+  if (ok) snprintf(chave, nChave, "trakt-api-key: %s", k);
+  pthread_mutex_unlock(&travaCred);
+  if (!ok) return 0;
   cab[0] = "trakt-api-version: 2"; cab[1] = chave; cab[2] = NULL;
   return 1;
 }
@@ -285,7 +366,7 @@ int trakt_carregar(const char *dirArte) {
   // O ouvinte de 401 tambem vale para a credencial do PACOTE: este caminho nao
   // passa por trakt_definir, e sem o registro a sessao morta do arquivo seguia
   // invisivel — exatamente o caso que o dono relatou.
-  rede_avisar_401(avisoHttp401);
+  pthread_once(&aviso401UmaVez, aviso401Registrar);
   printf("[trakt] %s\n", ligado ? "credencial carregada" : "credencial incompleta");
   return ligado;
 }
@@ -391,32 +472,35 @@ static void doBlocoTrakt(CatItem *d, const char *bloco, const char *fim,
 // TkUltimo e a regra de empate: traktult.h (issue #213).
 static TkUltimo *ult;   // nUlt: ver trakt_esquecer
 static int ultCap;
-// Os ids ("tt:S:E") dos itens "a seguir" desta rodada, para enfeitar() saber
-// que precisa CONFERIR que o episodio existe antes de publicar.
-static char proxIds[TK_ULT_MAX][32];   // nProxIds: ver trakt_esquecer
+// Keep Trakt-confirmed episodes distinct from guesses that metadata must validate.
+typedef struct { char id[32]; int confirmado; } TkProximo;
+static TkProximo proxIds[TK_ULT_MAX];   // nProxIds: ver trakt_esquecer
 static int ehProximo(const char *id) {
-  int i;
-  for (i = 0; i < nProxIds; i++) if (!strcmp(proxIds[i], id)) return 1;
-  return 0;
+  int i, achou = 0;
+  pthread_mutex_lock(&travaCred);
+  for (i = 0; i < nProxIds && !achou; i++)
+    if (!strcmp(proxIds[i].id, id)) achou = proxIds[i].confirmado ? 2 : 1;
+  pthread_mutex_unlock(&travaCred);
+  return achou;
 }
-int trakt_e_a_seguir(const char *id) { return id && ehProximo(id); }
-int trakt_cw_concluiu(const char *id, long long progressoMs) {
+int trakt_e_a_seguir(const char *id) { return id && ehProximo(id) != 0; }
+int trakt_cw_concluiu_tvdb(const char *id, int tvdbEp, long long progressoMs) {
   char base[24]; int t = 0, e = 0, i;
   const char *sep = id ? strchr(id, ':') : NULL;
   if (!sep || sscanf(sep + 1, "%d:%d", &t, &e) != 2) return 0;
   snprintf(base, sizeof base, "%.*s", (int)(sep - id), id);
-  for (i = 0; i < nUlt; i++)
-    if (!strcmp(ult[i].imdb, base) && ult[i].temporada == t &&
-        ult[i].episodio == e && ult[i].quandoMs > progressoMs) return 1;
-  return 0;
+  int concluiu = 0;
+  pthread_mutex_lock(&travaCred);
+  for (i = 0; i < nUlt && !concluiu; i++)
+    concluiu = !strcmp(ult[i].imdb, base) && ult[i].quandoMs > progressoMs &&
+        ((tvdbEp > 0 && ult[i].tvdbEp > 0) ? ult[i].tvdbEp == tvdbEp :
+         (ult[i].temporada == t && ult[i].episodio == e));
+  pthread_mutex_unlock(&travaCred);
+  return concluiu;
 }
-// O episodio existe no meta do Cinemeta? Os ids em videos[] sao "tt:S:E".
-static int episodioExiste(const char *corpo, const char *serie, int t, int e) {
-  char chave[48];
-  snprintf(chave, sizeof chave, "\"id\":\"%s:%d:%d\"", serie, t, e);
-  return strstr(corpo, chave) != NULL;
+int trakt_cw_concluiu(const char *id, long long progressoMs) {
+  return trakt_cw_concluiu_tvdb(id, 0, progressoMs);
 }
-
 // OBRAS JA TENTADAS NO CINEMETA PARA A NOTA, nesta sessao (#243). Sem isto, quem
 // o Cinemeta nao da nota (ou que estoura o tempo) voltava a rede a cada refacao
 // da fileira. Tentou uma vez (achou, sem nota ou falhou), conta como satisfeito.
@@ -495,21 +579,68 @@ static void fichaGuardar(const char *tipo, const char *id, const char *corpo) {
   pthread_mutex_unlock(&fichaTrava);
 }
 
+// CACHE NEGATIVO DO CINEMETA (P2). 329 linhas de "episodio ausente na
+// ficha Nuvio; Cinemeta tambem nao tem" em 14 registros, com os MESMOS tt SxEy
+// repetidos a cada sync (155 num so registro). Duas coisas se repetiam:
+//   1. a LINHA, por episodio (tt:SxEy) — o ruido de log;
+//   2. o GET ao Cinemeta, por serie — a rede.
+// As duas ficam 24 h sem repetir. A chave do log e o EPISODIO (S9E19 nao
+// some, mas nao reimprime; S9E2 continua sendo conferido, #356). A chave do GET
+// e a SERIE, porque sem ficha nao ha o que conferir de qualquer episodio — e
+// isso so vale quando a resposta foi "nao tem": serie que o Cinemeta tem fica
+// no cache positivo (fichaGuardar), que vem antes.
+#define TK_CINE_NEG_MAX 32
+#define TK_CINE_NEG_S (24 * 3600)
+static struct { char chave[32]; time_t quando; } cineNeg[TK_CINE_NEG_MAX];
+static int cineNegProx;
+static pthread_mutex_t cineNegTrava = PTHREAD_MUTEX_INITIALIZER;
+
+// 1 = a chave (episodio "tt:SxEy" ou serie "tt") ja deu negativo no prazo.
+static int cineNegSabe(const char *chave) {
+  int i, r = 0;
+  pthread_mutex_lock(&cineNegTrava);
+  for (i = 0; i < TK_CINE_NEG_MAX && !r; i++)
+    if (cineNeg[i].chave[0] && !strcmp(cineNeg[i].chave, chave) &&
+        time(NULL) - cineNeg[i].quando < TK_CINE_NEG_S)
+      r = 1;
+  pthread_mutex_unlock(&cineNegTrava);
+  return r;
+}
+
+static void cineNegMarcar(const char *chave) {
+  int i;
+  pthread_mutex_lock(&cineNegTrava);
+  for (i = 0; i < TK_CINE_NEG_MAX; i++)
+    if (!strcmp(cineNeg[i].chave, chave)) break;
+  if (i == TK_CINE_NEG_MAX) {
+    for (i = 0; i < TK_CINE_NEG_MAX; i++)
+      if (!cineNeg[i].chave[0]) break;
+    if (i == TK_CINE_NEG_MAX) { i = cineNegProx; cineNegProx = (cineNegProx + 1) % TK_CINE_NEG_MAX; }
+  }
+  snprintf(cineNeg[i].chave, sizeof cineNeg[i].chave, "%s", chave);
+  cineNeg[i].quando = time(NULL);
+  pthread_mutex_unlock(&cineNegTrava);
+}
+
 // Ficha do Cinemeta (so ele) em cache proprio, para conferir episodios que a
 // ficha do Nuvio nao lista. Devolve copia (free) ou NULL.
 static char *cinemetaDaSerie(const char *tipo, const char *serie) {
+  MetaprovCineResult result;
   char *c = fichaBuscar("cinemeta-series", serie);
   if (c) return c;
-  c = metaprov_meta_cinemeta_com(tipo, serie, 8, NULL, NULL);
-  if (c) fichaGuardar("cinemeta-series", serie, c);
+  if (cineNegSabe(serie)) return NULL;   // ja nao tinha: nao pergunta de novo
+  c = metaprov_meta_cinemeta_com(tipo, serie, 8, NULL, NULL, &result);
+  if (result == METAPROV_CINE_FOUND) fichaGuardar("cinemeta-series", serie, c);
+  else if (result == METAPROV_CINE_ABSENT) cineNegMarcar(serie);
   return c;
 }
 
-static int enfeitar(CatItem *d, const char *tipo) {
+static int enfeitar(CatItem *d, const char *tipo, uint64_t sessao) {
+  if (!nv_perfil_sessao_atual(sessao)) return 0;
   char url[300], *corpo;
   char serie[24];
   const char *dp;
-  int precisaCinemeta, proximo, daConta, virou = 0, provFicha = -1;
+  int precisaCinemeta, proximo, confirmado, daConta, virou = 0, provFicha = -1;
   const char *epc;   // de onde saem o nome e a data do episodio "a seguir"
   char *corpoCine = NULL;
   // Arte PRIMEIRO, sem rede: mesma URL que trakt_lista ja monta. Antes cada
@@ -517,20 +648,23 @@ static int enfeitar(CatItem *d, const char *tipo) {
   // medido 2,1 s no Mac com paralelismo, e pior: se o Cinemeta falhava o
   // item SUMIA da fileira (compactacao). Metahub e deterministico pelo tt.
   arte_metahub_preencher(d);
-  // Id de addon de anime ("kitsu:41370"): o Cinemeta nao o conhece, e o corte
-  // no primeiro ':' pedia /meta/series/kitsu.json. Fica com o que o registro
-  // trouxe (sem arte, o item nao entra na fileira, como sempre).
-  if (strncmp(d->imdb, "tt", 2)) return d->poster[0] != 0;
+  // Cinemeta only understands IMDb. Keep confirmed Simkl next-up entries
+  // with their title even when the provider has no artwork for a fallback ID.
+  if (strncmp(d->imdb, "tt", 2))
+    return d->poster[0] || (d->titulo[0] && simkl_e_a_seguir && simkl_e_a_seguir(d->imdb));
   snprintf(serie, sizeof serie, "%s", d->imdb);
   dp = strchr(serie, ':');
   if (dp) *(char *)dp = 0;
   // Cinemeta so para o que o metahub nao tem: validar "a seguir", sinopse,
   // runtime/meta e nota. Arte ja esta; falha la NAO apaga o item.
-  // "A seguir" e o do Trakt (historico) ou o da CONTA (vistos, issue #199):
-  // os dois sao sugestao de episodio que ninguem confirmou que existe.
+  // Metadata validates guesses; Trakt next_episode already confirms its target.
+  if (!nv_perfil_sessao_travar(sessao)) return 0;
   daConta = cwo_conta_a_seguir(d->imdb);
-  proximo = ehProximo(d->imdb) || daConta;
-  precisaCinemeta = proximo || !d->sinopse[0] ||
+  proximo = ehProximo(d->imdb);
+  confirmado = proximo == 2;
+  proximo = proximo || daConta;
+  nv_perfil_sessao_destravar();
+  precisaCinemeta = proximo || d->tvdbEp > 0 || !d->sinopse[0] ||
                     !d->meta[0] || d->nota <= 0;
   if (!precisaCinemeta)
     return d->poster[0] != 0;
@@ -551,9 +685,9 @@ static int enfeitar(CatItem *d, const char *tipo) {
     deCache = corpo != NULL;
     // "A seguir" que o cache nao confirma pode ser episodio novo: pergunta a
     // rede antes de descartar o item.
-    if (corpo && proximo &&
-        !episodioExiste(corpo, serie, d->temporada, d->episodio) &&
-        !episodioExiste(corpo, serie, d->temporada + 1, 1)) {
+    if (corpo && proximo && !confirmado &&
+        !metaep_existe(corpo, d->temporada, d->episodio) &&
+        !metaep_proximo(corpo, d->temporada, d->episodio, NULL)) {
       free(corpo); corpo = NULL; deCache = 0;
     }
     if (!corpo) {
@@ -567,57 +701,73 @@ static int enfeitar(CatItem *d, const char *tipo) {
     (void)deCache; }
   marcarTentada(d->imdb);
   if (!corpo) {
-    // "A seguir" sem meta: nao da para confirmar que o episodio existe.
-    if (proximo) return 0;
+    // A metadata outage cannot invalidate Trakt next_episode.
+    if (proximo && !confirmado) return 0;
     return d->poster[0] != 0;
   }
-  // "A SEGUIR" SO ENTRA SE O EPISODIO EXISTE. Depois do ultimo da temporada o
-  // proximo e o primeiro da seguinte; depois do ultimo da serie nao ha
-  // proximo, e a serie nao entra — nao e "continuar", e "acabou".
+  // O Trakt identifica o episodio por TVDB, enquanto addons de anime podem
+  // expor outra numeracao de temporada. A ficha ja foi obtida pelo caminho
+  // normal; casar o ID aqui nao acrescenta rede e deixa o card pedir a fonte
+  // pelo par canonico do addon.
+  if (!strcmp(tipo, "series") && d->tvdbEp > 0) {
+    MetaEpInfo exato;
+    if (metaep_buscar_tvdb(corpo, d->tvdbEp, &exato)) {
+      d->temporada = exato.temporada; d->episodio = exato.episodio;
+      snprintf(d->imdb, sizeof d->imdb, "%s:%d:%d", serie,
+               d->temporada, d->episodio);
+    }
+  }
+  // Only unconfirmed guesses may advance to another metadata episode.
   epc = corpo;
-  if (proximo && !episodioExiste(corpo, serie, d->temporada, d->episodio) &&
-      !episodioExiste(corpo, serie, d->temporada + 1, 1) &&
+  if (proximo && !confirmado && !metaep_existe(corpo, d->temporada, d->episodio) &&
+      !metaep_proximo(corpo, d->temporada, d->episodio, NULL) &&
       provFicha != METAPROV_CINEMETA && !strcmp(tipo, "series")) {
     // A ficha do Nuvio pode estar atras do Cinemeta (The Rookie: 1 futuro
     // contra 18). Antes de largar o item, confere la; a ficha do Nuvio segue
     // valendo para todo o resto.
     corpoCine = cinemetaDaSerie(tipo, serie);
     if (corpoCine) {
-      int t = -1, e = -1;
-      if (episodioExiste(corpoCine, serie, d->temporada, d->episodio)) {
-        t = d->temporada; e = d->episodio;
-      } else if (episodioExiste(corpoCine, serie, d->temporada + 1, 1)) {
-        t = d->temporada + 1; e = 1;
-      }
-      if (t >= 0) {
+      MetaEpInfo prox;
+      if (metaep_existe(corpoCine, d->temporada, d->episodio)) {
         printf("[trakt] episodio ausente na ficha Nuvio; Cinemeta tem: %s S%dE%d\n",
-               serie, t, e);
+               serie, d->temporada, d->episodio);
+        epc = corpoCine;
+      } else if (metaep_proximo(corpoCine, d->temporada, d->episodio, &prox)) {
+        printf("[trakt] episodio ausente na ficha Nuvio; Cinemeta tem: %s S%dE%d\n",
+               serie, prox.temporada, prox.episodio);
         epc = corpoCine;
       }
     }
-    if (epc == corpo)
-      printf("[trakt] episodio ausente na ficha Nuvio; Cinemeta tambem nao tem: %s S%dE%d\n",
-             serie, d->temporada, d->episodio);
+    if (epc == corpo && (corpoCine || cineNegSabe(serie))) {
+      char chave[32];
+      snprintf(chave, sizeof chave, "%s:%d:%d", serie, d->temporada, d->episodio);
+      // A LINHA nao reimprime dentro de 24 h: era o ruido do mapa (155 vezes o
+      // mesmo tt SxEy num registro). Outro episodio da mesma serie ainda sai.
+      if (!cineNegSabe(chave)) {
+        printf("[trakt] episodio ausente na ficha Nuvio; Cinemeta tambem nao tem: %s S%dE%d\n",
+               serie, d->temporada, d->episodio);
+        cineNegMarcar(chave);
+      }
+    }
   }
   if (proximo) {
-    if (!episodioExiste(epc, serie, d->temporada, d->episodio)) {
-      if (episodioExiste(epc, serie, d->temporada + 1, 1)) {
+    MetaEpInfo prox;
+    if (!confirmado && !metaep_existe(epc, d->temporada, d->episodio)) {
+      if (metaep_proximo(epc, d->temporada, d->episodio, &prox)) {
         char velho[sizeof d->imdb];
         snprintf(velho, sizeof velho, "%s", d->imdb);
-        d->temporada++; d->episodio = 1;
+        d->temporada = prox.temporada;
+        d->episodio = prox.episodio;
         snprintf(d->imdb, sizeof d->imdb, "%s:%d:%d", serie, d->temporada, d->episodio);
         // So o da conta acompanha o id novo. O do Trakt continua como era
         // (ehProximo do id novo da 0); mexer nele nao e deste conserto.
-        if (daConta) cwo_conta_trocar(velho, d->imdb);
+        if (daConta && nv_perfil_sessao_travar(sessao)) {
+          cwo_conta_trocar(velho, d->imdb); nv_perfil_sessao_destravar();
+        }
         virou = 1;
       } else { free(corpo); free(corpoCine); return 0; }
     }
-    // O nome do episodio, para a legenda do card.
-    { char chave[48]; const char *v;
-      snprintf(chave, sizeof chave, "\"id\":\"%s:%d:%d\"", serie, d->temporada, d->episodio);
-      v = strstr(epc, chave);
-      if (v) { const char *ini = v; while (ini > epc && *ini != '{') ini--;
-               js_texto(ini, js_fim(ini), "name", d->nomeEpisodio, sizeof d->nomeEpisodio); } }
+    metaep_nome(epc, d->temporada, d->episodio, d->nomeEpisodio, sizeof d->nomeEpisodio);
   }
   // A DATA DE ESTREIA DO EPISODIO "A SEGUIR" (issue #127), do mesmo videos[]
   // que acabou de confirmar que ele existe. E ela que separa o que ja foi ao ar
@@ -625,19 +775,14 @@ static int enfeitar(CatItem *d, const char *tipo) {
   // futuros no fim ou numa fileira propria. Vale para o Simkl tambem: o lote
   // dele passa por aqui (simkl_continuar -> trakt_enfeitar_lote). Episodio sem
   // `released` fica sem data, e sem data conta como exibido, como no web.
-  if (d->progresso == 0 && d->temporada > 0 && d->episodio > 0 && !strcmp(tipo, "series")) {
-    char chave[48], quando[40] = "";
-    const char *v;
-    snprintf(chave, sizeof chave, "\"id\":\"%s:%d:%d\"", serie, d->temporada, d->episodio);
-    v = strstr(epc, chave);
-    if (v) {
-      const char *ini = v;
-      long long ms;
-      while (ini > epc && *ini != '{') ini--;
-      if (!js_texto(ini, js_fim(ini), "released", quando, sizeof quando))
-        js_texto(ini, js_fim(ini), "firstAired", quando, sizeof quando);
+  if (d->progresso == 0 && d->temporada >= 0 && d->episodio > 0 && !strcmp(tipo, "series")) {
+    char quando[40] = "";
+    long long ms;
+    if (metaep_lancamento(epc, d->temporada, d->episodio, quando, sizeof quando)) {
       ms = js_ms_iso(quando);
-      cwo_marcar_estreia(d->imdb, ms > 0 ? ms : CWO_SEM_DATA);
+      if (nv_perfil_sessao_travar(sessao)) {
+        cwo_marcar_estreia(d->imdb, ms > 0 ? ms : CWO_SEM_DATA); nv_perfil_sessao_destravar();
+      }
       if (ms <= 0)
         printf("[trakt] estreia: %s sem released/firstAired no Cinemeta (\"%s\")\n",
                d->imdb, quando);
@@ -713,7 +858,7 @@ static int enfeitar(CatItem *d, const char *tipo) {
     js_texto(corpo, NULL, "runtime", r, sizeof r);
     // O catalogo do Nuvio nao tem duracao de SERIE, so por episodio ("25min"):
     // a do primeiro episodio faz o papel da "54 min" do Cinemeta.
-    if (!r[0]) { const char *v = js_array(corpo, NULL, "videos");
+    if (!r[0]) { const char *v = js_videos_temporadas_falsas(corpo) ? NULL : js_array(corpo, NULL, "videos");
                  if (v) js_texto(v, js_fim(v), "runtime", r, sizeof r); }
     metaprov_duracao(r, sizeof r);
     js_texto(corpo, NULL, "releaseInfo", ano, sizeof ano);
@@ -779,6 +924,7 @@ typedef struct { CatItem *d; char tipo[8]; int ok; } TarefaEnf;
 typedef struct {
   TarefaEnf *t;
   int n, prox;
+  uint64_t sessao;
   pthread_mutex_t trava;
 } FilaEnf;
 
@@ -794,7 +940,7 @@ static void *fioEnfeitar(void *u) {
       // Pronto = arte + sinopse. Arte so (metahub) ainda pode querer o
       // Cinemeta para texto; `ok` 1 sobrevive a compactacao.
       if (itemPronto(d)) f->t[meu].ok = 1;
-      else f->t[meu].ok = enfeitar(d, f->t[meu].tipo); }
+      else f->t[meu].ok = enfeitar(d, f->t[meu].tipo, f->sessao); }
   }
 }
 
@@ -819,9 +965,9 @@ static void enfeitarFila(FilaEnf *f) {
 // Publico porque a fileira "Continuar assistindo" montada do progresso LOCAL
 // (descoberta.c, sem Trakt) precisa exatamente do mesmo enfeite: tem imdb,
 // tipo e porcentagem, e falta arte, sinopse e minutos restantes.
-int trakt_enfeitar_lote(CatItem *saida, int n) {
+int trakt_enfeitar_lote_sessao(CatItem *saida, int n, uint64_t sessao) {
   int jaFeitos = 0, q0;
-  if (n <= 0) return 0;
+  if (!nv_perfil_sessao_atual(sessao) || n <= 0) return 0;
   // QUEM JA TEM TUDO NAO VOLTA A REDE. O item vindo do Trakt com
   // `?extended=full` chega com arte e sinopse (ver doBlocoTrakt); o item vindo
   // do progresso LOCAL chega zerado — metahub cobre a arte sem Cinemeta, e o
@@ -833,7 +979,7 @@ int trakt_enfeitar_lote(CatItem *saida, int n) {
   if (jaFeitos == n) return n;
   { FilaEnf fila;
     fila.t = calloc((size_t)n, sizeof(TarefaEnf));
-    fila.n = n;
+    fila.n = n; fila.sessao = sessao;
     if (fila.t) {
       int q, r, w;
       for (q = 0; q < n; q++) {
@@ -850,17 +996,22 @@ int trakt_enfeitar_lote(CatItem *saida, int n) {
       int r, w;
       for (r = 0, w = 0; r < n; r++)
         if (itemPronto(&saida[r]) ||
-            enfeitar(&saida[r], saida[r].tipo)) { if (w != r) saida[w] = saida[r]; w++; }
+            enfeitar(&saida[r], saida[r].tipo, sessao)) { if (w != r) saida[w] = saida[r]; w++; }
       n = w;
     } }
-  return n;
+  return nv_perfil_sessao_atual(sessao) ? n : 0;
+}
+
+int trakt_enfeitar_lote(CatItem *saida, int n) {
+  return trakt_enfeitar_lote_sessao(saida, n, nv_perfil_sessao_ler());
 }
 
 // OS IDS DOS REGISTROS DE PLAYBACK da ultima leitura, para poder APAGAR.
 // Preenchida em trakt_continuar; consumida por trakt_playback_remover. Cabe a
 // mesma quantidade que a fileira mostra com folga.
 #define TK_PLAY_MAX 64
-static struct { char chave[28]; long long id; } play[TK_PLAY_MAX];   // nPlay: ver trakt_esquecer
+typedef struct { char chave[64], visivel[64]; long long id; } TkPlay;
+static TkPlay play[TK_PLAY_MAX];   // nPlay: ver trakt_esquecer
 
 // Remove o item da barra de retomada do Trakt. `imdb` e a chave COMPOSTA, do
 // mesmo jeito que trakt_continuar a montou ("tt123:2:8" em serie, "tt123" em
@@ -869,56 +1020,49 @@ static struct { char chave[28]; long long id; } play[TK_PLAY_MAX];   // nPlay: v
 // Devolve 0 quando nao ha o que apagar: Trakt desligado, ou id desconhecido
 // porque a fileira veio do progresso da CONTA e nao do Trakt. Nao e erro; o
 // chamador tem a sua propria remocao a fazer de qualquer jeito.
-int trakt_playback_remover(const char *imdb) {
-  const char *cab[4];
-  char aut[200], chaveCab[140], url[96];
-  char *r;
-  int i, st = 0, ok;
-  int achou = 0, todos = 1;
-  long long id, ids[TK_PLAY_MAX];
-  if (!ligado || !imdb || !imdb[0]) return 0;
-  snprintf(aut, sizeof aut, "Authorization: Bearer %s", token);
-  snprintf(chaveCab, sizeof chaveCab, "trakt-api-key: %s", cliente);
-  cab[0] = aut;
-  cab[1] = "trakt-api-version: 2";
-  cab[2] = chaveCab;
-  cab[3] = NULL;
-  // TODOS OS REGISTROS DA CHAVE (#244). /sync/playback guarda um registro por
-  // pausa; apagar so o primeiro deixava os outros devolvendo o item.
-  // Os ids saem da tabela SOB playTrava e o DELETE vai sem ela: trakt_continuar
-  // pode reescrever a tabela enquanto a rede responde.
+int trakt_remocao_capturar(TraktRemocao *r, const char *imdb) {
+  if (!r || !imdb || !*imdb) return 0;
+  memset(r, 0, sizeof *r); snprintf(r->imdb, sizeof r->imdb, "%s", imdb);
+  HistoricoPedido pedido = historicoPedido();
+  if (!pedido.aut[0] || !pedidoTravar(pedido)) return 0;
+  r->destino.sessao = pedido.sessao; r->destino.mapa = pedido.mapa; r->destino.credencial = pedido.credencial;
+  snprintf(r->destino.aut, sizeof r->destino.aut, "%s", pedido.aut);
+  snprintf(r->destino.chave, sizeof r->destino.chave, "%s", pedido.chave);
   pthread_mutex_lock(&playTrava);
-  for (i = 0; i < nPlay; i++)
-    if (play[i].id && !strcmp(play[i].chave, imdb)) ids[achou++] = play[i].id;
-  pthread_mutex_unlock(&playTrava);
-  for (i = 0; i < achou; i++) {
-    id = ids[i];
-    snprintf(url, sizeof url, "https://api.trakt.tv/sync/playback/%lld", id);
-    r = rede_apagar(url, 20, cab, &st);
-    ok = st >= 200 && st < 300;
-    free(r);
-    printf("[trakt] playback remover %s (id %lld) -> %s (HTTP %d)\n",
-           imdb, id, ok ? "ok" : "falhou", st);
-    fflush(stdout);
-    // SO ESQUECE O ID SE O SERVIDOR ACEITOU. Apagar a linha da tabela num 5xx
-    // faria a segunda tentativa dizer "sem id" e a pessoa nunca mais conseguiria
-    // remover aquele item sem reabrir o app.
-    if (ok) {
-      // A linha pode ter mudado de lugar (ou sumido) numa releitura: apaga
-      // pelo par chave+id, nao pelo indice.
-      int k;
+  for (int i = 0; i < nPlay && r->n < TRAKT_REMOVER_MAX; i++)
+    if (play[i].id && (!strcmp(play[i].chave, imdb) || !strcmp(play[i].visivel, imdb)))
+      r->ids[r->n++] = play[i].id;
+  pthread_mutex_unlock(&playTrava); pedidoDestravar();
+  return 1;
+}
+int trakt_remocao_executar(const TraktRemocao *r) {
+  if (!r || !r->destino.aut[0] || r->n < 1 || r->n > TRAKT_REMOVER_MAX) return 0;
+  HistoricoPedido pedido = { .sessao = r->destino.sessao, .mapa = r->destino.mapa, .credencial = r->destino.credencial };
+  snprintf(pedido.aut, sizeof pedido.aut, "%s", r->destino.aut);
+  snprintf(pedido.chave, sizeof pedido.chave, "%s", r->destino.chave);
+  const char *cab[4]; char aut[200], chave[140], url[96]; int todos = 1;
+  if (!cabecalhosCongelados(pedido, cab, aut, sizeof aut, chave, sizeof chave)) return 0;
+  for (int i = 0; i < r->n; i++) {
+    int st = 0;
+    snprintf(url, sizeof url, "https://api.trakt.tv/sync/playback/%lld", r->ids[i]);
+    char *res = rede_apagar(url, 20, cab, &st); int ok = st >= 200 && st < 300; free(res);
+    if (ok && pedidoTravar(pedido)) {
       pthread_mutex_lock(&playTrava);
-      for (k = 0; k < nPlay; k++)
-        if (play[k].id == id && !strcmp(play[k].chave, imdb)) play[k].chave[0] = 0;
-      pthread_mutex_unlock(&playTrava);
-    } else todos = 0;
+      for (int k = 0; k < nPlay; k++)
+        if (play[k].id == r->ids[i] &&
+            (!strcmp(play[k].chave, r->imdb) || !strcmp(play[k].visivel, r->imdb))) {
+          play[k].chave[0] = 0; play[k].visivel[0] = 0;
+        }
+      pthread_mutex_unlock(&playTrava); pedidoDestravar();
+    }
+    if (!ok) todos = 0;
+    printf("[trakt] playback remover %s (id %lld) -> %s (HTTP %d)\n", r->imdb, r->ids[i], ok ? "ok" : "falhou", st);
   }
-  if (!achou) {
-    printf("[trakt] playback: sem id para %s (nao veio do Trakt)\n", imdb);
-    fflush(stdout);
-    return 0;
-  }
-  return todos;
+  fflush(stdout); return todos;
+}
+int trakt_playback_remover(const char *imdb) {
+  TraktRemocao r;
+  return trakt_remocao_capturar(&r, imdb) && trakt_remocao_executar(&r);
 }
 
 // OCULTA (ou desfaz) A SERIE NO "PROGRESS WATCHED" DO TRAKT (#203). E o que faz o
@@ -927,13 +1071,13 @@ int trakt_playback_remover(const char *imdb) {
 // esconder em /users/hidden/progress_watched. Um POST, sincrono: chamar de fio
 // de trabalho. Limite do Trakt para POST: 1/s, e aqui sai um por gesto.
 // So obra com IMDb (tt...); id de outro catalogo nao existe no Trakt.
-int trakt_progresso_ocultar(const char *imdb, int ocultar) {
+int trakt_progresso_ocultar_destino(const TraktDestino *destino, const char *imdb, int ocultar) {
   const char *cab[5];
   char aut[200], chaveCab[140], id[24], url[96];
   Jsw w;
   char *r;
   int i, st = 0, ok;
-  if (!ligado || !imdb || imdb[0] != 't' || imdb[1] != 't') return 0;
+  if (!destino || !destino->aut[0] || !imdb || imdb[0] != 't' || imdb[1] != 't') return 0;
   for (i = 0; imdb[i] && imdb[i] != ':' && i < (int)sizeof id - 1; i++) id[i] = imdb[i];
   id[i] = 0;
   jsw_iniciar(&w);
@@ -948,9 +1092,10 @@ int trakt_progresso_ocultar(const char *imdb, int ocultar) {
   jsw_obj_fim(&w);
   jsw_arr_fim(&w);
   jsw_obj_fim(&w);
-  snprintf(aut, sizeof aut, "Authorization: Bearer %s", token);
-  snprintf(chaveCab, sizeof chaveCab, "trakt-api-key: %s", cliente);
-  cab[0] = aut; cab[1] = "trakt-api-version: 2"; cab[2] = chaveCab; cab[3] = NULL;
+  HistoricoPedido pedido = { .sessao = destino->sessao, .mapa = destino->mapa, .credencial = destino->credencial };
+  snprintf(pedido.aut, sizeof pedido.aut, "%s", destino->aut);
+  snprintf(pedido.chave, sizeof pedido.chave, "%s", destino->chave);
+  if (!cabecalhosCongelados(pedido, cab, aut, sizeof aut, chaveCab, sizeof chaveCab)) { jsw_livre(&w); return 0; }
   snprintf(url, sizeof url, "https://api.trakt.tv/users/hidden/progress_watched%s",
            ocultar ? "" : "/remove");
   r = rede_postar_st(url, 20, cab, jsw_texto_final(&w), &st);
@@ -961,6 +1106,11 @@ int trakt_progresso_ocultar(const char *imdb, int ocultar) {
          ocultar ? "ocultar" : "reexibir", id, ok ? "ok" : "falhou", st);
   fflush(stdout);
   return ok;
+}
+
+int trakt_progresso_ocultar(const char *imdb, int ocultar) {
+  TraktDestino d;
+  return trakt_destino_capturar(&d) && trakt_progresso_ocultar_destino(&d, imdb, ocultar);
 }
 
 // MARCA OU DESMARCA UM LOTE DE EPISODIOS NO TRAKT.
@@ -978,61 +1128,80 @@ int trakt_progresso_ocultar(const char *imdb, int ocultar) {
 // O lote chega ORDENADO por temporada, mas nao se assume isso: o laco agrupa
 // procurando cada temporada uma vez, que para os poucos episodios de um gesto
 // custa menos que ordenar.
-int trakt_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd,
-                           int visto) {
+int trakt_episodios_marcar_alvos_destino(const TraktDestino *destino, const char *imdb,
+                           const TraktEpisodioAlvo *alvos, int qtd, int visto) {
   const char *cab[4];
   char aut[200], chaveCab[140], id[24], url[64];
   Jsw w;
   char *r;
-  int i, j, st = 0, ok;
+  int i, j, st = 0, ok, numericos = 0, exatos = 0;
   // 256 e nao 64: o lote da temporada agora vem do catalogo tambem (visto.c),
   // e temporada de anime passa de 64 — com 64 o resto era cortado calado.
   char feita[256];
-  if (!ligado || !imdb || imdb[0] != 't' || !pares || qtd < 1) return 0;
+  if (!destino || !destino->aut[0] || !imdb || imdb[0] != 't' || !alvos || qtd < 1) return 0;
   if (qtd > (int)sizeof feita) qtd = (int)sizeof feita;
   for (i = 0; imdb[i] && imdb[i] != ':' && i < (int)sizeof id - 1; i++) id[i] = imdb[i];
   id[i] = 0;
   if (!id[0]) return 0;
   memset(feita, 0, sizeof feita);
+  for (i = 0; i < qtd; i++) {
+    if (alvos[i].tvdbEp <= 0) numericos++;
+    else {
+      for (j = 0; j < i; j++) if (alvos[j].tvdbEp == alvos[i].tvdbEp) break;
+      if (j == i) exatos++;
+    }
+  }
 
   jsw_iniciar(&w);
   jsw_obj_ini(&w);
-  jsw_chave(&w, "shows");
-  jsw_arr_ini(&w);
-  jsw_obj_ini(&w);
-  jsw_chave(&w, "ids");
-  jsw_obj_ini(&w);
-  jsw_cs(&w, "imdb", id);
-  jsw_obj_fim(&w);
-  jsw_chave(&w, "seasons");
-  jsw_arr_ini(&w);
-  for (i = 0; i < qtd; i++) {
-    if (feita[i]) continue;
-    jsw_obj_ini(&w);
-    jsw_ci(&w, "number", pares[i].temporada);
+  if (exatos) {
     jsw_chave(&w, "episodes");
     jsw_arr_ini(&w);
-    for (j = i; j < qtd; j++) {
-      if (feita[j] || pares[j].temporada != pares[i].temporada) continue;
-      feita[j] = 1;
+    for (i = 0; i < qtd; i++) if (alvos[i].tvdbEp > 0) {
+      for (j = 0; j < i; j++) if (alvos[j].tvdbEp == alvos[i].tvdbEp) break;
+      if (j < i) continue;
+      jsw_obj_ini(&w); jsw_chave(&w, "ids"); jsw_obj_ini(&w);
+      jsw_ci(&w, "tvdb", alvos[i].tvdbEp); jsw_obj_fim(&w); jsw_obj_fim(&w);
+    }
+    jsw_arr_fim(&w);
+  }
+  if (numericos) {
+    jsw_chave(&w, "shows");
+    jsw_arr_ini(&w);
+    jsw_obj_ini(&w);
+    jsw_chave(&w, "ids");
+    jsw_obj_ini(&w);
+    jsw_cs(&w, "imdb", id);
+    jsw_obj_fim(&w);
+    jsw_chave(&w, "seasons");
+    jsw_arr_ini(&w);
+    for (i = 0; i < qtd; i++) {
+      if (feita[i] || alvos[i].tvdbEp > 0) continue;
       jsw_obj_ini(&w);
-      jsw_ci(&w, "number", pares[j].episodio);
+      jsw_ci(&w, "number", alvos[i].par.temporada);
+      jsw_chave(&w, "episodes");
+      jsw_arr_ini(&w);
+      for (j = i; j < qtd; j++) {
+        if (feita[j] || alvos[j].tvdbEp > 0 ||
+            alvos[j].par.temporada != alvos[i].par.temporada) continue;
+        feita[j] = 1;
+        jsw_obj_ini(&w);
+        jsw_ci(&w, "number", alvos[j].par.episodio);
+        jsw_obj_fim(&w);
+      }
+      jsw_arr_fim(&w);
       jsw_obj_fim(&w);
     }
     jsw_arr_fim(&w);
     jsw_obj_fim(&w);
+    jsw_arr_fim(&w);
   }
-  jsw_arr_fim(&w);
-  jsw_obj_fim(&w);
-  jsw_arr_fim(&w);
   jsw_obj_fim(&w);
 
-  snprintf(aut, sizeof aut, "Authorization: Bearer %s", token);
-  snprintf(chaveCab, sizeof chaveCab, "trakt-api-key: %s", cliente);
-  cab[0] = aut;
-  cab[1] = "trakt-api-version: 2";
-  cab[2] = chaveCab;
-  cab[3] = NULL;
+  HistoricoPedido pedido = { .sessao = destino->sessao, .mapa = destino->mapa, .credencial = destino->credencial };
+  snprintf(pedido.aut, sizeof pedido.aut, "%s", destino->aut);
+  snprintf(pedido.chave, sizeof pedido.chave, "%s", destino->chave);
+  if (!cabecalhosCongelados(pedido, cab, aut, sizeof aut, chaveCab, sizeof chaveCab)) { jsw_livre(&w); return 0; }
   snprintf(url, sizeof url, "https://api.trakt.tv/sync/history%s",
            visto ? "" : "/remove");
   r = rede_postar_st(url, 20, cab, jsw_texto_final(&w), &st);
@@ -1048,17 +1217,70 @@ int trakt_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd,
   return ok;
 }
 
+int trakt_episodios_marcar_token(const char *tok, const char *imdb, const VistoPar *pares, int qtd, int visto) {
+  TraktDestino d = {0};
+  const char *cli = cliente[0] ? cliente : nuvem_trakt_cliente();
+  if (!tok || !*tok || !cli || !*cli) return 0;
+  snprintf(d.aut, sizeof d.aut, "Authorization: Bearer %s", tok);
+  snprintf(d.chave, sizeof d.chave, "trakt-api-key: %s", cli);
+  return trakt_episodios_marcar_destino(&d, imdb, pares, qtd, visto);
+}
+
+int trakt_titulo_marcar_destino(const TraktDestino *d, const char *imdb, const char *tipo, int visto) {
+  const char *cab[4];
+  char aut[200], chave[140], corpo[200], url[80], id[24];
+  int st = 0;
+  if (!d || !imdb || imdb[0] != 't') return 0;
+  size_t n = strcspn(imdb, ":");
+  if (n >= sizeof id) return 0;
+  memcpy(id, imdb, n); id[n] = 0;
+  HistoricoPedido p = { .sessao = d->sessao, .mapa = d->mapa, .credencial = d->credencial };
+  snprintf(p.aut, sizeof p.aut, "%s", d->aut);
+  snprintf(p.chave, sizeof p.chave, "%s", d->chave);
+  if (!cabecalhosCongelados(p, cab, aut, sizeof aut, chave, sizeof chave)) return 0;
+  snprintf(corpo, sizeof corpo, "{\"%s\":[{\"ids\":{\"imdb\":\"%s\"}}]}",
+           tipo && !strcmp(tipo, "series") ? "shows" : "movies", id);
+  snprintf(url, sizeof url, "https://api.trakt.tv/sync/history%s", visto ? "" : "/remove");
+  char *r = rede_postar_st(url, 20, cab, corpo, &st);
+  int ok = r && st >= 200 && st < 300;
+  free(r);
+  return ok;
+}
+
+int trakt_episodios_marcar_destino(const TraktDestino *destino, const char *imdb,
+                                   const VistoPar *pares, int qtd, int visto) {
+  TraktEpisodioAlvo alvos[256];
+  if (!pares || qtd < 1) return 0;
+  if (qtd > (int)(sizeof alvos / sizeof alvos[0])) qtd = (int)(sizeof alvos / sizeof alvos[0]);
+  for (int i = 0; i < qtd; i++) { alvos[i].par = pares[i]; alvos[i].tvdbEp = 0; }
+  return trakt_episodios_marcar_alvos_destino(destino, imdb, alvos, qtd, visto);
+}
+
+int trakt_destino_capturar(TraktDestino *d) {
+  if (!d) return 0;
+  HistoricoPedido p = historicoPedido();
+  memset(d, 0, sizeof *d); d->sessao = p.sessao; d->mapa = p.mapa; d->credencial = p.credencial;
+  snprintf(d->aut, sizeof d->aut, "%s", p.aut); snprintf(d->chave, sizeof d->chave, "%s", p.chave);
+  return p.aut[0] != 0;
+}
+int trakt_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd, int visto) {
+  TraktDestino d;
+  if (!trakt_destino_capturar(&d)) return 0;
+  return trakt_episodios_marcar_destino(&d, imdb, pares, qtd, visto);
+}
+
 // A barra de retomada vem de /sync/playback e nao informa se o titulo foi
 // marcado como assistido. Consultamos o historico real uma vez no mesmo ciclo
 // de descoberta para que a modal nao trate progresso alto como prova de visto.
 // Para series, registros com `episode` sao deliberadamente ignorados: ter
 // visto um episodio nao significa ter marcado a serie inteira como assistida.
-static void carregarHistoricoReal(const char *const *cab, HistoricoPedido pedido) {
-  char *corpo = rede_baixar_com("https://api.trakt.tv/sync/history?limit=100&extended=full", 25, cab);
+static void carregarHistoricoReal(const char *const *cab, HistoricoPedido pedido,
+                                    TkUltimo *ultSaida, int *nUltSaida) {
+  char *corpo = provedorBaixar("https://api.trakt.tv/sync/history?limit=100&extended=full", 25, cab);
   const char *p;
   if (!corpo) return;
   if (!historicoPedidoAtual(pedido)) { free(corpo); return; }
-  nUlt = 0;
+  *nUltSaida = 0;
   p = strchr(corpo, '[');
   p = p ? p + 1 : NULL;
   while (p && *p) {
@@ -1081,9 +1303,9 @@ static void carregarHistoricoReal(const char *const *cab, HistoricoPedido pedido
           const char *fe = js_fim(strchr(ep, '{'));
           char quando[40] = "";
           js_texto(p, f, "watched_at", quando, sizeof quando);
-          tk_ult_anotar(ult, &nUlt, TK_ULT_MAX, id,
+          tk_ult_anotar_tvdb(ultSaida, nUltSaida, TK_ULT_MAX, id,
                         (int)js_num(ep, fe, "season", 0), (int)js_num(ep, fe, "number", 0),
-                        quando[0] ? js_ms_iso(quando) : 0);
+                        quando[0] ? js_ms_iso(quando) : 0, metaep_tvdb_video(ep, fe));
         }
         p = js_prox(f);
         continue;
@@ -1115,7 +1337,8 @@ static void carregarHistoricoReal(const char *const *cab, HistoricoPedido pedido
 static const char *filmesPula(const char *p);
 static const char *filmesObjetoFim(const char *p);
 
-static void carregarSeriesVistas(const char *const *cab, HistoricoPedido pedido) {
+static void carregarSeriesVistas(const char *const *cab, HistoricoPedido pedido,
+                                 TkUltimo **ult, int *nUlt, int *ultCap) {
   TkUltimo *acc = NULL;
   int nAcc = 0, cap = 0, pagina = 1, ok = 0;
   char *anterior = NULL;
@@ -1126,7 +1349,7 @@ static void carregarSeriesVistas(const char *const *cab, HistoricoPedido pedido)
     int st = 0, objetos = 0;
     snprintf(url, sizeof url,
              "https://api.trakt.tv/sync/watched/shows?extended=noseasons&page=%d&limit=250", pagina);
-    corpo = rede_baixar_st(url, 25, cab, &st);
+    corpo = provedorBaixarSt(url, 25, cab, &st);
     if (!corpo || st != 200 || (anterior && !strcmp(anterior, corpo))) { free(corpo); break; }
     free(anterior); anterior = corpo;
     p = filmesPula(corpo);
@@ -1156,6 +1379,7 @@ static void carregarSeriesVistas(const char *const *cab, HistoricoPedido pedido)
           acc[nAcc].temporada = -1;
           acc[nAcc].episodio = (int)((ms / 1000) & 0x3fffffff) + 1;
           acc[nAcc].quandoMs = ms;
+          acc[nAcc].tvdbEp = 0;
           nAcc++;
         }
       }
@@ -1177,16 +1401,16 @@ fimSeries:
     fflush(stdout);
     return;
   }
-  if (nAcc > INT_MAX - nUlt) { free(acc); return; }
-  if (ultCap < nUlt + nAcc) {
-    TkUltimo *novo = realloc(ult, sizeof *ult * (size_t)(nUlt + nAcc));
+  if (nAcc > INT_MAX - *nUlt) { free(acc); return; }
+  if (*ultCap < *nUlt + nAcc) {
+    TkUltimo *novo = realloc(*ult, sizeof **ult * (size_t)(*nUlt + nAcc));
     if (!novo) { free(acc); return; }
-    ult = novo; ultCap = nUlt + nAcc;
+    *ult = novo; *ultCap = *nUlt + nAcc;
   }
   for (int i = 0; i < nAcc; i++) {
     int k;
-    for (k = 0; k < nUlt; k++) if (!strcmp(ult[k].imdb, acc[i].imdb)) break;
-    if (k == nUlt) ult[nUlt++] = acc[i];
+    for (k = 0; k < *nUlt; k++) if (!strcmp((*ult)[k].imdb, acc[i].imdb)) break;
+    if (k == *nUlt) (*ult)[(*nUlt)++] = acc[i];
   }
   free(acc);
   printf("[trakt] series vistas: %d (%d pagina(s))\n", nAcc, pagina);
@@ -1198,12 +1422,12 @@ fimSeries:
 // watched (next_episode). Um GET por serie candidata, TK_FIOS em paralelo,
 // so para quem passou do filtro de playback. Falha de rede: fica o palpite do
 // historico, como antes (o enfeitar ainda confere no Cinemeta).
-typedef struct { int u, estado, t, e; } TarefaProx;
-static TarefaProx *proxTarefas;
-static int proxN, proxProx;
-static const char *const *proxCab;
-static HistoricoPedido proxPedido;
-static pthread_mutex_t proxTrava = PTHREAD_MUTEX_INITIALIZER;
+typedef struct { int u, estado, t, e, tvdbEp; } TarefaProx;
+typedef struct {
+  TarefaProx *tarefas; const TkUltimo *ult;
+  int n, prox; const char *const *cab; HistoricoPedido pedido;
+  pthread_mutex_t trava;
+} FilaProx;
 
 // MEMORIA DO "A SEGUIR" CONFIRMADO (B2, arranque). Cada volta da descoberta
 // (arranque, escolha de perfil, sync que trouxe addons, ciclo de 5 min) refazia
@@ -1214,22 +1438,24 @@ static pthread_mutex_t proxTrava = PTHREAD_MUTEX_INITIALIZER;
 // a chave muda e o GET sai de novo. Guarda so a resposta POSITIVA (estado 1):
 // "sem proximo" muda sozinho quando o episodio novo vai ao ar, e nao e guardado.
 #define TK_PROX_MEM 64
-static struct { char imdb[24]; int tv, ev, t, e; } proxMem[TK_PROX_MEM];
+static struct { char imdb[24]; int tv, ev, t, e, tvdbEp; } proxMem[TK_PROX_MEM];
 static int nProxMem, proxMemProx;
 static pthread_mutex_t proxMemTrava = PTHREAD_MUTEX_INITIALIZER;
 
-static int proxMemBuscar(const char *imdb, int tv, int ev, int *t, int *e) {
+static int proxMemBuscar(const char *imdb, int tv, int ev, int *t, int *e, int *tvdbEp) {
   int i, r = 0;
   pthread_mutex_lock(&proxMemTrava);
   for (i = 0; i < nProxMem && !r; i++)
     if (proxMem[i].tv == tv && proxMem[i].ev == ev && !strcmp(proxMem[i].imdb, imdb)) {
-      *t = proxMem[i].t; *e = proxMem[i].e; r = 1;
+      *t = proxMem[i].t; *e = proxMem[i].e; *tvdbEp = proxMem[i].tvdbEp; r = 1;
     }
   pthread_mutex_unlock(&proxMemTrava);
   return r;
 }
-static void proxMemGuardar(const char *imdb, int tv, int ev, int t, int e) {
+static void proxMemGuardar(const char *imdb, int tv, int ev, int t, int e, int tvdbEp,
+                           HistoricoPedido pedido) {
   int i;
+  if (!pedidoTravar(pedido)) return;
   pthread_mutex_lock(&proxMemTrava);
   for (i = 0; i < nProxMem; i++)
     if (!strcmp(proxMem[i].imdb, imdb)) break;
@@ -1239,7 +1465,9 @@ static void proxMemGuardar(const char *imdb, int tv, int ev, int t, int e) {
   }
   snprintf(proxMem[i].imdb, sizeof proxMem[i].imdb, "%s", imdb);
   proxMem[i].tv = tv; proxMem[i].ev = ev; proxMem[i].t = t; proxMem[i].e = e;
+  proxMem[i].tvdbEp = tvdbEp;
   pthread_mutex_unlock(&proxMemTrava);
+  pedidoDestravar();
 }
 // Esquecida quando a credencial muda (outra conta Trakt, outro historico).
 static void proxMemLimpar(void) {
@@ -1252,29 +1480,38 @@ static void proxMemLimpar(void) {
 #define TK_FIOS_PROX 6
 
 static void *fioProximo(void *x) {
-  (void)x;
+  FilaProx *fila = x;
+  donoHttpDefinir(fila->pedido);
   for (;;) {
-    int meu;
+    int meu, tv, ev;
     char url[160], *corpo;
     const char *imdb;
-    int tv, ev;
-    pthread_mutex_lock(&proxTrava);
-    if (proxProx >= proxN) { pthread_mutex_unlock(&proxTrava); return NULL; }
-    meu = proxProx++;
-    pthread_mutex_unlock(&proxTrava);
-    imdb = ult[proxTarefas[meu].u].imdb;
-    tv = ult[proxTarefas[meu].u].temporada;
-    ev = ult[proxTarefas[meu].u].episodio;
-    if (proxMemBuscar(imdb, tv, ev, &proxTarefas[meu].t, &proxTarefas[meu].e)) {
-      proxTarefas[meu].estado = 1;
-      historicoDefinirPedido(imdb, "series", 0, proxPedido);
-      continue;
-    }
+    pthread_mutex_lock(&fila->trava);
+    if (fila->prox >= fila->n) { pthread_mutex_unlock(&fila->trava); return NULL; }
+    meu = fila->prox++;
+    pthread_mutex_unlock(&fila->trava);
+    if (!historicoPedidoAtual(fila->pedido)) return NULL;
+    TarefaProx *tarefa = &fila->tarefas[meu];
+    const TkUltimo *ultimo = &fila->ult[tarefa->u];
+    imdb = ultimo->imdb; tv = ultimo->temporada; ev = ultimo->episodio;
+    if (pedidoTravar(fila->pedido)) {
+      int achou = proxMemBuscar(imdb, tv, ev, &tarefa->t, &tarefa->e, &tarefa->tvdbEp);
+      pedidoDestravar();
+      if (achou) {
+        tarefa->estado = 1;
+        historicoDefinirPedido(imdb, "series", 0, fila->pedido);
+        continue;
+      }
+    } else return NULL;
     snprintf(url, sizeof url,
-             "https://api.trakt.tv/shows/%s/progress/watched?hidden=false&specials=false",
-             imdb);
-    corpo = rede_baixar_com(url, 8, proxCab);
-    proxTarefas[meu].estado = tk_prog_proximo(corpo, &proxTarefas[meu].t, &proxTarefas[meu].e);
+             "https://api.trakt.tv/shows/%s/progress/watched?hidden=false&specials=false", imdb);
+    corpo = provedorBaixar(url, 8, fila->cab);
+    tarefa->estado = tk_prog_proximo(corpo, &tarefa->t, &tarefa->e);
+    if (tarefa->estado == 1 && corpo) {
+      const char *p = strstr(corpo, "\"next_episode\"");
+      p = p ? strchr(p, '{') : NULL;
+      if (p) tarefa->tvdbEp = metaep_tvdb_video(p, js_fim(p));
+    }
     // O SELO DE SERIE VISTA SAI DAQUI, nao da abertura do titulo: o cabecalho
     // (aired/completed, antes de "seasons") diz se tudo o que foi ao ar foi visto.
     if (corpo) {
@@ -1282,24 +1519,26 @@ static void *fioProximo(void *x) {
       const char *fimCab = sz ? sz : corpo + strlen(corpo);
       int exib = (int)js_num(corpo, fimCab, "aired", 0.0);
       int vist = (int)js_num(corpo, fimCab, "completed", 0.0);
-      if (exib > 0) historicoDefinirPedido(imdb, "series", vist >= exib, proxPedido);
+      if (exib > 0) historicoDefinirPedido(imdb, "series", vist >= exib, fila->pedido);
     }
-    if (proxTarefas[meu].estado == 1)
-      proxMemGuardar(imdb, tv, ev, proxTarefas[meu].t, proxTarefas[meu].e);
+    if (tarefa->estado == 1)
+      proxMemGuardar(imdb, tv, ev, tarefa->t, tarefa->e, tarefa->tvdbEp, fila->pedido);
     free(corpo);
   }
 }
 
-static void consultarProximos(TarefaProx *v, int n, const char *const *cab, HistoricoPedido pedido) {
+static void consultarProximos(TarefaProx *v, int n, const TkUltimo *ultimo,
+                               const char *const *cab, HistoricoPedido pedido) {
   pthread_t fios[TK_FIOS_PROX];
   int q, criados = 0;
   if (n <= 0) return;
-  proxTarefas = v; proxN = n; proxProx = 0; proxCab = cab; proxPedido = pedido;
+  FilaProx fila = { .tarefas = v, .ult = ultimo, .n = n, .cab = cab, .pedido = pedido };
+  pthread_mutex_init(&fila.trava, NULL);
   for (q = 0; q < TK_FIOS_PROX && q < n; q++)
-    if (pthread_create(&fios[criados], NULL, fioProximo, NULL) == 0) criados++;
-  if (!criados) fioProximo(NULL);
+    if (pthread_create(&fios[criados], NULL, fioProximo, &fila) == 0) criados++;
+  if (!criados) fioProximo(&fila);
   for (q = 0; q < criados; q++) pthread_join(fios[q], NULL);
-  proxTarefas = NULL; proxN = 0;
+  pthread_mutex_destroy(&fila.trava);
 }
 
 // TODOS OS FILMES VISTOS (#212). carregarHistoricoReal le as ultimas 100
@@ -1392,11 +1631,11 @@ static int filmesLerPagina(const char *corpo, FilmesVistos *v) {
 
 static int filmesAplicar(const FilmesVistos *v, HistoricoPedido pedido) {
   int atual;
-  pthread_mutex_lock(&travaCred);
-  atual = pedido.credencial == credGeracao && pedido.mapa == cat_historico_geracao();
+  if (!pedidoTravar(pedido)) return 0;
+  atual = 1;
   for (size_t i = 0; atual && i < v->n; i++)
     atual = cat_historico_definir_se_geracao(v->ids[i], "movie", 1, pedido.mapa);
-  pthread_mutex_unlock(&travaCred);
+  pedidoDestravar();
   if (atual && v->n) {
     printf("[visto] marcado por trakt-importacao pos=0 dur=0 assistido=0s n=%zu filmes (sem reproducao local)\n", v->n);
     fflush(stdout);
@@ -1418,7 +1657,7 @@ static void carregarFilmesVistos(const char *const *cab, HistoricoPedido pedido)
   char ativ[40] = "";
   char url[128], *anterior = NULL;
   int pagina = 1, ok = 0;
-  char *corpo = rede_baixar_com("https://api.trakt.tv/sync/last_activities", 15, cab);
+  char *corpo = provedorBaixar("https://api.trakt.tv/sync/last_activities", 15, cab);
   if (corpo) {
     const char *m = strstr(corpo, "\"movies\"");
     const char *o = m ? strchr(m, '{') : NULL;
@@ -1433,7 +1672,7 @@ static void carregarFilmesVistos(const char *const *cab, HistoricoPedido pedido)
   for (;;) {
     int st = 0, n;
     snprintf(url, sizeof url, "https://api.trakt.tv/sync/watched/movies?page=%d&limit=250", pagina);
-    corpo = rede_baixar_st(url, 25, cab, &st);
+    corpo = provedorBaixarSt(url, 25, cab, &st);
     if (!corpo || st != 200 || (anterior && !strcmp(anterior, corpo))) { free(corpo); break; }
     n = filmesLerPagina(corpo, &v);
     free(anterior); anterior = corpo;
@@ -1446,19 +1685,20 @@ static void carregarFilmesVistos(const char *const *cab, HistoricoPedido pedido)
   }
   free(anterior);
   if (ok && filmesAplicar(&v, pedido)) {
-    pthread_mutex_lock(&travaCred);
-    if (pedido.credencial == credGeracao && pedido.mapa == cat_historico_geracao() && ativ[0]) {
+    if (pedidoTravar(pedido)) {
+    if (ativ[0]) {
       snprintf(filmesAtiv, sizeof filmesAtiv, "%s", ativ);
       filmesAtivMapa = pedido.mapa;
     }
-    pthread_mutex_unlock(&travaCred);
+    pedidoDestravar();
+    }
     printf("[trakt] filmes vistos: %d (%d pagina(s))\n", (int)v.n, pagina);
   } else printf("[trakt] filmes vistos: falhou na pagina %d; mapa anterior mantido\n", pagina);
   fflush(stdout);
   free(v.ids);
 }
 
-static volatile int continuarFalhou;
+static _Atomic int continuarFalhou;
 int trakt_continuar_falhou(void) { return continuarFalhou; }
 
 // UMA OBRA, UM CARD (#244). /sync/playback traz um registro por pausa: o mesmo
@@ -1470,7 +1710,7 @@ static size_t obraLen(const char *imdb) {
   const char *c = strchr(imdb, ':');
   return c ? (size_t)(c - imdb) : strlen(imdb);
 }
-static int dedupObras(CatItem *v, int n) {
+static int dedupObras(CatItem *v, int n, TkPlay *playLocal, int nPlayLocal) {
   int i, j, w = 0;
   for (i = 0; i < n; i++) {
     size_t L = obraLen(v[i].imdb);
@@ -1484,11 +1724,9 @@ static int dedupObras(CatItem *v, int n) {
         snprintf(velho, sizeof velho, "%s", v[achou].imdb);
         v[achou] = v[i];
       } else snprintf(velho, sizeof velho, "%s", v[i].imdb);
-      pthread_mutex_lock(&playTrava);
-      for (k = 0; k < nPlay; k++)
-        if (!strcmp(play[k].chave, velho))
-          snprintf(play[k].chave, sizeof play[k].chave, "%s", v[achou].imdb);
-      pthread_mutex_unlock(&playTrava);
+      for (k = 0; k < nPlayLocal; k++)
+        if (!strcmp(playLocal[k].chave, velho))
+          snprintf(playLocal[k].chave, sizeof playLocal[k].chave, "%s", v[achou].imdb);
       printf("[trakt] playback repetido de %.*s; fica o mais recente (%s)\n",
              (int)L, v[achou].imdb, v[achou].imdb); }
   }
@@ -1500,19 +1738,25 @@ static int dedupObras(CatItem *v, int n) {
 // de filmes) e, na LG e no Android, eram ~4 s dos 9-14 s ate a fileira "Continuar
 // assistindo". Agora saem juntos; cada um escreve em estado proprio (play[]/nPlay
 // so o playback, ult[]/nUlt so o historico, o mapa de vistos sob travaCred).
-typedef struct { const char *const *cab; HistoricoPedido pedido; } PedidoHist;
+typedef struct {
+  const char *const *cab; HistoricoPedido pedido; TkUltimo **ult; int *nUlt, *ultCap;
+} PedidoHist;
 
-static void carregarHistoricoTudo(const char *const *cab, HistoricoPedido pedido) {
-  carregarHistoricoReal(cab, pedido);
-  carregarSeriesVistas(cab, pedido);
+// *ult entra com TK_ULT_MAX vagas (o historico); as series vistas crescem a tabela.
+static void carregarHistoricoTudo(const char *const *cab, HistoricoPedido pedido,
+                                  TkUltimo **ult, int *nUlt, int *ultCap) {
+  carregarHistoricoReal(cab, pedido, *ult, nUlt);
+  carregarSeriesVistas(cab, pedido, ult, nUlt, ultCap);
 }
 static void *fioHistorico(void *u) {
   PedidoHist *h = (PedidoHist *)u;
-  carregarHistoricoTudo(h->cab, h->pedido);
+  donoHttpDefinir(h->pedido);
+  carregarHistoricoTudo(h->cab, h->pedido, h->ult, h->nUlt, h->ultCap);
   return NULL;
 }
 static void *fioFilmesVistos(void *u) {
   PedidoHist *h = (PedidoHist *)u;
+  donoHttpDefinir(h->pedido);
   carregarFilmesVistos(h->cab, h->pedido);
   return NULL;
 }
@@ -1523,31 +1767,37 @@ int trakt_continuar(CatItem *saida, int max) {
   char *corpo;
   const char *p;
   int n = 0;
-  continuarFalhou = 0;
+  TkPlay playLocal[TK_PLAY_MAX] = {0}; int nPlayLocal = 0;
+  TkUltimo *ultLocal; int nUltLocal = 0, capUltLocal = TK_ULT_MAX;
+  TkProximo proxIdsLocal[TK_ULT_MAX] = {0}; int nProxLocal = 0;
   HistoricoPedido pedido = historicoPedido();
   if (!cabecalhosPedido(pedido, cab, aut, sizeof aut, chave, sizeof chave)) return 0;
-  if (!ult) {
-    ult = calloc(TK_ULT_MAX, sizeof *ult);
-    if (!ult) { continuarFalhou = 1; return 0; }
-    ultCap = TK_ULT_MAX;
+  if (pedidoTravar(pedido)) { continuarFalhou = 0; pedidoDestravar(); } else return 0;
+  if (!(ultLocal = calloc(TK_ULT_MAX, sizeof *ultLocal))) {
+    if (pedidoTravar(pedido)) { continuarFalhou = 1; pedidoDestravar(); }
+    return 0;
   }
-  nUlt = 0;
-  pthread_mutex_lock(&playTrava); nPlay = 0; pthread_mutex_unlock(&playTrava);
   // Historico e filmes vistos em fios proprios enquanto o playback baixa. Sem
   // fio (pthread_create falhou, ou WebAssembly sem threads): ficam em serie,
   // depois do playback, como antes.
-  PedidoHist ph = { cab, pedido };
+  PedidoHist ph = { cab, pedido, &ultLocal, &nUltLocal, &capUltLocal };
   pthread_t fioHist, fioFilmes;
   int hist = pthread_create(&fioHist, NULL, fioHistorico, &ph) == 0;
   int filmes = pthread_create(&fioFilmes, NULL, fioFilmesVistos, &ph) == 0;
-  corpo = rede_baixar_com("https://api.trakt.tv/sync/playback?extended=full", 25, cab);
+  corpo = provedorBaixar("https://api.trakt.tv/sync/playback?extended=full", 25, cab);
   if (!corpo) {
     if (hist) pthread_join(fioHist, NULL);
     if (filmes) pthread_join(fioFilmes, NULL);
-    continuarFalhou = 1; printf("[trakt] sem resposta\n"); return 0;
+    if (pedidoTravar(pedido)) { continuarFalhou = 1; pedidoDestravar(); }
+    free(ultLocal);
+    printf("[trakt] sem resposta\n"); return 0;
   }
   // A prova de conclusao precisa estar pronta antes de consumir vagas de playback.
-  if (hist) pthread_join(fioHist, NULL); else carregarHistoricoTudo(cab, pedido);
+  if (hist) pthread_join(fioHist, NULL);
+  else carregarHistoricoTudo(cab, pedido, &ultLocal, &nUltLocal, &capUltLocal);
+  if (!historicoPedidoAtual(pedido)) {
+    free(corpo); free(ultLocal); if (filmes) pthread_join(fioFilmes, NULL); return 0;
+  }
   // O corpo e um array na raiz; js_array procura por chave, entao anda-se a mao.
   p = strchr(corpo, '[');
   p = p ? p + 1 : NULL;
@@ -1589,18 +1839,24 @@ int trakt_continuar(CatItem *saida, int max) {
       if (!imdb[0]) { p = js_prox(f); continue; }
       if (serie) {
         const char *fe = js_fim(strchr(ep, '{'));
-        d->temporada = (int)js_num(ep, fe, "season", 0);
+        d->temporada = (int)js_num(ep, fe, "season", 1);
         d->episodio  = (int)js_num(ep, fe, "number", 0);
+        d->tvdbEp = metaep_tvdb_video(ep, fe);
         js_texto(ep, fe, "title", d->nomeEpisodio, sizeof d->nomeEpisodio);
         snprintf(d->imdb, sizeof d->imdb, "%s:%d:%d", imdb,
-                 d->temporada ? d->temporada : 1, d->episodio ? d->episodio : 1);
+                 d->temporada >= 0 && d->episodio > 0 ? d->temporada : 1, d->episodio > 0 ? d->episodio : 1);
         snprintf(d->tipo, sizeof d->tipo, "series");
       } else {
         snprintf(d->imdb, sizeof d->imdb, "%s", imdb);
         snprintf(d->tipo, sizeof d->tipo, "movie");
       }
       // So o historico posterior do MESMO episodio confirma avancar um pausado.
-      if (trakt_cw_concluiu(d->imdb, d->retomadoMs)) { p = js_prox(f); continue; }
+      int concluiu = 0;
+      for (int u = 0; u < nUltLocal && !concluiu; u++)
+        concluiu = !strcmp(ultLocal[u].imdb, imdb) && ultLocal[u].quandoMs > d->retomadoMs &&
+          ((d->tvdbEp > 0 && ultLocal[u].tvdbEp > 0) ? d->tvdbEp == ultLocal[u].tvdbEp :
+           (ultLocal[u].temporada == d->temporada && ultLocal[u].episodio == d->episodio));
+      if (serie && concluiu) { p = js_prox(f); continue; }
       // O ID DO REGISTRO DE PLAYBACK, guardado aqui e em lugar nenhum mais.
       //
       // O Trakt remove um item da barra de retomada por DELETE
@@ -1617,18 +1873,17 @@ int trakt_continuar(CatItem *saida, int max) {
       // O "id" do topo do objeto e o do registro; os blocos aninhados trazem
       // "ids" (plural), que nao casa com a busca por "id".
       { double pid = js_num(p, f, "id", 0.0);
-        pthread_mutex_lock(&playTrava);
-        if (nPlay < TK_PLAY_MAX && pid > 0.0) {
-          snprintf(play[nPlay].chave, sizeof play[nPlay].chave, "%s", d->imdb);
-          play[nPlay].id = (long long)pid;
-          nPlay++;
+        if (nPlayLocal < TK_PLAY_MAX && pid > 0.0) {
+          snprintf(playLocal[nPlayLocal].chave, sizeof playLocal[nPlayLocal].chave, "%s", d->imdb);
+          snprintf(playLocal[nPlayLocal].visivel, sizeof playLocal[nPlayLocal].visivel, "%s", d->imdb);
+          playLocal[nPlayLocal].id = (long long)pid;
+          nPlayLocal++;
         }
-        pthread_mutex_unlock(&playTrava);
       }
       // Enfeitar fica para DEPOIS do laco, em paralelo. Aqui o item ja esta
       // montado: so falta a arte e a sinopse, que vem da rede.
       n++;
-      n = dedupObras(saida, n);
+      n = dedupObras(saida, n, playLocal, nPlayLocal);
     }
     p = js_prox(f);
   }
@@ -1636,35 +1891,34 @@ int trakt_continuar(CatItem *saida, int max) {
   // Os filmes vistos seguem rodando durante os GETs de "a seguir" e do enfeite
   // abaixo; so sao esperados no fim, antes de a fileira sair.
   if (!filmes) carregarFilmesVistos(cab, pedido);
-  printf("[trakt] historico: %d serie(s) com ultimo episodio visto\n", nUlt);
-  // "A SEGUIR": serie cujo ultimo episodio visto terminou e que nao esta
-  // pausada em nada. Entra com progresso 0 no episodio seguinte; enfeitar()
-  // confere no Cinemeta que ele existe (ou salta para a temporada seguinte) e
-  // descarta o que acabou. Ver ult[].
-  nProxIds = 0;
+  printf("[trakt] historico: %d serie(s) com ultimo episodio visto\n", nUltLocal);
+  // Up Next uses Trakt next_episode when available. Only history guesses
+  // need episode validation during metadata enrichment.
+  nProxLocal = 0;
   { int u, nTar = 0, acabou = 0;
-    TarefaProx *tar = calloc((size_t)nUlt, sizeof *tar);
-    int *tarDe = calloc((size_t)nUlt, sizeof *tarDe); // ult[u] -> indice em tar[]
-    if (nUlt && (!tar || !tarDe)) {
-      free(tar); free(tarDe);
+    TarefaProx *tar = calloc((size_t)nUltLocal, sizeof *tar);
+    int *tarDe = calloc((size_t)nUltLocal, sizeof *tarDe); // ultLocal[u] -> indice em tar[]
+    if (nUltLocal && (!tar || !tarDe)) {
+      free(tar); free(tarDe); free(ultLocal);
       if (filmes) pthread_join(fioFilmes, NULL);
-      continuarFalhou = 1;
+      if (pedidoTravar(pedido)) { continuarFalhou = 1; pedidoDestravar(); }
       return 0;
     }
     // Sem o toggle "Proximo episodio" o GET ainda sai: e ele que da o selo.
-    for (u = 0; u < nUlt; u++) {
+    for (u = 0; u < nUltLocal; u++) {
       tarDe[u] = -1;
-      if (ult[u].temporada == 0 || ult[u].episodio <= 0 || strncmp(ult[u].imdb, "tt", 2)) continue;
+      if (ultLocal[u].temporada == 0 || ultLocal[u].episodio <= 0 || strncmp(ultLocal[u].imdb, "tt", 2)) continue;
       tar[nTar].u = u; tar[nTar].estado = -1; tar[nTar].t = tar[nTar].e = 0;
       tarDe[u] = nTar++;
     }
-    consultarProximos(tar, nTar, cab, pedido);
-    for (u = 0; ajustes_cw_proximo() && u < nUlt; u++) {
-      int k, ja = 0, alvo, proxT = ult[u].temporada, proxE = ult[u].episodio + 1;
-      size_t L = strlen(ult[u].imdb);
-      if (ult[u].temporada == 0 || ult[u].episodio <= 0) continue;
+    consultarProximos(tar, nTar, ultLocal, cab, pedido);
+    for (u = 0; ajustes_cw_proximo() && u < nUltLocal; u++) {
+      int k, ja = 0, alvo, proxT = ultLocal[u].temporada, proxE = ultLocal[u].episodio + 1;
+      int proxTvdb = 0;
+      size_t L = strlen(ultLocal[u].imdb);
+      if (ultLocal[u].temporada == 0 || ultLocal[u].episodio <= 0) continue;
       for (k = 0; k < n; k++)
-        if (!strncmp(saida[k].imdb, ult[u].imdb, L) &&
+        if (!strncmp(saida[k].imdb, ultLocal[u].imdb, L) &&
             (saida[k].imdb[L] == 0 || saida[k].imdb[L] == ':')) { ja = 1; break; }
       if (ja) continue;
       if (tarDe[u] >= 0) {
@@ -1673,15 +1927,15 @@ int trakt_continuar(CatItem *saida, int max) {
           // O Trakt diz que nao ha proximo: a serie acabou (ou tudo o que foi
           // ao ar ja foi visto). Nao e "continuar".
           printf("[trakt] a seguir: %s sem proximo no Trakt (ultimo visto T%dE%d); fora\n",
-                 ult[u].imdb, ult[u].temporada, ult[u].episodio);
+                 ultLocal[u].imdb, ultLocal[u].temporada, ultLocal[u].episodio);
           acabou++;
           continue;
         }
-        if (r->estado == 1) { proxT = r->t; proxE = r->e; }
+        if (r->estado == 1) { proxT = r->t; proxE = r->e; proxTvdb = r->tvdbEp; }
       }
       // Episodio desconhecido (vinda de /sync/watched/shows): sem o proximo do
       // Trakt nao ha palpite possivel.
-      if (ult[u].temporada < 0 && !(tarDe[u] >= 0 && tar[tarDe[u]].estado == 1)) continue;
+      if (ultLocal[u].temporada < 0 && !(tarDe[u] >= 0 && tar[tarDe[u]].estado == 1)) continue;
       // Pausados validos nunca cedem lugar a sugestoes de outras obras.
       if (n < max) alvo = n++;
       else {
@@ -1689,33 +1943,36 @@ int trakt_continuar(CatItem *saida, int max) {
         for (k = 0; k < n; k++)
           if (saida[k].progresso == 0 &&
               (vel < 0 || saida[k].retomadoMs < saida[vel].retomadoMs)) vel = k;
-        if (vel < 0 || saida[vel].retomadoMs >= ult[u].quandoMs) continue;
+        if (vel < 0 || saida[vel].retomadoMs >= ultLocal[u].quandoMs) continue;
         alvo = vel;
       }
       { CatItem *d = &saida[alvo];
         memset(d, 0, sizeof *d);
         d->temporada = proxT;
         d->episodio = proxE;
-        snprintf(d->imdb, sizeof d->imdb, "%s:%d:%d", ult[u].imdb, d->temporada, d->episodio);
+        d->tvdbEp = proxTvdb;
+        snprintf(d->imdb, sizeof d->imdb, "%s:%d:%d", ultLocal[u].imdb, d->temporada, d->episodio);
         snprintf(d->tipo, sizeof d->tipo, "series");
         d->progresso = 0;
-        d->retomadoMs = ult[u].quandoMs;
-        if (nProxIds < TK_ULT_MAX) snprintf(proxIds[nProxIds++], sizeof proxIds[0], "%s", d->imdb);
-        printf("[trakt] a seguir: %s (ultimo visto T%dE%d, %lld)\n", d->imdb, ult[u].temporada, ult[u].episodio, ult[u].quandoMs);
+        d->retomadoMs = ultLocal[u].quandoMs;
+        if (nProxLocal < TK_ULT_MAX) {
+          TkProximo *p = &proxIdsLocal[nProxLocal++];
+          snprintf(p->id, sizeof p->id, "%s", d->imdb);
+          p->confirmado = tarDe[u] >= 0 && tar[tarDe[u]].estado == 1;
+        }
+        printf("[trakt] a seguir: %s (ultimo visto T%dE%d, %lld)\n", d->imdb, ultLocal[u].temporada, ultLocal[u].episodio, ultLocal[u].quandoMs);
       }
     }
     if (nTar)
       printf("[trakt] a seguir conferido no Trakt: %d serie(s), %d sem proximo\n", nTar, acabou);
     free(tar); free(tarDe);
   }
-  // Pausados primeiro; recencia dentro de cada grupo. Insercao: n <= CONT_MAX.
+  // Last watched first, including next episodes after a completed episode.
   { int a, b;
     for (a = 1; a < n; a++) {
       CatItem t = saida[a];
-      for (b = a - 1; b >= 0 &&
-           ((saida[b].progresso == 0 && t.progresso > 0) ||
-            ((saida[b].progresso == 0) == (t.progresso == 0) &&
-             saida[b].retomadoMs < t.retomadoMs)); b--) saida[b + 1] = saida[b];
+      for (b = a - 1; b >= 0 && saida[b].retomadoMs < t.retomadoMs; b--)
+        saida[b + 1] = saida[b];
       saida[b + 1] = t;
     } }
   // O MAPA DE EPISODIOS VISTOS NAO SAI DAQUI. Ele e buscado por SERIE, em
@@ -1725,18 +1982,66 @@ int trakt_continuar(CatItem *saida, int max) {
   // 75 series, ela devolveu 90675 bytes com ZERO ocorrencias de "seasons" e
   // "number", mesmo com ?extended=full. Nao retentar sem medicao nova.
 
-  n = trakt_enfeitar_lote(saida, n);
+  // Publish only complete request-owned tables. No old worker can refill
+  // them after a new profile opening clears them.
+  if (pedidoTravar(pedido)) {
+    if (ultCap < nUltLocal) {
+      TkUltimo *novo = realloc(ult, sizeof *ult * (size_t)nUltLocal);
+      if (novo) { ult = novo; ultCap = nUltLocal; }
+    }
+    nUlt = ultCap >= nUltLocal ? nUltLocal : 0;
+    if (nUlt) memcpy(ult, ultLocal, sizeof *ult * (size_t)nUlt);
+    memcpy(proxIds, proxIdsLocal, sizeof proxIdsLocal); nProxIds = nProxLocal;
+    pthread_mutex_lock(&playTrava);
+    memcpy(play, playLocal, sizeof playLocal); nPlay = nPlayLocal;
+    pthread_mutex_unlock(&playTrava);
+    pedidoDestravar();
+    n = trakt_enfeitar_lote_sessao(saida, n, pedido.sessao);
+    // Enfeitar pode traduzir a numeracao Trakt para a numeracao canonica do
+    // addon. Preserve a chave original para DELETE, mas publique tambem a
+    // chave que o usuario passou a ver.
+    for (int i = 0; i < nPlayLocal; i++) {
+      size_t L = obraLen(playLocal[i].chave);
+      for (int k = 0; k < n; k++)
+        if (obraLen(saida[k].imdb) == L && !strncmp(saida[k].imdb, playLocal[i].chave, L)) {
+          snprintf(playLocal[i].visivel, sizeof playLocal[i].visivel, "%s", saida[k].imdb);
+          break;
+        }
+    }
+    { TkProximo mapeados[TK_ULT_MAX] = {0}; int nm = 0;
+      for (int i = 0; i < nProxLocal && nm < TK_ULT_MAX; i++) {
+        size_t L = obraLen(proxIdsLocal[i].id);
+        for (int k = 0; k < n; k++)
+          if (obraLen(saida[k].imdb) == L && !strncmp(saida[k].imdb, proxIdsLocal[i].id, L)) {
+            mapeados[nm] = proxIdsLocal[i];
+            snprintf(mapeados[nm].id, sizeof mapeados[nm].id, "%s", saida[k].imdb);
+            nm++;
+            break;
+          }
+      }
+      memset(proxIdsLocal, 0, sizeof proxIdsLocal);
+      memcpy(proxIdsLocal, mapeados, sizeof mapeados); nProxLocal = nm;
+    }
+    if (pedidoTravar(pedido)) {
+      memcpy(proxIds, proxIdsLocal, sizeof proxIdsLocal); nProxIds = nProxLocal;
+      pthread_mutex_lock(&playTrava);
+      memcpy(play, playLocal, sizeof playLocal); nPlay = nPlayLocal;
+      pthread_mutex_unlock(&playTrava);
+      pedidoDestravar();
+    }
+  } else n = 0;
+  free(ultLocal);
   if (filmes) pthread_join(fioFilmes, NULL);
 
   printf("[trakt] %d em andamento\n", n);
   fflush(stdout);
-  return n;
+  return historicoPedidoAtual(pedido) ? n : 0;
 }
 
 // Alguns clientes recebem 401 apenas no feed agregado. O grafo e o
 // historico publico dos perfis continuam acessiveis com a mesma credencial.
 static char *socialPorSeguidos(const char *const *cab, int max) {
-  char *lista=rede_baixar_com("https://api.trakt.tv/users/me/following?extended=full",10,cab);
+  char *lista=provedorBaixar("https://api.trakt.tv/users/me/following?extended=full",10,cab);
   if(!lista)return NULL;
   char *out=calloc(1,262144);size_t used=1;int n=0,consultados=0;
   if(!out){free(lista);return NULL;}out[0]='[';
@@ -1751,8 +2056,8 @@ static char *socialPorSeguidos(const char *const *cab, int max) {
     if(!id[0] || strspn(id,"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")!=strlen(id)){p=js_prox(f);continue;}
     consultados++;
     snprintf(url,sizeof url,"https://api.trakt.tv/users/%s/watching?extended=full",id);
-    char *body=rede_baixar_com(url,8,cab);int agora=body&&strchr(body,'{');
-    if(!agora){free(body);snprintf(url,sizeof url,"https://api.trakt.tv/users/%s/history?limit=1&extended=full",id);body=rede_baixar_com(url,8,cab);}
+    char *body=provedorBaixar(url,8,cab);int agora=body&&strchr(body,'{');
+    if(!agora){free(body);snprintf(url,sizeof url,"https://api.trakt.tv/users/%s/history?limit=1&extended=full",id);body=provedorBaixar(url,8,cab);}
     const char *b=body?strchr(body,'{'):NULL,*bf=b?js_fim(b):NULL;
     if(b&&bf&&bf>b+1) {
       size_t un=(size_t)(uf-u),bn=(size_t)(bf-b-2);
@@ -1770,7 +2075,7 @@ static char *socialPorSeguidos(const char *const *cab, int max) {
 }
 
 // Zerada por trakt_definir: credencial nova pode ter o escopo que faltava.
-static volatile int socialSemFeed;
+static _Atomic int socialSemFeed;
 void trakt_social_reavaliar(void) { socialSemFeed = 0; }
 
 int trakt_social(CatItem *saida, int max) {
@@ -1783,20 +2088,21 @@ int trakt_social(CatItem *saida, int max) {
   // pagava os dois em TODO ciclo da home antes de cair no fallback. Um token
   // novo (trakt_definir) zera a marca, porque ai a resposta pode mudar.
   if (!ligado || max < 1) return 0;
-  if (!trakt_cabecalhos(cab, aut, sizeof aut, chave, sizeof chave)) return 0;
+  HistoricoPedido pedido = historicoPedido();
+  if (!cabecalhosPedido(pedido, cab, aut, sizeof aut, chave, sizeof chave)) return 0;
   corpo = NULL;
   if (!socialSemFeed) {
-    corpo = rede_baixar_com(
+    corpo = provedorBaixar(
       "https://api.trakt.tv/users/me/friends/activities?extended=full&page=1&limit=12",
       20, cab);
     // Contas sem o escopo social novo podem receber 401 no grafo `friends`,
     // embora o token continue valido para historico. `following` e o fallback
     // honesto: ainda sao pessoas escolhidas pelo dono, nunca atividade global.
-    if (!corpo) corpo = rede_baixar_com(
+    if (!corpo) corpo = provedorBaixar(
       "https://api.trakt.tv/users/me/following/activities?extended=full&page=1&limit=12",
       20, cab);
     if (!corpo) {
-      socialSemFeed = 1;
+      if (pedidoTravar(pedido)) { socialSemFeed = 1; pedidoDestravar(); }
       printf("[trakt] feed agregado indisponivel nesta conta; usando os seguidos\n");
       fflush(stdout);
     }
@@ -1872,7 +2178,7 @@ int trakt_social(CatItem *saida, int max) {
   if (n > 0) {
     FilaEnf fila;
     fila.t = calloc((size_t)n, sizeof *fila.t);
-    fila.n = n;
+    fila.n = n; fila.sessao = pedido.sessao;
     if (fila.t) {
       int q;
       for (q = 0; q < n; q++) {
@@ -1885,7 +2191,7 @@ int trakt_social(CatItem *saida, int max) {
     }
   }
   printf("[trakt] %d atividades de amigos\n", n); fflush(stdout);
-  return n;
+  return historicoPedidoAtual(pedido) ? n : 0;
 }
 
 static void perfilGenero(PerfilDados *d, const char *nome) {
@@ -1926,7 +2232,8 @@ int trakt_perfil(PerfilDados *d) {
   int nRanking = 0;
   if (!d || !ligado) return 0;
   memset(d,0,sizeof *d);
-  if (!trakt_cabecalhos(cab,aut,sizeof aut,chave,sizeof chave)) return 0;
+  HistoricoPedido pedido = historicoPedido();
+  if (!cabecalhosPedido(pedido,cab,aut,sizeof aut,chave,sizeof chave)) return 0;
   static const char *meses[]={"Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"};
   // O MES PASSA PELA TABELA AQUI, na composicao: "Setembro 2026" e uma string
   // montada, e a traducao de text.c casa a string inteira — ela nunca acharia
@@ -1940,13 +2247,13 @@ int trakt_perfil(PerfilDados *d) {
   strftime(inicio,sizeof inicio,"%Y-%m-%dT%H%%3A%M%%3A%SZ",&utc);
   // Perfil e avatar. O avatar pode ser WebP no Trakt novo; o renderer so o
   // pede se o firmware aceitar, e a tela continua completa sem ele.
-  corpo=rede_baixar_com("https://api.trakt.tv/users/settings?extended=full",15,cab);
+  corpo=provedorBaixar("https://api.trakt.tv/users/settings?extended=full",15,cab);
   if(corpo){ const char *u=strstr(corpo,"\"user\""); const char *fu=u?js_fim(strchr(u,'{')):NULL;
     if(u&&fu){js_texto(u,fu,"name",d->nome,sizeof d->nome);js_texto(u,fu,"username",d->usuario,sizeof d->usuario);
       js_texto(u,fu,"full",d->avatar,sizeof d->avatar);} free(corpo); }
   snprintf(url,sizeof url,
     "https://api.trakt.tv/users/me/history?start_at=%s&extended=full&page=1&limit=100",inicio);
-  corpo=rede_baixar_com(url,25,cab);
+  corpo=provedorBaixar(url,25,cab);
   if (!corpo || !strchr(corpo, '[')) { free(corpo); return 0; }
   ranking = calloc(100, sizeof *ranking);
   if (!ranking) { free(corpo); return 0; }
@@ -1979,7 +2286,7 @@ int trakt_perfil(PerfilDados *d) {
       for(int i=0;i<nRanking;i++)if(imdb[0]&&!strcmp(ranking[i].id,imdb)){hi=i;break;}
       if(hi<0&&imdb[0]&&nRanking<100){hi=nRanking++;PerfilDestaque *h=&ranking[hi];
         snprintf(h->id,sizeof h->id,"%s",imdb);snprintf(h->titulo,sizeof h->titulo,"%s",titulo);
-        if(t>0&&e>0)snprintf(h->detalhe,sizeof h->detalhe,i18n("T%dE%d"),t,e);else snprintf(h->detalhe,sizeof h->detalhe,"Filme");
+        if(t>=0&&e>0)snprintf(h->detalhe,sizeof h->detalhe,i18n("T%dE%d"),t,e);else snprintf(h->detalhe,sizeof h->detalhe,"Filme");
         if(imdb[0]){snprintf(h->poster,sizeof h->poster,"https://images.metahub.space/poster/medium/%s/img",imdb);
           snprintf(h->backdrop,sizeof h->backdrop,"https://images.metahub.space/background/medium/%s/img",imdb);}}
       if(hi>=0){ranking[hi].plays++;if(runtime>0)ranking[hi].minutos+=runtime;}
@@ -2004,16 +2311,11 @@ int trakt_perfil(PerfilDados *d) {
   for(int i=0;i<d->nDestaques;i++)for(int j=i+1;j<d->nDestaques;j++)if(d->destaques[j].plays>d->destaques[i].plays){PerfilDestaque x=d->destaques[i];d->destaques[i]=d->destaques[j];d->destaques[j]=x;}
   for(int i=0;i<d->nGeneros;i++)for(int j=i+1;j<d->nGeneros;j++)if(d->generos[j].quantidade>d->generos[i].quantidade){PerfilGenero x=d->generos[i];d->generos[i]=d->generos[j];d->generos[j]=x;}
   printf("[trakt] perfil: %d plays, %d min, %d destaques\n",d->plays,d->minutos,d->nDestaques);fflush(stdout);
-  return 1;
+  return historicoPedidoAtual(pedido);
 }
 
-// PAGINACAO (#6 Shield: biblioteca mostrava Trakt 213 de 1600+). A watchlist
-// aceita ?page=&limit= e, sem eles, devolve tudo; a colecao NAO pagina (a doc
-// do Trakt so lista page/limit na watchlist). O cabecalho X-Pagination-Page-
-// Count nao chega aqui (rede_baixar_com devolve so o corpo), entao a parada e a
-// do mapa de filmes vistos: pagina VAZIA, corpo igual ao anterior ou o teto da
-// plataforma. O Trakt pode capar a pagina abaixo do limit pedido, por isso
-// pagina curta NAO encerra. A colecao e pedida sem parametros, uma vez.
+// Watchlist pages follow response metadata, with empty/repeated-page fallback
+// when headers are unavailable. Collection remains a single request per type.
 #define TRAKT_LISTA_PAGINA 500
 #define TRAKT_LISTA_PAGINAS_MAX 64
 
@@ -2027,10 +2329,8 @@ static int listaNucleo(const char *qual, CatItem **pv, int *cap, int cresce,
   const char *p;
   int n = 0, passo, paginas = 0, visto = 0;
   int paginavel = !strcmp(qual, "watchlist");
-  if (!ligado) return 0;
-  snprintf(aut, sizeof aut, "Authorization: Bearer %s", token);
-  snprintf(chave, sizeof chave, "trakt-api-key: %s", cliente);
-  cab[0] = aut; cab[1] = "trakt-api-version: 2"; cab[2] = chave; cab[3] = NULL;
+  HistoricoPedido pedido = historicoPedido();
+  if (!cabecalhosPedido(pedido, cab, aut, sizeof aut, chave, sizeof chave)) return 0;
 
   // Filmes e series vem em endpoints separados; misturar as duas listas na
   // mesma fileira e o que o dono ve como "Minha Lista".
@@ -2039,14 +2339,16 @@ static int listaNucleo(const char *qual, CatItem **pv, int *cap, int cresce,
     int pagina = 1;
     anterior = NULL;
     for (;;) {
-      int lidos = 0;
+      int lidos = 0, proxima = -1;
       if (paginavel)
-        snprintf(url, sizeof url, "https://api.trakt.tv/sync/%s/%s?page=%d&limit=%d",
+        // added/desc: the most recently added title comes first (#610).
+        snprintf(url, sizeof url, "https://api.trakt.tv/sync/%s/%s/added/desc?page=%d&limit=%d",
                  qual, tipo, pagina, TRAKT_LISTA_PAGINA);
       else
         snprintf(url, sizeof url, "https://api.trakt.tv/sync/%s/%s", qual, tipo);
-      corpo = rede_baixar_com(url, 25, cab);
-      if (!corpo) break;
+      if (!historicoPedidoAtual(pedido)) break;
+      corpo = provedorGet(url, 25, cab, NULL, &proxima, pagina);
+      if (!corpo) { free(anterior); return -1; }
       if (anterior && !strcmp(anterior, corpo)) { free(corpo); break; }
       paginas++;
       p = strchr(corpo, '[');
@@ -2058,6 +2360,7 @@ static int listaNucleo(const char *qual, CatItem **pv, int *cap, int cresce,
         while (*p && (unsigned char)*p <= ' ') p++;
         if (*p != '{') break;
         f = js_fim(p);
+        lidos++;   // Pagination counts server entries, including titles without IMDb.
         bloco = strstr(p, passo ? "\"show\"" : "\"movie\"");
         if (bloco && bloco < f) {
           const char *fb = js_fim(strchr(bloco, '{'));
@@ -2065,7 +2368,7 @@ static int listaNucleo(const char *qual, CatItem **pv, int *cap, int cresce,
           js_texto(bloco, fb, "imdb", imdb, sizeof imdb);
         }
         if (imdb[0]) {
-          lidos++; visto++;
+          visto++;
           if (n < max) {
             CatItem *d;
             if (cresce && n >= *cap) {
@@ -2081,7 +2384,7 @@ static int listaNucleo(const char *qual, CatItem **pv, int *cap, int cresce,
             snprintf(d->titulo, sizeof d->titulo, "%s", titulo);
             snprintf(d->imdb, sizeof d->imdb, "%s", imdb);
             snprintf(d->tipo, sizeof d->tipo, "%s", passo ? "series" : "movie");
-            if (paginavel) { d->naLista = 1; d->fontes = CAT_FONTE_TRAKT; }
+            if (paginavel) { d->naLista = 1; d->fontes = CAT_FONTE_TRAKT; d->listaFontes = 1u << AJ_SALVOS_TRAKT; }
             else           d->naColecao = 1;
             // Arte SEM consultar: metahub deterministico pelo IMDb (ver
             // artemetahub.h). Uma consulta por item limitava a lista a dez.
@@ -2094,15 +2397,15 @@ static int listaNucleo(const char *qual, CatItem **pv, int *cap, int cresce,
         p = js_prox(f);
       }
       free(anterior); anterior = corpo;
-      if (!paginavel || !lidos || pagina >= TRAKT_LISTA_PAGINAS_MAX) break;
+      if (!paginavel || !lidos || !proxima || pagina >= TRAKT_LISTA_PAGINAS_MAX) break;
       if (n >= max) break;   // teto da plataforma: nao pede o resto
-      pagina++;
+      pagina = proxima > pagina ? proxima : pagina + 1;
     }
     free(anterior);
   }
   if (pag) *pag = paginas;
   if (total) *total = visto;
-  return n;
+  return historicoPedidoAtual(pedido) ? n : 0;
 }
 
 static void listaLog(const char *qual, int n, int total, int paginas, int max) {
@@ -2119,7 +2422,7 @@ int trakt_lista(const char *qual, CatItem *saida, int max) {
   if (max <= 0) return 0;
   n = listaNucleo(qual, &v, &cap, 0, max, &pag, &total);
   listaLog(qual, n, total, pag, max);
-  return n;
+  return n < 0 ? 0 : n;
 }
 
 int trakt_lista_cresc(const char *qual, CatItem **saida, int max) {
@@ -2140,27 +2443,32 @@ int trakt_lista_cresc(const char *qual, CatItem **saida, int max) {
 // a taxa). A decisao de qual chamada mandar mora em traktscrobble.c.
 static pthread_mutex_t travaScr = PTHREAD_MUTEX_INITIALIZER;
 static ScrobbleEstado scrEstado;
-static struct { int acao; char id[64]; double pct; int tem; } scrPend;
+// O alvo chega congelado pelo player. O trabalhador nao volta a consultar a
+// ficha: isso poderia resolver start/pause/stop em snapshots diferentes. Sem
+// TVDB provado pela lista final, conserva o par numerico escolhido; ids TMDB
+// ou Trakt isolados continuam no fallback numerico em vez de prova tardia.
+typedef struct ScrPendente {
+  int acao; TraktScrobbleAlvo alvo; double pct; HistoricoPedido pedido; struct ScrPendente *proximo;
+} ScrPendente;
+static ScrPendente *scrPrimeiro, *scrUltimo;
 static int scrFioVivo;
 
-static void enviarScrobble(int acao, const char *id, double pct) {
+static void enviarScrobble(int acao, const TraktScrobbleAlvo *alvo, double pct, HistoricoPedido pedido) {
   const char *cab[4];
   char aut[200], chave[140], corpo[400], url[64], *r;
   int status = 0;
-  snprintf(aut, sizeof aut, "Authorization: Bearer %s", token);
-  snprintf(chave, sizeof chave, "trakt-api-key: %s", cliente);
-  cab[0] = aut; cab[1] = "trakt-api-version: 2"; cab[2] = chave; cab[3] = NULL;
-  scrobble_corpo(corpo, sizeof corpo, id, pct);
+  if (!cabecalhosCongelados(pedido, cab, aut, sizeof aut, chave, sizeof chave)) return;
+  scrobble_corpo_alvo(corpo, sizeof corpo, alvo, pct);
   snprintf(url, sizeof url, "https://api.trakt.tv/scrobble/%s", scrobble_nome(acao));
   r = rede_postar_st(url, 20, cab, corpo, &status);
   // O log NUNCA leva o token. rede_postar devolvia corpo nao nulo tambem em
   // 401/422, e o log antigo dizia "ok" para isso: o erro ficava invisivel.
   if (status >= 200 && status < 300)
-    printf("[trakt] %s %s %.1f%% -> ok (%d)\n", scrobble_nome(acao), id, pct, status);
+    printf("[trakt] %s %s %.1f%% -> ok (%d)\n", scrobble_nome(acao), alvo->id, pct, status);
   else if (status == 409)
-    printf("[trakt] %s %s %.1f%% -> 409 ja registrado, ignorado\n", scrobble_nome(acao), id, pct);
+    printf("[trakt] %s %s %.1f%% -> 409 ja registrado, ignorado\n", scrobble_nome(acao), alvo->id, pct);
   else
-    printf("[trakt] %s %s %.1f%% -> FALHOU http=%d%s%.80s\n", scrobble_nome(acao), id, pct,
+    printf("[trakt] %s %s %.1f%% -> FALHOU http=%d%s%.80s\n", scrobble_nome(acao), alvo->id, pct,
            status, r && *r ? " corpo=" : "", r ? r : "");
   fflush(stdout);
   free(r);
@@ -2169,14 +2477,16 @@ static void enviarScrobble(int acao, const char *id, double pct) {
 static void *fioScrobble(void *u) {
   (void)u;
   for (;;) {
-    int acao; char id[64]; double pct;
+    int acao; TraktScrobbleAlvo alvo; double pct; HistoricoPedido pedido;
     pthread_mutex_lock(&travaScr);
-    if (!scrPend.tem) { scrFioVivo = 0; pthread_mutex_unlock(&travaScr); return NULL; }
-    acao = scrPend.acao; pct = scrPend.pct;
-    snprintf(id, sizeof id, "%s", scrPend.id);
-    scrPend.tem = 0;
+    if (!scrPrimeiro) { scrFioVivo = 0; pthread_mutex_unlock(&travaScr); return NULL; }
+    ScrPendente *pendente = scrPrimeiro;
+    scrPrimeiro = pendente->proximo; if (!scrPrimeiro) scrUltimo = NULL;
+    acao = pendente->acao; pct = pendente->pct; pedido = pendente->pedido;
+    alvo = pendente->alvo;
+    memset(pendente, 0, sizeof *pendente); free(pendente);
     pthread_mutex_unlock(&travaScr);
-    enviarScrobble(acao, id, pct);
+    enviarScrobble(acao, &alvo, pct, pedido);
   }
 }
 
@@ -2190,16 +2500,25 @@ static int recusar(int evento) {
 }
 
 // Enfileira. Devolve a acao decidida (SCR_NADA quando nao ha o que mandar).
-int trakt_scrobble(int evento, const char *imdb, double posSeg, double durSeg, double assistidoSeg,
-                   int assistiu) {
+int trakt_scrobble_alvo(int evento, const TraktScrobbleAlvo *alvo, double posSeg,
+                        double durSeg, double assistidoSeg, int assistiu) {
   int acao;
   double pct;
   pthread_t t;
+  (void)assistiu;
+  const char *imdb = alvo ? alvo->id : NULL;
   if (!ligado || !imdb || !*imdb || !isfinite(posSeg) || !isfinite(durSeg) ||
-      !isfinite(assistidoSeg) || durSeg < 120.0 || assistidoSeg < 5.0) return recusar(evento);
+      !isfinite(assistidoSeg) || durSeg < 120.0) return recusar(evento);
+  // PARIDADE COM O NUVIOTV OFICIAL: o start exige reproducao continua (o player
+  // so o pede depois de PLR_SCR_TOCOU_S), mas a SAIDA fala pela posicao, como
+  // o flushPlaybackSnapshotForSwitchOrExit de la — inclusive depois de um seek.
+  if (evento != SCR_EV_SAIU && assistidoSeg < 5.0) return recusar(evento);
+  if (evento == SCR_EV_SAIU && (posSeg < 1.0 || assistidoSeg < 1.0)) return recusar(evento);
   pct = 100.0 * posSeg / durSeg;
-  // Valida ANTES da vaga pendente: nem um stop sem reproducao entra na fila.
-  if (evento == SCR_EV_SAIU && pct >= 90.0 && !assistiu) return recusar(evento);
+  // As validacoes acima vem ANTES da vaga pendente: nem um stop sem reproducao
+  // entra na fila.
+  HistoricoPedido pedido = historicoPedido();
+  if (!pedido.aut[0] || !nv_perfil_sessao_travar(pedido.sessao)) return recusar(evento);
   pthread_mutex_lock(&travaScr);
   acao = scrobble_decidir(&scrEstado, evento, imdb, pct);
   if (acao != SCR_NADA) {
@@ -2208,8 +2527,23 @@ int trakt_scrobble(int evento, const char *imdb, double posSeg, double durSeg, d
              posSeg, durSeg, assistidoSeg, imdb);
       fflush(stdout);
     }
-    scrPend.acao = acao; scrPend.pct = pct; scrPend.tem = 1;
-    snprintf(scrPend.id, sizeof scrPend.id, "%s", imdb);
+    // Coalesce only within an opening. B's start must never overwrite A's
+    // queued final pause/stop while A's previous request is still in flight.
+    ScrPendente *pendente = scrUltimo;
+    if (!pendente || pendente->pedido.sessao != pedido.sessao ||
+        pendente->pedido.credencial != pedido.credencial ||
+        strcmp(pendente->alvo.id, alvo->id) || pendente->alvo.tvdbEp != alvo->tvdbEp) {
+      pendente = calloc(1, sizeof *pendente);
+      if (pendente) {
+        if (scrUltimo) scrUltimo->proximo = pendente; else scrPrimeiro = pendente;
+        scrUltimo = pendente;
+      }
+    }
+    if (!pendente) { acao = SCR_NADA; }
+    else {
+      pendente->acao = acao; pendente->pct = pct; pendente->pedido = pedido;
+      pendente->alvo = *alvo;
+    }
     if (!scrFioVivo) {
       scrFioVivo = 1;
       if (pthread_create(&t, NULL, fioScrobble, NULL) != 0) scrFioVivo = 0;
@@ -2217,7 +2551,15 @@ int trakt_scrobble(int evento, const char *imdb, double posSeg, double durSeg, d
     }
   }
   pthread_mutex_unlock(&travaScr);
+  nv_perfil_sessao_destravar();
   return acao;
+}
+
+int trakt_scrobble(int evento, const char *imdb, double posSeg, double durSeg,
+                   double assistidoSeg, int assistiu) {
+  TraktScrobbleAlvo alvo = {{0}, 0};
+  if (imdb) snprintf(alvo.id, sizeof alvo.id, "%s", imdb);
+  return trakt_scrobble_alvo(evento, &alvo, posSeg, durSeg, assistidoSeg, assistiu);
 }
 
 // Saida do player: stop (>= 90%) ou pause, como sempre foi.
@@ -2235,176 +2577,84 @@ void trakt_marcar(const char *imdb, double posSeg, double durSeg, double assisti
 // titulo que ja estava na lista, e um segundo toque adicionaria de novo.
 // ci->naLista ja e preenchido por trakt_lista na descoberta; o que faltava era
 // manter esse campo em dia depois de uma escrita nossa.
-static char alvoLista[24];
-static char alvoListaTipo[8];
-static int  alvoAdicionar, fioListaVivo;
-static pthread_t fioLista;
-
-static void *enviarLista(void *u) {
-  const char *cab[4];
-  char aut[200], chave[140], url[120], corpo[200], id[24], tipoItemBuf[8];
-  char *resp;
-  int status = 0, confirmado;
-  int adicionar;
-  (void)u;
-  pthread_mutex_lock(&travaLista);
-  snprintf(id, sizeof id, "%s", alvoLista);
-  snprintf(tipoItemBuf, sizeof tipoItemBuf, "%s", alvoListaTipo);
-  adicionar = alvoAdicionar;
-  pthread_mutex_unlock(&travaLista);
-  if (!trakt_cabecalhos(cab, aut, sizeof aut, chave, sizeof chave)) {
-    estadoEscrever(&listaEstado, TK_OP_FALHA);
-    pthread_mutex_lock(&travaLista); fioListaVivo = 0; pthread_mutex_unlock(&travaLista);
-    return NULL;
-  }
-  // O tipo faz parte da intencao: mandar filme e serie juntos deixa a API
-  // resolver o IMDb no escopo errado e torna a confirmacao ambigua.
-  if (!strcmp(tipoItemBuf, "series"))
-    snprintf(corpo, sizeof corpo, "{\"shows\":[{\"ids\":{\"imdb\":\"%s\"}}]}", id);
-  else
-    snprintf(corpo, sizeof corpo, "{\"movies\":[{\"ids\":{\"imdb\":\"%s\"}}]}", id);
-  snprintf(url, sizeof url, "https://api.trakt.tv/sync/watchlist%s",
-           adicionar ? "" : "/remove");
-  resp = rede_postar_st(url, 20, cab, corpo, &status);
-  confirmado = status >= 200 && status < 300;
-  estadoEscrever(&listaEstado, confirmado ? TK_OP_CONFIRMADA : TK_OP_FALHA);
-  printf("[trakt] watchlist %s %s (%s) -> %s (HTTP %d)\n",
-         adicionar ? "add" : "del", id, tipoItemBuf,
-         confirmado ? "confirmado" : "falhou", status);
-  fflush(stdout);
-  free(resp);
+typedef struct {
+  char id[24], tipo[8]; int adicionar; HistoricoPedido pedido;
+} ComandoTracker;
+static int fioListaVivo, fioHistVivo;
+static uint64_t listaSessao, histSessao;
+static void escritasAbrirSessao(void) {
+  pthread_mutex_lock(&travaScr);
+  memset(&scrEstado, 0, sizeof scrEstado);
+  // Keep an already queued final outgoing action with its immutable auth.
+  pthread_mutex_unlock(&travaScr);
+  escritasEsquecerOperacoes();
+}
+static void escritasEsquecerOperacoes(void) {
   pthread_mutex_lock(&travaLista); fioListaVivo = 0; pthread_mutex_unlock(&travaLista);
-  return NULL;
-}
-
-// --- marcar/desmarcar como ASSISTIDO -----------------------------------------
-//
-// Endpoint DIFERENTE do trakt_marcar: aquele e /scrobble/pause ("parei aqui"),
-// que o player usa ao sair. Este e /sync/history ("assisti"), que e o que o
-// botao do olho quer dizer.
-//
-// Nao dava para reaproveitar trakt_marcar: ele guarda `durSeg <= 1.0 -> return`
-// para nao mandar scrobble com duracao invalida, e o chamador do olho passava
-// exatamente dur=1.0 — a funcao voltava na primeira linha e NADA era enviado. O
-// botao parecia funcionar (o espelho local mudava) e o Trakt nunca sabia.
-static pthread_t fioHist;
-static int       fioHistVivo, histAdicionar;
-static char      alvoHist[24];
-static char      alvoHistTipo[8];
-static HistoricoPedido alvoHistPedido;
-
-static void *enviarHistorico(void *u) {
-  const char *cab[4];
-  char aut[200], chave[140], url[120], corpo[200], id[24], tipoItemBuf[8];
-  char *resp;
-  int status = 0, confirmado;
-  int marcar;
-  HistoricoPedido pedido;
-  (void)u;
-  pthread_mutex_lock(&travaHistorico);
-  snprintf(id, sizeof id, "%s", alvoHist);
-  snprintf(tipoItemBuf, sizeof tipoItemBuf, "%s", alvoHistTipo);
-  marcar = histAdicionar;
-  pedido = alvoHistPedido;
-  pthread_mutex_unlock(&travaHistorico);
-  if (!cabecalhosPedido(pedido, cab, aut, sizeof aut, chave, sizeof chave)) {
-    estadoEscrever(&historicoEstado, TK_OP_FALHA);
-    pthread_mutex_lock(&travaHistorico); fioHistVivo = 0; pthread_mutex_unlock(&travaHistorico);
-    return NULL;
-  }
-  // O escopo do comando e explicito. Para serie, o alvo e o show, nao um
-  // episodio derivado de progresso e nem um segundo vetor de tipo oposto.
-  if (!strcmp(tipoItemBuf, "series"))
-    snprintf(corpo, sizeof corpo, "{\"shows\":[{\"ids\":{\"imdb\":\"%s\"}}]}", id);
-  else
-    snprintf(corpo, sizeof corpo, "{\"movies\":[{\"ids\":{\"imdb\":\"%s\"}}]}", id);
-  snprintf(url, sizeof url, "https://api.trakt.tv/sync/history%s",
-           marcar ? "" : "/remove");
-  resp = rede_postar_st(url, 20, cab, corpo, &status);
-  confirmado = status >= 200 && status < 300 &&
-    historicoDefinirPedido(id, tipoItemBuf, marcar, pedido);
-  estadoEscrever(&historicoEstado, confirmado ? TK_OP_CONFIRMADA : TK_OP_FALHA);
-  printf("[trakt] historico %s %s (%s) -> %s (HTTP %d)\n",
-         marcar ? "add" : "del", id, tipoItemBuf,
-         confirmado ? "confirmado" : "falhou", status);
-  fflush(stdout);
-  free(resp);
   pthread_mutex_lock(&travaHistorico); fioHistVivo = 0; pthread_mutex_unlock(&travaHistorico);
+  estadoEscrever(&listaEstado, TK_OP_NENHUMA);
+  estadoEscrever(&historicoEstado, TK_OP_NENHUMA);
+}
+static void *enviarComando(void *u, int historico) {
+  ComandoTracker *a = u;
+  const char *cab[4]; char aut[200], chave[140], url[120], corpo[200];
+  int status = 0, confirmado = 0; char *resp = NULL;
+  if (cabecalhosCongelados(a->pedido, cab, aut, sizeof aut, chave, sizeof chave)) {
+    snprintf(corpo, sizeof corpo, "{\"%s\":[{\"ids\":{\"imdb\":\"%s\"}}]}",
+             !strcmp(a->tipo, "series") ? "shows" : "movies", a->id);
+    snprintf(url, sizeof url, "https://api.trakt.tv/sync/%s%s",
+             historico ? "history" : "watchlist", a->adicionar ? "" : "/remove");
+    resp = rede_postar_st(url, 20, cab, corpo, &status);
+    confirmado = status >= 200 && status < 300;
+    if (historico && confirmado)
+      confirmado = historicoDefinirPedido(a->id, a->tipo, a->adicionar, a->pedido);
+  }
+  if (pedidoCredTravar(a->pedido)) {
+    pthread_mutex_t *travaOp = historico ? &travaHistorico : &travaLista;
+    pthread_mutex_lock(travaOp);
+    estadoEscrever(historico ? &historicoEstado : &listaEstado,
+                   confirmado ? TK_OP_CONFIRMADA : TK_OP_FALHA);
+    if (historico) fioHistVivo = 0; else fioListaVivo = 0;
+    pthread_mutex_unlock(travaOp);
+    pedidoDestravar();
+  }
+  printf("[trakt] %s %s %s (%s) -> HTTP %d\n", historico ? "historico" : "watchlist",
+         a->adicionar ? "add" : "del", a->id, a->tipo, status);
+  fflush(stdout); free(resp); memset(a, 0, sizeof *a); free(a);
   return NULL;
 }
-
-int trakt_assistido_tipo(const char *imdb, const char *tipo, int marcar) {
-  const char *dp;
-  // TODA RECUSA FALA. As duas saidas daqui eram MUDAS, e o relato do dono foi
-  // exatamente "clico e nao aparece nada no log" — sem uma linha nao ha como
-  // separar "o Trakt esta desligado" de "ja ha um pedido no ar" de "o pedido
-  // saiu e o servidor recusou". Silencio nao se diagnostica.
-  if (!ligado || !imdb || imdb[0] != 't') {
-    printf("[trakt] historico recusado: %s (id=%s)\n",
-           !ligado ? "Trakt desligado" : "id invalido", imdb ? imdb : "(nulo)");
-    fflush(stdout);
-    estadoEscrever(&historicoEstado, TK_OP_FALHA);
-    return 0;
+static void *enviarLista(void *u) { return enviarComando(u, 0); }
+static void *enviarHistorico(void *u) { return enviarComando(u, 1); }
+static int iniciarComando(const char *imdb, const char *tipo, int adicionar, int historico) {
+  pthread_t fio;
+  ComandoTracker *a;
+  pthread_mutex_t *travaOp = historico ? &travaHistorico : &travaLista;
+  volatile int *estado = historico ? &historicoEstado : &listaEstado;
+  if (!imdb || imdb[0] != 't') { estadoEscrever(estado, TK_OP_FALHA); return 0; }
+  a = calloc(1, sizeof *a); if (!a) return 0;
+  a->pedido = historicoPedido();
+  if (!a->pedido.aut[0] || !pedidoTravar(a->pedido)) { free(a); return 0; }
+  pthread_mutex_lock(travaOp);
+  int *vivo = historico ? &fioHistVivo : &fioListaVivo;
+  uint64_t *sessao = historico ? &histSessao : &listaSessao;
+  if (*vivo && *sessao == a->pedido.sessao) {
+    pthread_mutex_unlock(travaOp); pedidoDestravar(); free(a); return 0;
   }
-  pthread_mutex_lock(&travaHistorico);
-  if (fioHistVivo) {
-    pthread_mutex_unlock(&travaHistorico);
-    // ESTA E A SAIDA QUE MAIS ENGANA: o pedido anterior ainda esta no ar (ate
-    // 20 s de timeout), a funcao devolve 0 e o modal mostra falha sem que nada
-    // tenha sido tentado. Agora ela DIZ, e escreve o estado — sem isso o modal
-    // ficava com a mesma cara de "nao fez nada" que uma recusa do servidor.
-    printf("[trakt] historico ocupado: ja ha um pedido no ar, %s ignorado\n", imdb);
-    fflush(stdout);
-    estadoEscrever(&historicoEstado, TK_OP_FALHA);
-    return 0;
-  }
-  // "tt123:2:5" (episodio) vira "tt123": o historico e do TITULO.
-  dp = strchr(imdb, ':');
-  { size_t k = dp ? (size_t)(dp - imdb) : strlen(imdb);
-    if (k >= sizeof alvoHist) k = sizeof alvoHist - 1;
-    memcpy(alvoHist, imdb, k); alvoHist[k] = 0; }
-  snprintf(alvoHistTipo, sizeof alvoHistTipo, "%s", tipo_item(tipo, imdb));
-  histAdicionar = marcar;
-  alvoHistPedido = historicoPedido();
-  estadoEscrever(&historicoEstado, TK_OP_PENDENTE);
-  fioHistVivo = 1;
-  pthread_mutex_unlock(&travaHistorico);
-  if (pthread_create(&fioHist, NULL, enviarHistorico, NULL) != 0) {
-    pthread_mutex_lock(&travaHistorico); fioHistVivo = 0; pthread_mutex_unlock(&travaHistorico);
-    estadoEscrever(&historicoEstado, TK_OP_FALHA);
-    return 0;
-  }
-  else pthread_detach(fioHist);
-  return 1;
+  size_t k = strcspn(imdb, ":"); if (k >= sizeof a->id) k = sizeof a->id - 1;
+  memcpy(a->id, imdb, k); a->id[k] = 0;
+  snprintf(a->tipo, sizeof a->tipo, "%s", tipo_item(tipo, imdb)); a->adicionar = adicionar;
+  *vivo = 1; *sessao = a->pedido.sessao; estadoEscrever(estado, TK_OP_PENDENTE);
+  int ok = pthread_create(&fio, NULL, historico ? enviarHistorico : enviarLista, a) == 0;
+  if (ok) pthread_detach(fio);
+  else { *vivo = 0; estadoEscrever(estado, TK_OP_FALHA); free(a); }
+  pthread_mutex_unlock(travaOp); pedidoDestravar();
+  return ok;
 }
-
+int trakt_assistido_tipo(const char *imdb, const char *tipo, int marcar) {
+  return iniciarComando(imdb, tipo, marcar, 1);
+}
 int trakt_watchlist_tipo(const char *imdb, const char *tipo, int adicionar) {
-  const char *dp;
-  if (!ligado || !imdb || imdb[0] != 't') {
-    estadoEscrever(&listaEstado, TK_OP_FALHA);
-    return 0;
-  }
-  pthread_mutex_lock(&travaLista);
-  if (fioListaVivo) {
-    pthread_mutex_unlock(&travaLista);
-    return 0;
-  }
-  dp = strchr(imdb, ':');
-  { size_t k = dp ? (size_t)(dp - imdb) : strlen(imdb);
-    if (k >= sizeof alvoLista) k = sizeof alvoLista - 1;
-    memcpy(alvoLista, imdb, k); alvoLista[k] = 0; }
-  snprintf(alvoListaTipo, sizeof alvoListaTipo, "%s", tipo_item(tipo, imdb));
-  alvoAdicionar = adicionar;
-  estadoEscrever(&listaEstado, TK_OP_PENDENTE);
-  fioListaVivo = 1;
-  pthread_mutex_unlock(&travaLista);
-  if (pthread_create(&fioLista, NULL, enviarLista, NULL) != 0) {
-    pthread_mutex_lock(&travaLista); fioListaVivo = 0; pthread_mutex_unlock(&travaLista);
-    estadoEscrever(&listaEstado, TK_OP_FALHA);
-    return 0;
-  }
-  else pthread_detach(fioLista);
-  return 1;
+  return iniciarComando(imdb, tipo, adicionar, 0);
 }
 
 void trakt_assistido(const char *imdb, int marcar) {
@@ -2421,18 +2671,32 @@ void trakt_watchlist(const char *imdb, int adicionar) {
 // decisao do dono. Um pedido por resposta, num fio proprio e destacado; o
 // alvo viaja num bloco alocado, entao duas respostas seguidas nao disputam um
 // buffer global (a reacao e rara: no maximo uma por titulo).
-typedef struct { char id[24]; char tipo[8]; int nota; } AlvoNota;
+typedef struct { char id[40]; char tipo[8]; int nota; HistoricoPedido pedido; } AlvoNota;
+
+int trakt_nota_corpo(char *dst, size_t tam, const char *imdb, const char *tipo, int nota) {
+  char id[24], extra; int t, e, n;
+  if (!dst || !tam || !imdb || strncmp(imdb, "tt", 2) || nota < 0 || nota > 10) return 0;
+  size_t k = strcspn(imdb, ":");
+  if (k < 3 || k >= sizeof id) return 0;
+  for (size_t i = 2; i < k; i++) if (imdb[i] < '0' || imdb[i] > '9') return 0;
+  memcpy(id, imdb, k); id[k] = 0;
+  if (imdb[k]) {
+    if (sscanf(imdb + k, ":%d:%d%c", &t, &e, &extra) != 2 || t < 0 || e < 1) return 0;
+    n = snprintf(dst, tam, "{\"shows\":[{\"ids\":{\"imdb\":\"%s\"},\"seasons\":[{\"number\":%d,\"episodes\":[{\"number\":%d,\"rating\":%d}]}]}]}", id, t, e, nota);
+  } else n = snprintf(dst, tam, "{\"%s\":[{\"rating\":%d,\"ids\":{\"imdb\":\"%s\"}}]}",
+                       tipo && !strcmp(tipo, "series") ? "shows" : "movies", nota, id);
+  return n > 0 && (size_t)n < tam;
+}
 
 static void *enviarNota(void *u) {
   AlvoNota *a = (AlvoNota *)u;
   const char *cab[4];
-  char aut[200], chave[140], corpo[200];
+  char aut[200], chave[140], corpo[300];
   char *resp;
   int status = 0;
-  if (!trakt_cabecalhos(cab, aut, sizeof aut, chave, sizeof chave)) { free(a); return NULL; }
-  snprintf(corpo, sizeof corpo, "{\"%s\":[{\"rating\":%d,\"ids\":{\"imdb\":\"%s\"}}]}",
-           !strcmp(a->tipo, "series") ? "shows" : "movies", a->nota, a->id);
-  resp = rede_postar_st("https://api.trakt.tv/sync/ratings", 20, cab, corpo, &status);
+  if (!cabecalhosCongelados(a->pedido, cab, aut, sizeof aut, chave, sizeof chave)) { free(a); return NULL; }
+  if (!trakt_nota_corpo(corpo, sizeof corpo, a->id, a->tipo, a->nota)) { free(a); return NULL; }
+  resp = rede_postar_st(a->nota ? "https://api.trakt.tv/sync/ratings" : "https://api.trakt.tv/sync/ratings/remove", 20, cab, corpo, &status);
   printf("[trakt] nota %d %s (%s) -> HTTP %d\n", a->nota, a->id, a->tipo, status);
   fflush(stdout);
   free(resp);
@@ -2443,16 +2707,14 @@ static void *enviarNota(void *u) {
 int trakt_avaliar(const char *imdb, const char *tipo, int nota) {
   AlvoNota *a;
   pthread_t f;
-  const char *dp;
-  if (!ligado || !imdb || imdb[0] != 't' || nota < 1 || nota > 10) return 0;
+  char corpo[300];
+  if (!ligado || !trakt_nota_corpo(corpo, sizeof corpo, imdb, tipo, nota)) return 0;
   a = (AlvoNota *)calloc(1, sizeof *a);
   if (!a) return 0;
-  dp = strchr(imdb, ':');
-  { size_t k = dp ? (size_t)(dp - imdb) : strlen(imdb);
-    if (k >= sizeof a->id) k = sizeof a->id - 1;
-    memcpy(a->id, imdb, k); a->id[k] = 0; }
+  snprintf(a->id, sizeof a->id, "%s", imdb);
   snprintf(a->tipo, sizeof a->tipo, "%s", tipo_item(tipo, imdb));
-  a->nota = nota;
+  a->nota = nota; a->pedido = historicoPedido();
+  if (!a->pedido.aut[0]) { free(a); return 0; }
   if (pthread_create(&f, NULL, enviarNota, a) != 0) { free(a); return 0; }
   pthread_detach(f);
   return 1;

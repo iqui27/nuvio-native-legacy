@@ -109,6 +109,9 @@ static void     soltar(uint8_t *px);
 #include <math.h>
 #include <pthread.h>
 #include <stdarg.h>
+#ifdef NV_UM_FIO
+#include "fio1.h"
+#endif
 
 // Prazo do fio de decode, em tempo de relogio desde o envio. O teste da fila
 // compila com um prazo curto para forcar abandono.
@@ -160,6 +163,18 @@ static void soltarJob(int32_t *job) {
   free(job);
 }
 
+// A dead channel has no consumers left: direct jobs can now be reclaimed.
+static void largarCanalMorto(int32_t *job) {
+  if (job[J_ORIGEM] != 2 ||
+      !(__atomic_load_n(&canalEstado, __ATOMIC_ACQUIRE) & CANAL_MORTO)) return;
+  if (__atomic_load_n(&job[J_EST], __ATOMIC_ACQUIRE) == EST_ABERTO) {
+    job[J_W] = job[J_H] = 0;
+    __atomic_store_n(&job[J_EST], EST_PRONTO, __ATOMIC_RELEASE);
+  }
+  else if (__atomic_load_n(&job[J_EST], __ATOMIC_ACQUIRE) == EST_ABANDONADO)
+    __atomic_store_n(&job[J_EST], EST_LARGADO, __ATOMIC_RELEASE);
+}
+
 // Libera os abandonados que o Worker ja largou (estado 5). Barato: a lista so
 // tem o que passou do prazo, e o Worker novo termina cada um em milissegundos.
 static int varrer(void) {
@@ -168,6 +183,7 @@ static int varrer(void) {
   pthread_mutex_lock(&lixoMtx);
   for (j = lixo; j; j = prox) {
     prox = (int32_t *)(intptr_t)j[J_PROX];
+    largarCanalMorto(j);
     if (__atomic_load_n(&j[J_EST], __ATOMIC_ACQUIRE) == EST_LARGADO) {
       if (ant) ant[J_PROX] = (int32_t)(intptr_t)prox; else lixo = prox;
       soltarJob(j);
@@ -233,12 +249,30 @@ void navegador_iniciar(void) {
     D.voo = {};
     Module.nvDec = D;
     var matarCanal = function (quem, e) {
+      // Stop every consumer before C is allowed to reclaim direct jobs.
+      D.morto = true;
+      if (D.w) D.w.terminate();
+      if (D.s) D.s.terminate();
       Atomics.or(HEAP32, pCanal, 4);
       console.log('[webp] ' + quem + ' caiu (' + (e && e.message ? e.message : '?') + '); canal direto desligado');
+      var k;
+      for (k in D.voo) { if (D.voo.hasOwnProperty(k)) { var f = D.voo[k]; delete D.voo[k]; f(); } }
     };
     if (typeof OffscreenCanvas === 'undefined' || typeof Worker === 'undefined') {
       D.morto = true;
       Atomics.or(HEAP32, pCanal, 4);
+      return;
+    }
+    // SEM MEMORIA COMPARTILHADA (VIDAA st/, --um-fio) o Worker nao serve: o
+    // postMessage abaixo COPIARIA o heap inteiro (256 MiB, uma vez por Worker)
+    // e o decode escreveria na copia, que o C nunca le. Medido no Chrome sem
+    // isolamento: a sentinela morria com "is not a shared typed array" no
+    // Atomics.wait. Fica o decode no fio principal, o mesmo caminho de quando
+    // o Worker cai.
+    if (typeof SharedArrayBuffer === 'undefined' || !(wasmMemory.buffer instanceof SharedArrayBuffer)) {
+      D.morto = true;
+      Atomics.or(HEAP32, pCanal, 4);
+      console.log('[webp] sem memoria compartilhada; decode no fio principal');
       return;
     }
     try {
@@ -248,16 +282,12 @@ void navegador_iniciar(void) {
       };
       // Worker morto: o canal direto sai (os pedidos novos voltam ao fio
       // principal), e os pedidos que tinham ido pelo fio principal voltam ao
-      // decode no proprio fio principal. Os que estavam no canal direto
-      // vencem o prazo no C e ficam no aguardo para sempre — no maximo um
-      // por fio de decode, e so se o Worker morrer com eles em voo.
+      // decode no proprio fio principal. Direct jobs fail in the C wait/GC
+      // paths after both consumers have been terminated.
       D.w.onerror = function (e) {
         D.morto = true;
         matarCanal('decodificador.js', e);
-        try { if (D.s) D.s.terminate(); } catch (x) {}
         console.log('[webp] decode volta ao fio principal');
-        var k;
-        for (k in D.voo) { if (D.voo.hasOwnProperty(k)) { var f = D.voo[k]; delete D.voo[k]; f(); } }
       };
       if (typeof MessageChannel === 'undefined') {
         Atomics.or(HEAP32, pCanal, 4);
@@ -298,7 +328,17 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
   // se pudesse seria ele mesmo quem deixaria de rodar o `then`. Hoje o unico
   // chamador e o fio de decode do tex_cache; esta guarda existe para que
   // amanha isto vire NULL em vez de travar o app.
+#ifdef NV_UM_FIO
+  // VIDAA st/ (--um-fio): so ha um fio de JS, e emscripten_is_main_browser_thread()
+  // e sempre verdadeiro — a guarda de cima devolvia NULL a TODO pedido, e WebP
+  // nao tem outro decoder em WASM (arte WebP nunca aparecia). Aqui o fio de
+  // decode e uma FIBRA de src/fio1.c: pode esperar cedendo ao escalonador (ver
+  // o laco do prazo abaixo), como nv_http em rede.c. Fora de fibra continua
+  // nao dando: quem esperaria e o proprio laco que resolve a promessa.
+  if (!fio1_em_fibra()) return NULL;
+#else
   if (emscripten_is_main_browser_thread()) return NULL;
+#endif
   varrer();
   if (!dimensoes(dados, n, &fw, &fh)) return NULL;
   // A MESMA CONTA do Worker (Math.round = floor(x + 0.5)); a linha a mais no
@@ -351,8 +391,13 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
     // So toca no job se ele ainda e ESTE pedido e ainda esta em aberto ou
     // abandonado; um reencaminhamento tardio (onerror) de job ja liberado
     // cai aqui e nao escreve nada.
+    // typeof primeiro: sem isolamento de origem (VIDAA st/) o nome nem existe.
+    var heapCompartilhado = typeof SharedArrayBuffer !== 'undefined' && HEAP32.buffer instanceof SharedArrayBuffer;
+    var lerEstado = function () {
+      return heapCompartilhado ? Atomics.load(HEAP32, pJob) : HEAP32[pJob];
+    };
     var vivo = function () {
-      var e = Atomics.load(HEAP32, pJob);
+      var e = lerEstado();
       return HEAP32[pJob + 7] === seq && (e === 0 || e === 4);
     };
     var fim = function (w, h, ow, oh) {
@@ -360,9 +405,12 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
       HEAP32[pJob + 2] = h;
       HEAP32[pJob + 4] = ow;
       HEAP32[pJob + 5] = oh;
-      // 0 -> 1 entrega ao C; se o C ja desistiu (4), 4 -> 5 larga o job.
-      if (Atomics.compareExchange(HEAP32, pJob, 0, 1) === 4) Atomics.compareExchange(HEAP32, pJob, 4, 5);
-      Atomics.notify(HEAP32, pJob);
+      if (heapCompartilhado) {
+        // 0 -> 1 entrega ao C; se o C ja desistiu (4), 4 -> 5 larga o job.
+        if (Atomics.compareExchange(HEAP32, pJob, 0, 1) === 4) Atomics.compareExchange(HEAP32, pJob, 4, 5);
+        Atomics.notify(HEAP32, pJob);
+      } else if (HEAP32[pJob] === 0) HEAP32[pJob] = 1;
+      else if (HEAP32[pJob] === 4) HEAP32[pJob] = 5;
     };
     // CAMINHO ANTIGO, no fio principal. Fica como reserva: e o que roda
     // quando o Worker nao sobe (sem OffscreenCanvas, arquivo ausente, CSP).
@@ -379,7 +427,7 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
           var w = ow;
           var h = oh;
           if (!vivo()) { if (bmp.close) bmp.close(); return; }
-          if (Atomics.load(HEAP32, pJob) === 4) { if (bmp.close) bmp.close(); fim(0, 0, 0, 0); return; }
+          if (lerEstado() === 4) { if (bmp.close) bmp.close(); fim(0, 0, 0, 0); return; }
           // REDUZ NO CANVAS, nao no heap: o bitmap inteiro vive na memoria do
           // navegador; so o tamanho pedido atravessa para o WASM.
           if (largMax > 0 && ow > largMax) {
@@ -419,6 +467,7 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
   limite = emscripten_get_now() + NV_NAV_PRAZO_MS;
   for (;;) {
     double resta;
+    largarCanalMorto(job);
     if (__atomic_load_n(&job[J_EST], __ATOMIC_ACQUIRE) == EST_PRONTO) break;
     resta = limite - emscripten_get_now();
     if (resta <= 0) {
@@ -441,7 +490,13 @@ uint8_t *navegador_decodificar(const unsigned char *dados, size_t n, const char 
       }
       continue;   // perdeu a corrida para o 0 -> 1: o resultado chegou agora
     }
+#ifdef NV_UM_FIO
+    // Sem futex de verdade: cede as outras fibras e, no fim da fatia do
+    // quadro, ao navegador — e so ai que o `then` do createImageBitmap roda.
+    fio1_ceder();
+#else
     emscripten_futex_wait(&job[J_EST], EST_ABERTO, resta < 250.0 ? resta : 250.0);
+#endif
   }
 
   w  = job[J_W];

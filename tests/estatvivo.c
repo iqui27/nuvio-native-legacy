@@ -22,7 +22,7 @@ int main(void) {
   // ANDROID: bytes contados -> Medido; 5,35 MB em 1 s = 42,8 Mbps.
   ev_zerar(&e);
   in = base();
-  in.vs.bytes = 0; in.vs.bufferSeg = 38; in.vs.bufferAlvoSeg = 50; in.vs.conexoes = 4;
+  in.vs.bytes = 0; in.vs.bufferSeg = 38; in.vs.bufferAlvoSeg = 50; in.vs.poolConexoes = 4; in.vs.conexoes = 0;
   in.vs.primeiroByteMs = 212; in.vs.quadros = 41280; in.vs.quadrosPerdidos = 3;
   snprintf(in.vs.host, sizeof in.vs.host, "cdn-17.exemplo.net");
   in.taxaKbps = 38000;
@@ -32,7 +32,7 @@ int main(void) {
   ev_amostra(&e, 2000, &in, 21, 0);
   assert(e.kbps == 42800 && e.velOrigem == EVO_MEDIDO);
   assert(e.bufOrigem == EVO_MEDIDO && e.bufSeg == 38 && e.bufMb > 180 && e.bufMb < 181);
-  assert(e.servOrigem == EVO_MEDIDO && e.conexoes == 4 && !strcmp(e.host, "cdn-17.exemplo.net"));
+  assert(e.servOrigem == EVO_MEDIDO && e.poolConexoes == 4 && e.conexoes == 0 && !strcmp(e.host, "cdn-17.exemplo.net"));
   assert(e.quadrosOrigem == EVO_MEDIDO && e.perdidos == 3);
   // contador que voltou (reabriu): nao vira numero negativo
   in.vs.bytes = 100;

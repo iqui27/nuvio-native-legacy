@@ -21,7 +21,7 @@
 #include <string.h>
 #include <stdio.h>
 
-typedef struct { char imdb[24]; int temporada, episodio; long long quandoMs; } TkUltimo;
+typedef struct { char imdb[24]; int temporada, episodio; long long quandoMs; int tvdbEp; } TkUltimo;
 
 // Uma linha de episodio do historico (que vem do mais novo para o mais velho).
 // Devolve 1 se criou ou trocou a entrada da serie.
@@ -36,13 +36,20 @@ static inline int tk_ult_anotar(TkUltimo *v, int *n, int max, const char *imdb,
     if (ms < v[k].quandoMs) return 0;
     if (ms == v[k].quandoMs &&
         (t < v[k].temporada || (t == v[k].temporada && e <= v[k].episodio))) return 0;
-    v[k].temporada = t; v[k].episodio = e; v[k].quandoMs = ms;
+    v[k].temporada = t; v[k].episodio = e; v[k].quandoMs = ms; v[k].tvdbEp = 0;
     return 1;
   }
   if (*n >= max) return 0;
   snprintf(v[*n].imdb, sizeof v[*n].imdb, "%s", imdb);
-  v[*n].temporada = t; v[*n].episodio = e; v[*n].quandoMs = ms;
+  v[*n].temporada = t; v[*n].episodio = e; v[*n].quandoMs = ms; v[*n].tvdbEp = 0;
   (*n)++;
+  return 1;
+}
+
+static inline int tk_ult_anotar_tvdb(TkUltimo *v, int *n, int max, const char *id,
+                                    int t, int e, long long ms, int tvdbEp) {
+  if (!tk_ult_anotar(v, n, max, id, t, e, ms)) return 0;
+  for (int k = 0; k < *n; k++) if (!strcmp(v[k].imdb, id)) { v[k].tvdbEp = tvdbEp; break; }
   return 1;
 }
 

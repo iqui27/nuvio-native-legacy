@@ -32,9 +32,9 @@ int main(void) {
 
   p = cwo_ordenar(v, 6, CWO_PADRAO, AGORA, perm);
   assert(p == 6);
-  { static const int esperado[] = {0, 5, 1, 2, 3, 4};
+  { static const int esperado[] = {0, 1, 2, 3, 4, 5};
     for (i = 0; i < 6; i++) assert(perm[i] == esperado[i]); }
-  puts("ok  padrao: pausados primeiro, recencia dentro de cada grupo");
+  puts("ok  default: last-watched order across paused and next-up items");
 
   { static const int esperado[6] = { 0, 5, 2, 4, 1, 3 };
     p = cwo_ordenar(v, 6, CWO_STREAMING, AGORA, perm);
@@ -62,8 +62,8 @@ int main(void) {
   cwo_marcar_estreia("tt1:1:2", AGORA + DIA);   // regravar troca, nao duplica
   assert(cwo_estreia("tt1:1:2") == AGORA + DIA);
   { char id[32];
-    for (i = 0; i < 200; i++) { snprintf(id, sizeof id, "tt9:%d:1", i); cwo_marcar_estreia(id, i); }
-    assert(cwo_estreia("tt9:199:1") == 199);   // cheia: a mais nova fica
+    for (i = 0; i < 201; i++) { snprintf(id, sizeof id, "tt9:%d:1", i); cwo_marcar_estreia(id, i); }
+    assert(cwo_estreia("tt9:200:1") == 200);   // cheia: a mais nova fica
     assert(cwo_estreia("tt9:0:1") == CWO_SEM_DATA); }
   puts("ok  estreias: regravar troca, tabela cheia gira");
 
@@ -73,6 +73,16 @@ int main(void) {
     cwo_publicar_futuros(NULL, 0);
     assert(!cwo_e_futuro("tt5:2:1")); }
   puts("ok  futuros publicados: substitui o conjunto inteiro");
+  // 0 pausados + 39 proximos nao exibidos, Separar: cwo_corte devolve 39 e
+  // todos tem de caber na tabela (antes CWO_FUT_MAX era 36).
+  { int mp, mf, k; char buf[40][16]; const char *ids[40];
+    cwo_corte(0, 39, CWO_FILEIRA_MAX, &mp, &mf);
+    assert(mp == 0 && mf == 39);
+    for (k = 0; k < 39; k++) { snprintf(buf[k], sizeof buf[k], "ttF:%d:1", k); ids[k] = buf[k]; }
+    cwo_publicar_futuros(ids, 39);
+    for (k = 0; k < 39; k++) assert(cwo_e_futuro(buf[k]));
+    cwo_publicar_futuros(NULL, 0); }
+  puts("ok  39 futuros publicados cabem na fileira");
   // O corte com reserva (Brothers, C9 24/09: 21 exibidos + 1 futuro, 12 lugares).
   { int mp, mf;
     cwo_corte(21, 1, 12, &mp, &mf); assert(mp == 11 && mf == 1);

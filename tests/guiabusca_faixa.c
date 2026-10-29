@@ -5,6 +5,7 @@
 //
 // Contrato: com `out`, o retorno e min(total, cap); sem `out`, e o total.
 // Roda com SANITIZE=1 (ASan): antes do conserto, stack-buffer-overflow.
+#include "stub_perfisessao.h"
 #include "../src/xtepg.c"
 #include "nvtmp.h"
 #include "../src/epg.h"
@@ -15,6 +16,10 @@
 #include <time.h>
 
 // --- dubles ------------------------------------------------------------------
+int rede_baixar_fluxo(const char *url, int s, const char *const *cab,
+    int (*cb)(const char *, size_t, void *), void *u, long long max, int *st, long long *n) {
+  (void)url; (void)s; (void)cab; (void)cb; (void)u; (void)max; (void)st; (void)n; return 0;
+}
 char *rede_baixar_bin(const char *u, int s, long *n) { (void)u; (void)s; (void)n; return 0; }
 char *rede_baixar_bin_medido_controle(const char *url, int segundos, const char *const *cab,
                                       const RedeControle *c, long *tam, RedeMedida *m) {

@@ -53,6 +53,7 @@ int  avisos_sessao_anterior_caiu(void);
 // Um item por `id`; o id leva o numero da sessao, entao cada queda avisa uma vez.
 void avisos_modo_seguro(const char *id, const char *titulo, const char *texto);
 void avisos_iniciar(void);   // depois de dados_iniciar; grava a marca de sessao
+void avisos_abrir_sessao(void); // zera UI/avisos pessoais, conserva avisos do aparelho
 void avisos_encerrar(void);  // saida limpa: apaga a marca
 // Ultimo sinal de vida na marca de sessao: evento de janela ("oculto",
 // "visivel", "foco-perdido"...) grava na hora; NULL e a batida periodica

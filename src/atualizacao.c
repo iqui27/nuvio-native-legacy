@@ -282,7 +282,7 @@ static float rolar, rolarAlvo, notasH, vistaH;
 static ToqueRolagem toqueNotas;
 static int toqueNotasRolar(const PonteiroRolagem *e) {
   int r = toquerol_evento(&toqueNotas, e);
-  if (toqueNotas.livre) rolarAlvo = rolar;
+  if (toquerol_livre(&toqueNotas)) rolarAlvo = rolar;
   return r;
 }
 #endif
@@ -465,9 +465,17 @@ static int acharAnexo(const char *corpo, char *dst, size_t tam, char *hash, size
 #endif
 
 #ifdef NV_ANDROID
-// Contrato do anexo: "Nuvio-<versao>-android.apk". "-android-debug.apk" e
-// "-android-preview.N.apk" NAO terminam em "-android.apk", entao nao casam.
+// Match the installed variant exactly. Pointer width follows the running
+// process, including 32-bit Fire OS on 64-bit hardware.
+#ifdef NV_APK_LITE
+#if UINTPTR_MAX == UINT32_MAX
+#define AT_APK_SUFIXO "-android-lite-armv7.apk"
+#else
+#define AT_APK_SUFIXO "-android-lite-arm64.apk"
+#endif
+#else
 #define AT_APK_SUFIXO "-android.apk"
+#endif
 static int acharApk(const char *corpo, char *dst, size_t tam, char *hash, size_t tamHash) {
   return acharAnexo(corpo, dst, tam, hash, tamHash, AT_APK_SUFIXO);
 }
@@ -554,6 +562,12 @@ static int fioConsulta(void *arg) {
 #endif
   (void)arg;
   body[0] = 0;
+#ifdef NV_VIDAA
+  SDL_LockMutex(mtx);
+  pronto = 1;
+  SDL_UnlockMutex(mtx);
+  return 0;  // hosted app e sempre current
+#endif
   corpo = rede_baixar(AT_URL, 12);
   if (!corpo) { printf("[atualizacao] sem resposta do GitHub\n"); fflush(stdout); }
   else {
@@ -630,8 +644,18 @@ static int fioInstalar(void *arg) {
    * an isolated diagnostic app, including through a stale update card. */
   (void)arg; return 0;
 #endif
+#ifdef NV_IOS
+  // iOS: the App Store / TestFlight installs updates; the card stays an advice.
+  (void)arg; return 0;
+#else
   char cmd[900];
   (void)arg;
+#ifdef NV_VIDAA
+  SDL_LockMutex(mtx);
+  pronto = 1;
+  SDL_UnlockMutex(mtx);
+  return 0;  // hosted app e sempre current
+#endif
   { char extra[110] = "";
     if (ipkHash[0]) snprintf(extra, sizeof extra, ",\"ipkHash\":\"%s\"", ipkHash);
     snprintf(cmd, sizeof cmd,
@@ -693,6 +717,7 @@ static int fioInstalar(void *arg) {
   SDL_LockMutex(mtx); estado = AT_FALHOU; SDL_UnlockMutex(mtx);
   printf("[atualizacao] instalador nao respondeu no prazo\n"); fflush(stdout);
   return 0;
+#endif
 }
 
 // 1 quando existe o que instalar: alvo que sabe, release com .ipk anexado e
@@ -830,6 +855,7 @@ static int fioInstalarApk(void *arg) {
     apkFalhou(); return 0;
   }
   mkdir(dir, 0755);
+  if (!android_preparar_apk(arq)) { apkFalhou(); return 0; }
   // Ja baixado e conferido numa tentativa anterior?
   f = fopen(arq, "rb");
   if (f) {
@@ -1093,7 +1119,7 @@ void atualizacao_abrir(void) {
 void atualizacao_evento(const SDL_Event *e) {
 #ifdef NV_TOUCH_UI
   if (toquerol_navegacao(e)) {
-    if (toqueNotas.livre) rolarAlvo = rolar;
+    if (toquerol_livre(&toqueNotas)) rolarAlvo = rolar;
     toquerol_limpar(&toqueNotas);
   }
 #endif
@@ -1257,7 +1283,7 @@ void atualizacao_atualizar(float dt, Uint32 agora) {
   // Rolagem suave, mas curta (~120 ms para chegar): quem segura a seta quer
   // ver o texto andar, nao esperar.
 #ifdef NV_TOUCH_UI
-  if (!toqueNotas.livre)
+  if (!toquerol_livre(&toqueNotas))
 #endif
   { float d = rolarAlvo - rolar, f = dt * 1000.0f / 120.0f;
     if (f > 1.0f) f = 1.0f;
@@ -1526,10 +1552,7 @@ void atualizacao_desenhar(Uint32 agora) {
   if (ajustes_vidro()) {
     gfx_rect((GfxRect){ R.x - 20.0f, R.y - 6.0f, R.w + 40.0f, R.h + 40.0f }, 0, GFX_SOMBRA,
              1.0f, 0, 0, 0.5f, 0, 0, 0, 0.36f * a);
-    gfx_cor(R, raio, 0.055f, 0.059f, 0.071f, (0.80f + 0.10f * tr) * a);
-    // radial-gradient(120% 80% at 22% -40%, branco 10% -> 0 a 60%)
-    gfx_luz_canto(R, raio, R.w * 0.22f, -R.h * 0.40f, (R.w > R.h ? R.w : R.h) * 0.62f,
-                  1, 1, 1, 0.10f * a);
+    gfx_vidro_material(R, raio, GFX_VIDRO_DENS + 0.10f * tr, a);   // + gfx_vidro_luz
   } else {
     gfx_rect((GfxRect){ R.x - 16.0f, R.y - 4.0f, R.w + 32.0f, R.h + 30.0f }, 0, GFX_SOMBRA,
              1.0f, 0, 0, 0.5f, 0, 0, 0, 0.45f * a);

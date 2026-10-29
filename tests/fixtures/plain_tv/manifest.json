@@ -1,0 +1,10 @@
+{
+  "id": "org.example.plaintv",
+  "version": "1.0.0",
+  "name": "Plain TV",
+  "description": "Minimal Stremio live TV fixture",
+  "types": ["tv"],
+  "catalogs": [{"type": "tv", "id": "x", "name": "X"}],
+  "resources": ["catalog", "meta", "stream"],
+  "idPrefixes": ["x:"]
+}

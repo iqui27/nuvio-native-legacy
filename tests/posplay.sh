@@ -5,7 +5,7 @@ set -eu
 cd "$(dirname "$0")/.."
 sources=()
 for source in src/*.c src/dts/*.c; do
-  if [ "$source" != src/main.c ]; then sources+=("$source"); fi
+  if [ "$source" != src/main.c ] && [ "$source" != src/posplay.c ]; then sources+=("$source"); fi
 done
 flags=(-DNV_SHOT_HOOKS)
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi

@@ -1,4 +1,5 @@
 // PROXY DE TS DA LIVE TV. Ver proxyts.h para o porque.
+#include "mediaurl.h"
 #include "proxyts.h"
 #include <string.h>
 
@@ -28,6 +29,9 @@ const char *proxyts_resolver(const char *url, char *buf, size_t n) {
 #else
 
 #include "rede.h"
+#include "livetv_regras.h"
+// Keep the network proxy independent of SDL headers.
+extern int ajustes_livetv_resolucao(void);
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netinet/in.h>
@@ -56,7 +60,7 @@ const char *proxyts_resolver(const char *url, char *buf, size_t n) {
 
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 static int sockOuvir = -1, porta;
-static char fonteAtual[4096];
+static char fonteAtual[NV_MEDIA_URL_MAX];
 // Cabecalhos do addon: os pendentes (proxima sessao) e os da sessao em curso.
 static char cabsPendentes[512], cabsAtual[512];
 static atomic_uint sessaoAtual, sessaoRedirecionada;
@@ -100,11 +104,13 @@ static void pxJuntar(const char *base, const char *rel, char *dst, size_t n) {
   snprintf(dst, n, "%.*s/%s", (int)barra, base, rel);
 }
 
-// Le uma playlist (master ou de midia). Na master, fica a primeira variante
-// (a ordem do provedor) em uri[0] com mestre=1.
+// Parse a media/master playlist. Automatic uses the highest variant; an
+// explicit resolution uses the nearest height. Re-read settings on each open.
 static int pxLer(const char *texto, const char *base, PxLista *l) {
   const char *p = texto;
-  int proximaEhVariante = 0;
+  int proximaEhVariante = 0, altura = 0, melhorAltura = -1;
+  int alvo = nv_res_opcao_altura(ajustes_livetv_resolucao()), melhorDif = 1 << 30;
+  long banda = 0, melhorBanda = -1;
   memset(l, 0, sizeof *l);
   l->alvo = 6;
   if (!texto || strncmp(texto, "#EXTM3U", 7)) return 0;
@@ -117,10 +123,21 @@ static int pxLer(const char *texto, const char *base, PxLista *l) {
     else if (!strncmp(linha, "#EXT-X-ENDLIST", 14)) l->fim = 1;
     else if (!strncmp(linha, "#EXT-X-KEY:", 11) && !strstr(linha, "METHOD=NONE")) l->cifrado = 1;
     else if (!strncmp(linha, "#EXT-X-MAP:", 11)) l->fmp4 = 1;
-    else if (!strncmp(linha, "#EXT-X-STREAM-INF", 17)) proximaEhVariante = 1;
+    else if (!strncmp(linha, "#EXT-X-STREAM-INF", 17)) {
+      const char *r = strstr(linha, "RESOLUTION="), *b = strstr(linha, "BANDWIDTH=");
+      int largura;
+      altura = 0; banda = b ? atol(b + 10) : 0;
+      if (r) sscanf(r + 11, "%dx%d", &largura, &altura);
+      proximaEhVariante = 1;
+    }
     else if (linha[0] && linha[0] != '#') {
       if (proximaEhVariante) {
-        if (!l->mestre) { l->mestre = 1; pxJuntar(base, linha, l->uri[0], sizeof l->uri[0]); l->n = 1; }
+        int dif = abs(altura - alvo);
+        if (!l->mestre || (alvo ? dif < melhorDif :
+            altura > melhorAltura || (altura == melhorAltura && banda > melhorBanda))) {
+          melhorAltura = altura; melhorBanda = banda; melhorDif = dif;
+          l->mestre = 1; pxJuntar(base, linha, l->uri[0], sizeof l->uri[0]); l->n = 1;
+        }
         proximaEhVariante = 0;
       } else if (!l->mestre && l->n < PX_SEG_MAX) {
         pxJuntar(base, linha, l->uri[l->n], sizeof l->uri[0]);
@@ -187,7 +204,7 @@ static int pxEnviar(int s, const void *b, size_t n) {
 
 typedef struct PxFluxo PxFluxo;
 typedef struct PxConexao {
-  int s; unsigned sessao; char fonte[4096]; volatile int cancelar;
+  int s; unsigned sessao; char fonte[NV_MEDIA_URL_MAX]; volatile int cancelar;
   PxFluxo *fluxo;
   struct PxConexao *proxima;
   uint64_t pos;
@@ -268,13 +285,13 @@ static void pxDormir(const PxConexao *c, int ms) {
 // e o endereco pedido. O redirecionamento da FONTE ja foi resolvido uma vez em
 // pxAtender (rede_url_final_cab), e e esse endereco que chega aqui.
 static int pxPlaylist(const char *url, const char *cabs, PxLista *l, char *final, size_t nf) {
-  char atual[4096];
+  char atual[NV_MEDIA_URL_MAX];
   int volta;
   snprintf(atual, sizeof atual, "%s", url);
   for (volta = 0; volta < 3; volta++) {
     long n = 0;
     int st = 0, er = 0;
-    char fin[4096];
+    char fin[NV_MEDIA_URL_MAX];
     char *b;
     fin[0] = 0;
     if (cabs && *cabs) {
@@ -352,7 +369,7 @@ static int pxEntregar(PxConexao *c, const void *b, size_t n) {
 static void pxHls(PxConexao *c, const char *urlLista, const char *cabs) {
   PxLista *lp = malloc(sizeof *lp);
   PxTabelas tab;
-  char base[4096];
+  char base[NV_MEDIA_URL_MAX];
   long ultimo = -1, segs = 0, bytes = 0;
   int falhas = 0;
   time_t desdeNovo = time(NULL), t0 = time(NULL);
@@ -611,7 +628,7 @@ static void *pxAtender(void *u) {
   // O QUE A FONTE E: um trecho do comeco decide entre TS continuo e playlist.
   { long n = 0;
     int st = 0, er = 0;
-    char fin[4096];
+    char fin[NV_MEDIA_URL_MAX];
     char *b;
     fin[0] = 0;
     if (cabs[0]) {

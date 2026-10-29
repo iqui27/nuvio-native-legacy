@@ -4,6 +4,7 @@
 // metodo, corpo grande, uso unico, expiracao, bloqueio por tentativas.
 // O texto de teste NAO e chave de ninguem.
 #include "celular.h"
+#include "posterprov.h"
 #include "nvtmp.h"
 #include <assert.h>
 #include <stdio.h>
@@ -40,6 +41,11 @@ int main(void) {
   int p, i;
 
   assert(celular_disponivel());
+  assert(!celular_abrir_link("bad","javascript:alert(1)"));
+  assert(celular_abrir_link("External","https://example.invalid/?a=1&b=2"));
+  snprintf(a,sizeof a,"'%s'",celular_url());
+  assert(curl(a)==200 && strstr(saida,"href=\"https://example.invalid/?a=1&amp;b=2\"") && !strstr(saida,"<textarea"));
+  celular_fechar();
   assert(celular_abrir("Chave do Seekr"));
   u = celular_url();
   p = celular_porta();
@@ -54,6 +60,10 @@ int main(void) {
   snprintf(a, sizeof a, "'%s'", u);
   assert(curl(a) == 200 && strstr(saida, "<textarea") && strstr(saida, "Chave do Seekr"));
   assert(strstr(saida, "lang='pt-BR'") || strstr(saida, "lang='pt"));
+  // O maxlength da textarea segue o teto do modelo de URL (PP_MODELO_MAX):
+  // modelos longos colados pelo celular nao podem ser cortados pelo navegador.
+  { char ml[40]; snprintf(ml, sizeof ml, "maxlength=%d", PP_MODELO_MAX - 1);
+    assert(strstr(saida, ml)); }
   snprintf(a, sizeof a, "-I '%s'", local);
   assert(curl(a) == 200);
   // Sem CORS: nenhum Access-Control na resposta.

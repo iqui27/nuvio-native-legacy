@@ -2,6 +2,9 @@
 #include "../src/player.c"
 #include <assert.h>
 const char *i18n(const char *key) { return key; }
+// Ajustes nao entra nesta bancada (so seekr.c + player.c): relogio de 12 h
+// desligado, como em tests/guia_logos.c. seekr_horario_local usa hora_tela().
+int ajustes_relogio_12h(void) { return 0; }
 int main(void) {
   SeekrUso u = {.usadas=50, .limite=50, .persistente=1,
                 .reinicioUtc=1735776000LL, .retryUtc=1735779600LL};

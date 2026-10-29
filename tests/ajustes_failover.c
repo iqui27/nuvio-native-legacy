@@ -80,30 +80,31 @@ static void independentes(void) {
   puts("PASS: failover toggles default off, persist and remain independent");
 }
 
-static void limiteRemoto(int op, int servico) {
-  const int original = fontefalha_provedor_limite(servico);
+// Per-service rows left the screen (shared exclusions): the numeric editor
+// lives in the provider order sheet and saves to the selected service.
+static void limitesNaOrdem(void) {
+  for (int i = 0; i < DEBRID_N; i++)
+    assert(fontefalha_provedor_definir_limite(i, i + 1));
+  abrir(AJ_FALHA_PROVEDOR_ORDEM); assert(frAberta == 4);
+  // Links column (col 2) on the first row opens RD's numeric editor as a draft.
+  key(SDLK_RIGHT); key(SDLK_RIGHT); key(SDLK_RETURN);
+  assert(uxEditor == 1 && uxOp == AJ_FALHA_RD_LIMITE && uxPendente == 1);
   FonteFalhaConfig antes = configuracao();
   char *disco = arquivo();
-  abrir(op); assert(uxEditor == 1 && uxOp == op && uxPendente == original);
-  key(SDLK_RIGHT); assert(uxPendente == original + 1);
-  igual(&antes); igualArquivo(disco);
-  key(SDLK_ESCAPE); assert(!uxEditor); igual(&antes); igualArquivo(disco);
-  abrir(op);
-  for (int i = 0; i < 20; i++) key(SDLK_LEFT);
-  assert(uxPendente == 1); igual(&antes); igualArquivo(disco); free(disco);
-  key(SDLK_RETURN); assert(!uxEditor && fontefalha_provedor_limite(servico) == 1);
-  recarregar(); assert(fontefalha_provedor_limite(servico) == 1);
-  abrir(op);
+  key(SDLK_RIGHT); assert(uxPendente == 2); igual(&antes); igualArquivo(disco);
+  key(SDLK_ESCAPE); assert(!uxEditor && frAberta == 4); igual(&antes); free(disco);
+  // Second row (TB): col 2, then clamp 1..10 and persist.
+  key(SDLK_DOWN); key(SDLK_RIGHT); key(SDLK_RIGHT); key(SDLK_RETURN);
+  assert(uxEditor == 1 && uxOp == AJ_FALHA_TB_LIMITE && uxPendente == 2);
   for (int i = 0; i < 20; i++) key(SDLK_RIGHT);
-  assert(uxPendente == 10 && fontefalha_provedor_limite(servico) == 1);
-  key(SDLK_RETURN); assert(!uxEditor && fontefalha_provedor_limite(servico) == 10);
-  recarregar(); assert(fontefalha_provedor_limite(servico) == 10);
+  assert(uxPendente == 10); key(SDLK_RETURN);
+  assert(!uxEditor && frAberta == 4 && fontefalha_provedor_limite(DEBRID_TB) == 10);
+  key(SDLK_ESCAPE); assert(!frAberta);
+  recarregar(); assert(fontefalha_provedor_limite(DEBRID_TB) == 10);
+  FonteFalhaConfig salvo = configuracao(); recarregar(); igual(&salvo);
 }
 static void provedores(void) {
-  limiteRemoto(AJ_FALHA_RD_LIMITE, DEBRID_RD);
-  limiteRemoto(AJ_FALHA_TB_LIMITE, DEBRID_TB);
-  limiteRemoto(AJ_FALHA_PM_LIMITE, DEBRID_PM);
-  limiteRemoto(AJ_FALHA_AD_LIMITE, DEBRID_AD);
+  limitesNaOrdem();
   // Distinct saved limits must follow service IDs when the order changes.
   for (int i = 0; i < DEBRID_N; i++)
     assert(fontefalha_provedor_definir_limite(i, i + 1));

@@ -32,6 +32,7 @@ static int fixturePrintf(const char *format, ...) {
 
 static CatItem item;
 static int trailerSetting = 1;
+static int heroEnabled = 1;
 static int posterSetting;
 // "Fonte do trailer" (trailerfonte.h). A regra e a de producao
 // (src/trailerfonte.c entra na linha do emcc); so o valor gravado e do teste.
@@ -55,10 +56,12 @@ const CatItem *cat_item(int i) { return i == 0 ? &item : NULL; }
 
 int ajustes_social(void) { return 1; }
 int ajustes_hist_conta(void) { return 1; }
-int ajustes_hero_ligado(void) { return 1; }
+int ajustes_hero_ligado(void) { return heroEnabled; }
 int ajustes_trailer_hero(void) { return trailerSetting; }
+int ajustes_trailer_hero_vetado(void) { return 0; }
+int video_registro_negado(void) { return 0; }
 static int somSetting;
-int ajustes_trailer_hero_som(void) { return somSetting; }
+int ajustes_trailer_som(void) { return somSetting; }
 Uint32 ajustes_trailer_hero_espera_ms(void) { return NV_TRAILER_HERO_ESPERA_MS; }
 int ajustes_tmdb_trailers(void) { return 1; }
 int ajustes_home_layout(void) { return layoutSetting; }
@@ -71,7 +74,8 @@ int trailer_suportado(void) { return 1; }
 int trailer_aberto(void) { return opened; }
 int trailer_cheia(void) { return 0; }
 int trailer_tocando(void) { return opened && playing; }
-int trailer_mostra_video(void) { return 1; }   // .tpk: 0 ate o recorte assentar
+static int geometryReady = 1, asyncGeometry;
+int trailer_mostra_video(void) { return geometryReady; }
 static int donoTrailer;
 void trailer_marcar_dono(int dono, const char *imdb) { (void)imdb; donoTrailer = dono; }
 int trailer_dono(void) { return opened ? donoTrailer : 0; }
@@ -94,8 +98,12 @@ void video_tpk_cartao_destino(float x,float y,float w,float h,float *ox,float *o
 #endif
 static int lastNoCartao, rectCalls;
 void trailer_no_cartao(int sim) { lastNoCartao = sim; }
-void trailer_rect(GfxRect r) { lastRect = r; rectCalls++; }
+void trailer_rect(GfxRect r) { lastRect = r; rectCalls++; if (asyncGeometry) geometryReady = 0; }
 GfxRect trailer_retangulo(void) { return lastRect; }
+float gfx_escala_txt_entrar(void) { return 1.0f; }
+void gfx_escala_sair(float anterior) { (void)anterior; }
+static int fraco;
+int memlog_android_fraco(void) { return fraco; }
 void trailer_abrir(const char *source, GfxRect r, int som, int cheia) {
   (void)cheia; lastRect = r;
   lastSom = som;
@@ -141,6 +149,10 @@ int extras_hero_trailer_obter(const char *imdb, char *dst, unsigned cap) {
   return 1;
 }
 
+// Trailer audio (Ajustes): -1 TMDB pending, 1 its first trailer is the chosen language.
+static int youtubeIdioma;
+int extras_hero_trailer_idioma_preferido(const char *imdb) { (void)imdb; return youtubeIdioma; }
+
 static int check(const char *name, int ok) {
   if (!ok) { fprintf(stderr, "FALHOU: %s\n", name); return 1; }
   printf("ok %s\n", name);
@@ -157,6 +169,7 @@ static void resetState(const char *id) {
   heroDesejado = -1;
   heroEntra = 1.0f;
   heroSai = 0.0f;
+  heroDesliza = 1.0f;
   focoHero = 1;
   foco.fileira = -1;
   heroTrailerItem = -1;
@@ -171,6 +184,7 @@ static void resetState(const char *id) {
   heroTrailerTocouN = 0;   // cada caso reinicia a memoria da sessao no teste
   heroTrailerMemoriaFalhou = 0;
   trailerSetting = 1;
+  heroEnabled = 1;
   posterSetting = 0;
   nFileiras = 0;
   fonteSetting = TRF_AUTO;
@@ -179,7 +193,7 @@ static void resetState(const char *id) {
   appleReady = 0;
   appleOpenFails = 0;
   imdbOpenFails = 0;layoutSetting = HOME_LAYOUT_PADRAO;
-  youtubeReady = 0;
+  youtubeReady = 0; youtubeIdioma = 0;
   imdbReady = 0; imdbAnswered = 1;
   trailerfonte_definir_imdb_tizen(1);
   trailerfonte_definir_imdb_primeiro_destaque(0); /* baseline LG/WGT order */
@@ -259,6 +273,25 @@ int main(void) {
   rc |= check("falha Apple libera IMDb", opened && strstr(lastSource, "imdb"));
   home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS + 2);
   rc |= check("falha Apple nao repete IMDb", openedCount == 2);
+
+#ifdef __EMSCRIPTEN__
+  // TRAILER AUDIO: Apple answers first, TMDB later. The English Apple waits;
+  // the dubbed TMDB trailer opens once TMDB answers.
+  resetState("tt0000205");
+  appleReady = 1; imdbReady = 1; youtubeIdioma = -1;
+  home_trailer_passo(1, 0.016f, start);
+  home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS);
+  rc |= check("audio do trailer: Apple pronta espera o TMDB", openedCount == 0);
+  youtubeIdioma = 1; youtubeReady = 1;
+  home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS + 1);
+  rc |= check("audio do trailer: TMDB depois abre o dublado", opened && !strcmp(lastSource, "dQw4w9WgXcQ"));
+  // TMDB never answers: the window bounds the wait, then English.
+  resetState("tt0000206");
+  appleReady = 1; youtubeIdioma = -1;
+  home_trailer_passo(1, 0.016f, start);
+  home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_MAX_ESPERA_MS);
+  rc |= check("audio do trailer: TMDB mudo cai na Apple no fim da janela", opened && strstr(lastSource, "apple"));
+#endif
 
   // A source which never reaches playing gets its own preparation window.
   // The fallback receives a fresh window too.
@@ -403,14 +436,37 @@ int main(void) {
   home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS);
   rc |= check("na espera do ajuste abre", openedCount == 1);
 
-  // "Som do trailer no destaque" ligado: o destaque pede som (quem tira o
-  // som na Samsung e trailer_abrir, fora deste stub).
+  // "Som do trailer" ligado (#509: um ajuste para todo trailer): o destaque
+  // pede som (quem tira o som na Samsung e trailer_abrir, fora deste stub).
   resetState("tt0000015");
   somSetting = 1;
+  layoutSetting = HOME_LAYOUT_MODERNA;
   appleReady = 1;
   home_trailer_passo(1, 0.016f, start);
   home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS);
   rc |= check("ajuste de som ligado: destaque pede som", openedCount == 1 && lastSom == 1);
+  playing = 1;
+  for (int q = 0; q < 60; q++) home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS + q * 16);
+  rc |= check("destaque: cinema mode still follows the hero trailer", heroCinema.oculta && heroCinema.v > 0.5f);
+  playing = 0; trailercinema_zerar(&heroCinema);
+
+  // #500: opening uses last frame's artwork geometry. The next draw can
+  // expand the hero from a corner banner to fullscreen without a new title.
+  resetState("tt500rect");
+  appleReady = 1;
+  heroArteRect = (GfxRect){555, 0, 1365, 670};
+  home_trailer_passo(1, 0.016f, start);
+  home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS);
+  rc |= check("hero opens in the current artwork rectangle", opened && lastRect.x == 555);
+  heroArteRect = (GfxRect){0, 0, 1920, 1080};
+  playing = 1;
+  int movesBefore = rectCalls;
+  home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS + 1);
+  rc |= check("hero video follows expanded artwork without reopening",
+              lastRect.x == 0 && lastRect.w == 1920 && lastRect.h == 1080 && openedCount == 1);
+  home_trailer_passo(1, 0.016f, start + NV_TRAILER_HERO_ESPERA_MS + 2);
+  rc |= check("unchanged hero geometry does not reset the video plane", rectCalls == movesBefore + 1);
+  home_trailer_passo(0, 0.016f, start + 4000);
 
   for (int social=0; social<2; social++) {
     resetState(social ? "tt228social" : "tt228catalog");
@@ -439,11 +495,45 @@ int main(void) {
   rc|=check("focused poster waits for expansion delay",!opened&&heroTrailerGateAnterior==HERO_GATE_POSTER_WAIT);
   home_trailer_passo(1,.016f,start+500);
   home_trailer_passo(1,.016f,start+500+NV_TRAILER_HERO_ESPERA_MS);
-  rc|=check("focused content poster starts muted independently of hero setting",opened&&lastSom==0);
+  rc|=check("focused poster (tela cheia) opens muted with the sound switch off",opened&&lastSom==0);
   home_trailer_passo(0,.016f,start+4000);rc|=check("poster overlay closes Home trailer",!opened);
+  // #509: UM ajuste de som vale em qualquer lugar que o trailer toca.
+  resetState("tt228posterSom");
+  focoHero=0;posterSetting=AJ_TRAILER_CARTAZ_CHEIA;trailerSetting=0;somSetting=1;nFileiras=1;foco.fileira=0;
+  fileiras[0].tipo=FILEIRA_NORMAL;heroPendente=heroAtual;heroPendenteEm=start;appleReady=1;
+  home_trailer_passo(1,.016f,start+500);
+  home_trailer_passo(1,.016f,start+500+NV_TRAILER_HERO_ESPERA_MS);
+  rc|=check("tela cheia poster asks for sound with the switch on",opened&&lastSom==1);
 
-  // TRES MODOS (08/10/2026). No card: so com o cartaz que o desenho marcou,
-  // no retangulo dele, sem modo cinema; Tela cheia: no destaque, com cinema.
+  // Dinamica Stage/Split borrow Moderna geometry but keep opaque artwork.
+  // Fullscreen poster trailers must follow the saved layout, even with sound.
+  { const TipoFileira rows[] = {FILEIRA_PALCO, FILEIRA_HEROI_DIVIDIDO};
+    for (int row = 0; row < 2; row++) {
+      for (int layout = HOME_LAYOUT_MODERNA; layout <= HOME_LAYOUT_DINAMICA; layout++) {
+        resetState("tt-dinpalco-trailer");
+        focoHero = 0; foco.fileira = 0; nFileiras = 1;
+        fileiras[0].tipo = rows[row];
+        layoutSetting = layout; posterSetting = AJ_TRAILER_CARTAZ_CHEIA;
+        trailerSetting = 0; somSetting = 1; appleReady = 1;
+        heroPendente = heroAtual; heroPendenteEm = start; sourceRequests = 0;
+        home_trailer_passo(1, .016f, start + 500);
+        home_trailer_passo(1, .016f, start + 500 + NV_TRAILER_HERO_ESPERA_MS);
+        if (layout == HOME_LAYOUT_DINAMICA) {
+          rc |= check(row ? "Dinamica Split blocks hidden fullscreen playback" :
+                            "Dinamica Stage blocks hidden fullscreen playback",
+                      !opened && openedCount == 0 && sourceRequests == 0 &&
+                      heroTrailerItem == -1 && heroTrailerGateAnterior == HERO_GATE_DYNAMIC);
+        } else {
+          rc |= check("Stage/Split fullscreen trailers remain eligible in other saved layouts",
+                      opened && openedCount == 1 && lastSom == 1);
+        }
+      }
+    }
+  }
+
+  // TRES MODOS. No card: so com o cartaz que o desenho marcou,
+  // no retangulo dele, sem modo cinema; Tela cheia: no destaque, com a Home
+  // no lugar (#509: o modo cinema ficava para o trailer do destaque).
   { const GfxRect card = { 300.0f, 600.0f, 568.0f, 320.0f };
     resetState("tt-card");
     focoHero=0;posterSetting=AJ_TRAILER_CARTAZ_CARD;trailerSetting=0;nFileiras=1;foco.fileira=0;
@@ -459,7 +549,7 @@ int main(void) {
     rc|=check("no card: expanding portrait waits until fully open",!opened);
     cartaoTrailerServe=1;
     home_trailer_passo(1,.016f,start+700+NV_TRAILER_HERO_ESPERA_MS);
-    rc|=check("no card: opens muted inside the card rect",opened&&lastSom==0&&heroTrailerNoCartao&&lastNoCartao&&
+    rc|=check("no card: opens muted inside the card rect with the switch off",opened&&lastSom==0&&heroTrailerNoCartao&&lastNoCartao&&
               lastRect.x==card.x&&lastRect.y==card.y&&lastRect.w==card.w&&lastRect.h==card.h);
     playing=1;
     for (int q=0;q<60;q++) home_trailer_passo(1,.016f,start+800+NV_TRAILER_HERO_ESPERA_MS+q*16);
@@ -475,6 +565,93 @@ int main(void) {
     home_trailer_passo(1,.016f,start+2200+NV_TRAILER_HERO_ESPERA_MS);
     rc|=check("no card: card gone (focus left) stays closed",!opened);
 
+    resetState("tt-card-som");
+    focoHero=0;posterSetting=AJ_TRAILER_CARTAZ_CARD;trailerSetting=0;somSetting=1;nFileiras=1;foco.fileira=0;
+    layoutSetting=HOME_LAYOUT_MODERNA;trailercinema_zerar(&heroCinema);
+    fileiras[0].tipo=FILEIRA_NORMAL;heroPendente=heroAtual;heroPendenteEm=start;appleReady=1;
+    cartaoTrailerItem=heroAtual;cartaoTrailerRect=card;cartaoTrailerPode=cartaoTrailerServe=1;
+    home_trailer_passo(1,.016f,start+500);
+    home_trailer_passo(1,.016f,start+500+NV_TRAILER_HERO_ESPERA_MS);
+    rc|=check("no card asks for sound with the switch on",opened&&lastSom==1&&heroTrailerNoCartao&&lastNoCartao);
+
+
+    // Low-end Android (Onn): no window moves while the card still moves.
+    resetState("tt-card-fraco");fraco=1;
+    focoHero=0;posterSetting=AJ_TRAILER_CARTAZ_CARD;trailerSetting=0;nFileiras=1;foco.fileira=0;
+    layoutSetting=HOME_LAYOUT_MODERNA;trailercinema_zerar(&heroCinema);
+    fileiras[0].tipo=FILEIRA_NORMAL;heroPendente=heroAtual;heroPendenteEm=start;appleReady=1;
+    cartaoTrailerItem=heroAtual;cartaoTrailerRect=card;cartaoTrailerPode=1;
+    { Uint32 t=start+500+NV_TRAILER_HERO_ESPERA_MS;
+      cartaoTrailerServe=1;home_trailer_passo(1,.016f,start+500);
+      for (int q=0;q<10;q++) { cartaoTrailerRect.x+=10.0f;cartaoTrailerServe=1;home_trailer_passo(1,.016f,t+q*16); }
+      rc|=check("low-end: card trailer waits while the card rect moves",!opened);
+      cartaoTrailerServe=1;home_trailer_passo(1,.016f,t+144+NV_CARTAO_ASSENTA_MS-1);
+      rc|=check("low-end: still waiting just before the rect settles",!opened);
+      cartaoTrailerServe=1;home_trailer_passo(1,.016f,t+144+NV_CARTAO_ASSENTA_MS);
+      rc|=check("low-end: opens once the card rect settled",opened&&lastRect.x==cartaoTrailerRect.x);
+      playing=1;rectCalls=0;
+      for (int q=0;q<60;q++) { cartaoTrailerServe=1;home_trailer_passo(1,.016f,t+144+NV_CARTAO_ASSENTA_MS+q*16); }
+      rc|=check("low-end: video fully visible before the card moves",heroTrailerFade>0.9f);
+      // Production order: step sees the previous rect, then draw publishes the
+      // new rect and chooses the hole alpha before the next step can hide it.
+      Uint32 movingAt=t+500+NV_CARTAO_ASSENTA_MS+1000;
+      cartaoTrailerServe=1;home_trailer_passo(1,.016f,movingAt);
+      rc|=check("low-end: stationary draw keeps the video visible",cartaoTrailerAlpha(heroAtual,movingAt)>0.9f);
+      cartaoTrailerRect.x+=40.0f;
+      float movingAlpha=cartaoTrailerAlpha(heroAtual,movingAt);
+      printf("first-moving-frame alpha: %.6f\n",movingAlpha);
+      rc|=check("low-end: draw hides hole before the next trailer step",movingAlpha==0.0f&&rectCalls==0);
+      cartaoTrailerServe=1;home_trailer_passo(1,.016f,movingAt+16);
+      rc|=check("low-end: hole gone on the first moving frame",heroTrailerFade<0.01f);
+      for (int q=1;q<5;q++) { cartaoTrailerServe=1;home_trailer_passo(1,.016f,t+500+NV_CARTAO_ASSENTA_MS+1000+q*16); }
+      rc|=check("low-end: plane holds while the card moves",rectCalls==0);
+      rc|=check("low-end: poster returns (no hole) while the card moves",heroTrailerFade<0.01f);
+      asyncGeometry=1;
+      cartaoTrailerServe=1;home_trailer_passo(1,.016f,t+500+NV_CARTAO_ASSENTA_MS+1000+80+NV_CARTAO_ASSENTA_MS);
+      rc|=check("low-end: plane follows once, after the card settled",rectCalls==1&&lastRect.x==cartaoTrailerRect.x);
+      for (int q=0;q<60;q++) { cartaoTrailerServe=1;home_trailer_passo(1,.016f,movingAt+500+q*16); }
+      rc|=check("low-end: no hole while Android geometry acknowledgement is delayed",
+                heroTrailerFade==0.0f&&cartaoTrailerAlpha(heroAtual,movingAt+1500)==0.0f&&rectCalls==1);
+      heroTrailerFade=0.9f;
+      rc|=check("low-end: draw rejects pending native geometry",cartaoTrailerAlpha(heroAtual,movingAt+1500)==0.0f);
+      geometryReady=1;asyncGeometry=0;
+      for (int q=0;q<60;q++) { cartaoTrailerServe=1;home_trailer_passo(1,.016f,t+700+1000+80+2*NV_CARTAO_ASSENTA_MS+q*16); }
+      rc|=check("low-end: video fades back in once settled",heroTrailerFade>0.9f);
+    }
+    fraco=0;
+
+    // Card playback uses the focused title, even when the hero is hidden or
+    // its artwork still belongs to another title. Fullscreen still needs it.
+    for (int hidden = 0; hidden < 2; hidden++) {
+      resetState(hidden ? "tt-card-no-hero" : "tt-card-dynamic");
+      focoHero=0;posterSetting=AJ_TRAILER_CARTAZ_CARD;trailerSetting=0;
+      nFileiras=1;foco.fileira=0;fileiras[0].tipo=FILEIRA_NORMAL;
+      layoutSetting=HOME_LAYOUT_DINAMICA;heroEnabled=!hidden;
+      heroPendente=0;heroPendenteEm=start;appleReady=1;
+      cartaoTrailerItem=0;cartaoTrailerRect=card;cartaoTrailerPode=1;cartaoTrailerServe=0;
+      if (hidden) { heroAtual=1;heroDesejado=0;heroEntra=0;heroSai=1;heroDesliza=0; }
+      home_trailer_passo(1,.016f,start+499);
+      rc|=check("independent card still waits for focus delay",!opened);
+      home_trailer_passo(1,.016f,start+500);
+      home_trailer_passo(1,.016f,start+500+NV_TRAILER_HERO_ESPERA_MS);
+      rc|=check("independent card still waits for full expansion",!opened);
+      cartaoTrailerServe=1;
+      home_trailer_passo(1,.016f,start+501+NV_TRAILER_HERO_ESPERA_MS);
+      rc|=check(hidden ? "no card plays without hero using focused identity" : "no card plays in Dynamic layout",
+                opened&&openedCount==1&&heroTrailerItem==0&&heroTrailerNoCartao&&lastNoCartao&&
+                !strcmp(heroTrailerImdb,item.imdb)&&lastRect.x==card.x&&lastRect.y==card.y&&
+                lastRect.w==card.w&&lastRect.h==card.h);
+      playing=1;
+      for (int q=0;q<60;q++) home_trailer_passo(1,.016f,start+600+NV_TRAILER_HERO_ESPERA_MS+q*16);
+      rc|=check("independent card fades in without cinema",heroTrailerFade>0.9f&&!heroCinema.oculta);
+      home_trailer_passo(0,.016f,start+4000);
+      rc|=check("independent card closes beneath overlay",!opened);
+      posterSetting=AJ_TRAILER_CARTAZ_CHEIA;
+      home_trailer_passo(1,.016f,start+5000);
+      rc|=check("fullscreen poster still requires visible hero",
+                !opened&&heroTrailerGateAnterior==(hidden ? HERO_GATE_DISABLED : HERO_GATE_DYNAMIC));
+    }
+
     resetState("tt-cheia");
     focoHero=0;posterSetting=AJ_TRAILER_CARTAZ_CHEIA;trailerSetting=0;nFileiras=1;foco.fileira=0;
     layoutSetting=HOME_LAYOUT_MODERNA;trailercinema_zerar(&heroCinema);heroTrailerNoCartao=0;
@@ -485,7 +662,7 @@ int main(void) {
     rc|=check("tela cheia: portrait poster plays in the hero rect",opened&&!heroTrailerNoCartao&&!lastNoCartao);
     playing=1;
     for (int q=0;q<60;q++) home_trailer_passo(1,.016f,start+600+NV_TRAILER_HERO_ESPERA_MS+q*16);
-    rc|=check("tela cheia: cinema mode like the hero trailer",heroCinema.oculta&&heroCinema.v>0.5f);
+    rc|=check("tela cheia: home stays visible, no cinema for the poster trailer",!heroCinema.oculta&&heroCinema.v<0.1f);
     trailercinema_zerar(&heroCinema);
   }
 

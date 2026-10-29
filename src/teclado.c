@@ -1,5 +1,6 @@
 // Ver teclado.h para por que esta modal existe e o que ela NAO tenta ser.
 #include "teclado.h"
+#define NV_TXT_TELA
 #include "escala.h"
 #include "gfx.h"
 #include "text.h"
@@ -149,8 +150,8 @@ static int vozOk(void) {
 }
 static int celOk(void) { return (forcaCel >= 0 ? forcaCel : celb_disponivel()) && !semCel; }
 // Ajuste "Teclado" (Android): 0 automatico, 1 so a grade do app, 2 o teclado do
-// sistema direto. Fora do Android st_abre_sozinho() e 0 e nada muda.
-static int modoTeclado(void) { return st_abre_sozinho() ? ajustes_teclado_android() : 0; }
+// sistema direto. Onde o ajuste nao existe (Mac) st_teclado_modo() e 0.
+static int modoTeclado(void) { return st_teclado_modo(); }
 static int teTelefoneIme(void) { return telefoneui_ativo() && imeOk() && modoTeclado() != 1; }
 #ifdef NV_TOUCH_UI
 enum { TE_P_CAMPO=0, TE_P_FALAR, TE_P_CEL, TE_P_APAGAR, TE_P_LIMPAR,
@@ -164,6 +165,8 @@ static int tePhoneEvento(const SDL_Event *e);
 static void tePhoneDesenhar(Uint32 agora);
 #endif
 
+static int folhaDireitaPend, folhaDireita;
+void teclado_apresentacao(int modo) { folhaDireitaPend = modo; }
 static float gradeW(void) {
   return (float)nCols * TE_TECLA + (float)(nCols - 1) * TE_GAP;   // 504 com 6
 }
@@ -205,7 +208,7 @@ static float teEsqW0(void) {
   float w = 1340.0f - 2 * TE_ILHA_PX - TE_COL_GAP - gradeW();
   float teto = NV_TELA_W - 80.0f - 2 * TE_ILHA_PX - TE_COL_GAP - gradeW();
   if (w > teto) w = teto;
-  if (w < 420.0f) w = 420.0f;
+  if (w < fminf(420.0f, teto)) w = fminf(420.0f, teto);
   return w;
 }
 
@@ -238,7 +241,7 @@ static float teW(void) {
   if (teRetrato()) return 2 * TE_ILHA_PX + fmaxf(teEsqW(), gradeW());
   return 2 * TE_ILHA_PX + teEsqW() + TE_COL_GAP + gradeW();
 }
-static float teX(void) { return (NV_TELA_W - teW()) * 0.5f; }
+static float teX(void) { return folhaDireita ? NV_TELA_W - 24.0f - teW() : (NV_TELA_W - teW()) * 0.5f; }
 static float teGradeX(void) {
   if (teRetrato()) return teX() + (teW() - gradeW()) * 0.5f;
   return teX() + TE_ILHA_PX + teEsqW() + TE_COL_GAP;
@@ -259,6 +262,7 @@ static float teGradeY(void) {
 static const char *alfa(void) { return alfabetoAtual ? alfabetoAtual : ALFABETO; }
 static char  texto[TECLADO_LONGO + 1];
 static int   n, maxN, resultado;
+static int   confirmarVazio;
 static char  tituloAtual[96], dicaAtual[160];
 static int   celRecebido;
 // SENHA (#216): o campo mostra pontos, nunca o texto. A modal fica na tela e
@@ -536,6 +540,7 @@ static int utf8Inteiro(const char *s, int n) {
 void teclado_abrir(const char *titulo, const char *dica, int max) {
   teclado_abrir_com(titulo, dica, max, NULL, NULL);
 }
+void teclado_permitir_vazio(int permitir) { confirmarVazio = aberto && permitir; }
 
 void teclado_abrir_com(const char *titulo, const char *dica, int max,
                        const char *alfabeto, const char *inicial) {
@@ -550,12 +555,15 @@ void teclado_abrir_com(const char *titulo, const char *dica, int max,
   alfabetoAtual = (alfabeto && *alfabeto) ? alfabeto : NULL;
   celb_fechar_dono(CELB_TECLADO);   // reabrir por cima nao herda o QR da anterior
   mascarar = 0; tipoIme = ST_IME_TEXTO; ehSenha = 0; semCel = 0; pendIme = 0; aceitaUtf8 = 0;
+  // Uma abertura consome o modo pedido: a proxima volta a modal central.
+  folhaDireita = folhaDireitaPend == 1; folhaDireitaPend = 0;
   teMontar(0);
   aberto = 1;
   fileira = 0; coluna = 0; colunaAntes = 0;
   voltaF = voltaC = 0; barraAntes = -1;
   medido = 0;
   resultado = TECLADO_NADA;
+  confirmarVazio = 0;
   maxN = max > 0 && max <= TECLADO_LONGO ? max : TECLADO_MAX;
   // TEXTO INICIAL: editar um portal ja cadastrado nao pode obrigar a redigitar
   // o endereco inteiro. Cortado em maxN, nunca truncado no meio de nada porque
@@ -771,16 +779,13 @@ static void aplicar(void) {
   }
   if (coluna == 1) { n = 0; texto[0] = 0; return; }
   if (ehSenha && coluna == 2) { mascarar = !mascarar; return; }
-  // "pronto" com o campo vazio nao e uma confirmacao de nada: quem chega ali
-  // sem digitar quis olhar o teclado, e fechar a modal com resultado PRONTO
-  // mandaria a tela de amigos tentar vincular uma string vazia. A excecao e o
-  // campo que ABRIU COM UM VALOR (regex, chaves, enderecos: "Vazio apaga"):
-  // ali esvaziar e dar pronto e o jeito de apagar, e antes nao fazia nada.
-  if (n < 1 && !abriuComValor) return;
+  // Preserve clearing an existing field; optional fields may also explicitly
+  // confirm an empty value when they opened empty. Pairing remains nonempty.
+  if (n < 1 && !abriuComValor && !confirmarVazio) return;
   fechar(TECLADO_PRONTO);
 }
 
-void teclado_evento(const SDL_Event *e) {
+static void teclado_evento_(const SDL_Event *e) {
   SDL_Keycode k;
   if (aberto && st_evento(e)) return;   // teclado da TV: valor inteiro por sistexto
   if (!aberto || e->type != SDL_KEYDOWN) return;
@@ -856,7 +861,7 @@ void teclado_evento(const SDL_Event *e) {
   }
 }
 
-void teclado_atualizar(float dt, Uint32 agora) {
+static void teclado_atualizar_(float dt, Uint32 agora) {
   int f, c;
   (void)agora;
   if (aberto) {
@@ -894,7 +899,7 @@ void teclado_atualizar(float dt, Uint32 agora) {
       if (!teTelefoneIme()) definirDoSistema(t);
       // "Concluir" no teclado da TV e o "pronto" da modal; o fim da FALA nao —
       // a pessoa confere o que o reconhecedor entendeu antes de enviar.
-      if (r == ST_FIM && !voz && n > 0) fechar(TECLADO_PRONTO);
+      if (r == ST_FIM && !voz && (n > 0 || confirmarVazio)) fechar(TECLADO_PRONTO);
     }
   }
   { float alvo = (aberto && celb_embutido(CELB_TECLADO)) ? 1.0f : 0.0f;
@@ -1257,7 +1262,7 @@ static void tePhoneBotao(TePhoneControle c, float a) {
   float h = tePhoneTexto(TXT_ILHA_SEG, c.rotulo, c.r.w - 32, 28);
   txt_bloco(TXT_ILHA_SEG, c.rotulo, tom, tom, tom, c.r.x + 16,
             c.r.y + (c.r.h - h) * .5f, c.r.w - 32, 28,
-            (c.id == TE_P_PRONTO && !n ? .4f : .95f) * a, 0);
+            (c.id == TE_P_PRONTO && !n && !confirmarVazio ? .4f : .95f) * a, 0);
 }
 static void tePhoneDesenhar(Uint32 agora) {
   if (anim < .005f && !aberto) return;
@@ -1274,7 +1279,7 @@ static void tePhoneDesenhar(Uint32 agora) {
   if (tePhoneNativo()) return;
   TePhoneLayout l = tePhoneMedir();
   if (ajustes_vidro()) {
-    gfx_cor(l.painel, 28 / l.painel.h, .055f, .059f, .071f, .86f * a);
+    gfx_vidro_material(l.painel, 28 / l.painel.h, GFX_VIDRO_DENS_MODAL, a);
     gfx_luz_canto(l.painel, 28 / l.painel.h, l.painel.w * .22f, -l.painel.h * .4f,
                   l.painel.h * .62f, 1, 1, 1, .1f * a);
   } else gfx_cor(l.painel, 28 / l.painel.h, .082f, .086f, .102f, a);
@@ -1318,9 +1323,11 @@ static void tePhoneDesenhar(Uint32 agora) {
 }
 #endif
 
+void teclado_evento(const SDL_Event *e) { TXT_INI(); teclado_evento_(e); TXT_FIM(); }
+void teclado_atualizar(float dt, Uint32 agora) { TXT_INI(); teclado_atualizar_(dt, agora); TXT_FIM(); }
+
 static void teDesenhar(Uint32 agora);
-// O teclado fica em 1080p em qualquer "Tamanho da interface": em 100% ele ja
-// ocupa a largura da tela (ver a conta no alto), e ampliado nao caberia.
+// TV follows text scale; the virtual viewport keeps the modal centered.
 void teclado_desenhar(Uint32 agora) {
 #ifdef NV_TOUCH_UI
   if (teTelefoneIme()) {
@@ -1330,9 +1337,9 @@ void teclado_desenhar(Uint32 agora) {
     return;
   }
 #endif
-  ESCALA_REAL_INI();
+  TXT_INI();
   teDesenhar(agora);
-  ESCALA_REAL_FIM();
+  TXT_FIM();
 }
 static void teDesenhar(Uint32 agora) {
   float a = anim_suave(anim), dy, x, y, ew;
@@ -1352,12 +1359,12 @@ static void teDesenhar(Uint32 agora) {
     ponteiro_camada();
     ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, NULL, 0, 0);
   }
-  gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, 0.84f * anim);
+  gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, (folhaDireita ? 0.18f : 0.84f) * anim);
   { GfxRect p = { teX(), teY() + dy, teW(), teH() };
     float raio = 36.0f / p.h;
     gfx_rect((GfxRect){ p.x - 20, p.y - 6, p.w + 40, p.h + 46 }, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.40f * a);
     if (ajustes_vidro()) {
-      gfx_cor(p, raio, 0.055f, 0.059f, 0.071f, 0.86f * a);
+      gfx_vidro_material(p, raio, GFX_VIDRO_DENS_MODAL, a);
       gfx_luz_canto(p, raio, p.w * 0.22f, -p.h * 0.40f, p.h * 0.62f, 1, 1, 1, 0.10f * a);
     } else gfx_cor(p, raio, 0.082f, 0.086f, 0.102f, a); }
 
@@ -1440,7 +1447,9 @@ static void teDesenhar(Uint32 agora) {
         int fim = ini;
         float sx = x, py = y + (float)fila * (h + TE_FILA_GAP);
         while (fim < k && segFila[fim] == fila) fim++;
-        teNeutro((GfxRect){ sx, py, teChipsLarg(segEst, segPad, rot, ini, fim), h }, h * 0.5f, 0.06f, 0.114f, 0.118f, 0.137f, a);
+        GfxRect track = { sx, py, teChipsLarg(segEst, segPad, rot, ini, fim), h };
+        if (ajustes_vidro()) gfx_vidro_folha(track, 0.5f, a);
+        else teNeutro(track, h * 0.5f, 0.06f, 0.114f, 0.118f, 0.137f, a);
         sx += 5.0f;
         for (i = ini; i < fim; i++) {
           int foco = aberto && fileira < 0 && coluna == col[i];

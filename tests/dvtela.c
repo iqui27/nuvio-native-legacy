@@ -165,7 +165,7 @@ static void variantes(void) {
   assert(dvt_variante(0, 0) == DVT_VAR_CINEMA);
   assert(dvt_variante(1, 0) == DVT_VAR_DETALHADA);
   assert(dvt_variante(0, 1) == DVT_VAR_DETALHADA);
-  dvtela_apresentacao(0, "", "Titulo", "T1E1");
+  dvtela_apresentacao(0);
   dvtela_entrar(1000);
   assert(dvtela_variante() == DVT_VAR_CINEMA);
   // Mesmo depois dos 800 ms, OK nao ativa o botao oculto da Cinema.
@@ -190,7 +190,7 @@ static void variantes(void) {
   assert(dvtela_evento(&e, 10000) == DVT_EV_ENGOLIU && dvtela_ativa());
   e = tecla(SDLK_RETURN);
   assert(dvtela_evento(&e, 10000) == DVT_EV_HDR10 && !dvtela_ativa());
-  dvtela_apresentacao(1, "", "Titulo", "");
+  dvtela_apresentacao(1);
   dvtela_entrar(10000);
   assert(dvtela_variante() == DVT_VAR_DETALHADA);
   dvtela_sair(DVT_SAIDA_FONTE, 10100);

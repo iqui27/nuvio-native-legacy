@@ -194,7 +194,8 @@ int main(int argc, char **argv) {
   for (k = 0; k < 4; k++) {
     double soma = 0;
     int m;
-    gpun_definir_nivel(k);
+    if (k == 3) gpun_forcar_720(); // resolution is independent of effects
+    gpun_definir_nivel(k == 3 ? 2 : k);
     for (n = 0; n < 30; n++) quadro(w, 0);   // assenta (alvo interno criado)
     for (n = 0; n < 120; n++) soma += quadro(w, 1);
     printf("[shot] nivel=%d fill=%.2f telas, %d rects, %d cheias", k, gfx_fill, gfx_n_rect, gfx_n_cheio);

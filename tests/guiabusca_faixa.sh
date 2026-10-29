@@ -10,7 +10,7 @@ flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/nuvio-guiabusca-faixa-XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
-cc ${flags[@]+"${flags[@]}"} ${NUVIO_CFLAGS:-} src/epg.c tests/guiabusca_faixa.c \
+cc ${flags[@]+"${flags[@]}"} ${NUVIO_CFLAGS:-} src/epg.c src/xmltv.c tests/guiabusca_faixa.c \
   -Isrc -o "$tmp/t" -O1 -g -lz -lpthread \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined
 "$tmp/t"

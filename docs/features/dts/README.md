@@ -67,17 +67,28 @@ For TV reports include model, firmware, revision, selected track and output;
 check native DTS, conversion, seeks, track changes and A/V sync using the
 [DTS Debug app](../../../tools/dts-pipeline/DEBUG.md).
 
-## Samsung .tpk (Tizen 8–9)
+## Samsung .tpk (Tizen 6+)
 
 The Samsung build converts with its own path: the TV's `Tizen.Multimedia.Player`
 reads the converted stream from a local HTTP server inside the app
 (`src/dts/dts_hls_tpk.c`; converter `src/dts/dts_remux.c`). Video is copied byte
 for byte; DTS decodes the core, TrueHD its 5.1 presentation, output AC3 5.1 at
-640 kb/s (stereo sources 2.0). Delivery is HLS on 127.0.0.1 only.
-MKV sources decide from their track header; MP4 sources (announced as MP4, VOD)
-are probed by the converter beside the original, which keeps playing until a
-DTS/TrueHD track is found. HLS needs the keyframe index to reach the end of the
-file: an MKV without Cues switches to the continuous TS, which seeks by time.
+640 kb/s (stereo sources 2.0), or AAC 2.0 with the Stereo setting. Settings has
+one row on the .tpk: Off / 5.1 / Stereo (`dtsTpkLocal`).
+
+Delivery is HLS VOD on 127.0.0.1 with a random token: the playlist comes from the
+keyframe index (keyframes grouped to at least 2 s per segment), each MPEG-TS
+segment is made when the player asks for it (chunked body, Range ignored), and
+the player gets a 1 s prebuffer
+(`X-Nuvio-Prebuffer`, applied by `tizen-tpk/Video.cs`). Seeking, position and
+duration stay with the player. An MKV without Cues switches to one continuous TS
+that restarts at `?t=` on seek. MKV sources decide from their track header; MP4
+sources (announced as MP4, VOD) are probed by the converter beside the original,
+which keeps playing until a DTS/TrueHD track is found. Only HEVC and H.264 video
+are converted. Each playback logs a `[dts-tpk] mem:` line (app RSS peak, lowest
+MemAvailable, reader rings).
+
+Host test of the server with a .tpk FFmpeg build: `tests/dts_tpk_servidor.sh`.
 
 ## Dependency provenance and distribution
 

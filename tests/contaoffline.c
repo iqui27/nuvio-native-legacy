@@ -235,6 +235,7 @@ void debrid_esquecer(void) {}
 void extras_definir_chave(const char *c) { (void)c; }
 void fontepref_esquecer(void) {}
 void legmem_esquecer(void) {}
+void audiomem_esquecer(void) {}
 void homeestado_esquecer(void) {}
 void mapa_esquecer(void) {}
 void prog_esquecer_tudo(void) {}
@@ -334,7 +335,7 @@ int main(int argc, char **argv) {
     confere("#201: a URL acima do limite nao chegou, nem cortada", nAplicados == 2 && !grandeChegou);
     // A lista desta TV ficou menor que a da conta. Marcar como suja e um no-op
     // desde a mao unica (#360): pendencia de addons nao existe mais.
-    sync_sujar_addons();
+    sync_sujar_addons(NULL);
     confere("#201: lista incompleta nao gera pendencia em disco",
             !existe("conta-addons-pend-636f6e74612d61-p1.txt"));
   }

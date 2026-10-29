@@ -26,6 +26,6 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/player.c|src/video.c) continue;; esac
   sources+=("$source")
 done
-cc "${flags[@]}" "${sources[@]}" tests/player_android_retomada.c "$dir/player.o" "$dir/video.o" \
+cc "${flags[@]}" "${sources[@]}" tests/player_android_retomada.c tests/player_android_coto.c "$dir/player.o" "$dir/video.o" \
   -o "$dir/test" -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
 "$dir/test"

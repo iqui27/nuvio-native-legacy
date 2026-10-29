@@ -187,6 +187,25 @@ typedef enum {
   // Medium nas outras). Mesmo corpo da sinopse (NV_FT_DET_SIN).
   TXT_DET_META_FORTE,   // ano, duracao       26 / 700
   TXT_DET_META_GEN,     // generos            26 / 600
+  // BARRA DA APPLE TV (menu.c; dono, 14/10: "a font da sidebar tem que ser
+  // mais pesada e o titulo streaming pode ser mais marcante"). Rotulo de
+  // item um peso acima do TXT_DET_META (Regular); cabecalho de secao maior
+  // e em Bold, desenhado em caixa alta com tracking.
+  TXT_TV_ROTULO,        // item da barra       25 / 500
+  TXT_TV_SECAO,         // "STREAMING"         24 / 700
+  TXT_HERO_SIN_GRANDE, // optional hero synopsis, 24/400
+  // #477: corpos exclusivos das sinopses; 100% usa o original.
+  TXT_SINOPSE_19, TXT_SINOPSE_21, TXT_SINOPSE_22, TXT_SINOPSE_23,
+  TXT_SINOPSE_24, TXT_SINOPSE_25, TXT_SINOPSE_26, TXT_SINOPSE_27,
+  TXT_SINOPSE_28, TXT_SINOPSE_29, TXT_SINOPSE_30, TXT_SINOPSE_31,
+  TXT_SINOPSE_33, TXT_SINOPSE_34, TXT_SINOPSE_35, TXT_SINOPSE_39,
+  TXT_SINOPSE_20, // 125% de 16px; append-only, preserva os estilos anteriores
+  TXT_MUS_TIT, TXT_MUS_ART, TXT_MUS_TRACK, TXT_MUS_KICK, TXT_MUS_17, TXT_MUS_16,
+  TXT_HERO_META_G,  // hero info Grande, 24/500
+  TXT_HERO_META_GG, // hero info Muito grande, 27/500
+  TXT_FILMO_ANO, // History chapter display, 84/700
+  TXT_PEN_ROW, // Pencil small-text optical compensation, 22/700.
+  TXT_PEN_VALUE, // Pencil values, 19/400.
   TXT_NFONTES
 } TxtEstilo;
 
@@ -210,7 +229,9 @@ typedef enum {
   TXT_FAMILIA_ROBOTO,
   TXT_FAMILIA_ATKINSON,
   TXT_FAMILIA_JETBRAINS,
-  TXT_FAMILIA_N
+  TXT_FAMILIA_N,
+  // Imported identities; never persisted as bundled family IDs.
+  TXT_FAMILIA_IMPORTADA1 = 100, TXT_FAMILIA_IMPORTADA2, TXT_FAMILIA_IMPORTADA_UI
 } TxtFamilia;
 
 extern const char *const TXT_FAMILIAS_PT[TXT_FAMILIA_N];
@@ -221,6 +242,11 @@ extern const char *const TXT_FAMILIAS_PT[TXT_FAMILIA_N];
 // que o chamador escolheu para a legenda.
 void txt_definir_fonte_interface(TxtFamilia familia);
 TxtFamilia txt_fonte_interface(void);
+// Aviso de memoria: esvazia a grade de linhas rasterizadas (texturas de texto),
+// que voltam a existir sob demanda. So o fio de desenho chama.
+void txt_aliviar(void);
+// CORPO E PESO de um estilo, para teste e diagnostico (o desenho nao usa).
+void txt_estilo_medidas(TxtEstilo estilo, int *corpo, int *peso);
 // Que fonte desenharia a linha `s` no estilo dado, em texto ("principal",
 // "inter", "reserva:CJK:/caminho"). Para teste e diagnostico; NULL = nenhuma.
 // Linha de legenda ja quebrada -> ordem visual, arabe moldado so se a fonte tem
@@ -251,6 +277,7 @@ extern int    txt_pendentes;
 // Largura em unidades de layout que txt_linha() daria, SEM rasterizar nem
 // gastar orcamento. Para medir/quebrar texto; nao desenha nada.
 int  txt_largura(TxtEstilo estilo, const char *s);
+int  txt_largura_familia(TxtEstilo estilo, const char *s, TxtFamilia familia);
 
 // `dirRecursos` e a pasta que contem fonts/. No aparelho e a pasta do app; no
 // Mac, a pasta do pacote — sem esse parametro a fonte so era procurada ao lado
@@ -267,6 +294,17 @@ void txt_encerrar(void);
 void txt_novo_quadro(void);
 
 TxtLinha txt_linha(TxtEstilo estilo, const char *s, int r, int g, int b, int a);
+// Verbatim add-on block with color emoji, unlimited wrapping and measured height.
+// Height of the first maxLines measured lines; zero means the full block.
+float txt_addon_altura(TxtEstilo style, const char *s, float width, int maxLines);
+float txt_addon_bloco(TxtEstilo style, const char *s, float x, float y, float width,
+                       int gray, float alpha, int *lines);
+int txt_addon_emoji(const char *s, int *bytes);
+#ifdef NV_ADDON_LAYOUT_TEST
+int txt_addon_test_surface(TxtEstilo style, const char *s, int *width, int *height);
+#endif
+// Render provider content verbatim; callers translate UI keys explicitly.
+TxtLinha txt_linha_bruta(TxtEstilo estilo, const char *s, int r, int g, int b, int a);
 
 // Igual a txt_linha, mas escolhe uma familia explicita. Usado pela legenda
 // para manter sua preferencia independente da interface. Familia indisponivel
@@ -292,10 +330,17 @@ TxtLinha txt_linha_corta_familia(TxtEstilo estilo, const char *s, int r, int g,
 TxtLinha txt_linha_corta_enfase(TxtEstilo estilo, const char *s, int r, int g,
                                 int b, int a, float maxW, TxtFamilia familia,
                                 int enfase);
+// Clip provider content verbatim, without treating it as a translation key.
+TxtLinha txt_linha_corta_bruta(TxtEstilo estilo, const char *s, int r, int g,
+                               int b, int a, float maxW);
 
 // Desenha no canto superior esquerdo (x,y).
 void txt_desenhar(TxtLinha l, float x, float y);
 void txt_desenhar_alpha(TxtLinha l, float x, float y, float alpha);
+void txt_desenhar_peso(TxtLinha l, float x, float y, float alpha, float peso);
+// Borda da legenda (b = textura na cor da borda): 1 = contorno opaco nas 8
+// direcoes, 2 = sombra deslocada. Desenhar ANTES do texto.
+void txt_desenhar_borda(TxtLinha b, float x, float y, int borda, float alpha);
 // Multiplica so o RGB da textura (0..1); preserva o alpha e o encaixe no pixel.
 void txt_desenhar_tom(TxtLinha l, float x, float y, float cr, float cg, float cb, float alpha);
 
@@ -305,6 +350,19 @@ void txt_desenhar_tom(TxtLinha l, float x, float y, float cr, float cg, float cb
 // cabecalho. Passe x = -1 para so medir, sem desenhar.
 float txt_tracking(TxtEstilo estilo, const char *s, int r, int g, int b,
                    float x, float y, float alpha, float tracking);
+
+// TEXTO VIVO: desenha `s` glifo a glifo, cada caractere uma linha de UMA letra
+// rasterizada em BRANCO e tintada na hora (o GFX_TEXTO pega a cor no uniforme,
+// nao no RGB da textura). Para o texto que muda com o relogio da cena — tempo
+// do seek, percentuais, o IP sendo digitado: um valor novo reusa glifos que ja
+// estao no cache em vez de rasterizar + subir uma textura nova (~2,4 ms na C9,
+// medido) no meio da rolagem. Perde o kerning ENTRE caracteres, o que nao
+// aparece em digitos e selos curtos; frase com palavra vai em txt_linha.
+void txt_glifos(TxtEstilo estilo, const char *s, int r, int g, int b,
+                float x, float y, float alpha);
+// A largura do que txt_glifos desenharia, SEM desenhar: quem centra o texto
+// vivo tem de medir do mesmo jeito que desenha.
+float txt_glifos_largura(TxtEstilo estilo, const char *s);
 
 // Desenha texto QUEBRADO em linhas que cabem em `larg`, devolvendo a altura
 // usada. Sem isso, qualquer texto de tamanho variavel (sinopse de episodio,
@@ -321,6 +379,9 @@ size_t txt_token_tam(const char *s);
 // Com alpha = 0, os blocos so medem: mesma quebra, sem rasterizacao nem GL.
 float txt_bloco(TxtEstilo estilo, const char *s, int r, int g, int b,
                 float x, float y, float larg, float leading, float alpha, int maxLinhas);
+// Wrap provider content without translating the text or individual lines.
+float txt_bloco_bruto(TxtEstilo estilo, const char *s, int r, int g, int b,
+                      float x, float y, float larg, float leading, float alpha, int maxLinhas);
 
 // Igual a txt_bloco, mas indica com reticencias quando `maxLinhas` omite texto.
 // Uma palavra maior que a linha tambem e cortada com reticencias sem estourar

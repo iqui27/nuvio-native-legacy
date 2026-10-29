@@ -584,6 +584,7 @@ static void selospacote_iniciar_i(void) {
   fflush(stdout);
 }
 void selospacote_iniciar(void) { if (perfis_ativo() == perfilLido) return; travar(); selospacote_iniciar_i(); soltar(); }
+void selospacote_recarregar(void) { travar(); perfilLido = -1; selospacote_iniciar_i(); soltar(); }
 
 static void selospacote_conta_do_blob_i(const char *blob) {
   J *raiz, *f, *v;

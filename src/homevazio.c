@@ -41,7 +41,7 @@ void homevazio_desenhar(float alfa) {
   GLuint t;
   TxtLinha l;
   if (alfa <= 0.003f) return;
-  gfx_vidro_painel(p, 0.06f, 0.78f, alfa);
+  gfx_vidro_material(p, 0.06f, GFX_VIDRO_DENS, alfa);
   l = txt_linha_corta(TXT_HEADLINE, "Sua Home está vazia", 255, 255, 255, 255, tw);
   txt_desenhar_alpha(l, tx, y, alfa);
   y += l.h + 22.0f;

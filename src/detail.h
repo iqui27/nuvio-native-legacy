@@ -10,6 +10,9 @@
 #include "home.h"
 
 void detail_abrir(const HomeItem *item);
+int  detail_tem_servidores(void);
+int  detail_arte_titulo(const CatItem *titulo, char *saida, size_t tam, int *poster);
+void partirMeta(const char *meta, char *ano, size_t na, char *resto, size_t nr);
 // Abre a FILMOGRAFIA de uma pessoa por cima da pagina ja aberta (o mesmo painel
 // do OK num rosto do elenco). Para o Spotlight: a pessoa achada no elenco de um
 // titulo abre a pagina dele e o painel dela na mesma tecla. Sem pagina aberta
@@ -24,6 +27,9 @@ void detail_fechar_seco(void);
 int  detail_relogio_oculto(void);  // 1 no carrossel de titulos (cartao com vizinhos), ainda sem esticar: a ilha do relogio some
 int  detail_pediu_social(void);   // sempre 0 desde #407 (CIMA no topo nao abre Salvos/Avisos; AZUL/CH+ abre)
 int  detail_pediu_menu(void);   // 1 uma vez: ESQUERDA na borda pediu o menu lateral (a pagina NAO fecha; Voltar e quem sai)
+int  detail_pediu_relogio(void);      // CIMA no hero pediu a ilha do relogio, uma vez
+const char *detail_transicao(void);   // "sobe", "desce" ou "-" ([quadro])
+int  detail_relogio_navegavel(void);  // 1 quando a ilha do relogio pode receber foco agora
 // app.c, a cada quadro: 1 enquanto a barra lateral esta aberta POR CIMA da
 // pagina. O trailer do fundo fica mudo (sem fechar) e recupera o som depois.
 void detail_sob_menu(int sim);
@@ -57,6 +63,8 @@ int  detail_pediu_abrir(void);
 // Chamar ANTES de abrir outro titulo com a pagina aberta: guarda o atual para o
 // Voltar retornar a ele em vez de fechar a pagina.
 void detail_volta_notar(int novo);
+// Mark the next title switch as a return boundary through the trail.
+void detail_trilha_notar(void);
 
 // O botao do olho: marcar o titulo como ASSISTIDO. Nao e o mesmo que
 // detail_pediu_marcar, que e "adicionar a lista" — o olho caia no mesmo `else`
@@ -64,7 +72,17 @@ void detail_volta_notar(int novo);
 int  detail_pediu_assistido(void);
 int  detail_pediu_amigos(char *imdb, size_t tam); // OK na ilha de amigos: o imdb do titulo, uma vez
 int  detail_pediu_marcar(void);       // botao "+"
+// The Detail actions the iOS vertical bar carries (the bar morphs per screen):
+// the same requests the on-screen buttons and the "More" island make.
+enum { DETAIL_BARRA_FONTES, DETAIL_BARRA_TRAILER, DETAIL_BARRA_VISTO, DETAIL_BARRA_LISTA };
+void detail_acao_barra(int acao);
+int  detail_fonte_servidor(void); // consumes requested provider; -1 ordinary Sources
+int  detail_pediu_fontes_ep(int *temporada, int *episodio);
 int  detail_pediu_fontes(void);       // OK segurado, ou o botao "..."
+// O episodio travado junto com o pedido de fontes (toque no card com
+// "Escolher a fonte ao reproduzir", ou "Fontes deste episodio" no menu).
+// A folha rouba o foco da fileira: ler detail_ep_foco depois apontava o
+// episodio em andamento, nao o escolhido (#513). 0 = folha do titulo.
 int  detail_pediu_explorar(void);     // circular "Explorar": abrir a toca (explorar.h) neste titulo, uma vez
 // Botao secundario "Reproduzir desde o inicio", que so existe quando ha
 // progresso. Hoje ele tambem marca `detail_pediu_reproduzir`, porque o roteador
@@ -84,6 +102,7 @@ int  detail_pediu_do_inicio(void);
 // logo centralizado no topo (isso era do app da Apple TV). As secoes ficam em
 // coordenadas ABSOLUTAS de documento, e rolar e so subtrair scrollY.
 #define NV_DETP_X             96.0f   // gutter das fileiras (--tv-safe-gutter-wide)
+#define NV_DETP_ESP  ((float)(ajustes_det_espaco() - 1))   // -1, 0, +1
 // Fim do documento rolavel. NAO e onde o elenco termina (2024): e o que o web
 // tem de altura rolavel, porque abaixo do elenco ele ainda monta as secoes de
 // comentarios e de produtoras, que este port nao tem.
@@ -116,9 +135,9 @@ int  detail_pediu_do_inicio(void);
 // Abas de temporada: 269x80 em x=96, passo 321 (gap 52), raio 40, fonte 32/500.
 // A largura sai do texto + padding, e nao e constante: "Especiais" mede 219.
 #define NV_DETP_TEMP_Y      1160.0f
-#define NV_DETP_TEMP_H        60.0f   // Compact season selector
+#define NV_DETP_TEMP_H        56.0f   // Compact season selector
 #define NV_DETP_TEMP_PADX     26.0f
-#define NV_DETP_TEMP_GAP      20.0f
+#define NV_DETP_TEMP_GAP      14.0f
 // Base do resumo da temporada ("12 episódios · 5 assistidos") ao TOPO das
 // pilulas. A folga vive na vaga do cabecalho "Temporadas" que foi retirado: o
 // grupo comeca em NV_DETP_G_TEMP (1080) e a pilula so em 1160, entao ha 80 px
@@ -141,7 +160,7 @@ int  detail_pediu_do_inicio(void);
 #define NV_DETP_EP_H         414.0f   // a caixa E a miniatura: o texto fica dentro
 #define NV_DETP_EP_PASSO     672.0f   // 767 - 96 = 671, arredondado para 640+32
 #define NV_DETP_EP_THUMB_H   414.0f
-#define NV_DETP_EP_RAIO       32.0f
+#define NV_DETP_EP_RAIO       18.0f
 #define NV_DETP_EP_PAD        32.0f   // margem do texto dentro da miniatura
 #define NV_DETP_EP_TEXTO_W   576.0f
 // Selo "EPISÓDIO n": caixa 152x43 em (32,155) dentro do card, tinta do texto
@@ -166,15 +185,6 @@ int  detail_pediu_do_inicio(void);
 #define NV_DETP_EP_ICONE      28.0f
 #define NV_DETP_EP_BARRA_Y   390.0f   // barra 576x8, raio 999
 #define NV_DETP_EP_BARRA_H     8.0f
-// MODERNA: titulo e sinopse ficam ABAIXO da miniatura (16:9), nao sobre ela. Na
-// miniatura sobram o selo, o rodape de duracao/notas/data, a barra e o visto.
-#define NV_DETP_EPM_THUMB_H  360.0f
-#define NV_DETP_EPM_H        490.0f   // miniatura + titulo (1 linha) + sinopse (2 linhas)
-#define NV_DETP_EPM_SELO_Y    24.0f
-#define NV_DETP_EPM_META_Y   290.0f
-#define NV_DETP_EPM_BARRA_Y  336.0f
-#define NV_DETP_EPM_TIT_DY    16.0f   // base da miniatura ao topo do titulo
-#define NV_DETP_EPM_SIN_DY    62.0f   // base da miniatura ao topo da sinopse
 #define NV_DETP_EP_STATUS     48.0f   // circulo tracejado de "nao assistido"
 // Anel de foco. O web usa 2px na miniatura do episodio e 4px nos botoes do
 // hero; aqui fica 4 nos dois, porque a folha declara pixels de CSS e a tela
@@ -194,11 +204,11 @@ int  detail_pediu_do_inicio(void);
 // ESQUERDA do card (nao centralizado); nome 26/500 rgb(179,179,179) e papel
 // 21/400 rgb(128,128,128) abaixo.
 #define NV_DETP_EL_Y        1817.0f
-#define NV_DETP_EL_W         220.0f
-#define NV_DETP_EL_PASSO     270.0f
-#define NV_DETP_EL_AVATAR    140.0f
-#define NV_DETP_EL_NOME_DY    10.0f   // base do avatar -> topo do nome
-#define NV_DETP_EL_PAPEL_DY   43.0f   // topo do nome -> topo do papel
+#define NV_DETP_EL_W         190.0f
+#define NV_DETP_EL_PASSO     214.0f
+#define NV_DETP_EL_AVATAR    254.0f
+#define NV_DETP_EL_NOME_DY    16.0f   // base do avatar -> topo do nome
+#define NV_DETP_EL_PAPEL_DY   30.0f   // topo do nome -> topo do papel
 // Altura de uma linha de texto do cartao de elenco (nome ou papel), e o vao
 // MEDIDO entre a base do elenco e o topo do wordmark do Trakt na captura da
 // referencia (~105 px em 1920). Existem para o empilhamento da secao de
@@ -254,13 +264,20 @@ int  detail_pediu_do_inicio(void);
 // Padding, icone e vao descem na mesma proporcao (~0,75); o rotulo fica em 25,
 // que e o piso de leitura desta interface. O foco continua por ESCALA, com os
 // mesmos fatores medidos: 72 vira 83 focado.
-#define NV_DETW2_BTN_H        72.0f
+#define NV_DETW2_BTN_H        94.0f
 #define NV_DETW2_BTN_PADX     38.0f
 #define NV_DETW2_BTN_ICONE_W  22.0f   // triangulo 22x24, centrado na vertical
 #define NV_DETW2_BTN_ICONE_H  24.0f
 #define NV_DETW2_BTN_GAPI     16.0f   // fim do triangulo -> tinta do rotulo
-#define NV_DETW2_CIRC         72.0f
-#define NV_DETW2_BTN_GAP      18.0f
+#define NV_DETW2_CIRC         96.0f
+// 2.1 TV hero (owner, 25/10/2026: "o tamanho dos botoes igual do app atual"):
+// the 2.0.8 Play pill and discs, and the info block at the hero bottom.
+#define NV_DET21_BTN_H        72.0f
+#define NV_DET21_CIRC         72.0f
+#define NV_DET21_BTN_GAP      18.0f
+#define NV_DET21_GAP          30.0f   // logo/actions/synopsis/meta rhythm (2.0.8: 32/30/36)
+#define NV_DET21_FIM        1048.0f   // same physical bottom as the 2.0.8 info block
+#define NV_DETW2_BTN_GAP      24.0f
 // Glifo dentro do circular: 32 num circulo de 96 em repouso e 36 num de 110
 // focado — 0,333 do diametro nos dois. Estava 0,45, que vinha de uma captura
 // solta do dono e engordava o "+" ate quase encostar na borda.
@@ -273,8 +290,8 @@ int  detail_pediu_do_inicio(void);
 // a pilula vai de 321x94 para 357,6x107,8 (1,114 em x, 1,147 em y) e o circulo
 // de 96 para 110 (1,146 nos dois eixos). Escrever um so fator faria a pilula
 // crescer 10px a mais do que a referencia; ficam os dois, como medidos.
-#define NV_DETW2_FOCO_SX       1.114f
-#define NV_DETW2_FOCO_SY       1.147f
+#define NV_DETW2_FOCO_SX       1.04f
+#define NV_DETW2_FOCO_SY       1.04f
 
 // PILHA DE TEXTO. As duas capturas dao as mesmas coordenadas absolutas para o
 // que esta ABAIXO da sinopse (selo do IMDb em y=938, selo de classificacao em
@@ -348,15 +365,15 @@ int  detail_pediu_do_inicio(void);
 // medida: o Mac parametriza o espacamento por chamada
 // (DetailSectionContainer(horizontalPadding, contentMaxWidth, bottomPadding)),
 // entao nao ha uma constante unica para ler no bytecode.
-#define NV_DETF_HERO_FIM     1080.0f   // o hero ocupa 0..1080, igual a serie
-#define NV_DETF_CAB_H          46.0f   // linha do cabecalho (TXT_HEADLINE, 38)
-#define NV_DETF_CAB_GAP        20.0f   // cabecalho -> conteudo
-#define NV_DETF_SEC_GAP        64.0f   // fim de uma secao -> cabecalho da proxima
+#define NV_DETF_HERO_FIM     1000.0f   // o hero ocupa 0..1080, igual a serie
+#define NV_DETF_CAB_H          24.0f   // linha do cabecalho (TXT_HEADLINE, 38)
+#define NV_DETF_CAB_GAP        24.0f   // cabecalho -> conteudo
+#define NV_DETF_SEC_GAP       132.0f   // fim de uma secao -> cabecalho da proxima
 #define NV_DETF_PAD_FIM       130.0f   // padding-bottom do scroller (clamp(116,12vh,168))
 
 // ELENCO. Card 220x193, passo 270, avatar 140 alinhado a ESQUERDA do card.
 // Medido no web (.movie-cast-card / .movie-cast-track).
-#define NV_DETF_EL_ALT        193.0f
+#define NV_DETF_EL_ALT        392.0f
 #define NV_DETF_EL_MAX           18    // .slice(0, 18) do web
 // QUANTOS CABEM NA LINHA, medido na captura tests/detail_secoes_shot.sh
 // (/tmp/nuvio-detsec-10-filme-chamada.png): a fileira comeca no gutter
@@ -379,14 +396,14 @@ int  detail_pediu_do_inicio(void);
 
 // TRAILERS. Card520 de largura, miniatura520x292 raio24, passo582.
 // O selo de play e um circulo de 96 a rgba(0,0,0,.48) com o triangulo de 44.
-#define NV_DETF_TR_W          520.0f
-#define NV_DETF_TR_PASSO      582.0f
-#define NV_DETF_TR_VIDEO_H    292.0f
-#define NV_DETF_TR_RAIO        24.0f
-#define NV_DETF_TR_NOME_DY    302.0f   // topo do card -> nome (28/500 branco)
+#define NV_DETF_TR_W          400.0f
+#define NV_DETF_TR_PASSO      424.0f
+#define NV_DETF_TR_VIDEO_H    225.0f
+#define NV_DETF_TR_RAIO        18.0f
+#define NV_DETF_TR_NOME_DY    240.0f   // topo do card -> nome (28/500 branco)
 #define NV_DETF_TR_TIPO_DY    344.6f   // topo do card -> subrotulo (24/400 cinza)
-#define NV_DETF_TR_ALT        377.0f
-#define NV_DETF_TR_PLAY_D      96.0f
+#define NV_DETF_TR_ALT        282.0f
+#define NV_DETF_TR_PLAY_D      44.0f
 
 // DETALHES DO FILME. Tabela de duas colunas com divisoria por linha.
 //

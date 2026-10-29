@@ -30,6 +30,7 @@ typedef struct {
   const char *apple;   int appleRespondeu, appleFalhou;
   const char *imdb;    int imdbRespondeu;
   const char *youtube; int youtubeRespondeu;
+  int youtubeIdiomaPreferido; // 1 youtube is in the chosen (non-English) trailer audio; -1 TMDB not answered yet
 } TrailerCandidatos;
 
 typedef enum {
@@ -49,6 +50,7 @@ TrailerDecisao trailerfonte_escolher(int ajuste, int tizen, const TrailerCandida
 // Proxima fonte da ordem depois de `qual`, ou 0: e o que decide se o prazo
 // vencido "tenta a proxima" ou "fica a arte".
 int  trailerfonte_depois(int ajuste, int tizen, int qual);
+int  trailerfonte_depois_dublado(int ajuste, int tizen, int qual);
 // "apple" / "imdb" / "youtube", para o log.
 const char *trailerfonte_nome(int qual);
 // 1 quando o trailer em tela cheia pode ter som. Samsung: NUNCA (decisao do

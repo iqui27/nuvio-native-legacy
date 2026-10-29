@@ -1,0 +1,71 @@
+{
+  "meta": {
+    "id": "tt21975436",
+    "type": "series",
+    "name": "Kaiju No. 8",
+    "description": "A man working a job far removed from his childhood dreams gets wrapped up in an unexpected situation - becoming a monster, he aims once again to fulfill his lifelong dream.",
+    "runtime": "24 min",
+    "imdbRating": "8.2",
+    "poster": "https://images.metahub.space/poster/small/tt21975436/img",
+    "background": "https://images.metahub.space/background/medium/tt21975436/img",
+    "logo": "https://images.metahub.space/logo/medium/tt21975436/img",
+    "videos": [
+      {
+        "name": "Kafka Hibino",
+        "season": 1,
+        "number": 12,
+        "firstAired": "2024-06-29T14:00:00.000Z",
+        "tvdb_id": 10364437,
+        "rating": "0",
+        "overview": "Kafka's final fate is determined as the monster within him tries to take control.",
+        "thumbnail": "https://episodes.metahub.space/tt21975436/1/12/w780.jpg",
+        "id": "tt21975436:1:12",
+        "released": "2024-06-29T14:00:00.000Z",
+        "episode": 12,
+        "description": "Kafka's final fate is determined as the monster within him tries to take control."
+      },
+      {
+        "name": "Kaiju Weapon",
+        "season": 2,
+        "number": 1,
+        "firstAired": "2025-07-19T14:00:00.000Z",
+        "tvdb_id": 10567809,
+        "rating": "0",
+        "overview": "The aftermath of Kafka's transformation and battle with Isao.",
+        "thumbnail": "https://episodes.metahub.space/tt21975436/2/1/w780.jpg",
+        "id": "tt21975436:2:1",
+        "released": "2025-07-19T14:00:00.000Z",
+        "episode": 1,
+        "description": "The aftermath of Kafka's transformation and battle with Isao."
+      },
+      {
+        "name": "The Next Generation's Trial",
+        "season": 2,
+        "number": 2,
+        "firstAired": "2025-07-26T14:00:00.000Z",
+        "tvdb_id": 11209906,
+        "rating": "0",
+        "overview": "A challenge begins for the next generation of the Defense Force.",
+        "thumbnail": "https://episodes.metahub.space/tt21975436/2/2/w780.jpg",
+        "id": "tt21975436:2:2",
+        "released": "2025-07-26T14:00:00.000Z",
+        "episode": 2,
+        "description": "A challenge begins for the next generation of the Defense Force."
+      },
+      {
+        "name": "The Strongest Division",
+        "season": 2,
+        "number": 3,
+        "firstAired": "2025-08-02T14:00:00.000Z",
+        "tvdb_id": 11209907,
+        "rating": "0",
+        "overview": "Kaiju No. 9 appears for the third time, splitting in two and overwhelming the Defense Force.",
+        "thumbnail": "https://episodes.metahub.space/tt21975436/2/3/w780.jpg",
+        "id": "tt21975436:2:3",
+        "released": "2025-08-02T14:00:00.000Z",
+        "episode": 3,
+        "description": "Kaiju No. 9 appears for the third time, splitting in two and overwhelming the Defense Force."
+      }
+    ]
+  }
+}

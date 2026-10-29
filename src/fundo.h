@@ -32,11 +32,6 @@ void fundo_desenhar(GfxRect area, const char *arteUrl, float a);
 // desfocada no retangulo, sem o assado, que e de tela inteira.
 void fundo_desenhar_modo(int modo, GfxRect area, float raioPx, const char *arteUrl, float a);
 
-// Uma vez por quadro (main.c, depois de gfx_ambiente_preparar): com "Vidro
-// fosco" ligado e sem luz imersiva, assa a arte borrada do TITULO EM CENA para o
-// vidro (gfx_vidro_fosco) desenhar dentro dos paineis. Nada se nao ha arte em
-// cena. Refaz so quando a paleta muda.
-void fundo_fosco_quadro(void);
 
 // O veu escuro da Borrada de tela cheia nos proximos desenhos (0..1; < 0 volta
 // aos 28% de sempre). A pagina do titulo usa mais: o texto fica sobre ela.

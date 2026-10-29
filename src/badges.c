@@ -326,7 +326,8 @@ float badges_desenhar_selos(uint64_t mask, float x, float y, float maxW, float h
       }
     }
     p = (GfxRect){ x, y - sobra, w + padX * 2.0f, ch };
-    gfx_cor(p, raio, 0.10f, 0.11f, 0.13f, 0.88f * a);
+    if (ajustes_vidro()) gfx_vidro_chip(p, raio, 0.88f, a);
+    else gfx_cor(p, raio, 0.10f, 0.11f, 0.13f, 0.88f * a);
     gfx_cor(p, raio, r, g, b, 0.16f * a);
     gfx_anel(p, raio, 1.5f, br, bg, bb, 0.60f * a);
     if (temArte) {
@@ -424,12 +425,17 @@ static void notaTexto(char *dst, size_t n, int nota) {
   // ingles a virgula le como milhar interrompido (ver recomenda.c).
   snprintf(dst, n, idioma_ponto_decimal(ajustes_idioma()) ? "%d.%d" : "%d,%d", nota / 10, nota % 10);
 }
+static float imdbMarcaLargura(void) {
+  TxtLinha l = txt_linha(TXT_MINI, "IMDb", 10, 10, 10, 255);
+  float w = (float)l.w + 16.0f;
+  return w > BADGE_IMDB_W ? w : BADGE_IMDB_W;
+}
 float badge_imdb_largura(int nota) {
   char t[8]; TxtLinha l;
   if (nota <= 0) return 0.0f;
   notaTexto(t, sizeof t, nota);
   l = txt_linha(TXT_CAPTION2, t, 0, 0, 0, 255);
-  return BADGE_IMDB_W + BADGE_IMDB_GAP + (float)l.w;
+  return imdbMarcaLargura() + BADGE_IMDB_GAP + (float)l.w;
 }
 float badge_imdb(float x, float y, int nota, int escuro, float a) {
   char t[8]; TxtLinha l, lm; GfxRect m;
@@ -437,14 +443,14 @@ float badge_imdb(float x, float y, int nota, int escuro, float a) {
   if (nota <= 0) return 0.0f;
   notaTexto(t, sizeof t, nota);
   l = txt_linha(TXT_CAPTION2, t, c, c, c, 255);
-  m.x = x; m.y = y; m.w = BADGE_IMDB_W; m.h = BADGE_H;
+  m.x = x; m.y = y; m.w = imdbMarcaLargura(); m.h = BADGE_H;
   // #F5C518 e o amarelo da marca; o texto e preto porque e assim que ela
   // existe — nao segue o realce nem a tinta da linha.
   gfx_cor(m, BADGE_IMDB_R / BADGE_H, 0.961f, 0.773f, 0.094f, a);
   lm = txt_linha(TXT_MINI, "IMDb", 10, 10, 10, 255);
   txt_desenhar_alpha(lm, m.x + (m.w - (float)lm.w) * 0.5f, m.y + (m.h - (float)lm.h) * 0.5f, a);
-  txt_desenhar_alpha(l, x + BADGE_IMDB_W + BADGE_IMDB_GAP, y + (BADGE_H - (float)l.h) * 0.5f, a);
-  return BADGE_IMDB_W + BADGE_IMDB_GAP + (float)l.w;
+  txt_desenhar_alpha(l, x + m.w + BADGE_IMDB_GAP, y + (BADGE_H - (float)l.h) * 0.5f, a);
+  return m.w + BADGE_IMDB_GAP + (float)l.w;
 }
 
 // CHECK DE ASSISTIDO (U4, 205): UM desenhador para todos os estilos de cartao.
@@ -484,7 +490,7 @@ static float seloEscritoEm(float mx, float my, float w, float a, int ancora_dir,
   if (ancora_dir) mx -= pw;
   ajustes_acento(&ar, &ag, &ab);
   gfx_cor((GfxRect){ mx, my + 3.0f, pw, h }, 0.5f, 0, 0, 0, 0.28f * a);
-  gfx_cor((GfxRect){ mx, my, pw, h }, 0.5f, 0.05f, 0.055f, 0.067f, 0.80f * a);
+  gfx_vidro_ou_solido((GfxRect){ mx, my, pw, h }, 0.5f, GFX_VIDRO_DENS, a, 0.05f, 0.055f, 0.067f, 0.80f);
   { float ix = compacto ? mx + (h - ic) * 0.5f : mx + h * 0.36f;
     gfx_icone((GfxRect){ ix, my + (h - ic) * 0.5f, ic, ic }, "check", ar, ag, ab, a);
     if (!compacto) txt_desenhar_alpha(t, ix + ic + 6.0f, my + (h - t.h) * 0.5f, a); }

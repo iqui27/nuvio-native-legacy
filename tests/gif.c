@@ -758,6 +758,15 @@ int main(void) {
     // LONGO, anima a 25 quadros/s; a 50 quadros/s continua pesado demais.
     assert(gif_custo(241, 500, 281, 241 * 40) <= gif_orcamento_para(2.0));
     assert(gif_custo(241, 500, 281, 241 * 20) > gif_orcamento_para(2.0));
+    // #589: esse mesmo GIF (26,5 MB/s, log da QE55Q80B) anima em camera lenta
+    // dentro do teto em vez de parar; o dobro do teto ou mais continua parado.
+    { size_t c = gif_custo(241, 500, 281, 4880), o = gif_orcamento_para(2.0);
+      double k = gif_estica(c, o);
+      assert(k > 1.0 && k < 1.4);
+      assert(gif_custo(241, 500, 281, (int)(4880 * k + 1)) <= o);
+      assert(gif_estica(o, o) == 1.0 && gif_estica(c, GIF_SEM_TETO) == 1.0);
+      assert(gif_estica(c, 0) == 0.0);
+      assert(gif_estica(o * 2 + 1, o) == 0.0); }
     // Navegador que nao informa: o mesmo teto de 2 GB, nao "sem teto".
     assert(gif_orcamento_para(0.0) == 20 * MB);
     assert(gif_orcamento_para(-1.0) == 20 * MB);

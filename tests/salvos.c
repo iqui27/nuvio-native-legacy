@@ -12,6 +12,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include "nvtmp.h"
+#include "ajustes.h"
+
+// A fonte LOCAL neste harness: a lista local so marca a biblioteca Nuvio.
+static int fonteBib = AJ_SALVOS_LOCAL;
+int ajustes_fonte_biblioteca(void) { return fonteBib; }
 
 static int falhas;
 static void confere(const char *o_que, int obtido, int esperado) {
@@ -60,7 +65,11 @@ int cat_indice_por_imdb(const char *imdb) {
   return -1;
 }
 void cat_definir_na_lista(int i, int naLista) {
-  if (i >= 0 && i < nCat) cat[i].naLista = naLista ? 1 : 0;
+  if (i < 0 || i >= nCat) return;
+  unsigned bit = 1u << fonteBib;
+  if (naLista) cat[i].listaFontes |= bit;
+  else cat[i].listaFontes &= ~bit;
+  cat[i].naLista = cat[i].listaFontes != 0;
 }
 static void poeNoCatalogo(const char *imdb, const char *titulo, int naLista,
                           int progresso, int t, int e) {
@@ -70,6 +79,7 @@ static void poeNoCatalogo(const char *imdb, const char *titulo, int naLista,
   snprintf(c->tipo, sizeof c->tipo, "series");
   snprintf(c->titulo, sizeof c->titulo, "%s", titulo);
   c->naLista = naLista;
+  c->listaFontes = naLista ? 1u << fonteBib : 0;
   c->progresso = progresso;
   c->temporada = t;
   c->episodio = e;
@@ -119,19 +129,22 @@ static int refMelhorCopia(const char *id) {
 }
 static int refUniao(SalvosEntrada *out, int cap) {
   int i, k = 0;
-  for (i = 0; i < salvos_n() && k < cap; i++) {
+  for (i = 0; fonteBib == AJ_SALVOS_LOCAL && i < salvos_n() && k < cap; i++) {
     out[k].local = i; out[k].cat = refMelhorCopia(salvos_item(i)->id); k++;
   }
   for (i = 0; i < nCat && k < cap; i++) {
     const CatItem *c = &cat[i];
     int j, achou = -1;
-    if (!c->naLista || !c->imdb[0] || salvos_tem(c->imdb)) continue;
+    if (!c->naLista || !c->imdb[0] ||
+        (fonteBib != AJ_SALVOS_LOCAL && !(c->listaFontes & (1u << fonteBib))) ||
+        (fonteBib == AJ_SALVOS_LOCAL && salvos_tem(c->imdb))) continue;
     for (j = 0; j < k && achou < 0; j++)
       if (out[j].local < 0 && salvos_mesmo_titulo(cat[out[j].cat].imdb, c->imdb)) achou = j;
     if (achou >= 0) {
       if (c->progresso > 0 && cat[out[achou].cat].progresso <= 0) out[achou].cat = i;
       continue;
     }
+    if (!(c->listaFontes & (1u << fonteBib))) continue;
     out[k].local = -1; out[k].cat = i; k++;
   }
   return k;
@@ -291,6 +304,12 @@ int main(void) {
         else snprintf(idc, sizeof idc, "tt%07d", t);
         poeNoCatalogo(idc, "Copia", sorteio(3) == 0, sorteio(4) == 0 ? 10 + sorteio(80) : 0, 0, 0);
       }
+      // Mix source memberships independently of the active Library source.
+      for (k = 0; k < nCat; k++) {
+        cat[k].listaFontes = (unsigned)sorteio(8);
+        cat[k].naLista = cat[k].listaFontes != 0;
+      }
+      fonteBib = rodada % 3;
       na = salvos_uniao(a, 800);
       nb = refUniao(b, 800);
       if (na != nb) ok = 0;
@@ -300,7 +319,31 @@ int main(void) {
       else if (iguais == rodada) printf("  primeira divergencia na rodada %d: %d x %d entradas\n", rodada, na, nb);
     }
     confere("as 300 rodadas deram a mesma uniao", iguais, 300);
-    nCat = 0; }
+    nCat = 0; fonteBib = AJ_SALVOS_LOCAL; }
+
+  printf("\nLibrary includes only the selected source:\n");
+  {
+    SalvosEntrada u[16];
+    salvos_esquecer(); salvos_iniciar(); nCat = 0;
+    fonteBib = AJ_SALVOS_LOCAL;
+    salvos_definir(comId("tt8000001", "Local"), 1);
+    poeNoCatalogo("tt8000002", "Account", 1, 0, 0, 0);
+    fonteBib = AJ_SALVOS_TRAKT;
+    poeNoCatalogo("tt8000003", "Trakt", 1, 0, 0, 0);
+    fonteBib = AJ_SALVOS_SIMKL;
+    poeNoCatalogo("tt8000004", "Simkl", 1, 0, 0, 0);
+    for (int source = 0; source < 3; source++) {
+      fonteBib = source;
+      int n = salvos_uniao(u, 16);
+      confere("selected source row count", n, source == AJ_SALVOS_LOCAL ? 2 : 1);
+      for (int row = 0; row < 4; row++) {
+        char id[24]; snprintf(id, sizeof id, "tt800000%d", row + 1);
+        confere("source-specific inclusion", quantasVezes(u, n, id),
+                source == AJ_SALVOS_LOCAL ? row < 2 : row == source + 1);
+      }
+    }
+    nCat = 0; fonteBib = AJ_SALVOS_LOCAL;
+  }
 
   printf("\na revisao da lista sobe a cada mudanca:\n");
   { unsigned r0;
@@ -345,6 +388,28 @@ int main(void) {
     confere("sair apaga todos os perfis e a marca",
             !arq("salvos-p1.txt") && !arq("salvos-p2.txt") && !arq("salvos-migracao.txt"), 1);
     salvos_perfil(1); }
+
+  printf("\na marca no catalogo segue a fonte efetiva:\n");
+  { int k;
+    salvos_esquecer(); salvos_iniciar();
+    nCat = 0;
+    poeNoCatalogo("tt6000001", "Local so", 0, 0, 0, 0);
+    salvos_definir(comId("tt6000001", "Local so"), 1);
+    fonteBib = AJ_SALVOS_TRAKT;
+    confere("Trakt efetivo: salvar local nao marca o catalogo",
+            salvos_aplicar_catalogo(), 0);
+    confere("e o item segue sem marca", cat[0].naLista, 0);
+    k = 0;
+    salvos_reconciliar();   // idem na passada continua
+    confere("reconciliar tambem nao marca", cat[0].naLista, 0);
+    fonteBib = AJ_SALVOS_LOCAL;
+    confere("de volta ao LOCAL marca", salvos_aplicar_catalogo(), 1);
+    confere("e a marca ficou", cat[0].naLista, 1);
+    confere("local membership recorded", cat[0].listaFontes, 1u << AJ_SALVOS_LOCAL);
+    cat_definir_na_lista(0, 0);
+    confere("local membership removed", cat[0].listaFontes, 0);
+    (void)k;
+  }
 
   printf("\n%s\n", falhas ? "FALHOU" : "PASSOU");
   return falhas ? 1 : 0;

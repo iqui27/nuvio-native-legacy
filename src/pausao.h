@@ -10,7 +10,7 @@
 // AS REGRAS, uma a uma, com a linha de origem:
 //
 //   playerScreen.js:567   PAUSE_OVERLAY_DELAY_MS = 5000. O painel NAO sobe no
-//                         instante da pausa: sobe cinco segundos depois. Pausa
+//                         instante da pausa: sobe quatro segundos depois. Pausa
 //                         curta (levantar, pegar agua) nao merece uma ficha na
 //                         cara; pausa longa e alguem que parou para ler.
 //   playerScreen.js:568   MAX_PAUSE_OVERLAY_CAST = 8 nomes de elenco.
@@ -63,17 +63,20 @@ enum { PAUSAO_LIVRE = 0,     // nao consumiu: trate a tecla normalmente
 // quais folhas estao abertas. `idx` e o item do catalogo em reproducao, `imdb`
 // o id DELE (#190: o desenho confere que o indice ainda e aquele titulo, porque
 // o catalogo pode ser trocado entre este quadro e o desenho) e `linhaEp` a
-// linha "T1 · E4 · Nome" que o player ja monta (vazia num filme).
+// linha "T1 · E4 · Nome" que o player ja monta (vazia num filme). `sinopseEp` e
+// a sinopse do episodio em exibicao; so quando vazia vale a da serie.
+// `temporada`/`episodio` (<= 0 num filme) chaveiam os comentarios do Trakt.
 void pausao_atualizar(float dt, Uint32 agora, int podeSubir, int idx,
-                      const char *imdb, const char *linhaEp);
+                      const char *imdb, int temporada, int episodio,
+                      const char *linhaEp, const char *sinopseEp);
 
 // 1 do quadro em que o painel aparece ate o quadro em que some por completo.
 int  pausao_visivel(void);
 
-// SOMEONE TOUCHED THE CONTROL. Restarts the 5 s clock that makes the panel come
+// SOMEONE TOUCHED THE CONTROL. Restarts the 4 s clock that makes the panel come
 // up, and that is what stops it returning over someone who is still using the
 // player. Without it: the panel rises, a key dismisses it, its clock restarts
-// from zero, and the panel is back 5 s later - taking away the controls the
+// from zero, and the panel is back 4 s later - taking away the controls the
 // person just brought up.
 //
 // Call on EVERY key, not only the ones the panel consumes.

@@ -4,6 +4,7 @@
 #include "legenda.h"
 #include "dados.h"
 #include <assert.h>
+int xtream_url_limitada(const char *url) { (void)url; return 0; }
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>

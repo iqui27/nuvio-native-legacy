@@ -169,6 +169,9 @@ int main(int argc, char **argv) {
     fclose(f);
     ajustes_dir(getenv("NUVIO_DADOS")); }
   ajustes_iniciar();
+  // #205: a cara Cinema e a abertura normal; a medida das faixas e a do degrade
+  // desfocado (a arte nitida tem faixas chapadas dela mesma).
+  assert(ajustes_shot_valor("aberturaFundoLocal", 2));
   if (getenv("NUVIO_SHOT_VIDRO")) ajustes_definir_vidro(1);
   { CatItem c; memset(&c, 0, sizeof c);
     snprintf(c.tipo, sizeof c.tipo, "movie");

@@ -258,7 +258,11 @@ int main(void) {
   CONFERE(cursor == 3, "o 304 nao mexe no cursor (%lld)", cursor);
   CONFERE(!strcmp(etagRec, "\"9-3-2\""), "o 304 preserva o ETag: [%s]", etagRec);
 
-  // --- 7. o cache sobrevive ao arranque ------------------------------------
+  // --- 7. o cache sobrevive ao arranque, inclusive sem login ----------------
+  { char usuario[80], jwt[3000];
+    CONFERE(!sessao_identidade_local_copiar(usuario, sizeof usuario, jwt, sizeof jwt),
+            "o arranque do fixture deve ser anonimo");
+    memset(jwt, 0, sizeof jwt); }
   simularArranque();
   CONFERE(recomenda_n() == 0, "o arranque simulado esvaziou a memoria");
   recomenda_iniciar();

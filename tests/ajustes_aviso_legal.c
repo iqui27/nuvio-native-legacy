@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
   assert(registro_legal_aberto() == 2); fechar();
   if (!strcmp(argv[2], "primeira")) assert(!dados_ler("aviso-legal.txt")); // leitura nao marca aviso
   // Gravar Xtream via teclado: a operacao termina antes do aviso informativo.
-  focarOpcao(AJ_XTREAM_SERVIDOR); key(SDLK_RETURN);
+  ajIptvNovaAbrir(AJ_IPTV_ADD_XTREAM);
   assert(teclado_aberto()); teclado_teste_texto("https://tv.example");
   teclado_teste_foco(0, 0);
   { SDL_Event e = {0}; e.type = SDL_KEYDOWN;
@@ -38,6 +38,11 @@ int main(int argc, char **argv) {
     e.key.keysym.sym = SDLK_RIGHT; teclado_evento(&e); teclado_evento(&e);
     e.key.keysym.sym = SDLK_RETURN; teclado_evento(&e); }
   assert(!teclado_aberto());
+  ajustes_atualizar(0.016f, SDL_GetTicks());
+  assert(iptvForm.nova && !strcmp(iptvForm.servidor, "https://tv.example"));
+  snprintf(iptvForm.usuario, sizeof iptvForm.usuario, "fixture-user");
+  snprintf(iptvForm.senha, sizeof iptvForm.senha, "fixture-password");
+  ajIptvSalvar();
   ajustes_atualizar(0.016f, SDL_GetTicks());
   if (!strcmp(argv[2], "primeira")) {
     assert(registro_legal_aberto() == 1);

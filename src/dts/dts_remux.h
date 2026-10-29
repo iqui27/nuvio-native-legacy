@@ -1,4 +1,5 @@
-/* DTS / TrueHD -> Dolby Digital remux for the Samsung .tpk. Video packets are copied untouched; ONE
+/* DTS / TrueHD -> Dolby Digital remux for the Samsung .tpk
+ * (docs/features/dts/README.md). Video packets are copied untouched; ONE
  * DTS/TrueHD/MLP track is decoded and re-encoded as AC3 (5.1 640 kb/s, or 2.0
  * 192 kb/s for stereo sources) or, with the "Stereo" setting, AAC 2.0. Output
  * goes to a writer callback: MPEG-TS segments for HLS, or one progressive
@@ -47,9 +48,12 @@ typedef struct {
 typedef int (*DtsRemuxWrite)(void *opaque, const unsigned char *data, int n);
 
 int dts_remux_available(void);
-/* Bytes of packets all generators together may hold queued (default 192 MiB;
- * the lower-RAM TVs set less). A generator that would pass it fails cleanly. */
+/* Shared packet budget across generators: 192 MiB, 128 MiB on older TVs. */
 void dts_remux_set_queue_budget_mib(int mib);
+/* Device offset, snapshotted by each new source. Positive delays audio only. */
+void dts_remux_set_audio_offset_ms(int ms);
+/* #605: strip HDR10+ dynamic SEI from HEVC video packets of the next open. */
+void dts_remux_set_hdr10p_strip(int on);
 
 /* Opens the source and reads its keyframe index (one seek: Matroska parses
  * Cues lazily). audio_ordinal: which audio track to convert, counted among the
@@ -61,6 +65,13 @@ void dts_remux_set_queue_budget_mib(int mib);
  * failure with the reason in err (no URL in it). */
 DtsRemux *dts_remux_open(const char *url, const char *headers, int audio_ordinal, int stereo_aac,
                          double seg_target_s, volatile int *cancel, char *err, size_t errn);
+/* The same in two steps, so another thread can stop a probe that waits on the
+ * network: dts_remux_new() returns an empty source that dts_remux_cancel()
+ * already accepts (*cancel, may be NULL, is also read as in dts_remux_open); dts_remux_probe() fills it (0) or fails (-1, reason in err,
+ * "Cancelled" after a cancel). Either way the caller closes it. */
+DtsRemux *dts_remux_new(volatile int *cancel);
+int dts_remux_probe(DtsRemux *, const char *url, const char *headers, int audio_ordinal, int stereo_aac,
+                    double seg_target_s, char *err, size_t errn);
 const DtsRemuxInfo *dts_remux_info(const DtsRemux *);
 double dts_remux_segment_start(const DtsRemux *, int seg);    /* seconds; segment 0 = 0 */
 double dts_remux_segment_duration(const DtsRemux *, int seg);
@@ -68,9 +79,6 @@ int dts_remux_segment_at(const DtsRemux *, double seconds);
 /* Source time of the index keyframe at or before `seconds` (progressive runs
  * start there); `seconds` itself when there is no index. */
 double dts_remux_keyframe_before(const DtsRemux *, double seconds);
-/* Rebuilds the HLS segment table for another target length (the size of the
- * source is known only after the open). Call before the first generator. */
-void dts_remux_resegment(DtsRemux *, double seg_target_s);
 /* Aborts every network wait of this source and its generators (async-safe). */
 void dts_remux_cancel(DtsRemux *);
 /* Frees the source; every generator must be freed first. */

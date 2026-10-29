@@ -64,6 +64,13 @@
 //      foi substituida: ela virou a rede embaixo.
 //   3. -1, e stream_automatico() assume, como sempre.
 //
+// ATUALIZACAO (dono, 15/10/2026): antes de tudo isso vem o LANCAMENTO (mesmo
+// addon + mesma impressao de release, fontepref_lancamento), e as camadas
+// viraram pontos numa passada so — a tabela esta junto de
+// fontepref_lancamento, abaixo. Motivo: com um bingeGroup largo ("aio|1080p")
+// varios lancamentos empatavam e ganhava o primeiro da lista do addon, nao o
+// que a pessoa escolheu. Nada casou continua sendo -1.
+//
 // A camada 1 NAO EXIGE provedor: o bingeGroup e a declaracao do addon sobre
 // identidade de fonte, e e assim que o app web o usa (um `find` por
 // bingeGroup, sem olhar mais nada). A camada 2 continua exigindo as duas
@@ -115,6 +122,23 @@
 // same way still matches, which is the discipline of the other two keys.
 #define FONTEPREF_ARQUIVO 256
 
+// THE RELEASE FINGERPRINT (fontepref_lancamento): what the release name says
+// AFTER the episode marker, where the release itself is named:
+// "grupo|resolucao|origem|codec|hdr" ("ntb|1080|webdl|avc|"). fileKey keeps
+// only the part BEFORE the marker (the name of the show), which is the same
+// for every release of that show; this is what tells two releases apart.
+#define FONTEPREF_LANC 96
+
+// THE TIER of a source (fontepref_nivel): SeaDex best/alternative, or the
+// release tier an AIOStreams formatter writes ("Remux T1", "BD T2", "Web T1",
+// "Tier 01"...), as one label: "seadex-best", "seadex-alt", "remux-t1",
+// "uhd-bluray-t2", "web-scene". Read from the name and the description (file
+// names never carry it), after folding styled Unicode (math bold, small caps,
+// sub/superscript digits, fullwidth, enclosed letters) back to ASCII. A tier
+// only counts right after a source word, so "Terminator 2" or "S01" never do;
+// a bare "SeaDex" never counts either ("SeaDex Muxers" is a tier name).
+#define FONTEPREF_NIVEL 32
+
 // VALIDADE DA PREFERENCIA — 180 dias.
 //
 // O app web tambem expira a dele, e a comparacao importa porque os dois
@@ -152,36 +176,59 @@ typedef struct {
   char bingeGroup[FONTEPREF_BINGE]; // o que o addon declarou; vazio e comum
   char rotulo[192];                 // desempate e log
   char arquivo[FONTEPREF_ARQUIVO];  // fileKey(): release name, no episode marker
+  char lancamento[FONTEPREF_LANC];  // fontepref_lancamento(): the release itself
+  char nivel[FONTEPREF_NIVEL];      // fontepref_nivel(): SeaDex / tier label
   int  altura;
   long long quandoS;                // time(NULL) da escolha
 } FontePref;
 
-// --- A MEMORIA DO AUTOMATICO (2.0.4, #310) ---------------------------------
+// --- A MEMORIA DO AUTOMATICO (2.0.4, #310; dono, 16/10/2026) -------------
 //
-// Quem nunca abre a folha de fontes nunca teve preferencia gravada, e o
-// episodio seguinte caia na pontuacao, que pode trocar de release. Agora o
-// bingeGroup da fonte que o AUTOMATICO escolheu e que TOCOU (app.c, so depois
-// de o video andar) tambem e guardado — mas SEPARADO da escolha da pessoa:
-// outra tabela, outro arquivo (fontepref-auto-p<N>.txt, que o app antigo nem
-// le, entao o formato da manual nao muda). Por isso fontepref_tem e
-// fontepref_do_titulo continuam respondendo SO pela manual: e delas que
-// dependem a folha abrir em "escolher ao reproduzir", o "Sua escolha anterior"
-// e o Retomar. A manual sempre vence: com ela gravada a automatica nem entra, e
-// gravar uma manual apaga a automatica do titulo.
-//
-// Guarda so o bingeGroup (sem grupo nao guarda nada: a heuristica de
-// provedor+audio foi feita para uma escolha deliberada). Ao ler, so segue o
-// grupo se isso nao rebaixar o que o automatico escolheria hoje
-// (stream_grupo_sem_perda: regras do dono, faixa, DV, MP4 da LG). Grupo ausente
-// na lista: cai calado na pontuacao e NAO apaga a memoria. Outro grupo que
-// TOCOU em automatico substitui (e a release que de fato esta disponivel);
-// vence o prazo da manual (FONTEPREF_VALIDADE_S).
-// 1 = guardou/atualizou; 0 = nada (sem grupo, manual existente, episodio nao).
+// A fonte que o AUTOMATICO escolheu e que TOCOU (app.c, so depois de o video
+// estar pronto e andar 3 s; serie apenas) vira preferencia do titulo quando
+// nao ha escolha a mao em vigor: o MESMO registro de uma escolha a mao
+// (provedor, trilha, bingeGroup, lancamento...), casado do MESMO jeito
+// (casar: lancamento, depois bingeGroup, depois provedor + audio). Ela mora
+// noutra tabela e noutro arquivo (fontepref-auto-p<N>.txt) porque a escolha a
+// mao MANDA:
+//   - com uma escolha a mao gravada e nao vencida, nada e guardado aqui, e a
+//     leitura usa a mao (fontepref_escolher);
+//   - escolher a mao apaga a automatica do titulo;
+//   - fontepref_tem / fontepref_do_titulo / fontepref_escolher_manual sao SO
+//     da mao: a folha nao marca a automatica como "Sua escolha anterior" e
+//     "escolher a fonte ao reproduzir" continua abrindo a folha.
+// A resolucao nao entra (uma "4K" de IA nao tira a fonte que ja provou que
+// toca); o que nao pode tocar aqui e recusado, e na mesma resolucao uma release
+// com evidencia claramente maior ainda vence (stream_grupo_sem_perda).
+// Nada casou: -1 e o automatico de sempre. Outra fonte que TOCOU substitui
+// (e a que de fato esta disponivel); vale o prazo da mao (FONTEPREF_VALIDADE_S).
+// 1 = guardou/atualizou; 0 = nada (sem provedor, mao em vigor, a mesma de novo).
 int fontepref_auto_guardar(const char *id, const Stream *s);
 // Como fontepref_escolher, mas SO a escolha da pessoa: para a folha de fontes e
 // para "escolher a fonte ao reproduzir", onde a automatica nao pode aparecer
 // como escolha nem tocar sozinha.
 int fontepref_escolher_manual(const char *id);
+
+// OS AJUSTES DE REPRODUCAO. app.c passa "Preferir o mesmo grupo de fonte" em
+// `reusar` E em `preferirGrupo` (o dono, 16/10: lembrar a escolha a mao para o
+// titulo inteiro faz parte dele), 0 em `validadeS`, e "Reusar o grupo entre
+// sessoes" em `grupoEntreSessoes`. Os valores de fabrica sao o comportamento de
+// antes: 1, FONTEPREF_VALIDADE_S, 1, 1.
+//   reusar=0         fontepref_do_titulo/_tem/_escolher_manual nao veem a
+//                    escolha manual (ela continua gravada e gravando).
+//   validadeS        prazo da escolha manual (venceu()); <= 0 = o de fabrica.
+//   preferirGrupo=0  o bingeGroup nao decide nada: nem a camada 1 da manual
+//                    (sobra provedor + trilha) nem a memoria do automatico.
+//   grupoEntreSessoes=0  a escolha manual e a memoria do automatico so valem
+//                    para o titulo que ESTE processo gravou ou confirmou; os
+//                    arquivos continuam sendo escritos.
+// app.c chama a cada quadro; sao so atribuicoes.
+void fontepref_configurar(int reusar, long long validadeS, int preferirGrupo, int grupoEntreSessoes);
+
+// A memoria em vigor deste titulo: a escolha a mao, senao a fonte que o
+// automatico tocou (se os ajustes a deixam valer). NULL = nenhuma. Para app.c
+// esperar pelo add-on dela antes de decidir (autoParcialPronto).
+const FontePref *fontepref_memoria(const char *id);
 
 // Le o arquivo do perfil corrente. Chamar no arranque, depois de
 // dados_iniciar. Sem pasta de dados e no-op silencioso (dados.c ja explicou no
@@ -209,6 +256,31 @@ void fontepref_id_base(const char *id, char *dst, unsigned tam);
 // "mesmo provedor" e a melhor resposta possivel.
 void fontepref_trilha(const Stream *s, char *dst, unsigned tam);
 
+// THE RELEASE FINGERPRINT of a source: "grupo|resolucao|origem|codec|hdr",
+// read from behaviorHints.filename (the descricao when there is no file name,
+// without the group: a description is not a release name). Empty when nothing
+// in it names the release. Starts with '|' when there is no release group:
+// such a fingerprint still narrows the match, but counts less (see casar()).
+//
+// THE MATCHING ORDER, for the remembered pick (manual) and for the automatic
+// memory alike, by points over the whole list (the highest wins; nothing
+// scores = -1, and the automatic pick takes over as always):
+//   5000  same bingeGroup (the addon's own "same source" label) — FIRST, as
+//         in Nuvio (owner, 16/10): it beats everything below combined, and
+//         for the automatic memory the release-evidence rule does not drop it;
+//   1000  same addon AND same fingerprint with a release group: the release
+//         you picked, in this episode;
+//    400  same addon, same resolution AND same tier (SeaDex best/alt, Remux
+//         T1...): the release is missing, an equally ranked one is here;
+//    300  same addon AND same fingerprint without a group;
+//    200  same addon AND same audio tags (provedor + trilha, strict);
+//    100  same addon, today's tags contain the remembered ones.
+// Points add up, so a source that is the same release AND the same bingeGroup
+// beats one that is only either; nota() breaks ties. On Next, the bingeGroup
+// of the source PLAYING NOW comes before all of this (fontepref_binge_tocando).
+void fontepref_lancamento(const Stream *s, char *dst, unsigned tam);
+void fontepref_nivel(const Stream *s, char *dst, unsigned tam);
+
 // Guarda a escolha e GRAVA. `id` pode vir com episodio; e cortado aqui.
 // Devolve 1 quando a tabela mudou. Fonte sem provedor nao entra.
 int fontepref_guardar(const char *id, const Stream *s);
@@ -225,5 +297,28 @@ int fontepref_tem(const char *id);
 // deste titulo. -1 quando nao ha preferencia ou quando nenhuma fonte de hoje
 // casa — e -1 quer dizer "siga o automatico", nunca "nao toque".
 int fontepref_escolher(const char *id);
+// Bumps whenever the manual or automatic tables change (load, save, profile):
+// callers that cache fontepref_escolher per stream list key on it too.
+unsigned fontepref_revisao(void);
+// A mesma memoria para uma lista propria do proximo episodio. O callback
+// compara a qualidade nessa lista, sem ler/instalar a lista em reproducao.
+int fontepref_escolher_lista(const char *id, const Stream *fontes, int n,
+                             int (*semPerda)(int indice, int forte, void *ctx), void *ctx);
+
+// --- NEXT: A FONTE QUE ESTA TOCANDO (dono, 16/10, como o Nuvio) -----------
+// No Next, a PRIMEIRA prioridade e uma fonte com o bingeGroup EXATO da fonte
+// que esta tocando agora (mesmo que ela tenha vindo de um recuo do automatico);
+// so sem ela entram as regras acima (escolha a mao / memoria do automatico).
+// So na RAM. fontepref_tocando: chamado quando uma fonte de episodio tocou de
+// verdade. _tocando_de: 1 se ha uma, com bingeGroup, para este titulo.
+// _binge_tocando: indice na lista atual (stream_item) ou -1.
+// _escolher_lista_next: o mesmo numa lista propria, e sem casar cai em
+// fontepref_escolher_lista. `forte` em semPerda = casou pelo bingeGroup: so
+// precisa poder tocar (a regra de evidencia nao vale).
+void fontepref_tocando(const char *id, const Stream *s);
+int  fontepref_tocando_de(const char *id, char *provedor, unsigned tamProv, char *binge, unsigned tamBinge);
+int  fontepref_binge_tocando(const char *id);
+int  fontepref_escolher_lista_next(const char *id, const Stream *fontes, int total,
+                                   int (*semPerda)(int indice, int forte, void *ctx), void *ctx);
 
 #endif

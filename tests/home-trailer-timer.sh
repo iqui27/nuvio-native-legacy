@@ -18,3 +18,9 @@ cc -DNV_TPK -O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   src/cwordem.c src/cwretido.c tests/home-trailer-timer.c tests/amigosfil_stub.c src/trailerfonte.c \
   -Wl,-dead_strip,-undefined,dynamic_lookup -o ${TMPDIR:-/tmp}/nuvio-home-trailer-tpk
 ${TMPDIR:-/tmp}/nuvio-home-trailer-tpk
+cc -DNV_ANDROID -O1 -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
+  -ffunction-sections -fdata-sections tests/trailer-android-geometry.c \
+  -Wl,-dead_strip,-undefined,dynamic_lookup -o ${TMPDIR:-/tmp}/nuvio-trailer-android-geometry
+${TMPDIR:-/tmp}/nuvio-trailer-android-geometry
+bash tests/video_android_janela.sh
+python3 tests/android_window_ready.py

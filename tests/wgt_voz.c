@@ -13,6 +13,7 @@
 #include <string.h>
 
 const char *desc_tmdb_idioma(void) { return "pt-BR"; }
+int ajustes_teclado_android(void) { return 0; }
 
 // --- o window.nvTexto fingido ---
 static int temCampo = 1, mic = -1, seq, fim = -1, abriu, fechou, abriuVoz;
@@ -110,6 +111,11 @@ int main(int argc, char **argv) {
   assert(fechou == 1 && !texto_sistema_aberto() && !st_aviso()[0]);
   r = ler(ST_BUSCA, t, sizeof t);
   assert(r == ST_NADA);
+
+  assert(st_voz_iniciar(ST_BUSCA));
+  fim = 2;
+  assert(ler(ST_BUSCA, t, sizeof t) == ST_CANCELOU);
+  assert(st_estado() == ST_PARADO && st_aviso()[0] && !texto_sistema_aberto());
 
   SDL_Quit();
   printf("PASS: wgt_voz mic=%d (teclado da TV para digitar e botao de microfone)\n", mic);

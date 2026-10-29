@@ -233,19 +233,23 @@ void jsm_fonte(JsMotor *m, const char *tipo) { snprintf(m->fonte, sizeof m->font
 static void reportar(JsMotor *m, double agora, int parado) {
   const char *st;
   int pct = 0;
-  char b[256];
+  char b[512];
   int pronto = m->p.pronto(m->p.u);
   if (!pronto) {
     st = m->stApp[0] ? m->stApp : "carregando";
     pct = m->pctApp;
   } else if (m->p.bufferando_ms(m->p.u) > 1000 || parado || (m->seekEmCurso && agora - m->seekEm > 1500)) {
     st = "carregando";
+    pct = m->pctApp;
   } else if (m->p.tocando(m->p.u)) st = "tocando";
   else st = "pronto";
-  if (!strcmp(st, m->stEnviado) && (strcmp(st, "carregando") || pct == m->pctEnviado || agora - m->estadoEm < 1000))
-    return;
+  if (!strcmp(st, m->stEnviado) && agora - m->estadoEm < 1000) return;
   if (jsp_estado(b, sizeof b, st, pct, posLocal(m, agora), m->p.duracao(m->p.u), m->fonte,
-                 m->rel.tem ? m->rel.melhorRtt : 0, m->sync.latSeekMs + m->sync.latPlayMs) > 0 && mandar(m, b) == 1) {
+                 m->rel.tem ? m->rel.melhorRtt : 0, m->sync.latSeekMs + m->sync.latPlayMs) <= 0) return;
+  size_t len = strlen(b);
+  snprintf(b + len - 1, sizeof b - len + 1, ",\"stats\":%d,\"offset\":%.0f,\"drift\":%.0f,\"altura\":%d}",
+           m->rel.tem, m->rel.offset, (posLocal(m, agora) - jsm_pos_alvo(m, agora)) * 1000, m->altura);
+  if (mandar(m, b) == 1) {
     snprintf(m->stEnviado, sizeof m->stEnviado, "%s", st);
     m->pctEnviado = pct;
     m->estadoEm = agora;
@@ -370,6 +374,9 @@ int jsm_cmd(JsMotor *m, const char *op, double pos, const char *ep, double agora
   int controle = strcmp(op, "encerrar") != 0;
   if (!m->conectado) return -1;
   if (controle && !jsm_pode_controlar(m)) return 0;
+  if (m->temSala && m->sala.rel.estado == JSE_LOBBY &&
+      (!strcmp(op, "play") || !strcmp(op, "seek"))) return 0;
+  if (!strcmp(op, "comecar") && (!m->temSala || m->sala.rel.estado != JSE_LOBBY || !jsm_sou_anfitriao(m))) return 0;
   if (!strcmp(op, "pausa")) {
     // Otimista: para na hora, no quadro em que a pessoa apertou.
     pos = posLocal(m, agora);

@@ -154,6 +154,10 @@ int js_cadeia(const char *p, char *dst, size_t tam) {
   return lerTextoEm(p, p + strlen(p), dst, tam);
 }
 
+int js_cadeia_linhas(const char *p, char *dst, size_t tam) {
+  return p && tam ? lerTextoEm2(p,p+strlen(p),dst,tam,1) : 0;
+}
+
 int js_texto(const char *ini, const char *fim, const char *chave,
              char *dst, size_t tam) {
   const char *p;
@@ -225,6 +229,29 @@ const char *js_prox(const char *fimAnterior) {
     return (*p == '{' || *p == '"') ? p : NULL;
   }
   return NULL;
+}
+
+// Density alone cannot distinguish a sparse catalog from broken numbering.
+int js_videos_temporadas_falsas(const char *corpo) {
+  const char *v = js_array(corpo, NULL, "videos");
+  int temporadas[5], n = 0;
+  while (v) {
+    const char *f = js_fim(v);
+    int t = (int)js_num(v, f, "season", 0);
+    if (t > 0) {
+      char d[40] = "";
+      int i;
+      if (js_num(v, f, "episode", 0) != 1) return 0;
+      js_texto(v, f, "released", d, sizeof d);
+      // Missing dates are unknown, not evidence of a fabricated season.
+      if (strspn(d, "0123456789") != 4 ||
+          (d[4] && strncmp(d + 4, "-01-01", 6))) return 0;
+      for (i = 0; i < n && temporadas[i] != t; i++) {}
+      if (i == n && n < 5) temporadas[n++] = t;
+    }
+    v = js_prox(f);
+  }
+  return n == 5;
 }
 
 const char *js_raiz_array(const char *corpo) {

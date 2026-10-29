@@ -33,6 +33,7 @@ typedef enum {
 int discord_disponivel(void);
 
 DisEstado discord_estado(void);
+void discord_recarregar(void); // reload account-restored connection
 void discord_comecar(void);       // pede codigo novo e mostra
 void discord_cancelar(void);      // fecha o cartao de vinculo
 void discord_esquecer(void);      // desvincula o perfil ativo

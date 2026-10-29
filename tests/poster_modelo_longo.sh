@@ -12,7 +12,7 @@ sources=()
 for source in src/*.c src/dts/*.c; do
   if [ "$source" != src/main.c ]; then sources+=("$source"); fi
 done
-cc -DAJUSTES_TESTE "${sources[@]}" tests/poster_modelo_longo.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-postermodelo-tests \
+cc -DAJUSTES_TESTE -DNV_TEXTO_SDL_TESTE "${sources[@]}" tests/poster_modelo_longo.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-postermodelo-tests \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined -w

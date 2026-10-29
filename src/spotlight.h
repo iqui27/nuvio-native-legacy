@@ -80,6 +80,7 @@
 #ifndef NV_SPOTLIGHT_H
 #define NV_SPOTLIGHT_H
 #include <SDL2/SDL.h>
+#include "guiav5.h"
 
 // Teclas sinteticas (ver o topo): quem traduz o controle manda estas.
 #define SPOT_TECLA_VOZ   SDLK_F6
@@ -94,6 +95,14 @@ void spot_abrir_demo(void);
 void spot_abrir_ajustes(int voz);
 // "Buscar no guia" (Guia de uso): os recursos do guia e os ajustes que casam.
 void spot_abrir_guia(void);
+/* Live TV uses the same entry, motion and renderer. Callbacks stay on the UI thread. */
+enum { SPOT_TV_CANAL, SPOT_TV_PROGRAMA, SPOT_TV_CATEGORIA, SPOT_TV_VOD, SPOT_TV_ESPORTE };
+typedef struct {
+  int tipo, indice;
+  time_t inicio;
+  char id[128], nome[140];
+} SpotTVResultado;
+void spot_abrir_tv(const G5Item *(*catalogo)(int indice, int *n), void (*abrir)(const SpotTVResultado *));
 // Reabre a busca local após abrir um resultado, restaurando consulta e foco.
 void spot_reabrir_ajustes(void);
 void spot_fechar(void);

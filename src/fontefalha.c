@@ -1,21 +1,77 @@
 #define _POSIX_C_SOURCE 200809L
 #include "fontefalha.h"
 #include <ctype.h>
+#include <errno.h>
+#include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 static FonteFalhaConfig configuracao;
 static char diretorio[1024];
+static char arquivoAtivo[128] = "fontefalha.txt";
 static int iniciada;
+static pthread_mutex_t configTrava = PTHREAD_MUTEX_INITIALIZER;
+static const char *const filtroChaves[FONTEFILTRO_N] = {
+  "filtro_resolucao", "filtro_qualidade", "filtro_visual", "filtro_audio",
+  "filtro_canais", "filtro_encode", "filtro_linguas"
+};
+
+static int hexDigito(unsigned char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+static int filtroMascara(const char *texto, uint64_t *saida) {
+  size_t n = strlen(texto);
+  if (!n || n > 16) return 0;
+  uint64_t v = 0;
+  for (size_t i = 0; i < n; i++) {
+    int d = hexDigito((unsigned char)texto[i]);
+    if (d < 0) return 0;
+    v = (v << 4) | (unsigned)d;
+  }
+  *saida = v; return 1;
+}
+static int filtroMaximo(const char *texto, unsigned *saida) {
+  if (!*texto) return 0;
+  unsigned v = 0;
+  for (const unsigned char *p = (const unsigned char *)texto; *p; p++) {
+    if (*p < '0' || *p > '9') return 0;
+    v = v * 10 + *p - '0';
+    if (v > FONTEFILTRO_MAX_GB) return 0;
+  }
+  *saida = v; return 1;
+}
+static int filtroGruposLer(const char *texto, char *saida, size_t n) {
+  if (!strcmp(texto, "-")) { saida[0] = 0; return 1; }
+  size_t l = strlen(texto);
+  if (!l || (l & 1) || l / 2 >= n) return 0;
+  char grupos[sizeof ((FonteFiltroConfig *)0)->grupos] = {0};
+  for (size_t i = 0; i < l; i += 2) {
+    int a = hexDigito((unsigned char)texto[i]), b = hexDigito((unsigned char)texto[i + 1]);
+    if (a < 0 || b < 0) return 0;
+    unsigned c = (unsigned)(a * 16 + b);
+    if (c < 32 || c >= 127) return 0;
+    grupos[i / 2] = (char)c;
+  }
+  return fontefiltro_grupos_normalizar(grupos, saida, (unsigned)n);
+}
 
 static void padrao(FonteFalhaConfig *c) {
   memset(c, 0, sizeof *c);
   for (int i = 0; i < 4; i++) { c->ordem[i] = i; c->limites[i] = 3; }
 }
-static void iniciar(void) { if (!iniciada) { padrao(&configuracao); iniciada = 1; } }
+static void iniciar(void) {
+  pthread_mutex_lock(&configTrava);
+  if (!iniciada) { padrao(&configuracao); iniciada = 1; }
+  pthread_mutex_unlock(&configTrava);
+}
 static int limiteVale(int n) { return n >= 1 && n <= FONTEFALHA_MAX_LINKS; }
 static int chaveVale(const char *s) {
   if (!s || strlen(s) != 32) return 0;
@@ -42,26 +98,53 @@ static int addonAdicionar(FonteFalhaConfig *c, const char *chave) {
   i = c->nAddons++;
   snprintf(c->addon[i].chave, sizeof c->addon[i].chave, "%s", chave);
   c->addon[i].limite = 3;
+  c->addon[i].aoVivo = 0;
   return i;
 }
-static int caminho(char *dst, size_t n, const char *sufixo) {
-  if (!diretorio[0]) return 0;
-  int r = snprintf(dst, n, "%s/fontefalha.txt%s", diretorio, sufixo);
+static int nomeVale(const char *nome) {
+  if (!nome || !*nome || strlen(nome) >= sizeof arquivoAtivo || nome[0] == '.') return 0;
+  for (const unsigned char *p = (const unsigned char *)nome; *p; p++)
+    if (!isalnum(*p) && *p != '-' && *p != '_' && *p != '.') return 0;
+  return 1;
+}
+static int caminhoNome(char *dst, size_t n, const char *nome, const char *sufixo) {
+  if (!diretorio[0] || !nomeVale(nome)) return 0;
+  int r = snprintf(dst, n, "%s/%s%s", diretorio, nome, sufixo);
   return r >= 0 && (size_t)r < n;
 }
 void fontefalha_dir(const char *dir) {
   diretorio[0] = 0;
   if (dir && strlen(dir) < sizeof diretorio) strcpy(diretorio, dir);
+  snprintf(arquivoAtivo, sizeof arquivoAtivo, "fontefalha.txt");
   fontefalha_config_ler();
 }
-void fontefalha_config_ler(void) {
+static void lerArquivo(const char *arquivo, FonteFalhaConfig *saida) {
   FonteFalhaConfig c;
-  char nome[1100], linha[512], k[40], extra;
-  padrao(&c); iniciada = 1;
-  FILE *f = caminho(nome, sizeof nome, "") ? fopen(nome, "r") : NULL;
+  char nome[1100], linha[1200], k[40], valor[1100], extra;
+  int filtroInvalido = 0;
+  padrao(&c);
+  FILE *f = caminhoNome(nome, sizeof nome, arquivo, "") ? fopen(nome, "r") : NULL;
   if (f) {
     while (fgets(linha, sizeof linha, f)) {
       int a, b, d, e;
+      // Nao deixar o restante de uma linha enorme virar uma nova preferencia.
+      if (!strchr(linha, '\n') && !feof(f)) {
+        int ch; while ((ch = fgetc(f)) != '\n' && ch != EOF) {}
+        if (!strncmp(linha, "filtro_", 7)) filtroInvalido = 1;
+        continue;
+      }
+      if (sscanf(linha, "%39s", k) == 1 && !strncmp(k, "filtro_", 7)) {
+        int categoria = -1;
+        for (int i = 0; i < FONTEFILTRO_N; i++) if (!strcmp(k, filtroChaves[i])) categoria = i;
+        if (categoria >= 0 || !strcmp(k, "filtro_maxgb") || !strcmp(k, "filtro_grupos")) {
+          int ok = sscanf(linha, "%39s %1099s %c", k, valor, &extra) == 2;
+          if (ok && categoria >= 0) ok = filtroMascara(valor, &c.filtro.excluir[categoria]);
+          else if (ok && !strcmp(k, "filtro_maxgb")) ok = filtroMaximo(valor, &c.filtro.maxGB);
+          else if (ok) ok = filtroGruposLer(valor, c.filtro.grupos, sizeof c.filtro.grupos);
+          if (!ok) filtroInvalido = 1;
+        }
+        continue;
+      }
       if (sscanf(linha, "provedores %d %c", &a, &extra) == 1 && (a == 0 || a == 1)) c.provedores = a;
       else if (sscanf(linha, "addons %d %c", &a, &extra) == 1 && (a == 0 || a == 1)) c.addons = a;
       else if (sscanf(linha, "ordem %d %d %d %d %c", &a, &b, &d, &e, &extra) == 4) {
@@ -71,15 +154,27 @@ void fontefalha_config_ler(void) {
         if (limiteVale(a) && limiteVale(b) && limiteVale(d) && limiteVale(e)) memcpy(c.limites, l, sizeof l);
       } else if (sscanf(linha, "addon %39s %d %c", k, &a, &extra) == 2 && limiteVale(a)) {
         int i = addonAdicionar(&c, k); if (i >= 0) c.addon[i].limite = a;
+      } else if (sscanf(linha, "addon_live %39s %d %c", k, &a, &extra) == 2 && (a == 0 || a == 1)) {
+        int i = addonAdicionar(&c, k); if (i >= 0) c.addon[i].aoVivo = a;
       }
     }
     fclose(f);
   }
-  configuracao = c;
+  // Filtros invalidos nao apagam a ordem/limites desta copia.
+  if (filtroInvalido || !fontefiltro_config_validar(&c.filtro)) memset(&c.filtro, 0, sizeof c.filtro);
+  *saida = c;
 }
-static int gravar(const FonteFalhaConfig *c) {
+void fontefalha_config_ler(void) {
+  FonteFalhaConfig c;
+  lerArquivo(arquivoAtivo, &c);
+  pthread_mutex_lock(&configTrava);
+  configuracao = c; iniciada = 1;
+  pthread_mutex_unlock(&configTrava);
+}
+static int gravarArquivo(const FonteFalhaConfig *c, const char *arquivo) {
   char nome[1100], temp[1120];
-  if (!caminho(nome, sizeof nome, "") || !caminho(temp, sizeof temp, ".tmp.XXXXXX")) return 0;
+  if (!caminhoNome(nome, sizeof nome, arquivo, "") ||
+      !caminhoNome(temp, sizeof temp, arquivo, ".tmp.XXXXXX")) return 0;
   int fd = mkstemp(temp);
   if (fd < 0) return 0;
   FILE *f = fdopen(fd, "w");
@@ -89,41 +184,99 @@ static int gravar(const FonteFalhaConfig *c) {
                    c->limites[0], c->limites[1], c->limites[2], c->limites[3]) >= 0;
   for (int i = 0; i < c->nAddons && ok; i++)
     ok = fprintf(f, "addon %s %d\n", c->addon[i].chave, c->addon[i].limite) >= 0;
+  for (int i = 0; i < c->nAddons && ok; i++)
+    if (c->addon[i].aoVivo) ok = fprintf(f, "addon_live %s 1\n", c->addon[i].chave) >= 0;
+  for (int i = 0; i < FONTEFILTRO_N && ok; i++)
+    ok = fprintf(f, "%s %016" PRIx64 "\n", filtroChaves[i], c->filtro.excluir[i]) >= 0;
+  if (ok) ok = fprintf(f, "filtro_maxgb %u\nfiltro_grupos ", c->filtro.maxGB) >= 0;
+  if (ok && !c->filtro.grupos[0]) ok = fputc('-', f) != EOF;
+  for (const unsigned char *p = (const unsigned char *)c->filtro.grupos; ok && *p; p++)
+    ok = fprintf(f, "%02x", (unsigned)*p) >= 0;
+  if (ok) ok = fputc('\n', f) != EOF;
   if (ok) ok = fflush(f) == 0 && fsync(fd) == 0;
   if (fclose(f) != 0) ok = 0;
   if (ok) ok = rename(temp, nome) == 0;
   if (!ok) unlink(temp);
   return ok;
 }
-static int publicar(const FonteFalhaConfig *c) {
-  if (!gravar(c)) return 0;
-  configuracao = *c; return 1;
+int fontefalha_preparar_privado(const char *arquivo) {
+  char nome[1100];
+  struct stat st;
+  FonteFalhaConfig compartilhada;
+  if (!caminhoNome(nome, sizeof nome, arquivo, "")) return 0;
+  // Uma copia existente, mesmo vazia, pertence a este perfil. Nao substitui-la
+  // por causa de erro de leitura ou por uma configuracao de outro perfil.
+  if (lstat(nome, &st) == 0) return S_ISREG(st.st_mode);
+  if (errno != ENOENT) return 0;
+  lerArquivo("fontefalha.txt", &compartilhada);
+  return gravarArquivo(&compartilhada, arquivo);
 }
-void fontefalha_config(FonteFalhaConfig *c) { iniciar(); if (c) *c = configuracao; }
-int fontefalha_ativa(void) { iniciar(); return configuracao.provedores || configuracao.addons; }
-int fontefalha_provedores(void) { iniciar(); return configuracao.provedores; }
-int fontefalha_addons(void) { iniciar(); return configuracao.addons; }
+int fontefalha_arquivo(const char *arquivo) {
+  if (!nomeVale(arquivo) || !diretorio[0]) return 0;
+  snprintf(arquivoAtivo, sizeof arquivoAtivo, "%s", arquivo);
+  fontefalha_config_ler();
+  return 1;
+}
+static int publicar(const FonteFalhaConfig *c) {
+  if (!gravarArquivo(c, arquivoAtivo)) return 0;
+  pthread_mutex_lock(&configTrava);
+  configuracao = *c;
+  pthread_mutex_unlock(&configTrava);
+  return 1;
+}
+void fontefalha_config(FonteFalhaConfig *c) {
+  iniciar();
+  pthread_mutex_lock(&configTrava);
+  if (c) *c = configuracao;
+  pthread_mutex_unlock(&configTrava);
+}
+int fontefalha_ativa(void) { FonteFalhaConfig c; fontefalha_config(&c); return c.provedores || c.addons; }
+int fontefalha_provedores(void) { FonteFalhaConfig c; fontefalha_config(&c); return c.provedores; }
+int fontefalha_addons(void) { FonteFalhaConfig c; fontefalha_config(&c); return c.addons; }
+void fontefalha_filtro(FonteFiltroConfig *c) {
+  iniciar();
+  pthread_mutex_lock(&configTrava);
+  if (c) *c = configuracao.filtro;
+  pthread_mutex_unlock(&configTrava);
+}
+int fontefalha_filtro_ativo(void) {
+  FonteFiltroConfig filtro;
+  fontefalha_filtro(&filtro);
+  for (int i = 0; i < FONTEFILTRO_N; i++) if (filtro.excluir[i]) return 1;
+  return filtro.maxGB != 0 || filtro.grupos[0] != 0;
+}
+int fontefalha_filtro_definir(const FonteFiltroConfig *filtro) {
+  iniciar();
+  if (!filtro || !memchr(filtro->grupos, 0, sizeof filtro->grupos)) return 0;
+  FonteFiltroConfig novo = {0};
+  memcpy(novo.excluir, filtro->excluir, sizeof novo.excluir); novo.maxGB = filtro->maxGB;
+  if (!fontefiltro_grupos_normalizar(filtro->grupos, novo.grupos, sizeof novo.grupos) ||
+      !fontefiltro_config_validar(&novo)) return 0;
+  FonteFalhaConfig c; fontefalha_config(&c); c.filtro = novo;
+  return publicar(&c);
+}
 int fontefalha_definir_provedores(int sim) {
-  iniciar(); FonteFalhaConfig c = configuracao; c.provedores = !!sim; return publicar(&c);
+  iniciar(); FonteFalhaConfig c; fontefalha_config(&c); c.provedores = !!sim; return publicar(&c);
 }
 int fontefalha_definir_addons(int sim) {
-  iniciar(); FonteFalhaConfig c = configuracao; c.addons = !!sim; return publicar(&c);
+  iniciar(); FonteFalhaConfig c; fontefalha_config(&c); c.addons = !!sim; return publicar(&c);
 }
 int fontefalha_provedor_posicao(int s) {
-  iniciar(); for (int i = 0; i < 4; i++) if (configuracao.ordem[i] == s) return i;
+  FonteFalhaConfig c; fontefalha_config(&c);
+  for (int i = 0; i < 4; i++) if (c.ordem[i] == s) return i;
   return -1;
 }
-int fontefalha_provedor_limite(int s) { iniciar(); return s >= 0 && s < 4 ? configuracao.limites[s] : 3; }
+int fontefalha_provedor_limite(int s) { FonteFalhaConfig c; fontefalha_config(&c); return s >= 0 && s < 4 ? c.limites[s] : 3; }
 int fontefalha_provedor_mover(int s, int delta) {
   iniciar(); int i = fontefalha_provedor_posicao(s), j = i + delta;
   if ((delta != -1 && delta != 1) || i < 0 || j < 0 || j >= 4) return 0;
-  FonteFalhaConfig c = configuracao;
+  FonteFalhaConfig c; fontefalha_config(&c);
   c.ordem[i] = c.ordem[j]; c.ordem[j] = s;
   return publicar(&c);
 }
 int fontefalha_provedor_definir_limite(int s, int l) {
   iniciar(); if (s < 0 || s >= 4 || !limiteVale(l)) return 0;
-  FonteFalhaConfig c = configuracao; c.limites[s] = l; return publicar(&c);
+  FonteFalhaConfig c; fontefalha_config(&c); c.limites[s] = l; return publicar(&c);
 }
 void fontefalha_addon_chave(const char *base, char *dst, unsigned n) {
   uint64_t a = UINT64_C(14695981039346656037), b = UINT64_C(7809847782465536322);
@@ -137,25 +290,39 @@ void fontefalha_addon_chave(const char *base, char *dst, unsigned n) {
 }
 void fontefalha_addons_registrar(const char *const *chaves, int n) {
   iniciar(); if (!chaves) return;
+  pthread_mutex_lock(&configTrava);
   for (int i = 0; i < n; i++) addonAdicionar(&configuracao, chaves[i]);
+  pthread_mutex_unlock(&configTrava);
 }
-int fontefalha_addon_posicao(const char *chave) { iniciar(); return addonIndice(&configuracao, chave); }
+int fontefalha_addon_posicao(const char *chave) { FonteFalhaConfig c; fontefalha_config(&c); return addonIndice(&c, chave); }
 int fontefalha_addon_limite(const char *chave) {
-  iniciar(); int i = addonIndice(&configuracao, chave); return i >= 0 ? configuracao.addon[i].limite : 3;
+  FonteFalhaConfig c; fontefalha_config(&c); int i = addonIndice(&c, chave); return i >= 0 ? c.addon[i].limite : 3;
 }
 int fontefalha_addon_mover(const char *chave, int delta) {
-  iniciar(); int i = addonIndice(&configuracao, chave);
-  if (!delta || delta <= -configuracao.nAddons || delta >= configuracao.nAddons || i < 0) return 0;
+  FonteFalhaConfig c; fontefalha_config(&c); int i = addonIndice(&c, chave);
+  if (!delta || delta <= -c.nAddons || delta >= c.nAddons || i < 0) return 0;
   int j = i + delta;
-  if (j < 0 || j >= configuracao.nAddons) return 0;
-  FonteFalhaConfig c = configuracao; FonteFalhaAddon a = c.addon[i]; c.addon[i] = c.addon[j]; c.addon[j] = a;
+  if (j < 0 || j >= c.nAddons) return 0;
+  FonteFalhaAddon a = c.addon[i]; c.addon[i] = c.addon[j]; c.addon[j] = a;
   return publicar(&c);
 }
 int fontefalha_addon_definir_limite(const char *chave, int l) {
   iniciar(); if (!limiteVale(l)) return 0;
-  FonteFalhaConfig c = configuracao; int i = addonAdicionar(&c, chave);
+  FonteFalhaConfig c; fontefalha_config(&c); int i = addonAdicionar(&c, chave);
   if (i < 0) return 0;
   c.addon[i].limite = l; return publicar(&c);
+}
+int fontefalha_addon_ao_vivo(const char *chave) {
+  if (!chave || !chave[0]) return 0;
+  iniciar(); pthread_mutex_lock(&configTrava);
+  int i = addonIndice(&configuracao, chave);
+  int ligado = i >= 0 && configuracao.addon[i].aoVivo;
+  pthread_mutex_unlock(&configTrava); return ligado;
+}
+int fontefalha_addon_definir_ao_vivo(const char *chave, int ligado) {
+  FonteFalhaConfig c; fontefalha_config(&c); int i = addonAdicionar(&c, chave);
+  if (i < 0) return 0;
+  c.addon[i].aoVivo = !!ligado; return publicar(&c);
 }
 
 typedef struct { char addon[FONTEFALHA_CHAVE]; int usadas[5]; } UsoAddon;
@@ -183,7 +350,7 @@ static int limiteAddon(const FonteFalhaSessao *s, const char *chave) {
   int i = addonIndice(&s->cfg, chave); return i >= 0 ? s->cfg.addon[i].limite : 3;
 }
 static int candidataVale(const FonteFalhaSessao *s, const FonteFalhaCandidata *c, int servico) {
-  if (c->indice < 0 || jaTentada(s, c, servico)) return 0;
+  if (c->indice < 0 || !fontefiltro_permite(&s->cfg.filtro, &c->filtro) || jaTentada(s, c, servico)) return 0;
   if (servico >= 0) {
     if (servico >= 4 || !s->cfg.provedores || !c->nativa || !(s->disponiveis & (1u << servico)) ||
         s->usadas[servico] >= s->cfg.limites[servico]) return 0;
@@ -198,7 +365,8 @@ FonteFalhaSessao *fontefalha_sessao_nova(const FonteFalhaConfig *cfg, unsigned d
   FonteFalhaSessao *s = calloc(1, sizeof *s);
   if (!s) return NULL;
   if (cfg) s->cfg = *cfg; else fontefalha_config(&s->cfg);
-  if (!ordemVale(s->cfg.ordem) || s->cfg.nAddons < 0 || s->cfg.nAddons > FONTEFALHA_MAX_ADDONS) {
+  if (!ordemVale(s->cfg.ordem) || s->cfg.nAddons < 0 || s->cfg.nAddons > FONTEFALHA_MAX_ADDONS ||
+      !fontefiltro_config_validar(&s->cfg.filtro)) {
     free(s); return NULL;
   }
   for (int i = 0; i < 4; i++) if (!limiteVale(s->cfg.limites[i])) { free(s); return NULL; }
@@ -207,6 +375,9 @@ FonteFalhaSessao *fontefalha_sessao_nova(const FonteFalhaConfig *cfg, unsigned d
   s->preferido = preferido;
   if (!s->cfg.provedores) s->fase = 4;
   return s;
+}
+void fontefalha_sessao_filtro(const FonteFalhaSessao *s, FonteFiltroConfig *saida) {
+  if (saida) { if (s) *saida = s->cfg.filtro; else memset(saida, 0, sizeof *saida); }
 }
 void fontefalha_sessao_liberar(FonteFalhaSessao *s) {
   if (!s) return;

@@ -86,4 +86,5 @@ int  recresp_pendente(char *corpo, size_t tam, long long *rec, unsigned *versao)
 void recresp_confirmar(long long rec, unsigned versao);
 // Sair da conta / trocar de perfil (recomenda_esquecer).
 void recresp_esquecer(void);
+void recresp_abrir_sessao(void); // invalida memoria sem apagar respostas salvas
 #endif

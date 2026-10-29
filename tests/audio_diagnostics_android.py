@@ -134,6 +134,7 @@ fun main() {
     val discontinuity = AudioSink.UnexpectedDiscontinuityException(500000, 0)
     val before = f.native.size
     a.onAudioSinkError(event, discontinuity)
+    check(f.native.last().contains("expectedUs=0 actualUs=500000"))
     repeat(10000) { a.onAudioSinkError(event, discontinuity) }
     check(f.native.size == before + 1)
     SystemClock.now = 29999

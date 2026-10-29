@@ -21,6 +21,7 @@ void explorar_desenhar(Uint32 agora);
 // Flags de navegacao no mesmo contrato das outras telas: a leitura consome o
 // pedido, evitando reabrir o detalhe ou a barra lateral em todos os quadros.
 int explorar_quer_sair(void);
+int explorar_pediu_relogio(void);
 int explorar_pediu_abrir(int *indice);
 
 #endif

@@ -29,6 +29,7 @@
 #ifndef NV_POSTERPROV_H
 #define NV_POSTERPROV_H
 #include <stddef.h>
+#include "arteurl.h"
 
 typedef enum {
   PP_DESLIGADO = 0,     // ordem = a de V_POSTER_PROV em ajustes.c e a gravada
@@ -37,13 +38,12 @@ typedef enum {
   PP_MODELO
 } PosterProv;
 
-#define PP_URL_MAX      512    // o tex_cache guarda o caminho em 512 bytes
+#define PP_URL_MAX      NV_ARTE_URL_MAX  // Same limit as catalog posters and texture URLs.
 #define PP_INSTANCIA_MAX 128
-#define PP_TOKEN_MAX    400    // a URL inteira tem de caber em PP_URL_MAX (512)
+#define PP_TOKEN_MAX    400    // The complete URL must fit PP_URL_MAX.
 #define PP_EXTRA_MAX    120
 #define PP_CHAVE_MAX     64
-#define PP_MODELO_MAX   401    // 400: o modelo colado do celular (o campo pede PP_MODELO_MAX - 1)
-                               // passa de 299 (#361/#390); a URL montada segue em PP_URL_MAX
+#define PP_MODELO_MAX   PP_URL_MAX  // Long provider settings must survive input and persistence.
 #define PP_INSTANCIA_PADRAO "https://spatial-posters.vercel.app"
 
 typedef struct {
@@ -72,8 +72,7 @@ int posterprov_normalizar_instancia(const char *entrada, char *out, size_t n);
 int posterprov_extrair_token(const char *entrada, char *tok, size_t n,
                              char *inst, size_t ni);
 
-// Parametros extras do SpatialPosters, a alternativa CURTA ao token (um token
-// real tem 500+ caracteres e nao cabe na URL de 512 nem no teclado da TV):
+// Short SpatialPosters parameters, an alternative to the token field:
 // "bs=vetro&side=right&lang=pt". Aceita ?/& na frente, so [A-Za-z0-9_=&.,%-],
 // e recusa fmt/format/config/c (o formato e nosso; o token tem campo proprio).
 // 1 se valido (normalizado em `out`, vazio = apagar).
@@ -81,6 +80,12 @@ int posterprov_extra_normalizar(const char *entrada, char *out, size_t n);
 
 // Modelo livre: http(s)://, marcadores {imdb} {tmdb} {type} {tipo_tmdb},
 // aliases {imdb_id} {tmdb_id} e {id} (IMDb se houver, senao TMDB).
+// {shape} = poster/landscape; its presence opts landscape cards into overrides.
+// Nuvio alternatives {tmdb_id|imdb_id}: first non-empty value wins.
+// {id_type} = imdb/tmdb; {typed_id} = tt... or movie-N/series-N.
+// Percent-encoded braces/pipes are accepted; other URL escapes stay unchanged.
+// {id} retains Legacy's IMDb-or-numeric-TMDB meaning for saved templates.
+// Identity markers may end in ? to emit an empty value when unavailable.
 // Pelo menos um deles. 1 se valido.
 int posterprov_modelo_valido(const char *modelo);
 // Para o que a pessoa DIGITA agora: valido e, no pior caso de cada marcador,
@@ -129,6 +134,9 @@ void posterprov_preferir_addon(int sim);
 int  posterprov_addon_vence(const char *origem, const char *orig);
 const char *posterprov_card_addon(const char *origem, const char *imdb, long tmdb,
                                   const char *tipo, const char *orig);
+
+const char *posterprov_card_formato(const char *origem, const char *imdb, long tmdb,
+                                    const char *tipo, const char *orig, int landscape);
 
 // 1 quando `url` e uma URL montada pelo provedor ativo (para o portao de
 // concorrencia e para redigir o log).

@@ -44,6 +44,7 @@
 #include "idioma.h"
 #include "botoes.h"
 #include "socialvis.h"
+#include "juntos.h"
 #include "svdesenho.h"
 #include "recresp.h"
 #include "reacao.h"
@@ -63,43 +64,37 @@
 // em x=1120, 776x1032): quem ja tinha o gesto na memoria muscular encontra a
 // camada no mesmo lugar, so com outro conteudo.
 #include "telefoneui.h"
-#define SP_X          (NV_TELA_W - SP_W - 24.0f)
-#define SP_W          telefoneui_largura(776.0f, NV_TELA_W, 24.0f)
+#define SP_X          (NV_TELA_W - SP_W - 40.0f)
+#define SP_W          telefoneui_largura(760.0f, NV_TELA_W, 40.0f)
 // A ILHA FLUTUA A NV_FOLHA_MARGEM das tres bordas e com o raio da folha de
 // Fontes (streams.c): as duas camadas da direita sao o mesmo objeto, e uma
 // colada no topo ao lado da outra solta leria como dois materiais.
-#define SP_Y          NV_FOLHA_MARGEM
-#define SP_H          (NV_TELA_H - 2.0f * NV_FOLHA_MARGEM)
-#define SP_RAIO        NV_FOLHA_RAIO
+#define SP_Y          40.0f
+#define SP_H          (NV_TELA_H - 80.0f)
+#define SP_RAIO        36.0f
 // A GRAMATICA DO MOCKUP APROVADO ("Glass UI — ilha", tela 3; o CSS esta em
 // design/glass-ilha/glass-ilha.html), em px de 1080p e RELATIVA AO TOPO E A
 // ESQUERDA DO PAINEL — o mockup poe a ilha a 40 da borda e a folha de Fontes
 // real a 24, entao o que se copia e a distancia de dentro, nao a absoluta:
-//   cabecalho  40 de ar; o kicker (15 caixa alta) e "Social" (40 bold) a 48 da
-//              borda. SEM o disco de fechar do mockup: o dono pediu para tirar
-//              o X (03/10); VOLTAR e ESQUERDA na borda fecham.
-//   abas       136 do topo, o seletor a 42 da borda: 5 de folga, segmentos de
-//              45 (19 semibold, 20 de recuo, contagem 16 em cinza a 9 do rotulo)
+//   Header order: labeled tabs first, then the kicker and selected tab title.
+//   Keep the sheet, row geometry and social destinations from the social merge.
+//   Back and LEFT at the edge close the sheet; no close button.
 //   lista      217 do topo; linhas de 26 a 26 das bordas, raio 22, 18/22 de
 //              recuo; secao 22 bold com um fio de 1 px a 8 % embaixo
-// Era o painel "parecido": abas no lugar do titulo, rotulos de secao em
-// cinza 22, rosto e capa juntos a esquerda (foto do dono lado a lado com o
-// mockup, 02/10: "o mockup ta bem mais polido que a build").
 #define SP_PAD          48.0f   // do painel ao texto (26 da linha + 22 dela)
 #define SP_INTERNO    (SP_W - SP_PAD * 2.0f)
 #define SP_LINHA_X      26.0f   // do painel a superficie da linha
 #define SP_LINHA_W    (SP_W - SP_LINHA_X * 2.0f)
 #define SP_LINHA_PADX   22.0f
 #define SP_LINHA_RAIO   22.0f
-#define SP_KICK_Y      (SP_Y + 40.0f)
-#define SP_TIT_Y       (SP_Y + 62.0f)
+// Keep the summary and title below the top tab row.
+#define SP_KICK_Y      (SP_Y + 112.0f)
+#define SP_TIT_Y       (SP_Y + 138.0f)
 // ABAS. Elas so existem quando o servico de recomendacoes foi compilado
 // (recomenda_ativo); sem ele o painel e exatamente o que era, sem uma linha a
 // mais de cromo para uma funcao que nao existe naquele pacote.
-// A FAIXA DE ABAS MORA NA LINHA DO TITULO (pedido do dono, 07/10): o titulo grande
-// diz a aba aberta e as abas, compactas (icone + contagem), ficam a direita dele.
-// Era uma segunda fileira de 55 px abaixo do titulo; a lista subiu esses 77 px.
-#define SP_ABAS_Y      (SP_Y + 60.0f)
+// Keep all destinations and tab editing in the same navigation order.
+#define SP_ABAS_Y      (SP_Y + 40.0f)
 #define SP_ABAS_H        52.0f
 #define SP_ABAS_X       42.0f
 // AR DO FOCO entre o recorte da lista e a primeira linha. A superficie da linha
@@ -111,7 +106,7 @@
 // da linha focada. O recorte fica 12 px abaixo das abas, e o conteudo nasce
 // em 217 do topo do painel, onde o mockup poe a lista.
 #define SP_FOCO_AR      14.0f
-#define SP_LISTA_Y     (SP_Y + 140.0f - SP_FOCO_AR)
+#define SP_LISTA_Y     (SP_Y + 225.0f - SP_FOCO_AR)
 #define SP_LISTA_BASE  (SP_Y + SP_H - 24.0f)
 // A LINHA DE SALVOS: cartaz 2:3 de 64x96 com 18 px de recuo em cima e
 // embaixo, a mesma altura de ritmo das linhas do feed (capa 52x76 e 114). O
@@ -311,7 +306,7 @@ enum { SPS_CONSENT_NAO = 0, SPS_CONSENT_SIM, SPS_REC, SPS_SUG,
        // lista. Agora os pedidos abrem a aba, cada um com Aceitar e Recusar.
        SPS_PEDIDO,
        // "Ver mais pessoas": abre as sugestoes cortadas (amigoslista.h).
-       SPS_MAIS };
+       SPS_MAIS, SPS_JUNTOS, SPS_JUNTOS_X };
 // A API do alcance e do nome so existe no socialsrv (branch agente/socialsrv).
 // Ate o merge as linhas ficam desligadas; NV_SOCIAL_V2_UI liga so a tela (o
 // teste de captura o usa com a API de mentira).
@@ -590,6 +585,9 @@ int spainel_pediu_agenda(void) {
 }
 int spainel_visivel(void) { return aberto || entrada > 0.002f; }
 
+// Resume the existing list after its title closes; retain tab, row and scroll.
+void spainel_voltar_titulo(void) { aberto = 1; okDesde = 0; }
+
 const char *spainel_pediu_abrir(void) {
   if (!temPedido) return NULL;
   temPedido = 0;
@@ -610,12 +608,12 @@ static int ehSerie(const char *tipo, int nTemporadas) {
 // quadro e comparar dois inteiros, e a reconstrucao so acontece quando ha o
 // que mostrar de diferente (tests/salvospainel.sh conta quantas vezes).
 static unsigned marcaRevCat, marcaRevSalvos, marcaRevOrg, marcaRevRet;
-static int reconstrucoes, fundosPintados;
+static int reconstrucoes, fundosPintados, marcaFonte = -1;
 int spainel_n_reconstrucoes(void) { return reconstrucoes; }
 int spainel_n_fundos(void) { return fundosPintados; }
 static int listaVelha(void) {
   sorg_carregar();   // troca de perfil sobe a revisao da organizacao
-  return marcaCatN < 0 || sorg_revisao() != marcaRevOrg || cat_revisao_itens() != marcaRevCat ||
+  return marcaFonte != ajustes_fonte_biblioteca() || marcaCatN < 0 || sorg_revisao() != marcaRevOrg || cat_revisao_itens() != marcaRevCat ||
          salvos_revisao() != marcaRevSalvos || cat_n() != marcaCatN ||
          cw_retido_rev() != marcaRevRet;
 }
@@ -758,6 +756,7 @@ static void reconstruir(void) {
   marcaCatN = catN;
   marcaRevCat = revCat;
   marcaRevSalvos = revSalvos;
+  marcaFonte = ajustes_fonte_biblioteca();
   marcaRevRet = cw_retido_rev();
   // O FOCO DAS ABAS (-1) NAO E UM FOCO FORA DA FAIXA. Sem esta guarda, uma
   // reconstrucao com a lista vazia jogaria o foco de volta para a linha 0, que
@@ -1110,7 +1109,7 @@ static int nVisiveis(void) {
 // A BARRA DE OPCOES (Ordenar, Agrupar, Estilo, categorias) mora entre as abas
 // e a lista, e empurra a lista SP_OPC_EXTRA para baixo so quando existe.
 #define SP_FOCO_BARRA  (-2)
-#define SP_OPC_Y     (SP_ABAS_Y + SP_ABAS_H + 14.0f)
+#define SP_OPC_Y     SP_LISTA_Y
 #define SP_OPC_H      NV_CTRL_H
 #define SP_OPC_EXTRA (SP_OPC_Y + SP_OPC_H + 12.0f - SP_LISTA_Y)
 static int temBarra(void);
@@ -1122,17 +1121,22 @@ static float listaTopo(void) {
 
 // 1 enquanto a pergunta de primeira entrada esta na tela.
 static int consentindo(void) {
-  return aba == SP_ABA_SOCIAL && nSocial > 0 && social[0].tipo == SPS_CONSENT_NAO;
+  int i = juntos_banner() ? 2 : 0;
+  return aba == SP_ABA_SOCIAL && nSocial > i && social[i].tipo == SPS_CONSENT_NAO;
 }
 // 1 enquanto a pergunta do nivel (alcance) esta na tela.
 static int perguntandoAlcance(void) {
-  return aba == SP_ABA_SOCIAL && nSocial > 0 && social[0].tipo == SPS_ALC_0;
+  int i = juntos_banner() ? 2 : 0;
+  return aba == SP_ABA_SOCIAL && nSocial > i && social[i].tipo == SPS_ALC_0;
 }
 
+static int bannerVisto;
 static int spsConta(int t) { return t == SPS_IDENT || t == SPS_SIMKL || t == SPS_LETTERBOXD; }
 static float socialAlt(int i) {
   if (i < 0 || i >= nSocial) return 0.0f;
   switch (social[i].tipo) {
+    case SPS_JUNTOS: return 142;
+    case SPS_JUNTOS_X: return NV_CTRL_H;
     case SPS_REC:       return SPI_H;
     case SPS_SUG:       return SPS_H_SUG;
     case SPS_PEDIDO:    return SPS_H_SUG;
@@ -1169,6 +1173,10 @@ static float socialAntes(int i) {
   // A PRIMEIRA SECAO DA LISTA tem 6 px de ar, e nao 22 (ver SP_SECAO_AR1).
   float sh = (i == 0 && socialTopo() <= 0.0f) ? SP_SECAO_H1 : SP_SECAO_H;
   if (i < 0 || i >= nSocial) return 0.0f;
+  if (bannerVisto && i == 2) {
+    if (social[i].tipo == SPS_CONSENT_NAO) return SPS_CONSENT_TOPO;
+    if (social[i].tipo == SPS_ALC_0) return SPS_ALC_TOPO;
+  }
   // POR PESSOA: um rotulo com o nome de quem mandou antes da primeira
   // recomendacao de cada pessoa.
   if (social[i].tipo == SPS_REC && recVista[social[i].idx]) {
@@ -1192,7 +1200,7 @@ static float socialAntes(int i) {
 
 // Altura do bloco de texto que abre a lista e nao recebe foco.
 static float socialTopo(void) {
-  if (aba != SP_ABA_SOCIAL) return 0.0f;
+  if (aba != SP_ABA_SOCIAL || bannerVisto) return 0.0f;
 #ifdef NV_TOUCH_UI
   if (telefoneui_ativo() && (consentindo() || perguntandoAlcance()))
     return socialPerguntaTelefone(0, 0, 0, perguntandoAlcance());
@@ -1231,6 +1239,11 @@ static void reconstruirSocial(void) {
   consentEstado = -1;
   if (!temAbas()) return;
   consentEstado = recomenda_aparecer();
+  bannerVisto = juntos_banner();
+  if (bannerVisto) {
+    social[nSocial++].tipo = SPS_JUNTOS;
+    social[nSocial++].tipo = SPS_JUNTOS_X;
+  }
 
   // A PERGUNTA VEM ANTES DE TUDO, e ela e a lista inteira enquanto durar. Nao e
   // um cartaz por cima de uma lista que da para ler por baixo: o pedido foi
@@ -2096,6 +2109,14 @@ static void okSocial(void) {
   if (aba == SP_ABA_SOCIAL) {
     if (foco < 0 || foco >= nSocial) return;
     switch (social[foco].tipo) {
+      case SPS_JUNTOS:
+        if (juntos_reentrar()) spainel_fechar();
+        return;
+      case SPS_JUNTOS_X:
+        juntos_banner_dispensar();
+        reconstruirSocial();
+        foco = 0;
+        return;
       case SPS_CONSENT_NAO:
       case SPS_CONSENT_SIM:
         recomenda_responder_aparecer(social[foco].tipo == SPS_CONSENT_SIM);
@@ -2556,6 +2577,7 @@ void spainel_atualizar(float dt, Uint32 agora) {
   // reconstruir, a lista continuaria a do instante da abertura. Ver listaVelha:
   // a pergunta por quadro sao duas revisoes, e nao um retrato do catalogo.
   if (aberto && listaVelha()) reconstruir();
+  if (aberto && aba == SP_ABA_SOCIAL && bannerVisto != juntos_banner()) reconstruirSocial();
   // O teclado de nome de categoria e o que ele devolveu.
   if (tecladoPara) { teclado_atualizar(dt, agora); tecladoResultado(); }
   // "Mover para categoria" no menu do cartaz: a escolha abre aqui, por cima
@@ -2666,7 +2688,7 @@ void spainel_atualizar(float dt, Uint32 agora) {
     if (topoR + POP_LINHA_H - alvoR > janela) alvoR = topoR + POP_LINHA_H - janela;
     if (topoR < alvoR) alvoR = topoR;
 #ifdef NV_TOUCH_UI
-    if (!toquePop.livre)
+    if (!toquerol_livre(&toquePop))
 #endif
     popRol = ajustes_animacoes_reduzidas() ? alvoR : anim_mola(popRol, alvoR, dt, NV_MOLA_FOCO);
   }
@@ -2718,7 +2740,7 @@ void spainel_atualizar(float dt, Uint32 agora) {
   }
   if (alvo < 0.0f) alvo = 0.0f;
 #ifdef NV_TOUCH_UI
-  if (toquePainel.livre) { scrollY = toquerol_clamp(scrollY, 0, toquePainelMax()); velY = 0; }
+  if (toquerol_livre(&toquePainel)) { scrollY = toquerol_clamp(scrollY, 0, toquePainelMax()); velY = 0; }
   else
 #endif
   scrollY = anim_mola2_reduzida(&velY, scrollY, alvo, dt, NV_MOLA2_SCROLL,
@@ -2804,7 +2826,11 @@ static float focoTexto(float f) { (void)f; return 0.0f; }
 static void superficieItem(GfxRect r, float raio, float f, float a) {
   float v = focoVisual(f);
   if (v <= .001f || a <= .001f) return;
-  if (ajustes_vidro()) { gfx_cor(r, raio, 1, 1, 1, .12f * v * a); return; }
+  if (gfx_foco_placa(r, raio, v, a)) return;
+  if (ajustes_vidro()) {
+    gfx_cor(r, raio, 1, 1, 1, .12f * v * a);
+    return;
+  }
   // NO SOLIDO A LINHA FOCADA SOBE: #2b2d34 com a sombra curta do mockup
   // (".row.foco" solido: 0 10px 30px a 40 %) e o fio claro de 1 px no topo
   // ("inset 0 1px 0" a 6 %). Sem a sombra o degrau cinza sobre o cinza do
@@ -3027,7 +3053,8 @@ static void barraSobreArte(GfxRect arte, int progresso, float a) {
   if (progresso <= 0) return;
   ajustes_acento(&pr, &pg, &pb);
   c.w = t.w * p;
-  gfx_cor(t, 0.5f, 0.0f, 0.0f, 0.0f, 0.55f * a);
+  if (ajustes_vidro()) gfx_vidro_chip(t, 0.5f, 0.55f, a);
+  else gfx_cor(t, 0.5f, 0.0f, 0.0f, 0.0f, 0.55f * a);
   if (c.w > t.h) gfx_cor(c, 0.5f, pr, pg, pb, a);
 }
 
@@ -3331,7 +3358,7 @@ static void desenhaRecLinha(int linha, int idx, float dx, float y, float a, Uint
 #define SP_SEG_PAD   5.0f
 #define SP_SEG_VAO   4.0f
 #define SP_SEG_ICO  26.0f   // o icone Lucide da aba
-#define SP_SEG_PX   16.0f   // recuo lateral de cada segmento
+#define SP_SEG_PX   12.0f   // recuo lateral de cada segmento
 #define SP_SEG_NUM   8.0f
 static const char *rotuloAba(int i) {
   return i == SP_ABA_SALVOS ? "Salvos" : i == SP_ABA_ATIVIDADE ? "Atividade"
@@ -3372,7 +3399,8 @@ static float segLargura(int i, TxtLinha *num, int cor, int comNum) {
     *num = novo ? txt_linha(TXT_ILHA_NUM, b, (int)(ar * 255), (int)(ag * 255), (int)(ab * 255), 255)
                 : txt_linha(TXT_ILHA_NUM, b, cor, cor, cor, 255);
   }
-  return SP_SEG_ICO + SP_SEG_PX * 2.0f + (num->w > 0 ? SP_SEG_NUM + (float)num->w : 0.0f);
+  TxtLinha label = txt_linha(TXT_ILHA_SEG, i18n(rotuloAba(i)), cor, cor, cor, 255);
+  return label.w + SP_SEG_PX * 2.0f + (num->w > 0 ? SP_SEG_NUM + (float)num->w : 0.0f);
 }
 #define SP_SEG_LAPIS (SP_SEG_ICO + SP_SEG_PX * 2.0f)
 // Largura da faixa. Com o titulo grande ao lado, o que sobra e o painel menos o
@@ -3530,7 +3558,7 @@ static void desenhaAbas(float dx, float a, float larguraDisp) {
   float x;
   if (abasLargura(1) > larguraDisp) todas = 0;
   w0 = abasLargura(todas);
-  x = SP_X + dx + SP_W - SP_ABAS_X - w0;
+  x = SP_X + dx + SP_ABAS_X;
   ajustes_acento(&ar, &ag, &ab);
   { GfxRect caixa = { x, SP_ABAS_Y, w0, SP_ABAS_H };
     if (ajustes_vidro()) gfx_cor(caixa, 0.5f, 1, 1, 1, .06f * a);
@@ -3555,7 +3583,7 @@ static void desenhaAbas(float dx, float a, float larguraDisp) {
         if (foco == SP_FOCO_ABAS && !editLapis) {
           if (ajustes_vidro()) gfx_vidro_pilula_cheia(p, 0.5f, 1.0f, a);
           else { botao_luz(p, .55f, a); gfx_cor(p, 0.5f, ar, ag, ab, a); }
-        } else {
+        } else if (!gfx_foco_placa(p, 0.5f, 1.0f, a)) {
           if (ajustes_vidro()) gfx_cor(p, 0.5f, 1, 1, 1, .14f * a);
           else gfx_cor(p, 0.5f, .204f, .212f, .243f, a);
         }
@@ -3583,23 +3611,28 @@ static void desenhaAbas(float dx, float a, float larguraDisp) {
       else { botao_luz(p, .55f, a); gfx_cor(p, 0.5f, ar, ag, ab, a); }
     }
     ic = (float)cor / 255.0f;
-    gfx_icone((GfxRect){ x + SP_SEG_PX, p.y + (p.h - SP_SEG_ICO) * 0.5f, SP_SEG_ICO, SP_SEG_ICO },
-              lapis ? "aj_pencil" : iconeAba(i), ic, ic, ic, a * alfaTxt);
+    TxtLinha label = {0};
+    if (lapis) gfx_icone((GfxRect){ x + SP_SEG_PX, p.y + (p.h - SP_SEG_ICO) * 0.5f, SP_SEG_ICO, SP_SEG_ICO },
+                         "aj_pencil", ic, ic, ic, a * alfaTxt);
+    else {
+      label = txt_linha(TXT_ILHA_SEG, i18n(rotuloAba(i)), cor, cor, cor, 255);
+      txt_desenhar_alpha(label, x + SP_SEG_PX, p.y + (p.h - label.h) * .5f, a * alfaTxt);
+    }
     if (num.w > 0) {
       int novo;
       contaDaAba(i, &novo);
       // Sobre a pilula de acento a contagem vai na tinta do foco: no acento
       // ela sumiria justamente na aba em que o dedo esta.
-      if (focada) {
+      if (focada || (ativa && ajustes_foco_acento())) {
         char b[16];
         int n = contaDaAba(i, &novo);
         snprintf(b, sizeof b, "%d", n > 99 ? 99 : n);
         num = txt_linha(TXT_ILHA_NUM, b, cor, cor, cor, 255);
         novo = 0;
       }
-      txt_desenhar_alpha(num, x + SP_SEG_PX + SP_SEG_ICO + SP_SEG_NUM,
+      txt_desenhar_alpha(num, x + SP_SEG_PX + label.w + SP_SEG_NUM,
                          p.y + (p.h - num.h) * 0.5f,
-                         a * (novo ? 1.0f : focada ? 0.7f : 0.45f));
+                         a * (novo ? 1.0f : focada || (ativa && ajustes_foco_acento()) ? 0.7f : 0.45f));
     }
     x += w + SP_SEG_VAO;
   }
@@ -3755,7 +3788,7 @@ static void desenhaPop(float a) {
              1.0f, 0, 0, 0.5f, 0, 0, 0, .42f * e);
     if (vid) gfx_vidro_folha(r, 28.0f / h, e);
     else gfx_cor(r, 28.0f / h, .098f, .102f, .118f, .99f * e);
-    gfx_luz_canto(r, 28.0f / h, w * .25f, -h * .25f, w * .9f, 1, 1, 1, (vid ? .06f : .04f) * e); }
+    if (!vid) gfx_luz_canto(r, 28.0f / h, w * .25f, -h * .25f, w * .9f, 1, 1, 1, .04f * e); }
   // O TEXTO NA ESCALA DA ILHA: titulo 24 semibold, apoio 19 a 62 %, opcoes
   // 24 regular a 88 % (branco cheio na focada).
   { TxtLinha t = txtIlha(TXT_ILHA_NOME, popTitulo, w - 64.0f);
@@ -4665,7 +4698,7 @@ static void desenhaEditar(float dx, float a) {
 #ifdef NV_TOUCH_UI
   float topo = SP_LISTA_Y + SP_FOCO_AR + 6.0f, base = SP_LISTA_BASE;
   float maximo = fmaxf(0, n * SPE_LIN_H + 18 + NV_CTRL_H - (base - topo));
-  if (!toqueEditar.livre) {
+  if (!toquerol_livre(&toqueEditar)) {
     float fim = editLin >= n ? n * SPE_LIN_H + 18 + NV_CTRL_H : (editLin + 1) * SPE_LIN_H;
     toqueEditarOffset = toquerol_clamp(fim - (base - topo), 0, maximo);
   }
@@ -4960,6 +4993,7 @@ static void desenharPainel(Uint32 agora) {
   // veu ja nao custa nada por quadro; o que sobra sao a entrada, a saida e o
   // painel sobre outras telas.
   if (!veuNoFundo) veuInteiro();
+  gfx_vidro_cobrir();   // the veil covers the home glass drawn before: the island frosts
   // Painel flutuante escuro e neutro; o veu separa a camada do conteudo sem
   // uma luz decorativa colorida competindo com posters e selos.
   { GfxRect p = { SP_X + x, SP_Y, SP_W, SP_H };
@@ -4974,19 +5008,15 @@ static void desenharPainel(Uint32 agora) {
                    0, 0, 0, .38f * as, p, raioForma * p.h, vid ? 0.0f : .98f * as);
     if (vid) gfx_vidro_folha(p, raioForma, as);
     else gfx_cor(p, raioForma, .071f, .075f, .086f, .98f * as);
-    gfx_luz_canto(p, raioForma, p.w * .25f, -p.h * .25f, p.w * .9f, 1, 1, 1, (vid ? .06f : .04f) * as);
+    if (!vid) gfx_luz_canto(p, raioForma, p.w * .25f, -p.h * .25f, p.w * .9f, 1, 1, 1, .04f * as);
   }
 
   // Tudo daqui para baixo fica preso ao painel: sem o recorte, a lista rolada
   // desenha por cima do cabecalho e por baixo da borda inferior.
   gfx_recorte(SP_X + x, SP_Y, SP_W, SP_H);
 
-  // O CABECALHO DO MOCKUP (".kick" + ".ttl" + ".dsc"): o resumo da aba em
-  // caixa alta pequena e espacada a 45 %, "Social" em 40 bold embaixo (o
-  // disco de fechar do mockup saiu a pedido do dono, 03/10). Era a contagem
-  // solta a direita das abas e nenhum titulo — o painel nao dizia o nome
-  // dele (dono, 02/10, comparando com o mockup). As PARTES passam por i18n; a
-  // juncao, nao (ver metaTexto).
+  // The localized summary and selected tab title sit below the tab row.
+  // Translate the summary parts, not their joined text (see metaTexto).
   // recomenda_n() E NAO nRecs: com a pergunta de consentimento na tela a lista
   // local esta vazia de proposito, e escrever "0 recomendações" ao lado de uma
   // aba com o selo em 2 seria o painel se contradizendo em dois centimetros.
@@ -5025,6 +5055,11 @@ static void desenharPainel(Uint32 agora) {
              nCont, i18n("para retomar"));
   }
   else snprintf(buf, sizeof buf, "%d %s", nLinhas, i18n(nLinhas == 1 ? "título" : "títulos"));
+  if (recursosSociais()) {
+    int online = socialvis_n_ao_vivo();
+    snprintf(buf, sizeof buf, "%d %s · %s", online,
+             i18n(online == 1 ? "amigo" : "amigos"), i18n("assistindo agora"));
+  }
   if (editando) snprintf(buf, sizeof buf, "%s", i18n("Ligue ou desligue as abas e mude a ordem."));
   xp = x;
   // A TROCA DE ABA (e de/para a folha Editar). `tt` e a mola do corpo, `ft` o
@@ -5038,11 +5073,10 @@ static void desenharPainel(Uint32 agora) {
     // O que vem abaixo (barra de opcoes e lista) entra deslizando.
     xl = (float)trocaDir * SP_TROCA_DESLIZE * (1.0f - tt);
     al = ft; }
-  // O TITULO GRANDE E A ABA ABERTA (pedido do dono, 07/10); as abas, compactas,
-  // ficam na mesma linha, a direita. O titulo cede se o idioma o faz comprido.
-  { float maxT = SP_W - SP_ABAS_X - SP_PAD - abasLargura(0) - 28.0f;
+  // Reuse the same localized title for the incoming and outgoing animation.
+  { float maxT = SP_INTERNO;
     TxtLinha t = txt_linha_corta(TXT_ILHA_TITULO,
-                                 editando ? i18n("Editar abas") : i18n(rotuloAba(aba)),
+                                 tituloAgora(),
                                  SPI_FG_R, SPI_FG_G, SPI_FG_B, 255, editando ? SP_INTERNO : maxT);
     { float tt = trocaT;
       if (tt < 0.999f && tituloAnt[0]) {
@@ -5053,7 +5087,7 @@ static void desenharPainel(Uint32 agora) {
       }
       txt_desenhar_alpha(t, SP_X + x + SP_PAD + (float)trocaDir * SP_TITULO_DESLIZE * (1.0f - tt),
                          SP_TIT_Y, a * anim_clamp((tt - 0.2f) / 0.5f, 0.0f, 1.0f)); }
-    if (temAbas() && !editando) desenhaAbas(x, a, SP_W - SP_ABAS_X - SP_PAD - (float)t.w - 28.0f); }
+    if (temAbas() && !editando) desenhaAbas(x, a, SP_W - 2.0f * SP_ABAS_X); }
   x = xp + xl; a *= al;   // dai para baixo e o corpo, que desliza na troca
   if (editando) { desenhaEditar(x, a); gfx_sem_recorte(); return; }
 #ifdef NV_TOUCH_UI
@@ -5134,13 +5168,15 @@ static void desenharPainel(Uint32 agora) {
     // O BLOCO DE TEXTO ROLA COM A LISTA, e nao fica preso no topo: ele explica
     // a lista que vem logo abaixo, e um texto fixo com linhas passando por
     // baixo dele leria como duas telas empilhadas.
-    if (consentindo())    desenhaConsentimento(x, y, a);
-    else if (perguntandoAlcance()) desenhaAlcancePergunta(x, y, a);
+    if (!bannerVisto && consentindo()) desenhaConsentimento(x, y, a);
+    else if (!bannerVisto && perguntandoAlcance()) desenhaAlcancePergunta(x, y, a);
     y += socialTopo();
     for (i = 0; i < nSocial; i++) {
       float alt = socialAlt(i);
       float cab = socialAntes(i);
       if (cab > 0.0f) {
+        if (bannerVisto && i == 2 && consentindo()) desenhaConsentimento(x, y, a);
+        else if (bannerVisto && i == 2 && perguntandoAlcance()) desenhaAlcancePergunta(x, y, a);
         // So a secao das sugestoes tem rotulo; o vao do interruptor e mudo.
         if (social[i].tipo == SPS_PEDIDO && y + cab >= listaTopo() && y <= SP_LISTA_BASE) {
           char rotPed[96];
@@ -5175,6 +5211,21 @@ static void desenharPainel(Uint32 agora) {
           ponteiro_alvo_faixa(SP_X + x + SP_LINHA_X, y, SP_LINHA_W, alt, listaTopo(), SP_LISTA_BASE,
                               ponteiroLinhaAba, NULL, i, 0);
         switch (social[i].tipo) {
+          case SPS_JUNTOS: {
+            const JsMotor *m = juntos_motor();
+            char sub[240];
+            snprintf(sub, sizeof sub, "%s · %d %s", juntos_titulo(), m ? m->sala.n : 0, i18n("pessoas"));
+            GfxRect r = linhaIlhaRet(x, y, alt);
+            superficieItem(r, SP_LINHA_RAIO / alt, animFoco[i], a);
+            gfx_icone((GfxRect){ r.x + 22, y + 20, 32, 32 }, "aj_users", 1, 1, 1, a);
+            txt_desenhar_alpha(txtIlha(TXT_ILHA_NOME, i18n("Sessão em andamento"), SP_INTERNO - 52), r.x + 70, y + 16, a);
+            txt_desenhar_alpha(txtIlha(TXT_ILHA_META, sub, SP_INTERNO - 52), r.x + 70, y + 54, a * .7f);
+            txt_desenhar_alpha(txtIlha(TXT_ILHA_SEG, i18n("Voltar à sessão"), SP_INTERNO - 52), r.x + 70, y + 96, a);
+            break;
+          }
+          case SPS_JUNTOS_X:
+            desenhaBotaoLinha(i, x, y, alt, a, "Dispensar", NULL, "aj_x", 0);
+            break;
           case SPS_REC: desenhaRecLinha(i, social[i].idx, x, y, a, agora); break;
           case SPS_SUG: desenhaSugLinha(i, social[i].idx, x, y, a, agora); break;
           case SPS_PEDIDO: desenhaPedidoLinha(i, social[i].idx, x, y, a, agora); break;
@@ -5301,3 +5352,40 @@ const char *spainel_foco_social(void) {
 }
 
 int spainel_n_continuar(void) { if (listaVelha()) reconstruir(); return nCont; }
+
+// THE SHELL FOR OTHER SIDEBARS (Watch Together on CH+, owner 26/10): the same
+// veil, island material, kicker, title, sections and focus rows as above, so a
+// second sidebar never drifts from this one. No tabs, no list of its own.
+void spainel_lateral(float e, const char *kick, const char *titulo, SpLateralCorpo corpo, void *u) {
+  float x = (1.0f - e) * (NV_TELA_W - SP_X);
+  GfxRect p = { SP_X + x, SP_Y, SP_W, SP_H };
+  const int vid = ajustes_vidro();
+  if (e < 0.002f) return;
+  ESCALA_INI();
+  { ESCALA_REAL_INI();
+    gfx_cor((GfxRect){ 0, 0, NV_LAYOUT_REAL_W, 1080.0f }, 0.0f, 0, 0, 0, SP_VEU * e);
+    ESCALA_REAL_FIM(); }
+  gfx_vidro_cobrir();
+  gfx_sombra_sob((GfxRect){ p.x - 18.0f, p.y - 8.0f, p.w + 36.0f, p.h + 40.0f }, 1.0f, 0, 0.5f,
+                 0, 0, 0, .38f * e, p, SP_RAIO / SP_W * p.h, vid ? 0.0f : .98f * e);
+  if (vid) gfx_vidro_folha(p, SP_RAIO / SP_W, e);
+  else gfx_cor(p, SP_RAIO / SP_W, .071f, .075f, .086f, .98f * e);
+  if (!vid) gfx_luz_canto(p, SP_RAIO / SP_W, p.w * .25f, -p.h * .25f, p.w * .9f, 1, 1, 1, .04f * e);
+  gfx_recorte(p.x, p.y, p.w, p.h);
+  caixaAltaIlha(kick, SPI_FG_R, SPI_FG_G, SPI_FG_B, p.x + SP_PAD, SP_Y + 40.0f, e * 0.45f);
+  txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_TITULO, titulo, SPI_FG_R, SPI_FG_G, SPI_FG_B, 255, SP_INTERNO),
+                     p.x + SP_PAD, SP_Y + 62.0f, e);
+  corpo((GfxRect){ p.x + SP_PAD, SP_LISTA_Y, SP_INTERNO, SP_LISTA_BASE - SP_LISTA_Y }, e, u);
+  gfx_sem_recorte();
+  ESCALA_FIM();
+}
+
+float spainel_lateral_secao(GfxRect area, float y, const char *rotulo, float a, int primeira) {
+  desenhaSecao(area.x - SP_PAD, y, rotulo, a, primeira);
+  return secaoAlt(primeira);
+}
+
+void spainel_lateral_linha(GfxRect area, float y, float h, float f, float a) {
+  GfxRect r = { area.x - SP_PAD + SP_LINHA_X, y, SP_LINHA_W, h };
+  superficieItem(r, SP_LINHA_RAIO / r.h, f, a);
+}

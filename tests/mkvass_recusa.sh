@@ -70,11 +70,12 @@ PORTA=$(awk '/porta/{print $2}' "$DIR/porta.txt")
 [ -n "$PORTA" ] || { echo "mkvass_recusa.sh: servidor nao subiu"; exit 1; }
 
 # Pausas encurtadas (-D), como no tests/mkvass.sh: na TV 10-60 s e 0,5-8 s.
-cc -Isrc -I/opt/homebrew/include -O1 -g -Wall -Wno-deprecated-declarations \
+. tests/mkvcore_flag.sh
+cc ${MKVCORE_CC[@]+"${MKVCORE_CC[@]}"} -Isrc -I/opt/homebrew/include -O1 -g -Wall -Wno-deprecated-declarations \
   -DMKVASS_PAUSA_CDN_INI_MS=150L -DMKVASS_PAUSA_CDN_MAX_MS=600L \
   -DMKVASS_RECUO_INI_MS=20L -DMKVASS_RECUO_MAX_MS=160L \
   -DREDE_CALMA_INI_MS=600UL -DREDE_CALMA_MAX_MS=2400UL \
-  tests/mkvass_recusa.c src/mkvass.c src/assrender.c src/legenda.c src/rede.c src/redeurl.c \
+  tests/mkvass_recusa.c src/mkvass.c src/imgsub.c src/pgs.c src/assrender.c src/legenda.c tests/mkvass_i18n.c src/rede.c src/redeurl.c \
   src/dados.c src/mkv.c -o "$DIR/test" -lpthread
 mkdir "$DIR/dados"
 set +e

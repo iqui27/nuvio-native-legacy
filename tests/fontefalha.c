@@ -286,6 +286,13 @@ static void persistence(const char *dir) {
   for (int i = 0; i < 4; i++) assert(before.ordem[i] == i && before.limites[i] == 3);
   const char *keys[] = {A, B, C}; fontefalha_addons_registrar(keys, 2);
   assert(fontefalha_addon_limite(A) == 3 && fontefalha_addon_limite(B) == 3);
+  assert(!fontefalha_addon_ao_vivo(A) && !fontefalha_addon_ao_vivo(B));
+  assert(fontefalha_addon_definir_ao_vivo(A, 1));
+  assert(fontefalha_addon_ao_vivo(A) && !fontefalha_addon_ao_vivo(B));
+  assert(!fontefalha_ativa()); // Classification never enables failover.
+  fontefalha_config_ler();
+  assert(fontefalha_addon_ao_vivo(A) && !fontefalha_addon_ao_vivo(B));
+  assert(!fontefalha_addon_definir_ao_vivo("invalid", 1));
   assert(fontefalha_definir_provedores(1));
   assert(fontefalha_ativa() && fontefalha_provedores() && !fontefalha_addons());
   assert(fontefalha_definir_provedores(0) && fontefalha_definir_addons(1));
@@ -310,6 +317,7 @@ static void persistence(const char *dir) {
   assert(!rename(path, backup) && !mkdir(path, 0700));
   assert(!fontefalha_definir_addons(0) && !fontefalha_provedor_definir_limite(1, 4));
   assert(!fontefalha_addon_mover(A, -1));
+  assert(!fontefalha_addon_definir_ao_vivo(A, 0) && fontefalha_addon_ao_vivo(A));
   fontefalha_config(&after); assert(!memcmp(&before, &after, sizeof before));
   DIR *d = opendir(dir); assert(d); struct dirent *entry;
   while ((entry = readdir(d))) assert(!strstr(entry->d_name, ".tmp."));

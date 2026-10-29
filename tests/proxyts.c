@@ -3,6 +3,7 @@
 #include "nvtmp.h"
 #include "streams.h"
 #include <assert.h>
+int ajustes_livetv_resolucao(void) { return 0; }
 static int falhas;
 #define OK(c, m) do { if (c) printf("ok  %s\n", m); else { printf("FALHOU %s\n", m); falhas++; } } while (0)
 static long baixar(const char *url, int segundos, unsigned char **out, char *cab, size_t ncab) {
@@ -32,7 +33,7 @@ int main(void) {
   OK(pxLer("#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:120\n#EXTINF:4,\na.ts\n#EXTINF:4,\nb.ts\n", "http://h/x/l.m3u8", &l)
      && l.alvo == 4 && l.seq0 == 120 && l.n == 2 && !strcmp(l.uri[1], "http://h/x/b.ts"), "playlist de midia");
   OK(pxLer("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nv1/i.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2\nv2/i.m3u8\n", "http://h/m.m3u8", &l)
-     && l.mestre && !strcmp(l.uri[0], "http://h/v1/i.m3u8"), "master: primeira variante");
+     && l.mestre && !strcmp(l.uri[0], "http://h/v2/i.m3u8"), "master: highest bandwidth in Automatic");
 
   // HLS ao vivo (o .ts que vira playlist): fluxo TS continuo, com PAT no comeco
   assert(proxyts_url("http://127.0.0.1:8765/live/u/p/105.ts", url, sizeof url));

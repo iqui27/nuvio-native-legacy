@@ -37,6 +37,10 @@ enum { ILHA_INFO = 0, ILHA_OK, ILHA_ERRO, ILHA_ACENTO };
 // "abre" na ponta direita.
 void ilha_avisar(const char *chave, int tipo, const char *icone,
                  const char *texto, unsigned ms, int tecla);
+// Fecha a abertura anterior: tira avisos, cartoes, atividade e pedidos
+// privados. Mantem avisos identificados do aparelho (atualizacao/queda/rede)
+// e a configuracao de posicao do relogio. Nao cancela a atualizacao em curso.
+void ilha_abrir_sessao(void);
 // Tira o aviso desta chave da tela e da fila (ex.: a central foi aberta).
 void ilha_retirar(const char *chave);
 // 1 enquanto o aviso desta chave esta na tela ou na fila.
@@ -192,6 +196,10 @@ int  ilha_ponto_pediu(void);
 // Onde o relogio pode ficar, decidido por quadro por app.c (a home tem o topo
 // esquerdo livre; Ajustes e Explorar tem titulo ali).
 void ilha_relogio_visivel(int visivel);
+// O roteador concede foco ao sair pelo topo de uma pagina; nao altera os
+// cartoes nem o caminho existente de toque/AZUL/CH+.
+void ilha_relogio_focar(int foco);
+int  ilha_relogio_focado(void);
 
 // PONTO UNICO DA POSICAO. Sem chamada, a ilha fica no topo esquerdo, na coluna
 // do conteudo — ou no topo direito no layout Dinamica, onde a pilula fechada
@@ -221,7 +229,7 @@ int  ilha_ocupada(void);
 // ILHA_AMIGO (02/10, mockup aprovado): o terceiro cartao, "Ana · Severance ·
 // agora", com o rosto dela e a capa — o evento de inicio mais novo do feed
 // enquanto ele tiver menos de 15 min (a regra de RecAmigo.temAgora).
-enum { ILHA_VIVO = 0, ILHA_ESTREIA, ILHA_AMIGO, ILHA_N_CARTOES };
+enum { ILHA_VIVO = 0, ILHA_ESTREIA, ILHA_AMIGO, ILHA_JUNTOS, ILHA_N_CARTOES };
 #define ILHA_ALTERNA_MS 6000u
 typedef struct {
   char chave[80];        // muda = outro conteudo (a pilula remorfa)
@@ -235,6 +243,7 @@ typedef struct {
   char avisoId[72];      // ILHA_ESTREIA: id do aviso em avisos.c
   char pessoa[64], rosto[256];   // ILHA_AMIGO: nome e avatar de quem esta vendo
 } IlhaCartao;
+int ilha_retomar_focado(IlhaCartao *c);
 // NULL tira o cartao. A copia e da ilha; quem chama pode descartar o seu.
 void ilha_cartao(int qual, const IlhaCartao *c);
 // Troca de identidade: apaga este cartao e suas copias no modal, no pedido e
@@ -300,7 +309,11 @@ void ilha_coberta(int coberta);
 // com o alfa caindo. Efeitos leves: mola sem repique; minimos: sem animacao.
 typedef void (*IlhaCorpo)(GfxRect r, float a, void *u);
 void  ilha_corpo(float w, float h, IlhaCorpo corpo, void *u);
+// The island's animated rect while a body is open (last drawn frame).
+GfxRect ilha_corpo_rect(void);
 // 0 = pilula, 1 = painel assentado (passa um pouco de 1 no repique).
 float ilha_corpo_t(void);
+// Chamar logo depois de ilha_corpo: este corpo (e a saida dele) sem sombra caida.
+void  ilha_corpo_sem_sombra(void);
 
 #endif

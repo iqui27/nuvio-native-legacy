@@ -10,11 +10,13 @@
 #include <time.h>
 
 #define ARQUIVO "fontesmortas.txt"
+static char arquivo[80] = ARQUIVO;
 #define MAX_MORTAS 128
 #define VALIDADE_S (6 * 3600)
 typedef struct { uint64_t chave; time_t quando; } Morta;
 static Morta mortas[MAX_MORTAS];
 static int n, carregado;
+static unsigned versao;
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 
 static uint64_t bytes(uint64_t h, const char *s) {
@@ -85,7 +87,7 @@ static void gravar(void) {
     k += (size_t)snprintf(buf + k, sizeof buf - k, "%016llx %lld\n",
                           (unsigned long long)mortas[i].chave, (long long)mortas[i].quando);
   buf[k] = 0;
-  dados_gravar(ARQUIVO, buf);
+  dados_gravar(arquivo, buf);
 }
 static void podar(time_t agora) {
   int k = 0;
@@ -94,10 +96,9 @@ static void podar(time_t agora) {
 }
 // Sem arquivo de dados (dados_dir vazia, .wgt) a tabela vive so na memoria.
 // carregado = 1 impede re-leitura por acesso; dados_ler ja e no-op la.
-void fontesmortas_iniciar(void) {
-  char *b = dados_ler(ARQUIVO), *p, *linha;
+static void carregarSemTrava(void) {
+  char *b = dados_ler(arquivo), *p, *linha;
   time_t agora = time(NULL);
-  pthread_mutex_lock(&trava);
   n = 0;
   for (linha = b; linha && *linha && n < MAX_MORTAS; linha = p) {
     unsigned long long chave;
@@ -108,19 +109,50 @@ void fontesmortas_iniciar(void) {
         valida((time_t)quando, agora)) mortas[n++] = (Morta){(uint64_t)chave, (time_t)quando};
   }
   carregado = 1;
-  // O arquivo e pequeno e a poda acontece ja na leitura, nao so na proxima falha.
   if (b) gravar();
-  pthread_mutex_unlock(&trava);
   free(b);
 }
-static void garantir(void) { if (!carregado) fontesmortas_iniciar(); }
+void fontesmortas_iniciar(void) {
+  pthread_mutex_lock(&trava);
+  carregarSemTrava();
+  versao++;
+  pthread_mutex_unlock(&trava);
+}
+void fontesmortas_definir_escopo(const char *conta, int perfil) {
+  char novo[80];
+  uint64_t h = bytes(UINT64_C(14695981039346656037), conta ? conta : "");
+  snprintf(novo, sizeof novo, "fontesmortas-%016llx-p%d.txt",
+           (unsigned long long)h, perfil > 0 ? perfil : 0);
+  pthread_mutex_lock(&trava);
+  if (strcmp(novo, arquivo)) {
+    snprintf(arquivo, sizeof arquivo, "%s", novo);
+    memset(mortas, 0, sizeof mortas); n = carregado = 0; versao++;
+  }
+  pthread_mutex_unlock(&trava);
+}
+static void garantirSemTrava(void) { if (!carregado) carregarSemTrava(); }
+unsigned fontesmortas_versao(void) {
+  static time_t ultima;
+  time_t agora = time(NULL);
+  pthread_mutex_lock(&trava);
+  garantirSemTrava();
+  if (agora != ultima) {
+    int antes = n;
+    podar(agora);
+    if (n != antes) versao++;
+    ultima = agora;
+  }
+  unsigned v = versao;
+  pthread_mutex_unlock(&trava);
+  return v;
+}
 long fontesmortas_idade(const Stream *s) {
   uint64_t chave = identidade(s);
   long idade = -1;
   time_t agora = time(NULL);
   if (!chave) return -1;
-  garantir();
   pthread_mutex_lock(&trava);
+  garantirSemTrava();
   for (int i = 0; i < n; i++) if (mortas[i].chave == chave && valida(mortas[i].quando, agora)) {
     idade = agora > mortas[i].quando ? (long)(agora - mortas[i].quando) : 0; break;
   }
@@ -131,8 +163,8 @@ void fontesmortas_marcar(const Stream *s) {
   uint64_t chave = identidade(s);
   time_t agora = time(NULL);
   if (!chave) return;
-  garantir();
   pthread_mutex_lock(&trava);
+  garantirSemTrava();
   podar(agora);
   int i;
   for (i = 0; i < n && mortas[i].chave != chave; i++);
@@ -141,16 +173,18 @@ void fontesmortas_marcar(const Stream *s) {
     for (int j = 1; j < n; j++) if (mortas[j].quando < mortas[i].quando) i = j;
   } else if (i == n) n++;
   mortas[i] = (Morta){chave, agora};
+  versao++;
   gravar();
   pthread_mutex_unlock(&trava);
 }
 void fontesmortas_limpar(const Stream *s) {
   uint64_t chave = identidade(s);
   if (!chave) return;
-  garantir();
   pthread_mutex_lock(&trava);
+  garantirSemTrava();
   for (int i = 0; i < n; i++) if (mortas[i].chave == chave) {
     memmove(mortas + i, mortas + i + 1, (size_t)(--n - i) * sizeof *mortas);
+    versao++;
     gravar(); break;
   }
   pthread_mutex_unlock(&trava);

@@ -15,7 +15,7 @@
 const R = String.raw;
 
 // --- modo m: aleatorio --------------------------------------------------------
-let seed = 20261013;
+let seed = Number(process.env.NV_SEED) || 20261013;   // NV_SEED=n roda outra semente
 function rnd() {   // mulberry32
   seed |= 0; seed = seed + 0x6D2B79F5 | 0;
   let t = Math.imul(seed ^ seed >>> 15, 1 | seed);

@@ -13,6 +13,6 @@ cc ${flags[@]+"${flags[@]}"} -DNV_DESC_MIN_MS=1000ull -DCAT_ESPERA_SILENCIO_MS=3
   src/cwordem.c tests/desc_iniciar_corrida.c src/homeestado.c src/catalogo.c \
   src/progresso.c src/js.c src/metaprov.c src/colecoes.c src/redeurl.c src/catordem.c src/cotacat.c \
   -Isrc -Itests -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-  -o "$tmp/nuvio-desc-iniciar-corrida" -O1 -g -pthread \
+  -o "$tmp/nuvio-desc-iniciar-corrida" -O1 -g -pthread -Wl,-undefined,dynamic_lookup \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined -Wno-unused-function
 "$tmp/nuvio-desc-iniciar-corrida"

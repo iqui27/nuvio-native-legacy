@@ -85,6 +85,7 @@ int fonteauto_primeira(const int *fila, int n, FonteVerificar verificar,
 //   - PRIMEIRA: nenhum addon instalado ANTES do da primeira candidata falta
 //     (a primeira da lista inteira nao pode mudar), e ela cabe no teto ou
 //     ninguem mais falta;
+//   - all pending add-ons can only supply groups below the current winner;
 //   - MELHOR: a melhor candidata presente e `boa` (dentro do teto, em cache,
 //     na resolucao do teto — 4K com teto automatico);
 //   - o prazo passou (prazoPassou).
@@ -96,6 +97,9 @@ int fonteauto_primeira(const int *fila, int n, FonteVerificar verificar,
 // E 0 quando nao ha candidata nao excluida, ou quando a lembrada pode estar
 // num addon que ainda nao respondeu (prefPendente): ai nem o prazo vale — a
 // escolha que a pessoa fez nao e trocada por pressa.
+// `esperaTodos` ("Espera pelos add-ons" = Todos, PR #567): nada de "boa o
+// bastante" nem de ordem; so decide quando nenhum add-on falta (ou a lembrada
+// ja chegou), e ai a fila escolhe a melhor da lista inteira.
 typedef struct {
   int modo, total, preferida, prefPendente, prazoPassou, algumPendente;
   const long *pontos;
@@ -109,6 +113,7 @@ typedef struct {
   const int *rank;                        // NULL = sem ordem dos add-ons
   int ordemUso;                           // FR_ORDEM_*
   int pendenteRankMin;                    // menor posicao entre os add-ons pendentes (99 = nenhum)
+  int esperaTodos;                        // "Todos os add-ons": so decide sem add-on pendente
 } FonteautoParcial;
 int fonteauto_pode_decidir(const FonteautoParcial *p);
 

@@ -26,6 +26,7 @@
 #include "autosync.h"
 #include <math.h>
 #include <stdio.h>
+const char *i18n(const char *text) { return text; }
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>

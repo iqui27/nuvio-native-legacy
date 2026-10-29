@@ -1,15 +1,14 @@
 // DTS / TrueHD -> Dolby Digital no .tpk da Samsung: o servidor HTTP local de
-// onde o player da TV le o fluxo convertido. Ver dts_hls_tpk.h. O andaime e o do
-// src/proxyts.c (127.0.0.1, porta livre, um fio por conexao, sessao por
-// geracao); o conversor e o dts_remux.c.
+// onde o player da TV le o fluxo convertido. Ver dts_hls_tpk.h e
+// docs/features/dts/README.md. O andaime e o do src/proxyts.c (127.0.0.1,
+// porta livre, um fio por conexao, sessao por geracao); o conversor e o
+// dts_remux.c.
 //
-// MODOS:
-//  1 HLS sob demanda: playlist VOD montada do indice de quadros-chave; cada
-//    segmento sai do conversor quando o player pede. Seek, posicao e duracao
-//    ficam com o player.
-//  2/3 progressivo (TS, MKV, MP4): um fluxo so, reaberto a cada seek (?t=).
-// CORPO (pergunta 3 do teste): chunked, Content-Length (o segmento inteiro e
-// gerado antes; Range respondido da memoria) ou fechar a conexao no fim.
+// ENTREGA: HLS sob demanda (playlist VOD montada do indice de quadros-chave;
+// cada segmento sai do conversor quando o player pede; seek, posicao e duracao
+// ficam com o player). Sem indice ate o fim (MKV sem Cues) o app troca sozinho
+// para um TS continuo, reaberto a cada seek (?t=). Corpo sempre chunked: o
+// tamanho de um segmento so existe depois de gera-lo (Range e ignorado).
 //
 // REGISTRO: toda requisicao do player sai no log com o Range e o
 // Connection dela, e a resposta com bytes, primeiro byte, tempo total e o
@@ -22,9 +21,8 @@
 #ifndef NV_TPK
 int dts_tpk_disponivel(void) { return 0; }
 const char *dts_tpk_modo_nome(int m) { (void)m; return ""; }
-const char *dts_tpk_corpo_nome(int c) { (void)c; return ""; }
-int dts_tpk_abrir(const char *u, const char *h, int t, int s, int m, int c, double i, char *o, size_t n) {
-  (void)u; (void)h; (void)t; (void)s; (void)m; (void)c; (void)i; if (o && n) o[0] = 0; return 0;
+int dts_tpk_abrir(const char *u, const char *h, int t, int s, int m, double i, char *o, size_t n) {
+  (void)u; (void)h; (void)t; (void)s; (void)m; (void)i; if (o && n) o[0] = 0; return 0;
 }
 int dts_tpk_url_em(double s, char *o, size_t n) { (void)s; if (o && n) o[0] = 0; return 0; }
 void dts_tpk_fechar(void) {}
@@ -43,9 +41,7 @@ int dts_tpk_e_url(const char *u) { (void)u; return 0; }
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <ifaddrs.h>
 #include <math.h>
-#include <net/if.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <pthread.h>
@@ -63,19 +59,16 @@ int dts_tpk_e_url(const char *u) { (void)u; return 0; }
 #define MSG_NOSIGNAL 0
 #endif
 
-#define SEG_ALVO_S       6.0           /* HLS: keyframes grouped to >= 6 s */
-#define LEN_ALVO_BYTES   (32.0 * 1048576.0)  /* Content-Length: segment kept in RAM */
-#define LEN_TETO         (160u << 20)  /* a Content-Length segment never grows past this */
+// Picked on the S95C (Tizen 9, Oct 2026): 2 s segments with a 1 s player
+// prebuffer seek in about 2 s on a fast source; 6 s segments took 10-21 s.
+#define SEG_ALVO_S       2.0           /* HLS: keyframes grouped to >= 2 s */
+#define PREBUFFER_MS     1000          /* player prebuffer before it starts */
 #define ESPERA_SONDA_MS  30000
 #define ESPERA_GERADOR_MS 30000
-#define GERADORES        2
-#define MAX_CONEXOES     16            /* player + retries; beyond this the connection gets a 503 */
+#define GERADORES        2             /* each one is one more connection to the source */
 
-static const char *const MODO_NOME[DTSTPK_MODOS] = {
-  "HLS 127.0.0.1", "progressive TS", "progressive MKV", "progressive MP4" };
-static const char *const CORPO_NOME[DTSTPK_CORPOS] = { "chunked", "content-length", "close" };
+static const char *const MODO_NOME[DTSTPK_MODOS] = { "HLS", "continuous TS", "off" };
 const char *dts_tpk_modo_nome(int m) { return m >= 0 && m < DTSTPK_MODOS ? MODO_NOME[m] : "?"; }
-const char *dts_tpk_corpo_nome(int c) { return c >= 0 && c < DTSTPK_CORPOS ? CORPO_NOME[c] : "?"; }
 
 static uint64_t agoraMs(void) {
   struct timespec t;
@@ -88,7 +81,7 @@ static void prazoEm(struct timespec *ts, int ms) {
   if (ts->tv_nsec >= 1000000000L) { ts->tv_nsec -= 1000000000L; ts->tv_sec++; }
 }
 
-// --- token -------------------------------------------------------------
+// --- token e IP -------------------------------------------------------------
 static void gerarToken(char *t, int n) {
   static const char A[] = "abcdefghjkmnpqrstuvwxyz23456789";
   unsigned char b[32];
@@ -120,7 +113,7 @@ static int enviarTudo(int s, const void *b, size_t n, volatile int *parar1, vola
   return 1;
 }
 
-static int ouvir(in_addr_t onde, int portaPreferida, int *porta) {
+static int ouvir(in_addr_t onde, int *porta) {
   struct sockaddr_in a;
   socklen_t al = sizeof a;
   int um = 1, s = socket(AF_INET, SOCK_STREAM, 0);
@@ -128,21 +121,26 @@ static int ouvir(in_addr_t onde, int portaPreferida, int *porta) {
   setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &um, sizeof um);
   memset(&a, 0, sizeof a);
   a.sin_family = AF_INET; a.sin_addr.s_addr = htonl(onde);
-  a.sin_port = htons((unsigned short)portaPreferida);
-  if (bind(s, (struct sockaddr *)&a, sizeof a) < 0) {
-    if (!portaPreferida) { close(s); return -1; }
-    a.sin_port = 0;
-    if (bind(s, (struct sockaddr *)&a, sizeof a) < 0) { close(s); return -1; }
-  }
+  if (bind(s, (struct sockaddr *)&a, sizeof a) < 0) { close(s); return -1; }   // porta 0: livre
   if (listen(s, 16) < 0 || getsockname(s, (struct sockaddr *)&a, &al) < 0) { close(s); return -1; }
   *porta = ntohs(a.sin_port);
   return s;
 }
 
-// Le o cabecalho do pedido (ate a linha vazia). 0 = conexao fechada/prazo.
-static int lerPedido(int s, char *b, size_t n, int prazoMs) {
-  size_t tot = 0;
+// Fim do cabecalho (depois da linha vazia), 0 = ainda nao chegou.
+static size_t fimCabecalho(const char *b) {
+  const char *a = strstr(b, "\r\n\r\n"), *z = strstr(b, "\n\n");
+  if (a && (!z || a < z)) return (size_t)(a - b) + 4;
+  return z ? (size_t)(z - b) + 2 : 0;
+}
+
+// Le o cabecalho do pedido (ate a linha vazia); b ja traz `ja` bytes (o que o
+// porteiro leu, ou o que sobrou do pedido anterior). 0 = conexao fechada/prazo.
+static int lerPedido(int s, char *b, size_t n, int prazoMs, size_t ja) {
+  size_t tot = ja;
   uint64_t fim = agoraMs() + (uint64_t)prazoMs;
+  b[tot] = 0;
+  if (fimCabecalho(b)) return (int)tot;
   while (tot < n - 1) {
     struct pollfd p = { s, POLLIN, 0 };
     int restam = (int)(fim > agoraMs() ? fim - agoraMs() : 0);
@@ -191,6 +189,130 @@ static int lerLinha(const char *cab, Pedido *p) {
   return !strcmp(p->metodo, "GET") || p->head;
 }
 
+static void responderSimples(int s, int cod, const char *msg, const char *tipo, const char *corpo, int manter);
+
+// --- porteiro ---------------------------------------------------------------
+// Review blocker 3: no thread per connection before its token is checked. One
+// thread per listener holds the new connections (up to PORT_PEND, the oldest
+// dropped when full, PORT_PRAZO_MS each to send the request head), reads the
+// head without blocking, and only a head with the live token gets a thread,
+// up to maxVivos at once. Anything else is answered (404/503) and closed here.
+#define PORT_VIVOS 8
+#define PORT_PEND 16
+#define PORT_PRAZO_MS 5000
+#define CAB_MAX 8192
+typedef struct Porteiro Porteiro;
+typedef struct { Porteiro *pt; int sock; size_t n; char cab[CAB_MAX]; } Conexao;
+struct Porteiro {
+  int ls, maxVivos;
+  int (*valido)(const char *cab);   // the head carries a live token
+  void *(*fio)(void *);             // takes the Conexao, frees it, calls conexaoFim
+  atomic_int vivos;
+  pthread_mutex_t m;
+  Conexao *conexoes[PORT_VIVOS];
+  unsigned recusados;
+};
+static void conexaoFim(Conexao *c) {
+  Porteiro *pt = c->pt;
+  pthread_mutex_lock(&pt->m);
+  for (int i = 0; i < pt->maxVivos; i++) if (pt->conexoes[i] == c) {
+    pt->conexoes[i] = NULL;
+    atomic_fetch_sub(&pt->vivos, 1);
+    break;
+  }
+  close(c->sock);
+  pthread_mutex_unlock(&pt->m);
+  free(c);
+}
+static int tokenNoCaminho(const char *cab, const char *tok) {   // "GET /<tok>/..." or "/<tok>"
+  const char *p = strchr(cab, ' ');
+  size_t k = strlen(tok);
+  if (!p || !k) return 0;
+  while (*p == ' ') p++;
+  if (*p++ != '/') return 0;
+  return !strncmp(p, tok, k) && (p[k] == '/' || p[k] == ' ' || p[k] == '?');
+}
+static void entregar(Porteiro *pt, int s, char *b, size_t n) {
+  pthread_t t;
+  Conexao *c;
+  pthread_mutex_lock(&pt->m);
+  if (!pt->valido(b)) {
+    pthread_mutex_unlock(&pt->m);
+    if (!(pt->recusados++ % 64)) { printf("[dts-tpk] pedido sem token valido: 404, sem fio (%u)\n", pt->recusados); fflush(stdout); }
+    responderSimples(s, 404, "Not Found", NULL, "", 0);
+    close(s); return;
+  }
+  if (atomic_load(&pt->vivos) >= pt->maxVivos || !(c = malloc(sizeof *c))) {
+    pthread_mutex_unlock(&pt->m);
+    printf("[dts-tpk] %d conexoes abertas: 503\n", pt->maxVivos);
+    fflush(stdout);
+    responderSimples(s, 503, "Service Unavailable", NULL, "busy\n", 0);
+    close(s); return;
+  }
+  c->pt = pt; c->sock = s; c->n = n;
+  memcpy(c->cab, b, n + 1);
+  for (int i = 0; i < pt->maxVivos; i++) if (!pt->conexoes[i]) { pt->conexoes[i] = c; break; }
+  atomic_fetch_add(&pt->vivos, 1);
+  pthread_mutex_unlock(&pt->m);
+  if (pthread_create(&t, NULL, pt->fio, c) == 0) pthread_detach(t);
+  else conexaoFim(c);
+}
+static void *porteiro(void *u) {
+  Porteiro *pt = u;
+  struct { int s; size_t n; uint64_t fim; char *b; } pd[PORT_PEND];
+  int np = 0;
+  for (;;) {
+    struct pollfd f[PORT_PEND + 1];
+    uint64_t t = agoraMs();
+    int espera = 1000, i;
+    f[0].fd = pt->ls; f[0].events = POLLIN; f[0].revents = 0;
+    for (i = 0; i < np; i++) {
+      int r = pd[i].fim > t ? (int)(pd[i].fim - t) : 0;
+      f[i + 1].fd = pd[i].s; f[i + 1].events = POLLIN; f[i + 1].revents = 0;
+      if (r < espera) espera = r;
+    }
+    if (poll(f, (nfds_t)np + 1, espera) < 0 && errno != EINTR) { usleep(200 * 1000); continue; }
+    t = agoraMs();
+    for (i = np - 1; i >= 0; i--) {   // from the end: removal swaps in one already seen
+      int fim = 0, pronto = 0;
+      if (f[i + 1].revents) {
+        ssize_t k = recv(pd[i].s, pd[i].b + pd[i].n, CAB_MAX - 1 - pd[i].n, MSG_DONTWAIT);
+        if (k > 0) {
+          pd[i].n += (size_t)k; pd[i].b[pd[i].n] = 0;
+          if (fimCabecalho(pd[i].b)) pronto = 1; else if (pd[i].n >= CAB_MAX - 1) fim = 1;
+        } else if (k == 0 || (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) fim = 1;
+      }
+      if (!pronto && !fim && t >= pd[i].fim) fim = 1;
+      if (pronto) entregar(pt, pd[i].s, pd[i].b, pd[i].n);
+      else if (fim) close(pd[i].s);
+      if (pronto || fim) { free(pd[i].b); pd[i] = pd[--np]; }
+    }
+    if (f[0].revents & POLLIN) {
+      int s = accept(pt->ls, NULL, NULL);
+      if (s < 0) continue;
+      if (np == PORT_PEND) { close(pd[0].s); free(pd[0].b); pd[0] = pd[--np]; }   // the oldest waits no more
+      { struct timeval tv = { 1, 0 };   // envio em fatias de 1 s: o cancelamento e checado entre elas
+        setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv); }
+#ifdef SO_NOSIGPIPE
+      { int um = 1; setsockopt(s, SOL_SOCKET, SO_NOSIGPIPE, &um, sizeof um); }
+#endif
+      if (!(pd[np].b = malloc(CAB_MAX))) { close(s); continue; }
+      pd[np].s = s; pd[np].n = 0; pd[np].b[0] = 0; pd[np].fim = t + PORT_PRAZO_MS;
+      np++;
+    }
+  }
+  return NULL;
+}
+static int porteiroSubir(Porteiro *pt, int ls, int maxVivos, int (*valido)(const char *), void *(*fio)(void *)) {
+  pthread_t t;
+  pt->ls = ls; pt->maxVivos = maxVivos; pt->valido = valido; pt->fio = fio;
+  pthread_mutex_init(&pt->m, NULL);
+  atomic_store(&pt->vivos, 0);
+  if (pthread_create(&t, NULL, porteiro, pt) != 0) return 0;
+  pthread_detach(t);
+  return 1;
+}
+
 static void responderSimples(int s, int cod, const char *msg, const char *tipo, const char *corpo, int manter) {
   char cab[512];
   size_t n = corpo ? strlen(corpo) : 0;
@@ -213,7 +335,7 @@ typedef struct Sessao {
   unsigned id;
   char token[12];
   char *url, *cabs;
-  int track, stereo, modo, corpo;
+  int track, stereo, modo;
   volatile int cancelar;
   pthread_mutex_t m;
   pthread_cond_t c;
@@ -222,44 +344,30 @@ typedef struct Sessao {
   char erro[160], caminho[40];
   double duracao;
   DtsRemux *rx;
+  DtsRemux *rxSonda;              // while the probe runs: what a close cancels
   Gerador ger[GERADORES];
   unsigned uso;
   double inicioStream;            // progressivo: keyframe do fluxo em curso
-  // Content-Length: o ultimo segmento fica na memoria para o Range
-  int cacheSeg; unsigned char *cache; size_t cacheN;
   // resumo
   unsigned nPedidos, nSegs, nContinuou, nBuscou, nErros;
   int64_t bytes;
   uint64_t criadaMs, prontaMs, primeiroPedidoMs;
   char agente[96];
+  // memory line
+  long rssIni, rssPico, livreIni, livreMin;   // kB; -1 unknown
+  int hwmZerado;
+  uint64_t memLogMs;
 } Sessao;
 
 static pthread_mutex_t G = PTHREAD_MUTEX_INITIALIZER;
 static Sessao *atual;
 static unsigned contador;
-static int portaLo;
-
-// O ouvinte e o fio que aceita: o fio fecha o proprio socket ao ver `parar`
-// (fechar o fd de fora, com um accept() pendente, deixaria o numero reusavel).
-typedef struct { int fd; atomic_int parar; } Ouvinte;
-static Ouvinte *ouvinteLo;              // sob G
-typedef struct { int fd; } Conexao;
-// O teardown solta as vagas, mas so o fio dono fecha/libera a conexao.
-// Comparar por identidade impede que um fio antigo solte a vaga de um novo.
-static pthread_mutex_t socksM = PTHREAD_MUTEX_INITIALIZER;
-static Conexao *socks[MAX_CONEXOES];
-static void sockSoltar(Conexao *c) {
-  pthread_mutex_lock(&socksM);
-  for (int i = 0; i < MAX_CONEXOES; i++) if (socks[i] == c) { socks[i] = NULL; break; }
-  close(c->fd);
-  pthread_mutex_unlock(&socksM);
-  free(c);
-}
+static int sockLo = -1, portaLo;
 
 static void sessaoDestruir(Sessao *s) {
   for (int i = 0; i < GERADORES; i++) dts_remux_gen_free(s->ger[i].g);
   dts_remux_close(s->rx);
-  free(s->cache); free(s->url); free(s->cabs);
+  free(s->url); free(s->cabs);
   pthread_cond_destroy(&s->c); pthread_mutex_destroy(&s->m);
   free(s);
 }
@@ -295,16 +403,22 @@ static void sessaoResumo(Sessao *s) {
 static void *fioSonda(void *u) {
   Sessao *s = u;
   char err[160] = "";
-  DtsRemux *rx = dts_remux_open(s->url, s->cabs, s->track, s->stereo, SEG_ALVO_S, &s->cancelar, err, sizeof err);
-  const DtsRemuxInfo *in = rx ? dts_remux_info(rx) : NULL;
-  if (rx && s->corpo == DTSTPK_CORPO_LENGTH && in->size_bytes > 0 && in->duration_s > 1.0) {
-    // O segmento inteiro fica na memoria antes de sair: alvo de ~32 MB.
-    double bps = in->size_bytes / in->duration_s, alvo = LEN_ALVO_BYTES / bps;
-    if (alvo < 2.0) alvo = 2.0;
-    if (alvo > SEG_ALVO_S) alvo = SEG_ALVO_S;
-    dts_remux_resegment(rx, alvo);
-  }
+  // Two steps so a close during the probe (stop/back while the source is still
+  // answering) reaches its reader: encerrarAtual cancels rxSonda.
+  DtsRemux *rx = dts_remux_new(&s->cancelar);
   pthread_mutex_lock(&s->m);
+  s->rxSonda = rx;
+  if (rx && s->cancelar) dts_remux_cancel(rx);
+  pthread_mutex_unlock(&s->m);
+  if (rx && dts_remux_probe(rx, s->url, s->cabs, s->track, s->stereo, SEG_ALVO_S, err, sizeof err) < 0) {
+    pthread_mutex_lock(&s->m); s->rxSonda = NULL; pthread_mutex_unlock(&s->m);
+    dts_remux_close(rx);
+    rx = NULL;
+  }
+  if (!rx && !err[0]) snprintf(err, sizeof err, "Out of memory");
+  const DtsRemuxInfo *in = rx ? dts_remux_info(rx) : NULL;
+  pthread_mutex_lock(&s->m);
+  s->rxSonda = NULL;
   if (s->cancelar) { if (rx) dts_remux_close(rx); rx = NULL; s->estado = DTSTPK_FALHOU; snprintf(s->erro, sizeof s->erro, "cancelled"); }
   else if (!rx) { s->estado = DTSTPK_FALHOU; snprintf(s->erro, sizeof s->erro, "%s", err[0] ? err : "probe failed"); }
   else if (s->modo == DTSTPK_HLS && (in->n_segments < 1 || !in->index_complete)) {
@@ -451,81 +565,36 @@ static void soltarGerador(Sessao *s, Gerador *g) {
 
 // --- saida de um run ------------------------------------------------------------
 typedef struct {
-  int sock, corpo, manter, cabEnviado, status;
+  int sock, manter, cabEnviado, status;
   const char *tipo;
   Sessao *s;
   Gerador *ger;
   int64_t bytes;
   uint64_t t0, primeiroByte;
-  unsigned char *mem; size_t memN, memCap; int estourou;
 } Saida;
 
 static int enviarCab(Saida *o) {
   char cab[400];
-  if (o->corpo == DTSTPK_CORPO_CHUNKED)
-    snprintf(cab, sizeof cab, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nTransfer-Encoding: chunked\r\n"
-             "Cache-Control: no-cache\r\nConnection: %s\r\n\r\n", o->tipo, o->manter ? "keep-alive" : "close");
-  else
-    snprintf(cab, sizeof cab, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n", o->tipo);
+  snprintf(cab, sizeof cab, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nTransfer-Encoding: chunked\r\n"
+           "Cache-Control: no-cache\r\nConnection: %s\r\n\r\n", o->tipo, o->manter ? "keep-alive" : "close");
   o->cabEnviado = 1; o->status = 200;
   return enviarTudo(o->sock, cab, strlen(cab), &o->s->cancelar, &o->ger->parar);
 }
 
 static int saidaEscrever(void *u, const unsigned char *d, int n) {
   Saida *o = u;
+  char tam[16];
+  int k;
   if (!o->primeiroByte) o->primeiroByte = agoraMs();
-  if (o->corpo == DTSTPK_CORPO_LENGTH) {
-    if (o->memN + (size_t)n > o->memCap) {
-      size_t cap = o->memCap ? o->memCap * 2 : (8u << 20);
-      while (cap < o->memN + (size_t)n) cap *= 2;
-      if (cap > LEN_TETO) { o->estourou = 1; return -1; }
-      unsigned char *m = realloc(o->mem, cap);
-      if (!m) { o->estourou = 1; return -1; }
-      o->mem = m; o->memCap = cap;
-    }
-    memcpy(o->mem + o->memN, d, (size_t)n); o->memN += (size_t)n;
-    return n;
-  }
   if (!o->cabEnviado && !enviarCab(o)) return -1;
-  if (o->corpo == DTSTPK_CORPO_CHUNKED) {
-    char tam[16];
-    int k = snprintf(tam, sizeof tam, "%x\r\n", (unsigned)n);
-    if (!enviarTudo(o->sock, tam, (size_t)k, &o->s->cancelar, &o->ger->parar) ||
-        !enviarTudo(o->sock, d, (size_t)n, &o->s->cancelar, &o->ger->parar) ||
-        !enviarTudo(o->sock, "\r\n", 2, &o->s->cancelar, &o->ger->parar)) return -1;
-  } else if (!enviarTudo(o->sock, d, (size_t)n, &o->s->cancelar, &o->ger->parar)) return -1;
+  k = snprintf(tam, sizeof tam, "%x\r\n", (unsigned)n);
+  if (!enviarTudo(o->sock, tam, (size_t)k, &o->s->cancelar, &o->ger->parar) ||
+      !enviarTudo(o->sock, d, (size_t)n, &o->s->cancelar, &o->ger->parar) ||
+      !enviarTudo(o->sock, "\r\n", 2, &o->s->cancelar, &o->ger->parar)) return -1;
   o->bytes += n;
   return n;
 }
 
-// Corpo da memoria (Content-Length), com Range "bytes=a-b" / "bytes=a-".
-static void enviarMemoria(int sock, Sessao *s, const char *tipo, const unsigned char *b, size_t n,
-                          const char *range, int manter, int soCab, int *status, int64_t *enviados) {
-  char cab[400];
-  size_t ini = 0, fim = n ? n - 1 : 0;
-  int parcial = 0;
-  unsigned long long a, z;
-  if (range[0] && sscanf(range, "bytes=%llu-%llu", &a, &z) >= 1) {
-    if (sscanf(range, "bytes=%llu-%llu", &a, &z) < 2) z = n ? n - 1 : 0;
-    if (a >= n || z < a) {   // fora do corpo, ou invertido ("bytes=8-0")
-      snprintf(cab, sizeof cab, "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */%zu\r\n"
-               "Content-Length: 0\r\nConnection: %s\r\n\r\n", n, manter ? "keep-alive" : "close");
-      enviarTudo(sock, cab, strlen(cab), &s->cancelar, NULL);
-      *status = 416; return;
-    }
-    ini = (size_t)a; fim = z >= n ? n - 1 : (size_t)z; parcial = 1;
-  }
-  if (parcial)
-    snprintf(cab, sizeof cab, "HTTP/1.1 206 Partial Content\r\nContent-Type: %s\r\nContent-Length: %zu\r\n"
-             "Content-Range: bytes %zu-%zu/%zu\r\nAccept-Ranges: bytes\r\nCache-Control: no-cache\r\nConnection: %s\r\n\r\n",
-             tipo, fim - ini + 1, ini, fim, n, manter ? "keep-alive" : "close");
-  else
-    snprintf(cab, sizeof cab, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %zu\r\nAccept-Ranges: bytes\r\n"
-             "Cache-Control: no-cache\r\nConnection: %s\r\n\r\n", tipo, n, manter ? "keep-alive" : "close");
-  *status = parcial ? 206 : 200;
-  if (!enviarTudo(sock, cab, strlen(cab), &s->cancelar, NULL) || soCab) return;   // HEAD: so o cabecalho
-  if (n && enviarTudo(sock, b + ini, fim - ini + 1, &s->cancelar, NULL)) *enviados = (int64_t)(fim - ini + 1);
-}
 
 // Um segmento (seg >= 0) ou o fluxo progressivo (seg < 0, a partir de `t`).
 // Devolve se a conexao pode seguir aberta.
@@ -536,30 +605,7 @@ static int servirFluxo(int sock, Sessao *s, const Pedido *pd, unsigned nr, int s
   uint64_t t0 = agoraMs();
   DtsRemuxStats st;
   Saida o;
-  int corpo = s->corpo;
-  if (seg < 0 && corpo == DTSTPK_CORPO_LENGTH) corpo = DTSTPK_CORPO_CLOSE;   // fluxo sem fim nao tem tamanho
-  if (corpo == DTSTPK_CORPO_CLOSE) manter = 0;
   memset(&st, 0, sizeof st);
-  // Content-Length: o mesmo segmento de novo (Range de retomada) sai da memoria.
-  if (seg >= 0 && corpo == DTSTPK_CORPO_LENGTH) {
-    pthread_mutex_lock(&s->m);
-    if (s->cache && s->cacheSeg == seg) {
-      unsigned char *b = s->cache; size_t n = s->cacheN;
-      s->cache = NULL;                     // emprestado: volta depois de enviar
-      pthread_mutex_unlock(&s->m);
-      int status = 0; int64_t env = 0;
-      enviarMemoria(sock, s, tipo, b, n, pd->range, manter, pd->head, &status, &env);
-      pthread_mutex_lock(&s->m);
-      if (!s->cache) { s->cache = b; s->cacheN = n; s->cacheSeg = seg; } else free(b);
-      s->bytes += env;
-      pthread_mutex_unlock(&s->m);
-      printf("[dts-tpk] #%u <- %d seg%d da memoria: %lld B em %u ms\n", nr, status, seg, (long long)env,
-             (unsigned)(agoraMs() - t0));
-      fflush(stdout);
-      return manter;
-    }
-    pthread_mutex_unlock(&s->m);
-  }
   if (pd->head) {
     // HEAD: so o cabecalho; o tamanho de um segmento nao existe antes de gera-lo.
     char cab[300];
@@ -582,31 +628,23 @@ static int servirFluxo(int sock, Sessao *s, const Pedido *pd, unsigned nr, int s
     pthread_mutex_lock(&s->m); s->inicioStream = dts_remux_keyframe_before(s->rx, t); pthread_mutex_unlock(&s->m);
   }
   memset(&o, 0, sizeof o);
-  o.sock = sock; o.corpo = corpo; o.manter = manter; o.tipo = tipo; o.s = s; o.ger = ger; o.t0 = t0;
-  if (pd->range[0] && strncmp(pd->range, "bytes=0-", 8) && corpo != DTSTPK_CORPO_LENGTH)
-    printf("[dts-tpk] #%u: Range %s ignorado (corpo %s gera do inicio)\n", nr, pd->range, CORPO_NOME[corpo]);
+  o.sock = sock; o.manter = manter; o.tipo = tipo; o.s = s; o.ger = ger; o.t0 = t0;
+  if (pd->range[0] && strncmp(pd->range, "bytes=0-", 8))
+    printf("[dts-tpk] #%u: Range ignorado (gera do inicio, 200 inteiro)\n", nr);
   rr = dts_remux_gen_run(ger->g, seg, t, fmt, saidaEscrever, &o, &ger->parar, &st, err, sizeof err);
   soltarGerador(s, ger);
-  int status = o.status, ok = rr == 0 && !o.estourou;
+  int status = o.status, ok = rr == 0;
   int64_t enviados = o.bytes;
-  if (ok && corpo == DTSTPK_CORPO_LENGTH) {
-    enviarMemoria(sock, s, tipo, o.mem, o.memN, pd->range, manter, 0, &status, &enviados);
-    pthread_mutex_lock(&s->m);
-    free(s->cache); s->cache = o.mem; s->cacheN = o.memN; s->cacheSeg = seg; o.mem = NULL;
-    pthread_mutex_unlock(&s->m);
-  } else if (ok && corpo == DTSTPK_CORPO_CHUNKED) {
+  if (ok) {
     if (!o.cabEnviado) enviarCab(&o);
     if (!enviarTudo(sock, "0\r\n\r\n", 5, &s->cancelar, NULL)) manter = 0;
-  } else if (ok && !o.cabEnviado) enviarCab(&o);
-  if (!ok) {
+  } else {
     if (!o.cabEnviado && rr != -2) {
-      responderSimples(sock, o.estourou ? 507 : 500, o.estourou ? "Insufficient Storage" : "Internal Server Error",
-                       NULL, "conversion failed\n", 0);
-      status = o.estourou ? 507 : 500;
+      responderSimples(sock, 500, "Internal Server Error", NULL, "conversion failed\n", 0);
+      status = 500;
     }
     manter = 0;
   }
-  free(o.mem);
   pthread_mutex_lock(&s->m);
   s->bytes += enviados;
   if (seg >= 0 && ok) { s->nSegs++; if (!st.fresh) s->nContinuou++; else s->nBuscou++; }
@@ -654,7 +692,8 @@ static void playlistMestre(Sessao *s, char *b, size_t n) {
   long fps = lround(in->fps * 1000.0);
   size_t p = 0;
   if (bw < 1000000L) bw = 1000000L;
-  p += (size_t)snprintf(b + p, n - p, "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-STREAM-INF:BANDWIDTH=%ld", bw);
+  p += (size_t)snprintf(b + p, n - p, "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n");
+  p += (size_t)snprintf(b + p, n - p, "#EXT-X-STREAM-INF:BANDWIDTH=%ld", bw);
   if (in->width > 0 && in->height > 0) p += (size_t)snprintf(b + p, n - p, ",RESOLUTION=%dx%d", in->width, in->height);
   if (fps > 0) p += (size_t)snprintf(b + p, n - p, ",FRAME-RATE=%ld.%03ld", fps / 1000, fps % 1000);
   if (!strncmp(in->hdr, "PQ", 2) || !strcmp(in->hdr, "HLG"))
@@ -725,12 +764,10 @@ static int atenderPedido(int sock, const Pedido *pd, int manter) {
       fflush(stdout);
       r = manter;
     } else r = servirFluxo(sock, s, pd, nr, k, 0, "mpegts", "video/mp2t", manter);
-  } else if (!strncmp(resto, "prog.", 5)) {
-    const char *e = resto + 5, *fmt = !strcmp(e, "mkv") ? "matroska" : !strcmp(e, "mp4") ? "mp4" : "mpegts";
-    const char *tipo = !strcmp(e, "mkv") ? "video/x-matroska" : !strcmp(e, "mp4") ? "video/mp4" : "video/mp2t";
+  } else if (!strcmp(resto, "prog.ts")) {
     const char *q = strstr(pd->query, "t=");
     double t = q ? atof(q + 2) : 0.0;
-    r = servirFluxo(sock, s, pd, nr, -1, t, fmt, tipo, manter);
+    r = servirFluxo(sock, s, pd, nr, -1, t, "mpegts", "video/mp2t", manter);
   } else {
     responderSimples(sock, 404, "Not Found", NULL, "", manter);
     r = manter;
@@ -739,89 +776,49 @@ static int atenderPedido(int sock, const Pedido *pd, int manter) {
   return r;
 }
 
+// One connection of the player (its first request head already read and its
+// token checked by the porteiro); keep-alive requests follow on the same socket.
 static void *atender(void *u) {
   Conexao *c = u;
-  int sock = c->fd;
-  char cab[8192];
+  int sock = c->sock;
+  size_t ja = c->n;
+  char cab[CAB_MAX], resto[CAB_MAX];
+  memcpy(cab, c->cab, ja + 1);
   for (int n = 0;; n++) {
     Pedido pd;
-    if (!lerPedido(sock, cab, sizeof cab, n ? 60000 : 15000)) break;
+    int tot = lerPedido(sock, cab, sizeof cab, n ? 60000 : 15000, ja);
+    size_t h;
+    if (!tot) break;
+    h = fimCabecalho(cab);
+    ja = (size_t)tot - h;                 // a pipelined next request, if any
+    memcpy(resto, cab + h, ja);
+    cab[h] = 0;
     if (!lerLinha(cab, &pd)) { responderSimples(sock, 405, "Method Not Allowed", NULL, "", 0); break; }
     int manter = pd.http11 ? strcasecmp(pd.conexao, "close") != 0 : strcasecmp(pd.conexao, "keep-alive") == 0;
     if (!atenderPedido(sock, &pd, manter)) break;
+    memcpy(cab, resto, ja);
   }
-  sockSoltar(c);
+  conexaoFim(c);
   return NULL;
 }
 
-static void *aceitar(void *u) {
-  Ouvinte *o = u;
-  while (!atomic_load(&o->parar)) {
-    struct pollfd p = { o->fd, POLLIN, 0 };
-    int s, r = poll(&p, 1, 200);     // acorda para olhar `parar`
-    pthread_t t;
-    if (r <= 0) { if (r < 0 && errno != EINTR) usleep(200 * 1000); continue; }
-    s = accept(o->fd, NULL, NULL);
-    if (s < 0) continue;
-    { struct timeval tv = { 1, 0 };   // envio em fatias de 1 s: o cancelamento e checado entre elas
-      setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv); }
-#ifdef SO_NOSIGPIPE
-    { int um = 1; setsockopt(s, SOL_SOCKET, SO_NOSIGPIPE, &um, sizeof um); }
-#endif
-    Conexao *c = NULL;
-    pthread_mutex_lock(&socksM);
-    int parado = atomic_load(&o->parar);
-    if (!parado) for (int i = 0; i < MAX_CONEXOES; i++) if (!socks[i]) {
-      c = malloc(sizeof *c);
-      if (c) { c->fd = s; socks[i] = c; }
-      break;
-    }
-    pthread_mutex_unlock(&socksM);
-    if (!c) {
-      if (!parado) responderSimples(s, 503, "Service Unavailable", NULL, "too many connections\n", 0);
-      close(s);
-      continue;
-    }
-    if (pthread_create(&t, NULL, atender, c) == 0) pthread_detach(t);
-    else sockSoltar(c);
-  }
-  close(o->fd);
-  free(o);
-  return NULL;
+// A head for the live session's token (old sessions' and unknown ones: 404).
+static int tokenAtual(const char *cab) {   // under porteiroHls.m
+  return atual && tokenNoCaminho(cab, atual->token);
 }
+static Porteiro porteiroHls;
 
-// Sob G. So 127.0.0.1: nada do servidor sai da TV.
+// Sob G. Only 127.0.0.1 (review blocker 3): the TV's own player is the client.
 static int subir(void) {
-  pthread_t t;
-  Ouvinte *o;
-  int fd, porta;
-  if (ouvinteLo) return 1;
+  if (sockLo >= 0) return 1;
   signal(SIGPIPE, SIG_IGN);
-  fd = ouvir(INADDR_LOOPBACK, 0, &porta);
-  if (fd < 0) return 0;
-  o = calloc(1, sizeof *o);
-  if (!o) { close(fd); return 0; }
-  o->fd = fd;
-  atomic_init(&o->parar, 0);
-  if (pthread_create(&t, NULL, aceitar, o) != 0) { close(fd); free(o); return 0; }
-  pthread_detach(t);
-  ouvinteLo = o; portaLo = porta;
-  printf("[dts-tpk] servidor ouvindo em %s:%d\n", "127.0.0.1", porta);
+  sockLo = ouvir(INADDR_LOOPBACK, &portaLo);
+  if (sockLo < 0) return 0;
+  // 8 connections at once: the player uses 1-3; the rest wait in the porteiro.
+  if (!porteiroSubir(&porteiroHls, sockLo, PORT_VIVOS, tokenAtual, atender)) { close(sockLo); sockLo = -1; return 0; }
+  printf("[dts-tpk] servidor ouvindo em 127.0.0.1:%d\n", portaLo);
   fflush(stdout);
   return 1;
-}
-
-// Sob G. O fio de aceite fecha o socket na proxima volta (<= 200 ms).
-static void descer(void) {
-  if (!ouvinteLo) return;
-  pthread_mutex_lock(&socksM);
-  atomic_store(&ouvinteLo->parar, 1);
-  for (int i = 0; i < MAX_CONEXOES; i++) if (socks[i]) {
-    shutdown(socks[i]->fd, SHUT_RDWR);
-    socks[i] = NULL;
-  }
-  pthread_mutex_unlock(&socksM);
-  ouvinteLo = NULL; portaLo = 0;
 }
 
 // Versao maior da Tizen (system-info por dlopen, como gpunivel.c). -1 = nao leu.
@@ -840,34 +837,131 @@ static int tizenMaior(void) {
   return v;
 }
 
+// Anel do leitor da fonte, MiB: abaixo do 8 (menos RAM) cai de 32 para 16.
+static int anelMib(void) {
+  int t = tizenMaior();
+  return t >= 6 && t < 8 ? 16 : 32;
+}
+
 // Tizen 6 em diante: os tres pacotes 6+ (NuvioTpk60/65/NuvioTpk) carregam a
 // mesma .so, e as TVs de 2021/2022 (6.0/6.5) tambem nao tocam DTS (especificacao
-// de video da Samsung de cada ano). Abaixo do 8 (menos RAM) o anel do leitor da
-// fonte cai de 32 para 16 MiB; no 8/9 nada muda.
+// de video da Samsung de cada ano).
 int dts_tpk_disponivel(void) {
   static int c = -1;   // os Ajustes perguntam a cada quadro: decide uma vez
   if (c < 0) {
     int t = tizenMaior();
     c = (t < 0 || t >= 6) && dts_remux_available();
-    if (c && t >= 6 && t < 8) { dts_engine_set_ring_mib(16); dts_remux_set_queue_budget_mib(128); }
-    printf("[dts-tpk] conversao DTS/TrueHD %s (tizen %d, FFmpeg %s%s)\n", c ? "disponivel" : "indisponivel", t,
-           dts_remux_available() ? "ligado" : "ausente", c && t >= 6 && t < 8 ? ", anel 16 MiB" : "");
+    printf("[dts-tpk] conversao DTS/TrueHD %s (tizen %d, FFmpeg %s, anel %d MiB)\n", c ? "disponivel" : "indisponivel", t,
+           dts_remux_available() ? "ligado" : "ausente", anelMib());
     fflush(stdout);
   }
   return c;
 }
 
+// --- memory line (one per playback) --------------------------------------------
+// Peak resident memory of the app and the lowest MemAvailable of the TV while a
+// session lives, sampled every 500 ms (and VmHWM, reset at the session start
+// when the kernel allows it), with the reader rings alive. Kilobytes; -1 = not
+// readable. Stdout only (the app log).
+static long lerKb(const char *arq, const char *chave) {
+  char l[160];
+  size_t k = strlen(chave);
+  long v = -1;
+  FILE *f = fopen(arq, "r");
+  if (!f) return -1;
+  while (fgets(l, sizeof l, f))
+    if (!strncmp(l, chave, k) && l[k] == ':') { v = atol(l + k + 1); break; }
+  fclose(f);
+  return v;
+}
+// Package id from where libnuvio.so was loaded (.../<package>/lib/libnuvio.so).
+static const char *pacote(void) {
+  static char p[64];
+  if (!p[0]) {
+    char l[512];
+    FILE *f = fopen("/proc/self/maps", "r");
+    snprintf(p, sizeof p, "?");
+    while (f && fgets(l, sizeof l, f)) {
+      char *a = strstr(l, "/lib/libnuvio"), *b;
+      if (!a) continue;
+      *a = 0;
+      b = strrchr(l, '/');
+      if (b && b[1]) snprintf(p, sizeof p, "%s", b + 1);
+      break;
+    }
+    if (f) fclose(f);
+  }
+  return p;
+}
+static void memAmostra(Sessao *s, long rss, long livre) {   // sob s->m
+  if (rss > s->rssPico) s->rssPico = rss;
+  if (livre >= 0 && (s->livreMin < 0 || livre < s->livreMin)) s->livreMin = livre;
+}
+static void memLinha(Sessao *s, int fim) {
+  DtsEngineRings rg;
+  long hwm = lerKb("/proc/self/status", "VmHWM"), total = lerKb("/proc/meminfo", "MemTotal");
+  dts_engine_rings(&rg, 0);
+  pthread_mutex_lock(&s->m);
+  memAmostra(s, lerKb("/proc/self/status", "VmRSS"), lerKb("/proc/meminfo", "MemAvailable"));
+  printf("[dts-tpk] mem%s: sessao %u, %s, tizen %d, RAM %ld MB; app RSS peak %ld MB (start %ld, VmHWM %ld %s), "
+         "MemAvailable low %ld MB (start %ld); reader rings peak %d = %lld MiB, alive now %d = %lld MiB; %.0f s\n",
+         fim ? "" : " (running)", s->id, pacote(), tizenMaior(), total / 1024, s->rssPico / 1024, s->rssIni / 1024,
+         hwm / 1024, s->hwmZerado ? "since session start" : "since app start", s->livreMin / 1024, s->livreIni / 1024,
+         rg.peak, rg.peak_bytes >> 20, rg.alive, rg.bytes >> 20, (agoraMs() - s->criadaMs) / 1000.0);
+  pthread_mutex_unlock(&s->m);
+  fflush(stdout);
+}
+static void memInicio(Sessao *s) {
+  FILE *f = fopen("/proc/self/clear_refs", "w");   // "5": VmHWM back to the RSS of now
+  s->hwmZerado = f && fputs("5", f) >= 0;
+  if (f && fclose(f)) s->hwmZerado = 0;
+  s->rssIni = s->rssPico = lerKb("/proc/self/status", "VmRSS");
+  s->livreIni = s->livreMin = lerKb("/proc/meminfo", "MemAvailable");
+  s->memLogMs = s->criadaMs;
+  dts_engine_rings(NULL, 1);
+}
+static void *fioMemoria(void *u) {
+  (void)u;
+  for (;;) {
+    long rss, livre;
+    Sessao *s;
+    int linha = 0;
+    usleep(500 * 1000);
+    rss = lerKb("/proc/self/status", "VmRSS");
+    livre = lerKb("/proc/meminfo", "MemAvailable");
+    pthread_mutex_lock(&G);
+    if ((s = atual) != NULL) {
+      pthread_mutex_lock(&s->m);
+      memAmostra(s, rss, livre);
+      if (agoraMs() - s->memLogMs >= 120000) { s->memLogMs = agoraMs(); linha = 1; }
+      pthread_mutex_unlock(&s->m);
+      if (linha) memLinha(s, 0);   // a running line every 2 min: an OOM kill leaves no final one
+    }
+    pthread_mutex_unlock(&G);
+  }
+  return NULL;
+}
+
 static void encerrarAtual(void) {   // sob G
   Sessao *s = atual;
   if (!s) return;
+  pthread_mutex_lock(&porteiroHls.m);
   atual = NULL;
+  for (int i = 0; i < porteiroHls.maxVivos; i++) if (porteiroHls.conexoes[i]) {
+    shutdown(porteiroHls.conexoes[i]->sock, SHUT_RDWR);
+    porteiroHls.conexoes[i] = NULL;
+  }
+  atomic_store(&porteiroHls.vivos, 0);
+  pthread_mutex_unlock(&porteiroHls.m);
   pthread_mutex_lock(&s->m);
   s->cancelar = 1;
   for (int i = 0; i < GERADORES; i++) s->ger[i].parar = 1;
+  if (s->rxSonda) dts_remux_cancel(s->rxSonda);   // the probe hangs up on the source now
   pthread_cond_broadcast(&s->c);
   pthread_mutex_unlock(&s->m);
   if (s->rx) dts_remux_cancel(s->rx);
   sessaoResumo(s);
+  memLinha(s, 1);
   if (--s->refs == 0) {
     pthread_t t;
     if (pthread_create(&t, NULL, fioDestruir, s) == 0) pthread_detach(t);
@@ -883,20 +977,19 @@ static int urlDe(Sessao *s, double t, char *out, size_t n) {
       snprintf(out, n, "http://%s:%d/%s/m.m3u8", host, porta, s->token); break;
     default: {
       long ms = lround((t > 0 ? t : 0) * 1000.0);
-      snprintf(out, n, "http://%s:%d/%s/prog.%s?t=%ld.%03ld", host, porta, s->token,
-               s->modo == DTSTPK_PROG_MKV ? "mkv" : s->modo == DTSTPK_PROG_MP4 ? "mp4" : "ts", ms / 1000, ms % 1000);
+      snprintf(out, n, "http://%s:%d/%s/prog.ts?t=%ld.%03ld", host, porta, s->token, ms / 1000, ms % 1000);
     }
   }
   return 1;
 }
 
-int dts_tpk_abrir(const char *url, const char *headers, int track, int stereo, int modo, int corpo,
+int dts_tpk_abrir(const char *url, const char *headers, int track, int stereo, int modo,
                   double inicio, char *out, size_t n) {
   Sessao *s;
   pthread_t t;
+  unsigned id;
   if (out && n) out[0] = 0;
-  if (!url || !*url || !out || n < 64 || modo < 0 || modo >= DTSTPK_MODOS || !dts_remux_available()) return 0;
-  if (corpo < 0 || corpo >= DTSTPK_CORPOS) corpo = DTSTPK_CORPO_CHUNKED;
+  if (!url || !*url || !out || n < 64 || modo < 0 || modo >= DTSTPK_DESLIGADO || !dts_remux_available()) return 0;
   pthread_mutex_lock(&G);
   encerrarAtual();
   if (!subir()) {
@@ -905,31 +998,42 @@ int dts_tpk_abrir(const char *url, const char *headers, int track, int stereo, i
     fflush(stdout);
     return 0;
   }
+  dts_remux_set_queue_budget_mib(anelMib() == 16 ? 128 : 192);
+  dts_engine_set_ring_mib(anelMib());   // ring of the readers this session opens
+  { static int monitor;
+    pthread_t tm;
+    if (!monitor && pthread_create(&tm, NULL, fioMemoria, NULL) == 0) { pthread_detach(tm); monitor = 1; } }
   s = calloc(1, sizeof *s);
   if (!s) { pthread_mutex_unlock(&G); return 0; }
   pthread_mutex_init(&s->m, NULL); pthread_cond_init(&s->c, NULL);
   s->id = ++contador;
   gerarToken(s->token, 8);
   s->url = strdup(url); s->cabs = strdup(headers ? headers : "");
-  s->track = track; s->stereo = stereo; s->modo = modo; s->corpo = corpo;
-  s->estado = DTSTPK_SONDANDO; s->cacheSeg = -1; s->inicioStream = -1;
+  s->track = track; s->stereo = stereo; s->modo = modo;
+  s->estado = DTSTPK_SONDANDO; s->inicioStream = -1;
   s->criadaMs = agoraMs();
+  memInicio(s);
   for (int i = 0; i < GERADORES; i++) s->ger[i].seg = -1;
   if (!s->url || !s->cabs) { pthread_mutex_unlock(&G); sessaoDestruir(s); return 0; }
   s->refs = 2;   // a sessao atual e o fio da sonda
+  pthread_mutex_lock(&porteiroHls.m);
   atual = s;
+  pthread_mutex_unlock(&porteiroHls.m);
   if (pthread_create(&t, NULL, fioSonda, s) != 0) {
-    atual = NULL; s->refs = 0; pthread_mutex_unlock(&G); sessaoDestruir(s); return 0;
+    pthread_mutex_lock(&porteiroHls.m); atual = NULL; pthread_mutex_unlock(&porteiroHls.m); s->refs = 0; pthread_mutex_unlock(&G); sessaoDestruir(s); return 0;
   }
   pthread_detach(t);
   urlDe(s, inicio, out, n);
+  id = s->id;   // s may go once G is released (a close from another thread)
   pthread_mutex_unlock(&G);
-  printf("[dts-tpk] sessao %u: modo %s, corpo %s, endereco %s, audio %d do arquivo, saida %s; player abre %s\n", s->id,
-         MODO_NOME[modo], CORPO_NOME[corpo], "127.0.0.1", track, stereo ? "AAC 2.0" : "AC3",
-          strstr(out, ".m3u8") ? "a playlist HLS" : "o fluxo progressivo");
+  printf("[dts-tpk] sessao %u: %s em 127.0.0.1, audio %d do arquivo, saida %s; player abre %s; segmentos de %.0f s\n",
+         id, MODO_NOME[modo], track, stereo ? "AAC 2.0" : "AC3",
+         strstr(out, ".m3u8") ? "a playlist HLS" : "o fluxo progressivo", SEG_ALVO_S);
   fflush(stdout);
   return 1;
 }
+
+int dts_tpk_prebuffer_ms(void) { return PREBUFFER_MS; }
 
 int dts_tpk_url_em(double t, char *out, size_t n) {
   int ok = 0;
@@ -946,7 +1050,6 @@ int dts_tpk_url_em(double t, char *out, size_t n) {
 void dts_tpk_fechar(void) {
   pthread_mutex_lock(&G);
   encerrarAtual();
-  descer();
   pthread_mutex_unlock(&G);
 }
 
@@ -983,4 +1086,5 @@ int dts_tpk_e_url(const char *u) {
   pthread_mutex_unlock(&G);
   return a[0] && !strncmp(u, a, strlen(a));
 }
+
 #endif

@@ -23,6 +23,8 @@ fi
 alvo="${1:-}"
 args=(--release --manifest-path rust/mkvcore/Cargo.toml --target-dir "${NV_RUST_TARGET_DIR:-rust/mkvcore/target}")
 [ -n "$alvo" ] && args+=(--target "$alvo")
+# Keep the standalone no_std personality unless std is linked by DV7.
+[ "${NUVIO_RUST_EXTERNAL_PERSONALITY:-0}" = 1 ] && args+=(--features external-personality)
 cargo build -q "${args[@]}" >&2
 dir="${NV_RUST_TARGET_DIR:-rust/mkvcore/target}"
 if [ -n "$alvo" ]; then echo "$(pwd)/$dir/$alvo/release/libmkvcore.a"; else echo "$(pwd)/$dir/release/libmkvcore.a"; fi

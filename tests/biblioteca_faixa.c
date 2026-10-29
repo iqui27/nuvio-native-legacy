@@ -116,6 +116,7 @@ static void povoar(void) {
     snprintf(it->tipo, sizeof it->tipo, "%s", i % 3 ? "movie" : "series");
     snprintf(it->genero, sizeof it->genero, "Movie · Drama");
     it->naLista = 1;
+    it->listaFontes = 1u << AJ_SALVOS_LOCAL;
     it->naColecao = i % 2;
     it->fontes = i % 4 == 0 ? 0 : i % 4;
   }

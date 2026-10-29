@@ -33,7 +33,7 @@ int main(void) {
   assert(!ajustes_legenda_sync_auto() && !dePerfil(AJ_LEG_SYNC_AUTO));
   { char *blob = NULL;
     ajustes_mesclar_blob("{}", &blob);
-    assert(!blob || !strstr(blob, "legendaSyncAutoLocal")); free(blob); }
+    assert(!blob || !strstr(blob, "\"legendaSyncAutoLocal\"")); free(blob); }
 
   // Perfil 1: destaque desligado, 4K pedido. 2.0.2: ele manda o historico so
   // para o Simkl e nao quer o social; o perfil 2 e o contrario.
@@ -44,6 +44,7 @@ int main(void) {
   valor[AJ_HERO] = 1;
   valor[AJ_RESOLUCAO] = RES_4K;
   valor[AJ_ADDONS_PRINCIPAL] = 0;
+  ajustes_definir_ocultar_filmes_vistos(1);
   ajustes_perfil_guardar(1);
 
   // O perfil 2 mexe nas duas coisas.
@@ -54,6 +55,7 @@ int main(void) {
   valor[AJ_HERO] = 0;
   valor[AJ_RESOLUCAO] = 0;
   valor[AJ_ADDONS_PRINCIPAL] = 1;
+  ajustes_definir_ocultar_filmes_vistos(0);
   ajustes_perfil_guardar(2);
 
   // Volta ao 1: o destaque dele volta, a TV continua como esta.
@@ -63,12 +65,29 @@ int main(void) {
   assert(valor[AJ_ADDONS_PRINCIPAL] == 1);   // ajuste desta TV, nao do perfil
   assert(valor[AJ_CW_FONTE] == AJ_CWF_SIMKL && valor[AJ_SALVOS_DEST] == AJ_SALVOS_SIMKL);
   assert(!ajustes_hist_conta() && !ajustes_social());
+  assert(ajustes_ocultar_filmes_vistos());
 
   // E o 2 de novo.
   assert(ajustes_perfil_restaurar(2) == 1);
   assert(valor[AJ_HERO] == 0);
   assert(valor[AJ_CW_FONTE] == AJ_CWF_CONTA && valor[AJ_SALVOS_DEST] == AJ_SALVOS_LOCAL);
   assert(ajustes_hist_conta() && ajustes_social());
+  assert(!ajustes_ocultar_filmes_vistos());
+
+  // Session reset clears the outgoing preference; reload restores its owner.
+  ajustes_definir_ocultar_filmes_vistos(1);
+  ajustes_perfil_padrao();
+  assert(!ajustes_ocultar_filmes_vistos());
+  assert(ajustes_perfil_restaurar(3) == 0);
+  assert(!ajustes_ocultar_filmes_vistos());
+  assert(ajustes_perfil_restaurar(1) == 1);
+  assert(ajustes_ocultar_filmes_vistos());
+  ajustes_aplicar_blob("{\"hideWatchedMoviesLocal\":1}");
+  assert(ajustes_ocultar_filmes_vistos());
+  { char *localBlob = NULL;
+    ajustes_mesclar_blob("{}", &localBlob);
+    assert(localBlob && strstr(localBlob, "c_hideWatchedMoviesLocal"));
+    free(localBlob); }
 
   // Perfil nunca usado aqui: nada muda.
   valor[AJ_HERO] = 1;
@@ -101,6 +120,7 @@ int main(void) {
     assert(!strstr(t, CHAVE[AJ_ADDONS_PRINCIPAL]));
     assert(!strstr(t, "\n-") && t[0] != '-');
     assert(strstr(t, CHAVE[AJ_HERO]));
+    assert(strstr(t, "hideWatchedMoviesLocal 0\n"));
     free(t); }
 
   // An older or foreign client may upload device-only keys. Pull must
@@ -120,8 +140,29 @@ int main(void) {
   assert(valor[AJ_GPU_EFEITOS] == 1);
   assert(valor[AJ_HERO] == 0);  // Person preference still follows the account.
 
+  // Arquivos privados dos provedores (conta + perfil) saem no logout; os
+  // compartilhados e o que nao termina em -pN.txt ficam.
+  static const char *const privados[] = {
+    "debrid-conta_x-p1.txt", "debrid-conta_x-p12.txt", "provider-scope-conta_x-p2.txt",
+    "fontefalha-conta_x-p3.txt", "fontesmortas-00ff00ff00ff00ff-p1.txt",
+    "debrid-conta_x-p1.txt.tmp" };
+  static const char *const ficam[] = { "debrid.txt", "fontefalha.txt", "fontesmortas.txt",
+                                       "debrid-conta_x.txt", "outra-conta_x-p1.txt" };
+  for (size_t i = 0; i < sizeof privados / sizeof *privados; i++)
+    assert(dados_gravar(privados[i], "x\n"));
+  for (size_t i = 0; i < sizeof ficam / sizeof *ficam; i++)
+    assert(dados_gravar(ficam[i], "x\n"));
+
   // Logout: nenhuma copia sobra.
   ajustes_perfil_esquecer();
+  for (size_t i = 0; i < sizeof privados / sizeof *privados; i++) {
+    char *t = dados_ler(privados[i]);
+    assert(!t);
+  }
+  for (size_t i = 0; i < sizeof ficam / sizeof *ficam; i++) {
+    char *t = dados_ler(ficam[i]);
+    assert(t); free(t);
+  }
   assert(ajustes_perfil_restaurar(1) == 0);
   assert(ajustes_perfil_restaurar(2) == 0);
 

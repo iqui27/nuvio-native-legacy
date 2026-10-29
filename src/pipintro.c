@@ -224,7 +224,7 @@ static void pipintro_desenharCorpo_(Uint32 agora) {
 
   dy = (1.0f - a) * 36.0f;
   { GfxRect p = { PI_X, PI_Y + dy, PI_W, PI_H };
-    gfx_cor(p, 0.030f, 0.075f, 0.078f, 0.088f, 0.98f * a); }
+    gfx_vidro_ou_solido(p, 0.030f, GFX_VIDRO_DENS_MODAL, a, 0.075f, 0.078f, 0.088f, 0.98f); }
   gfx_recorte(PI_X, PI_Y + dy, PI_W, PI_H);
 
   // --- coluna da figura -------------------------------------------------

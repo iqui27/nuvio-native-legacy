@@ -34,6 +34,10 @@ void episodios_menu_desenhar(void);
 // 1 uma vez, quando a pessoa escolheu "Fontes deste episodio" no menu. Quem
 // chamou decide o que abrir — o menu nao conhece a folha de fontes.
 int  episodios_menu_pediu_fontes(void);
+// T/E do episodio que o menu tinha por alvo quando a folha foi pedida
+// (0/0 no menu de temporada). A escolha na folha vale para ele, nao para o
+// foco que a pagina de detalhe ja perdeu (#513).
+int  episodios_menu_fontes(int *temporada, int *episodio);
 // O MENU DA TEMPORADA (issue #108), sozinho sobre a tela de quem chamar — a
 // pagina de detalhe abre com a pressao longa na aba. Duas linhas: "Marcar
 // temporada como assistida" e "Desmarcar temporada". `temporada` e o NUMERO.
@@ -47,19 +51,20 @@ void episodios_menu_atualizar(float dt);
 // episodios_menu_aberto cai no instante do Voltar e devolve as teclas a pagina;
 // este segura o desenho ate o fim do caminho de volta.
 int  episodios_menu_visivel(void);
-// DE ONDE O MENU SAIU, na tela virtual (escala.h), a cada quadro e antes de
-// episodios_menu_desenhar. No menu do EPISODIO e o card: a ilha fica ao lado
-// dele, como a do cartaz na home, e quem chamou redesenha o card por cima do
-// veu. No da TEMPORADA e a aba: ela se abre para baixo num painel com as
-// acoes (episodios_menu_painel() = 1), e quem chamou redesenha a aba por cima,
-// de cabecalho. Sem ancora o menu vai para o meio da tela.
+// Anchor in virtual coordinates, updated before drawing. Season menus expand
+// below their tab; episode menus cover the row. Modern Detail can draw its
+// episode in the reserved summary rectangle without covering any controls.
 void episodios_menu_ancora(GfxRect r);
 int  episodios_menu_painel(void);
 // Para teste: a caixa (tela virtual) do menu ou do painel ABERTO no ultimo
 // quadro desenhado, a mola de abertura 0..1 e a linha em foco.
 int   episodios_menu_caixa(GfxRect *r);
+// Reserved episode summary beside Modern Detail actions and reviews.
+int   episodios_menu_resumo(GfxRect *r);
 float episodios_menu_anim(void);
 int   episodios_menu_foco(void);
+int episodios_menu_trocou(int *temporada,int *episodio);
+float episodios_menu_transicao(int *direcao);
 // 1 com o menu aberto no modo temporada (para teste).
 int  episodios_menu_modo_temporada(void);
 // O lote que "temporada inteira" aplica: catalogo + mapa, sem o que nao foi ao

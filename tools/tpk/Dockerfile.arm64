@@ -1,0 +1,43 @@
+# Native ARM64 compiler, ARM32 softfp output and buster's glibc 2.28 ABI.
+# QEMU is explicit for runtime probes; no host binfmt registration required.
+FROM --platform=linux/arm64 debian:buster-slim
+RUN dpkg --add-architecture armel && \
+    printf '%s\n' 'deb http://archive.debian.org/debian buster main' \
+      'deb http://archive.debian.org/debian-security buster/updates main' > /etc/apt/sources.list && \
+    apt-get -qq update && \
+    # armel security updates ended earlier: multiarch requires identical versions.
+    apt-get -q install -y --allow-downgrades --no-install-recommends \
+      libc6=2.28-10+deb10u1 libc-bin=2.28-10+deb10u1 \
+      libc-dev-bin=2.28-10+deb10u1 zlib1g=1:1.2.11.dfsg-1+deb10u1 \
+      gcc-arm-linux-gnueabi g++-arm-linux-gnueabi make pkg-config file qemu-user \
+      libglvnd-core-dev libgles2:armel libegl1:armel zlib1g-dev:armel \
+      libc6-dev:armel ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /opt/arm32/bin && \
+    for tool in gcc g++ cpp ar as ld nm objcopy objdump ranlib readelf size strings strip; do \
+      ln -s /usr/bin/arm-linux-gnueabi-$tool /opt/arm32/bin/$tool; \
+    done && \
+    ln -s libGLESv2.so.2 /usr/lib/arm-linux-gnueabi/libGLESv2.so && \
+    ln -s libEGL.so.1 /usr/lib/arm-linux-gnueabi/libEGL.so
+ENV PATH=/opt/arm32/bin:$PATH \
+    CC=arm-linux-gnueabi-gcc CXX=arm-linux-gnueabi-g++ \
+    AR=arm-linux-gnueabi-ar RANLIB=arm-linux-gnueabi-ranlib \
+    PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabi/pkgconfig:/usr/share/pkgconfig \
+    NUVIO_TPK_CROSS=1 \
+    CFLAGS="-O2 -fPIC -march=armv7-a -mfloat-abi=softfp -mfpu=neon" \
+    CXXFLAGS="-O2 -fPIC -march=armv7-a -mfloat-abi=softfp -mfpu=neon"
+# Mesa's dev packages pull unused GLX dependencies unavailable on armel.
+# Extract their portable headers and pkg-config files; runtime libs are above.
+RUN apt-get -qq update && \
+    apt-get -q install -y --no-install-recommends libx11-dev:armel && cd /tmp && \
+    apt-get download libgles2-mesa-dev:armel libegl1-mesa-dev:armel mesa-common-dev:armel && \
+    for package in *.deb; do dpkg-deb -x "$package" /; done && \
+    rm -f /tmp/*.deb && rm -rf /var/lib/apt/lists/*
+# Fail the image build if it cannot link and run ARM32 with the target ABI.
+RUN printf '%s\n' '#include <zlib.h>' '#include <pthread.h>' \
+      '#include <GLES2/gl2.h>' '#include <EGL/egl.h>' \
+      'int main(void) { return zlibVersion()[0] != 49 || pthread_self() == 0 || glGetError() != 0 || !eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS); }' > /tmp/probe.c && \
+    gcc $CFLAGS /tmp/probe.c -o /tmp/probe /usr/lib/arm-linux-gnueabi/libz.a -pthread -lGLESv2 -lEGL && \
+    readelf -h /tmp/probe | grep -q 'Machine:.*ARM' && \
+    readelf -A /tmp/probe | grep -q 'Tag_CPU_arch: v7' && \
+    qemu-arm -L / /tmp/probe && rm /tmp/probe.c /tmp/probe

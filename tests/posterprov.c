@@ -16,6 +16,12 @@
 #include <unistd.h>
 #include "jellyfin_stub.inc"
 
+// These services are unused here; satisfy the shared session stub on macOS.
+int trakt_enfeitar_lote(CatItem *items, int n) { (void)items; return n; }
+int recomenda_social_mesclar(CatItem *items, int n, int max) {
+  (void)items; (void)max; return n;
+}
+
 static int ok(const char *nome) { printf("ok  %s\n", nome); return 1; }
 #define IGUAL(a, b) do { if (strcmp((a), (b))) { \
   printf("FALHOU %s:%d\n  obtido:   %s\n  esperado: %s\n", __FILE__, __LINE__, (a), (b)); exit(1); } } while (0)
@@ -123,10 +129,11 @@ int main(void) {
     c = spatial("https://p.exemplo.com", grande);       // instancia curta: cabe
     assert(posterprov_montar_url(&c, "tt0111161", 0, "series", u, sizeof u));
     assert(strlen(u) < PP_URL_MAX);
-    // instancia longa + token no limite + extras: NAO cabe em 512 -> recusa
+    // Long instance, maximum token and extras exceed the old 512-byte limit.
     snprintf(c.instancia, sizeof c.instancia, "https://uma-instancia-com-nome-bem-comprido.exemplo.com.br");
     memset(c.extra, 'e', PP_EXTRA_MAX); c.extra[0] = 'x'; c.extra[1] = '=';
-    assert(!posterprov_montar_url(&c, "tt0111161", 0, "series", u, sizeof u));
+    assert(posterprov_montar_url(&c, "tt0111161", 0, "series", u, sizeof u));
+    assert(strlen(u) > 512);
     c = spatial("https://spatial-posters.vercel.app", grande);
     // buffer menor que a URL: recusa em vez de truncar
     assert(!posterprov_montar_url(&c, "tt0111161", 0, "series", u, 200));
@@ -176,6 +183,48 @@ int main(void) {
   c.prov = PP_DESLIGADO;
   assert(!posterprov_montar_url(&c, "tt0111161", 0, "movie", u, sizeof u));
   ok("modelo proprio: marcadores, validacao, faltando dado");
+
+  // Pictorium's Nuvio export: no extension, saved per-title choices via live=1.
+  c.prov = PP_MODELO;
+  snprintf(c.modelo, sizeof c.modelo,
+           "https://pictorium.elfhosted.com/api/poster/{type}/{tmdb_id|imdb_id}"
+           "?u=test-space&live=1&shape={shape}");
+  assert(posterprov_modelo_cabe(c.modelo));
+  assert(posterprov_montar_url(&c, "tt0903747", 1396, "series", u, sizeof u));
+  IGUAL(u, "https://pictorium.elfhosted.com/api/poster/series/1396?u=test-space&live=1&shape=poster");
+  assert(posterprov_montar_url(&c, "tt0903747", 0, "series", u, sizeof u));
+  assert(strstr(u, "/series/tt0903747?"));
+  assert(posterprov_montar_url(&c, "tmdb:t1396", 0, "series", u, sizeof u));
+  assert(strstr(u, "/series/1396?"));
+  assert(!posterprov_montar_url(&c, "unknown", 0, "series", u, sizeof u));
+  posterprov_configurar(&c);
+  assert(strstr(posterprov_card_formato(NULL, "tt0903747", 1396, "series", "original", 1),
+                "shape=landscape"));
+  snprintf(c.modelo, sizeof c.modelo,
+           "https://pictorium.elfhosted.com/api/poster/%%7Btype%%7D/%%7btmdb_id%%7Cimdb_id%%7d"
+           "?live=1&shape=%%7Bshape%%7D&key=FAKE%%2Bvalue");
+  assert(posterprov_modelo_cabe(c.modelo));
+  assert(posterprov_montar_url(&c, "tt0903747", 1396, "series", u, sizeof u));
+  IGUAL(u, "https://pictorium.elfhosted.com/api/poster/series/1396?live=1&shape=poster&key=FAKE%2Bvalue");
+  posterprov_redigir(u, l, sizeof l);
+  assert(!strstr(l, "FAKE") && !strstr(l, "key="));
+  posterprov_configurar(&c);
+  assert(strstr(posterprov_card_formato(NULL, "tt0903747", 1396, "series", "original", 1),
+                "shape=landscape"));
+  snprintf(c.modelo, sizeof c.modelo,
+           "https://api.aioratings.com/FAKE/{id_type}/poster-default/{typed_id}.webp");
+  assert(posterprov_montar_url(&c, "tmdb:t1396", 0, "series", u, sizeof u));
+  IGUAL(u, "https://api.aioratings.com/FAKE/tmdb/poster-default/series-1396.webp");
+  assert(posterprov_montar_url(&c, "tt0903747", 1396, "series", u, sizeof u));
+  IGUAL(u, "https://api.aioratings.com/FAKE/imdb/poster-default/tt0903747.webp");
+  snprintf(c.modelo, sizeof c.modelo, "https://x/{imdb_id|tmdb_id}/{tmdb_id?}.png");
+  assert(posterprov_montar_url(&c, "tt0903747", 0, "series", u, sizeof u));
+  IGUAL(u, "https://x/tt0903747/.png");
+  assert(!posterprov_modelo_valido("https://x/{tmdb_id|}"));
+  assert(!posterprov_modelo_valido("https://x/{|imdb_id}"));
+  assert(!posterprov_modelo_valido("https://x/{tmdb_id|unknown}"));
+  assert(!posterprov_modelo_valido("https://x/{tmdb_id?|imdb_id}"));
+  ok("Nuvio templates: Pictorium alternatives, encoded markers, namespace aliases");
 
   // ---------------------------------------------------------- token / instancia
   assert(posterprov_extrair_token("abc.DEF-123_x=", t, sizeof t, inst, sizeof inst));

@@ -23,6 +23,7 @@
 
 // ---- disco em memoria ---------------------------------------------------------
 
+#include "sync.h"
 #define ARQ_MAX 32
 static struct { char nome[48]; char *conteudo; } arqs[ARQ_MAX];
 static pthread_mutex_t travaArq = PTHREAD_MUTEX_INITIALIZER;
@@ -92,7 +93,7 @@ void trakt_sessao_morta(void) {}
 const char *nuvem_trakt_cliente(void) { return "cliente-teste"; }
 const char *nuvem_trakt_segredo(void) { return "segredo-teste"; }
 int  sessao_logada(void)  { return 0; }
-int  sync_estado(void)    { return 2; }
+SyncEstado sync_estado(void) { return SYNC_PRONTO; }
 int  sync_empurrar_credencial(const char *p, const char *j) { (void)p; (void)j; return 0; }
 static int nRepetir;
 void desc_repetir(void)   { nRepetir++; }
@@ -130,6 +131,12 @@ char *rede_postar_st(const char *url, int segundos, const char *const *cab,
   }
   noAr = 0;
   return r;
+}
+
+char *rede_postar_st_retry(const char *url, int segundos, const char *const *cab,
+                           const char *corpo, int *status, int *retry) {
+  if (retry) *retry = 0;
+  return rede_postar_st(url, segundos, cab, corpo, status);
 }
 
 // ---- utilidades ---------------------------------------------------------------

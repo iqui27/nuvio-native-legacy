@@ -2,6 +2,7 @@
 // Como stalker_scheduler.c, inclui app.c e descarta as telas no linker.
 #define SDL_MAIN_HANDLED
 #include "../src/app.c"
+#include "stub_m3u.h"
 
 static int audios, legendas, prontoTeste, tocouTeste, dvTeste;
 static int proximaBoa = 1, falhas;

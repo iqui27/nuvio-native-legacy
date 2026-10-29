@@ -4,7 +4,7 @@
 void abrecine_passo(AbreCine *a, int abrindo, int imagem, int detalhadaPadrao,
                     Uint32 agora, float dt, int reduzidas) {
   if (abrindo) {
-    if (!a->viva) { a->detalhada = detalhadaPadrao; a->desde = agora; a->foco = 0.0f; }
+    if (!a->viva) { a->detalhada = detalhadaPadrao; a->desde = agora; a->foco = 0.0f; a->calado = 1; }
     a->viva = 1;
     a->veu = 1.0f;
     // O recuo da arte leva ~1 s: o corte para a tela de espera nao se ve.
@@ -18,6 +18,12 @@ void abrecine_passo(AbreCine *a, int abrindo, int imagem, int detalhadaPadrao,
   if (!imagem && agora - a->fim < ABRECINE_SEGURA_MS) return;
   a->veu = reduzidas ? 0.0f : anim_mola(a->veu, 0.0f, dt, 6.0f);
   if (a->veu < 0.01f) a->veu = 0.0f;
+}
+
+int abrecine_osd_calado(const AbreCine *a) { return a->calado; }
+
+void abrecine_acordou(AbreCine *a, int carregando) {
+  if (!carregando && !a->viva) a->calado = 0;
 }
 
 int abrecine_cinema(const AbreCine *a) { return a->veu > 0.0f && !a->detalhada; }

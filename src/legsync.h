@@ -50,6 +50,7 @@ typedef enum {
   LEGSYNC_M_NENHUM = 0, LEGSYNC_M_SEM_EXTERNA, LEGSYNC_M_EMBUTIDA, LEGSYNC_M_PLATAFORMA,
   LEGSYNC_M_EXTERNA_INCOMPLETA, LEGSYNC_M_SEM_REFERENCIA, LEGSYNC_M_SEM_RANGE,
   LEGSYNC_M_REDE, LEGSYNC_M_ORCAMENTO, LEGSYNC_M_SEM_OUTRA, LEGSYNC_M_CONFIANCA,
+  LEGSYNC_M_REGION_DISAGREEMENT,
   // F06 (Por audio): why the audio reference is not offered / was refused.
   LEGSYNC_M_AUD_PLATAFORMA, LEGSYNC_M_AUD_PASSTHROUGH, LEGSYNC_M_AUD_SEM_AUDIO,
   LEGSYNC_M_AUD_SEM_FALA,
@@ -153,6 +154,7 @@ int legsync_pil_passo(LegSyncPil *p, const LegSyncVisao *v, unsigned agora, cons
 // Liga o AutoSync como provedor da linha de sincronizacao do seletor de
 // legendas do F04 (legendasui_definir_sync). Idempotente; thread da UI.
 void legsync_ui_ligar(void);
+void legsync_audio_offset_texto(int ms, char *dst, unsigned tam);
 
 // So para testes: leitor do legref antes do primeiro legsync_iniciar.
 void legsync_teste_leitor(LegRefLer ler, void *u);

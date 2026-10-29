@@ -79,6 +79,23 @@ static void captura(const char *nome, SDL_Window *win) {
   printf("captura: %s\n", nome);
 }
 
+// O quadro atual da janela, em PNG (a captura de 3 quadros do foco usa).
+static void salvarQuadro(const char *nome) {
+  unsigned char *pix = malloc(1920 * 1080 * 4);
+  SDL_Surface *s;
+  int y;
+  assert(pix);
+  glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pix);
+  s = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
+  assert(s);
+  for (y = 0; y < 1080; y++)
+    memcpy((char *)s->pixels + y * s->pitch, pix + (1079 - y) * 1920 * 4, 1920 * 4);
+  assert(IMG_SavePNG(s, nome) == 0);
+  SDL_FreeSurface(s);
+  free(pix);
+  printf("captura: %s\n", nome);
+}
+
 static void fonte(int i, const char *titulo, const char *tipo) {
   ColSource *s = &pasta.sources[i];
   snprintf(s->title, sizeof s->title, "%s", titulo);
@@ -108,6 +125,7 @@ int main(int argc, char **argv) {
   glViewport(0, 0, 1920, 1080);
   gfx_tamanho_alvo(1920, 1080);
   assert(gfx_iniciar());
+  ajustes_iniciar();
   assert(txt_iniciar("deploy/app", 1));
   tex_iniciar(64);
   gfx_icones_dir("deploy/app/art");
@@ -148,6 +166,56 @@ int main(int argc, char **argv) {
       e.key.keysym.sym=SDLK_LEFT; vertudo_evento(&e); assert(tabCursor==cabN());
       e.key.keysym.sym=SDLK_RIGHT; vertudo_evento(&e); assert(tabCursor==cabN()+1);
     }
+    goto fim;
+  }
+
+  // AS ABAS DA PAGINA DE STREAMING (#205, Netflix na TCL): a fileira na ordem
+  // do catalogo, a primeira aba colada no logo, a capsula do foco deslizando
+  // e o degradê da marca sem o degrau duro no meio da tela.
+  if (getenv("NUVIO_SHOT_STREAMTABS")) {
+    memset(pastaFontes, 0, sizeof pastaFontes);
+    memset(&pasta, 0, sizeof pasta);
+    pasta.sources = pastaFontes;
+    snprintf(pasta.title, sizeof pasta.title, "Netflix");
+    snprintf(pasta.group, sizeof pasta.group, "Streaming");
+    fonte(0, "Latest Netflix", "movie");
+    fonte(1, "Latest Netflix", "series");
+    fonte(2, "Top Rated Netflix", "movie");
+    fonte(3, "Top Rated Netflix", "series");
+    fonte(4, "Netflix Kids Top 10", "movie");
+    fonte(5, "Netflix Kids Top 10", "series");
+    fonte(6, "New on Netflix", "movie");
+    fonte(7, "New on Netflix", "series");
+    pasta.nSources = 8;
+    collection = &pasta;
+    snprintf(titulo, sizeof titulo, "%s", pasta.title);
+    aberta = 1; anim = 1.0f; source = 0; shotGrade = 10;
+    ajustes_definir_abas_estilo(VT_AB_CHIPS);
+    // 1) REPOUSO: foco no conteudo, fileira encostada no logo, 1a aba visivel.
+    tabFocus = 0; tabCursor = 0; foco = 0;
+    snprintf(nome, sizeof nome, "%s-repouso.png", saida); captura(nome, w);
+    // 2) TRES QUADROS DO FOCO: o cursor salta para a 4a aba e a capsula
+    // desliza — partida, meio do caminho, assentada.
+    tabFocus = 1; tabCursor = 0;
+    { SDL_Event e = {0}; e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_RIGHT;
+      int quadro = 0, i;
+      for (i = 0; i < 3; i++) vertudo_evento(&e);
+      assert(tabCursor == 3);
+      rail_shot_aplicar();
+      for (i = 0; i < 90; i++) {
+        SDL_PumpEvents(); txt_novo_quadro(); tex_novo_quadro(); tex_bombear(6);
+        gfx_novo_quadro();
+        glClearColor(0.051f, 0.051f, 0.051f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        vertudo_atualizar(1.0f / 60.0f, SDL_GetTicks());
+        vertudo_desenhar(SDL_GetTicks());
+        rail_shot_desenhar(MENU_INICIO);
+        if (i == 0 || i == 6 || i == 25) {
+          snprintf(nome, sizeof nome, "%s-foco-%d.png", saida, ++quadro);
+          salvarQuadro(nome);
+        }
+        SDL_GL_SwapWindow(w);
+      } }
     goto fim;
   }
 

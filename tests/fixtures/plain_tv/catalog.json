@@ -1,0 +1,7 @@
+{
+  "metas": [
+    {"id": "x:1", "type": "tv", "name": "Station One", "poster": "https://example.invalid/one.png"},
+    {"id": "x:2", "type": "tv", "name": "Station Two", "logo": "https://example.invalid/two.png"},
+    {"id": "x:3", "type": "tv", "name": "Station Three"}
+  ]
+}

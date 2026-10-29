@@ -76,8 +76,14 @@ int fa_ja_tocando(int abertaIdx, int escolhida) {
 }
 
 int fa_preparada_vale(const FaPreparada *p, const FaAgora *a) {
+  return fa_preparada_vale_buffer(p, a, 0, 0);
+}
+
+int fa_preparada_vale_buffer(const FaPreparada *p, const FaAgora *a,
+                            int bufferPronto, int linkRenovado) {
   if (!p || !a || !p->alvo || !a->alvo) return 0;
   return !strcmp(p->alvo, a->alvo) && p->lista == a->lista && p->lembrada == a->lembrada &&
          p->idx >= 0 && p->idx < a->n && a->idxDisponivel &&
-         p->idadeMs <= FA_PREPARADA_VALE_MS && a->idadeListaMs <= FA_LINK_VALE_MS;
+         p->idadeMs <= (bufferPronto ? FA_BUFFER_VALE_MS : FA_PREPARADA_VALE_MS) &&
+         (bufferPronto || linkRenovado || a->idadeListaMs <= FA_LINK_VALE_MS);
 }

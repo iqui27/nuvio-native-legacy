@@ -46,7 +46,7 @@ static void eps(CatEp *v, int n) {
 int main(void) {
   CatItem v[3];
   HomeItem hi;
-  CatEp *lote = malloc(sizeof(CatEp) * 1200);
+  CatEp *lote = malloc(sizeof(CatEp) * 2400);
   int falhas = 0;
   assert(lote);
   // ids que nenhum servico conhece: o pedido sai, demora na rede e nao
@@ -74,8 +74,8 @@ int main(void) {
   quadros(3);
   assert(cat_n_episodios(1) == 3);
   { unsigned rev = cat_revisao();
-    eps(lote, 1200);
-    cat_definir_episodios(2, lote, 1200);   // nEps + 1200 > CAT_EP_MAX: volta
+    eps(lote, 2400);
+    cat_definir_episodios(2, lote, 2400);   // Fill the current 2400-episode store to force eviction.
     assert(cat_revisao() == rev);            // a revisao nao andou...
     assert(cat_n_episodios(1) == 0); }       // ...e a lista da serie aberta sumiu
   quadros(1);

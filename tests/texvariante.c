@@ -101,6 +101,35 @@ int main(int argc, char **argv) {
     fm = fopen(m, "w"); if (fm) { fputs("1\n", fm); fclose(fm); } }
   tex_cache_dir(dir);
 
+  /* Requests use the same layer and drawable scales as rendering. A 288px
+   * card in a 1.5x layer draws at 432px on 1080p, or 288px on 720p. */
+  {
+    const char *poster = "https://image.tmdb.org/t/p/w500/surface-card.jpg";
+    char variant[600];
+    float previous = gfx_escala();
+    for (int quality = 0; quality <= 2; quality++) {
+      tex_qualidade(quality);
+      gfx_escala_sair(1.5f);
+      tex_escala(1920.0f / NV_TELA_BASE_W);
+      (void)tex_obter_larg(poster, 288.0f);
+      int k = acharIndice(poster, hashCaminho(poster));
+      assert(k >= 0 && itens[k].limite >= 432);
+      assert(!arte_tamanho_url(poster, limiteDaVariante(&itens[k]), variant, sizeof variant));
+      memset(itens, 0, sizeof itens); filaIni = filaFim = 0;
+
+      tex_escala(1280.0f / NV_TELA_BASE_W);
+      int cap = capDeLargura(288.0f);
+      assert(cap == (quality == 0 ? 288 : quality == 1 ? 384 : 480));
+      int changed = arte_tamanho_url(poster, cap, variant, sizeof variant);
+      assert(quality == 0 ? changed && strstr(variant, "/w300/") : !changed);
+
+      gfx_escala_sair(1.0f); tex_escala(1.0f);
+      assert(capDeLargura(220.0f) == (quality == 0 ? 224 : quality == 1 ? 288 : 352));
+    }
+    gfx_escala_sair(previous); tex_qualidade(1); tex_escala(1.0f);
+    puts("ok  output-pixel request caps preserve w500 on 1080p and 720p sizing");
+  }
+
   /* 1. Card a 704: baixa w780, chave continua a original. */
   { int foi = 0;
     pedido(0, ORIG, 704);

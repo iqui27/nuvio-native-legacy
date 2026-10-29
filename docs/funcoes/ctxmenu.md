@@ -111,7 +111,7 @@ flowchart TD
     B -->|tirarRemotoEmFio| E[tirarremoto.c]
     B -->|ilhaacao_feita, ilhasalvar_*| F[ilha.c / ilhasalvar.c]
     B -->|recenviar_abrir| G[recenviar.c]
-    B -->|home_previa_fileira| H[home.c]
+    B -->|home_ancora_foco| H[home.c]
     B -->|ctxinfo_*| I[ctxinfo.c]
     B -->|lst_*, lst_itens_*| J[listas.c]
     B -->|logotitulo_desenhar| K[logotitulo.c]
@@ -192,7 +192,7 @@ sequenceDiagram
 - **Se você mexer no gesto de hold**, confira `observarHold` (`src/ctxmenu.c:179-201`) e `esperandoSoltura`. Issue: com o modal aberto no limiar, o OK afundado não pode escolher nada — teste `tests/hold.c` cobre isso.
 - **Se você mexer em `aplicar()` / `iniciarAssistido()`**, confira a ordem: local primeiro, depois Trakt/Simkl; espelho só depois do 2xx (`src/ctxmenu.c:1170-1212`). Issues #22, #244 e #110 vieram de apagar só local ou de não esperar resposta.
 - **Se você mexer na confirmação (pagina 2)**, confira `confFoco` inicial 0 = "Tirar", 1 = "Cancelar"; setas esquerda/direita mudam; Voltar = cancelar (`src/ctxmenu.c:1085-1091`).
-- **Se você mexer na página de estilos**, confira `fil_estilos()`, `fil_estilo_linhas()`, `home_previa_fileira()`; o tamanho é segmentado dentro da linha (`src/ctxmenu.c:403-411,1385-1420`).
+- **Se você mexer na página de estilos**, confira `fil_estilos()`, `fil_estilo_linhas()`, `home_ancora_foco()`; menu compacto ao lado do cartão focado (`ctx_estilo_rect`), a fileira é a prévia ao vivo; o tamanho P/M/G aparece só na linha focada.
 - **Se você mexer no desenho inline**, confira `modoInline()` (`src/ctxmenu.c:1742`) e `salvospainel.c`: a linha se abre DENTRO do painel, não flutua.
 - **Contratos com Kotlin/.NET/JS**: nenhum chamador nativo direto. Toda a interação é via SDL events vindos de `app.c`.
 - **Limites de buffer**: `cartazArte[1024]`, `operacaoImdb[16]`, `pedCategoriaImdb[24]`, `filChave[192]`, `filTitulo[96]` (`src/ctxmenu.c:164,112,240,255,256`). `CTX_MAX=9` limita `ops[]` e `focoAnim[]` (`src/ctxmenu.c:230-233`).

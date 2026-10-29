@@ -650,7 +650,7 @@ static void cenaFontes(float x, float y, float t, float a) {
   float ry0 = folha.y + 88.0f, rh = 72.0f, rg = 10.0f;
   float fy = ry0 + ((float)k + (k < 3 ? m : 0.0f)) * (rh + rg);
   arte(F_FONTES, (GfxRect){ x, y, N160_PV_W, N160_PV_H }, N160_PV_RAIO, 1.0f, 0.55f * a);
-  gfx_cor(folha, rr(20.0f, folha), 0.060f, 0.064f, 0.076f, 0.96f * a);
+  gfx_vidro_ou_solido(folha, rr(20.0f, folha), GFX_VIDRO_DENS_MODAL, a, 0.060f, 0.064f, 0.076f, 0.96f);
   { TxtLinha h = txt_linha(TXT_HEADLINE, i18n("Fontes"), 244, 246, 250, 255);
     txt_desenhar_alpha(h, folha.x + 28.0f, folha.y + 24.0f, a); }
   // O foco: accent solido com a luz macia por tras, deslizando de linha em linha.
@@ -681,7 +681,7 @@ static void cenaFontes(float x, float y, float t, float a) {
   { GfxRect p = { folha.x, folha.y + folha.h + 22.0f, folha.w, 228.0f };
     TxtLinha tt = txt_linha(TXT_CALLOUT, i18n("Teste de velocidade"), 244, 246, 250, 255);
     float bx = p.x + 28.0f + 170.0f, bwMax = p.w - 28.0f - 170.0f - 130.0f;
-    gfx_cor(p, rr(20.0f, p), 0.060f, 0.064f, 0.076f, 0.96f * a);
+    gfx_vidro_ou_solido(p, rr(20.0f, p), GFX_VIDRO_DENS_MODAL, a, 0.060f, 0.064f, 0.076f, 0.96f);
     txt_desenhar_alpha(tt, p.x + 28.0f, p.y + 22.0f, a);
     { float cx = p.x + p.w - 28.0f;
       cx -= badge_largura(i18n("Por add-on"));
@@ -1070,7 +1070,7 @@ static void novidades160_desenharCorpo_(Uint32 agora) {
   dy = (1.0f - a) * 34.0f;
   y0 = N160_Y + dy;
   card = (GfxRect){ N160_X, y0, N160_W, N160_H };
-  gfx_cor(card, N160_RAIO / N160_H, 0.050f, 0.053f, 0.062f, 0.96f * a);
+  gfx_vidro_ou_solido(card, N160_RAIO / N160_H, GFX_VIDRO_DENS_MODAL, a, 0.050f, 0.053f, 0.062f, 0.96f);
   gfx_rect(card, 0, GFX_ANEL, 0, 1.2f / N160_H, 0, N160_RAIO / N160_H, 1, 1, 1, 0.06f * a);
   // Uma luz do realce entrando pelo alto da previa: o calor da celebracao, so
   // no fundo do cartao.

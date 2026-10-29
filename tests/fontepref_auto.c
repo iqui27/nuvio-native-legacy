@@ -85,9 +85,10 @@ int main(void) {
           "a leitura so-manual (folha, 'escolher ao reproduzir') nao a enxerga");
   CONFERE(!arquivoExiste(dir, "fontepref-p1.txt"), "o arquivo da manual nem foi criado");
 
-  // ---- sem bingeGroup nada e guardado (nem heuristica de provedor)
-  CONFERE(fontepref_auto_guardar("tt3000002:1:1", &v[0]) == 0, "fonte sem bingeGroup: nada guardado");
-  CONFERE(fontepref_escolher("tt3000002:1:2") == -1, "e o episodio seguinte segue a pontuacao");
+  // ---- sem bingeGroup tambem e guardada (16/10): casa por provedor + audio,
+  // como uma escolha a mao.
+  CONFERE(fontepref_auto_guardar("tt3000002:1:1", &v[0]) == 1, "fonte sem bingeGroup: guardada");
+  CONFERE(fontepref_escolher("tt3000002:1:2") == 0, "e o episodio seguinte vai no mesmo provedor e audio");
 
   // ---- outra serie / outro perfil nao herdam
   CONFERE(fontepref_escolher("tt3000009:1:2") == -1, "outra serie nao herda");
@@ -144,7 +145,8 @@ int main(void) {
   fonteB(&v[3], "Torrentio", "Torrentio\n4k", "https://exemplo.invalido/4k/2.mp4", 2160, 1, "");
   stream_definir_lista(v, 4);
   CONFERE(stream_automatico() == 3, "a pontuacao escolhe a 4K (%d)", stream_automatico());
-  CONFERE(fontepref_escolher("tt3000005:1:2") == -1, "o grupo X (1080p) NAO rebaixa a faixa da 4K");
+  CONFERE(fontepref_escolher("tt3000005:1:2") == 1,
+          "o grupo X (1080p) que ja tocou vence a 4K (16/10: qualidade nao tira a que tocou)");
 
   // ---- a regra do MP4 da LG (2.0.3) fica ACIMA: grupo em MKV nao ganha do MP4
   // da mesma faixa. Fora da LG a regra nao existe e o grupo vale.
@@ -177,7 +179,7 @@ int main(void) {
       CONFERE(!strcmp(linha, "# nuvio fontes v1\n"), "cabecalho v1 intacto");
       fgets(linha, sizeof linha, f);
       for (p = linha; *p; p++) if (*p == '\t') campos++;
-      CONFERE(campos == 7, "eight fields, release file name last (%d tabs)", campos);
+      CONFERE(campos == 9, "ten fields, tier (SeaDex/Remux T1) last (%d tabs)", campos);
       fclose(f); } }
 
   // ---- sair da conta apaga tambem a automatica

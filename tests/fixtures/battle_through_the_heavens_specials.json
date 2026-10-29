@@ -1,0 +1,169 @@
+{
+  "meta": {
+    "id": "tt12409194",
+    "name": "Battle Through the Heavens",
+    "videos": [
+      {
+        "id": "tt12409194:0:1",
+        "season": 0,
+        "episode": 1,
+        "name": "Special 1 (Magic Beast Mountain): Episode 1 Encounter",
+        "released": "2017-09-30T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:2",
+        "season": 0,
+        "episode": 2,
+        "name": "Special 1 (Magic Beast Mountain): Episode 2 Farewell",
+        "released": "2017-10-07T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:3",
+        "season": 0,
+        "episode": 3,
+        "name": "Special 2 (Song of the Desert): Episode 1 A Mirage",
+        "released": "2019-04-14T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:4",
+        "season": 0,
+        "episode": 4,
+        "name": "Special 2 (Song of the Desert): Episode 2 Angry Sea, Wild Sand",
+        "released": "2019-04-21T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:5",
+        "season": 0,
+        "episode": 5,
+        "name": "Special 2 (Song of the Desert): Episode 3 Song of the Desert",
+        "released": "2019-04-28T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:6",
+        "season": 0,
+        "episode": 6,
+        "name": "Special 3 (Three-Year Agreement): Episode 1",
+        "released": "2021-10-31T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:7",
+        "season": 0,
+        "episode": 7,
+        "name": "Special 3 (Three-Year Agreement): Episode 2",
+        "released": "2021-10-31T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:8",
+        "season": 0,
+        "episode": 8,
+        "name": "Special 3 (Three-Year Agreement): Episode 3",
+        "released": "2021-11-07T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:9",
+        "season": 0,
+        "episode": 9,
+        "name": "Special 3 (Three-Year Agreement): Episode 4",
+        "released": "2021-11-14T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:10",
+        "season": 0,
+        "episode": 10,
+        "name": "Special 3 (Three-Year Agreement): Episode 5",
+        "released": "2021-11-21T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:11",
+        "season": 0,
+        "episode": 11,
+        "name": "Special 3 (Three-Year Agreement): Episode 6",
+        "released": "2021-11-28T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:12",
+        "season": 0,
+        "episode": 12,
+        "name": "Special 3 (Three-Year Agreement): Episode 7",
+        "released": "2021-12-05T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:13",
+        "season": 0,
+        "episode": 13,
+        "name": "Special 3 (Three-Year Agreement): Episode 8",
+        "released": "2021-12-12T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:14",
+        "season": 0,
+        "episode": 14,
+        "name": "Special 3 (Three-Year Agreement): Episode 9",
+        "released": "2021-12-19T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:15",
+        "season": 0,
+        "episode": 15,
+        "name": "Special 3 (Three-Year Agreement): Episode 10",
+        "released": "2021-12-26T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:16",
+        "season": 0,
+        "episode": 16,
+        "name": "Special 3 (Three-Year Agreement): Episode 11",
+        "released": "2022-01-02T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:17",
+        "season": 0,
+        "episode": 17,
+        "name": "Special 3 (Three-Year Agreement): Episode 12",
+        "released": "2022-01-09T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:18",
+        "season": 0,
+        "episode": 18,
+        "name": "Special 3 (Three-Year Agreement): Episode 13",
+        "released": "2022-01-16T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:19",
+        "season": 0,
+        "episode": 19,
+        "name": "Special 4 (The Origin): Episode 1",
+        "released": "2022-07-17T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:20",
+        "season": 0,
+        "episode": 20,
+        "name": "Special 4 (The Origin): Episode 2",
+        "released": "2022-07-17T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:0:21",
+        "season": 0,
+        "episode": 21,
+        "name": "Special 4 (The Origin): Episode 3",
+        "released": "2022-07-24T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:1:1",
+        "season": 1,
+        "episode": 1,
+        "name": "Episode 1",
+        "released": "2017-01-07T18:00:00.000Z"
+      },
+      {
+        "id": "tt12409194:5:1",
+        "season": 5,
+        "episode": 1,
+        "name": "Episode 01",
+        "released": "2022-07-31T18:00:00.000Z"
+      }
+    ]
+  }
+}

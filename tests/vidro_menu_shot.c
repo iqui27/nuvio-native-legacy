@@ -40,6 +40,7 @@ static void captura(const char *nome, SDL_Window *win) {
   for (i = 0; i < nq; i++) {
     SDL_PumpEvents();
     if (!qual) SDL_Delay(16);
+    gfx_novo_quadro();   // per-frame glass bookkeeping, as in app.c
     txt_novo_quadro();
     tex_novo_quadro();
     tex_bombear(6);
@@ -113,8 +114,9 @@ int main(int argc, char **argv) {
       // NUVIO_SHOT_RAIL=recolhida: sem a rail de icones (collapseSidebar 0 =
       // "Recolhida" na ordem de V_RAIL); o padrao da captura e a rail fixa.
       { const char *rail = getenv("NUVIO_SHOT_RAIL");
-        fprintf(f, "idioma 0\nselected_theme %d\ncollapseSidebar %d\n", tema,
-                rail && !strcmp(rail, "recolhida") ? 0 : 1); }
+        { const char *idi = getenv("NUVIO_SHOT_IDIOMA");   // 0 pt, 1 en, 4 ru, 5 fr, 6 de
+          fprintf(f, "idioma %d\nselected_theme %d\ncollapseSidebar %d\n", idi && *idi ? atoi(idi) : 0, tema,
+                rail && !strcmp(rail, "recolhida") ? 0 : 1); } }
       // NUVIO_SHOT_LAYOUT=0|1|2: Moderna, Padrao ou Dinamica (homeLayoutLocal);
       // o menu muda de forma com o layout da home.
       { const char *lay = getenv("NUVIO_SHOT_LAYOUT");
@@ -134,6 +136,7 @@ int main(int argc, char **argv) {
       dados_iniciar("deploy/app/art");
       perfis_carregar_ativo();
       ajustes_dir(dir);
+      ajustes_teste_vidro_env();   // NUVIO_SHOT_VIDRO_OPAC / _FOSCO
     } }
 
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
@@ -155,10 +158,16 @@ int main(int argc, char **argv) {
   gfx_icones_dir("deploy/app/art");
 
   menu_iniciar();
+  // NUVIO_SHOT_PILULA=1: the top bar at rest, as on the home (A27 top chrome).
+  if (getenv("NUVIO_SHOT_PILULA")) menu_pilula_mostrar(1.0f);
   snprintf(nome, sizeof nome, "%s-rail.bmp", saida);
   captura(nome, w);
   menu_abrir();
-  if (getenv("NUVIO_SHOT_TOPO")) { tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); }
+  if (getenv("NUVIO_SHOT_TOPO")) {   // NUVIO_SHOT_FOCO=n: quantos passos para a direita (padrao 2)
+    const char *fo = getenv("NUVIO_SHOT_FOCO");
+    int p, np = fo && *fo ? atoi(fo) : 2;
+    for (p = 0; p < np; p++) tecla(SDLK_RIGHT);
+  }
   else { tecla(SDLK_DOWN); tecla(SDLK_DOWN); }
   // A ilha do menu no meio da abertura: a largura cresce, o rotulo entra.
   nq = 8;

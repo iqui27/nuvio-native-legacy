@@ -48,6 +48,10 @@ float botao_largura(const char *rotulo, const char *icone, int primario);
 void botao_pilula(GfxRect r, const char *rotulo, const char *icone,
                   float foco, int primario, int alinhar, float a);
 
+// Same action layout and focus, with the approved borderless resting material.
+void botao_pilula_sem_aro(GfxRect r, const char *rotulo, const char *icone,
+                         float foco, int primario, int alinhar, float a);
+
 // So a SUPERFICIE do primario (luz + preenchimento repouso->realce), para uma
 // linha que leva mais que icone e rotulo — a do amigo, com a foto dele. Devolve
 // a cor do texto em 0..255 para ESSE foco: a tinta do realce a partir de 0,5,

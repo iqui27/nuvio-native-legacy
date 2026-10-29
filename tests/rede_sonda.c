@@ -3,6 +3,7 @@
 #include "rede.h"
 #include "streams.h"
 #include <assert.h>
+#include "stub_perfisessao.h"
 #include <stdio.h>
 #include <string.h>
 

@@ -4,6 +4,7 @@
 // lateral (janela de 12 s) em vez de voltar a colher 90 s a frente do video.
 #include "../src/mkvass.c"
 #include <assert.h>
+const char *i18n(const char *text) { return text; }
 
 static int baixados;
 static pthread_mutex_t tb = PTHREAD_MUTEX_INITIALIZER;

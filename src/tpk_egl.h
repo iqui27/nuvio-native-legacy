@@ -14,6 +14,7 @@ typedef struct {
   EGLBoolean (*MakeCurrent)(EGLDisplay, EGLSurface, EGLSurface, EGLContext);
   EGLint     (*GetError)(void);
   EGLBoolean (*QueryContext)(EGLDisplay, EGLContext, EGLint, EGLint *);
+  EGLBoolean (*QuerySurface)(EGLDisplay, EGLSurface, EGLint, EGLint *);
   EGLBoolean (*ChooseConfig)(EGLDisplay, const EGLint *, EGLConfig *, EGLint, EGLint *);
   EGLBoolean (*GetConfigAttrib)(EGLDisplay, EGLConfig, EGLint, EGLint *);
   EGLDisplay (*GetDisplay)(EGLNativeDisplayType);
@@ -36,6 +37,7 @@ int tpk_egl_carregar(void);   // 0 = ok
 #define eglMakeCurrent        tpkEgl.MakeCurrent
 #define eglGetError           tpkEgl.GetError
 #define eglQueryContext       tpkEgl.QueryContext
+#define eglQuerySurface       tpkEgl.QuerySurface
 #define eglChooseConfig       tpkEgl.ChooseConfig
 #define eglGetConfigAttrib    tpkEgl.GetConfigAttrib
 #define eglGetDisplay         tpkEgl.GetDisplay

@@ -5,12 +5,18 @@ name: Build TPK
 # `NV_TPK_PACOTES="NuvioTpk60 NuvioTpk65 NuvioTpk" bash tools/tpk.sh` does on a
 # computer, and uploads the .tpk files as one downloadable artifact.
 #
-# Runs on every push to any branch, and by hand: Actions tab -> Build TPK ->
-# Run workflow (that button shows once this file is on the default branch).
+# Runs on pushes to master that touch app code, and by hand: Actions tab ->
+# Build TPK -> Run workflow. The integration branch is pushed together with
+# master, so building both would only duplicate the same commit.
 # A new push to the same branch cancels the build still running for it.
 
 on:
   push:
+    branches: [master]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - ".github/ISSUE_TEMPLATE/**"
   workflow_dispatch:
     inputs:
       pacotes:
