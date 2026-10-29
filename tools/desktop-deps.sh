@@ -1,5 +1,5 @@
 #!/bin/bash
-# Pinned upstream binaries. No Homebrew runtime libraries enter release packages.
+# Verified upstream SDL/mpv binaries; macOS mpv dylibs are bundled recursively.
 set -euo pipefail
 DESKTOP_OUT="${NUVIO_DESKTOP_OUT:-/Volumes/ExternalSSD/tmp/rev/desktop}"
 DESKTOP_CACHE="${NUVIO_DESKTOP_CACHE:-$DESKTOP_OUT/cache}"
@@ -38,6 +38,36 @@ SDL2 2.32.10 release 4a7ac31640d70214e848f994be8a12849c0f97918a7e6c2e27a40036166
 SDL2_image 2.8.8 projects/SDL_image/release 7b3d87be94c96bf6b2074c17f6379586216c1482a308b9323fd37cdb523f6d14 67446b12f14e4667b76a5721c91e419363e65b74b66cde8057edb29add90cd42
 SDL2_ttf 2.24.0 projects/SDL_ttf/release 677404e23a1a5f6efcbe64697471c5161283e4af5a6403dcb92235d7d83805cd 3a09e0a967ad53eca3ff2701de4d0df3369c0368739a1088a78d9d74908ef2c3
 DEPS
+}
+mpv_windows_deps() {
+  local archive=mpv-dev-x86_64-20261021-git-e471496c56.7z
+  # GitHub upstream asset digest, independently retrieved from the release API.
+  local sha=efc719eff3dc5954b4a5efc800632808bcec01cc9034940dd14e5eb7fe9ea633
+  local url="https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261021/$archive"
+  fetch "$url" "$sha"
+  MPV_WINDOWS="$DESKTOP_CACHE/mpv-win64-20261021"
+  command -v 7zz >/dev/null || { echo "Install extraction tool: brew install sevenzip" >&2; return 1; }
+  mkdir -p "$MPV_WINDOWS"
+  7zz x -y "-o$MPV_WINDOWS" "$DESKTOP_CACHE/$archive" >/dev/null
+  test -f "$MPV_WINDOWS/include/mpv/render_gl.h"
+  test -f "$MPV_WINDOWS/libmpv.dll.a"
+  test -f "$MPV_WINDOWS/libmpv-2.dll"
+  # libmpv imports vulkan-1.dll eagerly even when rendering through OpenGL.
+  # Digest: https://vulkan.lunarg.com/sdk/files.json (Windows 1.4.363.0).
+  fetch https://sdk.lunarg.com/sdk/download/1.4.363.0/windows/VulkanRT-X64-1.4.363.0-Components.zip a25a927aa8b9f0371048f1861cf88ac3b9bc9b1fb332c42d897c8ab32695769a
+  unzip -qo "$DESKTOP_CACHE/VulkanRT-X64-1.4.363.0-Components.zip" -d "$DESKTOP_CACHE/vulkan-runtime"
+  VULKAN_WINDOWS=$(find "$DESKTOP_CACHE/vulkan-runtime" -path '*/x64/vulkan-1.dll' -print -quit)
+  test -n "$VULKAN_WINDOWS"
+  fetch https://raw.githubusercontent.com/mpv-player/mpv/e471496c56/LICENSE.GPL edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6
+  fetch https://raw.githubusercontent.com/mpv-player/mpv/e471496c56/LICENSE.LGPL 72b672113d642cbb8ef5dcc76938db801983c56e50b1400ab930f1a64d6dc8d9
+}
+mpv_mac_deps() {
+  local prefix="${NUVIO_MPV_PREFIX:-$(brew --prefix mpv 2>/dev/null || true)}"
+  if [ ! -f "$prefix/lib/libmpv.dylib" ]; then
+    brew install mpv
+    prefix=$(brew --prefix mpv)
+  fi
+  MPV_MAC="$prefix"
 }
 desktop_env() {
   local header="$1" values="$1.values" oldmask

@@ -1,3 +1,4 @@
+#ifndef NV_DESKTOP_MPV
 #include "app_id.h"
 #include "video.h"
 #include "mediaurl.h"
@@ -4014,3 +4015,4 @@ int video_legenda_nativa(char *d, int t) {
 #endif
 
 #endif  /* !__EMSCRIPTEN__ */
+#endif  /* !NV_DESKTOP_MPV */

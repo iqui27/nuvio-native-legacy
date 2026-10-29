@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 source tools/desktop-deps.sh
 command -v x86_64-w64-mingw32-gcc >/dev/null || { echo 'Install compiler: brew install mingw-w64' >&2; exit 1; }
 sdl_deps windows
+mpv_windows_deps
 fetch https://curl.se/windows/dl-8.23.0_6/curl-8.23.0_6-win64-mingw.zip e8219337f2e556e8d5a69e58fc22c4bd3d86381608d4984096aafd7a8849b71f
 unzip -qo "$DESKTOP_CACHE/curl-8.23.0_6-win64-mingw.zip" -d "$DESKTOP_CACHE"
 CURL="$DESKTOP_CACHE/curl-8.23.0_6-win64-mingw"
@@ -20,14 +21,19 @@ for spec in SDL2-2.32.10 SDL2_image-2.8.8 SDL2_ttf-2.24.0; do
   cp "$prefix/bin/"*.dll "$PKG/"
 done
 x86_64-w64-mingw32-gcc src/*.c src/dts/*.c -o "$PKG/Nuvio.exe" -O1 \
-  -std=gnu11 -DNV_DESKTOP_RELEASE -DSDL_MAIN_HANDLED -include tools/windows-compat/platform.h \
-  -I tools/windows-compat "${FLAGS[@]}" -I "$CURL/include" -include "$WORK/env.h" \
-  -lSDL2 -lSDL2_image -lSDL2_ttf "$CURL/lib/libz.a" -lws2_32 -lbcrypt -lopengl32 \
+  -std=gnu11 -DNV_DESKTOP_RELEASE -DNV_DESKTOP_MPV -DNV_TOUCH_UI -DSDL_MAIN_HANDLED -include tools/windows-compat/platform.h \
+  -I tools/windows-compat -I "$MPV_WINDOWS/include" "${FLAGS[@]}" -I "$CURL/include" -include "$WORK/env.h" \
+  -lSDL2 -lSDL2_image -lSDL2_ttf "$MPV_WINDOWS/libmpv.dll.a" "$CURL/lib/libz.a" -lws2_32 -lbcrypt -lopengl32 \
   -static-libgcc -Wno-incompatible-pointer-types -Wno-int-conversion
 cp "$CURL/bin/libcurl-x64.dll" "$PKG/"
+cp "$MPV_WINDOWS/libmpv-2.dll" "$VULKAN_WINDOWS" "$PKG/"
+# Keep the upstream DLL basename: its import library requests libmpv-2.dll.
 # GCC's compiler TLS runtime imports winpthreads even though app threads use SDL.
 cp "$(dirname "$(x86_64-w64-mingw32-gcc -print-file-name=libwinpthread.a)")/../bin/libwinpthread-1.dll" "$PKG/"
 desktop_art "$PKG"
+cp "$DESKTOP_CACHE/LICENSE.GPL" "$PKG/licencas/mpv-GPL.txt"
+cp "$DESKTOP_CACHE/LICENSE.LGPL" "$PKG/licencas/mpv-LGPL.txt"
+cp "$DESKTOP_CACHE/vulkan-runtime/VulkanRT-X64-1.4.363.0-Components/VulkanRT-License.txt" "$PKG/licencas/vulkan.txt"
 ditto "$CURL/COPYING.txt" "$PKG/licencas/curl.txt"
 for spec in SDL2-2.32.10 SDL2_image-2.8.8 SDL2_ttf-2.24.0; do
   cp "$DESKTOP_CACHE/$spec/LICENSE.txt" "$PKG/licencas/$spec.txt"

@@ -21,6 +21,13 @@
 // Registra no barramento e sobe o laco de eventos. 1 se deu certo.
 // Falhar aqui nao e fatal: o app segue sem video.
 int  video_iniciar(void);
+#ifdef NV_DESKTOP_MPV
+// Current SDL GL 2.1 compatibility context, RGBA drawable, render thread only.
+// After gpun_quadro_fim(), before captures/swap: fills transparent UI areas.
+int video_desktop_render(int drawableW, int drawableH);
+// Immediately after SDL_GL_SwapWindow(). Destroy video BEFORE deleting GL context.
+void video_desktop_swap(void);
+#endif
 // O MESMO, para quem se oferece sozinho (o trailer do detalhe): segue o recuo
 // de lsregistro.h e desiste depois de poucas recusas, em vez de chamar
 // LSRegister a cada 15 s pela sessao inteira (registros 1720-1774). Onde nao
