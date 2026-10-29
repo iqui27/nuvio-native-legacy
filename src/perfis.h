@@ -34,9 +34,9 @@ typedef struct {
   char fundoUrl[300];
   int  primario;        // is_primary
   int  temPin;          // veio de sync_pull_profile_locks
-  // uses_primary_plugins: este perfil LE os addons do perfil 1 em vez de ter
-  // os seus. Ver perfis_ativo_addons().
+  // uses_primary_addons: source for perfis_ativo_addons().
   int  usaAddonsDoPrimario;
+  int  usaPluginsDoPrimario; // Independent uses_primary_plugins server column.
 } ContaPerfil;
 
 // Busca os perfis e o dono. BLOQUEIA — chamar do fio de sync.
@@ -125,6 +125,8 @@ int  perfis_pode_dispensar(void);
 // Confirma o perfil que ja estava gravado, sem reescrever o arquivo. E o que o
 // Voltar faz: encerra a pergunta desta sessao mantendo a resposta de ontem.
 void perfis_manter_ativo(void);
+// Return to the picker when the selected profile no longer exists.
+void perfis_exigir_escolha(void);
 
 // Qual SLOT (0..n-1 da lista, nao o profile_index) a tela comeca focando: o do
 // perfil ativo, ou 0 quando ele nao esta mais na lista. Abrir a tela com o
@@ -166,15 +168,15 @@ int  perfis_verificar_pin(int indice, const char *pin);
 //
 // A TV nao guarda avatar_id (a leitura resolve o id em URL na hora, ver
 // avatarOficial em perfis.c), entao o push manda avatar_id null e a URL ja
-// resolvida em avatar_url: a foto e a mesma em qualquer aparelho. E a TV
-// tambem nao guarda uses_primary_plugins: o push espelha nele o valor de
-// uses_primary_addons, que e o unico que este app le.
+// resolvida em avatar_url: a foto e a mesma em qualquer aparelho.
+// Preserve add-on and plugin inheritance independently.
 typedef struct {
   int  indice;          // profile_index (1..CONTA_PERFIL_MAX)
   char nome[64];
   char corHex[10];
   char avatarUrl[300];  // vazio -> null (sem foto, o circulo com a inicial)
-  int  usaAddons;       // uses_primary_addons, espelhado em uses_primary_plugins
+  int  usaAddons;       // uses_primary_addons
+  int  usaPlugins;      // uses_primary_plugins
 } PerfisPush;
 
 // O MENOR indice 1..CONTA_PERFIL_MAX fora da lista, ou 0 quando nao ha: o

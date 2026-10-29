@@ -21,6 +21,13 @@
 //
 //   bash tests/perfis21.sh
 #include "perfis.h"
+#include "../src/perfisedit.c"
+
+int ajustes_animacoes_reduzidas(void) { return 1; }
+int teclado_aberto(void) { return 0; }
+void teclado_atualizar(float dt, Uint32 agora) { (void)dt; (void)agora; }
+int teclado_resultado(void) { return 0; }
+const char *teclado_texto(void) { return ""; }
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -109,12 +116,13 @@ char *sessao_rpc(const char *funcao, const char *corpoJson, int *status) {
     snprintf(removerCorpo, sizeof removerCorpo, "%s", corpoJson ? corpoJson : "");
     r = "[]";
   } else if (!strcmp(funcao, "sync_pull_profile_locks")) {
-    r = "[]";
+    r = "[{\"profile_index\":1,\"pin_enabled\":true}]";
   }
   return r ? strdup(r) : NULL;
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+  int pinOnly = argc > 1 && !strcmp(argv[1], "pin");
   PerfisPush l[CONTA_PERFIL_MAX];
   int n, i;
 
@@ -123,9 +131,9 @@ int main(void) {
   //    teto com buracos no meio.
   snprintf(pushResposta, sizeof pushResposta,
     "[{\"profile_index\":1,\"name\":\"Henrique\",\"avatar_color_hex\":\"#1E88E5\","
-    "\"avatar_url\":\"https://exemplo.invalido/av1.png\",\"uses_primary_addons\":true},"
+    "\"avatar_url\":\"https://exemplo.invalido/av1.png\",\"uses_primary_addons\":true,\"uses_primary_plugins\":false},"
     "{\"profile_index\":2,\"name\":\"Álvaro\",\"avatar_color_hex\":\"#E53935\","
-    "\"uses_primary_addons\":false},"
+    "\"uses_primary_addons\":false,\"uses_primary_plugins\":true},"
     "{\"profile_index\":4,\"name\":\"Infantil\",\"avatar_color_hex\":\"#43A047\","
     "\"uses_primary_addons\":false}]");
   assert(perfis_puxar() == 3);
@@ -148,7 +156,16 @@ int main(void) {
   assert(strstr(pushCorpo, "\"avatar_id\":null"));
   assert(strstr(pushCorpo, "\"avatar_url\":\"https://exemplo.invalido/av1.png\""));
   assert(strstr(pushCorpo, "\"uses_primary_addons\":true"));
-  assert(strstr(pushCorpo, "\"uses_primary_plugins\":true"));
+  if (!pinOnly) {
+    assert(strstr(pushCorpo, "\"uses_primary_addons\":true,\"uses_primary_plugins\":false"));
+    assert(strstr(pushCorpo, "\"uses_primary_addons\":false,\"uses_primary_plugins\":true"));
+  }
+  // Disk cache must retain the independent values too.
+  perfis_carregar_ativo();
+  assert(perfis_push_atuais(l, CONTA_PERFIL_MAX) == 3);
+  assert(l[0].usaAddons == 1 && l[0].usaPlugins == 0);
+  assert(l[1].usaAddons == 0 && l[1].usaPlugins == 1);
+
   // A lista inteira viaja: 1, 2 e 4.
   { int ha[9] = {0}; const char *p = pushCorpo;
     while ((p = strstr(p, "\"profile_index\":")) != NULL) {
@@ -191,6 +208,30 @@ int main(void) {
   assert(perfis_remover(4) == 1);
   assert(strstr(removerCorpo, "\"p_profile_id\":4"));
   assert(!strstr(removerCorpo, "p_profiles"));
+
+  // Async editor completion must invalidate the deleted profile's admission.
+  perfis_definir_ativo(2);
+  snprintf(pushResposta, sizeof pushResposta,
+    "[{\"profile_index\":1,\"name\":\"Locked\"}]");
+  assert(perfis_puxar() == 1);
+  assert(perfis_item(0)->temPin);
+  aberto = fioVivo = 1;
+  atomic_store(&pexResultado, 1);
+  perfisedit_atualizar(0.016f, 0);
+  assert(!perfis_pode_dispensar());
+  assert(perfis_precisa_escolher());
+  assert(perfis_acao(0) == PERFIL_ACAO_PIN);
+  assert(perfis_ativo() == 2);
+  assert(dados_ler("perfil.txt") == NULL);
+
+  // An unlocked replacement retains the existing automatic selection.
+  snprintf(pushResposta, sizeof pushResposta,
+    "[{\"profile_index\":3,\"name\":\"Open\"}]");
+  assert(perfis_puxar() == 1);
+  fioVivo = 1;
+  atomic_store(&pexResultado, 1);
+  perfisedit_atualizar(0.016f, 0);
+  assert(perfis_ativo() == 3 && perfis_pode_dispensar());
 
   // 6) SEM REDE: -1, nao crash, nao 0. A tela mostra "Sem conexão".
   redeCaida = 1;

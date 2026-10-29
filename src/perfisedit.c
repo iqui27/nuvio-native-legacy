@@ -330,10 +330,13 @@ void perfisedit_atualizar(float dt, Uint32 agora) {
     fioVivo = 0;
     atomic_store(&pexResultado, 0);
     if (r == 1) {
-      // Quem foi apagado pode ser o perfil ATIVO: a escolha de sempre e o
-      // primeiro que sobrou, gravado no disco, no fio do quadro.
-      if (!perfis_item_ativo() && perfis_n() > 0)
-        perfis_definir_ativo(perfis_item(0)->indice);
+      // A locked replacement must pass through the picker's normal PIN flow.
+      if (!perfis_item_ativo() && perfis_n() > 0) {
+        if (perfis_acao(0) == PERFIL_ACAO_ENTRAR)
+          perfis_definir_ativo(perfis_item(0)->indice);
+        else
+          perfis_exigir_escolha();
+      }
       est = PEX_LISTA;
       if (foco >= perfis_n() + 1) foco = perfis_n() > 0 ? perfis_n() - 1 : 0;
       alvo = -1;
