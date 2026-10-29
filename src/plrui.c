@@ -173,6 +173,11 @@ float plrui_kicker(const char *s, float x, float y, int r, int g, int b, float a
 #define KBD_H   30.0f
 static float dicas(const char *const *teclas, const char *const *rotulos, int n,
                    float x, float yc, int alinhaDir, float a, int video) {
+#ifdef NV_DESKTOP_UI
+  (void)teclas; (void)rotulos; (void)n; (void)x; (void)yc;
+  (void)alinhaDir; (void)a; (void)video;
+  return 0;
+#endif
   float tot = 0.0f, xx;
   int i, pass;
   for (pass = 0; pass < 2; pass++) {
