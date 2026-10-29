@@ -113,25 +113,27 @@ int main(void) {
   saw_channel_a=saw_channel_b=0;gv_hero(GV_BASE);
   CHECK(saw_channel_b&&!saw_channel_a,"card and preview describe the same playing channel despite grid focus");
   float px,py,pw,ph;guia_preview_rect(&px,&py,&pw,&ph);
-  CHECK(fabsf(pw/ph-16.0f/9)<.001f,"preview frame matches default video aspect without inner bands");
+  CHECK(px==GV_MX+GV_MW*.51f&&py==GV_CHIP_Y&&pw==GV_MW*.49f,
+        "Grade preview occupies the owner's marked right frame");
   VideoSimulacao sized=sim;sized.largura=720;sized.altura=576;video_simular(&sized);
   guia_preview_rect(&px,&py,&pw,&ph);
-  CHECK(fabsf(pw/ph-1.25f)<.001f,"preview follows source aspect without stretching");
+  CHECK(pw==GV_MW*.49f&&ph==GV_BASE+gv_hh+40-GV_CHIP_Y,
+        "Grade frame stays fixed across source aspect changes");
   video_simular(&sim);
   gv_zone=2;gv_activate();
   CHECK(guia_pediu_restaurar(),"OK on the playing card restores its channel rather than selected row");
   /* Pointer selection must update the zone before the next remote key. */
-  gv_zone=0;gv_lin=1;point_focus(1201,0);gv_event(SDLK_RIGHT,0);gv_event(SDLK_UP,0);
-  CHECK(gv_zone==5&&focus>=1100&&focus<=1106,"category Right then Up reaches top tabs after pointer focus");
-  gv_zone=0;gv_lin=0;gv_npins=1;
-  const int up[]={1,2,4,5},down[]={4,2,1,0};
-  for(unsigned i=0;i<4;i++){gv_event(SDLK_UP,0);CHECK(gv_zone==up[i],"Up follows grid, pins, preview, chips, tabs");}
-  for(unsigned i=0;i<4;i++){gv_event(SDLK_DOWN,0);CHECK(gv_zone==down[i],"Down retraces tabs, chips, preview, pins, grid");}
+  gv_zone=0;gv_lin=1;point_focus(1202,0);gv_event(SDLK_RIGHT,0);gv_event(SDLK_UP,0);
+  CHECK(gv_zone==0&&gv_lin==1,"source footer Up restores grid after pointer focus");
+  gv_zone=0;gv_top=0;gv_lin=0;gv_npins=1;
+  const int up[]={1,5,5},down[]={5,1,0};
+  for(unsigned i=0;i<3;i++){gv_event(SDLK_UP,0);CHECK(gv_zone==up[i],"Up follows grid, pins, actions, tabs");}
+  for(unsigned i=0;i<3;i++){gv_event(SDLK_DOWN,0);CHECK(gv_zone==down[i],"Down retraces tabs, actions, pins, grid");}
   gv_npins=0;gv_zone=0;gv_event(SDLK_UP,0);
-  CHECK(gv_zone==2,"Up skips absent pinned row");
+  CHECK(gv_zone==5&&focus==1104,"Up skips absent pinned row");
   gv_zone=0;gv_npins=1;
-  for(int i=0;i<4;i++)gv_event(SDLK_UP,0);
-  for(int i=0;i<4;i++){gv_event(SDLK_ESCAPE,0);CHECK(gv_zone==down[i],"Back retraces the vertical focus chain");}
+  for(int i=0;i<3;i++)gv_event(SDLK_UP,0);
+  for(int i=0;i<3;i++){gv_event(SDLK_ESCAPE,0);CHECK(gv_zone==down[i],"Back retraces the vertical focus chain");}
   gv_side_open=0;gv_exit_armed=0;
   snprintf(screen,sizeof screen,"cartoes");snprintf(gv_pagina,sizeof gv_pagina,"cartoes");
   gv_lin=1;gv_top=1;gv_card=1;gv_zone=6;focus=42;
@@ -146,11 +148,11 @@ int main(void) {
   player_encerrar();
   snprintf(screen,sizeof screen,"grade");snprintf(gv_pagina,sizeof gv_pagina,"grade");
   gv_hh=208;guia_preview_rect(&x,&y,&w,&h);
-  CHECK(fabsf(w/h-16.0f/9)<.001f && h==208,
-        "compact guide exports its enlarged card preview geometry");
+  CHECK(w==GV_MW*.49f&&h==GV_BASE+208+40-GV_CHIP_Y,
+        "preview follows every frame of the hero spring");
   gv_hh=GV_HERO_H;guia_preview_rect(&x,&y,&w,&h);
-  CHECK(fabsf(w/h-16.0f/9)<.001f && h==GV_HERO_H,
-        "expanded guide exports its enlarged card preview geometry");
+  CHECK(w==GV_MW*.49f&&h==GV_BASE+GV_HERO_H+40-GV_CHIP_Y,
+        "expanded guide exports the enlarged right frame");
   /* Sports must remain usable without ESPN events or any EPG. */
   stagingZerar();
   int sports_source=sFonte(LTV_M3U,"sports-fixture","Fixture","");
