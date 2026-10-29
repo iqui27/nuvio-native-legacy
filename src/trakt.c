@@ -2302,6 +2302,7 @@ int trakt_perfil(PerfilDados *d) {
   diasNoMes=31; if(tmv.tm_mon==1) diasNoMes=((tmv.tm_year+1900)%4==0)?29:28;
   else if(tmv.tm_mon==3||tmv.tm_mon==5||tmv.tm_mon==8||tmv.tm_mon==10)diasNoMes=30;
   d->nDias=diasNoMes;
+  d->diaHoje=tmv.tm_mday;
   {struct tm primeiro=tmv;primeiro.tm_mday=1;mktime(&primeiro);d->primeiroDiaSemana=primeiro.tm_wday;}
   for(int i=0;i<d->nDias;i++)if(d->atividade[i])d->diasAtivosMes++;
   // Um recorte mensal nao comprova a atividade anual.

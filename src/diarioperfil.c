@@ -94,6 +94,7 @@ int diario_perfil_dados(int perfil, PerfilDados *d, long long agora) {
   diasNoMes = (int)((a.fim - a.ini + 43200) / 86400);
   if (diasNoMes > PERFIL_MAX_DIAS) diasNoMes = PERFIL_MAX_DIAS;
   d->nDias = diasNoMes;
+  d->diaHoje = m.tm_mday;
   { struct tm q = m; q.tm_mday = 1; q.tm_isdst = -1; mktime(&q); d->primeiroDiaSemana = q.tm_wday; }
   for (i = 0; i < d->nDias; i++) if (d->atividade[i]) d->diasAtivosMes++;
   for (i = 0; i < 366; i++) if (a.diasAno[i]) d->diasAtivosAno++;
