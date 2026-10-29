@@ -1979,7 +1979,7 @@ static void gv_button(int id,const char *text,const char *icon,float x,float y,f
 }
 /* Dicas do rodape: o mesmo componente das dicas do player e da faixa. */
 static void gv_hints(const char *const *keys,const char *const *labels,int n){
-  plrui_dicas(keys,labels,n,GV_X,1042,0,1);
+  (void)keys;(void)labels;(void)n;
   const ContaPerfil *p=perfis_item_ativo();
   if(p){
     gfx_icone((GfxRect){1752,1030,24,24},"aj_shield-check",.65f,.66f,.68f,1);

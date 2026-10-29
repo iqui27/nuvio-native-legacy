@@ -8,6 +8,10 @@ cc -std=gnu11 -Isrc -O1 -g -Wall -Wextra -Werror \
   tests/esportes_seguir.c -pthread -lm -o "$work/test"
 "$work/test" "$work/data" write
 "$work/test" "$work/data" read
+"$work/test" "$work/game-restart" game-write
+"$work/test" "$work/game-restart" game-restart
+"$work/test" "$work/game-refresh" game-write
+"$work/test" "$work/game-refresh" game-refresh
 for suite in esportes esportes_estado esportes_ordem esportes_ui lembrete guiav5 guiav5_epg_lifetime; do bash "tests/$suite.sh"; done
 if [ "${FOLLOW_PNG:-1}" = 1 ]; then
   export NUVIO_DADOS="$work/shots"

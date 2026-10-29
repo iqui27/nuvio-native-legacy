@@ -28,7 +28,12 @@ void esportes_seguir_lembretes(void){
     EspEvento e={0};
     if(sscanf(l->base+7,"%31[^|]|%79[^|]|%99[^|]|%79[^|]|%79[^|]",e.modalidade,e.ligaId,e.id,e.participantes[0].id,e.participantes[1].id)!=5)continue;
     e.nParticipantes=2;
-    if(!esportes_segue_evento(&e)){
+    int cancelled=0;
+    for(int j=0;j<esportes_jogos_seguidos_n();j++){
+      const EspEvento *saved=esportes_jogo_seguido(j);
+      if(!strcmp(saved->id,e.id)&&!strcmp(saved->ligaId,e.ligaId)&&!strcmp(saved->modalidade,e.modalidade)&&saved->estado>=2)cancelled=1;
+    }
+    if(cancelled || !esportes_segue_evento(&e)){
       char id[80],title[120];strcpy(id,l->canal);strcpy(title,l->titulo);time_t t=l->ini;
       lembrete_alternar(id,"",title,"",t,t+60);
     }
