@@ -1,4 +1,8 @@
 /* Grade navigation contract, exercised through the real guide handlers. */
+#include "plrui.h"
+#define plrui_linha_foco(...) ((void)0)
+#define gfx_recorte_dentro(...) ((GfxRecorteAnt){0})
+#define gfx_recorte_voltar(...) ((void)0)
 #define main guiav5_existing_main
 #include "guiav5_bugs.c"
 #undef main
@@ -26,19 +30,29 @@ int main(void){
   CHECK(gv_vis(GV_BASE)>=4,"1080p Grade retains at least four complete channel rows");
   CHECK(GV_SOURCE_Y>=gv_rows_y(GV_BASE)+3*(GV_ROW_H+GV_ROW_GAP)+GV_ROW_H,
         "source footer uses bottom margin below four complete rows");
-  /* A scrolled grid and pointer-selected footer must use visible neighbors. */
-  gv_top=5;gv_lin=5;
-  key(SDLK_UP);CHECK(gv_zone==1&&gv_lin==5,"visible grid top Up reaches pinned row without scrolling sideways");
+  /* D-pad traverses every channel; only list endpoints leave the grid. */
+  gv_top=5;gv_lin=5;gv_rol=5;gv_rol_v=0;gv_dt=1.0f/60;
+  key(SDLK_UP);CHECK(gv_zone==0&&gv_lin==4,"visible grid top Up reaches previous channel");
+  gv_grid(GV_BASE);
+  CHECK(gv_top==4&&gv_rol>4&&gv_rol<5,"Up scrolls smoothly above visible window");
+  for(int row=3;row>=0;row--){
+    key(SDLK_UP);CHECK(gv_zone==0&&gv_lin==row,"Up reaches every earlier channel");gv_grid(GV_BASE);
+  }
+  key(SDLK_UP);CHECK(gv_zone==1&&gv_lin==0,"channel one Up reaches pinned row");
   key(SDLK_UP);CHECK(gv_zone==5&&focus==1104,"pinned Up reaches button row");
   key(SDLK_UP);CHECK(gv_zone==5&&focus==1100,"button row Up reaches top tabs");
   key(SDLK_DOWN);CHECK(gv_zone==5&&focus==1104,"top tabs Down reaches button row");
   key(SDLK_DOWN);CHECK(gv_zone==1,"button row Down reaches pinned row");
-  key(SDLK_DOWN);CHECK(gv_zone==0&&gv_lin==5,"pinned Down reaches visible grid top");
-  for(int row=1;row<gv_vis(GV_BASE);row++){
-    key(SDLK_DOWN);CHECK(gv_zone==0&&gv_lin==5+row,"Down reaches next visible grid row");
+  key(SDLK_DOWN);CHECK(gv_zone==0&&gv_lin==0,"pinned Down reaches channel one");
+  gv_top=0;gv_lin=gv_vis(GV_BASE)-1;gv_rol=0;gv_rol_v=0;
+  key(SDLK_DOWN);CHECK(gv_zone==0&&gv_lin==gv_vis(GV_BASE),"visible grid bottom Down reaches next channel");
+  gv_grid(GV_BASE);
+  CHECK(gv_top==1&&gv_rol>0&&gv_rol<1,"Down scrolls smoothly beyond visible window");
+  for(int row=gv_lin+1;row<gv_match;row++){
+    key(SDLK_DOWN);CHECK(gv_zone==0&&gv_lin==row,"Down reaches every later channel");gv_grid(GV_BASE);
   }
-  key(SDLK_DOWN);CHECK(gv_zone==4,"visible grid bottom Down reaches source footer");
-  key(SDLK_UP);CHECK(gv_zone==0&&gv_lin==5+gv_vis(GV_BASE)-1,"footer Up reaches visible grid bottom");
+  key(SDLK_DOWN);CHECK(gv_zone==4,"only last channel Down reaches source footer");
+  key(SDLK_UP);CHECK(gv_zone==0&&gv_lin==gv_match-1,"footer Up reaches last channel");
   gv_lin=5;point_focus(1200,0);key(SDLK_UP);
   CHECK(gv_zone==0&&gv_lin==gv_top+gv_vis(GV_BASE)-1,"footer Up reaches visible grid last row after pointer focus");
   for(int action=1104;action<=1106;action++){

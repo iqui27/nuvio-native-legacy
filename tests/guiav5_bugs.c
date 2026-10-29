@@ -102,7 +102,7 @@ int main(void) {
   /* Pointer selection must update the zone before the next remote key. */
   gv_zone=0;gv_lin=1;point_focus(1202,0);gv_event(SDLK_RIGHT,0);gv_event(SDLK_UP,0);
   CHECK(gv_zone==0&&gv_lin==1,"source footer Up restores grid after pointer focus");
-  gv_zone=0;gv_lin=0;gv_npins=1;
+  gv_zone=0;gv_top=0;gv_lin=0;gv_npins=1;
   const int up[]={1,5,5},down[]={5,1,0};
   for(unsigned i=0;i<3;i++){gv_event(SDLK_UP,0);CHECK(gv_zone==up[i],"Up follows grid, pins, actions, tabs");}
   for(unsigned i=0;i<3;i++){gv_event(SDLK_DOWN,0);CHECK(gv_zone==down[i],"Down retraces tabs, actions, pins, grid");}

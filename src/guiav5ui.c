@@ -3192,7 +3192,7 @@ static int gv_event(SDL_Keycode k,int repeat){
   /* Vertical chain: tabs, actions (zone 5), pins, channels, sources (zone 4). */
   int grid=gv_cartoes()?6:0;
   if(k==SDLK_UP){
-    if(gv_zone==0&&gv_lin>gv_top)gv_mover_linha(-1);
+    if(gv_zone==0&&gv_lin>0)gv_mover_linha(-1);
     else if(gv_zone==6&&gv_card>=5){gv_card-=5;gv_lin=gv_card;gv_janela();}
     else if(gv_zone==4){
       gv_zone=grid;
@@ -3209,7 +3209,7 @@ static int gv_event(SDL_Keycode k,int repeat){
     if(gv_zone==5){if(focus<1104)focus=1104;else gv_zone=gv_zona_ok(1)?1:grid;}
     else if(gv_zone==2)gv_zone=gv_zona_ok(1)?1:grid;
     else if(gv_zone==1){gv_zone=grid;if(grid==0){gv_lin=gv_top;gv_janela();}}
-    else if(gv_zone==0){if(gv_lin+1<gv_match&&gv_lin+1<gv_top+gv_vis(GV_BASE))gv_mover_linha(1);else gv_zone=4;}
+    else if(gv_zone==0){if(gv_lin+1<gv_match)gv_mover_linha(1);else gv_zone=4;}
     else if(gv_zone==6){if(gv_card+5<gv_match){gv_card+=5;gv_lin=gv_card;gv_janela();}else gv_zone=4;}
     else if(gv_zone==3){int s2=gv_sb+1;while(s2<GV_SB_N&&!gv_sb_tem(s2))s2++;if(s2<GV_SB_N)gv_sb=s2;}
     if(gv_zone==1&&gv_pin>=gv_npins)gv_pin=gv_npins-1;
