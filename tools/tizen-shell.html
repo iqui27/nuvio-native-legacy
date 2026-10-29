@@ -686,7 +686,7 @@
       // que e onde ela funciona bem.
       ["MediaPlay", "MediaPause", "MediaPlayPause", "MediaStop",
        "MediaRewind", "MediaFastForward", "ChannelUp", "ChannelDown",
-       "ColorF0Red", "ColorF1Green", "ColorF2Yellow", "ColorF3Blue", "Search"]
+       "ColorF0Red", "ColorF1Green", "ColorF2Yellow", "ColorF3Blue", "Search", "Info"]
         .forEach(function (k) {
           try { tizen.tvinputdevice.registerKey(k); } catch (e) {}
         });
@@ -807,6 +807,7 @@
     // Enter: com os controles em pe o Enter aperta o botao em foco, e com o
     // foco em Legendas o "pause" abria a folha de legendas (#109). O C trata
     // SDLK_PAUSE em player_evento: alterna e poe o foco no Play.
+    457:   { key: "i", code: "KeyI", keyCode: 73 }, // Info
     10252: { key: "Pause", code: "Pause", keyCode: 19 },  // MediaPlayPause
     415:   { key: "Pause", code: "Pause", keyCode: 19 },  // MediaPlay
     19:    { key: "Pause", code: "Pause", keyCode: 19 },  // MediaPause

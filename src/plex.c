@@ -848,7 +848,7 @@ int px_ler_fontes(const PxConta *c, const char *rk, const char *corpo, size_t n,
     if (*p != '{') { p = f; idx++; continue; }
     dur = numRaiz(p, f, "duration", durItem);
     txtRaiz(p, f, "container", cont, sizeof cont);
-    key[0] = 0; tam = 0;
+    key[0] = 0; tam = 0; q = NULL;
     if (blocoRaiz(p, f, "Part", &pi, &pf) && (q = elemento(pi + 1, pf)) != NULL && *q == '{') {
       const char *qf = depoisElemento(q);
       if (qf) { txtRaiz(q, qf, "key", key, sizeof key); tam = numRaiz(q, qf, "size", 0); }
@@ -892,6 +892,8 @@ int px_ler_fontes(const PxConta *c, const char *rk, const char *corpo, size_t n,
       copiar(s->url, sizeof s->url, sp->url);
       copiar(s->provedor, sizeof s->provedor, "Plex");
       s->fileIdx = -1;
+      if (q && *q == '{') txtRaiz(q, depoisElemento(q), "file", s->arquivo, sizeof s->arquivo);
+      copiar(s->container, sizeof s->container, cont);
       s->mp4 = metodo == PX_METODO_DIRETO && (!strcmp(cont, "mp4") || !strcmp(cont, "m4v"));
       s->tamanhoBytes = metodo == PX_METODO_DIRETO && tam > 0 ? (uint64_t)tam : 0;
       // Original file size is useful in Sources even when playback uses HLS.

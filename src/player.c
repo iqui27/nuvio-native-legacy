@@ -158,6 +158,8 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "neste.h"
 #include "cacheboost.h"
 #include "audioinfo.h"
+#include "playinfo.h"
+#include "central.h"
 #include "legendasui.h"   /* F04: second subtitle band */
 #include <time.h>
 #include "servidores.h"
@@ -246,7 +248,7 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 // IDs estaveis: a ordem visual e de navegacao vem de transporteAcoes.
 // Na serie, Anterior/Proximo ficam ao lado do Play; o restante conserva a ordem.
 enum { PLR_PLAY, PLR_CC, PLR_AUDIO, PLR_ASPECTO,
-       PLR_FONTES, PLR_EPISODIOS, PLR_PROXIMO, PLR_REINICIAR, PLR_NESTE, PLR_NBTNS };
+       PLR_FONTES, PLR_EPISODIOS, PLR_PROXIMO, PLR_REINICIAR, PLR_NESTE, PLR_OPTIONS, PLR_NBTNS };
 
 // Avanco em curso: enquanto vale, posSeg e do DONO e nao do pipeline.
 static int    scrubbing, scrubPassos, scrubTocava, scrubDir, scrubToque;
@@ -1921,6 +1923,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
   desc_episodios_garantir(idx);
   fonteAcaoInvalidar();
   aberto = 1; saindo = 0; pediuSair = 0; barraFoco = 0;
+  playinfo_close();
   // Titulo novo: um avanco em curso do anterior mandaria a posicao velha ao
   // pipeline novo assim que o silencio vencesse.
   scrubbing = 0; scrubPassos = 0; scrubTocava = 0; scrubDir = 0; scrubToque = 0; scrubInicio = 0.0;
@@ -3453,6 +3456,7 @@ static int transporteAcoes(PlrAcao a[PLR_NBTNS]) {
   a[n++] = (PlrAcao){PLR_FONTES, 1};
   if (temUltimoBotao()) a[n++] = (PlrAcao){PLR_EPISODIOS, 1};
   if (serie) a[n++] = (PlrAcao){PLR_NESTE, 1};
+  a[n++] = (PlrAcao){PLR_OPTIONS, 1};
   return n;
 }
 static int transporteHabilitado(int id) {
@@ -4317,6 +4321,7 @@ static int ativarBotao(int i, int repetiu) {
     case PLR_ASPECTO: player_aspecto_ciclar(); break;
     case PLR_CC: pedFaixas = 2; break;
     case PLR_AUDIO: pedFaixas = 1; break;
+    case PLR_OPTIONS: central_abrir(); break;
     case PLR_FONTES: pedFontes = 1; break;
     case PLR_NESTE: nesteAberto = 1; nesteT = epT; nesteE = epE; break;
     case PLR_EPISODIOS:
@@ -5466,6 +5471,7 @@ static const char *iconeBotao(int i) {
     case PLR_PROXIMO:   return "pl_chevron-right";
     case PLR_REINICIAR: return "pl_rotate-ccw";
     case PLR_NESTE:     return "pl_users";
+    case PLR_OPTIONS:   return "aj_ellipsis";
     default:            return epE > 0 ? "pl_list-video" : "pl_film";
   }
 }
@@ -5479,6 +5485,7 @@ static const char *rotuloBotao(int i) {
     case PLR_PROXIMO:   return "Próximo episódio";
     case PLR_REINICIAR: return "Assistir do começo";
     case PLR_NESTE:     return "Neste episódio";
+    case PLR_OPTIONS:   return "Opções";
     default:            return ehCanal() ? "Guia" : epE > 0 ? "Epis\xc3\xb3""dios" : "Relacionados";
   }
 }

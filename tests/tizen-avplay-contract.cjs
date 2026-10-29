@@ -48,6 +48,21 @@ const call = (op, text = '', a = 0, b = 0, c = 0, d = 0, dst = 0, size = 0) =>
     assert.equal(call('estado', '', 0, 0, 0, 0, 8, 96), 1);
     assert.equal(context.HEAPF64[10], 0);
   });
+  check('playback metadata uses cached tracks without firmware reads', () => {
+    const saved = context.__nvav.trilhas;
+    context.__nvav.trilhas = [
+      {type: 'VIDEO', index: 0, extra_info: {fourCC: 'HEVC', frame_rate: '23.976', bit_rate: '8000000'}},
+      {type: 'AUDIO', index: 2, extra_info: {fourCC: 'EAC3', channels: '6'}}
+    ];
+    assert.equal(call('playinfo', '', 2, 0, 0, 0, 2048, 256), 1);
+    const info = JSON.parse(outputs.get(2048));
+    assert.equal(info.codec, 'HEVC');
+    assert.equal(info.fps, 23.976);
+    assert.equal(info.kbps, 8000);
+    assert.equal(info.audio, 'EAC3');
+    assert.equal(info.channels, 6);
+    context.__nvav.trilhas = saved;
+  });
   check('buffer percentage keeps its integration slot', () => {
     context.__nvav.bufPct = 37;
     call('estado', '', 0, 0, 0, 0, 8, 96);
