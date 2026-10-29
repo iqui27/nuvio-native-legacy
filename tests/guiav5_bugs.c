@@ -25,6 +25,13 @@ static char *category_fixture(const char *,const char *,const char *,const char 
 #include <assert.h>
 
 static int failures;
+static int preview_volume = -1;
+static void record_volume(int pct) { preview_volume = pct; }
+static void guide_audio_tick(void) {
+#define video_volume record_volume
+#include "guide_audio.inc"
+#undef video_volume
+}
 static int saw_channel_a, saw_channel_b;
 static int category_failure, category_calls;
 static char *category_fixture(const char *server,const char *user,const char *password,const char *request,int timeout,int *status){
@@ -82,6 +89,22 @@ int main(void) {
   CHECK(!guia_preview_no_ar(), "idle preview remains dark until a video frame is ready");
   video_simular(&sim); player_definir_fonte("https://example.invalid/live.m3u8");
   CHECK(guia_preview_no_ar(), "accepted preview source reveals video while guide stays open");
+  /* Record the real app dispatch, including a previously muted player. */
+  snprintf(screen,sizeof screen,"grade");
+  preview_volume=0;guide_audio_tick();
+  CHECK(preview_volume==100,"Grade preview defaults to audible and clears prior mute");
+  ajustes_definir_guia_previa_sem_som(1);guide_audio_tick();
+  CHECK(preview_volume==0,"explicit guide mute sends volume zero");
+  ajustes_definir_guia_previa_sem_som(0);guide_audio_tick();
+  CHECK(preview_volume==100,"guide audio toggle restores player volume");
+  ajustes_definir_guia_previa_sem_som(1);guide_audio_tick();
+  snprintf(screen,sizeof screen,"cartoes");guide_audio_tick();
+  CHECK(preview_volume==0,"saved guide mute also applies to Cards");
+  player_restaurar();guide_audio_tick();
+  CHECK(preview_volume==100,"full-screen handoff restores sound after muted preview");
+  player_minimizar_para_guia(x,y,w,h);guide_audio_tick();
+  CHECK(preview_volume==0,"returning to guide respects saved mute");
+  ajustes_definir_guia_previa_sem_som(0);guide_audio_tick();
   /* The now-watching card must describe the stream, even with another row selected. */
   snprintf(screen,sizeof screen,"grade");snprintf(gv_pagina,sizeof gv_pagina,"grade");
   gv_lin=0;gv_snap_force=1;gv_snapshot();
