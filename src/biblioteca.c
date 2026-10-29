@@ -332,6 +332,7 @@ static int tipo = TIPO_TODOS;
 static int ordem = ORD_ADICIONADOS;
 static int origem = ORIG_TODAS;
 static int focoOrigem, origemSel;
+static int origemRetorno = -1;
 static struct { GfxRect rect; PonteiroFn focus; int a,b,id; } navigation[512];
 static int navigationCount;
 static int navigationFocus(void);
@@ -1222,6 +1223,7 @@ int biblioteca_iniciar(void) {
   lst_iniciar();
   modo = MODO_PARAVER; tipo = TIPO_TODOS; ordem = ORD_ADICIONADOS; origem = ORIG_TODAS; serverFilter = -1; trilha = 0;
   focoOrigem = focoBotaoOrig = faixaNoBotao = 0; origemSel = 0; esconderVistos = 0; generoSel = 0;
+  origemRetorno = -1;
   pickSel = 0; temAberta = 0; acaoSel = 0; listaTab = 0; recado[0] = 0; recadoAte = 0.0f;
   tecPara = TEC_NADA; abertaPropria = 0; edModo = ED_NADA; ordemPega = -1;
   ordemMudou = 0; compartilha = 0;
@@ -1716,6 +1718,14 @@ static void biblioteca_evento_(const SDL_Event *e) {
   }
   if (k == SDLK_DOWN && estadoFalhou() && !focoOrigem &&
       (temAberta || foco.fileira == BIB_FIL_PICK)) { estadoFoco = 1; return; }
+  // Retrace the source-to-tabs edge before normal page Back handling.
+  if (!temAberta && !focoOrigem && foco.fileira == BIB_FIL_MODO && origemRetorno >= 0) {
+    if (k == SDLK_DOWN || nv_tecla_voltar(e)) {
+      focoOrigem = 1; origemSel = origemRetorno; origemRetorno = -1;
+      return;
+    }
+    if (k != SDLK_UP) origemRetorno = -1;
+  }
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE ||
       k == SDLK_DELETE) {
     // Dentro de uma lista, o Back volta PARA A LISTA DE LISTAS antes de fechar
@@ -1747,7 +1757,11 @@ static void biblioteca_evento_(const SDL_Event *e) {
   }
   if (focoOrigem) {
     if (k == SDLK_UP && origemSel > 0) origemSel--;
-    else if (k == SDLK_UP) { focoOrigem = 0; foco.fileira = BIB_FIL_PICK; focoBotaoOrig = botaoOrigens(); }
+    else if (k == SDLK_UP) {
+      origemRetorno = origemSel;
+      focoOrigem = focoBotaoOrig = 0;
+      foco.fileira = BIB_FIL_MODO; foco.coluna = modo;
+    }
     else if (k == SDLK_DOWN && origemSel < (modo == MODO_LISTAS ? BIB_N_FONTES : nOrigens()) - 1) origemSel++;
     else if (k == SDLK_RIGHT) { focoOrigem = 0; foco.fileira = BIB_FIL_GRADE; foco.coluna = 0; }
     else if (k == SDLK_LEFT) sair = 1;
@@ -3494,6 +3508,7 @@ static void desenhaLinhaLista(const LstLista *l, float y, float f, float a) {
 static void ponteiroOrigem(int a, int b) {
   (void)b;
   focoOrigem = 1; origemSel = a; focoBotaoOrig = 0;
+  origemRetorno = -1;
 }
 
 static int navigationFocus(void) {

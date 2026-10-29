@@ -1,17 +1,20 @@
 #!/bin/bash
-# Link the real 2.1 Library handlers with the existing native test objects.
+# Render focus targets and exercise the public Library handler in TV and phone layouts.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-OBJ=${TMPDIR:-/tmp}/nv21-obj-$(basename "$PWD")
-if [ ! -f "$OBJ/app.o" ]; then bash tests/detail21.sh; fi
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-biblioteca-up.XXXXXX")
 trap 'rm -rf "$work"' EXIT
-objects=()
-for object in "$OBJ"/*.o; do
-  case "$object" in */biblioteca.o) continue;; esac
-  objects+=("$object")
+flags=()
+if [ -n "${BIB_UP_REV:-}" ]; then
+  git show "$BIB_UP_REV:src/biblioteca.c" > "$work/biblioteca.c"
+  flags+=("-DBIB_UP_SOURCE=\"$work/biblioteca.c\"")
+fi
+sources=()
+for source in src/*.c src/dts/*.c; do
+  case "$source" in src/main.c|src/biblioteca.c) continue;; esac
+  sources+=("$source")
 done
-cc -O1 -g tests/biblioteca_up.c src/detail.c "${objects[@]}" -Isrc \
+cc -DNV_TOUCH_UI "${flags[@]+${flags[@]}}" -O1 -g tests/biblioteca_up.c "${sources[@]}" -Isrc \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -L/opt/homebrew/lib \
   -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined -o "$work/test"
