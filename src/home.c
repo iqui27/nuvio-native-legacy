@@ -3,6 +3,7 @@
 // hero no topo, rail fixa à esquerda e fileiras horizontais de posters. A
 // infraestrutura nativa cuida de cache assíncrono, foco e transições.
 #include "home.h"
+#include "menu.h"
 #include "memlog.h"
 #include "perfis.h"
 #include "botoes.h"
@@ -3799,8 +3800,10 @@ static void home_atualizar_(float dt, Uint32 agora) {
 #ifdef NV_TOUCH_UI
   if (!telefoneui_ativo()) { toqueHomeLimpar(); toqueHeroCancelar(); }
 #endif
-  sincronizarFileiras();
-  homeAtualizarReferenciasArte();
+  if (!menu_ocupado(agora)) {
+    sincronizarFileiras();
+    homeAtualizarReferenciasArte();
+  }
   // A FILEIRA DE AMIGOS tem tantas colunas quantos rostos (+ "Adicionar"), e
   // isso muda sem o catalogo mudar (um amigo novo chega do recomenda.c).
   for (int r = 0; r < nFileiras; r++) {

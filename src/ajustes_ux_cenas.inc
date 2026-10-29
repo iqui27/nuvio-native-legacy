@@ -202,7 +202,7 @@ static void ajcCenaHome(int op) {
     case AJ_ROTULOS: case AJ_NOME_ADDON: case AJ_SUFIXO_TIPO: o.hero = 0; o.marca = AJC_M_TITULOS; break;
     case AJ_NOTAS_HOME: case AJ_SELO_VISTO: o.hero = 0; break;
     case AJ_MENU_TOPO: case AJ_RAIL_MODERNA: case AJ_RAIL: case AJ_MENU_EXPLORAR: case AJ_MENU_GUIA: case AJ_MENU_AGENDA:
-    case AJ_MENU_PERFIL: case AJ_RAIL_BLUR: case AJ_DESCOBRIR:
+    case AJ_MENU_ESPORTES: case AJ_MENU_PERFIL: case AJ_RAIL_BLUR: case AJ_DESCOBRIR:
       o.marca = AJC_M_RAIL; break;
     default:
       if ((op == AJ_CW_LIGADO || op == AJ_CW_OK || op == AJ_CW_ESTILO || op == AJ_CW_THUMB ||
