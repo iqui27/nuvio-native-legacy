@@ -2,6 +2,7 @@
 #include "amigosfil.h"
 #include "socialvis.h"
 #include "svdesenho.h"
+#include "tex_cache.h"
 #include "catalogo.h"
 #include "artehero.h"
 #include "recomenda.h"

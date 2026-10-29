@@ -426,6 +426,12 @@ void tpk_gl_trocar(void) {
   eglMakeCurrent(dpy, sup, sup, ctx);
 }
 
+void *tpk_gl_corrente(void) {
+  if (!tpkEgl.GetCurrentContext) return NULL;
+  EGLContext c = eglGetCurrentContext();
+  return c == EGL_NO_CONTEXT ? NULL : (void *)c;
+}
+
 void tpk_tamanho(int *w, int *h) {
   if (w) *w = telaW;
   if (h) *h = telaH;

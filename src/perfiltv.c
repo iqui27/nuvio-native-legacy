@@ -128,7 +128,28 @@ const char *ptv_plataforma_nome(PtvPlataforma p) {
   }
 }
 
+// Cache contract budgets. Keep docs/cache-capas.md and its SHA256 in sync.
+PtvCache ptv_cache(PtvPlataforma p, long mem) {
+  PtvCache c = {2, 96, 48, 8, 512, 1024, 5};
+  if (!mem || mem < 1200) { c.fileiras = 1; c.decodeMb = 64; }
+  if (p == PTV_ANDROID) {
+    c.decodeMb = ptv_tex_auto_mb(p, mem) / 2;
+    if (c.decodeMb < 64) c.decodeMb = 64;
+    if (c.decodeMb > 96) c.decodeMb = 96;
+    c.discoMb = 64;
+  } else if (p == PTV_TIZEN) c.discoMb = 48;
+  return c;
+}
+
 int ptv_tex_auto_mb(PtvPlataforma p, long mem) {
+  if (p == PTV_ANDROID) {
+    if (!mem || mem < 1500) return 32;
+    // Keep several poster rows resident; OS memory pressure still trims the cache.
+    if (mem < 2000) return 96;
+    if (mem < 3000) return 160;
+    if (mem < 4000) return 192;
+    return 256;
+  }
   if (p == PTV_TPK) {
     if (!mem) return NV_TEX_ORCAMENTO_MB;
     if (mem < 1200) return 64;
@@ -148,6 +169,7 @@ int ptv_tex_auto_mb(PtvPlataforma p, long mem) {
 }
 
 int ptv_tex_teto_mb(PtvPlataforma p, long mem) {
+  if (p == PTV_ANDROID) return ptv_tex_auto_mb(p, mem);
   if (p == PTV_TIZEN) return ptv_tex_auto_mb(p, mem);
   if (p == PTV_TPK) {
     if (!mem || mem < 1200) return 96;
@@ -156,6 +178,7 @@ int ptv_tex_teto_mb(PtvPlataforma p, long mem) {
   }
   if (!mem) return 160;
   if (mem < 1200) return 64;
+  if (mem <= 1300) return 128;
   if (mem < 2000) return 160;
   if (mem < 3000) return p == PTV_ANDROID ? 192 : 300;
   return 512;
@@ -178,7 +201,7 @@ static int fiosTeto(PtvPlataforma p, long mem) {
 int ptv_heroi_max(PtvPlataforma p, long mem) {
   if (p == PTV_TIZEN) return mem >= 2000 ? 1920 : 1280;
   if (p == PTV_TPK && !mem) return 1280;
-  if (mem && mem < 1200) return 1280;
+  if (mem && mem <= 1300) return 1280;
   return 1920;
 }
 

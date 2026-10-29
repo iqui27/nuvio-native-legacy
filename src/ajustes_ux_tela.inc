@@ -18,15 +18,16 @@ static const Item TELA[] = {
 #ifdef NV_TPK
       OPC(AJ_AUDIO_OFFSET),
 #endif
+      OPC(AJ_AUDIO_NORMALIZAR),
     ROT("Escolha da fonte"),
       OPC(AJ_FONTE_MANUAL), OPC(AJ_FONTE_PRIORIDADE), OPC(AJ_FONTE_IDIOMA_AUDIO), OPC(AJ_FONTE_PRAZO),
       OPC(AJ_FONTE_REPOR), OPC(AJ_TAM_MAX),
       OPC(AJ_FONTE_GRUPO), OPC(AJ_FONTE_GRUPO_SESSOES),
       OPC(AJ_LINK_REUSAR), OPC(AJ_LINK_PRAZO),
     ROT("Durante e depois"),
-      OPC(AJ_PAUSA_OVERLAY), OPC(AJ_TELA_ABERTURA), OPC(AJ_ABERTURA_ADDON), OPC(AJ_ABERTURA_FUNDO), OPC(AJ_ABERTURA_ESTILO), OPC(AJ_ESTAT_TAMANHO), OPC(AJ_ESTAT_LADO), OPC(AJ_PLR_CLASSIF), OPC(AJ_PULAR_ABERTURA), OPC(AJ_PULAR_RESUMO),
+      OPC(AJ_PAUSA_OVERLAY), OPC(AJ_PAUSA_COMENTARIOS), OPC(AJ_PAUSA_NOTAS), OPC(AJ_PAUSA_ELENCO), OPC(AJ_TELA_ABERTURA), OPC(AJ_ABERTURA_ADDON), OPC(AJ_ABERTURA_FUNDO), OPC(AJ_ABERTURA_ESTILO), OPC(AJ_ESTAT_TAMANHO), OPC(AJ_ESTAT_LADO), OPC(AJ_PLR_CLASSIF), OPC(AJ_PULAR_ABERTURA), OPC(AJ_PULAR_RESUMO),
       OPC(AJ_PULAR_CREDITOS), OPC(AJ_PROXIMO_AUTO), OPC(AJ_PROXIMO_CONTAGEM), OPC(AJ_REACAO_CREDITOS), OPC(AJ_CW_CONCLUIDO), OPC(AJ_CW_MINIMO),
-      OPC(AJ_PLR_FORMATO), OPC(AJ_SAIDA_PLAYER), OPC(AJ_PROPORCAO_PADRAO), OPC(AJ_BRILHO_PLAYER), OPC(AJ_HDR_UI),
+      OPC(AJ_PLR_FORMATO), OPC(AJ_PLR_FORMATO_POS), OPC(AJ_PLR_CODEC), OPC(AJ_SAIDA_PLAYER), OPC(AJ_PROPORCAO_PADRAO), OPC(AJ_BRILHO_PLAYER), OPC(AJ_HDR_UI),
     ROT("Miniatura ao avançar"),
       OPC(AJ_SEEKR_LIGADO), OPC(AJ_SEEKR_CHAVE), OPC(AJ_SEEKR_TESTAR), OPC(AJ_SEEKR_FITA),
     MAIS(),
@@ -40,11 +41,16 @@ static const Item TELA[] = {
 #ifdef NV_ANDROID
       OPC(AJ_FONTE_PRECARREGAR),   // so o Android tem o preload do player
 #endif
+      OPC(AJ_FONTE_OCULTAR_DV), OPC(AJ_FONTE_OCULTAR_AUDIO), OPC(AJ_FONTE_OCULTAR_VIDEO),
       OPC(AJ_TAM_MIN), OPC(AJ_FONTE_TEXTO), OPC(AJ_FONTE_ORDEM_ADDON), OPC(AJ_SELOS_CORES),
       OPC(AJ_SELOS_PACOTE), OPC(AJ_SELOS_PACOTE_ADD), OPC(AJ_SELOS_PACOTE_REM),
     ROT("Som e vídeo desta TV"),
       OPC(AJ_DTS_AC3),
-#ifdef NV_ANDROID
+#if defined(NV_TPK) || defined(NV_WEBOS)
+      OPC(AJ_HDR10P_STRIP),
+#endif
+#if defined(NV_ANDROID) || defined(AJUSTES_TESTE)
+      OPC(AJ_AFR),
       OPC(AJ_TUNNELING),
 #endif
 #if !defined(NV_TPK) && !defined(NV_ANDROID)
@@ -72,7 +78,7 @@ static const Item TELA[] = {
 
   SEC("Idiomas e legendas", "Idioma da interface, áudio, legenda e metadados", "aj_languages"),
     ROT("Idiomas"),
-      OPC(AJ_IDIOMA), OPC(AJ_AUD_LINGUA), OPC(AJ_AUD_LINGUA2), OPC(AJ_LEG_LINGUA), OPC(AJ_LEG_FORCADA),
+      OPC(AJ_IDIOMA), OPC(AJ_AUD_LINGUA), OPC(AJ_AUD_ORIGINAL), OPC(AJ_AUD_LINGUA2), OPC(AJ_LEG_LINGUA), OPC(AJ_LEG_FORCADA),
       OPC(AJ_LEG_MOSTRAR), OPC(AJ_LEG_SYNC_AUTO),
 #ifdef NV_ANDROID
       // Sincronia pelo audio (F06): so o player do Android entrega o PCM. Na LG e
@@ -97,7 +103,7 @@ static const Item TELA[] = {
   // A escolha da fonte foi para Reproducao (mockup v3, tela 02).
   SEC("Fontes e addons", "Addons, debrid e servidores pessoais", "aj_puzzle"),
     ROT("Addons"),
-      OPC(AJ_ADDONS), OPC(AJ_PLUGINS), OPC(AJ_ADDONS_PRINCIPAL), OPC(AJ_BUSCA_CINEMETA),
+      OPC(AJ_ADDONS), OPC(AJ_ADDONS_LIGADO), OPC(AJ_DEBRID_LIGADO), OPC(AJ_LEG_ESTILO_LIGADO), OPC(AJ_PLUGINS), OPC(AJ_ADDONS_PRINCIPAL), OPC(AJ_BUSCA_CINEMETA),
       OPC(AJ_BUSCA_NUVIO), OPC(AJ_BUSCA_ORIGEM),   // #311
     ROT("Falha na reprodução"),
       OPC(AJ_FILTROS_FONTES),
@@ -127,7 +133,8 @@ static const Item TELA[] = {
     ROT("Guia de TV"),
       OPC(AJ_GUIA_ORDEM), OPC(AJ_GUIA_FONTE), OPC(AJ_GUIA_RECARREGAR), OPC(AJ_EPG_PAIS), OPC(AJ_EPG_MEMORIA), OPC(AJ_GUIA_CATEGORIAS),
       OPC(AJ_URL_LISTA), OPC(AJ_URL_M3U_ADD), OPC(AJ_URL_XMLTV_ADD), OPC(AJ_URL_REM),
-      OPC(AJ_LIVETV_SUGERIR),
+      OPC(AJ_LIVETV_SUGERIR), OPC(AJ_GUIA_PREVIA_GRANDE),
+      OPC(AJ_GUIA_PREVIA_DESTACAR), OPC(AJ_GUIA_PREVIA_SOM), OPC(AJ_GUIA_DIAS),
     ROT("Se o canal não abre"),
       OPC(AJ_LIVETV_DIAG), OPC(AJ_LIVETV_RES), OPC(AJ_LIVETV_ESPERA),
     MAIS(),
@@ -141,7 +148,8 @@ static const Item TELA[] = {
       OPC(AJ_FUNDO_DIN), OPC(AJ_FUNDO_DIN_COR),
       OPC(AJ_HERO_CATALOGOS), OPC(AJ_HERO_GENERO),
       OPC(AJ_HERO_SINOPSE), OPC(AJ_HERO_NOTAS), OPC(AJ_HERO_ANO), OPC(AJ_HERO_DURACAO),
-      OPC(AJ_HERO_SINOPSE_TAM),
+      OPC(AJ_HERO_PASTA_DETALHES),
+      OPC(AJ_HERO_TAMANHO), OPC(AJ_HERO_SINOPSE_TAM),
     ROT("Fileiras"),
       OPC(AJ_FIL_ORDEM), OPC(AJ_FIL_LIMITE), OPC(AJ_ITENS_FILEIRA),
       OPC(AJ_ESPACO_FILEIRAS), OPC(AJ_ESPACO_TITULOS),
@@ -175,7 +183,7 @@ static const Item TELA[] = {
     OPC(AJ_TECLADO_ANDROID),
 #endif
     ROT("Cores e vidro"),
-      OPC(AJ_TEMA), OPC(AJ_ARTE_TOM), OPC(AJ_FUNDO), OPC(AJ_COR_LOGO), OPC(AJ_VIDRO), OPC(AJ_VIDRO_CONTORNO), OPC(AJ_FOCO_ACENTO),
+      OPC(AJ_TEMA), OPC(AJ_ARTE_TOM), OPC(AJ_FUNDO), OPC(AJ_COR_LOGO), OPC(AJ_VIDRO), OPC(AJ_VIDRO_CONTORNO), OPC(AJ_FOCO_ACENTO), OPC(AJ_SUAVIZAR_DEGRADES),
     ROT("Fileiras"), OPC(AJ_TITULO_FIL), OPC(AJ_PALCO_FUNDO),
     ROT("Logo e abertura"),
       OPC(AJ_LOGO_APP), OPC(AJ_ABERTURA), OPC(AJ_ICONE_APP),
@@ -188,12 +196,12 @@ static const Item TELA[] = {
     MAIS(),
     ROT("Cores e vidro"), OPC(AJ_VIDRO_OPAC), OPC(AJ_VIDRO_FOSCO), OPC(AJ_VIDRO_QUALIDADE),
 
-  // NOTAS (decisao do dono, 07/10): so as onze "Notas no titulo". Os oito
-  // AJ_MDB_* (qual nota o MDBList baixa) sairam da tela e continuam no enum e na
-  // conta: ligar uma nota liga o par dela e o MDBList por baixo (notaLigarPar).
+  // NOTAS (decisao do dono, 07/10): as onze "Notas no titulo" ficam a vista.
+  // Os oito AJ_MDB_* (qual fonte o MDBList baixa) ficam em Mais opcoes (2.1: nada
+  // some da tela); ligar uma nota ainda liga o par dela e o MDBList (notaLigarPar).
   SEC("Página do título", "O que aparece, notas e dados do título", "aj_file-text"),
     ROT("O que aparece"),
-      OPC(AJ_DET_VEU), OPC(AJ_DET_DATA_CHEIA), OPC(AJ_DET_BLUR_NAO_VISTOS), OPC(AJ_EP_TAMANHO),
+      OPC(AJ_DET_VEU), OPC(AJ_DET_DATA_CHEIA), OPC(AJ_DET_BLUR_NAO_VISTOS), OPC(AJ_EP_TAMANHO), OPC(AJ_DET_TOPO), OPC(AJ_DET_ELENCO_VISTO),
     ROT("Notas"),
       OPC(AJ_NT_IMDB), OPC(AJ_NT_TOMATES), OPC(AJ_NT_AUDIENCIA), OPC(AJ_NT_META),
       OPC(AJ_NT_METAUSER), OPC(AJ_NT_TRAKT), OPC(AJ_NT_TMDB), OPC(AJ_NT_LETTER),
@@ -202,6 +210,8 @@ static const Item TELA[] = {
       OPC(AJ_TMDB_LIGADO),
     MAIS(),
     ROT("Notas"), OPC(AJ_MDB_LIGADO),
+      OPC(AJ_MDB_IMDB), OPC(AJ_MDB_TRAKT), OPC(AJ_MDB_TMDB), OPC(AJ_MDB_TOMATES),
+      OPC(AJ_MDB_AUDIENCIA), OPC(AJ_MDB_META), OPC(AJ_MDB_LETTER), OPC(AJ_MDB_MAL),
     ROT("Dados do título"),
       OPC(AJ_TMDB_ARTE), OPC(AJ_TMDB_BASICO),
       OPC(AJ_TMDB_FICHA), OPC(AJ_TMDB_DATAS), OPC(AJ_TMDB_ELENCO),
@@ -245,16 +255,18 @@ static const Item TELA[] = {
   SEC("Conta e serviços", "Perfil, sincronização, Trakt, Simkl e avisos", "aj_user-round"),
     ROT("Perfil"),
       OPC(AJ_PERFIL_ATIVO), OPC(AJ_SYNC),
-      OPC(AJ_PERFIL_PESQ), OPC(AJ_PERFIL_EDITAR), OPC(AJ_SAIR),
+      OPC(AJ_PERFIL_PESQ), OPC(AJ_PERFIL_EDITAR), OPC(AJ_PERFIL_INFANTIL), OPC(AJ_SAIR),
     ROT("Trakt e Simkl"),
-      OPC(AJ_TRAKT), OPC(AJ_SIMKL), OPC(AJ_SALVOS_DEST), OPC(AJ_CW_FONTE), OPC(AJ_CW_PROXIMO), OPC(AJ_HIST_CONTA), OPC(AJ_SOCIAL), OPC(AJ_DISCORD),
+      OPC(AJ_TRAKT), OPC(AJ_SIMKL), OPC(AJ_SALVOS_DEST), OPC(AJ_CW_FONTE), OPC(AJ_CW_PROXIMO), OPC(AJ_HIST_CONTA), OPC(AJ_SOCIAL), OPC(AJ_DISCORD), OPC(AJ_DIARIO_NUVEM),
     ROT("Notificações"), OPC(AJ_ENQUETES),
+    ROT("Conquistas"), OPC(AJ_CONQ_LIGADO), OPC(AJ_CONQ_AVISO), OPC(AJ_CONQ_DICAS),
 
   SEC("Esta TV", "Resolução, imagens, efeitos e diagnóstico", "aj_monitor-cog"),
 OPC(AJ_RESOLUCAO), OPC(AJ_GPU_EFEITOS), OPC(AJ_AMPLIAR_UI), OPC(AJ_AMPLIACAO_ALGO), OPC(AJ_AMPLIACAO_NITIDEZ), OPC(AJ_HDR_INTERFACE), OPC(AJ_QUALIDADE_IMG),
     OPC(AJ_NAV_RAPIDA), OPC(AJ_MEDIDOR), OPC(AJ_DIAGNOSTICO), OPC(AJ_VELOCIDADE), OPC(AJ_ESPACO),
+    OPC(AJ_AVANCADAS),
 #ifdef NV_ANDROID
-    OPC(AJ_LIMPAR_CACHE),
+    OPC(AJ_TV_HOME), OPC(AJ_LIMPAR_CACHE),
 #endif
     MAIS(),
     ROT("Memória"), OPC(AJ_TEX_MB),
@@ -276,7 +288,7 @@ OPC(AJ_RESOLUCAO), OPC(AJ_GPU_EFEITOS), OPC(AJ_AMPLIAR_UI), OPC(AJ_AMPLIACAO_ALG
 
 // Texto exibido no painel ao selecionar uma categoria. Mesma ordem dos SECs.
 static const char *SECAO_AJUDA[] = {
-  "Qualidade máxima, Dolby Vision e Atmos, e o que acontece durante e depois do vídeo.",
+  "Qualidade, Dolby Vision, Atmos e a escolha da fonte.",
   "Idioma da interface, preferências de áudio e legenda e idioma dos metadados.",
   "Addons e plugins, debrid e servidores pessoais.",
   "Conexão dos provedores e diagnóstico de reprodução de canais ao vivo.",

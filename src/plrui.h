@@ -17,6 +17,9 @@
 // `raioPx` em pixels; `modal` = 1 deixa o miolo um degrau mais denso (.86),
 // como a ilha que vira modal.
 void plrui_material(GfxRect r, float raioPx, int modal, float a);
+// Rest surface inside a page (chips, strips, small pills): glass draws the
+// same flat veil as the Detail source chips, never the glass rim.
+void plrui_material_plano(GfxRect r, float raioPx, float a);
 // Same material; semSombra = 1 drops the drop shadow (Sources sheet).
 void plrui_material_s(GfxRect r, float raioPx, int modal, float a, int semSombra);
 // The title-page card material (shared glass, GFX_VIDRO_DENS): what the
@@ -53,6 +56,7 @@ float plrui_kicker(const char *s, float x, float y, int r, int g, int b, float a
 // DICAS DE TECLA (kbd + rotulo), lado a lado com vao de 22. `teclas` e
 // `rotulos` ja traduzidos pelo chamador? Nao: os dois passam por i18n aqui.
 // `alinhaDir` = 1 faz x ser a borda DIREITA. Devolve a largura total.
+// x < 0 measures only, using the same translated text and spacing.
 float plrui_dicas(const char *const *teclas, const char *const *rotulos, int n,
                   float x, float yc, int alinhaDir, float a);
 float plrui_dicas_video(const char *const *teclas, const char *const *rotulos, int n,
@@ -65,6 +69,13 @@ float plrui_dicas_video(const char *const *teclas, const char *const *rotulos, i
 // desliza entre os chips (sel) e esmaece ao entrar/sair do segmentado (ed).
 float plrui_seg(const char *const *rotulos, const int *contagem, int n, float sel, float ed,
                 float x, float y, float a);
+// plrui_seg with the chosen item apart from the focus pill (`escolhido`, -1 =
+// same as `sel`) and `leve` = rimless track for the 2.1 mock surfaces.
+float plrui_seg_ex(const char *const *rotulos, const int *contagem, int n, int escolhido,
+                   float sel, float ed, float x, float y, float a, int leve);
+// Same, with text counts ("3/4"); NULL or "" = no count.
+float plrui_seg_txt(const char *const *rotulos, const char *const *contagem, int n, float sel,
+                    float ed, float x, float y, float a);
 
 // A BARRA DE PROGRESSO, a mesma em todo lugar (OSD, pausa, ao vivo, trailer):
 // trilho branco 20% com cantos redondos, o buffer a 30%, o andado no acento.

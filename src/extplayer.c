@@ -1,5 +1,6 @@
 // Player externo (#501) — ver extplayer.h.
 #include "extplayer.h"
+#include "mediaurl.h"
 #include <stddef.h>
 
 int extplayer_decidir(int modo, const char *cabs, int *avisar) {
@@ -78,7 +79,7 @@ static void (*pendSair)(void);
 
 static void abrirExterno(const char *url, const char *titulo, const char *pkg,
                          void (*interno)(const char *), void (*sair)(void)) {
-  if (android_abrir_externo(url, titulo, pkg)) {
+  if (android_abrir_externo(nv_media_url(url), titulo, pkg)) {
     printf("[extplayer] aberto no player externo\n");
     sair();   // sem sincronia: o item fica como iniciado
     return;

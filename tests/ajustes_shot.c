@@ -128,7 +128,7 @@ static void captura(const char *nome, SDL_Window *win) {
     }
     if (getenv("NUVIO_AJ_QUADROS")) {   // a ilha do relogio, como o app poe
       ilha_relogio_visivel(ajustes_relogio_cabe());
-      ilha_posicionar(1);
+      ilha_posicionar(3);
       ilha_desenhar(SDL_GetTicks());
     }
     // NUVIO_SHOT_TXT=1: text lines rasterized per frame once the screen has
@@ -340,6 +340,8 @@ int main(int argc, char **argv) {
     ix = fopen(nome, "w");
     assert(ix);
     for (n = 0; ajustes_teste_cena_item(n, &op, &sec, &chave, &rot); n++) {
+      // Capture one requested preview without generating the entire catalogue.
+      if (getenv("NUVIO_SHOT_CENA") && strcmp(getenv("NUVIO_SHOT_CENA"), chave ? chave : "")) continue;
       unsigned char *pix = malloc(960 * 540 * 4);
       SDL_Surface *s;
       int q, y;
@@ -444,6 +446,23 @@ int main(int argc, char **argv) {
       if (quadrosCaptura != 60) snprintf(nome, sizeof nome, "%s-%s-q%d.png", saida, id, quadrosCaptura);
       else snprintf(nome, sizeof nome, "%s-%s.png", saida, id);
       captura(nome, w);
+      if (getenv("NUVIO_SHOT_MOTION")) {
+        const char *keys=getenv("NUVIO_SHOT_MOTION");
+        for(const char *k=keys;*k;k++)
+          tecla(*k=='d'?SDLK_DOWN:*k=='u'?SDLK_UP:*k=='l'?SDLK_LEFT:*k=='r'?SDLK_RIGHT:*k=='o'?SDLK_RETURN:SDLK_ESCAPE);
+        static const int frames[]={1,3,3,5,48};
+        int elapsed=0;
+        for(int f=0;f<5;f++) {
+          elapsed+=frames[f];quadrosCaptura=frames[f];
+          snprintf(nome,sizeof nome,"%s-%s-motion-%02d.png",saida,id,elapsed);
+          captura(nome,w);
+          if(getenv("NUVIO_SHOT_MOTION_CHECK")) {
+            int both=ajustes_teste_transicao();
+            assert(both==(elapsed<13) && "a section change must animate the list for about 220 ms");
+            printf("Settings motion frame %d: transition=%d\n",elapsed,both);
+          }
+        }
+      }
       quadrosCaptura = 60;
       if (spot_aberto()) spot_fechar();
     }
@@ -527,6 +546,19 @@ int main(int argc, char **argv) {
     goto fim_capturas;
   }
 
+  // NUVIO_SHOT_PERFIL=1 (2.1): so as capturas de ajustes por perfil. Use com
+  // NUVIO_SHOT_DADOS=<pasta vazia> para as marcas de perfil infantil gravarem.
+  if (getenv("NUVIO_SHOT_PERFIL")) {
+    static const char *const nomes[] = { "chip", "selos", "menu", "copiar", "pin-admin", "bloqueio", "editando" };
+    static const int ordem[7] = { 0, 1, 2, 3, 5, 6, 4 };   /* o PIN por ultimo: o teclado fica aberto */
+    for (i = 0; i < 7; i++) {
+      ajustes_teste_ux_captura(30 + ordem[i]);
+      snprintf(nome, sizeof nome, "%s-perfil-%s.png", saida, nomes[ordem[i]]);
+      captura(nome, w);
+    }
+    goto fim_capturas;
+  }
+
   // Cenários do novo contrato: categoria, seleção, cancelamento,
   // dependência e restauração. Só fixtures em memória, sem dados pessoais.
   static const char *const cenarios[] = {
@@ -541,6 +573,12 @@ int main(int argc, char **argv) {
     static const char *const n[] = { "trailers", "trailer-seletor", "ampliacao", "ampliacao-seletor" };
     ajustes_teste_ux_captura(i);
     snprintf(nome, sizeof nome, "%s-%s.png", saida, n[i - 21]);
+    captura(nome, w);
+  }
+  for (i = 25; i <= 27; i++) {
+    static const char *const n[] = { "tour", "tour-onde", "tour-fileira2" };
+    ajustes_teste_ux_captura(i);
+    snprintf(nome, sizeof nome, "%s-%s.png", saida, n[i - 25]);
     captura(nome, w);
   }
   if (!getenv("NUVIO_AJUSTES_UX")) {

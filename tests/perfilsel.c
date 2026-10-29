@@ -28,6 +28,7 @@
 static int servidoresTrocas, sessoesEncerradas;
 static void encerrarSessao(void) { sessoesEncerradas++; }
 void servidores_perfil_trocou(void) { servidoresTrocas++; } // not linked here
+void trava_invalidar_autorizacoes(void) {} // playback lock is outside this profile gate
 void plugins_perfil_mudou(void) {}     // plugins.c is not linked here
 
 // --- pasta de dados de mentira ----------------------------------------------
@@ -58,6 +59,8 @@ int dados_gravar(const char *nome, const char *conteudo) {
 }
 // fileiras.c nao entra neste teste; o perfil so avisa a troca.
 void fil_definir_perfil(int p) { (void)p; }
+void cf_definir_perfil(int p) { (void)p; }
+void ov_definir_perfil(int p) { (void)p; }
 // fontepref.c idem: a fonte lembrada tambem e por perfil, e perfis.c so avisa.
 void fontepref_definir_perfil(int p) { (void)p; }
 void legmem_definir_perfil(int p) { (void)p; }

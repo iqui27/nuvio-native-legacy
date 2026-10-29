@@ -12,4 +12,4 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined,float-cas
 cc src/stream_parse.c src/fontefiltro.c src/linguas.c src/js.c src/badges.c tests/stream_parser.c -Isrc \
   -I/opt/homebrew/include -O1 -g -Wall -Wextra -Wno-macro-redefined \
   "${flags[@]}" -o "$DIR/test"
-"$DIR/test"
+"$DIR/test" "$@"

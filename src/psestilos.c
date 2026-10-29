@@ -144,7 +144,7 @@ void psestilos_atualizar(float dt, const PSCena *c, int modo) {
       if (parTroca >= 1.0f) { parTroca = 1.0f; parTemAnt = 0; }
     }
   }
-  if (modo == PS_FUNDO_LUZ || modo == PS_FUNDO_PROJETOR) graoGarantir();
+  if (modo == PS_FUNDO_PROJETOR) graoGarantir();
   if (modo == PS_FUNDO_LUZ) {
     if (luzX < 0.0f || c->reduzida) luzX = c->xFoco;
     else luzX += (c->xFoco - luzX) * (dt * 2.2f > 1.0f ? 1.0f : dt * 2.2f);
@@ -267,7 +267,7 @@ static void desenharLuz(const PSCena *c, float alfa) {
   // #205: o dono tirou a linha de horizonte (a barra de luz comprida sob o
   // bloco de perfis/continuar assistindo); so ela saiu, o resto ficou.
   veusBordas(0.60f, 0.65f, 0.55f, alfa);
-  graoDesenhar(0.055f * alfa);
+  // Light keeps shader dithering; coarse film grain belongs to Projector (#657).
 }
 
 static void desenharProjetor(const PSCena *c, float alfa) {

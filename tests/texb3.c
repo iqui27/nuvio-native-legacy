@@ -79,10 +79,10 @@ int main(void) {
         itens[0].ultimoQuadro = quadroAtual;
       }
     }
-    // 4 faixas de 2 MB (273 linhas; a reserva vai junto da primeira) = 4 chamadas
+    // 1 MiB strips hold 136 complete 1920-pixel rows: eight calls for 1080 rows.
     printf("heroi 1920x1080: %d chamadas de tex_bombear, <= %ld B por chamada\n",
            chamadas, NV_TEX_FAIXA_BYTES);
-    assert(chamadas == 4);
+    assert(chamadas == 8);
     assert(itens[0].estado == PRONTO && itens[0].tex && itens[0].sup == NULL);
     assert(uplIdx == -1 && uplTex == 0);
     lido = malloc((size_t)1920 * 1080 * 4);

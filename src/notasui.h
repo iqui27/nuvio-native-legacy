@@ -26,6 +26,12 @@ void  notasui_planejar(NotasPlano *p, const int cru[EX_NFONTES], float disp,
                        float leadPrimeiro, const unsigned char *querer);
 // Desenha o plano com o centro vertical em `yc`. Devolve o x onde parou.
 float notasui_desenhar_linha(const NotasPlano *p, float x, float yc, float a);
+// 1 = o Trakt vai pelo logotipo (check vermelho) e o Metacritic pelo logo (vale ate desligar).
+void notasui_modo_icone(int ligado);
+// O mesmo com outro vao entre as notas (o painel de pausa respira mais).
+float notasui_desenhar_linha_vao(const NotasPlano *p, float x, float yc, float vao, float a);
+// Largura do plano com esse vao.
+float notasui_plano_largura(const NotasPlano *p, float vao);
 
 // --- secao "Notas" -------------------------------------------------------------
 typedef struct {
@@ -36,6 +42,7 @@ typedef struct {
   int (*nEps)(int t);
   int (*epNum)(int t, int i);
   int (*epNota)(int t, int i);
+  int notaPessoal;              // Half-star value, 0 when unrated.
 } NotasSecao;
 
 // A secao (Glass UI 1.8): cartao de nota a esquerda (media, critica x publico,
@@ -51,6 +58,18 @@ float notasui_fontes_altura(const NotasSecao *s);
 // Devolve a altura ocupada.
 float notasui_fontes_desenhar(const NotasSecao *s, float x, float y, float a,
                               const float *foco);
+
+// Individual legacy cards for the selectable horizontal Detail row.
+// Summary column on the left, then a grid of cards (sources, Your rating,
+// Friends), notasui_colunas() per row; `celulas` counts the grid cards.
+float notasui_cartao_largura(int resumo);
+int   notasui_colunas(void);
+float notasui_celula_x(int resumo, int j);
+float notasui_celula_y(const NotasSecao *s, int resumo, int j);
+float notasui_celula_altura(void);
+float notasui_cartao_altura(const NotasSecao *s, int resumo, int celulas);
+// `h` is the summary height (the section height); ignored for source cards.
+void notasui_cartao(const NotasSecao *s, int fonte, float x, float y, float h, float f, float a);
 
 // Cartao "Notas por episodio" do bloco "Numeros da temporada" (serie):
 // temporadas x episodios dentro de `card`; (selT, selI) e o episodio em foco

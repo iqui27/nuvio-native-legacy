@@ -16,6 +16,7 @@ premio do Wikidata tambem fica nos produtores que receberam a estatueta.
 import json
 import pathlib
 import re
+import sys
 import urllib.parse
 import urllib.request
 
@@ -78,3 +79,43 @@ def main():
 
 if __name__ == "__main__":
     main()
+def exportar_local():
+    """Embarca IDs ja versionados; --local nao consulta a rede."""
+    texto = SAIDA.read_text(encoding="utf-8")
+    trilhas = json.loads(texto[texto.index("{"):texto.rindex("}") + 1])
+    # IDs do Oscar preservam src/conquistas_oscar.inc; os metadados completos
+    # embarcam junto: a tela de trilha le titulo, ano e id sem depender de rede.
+    ids = [f['imdb'] for f in trilhas['oscar-melhor-filme']['filmes']]
+    linhas = ['// Gerado por tools/trilhas-wikidata.py --local, do catalogo Wikidata CC0 versionado.',
+              'static const char *const OSCAR_FILMES[] = {']
+    for i in range(0, len(ids), 7):
+        linhas.append('  ' + ', '.join(json.dumps(k) for k in ids[i:i + 7]) + ',')
+    linhas.append('};')
+    (RAIZ / 'src' / 'conquistas_oscar.inc').write_text('\n'.join(linhas) + '\n', encoding='utf-8')
+
+    linhas = ['// Gerado por tools/trilhas-wikidata.py --local, do catalogo Wikidata CC0 versionado.',
+              'typedef CqPasso CqPassoG;']
+    for tid, trilha in trilhas.items():
+        nome = trilha['nome'].get('pt-BR') or trilha['nome'].get('en') or tid
+        tabela = re.sub(r'[^A-Za-z0-9]', '_', tid.upper())
+        linhas.append(f'static const CqPassoG G_{tabela}[] = {{')
+        for f in trilha['filmes']:
+            ano = int(f['data'] / 10000) if f['data'] else 0
+            linhas.append('  { %s, %s, %d, %d },' % (
+                json.dumps(f['titulo'], ensure_ascii=False), json.dumps(f['imdb']), f['tmdb'], ano))
+        linhas.append('};')
+    linhas.append('static const CqTrilha TRILHAS_G[] = {')
+    for tid, trilha in trilhas.items():
+        nome = trilha['nome'].get('pt-BR') or trilha['nome'].get('en') or tid
+        tabela = re.sub(r'[^A-Za-z0-9]', '_', tid.upper())
+        linhas.append('  { %s, %s, %s, %d, (const CqPasso *)G_%s },' % (
+            json.dumps(tid), json.dumps(nome, ensure_ascii=False),
+            json.dumps('ordem de lançamento', ensure_ascii=False), len(trilha['filmes']), tabela))
+    linhas += ['};', 'static const int TRILHAS_G_N = (int)(sizeof TRILHAS_G / sizeof TRILHAS_G[0]);']
+    (RAIZ / 'src' / 'trilhas_catalogo.inc').write_text('\n'.join(linhas) + '\n', encoding='utf-8')
+
+
+if __name__ == "__main__":
+    if "--local" not in sys.argv:
+        main()
+    exportar_local()

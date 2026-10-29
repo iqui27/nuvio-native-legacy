@@ -165,6 +165,7 @@ typedef enum {
   FIL_ORIGEM_APP = 0,   // Continuar assistindo, Entre amigos, Retomar agora
   FIL_ORIGEM_COLECAO,   // grupo de colecoes (chave collection_<id>)
   FIL_ORIGEM_CATALOGO,  // catalogo declarado por um addon
+  FIL_ORIGEM_SERVIDOR,  // personal server, outside the addon quota
   FIL_ORIGEM_N
 } FilOrigem;
 
@@ -457,6 +458,10 @@ const char *fil_linha_tipo_rotulo(int i);
 // Grava a forma da fileira. 0 quando a chave nao e conhecida, e fixa, ou o
 // tipo nao vale para ela.
 int  fil_definir_tipo(const char *chave, int t);
+// Server content: 0 preserves server order, 1 sorts titles; watched hiding is opt-in.
+int fil_definir_servidor(const char *chave, int ordem, int ocultarVistos);
+int fil_servidor_ordem(const char *chave);
+int fil_servidor_ocultar_vistos(const char *chave);
 void fil_ciclar_tam(int i);
 // Troca a linha com a vizinha e devolve o novo indice dela (o mesmo, se nao deu
 // para mover). E o gesto de "pegar e mover" da tela de reordenar.
@@ -483,6 +488,12 @@ void fil_ordenar_por_addon(void);
 // --- consulta por chave (descoberta.c e home.c) ------------------------------
 int   fil_oculta(const char *chave);
 int   fil_tipo(const char *chave);    // FIL_TIPO_AUTO quando nao foi escolhido
+// FUNDO DO PALCO POR FILEIRA (#659). -1 = o global de Ajustes
+// (ajustes_palco_fundo); 0..PALCO_N-1 = o modo PALCO_* que so esta fileira
+// pede. Gravado como linha opcional "palco <chave> <modo>", o mesmo truque
+// de "ordemfileira": o formato posicional da linha `linha` nao muda.
+int   fil_palco(const char *chave);
+int   fil_definir_palco(const char *chave, int modo);   // 0 quando a fileira nao existe
 float fil_escala(const char *chave);  // 1.0 quando nao foi escolhido
 // O fator que a fileira teria COM a forma `t`: o Tamanho dela vezes o fator da
 // forma (fil_tipo_fator). E o que a previa do modal precisa — a forma em foco

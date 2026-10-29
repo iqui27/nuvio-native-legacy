@@ -132,14 +132,17 @@ static float menuEscala(void) {
 // "Inicio" sem acento era erro de portugues NA TELA. E "Busca", nao "Buscar":
 // os outros tres sao substantivos (Biblioteca, Ajustes) e o verbo destoava.
 // Rotulos e ordem conferidos na referencia.
-static const char *ROTULOS[MENU_N] = { "Início", "Explorar", "Guia TV", "Busca", "Biblioteca", "Agenda", "Perfil e Stats", "Ajustes" };
+static const char *ROTULOS[MENU_N] = { "Início", "Explorar", "Guia TV", "Esportes", "Busca", "Biblioteca", "Agenda", "Perfil e Stats", "Ajustes", "Servidores pessoais" };
 
 // ITEM ESCONDIDO (#162): Explorar, Guia, Agenda e Perfil somem da barra quando
 // desligados nos Ajustes. Inicio, Busca, Biblioteca e Ajustes ficam sempre —
 // sem os Ajustes nao haveria como trazer os outros de volta. Esconder so tira
 // a linha: desenho, alvos do ponteiro e setas pulam o item, e o painel encolhe.
+static int servidorConectado;
+void menu_servidores(int conectado) { servidorConectado = conectado; }
 static int mostra(int i) {
   switch (i) {
+    case MENU_SERVIDORES: return servidorConectado;
     case MENU_EXPLORAR: return ajustes_menu_explorar();
     case MENU_GUIA:     return ajustes_menu_guia();
     case MENU_AGENDA:   return ajustes_menu_agenda();
@@ -273,7 +276,8 @@ static GfxRect linhaRect(const MenuGeo *g, float y, float h, float e) {
 // por baixo e a opaca 1 px abaixo deixam so o fio, seguindo o arredondado.
 static void focoLinha(GfxRect r, float f, float alpha) {
   if (f <= 0.01f || alpha <= 0.01f) return;
-  if (ajustes_vidro()) { if (!gfx_foco_placa(r, 0.5f, f, alpha)) gfx_cor(r, 0.5f, 1, 1, 1, .14f * f * alpha); return; }
+  if (gfx_foco_placa(r, 0.5f, f, alpha)) return;
+  if (ajustes_vidro()) { gfx_cor(r, 0.5f, 1, 1, 1, .14f * f * alpha); return; }
   { GfxRect s = { r.x - MK(30.0f), r.y + MK(10.0f - 30.0f), r.w + MK(60.0f), r.h + MK(60.0f) };
     gfx_rect(s, 0, GFX_SOMBRA, 1.0f, MK(42.0f) * gfx_escala(), 0, (r.h * 0.5f + MK(30.0f)) / s.h,
              0, 0, 0, .40f * f * alpha); }
@@ -495,6 +499,14 @@ static void escolher(void) {
   aberto = 0;
 }
 
+// A destination chosen outside the sidebar (the iOS tab bar): the same path as
+// confirming that row in the open sidebar.
+void menu_ir(int d) {
+  if (d < 0 || d >= MENU_N) return;
+  linha = d;
+  escolher();
+}
+
 int menu_pediu_trocar(void) { int p = pediuTrocar; pediuTrocar = 0; return p; }
 int menu_pediu_colecao(void) { int c = pediuColecao; pediuColecao = -1; return c; }
 int menu_pediu_spotlight(void) { int p = pediuSpot; pediuSpot = 0; return p; }
@@ -619,7 +631,7 @@ void menu_atualizar(float dt, Uint32 agora) {
 static void icone(int d, float cx, float cy, float s, float r, float g, float b, float a) {
   // `portal` ja e um SVG embarcado e le como entrada para uma descoberta;
   // manter o icone real evita inventar um glifo SDF e duplicar o de Busca.
-  static const char *nomes[MENU_N] = {"menu_home", "portal", "menu_guide", "menu_search", "menu_library", "menu_agenda", "menu_profile", "menu_settings"};
+  static const char *nomes[MENU_N] = {"menu_home", "portal", "menu_guide", "menu_sports", "menu_search", "menu_library", "menu_agenda", "menu_profile", "menu_settings", "aj_server"};
   if (d < 0 || d >= MENU_N) return;
   gfx_icone((GfxRect){cx-s*.5f, cy-s*.5f, s, s}, nomes[d], r, g, b, a);
 }
@@ -628,7 +640,7 @@ static void icone(int d, float cx, float cy, float s, float r, float g, float b,
 // Os icones da barra CLASSICA: os de traco do mockup (tools/icones-menu.sh).
 // A Dinamica continua chamando icone(), com os menu_*.png de sempre.
 static void iconeTraco(int d, float cx, float cy, float s, float r, float g, float b, float a) {
-  static const char *nomes[MENU_N] = {"mt_inicio", "mt_explorar", "mt_guia", "mt_busca", "mt_biblioteca", "mt_agenda", "mt_perfil", "mt_ajustes"};
+  static const char *nomes[MENU_N] = {"mt_inicio", "mt_explorar", "mt_guia", "menu_sports", "mt_busca", "mt_biblioteca", "mt_agenda", "mt_perfil", "mt_ajustes", "aj_server"};
   if (d < 0 || d >= MENU_N) return;
   gfx_icone((GfxRect){cx-s*.5f, cy-s*.5f, s, s}, nomes[d], r, g, b, a);
 }
@@ -692,10 +704,16 @@ static void desenhaRodape(const MenuGeo *g, float e, float alpha, float foco, fl
       gfx_tex_aspect_atual = tex_aspecto(p->avatarUrl);
       gfx_rect(av, tex, GFX_AVATAR, 0, 0, 0, 0.5f, 0, 0, 0, alpha);
       gfx_tex_aspect_atual = 0.0f;
+    } else if (!p || !p->nome[0]) {
+      // Sem perfil carregado nao ha inicial: o glifo de pessoa, em vez do "?"
+      // azul do padrao do web.
+      gfx_cor(av, 0.5f, 1, 1, 1, alpha * 0.10f);
+      gfx_icone((GfxRect){av.x + av.w * 0.25f, av.y + av.h * 0.25f, av.w * 0.5f, av.h * 0.5f},
+                "mt_perfil", 0.85f, 0.85f, 0.87f, alpha);
     } else {
-      corAvatar(p ? p->corHex : NULL, &cr, &cg, &cb);
+      corAvatar(p->corHex, &cr, &cg, &cb);
       gfx_cor(av, 0.5f, cr, cg, cb, alpha);
-      inicialDe(p ? p->nome : NULL, ini, sizeof ini);
+      inicialDe(p->nome, ini, sizeof ini);
       { TxtLinha l = txt_linha(TXT_V2_KBD18, ini, 255, 255, 255, 255);
         txt_desenhar_alpha(l, av.x + (av.w - l.w) * 0.5f,
                            av.y + (av.h - l.h) * 0.5f, alpha); } } }
@@ -740,6 +758,8 @@ static void menu_desenharCorpo_(Uint32 agora);
 // Camada ampliada no fator fixo do menu (NV_MENU_ESCALA): o corpo desenha na
 // tela virtual dele.
 void menu_desenhar(Uint32 agora) {
+  /* Settings owns the Pencil rail; the expanded menu keeps its normal shell. */
+  if(destino==MENU_AJUSTES && !aberto && desliza<.002f && expande<=.004f)return;
   float ant = gfx_escala();
   gfx_escala_sair(NV_MENU_ESCALA);   // fator FIXO, nao o do Tamanho da interface
   menu_desenharCorpo_(agora);
@@ -915,8 +935,8 @@ static int tvAtivo(void) { return ajustes_home_layout() == HOME_LAYOUT_DINAMICA;
 
 // Ordem do original: Inicio, Busca, Explorar... (o resto segue a ordem do app).
 static const int TV_ORDEM[MENU_N] = {
-  MENU_INICIO, MENU_BUSCAR, MENU_EXPLORAR, MENU_GUIA, MENU_AGENDA,
-  MENU_BIBLIOTECA, MENU_PERFIL, MENU_AJUSTES
+  MENU_INICIO, MENU_BUSCAR, MENU_EXPLORAR, MENU_GUIA, MENU_ESPORTES, MENU_AGENDA,
+  MENU_BIBLIOTECA, MENU_SERVIDORES, MENU_PERFIL, MENU_AJUSTES
 };
 static const char *tvRotulo(int d) { return menu_rotulo(d); }
 // Focos na ordem de navegacao: cabecalho (trocar de usuario) e os visiveis.
@@ -1163,6 +1183,10 @@ static void tvAvatar(GfxRect av, float alfa) {
     { TxtLinha l = txt_linha(TXT_CAPTION2, ini, 255, 255, 255, 255);
       txt_desenhar_alpha(l, av.x + (av.w - l.w) * 0.5f, av.y + (av.h - l.h) * 0.5f, alfa); }
   }
+}
+
+void menu_avatar(float x, float y, float size, float alpha) {
+  tvAvatar((GfxRect){x, y, size, size}, alpha);
 }
 
 // Escurece SO o lado esquerdo: faixas verticais de cor chapada com o alfa

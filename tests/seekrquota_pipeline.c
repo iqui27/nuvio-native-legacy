@@ -16,6 +16,9 @@ static time_t tempo(time_t *p) { if (p) *p = agora; return agora; }
 #include "../src/seekr.c"
 #undef time
 
+// Ajustes nao entra nesta bancada: relogio de 12 h desligado (tests/guia_logos.c).
+int ajustes_relogio_12h(void) { return 0; }
+
 void gfx_tex_esquecer(GLuint t) { (void)t; }
 static pthread_mutex_t redeTrava = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t redeCond = PTHREAD_COND_INITIALIZER;

@@ -149,7 +149,7 @@ int main(void) {
   puts("ok  nova visita a home religa a rotacao");
 
   // (5) NAO TROCA COM O TRAILER TOCANDO: a mesma situacao, com o trailer no ar.
-  ajustes_aplicar_blob("{\"trailerHero\":true}");
+  assert(ajustes_shot_valor("trailerHero", 0));
   heroTrailerItem = heroAtual;
   { const CatItem *ci = cat_item_exato(heroAtual);
     assert(ci);

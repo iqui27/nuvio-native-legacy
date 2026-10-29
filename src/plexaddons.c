@@ -6,7 +6,7 @@
 static int origem(const char *id, const char *tipo, int (*cancelado)(void *), void *ctx,
                   OrigemAviso aviso, void *avisoU, void *saida) {
   (void)aviso; (void)avisoU;   // one quiet lookup, no per-source progress rows
-  return plex_consultar(id, tipo, cancelado, ctx, (Stream **)saida);
+  return plex_consultar(id, tipo, NULL, 0, cancelado, ctx, (Stream **)saida);
 }
 
 static void *preparoCapturar(void) { return plex_preparo_capturar(); }

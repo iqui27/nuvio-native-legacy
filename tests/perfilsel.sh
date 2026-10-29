@@ -44,7 +44,7 @@ flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 # So perfis.c, js.c e jsw.c: a regra nao depende de SDL, de rede nem da tela, e
 # linkar o app inteiro aqui tornaria o teste lento e fragil.
-cc ${flags[@]+"${flags[@]}"} src/perfis.c src/js.c src/jsw.c tests/perfilsel.c \
+cc ${flags[@]+"${flags[@]}"} src/perfis.c src/admin.c src/js.c src/jsw.c tests/perfilsel.c \
   -Isrc -o ${TMPDIR:-/tmp}/nuvio-perfilsel-tests -O1 -g \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined
 

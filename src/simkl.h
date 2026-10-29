@@ -113,6 +113,32 @@ int simkl_plantowatch(CatItem *saida, int max);
 // por este app depois dela). E a GUARDA do "-": ver simkl_lista_tipo.
 int simkl_na_plantowatch(const char *imdb);
 
+// --- historico visto do Simkl de OUTRO perfil desta TV (issue #643) ----------
+
+// Um titulo que a pessoa terminou, com a hora ORIGINAL do watched_at (nao a
+// da importacao). Filme: temporada/episodio 0; episodio: T:E do ep visto.
+typedef struct {
+  char imdb[24], tipo[8], titulo[160], poster[NV_ARTE_URL_MAX];
+  int temporada, episodio;
+  long long quando;          // epoch s
+} SimklVisto;
+
+// Corpo de /sync/all-items/all/completed (com episode_watched_at=yes): um
+// objeto {"movies":[...],"shows":[...],"anime":[...]}. Filme vira um item
+// por titulo (last_watched_at); serie/anime vira um por episodio visto
+// (watched_at). Mais novo primeiro; o mesmo episodio duas vezes conta um
+// (fica o mais novo). ATE 24 titulos por chamada — e a fileira do amigo, nao
+// um arquivo.
+int simkl_ler_vistos(const char *json, SimklVisto *dst, int max);
+
+// O visto de OUTRO perfil desta conta, LENDO O ARQUIVO DO PERFIL PEDIDO
+// (simkl-p<N>.txt) sem copiar o token para o perfil ativo nem mexer no estado
+// de simklauth. Returns the mutex-protected cache immediately; a worker checks
+// completed activities and merges date_from updates into 24 persisted items.
+// 0 = no cached history yet. HTTP failures retain the last successful cache.
+int simkl_vistos_perfil(int perfil, SimklVisto *dst, int max);
+unsigned simkl_vistos_revisao(void);
+
 // --- escritas: NAO bloqueiam --------------------------------------------------
 
 // Estados de uma escrita, com os MESMOS numeros que ctxmenu.c usa para o
@@ -128,6 +154,9 @@ enum { SMK_OP_NENHUMA = 0, SMK_OP_PENDENTE, SMK_OP_CONFIRMADA, SMK_OP_FALHA };
 // em "completed", apagaria o que a pessoa assistiu.
 int simkl_lista_tipo(const char *imdb, const char *tipo, int adicionar);
 int simkl_lista_estado(void);
+
+// POST /sync/ratings (1 a 10), num fio. 0 sem vinculo ou imdb/nota invalidos.
+int simkl_avaliar(const char *imdb, const char *tipo, int nota);
 
 // DELETE /sync/playback/<id> do item da fileira, num fio. `imdb` e a chave
 // composta da fileira ("tt:S:E" ou "tt"). 0 quando nao ha id conhecido — o

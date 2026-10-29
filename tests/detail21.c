@@ -1,0 +1,470 @@
+#define extras_n_estudios studioCountFixture
+#define extras_estudio_tmdb studioIdFixture
+#define extras_estudio_nome studioNameFixture
+#define extras_estudio_rede studioNetworkFixture
+#define vertudo_colecao studioOpenFixture
+#define vertudo_aberta studioVisibleFixture
+#define vertudo_evento studioEventFixture
+#define extras_nota ratingFixture
+#define seriefrases_n quoteCountFixture
+#define seriefrases_n_fatos factCountFixture
+#define extras_comentario_spoiler comSpoilerFixture
+#define extras_n_comentarios comCountFixture
+#define extras_relacionado_imdb relFixture
+#define juntos_disponivel togetherAvailableFixture
+#define travaui_disponivel lockAvailableFixture
+#define juntosui_abrir_folha togetherOpenFixture
+#define travaui_abrir lockOpenFixture
+#include "../src/detail.c"
+static int studios, studioVisible;
+static long openedStudio;
+static char openedType[16], openedMedia[16];
+int studioCountFixture(void) { return studios; }
+long studioIdFixture(int i) { return 100+i; }
+const char *studioNameFixture(int i) { return i ? "Universal Television" : "FOX"; }
+int studioNetworkFixture(int i) { return i==0; }
+void studioOpenFixture(const ColFolder *folder) {
+  openedStudio=folder->sources[0].tmdbId;
+  snprintf(openedType,sizeof openedType,"%s",folder->sources[0].tmdbTipo);
+  snprintf(openedMedia,sizeof openedMedia,"%s",folder->sources[0].midia);
+  studioVisible=1;
+}
+int studioVisibleFixture(void) { return studioVisible; }
+void studioEventFixture(const SDL_Event *e) {
+  if (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_ESCAPE) studioVisible=0;
+}
+static int eligible, roomT, roomE, lockIdx=-1;
+static int richRatings;
+int ratingFixture(int f) {
+  if (richRatings && (f==EX_TMDB || f==EX_METACRITIC || f==EX_LETTERBOXD || f==EX_TRAKT)) return 70;
+  return f==EX_IMDB ? 80 : f==EX_TOMATOES ? 920 : 0;
+}
+int togetherAvailableFixture(void) { return eligible; }
+int lockAvailableFixture(void) { return eligible; }
+void togetherOpenFixture(int i,int t,int e) { (void)i; roomT=t; roomE=e; }
+int lockOpenFixture(const CatItem *ci,int i) { (void)ci; lockIdx=i; return 1; }
+#undef extras_relacionado_imdb
+static int quoteCount;
+int quoteCountFixture(void) { return quoteCount; }
+int factCountFixture(void) { return 0; }
+int comSpoilerFixture(int ep,int i) { (void)ep; return i == 0; }
+int comCountFixture(void) { return 3; }
+const char *relFixture(int i) { (void)i; return "tt9000011"; }
+#include <assert.h>
+#include "dados.h"
+#include "ilhaacao.h"
+
+static void press(SDL_Keycode code) {
+  SDL_Event e = {0}; e.type = SDL_KEYDOWN; e.key.keysym.sym = code;
+  detail_evento(&e);
+  e.type = SDL_KEYUP; detail_evento(&e);
+}
+
+static int ratingNavigation(void) {
+  int failures = 0;
+  nivel=0; botao=2; focoVersao=focoAmigos=0; focoServidor=-1;
+  aberto=1; saindo=0; carro=0;
+  press(SDLK_RETURN);
+  assert(detmais_aberto());
+  while (detmais_acao(detmais_foco()) != DMAIS_NOTA) press(SDLK_DOWN);
+  int row = detmais_foco();
+  press(SDLK_RETURN);
+  int island = reacao_aberta();
+  printf("%s: P1 More Rate reaches shared rating island\n", island ? "PASS" : "FAIL");
+  failures += !island;
+  press(SDLK_ESCAPE);
+  int parent = !reacao_aberta() && detmais_aberto() && detmais_foco()==row && botao==2 && nivel==0;
+  printf("%s: P1 rating Back restores More and focused Rate row\n", parent ? "PASS" : "FAIL");
+  failures += !parent;
+  if (parent) { press(SDLK_RETURN); assert(reacao_aberta()); press(SDLK_ESCAPE); press(SDLK_ESCAPE); }
+  detmais_zerar();
+  int personalColumn = notaMedia()->n>0 ? 1 : 0;
+  for (int n=0; notaFonte(n)>=0; n++) personalColumn++;
+  nivel=1; foco.fileira=SEC_NOTAS; foco.coluna=personalColumn;
+  press(SDLK_RETURN);
+  int personal = reacao_aberta();
+  printf("%s: P1 Your rating reaches shared rating island\n", personal ? "PASS" : "FAIL");
+  failures += !personal;
+  press(SDLK_ESCAPE);
+  assert(nivel==1 && foco.fileira==SEC_NOTAS && foco.coluna==personalColumn && !saindo);
+  nivel=0; botao=0;
+  SDL_Event up={0}; up.type=SDL_KEYDOWN; up.key.keysym.sym=SDLK_UP;
+  detail_evento(&up);
+  assert(pediuRelogio && !reacao_aberta());
+  return failures;
+}
+
+// Ratings block (0 means ON): three per row, 20% shorter, D-pad steps between rows.
+static int ratingsGrid(void) {
+  int failures=0;
+  char path[1024];
+  snprintf(path,sizeof path,"%s/ajustes.txt",dados_dir());
+  FILE *f=fopen(path,"w"); assert(f);
+  fputs("notaTituloImdb 0\nnotaTituloTomates 0\nnotaTituloTmdb 0\nnotaTituloMeta 0\n"
+        "notaTituloLetter 0\nnotaTituloTrakt 0\n",f);
+  fclose(f); ajustes_dir(dados_dir());
+  richRatings=1; recalcularLayout(); sincronizarColunas();
+  int off=notaMedia()->n>0, cells=nNotasTiles()-off;
+  assert(off==1 && cells==7);   // 6 sources + Your rating
+  int perRow = xItem(SEC_NOTAS,off+0)<xItem(SEC_NOTAS,off+1) &&
+               xItem(SEC_NOTAS,off+1)<xItem(SEC_NOTAS,off+2) &&
+               xItem(SEC_NOTAS,off+3)==xItem(SEC_NOTAS,off+0);
+  printf("%s: R1 three cards per row\n",perRow ? "PASS" : "FAIL"); failures+=!perRow;
+  float expected = (3*217.0f + 2*(14.0f + 8.0f*NV_DETP_ESP))*0.8f;
+  int tall = fabsf(notasui_celula_altura()-173.6f)<.001f &&
+             fabsf(alturaSecao(SEC_NOTAS)-expected)<.001f &&
+             fabsf(notaAlturaCel(0)-expected)<.001f &&
+             fabsf(notaY(off+6)+notaAlturaCel(off+6)-expected)<.001f;
+  printf("%s: R2 cards 173.6 high, grid and summary 20%% shorter\n",tall ? "PASS" : "FAIL"); failures+=!tall;
+  nivel=1; botao=0; saindo=0; foco.fileira=SEC_NOTAS;
+  foco.coluna=off+0; press(SDLK_DOWN); int d1=foco.coluna==off+3;
+  press(SDLK_DOWN); int d2=foco.fileira==SEC_NOTAS && foco.coluna==off+6;
+  foco.coluna=off+5; press(SDLK_DOWN); int d3=foco.coluna==off+6;
+  press(SDLK_UP); int u1=foco.coluna==off+3;
+  foco.coluna=off+4; press(SDLK_UP); int u2=foco.coluna==off+1;
+  int nav=d1 && d2 && d3 && u1 && u2;
+  printf("%s: R3 DOWN/UP move between rows\n",nav ? "PASS" : "FAIL"); failures+=!nav;
+  // Pointer targets: same-column cards sit on their own row, no overlap.
+  int rows=notaY(off+0)<notaY(off+3) && notaY(off+3)<notaY(off+6) &&
+           notaY(off+0)+notaAlturaCel(off+0)<=notaY(off+3) &&
+           notaY(off+3)+notaAlturaCel(off+3)<=notaY(off+6) &&
+           notaAlturaCel(off+6)==notasui_celula_altura();
+  printf("%s: R4 pointer targets do not overlap across rows\n",rows ? "PASS" : "FAIL"); failures+=!rows;
+  richRatings=0;
+  return failures;
+}
+
+int main(int argc, char **argv) {
+  assert(SDL_Init(SDL_INIT_TIMER) == 0);
+  dados_iniciar("deploy/app/art");
+  ajustes_iniciar();
+  ajustes_dir(dados_dir());
+  assert(ajustes_detalhe_topo() == 0);
+  char path[1024];
+  snprintf(path, sizeof path, "%s/ajustes.txt", dados_dir());
+  for (int mode = 0; mode < 3; mode++) {
+    FILE *f = fopen(path, "w"); assert(f);
+    fprintf(f, "detalheTopoLocal %d\n", mode); fclose(f);
+    ajustes_dir(dados_dir());
+    assert(ajustes_detalhe_topo() == mode);
+    assert(topoVersao() == (mode != 1));
+    assert(topoPessoal() == (mode != 0));
+  }
+  CatItem itemTeste = {0};
+  snprintf(itemTeste.tipo, sizeof itemTeste.tipo, "series");
+  snprintf(itemTeste.imdb, sizeof itemTeste.imdb, "tt9000011");
+  itemTeste.temporadas[0] = 1; itemTeste.nTemporadas = 1;
+  cat_definir_tudo(&itemTeste, 1, NULL, 0); idx = 0;
+  // TV retains legacy Play + Save, with other actions in More.
+  assert(nBotoes()==3 && acaoEm(0)==ACAO_PRIMARIO && acaoEm(1)==ACAO_LISTA && acaoEm(2)==ACAO_MAIS);
+  int available[DMAIS_N]; maisDisponiveis(available);
+  assert(available[DMAIS_VISTO] && !available[DMAIS_VISTO_SAI] && available[DMAIS_NOTA]);
+  executarMais(DMAIS_VISTO); assert(detail_pediu_assistido());
+  servidoresDisponiveis=1;
+  assert(nBotoes()==3 && acaoEm(1)==ACAO_LISTA);
+  maisDisponiveis(available); assert(available[DMAIS_NOTA]);
+  servidoresDisponiveis=0;
+  // The spatial spring must run even under reduced motion, restoring policy.
+  float velocity=0;
+  anim_politica_reduzida=1;
+  float moving=det_mola(&velocity,0,1,1.f/60,22);
+  assert(moving>0 && moving<1 && anim_politica_reduzida==1);
+  anim_politica_reduzida=0;
+  // Hero reveal: entering More focuses Rate, optional Together, then More last.
+  for (int servers=0; servers<2; servers++)
+  for (eligible=0; eligible<2; eligible++) {
+    servidoresDisponiveis=servers; maisAcoes=0;
+    nivel=0; botao=1; focoVersao=focoAmigos=0; focoServidor=-1;
+    aberto=1; saindo=0; carro=0;
+    press(SDLK_RIGHT);
+    assert(maisAcoes && botao==2 && acaoEm(botao)==ACAO_NOTA);
+    press(SDLK_RETURN); assert(reacao_aberta());
+    press(SDLK_ESCAPE); assert(botao==2 && !saindo);
+    press(SDLK_RIGHT);
+    if (eligible) { assert(acaoEm(botao)==ACAO_JUNTOS); press(SDLK_RIGHT); }
+    assert(acaoEm(botao)==ACAO_MAIS && botao==nBotoes()-1);
+    press(SDLK_RETURN); assert(detmais_aberto());
+    press(SDLK_ESCAPE); assert(!detmais_aberto() && acaoEm(botao)==ACAO_MAIS && !saindo);
+    while (botao>1) press(SDLK_LEFT);
+    assert(!maisAcoes && nBotoes()==3);
+    ponteiroDetalhe(-1,2); assert(maisAcoes && acaoEm(botao)==ACAO_NOTA);
+    ponteiroDetalhe(-1,1);
+    assert(!maisAcoes && nBotoes()==3);
+    detmais_zerar();
+  }
+  eligible=0; servidoresDisponiveis=0; botao=0;
+  puts("PASS: hero reveal navigation, eligibility, rating, menu Back and pointer focus");
+  // Existing per-source settings govern both cards and their summary.
+  FILE *ratings=fopen(path,"w"); assert(ratings);
+  fputs("notaTituloImdb 1\nnotaTituloTomates 0\nmdblist_show_tomatoes 0\n",ratings); fclose(ratings);
+  ajustes_dir(dados_dir());
+  assert(notaFonte(0)==EX_TOMATOES && notaFonte(1)==-1);
+  assert(notaMedia()->n==1 && notaMedia()->media==92);
+  ratings=fopen(path,"w"); assert(ratings);
+  fputs("notaTituloImdb 0\nnotaTituloTomates 0\n",ratings); fclose(ratings); ajustes_dir(dados_dir());
+  if (argc > 1) {
+    SDL_Event key = {0}; key.type = SDL_KEYDOWN;
+    if (!strcmp(argv[1], "ratings-grid")) {
+      CatItem item = {0};
+      snprintf(item.tipo, sizeof item.tipo, "movie");
+      snprintf(item.imdb, sizeof item.imdb, "tt9000012");
+      cat_definir_tudo(&item, 1, NULL, 0); idx = 0;
+      int failures = ratingsGrid();
+      SDL_Quit(); return failures ? 1 : 0;
+    } else if (!strcmp(argv[1], "rating")) {
+      int failures = ratingNavigation();
+      SDL_Quit(); return failures ? 1 : 0;
+    } else if (!strcmp(argv[1], "actions")) {
+      agenda_definir_hoje("2026-10-22");
+      agenda_registrar(itemTeste.imdb,"Fixture",NULL,"Returning Series",2,1,"Premiere","2027-01-01","");
+      eligible=1;
+      itemTeste.temporada=2; itemTeste.episodio=9; itemTeste.progresso=40;
+      cat_definir_tudo(&itemTeste,1,NULL,0);
+      int d[DMAIS_N]; maisDisponiveis(d);
+      assert(d[DMAIS_JUNTOS] && d[DMAIS_TRAVAR] && d[DMAIS_INICIO]);
+      executarMais(DMAIS_JUNTOS); assert(roomT==2 && roomE==9);
+      executarMais(DMAIS_TRAVAR); assert(lockIdx==0);
+      executarMais(DMAIS_INICIO); assert(pedDoInicio);
+      int before=agenda_lembrete(itemTeste.imdb);
+      executarMais(DMAIS_LEMBRAR); assert(agenda_lembrete(itemTeste.imdb)!=before);
+      int found = 0;
+      detmais_abrir(d);
+      for (int i=0; i<detmais_n(); i++)
+        if (!strcmp(detmais_rotulo(detmais_acao(i)), "Lembrar-me")) found=1;
+      assert(found); // landscape must retain the eligible reminder
+    } else if (!strcmp(argv[1], "sources")) {
+      itemTeste.temporada=2; itemTeste.episodio=9; itemTeste.progresso=40;
+      cat_definir_tudo(&itemTeste,1,NULL,0);
+      episodios_menu_visto(0,1,3,"Selected episode");
+      // This fixture has no watched later episodes: sources is row five.
+      key.key.keysym.sym=SDLK_DOWN;
+      for (int i=0;i<4;i++) detail_evento(&key);
+      key.key.keysym.sym=SDLK_RETURN; detail_evento(&key);
+      int t=0, ep=0;
+      assert(detail_pediu_fontes());
+      assert(detail_pediu_fontes_ep(&t,&ep) && t==1 && ep==3);
+    } else if (!strcmp(argv[1], "back")) {
+      SDL_Keycode backs[]={SDLK_ESCAPE,SDLK_BACKSPACE,SDLK_AC_BACK,SDLK_DELETE,SDLK_UNKNOWN};
+      for (int i=0;i<5;i++) {
+        notaAbrir(); key.key.keysym.sym=backs[i];
+        key.key.keysym.scancode=i==4 ? NV_SCANCODE_BACK : 0;
+        detail_evento(&key); assert(!reacao_aberta());
+        assert(!saindo && notaMinha()==0);
+      }
+    }
+    SDL_Quit(); return 0;
+  }
+  CatEp ep = {0}; ep.temporada = 1; ep.episodio = 1;
+  cat_definir_episodios(0, &ep, 1);
+  FILE *f = fopen(path, "w"); assert(f);
+  fputs("blurUnwatchedEpisodes 0\n", f); fclose(f); ajustes_dir(dados_dir());
+  assert(epOculto(&ep)); // unknown history must not leak a spoiler
+  vistoep_definir(itemTeste.imdb, 1, 1, 1);
+  assert(!epOculto(&ep));
+  vistoep_definir(itemTeste.imdb, 1, 1, 0);
+  assert(epOculto(&ep));
+  nivel = 1; foco.fileira = SEC_EPISODIOS; foco.coluna = 0;
+  saindo = 0; pedReproduzir = 0;
+  SDL_Event e = {0}; e.type = SDL_KEYUP; e.key.keysym.sym = SDLK_RETURN;
+  okDesceEm = SDL_GetTicks() - NV_HOLD_MS - 2;
+  detail_evento(&e);
+  assert(!epOculto(&ep) && !pedReproduzir);
+  ep.episodio = 2; assert(epOculto(&ep)); // reveal belongs to one episode
+  CatEp grid[4] = {{0}};
+  grid[0].temporada=1; grid[0].episodio=1; grid[0].nota=72;
+  grid[1].temporada=1; grid[1].episodio=2; grid[1].nota=81;
+  grid[2].temporada=2; grid[2].episodio=1; grid[2].nota=90;
+  grid[3].temporada=2; grid[3].episodio=2; grid[3].nota=79;
+  cat_definir_episodios(0, grid, 4);
+  assert(progVizinho(1, 1) == 3);
+  assert(progVizinho(2, -1) == 0);
+  assert(progVizinho(0, -1) == -1);
+  assert(secaoN(SEC_PROGTEMP) == 4);
+  char mono[12];
+  elencoMonograma("Ryan Gosling", mono, sizeof mono); assert(!strcmp(mono,"RG"));
+  elencoMonograma("Óscar", mono, sizeof mono); assert(!strcmp(mono,"Ó"));
+  elencoMonograma("", mono, sizeof mono); assert(!strcmp(mono,""));
+  assert(!relacionadoVisto(0));
+  cat_historico_definir_id(itemTeste.imdb,itemTeste.tipo,1);
+  assert(relacionadoVisto(0));
+  assert(!strcmp(cabecalhoDe(SEC_RELACIONADOS),"Mais como este"));
+  comentEp=0; memset(comRevelados,0,sizeof comRevelados); comInteiro=-1;
+  assert(comOculto(0));
+  comAbrir(0); assert(!comOculto(0) && comInteiro==-1);
+  comAbrir(0); assert(comInteiro==0);
+  comInteiro=-1; comAbrir(1); assert(comInteiro==1);
+  quoteCount=0; assert(secaoN(SEC_FRASES)==0);
+  quoteCount=1; frasesAberta=0; assert(secaoN(SEC_FRASES)==0); // prior title data stays hidden
+  frasesAberta=1; assert(secaoN(SEC_FRASES)==1);
+  snprintf(itemTeste.titulo,sizeof itemTeste.titulo,"Test title");
+  cat_definir_tudo(&itemTeste,1,NULL,0);
+  assert(secaoN(SEC_DETALHES)>=0); // missing original metadata leaves no fabricated facts
+  assert(ORDEM_FILME[0]==SEC_NOTAS && ORDEM_FILME[1]==SEC_TRAILERS);
+  assert(ORDEM_FILME[3]==SEC_COLECAO);
+  snprintf(itemTeste.tipo,sizeof itemTeste.tipo,"movie");
+  cat_definir_tudo(&itemTeste,1,NULL,0);
+  nivel=0; botao=1; focoVersao=0; vaiTocar.tem=1;
+  e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_DOWN;
+  detail_evento(&e); assert(!focoVersao); // other buttons can reach the body
+  nivel=1; foco.fileira=SEC_RELACIONADOS; foco.coluna=2; scrollY=400;
+  memset(foco.nColunas,0,sizeof foco.nColunas);
+  foco.nColunas[SEC_FRASES]=1; foco.fileira=SEC_FRASES;
+  quoteCount=0; sincronizarColunas();
+  assert(nivel==0 || secaoN(foco.fileira)>0); // a vanished row never traps focus
+  nivel=1; foco.fileira=SEC_RELACIONADOS; foco.coluna=2; scrollY=400;
+  aberto=1; saindo=0; nVolta=0;
+  detail_volta_notar(1);
+  assert(nVolta==1 && voltaEstado[0].coluna==2 && voltaEstado[0].fileira==SEC_RELACIONADOS);
+  FILE *perfil=fopen(path,"w"); assert(perfil); fputs("detalheTopoLocal 2\n",perfil); fclose(perfil); ajustes_dir(dados_dir());
+  assert(ajustes_detalhe_topo()==2);
+  char perfilPath[1024]; snprintf(perfilPath,sizeof perfilPath,"%s/ajustes-p9.txt",dados_dir());
+  perfil=fopen(perfilPath,"w"); assert(perfil); fputs("menuTopoLocal 0\n",perfil); fclose(perfil);
+  ajustes_perfil_restaurar(9);
+  assert(ajustes_detalhe_topo()==0); // pre-existing profiles must not inherit Both
+  CatItem cast[2]={{0}};
+  snprintf(cast[0].tipo,sizeof cast[0].tipo,"movie"); snprintf(cast[1].tipo,sizeof cast[1].tipo,"movie");
+  snprintf(cast[0].imdb,sizeof cast[0].imdb,"tt9011001"); snprintf(cast[1].imdb,sizeof cast[1].imdb,"tt9011002");
+  cast[0].elenco[0].tmdb=42; cast[0].nElenco=1;
+  cast[1].elenco[0].tmdb=42; cast[1].nElenco=1;
+  cat_definir_tudo(cast,2,NULL,0); idx=0;
+  assert(elencoVistoEm(42)==-1);
+  cat_historico_definir_id(cast[1].imdb,"movie",1);
+  assert(elencoVistoEm(42)==1);
+  assert(elencoVistoEm(0)==-1);
+  assert(!extras_titulo_original()[0]);
+  LinhaDet facts[NV_DETF_DET_MAXL];
+  int nf=montarDetalhes(facts,NV_DETF_DET_MAXL);
+  for(int i=0;i<nf;i++) assert(facts[i].valor[0]);
+  itemTeste.nTemporadas=1; itemTeste.temporadas[0]=1; snprintf(itemTeste.tipo,sizeof itemTeste.tipo,"series");
+  cat_definir_tudo(&itemTeste,1,NULL,0); idx=0;
+  assert(secaoN(SEC_TEMPORADAS)==3); // shuffle, real season, spoiler switch
+  temporada=0; foco.fileira=SEC_TEMPORADAS; foco.coluna=2; nivel=1;
+  e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_RETURN; detail_evento(&e);
+  e.type=SDL_KEYUP; detail_evento(&e);
+  assert(temporada==0); // switch never becomes a season index
+  agenda_definir_hoje("2026-10-22");
+  agenda_registrar(itemTeste.imdb,"Fixture",NULL,"Returning Series",2,1,"Premiere","2027-01-01","");
+  assert(temLembreteTemporada() && secaoN(SEC_TEMPORADAS)==4);
+  assert(temporadaLembrete(2));
+  int bestT=0,bestE=0;
+  grid[0].nota=72; grid[1].nota=81; grid[2].nota=90; grid[3].nota=79;
+  cat_definir_episodios(0,grid,4);
+  assert(progMelhorNaoVisto(&bestT,&bestE)==90 && bestT==2 && bestE==1);
+  vistoep_definir(itemTeste.imdb,2,1,1);
+  assert(progMelhorNaoVisto(&bestT,&bestE)==81 && bestT==1 && bestE==2);
+  vaiTocar.tem=1; stream_invalidar("fixture target changed");
+  assert(!topoFonteDisponivel()); // stale rendered source cannot take focus
+  nivel=0; focoVersao=1; pedFontes=0; botao=0;
+  e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_DOWN; detail_evento(&e);
+  assert(!pedFontes && !focoVersao && nivel==1);
+  gfx_escala_txt_definir(.85f);
+  float priorScale=gfx_escala_txt_entrar();
+  recalcularLayout();
+  assert(fabsf(topoSec[SEC_TEMPORADAS]*.85f-(NV_DET21_FIM+56))<.01f);
+  gfx_escala_sair(priorScale); gfx_escala_txt_definir(1);
+  recalcularLayout();
+  assert(NV_DET21_BTN_H==72 && NV_DET21_CIRC==72);
+  assert(COL_CARD_W==760 && COL_CARD_H==300);
+  assert(COM_CARD_W==556 && COM_CARD_H==212 && COM_CARD_GAP==24);
+  assert(alturaCabComentarios()==48 && nPilulasCom()==0);
+  assert(MUS_W==960 && MUS_H==292 && MUS_CAPA==200);
+  assert(secaoAlvo(SEC_NOTAS)==.42f);
+  nivel=1; foco.fileira=SEC_NOTAS; assert(secaoAlvo(SEC_NOTAS)==1.f);
+  nivel=0; assert(secaoAlvo(SEC_NOTAS)==1.f);
+  itemTeste.temporadas[0]=1; itemTeste.nTemporadas=1; snprintf(itemTeste.tipo,sizeof itemTeste.tipo,"series");
+  cat_definir_tudo(&itemTeste,1,NULL,0); idx=0; cat_definir_episodios(0,grid,2);
+  temporada=0; nivel=1; foco.fileira=SEC_EPISODIOS; foco.coluna=1;
+  assert(!detail_ep_borda(1) && temporada==0); // switch/reminder are never adjacent seasons
+  // Lower sections are separate rows; horizontal movement never changes rows.
+  quoteCount=1; frasesAberta=1; sincronizarColunas(); recalcularLayout();
+  nivel=1; foco.fileira=SEC_FRASES; foco.coluna=0;
+  assert(topoSec[SEC_FRASES]<topoSec[SEC_DETALHES]);
+  assert(parDir(SEC_FRASES)==-1);
+  assert(moverFileira(1) && foco.fileira==SEC_DETALHES);
+  assert(moverFileira(-1) && foco.fileira==SEC_FRASES);
+  assert(moverFileira(-1) && foco.fileira==SEC_COMENTARIOS);
+  quoteCount=3; seriefrases_selecionar(1);
+  foco.fileira=SEC_FRASES; e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_UP;
+  detail_evento(&e); assert(foco.fileira==SEC_COMENTARIOS);
+  quoteCount=0; assert(parEsq(SEC_DETALHES)==-1);
+  // A browsed episode stays selected; an unopened page instead seeds the default.
+  epEscolhido=1;
+  sincronizarColunas(); nivel=0; botao=1; focoAmigos=0; carro=0; saindo=0;
+  foco.colunaLembrada[SEC_EPISODIOS]=1;
+  e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_DOWN; detail_evento(&e);
+  assert(nivel==1 && foco.fileira==SEC_EPISODIOS && foco.coluna==1);
+  assert(moverFileira(1) && foco.fileira==SEC_PROGTEMP && foco.coluna==1);
+  assert(moverFileira(-1) && foco.fileira==SEC_EPISODIOS && foco.coluna==1);
+  foco.colunaLembrada[SEC_TEMPORADAS]=2;
+  assert(moverFileira(-1) && foco.fileira==SEC_TEMPORADAS && foco.coluna==colTemp(temporada));
+  char status[256];
+  itemTeste.restanteMin=18; itemTeste.progresso=40;
+  snprintf(itemTeste.meta,sizeof itemTeste.meta,"2026 · 120 min");
+  cat_definir_tudo(&itemTeste,1,NULL,0); idx=0;
+  topoEstadoTexto(status,sizeof status,120,1);
+  assert(strstr(status,"18"));
+  assert(detalheExpo(0)==0 && detalheExpo(1)==1);
+  assert(fabsf(detalheExpo(.5f)-.96875f)<.0001f);
+  char duration[32]; desc_duracao_min_curta(156,duration,sizeof duration);
+  assert(!strcmp(duration,"2h36"));
+  assert(ORDEM_SERIE[7]==SEC_COLECAO && ORDEM_SERIE[8]==SEC_TRAILERS);
+  diario_iniciar();
+  assert(ratingNavigation()==0);
+  notaAbrir(); assert(reacao_aberta());
+  press(SDLK_UP); press(SDLK_RIGHT); press(SDLK_RETURN);
+  assert(reacao_passo()==2 && reacao_nota(itemTeste.imdb)==9 && notaMinha()==9);
+  assert(ilhaacao_tem_desfazer());
+  ilhaacao_botao(1);
+  assert(reacao_nota(itemTeste.imdb)==0 && notaMinha()==0);
+  press(SDLK_ESCAPE); assert(!reacao_aberta());
+  notaAbrir(); press(SDLK_RIGHT); press(SDLK_RETURN);
+  assert(reacao_passo()==2 && reacao_nota(itemTeste.imdb)==5 && notaMinha()==5);
+  press(SDLK_ESCAPE);
+  notaAbrir(); e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_ESCAPE; detail_evento(&e);
+  assert(!reacao_aberta() && notaMinha()==5);
+  // Up focuses the nearest global control; it never opens a rating editor.
+  nivel=0; botao=0; focoVersao=0; aberto=1; pediuRelogio=0;
+  e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_UP; detail_evento(&e);
+  assert(pediuRelogio && !reacao_aberta());
+  assert(ratingsGrid()==0);
+  // Exercise the reported row-end escape with a visible target in another row.
+  saindo=carro=pessoaAberta=0; aberto=1; nivel=1; studios=2;
+  quoteCount=3; frasesAberta=1; sincronizarColunas(); recalcularLayout();
+  foco.fileira=SEC_COMENTARIOS; foco.coluna=nCartoesCom()-1;
+  navigationCount=0;
+  navigationTarget(100,200,556,212,ponteiroDetalhe,NULL,SEC_COMENTARIOS,foco.coluna);
+  navigationTarget(700,460,360,180,ponteiroDetalhe,NULL,SEC_ESTUDIOS,0);
+  press(SDLK_RIGHT);
+  assert(foco.fileira==SEC_COMENTARIOS && foco.coluna==nCartoesCom());
+  press(SDLK_RIGHT);
+  assert(foco.fileira==SEC_COMENTARIOS && foco.coluna==nCartoesCom());
+  press(SDLK_RETURN); assert(lowerList==1);
+  press(SDLK_DOWN); assert(lowerCursor==1);
+  press(SDLK_ESCAPE); assert(!lowerList && foco.fileira==SEC_COMENTARIOS);
+  press(SDLK_DOWN); assert(foco.fileira==SEC_FRASES);
+  foco.coluna=1; press(SDLK_RETURN);
+  assert(lowerList==2 && lowerCursor==1);
+  press(SDLK_DOWN); assert(lowerCursor==2);
+  press(SDLK_ESCAPE); assert(!lowerList && foco.fileira==SEC_FRASES && foco.coluna==1);
+  press(SDLK_RIGHT); press(SDLK_RIGHT);
+  assert(foco.fileira==SEC_FRASES && foco.coluna==2);
+  for (int movie=0;movie<2;movie++) {
+    snprintf(itemTeste.tipo,sizeof itemTeste.tipo,"%s",movie ? "movie" : "series");
+    cat_definir_tudo(&itemTeste,1,NULL,0); idx=0;
+    sincronizarColunas(); recalcularLayout();
+    assert(secaoN(SEC_ESTUDIOS)==2 && topoSec[SEC_ESTUDIOS]>topoSec[SEC_DETALHES]);
+    nivel=1; foco.fileira=SEC_ESTUDIOS; foco.coluna=1;
+    press(SDLK_RETURN);
+    assert(studioBrowse && openedStudio==101 && !strcmp(openedType,"COMPANY"));
+    assert(!strcmp(openedMedia,movie ? "MOVIE" : "TV") && !saindo);
+    press(SDLK_ESCAPE);
+    assert(!studioVisible && foco.fileira==SEC_ESTUDIOS && foco.coluna==1);
+    studioBrowse=0;
+    foco.coluna=0; press(SDLK_RETURN);
+    assert(!strcmp(openedType,"NETWORK")); press(SDLK_ESCAPE); studioBrowse=0;
+  }
+  puts("detail lower sections: row boundaries, See more, quote list/Back, studio routes/Back OK");
+  puts("detail21: content, navigation, profile isolation and personal status OK");
+  SDL_Quit();
+  return 0;
+}

@@ -16,6 +16,7 @@
 // TV tocando o mesmo arquivo: e o que comprovadamente funciona.
 #ifndef NV_VIDEO_H
 #define NV_VIDEO_H
+#include <SDL2/SDL_stdinc.h>
 
 // Registra no barramento e sobe o laco de eventos. 1 se deu certo.
 // Falhar aqui nao e fatal: o app segue sem video.
@@ -109,6 +110,9 @@ void video_escala_definir(int sw, int sh);
 // esta tocando — e a unica coisa que identifica o arquivo, nos dois alvos.
 const char *video_url_atual(void);
 double video_pos(void);      // segundos decorridos
+// Raw backend sample; timestamp uses SDL_GetTicks64(), never wall time.
+// Repeated reads keep the timestamp until a new native sample arrives.
+double video_pos_amostra(Uint64 *ticksDaAmostra);
 double video_duracao(void);  // 0 enquanto desconhecida
 
 // Segundo em que comecam os CREDITOS, ou 0 quando o arquivo nao diz. Sai do
@@ -133,6 +137,8 @@ int video_live_progresso(double *pos, double *fim);
 int video_recuperando_live(void);
 // HLS target duration for this live session; zero for VOD/unknown.
 unsigned video_live_segmento_ms(void);
+// Elapsed since the current Android live HTTP request; zero during decoder release.
+unsigned video_live_pedido_ms(void);
 #endif
 // Afirmacao de Dolby Vision da FONTE escolhida (o addon descreve o arquivo).
 // Chamar ANTES de video_tocar/definir_fonte: e o que decide o hdrType que o
@@ -317,14 +323,15 @@ typedef struct {
   double bufferSeg;         // segundos de video baixados a frente; < 0 = nao sabe
   double bufferAlvoSeg;     // o que o player tenta manter; 0 = nao diz
   int bufferPct;            // 0..100; -1 = nao informa
-  int conexoes;             // abertas agora para o video; -1 = nao sabe
+  int conexoes;             // downloads ativos agora; -1 = nao sabe
+  int poolConexoes;         // pool desta abertura: paralelo ou unica; -1 = nao sabe
   int primeiroByteMs;       // do pedido ao 1o byte do ultimo trecho; -1
   long long quadrosPerdidos, quadros;   // -1 = o decodificador nao conta
   char host[96];            // host publico (sem caminho) do link FINAL; "" = nao sabe
 } VideoStats;
 static inline void video_stats_vazio(VideoStats *s) {
   s->bytes = -1; s->bufferSeg = -1.0; s->bufferAlvoSeg = 0.0; s->bufferPct = -1;
-  s->conexoes = -1; s->primeiroByteMs = -1; s->quadrosPerdidos = s->quadros = -1;
+  s->conexoes = s->poolConexoes = -1; s->primeiroByteMs = -1; s->quadrosPerdidos = s->quadros = -1;
   s->host[0] = 0;
 }
 void video_estatisticas(VideoStats *s);
@@ -518,6 +525,10 @@ void video_forcar_sdr(void);
 int  video_velocidade_suportada(void);
 void video_velocidade(int centesimos);
 int  video_velocidade_atual(void);
+// Room correction in thousandths (950..1050); 1000 clears it. Personal speed
+// remains separate. Effective rate is in hundredths for existing native APIs.
+void video_taxa_sync(int milesimos);
+int  video_taxa_efetiva(void);
 // O PLAYER mediu que o pipeline nao acelerou (velocidade.h, VelMedidor) apesar
 // do "ok" da plataforma: o backend passa a se comportar como depois de uma
 // recusa (suportada = 0, atual = 100) e devolve o pipeline a 1x.

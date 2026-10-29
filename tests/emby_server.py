@@ -131,6 +131,17 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authed():
             return self.reply(401)
         base = "/Users/%s" % USER_ID
+        if p == base + "/Items/Resume" and method == "GET":
+            m = movie(2)
+            m["ProviderIds"] = {"Imdb": "tt0002002"}
+            m["UserData"]["LastPlayedDate"] = "2026-10-06T10:00:00Z"
+            ep = episodes()[0]
+            ep["SeriesId"] = "2001"
+            ep["UserData"] = {"PlaybackPositionTicks": 9000000000,
+                              "LastPlayedDate": "2026-10-06T11:00:00Z"}
+            return self.reply(200, {"Items": [movie(1), m, ep]})
+        if p == "/Shows/NextUp" and method == "GET":
+            return self.reply(200, {"Items": []})
         if p == base + "/Views" and method == "GET":
             return self.reply(200, {"Items": [
                 {"Name": "Movies", "Id": LIB_MOVIES, "CollectionType": "movies"},
@@ -139,6 +150,26 @@ class Handler(BaseHTTPRequestHandler):
         if p == base + "/Items" and method == "GET":
             parent = q.get("parentid", [""])[0]
             items = [movie(1), movie(2)] if parent == LIB_MOVIES else [SERIES] if parent == LIB_SHOWS else []
+            if q.get("includeitemtypes", [""])[0] == "BoxSet":
+                return self.reply(200, {"Items": [{"Id": "4001", "Type": "BoxSet", "Name": "Family"}], "TotalRecordCount": 1})
+            if q.get("includeitemtypes", [""])[0] == "Playlist":
+                return self.reply(200, {"Items": [{"Id": "5001", "Type": "Playlist", "Name": "Weekend"}], "TotalRecordCount": 1})
+            if parent == "4001":
+                items = [movie(2)]
+            if not parent and q.get("recursive", [""])[0] == "true":
+                # The matching index: Emby spells the keys like Jellyfin.
+                m2 = movie(2)
+                m2["ProviderIds"] = {"Imdb": "tt0002002"}
+                m2["DateLastSaved"] = "2026-08-01T10:00:00.0000000Z"
+                sh = dict(SERIES)
+                sh["ProviderIds"] = {"Tmdb": "4242"}
+                items = [movie(1), m2, sh]
+            if parent:
+                for item in items:
+                    if item["Id"] == "1002":
+                        item["ProviderIds"] = {"Imdb": "tt0002002"}
+                    elif item["Id"] == "2001":
+                        item["ProviderIds"] = {"Tmdb": "4242"}
             start = int(q.get("startindex", ["0"])[0])
             return self.reply(200, {"Items": items[start:], "TotalRecordCount": len(items)})
         m = re.fullmatch(re.escape(base) + r"/Items/(\d+)", p)
@@ -151,6 +182,10 @@ class Handler(BaseHTTPRequestHandler):
                 d["People"] = [{"Name": "Mov Actor", "Id": "88", "Type": "Actor", "Role": "R"}]
                 return self.reply(200, d)
             return self.reply(404)
+        if p == "/Playlists/5001/Items" and method == "GET":
+            m = movie(2)
+            m["ProviderIds"] = {"Imdb": "tt0002002"}
+            return self.reply(200, {"Items": [m], "TotalRecordCount": 1})
         if p == "/Shows/2001/Episodes" and method == "GET":
             if q.get("userid", [""])[0] != USER_ID:
                 return self.reply(400)

@@ -14,6 +14,7 @@
 #include "js.h"
 #include "descoberta.h"
 #include "ajustes.h"
+#include "servidores.h"
 #include "agenda.h"
 #include "comentordem.h"
 #include "idiomacod.h"
@@ -228,6 +229,11 @@ static int progressoPronto, proximoT, proximoE;
 // "aired" do Trakt ja desconta episodio que ainda nao foi ao ar, que e
 // justamente o denominador certo para uma porcentagem.
 static int epsExibidos, epsVistos;
+// Per-episode resume % from personal servers (issue #617), filled on the fetch
+// thread; the episode list reads it when the current CatItem has no progress.
+#define EX_EP_PROG_MAX 256
+static struct { short t, e; int pct; } epProg[EX_EP_PROG_MAX];
+static int nEpProg;
 // QUANTOS VISTOS O MAPA (vistoep) TINHA quando epsVistos foi lido do Trakt. O
 // hero mostra epsVistos + (mapa agora - epsBase): marcar/desmarcar pelo menu,
 // player ou Agenda mexe no mapa na hora, e sem isto a linha "% assistido"
@@ -241,6 +247,13 @@ static struct { int numero; int nEps; struct { int ep, nota; } eps[EX_EP_MAX]; }
             temps[EX_TEMP_MAX];
 static int  nTemps;
 static char colNome[80];
+// Book author from the TMDB crew (Novel/Book/Author) and whether `col` lists
+// that author's adaptations instead of the TMDB collection (Detail 2.1).
+static char livroAutor[80];
+static int  colDoAutor;
+static int livroTrabalho(const char *job) {
+  return !strcmp(job, "Novel") || !strcmp(job, "Book") || !strcmp(job, "Author");
+}
 // Arte propria da colecao (poster w342 e backdrop w780, URL absoluta) e a
 // sinopse dela: o mini card da pagina e a tela de lista da saga.
 static char colCapa[160], colFundo[160], colSinopse[600];
@@ -255,7 +268,7 @@ static char fichaStatus[32], fichaPaises[160], fichaCert[12], fichaLanc[16], fic
 // bella): ele devolve `country` = "Italy", que e o pais de PRODUCAO. Deduzir
 // idioma de pais erra em toda co-producao e em todo pais multilingue, entao a
 // deducao nao existe aqui.
-static char fichaIdiomaOrig[8];
+static char fichaIdiomaOrig[8], fichaTituloOrig[160];
 static int  fichaDur;
 // AGENDA DA SERIE — proximo episodio e situacao, do MESMO corpo /tv/<id>.
 // Ver agenda.h para o porque de nao ser o Trakt. Os campos sempre estiveram
@@ -465,7 +478,8 @@ static void urlFicha(char *dst, size_t cap, int serie, long idT,
   if (mais) snprintf(append + strlen(append), sizeof append - strlen(append), "%srecommendations", append[0] ? "," : "");
   // keywords junto da ficha: o sinal de cena pos-creditos vem no MESMO corpo
   // (TMDB 179430/179431), sem viagem nova.
-  if (!serie) snprintf(append + strlen(append), sizeof append - strlen(append), "%skeywords", append[0] ? "," : "");
+  // credits: the book author (crew Novel/Book/Author) for Detail 2.1.
+  if (!serie) snprintf(append + strlen(append), sizeof append - strlen(append), "%skeywords,credits", append[0] ? "," : "");
   snprintf(dst, cap, "%s/%s/%ld?api_key=%s&language=%s%s%s%s",
            "https://api.themoviedb.org/3", serie ? "tv" : "movie", idT,
            chave, idioma, append[0] ? "&append_to_response=" : "", append, extra);
@@ -885,6 +899,32 @@ static void *buscar(void *arg) {
       fflush(stdout);
     }
   }
+  // PERSONAL SERVER (#617): watched flags and resume positions for episodes,
+  // same thread as Trakt — no extra round trip when the index is already warm.
+  if (parte != 1 && serie && ajustes_jellyfin_ligado()) {
+    SrvEp srv[512];
+    int k = servidores_episodios(id, srv, (int)(sizeof srv / sizeof *srv));
+    int i, w = 0;
+    if (k > 0) {
+      for (i = 0; i < k && w < EX_EP_PROG_MAX; i++) {
+        if (srv[i].visto)
+          vistoep_fonte_se_sessao(id, srv[i].temporada, srv[i].episodio, 1,
+                                  srv[i].vistoMs, NULL, perfilSessao);
+        if (srv[i].retomadoTicks > 0 && srv[i].duracaoTicks > srv[i].retomadoTicks) {
+          int pct = (int)(srv[i].retomadoTicks * 100.0 / srv[i].duracaoTicks + 0.5);
+          if (pct > 1 && pct < 98) {
+            epProg[w].t = srv[i].temporada;
+            epProg[w].e = srv[i].episodio;
+            epProg[w].pct = pct;
+            w++;
+          }
+        }
+      }
+      pthread_mutex_lock(&trava);
+      if (!strcmp(id, idPedido) && sessaoDoFioAtual()) { nEpProg = w; progressoPronto = 1; }
+      pthread_mutex_unlock(&trava);
+    }
+  }
 
   // O usuario ja abriu outro titulo. Nao gastar varias viagens opcionais com
   // uma tela que nao existe mais; entrega o fio ao pedido pendente.
@@ -1058,8 +1098,8 @@ static void *buscar(void *arg) {
   // content_ratings, e ainda nao ha onde mostra-la — o Detalhes e so de filme).
   if (parte != 0) {
     const char *chave = desc_chave_tmdb();
-    long idCol = 0, idT = tmdbId;
-    char nome[80] = "";
+    long idCol = 0, idT = tmdbId, idLivro = 0;
+    char nome[80] = "", livro[80] = "";
     int tNums[EX_TEMP_MAX], nTNum = 0;
     int ultTemp = 0;   // > 0: recuo do trailer para esta temporada
     // O id do TMDB so fica no catalogo DEPOIS do enriquecimento do elenco; na
@@ -1137,6 +1177,12 @@ static void *buscar(void *arg) {
         // fichaIdiomaOrig.
         js_texto(corpo, fimC, "original_language",
                  fichaIdiomaOrig, sizeof fichaIdiomaOrig);
+        js_texto(corpo, fimC, serie ? "original_name" : "original_title",
+                 fichaTituloOrig, sizeof fichaTituloOrig);
+        if (serie && ajustes_tmdb_ficha()) {
+          js_texto(corpo, fimC, "status", fichaStatus, sizeof fichaStatus);
+          js_texto(corpo, fimC, "first_air_date", fichaLanc, sizeof fichaLanc);
+        }
         // --- AGENDA DA SERIE (nenhuma viagem a mais) ----------------------
         //
         // `status`, `next_episode_to_air` e `last_episode_to_air` ja vinham
@@ -1187,6 +1233,18 @@ static void *buscar(void *arg) {
                      idCol = (long)js_num(o, of, "id", 0.0);
                      js_texto(o, of, "name", nome, sizeof nome); }
           }
+          b = strstr(corpo, "\"credits\"");
+          b = b ? strchr(b, '{') : NULL;
+          for (const char *c = b ? js_array(b, js_fim(b), "crew") : NULL;
+               c && !idLivro; c = js_prox(js_fim(c))) {
+            char job[24] = "";
+            js_texto(c, js_fim(c), "job", job, sizeof job);
+            if (!livroTrabalho(job)) continue;
+            js_texto(c, js_fim(c), "name", livro, sizeof livro);
+            if (livro[0]) idLivro = (long)js_num(c, js_fim(c), "id", 0.0);
+          }
+          // The enclosing TMDB publication already holds trava and checks id/session.
+          snprintf(livroAutor, sizeof livroAutor, "%s", livro);
         }
 
         // Movie alert eligibility uses dates already present in this response.
@@ -1485,16 +1543,21 @@ static void *buscar(void *arg) {
         }
       }
     }
-    if (!serie && ajustes_tmdb_col() && idCol > 0) {
-      snprintf(url, sizeof url, "%s/collection/%ld?api_key=%s&language=%s",
-               "https://api.themoviedb.org/3", idCol, chave, desc_tmdb_idioma());
+    // "Do mesmo autor": the book author's adaptations (TMDB person crew);
+    // without an author, or with only this one film, the TMDB collection.
+    for (int doAutor = idLivro > 0; !serie && ajustes_tmdb_col() && doAutor >= 0; doAutor--) {
+      if (doAutor) snprintf(url, sizeof url, "%s/person/%ld/movie_credits?api_key=%s&language=%s",
+                            "https://api.themoviedb.org/3", idLivro, chave, desc_tmdb_idioma());
+      else if (idCol > 0) snprintf(url, sizeof url, "%s/collection/%ld?api_key=%s&language=%s",
+                                   "https://api.themoviedb.org/3", idCol, chave, desc_tmdb_idioma());
+      else break;
       corpo = rede_baixar(url, 15);
       if (corpo) {
         struct ColAch { char t[120], a[8], d[16], po[160], sin[420]; long id; int nota; }
             ach[EX_COL_MAX];
         char capa[160] = "", fundo[160] = "", sinC[600] = "", cam[96];
         int nc = 0;
-        const char *p = js_array(corpo, NULL, "parts");
+        const char *p = js_array(corpo, NULL, doAutor ? "crew" : "parts");
         // Chaves da RAIZ: "poster_path" e "overview" tambem existem dentro de
         // cada parte, e js_texto pegaria a da primeira parte.
         if (js_texto_raiz(corpo, "poster_path", cam, sizeof cam) && cam[0] == '/')
@@ -1504,6 +1567,12 @@ static void *buscar(void *arg) {
         js_texto_raiz(corpo, "overview", sinC, sizeof sinC);
         while (p && nc < EX_COL_MAX) {
           const char *f = js_fim(p);
+          if (doAutor) {
+            char job[24] = ""; long idp = (long)js_num(p, f, "id", 0.0); int k;
+            js_texto(p, f, "job", job, sizeof job);
+            for (k = 0; k < nc && ach[k].id != idp; k++) {}
+            if (!livroTrabalho(job) || k < nc) { p = js_prox(f); continue; }
+          }
           ach[nc].t[0] = ach[nc].a[0] = ach[nc].d[0] = 0;
           ach[nc].po[0] = ach[nc].sin[0] = 0;
           js_texto(p, f, "title", ach[nc].t, sizeof ach[nc].t);
@@ -1520,6 +1589,7 @@ static void *buscar(void *arg) {
           p = js_prox(f);
         }
         free(corpo);
+        if (doAutor && nc < 2) continue;
         // ORDEM DA SAGA = data de lancamento. O TMDB devolve `parts` na ordem
         // em que as partes foram cadastradas, que nem sempre e a cronologica;
         // parte sem data (anunciada) vai para o fim. Insercao estavel: sao 12.
@@ -1537,7 +1607,8 @@ static void *buscar(void *arg) {
         pthread_mutex_lock(&trava);
         if (!strcmp(id, idPedido) && sessaoDoFioAtual()) {
           int k;
-          snprintf(colNome, sizeof colNome, "%s", nome);
+          snprintf(colNome, sizeof colNome, "%s", doAutor ? livro : nome);
+          colDoAutor = doAutor;
           snprintf(colCapa, sizeof colCapa, "%s", capa);
           snprintf(colFundo, sizeof colFundo, "%s", fundo);
           snprintf(colSinopse, sizeof colSinopse, "%s", sinC);
@@ -1552,6 +1623,7 @@ static void *buscar(void *arg) {
           nCol = nc;
         }
         pthread_mutex_unlock(&trava);
+        break;
       }
     }
   }
@@ -1697,10 +1769,11 @@ static void *lacoParte(void *arg) {
 static void zerarPublicado(void) {
   comentariosLimpar(coment);
   notaTrakt = votosTrakt = nComent = nRel = nTemps = nCol = 0;
-  colNome[0] = colCapa[0] = colFundo[0] = colSinopse[0] = 0;
+  colNome[0] = colCapa[0] = colFundo[0] = colSinopse[0] = livroAutor[0] = 0;
+  colDoAutor = 0;
   nTrailer = fichaDur = nEstudio = 0;
   fichaStatus[0] = fichaPaises[0] = fichaCert[0] = fichaLanc[0] = fichaDigital[0] = 0;
-  fichaIdiomaOrig[0] = 0;
+  fichaIdiomaOrig[0] = fichaTituloOrig[0] = 0;
   agStatus[0] = agDataProx[0] = agDataUlt[0] = agNomeEp[0] = 0;
   agTemp = agEp = 0;
   memset(vistos, 0, sizeof vistos);
@@ -1761,6 +1834,7 @@ void extras_pedir(const char *imdb, int serie, long tmdbId) {
   seriePedido = serie;
   tmdbPedido = tmdbId;
   zerarPublicado();
+  nEpProg = 0;
   snprintf(idEmCurso, sizeof idEmCurso, "%s", imdb);
   serieEmCurso = serie;
   tmdbEmCurso = tmdbId;
@@ -1841,9 +1915,11 @@ static void *buscarEpComent(void *arg) {
   int n = 0, total = 0, raw = 0, source = p->tmdb, more = 0;
   ComentAchado achado[20] = {0};
   if (!source && trakt_cabecalhos_publicos(cab, chave, sizeof chave)) {
-    snprintf(url, sizeof url,
+    if (p->e>0) snprintf(url, sizeof url,
       "https://api.trakt.tv/shows/%s/seasons/%d/episodes/%d/comments/likes?page=%d&limit=%d",
       p->show, p->t, p->e, p->pagina, EP_PAGINA);
+    else snprintf(url,sizeof url,"https://api.trakt.tv/%s/%s/comments/likes?page=%d&limit=%d",
+      p->serie ? "shows" : "movies",p->show,p->pagina,EP_PAGINA);
     corpo = epBaixar(p, url, cab);
     const char *v = corpo ? strchr(corpo, '[') : NULL;
     v = v ? v + 1 : NULL;
@@ -1856,7 +1932,7 @@ static void *buscarEpComent(void *arg) {
     more = raw == EP_PAGINA;
     free(corpo); corpo = NULL;
   }
-  if (!source && p->pagina == 1 && rede_job_estado(p->job) == REDE_OK) {
+  if (!source && p->e>0 && p->pagina == 1 && rede_job_estado(p->job) == REDE_OK) {
     snprintf(url, sizeof url, "https://api.trakt.tv/shows/%s/seasons/%d/episodes/%d/ratings", p->show, p->t, p->e);
     corpo = cab[0] ? epBaixar(p, url, cab) : NULL;
     ExEpNotas notas = {0};
@@ -1960,7 +2036,7 @@ void extras_comentarios_ep_cancelar(void) {
   pthread_mutex_unlock(&trava);
 }
 void extras_pedir_comentarios_ep(const char *imdbSerie,int t,int e) {
-  if (!imdbSerie || !*imdbSerie || t<0 || e<=0) return;
+  if (!imdbSerie || !*imdbSerie || t<0 || e<0 || (!e && t)) return;
   char show[24]; snprintf(show,sizeof show,"%s",imdbSerie);
   char *dp=strchr(show,':'); if (dp) *dp=0;
   pthread_mutex_lock(&trava);
@@ -2307,7 +2383,7 @@ void extras_trailer_abrir(int i) {
   // quem chamou, e fica no registro.
   printf("[trailer] extras_trailer_abrir na Samsung ignorado (%s)\n", url);
   fflush(stdout);
-#elif defined(NV_LINUX_DESKTOP)
+#elif defined(NV_LINUX_DESKTOP) || defined(NV_IOS)
   SDL_OpenURL(url);
 #elif defined(__APPLE__)
   char cmd[160];
@@ -2326,6 +2402,8 @@ void extras_trailer_abrir(int i) {
 }
 
 const char *extras_colecao_nome(void) { return colNome; }
+const char *extras_livro_autor(void) { return livroAutor; }
+int extras_colecao_do_autor(void) { return colDoAutor; }
 int extras_n_colecao(void) { return nCol; }
 const char *extras_colecao_titulo(int i) {
   return (i >= 0 && i < nCol) ? col[i].titulo : "";
@@ -2349,6 +2427,7 @@ int extras_colecao_nota(int i) { return (i >= 0 && i < nCol) ? col[i].nota : 0; 
 int extras_n_estudios(void) { return nEstudio; }
 // O idioma original do titulo que esta na ficha, ou "" quando nao se sabe.
 const char *extras_idioma_original(void) { return fichaIdiomaOrig; }
+const char *extras_titulo_original(void) { return fichaTituloOrig; }
 
 const char *extras_estudio_nome(int i) {
   return (i >= 0 && i < nEstudio) ? estudio[i].nome : "";
@@ -2401,6 +2480,15 @@ int extras_ep_visto(int temporada, int episodio) {
   // muda no proximo fetch. -1 = o mapa nao sabe, vale a matriz.
   m = id[0] ? vistoep_estado(id, temporada, episodio) : -1;
   return m >= 0 ? m : visto;
+}
+
+int extras_ep_progresso(int temporada, int episodio) {
+  int i, pct = 0;
+  pthread_mutex_lock(&trava);
+  for (i = 0; i < nEpProg; i++)
+    if (epProg[i].t == temporada && epProg[i].e == episodio) { pct = epProg[i].pct; break; }
+  pthread_mutex_unlock(&trava);
+  return pct;
 }
 
 int extras_progresso_pronto(void) {

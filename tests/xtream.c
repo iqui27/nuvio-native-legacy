@@ -36,13 +36,53 @@ static char ultimaUrl[1200];      // a url DO PAINEL (desfeito o proxy)
 static char ultimaPedida[4000];   // o endereco que a rede recebeu de fato
 static char ultimoCorpo[1200];    // o corpo do POST ao proxy (Tizen)
 static int ultimoPost;
+static int ultimoPrazo;
+#include <pthread.h>
+#include <errno.h>
+static pthread_mutex_t request_lock=PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t request_cond=PTHREAD_COND_INITIALIZER;
+static int concurrent,background_entered,background_release,foreground_done,background_seconds;
+static char *concurrent_response(const char *url,int seconds,int *status){
+  pthread_mutex_lock(&request_lock);
+  if(strstr(url,"get_vod_info")){
+    background_entered=1;pthread_cond_broadcast(&request_cond);
+    while(!background_release)pthread_cond_wait(&request_cond,&request_lock);
+    background_seconds=seconds;
+  }else{foreground_done=1;pthread_cond_broadcast(&request_cond);}
+  pthread_mutex_unlock(&request_lock);*status=200;return strdup("{}");
+}
+static void *background_request(void *unused){
+  (void)unused;int status;char *body=xtream_consultar_metadata("http://fixture","u","p","get_vod_info&vod_id=3",15,&status);
+  assert(body&&status==200);free(body);return NULL;
+}
+static void *foreground_request(void *unused){
+  (void)unused;int status;char *body=xtream_consultar("http://fixture","u","p","get_series_info&series_id=4",15,&status);
+  assert(body&&status==200);free(body);return NULL;
+}
+static void concurrent_requests(void){
+  pthread_t background,foreground;concurrent=1;
+  assert(!pthread_create(&background,NULL,background_request,NULL));
+  pthread_mutex_lock(&request_lock);
+  while(!background_entered)pthread_cond_wait(&request_cond,&request_lock);
+  pthread_mutex_unlock(&request_lock);
+  assert(!pthread_create(&foreground,NULL,foreground_request,NULL));
+  struct timespec deadline;clock_gettime(CLOCK_REALTIME,&deadline);deadline.tv_sec+=2;
+  pthread_mutex_lock(&request_lock);int rc=0;
+  while(!foreground_done&&rc!=ETIMEDOUT)rc=pthread_cond_timedwait(&request_cond,&request_lock,&deadline);
+  int completed=foreground_done;background_release=1;pthread_cond_broadcast(&request_cond);
+  pthread_mutex_unlock(&request_lock);
+  pthread_join(background,NULL);pthread_join(foreground,NULL);concurrent=0;
+  assert(completed&&"foreground provider request waited for background metadata");
+  assert(background_seconds==15);
+}
 // Build do teste do Tizen (-DNV_XTREAM_PROXY_TESTE): a chamada chega como
 // POST <NV_REC_URL>/v1/xtream com a url do painel crua no corpo.
 static char *responder(const char *url);
 // #158: o chamar() do xtream.c agora usa rede_baixar_st (corpo + status),
 // para o log e a tela saberem se foi 401, 403, 458, 429 ou pagina HTML.
 char *rede_baixar_st(const char *url, int segundos, const char *const *cab, int *status) {
-  (void)segundos; (void)cab;
+  if(concurrent)return concurrent_response(url,segundos,status);
+  ultimoPrazo=segundos; (void)cab;
   ultimoPost = 0;
   snprintf(ultimaPedida, sizeof ultimaPedida, "%s", url);
   snprintf(ultimaUrl, sizeof ultimaUrl, "%s", url);
@@ -55,7 +95,8 @@ char *rede_baixar_st_retry(const char *url, int segundos, const char *const *cab
 }
 char *rede_postar_st(const char *url, int segundos, const char *const *cab,
                      const char *corpo, int *status) {
-  (void)segundos;
+  if(concurrent)return concurrent_response(corpo,segundos,status);
+  ultimoPrazo=segundos;
   ultimoPost = 1;
   assert(cab && !strcmp(cab[0], "Content-Type: text/plain"));
   snprintf(ultimaPedida, sizeof ultimaPedida, "%s", url);
@@ -130,6 +171,12 @@ static void checkCategory(const char *name,int order,int count,void *u) {
   assert(!strcmp(name,expected));
   s->seen[order]=1;s->categories++;
 }
+static int checkMixed(const XtreamItem *c,void *u) {
+  int *seen=u;(*seen)++;
+  if(c->kind==1){assert(c->url&&strstr(c->url,"/movie/")&&strstr(c->url,"/9.mp4"));}
+  else assert(c->kind==0&&!strcmp(c->nome,"Live"));
+  return 1;
+}
 static int checkChannel(const XtreamItem *c,void *u) {
   StreamCheck *s=u;
   assert(s->categories==s->expectedCategories);
@@ -145,6 +192,14 @@ static int checkChannel(const XtreamItem *c,void *u) {
 }
 
 int main(void) {
+  concurrent_requests();
+  int st=0;
+  char *list=xtream_consultar("http://fixture.invalid","fixture","fixture","get_vod_categories",15,&st);
+  free(list);assert(ultimoPrazo==120);
+  list=xtream_consultar("http://fixture.invalid","fixture","fixture","get_series",15,&st);
+  free(list);assert(ultimoPrazo==120);
+  list=xtream_consultar("http://fixture.invalid","fixture","fixture","",15,&st);
+  free(list);assert(ultimoPrazo==15);
   XtreamCanal c[16];
   char url[600];
   int n;
@@ -188,6 +243,13 @@ int main(void) {
   puts("ok  lg: lista direto no painel");
 #endif
 
+  {
+    const char *saved=respStreams;int seen=0,total=0;
+    respStreams="[{\"stream_id\":8,\"name\":\"Live\",\"stream_type\":\"live\"},{\"stream_id\":9,\"name\":\"Film\",\"stream_type\":\"movie\"}]";
+    assert(xtream_canais_cb(NULL,checkMixed,&seen,&total)==2&&seen==2&&total==2);
+    respStreams=saved;
+    puts("PASS: native Xtream forwards live/VOD types and playable VOD URL");
+  }
   // #424: categories beyond 256 retain their names, including the last
   // channels of a large provider list. Preserve provider channel order.
   {

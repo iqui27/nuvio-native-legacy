@@ -52,6 +52,16 @@ int stalker_canais_cb_sessao(StalkerCb cb, void *u, uint64_t session) {
   for (int i = 0; i < n; i++) if (!cb(&out[i], u)) break;
   return n;
 }
+int stalker_fonte_canais_cb(unsigned id, StalkerCb cb, void *u, uint64_t session) {
+  StalkerCanal out[2];
+  int n = stalker_canais_sessao(out, 2, session);
+  for (int i = 0; i < n; i++) {
+    char idFonte[80]; snprintf(idFonte, sizeof idFonte, "stalker:%u:%s", id, out[i].id);
+    snprintf(out[i].id, sizeof out[i].id, "%s", idFonte);
+    if (!cb(&out[i], u)) break;
+  }
+  return n;
+}
 uint64_t perfis_sessao_geracao(void) { return 0; }
 int perfis_sessao_atual(uint64_t g) { return g == 0; }
 int perfis_sessao_travar(uint64_t g) { return g == 0; }
@@ -374,10 +384,74 @@ static int cacheWorkBound(void) {
   return failures != 0;
 }
 
+/* 2000-channel fixture: every unclassified name gets a Jev section (cycled),
+ * provider groups stay, and no channel is left without a category. */
+static char *bulkWorker(const char *url, const char *body, int *status) {
+  (void)url;
+  static const char *const SECS[] = {"Esportes","Notícias","Infantil","Filmes","Abertos"};
+  size_t cap = 200 * 256 + 16;
+  char *reply = malloc(cap);
+  assert(reply);
+  size_t used = (size_t)snprintf(reply, cap, "{\"cats\":{");
+  const char *p = strchr(body, '[');
+  int count = 0;
+  while (p && (p = strchr(p, '"'))) {
+    const char *end = strchr(++p, '"');
+    assert(end && end - p < 128);
+    used += (size_t)snprintf(reply + used, cap - used,
+                             "%s\"%.*s\":\"%s\"", count ? "," : "", (int)(end - p), p,
+                             SECS[count % 5]);
+    count++;
+    p = end + 1;
+  }
+  assert(count <= 200);
+  snprintf(reply + used, cap - used, "}}");
+  posts++; *status = 200;
+  return reply;
+}
+static int bulk2000(void) {
+  int failures = 0, before = posts;
+  stagingZerar(); sTeto = 5000;
+  int fl = sFonte(LTV_M3U, "https://private/big", "Big list", "");
+  if (fl < 0) return 1;
+  M3uCtx ctx = {.fl = fl};
+  char nome[64];
+  for (int i = 0; i < 1000; i++) {
+    snprintf(nome, sizeof nome, "uncategorized %04d", i);
+    addM3u(&ctx, nome, "", "https://private/x");
+  }
+  /* Provider groups fill the rest of the 2000: they never reach Jev. */
+  for (int i = 0; i < 1000; i++) {
+    snprintf(nome, sizeof nome, "Canal Com Grupo %04d", i);
+    addM3u(&ctx, nome, "Provider Group", "https://private/g");
+  }
+  assert(sNCanais == 2000);
+  livecat_postar_teste(bulkWorker);
+  sugerirSecoes();
+  selecionarSecoes();
+  int semCat = 0, provider = 0;
+  for (int i = 0; i < sNCanais; i++) {
+    if (sCanais[i].cat < 0) semCat++;
+    else if (!strcmp(sCats[sCanais[i].cat].nome, "Provider Group")) provider++;
+  }
+  if (sNCanais != 2000 || semCat || provider != 1000) {
+    printf("FAIL: 2000-channel load -> %d canais, %d sem categoria, %d provider\n",
+           sNCanais, semCat, provider);
+    failures++;
+  } else puts("PASS: 2000-channel load categorizes every channel via livecat (provider groups untouched)");
+  /* Network budget shares the 2 s window: the run sends bounded batches. */
+  if (posts - before < 1) { puts("FAIL: livecat batches for 1000 uncached names"); failures++; }
+  /* The bulk source never reaches the disk cache: the restart run must still
+   * find only the original fixture. */
+  stagingZerar();
+  return failures;
+}
+
 int main(int argc, char **argv) {
   M3uCtx ctx = {0};
   dados_iniciar(NULL);
   (void)argv;
+  if (argc > 1 && !strcmp(argv[1], "bulk")) return bulk2000();
   if (argc > 1) {
     char source[LTV_CHAVE];
     const char *selected[] = {"Infantil"};
@@ -468,7 +542,8 @@ int main(int argc, char **argv) {
 
   stagingZerar(); sTeto = 1;
   ltv_pref_definir_grupos(ltv_pref("st", 1), selected, 1);
-  stalkerCarregar();
+  { IptvConta conta = { .id = 0, .tipo = IPTV_STALKER, .ativa = 1, .nome = "stalker" };
+    stalkerCarregar(&conta); }
   sugerirSecoes(); selecionarSecoes();
   if (sNCanais != 1 || strcmp(sCanais[0].nome, "Lumen") ||
       posts != 1) {
@@ -527,6 +602,48 @@ int main(int argc, char **argv) {
   assert(sNCanais == 1 && !strcmp(sCanais[0].nome, "Nimbo"));
   assert(posts == 2 && sLtvF[ctx.fl].cortada);
   puts("PASS: uncached suggestions filter before quota and retain at most the channel cap");
+  /* Owner inventory: every source group survives publication, including >48
+   * categories on native TVs, and all 2693 live rows have exactly one group. */
+  stagingZerar();sTeto=30000;enabled=0;
+  for(int f=0;f<3;f++){
+    char ref[80];snprintf(ref,sizeof ref,"https://coverage%d.test",f);
+    M3uCtx all={.fl=sFonte(LTV_M3U,ref,"Coverage","")};
+    int sizes[]={1978,647,68};
+    for(int i=0;i<sizes[f];i++){
+      char id[96],name[96],group[64];snprintf(id,sizeof id,"https://coverage%d.test/live/%d.ts",f,i);
+      snprintf(name,sizeof name,"Coverage %d %d",f,i);snprintf(group,sizeof group,"Source %d group %d",f,i%170);
+      addM3u(&all,name,i%7?group:"",id);
+    }
+  }
+  selecionarSecoes();assert(sNCanais==2693);
+  int grouped=0;for(int i=0;i<sNCanais;i++){assert(sCanais[i].cat>=0&&sCats[sCanais[i].cat].nome[0]);grouped++;}
+  assert(grouped==1978+647+68);
+  puts("PASS: all 1978 + 647 + 68 live channels retain a category after final admission");
+  stagingZerar();sTeto=30000;ltv_pref_carregar(perfis_ativo());
+  M3uCtx mixed={.fl=sFonte(LTV_M3U,"https://mixed.test","Mixed","")};
+  addM3u(&mixed,"Telecine","Filmes","https://mixed.test/live/1.ts");
+  addM3u(&mixed,"Film","VOD","https://mixed.test/movie/2");
+  addM3u(&mixed,"Show S01E02","Series","https://mixed.test/play/3");
+  addM3u(&mixed,"Film 2","Movies","https://mixed.test/4.mp4?token=test");
+  assert(sNCanais==1&&sNMixedVod==3&&sNCanais+sNMixedVod==4);
+  XtCtx mixed_xt={.fl=sFonte(LTV_XTREAM,"","Mixed Xtream","")};
+  XtreamItem film={.id="xtream:film",.nome="Film",.logo="",.epgId="",.categoria="Movies",.kind=1,.url="https://mixed.test/movie/film.mp4"};
+  xtCanal(&film,&mixed_xt);assert(sNCanais==1&&sNMixedVod==4);
+  GFonte af={.base="https://mixed-addon.test",.tipo="tv",.id="mixed",.nome="Mixed"};
+  nAddonsCarga=1;addonsCarga=calloc(1,sizeof *addonsCarga);addonsCarga[0].ativo=1;snprintf(addonsCarga[0].base,sizeof addonsCarga[0].base,"%s",af.base);
+  addonPage=strdup("{\"metas\":[{\"id\":\"live\",\"name\":\"Live\",\"type\":\"tv\"},{\"id\":\"film\",\"name\":\"Film\",\"type\":\"movie\"},{\"id\":\"show\",\"name\":\"Show\",\"type\":\"series\"}]}");
+  int added=0,addon_source=sFonte(LTV_ADDON,af.base,"Mixed addon",af.base);
+  assert(lerPagina(&af,addon_source,0,&added)==3&&sNCanais==2&&sNMixedVod==6);
+  free(addonPage);addonPage=NULL;free(addonsCarga);addonsCarga=NULL;nAddonsCarga=0;
+  const char *mixed_key=sLtvF[mixed.fl].chave;
+  LtvPref *power=ltv_pref(mixed_key,1);power->desligada=1;ltv_pref_gravar();
+  addM3u(&mixed,"Disabled","News","https://mixed.test/live/5.ts");assert(sNCanais==2);
+  char saved_key[LTV_CHAVE];snprintf(saved_key,sizeof saved_key,"%s",mixed_key);
+  ltv_pref_carregar(perfis_ativo());assert(!ltv_fonte_ligada(saved_key));
+  power=ltv_pref(saved_key,1);power->desligada=0;ltv_pref_gravar();
+  addM3u(&mixed,"Enabled","News","https://mixed.test/live/6.ts");assert(sNCanais==3);
+  puts("PASS: mixed live/VOD totals, disabled source adds zero, persisted switch, re-enable restores admission");
+  enabled=1;
   failures += xtreamLocalSections();
   failures += cacheWorkBound();
   failures += selectedOverflow();

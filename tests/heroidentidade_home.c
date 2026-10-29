@@ -57,7 +57,7 @@ int main(void) {
   const char *a, *b;
   char esperadoA[512];
   int i;
-  ajustes_aplicar_blob("{\"continueWatchingEnabled\":true}");
+  assert(ajustes_shot_valor("continueWatchingEnabled", 0));
   // Dois episodios (Continuar assistindo) e dois filmes sem backdrop, que caem
   // no fundo do metahub montado pelo id — os dois caminhos do buffer unico.
   for (i = 0; i < 4; i++) {

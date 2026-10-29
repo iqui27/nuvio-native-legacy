@@ -18,6 +18,7 @@ void *SDL_AndroidGetActivity(void);
 int xtream_url_limitada(const char *u) { (void)u; return 0; }
 int xtream_conexoes_limitadas(void) { return 0; }
 int xtream_conta_ler(XtreamConta *c) { memset(c, 0, sizeof *c); return 0; }
+int juntos_precarregando(void) { return 0; }
 int stream_kbps_atual(void) { return 0; }
 static int cap4k[4];
 void stream_definir_decoder4k(int h, int a, int v, int av) {
@@ -39,6 +40,8 @@ Uint32 SDL_GetTicks(void) { return relogio; }
 SDL_mutex *SDL_CreateMutex(void) { return (SDL_mutex *)(uintptr_t)1; }
 void marco(const char *s) { (void)s; }
 const char *ling_audio(void) { return ""; }
+const char *ling_audio_preferido(void) { return ""; }
+int ajustes_audio_normalizar(void) { return 0; }
 void tex_pressao_reproducao(int l) { (void)l; }
 void vel_log(int cent, const char *estado) { (void)cent; (void)estado; }
 

@@ -54,6 +54,23 @@ int main(void) {
   d = dados_dir();
   char *tmp;
   assert(d && d[0] && strstr(d, "nuvio-enq-dados"));   // so escreve na pasta do teste
+  // Missing identity performs no HTTP and does not retry every minute.
+  mtx = SDL_CreateMutex();
+  Op op = { .tipo = OP_BUSCAR, .gen = gen };
+  semIdentidade = 1;
+  executar(&op);
+  assert(S.nGet == 0);
+  agoraAtual = T0;
+  aplicar(&caixa);
+  assert(proxima - agoraAtual > 60000u);
+  semIdentidade = 0;
+  getStatus = 401;
+  executar(&op); /* Also checks room for a full bearer. */
+  aplicar(&caixa);
+  assert(S.nGet == 1 && proxima - agoraAtual > 60000u);
+  getStatus = 0;
+  caixaCheia = 0; proxima = 0;
+  S.nGet = 0;
   // 1. Nada antes de o app assentar (nao bloqueia a abertura).
   serv("logo-1", 3 * 86400);
   enquete_passo(T0); enquete_passo(T0 + 100);

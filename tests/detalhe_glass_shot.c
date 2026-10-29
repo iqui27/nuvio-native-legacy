@@ -28,6 +28,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#define juntos_disponivel heroTogetherFixture
+int heroTogetherFixture(void) { return getenv("NUVIO_HERO_TOGETHER") != NULL; }
 #define extras_pedir            fx_pedir
 #define extras_carregando       fx_carregando
 #define extras_n_temporadas     fx_n_temporadas
@@ -36,6 +38,7 @@
 #define extras_ep_numero        fx_ep_numero
 #define extras_ep_nota          fx_ep_nota
 #define extras_n_comentarios    fx_n_comentarios
+#define extras_comentario_spoiler fx_com_spoiler
 #define extras_n_comentarios_ep fx_n_comentarios_ep
 #define extras_comentario_usuario  fx_com_usuario
 #define extras_comentario_texto    fx_com_texto
@@ -57,6 +60,8 @@
 #define extras_colecao_poster   fx_colecao_poster
 #define extras_colecao_sinopse_parte fx_colecao_sinopse_parte
 #define extras_colecao_nota     fx_colecao_nota
+#define extras_livro_autor      fx_livro_autor
+#define extras_colecao_do_autor fx_colecao_do_autor
 #define extras_n_estudios       fx_n_estudios
 #define extras_estudio_nome     fx_estudio_nome
 #define extras_estudio_logo     fx_estudio_logo
@@ -80,7 +85,32 @@
 #define extras_ficha_duracao      fx_ficha_duracao
 #define extras_ficha_paises       fx_ficha_paises
 #define extras_ficha_classificacao fx_ficha_classificacao
+#define extras_titulo_original  fx_titulo_original
+#define extras_idioma_original  fx_idioma_original
+#define extras_estudio_rede     fx_estudio_rede
 
+#if defined(NV_DETAIL21_PROOF) || defined(NV_LEGACY_PROOF)
+#define mus_estado fx_mus_estado
+#include "musica.h"
+MusEstado fx_mus_estado(const char *imdb,int temp,MusAlbum *out) {
+  (void)imdb; (void)temp;
+  if (out) {
+    memset(out,0,sizeof *out);
+    snprintf(out->titulo,sizeof out->titulo,"The Dark Knight (Original Motion Picture Soundtrack)");
+    snprintf(out->artista,sizeof out->artista,"Hans Zimmer & James Newton Howard");
+    snprintf(out->capa,sizeof out->capa,"/Volumes/ExternalSSD/tmp/musica-visual/src/assets/film.jpg");
+    static const char *tracks[]={"Why So Serious?","I'm Not a Hero","Harvey Two-Face"};
+    out->n=3;
+    for (int i=0;i<3;i++) {
+      static const int durations[]={554,394,175};
+      out->faixa[i].n=i+1; out->faixa[i].dur=durations[i];
+      snprintf(out->faixa[i].titulo,sizeof out->faixa[i].titulo,"%s",tracks[i]);
+      snprintf(out->faixa[i].artista,sizeof out->faixa[i].artista,"%s",out->artista);
+    }
+  }
+  return MUS_PRONTO;
+}
+#endif
 #include "text.h"
 static int traktLayoutCalls;
 float trakt_bloco(TxtEstilo, const char *, int, int, int, float, float, float, float, float, int);
@@ -90,7 +120,64 @@ size_t trakt_token_tam(const char *);
 #define txt_largura trakt_largura
 #define txt_token_tam trakt_token_tam
 #include "gfx.h"
+#include "botoes.h"
+#include "catalogo.h"
+#include "reacao.h"
+#include "plrui.h"
 static int cardMaterial, cardFrost, captionSolid, commentMaterial;
+// Record actual draw arguments, so missing hero offsets fail the PNG proof.
+static GfxRect serverRects[7];
+static int serverRectCount;
+static int serverRims;
+static GfxRect serverPrimary;
+static int serverHints;
+static float server_hints(const char *const *keys, const char *const *labels, int n,
+                          float x, float y, int right, float a) {
+  if (a > .01f) serverHints++;
+  return plrui_dicas(keys, labels, n, x, y, right, a);
+}
+static void server_rating_hint(const CatItem *item, float a);
+void server_panel(GfxRect r, float radius, float density, float a) {
+  if (getenv("NUVIO_SERVER_CHECK") && a > .01f && !gfx_vidro_sem_aro) serverRims++;
+  gfx_vidro_painel(r, radius, density, a);
+}
+static void server_primary(GfxRect r, const char *label, const char *icon, float focus, int primary, int align, float a) {
+  serverPrimary = r;
+  botao_pilula(r, label, icon, focus, primary, align, a);
+}
+static float server_compact(float x, float y, const char *label, const char *icon, float focus, float a) {
+  float w = plrui_botao(x, y, label, icon, focus, a);
+  serverPrimary = (GfxRect){x, y, w, 60};
+  return w;
+}
+#define botao_pilula server_primary
+#define plrui_botao server_compact
+static void server_rect(GfxRect r) {
+  if (getenv("NUVIO_SHOT_SERVIDORES") && serverRectCount < 7)
+    serverRects[serverRectCount++] = r;
+}
+#include "plrui.h"
+#include "vaitocarui.h"
+static void server_material(GfxRect r, float radius, int modal, float a) {
+  if (r.h == 76.0f) server_rect(r);
+  plrui_material(r, radius, modal, a);
+}
+static void server_vai(const VaiTocar *vt, float x, float y, float w, float a) {
+  server_rect((GfxRect){x, y, w, vtui_altura(vt)});
+  vtui_desenhar(vt, x, y, w, a);
+}
+static void server_plano(GfxRect r, float radius, float a) {
+  if (r.h == 76.0f || r.h == 132.0f || r.h == 56.0f) server_rect(r);
+  plrui_material_plano(r, radius, a);
+}
+static void server_button(GfxRect r, float a) {
+  if (r.w == 180 && r.h == 48) server_rect(r);
+  plrui_botao_repouso(r, a);
+}
+#define plrui_botao_repouso server_button
+#define plrui_material server_material
+#define plrui_material_plano server_plano
+#define vtui_desenhar server_vai
 static void card_material(GfxRect r, float radius, float density, float alpha) {
   int before = gfx_vidro_com_fonte;
   gfx_vidro_material(r, radius, density, alpha);
@@ -99,6 +186,7 @@ static void card_material(GfxRect r, float radius, float density, float alpha) {
   cardFrost += gfx_vidro_com_fonte > before;
 }
 static void card_color(GfxRect r, float radius, float cr, float cg, float cb, float a) {
+  if (r.w == 180 && r.h == 48) server_rect(r);
   if (cr == .19f && cg == .21f && cb == .23f && a > .5f) captionSolid++;
   gfx_cor(r, radius, cr, cg, cb, a);
 }
@@ -109,18 +197,68 @@ void b2_panel(GfxRect r, float radius, float density, float a);
 #ifndef NV_DETAIL_SOURCE
 #define NV_DETAIL_SOURCE "../src/detail.c"
 #endif
+// Freeze only Detail's wall clock for reproducible estimated-finish labels.
+static time_t detailShotTime(time_t *result) {
+  const char *fixed = getenv("NUVIO_SHOT_TIME");
+  time_t value = fixed ? (time_t)strtoll(fixed, NULL, 10) : time(NULL);
+  if (result) *result = value;
+  return value;
+}
+#define time detailShotTime
+#define servidores_contem_item fx_servidor_contem
+#define servidores_info fx_servidor_info
+#define plrui_dicas server_hints
+#define reacao_detalhe_dica server_rating_hint
 #include NV_DETAIL_SOURCE
+#ifdef NV_LEGACY_PROOF
+// Compatibility only for unexecuted 2.1-specific capture scenarios.
+static Uint32 heroDesde, secVisto[N_SECOES];
+static int focoServidor;
+static int nNotasTiles(void) { return 1; }
+int detail_fonte_servidor(void) { return 0; }
+int detail_tem_servidores(void) { return 0; }
+int musicaui_visivel(void) { return musicaui_aberta(); }
+#endif
+#undef time
+#undef plrui_dicas
+#undef reacao_detalhe_dica
+static void server_rating_hint(const CatItem *item, float a) {
+  if (a > .01f) serverHints++;
+  reacao_detalhe_dica(item, a);
+}
+#undef plrui_material_plano
 #undef gfx_vidro_material
 #undef gfx_vidro_painel
 #undef gfx_cor
 #undef txt_bloco
 #undef txt_largura
 #undef txt_token_tam
+#undef servidores_contem_item
+#undef servidores_info
+int servidores_info(const char *id, const char *type, SrvAchado *out);
+int fx_servidor_info(const char *id, const char *type, SrvAchado *out) {
+  if (!getenv("NUVIO_DETSRV_PROOF")) return servidores_info(id, type, out);
+  if (out) {
+    memset(out, 0, sizeof *out);
+    snprintf(out->servidor, sizeof out->servidor, "ZimaOS");
+    out->altura = 2160;
+  }
+  return 1;
+}
+#undef plrui_material
+#undef plrui_botao_repouso
+#undef vtui_desenhar
+int fx_servidor_contem(const CatItem *item, int provider) {
+  return getenv("NUVIO_SHOT_SERVIDORES") && item && provider < 2;
+}
 
 float trakt_bloco(TxtEstilo e, const char *s, int r, int g, int b,
                    float x, float y, float w, float lead, float a, int max) {
   traktLayoutCalls++;
-  return txt_bloco(e, s, r, g, b, x, y, w, lead, a, max);
+  float h = txt_bloco(e, s, r, g, b, x, y, w, lead, a, max);
+  if (e == TXT_DET_META2 && x >= 0 && s && !strcmp(s, tituloDe(idx)))
+    server_rect((GfxRect){x, y, w, h});
+  return h;
 }
 int trakt_largura(TxtEstilo e, const char *s) {
   traktLayoutCalls++;
@@ -162,7 +300,9 @@ static const char *const COM_TXT[] = {
   "as cenas em que aparece.",
   "Perfeito para uma tarde de chuva." };
 static const int COM_NOTA[] = { 8, 6, 7 }, COM_CUR[] = { 6, 3, 1 };
-int fx_n_comentarios(void)    { return (getenv("NUVIO_DETAIL_CHECK") && !strcmp(getenv("NUVIO_DETAIL_CHECK"), "comments")) || (getenv("NUVIO_TRAKT_CHECK") && (!strcmp(getenv("NUVIO_TRAKT_CHECK"), "perf") || !strcmp(getenv("NUVIO_TRAKT_CHECK"), "vidro"))) ? 8 : 3; }
+int fx_com_spoiler(int ep, int i) { return i == 1; }
+int fx_n_comentarios(void)    { return ehSerieDeEnsaio() && !getenv("NUVIO_SHOT_REFERENCE") && !getenv("NUVIO_DETSECOES_PROOF") ? 0 :
+    (getenv("NUVIO_DETAIL_CHECK") && !strcmp(getenv("NUVIO_DETAIL_CHECK"), "comments")) || (getenv("NUVIO_TRAKT_CHECK") && (!strcmp(getenv("NUVIO_TRAKT_CHECK"), "perf") || !strcmp(getenv("NUVIO_TRAKT_CHECK"), "vidro"))) ? 8 : 3; }
 int fx_n_comentarios_ep(void) { return 0; }
 const char *fx_com_usuario(int i)  { return COM_USU[i % 3]; }
 const char *fx_com_texto(int i)    {
@@ -181,9 +321,15 @@ const char *fx_com_lingua(int i)   { (void)i; return ""; }
 const char *fx_ficha_status(void)        { return "Released"; }
 const char *fx_ficha_lancamento(void)    { return getenv("NUVIO_SHOT_AVISOFONTE") ? "2027-07-17" : "2026-05-01"; }
 const char *fx_ficha_digital(void)       { return ""; }
-int         fx_ficha_duracao(void)       { return 124; }
+int         fx_ficha_duracao(void)       { return getenv("NUVIO_SHOT_REFERENCE") ? 156 : 124; }
 const char *fx_ficha_paises(void)        { return "United States of America"; }
 const char *fx_ficha_classificacao(void) { return "12"; }
+const char *fx_titulo_original(void)  {
+  return getenv("NUVIO_SHOT_REFERENCE") ? (ehSerieDeEnsaio() ? "Fargo" : "Project Hail Mary") :
+    ehSerieDeEnsaio() ? "Fallout" : "The Devil Wears Prada 2";
+}
+const char *fx_idioma_original(void)  { return "en"; }
+int fx_estudio_rede(int i) { return ehSerieDeEnsaio() && i==0; }
 
 static const char *const REL_TIT[] = { "The Prestige", "Frequency", "Outcome", "The Invite",
                                        "Prisoners", "Spaceman", "The Martian" };
@@ -195,42 +341,81 @@ const char *fx_relacionado_titulo(int i) { return REL_TIT[i]; }
 const char *fx_relacionado_ano(int i) { return REL_ANO[i]; }
 const char *fx_relacionado_poster(int i) { return REL_PO[i]; }
 
-int fx_n_colecao(void)        { return ehSerieDeEnsaio() ? 0 : 2; }
-const char *fx_colecao_nome(void) { return "O Diabo Veste Prada"; }
-static const char *const COL_TIT[] = { "The Devil Wears Prada", "The Devil Wears Prada 2" };
-static const char *const COL_ANO[] = { "2006", "2026" };
-const char *fx_colecao_titulo(int i) { return COL_TIT[i]; }
-const char *fx_colecao_ano(int i) { return COL_ANO[i]; }
+// Reference movie (Project Hail Mary): the row is the book author's adaptations,
+// as the mock (Andy Weir: The Martian, this film, the announced Artemis).
+#define REF_FILME (getenv("NUVIO_SHOT_REFERENCE") && !ehSerieDeEnsaio())
+const char *fx_livro_autor(void) { return REF_FILME ? "Andy Weir" : ""; }
+int fx_colecao_do_autor(void) { return REF_FILME; }
+int fx_n_colecao(void)        { return ehSerieDeEnsaio() ? 6 : REF_FILME ? 3 : 2; }
+const char *fx_colecao_nome(void) { return ehSerieDeEnsaio() ? "Fargo" : REF_FILME ? "Andy Weir" : "O Diabo Veste Prada"; }
+static const char *const COL_TIT_F[] = { "The Devil Wears Prada", "The Devil Wears Prada 2" };
+static const char *const COL_ANO_F[] = { "2006", "2026" };
+static const char *const COL_TIT_R[] = { "Perdido em Marte", "Project Hail Mary", "Artemis" };
+static const char *const COL_ANO_R[] = { "2015", "2026", "" };
+static const char *const COL_TIT_S[] = { "Filme", "T1", "T2", "T3", "T4", "T5" };
+static const char *const COL_ANO_S[] = { "1996", "2014", "2015", "2017", "2020", "2023" };
+const char *fx_colecao_titulo(int i) { return (ehSerieDeEnsaio() ? COL_TIT_S : REF_FILME ? COL_TIT_R : COL_TIT_F)[i]; }
+const char *fx_colecao_ano(int i) { return (ehSerieDeEnsaio() ? COL_ANO_S : REF_FILME ? COL_ANO_R : COL_ANO_F)[i]; }
 long fx_colecao_tmdb(int i) { return 350 + i; }
 const char *fx_colecao_capa(void) { return A "poster/07.jpg"; }
 const char *fx_colecao_fundo(void) { return A "07.jpg"; }
 const char *fx_colecao_sinopse(void) { return "Dois filmes sobre a Runway."; }
-const char *fx_colecao_poster(int i) { return i ? A "poster/07.jpg" : A "poster/02.jpg"; }
+const char *fx_colecao_poster(int i) {
+  static char ref[2][400];
+  if (REF_FILME && i < 3) {
+    if (i == 2) return "";   // Artemis: announced, no art
+    snprintf(ref[i], sizeof ref[i], "%s/%s.jpg", getenv("NUVIO_SHOT_REFERENCE"), i ? "phm-arte" : "martian");
+    return ref[i];
+  }
+  if (getenv("NUVIO_PROOF_ASSETS")) {
+    snprintf(ref[i%2],sizeof ref[0],"%s/%s.jpg",getenv("NUVIO_PROOF_ASSETS"),i ? "tt33612209" : "tt0458352");
+    return ref[i%2];
+  }
+  return i ? A "poster/07.jpg" : A "poster/02.jpg";
+}
 const char *fx_colecao_sinopse_parte(int i) { (void)i; return "Sinopse da parte."; }
 int fx_colecao_nota(int i) { return 70 + i * 5; }
 
-static const char *const EST_NOME[] = { "20th Century Studios", "Wendy Finerman Productions", "Fox 2000" };
+static const char *const EST_NOME_F[] = { "20th Century Studios", "Wendy Finerman Productions", "Fox 2000" };
+static const char *const EST_NOME_S[] = { "FX", "MGM Television", "26 Keys" };
+static const char *const EST_LOGO[] = { "deploy/app/art/logo/00.png", "deploy/app/art/logo/07.png", "" };
 int fx_n_estudios(void)       { return 3; }
-const char *fx_estudio_nome(int i) { return EST_NOME[i]; }
-const char *fx_estudio_logo(int i) { static const char *const L[] = { "deploy/app/art/logo/00.png", "deploy/app/art/logo/07.png", "" }; return L[i]; }
+const char *fx_estudio_nome(int i) { return (ehSerieDeEnsaio() ? EST_NOME_S : EST_NOME_F)[i]; }
+const char *fx_estudio_logo(int i) { return getenv("NUVIO_DETSECOES_PROOF") ? "" : EST_LOGO[i]; }
 
-static const char *const TR_NOME[] = { "Trailer oficial", "Teaser", "Por trás das câmeras", "Entrevista com o elenco" };
+static const char *const TR_NOME_F[] = { "Trailer oficial", "Trailer 2", "Bastidores", "Cena · Rocky" };
+static const char *const TR_NOME_S[] = { "Recap · T1 em 3 min", "Trailer · T1", "Teaser · T5", "Bastidores" };
 static const char *const TR_MINI[] = { A "07.jpg", A "13.jpg", A "30.jpg", A "22.jpg" };
 int fx_n_trailers(void) { return 4; }
 const char *fx_trailer_yt(int i) { (void)i; return "abc"; }
-const char *fx_trailer_nome(int i) { return TR_NOME[i]; }
-const char *fx_trailer_miniatura(int i) { return TR_MINI[i]; }
+const char *fx_trailer_nome(int i) { return (ehSerieDeEnsaio() ? TR_NOME_S : TR_NOME_F)[i]; }
+const char *fx_trailer_miniatura(int i) {
+  const char *ref=getenv("NUVIO_SHOT_REFERENCE");
+  static char path[1024];
+  // Match the per-card artwork used in the approved 2.1 captures.
+  const char *trailers = getenv("NUVIO_SHOT_TRAILERS");
+  if (trailers) { snprintf(path,sizeof path,"%s/%s-%d.jpg",trailers,ehSerieDeEnsaio() ? "fargo" : "phm",i); return path; }
+  if (ref) { snprintf(path,sizeof path,"%s/%s-arte.jpg",ref,ehSerieDeEnsaio() ? "fargo" : "phm"); return path; }
+  return TR_MINI[i];
+}
 int fx_nota_trakt(void) { return 85; }
 int fx_nota(int f) {
+  if (getenv("NUVIO_SHOT_RATING_BRANDS")) {
+    static const int ratings[EX_NFONTES] = {
+      [EX_IMDB]=82, [EX_TOMATOES]=950, [EX_METACRITIC]=770, [EX_METAUSER]=820,
+      [EX_TRAKT]=870, [EX_TMDB]=860, [EX_LETTERBOXD]=43, [EX_EBERT]=25
+    };
+    return ratings[f];
+  }
   switch (f) {
     case EX_IMDB: return 80; case EX_TOMATOES: return 920; case EX_METACRITIC: return 780;
     case EX_TRAKT: return 850; case EX_LETTERBOXD: return 39; default: return 0;
   }
 }
 
-int fx_n_temporadas(void) { return ehSerieDeEnsaio() ? 2 : 0; }
+int fx_n_temporadas(void) { return ehSerieDeEnsaio() ? (getenv("NUVIO_SHOT_REFERENCE") ? 5 : 2) : 0; }
 int fx_temporada_numero(int t) { return t + 1; }
-int fx_n_eps(int t) { (void)t; return ehSerieDeEnsaio() ? 8 : 0; }
+int fx_n_eps(int t) { (void)t; return ehSerieDeEnsaio() ? (getenv("NUVIO_SHOT_REFERENCE") ? 10 : 8) : 0; }
 int fx_ep_numero(int t, int i) { (void)t; return i + 1; }
 int fx_ep_nota(int t, int i) { return 78 + ((i * 3 + t * 5) % 12); }
 int fx_ep_visto(int t, int e) { (void)t; (void)e; return 0; }
@@ -255,12 +440,21 @@ static void cacheFrases(void) {
                         "com uma volta. É uma correção de rota.\n");
   for (int i = 2; i <= 6; i++)
     k += (size_t)snprintf(buf + k, sizeof buf - k, "Q\tAndy Sachs\tFrase de ensaio %d.\n", i);
-  assert(dados_gravar_leve("frases-" IMDB_FILME ".txt", buf));
+  if (getenv("NUVIO_SHOT_REFERENCE")) {
+    snprintf(buf,sizeof buf,"# nuvio seriefrases v1\n%lld\tProject Hail Mary\t1\nQ\tRocky\tAmaze! Amaze! Amaze!\n",(long long)time(NULL));
+    assert(dados_gravar_leve("frases-" IMDB_FILME ".txt",buf));
+    snprintf(buf,sizeof buf,"# nuvio seriefrases v1\n%lld\tFargo\t1\nQ\tLorne Malvo · T1:E1\tOs mapas diziam: aqui há dragões. Hoje não dizem mais. Isso não quer dizer que os dragões não estejam lá.\n",(long long)time(NULL));
+    assert(dados_gravar_leve("frases-" IMDB_SERIE ".txt",buf));
+  } else {
+    assert(dados_gravar_leve("frases-" IMDB_FILME ".txt", buf));
+    snprintf(buf,sizeof buf,"# nuvio seriefrases v1\n%lld\tFallout\t1\nQ\tLucy · S1:E1\tEveryone wants to save the world. They just disagree on how.\nQ\tThe Ghoul\tThe wasteland has its own golden rule. Thou shalt get sidetracked every time.\n",(long long)time(NULL));
+    assert(dados_gravar_leve("frases-" IMDB_SERIE ".txt",buf));
+  }
 }
 
 // --- CATALOGO ----------------------------------------------------------------
 static CatItem itens[2];
-static CatEp episodios[16];
+static CatEp episodios[50];
 static const char *const EP_NOME[8] = { "The End", "The Target", "The Head", "The Ghouls",
   "The Past", "The Trap", "The Radio", "The Beginning" };
 
@@ -323,25 +517,67 @@ static void montarCatalogo(void) {
     } }
   itens[1].nElenco = 6;
 
+  if (getenv("NUVIO_SHOT_REFERENCE")) {
+    const char *ref=getenv("NUVIO_SHOT_REFERENCE");
+    snprintf(itens[1].titulo,sizeof itens[1].titulo,"Project Hail Mary");
+    snprintf(itens[1].meta,sizeof itens[1].meta,"2026 · 156 min");
+    snprintf(itens[1].genero,sizeof itens[1].genero,"Filme · Ficção científica");
+    snprintf(itens[1].sinopse,sizeof itens[1].sinopse,"Ryland Grace acorda sozinho numa nave a anos-luz da Terra, sem lembrar quem é nem por que está ali. Aos poucos a memória volta — e com ela a missão de salvar o Sol.");
+    snprintf(itens[1].direcao,sizeof itens[1].direcao,"Phil Lord, Christopher Miller");
+    snprintf(itens[0].titulo,sizeof itens[0].titulo,"Fargo");
+    snprintf(itens[0].direcao,sizeof itens[0].direcao,"Noah Hawley");
+    itens[0].nTemporadas=5;
+    for (int t=0;t<5;t++) itens[0].temporadas[t]=t+1;
+    snprintf(itens[0].meta,sizeof itens[0].meta,"2014 · 54 min");
+    snprintf(itens[0].genero,sizeof itens[0].genero,"Série · Crime · Drama");
+    snprintf(itens[0].sinopse,sizeof itens[0].sinopse,"Um vendedor de seguros frustrado cruza o caminho de um assassino de aluguel. A partir daí, uma cidadezinha de Minnesota nunca mais será a mesma.");
+    for (int k=0;k<2;k++) {
+      snprintf(itens[k].backdrop,sizeof itens[k].backdrop,"%s/%s-arte.jpg",ref,k ? "phm" : "fargo");
+      snprintf(itens[k].logo,sizeof itens[k].logo,"%s/%s-logo.png",ref,k ? "phm" : "fargo");
+      static const char *const names[2][6]={
+        {"Billy Bob Thornton","Martin Freeman","Allison Tolman","Colin Hanks","Bob Odenkirk","Keith Carradine"},
+        {"Ryan Gosling","Sandra Hüller","James Ortiz","Lionel Boyce","Ken Leung","Milana Vayntrub"}};
+      static const char *const roles[2][6]={
+        {"Lorne Malvo","Lester Nygaard","Molly Solverson","Gus Grimly","Bill Oswalt","Lou Solverson"},
+        {"Ryland Grace","Eva Stratt","Rocky (voz)","Carl","Yáo","Olesya"}};
+      for (int j=0;j<6;j++) {
+        snprintf(itens[k].elenco[j].foto,sizeof itens[k].elenco[j].foto,"%s/elenco/%c%d.jpg",ref,k ? 'a' : 'b',j);
+        snprintf(itens[k].elenco[j].nome,sizeof itens[k].elenco[j].nome,"%s",names[k][j]);
+        snprintf(itens[k].elenco[j].papel,sizeof itens[k].elenco[j].papel,"%s",roles[k][j]);
+      }
+      itens[k].elenco[5].foto[0]=0;
+    }
+  }
   fil.ini = 0; fil.n = 2;
   snprintf(fil.titulo, sizeof fil.titulo, "Ensaio");
   snprintf(fil.tipo, sizeof fil.tipo, "series");
   cat_definir_tudo(itens, 2, &fil, 1);
 
-  for (int t = 1; t <= 2; t++)
-    for (i = 0; i < 8; i++) {
+  int reference=getenv("NUVIO_SHOT_REFERENCE")!=NULL;
+  for (int t = 1; t <= (reference ? 5 : 2); t++)
+    for (i = 0; i < (reference ? 10 : 8); i++) {
       CatEp *e = &episodios[n++];
       e->temporada = t; e->episodio = i + 1;
-      snprintf(e->nome, sizeof e->nome, "%s", EP_NOME[i]);
+      e->nota=78+(i*3+t)%16;
+      snprintf(e->nome, sizeof e->nome, "%s", EP_NOME[i%8]);
       snprintf(e->duracao, sizeof e->duracao, "56 min");
       snprintf(e->data, sizeof e->data, "11 de abril de 2024");
       snprintf(e->sinopse, sizeof e->sinopse, "%s",
                i == 2 ? "Lucy, Maximus e o Ghoul disputam a mesma recompensa no deserto."
                       : "Sinopse do episódio.");
       snprintf(e->thumb, sizeof e->thumb, A "ep/00_1_%02d.jpg", (t == 1 ? i : 7 - i) + 1);
+      const char *ref=getenv("NUVIO_SHOT_REFERENCE");
+      if (ref) {
+        snprintf(e->thumb,sizeof e->thumb,"%s/ep%d.jpg",ref,1+i%4);
+        snprintf(e->nome,sizeof e->nome,"Episódio %d",i+1);
+      }
     }
   cat_definir_episodios(0, episodios, n);
-  for (i = 1; i <= 8; i++) vistoep_definir(IMDB_SERIE, 1, i, i <= 2);
+  for (i = 1; i <= (reference ? 10 : 8); i++) vistoep_definir(IMDB_SERIE, 1, i, i <= 2);
+  if (reference) {
+    agenda_definir_hoje("2026-10-22");
+    agenda_registrar(IMDB_SERIE,"Fargo",NULL,"Returning Series",6,1,"Premiere","2027-01-01","");
+  }
 }
 
 // --- CAPTURA -----------------------------------------------------------------
@@ -357,7 +593,7 @@ static void gravar(const char *id) {
   s = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
   for (int y = 0; y < 1080; y++)
     memcpy((char *)s->pixels + y * s->pitch, pix + (1079 - y) * 1920 * 4, 1920 * 4);
-  SDL_SaveBMP(s, nome);
+  if (!getenv("NUVIO_DETAIL21_PROOF") && !getenv("NUVIO_LEGACY_PROOF")) SDL_SaveBMP(s, nome);
   snprintf(nome, sizeof nome, "%s/%s.png", saida, id);
   assert(IMG_SavePNG(s, nome) == 0);
   SDL_FreeSurface(s);
@@ -379,21 +615,26 @@ static void gravar(const char *id) {
   }
 }
 
+static float shotScroll=-1;
 static void quadros(int n) {
   for (int i = 0; i < n; i++) {
     SDL_PumpEvents();
     tex_bombear(3);
     vt_antes();
     detail_atualizar(1.0f / 60.0f, SDL_GetTicks());
+    if (shotScroll>=0) scrollY=shotScroll;
     txt_novo_quadro();
     tex_novo_quadro();
     gfx_novo_quadro();
     glClearColor(NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
+    serverRectCount = 0;
+    serverRims = 0;
+    serverHints = 0;
     detail_desenhar(SDL_GetTicks());
     // NUVIO_SHOT_RELOGIO=1: the clock island over the page, as app.c draws it.
     if (getenv("NUVIO_SHOT_RELOGIO")) {
-      ilha_relogio_visivel(1); ilha_posicionar(1); ilha_desenhar(SDL_GetTicks());
+      ilha_relogio_visivel(1); ilha_posicionar(getenv("NUVIO_SHOT_SERVIDORES") ? 2 : 1); ilha_desenhar(SDL_GetTicks());
     }
     // NUVIO_SHOT_PAINEL=1: o painel de Salvos/Avisos aberto POR CIMA da pagina,
     // como app.c o desenha agora (sem o `!detail_aberto()` de antes).
@@ -426,6 +667,27 @@ static void abrir(int i, int nv, int sec, int col) {
   hi.rect.w = NV_TELA_W; hi.rect.h = NV_TELA_H;
   hi.titulo = itens[i].titulo; hi.genero = itens[i].genero; hi.meta = itens[i].meta;
   detail_abrir(&hi);
+  if (getenv("NUVIO_SHOT_REFERENCE")) {
+    cat_historico_definir_id(itens[i].imdb,itens[i].tipo,i ? 0 : 1);
+    char path[1024]; snprintf(path,sizeof path,"%s/ajustes.txt",dados_dir());
+    FILE *f=fopen(path,"a"); assert(f);
+    fprintf(f,"selected_theme %d\n",i ? 5 : 1); fclose(f);
+    ajustes_dir(dados_dir());
+  }
+  if (getenv("NUVIO_SHOT_SOURCE")) {
+    Stream source={0};
+    snprintf(source.rotulo,sizeof source.rotulo,"Fixture 4K Dolby Vision Atmos");
+    snprintf(source.url,sizeof source.url,"https://example.invalid/fixture.mp4");
+    snprintf(source.provedor,sizeof source.provedor,"Offline fixture");
+    source.altura=2160; source.dolbyVision=source.dolbyAtmos=source.mp4=1;
+    source.badges=badges_detectar(source.rotulo);
+    source.tamanhoMB=8000;
+    char alvo[96]; int st=0,ep=0;
+    if (ehSerie()) episodioAlvo(&st,&ep,NULL);
+    if (st && ep) snprintf(alvo,sizeof alvo,"%s:%d:%d",itens[i].imdb,st,ep);
+    else snprintf(alvo,sizeof alvo,"%s",itens[i].imdb);
+    stream_definir_alvo(alvo); stream_definir_lista(&source,1);
+  }
   quadros(2);
   nivel = nv;
   if (nv == 0) botao = col;
@@ -434,7 +696,10 @@ static void abrir(int i, int nv, int sec, int col) {
   // Os quadros daqui sao muito mais rapidos que os da TV: o esvanecer do logo
   // (260 ms, SDL_GetTicks) ainda nao terminou. Espera e assenta.
   SDL_Delay(400);
-  quadros(4);
+  heroDesde = SDL_GetTicks() - 10000;   // stills show the settled hero enter wave
+  // Springs and crossfades step by real ms: sub-ms frames give dt 0, so pace
+  // the last frames like the TV (16 ms) until focus fills settle.
+  for (int k = 0; k < 16; k++) { SDL_Delay(16); quadros(1); }
 }
 
 #include "traktcoment_checks.h"
@@ -477,7 +742,7 @@ int main(int argc, char **argv) {
   assert(gfx_iniciar());
   { char ic[1024]; if (realpath("deploy/app/art", ic)) gfx_icones_dir(ic); }
   assert(txt_iniciar("deploy/app", 1));
-  tex_iniciar(16);
+  tex_iniciar(getenv("NUVIO_SHOT_REFERENCE") ? 30 : 16);
   ajustes_iniciar();
   dados_iniciar("deploy/app/art");
   dd = dados_dir();
@@ -489,9 +754,16 @@ int main(int argc, char **argv) {
     const char *lg = getenv("NUVIO_SHOT_IDIOMA");
     snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dd);
     f = fopen(caminho, "w"); assert(f);
-    if (lg && *lg) fprintf(f, "idioma %d\n", atoi(lg));
+    fprintf(f, "idioma %d\n", lg && *lg ? atoi(lg) : 0);
     // Acento azul do mockup (#5aa2ff/#42a5f5): o tema Oceano.
     fputs("selected_theme 2\n", f);
+    if (getenv("NUVIO_DETAIL21_PROOF") || getenv("NUVIO_LEGACY_PROOF"))
+      fputs("notaTituloTrakt 0\nnotaTituloMeta 0\nnotaTituloLetter 0\n",f);
+    if (getenv("NUVIO_SHOT_RATING_BRANDS"))
+      fputs("notaTituloMetaUser 0\nnotaTituloTmdb 0\nnotaTituloEbert 0\n",f);
+    if (getenv("NUVIO_SHOT_REFERENCE")) fputs("blurUnwatchedEpisodes 0\n",f);
+    if (getenv("NUVIO_SHOT_TOPO")) fprintf(f, "detalheTopoLocal %d\n", atoi(getenv("NUVIO_SHOT_TOPO")));
+    if (getenv("NUVIO_SHOT_SPOILERS")) fputs("blurUnwatchedEpisodes 0\n",f);
     if (getenv("NUVIO_SHOT_LAYOUT")) fprintf(f, "homeLayoutLocal %d\n", atoi(getenv("NUVIO_SHOT_LAYOUT")));
     if (getenv("NUVIO_SHOT_VIDRO") && atoi(getenv("NUVIO_SHOT_VIDRO")))
       fputs("vidroLocal 0\n", f);
@@ -499,6 +771,8 @@ int main(int argc, char **argv) {
     // Ajustes > Aparencia > Fundo: 0 Arte, 1 Arte borrada, 2 Frost.
     // NUVIO_SHOT_FONTE=3: Montserrat, the interface font of the owner's TV.
     if (getenv("NUVIO_SHOT_FONTE")) fprintf(f, "fonteInterface %d\n", atoi(getenv("NUVIO_SHOT_FONTE")));
+    // NUVIO_SHOT_ESCALA=<0..5>: text/component scale (0 = 85%, 2 = 100%).
+    if (getenv("NUVIO_SHOT_ESCALA")) fprintf(f, "escalaTextoVersaoLocal 1\nescalaTextoLocal %d\n", atoi(getenv("NUVIO_SHOT_ESCALA")));
     if (getenv("NUVIO_SHOT_FUNDO")) fprintf(f, "fundoLocal %d\n", atoi(getenv("NUVIO_SHOT_FUNDO")));
     // NUVIO_SHOT_BORDA=1: "Borda no cartaz em foco" off (focus grows instead of a ring).
     if (getenv("NUVIO_SHOT_BORDA")) fprintf(f, "bordaFocoCartaz %d\n", atoi(getenv("NUVIO_SHOT_BORDA")));
@@ -524,6 +798,7 @@ int main(int argc, char **argv) {
   // As marcas das notas (IMDb, Rotten Tomatoes, Trakt) vem da pasta de arte.
   { char ar[1024]; if (realpath("deploy/app/art", ar)) extras_carregar(ar); }
   montarCatalogo();
+#include "chipfonte_shots.inc"
   cacheFrases();
 #ifdef NV_SHOT_HOOKS
   if (getenv("NUVIO_C9_CACHE")) return vc_run();
@@ -568,6 +843,190 @@ int main(int argc, char **argv) {
     { SvPerfil p; memset(&p, 0, sizeof p);
       p.gostoPct = 82; p.gostoTotal = 11; p.estado = SV_PERFIL_OK;
       socialvis_definir_perfil_extra("nuvio:mari", &p); }
+  }
+
+  if (quer(argc,argv,"hero-actions")) {
+    abrir(0,0,0,1);
+    gravar("collapsed");
+    SDL_Event e={0}; e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_RIGHT;
+    detail_evento(&e);
+    assert(acaoEm(botao)==ACAO_NOTA);
+    for (int k=0;k<50;k++) { SDL_Delay(16); quadros(1); }
+    gravar("expanded-rate");
+    while (acaoEm(botao)!=ACAO_MAIS) detail_evento(&e);
+    for (int k=0;k<30;k++) { SDL_Delay(16); quadros(1); }
+    gravar("more-focused");
+    e.key.keysym.sym=SDLK_RETURN; detail_evento(&e);
+    e.type=SDL_KEYUP; detail_evento(&e);
+    assert(detmais_aberto());
+    // Fixed frame times use the real renderer; no screenshot-only geometry.
+    const int frames[]={0,2,5,12,50};
+    int f=0;
+    for (int k=0;k<=50;k++) {
+      SDL_Delay(16); quadros(1);
+      if (k==frames[f]) {
+        char name[32]; snprintf(name,sizeof name,"morph-%d",f+1); gravar(name);
+        if (++f==5) break;
+      }
+    }
+    gravar("menu-open");
+    e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_ESCAPE; detail_evento(&e);
+    assert(!detmais_aberto() && acaoEm(botao)==ACAO_MAIS);
+    for (int k=0;k<75;k++) { SDL_Delay(16); quadros(1); }
+    assert(detmais_visivel()<.003f);
+    gravar("menu-closed");
+    e.key.keysym.sym=SDLK_LEFT;
+    while (botao>1) detail_evento(&e);
+    for (int k=0;k<50;k++) { SDL_Delay(16); quadros(1); }
+    assert(!maisAcoes && acoesVis<.003f);
+    gravar("collapsed-again");
+    puts("PASS: hero reveal and reverse morph, focus restored to More");
+    return 0;
+  }
+  if (quer(argc,argv,"video")) {
+    static const struct { const char *name; int movie,row,col; } shots[]={
+      {"hero",1,-1,0},{"notas",1,SEC_NOTAS,0},{"trailers",1,SEC_TRAILERS,1},
+      {"elenco",1,SEC_ELENCO,1},{"autor",1,SEC_COLECAO,1},
+      {"similares",1,SEC_RELACIONADOS,0},{"comentarios",1,SEC_COMENTARIOS,0},
+      {"ficha",1,SEC_DETALHES,0},{"serie-hero",0,-1,0},
+      {"episodios",0,SEC_EPISODIOS,2},{"progresso",0,SEC_PROGTEMP,2},
+      {"universo",0,SEC_COLECAO,1}
+    };
+    for (int j=0;j<(int)(sizeof shots/sizeof *shots);j++) {
+      tex_encerrar(); assert(tex_iniciar(30));
+      abrir(shots[j].movie,shots[j].row>=0,shots[j].row<0 ? 0 : shots[j].row,shots[j].col);
+      frasesAberta=1; seriefrases_abrir(itens[shots[j].movie].imdb);
+      quadros(50); gravar(shots[j].name);
+    }
+  }
+
+  // anim: enter, focus moves (ratings row to Friends, cast) and exit, as frames.
+  if (argc > 2 && quer(argc,argv,"anim")) {
+    SDL_Event e;
+    char name[100];
+    memset(&e, 0, sizeof e); e.type = SDL_KEYDOWN;
+    tex_encerrar(); assert(tex_iniciar(30));
+    abrir(1,0,0,0); quadros(1);
+    // Art first, so the enter frames show the page and not empty slots.
+    { Uint32 dl = SDL_GetTicks() + 15000; int pend = 1;
+      while (pend && (Sint32)(dl - SDL_GetTicks()) > 0) {
+        tex_estatisticas(NULL,&pend,NULL,NULL,NULL); SDL_Delay(16); tex_bombear(3); } }
+    detail_fechar_seco();
+    for (int k=0;k<60 && detail_aberto();k++) quadros(1);
+    printf("anim enter from closed=%d\n", !detail_aberto());
+    { HomeItem hi; memset(&hi, 0, sizeof hi);   // raw open: abrir() settles 160 frames
+      hi.indice = 1; hi.rect.w = NV_TELA_W; hi.rect.h = NV_TELA_H;
+      hi.titulo = itens[1].titulo; hi.genero = itens[1].genero; hi.meta = itens[1].meta;
+      detail_abrir(&hi); }
+    // 5 frames (83 ms) of page time per capture: the hero wave clock is pinned
+    // to the same simulated time, since each capture takes longer than that.
+    for (int k=0;k<12;k++) {
+      int ms = k * 5 * 1000 / 60;
+      quadros(k ? 4 : 0); heroDesde = SDL_GetTicks() - (Uint32)ms; quadros(1);
+      printf("anim t=%.3f a2=%.3f ms=%d\n", t, fase2(), ms);
+      snprintf(name,sizeof name,"anim-enter-%d",k); gravar(name); }
+    quadros(40); SDL_Delay(400); quadros(8);
+    // Hero focus Play -> +: fill, ink and scale ease (draw dt is capped at 50 ms).
+    e.key.keysym.sym = SDLK_RIGHT; detail_evento(&e);
+    for (int k=0;k<4;k++) { quadros(1); snprintf(name,sizeof name,"anim-botao-%d",k); gravar(name); }
+    e.key.keysym.sym = SDLK_LEFT; detail_evento(&e); quadros(30);
+    abrir(1,1,SEC_NOTAS,0); quadros(60); SDL_Delay(400); quadros(8);
+    gravar("anim-notas-0");
+    for (int c=1;c<nNotasTiles();c++) { e.key.keysym.sym = SDLK_RIGHT; detail_evento(&e); quadros(3); }
+    for (int k=0;k<4;k++) { quadros(k ? 5 : 1); snprintf(name,sizeof name,"anim-notas-fim-%d",k); gravar(name); }
+    quadros(40); gravar("anim-notas-amigos");
+    // Section reveal (forgotten once, as when it scrolls in) and the row dim
+    // easing from the ratings row down to trailers.
+    // Each saved frame takes longer than the 300 ms reveal, so the start of
+    // every section is pinned to 90 ms more of reveal per frame.
+    memset(secVisto, 0, sizeof secVisto);
+    quadros(1);
+    { Uint32 t0 = SDL_GetTicks(), atraso[N_SECOES];
+      for (int r=0;r<N_SECOES;r++) atraso[r] = secVisto[r] ? secVisto[r] - t0 : 0;
+      for (int k=0;k<5;k++) {
+        Uint32 ag = SDL_GetTicks();
+        for (int r=0;r<N_SECOES;r++) if (atraso[r]) secVisto[r] = (ag + atraso[r] - k*90) | 1u;
+        quadros(1); snprintf(name,sizeof name,"anim-revela-%d",k); gravar(name);
+      } }
+    quadros(40); SDL_Delay(600); quadros(8);
+    e.key.keysym.sym = SDLK_DOWN; detail_evento(&e);
+    for (int k=0;k<4;k++) { quadros(k ? 2 : 1); snprintf(name,sizeof name,"anim-dim-%d",k); gravar(name); }
+    // Footer card focused: its text scales with the card.
+    abrir(1,1,SEC_DETALHES,0); quadros(60); SDL_Delay(400); quadros(8); gravar("anim-rodape");
+    abrir(1,1,SEC_ELENCO,0); quadros(60); SDL_Delay(400); quadros(8);
+    printf("anim focus row=%d col=%d\n", foco.fileira, foco.coluna);
+    e.key.keysym.sym = SDLK_RIGHT; detail_evento(&e);
+    for (int k=0;k<4;k++) { quadros(k ? 4 : 1); snprintf(name,sizeof name,"anim-elenco-%d",k); gravar(name); }
+    detail_fechar();
+    for (int k=0;k<5;k++) { quadros(k ? 4 : 1); snprintf(name,sizeof name,"anim-exit-%d",k); gravar(name); }
+  }
+
+  if (quer(argc,argv,"lower-sections")) {
+    const int rows[]={SEC_COMENTARIOS,SEC_FRASES,SEC_DETALHES,SEC_ESTUDIOS};
+    const char *names[]={"comments","quotes","details","studios"};
+    for (int movie=0;movie<2;movie++) for (int i=0;i<4;i++) {
+      abrir(movie,1,rows[i],0);
+      frasesAberta=1; seriefrases_abrir(itens[movie].imdb);
+      quadros(60); SDL_Delay(400); quadros(8);
+      char name[96]; snprintf(name,sizeof name,"%s-%s",movie ? "movie" : "series",names[i]);
+      gravar(name);
+#ifdef NV_DETSECOES_PROOF
+      SDL_Event key={0}; key.type=SDL_KEYDOWN;
+      if (i==0) {
+        for (int k=0;k<EX_COMENT_MAX+3;k++) { key.key.keysym.sym=SDLK_RIGHT; detail_evento(&key); quadros(8); }
+        assert(foco.fileira==SEC_COMENTARIOS && foco.coluna==nCartoesCom());
+        quadros(60); snprintf(name,sizeof name,"%s-comments-end",movie ? "movie" : "series"); gravar(name);
+      }
+      if (i==0 || i==1) {
+        key.key.keysym.sym=SDLK_RETURN; detail_evento(&key);
+        key.type=SDL_KEYUP; detail_evento(&key);
+        assert(lowerList==(i==1 ? 2 : 1));
+        for (int k=0;k<24;k++) { SDL_Delay(16); quadros(1); }
+        snprintf(name,sizeof name,"%s-%s-list",movie ? "movie" : "series",names[i]); gravar(name);
+        key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_ESCAPE; detail_evento(&key);
+        assert(!lowerList && foco.fileira==rows[i]);
+      }
+#endif
+    }
+  }
+
+  if (quer(argc,argv,"full")) {
+    assert(ajustes_idioma()==IDIOMA_PT);
+    for (int movie=1;movie>=0;movie--) {
+      tex_encerrar(); assert(tex_iniciar(30));
+      abrir(movie,0,0,0);
+      frasesAberta=1; seriefrases_abrir(itens[movie].imdb);
+      quadros(20); recalcularLayout();
+      int height=(int)ceilf(docFim);
+      char name[100],path[1024];
+      snprintf(path,sizeof path,"%s/%s-height.txt",saida,movie ? "movie" : "series");
+      FILE *f=fopen(path,"w"); assert(f); fprintf(f,"%d\n",height); fclose(f);
+      snprintf(path,sizeof path,"%s/%s-sections.txt",saida,movie ? "movie" : "series");
+      f=fopen(path,"w"); assert(f);
+      for (int r=0;r<N_SECOES;r++) if (secaoN(r)>0)
+        fprintf(f,"%d %.0f %.0f\n",r,topoSec[r],conteudoSec[r]);
+      fclose(f);
+      for (int sy=0;sy<height;sy+=900) {
+        shotScroll=sy; quadros(40); SDL_Delay(450); quadros(12);
+        // The asynchronous cache can still be decoding under host build load.
+        Uint32 deadline = SDL_GetTicks() + 15000;
+        for (;;) {
+          int pending = 0;
+          tex_estatisticas(NULL, &pending, NULL, NULL, NULL);
+          if (!pending) break;
+          assert((Sint32)(deadline - SDL_GetTicks()) > 0);
+          SDL_Delay(16); quadros(4);
+        }
+        SDL_Delay(400); quadros(4); // Settle artwork fades after the last upload.
+        snprintf(name,sizeof name,"%s-full-%04d",movie ? "movie" : "series",sy);
+        gravar(name);
+        int live=0,pending=0,hot=0; long bytes=0,hotBytes=0;
+        tex_estatisticas(&live,&pending,&bytes,&hot,&hotBytes);
+        printf("textures %s live=%d hot=%d pending=%d bytes=%ld\n",name,live,hot,pending,bytes);
+        assert(live<=30);
+      }
+      shotScroll=-1;
+    }
   }
 
   // NUVIO_VIDRO_TELAS=<dir> (tests/vidro_telas.sh): glass budget with the
@@ -637,7 +1096,329 @@ int main(int argc, char **argv) {
     assert(!strcmp(aviso.imdb, IMDB_FILME)); assert(!agenda_lembrete(IMDB_FILME));
     return 0;
   }
+#ifndef NV_LEGACY_PROOF
+  if (quer(argc,argv,"rating-navigation")) {
+    for (int scale=0; scale<2; scale++) for (int glass=0; glass<2; glass++) {
+      char name[80];
+      gfx_escala_txt_definir(scale ? 1.f : .85f); ajustes_definir_vidro(glass);
+      abrir(1,0,0,2);
+      SDL_Event e={0}; e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_RETURN;
+      detail_evento(&e); e.type=SDL_KEYUP; detail_evento(&e);
+      assert(detmais_aberto());
+      e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_DOWN;
+      while (detmais_acao(detmais_foco())!=DMAIS_NOTA) detail_evento(&e);
+      int row=detmais_foco();
+      e.key.keysym.sym=SDLK_RETURN; detail_evento(&e);
+      e.type=SDL_KEYUP; detail_evento(&e);
+      assert(reacao_aberta() && detmais_aberto());
+      for (int k=0;k<30;k++) { SDL_Delay(16); quadros(1); }
+      snprintf(name,sizeof name,"rating-%d-%s",scale ? 100 : 85,glass ? "glass" : "solid"); gravar(name);
+      e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_ESCAPE; detail_evento(&e);
+      assert(!reacao_aberta() && detmais_aberto() && detmais_foco()==row && botao==2);
+      quadros(30);
+      snprintf(name,sizeof name,"rating-back-%d-%s",scale ? 100 : 85,glass ? "glass" : "solid"); gravar(name);
+      detail_evento(&e);
+      assert(!detmais_aberto() && nivel==0 && botao==2 && !saindo);
+    }
+    puts("PASS: shared rating island, Back restores focused Rate, second Back restores More button");
+    tex_encerrar(); SDL_Quit(); return 0;
+  }
+#endif
+  if (quer(argc,argv,"reviews-proof")) {
+    const float scales[]={1,.85f};
+    for (int mode=0;mode<2;mode++) {
+      gfx_escala_txt_definir(scales[mode]); ajustes_definir_vidro(mode==0);
+      montarCatalogo(); abrir(1,1,SEC_COMENTARIOS,0);
+      for (int tick=0;tick<60;tick++) { SDL_Delay(16); quadros(1); }
+      for (int state=0;state<3;state++) {
+        if (state) {
+          SDL_Event key={0}; key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_RIGHT;
+          detail_evento(&key); assert(foco.coluna==state);
+          for (int tick=0;tick<30;tick++) { SDL_Delay(16); quadros(1); }
+        }
+        // Isolate the section: adjacent round-4 components intentionally differ.
+        txt_novo_quadro(); gfx_novo_quadro();
+        glClearColor(.04f,.05f,.07f,1); glClear(GL_COLOR_BUFFER_BIT);
+        float scale=gfx_escala_txt_entrar();
+        desenhaComentarios(72,300,1);
+        gfx_escala_sair(scale);
+        char name[128]; snprintf(name,sizeof name,"%d-%s-reviews-%d",mode ? 85 : 100,mode ? "solid" : "glass",state);
+        gravar(name);
+      }
+      SDL_Event key={0}; key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_RETURN;
+      detail_evento(&key); key.type=SDL_KEYUP; detail_evento(&key); assert(comInteiro==2);
+      key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_ESCAPE; detail_evento(&key);
+      assert(comInteiro<0 && nivel==1 && foco.fileira==SEC_COMENTARIOS && foco.coluna==2);
+    }
+    puts("PASS: review focus, navigation, open and Back");
+    tex_encerrar(); SDL_Quit(); return 0;
+  }
+  if (quer(argc,argv,"rating-brands-proof")) {
+    const float scales[]={.85f,1};
+    for (int scale=0;scale<2;scale++) for (int glass=0;glass<2;glass++) {
+      gfx_escala_txt_definir(scales[scale]); ajustes_definir_vidro(glass);
+      montarCatalogo(); abrir(1,1,SEC_NOTAS,0);
+      assert(notaCelulas()==9 && notasui_colunas()==3);
+      for (int focused=0;focused<2;focused++) {
+        memset(animFoco[SEC_NOTAS],0,sizeof animFoco[SEC_NOTAS]);
+        animFoco[SEC_NOTAS][1]=focused;
+        for (int frame=0;frame<60;frame++) {
+          txt_novo_quadro(); gfx_novo_quadro();
+          glClearColor(.04f,.05f,.07f,1); glClear(GL_COLOR_BUFFER_BIT);
+          float previous=gfx_escala_txt_entrar();
+          desenhaNotasTiles(72,120,1);
+          gfx_escala_sair(previous);
+          tex_bombear(3);
+        }
+        char name[128];
+        snprintf(name,sizeof name,"%d-%s-ratings-%s",scale ? 100 : 85,
+                 glass ? "glass" : "solid",focused ? "focused" : "rest");
+        gravar(name);
+      }
+    }
+    puts("PASS: rating brands, three rows, both materials and text scales");
+    tex_encerrar(); SDL_Quit(); return 0;
+  }
+  if (quer(argc,argv,"legacy-proof")) {
+    const float scales[]={.85f,1};
+    for (int scale=0;scale<2;scale++) for (int glass=0;glass<2;glass++) {
+      if (getenv("NUVIO_PROOF_SCALE") && atoi(getenv("NUVIO_PROOF_SCALE"))!=(scale ? 100 : 85)) continue;
+      if (getenv("NUVIO_PROOF_GLASS") && atoi(getenv("NUVIO_PROOF_GLASS"))!=glass) continue;
+      gfx_escala_txt_definir(scales[scale]); ajustes_definir_vidro(glass);
+      char name[128];
+      const int rows[]={-1,SEC_NOTAS,SEC_COLECAO,SEC_MUSICAS,SEC_COMENTARIOS};
+      const char *names[]={"hero","ratings","collection","music","reviews"};
+      for (int section=0;section<5;section++) {
+        if (getenv("NUVIO_PROOF_SECTION") && strcmp(getenv("NUVIO_PROOF_SECTION"),names[section])) continue;
+        montarCatalogo();
+        if (section==3) {
+          snprintf(itens[1].titulo,sizeof itens[1].titulo,"The Dark Knight");
+          snprintf(itens[1].meta,sizeof itens[1].meta,"2008 · 152 min");
+          cat_definir_tudo(itens,2,NULL,0);
+        }
+        abrir(1,section>0,section>0 ? rows[section] : 0,0);
+        for (int tick=0;tick<60;tick++) { SDL_Delay(16); quadros(1); }
+        snprintf(name,sizeof name,"%d-%s-%s",scale ? 100 : 85,glass ? "glass" : "solid",names[section]); gravar(name);
+        if (section==3) {
+          shotScroll=scrollY; nivel=0;
+          for (int tick=0;tick<30;tick++) { SDL_Delay(16); quadros(1); }
+          snprintf(name,sizeof name,"%d-%s-music-unfocused",scale ? 100 : 85,glass ? "glass" : "solid"); gravar(name);
+          nivel=1; shotScroll=-1;
+          for (int tick=0;tick<30;tick++) { SDL_Delay(16); quadros(1); }
+        }
+#ifdef NV_DETAIL21_PROOF
+        if (section==1) {
+          SDL_Event key={0}; key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_RIGHT;
+          for (int c=1;c<nNotasTiles();c++) { detail_evento(&key); assert(foco.coluna==c); }
+          for(int tick=0;tick<30;tick++) { SDL_Delay(16); quadros(1); }
+          snprintf(name,sizeof name,"%d-%s-ratings-last",scale ? 100 : 85,glass ? "glass" : "solid"); gravar(name);
+          key.key.keysym.sym=SDLK_ESCAPE; detail_evento(&key); assert(nivel==0 && !saindo);
+        }
+        if (section==2) {
+          SDL_Event key={0}; key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_RETURN; detail_evento(&key);
+          key.type=SDL_KEYUP; detail_evento(&key); assert(colListaAberta);
+          key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_ESCAPE; detail_evento(&key);
+          assert(!colListaAberta && foco.fileira==SEC_COLECAO && nivel==1);
+        }
+        if (section==4) {
+          SDL_Event key={0}; key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_RIGHT;
+          for (int c=1;c<secaoN(SEC_COMENTARIOS);c++) { detail_evento(&key); assert(foco.coluna==c); }
+          key.key.keysym.sym=SDLK_RETURN; detail_evento(&key); key.type=SDL_KEYUP; detail_evento(&key);
+          assert(comInteiro>=0); key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_ESCAPE; detail_evento(&key);
+          assert(comInteiro<0 && nivel==1 && foco.fileira==SEC_COMENTARIOS);
+        }
+#endif
+        if (section==3) {
+          snprintf(itens[1].titulo,sizeof itens[1].titulo,"The Dark Knight");
+          snprintf(itens[1].meta,sizeof itens[1].meta,"2008 · 152 min");
+          cat_definir_tudo(itens,2,NULL,0);
+          SDL_Event key={0}; key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_RETURN; detail_evento(&key);
+          key.type=SDL_KEYUP; detail_evento(&key); assert(musicaui_aberta());
+          for (int frame=0;frame<4;frame++) {
+            for (int tick=0;tick<(frame==3 ? 28 : 5);tick++) { SDL_Delay(16); quadros(1); }
+            snprintf(name,sizeof name,"%d-%s-music-open-%d",scale ? 100 : 85,glass ? "glass" : "solid",frame); gravar(name);
+          }
+          key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_ESCAPE; detail_evento(&key);
+#ifdef NV_DETAIL21_PROOF
+          assert(musicaui_visivel() && !musicaui_aberta());
+          assert(detail_relogio_oculto() && !detail_relogio_navegavel());
+          key.key.keysym.sym=SDLK_DOWN; detail_evento(&key);
+          assert(nivel==1 && foco.fileira==SEC_MUSICAS);
+#endif
+          for (int tick=0;tick<50;tick++) {
+            SDL_Delay(16); quadros(1);
+            if (tick==4 || tick==10 || tick==49) {
+              snprintf(name,sizeof name,"%d-%s-music-close-%d",scale ? 100 : 85,glass ? "glass" : "solid",tick); gravar(name);
+            }
+          }
+          assert(!musicaui_aberta());
+#ifdef NV_DETAIL21_PROOF
+          assert(!musicaui_visivel() && nivel==1 && foco.fileira==SEC_MUSICAS);
+#endif
+          montarCatalogo();
+        }
+      }
+      montarCatalogo();
+      itens[1].progresso=40; itens[1].restanteMin=68;
+      cat_definir_tudo(itens,2,NULL,0);
+      abrir(1,0,0,0);
+#ifdef NV_DETAIL21_PROOF
+      focoVersao=1;
+#endif
+      quadros(30);
+      snprintf(name,sizeof name,"%d-%s-hot-source",scale ? 100 : 85,glass ? "glass" : "solid"); gravar(name);
+#ifdef NV_DETAIL21_PROOF
+      assert(topoFonteDisponivel());
+      SDL_Event key={0}; key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_DOWN; detail_evento(&key);
+      assert(!pedFontes && !focoVersao && nivel==1);
+      key.key.keysym.sym=SDLK_UP; detail_evento(&key);
+      assert(nivel==0 && focoVersao && !pedFontes);
+      nivel=0; focoVersao=1;
+      key.key.keysym.sym=SDLK_RETURN; detail_evento(&key); key.type=SDL_KEYUP; detail_evento(&key);
+      assert(detail_pediu_fontes());
+#endif
+    }
+    puts("PASS: legacy components, music open/Back, hot-source navigation");
+    tex_encerrar();
+    SDL_Quit(); return 0;
+  }
   if (quer(argc, argv, "filme-topo")) { abrir(1, 0, 0, 0); gravar("filme-topo"); }
+  if (quer(argc, argv, "detalhe-chip")) {
+    assert(ajustes_rapido_cor_definir(11));
+    assert(dados_gravar("perfis.txt", "1\t0\t1\t0\t#7655D6\tMarina\t\t\n"));
+    perfis_carregar_ativo();
+    // Confirmed foreign logo, friends feed, and a real candidate stream.
+    snprintf(itens[1].logoIdiomaUrl, sizeof itens[1].logoIdiomaUrl, "%s", itens[1].logo);
+    snprintf(itens[1].logoIdioma, sizeof itens[1].logoIdioma, "ja");
+    cat_definir_tudo(itens, 2, NULL, 0);
+    static Stream candidate;
+    snprintf(candidate.url, sizeof candidate.url, "https://example.invalid/movie.mkv");
+    candidate.altura = 2160;
+    if (getenv("NUVIO_DETSRV_PROOF")) {
+      snprintf(candidate.bingeGroup, sizeof candidate.bingeGroup, "plex|direct");
+      snprintf(candidate.provedor, sizeof candidate.provedor, "Local · ZimaOS");
+      snprintf(candidate.rotulo, sizeof candidate.rotulo, "4K Dolby Vision Atmos 7.1");
+      candidate.dolbyVision = 1;
+      candidate.tamanhoBytes = UINT64_C(21152713932);
+      candidate.badges = badges_detectar(candidate.rotulo);
+      snprintf(itens[1].titulo, sizeof itens[1].titulo, "Heretic");
+      snprintf(itens[1].meta, sizeof itens[1].meta, "2024 · 111 min");
+      snprintf(itens[1].genero, sizeof itens[1].genero, "Movie · Thriller · Horror");
+      cat_definir_tudo(itens, 2, NULL, 0);
+    }
+    stream_definir_alvo(IMDB_FILME); stream_definir_lista(&candidate, 1);
+    abrir(1,0,0,0);
+    if (getenv("NUVIO_SERVER_CHECK")) {
+      int failures = 0;
+      const float scales[] = {1, .85f};
+      for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
+        gfx_escala_txt_definir(scales[scale]); ajustes_definir_vidro(glass);
+        quadros(160);
+        float red, green, blue; ajustes_acento(&red, &green, &blue);
+        unsigned char pixel[4];
+        glReadPixels((int)((serverPrimary.x + serverPrimary.w * .5f) * gfx_escala_txt()),
+                     1080 - (int)((serverPrimary.y + 8) * gfx_escala_txt()), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+        int compact = serverPrimary.w <= 240 && serverPrimary.h <= 76;
+        int accent = fabsf(pixel[0] / 255.f - red) < .08f &&
+                     fabsf(pixel[1] / 255.f - green) < .08f && fabsf(pixel[2] / 255.f - blue) < .08f;
+        printf("%s: P1 primary %d%% %s width=%.1f height=%.1f accent=%d\n",
+               compact && accent ? "PASS" : "FAIL", scale ? 85 : 100, glass ? "glass" : "solid",
+               serverPrimary.w, serverPrimary.h, accent);
+        failures += !compact || !accent;
+        printf("%s: P1 rimless controls %d%% %s outlines=%d\n", serverRims ? "FAIL" : "PASS",
+               scale ? 85 : 100, glass ? "glass" : "solid", serverRims);
+        failures += serverRims != 0;
+        assert(serverRectCount == 4 && serverHints == 0);
+        GfxRect friends = serverRects[0], next = serverRects[1];
+        assert(fabsf(friends.y + hSinVis + NV_DETW2_GAP_SIN + NV_DETW2_M1_H -
+                      1048 / gfx_escala_txt()) < 1);
+        for (int p = 2; p < 4; p++) {
+          GfxRect source = serverRects[p];
+          assert(next.x + next.w < source.x);
+          assert(fabsf(next.y + next.h * .5f - source.y - source.h * .5f) < 1);
+          assert(source.y + source.h < friends.y);
+        }
+        assert(friends.x >= serverRects[3].x);
+        printf("PASS: bottom anchor, source row, recommendation, no ratings or hints\n");
+      }
+      return failures ? 1 : 0;
+    }
+    const float scales[] = {1, .85f};
+    for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
+      char name[80]; gfx_escala_txt_definir(scales[scale]); ajustes_definir_vidro(glass);
+      for (int frame = 0; frame < 40; frame++) { SDL_Delay(16); quadros(1); }
+      snprintf(name, sizeof name, "server-%d-%s", (int)(scales[scale] * 100 + .5f), glass ? "glass" : "solid"); gravar(name);
+    }
+    gfx_escala_txt_definir(1); ajustes_definir_vidro(1);
+    for (int frame = 0; frame < 40; frame++) { SDL_Delay(16); quadros(1); }
+    gravar("detalhe-chip");
+    SDL_Event e = {0}; e.type = SDL_KEYDOWN;
+    e.key.keysym.sym = SDLK_DOWN; detail_evento(&e);
+    const int times[] = {0, 80, 160, 320};
+    quadros(1);
+    for (int i = 0, elapsed = 0; i < 4; i++) {
+      while (elapsed < times[i]) { SDL_Delay(16); quadros(1); elapsed += 16; }
+      char name[80]; snprintf(name, sizeof name, "server-focus-%03d", times[i]); gravar(name);
+    }
+    e.key.keysym.sym = SDLK_UP; detail_evento(&e); quadros(90);
+    HomeItem hi = {0}; hi.indice = 1; hi.rect.w = NV_TELA_W; hi.rect.h = NV_TELA_H;
+    hi.titulo = itens[1].titulo; hi.genero = itens[1].genero; hi.meta = itens[1].meta;
+    detail_fechar_seco(); quadros(1);
+    detail_abrir(&hi);
+    quadros(1);
+    if (!getenv("NUVIO_DETSRV_PROOF"))
+      assert(fase2() == 0 && textogate_passo(&gateHero, 0, SDL_GetTicks()) < .1f);
+    for (int i = 0, elapsed = 0; i < 4; i++) {
+      while (elapsed < times[i]) { SDL_Delay(16); quadros(1); elapsed += 16; }
+      char name[80]; snprintf(name, sizeof name, "server-entry-%03d", times[i]); gravar(name);
+    }
+    quadros(160);
+    int nav = nBotoes() == 3 && acaoEm(2) == ACAO_MAIS;
+    if (getenv("NUVIO_DETSRV_PROOF")) {
+      e.key.keysym.sym = SDLK_DOWN; detail_evento(&e);
+      assert(nivel == 0 && focoServidor == 0);
+      e.key.keysym.sym = SDLK_RETURN; detail_evento(&e);
+      e.type = SDL_KEYUP; detail_evento(&e);
+      assert(detail_pediu_fontes() && detail_fonte_servidor() == 0);
+      stream_folha_item(1); stream_folha_abrir(); stream_folha_servidor(0);
+      quadros(90); gravar("server-sources-glass");
+      ajustes_definir_vidro(0); quadros(30); gravar("server-sources-solid");
+      ajustes_definir_vidro(1);
+      e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_ESCAPE; stream_folha_evento(&e);
+      assert(!stream_folha_aberta() && focoServidor == 0 && nivel == 0);
+      // Let the closing spring finish while retaining the underlying focus.
+      for (int frame = 0; frame < 90; frame++) {
+        stream_folha_atualizar(1.f / 60, SDL_GetTicks()); quadros(1);
+      }
+      gravar("server-chip-return");
+      e.key.keysym.sym = SDLK_UP; detail_evento(&e);
+      assert(focoServidor == -1 && botao == 0);
+    }
+#define STEP(code, expected) do { e.key.keysym.sym = code; detail_evento(&e); nav &= !!(expected); } while (0)
+    STEP(SDLK_DOWN, focoServidor == 0 && !focoAmigos);
+    STEP(SDLK_RIGHT, focoServidor == 1 && !focoAmigos);
+    STEP(SDLK_UP, focoServidor == -1 && !focoAmigos);
+    STEP(SDLK_DOWN, focoServidor == 0 && !focoAmigos);
+    STEP(SDLK_DOWN, focoServidor == -1 && focoAmigos);
+    STEP(SDLK_UP, focoServidor == 0 && !focoAmigos);
+    STEP(SDLK_UP, focoServidor == -1 && !focoAmigos);
+    STEP(SDLK_DOWN, focoServidor == 0 && !focoAmigos);
+    STEP(SDLK_DOWN, focoServidor == -1 && focoAmigos);
+    STEP(SDLK_DOWN, nivel == 1 && !focoAmigos && focoServidor == -1);
+#undef STEP
+    char path[700]; snprintf(path, sizeof path, "%s/detalhe-chip-rects.json", saida);
+    FILE *proof = fopen(path, "w"); assert(proof);
+    fprintf(proof, "{\"navigation_ok\":%d,\"rects\":[", nav);
+    for (int i = 0; i < serverRectCount; i++) {
+      GfxRect r = serverRects[i];
+      fprintf(proof, "%s[%.2f,%.2f,%.2f,%.2f]", i ? "," : "", r.x, r.y, r.w, r.h);
+    }
+    fputs("]}\n", proof); fclose(proof);
+    nivel = 0; focoAmigos = 0; focoServidor = 0;
+    e.key.keysym.sym = SDLK_RETURN; detail_evento(&e);
+    e.type = SDL_KEYUP; detail_evento(&e);
+    assert(detail_pediu_fontes() && detail_fonte_servidor() == 0);
+  }
   // O ULTIMO circular da linha aberta em foco: hoje o "..." (Mais opcoes).
   if (quer(argc, argv, "filme-explorar")) {
     abrir(1, 0, 0, 0);
@@ -732,6 +1513,14 @@ int main(int argc, char **argv) {
   if (quer(argc, argv, "filme-colecao")) { abrir(1, 1, SEC_COLECAO, 0); gravar("filme-colecao"); }
   if (quer(argc, argv, "filme-fim")) { abrir(1, 1, SEC_DETALHES, 0); gravar("filme-fim"); }
   if (quer(argc, argv, "serie-topo")) { abrir(0, 0, 0, 0); gravar("serie-topo"); }
+  if (quer(argc, argv, "serie-progresso")) { abrir(0, 1, SEC_PROGTEMP, 2); gravar("serie-progresso"); }
+  if (quer(argc, argv, "serie-fim")) { abrir(0, 1, SEC_DETALHES, 0); gravar("serie-fim"); }
+  if (quer(argc, argv, "serie-comentarios")) { abrir(0, 1, SEC_COMENTARIOS, 2); gravar("serie-comentarios"); }
+  if (quer(argc, argv, "serie-ep")) {
+    abrir(0, 1, SEC_EPISODIOS, getenv("NUVIO_SHOT_REFERENCE") ? 3 : 2);
+    gravar("serie-ep");
+  }
+  if (quer(argc, argv, "serie-temp")) { abrir(0, 1, SEC_TEMPORADAS, 0); gravar("serie-temp"); }
   if (quer(argc, argv, "serie-ep")) { abrir(0, 1, SEC_EPISODIOS, 2); gravar("serie-ep"); }
   if (quer(argc, argv, "serie-temp")) { abrir(0, 1, SEC_TEMPORADAS, 1); gravar("serie-temp"); }
   if (quer(argc, argv, "serie-baixo")) { abrir(0, 1, SEC_ELENCO, 0); gravar("serie-baixo"); }

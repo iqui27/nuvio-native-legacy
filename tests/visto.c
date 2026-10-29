@@ -1,3 +1,4 @@
+#include "rede.h"
 // "Marcar como assistido" para os tres destinos (visto.c), contra rede FALSA.
 //
 // O pedido do dono: "o mark as watch tem que funcionar tanto no nuvio, como no
@@ -104,6 +105,7 @@ int dados_apagar(const char *n) {
 int cat_indice_por_imdb(const char *imdb) { (void)imdb; return -1; }
 void cat_aplicar_progresso(int i, double p, double d, int t, int e) { (void)i; (void)p; (void)d; (void)t; (void)e; }
 void cat_historico_definir_id(const char *i, const char *t, int v) { (void)i; (void)t; (void)v; }
+void cat_historico_definir_tempo(const char *i, const char *t, int v, long long ms) { (void)ms; cat_historico_definir_id(i, t, v); }
 unsigned long long cat_historico_geracao(void) { return 1; }
 int cat_historico_definir_se_geracao(const char *i, const char *t, int v,
                                      unsigned long long g) {
@@ -475,3 +477,7 @@ int main(void) {
   fprintf(stderr, "visto: tudo ok\n");
   return 0;
 }
+
+int rede_pedir(const RedePedido *p, RedeResposta *r) { (void)p; memset(r,0,sizeof *r);r->erro=REDE_INDISPONIVEL;return 0; }
+void rede_resposta_limpar(RedeResposta *r) { free(r->corpo); free(r->cabecalhos); memset(r,0,sizeof *r); }
+char *rede_baixar_st_retry(const char *u,int t,const char *const *c,int *st,int *retry) { if(retry)*retry=0;return rede_baixar_st(u,t,c,st); }

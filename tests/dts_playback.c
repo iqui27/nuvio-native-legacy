@@ -20,6 +20,13 @@ static atomic_int allow_decode_failure, transport_stalled, release_transport, st
 static atomic_int jam_native, native_full, seek_failure;
 static atomic_int timestamp_fault, timestamp_fail_open, timestamp_block_open, timestamp_open_entered;
 static int last_dv;
+static int last_p7;
+static atomic_llong buffer_ready = 21*1048576LL;
+void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *out) {
+ (void)e;
+ *out=(DtsBufferInfo){.ready_bytes=atomic_load(&buffer_ready),.capacity_bytes=68*1048576LL,
+                     .position=1048576,.total=300*1048576LL,.contiguous_bytes=20*1048576LL};
+}
 static atomic_llong stall_wall_ns;
 static int64_t frozen_clock, original_stall_clock;
 static int64_t stall_audio_pts, stall_video_pts;
@@ -38,7 +45,9 @@ static void emit(const char *json) {
  assert(cb);cb(u,json);
 }
 int dts_engine_available(void) { return 1; }
-void dts_engine_allow_p7(DtsEngine *e,int on) { (void)e; (void)on; }
+void dts_engine_allow_p7(DtsEngine *e,int on) { (void)e; (void)on;
+ last_p7=on;
+}
 void dts_engine_dv(DtsEngine *e,int on) { (void)e; last_dv=on; }
 DtsEngine *dts_engine_create(void) { return calloc(1,sizeof(DtsEngine)); }
 int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,int core,double target) {
@@ -242,6 +251,24 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
+ if(!strcmp(argv[1],"buffer")) {
+  assert(getenv("DV7_OFF"));scenario=NORMAL;p=start(1,4,NULL,0,0);
+  wait_status(p,0,0);wait_count(&pauses,1);assert(!last_dv && !last_p7);
+  int i;
+  for(i=0;i<1500;i++) { dts_playback_status(p,&s);if(s.buffer.ready_bytes==21*1048576LL)break;nap(); }
+  assert(i<1500 && s.buffer.capacity_bytes==68*1048576LL && s.buffered_until>=0);
+  atomic_store(&buffer_ready,23*1048576LL);
+  for(i=0;i<1500;i++) { dts_playback_status(p,&s);if(s.buffer.ready_bytes==23*1048576LL)break;nap(); }
+  assert(i<1500); // Pausing does not freeze telemetry while prefetch completes.
+  atomic_store(&timestamp_block_open,1);atomic_store(&seek_failure,1);
+  dts_playback_seek(p,20);
+  for(i=0;i<1500 && !atomic_load(&timestamp_open_entered);i++)nap();
+  assert(i<1500);dts_playback_status(p,&s);
+  assert(!s.prepared && !s.buffer.capacity_bytes && !s.buffered_until);
+  dts_playback_close(p);
+  puts("DTS buffer snapshots update while paused and clear on seek/reopen with DV/P7 off.");
+  return 0;
+ }
  if(!strncmp(argv[1],"timestamp",9)) {
   int bounded=!strcmp(argv[1],"timestampbound"), progress=!strcmp(argv[1],"timestampprogress");
   int reopen_fail=!strcmp(argv[1],"timestampopenfail"), cancel=!strcmp(argv[1],"timestampcancel");

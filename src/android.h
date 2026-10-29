@@ -9,6 +9,7 @@
 // pede ao SDL que o Voltar chegue ao app em vez de fechar a Activity.
 void android_iniciar(void);
 void android_limpar_cache(void);
+void android_tv_home(int ready);
 // Saved device mode: changes the existing Activity, without recreating native state.
 void android_interface_modo(int mobile);
 // Salva uma copia local do registro pelo seletor de arquivos do Android.
@@ -41,6 +42,8 @@ int android_preparar_apk(const char *caminho);
 int  android_st_teclado(const char *inicial, int max);
 int  android_st_ditar(const char *idioma);
 void android_st_fechar(void);
+int android_importar_fonte(int slot);
+int android_fonte_evento(char *dst, size_t n);
 int  android_st_evento(char *dst, size_t n);
 // #205: NuvioActivity.volumesExternos (getExternalFilesDirs), one path per line,
 // index 0 = primary/emulated. 1 = veio texto em dst.

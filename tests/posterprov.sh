@@ -17,6 +17,7 @@ ${TMPDIR:-/tmp}/nuvio-posterprov-tests
 # descoberta.c, com o conjunto de link de tests/detalheanime.sh).
 cc src/catalogo.c src/cwordem.c tests/posteraddon.c src/cotacat.c \
   src/js.c src/metaprov.c src/colecoes.c src/redeurl.c src/catordem.c src/artefontes.c \
+  tests/discovery_boundary_stub.c \
   -Isrc -Itests -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -o ${TMPDIR:-/tmp}/nuvio-posteraddon-tests -O1 -g \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined

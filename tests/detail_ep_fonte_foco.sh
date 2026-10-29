@@ -18,3 +18,5 @@ cc "${sources[@]}" tests/detail_ep_fonte_foco.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-d
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined
 ${TMPDIR:-/tmp}/nuvio-detail-epfoco-tests
+# C6: the title-page sheet keeps automatic focus after the default filter.
+bash tests/streams_folha_cache.sh

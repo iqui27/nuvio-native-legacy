@@ -48,6 +48,8 @@ void gpun_ampliar_app(int app);
 // Settings > This TV: upscaling algorithm (0 = automatic) and RCAS sharpness
 // 0..4. Read every frame; only used while gpun_ampliar_app upscales.
 void gpun_ampliacao(int algo, int nitidez);
+// Actual session state, including drawable limits and internal-target failure.
+int gpun_ampliacao_ativa(void);
 // Preview resize: keep the selected GPU level and rebuild its internal target.
 // Called on the drawing thread before beginning the next frame; other builds ignore it.
 void gpun_redimensionar(int w, int h);

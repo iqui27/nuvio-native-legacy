@@ -13,6 +13,8 @@ int perftv_enabled, perftv_uploads;
 static char *lerArquivo(const char *url, int s, long *n);
 #include "../src/seekr.c"
 void gfx_tex_esquecer(GLuint t) { (void)t; }
+// Ajustes nao entra nesta bancada: relogio de 12 h desligado (tests/guia_logos.c).
+int ajustes_relogio_12h(void) { return 0; }
 // Dubles: este teste nao consulta a API.
 char *rede_baixar(const char *u, int s) { (void)u; (void)s; return NULL; }
 char *rede_baixar_st(const char *u, int s, const char *const *c, int *st) {

@@ -70,6 +70,9 @@ int ling_afinidade(const char *cod, const char *pref);
 const char *ling_legenda(void);
 const char *ling_legenda2(void);
 const char *ling_audio(void);
+void ling_preferir_original(int ligado);
+int ling_prefere_original(void);
+const char *ling_audio_preferido(void);
 // Segundo idioma de audio (audioescolha.h): ling_legenda2, a mesma regra.
 const char *ling_audio2(void);
 

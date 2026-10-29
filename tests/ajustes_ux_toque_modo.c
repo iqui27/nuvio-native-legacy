@@ -180,12 +180,12 @@ static int abrirInterface(void) {
   CONFERE(alvoInterface(NULL, ajToqueCancelar, 0, &x, &y), "Modo da interface: registra Cancelar");
   return 1;
 }
-static void interfacePorToque(void) {
+static void interfacePorToque(int width, int height) {
   const char *dir = getenv("NUVIO_DADOS");
   float x, y;
   ajustes_dir(dir);
   valor[AJ_INTERFACE_MODO] = 0; interfaceAplicar(); assert(gravar());
-  layout_tela_definir(1080, 2340);   // phone drawable, saved TV canvas
+  layout_tela_definir(width, height);   // landscape phone, saved TV canvas
   ponteiro_iniciar(); ponteiro_teste_toque(1);
   assert(!layout_modo_mobile());
   if (!abrirInterface()) return;
@@ -408,8 +408,10 @@ int main(void) {
 #ifdef NV_TOUCH_UI
   fileiras(0); fileiras(1);
   if (!falhas) puts("PASS: Fileiras targets, callbacks and hints are Mobile only");
-  interfacePorToque();
-  if (!falhas) puts("PASS: interface selector confirms and saves TV/Mobile by touch");
+  interfacePorToque(2340, 1080);
+  interfacePorToque(1280, 720);
+  interfacePorToque(800, 480);
+  if (!falhas) puts("PASS: landscape phone selector confirms and saves TV/Mobile by touch at three sizes");
   rodapePorToque();
   if (!falhas) puts("PASS: footer hint chips confirm and cancel by touch");
 #else

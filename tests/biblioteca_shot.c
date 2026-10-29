@@ -12,6 +12,12 @@
 // ESCREVE EM NUVIO_DADOS, e recusa rodar se dados_dir() nao for essa pasta:
 // fixar uma lista GRAVA, e um teste deste repositorio ja sobrescreveu os dados
 // reais do dono.
+#ifdef NV_J1_SHOT
+#ifndef BIB_FONTE
+#define BIB_FONTE "../src/biblioteca.c"
+#endif
+#include BIB_FONTE
+#endif
 #include "biblioteca.h"
 #include "nvtmp.h"
 #include "ctxmenu.h"
@@ -24,6 +30,7 @@
 #include "dados.h"
 #include "gfx.h"
 #include "text.h"
+#include "teclado.h"
 #include "tex_cache.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
@@ -33,6 +40,20 @@
 #include <string.h>
 
 static SDL_Window *win;
+static int serverContainsShot(const CatItem *it, int p) {
+  int v = 0; for (const char *s = it->imdb; *s; s++) v += (unsigned char)*s;
+  return p < 0 || v % 3 == p || v % 5 == 0;
+}
+static int serverRowsShot(int i, const char **name, const char **sub, int *count) {
+  const char *names[] = {"Plex", "Jellyfin", "Emby", "Seus servidores"};
+  static const char *subs[] = {"Casa · Conectado", "Sala · Conectado", "Estúdio · Desconectado", NULL};
+  if (i < 0 || i > 3) return 0; *name = names[i]; *sub = subs[i]; *count = i < 3 ? 8 : 0; return 1;
+}
+static int serverQualityShot(const CatItem *it, int *altura, int *hdr) {
+  if (it->progresso > 0 && it->progresso < 100) return 0;
+  *altura = 2160; *hdr = 1; return 1;
+}
+static void serverSelectShot(int i) { if (i < 3) biblioteca_servidor_filtrar(i); }
 
 static void tecla(SDL_Keycode k) {
   SDL_Event e = { 0 };
@@ -85,16 +106,131 @@ static void medir(const char *rotulo) {
   fflush(stdout);
 }
 
+#ifdef NV_J1_SHOT
+static void j1_movimento(const char *nome) {
+  const int times[] = {0, 50, 80, 100, 150, 160, 250, 320, 400};
+  const char *names[] = {"focus", "entry", "exit", "reverse", "tabs", "tabfocus", "chips"};
+  float savedFocus[BIB_MAX_LINHAS][BIB_COLUNAS_MAX];
+  memcpy(savedFocus, animFoco, sizeof savedFocus);
+  Foco saved = foco;
+  float savedScroll = scrollY, savedVelocity = velY;
+  int savedExit = sair, savedOrigin = focoOrigem, savedMode = modo, savedView = exibicao, savedPick = pickSel;
+  int oldCount = nVistaAnterior;
+  for (int sequence = 0; sequence < 7; sequence++) {
+    if (getenv("NV_J1_MENU") && sequence != 1 && sequence != 5 && sequence != 6) continue;
+    Uint32 base = SDL_GetTicks();
+    if (!sequence) {
+      focoOrigem = 0; foco.fileira = gradeIni(); foco.coluna = 0;
+      for (int warm = 0; warm < 60; warm++) biblioteca_atualizar(1.0f / 60, base);
+      focus_mover_grade(&foco, colunas() > 1 ? 1 : 0, colunas() > 1 ? 0 : 1);
+    } else if (sequence == 1) { animTela = 0; ondaEm = base; ondaArmada = 0; }
+    else if (sequence == 2) { sair = 1; }
+    else if (sequence == 3) {
+      sair = 1;
+      for (int i = 0; i < 8; i++) biblioteca_atualizar(.01f, base);
+      sair = 0;
+    }
+    else if (sequence >= 5) {
+      // Focus slides along the tabs (no choice) / across the filter chips.
+      if (temAberta || modo == MODO_LISTAS) continue;
+      focoOrigem = 0; foco.fileira = sequence == 5 ? BIB_FIL_MODO : BIB_FIL_PICK; foco.coluna = 0;
+      if (sequence == 6) pickSel = 0;
+      for (int warm = 0; warm < 60; warm++) biblioteca_atualizar(1.0f / 60, base);
+      tecla(SDLK_RIGHT);
+      assert(foco.coluna == 1);
+    }
+    else {
+      if (temAberta || modo == MODO_LISTAS || !nVistaAtual) continue;
+      focoOrigem = 0;
+      int previous = modo;
+      foco.fileira = BIB_FIL_MODO; foco.coluna = (modo + 1) % 4;
+      tecla(SDLK_RETURN);
+      assert(modo != previous && nVistaAnterior > 0);
+    }
+    int elapsed = 0;
+    for (int frame = 0; frame < (int)(sizeof times / sizeof *times); frame++) {
+      while (elapsed < times[frame]) {
+        elapsed += 10;
+        biblioteca_atualizar(.01f, base + elapsed);
+      }
+      txt_novo_quadro(); tex_novo_quadro(); tex_bombear(6);
+      glClear(GL_COLOR_BUFFER_BIT);
+      biblioteca_desenhar(base + elapsed);
+      unsigned char *pixels = malloc(1920 * 1080 * 4);
+      SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
+      assert(pixels && surface);
+      glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+      for (int y = 0; y < 1080; y++) memcpy((char *)surface->pixels + y * surface->pitch, pixels + (1079-y)*1920*4, 1920*4);
+      char path[1024]; snprintf(path, sizeof path, "%s-%s-%03d.png", nome, names[sequence], times[frame]);
+      if (getenv("NV_J1_MENU")) {
+        snprintf(path, sizeof path, "%s-%s-%03d.bmp", nome, names[sequence], times[frame]);
+        assert(!SDL_SaveBMP(surface, path));
+      } else assert(!IMG_SavePNG(surface, path));
+      SDL_FreeSurface(surface); free(pixels);
+    }
+    foco = saved; scrollY = savedScroll; velY = savedVelocity;
+    memcpy(animFoco, savedFocus, sizeof savedFocus);
+    animTela = animVista = 1; ondaEm = 0; sair = savedExit; focoOrigem = savedOrigin; pickSel = savedPick;
+    if (sequence == 4) {
+      modo = savedMode; exibicao = savedView; reconstruir(); foco = saved;
+      scrollY = savedScroll; velY = savedVelocity; focoOrigem = savedOrigin;
+      animTela = animVista = 1; ondaEm = 0;
+      for (int i = 0; i < 60; i++) biblioteca_atualizar(1.0f / 60, SDL_GetTicks());
+      biblioteca_desenhar(SDL_GetTicks());
+    }
+  }
+  nVistaAnterior = oldCount;
+}
+#endif
+#ifdef NV_J1_SHOT
+// Frames of the Origens island closing into its chip (or opening out of it):
+// <nome>-<ms>.png at fixed clock steps, the rail drawn like captura().
+#ifndef NV_BIB_BEFORE
+static void origens_quadros(const char *nome) {
+  const int times[] = {0, 60, 120, 180, 260, 360, 500, 1000};
+  SDL_Surface *strip = SDL_CreateRGBSurfaceWithFormat(0, 1920, 540, 32, SDL_PIXELFORMAT_RGBA32);
+  assert(strip);
+  Uint32 base = SDL_GetTicks();
+  int elapsed = 0;
+  for (int frame = 0; frame < (int)(sizeof times / sizeof *times); frame++) {
+    while (elapsed < times[frame]) { elapsed += 10; biblioteca_atualizar(.01f, base + elapsed); }
+    txt_novo_quadro(); tex_novo_quadro(); tex_bombear(6);
+    glClear(GL_COLOR_BUFFER_BIT);
+    biblioteca_desenhar(base + elapsed);
+    rail_shot_desenhar(MENU_BIBLIOTECA);
+    unsigned char *pixels = malloc(1920 * 1080 * 4);
+    SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
+    assert(pixels && surface);
+    glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    for (int y = 0; y < 1080; y++) memcpy((char *)surface->pixels + y * surface->pitch, pixels + (1079-y)*1920*4, 1920*4);
+    SDL_Rect cell = { (frame % 4) * 480, (frame / 4) * 270, 480, 270 };
+    assert(!SDL_BlitScaled(surface, NULL, strip, &cell));
+    SDL_FreeSurface(surface); free(pixels);
+  }
+  char path[1024]; snprintf(path, sizeof path, "%s.png", nome);
+  assert(!IMG_SavePNG(strip, path));
+  SDL_FreeSurface(strip);
+}
+#endif
+#endif
 static void captura(const char *nome) {
   unsigned char *pix;
   SDL_Surface *s;
   int y;
   rail_shot_aplicar();
+  if (getenv("NUVIO_SHOT_VIDRO")) ajustes_definir_vidro(atoi(getenv("NUVIO_SHOT_VIDRO")));
   // 50 quadros E pelo menos 0,9 s: a onda da grade (revela.h) dura ~0,6 s de
   // relogio, e sem o piso a foto saia com a segunda fileira ainda entrando.
   { Uint32 t0 = SDL_GetTicks();
     quadros(50);
-    while (SDL_GetTicks() - t0 < 900u) quadros(1); }
+    while (SDL_GetTicks() - t0 < 900u) quadros(1);
+    if (getenv("NV_J1_SHOT")) {
+      int pending = 1;
+      while (pending && SDL_GetTicks() - t0 < 5000u) {
+        quadros(1); SDL_Delay(2);
+        tex_estatisticas(NULL, &pending, NULL, NULL, NULL);
+      }
+    } }
   SDL_PumpEvents();
   txt_novo_quadro();
   tex_novo_quadro();
@@ -113,11 +249,20 @@ static void captura(const char *nome) {
   assert(s);
   for (y = 0; y < 1080; y++)
     memcpy((char *)s->pixels + y * s->pitch, pix + (1079 - y) * 1920 * 4, 1920 * 4);
-  assert(SDL_SaveBMP(s, nome) == 0);
+  if (getenv("NV_J1_SHOT") && !getenv("NV_J1_MENU")) {
+    char png[1024]; snprintf(png, sizeof png, "%s", nome);
+    char *ext = strrchr(png, '.'); if (ext) strcpy(ext, ".png");
+    assert(IMG_SavePNG(s, png) == 0);
+  }
+  else assert(SDL_SaveBMP(s, nome) == 0);
   SDL_FreeSurface(s);
   free(pix);
   SDL_GL_SwapWindow(win);
   printf("captura: %s\n", nome);
+#ifdef NV_J1_SHOT
+  const char *scale = getenv("NUVIO_SHOT_ESCALA_TEXTO");
+  if (!getenv("NV_J1_STILLS") && (!scale || !strcmp(scale, "1") || !strcmp(scale, ".85"))) j1_movimento(nome);
+#endif
 }
 
 // TITULOS DE MENTIRA, escolhidos para cobrir OS CASOS DA LINHA, e nao para
@@ -159,24 +304,37 @@ static const struct {
   { "O Agente Secreto", "", "Programa de TV", "", 1, 0, 0, 0 },
 };
 
+// Conferencia do que a tela decidiu (foco, modo); a falha sai no rc do programa.
+static int falhasTela;
+#define ASSERTA(cond, ...) do { \
+  if (!(cond)) { falhasTela++; printf("  FALHOU: "); printf(__VA_ARGS__); printf("\n"); } \
+  else { printf("  ok: "); printf(__VA_ARGS__); printf("\n"); } \
+} while (0)
+
 static void povoar(void) {
   CatItem v[sizeof AMOSTRA / sizeof AMOSTRA[0]];
   size_t i;
   for (i = 0; i < sizeof AMOSTRA / sizeof AMOSTRA[0]; i++) {
     CatItem it;
     memset(&it, 0, sizeof it);
-    snprintf(it.titulo, sizeof it.titulo, "%s", AMOSTRA[i].titulo);
+    static const char *posterTitles[] = { "Fallout", "Widow’s Bay", "O Grande Truque", "Uma Batalha Após a Outra", "Origem", "Alta Frequência", "Outcome", "O Diabo Veste Prada 2", "The Invite", "Os Suspeitos", "O Astronauta", "We Bury the Dead", "Perdido em Marte", "Devoradores de Estrelas" };
+    snprintf(it.titulo, sizeof it.titulo, "%s", posterTitles[i]);
     snprintf(it.imdb, sizeof it.imdb, "tt900%02d", (int)i);
     snprintf(it.tipo, sizeof it.tipo, "%s", AMOSTRA[i].serie ? "series" : "movie");
     snprintf(it.meta, sizeof it.meta, "%s", AMOSTRA[i].meta);
-    snprintf(it.genero, sizeof it.genero, "%s", AMOSTRA[i].genero);
+    snprintf(it.genero, sizeof it.genero, "%s", AMOSTRA[i].serie ? "Série · Drama" : "Filme · Drama");
     snprintf(it.sinopse, sizeof it.sinopse, "%s", AMOSTRA[i].sinopse);
-    snprintf(it.poster, sizeof it.poster, "deploy/app/art/%02d.jpg", (int)i);
+    snprintf(it.poster, sizeof it.poster, "deploy/app/art/poster/%02d.jpg", (int)i);
+    it.fontes = i % 3 == 0 ? CAT_FONTE_TRAKT | CAT_FONTE_SIMKL
+              : i % 3 == 1 ? CAT_FONTE_TRAKT : CAT_FONTE_NUVIO;
+    if (i % 4 == 0) strcpy(it.origem, "AIOMetadata");
     it.nota = AMOSTRA[i].nota;
     it.progresso = AMOSTRA[i].progresso;
     it.restanteMin = AMOSTRA[i].restante;
     if (AMOSTRA[i].serie) it.nTemporadas = 1;
+    if (AMOSTRA[i].serie && AMOSTRA[i].progresso) { it.temporada = 1; it.episodio = 4; }
     it.naLista = 1;
+    it.listaFontes = 1u << AJ_SALVOS_LOCAL;
     it.naColecao = (i % 2) == 0;
     v[i] = it;
   }
@@ -250,6 +408,34 @@ static void injetarListas(void) {
   quadros(4);
 }
 
+#ifdef NV_J1_SHOT
+// Mock 6D: the profile's own Trakt lists (bare /users/me/lists JSON), the first
+// one public, described and edited four days ago.
+static void injetarMinhas(void) {
+  static const struct { const char *nome, *desc, *priv; int n; } L[] = {
+    { "Filmes para domingo cedo", "Curtos, claros, sem violência. O que eu boto quando a casa ainda está dormindo.", "public", 18 },
+    { "Para ver com o pai", "", "private", 9 },
+    { "Melhores de 2025", "", "public", 25 },
+    { "Maratona de irmãs", "", "public", 12 },
+    { "Plano para ver", "", "private", 37 },
+  };
+  char json[4000], quando[64];
+  time_t t = time(NULL) - 4 * 86400;
+  strftime(quando, sizeof quando, "\"updated_at\":\"%Y-%m-%dT08:30:00.000Z\",", gmtime(&t));
+  size_t k = (size_t)snprintf(json, sizeof json, "[");
+  for (int i = 0; i < 5; i++)
+    k += (size_t)snprintf(json + k, sizeof json - k,
+        "%s{\"name\":\"%s\",\"description\":\"%s\",\"privacy\":\"%s\",\"item_count\":%d,%s"
+        "\"ids\":{\"trakt\":%d,\"slug\":\"l%d\"},\"user\":{\"username\":\"marina\",\"ids\":{\"slug\":\"marina\"}}}",
+        i ? "," : "", L[i].nome, L[i].desc, L[i].priv, L[i].n,
+        i ? "" : quando, 1049900 + i, i);
+  snprintf(json + k, sizeof json - k, "]");
+  quadros(40);
+  lst_ler_trakt(json, 0);
+  quadros(4);
+}
+#endif
+
 int main(int argc, char **argv) {
   const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-biblioteca");
   // "lista" no segundo argumento COMECA em exibicao de lista, sem ter desenhado
@@ -291,6 +477,13 @@ int main(int argc, char **argv) {
   // marca.
   extras_carregar("deploy/app/art");
 
+#ifdef NV_J1_SHOT
+  // A named active profile, as a real account has: the subtitle says "perfil
+  // Marina" and the sidebar footer shows her initial instead of the no-profile glyph.
+  { extern void perfis_teste_definir(const char *const *, const int *, int, int);
+    const char *nomes[] = { "Marina" };
+    perfis_teste_definir(nomes, NULL, 1, 1); }
+#endif
   dados_iniciar(quero);
   if (strcmp(dados_dir(), quero)) {
     printf("RECUSADO: dados_dir()=\"%s\" nao e a pasta do teste \"%s\".\n",
@@ -323,6 +516,8 @@ int main(int argc, char **argv) {
       if (fa) { fprintf(fa, "seloVistoLocal %s\n", sv); fclose(fa); }
     } }
   ajustes_iniciar();
+  dados_gravar("ajustes.txt", "idioma 0\nbordaFocoCartaz 1\nrealce 0\nmodernSidebar 0\ncollapseSidebar 1\n");
+  ajustes_dir(dados_dir());
   { const char *bv = getenv("NUVIO_SHOT_BORDA"), *sv = getenv("NUVIO_SHOT_SELO");
     if ((bv && *bv == '0') || (sv && *sv)) ajustes_dir(dados_dir()); }
   // NUVIO_SHOT_ESCALA_TEXTO=0.85..1.3: text scale of the capture (default: settings).
@@ -333,6 +528,186 @@ int main(int argc, char **argv) {
     ajustes_definir_vidro(!(v && *v == '0')); }
   povoar();
   biblioteca_iniciar();
+  rail_shot_aplicar();
+  if (argc > 2 && !strcmp(argv[2], "servers")) {
+    biblioteca_servidores_contem(serverContainsShot);
+    biblioteca_servidores_qualidade(serverQualityShot);
+    biblioteca_origens_servidores(serverRowsShot, serverSelectShot);
+    biblioteca_iniciar(); tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RIGHT);
+    snprintf(nome, sizeof nome, "%s-biblioteca-servidores.bmp", saida); captura(nome);
+    biblioteca_servidor_filtrar(0);
+    snprintf(nome, sizeof nome, "%s-biblioteca-filtro-plex.bmp", saida); captura(nome);
+    biblioteca_servidor_filtrar(2);
+    snprintf(nome, sizeof nome, "%s-biblioteca-filtro-emby.bmp", saida); captura(nome);
+    biblioteca_iniciar(); tecla(SDLK_DOWN); tecla(SDLK_RIGHT);
+    for (int i = 0; i < 4; i++) tecla(SDLK_RIGHT);
+    tecla(SDLK_RETURN); tecla(SDLK_DOWN);
+    snprintf(nome, sizeof nome, "%s-biblioteca-lista-servidor.bmp", saida); captura(nome);
+    biblioteca_iniciar(); tecla(SDLK_RIGHT); tecla(SDLK_RETURN); tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RIGHT);
+    snprintf(nome, sizeof nome, "%s-biblioteca-continuar.bmp", saida); captura(nome);
+    biblioteca_iniciar(); for (int i = 0; i < 4; i++) tecla(SDLK_RIGHT); tecla(SDLK_RETURN); tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+    for (int i = 0; i < 5; i++) tecla(SDLK_DOWN); tecla(SDLK_RETURN); tecla(SDLK_RIGHT);
+    snprintf(nome, sizeof nome, "%s-listas-servidor.bmp", saida); captura(nome);
+    return 0;
+  }
+  if (argc > 2 && (!strcmp(argv[2], "mock") || !strcmp(argv[2], "menu"))) {
+#ifdef NV_J1_SHOT
+    // Mock state: "Esconder assistidos" on and the user's lists loaded (Listas 14).
+    if (!strcmp(argv[2], "menu")) {
+      char json[5000];
+      size_t used = (size_t)snprintf(json, sizeof json, "[");
+      for (int i = 0; i < 14; i++)
+        used += (size_t)snprintf(json + used, sizeof json - used,
+          "%s{\"name\":\"Library list %d\",\"ids\":{\"trakt\":%d}}", i ? "," : "", i + 1, 800000 + i);
+      snprintf(json + used, sizeof json - used, "]");
+      lst_ler_trakt(json, 0);
+      assert(lst_n() == 14);
+    } else injetarListas();
+    esconderVistos = 1; reconstruir();
+#endif
+    tecla(SDLK_DOWN); tecla(SDLK_DOWN); // source panel
+    tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); // first row, second poster
+    snprintf(nome, sizeof nome, "%s-grid.bmp", saida); captura(nome);
+#if defined(NV_J1_SHOT) && !defined(NV_BIB_BEFORE)
+    if (getenv("NV_BIB_ORIGENS")) {
+      // Owner 25/10: the "Origens" chip closes the panel and the grid widens.
+      int abertas = colunas();
+      tecla(SDLK_UP); tecla(SDLK_LEFT);
+      ASSERTA(focoBotaoOrig, "Left of Type lands on the Origens chip");
+      tecla(SDLK_RETURN);
+      ASSERTA(!origensAbertas && colunas() > abertas, "OK closes Origens, %d -> %d columns", abertas, colunas());
+      snprintf(nome, sizeof nome, "%s-fechar", saida); origens_quadros(nome);
+      snprintf(nome, sizeof nome, "%s-grid-fechado.bmp", saida); captura(nome);
+      tecla(SDLK_RETURN);
+      ASSERTA(origensAbertas && colunas() == abertas, "OK opens Origens again");
+      snprintf(nome, sizeof nome, "%s-abrir", saida); origens_quadros(nome);
+      // Reflow also keeps the list header, row position and width continuous.
+      exibicao = VIS_LISTA; remapear(0);
+      snprintf(nome, sizeof nome, "%s-lista.bmp", saida); captura(nome);
+      alternarOrigens();
+      snprintf(nome, sizeof nome, "%s-lista-fechar", saida); origens_quadros(nome);
+      snprintf(nome, sizeof nome, "%s-lista-fechada.bmp", saida); captura(nome);
+      alternarOrigens();
+      snprintf(nome, sizeof nome, "%s-lista-abrir", saida); origens_quadros(nome);
+    }
+#endif
+    if (!strcmp(argv[2], "menu") || getenv("NV_BIB_SO_GRADE")) return falhasTela ? 1 : 0;
+#ifdef NV_J1_SHOT
+    ASSERTA(nVistaAtual > 0, "Library retains rendered outgoing cells");
+    remapear(0);
+    ASSERTA(nVistaAnterior > 0 && animVista == 0, "tab remap retains outgoing cells for crossfade");
+    quadros(60);
+#endif
+    // Landscape input must produce a readable title card, never grey letterboxing.
+    CatItem original = *cat_item(2), landscape = original;
+    strcpy(landscape.poster, "deploy/app/art/02.jpg");
+    cat_atualizar_item(2, &landscape);
+    snprintf(nome, sizeof nome, "%s-landscape.bmp", saida); captura(nome);
+    cat_atualizar_item(2, &original);
+    // Watched history: real local timestamp API, synthetic account-free data.
+    for (int i = 0; i < 5; i++) {
+      char id[16]; snprintf(id, sizeof id, "tt900%02d", i);
+      cat_historico_definir_tempo(id, AMOSTRA[i].serie ? "series" : "movie", 1, 1791932400000LL - i * 86400000LL);
+    }
+    biblioteca_iniciar();
+    tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);
+    tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+    snprintf(nome, sizeof nome, "%s-watched.bmp", saida); captura(nome);
+    biblioteca_iniciar();
+    for (int i = 0; i < 4; i++) tecla(SDLK_RIGHT);
+    tecla(SDLK_RETURN);
+#ifdef NV_J1_SHOT
+    // 6D: own lists as rows, the panel of the focused one on the right.
+    injetarMinhas();
+    { static const int viu[] = { 11, 3, 25, 5, -1 };
+      for (int i = 0; i < lst_n(); i++) {
+        CatItem posters[4];
+        for (int j = 0; j < 4; j++) posters[j] = *cat_item((i * 3 + j + 5) % cat_n());
+        LstLista l = *lst_lista(i); lst_previa_registrar(&l, posters, 4);
+        lst_previa_resumo(&l, i ? "" : "Começa com café na mesa. Funciona toda vez.", viu[i]);
+      } }
+    tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RIGHT);
+    ASSERTA(!focoOrigem && celulaEmFoco() == 0, "D-pad reaches the first own list row");
+    snprintf(nome, sizeof nome, "%s-lists.bmp", saida); captura(nome);
+    tecla(SDLK_RIGHT);
+    ASSERTA(focoPainel, "Right moves from the rows into the list panel");
+    tecla(SDLK_LEFT);
+    ASSERTA(!focoPainel && celulaEmFoco() == 0, "Left returns from the panel to the row");
+    tecla(SDLK_UP); tecla(SDLK_UP);   // 6B below opens a public list of someone else
+#endif
+    injetarListas();
+    for (int i = 0; i < lst_n(); i++) {
+      CatItem posters[4];
+      for (int j = 0; j < 4; j++) posters[j] = *cat_item((i * 3 + j) % cat_n());
+      LstLista l = *lst_lista(i); lst_previa_registrar(&l, posters, 4);
+    }
+#ifdef NV_J1_SHOT
+    focoOrigem = 0; foco.fileira = gradeIni(); foco.coluna = 0; quadros(10);
+#else
+    tecla(SDLK_DOWN); tecla(SDLK_RIGHT); tecla(SDLK_DOWN);
+    snprintf(nome, sizeof nome, "%s-lists.bmp", saida); captura(nome);
+#endif
+    CatItem trail[8]; DescItemLista notes[8] = {0};
+    for (int i = 0; i < 8; i++) {
+      trail[i] = *cat_item(i);
+      notes[i].rank = i + 1;
+      notes[i].entrouMs = 1791932400000LL - i * 86400000LL;
+      snprintf(notes[i].nota, sizeof notes[i].nota, "Passo %d: observe como a imagem e o som constroem esta história.", i + 1);
+    }
+    lst_teste_itens(trail, 8); lst_teste_extras(notes, 8);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN); quadros(5);
+    { int ed, action, grabbed, sharing, row;
+      biblioteca_teste_estado(&ed, &action, &grabbed, &sharing, &row);
+      ASSERTA(row == 0, "list opens on actions");
+      tecla(SDLK_DOWN);
+      biblioteca_teste_estado(&ed, &action, &grabbed, &sharing, &row);
+      ASSERTA(row == 1, "D-pad reaches list items");
+      tecla(SDLK_LEFT);
+      biblioteca_teste_estado(&ed, &action, &grabbed, &sharing, &row);
+      ASSERTA(row == 0, "Left returns from items to actions");
+#ifdef NV_J1_SHOT
+      tecla(SDLK_UP);
+      ASSERTA(focoCont && pagProximo >= 0, "Up from the actions reaches Continuar");
+      tecla(SDLK_DOWN);
+      ASSERTA(!focoCont && foco.fileira == 0, "Down returns from Continuar to the actions");
+#endif
+    }
+    snprintf(nome, sizeof nome, "%s-list-page.bmp", saida); captura(nome);
+    for (int i = 0; i < 7; i++) tecla(SDLK_RIGHT);
+    tecla(SDLK_RETURN); tecla(SDLK_LEFT); tecla(SDLK_LEFT); tecla(SDLK_LEFT); tecla(SDLK_LEFT);
+    tecla(SDLK_DOWN);
+    { int ed, action, grabbed, sharing, row;
+      biblioteca_teste_estado(&ed, &action, &grabbed, &sharing, &row);
+      ASSERTA(row == 1 && biblioteca_teste_trilha(), "D-pad reaches trail steps in trail mode");
+#ifdef NV_J1_SHOT
+      { TXT_INI();
+      ASSERTA(fabsf(BIB_CARD_W * gfx_escala_txt() - 220) < .1f,
+              "Trail keeps normal 220px physical Library poster width");
+      TXT_FIM(); }
+      for (int i = 0; i < 7; i++) tecla(SDLK_RIGHT);
+      quadros(90);
+      { TXT_INI();
+      ASSERTA(trilhaX > 0 && (7 * (BIB_CARD_W + BIB_CARD_GAP) - trilhaX + BIB_CARD_W) <= bibW() + 1,
+              "last Trail poster remains reachable at normal Library size");
+      TXT_FIM(); }
+      for (int i = 0; i < 7; i++) tecla(SDLK_LEFT);
+      quadros(90);
+#endif
+    }
+    snprintf(nome, sizeof nome, "%s-trail.bmp", saida); captura(nome);
+#ifdef NV_J1_SHOT
+    Foco expected = focoListas;
+    tecla(SDLK_ESCAPE);
+    ASSERTA(!temAberta && foco.fileira == expected.fileira && foco.coluna == expected.coluna,
+            "Back restores the selected list cell");
+    biblioteca_iniciar(); quadros(60);
+    tecla(SDLK_ESCAPE);
+    ASSERTA(!biblioteca_quer_sair(), "Back retains Library while exit animates");
+    quadros(90);
+    ASSERTA(biblioteca_quer_sair(), "Library exits after its fade settles");
+#endif
+    return falhasTela ? 1 : 0;
+  }
   if (comecaLista) {
     int k;
     for (k = 0; k < 8; k++) tecla(SDLK_LEFT);
@@ -354,7 +729,7 @@ int main(int argc, char **argv) {
   // Escolhe a aba `n` da barra (0 = Salvos, 1 = Coleção, 2 = Listas): a seta so
   // move o foco, o OK escolhe.
   #define MODO(n) do { int _k; AO_TOPO(); \
-    for (_k = 0; _k < 3; _k++) tecla(SDLK_LEFT); \
+    for (_k = 0; _k < 8; _k++) tecla(SDLK_LEFT); \
     for (_k = 0; _k < (n); _k++) tecla(SDLK_RIGHT); \
     tecla(SDLK_RETURN); solta(SDLK_RETURN); } while (0)
 
@@ -508,6 +883,127 @@ int main(int argc, char **argv) {
   captura(nome);
   tecla(SDLK_ESCAPE);      // volta para a lista de listas
 
+  // 8b. A PAGINA DA LISTA do Trakt (6B): cabecalho, rank e nota do curador. Sem
+  // rede o Trakt nao entrega itens nem extras, entao entram por gancho.
+  { CatItem pit[6];
+    DescItemLista ex[6];
+    int k, pn = cat_n() < 6 ? cat_n() : 6;
+    memset(ex, 0, sizeof ex);
+    for (k = 0; k < pn; k++) {
+      const CatItem *c = cat_item(k);
+      if (c) pit[k] = *c;
+      ex[k].rank = k + 1;
+      if (k % 2 == 0) snprintf(ex[k].nota, sizeof ex[k].nota,
+                               "Repare na fotografia da cena do corredor.");
+    }
+    lst_teste_itens(pit, pn);
+    lst_teste_extras(ex, pn);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    quadros(40);
+    snprintf(nome, sizeof nome, "%s-lista-pagina.bmp", saida);
+    captura(nome);
+    tecla(SDLK_DOWN);
+    snprintf(nome, sizeof nome, "%s-lista-pagina-foco.bmp", saida);
+    captura(nome);
+    tecla(SDLK_ESCAPE);
+  }
+
+  // 8c. A LISTA PROPRIA: uma lista do Trakt do dono, com os 6 itens inteiros
+  // (item_count 6 e ids de entrada), ganha os sete chips. Sem conta o Trakt nao
+  // grava, entao o salvamento falha e a tela tem que voltar ao que o servidor tem.
+  { static const char *UMA =
+      "[{\"name\":\"Noites de chuva\",\"description\":\"Para ver sem pressa\","
+      "\"privacy\":\"public\",\"item_count\":6,\"likes\":2,"
+      "\"ids\":{\"trakt\":3100500,\"slug\":\"noites-de-chuva\"},"
+      "\"user\":{\"username\":\"iqui27\",\"name\":\"Henrique\",\"ids\":{\"slug\":\"iqui27\"}}}]";
+    CatItem pit[6];
+    DescItemLista ex[6];
+    int k, pn = cat_n() < 6 ? cat_n() : 6;
+    int ed, acao, pega, comp, fil;
+    memset(ex, 0, sizeof ex);
+    for (k = 0; k < pn; k++) {
+      const CatItem *c = cat_item(k);
+      if (c) pit[k] = *c;
+      ex[k].rank = k + 1;
+      ex[k].itemId = 7000 + k;
+    }
+    quadros(40);
+    lst_ler_trakt(UMA, 0);
+    quadros(4);
+    lst_teste_itens(pit, pn);
+    lst_teste_extras(ex, pn);
+    AO_TOPO();
+    tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    quadros(40);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(fil == 0 && acao == 0, "a lista abre com o foco no primeiro chip (fil %d acao %d)", fil, acao);
+    snprintf(nome, sizeof nome, "%s-propria-chips.bmp", saida);
+    captura(nome);
+    // Ate Ordem (chip 4) e liga.
+    for (k = 0; k < 4; k++) tecla(SDLK_RIGHT);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(acao == 4, "o foco alcanca Ordem pelo D-pad (veio %d)", acao);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(ed == 1 && fil >= 1, "Ordem liga e leva o foco para a grade (ed %d fil %d)", ed, fil);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);       // pega o primeiro titulo
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(pega == 0, "OK pega o titulo 0 (veio %d)", pega);
+    tecla(SDLK_DOWN);                              // move para a posicao 1 (exibicao em lista: uma coluna)
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(pega == 1, "seta move o titulo pego (veio %d)", pega);
+    { CatItem c0;
+      lst_item(1, &c0);
+      ASSERTA(!strcmp(c0.titulo, pit[0].titulo), "o titulo pego foi para a posicao 1 (%s)", c0.titulo); }
+    snprintf(nome, sizeof nome, "%s-propria-ordem.bmp", saida);
+    captura(nome);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);       // solta
+    tecla(SDLK_ESCAPE);                            // conclui: sem conta, falha e recarrega
+    { const char *rec = biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+      ASSERTA(ed == 0 && pega == -1, "Back conclui a ordem (ed %d pega %d)", ed, pega);
+      ASSERTA(!strcmp(rec, "Não foi possível salvar a lista"), "sem conta o salvamento falha com recado (%s)", rec); }
+    snprintf(nome, sizeof nome, "%s-propria-ordem-falha.bmp", saida);
+    captura(nome);
+    // Compartilhar (chip 6): QR por cima, qualquer tecla fecha.
+    AO_TOPO();
+    for (k = 0; k < 2; k++) tecla(SDLK_RIGHT);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(acao == 6, "o foco alcanca Compartilhar (veio %d)", acao);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(comp == 1, "lista publica abre o QR");
+    snprintf(nome, sizeof nome, "%s-propria-compartilhar.bmp", saida);
+    captura(nome);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(comp == 0, "uma tecla fecha o QR");
+    // Notas (chip 5): liga, OK no titulo abre o teclado, Back fecha o teclado e depois o modo.
+    tecla(SDLK_LEFT);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(ed == 2, "Notas liga (ed %d)", ed);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    ASSERTA(teclado_aberto(), "OK no titulo abre o teclado da nota");
+    snprintf(nome, sizeof nome, "%s-propria-nota-teclado.bmp", saida);
+    captura(nome);
+    tecla(SDLK_ESCAPE);
+    ASSERTA(!teclado_aberto(), "Back fecha o teclado");
+    tecla(SDLK_ESCAPE);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(ed == 0, "Back conclui Notas (ed %d)", ed);
+    // Descricao (chip 3): teclado com a descricao atual.
+    AO_TOPO();
+    for (k = 0; k < 8; k++) tecla(SDLK_LEFT);
+    for (k = 0; k < 3; k++) tecla(SDLK_RIGHT);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    ASSERTA(teclado_aberto(), "Descricao abre o teclado");
+    snprintf(nome, sizeof nome, "%s-propria-descricao.bmp", saida);
+    captura(nome);
+    tecla(SDLK_ESCAPE);
+    tecla(SDLK_ESCAPE);                            // volta para a lista de listas
+  }
+
   // 9. A fonte SIMKL sem vinculo: a tela diz o que falta, e nao mostra aba
   // vazia. O seletor de fonte cicla Trakt -> Simkl.
   AO_TOPO();
@@ -531,6 +1027,6 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-busca-teclado.bmp", saida);
   captura(nome);
 
-  printf("pronto\n");
-  return 0;
+  printf("pronto (%d falha%s)\n", falhasTela, falhasTela == 1 ? "" : "s");
+  return falhasTela ? 1 : 0;
 }

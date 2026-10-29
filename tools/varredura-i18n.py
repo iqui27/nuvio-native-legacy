@@ -125,6 +125,7 @@ def eh_frase(s):
     # nem "luna://com.webos.media/%s", e depois que a regra de formato passou a
     # deixar frases com "%" entrarem, os quatro viraram ruido fixo.
     if "://" in s: return False
+    if s == "perfil:%d": return False  # Internal avatar identity, never displayed.
     if re.search(r"/[A-Za-z0-9._-]+\.[A-Za-z]{2,4}$", s): return False
     # FORMATO PURO x FRASE QUE CONTEM FORMATO, e a diferenca custou tres
     # frases em portugues na v1.0.35. A regra antiga descartava todo literal
@@ -209,6 +210,8 @@ def achar_rotulo_sem_i18n(txt, linha_de, ctx_fn, re_desenho, re_nao_e_tela, nome
 NAO_E_TELA = ("printf", "fprintf", "puts", "fputs", "perror", "marco",
               "strcmp", "strncmp", "strcasecmp", "strstr", "strchr", "strrchr",
               "getenv", "setenv", "fopen", "unlink", "remove", "rename",
+              # Guide state route IDs, never rendered UI copy.
+              "g5ui_open", "go",
               "mkdir", "system", "dlopen", "dlsym", "js_", "jsw_", "rede_",
               "curl_", "SDL_Log",
               # motivo de log da fonte guardada (fontevolta.h): nunca tela
@@ -263,10 +266,30 @@ def contexto(txt, i):
 # "nao sei o que e": sem esta lista a ferramenta nao pode virar teste, e sem
 # virar teste ela nao impede a proxima regressao.
 IGNORAR = {
+    # Guide v5 internal screen routes, never rendered as labels.
+    "fontes-gerenciar", "parental-perfil-infantil", "vod-titulo",
+    # Verified non-UI literals on the 2.1 feature branch:
+    # fundo.c diagnostics; faixas/player/video_android speed and subtitle logs.
+    # Verified diagnostics, protocol/file identifiers, and genre/token match data.
+    # Verified non-UI literals: diagnostic messages, parser vocabulary, JSON
+    # enum values, persistent filenames and app_tela_nome telemetry ids.
+    " (sem quadro pequeno)", "desenho direto (sem quadro pequeno)",
+    "sem a copia desfocada da arte ainda (arte nao decodificada?): fundo liso",
+    "codec nao e de texto (ASS/SRT/WebVTT): a TV desenha",
+    "confirmada pelo relogio do pipeline", "enviado ao ExoPlayer",
+    # mapa.c canonical genre aliases and legauto.c filename stopwords.
+    "acción", "ação", "ciencia ficción", "com", "comédia", "fantasía",
+    # Remote schema enum, persistence names and trailer diagnostic gate.
+    '"POSTER"', "conta-pend-%s.txt", "perfil-infantil.txt", "escolha-perfil",
+    # Room protocol values and notice IDs; UI resolves these to translated text.
+    "juntos:erro", "juntos:fonte", "nenhuma", "todos", ',"fonte":{"tipo":"%s"}',
+    # filmography provider hostname and spoiler-matching stem, never UI labels.
+    "simkl.com", "traiç",
     "catalogo-*.bin",                # androidcache.c: cache filename pattern, never UI text
     "ltv-fontes.txt", "ltv-fontes-p%d.txt",  # ltv.c: preference filenames, never UI labels
     "daqui em diante",  # episodios.c nomeModo: so no log [visto] menu, nunca rotulo
     "fechar",  # main.c: nome do evento de janela so no log "[ciclo] janela="
+    "ime-sem-osk",  # entrada_texto.c #642: motivo de terminar(), so no log [texto]
     # PR #567: motivos so de log ([fonte] lembrada / auto / link guardado).
     "lancamento sem grupo", "todos os add-ons permitidos responderam", "relogio para tras",
     # video_tpk.c: motivos de cartaoModo()/cartaoEncaixar(), so no log "[video] tpk cartao".
@@ -291,6 +314,12 @@ IGNORAR = {
     "compara nivel salvo com efeitos completos",
     "nao desce de novo nesta TV",
     "sem ganho significativo",
+    '"POSTER"', "conta-pend-%s.txt", "escolha-perfil", "com",
+    "acción", "ação", "comédia", "fantasía", "ciencia ficción",
+    "%s/v1/diario?desde=%lld&limite=500",
+    "%d addons · %d progressos · %d vistos · %d na lista · %d coleções%s%s",
+    "ação", "acción", "comédia", "fantasía", "ciencia ficción", "com", "das",
+    '"POSTER"', "conta-pend-%s.txt", "escolha-perfil",
     # RC 1.8 triage, each checked in the source:
     # - sync.c NOME[] are the labels of the "[sync] etapas" LOG line; "ver" is a
     #   field name in the jellyfin conta file; "forcé" is a pattern legref.c
@@ -320,6 +349,8 @@ IGNORAR = {
     # vao para a tela.
     "guia-fontes", "guia-fileiras", "guia-legendas", "guia-vindo-do-whatsnew",
     "h-fileiras",
+    # Sports route and bounded metadata cache filename, never rendered labels.
+    "esportes-catalogo", "esportes-fileira-%d.json",
     # Palavra que a folha de Fontes PROCURA no nome/descricao do arquivo para
     # saber se ha audio em portugues (streams.c, idiomaDa). Dado de comparacao,
     # nunca texto desenhado.
@@ -384,6 +415,7 @@ IGNORAR = {
     "%s/poster/%02d.jpg",           # caminho da arte dos dados de exemplo (socialvis.c, so teste)
     "biblioteca.h", "catalogo.h", "fileiras.h", "perfil.h", "legenda.h",
     "perfil.txt",                   # #include e nome de arquivo
+    "perfil-infantil.txt", "perfil-ajustes-travados.txt",  # profile state filenames, never UI
     "com.webos.media.client.nuvio", # id do cliente LS2
     "abrir", "buscar", "erro",      # nomes de operacao do bridge JS (video_tizen.c)
     "fontes", "legenda", "mais", "nao", "poster",  # chaves internas, nao rotulo
@@ -442,6 +474,7 @@ IGNORAR = {
     # Keys of the Search "?!#" page (busca.c SIMBOLOS): accented letters and
     # punctuation typed into the query, never a screen label.
     "áàâãéêíóôõúçñü.,:;'\"!?-_&()/@#+=*·",
+    "perfil 5",  # DV release metadata in streams.c; parser vocabulary, never a UI label.
     # Release-language matching terms in fontenota.c; input data, never UI labels.
     "français", "inglês", "japonês", "română", "türkçe",
     # O MESMO CODIGO EM MAIUSCULA (fontepref.c). E o valor da tabela TERMOS,
@@ -636,6 +669,8 @@ def varrer():
                                 "ajustes_ux_desenho.inc", "ajustes_ux_ilha.inc",
                                 "registro_ilha.inc", "registro_envio.inc") if (src / nome).exists()
     ]
+    # 2.1: as tres ilhas (ajustes_tri*.inc), os presets e o parental.
+    arquivos += [src / nome for nome in ("ajustes_tri.inc", "ajustes_tri_desenho.inc", "ajustes_presets.inc", "ajustes_parental.inc") if (src / nome).exists()]
     for arq in sorted(arquivos):
         if arq.name == "idioma.c":
             continue
@@ -701,7 +736,10 @@ def varrer():
             # obvio — e a chave saiu da tela em portugues no ingles inteiro.
             # Escrever i18n( E a declaracao de que aquilo e interface; depois
             # dela, adivinhar o idioma so serve para errar.
-            direto = (RE_DESENHO.search(ctx) is not None
+            pencil = arq.name.startswith(("ajustes_tri", "ajustes_presets", "ajustes_parental"))
+            if pencil and (s.startswith(("aj_", "pl_")) or s.endswith((".inc", ".txt", ".h")) or s in ("%s", "%ld MB", "%dx%d", "%s → %s", "−", "+") or s.startswith(("name=", "%95[", "%s%d"))):
+                continue
+            direto = (pencil or RE_DESENHO.search(ctx) is not None
                       or RE_I18N.search(ctx) is not None)
             if not direto and not PT.search(s):
                 continue
@@ -717,7 +755,7 @@ def varrer():
             # MONTAGEM: o formato tem de ser envolvido na origem, porque a
             # string final nunca casa com chave. Sem "%", o literal chega
             # inteiro na tela e basta a chave.
-            if "%" in s and "i18n" not in ctx.split("(")[0][-40:] and "i18n" not in ctx:
+            if not pencil and "%" in s and "i18n" not in ctx.split("(")[0][-40:] and "i18n" not in ctx:
                 if s not in IGNORAR:
                     faltando_i18n.setdefault(s, []).append(onde)
             elif s not in chaves and s not in IGNORAR:

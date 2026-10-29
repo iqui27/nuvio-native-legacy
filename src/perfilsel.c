@@ -789,8 +789,11 @@ static float ambDesenhar(float a) {
   return cob;
 }
 
+static void gifReset(void);
+
 void perfilsel_iniciar(void) {
   int i;
+  gifReset();
 #ifdef NV_TOUCH_UI
   psToqueX = 0.0f; psToqueLivre = 0;
 #endif
@@ -1162,6 +1165,13 @@ static const ContaPerfil *gifDono;
 static int    gifAnima = -1;
 static GLuint gifTex;
 
+static void gifReset(void) {
+  gifDono = NULL;
+  gifAnima = -1;
+  gifTex = 0;
+  gif_parar();
+}
+
 // O circulo do perfil: soquete escuro, cor da conta por cima e, quando ha,
 // a foto. Tres camadas e nao uma porque a cor precisa DIMINUIR fora do foco
 // sem virar um buraco preto sobre a arte de fundo — o soquete e o que garante
@@ -1176,12 +1186,13 @@ static void disco(GfxRect a, const ContaPerfil *p, float f, float alfa,
   gfx_rect(a, 0, GFX_DISCO, 0, 0, 0, 0, 0.09f, 0.09f, 0.10f, alfa);
   gfx_rect(a, 0, GFX_DISCO, 0, 0, 0, 0, cr, cg, cb, vivo * alfa);
   foto = p->avatarUrl[0] ? tex_obter_larg(p->avatarUrl, a.w) : 0;
+  // Static avatars also end the previous focus session (#660).
+  if (focado && gifDono != p) { gifReset(); gifDono = p; }
   if (focado && gif_pode_animar() && !ajustes_animacoes_reduzidas()
       && p->avatarUrl[0] && strstr(p->avatarUrl, ".gif")) {
     // O arquivo e pedido a cada quadro em que este perfil e o foco — fora
     // dele nenhum download comeca (ver a nota de gif_pode_animar em gif.h).
     const char *arq = tex_arquivo(p->avatarUrl);
-    if (gifDono != p) { gifDono = p; gifAnima = -1; gifTex = 0; gif_parar(); }
     if (gifAnima < 0 && arq) gifAnima = gif_animado(arq);
     if (arq && gifAnima > 0) {
       // A cada desenho: o relogio e de gif.c, e sem quadro vencido a chamada

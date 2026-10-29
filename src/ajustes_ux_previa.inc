@@ -761,13 +761,18 @@ static float ajPreviaFonte(int op, float x, float y, float w) {
   int n = nValores(op), sel = valor[op], k;
   ajustes_acento(&ar, &ag, &ab);
   if (sel < 0 || sel >= TXT_FAMILIA_N) sel = 0;
+  TxtFamilia amostra = (TxtFamilia)sel;
+  if (legfontes_selecionada(LEGFONTE_INTERFACE) >= 0) {
+    amostra = TXT_FAMILIA_IMPORTADA_UI;
+    sel = -1; // No bundled face is selected while an imported one is active.
+  }
   ajCenaArte(ajArte(AJA_FUNDO, ajCenaArteOp(op)), (GfxRect){ x, y, w, h }, 22, 0.3f);
   ajCenaVidro((GfxRect){ x + 28 * s, y + 28 * s, w - 56 * s, h - 56 * s }, 24 * s, 1);
-  { TxtLinha l = txt_linha_familia(ajEstiloPxS(96 * s, 1), "Aa", 243, 242, 239, 255, (TxtFamilia)sel);
+  { TxtLinha l = txt_linha_familia(ajEstiloPxS(96 * s, 1), "Aa", 243, 242, 239, 255, amostra);
     txt_desenhar(l, x + 56 * s, y + 52 * s);
-    l = txt_linha_corta_familia(ajEstiloPxS(24 * s, 1), ajTituloN(9), 243, 242, 239, 255, 250 * s, (TxtFamilia)sel);
+    l = txt_linha_corta_familia(ajEstiloPxS(24 * s, 1), ajTituloN(9), 243, 242, 239, 255, 250 * s, amostra);
     txt_desenhar(l, x + 58 * s, y + 200 * s);
-    l = txt_linha_corta_familia(ajEstiloPxS(14 * s, 0), ajMetaTitulo(9), 243, 242, 239, 255, 250 * s, (TxtFamilia)sel);
+    l = txt_linha_corta_familia(ajEstiloPxS(14 * s, 0), ajMetaTitulo(9), 243, 242, 239, 255, 250 * s, amostra);
     txt_desenhar_alpha(l, x + 58 * s, y + 240 * s, 0.6f); }
   if (n > TXT_FAMILIA_N) n = TXT_FAMILIA_N;
   for (k = 0; k < n; k++) {

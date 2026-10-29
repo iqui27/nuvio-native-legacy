@@ -16,3 +16,4 @@ fi
 for scenario in resumeseek seekfallback timestamp timestampbound timestampprogress timestampopenfail timestampcancel timestamppause timestampdv timestampseek timestampaudio preparefail pause backpressure delayedid cancel seek seeksegment pausedseek pacing ordinal filtered ambiguous audio audioerror eof eoferror pausedreload eofpause overflow subtitles reordered core nocore volume cpu pausedcore controls stallpaced stallrecover stallbound stallnoclock stalltransient stallpause stallseek stallpausedseek stallrecovernoclock stallrecovercancel stallseeknoclock stallrecoverunloaded sustained; do
  "$tmp/test" "$scenario"
 done
+DV7_OFF=1 "$tmp/test" buffer

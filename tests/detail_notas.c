@@ -2,12 +2,14 @@
 // first-time hint is only dismissed after the island actually showed it.
 #define ilha_mostrou mostrou_fixture
 #define extras_n_comentarios com_n_fixture
+#define extras_n_comentarios_ep com_n_fixture
 static int mostrouRet;
 static int com_n_fixture(void) { return 2; }
 static int mostrou_fixture(const char *chave) { (void)chave; return mostrouRet; }
 #include "../src/detail.c"
 #undef ilha_mostrou
 #undef extras_n_comentarios
+#undef extras_n_comentarios_ep
 #include <assert.h>
 int main(void) {
   assert(SDL_Init(SDL_INIT_TIMER) == 0);
