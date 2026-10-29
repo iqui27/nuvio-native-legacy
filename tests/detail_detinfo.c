@@ -19,7 +19,20 @@
 #include <assert.h>
 #include <SDL2/SDL_image.h>
 
-static int sparse;
+static int sparse, previewLines, measurements;
+static const char *reviewText;
+void fonte_addon_measure(void) { measurements++; }
+void fonte_addon_box(int x, int y, int w, int h, int emoji) {
+  (void)x; (void)y; (void)w; (void)h; (void)emoji;
+}
+void fonte_addon_line(const char *text, float y, float w, float h, float limit) {
+  (void)text; (void)y; (void)w; (void)h; (void)limit;
+  previewLines++;
+}
+void fonte_addon_visible(const char *text, float y, float h) {
+  (void)y; (void)h;
+  assert(!strstr(text,"HIDDEN"));
+}
 const char *fixtureOriginal(void) {
   return sparse ? "L'Âge de fer : une histoire de la Praça Charles de Gaulle, des souvenirs et des rencontres à travers plusieurs générations"
                 : "La Bataille de Gaulle : L'Âge de fer";
@@ -33,6 +46,7 @@ const char *fixtureValue(int i) { (void)i; return "Praça Charles de Gaulle"; }
 int fixtureReviews(void) { return 1; }
 const char *fixtureReview(int i) {
   (void)i;
+  if (reviewText) return reviewText;
   return "🇫🇷 Great Churchill character. L'Âge de fer, Praça Charles de Gaulle. "
          "A measured performance with a memorable ending. A longer review keeps wrapping "
          "inside the card without covering the next section.";
@@ -90,6 +104,21 @@ int main(int argc,char **argv) {
   CatItem item={0}; strcpy(item.tipo,"movie"); strcpy(item.imdb,"tt9000011");
   strcpy(item.titulo,"De Gaulle: Résistance"); cat_definir_tudo(&item,1,NULL,0);
   idx=0; aberto=1;
+  /* Removing the preview limit must submit hidden lines and fail here. */
+  char *longReview=malloc(1024*1024); assert(longReview);
+  memset(longReview,'x',1024*1024-1); longReview[1024*1024-1]=0;
+  memcpy(longReview,"🇫🇷 first\nsecond\nthird\nHIDDEN\n",sizeof "🇫🇷 first\nsecond\nthird\nHIDDEN\n"-1);
+  reviewText=longReview;
+  txt_novo_quadro(); gfx_novo_quadro(); previewLines=measurements=0;
+  desenhaComentarios(NV_DETP_X,80,1);
+  assert(previewLines==3 && measurements<2048);
+  memset(longReview,'x',1024*1024-1);
+  memcpy(longReview,"🇫🇷 ",9);
+  txt_novo_quadro(); previewLines=measurements=0;
+  desenhaComentarios(NV_DETP_X,80,1);
+  assert(previewLines==3 && measurements<2048);
+  reviewText=NULL; free(longReview);
+  puts("PASS: long review layout and submission stop at three lines");
   int colors=0;
   for (int phone=0;phone<2;phone++) for (int fields=6;fields>=3;fields-=3)
     colors+=capture(argv[1],phone,fields);

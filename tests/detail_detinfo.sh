@@ -13,6 +13,9 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/detail.c) continue;; esac
   object="$OBJ/$(basename "$source" .c).o"
   case "$source" in
+    src/text.c)
+      object="$work/text.o"
+      cc "${flags[@]}" -DNV_ADDON_LAYOUT_TEST -c "$source" -o "$object";;
     src/layout.c|src/gfx.c|src/ponteiro.c)
       object="$work/$(basename "$source" .c).o"
       cc "${flags[@]}" -DNV_TOUCH_UI -c "$source" -o "$object";;
