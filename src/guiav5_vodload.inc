@@ -94,7 +94,7 @@ static void vod_load_worker(void){
   printf("[vod-load] phase=%s http=%d categories=%d items=%d ok=%d ms=%u\n",operation==8?"cache":operation==6?"categories":"items",status,categories,items,worker_ok,SDL_GetTicks()-began);
 }
 static void vod_begin(void){
-  if(atomic_load(&busy))return;
+  if(atomic_load(&busy)){vod_begin_pending=1;return;}
   use_saved=1;
   if(vod_cache_checked&&!vod_lazy){if(!source_loaded||categories_missing){action[0]=0;start(2);}return;}
   vod_lazy=1;
@@ -114,9 +114,10 @@ static void vod_tick(void){
   for(int r=0;r<vod_data.nrows;r++){
     VodRow *row=&vod_data.rows[r];int k=row->kind==G5_SERIES;
     if((k?!draft.series:!draft.movies)||(!strcmp(screen,"vod-series")&&!k)||!group_allowed(row->name)||(rules.hide_adult&&adult_group(row->name))||(catalog_group[0]&&strcmp(catalog_group,row->name)))continue;
-    /* Fetch the focused row and one row ahead. Further rows wait for navigation. */
-    int position=eligible++;if(position<active||position>active+1)continue;
     int done=0;for(int i=0;i<vod_done_count[k];i++)done|=!strcmp(vod_done[k][i],row->id);
+    /* Completed empty categories have no navigable row. */
+    if(done&&!row->count)continue;
+    int position=eligible++;if(position<active||position>active+1)continue;
     if(done)continue;
     if(strspn(row->id,"0123456789")!=strlen(row->id)||!row->id[0])continue;
     vod_request_kind=k;snprintf(vod_request_id,sizeof vod_request_id,"%s",row->id);start(7);return;

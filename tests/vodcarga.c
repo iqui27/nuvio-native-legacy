@@ -6,7 +6,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-static atomic_int requests, full_lists, category_requests, fail_items;
+static atomic_int requests, full_lists, category_requests, fail_items, empty_leading;
 static char *fixture_request(const char *server,const char *user,const char *password,const char *action,int seconds,int *status){
   (void)server;(void)user;(void)password;(void)seconds;
   atomic_fetch_add(&requests,1);*status=200;
@@ -20,6 +20,7 @@ static char *fixture_request(const char *server,const char *user,const char *pas
   SDL_Delay(80);
   char *body=malloc(900000);assert(body);size_t n=0;body[n++]='[';
   int category=atoi(strstr(action,"category_id=")+12);
+  if(atomic_load(&empty_leading)&&category<9){free(body);return strdup("[]");}
   for(int i=0;i<4000;i++)n+=snprintf(body+n,900000-n,"%s{\"stream_id\":%d,\"series_id\":%d,\"name\":\"Fixture title %04d\",\"category_id\":%d,\"container_extension\":\"mp4\"}",i?",":"",category*10000+i,category*10000+i,i,category);
   strcpy(body+n,"]");return body;
 }
@@ -46,8 +47,9 @@ static void pump(void){g5ui_update();vod_filter();SDL_Delay(1);}
 static atomic_int lifetime_finished;
 static void *lifetime_worker(void *unused){
   (void)unused;
+  /* Simulate a transport that takes time to acknowledge cancellation. */
   while(!atomic_load(&worker_cancel))SDL_Delay(1);
-  assert(inventory&&count==1&&!strcmp(inventory[0].name,"Mixed lifetime title"));
+  SDL_Delay(250);
   atomic_store(&lifetime_finished,1);atomic_store(&ready,1);return NULL;
 }
 static void lifetime_test(const char *test){
@@ -56,11 +58,14 @@ static void lifetime_test(const char *test){
   strcpy(inventory[0].source,"m3u");strcpy(inventory[0].group,"Mixed");
   if(!strcmp(test,"clear")){
     worker_cancel=0;atomic_store(&busy,1);
-    assert(!pthread_create(&worker,NULL,lifetime_worker,NULL));
-    clear_catalog();
-    assert(atomic_load(&lifetime_finished)&&"catalog clear must join before freeing inventory");
-    assert(!atomic_load(&busy)&&!atomic_load(&ready)&&!inventory&&!count);
-    assert(!staging&&!vod_pending.refs);
+    assert(!pthread_create(&worker,NULL,lifetime_worker,NULL));pthread_detach(worker);
+    Uint32 began=SDL_GetTicks();clear_catalog();
+    assert(SDL_GetTicks()-began<50&&"account switch must never wait for a worker");
+    assert(!inventory&&!count);
+    assert(!start(8)&&"cancelled staging stays owned until completion");
+    while(atomic_load(&busy)&&SDL_GetTicks()-began<2000)pump();
+    assert(atomic_load(&lifetime_finished)&&!atomic_load(&busy));
+    assert(!staging&&!vod_pending.refs&&!vod_data.count);
   }else{
     assert(start(8));
     Uint32 began=SDL_GetTicks();
@@ -81,6 +86,15 @@ int main(int argc,char **argv){
   assert(gfx_iniciar()&&txt_iniciar("deploy/app",1));tex_iniciar(64);gfx_icones_dir("deploy/app/art");dados_iniciar(getenv("NUVIO_DADOS"));ajustes_dir(getenv("NUVIO_DADOS"));context();
   assert(xtream_conta_definir("http://fixture.invalid","fixture","fixture"));
   draft.movies=1;draft.series=0;draft.live=1;committed=1;
+  if(argc>1&&!strcmp(argv[1],"empty")){
+    atomic_store(&empty_leading,1);g5ui_open("vod-filmes");
+    Uint32 began=SDL_GetTicks();
+    while(vod_data.count<4000&&SDL_GetTicks()-began<2000)pump();
+    assert(vod_data.count==4000&&"empty leading categories must not starve later rows");
+    while(atomic_load(&busy))pump();
+    assert(vod_rows==1&&vod_done_count[0]==3);
+    puts("VOD empty leading categories: PASS");return 0;
+  }
   if(argc>1){lifetime_test(argv[1]);return 0;}
   g5ui_open("vod-filmes");shot(window,"loading-skeleton");
   Uint32 began=SDL_GetTicks();

@@ -29,4 +29,6 @@ else
   "$work/test" index
   "$work/test" clear
   "$work/test"
+  rm -f "$NUVIO_DADOS"/guiav5-vod-*.json
+  "$work/test" empty
 fi

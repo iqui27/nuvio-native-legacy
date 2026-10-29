@@ -155,9 +155,9 @@ int main(void) {
   source_loaded=0;draft.type=1;persist();
   CHECK(!source_loaded,"saving source settings does not mark an unfetched catalog loaded");
   snprintf(screen,sizeof screen,"vod-filmes");source_loaded=1;
-  operation=2;worker_ok=worker_cancel=0;worker_profile=profile;
+  operation=2;worker_ok=worker_cancel=0;worker_profile=profile;worker_generation=catalog_generation;
   snprintf(worker_account,sizeof worker_account,"%s",account);
-  assert(!pthread_create(&worker,NULL,failed_catalog,NULL));
+  assert(!pthread_create(&worker,NULL,failed_catalog,NULL));pthread_detach(worker);
   atomic_store(&busy,1);atomic_store(&ready,1);
   g5ui_update();
   CHECK(!source_loaded&&!atomic_load(&busy),"failed VOD publication clears loaded flag for next open");

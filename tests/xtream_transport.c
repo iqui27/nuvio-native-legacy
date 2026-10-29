@@ -14,6 +14,7 @@ static int test_clock(clockid_t id, struct timespec *ts) {
 #include <stdarg.h>
 typedef struct { long timeout; size_t (*write)(void *,size_t,size_t,void *); void *data; } Fake;
 static int mode,calls,created,failed;
+static int stop(void *unused){(void)unused;return 1;}
 static void *init(void){created++;return calloc(1,sizeof(Fake));}
 static int option(void *c,int op,...){
   Fake *f=c;va_list ap;va_start(ap,op);
@@ -47,5 +48,10 @@ int main(int argc,char **argv){
     assert(b&&status==200&&strstr(b,"[]"));free(b);
     assert(calls==(mode?2:1));if(mode)assert(created==2);
   }
-  puts("Xtream streaming list and exhausted reused connection: PASS");return 0;
+  rede_parar_quando(stop,NULL);
+  Vigia watcher={0};
+  assert(vigiar(&watcher,0,0,0,0)==1&&"idle Xtream transfers must abort");
+  assert(!valeRepetir(28,&watcher,0)&&"cancelled requests must not retry");
+  rede_parar_quando(NULL,NULL);
+  puts("Xtream streaming list, reused connection and idle cancellation: PASS");return 0;
 }
