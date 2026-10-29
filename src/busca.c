@@ -2025,6 +2025,7 @@ static void desenhaTeclado(void) {
     }
   }
   // Dicas do controle, 16 px a 16 abaixo da ilha (o texto mudo do mockup).
+#ifndef NV_DESKTOP_UI
   { float y = ilha.y + ilha.h + 16.0f;
     const char *d1 = campoFoco == 1 ? i18n("OK   Teclado da TV")
                    : campoFoco == 2 ? i18n("OK   Falar")
@@ -2040,6 +2041,7 @@ static void desenhaTeclado(void) {
     TxtLinha a2 = txt_linha(TXT_ILHA_APOIO, d2, BU_TX);
     txt_desenhar_alpha(a1, BU_KB_X + 12.0f, y, 0.42f);
     txt_desenhar_alpha(a2, BU_KB_X + 12.0f, y + a1.h + 6.0f, 0.42f); }
+#endif
 }
 
 static void desenhaVazio(void) {

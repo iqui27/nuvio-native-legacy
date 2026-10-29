@@ -76,7 +76,7 @@ run(str(fixture), str(DATA / 'catalogo-rede.bin'), str(ART), str(MOCK))
 for path in ('/tmp/nuvio-video', '/tmp/nuvio-key', '/tmp/nuvio-shot-req'):
     Path(path).unlink(missing_ok=True)
 log = OUT / 'mac-scene.log'
-env = dict(os.environ, NUVIO_DADOS=str(DATA), NUVIO_UI_PREVIEW='1', NUVIO_MPV_DIAG='1')
+env = dict(os.environ, NUVIO_DADOS=str(DATA), NUVIO_UI_PREVIEW='1')
 with log.open('w') as output:
     process = subprocess.Popen([str(APP), str(ART)], env=env, stdout=output,
                                stderr=subprocess.STDOUT, start_new_session=True)

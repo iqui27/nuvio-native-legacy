@@ -330,20 +330,6 @@ int video_desktop_render(int drawableW, int drawableH) {
     mpv_render_context_update(renderer);
     ok = check(mpv_render_context_render(renderer, params));
   }
-  if (getenv("NUVIO_MPV_DIAG")) {
-    static unsigned frames;
-    if (!(frames++ % 120)) {
-      unsigned char pixel[4]; GLint alpha;
-      glReadPixels(w / 2, h / 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
-      bindFramebuffer(GL_FRAMEBUFFER, (GLuint)oldFbo);
-      glGetIntegerv(GL_ALPHA_BITS, &alpha);
-      unsigned char ui[4];
-      glReadPixels(drawableW / 2, drawableH / 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, ui);
-      printf("[mpv-render] ok=%d fbo=%d tex=%dx%d rect=%d,%d,%d,%d video=%u,%u,%u,%u ui=%u,%u,%u,%u alpha=%d gl=%x\n",
-             ok, oldFbo, w, h, dx, dy, dw, dh, pixel[0], pixel[1], pixel[2], pixel[3],
-             ui[0], ui[1], ui[2], ui[3], alpha, glGetError());
-    }
-  }
   bindFramebuffer(GL_FRAMEBUFFER, (GLuint)oldFbo);
   useProgram(0); activeTexture(GL_TEXTURE0);
   glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glDisable(GL_SCISSOR_TEST);
