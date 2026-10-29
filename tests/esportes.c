@@ -59,6 +59,9 @@ int main(void) {
   assert(!strcmp(ls[1].id,"nba"));
   memset(e,0,sizeof e); assert(esportes_eventos_ler(jogo,"basketball",&liga,e,5)==1);
   assert(e[0].nParticipantes==2 && e[0].estado==1);
+  const char *metadata="{\"events\":[{\"id\":\"color\",\"name\":\"Home vs Away\",\"date\":\"2026-10-19T20:00Z\",\"competitions\":[{\"venue\":{\"fullName\":\"Stadium\",\"address\":{\"city\":\"Rio\"}},\"competitors\":[{\"team\":{\"displayName\":\"Home\",\"color\":\"C32832\",\"alternateColor\":\"16805A\"}}]}]}]}";
+  EspEvento colored={0};assert(esportes_eventos_ler(metadata,"soccer",&liga,&colored,1)==1);
+  assert(!strcmp(colored.cidade,"Rio")&&!strcmp(colored.participantes[0].cor,"C32832")&&!strcmp(colored.participantes[0].corAlternativa,"16805A"));
   assert(!strcmp(e[0].participantes[0].pontos,"80"));
   assert(!strcmp(e[0].local,"Arena")); assert(e[0].nEmissoras==2);
   time_t t=(time_t)(js_ms_iso("2026-10-19T20:00Z")/1000);

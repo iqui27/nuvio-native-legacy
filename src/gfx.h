@@ -549,6 +549,7 @@ void gfx_tex_esquecer(GLuint tex);
 // Os relogios finos (gfx_ms_rect, tex_ms_busca) ficam atras de NV_PERF_FINO
 // porque custam DUAS leituras de relogio por desenho — cerca de 250 chamadas
 // por quadro so para medir. Ligue com -DNV_PERF_FINO quando a pergunta voltar.
+extern int    gfx_n_text;   // text texture draws in this frame
 extern int    gfx_n_rect;   // chamadas de gfx_rect
 extern int    gfx_n_prog;   // trocas de programa GL (glUseProgram)
 extern int    gfx_n_bind;   // trocas de textura (glBindTexture)

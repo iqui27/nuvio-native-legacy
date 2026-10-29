@@ -7,6 +7,7 @@
 void esportesui_fontes(const EspEvento *ev);
 void esportesui_fontes_passo(void);
 void esportesui_cartao(const EspEvento *ev, GfxRect rect, int focused);
+void esportesui_cache_limpar(void);
 void esportesui_logo(const char *url, int sport, GfxRect rect);
 int esportesui_fundo(GfxRect rect, int sport, int focused);
 void esportesui_recursos(const char *dirArte);

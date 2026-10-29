@@ -1790,7 +1790,7 @@ static int gv_is(const char *s){
     "erros","vazio","fontes-erro","esportes-ligas","esportes-liga","esportes-favoritos",
     "esportes-ajustes","esportes-onde-assistir","esportes-noticias","esportes-hoje",
     "esportes-proximos","esportes-resultados","esportes-modalidades","esportes-catalogo",
-    "esportes-visibilidade","esportes-modalidades-config","esportes-artigo","esportes-canais",NULL};
+    "esportes-visibilidade","esportes-modalidades-config","esportes-artigo","esportes-canais","esportes-evento",NULL};
   for(int i=0;ss[i];i++)if(!strcmp(s,ss[i]))return 1;
   return 0;
 }
@@ -2859,9 +2859,9 @@ static void gv_screen(void){
     gv_reg=topo&&gv_side_open;if(!gv_sports()||gv_side_open)gv_sidebar(base);gv_reg=0;
     int esp=!strncmp(ov?gv_pagina:screen,"esportes-",9);
     if(esp){
-      gfx_sem_transformar();gfx_opacidade_grupo=og;
-      if(ov)gv_como(gv_pagina,gv_sports_screen);
+      if(ov){gfx_sem_transformar();gfx_opacidade_grupo=og;gv_como(gv_pagina,gv_sports_screen);}
       else{gv_reg=1;gv_sports_screen();gv_reg=0;}
+      gfx_sem_transformar();gfx_opacidade_grupo=og;
     }else{
       if(gv_cartoes()){gv_hero_compact(base);gv_dock(base,208);gv_cards(base);}
       else{gv_hero(base);gv_dock(base,gv_hh);gv_grid(base);}
