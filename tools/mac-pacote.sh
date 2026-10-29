@@ -20,7 +20,7 @@ MIN_MACOS=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["min
 BINARIES=()
 for arch in "${ARCHES[@]}"; do
   cc src/*.c src/dts/*.c -o "$WORK/Nuvio-$arch" -O1 -arch "$arch" \
-    -mmacosx-version-min="$MIN_MACOS" -DNV_DESKTOP_RELEASE -DNV_DESKTOP_MPV -DNV_TOUCH_UI -include "$WORK/env.h" \
+    -mmacosx-version-min="$MIN_MACOS" -DNV_DESKTOP_RELEASE -DNV_DESKTOP_MPV -DNV_DESKTOP_UI -DNV_TOUCH_UI -include "$WORK/env.h" \
     -I "$WORK/include" -I "$WORK/include/SDL2" -I src/vendor/jpeg62 \
     -F "$APP/Contents/Frameworks" -framework SDL2 -framework SDL2_image -framework SDL2_ttf \
     -I "$MPV_MAC/include" -L "$MPV_MAC/lib" -lmpv \

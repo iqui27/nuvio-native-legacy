@@ -21,12 +21,13 @@ for spec in SDL2-2.32.10 SDL2_image-2.8.8 SDL2_ttf-2.24.0; do
   cp "$prefix/bin/"*.dll "$PKG/"
 done
 x86_64-w64-mingw32-gcc src/*.c src/dts/*.c -o "$PKG/Nuvio.exe" -O1 \
-  -std=gnu11 -DNV_DESKTOP_RELEASE -DNV_DESKTOP_MPV -DNV_TOUCH_UI -DSDL_MAIN_HANDLED -include tools/windows-compat/platform.h \
+  -std=gnu11 -DNV_DESKTOP_RELEASE -DNV_DESKTOP_MPV -DNV_DESKTOP_UI -DNV_TOUCH_UI -DSDL_MAIN_HANDLED -include tools/windows-compat/platform.h \
   -I tools/windows-compat -I "$MPV_WINDOWS/include" "${FLAGS[@]}" -I "$CURL/include" -include "$WORK/env.h" \
   -lSDL2 -lSDL2_image -lSDL2_ttf "$MPV_WINDOWS/libmpv.dll.a" "$CURL/lib/libz.a" -lws2_32 -lbcrypt -lopengl32 \
   -static-libgcc -Wno-incompatible-pointer-types -Wno-int-conversion
 cp "$CURL/bin/libcurl-x64.dll" "$PKG/"
 cp "$MPV_WINDOWS/libmpv-2.dll" "$VULKAN_WINDOWS" "$PKG/"
+cp "$MPV_WINDOWS/libmpv-2.dll" "$PKG/mpv-2.dll"
 # Keep the upstream DLL basename: its import library requests libmpv-2.dll.
 # GCC's compiler TLS runtime imports winpthreads even though app threads use SDL.
 cp "$(dirname "$(x86_64-w64-mingw32-gcc -print-file-name=libwinpthread.a)")/../bin/libwinpthread-1.dll" "$PKG/"

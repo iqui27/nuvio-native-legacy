@@ -2,6 +2,7 @@
 #ifdef NV_DESKTOP_MPV
 #include "video.h"
 #include "mediaurl.h"
+#include "layout.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
 #include <mpv/client.h>
@@ -236,7 +237,7 @@ int video_tocar(const char *url) {
   }
   mpv_node node = {.u.list = &list, .format = MPV_FORMAT_NODE_ARRAY};
   if (!check(mpv_set_property_async(player, 0, "http-header-fields", MPV_FORMAT_NODE, &node))) return 0;
-  set("pause", "no"); setNumber("volume", volume); setNumber("speed", speed / 100.0);
+  set("pause", "no"); setNumber("volume", volume); setNumber("speed", video_taxa_efetiva() / 100.0);
   const char *cmd[] = {"loadfile", url, "replace", NULL};
   awaitingStart = 1;
   active = check(mpv_command_async(player, 0, cmd));
@@ -302,7 +303,7 @@ int video_desktop_render(int drawableW, int drawableH) {
   glMatrixMode(GL_PROJECTION); glPushMatrix();
   glMatrixMode(GL_MODELVIEW); glPushMatrix();
   glMatrixMode(GL_TEXTURE); glPushMatrix();
-  int w = (int)ceil(dw * drawableW / 1920.0), h = (int)ceil(dh * drawableH / 1080.0);
+  int w = (int)ceil(dw * drawableW / (double)NV_TELA_W), h = (int)ceil(dh * drawableH / (double)NV_TELA_H);
   activeTexture(GL_TEXTURE0);
   if (!texture) glGenTextures(1, &texture);
   glBindTexture(GL_TEXTURE_2D, texture);
@@ -333,7 +334,7 @@ int video_desktop_render(int drawableW, int drawableH) {
   glDisable(GL_STENCIL_TEST); glDisable(GL_ALPHA_TEST); glDisable(GL_LIGHTING);
   glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
   glViewport(0, 0, drawableW, drawableH);
-  glMatrixMode(GL_PROJECTION); glLoadIdentity(); glOrtho(0, 1920, 1080, 0, -1, 1);
+  glMatrixMode(GL_PROJECTION); glLoadIdentity(); glOrtho(0, NV_TELA_W, NV_TELA_H, 0, -1, 1);
   glMatrixMode(GL_MODELVIEW); glLoadIdentity();
   glMatrixMode(GL_TEXTURE); glLoadIdentity();
   glEnable(GL_BLEND); glBlendFunc(GL_ONE_MINUS_DST_ALPHA, GL_ONE);
