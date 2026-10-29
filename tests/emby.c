@@ -19,6 +19,7 @@ static char dirDados[512];
 static int perfilAtivo = 1;
 int perfis_ativo(void) { return perfilAtivo; }
 int ajustes_jellyfin_ligado(void) { return 1; }
+int fil_estado_chave(const char *chave) { (void)chave; return 1; }
 const char *i18n(const char *s) { return s; }
 char *dados_caminho(char *dst, unsigned tam, const char *nome) {
   snprintf(dst, tam, "%s/%s", dirDados, nome);
@@ -312,14 +313,17 @@ static void integracao(void) {
   { CatItem *x = malloc(sizeof(CatItem) * SRV_ITENS_MAX);
     CatFileira f[SRV_FIL_MAX];
     int tot = 0, nr = servidores_fileiras_copiar(x, SRV_ITENS_MAX, f, SRV_FIL_MAX, &tot);
-    assert(nr == 2 && tot == 2 && f[0].n == 1 && f[1].ini == 1 && servidores_conectado());
-    assert(!strcmp(x[0].imdb, "tt0002002") && !strcmp(x[1].imdb, "tmdb:4242"));
-    assert(!jfid_e(x[0].imdb) && !jfid_e(x[1].imdb));
+    assert(nr == 2 && tot == 3 && f[0].n == 2 && f[1].ini == 2 && servidores_conectado());
+    assert(!strcmp(x[1].imdb, "tt0002002") && !strcmp(x[2].imdb, "tmdb:4242"));
+    assert(jfid_e(x[0].imdb) && !jfid_e(x[1].imdb) && !jfid_e(x[2].imdb));
     assert(servidores_chave_fileira("emby_11") && servidores_chave_fileira("plex_1") && !servidores_chave_fileira("cw"));
     assert(servidores_pagina("emby_11", 0, 60, x, 60, &tot, NULL) == 2 && tot == 2);
     assert(jfid_e(x[0].imdb) && !strcmp(x[1].imdb, "tt0002002"));
     assert(servidores_pagina("emby_11", 1, 60, x, 60, &tot, NULL) == 1 && tot == 2);
     assert(!strcmp(x[0].imdb, "tt0002002"));
+    assert(servidores_pagina("emby_11|1|Action", 0, 1, x, 60, &tot, NULL) == 1 && tot == 2);
+    assert(servidores_pagina("emby_11|1|Action", 1, 1, x, 60, &tot, NULL) == 1 && !strcmp(x[0].imdb, "tt0002002"));
+    assert(servidores_pagina("emby_11|1|Comedy", 0, 60, x, 60, &tot, NULL) == 0 && tot == 0);
     assert(servidores_pagina("other", 0, 60, x, 60, &tot, NULL) == -1);
     // Collection routes must obey the same paging contract as libraries.
     assert(servidores_pagina("emby_collections", -1, 60, x, 60, &tot, NULL) < 0 && tot == 0);
@@ -336,10 +340,11 @@ static void integracao(void) {
   assert(emby_indice_n() == 3 && emby_tem("tt0002002", "movie", NULL) && emby_tem("tmdb:4242", "series", NULL));
   assert(!jellyfin_tem("tt0002002", "movie", NULL));                                // the other instance has nothing
   { CatItem *cw = calloc(12, sizeof *cw);
-    assert(cw && servidores_continuar(cw, 12) == 2);
-    assert(!strcmp(cw[0].imdb, "tt0002002") && cw[0].progresso == 25 && cw[0].retomadoMs > 0);
-    assert(!strcmp(cw[1].imdb, "tmdb:4242") && cw[1].temporada == 1 && cw[1].episodio == 1);
-    assert(cw[1].progresso == 33 && cw[1].retomadoMs > cw[0].retomadoMs);
+    assert(cw && servidores_continuar(cw, 12) == 3);
+    assert(jfid_e(cw[0].imdb));
+    assert(!strcmp(cw[1].imdb, "tt0002002") && cw[1].progresso == 25 && cw[1].retomadoMs > 0);
+    assert(!strcmp(cw[2].imdb, "tmdb:4242") && cw[2].temporada == 1 && cw[2].episodio == 1);
+    assert(cw[2].progresso == 33 && cw[2].retomadoMs > cw[1].retomadoMs);
     free(cw); }
   { SrvAchado a;
     assert(servidores_info("em:9f8e7d6c.1001", "movie", &a));
@@ -347,6 +352,12 @@ static void integracao(void) {
     assert(emby_tem("tt0002002", "movie", &a) && !strcmp(a.tipoSrv, "Emby") && !strcmp(a.servidor, "Emby Home")); }
   r = emby_consultar("tt0002002", "movie", NULL, 0, NULL, NULL, &lista);
   assert(r == 2 && lista && strstr(lista[0].url, "/media/emby/Videos/1002/stream") && strstr(lista[0].url, "api_key="));
+  { Legenda *sub = calloc(LEG_MAX, sizeof *sub); char id[64]; assert(sub);
+    assert(emby_legendas(lista[0].url, sub, LEG_MAX, id, sizeof id) == 2);
+    assert(!strcmp(id, "tt0002002") && !strcmp(sub[1].arquivo, "movie.en.ass"));
+    assert(strstr(sub[1].url, "/media/emby/Videos/1002/mediasource_1002/Subtitles/5/Stream.ass"));
+    assert(emby_legendas("https://unknown.invalid", sub, LEG_MAX, id, sizeof id) == -1);
+    free(sub); }
   free(lista); lista = NULL;
   r = emby_consultar("tmdb:4242:2:1", "series", NULL, 0, NULL, NULL, &lista);     // episode 3021 on demand
   assert(r == 2 && lista && strstr(lista[0].url, "/Videos/3021/stream"));
@@ -450,6 +461,8 @@ int main(int argc, char **argv) {
   snprintf(raiz, sizeof raiz, "%s", argv[1]);
   snprintf(dirDados, sizeof dirDados, "%s", argv[2]);
   testarProtocolo();
+  void testarEmbyBib(void);
+  testarEmbyBib();
   integracao();
   emby_encerrar();
   jellyfin_encerrar();

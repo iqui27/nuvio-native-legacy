@@ -11,6 +11,7 @@
 #include "servidores.h"
 #include "srvidx.h"
 #include "plex.h"
+#include "jellyfin.h"
 #include <stdio.h>
 
 // "Local · Casa" / "Remoto · Casa": the source chip and card say where the
@@ -49,7 +50,12 @@ static int preparoConsultar(const void *p, const char *id, const char *tipo,
   return n;
 }
 static void preparoLiberar(void *p) { plex_preparo_liberar(p); }
+static int legendasServidor(const char *url, Legenda *out, int max, char *id, size_t tam) {
+  int n = jellyfin_legendas(url, out, max, id, tam);
+  return n >= 0 ? n : emby_legendas(url, out, max, id, tam);
+}
 void servidores_ligar_aos_addons(void) {
+  addons_legendas_servidor(legendasServidor);
   static const OrigemPreparoOps ops = {preparoCapturar, preparoAtual, preparoConsultar, preparoLiberar};
   addons_definir_origem_extra(origem, servidores_casamento_ativo);
   addons_definir_origem_extra_preparo(origem, &ops);

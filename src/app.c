@@ -5113,8 +5113,10 @@ static void legendasDaFonte(void) {
   snprintf(chave, sizeof chave, "%s|%s", alvo, s->url[0] ? s->url : s->infoHash);
   if (!strcmp(chave, ultimo)) return;
   snprintf(ultimo, sizeof ultimo, "%s", chave);
-  addons_legendas_fonte(alvo, c->tipo, s->arquivo, (unsigned long long)s->tamanhoBytes,
-                        s->videoHash, s->url, s->cabecalhos[0] != 0);
+  int server = servidores_eh_fonte(s);
+  addons_legendas_fonte(alvo, c->tipo, server ? "" : s->arquivo,
+                        server ? 0 : (unsigned long long)s->tamanhoBytes,
+                        server ? "" : s->videoHash, s->url, server || s->cabecalhos[0] != 0);
 }
 
 // TRAILER NO DESTAQUE: so com a home na frente de tudo. A lista e a mesma

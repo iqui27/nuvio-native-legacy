@@ -11,6 +11,7 @@
 // stream_definir_lista, e a tela so precisa olhar addons_estado().
 #ifndef NV_ADDONS_H
 #define NV_ADDONS_H
+#include <stddef.h>
 #include "watchstate.h"
 #include "addonurl.h"
 #include "fontefalha.h"
@@ -253,6 +254,8 @@ typedef struct {
   int addonIndice;   // origem para dedup por id+addon
 } Legenda;
 
+// Optional server resolver, called only on the subtitle worker with the selected URL.
+void addons_legendas_servidor(int (*resolver)(const char *, Legenda *, int, char *, size_t));
 void addons_buscar_legendas(const char *imdb, const char *tipo);
 
 // O ARQUIVO QUE TOCA, para os extras do Stremio (legextras.h, #201): com a

@@ -17,6 +17,7 @@ int main(void) {
   SDL_Event e = {0}; Qr q;
   assert(qr_gerar(&q, HOMEVAZIO_URL));
   assert(homevazio_ativo(0));
+  assert(!homevazio_ativo(3)); // Server library rows work with zero addons.
   logada = 1; estado = SYNC_RODANDO;
   assert(!homevazio_ativo(0));
   estado = SYNC_PRONTO;

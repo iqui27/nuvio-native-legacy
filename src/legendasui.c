@@ -1098,10 +1098,8 @@ void legendasui_corpo(GfxRect c, float a) {
       txt_desenhar_alpha(l, x0 + 10.0f, yc - (float)l.h * 0.5f, a);
     } else {
       char q[32];
-      // "Segure OK" saiu daqui: a linha em foco ja diz (Mais opcoes).
-      const char *k[3] = { "OK", "\xe2\x86\x92", "Voltar" };
-      const char *rt[3] = { "Usar", "Estilo", mais || ver ? "Voltar" : "Fechar" };
-      const char *km[2] = { "OK", "Voltar" }, *rm[2] = { "Usar", "Fechar" };
+      // Only the item count belongs in this footer; no remote-control hint bar.
+
       int naSync = nLinhasV && linhas[foco].tipo == LR_SYNC, nf = 0, pf = 0;
       // The AutoSync row is not a choice: it is left out of "N de M", which
       // disappears on it, and the hints say what OK does there.
@@ -1110,16 +1108,6 @@ void legendasui_corpo(GfxRect c, float a) {
         snprintf(q, sizeof q, i18n("%d de %d"), nf ? pf : 0, nf);
         { TxtLinha l = txt_linha(TXT_ILHA_APOIO, q, 243, 242, 239, 115);
           txt_desenhar_alpha(l, x0 + 10.0f, yc - (float)l.h * 0.5f, a); }
-        if (menu) plrui_dicas(km, rm, 2, x0 + w - 10.0f, yc, 1, a);
-        else plrui_dicas(k, rt, 3, x0 + w - 10.0f, yc, 1, a);
-      } else {
-        const char *rot[4], *ks[3] = { "OK", "\xe2\x86\x90 \xe2\x86\x92", "Voltar" };
-        int n = nAcoes(linhas[foco].slot, rot, 4);
-        const char *rs[3] = { n ? rot[syncAcao < n ? syncAcao : 0] : "", "Op\xc3\xa7\xc3\xa3o", "Fechar" };
-        if (n == 1) { const char *k2[2] = { "OK", "Voltar" }, *r2[2] = { rot[0], "Fechar" };
-          plrui_dicas(k2, r2, 2, x0 + w - 10.0f, yc, 1, a); }
-        else if (n) plrui_dicas(ks, rs, 3, x0 + w - 10.0f, yc, 1, a);
-        else plrui_dicas(ks + 2, rs + 2, 1, x0 + w - 10.0f, yc, 1, a);
       }
     } }
   if (menu) {
