@@ -6073,13 +6073,14 @@ static void desenhaHero(Uint32 agora, float saida) {
         alvoAcaoHero(bt, saida, cin, aBtn);
         if (layout_desktop_ativo()) {
           retSoAbre = !ci || (!strcmp(ci->tipo, "series") && ci->episodio <= 0);
-          ponteiro_alvo(bt.x, bt.y, bt.w, bt.h, ponteiroHero, retAtivar, RET_PLAY, 0);
+          retAlvo[RET_PLAY] = bt; retAlvoOk[RET_PLAY] = aBtn > .3f;
           for (int j = 0; j < 2; j++) {
             GfxRect disc = {bt.x + bt.w + 18 + j * (bh + 14), by, bh, bh};
             gfx_vidro_folha(disc, .5f, aBtn);
             TxtLinha icon = txt_linha(TXT_ILHA_NOME, j ? "…" : "+", 243, 242, 239, 255);
             txt_desenhar_alpha(icon, disc.x + (disc.w - icon.w) * .5f, disc.y + (disc.h - icon.h) * .5f, aBtn);
-            ponteiro_alvo(disc.x, disc.y, disc.w, disc.h, ponteiroHero, retAtivar, j ? RET_MAIS : RET_LISTA, 0);
+            int action = j ? RET_MAIS : RET_LISTA;
+            retAlvo[action] = disc; retAlvoOk[action] = aBtn > .3f;
           }
         }
 #endif

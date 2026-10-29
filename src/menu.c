@@ -135,7 +135,7 @@ static float menuEscala(void) {
 // Rotulos e ordem conferidos na referencia.
 static const char *ROTULOS[MENU_N] = { "Início", "Explorar", "Guia TV", "Esportes", "Busca", "Biblioteca", "Agenda", "Perfil e Stats", "Ajustes", "Servidores pessoais"
 #ifdef NV_DESKTOP_UI
-  , "Listas", "Conquistas", "Fontes e addons", "Assistir juntos"
+  , "Listas", "Conquistas", "Fontes e addons", "Assistir Juntos"
 #endif
 };
 
@@ -639,7 +639,11 @@ void menu_atualizar(float dt, Uint32 agora) {
 static void icone(int d, float cx, float cy, float s, float r, float g, float b, float a) {
   // `portal` ja e um SVG embarcado e le como entrada para uma descoberta;
   // manter o icone real evita inventar um glifo SDF e duplicar o de Busca.
-  static const char *nomes[MENU_N] = {"menu_home", "portal", "menu_guide", "menu_sports", "menu_search", "menu_library", "menu_agenda", "menu_profile", "menu_settings", "aj_server"};
+  static const char *nomes[MENU_N] = {"menu_home", "portal", "menu_guide", "menu_sports", "menu_search", "menu_library", "menu_agenda", "menu_profile", "menu_settings", "aj_server"
+#ifdef NV_DESKTOP_UI
+    , "mt_agenda", "mt_perfil", "aj_server", "mt_perfil"
+#endif
+  };
   if (d < 0 || d >= MENU_N) return;
   gfx_icone((GfxRect){cx-s*.5f, cy-s*.5f, s, s}, nomes[d], r, g, b, a);
 }

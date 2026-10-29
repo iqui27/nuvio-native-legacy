@@ -16,7 +16,7 @@ DATA.mkdir(parents=True, exist_ok=True)
 for name in ('/tmp/nuvio-video', '/tmp/nuvio-key', '/tmp/nuvio-shot-req'):
     Path(name).unlink(missing_ok=True)
 log = OUT / 'windows-video.log'
-env = dict(os.environ, NUVIO_DADOS='Z:' + str(DATA), NUVIO_UI_PREVIEW='1',
+env = dict(os.environ, NUVIO_DADOS='Z:' + str(DATA), NUVIO_UI_PREVIEW='1', NUVIO_LOG='Z:' + str(log),
            WINEDEBUG='-all')
 with log.open('w') as output:
     process = subprocess.Popen([WINE, '--bottle', 'Windwos apps',
@@ -36,7 +36,7 @@ with log.open('w') as output:
         if 'primeiro quadro na tela' not in text:
             raise RuntimeError('Wine could not start the Windows OpenGL app; see windows-video.log')
         Path('/tmp/nuvio-video').write_text('Z:' + str(OUT / 'sintel-trailer.mp4') + '\n')
-        time.sleep(5)
+        time.sleep(25)
         bmp = Path('/tmp/nuvio-shot.bmp')
         bmp.unlink(missing_ok=True)
         Path('/tmp/nuvio-shot-req').write_text('1\n')
@@ -56,5 +56,13 @@ with log.open('w') as output:
             except subprocess.TimeoutExpired:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
+        # CrossOver launcher may exit while its Windows child stays alive.
+        listing = subprocess.run(['pgrep', '-f', str(OUT / 'Nuvio-win64/Nuvio.exe').replace('/', '\\\\')],
+                                 text=True, stdout=subprocess.PIPE)
+        for pid in listing.stdout.split():
+            try:
+                os.kill(int(pid), signal.SIGTERM)
+            except ProcessLookupError:
+                pass
         for name in ('/tmp/nuvio-video', '/tmp/nuvio-key', '/tmp/nuvio-shot-req'):
             Path(name).unlink(missing_ok=True)

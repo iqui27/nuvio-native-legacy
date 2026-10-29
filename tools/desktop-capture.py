@@ -52,13 +52,14 @@ for header in (ROOT / 'src').glob('novidades*.h'):
 ART.parent.mkdir(parents=True, exist_ok=True)
 if not ART.exists():
     shutil.copytree(OUT / 'Nuvio.app/Contents/Resources/art', ART)
+shutil.copy2(MOCK / 'design/glass-ilha/arte.jpg', ART / '05.jpg')
 (ART / 'addons.txt').write_text('Offline fixture\thttps://example.invalid/manifest.json\t0\t0\t0\n')
 fonts = ART.parent / 'fonts'
 if not fonts.exists():
     shutil.copytree(ROOT / 'deploy/app/fonts', fonts)
-(DATA / 'ajustes.txt').write_text('idioma 1\nidiomaAutoLocal 0\nhomeLayoutLocal 2\ntrailerHero 1\n')
-(DATA / 'fileirasui-p1.txt').write_text('limite 7\nordem 1\nmigracao 197\nhero continue_watching\nlinha social_activity\t1\t0\t1\t0\tFriends watching\nlinha continue_watching\t0\t0\t1\t0\tContinue watching\nlinha desktop_trending\t0\t0\t1\t0\tTrending now\n')
-(DATA / 'ajustes-p1.txt').write_text('socialLocal 1\nheroDifferentFromCard 1\nselected_theme 5\n')
+(DATA / 'ajustes.txt').write_text('idioma 1\nidiomaAutoLocal 0\nhomeLayoutLocal 2\ntrailerHero 1\nsocialLocal 1\nheroDifferentFromCard 0\nheroFundoLocal 1\nselected_theme 6\n')
+(DATA / 'fileirasui-p1.txt').write_text('limite 7\nordem 1\nmigracao 197\nhero continue_watching\nlinha social_activity\t1\t0\t1\t0\tFriends watching\nlinha continue_watching\t0\t0\t1\t0\tContinue watching\nlinha desktop_trending\t0\t1\t1\t0\tTrending now\n')
+(DATA / 'ajustes-p1.txt').write_text('socialLocal 1\nheroDifferentFromCard 0\nheroFundoLocal 1\nselected_theme 6\n')
 fixture = OUT / 'desktop-scene'
 run('cc', '-std=c11', '-Isrc', 'tools/desktop-scene.c', '-o', str(fixture))
 run(str(fixture), str(DATA / 'catalogo-rede.bin'), str(ART), str(MOCK))
@@ -72,8 +73,8 @@ with log.open('w') as output:
     try:
         wait_for(lambda: 'primeiro quadro na tela' in log.read_text(errors='replace'))
         time.sleep(1)
-        key('left')
         key('right')
+        key('left')
         key('janela:1280,800')
         photo('mac-home-1280.png')
         key('janela:669,951')
