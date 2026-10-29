@@ -182,7 +182,18 @@ void cacaui_evento(const SDL_Event *e) {
         else { pLin++; pCol=0; }
       }
       else if (k == SDLK_UP) zona = Z_SUG;
-      else if (k == SDLK_DOWN) { zona = Z_BOT; bot = 0; } else if (ok && i < n) {
+      else if (k == SDLK_DOWN) {
+        float xs[CU_BOT_MAX], distance=1e9f;
+        int rows[CU_BOT_MAX], ids[CU_BOT_MAX], nb=botoes(ids);
+        acaoPosicoes(xs,rows);
+        bot=0;
+        for (int j=0;j<nb;j++) if (rows[j]==0) {
+          float dx=xs[j]-(pCol*(CU_PW+CU_PGAP)+CU_PW*.5f);
+          if (dx<0) dx=-dx;
+          if (dx<distance) { distance=dx; bot=j; }
+        }
+        zona=Z_BOT;
+      } else if (ok && i < n) {
         CacaFilme f;
         if (caca_filme(sel, i, &f) && f.imdb[0]) { pedidoFilme=f; snprintf(pedido, sizeof pedido, "%s", f.imdb); temPedido = 1; }
       }
@@ -203,7 +214,19 @@ void cacaui_evento(const SDL_Event *e) {
           if (dx<distance) { distance=dx; nearest=j; }
         }
         if (nearest>=0) bot=nearest;
-        else if (k==SDLK_UP) zona=nPost()>0 ? Z_POST : Z_LISTA;
+        else if (k==SDLK_UP) {
+          zona=nPost()>0 ? Z_POST : Z_LISTA;
+          if (zona==Z_POST) {
+            int visible=nPost()-pLin0*cols;
+            if (visible>cols) visible=cols;
+            pLin=pLin0;
+            for (int j=0;j<visible;j++) {
+              float dx=j*(CU_PW+CU_PGAP)+CU_PW*.5f-xs[bot];
+              if (dx<0) dx=-dx;
+              if (dx<distance) { distance=dx; pCol=j; }
+            }
+          }
+        }
       }
       else if (ok && bot < nb) {
         switch (ids[bot]) {
