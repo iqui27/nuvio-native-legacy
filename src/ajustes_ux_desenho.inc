@@ -1106,7 +1106,10 @@ static float aj2PilulaEstado(int op, float xDir, float yc, int ligado, float a) 
   // 2.1 (mockup de 27/10): um INTERRUPTOR de 52 x 30 — trilho branco 14%
   // desligado, no acento ligado; o botao branco desliza. `on` e a mola da
   // linha, para o deslize acompanhar o OK.
-  float on = op >= 0 ? aj2PilulaOn(op, ligado) : (float)(ligado ? 1 : 0), ar, ag, ab;
+  return ajustes_ui_interruptor(xDir, yc, op >= 0 ? aj2PilulaOn(op, ligado) : (float)(ligado ? 1 : 0), a);
+}
+float ajustes_ui_interruptor(float xDir, float yc, float on, float a) {
+  float ar, ag, ab;
   float w = 52.0f, h = 30.0f;
   GfxRect r = { xDir - w, yc - h * 0.5f, w, h };
   GfxRect k = { r.x + 3.0f + 22.0f * on, yc - 12.0f, 24.0f, 24.0f };

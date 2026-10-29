@@ -195,29 +195,34 @@ int main(int argc, char **argv) {
     capture(window, dir, "options-first");
     if (!baseline) {
       assert(focus==1940 && gv_gfolha_visto);
-      const int down[]={1942,1944,1945,1947,1948,1939};
+      const int down[]={1942,1944,1945,1947,1948,1949,1937,1938,1939};
       for(unsigned i=0;i<sizeof down/sizeof *down;i++) {
         gv_event(SDLK_DOWN,0); assert(focus==down[i]); quadro();
       }
       gv_event(SDLK_DOWN,0); assert(focus==1939);
-      gv_event(SDLK_LEFT,0); assert(focus==1938);
-      gv_event(SDLK_UP,0); assert(focus==1948);
-      gv_event(SDLK_RIGHT,0); assert(focus==1948);
-      const int up[]={1947,1945,1944,1942,1940};
+      gv_event(SDLK_LEFT,0); assert(focus==1939);
+      gv_event(SDLK_UP,0); assert(focus==1938);
+      gv_event(SDLK_RIGHT,0); assert(focus==1938);
+      const int up[]={1937,1949,1948,1947,1945,1944,1942,1940};
       for(unsigned i=0;i<sizeof up/sizeof *up;i++) {
         gv_event(SDLK_UP,0); assert(focus==up[i]); quadro();
       }
-      gv_event(SDLK_UP,0); assert(focus==1940);
+      gv_event(SDLK_UP,0); assert(focus==1936);
+      gv_event(SDLK_DOWN,0); assert(focus==1940);
       gv_event(SDLK_LEFT,0); assert(focus==1940 && !gv_side_open);
       gv_event(SDLK_ESCAPE,0); assert(!strcmp(screen,"grade") && focus==1105);
       gv_go("ajustes");
 #ifndef GUIAPOLIR_BASELINE_CODE
+      focus=1944;gv_activate();
       focus=1943;gv_activate();assert(ajustes_guia_previa_destacar());
       focus=1944;gv_activate();assert(!ajustes_guia_previa_destacar());
+      gv_voltar();
       focus=1945;gv_activate();assert(!ajustes_guia_previa_sem_som());
       gv_activate();assert(ajustes_guia_previa_sem_som());
+      focus=1947;gv_activate();
       focus=1947;gv_activate();assert(ajustes_guia_dias()==3);
       focus=1946;gv_activate();assert(ajustes_guia_dias()==1);
+      gv_voltar();
 #endif
     }
     gv_voltar(); gv_zone=5; focus=1105; gv_event(SDLK_RIGHT,0);
