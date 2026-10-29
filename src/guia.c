@@ -8002,8 +8002,12 @@ int guia_fonte_saude(int i, GuiaFonteSaude *o) {
   const GFonteLtv *F = &ltvF[i];
   o->nome = F->nome[0] ? F->nome : ltv_tipo_nome(F->tipo);
   o->saude = F->saude; o->canais = fonteAtiva(i)?F->nCanais:0; o->comGuia = fonteAtiva(i)?F->epgCom:0;
-  o->deCache = F->deCache; o->atualizada = F->atualizada;
+  o->deCache = F->deCache; o->atualizada = F->atualizada; o->chave = F->chave;
   return 1;
+}
+const char *guia_canal_fonte(int i){
+  if(i<0||i>=nCanais||canais[i].fonte<0||canais[i].fonte>=nLtvF)return "";
+  return ltvF[canais[i].fonte].chave;
 }
 int guia_fonte_playback_permitida(const char *base){
   char key[LTV_CHAVE];ltv_chave_fonte(LTV_ADDON,base,key,sizeof key);

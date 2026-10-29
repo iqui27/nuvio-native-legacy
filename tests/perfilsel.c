@@ -29,6 +29,7 @@ static int servidoresTrocas, sessoesEncerradas;
 static void encerrarSessao(void) { sessoesEncerradas++; }
 void servidores_perfil_trocou(void) { servidoresTrocas++; } // not linked here
 void trava_invalidar_autorizacoes(void) {} // playback lock is outside this profile gate
+int perfil_regra_tempo(float seconds) { (void)seconds; return 0; }
 void plugins_perfil_mudou(void) {}     // plugins.c is not linked here
 
 // --- pasta de dados de mentira ----------------------------------------------

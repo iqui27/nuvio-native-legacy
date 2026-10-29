@@ -13,6 +13,8 @@
 #define NV_PERFIS_H
 #include <stdint.h>
 
+#include <stddef.h>
+
 #define CONTA_PERFIL_MAX 8
 
 typedef struct {
@@ -32,9 +34,9 @@ typedef struct {
   char fundoUrl[300];
   int  primario;        // is_primary
   int  temPin;          // veio de sync_pull_profile_locks
-  // uses_primary_plugins: este perfil LE os addons do perfil 1 em vez de ter
-  // os seus. Ver perfis_ativo_addons().
+  // uses_primary_addons: source for perfis_ativo_addons().
   int  usaAddonsDoPrimario;
+  int  usaPluginsDoPrimario; // Independent uses_primary_plugins server column.
 } ContaPerfil;
 
 // Busca os perfis e o dono. BLOQUEIA — chamar do fio de sync.
@@ -123,6 +125,8 @@ int  perfis_pode_dispensar(void);
 // Confirma o perfil que ja estava gravado, sem reescrever o arquivo. E o que o
 // Voltar faz: encerra a pergunta desta sessao mantendo a resposta de ontem.
 void perfis_manter_ativo(void);
+// Return to the picker when the selected profile no longer exists.
+void perfis_exigir_escolha(void);
 
 // Qual SLOT (0..n-1 da lista, nao o profile_index) a tela comeca focando: o do
 // perfil ativo, ou 0 quando ele nao esta mais na lista. Abrir a tela com o
@@ -149,6 +153,50 @@ PerfilAcao perfis_acao(int i);
 // Juntar -1 com 0 faz a TV sem rede dizer "PIN incorreto" a quem digitou o PIN
 // certo, e manda essa pessoa tentar de novo para sempre.
 int  perfis_verificar_pin(int indice, const char *pin);
+
+// --- CRIAR, EDITAR E REMOVER (2.1) -----------------------------------------
+//
+// O contrato e o do app oficial, lido no app mobile que ja faz tudo isso
+// (ProfileRepository.kt):
+//
+//   criar/editar: RPC sync_push_profiles, corpo
+//     { "p_client_max_profiles": <teto do cliente>, "p_profiles": [ ... ] }
+//   com a lista INTEIRA (os que existem + o novo/renomeado), cada um como
+//     { profile_index, name, avatar_color_hex, uses_primary_addons,
+//       uses_primary_plugins, avatar_id, avatar_url }.
+//   remover: RPC sync_delete_profile_data, corpo { "p_profile_id": N }.
+//
+// A TV nao guarda avatar_id (a leitura resolve o id em URL na hora, ver
+// avatarOficial em perfis.c), entao o push manda avatar_id null e a URL ja
+// resolvida em avatar_url: a foto e a mesma em qualquer aparelho.
+// Preserve add-on and plugin inheritance independently.
+typedef struct {
+  int  indice;          // profile_index (1..CONTA_PERFIL_MAX)
+  char nome[64];
+  char corHex[10];
+  char avatarUrl[300];  // vazio -> null (sem foto, o circulo com a inicial)
+  int  usaAddons;       // uses_primary_addons
+  int  usaPlugins;      // uses_primary_plugins
+} PerfisPush;
+
+// O MENOR indice 1..CONTA_PERFIL_MAX fora da lista, ou 0 quando nao ha: o
+// buraco e preenchido antes de crescer, a mesma conta do app oficial.
+int  perfis_indice_livre(void);
+
+// Copia a lista atual para o formato do push (a base de um criar/renomear).
+// Devolve n; 0 quando nao ha lista.
+int  perfis_push_atuais(PerfisPush *dst, int max);
+
+// Monta o corpo de sync_push_profiles com a lista inteira. Separado do envio
+// para o teste sem rede provar o corpo; devolve 1 quando coube.
+int  perfis_push_corpo(const PerfisPush *l, int n, char *dst, size_t tam);
+
+// Envia a lista (BLOQUEIA — chamar de um fio, como o PIN). 1 aceito,
+// -1 sem rede. Depois de aceito, quem chamou re-puxa (perfis_puxar).
+int  perfis_push_lista(const PerfisPush *l, int n);
+
+// Apaga o perfil da conta (BLOQUEIA — fio). 1 aceito, -1 sem rede.
+int  perfis_remover(int indice);
 
 // Esquece os perfis, o dono e a escolha gravada. Chamado ao SAIR: manter a
 // escolha faria a conta seguinte comecar sincronizando o `p_profile_id` da

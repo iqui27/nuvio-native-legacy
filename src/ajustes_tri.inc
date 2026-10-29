@@ -38,7 +38,6 @@ static int triLinha, triAcao;      // linha e acao (pilulas) da rota utilitaria
 static int triTrocarPerfil;        // "Trocar de perfil" pedido na folha do perfil
 static float triChipF[TRI_C_N], triSecF[AJ_MAX_SECOES + 1], triUtilF[AJ_N];
 static float triUtilRol, triUtilRolAlvo;   // rolagem das rotas utilitarias: o desenho acha o alvo, triAtualizar segue
-static float triSecRolX, triSecRolXAlvo;   // retrato: a faixa horizontal de secoes rola ate a secao em foco
 static float triSecRolY, triSecRolYAlvo;   // ilha 1: rola ate a secao em foco quando nao cabe (texto grande)
 static int ajPontUtil;                     // a rota utilitaria aceita o ponteiro (sem editor/modal, entrada feita)
 // Movimento por ilha (nada de fade da tela inteira ao trocar de ilha):
@@ -247,21 +246,7 @@ static int triChipEvento(SDL_Keycode k) {
   }
   return 1;
 }
-static void triSecoesIr(int dir) {
-  int s = triSecFoco + dir;
-  if (s < 0 || s > nSecoes) return;
-  triSubmenu = -1;
-  triSecFoco = s; if (!triParental(s)) focarSecao(s);
-}
 static int triSecoesEvento(SDL_Keycode k) {
-  if (ajRetrato()) {   // a faixa horizontal: ← → trocam de secao, ↓ entra, ↑ chips
-    if (uxVoltar(k)) { sair = 1; return 1; }
-    if (k == SDLK_LEFT) { if (triSecFoco > 0) triSecoesIr(-1); else sair = 1; return 1; }
-    if (k == SDLK_RIGHT) { triSecoesIr(1); return 1; }
-    if (k == SDLK_UP) { triIlha = TRI_CHIPS; return 1; }
-    if (uxOk(k) || k == SDLK_DOWN) { triEntrar(triSecFoco); return 1; }
-    return 1;
-  }
   if (uxVoltar(k) || k == SDLK_LEFT) { sair = 1; return 1; }
   if (k == SDLK_UP) {
     if (triSecFoco > 0) { triSubmenu = -1; triSecFoco--; if (!triParental(triSecFoco)) focarSecao(triSecFoco); }
@@ -449,10 +434,6 @@ static void triAtualizar(float dt) {
   if (!(ajTelaCheia() && ajToqueLivre[AJT_UTIL]))
 #endif
   triUtilRol = red ? triUtilRolAlvo : anim_mola(triUtilRol, triUtilRolAlvo, dt, NV_MOLA_FOCO);
-#ifdef NV_TOUCH_UI
-  if (!(ajTelaCheia() && ajToqueLivre[AJT_FAIXA]))
-#endif
-  triSecRolX = red ? triSecRolXAlvo : anim_mola(triSecRolX, triSecRolXAlvo, dt, NV_MOLA_FOCO);
 #ifdef NV_TOUCH_UI
   if (!(ajTelaCheia() && ajToqueLivre[AJT_SECOES]))
 #endif

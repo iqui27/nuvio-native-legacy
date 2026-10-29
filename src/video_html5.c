@@ -822,13 +822,22 @@ static int aplicarRect(int x, int y, int w, int h) {
   return 1;
 }
 
-void video_janela(int x, int y, int w, int h) {
+static void janelaDestino(int x, int y, int w, int h) {
   if (w < 1 || h < 1) return;
   if (x < 0) { w += x; x = 0; }
   if (y < 0) { h += y; y = 0; }
   if (x + w > 1920) w = 1920 - x;
   if (y + h > 1080) h = 1080 - y;
   aplicarRect(x, y, w, h);
+}
+
+void video_janela(int x, int y, int w, int h) {
+  if (w < 1 || h < 1) return;
+  if (cropAtivo) {
+    cropAtivo = 0;
+    avChamar("recorte", NULL, 0, 0, 0, 0, NULL, 0);
+  }
+  janelaDestino(x, y, w, h);
 }
 
 // Recorte de FONTE de verdade, feito em CSS (ver a nota grande no topo do
@@ -841,13 +850,13 @@ void video_janela_fonte(int sx, int sy, int sw, int sh,
   if (sw <= 0 || sh <= 0) {
     cropAtivo = 0;
     avChamar("recorte", NULL, 0, 0, 0, 0, NULL, 0);
-    video_janela(dx, dy, dw, dh);
+    janelaDestino(dx, dy, dw, dh);
     return;
   }
   cropAtivo = 1;
   cropSX = sx; cropSY = sy; cropSW = sw; cropSH = sh;
   avChamar("recorte", NULL, sx, sy, sw, sh, NULL, 0);
-  video_janela(dx, dy, dw, dh);
+  janelaDestino(dx, dy, dw, dh);
 }
 
 // Sempre 1: o recorte aqui e um <div overflow:hidden> comum, nao uma

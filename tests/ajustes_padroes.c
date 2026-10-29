@@ -106,6 +106,15 @@ int main(void) {
   valor[AJ_HERO_TAMANHO] = 9;
   assert(ajustes_hero_tamanho() == 0 && !ajustes_hero_sinopse_grande());
   valor[AJ_HERO_TAMANHO] = 0;
+  // Profile size stays device-local, defaults to Medium, and preserves all three choices.
+  assert(!strcmp(CHAVE[AJ_PS_TAMANHO], "psTamanhoLocal"));
+  assert(somenteDesteAparelho(AJ_PS_TAMANHO) && OPCOES[AJ_PS_TAMANHO].n == 3);
+  assert(ajustes_ps_tamanho() == 1);
+  for (int size = 0; size < 3; size++) {
+    valor[AJ_PS_TAMANHO] = size; assert(ajustes_ps_tamanho() == size);
+  }
+  valor[AJ_PS_TAMANHO] = 9; assert(ajustes_ps_tamanho() == 1);
+  valor[AJ_PS_TAMANHO] = 1;
   // Home: layout e arte do destaque.
   assert(valor[AJ_HERO_FUNDO] == 0);          // Automatico
   assert(valor[AJ_HERO_ARTE_DIF] == 1);       // Desligado: mesma foto do card
@@ -215,7 +224,7 @@ int main(void) {
   assert(AJ_N > AJ_CONQ_DICAS && AJ_CONQ_LIGADO == AJ_MENU_TOPO + 1);
   assert(AJ_GUIA_PREVIA_GRANDE == AJ_DET_ELENCO_VISTO + 1 && AJ_AUD_ORIGINAL == AJ_GUIA_PREVIA_GRANDE + 1);
   assert(AJ_HERO_PASTA_DETALHES == AJ_LEG_ESTILO_LIGADO + 1);
-  assert(AJ_FONTE_OCULTAR_DV == AJ_GUIA_DIAS + 1 && AJ_TV_HOME == AJ_FONTE_OCULTAR_VIDEO + 1 && AJ_N == AJ_TV_HOME + 1);
+  assert(AJ_FONTE_OCULTAR_DV == AJ_GUIA_DIAS + 1 && AJ_TV_HOME == AJ_FONTE_OCULTAR_VIDEO + 1 && AJ_PS_TAMANHO == AJ_TV_HOME + 1 && AJ_N == AJ_PS_TAMANHO + 1);
   assert(ajustes_tv_home() && valorPadrao[AJ_TV_HOME] == 0 && escopoDe(AJ_TV_HOME) == ESC_TV);
   assert(!strcmp(CHAVE[AJ_TV_HOME], "androidTvHomeLocal"));
   const char *capKeys[] = {"fonteOcultarDvLocal", "fonteOcultarAudioLocal", "fonteOcultarVideoLocal"};

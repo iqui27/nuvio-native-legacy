@@ -334,6 +334,8 @@ static int autoParcialPronto(void) {
 // instante ainda nao tem a lista de episodios nem o "proximo" que
 // continuar_desenhar calculou para desenhar o card.
 static int cwTocarT, cwTocarE;
+static int homeAcaoDet = -1;   // home_pediu_acao_detalhe, esperando a pagina
+static Uint32 homeAcaoDetEm;
 static int cwRewatch = -1;
 // Episode the source sheet was opened FOR (#513). Not cwTocar: that slot is
 // rewritten every frame by Continue Watching, the island and the agenda, and
@@ -6168,6 +6170,7 @@ void app_atualizar(float dt, Uint32 agora) {
       if (!saiuPorEsquerda && !saiuPorCima && juntosui_voltar_filme()) {
         menu_fechar();
       } else if ((saiuPorEsquerda || saiuPorCima) && sidebar_permitida()) {
+        if (tela == TELA_BIBLIOTECA) biblioteca_retomar();
         menu_abrir();
       } else if (tela == TELA_CACA && cacaDoPerfil) {
         trocarTela(TELA_PERFIL);
@@ -6195,8 +6198,15 @@ void app_atualizar(float dt, Uint32 agora) {
   // a lista ficaria cobrindo a tela nova.
 #ifdef NV_IOS
   { int d = ios_destino_pedido(); if (d >= 0) menu_ir(d); }
-  { int a = ios_acao_pedida(); if (a >= 0) detail_acao_barra(a); }
+  { int a = ios_acao_pedida(); if (a >= 0) { if (a >= 10) biblioteca_acao_barra(a); else detail_acao_barra(a); } }
 #endif
+  // Botao do destaque em pe (+, fontes, trailer): a pagina abre primeiro e a
+  // acao entra quando ela ja assentou, pelo mesmo caminho da barra do iOS.
+  if (homeAcaoDet >= 0) {
+    Uint32 t = SDL_GetTicks() - homeAcaoDetEm;
+    if (detail_aberto() && t >= 450) { detail_acao_barra(homeAcaoDet); homeAcaoDet = -1; }
+    else if (!detail_aberto() && t >= 1000) homeAcaoDet = -1;
+  }
   if (menu_escolheu()) {
     tituloDoPainel = 0;
     if (detail_aberto()) detail_fechar_seco();
@@ -6250,7 +6260,11 @@ void app_atualizar(float dt, Uint32 agora) {
     HomeItem it;
     SpotPedido pedPessoa;
     if (tela == TELA_HOME && home_pediu_abrir()) {
-      if (home_item_focado(&it)) abrirTitulo(&it, 1, 1);
+      int acaoDet = home_pediu_acao_detalhe();
+      if (home_item_focado(&it)) {
+        abrirTitulo(&it, 1, 1);
+        if (acaoDet >= 0) { homeAcaoDet = acaoDet; homeAcaoDetEm = SDL_GetTicks(); }
+      }
     } else if (tela == TELA_EXPLORAR && explorar_pediu_abrir(&idx)) {
       abrirPorIndice(idx);
     } else if (tela == TELA_HOME && home_pediu_tocar()) {
@@ -7703,12 +7717,18 @@ static void desenharAtrasDoPainel(void *ctx) {
     // home some com a pagina rolada. Telas fora do menu (Addons, Social,
     // diagnosticos) tem titulo proprio nesse canto: la ela some na hora, e a
     // barra abre pelo ESQUERDA na borda e pela faixa do ponteiro.
-    menu_pilula_mostrar(vertudo_aberta() || detail_aberto() ? -1.0f   // "Ver tudo"/colecao/pagina tem cabecalho proprio
-                        : tela == TELA_HOME ? home_topo_fracao()
-                        : ajustes_menu_topo() ? -1.0f   // #461: a barra no topo fechada so mora na home
-                        : (tela == TELA_EXPLORAR || tela == TELA_BUSCA ||
-                           tela == TELA_BIBLIOTECA || tela == TELA_AGENDA ||
-                           tela == TELA_PERFIL || tela == TELA_AJUSTES) ? 1.0f : -1.0f);
+    float pilula = vertudo_aberta() || detail_aberto() ? -1.0f   // "Ver tudo"/colecao/pagina tem cabecalho proprio
+                 : tela == TELA_HOME ? home_topo_fracao()
+                 : ajustes_menu_topo() ? -1.0f   // #461: a barra no topo fechada so mora na home
+                 : (tela == TELA_EXPLORAR || tela == TELA_BUSCA ||
+                    tela == TELA_BIBLIOTECA || tela == TELA_AGENDA ||
+                    tela == TELA_PERFIL || tela == TELA_AJUSTES) ? 1.0f : -1.0f;
+#ifdef NV_IOS
+    // Telefone em pe: a barra vertical do sistema ja diz a tela e leva as abas
+    // (mocks ios-02/08/11 sem pilula); a gaveta abre pelo gesto da borda.
+    if (layout_modo_mobile() && NV_TELA_H > NV_TELA_W) pilula = -1.0f;
+#endif
+    menu_pilula_mostrar(pilula);
     CAMADA_SE(menu_aberto());
     menu_desenhar(agora);
   }
@@ -7864,6 +7884,11 @@ int app_home_recebe_teclas(void) {
 }
 
 static int relogioCabe(void) {
+#ifdef NV_IOS
+  // TELEFONE EM PE: o iOS ja mostra a hora (e o Wi-Fi) no alto da barra do
+  // sistema; a pilula do relogio era a mesma hora uma segunda vez.
+  if (layout_modo_mobile() && NV_TELA_H > NV_TELA_W) return 0;
+#endif
   // AJUSTES NO GLASS UI (mockup de 03/10): o relogio fica no canto, em cima da
   // ilha de categorias — a tela nao tem mais titulo ali. Com folha, vinculo ou
   // teclado por cima ele some, como na home com um cartao na frente.

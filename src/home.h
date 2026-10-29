@@ -129,6 +129,9 @@ void home_retomar_dispensar(void);
 void home_retomar_esquecer(void);
 int  home_quer_sair(void);
 int  home_pediu_abrir(void);   // OK pressionado: consome o pedido
+// Botao do destaque em pe (+, fontes, trailer): a acao do detalhe
+// (DETAIL_BARRA_*) a fazer depois que a pagina abrir; -1 sem pedido.
+int  home_pediu_acao_detalhe(void);
 void home_pedir_abrir(void);   // pede a pagina do titulo focado (menu do cartao)
 int  home_foco_retomada(void); // card focado e de retomada (OK nele toca)
 int  home_pediu_tocar(void);   // OK num card de retomada com "OK no card" = Retomar

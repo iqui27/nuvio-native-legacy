@@ -124,6 +124,19 @@ static int detalheRetrato(void) {
   return 0;
 #endif
 }
+// Telefone fechado em retrato (iPhone Duo, tela externa): mesma escala do mock
+// em pontos que a home usa (abfec7258). Tablet em retrato segue o layout largo.
+#define RET_MOCK_W 466.0f
+static float retPt(float pt) { return pt * NV_LAYOUT_REAL_W / (RET_MOCK_W * gfx_escala()); }
+static float retFator(float ptPorPx) { return ptPorPx * NV_LAYOUT_REAL_W / RET_MOCK_W; }
+static float retEm(float f, float eh) { gfx_escala_sair(f); return eh / f; }
+static int detalheRetratoFone(void) {
+#ifdef NV_TOUCH_UI
+  return layout_modo_mobile() && NV_TELA_H > NV_TELA_W;
+#else
+  return 0;
+#endif
+}
 static int heroServidor(void);
 static float larguraTextoHero(void) {
   if (heroServidor()) return 700.0f;
@@ -1203,19 +1216,22 @@ static float vaoAntes(int r) {
   }
 }
 
+static float epDyFone;
 static void recalcularLayout(void) {
   static int ready, lastSeries, counts[N_SECOES];
   static float heights[N_SECOES], lastScale;
   float scale=gfx_escala_tela_txt();
-  int changed=!ready || lastSeries!=ehSerie() || lastScale!=scale;
+  static int lastFone;
+  int fone=detalheRetratoFone() && !heroServidor();
+  int changed=!ready || lastSeries!=ehSerie() || lastScale!=scale || lastFone!=fone;
   for (int r=0;r<N_SECOES;r++) {
     int n=secaoN(r); float h=n>0 ? alturaSecao(r) : 0;
     if (counts[r]!=n || heights[r]!=h) changed=1;
     counts[r]=n; heights[r]=h;
   }
   if (!changed) return;
-  ready=1; lastSeries=ehSerie(); lastScale=scale;
-  float y=heroServidor() ? NV_TELA_H + 60 : ANC(NV_DET21_FIM + 56);
+  ready=1; lastSeries=ehSerie(); lastScale=scale; lastFone=fone;
+  float y=heroServidor() ? NV_TELA_H + 60 : fone ? retPt(636) : ANC(NV_DET21_FIM + 56);
   const int *order=ordemSecoes();
   for (int r=0;r<N_SECOES;r++) {
     topoSec[r]=conteudoSec[r]=y; dxSec[r]=0; wSec[r]=1728;
@@ -1228,10 +1244,13 @@ static void recalcularLayout(void) {
     topoSec[r]=conteudoSec[r]=y;
     if (secaoN(r)<=0) continue;
     if (r==SEC_TEMPORADAS && !epModerno()) {
-      topoSec[r]=serieGrupo(0);
-      conteudoSec[r]=epApple() ? 1160 : NV_DETP_TEMP_Y;
-      topoSec[SEC_EPISODIOS]=serieGrupo(1);
-      conteudoSec[SEC_EPISODIOS]=epApple() ? 1286 : NV_DETP_EP_Y;
+      // Retrato do telefone: o heroi e mais alto que o da TV; a faixa de
+      // temporadas/episodios desce pelo mesmo tanto (zero na TV).
+      epDyFone = fone ? fmaxf(0, y - serieGrupo(0)) : 0;
+      topoSec[r]=serieGrupo(0)+epDyFone;
+      conteudoSec[r]=(epApple() ? 1160 : NV_DETP_TEMP_Y)+epDyFone;
+      topoSec[SEC_EPISODIOS]=serieGrupo(1)+epDyFone;
+      conteudoSec[SEC_EPISODIOS]=(epApple() ? 1286 : NV_DETP_EP_Y)+epDyFone;
       alvoSec[r]=alvoSec[SEC_EPISODIOS]=NV_DETP_ALVO_FILEIRA;
       y=conteudoSec[SEC_EPISODIOS]+epCardH()+60;
       continue;
@@ -2447,7 +2466,7 @@ static float notasBloco(void) {
 static float epExtraAltura(void) { return epAppleExtra() + notasBloco(); }
 static float epTempY(void) { return conteudoSec[SEC_TEMPORADAS]; }
 static float epRowY(void) { return conteudoSec[SEC_EPISODIOS]; }
-static float epAbasY(void) { return (epApple() ? 1758.0f : NV_DETP_ABA_Y) + epExtraAltura(); }
+static float epAbasY(void) { return (epApple() ? 1758.0f : NV_DETP_ABA_Y) + epExtraAltura() + epDyFone; }
 static float epElencoY(void) { return conteudoSec[SEC_ELENCO]; }
 static float serieGrupo(int r) {
   static const float glass[] = { NV_DETP_G_TEMP, NV_DETP_G_EP, NV_DETP_G_ABAS, NV_DETP_G_ELENCO };
@@ -2469,7 +2488,7 @@ static float alturaSecao(int r) {
     // empilhada usando so a altura dos cartoes e saia POR CIMA deles.
     case SEC_COMENTARIOS:  return alturaCabComentarios() + COM_CARD_H;
     case SEC_ESTUDIOS:    return EST_CARD_H;
-    case SEC_DETALHES:    return 80 + ceilf(nLinhasDetalhe()/(detalheRetrato() ? 1.0f : 2.0f))*76;
+    case SEC_DETALHES:    return ceilf(nLinhasDetalhe()/(detalheRetrato() ? 2.0f : 3.0f))*132;
     // As duas sob demanda: a CHAMADA enquanto ninguem entrou (titulo +
     // procedencia + custo, tres linhas) e a altura MEDIDA no ultimo desenho
     // depois disso.
@@ -5185,8 +5204,261 @@ static int mostrarNomeLogo(const CatItem *ci, const char *url, int loaded,
      actual && known && !strcmp(actual, known));
   return same && strncmp(ci->logoIdioma, language, 2) != 0;
 }
+// ---- iPhone Duo (tela externa fechada, retrato) ---------------------------
+// Coluna centrada na area de conteudo (largura - barra do sistema): logo,
+// pilula + discos, chip de qualidade, sinopse em 2 linhas e 2 linhas de meta.
+// Medidas em pt do mock (466 pt de largura) via retPt; texto no fator proprio.
+static void retTxtCentro(TxtEstilo e, const char *s, int r, int g, int b,
+                         float cxEh, float ycEh, float fator, float maxwEh, float a) {
+  float eh = gfx_escala(), f = retFator(fator), k = retEm(f, eh);
+  TxtLinha l = txt_linha_corta(e, s, r, g, b, 255, maxwEh * k);
+  txt_desenhar_alpha(l, cxEh * k - l.w * 0.5f, ycEh * k - l.h * 0.5f, a);
+  gfx_escala_sair(eh);
+}
+
+// Quebra gulosa em ate 2 linhas (escala corrente); a 2a leva reticencias.
+static void retDuasLinhas(TxtEstilo e, const char *s, float maxw, char l1[200], char l2[200]) {
+  char *dst[2] = { l1, l2 };
+  l1[0] = l2[0] = 0;
+  const char *p = s;
+  for (int li = 0; li < 2 && *p; li++) {
+    char *d = dst[li]; d[0] = 0;
+    while (*p == ' ') p++;
+    while (*p) {
+      const char *fim = strchr(p, ' '); size_t n = fim ? (size_t)(fim - p) : strlen(p);
+      char t[200]; size_t cur = strlen(d);
+      if (cur + 1 + n >= sizeof t) break;
+      memcpy(t, d, cur); if (cur) t[cur++] = ' ';
+      memcpy(t + cur, p, n); t[cur + n] = 0;
+      if (cur && txt_largura(e, t) > maxw) break;
+      memcpy(d, t, cur + n + 1);
+      p += n; while (*p == ' ') p++;
+    }
+    if (li == 1 && *p) {   // sobrou texto: reticencias
+      size_t n = strlen(d);
+      while (n && txt_largura(e, d) + txt_largura(e, "\xe2\x80\xa6") > maxw) {
+        while (n && d[n-1] != ' ') n--;
+        if (n) d[--n] = 0;
+      }
+      strcat(d, "\xe2\x80\xa6");
+    }
+  }
+}
+
+// Linha 1 da meta (selo, generos, ano, temporadas/duracao, IMDb + RT). Retorna
+// a largura; desenha em x (escala corrente) quando `desenha`.
+static float retMeta1(const CatItem *ci, const char *ano, const char *dur,
+                      float x0, float yc, float maxw, float a, int desenha) {
+  float x = x0;
+  float aa = desenha ? a : 0.0f;
+  int algo = 0;
+  if (ci) x += badges_desenhar(badges_provedor(ci->provNome), x, yc - 14, 400, 28, aa);
+  const char *g = generoDe(idx);
+  const char *p = g ? strstr(g, "\xc2\xb7") : NULL;
+  while (p) {
+    char termo[80]; size_t n;
+    p += 2; while (*p == ' ') p++;
+    const char *fim = strstr(p, "\xc2\xb7");
+    n = fim ? (size_t)(fim - p) : strlen(p);
+    while (n && p[n-1] == ' ') n--;
+    if (n && n < sizeof termo) {
+      memcpy(termo, p, n); termo[n] = 0;
+      if (algo) { desenhaPonto(x + (NV_DETW2_BULLET_SEP*0.4f), yc, 0.702f, aa);
+                  x += (NV_DETW2_BULLET_SEP*0.4f) * 2 + (NV_DETW2_PONTO_D*0.6f); }
+      TxtLinha lt = txt_linha(TXT_DET_META_GEN, termo, 179, 179, 179, 255);
+      txt_desenhar_alpha(lt, x, yc - lt.h * 0.5f, aa);
+      x += lt.w; algo = 1;
+    }
+    p = fim;
+  }
+  const float pontoW = (NV_DETW2_SEP*0.4f) * 2 + (NV_DETW2_PONTO_D*0.6f);
+  char col[64]; col[0] = 0;
+  if (ehSerie()) { int t = nTemporadasReais();
+    if (t > 0) snprintf(col, sizeof col, i18n(t == 1 ? "%d temporada" : "%d temporadas"), t); }
+  else snprintf(col, sizeof col, "%s", dur);
+  const char *itens[2] = { ano, col };
+  for (int i = 0; i < 2; i++) {
+    if (!itens[i][0]) continue;
+    if (algo) { desenhaPonto(x + (NV_DETW2_SEP*0.4f), yc, 0.502f, aa); x += pontoW; }
+    TxtLinha l = txt_linha(TXT_DET_META_FORTE, itens[i], 255, 255, 255, 255);
+    txt_desenhar_alpha(l, x, yc - l.h * 0.5f, aa);
+    x += l.w; algo = 1;
+  }
+  { unsigned char q[EX_NFONTES] = {0}; NotasPlano plano;
+    q[EX_IMDB] = (unsigned char)ajustes_nota_titulo(EX_IMDB);
+    q[EX_TOMATOES] = (unsigned char)ajustes_nota_titulo(EX_TOMATOES);
+    notasui_planejar(&plano, notasDados()->cru, maxw - (x - x0), algo ? pontoW : 0.0f, q);
+    if (plano.n > 0) {
+      if (algo) { desenhaPonto(x + (NV_DETW2_SEP*0.4f), yc, 0.502f, aa); x += pontoW; }
+      if (desenha) x = notasui_desenhar_linha(&plano, x, yc, a);
+      else x += notasui_plano_largura(&plano, 0.0f);
+    } }
+  return x - x0;
+}
+
+static void heroFone(float a, float desloc) {
+  const CatItem *ci = cat_item(idx);
+  const float eh = gfx_escala();
+  const Uint32 agoraH = SDL_GetTicks();
+  const float cx = (NV_TELA_W - ANC(nv_inset_d)) * 0.5f;
+  const float sobe = (saindo ? (1.0f - a) * 26.0f : 0.0f) + desloc;
+  const float contentW = NV_TELA_W - ANC(nv_inset_d);
+  versaoRect = (GfxRect){0};
+  maisAncora = (GfxRect){0};
+
+  char ano[32], dur[64]; int durMin = 0;
+  partirMeta(fichaDe(idx), ano, sizeof ano, dur, sizeof dur);
+  { char cru[64]; snprintf(cru, sizeof cru, "%s", dur);
+    durMin = minutosDe(cru);
+    desc_duracao_txt(cru, dur, sizeof dur);
+    if (durMin > 0) desc_duracao_min_curta(durMin, dur, sizeof dur); }
+  const char *sin = sinopseDe(idx);
+
+  { int vt_t = 0, vt_e = 0;
+    if (ehSerie() && !episodioAlvo(&vt_t, &vt_e, NULL)) vt_t = vt_e = 0;
+    if (vaiTocarIdx != idx || vaiTocarT != vt_t || vaiTocarE != vt_e || (Uint32)(agoraH - vaiTocarEm) > 250u) {
+      if (ci && ci->imdb[0]) vt_montar(&vaiTocar, ci->imdb, vt_t, vt_e);
+      else memset(&vaiTocar, 0, sizeof vaiTocar);
+      vaiTocarIdx = idx; vaiTocarT = vt_t; vaiTocarE = vt_e; vaiTocarEm = agoraH; } }
+
+  // --- logo ---
+  const char *arqLogo = logoDe(idx);
+  const char *nome = mostrarNomeLogo(ci, arqLogo && tex_falhou(arqLogo) ? NULL : arqLogo,
+                                    0, desc_tmdb_idioma()) ? tituloDe(idx) : NULL;
+  GLuint texLogo = arqLogo ? tex_obter_logo_larg(arqLogo, retPt(243) * 1.04f) : 0;
+  titulo_tempo_logo(&detalheTempo, "detalhe", arqLogo, texLogo, 0);
+  if (a > 0.05f) titulo_tempo_info(&detalheTempo, "detalhe", ci, 0);
+  const float baseLogo = retPt(372) + sobe;
+  float aLogo = a;
+  { static char logoVisto[600]; static Uint32 logoDesde;
+    if (texLogo) {
+      if (!arqLogo || strcmp(logoVisto, arqLogo)) {
+        snprintf(logoVisto, sizeof logoVisto, "%s", arqLogo ? arqLogo : "");
+        logoDesde = SDL_GetTicks(); }
+      float f = (float)(SDL_GetTicks() - logoDesde) / 260.0f;
+      if (f < 1.0f) aLogo *= f < 0 ? 0 : f;
+    } else logoVisto[0] = 0; }
+  if (texLogo) {
+    float asp = tex_aspecto(arqLogo); if (asp <= 0.0f) asp = 2.5f;
+    float h = retPt(98), w = h * asp, wMax = retPt(243);
+    if (w > wMax) { w = wMax; h = w / asp; }
+    GfxRect r = { cx - w * 0.5f, baseLogo - h, w, h };
+    int zoom = !saindo && !anim_politica_reduzida && !gfx_transformado();
+    if (zoom) {
+      float ms = (float)(SDL_GetTicks() - heroDesde);
+      float k = anim_clamp(ms / 500.0f, 0, 1);
+      aLogo *= k < .5f ? 2*k*k : 1 - 2*(1-k)*(1-k);
+      float sL = 1.0f + 0.04f * exp2f(-10.0f * anim_clamp(ms / 900.0f, 0, 1));
+      gfx_transformar(r.x, r.y + r.h, sL, 0, 0);
+    }
+    GfxModo m = tex_marca_escura(arqLogo) ? GFX_MARCA : GFX_TEXTO;
+    gfx_tex_aspect_atual = 0.0f;
+    gfx_rect(r, texLogo, m, 0,0,0,0.0f, 1,1,1, aLogo);
+    if (zoom) gfx_sem_transformar();
+    titulo_tempo_logo(&detalheTempo, "detalhe", arqLogo, texLogo, aLogo > 0.05f);
+  } else if (nome) {
+    retTxtCentro(TXT_TITULO2, nome, 255,255,255, cx, baseLogo - retPt(45), 1.0f, contentW - retPt(32), a);
+  }
+
+  // --- pilula + discos ---
+  char rot[48]; int retomando = 0;
+  { int t=0,e=0,de=0;
+    if (ehSerie() && episodioAlvo(&t,&e,&de) && t>0 && e>0 && de>=2)
+      { snprintf(rot,sizeof rot,i18n("%s T%d:E%d"),i18n(de==2?"Retomar":"Próximo"),t,e); retomando=(de==2); }
+    else { snprintf(rot,sizeof rot,"%s",det_rotulo_primario(ci?ci->progresso:0, ajustes_cw_concluido())); retomando=!ehSerie(); } }
+  (void)retomando;
+  if (ci && ehSerie() && rewatch_ativa(ci->imdb)) { int t=0,e=0; if (episodioAlvo(&t,&e,NULL)) snprintf(rot,sizeof rot,i18n("Reassistindo T%dE%d"),t,e); }
+  else if (ci && ehSerie()) { int total=0,vistos=0; extras_progresso_serie(&vistos,&total); if (total>0 && vistos>=total) snprintf(rot,sizeof rot,"%s",i18n("Reassistir do início")); }
+
+  int n = nBotoes();
+  if (botao >= n) botao = n - 1;
+  int iLista = -1, iMais = -1;
+  for (int i = 1; i < n; i++) { int ac = acaoEm(i);
+    if (ac == ACAO_LISTA && iLista < 0) iLista = i;
+    else if (ac == ACAO_MAIS && iMais < 0) iMais = i; }
+  const float dC = retPt(55), gapD = retPt(12.5f), pw = retPt(221);
+  const float yRow = retPt(395) + sobe;
+  const float rowW = pw + (dC + gapD) * ((iLista >= 0) + (iMais >= 0));
+  float x0 = cx - rowW * 0.5f;
+  { float dy, k = heroOnda(0.0f, &dy);
+    GfxRect rp = { x0, yRow + dy, pw, dC };
+    float f = focoBotao(0, nivel == 0 && !focoVersao && botao == 0);
+    float aP = a * k;
+    rp = detalheEscala(rp, f, NV_DETW2_FOCO_SX - 1.0f);
+    int tb = botao_superficie(rp, 1.0f, aP);
+    float t = tb / 255.0f, s = rp.h / NV_DETW2_BTN_H;
+    float iw = NV_DETW2_BTN_ICONE_W * s, ih = NV_DETW2_BTN_ICONE_H * s, gi = NV_DETW2_BTN_GAPI * s;
+    float fG = retFator(0.8f), kG = retEm(fG, eh);
+    TxtLinha lb = txt_linha_corta(TXT_DET_BOTAO, rot, tb,tb,tb,255, (rp.w - NV_DETW2_BTN_PADX*2*s - iw - gi) * kG);
+    float lw = lb.w / kG, x = rp.x + (rp.w - (iw + gi + lw)) * 0.5f;
+    txt_desenhar_alpha(lb, (x + iw + gi) * kG, (rp.y + rp.h * 0.5f) * kG - lb.h * 0.5f, aP);
+    gfx_escala_sair(eh);
+    gfx_rect((GfxRect){x, rp.y + (rp.h - ih) * 0.5f, iw, ih}, 0, GFX_PLAY, 0,0,0,0.0f, t,t,t, aP);
+    primarioPct = -1;
+    if (aP > 0.3f) ponteiro_alvo(rp.x, rp.y, rp.w, fmaxf(rp.h, retPt(44)), ponteiroDetalhe, NULL, -1, 0);
+  }
+  { int idxs[2] = { iLista, iMais }; float xd = x0 + pw + gapD;
+    for (int j = 0; j < 2; j++) { int nb = idxs[j]; if (nb < 0) continue;
+      float dy, k = heroOnda(0.5f * nb, &dy);
+      GfxRect rc = { xd, yRow + dy, dC, dC };
+      desenhaBotao(rc, NULL, acaoEm(nb), focoBotao(nb, nivel == 0 && !focoVersao && botao == nb), a * k);
+      if (acaoEm(nb) == ACAO_MAIS) maisAncora = rc;
+      if (a * k > 0.3f) ponteiro_alvo(rc.x, rc.y, rc.w, fmaxf(rc.h, retPt(44)), ponteiroDetalhe, NULL, -1, nb);
+      xd += dC + gapD; } }
+
+  // --- chip de qualidade ---
+  if (vaiTocar.tem) {
+    char texto[240]; VaiTocar compact = vaiTocar; compact.idiomas[0] = 0;
+    vt_chip_texto(&compact, texto, sizeof texto);
+    float f = retFator(0.63f), k = retEm(f, eh);
+    TxtLinha q = txt_linha(TXT_ILHA_SUB, texto, 225,227,232,255);
+    float qw = q.w / k, ch = retPt(24), dot = retPt(6), pad = retPt(10);
+    float cw = qw + dot + retPt(6) + pad * 2, yc = retPt(478) + sobe;
+    float xc = cx - cw * 0.5f;
+    txt_desenhar_alpha(q, (xc + pad + dot + retPt(6)) * k, yc * k - q.h * 0.5f, a);
+    gfx_escala_sair(eh);
+    plrui_material_plano((GfxRect){xc, yc - ch * 0.5f, cw, ch}, ch * 0.5f, a);
+    gfx_cor((GfxRect){xc + pad, yc - dot * 0.5f, dot, dot}, 0.5f, 0.30f, 0.85f, 0.45f, a);
+    // o texto foi desenhado antes do fundo: redesenha por cima
+    f = retFator(0.63f); k = retEm(f, eh);
+    txt_desenhar_alpha(q, (xc + pad + dot + retPt(6)) * k, yc * k - q.h * 0.5f, a);
+    gfx_escala_sair(eh);
+  }
+
+  // --- sinopse em 2 linhas ---
+  if (sin && sin[0]) {
+    float f = retFator(0.49f), k = retEm(f, eh);
+    char l1[200], l2[200];
+    float maxwEh = fminf(retPt(340), contentW - retPt(32));
+    retDuasLinhas(TXT_DET_SIN, sin, maxwEh * k, l1, l2);
+    gfx_escala_sair(eh);
+    if (l1[0]) retTxtCentro(TXT_DET_SIN, l1, 190,190,190, cx, retPt(522) + sobe, 0.49f, maxwEh, a);
+    if (l2[0]) retTxtCentro(TXT_DET_SIN, l2, 190,190,190, cx, retPt(538) + sobe, 0.49f, maxwEh, a);
+  }
+
+  // --- meta ---
+  { const float y1 = retPt(575) + sobe, y2 = retPt(600) + sobe;
+    const float maxwEh = contentW - retPt(16);
+    float f = retFator(0.47f), k = retEm(f, eh);
+    float maxw = maxwEh * k;
+    float w1 = retMeta1(ci, ano, dur, 0, 0, maxw, a, 0);
+    retEm(f, eh);
+    retMeta1(ci, ano, dur, cx * k - w1 * 0.5f, y1 * k, maxw, a, 1);
+    { unsigned char q[EX_NFONTES] = {0}; NotasPlano plano;
+      for (int f = 0; f < EX_NFONTES; f++)
+        q[f] = (f != EX_IMDB && f != EX_TOMATOES) ? (unsigned char)ajustes_nota_titulo(f) : 0;
+      retEm(f, eh);
+      notasui_planejar(&plano, notasDados()->cru, maxw, 0.0f, q);
+      if (plano.n > 0) {
+        float w2 = notasui_plano_largura(&plano, 0.0f);
+        notasui_desenhar_linha(&plano, cx * k - w2 * 0.5f, y2 * k, a);
+      } }
+    gfx_escala_sair(eh); }
+}
+
 static void heroWeb(float a, float desloc) {
   if (a <= 0.005f) return;
+  if (detalheRetratoFone() && !heroServidor()) { heroFone(a, desloc); return; }
   const CatItem *ci = cat_item(idx);
 
   char ano[32], dur[64];
@@ -8086,10 +8358,10 @@ static void desenhaComentarios(float x, float y, float a) {
     if (comOculto(i)) {
       for (int k=0; k<3; k++) gfx_cor((GfxRect){px,y+96+k*30,larg-k*60,14},.5f,.25f,.27f,.29f,a);
       txt_desenhar_alpha(txt_linha(TXT_CAPTION2,"Contém spoiler · OK para ler",200,203,210,255),px,y+176,a);
-    } else agendaui_sinopse(TXT_G22M, daSerie ? extras_comentario_texto(i)
-                                     : extras_comentario_ep_texto(i),
-              px,y+84,larg,33,3,
-              focCor ? (tintaEsc ? 45 : 235) : 190, focCor ? (tintaEsc ? 47 : 236) : 195, focCor ? (tintaEsc ? 52 : 240) : 205,a*.95f);
+    } else {
+      const char *text=daSerie ? extras_comentario_texto(i) : extras_comentario_ep_texto(i);
+      txt_addon_previa(TXT_G22M,text,px,y+84,larg,195,a*.95f);
+    }
 
     { int nota = daSerie ? extras_comentario_nota(i)
                          : extras_comentario_ep_nota(i);
@@ -8485,18 +8757,16 @@ static void desenhaRodape(int r,float a) {
     }
   } else {
     LinhaDet rows[NV_DETF_DET_MAXL]; int n=montarDetalhes(rows,NV_DETF_DET_MAXL);
-    float h=alturaSecao(r);
-    int cols=detalheRetrato() ? 1 : 2;
-    for (int col=0;col<cols;col++) {
-      GfxRect card={96+col*876,y,detalheRetrato() ? NV_TELA_W-192 : 852,h};
-      moldura(card,22,a);
-      for (int i=col;i<n;i+=cols) {
-        float cy=y+28+(i/cols)*76;
-        txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_NOME,i18n(rows[i].chave),156,165,179,255,220),card.x+28,cy,a);
-        txt_bloco_corta(TXT_ILHA_NOME,rows[i].valor,239,241,246,card.x+264,cy,card.w-292,30,a,2);
-      }
+    float h=alturaSecao(r), width=NV_TELA_W-NV_DETP_X*2;
+    int cols=detalheRetrato() ? 2 : 3;
+    float gap=48, cell=(width-gap*(cols-1))/cols;
+    for (int i=0;i<n;i++) {
+      float x=NV_DETP_X+(i%cols)*(cell+gap), cy=y+(i/cols)*132;
+      char label[168]; idioma_maiusc_em(ajustes_idioma(),label,sizeof label,i18n(rows[i].chave));
+      txt_tracking(TXT_ILHA_HORA,label,243,242,239,x,cy,a*.48f,1.8f);
+      txt_bloco_corta(TXT_ILHA_CORPO,rows[i].valor,243,242,239,x,cy+32,cell,32,a,2);
     }
-    if (a>.3f) navigationTarget(96,y,detalheRetrato() ? NV_TELA_W-192 : 1728,h,ponteiroDetalhe,NULL,r,0);
+    if (a>.3f) navigationTarget(NV_DETP_X,y,width,h,ponteiroDetalhe,NULL,r,0);
   }
 }
 

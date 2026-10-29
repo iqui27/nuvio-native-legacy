@@ -185,9 +185,10 @@ static void gravarCache(void) {
     limpo(av, sizeof av, lista[i].avatarUrl);
     limpo(fu, sizeof fu, lista[i].fundoUrl);
     limpo(cor, sizeof cor, lista[i].corHex);
-    p += (size_t)snprintf(buf + p, sizeof buf - p, "%d\t%d\t%d\t%d\t%s\t%s\t%s\t%s\n",
+    p += (size_t)snprintf(buf + p, sizeof buf - p, "%d\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t%d\n",
                           lista[i].indice, lista[i].temPin, lista[i].primario,
-                          lista[i].usaAddonsDoPrimario, cor, nome, av, fu);
+                          lista[i].usaAddonsDoPrimario, cor, nome, av, fu,
+                          lista[i].usaPluginsDoPrimario);
   }
   if (p >= sizeof buf) return;   // nao gravar um arquivo truncado
   dados_gravar(ARQ_LISTA, buf);
@@ -223,6 +224,7 @@ static void lerCache(void) {
     campo(&p, d->nome, sizeof d->nome);
     campo(&p, d->avatarUrl, sizeof d->avatarUrl);
     campo(&p, d->fundoUrl, sizeof d->fundoUrl);
+    campo(&p, num, sizeof num); d->usaPluginsDoPrimario = atoi(num);
     while (*p == '\n' || *p == '\r') p++;
     // Linha sem indice e lixo (arquivo de outra versao, escrita interrompida):
     // pular uma linha e melhor que desistir do arquivo inteiro.
@@ -365,7 +367,10 @@ static int puxarPerfis(PedidoPerfis *pedido) {
           js_bruto(p, f, "uses_primary_addons", b, sizeof b)
           ? (strcmp(b, "true") == 0)
           : (js_bruto(p, f, "uses_primary_plugins", b, sizeof b)
-             ? (strcmp(b, "true") == 0) : 0); }
+             ? (strcmp(b, "true") == 0) : 0);
+        recebida[recebidos].usaPluginsDoPrimario =
+          js_bruto(p, f, "uses_primary_plugins", b, sizeof b)
+          && strcmp(b, "true") == 0; }
       recebidos++;
     }
     if (recebidos > 0) { memcpy(tmp, recebida, sizeof tmp); novos = recebidos; }
@@ -543,6 +548,11 @@ void perfis_definir_ativo(int indice) {
 }
 
 void perfis_manter_ativo(void) { escolhido = 1; }
+void perfis_exigir_escolha(void) {
+  escolhido = gravado = 0;
+  trava_invalidar_autorizacoes();
+  dados_apagar(ARQ_ATIVO);
+}
 
 int perfis_sem_escolha(void) {
   if (perfil_regra_tempo(0)) return 0;
@@ -613,6 +623,97 @@ int perfis_verificar_pin(int indice, const char *pin) {
     return principal==1?1:principal<0 || result<0?-1:0;
   }
   return result;
+}
+
+// --- CRIAR, EDITAR E REMOVER (2.1) ------------------------------------------
+//
+// Ver perfis.h: o contrato e o do app oficial (sync_push_profiles com a
+// lista inteira; sync_delete_profile_data pelo indice). A TCP e BLOQUEAR e
+// voltar com TRES respostas (1/-1), pelo mesmo motivo do PIN: quem chama
+// mostra "sem conexão", e nao um erro generico.
+int perfis_indice_livre(void) {
+  int idx, i;
+  for (idx = 1; idx <= CONTA_PERFIL_MAX; idx++) {
+    int achou = 0;
+    for (i = 0; i < n; i++)
+      if (lista[i].indice == idx) { achou = 1; break; }
+    if (!achou) return idx;
+  }
+  return 0;
+}
+
+int perfis_push_atuais(PerfisPush *dst, int max) {
+  int i;
+  if (!dst || max <= 0) return 0;
+  for (i = 0; i < n && i < max; i++) {
+    memset(&dst[i], 0, sizeof dst[i]);
+    dst[i].indice = lista[i].indice;
+    snprintf(dst[i].nome, sizeof dst[i].nome, "%s", lista[i].nome);
+    snprintf(dst[i].corHex, sizeof dst[i].corHex, "%s", lista[i].corHex);
+    snprintf(dst[i].avatarUrl, sizeof dst[i].avatarUrl, "%s", lista[i].avatarUrl);
+    dst[i].usaAddons = lista[i].usaAddonsDoPrimario;
+    dst[i].usaPlugins = lista[i].usaPluginsDoPrimario;
+  }
+  return i;
+}
+
+int perfis_push_corpo(const PerfisPush *l, int nl, char *dst, size_t tam) {
+  Jsw w;
+  const char *corpo;
+  int i, ok;
+  if (!l || nl <= 0 || !dst || tam == 0) return 0;
+  jsw_iniciar(&w);
+  jsw_obj_ini(&w);
+  jsw_ci(&w, "p_client_max_profiles", CONTA_PERFIL_MAX);
+  jsw_chave(&w, "p_profiles");
+  jsw_arr_ini(&w);
+  for (i = 0; i < nl; i++) {
+    jsw_obj_ini(&w);
+    jsw_ci(&w, "profile_index", l[i].indice);
+    jsw_cs(&w, "name", l[i].nome);
+    jsw_cs(&w, "avatar_color_hex", l[i].corHex);
+    jsw_cb(&w, "uses_primary_addons", l[i].usaAddons ? 1 : 0);
+    jsw_cb(&w, "uses_primary_plugins", l[i].usaPlugins ? 1 : 0);
+    jsw_chave(&w, "avatar_id");
+    jsw_nulo(&w);
+    jsw_cs(&w, "avatar_url", l[i].avatarUrl[0] ? l[i].avatarUrl : NULL);
+    jsw_obj_fim(&w);
+  }
+  jsw_arr_fim(&w);
+  jsw_obj_fim(&w);
+  corpo = jsw_texto_final(&w);
+  ok = corpo && strlen(corpo) < tam;
+  if (ok) snprintf(dst, tam, "%s", corpo);
+  jsw_livre(&w);
+  return ok;
+}
+
+int perfis_push_lista(const PerfisPush *l, int nl) {
+  // 8 perfis x (nome 64 + URL 300 + campos) cabe com folga.
+  char corpo[8192];
+  char *r;
+  int st = 0, ok;
+  if (!perfis_push_corpo(l, nl, corpo, sizeof corpo)) return -1;
+  r = sessao_rpc("sync_push_profiles", corpo, &st);
+  ok = r && st >= 200 && st < 300;
+  free(r);
+  return ok ? 1 : -1;
+}
+
+int perfis_remover(int indice) {
+  Jsw w;
+  char *r;
+  int st = 0, ok;
+  if (indice <= 0) return -1;
+  jsw_iniciar(&w);
+  jsw_obj_ini(&w);
+  jsw_ci(&w, "p_profile_id", indice);
+  jsw_obj_fim(&w);
+  r = sessao_rpc("sync_delete_profile_data", jsw_texto_final(&w), &st);
+  jsw_livre(&w);
+  ok = r && st >= 200 && st < 300;
+  free(r);
+  return ok ? 1 : -1;
 }
 
 void perfis_esquecer(void) {
