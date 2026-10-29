@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-out=/Volumes/ExternalSSD/tmp/rev/guialayout
+out=/Volumes/ExternalSSD/tmp/rev/guialayout/v2
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-guialayout-shot.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 cache="${TMPDIR:-/tmp}/nuvio-guialayout-$(basename "$PWD")"
@@ -16,7 +16,7 @@ for source in src/*.c src/dts/*.c; do
   if [[ ! -f "$object" || "$source" -nt "$object" ]]; then cc "${flags[@]}" -c "$source" -o "$object"; fi
   objects+=("$object")
 done
-git show 3485af0f00481897c151697dbcbcb6848ad9dad5:src/guiav5ui.c > "$work/before.c"
+git show integracao/2.1:src/guiav5ui.c > "$work/before.c"
 cc "${flags[@]}" -DGUIALAYOUT_BASELINE -DGUIAV5_UNDER_TEST=\""$work/before.c"\" \
   tests/guialayout_shot.c "${objects[@]}" -o "$work/before" \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL

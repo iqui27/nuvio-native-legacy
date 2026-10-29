@@ -27,6 +27,7 @@ int main(int argc,char **argv){
   snprintf(ltvF[0].nome,sizeof ltvF[0].nome,"Iptb");ltvF[0].nCanais=nCanais;
   char logo[1024];snprintf(logo,sizeof logo,"%s/tests/fixtures/aovivo/logo.png",getenv("GUIALAYOUT_ROOT"));
   canais[0].logo=logo;canais[0].nome="SporTV HD";
+  ajustes_definir_guia_previa_grande(1);
   g5ui_open("grade");aberta=1;gv_lin=0;gv_zone=0;gv_snap_force=1;gv_snapshot();
   gv_assistir("c1");CatItem it;assert(guia_pediu_preview(&it));
   float x,y,w,h;guia_preview_rect(&x,&y,&w,&h);player_mini_no_guia(x,y,w,h);player_manter_mini();
@@ -34,6 +35,18 @@ int main(int argc,char **argv){
   static const VideoSimulacao sim={.aceita=1,.pronto=1,.tocando=1,.largura=1920,.altura=1080};
   video_simular(&sim);player_definir_fonte("https://example.invalid/live.m3u8");
   capture(window,argv[1],"preview-playing");frame_cost();
+#ifndef GUIALAYOUT_BASELINE
+  char all[96];snprintf(all,sizeof all,"%s  %d",i18n("Todos ao vivo"),gv_total_n);
+  TxtLinha full=txt_linha_bruta(TXT_ILHA_APOIO,all,243,242,239,255);
+  float available=gv_source_chip(0,0,0)-10-16;
+  TxtLinha fitted=txt_linha_corta_bruta(TXT_ILHA_APOIO,all,243,242,239,255,available);
+  assert(full.tex&&fitted.tex==full.tex&&available>=full.w);
+#endif
+  printf("VISIBLE ROWS: %d; first y %.0f; last bottom %.0f\n",gv_vis(GV_BASE),gv_rows_y(GV_BASE),
+         gv_rows_y(GV_BASE)+(gv_vis(GV_BASE)-1)*(GV_ROW_H+GV_ROW_GAP)+GV_ROW_H);
+#ifndef GUIALAYOUT_BASELINE
+  assert(gv_vis(GV_BASE)>=4);
+#endif
 #ifndef GUIALAYOUT_BASELINE
   gv_zone=4;gv_chipi=2;gv_activate();
   capture(window,argv[1],"pins-focused");
