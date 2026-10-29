@@ -502,7 +502,11 @@ static void escolher(void) {
     linha = destino;
     return;
   }
-  if (linha != destino) { destino = linha; mudou = 1; }
+  if (linha != destino
+#ifdef NV_DESKTOP_UI
+      || linha == MENU_CONQUISTAS || linha == MENU_JUNTOS || linha == MENU_LISTAS
+#endif
+     ) { destino = linha; mudou = 1; }
   aberto = 0;
 }
 

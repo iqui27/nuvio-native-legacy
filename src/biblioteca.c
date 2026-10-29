@@ -2058,6 +2058,7 @@ static void pollEscrita(void) {
 }
 
 void biblioteca_abrir_listas(void) {
+  temAberta = 0; trilha = 0;
   modo = MODO_LISTAS; listaTab = 0; fonte = FONTE_TRAKT; origensAbertas = 0;
   recado[0] = 0; flipDe = animOrig;
   pedirFonte();

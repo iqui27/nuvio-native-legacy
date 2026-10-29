@@ -38,17 +38,27 @@ def photo(name):
     Path('/tmp/nuvio-shot-req').write_text('1\n')
     wait_for(source.exists)
     dest = OUT / name
-    size = '669x951!' if name == 'mac-home-narrow.png' else '1280x800!'
+    size = '669x951>' if name == 'mac-home-narrow.png' else '1280x800!'
     run('magick', str(source), '-resize', size, str(dest))
     return dest
 
 
+if DATA.exists():
+    shutil.rmtree(DATA)  # This helper owns only its isolated fixture directory.
 DATA.mkdir(parents=True, exist_ok=True)
 # Existing tours must not cover the scene under test.
 import re
 for header in (ROOT / 'src').glob('novidades*.h'):
     for name in re.findall(r'"(novidades[^"/]*\.txt)"', header.read_text()):
         (DATA / name).write_text('1\n')
+for name in re.findall(r'\{ "([^"]+\.txt)"', (ROOT / 'src/novidadesfila.c').read_text()) + ['salvos-intro.txt', 'aviso-log.txt', 'recintro-social.txt']:
+    (DATA / name).write_text('1\n')
+for source in [*(ROOT / 'src').glob('novidades*.c'), *(ROOT / 'src/novidades').glob('*.inc')]:
+
+    for name in re.findall(r'"(novidades[^"/]*\.txt)"', source.read_text()):
+        (DATA / name).write_text('1\n')
+(DATA / 'dicas-controle-205.txt').write_text('2.1\n')
+(DATA / 'diagnostico-otimizacao-intro.cfg').write_text('versao=1\n')
 ART.parent.mkdir(parents=True, exist_ok=True)
 if not ART.exists():
     shutil.copytree(OUT / 'Nuvio.app/Contents/Resources/art', ART)
@@ -77,6 +87,13 @@ with log.open('w') as output:
         key('left')
         key('janela:1280,800')
         photo('mac-home-1280.png')
+        key('mover:1100,25')
+        key('clicar:1100,25')
+        time.sleep(3)
+        photo('mac-search.png')
+        assert 'tela=busca' in log.read_text(errors='replace'), 'Toolbar search click failed'
+        key('mover:75,114')
+        key('clicar:75,114')
         key('janela:669,951')
         photo('mac-home-narrow.png')
         key('janela:1280,800')

@@ -530,10 +530,16 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
       if (sscanf(dp + 1, "%d,%d", &mx, &my) == 2) {
         SDL_Event m; SDL_zero(m);
         m.type = SDL_MOUSEMOTION; m.motion.x = mx; m.motion.y = my;
+#ifdef NV_DESKTOP_RELEASE
+      m.motion.windowID = SDL_GetWindowID(SDL_GL_GetCurrentWindow());
+#endif
         ponteiro_evento(&m, entregar);
         if (clicar) {
           SDL_zero(m);
           m.type = SDL_MOUSEBUTTONDOWN; m.button.button = SDL_BUTTON_LEFT;
+#ifdef NV_DESKTOP_RELEASE
+        m.button.windowID = SDL_GetWindowID(SDL_GL_GetCurrentWindow());
+#endif
           m.button.x = mx; m.button.y = my;
           ponteiro_evento(&m, entregar);
           m.type = SDL_MOUSEBUTTONUP;

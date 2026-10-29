@@ -56,6 +56,12 @@ int main(void) {
   assert(menu_pediu_trocar() && !menu_aberto());
   desktopBusca(0, 0);
   assert(menu_destino() == MENU_BUSCAR && !menu_aberto());
+  menu_ir(MENU_CONQUISTAS); assert(menu_mudou_destino());
+  menu_ir(MENU_CONQUISTAS); assert(menu_mudou_destino());
+  menu_ir(MENU_JUNTOS); assert(menu_mudou_destino());
+  menu_ir(MENU_JUNTOS); assert(menu_mudou_destino());
+  menu_ir(MENU_LISTAS); assert(menu_mudou_destino());
+  menu_ir(MENU_LISTAS); assert(menu_mudou_destino());
 
   layout_janela_definir(1000, 500);
   assert(layout_desktop_ativo() && nv_layout_w == 1500);
