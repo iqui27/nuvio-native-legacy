@@ -9,6 +9,8 @@ RUN dpkg --add-architecture armel && \
     apt-get -q install -y --allow-downgrades --no-install-recommends \
       libc6=2.28-10+deb10u1 libc-bin=2.28-10+deb10u1 \
       libc-dev-bin=2.28-10+deb10u1 zlib1g=1:1.2.11.dfsg-1+deb10u1 \
+      gcc libc6-dev=2.28-10+deb10u1 linux-libc-dev=4.19.249-2 \
+      linux-libc-dev:armel=4.19.249-2 \
       gcc-arm-linux-gnueabi g++-arm-linux-gnueabi make pkg-config file qemu-user \
       libglvnd-core-dev libgles2:armel libegl1:armel zlib1g-dev:armel \
       libc6-dev:armel ca-certificates && \

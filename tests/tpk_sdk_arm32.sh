@@ -34,6 +34,12 @@ int main(void) {
 }
 C
 ctr_run --rm --platform "$TPK_PLATFORM" -v "$T:/proof" -w /proof "$TPK_IMAGE" sh -ec '
+  if [ "${NUVIO_TPK_CROSS:-0}" = 1 ]; then
+    # FreeType/FriBidi generators need a runnable native compiler and libc.
+    printf "#include <stdio.h>\nint main(void) { return puts(\"native generator\") < 0; }\n" > generator.c
+    /usr/bin/gcc -B/usr/bin/ generator.c -o generator
+    ./generator
+  fi
   gcc $CFLAGS -shared probe.c -o probe.so -Wl,--no-undefined -Wl,--hash-style=both \
     /usr/lib/arm-linux-gnueabi/libz.a -pthread -lEGL -lGLESv2
   gcc $CFLAGS main.c -o main -ldl
