@@ -4033,6 +4033,35 @@ static float abreFoco = 1.0f, abreAnt;
 static int linhaAnt = -1, focoVisto = -1;
 static float addonRol;
 static int addonRolFim;
+static int nomeRolIndice = -1;
+static unsigned nomeRolGeracao;
+static Uint32 nomeRolDesde;
+static float nomeRolLargura;
+static char nomeRolTexto[sizeof(((Stream *)0)->arquivo)];
+
+// One cached texture moves inside the existing filename slot; no layout per tick.
+static void desenharNomeFonte(const char *text, int indice, int sel,
+                              float x, float y, float w, float alpha, Uint32 now) {
+  if (!sel || !aberta) {
+    txt_desenhar_alpha(txt_linha_corta_bruta(TXT_PG_FIM,text,125,125,123,255,w),x,y,alpha);
+    return;
+  }
+  TxtLinha line=txt_linha_bruta(TXT_PG_FIM,text,125,125,123,255);
+  if (!line.tex) return;
+  if (nomeRolIndice!=indice || nomeRolGeracao!=listaGeracao || fabsf(nomeRolLargura-w)>.5f || strcmp(nomeRolTexto,text)) {
+    nomeRolIndice=indice; nomeRolGeracao=listaGeracao; nomeRolLargura=w;
+    snprintf(nomeRolTexto,sizeof nomeRolTexto,"%s",text); nomeRolDesde=now;
+  }
+  float distance=fmaxf(0,line.w-w), offset=0;
+  if (distance>0) {
+    float travel=distance/24.0f*1000.0f;
+    float phase=fmodf((float)(Uint32)(now-nomeRolDesde),800.0f+travel+1200.0f);
+    offset=fminf(distance,fmaxf(0,(phase-800.0f)*.024f));
+  }
+  GfxRecorteAnt clip=gfx_recorte_dentro(x,y,w,line.h);
+  txt_desenhar_alpha(line,x-offset,y,alpha);
+  gfx_recorte_voltar(clip);
+}
 
 
 static void linhaLimpa(char *d, size_t tam, const char *ini, size_t n) {
@@ -4479,14 +4508,14 @@ static uint64_t logosDa(const Stream *s, uint64_t tira) {
 // repetia os numeros que a coluna da direita ja mostra. Buffer estatico: so
 // o fio principal chama, e cada chamador usa o texto antes da seguinte.
 static const char *arquivoDa(const Stream *s) {
-  static char ult[192];
+  static char ult[sizeof s->arquivo];
   const char *p, *f;
   if (s->arquivo[0]) return s->arquivo;
   if (!logosDa(s, 0) && !selosPacoteVisiveis((Stream *)s) && strcmp(containerDa(s), "MP4") && !idiomaDa(s)) return "";
   ult[0] = 0;
   for (p = s->descricao; *p; p = f + 1) {
     f = strchr(p, '\n');
-    char l[192];
+    char l[sizeof s->arquivo];
     linhaLimpa(l, sizeof l, p, f ? (size_t)(f - p) : strlen(p));
     if (l[0]) snprintf(ult, sizeof ult, "%s", l);
     if (!f) break;
@@ -4913,6 +4942,7 @@ void stream_folha_abrir(void) {
   aberta=1; escolha=-1; grupo=1; filtro=0; filtroVisto=-2; pillW=-1.0f; trocaDesde=0; soMp4=0; soCache=0; soDub=0; recarregar=0;
   folhaRelogio = 0; // Browsing Sources always slides from the right, independent of the clock.
   folhaEntrada = 0;
+  nomeRolIndice = -1;
   recarregarFonteConfirmacao = 0;
   recarregarFontePerfil = nv_perfil_sessao_ler();
   recarregarFonteContexto = canalFolha ? 0 : player_recarregar_contexto();
@@ -5524,6 +5554,7 @@ void stream_folha_atualizar(float dt, Uint32 agora) {
   {
     int linha = grupo==1 ? foco : -1;
     if (linha != focoVisto) {
+      nomeRolIndice=-1;
       addonRol=0;
       if (addonRolFim && linha>=0 && filtrado(linha)>=0 && ajustes_fonte_texto_addon())
         addonRol=fmaxf(0,alturaLinha(filtrado(linha),automaticaDaFolha(),1)-areaLista());
@@ -6329,6 +6360,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   float lx=x+FOLHA_PAD_E, rw=w-FOLHA_PAD_E-FOLHA_PAD_D;
   float tx=lx+FOLHA_TXT, tr=lx+rw-FOLHA_TXT;
   const float oy=folhaOY;
+  if (grupo!=1 || !aberta || detAberto || ptAberto) nomeRolIndice=-1;
   GfxRect ilhaR={x,0,w,NV_TELA_H};
   ajustes_acento(&ar,&ag,&ab);
   ai=(int)(ar*255.0f+.5f);
@@ -6807,7 +6839,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       if(a>.02f && arq[0]){ char d[512];
         snprintf(d,sizeof d,"%s",arq);
         for(char *p=d;*p;p++)if((unsigned char)*p<32)*p=' ';
-        txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,d,125,125,123,255,tr-tx),tx,cy,anim*a); }
+        desenharNomeFonte(d,i,sel && !detAberto && !ptAberto,tx,cy,tr-tx,anim*a,agora); }
       if(a>.02f){ char f1[160], f2[128]; StreamfitClasse fc=fitTexto2(i,f1,sizeof f1,f2,sizeof f2);
         if(f1[0]){
         float fy=cy+(arq[0]?FOLHA_ARQ_H:0);
@@ -6871,12 +6903,9 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   anim=animLista; lx-=dxLista; tx-=dxLista; tr-=dxLista;
   gfx_recorte_voltar(listClip);
   if (temServidor()) {
-    const char *keys[] = {"OK", "↓"};
-    const char *labels[] = {i18n("Assistir"), i18n("Detalhes da fonte")};
     gfx_cor((GfxRect){tx,folhaBase+8,tr-tx,1},0,1,1,1,.08f*anim);
     txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,i18n("A cópia do seu servidor aparece primeiro quando disponível."),
                        150,153,162,255,tr-tx),tx,folhaBase+20,anim);
-    plrui_dicas(keys,labels,2,tx,folhaBase+70,0,anim);
   }
   if (detAnim > .01f) {
     desenhaDetalhe(x,w,ptr);
