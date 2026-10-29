@@ -23,4 +23,10 @@ if [[ ${VOD_BASELINE:-0} == 1 ]]; then
   extra=(-DGUIAV5_UNDER_TEST=\""$work/before.c"\")
 fi
 cc "${flags[@]}" ${extra[@]+"${extra[@]}"} tests/vodcarga.c "${objects[@]}" -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL -o "$work/test"
-"$work/test"
+if [[ $# -gt 0 ]]; then
+  "$work/test" "$@"
+else
+  "$work/test" index
+  "$work/test" clear
+  "$work/test"
+fi

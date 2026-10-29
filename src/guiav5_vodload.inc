@@ -90,7 +90,7 @@ static void vod_load_worker(void){
       }
     }
   }
-  vod_index(&vod_pending,1);
+  if(!worker_cancel)vod_index(&vod_pending,0);
   printf("[vod-load] phase=%s http=%d categories=%d items=%d ok=%d ms=%u\n",operation==8?"cache":operation==6?"categories":"items",status,categories,items,worker_ok,SDL_GetTicks()-began);
 }
 static void vod_begin(void){

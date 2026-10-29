@@ -152,7 +152,13 @@ static const char *alphabet="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY
 static void erase(void *p,size_t n){volatile unsigned char *s=p;while(n--)*s++=0;}
 static void filename(char *out,size_t n,const char *what){snprintf(out,n,"guiav5-%s-p%d.json",what,perfis_ativo());}
 static void save_rules(void);
-static void clear_catalog(void){free(inventory);free(series_catalog);inventory=series_catalog=NULL;count=total=series_count=0;source_loaded=categories_missing=0;vod_lazy=vod_failed=vod_cache_checked=0;memset(vod_done_count,0,sizeof vod_done_count);vod_selected_slot=-1;vod_revision++;vod_free(&vod_data);free(vod_order);free(vod_layout);vod_order=NULL;vod_layout=NULL;vod_size=vod_rows=0;}
+static void clear_catalog(void){
+  worker_cancel=1;
+  if(atomic_load(&busy)){
+    pthread_join(worker,NULL);atomic_store(&busy,0);atomic_store(&ready,0);
+    free(staging);staging=NULL;vod_free(&vod_pending);erase(&work_draft,sizeof work_draft);
+  }
+  free(inventory);free(series_catalog);inventory=series_catalog=NULL;count=total=series_count=0;source_loaded=categories_missing=0;vod_lazy=vod_failed=vod_cache_checked=0;memset(vod_done_count,0,sizeof vod_done_count);vod_selected_slot=-1;vod_revision++;vod_free(&vod_data);free(vod_order);free(vod_layout);vod_order=NULL;vod_layout=NULL;vod_size=vod_rows=0;}
 static void gs_reset(void);
 static void context(void){
   int p=perfis_ativo();const char *owner=sessao_usuario();if(!owner)owner="";
@@ -898,9 +904,20 @@ static int vod_add_row(VodCatalog *v,int kind,const char *id,const char *name){
   snprintf(row->id,sizeof row->id,"%s",id);snprintf(row->name,sizeof row->name,"%s",name);
   return v->nrows++;
 }
+/* UI thread only: inventory references are merged after the worker is joined. */
+static void vod_index_inventory(VodCatalog *v){
+  VodRef *refs=realloc(v->refs,(v->count+count+1)*sizeof *refs);
+  if(!refs)return;v->refs=refs;
+  for(int i=0;i<count;i++){
+    G5Item *it=&inventory[i];if(it->kind==G5_LIVE)continue;
+    if(!strcmp(it->source,"xtream")&&((it->kind==G5_MOVIE&&v->json[0])||(it->kind==G5_SERIES&&v->json[1])))continue;
+    int row=vod_add_row(v,it->kind,it->group,it->group[0]?it->group:i18n("Outros"));
+    if(row>=0){v->refs[v->count++]=(VodRef){NULL,NULL,i,row};v->rows[row].count++;}
+  }
+}
 static void vod_index(VodCatalog *v,int mixed){
   free(v->refs);free(v->rows);v->refs=NULL;v->rows=NULL;v->count=v->nrows=0;
-  int capacity=mixed?count:0;for(int k=0;k<2;k++)if(v->json[k])for(const char *p=js_raiz_array(v->json[k]);p;){const char *end=js_fim(p);if(!end)break;capacity++;p=js_prox(end);}
+  int capacity=0;for(int k=0;k<2;k++)if(v->json[k])for(const char *p=js_raiz_array(v->json[k]);p;){const char *end=js_fim(p);if(!end)break;capacity++;p=js_prox(end);}
   v->refs=calloc(capacity?capacity:1,sizeof *v->refs);if(!v->refs)return;
   for(int k=0;k<2;k++){
     for(const char *p=v->categories[k]?js_raiz_array(v->categories[k]):NULL;p;){const char *end=js_fim(p);if(!end)break;
@@ -915,13 +932,8 @@ static void vod_index(VodCatalog *v,int mixed){
       if(row>=0&&id[0]&&name[0])v->refs[v->count++]=(VodRef){p,end,-1,row};p=js_prox(end);
     }
   }
-  for(int i=0;mixed&&i<count;i++){
-    G5Item *it=&inventory[i];if(it->kind==G5_LIVE)continue;
-    if(!strcmp(it->source,"xtream")&&((it->kind==G5_MOVIE&&v->json[0])||(it->kind==G5_SERIES&&v->json[1])))continue;
-    int row=vod_add_row(v,it->kind,it->group,it->group[0]?it->group:i18n("Outros"));
-    if(row>=0)v->refs[v->count++]=(VodRef){NULL,NULL,i,row};
-  }
   for(int i=0;i<v->count;i++)v->rows[v->refs[i].row].count++;
+  if(mixed)vod_index_inventory(v);
 }
 static void vod_rebuild(void){
   vod_revision++;
@@ -1649,6 +1661,7 @@ void g5ui_update(void){
         if(!worker_ok&&(operation==6||operation==7)){vod_lazy=0;fallback_fetch=1;}
         if(worker_ok||operation==6){
           int old_focus=focus;float old_scroll=vod_scroll;
+          vod_index_inventory(&vod_pending);
           vod_free(&vod_data);vod_data=vod_pending;memset(&vod_pending,0,sizeof vod_pending);
           vod_rebuild();focus=old_focus;vod_scroll=old_scroll;
           source_loaded=operation!=8;vod_failed=!worker_ok;
@@ -2050,9 +2063,9 @@ static void gv_button(int id,const char *text,const char *icon,float x,float y,f
   ponteiro_alvo(x,y,w,h,point_focus,point_activate,id,0);
   gv_registra(id,x,y,w,h);
 }
-/* Dicas do rodape: o mesmo componente das dicas do player e da faixa. */
+/* Keep the profile badge without a control-hint bar. */
 static void gv_hints(const char *const *keys,const char *const *labels,int n){
-  plrui_dicas(keys,labels,n,GV_X,1042,0,1);
+  (void)keys;(void)labels;(void)n;
   const ContaPerfil *p=perfis_item_ativo();
   if(p){
     gfx_icone((GfxRect){1752,1030,24,24},"aj_shield-check",.65f,.66f,.68f,1);
