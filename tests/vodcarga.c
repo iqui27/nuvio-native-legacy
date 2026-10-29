@@ -21,7 +21,7 @@ static char *fixture_request(const char *server,const char *user,const char *pas
   char *body=malloc(900000);assert(body);size_t n=0;body[n++]='[';
   int category=atoi(strstr(action,"category_id=")+12);
   if(atomic_load(&empty_leading)&&category<9){free(body);return strdup("[]");}
-  for(int i=0;i<4000;i++)n+=snprintf(body+n,900000-n,"%s{\"stream_id\":%d,\"series_id\":%d,\"name\":\"Fixture title %04d\",\"category_id\":%d,\"container_extension\":\"mp4\"}",i?",":"",category*10000+i,category*10000+i,i,category);
+  for(int i=0;i<4000;i++)n+=snprintf(body+n,900000-n,"%s{\"stream_id\":%d,\"series_id\":%d,\"name\":\"%s title %04d\",\"category_id\":%d,\"container_extension\":\"mp4\"}",i?",":"",category*10000+i,category*10000+i,category==9?"Hidden":"Fixture",i,category);
   strcpy(body+n,"]");return body;
 }
 #define xtream_consultar fixture_request
@@ -94,6 +94,30 @@ int main(int argc,char **argv){
     while(atomic_load(&busy))pump();
     assert(vod_rows==1&&vod_done_count[0]==3);
     puts("VOD empty leading categories: PASS");return 0;
+  }
+  if(argc>1&&!strcmp(argv[1],"search")){
+    for(int k=0;k<2;k++){
+      clear_catalog();query[0]=0;draft.movies=!k;draft.series=k;
+      g5ui_open(k?"vod-series":"vod-filmes");
+      Uint32 began=SDL_GetTicks();
+      while((vod_done_count[k]<2||atomic_load(&busy))&&SDL_GetTicks()-began<3000)pump();
+      assert(vod_done_count[k]==2&&"only the first two categories of this kind should be loaded");
+      snprintf(query,sizeof query,"Hidden title 0007");vod_filter();
+      assert(!vod_size&&"target must be absent before loading the unopened category");
+      began=SDL_GetTicks();Uint32 longest=0;
+      while((!vod_size||atomic_load(&busy))&&SDL_GetTicks()-began<3000){
+        Uint32 tick=SDL_GetTicks();pump();frame(window);
+        Uint32 elapsed=SDL_GetTicks()-tick;if(elapsed>longest)longest=elapsed;
+      }
+      assert(vod_size==1&&"search must discover a title unique to the unopened third category");
+      assert(!strcmp(vod_item(vod_order[0])->name,"Hidden title 0007"));
+      assert(longest<80&&"search loading must not block UI on the provider");
+      assert(vod_done_count[k]==3&&!atomic_load(&full_lists));
+      int before=atomic_load(&requests);for(int i=0;i<5;i++)pump();
+      assert(atomic_load(&requests)==before&&"completed search categories must not reload");
+      printf("VOD unopened-category search (%s): PASS, longest frame %u ms\n",k?"series":"movies",longest);
+    }
+    return 0;
   }
   if(argc>1){lifetime_test(argv[1]);return 0;}
   g5ui_open("vod-filmes");shot(window,"loading-skeleton");

@@ -31,4 +31,6 @@ else
   "$work/test"
   rm -f "$NUVIO_DADOS"/guiav5-vod-*.json
   "$work/test" empty
+  rm -f "$NUVIO_DADOS"/guiav5-vod-*.json
+  "$work/test" search
 fi

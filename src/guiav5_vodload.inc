@@ -117,7 +117,7 @@ static void vod_tick(void){
     int done=0;for(int i=0;i<vod_done_count[k];i++)done|=!strcmp(vod_done[k][i],row->id);
     /* Completed empty categories have no navigable row. */
     if(done&&!row->count)continue;
-    int position=eligible++;if(position<active||position>active+1)continue;
+    int position=eligible++;if(!query[0]&&(position<active||position>active+1))continue;
     if(done)continue;
     if(strspn(row->id,"0123456789")!=strlen(row->id)||!row->id[0])continue;
     vod_request_kind=k;snprintf(vod_request_id,sizeof vod_request_id,"%s",row->id);start(7);return;
