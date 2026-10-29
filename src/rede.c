@@ -136,6 +136,8 @@ typedef struct { char h[96]; unsigned long ms; } UsoHost;
 typedef struct {
   long limiteLocal;
   volatile int *cancelLocal;
+  int (*parar)(void *);
+  void *pararUsuario;
   int limitouLocal;
   int cancelouLocal;
   long bytesLocal;
@@ -171,6 +173,8 @@ static RedeFio *redeFio(void) {
 long *rede_teto_ptr(void) { return &redeFio()->teto; }
 #define redeLimiteLocal   (redeFio()->limiteLocal)
 #define redeCancelLocal   (redeFio()->cancelLocal)
+#define redeParar (redeFio()->parar)
+#define redePararUsuario (redeFio()->pararUsuario)
 #define redeLimitouLocal  (redeFio()->limitouLocal)
 #define redeCancelouLocal (redeFio()->cancelouLocal)
 #define redeBytesLocal    (redeFio()->bytesLocal)
@@ -186,12 +190,18 @@ long *rede_teto_ptr(void) { return &redeFio()->teto; }
  * entre sondagens: cada fio recebe seu teto e seu cancel token. */
 static _Thread_local long redeLimiteLocal;
 static _Thread_local volatile int *redeCancelLocal;
+static _Thread_local int (*redeParar)(void *);
+static _Thread_local void *redePararUsuario;
 static _Thread_local int redeLimitouLocal;
 static _Thread_local int redeCancelouLocal;
 static _Thread_local long redeBytesLocal;
 // 1 = este fio e leitura lateral ao video (rede_lateral, #385).
 static _Thread_local int redeLateral;
 #endif
+void rede_parar_quando(int (*parar)(void *),void *usuario){
+  redeParar=parar;redePararUsuario=usuario;
+}
+static int redeParou(void){return (redeCancelLocal&&*redeCancelLocal)||(redeParar&&redeParar(redePararUsuario));}
 static unsigned long redeAgoraMs(void);
 
 static long redeLimiteAtual(void) {
@@ -251,7 +261,8 @@ EM_JS(int, nv_http_iniciar_bruto, (const char *metodo, const char *url,
     else if (xhr) xhr.abort();
   };
   var reg = { pronto: false, erro: false, status: 0, url: "", etag: "", bytes: null,
-              mime: "", tamanho: -1, retry: 0, limitado: false };
+              mime: "", tamanho: -1, retry: 0, limitado: false,
+              abortar: function () { reg.erro = true; abortar(); terminar(); } };
   Module.nvFioReqs[id] = reg;
   var terminar = function () {
     if (reg.pronto) return;
@@ -421,8 +432,13 @@ static char *nv_http_colher_assinc(int id, int *tam, int *status,
 // vazaoWorker and livetvdiag fioRede run in workers; descoberta also has
 // synchronous fallbacks on thread-creation failure. Both contexts must yield
 // to fetch callbacks. NV_UM_FIO uses its scheduler instead of nested Asyncify.
+EM_JS(void, nv_http_abortar, (int id), {
+  var reg = Module.nvFioReqs && Module.nvFioReqs[id];
+  if (reg && !reg.pronto) reg.abortar();
+});
 static void nv_http_esperar(int id) {
   while (!nv_http_pronto_assinc(id)) {
+    if(redeParou()){redeCancelouLocal=1;nv_http_abortar(id);break;}
 #ifdef NV_UM_FIO
     fio1_ceder();
 #else
@@ -1758,7 +1774,7 @@ static int vigiar(void *u, long long dlTotal, long long dlAgora,
   Vigia *v = (Vigia *)u;
   unsigned long agora = redeAgoraMs();
   (void)dlTotal; (void)ulTotal; (void)ulAgora;
-  if (redeCancelLocal && *redeCancelLocal) { redeCancelouLocal = 1; return 1; }
+  if (redeParou()) { redeCancelouLocal = 1; return 1; }
   if (dlAgora > v->visto) { v->visto = dlAgora; v->ultimoMs = agora; return 0; }
   if (v->visto > 0 && v->paradoMs && agora - v->ultimoMs > v->paradoMs) {
     v->parou = 1;
@@ -1845,7 +1861,7 @@ static size_t receber(void *dados, size_t tam, size_t qtd, void *u) {
   if (tam && qtd > SIZE_MAX / tam) return 0;
   bytes = tam * qtd;
   if (!bytes) return 0;
-  if (redeCancelLocal && *redeCancelLocal) {
+  if (redeParou()) {
     redeCancelouLocal = 1;
     return 0;
   }
@@ -2253,7 +2269,7 @@ static char *androidDepois(const char *verbo, const char *url, int segundos,
   char *r, origem[320], *host, *fim;
   int codigo = redeCurlLocal;
   unsigned i;
-  if (redeCancelouLocal || (redeCancelLocal && *redeCancelLocal)) return NULL;
+  if (redeCancelouLocal || redeParou()) return NULL;
   r = viaAndroid(verbo, url, segundos, cab, corpo, status, NULL, retryAfter, "curl falhou");
   // Only transport errors count; malformed URLs, unsupported protocols,
   // allocation failures and deliberate aborts say nothing about curl health.
@@ -2398,7 +2414,7 @@ static char *rede_baixar_interno(const char *url, int segundos, long *tam,
 // Range da pre-busca virava duas. A segunda conexao ao host que acabou de
 // recusar nao ajuda a legenda e e mais uma batida no CDN que o player usa.
 static int valeRepetir(int r, const Vigia *v, size_t bytes) {
-  if (redeCancelouLocal) return 0;
+  if (redeCancelouLocal || redeParou()) return 0;
   if (redeLateral && redeParcialOk && (r == 6 || r == 7 || r == 35)) return 0;
   if (r == 42) return v->parou;            // vigia: corpo parado
   if (bytes > 0) return 0;
@@ -2866,6 +2882,7 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
                           const char *verbo) {
   Balde b = {0};
   CacaCab respostaCab = { NULL, 0, retryAfter };
+  Vigia vigia;
   if (retryAfter) *retryAfter = 0;
   void *c, *lista = NULL;
   int r;
@@ -2880,6 +2897,7 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
   curl_setopt(c, OPT_WRITEFUNCTION, receber);
   curl_setopt(c, OPT_WRITEDATA, &b);
   opcoesComuns(c, (unsigned long)(segundos > 0 ? segundos : 20) * 1000UL);
+  if(redeParar)ligarVigia(c,&vigia,(unsigned long)(segundos > 0 ? segundos : 20)*1000UL);
   if (seguro) {
     // OAuth credentials require authenticated TLS and never follow redirects.
     curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
