@@ -92,7 +92,7 @@ static unsigned vod_revision;
 static int vod_lazy, vod_failed, vod_cache_checked, vod_begin_pending;
 static char vod_cache_key[65], vod_work_key[65], vod_request_id[64];
 static int vod_request_kind;
-static char vod_done[2][G5_GROUPS][64];
+static char (*vod_done[2])[64];
 static int vod_done_count[2];
 static void vod_begin(void);
 static void vod_tick(void);
@@ -156,6 +156,7 @@ static void save_rules(void);
 static void clear_catalog(void){
   worker_cancel=1;catalog_generation++;vod_begin_pending=0;
   /* Detached worker retains staging until ready; UI never waits for transport. */
+  for(int k=0;k<2;k++){free(vod_done[k]);vod_done[k]=NULL;}
   free(inventory);free(series_catalog);inventory=series_catalog=NULL;count=total=series_count=0;source_loaded=categories_missing=0;vod_lazy=vod_failed=vod_cache_checked=0;memset(vod_done_count,0,sizeof vod_done_count);vod_selected_slot=-1;vod_revision++;vod_free(&vod_data);free(vod_order);free(vod_layout);vod_order=NULL;vod_layout=NULL;vod_size=vod_rows=0;}
 static void gs_reset(void);
 static void context(void){
@@ -1668,8 +1669,12 @@ void g5ui_update(void){
           vod_free(&vod_data);vod_data=vod_pending;memset(&vod_pending,0,sizeof vod_pending);
           vod_rebuild();focus=old_focus;vod_scroll=old_scroll;
           source_loaded=operation!=8;vod_failed=!worker_ok;
-          if(operation==7&&vod_done_count[vod_request_kind]<G5_GROUPS)
-            snprintf(vod_done[vod_request_kind][vod_done_count[vod_request_kind]++],64,"%s",vod_request_id);
+          if(operation==7){
+            int k=vod_request_kind;
+            char (*done)[64]=realloc(vod_done[k],(vod_done_count[k]+1)*sizeof *done);
+            if(!done)vod_failed=1;
+            else{vod_done[k]=done;snprintf(done[vod_done_count[k]++],64,"%s",vod_request_id);}
+          }
           for(int r=0;r<vod_data.nrows&&group_count<G5_GROUPS;r++){
             const char *name=vod_data.rows[r].name;int found=0;
             for(int g=0;g<group_count;g++)found|=!strcmp(groups[g],name);

@@ -7,15 +7,29 @@
 #include <stdlib.h>
 #include <stdio.h>
 static atomic_int requests, full_lists, category_requests, fail_items, empty_leading;
+static int many_categories;
+static atomic_int category_hits[2][300];
 static char *fixture_request(const char *server,const char *user,const char *password,const char *action,int seconds,int *status){
   (void)server;(void)user;(void)password;(void)seconds;
   atomic_fetch_add(&requests,1);*status=200;
   if(strstr(action,"categories")){
     atomic_fetch_add(&category_requests,1);
+    if(many_categories){
+      char *body=malloc(24000);assert(body);size_t n=0;body[n++]='[';
+      for(int i=0;i<300;i++)n+=snprintf(body+n,24000-n,"%s{\"category_id\":%d,\"category_name\":\"Category %d\"}",i?",":"",i+1,i+1);
+      strcpy(body+n,"]");return body;
+    }
     return strdup("[{\"category_id\":7,\"category_name\":\"Drama\"},{\"category_id\":8,\"category_name\":\"Adventure\"},{\"category_id\":9,\"category_name\":\"Mystery\"}]");
   }
   if(!strstr(action,"category_id=")){atomic_fetch_add(&full_lists,1);*status=413;return NULL;}
   if(atomic_load(&fail_items)){*status=503;return NULL;}
+  if(many_categories){
+    int category=atoi(strstr(action,"category_id=")+12),kind=!strncmp(action,"get_series",10);
+    assert(category>=1&&category<=300);
+    atomic_fetch_add(&category_hits[kind][category-1],1);
+    if(category!=300)return strdup("[]");
+    return strdup("[{\"stream_id\":300,\"series_id\":300,\"name\":\"Final category title\",\"category_id\":300}]");
+  }
   /* Slow provider: UI must keep drawing while this worker waits. */
   SDL_Delay(80);
   char *body=malloc(900000);assert(body);size_t n=0;body[n++]='[';
@@ -94,6 +108,22 @@ int main(int argc,char **argv){
     while(atomic_load(&busy))pump();
     assert(vod_rows==1&&vod_done_count[0]==3);
     puts("VOD empty leading categories: PASS");return 0;
+  }
+  if(argc>1&&!strcmp(argv[1],"many")){
+    many_categories=1;
+    for(int k=0;k<2;k++){
+      clear_catalog();draft.movies=!k;draft.series=k;
+      strcpy(query,"Final category title");g5ui_open(k?"vod-series":"vod-filmes");
+      Uint32 began=SDL_GetTicks();
+      while((vod_done_count[k]<300||atomic_load(&busy))&&SDL_GetTicks()-began<10000)pump();
+      assert(vod_done_count[k]==300&&"search must complete all 300 categories");
+      assert(vod_size==1&&!strcmp(vod_item(vod_order[0])->name,"Final category title"));
+      for(int i=0;i<10;i++)pump();
+      for(int i=0;i<300;i++)assert(atomic_load(&category_hits[k][i])==1&&"each category must be fetched exactly once");
+      assert(!atomic_load(&full_lists));
+      printf("VOD 300-category search (%s): PASS\n",k?"series":"movies");
+    }
+    clear_catalog();return 0;
   }
   if(argc>1&&!strcmp(argv[1],"search")){
     for(int k=0;k<2;k++){
