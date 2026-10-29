@@ -53,6 +53,8 @@ static void heroTempoInicio(int indice) {
 #include "telefoneui.h"
 #include "ajustes.h"
 #include "cwordem.h"
+#include "vaitocar.h"
+#include "plrui.h"
 #include "catalogo.h"
 #include "artehero.h"
 #include "logotitulo.h"
@@ -5074,11 +5076,28 @@ static void desenhaCopiaRetrato(const CatItem *ci, int principal, float cx, floa
   // a nota ao lado no da meta, como no mock. Larguras em unidades da home.
   const char *selo = ci->classificacao[0] ? ci->classificacao : NULL;
   int nota = ajustes_hero_notas() ? imdbnota_obter(ci->imdb, ci->nota, serie) : 0;
-  float wSelo = 0.0f, wMarca = 0.0f, kP, kG, kM;
-  TxtLinha ln = {0}, lm = {0};
+  VaiTocar vt;
+  vt_montar(&vt, ci->imdb, temEp ? ci->temporada : 0, temEp ? ci->episodio : 0);
+  char qualidade[128] = "", estado[80] = "";
+  if (vt.tem) {
+    vt.idiomas[0] = vt.tamanho[0] = 0;
+    if (!strcmp(vt.hdr, "Dolby Vision")) snprintf(vt.hdr, sizeof vt.hdr, "DV");
+    vt_chip_texto(&vt, qualidade, sizeof qualidade);
+  }
+  char rawStatus[32];
+  const char *status = extras_status_titulo(ci->imdb, rawStatus, sizeof rawStatus)
+    ? desc_status_chave(rawStatus, serie) : NULL;
+  if (status) idioma_maiusc(estado, sizeof estado, i18n(status));
+  float wSelo = 0.0f, wMarca = 0.0f, kP, kG, kM, wEstado = 0, wQualidade = 0;
+  TxtLinha ln = {0}, lm = {0}, le = {0}, lq = {0};
   kP = retEm(fP, eh);
   if (selo) wSelo = badge_largura(selo) / kP;
   if (nota > 0) wMarca = badge_imdb_marca(0, 0, 0.0f) / kP;
+  if (estado[0]) { le = txt_linha(TXT_MINI, estado, 235,235,235,255); wEstado = le.w / kP + retPt(10); }
+  if (qualidade[0]) {
+    lq = txt_linha_corta(TXT_MINI, qualidade, 225,227,232,255, pw * kP * .42f);
+    wQualidade = lq.w / kP + retPt(20);
+  }
   kG = retEm(fG, eh);
   if (nota > 0) { char t[8]; badge_nota_texto(t, sizeof t, nota); ln = txt_linha(TXT_CAPTION2, t, 235, 235, 235, 255); }
   kM = retEm(fMeta, eh);
@@ -5086,7 +5105,7 @@ static void desenhaCopiaRetrato(const CatItem *ci, int principal, float cx, floa
   gfx_escala_sair(eh);
   const float gSelo = retPt(8.0f), gNota = retPt(5.0f);
   float wNota = nota > 0 ? wMarca + gNota + (float)ln.w / kG : 0.0f;
-  int temSelos = wSelo > 0.0f || wNota > 0.0f;
+  int temSelos = wSelo > 0.0f || wNota > 0.0f || wEstado > 0 || wQualidade > 0;
 
   // De baixo para cima: discos, pilula, selos, meta, logo.
   float yDisco = base - dC;
@@ -5134,8 +5153,16 @@ static void desenhaCopiaRetrato(const CatItem *ci, int principal, float cx, floa
     gfx_escala_sair(eh);
   }
   if (temSelos) {
-    float x = cx - (wSelo + wNota + (wSelo > 0.0f && wNota > 0.0f ? gSelo : 0.0f)) * 0.5f;
+    int nSelos = (wSelo > 0) + (wNota > 0) + (wEstado > 0) + (wQualidade > 0);
+    float x = cx - (wSelo + wNota + wEstado + wQualidade + (nSelos - 1) * gSelo) * .5f;
     float yc = ySelo + hSelo * 0.5f;
+    if (wEstado > 0) {
+      plrui_material_plano((GfxRect){x,ySelo,wEstado,hSelo},retPt(3),a);
+      retEm(fP, eh);
+      txt_desenhar_alpha(le, (x + retPt(5))*kP, yc*kP-le.h*.5f,a);
+      gfx_escala_sair(eh);
+      x += wEstado + gSelo;
+    }
     retEm(fP, eh);
     if (selo) { badge_desenhar(x * kP, yc * kP - BADGE_H * 0.5f, selo, BADGE_NEUTRO, a); x += wSelo + gSelo; }
     if (nota > 0) badge_imdb_marca(x * kP, yc * kP - BADGE_H * 0.5f, a);
@@ -5144,6 +5171,14 @@ static void desenhaCopiaRetrato(const CatItem *ci, int principal, float cx, floa
       txt_desenhar_alpha(ln, (x + wMarca + gNota) * kG, yc * kG - ln.h * 0.5f, a);
     }
     gfx_escala_sair(eh);
+    x += wNota + (wNota > 0 ? gSelo : 0);
+    if (wQualidade > 0) {
+      plrui_material_plano((GfxRect){x,ySelo,wQualidade,hSelo},hSelo*.5f,a);
+      gfx_cor((GfxRect){x+retPt(4),yc-retPt(2),retPt(4),retPt(4)},.5f,.3f,.85f,.45f,a);
+      retEm(fP, eh);
+      txt_desenhar_alpha(lq,(x+retPt(12))*kP,yc*kP-lq.h*.5f,a);
+      gfx_escala_sair(eh);
+    }
   }
 
   // Primario: a superficie da pilula primaria do app (realce) com o triangulo

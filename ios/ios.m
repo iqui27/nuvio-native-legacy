@@ -243,7 +243,14 @@ static NuvioPainel *painelAtual(void) {
 // A tap on the folded capsule (the active tab) is the explicit interaction
 // that opens it; a tap on another tab goes there and folds it again.
 - (BOOL)tabBarController:(UITabBarController *)t shouldSelectTab:(UITab *)tab {
-  if (tab == t.selectedTab) { abasDobrar(!abasAbertas); return NO; }
+  if (tab == t.selectedTab) {
+    if (!strcmp(telaAnt, "detalhe")) {
+      NSUInteger i = [t.tabs indexOfObject:tab];
+      if (i < (NSUInteger)N_ABAS) destinoPedido = TAB_DESTINO[i];
+      abasDobrar(0);
+    } else abasDobrar(!abasAbertas);
+    return NO;
+  }
   return YES;
 }
 - (void)tabBarController:(UITabBarController *)t didSelectTab:(UITab *)tab previousTab:(UITab *)ant {

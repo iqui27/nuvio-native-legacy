@@ -72,7 +72,10 @@ static void triCabecalho(void) {
   static const char *const icones[] = { "aj_search", "aj_wand-sparkles", "aj_rotate-ccw", "aj_sparkles" };
   static const char *const rot[] = { "Buscar ajuste", "Predefinições", "Diferente do padrão", "O que o Nuvio faz?" };
   float x = triX0(), y = 112.0f, xd = triXFim(), ar, ag, ab;
-  if (ajRetrato()) xd -= nv_inset_d / ajustes_tamanho_ajustes() + triX0();
+  if (ajRetrato()) {
+    xd -= nv_inset_d / ajustes_tamanho_ajustes() + triX0();
+    y = fmaxf(y, (nv_inset_t + 112.0f) / ajustes_tamanho_ajustes());
+  }
   char n[TRI_C_N][24];
   int i, difs = 0;
   ajustes_acento(&ar, &ag, &ab);
@@ -82,7 +85,8 @@ static void triCabecalho(void) {
   if (!menu_pilula_titulo()) {
     const ContaPerfil *p = perfis_item_ativo();
     char k[160];
-    TxtLinha t = ajTxt(TXT_V2_TIT, "Ajustes");
+    float largura = ajRetrato() ? fmaxf(1, xd - x - 4 * 68.0f) : NV_VTELA_W;
+    TxtLinha t = ajTxtC(TXT_V2_TIT, "Ajustes", largura);
     if (p && p->nome[0]) snprintf(k, sizeof k, "Nuvio · %s", p->nome);
     else snprintf(k, sizeof k, "Nuvio");
     ajKicker(k, x, y, 1);
@@ -670,6 +674,7 @@ static void triRodape(void) {
   // Confirmar/Cancelar do 2.0.3 (aj2RodapeA3), alvos de toque de verdade.
   if (ajPontInline) { ajToqueBotoes(xd, yc, 1.0f); return; }
 #endif
+  if (ajTelaCheia()) return;
   if (uxEditor) { d[0] = (AjDica){ "OK", "Confirmar" }; d[1] = (AjDica){ "Voltar", "Cancelar" }; nd = 2; }
   else if (triUtil) { d[0] = (AjDica){ "OK", "Abrir" }; d[1] = (AjDica){ "↑ ↓", "Navegar" }; d[2] = (AjDica){ "Voltar", "Sair" }; nd = 3; }
   else if (triIlha == TRI_SECOES) { d[0] = (AjDica){ "OK", "Entrar" }; d[1] = (AjDica){ "↑ ↓", "Navegar" }; d[2] = (AjDica){ "Voltar", "Sair" }; nd = 3; }

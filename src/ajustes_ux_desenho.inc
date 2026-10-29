@@ -1441,6 +1441,7 @@ static float ajDicasLargura(const AjDica *d, int n) {
 }
 // Rodape de dicas de uma ilha: fio de 7% e as teclas, com o fundo em yBase.
 static void ajDicas(const AjDica *d, int n, float x, float yBase, float w, float a) {
+  if (ajTelaCheia()) return;
   gfx_cor((GfxRect){ x, yBase - 30.0f - 18.0f, w, 1 }, 0, 1, 1, 1, 0.07f * a);
   ajDicasLinha(d, n, x + 6.0f, yBase - 30.0f, a);
 }
@@ -1448,6 +1449,7 @@ static void ajDicas(const AjDica *d, int n, float x, float yBase, float w, float
 // Como ajDicas, mas quebra em mais de uma linha quando as teclas nao cabem em
 // `w` (alemao, russo): a ultima linha fica rente a yBase e as outras acima.
 static void ajDicasQuebra(const AjDica *d, int n, float x, float yBase, float w, float a) {
+  if (ajTelaCheia()) return;
   int ini[8], nl = 0, i = 0, r;
   while (i < n && nl < 8) {
     int j = i + 1;

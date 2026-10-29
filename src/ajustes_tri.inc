@@ -257,7 +257,7 @@ static int triSecoesEvento(SDL_Keycode k) {
     if (triSecFoco < nSecoes) { triSubmenu = -1; triSecFoco++; if (!triParental(triSecFoco)) focarSecao(triSecFoco); }
     return 1;
   }
-  if (uxOk(k) || k == SDLK_RIGHT) { triEntrar(triSecFoco); return 1; }
+  if (uxOk(k) || (!ajRetrato() && k == SDLK_RIGHT)) { triEntrar(triSecFoco); return 1; }
   return 1;
 }
 static int triListaEvento(SDL_Keycode k) {
