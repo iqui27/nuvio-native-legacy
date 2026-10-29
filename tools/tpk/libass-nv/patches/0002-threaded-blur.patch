@@ -1,0 +1,522 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: nv <noreply@anthropic.com>
+Date: Mon, 26 Oct 2026 12:00:00 +0100
+Subject: [PATCH 2/3] libass: NEON blur stripe pipeline split across helper
+ threads
+
+
+diff --git a/libass/arm/neon32.c b/libass/arm/neon32.c
+index 7ffec32..e656db7 100644
+--- a/libass/arm/neon32.c
++++ b/libass/arm/neon32.c
+@@ -31,6 +31,7 @@
+  */
+ 
+ #include <arm_neon.h>
++#include <stdlib.h>
+ #include <string.h>
+ 
+ #include "ass_rasterizer.h"
+@@ -194,6 +195,11 @@ static void ass_be_blur_neon32(uint8_t *restrict buf, ptrdiff_t stride,
+ /* ------------------------------------------------------------------------ */
+ /* Gaussian blur stripe pipeline (c/blur_template.h, ALIGNMENT 16)          */
+ /* One stripe line is 8 int16 = one Q register.                             */
++/*                                                                          */
++/* Every filter is written for a RANGE of output stripes (or rows for      */
++/* unpack): each output stripe depends only on the read-only source, so    */
++/* ranges can run on different cores and the result is byte-for-byte the   */
++/* same as one pass (nv32_par below). Arithmetic is the C engine's.         */
+ 
+ #define N32_STRIPE 8
+ #define N32_MASK   7
+@@ -210,50 +216,213 @@ static inline int16x8_t nv32_line(const int16_t *ptr, size_t offs, size_t size)
+     return vld1q_s16(nv32_get_line(ptr, offs, size));
+ }
+ 
+-static void ass_stripe_unpack16_neon32(int16_t *restrict dst, const uint8_t *restrict src,
+-                                       ptrdiff_t src_stride, size_t width, size_t height)
++/* ---- small worker pool --------------------------------------------------- */
++
++#include <pthread.h>
++
++#define NV32_MAX_THREADS 4
++
++typedef void Nv32Part(const void *job, size_t from, size_t to);
++
++static struct {
++    pthread_mutex_t lock, call;     // call: one dispatcher at a time
++    pthread_cond_t go, done;
++    int started, wanted;            // helper threads alive / wanted in total (incl. caller)
++    unsigned gen;
++    int pending;
++    Nv32Part *fn;
++    const void *job;
++    size_t n, parts;
++} nv32_pool = {
++    PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER,
++    PTHREAD_COND_INITIALIZER, PTHREAD_COND_INITIALIZER,
++    0, 1, 0, 0, NULL, NULL, 0, 0
++};
++
++static void nv32_run_part(Nv32Part *fn, const void *job, size_t n, size_t parts, size_t k)
+ {
+-    for (size_t y = 0; y < height; y++) {
++    size_t from = n * k / parts, to = n * (k + 1) / parts;
++    if (to > from)
++        fn(job, from, to);
++}
++
++static void *nv32_helper(void *arg)
++{
++    size_t k = (size_t) (uintptr_t) arg;   // part index 1..
++    unsigned seen = 0;
++    pthread_mutex_lock(&nv32_pool.lock);
++    for (;;) {
++        while (nv32_pool.gen == seen)
++            pthread_cond_wait(&nv32_pool.go, &nv32_pool.lock);
++        seen = nv32_pool.gen;
++        Nv32Part *fn = nv32_pool.fn;
++        const void *job = nv32_pool.job;
++        size_t n = nv32_pool.n, parts = nv32_pool.parts;
++        int mine = k < parts;
++        pthread_mutex_unlock(&nv32_pool.lock);
++        if (mine)
++            nv32_run_part(fn, job, n, parts, k);
++        pthread_mutex_lock(&nv32_pool.lock);
++        if (mine && --nv32_pool.pending == 0)
++            pthread_cond_signal(&nv32_pool.done);
++    }
++    return NULL;
++}
++
++int ass_nv32_set_threads(int n)
++{
++    if (n < 1) n = 1;
++    if (n > NV32_MAX_THREADS) n = NV32_MAX_THREADS;
++    pthread_mutex_lock(&nv32_pool.call);
++    pthread_mutex_lock(&nv32_pool.lock);
++    while (nv32_pool.started + 1 < n) {
++        pthread_t t;
++        pthread_attr_t at;
++        pthread_attr_init(&at);
++        pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
++        int ok = pthread_create(&t, &at, nv32_helper,
++                                (void *) (uintptr_t) (nv32_pool.started + 1)) == 0;
++        pthread_attr_destroy(&at);
++        if (!ok)
++            break;
++        nv32_pool.started++;
++    }
++    if (n > nv32_pool.started + 1)
++        n = nv32_pool.started + 1;
++    nv32_pool.wanted = n;
++    pthread_mutex_unlock(&nv32_pool.lock);
++    pthread_mutex_unlock(&nv32_pool.call);
++    return n;
++}
++
++int ass_nv32_get_threads(void)
++{
++    return __atomic_load_n(&nv32_pool.wanted, __ATOMIC_RELAXED);
++}
++
++static size_t nv32_par_min = 65536;
++
++/* Runs fn over [0, n) split in parts. `work` is the number of int16 lanes
++ * touched; small jobs stay on the calling thread (waking helpers costs more). */
++static void nv32_par(Nv32Part *fn, const void *job, size_t n, size_t work)
++{
++    int threads = __atomic_load_n(&nv32_pool.wanted, __ATOMIC_RELAXED);
++    size_t parts = (size_t) threads;
++    if (parts > n)
++        parts = n;
++    if (parts <= 1 || work < nv32_par_min || pthread_mutex_trylock(&nv32_pool.call)) {
++        fn(job, 0, n);
++        return;
++    }
++    pthread_mutex_lock(&nv32_pool.lock);
++    nv32_pool.fn = fn;
++    nv32_pool.job = job;
++    nv32_pool.n = n;
++    nv32_pool.parts = parts;
++    nv32_pool.pending = (int) parts - 1;
++    nv32_pool.gen++;
++    pthread_cond_broadcast(&nv32_pool.go);
++    pthread_mutex_unlock(&nv32_pool.lock);
++
++    nv32_run_part(fn, job, n, parts, 0);
++
++    pthread_mutex_lock(&nv32_pool.lock);
++    while (nv32_pool.pending > 0)
++        pthread_cond_wait(&nv32_pool.done, &nv32_pool.lock);
++    pthread_mutex_unlock(&nv32_pool.lock);
++    pthread_mutex_unlock(&nv32_pool.call);
++}
++
++typedef struct {
++    int16_t *dst;
++    const int16_t *src;
++    size_t w, h;
++    const int16_t *param;
++} Nv32Job;
++
++#define N32_STRIPES(w) (((w) + N32_MASK) / N32_STRIPE)
++
++/* ---- unpack / pack -------------------------------------------------------- */
++
++typedef struct {
++    int16_t *dst;
++    const uint8_t *src;
++    ptrdiff_t stride;
++    size_t width, height;
++} Nv32Unpack;
++
++static void nv32_unpack_rows(const void *jv, size_t y0, size_t y1)
++{
++    const Nv32Unpack *j = jv;
++    int16_t *dst = j->dst + y0 * N32_STRIPE;
++    const uint8_t *src = j->src + y0 * j->stride;
++    for (size_t y = y0; y < y1; y++) {
+         int16_t *ptr = dst;
+-        for (size_t x = 0; x < width; x += N32_STRIPE) {
++        for (size_t x = 0; x < j->width; x += N32_STRIPE) {
+             uint8x8_t s = vld1_u8(src + x);
+             uint8x8x2_t z = vzip_u8(s, s);  // s * 257 in each 16-bit lane
+             uint16x8_t v = vreinterpretq_u16_u8(vcombine_u8(z.val[0], z.val[1]));
+             vst1q_s16(ptr, vreinterpretq_s16_u16(vrshrq_n_u16(v, 2)));
+-            ptr += N32_STRIPE * height;
++            ptr += N32_STRIPE * j->height;
+         }
+         dst += N32_STRIPE;
+-        src += src_stride;
++        src += j->stride;
+     }
+ }
+ 
+-static void ass_stripe_pack16_neon32(uint8_t *restrict dst, ptrdiff_t dst_stride,
+-                                     const int16_t *restrict src, size_t width, size_t height)
++static void ass_stripe_unpack16_neon32(int16_t *restrict dst, const uint8_t *restrict src,
++                                       ptrdiff_t src_stride, size_t width, size_t height)
++{
++    Nv32Unpack j = { dst, src, src_stride, width, height };
++    nv32_par(nv32_unpack_rows, &j, height, N32_STRIPES(width) * N32_STRIPE * height);
++}
++
++typedef struct {
++    uint8_t *dst;
++    ptrdiff_t stride;
++    const int16_t *src;
++    size_t width, height;
++} Nv32Pack;
++
++static void nv32_pack_stripes(const void *jv, size_t s0, size_t s1)
+ {
+     static const int16_t dither[16] = {
+          8, 40,  8, 40,  8, 40,  8, 40,
+         56, 24, 56, 24, 56, 24, 56, 24,
+     };
++    const Nv32Pack *j = jv;
+     const int16x8_t d0 = vld1q_s16(dither), d1 = vld1q_s16(dither + 8);
+-
+-    for (size_t x = 0; x < width; x += N32_STRIPE) {
++    const int16_t *src = j->src + s0 * N32_STRIPE * j->height;
++    uint8_t *dst = j->dst + s0 * N32_STRIPE;
++    for (size_t s = s0; s < s1; s++) {
+         uint8_t *ptr = dst;
+-        for (size_t y = 0; y < height; y++) {
++        for (size_t y = 0; y < j->height; y++) {
+             int16x8_t v = vld1q_s16(src);
+             int16x8_t t = vaddq_s16(vsubq_s16(v, vshrq_n_s16(v, 8)), (y & 1) ? d1 : d0);
+             vst1_u8(ptr, vmovn_u16(vshrq_n_u16(vreinterpretq_u16_s16(t), 6)));
+-            ptr += dst_stride;
++            ptr += j->stride;
+             src += N32_STRIPE;
+         }
+         dst += N32_STRIPE;
+     }
+-    size_t left = dst_stride - ((width + N32_MASK) & ~(size_t) N32_MASK);
++}
++
++static void ass_stripe_pack16_neon32(uint8_t *restrict dst, ptrdiff_t dst_stride,
++                                     const int16_t *restrict src, size_t width, size_t height)
++{
++    Nv32Pack j = { dst, dst_stride, src, width, height };
++    size_t n = N32_STRIPES(width);
++    nv32_par(nv32_pack_stripes, &j, n, n * N32_STRIPE * height);
++    dst += n * N32_STRIPE;
++    size_t left = dst_stride - n * N32_STRIPE;
+     for (size_t y = 0; y < height; y++) {
+         memset(dst, 0, left);
+         dst += dst_stride;
+     }
+ }
+ 
++/* ---- shrink / expand ------------------------------------------------------ */
++
+ // shrink_func of c_blur.c on unsigned lanes (values are in 0..0x4000)
+ static inline uint16x8_t nv32_shrink(uint16x8_t p1p, uint16x8_t p1n,
+                                      uint16x8_t z0p, uint16x8_t z0n,
+@@ -269,19 +438,18 @@ static inline uint16x8_t nv32_shrink(uint16x8_t p1p, uint16x8_t p1n,
+     return vrshrq_n_u16(r, 1);
+ }
+ 
+-static void ass_shrink_horz16_neon32(int16_t *restrict dst, const int16_t *restrict src,
+-                                     size_t src_width, size_t src_height)
++static void nv32_shrink_horz_r(const void *jv, size_t s0, size_t s1)
+ {
+-    size_t dst_width = (src_width + 5) >> 1;
+-    size_t size = ((src_width + N32_MASK) & ~(size_t) N32_MASK) * src_height;
+-    size_t step = N32_STRIPE * src_height;
+-
+-    size_t offs = 0;
+-    for (size_t x = 0; x < dst_width; x += N32_STRIPE) {
+-        for (size_t y = 0; y < src_height; y++) {
+-            uint16x8_t a = vreinterpretq_u16_s16(nv32_line(src, offs - step, size));
+-            uint16x8_t b = vreinterpretq_u16_s16(nv32_line(src, offs, size));
+-            uint16x8_t c = vreinterpretq_u16_s16(nv32_line(src, offs + step, size));
++    const Nv32Job *j = jv;
++    size_t size = N32_STRIPES(j->w) * N32_STRIPE * j->h;
++    size_t step = N32_STRIPE * j->h;
++    size_t offs = 2 * s0 * step;
++    int16_t *dst = j->dst + s0 * step;
++    for (size_t s = s0; s < s1; s++) {
++        for (size_t y = 0; y < j->h; y++) {
++            uint16x8_t a = vreinterpretq_u16_s16(nv32_line(j->src, offs - step, size));
++            uint16x8_t b = vreinterpretq_u16_s16(nv32_line(j->src, offs, size));
++            uint16x8_t c = vreinterpretq_u16_s16(nv32_line(j->src, offs + step, size));
+             uint16x8x2_t bc = vuzpq_u16(b, c);  // ptr[2k], ptr[2k + 1]
+             uint16x8x2_t aa = vuzpq_u16(a, a);  // lanes 6, 7: ptr[-4], ptr[-2] / ptr[-3], ptr[-1]
+             uint16x8_t r = nv32_shrink(vextq_u16(aa.val[0], bc.val[0], 6),
+@@ -297,13 +465,22 @@ static void ass_shrink_horz16_neon32(int16_t *restrict dst, const int16_t *restr
+     }
+ }
+ 
+-static void ass_shrink_vert16_neon32(int16_t *restrict dst, const int16_t *restrict src,
++static void ass_shrink_horz16_neon32(int16_t *restrict dst, const int16_t *restrict src,
+                                      size_t src_width, size_t src_height)
+ {
+-    size_t dst_height = (src_height + 5) >> 1;
+-    size_t step = N32_STRIPE * src_height;
++    Nv32Job j = { dst, src, src_width, src_height, NULL };
++    size_t n = N32_STRIPES((src_width + 5) >> 1);
++    nv32_par(nv32_shrink_horz_r, &j, n, n * N32_STRIPE * src_height * 3);
++}
+ 
+-    for (size_t x = 0; x < src_width; x += N32_STRIPE) {
++static void nv32_shrink_vert_r(const void *jv, size_t s0, size_t s1)
++{
++    const Nv32Job *j = jv;
++    size_t dst_height = (j->h + 5) >> 1;
++    size_t step = N32_STRIPE * j->h;
++    const int16_t *src = j->src + s0 * step;
++    int16_t *dst = j->dst + s0 * N32_STRIPE * dst_height;
++    for (size_t s = s0; s < s1; s++) {
+         size_t offs = 0;
+         for (size_t y = 0; y < dst_height; y++) {
+ #define L(o) vreinterpretq_u16_s16(nv32_line(src, offs + (o), step))
+@@ -319,6 +496,14 @@ static void ass_shrink_vert16_neon32(int16_t *restrict dst, const int16_t *restr
+     }
+ }
+ 
++static void ass_shrink_vert16_neon32(int16_t *restrict dst, const int16_t *restrict src,
++                                     size_t src_width, size_t src_height)
++{
++    Nv32Job j = { dst, src, src_width, src_height, NULL };
++    size_t n = N32_STRIPES(src_width);
++    nv32_par(nv32_shrink_vert_r, &j, n, n * N32_STRIPE * src_height * 3);
++}
++
+ // expand_func of c_blur.c: returns rp in *rp and rn in *rn
+ static inline void nv32_expand(uint16x8_t *rp, uint16x8_t *rn,
+                                uint16x8_t p1, uint16x8_t z0, uint16x8_t n1)
+@@ -328,18 +513,19 @@ static inline void nv32_expand(uint16x8_t *rp, uint16x8_t *rn,
+     *rn = vrhaddq_u16(vhaddq_u16(r, n1), z0);
+ }
+ 
+-static void ass_expand_horz16_neon32(int16_t *restrict dst, const int16_t *restrict src,
+-                                     size_t src_width, size_t src_height)
++/* Iteration i of the C loop "for (x = 8; x < dst_width; x += 16)" reads source
++ * stripe i (and i - 1) and writes destination stripes 2i and 2i + 1. */
++static void nv32_expand_horz_r(const void *jv, size_t i0, size_t i1)
+ {
+-    size_t dst_width = 2 * src_width + 4;
+-    size_t size = ((src_width + N32_MASK) & ~(size_t) N32_MASK) * src_height;
+-    size_t step = N32_STRIPE * src_height;
+-
+-    size_t offs = 0;
+-    for (size_t x = N32_STRIPE; x < dst_width; x += 2 * N32_STRIPE) {
+-        for (size_t y = 0; y < src_height; y++) {
+-            uint16x8_t a = vreinterpretq_u16_s16(nv32_line(src, offs - step, size));
+-            uint16x8_t b = vreinterpretq_u16_s16(nv32_line(src, offs, size));
++    const Nv32Job *j = jv;
++    size_t size = N32_STRIPES(j->w) * N32_STRIPE * j->h;
++    size_t step = N32_STRIPE * j->h;
++    size_t offs = i0 * step;
++    int16_t *dst = j->dst + 2 * i0 * step;
++    for (size_t i = i0; i < i1; i++) {
++        for (size_t y = 0; y < j->h; y++) {
++            uint16x8_t a = vreinterpretq_u16_s16(nv32_line(j->src, offs - step, size));
++            uint16x8_t b = vreinterpretq_u16_s16(nv32_line(j->src, offs, size));
+             uint16x8_t rp, rn;
+             nv32_expand(&rp, &rn, vextq_u16(a, b, 6), vextq_u16(a, b, 7), b);
+             uint16x8x2_t z = vzipq_u16(rp, rn);
+@@ -350,9 +536,22 @@ static void ass_expand_horz16_neon32(int16_t *restrict dst, const int16_t *restr
+         }
+         dst += step;
+     }
++}
++
++static void ass_expand_horz16_neon32(int16_t *restrict dst, const int16_t *restrict src,
++                                     size_t src_width, size_t src_height)
++{
++    size_t dst_width = 2 * src_width + 4;
++    size_t size = N32_STRIPES(src_width) * N32_STRIPE * src_height;
++    size_t step = N32_STRIPE * src_height;
++    size_t iters = dst_width > N32_STRIPE ? (dst_width - N32_STRIPE + 2 * N32_STRIPE - 1) / (2 * N32_STRIPE) : 0;
++    Nv32Job j = { dst, src, src_width, src_height, NULL };
++    nv32_par(nv32_expand_horz_r, &j, iters, iters * 2 * step);
+     if ((dst_width - 1) & N32_STRIPE)
+         return;
+ 
++    size_t offs = iters * step;
++    dst += 2 * iters * step;
+     for (size_t y = 0; y < src_height; y++) {
+         uint16x8_t a = vreinterpretq_u16_s16(nv32_line(src, offs - step, size));
+         uint16x8_t b = vreinterpretq_u16_s16(nv32_line(src, offs, size));
+@@ -365,13 +564,14 @@ static void ass_expand_horz16_neon32(int16_t *restrict dst, const int16_t *restr
+     }
+ }
+ 
+-static void ass_expand_vert16_neon32(int16_t *restrict dst, const int16_t *restrict src,
+-                                     size_t src_width, size_t src_height)
++static void nv32_expand_vert_r(const void *jv, size_t s0, size_t s1)
+ {
+-    size_t dst_height = 2 * src_height + 4;
+-    size_t step = N32_STRIPE * src_height;
+-
+-    for (size_t x = 0; x < src_width; x += N32_STRIPE) {
++    const Nv32Job *j = jv;
++    size_t dst_height = 2 * j->h + 4;
++    size_t step = N32_STRIPE * j->h;
++    const int16_t *src = j->src + s0 * step;
++    int16_t *dst = j->dst + s0 * N32_STRIPE * dst_height;
++    for (size_t s = s0; s < s1; s++) {
+         size_t offs = 0;
+         for (size_t y = 0; y < dst_height; y += 2) {
+             uint16x8_t p1 = vreinterpretq_u16_s16(nv32_line(src, offs - 2 * N32_STRIPE, step));
+@@ -388,6 +588,14 @@ static void ass_expand_vert16_neon32(int16_t *restrict dst, const int16_t *restr
+     }
+ }
+ 
++static void ass_expand_vert16_neon32(int16_t *restrict dst, const int16_t *restrict src,
++                                     size_t src_width, size_t src_height)
++{
++    Nv32Job j = { dst, src, src_width, src_height, NULL };
++    size_t n = N32_STRIPES(src_width);
++    nv32_par(nv32_expand_vert_r, &j, n, n * N32_STRIPE * (2 * src_height + 4) * 2);
++}
++
+ /*
+  * Main parametric filters. blur_horz needs ptr[k - 2n .. k] across up to
+  * three stripe lines l0 = ptr[-16..-9], l1 = ptr[-8..-1], l2 = ptr[0..7];
+@@ -415,17 +623,16 @@ static void ass_expand_vert16_neon32(int16_t *restrict dst, const int16_t *restr
+ #define N32_TAPS8(n) N32_TAP(n, 8) N32_TAPS7(n)
+ 
+ #define N32_BLUR_HORZ(n) \
+-static void ass_blur##n##_horz16_neon32(int16_t *restrict dst, const int16_t *restrict src, \
+-                                        size_t src_width, size_t src_height, \
+-                                        const int16_t *restrict param) \
++static void nv32_blur##n##_horz_r(const void *jv, size_t s0, size_t s1) \
+ { \
+-    size_t dst_width = src_width + 2 * (n); \
+-    size_t size = ((src_width + N32_MASK) & ~(size_t) N32_MASK) * src_height; \
+-    size_t step = N32_STRIPE * src_height; \
+-    \
+-    size_t offs = 0; \
+-    for (size_t x = 0; x < dst_width; x += N32_STRIPE) { \
+-        for (size_t y = 0; y < src_height; y++) { \
++    const Nv32Job *j = jv; \
++    const int16_t *restrict src = j->src, *restrict param = j->param; \
++    size_t size = N32_STRIPES(j->w) * N32_STRIPE * j->h; \
++    size_t step = N32_STRIPE * j->h; \
++    size_t offs = s0 * step; \
++    int16_t *dst = j->dst + s0 * step; \
++    for (size_t s = s0; s < s1; s++) { \
++        for (size_t y = 0; y < j->h; y++) { \
+             int16x8_t l0 = (n) > 4 ? nv32_line(src, offs - 2 * step, size) : vdupq_n_s16(0); \
+             int16x8_t l1 = nv32_line(src, offs - step, size); \
+             int16x8_t l2 = nv32_line(src, offs, size); \
+@@ -439,6 +646,15 @@ static void ass_blur##n##_horz16_neon32(int16_t *restrict dst, const int16_t *re
+             offs += N32_STRIPE; \
+         } \
+     } \
++} \
++\
++static void ass_blur##n##_horz16_neon32(int16_t *restrict dst, const int16_t *restrict src, \
++                                        size_t src_width, size_t src_height, \
++                                        const int16_t *restrict param) \
++{ \
++    Nv32Job j = { dst, src, src_width, src_height, param }; \
++    size_t ns = N32_STRIPES(src_width + 2 * (n)); \
++    nv32_par(nv32_blur##n##_horz_r, &j, ns, ns * N32_STRIPE * src_height * (n)); \
+ }
+ 
+ N32_BLUR_HORZ(4)
+@@ -447,14 +663,15 @@ N32_BLUR_HORZ(6)
+ N32_BLUR_HORZ(7)
+ N32_BLUR_HORZ(8)
+ 
+-static inline void nv32_blur_vert(int16_t *restrict dst, const int16_t *restrict src,
+-                                  size_t src_width, size_t src_height,
+-                                  const int16_t *restrict param, const int n)
++static inline void nv32_blur_vert_r(const Nv32Job *j, size_t s0, size_t s1, const int n)
+ {
+-    size_t dst_height = src_height + 2 * n;
+-    size_t step = N32_STRIPE * src_height;
++    size_t dst_height = j->h + 2 * n;
++    size_t step = N32_STRIPE * j->h;
++    const int16_t *src = j->src + s0 * step;
++    int16_t *dst = j->dst + s0 * N32_STRIPE * dst_height;
++    const int16_t *param = j->param;
+ 
+-    for (size_t x = 0; x < src_width; x += N32_STRIPE) {
++    for (size_t s = s0; s < s1; s++) {
+         size_t offs = 0;
+         for (size_t y = 0; y < dst_height; y++) {
+             int32x4_t acc_lo = vdupq_n_s32(0x8000), acc_hi = vdupq_n_s32(0x8000);
+@@ -478,11 +695,18 @@ static inline void nv32_blur_vert(int16_t *restrict dst, const int16_t *restrict
+ }
+ 
+ #define N32_BLUR_VERT(n) \
++static void nv32_blur##n##_vert_r(const void *jv, size_t s0, size_t s1) \
++{ \
++    nv32_blur_vert_r(jv, s0, s1, n); \
++} \
++\
+ static void ass_blur##n##_vert16_neon32(int16_t *restrict dst, const int16_t *restrict src, \
+                                         size_t src_width, size_t src_height, \
+                                         const int16_t *restrict param) \
+ { \
+-    nv32_blur_vert(dst, src, src_width, src_height, param, n); \
++    Nv32Job j = { dst, src, src_width, src_height, param }; \
++    size_t ns = N32_STRIPES(src_width); \
++    nv32_par(nv32_blur##n##_vert_r, &j, ns, ns * N32_STRIPE * (src_height + 2 * (n)) * (n)); \
+ }
+ 
+ N32_BLUR_VERT(4)
+@@ -501,6 +725,15 @@ N32_BLUR_VERT(8)
+ 
+ static void ass_bitmap_engine_neon32(BitmapEngine *engine, unsigned mask)
+ {
++    /* Test hook (CI checkasm/verify only): force the threaded paths. */
++    static int env_done;
++    if (!env_done) {
++        const char *t = getenv("ASS_NV_THREADS"), *m = getenv("ASS_NV_PAR_MIN");
++        env_done = 1;
++        if (m) nv32_par_min = (size_t) strtoul(m, NULL, 10);
++        if (t) ass_nv32_set_threads(atoi(t));
++    }
++
+     if (mask & ASS_FLAG_LARGE_TILES) {
+         engine->tile_order     = 5;
+         engine->fill_solid     = ass_fill_solid_tile32_neon32;

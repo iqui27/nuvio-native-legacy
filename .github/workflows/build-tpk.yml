@@ -58,7 +58,11 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.NUVIO_TPK_CACHE }}
-          key: tpk-deps-${{ hashFiles('tools/tpk/Dockerfile', 'tools/tpk/deps.sh') }}
+          key: tpk-deps-${{ hashFiles('tools/tpk/Dockerfile', 'tools/tpk/deps.sh', 'tools/tpk/libass-nv/patches/*', 'tools/tpk/libass-nv/cflags') }}
+          # Only the libass patches changed: the rest still comes back, and
+          # tools/tpk.sh rebuilds just libass (its stamp is the patches' hash).
+          restore-keys: |
+            tpk-deps-
 
       # The static FFmpeg for DTS/TrueHD -> AC3 (tools/build-dts-ffmpeg.sh, built
       # by tools/tpk.sh into $NUVIO_TPK_CACHE/prefix-dts) takes long under ARM
@@ -100,7 +104,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ env.NUVIO_TPK_CACHE }}
-          key: tpk-deps-${{ hashFiles('tools/tpk/Dockerfile', 'tools/tpk/deps.sh') }}
+          key: tpk-deps-${{ hashFiles('tools/tpk/Dockerfile', 'tools/tpk/deps.sh', 'tools/tpk/libass-nv/patches/*', 'tools/tpk/libass-nv/cflags') }}
 
       # Only a finished FFmpeg build (tpk.sh writes .carimbo last) is cached.
       - name: Check FFmpeg (DTS) build
@@ -133,3 +137,29 @@ jobs:
           name: NuvioTpk
           path: build/tpk/*.tpk
           if-no-files-found: error
+
+      # The .tpk libass has an ARMv7 NEON bitmap engine and a threaded blur
+      # (tools/tpk/libass-nv). In the same linux/arm build image under qemu,
+      # libass's checkasm compares every NEON function with the C engine, and
+      # verify.c renders the sample scripts with the C engine and with NEON at
+      # 1 and 4 blur threads and compares every image byte for byte (plus the
+      # dialogue opacity: alpha only). Any difference fails the run; it comes
+      # after the upload so a .tpk is still there to look at.
+      - name: Verify libass NEON engine and blur threads (qemu-arm)
+        run: |
+          set -o pipefail
+          ok=1
+          docker run --rm --platform linux/arm -v "$NUVIO_TPK_CACHE:/w" -v "$PWD:/work" -w /work \
+            nuvio-tpk-sdk sh tools/tpk/libass-nv/verify.sh 2>&1 | tee verify-libass.log || ok=0
+          {
+            echo '### libass NEON engine + blur threads (qemu-arm)'
+            echo '```'
+            grep -E '^\[verify\]|identical|differ|RESULT|frames' verify-libass.log | tail -n 30
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$ok" = 1 ]; then
+            echo "::notice title=libass NEON::$(grep -E 'RESULT|total C' verify-libass.log | tr '\n' ' ')"
+          else
+            tail -n 25 verify-libass.log | sed 's/^/::error title=libass verify::/'
+            exit 1
+          fi

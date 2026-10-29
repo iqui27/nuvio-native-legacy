@@ -55,9 +55,17 @@ Libs: -L\${libdir} -lharfbuzz
 Cflags: -I\${includedir}/harfbuzz
 PC
 fi
-cd /w/src/libass-0.17.5
-if [ ! -f $P/lib/libass.a ]; then
-  make distclean >/dev/null 2>&1 || true
-  CPPFLAGS="-I$P/include" LDFLAGS="-L$P/lib" ./configure $HOST -q --prefix=$P --enable-static --disable-shared --disable-fontconfig --disable-require-system-font-provider --disable-enca --disable-libunibreak --disable-asm --enable-harfbuzz && make -j6 >/dev/null && make install >/dev/null || exit 1
+# libass do .tpk = 0.17.5 + tools/tpk/libass-nv/patches (motor NEON do armv7 e
+# cronometros por etapa), ja aplicados pelo tools/tpk.sh em /w/src/libass-nv
+# (o carimbo e o hash dos patches). Compila numa COPIA: a arvore do cache e do
+# usuario do host e o container roda como root. --disable-asm continua: o motor
+# NEON do armv7 nao depende do asm do libass (que so existe para x86/aarch64).
+NV_ASS_STAMP=$(cat /w/src/libass-nv/.nv-stamp)
+if [ ! -f $P/lib/libass.a ] || [ "$(cat $P/lib/.libass-nv 2>/dev/null)" != "$NV_ASS_STAMP" ]; then
+  rm -rf ${TMPDIR:-/tmp}/libass-nv && cp -a /w/src/libass-nv ${TMPDIR:-/tmp}/libass-nv && cd ${TMPDIR:-/tmp}/libass-nv
+  # tools/tpk/libass-nv/cflags vem depois do -O2 do $CFLAGS da imagem (o ultimo -O vale).
+  CFLAGS="$CFLAGS $(cat .nv-cflags 2>/dev/null)" CPPFLAGS="-I$P/include" LDFLAGS="-L$P/lib" ./configure $HOST -q --prefix=$P --enable-static --disable-shared --disable-fontconfig --disable-require-system-font-provider --disable-enca --disable-libunibreak --disable-asm --enable-harfbuzz && make -j6 >/dev/null && make install >/dev/null || exit 1
+  printf "%s" "$NV_ASS_STAMP" > $P/lib/.libass-nv
+  cd / && rm -rf ${TMPDIR:-/tmp}/libass-nv
 fi
 ls -la $P/lib/*.a

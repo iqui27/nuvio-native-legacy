@@ -153,6 +153,21 @@ static atomic_uint consultaLentaEm;
 static int reconPausa = -1;
 // Seek enviado sem confirmacao do host: a recuperacao retoma nele.
 static atomic_int buscaAlvoMs = -1;
+// ---- RELOGIO DA LEGENDA (dono 25/10) ------------------------------------------
+// Leituras reais da posicao, carimbadas pelo host no MEIO da consulta
+// (nv_tpk_video_posicao). Antes: depois de um seek o host guardava o ALVO como
+// posicao (a TV pula para o quadro-chave, 6,3 s antes no log de 25/10) e na
+// pausa nao relia nada; a legenda corria segundos a frente (letreiros do
+// celular no bone da menina, a caixa do INBOX fora do celular).
+static pthread_mutex_t amTrava = PTHREAD_MUTEX_INITIALIZER;
+static struct { unsigned seq; int valido, ms; double carimbo, incerteza; } am;
+static double amBusca;                 // monoAgora do ultimo EV_BUSCOU (sob amTrava)
+static atomic_int posIncerta;          // 1 = seek feito, ainda sem leitura real
+static atomic_uint incertaTick;        // SDL_GetTicks do seek (1,5 s no maximo)
+static double monoAgora(void) {
+  struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (double)ts.tv_sec + ts.tv_nsec / 1e9;
+}
 static int reconAlvoMs = -1;
 
 // CABECALHO DO MKV (#206). O player do host so da o idioma de cada faixa; o
@@ -259,6 +274,25 @@ void nv_tpk_video_registrar_faixas(FnEscolher escolher) { hEscolher = escolher; 
 __attribute__((visibility("default")))
 void nv_tpk_video_registrar_aspecto(FnAspecto janela) { hAspecto = janela; }
 
+/* Host (qualquer fio): uma leitura real da posicao. motivo 0 = a consulta de
+ * sempre (tocando), 1 = logo depois de um seek, 2 = logo depois da pausa,
+ * 3 = a pausa assentou (~300 ms depois). carimboNs = o meio da consulta no
+ * Stopwatch do .NET, que no Linux e o CLOCK_MONOTONIC em ns. */
+__attribute__((visibility("default")))
+void nv_tpk_video_posicao(int ms, int motivo, int consultaMs, long long carimboNs) {
+  double agora = monoAgora(), c = (double)carimboNs / 1e9, inc = consultaMs > 0 ? consultaMs / 2000.0 : 0.0;
+  if (!ativo || ms < 0) return;
+  if (c > agora + 0.05 || c < agora - 10.0) c = agora - inc;   // relogio diferente: o fim menos meia consulta
+  pthread_mutex_lock(&amTrava);
+  /* Consulta que COMECOU antes do ultimo seek (chega depois do EV_BUSCOU, ate
+   * 600 ms mais lenta): a posicao e a de antes do salto. Fora — ela tirava o
+   * posIncerta com a posicao velha e a legenda da outra cena aparecia. */
+  if (c - inc < amBusca) { pthread_mutex_unlock(&amTrava); return; }
+  am.ms = ms; am.carimbo = c; am.incerteza = inc; am.seq++; am.valido = 1;
+  pthread_mutex_unlock(&amTrava);
+  if (motivo <= 1) atomic_store(&posIncerta, 0);   // a TV ja disse onde caiu depois do seek
+}
+
 void video_escolher_audio(int i);
 
 static int convPossivel(void);
@@ -302,6 +336,7 @@ __attribute__((visibility("default")))
 void nv_tpk_video_faixa(int tipo, int idx, const char *lingua) {
   VideoFaixa *f;
   const char *l = lingua ? lingua : "";
+  if (!ativo) return;   // lista tardia depois de sair (como nv_tpk_video_evento)
   if (tipo == 0) { if (nNovasA >= MAX_FAIXAS) return; f = &novasA[nNovasA++]; }
   else           { if (nNovasL >= MAX_FAIXAS) return; f = &novasL[nNovasL++]; }
   memset(f, 0, sizeof *f);
@@ -318,6 +353,9 @@ void nv_tpk_video_faixas_fim(int selAudio, int selLeg) {
   // Segunda leitura (o host rele o audio com o video ja tocando, #165): so o
   // audio muda; a legenda que o app ja escolheu fica.
   int releitura = (nAudio || nLeg) && !nNovasL && nLeg;
+  // Depois de sair: a lista e do player que ja fechou; nao repovoa o menu nem
+  // dispara a ordem do audio (video_parar ja zerou tudo).
+  if (!ativo) { nNovasA = nNovasL = 0; return; }
   memcpy(faixaAudio, novasA, sizeof novasA);
   audioAtual = selAudio >= 0 ? selAudio : 0;
   if (!releitura) {
@@ -453,8 +491,13 @@ void nv_tpk_video_evento(int tipo, int a, int b) {
       break;
     }
     case EV_BUSCOU:
-      if (atomic_compare_exchange_strong(&buscaAlvoMs, &a, -1))
-        atomic_store(&legSeekChegou, 1);
+      { int alvo = a;   // the CAS writes the current value back into alvo on failure
+        if (atomic_compare_exchange_strong(&buscaAlvoMs, &alvo, -1))
+          atomic_store(&legSeekChegou, 1); }
+      // O host so sabe o ALVO aqui; onde a TV caiu chega pela proxima leitura.
+      pthread_mutex_lock(&amTrava); amBusca = monoAgora(); pthread_mutex_unlock(&amTrava);
+      atomic_store(&incertaTick, SDL_GetTicks() | 1u);
+      atomic_store(&posIncerta, 1);
       break;
     case EV_CONSULTA_LENTA: atomic_store(&consultaLentaEm, SDL_GetTicks() | 1u); break;
     case EV_PRONTO:  durMs = a; pronto = 1; break;
@@ -802,6 +845,8 @@ static void abrirSessao(void) {
   mkvass_aceitar_imagem(1);   // PGS: o app decodifica e desenha (imgsub)
   atomic_store(&temErroDetalhe, 0);
   vigiaAtiva = 0; buscaAlvoMs = -1;
+  pthread_mutex_lock(&amTrava); am.valido = 0; amBusca = 0; pthread_mutex_unlock(&amTrava);   // seq continua: o player compara
+  atomic_store(&posIncerta, 0);
   atomic_store(&vigiaReiniciar, 1);
   ativo = 1; pronto = falhou = terminou = tocando = 0;
   largura = altura = durMs = 0; bufferando = 1; bufferDesde = SDL_GetTicks(); bufPct = 0;
@@ -1334,6 +1379,9 @@ static void avaliarAudioTv(void) {
 // rotulos. Sem mutex, como o resto deste arquivo: o rotulo sai de uma vez so.
 static void sondaMkv(double pos) {
   Uint32 t = SDL_GetTicks();
+  // Player fechado: nada a casar nem a escolher (video_bombear roda em todo
+  // quadro, tambem depois do Voltar). O proximo titulo abre com video_tocar.
+  if (!ativo) return;
   if (mkvEstado == 1 && urlAtual[0] && t - mkvOlhou >= 500) {
     unsigned char *cab = NULL; long cabN = 0;
     mkvOlhou = t;
@@ -1831,6 +1879,14 @@ void video_parar(void) {
   atomic_store(&playerPreso, -2); // aviso de antes da saida nao reabre o video
   if (ativo && hParar) hParar();
   ativo = pronto = tocando = 0;
+  // AS FAIXAS SAEM COM O VIDEO (27/10). O memset do `cv` acima zerava
+  // cv.recusadas e deixava mkvN/faixasLidas/nAudio do episodio fechado: o
+  // proximo video_bombear refazia o casamento e a ordem do audio sobre a lista
+  // velha ("[mkv] contagem" e "audio pela ordem ... fica" depois do Voltar).
+  // A geracao nova faz um fioMkv ainda na rede descartar o que trouxer;
+  // video_tocar zera o mesmo ao abrir o proximo.
+  mkvGeracao++; mkvN = 0; mkvEstado = 0; faixasNovas = 0; faixasLidas = 0;
+  nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; nNovasA = nNovasL = 0;
 }
 void video_pausar(int p) {
   int estavaPausado = pausaPedida;
@@ -2124,6 +2180,36 @@ int video_busca_em_voo(void) {
          (cv.ativo && cv.seekPend) || mf.pend;
 }
 unsigned video_busca_falhas(void) { return atomic_load(&buscaFalhas); }
+int video_pos_amostra(double *pos, double *carimbo, double *incerteza, unsigned *seq) {
+  int ms; unsigned sq;
+  if (!pronto || cv.reabrindo || (cv.ativo && cv.prog && !cv.deslocOk)) return 0;
+  pthread_mutex_lock(&amTrava);
+  sq = am.valido ? am.seq : 0; ms = am.ms; *carimbo = am.carimbo; *incerteza = am.incerteza;
+  pthread_mutex_unlock(&amTrava);
+  if (!sq) return 0;
+  *pos = ms / 1000.0 + (cv.ativo && cv.prog ? cv.desloc : 0.0);
+  *seq = sq;
+  return 1;
+}
+/* Frame rate and HDR of the playing MKV (picture sync, legimagem.c).
+ * 0 = unknown (not an MKV, or the header has no DefaultDuration). */
+int video_tpk_quadro(double *fps, int *hdr) {
+  int i;
+  *fps = 0; *hdr = 0;
+  for (i = 0; i < mkvN; i++)
+    if (mkvFx[i].tipo == 1) {
+      if (mkvFx[i].quadroNs > 0) *fps = 1e9 / (double)mkvFx[i].quadroNs;
+      *hdr = mkvFx[i].transferencia == 16 || mkvFx[i].transferencia == 18 || mkvFx[i].dvPerfil > 0;
+      break;
+    }
+  return *fps > 1.0;
+}
+int video_pos_incerta(void) {
+  if (!atomic_load(&posIncerta)) return 0;
+  // Sem leitura em 1,5 s (consulta presa): volta ao de antes em vez de esconder.
+  if (SDL_GetTicks() - atomic_load(&incertaTick) > 1500u) { atomic_store(&posIncerta, 0); return 0; }
+  return 1;
+}
 double video_pos(void) {
   if (terminou && video_duracao() > 0) return video_duracao();
   return cv.reabrindo ? cv.posMantida : posReal();

@@ -30,6 +30,10 @@
 #include "faixasmkv.h"
 #define NV_ESCALA_TELA   // o arquivo inteiro mede pela tela virtual (escala.h)
 #include "escala.h"
+#ifdef NV_TPK
+#include "assperf.h"
+#include "legimagem.h"
+#endif
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
@@ -460,7 +464,6 @@ static int legendaAtiva(void) {
 static int modo;
 // Coluna dentro da folha de LEGENDA: 0 = lista, 1 = estilo.
 #define FX_COL_ESTILO 2
-#define FX_N_ESTILO   11
 static int ctl = -1;       // ESTILO: item cujo controle esta aberto (-1 = a grade)
 
 static int nLinhas(int col);
@@ -575,8 +578,9 @@ static int linhaDaLeg(int i) {
   return i;
 }
 
+static int nEst(void);
 static int nLinhas(int col) {
-  if (col == FX_COL_ESTILO) return FX_N_ESTILO;
+  if (col == FX_COL_ESTILO) return nEst();
   if (col == 0) { int n = video_n_audio(); return n; }
   return nLegendas() + 1;   // +1 pela linha "Desativada"
 }
@@ -586,11 +590,63 @@ static int nLinhas(int col) {
 // Oito linhas "rotulo: valor". OK cicla o valor e aplica NA HORA — as
 // personalizacoes abaixo usam somente metodos presentes no firmware. A ultima
 // linha restaura o conjunto inteiro sem exigir dezenas de toques no controle.
-enum { EST_FONTE = 1, EST_COR = 2, EST_RESTAURAR = 9, EST_COR_BORDA = 10 };
-static const char *const EST_ROT[FX_N_ESTILO] = {
+enum { EST_FONTE = 1, EST_COR = 2, EST_RESTAURAR = 9, EST_COR_BORDA = 10,
+#ifdef NV_TPK
+       /* ASS/SSA tracks on the .tpk (owner 26-27/10): with libass on, the
+        * column is size and opacity of the dialogue, delay, contrast, gamma,
+        * render resolution, picture sync, libass itself and Restore
+        * defaults (always the last cell). With libass off it is the ordinary
+        * column plus the libass row, Restore defaults last. */
+       EST_LIBASS, EST_ASS_TAM, EST_ASS_OPAC, EST_CONTRASTE, EST_GAMA, EST_ESCALA, EST_SINC,
+#endif
+       EST_TOTAL };
+static const char *const EST_ROT[EST_TOTAL] = {
   "Tamanho", "Fonte OpenSubtitles", "Cor", "Opacidade", "Fundo", "Posição", "Borda", "Atraso",
   "Negrito", "Restaurar padrão", "Cor da borda"
+#ifdef NV_TPK
+  , "libass", "Tamanho", "Opacidade", "Contraste", "Gama", "Resolução das legendas", "Sincronia com a imagem"
+#endif
 };
+
+/* The rows on screen (positions in the grid) -> row ids above. */
+static int estLinhas[EST_TOTAL], estNLinhas;
+#ifdef NV_TPK
+static int sincPesada;   // Picture sync: 0 = Left/Right edit normal scenes, 1 = busy scenes
+static void escolherLegenda(int i);
+static int legendaAtiva(void);
+static int estFaixaAss(void) {
+  const VideoFaixa *f = legOverlay >= 0 ? video_legenda(legOverlay) : NULL;
+  return ehAss(f) || legenda_ass_ativa() || (assrender_ativo() && !assrender_texto_simples());
+}
+#endif
+static void estMapa(void) {
+  int i;
+  estNLinhas = 0;
+#ifdef NV_TPK
+  if (estFaixaAss()) {
+    if (assperf_get(AP_LIBASS)) {
+      static const int L[] = { EST_ASS_TAM, EST_ASS_OPAC, 7, EST_CONTRASTE, EST_GAMA, EST_ESCALA, EST_SINC,
+                               EST_LIBASS, EST_RESTAURAR };
+      for (i = 0; i < (int)(sizeof L / sizeof L[0]); i++) estLinhas[estNLinhas++] = L[i];
+      return;
+    }
+    /* Restore defaults stays the last cell (owner 27/10), after libass. */
+    for (i = 0; i <= EST_COR_BORDA; i++) if (i != EST_RESTAURAR) estLinhas[estNLinhas++] = i;
+    estLinhas[estNLinhas++] = EST_LIBASS;
+    estLinhas[estNLinhas++] = EST_RESTAURAR;
+    return;
+  }
+#endif
+  for (i = 0; i <= EST_COR_BORDA; i++) estLinhas[estNLinhas++] = i;
+}
+static int nEst(void) { estMapa(); return estNLinhas; }
+static int estId(int pos) { estMapa(); return pos >= 0 && pos < estNLinhas ? estLinhas[pos] : -1; }
+static int estPos(int id) {
+  int i;
+  estMapa();
+  for (i = 0; i < estNLinhas; i++) if (estLinhas[i] == id) return i;
+  return 0;
+}
 static const char *const EST_FUNDO[5] = { "Nenhum", "Escuro 25%", "Escuro 50%",
                                           "Escuro 75%", "Escuro 100%" };
 static const char *const EST_BORDA[3] = { "Nenhuma", "Contorno", "Sombra" };
@@ -615,7 +671,12 @@ static int estCampoAss(int linha) {
 }
 static int estiloPreservadoAss(int linha) {
   int campo = estCampoAss(linha);
-  return campo && assrender_ativo() && !assrender_texto_simples() && !player_leg_estilo_tocado(campo);
+  if (!campo || !assrender_ativo() || assrender_texto_simples()) return 0;
+#ifdef NV_TPK
+  /* Styled ASS is drawn as the author made it (new engine, assperf.h). */
+  if (ASS_NOVO) return 1;
+#endif
+  return !player_leg_estilo_tocado(campo);
 }
 
 static void valorEstilo(int linha, char *dst, size_t tam) {
@@ -651,6 +712,23 @@ static void valorEstilo(int linha, char *dst, size_t tam) {
       int c = e->corBorda >= 0 && e->corBorda < VIDEO_LEG_NCORES ? e->corBorda : 0;
       snprintf(dst, tam, "%s", VIDEO_LEG_CORES_PT[c ? c - 1 : VIDEO_LEG_NCORES - 1]);
       break; }
+#ifdef NV_TPK
+    case EST_LIBASS: snprintf(dst, tam, "%s", i18n(assperf_get(AP_LIBASS) ? "Ligado" : "Desligado")); break;
+    case EST_ASS_TAM: snprintf(dst, tam, "%d%%", assperf_get(AP_ASSTAM)); break;
+    case EST_ASS_OPAC: snprintf(dst, tam, "%d%%", assperf_get(AP_ASSOPAC)); break;
+    case EST_CONTRASTE: snprintf(dst, tam, "%d", 30 - assperf_get(AP_CONTRASTE)); break;
+    case EST_GAMA: { int g = assperf_get(AP_GAMA); g = g <= 5 ? -g : 11 - g;
+      if (g) snprintf(dst, tam, "%+d", g); else snprintf(dst, tam, "%s", i18n("Desligado"));
+      break; }
+    case EST_ESCALA: { int v = assperf_get(AP_ESCALA);
+      snprintf(dst, tam, "%s", v == 5 ? i18n("Automático") : v == 2 ? "75%" : "100%");
+      break; }
+    case EST_SINC: { int lv, ps, ag;
+      legimagem_valores(&lv, &ps, &ag);
+      if (ctl == EST_SINC) snprintf(dst, tam, sincPesada ? "%d / [%d] ms" : "[%d] / %d ms", lv, ps);
+      else snprintf(dst, tam, "%d / %d ms", lv, ps);
+      break; }
+#endif
     default: dst[0] = 0; break;   // "Restaurar padrao" e acao, nao valor
   }
 }
@@ -665,8 +743,29 @@ static void ciclarEstilo(int linha) {
     case 6: e->borda   = (e->borda + 1) % 3; player_leg_estilo_tocou(PLR_LEG_BORDA); break;
     case 8: e->negrito = !e->negrito; player_leg_estilo_tocou(PLR_LEG_NEGRITO); break;
     case EST_RESTAURAR:
+#ifdef NV_TPK
+      if (estFaixaAss() && assperf_get(AP_LIBASS)) {
+        assperf_restaurar();
+        legimagem_restaurar();
+        e->atrasoMs = 0;
+        sincPesada = 0;
+        break;
+      }
+#endif
       player_leg_estilo_restaurar();
       return;
+#ifdef NV_TPK
+    case EST_ESCALA: {   // Auto -> 100 % -> 75 %
+      int v = assperf_get(AP_ESCALA);
+      assperf_definir(AP_ESCALA, v == 5 ? 0 : v == 0 ? 2 : 5);
+      return; }
+    case EST_LIBASS:
+      /* The same track again, so libass takes it (or lets it go). */
+      assperf_definir(AP_LIBASS, !assperf_get(AP_LIBASS));
+      escolherLegenda(legendaAtiva());
+      foco[FX_COL_ESTILO] = estPos(EST_LIBASS);
+      return;
+#endif
     default: return;
   }
   player_leg_estilo_mudou();
@@ -681,15 +780,26 @@ static void ciclarEstilo(int linha) {
 typedef struct { int min, max, toque, segura, teto; } EstSlider;   // max == min: sem slider
 // toque = passo de um toque; segura = passo de cada repeticao da tecla segurada;
 // teto = quantas vezes o passo pode crescer segurando (aceleracao).
-static const EstSlider EST_SL[FX_N_ESTILO] = {
+static const EstSlider EST_SL[EST_TOTAL] = {
   [0] = { 50, 300, 10, 20, 1 },                                   // Tamanho %
   [3] = { 0, 3, 1, 1, 1 },                                        // Opacidade: 25..100%
   [5] = { 0, 7, 1, 1, 1 },                                        // Posicao: 8 niveis
   [7] = { -LEGUI_ATRASO_MAX, LEGUI_ATRASO_MAX, 100, 500, 4 },     // Atraso: 0,1 s / 0,5 s
+#ifdef NV_TPK
+  [EST_ASS_TAM] = { 50, 200, 5, 10, 2 },                          // dialogue size %
+  [EST_ASS_OPAC] = { 20, 100, 5, 10, 1 },                         // dialogue opacity %
+  [EST_CONTRASTE] = { 0, 30, 1, 1, 1 },                           // the TV's numbers
+  [EST_GAMA] = { -5, 5, 1, 1, 1 },
+#endif
 };
-static int estSlider(int i) { return i >= 0 && i < FX_N_ESTILO && EST_SL[i].max > EST_SL[i].min; }
-// 0 = sem controle, 1 = slider, 2 = paleta, 3 = lista de fontes.
-static int estTipo(int i) { return estSlider(i) ? 1 : i == EST_COR || i == EST_COR_BORDA ? 2 : i == EST_FONTE ? 3 : 0; }
+static int estSlider(int i) { return i >= 0 && i < EST_TOTAL && EST_SL[i].max > EST_SL[i].min; }
+// 0 = sem controle, 1 = slider, 2 = paleta, 3 = lista de fontes, 4 = picture sync.
+static int estTipo(int i) {
+#ifdef NV_TPK
+  if (i == EST_SINC) return 4;
+#endif
+  return estSlider(i) ? 1 : i == EST_COR || i == EST_COR_BORDA ? 2 : i == EST_FONTE ? 3 : 0;
+}
 
 static int ctlVis = -1;    // o ultimo aberto: o controle continua desenhado enquanto fecha
 static int ctlSub;         // amostra / fonte com o foco
@@ -701,6 +811,12 @@ static float ctlAmostra[VIDEO_LEG_NCORES];   // 0..1: a amostra em foco cresce
 static int estLer(int i) {
   const VideoLegendaEstilo *e = player_leg_estilo();
   switch (i) {
+#ifdef NV_TPK
+    case EST_ASS_TAM: return assperf_get(AP_ASSTAM);
+    case EST_ASS_OPAC: return assperf_get(AP_ASSOPAC);
+    case EST_CONTRASTE: return 30 - assperf_get(AP_CONTRASTE);
+    case EST_GAMA: { int g = assperf_get(AP_GAMA); return g <= 5 ? -g : 11 - g; }
+#endif
     case 0: return e->tamanho;
     case 3: return 3 - (e->opacidade < 0 ? 0 : e->opacidade > 3 ? 3 : e->opacidade);
     case 5: return e->posicao;
@@ -712,6 +828,12 @@ static void estGravar(int i, int v) {
   const EstSlider *s = &EST_SL[i];
   v = v < s->min ? s->min : v > s->max ? s->max : v;
   switch (i) {
+#ifdef NV_TPK
+    case EST_ASS_TAM: assperf_definir(AP_ASSTAM, v); return;
+    case EST_ASS_OPAC: assperf_definir(AP_ASSOPAC, v); return;
+    case EST_CONTRASTE: assperf_definir(AP_CONTRASTE, 30 - v); return;
+    case EST_GAMA: assperf_definir(AP_GAMA, v == 0 ? 0 : v < 0 ? -v : 11 - v); return;
+#endif
     case 0: e->tamanho = v; break;
     case 3: e->opacidade = 3 - v; break;
     case 5: if (e->posicao != v) player_leg_estilo_tocou(PLR_LEG_POSICAO); e->posicao = v; break;
@@ -1176,9 +1298,18 @@ static int estiloTecla(SDL_Keycode k, int rep) {
   int ok = k == SDLK_RETURN || k == SDLK_KP_ENTER;
   int dx = k == SDLK_RIGHT ? 1 : k == SDLK_LEFT ? -1 : 0, dy = k == SDLK_DOWN ? 1 : k == SDLK_UP ? -1 : 0;
   ctlRep = rep ? ctlRep + 1 : 0;
+  if (*f >= nEst()) *f = nEst() - 1;
+  if (*f < 0) *f = 0;
   if (ctl >= 0) {
     int t = estTipo(ctl);
     if (voltar) { ctl = -1; return 1; }
+#ifdef NV_TPK
+    if (t == 4) {   // picture sync: Left/Right 1 ms (held: faster), OK switches normal / busy
+      if (ok) sincPesada = !sincPesada;
+      else if (dx) legimagem_ajustar(dx * (!rep ? 1 : ctlRep > 24 ? 10 : ctlRep > 8 ? 5 : 1), sincPesada);
+      return 1;
+    }
+#endif
     if (ok) { if (t > 1) estEscolher(ctlSub); ctl = -1; return 1; }
     if (t == 1) { if (dx) estPasso(ctl, dx, rep); }
     else if (t == 2) { if (dx) estEscolher((ctlSub + dx + VIDEO_LEG_NCORES) % VIDEO_LEG_NCORES); }
@@ -1192,11 +1323,12 @@ static int estiloTecla(SDL_Keycode k, int rep) {
   // A grade de FX_BARRA_COLS colunas: as quatro setas andam nela; a esquerda da
   // primeira coluna volta para a lista de legendas.
   if (dx < 0) { if (*f % FX_BARRA_COLS) (*f)--; else coluna = 1; }
-  else if (dx > 0) { if (*f % FX_BARRA_COLS < FX_BARRA_COLS - 1 && *f + 1 < FX_N_ESTILO) (*f)++; }
+  else if (dx > 0) { if (*f % FX_BARRA_COLS < FX_BARRA_COLS - 1 && *f + 1 < nEst()) (*f)++; }
   else if (dy < 0) { if (*f >= FX_BARRA_COLS) *f -= FX_BARRA_COLS; }
-  else if (dy > 0) { if (*f + FX_BARRA_COLS < FX_N_ESTILO) *f += FX_BARRA_COLS; }
+  else if (dy > 0) { if (*f + FX_BARRA_COLS < nEst()) *f += FX_BARRA_COLS; }
   else if (ok) {
-    if (estTipo(*f)) estAbrir(*f); else ciclarEstilo(*f);
+    int id = estId(*f);
+    if (estTipo(id)) estAbrir(id); else ciclarEstilo(id);
   }
   return 1;
 }
@@ -1826,7 +1958,7 @@ static void corpoLista(GfxRect c, float a) {
 // a lista (o ESQUERDA da primeira coluna).
 static void ponteiroEstilo(int i, int b) {
   (void)b;
-  if (!faixas_estilo_topo() || ctl >= 0 || i < 0 || i >= FX_N_ESTILO || foco[FX_COL_ESTILO] == i) return;
+  if (!faixas_estilo_topo() || ctl >= 0 || i < 0 || i >= nEst() || foco[FX_COL_ESTILO] == i) return;
   foco[FX_COL_ESTILO] = i;
 }
 static void ponteiroSub(int i, int b) { (void)b; if (ctl >= 0 && i >= 0) ctlSub = i; }
@@ -1841,12 +1973,12 @@ static void ponteiroSlider(int a, int b) {
 static void ponteiroAba(int estilo, int b) { (void)b; faixas_aba_estilo(estilo); }
 
 #ifdef NV_TOUCH_UI
-static void celulaEstiloTelefone(int i, GfxRect r, float a, int ativa) {
-  int sel = coluna == FX_COL_ESTILO && i == foco[FX_COL_ESTILO];
+static void celulaEstiloTelefone(int i, int pos, GfxRect r, float a, int ativa) {
+  int sel = coluna == FX_COL_ESTILO && i == estId(foco[FX_COL_ESTILO]);
   int pres = estiloPreservadoAss(i);
   float x = r.x + 20, w = r.w - 40;
   if (sel) plrui_linha_foco(r, 22, a);
-  if (ativa) ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroEstilo, NULL, i, 0);
+  if (ativa && pos >= 0) ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroEstilo, NULL, pos, 0);
   if (i == EST_RESTAURAR) {
     int compacto = r.w < 154;
     float tx = compacto ? r.x + 10 : r.x + 54, tw = compacto ? r.w - 20 : r.w - 74;
@@ -1877,15 +2009,16 @@ static void celulaEstiloTelefone(int i, GfxRect r, float a, int ativa) {
 }
 #endif
 
-// Uma celula do ESTILO: rotulo em cima, valor embaixo; "Restaurar padrao" e acao.
-static void celulaEstilo(int i, GfxRect r, float a, int ativa) {
+// Uma celula do ESTILO (`i` = a linha, `pos` = o lugar na grade, -1 = no
+// controle): rotulo em cima, valor embaixo; "Restaurar padrao" e acao.
+static void celulaEstilo(int i, int pos, GfxRect r, float a, int ativa) {
 #ifdef NV_TOUCH_UI
-  if (telefoneui_ativo()) { celulaEstiloTelefone(i, r, a, ativa); return; }
+  if (telefoneui_ativo()) { celulaEstiloTelefone(i, pos, r, a, ativa); return; }
 #endif
-  int sel = coluna == FX_COL_ESTILO && i == foco[FX_COL_ESTILO];
+  int sel = coluna == FX_COL_ESTILO && i == estId(foco[FX_COL_ESTILO]);
   int pres = estiloPreservadoAss(i);
   if (sel) plrui_linha_foco(r, 22.0f, a);
-  if (ativa) ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroEstilo, NULL, i, 0);
+  if (ativa && pos >= 0) ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroEstilo, NULL, pos, 0);
   if (i == EST_RESTAURAR) {
     TxtLinha l = txt_linha(TXT_G20B, EST_ROT[i], 243, 242, 239, sel ? 255 : 191);
     gfx_icone((GfxRect){ r.x + 20.0f, r.y + (r.h - 22.0f) * 0.5f, 22.0f, 22.0f }, "pl_rotate-ccw", 1, 1, 1, (sel ? 1.0f : 0.75f) * a);
@@ -1911,7 +2044,7 @@ static void celulaEstilo(int i, GfxRect r, float a, int ativa) {
     txt_desenhar_alpha(lv, x, yv, a); }
 }
 
-#define IL_EST_FILEIRAS ((FX_N_ESTILO + FX_BARRA_COLS - 1) / FX_BARRA_COLS)
+#define IL_EST_FILEIRAS ((nEst() + FX_BARRA_COLS - 1) / FX_BARRA_COLS)
 static float estiloGradeH(void) {
   float h = IL_EST_CEL_H * IL_EST_FILEIRAS + 6.0f * (IL_EST_FILEIRAS - 1);
   if (ctl == EST_FONTE || (ctlVis == EST_FONTE && ctlAnim > .005f)) {
@@ -1958,6 +2091,10 @@ static void sliderCtl(int i, GfxRect r, float a, int ativo) {
   } else {
     char lo[24], hi[24];
     if (i == 7) { snprintf(lo, sizeof lo, "-%d s", LEGUI_ATRASO_MAX / 1000); snprintf(hi, sizeof hi, "+%d s", LEGUI_ATRASO_MAX / 1000); }
+#ifdef NV_TPK
+    else if (i == EST_CONTRASTE) { snprintf(lo, sizeof lo, "0"); snprintf(hi, sizeof hi, "30"); }
+    else if (i == EST_GAMA) { snprintf(lo, sizeof lo, "-5"); snprintf(hi, sizeof hi, "+5"); }
+#endif
     else { snprintf(lo, sizeof lo, "%d%%", i == 3 ? 25 : EST_SL[i].min); snprintf(hi, sizeof hi, "%d%%", i == 3 ? 100 : EST_SL[i].max); }
     { TxtLinha tl = txt_linha(TXT_G16B, lo, 243, 242, 239, 150), th = txt_linha(TXT_G16B, hi, 243, 242, 239, 150);
       txt_desenhar_alpha(tl, x1, cy - (float)tl.h * 0.5f, a);
@@ -1967,11 +2104,19 @@ static void sliderCtl(int i, GfxRect r, float a, int ativo) {
   sliderTx = x1; sliderTw = x2 - x1;
   px = x1 + (x2 - x1) * f;
   gfx_cor((GfxRect){ x1, cy - 4.0f, x2 - x1, 8.0f }, 0.5f, 1, 1, 1, 0.16f * a);
-  { float z = i == 7 ? 0.5f : 0.0f, fa = (z < f ? z : f), fb = (z < f ? f : z);
+  { int centro = i == 7;
+#ifdef NV_TPK
+    centro |= i == EST_GAMA;
+#endif
+  { float z = centro ? 0.5f : 0.0f, fa = (z < f ? z : f), fb = (z < f ? f : z);
     if (fb - fa > 0.001f) gfx_cor((GfxRect){ x1 + (x2 - x1) * fa, cy - 4.0f, (x2 - x1) * (fb - fa), 8.0f }, 0.5f, ar, ag, ab, a); }
-  if (i == 7) gfx_cor((GfxRect){ (x1 + x2) * 0.5f - 1.0f, cy - 11.0f, 2.0f, 22.0f }, 0, 1, 1, 1, 0.38f * a);
-  if (i == 3 || i == 5) {   // niveis discretos: um ponto por parada
-    int n = i == 3 ? 4 : 8, k;
+  if (centro) gfx_cor((GfxRect){ (x1 + x2) * 0.5f - 1.0f, cy - 11.0f, 2.0f, 22.0f }, 0, 1, 1, 1, 0.38f * a); }
+  if (i == 3 || i == 5
+#ifdef NV_TPK
+      || i == EST_GAMA
+#endif
+      ) {   // niveis discretos: um ponto por parada
+    int n = i == 3 ? 4 : i == 5 ? 8 : 11, k;
     for (k = 0; k < n; k++) {
       float tx = x1 + (x2 - x1) * (float)k / (float)(n - 1);
       if (fabsf(tx - px) > 18.0f) gfx_cor((GfxRect){ tx - 3.0f, cy - 3.0f, 6.0f, 6.0f }, 0.5f, 1, 1, 1, 0.45f * a);
@@ -2050,13 +2195,41 @@ static void fontesCtl(GfxRect r, float a, int ativo) {
   }
 }
 
+#ifdef NV_TPK
+/* Picture sync: the two values of this kind of video side by side; the one
+ * Left/Right edit is lit, OK switches. */
+static void ponteiroSinc(int i, int b) { (void)b; if (ctl == EST_SINC) sincPesada = i; }
+static void sincCtl(GfxRect r, float a, int ativo) {
+  int lv, ps, ag, k;
+  legimagem_valores(&lv, &ps, &ag);
+  fundoCtl(r, a);
+  for (k = 0; k < 2; k++) {
+    GfxRect c = { r.x + 12.0f + k * (r.w - 18.0f) * 0.5f, r.y + 8.0f, (r.w - 30.0f) * 0.5f, r.h - 16.0f };
+    char v[24];
+    int sel = k == sincPesada;
+    TxtLinha lr = txt_linha(TXT_G16B, k ? "Cenas agitadas" : "Cenas normais", 243, 242, 239, sel ? 200 : 128), lv2;
+    float yv;
+    snprintf(v, sizeof v, "%d ms", k ? ps : lv);
+    lv2 = txt_linha(TXT_ILHA_SECAO, v, 243, 242, 239, sel ? 255 : 150);
+    if (sel) plrui_linha_foco(c, 22.0f, a);
+    yv = c.y + (c.h - ((float)lr.h + 6.0f + (float)lv2.h)) * 0.5f;
+    txt_desenhar_alpha(lr, c.x + 20.0f, yv, a);
+    txt_desenhar_alpha(lv2, c.x + 20.0f, yv + (float)lr.h + 6.0f, a);
+    if (ativo) ponteiro_alvo(c.x, c.y, c.w, c.h, NULL, ponteiroSinc, k, 0);
+  }
+}
+#endif
+
 static void controleEstilo(int i, GfxRect g, float a, int ativo) {
   if (estTipo(i) == 3) { fontesCtl(g, a, ativo); return; }
   { GfxRect ra = { g.x, g.y, g.w, IL_EST_CEL_H }, rb = { g.x, g.y + IL_EST_CEL_H + 6.0f, g.w, IL_EST_CEL_H };
     if (telefoneui_ativo() && estTipo(i) == 2 && paletaColunas(g.w) < VIDEO_LEG_NCORES)
       rb.h = g.h - (rb.y - g.y);
-    celulaEstilo(i, ra, a, 0);                          // o item, com o valor ao vivo
+    celulaEstilo(i, -1, ra, a, 0);                      // o item, com o valor ao vivo
     if (ativo) ponteiro_alvo(ra.x, ra.y, ra.w, ra.h, NULL, ponteiroFecharCtl, 0, 0);
+#ifdef NV_TPK
+    if (estTipo(i) == 4) { sincCtl(rb, a, ativo); return; }
+#endif
     if (estTipo(i) == 1) sliderCtl(i, rb, a, ativo); else paletaCtl(rb, a, ativo); }
 }
 
@@ -2079,10 +2252,10 @@ static void corpoEstilo(GfxRect c, float a) {
     { const char *k[3] = { "\xe2\x86\x90 \xe2\x86\x92", "OK", "Voltar" }, *rt[3];
       int n = 3, t0 = ctl >= 0 ? estTipo(ctl) : 0;
       if (ctl >= 0) {
-        rt[0] = t0 == 1 ? "Ajustar" : "Escolher"; rt[1] = "Pronto"; rt[2] = "Voltar";
+        rt[0] = t0 == 1 || t0 == 4 ? "Ajustar" : "Escolher"; rt[1] = t0 == 4 ? "Trocar" : "Pronto"; rt[2] = "Voltar";
         if (t0 == 3) k[0] = "\xe2\x86\x91 \xe2\x86\x93 \xe2\x86\x90 \xe2\x86\x92";
       } else {
-        rt[0] = "Op\xc3\xa7\xc3\xa3o"; rt[1] = estTipo(foco[FX_COL_ESTILO]) ? "Abrir" : "Mudar"; rt[2] = "Fechar";
+        rt[0] = "Op\xc3\xa7\xc3\xa3o"; rt[1] = estTipo(estId(foco[FX_COL_ESTILO])) ? "Abrir" : "Mudar"; rt[2] = "Fechar";
       }
       plrui_dicas(k, rt, n, x0 + w - 10.0f, yc, 1, a); } }
   y += IL_EST_TOPO + 14.0f;
@@ -2090,10 +2263,10 @@ static void corpoEstilo(GfxRect c, float a) {
   // grade some e sobe um pouco, o controle entra de baixo, pela mola da tela.
   if (ctlAnim < 0.995f) {
     float ag = a * (1.0f - anim_clamp(ctlAnim * 1.6f, 0.0f, 1.0f)), dy = -10.0f * ctlAnim;
-    for (i = 0; i < FX_N_ESTILO; i++) {
+    for (i = 0; i < nEst(); i++) {
       GfxRect r = { x0 + (i % FX_BARRA_COLS) * (cw + 6.0f), y + dy + (i / FX_BARRA_COLS) * (IL_EST_CEL_H + 6.0f),
                     cw, IL_EST_CEL_H };
-      celulaEstilo(i, r, ag, assentada && ctlAnim < 0.01f);
+      celulaEstilo(estId(i), i, r, ag, assentada && ctlAnim < 0.01f);
     }
   }
   if (ctlAnim > 0.005f && ctlVis >= 0) {

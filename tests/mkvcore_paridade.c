@@ -98,6 +98,10 @@ static Buf valido(void) {
     memset(dv, 0, sizeof dv); dv[0] = 1; dv[2] = (unsigned char)((8 << 1) | 0); dv[3] = (unsigned char)((6 << 3) | 4 | 1);
     dv[4] = 0x10;
     el(&B, 0x41ED, dv, 24, 1); fecha(&B, m); }
+  // DefaultDuration (23.976 fps) and Video > Colour > TransferCharacteristics (PQ).
+  eluint(&B, 0x23E383, 41708333ULL);
+  { long v = abre(&B, 0xE0), co = abre(&B, 0x55B0);
+    eluint(&B, 0x55BA, 16); fecha(&B, co); fecha(&B, v); }
   fecha(&B, a);
   a = abre(&B, 0xAE);
   eluint(&B, 0xD7, 2); eluint(&B, 0x83, 2); elstr(&B, 0x86, "A_EAC3"); elstr(&B, 0x22B59C, "por");
@@ -152,7 +156,8 @@ static int mesmoFaixa(const MkvFaixa *a, const MkvFaixa *b) {
          a->dvPerfil == b->dvPerfil && a->dvNivel == b->dvNivel && a->dvRpu == b->dvRpu &&
          a->dvEl == b->dvEl && a->dvBl == b->dvBl && a->dvCompat == b->dvCompat &&
          a->cpN == b->cpN && a->hvccNal62 == b->hvccNal62 && a->bamN == b->bamN &&
-         a->nalTam == b->nalTam && a->entradaInteira == b->entradaInteira && a->bamTipo == b->bamTipo;
+         a->nalTam == b->nalTam && a->entradaInteira == b->entradaInteira && a->bamTipo == b->bamTipo &&
+         a->quadroNs == b->quadroNs && a->transferencia == b->transferencia;
 }
 static int mesmoCap(const MkvCap *a, const MkvCap *b) {
   return a->inicio == b->inicio && !memcmp(a->nome, b->nome, sizeof a->nome);

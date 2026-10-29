@@ -462,7 +462,8 @@ int cat_visto(const CatItem *c) {
 // fallback para itens que ainda nao entraram no vetor.
 const char *cat_tipo_por_imdb(const char *imdb) {
   int i = cat_indice_por_imdb(imdb);
-  if (i >= 0 && cat_item(i)) return cat_item(i)->tipo;
+  const CatItem *it = i >= 0 ? cat_item(i) : NULL;   // um so: a troca pode zerar n entre duas chamadas
+  if (it) return it->tipo;
   return (imdb && strchr(imdb, ':')) ? "series" : "movie";
 }
 

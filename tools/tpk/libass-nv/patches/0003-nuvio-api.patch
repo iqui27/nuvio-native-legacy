@@ -1,0 +1,143 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: nv <noreply@anthropic.com>
+Date: Tue, 27 Oct 2026 12:00:00 +0100
+Subject: [PATCH 3/3] libass: Nuvio API (engine switch, blur threads,
+ dialogue opacity)
+
+
+diff --git a/libass/ass.h b/libass/ass.h
+index 851ca7c..3e9695b 100644
+--- a/libass/ass.h
++++ b/libass/ass.h
+@@ -848,6 +848,35 @@ void *ass_malloc(size_t size);
+  */
+ void ass_free(void *ptr);
+ 
++/*
++ * Nuvio TPK additions (tools/tpk/libass-nv). Not upstream API.
++ */
++#define ASS_NV_API 1
++
++/**
++ * \brief Select the bitmap engine: 1 = SIMD (NEON on armv7, the default
++ * there), 0 = plain C. Only the CI check (verify.c) compares the two.
++ * Empties the renderer caches. Returns the engine now in use.
++ */
++int ass_nv_set_engine(ASS_Renderer *priv, int simd);
++int ass_nv_get_engine(ASS_Renderer *priv);
++int ass_nv_simd_available(void);
++
++/**
++ * \brief Threads for the NEON blur stripe pipeline (process wide, 1..4,
++ * default 1). Big blurs are split by stripe across helper threads; the
++ * output is identical. Returns the number now in use.
++ */
++int ass_nv_set_threads(int n);
++int ass_nv_get_threads(void);
++
++/**
++ * \brief Opacity of dialogue lines, 0..255 (255 = as authored, the default).
++ * Multiplies the alpha of events WITHOUT \pos, \move, \clip, \iclip, \org,
++ * \pbo or a drawing; signs and typesetting keep the author's alpha.
++ */
++void ass_nv_set_dialogue_alpha(ASS_Renderer *priv, int alpha);
++
+ #undef ASS_DEPRECATED
+ #undef ASS_DEPRECATED_ENUM
+ 
+diff --git a/libass/ass_render.c b/libass/ass_render.c
+index 18f856a..3b24a68 100644
+--- a/libass/ass_render.c
++++ b/libass/ass_render.c
+@@ -3009,6 +3009,17 @@ ass_render_event(RenderContext *state, ASS_Event *event,
+     if (state->border_style == 4)
+         add_background(state, event_images);
+ 
++    /* Nuvio: the app's subtitle opacity for dialogue only. Lines with \pos,
++     * \move, \clip, \org or a drawing (the signs and typesetting) keep the
++     * author's alpha. */
++    if (render_priv->nv_dialogue_fade && !state->explicit) {
++        unsigned keep = 255u - (unsigned) render_priv->nv_dialogue_fade;
++        for (ASS_Image *im = event_images->imgs; im; im = im->next) {
++            unsigned a = im->color & 0xFF;   // 0 = opaque, 255 = transparent
++            im->color = (im->color & ~0xFFu) | (255u - (255u - a) * keep / 255u);
++        }
++    }
++
+     ass_shaper_cleanup(state->shaper, text_info);
+     free_render_context(state);
+ 
+diff --git a/libass/ass_render.h b/libass/ass_render.h
+index e1eb7d2..6da045d 100644
+--- a/libass/ass_render.h
++++ b/libass/ass_render.h
+@@ -338,6 +338,8 @@ struct ass_renderer {
+     BitmapEngine engine;
+ 
+     ASS_Style user_override_style;
++
++    int nv_dialogue_fade;           // ass_nv_set_dialogue_alpha: 0 = as authored, 255 = invisible
+ };
+ 
+ typedef struct render_priv {
+diff --git a/libass/ass_render_api.c b/libass/ass_render_api.c
+index ee1620a..a3118ca 100644
+--- a/libass/ass_render_api.c
++++ b/libass/ass_render_api.c
+@@ -25,6 +25,7 @@
+ 
+ #include "ass_render.h"
+ #include "ass_utils.h"
++#include "ass_priv.h"
+ 
+ static void ass_reconfigure(ASS_Renderer *priv)
+ {
+@@ -213,3 +214,48 @@ ass_create_font_provider(ASS_Renderer *priv, ASS_FontProviderFuncs *funcs,
+ {
+     return ass_font_provider_new(priv->fontselect, funcs, data);
+ }
++
++
++/* ---- Nuvio TPK additions (tools/tpk/libass-nv) ---- */
++
++void ass_nv_set_dialogue_alpha(ASS_Renderer *priv, int alpha)
++{
++    alpha = alpha < 0 ? 0 : alpha > 255 ? 255 : alpha;
++    priv->nv_dialogue_fade = 255 - alpha;
++}
++
++int ass_nv_simd_available(void)
++{
++    return ass_get_cpu_flags(ASS_CPU_FLAG_ALL) != ASS_CPU_FLAG_NONE;
++}
++
++BitmapBlendFunc ass_add_bitmaps_c;
++
++int ass_nv_get_engine(ASS_Renderer *priv)
++{
++    return priv->engine.add_bitmaps != ass_add_bitmaps_c;
++}
++
++int ass_nv_set_engine(ASS_Renderer *priv, int simd)
++{
++    unsigned flags = simd ? ASS_CPU_FLAG_ALL : ASS_CPU_FLAG_NONE;
++#if CONFIG_LARGE_TILES
++    flags |= ASS_FLAG_LARGE_TILES;
++#endif
++    BitmapEngine engine = ass_bitmap_engine_init(flags);
++    if (engine.add_bitmaps != priv->engine.add_bitmaps) {
++        priv->engine = engine;
++        ass_reconfigure(priv);
++    }
++    return ass_nv_get_engine(priv);
++}
++
++#if ASS_NV_NEON32
++int ass_nv32_set_threads(int n);
++int ass_nv32_get_threads(void);
++int ass_nv_set_threads(int n) { return ass_nv32_set_threads(n); }
++int ass_nv_get_threads(void) { return ass_nv32_get_threads(); }
++#else
++int ass_nv_set_threads(int n) { (void) n; return 1; }
++int ass_nv_get_threads(void) { return 1; }
++#endif

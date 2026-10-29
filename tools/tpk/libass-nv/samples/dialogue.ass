@@ -1,0 +1,23 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Roboto,64,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3.5,1.5,2,120,120,60,1
+Style: Top,Roboto,56,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,1,0,0,100,100,0,0,1,3,1,8,120,120,50,1
+Style: Box,Roboto,52,&H00FFFFFF,&H000000FF,&H60000000,&H60000000,0,0,0,0,100,100,0,0,3,6,0,2,120,120,180,1
+Style: CJK,Droid Sans Fallback,60,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,8,120,120,160,1
+Style: Arabic,Noto Naskh Arabic,60,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,1,2,120,120,300,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:02.00,Default,,0,0,0,,Is that so? Then I'll just have to make you confess first.
+Dialogue: 0,0:00:02.00,0:00:04.00,Default,,0,0,0,,This line is long enough that it has to wrap onto a second line at 1080p with these margins, so smart wrapping runs.
+Dialogue: 0,0:00:01.00,0:00:03.50,Top,,0,0,0,,{\an8}Overlapping top line
+Dialogue: 0,0:00:01.50,0:00:04.00,Box,,0,0,0,,Opaque box style (BorderStyle 3)
+Dialogue: 0,0:00:00.00,0:00:04.00,CJK,,0,0,0,,天才たちの恋愛頭脳戦
+Dialogue: 0,0:00:00.00,0:00:04.00,Arabic,,0,0,0,,مرحبا بالعالم

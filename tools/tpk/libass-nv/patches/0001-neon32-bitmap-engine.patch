@@ -1,0 +1,882 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: nv <noreply@anthropic.com>
+Date: Fri, 23 Oct 2026 16:47:10 +0200
+Subject: [PATCH 1/3] libass: ARMv7 NEON bitmap engine (bit-identical to the C
+ engine)
+
+
+diff --git a/checkasm/checkasm.c b/checkasm/checkasm.c
+index 857938b..5c01fe6 100644
+--- a/checkasm/checkasm.c
++++ b/checkasm/checkasm.c
+@@ -76,6 +76,8 @@ static const struct {
+     { "AVX2",               "avx2",      ASS_CPU_FLAG_X86_AVX2 },
+ #elif ARCH_AARCH64
+     { "NEON",               "neon",      ASS_CPU_FLAG_ARM_NEON },
++#elif ASS_NV_NEON32
++    { "NEON (armv7)",       "neon32",    ASS_CPU_FLAG_ARM_NEON },
+ #endif
+     { 0 }
+ };
+diff --git a/libass/arm/neon32.c b/libass/arm/neon32.c
+new file mode 100644
+index 0000000..7ffec32
+--- /dev/null
++++ b/libass/arm/neon32.c
+@@ -0,0 +1,540 @@
++/*
++ * Copyright (C) 2026 libass contributors
++ *
++ * This file is part of libass.
++ *
++ * Permission to use, copy, modify, and distribute this software for any
++ * purpose with or without fee is hereby granted, provided that the above
++ * copyright notice and this permission notice appear in all copies.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
++ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
++ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
++ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
++ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ */
++
++/*
++ * Bitmap engine for 32-bit ARM with NEON (ARMv7-A, softfp or hardfp).
++ *
++ * libass ships SIMD only for x86 and aarch64; on armv7 it falls back to the
++ * plain C engine. This is a port of the aarch64 engine (the aarch64 .S files) to NEON
++ * intrinsics, with the C engine's arithmetic kept exactly (int16 wraparound,
++ * rounding, saturation), so every function is bit-identical to its C
++ * counterpart. Alignment is 16 (stripes of 8 int16), tiles 16 or 32, the same
++ * layout the C engine uses, so nothing else in libass changes.
++ *
++ * This file is #included from ass_bitmap_engine.c, so no build-system change
++ * is needed. Checked against the C engine by checkasm (armv7 entry added).
++ */
++
++#include <arm_neon.h>
++#include <string.h>
++
++#include "ass_rasterizer.h"
++
++static inline int16x8_t nv32_index16(void)
++{
++    static const int16_t idx[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
++    return vld1q_s16(idx);
++}
++
++
++/* ------------------------------------------------------------------------ */
++/* Rasterizer                                                                */
++
++#define TILE_SIZE 16
++#include "neon32_rasterizer.h"
++#undef TILE_SIZE
++
++#define TILE_SIZE 32
++#include "neon32_rasterizer.h"
++#undef TILE_SIZE
++
++
++/* ------------------------------------------------------------------------ */
++/* Blend functions (c/c_blend_bitmaps.c). The tail of each row is done in   */
++/* plain C, so nothing past `width` is read or written.                     */
++
++static void ass_add_bitmaps_neon32(uint8_t *restrict dst, ptrdiff_t dst_stride,
++                                   const uint8_t *restrict src, ptrdiff_t src_stride,
++                                   size_t width, size_t height)
++{
++    for (size_t y = 0; y < height; y++) {
++        size_t x = 0;
++        for (; x + 16 <= width; x += 16)
++            vst1q_u8(dst + x, vqaddq_u8(vld1q_u8(dst + x), vld1q_u8(src + x)));
++        if (x + 8 <= width) {
++            vst1_u8(dst + x, vqadd_u8(vld1_u8(dst + x), vld1_u8(src + x)));
++            x += 8;
++        }
++        for (; x < width; x++) {
++            unsigned out = dst[x] + src[x];
++            dst[x] = FFMIN(out, 255);
++        }
++        dst += dst_stride;
++        src += src_stride;
++    }
++}
++
++static void ass_imul_bitmaps_neon32(uint8_t *restrict dst, ptrdiff_t dst_stride,
++                                    const uint8_t *restrict src, ptrdiff_t src_stride,
++                                    size_t width, size_t height)
++{
++    const uint16x8_t k255 = vdupq_n_u16(255);
++    for (size_t y = 0; y < height; y++) {
++        size_t x = 0;
++        for (; x + 8 <= width; x += 8) {
++            uint16x8_t t = vmlal_u8(k255, vld1_u8(dst + x), vmvn_u8(vld1_u8(src + x)));
++            vst1_u8(dst + x, vshrn_n_u16(t, 8));
++        }
++        for (; x < width; x++)
++            dst[x] = (dst[x] * (255 - src[x]) + 255) >> 8;
++        dst += dst_stride;
++        src += src_stride;
++    }
++}
++
++static void ass_mul_bitmaps_neon32(uint8_t *restrict dst, ptrdiff_t dst_stride,
++                                   const uint8_t *restrict src1, ptrdiff_t src1_stride,
++                                   const uint8_t *restrict src2, ptrdiff_t src2_stride,
++                                   size_t width, size_t height)
++{
++    const uint16x8_t k255 = vdupq_n_u16(255);
++    for (size_t y = 0; y < height; y++) {
++        size_t x = 0;
++        for (; x + 8 <= width; x += 8) {
++            uint16x8_t t = vmlal_u8(k255, vld1_u8(src1 + x), vld1_u8(src2 + x));
++            vst1_u8(dst + x, vshrn_n_u16(t, 8));
++        }
++        for (; x < width; x++)
++            dst[x] = (src1[x] * src2[x] + 255) >> 8;
++        dst  += dst_stride;
++        src1 += src1_stride;
++        src2 += src2_stride;
++    }
++}
++
++
++/* ------------------------------------------------------------------------ */
++/* \be box blur (c/c_be_blur.c)                                             */
++/*                                                                          */
++/* h[x] = b[x-1] + 2 b[x] + b[x+1] per row (b outside the row = 0), then    */
++/* out[y] = (h[y-1] + 2 h[y] + h[y+1]) >> 4 with the same in-place, one-row */
++/* -late order and the same tmp layout as the C code.                       */
++
++void ass_be_blur_c(uint8_t *restrict buf, ptrdiff_t stride,
++                   size_t width, size_t height, uint16_t *restrict tmp);
++
++static inline uint16x8_t nv32_be_hsum(const uint8_t *lb)
++{
++    // lb points at b[x - 1]
++    uint16x8_t s = vaddl_u8(vld1_u8(lb), vld1_u8(lb + 2));
++    return vaddq_u16(s, vshll_n_u8(vld1_u8(lb + 1), 1));
++}
++
++static inline void nv32_be_store(uint8_t *dst, size_t x, size_t width, uint8x8_t v)
++{
++    if (x + 8 <= width) {
++        vst1_u8(dst + x, v);
++    } else {
++        uint8_t t[8];
++        vst1_u8(t, v);
++        memcpy(dst + x, t, width - x);
++    }
++}
++
++static void ass_be_blur_neon32(uint8_t *restrict buf, ptrdiff_t stride,
++                               size_t width, size_t height, uint16_t *restrict tmp)
++{
++    if (stride > 8192) {
++        ass_be_blur_c(buf, stride, width, height, tmp);
++        return;
++    }
++
++    uint16_t *col_pix_buf = tmp;           // h of the previous row
++    uint16_t *col_sum_buf = tmp + stride;  // h[y-2] + h[y-1] (or h[0])
++    size_t w8 = (width + 7) & ~(size_t) 7; // <= stride
++
++    // zero-padded copy of the current row: lb[0] = b[-1], lb[1 + x] = b[x]
++    uint8_t lb[stride + 16];
++    memset(lb, 0, sizeof(lb));
++
++    memcpy(lb + 1, buf, width);
++    for (size_t x = 0; x < w8; x += 8) {
++        uint16x8_t h = nv32_be_hsum(lb + x);
++        vst1q_u16(col_pix_buf + x, h);
++        vst1q_u16(col_sum_buf + x, h);
++    }
++
++    for (size_t y = 1; y < height; y++) {
++        uint8_t *dst = buf;
++        buf += stride;
++        memcpy(lb + 1, buf, width);
++        for (size_t x = 0; x < w8; x += 8) {
++            uint16x8_t h = nv32_be_hsum(lb + x);
++            uint16x8_t col_pix = vld1q_u16(col_pix_buf + x);
++            uint16x8_t col_sum = vaddq_u16(col_pix, h);
++            uint16x8_t out = vaddq_u16(vld1q_u16(col_sum_buf + x), col_sum);
++            vst1q_u16(col_pix_buf + x, h);
++            vst1q_u16(col_sum_buf + x, col_sum);
++            nv32_be_store(dst, x, width, vshrn_n_u16(out, 4));
++        }
++    }
++
++    for (size_t x = 0; x < w8; x += 8) {
++        uint16x8_t out = vaddq_u16(vld1q_u16(col_sum_buf + x), vld1q_u16(col_pix_buf + x));
++        nv32_be_store(buf, x, width, vshrn_n_u16(out, 4));
++    }
++}
++
++
++/* ------------------------------------------------------------------------ */
++/* Gaussian blur stripe pipeline (c/blur_template.h, ALIGNMENT 16)          */
++/* One stripe line is 8 int16 = one Q register.                             */
++
++#define N32_STRIPE 8
++#define N32_MASK   7
++
++static const int16_t nv32_zero_line[8] __attribute__((aligned(16)));
++
++static inline const int16_t *nv32_get_line(const int16_t *ptr, size_t offs, size_t size)
++{
++    return offs < size ? ptr + offs : nv32_zero_line;
++}
++
++static inline int16x8_t nv32_line(const int16_t *ptr, size_t offs, size_t size)
++{
++    return vld1q_s16(nv32_get_line(ptr, offs, size));
++}
++
++static void ass_stripe_unpack16_neon32(int16_t *restrict dst, const uint8_t *restrict src,
++                                       ptrdiff_t src_stride, size_t width, size_t height)
++{
++    for (size_t y = 0; y < height; y++) {
++        int16_t *ptr = dst;
++        for (size_t x = 0; x < width; x += N32_STRIPE) {
++            uint8x8_t s = vld1_u8(src + x);
++            uint8x8x2_t z = vzip_u8(s, s);  // s * 257 in each 16-bit lane
++            uint16x8_t v = vreinterpretq_u16_u8(vcombine_u8(z.val[0], z.val[1]));
++            vst1q_s16(ptr, vreinterpretq_s16_u16(vrshrq_n_u16(v, 2)));
++            ptr += N32_STRIPE * height;
++        }
++        dst += N32_STRIPE;
++        src += src_stride;
++    }
++}
++
++static void ass_stripe_pack16_neon32(uint8_t *restrict dst, ptrdiff_t dst_stride,
++                                     const int16_t *restrict src, size_t width, size_t height)
++{
++    static const int16_t dither[16] = {
++         8, 40,  8, 40,  8, 40,  8, 40,
++        56, 24, 56, 24, 56, 24, 56, 24,
++    };
++    const int16x8_t d0 = vld1q_s16(dither), d1 = vld1q_s16(dither + 8);
++
++    for (size_t x = 0; x < width; x += N32_STRIPE) {
++        uint8_t *ptr = dst;
++        for (size_t y = 0; y < height; y++) {
++            int16x8_t v = vld1q_s16(src);
++            int16x8_t t = vaddq_s16(vsubq_s16(v, vshrq_n_s16(v, 8)), (y & 1) ? d1 : d0);
++            vst1_u8(ptr, vmovn_u16(vshrq_n_u16(vreinterpretq_u16_s16(t), 6)));
++            ptr += dst_stride;
++            src += N32_STRIPE;
++        }
++        dst += N32_STRIPE;
++    }
++    size_t left = dst_stride - ((width + N32_MASK) & ~(size_t) N32_MASK);
++    for (size_t y = 0; y < height; y++) {
++        memset(dst, 0, left);
++        dst += dst_stride;
++    }
++}
++
++// shrink_func of c_blur.c on unsigned lanes (values are in 0..0x4000)
++static inline uint16x8_t nv32_shrink(uint16x8_t p1p, uint16x8_t p1n,
++                                     uint16x8_t z0p, uint16x8_t z0n,
++                                     uint16x8_t n1p, uint16x8_t n1n)
++{
++    uint16x8_t t0 = vaddq_u16(p1p, n1n);
++    uint16x8_t t1 = vaddq_u16(p1n, n1p);
++    uint16x8_t t2 = vaddq_u16(z0p, z0n);
++    uint16x8_t r = vhaddq_u16(t0, t1);
++    r = vhaddq_u16(r, t2);
++    r = vhaddq_u16(r, t1);
++    r = vhaddq_u16(r, t2);
++    return vrshrq_n_u16(r, 1);
++}
++
++static void ass_shrink_horz16_neon32(int16_t *restrict dst, const int16_t *restrict src,
++                                     size_t src_width, size_t src_height)
++{
++    size_t dst_width = (src_width + 5) >> 1;
++    size_t size = ((src_width + N32_MASK) & ~(size_t) N32_MASK) * src_height;
++    size_t step = N32_STRIPE * src_height;
++
++    size_t offs = 0;
++    for (size_t x = 0; x < dst_width; x += N32_STRIPE) {
++        for (size_t y = 0; y < src_height; y++) {
++            uint16x8_t a = vreinterpretq_u16_s16(nv32_line(src, offs - step, size));
++            uint16x8_t b = vreinterpretq_u16_s16(nv32_line(src, offs, size));
++            uint16x8_t c = vreinterpretq_u16_s16(nv32_line(src, offs + step, size));
++            uint16x8x2_t bc = vuzpq_u16(b, c);  // ptr[2k], ptr[2k + 1]
++            uint16x8x2_t aa = vuzpq_u16(a, a);  // lanes 6, 7: ptr[-4], ptr[-2] / ptr[-3], ptr[-1]
++            uint16x8_t r = nv32_shrink(vextq_u16(aa.val[0], bc.val[0], 6),
++                                       vextq_u16(aa.val[1], bc.val[1], 6),
++                                       vextq_u16(aa.val[0], bc.val[0], 7),
++                                       vextq_u16(aa.val[1], bc.val[1], 7),
++                                       bc.val[0], bc.val[1]);
++            vst1q_s16(dst, vreinterpretq_s16_u16(r));
++            dst  += N32_STRIPE;
++            offs += N32_STRIPE;
++        }
++        offs += step;
++    }
++}
++
++static void ass_shrink_vert16_neon32(int16_t *restrict dst, const int16_t *restrict src,
++                                     size_t src_width, size_t src_height)
++{
++    size_t dst_height = (src_height + 5) >> 1;
++    size_t step = N32_STRIPE * src_height;
++
++    for (size_t x = 0; x < src_width; x += N32_STRIPE) {
++        size_t offs = 0;
++        for (size_t y = 0; y < dst_height; y++) {
++#define L(o) vreinterpretq_u16_s16(nv32_line(src, offs + (o), step))
++            uint16x8_t r = nv32_shrink(L(-4 * N32_STRIPE), L(-3 * N32_STRIPE),
++                                       L(-2 * N32_STRIPE), L(-1 * N32_STRIPE),
++                                       L(0), L(1 * N32_STRIPE));
++#undef L
++            vst1q_s16(dst, vreinterpretq_s16_u16(r));
++            dst  += 1 * N32_STRIPE;
++            offs += 2 * N32_STRIPE;
++        }
++        src += step;
++    }
++}
++
++// expand_func of c_blur.c: returns rp in *rp and rn in *rn
++static inline void nv32_expand(uint16x8_t *rp, uint16x8_t *rn,
++                               uint16x8_t p1, uint16x8_t z0, uint16x8_t n1)
++{
++    uint16x8_t r = vhaddq_u16(vhaddq_u16(p1, n1), z0);
++    *rp = vrhaddq_u16(vhaddq_u16(r, p1), z0);
++    *rn = vrhaddq_u16(vhaddq_u16(r, n1), z0);
++}
++
++static void ass_expand_horz16_neon32(int16_t *restrict dst, const int16_t *restrict src,
++                                     size_t src_width, size_t src_height)
++{
++    size_t dst_width = 2 * src_width + 4;
++    size_t size = ((src_width + N32_MASK) & ~(size_t) N32_MASK) * src_height;
++    size_t step = N32_STRIPE * src_height;
++
++    size_t offs = 0;
++    for (size_t x = N32_STRIPE; x < dst_width; x += 2 * N32_STRIPE) {
++        for (size_t y = 0; y < src_height; y++) {
++            uint16x8_t a = vreinterpretq_u16_s16(nv32_line(src, offs - step, size));
++            uint16x8_t b = vreinterpretq_u16_s16(nv32_line(src, offs, size));
++            uint16x8_t rp, rn;
++            nv32_expand(&rp, &rn, vextq_u16(a, b, 6), vextq_u16(a, b, 7), b);
++            uint16x8x2_t z = vzipq_u16(rp, rn);
++            vst1q_s16(dst, vreinterpretq_s16_u16(z.val[0]));
++            vst1q_s16(dst + step, vreinterpretq_s16_u16(z.val[1]));
++            dst  += N32_STRIPE;
++            offs += N32_STRIPE;
++        }
++        dst += step;
++    }
++    if ((dst_width - 1) & N32_STRIPE)
++        return;
++
++    for (size_t y = 0; y < src_height; y++) {
++        uint16x8_t a = vreinterpretq_u16_s16(nv32_line(src, offs - step, size));
++        uint16x8_t b = vreinterpretq_u16_s16(nv32_line(src, offs, size));
++        uint16x8_t rp, rn;
++        nv32_expand(&rp, &rn, vextq_u16(a, b, 6), vextq_u16(a, b, 7), b);
++        uint16x8x2_t z = vzipq_u16(rp, rn);
++        vst1q_s16(dst, vreinterpretq_s16_u16(z.val[0]));
++        dst  += N32_STRIPE;
++        offs += N32_STRIPE;
++    }
++}
++
++static void ass_expand_vert16_neon32(int16_t *restrict dst, const int16_t *restrict src,
++                                     size_t src_width, size_t src_height)
++{
++    size_t dst_height = 2 * src_height + 4;
++    size_t step = N32_STRIPE * src_height;
++
++    for (size_t x = 0; x < src_width; x += N32_STRIPE) {
++        size_t offs = 0;
++        for (size_t y = 0; y < dst_height; y += 2) {
++            uint16x8_t p1 = vreinterpretq_u16_s16(nv32_line(src, offs - 2 * N32_STRIPE, step));
++            uint16x8_t z0 = vreinterpretq_u16_s16(nv32_line(src, offs - 1 * N32_STRIPE, step));
++            uint16x8_t n1 = vreinterpretq_u16_s16(nv32_line(src, offs, step));
++            uint16x8_t rp, rn;
++            nv32_expand(&rp, &rn, p1, z0, n1);
++            vst1q_s16(dst, vreinterpretq_s16_u16(rp));
++            vst1q_s16(dst + N32_STRIPE, vreinterpretq_s16_u16(rn));
++            dst  += 2 * N32_STRIPE;
++            offs += 1 * N32_STRIPE;
++        }
++        src += step;
++    }
++}
++
++/*
++ * Main parametric filters. blur_horz needs ptr[k - 2n .. k] across up to
++ * three stripe lines l0 = ptr[-16..-9], l1 = ptr[-8..-1], l2 = ptr[0..7];
++ * N32_WIN(s) is ptr[k + s] for the 8 lanes k, built with vext (constant s).
++ */
++#define N32_WIN(s) \
++    ((s) == 0 ? l2 : (s) == -8 ? l1 : (s) == -16 ? l0 : \
++     (s) < -8 ? vextq_s16(l0, l1, ((s) + 16) & 7) : vextq_s16(l1, l2, ((s) + 8) & 7))
++
++#define N32_TAP(n, i) \
++    { \
++        int16x8_t d1 = vsubq_s16(N32_WIN(-(n) - (i)), center); \
++        int16x8_t d2 = vsubq_s16(N32_WIN(-(n) + (i)), center); \
++        int16_t p = param[(i) - 1]; \
++        acc_lo = vmlal_n_s16(acc_lo, vget_low_s16(d1), p); \
++        acc_hi = vmlal_n_s16(acc_hi, vget_high_s16(d1), p); \
++        acc_lo = vmlal_n_s16(acc_lo, vget_low_s16(d2), p); \
++        acc_hi = vmlal_n_s16(acc_hi, vget_high_s16(d2), p); \
++    }
++
++#define N32_TAPS4(n) N32_TAP(n, 4) N32_TAP(n, 3) N32_TAP(n, 2) N32_TAP(n, 1)
++#define N32_TAPS5(n) N32_TAP(n, 5) N32_TAPS4(n)
++#define N32_TAPS6(n) N32_TAP(n, 6) N32_TAPS5(n)
++#define N32_TAPS7(n) N32_TAP(n, 7) N32_TAPS6(n)
++#define N32_TAPS8(n) N32_TAP(n, 8) N32_TAPS7(n)
++
++#define N32_BLUR_HORZ(n) \
++static void ass_blur##n##_horz16_neon32(int16_t *restrict dst, const int16_t *restrict src, \
++                                        size_t src_width, size_t src_height, \
++                                        const int16_t *restrict param) \
++{ \
++    size_t dst_width = src_width + 2 * (n); \
++    size_t size = ((src_width + N32_MASK) & ~(size_t) N32_MASK) * src_height; \
++    size_t step = N32_STRIPE * src_height; \
++    \
++    size_t offs = 0; \
++    for (size_t x = 0; x < dst_width; x += N32_STRIPE) { \
++        for (size_t y = 0; y < src_height; y++) { \
++            int16x8_t l0 = (n) > 4 ? nv32_line(src, offs - 2 * step, size) : vdupq_n_s16(0); \
++            int16x8_t l1 = nv32_line(src, offs - step, size); \
++            int16x8_t l2 = nv32_line(src, offs, size); \
++            (void) l0; \
++            int16x8_t center = N32_WIN(-(n)); \
++            int32x4_t acc_lo = vdupq_n_s32(0x8000), acc_hi = vdupq_n_s32(0x8000); \
++            N32_TAPS##n(n) \
++            int16x8_t r = vcombine_s16(vshrn_n_s32(acc_lo, 16), vshrn_n_s32(acc_hi, 16)); \
++            vst1q_s16(dst, vaddq_s16(center, r)); \
++            dst  += N32_STRIPE; \
++            offs += N32_STRIPE; \
++        } \
++    } \
++}
++
++N32_BLUR_HORZ(4)
++N32_BLUR_HORZ(5)
++N32_BLUR_HORZ(6)
++N32_BLUR_HORZ(7)
++N32_BLUR_HORZ(8)
++
++static inline void nv32_blur_vert(int16_t *restrict dst, const int16_t *restrict src,
++                                  size_t src_width, size_t src_height,
++                                  const int16_t *restrict param, const int n)
++{
++    size_t dst_height = src_height + 2 * n;
++    size_t step = N32_STRIPE * src_height;
++
++    for (size_t x = 0; x < src_width; x += N32_STRIPE) {
++        size_t offs = 0;
++        for (size_t y = 0; y < dst_height; y++) {
++            int32x4_t acc_lo = vdupq_n_s32(0x8000), acc_hi = vdupq_n_s32(0x8000);
++            int16x8_t center = nv32_line(src, offs - n * N32_STRIPE, step);
++            for (int i = n; i > 0; i--) {
++                int16x8_t d1 = vsubq_s16(nv32_line(src, offs - (n + i) * N32_STRIPE, step), center);
++                int16x8_t d2 = vsubq_s16(nv32_line(src, offs - (n - i) * N32_STRIPE, step), center);
++                int16_t p = param[i - 1];
++                acc_lo = vmlal_n_s16(acc_lo, vget_low_s16(d1), p);
++                acc_hi = vmlal_n_s16(acc_hi, vget_high_s16(d1), p);
++                acc_lo = vmlal_n_s16(acc_lo, vget_low_s16(d2), p);
++                acc_hi = vmlal_n_s16(acc_hi, vget_high_s16(d2), p);
++            }
++            int16x8_t r = vcombine_s16(vshrn_n_s32(acc_lo, 16), vshrn_n_s32(acc_hi, 16));
++            vst1q_s16(dst, vaddq_s16(center, r));
++            dst  += N32_STRIPE;
++            offs += N32_STRIPE;
++        }
++        src += step;
++    }
++}
++
++#define N32_BLUR_VERT(n) \
++static void ass_blur##n##_vert16_neon32(int16_t *restrict dst, const int16_t *restrict src, \
++                                        size_t src_width, size_t src_height, \
++                                        const int16_t *restrict param) \
++{ \
++    nv32_blur_vert(dst, src, src_width, src_height, param, n); \
++}
++
++N32_BLUR_VERT(4)
++N32_BLUR_VERT(5)
++N32_BLUR_VERT(6)
++N32_BLUR_VERT(7)
++N32_BLUR_VERT(8)
++
++#undef N32_WIN
++#undef N32_TAP
++#undef N32_BLUR_HORZ
++#undef N32_BLUR_VERT
++
++
++/* ------------------------------------------------------------------------ */
++
++static void ass_bitmap_engine_neon32(BitmapEngine *engine, unsigned mask)
++{
++    if (mask & ASS_FLAG_LARGE_TILES) {
++        engine->tile_order     = 5;
++        engine->fill_solid     = ass_fill_solid_tile32_neon32;
++        engine->fill_halfplane = ass_fill_halfplane_tile32_neon32;
++        engine->fill_generic   = ass_fill_generic_tile32_neon32;
++        engine->merge          = ass_merge_tile32_neon32;
++    } else {
++        engine->tile_order     = 4;
++        engine->fill_solid     = ass_fill_solid_tile16_neon32;
++        engine->fill_halfplane = ass_fill_halfplane_tile16_neon32;
++        engine->fill_generic   = ass_fill_generic_tile16_neon32;
++        engine->merge          = ass_merge_tile16_neon32;
++    }
++
++    engine->add_bitmaps  = ass_add_bitmaps_neon32;
++    engine->imul_bitmaps = ass_imul_bitmaps_neon32;
++    engine->mul_bitmaps  = ass_mul_bitmaps_neon32;
++    engine->be_blur      = ass_be_blur_neon32;
++
++    engine->align_order   = 4;
++    engine->stripe_unpack = ass_stripe_unpack16_neon32;
++    engine->stripe_pack   = ass_stripe_pack16_neon32;
++    engine->shrink_horz   = ass_shrink_horz16_neon32;
++    engine->shrink_vert   = ass_shrink_vert16_neon32;
++    engine->expand_horz   = ass_expand_horz16_neon32;
++    engine->expand_vert   = ass_expand_vert16_neon32;
++    engine->blur_horz[0]  = ass_blur4_horz16_neon32;
++    engine->blur_horz[1]  = ass_blur5_horz16_neon32;
++    engine->blur_horz[2]  = ass_blur6_horz16_neon32;
++    engine->blur_horz[3]  = ass_blur7_horz16_neon32;
++    engine->blur_horz[4]  = ass_blur8_horz16_neon32;
++    engine->blur_vert[0]  = ass_blur4_vert16_neon32;
++    engine->blur_vert[1]  = ass_blur5_vert16_neon32;
++    engine->blur_vert[2]  = ass_blur6_vert16_neon32;
++    engine->blur_vert[3]  = ass_blur7_vert16_neon32;
++    engine->blur_vert[4]  = ass_blur8_vert16_neon32;
++}
+diff --git a/libass/arm/neon32_rasterizer.h b/libass/arm/neon32_rasterizer.h
+new file mode 100644
+index 0000000..fb245ee
+--- /dev/null
++++ b/libass/arm/neon32_rasterizer.h
+@@ -0,0 +1,242 @@
++/*
++ * Copyright (C) 2026 libass contributors
++ *
++ * This file is part of libass.
++ *
++ * Permission to use, copy, modify, and distribute this software for any
++ * purpose with or without fee is hereby granted, provided that the above
++ * copyright notice and this permission notice appear in all copies.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
++ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
++ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
++ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
++ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ */
++
++/*
++ * ARMv7 NEON rasterizer, included twice from neon32.c (TILE_SIZE 16 and 32).
++ * Every operation mirrors c/rasterizer_template.h with the same int16
++ * truncation, so the output is bit-identical to the C engine.
++ */
++
++#if   TILE_SIZE == 16
++#define N32S(name)  name ## 16_neon32
++#define TILE_ORDER  4
++#elif TILE_SIZE == 32
++#define N32S(name)  name ## 32_neon32
++#define TILE_ORDER  5
++#else
++#error Unsupported tile size
++#endif
++
++#define NV            (TILE_SIZE / 8)
++#define FULL_VALUE    (1 << (14 - TILE_ORDER))
++#define RESCALE_AB(ab, scale) \
++    (((ab) * (int64_t) (scale) + ((int64_t) 1 << (45 + TILE_ORDER))) >> (46 + TILE_ORDER))
++#define RESCALE_C(c, scale) \
++    (((int32_t) ((c) >> (7 + TILE_ORDER)) * (int64_t) (scale) + ((int64_t) 1 << 44)) >> 45)
++
++
++static void N32S(ass_fill_solid_tile)(uint8_t *buf, ptrdiff_t stride, int set)
++{
++    uint8x16_t v = vdupq_n_u8(set ? 255 : 0);
++    for (int y = 0; y < TILE_SIZE; y++) {
++        for (int j = 0; j < TILE_SIZE / 16; j++)
++            vst1q_u8(buf + 16 * j, v);
++        buf += stride;
++    }
++}
++
++
++static void N32S(ass_fill_halfplane_tile)(uint8_t *buf, ptrdiff_t stride,
++                                          int32_t a, int32_t b, int64_t c, int32_t scale)
++{
++    int16_t aa = RESCALE_AB(a, scale), bb = RESCALE_AB(b, scale);
++    int16_t cc = RESCALE_C(c, scale) + FULL_VALUE / 2 - ((aa + bb) >> 1);
++
++    int16_t abs_a = aa < 0 ? -aa : aa;
++    int16_t abs_b = bb < 0 ? -bb : bb;
++    int16_t delta = (FFMIN(abs_a, abs_b) + 2) >> 2;
++
++    // va1[x] = aa * x - delta, va2[x] = aa * x + delta (int16 wrap, as in C)
++    int16x8_t va1[NV], va2[NV];
++    const int16x8_t vdelta = vdupq_n_s16(delta);
++    for (int j = 0; j < NV; j++) {
++        int16x8_t x = vaddq_s16(nv32_index16(), vdupq_n_s16(8 * j));
++        int16x8_t ax = vmulq_n_s16(x, aa);
++        va1[j] = vsubq_s16(ax, vdelta);
++        va2[j] = vaddq_s16(ax, vdelta);
++    }
++
++    const int16x8_t zero = vdupq_n_s16(0), full = vdupq_n_s16(FULL_VALUE);
++    for (int y = 0; y < TILE_SIZE; y++) {
++        int16x8_t vc = vdupq_n_s16(cc);
++        for (int j = 0; j < NV; j += 2) {
++            int16x8_t c1 = vsubq_s16(vc, va1[j]);
++            int16x8_t c2 = vsubq_s16(vc, va2[j]);
++            c1 = vminq_s16(vmaxq_s16(c1, zero), full);
++            c2 = vminq_s16(vmaxq_s16(c2, zero), full);
++            int16x8_t r0 = vshrq_n_s16(vaddq_s16(c1, c2), 7 - TILE_ORDER);
++            c1 = vsubq_s16(vc, va1[j + 1]);
++            c2 = vsubq_s16(vc, va2[j + 1]);
++            c1 = vminq_s16(vmaxq_s16(c1, zero), full);
++            c2 = vminq_s16(vmaxq_s16(c2, zero), full);
++            int16x8_t r1 = vshrq_n_s16(vaddq_s16(c1, c2), 7 - TILE_ORDER);
++            vst1q_u8(buf + 8 * j, vcombine_u8(vqmovun_s16(r0), vqmovun_s16(r1)));
++        }
++        buf += stride;
++        cc -= bb;
++    }
++}
++
++
++// Render top/bottom line of the trapezoid with antialiasing (same as C)
++static inline void N32S(update_border_line)(int16x8_t res[NV],
++                                            int16_t abs_a, const int16x8_t va[NV],
++                                            int16_t b, int16_t abs_b,
++                                            int16_t c, int up, int dn)
++{
++    int16_t size = dn - up;
++    int16_t w = FULL_VALUE + (size << (8 - TILE_ORDER)) - abs_a;
++    w = FFMIN(w, FULL_VALUE) << (2 * TILE_ORDER - 5);
++
++    int16_t dc_b = abs_b * (int32_t) size >> 6;
++    int16_t dc = (FFMIN(abs_a, dc_b) + 2) >> 2;
++
++    int16_t base = (int32_t) b * (int16_t) (up + dn) >> 7;
++    int16_t offs1 = size - ((base + dc) * (int32_t) w >> 16);
++    int16_t offs2 = size - ((base - dc) * (int32_t) w >> 16);
++
++    size <<= 1;
++    const int16x8_t vo1 = vdupq_n_s16(offs1), vo2 = vdupq_n_s16(offs2);
++    const int16x8_t zero = vdupq_n_s16(0), vsize = vdupq_n_s16(size);
++    const int16x4_t vcc = vdup_n_s16(c);
++    for (int j = 0; j < NV; j++) {
++        // cw = (c - va[x]) * w >> 16, with c - va[x] in 32 bits as in C
++        int32x4_t lo = vmulq_n_s32(vsubl_s16(vcc, vget_low_s16(va[j])), w);
++        int32x4_t hi = vmulq_n_s32(vsubl_s16(vcc, vget_high_s16(va[j])), w);
++        int16x8_t cw = vcombine_s16(vmovn_s32(vshrq_n_s32(lo, 16)),
++                                    vmovn_s32(vshrq_n_s32(hi, 16)));
++        int16x8_t c1 = vaddq_s16(cw, vo1);
++        int16x8_t c2 = vaddq_s16(cw, vo2);
++        c1 = vminq_s16(vmaxq_s16(c1, zero), vsize);
++        c2 = vminq_s16(vmaxq_s16(c2, zero), vsize);
++        res[j] = vaddq_s16(res[j], vaddq_s16(c1, c2));
++    }
++}
++
++static void N32S(ass_fill_generic_tile)(uint8_t *restrict buf, ptrdiff_t stride,
++                                        const struct segment *restrict line, size_t n_lines,
++                                        int winding)
++{
++    int16x8_t res[TILE_SIZE][NV];
++    for (int y = 0; y < TILE_SIZE; y++)
++        for (int j = 0; j < NV; j++)
++            res[y][j] = vdupq_n_s16(0);
++    int16_t delta[TILE_SIZE + 2] = {0};
++
++    const int16x8_t zero = vdupq_n_s16(0), full = vdupq_n_s16(FULL_VALUE);
++    const struct segment *end = line + n_lines;
++    for (; line != end; ++line) {
++        int16_t up_delta = line->flags & SEGFLAG_DN ? 4 : 0;
++        int16_t dn_delta = up_delta;
++        if (!line->x_min && (line->flags & SEGFLAG_EXACT_LEFT)) dn_delta ^= 4;
++        if (line->flags & SEGFLAG_UL_DR) {
++            int16_t tmp = up_delta;
++            up_delta = dn_delta;
++            dn_delta = tmp;
++        }
++
++        int up = line->y_min >> 6, dn = line->y_max >> 6;
++        int16_t up_pos = line->y_min & 63;
++        int16_t up_delta1 = up_delta * up_pos;
++        int16_t dn_pos = line->y_max & 63;
++        int16_t dn_delta1 = dn_delta * dn_pos;
++        delta[up + 1] -= up_delta1;
++        delta[up] -= (up_delta << 6) - up_delta1;
++        delta[dn + 1] += dn_delta1;
++        delta[dn] += (dn_delta << 6) - dn_delta1;
++        if (line->y_min == line->y_max)
++            continue;
++
++        int16_t a = RESCALE_AB(line->a, line->scale);
++        int16_t b = RESCALE_AB(line->b, line->scale);
++        int16_t c = RESCALE_C(line->c, line->scale) - (a >> 1) - b * up;
++
++        int16x8_t va[NV];
++        for (int j = 0; j < NV; j++)
++            va[j] = vmulq_n_s16(vaddq_s16(nv32_index16(), vdupq_n_s16(8 * j)), a);
++        int16_t abs_a = a < 0 ? -a : a;
++        int16_t abs_b = b < 0 ? -b : b;
++        int16_t dc = (FFMIN(abs_a, abs_b) + 2) >> 2;
++        int16_t base = FULL_VALUE / 2 - (b >> 1);
++        int16_t dc1 = base + dc;
++        int16_t dc2 = base - dc;
++
++        if (up_pos) {
++            if (dn == up) {
++                N32S(update_border_line)(res[up], abs_a, va, b, abs_b, c, up_pos, dn_pos);
++                continue;
++            }
++            N32S(update_border_line)(res[up], abs_a, va, b, abs_b, c, up_pos, 64);
++            up++;
++            c -= b;
++        }
++        // c1 = c - va[x] + dc1, c2 = c - va[x] + dc2 (int16 wrap, as in C)
++        int16x8_t vb1[NV], vb2[NV];
++        for (int j = 0; j < NV; j++) {
++            vb1[j] = vsubq_s16(vdupq_n_s16(dc1), va[j]);
++            vb2[j] = vsubq_s16(vdupq_n_s16(dc2), va[j]);
++        }
++        for (int y = up; y < dn; y++) {
++            int16x8_t vc = vdupq_n_s16(c);
++            for (int j = 0; j < NV; j++) {
++                int16x8_t c1 = vaddq_s16(vc, vb1[j]);
++                int16x8_t c2 = vaddq_s16(vc, vb2[j]);
++                c1 = vminq_s16(vmaxq_s16(c1, zero), full);
++                c2 = vminq_s16(vmaxq_s16(c2, zero), full);
++                res[y][j] = vsraq_n_s16(res[y][j], vaddq_s16(c1, c2), 7 - TILE_ORDER);
++            }
++            c -= b;
++        }
++        if (dn_pos)
++            N32S(update_border_line)(res[dn], abs_a, va, b, abs_b, c, 0, dn_pos);
++    }
++
++    int16_t cur = 256 * (int8_t) winding;
++    for (int y = 0; y < TILE_SIZE; y++) {
++        cur += delta[y];
++        int16x8_t vcur = vdupq_n_s16(cur);
++        for (int j = 0; j < NV; j += 2) {
++            // |res + cur| (int16 wrap) clamped to 0..255; |-32768| stays
++            // negative and saturates to 0, exactly like the C code
++            int16x8_t v0 = vabsq_s16(vaddq_s16(res[y][j], vcur));
++            int16x8_t v1 = vabsq_s16(vaddq_s16(res[y][j + 1], vcur));
++            vst1q_u8(buf + 8 * j, vcombine_u8(vqmovun_s16(v0), vqmovun_s16(v1)));
++        }
++        buf += stride;
++    }
++}
++
++
++static void N32S(ass_merge_tile)(uint8_t *restrict buf, ptrdiff_t stride,
++                                 const uint8_t *restrict tile)
++{
++    for (int y = 0; y < TILE_SIZE; y++) {
++        for (int j = 0; j < TILE_SIZE / 16; j++)
++            vst1q_u8(buf + 16 * j, vmaxq_u8(vld1q_u8(buf + 16 * j), vld1q_u8(tile + 16 * j)));
++        buf += stride;
++        tile += TILE_SIZE;
++    }
++}
++
++
++#undef N32S
++#undef TILE_ORDER
++#undef NV
++#undef FULL_VALUE
++#undef RESCALE_AB
++#undef RESCALE_C
+diff --git a/libass/ass_bitmap_engine.c b/libass/ass_bitmap_engine.c
+index 847adc4..def4326 100644
+--- a/libass/ass_bitmap_engine.c
++++ b/libass/ass_bitmap_engine.c
+@@ -24,6 +24,10 @@
+ #include "ass_bitmap_engine.h"
+ #include "x86/cpuid.h"
+ 
++#if ASS_NV_NEON32
++#include "arm/neon32.c"
++#endif
++
+ 
+ #define RASTERIZER_PROTOTYPES(tile_size, suffix) \
+     FillSolidTileFunc     ass_fill_solid_tile     ## tile_size ## _ ## suffix; \
+@@ -153,7 +157,7 @@ unsigned ass_get_cpu_flags(unsigned mask)
+ 
+ #endif
+ 
+-#if ARCH_AARCH64
++#if ARCH_AARCH64 || ASS_NV_NEON32
+     flags = ASS_CPU_FLAG_ARM_NEON;
+ #endif
+ 
+@@ -196,6 +200,13 @@ BitmapEngine ass_bitmap_engine_init(unsigned mask)
+ #endif
+ #endif
+ 
++#if ASS_NV_NEON32
++    if (ass_get_cpu_flags(mask) & ASS_CPU_FLAG_ARM_NEON) {
++        ass_bitmap_engine_neon32(&engine, mask);
++        return engine;
++    }
++#endif
++
+     ALL_FUNCTIONS(4, 16, c)
+     if (mask & ASS_FLAG_WIDE_STRIPE) {
+         BLUR_FUNCTIONS(5, 32, c)
+diff --git a/libass/ass_bitmap_engine.h b/libass/ass_bitmap_engine.h
+index 68d7aa8..cb9e2df 100644
+--- a/libass/ass_bitmap_engine.h
++++ b/libass/ass_bitmap_engine.h
+@@ -31,6 +31,16 @@
+  *   must be aligned to the engine alignment
+  */
+ 
++/*
++ * 32-bit ARM with NEON: arm/neon32.c, an intrinsics port of the aarch64
++ * engine (bit-identical to the C engine). Independent of CONFIG_ASM.
++ */
++#if !ARCH_X86 && !ARCH_AARCH64 && defined(__ARM_NEON) && !defined(__aarch64__)
++#define ASS_NV_NEON32 1
++#else
++#define ASS_NV_NEON32 0
++#endif
++
+ struct segment;
+ typedef void FillSolidTileFunc(uint8_t *buf, ptrdiff_t stride, int set);
+ typedef void FillHalfplaneTileFunc(uint8_t *buf, ptrdiff_t stride,
+@@ -95,6 +105,8 @@ enum {
+     ASS_CPU_FLAG_X86_AVX2      = 0x0004,
+ #elif ARCH_AARCH64
+     ASS_CPU_FLAG_ARM_NEON      = 0x0001,
++#elif ASS_NV_NEON32
++    ASS_CPU_FLAG_ARM_NEON      = 0x0001,
+ #endif
+     ASS_CPU_FLAG_ALL           = 0x0FFF,
+     ASS_FLAG_LARGE_TILES       = 0x1000,
