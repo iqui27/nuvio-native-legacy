@@ -782,7 +782,15 @@ const char *addons_id_manifesto(int i) {
 const char *addons_nome_por_id(const char *id) {
   int i;
   if (!id || !id[0]) return "";
-  for (i = 0; i < nAddon; i++) if (addon[i].id[0] && !strcmp(addon[i].id, id)) return addon[i].nome;
+  for (i = 0; i < nAddon; i++) {
+    if (addon[i].id[0] && !strcmp(addon[i].id, id)) return addon[i].nome;
+    if (id[0] == '#') {
+      unsigned h = 2166136261u;
+      for (const unsigned char *p = (const unsigned char *)addon[i].base; *p; p++) h = (h ^ *p) * 16777619u;
+      char key[16]; snprintf(key, sizeof key, "#%08x", h);
+      if (!strcmp(key, id)) return addon[i].nome;
+    }
+  }
   return "";
 }
 

@@ -235,8 +235,9 @@ static float ajTopoLista(void);
 // 2.0.2: o cabecalho da pagina da categoria (o cartao da grade crescido), acima
 // da arte e da lista; o titulo saiu de dentro da ilha da lista.
 #define AJ_CAB_PAGINA  (ajRetrato() && !telefoneui_ativo() ? 224.0f : 136.0f)
-#define AJ_BASE        (NV_VTELA_H - ajPaginaMargem() - AJ_A3_RODAPE)
-#define AJ_A3_CAB       28.0f
+static float triListaBase(void);   // ajustes_tri_desenho.inc
+#define AJ_BASE        triListaBase()
+#define AJ_A3_CAB        8.0f   // 2.1: a lista comeca logo abaixo do cabecalho da ilha
 #define AJ_A3_RODAPE    72.0f
 // Raio da linha em fracao do menor lado (o SDF do shader e normalizado):
 // 12px sobre 88 de altura.
@@ -767,6 +768,8 @@ typedef enum {
   AJ_HERO_PASTA_DETALHES, // Append-only: folder hero details, local and enabled by default.
   AJ_GUIA_PREVIA_DESTACAR, AJ_GUIA_PREVIA_SOM, AJ_GUIA_DIAS,
   AJ_FONTE_OCULTAR_DV, AJ_FONTE_OCULTAR_AUDIO, AJ_FONTE_OCULTAR_VIDEO, // Device-local, append-only.
+  AJ_TV_HOME, // Device-local, append-only; enabled by default.
+  AJ_PS_TAMANHO, // Device-local profile avatar size; append-only.
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -793,6 +796,7 @@ static const char *V_ICONE_APP[ICONEAPP_N] = {
 };
 static const char *V_FONTE_ORDEM_ADDON[] = { "Por qualidade", "Do addon" };
 static const char *V_TELA_ABERTURA[] = { "Cinema", "Detalhada" };
+static const char *V_PS_TAMANHO[] = { "Pequeno", "Médio", "Grande" };
 static const char *V_ABERTURA_FUNDO[] = { "Desligado", "Arte", "Arte borrada" };
 static const char *V_ABERTURA_ESTILO[] = { "Centro", "Canto" };
 static const char *V_ARTE_TOM[] = { "Vívido", "Claro" };
@@ -1930,6 +1934,8 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Ocultar Dolby Vision incompatível", V_AUTO_LIGA, 3),
   ESC("Ocultar áudio incompatível", V_AUTO_LIGA, 3),
   ESC("Ocultar vídeo incompatível", V_AUTO_LIGA, 3),
+  ESC("Mostrar na tela inicial do Android TV", V_LIGA, 2),
+  ESC("Tamanho dos perfis", V_PS_TAMANHO, 3),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2275,6 +2281,8 @@ static const char *CHAVE[] = {
   "heroFolderDetailsLocal",
   "guiaPreviaDestacarLocal", "guiaPreviaSomLocal", "guiaDiasLocal",
   "fonteOcultarDvLocal", "fonteOcultarAudioLocal", "fonteOcultarVideoLocal",
+  "androidTvHomeLocal",
+  "psTamanhoLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2359,6 +2367,24 @@ static int grupoAberto[AJ_MAX_SECOES];
 // leva a uma avancada). Dura a sessao; nao vai para o disco.
 static int maisAberto[AJ_MAX_SECOES];
 static int maisItem[AJ_MAX_SECOES];   // indice em TELA do IT_MAIS da categoria (-1 = nao tem)
+#define AJ_TRI_POLISH 1
+static int triSubmenu = -1;         // TELA topic index; presentation only
+static int triTopico(int i) {
+  if (i < 0 || i >= AJ_N_TELA || TELA[i].tipo != IT_ROT) return 0;
+  int end = i + 1;
+  while (end < AJ_N_TELA && TELA[end].tipo == IT_OPC) end++;
+  return end - i - 1 >= 8;
+}
+static int triDono(int i) {
+  if (i < 0 || i >= AJ_N_TELA || TELA[i].tipo != IT_OPC) return -1;
+  while (--i >= 0 && TELA[i].tipo == IT_OPC) {}
+  return triTopico(i) ? i : -1;
+}
+static int triMostrar(int i) {
+  if (triSubmenu >= 0)
+    return i > triSubmenu && TELA[i].tipo == IT_OPC && triDono(i) == triSubmenu;
+  return TELA[i].tipo != IT_OPC || triDono(i) < 0;
+}
 
 static void montarTela(void) {
   int i, s = -1, g = -1, depois = 0;
@@ -2708,8 +2734,8 @@ int ajustes_pediu_livetv_diag(void) { int v = pediuLivetvDiag; pediuLivetvDiag =
 // escreve, e por isso os dois nunca discordam.
 static int focoItem = 0;
 static int focoOp = -1;
-static void aj4Focar(int op);
-static void aj4Iniciar(void);
+static void triFocar(int op);
+static void triIniciar(void);
 // Pedido do cartao de novidades ("Experimentar a cor viva"): a proxima
 // abertura pousa na linha da cor, dentro de Aparencia (ver ajustes_iniciar).
 static int abrirNaCor, abrirNaFonte, abrirNoLayout, abrirNoVidro, abrirNoTrakt, abrirNaEspera, abrirFileiras;
@@ -2792,8 +2818,8 @@ static float scrollY = 0.0f;
 // aqui partia na velocidade maxima e o primeiro quadro ja saltava 12%.
 static float velY = 0.0f;
 #ifdef NV_TOUCH_UI
-enum { AJT_MENU, AJT_INDICE, AJT_LISTA, AJT_EDITOR, AJT_DIFS, AJT_SUB, AJT_FONTES, AJT_FILEIRAS, AJT_N };
-typedef struct { GfxRect r; float *offset, maximo, escala; int id; } AjToqueRegiao;
+enum { AJT_MENU, AJT_INDICE, AJT_LISTA, AJT_EDITOR, AJT_DIFS, AJT_SUB, AJT_FONTES, AJT_FILEIRAS, AJT_FAIXA, AJT_UTIL, AJT_SECOES, AJT_N };
+typedef struct { GfxRect r; float *offset, maximo, escala; int id, eixoX; } AjToqueRegiao;
 static AjToqueRegiao ajToqueRegioes[AJT_N];
 static int ajToqueN, ajToqueAtivo = -1, ajToqueLivre[AJT_N], ajToqueChave[AJT_N];
 static float ajToqueOffset[AJT_N];
@@ -2806,9 +2832,9 @@ static void ajToqueCamada(void) { ajToqueN = 0; }
 static int ajToqueRolar(const PonteiroRolagem *e) {
   if (!layout_modo_mobile()) return 0;
   if (e->fase == PONT_ROL_INICIO) {
-    if (!e->eixoY) return 0;
     for (int i = ajToqueN - 1; i >= 0; i--) {
       AjToqueRegiao *r = &ajToqueRegioes[i];
+      if (r->eixoX == e->eixoY) continue;   // a regiao rola num eixo so (a faixa de secoes e horizontal)
       if (e->x >= r->r.x && e->x < r->r.x + r->r.w && e->y >= r->r.y && e->y < r->r.y + r->r.h) {
         ajToqueAtivo = r->id; ajToqueLivre[r->id] = 1; return 1;
       }
@@ -2828,7 +2854,7 @@ static int ajToqueRolar(const PonteiroRolagem *e) {
   return 1;
 }
 // Guarda a escala durante o desenho: no fio de eventos a escala ja voltou a 1.
-static float ajToqueRegistrar(int id, GfxRect r, float *offset, float maximo, float alvo, int chave) {
+static float ajToqueRegistrarEixo(int id, GfxRect r, float *offset, float maximo, float alvo, int chave, int eixoX) {
   if (!ajTelaCheia()) return alvo;
   float s = gfx_escala();
   if (ajToqueChave[id] != chave) {
@@ -2838,10 +2864,13 @@ static float ajToqueRegistrar(int id, GfxRect r, float *offset, float maximo, fl
   if (!ajToqueLivre[id]) *offset = alvo;
   maximo = fmaxf(0.0f, maximo); *offset = anim_clamp(*offset, 0.0f, maximo);
   if (ajToqueN < AJT_N && s > 0.0f && r.w > 0.0f && r.h > 0.0f) {
-    ajToqueRegioes[ajToqueN++] = (AjToqueRegiao){ {r.x * s, r.y * s, r.w * s, r.h * s}, offset, maximo, s, id };
+    ajToqueRegioes[ajToqueN++] = (AjToqueRegiao){ {r.x * s, r.y * s, r.w * s, r.h * s}, offset, maximo, s, id, eixoX };
     ponteiro_rolagem(ajToqueRolar);
   }
   return *offset;
+}
+static float ajToqueRegistrar(int id, GfxRect r, float *offset, float maximo, float alvo, int chave) {
+  return ajToqueRegistrarEixo(id, r, offset, maximo, alvo, chave, 0);
 }
 #endif
 static float screenReveal, screenRoute=-1;
@@ -2886,12 +2915,9 @@ static char uxAviso[160];
 static Uint32 uxAvisoAte;
 static const char *textoValor(int op);
 static int ajOpcaoDisponivel(int op);
-static int aj4Evento(SDL_Keycode k);
+static int triEvento(SDL_Keycode k);
 static void ajPenSavedForget(void);
-static int aj4RTL(void);
-static int ajPenLanguageMove(SDL_Keycode key);
-static const char *aj4Rotulo(int op);
-static int aj4Simples(int op);
+static int triRTL(void);
 static int uxTemPadrao(int op);
 static int uxDiferente(int op);
 static void uxCancelar(void);
@@ -3034,6 +3060,8 @@ int ajustes_brilho_player(void)    { int v = valor[AJ_BRILHO_PLAYER]; return v <
 void ajustes_espelhar_enquetes(int ligado) { int n = ligado ? 0 : 1; if (valor[AJ_ENQUETES] != n) { valor[AJ_ENQUETES] = n; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); } }
 int ajustes_fonte_hdr(void)        { int v = valor[AJ_FONTE_HDR]; return v < 0 || v > 2 ? 0 : v; }
 int ajustes_fonte_ordem_addon(void)   { return valor[AJ_FONTE_ORDEM_ADDON] == 1; }
+int ajustes_tv_home(void) { return valor[AJ_TV_HOME] == 0; }
+
 int ajustes_fonte_ocultar(int regra) {
   if (regra < 0 || regra > 2) return 0;
   int v = valor[AJ_FONTE_OCULTAR_DV + regra];
@@ -3941,6 +3969,7 @@ int ajustes_cw_mostrar_nao_exibidos(void)  { return lig(AJ_CW_NAO_EXIBIDOS); }
 int ajustes_cw_ordem(void)            { return valor[AJ_CW_ORDEM]; }
 int ajustes_cw_retido_tambem(void)    { return lig(AJ_CW_RETIDO_TAMBEM); }
 int ajustes_ps_continuar(void)        { return lig(AJ_PS_CONTINUAR); }
+int ajustes_ps_tamanho(void)          { int v = valor[AJ_PS_TAMANHO]; return v >= 0 && v <= 2 ? v : 1; }
 int ajustes_dts_ac3(void)             { return valor[AJ_DTS_AC3] == 1; }
 // .tpk: HLS (o TS continuo e so a troca automatica de video_tpk.c) ou desligado.
 int ajustes_dts_tpk_modo(void) {
@@ -6239,7 +6268,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_PLR_CLASSIF:    /* o web nao tem esta escolha */
     case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS: /* conquistas: por perfil desta TV */
     case AJ_CW_RETIDO_TAMBEM: /* o web nao tem a ilha */
-    case AJ_PS_CONTINUAR:   /* o web nao tem este cartao; escolha desta TV */
+    case AJ_PS_CONTINUAR: case AJ_PS_TAMANHO: /* Profile picker preferences belong to this TV. */
     case AJ_AUD_ORIGINAL: case AJ_AUDIO_NORMALIZAR:
     case AJ_DEBRID_LIGADO: case AJ_ADDONS_LIGADO: case AJ_LEG_ESTILO_LIGADO:
     case AJ_AUDIO_OFFSET:   /* audio presentation calibration belongs to this TV */
@@ -6332,6 +6361,7 @@ static int somenteDesteAparelho(int op) {
 // memoria, rede e idioma da interface ficam. Segredos nunca estao em valor[].
 static int soNaTv(int op) {
   switch (op) {
+    case AJ_TV_HOME:
     case AJ_FONTE_OCULTAR_DV: case AJ_FONTE_OCULTAR_AUDIO: case AJ_FONTE_OCULTAR_VIDEO:
     case AJ_ICONE_APP: case AJ_LOGO_APP: case AJ_ABERTURA:
     case AJ_IDIOMA: case AJ_FONTE_UI: case AJ_ANIM:
@@ -6907,13 +6937,11 @@ static int foraDestaPlataforma(int op) {
   if (op == AJ_INTERFACE_MODO) return 1;
 #endif
 #ifndef NV_ANDROID
-  if (op == AJ_PLAYER_EXTERNO || op == AJ_PLAYER_ANIME) return 1;   // #501: so ha outro player no Android
+  if (op == AJ_TV_HOME || op == AJ_PLAYER_EXTERNO || op == AJ_PLAYER_ANIME) return 1;   // #501: so ha outro player no Android
 #endif
   if (op == AJ_RELOGIO_POS) return 1;   // saiu da tela em 7d69643a: a ilha e sempre no canto direito
-  // 2.0.3: o Descobrir do web nao existe na TV; "Avancadas" e a pilula do alto
-  // do indice; os oito AJ_MDB_* seguem as "Notas no titulo" (notaLigarPar).
-  if (op == AJ_DESCOBRIR || op == AJ_AVANCADAS) return 1;
-  if (op >= AJ_MDB_TRAKT && op <= AJ_MDB_MAL) return 1;
+  // 2.0.3: o Descobrir do web nao existe na TV (nada le AJ_DESCOBRIR).
+  if (op == AJ_DESCOBRIR) return 1;
   // #509: um so interruptor de som; AJ_DET_TRAILER_SOM fica so para a migracao.
   if (op == AJ_DET_TRAILER_SOM) return 1;
 #ifndef __EMSCRIPTEN__
@@ -7052,7 +7080,7 @@ int ajustes_iniciar(void) {
   // Reabre na categoria em que estava, com o foco no indice (ver focoIndice).
   if (secAtual < 0 || secAtual >= nSecoes) secAtual = 0;
   focoIndice = 1; uxChipAv = 0; uxTopo = -1;
-  aj4Iniciar();
+  triIniciar();
   focarSecao(secAtual);
   uxTopo = -1; uxCabLayout = 0;
   // "Experimentar a cor viva" (cartao de novidades): abre em Aparencia com o
@@ -7807,7 +7835,7 @@ static int visivel(int i) {
   return 1;
 }
 static int focavel(int i) {
-  return (TELA[i].tipo == IT_GRP || TELA[i].tipo == IT_OPC || TELA[i].tipo == IT_MAIS) && visivel(i);
+  return (TELA[i].tipo == IT_GRP || TELA[i].tipo == IT_OPC || TELA[i].tipo == IT_MAIS || triTopico(i)) && triMostrar(i) && visivel(i);
 }
 static void focar(int i) {
   if (i < 0 || i >= AJ_N_TELA) return;
@@ -7828,6 +7856,7 @@ static int primeiroDaSecao(int s) {
 }
 static void focarSecao(int s) {
   if (s < 0 || s >= nSecoes) return;
+  triSubmenu = -1;
   { int i = uxUltimoItem[s];
     focar(i > secIni[s] && i < secFim(s) && focavel(i) ? i : primeiroDaSecao(s)); }
 }
@@ -7846,9 +7875,7 @@ static void focarOpcao(int op) {
     // (so nesta sessao) em vez de esconder o destino.
     if (uxAvancada(op) && !lig(AJ_AVANCADAS)) maisAberto[secDoItem[i]] = 1;
     focar(i);
-    focoIndice = 0;
-    aj4Focar(op);
-    focoIndice = 0;
+    triFocar(op);
     return;
   }
 }
@@ -8307,6 +8334,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_ESPACO_FILEIRAS: return "O espaço vertical entre uma fileira da Home e a seguinte. Com menos cabem mais fileiras na tela, com mais a Home fica mais arejada.";
     case AJ_ESPACO_TITULOS: return "O espaço horizontal entre os cartazes de uma fileira da Home.";
     case AJ_TUNNELING: return "Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.";
+    case AJ_TV_HOME: return "Mostra Continuar assistindo e o canal Nuvio no Android TV. Perfis infantis ficam ocultos. Desligar remove os itens publicados. Vale só nesta TV.";
     case AJ_AFR: return "Troca a taxa de atualização da TV para a do vídeo (24 Hz, 50 Hz...), reduzindo trepidação. Automático aplica a melhor correspondência ao abrir o vídeo e restaura ao sair; se a TV não oferecer um modo compatível, nada muda. Só Android TV.";
     case AJ_HDR_INTERFACE: return "HDR experimental para os menus. Branco limitado a 203 nits. Reinicie o app após mudar. Sem suporte, usa SDR.";
     case AJ_AMPLIAR_UI: return "Só vale com a resolução em 1080p ou 720p: o app amplia a interface para a tela (usa mais GPU). Na Automática e na 4K quem amplia é a TV. Reinicie o app depois de mudar.";
@@ -8320,6 +8348,7 @@ static const char *ajudaOpcaoBase(int op) {
 #else
     case AJ_DTS_AC3: return "Como o áudio DTS é entregue à TV quando o app o converte (só na LG). Estéreo (AAC) é o modo provado e serve qualquer TV. 5.1 (Dolby Digital) mantém o som surround para barra de som e receiver por ARC/eARC; vale a partir do próximo vídeo.";
 #endif
+    case AJ_PS_TAMANHO: return "Tamanho dos avatares na escolha de perfil: Pequeno, Médio (o de sempre) ou Grande.";
     case AJ_PS_CONTINUAR: return "Ligado, cada perfil mostra na escolha de perfil o cartão com o que ele estava assistindo. Desligado, a tela mostra só os perfis.";
     case AJ_HIST_CONTA: return "Ligado (padrão): o que você assiste neste perfil sobe para a conta Nuvio, com o progresso e os vistos. Desligado: nada disso é enviado à conta; o Trakt e o Simkl vinculados a este perfil continuam recebendo. Vale só para este perfil.";
     case AJ_SOCIAL: return "Ligado (padrão): amigos, atividade deles e recomendações. Desligado: tudo isso some, com a fileira de amigos da Home, e o app para de falar com o serviço social. Salvos e Avisos continuam. Vale só para este perfil.";
@@ -8417,6 +8446,9 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_NT_METAUSER: case AJ_NT_TRAKT: case AJ_NT_TMDB: case AJ_NT_LETTER:
     case AJ_NT_MAL: case AJ_NT_EBERT: case AJ_NT_SCORE:
       return "Mostra esta nota na linha do título, com a marca e a escala do próprio site. Se a linha não couber, saem primeiro as menos importantes. A aba de notas continua mostrando todas.";
+    case AJ_GUIA_PREVIA_DESTACAR: return "Quando a prévia do canal começa no Guia de TV: ao destacar ou só ao selecionar. Ao destacar é mais rápido; ao selecionar poupa rede e evita a prévia enquanto você só passa pela lista.";
+    case AJ_GUIA_PREVIA_SOM: return "A prévia do canal no Guia de TV toca sem som. Desligado, o áudio do canal entra junto com a prévia.";
+    case AJ_GUIA_DIAS: return "Quantos dias de programação o Guia de TV carrega e guarda. Um dia é mais leve e abre mais rápido; três dias deixam ver o que vem nos próximos dias.";
     default: return "Use as setas laterais para escolher. A preferência é aplicada ao alterar o valor.";
   }
 }
@@ -8683,7 +8715,7 @@ static float yDoItem(int item) {
   for (i = secIni[s]; i < item && i < secFim(s); i++) y += alturaItem(i);
   return y;
 }
-static float alturaFoco(int i) { return TELA[i].tipo == IT_GRP ? AJ_GRUPO_H : TELA[i].tipo == IT_MAIS ? alturaItem(i) : ajLinhaH(i); }
+static float alturaFoco(int i) { return triTopico(i) ? alturaItem(i) : TELA[i].tipo == IT_GRP ? AJ_GRUPO_H : TELA[i].tipo == IT_MAIS ? alturaItem(i) : ajLinhaH(i); }
 
 // Tecla dentro da folha de fileiras.
 //
@@ -10104,7 +10136,7 @@ static int ehInterruptor(int op) {
 #include "ajustes_ux_dados.inc"
 #include "ajustes_ux_interacao.inc"
 #include "ajustes_ux_perfil.inc"
-#include "ajustes_ux_v4.inc"
+#include "ajustes_tri.inc"
 
 static const char *uxCaminho(int op);
 static const char *uxBloco(int op);
@@ -10124,7 +10156,7 @@ void ajustes_evento(const SDL_Event *e) {
   if (tourAberto && e->type==SDL_KEYDOWN && tourSeta(e->key.keysym.sym)) {
     tourEvento(e); AJ_ESCALA_FIM(); return;
   }
-  if (e->type==SDL_KEYDOWN && navigationMove(e->key.keysym.sym)) { AJ_ESCALA_FIM(); return; }
+  if (e->type==SDL_KEYDOWN && !triSetaSemantica(e->key.keysym.sym) && navigationMove(e->key.keysym.sym)) { AJ_ESCALA_FIM(); return; }
   if (tourAberto) { tourEvento(e); AJ_ESCALA_FIM(); return; }
   // Resolve the tour destination before another key can reach the old page.
   if (tourPend) tourAtualizar(0);
@@ -10442,18 +10474,16 @@ static void eventoTela(const SDL_Event *e) {
 
 }
 
-static void aj2Atualizar(float dt);
 void ajustes_fontes_atualizar(void) {
   const char *fonteStatus = legfontes_atualizar();
   ajFonteInterfaceAplicar();
   if (fonteStatus) uxNotificar(fonteStatus);
 }
 void ajustes_atualizar(float dt, Uint32 agora) {
-  ajPenDt=dt;ajPenMotionUpdate(dt);
   if(iptvForm.tipo && !nv_perfil_sessao_atual(iptvForm.sessao)) { ajIptvLimparForm();uxCancelar();stCampo=0;teclado_esquecer(); }
   ajLegendaEspelhar(); ajIptvEspelhar();
   AJ_ESCALA_INI();
-  int route=tourAberto*1000+frAberta*10+ffCategoria+aj4Util*100+focoIndice*10000+uxEditor*100000+aj4Grupos*1000000;
+  int route=tourAberto+frAberta*8+(ffCategoria+2)*128;   // 2.1: ilhas, editor e rotas animam por conta propria
   if(screenRoute!=route){screenRoute=route;screenReveal=0;}
   screenReveal=ajustes_animacoes_reduzidas()?!sair:anim_mola(screenReveal,!sair,dt,NV_MOLA_TELA);
   guiaAtualizar(dt);
@@ -10493,10 +10523,6 @@ void ajustes_atualizar(float dt, Uint32 agora) {
     if(ajPenSaveKeyboard && r!=TECLADO_NADA) {
       if(r==TECLADO_PRONTO && ajPenSaveProfile==perfis_ativo())uxNotificar(ajPenSavedSave(teclado_texto())?"Preset salvo.":"Não foi possível salvar. O valor anterior foi mantido.");
       ajPenSaveKeyboard=0;teclado_esquecer();r=TECLADO_NADA;
-    }
-    if (aj4BuscaTeclado && r != TECLADO_NADA) {
-      if(r==TECLADO_PRONTO)snprintf(aj4Consulta,sizeof aj4Consulta,"%s",teclado_texto());
-      aj4BuscaTeclado=0; teclado_esquecer(); r=TECLADO_NADA;
     }
     if (r == TECLADO_PRONTO && stCampo) {
       size_t cap;char *rascunho=ajIptvRascunho(stCampo,&cap);
@@ -10639,7 +10665,7 @@ void ajustes_atualizar(float dt, Uint32 agora) {
 #endif
     scrollY = anim_mola2_reduzida(&velY, scrollY, alvo, dt, NV_MOLA2_SCROLL,
                                   ajustes_animacoes_reduzidas());
-  aj2Atualizar(dt);
+  triAtualizar(dt);
   AJ_ESCALA_FIM();
 }
 
@@ -11204,7 +11230,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_FIL_ORDEM: case AJ_RAIL: case AJ_RAIL_MODERNA: case AJ_MENU_TOPO: case AJ_ABAS_ESTILO:
     case AJ_RAIL_BLUR: case AJ_MIC_BUSCA: case AJ_HERO: case AJ_HERO_CATALOGOS: case AJ_HERO_GENERO:
     case AJ_HERO_SINOPSE: case AJ_HERO_NOTAS: case AJ_HERO_ANO: case AJ_HERO_DURACAO:
-    case AJ_PS_FUNDO: case AJ_PS_CONTINUAR: case AJ_DESCOBRIR: case AJ_ROTULOS:
+    case AJ_PS_FUNDO: case AJ_PS_CONTINUAR: case AJ_PS_TAMANHO: case AJ_DESCOBRIR: case AJ_ROTULOS:
     case AJ_NOME_ADDON: case AJ_SUFIXO_TIPO: case AJ_OCULTAR_NLANC: case AJ_MURAL_TITULOS:
     case AJ_NOTAS_HOME: case AJ_GRAD_CLASSICO: case AJ_SELO_VISTO: case AJ_OCULTAR_FILMES_VISTOS: case AJ_BIB_HOME: case AJ_TITULO_FIL:
       return AJPV_HOME;
@@ -11293,7 +11319,7 @@ static AjPreview familiaPreviaOpcao(int op) {
 
 #include "ajustes_ux_desenho.inc"
 #include "ajustes_ux_perfil_desenho.inc"
-#include "ajustes_ux_v4_desenho.inc"
+#include "ajustes_tri_desenho.inc"
 
 #ifdef AJUSTES_TESTE
 void teclado_teste_texto(const char *t);
@@ -11324,7 +11350,7 @@ static void ajDesenharTudo(Uint32 agora) {
   montarTela();
   if (guiaAberto) { ponteiro_camada(); guiaDesenhar(); return; }
   if (tourAberto && tourVis > .99f) { ponteiro_camada(); tourDesenhar(); return; }
-  aj4Desenhar();
+  triDesenhar();
   // Tour enter/exit: the page fades and rises over v4 instead of cutting.
   if (tourVis > .01f) { if (tourAberto) ponteiro_camada(); tourDesenhar(); }
 
@@ -11573,7 +11599,7 @@ int ajustes_teste_quadro(const char *id) {
   if (teclado_aberto()) { SDL_Event e = { 0 }; e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_ESCAPE; teclado_evento(&e); }
   aj2PoseFixa = 0;
   if (!strncmp(id, "tour", 4)) {
-    aj4Iniciar(); pfTela = 0; uxVeioBusca = 0;
+    triIniciar(); pfTela = 0; uxVeioBusca = 0;
     tourAbrir(); tourInicio = (long)time(NULL);
     if (!strcmp(id, "tour-more")) { tourFoco = 8; tourTopo = 2; tourRol = tourRolAlvo = 808; }
     if (!strcmp(id, "tour-last")) { tourFoco = 16; tourTopo = 3; tourRol = tourRolAlvo = 1212; }
@@ -11581,113 +11607,27 @@ int ajustes_teste_quadro(const char *id) {
     if (!strcmp(id, "tour-edit")) { tourVis = 1; tourLigar(2); tourAtualizar(0); }
     return 1;
   }
-  if(!strncmp(id,"pen-",4)) {
-    static const char *const names[]={"Marina"};perfis_teste_definir(names,NULL,1,1);
-    aj4Iniciar();pfTela=0;uxVeioBusca=0;valor[AJ_AVANCADAS]=0;valor[AJ_TEMA]=6;
-    if(!strcmp(id,"pen-review")) { aj4Util=2;focoIndice=0;ajPenPresetPrepare(0); }
-    else if(!strcmp(id,"pen-provider"))ajPenOpen(AJ_PEN_PROVIDER);
-    else if(!strcmp(id,"pen-iptv-provider"))ajPenOpen(AJ_PEN_IPTV_PROVIDER);
-    else if(!strcmp(id,"pen-provider-failures"))ajPenOpen(AJ_PEN_PROVIDER_FAILURES);
-    else if(!strcmp(id,"pen-addon-failures"))ajPenOpen(AJ_PEN_ADDON_FAILURES);
-    else if(!strcmp(id,"pen-editor-number")) { ajPenOpen(28);focarOpcao(AJ_LEG1_TAMANHO);uxAbrirEditor(AJ_LEG1_TAMANHO); }
-    else if(!strcmp(id,"pen-editor-choice")) { ajPenOpen(33);focarOpcao(AJ_HOME_LAYOUT);uxAbrirEditor(AJ_HOME_LAYOUT); }
-    else if(!strcmp(id,"pen-components"))ajPenOpen(AJ_PEN_COMPONENTS);
-    else if(!strcmp(id,"pen-parental")) {
-      perfil_regras_amostra();
-      valor[AJ_ENQUETES]=1;valor[AJ_HERO_TRAILER]=0;ajPenOpen(AJ_PEN_PARENTAL);
-    }
-    else if(!strcmp(id,"pen-rules"))ajPenOpen(AJ_PEN_RULES);
-    else if(!strcmp(id,"pen-features"))ajPenOpen(AJ_PEN_TOUR);
-    else if(!strcmp(id,"pen-presets")) {
-      ajPenSavedLoad();ajPenSavedCount=2;
-      snprintf(ajPenSavedNames[0],64,"Filme de sexta");snprintf(ajPenSavedNames[1],64,"TV com a vó");
-      memset(ajPenSavedValues,-1,sizeof ajPenSavedValues);
-      ajPenSavedValues[0][AJ_AUD_LINGUA]=2;ajPenSavedValues[0][AJ_LEG1_TAMANHO]=140;
-      ajPenSavedValues[1][AJ_FONTE_MANUAL]=1;ajPenSavedValues[1][AJ_HERO_TRAILER]=1;ajPenSavedValues[1][AJ_LEG1_COR]=0;
-      aj4Util=2;focoIndice=0;
-    }
-    else if(!strcmp(id,"pen-quality")) { ajPenOpen(29);focarOpcao(AJ_QUALIDADE);uxAbrirEditor(AJ_QUALIDADE);uxPendente=1; }
-    else if(!strcmp(id,"pen-source")) {
-      Stream fixture[5]={0};const char *labels[]={"Torrentio · 4K Dolby Vision","Real-Debrid · 1080p","Torrentio · 720p","Mediafusion + · 1080p","YTS · 720p"};
-      const int heights[]={2160,1080,720,1080,720};
-      for(int i=0;i<5;i++) { snprintf(fixture[i].rotulo,sizeof fixture[i].rotulo,"%s",labels[i]);fixture[i].altura=heights[i];fixture[i].debridServico=i==1?DEBRID_RD+1:0;snprintf(fixture[i].url,sizeof fixture[i].url,"https://example.invalid/source-%d.mp4",i); }
-      stream_definir_lista(fixture,5);stream_definir_atual(1);ajPenOpen(AJ_PEN_SOURCES);ajPenRow=3;valor[AJ_FONTE_MANUAL]=0;
-    }
-    else if(!strcmp(id,"pen-scale")) { ajPenOpen(34);focarOpcao(AJ_ESCALA_TEXTO);uxAbrirEditor(AJ_ESCALA_TEXTO);uxPendente=2; }
-    else if(!strcmp(id,"pen-color")) { ajPenOpen(34);focarOpcao(AJ_TEMA);uxAbrirEditor(AJ_TEMA);uxPendente=3; }
-    else if(!strcmp(id,"pen-audio")) {
-      int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=valor[AJ_LEG_LINGUA]=order[1];
-      valor[AJ_LEG_FORCADA]=valor[AJ_LEG_SYNC_AUDIO]=0;valor[AJ_LEG_LINGUA2]=0;
-      ajPenOpen(27);ajPenRow=1;
-    }
-    else if(!strcmp(id,"pen-estilo")) {
-      VideoLegendaEstilo *sample=player_leg_estilo();sample->tamanho=100;sample->fundo=2;sample->negrito=1;sample->posicao=0;
-      ajLegendaEspelhar();ajPenOpen(28);aj4Topo=2;
-    }
-    else if(!strncmp(id,"pen-adv-",8))ajPenOpen(atoi(id+8));
-    else if(!strncmp(id,"pen-main-",9)) {
-      int page=atoi(id+9);
-      if(page==0) { valor[AJ_FONTE_MANUAL]=0;valor[AJ_FONTE_REPOR]=0; }
-      if(page==1) { valor[AJ_PULAR_ABERTURA]=valor[AJ_PULAR_CREDITOS]=valor[AJ_PROXIMO_AUTO]=0;valor[AJ_REACAO_CREDITOS]=1;valor[AJ_PROXIMO_CONTAGEM]=10;valor[AJ_PROPORCAO_PADRAO]=1; }
-      if(page==2)valor[AJ_SELOS_CORES]=0;
-      if(page==3)valor[AJ_MANTER_VIDEO]=0;
-      if(page==4) { valor[AJ_HOME_LAYOUT]=0;valor[AJ_HERO_CHEIO]=0;valor[AJ_ITENS_FILEIRA]=1;valor[AJ_OCULTAR_NLANC]=0; }
-      if(page==5) { valor[AJ_ESCALA_TEXTO]=2;valor[AJ_TAMANHO_UI]=0;valor[AJ_VIDRO_OPAC]=2;valor[AJ_VIDRO_FOSCO]=0;valor[AJ_ANIM]=0;valor[AJ_FUNDO]=1; }
-      if(page==6) { valor[AJ_HERO_TRAILER]=0;valor[AJ_DET_TRAILER_AUTO]=0;valor[AJ_HERO_TRAILER_SOM]=0;valor[AJ_EXPANDIR_ATRASO]=2;valor[AJ_GRAD_CLASSICO]=0; }
-      if(page==7) { valor[AJ_DET_BLUR_NAO_VISTOS]=0;valor[AJ_DET_VEU]=40;valor[AJ_DET_TOPO]=2;valor[AJ_NT_TMDB]=0; }
-      if(page==9)valor[AJ_ADDONS_PRINCIPAL]=0;
-      if(page==13)valor[AJ_LIVETV_PROXY]=1;
-      if(page==14)valor[AJ_NAV_RAPIDA]=0;
-      if(page==16) { valor[AJ_COLECAO_EXIBICAO]=1;valor[AJ_DESCOBRIR]=1; }
-      ajPenOpen(29+page);
-      if(page==6 || page==16)aj4Topo=2;
-    }
-    else if(!strcmp(id,"pen-audio-idioma")) {
-      int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=order[1];valor[AJ_AUD_ORIGINAL]=0;
-      ajPenOpen(27);focarOpcao(AJ_AUD_LINGUA);uxAbrirEditor(AJ_AUD_LINGUA);uxPendente=order[2];
-    }
-    else if(!strcmp(id,"pen-segunda")) {
-      ling_local_legenda2("en");valor[AJ_LEG_LINGUA2]=3;
-      ajPenOpen(AJ_PEN_SECONDARY);ajPenRow=4;valor[AJ_LEG2_BORDA]=2;
-    }
+  if (!strncmp(id, "tri-", 4)) {   // 2.1: as tres ilhas (docs/reviews/ajustes-fable)
+    static const char *const nomes[] = { "Marina" };
+    perfis_teste_definir(nomes, NULL, 1, 1);
+    triIniciar(); pfTela = 0; uxVeioBusca = 0; valor[AJ_AVANCADAS] = 1; valor[AJ_TEMA] = 6;
+    valor[AJ_IDIOMA] = 0; idiomaEfetivo = IDIOMA_PT; valor[AJ_HOME_LAYOUT] = 1;
+    valor[AJ_QUALIDADE] = 1;   // uma linha "diferente do padrao"
+    if (!strcmp(id, "tri-indice")) { }
+    else if (!strcmp(id, "tri-chips")) { triIlha = TRI_CHIPS; triChip = TRI_C_DIF; }
+    else if (!strcmp(id, "tri-secao")) { triEntrar(0); }
+    else if (!strcmp(id, "tri-opcao")) { focarOpcao(AJ_FONTE_PRIORIDADE); }
+    else if (!strcmp(id, "tri-mais")) { maisAberto[0] = 1; focarOpcao(AJ_DTS_AC3); }
+    else if (!strcmp(id, "tri-editor")) { focarOpcao(AJ_AUD_LINGUA); uxAbrirEditor(AJ_AUD_LINGUA); }
+    else if (!strcmp(id, "tri-numero")) { focarOpcao(AJ_LEG1_TAMANHO); uxAbrirEditor(AJ_LEG1_TAMANHO); }
+    else if (!strcmp(id, "tri-cor")) { focarOpcao(AJ_TEMA); uxAbrirEditor(AJ_TEMA); uxPendente = 3; }
+    else if (!strcmp(id, "tri-presets")) { triUtilAbrir(TRI_U_PRESETS); }
+    else if (!strcmp(id, "tri-revisao")) { triPresetPreparar(2); triUtilAbrir(TRI_U_REVISAO); triUtilVolta = TRI_U_PRESETS; }
+    else if (!strcmp(id, "tri-diferentes")) { triUtilAbrir(TRI_U_DIF); }
+    else if (!strcmp(id, "tri-parental")) { perfil_regras_amostra(); triSecFoco = nSecoes; triEntrar(nSecoes); triLinha = TRI_P_TEMPO; }
+    else if (!strcmp(id, "tri-solido")) { valor[AJ_VIDRO] = 1; triEntrar(0); }
+    else if (!strcmp(id, "tri-lista")) { valor[AJ_LAYOUT_AJUSTES] = 1; triEntrar(5); }
     else return 0;
-    return 1;
-  }
-  if (!strncmp(id, "v4-", 3)) {
-    static const char *const PF_V4[] = { "Marina" };
-    perfis_teste_definir(PF_V4, NULL, 1, 1);   // chip e escopo com nome, como o mockup
-    aj4Iniciar(); pfTela=0; uxVeioBusca=0;
-    valor[AJ_TEMA]=2; valor[AJ_AVANCADAS]=1;
-    if (!strcmp(id,"v4-inicio-avancado") || !strcmp(id,"v4-inicio-simples")) {
-      static const char *const names[]={"Marina"};perfis_teste_definir(names,NULL,1,1);
-      valor[AJ_IDIOMA]=0;idiomaEfetivo=IDIOMA_PT;
-      valor[AJ_TEMA]=6;valor[AJ_HOME_LAYOUT]=1;
-      int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=order[1];
-      aj4Linha=!strcmp(id,"v4-inicio-avancado")?3:1;
-      if(!strcmp(id,"v4-inicio-avancado")) { valor[AJ_AVANCADAS]=0;valor[AJ_QUALIDADE]=1; }
-    }
-    else if (!strcmp(id,"v4-secao")) { valor[AJ_AVANCADAS]=0; aj4Entrar(0); aj4Grupos=0; }
-    else if (!strcmp(id,"v4-secao-grupos")) { valor[AJ_AVANCADAS]=0; aj4Entrar(0); }   // pagina de grupos com "Mais grupos"
-    else if (!strcmp(id,"v4-review")) {   // revisao com escopo misto (TV + perfil)
-      valor[AJ_AVANCADAS]=0;
-      valor[AJ_QUALIDADE_IMG]=1; valor[AJ_ANIM]=0; valor[AJ_VIDRO]=0; valor[AJ_GPU_EFEITOS]=0;
-      valor[AJ_HERO_TRAILER]=0; valor[AJ_DET_TRAILER_AUTO]=0; valor[AJ_TEX_MB]=1;
-      aj4PrepararPreset(2); focoIndice=0;
-    }
-    else if (!strcmp(id,"v4-submenu")) { valor[AJ_AVANCADAS]=0; aj4Entrar(0); aj4Grupo=aj4GrupoDe(AJ_FONTE_MANUAL); aj4Grupos=0; }
-    else if (!strcmp(id,"v4-opcao-lista")) { focarOpcao(AJ_QUALIDADE); uxAbrirEditor(AJ_QUALIDADE); }
-    else if (!strcmp(id,"v4-predefinicoes")) { aj4Util=2; focoIndice=0; }
-    else if (!strcmp(id,"v4-diferentes")) {
-      memcpy(valor,valorPadrao,sizeof valor);valor[AJ_IDIOMA]=0;idiomaEfetivo=IDIOMA_PT;valor[AJ_TEMA]=2;valor[AJ_QUALIDADE]=1;
-      int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=order[1];
-      aj4Escopo=0;aj4Util=1;focoIndice=0;
-    }
-    else if (!strcmp(id,"v4-perfil")) { aj4AbrirPerfil(); }
-    else if (!strcmp(id,"v4-busca")) {
-      valor[AJ_TEMA]=6;valor[AJ_LEG_LINGUA]=2;valor[AJ_LEG_LINGUA2]=0;valor[AJ_ESCALA_TEXTO]=2;
-      ling_local_legenda2("");ling_conta_legenda2("");
-      snprintf(aj4Consulta,sizeof aj4Consulta,"legenda");aj4Util=3;focoIndice=0;
-    }
     return 1;
   }
   if (!strncmp(id, "v2-", 3)) {   // Ajustes v2 (ajustes-v2.html): os quadros do mockup
@@ -11870,16 +11810,21 @@ static int navigationFocus(void) {
   if(tourAberto)return 100000+tourFoco*2+tourBtn;
   if(frAberta==6)return 200000+(ffCategoria>=0?ffValorFoco:ffFoco);
   if(navigationBackFocus)return 50000;
-  if(aj4Topo>=0)return aj4Topo;
-  if(aj4Grupos&&!focoIndice&&!aj4Util&&!uxEditor)return 20000+(aj4Mais?999:aj4GrupoFoco);
   if(uxEditor)return 40000+uxPendente;
-  if(aj4Acao)return 30000+aj4Acao;
-  return 10000+aj4Linha;
+  if(triUtil)return 60000+triUtil*1000+(triUtil==TRI_U_DIF?uxDifFoco:triLinha)*10+triAcao;
+  if(triIlha==TRI_CHIPS)return triChip;
+  if(triIlha==TRI_SECOES)return 1000+triSecFoco;
+  return 10000+focoItem;
 }
 #undef ponteiro_alvo
 static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,PonteiroFn activate,int a,int b) {
   int id=-1;
-  if(fn==aj4PontFoco)id=a*10000+b;
+  if(fn==triPontChip)id=a;
+  else if(fn==triPontSecao)id=1000+a;
+  else if(fn==ajPonteiroItem)id=10000+a;
+  else if(fn==triPontUtilLinha)id=60000+triUtil*1000+a*10;
+  else if(fn==ajPontDif)id=61000+a*10;
+  else if(fn==triPontUtilAcao)id=60000+triUtil*1000+(triUtil==TRI_U_PRESETS?TRI_PRESET_N+ajPenSavedCount:triUtil==TRI_U_DIF?uxDifFoco:triLinha)*10+(triUtil==TRI_U_PRESETS?0:a);
   else if(fn==tourPontFoco)id=100000+a*2+b;
   else if(fn==ffPont)id=200000+a;
   if(id>=0&&navigationCount<512&&w>0&&h>0){

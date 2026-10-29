@@ -420,6 +420,8 @@ void gfx_recorte(float x, float y, float w, float h);
 // pode atualizar somente a .so e conservar arte antiga sem esse arquivo.
 // Carga preguiçosa, uma textura de 128x128; gfx_encerrar devolve a textura.
 void gfx_icones_dir(const char *dirArte);
+// Resolve packaged artwork against the runtime art directory.
+void gfx_arte_caminho(const char *rel, char *out, unsigned n);
 void gfx_icone(GfxRect r, const char *nome, float cr, float cg, float cb, float ca);
 void gfx_sem_recorte(void);
 // Recorte aninhado: cruza o pedido com a tesoura ativa (o corpo de uma ilha
@@ -547,6 +549,7 @@ void gfx_tex_esquecer(GLuint tex);
 // Os relogios finos (gfx_ms_rect, tex_ms_busca) ficam atras de NV_PERF_FINO
 // porque custam DUAS leituras de relogio por desenho — cerca de 250 chamadas
 // por quadro so para medir. Ligue com -DNV_PERF_FINO quando a pergunta voltar.
+extern int    gfx_n_text;   // text texture draws in this frame
 extern int    gfx_n_rect;   // chamadas de gfx_rect
 extern int    gfx_n_prog;   // trocas de programa GL (glUseProgram)
 extern int    gfx_n_bind;   // trocas de textura (glBindTexture)

@@ -134,6 +134,7 @@ int main(void) {
     if (TELA[i].tipo != IT_OPC ||
         (TELA[i].op != AJ_VIDRO && TELA[i].op != AJ_VIDRO_CONTORNO)) continue;
     valor[AJ_AVANCADAS] = 1;   // global advanced toggle Desligado
+    focarOpcao(TELA[i].op);   // opens the containing topic, without advanced mode
     assert(visivel(i) && focavel(i));
   }
   assert(inativa(AJ_VIDRO_CONTORNO));
@@ -161,20 +162,19 @@ int main(void) {
     assert(ti > 0 && tb > 0 && ajLinhaFilha(ti) && !ajLinhaFilha(tb)); }
   valor[AJ_VIDRO] = original;
 
-  // V4 toggles preview before committing, with the same persistence guard.
+  // 2.1: OK flips a switch at once and persists it (no draft editor), like 2.0.3.
   valor[AJ_RELOGIO] = 0; assert(gravar()); assert(ehInterruptor(AJ_RELOGIO));
   focarOpcao(AJ_RELOGIO); antes = arquivo();
-  key(SDLK_RETURN); assert(uxEditor && valor[AJ_RELOGIO] == 0); igual(antes);
-  key(SDLK_RIGHT); key(SDLK_RETURN);
+  key(SDLK_RETURN);
   assert(!uxEditor && !uxAvisoRisco && !uxRestaurar && valor[AJ_RELOGIO] == 1);
   { char *depois = arquivo(); assert(strcmp(antes, depois)); free(depois); } free(antes);
   assert(strstr(uxAviso, "salvo"));
-  key(SDLK_RETURN); key(SDLK_LEFT); key(SDLK_RETURN);
-  assert(!uxEditor && valor[AJ_RELOGIO] == 0);
+  key(SDLK_RETURN);
+  assert(!uxEditor && valor[AJ_RELOGIO] == 0);   // OK flips it back, still without an editor
   { char falho[1400]; snprintf(falho, sizeof falho, "%s/ausente", dir); snprintf(dirAjustes, sizeof dirAjustes, "%s", falho);
-    key(SDLK_RETURN); key(SDLK_RIGHT); key(SDLK_RETURN);
-    assert(valor[AJ_RELOGIO] == 0 && uxEditor); assert(strstr(uxAviso, "salvar"));
-    snprintf(dirAjustes, sizeof dirAjustes, "%s", dir); key(SDLK_ESCAPE); }
+    key(SDLK_RETURN);   // the file cannot be written: the value stays and the row says so
+    assert(valor[AJ_RELOGIO] == 0 && !uxEditor); assert(strstr(uxAviso, "salvar"));
+    snprintf(dirAjustes, sizeof dirAjustes, "%s", dir); }
   // Interruptor inativo (depende de outro): 2.0.3, o OK liga o requisito.
   valor[AJ_VIDRO] = 1; focarOpcao(AJ_VIDRO_CONTORNO); key(SDLK_RETURN); assert(!uxEditor && lig(AJ_VIDRO));
   valor[AJ_VIDRO] = 0;
@@ -208,7 +208,8 @@ int main(void) {
   key(SDLK_ESCAPE); assert(!uxEditor); assert(valor[AJ_HOME_LAYOUT] == original); igual(antes); free(antes);
   abrir(AJ_HOME_LAYOUT); key(SDLK_DOWN); key(SDLK_RETURN);
   assert(!uxEditor && valor[AJ_HOME_LAYOUT] != original);
-  antes = arquivo(); key(SDLK_LEFT); assert(aj4Grupos); key(SDLK_LEFT); assert(focoIndice); igual(antes); free(antes);
+  antes = arquivo(); key(SDLK_LEFT); assert(triSubmenu < 0 && triIlha == TRI_LISTA);
+  key(SDLK_LEFT); assert(focoIndice && triIlha == TRI_SECOES); igual(antes); free(antes);
 
   // Número só aplica o candidato final, sem gravar cada passo.
   original = valor[AJ_LARGURA_DP]; antes = arquivo(); abrir(AJ_LARGURA_DP);
@@ -268,8 +269,8 @@ int main(void) {
   ajustes_abrir_opcao(AJ_TEX_MB); ajustes_iniciar(); assert(uxVeioBusca);
   ajustes_encerrar(); ajustes_iniciar(); assert(!uxVeioBusca);
   focarOpcao(AJ_TEX_MB);
-  aj4Topo=0; key(SDLK_RETURN); assert(aj4Util==3 && teclado_aberto());
-  key(SDLK_ESCAPE); ajustes_atualizar(0,SDL_GetTicks()); aj4Util=0; aj4Topo=-1;
+  triIlha=TRI_CHIPS; triChip=TRI_C_BUSCA; key(SDLK_RETURN); assert(ajustes_pediu_busca()==1);   // the Spotlight search, in Settings mode
+  triIlha=TRI_LISTA; focoIndice=0;
 
   // Dependência (2.0.3): requisito interruptor, OK liga e o foco fica; requisito
   // que nao e interruptor (o layout), OK leva ate ele e Voltar devolve.
@@ -279,11 +280,13 @@ int main(void) {
   key(SDLK_RETURN); assert(focoOp == AJ_HOME_LAYOUT && !uxEditor && uxRetornarOp == AJ_HERO_CHEIO);
   key(SDLK_ESCAPE); assert(focoOp == AJ_HERO_CHEIO && !focoIndice);
 
-  // v4: OK on an inactive row moves focus to its requirement; Back returns.
+  // 2.1: moving in the list forgets the pending return (as in 2.0.3); Back then
+  // goes up one level to the topic row, then to the sections island.
   focarOpcao(AJ_HERO_CHEIO); key(SDLK_RETURN);
   assert(focoOp == AJ_HOME_LAYOUT && uxRetornarOp == AJ_HERO_CHEIO);
-  key(SDLK_DOWN); key(SDLK_ESCAPE); key(SDLK_ESCAPE);
-  assert(focoOp == AJ_HERO_CHEIO && !focoIndice && uxRetornarOp == -1);
+  key(SDLK_DOWN); assert(uxRetornarOp == -1);
+  key(SDLK_ESCAPE); assert(triSubmenu < 0 && triIlha == TRI_LISTA && !sair);
+  key(SDLK_ESCAPE); assert(focoIndice && triIlha == TRI_SECOES && !sair);
   valor[AJ_HOME_LAYOUT] = 0;
 
   // Category focus memory and advanced visibility survive the presentation change.
@@ -296,20 +299,17 @@ int main(void) {
     valor[AJ_AVANCADAS]=0;
     for(i=0;i<AJ_N_TELA;i++)if(TELA[i].tipo==IT_OPC && uxAvancada(TELA[i].op))assert(visivel(i) || TELA[i].op==AJ_ICONE_APP);
   }
-  // Approved Pencil index moves between cards and restores the originating card.
-  aj4Iniciar();valor[AJ_AVANCADAS]=0; focoIndice=1; aj4Topo=-1; aj4Linha=0;
-  key(SDLK_RIGHT); assert(aj4Linha==1);
-  key(SDLK_LEFT); assert(aj4Linha==0);
-  key(SDLK_RETURN); assert(!focoIndice && ajPenPage==29);
-  key(SDLK_ESCAPE); assert(focoIndice && aj4Linha==0);
-  aj4Topo=2; key(SDLK_RETURN); assert(aj4Util==4 && !pfTela);
-  aj4Acao=1; key(SDLK_RETURN); assert(pfTela==PF_MENU);
-  key(SDLK_ESCAPE); assert(!pfTela && aj4Util==4);
-  key(SDLK_ESCAPE); assert(!aj4Util && focoIndice);
-  aj4Topo=-1; aj4Linha=5; key(SDLK_RETURN); assert(aj4Util==1 && !focoIndice);
-  key(SDLK_ESCAPE); assert(focoIndice && !aj4Util);
-  aj4Topo=1; key(SDLK_RETURN); assert(!lig(AJ_AVANCADAS));
-  key(SDLK_RETURN); assert(lig(AJ_AVANCADAS)); aj4Topo=-1;
+  // Three islands (2.1): sections move with Up/Down, Right enters, Left/Back restore the section.
+  triIniciar();valor[AJ_AVANCADAS]=0; triFocarSecao(0);
+  key(SDLK_DOWN); assert(triSecFoco==1 && secAtual==1);
+  key(SDLK_UP); assert(triSecFoco==0);
+  key(SDLK_RETURN); assert(!focoIndice && triIlha==TRI_LISTA);
+  key(SDLK_ESCAPE); assert(focoIndice && triSecFoco==0);
+  focarOpcao(AJ_PERFIL_ATIVO); key(SDLK_RETURN); assert(pfTela==PF_MENU);
+  key(SDLK_ESCAPE); assert(!pfTela && focoOp==AJ_PERFIL_ATIVO);
+  key(SDLK_ESCAPE); assert(focoIndice);
+  triIlha=TRI_CHIPS; triChip=TRI_C_DIF; key(SDLK_RETURN); assert(triUtil==TRI_U_DIF && !focoIndice);
+  key(SDLK_ESCAPE); assert(focoIndice && !triUtil);
   // 2.0.3: as listas de addons/plugins voltam para a linha de onde sairam
   // (Fontes e addons), e nao para o indice; Voltar/ESC/Esquerda saem delas.
   { SDL_Event ev = { 0 };

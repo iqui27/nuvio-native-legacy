@@ -114,6 +114,7 @@ static float aspectoTeste=2;
 static char ultimoIcone[40];
 static GfxRect caixaIcone;
 void gfx_icone(GfxRect r,const char *n,float cr,float cg,float cb,float ca) { (void)cr;(void)cg;(void)cb;(void)ca;assert(r.w>0 && r.h>0);icones++;snprintf(ultimoIcone,sizeof ultimoIcone,"%s",n);caixaIcone=r; }
+void gfx_mini_liberar(GfxMini *m) { memset(m,0,sizeof *m); }
 float gfx_escala(void) { return 1; }
 float gfx_escala_entrar(void) { return 1; }
 void gfx_escala_sair(float v) { (void)v; }

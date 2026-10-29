@@ -457,10 +457,9 @@ int main(int argc, char **argv) {
           snprintf(nome,sizeof nome,"%s-%s-motion-%02d.png",saida,id,elapsed);
           captura(nome,w);
           if(getenv("NUVIO_SHOT_MOTION_CHECK")) {
-            float alpha[2]={0},dy[2]={0};
-            int both=ajustes_teste_pen_motion(alpha,dy);
-            assert(both==(elapsed<13) && "transition must draw both page titles with intermediate alpha and slide");
-            printf("Pencil motion frame %d: both=%d alpha=%.3f/%.3f dy=%.3f/%.3f\n",elapsed,both,alpha[0],alpha[1],dy[0],dy[1]);
+            int both=ajustes_teste_transicao();
+            assert(both==(elapsed<13) && "a section change must animate the list for about 220 ms");
+            printf("Settings motion frame %d: transition=%d\n",elapsed,both);
           }
         }
       }

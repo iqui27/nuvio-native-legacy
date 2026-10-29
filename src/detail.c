@@ -35,6 +35,8 @@
 #include "idioma.h"
 #include "ctxmenu.h"
 #include "ctxlista.h"
+#include "trilhas.h"
+#include "trilhasdados.h"
 #include "ilha.h"
 #include "idiomacod.h"
 #include "badges.h"
@@ -304,6 +306,7 @@ static int  pedAbrir = -1;
 static int  voltaPilha[8], nVolta, voltando;
 static struct { int fileira,coluna,nivel,botao,temporada,aba; float y; int colunas[N_SECOES]; } voltaEstado[8];
 static int restaurarVolta;
+static int trilhaPendente, trilhaVolta = -1;
 // Foco DENTRO da aba "Mais como este", que e uma lista vertical propria e nao
 // uma das fileiras horizontais do focus.c.
 static int  relFoco;
@@ -2485,7 +2488,7 @@ static float alturaSecao(int r) {
     // empilhada usando so a altura dos cartoes e saia POR CIMA deles.
     case SEC_COMENTARIOS:  return alturaCabComentarios() + COM_CARD_H;
     case SEC_ESTUDIOS:    return EST_CARD_H;
-    case SEC_DETALHES:    return 80 + ceilf(nLinhasDetalhe()/(detalheRetrato() ? 1.0f : 2.0f))*76;
+    case SEC_DETALHES:    return ceilf(nLinhasDetalhe()/(detalheRetrato() ? 2.0f : 3.0f))*132;
     // As duas sob demanda: a CHAMADA enquanto ninguem entrou (titulo +
     // procedencia + custo, tres linhas) e a altura MEDIDA no ultimo desenho
     // depois disso.
@@ -2803,6 +2806,8 @@ static void maisDisponiveis(int d[DMAIS_N]) {
   d[DMAIS_LEMBRAR] = !detalheRetrato() && temLembrar();
   d[DMAIS_JUNTOS] = !detalheRetrato() && temJuntos();
   d[DMAIS_TRAVAR] = !detalheRetrato() && temTravar();
+  { const CqTrilha *ts[1];
+    d[DMAIS_TRILHA] = ci && cqd_trilhas_de(ci->imdb, ci->tipo, ts, 1) > 0; }
 }
 static int temMais(void) {
   int d[DMAIS_N], i;
@@ -3047,6 +3052,9 @@ static void executarMais(int dm) {
     juntosui_abrir_folha(idx, t, e);
   } else if (dm == DMAIS_REWATCH || dm == DMAIS_REWATCH_FIM) {
     rewatchui_abrir(cat_item(idx), RW_ORIGEM_TITULO, 0, 0);
+  } else if (dm == DMAIS_TRILHA) {
+    const CatItem *ci = cat_item(idx);
+    if (ci) trilhas_abrir_titulo(ci->imdb, ci->tipo);
   } else if (dm == DMAIS_SINOPSE) {
     const CatItem *ci = cat_item(idx);
     sinopse_abrir(ci ? ci->titulo : "", sinopseDe(idx));
@@ -3584,6 +3592,12 @@ static void detail_evento_(const SDL_Event *e) {
     else if (focoVersao) { focoVersao = 0; botao = 0; }
 
     else if (carro && carCheia) carCheia = 0;   // tela cheia no topo -> cartao
+    else if (trilhaVolta == nVolta) {
+      trilhaVolta = -1;
+      trilhas_voltar_do_titulo();
+      if (nVolta > 0) { pedAbrir = voltaPilha[--nVolta]; voltando = 1; restaurarVolta = 1; }
+      else { saindo = 1; pediuMenu = 0; }
+    }
     else if (nVolta > 0) { pedAbrir = voltaPilha[--nVolta]; voltando = 1; restaurarVolta=1; }   // volta ao titulo de onde veio
     else { saindo = 1; pediuMenu = 0; }   // Voltar nao abre um menu pedido antes
     return;
@@ -5131,7 +5145,8 @@ static void topoEstadoTexto(char *dst, size_t n, int durMin, int pessoal) {
 
 static int topoFonteDisponivel(void) {
   const CatItem *ci=cat_item(idx); char alvo[96]; int st=0,ep=0;
-  if (!ci || !vaiTocar.tem) return 0;
+  if (!ci || !ci->imdb[0]) return 0;
+  if (!vaiTocar.tem) return 1;
   if (ehSerie()) episodioAlvo(&st,&ep,NULL);
   if (st>0 && ep>0) snprintf(alvo,sizeof alvo,"%s:%d:%d",ci->imdb,st,ep);
   else snprintf(alvo,sizeof alvo,"%s",ci->imdb);
@@ -5578,7 +5593,7 @@ static void heroWeb(float a, float desloc) {
       else memset(&vaiTocar, 0, sizeof vaiTocar);
       vaiTocarIdx = idx; vaiTocarT = vt_t; vaiTocarE = vt_e; vaiTocarEm = agoraH;
     }
-    { float alvo = vaiTocar.tem && topoVersao() ? 56.0f + DET_VAI_GAP : 0.0f;
+    { float alvo = topoFonteDisponivel() && topoVersao() ? 56.0f + DET_VAI_GAP : 0.0f;
       float dt = hVaiTick ? (float)(Uint32)(agoraH - hVaiTick) : 0.0f;
       hVaiTick = agoraH;
       if (dt > 100.0f) dt = 100.0f;
@@ -6012,23 +6027,21 @@ static void heroWeb(float a, float desloc) {
     TxtLinha value = txt_linha(TXT_ILHA_SUB, srvQuality, 225, 227, 232, 255);
     txt_desenhar_alpha(label, quality.x + 20, quality.y + (56 - label.h) * .5f, a);
     txt_desenhar_alpha(value, quality.x + 42 + label.w, quality.y + (56 - value.h) * .5f, a);
-  } else if (topoVersao() && vaiTocar.tem && hVai > 1.0f) {
+  } else if (topoVersao() && topoFonteDisponivel() && hVai > 1.0f) {
     char texto[240];
     VaiTocar compact = vaiTocar;
-    compact.idiomas[0] = compact.tamanho[0] = 0;
+    compact.idiomas[0] = 0;
+    if (compact.estado != FA_OK) compact.tamanho[0] = 0;
     vt_chip_texto(&compact, texto, sizeof texto);
+    if (!texto[0]) snprintf(texto,sizeof texto,"%s",i18n("Fontes"));
     float yV = yVers + sobe + dyV, aV = a * kV;
-    TxtLinha quality = txt_linha(TXT_ILHA_SUB, texto, 225, 227, 232, 255);
-    float qualityW = quality.w + 48;
-    plrui_material_plano((GfxRect){NV_DETW2_X,yV,qualityW,56},28,aV);
-    txt_desenhar_alpha(quality,NV_DETW2_X+24,yV+(56-quality.h)*.5f,aV);
-    int ink=versaoFoco>.5f ? ajustes_tinta_foco() : 225;
-    TxtLinha source = txt_linha_corta(TXT_ILHA_SUB,vaiTocar.provedor[0] ? vaiTocar.provedor : i18n("Fontes"),
-                                     ink,ink,ink,255,larguraTextoHero()-qualityW-84);
-    versaoRect = (GfxRect){NV_DETW2_X+qualityW+12,yV,source.w+72,56};
-    botao_pilula_sem_aro(versaoRect,"",NULL,versaoFoco,0,0,aV);
-    gfx_icone((GfxRect){versaoRect.x+16,yV+16,24,24},"aj_layers",ink/255.f,ink/255.f,ink/255.f,aV);
-    txt_desenhar_alpha(source,versaoRect.x+52,yV+(56-source.h)*.5f,aV);
+    int ink = (int)(160 + 38 * versaoFoco);
+    TxtLinha quality = txt_linha_corta(TXT_ILHA_APOIO,texto,ink,ink,ink,255,larguraTextoHero()-40);
+    versaoRect = (GfxRect){NV_DETW2_X,yV+12,quality.w+40,32};
+    gfx_cor(versaoRect,.25f,1,1,1,.12f*versaoFoco*aV);
+    int estado = vaiTocar.tem && vaiTocar.estado != FA_NADA ? vaiTocar.estado : FA_RUIM;
+    vtui_estado_ponto(estado,versaoRect.x+8,versaoRect.y+11,aV);
+    txt_desenhar_alpha(quality,versaoRect.x+28,versaoRect.y+(versaoRect.h-quality.h)*.5f,aV);
     if (aV>.3f) ponteiro_alvo(versaoRect.x,versaoRect.y,versaoRect.w,versaoRect.h,ponteiroDetalhe,NULL,-4,0);
   }
   if (pessoal[0]) {
@@ -8345,10 +8358,10 @@ static void desenhaComentarios(float x, float y, float a) {
     if (comOculto(i)) {
       for (int k=0; k<3; k++) gfx_cor((GfxRect){px,y+96+k*30,larg-k*60,14},.5f,.25f,.27f,.29f,a);
       txt_desenhar_alpha(txt_linha(TXT_CAPTION2,"Contém spoiler · OK para ler",200,203,210,255),px,y+176,a);
-    } else agendaui_sinopse(TXT_G22M, daSerie ? extras_comentario_texto(i)
-                                     : extras_comentario_ep_texto(i),
-              px,y+84,larg,33,3,
-              focCor ? (tintaEsc ? 45 : 235) : 190, focCor ? (tintaEsc ? 47 : 236) : 195, focCor ? (tintaEsc ? 52 : 240) : 205,a*.95f);
+    } else {
+      const char *text=daSerie ? extras_comentario_texto(i) : extras_comentario_ep_texto(i);
+      txt_addon_previa(TXT_G22M,text,px,y+84,larg,195,a*.95f);
+    }
 
     { int nota = daSerie ? extras_comentario_nota(i)
                          : extras_comentario_ep_nota(i);
@@ -8744,18 +8757,16 @@ static void desenhaRodape(int r,float a) {
     }
   } else {
     LinhaDet rows[NV_DETF_DET_MAXL]; int n=montarDetalhes(rows,NV_DETF_DET_MAXL);
-    float h=alturaSecao(r);
-    int cols=detalheRetrato() ? 1 : 2;
-    for (int col=0;col<cols;col++) {
-      GfxRect card={96+col*876,y,detalheRetrato() ? NV_TELA_W-192 : 852,h};
-      moldura(card,22,a);
-      for (int i=col;i<n;i+=cols) {
-        float cy=y+28+(i/cols)*76;
-        txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_NOME,i18n(rows[i].chave),156,165,179,255,220),card.x+28,cy,a);
-        txt_bloco_corta(TXT_ILHA_NOME,rows[i].valor,239,241,246,card.x+264,cy,card.w-292,30,a,2);
-      }
+    float h=alturaSecao(r), width=NV_TELA_W-NV_DETP_X*2;
+    int cols=detalheRetrato() ? 2 : 3;
+    float gap=48, cell=(width-gap*(cols-1))/cols;
+    for (int i=0;i<n;i++) {
+      float x=NV_DETP_X+(i%cols)*(cell+gap), cy=y+(i/cols)*132;
+      char label[168]; idioma_maiusc_em(ajustes_idioma(),label,sizeof label,i18n(rows[i].chave));
+      txt_tracking(TXT_ILHA_HORA,label,243,242,239,x,cy,a*.48f,1.8f);
+      txt_bloco_corta(TXT_ILHA_CORPO,rows[i].valor,243,242,239,x,cy+32,cell,32,a,2);
     }
-    if (a>.3f) navigationTarget(96,y,detalheRetrato() ? NV_TELA_W-192 : 1728,h,ponteiroDetalhe,NULL,r,0);
+    if (a>.3f) navigationTarget(NV_DETP_X,y,width,h,ponteiroDetalhe,NULL,r,0);
   }
 }
 
@@ -9577,9 +9588,13 @@ int detail_pediu_reproduzir(void) { int v = pedReproduzir; pedReproduzir = 0; re
 // detail_pediu_reproduzir do app.c, com a pagina ja aberta por baixo.
 void detail_pedir_reproduzir(void) { pedReproduzir = 1; }
 int detail_pediu_abrir(void) { int v = pedAbrir; pedAbrir = -1; return v; }
+void detail_trilha_notar(void) { trilhaPendente = 1; }
 void detail_volta_notar(int novo) {
+  int trilha = trilhaPendente;
+  trilhaPendente = 0;
+  if (trilha) trilhaVolta = nVolta;
   if (voltando) { voltando = 0; return; }       // esta troca E a volta: nao empilha
-  if (!aberto || saindo || novo == idx || idx < 0) return;
+  if (!aberto || saindo || (!trilha && novo == idx) || idx < 0) return;
   if (nVolta == (int)(sizeof voltaPilha / sizeof *voltaPilha)) {
     memmove(voltaPilha, voltaPilha + 1, sizeof voltaPilha - sizeof *voltaPilha);
     memmove(voltaEstado,voltaEstado+1,sizeof voltaEstado-sizeof *voltaEstado);
@@ -9591,6 +9606,7 @@ void detail_volta_notar(int novo) {
   voltaEstado[nVolta].y=scrollY;
   memcpy(voltaEstado[nVolta].colunas,foco.colunaLembrada,sizeof voltaEstado[nVolta].colunas);
   voltaPilha[nVolta++] = idx;
+  if (trilha) trilhaVolta = nVolta;
 }
 // Consume only on the same title that received the request.
 int detail_pediu_assistido(void) {

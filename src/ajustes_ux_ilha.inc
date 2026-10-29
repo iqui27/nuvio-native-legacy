@@ -186,7 +186,10 @@ static void ajDesenharInspetor(void) {
                   : rotuloOpcao(op);
     y += ajBloco(TXT_V2_A3TIT, t, x, y, w, 56.0f, 1, 2); }
   y += 10.0f;
-  { int maxL = (int)((fim - y) / 32.0f);
+  // 2.1: "Vale para" e "Recomendado" tem lugar garantido; a descricao e o
+  // "O que muda" cabem no que sobra (a ilha 3 tem 720 de altura util).
+  { float reserva = (!categoria && uxTemPadrao(op) && op != AJ_TEMA) ? 26.0f + 2 * 57.0f : 0.0f;
+    int maxL = (int)((fim - reserva - y) / 32.0f);
     if (maxL > 5) maxL = 5;   // a descricao inteira: cortar no meio da frase nao serve
     if (maxL < 1) maxL = 1;
     if (naMais) {
@@ -213,7 +216,7 @@ static void ajDesenharInspetor(void) {
       const char *t = i18n(ef);
       TxtLinha lp = ajTxt(TXT_V3_INSP_B, "O que muda:");
       float hh = txt_bloco(TXT_V3_INSP, t, 0, 0, 0, x, -4000, w, 37.0f, 0, 4) + 37.0f;
-      if (y + 4.0f + hh <= fim) {
+      if (y + 4.0f + hh <= fim - reserva) {
         // A primeira linha continua depois do rotulo em negrito: as palavras
         // que cabem nela; o resto quebra normalmente embaixo.
         char l1[400];
@@ -309,9 +312,7 @@ static void ajDesenharMais(int item, float y, float f, float a) {
   float yc = y + AJ2_LN_H * 0.5f, xDir = ln.x + ln.w - 22.0f, aTx = a * aj2TextoLista, x;
   TxtLinha r, v;
   if (a <= 0.004f) return;
-  ajFocoLinha(ln, 14.0f, f, aTx);
-  if (f > 0.01f) { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab); gfx_cor(ln, 14.0f / ln.h, ar, ag, ab, 0.14f * f * aTx); }
-  if (f < 0.99f) gfx_anel(ln, 14.0f / ln.h, 1.5f, 1, 1, 1, 0.16f * (1.0f - f) * aTx);
+  ajFocoLinha(ln, 20.0f, f, aTx);
   if (aTx <= 0.004f) return;
   ajIcone("aj_sliders-horizontal", ln.x + 20.0f, yc - 12.0f, 24.0f, (f > 0.5f ? 0.9f : 0.6f) * aTx);
   snprintf(rot, sizeof rot, "%s · %d", i18n("Mais opções"), n);
@@ -324,7 +325,8 @@ static void ajDesenharMais(int item, float y, float f, float a) {
 }
 
 static float ajAlturaItem(int i) {
-  if (!visivel(i)) return 0.0f;
+  if (!triMostrar(i) || !visivel(i)) return 0.0f;
+  if (triTopico(i)) return AJ2_LN_GAP + AJ2_LN_H;
   switch (TELA[i].tipo) {
     case IT_SEC: return 0.0f;
     case IT_ROT: return AJ2_GRUPO_H;
@@ -412,7 +414,7 @@ static void ajPonteiroItem(int i, int b) {
   if (i == focoItem && !focoIndice && !uxCabLayout) return;
   focar(i);
   focoIndice = 0;
-  if(TELA[i].tipo==IT_OPC) { aj4Focar(TELA[i].op);aj4Acao=0; }
+  triFocar(TELA[i].op);
 }
 static void ajDesenharFolha(void) {
   GfxRect fr = aj2ListaR();
@@ -1220,17 +1222,19 @@ static void ajPontDif(int i, int b) {
   if (uxEditor || uxIndice != 1 || i < 0 || i >= uxNDifs || (!focoIndice && i == uxDifFoco)) return;
   focoIndice = 0; uxDifFoco = i;
 }
+// 2.1: a janela de rolagem vem da ilha (acima das pilulas Restaurar/Desfazer),
+// nao de "dez linhas": a linha em foco fica visivel por triUtilRol (mola em
+// triAtualizar; o dedo manda no celular).
 static void aj2DesenharDiferencas(void) {
   GfxRect fr = aj2ListaR();
-  float topo = AJ_TOPO, base = AJ_BASE + AJ_A3_RODAPE, y = topo + 8.0f;
-  int primeiro = uxDifFoco > 9 ? uxDifFoco - 9 : 0, i;
+  float topo = AJ_TOPO, base = triUtil == TRI_U_DIF ? triUtilBase() : AJ_BASE + AJ_A3_RODAPE, y, fl0 = -1.0f, fl1 = -1.0f;
+  float rol = triUtilRol, total = uxNDifs * 78.0f + 16.0f;
+  int i;
 #ifdef NV_TOUCH_UI
-  if (ajTelaCheia() && ajPontLista) {
-    float off = ajToqueRegistrar(AJT_DIFS, (GfxRect){fr.x, topo, fr.w, base - topo}, &ajToqueOffset[AJT_DIFS],
-                                uxNDifs * 78.0f - (base - topo), primeiro * 78.0f, 0);
-    primeiro = 0; y = topo + 8.0f - off;
-  }
+  if (ajTelaCheia() && (ajPontLista || ajPontUtil))
+    rol = triUtilRol = ajToqueRegistrar(AJT_DIFS, (GfxRect){fr.x, topo, fr.w, base - topo}, &triUtilRol, total - (base - topo), triUtilRol, 0);
 #endif
+  y = topo + 8.0f - rol;
   float x = fr.x + 18, w = fr.w - 36;
   ajPaginaIlha(fr, 40.0f, 1);
   aj2CabecalhoA3(fr, "Diferentes do padrão", 0, 1);
@@ -1240,17 +1244,15 @@ static void aj2DesenharDiferencas(void) {
     txt_desenhar(t, x + 22, y + 20);
     y += 76;
   }
-  for (i = primeiro; i < uxNDifs; i++) {
+  for (i = 0; i < uxNDifs; i++) {
     char atual[160], padrao[160], det[300];
     int op = uxDifs[i], foco = !focoIndice && i == uxDifFoco;
     GfxRect r = { x, y, w, 76 };
-#ifdef NV_TOUCH_UI
-    if (ajTelaCheia() && y + 76 < topo) { y += 78; continue; }
-#endif
     float xd = x + w - 22, a = ajMascara(y + 38, topo, base), yc = y + 38;
     TxtLinha la, lp, lr, ls;
-    if (y > base) break;
-    if (ajPontLista) ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, ajPontDif, NULL, i, 0);
+    if (foco) { fl0 = y + rol; fl1 = fl0 + 76.0f; }
+    if (y + 76 < topo || y > base) { y += 78; continue; }   // fora da janela: so conta a altura
+    if (ajPontLista || ajPontUtil) ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, ajPontDif, NULL, i, 0);
     if (foco) {
       float ar, ag, ab;
       ajFocoLinha(r, 18, 1, a);
@@ -1286,6 +1288,7 @@ static void aj2DesenharDiferencas(void) {
     txt_desenhar_alpha(n, x + 22, y + 24, 0.42f);
   }
   gfx_sem_recorte();
+  if (triUtil == TRI_U_DIF) triUtilRolar(fl0, fl1, topo, base, total);
 }
 static void aj2InspetorDiferencas(void) {
   GfxRect ir = aj2InspR();

@@ -115,6 +115,14 @@ int deeplink_parse(const char *url, DeepLink *o) {
 
   fim = p + strcspn(p, "?#");
   query = *fim == '?' ? fim + 1 : "";
+  if (*query) {
+    const char *profile = strstr(query, "tvprofile=");
+    if (profile && (profile == query || profile[-1] == '&')) {
+      long value; profile += 10;
+      if (!numero(profile, strcspn(profile, "&#"), 9999, &value) || value < 1) goto lixo;
+      o->tvProfile = (int)value;
+    }
+  }
   pn = (size_t)(fim - p);
   n = segmentos(p, pn, seg, len, 6);
   if (n < 1) return 0;

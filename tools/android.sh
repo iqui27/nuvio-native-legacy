@@ -56,6 +56,7 @@ done
 echo "[2/5] arte e fontes -> $EST/assets"
 rm -rf "$EST/assets"; mkdir -p "$EST/assets"
 NUVIO_ARTE_ESTAGIO="build/android/assets/art" bash tools/tizen-art.sh >/dev/null
+python3 tools/android-art-check.py "$EST/assets/art"
 mkdir -p "$EST/assets/fonts"
 cp deploy/app/fonts/* "$EST/assets/fonts/"
 mkdir -p "$EST/assets/licencas"
@@ -172,6 +173,7 @@ for a in "${APKS[@]}"; do
       printf '%s\n' "$L" | grep -x "lib/$abi/$so" >/dev/null || { echo "android.sh: $a missing lib/$abi/$so" >&2; exit 1; }
     done
   done
+  python3 tools/android-art-check.py "$a"
   printf '%s\n' "$L" | grep '^assets/art/' >/dev/null || { echo "android.sh: $a sem assets/art" >&2; exit 1; }
   printf '%s\n' "$L" | grep '^assets/fonts/' >/dev/null || { echo "android.sh: $a sem assets/fonts" >&2; exit 1; }
   printf '%s\n' "$L" | grep '^assets/licencas/p2p-avisos.txt$' >/dev/null || { echo "android.sh: $a sem assets/licencas" >&2; exit 1; }

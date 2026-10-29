@@ -2,7 +2,7 @@
 # Offline Home motion regression plus before/after PNG strips and CPU draw counters.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-output=/Volumes/ExternalSSD/tmp/rev/homeanim
+output=${2:-/Volumes/ExternalSSD/tmp/rev/homeanim}
 mkdir -p "$output"
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-homeanim.XXXXXX")
 trap 'rm -rf "$work"' EXIT
@@ -20,7 +20,8 @@ cc "${sources[@]}" tests/homeanim_shot.c -Isrc -o "$work/test" \
 }
 phase=${1:-after}
 args=("$output")
-if [ "$phase" = before ]; then args+=(before); fi
+if [ "$phase" = before ]; then args+=(before); else args+=(after); fi
+if [ "${3:-}" = round ]; then args+=(round); fi
 NUVIO_DADOS="$work/data" NUVIO_TESTE_DIR="$work/data" \
   sandbox-exec -p '(version 1) (allow default) (deny network*)' "$work/test" "${args[@]}" \
   >"$output/$phase.log" 2>&1 && rc=0 || rc=$?

@@ -123,7 +123,11 @@ static void competicao(const char *p, const char *fim, EspEvento *e) {
   texto(p, fim, "endDate", date, sizeof date); if (date[0]) e->fim = (time_t)(js_ms_iso(date) / 1000);
   estado(p, fim, e);
   a = objeto(p, fim, "venue");
-  if (a) texto(a, js_fim(a), "fullName", e->local, sizeof e->local);
+  if (a) {
+    texto(a, js_fim(a), "fullName", e->local, sizeof e->local);
+    const char *address=objeto(a,js_fim(a),"address");
+    if(address)texto(address,js_fim(address),"city",e->cidade,sizeof e->cidade);
+  }
   a = objeto(p, fim, "type");
   if (a) texto(a, js_fim(a), "abbreviation", e->sessao, sizeof e->sessao);
   for (a = array(p, fim, "competitors"); a && e->nParticipantes < 2; ) {
@@ -138,6 +142,8 @@ static void competicao(const char *p, const char *fim, EspEvento *e) {
       texto(t, js_fim(t), "shortDisplayName", v->curto, sizeof v->curto);
       if (!v->curto[0]) texto(t, js_fim(t), "shortName", v->curto, sizeof v->curto);
       texto(t, js_fim(t), "abbreviation", v->sigla, sizeof v->sigla);
+      texto(t, js_fim(t), "color", v->cor, sizeof v->cor);
+      texto(t, js_fim(t), "alternateColor", v->corAlternativa, sizeof v->corAlternativa);
       texto(t,js_fim(t),"logoDark",v->logo,sizeof v->logo);
       if (!v->logo[0]) texto(t,js_fim(t),"logo",v->logo,sizeof v->logo);
       if (!v->logo[0]) imagem(t,js_fim(t),v->logo,sizeof v->logo);

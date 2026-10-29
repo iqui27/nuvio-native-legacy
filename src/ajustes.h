@@ -9,6 +9,7 @@
 // Os valores sao gravados em <dir>/ajustes.txt, uma chave por linha.
 #ifndef NV_AJUSTES_H
 #define NV_AJUSTES_H
+int ajustes_tv_home(void);
 #include <SDL2/SDL.h>
 #include "idiomacod.h"
 #include "gfx.h"
@@ -648,7 +649,8 @@ int   ajustes_cache_seek_mb(void);           // F07: seek cache limit in MB for 
 #ifdef AJUSTES_TESTE
 void  ajustes_teste_escala(int percentual); // fixture only; does not persist
 // Last frame: two distinct Pencil titles drawn with intermediate alpha and slide.
-int   ajustes_teste_pen_motion(float *alpha, float *dy);
+int   ajustes_teste_transicao(void);   // 1 enquanto a lista da secao nova entra (2.1, tres ilhas)
+float ajustes_teste_movimento(void);   // andamento do movimento das ilhas (nav21)
 #endif
 // Fundo atras dos paineis (Aparencia › Fundo): 0 Arte, 1 Arte borrada, 2 Frost.
 int   ajustes_fundo(void);
@@ -703,6 +705,7 @@ int   ajustes_cw_ordem(void);
 int   ajustes_dts_ac3(void);             // 1 = DTS convertido em AC3 5.1 (LG, e padrao no .tpk); 0 = AAC estereo (.tpk: ou desligado)
 int   ajustes_dts_tpk_modo(void);        // .tpk: DTSTPK_HLS, ou DTSTPK_DESLIGADO com a conversao desligada
 int   ajustes_ps_continuar(void);        // #303: 0 = sem o cartao "continuar" na escolha de perfil
+int   ajustes_ps_tamanho(void);         // 2.1: 0 pequeno, 1 medio (padrao), 2 grande — os avatares da escolha de perfil
 int   ajustes_hist_conta(void);          // 1 = this profile's history goes to the Nuvio account (per profile, default on)
 int   ajustes_amigos_estilo(void); // 0 Feed, 1 Live, 2 Stories, 3 Presence, 4 Poster, 5 Classic
 int   ajustes_social(void);              // 1 = friends/social features on (per profile, default on)

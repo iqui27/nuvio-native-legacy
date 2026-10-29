@@ -25,7 +25,7 @@
 // Ordem FIXA das linhas (a do uso: o trailer e o que mais se procura).
 // TV keeps Play + Save; watched and rating actions live in More.
 enum { DMAIS_VISTO = 0, DMAIS_VISTO_SAI, DMAIS_NOTA,
-       DMAIS_TRAILER, DMAIS_EXPLORAR, DMAIS_ARTE, DMAIS_RECOMENDAR, DMAIS_REWATCH, DMAIS_REWATCH_FIM, DMAIS_SINOPSE, DMAIS_INICIO, DMAIS_LEMBRAR, DMAIS_JUNTOS, DMAIS_TRAVAR, DMAIS_N };
+       DMAIS_TRAILER, DMAIS_EXPLORAR, DMAIS_ARTE, DMAIS_RECOMENDAR, DMAIS_REWATCH, DMAIS_REWATCH_FIM, DMAIS_SINOPSE, DMAIS_INICIO, DMAIS_LEMBRAR, DMAIS_JUNTOS, DMAIS_TRAVAR, DMAIS_TRILHA, DMAIS_N };
 
 // Abre com as acoes que existem neste titulo (`disp[i]` != 0), foco na
 // primeira. Sem nenhuma disponivel, nao abre.
