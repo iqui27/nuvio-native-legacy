@@ -2,7 +2,7 @@
 # One native target: real parser, renderer, D-pad, baseline failure and PNGs.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-out=/Volumes/ExternalSSD/tmp/rev/chipfonte2
+out=/Volumes/ExternalSSD/tmp/rev/chipfonte2/v2
 objects="${TMPDIR:-/tmp}/nv-chipfonte2-$(basename "$PWD")"
 mkdir -p "$out" "$objects"
 work=$(mktemp -d "${TMPDIR:-/tmp}/nv-chipfonte2.XXXXXX")
@@ -23,16 +23,16 @@ if ((${#sources[@]})); then
 fi
 export NUVIO_CHIPFONTE2_PROOF=1 NUVIO_SHOT_IDIOMA=1 NUVIO_SHOT_TOPO=0 NUVIO_SHOT_SOURCE=1
 export NUVIO_SHOT_TIME=1793203200
-# Fixed integracao/2.1 starting point: later branch movement cannot weaken red proof.
-git show 3485af0f00481897c151697dbcbcb6848ad9dad5:src/detail.c > "$work/detail-before.c"
+# Fixed two-chip starting point: later branch movement cannot weaken red proof.
+git show 1194556db:src/detail.c > "$work/detail-before.c"
 cc "${flags[@]}" "-DNV_DETAIL_SOURCE=\"$work/detail-before.c\"" tests/detalhe_glass_shot.c "$objects/"*.o -o "$work/before" "${libs[@]}"
 mkdir -p "$work/nuvio-detglass-dados.before" "$work/nuvio-detglass-dados.red"
 NUVIO_DADOS="$work/nuvio-detglass-dados.before" NUVIO_CHIPFONTE2_BEFORE=1 "$work/before" "$out" > "$out/before.log" 2>&1
 if NUVIO_DADOS="$work/nuvio-detglass-dados.red" "$work/before" "$work" > "$out/red.log" 2>&1; then
   echo 'FAIL: baseline unexpectedly passed' >&2; exit 1
 fi
-rg -q 'FAIL: resolved AIOStreams renderer: dots=0' "$out/red.log"
-echo 'PASS: integracao/2.1 fails on missing rendered status dot and size'
+rg -q 'FAIL: single quality chip: dots=2 source-draws=2' "$out/red.log"
+echo 'PASS: two-chip baseline fails the single quality chip regression'
 cc "${flags[@]}" tests/detalhe_glass_shot.c "$objects/"*.o -o "$work/after" "${libs[@]}"
 mkdir -p "$work/nuvio-detglass-dados.after"
 NUVIO_DADOS="$work/nuvio-detglass-dados.after" "$work/after" "$out"

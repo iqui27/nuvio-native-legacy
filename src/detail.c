@@ -5126,7 +5126,8 @@ static void topoEstadoTexto(char *dst, size_t n, int durMin, int pessoal) {
 
 static int topoFonteDisponivel(void) {
   const CatItem *ci=cat_item(idx); char alvo[96]; int st=0,ep=0;
-  if (!ci || !vaiTocar.tem) return 0;
+  if (!ci || !ci->imdb[0]) return 0;
+  if (!vaiTocar.tem) return 1;
   if (ehSerie()) episodioAlvo(&st,&ep,NULL);
   if (st>0 && ep>0) snprintf(alvo,sizeof alvo,"%s:%d:%d",ci->imdb,st,ep);
   else snprintf(alvo,sizeof alvo,"%s",ci->imdb);
@@ -5320,7 +5321,7 @@ static void heroWeb(float a, float desloc) {
       else memset(&vaiTocar, 0, sizeof vaiTocar);
       vaiTocarIdx = idx; vaiTocarT = vt_t; vaiTocarE = vt_e; vaiTocarEm = agoraH;
     }
-    { float alvo = vaiTocar.tem && topoVersao() ? 56.0f + DET_VAI_GAP : 0.0f;
+    { float alvo = topoFonteDisponivel() && topoVersao() ? 56.0f + DET_VAI_GAP : 0.0f;
       float dt = hVaiTick ? (float)(Uint32)(agoraH - hVaiTick) : 0.0f;
       hVaiTick = agoraH;
       if (dt > 100.0f) dt = 100.0f;
@@ -5754,26 +5755,21 @@ static void heroWeb(float a, float desloc) {
     TxtLinha value = txt_linha(TXT_ILHA_SUB, srvQuality, 225, 227, 232, 255);
     txt_desenhar_alpha(label, quality.x + 20, quality.y + (56 - label.h) * .5f, a);
     txt_desenhar_alpha(value, quality.x + 42 + label.w, quality.y + (56 - value.h) * .5f, a);
-  } else if (topoVersao() && vaiTocar.tem && hVai > 1.0f) {
+  } else if (topoVersao() && topoFonteDisponivel() && hVai > 1.0f) {
     char texto[240];
     VaiTocar compact = vaiTocar;
-    compact.idiomas[0] = compact.tamanho[0] = 0;
+    compact.idiomas[0] = 0;
+    if (compact.estado != FA_OK) compact.tamanho[0] = 0;
     vt_chip_texto(&compact, texto, sizeof texto);
+    if (!texto[0]) snprintf(texto,sizeof texto,"%s",i18n("Fontes"));
     float yV = yVers + sobe + dyV, aV = a * kV;
-    TxtLinha quality = txt_linha(TXT_ILHA_APOIO, texto, 160, 162, 166, 255);
-    float qualityW = quality.w;
-    int ink=versaoFoco>.5f ? ajustes_tinta_foco() : 225;
-    char fonte[320];
-    snprintf(fonte,sizeof fonte,"%s%s%s",vaiTocar.provedor[0] ? vaiTocar.provedor : i18n("Fontes"),
-             vaiTocar.tamanho[0] ? " · " : "",vaiTocar.tamanho);
-    TxtLinha source = txt_linha_corta(TXT_ILHA_SUB,fonte,
-                                     ink,ink,ink,255,larguraTextoHero()-qualityW-96);
-    versaoRect = (GfxRect){NV_DETW2_X+qualityW+24,yV,source.w+72,56};
-    botao_pilula_sem_aro(versaoRect,"",NULL,versaoFoco,0,0,aV);
-    vtui_estado_ponto(vaiTocar.estado,versaoRect.x+23,yV+23,aV);
-    float sourceY = yV+(56-source.h)*.5f;
-    txt_desenhar_alpha(quality,NV_DETW2_X,sourceY+source.h-quality.h,aV);
-    txt_desenhar_alpha(source,versaoRect.x+52,sourceY,aV);
+    int ink = (int)(160 + 38 * versaoFoco);
+    TxtLinha quality = txt_linha_corta(TXT_ILHA_APOIO,texto,ink,ink,ink,255,larguraTextoHero()-40);
+    versaoRect = (GfxRect){NV_DETW2_X,yV+12,quality.w+40,32};
+    gfx_cor(versaoRect,.25f,1,1,1,.12f*versaoFoco*aV);
+    int estado = vaiTocar.tem && vaiTocar.estado != FA_NADA ? vaiTocar.estado : FA_RUIM;
+    vtui_estado_ponto(estado,versaoRect.x+8,versaoRect.y+11,aV);
+    txt_desenhar_alpha(quality,versaoRect.x+28,versaoRect.y+(versaoRect.h-quality.h)*.5f,aV);
     if (aV>.3f) ponteiro_alvo(versaoRect.x,versaoRect.y,versaoRect.w,versaoRect.h,ponteiroDetalhe,NULL,-4,0);
   }
   if (pessoal[0]) {
