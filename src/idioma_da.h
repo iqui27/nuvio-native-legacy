@@ -4470,6 +4470,7 @@
   T("Melhor fonte prefere 4K, Dolby Vision e MP4. Se a escolhida não abrir, tenta outras. Não espera o addon mais lento.", "Bedste kilde foretrækker 4K, Dolby Vision og MP4. Hvis den valgte ikke åbner, prøver den andre. Den venter ikke på den langsomste tilføjelse."),
   T("Melhor fonte: prefere 4K, Dolby Vision e MP4 e confere uma fonte por vez. Primeira da lista: toca a primeira que o addon mandou e não confere nenhuma outra — para quem já filtra e ordena no AIOStreams.", "Bedste kilde: foretrækker 4K, Dolby Vision og MP4 og tjekker én kilde ad gangen. Første på listen: afspiller den første, add-onnet sendte, og tjekker ingen andre — til dem, der allerede filtrerer og sorterer i AIOStreams."),
   T("Melhor para esta TV", "Bedst til dette TV"),
+  T("Melhor para este iPhone", ""),
   T("Melhor para esta TV primeiro, grupos por qualidade e filtros Só MP4, Em cache e Dublado.", "Bedst til dette TV først, grupper efter kvalitet og filtrene Kun MP4, I cache og Eftersynkroniseret."),
   T("Melhor qualidade", "Bedste kvalitet"),
   T("Melhor resultado", "Bedste resultat"),

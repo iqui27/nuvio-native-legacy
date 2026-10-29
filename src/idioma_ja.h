@@ -4470,6 +4470,7 @@
   T("Melhor fonte prefere 4K, Dolby Vision e MP4. Se a escolhida não abrir, tenta outras. Não espera o addon mais lento.", "最適なソース は 4K、Dolby Vision、MP4 を優先します。選んだものが開かなければ、ほかを試します。一番遅いアドオンは待ちません。"),
   T("Melhor fonte: prefere 4K, Dolby Vision e MP4 e confere uma fonte por vez. Primeira da lista: toca a primeira que o addon mandou e não confere nenhuma outra — para quem já filtra e ordena no AIOStreams.", "最適なソース: 4K、Dolby Vision、MP4 を優先し、ソースを 1 つずつ確認します。リストの先頭: アドオンが最初に返したソースを再生し、他は確認しません。AIOStreams ですでにフィルターと並べ替えをしている方向けです。"),
   T("Melhor para esta TV", "このテレビに最適"),
+  T("Melhor para este iPhone", ""),
   T("Melhor para esta TV primeiro, grupos por qualidade e filtros Só MP4, Em cache e Dublado.", "このテレビに最適 が最初に、画質ごとのグループと、MP4 のみ、キャッシュ済み、吹き替え のフィルター。"),
   T("Melhor qualidade", "最高の品質"),
   T("Melhor resultado", "最良の結果"),

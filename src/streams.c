@@ -6186,7 +6186,7 @@ static void stream_folha_desenharCorpo_(Uint32 agora) {
   // NV_FOLHA_MARGEM das tres bordas, raio NV_FOLHA_RAIO, sombra curta e uma
   // luz larga no canto de cima — o mesmo material da ilha do relogio. O ajuste
   // de vidro escolhe o miolo: translucido (gfx_vidro_folha) ou solido.
-  { const int vid = ajustes_vidro();
+  { const int vid = folhaFone() ? 0 : ajustes_vidro();
     GfxRect corpo={x,FOLHA_MARGEM,FOLHA_W,NV_TELA_H-2*FOLHA_MARGEM};
     gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,0,0,0,(vid?.30f:.42f)*anim);
     int rim = gfx_vidro_sem_aro;
@@ -6196,7 +6196,11 @@ static void stream_folha_desenharCorpo_(Uint32 agora) {
       // Frost samples the frame captured before this surface. Apply density
       // after the glass so that captured hero text cannot bypass the backing.
       gfx_cor(corpo,FOLHA_RAIO_IL/corpo.h,.055f,.059f,.071f,.88f*anim);
-    } else plrui_material_s(corpo,FOLHA_RAIO_IL,0,anim,1);
+    } else {
+      plrui_material_s(corpo,FOLHA_RAIO_IL,0,anim,1);
+      // Phone: the sheet is opaque (mock); the detail page must not ghost through.
+      if (folhaFone()) gfx_cor(corpo,FOLHA_RAIO_IL/corpo.h,.055f,.059f,.071f,.98f*anim);
+    }
     gfx_vidro_sem_aro = rim; }
   GfxRecorteAnt clip = gfx_recorte_dentro(x,FOLHA_MARGEM,FOLHA_W,NV_TELA_H-2*FOLHA_MARGEM);
   corpoFolha(x, FOLHA_W, anim, agora, 0);
@@ -6415,6 +6419,9 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   { int cnt[13]={0}; float iw[14], sx, segY=FOLHA_ABAS_Y+oy, maxW=rw+4.0f;
     const float pin=(FOLHA_ABAS_H-FOLHA_ABA_H)*.5f;
     TxtLinha nome[14], num[14];
+#ifdef NV_TOUCH_UI
+    GfxRecorteAnt abasClip; int abasClipOn = 0;
+#endif
     folhaDados();
     memcpy(cnt, folhaContagens, sizeof cnt);
     for(int position=-1;position<nProvedores;position++){
@@ -6441,7 +6448,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       toquerol_vincular(&toqueFontesAbas, (GfxRect){lx - 2, segY, maxW, FOLHA_ABAS_H}, gfx_escala(),
                        0, total - 6 - maxW, 0, &toqueFontesAbasOffset);
       ini = -1; fim = nProvedores; soma = fminf(total, maxW + 6);
-      gfx_recorte(lx - 2, segY, maxW, FOLHA_ABAS_H);
+      abasClip = gfx_recorte_dentro(lx - 2, segY, maxW, FOLHA_ABAS_H); abasClipOn = 1;
     }
 #endif
     sx=lx-2.0f;
@@ -6482,7 +6489,11 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       }
       txt_desenhar_alpha(nome[qidx],r.x+22+iconW,r.y+(FOLHA_ABA_H-nome[qidx].h)*.5f,anim);
       txt_desenhar_alpha(num[qidx],r.x+22+iconW+nome[qidx].w+10,r.y+(FOLHA_ABA_H-num[qidx].h)*.5f+1,anim);
-      sx+=iw[qidx]+6.0f; } }
+      sx+=iw[qidx]+6.0f; }
+#ifdef NV_TOUCH_UI
+    if (abasClipOn) gfx_recorte_voltar(abasClip);
+#endif
+  }
   // AVISO DOS FILTROS RAPIDOS, sob as abas: quantas fontes eles escondem. OK
   // (ou toque) tira todos. Reserva todas as linhas, inclusive a acao de recuperar.
   { const char *dica = canaisFolha?NULL:fraseDicaChips();
@@ -6604,6 +6615,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       { char pv[160];
         legendaProvedor(s,pv,sizeof pv);
         lp=txt_linha_corta(TXT_PG_FIM,pv,150,150,148,255,318); }
+      
       colW=lp.w+22;
       if(gb[0] && lg.w+6+lu.w>colW) colW=lg.w+6+lu.w;
       cy=y+20+(temMarca(i,automatica)?FOLHA_MARCA_H:0);
@@ -6648,7 +6660,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
         // StreamFit (F03): the automatic pick is NOT changed by the measurement.
         // When its host was measured too slow for it, the mark keeps naming the
         // real choice but stops calling it the best for this TV.
-        mx+=16+caixaAlta(fitPesada(i) ? "Escolha automática" : "Melhor para esta TV",
+        mx+=16+caixaAlta(fitPesada(i) ? "Escolha automática" : (folhaFone() ? "Melhor para este iPhone" : "Melhor para esta TV"),
                          ai,(int)(ag*255),(int)(ab*255),mx+16,cy,anim)+18;
         // #284: no modo "do addon" a fileira de selos nao existe e a linha
         // nao dizia a resolucao; ela vai junto da marca ("4K · HDR10").

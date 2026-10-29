@@ -4470,6 +4470,7 @@
   T("Melhor fonte prefere 4K, Dolby Vision e MP4. Se a escolhida não abrir, tenta outras. Não espera o addon mais lento.", "最佳片源優先選擇 4K、Dolby Vision 和 MP4。如果選中的打不開，會嘗試其他片源。不會等待最慢的附加元件。"),
   T("Melhor fonte: prefere 4K, Dolby Vision e MP4 e confere uma fonte por vez. Primeira da lista: toca a primeira que o addon mandou e não confere nenhuma outra — para quem já filtra e ordena no AIOStreams.", "最佳片源：優先 4K、Dolby Vision 和 MP4，並逐個檢查片源。清單第一個：直接播放附加元件送來的第一個，不檢查其他——適合已經在 AIOStreams 裡篩選並排序的使用者。"),
   T("Melhor para esta TV", "最適合這台電視"),
+  T("Melhor para este iPhone", ""),
   T("Melhor para esta TV primeiro, grupos por qualidade e filtros Só MP4, Em cache e Dublado.", "最適合這台電視的排在第一，按畫質分組，並有 僅 MP4、已快取和配音 篩選。"),
   T("Melhor qualidade", "最好的品質"),
   T("Melhor resultado", "最佳結果"),

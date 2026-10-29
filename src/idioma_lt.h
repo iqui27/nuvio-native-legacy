@@ -4470,6 +4470,7 @@
   T("Melhor fonte prefere 4K, Dolby Vision e MP4. Se a escolhida não abrir, tenta outras. Não espera o addon mais lento.", "Geriausias šaltinis renkasi 4K, Dolby Vision ir MP4. Jei pasirinktas neatsidaro, bando kitus. Nelaukia lėčiausio priedo."),
   T("Melhor fonte: prefere 4K, Dolby Vision e MP4 e confere uma fonte por vez. Primeira da lista: toca a primeira que o addon mandou e não confere nenhuma outra — para quem já filtra e ordena no AIOStreams.", "Geriausias šaltinis: teikia pirmenybę 4K, Dolby Vision ir MP4 ir tikrina po vieną šaltinį. Pirmas sąraše: groja pirmą papildinio atsiųstą ir netikrina kitų — tiems, kurie jau filtruoja ir rūšiuoja AIOStreams."),
   T("Melhor para esta TV", "Geriausia šiam televizoriui"),
+  T("Melhor para este iPhone", ""),
   T("Melhor para esta TV primeiro, grupos por qualidade e filtros Só MP4, Em cache e Dublado.", "Pirmiausia Geriausia šiam televizoriui, grupės pagal kokybę ir filtrai Tik MP4, Talpykloje ir Dubliuota."),
   T("Melhor qualidade", "Geriausia kokybė"),
   T("Melhor resultado", "Geriausias rezultatas"),
