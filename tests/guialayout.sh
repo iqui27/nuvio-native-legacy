@@ -3,6 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-guialayout.XXXXXX")
 trap 'rm -rf "$work"' EXIT
+node tests/guialayout_html5.cjs
 export NUVIO_DADOS="$work/dados"
 mkdir -p "$NUVIO_DADOS"
 sources=()
