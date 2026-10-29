@@ -2469,7 +2469,7 @@ static float alturaSecao(int r) {
     // empilhada usando so a altura dos cartoes e saia POR CIMA deles.
     case SEC_COMENTARIOS:  return alturaCabComentarios() + COM_CARD_H;
     case SEC_ESTUDIOS:    return EST_CARD_H;
-    case SEC_DETALHES:    return 80 + ceilf(nLinhasDetalhe()/(detalheRetrato() ? 1.0f : 2.0f))*76;
+    case SEC_DETALHES:    return ceilf(nLinhasDetalhe()/(detalheRetrato() ? 2.0f : 3.0f))*132;
     // As duas sob demanda: a CHAMADA enquanto ninguem entrou (titulo +
     // procedencia + custo, tres linhas) e a altura MEDIDA no ultimo desenho
     // depois disso.
@@ -8087,10 +8087,13 @@ static void desenhaComentarios(float x, float y, float a) {
     if (comOculto(i)) {
       for (int k=0; k<3; k++) gfx_cor((GfxRect){px,y+96+k*30,larg-k*60,14},.5f,.25f,.27f,.29f,a);
       txt_desenhar_alpha(txt_linha(TXT_CAPTION2,"Contém spoiler · OK para ler",200,203,210,255),px,y+176,a);
-    } else agendaui_sinopse(TXT_G22M, daSerie ? extras_comentario_texto(i)
-                                     : extras_comentario_ep_texto(i),
-              px,y+84,larg,33,3,
-              focCor ? (tintaEsc ? 45 : 235) : 190, focCor ? (tintaEsc ? 47 : 236) : 195, focCor ? (tintaEsc ? 52 : 240) : 205,a*.95f);
+    } else {
+      const char *text=daSerie ? extras_comentario_texto(i) : extras_comentario_ep_texto(i);
+      // Sources' color-emoji renderer, clipped to the existing three-line preview.
+      GfxRecorteAnt clip=gfx_recorte_dentro(px,y+84,larg,txt_addon_altura(TXT_G22M,text,larg,3));
+      txt_addon_bloco(TXT_G22M,text,px,y+84,larg,195,a*.95f,NULL);
+      gfx_recorte_voltar(clip);
+    }
 
     { int nota = daSerie ? extras_comentario_nota(i)
                          : extras_comentario_ep_nota(i);
@@ -8486,18 +8489,16 @@ static void desenhaRodape(int r,float a) {
     }
   } else {
     LinhaDet rows[NV_DETF_DET_MAXL]; int n=montarDetalhes(rows,NV_DETF_DET_MAXL);
-    float h=alturaSecao(r);
-    int cols=detalheRetrato() ? 1 : 2;
-    for (int col=0;col<cols;col++) {
-      GfxRect card={96+col*876,y,detalheRetrato() ? NV_TELA_W-192 : 852,h};
-      moldura(card,22,a);
-      for (int i=col;i<n;i+=cols) {
-        float cy=y+28+(i/cols)*76;
-        txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_NOME,i18n(rows[i].chave),156,165,179,255,220),card.x+28,cy,a);
-        txt_bloco_corta(TXT_ILHA_NOME,rows[i].valor,239,241,246,card.x+264,cy,card.w-292,30,a,2);
-      }
+    float h=alturaSecao(r), width=NV_TELA_W-NV_DETP_X*2;
+    int cols=detalheRetrato() ? 2 : 3;
+    float gap=48, cell=(width-gap*(cols-1))/cols;
+    for (int i=0;i<n;i++) {
+      float x=NV_DETP_X+(i%cols)*(cell+gap), cy=y+(i/cols)*132;
+      char label[168]; idioma_maiusc_em(ajustes_idioma(),label,sizeof label,i18n(rows[i].chave));
+      txt_tracking(TXT_ILHA_HORA,label,243,242,239,x,cy,a*.48f,1.8f);
+      txt_bloco_corta(TXT_ILHA_CORPO,rows[i].valor,243,242,239,x,cy+32,cell,32,a,2);
     }
-    if (a>.3f) navigationTarget(96,y,detalheRetrato() ? NV_TELA_W-192 : 1728,h,ponteiroDetalhe,NULL,r,0);
+    if (a>.3f) navigationTarget(NV_DETP_X,y,width,h,ponteiroDetalhe,NULL,r,0);
   }
 }
 
