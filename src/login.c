@@ -12,6 +12,8 @@
 #include "ponteiro.h"
 #include "ajustes.h"
 #include "idioma.h"
+#include "botoes.h"
+#include "plrui.h"
 #include <SDL2/SDL_image.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -273,11 +275,7 @@ void login_atualizar(float dt, Uint32 agora) {
 static void pilula(float cx, float y, float w, const char *rot, float k, float alpha,
                    PonteiroFn focar, int i) {
   GfxRect pill = { cx - w * 0.5f, y, w, LG_PILL_H };
-  TxtLinha t;
-  int tom = k >= 0.5f ? 24 : 236;
-  gfx_cor(pill, NV_RAIO_PILL, 1.0f, 1.0f, 1.0f, anim_mistura(0.12f, 0.92f, k) * alpha);
-  t = txt_linha_corta(TXT_BODY, rot, tom, tom, tom + 2 > 255 ? 255 : tom + 2, 255, w - 48.0f);
-  txt_desenhar_alpha(t, cx - t.w * 0.5f, y + (LG_PILL_H - t.h) * 0.5f, alpha);
+  botao_pilula_sem_aro(pill, i18n(rot), NULL, k, 0, 0, alpha);
   if (focar) ponteiro_alvo(pill.x, pill.y, pill.w, pill.h, focar, NULL, i, 0);
 }
 
@@ -302,14 +300,10 @@ static float tituloLogin(float y) {
 static void campo(float y, int i, const char *rotulo, const char *valor, int oculto) {
   float x = (NV_TELA_W - LG_CAMPO_W) * 0.5f, k = animFoco[i];
   GfxRect cx = { x, y + 42.0f, LG_CAMPO_W, LG_CAMPO_H };
-  float ar, ag, ab;
-  TxtLinha r = txt_linha(TXT_CAPTION, rotulo, 176, 178, 186, 255);
+  TxtLinha r = txt_linha(TXT_ILHA_NOME, rotulo, 176, 178, 186, 255);
   txt_desenhar_alpha(r, x + 4.0f, y, 1.0f);
-  ajustes_acento(&ar, &ag, &ab);
-  gfx_cor(cx, NV_RAIO_CARD, 1.0f, 1.0f, 1.0f, anim_mistura(0.07f, 0.13f, k));
-  if (k > 0.01f)
-    gfx_vidro_aro((GfxRect){ cx.x - 6, cx.y - 6, cx.w + 12, cx.h + 12 }, NV_RAIO_CARD, 2.5f,
-                  ar, ag, ab, 0.95f * k);
+  gfx_cor(cx,22.0f/cx.h,.141f,.149f,.173f,.92f);
+  plrui_linha_foco(cx, 22.0f, k);
   ponteiro_alvo(cx.x, y, cx.w, cx.h + 42.0f, ptFocoEmail, NULL, i, 0);
   if (valor[0]) {
     char pontos[TECLADO_LONGO * 3 + 1];
@@ -342,10 +336,7 @@ static void desenharEmail(float y, Uint32 agora) {
   { float x = (NV_TELA_W + LG_CAMPO_W) * 0.5f - LG_MOSTRAR_W - 12.0f;
     float yb = y + 42.0f + (LG_CAMPO_H - 60.0f) * 0.5f, k = animFoco[LE_MOSTRAR];
     GfxRect b = { x, yb, LG_MOSTRAR_W, 60.0f };
-    int tom = k >= 0.5f ? 24 : 220;
-    TxtLinha t = txt_linha(TXT_CAPTION, senhaVisivel ? "Ocultar" : "Mostrar", tom, tom, tom, 255);
-    gfx_cor(b, NV_RAIO_PILL, 1.0f, 1.0f, 1.0f, anim_mistura(0.10f, 0.92f, k));
-    txt_desenhar_alpha(t, b.x + (b.w - t.w) * 0.5f, b.y + (b.h - t.h) * 0.5f, 1.0f);
+    botao_pilula_sem_aro(b, i18n(senhaVisivel ? "Ocultar" : "Mostrar"), NULL, k, 0, 0, 1.0f);
     ponteiro_alvo(b.x, b.y, b.w, b.h, ptFocoEmail, NULL, LE_MOSTRAR, 0); }
   y += 42.0f + LG_CAMPO_H + 48.0f;
   pilula(NV_TELA_W * 0.5f, y, LG_EMAIL_PILL_W, st == SES_EMAIL ? "Entrando…" : "Entrar",

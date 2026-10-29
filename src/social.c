@@ -280,7 +280,7 @@ void social_desenhar(Uint32 agora) {
     if(u[0])textoA(TXT_ILHA_SUB_L,u,tx,ay+86,tw,.55f);
     float by=dados.bio[0]?txt_bloco(TXT_ILHA_SUB_L,dados.bio,243,242,239,lx,ay+164,bw,32,.62f,5)+20:0;
     if(strncmp(dados.pessoa.socialSlug,"nuvio:",6))textoA(TXT_ILHA_APOIO,"Trakt · perfil público",lx,ay+164+by,bw,.45f);
-    {static const char *const T[2]={"OK","Voltar"},*const R[2]={"Abrir título","Fechar"};int lista=nv&&zona&&(dados.estado==SOCIAL_PRONTO||dados.estado==SOCIAL_ATUALIZANDO||dados.estado==SOCIAL_STALE);plrui_dicas(T+!lista,R+!lista,2-!lista,lx,ANC(1000),0,1);}}
+  }
   // A ilha.
   if (ajustes_vidro()) gfx_vidro_folha(il,SO_RAIO/il.h,1);
   else t21_ilha_solida(il,SO_RAIO,1);

@@ -2,6 +2,7 @@
 #include "nav21.h"
 #include "dados.h"
 #include "ajustes.h"
+#include "conquistas.h"
 #include "text.h"
 #include "tex_cache.h"
 #include <SDL2/SDL_image.h>
@@ -55,7 +56,7 @@ static void key(Nav21Screen s,SDL_Keycode code) {
   e.type=SDL_KEYUP; s.key(&e);
 }
 static void frame(Nav21Screen s,float dt) {
-  s.step(dt); count=0; txt_novo_quadro(); tex_novo_quadro(); gfx_novo_quadro();
+  s.step(dt); count=0; txt_novo_quadro(); tex_novo_quadro(); tex_bombear(12); gfx_novo_quadro();
   glClearColor(.01f,.01f,.01f,1); glClear(GL_COLOR_BUFFER_BIT); s.draw();
 }
 static void settle(Nav21Screen s) { for(int i=0;i<90;i++) s.step(1.f/60); for(int i=0;i<4;i++)frame(s,.1f); }
@@ -104,11 +105,14 @@ void nav21_check(Nav21Screen s) {
   Nav21Target base[NAV21_MAX]; int n=count; memcpy(base,targets,n*sizeof *base);
   nav21_expect(s.name,"Open: nonempty focus registry",n>0,1);
   for(int i=0;i<n;i++)fprintf(registry,"%s\t%d\t%.1f\t%.1f\t%.1f\t%.1f\n",s.name,base[i].id,base[i].r.x,base[i].r.y,base[i].r.w,base[i].r.h);
-  if(!strcmp(s.name,"Library + Origins")||!strcmp(s.name,"Settings/UX")){
+  if(getenv("TELASPOLIR_OUT") || !strcmp(s.name,"Library + Origins")||!strcmp(s.name,"Settings/UX")){
+    for(int i=0;i<24;i++){frame(s,.016f);SDL_Delay(3);}
     hash();
     SDL_Surface *upright=SDL_CreateRGBSurfaceWithFormat(0,1920,1080,32,SDL_PIXELFORMAT_RGBA32);
     for(int y=0;y<1080;y++)memcpy((char*)upright->pixels+y*upright->pitch,pixels+(1079-y)*1920*4,1920*4);
-    char path[1024];snprintf(path,sizeof path,"%s/%s.png",artifactDir,s.name[0]=='L'?"library":"settings");
+    char slug[160];snprintf(slug,sizeof slug,"%s",s.name);
+    for(char *p=slug;*p;p++)if(*p=='/'||*p==' '||*p=='+')*p='-';
+    char path[1024];snprintf(path,sizeof path,"%s/%s.png",artifactDir,getenv("TELASPOLIR_OUT")?slug:s.name[0]=='L'?"library":"settings");
     if(IMG_SavePNG(upright,path))exit(2);SDL_FreeSurface(upright);
   }
   int edges[NAV21_MAX][4], expectedEdges[NAV21_MAX][4], actualEdges[NAV21_MAX][4]; memset(edges,-1,sizeof edges);memset(expectedEdges,-1,sizeof expectedEdges);
@@ -142,7 +146,7 @@ void nav21_check(Nav21Screen s) {
     else if(!seen[i]) {char missing[120];snprintf(missing,sizeof missing,"Open: no D-pad path to %d",base[i].id);nav21_expect(s.name,missing,0,1);}
     for(int d=0;d<4;d++)if(expectedEdges[i][d]>=0){char edge[4300];snprintf(edge,sizeof edge,"%s; from %d, %s: went to %d, expected %d",path,base[i].id,names[d],actualEdges[i][d],expectedEdges[i][d]);nav21_expect(s.name,edge,actualEdges[i][d],expectedEdges[i][d]);}
   }
-  motion(s,0);if(strcmp(s.name,"Home 2.1"))motion(s,1);
+  if(s.transition){motion(s,0);if(strcmp(s.name,"Home 2.1"))motion(s,1);}
   // Exact route/focus checks live beside each real internal navigation path and router fixture.
   printf("SCREEN %s targets=%d violations=%d\n",s.name,n,failures-before);fflush(stdout);
 }
@@ -158,12 +162,20 @@ int main(int argc,char **argv) {
   GLuint t,f;glGenTextures(1,&t);glBindTexture(GL_TEXTURE_2D,t);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,1920,1080,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
   glGenFramebuffers(1,&f);glBindFramebuffer(GL_FRAMEBUFFER,f);glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,t,0);assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
   glViewport(0,0,1920,1080);gfx_tamanho_alvo(1920,1080);assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));tex_iniciar(64);gfx_icones_dir("deploy/app/art");gfx_escala_txt_definir(1);
+#ifdef NV_TELASPOLIR
+  char *art=realpath("deploy/app/art",NULL);assert(art);gfx_icones_dir(art);conquistas_arte_dir(art);free(art);
+#endif
   Nav21Screen hardCut={"Motion/negative-control",fakeAction,fakeKey,fakeStep,fakeDraw,fakeValue,fakeSelect,fakeValue,0,fakeTransition};
   int savedFailures=failures;FILE *savedLog=logfile;logfile=tmpfile();assert(logfile);
   nav21_motion(hardCut,fakeAction,"Hard cut plus unrelated animation must fail");
   int rejected=failures==savedFailures+1;failures=savedFailures;fclose(logfile);logfile=savedLog;
   nav21_expect("Motion/negative-control","Hard cut plus unrelated animation rejected",rejected,1);
+#ifdef NV_TELASPOLIR
+  extern void telaspolir_search(void),telaspolir_pages(void);
+  nav21_servers();nav21_achievements();nav21_start();nav21_aio();nav21_filmo();nav21_addonguide();nav21_social();nav21_player();nav21_juntos();telaspolir_search();telaspolir_pages();
+#else
   nav21_router();nav21_servers();nav21_achievements();nav21_start();nav21_aio();nav21_filmo();nav21_addonguide();nav21_detail();nav21_social();nav21_settings();nav21_sources();nav21_island();nav21_rating();nav21_player();nav21_juntos();nav21_home();
+#endif
   fprintf(logfile,"\n%d checks, %d violations.\n",checks,failures);fclose(logfile);fclose(registry);
   printf("nav21: %d checks, %d violations\n",checks,failures);return failures?1:0;
 }
