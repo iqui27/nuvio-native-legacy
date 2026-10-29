@@ -29,11 +29,13 @@ static int gs_team_arrow(SDL_Keycode k){
   if(strcmp(screen,"esportes-times")||focus<2800||focus>=2806)return 0;
   gs_team_collect();int n=gs_page*6+focus-2800;
   if(k==SDLK_UP&&n==0){focus=2021;return 1;}
-  int next=n+(k==SDLK_DOWN?1:k==SDLK_UP?-1:k==SDLK_LEFT?-6:6);
+  if(k==SDLK_LEFT){gv_side_enter();return 1;}
+  if(k==SDLK_RIGHT)return 1;
+  int next=n+(k==SDLK_DOWN?1:-1);
   if(next>=0&&next<gs_team_n){gs_page=next/6;focus=2800+next%6;}return 1;
 }
 static void gs_follow_badge(const EspEvento *e,GfxRect r){
   if(!esportes_segue_evento(e))return;
   float ar,ag,ab;ajustes_acento(&ar,&ag,&ab);
-  gfx_icone((GfxRect){r.x+r.w-48,r.y+14,26,26},esportes_segue_jogo(e)?"pl_bell":"aj_star",ar,ag,ab,1);
+  gfx_icone((GfxRect){r.x+r.w-46,r.y+r.h-38,22,22},esportes_segue_jogo(e)?"pl_bell":"aj_star",ar,ag,ab,1);
 }

@@ -7,16 +7,17 @@ static int (*gs_follow_state)(const EspEvento *);
 void g5ui_sports_follow(void (*action)(const EspEvento *),int (*state)(const EspEvento *)){
   gs_follow_action=action;gs_follow_state=state;
 }
-typedef struct {char id[128],name[200],base[512];int confirmed;} GSWatch;
+typedef struct {char id[128],name[200],base[512],logo[512];int confirmed;} GSWatch;
 static GSWatch gs_watch[8];static int gs_watch_n,gs_watch_cursor;
 static unsigned gs_watch_revision,gs_watch_epg,gs_event_revision;
 static char gs_kickoff[100],gs_venue[300],gs_reminder_id[128];
-static void gs_watch_add(const char *id,const char *name,const char *base,int confirmed){
+static void gs_watch_add(const char *id,const char *name,const char *base,const char *logo,int confirmed){
   for(int j=0;j<gs_watch_n;j++)if(!strcmp(gs_watch[j].id,id)){gs_watch[j].confirmed|=confirmed;return;}
   if(gs_watch_n>=8)return;
   GSWatch *c=&gs_watch[gs_watch_n++];memset(c,0,sizeof *c);
   snprintf(c->id,sizeof c->id,"%s",id);snprintf(c->name,sizeof c->name,"%s",name);
   snprintf(c->base,sizeof c->base,"%s",base);c->confirmed=confirmed;
+  snprintf(c->logo,sizeof c->logo,"%s",logo?logo:"");
 }
 static void gs_watch_step(void){
   if(gs_event_revision!=esportes_revisao()){
@@ -31,17 +32,17 @@ static void gs_watch_step(void){
   }
   Uint32 start=SDL_GetTicks();
   for(int batch=0;batch<8&&SDL_GetTicks()-start<2;batch++){
-    const char *id,*name,*group,*base;
+    const char *id,*name,*group,*base,*logo;
     if(!guia_canal_regra_campos(gs_watch_cursor,NULL,NULL,NULL,NULL,NULL))break;
     int i=gs_watch_cursor++;
-    if(!guia_canal_campos(i,&id,&name,NULL,&group,&base)||!guia_busca_elegivel(i)||!g5ui_channel_allowed(id,name,group,base))continue;
+    if(!guia_canal_campos(i,&id,&name,&logo,&group,&base)||!guia_busca_elegivel(i)||!g5ui_channel_allowed(id,name,group,base))continue;
     int confirmed=0;
     /* Broadcaster links explicitly say which channel carries the event; EPG
      * confirmation is additional evidence, never fabricated from affiliation. */
     EpgProg programs[16];time_t end=gs_selected.fim>gs_selected.inicio?gs_selected.fim:gs_selected.inicio+6*3600;
     int n=guia_busca_programas(i,gs_selected.inicio-3*3600,end,0,programs,16);
     for(int p=0;p<n;p++)if(esportes_corresponde(&gs_selected,programs[p].titulo,programs[p].ini,programs[p].fim))confirmed=1;
-    if(confirmed||esportes_emissora(&gs_selected,name))gs_watch_add(id,name,base,confirmed);
+    if(confirmed||esportes_emissora(&gs_selected,name))gs_watch_add(id,name,base,logo,confirmed);
   }
 }
 static void gs_event_open(const EspEvento *e){
@@ -83,34 +84,55 @@ static void gs_team(const EspParticipante *p,int sport,float x,float y,float siz
 static void gs_event_draw(void){
   const EspEvento *e=&gs_selected;int sport=gs_sport_id(e->modalidade);
   gv_button(2020,i18n("Voltar"),"pl_chevron-left",GV_MX,210,180,0,1);
-  gv_label(TXT_ILHA_NOME,e->liga,GV_MX+210,222,1000,1);
-  GfxRect panel={GV_MX,306,GV_MW,370};plrui_cartao(panel,28,1);
+  for(int k=0;k<esportes_catalogo_n();k++){
+    const EspLiga *l=esportes_catalogo_liga(k);
+    if(l&&!strcmp(l->id,e->ligaId)){esportesui_logo(l->logo,sport,(GfxRect){GV_MX+210,208,42,42});break;}
+  }
+  gv_label(TXT_ILHA_NOME,e->liga,GV_MX+268,222,1000,1);
+  GfxRect panel={GV_MX,286,GV_MW,390};plrui_cartao(panel,28,1);
+  float ar,ag,ab;ajustes_acento(&ar,&ag,&ab);
+  if(e->estado==1)gfx_cor((GfxRect){GV_MX+GV_MW*.5f-56,320,112,34},.5f,ar,ag,ab,.18f);
   for(int p=0;p<e->nParticipantes;p++){
     float center=GV_MX+GV_MW*(p?.76f:.24f);
-    gs_team(&e->participantes[p],sport,center-75,330,150);
-    TxtLinha name=txt_linha_corta_bruta(TXT_ILHA_NOME,e->participantes[p].nome,243,242,239,255,GV_MW*.36f);
-    txt_desenhar(name,center-name.w*.5f,502);
+    gs_team(&e->participantes[p],sport,center-82,326,164);
+    TxtLinha name=txt_linha_bruta(TXT_ILHA_NOME,e->participantes[p].nome,243,242,239,255);
+    if(name.w<=GV_MW*.34f)txt_desenhar(name,center-name.w*.5f,512);
+    else txt_bloco_bruto(TXT_ILHA_NOME,e->participantes[p].nome,243,242,239,center-GV_MW*.17f,504,GV_MW*.34f,1.1f,1,2);
   }
   if(e->nParticipantes!=2)gv_label(TXT_ILHA_TITULO,e->nome,GV_MX+40,400,GV_MW-80,0);
   char score[80];snprintf(score,sizeof score,"%s  :  %s",e->participantes[0].pontos[0]?e->participantes[0].pontos:"–",e->participantes[1].pontos[0]?e->participantes[1].pontos:"–");
   const char *status=e->estado==1?"Ao vivo":e->estado==2?"Encerrado":e->estado==3?e->detalhe:"Próximos jogos";
   TxtLinha state=txt_linha_corta_bruta(TXT_ILHA_SUB,i18n(status),154,156,158,255,GV_MW*.3f);
-  txt_desenhar(state,GV_MX+(GV_MW-state.w)*.5f,340);
+  txt_desenhar(state,GV_MX+(GV_MW-state.w)*.5f,328);
   if(e->nParticipantes==2){
     TxtLinha value=txt_linha_bruta(e->estado==0?TXT_ILHA_TITULO:TXT_AJ_NUM64,e->estado==0?"×":score,243,242,239,255);
     txt_desenhar(value,GV_MX+(GV_MW-value.w)*.5f,396);
   }
   TxtLinha detail=txt_linha_corta_bruta(TXT_ILHA_SUB,e->detalhe,154,156,158,255,GV_MW*.3f);
   txt_desenhar(detail,GV_MX+(GV_MW-detail.w)*.5f,486);
+  if(e->estado==1)gfx_cor((GfxRect){GV_MX+(GV_MW-detail.w)*.5f-17,493,7,7},.5f,ar,ag,ab,.65f+.25f*sinf(SDL_GetTicks()*.004f));
   gv_label(TXT_ILHA_SUB,gs_venue,GV_MX+40,582,GV_MW-80,1);
-  gv_label(TXT_ILHA_SUB,gs_kickoff,GV_MX+40,620,GV_MW-80,1);
+  gv_label(TXT_ILHA_SUB,gs_kickoff,GV_MX+40,620,GV_MW*.45f,1);
+  if(e->nEmissoras)gv_label(TXT_ILHA_SUB,e->emissoras[0],GV_MX+GV_MW*.55f,620,GV_MW*.4f-40,1);
   gv_label(TXT_ILHA_NOME,i18n("Onde assistir"),GV_MX,712,600,0);
-  for(int j=0;j<gs_watch_n;j++)gv_button(2080+j,gs_watch[j].name,"aj_play",GV_MX+(j%4)*360,766+(j/4)*70,342,0,1);
+  for(int j=0;j<gs_watch_n;j++){
+    GSWatch *c=&gs_watch[j];int id=2080+j;float width=(GV_MW-54)/4;
+    GfxRect r={GV_MX+(j%4)*(width+18),762+(j/4)*76,width,66};
+    int focused=gv_btn_foc(id);plrui_botao_repouso(r,1);
+    if(focused)plrui_pilula_foco(gv_foco_folha(r),1);
+    guia_logo_desenhar(c->logo,c->name,(GfxRect){r.x+18,r.y+10,70,46},70,46,.965f,1);
+    float cr,cg,cb;gv_tinta(focused,0,&cr,&cg,&cb);
+    TxtLinha name=txt_linha_corta_bruta(TXT_ILHA_CORPO,c->name,cr*255,cg*255,cb*255,255,width-130);
+    txt_desenhar(name,r.x+106,r.y+22);
+    ponteiro_alvo(r.x,r.y,r.w,r.h,point_focus,point_activate,id,0);gv_registra(id,r.x,r.y,r.w,r.h);
+  }
   if(!gs_watch_n){
     char broadcasters[700]="";
     for(int j=0;j<e->nEmissoras;j++){size_t n=strlen(broadcasters);snprintf(broadcasters+n,sizeof broadcasters-n,"%s%s",j?" · ":"",e->emissoras[j]);}
-    gv_label(TXT_ILHA_SUB,broadcasters[0]?broadcasters:i18n("Nenhum canal encontrado para este evento"),GV_MX,772,GV_MW,1);
+    plrui_cartao((GfxRect){GV_MX,762,GV_MW,76},22,1);
+    gfx_icone((GfxRect){GV_MX+22,784,30,30},"aj_tv",.65f,.67f,.7f,1);
+    gv_label(TXT_ILHA_SUB,broadcasters[0]?broadcasters:i18n("Nenhum canal encontrado para este evento"),GV_MX+72,788,GV_MW-100,1);
   }
-  if(e->estado==0||e->estado==1)gv_button(2088,i18n(lembrete_achar(gs_reminder_key(),e->inicio,e->nome)>=0?"Lembrete marcado  ·  OK cancela":"Lembrar-me"),"aj_bell",GV_MX,gs_watch_n>4?922:866,530,0,1);
+  if(e->estado==0||e->estado==1)gv_button(2088,i18n(lembrete_achar(gs_reminder_key(),e->inicio,e->nome)>=0?"Lembrete ativo":"Lembrar-me"),"aj_bell",GV_MX,gs_watch_n>4?922:866,530,0,1);
   if(gs_follow_action)gv_button(2089,i18n(gs_follow_state&&gs_follow_state(e)?"Seguindo":"Seguir"),"aj_star",GV_MX+550,gs_watch_n>4?922:866,260,0,1);
 }

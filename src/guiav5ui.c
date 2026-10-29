@@ -2784,6 +2784,7 @@ static void gv_busca_abrir(void){
 /* --- dispatcher da tela principal ------------------------------------------ */
 static int gv_cartoes(void){return !strcmp(gv_pagina,"cartoes");}
 static void gv_footer(void){
+  if(gv_sports())return;
   int ov=gv_overlay();char playhint[96];snprintf(playhint,sizeof playhint,"%s / %s",i18n("Prévia"),i18n("Tela cheia"));
   if(!strcmp(screen,"busca")){const char *k[]={"OK","Voltar"},*l[]={"Assistir / abrir programa","Fechar busca"};gv_hints(k,l,2);}
   else if(!strcmp(screen,"numero")){const char *k[]={"0-9","OK","Voltar"},*l[]={"Digitar","Ir agora","Apagar / cancelar"};gv_hints(k,l,3);}
@@ -3041,7 +3042,7 @@ static int gv_activate(void){
 /* OK segurado (NV_HOLD, segurar.h): opcoes do canal; no dock, desafixa. */
 static Uint32 gv_ok_desde;static int gv_ok_longo;
 static void gv_ok_segurado(void){
-  if(gv_sports()&&focus>=2200&&focus<2203){
+  if(gv_sports()&&focus>=2200&&focus<2206){
     int i=gs_page*3+focus-2200;if(i<gs_n){gs_selected=gs_games[i];gs_open("esportes-onde-assistir");}return;
   }
   if(gv_zone==1){GVCh *c=gv_canal_focado();if(c){guia_alternar_favorito(c->id);gv_snap_force=1;if(gv_pin>0&&gv_pin>=gv_npins-1)gv_pin--;}return;}
@@ -3164,7 +3165,7 @@ static int gv_event(SDL_Keycode k,int repeat){
       }return 1;
     }
     if(ok&&!repeat){
-      if(gv_sports()&&focus>=2200&&focus<2203){gv_ok_desde=SDL_GetTicks();if(!gv_ok_desde)gv_ok_desde=1;gv_ok_longo=0;return 1;}
+      if(gv_sports()&&focus>=2200&&focus<2206){gv_ok_desde=SDL_GetTicks();if(!gv_ok_desde)gv_ok_desde=1;gv_ok_longo=0;return 1;}
       return gv_activate();
     }
     if(!strcmp(screen,"vazio")||!gv_total_n||gv_sports())return 1;
