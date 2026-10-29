@@ -2278,6 +2278,7 @@ static void logosEmprestar(void) {
 // linha seja uma janela contigua, e refaz Favoritos, contas e a vista. Roda ao
 // publicar e ao desligar um addon no painel (que tira canais sem esperar o fio).
 static void empacotar(void) {
+  free(canalIndice);canalIndice=NULL;canalIndiceCap=0;
   canaisRevisao++;
   grupoNContas = iptv_contas(grupoContas, IPTV_MAX_CONTAS);
   for(int f=0;f<nLtvF;f++)grupoOrdFonte[f]=fonteOrdem(f);
@@ -2929,6 +2930,14 @@ static void canalParaItem(const GCanal *c, CatItem *dst);
 static GCanal *canalPorId(const char *id) {
   int i;
   if (!id || !id[0]) return NULL;
+  if (canalIndiceCap) {
+    unsigned slot=ltv_hash(id)&(canalIndiceCap-1);
+    while ((i=canalIndice[slot]-1)>=0) {
+      if (!strcmp(canais[i].id,id) && fonteAtiva(canais[i].fonte)) return &canais[i];
+      slot=(slot+1)&(canalIndiceCap-1);
+    }
+    return NULL;
+  }
   for (i = 0; i < nCanais; i++) if (fonteAtiva(canais[i].fonte) && !strcmp(canais[i].id, id)) return &canais[i];
   return NULL;
 }
@@ -3564,13 +3573,9 @@ int guia_info_canal(const char *id, int *numero, int *total, char *cat, size_t n
 }
 
 int guia_e_favorito(const char *id) {
-  if (!favLido) favLer();
+  if (!favLido) { favLer(); favAplicar(); }
   GCanal *c = canalPorId(id);
-  if (c) {
-    int root=varianteRaiz((int)(c-canais));
-    for(int i=root;i>=0;i=canais[i].varianteProxima-1)if(favIndiceCanal(&canais[i])>=0)return 1;
-    return 0;
-  }
+  if (c) return canais[varianteRaiz((int)(c-canais))].fav;
   return id && id[0] && favIndice(id) >= 0;
 }
 

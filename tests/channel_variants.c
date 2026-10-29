@@ -1,3 +1,7 @@
+#include <string.h>
+static unsigned long comparisons;
+static int counted_strcmp(const char *a,const char *b){comparisons++;return strcmp(a,b);}
+#define strcmp counted_strcmp
 #define CHANNEL_VARIANTS_TEST
 #define main account_groups_main
 #include "guia_grupos.c"
@@ -84,5 +88,20 @@ int main(int argc,char **argv){
   fixture();assert(guia_variantes(ids[0],v,32)==4&&!strcmp(v[0].id,ids[3]));
   falharGravacao=1;guia_variante_tocou(ids[1]);falharGravacao=0;
   assert(guia_variantes(ids[0],v,32)==4&&!strcmp(v[0].id,ids[3]));
-  puts("PASS: playlist variants, quality order, distinct regions/numbers/EPG IDs, old ID focus, pins and grouping toggle");
+  /* A full snapshot must use cached lookups, with grouping on and off. */
+  stagingZerar();sTeto=30000;
+  int source=sFonteChave("large",LTV_M3U,"Large","");
+  for(int i=0;i<30000;i++){
+    char id[80],name[80];snprintf(id,sizeof id,"m3u:large:%d",i);snprintf(name,sizeof name,"Channel %d HD",i);
+    GCru c={.id=id,.nome=name,.grupo="Large",.tipo="channel"};assert(sCanalAdd(source,&c));
+  }
+  adotarStaging();
+  for(int enabled=0;enabled<2;enabled++){
+    grouping=enabled;guia_reordenar();comparisons=0;
+    variantesMontar();favAplicar();assert(comparisons<30UL*(unsigned long)nCanais);
+    comparisons=0;
+    for(int i=0;i<nCanais;i++)assert(!guia_e_favorito(canais[i].id));
+    assert(comparisons<30UL*(unsigned long)nCanais);
+  }
+  puts("PASS: variants, favorites, headers, pins and linear 30,000-channel snapshots");
 }

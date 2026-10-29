@@ -1950,24 +1950,32 @@ static void processarFonteJob(void) {
     fontefalha_sessao_liberar(job->falha); job->falha = NULL;
   } else if (tipo == FJOB_STALKER) {
     const char *idAtual = player_id_canal();
-    mesmoId = idAtual[0] && !strcmp(id, idAtual);
+    int atual=stream_atual();
+    const Stream *variante=stream_item(atual);
+    int agrupado=renovando && variante && variante->canalVariante[0];
+    mesmoId = idAtual[0] && !strcmp(id, agrupado ? variante->canalVariante : idAtual);
     if (renovando) {
       int sessao = (player_aberto() || player_mini_ativo()) && !player_quer_sair();
+      Stream renovada;
+      if(agrupado){renovada=*variante;snprintf(renovada.url,sizeof renovada.url,"%s",url);}
       if (aplicar && mesmoId && sessao && resultado == 0 && url[0] &&
-          montarCanalStalker(id, url) == 0) {
-        const Stream *s = stream_item(0);
+          (agrupado ? stream_vod_renovada_aplicar(atual,job->listaGeracao,&renovada,job->sessaoPerfil)
+                    : montarCanalStalker(id, url) == 0)) {
+        int indice=agrupado?atual:0;
+        const Stream *s = stream_item(indice);
         stalkerRenovando = 0;
         stalkerTentativas++;
-        stream_definir_atual(0);
-        canalFonteIdx = 0;
+        stream_definir_atual(indice);
+        canalFonteIdx = indice;
         canalFonteDesde = SDL_GetTicks();
         canalViaProxy = 0;
         if (s) player_definir_fonte(s->url);
         marco("canal: link renovado");
       } else if (aplicar && mesmoId) {
         stalkerRenovando = 0;
-        canalFonteIdx = -1;
-        if (sessao) {
+        canalFonteIdx = agrupado ? atual : -1;
+        if (agrupado) stalkerTentativas = CANAL_STALKER_TENTATIVAS;
+        else if (sessao) {
           if (player_mini_ativo()) player_fechar_mini();
           else player_erro_fonte();
         }
@@ -7029,14 +7037,16 @@ void app_atualizar(float dt, Uint32 agora) {
       // Com teto: `stalkerTentativas` impede que um portal fora do ar vire um
       // laco de create_link a cada 12 s para sempre. O teto zera quando o canal
       // troca (canalFonteIdx = -1 em tocarCanal).
-      if ((stalker_e_id(player_id_canal()) && !guia_tem_variantes(player_id_canal())) || m3u_e_id(player_id_canal())) {
+      if (stalker_e_id(player_id_canal()) || m3u_e_id(player_id_canal())) {
         if (stalkerRenovando) return;
         if (stalkerTentativas < CANAL_STALKER_TENTATIVAS) {
           unsigned geracao = novaGeracaoFonte();
           fontePedidoGeracao = geracao;
           fonteEscolhida = -2;
           stalkerRenovando = 1;
-          if (pedirFonteJob(FJOB_STALKER, geracao, player_id_canal(), 1) >= 0) {
+          const Stream *atual=stream_item(canalFonteIdx);
+          const char *id=atual && stalker_e_id(atual->canalVariante)?atual->canalVariante:player_id_canal();
+          if (pedirFonteJob(FJOB_STALKER, geracao, id, 1) >= 0) {
           // A resposta e aplicada no bloco acima depois do join. Enquanto
           // isso, o watchdog nao dispara outro pedido em paralelo.
           canalFonteIdx = -2;
@@ -7047,12 +7057,13 @@ void app_atualizar(float dt, Uint32 agora) {
           }
           stalkerRenovando = 0;
         }
-        {
+        if (!guia_tem_variantes(player_id_canal())) {
           canalFonteIdx = -1;
           if (player_mini_ativo()) player_fechar_mini();
           else player_erro_fonte();
+          return;
         }
-        return;
+        // Exhausted renewal budget: continue through normal variant fallback.
       }
       // A MESMA URL DE NOVO NAO E "PROXIMA". MEDIDO na C9 em 19/09 (Fenix TV,
       // canal com 4 fontes, duas com a mesma url de proxy): a fonte travou
@@ -7066,6 +7077,7 @@ void app_atualizar(float dt, Uint32 agora) {
       }
       s = (prox >= 0 && prox < stream_n()) ? stream_item(prox) : NULL;
       if (s) {
+        if(stalker_e_id(s->canalVariante))stalkerTentativas=0;
         printf("[guia] fonte %d nao abriu; tentando %d\n", canalFonteIdx, prox);
         marco("canal: fonte morta, proxima");
         stream_definir_atual(prox);

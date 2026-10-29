@@ -1,13 +1,9 @@
 /* Presentation-only groups retain every provider ID and playback record. */
-typedef struct { int i, fonte; char nome[160], epg[160]; } GVarKey;
+typedef struct { int root, tail, fonte; char nome[160], epg[160]; } GVarKey;
 static LtvArena varianteArena;
 static int variantesAtivas;
-static int cmpVarKey(const void *a,const void *b) {
-  const GVarKey *x=a,*y=b;
-  if(x->fonte!=y->fonte)return x->fonte-y->fonte;
-  int c=strcmp(x->nome,y->nome);if(c)return c;
-  c=strcmp(x->epg,y->epg);return c?c:x->i-y->i;
-}
+static int *canalIndice;
+static unsigned canalIndiceCap;
 static int varianteAlturaScore(int h) { return h==1080?4:h==720?3:h==2160?2:h>0?1:0; }
 static int varianteScore(const GCanal *c) { return varianteAlturaScore(nv_res_do_texto(c->nome)); }
 static void variantesMontar(void) {
@@ -15,25 +11,40 @@ static void variantesMontar(void) {
   for(int i=0;i<nCanais;i++){
     canais[i].varianteGrupo=canais[i].varianteProxima=0;canais[i].nomeGrupo=NULL;
   }
-  if(!ajustes_livetv_agrupar())return;
-  GVarKey *keys=calloc((size_t)nCanais+1,sizeof *keys);if(!keys)return;
-  for(int i=0;i<nCanais;i++){
-    keys[i].i=i;keys[i].fonte=canais[i].fonte;
-    char display[160];nv_nome_limpo(canais[i].nome,display,sizeof display);
-    canais[i].nomeGrupo=ltv_dup(&varianteArena,display[0]?display:canais[i].nome);
-    nv_nome_base(canais[i].nome,keys[i].nome,sizeof keys[i].nome);
-    /* Distinct explicit EPG identities never collapse on a generic name. */
-    nv_dobrar(canais[i].epgId,keys[i].epg,sizeof keys[i].epg);
+  /* Rebuild once per publication/repack; snapshots only read these caches. */
+  free(canalIndice);canalIndice=NULL;canalIndiceCap=0;
+  unsigned cap=1;while(cap<(unsigned)nCanais*2+1)cap*=2;
+  canalIndice=calloc(cap,sizeof *canalIndice);
+  if(canalIndice){
+    canalIndiceCap=cap;
+    for(int i=0;i<nCanais;i++){
+      unsigned slot=ltv_hash(canais[i].id)&(cap-1);
+      while(canalIndice[slot])slot=(slot+1)&(cap-1);
+      canalIndice[slot]=i+1;
+    }
   }
-  qsort(keys,(size_t)nCanais,sizeof *keys,cmpVarKey);
-  for(int start=0,end;start<nCanais;start=end){
-    for(end=start+1;end<nCanais&&keys[start].nome[0]&&keys[start].fonte==keys[end].fonte&&
-        !strcmp(keys[start].nome,keys[end].nome)&&!strcmp(keys[start].epg,keys[end].epg);end++){}
-    if(end-start<2)continue;
-    int root=keys[start].i;variantesAtivas++;
-    for(int j=start;j<end;j++){
-      int i=keys[j].i;canais[i].varianteGrupo=root+1;
-      canais[i].varianteProxima=j+1<end?keys[j+1].i+1:0;
+  if(!ajustes_livetv_agrupar())return;
+  GVarKey *keys=calloc(cap,sizeof *keys);if(!keys)return;
+  for(int i=0;i<nCanais;i++){
+    char display[160],nome[160],epg[160];
+    nv_nome_limpo(canais[i].nome,display,sizeof display);
+    canais[i].nomeGrupo=ltv_dup(&varianteArena,display[0]?display:canais[i].nome);
+    nv_nome_base(canais[i].nome,nome,sizeof nome);
+    /* Distinct explicit EPG identities never collapse on a generic name. */
+    nv_dobrar(canais[i].epgId,epg,sizeof epg);
+    if(!nome[0])continue;
+    unsigned slot=(ltv_hash(nome)*31UL+ltv_hash(epg)*7UL+(unsigned)canais[i].fonte)&(cap-1);
+    while(keys[slot].root&&(keys[slot].fonte!=canais[i].fonte||
+          strcmp(keys[slot].nome,nome)||strcmp(keys[slot].epg,epg)))slot=(slot+1)&(cap-1);
+    GVarKey *key=&keys[slot];
+    if(!key->root){
+      key->root=key->tail=i+1;key->fonte=canais[i].fonte;
+      snprintf(key->nome,sizeof key->nome,"%s",nome);snprintf(key->epg,sizeof key->epg,"%s",epg);
+    }else{
+      int root=key->root-1;
+      if(!canais[root].varianteGrupo)variantesAtivas++;
+      canais[root].varianteGrupo=canais[i].varianteGrupo=root+1;
+      canais[key->tail-1].varianteProxima=i+1;key->tail=i+1;
     }
   }
   free(keys);
