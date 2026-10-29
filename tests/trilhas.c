@@ -27,6 +27,19 @@ int main(void) {
   assert(conquistas_abrir_trilha("trilha:oscar-melhor-filme"));
   assert(trilhas_aberta() && trilhas_passos() == 98 && trilhas_vistos() == 0 && trilhas_passo() == 0);
   assert(!cqd_trilhas_de("tt0018578", "series", NULL, 0));
+  const CqTrilha *oscar=cqd_trilha_buscar("oscar-melhor-filme");
+  for(int i=0;i<oscar->n;i++) { char url[512]; assert(trilhas_poster(&oscar->p[i],url,sizeof url)); assert(strstr(url,oscar->p[i].imdb)); }
+  tecla_trilha(SDLK_UP); assert(trilhas_foco()==2);
+  tecla_trilha(SDLK_UP); assert(trilhas_foco()==2);
+  tecla_trilha(SDLK_RIGHT); assert(trilhas_foco()==3);
+  tecla_trilha(SDLK_LEFT); assert(trilhas_foco()==2);
+  tecla_trilha(SDLK_LEFT); assert(trilhas_foco()==1);
+  tecla_trilha(SDLK_RIGHT); tecla_trilha(SDLK_DOWN); assert(trilhas_foco()==100);
+  for(int i=0;i<97;i++) { tecla_trilha(SDLK_RIGHT); assert(trilhas_passo()==i+1); }
+  for(int i=97;i>0;i--) tecla_trilha(SDLK_LEFT);
+  tecla_trilha(SDLK_DOWN); assert(trilhas_foco()==4);
+  tecla_trilha(SDLK_RIGHT); assert(trilhas_foco()==5);
+  tecla_trilha(SDLK_LEFT); tecla_trilha(SDLK_UP); assert(trilhas_foco()==100);
   tecla_trilha(SDLK_ESCAPE);
   cqd_concluir_local("tt0018578");
   cat_historico_definir_id("tt0019729", "movie", 1);
@@ -42,7 +55,7 @@ int main(void) {
   assert(marcou == 1 && trilhas_vistos() == 3);
   tecla_trilha(SDLK_ESCAPE);
   assert(trilhas_abrir_titulo("tt30144839", "movie"));
-  assert(trilhas_passo() == 97 && trilhas_primeiro_visivel() == 90);
+  assert(trilhas_passo() == 97 && trilhas_primeiro_visivel() == 91);
   tecla_trilha(SDLK_RETURN);
   assert(trilhas_pediu_titulo(&p) && !strcmp(p.imdb,"tt30144839"));
   trilhas_voltar_do_titulo();
@@ -60,6 +73,11 @@ int main(void) {
   perfil = 2; cat_historico_contexto(conta, perfil);
   assert(conquistas_abrir_trilha("trilha:oscar-melhor-filme"));
   assert(trilhas_vistos() == 0 && trilhas_passo() == 0);
+  struct timespec t0,t1;
+  clock_gettime(CLOCK_MONOTONIC,&t0);
+  for(int i=0;i<100;i++) assert(trilhas_abrir("oscar-melhor-filme"));
+  clock_gettime(CLOCK_MONOTONIC,&t1);
+  printf("Trail open average: %.3f ms (100 local opens; no network)\n",((t1.tv_sec-t0.tv_sec)*1e9+t1.tv_nsec-t0.tv_nsec)/1e8);
   puts("PASS: trail open/resume, durable history, all steps, contextual title and profile isolation");
   return 0;
 }

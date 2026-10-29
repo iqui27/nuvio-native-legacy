@@ -14,8 +14,7 @@
 #include <stdio.h>
 #include <string.h>
 
-// Medidas (1920x1080). Pôster w185 do TMDB desenhado a 118x177: 2 linhas
-// visiveis, no maximo ~20 texturas na tela (plano 15: <= 40 w185).
+// TV canvas: one large poster row, paged horizontally, actions below.
 #define CU_TOPO      52.0f
 #define CU_SUG_Y     138.0f
 #define CU_CORPO_Y   236.0f
@@ -23,10 +22,10 @@
 #define CU_LIN_H     96.0f
 #define CU_LIN_GAP   10.0f
 #define CU_LIN_VIS   7
-#define CU_PW        110.0f
-#define CU_PH        165.0f
+#define CU_PW        184.0f
+#define CU_PH        276.0f
 #define CU_PGAP      16.0f
-#define CU_PLIN      2
+#define CU_PLIN      1
 #define CU_PAINEL_H  776.0f
 #define CU_PAD       32.0f
 #define CU_SUG_MAX   3
@@ -38,6 +37,7 @@ enum { B_FILEIRA = 0, B_COLECAO, B_DOC, B_CURTA, B_AMIGOS, B_PARAR };
 static int zona, sel, lista0, pCol, pLin, pLin0, bot, sug;
 static int sair, temPedido, pediuBusca;
 static char pedido[24];
+static CacaFilme pedidoFilme;
 static float entrada, fLista[CACA_MAX], fBot[CU_BOT_MAX], fSug[CU_SUG_MAX + 2];
 // O anel do poster e UM so (o selecionado), nao 64 celulas: grade maior que 64
 // (Top 250) nao perde o foco.
@@ -100,6 +100,7 @@ int cacaui_pediu_titulo(char *imdb, size_t tam) {
   if (imdb && tam) snprintf(imdb, tam, "%s", pedido);
   return 1;
 }
+int cacaui_filme_pedido(CacaFilme *f) { if (!f) return 0; *f=pedidoFilme; return pedidoFilme.imdb[0]!=0; }
 int cacaui_pediu_busca(void) { int v = pediuBusca; pediuBusca = 0; return v; }
 
 static int nPost(void) { return caca_n_filmes(sel); }
@@ -119,6 +120,22 @@ static void eventoTrilhas(SDL_Keycode k, int ok, int voltar) {
   }
   if (tSel < tIni) tIni = tSel;
   if (tSel >= tIni + 9) tIni = tSel - 8;
+}
+
+// Share the rendered wrapping geometry with directional navigation.
+static float wDir(void);
+static void acaoPosicoes(float *xs, int *rows) {
+  CacaInfo c;
+  int ids[CU_BOT_MAX], nb=botoes(ids), row=0;
+  float x=0, available=wDir()-2*CU_PAD;
+  caca_info(sel,&c);
+  for (int i=0;i<nb;i++) {
+    const char *rot,*ico;
+    rotuloBotao(ids[i],&c,&rot,&ico);
+    float w=plrui_botao_largura(i18n(rot),ico);
+    if (x>0 && x+w>available) { x=0; row++; }
+    xs[i]=x+w*.5f; rows[i]=row; x+=w+12;
+  }
 }
 
 void cacaui_evento(const SDL_Event *e) {
@@ -155,24 +172,39 @@ void cacaui_evento(const SDL_Event *e) {
     case Z_POST: {
       int i = pLin * cols + pCol;
       n = nPost();
-      if (k == SDLK_LEFT) { if (pCol > 0) pCol--; else zona = Z_LISTA; }
-      else if (k == SDLK_RIGHT && pCol + 1 < cols && i + 1 < n) pCol++;
-      else if (k == SDLK_UP) { if (pLin > 0) pLin--; else zona = Z_SUG; }
-      else if (k == SDLK_DOWN) {
-        if ((pLin + 1) * cols < n) { pLin++; if (pLin * cols + pCol >= n) pCol = n - 1 - pLin * cols; }
-        else { zona = Z_BOT; bot = 0; }
-      } else if (ok && i < n) {
+      if (k == SDLK_LEFT) {
+        if (pCol > 0) pCol--;
+        else if (pLin>0) { pLin--; pCol=cols-1; }
+        else zona = Z_LISTA;
+      }
+      else if (k == SDLK_RIGHT && i + 1 < n) {
+        if (pCol + 1 < cols) pCol++;
+        else { pLin++; pCol=0; }
+      }
+      else if (k == SDLK_UP) zona = Z_SUG;
+      else if (k == SDLK_DOWN) { zona = Z_BOT; bot = 0; } else if (ok && i < n) {
         CacaFilme f;
-        if (caca_filme(sel, i, &f) && f.imdb[0]) { snprintf(pedido, sizeof pedido, "%s", f.imdb); temPedido = 1; }
+        if (caca_filme(sel, i, &f) && f.imdb[0]) { pedidoFilme=f; snprintf(pedido, sizeof pedido, "%s", f.imdb); temPedido = 1; }
       }
       if (pLin < pLin0) pLin0 = pLin;
       if (pLin >= pLin0 + CU_PLIN) pLin0 = pLin - CU_PLIN + 1;
       break; }
     case Z_BOT: {
       int ids[CU_BOT_MAX], nb = botoes(ids);
-      if (k == SDLK_LEFT) { if (bot > 0) bot--; else zona = Z_LISTA; }
-      else if (k == SDLK_RIGHT && bot + 1 < nb) bot++;
-      else if (k == SDLK_UP) zona = nPost() > 0 ? Z_POST : Z_LISTA;
+      float xs[CU_BOT_MAX]; int rows[CU_BOT_MAX];
+      acaoPosicoes(xs,rows);
+      if (k == SDLK_LEFT) { if (bot > 0 && rows[bot-1]==rows[bot]) bot--; else zona = Z_LISTA; }
+      else if (k == SDLK_RIGHT && bot + 1 < nb && rows[bot+1]==rows[bot]) bot++;
+      else if (k == SDLK_UP || k == SDLK_DOWN) {
+        int target=rows[bot]+(k==SDLK_UP ? -1 : 1), nearest=-1;
+        float distance=1e9f;
+        for (int j=0;j<nb;j++) if (rows[j]==target) {
+          float dx=xs[j]-xs[bot]; if (dx<0) dx=-dx;
+          if (dx<distance) { distance=dx; nearest=j; }
+        }
+        if (nearest>=0) bot=nearest;
+        else if (k==SDLK_UP) zona=nPost()>0 ? Z_POST : Z_LISTA;
+      }
       else if (ok && bot < nb) {
         switch (ids[bot]) {
           case B_FILEIRA: caca_alternar(sel, CACA_F_FILEIRA); break;
@@ -280,7 +312,7 @@ static void desenharLista(float a) {
     if (!caca_info(i, &c)) continue;
     if (f > 0.01f) plrui_linha_foco(r, 18.0f, f * a);
     else if (i == sel) gfx_cor(r, 18.0f / r.h, 1, 1, 1, 0.06f * a);
-    else plrui_material(r, 18.0f, 0, a * 0.85f);
+    // Unfocused list rows share the panel background; avoid seven glass passes.
     rosto((GfxRect){ x + 16.0f, y + 16.0f, 64.0f, 64.0f }, c.foto, c.nome, a);
     if (c.total > 0) snprintf(buf, sizeof buf, "%d/%d", c.vistos, c.total);
     else snprintf(buf, sizeof buf, "%s", c.estado == CACA_ERRO ? "!" : "\xe2\x80\xa6");
@@ -295,7 +327,7 @@ static void desenharLista(float a) {
       if (d) {
         float ar, ag, ab;
         ajustes_acento(&ar, &ag, &ab);
-        textoCorta(TXT_MINI, i18n(conq_rotulo(d)), (int)(ar * 255), (int)(ag * 255), (int)(ab * 255),
+        textoCorta(TXT_ILHA_APOIO, i18n(conq_rotulo(d)), (int)(ar * 255), (int)(ag * 255), (int)(ab * 255),
                    x + 96.0f, y + 70.0f, CU_LISTA_W - 130.0f, a);
       } }
     y += CU_LIN_H + CU_LIN_GAP;
@@ -316,9 +348,9 @@ static void desenharLegenda(const CacaInfo *c, float x, float y, float a) {
     GfxRect ic = { x, y, 30.0f, 30.0f };
     if (ganho) gfx_icone(ic, ICONE_DEGRAU[b], ar, ag, ab, a);
     else gfx_icone(ic, ICONE_DEGRAU[b], 0.6f, 0.6f, 0.65f, a * 0.6f);
-    { TxtLinha l = txt_linha(TXT_CAPTION2, i18n(conq_rotulo(1 << b)), (int)(235 * k), (int)(235 * k), (int)(240 * k), 255);
+    { TxtLinha l = txt_linha(TXT_ILHA_SUB, i18n(conq_rotulo(1 << b)), (int)(235 * k), (int)(235 * k), (int)(240 * k), 255);
       txt_desenhar_alpha(l, x + 38.0f, y + (30.0f - (float)l.h) * 0.5f, a);
-      x += 38.0f + (float)l.w + 30.0f; }
+      x += 38.0f + (float)l.w + 22.0f; }
   }
 }
 
@@ -342,7 +374,7 @@ static void desenharDetalhe(Uint32 agora, float a) {
   char buf[200], anos[40] = "";
   int n, i, foco = pLin * (int)cols + pCol;
   if (!caca_info(sel, &c)) { desenharVazio(a); return; }
-  plrui_material((GfxRect){ x, y, w, CU_PAINEL_H }, 28.0f, 0, a);
+  plrui_material_plano((GfxRect){ x, y, w, CU_PAINEL_H }, 28.0f, a);
   // Cabecalho: nome e x/y.
   snprintf(buf, sizeof buf, "%d/%d", c.vistos, c.total);
   { TxtLinha l = txt_linha(TXT_TITULO3, buf, 245, 245, 250, 255);
@@ -381,16 +413,15 @@ static void desenharDetalhe(Uint32 agora, float a) {
       float ff = focoPoster * (i == foco ? 1.0f : 0.0f);
       if (!caca_filme(sel, i, &f)) continue;
       if (ff > 0.01f) {
-        float ar, ag, ab;
-        GfxRect b = { r.x - NV_ANEL_FOCO, r.y - NV_ANEL_FOCO, r.w + 2 * NV_ANEL_FOCO, r.h + 2 * NV_ANEL_FOCO };
-        ajustes_acento(&ar, &ag, &ab);
-        if (ajustes_vidro()) gfx_vidro_cartao(r, NV_RAIO_CARD * r.w / r.h, ff, a);
-        else gfx_cor(b, (NV_RAIO_CARD * r.w + NV_ANEL_FOCO) / b.h, ar, ag, ab, ff * a);
+        float grow=1.0f+0.08f*ff;
+        r.x-=r.w*(grow-1)*.5f; r.y-=r.h*(grow-1)*.5f;
+        r.w*=grow; r.h*=grow;
+        plrui_linha_foco((GfxRect){r.x-6,r.y-6,r.w+12,r.h+12},18,ff*a);
       }
       // O QUE FALTA fica apagado (o "cinza" do mockup): o proprio pôster a
       // um terco sobre o painel escuro, sem shader novo e sem segunda camada.
       // Em foco ele acende um pouco, para dar para ler a capa.
-      { float pa = f.visto ? 1.0f : 0.34f + 0.36f * ff;
+      { float pa = f.visto ? 1.0f : 0.72f + 0.28f * ff;
       if (f.poster[0]) svd_poster(r, f.poster, NV_RAIO_CARD * r.w / r.h, a * pa);
       else {
         gfx_cor(r, NV_RAIO_CARD * r.w / r.h, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G, NV_COR_ESQUELETO_B, a);
@@ -406,7 +437,7 @@ static void desenharDetalhe(Uint32 agora, float a) {
       }
     }
     // A linha do pôster em foco: titulo, ano e o que o OK faz.
-    if (zona == Z_POST && foco < n) {
+    if (foco < n) {
       CacaFilme f;
       if (caca_filme(sel, foco, &f)) {
         if (f.data > 10000000)
@@ -414,13 +445,9 @@ static void desenharDetalhe(Uint32 agora, float a) {
                    i18n(f.visto ? "Visto" : "Falta ver"));
         else
           snprintf(buf, sizeof buf, "%s \xc2\xb7 %s", f.titulo, i18n(f.visto ? "Visto" : "Falta ver"));
-        textoCorta(TXT_CAPTION, buf, 225, 225, 232, x + CU_PAD, py + 2.0f * (CU_PH + CU_PGAP) + 4.0f,
+        textoCorta(TXT_CAPTION, buf, 225, 225, 232, x + CU_PAD, py + CU_PLIN * (CU_PH + CU_PGAP) + 16.0f,
                    w - 2.0f * CU_PAD, a);
       }
-    } else if (n > (int)cols * CU_PLIN) {
-      snprintf(buf, sizeof buf, i18n("%d filmes · role para ver todos"), n);
-      textoCorta(TXT_CAPTION, buf, 150, 150, 160, x + CU_PAD, py + 2.0f * (CU_PH + CU_PGAP) + 4.0f,
-                 w - 2.0f * CU_PAD, a);
     } }
   // Legenda dos degraus e os botoes. Os botoes quebram em duas linhas quando
   // nao cabem (Montserrat e larga); a legenda sobe junto.
@@ -489,6 +516,6 @@ void cacaui_desenhar(Uint32 agora) {
   else desenharVazio(a);
   // Atribuicao exigida pelos termos da API do TMDB.
   texto(TXT_MINI, i18n("Filmografias: TMDB. Este produto usa a API do TMDB, sem endosso ou certificação do TMDB."),
-        120, xEsq(), 1080.0f - 40.0f, a * 0.9f);
+        120, xEsq(), 1080.0f - 28.0f, a * 0.5f);
   desenharTrilhas(anim_suave(fTrilhas) * a);
 }

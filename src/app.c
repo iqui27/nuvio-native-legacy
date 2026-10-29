@@ -69,6 +69,7 @@
 #include "mkvass.h"
 #include "assrender.h"
 #include "artehero.h"
+#include "artemetahub.h"
 #include "arteescolha.h"
 #include "vertudo.h"
 #include "guia.h"
@@ -5896,7 +5897,13 @@ void app_atualizar(float dt, Uint32 agora) {
       detail_trilha_notar();
       int indice = cat_indice_por_imdb_tipo(passo.imdb, "movie");
       if (indice >= 0) { detail_volta_notar(indice); abrirPorIndice(indice); }
-      else desc_pedir_titulo(passo.imdb);
+      else {
+        CatItem seed={0}; char ano[12];
+        snprintf(seed.imdb,sizeof seed.imdb,"%s",passo.imdb);
+        arte_metahub_preencher(&seed);
+        snprintf(ano,sizeof ano,"%d",passo.ano);
+        desc_pedir_titulo_semente(passo.imdb,0,"movie",passo.titulo,ano,seed.poster);
+      }
     } }
   // Titulo escolhido no painel de Salvos. Ele entrega o IMDb e nao um indice:
   // a lista dele inclui titulos que NAO estao no catalogo (vieram do arquivo
@@ -6339,7 +6346,18 @@ void app_atualizar(float dt, Uint32 agora) {
       char si[24];
       if (cacaui_pediu_titulo(si, sizeof si) && si[0]) {
         idx = cat_indice_por_imdb(si);
-        if (idx >= 0) abrirPorIndice(idx); else desc_pedir_titulo(si);
+        if (idx >= 0) abrirPorIndice(idx);
+        else {
+          CacaFilme f;
+          if (cacaui_filme_pedido(&f)) {
+            CatItem seed={0}; char ano[12];
+            snprintf(seed.imdb,sizeof seed.imdb,"%s",si);
+            snprintf(seed.poster,sizeof seed.poster,"%s",f.poster);
+            arte_metahub_preencher(&seed);
+            snprintf(ano,sizeof ano,"%ld",f.data/10000);
+            desc_pedir_titulo_semente(si,0,"movie",f.titulo,ano,seed.poster);
+          } else desc_pedir_titulo(si);
+        }
       }
     } else if (tela == TELA_SOCIAL) {
       char si[24];

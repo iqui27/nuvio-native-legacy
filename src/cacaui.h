@@ -9,6 +9,7 @@
 #define NV_CACAUI_H
 #include <SDL2/SDL.h>
 #include <stddef.h>
+#include "caca.h"
 
 // `foco` = indice da cacada a mostrar (caca.h), -1 = a primeira.
 void cacaui_abrir(int foco);
@@ -18,6 +19,7 @@ void cacaui_desenhar(Uint32 agora);
 int  cacaui_quer_sair(void);
 // OK num pôster: o imdb do titulo, uma vez.
 int  cacaui_pediu_titulo(char *imdb, size_t tam);
+int  cacaui_filme_pedido(CacaFilme *f);
 // "+ Cacar novo": o app abre a busca (Pessoas). Uma vez.
 int  cacaui_pediu_busca(void);
 

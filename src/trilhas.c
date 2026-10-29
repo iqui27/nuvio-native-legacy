@@ -1,6 +1,7 @@
 // Ordered trails: versioned Wikidata CC0 catalog, actual watched history.
 #include "trilhas.h"
 #include "ajustes.h"
+#include "artemetahub.h"
 #include "botoes.h"
 #include "catalogo.h"
 #include "conquistasdados.h"
@@ -18,9 +19,9 @@
 #define Q_W 1920.0f
 #define Q_H 1080.0f
 #define MG 148.0f
-#define CARD_W 174.0f
-#define GAP 28.0f
-#define VISIVEIS 8
+#define CARD_W 202.0f
+#define GAP 30.0f
+#define VISIVEIS 7
 
 enum { B_VOLTAR = 1, B_RETOMAR, B_BADGE, B_VER, B_VISTO, P_PASSO0 = 100 };
 static int aberto, foco, passo, primeiro, nvistos, pedidoTitulo, quer, sobreTitulo;
@@ -29,6 +30,7 @@ static unsigned char visto[CQ_TRILHA_MAX];
 static float ox, oy;
 
 int trilhas_aberta(void) { return aberto; }
+int trilhas_foco(void) { return foco; }
 const char *trilhas_titulo(void) { return tr ? tr->nome : ""; }
 int trilhas_passo(void) { return tr ? passo : -1; }
 int trilhas_passos(void) { return tr ? tr->n : 0; }
@@ -114,7 +116,9 @@ void trilhas_evento(const SDL_Event *e) {
     else if (k == SDLK_DOWN) { foco = B_VER; return; }
     foco = P_PASSO0 + passo; enquadrar(); return;
   }
-  if (k == SDLK_UP || (k == SDLK_DOWN && foco <= B_BADGE)) { foco = P_PASSO0 + passo; return; }
+  if ((k == SDLK_UP && foco >= B_VER) || (k == SDLK_DOWN && foco <= B_BADGE)) {
+    foco = P_PASSO0 + passo; return;
+  }
   if (k == SDLK_LEFT) {
     if (foco == B_VISTO) foco = B_VER;
     else if (foco == B_BADGE) foco = B_RETOMAR;
@@ -135,23 +139,32 @@ static void botao(float x, float y, const char *rotulo, const char *icone, int i
   float w = plrui_botao(x+ox,y+oy,rotulo,icone,foco == id,1);
   alvo(em(x,y,w,60),id);
 }
+int trilhas_poster(const CqPasso *p, char *url, size_t tam) {
+  CatItem ci={0};
+  if (!p || !url || !tam) return 0;
+  cat_copiar_por_id(p->imdb,"movie",&ci);
+  snprintf(ci.imdb,sizeof ci.imdb,"%s",p->imdb);
+  arte_metahub_preencher(&ci);
+  snprintf(url,tam,"%s",ci.poster);
+  return url[0]!=0;
+}
 static void cartao(int i) {
   const CqPasso *p = &tr->p[i];
   float x = MG + 12 + (i-primeiro)*(CARD_W+GAP);
   float cr,cg,cb;
   ajustes_acento(&cr,&cg,&cb);
-  GfxRect d=em(x+(CARD_W-44)/2,342,44,44), r=em(x,406,CARD_W,260);
+  GfxRect d=em(x+(CARD_W-44)/2,330,44,44), r=em(x,390,CARD_W,294);
   gfx_cor(d,.5f, visto[i]?cr:.09f,visto[i]?cg:.09f,visto[i]?cb:.10f,1);
   if (visto[i]) {
     float r,g,b;
     float tinta = ajustes_acento_tinta(&r,&g,&b);
     gfx_icone((GfxRect){d.x+10,d.y+10,24,24},"aj_check",tinta,tinta,tinta,1);
   }
-  else { char b[12]; snprintf(b,sizeof b,"%d",i+1); texto(TXT_ILHA_NOME,b,x+(CARD_W-24)/2,350,40,230); }
+  else { char b[12]; snprintf(b,sizeof b,"%d",i+1); texto(TXT_ILHA_NOME,b,x+(CARD_W-24)/2,338,40,230); }
   if (foco == P_PASSO0+i) plrui_linha_foco((GfxRect){r.x-8,r.y-8,r.w+16,r.h+16},18,1);
-  CatItem ci;
-  GLuint tex=0;
-  if (cat_copiar_por_id(p->imdb,"movie",&ci) && ci.poster[0]) tex=tex_obter_larg(ci.poster,192);
+  char url[NV_ARTE_URL_MAX];
+  trilhas_poster(p,url,sizeof url);
+  GLuint tex=tex_obter_larg(url,CARD_W);
   if (tex) gfx_rect(r,tex,GFX_CARD,0,0,0,12/r.h,1,1,1,1);
   else {
     gfx_cor(r,12/r.h,.071f,.075f,.086f,1);
@@ -165,7 +178,7 @@ static void cartao(int i) {
 void trilhas_desenhar(Uint32 agora) {
   (void)agora;
   if (!aberto || !tr) return;
-  ESCALA_SE_COUBER_INI(Q_W,Q_H);
+  ESCALA_REAL_INI();
   ox=(NV_TELA_W-Q_W)*.5f; oy=(NV_TELA_H-Q_H)*.5f;
   gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.051f,.051f,.051f,1);
   botao(MG,32,i18n("Voltar"),"aj_corner-up-left",B_VOLTAR);
@@ -175,10 +188,16 @@ void trilhas_desenhar(Uint32 agora) {
   texto(TXT_V2_24,i18n("Em ordem cronológica"),MG,222,1000,186);
   botao(1250,256,i18n("CONTINUAR"),"aj_play",B_RETOMAR);
   botao(1510,256,i18n("Ver o emblema"),"aj_star",B_BADGE);
-  gfx_cor(em(MG+12,363,1590,3),0,1,1,1,.12f);
+  gfx_cor(em(MG+12,351,1590,3),0,1,1,1,.12f);
   for (int i=primeiro;i<tr->n && i<primeiro+VISIVEIS;i++) cartao(i);
+  // Warm the next row after visible requests in the bounded async queue.
+  for (int i=primeiro+VISIVEIS;i<tr->n && i<primeiro+VISIVEIS+3;i++) {
+    char url[NV_ARTE_URL_MAX];
+    trilhas_poster(&tr->p[i],url,sizeof url);
+    tex_obter_larg(url,CARD_W);
+  }
   GfxRect sobre=em(1348,766,424,266), painel=em(MG,766,1168,266);
-  plrui_material(painel,28,0,1); plrui_material(sobre,28,0,1);
+  plrui_material_plano(painel,28,1); plrui_material_plano(sobre,28,1);
   const CqPasso *p=&tr->p[passo]; char b[256];
   snprintf(b,sizeof b,i18n("Passo %d · %s · %d"),passo+1,p->titulo,p->ano);
   texto(TXT_V2_KICK,b,MG+28,792,1110,186);
@@ -191,5 +210,5 @@ void trilhas_desenhar(Uint32 agora) {
   texto(TXT_V2_24,b,1376,838,368,239);
   snprintf(b,sizeof b,i18n("Em andamento · nível %d de 5"),cqregra_nivel(nvistos,tr->n,0));
   texto(TXT_V2_24,b,1376,884,368,186);
-  ESCALA_SE_COUBER_FIM();
+  ESCALA_REAL_FIM();
 }
