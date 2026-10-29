@@ -2,6 +2,17 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 phase=${1:-after}
+if [ "$phase" = after ]; then
+  python3 - <<'PY'
+from pathlib import Path
+source = Path('src/guiav5ui.c').read_text()
+assert 'gv_hints' not in source and 'gv_footer' not in source, 'Control-hint bar remains'
+assert '#define GV_SOURCE_Y 1046.0f' in source, 'Guide source footer missing'
+assert '"aj_search",GV_X,GV_CHIP_Y' in source, 'Guide action row missing'
+print('PASS Guide layout contract: source footer, action row, no control-hint bar')
+PY
+  bash tests/guialayout.sh
+fi
 out=/Volumes/ExternalSSD/tmp/rev/espolir
 mkdir -p "$out"
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-espolir.XXXXXX")

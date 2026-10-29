@@ -769,6 +769,7 @@ typedef enum {
   AJ_GUIA_PREVIA_DESTACAR, AJ_GUIA_PREVIA_SOM, AJ_GUIA_DIAS,
   AJ_FONTE_OCULTAR_DV, AJ_FONTE_OCULTAR_AUDIO, AJ_FONTE_OCULTAR_VIDEO, // Device-local, append-only.
   AJ_TV_HOME, // Device-local, append-only; enabled by default.
+  AJ_PS_TAMANHO, // Device-local profile avatar size; append-only.
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -795,6 +796,7 @@ static const char *V_ICONE_APP[ICONEAPP_N] = {
 };
 static const char *V_FONTE_ORDEM_ADDON[] = { "Por qualidade", "Do addon" };
 static const char *V_TELA_ABERTURA[] = { "Cinema", "Detalhada" };
+static const char *V_PS_TAMANHO[] = { "Pequeno", "Médio", "Grande" };
 static const char *V_ABERTURA_FUNDO[] = { "Desligado", "Arte", "Arte borrada" };
 static const char *V_ABERTURA_ESTILO[] = { "Centro", "Canto" };
 static const char *V_ARTE_TOM[] = { "Vívido", "Claro" };
@@ -1933,6 +1935,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Ocultar áudio incompatível", V_AUTO_LIGA, 3),
   ESC("Ocultar vídeo incompatível", V_AUTO_LIGA, 3),
   ESC("Mostrar na tela inicial do Android TV", V_LIGA, 2),
+  ESC("Tamanho dos perfis", V_PS_TAMANHO, 3),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2276,9 +2279,10 @@ static const char *CHAVE[] = {
   "audioNormalizarLocal",
   "debridLigadoLocal", "addonsLigadosLocal", "legEstiloLigadoLocal",
   "heroFolderDetailsLocal",
-  "guiaPreviaDestacarLocal", "guiaPreviaSomLocal", "guiaDiasLocal",
+  "guiaPreviaDestacarLocal", "guiaPreviaSomV2Local", "guiaDiasLocal",
   "fonteOcultarDvLocal", "fonteOcultarAudioLocal", "fonteOcultarVideoLocal",
   "androidTvHomeLocal",
+  "psTamanhoLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3965,6 +3969,7 @@ int ajustes_cw_mostrar_nao_exibidos(void)  { return lig(AJ_CW_NAO_EXIBIDOS); }
 int ajustes_cw_ordem(void)            { return valor[AJ_CW_ORDEM]; }
 int ajustes_cw_retido_tambem(void)    { return lig(AJ_CW_RETIDO_TAMBEM); }
 int ajustes_ps_continuar(void)        { return lig(AJ_PS_CONTINUAR); }
+int ajustes_ps_tamanho(void)          { int v = valor[AJ_PS_TAMANHO]; return v >= 0 && v <= 2 ? v : 1; }
 int ajustes_dts_ac3(void)             { return valor[AJ_DTS_AC3] == 1; }
 // .tpk: HLS (o TS continuo e so a troca automatica de video_tpk.c) ou desligado.
 int ajustes_dts_tpk_modo(void) {
@@ -4970,6 +4975,8 @@ void ajustes_dir(const char *dir) {
   memoriaEscolhida = 0;
   bibliotecaFonteEscolhida = 0;
   valor[AJ_ESCALA_TEXTO] = valorPadrao[AJ_ESCALA_TEXTO];
+  // V2 discards the old persisted mute default; later explicit choices survive.
+  valor[AJ_GUIA_PREVIA_SOM] = valorPadrao[AJ_GUIA_PREVIA_SOM];
   valor[AJ_TAMANHO_UI] = UI_SIZE_AUTO;
   fonteregra_carregar();
   fanartCarregar();
@@ -6263,7 +6270,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_PLR_CLASSIF:    /* o web nao tem esta escolha */
     case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS: /* conquistas: por perfil desta TV */
     case AJ_CW_RETIDO_TAMBEM: /* o web nao tem a ilha */
-    case AJ_PS_CONTINUAR:   /* o web nao tem este cartao; escolha desta TV */
+    case AJ_PS_CONTINUAR: case AJ_PS_TAMANHO: /* Profile picker preferences belong to this TV. */
     case AJ_AUD_ORIGINAL: case AJ_AUDIO_NORMALIZAR:
     case AJ_DEBRID_LIGADO: case AJ_ADDONS_LIGADO: case AJ_LEG_ESTILO_LIGADO:
     case AJ_AUDIO_OFFSET:   /* audio presentation calibration belongs to this TV */
@@ -6461,6 +6468,9 @@ static int perfilLerVetor(int perfil, int *v, char *tem) {
   t = dados_ler(nome);
   if (!t) return 0;
   int focoAntigo = -1;
+  // Missing V2 means this profile still carries the old mute default.
+  v[AJ_GUIA_PREVIA_SOM] = valorPadrao[AJ_GUIA_PREVIA_SOM];
+  tem[AJ_GUIA_PREVIA_SOM] = 1;
   for (l = t; l && *l; ) {
     char chave[64], *fim = strchr(l, '\n');
     int x, i;
@@ -8343,6 +8353,7 @@ static const char *ajudaOpcaoBase(int op) {
 #else
     case AJ_DTS_AC3: return "Como o áudio DTS é entregue à TV quando o app o converte (só na LG). Estéreo (AAC) é o modo provado e serve qualquer TV. 5.1 (Dolby Digital) mantém o som surround para barra de som e receiver por ARC/eARC; vale a partir do próximo vídeo.";
 #endif
+    case AJ_PS_TAMANHO: return "Tamanho dos avatares na escolha de perfil: Pequeno, Médio (o de sempre) ou Grande.";
     case AJ_PS_CONTINUAR: return "Ligado, cada perfil mostra na escolha de perfil o cartão com o que ele estava assistindo. Desligado, a tela mostra só os perfis.";
     case AJ_HIST_CONTA: return "Ligado (padrão): o que você assiste neste perfil sobe para a conta Nuvio, com o progresso e os vistos. Desligado: nada disso é enviado à conta; o Trakt e o Simkl vinculados a este perfil continuam recebendo. Vale só para este perfil.";
     case AJ_SOCIAL: return "Ligado (padrão): amigos, atividade deles e recomendações. Desligado: tudo isso some, com a fileira de amigos da Home, e o app para de falar com o serviço social. Salvos e Avisos continuam. Vale só para este perfil.";
@@ -11224,7 +11235,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_FIL_ORDEM: case AJ_RAIL: case AJ_RAIL_MODERNA: case AJ_MENU_TOPO: case AJ_ABAS_ESTILO:
     case AJ_RAIL_BLUR: case AJ_MIC_BUSCA: case AJ_HERO: case AJ_HERO_CATALOGOS: case AJ_HERO_GENERO:
     case AJ_HERO_SINOPSE: case AJ_HERO_NOTAS: case AJ_HERO_ANO: case AJ_HERO_DURACAO:
-    case AJ_PS_FUNDO: case AJ_PS_CONTINUAR: case AJ_DESCOBRIR: case AJ_ROTULOS:
+    case AJ_PS_FUNDO: case AJ_PS_CONTINUAR: case AJ_PS_TAMANHO: case AJ_DESCOBRIR: case AJ_ROTULOS:
     case AJ_NOME_ADDON: case AJ_SUFIXO_TIPO: case AJ_OCULTAR_NLANC: case AJ_MURAL_TITULOS:
     case AJ_NOTAS_HOME: case AJ_GRAD_CLASSICO: case AJ_SELO_VISTO: case AJ_OCULTAR_FILMES_VISTOS: case AJ_BIB_HOME: case AJ_TITULO_FIL:
       return AJPV_HOME;

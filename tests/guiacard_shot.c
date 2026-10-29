@@ -16,6 +16,7 @@ static void check_clean_preview(void){
   float badge_w=badge_largura(i18n("AO VIVO"));
   for(int y=22;y<h-22;y++)for(int x=22;x<w-22;x++){
     if(x<18+badge_w&&y<18+BADGE_H)continue;
+    if(strcmp(gv_pagina,"cartoes")&&x>=28+badge_w&&x<68+badge_w&&y<48)continue;
     assert(pixels[((h-1-y)*w+x)*4+3]==0);
   }
   free(pixels);

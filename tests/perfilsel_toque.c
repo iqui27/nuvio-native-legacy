@@ -7,6 +7,9 @@ static ContaPerfil ps[2] = {{.indice = 1}, {.indice = 2, .temPin = 1}};
 static int selecionado = 1, total = 2;
 const ContaPerfil *perfis_item(int i) { return i >= 0 && i < total ? &ps[i] : NULL; }
 int perfis_n(void) { return total; }
+int perfis_indice_livre(void) { return total < CONTA_PERFIL_MAX ? total + 1 : 0; }
+static int editorOpened, editorAdd;
+void perfisedit_abrir(int add) { editorOpened++; editorAdd = add; }
 PerfilAcao perfis_acao(int i) { return ps[i].temPin ? PERFIL_ACAO_PIN : PERFIL_ACAO_ENTRAR; }
 void perfis_definir_ativo(int i) { selecionado = i; }
 static char pinVisto[16]; static _Atomic int verificacoes;
@@ -54,4 +57,15 @@ int main(void) {
   repetir = 0; perfisRetentar(0, 0); assert(!repetir);
   total = 0; perfisRetentar(0, 0); assert(repetir);
   puts("perfilsel toque: PIN, bloqueio durante preparo, identidade e retentativa ok");
+  total = 2; concluido = 0;
+  assert(nFila() == 3);
+  tileAtivar(2, 0); assert(editorOpened == 1 && editorAdd);
+  botaoAtivar(1, 0); assert(editorOpened == 2 && !editorAdd && fase == 1);
+  preparando = 1; tileAtivar(2, 0); botaoAtivar(1, 0); assert(editorOpened == 2);
+  preparando = 0; pinDe = 0; tileAtivar(2, 0); assert(editorOpened == 2);
+  pinDe = -1; total = CONTA_PERFIL_MAX;
+  assert(nFila() == CONTA_PERFIL_MAX && !podeAdicionar());
+  botaoAtivar(0, 0); assert(editorOpened == 2);
+  botaoAtivar(1, 0); assert(editorOpened == 3 && !editorAdd);
+  puts("profiles 2.1: add tile, manage footer, capacity and input guards pass");
 }

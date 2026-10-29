@@ -1,5 +1,6 @@
 #ifndef NV_BADGES_H
 #define NV_BADGES_H
+#include <stddef.h>
 #include <stdint.h>
 #include "text.h"
 #include "gfx.h"
@@ -102,4 +103,8 @@ float badge_desenhar(float x, float y, const char *texto, BadgeEstilo estilo, fl
 // nota em tinta escura (sobre superficie clara). 0 de largura com nota <= 0.
 float badge_imdb(float x, float y, int nota, int escuro, float a);
 float badge_imdb_largura(int nota);
+// As duas metades do par, para quem desenha a nota em outro tamanho (a home em
+// pe do telefone): a marca amarela (a <= 0 so mede) e a nota no formato do idioma.
+float badge_imdb_marca(float x, float y, float a);
+void  badge_nota_texto(char *dst, size_t n, int nota);
 #endif

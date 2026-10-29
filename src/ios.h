@@ -31,6 +31,10 @@ int ios_acao_pedida(void);
 // safe-area insets to layout.c. Idempotent; call after every GL context.
 void ios_hospedar(void *uiwindow);
 
+// Physical RAM in MB (NSProcessInfo) and the process footprint in MB (task_info).
+long ios_ram_mb(void);
+double ios_rss_mb(void);
+
 // HTTP through NSURLSession, the libcurl stand-in on iOS (there is no libcurl
 // in the iOS SDK). Same contract as android_http: GET/POST with "Name: value"
 // headers separated by '\n'; returns the body (malloc, NUL-terminated, *n =
@@ -39,6 +43,15 @@ void ios_hospedar(void *uiwindow);
 char *nv_host_http(const char *verbo, const char *url, const char *cabs,
                    const char *corpo, int prazoMs, int *status, int *retryAfter, long *n,
                    char *erro, size_t nErro);
+// Bounded receipt: *n = -1 on overflow; cancels before storing excess bytes.
+char *nv_host_http_limit(const char *verbo, const char *url, const char *cabs,
+                         const char *corpo, int prazoMs, size_t maxBytes,
+                         int *status, int *retryAfter, long *n, char *erro, size_t nErro);
+// Bounded receipt with caller cancellation checked during an active transfer.
+char *nv_host_http_limit_cancel(const char *verbo, const char *url, const char *cabs,
+                         const char *corpo, int prazoMs, size_t maxBytes,
+                         int (*parar)(void *), void *context,
+                         int *status, int *retryAfter, long *n, char *erro, size_t nErro);
 // rede.c keeps the Android name for the host path; on iOS it resolves here.
 #define android_http nv_host_http
 

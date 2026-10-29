@@ -136,6 +136,40 @@ static void arrasto(int mobile) {
   else assert(captura == 0 && scrollX[0] == 0.0f && !toqueLivreX[0]);
 }
 
+static void portraitGrid(void) {
+  layout_tela_definir(466 * 3, 678 * 3);
+  layout_modo_definir(1);
+  buInterfaceAtualizar();
+  consulta[0] = 0; nConsulta = 0; redePend = 0;
+  nFil = 2; sugestao = 0; painel = 1; retFiltro = retTec = 0;
+  for (int r = 0; r < 2; r++) {
+    fil[r].n = r ? 8 : 4; fil[r].melhor = fil[r].pessoas = 0;
+    for (int c = 0; c < fil[r].n; c++) fil[r].itens[c] = 0;
+  }
+  int cols[] = {4, 8}; focus_iniciar(&focoRes, 2, cols);
+  scrollY = scrollAlvo = velY = 0; toqueBuscaLimpar();
+  SDL_Event e = {0}; e.type = SDL_KEYDOWN;
+  e.key.keysym.sym = SDLK_DOWN; busca_evento(&e);
+  assert(focoRes.fileira == 0 && focoRes.coluna == 3);
+  e.key.keysym.sym = SDLK_RIGHT; busca_evento(&e);
+  assert(focoRes.fileira == 1 && focoRes.coluna == 0); // crosses provider boundary
+  e.key.keysym.sym = SDLK_DOWN; busca_evento(&e);
+  assert(focoRes.fileira == 1 && focoRes.coluna == 3);
+  busca_evento(&e);
+  assert(focoRes.fileira == 1 && focoRes.coluna == 6);
+  for (int i = 0; i < 120; i++) busca_atualizar(.016f, SDL_GetTicks());
+  float y = retAreaTopo() + retPt(35) + 3 * retPasso() - scrollY;
+  assert(scrollY > 0 && y >= retAreaTopo() - 1 && y + retPasso() <= retAreaBase() + 1);
+  e.key.keysym.sym = SDLK_RETURN; busca_evento(&e);
+  e.type = SDL_KEYUP; busca_evento(&e);
+  assert(pedido == fil[1].itens[6]); pedido = -1;
+  fil[1].pessoas = 1; // filter must remove focused person before opening
+  focoRes.fileira = 1; focoRes.coluna = 5;
+  retChip(1, 0);
+  assert(focoRes.fileira == 0 && focoRes.coluna == 0);
+  puts("PASS: portrait Search grid navigation, focus scrolling and filters");
+}
+
 int main(void) {
   layout_tela_definir(1920, 1080);
   arrasto(0);
@@ -174,5 +208,6 @@ int main(void) {
   }
   puts("PASS: Busca drag, mic navigation and automatic system keyboard modes");
   resultadosAte24();
+  portraitGrid();
   return 0;
 }

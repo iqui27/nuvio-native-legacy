@@ -14,6 +14,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include "ios.h"
+#import <mach/mach.h>
 #include "menu.h"
 #include "detail.h"
 #include "idioma.h"
@@ -214,6 +215,11 @@ static NuvioPainel *painelAtual(void) {
       [self item:@(i18n("Trailer")) icone:@"film" acao:DETAIL_BARRA_TRAILER],
       [self item:@(i18n("Assistido")) icone:@"eye" acao:DETAIL_BARRA_VISTO],
       [self item:@(i18n("Biblioteca")) icone:@"plus" acao:DETAIL_BARRA_LISTA] ]] ];
+  } else if (!strcmp(tela, "biblioteca")) {
+    // The chips leave the canvas on the phone; the core opens its sheets (ids 10/11).
+    n.trailingItemGroups = @[ [UIBarButtonItemGroup fixedGroupWithRepresentativeItem:nil items:@[
+      [self item:@(i18n("Ordenar")) icone:@"arrow.up.arrow.down" acao:10],
+      [self item:@(i18n("Filtrar")) icone:@"line.3.horizontal.decrease" acao:11] ]] ];
   } else {
     n.trailingItemGroups = @[];
   }
@@ -225,7 +231,7 @@ static NuvioPainel *painelAtual(void) {
   } else {
     n.leftBarButtonItems = @[];
   }
-  [self.navigationController setNavigationBarHidden:(raiz || imersiva) animated:YES];
+  [self.navigationController setNavigationBarHidden:((raiz && strcmp(tela, "biblioteca")) || imersiva) animated:YES];
   [abas setTabBarHidden:imersiva animated:YES];
   abasDobrar(0);   // navigation always folds the capsule to the active tab
 }
@@ -329,64 +335,20 @@ int ios_insets(float *left, float *top, float *right, float *bottom) {
   return 1;
 }
 
-char *nv_host_http(const char *verbo, const char *url, const char *cabs,
-                   const char *corpo, int prazoMs, int *status, int *retryAfter, long *n,
-                   char *erro, size_t nErro) {
-  if (status) *status = 0;
-  if (retryAfter) *retryAfter = 0;
-  if (n) *n = 0;
-  if (erro && nErro) erro[0] = 0;
-  NSURL *u = [NSURL URLWithString:[NSString stringWithUTF8String:url ? url : ""]];
-  if (!u) { if (erro) snprintf(erro, nErro, "url invalida"); return NULL; }
-  NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:u];
-  req.HTTPMethod = [NSString stringWithUTF8String:verbo && *verbo ? verbo : "GET"];
-  req.timeoutInterval = (prazoMs > 0 ? prazoMs : 20000) / 1000.0;
-  req.cachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
-  if (cabs) {
-    for (NSString *linha in [[NSString stringWithUTF8String:cabs] componentsSeparatedByString:@"\n"]) {
-      NSRange dp = [linha rangeOfString:@":"];
-      if (dp.location == NSNotFound) continue;
-      NSString *k = [[linha substringToIndex:dp.location] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
-      NSString *v = [[linha substringFromIndex:dp.location + 1] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
-      if (k.length) [req setValue:v forHTTPHeaderField:k];
-    }
-  }
-  if (corpo) req.HTTPBody = [NSData dataWithBytes:corpo length:strlen(corpo)];
+#include <limits.h>
+#include <errno.h>
+#include "http.inc"
 
-  static NSURLSession *sessao;
-  static dispatch_once_t uma;
-  dispatch_once(&uma, ^{
-    NSURLSessionConfiguration *c = [NSURLSessionConfiguration ephemeralSessionConfiguration];
-    c.HTTPMaximumConnectionsPerHost = 6;
-    c.waitsForConnectivity = NO;
-    sessao = [NSURLSession sessionWithConfiguration:c];
-  });
+long ios_ram_mb(void) {
+  return (long)(NSProcessInfo.processInfo.physicalMemory / (1024ull * 1024ull));
+}
 
-  __block NSData *dados = nil;
-  __block NSHTTPURLResponse *resp = nil;
-  __block NSError *falha = nil;
-  dispatch_semaphore_t fim = dispatch_semaphore_create(0);
-  [[sessao dataTaskWithRequest:req completionHandler:^(NSData *d, NSURLResponse *r, NSError *e) {
-    dados = d; falha = e;
-    if ([r isKindOfClass:NSHTTPURLResponse.class]) resp = (NSHTTPURLResponse *)r;
-    dispatch_semaphore_signal(fim);
-  }] resume];
-  dispatch_semaphore_wait(fim, DISPATCH_TIME_FOREVER);
-
-  if (falha || !resp) {
-    if (erro) snprintf(erro, nErro, "%s", falha ? falha.localizedDescription.UTF8String : "sem resposta");
-    return NULL;
-  }
-  if (status) *status = (int)resp.statusCode;
-  NSString *ra = resp.allHeaderFields[@"Retry-After"];
-  if (retryAfter && ra) *retryAfter = ra.intValue;
-  size_t tam = dados ? dados.length : 0;
-  char *r = (char *)malloc(tam + 1);
-  if (!r) { if (erro) snprintf(erro, nErro, "sem memoria"); return NULL; }
-  if (tam) memcpy(r, dados.bytes, tam);
-  r[tam] = 0;
-  if (n) *n = (long)tam;
-  return r;
+// phys_footprint is what jetsam judges, not resident_size.
+double ios_rss_mb(void) {
+  task_vm_info_data_t v;
+  mach_msg_type_number_t n = TASK_VM_INFO_COUNT;
+  if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&v, &n) != KERN_SUCCESS) return 0.0;
+  return (double)v.phys_footprint / 1048576.0;
 }
 
 int main(int argc, char *argv[]) {

@@ -188,7 +188,8 @@ void guia_preparar_busca(void);
 int  guia_canal_numero(int i);   /* provider number of channel i, 0 outside */
 /* Source i for the guide's health sheets: name, LTV_SAUDE_* state, channels,
  * channels with EPG, cached list and list time. 0 past the last source. */
-typedef struct { const char *nome; int saude, canais, comGuia, deCache; long long atualizada; } GuiaFonteSaude;
+typedef struct { const char *nome; int saude, canais, comGuia, deCache; long long atualizada; const char *chave; } GuiaFonteSaude;
+const char *guia_canal_fonte(int i);
 int  guia_fonte_saude(int i, GuiaFonteSaude *o);
 int guia_fonte_ligada(int i);
 int guia_fonte_playback_permitida(const char *base);
