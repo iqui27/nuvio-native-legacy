@@ -1952,6 +1952,7 @@
   T("Classificação indicativa no player", "Veková prístupnosť v prehrávači"),
   T("Classificação máxima", "Maximálne hodnotenie"),
   T("Classificação no player", "Vekové hodnotenie v prehrávači"),
+  T("Clique para avaliar", "Kliknutím ohodnoťte"),
   T("Clube retrô", "Retro club"),
   T("Clássico", "Klasické"),
   T("Cobertura", "Pokrytie"),

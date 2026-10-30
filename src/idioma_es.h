@@ -1951,6 +1951,7 @@
   T("Classificação indicativa no player", "Clasificación por edad en el reproductor"),
   T("Classificação máxima", "Calificación máxima"),
   T("Classificação no player", "Clasificación en el reproductor"),
+  T("Clique para avaliar", "Haz clic para valorar"),
   T("Clube retrô", "Retro club"),
   T("Clássico", "Clásico"),
   T("Cobertura", "Cobertura"),

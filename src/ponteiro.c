@@ -1,6 +1,7 @@
 // Ponteiro do Magic Remote: estado, hit-test e cursor. Ver ponteiro.h.
 #include "ponteiro.h"
 #include "desktop_native.h"
+#include "desktop_input_log.h"
 #ifdef NV_DESKTOP_UI
 #include "menu.h"
 #include "salvospainel.h"
@@ -51,6 +52,16 @@
 static PonteiroAlvo lista[2][PONT_MAX_ALVOS];
 static int nLista[2];
 static PonteiroRolagemFn listaRolagem[2];
+#ifdef NV_DESKTOP_UI
+static float listaEscalaRolagem[2] = {1,1};
+static int scrollRow=-1, scrollItem=-1;
+static float scrollOffset;
+void ponteiro_scroll_offset(int row, int item, float offset) {
+  if(row>=0) scrollRow=row;
+  if(item>=0) scrollItem=item;
+  scrollOffset=offset;
+}
+#endif
 #ifdef NV_TOUCH_UI
 typedef struct { float largura; PonteiroBordaFn ativar; } Borda;
 static Borda listaBorda[2], toqueBorda;
@@ -119,6 +130,10 @@ static void pararInercia(void);
 static void pararRolagem(void);
 static int arrModo;
 static void cancelarToque(void) {
+#ifdef NV_DESKTOP_UI
+  nv_desktop_scroll_active=0;
+  nv_desktop_wheel_until=0;
+#endif
   pararRolagem();
   pararInercia();
   arrModo = 0;
@@ -329,8 +344,19 @@ static void converter(Uint32 janelaId, int x, int y) {
     if (win) SDL_GetWindowSize(win, &w, &h);
     if (w <= 0 || h <= 0) { w = (int)NV_TELA_W; h = (int)NV_TELA_H; }
   }
-  px = (float)x * NV_TELA_W / (float)w;
-  py = (float)y * NV_TELA_H / (float)h;
+#ifdef NV_DESKTOP_UI
+  // Refresh from window points even before the next resize/draw event.
+  layout_janela_definir(w,h);
+#endif
+#ifdef NV_DESKTOP_UI
+  if(layout_desktop_ativo()) {
+    px=layout_window_x(x,w,h);py=layout_window_y(y,w,h);
+  } else
+#endif
+  {
+    px = (float)x * NV_TELA_W / (float)w;
+    py = (float)y * NV_TELA_H / (float)h;
+  }
   if (px < 0) px = 0;
   if (px > NV_TELA_W - 1) px = NV_TELA_W - 1;
   if (py < 0) py = 0;
@@ -463,7 +489,16 @@ static int rolagemEntregar(PonteiroRolagemFn fn, int fase, int eixoY,
   PonteiroRolagem e = { fase, eixoY, delta, velocidade, x, y };
   int salvo = porToque, r;
   if (!fn) return 0;
+#ifdef NV_DESKTOP_UI
+  // Restore the drawing context, just as pointer rectangles retain their scale.
+  // Consumers using ToqueRolagem already divide the event by their saved scale.
+  float escala = gfx_escala();
+  gfx_escala_sair(listaEscalaRolagem[pronto]);
+#endif
   porToque = 1; r = fn(&e); porToque = salvo;
+#ifdef NV_DESKTOP_UI
+  gfx_escala_sair(escala);
+#endif
   return r;
 }
 
@@ -712,7 +747,11 @@ static void inerciaQuadro(Uint32 agora) {
   if (inRolagem) {
     PonteiroRolagemFn fn = inRolagem;
     float d = inVel * (float)dt;
+#ifdef NV_DESKTOP_UI
+    inVel *= expf(-(float)dt / 100.0f);
+#else
     inVel *= expf(-(float)dt / PONT_INERCIA_TAU);
+#endif
     if (!rolagemEntregar(fn, PONT_ROL_INERCIA, inEixoY, d, inVel, inX, inY) && inRolagem == fn)
       encerrarInercia(PONT_ROL_FIM);
     else if (inRolagem == fn && fabsf(inVel) < PONT_INERCIA_PARA) encerrarInercia(PONT_ROL_FIM);
@@ -724,7 +763,7 @@ static void inerciaQuadro(Uint32 agora) {
   if (fabsf(inVel) < PONT_INERCIA_PARA) pararInercia();
 }
 
-int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
+static int ponteiroEvento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
   Uint32 agora = agoraMs();
   if (quadroSessaoPendente &&
       (e->type == SDL_MOUSEMOTION || e->type == SDL_MOUSEBUTTONDOWN ||
@@ -734,7 +773,12 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
   switch (e->type) {
     case SDL_FINGERDOWN: case SDL_FINGERMOTION: case SDL_FINGERUP:
 #ifdef NV_TOUCH_UI
+#ifdef NV_DESKTOP_UI
+      // Indirect trackpad touches belong to Cocoa scrollWheel, never screen taps.
+      return 1;
+#else
       if (e->tfinger.touchId == SDL_MOUSE_TOUCHID) return 1;
+#endif
       // Um dedo substitui o cursor do mouse, sem desativar os alvos de toque.
       esconder("toque");
       if (!toqueQuadroPronto) return 1;
@@ -803,7 +847,13 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
         int i = ponteiro_achar(v, n, px, py);
         rastro("clique", i >= 0 ? &v[i] : NULL, n);
         ativarPendente.ok = 0;
-        if (i >= 0 && v[i].ativar) { guardar(&ativarPendente, &v[i]); return 1; }
+        if (i >= 0 && v[i].ativar) {
+          guardar(&ativarPendente, &v[i]);
+#ifdef NV_DESKTOP_UI
+          if(v[i].focar) v[i].focar(v[i].a,v[i].b);
+#endif
+          return 1;
+        }
         // Alvo sem nenhuma das duas funcoes e um ANTEPARO: o corpo de uma folha
         // absorve o clique no vazio em vez de deixa-lo cair no fundo que fecha.
         if (i >= 0 && !v[i].focar) return 1;
@@ -845,8 +895,77 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
       float dxp = e->wheel.preciseX, dyp = e->wheel.preciseY;
       if (e->wheel.direction == SDL_MOUSEWHEEL_FLIPPED) { dxp = -dxp; dyp = -dyp; }
       if (SDL_GetModState() & KMOD_SHIFT) { dxp = dyp; dyp = 0; }
-      if (!isfinite(dxp) || !isfinite(dyp) || (!dxp && !dyp)) return 1;
+      if (!isfinite(dxp) || !isfinite(dyp)) return 1;
       if (e->wheel.which == NV_DESKTOP_PIXEL_WHEEL) converter(e->wheel.windowID, e->wheel.mouseX, e->wheel.mouseY);
+      if (e->wheel.which == NV_DESKTOP_PIXEL_WHEEL && (e->wheel.x & (NV_WHEEL_PHASED|NV_WHEEL_UNPHASED))) {
+        // Ownership and the origin survive pauses, finger release and momentum.
+        static int active, route, vertical;
+        static float originX, originY, distance;
+        static PonteiroRolagemFn owner;
+        int phase=e->wheel.x;
+        static Uint32 unphasedAt;
+        if(phase & NV_WHEEL_UNPHASED) {
+          if(!unphasedAt || agora-unphasedAt>180) phase|=NV_WHEEL_BEGIN;
+          unphasedAt=agora;
+        }
+        SDL_Window *w=SDL_GetWindowFromID(e->wheel.windowID);
+        int width=1280,height=800;
+        if(w) SDL_GetWindowSize(w,&width,&height);
+        float units=NV_TELA_W/fmaxf(1,width);
+        if(phase & NV_WHEEL_BEGIN && !(phase & NV_WHEEL_MOMENTUM)) {
+          if(owner) rolagemEntregar(owner,PONT_ROL_FIM,vertical,0,0,originX,originY);
+          active=1;route=0;distance=0;owner=NULL;originX=px;originY=py;
+          int hit=ponteiro_achar(lista[pronto],nLista[pronto],px,py);
+          scrollRow=hit<0?-1:lista[pronto][hit].a;
+          scrollItem=hit<0?-1:lista[pronto][hit].b;scrollOffset=0;
+        }
+        if(phase & NV_WHEEL_CANCEL) {
+          if(owner) rolagemEntregar(owner,PONT_ROL_CANCELAR,vertical,0,0,originX,originY);
+          owner=NULL;active=0;nv_desktop_scroll_active=0;nv_desktop_wheel_until=agora;return 1;
+        }
+        // Cocoa may start with MayBegin/Changed (e.g. a monitor installed mid-contact).
+        if(!active && !(phase & NV_WHEEL_MOMENTUM) && (dxp || dyp)) {
+          active=1;route=0;distance=0;owner=NULL;originX=px;originY=py;
+        }
+        if(!active) return 1; // Orphan momentum cannot start navigation.
+        nv_desktop_scroll_active=!(phase & (NV_WHEEL_END|NV_WHEEL_UNPHASED));
+        nv_desktop_wheel_until=agora+100;
+        if(owner && owner!=listaRolagem[pronto]) { owner=NULL;route=6; }
+        if(dxp || dyp) {
+          if(!route) {
+            vertical=fabsf(dyp)>=fabsf(dxp);
+            if(!vertical && desktop_native_swipes() && spainel_aberto() && dxp>0) route=3;
+            else if(!vertical && desktop_native_swipes() && originX<24*units && dxp>0) route=1;
+            else if(!vertical && desktop_native_swipes() && originX>NV_TELA_W-24*units && dxp<0) route=2;
+            else {
+              owner=listaRolagem[pronto];
+              if(owner && !rolagemEntregar(owner,PONT_ROL_INICIO,vertical,(vertical?dyp:dxp)*units,0,originX,originY)) owner=NULL;
+              route=owner?5:!vertical && dxp>0 && desktop_native_swipes()?4:6;
+            }
+          }
+          if(route==5 && owner) rolagemEntregar(owner,PONT_ROL_MOVER,vertical,(vertical?dyp:dxp)*units,0,originX,originY);
+          else if(route<5) {
+            distance+=dxp;
+            if((route==2?-distance:distance)>48 || (phase & NV_WHEEL_SWIPE)) {
+              int action=route;route=6; // Latch before callbacks change the layer.
+              if(action==1) menu_desktop_revelar();
+              else if(action==2) spainel_abrir();
+              else if(action==3) spainel_fechar();
+              else { tecla(entregar,SDL_KEYDOWN,SDLK_AC_BACK);tecla(entregar,SDL_KEYUP,SDLK_AC_BACK); }
+            }
+          }
+        }
+        if(phase & NV_WHEEL_END) {
+          if(owner) rolagemEntregar(owner,PONT_ROL_SOLTAR,vertical,0,0,originX,originY);
+          // Keep the latch after finger-up: Cocoa may begin momentum next.
+          if(phase & NV_WHEEL_MOMENTUM) {
+            if(owner) rolagemEntregar(owner,PONT_ROL_FIM,vertical,0,0,originX,originY);
+            owner=NULL;active=0;
+          }
+        }
+        return 1;
+      }
+      if (!dxp && !dyp) return 1;
       static Uint32 lastWheel;
       static int edge;
       static float edgeDelta;
@@ -873,13 +992,14 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
       PonteiroRolagemFn fn = listaRolagem[pronto];
       int vertical = fabsf(dyp) >= fabsf(dxp);
       if (fn && rolagemEntregar(fn, PONT_ROL_INICIO, vertical, 0, 0, px, py)) {
-        rolagemEntregar(fn, PONT_ROL_MOVER, vertical, (vertical ? dyp : dxp) * scale, 0, px, py);
-        rolagemEntregar(fn, PONT_ROL_SOLTAR, vertical, 0, 0, px, py);
-        if (e->wheel.which == NV_DESKTOP_PIXEL_WHEEL)
+        if (e->wheel.which == NV_DESKTOP_PIXEL_WHEEL) {
+          rolagemEntregar(fn, PONT_ROL_MOVER, vertical, (vertical ? dyp : dxp) * scale, 0, px, py);
+          rolagemEntregar(fn, PONT_ROL_SOLTAR, vertical, 0, 0, px, py);
           rolagemEntregar(fn, PONT_ROL_FIM, vertical, 0, 0, px, py);
-        else {
+        } else {
+          // Wheel notches animate from the current offset, without an initial jump.
           inercia = 1; inRolagem = fn; inEixoY = vertical;
-          inVel = (vertical ? dyp : dxp) * scale / 180;
+          inVel = (vertical ? dyp : dxp) * scale / 100;
           inUltMs = agora; inX = px; inY = py;
         }
       }
@@ -963,6 +1083,18 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
     default:
       return 0;
   }
+}
+
+int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
+  int result=ponteiroEvento(e,entregar);
+#ifdef NV_DESKTOP_UI
+  if(e->type==SDL_MOUSEWHEEL || e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEBUTTONUP) {
+    int i=ponteiro_achar(lista[pronto],nLista[pronto],px,py);
+    desktop_input_log(e,px,py,e->type==SDL_MOUSEWHEEL?scrollRow:i<0?-1:lista[pronto][i].a,
+      e->type==SDL_MOUSEWHEEL?scrollItem:i<0?-1:lista[pronto][i].b,e->type==SDL_MOUSEWHEEL?scrollOffset:0);
+  }
+#endif
+  return result;
 }
 
 void ponteiro_quadro(Uint32 agora) {
@@ -1068,6 +1200,9 @@ void ponteiro_rolagem(PonteiroRolagemFn fn) {
   if (!layout_rolagem_livre()) return;
 #endif
   listaRolagem[escreve] = fn;
+#ifdef NV_DESKTOP_UI
+  listaEscalaRolagem[escreve] = gfx_escala();
+#endif
 }
 #ifdef NV_TOUCH_UI
 void ponteiro_borda_esquerda(float largura, PonteiroBordaFn ativar) {

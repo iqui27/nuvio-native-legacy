@@ -69,7 +69,7 @@ int amigosfil_rolagem(const PonteiroRolagem *e) {
   return r;
 }
 void amigosfil_focar(int coluna, int cartao) {
-  toquerol_limpar(&toque);
+  if (!layout_desktop_ativo() || !ponteiro_mouse()) toquerol_limpar(&toque);
   colAnt = coluna; dentro = cartao;
 }
 #endif
@@ -316,6 +316,9 @@ void amigosfil_atualizar(float dt, int focada, int *colunaP) {
   }
   if (ultX0 >= 0.0f) {
     float alvo = n > 0 && focada ? alvoScroll(coluna, ultX0, ultAlt) : (n > 0 ? scroll : 0.0f);
+#ifdef NV_DESKTOP_UI
+    if (toquerol_livre(&toque)) scroll=layout_scroll_assentar(scroll,toque.minimo,toque.maximo,dt);
+#endif
 #ifdef NV_TOUCH_UI
     if (!toquerol_livre(&toque))
 #endif

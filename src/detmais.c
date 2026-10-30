@@ -1,5 +1,6 @@
 // "Mais opcoes" da pagina do titulo — ver detmais.h.
 #include "detmais.h"
+#include "desktop_native.h"
 #include "detail_acoes.h"
 #include "ajustes.h"
 #include "anim.h"
@@ -99,6 +100,10 @@ int detmais_evento(const SDL_Event *e) {
     if (!okArmado) return -1;
     okArmado = 0;
     // Rate opens a child island; retain this menu and its focused row.
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+    if (layout_desktop_ativo()) aberto=0;
+    else
+#endif
     if (detmais_acao(foco) != DMAIS_NOTA) aberto = 0;
     return detmais_acao(foco);
   }
@@ -129,6 +134,25 @@ static void ptrFocar(int a, int b) { (void)b; if (aberto && a >= 0 && a < n) foc
 static void ptrFora(int a, int b) { (void)a; (void)b; detmais_fechar(); }
 
 void detmais_desenhar(GfxRect anc, float a) {
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+  if(layout_desktop_ativo()) {
+    if(!aberto) { vis=0;return; }
+    DesktopMenuItem items[DMAIS_N];
+    for(int i=0;i<n;i++) {
+      int action=linhas[i];
+      const char *symbol=action==DMAIS_TRAILER?"film":action==DMAIS_RECOMENDAR?"person.2":action==DMAIS_VISTO||action==DMAIS_VISTO_SAI?"eye":"ellipsis";
+      items[i]=(DesktopMenuItem){i18n(detmais_rotulo(action)),symbol,action+1,action==DMAIS_VISTO_SAI,0};
+    }
+    SDL_Window *window=SDL_GL_GetCurrentWindow();int w=1280,h=800;
+    if(window) SDL_GetWindowSize(window,&w,&h);
+    int action=desktop_native_menu(items,n,ponteiro_x()*w/NV_TELA_W,ponteiro_y()*h/NV_TELA_H)-1;
+    if(action<0) {detmais_fechar();vis=0;return;}
+    for(int i=0;i<n;i++) if(linhas[i]==action) foco=i;
+    SDL_Event event={0};event.type=SDL_KEYDOWN;event.key.keysym.sym=SDLK_RETURN;SDL_PushEvent(&event);
+    event.type=SDL_KEYUP;SDL_PushEvent(&event);
+    return;
+  }
+#endif
   Uint32 agora = SDL_GetTicks();
   float dt = tickAnt ? (float)(Uint32)(agora - tickAnt) * 0.001f : 1.0f / 60.0f;
   float p, pc, raio;
