@@ -1062,10 +1062,14 @@ static const char *V_LEG_COR[] = { "Branco", "Amarelo", "Verde", "Azul", "Vermel
 static const char *V_LEG_COR_BORDA[] = { "Preto", "Branco", "Amarelo", "Verde", "Azul", "Vermelho" };
 static const char *V_LEG_FUNDO[] = { "Nenhum", "Escuro 25%", "Escuro 50%", "Escuro 75%", "Escuro 100%" };
 static const char *V_LEG_BORDA[] = { "Nenhuma", "Contorno", "Sombra" };
-static const char *V_LEG_OPAC[] = { "100%", "75%", "50%", "25%" };
+static const char *V_LEG_OPAC[] = { LEG_OPAC_ROTULOS };
 static const char *V_LEG_POS[] = { "1", "2", "3", "4", "5", "6", "7", "8" };
 static const char *V_LEG2_FONTE[] = { "Igual à principal", "Inter", "LG Display", "Droid Sans", "Montserrat", "Roboto", "Atkinson Hyperlegible Next", "JetBrains Sans" };
-static const char *V_LEG2_OPAC[] = { "Igual à principal", "100%", "75%", "50%", "25%" };
+static const char *V_LEG2_OPAC[] = { "Igual à principal", LEG_OPAC_ROTULOS };
+_Static_assert(sizeof V_LEG_OPAC / sizeof *V_LEG_OPAC == LEG_OPAC_N,
+               "Primary opacity labels match the fine-grained scale");
+_Static_assert(sizeof V_LEG2_OPAC / sizeof *V_LEG2_OPAC == LEG_OPAC_N + 1,
+               "Secondary opacity retains the inheritance choice");
 static const char *V_LEG2_COR_BORDA[] = { "Igual à principal", "Preto", "Branco", "Amarelo", "Verde", "Azul", "Vermelho" };
 static const char *V_LEG2_NEGRITO[] = { "Igual à principal", "Ligado", "Desligado" };
 static const char *V_LEG2_POSICAO[] = { "Automático", "1", "2", "3", "4", "5", "6", "7", "8" };
@@ -1820,7 +1824,7 @@ static const Opcao OPCOES[AJ_N] = {
   NUM("Tamanho", TXT_LEG_PCT_MIN, TXT_LEG_PCT_MAX, 10, "%"),
   ESC("Fonte da legenda", V_FONTE_UI, TXT_FAMILIA_N),
   ESC("Cor", V_LEG_COR, VIDEO_LEG_NCORES),
-  ESC("Opacidade", V_LEG_OPAC, 4),
+  ESC("Opacidade", V_LEG_OPAC, LEG_OPAC_N),
   ESC("Fundo", V_LEG_FUNDO, 5),
   ESC("Posição", V_LEG_POS, 8),
   ESC("Borda", V_LEG_BORDA, 3),
@@ -1829,7 +1833,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Cor da borda", V_LEG_COR_BORDA, VIDEO_LEG_NCORES),
   ACAO("Restaurar padrão"),
   ESC("Fonte da legenda", V_LEG2_FONTE, TXT_FAMILIA_N + 1),
-  ESC("Opacidade", V_LEG2_OPAC, 5),
+  ESC("Opacidade", V_LEG2_OPAC, LEG_OPAC_N + 1),
   ESC("Posição", V_LEG2_POSICAO, 9),
   NUM("Atraso", -LEG_ATRASO_MANUAL_MAX, LEG_ATRASO_MANUAL_MAX, 100, " ms"),
   ESC("Negrito", V_LEG2_NEGRITO, 3),
@@ -2217,7 +2221,7 @@ static const char *CHAVE[] = {
   "-legenda1Tamanho", "-legenda1Fonte", "-legenda1Cor", "-legenda1Opacidade",
   "-legenda1Fundo", "-legenda1Posicao", "-legenda1Borda", "-legenda1Atraso",
   "-legenda1Negrito", "-legenda1CorBorda", "-legenda1Restaurar",
-  "legenda2FonteLocal", "legenda2OpacidadeLocal", "legenda2PosicaoLocal", "legenda2AtrasoLocal",
+  "legenda2FonteLocal", "legenda2OpacidadeFinaLocal", "legenda2PosicaoLocal", "legenda2AtrasoLocal",
   "legenda2NegritoLocal", "legenda2CorBordaLocal", "-legenda2Restaurar",
   "colecaoExibicaoPadraoLocal",
   "playerExternoLocal",
@@ -2641,7 +2645,7 @@ static int ajLegendaValor(int op) {
     case AJ_LEG1_TAMANHO: return e->tamanho;
     case AJ_LEG1_FONTE: return ajFonteAtual(op);
     case AJ_LEG1_COR: return e->cor;
-    case AJ_LEG1_OPACIDADE: return e->opacidade;
+    case AJ_LEG1_OPACIDADE: return leg_opacidade_indice(e->opacidade);
     case AJ_LEG1_FUNDO: return e->fundo;
     case AJ_LEG1_POSICAO: return e->posicao;
     case AJ_LEG1_BORDA: return e->borda;
@@ -2661,7 +2665,7 @@ static int ajLegendaDefinir(int op, int v) {
     case AJ_LEG1_TAMANHO: e.tamanho = v; break;
     case AJ_LEG1_FONTE: e.familia = v; break;
     case AJ_LEG1_COR: if (e.cor != v) tocou = PLR_LEG_COR; e.cor = v; break;
-    case AJ_LEG1_OPACIDADE: e.opacidade = v; break;
+    case AJ_LEG1_OPACIDADE: e.opacidade = leg_opacidade_do_indice(v); break;
     case AJ_LEG1_FUNDO: e.fundo = v; break;
     case AJ_LEG1_POSICAO: e.posicao = v; break;
     case AJ_LEG1_BORDA: e.borda = v; break;
@@ -3534,7 +3538,8 @@ void ajustes_leg2_estilo(const VideoLegendaEstilo *principal, VideoLegendaEstilo
   if (f >= 0) out->fundo = f;
   if (b >= 0) out->borda = b;
   if (valor[AJ_LEG2_FONTE] > 0) out->familia = valor[AJ_LEG2_FONTE] - 1;
-  if (valor[AJ_LEG2_OPACIDADE] > 0) out->opacidade = valor[AJ_LEG2_OPACIDADE] - 1;
+  if (valor[AJ_LEG2_OPACIDADE] > 0)
+    out->opacidade = leg_opacidade_do_indice(valor[AJ_LEG2_OPACIDADE] - 1);
   if (valor[AJ_LEG2_NEGRITO] > 0) out->negrito = valor[AJ_LEG2_NEGRITO] == 1;
   if (valor[AJ_LEG2_COR_BORDA] > 0) out->corBorda = valor[AJ_LEG2_COR_BORDA] - 1;
   if (ajustes_leg2_posicao() >= 0) out->posicao = ajustes_leg2_posicao();
@@ -5019,6 +5024,7 @@ void ajustes_dir(const char *dir) {
     int sinopseAntiga = -1, sinopseQuatro = -1, viuSinopse = 0;
     int dtsSaidaAntiga = -1, dtsModoAntigo = -1, viuDtsTpk = 0, viuHlsMode = 0;
     int leg2TamanhoAntigo = -1, viuLeg2Escala = 0;
+    int leg2OpacidadeAntiga = -1, viuLeg2Opacidade = 0;
   while (fgets(linha, sizeof linha, f)) {
     char chave[64]; int v, i, inicio = 0;
     if (sscanf(linha, "%63s%n", chave, &inicio) != 1) continue;
@@ -5104,6 +5110,10 @@ void ajustes_dir(const char *dir) {
       if (v >= 0 && v <= 20) leg2TamanhoAntigo = v;
       continue;
     }
+    if (!strcmp(chave, "legenda2OpacidadeLocal")) {
+      if (v >= 0 && v <= 4) leg2OpacidadeAntiga = v;
+      continue;
+    }
     // Outline is aesthetic: migrate its removed Automatic value to On.
     if (!strcmp(chave, "vidroContornoLocal") && v == 2) v = 0;
     for (i = 0; i < AJ_N; i++) {
@@ -5125,6 +5135,7 @@ void ajustes_dir(const char *dir) {
       if (i == AJ_DTS_AC3) viuDtsTpk = 1;
       if (i == AJ_WEBOS_HLS_MODE) viuHlsMode = 1;
       if (i == AJ_LEG2_TAMANHO && v >= 0 && v < 27) viuLeg2Escala = 1;
+      if (i == AJ_LEG2_OPACIDADE && v >= 0 && v <= LEG_OPAC_N) viuLeg2Opacidade = 1;
       break;
     }
   }
@@ -5143,6 +5154,9 @@ void ajustes_dir(const char *dir) {
     if (sinopseQuatro >= 0) valor[AJ_HERO_SINOPSE_TAM] = sinopseQuatro > 0;
     else if (sinopseAntiga >= 0) valor[AJ_HERO_SINOPSE_TAM] = sinopseAntiga > 0;
   }
+  // New sorted choices win over the legacy four-level key regardless of order.
+  if (!viuLeg2Opacidade && leg2OpacidadeAntiga >= 0)
+    valor[AJ_LEG2_OPACIDADE] = leg_opacidade_secundaria_migrar(leg2OpacidadeAntiga);
   if (!viuLeg2Escala && leg2TamanhoAntigo >= 0) {
     static const int pct[] = {0,60,80,100,120,140,160,170,180,190,200,210,220,230,240,250,260,270,280,290,300};
     int p = pct[leg2TamanhoAntigo];
