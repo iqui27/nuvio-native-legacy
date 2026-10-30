@@ -46,6 +46,21 @@ int main(int argc,char **argv){
   check(guia_canal_campos(0,NULL,NULL,NULL,NULL,NULL),"re-enable immediately restores cached source channels");
   ltv_pref_carregar(-99);ltv_pref_carregar(perfis_ativo());check(guia_fonte_ligada(0),"re-enabled switch persists");
 #ifndef GUIASETUP_BASELINE
+  puts("CHECK: Add/Back preserves active channels and EPG");
+  draft.type=1;draft.live=draft.epg=1;committed=1;use_saved=1;
+  snprintf(draft.playlist,sizeof draft.playlist,"https://example.test/live.m3u");
+  snprintf(draft.xmltv,sizeof draft.xmltv,"https://example.test/epg.xml");
+  inventory=calloc(G5_CAP,sizeof *inventory);count=total=1;source_loaded=1;
+  inventory[0].kind=G5_LIVE;snprintf(inventory[0].id,sizeof inventory[0].id,"retained");
+  G5Item channel;check(g5ui_m3u_channels(&channel,1)==1,"active M3U fixture exposes channels");
+  focus=0;key(SDLK_RETURN);settle(w);
+  check(g5ui_m3u_channels(&channel,1)==1&&!strcmp(g5ui_xmltv(),"https://example.test/epg.xml"),"Add keeps active channels and EPG during setup");
+  key(SDLK_ESCAPE);settle(w);
+  check(!strcmp(screen,"fontes-gerenciar")&&draft.type==1&&draft.live&&use_saved&&
+    !strcmp(draft.playlist,"https://example.test/live.m3u")&&g5ui_m3u_channels(&channel,1)==1&&
+    !strcmp(g5ui_xmltv(),"https://example.test/epg.xml"),"Add then Back keeps channels and EPG for next refresh");
+  /* Return to the original fixture for the approved screenshots. */
+  clear_catalog();erase(&draft,sizeof draft);committed=0;use_saved=0;
   focus=204;settle(w);key(SDLK_RETURN);settle(w);
   check(!strcmp(screen,"ajustes"),"Options remains reachable from source list");
   key(SDLK_ESCAPE);settle(w);check(!strcmp(screen,"fontes-gerenciar")&&focus==204,"Options Back returns to setup opener");
@@ -87,8 +102,20 @@ int main(int argc,char **argv){
 #ifndef GUIASETUP_BASELINE
   puts("CHECK: source identity after publication");g5ui_open("fontes-gerenciar");focus=100;nav=-1;settle(w);
   nLtvF=2;ltvF[1]=ltvF[0];snprintf(ltvF[1].chave,sizeof ltvF[1].chave,"another");
+  focus=102;key(SDLK_RETURN);settle(w);
+  check(teclado_aberto(),"Edit opens rename keyboard");
   GFonteLtv swap=ltvF[0];ltvF[0]=ltvF[1];ltvF[1]=swap;settle(w);
-  check(focus==104&&!strcmp(sources_key,"fixture"),"background publication follows source key rather than row index");
+  SDL_Event keyboard={.type=SDL_KEYDOWN};keyboard.key.keysym.sym=SDLK_RETURN;teclado_evento(&keyboard);
+  char expected_name[96];snprintf(expected_name,sizeof expected_name,"%s",teclado_texto());
+  check(strcmp(expected_name,ltvF[1].nome)!=0,"rename changes keyboard text");
+  keyboard.key.keysym.sym=SDLK_DOWN;
+  for(int i=0;i<12;i++)teclado_evento(&keyboard);
+  keyboard.key.keysym.sym=SDLK_RIGHT;for(int i=0;i<24;i++)teclado_evento(&keyboard);
+  keyboard.key.keysym.sym=SDLK_RETURN;teclado_evento(&keyboard);g5ui_update();settle(w);
+  check(!teclado_aberto(),"rename keyboard completes");
+  GuiaFonteSaude renamed,untouched;guia_fonte_saude(1,&renamed);guia_fonte_saude(0,&untouched);
+  check(!strcmp(renamed.nome,expected_name)&&strcmp(untouched.nome,expected_name),"rename follows original source key across publication");
+  check(focus>=104&&focus<108&&!strcmp(sources_key,"fixture"),"background publication follows source key rather than row index");
   puts("CHECK: disabled source cache survives refresh");
   char cache_file[64];cacheNomeFonte("fixture",cache_file,sizeof cache_file);dados_gravar(cache_file,"retained-cache");
   ltv_pref("fixture",1)->desligada=1;ltvF[1].deCache=0;ltvF[1].nCanais=12;cacheGravar();

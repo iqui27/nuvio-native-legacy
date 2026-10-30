@@ -68,7 +68,7 @@ static float g5_bloco_bruto(TxtEstilo e,const char *s,int r,int g,int b,float x,
 static struct {
   char server[256], user[96], password[96], playlist[2048], xmltv[1100], file[3100], name[96];
   int type, live, movies, series, epg;
-} draft, work_draft;
+} draft, work_draft, sources_saved_draft;
 static G5Item *inventory, *staging;
 static int count, staging_count, staging_total, total, profile=-1, dirty;
 static char account[96], screen[48], previous[48], query[140], message[160], catalog_group[64];
@@ -142,8 +142,22 @@ static XtreamConta tested;
 static pthread_t worker;
 static int source_loaded, test_ok, use_saved, committed;
 static int save_failed;
-static int sources_offset,sources_category_offset,sources_edit=-1,sources_remove=-1;
-static char sources_key[LTV_CHAVE];
+static int sources_offset,sources_category_offset,sources_remove=-1;
+static char sources_key[LTV_CHAVE],sources_edit[LTV_CHAVE];
+static int sources_adding,sources_saved_use,sources_saved_count,sources_saved_total,sources_saved_loaded,sources_saved_groups;
+static G5Item *sources_saved_inventory;
+static char sources_saved_names[G5_GROUPS][64];
+static unsigned char sources_saved_on[G5_GROUPS];
+static void erase(void *p,size_t n);
+static void sources_cancel(void){
+  if(!sources_adding)return;
+  worker_cancel=1;catalog_generation++;
+  free(inventory);inventory=sources_saved_inventory;sources_saved_inventory=NULL;
+  count=sources_saved_count;total=sources_saved_total;source_loaded=sources_saved_loaded;
+  group_count=sources_saved_groups;memcpy(groups,sources_saved_names,sizeof groups);memcpy(group_on,sources_saved_on,sizeof group_on);
+  draft=sources_saved_draft;use_saved=sources_saved_use;sources_adding=0;
+  erase(&sources_saved_draft,sizeof sources_saved_draft);
+}
 static int sources_options;
 static int catalog_fetch_pending;
 static G5Item *series_catalog;
@@ -166,6 +180,7 @@ static void gs_reset(void);
 static void context(void){
   int p=perfis_ativo();const char *owner=sessao_usuario();if(!owner)owner="";
   if(profile==p&&!strcmp(account,owner))return;
+  sources_cancel();sources_edit[0]=0;
   gs_reset();catalog_group[0]=0;
   if(atomic_load(&busy))worker_cancel=1;
   if(screen[0])celular_fechar();phone_stage=0;screen[0]=0;
@@ -343,6 +358,7 @@ static int pg_igual(const char *a,const char *b){
   return !strcmp(a,b)||(!strncmp(a,"multiview-",10)&&!strncmp(b,"multiview-",10)&&!modal_tela(a)&&!modal_tela(b));
 }
 static void go(const char *name){
+  if(sources_adding&&strncmp(name,"setup-",6)&&strncmp(name,"parental-",9))sources_cancel();
   int volta=0,vfoco=0;
   if(!pg_nivel(screen)||!pg_nivel(name))pg_n=0;
   else if(!pg_igual(screen,name)){
@@ -433,13 +449,14 @@ void g5ui_forget(void){
   for(int p=1;p<=32;p++){char file[80];const char *parts[]={"source","rules"};for(int k=0;k<2;k++){snprintf(file,sizeof file,"guiav5-%s-p%d.json",parts[k],p);dados_apagar(file);}}
   profile=-1;
 }
-void g5ui_close(void){gs_reset();celular_fechar();phone_stage=0;screen[0]=0;edit=-1;worker_cancel=1;erase(draft.password,sizeof draft.password);nav=-1;}
+void g5ui_close(void){sources_cancel();gs_reset();celular_fechar();phone_stage=0;screen[0]=0;edit=-1;worker_cancel=1;erase(draft.password,sizeof draft.password);nav=-1;}
 int g5ui_active(void){return screen[0]!=0;}
 static void persist(void){
   extern void g5ui_save_source(const char *,const char *,int,int,int,int,int);
   g5ui_save_source(draft.playlist,draft.xmltv,draft.type,draft.live,draft.movies,draft.series,draft.epg);
   if(save_failed)return;
   if(draft.type==0){xtream_definir_servidor(draft.server);xtream_definir_usuario(draft.user);if(draft.password[0])xtream_definir_senha(draft.password);}
+  if(sources_adding){free(sources_saved_inventory);sources_saved_inventory=NULL;sources_adding=0;erase(&sources_saved_draft,sizeof sources_saved_draft);}
   erase(draft.password,sizeof draft.password);use_saved=1;dirty=1;committed=1;
 }
 #include "jsw.h"
@@ -1701,13 +1718,13 @@ void g5ui_update(void){
       else if(field==5){snprintf(query,sizeof query,"%s",t);focus=-1;}
       else if(field==6)snprintf(draft.name,sizeof draft.name,"%s",t);
       else if(field==7){snprintf(pin_value,sizeof pin_value,"%s",t);start(3);}
-      else if(field==8&&sources_edit>=0){GuiaFonteSaude source;
-        if(*t&&!strpbrk(t,"\t\r\n")&&guia_fonte_saude(sources_edit,&source)){
-          LtvPref *pref=ltv_pref(source.chave,1);if(pref){snprintf(pref->nome,sizeof pref->nome,"%s",t);ltv_pref_gravar();}
-        }sources_edit=-1;
+      else if(field==8&&sources_edit[0]){
+        if(*t&&!strpbrk(t,"\t\r\n")){
+          LtvPref *pref=ltv_pref(sources_edit,1);if(pref){snprintf(pref->nome,sizeof pref->nome,"%s",t);ltv_pref_gravar();}
+        }
       }
       if(field==4&&!strcmp(screen,"fontes-gerenciar")){g5ui_save_source(draft.playlist,draft.xmltv,draft.type,draft.live,draft.movies,draft.series,draft.epg);guia_recarregar(0);}
-    }teclado_esquecer();
+    }if(field==8)sources_edit[0]=0;teclado_esquecer();
   }
   if(!strcmp(screen,"setup-celular-tv")||(!strcmp(screen,"setup-pronto")&&phone_stage==3)){
     char data[CEL_CORPO_MAX+1];
@@ -1800,10 +1817,19 @@ int g5ui_live(const char *id,char *url,size_t cap){
   for(int i=0;i<count;i++)if(inventory[i].kind==G5_LIVE&&!strcmp(id+7,inventory[i].id)&&group_allowed(inventory[i].group)&&!restricted(&inventory[i])){snprintf(url,cap,"%s",inventory[i].url);return 1;}return 0;
 }
 int g5ui_m3u_channels(G5Item *out,int cap){
-  context();int n=0;if(!ltv_fonte_ligada("g5m3u")||!committed||!draft.live||draft.type==0)return 0;for(int i=0;i<count&&n<cap;i++)if(inventory[i].kind==G5_LIVE&&group_allowed(inventory[i].group))out[n++]=inventory[i];return n;
+  context();int n=0;
+  if(!ltv_fonte_ligada("g5m3u")||!committed)return 0;
+  if(sources_adding){
+    if(!sources_saved_draft.live||!sources_saved_draft.type)return 0;
+    for(int i=0;i<sources_saved_count&&n<cap;i++)if(sources_saved_inventory[i].kind==G5_LIVE){
+      int on=1;for(int g=0;g<sources_saved_groups;g++)if(!strcmp(sources_saved_names[g],sources_saved_inventory[i].group)){on=sources_saved_on[g];break;}
+      if(on)out[n++]=sources_saved_inventory[i];
+    }
+  }else if(draft.live&&draft.type)for(int i=0;i<count&&n<cap;i++)if(inventory[i].kind==G5_LIVE&&group_allowed(inventory[i].group))out[n++]=inventory[i];
+  return n;
 }
-const char *g5ui_xmltv(void){return draft.epg&&ltv_fonte_ligada("g5m3u")?draft.xmltv:"";}
-int g5ui_provider_epg(void){return !committed||draft.epg;}
+const char *g5ui_xmltv(void){return ltv_fonte_ligada("g5m3u")?(sources_adding?(sources_saved_draft.epg?sources_saved_draft.xmltv:""):(draft.epg?draft.xmltv:"")):"";}
+int g5ui_provider_epg(void){return !committed||(sources_adding?sources_saved_draft.epg:draft.epg);}
 
 /* ==========================================================================
  * GUIA TV v5 — A TELA PRINCIPAL DO GUIA (mock v5: guia.html + v4.js "newGuide"

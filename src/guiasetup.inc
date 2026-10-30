@@ -2,6 +2,9 @@
 static float sources_on[4],sources_velocity[4];
 static GuiaCategoria sources_categories[30000];
 static int sources_category_count;
+static unsigned sources_category_revision=~0u;
+static uint64_t sources_category_session;
+static int sources_category_language=-1;
 static void sources_switch(int id,const char *name,int on,float x,float y,float w){
   button(id,name,NULL,x,y,w,64,1);
   ajustes_ui_interruptor(x+w-18,y+32,on,1);
@@ -53,7 +56,12 @@ static void sources_screen(void){
   label(TXT_ILHA_SUB,i18n(ajustes_guia_ordem()?"Conta":"Categoria"),1236,624,550,1);
   gfx_cor((GfxRect){1236,672,552,1},0,1,1,1,.08f);
   label(TXT_ILHA_NOME,i18n("Categorias"),1236,694,550,0);
-  sources_category_count=guia_categorias(sources_categories,30000);
+  unsigned revision=guia_busca_revisao();uint64_t session=perfis_sessao_geracao();
+  int language=ajustes_idioma();
+  if(sources_category_revision!=revision||sources_category_session!=session||sources_category_language!=language){
+    sources_category_count=guia_categorias(sources_categories,30000);
+    sources_category_revision=revision;sources_category_session=session;sources_category_language=language;
+  }
   if(sources_category_offset>=sources_category_count)sources_category_offset=0;
   for(int i=0;i<3&&sources_category_offset+i<sources_category_count;i++){
     GuiaCategoria *c=&sources_categories[sources_category_offset+i];
@@ -64,10 +72,17 @@ static void sources_screen(void){
 }
 static int sources_activate(int id){
   if(id==8){sources_key[0]=0;pg_tras();return 1;}
-  if(id==0){sources_key[0]=0;use_saved=0;erase(&draft,sizeof draft);go("setup-tipo");return 1;}
+  if(id==0){
+    if(atomic_load(&busy))return 1;
+    sources_saved_draft=draft;sources_saved_use=use_saved;
+    sources_saved_inventory=inventory;sources_saved_count=count;sources_saved_total=total;sources_saved_loaded=source_loaded;
+    sources_saved_groups=group_count;memcpy(sources_saved_names,groups,sizeof groups);memcpy(sources_saved_on,group_on,sizeof group_on);
+    inventory=NULL;count=total=source_loaded=group_count=0;sources_adding=1;
+    sources_key[0]=0;use_saved=0;erase(&draft,sizeof draft);go("setup-tipo");return 1;
+  }
   if(id==6||id==7){sources_offset+=id==6?-4:4;sources_key[0]=0;focus=100;return 1;}
   if(id==9||id==10){sources_category_offset+=id==9?-3:3;focus=300;return 1;}
-  if(id>=300&&id<303){int i=sources_category_offset+id-300;if(i<sources_category_count)guia_categoria_definir(&sources_categories[i],!sources_categories[i].oculta);gv_snap_force=1;return 1;}
+  if(id>=300&&id<303){int i=sources_category_offset+id-300;if(i<sources_category_count&&guia_categoria_definir(&sources_categories[i],!sources_categories[i].oculta))sources_category_revision=~0u;gv_snap_force=1;return 1;}
   if(id==204){sources_options=1;gv_go("ajustes");return 1;}
   if(id==200){ajustes_definir_guia_dias(ajustes_guia_dias()==3?1:3);gv_snap_force=1;return 1;}
   if(id==201){input(4,"URL XMLTV",draft.xmltv,1);return 1;}
@@ -79,7 +94,7 @@ static int sources_activate(int id){
     if(action!=3)sources_remove=-1;
     if(action==0){guia_fonte_alternar(i);gv_snap_force=dirty=1;}
     else if(action==1)guia_recarregar(0);
-    else if(action==2){sources_edit=i;input(8,"Nome da fonte",source.nome,0);}
+    else if(action==2){snprintf(sources_edit,sizeof sources_edit,"%s",source.chave);input(8,"Nome da fonte",source.nome,0);}
     else if(sources_remove!=i)sources_remove=i;
     else{if(guia_fonte_remover(i)){sources_key[0]=0;focus=100;sources_remove=-1;}else snprintf(message,sizeof message,"%s",i18n("Não foi possível salvar a lista"));}
     return 1;

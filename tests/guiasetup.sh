@@ -5,14 +5,24 @@ export TMPDIR=/Volumes/ExternalSSD/tmp
 cd "$(dirname "$0")/.."
 out=/Volumes/ExternalSSD/tmp/rev/guiasetup
 work="$out/build"
-mkdir -p "$out/before" "$out/after" "$work"
-rm -rf "$work/data-before" "$work/data-after"
+mkdir -p "$out/before" "$out/after" "$out/blocked" "$work"
+rm -rf "$work/data-before" "$work/data-after" "$work/data-blocked"
 mkdir -p "$work/data-before" "$work/data-after"
 export NUVIO_DADOS="$work/data-before"
 git show b6dafd97e:src/guiav5ui.c > "$work/baseline.c"
 git show b6dafd97e:src/guia.c > "$work/guide-before.c"
 git show b6dafd97e:src/guia_grupos.inc > "$work/guia_grupos.inc"
+git show 444c4cb7d:src/guiav5ui.c > "$work/blocked.c"
+git show 444c4cb7d:src/guiasetup.inc > "$work/guiasetup.inc"
 python3 tests/guiasetup_compile.py "$work"
+mkdir -p "$work/data-blocked"
+export NUVIO_DADOS="$work/data-blocked"
+if "$work/blocked" "$out/blocked" 0 > "$out/blocked/regression.log" 2>&1; then
+  echo 'FAIL: blocked revision must reproduce Add/cancel and rename race';exit 1
+fi
+rg 'FAIL: Add then Back keeps channels and EPG' "$out/blocked/regression.log"
+rg 'FAIL: rename follows original source key' "$out/blocked/regression.log"
+export NUVIO_DADOS="$work/data-before"
 if "$work/before" "$out/before" 1 > "$out/before/regression.log" 2>&1; then
   echo 'FAIL: baseline must reproduce source navigation/re-enable regression';exit 1
 fi
