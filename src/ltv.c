@@ -192,6 +192,8 @@ int ltv_pref_de_texto(const char *t, LtvPref *out, int max) {
         else if (!strcmp(nome, "modo")) p.modo = atoi(val);
         else if (!strcmp(nome, "proxy")) p.proxy = atoi(val);
         else if (!strcmp(nome, "off")) p.desligada = !!atoi(val);
+        else if (!strcmp(nome, "removed")) p.removida = !!atoi(val);
+        else if (!strcmp(nome, "name")) snprintf(p.nome,sizeof p.nome,"%s",val);
         else if (!strcmp(nome, "g") && val[0]) {
           size_t u = strlen(p.grupos);
           if (u + kv + 2 < sizeof p.grupos) {
@@ -221,6 +223,8 @@ size_t ltv_pref_texto(const LtvPref *p, int n, char *dst, size_t tam) {
                      p[i].chave, p[i].az, p[i].fusoMin, p[i].formato, p[i].modo, p[i].proxy,p[i].desligada);
     if (w < 0 || (size_t)w >= tam - u) break;
     u += (size_t)w;
+    if(p[i].removida){w=snprintf(dst+u,tam-u,"\tremoved=1");if(w<0||(size_t)w>=tam-u)break;u+=(size_t)w;}
+    if(p[i].nome[0]){w=snprintf(dst+u,tam-u,"\tname=%s",p[i].nome);if(w<0||(size_t)w>=tam-u)break;u+=(size_t)w;}
     while (*g) {
       size_t k = strcspn(g, "\n");
       if (u + k + 4 >= tam) break;
@@ -264,7 +268,7 @@ LtvPref *ltv_pref(const char *chave, int criar) {
   return &prefs[nPrefs++];
 }
 int ltv_fonte_ligada(const char *chave) {
-  const LtvPref *p=ltv_pref(chave,0);return !p||!p->desligada;
+  const LtvPref *p=ltv_pref(chave,0);return !p||(!p->desligada&&!p->removida);
 }
 void ltv_pref_gravar(void) {
   static char buf[LTV_PREF_MAX * 2300];
