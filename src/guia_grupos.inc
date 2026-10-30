@@ -35,7 +35,7 @@ static int fonteAtiva(int f) {
   return 0;
 }
 static int fonteVisivel(int f) {
-  if(f<0 || f>=nLtvF)return 0;
+  if(!fonteAtiva(f))return 0;
   int escolha=ajustes_guia_fonte(), tipo=ltvF[f].tipo;
   return !escolha || (escolha==1 && tipo==LTV_XTREAM) || (escolha==2 && tipo==LTV_M3U) ||
       (escolha==3 && tipo==LTV_STALKER) || (escolha==4 && tipo==LTV_ADDON);
