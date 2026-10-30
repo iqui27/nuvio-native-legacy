@@ -1101,7 +1101,13 @@ static void dashboard(void) {
   texto(TXT_ILHA_HORA,source,680,963,740,158);
 }
 static void sidebar(void) {
-  painel(72,148,315,824);
+  float h=pagina==PAINEL?858:824;
+  if(pagina==PAINEL) {
+    // Seat the shared sheet material on an opaque body over dashboard text.
+    int glass=ajustes_vidro();
+    gfx_cor((GfxRect){72,148,315,h},T21_R_MODAL/h,glass?.055f:.071f,glass?.059f:.075f,glass?.071f:.086f,1);
+  }
+  painel(72,148,315,h);
   texto(TXT_ILHA_NOME,"AIOStreams",160,181,200,240);
   texto(TXT_ILHA_NUM,i18n("Seu addon conectado"),160,218,200,163);
   GLuint logo=tex_obter(arteLogo); if(logo) gfx_rect((GfxRect){110,190,26,26},logo,GFX_MARCA,0,0,0,0,1,1,1,1);
@@ -1122,7 +1128,10 @@ static void sidebar(void) {
 static void workspace(void) {
   if(pagina==PAINEL) {
     dashboard();
-    if(lateral) { navigationCount=0; sidebar(); }
+    if(lateral) {
+      gfx_cor((GfxRect){72,148,1776,858},T21_R_MODAL/858,0,0,0,T21_VEIL);
+      navigationCount=0; sidebar();
+    }
     return;
   }
   if(pagina==TITULO) { tituloDesenhar(); return; }
