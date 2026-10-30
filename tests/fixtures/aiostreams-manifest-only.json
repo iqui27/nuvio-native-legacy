@@ -1,0 +1,18 @@
+{
+  "services": [{"id": "realdebrid", "enabled": true, "credential": {"apiKey": "SANITIZED_TEST_KEY"}}],
+  "presets": [{"type": "torrentio", "enabled": true}, {"type": "comet", "enabled": true}],
+  "requiredResolutions": ["2160p", "1080p"],
+  "excludedQualities": ["CAM"],
+  "preferredVisualTags": ["HDR10"],
+  "preferredAudioTags": ["DTS"],
+  "preferredLanguages": ["Portuguese", "English"],
+  "size": {"global": {"movies": [0, 40000000000]}},
+  "requiredSeederRange": [5, 10000],
+  "excludeUncached": true,
+  "excludedKeywords": ["sample"],
+  "requiredRegexPatterns": ["1080p|2160p"],
+  "sortCriteria": {"global": [{"key": "cached", "direction": "desc"}, {"key": "resolution", "direction": "desc"}]},
+  "formatter": {"id": "aiostreams"},
+  "resultLimits": {"global": 20},
+  "statistics": {"enabled": true}
+}
