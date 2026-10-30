@@ -1495,6 +1495,7 @@ static int retentarCanal(void) {
 static int tocarFonteGuardada(void) {
   Stream s;
   char alvo[64];
+  Uint32 started = SDL_GetTicks();
   // #618: a fresh automatic choice must use the add-on's current order.
   // Keep the saved link intact for the other selection modes.
   if (ajustes_fonte_prioridade() == 3) return 0;
@@ -1502,7 +1503,7 @@ static int tocarFonteGuardada(void) {
   // sozinha. A folha e quem escolhe (detail_pediu_fontes, e o #62 quando a
   // lista chega). O Retomar do Continuar assistindo pede reproducao e cai
   // aqui tambem — com o ajuste ligado ele espera a folha, como o Play.
-  if (!fontevolta_toca_guardada(ajustes_fonte_manual(), fontefalha_ativa(),
+  if (!fontevolta_toca_guardada(ajustes_fonte_manual(),
                                 player_id_canal()[0], player_aberto()))
     return 0;
   alvoPlayer(alvo, sizeof alvo);
@@ -1520,8 +1521,12 @@ static int tocarFonteGuardada(void) {
   video_definir_dv(s.dolbyVision);
   video_definir_cabecalhos(s.cabecalhos);
   video_definir_mp4(stream_e_mp4(&s));
-  fontevolta_conferir(s.url, s.cabecalhos);
   definirFonteVOD(s.url);
+  printf("[t] CW local source opened in %u ms; verification async\n",
+         (unsigned)(SDL_GetTicks() - started));
+  fflush(stdout);
+  fontevolta_conferir(s.url, s.cabecalhos);
+  preparoEspera = 0; // A late preflight result must not replace local resume.
   voltaAtiva = 1;
   voltaDesde = SDL_GetTicks();
   return 1;
@@ -1553,11 +1558,14 @@ static void vigiarFonteGuardada(void) {
 #endif
     g.conferencia = fontevolta_conferencia();
     g.desdeMs = desde = SDL_GetTicks() - voltaDesde;
+    // A saved link has no stream-list index. Keep its recovery watcher
+    // after opening so later failures return to normal provider/add-on selection.
+    if (voltaAtiva == 2 && !g.falhou) return;
     d = fontevolta_decidir(&g, &motivo);
     if (d == FV_ABRIU) {
       printf("[voltafonte] abriu em %u ms sem busca\n", (unsigned)desde);
       fflush(stdout);
-      voltaAtiva = 0;
+      voltaAtiva = fontefalha_ativa() ? 2 : 0;
       return;
     } }
   if (!motivo) return;
@@ -1576,6 +1584,7 @@ static void vigiarFonteGuardada(void) {
   }
   { char alvo[64]; alvoPlayer(alvo, sizeof alvo);
     fontevolta_esquecer_alvo(alvo, sessao_usuario(), perfis_ativo(), motivo); }
+  if (fonteFalhaPos > 0.0) player_definir_retomada_fonte(fonteFalhaPos);
   player_voltar_a_esperar();
   limparFonteVOD();
   renovarListaDoPlayer();
@@ -3550,12 +3559,10 @@ static void recarregarFonteVOD(void) {
   if (fonteVODAutomatica) fonteVODDesde = agora;
   else fonteManualDesde = agora;
 }
-// #415: ao lado das texturas saem tambem os buffers que tex_aliviar nao ve —
-// colheita/legenda do mkvass (parar grava o sidecar parcial e nao bloqueia) e
-// a grade de linhas rasterizadas. O texto se refaz sob demanda no quadro.
+// Release rendering caches without cancelling the active subtitle reader:
+// its bounded window must keep following playback after memory pressure.
 static void aliviarMemoria(void) {
   tex_aliviar();
-  mkvass_parar();
   txt_aliviar();
   assrender_aliviar();
   memlog_devolver();
@@ -6316,7 +6323,7 @@ void app_atualizar(float dt, Uint32 agora) {
             ProxSugestao prox;
             tocar = 0;
             cwTocarT = cwTocarE = 0;
-            if (k >= 0 && cat_n_episodios(k) > 0) {
+            if (cat_episodios_finais(k, cw->imdb)) {
               if (prox_seguinte(cw, cat_episodio(k, 0), cat_n_episodios(k),
                                 ajustes_cw_concluido(),
                                 (long long)time(NULL) * 1000LL, &prox)) {
@@ -6332,7 +6339,16 @@ void app_atualizar(float dt, Uint32 agora) {
             }
           }
         }
+        if (tocar && cw && !strcmp(cw->tipo, "series") &&
+            !cat_episodio_existe_final(cat_indice_titulo(cw->imdb, it.indice),
+                                      cw->imdb, cwTocarT, cwTocarE)) {
+          cwEsperaItem = *cw;
+          cwEsperaDesde = SDL_GetTicks();
+          cwEspera = 2; // Resume the current episode once metadata publishes its video ID.
+          tocar = 0;
+        }
         abrirTitulo(&it, 1, 1);
+        if (cwEspera) desc_episodios(detail_indice(), 0);
         if (tocar) detail_pedir_reproduzir();
       }
     } else if (tela == TELA_BUSCA && busca_pediu_pessoa(&pedPessoa)) {
@@ -6382,10 +6398,16 @@ void app_atualizar(float dt, Uint32 agora) {
       cwEspera = 0; cwTocarT = cwTocarE = 0;
     } else {
       int k = cat_indice_titulo(cwEsperaItem.imdb, detail_indice());
-      if (k >= 0 && cat_n_episodios(k) > 0) {
+      if (cat_episodios_finais(k, cwEsperaItem.imdb) &&
+          (cwEspera != 2 || cat_episodio_existe_final(k, cwEsperaItem.imdb,
+                             cwEsperaItem.temporada, cwEsperaItem.episodio))) {
         ProxSugestao prox;
+        int retomar = cwEspera == 2;
         cwEspera = 0; cwTocarT = cwTocarE = 0;
-        if (prox_seguinte(&cwEsperaItem, cat_episodio(k, 0), cat_n_episodios(k),
+        if (retomar) {
+          cwTocarT = cwEsperaItem.temporada; cwTocarE = cwEsperaItem.episodio;
+          detail_pedir_reproduzir();
+        } else if (prox_seguinte(&cwEsperaItem, cat_episodio(k, 0), cat_n_episodios(k),
                           ajustes_cw_concluido(),
                           (long long)time(NULL) * 1000LL, &prox)) {
           cwTocarT = prox.temporada; cwTocarE = prox.episodio;
@@ -6441,7 +6463,7 @@ void app_atualizar(float dt, Uint32 agora) {
           if (strcmp(pendAlvo, alvo)) { snprintf(pendAlvo, sizeof pendAlvo, "%s", alvo); pendDesde = SDL_GetTicks(); }
           esperaFoco = SDL_GetTicks() - pendDesde < 1200u;
         } }
-      if (!player_visivel() && aguardandoFonte != 2 && ci && ci->imdb[0] && !esperaFoco &&
+      if (!cwEspera && !player_visivel() && aguardandoFonte != 2 && ci && ci->imdb[0] && !esperaFoco &&
           (strcmp(alvo, ultimoAlvo) || (detail_aberto() && ultimaVersao != addons_versao()))) {
         if (!strcmp(alvo, ultimoAlvo)) printf("[addons] lista mudou: refazendo a busca de fontes de %s\n", alvo);
         snprintf(ultimoAlvo, sizeof ultimoAlvo, "%s", alvo);
@@ -6548,7 +6570,7 @@ void app_atualizar(float dt, Uint32 agora) {
       } else {
         if (usouPreparo) limparFonteVOD();
         renovarListaDoPlayer();
-        if (!preparoEspera && (tocarParteGuardada() || tocarFonteGuardada())) { /* parte ou fonte guardada abriu */ }
+        if (tocarParteGuardada() || tocarFonteGuardada()) { preparoEspera = 0; }
         else aguardandoFonte = 1;
       }
     }

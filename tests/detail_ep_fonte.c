@@ -14,6 +14,21 @@
 static char urlDoPlayer[128];
 static int chamadasFonte, playerAbertoFlag, playerIndiceFlag, epTFlag, epEFlag;
 
+static int routerPedido, videoPronto, videoFalhou;
+static double retomada;
+#define sessao_logada teste_logada
+#define desc_sessao_aberta teste_logada
+#define detail_aberto teste_detail_aberto
+#define detail_indice teste_detail_indice
+#define detail_ep_foco teste_detail_ep_foco
+#define detail_pediu_reproduzir teste_detail_pedido
+#define player_abrir teste_player_abrir
+#define video_pronto teste_video_pronto
+#define video_falhou teste_video_falhou
+#define video_duracao teste_video_duracao
+#define player_carregando teste_carregando
+#define player_definir_retomada_fonte teste_retomada
+#define fontevolta_conferir teste_conferir
 #define player_definir_fonte teste_definir_fonte
 #define player_aberto teste_player_aberto
 #define player_indice teste_player_indice
@@ -21,12 +36,50 @@ static int chamadasFonte, playerAbertoFlag, playerIndiceFlag, epTFlag, epEFlag;
 #define sessao_usuario teste_sessao_usuario
 #define perfis_ativo teste_perfis_ativo
 #include "../src/app.c"
+#undef fontevolta_conferir
 #undef player_definir_fonte
 #undef player_aberto
 #undef player_indice
 #undef player_episodio_atual
 #undef sessao_usuario
 #undef perfis_ativo
+
+int teste_logada(void) { return 1; }
+int teste_detail_aberto(void) { return routerPedido; }
+int teste_detail_indice(void) { return 0; }
+int teste_detail_ep_foco(int *t, int *e) { *t = 1; *e = 3; return 1; }
+int teste_detail_pedido(void) {
+  int p = routerPedido; routerPedido = 0;
+  if (p) {
+    preparoRodando = fioFonteVivo = 1;
+    fonteJob.tipo = FJOB_PREPARO_FALHA;
+    fonteJob.sessaoPerfil = nv_perfil_sessao_ler();
+    fonteJob.preparoRodada = atomic_load(&preparoGeracao);
+    fonteJob.listaGeracao = stream_lista_geracao();
+    fonteJob.lembrada = -1;
+    strcpy(fonteJob.id, "tt0000513:1:3");
+    preparoContexto(&fonteJob.contexto);
+    atomic_store(&fonteJob.estado, FJOB_RUNNING);
+    assert(preparoEmCurso(fonteJob.id, -1));
+  }
+  return p;
+}
+void teste_player_abrir(int i, const char *url) {
+  (void)i; (void)url; playerAbertoFlag = 1;
+  // The router must reach the cached source despite pending preflight.
+  assert(preparoEspera);
+}
+int teste_video_pronto(void) { return videoPronto; }
+int teste_video_falhou(void) { return videoFalhou; }
+double teste_video_duracao(void) { return 3600.0; }
+int teste_carregando(void) { return 0; }
+void teste_retomada(double pos) { retomada = pos; }
+
+void teste_conferir(const char *url, const char *cab) {
+  (void)url; (void)cab;
+  // Even scheduling network verification must follow the local player open.
+  assert(chamadasFonte == 1);
+}
 
 void teste_definir_fonte(const char *u) {
   chamadasFonte++;
@@ -98,6 +151,59 @@ int main(void) {
   assert(app_teste_tocar_guardada());
   assert(chamadasFonte == 1 && !strcmp(urlDoPlayer, g.url));
   puts("ok auto: resume still plays the saved source");
+
+  fontefalha_dir(dir);
+  assert(fontefalha_definir_provedores(1));
+  assert(fontefalha_definir_addons(1));
+  assert(fontefalha_ativa());
+  urlDoPlayer[0] = 0; chamadasFonte = 0;
+  Uint32 started = SDL_GetTicks();
+  gravar("escolherFonteManual 1\nfontePrepararLocal 0\n");
+  fontevolta_configurar(ajustes_link_reusar(), ajustes_link_prazo_s());
+  fontevolta_guardar("tt0000513:1:3", "conta", 1, &g, 0, SDL_GetTicks());
+  stream_definir_alvo("tt0000513:1:3");
+  stream_definir_lista(&g, 1);
+  playerAbertoFlag = 0;
+  routerPedido = 1;
+  cwTocarT = 1; cwTocarE = 3;
+  perfilSessaoAplicada = perfis_sessao_geracao();
+  // The request fixture supplies a pending preflight without network work.
+  app_atualizar(0, SDL_GetTicks());
+  fioFonteVivo = preparoRodando = 0;
+  atomic_store(&fonteJob.estado, FJOB_IDLE);
+  assert(!preparoEspera);
+  assert(chamadasFonte == 1 && !strcmp(urlDoPlayer, g.url));
+  assert(SDL_GetTicks() - started < 100u);
+  puts("ok failover: local resume opens within 100 ms before network verification");
+  // Successful verification must retain recovery for later CDN errors and
+  // expired signed URLs. Both must enter normal provider/add-on selection.
+  int recovered = 0;
+  for (int failure = 0; failure < 2; failure++) {
+    videoPronto = 1; videoFalhou = 0;
+    vigiarFonteGuardada();
+    fonteFalhaPos = 125.0;
+    videoFalhou = 1;
+    if (failure) videoPronto = 0; // expired URL after the backend closes
+    vigiarFonteGuardada();
+    int ok = aguardandoFonte == 1 && retomada == 125.0 && !voltaAtiva;
+    printf("%s: %s after successful verification\n", ok ? "PASS" : "FAIL",
+           failure ? "expired signed URL" : "later CDN failure");
+    recovered += ok;
+    aguardandoFonte = 0;
+    videoFalhou = videoPronto = 0;
+    if (!failure) {
+      fontevolta_guardar("tt0000513:1:3", "conta", 1, &g, 0, SDL_GetTicks());
+      chamadasFonte = 0;
+      assert(app_teste_tocar_guardada());
+    }
+  }
+  fflush(stdout);
+  assert(recovered == 2);
+  puts("ok recovery: later CDN failure and expired URL preserve position and reselect");
+  gravar("escolherFonteManual 0\n");
+  chamadasFonte = 0;
+  assert(!app_teste_tocar_guardada() && chamadasFonte == 0);
+  gravar("escolherFonteManual 1\n");
 
   // Wrong target in the player: another episode's saved source does not
   // leak into this one.
