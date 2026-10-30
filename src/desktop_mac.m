@@ -154,14 +154,23 @@ void desktop_native_init(SDL_Window *window) {
   [[NSOpenGLContext currentContext] setValues:&opaque forParameter:NSOpenGLContextParameterSurfaceOpacity];
   // SDL normalizes Cocoa precise deltas into wheel ticks. Preserve native
   // pixels, phases and OS momentum in a tagged SDL event instead.
-  scrollMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskScrollWheel handler:^NSEvent *(NSEvent *event) {
-    if (event.window != nativeWindow || !event.hasPreciseScrollingDeltas) return event;
+  scrollMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskScrollWheel|NSEventMaskSwipe handler:^NSEvent *(NSEvent *event) {
+    BOOL swipe = event.type == NSEventTypeSwipe;
+    if (event.window != nativeWindow || (!swipe && !event.hasPreciseScrollingDeltas)) return event;
     SDL_Event wheel = {0}; wheel.type = SDL_MOUSEWHEEL;
     wheel.wheel.windowID = SDL_GetWindowID(window);
     wheel.wheel.which = NV_DESKTOP_PIXEL_WHEEL;
-    wheel.wheel.preciseX = event.scrollingDeltaX;
-    wheel.wheel.preciseY = event.scrollingDeltaY;
-    wheel.wheel.y = event.phase == NSEventPhaseBegan ? 1 : 0;
+    wheel.wheel.preciseX = swipe ? event.deltaX * 60 : event.scrollingDeltaX;
+    wheel.wheel.preciseY = swipe ? event.deltaY * 60 : event.scrollingDeltaY;
+    wheel.wheel.x = NV_WHEEL_PHASED;
+    if (event.phase & NSEventPhaseBegan) wheel.wheel.x |= NV_WHEEL_BEGIN;
+    if ((event.phase | event.momentumPhase) & NSEventPhaseEnded) wheel.wheel.x |= NV_WHEEL_END;
+    if ((event.phase | event.momentumPhase) & NSEventPhaseCancelled) wheel.wheel.x |= NV_WHEEL_CANCEL;
+    if (event.momentumPhase != NSEventPhaseNone) wheel.wheel.x |= NV_WHEEL_MOMENTUM;
+    // Unphased precise devices keep the existing wheel path.
+    if (event.phase == NSEventPhaseNone && event.momentumPhase == NSEventPhaseNone)
+      wheel.wheel.x = 0;
+    if (swipe) wheel.wheel.x = NV_WHEEL_PHASED|NV_WHEEL_BEGIN|NV_WHEEL_END|NV_WHEEL_SWIPE;
     wheel.wheel.timestamp = SDL_GetTicks();
     NSPoint p = [content convertPoint:event.locationInWindow fromView:nil];
     wheel.wheel.mouseX = p.x; wheel.wheel.mouseY = content.bounds.size.height - p.y;

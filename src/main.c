@@ -505,11 +505,12 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
     if (dp && !strncmp(linha,"preview:",8)) { app_desktop_preview(dp+1); continue; }
     if (dp && !strncmp(linha,"appearance:",11)) { desktop_native_appearance(dp+1); continue; }
     if (dp && !strncmp(linha,"wheel:",6)) {
-      SDL_Event wheel={0}; float dx,dy; int x,y;
-      if(sscanf(dp+1,"%d,%d,%f,%f",&x,&y,&dx,&dy)==4) {
+      SDL_Event wheel={0}; float dx,dy; int x,y,phase=0;
+      if(sscanf(dp+1,"%d,%d,%f,%f,%d",&x,&y,&dx,&dy,&phase)>=4) {
         wheel.type=SDL_MOUSEWHEEL;wheel.wheel.which=NV_DESKTOP_PIXEL_WHEEL;
         wheel.wheel.windowID=SDL_GetWindowID(SDL_GL_GetCurrentWindow());
         wheel.wheel.mouseX=x;wheel.wheel.mouseY=y;wheel.wheel.preciseX=dx;wheel.wheel.preciseY=dy;
+        wheel.wheel.x=phase;
         SDL_PushEvent(&wheel);
       }
       continue;

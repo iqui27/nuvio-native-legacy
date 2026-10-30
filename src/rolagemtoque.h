@@ -46,6 +46,9 @@ static inline int toquerol_evento(ToqueRolagem *r, const PonteiroRolagem *e) {
     if (e->eixoY != r->eixoY || r->maximo <= r->minimo ||
         x < r->regiao.x || x >= r->regiao.x + r->regiao.w ||
         y < r->regiao.y || y >= r->regiao.y + r->regiao.h) return 0;
+#ifdef NV_DESKTOP_UI
+    if (!e->eixoY && e->delta > 0 && *r->offset <= r->minimo + .5f) return 0;
+#endif
     r->livre = 1;
     return 1;
   }

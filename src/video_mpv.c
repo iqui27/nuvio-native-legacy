@@ -467,6 +467,7 @@ void video_velocidade_recusada(void) { video_velocidade(100); }
 int video_largura(void) { return width; }
 int video_altura(void) { return height; }
 void video_estatisticas(VideoStats *s) { video_stats_vazio(s); if (active) s->bufferSeg=bufferEnd-position; }
+void video_informacoes(VideoInfo *s) { memset(s, 0, sizeof *s); }
 int video_faixa_dts(const VideoFaixa *f) { return f && (!strcmp(f->codec,"dts") || !strcmp(f->codec,"dca")); }
 int video_dts_estado(void) { return video_faixa_dts(video_audio(audio)) ? VIDEO_DTS_NATIVO : VIDEO_DTS_NENHUM; }
 const char *video_dts_saida(void) { return ""; }

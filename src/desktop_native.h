@@ -16,6 +16,11 @@ static inline void desktop_native_init(SDL_Window *window) {
 }
 #endif
 #define NV_DESKTOP_PIXEL_WHEEL 0x4e565057u
+// Tagged precise wheel events carry Cocoa lifecycle in wheel.x (not ticks).
+enum {
+  NV_WHEEL_BEGIN=1, NV_WHEEL_END=2, NV_WHEEL_CANCEL=4,
+  NV_WHEEL_MOMENTUM=8, NV_WHEEL_SWIPE=16, NV_WHEEL_PHASED=32
+};
 #if defined(NV_DESKTOP_UI) && defined(__APPLE__)
 void desktop_native_init(SDL_Window *window);
 void desktop_native_sidebar(float fraction, float reveal);

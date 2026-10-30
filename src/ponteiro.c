@@ -845,8 +845,64 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
       float dxp = e->wheel.preciseX, dyp = e->wheel.preciseY;
       if (e->wheel.direction == SDL_MOUSEWHEEL_FLIPPED) { dxp = -dxp; dyp = -dyp; }
       if (SDL_GetModState() & KMOD_SHIFT) { dxp = dyp; dyp = 0; }
-      if (!isfinite(dxp) || !isfinite(dyp) || (!dxp && !dyp)) return 1;
+      if (!isfinite(dxp) || !isfinite(dyp)) return 1;
       if (e->wheel.which == NV_DESKTOP_PIXEL_WHEEL) converter(e->wheel.windowID, e->wheel.mouseX, e->wheel.mouseY);
+      if (e->wheel.which == NV_DESKTOP_PIXEL_WHEEL && (e->wheel.x & NV_WHEEL_PHASED)) {
+        // Ownership and the origin survive pauses, finger release and momentum.
+        static int active, route, vertical;
+        static float originX, originY, distance;
+        static PonteiroRolagemFn owner;
+        int phase=e->wheel.x;
+        SDL_Window *w=SDL_GetWindowFromID(e->wheel.windowID);
+        int width=1280,height=800;
+        if(w) SDL_GetWindowSize(w,&width,&height);
+        float units=NV_TELA_W/fmaxf(1,width);
+        if(phase & NV_WHEEL_BEGIN && !(phase & NV_WHEEL_MOMENTUM)) {
+          if(owner) rolagemEntregar(owner,PONT_ROL_FIM,vertical,0,0,originX,originY);
+          active=1;route=0;distance=0;owner=NULL;originX=px;originY=py;
+        }
+        if(phase & NV_WHEEL_CANCEL) {
+          if(owner) rolagemEntregar(owner,PONT_ROL_CANCELAR,vertical,0,0,originX,originY);
+          owner=NULL;active=0;return 1;
+        }
+        if(!active) return 1; // Orphan momentum cannot start navigation.
+        nv_desktop_wheel_until=agora+100;
+        if(owner && owner!=listaRolagem[pronto]) { owner=NULL;route=6; }
+        if(dxp || dyp) {
+          if(!route) {
+            vertical=fabsf(dyp)>=fabsf(dxp);
+            if(!vertical && desktop_native_swipes() && spainel_aberto() && dxp>0) route=3;
+            else if(!vertical && desktop_native_swipes() && originX<24*units && dxp>0) route=1;
+            else if(!vertical && desktop_native_swipes() && originX>NV_TELA_W-24*units && dxp<0) route=2;
+            else {
+              owner=listaRolagem[pronto];
+              if(owner && !rolagemEntregar(owner,PONT_ROL_INICIO,vertical,(vertical?dyp:dxp)*units,0,originX,originY)) owner=NULL;
+              route=owner?5:!vertical && dxp>0 && desktop_native_swipes()?4:6;
+            }
+          }
+          if(route==5 && owner) rolagemEntregar(owner,PONT_ROL_MOVER,vertical,(vertical?dyp:dxp)*units,0,originX,originY);
+          else if(route<5) {
+            distance+=dxp;
+            if((route==2?-distance:distance)>48 || (phase & NV_WHEEL_SWIPE)) {
+              int action=route;route=6; // Latch before callbacks change the layer.
+              if(action==1) menu_desktop_revelar();
+              else if(action==2) spainel_abrir();
+              else if(action==3) spainel_fechar();
+              else { tecla(entregar,SDL_KEYDOWN,SDLK_AC_BACK);tecla(entregar,SDL_KEYUP,SDLK_AC_BACK); }
+            }
+          }
+        }
+        if(phase & NV_WHEEL_END) {
+          if(owner) rolagemEntregar(owner,PONT_ROL_SOLTAR,vertical,0,0,originX,originY);
+          // Keep the latch after finger-up: Cocoa may begin momentum next.
+          if(phase & NV_WHEEL_MOMENTUM) {
+            if(owner) rolagemEntregar(owner,PONT_ROL_FIM,vertical,0,0,originX,originY);
+            owner=NULL;active=0;
+          }
+        }
+        return 1;
+      }
+      if (!dxp && !dyp) return 1;
       static Uint32 lastWheel;
       static int edge;
       static float edgeDelta;

@@ -2221,6 +2221,9 @@ static int toqueHomeRolar(const PonteiroRolagem *e) {
       }
       if (toqueFileira < 0) return 0;
       if (fileiras[toqueFileira].tipo == FILEIRA_SOCIAL && !amigosfil_rolagem(e)) return 0;
+#ifdef NV_DESKTOP_UI
+      if (fileiras[toqueFileira].tipo != FILEIRA_SOCIAL && e->delta > 0 && scrollX[toqueFileira] <= .5f) return 0;
+#endif
       toqueLivreX[toqueFileira] = 1; velX[toqueFileira] = 0.0f;
       memset(&bordaFil[toqueFileira], 0, sizeof bordaFil[toqueFileira]);
     }
