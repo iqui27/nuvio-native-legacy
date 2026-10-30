@@ -2,6 +2,29 @@
 #include "../src/aiostreamsui.c"
 #include <assert.h>
 static int keyboardResult, keyboardMasked, p2p, activeProfile=1;
+static int sidebarDrawn, sidebarHighlight;
+float gfx_opacidade_grupo=1;
+float gfx_escala_txt(void) { return 1; }
+float gfx_escala_txt_entrar(void) { return 1; }
+void gfx_escala_sair(float s) { (void)s; }
+int ajustes_vidro(void) { return 0; }
+float gfx_vidro_opacidade(void) { return 1; }
+GLuint tex_obter(const char *p) { (void)p; return 0; }
+void gfx_rect(GfxRect r,GLuint t,GfxModo m,float a,float b,float c,float d,float e,float f,float g,float h) { }
+void gfx_sombra_sob(GfxRect r,float a,float b,float c,float d,float e,float f,float g,GfxRect s,float h,float i) { }
+void gfx_vidro(GfxRect r,float a,int b,float c,float d,float e) { }
+void gfx_luz_canto(GfxRect r,float a,float b,float c,float d,float e,float f,float g,float h) { }
+void gfx_cor(GfxRect r,float a,float b,float c,float d,float e) {
+  if(r.x==72 && r.w==315 && e>0) sidebarDrawn++;
+}
+void gfx_icone(GfxRect r,const char *s,float a,float b,float c,float d) { }
+void plrui_linha_foco(GfxRect r,float radius,float alpha) {
+  if(r.x==91 && r.y==265 && alpha>.9f) sidebarHighlight++;
+}
+TxtLinha txt_linha_corta(TxtEstilo e,const char *s,int r,int g,int b,int a,float w) { return (TxtLinha){0}; }
+void txt_desenhar(TxtLinha l,float x,float y) { }
+#undef ponteiro_alvo
+void ponteiro_alvo(float x,float y,float w,float h,PonteiroFn f,PonteiroFn a,int i,int b) { }
 static const char *keyboardText="";
 static Stream traceStream;
 int stream_n(void) { return 1; }
@@ -203,11 +226,19 @@ int main(void) {
   foco=9; acao(); assert(entrada==4 && keyboardMasked);
   receber("sample-uuid"); assert(entrada==5 && keyboardMasked);
   receber("sample-password"); assert(!entrada && configAuth[0] && !configUuid[0]);
-  // Both first-column cards reach the sidebar.
+  pagina=PAINEL; lateral=0; foco=3; acao();
+  assert(pagina==FILTROS && regraSelecionada==7);
+  // Both first-column cards reach a drawn, highlighted sidebar and return.
   for(int row=0;row<2;row++) {
     pagina=PAINEL; lateral=0; foco=row*3;
     down.key.keysym.sym=SDLK_LEFT; aioui_evento(&down);
     assert(lateral && foco==0);
+    movimento(.5f); sidebarDrawn=sidebarHighlight=0; navigationCount=0;
+    sidebar();
+    assert(pagina==PAINEL && sidebarDrawn && sidebarHighlight && navigationCount==7);
+    down.key.keysym.sym=SDLK_DOWN; aioui_evento(&down); assert(lateral && foco==1);
+    down.key.keysym.sym=SDLK_RIGHT; aioui_evento(&down);
+    assert(!lateral && foco==row*3);
   }
   lateral=0;
   // Same-origin refresh authenticates; importing another instance must not.

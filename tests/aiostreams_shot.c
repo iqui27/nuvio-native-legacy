@@ -98,6 +98,13 @@ int main(int argc,char **argv) {
       }
       char name[160]; snprintf(name,sizeof name,"%s-%d-%s",names[p],scales[scale],glass?"glass":"solid");
       save(argv[1],name);
+      if(getenv("AIO_SHOT_DASHBOARD") && p==5) {
+        SDL_Event key={0}; key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_LEFT;
+        aioui_evento(&key); frame(800);
+        snprintf(name,sizeof name,"sidebar-focus-%d-%s",scales[scale],glass?"glass":"solid");
+        save(argv[1],name);
+        key.key.keysym.sym=SDLK_RIGHT; aioui_evento(&key); frame(800);
+      }
       if(getenv("AIO_SHOT_DASHBOARD") && p==10 && getenv("AIO_SHOT_DETAILS")) {
         const int groups[]={2,6,7};
         const char *details[]={"languages-end","sort","formatter"};

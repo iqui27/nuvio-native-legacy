@@ -100,7 +100,7 @@ static unsigned versao, geracao;
 static int catalogoSelecionado, linkSelecionado=-1, maisHosts;
 static int soManifesto;   // Configuration source is distinct from API authorization.
 static time_t ultimaAtualizacao;
-static int dashboardLinha[6];
+static int dashboardLinha[6], dashboardFoco;
 static float dashboardScroll[6], dashboardVel[6];
 static int dashboardTotal(int card);
 static void dashboard(void);
@@ -428,7 +428,7 @@ static void acao(void) {
     else if(foco<6) {
       const int pages[]={FONTES,FONTES,FILTROS,FILTROS,CATALOGOS,SAUDE};
       int card=foco; mudar(pages[card]);
-      if(card==3) regraSelecionada=6;
+      if(card==3) regraSelecionada=7;
     }
     else if(foco==6) campo(2);
     else if(foco==7) mudar(FONTES);
@@ -504,7 +504,7 @@ void aioui_evento(const SDL_Event *e) {
       if(step && dashboardLinha[foco]+step>=0 && dashboardLinha[foco]+step<=total-3) dashboardLinha[foco]+=step;
       else if(k==SDLK_UP) foco=foco>=3?foco-3:10;
       else if(k==SDLK_DOWN) foco=foco<3?foco+3:6;
-      else if(k==SDLK_LEFT) { if(foco%3) foco--; else { lateral=1; foco=0; } }
+      else if(k==SDLK_LEFT) { if(foco%3) foco--; else { dashboardFoco=foco; lateral=1; foco=0; navigationCount=0; } }
       else if(k==SDLK_RIGHT && foco%3<2) foco++;
     } else if(k==SDLK_DOWN) foco=foco==10?2:foco;
     else if(k==SDLK_UP) foco=foco==10?0:foco==9?3:5;
@@ -512,6 +512,7 @@ void aioui_evento(const SDL_Event *e) {
     else if(k==SDLK_LEFT && foco==6) foco=9;
     return;
   }
+  if(pagina==PAINEL && lateral && k==SDLK_RIGHT) { lateral=0; foco=dashboardFoco; navigationCount=0; return; }
   if(k==SDLK_UP || k==SDLK_DOWN || k==SDLK_LEFT || k==SDLK_RIGHT) {
     int first=0,total=0,step=(k==SDLK_DOWN)-(k==SDLK_UP);
     if(pagina==CATALOGOS) total=snap.catalogos;
@@ -1099,10 +1100,8 @@ static void dashboard(void) {
   char source[256]; snprintf(source,sizeof source,"%s%s%s",configStatus(),snap.detalhesOmitidos?" · ":"",snap.detalhesOmitidos?i18n("Configuração no celular"):"");
   texto(TXT_ILHA_HORA,source,680,963,740,158);
 }
-static void workspace(void) {
-  if(pagina==PAINEL) { dashboard(); return; }
-  if(pagina==TITULO) { tituloDesenhar(); return; }
-  painel(72,148,315,824); painel(411,148,1437,824);
+static void sidebar(void) {
+  painel(72,148,315,824);
   texto(TXT_ILHA_NOME,"AIOStreams",160,181,200,240);
   texto(TXT_ILHA_NUM,i18n("Seu addon conectado"),160,218,200,163);
   GLuint logo=tex_obter(arteLogo); if(logo) gfx_rect((GfxRect){110,190,26,26},logo,GFX_MARCA,0,0,0,0,1,1,1,1);
@@ -1119,6 +1118,15 @@ static void workspace(void) {
   gfx_cor((GfxRect){108,850,254,34},.2f,.25f,.32f,.34f,.55f);
   texto(TXT_ILHA_HORA,configStatus(),118,860,234,192);
   texto(TXT_ILHA_SUB,snap.nome[0]?snap.nome:"AIOStreams",108,891,252,174);
+}
+static void workspace(void) {
+  if(pagina==PAINEL) {
+    dashboard();
+    if(lateral) { navigationCount=0; sidebar(); }
+    return;
+  }
+  if(pagina==TITULO) { tituloDesenhar(); return; }
+  painel(411,148,1437,824); sidebar();
   texto(TXT_ILHA_TITULO,i18n(titulos[pagina]),453,184,1290,243);
   const char *intro=pagina==CATALOGOS?"CH+ / CH-: mover na Home":pagina==FONTES?"Addons, serviços, cache e P2P":pagina==LINKS?"Destinos externos e instalação":pagina==LEGENDAS?"Separadas das faixas dentro do vídeo":pagina==FILTROS?"Resumo somente leitura · Edite pelo celular":pagina==SAUDE?"Instância, latência e erros observados":"Sua configuração, com cada recurso no seu lugar.";
   bloco(i18n(intro),453,245,1240,1);
