@@ -310,10 +310,10 @@ int fontepref_escolher_lista(const char *id, const Stream *fontes, int n,
 // que esta tocando agora (mesmo que ela tenha vindo de um recuo do automatico);
 // so sem ela entram as regras acima (escolha a mao / memoria do automatico).
 // So na RAM. fontepref_tocando: chamado quando uma fonte de episodio tocou de
-// verdade. _tocando_de: 1 se ha uma, com bingeGroup, para este titulo.
+// verdade. _tocando_de: 1 se ha uma com bingeGroup ou release para este titulo.
 // _binge_tocando: indice na lista atual (stream_item) ou -1.
 // _escolher_lista_next: o mesmo numa lista propria, e sem casar cai em
-// fontepref_escolher_lista. `forte` em semPerda = casou pelo bingeGroup: so
+// fontepref_escolher_lista. `forte` em semPerda = bingeGroup ou release exata: so
 // precisa poder tocar (a regra de evidencia nao vale).
 void fontepref_tocando(const char *id, const Stream *s);
 int  fontepref_tocando_de(const char *id, char *provedor, unsigned tamProv, char *binge, unsigned tamBinge);

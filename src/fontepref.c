@@ -1242,12 +1242,14 @@ int fontepref_escolher_lista(const char *id, const Stream *fontes, int total,
 // --- NEXT: A FONTE QUE ESTA TOCANDO (dono, 16/10, como o Nuvio) -----------
 // So na RAM: o bingeGroup e o add-on da fonte que tocou de verdade agora.
 // Lido tambem pelo worker do proximo episodio, dai a trava.
+static int tocandoMp4;
 void fontepref_tocando(const char *id, const Stream *s) {
   char base[24];
   if (!id || !s) return;
   fontepref_id_base(id, base, sizeof base);
   pthread_mutex_lock(&travaTocando);
   montar(base, s, &tocandoPref);
+  tocandoMp4 = stream_e_mp4(s);
   pthread_mutex_unlock(&travaTocando);
 }
 
@@ -1257,7 +1259,7 @@ int fontepref_tocando_de(const char *id, char *provedor, unsigned tamProv, char 
   if (!id || !cfgBinge) return 0;
   fontepref_id_base(id, base, sizeof base);
   pthread_mutex_lock(&travaTocando);
-  ok = base[0] && tocandoPref.bingeGroup[0] && !strcmp(base, tocandoPref.id);
+  ok = base[0] && (tocandoPref.bingeGroup[0] || tocandoPref.lancamento[0]) && !strcmp(base, tocandoPref.id);
   if (ok && provedor) snprintf(provedor, tamProv, "%s", tocandoPref.provedor);
   if (ok && binge) snprintf(binge, tamBinge, "%s", tocandoPref.bingeGroup);
   pthread_mutex_unlock(&travaTocando);
@@ -1273,12 +1275,19 @@ static int bingeTocando(const char *id, int total, const Stream *(*item)(int, vo
   fontepref_id_base(id, base, sizeof base);
   pthread_mutex_lock(&travaTocando);
   p = tocandoPref;
+  int mp4 = tocandoMp4;
   pthread_mutex_unlock(&travaTocando);
-  if (!base[0] || !p.bingeGroup[0] || strcmp(base, p.id)) return -1;
+  if (!base[0] || (!p.bingeGroup[0] && !p.lancamento[0]) || strcmp(base, p.id)) return -1;
   // Broad groups share releases: use the playing release/audio to break ties.
   for (i = 0; i < total; i++) {
     const Stream *s = item(i, ctx);
-    if (!s || strcmp(s->bingeGroup, p.bingeGroup) || (podeTocar && !podeTocar(i, 1, ctxPode))) continue;
+    if (!s) continue;
+    int binge = p.bingeGroup[0] && !strcmp(s->bingeGroup, p.bingeGroup);
+    char audio[FONTEPREF_TRILHA]; fontepref_trilha(s, audio, sizeof audio);
+    int release = p.lancamento[0] && pontosLanc(p.provedor, p.lancamento, s) >= 1000 &&
+                  s->altura == p.altura && stream_e_mp4(s) == mp4 &&
+                  contemMarcas(audio, p.trilha);
+    if ((!binge && !release) || (podeTocar && !podeTocar(i, 1, ctxPode))) continue;
     int pts = casar(&p, s, NULL);
     if (pts > melhorPts) { melhorPts = pts; melhor = i; }
   }
@@ -1287,7 +1296,7 @@ static int bingeTocando(const char *id, int total, const Stream *(*item)(int, vo
 
 int fontepref_binge_tocando(const char *id) {
   int i = bingeTocando(id, stream_n(), itemGlobal, NULL, semPerdaGlobal, NULL);
-  if (i >= 0) { printf("[fonte] next: mesmo bingeGroup da fonte que tocava, posicao %d\n", i); fflush(stdout); }
+  if (i >= 0) { printf("[fonte] next: matched playing bingeGroup/release, posicao %d\n", i); fflush(stdout); }
   return i;
 }
 
@@ -1296,7 +1305,7 @@ int fontepref_escolher_lista_next(const char *id, const Stream *fontes, int tota
   int i;
   if (!fontes || total < 1) return -1;
   i = bingeTocando(id, total, itemVetor, (void *)fontes, semPerda, ctx);
-  if (i >= 0) { printf("[fonte] next (preparado): mesmo bingeGroup da fonte que tocava, posicao %d\n", i); fflush(stdout); return i; }
+  if (i >= 0) { printf("[fonte] next (preparado): matched playing bingeGroup/release, posicao %d\n", i); fflush(stdout); return i; }
   return fontepref_escolher_lista(id, fontes, total, semPerda, ctx);
 }
 

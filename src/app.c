@@ -251,7 +251,7 @@ static int autoParcialPronto(void) {
       if (ultNext >= 0) {
         addons_definir_espera_decisao(prazo > 0 ? prazo : 0);
         if (stream_auto_pode_decidir(ultNext, 0, 0, prazo == 0)) {
-          autoMotivo = "next: mesmo bingeGroup da fonte que tocava";
+          autoMotivo = "next: matched playing source";
           return 1;
         }
         return 0;
@@ -6054,14 +6054,15 @@ void app_atualizar(float dt, Uint32 agora) {
       // roda exatamente como rodava antes. Quem nunca abriu a folha de fontes
       // nao ve diferenca nenhuma.
       char base[24];
-      int lembrada;
+      int lembrada, nextCorrespondente;
       idBaseDoTitulo(base, sizeof base);
       // Com "escolher a fonte ao reproduzir" ligado so vale a escolha da PESSOA:
       // a memoria do automatico (bingeGroup) nao pode tocar sozinha aqui nem
       // aparecer como "Sua escolha anterior" na folha que vai abrir.
       // NEXT: o bingeGroup exato da fonte que tocava vem antes de tudo (o Nuvio
       // faz o mesmo, tambem com a escolha manual ligada).
-      lembrada = escolhaDoNext(base, NULL, 0) ? fontepref_binge_tocando(base) : -1;
+      nextCorrespondente = escolhaDoNext(base, NULL, 0) ? fontepref_binge_tocando(base) : -1;
+      lembrada = nextCorrespondente;
       if (lembrada < 0)
         lembrada = base[0] ? (ajustes_fonte_manual() ? fontepref_escolher_manual(base)
                                                      : fontepref_escolher(base)) : -1;
@@ -6077,8 +6078,9 @@ void app_atualizar(float dt, Uint32 agora) {
       // uma folha entre um zap e outro e o oposto do que se quer de TV ao
       // vivo, e la a escolha ja e feita pela playlist que responde.
       //
-      // #667: a remembered source sets the sheet's focus, never consent to play.
-      if (ajustes_fonte_manual() && stream_n() > 0) {
+      // Initial Play remains manual. Explicit Next may follow a positive match
+      // of the source already playing; without a match the sheet still opens.
+      if (ajustes_fonte_manual() && nextCorrespondente < 0 && stream_n() > 0) {
         aguardandoFonte = 0;
         folhaParaTocar = 1;
         nomeParaFolha(); stream_folha_abrir();

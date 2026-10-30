@@ -278,7 +278,10 @@ int main(void) {
   fontepref_configurar(1, 0, 1, 1);
   v[1].bingeGroup[0] = 0; v[2].bingeGroup[0] = 0;
   k = fontepref_escolher_lista_next("tt4000009:1:2", v, 3, NULL, NULL);
-  CONFERE(k == 0, "next: no source with that bingeGroup falls back to the title memory (%d)", k);
+  CONFERE(k == 1, "next: missing bingeGroup follows the exact playing release (%d)", k);
+  fonte(&v[1], "Torrentio", "", "The.Show.S01E02.1080p.WEB-DL.x264-OTHER.mkv", 1080);
+  k = fontepref_escolher_lista_next("tt4000009:1:2", v, 3, NULL, NULL);
+  CONFERE(k == 0, "next: no matching group or release falls back to title memory (%d)", k);
   // Shared groups must follow the playing release, independently of title memory.
   n = lista(v, 1, ORDENS[0]);
   fontepref_tocando("tt4000009:1:1", &v[1]); // FLUX plays; title memory below becomes NTb.
