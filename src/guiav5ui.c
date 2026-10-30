@@ -64,7 +64,8 @@ static float g5_bloco_bruto(TxtEstilo e,const char *s,int r,int g,int b,float x,
 
 #define G5_CAP 4096
 #define VOD_ITEM 10000
-#define G5_GROUPS 96
+/* Every retained item may belong to a different provider category. */
+#define G5_GROUPS G5_CAP
 static struct {
   char server[256], user[96], password[96], playlist[2048], xmltv[1100], file[3100], name[96];
   int type, live, movies, series, epg;

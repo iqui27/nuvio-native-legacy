@@ -1,5 +1,5 @@
 /* Presentation-only groups retain every provider ID and playback record. */
-typedef struct { int root, tail, fonte; char nome[160], epg[160]; } GVarKey;
+typedef struct { int root, tail, fonte, cat; char nome[160], epg[160]; } GVarKey;
 static LtvArena varianteArena;
 static int variantesAtivas;
 static int *canalIndice;
@@ -33,12 +33,13 @@ static void variantesMontar(void) {
     /* Distinct explicit EPG identities never collapse on a generic name. */
     nv_dobrar(canais[i].epgId,epg,sizeof epg);
     if(!nome[0])continue;
-    unsigned slot=(ltv_hash(nome)*31UL+ltv_hash(epg)*7UL+(unsigned)canais[i].fonte)&(cap-1);
-    while(keys[slot].root&&(keys[slot].fonte!=canais[i].fonte||
+    /* Each provider category needs its own visible representative. */
+    unsigned slot=(ltv_hash(nome)*31UL+ltv_hash(epg)*7UL+(unsigned)canais[i].fonte+(unsigned)canais[i].cat*17UL)&(cap-1);
+    while(keys[slot].root&&(keys[slot].fonte!=canais[i].fonte||keys[slot].cat!=canais[i].cat||
           strcmp(keys[slot].nome,nome)||strcmp(keys[slot].epg,epg)))slot=(slot+1)&(cap-1);
     GVarKey *key=&keys[slot];
     if(!key->root){
-      key->root=key->tail=i+1;key->fonte=canais[i].fonte;
+      key->root=key->tail=i+1;key->fonte=canais[i].fonte;key->cat=canais[i].cat;
       snprintf(key->nome,sizeof key->nome,"%s",nome);snprintf(key->epg,sizeof key->epg,"%s",epg);
     }else{
       int root=key->root-1;
