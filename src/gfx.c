@@ -336,6 +336,12 @@ static const char *FS_CABECA =
   // tela. O quad da luz por baixo deixa de ser pintado (gfx_ambiente
   // "pendente", ver gfx_rect). uAmbOn liga o caminho; a UV da luz e vAmb, a
   // posicao na tela vinda do vertex shader — nao gl_FragCoord (ver o VS).
+  // One page scrim for both the expanding window and settled Detail.
+  "float nv_detail_veil(vec2 uv){\n"
+  "  float ax = uv.x < 0.45 ? mix(0.8,0.35,uv.x/0.45) : mix(0.35,0.0,clamp((uv.x-0.45)/0.25,0.0,1.0));\n"
+  "  float ay = uv.y < 0.25 ? 0.0 : uv.y < 0.55 ? mix(0.0,0.55,(uv.y-0.25)/0.30) : mix(0.55,0.92,(uv.y-0.55)/0.45);\n"
+  "  return 1.0-(1.0-ax)*(1.0-ay);\n"
+  "}\n"
   "uniform sampler2D uAmb;\n"
   "uniform float uAmbOn;\n"
   // CAMADAS DO DESTAQUE NUMA PASSADA SO (gfx_hero_camadas, GFX_*_CAM). Durante o
@@ -800,10 +806,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  a = 1.0 - (1.0 - a) * (1.0 - ab);\n"
   // Approved detail v2 CSS stops, fused into the existing dithered pass.
   "  if (uPar.y > 0.5) {\n"
-  "    float ax = x < 0.45 ? mix(0.8,0.35,x/0.45) : mix(0.35,0.0,clamp((x-0.45)/0.25,0.0,1.0));\n"
-  "    float ay = vUv.y < 0.25 ? 0.0 : vUv.y < 0.55 ? mix(0.0,0.55,(vUv.y-0.25)/0.30) : mix(0.55,0.92,(vUv.y-0.55)/0.45);\n"
-  "    a = 1.0-(1.0-ax)*(1.0-ay); bg=vec3(0.0);\n"
-  "    gl_FragColor=nv_dither(mix(c,bg,a*uFoco),uCor.a); return;\n"
+  "    a = nv_detail_veil(vUv);\n"
   "  }\n"
   // uFoco = FORCA da vinheta: 1 no topo, 0 com a pagina rolada. No web a
   // vinheta e uma CAMADA IRMA do backdrop e tem opacidade propria — ao rolar,
@@ -1419,13 +1422,9 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "    float base = smoothstep(0.56, 1.0, u.y) * 0.60;\n"
   "    a = 1.0 - (1.0 - ac) * (1.0 - base);\n"
   "  } else if (uPar.y > 0.999) {\n"
-  "    a = 1.0 - smoothstep(0.0, 0.82, u.x);\n"
-  "    float ab = smoothstep(0.70, 1.0, u.y) * 0.92;\n"
-  "    a = 1.0 - (1.0 - a) * (1.0 - ab);\n"
+  "    a = nv_detail_veil(u);\n"
   "  } else {\n"
-  "    float ap = 1.0 - smoothstep(0.0, 0.82, u.x);\n"
-  "    float ab = smoothstep(0.70, 1.0, u.y) * 0.92;\n"
-  "    ap = 1.0 - (1.0 - ap) * (1.0 - ab);\n"
+  "    float ap = nv_detail_veil(u);\n"
   "    float ac = (1.0 - smoothstep(0.18, 0.72, u.x)) * smoothstep(0.18, 0.68, u.y);\n"
   "    float base = smoothstep(0.56, 1.0, u.y) * 0.60;\n"
   "    ac = 1.0 - (1.0 - ac) * (1.0 - base);\n"

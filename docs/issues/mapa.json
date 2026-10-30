@@ -29434,8 +29434,1628 @@
    "veredito": null,
    "motivo": "merged into integracao/2.1 (733e633d9)",
    "assunto": "Merge agente/21-21-aiodash"
+  },
+  {
+   "branch": "agente/21-21-tpkdeps",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "3faf7adfd",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (3faf7adfd)",
+   "assunto": "build-time tools for tpk static deps"
+  },
+  {
+   "branch": "agente/21-21-embybib",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "c83fb6fcf",
+   "review": "j-21-rev-embybib.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (c83fb6fcf)",
+   "assunto": "Emby/Jellyfin full library and server subtitles (review approved, owner OK 29/10)"
+  },
+  {
+   "branch": "agente/21-21-trilhasfix",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "338e318d5",
+   "review": "j-21-rev-trilhasfix2.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (338e318d5)",
+   "assunto": "trails posters, fast open, visual-order focus, polish (review approved, owner OK 29/10)"
+  },
+  {
+   "branch": "agente/21-21-ios-m3",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "9f3fc43c8",
+   "review": "j-21-rev-ios-m3.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (9f3fc43c8)",
+   "assunto": "(review approved, owner OK 29/10)"
+  },
+  {
+   "branch": "agente/21-21-playinfo",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "5c9bfcd64",
+   "review": "j-21-rev-playinfo.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (5c9bfcd64)",
+   "assunto": "(review approved, owner OK 29/10)"
+  },
+  {
+   "branch": "agente/21-21-fontenome",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "7f270ba95",
+   "review": "j-21-rev-fontenome.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (7f270ba95)",
+   "assunto": "(review approved, owner OK 29/10)"
+  },
+  {
+   "branch": "agente/21-21-telaspolir",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "18bf3b209",
+   "review": "j-21-rev-telaspolir.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (18bf3b209)",
+   "assunto": "(review approved, owner OK 29/10)"
+  },
+  {
+   "branch": "agente/21-21-perfilstats",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "a52915384",
+   "review": "j-21-rev-perfilstats.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (a52915384)",
+   "assunto": "(review approved, owner OK 29/10)"
+  },
+  {
+   "branch": "agente/21-21-menuperf",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "060df9c84",
+   "review": "j-21-rev-menuperf.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (060df9c84)",
+   "assunto": "(review approved, owner OK 29/10)"
+  },
+  {
+   "branch": "agente/21-21-fileirarepensar",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "ecd523e3c",
+   "review": null,
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (ecd523e3c)",
+   "assunto": "V1 expanded-focus row with solid card (review approved, owner OK 29/10)"
+  },
+  {
+   "branch": "agente/21-21-vodcarga",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "201c4857a",
+   "review": "j-21-rev-vodcarga-f.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (201c4857a)",
+   "assunto": "fast VOD loading (review approved)"
+  },
+  {
+   "branch": "agente/21-21-guiaopcoes",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "99c1cc880",
+   "review": "j-21-rev-guiaopcoes-f.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (99c1cc880)",
+   "assunto": "(review approved, owner OK 29/10)"
+  },
+  {
+   "branch": "agente/21-21-espolir",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "d5e55986a",
+   "review": "j-21-rev-espolir-f.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (d5e55986a)",
+   "assunto": "(review approved, owner OK 29/10)"
+  },
+  {
+   "branch": "agente/21-21-canaisjuntar",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "d0a0bf1c0",
+   "review": "j-21-rev-canaisjuntar-f.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (d0a0bf1c0)",
+   "assunto": "(review approved, owner OK 29/10)"
+  },
+  {
+   "branch": "agente/21-21-bibsubir",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "879adecb7",
+   "review": "j-21-rev-bibsubir2.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (879adecb7)",
+   "assunto": "(review approved, owner OK 29/10)"
+  },
+  {
+   "branch": "agente/21-21-guiasom",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "ce443142e",
+   "review": "j-21-rev-guiasom2.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (ce443142e)",
+   "assunto": "(review approved, owner OK on PNGs 29/10)"
+  },
+  {
+   "branch": "agente/21-21-ios-m2",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "61ddff445",
+   "review": "j-21-rev-ios-m2c.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (61ddff445)",
+   "assunto": "iOS milestone 2, phone portrait screens on iPhone Duo (review approved, owner OK 29/10)"
+  },
+  {
+   "branch": "agente/21-21-guialayout",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "af17db1a6",
+   "review": "j-21-rev-guialayout3.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (af17db1a6)",
+   "assunto": "guide footer sources, bigger preview, no hint bar (review approved, owner OK on PNGs 29/10)"
+  },
+  {
+   "branch": "agente/205-perfis21",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "8814b2f8d",
+   "review": "j-21-rev-perfis21b.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (8814b2f8d)",
+   "assunto": "(review approved, owner OK on PNGs 29/10)"
+  },
+  {
+   "branch": "agente/21-21-detinfo",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "ac94e1883",
+   "review": "j-21-rev-detinfo2.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (ac94e1883)",
+   "assunto": "(review approved, owner OK on PNGs 29/10)"
+  },
+  {
+   "branch": "agente/21-21-espevento",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "56b898318",
+   "review": "j-21-rev-espevento.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (56b898318)",
+   "assunto": "(review approved, owner OK on PNGs 29/10)"
+  },
+  {
+   "branch": "agente/21-21-ajustespolir",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "a945c1d74",
+   "review": "j-21-rev-ajustespolir.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (a945c1d74)",
+   "assunto": "(review approved, owner OK on PNGs 29/10)"
+  },
+  {
+   "branch": "agente/21-21-quickanim",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "5b2df91c1",
+   "review": "j-21-rev-quickanim.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (5b2df91c1)",
+   "assunto": "(review approved, owner OK on PNGs 29/10)"
+  },
+  {
+   "branch": "agente/21-21-chipfonte2",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "c153152f9",
+   "review": "j-21-rev-chipfonte2.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (c153152f9)",
+   "assunto": "(review approved, owner OK on PNGs 29/10)"
+  },
+  {
+   "branch": "agente/205-herotamanho",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "80a52d473",
+   "review": "j-21-rev-herotamanho.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (80a52d473)",
+   "assunto": "(review approved, owner OK on PNGs 28/10)"
+  },
+  {
+   "branch": "agente/205-heroglassfoco",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "0807c2f47",
+   "review": "j-21-rev-heroglassfoco.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (0807c2f47)",
+   "assunto": "(review approved, owner OK on PNGs 28/10)"
+  },
+  {
+   "branch": "agente/21-21-ajustesfable",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "3485af0f0",
+   "review": "j-21-rev6-ajustesfable.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (3485af0f0)",
+   "assunto": "three-island Settings (review approved, owner OK on PNGs 28/10)"
+  },
+  {
+   "branch": "agente/21-21-guiacard",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "22386135d",
+   "review": "j-21-rev-guiacard.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (22386135d)",
+   "assunto": "(review approved, owner OK on PNGs 28/10)"
+  },
+  {
+   "branch": "agente/21-21-listastrava",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "7917e1ae3",
+   "review": "j-21-rev-listastrava.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (7917e1ae3)",
+   "assunto": "(review approved)"
+  },
+  {
+   "branch": "agente/21-trilhas-shots",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "b8e9007bc",
+   "review": "j-21-rev3-trilhas.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (b8e9007bc)",
+   "assunto": "(owner OK on PNGs 28/10; review running)"
+  },
+  {
+   "branch": "agente/21-21-bibfonte",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "06c83c1c8",
+   "review": "j-21-rev-bibfonte.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (06c83c1c8)",
+   "assunto": "(owner OK on PNGs 28/10; review running)"
+  },
+  {
+   "branch": "agente/21-21-redondaanim",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "5850dace3",
+   "review": "j-21-rev-redondaanim.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (5850dace3)",
+   "assunto": "(owner OK on PNGs 28/10; review running)"
+  },
+  {
+   "branch": "agente/21-21-atvcanais",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "027105385",
+   "review": "j-21-rev-atvcanais.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (027105385)",
+   "assunto": "(review approved)"
+  },
+  {
+   "branch": "agente/21-21-legkern",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "969ae796b",
+   "review": "j-21-rev-legkern.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (969ae796b)",
+   "assunto": "(review approved)"
+  },
+  {
+   "branch": "agente/21-21-ios-m1",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "8480546ae",
+   "review": "j-21-rev3-ios-m1.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (8480546ae)",
+   "assunto": "iOS milestone 1, C core on iPhone Duo with system side bar (review approved)"
+  },
+  {
+   "branch": "agente/21-21-juntosux",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "5ec9480cc",
+   "review": "j-21-rev11-juntosux.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (5ec9480cc)",
+   "assunto": "(review approved, owner OK)"
+  },
+  {
+   "branch": "agente/21-21-iosmock",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "5984bbda0",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (5984bbda0)",
+   "assunto": "iOS/iPhone Duo plan and mockup generator (owner approved)"
+  },
+  {
+   "branch": "agente/21-21-homeanim",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "d30350e98",
+   "review": "j-21-rev5-homeanim.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (d30350e98)",
+   "assunto": "(review approved, owner OK on PNGs 28/10)"
+  },
+  {
+   "branch": "agente/21-21-detsrv",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "769c80d1b",
+   "review": "j-21-rev5-detsrv.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (769c80d1b)",
+   "assunto": "(review approved, owner OK on PNGs 28/10)"
+  },
+  {
+   "branch": "agente/21-21-detsecoes",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "f5b5ba938",
+   "review": "j-21-rev5-detsecoes.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (f5b5ba938)",
+   "assunto": "(review approved, owner OK on PNGs 28/10)"
+  },
+  {
+   "branch": "agente/21-21-epsmoderno",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "14ed3774b",
+   "review": "j-21-rev5-epsmoderno.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (14ed3774b)",
+   "assunto": "(review approved, owner OK on PNGs 28/10)"
+  },
+  {
+   "branch": "agente/21-21-listasux",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "bdcbae393",
+   "review": "j-21-rev6-listasux.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (bdcbae393)",
+   "assunto": "(review approved, owner OK on PNGs 28/10)"
+  },
+  {
+   "branch": "agente/21-21-vodui",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "d0651231f",
+   "review": "j-21-rev7-vodui.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (d0651231f)",
+   "assunto": "(review approved, owner OK on PNGs 28/10)"
+  },
+  {
+   "branch": "agente/21-21-xtvod",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "c149a99c6",
+   "review": "j-21-rev5-xtvod.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (c149a99c6)",
+   "assunto": "recover Xtream VOD lists and add live sports channels (review approved)"
+  },
+  {
+   "branch": "agente/21-21-aioimpl",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "45d9801a0",
+   "review": "j-21-rev4-aioimpl.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (45d9801a0)",
+   "assunto": "AIOStreams capabilities, identity, full catalogs and diagnostics (review approved)"
+  },
+  {
+   "branch": "agente/21-21-fonteincompat",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "322205627",
+   "review": "j-21-rev3-fonteincompat.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (322205627)",
+   "assunto": "hide sources incompatible with this TV (review approved, owner OK)"
+  },
+  {
+   "branch": "agente/21-21-guiapolir",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "7ff9171ad",
+   "review": "j-21-rev3-guiapolir.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (7ff9171ad)",
+   "assunto": "(review approved, owner OK)"
+  },
+  {
+   "branch": "agente/21-21-sportsux",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "1e01e0ef2",
+   "review": "j-21-rev2-sportsux.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (1e01e0ef2)",
+   "assunto": "predictable Sports navigation, settings and favorites (owner OK)"
+  },
+  {
+   "branch": "agente/21-21-detacoes",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "34c7984ae",
+   "review": "j-21-rev2-detacoes.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (34c7984ae)",
+   "assunto": "Detail hero More expands and morphs into its menu (owner OK)"
+  },
+  {
+   "branch": "agente/21-21-tz5rede",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "01e41949e",
+   "review": "j-21-rev-tz5rede.log",
+   "veredito": "APROVADO",
+   "motivo": "merged into integracao/2.1 (01e41949e)",
+   "assunto": "Tizen 5 connection lost on source select"
+  },
+  {
+   "branch": "agente/21-21-fonteaddon",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "0bbce98ed",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (0bbce98ed)",
+   "assunto": "add-on text with color emoji in Sources"
+  },
+  {
+   "branch": "agente/21-21-ess-srvsetup",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "d6ede5da1",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (d6ede5da1)",
+   "assunto": ""
+  },
+  {
+   "branch": "agente/21-21-autofonte",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "735bb97e0",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (735bb97e0)",
+   "assunto": ""
+  },
+  {
+   "branch": "agente/21-21-legaddons",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "9fd3657de",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (9fd3657de)",
+   "assunto": ""
+  },
+  {
+   "branch": "agente/21-21-celular",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "a989cbc06",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (a989cbc06)",
+   "assunto": ""
+  },
+  {
+   "branch": "agente/21-21-essencia",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "6c583c82a",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (6c583c82a)",
+   "assunto": "2.1 essence audit and fix queue"
+  },
+  {
+   "branch": "agente/21-21-diretor",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "7470574f3",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (7470574f3)",
+   "assunto": ""
+  },
+  {
+   "branch": "agente/21-21-penmotion",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "8f3e38976",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (8f3e38976)",
+   "assunto": "Pencil Settings page slide and fade"
+  },
+  {
+   "branch": "agente/21-21-ajustespen",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "35b58cbe3",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (35b58cbe3)",
+   "assunto": "Pencil Settings with Opus review fixes"
+  },
+  {
+   "branch": "agente/21-21-mergeguia",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "973879185",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (973879185)",
+   "assunto": "guide preview alignment, Spotlight search, VOD focus guard (2 reviews OK)"
+  },
+  {
+   "branch": "agente/21-21-guialib",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "a609d6b3d",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (a609d6b3d)",
+   "assunto": "(owner OK)"
+  },
+  {
+   "branch": "agente/21-21-fontesbotoes",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "91388cea5",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (91388cea5)",
+   "assunto": "(owner OK)"
+  },
+  {
+   "branch": "agente/21-21-guiabusca",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "a090a372f",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (a090a372f)",
+   "assunto": "(owner OK)"
+  },
+  {
+   "branch": "agente/21-21-buscateclado",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "0c914ab47",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (0c914ab47)",
+   "assunto": "(owner OK)"
+  },
+  {
+   "branch": "agente/21-21-setuptv2",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "b015f7eb7",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (b015f7eb7)",
+   "assunto": "(owner OK)"
+  },
+  {
+   "branch": "agente/21-21-socialtopo",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "cac7c6fa3",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (cac7c6fa3)",
+   "assunto": "(owner OK)"
+  },
+  {
+   "branch": "agente/21-21-guiaplay",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "39a72f2f3",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (39a72f2f3)",
+   "assunto": "(2 reviews OK)"
+  },
+  {
+   "branch": "agente/21-21-fileiras",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "eafd7ebd1",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (eafd7ebd1)",
+   "assunto": "(2 reviews OK)"
+  },
+  {
+   "branch": "agente/21-21-juntos400",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "5bb19a962",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (5bb19a962)",
+   "assunto": "Watch Together room 400 fix (2 reviews OK)"
+  },
+  {
+   "branch": "agente/21-21-setuptv",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "5423a59d4",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (5423a59d4)",
+   "assunto": "(owner OK, 2 reviews OK)"
+  },
+  {
+   "branch": "agente/21-21-guiapreview",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "53c7f0204",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (53c7f0204)",
+   "assunto": "(owner OK, 2 reviews OK)"
+  },
+  {
+   "branch": "agente/21-21-fontesanim",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "949ea5b51",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (949ea5b51)",
+   "assunto": "Sources grows from clock island (owner OK)"
+  },
+  {
+   "branch": "agente/21-21-social",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "a28492931",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (a28492931)",
+   "assunto": "(owner OK)"
+  },
+  {
+   "branch": "agente/21-21-esportes619",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "4e9ae476b",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (4e9ae476b)",
+   "assunto": "PR #619 Sports in guide v5 (owner OK)"
+  },
+  {
+   "branch": "agente/21-21-notasmarca",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "82702b125",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (82702b125)",
+   "assunto": "(owner OK)"
+  },
+  {
+   "branch": "agente/21-21-chipfonte",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "fd44f4b48",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (fd44f4b48)",
+   "assunto": "(owner OK)"
+  },
+  {
+   "branch": "agente/21-21-comecar",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "d2cb89532",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (d2cb89532)",
+   "assunto": ""
+  },
+  {
+   "branch": "agente/21-21-guiabugs",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "22f0fe7e3",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (22f0fe7e3)",
+   "assunto": ""
+  },
+  {
+   "branch": "agente/21-21-juntosauth",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "c73a7712d",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (c73a7712d)",
+   "assunto": ""
+  },
+  {
+   "branch": "agente/21-21-juntos62",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "eb64f6418",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (eb64f6418)",
+   "assunto": ""
+  },
+  {
+   "branch": "agente/21-21-navteste",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "01d651f13",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (01d651f13)",
+   "assunto": ""
+  },
+  {
+   "branch": "agente/21-21-ess-tour",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "ad7c86907",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (ad7c86907)",
+   "assunto": "(owner OK)"
+  },
+  {
+   "branch": "agente/21-21-ess-listas",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "a2f020494",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (a2f020494)",
+   "assunto": "(owner OK)"
+  },
+  {
+   "branch": "agente/21-21-ess-fontes",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "f95949f75",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (f95949f75)",
+   "assunto": "(owner OK)"
+  },
+  {
+   "branch": "agente/21-21-juntosfluido",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "8738ad845",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (8738ad845)",
+   "assunto": ""
+  },
+  {
+   "branch": "agente/21-21-aacfalha",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "af9fc65d4",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (af9fc65d4)",
+   "assunto": ""
+  },
+  {
+   "branch": "agente/21-21-juntostcl",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "8b5eb010f",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (8b5eb010f)",
+   "assunto": ""
+  },
+  {
+   "branch": "agente/21-21-deezer403",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "b82a058f8",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (b82a058f8)",
+   "assunto": ""
+  },
+  {
+   "branch": "agente/21-21-ratings3",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "5de406f72",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (5de406f72)",
+   "assunto": "(owner OK)"
+  },
+  {
+   "branch": "agente/21-21-j2",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "74dc0d9f1",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (74dc0d9f1)",
+   "assunto": "(owner OK)"
+  },
+  {
+   "branch": "agente/21-21-ess-conquistas",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "eea153873",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (eea153873)",
+   "assunto": "(owner OK)"
+  },
+  {
+   "branch": "agente/21-21-juntosready",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "4367a93e1",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (4367a93e1)",
+   "assunto": ""
+  },
+  {
+   "branch": "agente/21-21-musicamodal",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "dee876f2b",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (dee876f2b)",
+   "assunto": ""
+  },
+  {
+   "branch": "agente/21-21-juntoscinema",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "a21488e30",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (a21488e30)",
+   "assunto": ""
+  },
+  {
+   "branch": "agente/21-21-guiapolish",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "847ebdcf2",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (847ebdcf2)",
+   "assunto": ""
+  },
+  {
+   "branch": "agente/21-21-juntoslobby",
+   "status": "integrada",
+   "commits_a_frente": 0,
+   "ultimo_commit": "ddaa338ab",
+   "review": null,
+   "veredito": null,
+   "motivo": "merged into integracao/2.1 (ddaa338ab)",
+   "assunto": ""
+  },
+  {
+   "branch": "agente/202-biblioteca",
+   "status": "perdida",
+   "commits_a_frente": 7,
+   "ultimo_commit": "3 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "fix(lists): only 2xx answers fill a shelf or a cover"
+  },
+  {
+   "branch": "agente/203-318-play",
+   "status": "perdida",
+   "commits_a_frente": 2,
+   "ultimo_commit": "3 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "android (#318): relator de queda nativa no Android < 12, encadeado a ART"
+  },
+  {
+   "branch": "agente/203-323",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "3 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "fix(streams): conferencia paralela lia pilha devolvida (SIGSEGV em verificarOuParar, #323)"
+  },
+  {
+   "branch": "agente/203-perfilsel",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "3 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "perfilsel (#203): continuar sob cada avatar (variante D2): capa 2:3, titulo, T2 · E5 · 23 min e fio de progresso, apagado sem foco"
+  },
+  {
+   "branch": "agente/2031-dvp5-hdr10",
+   "status": "perdida",
+   "commits_a_frente": 2,
+   "ultimo_commit": "3 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "fix(fonte): mp4 primeiro da LG nao poe o perfil 5 na frente de um HDR10 da faixa"
+  },
+  {
+   "branch": "agente/204-arabe370",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "3 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "mapa (#370): log H33SP3 confirma quadradinhos e recargas (v2.0.3); sincronismo sem prova de defeito nosso, rascunho da resposta"
+  },
+  {
+   "branch": "agente/204-pr381",
+   "status": "perdida",
+   "commits_a_frente": 2,
+   "ultimo_commit": "3 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "scratch: icon mapping + tail assertion for AJ_AUTO_CREDITOS (integration-only registries)"
+  },
+  {
+   "branch": "agente/204-samsung-dts",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "3 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "docs(plans): spike DTS/TrueHD escondido na Samsung (2.0.4+)"
+  },
+  {
+   "branch": "agente/204-webos-versao",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "3 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "webOS: versao real da TV (nyx os_info) em webosMaior, starfish e acb como reserva"
+  },
+  {
+   "branch": "agente/205-205-legaddonsync",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "9 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "test: cover Subtitle Sync public manifest compatibility"
+  },
+  {
+   "branch": "agente/205-205-legsync21",
+   "status": "perdida",
+   "commits_a_frente": 22,
+   "ultimo_commit": "4 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "fix(subtitles): restore best choice group and candidate badges"
+  },
+  {
+   "branch": "agente/205-205-salvosremover",
+   "status": "perdida",
+   "commits_a_frente": 37,
+   "ultimo_commit": "3 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "Merge integracao/2.0.5 into agente/205-205-salvosremover"
+  },
+  {
+   "branch": "agente/205-205-traktlogin",
+   "status": "perdida",
+   "commits_a_frente": 2,
+   "ultimo_commit": "8 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "Fix translation table order for Trakt retry message"
+  },
+  {
+   "branch": "agente/205-cw-addon",
+   "status": "perdida",
+   "commits_a_frente": 5,
+   "ultimo_commit": "3 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "fix: keep episode lists provisional until addon selection ends"
+  },
+  {
+   "branch": "agente/205-cw-lento",
+   "status": "perdida",
+   "commits_a_frente": 3,
+   "ultimo_commit": "4 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "fix: retain recovery after saved-source resume"
+  },
+  {
+   "branch": "agente/205-foco-fileira",
+   "status": "perdida",
+   "commits_a_frente": 2,
+   "ultimo_commit": "4 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "fix(home): refresh saved item positions after row rebuilds"
+  },
+  {
+   "branch": "agente/205-glassmock",
+   "status": "perdida",
+   "commits_a_frente": 2,
+   "ultimo_commit": "2 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "docs(design): retune glass chrome direction A to tvOS 27 (A27)"
+  },
+  {
+   "branch": "agente/205-homebrew",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "2 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "Add webOS Homebrew Channel publishing research and draft manifest"
+  },
+  {
+   "branch": "agente/205-launchertcl-apps-grade",
+   "status": "perdida",
+   "commits_a_frente": 227,
+   "ultimo_commit": "5 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "fix(launcher): Apps grid bake review notes"
+  },
+  {
+   "branch": "agente/205-launchertcl-gemini-falha",
+   "status": "perdida",
+   "commits_a_frente": 239,
+   "ultimo_commit": "5 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "fix(assistente): log every request; transport and 502/504 failures get their own message"
+  },
+  {
+   "branch": "agente/205-launchertcl-gemini-ilha",
+   "status": "perdida",
+   "commits_a_frente": 42,
+   "ultimo_commit": "9 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "fix: share assistant quota per account and strip voice-search prefix"
+  },
+  {
+   "branch": "agente/205-launchertcl-ilha-polida",
+   "status": "perdida",
+   "commits_a_frente": 197,
+   "ultimo_commit": "6 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "Merge branch 'exp/casa-unica' into agente/205-launchertcl-ilha-polida"
+  },
+  {
+   "branch": "agente/205-launchertcl-launcher-perf",
+   "status": "perdida",
+   "commits_a_frente": 222,
+   "ultimo_commit": "6 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "fix(screensaver): pin only the last drawn app frame's art under the veil"
+  },
+  {
+   "branch": "agente/205-launchertcl-launcher-vivo",
+   "status": "perdida",
+   "commits_a_frente": 122,
+   "ultimo_commit": "7 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "launcher: keep the icon choice in HOME mode; review fixes"
+  },
+  {
+   "branch": "agente/205-launchertcl-launchertcl-home-modo",
+   "status": "perdida",
+   "commits_a_frente": 71,
+   "ultimo_commit": "7 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "test(saguao): cover settings persistence voice and populated row return"
+  },
+  {
+   "branch": "agente/205-launchertcl-launchertcl-plano-integrado",
+   "status": "perdida",
+   "commits_a_frente": 73,
+   "ultimo_commit": "7 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "design(saguao-integrado): PLANO sections 5, 9 and 11 for the four home layouts"
+  },
+  {
+   "branch": "agente/205-launchertcl-luzes-calibrar",
+   "status": "perdida",
+   "commits_a_frente": 204,
+   "ultimo_commit": "6 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "luzcal: close at once when a player opens or the cards stop drawing; disarm on profile change; save each tweak"
+  },
+  {
+   "branch": "agente/205-launchertcl-luzes-cor",
+   "status": "perdida",
+   "commits_a_frente": 213,
+   "ultimo_commit": "6 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "ajustes: picking Personalizado never applies a lights preset"
+  },
+  {
+   "branch": "agente/205-launchertcl-luzes-imersao",
+   "status": "perdida",
+   "commits_a_frente": 187,
+   "ultimo_commit": "6 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "Merge exp/casa-unica (Saguao pages) into the lights immersion branch"
+  },
+  {
+   "branch": "agente/205-launchertcl-luzes-wled",
+   "status": "perdida",
+   "commits_a_frente": 133,
+   "ultimo_commit": "7 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "lights: restore on quit, JNI copies the frame out, PixelCopy thread only while playing"
+  },
+  {
+   "branch": "agente/205-launchertcl-paginas",
+   "status": "perdida",
+   "commits_a_frente": 181,
+   "ultimo_commit": "7 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "casaperfil: lock the store; the sync worker copies painelWidgets"
+  },
+  {
+   "branch": "agente/205-launchertcl-painel-leve",
+   "status": "perdida",
+   "commits_a_frente": 239,
+   "ultimo_commit": "5 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "perf(launcher): Painel from a page copy, neighbour background baked ahead"
+  },
+  {
+   "branch": "agente/205-launchertcl-parallax-leve",
+   "status": "perdida",
+   "commits_a_frente": 237,
+   "ultimo_commit": "5 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "fix(gfx): blur refusal only for targets larger than the screen; strips last"
+  },
+  {
+   "branch": "agente/205-launchertcl-polido-escala",
+   "status": "perdida",
+   "commits_a_frente": 234,
+   "ultimo_commit": "5 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "Merge exp/casa-unica (Apps grid bake) into polido-escala"
+  },
+  {
+   "branch": "agente/205-launchertcl-render-4k",
+   "status": "perdida",
+   "commits_a_frente": 82,
+   "ultimo_commit": "7 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "Render Android TV UI at physical resolution with session p95 fallback"
+  },
+  {
+   "branch": "agente/205-launchertcl-rust-avaliacao",
+   "status": "perdida",
+   "commits_a_frente": 208,
+   "ultimo_commit": "6 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "rust-avaliacao: run-cross.sh (Android NDK, Tizen 4 gcc, emscripten link proof) + tiny C probe"
+  },
+  {
+   "branch": "agente/205-launchertcl-saguao-fiel",
+   "status": "perdida",
+   "commits_a_frente": 125,
+   "ultimo_commit": "7 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "design: Saguao pages v3 mockup (analog clock styles, weather widget, Showcase without back pill)"
+  },
+  {
+   "branch": "agente/205-launchertcl-saguao-fix-menu",
+   "status": "perdida",
+   "commits_a_frente": 99,
+   "ultimo_commit": "7 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "test(menu): use the Apps home mode index after the 4-mode picker"
+  },
+  {
+   "branch": "agente/205-launchertcl-saguao-j1-barra",
+   "status": "perdida",
+   "commits_a_frente": 81,
+   "ultimo_commit": "7 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "fix(launcher): finish unified navigation and island voice routing"
+  },
+  {
+   "branch": "agente/205-launchertcl-saguao-j2-lista",
+   "status": "perdida",
+   "commits_a_frente": 88,
+   "ultimo_commit": "7 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "Merge exp/casa-unica preserving shared rows and unified sidebar"
+  },
+  {
+   "branch": "agente/205-launchertcl-saguao-j4-baixo",
+   "status": "perdida",
+   "commits_a_frente": 92,
+   "ultimo_commit": "7 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "saguao (J3/J4): base proof for the low content, keep the J2 proof building"
+  },
+  {
+   "branch": "agente/205-launchertcl-saguao-j4a-seletor",
+   "status": "perdida",
+   "commits_a_frente": 93,
+   "ultimo_commit": "7 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "fix(settings): show TV home mode only with active launcher"
+  },
+  {
+   "branch": "agente/205-launchertcl-saguao-j5-ilhapag",
+   "status": "perdida",
+   "commits_a_frente": 93,
+   "ultimo_commit": "7 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "Merge exp/casa-unica preserving page pulses and shared launcher rows"
+  },
+  {
+   "branch": "agente/205-launchertcl-saguao-minimal",
+   "status": "perdida",
+   "commits_a_frente": 66,
+   "ultimo_commit": "7 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "fix: keep launcher channel shortcut behind overlays"
+  },
+  {
+   "branch": "agente/205-launchertcl-saguao-nitidez",
+   "status": "perdida",
+   "commits_a_frente": 81,
+   "ultimo_commit": "7 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "docs(saguao): bigger home scale and native 4K rendering requirement"
+  },
+  {
+   "branch": "agente/205-launchertcl-voz-assistente",
+   "status": "perdida",
+   "commits_a_frente": 135,
+   "ultimo_commit": "7 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "voice: vozmicservico honors TMPDIR"
+  },
+  {
+   "branch": "agente/205-launchertcl-voz-fix",
+   "status": "perdida",
+   "commits_a_frente": 137,
+   "ultimo_commit": "7 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "voice: MIC with another app in front moves the live task forward"
+  },
+  {
+   "branch": "agente/205-legajuste",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "13 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "docs: spec for Stremio-style subtitle adjust and auto-sync improvements"
+  },
+  {
+   "branch": "agente/205-legembut",
+   "status": "perdida",
+   "commits_a_frente": 2,
+   "ultimo_commit": "4 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "fix(subtitles): keep embedded reader alive under memory pressure"
+  },
+  {
+   "branch": "agente/205-mock21",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "2 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "design(2.1): friends row mockup with 5 modern styles (#205)"
+  },
+  {
+   "branch": "agente/205-pasta-titulo",
+   "status": "perdida",
+   "commits_a_frente": 2,
+   "ultimo_commit": "4 days ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "feat: allow hiding folder details in the Home hero"
+  },
+  {
+   "branch": "agente/205-respostas",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "3 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "docs(issues): draft replies for open issues in release 2.0.5"
+  },
+  {
+   "branch": "agente/205-tizenbrew",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "2 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "docs: TizenBrew research, module draft, submission draft"
+  },
+  {
+   "branch": "agente/21-21-desktop",
+   "status": "bloqueado",
+   "commits_a_frente": 15,
+   "ultimo_commit": "2 hours ago",
+   "review": "j-21-rev-desktop.log",
+   "veredito": "BLOQUEADO",
+   "motivo": "review BLOQUEADO",
+   "assunto": "Document desktop playback evidence and remaining visual limitations"
+  },
+  {
+   "branch": "agente/21-21-desktop-mpv",
+   "status": "em andamento",
+   "commits_a_frente": 2,
+   "ultimo_commit": "3 hours ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "live pi job",
+   "assunto": "feat: add libmpv desktop playback and verified runtime bundling"
+  },
+  {
+   "branch": "agente/21-21-desktop-ui",
+   "status": "em andamento",
+   "commits_a_frente": 2,
+   "ultimo_commit": "3 hours ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "live pi job",
+   "assunto": "Add responsive desktop sidebar and Home layout"
+  },
+  {
+   "branch": "agente/21-21-ios-video",
+   "status": "em andamento",
+   "commits_a_frente": 5,
+   "ultimo_commit": "2 minutes ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "live pi job",
+   "assunto": "ios: hand SDL's view controller back to the window before teardown"
+  },
+  {
+   "branch": "agente/ajustesvisual",
+   "status": "perdida",
+   "commits_a_frente": 2,
+   "ultimo_commit": "4 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "ajustes visual: 'atual' nao cai em A; folha de aviso em vidro nas direcoes; indice de B sem cortar"
+  },
+  {
+   "branch": "agente/biblioteca-ilimitada-plano",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "3 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "docs(biblioteca): plano da biblioteca sem teto (indice leve, janela de CatItem, paginas sob demanda)"
+  },
+  {
+   "branch": "agente/codex-contexto",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "4 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "docs: consolidate Glass UI context"
+  },
+  {
+   "branch": "agente/icones",
+   "status": "perdida",
+   "commits_a_frente": 5,
+   "ultimo_commit": "4 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "Android: troca do alias do launcher na saida do app (trocar na hora fechava a tarefa)"
+  },
+  {
+   "branch": "agente/p2p",
+   "status": "perdida",
+   "commits_a_frente": 6,
+   "ultimo_commit": "4 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "p2p motor: build-mac.sh e teste real compilando fora da arvore"
+  },
+  {
+   "branch": "agente/plugins",
+   "status": "perdida",
+   "commits_a_frente": 14,
+   "ultimo_commit": "4 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "addons: com fonte de addon na mao, a origem extra (plugins) ganha 6 s e e cortada; o que ja terminou fica"
+  },
+  {
+   "branch": "agente/pr259-merge",
+   "status": "perdida",
+   "commits_a_frente": 4,
+   "ultimo_commit": "3 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "DTS fallback: only for a known DTS track, back to native playback on failure"
+  },
+  {
+   "branch": "agente/rastreio",
+   "status": "perdida",
+   "commits_a_frente": 6,
+   "ultimo_commit": "3 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "rastreio: guarda estrito (TEMPO/AUSENTE/pulado, falhas conhecidas por nome+rc+assinatura, sem teste listado, timeout 90 s com override), base do release sem a tag do HEAD, reproducers"
+  },
+  {
+   "branch": "agente/refatoracao-plano",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "3 weeks ago",
+   "review": null,
+   "veredito": null,
+   "motivo": "no live job, no review log in 3 days",
+   "assunto": "docs: plano geral de refatoracao (Codex, graphify + ponytail)"
   }
  ],
- "jobs_atualizado_em": "2026-10-29T09:16:44",
- "jobs_nota": "Escrivao 2026-10-29T09:16:44, HEAD 201c4857a. Uma entrada por branch a frente de integracao/2.1 e por merge das ultimas 72h; append-only (entradas anteriores preservadas). Status: em andamento / revisao / bloqueado / integrada / perdida. Sem jobs vivos no snapshot. Perdidos em /Volumes/ExternalSSD/tmp/rev/escrivao/estado.md."
+ "jobs_atualizado_em": "2026-10-29T15:58:55",
+ "jobs_nota": "Escrivao 2026-10-29T15:58:55, HEAD 3faf7adfd. Uma entrada por branch a frente de integracao/2.1 e por merge das ultimas 72h; append-only (entradas anteriores preservadas). Status: em andamento / revisao / bloqueado / integrada / perdida. Perdidos detalhados em /Volumes/ExternalSSD/tmp/rev/escrivao/estado.md. Snapshot: 96 integradas, 66 a frente, 62 perdidas."
 }

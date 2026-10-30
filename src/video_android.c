@@ -27,6 +27,7 @@
 // video_creditos; passthrough fino de AC3/EAC3 por AudioCapabilities.
 #ifdef NV_ANDROID
 #include "marco.h"
+#include "nv_ticks.h"
 #include "streams.h"
 #include "juntos.h"
 #include "video.h"
@@ -565,7 +566,7 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativePos(JNIEnv *
     int conhecida = ms > (jlong)(INT64_MIN + 1);
     posMs = posNativoMs = !conhecida || ms < 0 ? 0 : ms > INT_MAX ? INT_MAX : (int)ms;
     pthread_mutex_lock(&travaAmostra);
-    posAmostraMs = posMs; posAmostraEm = SDL_GetTicks64();
+    posAmostraMs = posMs; posAmostraEm = nv_ticks64();
     pthread_mutex_unlock(&travaAmostra);
     liveProgressoValido = live && conhecida;
     livePosMs = conhecida ? ms : 0;
@@ -584,6 +585,20 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativePos(JNIEnv *
 // (AnalyticsListener). A trava e curta: o app copia no quadro dele.
 static pthread_mutex_t travaStats = PTHREAD_MUTEX_INITIALIZER;
 static VideoStats statsAndroid;
+static VideoInfo infoAndroid;
+JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeInfo(JNIEnv *env, jclass cls,
+    jstring codec, jstring container, jfloat fps, jint kbps) {
+  VideoInfo info = {0}; (void)cls;
+  deJString(env, codec, info.codec, sizeof info.codec);
+  deJString(env, container, info.container, sizeof info.container);
+  info.fps = fps > 0 ? fps : 0; info.kbps = kbps > 0 ? kbps : 0;
+  pthread_mutex_lock(&travaStats); infoAndroid = info; pthread_mutex_unlock(&travaStats);
+}
+void video_informacoes(VideoInfo *s) {
+  pthread_mutex_lock(&travaStats);
+  *s = ativo ? infoAndroid : (VideoInfo){0};
+  pthread_mutex_unlock(&travaStats);
+}
 static RedeFit redeFit;
 static int statsValido, redeMinMs = -1, redeMaxMs = -1, redeMaxMb = -1;
 static double redeMbps = -1;
@@ -844,13 +859,14 @@ static int abrirSessao(int inicioMs, int fracao) {
   velEnviada = 100;
   largura = altura = durMs = posMs = posNativoMs = 0; bufferando = 1; bufferDesde = SDL_GetTicks();
   pthread_mutex_lock(&travaAmostra);
-  posAmostraMs = 0; posAmostraEm = SDL_GetTicks64();
+  posAmostraMs = 0; posAmostraEm = nv_ticks64();
   pthread_mutex_unlock(&travaAmostra);
   tocandoDesde = 0; semDecoderAudio = 0; erroTxt[0] = 0; reconErroVideo = 0;
   pausaVista = 0;
   pausaPedida = juntos_precarregando();
   hdrAtual = "none"; dvAtual = atmosAtual = 0;
   pthread_mutex_lock(&travaStats); statsValido = 0;
+  memset(&infoAndroid, 0, sizeof infoAndroid);
   redeMbps = -1; redeMinMs = redeMaxMs = redeMaxMb = -1;
   memset(&redeFit, 0, sizeof redeFit); redeKbps = playerSessao ? stream_kbps_atual() : 0;
   pthread_mutex_unlock(&travaStats);

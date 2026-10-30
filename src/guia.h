@@ -199,6 +199,7 @@ int  guia_fonte_saude(int i, GuiaFonteSaude *o);
 int guia_fonte_ligada(int i);
 int guia_fonte_playback_permitida(const char *base);
 int guia_fonte_alternar(int i);
+int guia_fonte_remover(int i);
 int guia_vod_item(int i,G5Item *out);
 const char *guia_vod_origem(const char *source);
 int  guia_canal_campos(int i, const char **id, const char **nome, const char **logo,

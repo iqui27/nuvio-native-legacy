@@ -1,5 +1,6 @@
 // Watch Together: a interface — ver juntosui.h.
 #include "juntosui.h"
+#include "nv_ticks.h"
 #include "ajustes.h"
 #include "botoes.h"
 #include "badges.h"
@@ -769,7 +770,7 @@ void juntosui_atualizar(Uint32 agora) {
   // Cinema start (owner 26/10): at t0 the lobby does not vanish. Its art fades
   // and the film comes forward under it; the person pauses or enters the session.
   if (lobbyAberto && !cinema && !stream_folha_aberta() && sala && sala->temSala && sala->sala.rel.estado == JSE_TOCANDO &&
-      jsr_servidor(&sala->rel, (double)SDL_GetTicks64()) >= sala->sala.rel.t0 &&
+      jsr_servidor(&sala->rel, (double)nv_ticks64()) >= sala->sala.rel.t0 &&
       sala->prontoAnterior && !sala->playArmado) {
     cinema = 1; cinemaAnim = 0; foco = 0; mostrarQr = qrPendente = 0;
     if (camada != CAMADA_SAIR) camada = CAMADA_SALA;
@@ -1500,7 +1501,7 @@ static void desenharSala(void) {
       xd -= BOTAO_GAP;
     }
   }
-  texto(TXT_CAPTION, i18n("Setas para mover · OK para escolher · Voltar para retornar"), L, B - 64, 170, a, R - L);
+
   desenharConvite(R, T + 180, acoesY - 24, 1);
   custoCamada(3);
 }
@@ -1555,7 +1556,7 @@ static void corpoPainel(GfxRect A, float a, void *u) {
       snprintf(st, sizeof st, "%s%s%s · %d%%", p->anf ? i18n("anfitrião") : "", p->anf ? " · " : "", estadoTexto(p), p->pct);
     else snprintf(st, sizeof st, "%s%s%s", p->anf ? i18n("anfitrião") : "", p->anf ? " · " : "", estadoTexto(p));
     texto(TXT_ILHA_META, st, x + 70, y + 42, 185, a, A.w - 70);
-    double pos = fmax(0, jsm_pos_alvo(m, SDL_GetTicks64()) + p->drift / 1000.0);
+    double pos = fmax(0, jsm_pos_alvo(m, nv_ticks64()) + p->drift / 1000.0);
     if (p->stats) snprintf(st, sizeof st, "%02d:%02d · %s · %+.0f ms", (int)pos / 60, (int)pos % 60,
                           fonteTexto(p->fonte), p->drift);
     else snprintf(st, sizeof st, "%02d:%02d · %s · %s", (int)pos / 60, (int)pos % 60,
@@ -1664,7 +1665,7 @@ static int contagemRestante(void) {
   if (shotContagem) return shotContagem;
 #endif
   if (!m || !m->temSala || m->sala.rel.estado != JSE_TOCANDO) return 0;
-  falta = m->sala.rel.t0 - jsr_servidor(&m->rel, (double)SDL_GetTicks64());
+  falta = m->sala.rel.t0 - jsr_servidor(&m->rel, (double)nv_ticks64());
   if (falta <= 0 || falta > 3000) return 0;
   return (int)ceil(falta / 1000.0);
 }

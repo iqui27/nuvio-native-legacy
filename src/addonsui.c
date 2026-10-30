@@ -98,6 +98,14 @@ void addonsui_evento(const SDL_Event *e) {
   if (foco > ultimo) foco = ultimo;
   pediuRelogio = 0;
   if (e->type != SDL_KEYDOWN) return;
+  SDL_Keycode key = e->key.keysym.sym;
+  int aio = !aoVivo && !n;
+  if (!aoVivo) for (int i=0;i<n;i++) if (aioui_detectar(i)) aio=1;
+  if (aio && (key==SDLK_UP || key==SDLK_DOWN || key==SDLK_LEFT || key==SDLK_RIGHT)) {
+    int next=aioui_addons_mover(foco,(key==SDLK_RIGHT)-(key==SDLK_LEFT),(key==SDLK_DOWN)-(key==SDLK_UP));
+    if (next!=foco) { foco=next; return; }
+    if (key!=SDLK_LEFT) { if (key==SDLK_UP && foco==0) pediuRelogio=1; return; }
+  }
   switch (e->key.keysym.sym) {
     case SDLK_a: aioui_abrir(-1); break;
     case SDLK_UP:     if (foco > 0) foco--; else pediuRelogio = 1; break;

@@ -184,7 +184,7 @@ int main(int argc, char **argv) {
   ponteiro_teste_janela(w, h);
   ponteiro_teste_toque(1);
   gfx_escala_ui_definir(1.0f);
-  printf("== Biblioteca %s, %dx%d px, NV_TELA %dx%d\n", aberto ? "aberta" : "fechada", w, h, NV_TELA_W, NV_TELA_H);
+  printf("== Biblioteca %s, %dx%d px, NV_TELA %.0fx%.0f\n", aberto ? "aberta" : "fechada", w, h, NV_TELA_W, NV_TELA_H);
   povoar();
   biblioteca_iniciar();
   quadros(90);

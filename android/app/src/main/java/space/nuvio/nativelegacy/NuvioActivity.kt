@@ -1362,9 +1362,9 @@ class NuvioActivity : SDLActivity() {
             // Guide/Menu open the full TV guide, including during live playback.
             KeyEvent.KEYCODE_GUIDE, KeyEvent.KEYCODE_MENU -> KeyEvent.KEYCODE_F10
             KeyEvent.KEYCODE_PROG_BLUE, KeyEvent.KEYCODE_BOOKMARK -> KeyEvent.KEYCODE_S
-            // Info (i) = registro (enviar o log), como a vermelha/verde.
-            KeyEvent.KEYCODE_PROG_RED, KeyEvent.KEYCODE_PROG_GREEN,
-            KeyEvent.KEYCODE_INFO -> KeyEvent.KEYCODE_F9
+            // Info reaches the playback panel; red/green retain diagnostics.
+            KeyEvent.KEYCODE_INFO -> KeyEvent.KEYCODE_I
+            KeyEvent.KEYCODE_PROG_RED, KeyEvent.KEYCODE_PROG_GREEN -> KeyEvent.KEYCODE_F9
             // CH+/CH- vao como F7/F8 e o C decide (main.c): troca de canal com
             // canal na tela; fora disso, CH+ = AZUL e CH- = Spotlight, porque a
             // TCL e a maioria dos controles Android TV nao tem teclas coloridas

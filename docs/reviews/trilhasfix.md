@@ -1,0 +1,13 @@
+# Trail and Hunt responsiveness
+
+Trail posters previously depended exclusively on `cat_copiar_por_id`: an uncatalogued step never issued an image request. The catalog already supplies IMDb and TMDB identities; title/year lookup was not involved. Trail cards now reuse `arte_metahub_preencher`, preserve existing catalog artwork, and enqueue visible posters before three upcoming posters. The existing texture workers, fallback resolver and disk cache own downloads and reuse. No new cache or worker was added.
+
+Trail and Hunt movie clicks now pass their known title/year/poster through `desc_pedir_titulo_semente`, allowing detail to open before metadata completes. Hunt list fetches already run on its worker. Trail progress still reads the local completion ledger synchronously; this patch does not move that work to another thread.
+
+TV layout uses seven 202px trail posters and one horizontally paged 184px Hunt poster row. Hunt action Up/Down follows the same label-width wrapping as rendering. Trail Up from its header no longer jumps downward into posters. Unfocused Hunt rows no longer each render a glass island; panels use the existing borderless material. TMDB attribution remains subdued.
+
+Evidence is under `/Volumes/ExternalSSD/tmp/rev/trilhasfix/`. The focused regression drives production handlers, visits all 98 Oscar steps, resolves each real poster identity, checks Hunt zones and six wrapped actions, and runs existing trail/achievement/history/Hunt ownership regressions. `fail.log` records the missing-poster baseline; `nav-before.log` records the original handler failing horizontal paging. Final `bash tests/trilhasfix.sh` passes.
+
+Native local trail-open averages: baseline 0.006ms, changed runs 0.003–0.032ms, 100 opens per run. These tiny local measurements show no meaningful opening-time improvement and are not network or TCL device latency. First eight real Oscar images were downloaded for the render fixture; the screenshot verifies layout and artwork rendering, not live network/cache behavior. Hunt capture uses bundled artwork and fixture film names; covers are not semantically matched to names. Old Hunt capture fixture used the obsolete profile-only filename and was updated to the anonymous account filename.
+
+The supplied TCL log's 285.9ms Hunt frame reports event 0.0ms, pump 0.0ms, update 1.1ms, clear 5.7ms, draw 1.9ms, auxiliary 0.1ms and swap 22.4ms. These phases do not explain most elapsed time. No claim is made that the 260–286ms spike is fixed. Hardware profiling, actual movie-click before/after latency, live cold/warm poster cache proof, phone portrait captures and full animation evidence remain pending. No device deployment was performed.

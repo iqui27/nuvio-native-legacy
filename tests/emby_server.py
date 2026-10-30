@@ -55,7 +55,10 @@ def media_source(item):
             "TranscodingUrl": "/videos/%s/master.m3u8?MediaSourceId=mediasource_%s&PlaySessionId=ps1&api_key=%s"
                               % (item, item, TOKEN),
             "MediaStreams": [{"Type": "Video", "Codec": "hevc", "Height": 1080, "VideoRange": "HDR"},
-                             {"Type": "Audio", "Codec": "eac3", "Channels": 6}]}
+                             {"Type": "Audio", "Codec": "eac3", "Channels": 6},
+                             {"Type": "Subtitle", "Index": 2, "Codec": "subrip", "Language": "por", "DisplayTitle": "Portuguese"},
+                             {"Type": "Subtitle", "Index": 5, "Codec": "ass", "Language": "eng", "IsExternal": True,
+                              "Path": "/srv/private/movie.en.ass", "DisplayTitle": "English ASS"}]}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -170,8 +173,16 @@ class Handler(BaseHTTPRequestHandler):
                         item["ProviderIds"] = {"Imdb": "tt0002002"}
                     elif item["Id"] == "2001":
                         item["ProviderIds"] = {"Tmdb": "4242"}
+            genre = q.get("genres", [""])[0]
+            if genre:
+                items = [item for item in items if genre in item.get("Genres", [])]
+            if q.get("sortby", [""])[0] == "SortName":
+                items.sort(key=lambda item: item["Name"])
+                if q.get("sortorder", [""])[0] != "Ascending":
+                    return self.reply(400)
             start = int(q.get("startindex", ["0"])[0])
-            return self.reply(200, {"Items": items[start:], "TotalRecordCount": len(items)})
+            limit = int(q.get("limit", ["100"])[0])
+            return self.reply(200, {"Items": items[start:start + limit], "TotalRecordCount": len(items)})
         m = re.fullmatch(re.escape(base) + r"/Items/(\d+)", p)
         if m and method == "GET":
             i = m.group(1)
@@ -180,6 +191,8 @@ class Handler(BaseHTTPRequestHandler):
             if i in ("1001", "1002"):
                 d = movie(int(i) - 1000)
                 d["People"] = [{"Name": "Mov Actor", "Id": "88", "Type": "Actor", "Role": "R"}]
+                d["ProviderIds"] = {"Imdb": "tt0002002"} if i == "1002" else {}
+                d["MediaSources"] = [media_source(i)]
                 return self.reply(200, d)
             return self.reply(404)
         if p == "/Playlists/5001/Items" and method == "GET":

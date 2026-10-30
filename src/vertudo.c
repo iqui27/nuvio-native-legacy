@@ -108,6 +108,9 @@ static ColSource servidorFontes[SRV_VISAO_MAX];
 static char servidorRaiz[96];
 static char servidorChaves[SRV_VISAO_MAX][96];
 static int servidorAtivo, servidorFiltro, servidorOrdem, servidorControle;
+static char servidorGeneros[32][64];
+static int servidorGeneroN, servidorGenero;
+static float servidorControleAnim[3];
 static int servidorMapa[VT_MAX], servidorN = -1, servidorLidos = -1;
 static const char *const SRV_FILTROS[] = { "Todos", "Filmes", "Séries", "Não assistido", "Fonte HDR", "4K" };
 static const char *const SRV_ORDENS[] = { "Recentes", "Nome (A–Z)", "Ano", "Nota" };
@@ -579,6 +582,14 @@ static void servidorOrdenar(void) {
     SrvAchado info = {0};
     int tem;
     if (!desc_vertudo_item(i, it)) continue;
+    char genres[sizeof it->genero]; snprintf(genres, sizeof genres, "%s", it->genero);
+    for (char *p = genres; p && *p;) {
+      char *end = strstr(p, " · "); if (end) *end = 0;
+      int k = 0; while (k < servidorGeneroN && strcmp(servidorGeneros[k], p)) k++;
+      if (*p && k == servidorGeneroN && k < 32) snprintf(servidorGeneros[servidorGeneroN++], 64, "%s", p);
+      p = end ? end + 4 : NULL;
+    }
+    if (servidorGenero > 0 && !strstr(it->genero, servidorGeneros[servidorGenero - 1])) continue;
     tem = servidores_info(it->imdb, it->tipo, &info);
     if (strcmp(it->tipo, "group") && strcmp(it->tipo, "list") &&
         ((servidorFiltro == 1 && strcmp(it->tipo, "movie")) ||
@@ -643,6 +654,7 @@ static void vitFocarLinha(int linha);
 static void openSource(void) {
   const ColSource *s=&collection->sources[source];
   snprintf(catalogId,sizeof catalogId,"%s",s->catId);
+  if (servidorAtivo) servidorGeneroN = servidorGenero = 0;
   ranked=strstr(s->catId,"top100")||strstr(s->catId,"top250")||strstr(s->catId,"top10");
   genCarregar(s);
   foco=0;scrollY=velY=0;orderN=-1;celLay=-1;armarOnda();
@@ -696,7 +708,15 @@ static void carregarFonte(void) {
     fflush(stdout);
     return;
   }
-  desc_vertudo_filtro_desde(base, s->type, s->catId, genTem() ? genPedido() : s->genre, vitPaginaFonte());
+  char serverKey[192];
+  const char *key = s->catId;
+  if (servidorAtivo && (!strncmp(key, "jellyfin_", 9) || !strncmp(key, "emby_", 5)) &&
+      !strstr(key, "collections") && !strstr(key, "playlists") && !strstr(key, "nextup") && !strstr(key, "_list_")) {
+    snprintf(serverKey, sizeof serverKey, "%s|%d|%s", key, servidorOrdem,
+             servidorGenero ? servidorGeneros[servidorGenero - 1] : "");
+    key = serverKey;
+  }
+  desc_vertudo_filtro_desde(base, s->type, key, genTem() ? genPedido() : s->genre, vitPaginaFonte());
 }
 
 static int cursorInicial(void);
@@ -787,6 +807,8 @@ void vertudo_servidores(const char *chave) {
   snprintf(titulo, sizeof titulo, "%s", servidor.title);
   servidorAtivo = 1;
   servidorFiltro = servidorOrdem = servidorControle = 0;
+  servidorGeneroN = servidorGenero = 0;
+  memset(servidorControleAnim, 0, sizeof servidorControleAnim);
   source = tabCursor = escolhido;
   snprintf(servidorRaiz, sizeof servidorRaiz, "%s", servidorFontes[escolhido].catId);
   tabFocus = n > 1;
@@ -2449,13 +2471,15 @@ void vertudo_evento(const SDL_Event *e) {
   }
   if (servidorAtivo && tabFocus == 2) {
     if (k == SDLK_LEFT && servidorControle > 0) servidorControle--;
-    if (k == SDLK_RIGHT && servidorControle < 1) servidorControle++;
+    if (k == SDLK_RIGHT && servidorControle < 2) servidorControle++;
     if (k == SDLK_UP) tabFocus = 1;
     if (k == SDLK_DOWN) tabFocus = 0;
     if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
       if (!servidorControle) servidorFiltro = (servidorFiltro + 1) % 6;
-      else servidorOrdem = (servidorOrdem + 1) % 4;
+      else if (servidorControle == 1) servidorOrdem = (servidorOrdem + 1) % 4;
+      else servidorGenero = (servidorGenero + 1) % (servidorGeneroN + 1);
       servidorLidos = -1; foco = 0; scrollY = 0;
+      if (servidorControle > 0) carregarFonte();
       servidorOrdenar();
     }
     return;
@@ -2588,6 +2612,10 @@ void vertudo_atualizar(float dt, Uint32 agora) {
     pillAnim = anim_mola(pillAnim, alvoP, dt, alvoP > pillAnim ? NV_MOLA_FOCO : NV_MOLA_DESFOCO); }
   { float alvoG = genTem() && tabFocus == 3 ? 1.0f : 0.0f;
     genAnim = anim_mola(genAnim, alvoG, dt, alvoG > genAnim ? NV_MOLA_FOCO : NV_MOLA_DESFOCO); }
+  for (int i = 0; i < 3; i++) {
+    float target = servidorAtivo && tabFocus == 2 && servidorControle == i ? 1.f : 0.f;
+    servidorControleAnim[i] = anim_mola(servidorControleAnim[i], target, dt, NV_MOLA_FOCO);
+  }
   abasCapsulaAtualizar(dt);
   if (!tabFocus) ddAberto = 0;
   ddAnim = anim_mola(ddAnim, ddAberto ? 1.0f : 0.0f, dt, NV_MOLA_FOCO);
@@ -3263,15 +3291,15 @@ static void themeHeader(float a,float x0) {
     gfx_sem_recorte();
   }
   if (servidorAtivo) {
-    const char *rot[2] = { SRV_FILTROS[servidorFiltro], SRV_ORDENS[servidorOrdem] };
+    const char *rot[3] = { SRV_FILTROS[servidorFiltro], SRV_ORDENS[servidorOrdem],
+      servidorGenero ? servidorGeneros[servidorGenero - 1] : "Gênero" };
     float x = x0;
-    if (ajustes_vidro()) gfx_vidro_painel((GfxRect){x0 - 18, 323, 650, 62}, 28, .8f, a);
-    else gfx_cor((GfxRect){x0 - 18, 323, 650, 62}, .45f, .071f, .075f, .086f, a);
-    for (int i = 0; i < 2; i++) {
-      int f = tabFocus == 2 && servidorControle == i;
+    if (ajustes_vidro()) gfx_vidro_painel((GfxRect){x0 - 18, 323, 960, 62}, 28, .8f, a);
+    else gfx_cor((GfxRect){x0 - 18, 323, 960, 62}, .45f, .071f, .075f, .086f, a);
+    for (int i = 0; i < 3; i++) {
       TxtLinha l = txt_linha_corta(TXT_V2_SEG, i18n(rot[i]), 242, 243, 247, 255, 290);
       GfxRect r = {x, 328, l.w + 50, 52};
-      if (f) { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab); gfx_cor(r, .5f, ar, ag, ab, a);
+      if (servidorControleAnim[i] > .001f) { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab); gfx_cor(r, .5f, ar, ag, ab, a * servidorControleAnim[i]);
         int c = ajustes_tinta_foco(); l = txt_linha_corta(TXT_V2_SEG, i18n(rot[i]), c, c, c, 255, 290); }
       txt_desenhar_alpha(l, x + 25, r.y + (r.h - l.h) * .5f, a);
       x += r.w + 18;

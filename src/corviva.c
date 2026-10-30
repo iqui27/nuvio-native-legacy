@@ -7,6 +7,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(NV_ANDROID)
+#include <pthread.h>
+#include <stdatomic.h>
+// The 20-second cache flush must never wait for TV flash on the UI thread.
+static pthread_t cacheWriter;
+static atomic_int cacheWriting;
+static int cacheJoinable;
+static void *writeCache(void *snapshot) {
+  dados_gravar_leve("corviva.txt", snapshot);
+  free(snapshot);
+  atomic_store(&cacheWriting, 0);
+  return NULL;
+}
+#endif
 
 // --------------------------------------------------------------- cor (OKLab)
 //
@@ -864,6 +878,13 @@ void corviva_gravar_se_preciso(int forcar) {
   static char buf[CV_TAB * 140 + 2 * CV_URL + 64];
   size_t w = 0;
   int i, k;
+#if defined(NV_ANDROID)
+  if (cacheJoinable) {
+    if (!forcar && atomic_load(&cacheWriting)) return;
+    pthread_join(cacheWriter, NULL);
+    cacheJoinable = 0;
+  }
+#endif
   if (!sujo) return;
   if (!forcar && relogio - ultGravacao < 20000.0) return;
   ultGravacao = relogio;
@@ -891,6 +912,23 @@ void corviva_gravar_se_preciso(int forcar) {
   }
   sujo = 0;
   soltar();
+#if defined(NV_ANDROID)
+  if (!forcar) {
+    char *snapshot = strdup(buf);
+    if (snapshot) {
+      atomic_store(&cacheWriting, 1);
+      if (pthread_create(&cacheWriter, NULL, writeCache, snapshot) == 0) {
+        cacheJoinable = 1;
+        return;
+      }
+      atomic_store(&cacheWriting, 0);
+      free(snapshot);
+    }
+    // Cache is reproducible. Retry later instead of falling back to UI I/O.
+    travar(); sujo = 1; soltar();
+    return;
+  }
+#endif
   dados_gravar_leve("corviva.txt", buf);
 }
 

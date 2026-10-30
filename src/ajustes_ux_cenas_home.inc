@@ -750,6 +750,7 @@ static int ajcNovaHome(int sec, int op) {
     case AJ_RAIL: ajcHRailFixa(op); return 1;
     case AJ_MENU_EXPLORAR: ajcHMenuItem(op, "aj_compass"); return 1;
     case AJ_MENU_GUIA: ajcHMenuItem(op, "aj_tv-minimal-play"); return 1;
+    case AJ_MENU_ESPORTES: ajcHMenuItem(op, "menu_sports"); return 1;
     case AJ_MENU_AGENDA: ajcHMenuItem(op, "aj_calendar"); return 1;
     case AJ_MENU_PERFIL: ajcHMenuItem(op, "aj_user-round"); return 1;
     case AJ_RAIL_BLUR: ajcHRailBlur(op); return 1;

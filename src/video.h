@@ -117,7 +117,7 @@ void video_escala_definir(int sw, int sh);
 // esta tocando — e a unica coisa que identifica o arquivo, nos dois alvos.
 const char *video_url_atual(void);
 double video_pos(void);      // segundos decorridos
-// Raw backend sample; timestamp uses SDL_GetTicks64(), never wall time.
+// Raw backend sample; timestamp uses nv_ticks64(), never wall time.
 // Repeated reads keep the timestamp until a new native sample arrives.
 double video_pos_amostra(Uint64 *ticksDaAmostra);
 double video_duracao(void);  // 0 enquanto desconhecida
@@ -342,6 +342,14 @@ static inline void video_stats_vazio(VideoStats *s) {
   s->host[0] = 0;
 }
 void video_estatisticas(VideoStats *s);
+// Current output format, only fields confirmed by the native pipeline.
+// Zero/empty means unavailable. kbps is video bitrate, never socket throughput.
+typedef struct {
+  char codec[48], container[24];
+  double fps;
+  int kbps;
+} VideoInfo;
+void video_informacoes(VideoInfo *s);
 #if defined(__APPLE__) || defined(NV_LINUX_DESKTOP)
 void video_simular_estatisticas(const VideoStats *s);   // capturas; NULL zera
 #endif
@@ -556,6 +564,7 @@ typedef struct {
   int nAudio, nLeg, audioAtual, legAtual;
   VideoFaixa audio[8], leg[8];
   int largura, altura, atmos, dv;
+  VideoInfo info;
   char hdr[16];
   int pronto, reconectando;
   unsigned bufferandoMs;

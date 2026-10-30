@@ -423,10 +423,7 @@ void layout_insets_definir(float e, float t, float d, float b);
 // cartazes. Ficha: cartaz 212 + a ficha de texto. Palco: o cartaz do centro
 // sobre a medida do cartaz comum; os vizinhos caem para NV_PALCO_VIZ dele.
 #define NV_TEMPO_FAIXA_H   96.0f
-#define NV_FICHA_W        540.0f  // dono, 14/10: "deixar ele um pouco menor" — 600 transbordava o cartaz
-#define NV_FICHA_VAO      22.0f   // do cartaz a ilha da ficha: o card sai do filme, como a extensao do menu
-#define NV_FICHA_ILHA_DY  12.0f   // a ilha um pouco menor que o cartaz, dentro da fileira
-#define NV_FICHA_RAIO     32.0f   // o mesmo canto do menu contextual (CTX_ILHA_RAIO)
+#define NV_FICHA_INFO_W   470.0f  // V1 detail extension; inactive cards remain 2:3 posters
 #define NV_PALCO_ESC       1.3f
 // Fileira redonda (pessoas): diametro do disco. O nome vai abaixo, no bloco do rotulo.
 #define NV_REDONDA_D       200.0f

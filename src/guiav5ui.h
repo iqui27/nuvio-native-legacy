@@ -9,6 +9,7 @@ void g5ui_sports_follow(void (*action)(const EspEvento *),int (*state)(const Esp
 void g5ui_open(const char *screen);
 void g5ui_close(void);
 void g5ui_forget(void);
+void g5ui_remove_source(void); // Active profile only; retain the setup page and parental rules.
 int g5ui_active(void);
 int g5ui_event(const SDL_Event *e);
 void g5ui_update(void);

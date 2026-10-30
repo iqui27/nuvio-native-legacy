@@ -1795,29 +1795,7 @@ static void corpoLista(GfxRect c, float a) {
   }
   if (!n) txt_bloco(TXT_ILHA_TEXTO, "Nenhuma faixa disponível nesta fonte.", 160, 160, 158, x0 + 10.0f, y + 12.0f, w - 20.0f, 28, a, 2);
   y += (n ? (fim - r) * IL_LN_H + (fim - r - 1) * IL_LN_VAO : 60.0f) + 14.0f;
-  // RODAPE: "2 de 4" e as dicas do codigo, sob um fio de 1 px.
-  gfx_cor((GfxRect){ x0, y, w, 1.0f }, 0.0f, 1, 1, 1, 0.07f * a);
-  { char q[32];
-    float yc = y + 16.0f + 15.0f;
-    if (!modo && volFoco) {
-      // The real gain in decibels: 200% is +6.0 dB, not "twice as loud".
-      int v = cacheboost_volume();
-      if (v > 0) { snprintf(q, sizeof q, "%+.1f dB", cacheboost_volume_db(v)); plrui_decimal(q); }
-      else snprintf(q, sizeof q, "-\xe2\x88\x9e dB");
-    } else if (!modo && velFoco) snprintf(q, sizeof q, i18n("%d de %d"), vel_indice(video_velocidade_atual()) + 1, VEL_N);
-    else snprintf(q, sizeof q, i18n("%d de %d"), n ? foco[col] + 1 : 0, n);
-    { TxtLinha l = txt_linha(TXT_ILHA_APOIO, q, 243, 242, 239, 115);
-      txt_desenhar_alpha(l, x0 + 10.0f, yc - (float)l.h * 0.5f, a); }
-    if (!modo && (volFoco || velFoco)) {
-      const char *k[2] = { "\xe2\x86\x90 \xe2\x86\x92", "Voltar" }, *rt[2] = { "Ajustar", "Fechar" };
-      plrui_dicas(k, rt, 2, x0 + w - 10.0f, yc, 1, a);
-    } else if (!modo) {
-      const char *k[2] = { "OK", "Voltar" }, *rt[2] = { "Usar esta faixa", "Fechar" };
-      plrui_dicas(k, rt, 2, x0 + w - 10.0f, yc, 1, a);
-    } else {
-      const char *k[3] = { "OK", "\xe2\x86\x92", "Voltar" }, *rt[3] = { "Usar", "Estilo", "Fechar" };
-      plrui_dicas(k, rt, 3, x0 + w - 10.0f, yc, 1, a);
-    } }
+
 }
 
 // PONTEIRO (#99) NA BARRA DE ESTILO. Passar por cima FOCA (a celula, a amostra,
@@ -2076,15 +2054,7 @@ static void corpoEstilo(GfxRect c, float a) {
     if (assentada)
       ponteiro_alvo(x0 + 10.0f + (float)t.w + 18.0f, yc - 27.0f, plrui_seg(rot, cont, 1, 1, 0, -1.0f, 0, a),
                     54.0f, NULL, ponteiroAba, 0, 0);
-    { const char *k[3] = { "\xe2\x86\x90 \xe2\x86\x92", "OK", "Voltar" }, *rt[3];
-      int n = 3, t0 = ctl >= 0 ? estTipo(ctl) : 0;
-      if (ctl >= 0) {
-        rt[0] = t0 == 1 ? "Ajustar" : "Escolher"; rt[1] = "Pronto"; rt[2] = "Voltar";
-        if (t0 == 3) k[0] = "\xe2\x86\x91 \xe2\x86\x93 \xe2\x86\x90 \xe2\x86\x92";
-      } else {
-        rt[0] = "Op\xc3\xa7\xc3\xa3o"; rt[1] = estTipo(foco[FX_COL_ESTILO]) ? "Abrir" : "Mudar"; rt[2] = "Fechar";
-      }
-      plrui_dicas(k, rt, n, x0 + w - 10.0f, yc, 1, a); } }
+  }
   y += IL_EST_TOPO + 14.0f;
   // A grade e o controle se trocam NO MESMO retangulo (a altura nao muda): a
   // grade some e sobe um pouco, o controle entra de baixo, pela mola da tela.

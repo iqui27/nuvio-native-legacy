@@ -1,7 +1,33 @@
 #include "nav21.h"
+#include <SDL2/SDL_image.h>
 #include "../src/aiostreamsui.c"
 #undef ponteiro_alvo
 static int fixture;
+static void addonNavigation(void){
+  AddonRemoto list[2]={0};
+  for(int i=0;i<2;i++){snprintf(list[i].nome,sizeof list[i].nome,"AIOStreams %d",i+1);snprintf(list[i].url,sizeof list[i].url,"http://127.0.0.1:8799/aio%d/manifest.json",i);list[i].ativo=1;}
+  addons_definir_lista(list,2);
+  const SDL_Keycode keys[]={SDLK_LEFT,SDLK_RIGHT,SDLK_UP,SDLK_DOWN};
+  for(int from=0;from<5;from++)for(int d=0;d<4;d++){
+    addonsui_abrir();addonsui_ponteiro(from,0);navigationCount=0;aioui_addons_desenhar(from);
+    int current=-1;for(int i=0;i<navigationCount;i++)if(navigationIds[i]==from)current=i;
+    nav21_expect("Addons/manager","Focused action has rendered target",current>=0,1);
+    if(current<0)continue;
+    int next=focus_rect_nearest(navigationRects,navigationCount,current,(keys[d]==SDLK_RIGHT)-(keys[d]==SDLK_LEFT),(keys[d]==SDLK_DOWN)-(keys[d]==SDLK_UP));
+    int expected=navigationIds[next];
+    if(expected==from)continue;
+    SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=keys[d];addonsui_evento(&e);
+    char path[100];snprintf(path,sizeof path,"From %d, %s: visually adjacent action",from,SDL_GetKeyName(keys[d]));
+    nav21_expect("Addons/manager",path,addonsui_foco(),expected);
+  }
+  addonsui_abrir();
+  aioui_addons_desenhar(0);
+  unsigned char *pixels=malloc(1920*1080*4);SDL_Surface *surface=SDL_CreateRGBSurfaceWithFormat(0,1920,1080,32,SDL_PIXELFORMAT_RGBA32);
+  glReadPixels(0,0,1920,1080,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+  for(int y=0;y<1080;y++)memcpy((char*)surface->pixels+y*surface->pitch,pixels+(1079-y)*1920*4,1920*4);
+  char path[1024];snprintf(path,sizeof path,"%s/Addons-manager.png",getenv("NAV21_OUT"));IMG_SavePNG(surface,path);SDL_FreeSurface(surface);free(pixels);
+}
+
 static AioSnapshot data;
 static void openFixture(void){aioui_shot(fixture,&data);}
 static void stepFixture(float dt){movimento(dt);if(saindo&&abertura<=0)encerrar();}
@@ -35,6 +61,7 @@ static void pagingRegression(void){
   data.resultados=data.evidencias=data.catalogos=0;
 }
 void nav21_aio(void){
+  addonNavigation();
   data.valida=1;data.configurada=1;snprintf(data.nome,sizeof data.nome,"Offline fixture");
   pagingRegression();
   const char *names[]={"AIO/start","AIO/instance","AIO/import","AIO/services","AIO/ready","AIO/overview","AIO/catalogs","AIO/sources","AIO/links","AIO/subtitles","AIO/filters","AIO/health","AIO/title"};

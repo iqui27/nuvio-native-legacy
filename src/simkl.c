@@ -687,6 +687,7 @@ int simkl_perfil_ler(const char *settings, const char *itens,
   if (mes.tm_mon == 1) dias = ((mes.tm_year + 1900) % 4 == 0) ? 29 : 28;
   else if (mes.tm_mon == 3 || mes.tm_mon == 5 || mes.tm_mon == 8 || mes.tm_mon == 10) dias = 30;
   d->nDias = dias;
+  d->diaHoje = mes.tm_mday;
   primeiro = mes; primeiro.tm_mday = 1; primeiro.tm_hour = primeiro.tm_min = primeiro.tm_sec = 0;
   primeiro.tm_isdst = -1; mktime(&primeiro); d->primeiroDiaSemana = primeiro.tm_wday;
   for (int i = 0; i < d->nDias; i++) if (d->atividade[i]) d->diasAtivosMes++;

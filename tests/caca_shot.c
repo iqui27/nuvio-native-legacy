@@ -162,7 +162,7 @@ int main(int argc, char **argv) {
            CACA_F_SEMEADA, CONQ_PRIMEIRO,
            CACA_F_SEMEADA | CACA_F_FILEIRA, CONQ_PRIMEIRO | CONQ_METADE | CONQ_QUASE,
            CACA_F_SEMEADA | CACA_F_COLECAO, CONQ_PRIMEIRO | CONQ_METADE | CONQ_QUASE | CONQ_COMPLETA);
-  assert(dados_gravar("cacas-p1.txt", cacas));
+  assert(dados_gravar("cacas-anon-p1.txt", cacas));
   visto(101); visto(102);
   for (i = 0; i < 9; i++) visto(200 + i);
   for (i = 0; i < 3; i++) visto(300 + i);

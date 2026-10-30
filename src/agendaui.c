@@ -152,6 +152,8 @@
 // numeral. "A definir" escrito onde deveria haver um dia e metadado inventado.
 #include "menu.h"
 #include "agendaui.h"
+#include "botoes.h"
+#include "plrui.h"
 #include "agenda.h"
 #include "gfx.h"
 #include "text.h"
@@ -2749,6 +2751,11 @@ static void botaoAgenda(GfxRect r, const char *rotulo, int ativo, int foco,
   TxtLinha t;
   int c = ajustes_vidro() ? 230 : 220;
   ajustes_acento(&ar, &ag, &ab);
+  if (!agColunaUnica()) {
+    botao_pilula(r, rotulo, NULL, foco, 0, 0, 1.0f);
+    if (ativo && !foco) gfx_cor((GfxRect){r.x+r.w*.5f-3,r.y+r.h-9,6,6},.5f,ar,ag,ab,1);
+    return;
+  }
   if (ajustes_vidro()) {
     gfx_vidro_painel(r, 0.5f, ativo ? 0.58f : 0.36f, 1.0f);
     if (ativo) gfx_cor(r, 0.5f, ar, ag, ab, 0.17f);
@@ -2858,12 +2865,10 @@ static void desenhaDiaCalendario(GfxRect r, int dia, int mesmoMes,
   ajustes_acento(&ar, &ag, &ab);
   if (ajustes_vidro()) {
     gfx_cor(r, 0.14f, 1, 1, 1, selecionado ? 0.12f : 0.035f);
-    if (selecionado) gfx_vidro_foco(r, 0.14f, 1.0f, 1.0f);
+    if (selecionado) plrui_linha_foco(r, r.h*.14f, 1.0f);
   } else {
-    gfx_cor(r, 0.14f, selecionado ? ar : 0.13f,
-            selecionado ? ag : 0.14f, selecionado ? ab : 0.16f,
-            selecionado ? 0.32f : 0.92f);
-    if (selecionado) gfx_anel(r, 0.14f, 2.0f, ar, ag, ab, 0.9f);
+    gfx_cor(r, 0.14f, 0.13f, 0.14f, 0.16f, 0.92f);
+    if (selecionado) plrui_linha_foco(r, r.h*.14f, 1.0f);
   }
   snprintf(num, sizeof num, "%d", dia);
   if (agColunaUnica()) {
@@ -2914,7 +2919,7 @@ static void desenhaEventoCalendario(GfxRect r, const AgItem *it, int foco) {
   float ar, ag, ab;
   ajustes_acento(&ar, &ag, &ab);
   gfx_cor(r, 0.16f, 1, 1, 1, foco ? 0.095f : 0.035f);
-  if (foco) gfx_vidro_foco(r, 0.16f, 1.0f, 1.0f);
+  if (foco) plrui_linha_foco(r, r.h*.16f, 1.0f);
   const float u = agColunaUnica() ? P(1) : 1.0f;
   cartaz = (GfxRect){ r.x + 9.0f * u, r.y + 7.0f * u, 38.0f * u, r.h - 14.0f * u };
   if (it->poster[0] && !agColunaUnica()) {
@@ -3225,6 +3230,7 @@ static void desenharNaEscala(Uint32 agora) {
 // O desenho publico liga a escala (piso de 120%) e o layout mede pela tela
 // virtual — o mesmo modulo que mede e o que liga, como pede escala.h.
 void agendaui_desenhar(Uint32 agora) {
+  int rim=gfx_vidro_sem_aro;gfx_vidro_sem_aro=1;
   agInterfaceAtualizar();
 #ifdef NV_TOUCH_UI
   toqueAgenda.offset = toqueNoticia.offset = toqueCalendario.offset = toqueManchetes.offset = toqueModal.offset = NULL;
@@ -3232,6 +3238,7 @@ void agendaui_desenhar(Uint32 agora) {
   AG_ESC_INI();
   desenharNaEscala(agora);
   AG_ESC_FIM();
+  gfx_vidro_sem_aro=rim;
 }
 
 

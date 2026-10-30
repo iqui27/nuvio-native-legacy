@@ -1,6 +1,8 @@
 #ifndef NV_DESKTOP_MPV
 #include "app_id.h"
+#include "nv_ticks.h"
 #include "video.h"
+#include "nv_ticks.h"
 #include "mediaurl.h"
 #include "webosver.h"
 #include "audioinfo.h"
@@ -317,7 +319,7 @@ static VideoSimulacao SIM;
 static Uint64 simPosEm;
 void video_simular(const VideoSimulacao *s) {
   if (s) SIM = *s; else memset(&SIM, 0, sizeof SIM);
-  simPosEm = SDL_GetTicks64();
+  simPosEm = nv_ticks64();
   dtsEstado = SIM.dts;
 }
 int  video_iniciar(void) { return 0; }
@@ -361,6 +363,7 @@ static int simStatsDef;
 void video_simular_estatisticas(const VideoStats *s) {
   if (s) { simStats = *s; simStatsDef = 1; } else simStatsDef = 0;
 }
+void video_informacoes(VideoInfo *s) { *s = SIM.info; }
 void video_estatisticas(VideoStats *s) {
   if (simStatsDef) { *s = simStats; return; }
   video_stats_vazio(s);
@@ -612,6 +615,7 @@ static int       vidW = 1920, vidH = 1080, vidTaxa = 30;
 static int       expSrcW, expSrcH;
 static void      expJanelaAplicar(void);
 static long      vidBits;
+static VideoInfo vidInfo;
 static char      vidVarredura[24] = "progressive";
 // hdrType real informado pelo uMS para a camada que chegou ao decoder. Isto
 // vence o rotulo do addon: um arquivo marcado HDR-DV pode entregar apenas a
@@ -1039,6 +1043,8 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
     nv_seek_ok(&seekRetry);
   }
   if (strstr(p, "sourceInfo")) {
+    const char *vt = js_array(p, NULL, "videoTrackInfo");
+    if (vt && *vt == '{') js_texto(vt, js_fim(vt), "codec", vidInfo.codec, sizeof vidInfo.codec);
     { const char *q = strstr(p, "\"seekable\":");
       srcSeekable = q ? (strncmp(q + 11, "true", 4) == 0) : -1;
       q = strstr(p, "\"trickable\":");
@@ -1232,6 +1238,8 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
 
   if (strstr(p, "videoInfo")) {
     viuVideo = 1;   // fecha o prazo do recuo de DV
+    vidInfo.fps = js_num(p, NULL, "frameRate", 0);
+    vidInfo.kbps = (int)(js_num(p, NULL, "bitRate", 0) / 1000);
     double v;
     v = numeroDe(p, "\"width\":");      if (v > 0) vidW = (int)v;
     v = numeroDe(p, "\"height\":");     if (v > 0) vidH = (int)v;
@@ -1484,7 +1492,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
       posSeg = posNativa = v / 1000.0;
       pthread_mutex_lock(&travaAmostra);
       posAmostra = posSeg;
-      posAmostraEm = SDL_GetTicks64();
+      posAmostraEm = nv_ticks64();
       pthread_mutex_unlock(&travaAmostra);
       // Primeiro quadro com avanco: o numero de inicio de verdade.
       if (cronPediu && !cronQuadro && posSeg > 0.0) {
@@ -2673,7 +2681,7 @@ static int tocarInterno(const char *url, int comDV) {
   fonX = -1; dstX = dstY = dstW = dstH = -1;
   posSeg = posNativa = durSeg = bufferSeg = 0; tocando = pronto = 0; midia[0] = 0;
   pthread_mutex_lock(&travaAmostra);
-  posAmostra = 0; posAmostraEm = SDL_GetTicks64();
+  posAmostra = 0; posAmostraEm = nv_ticks64();
   pthread_mutex_unlock(&travaAmostra);
   ackMidia = 0; ack_publicar();
   velEnviada = 100;   // pipeline novo nasce em 1x; video_bombear reaplica
@@ -2681,6 +2689,7 @@ static int tocarInterno(const char *url, int comDV) {
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; vidAtmos = 0;
   legUrlAtual[0] = 0; mkvPendente = 0;
   snprintf(vidHdr, sizeof vidHdr, "none");
+  memset(&vidInfo, 0, sizeof vidInfo);
   seiX0 = seiX1 = seiX2 = seiY0 = seiY1 = seiY2 = 0;
   seiBrancoX = seiBrancoY = seiMinLum = seiMaxLum = seiMaxCLL = seiMaxFALL = 0;
   vuiPrim = vuiTrans = vuiMatriz = 2;
@@ -3738,6 +3747,7 @@ int  video_tem_dolby_vision(void) {
 }
 // hdrType cru do pipeline, para a tela poder dizer "HDR10" quando for HDR10 em
 // vez de calar. "none" quando o fluxo e SDR ou ainda nao se sabe.
+void video_informacoes(VideoInfo *s) { *s = vidInfo; }
 const char *video_hdr(void)       { return vidHdr; }
 int  video_largura(void)          { return vidW; }
 int  video_altura(void)           { return vidH; }

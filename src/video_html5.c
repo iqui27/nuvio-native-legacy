@@ -1084,6 +1084,7 @@ static void lerFaixas(void) {
 // hdrType/Atmos de forma confiavel entre motores. Selo ausente e honesto;
 // selo inventado mente para o dono no momento em que ele mais confia nele —
 // mesma decisao do Tizen, pela mesma razao.
+void video_informacoes(VideoInfo *s) { memset(s, 0, sizeof *s); }
 int  video_tem_atmos(void)        { return 0; }
 int  video_tem_dolby_vision(void) { return 0; }
 const char *video_hdr(void)       { return "desconhecido"; }

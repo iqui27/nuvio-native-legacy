@@ -159,12 +159,7 @@ static void dgApresentacao(int primeiraAbertura) {
   y += ajustes_ui_ef("aj_triangle-alert", i18n("Haverá testes de rede e consumo de dados. O relatório técnico será enviado automaticamente ao suporte."),
                      x, y, m.w - 112);
   y += 30;
-  { TxtLinha n = dgT(TXT_ILHA_GENERO, "Não altera assistidos, histórico, progresso ou scrobbling.");
-    const char *k[2] = { "OK", "Voltar" };
-    const char *l[2] = { primeiraAbertura ? "Continuar" : "Começar", primeiraAbertura ? "Fechar" : "Cancelar" };
-    float dw = ajustes_ui_dicas(k, l, 2, 0, 0, 0);
-    txt_desenhar_alpha(n, x, y + (30 - n.h) * 0.5f, 0.48f);
-    ajustes_ui_dicas(k, l, 2, m.x + m.w - 56 - dw, y, 1); }
+
 }
 
 // --- ESTADO 0: OBJETIVO --------------------------------------------------------
@@ -303,11 +298,7 @@ static void dgAndamento(Uint32 agora) {
     txt_desenhar_alpha(t, r.x + 66, cy - t.h * 0.5f, feita ? 0.62f : at ? 1.0f : 0.4f);
     if (at) { TxtLinha a = dgT(TXT_ILHA_GENERO, "agora"); txt_desenhar_alpha(a, r.x + r.w - 18 - a.w, cy - a.h * 0.5f, 0.5f); }
   }
-  { const char *k[1] = { "Voltar" }, *l[1] = { "Cancelar" };
-    float by = e.y + e.h - 44 - 30, dw = ajustes_ui_dicas(k, l, 1, 0, 0, 0);
-    TxtLinha t = dgT(TXT_ILHA_GENERO, "Voltar cancela e interrompe as requisições da sessão.");
-    txt_desenhar_alpha(t, x, by + (30 - t.h) * 0.5f, 0.48f);
-    ajustes_ui_dicas(k, l, 1, x + w - dw, by, 1); }
+
   // AGORA NESTA TV
   dr = (GfxRect){ e.x + e.w + 24, 112, 0, NV_TELA_H - 152 };
   dr.w = NV_TELA_W - 40 - dr.x;
@@ -543,9 +534,7 @@ static void dgResultado(void) {
       if (d.sugEstado != DS_TESTANDO) ponteiro_alvo(bx, by, bw, 60, ponteiroBotaoRes, NULL, i, 0);
       bx += bw + 12;
     }
-    { const char *k[3] = { "← →", "OK", "Voltar" }, *l[3] = { "Escolher", "Confirmar", "Sair" };
-      float dw = ajustes_ui_dicas(k, l, 3, 0, 0, 0);
-      ajustes_ui_dicas(k, l, 3, NV_TELA_W - 40 - dw, by + 15, 1); } }
+  }
 }
 
 // --- TESTE DE VELOCIDADE ----------------------------------------------------------
@@ -753,9 +742,6 @@ static void dgVazaoGenerico(Uint32 agora) {
       ponteiro_alvo(bx, by, bw, 60, ponteiroBotaoVaz, NULL, i, 0);
       bx += bw + 12;
     }
-  } else {
-    const char *k[1] = { "Voltar" }, *l[1] = { "Cancelar" };
-    ajustes_ui_dicas(k, l, 1, e.x, NV_TELA_H - 40 - 45, 1);
   }
 }
 

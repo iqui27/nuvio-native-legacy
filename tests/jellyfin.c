@@ -337,7 +337,7 @@ static void testarIntegracao(void) {
   while (jellyfin_fileiras_versao() == v0 && ms() < fim) dormir(20);
   n = jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, fils, JF_FIL_MAX, &ni);
 
-  assert(n >= 2 && ni >= jf_por_fileira(10));
+  assert(n >= 2 && ni >= (JF_ITENS_MAX - JF_POR_FILEIRA) / 10 && ni <= JF_ITENS_MAX);
   assert(jellyfin_chave_fileira(fils[0].chave) && !fils[0].base[0] && strstr(fils[0].titulo, "Jellyfin"));
   { int total;
     assert(jellyfin_pagina("jellyfin_collections", 0, 60, itens, 60, &total, NULL) == 1 && !strcmp(itens[0].tipo, "group"));
@@ -405,6 +405,12 @@ static void testarIntegracao(void) {
   free(controle("index"));
   assert(jellyfin_consultar("tt0900001:2:3", "series", NULL, 0, NULL, NULL, &lista) == 2 && lista);
   assert(strstr(lista[0].url, "e90000cb/stream"));    // episode_id(2, 3)
+  { Legenda *sub = calloc(LEG_MAX, sizeof *sub); char id[64]; assert(sub);
+    assert(jellyfin_legendas(lista[0].url, sub, LEG_MAX, id, sizeof id) == 1);
+    assert(!strcmp(id, "tt0900001:2:3"));
+    assert(!strcmp(sub[0].arquivo, "movie.en.srt") && strstr(sub[0].url, "/Subtitles/3/Stream.srt"));
+    assert(!strstr(sub[0].url, "/emby/") && strstr(sub[0].url, "ApiKey="));
+    free(sub); }
   free(lista); lista = NULL;
   assert(jellyfin_consultar("tt0900001:1:1", "series", NULL, 0, NULL, NULL, &lista) == 2);
   free(lista); lista = NULL;

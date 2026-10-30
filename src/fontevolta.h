@@ -50,10 +50,9 @@ int  fontevolta_pegar(const char *alvo, const char *conta, int perfil,
 
 // 1 when the saved URL may start before the source sheet. escolherManual is
 // "Escolher a fonte ao reproduzir": the sheet picks, so a live URL from the
-// last session must not start underneath it. The other three are the old
-// guards of tocarFonteGuardada (app.c).
-int  fontevolta_toca_guardada(int escolherManual, int falhaAtiva,
-                              int canal, int playerAberto);
+// last session must not start underneath it. Failover applies after a saved
+// source fails; enabling it must not force resume through network discovery.
+int  fontevolta_toca_guardada(int escolherManual, int canal, int playerAberto);
 // "REUSAR O ULTIMO LINK" (Ajustes > Reproducao): ligado, uma entrada POR
 // titulo/episodio e perfil (ate FONTEVOLTA_MAX), gravada no disco e valida por
 // `validadeS` contados no relogio de parede desde que o link saiu do addon;

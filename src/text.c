@@ -1124,7 +1124,7 @@ static TTF_Font *fonteNegritoReal(TxtFamilia familia, TxtEstilo estilo, TTF_Font
       int ajustado = bold ? corpoNegrito(fonte, bold, corpo, 0) : corpo;
       if (bold && ajustado != corpo && ajustado >= 4) {
         TTF_CloseFont(bold);
-        SDL_RWseek(rw, 0, RW_SEEK_SET);
+        rw->seek(rw, 0, RW_SEEK_SET);  // SDL_RWseek is not exported before SDL 2.0.10 (webOS 4)
         bold = TTF_OpenFontRW(rw, 0, ajustado);
       }
       fontesNegCam[camada][familia][i] = bold;
@@ -1891,10 +1891,11 @@ static TxtLinha linhaCache(TxtEstilo estilo, const char *s, int r, int g, int b,
     if (!*s) return vazia;
   } else snprintf(pre, sizeof pre, "T%d|", (int)(*trk * 100.0f + (*trk < 0 ? -0.5f : 0.5f)));
 
-  if (addonVerbatim) {
+  // Long release names can share the entire visible cache-key prefix.
+  if (addonVerbatim || (!trk && strlen(s) > 200)) {
     unsigned textHash = 2166136261u;
     for (const unsigned char *p = (const unsigned char *)s; *p; p++) textHash = (textHash ^ *p) * 16777619u;
-    snprintf(pre, sizeof pre, "A%08x|", textHash);
+    snprintf(pre, sizeof pre, "%c%08x|", addonVerbatim ? 'A' : 'L', textHash);
   }
   char chave[288];
   // A VARIANTE CJK entra na chave: o mesmo hanzi tem forma de japones, de chines

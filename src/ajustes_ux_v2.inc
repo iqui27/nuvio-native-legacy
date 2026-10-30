@@ -537,7 +537,7 @@ static void aj2DicasAlvo(const char *k, float x, float yc, float kw, float kh) {
 // foram desenhados pelo rodape de verdade).
 static float aj2DicasLinha(const AjDica *d, int n, float x, float yc, TxtEstilo ek, float kh, float kmin,
                            float kpad, TxtEstilo el, float g1, float g2, int desenha, float a) {
-  if (layout_desktop_ativo()) return 0;
+  if (layout_desktop_ativo() || ajTelaCheia()) return 0;
   int i;
   float x0 = x;
   for (i = 0; i < n; i++) {
