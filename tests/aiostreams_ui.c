@@ -43,10 +43,22 @@ void fil_alternar(int i) { (void)i; }
 int fil_mover(int i,int d) { (void)i;(void)d;return 0; }
 void desc_remontar_fileiras(void) { }
 void desc_repetir(void) { }
-static int configFetches, noCache, configDenied;
+static int configFetches, noCache, configDenied, authorizationHeaders;
+static void refreshSaved(void) {
+  proximaConsulta=0; iniciarRede();
+  for(;;) {
+    pthread_mutex_lock(&trava); int done=!ocupado; pthread_mutex_unlock(&trava);
+    if(done) break;
+    SDL_Delay(1);
+  }
+  entregue=0;
+}
 int rede_pedir(const RedePedido *p,RedeResposta *r) {
   memset(r,0,sizeof *r); r->status=200; r->erro=REDE_OK;
-  for(int i=0;p->cabecalhos[i];i++) if(strstr(p->cabecalhos[i],"no-cache")) noCache++;
+  for(int i=0;p->cabecalhos[i];i++) {
+    if(strstr(p->cabecalhos[i],"no-cache")) noCache++;
+    if(!strncmp(p->cabecalhos[i],"Authorization:",14)) authorizationHeaders++;
+  }
   if(strstr(p->url,"/api/v1/user")) {
     configFetches++;
     if(configDenied) { r->status=401; return 0; }
@@ -186,10 +198,50 @@ int main(void) {
   aioui_evento(&down); assert(foco==2 && dashboardLinha[2]==1);
   down.key.keysym.sym=SDLK_LEFT; aioui_evento(&down); assert(foco==1);
   down.key.keysym.sym=SDLK_DOWN; aioui_evento(&down); assert(foco==4);
+  strcpy(host,"https://example.invalid");
+  strcpy(base,"https://example.invalid/manifest.json");
   foco=9; acao(); assert(entrada==4 && keyboardMasked);
   receber("sample-uuid"); assert(entrada==5 && keyboardMasked);
   receber("sample-password"); assert(!entrada && configAuth[0] && !configUuid[0]);
-  memset(configAuth,0,sizeof configAuth); pendente=0;
+  // Both first-column cards reach the sidebar.
+  for(int row=0;row<2;row++) {
+    pagina=PAINEL; lateral=0; foco=row*3;
+    down.key.keysym.sym=SDLK_LEFT; aioui_evento(&down);
+    assert(lateral && foco==0);
+  }
+  lateral=0;
+  // Same-origin refresh authenticates; importing another instance must not.
+  int headers=authorizationHeaders;
+  refreshSaved(); assert(authorizationHeaders==headers+1);
+  entrada=3; receber("https://other.invalid/manifest.json");
+  refreshSaved(); assert(authorizationHeaders==headers+1);
+  assert(!configAuth[0]);
+  // A different manifest on the same origin also invalidates saved credentials.
+  entrada=4; receber("sample-uuid"); receber("sample-password");
+  refreshSaved(); assert(authorizationHeaders==headers+2);
+  entrada=3; receber("https://other.invalid/alternate/manifest.json");
+  refreshSaved(); assert(authorizationHeaders==headers+2 && !configAuth[0]);
+  // Changing scheme or port clears saved authorization as well.
+  const char *origins[]={"https://other.invalid:8443","http://other.invalid"};
+  for(int i=0;i<2;i++) {
+    instanceHost("https://other.invalid");
+    entrada=4; receber("sample-uuid"); receber("sample-password");
+    assert(configAuth[0]); entrada=1; receber(origins[i]);
+    assert(!configAuth[0]);
+  }
+  // Worker also refuses stale authorization if a request origin is changed.
+  Pedido *mismatch=calloc(1,sizeof *mismatch); assert(mismatch);
+  strcpy(mismatch->host,"https://other.invalid");
+  strcpy(mismatch->base,"https://example.invalid/stremio/sample/sample/manifest.json");
+  strcpy(mismatch->auth,"Authorization: Basic synthetic");
+  strcpy(mismatch->authOrigin,"https://example.invalid");
+  worker(mismatch); assert(authorizationHeaders==headers+2);
+  char title[192],value[384];
+  strcpy(snap.catalogo[0].tipo,"movie");
+  dashboardRow(4,0,title,sizeof title,value,sizeof value); assert(!strcmp(value,i18n("Filmes")));
+  strcpy(snap.catalogo[0].tipo,"series");
+  dashboardRow(4,0,title,sizeof title,value,sizeof value); assert(!strcmp(value,i18n("Séries")));
+  pendente=0;
   static AioSnapshot malformed; assert(!manifestConfig(&malformed,"https://example.invalid/not-json/manifest.json"));
   assert(!manifestConfig(&malformed,"https://example.invalid/eyJ0IjoiYWlvRW5jcnlwdCJ9/manifest.json"));
   for(int i=0;i<entrega.detalhes;i++) assert(!strstr(entrega.detalhe[i].valor,"SANITIZED_TEST_KEY"));

@@ -114,7 +114,15 @@ void aioui_arte(const char *dir) {
   snprintf(arteLogo,sizeof arteLogo,"%s/aiostreams/logo.png",dir);
 }
 static char usuario[96], base[2048], host[256], alvo[128], tipo[32], mensagem[256];
-static char configure[320], configAuth[2048], configUuid[128];
+static char configure[320], configAuth[2048], configUuid[128], configOrigin[256];
+static void clearAuthorization(void) {
+  memset(configAuth,0,sizeof configAuth); memset(configUuid,0,sizeof configUuid);
+  configOrigin[0]=0;
+}
+static void instanceHost(const char *origin) {
+  if(strcasecmp(host,origin)) clearAuthorization();
+  snprintf(host,sizeof host,"%s",origin);
+}
 static AioSnapshot snap;
 static const char *const gruposNome[]={"Resolução e qualidade","Tamanho e bitrate","Idiomas","Cache e tipos de fonte","Semeadores","Regex e palavras-chave","Ordenação","Formatador","Proxy","Serviços e preferências"};
 static int regraPertence(const AioRegra *r) {
@@ -137,7 +145,7 @@ static unsigned entregaGeracao;
 static AioSnapshot entrega;
 static int entregaInstalar;
 static char entregaBase[2048];
-typedef struct { unsigned geracao; int instalar, diagnostic; char base[2048], host[256], id[128], tipo[32], auth[2048]; } Pedido;
+typedef struct { unsigned geracao; int instalar, diagnostic; char base[2048], host[256], id[128], tipo[32], auth[2048], authOrigin[256]; } Pedido;
 
 int aioui_detectar(int i) {
   return i >= 0 && (!strncasecmp(addons_nome(i),"AIOStreams",10) ||
@@ -214,7 +222,12 @@ static void *worker(void *arg) {
     snprintf(url,sizeof url,"%s/api/v1/status",p->host); buscar(s,url,NULL,1,&body);
     // Status version is not evidence of authenticated configuration access.
     if(body) { aio_status(s,body); free(body); body=NULL; }
-    int authorized=p->auth[0]?!!snprintf(auth,sizeof auth,"%s",p->auth):aio_autorizacao(p->base,auth,sizeof auth);
+    char manifestOrigin[256];
+    int authorized=0;
+    if(p->auth[0] && !strcasecmp(p->host,p->authOrigin))
+      authorized=!!snprintf(auth,sizeof auth,"%s",p->auth);
+    else if(aio_url(p->base,manifestOrigin,sizeof manifestOrigin) && !strcasecmp(p->host,manifestOrigin))
+      authorized=aio_autorizacao(p->base,auth,sizeof auth);
     if(s->valida && authorized && !strncmp(p->host,"https://",8)) {
       snprintf(url,sizeof url,"%s/api/v1/user",p->host); buscar(s,url,auth,2,&body);
       if(body) {
@@ -281,6 +294,7 @@ static void iniciarRede(void) {
   snprintf(p->base,sizeof p->base,"%s",base); snprintf(p->host,sizeof p->host,"%s",host);
   snprintf(p->id,sizeof p->id,"%s",alvo); snprintf(p->tipo,sizeof p->tipo,"%s",tipo);
   snprintf(p->auth,sizeof p->auth,"%s",configAuth);
+  snprintf(p->authOrigin,sizeof p->authOrigin,"%s",configOrigin);
   pthread_t t; ocupado=1; entregue=0;
   if(pthread_create(&t,NULL,worker,p)) { ocupado=0; free(p); }
   else pthread_detach(t);
@@ -305,12 +319,12 @@ static void fechar(void) {
 }
 static void encerrar(void) {
   aberto=0;
-  memset(configAuth,0,sizeof configAuth); memset(configUuid,0,sizeof configUuid);
+  clearAuthorization();
   memset(&snap,0,sizeof snap); memset(base,0,sizeof base); alvo[0]=mensagem[0]=0;
 }
 void aioui_abrir(int i) {
   abertura=0; saindo=0; paginaAnterior=-1; historyCount=0; navigationCount=0;
-  memset(configAuth,0,sizeof configAuth); memset(configUuid,0,sizeof configUuid);
+  clearAuthorization();
   aberto=1; geracao++; foco=0; lateral=0; entrada=pendente=0; indice=i; alvo[0]=0; proximaConsulta=0;
   regraSelecionada=linkSelecionado=-1; evidenciaSelecionada=0; soManifesto=0; ultimaAtualizacao=0;
   memset(dashboardLinha,0,sizeof dashboardLinha);
@@ -394,7 +408,7 @@ static void acao(void) {
   }
   if(pagina==SEM) { int f=foco; mudar(f==2?IMPORTAR:INSTANCIA); if(f==1) campo(1); }
   else if(pagina==INSTANCIA) {
-    if(foco<7) { hostIdx=foco; snprintf(host,sizeof host,"%s",hosts[hostIdx]); qrAtual(); }
+    if(foco<7) { hostIdx=foco; instanceHost(hosts[hostIdx]); qrAtual(); }
     else if(foco==7) campo(1); else if(foco==8) mudar(IMPORTAR);
     else if(foco==10) { maisHosts=!maisHosts; foco=maisHosts?4:0; }
     else mudar(SERVICOS);
@@ -490,7 +504,7 @@ void aioui_evento(const SDL_Event *e) {
       if(step && dashboardLinha[foco]+step>=0 && dashboardLinha[foco]+step<=total-3) dashboardLinha[foco]+=step;
       else if(k==SDLK_UP) foco=foco>=3?foco-3:10;
       else if(k==SDLK_DOWN) foco=foco<3?foco+3:6;
-      else if(k==SDLK_LEFT && foco%3) foco--;
+      else if(k==SDLK_LEFT) { if(foco%3) foco--; else { lateral=1; foco=0; } }
       else if(k==SDLK_RIGHT && foco%3<2) foco++;
     } else if(k==SDLK_DOWN) foco=foco==10?2:foco;
     else if(k==SDLK_UP) foco=foco==10?0:foco==9?3:5;
@@ -558,11 +572,13 @@ static void receber(const char *texto) {
   } else if(entrada==5) {
     char credentials[1024];
     snprintf(credentials,sizeof credentials,"%s:%s",configUuid,texto);
-    if(texto[0] && !strncmp(host,"https://",8) && aio_basic(credentials,configAuth,sizeof configAuth)) { geracao++; atualizarRede(0); }
+    if(texto[0] && !strncmp(host,"https://",8) && aio_basic(credentials,configAuth,sizeof configAuth)) {
+      snprintf(configOrigin,sizeof configOrigin,"%s",host); geracao++; atualizarRede(0);
+    }
     memset(credentials,0,sizeof credentials); memset(configUuid,0,sizeof configUuid);
   } else if(entrada==1) {
     if(aio_url(texto,origem,sizeof origem) && !strcmp(texto,origem)) {
-      snprintf(host,sizeof host,"%s",origem); qrAtual(); mudar(SERVICOS);
+      instanceHost(origem); qrAtual(); mudar(SERVICOS);
     } else snprintf(mensagem,sizeof mensagem,"%s",i18n("URL inválida. Use apenas a origem HTTP ou HTTPS, sem credenciais."));
   } else if(entrada==2) {
     if(!texto[0] || strspn(texto,"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:_-.")!=strlen(texto))
@@ -571,7 +587,8 @@ static void receber(const char *texto) {
   } else if(aio_url(texto,origem,sizeof origem) && !strchr(texto,'#') &&
       strstr(texto,"/manifest.json") &&
       (strstr(texto,"/manifest.json")[14]==0 || strstr(texto,"/manifest.json")[14]=='?') && strlen(texto)<sizeof base) {
-    snprintf(base,sizeof base,"%s",texto); snprintf(host,sizeof host,"%s",origem); qrAtual(); geracao++; atualizarRede(1);
+    if(strcmp(base,texto)) clearAuthorization();
+    snprintf(base,sizeof base,"%s",texto); instanceHost(origem); qrAtual(); geracao++; atualizarRede(1);
   } else snprintf(mensagem,sizeof mensagem,"%s",i18n("Link inválido. Copie o manifesto em Salvar e instalar no AIOStreams."));
   entrada=0;
 }
@@ -999,7 +1016,7 @@ static void dashboardRow(int card,int row,char *title,size_t nt,char *value,size
     snprintf(value,nv,"%s",!strcmp(snap.detalhe[i].valor,"true")?i18n("Ativado"):!strcmp(snap.detalhe[i].valor,"false")?i18n("Desligado"):snap.detalhe[i].valor);
   } else if(card==4) {
     snprintf(title,nt,"%s",snap.catalogo[row].nome);
-    snprintf(value,nv,"%s",snap.catalogo[row].tipo);
+    snprintf(value,nv,"%s",!strcmp(snap.catalogo[row].tipo,"movie")?i18n("Filmes"):!strcmp(snap.catalogo[row].tipo,"series")?i18n("Séries"):snap.catalogo[row].tipo);
   } else if(row==0) {
     snprintf(title,nt,"%s",i18n("Manifesto"));
     snprintf(value,nv,"HTTP %d · %d ms",snap.http[0],snap.ms[0]);
@@ -1079,7 +1096,7 @@ static void dashboard(void) {
   }
   botaoIc(9,i18n(snap.configAccess==AIO_AVAILABLE?"Reconectar":"Conectar com UUID e senha"),"aj_shield-check",112,943,0);
   botaoIc(6,i18n("Inspecionar título"),"aj_funnel",1466,943,337);
-  char source[256]; snprintf(source,sizeof source,"%s%s",configStatus(),snap.detalhesOmitidos?" · Dados adicionais no celular":"");
+  char source[256]; snprintf(source,sizeof source,"%s%s%s",configStatus(),snap.detalhesOmitidos?" · ":"",snap.detalhesOmitidos?i18n("Configuração no celular"):"");
   texto(TXT_ILHA_HORA,source,680,963,740,158);
 }
 static void workspace(void) {
