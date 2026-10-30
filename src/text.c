@@ -1118,7 +1118,7 @@ static TTF_Font *fonteNegritoReal(TxtFamilia familia, TxtEstilo estilo, TTF_Font
       int ajustado = bold ? corpoNegrito(fonte, bold, corpo, 0) : corpo;
       if (bold && ajustado != corpo && ajustado >= 4) {
         TTF_CloseFont(bold);
-        SDL_RWseek(rw, 0, RW_SEEK_SET);
+        rw->seek(rw, 0, RW_SEEK_SET);  // SDL_RWseek is not exported before SDL 2.0.10 (webOS 4)
         bold = TTF_OpenFontRW(rw, 0, ajustado);
       }
       fontesNegCam[camada][familia][i] = bold;
