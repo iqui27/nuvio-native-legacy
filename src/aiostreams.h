@@ -47,9 +47,11 @@ typedef struct {
   AioCatalogo catalogo[AIO_CATALOG_MAX];
   AioItem servico[32], addon[AIO_MAX];
   AioResultado resultado[AIO_MAX];
+  int configEmbedded;
 } AioSnapshot;
 int aio_url(const char *url, char *origem, size_t n);
 int aio_autorizacao(const char *manifesto, char *dst, size_t n);
+int aio_basic(const char *credentials, char *dst, size_t n);
 int aio_manifesto(AioSnapshot *s, const char *json);
 void aio_configuracao(AioSnapshot *s, const char *json);
 void aio_resultados(AioSnapshot *s, const char *json);

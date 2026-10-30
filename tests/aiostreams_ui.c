@@ -10,6 +10,7 @@ const Stream *stream_item(int i) { (void)i; return &traceStream; }
 void stream_inspecao_ordem(int *r,int n) { for(int i=0;i<n;i++) r[i]=i+1; }
 int celular_abrir_link(const char *t,const char *d) { (void)t;return d[0]!=0; }
 int addons_n(void) { return 0; }
+int addons_aio_history(int i,const char *type,AddonAioRequest *out,int max) { (void)i;(void)type;(void)out;(void)max; return 0; }
 int addons_exportar(AddonRemoto *v,int n) { (void)v;(void)n;return 0; }
 int perfis_ativo_addons(void) { return activeProfile; }
 int contacache_gravar(const char *s,int p,const char *u,const char *c) { (void)s;(void)p;(void)u;(void)c;return 1; }
@@ -159,6 +160,40 @@ int main(void) {
     entregue=0;
   }
   assert(configFetches==2 && noCache==6);
+  // Sanitized manifest-only shape: embedded base64url JSON, no API identity.
+  FILE *fixture=fopen("tests/fixtures/aiostreams-manifest-only.json","rb"); assert(fixture);
+  unsigned char raw[4096]; size_t len=fread(raw,1,sizeof raw,fixture); fclose(fixture);
+  char encoded[6000]; size_t at=0;
+  const char alphabet[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  for(size_t i=0;i<len;i+=3) {
+    unsigned a=raw[i],b=i+1<len?raw[i+1]:0,c=i+2<len?raw[i+2]:0;
+    encoded[at++]=alphabet[a>>2]; encoded[at++]=alphabet[((a&3)<<4)|(b>>4)];
+    if(i+1<len) encoded[at++]=alphabet[((b&15)<<2)|(c>>6)];
+    if(i+2<len) encoded[at++]=alphabet[c&63];
+  }
+  encoded[at]=0;
+  char manifest[6500],alias[2048];
+  snprintf(manifest,sizeof manifest,"https://example.invalid/%s/manifest.json",encoded);
+  assert(nv_addon_url_guardar("AIOStreams",manifest,alias,sizeof alias));
+  Pedido *embedded=calloc(1,sizeof *embedded); assert(embedded);
+  strcpy(embedded->host,"https://example.invalid");
+  nv_addon_url(embedded->base,sizeof embedded->base,alias,"/manifest.json");
+  worker(embedded);
+  assert(entrega.configurada && entrega.addons==2 && entrega.servicos==1);
+  assert(entrega.detalhes>15 && entrega.regraUncached==1 && configFetches==2 && entrega.configEmbedded);
+  snap=entrega; pagina=PAINEL; lateral=0; foco=2; memset(dashboardLinha,0,sizeof dashboardLinha);
+  navigationCount=0; down.key.keysym.sym=SDLK_DOWN;
+  aioui_evento(&down); assert(foco==2 && dashboardLinha[2]==1);
+  down.key.keysym.sym=SDLK_LEFT; aioui_evento(&down); assert(foco==1);
+  down.key.keysym.sym=SDLK_DOWN; aioui_evento(&down); assert(foco==4);
+  foco=9; acao(); assert(entrada==4 && keyboardMasked);
+  receber("sample-uuid"); assert(entrada==5 && keyboardMasked);
+  receber("sample-password"); assert(!entrada && configAuth[0] && !configUuid[0]);
+  memset(configAuth,0,sizeof configAuth); pendente=0;
+  static AioSnapshot malformed; assert(!manifestConfig(&malformed,"https://example.invalid/not-json/manifest.json"));
+  assert(!manifestConfig(&malformed,"https://example.invalid/eyJ0IjoiYWlvRW5jcnlwdCJ9/manifest.json"));
+  for(int i=0;i<entrega.detalhes;i++) assert(!strstr(entrega.detalhe[i].valor,"SANITIZED_TEST_KEY"));
+  entregue=0;
   configDenied=1;
   Pedido *locked=calloc(1,sizeof *locked);
   strcpy(locked->host,"https://example.invalid");

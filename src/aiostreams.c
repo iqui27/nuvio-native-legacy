@@ -81,7 +81,12 @@ int aio_autorizacao(const char *url, char *dst, size_t n) {
     if (*q != '/' && !isalnum((unsigned char)*q) && !strchr("-_=+", *q)) return 0;
   size_t len = last - p;
   if (len >= sizeof credentials || n < 22 + ((len + 2) / 3) * 4) return 0;
-  memcpy(credentials, p, len); credentials[slash - p] = ':';
+  memcpy(credentials, p, len); credentials[slash - p] = ':'; credentials[len]=0;
+  int ok=aio_basic(credentials,dst,n); memset(credentials,0,sizeof credentials); return ok;
+}
+int aio_basic(const char *credentials,char *dst,size_t n) {
+  size_t len=strlen(credentials);
+  if(!strchr(credentials,':') || len>=1024 || n<22+((len+2)/3)*4) return 0;
   static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   strcpy(dst, "Authorization: Basic "); size_t k = strlen(dst);
   for (size_t i = 0; i < len; i += 3) {
@@ -91,7 +96,7 @@ int aio_autorizacao(const char *url, char *dst, size_t n) {
     dst[k++] = i+1 < len ? alphabet[((b & 15) << 2) | (c >> 6)] : '=';
     dst[k++] = i+2 < len ? alphabet[c & 63] : '=';
   }
-  dst[k] = 0; memset(credentials, 0, sizeof credentials); return 1;
+  dst[k] = 0; return 1;
 }
 void aio_capability(AioCapability *capability, int http) {
   *capability = http == 401 || http == 403 ? AIO_RESTRICTED :
@@ -303,7 +308,10 @@ static void config_details(AioSnapshot *s,const char *u) {
 static int count_array(const char *a);
 void aio_configuracao(AioSnapshot *s, const char *json) {
   const char *u = member(member(json,"data"),"userData");
+  if(!u) u=member(json,"userData");
+  if(!u && (member(json,"presets") || member(json,"services") || member(json,"formatter"))) u=json;
   s->configAccess = AIO_FAILED;
+  s->configEmbedded=0;
   s->configurada = s->servicos = s->addons = 0; memset(s->regras,0,sizeof s->regras);
   s->detalhes=s->detalhesOmitidos=0;
   memset(s->detalhe,0,sizeof s->detalhe);
