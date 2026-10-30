@@ -1291,18 +1291,12 @@ static void tvDesenhar(void) {
 #endif
   }
 
-  // Keep the polished Apple TV shape and focus. THE MATERIAL IS ALWAYS
-  // GLASS (fotos1014/appletv-sidebar.jpg): this layout mimics the tvOS
-  // sidebar, and the reference panel is translucent tinted glass regardless
-  // of the global "Interface de vidro" switch; gfx_vidro_folha still honors
-  // the Opacity/Frost/effect settings internally.
-  // The shared material at TV_MIOLO_MIN (88 % at the default "Opacity"): at
-  // 78 % the Home row titles read through the panel (TCL print). It follows
-  // the slider like every other glass surface.
+  // Read the current Glass/Frost settings on every draw, including the
+  // collapsed pill. Keep the shape and opening spring identical in all modes.
   gfx_vidro_camada = 1;   // frost over page glass too (detail pills, tabs, cards)
-  gfx_vidro_material(R, raioPx / R.h, TV_MIOLO_MIN, A);
+  gfx_vidro_ou_solido(R, raioPx / R.h, TV_MIOLO_MIN, A, .071f, .075f, .086f, .98f);
   gfx_vidro_camada = 0;
-  gfx_vidro_matiz(R, raioPx / R.h, A);
+  if (ajustes_vidro()) gfx_vidro_matiz(R, raioPx / R.h, A);
 
   // Conteudo da pilula fechada: some no comeco da abertura.
   { float ap = A * (1.0f - s * 3.0f);

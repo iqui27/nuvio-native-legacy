@@ -5919,9 +5919,6 @@ static void desenharPainelCategorias(float a) {
       txt_desenhar_alpha(tn, r.x + 24.0f, r.y + (r.h - (float)tn.h) * 0.5f, la); }
   }
   gfx_sem_recorte();
-  { TxtLinha t = txt_linha_corta_bruta(TXT_CAPTION, i18n("OK entra  ·  Voltar fecha"),
-                                 128, 130, 138, 255, G_CAT_W - 96.0f);
-    txt_desenhar_alpha(t, x0 + 56.0f, NV_TELA_H - 60.0f, ea); }
 }
 
 // DE ONDE VEM CANAL: as duas portas, desenhadas em codigo.
