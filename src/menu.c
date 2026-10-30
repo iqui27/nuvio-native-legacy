@@ -40,7 +40,6 @@ static void desktopRestaurar(void) {
   nv_desktop_sidebar = desktopCollapsed ? 0.0f : NV_DESKTOP_SIDEBAR_W;
   desktopReveal=desktopCollapsed?0:1; desktopRevealV=0;
 }
-static void desktopToggle(int a, int b) { (void)a; (void)b; menu_desktop_alternar(); }
 #endif
 #include "ilha.h"
 #include "iconeapp.h"
@@ -1298,26 +1297,13 @@ int menu_desktop_foco(void) { return aberto ? linha : -1; }
 void menu_desktop_servico(int index) { desktopEscolher(MENU_ST0+index,0); }
 void menu_desktop_perfil(void) { desktopEscolher(MENU_RODAPE,0); }
 #endif
-static void desktopBusca(int a, int b) { (void)a; (void)b; menu_ir(MENU_BUSCAR); }
 void menu_desktop_busca_desenhar(void) {
   if (!layout_desktop_ativo()) return;
   float ant = gfx_escala();
   gfx_escala_sair(1.0f);
   // A soft title-bar fade protects traffic lights without a solid strip.
   gfx_brilho_topo((GfxRect){0,0,NV_TELA_W,150},0,1,0,0,0,.65f);
-#ifdef NV_DESKTOP_UI
-  float tx = fmaxf(144, NV_DESKTOP_RAIL_W + 18);
-  gfx_icone((GfxRect){tx, 24, 28, 28}, "mt_biblioteca", .8f,.8f,.82f,1);
-  ponteiro_alvo(tx - 10, 12, 52, 56, NULL, desktopToggle, 0, 0);
-  if (desktopCollapsed) { gfx_escala_sair(ant); return; }
-#endif
-  GfxRect r = {NV_TELA_W - 414.0f, 13.0f, 390.0f, 46.0f};
-  gfx_vidro_folha(r, .5f, 1.0f);
-  iconeTraco(MENU_BUSCAR, r.x + 26, r.y + r.h * .5f, 26, .95f, .95f, .95f, .7f);
-  const char *query = menu_destino() == MENU_BUSCAR ? busca_consulta() : "";
-  TxtLinha l = txt_linha_corta(TXT_DET_META2, *query ? query : menu_rotulo(MENU_BUSCAR), 220, 220, 224, 255, r.w - 70);
-  txt_desenhar(l, r.x + 54, r.y + (r.h - l.h) * .5f);
-  ponteiro_alvo(r.x, r.y, r.w, r.h, NULL, desktopBusca, 0, 0);
+  // Desktop navigation lives in the sidebar.
   gfx_escala_sair(ant);
 }
 static float desktopLayout(float *ys) {

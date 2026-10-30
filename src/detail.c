@@ -952,7 +952,7 @@ static float docFim = NV_DETP_FIM;
 static int progTemNotas(void);   // definida adiante, junto da grade
 static const char *dicaSecao(int r) {
   switch (r) {
-    case SEC_TRAILERS:     return "OK abre no player, com som";
+    case SEC_TRAILERS:     return layout_desktop_ativo() ? NULL : "OK abre no player, com som";
     case SEC_COMENTARIOS:  return "Trakt · ordenado por curtidas";
     case SEC_PROGTEMP:     return progTemNotas() ? "IMDb · traço = visto" : NULL;
     case SEC_COLECAO:      return ehSerie() ? NULL : "ordem de lançamento";
@@ -1433,7 +1433,7 @@ static void desenhaNotasTiles(float x,float y,float a) {
         int minha=notaMinha();
         snprintf(v,sizeof v,minha ? "%d" : "★",minha);
         txt_desenhar_alpha(txt_linha(TXT_G52B,v,ar*255,ag*255,ab*255,255),tx+24,ty+54.4f,a);
-        txt_desenhar_alpha(txt_linha(TXT_G18R,i18n("OK para avaliar"),243,242,239,160),tx+24,ty+132.8f,a);
+        txt_desenhar_alpha(txt_linha(TXT_G18R,i18n(layout_desktop_ativo() ? "Click to rate" : "OK para avaliar"),243,242,239,160),tx+24,ty+132.8f,a);
       } else {
         AmigosTitulo am;
         if (amigosDoTitulo(&am)) {
@@ -2418,6 +2418,7 @@ static int nLinhasDetalhe(void) {
 // filme e ao culling. Antes cada numero destes vivia cravado no meio do
 // desenho, e uma secao nova herdava a altura do elenco em silencio.
 static float secaoAlvo(int r) {
+  if (layout_desktop_ativo()) return 1.f;
   if (r == SEC_TEMPORADAS && ajustes_home_layout() == HOME_LAYOUT_MODERNA) return 1.f;
   return nivel>=1 && foco.fileira!=r ? .42f : 1.f;
 }

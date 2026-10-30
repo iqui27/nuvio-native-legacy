@@ -1,7 +1,6 @@
 #if defined(NV_DESKTOP_UI) && defined(__APPLE__)
 #import <Cocoa/Cocoa.h>
 #import <OpenGL/OpenGL.h>
-#import <OpenGL/glext.h>
 int ajustes_idioma(void);
 #import <QuartzCore/QuartzCore.h>
 #include <SDL2/SDL_syswm.h>
@@ -15,11 +14,6 @@ int ajustes_idioma(void);
 #include "tex_cache.h"
 static NSWindow *nativeWindow;
 static NSView *sidebar, *sidebarControls;
-static NSView *sidebarBackdrop;
-static NSBitmapImageRep *sidebarPixels;
-static GLuint sidebarPbo, sidebarFence, sidebarFbo, sidebarTexture;
-static int sidebarPending;
-static Uint32 sidebarCopied;
 static int sidebarLanguage = -1;
 static NSMutableArray<NSTextField *> *groupLabels;
 static NSTextField *profileChevron;
@@ -140,30 +134,22 @@ void desktop_native_init(SDL_Window *window) {
   if (@available(macOS 26.0, *)) {
     NSGlassEffectView *glass = [NSGlassEffectView new];
     glass.cornerRadius = 16;
-    glass.style = NSGlassEffectViewStyleClear;
-    glass.tintColor = NSColor.clearColor;
+    glass.style = NSGlassEffectViewStyleRegular;
     glass.contentView = sidebarControls;
     sidebar = glass;
   } else {
     NSVisualEffectView *effect = [NSVisualEffectView new];
     effect.material = NSVisualEffectMaterialSidebar;
     effect.blendingMode = NSVisualEffectBlendingModeBehindWindow;
-    effect.state = NSVisualEffectStateFollowsWindowActiveState;
+    effect.state = NSVisualEffectStateActive;
     sidebar = effect;
     [sidebar addSubview:sidebarControls];
   }
   sidebar.wantsLayer = YES;
   sidebar.layer.cornerRadius = 16;
   sidebar.layer.masksToBounds = YES;
-  sidebarBackdrop = [NSView new];
-  sidebarBackdrop.wantsLayer = YES;
-  sidebarBackdrop.layer.cornerRadius = 16;
-  sidebarBackdrop.layer.masksToBounds = YES;
-  [container addSubview:sidebarBackdrop positioned:NSWindowAbove relativeTo:content];
-  [container addSubview:sidebar positioned:NSWindowAbove relativeTo:sidebarBackdrop];
-  sidebarBackdrop.layer.shadowOpacity=.18;
-  sidebarBackdrop.layer.shadowRadius=12;
-  sidebarBackdrop.layer.shadowOffset=CGSizeMake(0,-3);
+  // The GL surface has an alpha hole only over this native material.
+  [container addSubview:sidebar positioned:NSWindowAbove relativeTo:content];
   GLint opaque = 0;
   [[NSOpenGLContext currentContext] setValues:&opaque forParameter:NSOpenGLContextParameterSurfaceOpacity];
   // SDL normalizes Cocoa precise deltas into wheel ticks. Preserve native
@@ -192,66 +178,11 @@ void desktop_native_init(SDL_Window *window) {
 void desktop_native_sidebar(float fraction, float reveal) {
   if (getenv("NV_CAPTURA_GL")) fraction=0;
   sidebarFraction=fraction; sidebarReveal=reveal;
-  if (!sidebar || fraction<=0) return;
-  // Sample at most 10 Hz; a fence keeps mapping off the render critical path.
-  // Flip on the GPU into a small FBO, then publish only a completed PBO.
-  GLint viewport[4]; glGetIntegerv(GL_VIEWPORT,viewport);
-  int width=MAX(1,(int)(viewport[2]*fraction)), height=viewport[3];
-  if (sidebarPixels.pixelsWide!=width || sidebarPixels.pixelsHigh!=height) {
-    if(sidebarPbo) glDeleteBuffers(1,&sidebarPbo);
-    if(sidebarFence) glDeleteFencesAPPLE(1,&sidebarFence);
-    if(sidebarFbo) glDeleteFramebuffersEXT(1,&sidebarFbo);
-    if(sidebarTexture) glDeleteTextures(1,&sidebarTexture);
-    sidebarPbo=sidebarFence=sidebarFbo=sidebarTexture=0;sidebarPending=0;sidebarCopied=0;
-    [sidebarPixels release];
-    sidebarPixels=[[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:width pixelsHigh:height bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:width*4 bitsPerPixel:32];
-  }
-  GLint pack;glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING,&pack);
-  if(sidebarPending) {
-    if(!glTestFenceAPPLE(sidebarFence)) return;
-    glBindBuffer(GL_PIXEL_PACK_BUFFER,sidebarPbo);
-    const void *pixels=glMapBuffer(GL_PIXEL_PACK_BUFFER,GL_READ_ONLY);
-    if(pixels) {
-      memcpy(sidebarPixels.bitmapData,pixels,(size_t)width*height*4);
-      glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
-      [CATransaction begin];[CATransaction setDisableActions:YES];
-      sidebarBackdrop.layer.contents=(id)sidebarPixels.CGImage;
-      [CATransaction commit];
-    }
-    glBindBuffer(GL_PIXEL_PACK_BUFFER,pack);sidebarPending=0;
-  }
-  Uint32 now=SDL_GetTicks();
-  if(sidebarCopied && now-sidebarCopied<100) return;
-  GLint readFbo,drawFbo,texture;
-  glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING_EXT,&readFbo);
-  glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING_EXT,&drawFbo);
-  glGetIntegerv(GL_TEXTURE_BINDING_2D,&texture);
-  if(!sidebarPbo) {
-    glGenBuffers(1,&sidebarPbo);glBindBuffer(GL_PIXEL_PACK_BUFFER,sidebarPbo);
-    glBufferData(GL_PIXEL_PACK_BUFFER,(size_t)width*height*4,NULL,GL_STREAM_READ);
-    glGenFencesAPPLE(1,&sidebarFence);
-    glGenTextures(1,&sidebarTexture);glBindTexture(GL_TEXTURE_2D,sidebarTexture);
-    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,width,height,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
-    glGenFramebuffersEXT(1,&sidebarFbo);glBindFramebufferEXT(GL_DRAW_FRAMEBUFFER_EXT,sidebarFbo);
-    glFramebufferTexture2DEXT(GL_DRAW_FRAMEBUFFER_EXT,GL_COLOR_ATTACHMENT0_EXT,GL_TEXTURE_2D,sidebarTexture,0);
-    glBindTexture(GL_TEXTURE_2D,texture);
-  }
-  GLboolean scissor=glIsEnabled(GL_SCISSOR_TEST);glDisable(GL_SCISSOR_TEST);
-  glBindFramebufferEXT(GL_DRAW_FRAMEBUFFER_EXT,sidebarFbo);
-  glBlitFramebufferEXT(0,0,width,height,0,height,width,0,GL_COLOR_BUFFER_BIT,GL_NEAREST);
-  glBindFramebufferEXT(GL_READ_FRAMEBUFFER_EXT,sidebarFbo);
-  glBindBuffer(GL_PIXEL_PACK_BUFFER,sidebarPbo);
-  glReadPixels(0,0,width,height,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
-  glSetFenceAPPLE(sidebarFence);sidebarPending=1;sidebarCopied=now;
-  glBindBuffer(GL_PIXEL_PACK_BUFFER,pack);
-  glBindFramebufferEXT(GL_READ_FRAMEBUFFER_EXT,readFbo);
-  glBindFramebufferEXT(GL_DRAW_FRAMEBUFFER_EXT,drawFbo);
-  if(scissor)glEnable(GL_SCISSOR_TEST);
 }
 void desktop_native_finish(void) {
   float fraction=sidebarFraction;
   if (!sidebar) return;
-  if(fraction<=0) {sidebar.hidden=YES;sidebarBackdrop.hidden=YES;return;}
+  if(fraction<=0) {sidebar.hidden=YES;return;}
   [CATransaction begin]; [CATransaction setDisableActions:YES];
   NSRect bounds=nativeWindow.contentView.bounds;
   BOOL fullscreen=(nativeWindow.styleMask & NSWindowStyleMaskFullScreen)!=0;
@@ -259,13 +190,10 @@ void desktop_native_finish(void) {
   nativeWindow.contentView.superview.layer.cornerRadius=fullscreen?0:16;
   CGFloat titleInset=fullscreen?8:36;
   NSRect frame=NSMakeRect(8-(1-sidebarReveal)*bounds.size.width*fraction,8,MAX(1,bounds.size.width*fraction-16),bounds.size.height-titleInset-8);
-  sidebar.alphaValue=.86f*sidebarReveal; sidebarBackdrop.alphaValue=sidebarReveal;
+  sidebar.alphaValue=sidebarReveal;
   if(!NSEqualRects(sidebar.frame,frame)) sidebar.frame = frame;
   if(sidebar.hidden) sidebar.hidden=NO;
   sidebarControls.frame=sidebar.bounds;
-  sidebarBackdrop.hidden=NO;
-  sidebarBackdrop.frame=frame;
-  sidebarBackdrop.layer.contentsRect=CGRectMake(8/(bounds.size.width*fraction),titleInset/bounds.size.height,frame.size.width/(bounds.size.width*fraction),frame.size.height/bounds.size.height);
   sidebarRows();
   if(sidebarLanguage!=ajustes_idioma()) {
     sidebarLanguage=ajustes_idioma();

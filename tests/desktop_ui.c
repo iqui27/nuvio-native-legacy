@@ -69,7 +69,7 @@ int main(void) {
   assert(menu_pediu_colecao() == 5 && !menu_aberto());
   desktopEscolher(MENU_RODAPE, 0);
   assert(menu_pediu_trocar() && !menu_aberto());
-  desktopBusca(0, 0);
+  desktopEscolher(MENU_BUSCAR, 0);
   assert(menu_destino() == MENU_BUSCAR && !menu_aberto());
   menu_ir(MENU_CONQUISTAS); assert(menu_mudou_destino());
   menu_ir(MENU_CONQUISTAS); assert(menu_mudou_destino());
