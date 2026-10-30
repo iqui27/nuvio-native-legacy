@@ -35,7 +35,9 @@ static inline void toquerol_vincular(ToqueRolagem *r, GfxRect regiao,
   r->maximo = maximo > minimo ? maximo : minimo;
   r->eixoY = eixoY;
   r->offset = offset;
+#ifndef NV_DESKTOP_UI
   if (toquerol_livre(r) && offset) *offset = toquerol_clamp(*offset, r->minimo, r->maximo);
+#endif
 }
 static inline void toquerol_limpar(ToqueRolagem *r) { r->livre = 0; }
 static inline int toquerol_evento(ToqueRolagem *r, const PonteiroRolagem *e) {
@@ -55,7 +57,7 @@ static inline int toquerol_evento(ToqueRolagem *r, const PonteiroRolagem *e) {
   if (!r->livre) return 0;
   if (e->fase == PONT_ROL_MOVER || e->fase == PONT_ROL_INERCIA) {
     float antes = *r->offset;
-    *r->offset = toquerol_clamp(antes - e->delta / r->escala, r->minimo, r->maximo);
+    *r->offset = layout_scroll_delta(antes, e->delta / r->escala, r->minimo, r->maximo);
     return fabsf(*r->offset - antes) > 0.001f;
   }
   return 1;

@@ -25,6 +25,45 @@ static NSButton *profile;
 static NSMutableArray<NSButton *> *services;
 static NSScrollView *serviceScroll;
 static NSView *serviceContent;
+@interface NVMenuTarget : NSObject
+@property NSInteger selected;
+- (void)choose:(NSMenuItem *)item;
+@end
+@implementation NVMenuTarget
+- (void)choose:(NSMenuItem *)item { self.selected = item.tag; }
+@end
+int desktop_native_menu(const DesktopMenuItem *items, int count, float x, float y) {
+  if (!nativeWindow || count <= 0) return -1;
+  NSMenu *menu = [[NSMenu alloc] initWithTitle:@""];
+  menu.autoenablesItems = NO;
+  NVMenuTarget *target = [NVMenuTarget new]; target.selected = -1;
+  for (int i=0; i<count; i++) {
+    if (items[i].separator && menu.numberOfItems) [menu addItem:NSMenuItem.separatorItem];
+    NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:[NSString stringWithUTF8String:items[i].title] action:@selector(choose:) keyEquivalent:@""];
+    item.tag = items[i].action; item.target = target;
+    item.enabled = items[i].action != 0;
+    item.state = items[i].checked ? NSControlStateValueOn : NSControlStateValueOff;
+    if (items[i].symbol) {
+      item.image = [NSImage imageWithSystemSymbolName:[NSString stringWithUTF8String:items[i].symbol] accessibilityDescription:item.title];
+      if (@available(macOS 27.0, *)) item.preferredImageVisibility = NSMenuItemImageVisibilityVisible;
+    }
+    [menu addItem:item]; [item release];
+  }
+  NSView *view = nativeWindow.contentView;
+  NSPoint point = NSMakePoint(x, view.isFlipped ? y : view.bounds.size.height-y);
+  printf("[desktop-menu] native=NSMenu items=%d window=%ld\n",count,(long)nativeWindow.windowNumber); fflush(stdout);
+  // Proof tracking uses only an app-local timer; no activation or global input.
+  NSTimer *dismiss = nil;
+  if (getenv("NV_CAPTURA_MENU")) {
+    dismiss = [NSTimer timerWithTimeInterval:8 repeats:NO block:^(NSTimer *timer) { [menu cancelTracking]; }];
+    [[NSRunLoop mainRunLoop] addTimer:dismiss forMode:NSEventTrackingRunLoopMode];
+  }
+  [menu popUpMenuPositioningItem:nil atLocation:point inView:view];
+  [dismiss invalidate];
+  int selected = (int)target.selected;
+  [menu release]; [target release];
+  return selected;
+}
 // Keep every symbol centred in one column, independent of its intrinsic width.
 @interface NVSidebarCell : NSButtonCell
 @end
@@ -167,9 +206,10 @@ void desktop_native_init(SDL_Window *window) {
     if ((event.phase | event.momentumPhase) & NSEventPhaseEnded) wheel.wheel.x |= NV_WHEEL_END;
     if ((event.phase | event.momentumPhase) & NSEventPhaseCancelled) wheel.wheel.x |= NV_WHEEL_CANCEL;
     if (event.momentumPhase != NSEventPhaseNone) wheel.wheel.x |= NV_WHEEL_MOMENTUM;
-    // Unphased precise devices keep the existing wheel path.
+    // Magic Mouse has precise deltas without a finger lifecycle. Keep its
+    // pixel route; the consumer ends ownership after a short quiet interval.
     if (event.phase == NSEventPhaseNone && event.momentumPhase == NSEventPhaseNone)
-      wheel.wheel.x = 0;
+      wheel.wheel.x = NV_WHEEL_UNPHASED;
     if (swipe) wheel.wheel.x = NV_WHEEL_PHASED|NV_WHEEL_BEGIN|NV_WHEEL_END|NV_WHEEL_SWIPE;
     wheel.wheel.timestamp = SDL_GetTicks();
     NSPoint p = [content convertPoint:event.locationInWindow fromView:nil];

@@ -11,6 +11,7 @@
 #ifdef NV_DESKTOP_UI
 #include <SDL2/SDL.h>
 extern Uint32 nv_desktop_wheel_until;
+extern int nv_desktop_scroll_active;
 #endif
 
 #if defined(NV_DESKTOP_UI) && !defined(NV_TOUCH_UI)
@@ -73,9 +74,10 @@ static inline float layout_scroll_delta(float value, float delta, float lo, floa
 }
 static inline float layout_scroll_assentar(float value, float lo, float hi, float dt) {
 #ifdef NV_DESKTOP_UI
-  if ((Sint32)(SDL_GetTicks() - nv_desktop_wheel_until) < 0) return value;
+  if (nv_desktop_scroll_active || (Sint32)(SDL_GetTicks() - nv_desktop_wheel_until) < 0) return value;
   float bound = fmaxf(lo, fminf(hi, value));
-  return bound + (value - bound) * expf(-18 * dt);
+  float next = bound + (value - bound) * expf(-18 * dt);
+  return fabsf(next-bound)<.01f ? bound : next;
 #else
   (void)dt; return fmaxf(lo, fminf(hi, value));
 #endif

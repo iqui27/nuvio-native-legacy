@@ -1,4 +1,5 @@
 #include "ctxmenu.h"
+#include "desktop_native.h"
 #include "perfisessao.h"
 #include "catalogo.h"
 #include "logotitulo.h"
@@ -2264,7 +2265,66 @@ static void desktopPopover(void) {
   }
   gfx_sem_transformar();
 }
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+static int desktopActionIndex(int action) {
+  for (int i=0;i<nOps;i++) if (ops[i].acao==action) return i;
+  return -1;
+}
+static DesktopMenuItem desktopItem(int i, const CatItem *ci) {
+  int action=ops[i].acao, checked=0, separator=0;
+  const char *symbol="ellipsis";
+  switch(action) {
+    case OP_DESKTOP_PLAY: symbol="play";break;
+    case OP_DETALHES: symbol="info.circle";break;
+    case OP_DESKTOP_TRAILER: symbol="film";break;
+    case OP_DESKTOP_COPY: symbol="link";break;
+    case OP_LISTA: symbol="plus";separator=1;checked=ci&&tituloSalvo(ci);break;
+    case OP_ASSISTIDO: symbol="eye";checked=ci&&historicoDe(ci)==1;break;
+    case OP_RECOMENDAR: symbol="person.2";separator=1;break;
+    case OP_ESTILO: symbol="rectangle.grid.1x2";separator=1;break;
+    case OP_F_MENU: symbol="slider.horizontal.3";break;
+  }
+  return (DesktopMenuItem){i18n(ops[i].rot),symbol,action,checked,separator};
+}
+// Called after SwapWindow: AppKit tracks over a complete Home frame, then
+// returns the original action ID to the SDL main loop's existing dispatcher.
+void ctx_desktop_menu(void) {
+  if (!layout_desktop_ativo() || !aberto || pagina==2) return;
+  DesktopMenuItem items[CTX_MAX+FIL_TIPO_N*FIL_ESTILO_TAMS+FIL_ORD_N+PALCO_N+1];
+  int n=0, page=pagina;
+  if (page==1) {
+    for(int i=0;i<nEstilos;i++) for(int j=0;j<estLin[i].n;j++)
+      items[n++]=(DesktopMenuItem){i18n(estLin[i].nomes[j]),"rectangle.grid.1x2",1000+i*FIL_ESTILO_TAMS+j,fil_tipo(filChave)==estLin[i].tipos[j],j==0&&i>0};
+    if(ordemLinha) for(int i=0;i<FIL_ORD_N;i++)
+      items[n++]=(DesktopMenuItem){i18n(fil_ordem_rotulo(i)),"arrow.up.arrow.down",2000+i,ordemSel==i,i==0};
+    if(palcoLinha) for(int i=PALCO_PADRAO;i<PALCO_N;i++)
+      items[n++]=(DesktopMenuItem){i<0?i18n("Padrão"):i18n(ajustes_palco_fundo_rotulo(i)),"photo",3000+i-PALCO_PADRAO,palcoSel==i,i==PALCO_PADRAO};
+  } else {
+    const CatItem *ci=itemAtual();
+    for(int i=0;i<nOps;i++) items[n++]=desktopItem(i,ci);
+  }
+  SDL_Window *window=SDL_GL_GetCurrentWindow();int w=1280,h=800;
+  if(window) SDL_GetWindowSize(window,&w,&h);
+  int action=desktop_native_menu(items,n,desktopX*w/NV_TELA_W,desktopY*h/NV_TELA_H);
+  if(action<0) { estRestaurar();aberto=0;anim=0;return; }
+  if(page==1) {
+    if(action>=3000) palcoSel=action-3000+PALCO_PADRAO;
+    else if(action>=2000) ordemSel=action-2000;
+    else { int k=action-1000;estSel=estFoco=k/FIL_ESTILO_TAMS;estTam[estSel]=k%FIL_ESTILO_TAMS; }
+    aplicarEstilo();
+  } else {
+    int i=desktopActionIndex(action);
+    if(i<0) return;
+    foco=i;aplicar();
+    if(pagina==page && action!=OP_F_MENU) aberto=0;
+  }
+  anim=0;
+}
+#endif
 void ctx_desenhar(Uint32 agora) {
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+  if(layout_desktop_ativo() && pagina!=2) return;
+#endif
   ESCALA_INI();
   if(layout_desktop_ativo() && pagina!=1 && pagina!=2 && !doLista) {
     desktopPopover();ESCALA_FIM();return;

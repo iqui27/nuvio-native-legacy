@@ -4060,7 +4060,7 @@ static void detail_atualizar_(float dt, Uint32 agora) {
   colListaEntrada=anim_mola(colListaEntrada,colListaAberta ? 1 : 0,dt,NV_MOLA_FOCO);
   lowerEnter=anim_clamp(anim_mola(lowerEnter,lowerList ? 1 : 0,dt,NV_MOLA_FOCO),0,1);
 #ifdef NV_TOUCH_UI
-  if (toquerol_livre(&toqueLower)) { lowerTarget=lowerScroll; lowerScrollVel=0; }
+  if (toquerol_livre(&toqueLower)) { lowerScroll=layout_scroll_assentar(lowerScroll,toqueLower.minimo,toqueLower.maximo,dt); lowerTarget=lowerScroll; lowerScrollVel=0; }
   else
 #endif
   lowerScroll=anim_mola2(&lowerScrollVel,lowerScroll,lowerTarget,dt,NV_MOLA2_SCROLL);
@@ -4136,7 +4136,7 @@ static void detail_atualizar_(float dt, Uint32 agora) {
     if (alvo > maxY) alvo = maxY;
     if (alvo < 0.0f) alvo = 0.0f;
 #ifdef NV_TOUCH_UI
-    if (toqueColecao.livre) { colListaScroll = toquerol_clamp(colListaScroll, 0, maxY); colListaVel = 0; }
+    if (toqueColecao.livre) { colListaScroll = layout_scroll_assentar(colListaScroll, 0, maxY,dt); colListaVel = 0; }
     else
 #endif
     colListaScroll = anim_mola2(&colListaVel, colListaScroll, alvo, dt, NV_MOLA2_SCROLL);
@@ -4591,7 +4591,7 @@ static void detail_atualizar_(float dt, Uint32 agora) {
     } }
   for (int r=0;r<N_SECOES;r++) {
 #ifdef NV_TOUCH_UI
-    if (toqueSec[r].livre) { alvoScrollSec[r]=scrollSec[r]; velSec[r]=0; continue; }
+    if (toqueSec[r].livre) { scrollSec[r]=layout_scroll_assentar(scrollSec[r],toqueSec[r].minimo,toqueSec[r].maximo,dt); alvoScrollSec[r]=scrollSec[r]; velSec[r]=0; continue; }
 #endif
     scrollSec[r]=anim_mola2_reduzida(&velSec[r],scrollSec[r],alvoScrollSec[r],dt,
                                     NV_MOLA2_SCROLL,anim_politica_reduzida);
@@ -4651,7 +4651,7 @@ static void detail_atualizar_(float dt, Uint32 agora) {
     if (alvoY < 0.0f) alvoY = 0.0f;
   }
 #ifdef NV_TOUCH_UI
-  if (toqueDetalhe.livre) { scrollY = toquerol_clamp(scrollY, 0, fmaxf(0, docFim - NV_TELA_H)); velY = 0; }
+  if (toqueDetalhe.livre) { scrollY = layout_scroll_assentar(scrollY, 0, fmaxf(0, docFim - NV_TELA_H),dt); velY = 0; }
   else
 #endif
   {

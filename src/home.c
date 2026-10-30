@@ -2240,6 +2240,11 @@ static int toqueHomeRolar(const PonteiroRolagem *e) {
       s = &scrollX[toqueFileira]; minimo = 0.0f; maximo = toqueHomeMaxX(toqueFileira);
     }
     antes = *s; *s = layout_scroll_delta(*s, e->delta, minimo, maximo);
+#ifdef NV_DESKTOP_UI
+    if(getenv("NUVIO_DESKTOP_FRAME_LOG")) {
+      printf("[desktop-offset] axis=%c row=%d delta=%.4f offset=%.4f\n",e->eixoY?'y':'x',toqueFileira,e->delta,*s);fflush(stdout);
+    }
+#endif
     return fabsf(*s - antes) > 0.001f;
   }
   if (e->fase == PONT_ROL_FIM || e->fase == PONT_ROL_CANCELAR) {

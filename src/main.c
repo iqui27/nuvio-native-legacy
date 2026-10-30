@@ -2475,17 +2475,31 @@ int main(int argc, char **argv) {
 #ifdef NV_DESKTOP_MPV
     video_desktop_swap();
 #endif
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+    ctx_desktop_menu();
+#endif
 #ifndef __EMSCRIPTEN__
     { unsigned wait = player_frame_wait(playerUi, SDL_GetTicks() - frameStarted);
 #ifdef NV_DESKTOP_UI
+      SDL_DisplayMode display;
+      int hz = SDL_GetCurrentDisplayMode(SDL_GetWindowDisplayIndex(win), &display) == 0 && display.refresh_rate > 0 ? display.refresh_rate : 60;
+      // Foreground swaps already wait for display refresh. Only background
+      // proof runs disable vsync and need a software frame deadline.
       if (!playerUi) {
-        SDL_DisplayMode display;
-        int hz = SDL_GetCurrentDisplayMode(SDL_GetWindowDisplayIndex(win), &display) == 0 && display.refresh_rate > 0 ? display.refresh_rate : 60;
         unsigned target = 1000u / hz, elapsed = SDL_GetTicks() - frameStarted;
-        wait = elapsed < target ? target - elapsed : 0;
+        wait = getenv("NV_CAPTURA") && elapsed < target ? target - elapsed : 0;
       }
-      if (getenv("NUVIO_DESKTOP_FRAME_LOG") && (Sint32)(SDL_GetTicks() - nv_desktop_wheel_until) < 0)
-        printf("[desktop-scroll] t=%u work_ms=%u wait_ms=%u\n",SDL_GetTicks(),SDL_GetTicks()-frameStarted,wait);
+      if (getenv("NUVIO_DESKTOP_FRAME_LOG")) {
+        static Uint64 previous; static unsigned frames, dropped;
+        Uint64 now=SDL_GetPerformanceCounter();
+        double interval=previous ? (now-previous)*1000.0/SDL_GetPerformanceFrequency() : 0;
+        previous=now;
+        if (nv_desktop_scroll_active || (Sint32)(SDL_GetTicks()-nv_desktop_wheel_until)<0) {
+          frames++; if(interval>1500.0/hz) dropped+=(unsigned)(interval*hz/1000.0+.5)-1;
+          printf("[desktop-scroll] frame=%u interval_ms=%.3f refresh_hz=%d dropped=%u work_ms=%u wait_ms=%u\n",frames,interval,hz,dropped,SDL_GetTicks()-frameStarted,wait);
+          fflush(stdout);
+        }
+      }
 #endif
       if (wait) SDL_Delay(wait); }
 #else

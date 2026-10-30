@@ -119,6 +119,10 @@ static void pararInercia(void);
 static void pararRolagem(void);
 static int arrModo;
 static void cancelarToque(void) {
+#ifdef NV_DESKTOP_UI
+  nv_desktop_scroll_active=0;
+  nv_desktop_wheel_until=0;
+#endif
   pararRolagem();
   pararInercia();
   arrModo = 0;
@@ -712,7 +716,11 @@ static void inerciaQuadro(Uint32 agora) {
   if (inRolagem) {
     PonteiroRolagemFn fn = inRolagem;
     float d = inVel * (float)dt;
+#ifdef NV_DESKTOP_UI
+    inVel *= expf(-(float)dt / 100.0f);
+#else
     inVel *= expf(-(float)dt / PONT_INERCIA_TAU);
+#endif
     if (!rolagemEntregar(fn, PONT_ROL_INERCIA, inEixoY, d, inVel, inX, inY) && inRolagem == fn)
       encerrarInercia(PONT_ROL_FIM);
     else if (inRolagem == fn && fabsf(inVel) < PONT_INERCIA_PARA) encerrarInercia(PONT_ROL_FIM);
@@ -847,12 +855,17 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
       if (SDL_GetModState() & KMOD_SHIFT) { dxp = dyp; dyp = 0; }
       if (!isfinite(dxp) || !isfinite(dyp)) return 1;
       if (e->wheel.which == NV_DESKTOP_PIXEL_WHEEL) converter(e->wheel.windowID, e->wheel.mouseX, e->wheel.mouseY);
-      if (e->wheel.which == NV_DESKTOP_PIXEL_WHEEL && (e->wheel.x & NV_WHEEL_PHASED)) {
+      if (e->wheel.which == NV_DESKTOP_PIXEL_WHEEL && (e->wheel.x & (NV_WHEEL_PHASED|NV_WHEEL_UNPHASED))) {
         // Ownership and the origin survive pauses, finger release and momentum.
         static int active, route, vertical;
         static float originX, originY, distance;
         static PonteiroRolagemFn owner;
         int phase=e->wheel.x;
+        static Uint32 unphasedAt;
+        if(phase & NV_WHEEL_UNPHASED) {
+          if(!unphasedAt || agora-unphasedAt>180) phase|=NV_WHEEL_BEGIN;
+          unphasedAt=agora;
+        }
         SDL_Window *w=SDL_GetWindowFromID(e->wheel.windowID);
         int width=1280,height=800;
         if(w) SDL_GetWindowSize(w,&width,&height);
@@ -863,9 +876,10 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
         }
         if(phase & NV_WHEEL_CANCEL) {
           if(owner) rolagemEntregar(owner,PONT_ROL_CANCELAR,vertical,0,0,originX,originY);
-          owner=NULL;active=0;return 1;
+          owner=NULL;active=0;nv_desktop_scroll_active=0;nv_desktop_wheel_until=agora;return 1;
         }
         if(!active) return 1; // Orphan momentum cannot start navigation.
+        nv_desktop_scroll_active=!(phase & (NV_WHEEL_END|NV_WHEEL_UNPHASED));
         nv_desktop_wheel_until=agora+100;
         if(owner && owner!=listaRolagem[pronto]) { owner=NULL;route=6; }
         if(dxp || dyp) {
@@ -929,13 +943,14 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
       PonteiroRolagemFn fn = listaRolagem[pronto];
       int vertical = fabsf(dyp) >= fabsf(dxp);
       if (fn && rolagemEntregar(fn, PONT_ROL_INICIO, vertical, 0, 0, px, py)) {
-        rolagemEntregar(fn, PONT_ROL_MOVER, vertical, (vertical ? dyp : dxp) * scale, 0, px, py);
-        rolagemEntregar(fn, PONT_ROL_SOLTAR, vertical, 0, 0, px, py);
-        if (e->wheel.which == NV_DESKTOP_PIXEL_WHEEL)
+        if (e->wheel.which == NV_DESKTOP_PIXEL_WHEEL) {
+          rolagemEntregar(fn, PONT_ROL_MOVER, vertical, (vertical ? dyp : dxp) * scale, 0, px, py);
+          rolagemEntregar(fn, PONT_ROL_SOLTAR, vertical, 0, 0, px, py);
           rolagemEntregar(fn, PONT_ROL_FIM, vertical, 0, 0, px, py);
-        else {
+        } else {
+          // Wheel notches animate from the current offset, without an initial jump.
           inercia = 1; inRolagem = fn; inEixoY = vertical;
-          inVel = (vertical ? dyp : dxp) * scale / 180;
+          inVel = (vertical ? dyp : dxp) * scale / 100;
           inUltMs = agora; inX = px; inY = py;
         }
       }

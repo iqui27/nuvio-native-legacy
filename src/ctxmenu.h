@@ -24,6 +24,9 @@
 void ctx_abrir(int indice);
 #ifdef NV_DESKTOP_UI
 void ctx_desktop_ancorar(float x, float y);
+#if defined(__APPLE__)
+void ctx_desktop_menu(void);
+#endif
 int ctx_desktop_pedido(int *action); // 0 title, 1 play, 2 trailer; returns catalog index
 #endif
 // Fecha a UI e descarta copias/pedidos do perfil anterior. Escritas ja

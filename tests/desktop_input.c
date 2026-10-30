@@ -32,8 +32,11 @@ void gfx_cor(GfxRect r,float radius,float a,float b,float c,float d) { (void)r;(
 static void focus(int a,int b) { (void)a;(void)b;focuses++; }
 static void context(int a,int b) { (void)a;(void)b;contexts++; }
 static void deliver(const SDL_Event *e) { if(e->type==SDL_KEYDOWN) { if(e->key.keysym.sym==SDLK_AC_BACK) backs++; else arrows++; } }
-static int row, rowStart;
+static int row, rowStart, realScroll;
+static float realOffset;
+static ToqueRolagem preciseRow;
 static int scrolling(const PonteiroRolagem *e) {
+  if(realScroll) return toquerol_evento(&preciseRow,e);
   if(e->fase==PONT_ROL_INICIO && !e->eixoY && (!row || (rowStart && e->delta>0))) return 0;
   if(e->fase==PONT_ROL_MOVER){pixels+=e->delta;moves++;rowStart=1;}
   return 1;
@@ -112,6 +115,41 @@ int main(void) {
   ponteiro_alvo_segurar(context);fecharQuadro();
   ponteiro_evento(&e,deliver);
   assert(contexts==1 && focuses==3 && arrows==2);
+  // Real row consumer, redrawn between events: no per-frame clamp or snap.
+  realScroll=1;realOffset=100;
+  ponteiro_quadro(SDL_GetTicks());ponteiro_rolagem(scrolling);fecharQuadro();
+  toquerol_vincular(&preciseRow,(GfxRect){0,0,1920,1200},1,0,110,0,&realOffset);
+  phased(500,200,-.25f,0,NV_WHEEL_BEGIN);
+  assert(fabsf(realOffset-(100+.25f*NV_TELA_W/1280))<.001f);
+  phased(500,200,0,0,NV_WHEEL_END); // Finger up precedes OS momentum.
+  for(int i=0;i<8;i++) {
+    float before=realOffset;
+    phased(500,200,-.125f,0,NV_WHEEL_MOMENTUM);
+    toquerol_vincular(&preciseRow,(GfxRect){0,0,1920,1200},1,0,110,0,&realOffset);
+    assert(fabsf(realOffset-before-.125f*NV_TELA_W/1280)<.001f);
+    assert(layout_scroll_assentar(realOffset,0,110,.016f)==realOffset);
+  }
+  phased(500,200,-40,0,NV_WHEEL_MOMENTUM);
+  assert(realOffset>110 && realOffset<=182);
+  float stretched=realOffset;
+  toquerol_vincular(&preciseRow,(GfxRect){0,0,1920,1200},1,0,110,0,&realOffset);
+  assert(realOffset==stretched);
+  phased(500,200,0,0,NV_WHEEL_MOMENTUM|NV_WHEEL_END);
+  assert(!nv_desktop_scroll_active && !inRolagem);
+  nv_desktop_wheel_until=0;
+  for(int i=0;i<120;i++) realOffset=layout_scroll_assentar(realOffset,0,110,1.0f/60);
+  assert(realOffset==110);
+  realOffset=50;
+  phased(500,200,-.2f,0,NV_WHEEL_UNPHASED);
+  assert(fabsf(realOffset-(50+.2f*NV_TELA_W/1280))<.001f && !inRolagem);
+  float beforeWheel=realOffset;
+  e=(SDL_Event){0};e.type=SDL_MOUSEWHEEL;e.wheel.preciseX=-1;
+  ponteiro_evento(&e,deliver);
+  assert(realOffset==beforeWheel && inRolagem);
+  inerciaQuadro(SDL_GetTicks()+16);
+  assert(realOffset>beforeWheel);
+  pararInercia();
+  puts("PASS: precise deltas and momentum remain fractional across redraw; rubber-band survives redraw and settles exactly at bound");
   puts("PASS: hover updates focus without scrolling; fractional pixels; no Mac double momentum; left/right edges; one Back per phase sequence; row ownership; panel reverse; cancelled momentum; disabled swipe preference; click activation");
   SDL_Quit();return 0;
 }
