@@ -411,7 +411,7 @@ static int (*buscar)(const char *,char **,int *)=buscarPadrao;
 void intro_definir_buscador(int (*f)(const char *,char **,int *)){buscar=f?f:buscarPadrao;}
 static int buscarInterno(const char *url,char **corpo,int *status){return buscar(url,corpo,status);}
 
-enum{R_OK,R_VAZIO,R_FALHA};
+enum{R_SUCESSO,R_VAZIO,R_FALHA};
 // Episode misses are session-only (credfonte.c), cleared on upgrade/restart.
 // Persistent network misses hash the full URL, so /v3 cannot block /v4.
 static void chave404(char *k,size_t n,const Pedido *p){
@@ -437,7 +437,7 @@ static int pedirEp(const Pedido *p,int t,int e,double dur,char **json){
     cred_404_marcar(k,t,e,agora);
     return R_VAZIO;
   }
-  *json=j;return R_OK;
+  *json=j;return R_SUCESSO;
 }
 
 static int geracaoVale(unsigned g){int v;pthread_mutex_lock(&trava);v=(g==geracao);pthread_mutex_unlock(&trava);return v;}
@@ -623,10 +623,10 @@ static void *baixar(void *u){
     nw=j?intro_extrair(j,w,8):0;
     nl=j&&!temCred?creditosjson_extrair(j,limitados,8):0;
     n=intro_completar(v,n<0?0:n,w,nw,8);
-    r=rj==R_FALHA?R_FALHA:n>0?R_OK:rj;
+    r=rj==R_FALHA?R_FALHA:n>0?R_SUCESSO:rj;
   }
   else if(n<=0&&falhaAni)r=R_FALHA;
-  else if(n>0)r=R_OK;
+  else if(n>0)r=R_SUCESSO;
   if(n<0)n=0;
   if(deAni)
     for(int i=0;i<n&&nl<8;i++)
@@ -644,7 +644,7 @@ static void *baixar(void *u){
     IntroTrecho w[3];int falhaBackup=0,n0=n,nw=pedirBackup(p,w,&falhaBackup);
     n=intro_completar(v,n,w,nw,8);deBackup=n-n0;
     for(int i=n0;i<n&&nl<8;i++)if(v[i].tipo==INTRO_CREDITOS)limitados[nl++]=v[i];
-    if(falhaBackup)r=R_FALHA;else if(n>0&&r!=R_FALHA)r=R_OK;
+    if(falhaBackup)r=R_FALHA;else if(n>0&&r!=R_FALHA)r=R_SUCESSO;
     if(deBackup){printf("[intro] IntroDB backup: %d tipos ausentes adicionados\n",deBackup);fflush(stdout);}
   }
   for(int i=0;i<n;i++)if(v[i].tipo==INTRO_CREDITOS)temCred=1;

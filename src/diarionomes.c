@@ -16,7 +16,7 @@ static Nome *nomes;
 static int n, cap, lido, sujo;
 static unsigned relogio;
 
-static char *dup(const char *s) {
+static char *dupNome(const char *s) {
   size_t l = strlen(s ? s : "");
   char *d = malloc(l + 1);
   if (d) memcpy(d, s ? s : "", l + 1);
@@ -46,11 +46,11 @@ static int pore(const char *id, const char *titulo, int ano, const char *poster)
     }
     i = n++;
     memset(&nomes[i], 0, sizeof nomes[i]);
-    nomes[i].id = dup(id);
-    nomes[i].titulo = dup(""); nomes[i].poster = dup("");
+    nomes[i].id = dupNome(id);
+    nomes[i].titulo = dupNome(""); nomes[i].poster = dupNome("");
   }
-  if (titulo && titulo[0] && strcmp(nomes[i].titulo, titulo)) { free(nomes[i].titulo); nomes[i].titulo = dup(titulo); sujo = 1; }
-  if (poster && poster[0] && strcmp(nomes[i].poster, poster)) { free(nomes[i].poster); nomes[i].poster = dup(poster); sujo = 1; }
+  if (titulo && titulo[0] && strcmp(nomes[i].titulo, titulo)) { free(nomes[i].titulo); nomes[i].titulo = dupNome(titulo); sujo = 1; }
+  if (poster && poster[0] && strcmp(nomes[i].poster, poster)) { free(nomes[i].poster); nomes[i].poster = dupNome(poster); sujo = 1; }
   if (ano > 0 && nomes[i].ano != ano) { nomes[i].ano = ano; sujo = 1; }
   nomes[i].uso = ++relogio;
   return 1;
@@ -128,7 +128,7 @@ void diario_nomes_gravar(void) {
     if (copia) {
       for (i = 0; i < n; i++) {
         copia[i] = nomes[i];
-        copia[i].id = dup(nomes[i].id); copia[i].titulo = dup(nomes[i].titulo); copia[i].poster = dup(nomes[i].poster);
+        copia[i].id = dupNome(nomes[i].id); copia[i].titulo = dupNome(nomes[i].titulo); copia[i].poster = dupNome(nomes[i].poster);
         if (!copia[i].id || !copia[i].titulo || !copia[i].poster) break;
       }
       if (i == n) { qtd = n; sujo = 0; }

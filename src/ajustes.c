@@ -3732,7 +3732,7 @@ int ajustes_rail_moderna(void)        { return lig(AJ_RAIL_MODERNA); }
 // #461: a barra no topo nao existe no Dinamica (a pilula dela ja e o topo) nem
 // no telefone em retrato (nao cabe).
 int ajustes_menu_topo(void) {
-  return valor[AJ_MENU_TOPO] == 1 && ajustes_home_layout() != HOME_LAYOUT_DINAMICA && !ajRetrato();
+  return !layout_desktop_ativo() && valor[AJ_MENU_TOPO] == 1 && ajustes_home_layout() != HOME_LAYOUT_DINAMICA && !ajRetrato();
 }
 int ajustes_abas_estilo(void) { return valor[AJ_ABAS_ESTILO]; }
 void ajustes_definir_abas_estilo(int estilo) {
@@ -3760,6 +3760,7 @@ float ajustes_hero_escala_logo(void) { static const float e[3] = { 1.0f, 1.25f, 
 float ajustes_hero_escala_info(void) { static const float e[3] = { 1.0f, 1.15f, 1.3f }; return e[ajustes_hero_tamanho()]; }
 int ajustes_hero_tamanho(void) { int v = valor[AJ_HERO_TAMANHO]; return v >= 0 && v <= 2 ? v : 0; }
 int ajustes_home_layout(void) {
+  if (layout_desktop_ativo()) return HOME_LAYOUT_DINAMICA;
   int v = valor[AJ_HOME_LAYOUT];
   return v >= 0 && v < HOME_LAYOUT_N ? v : HOME_LAYOUT_MODERNA;
 }
@@ -4032,7 +4033,7 @@ int ajustes_meta_so_cinemeta(void)    { return lig(AJ_DET_SO_CINEMETA); }
 int   ajustes_expandir_poster(void)   { return lig(AJ_EXPANDIR); }
 float ajustes_expandir_poster_atraso(void) { return (float)valor[AJ_EXPANDIR_ATRASO]; }
 int   ajustes_navegacao_horizontal_rapida(void) { return lig(AJ_NAV_RAPIDA); }
-int   ajustes_borda_foco(void) { return lig(AJ_BORDA_FOCO); }
+int   ajustes_borda_foco(void) { return layout_desktop_ativo() ? 0 : lig(AJ_BORDA_FOCO); }
 
 int   ajustes_profundidade(void)      { return lig(AJ_PROF); }
 float ajustes_profundidade_borda(void)     { return valor[AJ_PROF_BORDA] / 100.0f; }
@@ -4050,6 +4051,7 @@ float ajustes_raio_poster_px(void)    { return (float)valor[AJ_RAIO_DP] * 2.0f; 
 // A regra do web, e nao dois layouts: o conteudo tem sempre 104 de recuo e a
 // rail acrescenta os 144 dela quando esta fixa.
 float ajustes_conteudo_x(void) {
+  if (layout_desktop_ativo()) return NV_DESKTOP_RAIL_W + fmaxf(96.0f, NV_TELA_W * .05f);
   return ajustes_rail_largura_fixa() + NV_CONTENT_PAD;
 }
 // A RAIL FIXA segue a pilula de icones que o menu desenha (menu.c, layouts
@@ -4058,6 +4060,7 @@ float ajustes_conteudo_x(void) {
 // O menu desenha numa escala FIXA (90 %, menu.c), que nao segue o Tamanho da
 // interface: a borda ja esta em px da tela REAL.
 float ajustes_rail_largura_fixa(void) {
+  if (layout_desktop_ativo()) return NV_DESKTOP_RAIL_W;
   float borda;
   // Layout Dinamica: a barra e a pilula da Apple TV (menu.c), sem rail fixa.
   if (ajustes_home_layout() == HOME_LAYOUT_DINAMICA) return 0.0f;

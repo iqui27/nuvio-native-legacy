@@ -23,6 +23,13 @@
 #define NV_TXT_TELA   // NV_TELA_W/H = tela virtual da escala de texto (escala.h)
 #include "escala.h"
 #include "detail.h"
+// Desktop content clears the pinned sidebar; the backdrop remains full bleed.
+#ifdef NV_DESKTOP_UI
+#undef NV_DETP_X
+#define NV_DETP_X (layout_desktop_ativo()?ANC(ajustes_conteudo_x()):96.0f)
+#undef NV_DETW2_X
+#define NV_DETW2_X (layout_desktop_ativo()?ANC(ajustes_conteudo_x()):96.0f)
+#endif
 #include "srvidx.h"
 #include "biblioteca.h"
 #include "detail_acoes.h"
@@ -414,11 +421,12 @@ static GfxRect detalheEscala(GfxRect r,float f,float escala) {
 // C.13: every tile takes the user's "Foco no cartaz" (focoprof.h). On: the
 // mock's spring growth plus the white ring; off: no ring, the shared 6 %.
 static float detalheFocoEscala(float escala) {
-  return ajustes_borda_foco() ? escala : FOCO_ZOOM;
+  return layout_desktop_ativo() ? .025f : ajustes_borda_foco() ? escala : FOCO_ZOOM;
 }
 static GfxRect detalheFoco(GfxRect r,float raio,float f,float escala,float a) {
   r=detalheEscala(r,f,detalheFocoEscala(escala));
-  if (f>.005f && ajustes_borda_foco()) gfx_anel(r,raio,1,1,1,1,f*a);
+  if (layout_desktop_ativo()) foco_anel(r,raio,f,a);
+  else if (f>.005f && ajustes_borda_foco()) gfx_anel(r,raio,1,1,1,1,f*a);
   return r;
 }
 static float corpoAlpha(float entrada) { return entrada; }
@@ -444,7 +452,7 @@ static void toqueDetalheLimpar(void) {
 }
 static void toqueDetalheSincronizarModo(void) {
   static int mobileAntes;
-  int mobile = telefoneui_ativo();
+  int mobile = layout_rolagem_livre();
   if (!mobile) {
     toqueDetalheLimpar();
     toquePessoaOffset = 0;
@@ -1219,11 +1227,11 @@ static float vaoAntes(int r) {
 static float epDyFone;
 static void recalcularLayout(void) {
   static int ready, lastSeries, counts[N_SECOES];
-  static float heights[N_SECOES], lastScale;
+  static float heights[N_SECOES], lastScale, lastWidth, lastHeight;
   float scale=gfx_escala_tela_txt();
   static int lastFone;
   int fone=detalheRetratoFone() && !heroServidor();
-  int changed=!ready || lastSeries!=ehSerie() || lastScale!=scale || lastFone!=fone;
+  int changed=!ready || lastSeries!=ehSerie() || lastScale!=scale || lastFone!=fone || lastWidth!=NV_TELA_W || lastHeight!=NV_TELA_H;
   for (int r=0;r<N_SECOES;r++) {
     int n=secaoN(r); float h=n>0 ? alturaSecao(r) : 0;
     if (counts[r]!=n || heights[r]!=h) changed=1;
@@ -1231,7 +1239,9 @@ static void recalcularLayout(void) {
   }
   if (!changed) return;
   ready=1; lastSeries=ehSerie(); lastScale=scale; lastFone=fone;
-  float y=heroServidor() ? NV_TELA_H + 60 : fone ? retPt(636) : ANC(NV_DET21_FIM + 56);
+  lastWidth=NV_TELA_W; lastHeight=NV_TELA_H;
+  float y=heroServidor() ? NV_TELA_H + 60 : fone ? retPt(636) :
+    layout_desktop_ativo() ? NV_TELA_H * .66f + 56 : ANC(NV_DET21_FIM + 56);
   const int *order=ordemSecoes();
   for (int r=0;r<N_SECOES;r++) {
     topoSec[r]=conteudoSec[r]=y; dxSec[r]=0; wSec[r]=1728;
@@ -1246,7 +1256,7 @@ static void recalcularLayout(void) {
     if (r==SEC_TEMPORADAS && !epModerno()) {
       // Retrato do telefone: o heroi e mais alto que o da TV; a faixa de
       // temporadas/episodios desce pelo mesmo tanto (zero na TV).
-      epDyFone = fone ? fmaxf(0, y - serieGrupo(0)) : 0;
+      epDyFone = layout_desktop_ativo() ? y - serieGrupo(0) : fone ? fmaxf(0, y - serieGrupo(0)) : 0;
       topoSec[r]=serieGrupo(0)+epDyFone;
       conteudoSec[r]=(epApple() ? 1160 : NV_DETP_TEMP_Y)+epDyFone;
       topoSec[SEC_EPISODIOS]=serieGrupo(1)+epDyFone;
@@ -1918,6 +1928,9 @@ void detail_mostrar_pessoa(long tmdb, const char *nome, const char *foto) {
   pessoaAberta = 1;
   pessoaFoco = 0;
   pessoaLinha = 0;
+#ifdef NV_DESKTOP_UI
+  filmo_abrir();
+#endif
 #ifdef NV_TOUCH_UI
   toquerol_limpar(&toquePessoa); toquePessoaOffset = 0;
 #endif
@@ -2075,7 +2088,7 @@ static void carPasso(int d) {
 // cartaz da fileira <-> cartao (abrir/fechar, t).
 static GfxRect carBuraco(float *raioPx) {
   GfxRect c = { CAR_X, CAR_Y, NV_TELA_W - 2.0f * CAR_X, NV_TELA_H - CAR_Y - CAR_BAIXO };
-  float k = cartao, s = suave(t), r;
+  float k = layout_desktop_ativo() ? 0 : cartao, s = suave(t), r;
   GfxRect h = { c.x * k, c.y * k, NV_TELA_W + (c.w - NV_TELA_W) * k, NV_TELA_H + (c.h - NV_TELA_H) * k };
   r = CAR_RAIO * k;
   if (s < 0.9999f) {
@@ -3091,6 +3104,9 @@ static void detail_evento_(const SDL_Event *e) {
   if (musicaui_visivel()) { if (musicaui_aberta()) musicaui_evento(e); return; }
   pediuRelogio = 0;
   if (sinopse_aberta()) { sinopse_evento(e); return; }
+#ifdef NV_DESKTOP_UI
+  if(pessoaAberta) { filmo_evento(e); return; }
+#endif
 #ifdef NV_TOUCH_UI
   toqueDetalheSincronizarModo();
 #endif
@@ -4086,7 +4102,13 @@ static void detail_atualizar_(float dt, Uint32 agora) {
     }
   }
   if (!aberto) { blocoAnt[0] = blocoAnt[1] = blocoAnt[2] = -1.0f; return; }
-  if (pessoaAberta && filmo_atualizar(dt)) pessoaAberta = 0;
+#ifdef NV_DESKTOP_UI
+  if (pessoaAberta) {
+    if(filmo_atualizar(dt)) pessoaAberta=0;
+    int credit=filmo_titulo();
+    if(credit>=0) { pessoaFoco=credit;abrirCredito(); }
+  }
+#endif
   if (pessoaAberta && pessoa_falhou()) {
     pessoaAberta = 0;
     ilha_avisar("det-elenco-sem-pagina", ILHA_INFO, NULL,
@@ -5189,7 +5211,7 @@ static void esqueletoSinopse(float x, float y, float a) {
 // bloco inteiro — sem tocar nas medidas do resto da pagina.
 #pragma push_macro("NV_DETW2_X")
 #undef NV_DETW2_X
-#define NV_DETW2_X ((heroServidor() ? ANC(96.0f) : 96.0f) + heroDx)
+#define NV_DETW2_X ((layout_desktop_ativo()?ANC(ajustes_conteudo_x()):heroServidor()?ANC(96.0f):96.0f) + heroDx)
 // Unknown language is not evidence of a mismatch. Keep a loaded logo clean;
 // only a confirmed foreign image needs a caption. Missing images keep text.
 static int mostrarNomeLogo(const CatItem *ci, const char *url, int loaded,
@@ -5558,7 +5580,7 @@ static void heroWeb(float a, float desloc) {
       if (fabsf(alvo - hSinVis) < 0.5f) hSinVis = alvo;
     }
     hSinInit = 1;
-    hSin = hSinVis; }
+    hSin = layout_desktop_ativo() ? fmaxf(alvo,hSinVis) : hSinVis; }
   const char *arqLogo = logoDe(idx);
   const char *nome = mostrarNomeLogo(ci, arqLogo && tex_falhou(arqLogo) ? NULL : arqLogo,
                                     0, desc_tmdb_idioma()) ? tituloDe(idx) : NULL;
@@ -5657,13 +5679,14 @@ static void heroWeb(float a, float desloc) {
   // NV_DET21_FIM, just above the first section kicker.
   float yVers = 716.0f;
   if (!detalheRetrato() && !heroServidor()) {
-    float y = ANC(NV_DET21_FIM);
+    float y = layout_desktop_ativo() ? NV_TELA_H * .66f : ANC(NV_DET21_FIM);
 
     float hP = (pessoal[0] ? 30.0f : 0.0f) + (srvLinha[0] ? 30.0f : 0.0f);
     if (hP > 0.0f) { yRetom = y - hP; y = yRetom - 8.0f; }
     yMeta1 = y - NV_DETW2_M1_H;
     ySin = yMeta1 - NV_DET21_GAP - hSin;
-    yAcoes = ySin - NV_DET21_GAP - NV_DET21_BTN_H - hVai;
+    float sourceHeight = layout_desktop_ativo() && topoVersao() && topoFonteDisponivel() ? fmaxf(hVai, 56) : hVai;
+    yAcoes = ySin - NV_DET21_GAP - NV_DET21_BTN_H - sourceHeight;
     yVers = yAcoes + NV_DET21_BTN_H + 12;
   }
 
@@ -8456,6 +8479,13 @@ static float desenhaFrases(float x, float y, float a) {
 // c (nivel 1) — as mesmas variaveis que as setas mexem em detail_evento.
 static void ponteiroDetalhe(int r, int c) {
   if (corpoSobArte()) return;
+#ifdef NV_DESKTOP_UI
+  // Hover updates identity without asking the document or row to scroll.
+  if (ponteiro_mouse()) {
+    toqueDetalhe.livre=1; velY=0;
+    if(r>=0 && r<N_SECOES) toqueSec[r].livre=1;
+  }
+#endif
   if (r==-4) { nivel=0; focoVersao=1; focoAmigos=0; focoServidor=-1; return; }
   focoVersao=0;
   if (r == -2) { ponteiroServidor(c,0); return; }
@@ -9115,6 +9145,9 @@ static void desenhaEsqueletoElenco(float a) {
 // o mesmo raio dos outros.
 
 static void desenhaPessoa(float a) {
+#ifdef NV_DESKTOP_UI
+  filmo_desenhar(a);return;
+#endif
   GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
   gfx_cor(tela, 0.0f, NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, a);
 
@@ -9181,6 +9214,9 @@ static void desenhaPessoa(float a) {
       { float fp = i == pessoaFoco ? 1.0f : 0.0f;
         foco_anel(r, raioCartaz(PES_CARD_W, PES_CARD_H), fp, a);
         r = foco_zoom(r, fp); }
+#ifdef NV_DESKTOP_UI
+      gfx_recorte(x0, topo, NV_TELA_W - x0, area);
+#endif
       if (t) {
         gfx_tex_aspect_atual = tex_aspecto(po);
         gfx_rect(r, t, GFX_CARD, i == pessoaFoco ? 1.0f : 0.0f, 0, 0,

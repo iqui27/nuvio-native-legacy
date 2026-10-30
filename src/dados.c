@@ -13,7 +13,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <pthread.h>
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__) && !defined(_WIN32)
 #include <ifaddrs.h>
 #include <sys/socket.h>
 #ifdef __APPLE__
@@ -552,7 +552,8 @@ static int gravarInterno(const char *nome, const char *conteudo, int leve) {
 #endif
   if (fclose(f) != 0) { remove(tmp); NV_FS_LIBERAR(); return 0; }
   if (rename(tmp, caminho) != 0) { remove(tmp); NV_FS_LIBERAR(); return 0; }
-#ifndef __EMSCRIPTEN__
+// Windows rename uses MOVEFILE_WRITE_THROUGH; directory fsync is POSIX only.
+#if !defined(__EMSCRIPTEN__) && !defined(_WIN32)
   if (durable) {
     int fd = open(dir, O_RDONLY | O_DIRECTORY);
     int ok = fd >= 0 && fsync(fd) == 0;
@@ -641,7 +642,7 @@ const char *dados_aparelho_id(void) {
   if (id[0]) return id;
   const char *raw = getenv("NUVIO_DEVICE_ID");
   char hardware[128] = "";
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__) && !defined(_WIN32)
   if (!raw || !*raw) {
     // Native TV network interfaces survive uninstall. Prefer wired over Wi-Fi;
     // enumerate interfaces, not currently connected routes.

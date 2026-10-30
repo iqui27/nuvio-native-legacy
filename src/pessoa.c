@@ -3,6 +3,9 @@
 #include "rede.h"
 #include "js.h"
 #include "idbase.h"
+#ifdef NV_DESKTOP_UI
+#include "dados.h"
+#endif
 int ajustes_tmdb_elenco(void);
 #include <pthread.h>
 #include <string.h>
@@ -184,8 +187,13 @@ static int linhas(const char *corpo, const char *chave, int papel, FmBruto *b, i
       r->votos = (int)js_num(p, f, "vote_count", 0);
       r->eps = (int)js_num(p, f, "episode_count", 0);
       r->talk = temNumero(p, f, "genre_ids", talk, 3);
-      if (js_texto(p, f, "poster_path", caminho, sizeof caminho) && caminho[0] == '/')
+      if (js_texto(p, f, "poster_path", caminho, sizeof caminho) && caminho[0] == '/') {
+#ifdef NV_DESKTOP_UI
+        if(getenv("NV_CAPTURA") && getenv("NUVIO_UI_PREVIEW")) snprintf(r->poster,sizeof r->poster,"%s",caminho);
+        else
+#endif
         snprintf(r->poster, sizeof r->poster, IMG "%s", caminho);
+      }
       if (r->tmdb && r->titulo[0]) n++;
     }
     p = js_prox(f);
@@ -316,6 +324,15 @@ void pessoa_pedir(long tmdbId, const char *nomeConhecido, const char *fotoConhec
   snprintf(fotoSemente, sizeof fotoSemente, "%s", fotoConhecida ? fotoConhecida : "");
   snprintf(nome, sizeof nome, "%s", nomeSemente);
   snprintf(foto, sizeof foto, "%s", fotoSemente);
+#ifdef NV_DESKTOP_UI
+  if(getenv("NV_CAPTURA") && getenv("NUVIO_UI_PREVIEW")) {
+    char *fixture=dados_ler("desktop-person.json");
+    if(fixture) {
+      pthread_mutex_unlock(&trava);
+      pessoa_ler(tmdbId,fixture,"2026-01-01");free(fixture);return;
+    }
+  }
+#endif
   // One worker drains the latest selection; older results cannot publish.
   if (!fioVivo) {
     fioVivo = 1;

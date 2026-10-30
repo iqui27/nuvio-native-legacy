@@ -1,5 +1,10 @@
 // Ponteiro do Magic Remote: estado, hit-test e cursor. Ver ponteiro.h.
 #include "ponteiro.h"
+#include "desktop_native.h"
+#ifdef NV_DESKTOP_UI
+#include "menu.h"
+#include "salvospainel.h"
+#endif
 #include "gfx.h"
 #include "layout.h"
 #include <stdio.h>
@@ -144,7 +149,15 @@ int ponteiro_teste_lista(const PonteiroAlvo **v) { if (v) *v = lista[pronto]; re
 
 float ponteiro_x(void) { return px; }
 float ponteiro_y(void) { return py; }
-int ponteiro_ativo(void) { return visivel || toqueDisponivel; }
+static int mouseInput=1;
+int ponteiro_mouse(void) { return mouseInput; }
+int ponteiro_ativo(void) {
+#ifdef NV_DESKTOP_UI
+  return 1;
+#else
+  return visivel || toqueDisponivel;
+#endif
+}
 
 // See ponteiro.h. A touch counts as activity too: a finger on the screen is also a
 // hand on the remote, and without this the bar vanished under a resting finger.
@@ -365,7 +378,7 @@ static void mover(void) {
   const PonteiroAlvo *v = lista[pronto];
   int i = ponteiro_achar(v, nLista[pronto], px, py);
   if (i < 0 || mesmo(&hover, &v[i])) return;
-  if (conteudoMexeuEm && agoraMs() - conteudoMexeuEm < PONT_ASSENTA_MS) return;
+  if (!layout_desktop_ativo() && conteudoMexeuEm && agoraMs() - conteudoMexeuEm < PONT_ASSENTA_MS) return;
   guardar(&hover, &v[i]);
   if (v[i].focar) { rastro("foco", &v[i], nLista[pronto]); v[i].focar(v[i].a, v[i].b); }
 }
@@ -743,8 +756,12 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
       if (e->motion.which == SDL_TOUCH_MOUSEID) return 1;
       converter(e->motion.windowID, e->motion.x, e->motion.y);
       primeiro(0, "movimento", e->motion.x, e->motion.y);
+#ifdef NV_DESKTOP_UI
+      if(layout_desktop_ativo()) menu_desktop_hover(e->motion.x);
+#endif
       if (tremorDaSeta(agora)) return 1;
       ultimoMov = agora;
+      mouseInput=1;
       reaparecer();
       mover();
       return 1;
@@ -754,9 +771,25 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
       invalidarToque();
       converter(e->button.windowID, e->button.x, e->button.y);
       primeiro(1, "clique", e->button.x, e->button.y);
+      mouseInput=1;
       ultimoMov = agora;
       reaparecer();
       if (e->button.button == SDL_BUTTON_RIGHT) {
+#ifdef NV_DESKTOP_UI
+        if(layout_desktop_ativo()) {
+          const PonteiroAlvo *v=lista[pronto];
+          int i=ponteiro_achar(v,nLista[pronto],px,py);
+          if(i>=0 && v[i].segurar) { v[i].segurar(v[i].a,v[i].b);return 1; }
+          if(i>=0 && v[i].focar) {
+            v[i].focar(v[i].a,v[i].b);
+            tecla(entregar,SDL_KEYDOWN,SDLK_RETURN);
+            okLongoToque=1;
+            tecla(entregar,SDL_KEYUP,SDLK_RETURN);
+            okLongoToque=0;
+          }
+          return 1;
+        }
+#endif
         // Nao ha botao direito no Magic Remote; no Mac ele e o Voltar, que e
         // o que falta para testar sem teclado.
         tecla(entregar, SDL_KEYDOWN, SDLK_AC_BACK); voltarPendente = 1;
@@ -808,6 +841,50 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
     case SDL_MOUSEWHEEL: {
       if (e->wheel.which == SDL_TOUCH_MOUSEID) return 1;
       invalidarToque();
+#ifdef NV_DESKTOP_UI
+      float dxp = e->wheel.preciseX, dyp = e->wheel.preciseY;
+      if (e->wheel.direction == SDL_MOUSEWHEEL_FLIPPED) { dxp = -dxp; dyp = -dyp; }
+      if (SDL_GetModState() & KMOD_SHIFT) { dxp = dyp; dyp = 0; }
+      if (!isfinite(dxp) || !isfinite(dyp) || (!dxp && !dyp)) return 1;
+      if (e->wheel.which == NV_DESKTOP_PIXEL_WHEEL) converter(e->wheel.windowID, e->wheel.mouseX, e->wheel.mouseY);
+      static Uint32 lastWheel;
+      static int edge;
+      static float edgeDelta;
+      SDL_Window *window = SDL_GetWindowFromID(e->wheel.windowID);
+      int ww = 1280, wh = 800;
+      if (window) SDL_GetWindowSize(window, &ww, &wh);
+      float units = NV_TELA_W / fmaxf(1, ww);
+      if (!lastWheel || agora - lastWheel > 180 || (e->wheel.which == NV_DESKTOP_PIXEL_WHEEL && e->wheel.y == 1)) {
+        edge = desktop_native_swipes() && fabsf(dxp) > fabsf(dyp) ?
+          (px < 24 * units ? 1 : px > NV_TELA_W - 24 * units ? -1 : 0) : 0;
+        edgeDelta = 0;
+      }
+      lastWheel = agora;
+      float scale = e->wheel.which == NV_DESKTOP_PIXEL_WHEEL ? units : 36 * units;
+      nv_desktop_wheel_until = agora + 100;
+      if (edge) {
+        edgeDelta += dxp * scale;
+        if (edgeDelta * edge > 48 * units) {
+          if (edge > 0) menu_desktop_revelar(); else spainel_abrir();
+          edge = 0;
+        }
+        return 1;
+      }
+      PonteiroRolagemFn fn = listaRolagem[pronto];
+      int vertical = fabsf(dyp) >= fabsf(dxp);
+      if (fn && rolagemEntregar(fn, PONT_ROL_INICIO, vertical, 0, 0, px, py)) {
+        rolagemEntregar(fn, PONT_ROL_MOVER, vertical, (vertical ? dyp : dxp) * scale, 0, px, py);
+        rolagemEntregar(fn, PONT_ROL_SOLTAR, vertical, 0, 0, px, py);
+        if (e->wheel.which == NV_DESKTOP_PIXEL_WHEEL)
+          rolagemEntregar(fn, PONT_ROL_FIM, vertical, 0, 0, px, py);
+        else {
+          inercia = 1; inRolagem = fn; inEixoY = vertical;
+          inVel = (vertical ? dyp : dxp) * scale / 180;
+          inUltMs = agora; inX = px; inY = py;
+        }
+      }
+      return 1;
+#endif
       int dy = e->wheel.y, dx = e->wheel.x;
       primeiro(2, "rodinha", dx, dy);
       if (e->wheel.direction == SDL_MOUSEWHEEL_FLIPPED) { dy = -dy; dx = -dx; }
@@ -877,6 +954,7 @@ int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
           (k == SDLK_UP || k == SDLK_DOWN || k == SDLK_LEFT || k == SDLK_RIGHT)) {
         // Toda seta rearma a janela, mesmo com o cursor ja escondido: quem
         // navega de seta em seta nao pode ver o cursor voltar entre elas.
+        mouseInput=0;
         esconder("seta");
         escondidoSeta = 1; setaEm = agora; setaAncora = 0;
       }
@@ -987,7 +1065,7 @@ void ponteiro_rolagem(PonteiroRolagemFn fn) {
   if (!ponteiro_ativo()) return;
 #ifdef NV_TOUCH_UI
   // TV keeps drag-as-arrows: no scroll capture outside Mobile mode.
-  if (!layout_modo_mobile()) return;
+  if (!layout_rolagem_livre()) return;
 #endif
   listaRolagem[escreve] = fn;
 }
@@ -1004,6 +1082,18 @@ void ponteiro_borda_ativar(void) {
 #endif
 
 void ponteiro_desenhar(void) {
+#ifdef NV_DESKTOP_UI
+  static SDL_Cursor *hand, *arrow;
+  if (!hand) hand = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
+  if (!arrow) arrow = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
+  int hit = ponteiro_achar(lista[escreve], nLista[escreve], px, py);
+  int clickable = hit >= 0 && (lista[escreve][hit].ativar || lista[escreve][hit].focar);
+  SDL_Cursor *cursor=clickable ? hand : arrow;
+  if(SDL_GetCursor()!=cursor) SDL_SetCursor(cursor);
+  SDL_ShowCursor(SDL_ENABLE);
+  // Components draw their own hover surface inside the image, never captions.
+  fecharQuadro(); return;
+#endif
   float g, d, sobre;
   if (!visivel) { fecharQuadro(); return; }
 #ifdef NV_PONT_WEBOS
