@@ -1,5 +1,7 @@
 #include "app_id.h"
+#include "nv_ticks.h"
 #include "video.h"
+#include "nv_ticks.h"
 #include "mediaurl.h"
 #include "webosver.h"
 #include "audioinfo.h"
@@ -316,7 +318,7 @@ static VideoSimulacao SIM;
 static Uint64 simPosEm;
 void video_simular(const VideoSimulacao *s) {
   if (s) SIM = *s; else memset(&SIM, 0, sizeof SIM);
-  simPosEm = SDL_GetTicks64();
+  simPosEm = nv_ticks64();
   dtsEstado = SIM.dts;
 }
 int  video_iniciar(void) { return 0; }
@@ -1489,7 +1491,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
       posSeg = posNativa = v / 1000.0;
       pthread_mutex_lock(&travaAmostra);
       posAmostra = posSeg;
-      posAmostraEm = SDL_GetTicks64();
+      posAmostraEm = nv_ticks64();
       pthread_mutex_unlock(&travaAmostra);
       // Primeiro quadro com avanco: o numero de inicio de verdade.
       if (cronPediu && !cronQuadro && posSeg > 0.0) {
@@ -2678,7 +2680,7 @@ static int tocarInterno(const char *url, int comDV) {
   fonX = -1; dstX = dstY = dstW = dstH = -1;
   posSeg = posNativa = durSeg = bufferSeg = 0; tocando = pronto = 0; midia[0] = 0;
   pthread_mutex_lock(&travaAmostra);
-  posAmostra = 0; posAmostraEm = SDL_GetTicks64();
+  posAmostra = 0; posAmostraEm = nv_ticks64();
   pthread_mutex_unlock(&travaAmostra);
   ackMidia = 0; ack_publicar();
   velEnviada = 100;   // pipeline novo nasce em 1x; video_bombear reaplica

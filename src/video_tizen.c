@@ -82,6 +82,7 @@
 #if defined(__EMSCRIPTEN__) && !defined(NV_VIDAA)
 
 #include "video.h"
+#include "nv_ticks.h"
 #include "js.h"
 #include "mediaurl.h"
 #include "avroi.h"
@@ -987,7 +988,7 @@ int video_tocar(const char *url) {
   reconAudio = reconLeg = -1; reconFaixasPend = 0; reconBuscar = -1.0;
   recarregarPausa = -1; pausaPedida = 0;
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; faixasLidas = 0;
-  posSeg = durSeg = posAmostra = 0; posAmostraEm = SDL_GetTicks64();
+  posSeg = durSeg = posAmostra = 0; posAmostraEm = nv_ticks64();
   vidW = vidH = 0; houveErro = 0; erroTexto[0] = 0;
   terminou = 0;
   seekEm = 0;
@@ -1340,7 +1341,7 @@ void video_bombear(void) {
   posSeg   = est[EST_POS];
   posAmostra = est[EST_POS_CRUA];
   {
-    Uint64 now = SDL_GetTicks64(), age = (Uint64)est[EST_POS_IDADE];
+    Uint64 now = nv_ticks64(), age = (Uint64)est[EST_POS_IDADE];
     posAmostraEm = age <= now ? now - age : 0;
   }
   bufPct   = (int)est[EST_BUFPCT];
@@ -1438,7 +1439,7 @@ void video_parar(void) {
   roiResetTentativas = 0;
   if (temAvplay) AV0("parar");
   ativo = tocando = pronto = terminou = 0;
-  posSeg = durSeg = posAmostra = 0; posAmostraEm = SDL_GetTicks64();
+  posSeg = durSeg = posAmostra = 0; posAmostraEm = nv_ticks64();
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; faixasLidas = 0;
   urlAtual[0] = 0;
 }

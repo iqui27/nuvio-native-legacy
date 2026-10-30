@@ -1,5 +1,6 @@
 // Watch Together: a cola com o app — ver juntos.h.
 #include "juntos.h"
+#include "nv_ticks.h"
 #include "atividade.h"
 #include "discordws.h"
 #include "idioma.h"
@@ -205,7 +206,7 @@ const char *juntos_url_celular(void) { return urlCelular; }
 int juntos_sou_anfitriao(void) { return temMotor && jsm_sou_anfitriao(&motor); }
 int juntos_pode_controlar(void) { return !temMotor || jsm_pode_controlar(&motor); }
 
-static double agoraLocal(void) { return (double)SDL_GetTicks64(); }
+static double agoraLocal(void) { return (double)nv_ticks64(); }
 
 static void separarEpJ(const char *ep, char *imdb, size_t n, int *t, int *e) {
   const char *p = strchr(ep, ':');

@@ -110,7 +110,7 @@ void video_escala_definir(int sw, int sh);
 // esta tocando — e a unica coisa que identifica o arquivo, nos dois alvos.
 const char *video_url_atual(void);
 double video_pos(void);      // segundos decorridos
-// Raw backend sample; timestamp uses SDL_GetTicks64(), never wall time.
+// Raw backend sample; timestamp uses nv_ticks64(), never wall time.
 // Repeated reads keep the timestamp until a new native sample arrives.
 double video_pos_amostra(Uint64 *ticksDaAmostra);
 double video_duracao(void);  // 0 enquanto desconhecida

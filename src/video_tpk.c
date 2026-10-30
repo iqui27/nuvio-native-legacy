@@ -20,6 +20,7 @@
 // "[video] tpk: first subtitle cue ..." ou "... no subtitle cue in 60 s ...".
 #ifdef NV_TPK
 #include "video.h"
+#include "nv_ticks.h"
 #include "mediaurl.h"
 #include "video_reconexao.h"
 #include "idioma.h"
@@ -2159,7 +2160,7 @@ double video_duracao(void) {
   return durMs / 1000.0;
 }
 double video_pos_amostra(Uint64 *t) {
-  if (t) *t = SDL_GetTicks64();
+  if (t) *t = nv_ticks64();
   return video_pos();
 }
 // Capitulos do MKV lidos por um fio lateral (capmkv.c, 203-capitulos).
