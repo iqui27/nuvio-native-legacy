@@ -54,8 +54,17 @@ int srv_descobrir(int provider, RedeJob *job, SrvRede *out, int max) {
 #ifdef __EMSCRIPTEN__
   (void)provider; (void)job; (void)out; (void)max; return 0;
 #else
+#ifdef _WIN32
+  SOCKET fd = socket(AF_INET, SOCK_DGRAM, 0);
+  int n = 0, yes = 1;
+#else
   int fd = socket(AF_INET, SOCK_DGRAM, 0), n = 0, yes = 1;
+#endif
+#ifdef _WIN32
+  if (fd == INVALID_SOCKET || !out || max < 1) { if (fd != INVALID_SOCKET) closesocket(fd); return 0; }
+#else
   if (fd < 0 || !out || max < 1) { if (fd >= 0) close(fd); return 0; }
+#endif
   setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &yes, sizeof yes);
   struct sockaddr_in dst = {0}; dst.sin_family = AF_INET;
   dst.sin_port = htons(provider == 0 ? 32414 : 7359);

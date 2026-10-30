@@ -253,7 +253,7 @@ int64_t mkvfix_tracks_pos(const unsigned char *b, long n, const MkvfixCab *c) {
 }
 
 // ---- servidor ----------------------------------------------------------------
-#if defined(__EMSCRIPTEN__) || defined(NV_ANDROID) || defined(NV_MKVFIX_SEM_REDE)   // tests: no network
+#if defined(__EMSCRIPTEN__) || defined(NV_ANDROID) || defined(_WIN32) || defined(NV_MKVFIX_SEM_REDE)   // tests: no network
 void mkvfix_sondar(const char *u, const char *c, const char *o) { (void)u; (void)c; (void)o; }
 void mkvfix_sondar_relay(const char *u, const char *c, const char *o) { mkvfix_sondar(u, c, o); }
 int  mkvfix_relay(void) { return 0; }

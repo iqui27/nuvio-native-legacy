@@ -377,6 +377,7 @@ enum { G_PARADO, G_BAIXANDO, G_PRONTO, G_FALHOU };
 static int estado = G_PARADO;
 static int fioVivo;
 static int recarregarPend;
+static int reativarCache;
 // Guide v5 M3U channels: copied on the UI thread, added as a source by the load thread.
 static G5Item *cargaG5; static int nCargaG5;
 static GFonteLtv cargaDesligadas[G_MAX_LTV];static int nCargaDesligadas;
@@ -461,6 +462,7 @@ static void mixedVodAdd(int f,int kind,const char *id,const char *name,const cha
 }
 static int sFonteChave(const char *ch, int tipo, const char *nome, const char *base) {
   int i;
+  const LtvPref *pref=ltv_pref(ch,0);if(pref&&pref->removida)return -1;
   for (i = 0; i < sNLtvF; i++) if (!strcmp(sLtvF[i].chave, ch)) return i;
   if (sNLtvF >= G_MAX_LTV) return -1;
   i = sNLtvF++;
@@ -1849,7 +1851,6 @@ static int cacheFonteLer(const char *chave) {
   int tipo, nc, ngi, i, fl, total, cortada, versao, antes = sNCanais;
   long long quando;
   static char s1[1024], s2[1024], s3[1024];
-  if(!ltv_fonte_ligada(chave))return 0;
   cacheNomeFonte(chave, nome, sizeof nome);
   if (!dados_caminho(caminho, sizeof caminho, nome)) return -1;
 #ifdef __EMSCRIPTEN__
@@ -1883,6 +1884,7 @@ static int cacheFonteLer(const char *chave) {
     int gi = sGrupoInfo(fl, lStr(&l, s1, sizeof s1), 0), cnt = (int)lInt(&l), en = (int)lInt(&l);
     if (gi >= 0) { sLtvF[fl].gi[gi].n = cnt; sLtvF[fl].gi[gi].entra = (unsigned char)en; }
   }
+  if(!ltv_fonte_ligada(chave)){sLtvF[fl].nCanais=nc;sLtvF[fl].total=total;sLtvF[fl].cortada=cortada;free(b);return 0;}
   for (i = 0; i < nc && l.ok; i++) {
     static char g[256], id[256], nm[256], lg[1024], ds[1024], ei[256], tn[256], ur[4096], ua[512], rf[512];
     GCru c;
@@ -1906,7 +1908,7 @@ static void cacheGravar(void) {
   size_t u = 0;
   int i;
   for (i = 0; i < nLtvF; i++) {
-    if (!ltvF[i].deCache && (sCacheN[i] > 0 || ltvF[i].nCanais > 0))
+    if (ltv_fonte_ligada(ltvF[i].chave) && !ltvF[i].deCache && (sCacheN[i] > 0 || ltvF[i].nCanais > 0))
       cacheFonteGravar(i);
     if (sCache[i]) { fclose(sCache[i]); sCache[i] = NULL; }
     sCacheN[i] = 0;
@@ -1921,6 +1923,8 @@ static void cacheGravar(void) {
 
 // Check installed sources directly: disabling an add-on must preserve its saved data.
 static int chaveConfigurada(const char *ch) {
+  const LtvPref *pref=ltv_pref(ch,0);if(pref&&pref->removida)return 0;
+  if(!strcmp(ch,"g5m3u")){char file[64];snprintf(file,sizeof file,"guiav5-source-p%d.json",perfis_ativo());char *saved=dados_ler(file);int exists=saved!=NULL;free(saved);return exists;}
   LtvUrl us[LTV_URLS_MAX];
   char atual[LTV_CHAVE];
   int i, nu;
@@ -2123,7 +2127,11 @@ static void *fioGuia(void *u) {
   (void)u;
   stagingZerar();
   sTeto = tetoCarga;
-  for(int f=0;f<nCargaDesligadas;f++)sFonteChave(cargaDesligadas[f].chave,cargaDesligadas[f].tipo,cargaDesligadas[f].nome,"");
+  for(int f=0;f<nCargaDesligadas;f++){
+    const GFonteLtv *old=&cargaDesligadas[f];int i=sFonteChave(old->chave,old->tipo,old->nome,"");
+    if(i>=0){sLtvF[i].nCanais=old->nCanais;sLtvF[i].total=old->total;sLtvF[i].atualizada=old->atualizada;sLtvF[i].epgCom=old->epgCom;}
+    cacheFonteLer(old->chave);
+  }
   sFalhas = 0; sXtFalha = XT_OK; sXtHttp = 0;
   // Fontes das fileiras primeiro — zero rede extra. A sonda de manifestos
   // completa com o que a home nao montou. ADDON DESLIGADO NAO ENTRA.
@@ -2143,8 +2151,8 @@ static void *fioGuia(void *u) {
   for (i = 0; cargaAtual() && i < nCargaContas; i++) {
     const IptvConta *c = &cargaContas[i];
     char chave[LTV_CHAVE]; int n = 0, tipo;
-    if (!c->ativa) continue;
     contaChave(c, chave, sizeof chave);
+    if (!c->ativa){sFonteChave(chave,c->tipo==IPTV_XTREAM?LTV_XTREAM:c->tipo==IPTV_STALKER?LTV_STALKER:LTV_M3U,c->nome,"");cacheFonteLer(chave);continue;}
     tipo = c->tipo == IPTV_XTREAM ? LTV_XTREAM : c->tipo == IPTV_STALKER ? LTV_STALKER : LTV_M3U;
     if(!ltv_fonte_ligada(chave)){sFonteChave(chave,tipo,c->nome,"");continue;}
     if (c->tipo == IPTV_XTREAM && xtream_fonte_configurado(c->id)) n = xtreamCarregar(c);
@@ -2293,7 +2301,7 @@ static void empacotar(void) {
   nLogoM3u = nLogoVar = 0;  // Invalidate indexes even if repacking runs out of memory.
   // Apply current visibility rules even when an offline refresh keeps this list.
   for (i = 0, w = 0; i < nCanais; i++)
-    if (fonteAtiva(canais[i].fonte) && (!canais[i].base[0] || (baseLigada(canais[i].base) && !baseOculta(canais[i].base))) &&
+    if ((fonteAtiva(canais[i].fonte)||!ltv_fonte_ligada(ltvF[canais[i].fonte].chave)) && (!canais[i].base[0] || (baseLigada(canais[i].base) && !baseOculta(canais[i].base))) &&
         !guiafiltro_canal_oculto_fonte(&fltLive, ltvF[canais[i].fonte].chave, canais[i].id) &&
         !(canais[i].cat >= 0 && guiafiltro_cat_oculta(&fltLive, cats[canais[i].cat].nome)) &&
         !g5ui_channel_hidden(canais[i].id, canais[i].nome, canais[i].cat >= 0 ? cats[canais[i].cat].nome : "", canais[i].base))
@@ -2303,7 +2311,7 @@ static void empacotar(void) {
     LtvPref *p = ltv_pref(ltvF[i].chave, 0);
     az[i] = p ? p->az : 0;
     ltvF[i].fusoS = p ? p->fusoMin * 60 : 0;
-    ltvF[i].nCanais = 0; ltvF[i].nGrupos = 0;
+    if(ltv_fonte_ligada(ltvF[i].chave)){ltvF[i].nCanais = 0; ltvF[i].nGrupos = 0;}
   }
   ordAz = az;
   { int *no = realloc(catN, sizeof(int) * (size_t)(nCats + 1)), *no2;
@@ -2340,8 +2348,8 @@ static void empacotar(void) {
   if(w) memcpy(canais, tmp, sizeof(GCanal) * (size_t)w);
   nCanais = w;
   free(ordem); free(mapa); free(pos); free(tmp);
-  for (i = 0; i < nCanais; i++) if (canais[i].fonte >= 0 && canais[i].fonte < nLtvF) ltvF[canais[i].fonte].nCanais++;
-  for (i = 0; i < nCats; i++) if (cats[i].fonte >= 0 && cats[i].fonte < nLtvF) ltvF[cats[i].fonte].nGrupos++;
+  for (i = 0; i < nCanais; i++) if (canais[i].fonte >= 0 && canais[i].fonte < nLtvF && ltv_fonte_ligada(ltvF[canais[i].fonte].chave)) ltvF[canais[i].fonte].nCanais++;
+  for (i = 0; i < nCats; i++) if (cats[i].fonte >= 0 && cats[i].fonte < nLtvF && ltv_fonte_ligada(ltvF[cats[i].fonte].chave)) ltvF[cats[i].fonte].nGrupos++;
   logosEmprestar();
   variantesMontar();
   favAplicar();
@@ -2508,7 +2516,7 @@ static int cacheLer(void) {
     p += k; while (*p == '\r' || *p == '\n') p++;
   }
   free(t);
-  if (!sNCanais) { stagingZerar(); empacotar(); focoValido(); return 0; }
+  if (!sNCanais&&!sNLtvF) { stagingZerar(); empacotar(); focoValido(); return 0; }
   adotarStaging();
   assinaturaPublicada = assinaturaDe(canais, nCanais, cats, ltvF);
   printf("[guia] cache lido: %d canais em %d grupos, %d fonte(s)\n", nCanais, nCats, nLtvF);
@@ -5042,6 +5050,7 @@ void guia_atualizar(float dt, Uint32 agora) {
   // O painel de addons pediu recarga com o fio ainda vivo: agora que ele
   // acabou, vai.
   if (recarregarPend && !fioVivo) {
+    if(reativarCache){reativarCache=0;cacheLer();}
     recarregarPend = 0; estado = G_PARADO; ultTentativa = 0; iniciarCarga();
   }
   // PREVIEW: aplica a URL que o fio buscou (no fio de desenho, nunca no de
@@ -5919,9 +5928,6 @@ static void desenharPainelCategorias(float a) {
       txt_desenhar_alpha(tn, r.x + 24.0f, r.y + (r.h - (float)tn.h) * 0.5f, la); }
   }
   gfx_sem_recorte();
-  { TxtLinha t = txt_linha_corta_bruta(TXT_CAPTION, i18n("OK entra  ·  Voltar fecha"),
-                                 128, 130, 138, 255, G_CAT_W - 96.0f);
-    txt_desenhar_alpha(t, x0 + 56.0f, NV_TELA_H - 60.0f, ea); }
 }
 
 // DE ONDE VEM CANAL: as duas portas, desenhadas em codigo.
@@ -8005,8 +8011,9 @@ int guia_canal_numero(int i) { return i >= 0 && i < nCanais ? canais[i].numero :
 int guia_fonte_saude(int i, GuiaFonteSaude *o) {
   if (i < 0 || i >= nLtvF || !o) return 0;
   const GFonteLtv *F = &ltvF[i];
-  o->nome = F->nome[0] ? F->nome : ltv_tipo_nome(F->tipo);
-  o->saude = F->saude; o->canais = fonteAtiva(i)?F->nCanais:0; o->comGuia = fonteAtiva(i)?F->epgCom:0;
+  const LtvPref *pref=ltv_pref(F->chave,0);
+  o->nome = pref&&pref->nome[0]?pref->nome:F->nome[0] ? F->nome : ltv_tipo_nome(F->tipo);
+  o->saude = F->saude; o->canais = F->nCanais; o->comGuia = F->epgCom;
   o->deCache = F->deCache; o->atualizada = F->atualizada; o->chave = F->chave;
   return 1;
 }
@@ -8026,17 +8033,44 @@ int guia_vod_item(int i,G5Item *out){
   if(i<0||i>=nMixedVod)return 0;
   if(out)*out=mixedVod[i];return 1;
 }
-int guia_fonte_ligada(int i){return i>=0&&i<nLtvF&&ltv_fonte_ligada(ltvF[i].chave);}
+int guia_fonte_ligada(int i){return fonteAtiva(i);}
+static int guia_fonte_conta(int i){
+  if(i<0||i>=nLtvF)return -1;
+  IptvConta contas[IPTV_MAX_CONTAS];int n=iptv_contas(contas,IPTV_MAX_CONTAS);
+  for(int c=0;c<n;c++){char key[LTV_CHAVE];contaChave(&contas[c],key,sizeof key);if(!strcmp(key,ltvF[i].chave))return c;}
+  return -1;
+}
+int guia_fonte_remover(int i){
+  if(i<0||i>=nLtvF)return 0;
+  char key[LTV_CHAVE];snprintf(key,sizeof key,"%s",ltvF[i].chave);
+  int c=guia_fonte_conta(i),old=iptv_conta_indice(),ok=0;
+  if(c>=0){if(iptv_conta_selecionar(c))ok=iptv_conta_remover(NULL);iptv_conta_selecionar(old>c?old-1:old);}
+  else if(!strcmp(key,"g5m3u")){g5ui_remove_source();ok=1;}
+  else{
+    LtvUrl urls[LTV_URLS_MAX];int n=ltv_urls_copiar(urls,LTV_URLS_MAX);
+    for(int u=0;u<n;u++){char ch[LTV_CHAVE];ltv_chave_fonte(LTV_M3U,urls[u].url,ch,sizeof ch);
+      if(!strcmp(ch,key)){ltv_urls_remover(u);ok=1;break;}}
+    if(!ok&&ltvF[i].tipo==LTV_ADDON){LtvPref *p=ltv_pref(key,1);if(p){p->removida=1;ltv_pref_gravar();ok=1;}}
+  }
+  if(ok){guia_fonte_esquecer(key);guia_recarregar(0);}return ok;
+}
 int guia_fonte_alternar(int i){
   if(i<0||i>=nLtvF)return 0;
   LtvPref *p=ltv_pref(ltvF[i].chave,1);if(!p)return 0;
-  p->desligada=!p->desligada;ltv_pref_gravar();
-  cargaCancelada=1;empacotar();epgExtrasMontar();epg_recarregar();guia_recarregar(0);return 1;
+  int on=guia_fonte_ligada(i),c=guia_fonte_conta(i),old=iptv_conta_indice();
+  if(!on&&c>=0){if(!iptv_conta_selecionar(c))return 0;int ok=iptv_conta_ativar(1);iptv_conta_selecionar(old);if(!ok)return 0;grupoNContas=iptv_contas(grupoContas,IPTV_MAX_CONTAS);}
+  p->desligada=on;ltv_pref_gravar();
+  if(!on){
+    int cached=0;for(int ch=0;ch<nCanais;ch++)if(canais[ch].fonte==i){cached=1;break;}
+    if(!cached){if(fioVivo)reativarCache=1;else cacheLer();}
+  }
+  /* Keep inventory: switching back on works before a network refresh. */
+  cargaCancelada=1;canaisRevisao++;vistaMontar();focoValido();guia_recarregar(0);return 1;
 }
 int guia_canal_campos(int i, const char **id, const char **nome, const char **logo,
                       const char **cat, const char **base) {
   if (i < 0 || i >= nCanais) return 0;
-  if(!varianteVisivel(i)||!fonteAtiva(canais[i].fonte)||!gLiberado(&canais[i]))return 0;
+  if(!varianteVisivel(i)||!fonteAtiva(canais[i].fonte)||categoriaOculta(canais[i].cat)||!gLiberado(&canais[i]))return 0;
   int ok = guia_canal_regra_campos(i,id,nome,logo,cat,base);
   if (nome) *nome = canalNome(&canais[i]);
   return ok;
@@ -8057,7 +8091,7 @@ void guia_abrir_sessao(void) {
   // pedido e o desenho descarta o resultado pela geracao da abertura.
   cargaCancelada = 1;
   free(mixedVod);mixedVod=NULL;nMixedVod=0;
-  estado = G_PARADO; recarregarPend = 0; recargaDoPainel = 0;
+  estado = G_PARADO; recarregarPend = reativarCache = 0; recargaDoPainel = 0;
   nCanais = nCats = nFontes = nSabe = nFav = nFavOrd = 0;
   fontesOk = cacheLido = favLido = modoLido = previewLido = 0;
   modoLista = previewLigado = 0; assinaturaPublicada = 0;

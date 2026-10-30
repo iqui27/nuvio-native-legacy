@@ -21,6 +21,13 @@
 // Registra no barramento e sobe o laco de eventos. 1 se deu certo.
 // Falhar aqui nao e fatal: o app segue sem video.
 int  video_iniciar(void);
+#ifdef NV_DESKTOP_MPV
+// Current SDL GL 2.1 compatibility context, RGBA drawable, render thread only.
+// After gpun_quadro_fim(), before captures/swap: fills transparent UI areas.
+int video_desktop_render(int drawableW, int drawableH);
+// Immediately after SDL_GL_SwapWindow(). Destroy video BEFORE deleting GL context.
+void video_desktop_swap(void);
+#endif
 // O MESMO, para quem se oferece sozinho (o trailer do detalhe): segue o recuo
 // de lsregistro.h e desiste depois de poucas recusas, em vez de chamar
 // LSRegister a cada 15 s pela sessao inteira (registros 1720-1774). Onde nao
@@ -552,7 +559,7 @@ void video_encerrar(void);
 // que estiver aqui — faixas, tamanho, HDR, Atmos, buffer — para as telas do
 // player serem desenhadas com dados de um video "de verdade". Zerado (o padrao)
 // e o mesmo coto mudo de sempre. Nos alvos de TV a funcao nao existe.
-#if defined(__APPLE__) || defined(NV_LINUX_DESKTOP)
+#if defined(__APPLE__) || defined(_WIN32) || defined(NV_LINUX_DESKTOP)
 typedef struct {
   int nAudio, nLeg, audioAtual, legAtual;
   VideoFaixa audio[8], leg[8];

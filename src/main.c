@@ -1,5 +1,7 @@
 // Bootstrap: janela, contexto GL, loop e telemetria. Toda a UI vive nos modulos.
 #include "app_id.h"
+#include "desktop.h"
+#include "desktop_native.h"
 #include "arranque.h"
 #include "swapint.h"
 #include "quadroc.h"
@@ -24,7 +26,7 @@
 // o alvo Tizen (WASM) precisa pular exatamente os mesmos. Nomear a condicao
 // evita ter de lembrar de dois simbolos em cada ponto - sem isto o primeiro
 // build para o navegador ainda tentava abrir libwayland-client.so.0.
-#if defined(__APPLE__) || defined(NV_LINUX_DESKTOP) || defined(__EMSCRIPTEN__) || defined(NV_TPK) || defined(NV_ANDROID)
+#if defined(__APPLE__) || defined(_WIN32) || defined(NV_LINUX_DESKTOP) || defined(__EMSCRIPTEN__) || defined(NV_TPK) || defined(NV_ANDROID)
 #define NV_SEM_WEBOS 1
 #endif
 #ifdef NV_ANDROID
@@ -42,7 +44,7 @@
 // SIGTERM tratado pelo app: webOS e desktop (Mac/Linux). No .tpk o host .NET e
 // dono do sinal, no Android o sistema mata sem SIGTERM util e no Tizen/WASM nao
 // ha sinal. Os desktops entram para o handler ser exercitavel por teste no Mac.
-#if !defined(__EMSCRIPTEN__) && !defined(NV_TPK) && !defined(NV_ANDROID)
+#if !defined(__EMSCRIPTEN__) && !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(_WIN32)
 #define NV_SINAL_TERMINAR 1
 #include <signal.h>
 #endif
@@ -55,6 +57,7 @@
 #include "perftv.h"
 #include "vertudo.h"
 #include "ctxmenu.h"
+#include "menu.h"
 #include "estatvivoui.h"
 #include "gputempo.h"
 #include "text.h"
@@ -397,6 +400,18 @@ static void consome(const char *caminho) {
 // resolucao de um segundo, e duas rajadas de tecla no mesmo segundo seriam
 // tratadas como a mesma. No caminho normal (arquivo do proprio app) o consumo
 // funciona e nada disto entra em jogo.
+static const char *capturePath(const char *path) {
+#ifdef NV_DESKTOP_UI
+  const char *directory=getenv("NV_CAPTURA_DIR");
+  if (getenv("NV_CAPTURA") && directory) {
+    static char paths[4][1024];static unsigned slot;
+    char *result=paths[slot++%4];
+    snprintf(result,1024,"%s/%s",directory,strrchr(path,'/')+1);
+    return result;
+  }
+#endif
+  return path;
+}
 static int pedidoNovo(const char *caminho, time_t *bloqueado) {
   struct stat st;
 #ifdef __EMSCRIPTEN__
@@ -468,8 +483,8 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
     soltarEm = 0;
   }
   static time_t bloqueadoKey;
-  if (!pedidoNovo("/tmp/nuvio-key", &bloqueadoKey)) return;
-  FILE *f = fopen("/tmp/nuvio-key", "r");
+  if (!pedidoNovo(capturePath("/tmp/nuvio-key"), &bloqueadoKey)) return;
+  FILE *f = fopen(capturePath("/tmp/nuvio-key"), "r");
   if (!f) return;
   // A tecla injetada tambem conta como gente no controle: sem isto a tela de
   // descanso entrava 2 min depois da ultima tecla DE VERDADE, no meio de uma
@@ -485,6 +500,32 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
     int segurar = 0;
     char *dp = strchr(linha, ':');
     if (dp && !strcmp(dp + 1, "hold")) { *dp = 0; segurar = 1; }
+#ifdef NV_DESKTOP_RELEASE
+#ifdef NV_DESKTOP_UI
+    if (dp && !strncmp(linha,"preview:",8)) { app_desktop_preview(dp+1); continue; }
+    if (dp && !strncmp(linha,"appearance:",11)) { desktop_native_appearance(dp+1); continue; }
+    if (dp && !strncmp(linha,"wheel:",6)) {
+      SDL_Event wheel={0}; float dx,dy; int x,y;
+      if(sscanf(dp+1,"%d,%d,%f,%f",&x,&y,&dx,&dy)==4) {
+        wheel.type=SDL_MOUSEWHEEL;wheel.wheel.which=NV_DESKTOP_PIXEL_WHEEL;
+        wheel.wheel.windowID=SDL_GetWindowID(SDL_GL_GetCurrentWindow());
+        wheel.wheel.mouseX=x;wheel.wheel.mouseY=y;wheel.wheel.preciseX=dx;wheel.wheel.preciseY=dy;
+        SDL_PushEvent(&wheel);
+      }
+      continue;
+    }
+    if (dp && !strncmp(linha,"input:",6)) {
+      SDL_Event text={0};text.type=SDL_TEXTINPUT;snprintf(text.text.text,sizeof text.text.text,"%s",dp+1);SDL_PushEvent(&text);continue;
+    }
+#endif
+    if (dp && !strncmp(linha, "janela:", 7)) {
+      int w, h;
+      SDL_Window *window = SDL_GL_GetCurrentWindow();
+      if (window && sscanf(dp + 1, "%d,%d", &w, &h) == 2 && w >= 320 && h >= 320)
+        SDL_SetWindowSize(window, w, h);
+      continue;
+    }
+#endif
     // "abrir:tt0121955" abre o titulo direto (app.c). Porta de teste, como
     // "guia".
     if (dp && !strncmp(linha, "abrir:", 6)) { app_abrir_titulo(dp + 1); continue; }
@@ -514,20 +555,26 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
     // papel do Magic Remote (issue #99), em coordenadas da janela — que na TV
     // sao as do layout. Passam por ponteiro_evento como um evento de mouse de
     // verdade, entao o hit-test e o mesmo do controle.
-    if (dp && (!strncmp(linha, "mover:", 6) || !strncmp(linha, "clicar:", 7))) {
-      int mx = 0, my = 0, clicar = linha[0] == 'c';
+    if (dp && (!strncmp(linha, "mover:", 6) || !strncmp(linha, "clicar:", 7) || !strncmp(linha,"direito:",8))) {
+      int mx = 0, my = 0, clicar = linha[0] == 'c' || linha[0]=='d';
       if (sscanf(dp + 1, "%d,%d", &mx, &my) == 2) {
         SDL_Event m; SDL_zero(m);
         m.type = SDL_MOUSEMOTION; m.motion.x = mx; m.motion.y = my;
-        ponteiro_evento(&m, entregar);
+#ifdef NV_DESKTOP_RELEASE
+      m.motion.windowID = SDL_GetWindowID(SDL_GL_GetCurrentWindow());
+#endif
+        if (getenv("NV_CAPTURA")) SDL_PushEvent(&m); else ponteiro_evento(&m, entregar);
         if (clicar) {
           SDL_zero(m);
-          m.type = SDL_MOUSEBUTTONDOWN; m.button.button = SDL_BUTTON_LEFT;
+          m.type = SDL_MOUSEBUTTONDOWN; m.button.button = linha[0]=='d'?SDL_BUTTON_RIGHT:SDL_BUTTON_LEFT;
+#ifdef NV_DESKTOP_RELEASE
+        m.button.windowID = SDL_GetWindowID(SDL_GL_GetCurrentWindow());
+#endif
           m.button.x = mx; m.button.y = my;
-          ponteiro_evento(&m, entregar);
+          if (getenv("NV_CAPTURA")) SDL_PushEvent(&m); else ponteiro_evento(&m, entregar);
           m.type = SDL_MOUSEBUTTONUP;
           if (strstr(dp + 1, ":hold")) { soltarMouseEm = SDL_GetTicks() + NV_HOLD_MS + 120; soltarMouse = m; }
-          else ponteiro_evento(&m, entregar);
+          else if (getenv("NV_CAPTURA")) SDL_PushEvent(&m); else ponteiro_evento(&m, entregar);
         }
       }
       continue;
@@ -576,16 +623,16 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
     if (!k) continue;
     SDL_Event e; SDL_zero(e);
     e.type = SDL_KEYDOWN; e.key.keysym.sym = k;
-    entregar(&e);
+    if (getenv("NV_CAPTURA")) SDL_PushEvent(&e); else entregar(&e);
 
     // O par KEYUP existe porque parte da interface so decide quando a tecla
     // SOBE — o toque curto contra a pressao longa do OK, por exemplo. Mandar
     // so o KEYDOWN deixava essas acoes mudas.
     if (segurar) { soltarEm = SDL_GetTicks() + NV_HOLD_MS + 120; soltarTecla = k; }
-    else { e.type = SDL_KEYUP; entregar(&e); }
+    else { e.type = SDL_KEYUP; if (getenv("NV_CAPTURA")) SDL_PushEvent(&e); else entregar(&e); }
   }
   fclose(f);
-  consomeOuBloqueia("/tmp/nuvio-key", &bloqueadoKey);
+  consomeOuBloqueia(capturePath("/tmp/nuvio-key"), &bloqueadoKey);
 }
 
 // Tamanho do buffer de onde a captura le. Definido no arranque, junto com o
@@ -594,7 +641,9 @@ static int capW = (int)NV_TELA_BASE_W, capH = (int)NV_TELA_BASE_H;
 // Mobile uses the device viewport. Its dimensions and GPU samples cannot
 // decide the remembered TV resolution or trigger a TV 4K fallback.
 static int resolucaoDaTv(void) {
-#ifdef NV_TOUCH_UI
+#ifdef NV_DESKTOP_UI
+  return 0;
+#elif defined(NV_TOUCH_UI)
   return !layout_modo_mobile();
 #else
   return 1;
@@ -645,13 +694,20 @@ static void iosFramebufferTela(SDL_Window *w) {
 #ifdef NV_TOUCH_UI
 static void interfaceViewport(SDL_Window *win, int *width, int *height, int *modo) {
   int novoW = 0, novoH = 0;
+  float canvasW = NV_TELA_W, canvasH = NV_TELA_H;
 #ifdef NV_IOS
   iosFramebufferTela(win);
+#endif
+#ifdef NV_DESKTOP_UI
+  int janelaW, janelaH;
+  SDL_GetWindowSize(win, &janelaW, &janelaH);
+  layout_janela_definir(janelaW, janelaH);
 #endif
   int novoModo = layout_modo_mobile();
   SDL_GL_GetDrawableSize(win, &novoW, &novoH);
   if (novoW <= 0 || novoH <= 0 ||
-      (novoW == *width && novoH == *height && novoModo == *modo)) return;
+      (novoW == *width && novoH == *height && novoModo == *modo &&
+       canvasW == NV_TELA_W && canvasH == NV_TELA_H)) return;
   resolucaoTvViewportMudou(SDL_GetTicks(), novoModo != *modo);
   *width = novoW; *height = novoH; *modo = novoModo;
   layout_tela_definir(novoW, novoH);
@@ -703,7 +759,7 @@ static const char *pedidoVideo(void) {
   if (!p[0]) snprintf(p, sizeof p, "%s/nuvio-video", dados_dir());
   return p;
 #else
-  return "/tmp/nuvio-video";
+  return capturePath("/tmp/nuvio-video");
 #endif
 }
 
@@ -789,7 +845,11 @@ static void videoSeSolicitado(void) {
       if (pthread_create(&t, NULL, p2pTesteFio, NULL) == 0) pthread_detach(t);
       else { atomic_store(&p2pTesteEstado, 0); p2pmotor_segurar(0); }
     }
+#ifdef NV_DESKTOP_RELEASE
+    else { player_abrir(0, url); }
+#else
     else { video_tocar(url); video_janela(0, 0, 1920, 1080); }
+#endif
   }
   fclose(f);
   consomeOuBloqueia(pedidoVideo(), &bloqueado);
@@ -797,8 +857,8 @@ static void videoSeSolicitado(void) {
 
 static void capturaSeSolicitado(void) {
   static time_t bloqueado;
-  if (!pedidoNovo("/tmp/nuvio-shot-req", &bloqueado)) return;
-  consomeOuBloqueia("/tmp/nuvio-shot-req", &bloqueado);
+  if (!pedidoNovo(capturePath("/tmp/nuvio-shot-req"), &bloqueado)) return;
+  consomeOuBloqueia(capturePath("/tmp/nuvio-shot-req"), &bloqueado);
 
   // Le o DRAWABLE inteiro, nao 1920x1080 fixo: em tela retina o buffer e maior
   // que a janela, e ler o tamanho da janela captura so um quarto da imagem.
@@ -827,12 +887,12 @@ static void capturaSeSolicitado(void) {
   cab[34] = n & 255; cab[35] = (n >> 8) & 255; cab[36] = (n >> 16) & 255; cab[37] = (n >> 24) & 255;
 
   // grava num temporario e so entao renomeia: quem le nunca pega arquivo pela metade
-  FILE *f = fopen("/tmp/.nuvio-shot.tmp", "wb");
+  FILE *f = fopen(capturePath("/tmp/.nuvio-shot.tmp"), "wb");
   if (f) {
     fwrite(cab, 1, 54, f);
     fwrite(px, 1, n, f);
     fclose(f);
-    rename("/tmp/.nuvio-shot.tmp", "/tmp/nuvio-shot.bmp");
+    rename(capturePath("/tmp/.nuvio-shot.tmp"), capturePath("/tmp/nuvio-shot.bmp"));
     printf("captura: /tmp/nuvio-shot.bmp (%u bytes)\n", tam);
   }
   free(px);
@@ -1016,6 +1076,9 @@ int main(int argc, char **argv) {
     }
   }
   setvbuf(stdout, NULL, _IOLBF, 0);
+#ifdef NV_DESKTOP_RELEASE
+  desktop_start();
+#endif
   arranque_etapa("main");
   arranque_relatar();
 #ifdef NV_DTS_DEBUG
@@ -1041,6 +1104,12 @@ int main(int argc, char **argv) {
     if (base) { snprintf(dirBuf, sizeof dirBuf, "%sart", base); SDL_free(base); dirArte = dirBuf; }
     else dirArte = "/tmp/art";
   }
+#ifdef _WIN32
+  // Resource callers split parent directories on '/', including fonts beside art.
+  if (dirArte != dirBuf) snprintf(dirBuf, sizeof dirBuf, "%s", dirArte);
+  for (char *p = dirBuf; *p; p++) if (*p == '\\') *p = '/';
+  dirArte = dirBuf;
+#endif
 
   // O compositor do webOS engole o BACK e abre a barra de apps — a menos que a
   // surface declare que o app quer a tecla. Quem faz essa declaracao e o
@@ -1070,9 +1139,20 @@ int main(int argc, char **argv) {
   // nao usa SDL_Delay: cede pelo rAF (nv_ceder_quadro).
   SDL_SetHint(SDL_HINT_EMSCRIPTEN_ASYNCIFY, "0");
 #endif
+#ifdef NV_DESKTOP_UI
+  if (getenv("NV_CAPTURA")) {
+    SDL_SetHint(SDL_HINT_MAC_BACKGROUND_APP, "1");
+    SDL_SetHint(SDL_HINT_WINDOW_NO_ACTIVATION_WHEN_SHOWN, "1");
+  }
+#endif
   NV_ETAPA("SDL_Init");
   arranque_etapa("SDL_Init");
   if (SDL_Init(SDL_INIT_VIDEO) != 0) { printf("SDL_Init: %s\n", SDL_GetError()); return 1; }
+#ifdef NV_DESKTOP_RELEASE
+  SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER);
+  for (int i = 0; i < SDL_NumJoysticks(); i++)
+    if (SDL_IsGameController(i)) SDL_GameControllerOpen(i);
+#endif
 #ifdef __EMSCRIPTEN__
   emscripten_set_visibilitychange_callback(NULL, EM_TRUE, cicloWgt);
 #endif
@@ -1080,13 +1160,16 @@ int main(int argc, char **argv) {
   // Antes de qualquer fio: ver nv_blindar_formatos em sdlcompat.h (issue #65).
   nv_blindar_formatos();
 
-#if defined(__APPLE__) && !defined(NV_IOS)
+#if (defined(__APPLE__) && !defined(NV_IOS)) || defined(_WIN32)
   // Perfil de compatibilidade: e o unico do macOS que ainda aceita GLSL 1.20 e
   // as funcoes fixas que o GLES2 tem como core.
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
   Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI;
+#ifdef NV_DESKTOP_MPV
+  SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
+#endif
 #else
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
@@ -1275,6 +1358,11 @@ int main(int argc, char **argv) {
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
   }
 #endif
+#ifdef NV_DESKTOP_UI
+  pedeW = NV_DESKTOP_WINDOW_W; pedeH = NV_DESKTOP_WINDOW_H;
+  flags = (flags & ~SDL_WINDOW_FULLSCREEN_DESKTOP) | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+  if (getenv("NV_CAPTURA")) flags |= SDL_WINDOW_HIDDEN;
+#endif
   NV_ETAPA("SDL_CreateWindow");
   arranque_etapa("SDL_CreateWindow");
   win = SDL_CreateWindow(windowTitle, SDL_WINDOWPOS_CENTERED,
@@ -1355,7 +1443,7 @@ int main(int argc, char **argv) {
   // e MOUSEBUTTONDOWN/UP botao 1 no clique. Por isso aqui ele fica ligado, e a
   // seta desenhada e a do proprio sistema (ponteiro.c nao desenha outra).
   // No Mac o cursor do sistema continua escondido e o app desenha o seu.
-#ifdef NV_SEM_WEBOS
+#if defined(NV_SEM_WEBOS) && !defined(NV_DESKTOP_UI)
   SDL_ShowCursor(SDL_DISABLE);
 #else
   SDL_ShowCursor(SDL_ENABLE);
@@ -1511,13 +1599,18 @@ int main(int argc, char **argv) {
   // O cursor do Magic Remote e desenhado pelo app (ponteiro.c). Depois do
   // contexto: o log de arranque dele le a janela corrente.
   ponteiro_iniciar();
+  desktop_native_init(win);
 #if defined(__APPLE__) && !defined(NV_IOS)
   // Sem vsync no Mac. O SDL2 do Homebrew virou uma camada sobre o SDL3
   // (sdl2-compat), e nela o SwapWindow fica preso esperando um sinal de vsync
   // que nunca chega quando a janela nao esta em primeiro plano — o app trava no
   // primeiro quadro. No aparelho o SDL2 e o de verdade e o vsync fica ligado,
   // que e o que mantem os 60fps estaveis la.
+  #ifdef NV_DESKTOP_UI
+  SDL_GL_SetSwapInterval(getenv("NV_CAPTURA") ? 0 : 1);
+#else
   SDL_GL_SetSwapInterval(0);
+#endif
 #else
   SDL_GL_SetSwapInterval(1);
 #endif
@@ -1527,6 +1620,9 @@ int main(int argc, char **argv) {
   int dw = 0, dh = 0, jw = 0, jh = 0;
   SDL_GL_GetDrawableSize(win, &dw, &dh);
   SDL_GetWindowSize(win, &jw, &jh);
+#ifdef NV_DESKTOP_UI
+  layout_janela_definir(jw, jh);
+#endif
   ajustes_ui_saida(dw, dh);
   if (resolucaoDaTv() && ajustes_ampliar_app() && (ajustes_720p() || ajustes_1080p()))
     printf("[gpu-nivel] app output requested=%dx%d drawable=%dx%d%s\n",
@@ -1814,7 +1910,10 @@ int main(int argc, char **argv) {
   trakt_carregar(dirArte);
   desc_tmdb(dirArte);
   desc_espera_addons_definir(esperaAddonsDaConta);
-  desc_iniciar();
+#if defined(NV_DESKTOP_RELEASE) || defined(NV_LINUX_DESKTOP)
+  if (!getenv("NUVIO_UI_PREVIEW") || strcmp(getenv("NUVIO_UI_PREVIEW"), "1"))
+#endif
+    desc_iniciar();
   // RESOLUCAO DE LAYOUT, e nao metade: o snapshot e o fundo parado atras do
   // painel de Salvos (app.c), e a esquerda dele e uma faixa de 1120 px da home
   // a 42 % de brilho — na metade, o texto das fileiras amolecia no instante em
@@ -1917,6 +2016,19 @@ int main(int argc, char **argv) {
         continue;
       }
 #endif
+#ifdef NV_DESKTOP_RELEASE
+      if (desktop_event(&e, win, texto_sistema_aberto() || !strcmp(app_tela_nome(), "busca"))) continue;
+#endif
+#ifdef NV_DESKTOP_UI
+      // Returning the pointer to content also returns keyboard ownership.
+      if (layout_desktop_ativo() && !menu_sobre() &&
+          (e.type == SDL_MOUSEMOTION || e.type == SDL_MOUSEBUTTONDOWN)) {
+        int janelaW, janelaH;
+        SDL_GetWindowSize(win, &janelaW, &janelaH);
+        int x = e.type == SDL_MOUSEMOTION ? e.motion.x : e.button.x;
+        if (janelaW > 0 && x * NV_TELA_W / janelaW >= NV_DESKTOP_RAIL_W) menu_fechar();
+      }
+#endif
       ponteiro_diag(&e);
       // PROTECAO DE OLED (esmaecer.h): toda acao da pessoa acorda a tela, e a
       // tecla que acorda so acorda — nao age.
@@ -1943,6 +2055,18 @@ int main(int argc, char **argv) {
       // Teclado do sistema (entrada_texto.h): ve o texto ANTES de qualquer tela.
       texto_sistema_observar(&e);
       if (e.type == SDL_WINDOWEVENT) {
+#if defined(NV_DESKTOP_RELEASE) && !defined(NV_TOUCH_UI)
+        if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+          SDL_GL_GetDrawableSize(win, &dw, &dh);
+          if (dw > 0 && dh > 0) {
+            gpun_redimensionar(dw, dh);
+            glViewport(0, 0, dw, dh);
+            gfx_tamanho_alvo(dw, dh);
+            video_escala_definir(dw, dh);
+            capW = dw; capH = dh;
+          }
+        }
+#endif
         // A perda de foco cancela a selecao do relogio e qualquer OK armado;
         // app_evento consome estes avisos antes de entregar teclas as paginas.
         if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST || e.window.event == SDL_WINDOWEVENT_HIDDEN)
@@ -2301,7 +2425,9 @@ int main(int argc, char **argv) {
     t0 = NV_T0();
     txt_novo_quadro();
     ponteiro_quadro(agora);
+    desktop_native_sidebar(0,0);
     app_desenhar(agora);
+    desktop_native_finish();
     if (perftv_enabled) snprintf(perfScreen, sizeof perfScreen, "%s", perfTvScreen());
     // A abertura (#213) cobre os primeiros quadros, com a home montando por baixo.
     if (abertura_ativa()) {
@@ -2318,6 +2444,9 @@ int main(int argc, char **argv) {
     gfx_ambiente_descarregar();   // quadro sem desenho por cima: a luz ainda sai
     gpun_ampliacao(ajustes_ampliacao_algo(), ajustes_ampliacao_nitidez());
     gpun_quadro_fim();
+#ifdef NV_DESKTOP_MPV
+    video_desktop_render(dw, dh);
+#endif
     fDes = NV_DT(t0);
     fGfxMs = gfx_ms_rect; fTexMs = tex_ms_busca;
     fNRect = gfx_n_rect; fNProg = gfx_n_prog; fNBind = gfx_n_bind; fNBusca = tex_n_busca;
@@ -2342,8 +2471,21 @@ int main(int argc, char **argv) {
     }
     if (!nvPrimeiroQuadroFeito) arranque_etapa("primeiro SwapWindow");
     SDL_GL_SwapWindow(win);
+#ifdef NV_DESKTOP_MPV
+    video_desktop_swap();
+#endif
 #ifndef __EMSCRIPTEN__
     { unsigned wait = player_frame_wait(playerUi, SDL_GetTicks() - frameStarted);
+#ifdef NV_DESKTOP_UI
+      if (!playerUi) {
+        SDL_DisplayMode display;
+        int hz = SDL_GetCurrentDisplayMode(SDL_GetWindowDisplayIndex(win), &display) == 0 && display.refresh_rate > 0 ? display.refresh_rate : 60;
+        unsigned target = 1000u / hz, elapsed = SDL_GetTicks() - frameStarted;
+        wait = elapsed < target ? target - elapsed : 0;
+      }
+      if (getenv("NUVIO_DESKTOP_FRAME_LOG") && (Sint32)(SDL_GetTicks() - nv_desktop_wheel_until) < 0)
+        printf("[desktop-scroll] t=%u work_ms=%u wait_ms=%u\n",SDL_GetTicks(),SDL_GetTicks()-frameStarted,wait);
+#endif
       if (wait) SDL_Delay(wait); }
 #else
     (void)frameStarted;
@@ -2715,6 +2857,9 @@ int main(int argc, char **argv) {
   tex_encerrar();
   txt_encerrar();
   gfx_encerrar();
+#ifdef NV_DESKTOP_MPV
+  video_encerrar();
+#endif
   SDL_GL_DeleteContext(ctx);
   SDL_DestroyWindow(win);
   IMG_Quit();

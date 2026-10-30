@@ -244,6 +244,7 @@ static void agir(void) {
   }
 }
 static int nTopo(void) { return pagina==ESP_DETALHE || pagina==ESP_QUALIDADE?1:telaFileiras()?5:pagina==ESP_EVENTOS?4:3; }
+static int primeiroTopo(void) { return layout_desktop_ativo()?2:0; }
 static void acaoTopo(int i) {
   if (i == 0) { voltar(); return; }
   if (i == 1) {
@@ -296,6 +297,7 @@ void esportesui_evento(const SDL_Event *e) {
   if (k==SDLK_MENU && eventoFocado()) { pointerDetalhe(foco,0);return; }
   if (nv_tecla_voltar(e)) { voltar(); return; }
   limparToque(); medidas();
+  if(layout_desktop_ativo() && foco<0 && foco>=-3) foco=-3;
   if(focoFavorito()) {
     int n=esportes_favoritos_n();
     if(k==SDLK_LEFT){if(foco>FOCO_FAVORITO)foco--;else sair=1;}
@@ -325,12 +327,12 @@ void esportesui_evento(const SDL_Event *e) {
       int outro=esporteVizinho(m,k==SDLK_LEFT?-1:1);
       if (outro==m && k==SDLK_LEFT) sair=1;
       else escolherModalidade(outro);
-    } else if (k==SDLK_UP) foco=-1;
+    } else if (k==SDLK_UP) foco=-primeiroTopo()-1;
     else if (k==SDLK_DOWN || k==SDLK_RETURN || k==SDLK_KP_ENTER || k==SDLK_SPACE) foco=pagina==ESP_TODOS && esportes_favoritos_n()?FOCO_FAVORITO:nItens?codLinha(indices[0],-1):foco;
     return;
   }
   if (k == SDLK_LEFT) {
-    if (foco < -1) foco++;
+    if (foco < -primeiroTopo()-1) foco++;
     else if (foco>=0 && foco%colunas>0) foco--;
     else sair=1;
   } else if (k == SDLK_RIGHT) {
@@ -339,7 +341,7 @@ void esportesui_evento(const SDL_Event *e) {
   } else if (k == SDLK_UP) {
     if (foco<0) pediuRelogio=1;
     else if (foco>=colunas) foco-=colunas;
-    else foco=pagina==ESP_TODOS && esportes_favoritos_n()?FOCO_FAVORITO:pagina==ESP_TODOS || pagina==ESP_LIGAS?-FOCO_MODALIDADE-modalidade:-1;
+    else foco=pagina==ESP_TODOS && esportes_favoritos_n()?FOCO_FAVORITO:pagina==ESP_TODOS || pagina==ESP_LIGAS?-FOCO_MODALIDADE-modalidade:-primeiroTopo()-1;
   } else if (k == SDLK_DOWN) {
     if (foco<0) foco=telaFileiras()?-FOCO_MODALIDADE-modalidade:nItens?0:-1;
     else if (foco+colunas<nItens) foco+=colunas;
@@ -700,10 +702,19 @@ void esportesui_desenhar(Uint32 agora) {
   const char *botoes[]={"Voltar","Buscar","Ajustes",pagina==ESP_EVENTOS?"Favoritos":"Ligas","Atualizar"};
   int nBotoes=nTopo();
   float bw=fminf(210,(larguraLista-(nBotoes-1)*12)/nBotoes),by=172;
-  for (int i=0;i<nBotoes;i++) {
+  if(layout_desktop_ativo() && foco<0 && foco>=-3) foco=-3;
+  for (int i=primeiroTopo();i<nBotoes;i++) {
     GfxRect r={xLista+i*(bw+12),by,bw,60};
-    if (foco==-i-1) plrui_pilula_foco(r,1); else plrui_botao_repouso(r,1);
-    txt(TXT_CAPTION2,i18n(botoes[i]),r.x+16,r.y+18,r.w-32,foco==-i-1?plrui_tinta():245);
+    if(layout_desktop_ativo()) {
+      r=(GfxRect){xLista+larguraLista-(nBotoes-i)*52,72,44,44};
+      int hover=ponteiro_ativo() && ponteiro_x()/gfx_escala()>=r.x && ponteiro_x()/gfx_escala()<r.x+r.w && ponteiro_y()/gfx_escala()>=r.y && ponteiro_y()/gfx_escala()<r.y+r.h;
+      if(hover || foco==-i-1) gfx_cor(r,.25f,1,1,1,.12f);
+      const char *icon=i==2?"aj_settings":i==3?"aj_list-video":"aj_rotate-cw";
+      gfx_icone((GfxRect){r.x+10,r.y+10,24,24},icon,.85f,.85f,.87f,1);
+    } else {
+      if (foco==-i-1) plrui_pilula_foco(r,1); else plrui_botao_repouso(r,1);
+      txt(TXT_CAPTION2,i18n(botoes[i]),r.x+16,r.y+18,r.w-32,foco==-i-1?plrui_tinta():245);
+    }
     ponteiro_alvo(r.x,r.y,r.w,r.h,pointerTopo,pointerTopoAgir,i,0);
   }
   if(telaFileiras())menuModalidades();

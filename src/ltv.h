@@ -96,7 +96,9 @@ int ltv_fav_linha(const char *linha, char *chave, size_t nc, char *id, size_t ni
 // grupos escolhidos quando a fonte passa do teto.
 typedef struct {
   char chave[LTV_CHAVE];
+  char nome[64]; // Optional local display name; never credentials.
   int desligada;   // Per-profile source switch; old files default to enabled.
+  int removida;    // Local Live TV subscription removed; add-on remains installed.
   int  az;          // 1 = grupos em ordem alfabetica
   int  fusoMin;     // deslocamento da grade, -720..+840
   int  formato;     // 0 automatico, 1 HLS, 2 TS (diagnostico)

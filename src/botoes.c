@@ -3,6 +3,8 @@
 #include "anim.h"
 #include "text.h"
 #include "plrui.h"
+#include "layout.h"
+#include "ponteiro.h"
 
 static int semAro;
 void botao_pilula_sem_aro(GfxRect r, const char *rotulo, const char *icone,
@@ -73,6 +75,11 @@ float botao_largura(const char *rotulo, const char *icone, int primario) {
 
 int botao_superficie(GfxRect r, float foco, float a) {
   float fr, fg, fb, ti = botao_cor_foco(&fr, &fg, &fb);
+  if (layout_desktop_ativo()) {
+    gfx_cor(r,.5f,1,1,1,(.12f+.08f*foco)*a);
+    if (!ponteiro_mouse() && foco>.01f) gfx_anel(r,.5f,2/gfx_escala(),fr,fg,fb,foco*a);
+    return 243;
+  }
   if (ajustes_vidro()) {
     // Acao principal: em repouso o vidro leva a lavagem e o aro do realce (e
     // assim o tema continua visivel); em foco, a mesma pilula de vidro do

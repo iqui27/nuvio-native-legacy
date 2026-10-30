@@ -112,7 +112,7 @@ static void afFocar(GfxRect *r, float raio, float f, int foco) {
     svd_aro_foco(*r, raio, f, 1.0f);
     if (foco) afFoco = (GfxRect){r->x - NV_ANEL_FOCO, r->y - NV_ANEL_FOCO, r->w + 2 * NV_ANEL_FOCO, r->h + 2 * NV_ANEL_FOCO};
   } else {
-    float esc = 1.0f + 0.06f * f;
+    float esc = 1.0f + (layout_desktop_ativo() ? .025f : .06f) * f;
     r->x -= r->w * (esc - 1) * .5f; r->y -= r->h * (esc - 1) * .5f;
     r->w *= esc; r->h *= esc;
     if (foco) afFoco = *r;
@@ -228,6 +228,17 @@ static void afCartao(int i, GfxRect r, int foco, Uint32 agora) {
     svd_rosto((GfxRect){r.x + (r.w - d) * .5f, r.y + (r.h - d) * .5f, d, d}, a, 0, 1, agora);
   } else svd_rosto((GfxRect){r.x + 16, r.y + 16, 48, 48}, a, 0, 1, agora);
   afLegenda(i, base, 1);
+#ifdef NV_DESKTOP_UI
+  if(layout_desktop_ativo() && e && ponteiro_ativo() &&
+     ponteiro_x()/gfx_escala()>=r.x && ponteiro_x()/gfx_escala()<r.x+r.w &&
+     ponteiro_y()/gfx_escala()>=r.y && ponteiro_y()/gfx_escala()<r.y+r.h) {
+    int index=cat_indice_por_imdb(e->imdb);
+    GfxRect more={r.x+r.w-46,r.y+r.h-46,36,36};
+    gfx_cor(more,.5f,.04f,.045f,.055f,.85f);
+    gfx_icone((GfxRect){more.x+7,more.y+7,22,22},"aj_ellipsis",1,1,1,1);
+    if(index>=0) ponteiro_alvo(more.x,more.y,more.w,more.h,NULL,desktopSocialMenu,index,0);
+  }
+#endif
 }
 static void afConvite(float x0, float y, int focada) {
   float w = amigosfilDireita() - x0;
@@ -336,10 +347,10 @@ static void afDesenhar(float x0, float y, float corte, int focada, int coluna, U
       afTexto(i18n("Assistiu recentemente"), r.x + 16, y + 16, r.w - 32, TXT_CAPTION2, .6f);
     }
     if (r.x + r.w < x0 || r.x > dir) continue;
-    afCartao(i, r, focada && i == coluna, agora);
 #ifdef NV_TOUCH_UI
     alvoToque(r, corte, i, -1);
 #endif
+    afCartao(i, r, focada && i == coluna, agora);
   }
   gfx_recorte(0, corte, NV_TELA_W, NV_TELA_H - corte);
   if (ajustes_amigos_estilo() == 3) {

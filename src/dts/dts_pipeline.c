@@ -26,7 +26,12 @@ static void *open_adapter(int major, const DtsAdapter **api) {
     if (snprintf(path, sizeof path, "%s/dts-starfish-webos%d.so", override,
                  major == 3 ? 3 : 4) >= (int)sizeof path) return NULL;
   } else {
+#ifdef _WIN32
+    n = GetModuleFileNameA(NULL, executable, sizeof executable - 1);
+    if (n > 0) for (ssize_t i = 0; i < n; i++) if (executable[i] == '\\') executable[i] = '/';
+#else
     n = readlink("/proc/self/exe", executable, sizeof executable - 1);
+#endif
     if (n <= 0) return NULL;
     executable[n] = 0;
     char *slash = strrchr(executable, '/');

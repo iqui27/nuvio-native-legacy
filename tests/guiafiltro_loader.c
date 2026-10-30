@@ -43,6 +43,9 @@ static void channel(int fl, const char *cat, const char *id, const char *nome) {
   sGrupoInfo(fl, cat, 1);
   sCanalAdd(fl, &c);
 }
+int g5ui_active(void) { return 0; }
+int g5ui_changed(void) { return 0; }
+void g5ui_update(void) {}
 void desc_remontar_fileiras(void) {}
 void desc_repetir(void) {}
 int player_aberto(void) { return 0; }
@@ -1045,6 +1048,34 @@ static void panelPublicationRegression(void) {
   rebuild(); atomic_store(&pendPronto, 1); drenarCarga();
   assert(fNivel && !strcmp(fCatNome, "News") && fN == 0 && paFoco == 0);
 }
+/* Provider-order fixture: HBO repeats in an early pack and a late category. */
+static void liveHboRegression(void) {
+  int fl = begin(GF_TODAS, 30000);
+  channel(fl, "Movie pack", "xtream:pack-hbo", "HBO HD");
+  for (int i = 0; i < 155; i++) {
+    char cat[48], id[48], name[48];
+    snprintf(cat, sizeof cat, "Provider category %03d", i);
+    snprintf(id, sizeof id, "xtream:station-%d", i);
+    snprintf(name, sizeof name, "Station %d HD", i);
+    channel(fl, cat, id, name);
+  }
+  channel(fl, "HBO", "xtream:hbo-hd", "HBO HD");
+  channel(fl, "HBO", "xtream:hbo-fhd", "HBO FHD");
+  channel(fl, "HBO", "xtream:hbo-h265", "HBO H265");
+  rebuild(); adotarStaging();
+  assert(nCats == 157 && nCanais == 159);
+  for (int cat = 0; cat < nCats; cat++) {
+    int visible = 0;
+    for (int i = 0; i < nCanais; i++)
+      if (canais[i].cat == cat && varianteVisivel(i)) visible++;
+    assert(visible == 1 && "every provider category must keep a visible channel");
+  }
+  GuiaVariante variants[4];
+  assert(guia_variantes("xtream:hbo-hd", variants, 4) == 3);
+  for (int i = 0; i < 3; i++)
+    assert(!strncmp(variants[i].id, "xtream:hbo-", 11));
+  puts("PASS: 157 provider categories retain HBO and all 159 channel records");
+}
 #ifdef GUIAFILTRO_STALKER_TEST
 #define main filter_test_main
 #endif
@@ -1057,6 +1088,7 @@ int main(int argc, char **argv) {
     if (!strncmp(regression, "pagination", 10))
       paginationRegression(!strcmp(regression, "pagination-4k") ? GF_SO_4K :
                            !strcmp(regression, "pagination-prefer") ? GF_PREFERIR_4K : GF_TODAS);
+    else if (!strcmp(regression, "live-hbo")) liveHboRegression();
     else if (!strcmp(regression, "panel-publication")) panelPublicationRegression();
     else if (!strcmp(regression, "cap")) capRegression();
     else if (!strcmp(regression, "cache-refresh")) cacheRefreshRegression();

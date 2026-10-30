@@ -34,6 +34,9 @@ typedef enum {
   MENU_PERFIL,
   MENU_AJUSTES,
   MENU_SERVIDORES,
+#ifdef NV_DESKTOP_UI
+  MENU_LISTAS, MENU_CONQUISTAS, MENU_FONTES, MENU_JUNTOS, MENU_STREAMING,
+#endif
   MENU_N
 } MenuDestino;
 
@@ -41,6 +44,18 @@ typedef enum {
 // estado inicial ja e valido sem chamar (destino = MENU_INICIO, barra fora).
 int  menu_iniciar(void);
 void menu_servidores(int conectado);
+// Persistent desktop chrome; search opens the existing Search destination.
+void menu_desktop_busca_desenhar(void);
+#ifdef NV_DESKTOP_UI
+void menu_desktop_alternar(void);
+void menu_desktop_expandir(void);
+void menu_desktop_hover(float windowX);
+void menu_desktop_revelar(void);
+void menu_desktop_servico(int index);
+void menu_desktop_perfil(void);
+int menu_desktop_streaming(void);
+int menu_desktop_foco(void);
+#endif
 // Shared active-profile avatar, in the caller's coordinate layer.
 void menu_avatar(float x, float y, float size, float alpha);
 

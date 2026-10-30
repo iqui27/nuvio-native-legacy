@@ -1697,6 +1697,10 @@ static void soltarHandleDesde(void *c, int r, const char *url, unsigned primeira
     char *fim = NULL;
     hostUsado(url, agora);
     if (curl_getinfo && !curl_getinfo(c, INFO_URL_FINAL, &fim) && fim) hostUsado(fim, agora); }
+  /* Keep connections, DNS and TLS sessions, but detach request-owned buffers
+   * and callbacks before their stack frames expire. Cleanup at thread exit
+   * or parked-handle eviction can invoke progress/header callbacks. */
+  curl_reset(c);
 }
 
 static void soltarHandleR(void *c, int r, const char *url) {
@@ -2053,6 +2057,9 @@ static int abrirReal(void) {
 #endif
   h = dlopen("libcurl.so.5", RTLD_NOW);
   if (!h) h = dlopen("libcurl.so.4", RTLD_NOW);
+#endif
+#ifdef _WIN32
+  if (!h) h = dlopen("libcurl-x64.dll", RTLD_NOW);
 #endif
   if (!h) h = dlopen("libcurl.4.dylib", RTLD_NOW);   // Mac
   if (!h) h = dlopen("libcurl.dylib", RTLD_NOW);

@@ -13,6 +13,7 @@
 #include "gpunivel.h"
 #include "ajustes.h"
 #include "esmaecer.h"
+#include "ponteiro.h"
 
 // A MISTURA, com o estado lembrado. gfx_rect desliga a mistura num desenho
 // opaco e a devolve ao que estava — nao a "ligada" — porque quem gera o
@@ -335,6 +336,12 @@ static const char *FS_CABECA =
   // tela. O quad da luz por baixo deixa de ser pintado (gfx_ambiente
   // "pendente", ver gfx_rect). uAmbOn liga o caminho; a UV da luz e vAmb, a
   // posicao na tela vinda do vertex shader — nao gl_FragCoord (ver o VS).
+  // One page scrim for both the expanding window and settled Detail.
+  "float nv_detail_veil(vec2 uv){\n"
+  "  float ax = uv.x < 0.45 ? mix(0.8,0.35,uv.x/0.45) : mix(0.35,0.0,clamp((uv.x-0.45)/0.25,0.0,1.0));\n"
+  "  float ay = uv.y < 0.25 ? 0.0 : uv.y < 0.55 ? mix(0.0,0.55,(uv.y-0.25)/0.30) : mix(0.55,0.92,(uv.y-0.55)/0.45);\n"
+  "  return 1.0-(1.0-ax)*(1.0-ay);\n"
+  "}\n"
   "uniform sampler2D uAmb;\n"
   "uniform float uAmbOn;\n"
   // CAMADAS DO DESTAQUE NUMA PASSADA SO (gfx_hero_camadas, GFX_*_CAM). Durante o
@@ -799,10 +806,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  a = 1.0 - (1.0 - a) * (1.0 - ab);\n"
   // Approved detail v2 CSS stops, fused into the existing dithered pass.
   "  if (uPar.y > 0.5) {\n"
-  "    float ax = x < 0.45 ? mix(0.8,0.35,x/0.45) : mix(0.35,0.0,clamp((x-0.45)/0.25,0.0,1.0));\n"
-  "    float ay = vUv.y < 0.25 ? 0.0 : vUv.y < 0.55 ? mix(0.0,0.55,(vUv.y-0.25)/0.30) : mix(0.55,0.92,(vUv.y-0.55)/0.45);\n"
-  "    a = 1.0-(1.0-ax)*(1.0-ay); bg=vec3(0.0);\n"
-  "    gl_FragColor=nv_dither(mix(c,bg,a*uFoco),uCor.a); return;\n"
+  "    a = nv_detail_veil(vUv);\n"
   "  }\n"
   // uFoco = FORCA da vinheta: 1 no topo, 0 com a pagina rolada. No web a
   // vinheta e uma CAMADA IRMA do backdrop e tem opacidade propria — ao rolar,
@@ -1418,13 +1422,9 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "    float base = smoothstep(0.56, 1.0, u.y) * 0.60;\n"
   "    a = 1.0 - (1.0 - ac) * (1.0 - base);\n"
   "  } else if (uPar.y > 0.999) {\n"
-  "    a = 1.0 - smoothstep(0.0, 0.82, u.x);\n"
-  "    float ab = smoothstep(0.70, 1.0, u.y) * 0.92;\n"
-  "    a = 1.0 - (1.0 - a) * (1.0 - ab);\n"
+  "    a = nv_detail_veil(u);\n"
   "  } else {\n"
-  "    float ap = 1.0 - smoothstep(0.0, 0.82, u.x);\n"
-  "    float ab = smoothstep(0.70, 1.0, u.y) * 0.92;\n"
-  "    ap = 1.0 - (1.0 - ap) * (1.0 - ab);\n"
+  "    float ap = nv_detail_veil(u);\n"
   "    float ac = (1.0 - smoothstep(0.18, 0.72, u.x)) * smoothstep(0.18, 0.68, u.y);\n"
   "    float base = smoothstep(0.56, 1.0, u.y) * 0.60;\n"
   "    ac = 1.0 - (1.0 - ac) * (1.0 - base);\n"
@@ -2488,6 +2488,13 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
   int comAmb = 0, veuAmb = 0, opaco = 0, cheia, clearCor, duplo = 0;
   float din[4] = { 0.0f, 0.0f, 0.0f, 0.0f }, dinResto = -1.0f;
   if ((int)modo < 0 || (int)modo >= GFX_NMODOS) return;
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo() && modo == GFX_ANEL && pary == 0) {
+    if (ponteiro_mouse()) return;
+    parx=2.0f/(fmaxf(1,r.h)*gfx_escala());
+    ajustes_acento(&cr,&cg,&cb); ca*=.4f;
+  }
+#endif
   if (modo == GFX_VIDRO && !progs[modo].prog) return;   // gfx_vidro so chega aqui com o programa pronto
   if (modo >= GFX_COPIA_EASU && !progs[modo].prog) {
     // Opt-in upscaler: link on first use; a failed link falls back to the bilinear copy.
@@ -2731,7 +2738,7 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
   if (P->forcarCover >= 0) glUniform1f(P->forcarCover, gfx_card_forcar_cover_atual);
   if (P->veuTela >= 0)     glUniform1f(P->veuTela, gfx_card_veu_tela_atual);
   if (P->heroiVeu >= 0) glUniform4fv(P->heroiVeu, 1, gfx_card_heroi_veu_atual);
-  if (P->borda >= 0)  glUniform1f(P->borda, gfx_borda_foco_atual);
+  if (P->borda >= 0)  glUniform1f(P->borda, layout_desktop_ativo() ? 0 : gfx_borda_foco_atual);
   if (P->varre >= 0)  glUniform1f(P->varre, gfx_varre_atual);
   // Depois da arte (gfx_veu_na_arte) a lista so serve para gfx_veu_base pular
   // os mesmos veus: nenhum outro GFX_CARD do card (miniatura) ganha veu.
@@ -4448,6 +4455,13 @@ float gfx_foco_placa_alfa(float cr, float cg, float cb) {
 }
 int gfx_foco_placa(GfxRect r, float raio, float foco, float a) {
   float f = foco < 0.0f ? 0.0f : (foco > 1.0f ? 1.0f : foco), cr, cg, cb;
+  if (layout_desktop_ativo()) {
+    if (f > .01f && !ponteiro_mouse()) {
+      ajustes_acento(&cr,&cg,&cb);
+      gfx_anel(r,raio,2/gfx_escala(),cr,cg,cb,f*a);
+    }
+    return 1;
+  }
   if (!ajustes_foco_acento()) return 0;
   if (f <= 0.01f || a <= 0.001f) return 1;
   ajustes_acento(&cr, &cg, &cb);
@@ -4466,6 +4480,7 @@ int gfx_foco_placa(GfxRect r, float raio, float foco, float a) {
 void gfx_vidro_cartao(GfxRect r, float raio, float foco, float a) {
   float f = foco < 0.0f ? 0.0f : (foco > 1.0f ? 1.0f : foco), cr, cg, cb;
   if (f <= 0.01f || a <= 0.001f) return;
+  if (layout_desktop_ativo()) return;
   ajustes_acento(&cr, &cg, &cb);
   // "Contorno do vidro" DESLIGADO: sem fio no cartao, so um halo fraco por fora
   // (a arte cobre o interior, entao o realce fica de fora, na mesma ordem de
@@ -4480,6 +4495,11 @@ void gfx_vidro_cartao(GfxRect r, float raio, float foco, float a) {
 void gfx_vidro_pilula_cheia(GfxRect r, float raio, float foco, float a) {
   float f = foco < 0.0f ? 0.0f : (foco > 1.0f ? 1.0f : foco), cr, cg, cb;
   if (f <= 0.01f || a <= 0.001f) return;
+  if (layout_desktop_ativo()) {
+    gfx_cor(r,raio,1,1,1,.08f*f*a);
+    if (!ponteiro_mouse()) gfx_anel(r,raio,2/gfx_escala(),1,1,1,f*a);
+    return;
+  }
   ajustes_acento(&cr, &cg, &cb);
   // Coloured accents supply their own frost, including Library tabs/chips
   // without a glass backing. 0.92 preserves >= 90 % of solid accent chroma.
@@ -4500,7 +4520,7 @@ void gfx_vidro_pilula_cheia(GfxRect r, float raio, float foco, float a) {
 // Texto sobre a pilula cheia: a tinta que contrasta com o realce (escura sobre
 // realce claro, branca sobre escuro); fora do foco, o cinza claro de sempre.
 int gfx_vidro_tinta(float foco) {
-  if (foco < 0.5f) return 235;
+  if (layout_desktop_ativo() || foco < 0.5f) return 235;
   return ajustes_acento_tinta(NULL, NULL, NULL) < 0.5f ? 20 : 255;
 }
 // Superficie de um painel/pilula NA COR DO REALCE (acao principal em repouso):

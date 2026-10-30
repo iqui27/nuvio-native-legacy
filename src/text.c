@@ -485,7 +485,13 @@ void txt_estilo_medidas(TxtEstilo estilo, int *corpo, int *peso) {
 
 // One base per style, shared by measuring and rasterizing. Legacy 100% stays exact.
 static float corpoAtual(int style) {
-  return pisoCam[camada] ? ui_size_text(ESTILOS[style].corpo, escCam) : ESTILOS[style].corpo;
+  float size=pisoCam[camada] ? ui_size_text(ESTILOS[style].corpo, escCam) : ESTILOS[style].corpo;
+#ifdef NV_DESKTOP_UI
+  // 22.5 layout units at the 1.5 desktop scale are 15 window points.
+  if(layout_desktop_ativo() && (style==TXT_HERO_META || style==TXT_CW_META || style==TXT_DET_META2 || style==TXT_CALLOUT))
+    size=fmaxf(size,22.5f);
+#endif
+  return size;
 }
 
 // RESERVA PARA O QUE A INTER NAO TEM.

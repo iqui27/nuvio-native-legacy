@@ -26,12 +26,13 @@ static void check(int ok, const char *label) {
   printf("%s: %s\n", ok ? "PASS" : "FAIL", label);
   failures += !ok;
 }
-typedef struct { double fill, gpu, blur, copy; int cheias, capt, pass, n, gl[8], up; double upd, des; double modo[GFX_NMODOS]; } Soma;
+typedef struct { double fill, gpu, blur, copy; int cheias, capt, pass, n, gl[8], up, text; double upd, des; double modo[GFX_NMODOS]; FpsAmostra frames; } Soma;
 static void frame(Soma *s) {
   // Real clock, paced near 60 Hz: the hero carousel and easing read SDL_GetTicks.
   static Uint32 ant;
   SDL_Delay(ant && SDL_GetTicks() - ant < 16 ? 16 - (SDL_GetTicks() - ant) : 0);
   Uint32 now = SDL_GetTicks(); ant = now; nframe++;
+  int text0 = txt_rasterizadas;
   int gl0[8], up0 = perftv_uploads; memcpy(gl0, hl_gl, sizeof gl0);
   txt_novo_quadro(); tex_novo_quadro(); gfx_novo_quadro();
   glClearColor(.05f, .05f, .05f, 1); glClear(GL_COLOR_BUFFER_BIT);
@@ -44,11 +45,14 @@ static void frame(Soma *s) {
   ilha_desenhar(now);
   Uint64 t2 = SDL_GetPerformanceCounter();
   glFinish();
+  Uint64 t3 = SDL_GetPerformanceCounter();
   if (!s) return;
+  fps_add(&s->frames, (t3 - t0) * 1000.0 / SDL_GetPerformanceFrequency(), 0);
   double f = 1000.0 / SDL_GetPerformanceFrequency();
   s->upd += (t1 - t0) * f; s->des += (t2 - t1) * f;
   for (int k = 0; k < 8; k++) s->gl[k] += hl_gl[k] - gl0[k];
   s->up += perftv_uploads - up0;
+  s->text += txt_rasterizadas - text0;
   s->fill += gfx_fill; s->gpu += gfx_fill_gpu; s->blur += gfx_vidro_fill; s->copy += gfx_vidro_copia;
   if (getenv("HL_TRACE")) printf("frame %d: up=%d capt=%d pass=%d copy=%.2f fbo=%d 12=%.2f 38=%.2f 3=%.2f 37=%.2f fill=%.2f\n", nframe, perftv_uploads - up0, gfx_vidro_capturas, gfx_vidro_passadas, gfx_vidro_copia, hl_gl[1] - gl0[1], gfx_fill_modo[12], gfx_fill_modo[38], gfx_fill_modo[3], gfx_fill_modo[37], gfx_fill);
   s->cheias += gfx_n_cheio; s->capt += gfx_vidro_capturas; s->pass += gfx_vidro_passadas; s->n++;
@@ -56,7 +60,9 @@ static void frame(Soma *s) {
 }
 static void relato(const char *nome, const Soma *s) {
   double n = s->n;
-  printf("%s: cpu upd=%.2fms des=%.2fms\n", nome, s->upd / n, s->des / n);
+  printf("%s: p50_ms=%.2f p95_ms=%.2f\n", nome,
+         fps_percentil(&s->frames, 50), fps_percentil(&s->frames, 95));
+  printf("%s: cpu upd=%.2fms des=%.2fms text_pf=%.2f\n", nome, s->upd / n, s->des / n, s->text / n);
   printf("%s: fill=%.2f gpu=%.2f full=%.2f captures=%.2f passes=%.2f blur=%.3f copy=%.3f |",
          nome, s->fill / n, s->gpu / n, s->cheias / n, s->capt / n, s->pass / n, s->blur / n, s->copy / n);
   for (int k = 0; k < GFX_NMODOS; k++) if (s->modo[k] / n > 0.02) printf(" %d=%.2f", k, s->modo[k] / n);
@@ -103,8 +109,9 @@ int main(int argc, char **argv) {
   fputs("homeLayoutLocal 0\nvidroLocal 0\nmenuTopoLocal 1\nidioma 0\ntrailerHero 0\nrelogioTelaLocal 0\n", f);
   fclose(f); ajustes_dir(getenv("NUVIO_DADOS"));
   setenv("NUVIO_SHOT_VIDRO_FOSCO", "1", 1); ajustes_teste_vidro_env();
-  ajustes_teste_tema(12, 1);   // "Da arte" (AJ_TEMA_DINAMICA): cor-viva=1 as on the TCL
-  assert(ajustes_vidro() && ajustes_vidro_fosco() && ajustes_cor_viva() == 1);
+  int glass = !getenv("HL_GLASS_OFF");
+  ajustes_teste_tema(12, glass);   // "Da arte": cor-viva=1 as on the TCL
+  assert(ajustes_vidro() == glass && ajustes_cor_viva() == 1);
   perftv_enabled = 1; tex_iniciar(64); gfx_icones_dir("deploy/app/art");
   artehero_definir_falhou(tex_falhou);
   assert(home_iniciar("deploy/app/art")); menu_iniciar(); ilha_relogio_visivel(1);
@@ -145,13 +152,25 @@ int main(int argc, char **argv) {
     if (r == 0) shot(argv[1], "home-row2");
   }
   relato("rows", &rows_);
+  Soma cards = {0};
+  for (int c = 0; c < 8; c++) {
+    tecla(c < 4 ? SDLK_RIGHT : SDLK_LEFT);
+    for (int i = 0; i < 30; i++) { tex_bombear(16); frame(&cards); }
+  }
+  relato("cards", &cards);
   check(idle.capt == 0 && idle.pass == 0, "idle Home reuses the glass backdrop");
   check(idle.gpu / idle.n <= 2.0, "idle Home GPU fill <= 2.0 screens");
   check(rows_.capt / (double)rows_.n <= 0.5, "row change recaptures the glass backdrop at most every other frame");
   check(rows_.gpu / rows_.n <= 2.5, "row change GPU fill <= 2.5 screens");
   // Each hero crossfade frame recaptures; a full-screen copy there doubled the
   // bandwidth of a frame that already reads the whole hero twice.
-  check(rows_.capt && rows_.copy / rows_.capt <= 0.25, "row change copies only the glass regions per capture");
+  if (glass)
+    check(rows_.capt && rows_.copy / rows_.capt <= 0.25, "row change copies only the glass regions per capture");
+  else {
+    check(!rows_.capt && !rows_.pass, "Glass off performs no backdrop captures or blur passes");
+    check(rows_.text / (double)rows_.n < 0.1,
+          "row focus colors reuse text textures throughout the spring");
+  }
   tex_encerrar(); SDL_Quit();
   return failures ? 1 : 0;
 }

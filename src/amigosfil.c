@@ -1,5 +1,11 @@
 // A fileira "Amigos assistindo" da home (E2 com E1 dentro). Ver amigosfil.h.
 #include "amigosfil.h"
+#ifdef NV_DESKTOP_UI
+#include "ctxmenu.h"
+static void desktopSocialMenu(int index,int unused) {
+  (void)unused;ctx_fileira(NULL,NULL);ctx_abrir(index);
+}
+#endif
 #include "socialvis.h"
 #include "svdesenho.h"
 #include "tex_cache.h"
@@ -139,10 +145,21 @@ void amigosfil_retomar_foco(int *coluna) {
   }
   toquerol_limpar(&toque);
 }
+#ifdef NV_DESKTOP_UI
+static void desktopSocialContext(int coluna,int cartao) {
+  (void)cartao;
+  int index=amigosfil_indice_cat(coluna);
+  if(index>=0) desktopSocialMenu(index,0);
+}
+#endif
 static void alvoToque(GfxRect r, float corte, int coluna, int cartao) {
   float x = fmaxf(r.x, ultX0), dir = fminf(r.x + r.w, toque.regiao.x + toque.regiao.w);
-  if (toqueFocar && dir > x)
+  if (toqueFocar && dir > x) {
     ponteiro_alvo_faixa(x, r.y, dir - x, r.h, corte, NV_TELA_H, toqueFocar, NULL, coluna, cartao);
+#ifdef NV_DESKTOP_UI
+    if(layout_desktop_ativo()) ponteiro_alvo_segurar(desktopSocialContext);
+#endif
+  }
 }
 #endif
 

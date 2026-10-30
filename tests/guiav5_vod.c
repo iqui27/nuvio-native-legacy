@@ -53,9 +53,7 @@ static void fixture(void){
     snprintf(it->group,sizeof it->group,"%s",categories[i/12]);snprintf(it->name,sizeof it->name,"%s",titles[i%12]);
     snprintf(it->poster,sizeof it->poster,"deploy/app/art/poster/%02d.jpg",i%12);
     snprintf(it->backdrop,sizeof it->backdrop,"deploy/app/art/%02d.jpg",i%6);
-#ifndef VOD_BASELINE
     snprintf(it->year,sizeof it->year,"2024");snprintf(it->rating,sizeof it->rating,"8.5");snprintf(it->genre,sizeof it->genre,"Science fiction");
-#endif
   }
   snprintf(draft.name,sizeof draft.name,"Living room IPTV");build_groups();go("vod-filmes");focus=VOD_ITEM;
 }
@@ -72,6 +70,11 @@ int main(int argc,char **argv){
 #else
   shot(window,argv[1],"after");
   assert(vod_rows==6&&vod_size==72&&vod_layout[0].count==12&&vod_layout[3].kind==G5_SERIES);
+  /* The informational hero must register no remote or pointer actions. */
+  for(int i=0;i<num_focus;i++){
+    assert(next_focus[i]!=807&&next_focus[i]!=808&&next_focus[i]!=809);
+    assert(focus_rect[i].y<178||focus_rect[i].y>=488);
+  }
   assert(!strcmp(vod_category("FILMES: Adventure"),"Adventure"));
   assert(!strcmp(vod_category("SERIES:"),i18n("Outros")));
   assert(!strcmp(vod_category("  FILMES: Adventure"),"Adventure"));
@@ -93,8 +96,6 @@ int main(int argc,char **argv){
   pthread_mutex_unlock(&metadata_lock);
   key(SDLK_RETURN);assert(!strcmp(screen,"vod-titulo")&&selected==2);
   focus=0;key(SDLK_RETURN);assert(playing);playing=0;
-  go("vod-filmes");focus=807;key(SDLK_RETURN);assert(!strcmp(screen,"vod-titulo"));
-  go("vod-filmes");focus=809;key(SDLK_RETURN);assert(playing);playing=0;
   go("vod-filmes");focus=803;key(SDLK_RETURN);assert(!strcmp(screen,"fontes-gerenciar"));
   /* Foreground work must get its own worker while metadata remains stalled. */
   action[0]=0;
@@ -107,16 +108,25 @@ int main(int argc,char **argv){
   go("vod-filmes");focus=VOD_ITEM+2;frame(window);
   int initial=focus;key(SDLK_RIGHT);assert(focus==initial+1);frame(window);
   assert(poster_focus(focus)>0);key(SDLK_DOWN);assert(focus==VOD_ITEM+15);frame(window);assert(vod_row_at(vod_position())==1);
-  key(SDLK_UP);assert(focus==VOD_ITEM+3);key(SDLK_UP);assert(focus==807&&nav<0);
-  shot(window,argv[1],"hero-actions");
-  key(SDLK_RIGHT);assert(focus==808);key(SDLK_LEFT);assert(focus==807);
-  key(SDLK_LEFT);assert(focus==809);key(SDLK_RIGHT);assert(focus==807);
-  key(SDLK_UP);assert(nav==3);key(SDLK_DOWN);assert(nav<0&&focus==VOD_ITEM+3);
+  key(SDLK_UP);assert(focus==VOD_ITEM+3);key(SDLK_UP);assert(nav==3);
+  shot(window,argv[1],"top-tabs");
+  key(SDLK_DOWN);assert(nav<0&&focus==VOD_ITEM+3);
   key(SDLK_ESCAPE);assert(nav==3&&!strcmp(screen,"vod-filmes"));key(SDLK_DOWN);assert(focus==VOD_ITEM+3);
-  key(SDLK_UP);key(SDLK_RETURN);assert(!strcmp(screen,"vod-titulo")&&selected==3);
-  key(SDLK_ESCAPE);assert(!strcmp(screen,"vod-filmes")&&focus==807);
-  key(SDLK_RIGHT);key(SDLK_RETURN);assert(!strcmp(screen,"vod-series"));frame(window);assert(vod_rows==3&&vod_size==36);
-  go("vod-filmes");focus=VOD_ITEM;frame(window);key(SDLK_UP);key(SDLK_LEFT);assert(focus==809);key(SDLK_RETURN);assert(playing&&selected==0);playing=0;
+  key(SDLK_RETURN);assert(!strcmp(screen,"vod-titulo")&&selected==3);
+  key(SDLK_ESCAPE);assert(!strcmp(screen,"vod-filmes")&&focus==VOD_ITEM+3);
+  frame(window);focus=VOD_ITEM;key(SDLK_LEFT);assert(vod_sidebar&&focus==800);
+  key(SDLK_DOWN);assert(focus==801);key(SDLK_RETURN);frame(window);
+  assert(!vod_sidebar&&!strcmp(screen,"vod-series")&&vod_rows==3&&vod_size==36);
+  key(SDLK_UP);assert(nav==3);key(SDLK_DOWN);assert(focus==VOD_ITEM&&nav<0);
+  key(SDLK_RETURN);assert(!strcmp(screen,"vod-serie-temporadas")&&inventory[selected].kind==G5_SERIES);
+  key(SDLK_ESCAPE);assert(!strcmp(screen,"vod-series")&&focus==VOD_ITEM);
+  frame(window);key(SDLK_LEFT);assert(vod_sidebar&&focus==800);key(SDLK_RETURN);frame(window);
+  assert(!strcmp(screen,"vod-filmes")&&vod_size==72&&!vod_sidebar);
+  vod_failed=1;frame(window);focus=810;key(SDLK_DOWN);assert(focus==VOD_ITEM&&nav<0);vod_failed=0;
+  go("vod-busca");focus=VOD_ITEM;frame(window);key(SDLK_UP);assert(focus==804&&nav<0);
+  key(SDLK_DOWN);assert(focus==VOD_ITEM);
+  go("vod-filmes");focus=VOD_ITEM;frame(window);key(SDLK_RETURN);
+  assert(!strcmp(screen,"vod-titulo")&&selected==0);focus=0;key(SDLK_RETURN);assert(playing);playing=0;
   go("vod-filmes");focus=VOD_ITEM;frame(window);
   for(int i=0;i<10;i++)key(SDLK_RIGHT);assert(focus==VOD_ITEM+10);
   shot(window,argv[1],"horizontal");assert(vod_layout[0].scroll>0);
@@ -140,7 +150,7 @@ int main(int argc,char **argv){
   query[0]=catalog_group[0]=0;go("vod-filmes");vod_rebuild();vod_filter();
   assert(vod_size==4301&&vod_rows==2&&count==0);
   assert(!strcmp(vod_item(vod_order[4299])->name,"Movie 4299"));
-  vod_select(4299,0);assert(selected==0&&!strcmp(inventory[selected].name,"Movie 4299")&&count==1);
+  vod_select(4299);assert(selected==0&&!strcmp(inventory[selected].name,"Movie 4299")&&count==1);
   go("vod-filmes");snprintf(query,sizeof query,"Movie 4299");vod_filter();assert(vod_size==1);
   query[0]=0;rules.hide_locked=1;rules.ask_unrated=1;vod_filter();assert(vod_size==0);
   /* Import confirmation must discard retained catalogs and invalidate cached rows. */
@@ -148,11 +158,11 @@ int main(int argc,char **argv){
   drop_kind(G5_MOVIE);vod_filter();
   assert(vod_size==1&&vod_rows==1&&vod_layout[0].kind==G5_SERIES);
   assert(!vod_data.json[0]&&!vod_data.categories[0]);
-  vod_select(0,0);assert(inventory[selected].kind==G5_SERIES);
+  vod_select(0);assert(inventory[selected].kind==G5_SERIES);
   drop_kind(G5_SERIES);vod_filter();
   assert(vod_size==0&&vod_rows==0&&count==0);
   assert(!vod_data.json[1]&&!vod_data.categories[1]);
-  puts("PASS: disabled import kinds stay removed; six category rows, movie/series order, poster focus, activation during stalled metadata, concurrent foreground worker, hero actions, Back, scrolling, fallback and uncapped lazy records");
+  puts("PASS: disabled import kinds stay removed; six category rows, movie/series order, poster focus, activation during stalled metadata, concurrent foreground worker, noninteractive hero, Up to tabs, sidebar series switch, Back, scrolling, fallback and uncapped lazy records");
 #endif
   return 0;
 }

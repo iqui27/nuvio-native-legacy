@@ -55,6 +55,30 @@ int main(int argc,char **argv) {
   for(int i=0;i<6;i++) { s.http[i]=200; s.ms[i]=184+i*60; }
   s.addon[s.addons++]=(AioItem){.nome="OpenSubtitles v3 Plus",.ativo=1,.legenda=1};
   s.addon[s.addons++]=(AioItem){.nome="SubDL",.ativo=1,.legenda=1};
+  if(getenv("AIO_SHOT_STATES")) {
+    static AioSnapshot states[3]; states[0]=s;
+    states[1]=s; states[1].configurada=0; states[1].servicos=states[1].addons=states[1].detalhes=0;
+    memset(states[1].regras,0,sizeof states[1].regras);
+    memset(states[1].resumo,0,sizeof states[1].resumo);
+    // Apply exactly the embedded fixture through the same configuration parser.
+    FILE *f=fopen("tests/fixtures/aiostreams-manifest-only.json","rb"); assert(f);
+    char raw[8192], envelope[8256]; size_t n=fread(raw,1,sizeof raw-1,f); fclose(f); raw[n]=0;
+    snprintf(envelope,sizeof envelope,"{\"data\":{\"userData\":%s}}",raw);
+    aio_configuracao(&states[1],envelope);
+    states[1].configAccess=AIO_UNKNOWN; states[1].configEmbedded=1;
+    states[1].estatisticas=states[1].erros=states[1].filtrados=-1;
+    states[1].evidencias=states[1].resultados=0;
+    memset(states[1].http,0,sizeof states[1].http); states[1].http[0]=states[1].http[1]=200;
+    states[2].estatisticas=states[2].erros=states[2].filtrados=-1;
+    states[2].http[0]=503; states[2].http[1]=503;
+    const char *stateNames[]={"full-config","manifest-only","error"};
+    for(int i=0;i<3;i++) {
+      ajustes_definir_vidro(1); aioui_shot(5,&states[i]);
+      for(int tick=0;tick<120;tick++) { frame(10); SDL_Delay(2); }
+      save(argv[1],stateNames[i]);
+    }
+    return 0;
+  }
   const char *names[]={"sem-config","setup-instancia","setup-importar","setup-servicos","setup-pronto","painel","catalogos","fontes","links","legendas","filtros","saude","titulo-debug"};
   const int scales[]={100,85,90,110,120,130};
   int de=0,ate=11;if(getenv("AIO_SHOT_PASSES"))sscanf(getenv("AIO_SHOT_PASSES"),"%d-%d",&de,&ate);
@@ -74,6 +98,13 @@ int main(int argc,char **argv) {
       }
       char name[160]; snprintf(name,sizeof name,"%s-%d-%s",names[p],scales[scale],glass?"glass":"solid");
       save(argv[1],name);
+      if(getenv("AIO_SHOT_DASHBOARD") && p==5) {
+        SDL_Event key={0}; key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_LEFT;
+        aioui_evento(&key); frame(800);
+        snprintf(name,sizeof name,"sidebar-focus-%d-%s",scales[scale],glass?"glass":"solid");
+        save(argv[1],name);
+        key.key.keysym.sym=SDLK_RIGHT; aioui_evento(&key); frame(800);
+      }
       if(getenv("AIO_SHOT_DASHBOARD") && p==10 && getenv("AIO_SHOT_DETAILS")) {
         const int groups[]={2,6,7};
         const char *details[]={"languages-end","sort","formatter"};

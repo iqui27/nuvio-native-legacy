@@ -945,7 +945,7 @@ static void voltarAoPainel(void) {
     spainel_voltar_titulo();
   }
 }
-#ifdef NV_LINUX_DESKTOP
+#if defined(NV_LINUX_DESKTOP) || defined(NV_DESKTOP_RELEASE)
 static int uiPreview;
 #endif
 static int sair = 0;
@@ -974,7 +974,7 @@ static int saiuPorEsquerda, saiuPorCima;   // a ultima tecla foi ESQUERDA ou CIM
 // um canal minimizado. Manter a regra aqui evita que cada tela invente sua
 // propria nocao de PiP/Guia.
 static int sidebar_permitida(void) {
-  return tela != TELA_GUIA && !player_mini_ativo();
+  return (layout_desktop_ativo() || tela != TELA_GUIA) && !player_mini_ativo();
 }
 #ifdef NV_TOUCH_UI
 static int sidebarToquePode(void) {
@@ -1136,6 +1136,13 @@ static int routeCount, routeOpening;
 static void trocarTela(Tela nova) {
   tituloDoPainel = 0;
   if (nova == tela) return;
+#ifdef NV_DESKTOP_UI
+  // Child overlays keep the current parent; page destinations select themselves.
+  if(nova==TELA_ESPORTES) menu_definir_destino(MENU_ESPORTES);
+  else if(nova==TELA_GUIA) menu_definir_destino(MENU_GUIA);
+  else if(nova==TELA_BUSCA) menu_definir_destino(MENU_BUSCAR);
+  else if(nova==TELA_BIBLIOTECA && menu_destino()!=MENU_LISTAS && menu_destino()!=MENU_SERVIDORES) menu_definir_destino(MENU_BIBLIOTECA);
+#endif
   if (nova == TELA_GUIA && perfil_infantil_ativo()) {   // perfilinfantil.h: sem TV ao vivo
     glem_aviso_curto(i18n("Perfil infantil: sem TV ao vivo"));
     return;
@@ -1174,6 +1181,29 @@ static void trocarTela(Tela nova) {
   }
 }
 
+#ifdef NV_DESKTOP_UI
+// Offline proof uses the production routers, never an alternate renderer.
+void app_desktop_preview(const char *screen) {
+  if (!uiPreview) return;
+  if (!strcmp(screen,"filmography")) {
+    vertudo_fechar_seco();menu_fechar();
+    if(!detail_aberto()) { int title=cat_indice_por_imdb("tt12637874");if(title>=0)abrirPorIndice(title); }
+    detail_mostrar_pessoa(525,"Christopher Nolan","");return;
+  }
+  detail_fechar_seco(); vertudo_fechar_seco(); conquistas_ocultar(); menu_fechar();
+  if (!strcmp(screen,"home")) { menu_ir(MENU_INICIO); trocarTela(TELA_HOME); home_ir_topo(); }
+  else if (!strcmp(screen,"search")) { menu_ir(MENU_BUSCAR); trocarTela(TELA_BUSCA); }
+  else if (!strcmp(screen,"library")) { menu_ir(MENU_BIBLIOTECA); trocarTela(TELA_BIBLIOTECA); }
+  else if (!strcmp(screen,"lists")) { menu_definir_destino(MENU_LISTAS); trocarTela(TELA_BIBLIOTECA); biblioteca_abrir_listas(); }
+  else if (!strcmp(screen,"settings")) { menu_ir(MENU_AJUSTES); trocarTela(TELA_AJUSTES); }
+  else if (!strcmp(screen,"guide")) { trocarTela(TELA_GUIA); }
+  else if (!strcmp(screen,"sports")) { trocarTela(TELA_ESPORTES); }
+  else if (!strcmp(screen,"achievements")) { menu_definir_destino(MENU_CONQUISTAS); conquistas_abrir(); }
+  else if (!strcmp(screen,"collapse")) menu_desktop_alternar();
+  else if (!strcmp(screen,"expand")) menu_desktop_expandir();
+  else if (!strcmp(screen,"streaming")) menu_ir(MENU_STREAMING);
+}
+#endif
 static void abrirTelaFilha(Tela nova) {
   if(nova==tela)return;
   if(nova==TELA_GUIA && perfil_infantil_ativo()){trocarTela(nova);return;}
@@ -3953,7 +3983,7 @@ int app_iniciar(const char *dirArte) {
   perfis_ao_abrir_sessao(perfilEncerrarSessao);
   cat_cache_perfis(1);
   snprintf(perfilDirArte, sizeof perfilDirArte, "%s", dirArte ? dirArte : "");
-#ifdef NV_LINUX_DESKTOP
+#if defined(NV_LINUX_DESKTOP) || defined(NV_DESKTOP_RELEASE)
   const char *preview = getenv("NUVIO_UI_PREVIEW");
   uiPreview = preview && !strcmp(preview, "1");
 #endif
@@ -4049,7 +4079,7 @@ int app_iniciar(const char *dirArte) {
   recomenda_ao_mudar_alcance(atividade_definir_permitido);
   // Sem conta, o app abre no login. Com sessao gravada ele nem passa por ela —
   // pedir o codigo de novo a cada arranque seria o mesmo que nao ter gravado.
-#ifdef NV_LINUX_DESKTOP
+#if defined(NV_LINUX_DESKTOP) || defined(NV_DESKTOP_RELEASE)
   if (uiPreview) {
     tela = TELA_HOME;
     printf("[linux] UI preview: no account sync or video playback\n");
@@ -4495,6 +4525,16 @@ static int relogioPedidoPagina(void) {
 }
 
 void app_evento(const SDL_Event *e) {
+#ifdef NV_DESKTOP_UI
+  if (e->type == SDL_KEYDOWN && (e->key.keysym.mod & (KMOD_GUI | KMOD_CTRL))) {
+    if (e->key.keysym.sym == SDLK_b) { if (!e->key.repeat) menu_desktop_alternar(); return; }
+    if (e->key.keysym.sym == SDLK_f) {
+      if (detail_aberto()) detail_fechar();
+      if (tela != TELA_BUSCA) menu_ir(MENU_BUSCAR);
+      menu_fechar(); SDL_StartTextInput(); return;
+    }
+  }
+#endif
   if (musicaui_visivel()) {
     if (e->type == SDL_APP_WILLENTERBACKGROUND || e->type == SDL_APP_TERMINATING || e->type == SDL_QUIT)
       musicaui_fechar();
@@ -5507,7 +5547,7 @@ void app_atualizar(float dt, Uint32 agora) {
   // unica saida honesta. Continuar na home mostraria o catalogo de exemplo do
   // pacote como se fosse o da pessoa.
   if (!sessao_logada()
-#ifdef NV_LINUX_DESKTOP
+#if defined(NV_LINUX_DESKTOP) || defined(NV_DESKTOP_RELEASE)
       && !uiPreview
 #endif
      ) {
@@ -6270,13 +6310,25 @@ void app_atualizar(float dt, Uint32 agora) {
       case MENU_BIBLIOTECA: trocarTela(TELA_BIBLIOTECA); break;
       case MENU_SERVIDORES: trocarTela(TELA_BIBLIOTECA); srvsetup_abrir(-2); break;
       case MENU_AGENDA:     trocarTela(TELA_AGENDA);     break;
-      case MENU_ESPORTES:   trocarTela(TELA_GUIA); g5ui_open("esportes-ligas"); break;
+      case MENU_ESPORTES:
+#ifdef NV_DESKTOP_UI
+        trocarTela(TELA_ESPORTES);
+#else
+        trocarTela(TELA_GUIA); g5ui_open("esportes-ligas");
+#endif
+        break;
       // DIRETO PARA A TELA, e nao mais para o painel lateral. O item do menu
       // se chama "Perfil e Stats" e abria um resumo de tres botoes por cima da
       // home — para ver as estatisticas de verdade era preciso descer ate "Ver
       // perfil completo" e apertar OK, dois passos para chegar onde o rotulo ja
       // prometia. trocarTela(TELA_PERFIL) ja chama perfil_abrir + pedirPerfil.
       case MENU_PERFIL:     trocarTela(TELA_PERFIL);     break;
+#ifdef NV_DESKTOP_UI
+      case MENU_LISTAS:     trocarTela(TELA_BIBLIOTECA); biblioteca_abrir_listas(); break;
+      case MENU_CONQUISTAS: conquistas_abrir(); break;
+      case MENU_FONTES:     addonsui_abrir(); trocarTela(TELA_ADDONS); break;
+      case MENU_JUNTOS:     juntosui_abrir_folha(-1, 0, 0); break;
+#endif
       case MENU_AJUSTES:    trocarTela(TELA_AJUSTES);    break;
       default:              trocarTela(TELA_HOME);       break;
     }
@@ -7560,6 +7612,15 @@ void app_atualizar(float dt, Uint32 agora) {
   guia_atualizar(dt, agora);
   if (player_aberto()) epg_passo();
   ctx_atualizar(dt, agora);
+#ifdef NV_DESKTOP_UI
+  { int action,index=ctx_desktop_pedido(&action);
+    if(index>=0) {
+      abrirPorIndice(index);
+      if(action==1) detail_pedir_reproduzir();
+      if(action==2) { homeAcaoDet=DETAIL_BARRA_TRAILER;homeAcaoDetEm=agora; }
+    }
+  }
+#endif
   // Titulo escolhido na grade: abre o detalhe, como se tivesse vindo da home.
   { int idx = vertudo_pediu_abrir();
     if (idx >= 0) {
@@ -7635,7 +7696,9 @@ void app_atualizar(float dt, Uint32 agora) {
   novidades202_atualizar(dt, agora);
   resolver_atualizar(dt, agora);
   novcartao_atualizar(dt, agora);
+#ifndef NV_DESKTOP_UI
   dicascontrole_home_livre(app_home_recebe_teclas(), dt);
+#endif
   dicascontrole_atualizar(dt, agora);
   telemetria_atualizar(dt, agora);
   recintro_atualizar(dt, agora);
@@ -7764,7 +7827,7 @@ static void desenharAtrasDoPainel(void *ctx) {
   // significa "nao pinte a faixa", no de fora significava "nao exista".
   // Com a pagina do titulo aberta, so a barra aberta POR CIMA dela
   // (menu_sobre), ate recolher; a rail fixa nao aparece na pagina.
-  if (menu_visivel() && sidebar_permitida() && (!detail_aberto() || menu_sobre())) {
+  if (menu_visivel() && sidebar_permitida() && (layout_desktop_ativo() || !detail_aberto() || menu_sobre())) {
     // Layout Dinamica: a pilula da barra fica no canto das telas do menu, no
     // lugar do titulo delas (que nao e desenhado: menu_pilula_titulo). Na
     // home some com a pagina rolada. Telas fora do menu (Addons, Social,
@@ -7782,8 +7845,9 @@ static void desenharAtrasDoPainel(void *ctx) {
     if (layout_modo_mobile() && NV_TELA_H > NV_TELA_W) pilula = -1.0f;
 #endif
     menu_pilula_mostrar(pilula);
-    CAMADA_SE(menu_aberto());
+    CAMADA_SE(menu_aberto() && !layout_desktop_ativo());
     menu_desenhar(agora);
+    if (!ctx_aberto()) menu_desktop_busca_desenhar();
   }
   // Palco: o holofote escurece a home e a barra, nunca um menu ou a pagina.
   if (tela == TELA_HOME && !detail_aberto() && !vertudo_aberta() && !ctx_aberto() && !menu_aberto())
@@ -7938,6 +8002,7 @@ int app_home_recebe_teclas(void) {
 }
 
 static int relogioCabe(void) {
+  if (layout_desktop_ativo()) return 0;
 #ifdef NV_IOS
   // TELEFONE EM PE: o iOS ja mostra a hora (e o Wi-Fi) no alto da barra do
   // sistema; a pilula do relogio era a mesma hora uma segunda vez.
@@ -8249,8 +8314,11 @@ void app_desenhar(Uint32 agora) {
     } else ilha_atividade_detalhes(NULL, NULL);
   } else ilha_atividade_detalhes(NULL, NULL);
   if (guia_atualizando_lista()) ilha_atividade(i18n("Atualizando a lista de canais…"), -1.0f);
-  if (!registro_aberto() && !player_aberto() && sessao_logada() &&
-      tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL) {
+  if (!registro_aberto() && !player_aberto() && (sessao_logada()
+#ifdef NV_DESKTOP_UI
+      || uiPreview
+#endif
+      ) && tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL) {
     ilha_relogio_visivel(relogioCabe() && ajustes_relogio_ligado());
     ilha_posicionar(tela==TELA_AJUSTES?3:detail_tem_servidores()?2:1);
     // O painel de Salvos que nasceu da pilula recolhe para ela (o retangulo

@@ -7,7 +7,10 @@
  * sem addon no ar. Os canais e programas sao inventados; nenhum dado de conta
  * passa por aqui. Nao entra na suite (tools/testa-tudo.sh pula *_shot.sh).
  */
-#include "../src/guia.c"
+#ifndef GUIA_UNDER_TEST
+#define GUIA_UNDER_TEST "../src/guia.c"
+#endif
+#include GUIA_UNDER_TEST
 #ifndef GUIAV5_UNDER_TEST
 #define GUIAV5_UNDER_TEST "../src/guiav5ui.c"
 #endif

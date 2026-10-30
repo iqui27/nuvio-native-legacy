@@ -1,11 +1,12 @@
 #include <assert.h>
 #include "../src/filmo.c"
+#undef ponteiro_alvo
 static PonteiroAlvo targets[200];static int count;static PonteiroRolagemFn rolagem;
 void ponteiro_alvo(float x,float y,float w,float h,PonteiroFn f,PonteiroFn a,int i,int j){targets[count++]=(PonteiroAlvo){.x=x,.y=y,.w=w,.h=h,.focar=f,.ativar=a,.a=i,.b=j};}
 void ponteiro_camada(void){count=0;rolagem=NULL;}
 void ponteiro_rolagem(PonteiroRolagemFn fn){rolagem=fn;}
 const char *i18n(const char *s){return s;}
-float gfx_poster_k(void){return 1;}int txt_largura(TxtEstilo e,const char *s){return 100;}float gfx_escala_txt_entrar(void){return 1;}float gfx_escala_tela_txt(void){return 1;}void gfx_escala_sair(float k){}void ajustes_area_conteudo(float a,float b,float *x,float *w){if(x)*x=a;if(w)*w=1920-a-b;}
+float gfx_escala_txt(void){return 1;}float gfx_poster_k(void){return 1;}int txt_largura(TxtEstilo e,const char *s){return 100;}float gfx_escala_txt_entrar(void){return 1;}float gfx_escala_tela_txt(void){return 1;}void gfx_escala_sair(float k){}void ajustes_area_conteudo(float a,float b,float *x,float *w){if(x)*x=a;if(w)*w=1920-a-b;}
 float nv_layout_h=1080,nv_layout_w=1920;
 void fd_sobre(void){}
 const FdFicha *fd_ficha(void){static FdFicha d;return &d;}

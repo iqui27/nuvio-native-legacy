@@ -129,6 +129,7 @@ static float vtEscala(void) { return vtTelefone() ? gfx_escala_ui() : gfx_escala
 #define NV_TELA_H (NV_LAYOUT_REAL_H / vtEscala())
 static int vtTimelineRetrato(void) { return timeline && vtTelefone() && NV_TELA_H > NV_TELA_W; }
 static float vtInicio(void) {
+  if(layout_desktop_ativo()) return ajustes_conteudo_x()/vtEscala();
   return vtTelefone() ? 48.0f + ajustes_rail_largura_fixa() / vtEscala() : ajustes_conteudo_x();
 }
 static float vtFim(void) { return vtTelefone() ? NV_TELA_W - 48.0f : VT_PAN_X - VT_PAN_VAO; }
@@ -2393,7 +2394,7 @@ static float toqueVertudoMax(void) {
   return fmaxf(0.0f, VT_TOPO + celFim + VT_GAP_Y - NV_TELA_H + 120.0f);
 }
 static int toqueVertudoRolar(const PonteiroRolagem *e) {
-  if (!layout_modo_mobile()) { toqueLivre = toqueNasAbas = 0; return 0; }
+  if (!layout_rolagem_livre()) { toqueLivre = toqueNasAbas = 0; return 0; }
   float escala = vtEscala();
   if (e->fase == PONT_ROL_INICIO) {
     toqueNasAbas = 0;
@@ -2406,14 +2407,14 @@ static int toqueVertudoRolar(const PonteiroRolagem *e) {
   if (toqueNasAbas) return toquerol_evento(&toqueAbas, e);
   if (e->fase == PONT_ROL_MOVER || e->fase == PONT_ROL_INERCIA) {
     float antes = scrollY;
-    scrollY = anim_clamp(scrollY - e->delta / escala, 0.0f, toqueVertudoMax());
+    scrollY = layout_scroll_delta(scrollY, e->delta / escala, 0.0f, toqueVertudoMax());
     if (scrollY + NV_TELA_H >= VT_TOPO + celFim - 2.0f * (VT_CARD_H + VT_GAP_Y)) desc_vertudo_mais();
     return fabsf(scrollY - antes) > 0.001f;
   }
   return 1;
 }
 static void toqueVertudoRetomarFoco(void) {
-  if (layout_modo_mobile() && toqueLivre && nItens() > 0) {
+  if (layout_rolagem_livre() && toqueLivre && nItens() > 0) {
     float alvo = scrollY + NV_TELA_H * 0.30f - VT_TOPO, distancia = 1e9f;
     int coluna = celCol[foco];
     for (int i = 0; i < celN; i++) {
@@ -2569,7 +2570,7 @@ static float tetoScrollFoco(float celY, float celH) {
 void vertudo_atualizar(float dt, Uint32 agora) {
   vitManualLiberarSlot();
 #ifdef NV_TOUCH_UI
-  if (!layout_modo_mobile()) toqueLivre = toqueNasAbas = 0;
+  if (!layout_rolagem_livre()) toqueLivre = toqueNasAbas = 0;
 #endif
   float alvo, maxY;
   servidorOrdenar();
@@ -2658,7 +2659,7 @@ void vertudo_atualizar(float dt, Uint32 agora) {
   if (alvo < 0.0f) alvo = 0.0f;
   if (alvo > maxY) alvo = maxY;
 #ifdef NV_TOUCH_UI
-  if (toqueLivre) scrollY = anim_clamp(scrollY, 0.0f, maxY);
+  if (toqueLivre) scrollY = layout_scroll_assentar(scrollY, 0.0f, maxY, dt);
   else
 #endif
     scrollY = anim_mola2(&velY, scrollY, alvo, dt, NV_MOLA2_SCROLL);
@@ -3417,6 +3418,7 @@ static void timelineCard(int i,float cy,float a,float x0) {
   else if(!tex){TxtLinha sa=txt_linha(TXT_MINI,"Sem arte",184,188,198,255);
     txt_desenhar_alpha(sa,artRect.x+(artRect.w-sa.w)*.5f,artRect.y+(artRect.h-sa.h)*.5f,a*.9f);}
   marcaEstado(artRect,&it,a);
+  if (layout_desktop_ativo()) gfx_recorte(0,VT_TOPO,NV_TELA_W,NV_TELA_H-VT_TOPO);
   TxtLinha name=txt_linha_corta(TXT_CW_TITULO,it.titulo,242,243,247,255,tw);txt_desenhar_alpha(name,tx,cy+22,a);
   TxtLinha genre=txt_linha_corta(TXT_HERO_META,it.genero,187,194,207,255,tw);txt_desenhar_alpha(genre,tx,cy+64,a);
   char est[80];estadoLinha(&it,visto,est,sizeof est);
@@ -4030,7 +4032,12 @@ void vertudo_desenhar(Uint32 agora) {
     cy += (1.0f - entra) * NV_ENTRA_DY;
     if (lay == VT_LAY_LINHA) { GfxRect r=vtTimelineCard(cy); ponteiro_alvo_faixa(r.x,r.y,r.w,r.h,corteTopo,NV_TELA_H,ponteiroCartaz,NULL,i,0); }
     else ponteiro_alvo_faixa(cx,cy,w,h+40.0f,corteTopo,NV_TELA_H,ponteiroCartaz,NULL,i,0);
-    if (lay == VT_LAY_LINHA) { timelineCard(i, cy, ac, x0 + desl); continue; }
+    if (lay == VT_LAY_LINHA) {
+      // Glass/blur helpers may temporarily replace scissor state. Restore the
+      // page viewport before every card so no text can cross the fixed header.
+      if(layout_desktop_ativo()) gfx_recorte(0, corteTopo, NV_TELA_W, NV_TELA_H-corteTopo);
+      timelineCard(i, cy, ac, x0 + desl); continue;
+    }
     if (!viewItem(i, &it)) continue;
     switch (lay) {
       case VT_LAY_RANKING: rankingCard(i, &it, cx, cy, w, h, ac, agora, sel); break;

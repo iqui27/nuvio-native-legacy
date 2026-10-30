@@ -226,7 +226,11 @@ static uint64_t percorrerL(const char *p, int apagar, int fundo, LimTrab *lim) {
     }
     if (apagar) rmdir(p);
   } else {
+#ifdef _WIN32
+    soma = (uint64_t)st.st_size;
+#else
     soma = (uint64_t)st.st_blocks * 512u;
+#endif
     if (apagar) unlink(p);
   }
   return soma;

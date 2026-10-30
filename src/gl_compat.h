@@ -27,6 +27,9 @@
     glBindFramebuffer(alvo, fb ? fb : (GLuint)nv_gl_fb_tela);
   }
   #define glBindFramebuffer nvBindFramebufferTela
+#elif defined(_WIN32)
+  #include "windows_gl.h"
+  #define NV_GLSL_PREFIXO "#version 120\n#define lowp\n#define mediump\n#define highp\n"
 #elif defined(__APPLE__) && !defined(NV_GLES_NO_MAC)
   #define GL_SILENCE_DEPRECATION 1
   #include <OpenGL/gl.h>
