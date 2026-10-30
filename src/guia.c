@@ -377,6 +377,7 @@ enum { G_PARADO, G_BAIXANDO, G_PRONTO, G_FALHOU };
 static int estado = G_PARADO;
 static int fioVivo;
 static int recarregarPend;
+static int reativarCache;
 // Guide v5 M3U channels: copied on the UI thread, added as a source by the load thread.
 static G5Item *cargaG5; static int nCargaG5;
 static GFonteLtv cargaDesligadas[G_MAX_LTV];static int nCargaDesligadas;
@@ -5049,6 +5050,7 @@ void guia_atualizar(float dt, Uint32 agora) {
   // O painel de addons pediu recarga com o fio ainda vivo: agora que ele
   // acabou, vai.
   if (recarregarPend && !fioVivo) {
+    if(reativarCache){reativarCache=0;cacheLer();}
     recarregarPend = 0; estado = G_PARADO; ultTentativa = 0; iniciarCarga();
   }
   // PREVIEW: aplica a URL que o fio buscou (no fio de desenho, nunca no de
@@ -8061,6 +8063,10 @@ int guia_fonte_alternar(int i){
   int on=guia_fonte_ligada(i),c=guia_fonte_conta(i),old=iptv_conta_indice();
   if(!on&&c>=0){if(!iptv_conta_selecionar(c))return 0;int ok=iptv_conta_ativar(1);iptv_conta_selecionar(old);if(!ok)return 0;grupoNContas=iptv_contas(grupoContas,IPTV_MAX_CONTAS);}
   p->desligada=on;ltv_pref_gravar();
+  if(!on){
+    int cached=0;for(int ch=0;ch<nCanais;ch++)if(canais[ch].fonte==i){cached=1;break;}
+    if(!cached){if(fioVivo)reativarCache=1;else cacheLer();}
+  }
   /* Keep inventory: switching back on works before a network refresh. */
   cargaCancelada=1;canaisRevisao++;vistaMontar();focoValido();guia_recarregar(0);return 1;
 }
@@ -8088,7 +8094,7 @@ void guia_abrir_sessao(void) {
   // pedido e o desenho descarta o resultado pela geracao da abertura.
   cargaCancelada = 1;
   free(mixedVod);mixedVod=NULL;nMixedVod=0;
-  estado = G_PARADO; recarregarPend = 0; recargaDoPainel = 0;
+  estado = G_PARADO; recarregarPend = reativarCache = 0; recargaDoPainel = 0;
   nCanais = nCats = nFontes = nSabe = nFav = nFavOrd = 0;
   fontesOk = cacheLido = favLido = modoLido = previewLido = 0;
   modoLista = previewLigado = 0; assinaturaPublicada = 0;

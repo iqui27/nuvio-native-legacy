@@ -1385,7 +1385,7 @@ static void activate(int id){
   if(id==1106){g5ui_open("multiview-2");return;}
   if(id>=1100&&id<=1105){   /* guide top bar: Grade, Cartoes, Esportes, Filmes e series, Buscar, Opcoes */
     int n=id-1100;nav=-1;
-    if(gv_is(screen)){if(n==3)g5ui_open("vod-filmes");else if(n>=4)gv_go(n==4?"busca":"ajustes");else{gv_zone=5;focus=id;gv_go(n==0?"grade":n==1?"cartoes":"esportes-ligas");}return;}
+    if(gv_is(screen)){if(n==3)g5ui_open("vod-filmes");else if(n==5)g5ui_open("fontes-gerenciar");else if(n==4)gv_go("busca");else{gv_zone=5;focus=id;gv_go(n==0?"grade":n==1?"cartoes":"esportes-ligas");}return;}
     if(episodes_mode&&series_catalog){free(inventory);inventory=series_catalog;series_catalog=NULL;count=series_count;selected=parent_series;}episodes_mode=0;
     if(n==3){g5ui_open("vod-filmes");return;}
     if(n==5){if(strcmp(screen,"fontes-gerenciar"))g5ui_open("fontes-gerenciar");return;}
@@ -2020,7 +2020,7 @@ static int gv_overlay_nome(const char *s){
 }
 static int gv_overlay(void){return gv_overlay_nome(screen);}
 /* Telas cujo D-pad e a ordem espacial dos controles desenhados. */
-static int gv_lista(void){return gv_overlay()||!strcmp(screen,"vazio")||gv_sports();}
+static int gv_lista(void){return gv_overlay()||!gv_total_n||!strcmp(screen,"vazio")||gv_sports();}
 
 /* --- movimento: o foco desliza, a grade rola, folhas e paginas entram ------- */
 static GVGlide gv_gfoco,gv_gcanal,gv_gside;
@@ -2598,8 +2598,34 @@ static void gv_cards(float base){
   }
   gfx_recorte_voltar(clip);
 }
-/* --- estado vazio: adicione sua primeira fonte ----------------------------- */
+/* Empty guide: configured sources must remain reachable without setup. */
+static int gv_empty_offset;
 static void gv_vazio(void){
+  GuiaFonteSaude source;
+  if(guia_fonte_saude(0,&source)){
+    int on=0,off=0;
+    for(int i=0;guia_fonte_saude(i,&source);i++)if(guia_fonte_ligada(i))on++;else off++;
+    gv_label(TXT_TITULO2,i18n(on?"Suas fontes estão indisponíveis":"Suas fontes estão desligadas"),GV_MX+10,GV_BASE+28,1400,0);
+    gv_label(TXT_ILHA_CORPO,i18n(on?"Tente atualizar suas fontes ou gerencie sua configuração.":"Ligue uma fonte para voltar a assistir aos seus canais."),GV_MX+10,GV_BASE+94,1400,1);
+    if(gv_empty_offset>=off)gv_empty_offset=0;
+    int row=0;
+    for(int i=0,n=0;guia_fonte_saude(i,&source);i++){
+      if(guia_fonte_ligada(i))continue;
+      if(n++<gv_empty_offset)continue;
+      if(row==4)break;
+      if(!row&&focus<1700&&gv_zone!=5&&gv_zone!=4)focus=4000+i;
+      float y=GV_BASE+160+row++*100;
+      gv_label(TXT_ILHA_NOME,source.nome,GV_MX+32,y+17,850,1);
+      gv_button(4000+i,i18n("Ligar fonte"),"aj_power",GV_MX+1000,y,260,0,0);
+    }
+    if(!row&&focus<1700&&gv_zone!=5&&gv_zone!=4)focus=1799;
+    float y=GV_BASE+600;
+    gv_button(1799,i18n("Gerenciar fontes"),"aj_sliders-horizontal",GV_MX+10,y,340,0,0);
+    if(on)gv_button(1710,i18n("Tentar novamente"),"aj_rotate-cw",GV_MX+370,y,300,0,0);
+    if(gv_empty_offset)gv_button(1797,i18n("Anterior"),"aj_chevron-left",GV_MX+700,y,240,0,0);
+    if(gv_empty_offset+4<off)gv_button(1798,i18n("Próximo"),"aj_chevron-right",GV_MX+960,y,240,0,0);
+    return;
+  }
   gv_label(TXT_TITULO2,i18n("Adicione sua primeira fonte"),GV_MX+10,GV_BASE+28,1000,0);
   gv_label(TXT_ILHA_CORPO,i18n("O Nuvio não inclui canais. Use as listas que o seu provedor entregou."),GV_MX+10,GV_BASE+94,1300,1);
   const char *ts[]={"Lista M3U","Acesso Xtream","Guia XMLTV"};
@@ -3151,7 +3177,7 @@ static void gv_abrir(const char *name){
   if(gv_overlay_nome(name)){gv_folha_t=0;if(!strcmp(name,"ajustes")){gv_aj_sub=0;gv_gfolha.ok=0;focus=1940;}return;}
   snprintf(gv_pagina,sizeof gv_pagina,"%s",name);
   gv_pag_t=0;gv_tdesl=0;gv_tfoc=0;gv_tmin=0;gv_pfoco=-1;
-  gv_zone=!strcmp(name,"cartoes")?6:0;gv_side_open=0;gv_exit_armed=0;
+  gv_zone=!strcmp(name,"cartoes")?6:0;gv_side_open=0;gv_exit_armed=0;gv_empty_offset=0;
 }
 /* Volta um nivel: da folha para a folha de baixo, da pagina v5 para a tela do
  * guia que a abriu, ou para a pagina do guia; o foco volta para onde estava.
@@ -3240,7 +3266,15 @@ static int gv_activate(void){
     else if(focus==1710){guia_recarregar(0);gv_voltar();}
     else if(focus==1711)gv_go("erros");
     else gv_voltar();return 1;}
-  if((!strcmp(screen,"vazio")||!gv_total_n)&&!gv_sports()&&gv_zone!=5&&gv_zone!=4){g5ui_open("fontes-gerenciar");return 1;}
+  if((!strcmp(screen,"vazio")||!gv_total_n)&&!gv_sports()&&focus>=1700){
+    GuiaFonteSaude source;
+    if(focus>=4000&&guia_fonte_saude(focus-4000,&source)&&!guia_fonte_ligada(focus-4000)){
+      if(guia_fonte_alternar(focus-4000)){gv_snap_force=dirty=1;gv_zone=0;focus=-1;if(!strcmp(screen,"vazio"))gv_go("grade");}
+    }else if(focus==1797||focus==1798){gv_empty_offset+=focus==1797?-4:4;focus=-1;}
+    else if(focus==1710){guia_recarregar(0);gv_snap_force=1;}
+    else g5ui_open("fontes-gerenciar");
+    return 1;
+  }
   int topo=gv_sports()&&((focus>=1100&&focus<1107)||(focus>=1200&&focus<1206)||(focus>=1302&&focus<1305)||(focus>=1320&&focus<1320+gv_cats));
   if(topo){
     if(focus<1107)gv_zone=5;else if(focus<1206){gv_zone=4;gv_chipi=focus-1200;}
@@ -3410,7 +3444,7 @@ static int gv_event(SDL_Keycode k,int repeat){
       if(k==SDLK_LEFT||k==SDLK_RIGHT){int next=focus+(k==SDLK_LEFT?-1:1);if(next<1100)gv_side_enter();else if(next<=1106)focus=next;return 1;}
       if(ok&&!repeat){activate(focus);return 1;}
     }
-    if(k==SDLK_UP&&focus>=1200){gv_return_focus=focus;gv_return_zone=gv_zone;gv_zone=5;focus=1100+(gv_sports()?2:0);return 1;}
+    if(k==SDLK_UP&&focus>=1200&&gv_total_n){gv_return_focus=focus;gv_return_zone=gv_zone;gv_zone=5;focus=1100+(gv_sports()?2:0);return 1;}
     if(k==SDLK_LEFT){
       int at=-1,left=0;for(int i=0;i<num_focus;i++)if(next_focus[i]==focus)at=i;
       if(at>=0)for(int i=0;i<num_focus;i++)if(i!=at&&next_focus[i]>=1700&&focus_rect[i].x+focus_rect[i].w<=focus_rect[at].x+1&&fabsf(focus_rect[i].y-focus_rect[at].y)<30)left=1;
@@ -3423,6 +3457,7 @@ static int gv_event(SDL_Keycode k,int repeat){
       }return 1;
     }
     if(ok&&!repeat){
+      gv_ok_desde=0;
       if(gv_sports()&&focus>=2200&&focus<2206){gv_ok_desde=SDL_GetTicks();if(!gv_ok_desde)gv_ok_desde=1;gv_ok_longo=0;return 1;}
       return gv_activate();
     }

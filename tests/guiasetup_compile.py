@@ -20,14 +20,16 @@ def compile_source(source):
 
 with ThreadPoolExecutor(max_workers=8) as pool:
     objects = list(pool.map(compile_source, sources))
-for version in ('before', 'blocked', 'after'):
+for version in ('before', 'blocked', 'owner', 'after'):
     extra = [
         '-DGUIASETUP_BASELINE',
         '-DGUIAV5_UNDER_TEST="' + str(work / 'baseline.c') + '"',
         '-DGUIA_UNDER_TEST="' + str(work / 'guide-before.c') + '"',
     ] if version == 'before' else [
         '-DGUIAV5_UNDER_TEST="' + str(work / 'blocked.c') + '"',
-    ] if version == 'blocked' else []
+    ] if version == 'blocked' else [
+        '-DGUIAV5_UNDER_TEST="' + str(work / 'owner.c') + '"',
+    ] if version == 'owner' else []
     subprocess.run(['cc', *flags, *extra, 'tests/guiasetup.c', *objects,
-                    '-o', str(work / version), '-L/opt/homebrew/lib', '-lSDL2',
+                    '-o', str(work / ('owner-test' if version == 'owner' else version)), '-L/opt/homebrew/lib', '-lSDL2',
                     '-lSDL2_image', '-lSDL2_ttf', '-lz', '-framework', 'OpenGL'], check=True)

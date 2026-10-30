@@ -31,6 +31,8 @@ int main(int argc,char **argv){
   ltvF[0].atualizada=time(NULL)-3600;ltvF[0].epgCom=8;
   static GGrupoInfo groups_fixture[]={{"Sports",4,4,1},{"News",2,2,1},{"Films",3,3,1},{"Kids",3,3,1}};
   ltvF[0].gi=groups_fixture;ltvF[0].ngi=4;
+  ltvF[0].tipo=LTV_XTREAM;ltvF[0].base="";
+  for(int i=0;i<nCanais;i++)canais[i].base="";
   /* Prevent network activity; switches still run their production reload path. */
   fioVivo=1;
   g5ui_open("fontes-gerenciar");settle(w);options_frame(w,argv[1],"setup");
@@ -77,10 +79,34 @@ int main(int argc,char **argv){
   check(nc==4&&categories[0].oculta,"hidden category can be changed on setup screen");
   for(int i=0;i<nCanais;i++)if(!strcmp(cats[canais[i].cat].nome,"Sports"))check(!guia_canal_campos(i,NULL,NULL,NULL,NULL,NULL),"hidden category stays absent from v5 guide");
   key(SDLK_RETURN);settle(w);guia_categorias(categories,8);check(!categories[0].oculta,"same category row restores visibility");
-  puts("CHECK: empty Options");focus=100;key(SDLK_RETURN);settle(w);g5ui_open("grade");gv_total_n=0;gv_zone=5;focus=1105;
-  key(SDLK_RETURN);settle(w);check(!strcmp(screen,"fontes-gerenciar"),"Options reachable after last source disabled");
+  puts("CHECK: only Xtream source off, empty guide and one-press recovery");
+  focus=100;key(SDLK_RETURN);settle(w);g5ui_open("grade");settle(w);
+  check(!gv_total_n&&!strcmp(screen,"grade"),"disabled Xtream leaves zero visible channels");
+  int turn_on=focus;
+  check(turn_on==4000,"off empty state focuses first Turn on action, never first-source wizard");
+  int first_source=0;for(int i=0;i<num_focus;i++)if(next_focus[i]>=1700&&next_focus[i]<=1702)first_source=1;
+  check(!first_source,"configured source never renders first-source wizard actions");
+  options_frame(w,argv[1],"sources-turned-off");
+  key(SDLK_RETURN);settle(w);
+  printf("CHECK: recovery on=%d channels=%d screen=%s focus=%d zone=%d\n",guia_fonte_ligada(0),gv_total_n,screen,focus,gv_zone);
+  check(guia_fonte_ligada(0)&&gv_total_n>0&&!strcmp(screen,"grade"),"one-press Turn on restores cached channels and exits empty state");
+  check(recarregarPend,"Turn on schedules source refresh after cached channels");
+  if(guia_fonte_ligada(0))guia_fonte_alternar(0);
+  gv_snap_force=1;g5ui_open("grade");settle(w);
+  key(SDLK_UP);settle(w);gv_zone=5;focus=1105;key(SDLK_RETURN);settle(w);
+  printf("CHECK: Options screen=%s focus=%d zone=%d on=%d\n",screen,focus,gv_zone,guia_fonte_ligada(0));
+  check(!strcmp(screen,"fontes-gerenciar"),"Options reachable after last source disabled");
   focus=100;key(SDLK_RETURN);settle(w);key(SDLK_ESCAPE);settle(w);
-  check(!strcmp(screen,"grade"),"Back returns exactly one level to guide");
+  check(!strcmp(screen,"grade")&&gv_total_n>0,"Sources Turn on restores channels on return to guide");
+  /* An enabled source with no channels is unavailable, not unconfigured. */
+  int retained=nCanais;nCanais=0;ltvF[0].saude=LTV_SAUDE_FORA;gv_snap_force=1;gv_zone=0;focus=-1;settle(w);
+  check(focus==1799,"all-failed state focuses Manage sources");
+  key(SDLK_RETURN);settle(w);check(!strcmp(screen,"fontes-gerenciar"),"failed source opens Sources without setup");
+  nCanais=retained;ltvF[0].saude=LTV_SAUDE_OK;gv_snap_force=1;key(SDLK_ESCAPE);settle(w);
+  int retained_sources=nLtvF;nLtvF=0;nCanais=0;gv_snap_force=1;settle(w);
+  first_source=0;for(int i=0;i<num_focus;i++)if(next_focus[i]==1700)first_source=1;
+  check(first_source,"unconfigured guide still offers first-source setup");
+  nLtvF=retained_sources;nCanais=retained;gv_snap_force=1;
 #endif
   /* Same declared fixtures in before/after: no account or stream credentials. */
   puts("CHECK: Live footer");free(cats);cats=NULL;free(canais);canais=NULL;nCanais=0;semear();snprintf(ltvF[0].nome,sizeof ltvF[0].nome,"Living room TV");ltvF[0].nCanais=nCanais;
@@ -126,6 +152,16 @@ int main(int argc,char **argv){
   ltvF[0].gi=NULL;ltvF[0].ngi=0;ltvF[0].tipo=LTV_ADDON;check(guia_fonte_remover(0),"Remove handles Live TV add-on subscription");
   ltv_pref_carregar(perfis_ativo());check(ltv_pref("another",0)->removida,"removed subscription persists");
   stagingZerar();check(sFonteChave("another",LTV_ADDON,"Removed","")==-1,"removed source cannot reappear on refresh");
+  puts("CHECK: re-enable loads disk cache after disabled inventory publication");
+  semear();ltvF[0].gi=NULL;ltvF[0].ngi=0;ltvF[0].base="";
+  for(int i=0;i<nCanais;i++)canais[i].base="";
+  snprintf(ltvF[0].chave,sizeof ltvF[0].chave,"g5m3u");
+  char config_file[64];snprintf(config_file,sizeof config_file,"guiav5-source-p%d.json",perfis_ativo());dados_gravar(config_file,"{}");
+  ltvF[0].deCache=0;ltvF[0].nCanais=nCanais;cacheGravar();
+  check(guia_fonte_alternar(0)&&!guia_fonte_ligada(0),"cache fixture disabled");
+  nCanais=0;fioVivo=0;
+  check(guia_fonte_alternar(0)&&guia_canal_campos(0,NULL,NULL,NULL,NULL,NULL),"Turn on loads disk cache before network refresh when memory inventory is empty");
+  check(recarregarPend,"disk-cache restoration still schedules refresh");fioVivo=1;
 #endif
   if(!before)check(!failures,"all setup regression checks");
   printf("%s: source focus, persistence, re-enable, Options and spatial navigation\n",failures?"FAIL":"PASS");
