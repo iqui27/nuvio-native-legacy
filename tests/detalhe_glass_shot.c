@@ -719,6 +719,7 @@ static void abrir(int i, int nv, int sec, int col) {
 #ifdef NV_SHOT_HOOKS
 #include "vidro_c9_cache.h"
 #include "frost_stability.h"
+#include "frost_flicker.h"
 #endif
 
 static int quer(int argc, char **argv, const char *id) {
@@ -738,13 +739,15 @@ int main(int argc, char **argv) {
     else if (strcmp(config, "1080-frost") && strcmp(config, "1080-clear") && strcmp(config, "1080-minimal")) return 2;
   }
   saida = argc > 1 ? argv[1] : nvt("/nuvio-detglass");
+  if (getenv("NUVIO_FROST_FLICKER")) SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
   janela = SDL_CreateWindow("Nuvio: detalhe glass", SDL_WINDOWPOS_CENTERED,
                             SDL_WINDOWPOS_CENTERED, width, height,
-                            SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
+                            SDL_WINDOW_OPENGL |
+                            (getenv("NUVIO_FROST_FLICKER") ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN));
   assert(janela);
   gl = SDL_GL_CreateContext(janela);
   SDL_GL_SetSwapInterval(0);
@@ -753,7 +756,7 @@ int main(int argc, char **argv) {
   assert(gfx_iniciar());
   { char ic[1024]; if (realpath("deploy/app/art", ic)) gfx_icones_dir(ic); }
   assert(txt_iniciar("deploy/app", 1));
-  tex_iniciar(getenv("NUVIO_SHOT_REFERENCE") ? 30 : 16);
+  tex_iniciar(getenv("NUVIO_FROST_FLICKER") ? 192 : getenv("NUVIO_SHOT_REFERENCE") ? 30 : 16);
   ajustes_iniciar();
   dados_iniciar("deploy/app/art");
   dd = dados_dir();
@@ -815,6 +818,7 @@ int main(int argc, char **argv) {
 #endif
   cacheFrases();
 #ifdef NV_SHOT_HOOKS
+  if (getenv("NUVIO_FROST_FLICKER")) return ff_run();
   if (getenv("NUVIO_FROST_STABILITY")) return fs_run();
   if (getenv("NUVIO_C9_CACHE")) return vc_run();
 #endif

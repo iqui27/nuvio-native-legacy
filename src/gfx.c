@@ -3562,7 +3562,7 @@ static float vidroTom(float cinza);
 #define VID_FOLGA 64.0f     // slack around last frame's glass regions (scroll per frame)
 #define VID_RUIDO_N 256
 static GLuint vidGrab, vidH2, vidH2Fbo, vidQa, vidQaFbo, vidQb, vidQbFbo, vidRuido, vidProg;
-static GLuint vidSlot[VID_NSLOTS], vidSlotFbo[VID_NSLOTS], vidFundo, vidFundoFbo;
+static GLuint vidSlot[VID_NSLOTS], vidSlotFbo[VID_NSLOTS], vidFundo, vidFundoFbo, vidBackdrop;
 static float vidroSlotReg[VID_NSLOTS][4];
 static GLint vidLocR, vidLocT, vidLocO;
 static int vidW, vidH, vidFalhou;
@@ -3661,6 +3661,7 @@ static void vidLiberar(void) {
   memset(vidroSlotValido, 0, sizeof vidroSlotValido);
   glDeleteTextures(1, &vidFundo); glDeleteFramebuffers(1, &vidFundoFbo);
   vidFundo = vidFundoFbo = 0; fundoValido = 0;
+  glDeleteTextures(1, &vidBackdrop); vidBackdrop = 0;
   gfx_tex_esquecer(0);
 }
 static GLuint vidTex(int w, int h, GLenum fmt) {
@@ -3811,14 +3812,23 @@ static int vidCapturar(const float reg[][4], int n, GLuint dst, GLuint dstFbo, G
   tesoura = glIsEnabled(GL_SCISSOR_TEST);
   if (tesoura) glDisable(GL_SCISSOR_TEST);
   glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, vidGrab);
+  int retain = dst == vidFundo && ajustes_vidro_qualidade() == 2;
+  if (retain && !vidBackdrop) vidBackdrop = vidTex(telaW, telaH, GL_RGB);
+  glBindTexture(GL_TEXTURE_2D, retain ? vidBackdrop : vidGrab);
   // A saved backdrop excludes foreground even when this frame adds a region.
   for (i = 0; !source && i < k; i++) {
     x0 = (int)floorf(uv[i][0] * telaW); x1 = (int)ceilf(uv[i][2] * telaW);
     y0 = (int)floorf(uv[i][1] * telaH); y1 = (int)ceilf(uv[i][3] * telaH);
+    // High retains the complete backdrop for glass entering a new region
+    // after foreground has drawn. Regional blur still limits shader work.
+    if (retain) {
+      if (i) continue;
+      x0 = y0 = 0; x1 = telaW; y1 = telaH;
+    }
     glCopyTexSubImage2D(GL_TEXTURE_2D, 0, x0, y0, x0, y0, x1 - x0, y1 - y0);
     copia += (double)(x1 - x0) * (y1 - y0);
   }
+  if (retain) source = vidBackdrop;
   glDisable(GL_BLEND);
   glUseProgram(vidProg);
   glUniform1i(vidLocT, 0);
@@ -3958,7 +3968,9 @@ static GLuint vidroFonte(GfxRect r) {
     const float *reg = fundoDepois ? lido : full;
     vidroSlotValido[sl] = 0;
     // Modal veils need the live framebuffer, but only the island's sampling region.
-    if (!vidCapturar((const float (*)[4])reg, 1, *tex, *fbo, 0)) return 0;
+    GLuint source = ajustes_vidro_qualidade() == 2 && gfx_vidro_so_fundo &&
+                    fundoFim == 1 && !fundoDepois ? vidBackdrop : 0;
+    if (!vidCapturar((const float (*)[4])reg, 1, *tex, *fbo, source)) return 0;
     memcpy(vidroSlotReg[sl], reg, sizeof vidroSlotReg[sl]);
     memcpy(vidroSlotDep[sl], vidroDep, sizeof vidroDep);
     vidroSlotHash[sl] = vidroHash; vidroSlotValido[sl] = 1; vidroRecapturou = 1;
