@@ -1533,6 +1533,7 @@ static const char *sinopseDe(int i) {
 // um 404 so na pagina do titulo. Logo segue o CatItem.logo (512).
 static char arteFixa[NV_TEX_URL_MAX], logoFixo[512], logoCatalogoFixo[512];
 static int  arteFixaPoster;
+static RevelaArte revFundo;
 
 static const char *logoDe(int i) {
   const CatItem *c = cat_item(i);
@@ -1656,7 +1657,7 @@ static void desenhaArteDetalhe(GfxRect alvo, GLuint tex, const char *arte,
       // para o logo pequeno do canto nao flutuar sobre uma cena clara).
       gfx_rect(alvo, 0, GFX_DETALHE, veu * (1.0f - 0.85f * trailercinema_t(&trailerCinema)), 1.0f, 0, 0.0f, 0, 0, 0, alpha * trailerFade);
     } else
-      gfx_rect(alvo, tex, GFX_DETALHE, 1.0f, 0, 1, 0.0f, 0, 0, 0, alpha);
+      gfx_rect(alvo, tex, GFX_DETALHE, veu, 0, 1, 0.0f, 0, 0, 0, alpha);
   } else {
     float ap = gfx_tex_aspect_atual > 0.05f ? gfx_tex_aspect_atual : (2.0f / 3.0f);
     float h = alvo.h * 0.90f, w = h * ap, maxW = alvo.w * 0.42f;
@@ -1790,6 +1791,7 @@ static void abrirInterno(const HomeItem *it) {
   // Guarda identidade e copia ANTES de qualquer republicacao. Ver revalidarIdx.
   arteFixa[0] = logoFixo[0] = logoCatalogoFixo[0] = 0;
   arteFixaPoster = 0;   // arte nova por abertura
+  memset(&revFundo, 0, sizeof revFundo);
   { const CatItem *ci0 = cat_item(idx);
     idxImdb[0] = 0; idxTemCopia = 0;
     if (ci0) {
@@ -9217,6 +9219,15 @@ static void desenhaPessoa(float a) {
 // fundo (dono, 05/10: "nos Ajustes ta melhor"). 36%: um pouco acima dos 28%.
 #define DET_VEU_BORRADA 0.36f
 
+// Keep an accent-tinted veil until the actual backdrop can fade in.
+static void fundoEsperaArte(GfxRect r, float alpha) {
+  if (alpha <= .004f) return;
+  float cr, cg, cb;
+  ajustes_acento(&cr, &cg, &cb);
+  gfx_cor(r, 0, NV_COR_FUNDO_R + cr * .12f,
+          NV_COR_FUNDO_G + cg * .12f, NV_COR_FUNDO_B + cb * .12f, alpha);
+}
+
 // FOLHA + TIRA DE CARTOES do carrossel. A folha e um gfx_cor opaco de tela
 // cheia, que gfx_rect transforma em glClear; cada cartao e UM quad opaco
 // (GFX_JANELA) com os cantos no SDF. Na abertura a folha sobe sobre a home e
@@ -9227,6 +9238,7 @@ static void carFundo(void) {
   float expandida = 1.0f - cartao, salvaAmb = nv_ambiente_forca;
   const char *arteAtual = arteDe(idx);
   GLuint texAtual = arteAtual ? tex_obter_hero(arteAtual) : 0;
+  float arteAlpha = revela_arte(&revFundo, texAtual != 0, SDL_GetTicks());
   int k, modo = fundo_modo();
   int comTrailer = trailerFade > 0.005f && trailer_aberto() && !trailer_cheia();
   int especial = !comTrailer && (modo == FUNDO_FROST ||
@@ -9253,6 +9265,8 @@ static void carFundo(void) {
       nv_ambiente_forca = 1.0f;
     } else gfx_ambiente(expandida * a);
   }
+  if (!especial && !comTrailer)
+    fundoEsperaArte(tela, expandida * a * (1.0f - arteAlpha));
   veuPag = especial ? 1.0f : (1.0f - pg) * ajustes_detalhe_veu();
   veu = veuPag + (CAR_VEU - veuPag) * cartao;
   gfx_janela_atual[0] = h.x / NV_TELA_W; gfx_janela_atual[1] = h.y / NV_TELA_H;
@@ -9288,9 +9302,10 @@ static void carFundo(void) {
         else gfx_cor(r, raio / r.h,
                      NV_COR_FUNDO_R + (0.16f - NV_COR_FUNDO_R) * cartao,
                      NV_COR_FUNDO_G + (0.17f - NV_COR_FUNDO_G) * cartao,
-                     NV_COR_FUNDO_B + (0.19f - NV_COR_FUNDO_B) * cartao, ak);
+                     NV_COR_FUNDO_B + (0.19f - NV_COR_FUNDO_B) * cartao, ak * cartao);
         continue;
       }
+      if (k == carAplicado) ak *= arteAlpha;
       gfx_tex_aspect_atual = tex_aspecto(arte);
       if (arteDetalheEhPoster(carIdx[k]) && expandida > 0.0f) {
         // O cartaz reserva converge para o mesmo encaixe contido da pagina.
@@ -9357,13 +9372,11 @@ static void detalheFundo(float s) {
   backdropRect(&alvo, &aEntrada);
   const char *arte = arteDe(idx);
   if (carDesenhaFundo()) { carFundo(); return; }
+  // The zoom and settled page share the same base, background mode and veil.
+  // Keep the tinted base while artwork decodes; reveal it without a black frame.
   if (!detalheRetrato() && !heroServidor()) {
-    gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.043f,.043f,.047f,s);
-    float fade=anim_clamp(1-scrollY/1800.0f,0,1);
-    GLuint tex=arte && fade>.005f ? tex_obter_hero(arte) : 0;
-    alvo.y-=scrollY*.32f;
-    if (tex && fade>.005f) desenhaArteDetalhe(alvo,tex,arte,arteDetalheEhPoster(idx),aEntrada*fade,0);
-    return;
+    alvo.y -= scrollY * .32f;
+    aEntrada *= anim_clamp(1.0f - scrollY / 1800.0f, 0, 1);
   }
   int artePoster = arteDetalheEhPoster(idx);
   int modo = fundo_modo();
@@ -9371,6 +9384,7 @@ static void detalheFundo(float s) {
   int comTrailer = trailerFade > 0.005f && trailer_aberto() && !trailer_cheia();
   // Backdrop em tela cheia: pede o teto de 1920.
   GLuint tex = arte ? tex_obter_hero(arte) : 0;
+  float arteAlpha = revela_arte(&revFundo, tex != 0, SDL_GetTicks());
   if (pg > 0.01f && !detail_cobre_tela()) {
     GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
     gfx_cor(tela, 0.0f, NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, pg);
@@ -9378,8 +9392,9 @@ static void detalheFundo(float s) {
   // Frost independe da textura; a arte e apenas a camada opcional do topo.
   if (modo == FUNDO_ARTE || comTrailer ||
       (modo != FUNDO_FROST && (artePoster || !tex))) {
-    desenhaArteDetalhe(alvo, tex, arte, artePoster,
-                       tex ? aEntrada * (1.0f - 0.85f * pg) : 1.0f, pg);
+    if (!comTrailer) fundoEsperaArte(alvo, aEntrada * (1.0f - arteAlpha));
+    if (tex) desenhaArteDetalhe(alvo, tex, arte, artePoster,
+                               arteAlpha * aEntrada * (1.0f - 0.85f * pg), pg);
     return;
   }
   { GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
@@ -9405,7 +9420,7 @@ static void detalheFundo(float s) {
     // ~30 fps, clr 22 ms + swap 21 ms). O teto de 0,998 que havia aqui
     // obrigava o caminho misturado; sem fundo intacto o caminho continua o
     // misturado (o "vazar"), com alfa 1 em vez de 0,998.
-    gfx_rect(alvo, tex, GFX_DETALHE, 1.0f, 0, 1, 0.0f, 0, 0, 0, aEntrada * (1.0f - pg));
+    gfx_rect(alvo, tex, GFX_DETALHE, 1.0f, 0, 1, 0.0f, 0, 0, 0, arteAlpha * aEntrada * (1.0f - pg));
     gfx_tex_aspect_atual = 0.0f;
     nv_ambiente_forca = salva;
   }
