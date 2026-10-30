@@ -1948,6 +1948,7 @@
   T("Classificação indicativa no player", "Oynatıcıda yaş sınırı"),
   T("Classificação máxima", "Maksimum derecelendirme"),
   T("Classificação no player", "Oynatıcıda yaş sınırı"),
+  T("Clique para avaliar", "Puanlamak için tıklayın"),
   T("Clube retrô", "Retro club"),
   T("Clássico", "Klasik"),
   T("Cobertura", "Kapsama"),

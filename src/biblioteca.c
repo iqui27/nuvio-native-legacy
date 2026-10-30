@@ -861,7 +861,12 @@ static float toqueBibliotecaMax(void) {
   if (estado() != EST_ITENS && linhas > BIB_MAX_LINHAS) linhas = BIB_MAX_LINHAS;
   return linhas > 0 ? fmaxf(0.0f, gradeY() + (linhas - 1) * passoLinha() + alturaLinha() - BIB_GRADE_BASE) : 0.0f;
 }
-static int toqueBibliotecaRolar(const PonteiroRolagem *e) {
+static int toqueBibliotecaRolar(const PonteiroRolagem *input) {
+  const PonteiroRolagem *e=input;
+#ifdef NV_DESKTOP_UI
+  PonteiroRolagem local=*input;
+  float scale=gfx_escala();local.x/=scale;local.y/=scale;local.delta/=scale;e=&local;
+#endif
   if (!layout_rolagem_livre()) { toqueLivre = 0; return 0; }
   if (e->fase == PONT_ROL_INICIO) {
     if (!e->eixoY || e->x < bibX() || e->x >= bibX() + bibW() || e->y < gradeY() || e->y >= BIB_GRADE_BASE || nCelulas < 1 || teclado_aberto()) return 0;
@@ -871,6 +876,9 @@ static int toqueBibliotecaRolar(const PonteiroRolagem *e) {
   if (e->fase == PONT_ROL_MOVER || e->fase == PONT_ROL_INERCIA) {
     float antes = scrollY;
     scrollY = layout_scroll_delta(scrollY, e->delta, 0.0f, toqueBibliotecaMax());
+#ifdef NV_DESKTOP_UI
+    ponteiro_scroll_offset(-1,-1,scrollY);
+#endif
     if (estado() == EST_ITENS && scrollY >= toqueBibliotecaMax() - 2.0f * passoLinha()) lst_itens_mais();
     return fabsf(scrollY - antes) > 0.001f;
   }

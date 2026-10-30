@@ -2286,13 +2286,29 @@ static DesktopMenuItem desktopItem(int i, const CatItem *ci) {
   }
   return (DesktopMenuItem){i18n(ops[i].rot),symbol,action,checked,separator};
 }
+static int desktopLists(DesktopMenuItem *items, char names[LST_MAX][96]) {
+  if(lst_minhas_carregando()) return -1;
+  int n=0;
+  for(int i=0;i<lst_minhas_n() && i<LST_MAX;i++) {
+    LstLista l;if(!lst_minha(i,&l)) continue;
+    snprintf(names[n],96,"%s",l.titulo);
+    items[n]=(DesktopMenuItem){names[n],"list.bullet",4000+i,0,0};n++;
+  }
+  if(!n) items[n++]=(DesktopMenuItem){i18n("Você ainda não criou listas no Trakt"),NULL,0,0,0};
+  return n;
+}
 // Called after SwapWindow: AppKit tracks over a complete Home frame, then
 // returns the original action ID to the SDL main loop's existing dispatcher.
 void ctx_desktop_menu(void) {
   if (!layout_desktop_ativo() || !aberto || pagina==2) return;
-  DesktopMenuItem items[CTX_MAX+FIL_TIPO_N*FIL_ESTILO_TAMS+FIL_ORD_N+PALCO_N+1];
+  // Never enter synchronous NSMenu tracking while the main loop must poll lists.
+  if (pagina==3 && lst_minhas_carregando()) return;
+  DesktopMenuItem items[LST_MAX+CTX_MAX+FIL_TIPO_N*FIL_ESTILO_TAMS+FIL_ORD_N+PALCO_N+1];
+  char listNames[LST_MAX][96];
   int n=0, page=pagina;
-  if (page==1) {
+  if(page==3) {
+    n=desktopLists(items,listNames);
+  } else if (page==1) {
     for(int i=0;i<nEstilos;i++) for(int j=0;j<estLin[i].n;j++)
       items[n++]=(DesktopMenuItem){i18n(estLin[i].nomes[j]),"rectangle.grid.1x2",1000+i*FIL_ESTILO_TAMS+j,fil_tipo(filChave)==estLin[i].tipos[j],j==0&&i>0};
     if(ordemLinha) for(int i=0;i<FIL_ORD_N;i++)
@@ -2307,7 +2323,12 @@ void ctx_desktop_menu(void) {
   if(window) SDL_GetWindowSize(window,&w,&h);
   int action=desktop_native_menu(items,n,desktopX*w/NV_TELA_W,desktopY*h/NV_TELA_H);
   if(action<0) { estRestaurar();aberto=0;anim=0;return; }
-  if(page==1) {
+  if(page==3) {
+    LstLista l;
+    if(action>=4000 && lst_minha(action-4000,&l) && lstesc_adicionar_titulo(itemAtual(),&l)) {
+      aberto=0;pagina=0;
+    }
+  } else if(page==1) {
     if(action>=3000) palcoSel=action-3000+PALCO_PADRAO;
     else if(action>=2000) ordemSel=action-2000;
     else { int k=action-1000;estSel=estFoco=k/FIL_ESTILO_TAMS;estTam[estSel]=k%FIL_ESTILO_TAMS; }

@@ -32,6 +32,8 @@ void desktop_native_init(SDL_Window *window);
 void desktop_native_sidebar(float fraction, float reveal);
 void desktop_native_finish(void);
 void desktop_native_appearance(const char *name);
+int desktop_native_fullscreen(void);
+void desktop_native_capture_fullscreen(int width, int height);
 int desktop_native_dark(void);
 int desktop_native_swipes(void);
 #else
@@ -41,6 +43,8 @@ static inline void desktop_native_init(SDL_Window *window) { (void)window; }
 static inline void desktop_native_sidebar(float fraction, float reveal) { (void)fraction; (void)reveal; }
 static inline void desktop_native_finish(void) {}
 static inline void desktop_native_appearance(const char *name) { (void)name; }
+static inline int desktop_native_fullscreen(void) { return 0; }
+static inline void desktop_native_capture_fullscreen(int width, int height) { (void)width; (void)height; }
 static inline int desktop_native_dark(void) { return 1; }
 static inline int desktop_native_swipes(void) { return 1; }
 #endif

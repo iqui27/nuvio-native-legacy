@@ -1948,6 +1948,7 @@
   T("Classificação indicativa no player", "Classificazione per età nel player"),
   T("Classificação máxima", "Voto massimo"),
   T("Classificação no player", "Classificazione nel player"),
+  T("Clique para avaliar", "Fai clic per valutare"),
   T("Clube retrô", "Retro club"),
   T("Clássico", "Classico"),
   T("Cobertura", "Copertura"),

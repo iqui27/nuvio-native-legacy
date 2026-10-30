@@ -1433,7 +1433,7 @@ static void desenhaNotasTiles(float x,float y,float a) {
         int minha=notaMinha();
         snprintf(v,sizeof v,minha ? "%d" : "★",minha);
         txt_desenhar_alpha(txt_linha(TXT_G52B,v,ar*255,ag*255,ab*255,255),tx+24,ty+54.4f,a);
-        txt_desenhar_alpha(txt_linha(TXT_G18R,i18n(layout_desktop_ativo() ? "Click to rate" : "OK para avaliar"),243,242,239,160),tx+24,ty+132.8f,a);
+        txt_desenhar_alpha(txt_linha(TXT_G18R,i18n(layout_desktop_ativo() ? "Clique para avaliar" : "OK para avaliar"),243,242,239,160),tx+24,ty+132.8f,a);
       } else {
         AmigosTitulo am;
         if (amigosDoTitulo(&am)) {
@@ -4028,6 +4028,10 @@ static int toqueDetalheRolar(const PonteiroRolagem *e) {
     } else if (toqueSecAtiva >= 0) r = toquerol_evento(&toqueSec[toqueSecAtiva], e);
   }
   if (r) {
+#ifdef NV_DESKTOP_UI
+    ponteiro_scroll_offset(e->eixoY?-1:toqueSecAtiva,-1,
+      e->eixoY?scrollY:toqueSecAtiva>=0?scrollSec[toqueSecAtiva]:0);
+#endif
     toqueDetalhe.livre = 1; velY = 0;
     if (toqueSecAtiva >= 0) velSec[toqueSecAtiva] = 0;
     if (e->eixoY) { nivel = 1; carCheia = 1; }

@@ -45,6 +45,14 @@ int layout_modo_mobile(void);
 #define NV_DESKTOP_WINDOW_H 800
 #define NV_DESKTOP_BREAKPOINT 1000
 #define NV_DESKTOP_SCALE 1.5f
+#ifdef NV_DESKTOP_UI
+// Points -> layout; Retina pixels are used only to size the GL drawable.
+static inline float layout_window_units(int w, int h) {
+  return fmaxf(NV_TELA_BASE_W/fmaxf(1,w),NV_TELA_BASE_H/fmaxf(1,h));
+}
+static inline float layout_window_x(float x, int w, int h) { return x*layout_window_units(w,h); }
+static inline float layout_window_y(float y, int w, int h) { return y*layout_window_units(w,h); }
+#endif
 #define NV_DESKTOP_SIDEBAR_W 336.0f
 #define NV_DESKTOP_TOOLBAR_H 84.0f
 // Continuous pointer input is shared with touch; geometry stays platform-specific.
@@ -65,8 +73,8 @@ extern float nv_desktop_sidebar;
 static inline float layout_scroll_delta(float value, float delta, float lo, float hi) {
 #ifdef NV_DESKTOP_UI
   float next = value - delta;
-  if (next < lo) return fmaxf(lo - 72, value - delta * .32f);
-  if (next > hi) return fminf(hi + 72, value - delta * .32f);
+  if (next < lo) return value - delta * .32f / (1 + fmaxf(0,lo-value)/72);
+  if (next > hi) return value - delta * .32f / (1 + fmaxf(0,value-hi)/72);
   return next;
 #else
   return fmaxf(lo, fminf(hi, value - delta));

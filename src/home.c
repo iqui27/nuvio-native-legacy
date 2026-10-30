@@ -398,6 +398,9 @@ static float scrollY = 0.0f;
 #ifdef NV_TOUCH_UI
 static int toqueLivreY, toqueLivreX[MAX_FIL], toqueFileira = -1;
 static int toqueHeroYPreso;
+#ifdef NV_DESKTOP_UI
+static GfxRect desktopRowRect[MAX_FIL];
+#endif
 static float toqueHeroPaginaW, toqueHeroPaginaH;
 static float toqueHeroPaginaMin, toqueHeroPaginaMax;
 static void toqueHomeLimpar(void) {
@@ -2201,7 +2204,14 @@ static int toqueHeroRolar(const PonteiroRolagem *e) {
   return e->fase != PONT_ROL_INERCIA;
 }
 
-static int toqueHomeRolar(const PonteiroRolagem *e) {
+static int toqueHomeRolar(const PonteiroRolagem *input) {
+  const PonteiroRolagem *e=input;
+#ifdef NV_DESKTOP_UI
+  PonteiroRolagem local=*input;
+  float scale=gfx_escala();
+  local.x/=scale;local.y/=scale;local.delta/=scale;local.velocidade/=scale;
+  e=&local;
+#endif
   if (!layout_rolagem_livre()) { toqueHomeLimpar(); toqueHeroCancelar(); return 0; }
   if (!layout_desktop_ativo() && (toqueHero.estado || (e->fase == PONT_ROL_INICIO && !e->eixoY))) {
     int capturado = toqueHeroRolar(e);
@@ -2216,11 +2226,16 @@ static int toqueHomeRolar(const PonteiroRolagem *e) {
     if (!e->eixoY) {
       for (int r = 0; r < nFileiras; r++) {
         float h = NV_LEGACY_ROW_HEAD_H + alturaTotalFil(r);
+#ifdef NV_DESKTOP_UI
+        GfxRect hit=desktopRowRect[r];
+        if (e->y >= hit.y && e->y < hit.y+hit.h) { toqueFileira = r; break; }
+#else
         if (e->y >= y && e->y < y + h) { toqueFileira = r; break; }
+#endif
         y += h + fileiraGap();
       }
       if (toqueFileira < 0) return 0;
-      if (fileiras[toqueFileira].tipo == FILEIRA_SOCIAL && !amigosfil_rolagem(e)) return 0;
+      if (fileiras[toqueFileira].tipo == FILEIRA_SOCIAL && !amigosfil_rolagem(input)) return 0;
 #ifdef NV_DESKTOP_UI
       if (fileiras[toqueFileira].tipo != FILEIRA_SOCIAL && e->delta > 0 && scrollX[toqueFileira] <= .5f) return 0;
 #endif
@@ -2236,11 +2251,12 @@ static int toqueHomeRolar(const PonteiroRolagem *e) {
     if (e->eixoY) { s = &scrollY; minimo = -empurraHero(); maximo = toqueHomeMaxY(); }
     else {
       if (toqueFileira < 0 || toqueFileira >= nFileiras) return 0;
-      if (fileiras[toqueFileira].tipo == FILEIRA_SOCIAL) return amigosfil_rolagem(e);
+      if (fileiras[toqueFileira].tipo == FILEIRA_SOCIAL) return amigosfil_rolagem(input);
       s = &scrollX[toqueFileira]; minimo = 0.0f; maximo = toqueHomeMaxX(toqueFileira);
     }
     antes = *s; *s = layout_scroll_delta(*s, e->delta, minimo, maximo);
 #ifdef NV_DESKTOP_UI
+    ponteiro_scroll_offset(e->eixoY?-1:toqueFileira,-1,*s);
     if(getenv("NUVIO_DESKTOP_FRAME_LOG")) {
       printf("[desktop-offset] axis=%c row=%d delta=%.4f offset=%.4f\n",e->eixoY?'y':'x',toqueFileira,e->delta,*s);fflush(stdout);
     }
@@ -2249,7 +2265,7 @@ static int toqueHomeRolar(const PonteiroRolagem *e) {
   }
   if (e->fase == PONT_ROL_FIM || e->fase == PONT_ROL_CANCELAR) {
     if (!e->eixoY && toqueFileira >= 0 && toqueFileira < nFileiras && fileiras[toqueFileira].tipo == FILEIRA_SOCIAL)
-      amigosfil_rolagem(e);
+      amigosfil_rolagem(input);
     toqueFileira = -1;
   }
   return 1;
@@ -8522,6 +8538,9 @@ static void home_desenhar_(Uint32 agora) {
   gfx_recorte(recorteX, corte, NV_TELA_W - recorteX, NV_TELA_H - corte);
   const float topoFil = topoFileiras();
   float y = topoFil - scrollY + descida + bordaPag.x;
+#ifdef NV_DESKTOP_UI
+  memset(desktopRowRect,0,sizeof desktopRowRect);
+#endif
   // NENHUMA FILEIRA. Nao e o arranque (ali a home mostra o catalogo do pacote
   // ou o do cache): e o caso de a pessoa ter desligado todas em Ajustes. Sem
   // texto, o hero sozinho com o resto da tela vazia le como travamento — e ela
@@ -8575,6 +8594,10 @@ static void home_desenhar_(Uint32 agora) {
           (Sint32)(NV_ENTRA_MS + NV_ENTRA_PASSO_MS * NV_ENTRA_MAX_COL + 40))
         filEntraEm[r] = 0;
       gfx_opacidade_grupo = grupoFil * revela_entra(filEntraEm[r], 0.0f, agora); }
+#ifdef NV_DESKTOP_UI
+    desktopRowRect[r]=(GfxRect){homeConteudoX(),fmaxf(corte,y),homeLarguraUtil(),
+      fmaxf(0,fminf(NV_TELA_H,y+NV_LEGACY_ROW_HEAD_H+alturaTotalFil(r))-fmaxf(corte,y))};
+#endif
     float lw = larguraFil(r);
     float lh = alturaFil(r), passo = passoFil(r);
     float artH = lh;

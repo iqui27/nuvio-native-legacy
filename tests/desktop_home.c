@@ -26,8 +26,8 @@ int main(void) {
   assert(heroBaseCopia(HOME_LAYOUT_DINAMICA, art, 0, 0) < 1200);
   layout_janela_definir(1440, 900);
   art = heroArtworkRect(HOME_LAYOUT_DINAMICA, 0);
-  assert(art.x == 0 && art.w == 2160 && nv_layout_h == 1350);
-  assert(fabsf(art.h-1350)<.001f);
+  assert(art.x == 0 && art.w == 1920 && nv_layout_h == 1200);
+  assert(fabsf(art.h-1200)<.001f);
   puts("PASS: real desktop Home artwork, row rest position, content bounds, continue cards");
   return 0;
 }

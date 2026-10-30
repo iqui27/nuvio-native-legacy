@@ -1948,6 +1948,7 @@
   T("Classificação indicativa no player", "プレーヤーで年齢区分を表示"),
   T("Classificação máxima", "最大定格"),
   T("Classificação no player", "プレーヤーの年齢区分"),
+  T("Clique para avaliar", "クリックして評価"),
   T("Clube retrô", "Retro club"),
   T("Clássico", "クラシック"),
   T("Cobertura", "カバー率"),

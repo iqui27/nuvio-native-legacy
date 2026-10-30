@@ -1948,6 +1948,7 @@
   T("Classificação indicativa no player", "Phân loại độ tuổi trong trình phát"),
   T("Classificação máxima", "Đánh giá tối đa"),
   T("Classificação no player", "Phân loại độ tuổi trong trình phát"),
+  T("Clique para avaliar", "Nhấp để đánh giá"),
   T("Clube retrô", "Retro club"),
   T("Clássico", "Cổ điển"),
   T("Cobertura", "Phạm vi phủ"),

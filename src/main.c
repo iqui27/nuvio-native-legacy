@@ -503,6 +503,10 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
 #ifdef NV_DESKTOP_RELEASE
 #ifdef NV_DESKTOP_UI
     if (dp && !strncmp(linha,"preview:",8)) { app_desktop_preview(dp+1); continue; }
+    if (dp && !strncmp(linha,"fullscreen:",11) && getenv("NV_CAPTURA")) {
+      int w,h;if(sscanf(dp+1,"%d,%d",&w,&h)==2 && w>=320 && h>=320) desktop_native_capture_fullscreen(w,h);
+      continue;
+    }
     if (dp && !strncmp(linha,"appearance:",11)) { desktop_native_appearance(dp+1); continue; }
     if (dp && !strncmp(linha,"wheel:",6)) {
       SDL_Event wheel={0}; float dx,dy; int x,y,phase=0;
@@ -510,7 +514,8 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
         wheel.type=SDL_MOUSEWHEEL;wheel.wheel.which=NV_DESKTOP_PIXEL_WHEEL;
         wheel.wheel.windowID=SDL_GetWindowID(SDL_GL_GetCurrentWindow());
         wheel.wheel.mouseX=x;wheel.wheel.mouseY=y;wheel.wheel.preciseX=dx;wheel.wheel.preciseY=dy;
-        wheel.wheel.x=phase;
+        // Same packed fields as the Cocoa monitor: phase and momentumPhase.
+        wheel.wheel.y=phase&~31;wheel.wheel.x=phase&31;
         SDL_PushEvent(&wheel);
       }
       continue;
@@ -1141,6 +1146,7 @@ int main(int argc, char **argv) {
   SDL_SetHint(SDL_HINT_EMSCRIPTEN_ASYNCIFY, "0");
 #endif
 #ifdef NV_DESKTOP_UI
+  SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH,"1");
   if (getenv("NV_CAPTURA")) {
     SDL_SetHint(SDL_HINT_MAC_BACKGROUND_APP, "1");
     SDL_SetHint(SDL_HINT_WINDOW_NO_ACTIVATION_WHEN_SHOWN, "1");

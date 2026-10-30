@@ -24,8 +24,9 @@ void menu_desktop_hover(float x) { (void)x; }
 void spainel_abrir(void) { saved++; panel=1; }
 int spainel_aberto(void) { return panel; }
 void spainel_fechar(void) { panel=0; }
-float gfx_escala(void) { return 1; }
-void gfx_escala_sair(float x) { (void)x; }
+static float drawScale=1;
+float gfx_escala(void) { return drawScale; }
+void gfx_escala_sair(float x) { drawScale=x; }
 float gfx_opacidade_grupo=1;
 void gfx_sem_recorte(void) {}
 void gfx_cor(GfxRect r,float radius,float a,float b,float c,float d) { (void)r;(void)radius;(void)a;(void)b;(void)c;(void)d; }
@@ -33,6 +34,14 @@ static void focus(int a,int b) { (void)a;(void)b;focuses++; }
 static void context(int a,int b) { (void)a;(void)b;contexts++; }
 static void deliver(const SDL_Event *e) { if(e->type==SDL_KEYDOWN) { if(e->key.keysym.sym==SDLK_AC_BACK) backs++; else arrows++; } }
 static int row, rowStart, realScroll;
+static float capturedScale;
+static int latchedRow=-1;
+static int scaledRows(const PonteiroRolagem *e) {
+  capturedScale=gfx_escala();
+  if(e->fase==PONT_ROL_INICIO) latchedRow=(int)(e->y/capturedScale/200);
+  if(e->fase==PONT_ROL_MOVER) pixels+=e->delta/capturedScale;
+  return 1;
+}
 static float realOffset;
 static ToqueRolagem preciseRow;
 static int scrolling(const PonteiroRolagem *e) {
@@ -63,7 +72,26 @@ int main(void) {
   offset=0;assert(!toquerol_evento(&realRow,&start));
   start.delta=-20;assert(toquerol_evento(&realRow,&start));
   start.x=1200;assert(!toquerol_evento(&realRow,&start));
+  const int sizes[][2]={{1280,800},{1440,900},{2560,1440}};
+  for(int i=0;i<3;i++) for(int retina=1;retina<=2;retina++) {
+    int w=sizes[i][0],h=sizes[i][1];
+    layout_janela_definir(w,h);layout_tela_definir(w*retina,h*retina);
+    assert(fabsf(NV_TELA_W/w-NV_TELA_H/h)<.0001f);
+    assert(fabsf(fminf(NV_TELA_W/1920,NV_TELA_H/1080)-1)<.0001f);
+    ponteiro_teste_janela(w,h);converter(0,w/2,h/2);
+    assert(fabsf(px-NV_TELA_W/2)<.001f && fabsf(py-NV_TELA_H/2)<.001f);
+  }
   layout_janela_definir(1280,800);ponteiro_iniciar();ponteiro_teste_janela(1280,800);
+  // A wheel arriving during device/trackpad touch activity must retain ownership.
+  ponteiro_quadro(SDL_GetTicks());ponteiro_rolagem(scrolling);fecharQuadro();
+  phased(500,200,0,-1,NV_WHEEL_BEGIN);
+  assert(nv_desktop_scroll_active);
+  SDL_Event indirect={0};indirect.type=SDL_FINGERDOWN;indirect.tfinger.touchId=123;
+  ponteiro_evento(&indirect,deliver);
+  assert(nv_desktop_scroll_active);
+  indirect.type=SDL_FINGERUP;ponteiro_evento(&indirect,deliver);
+  phased(500,200,0,0,NV_WHEEL_END|NV_WHEEL_MOMENTUM);
+  moves=0;pixels=0;
   ponteiro_quadro(SDL_GetTicks());
   ponteiro_alvo(100,100,500,500,focus,NULL,0,0);ponteiro_rolagem(scrolling);fecharQuadro();
   SDL_Event e={0};e.type=SDL_MOUSEMOTION;e.motion.x=200;e.motion.y=200;ponteiro_evento(&e,deliver);
@@ -132,6 +160,11 @@ int main(void) {
   phased(500,200,-40,0,NV_WHEEL_MOMENTUM);
   assert(realOffset>110 && realOffset<=182);
   float stretched=realOffset;
+  for(int i=0;i<80;i++) {
+    float previous=realOffset;phased(500,500,-2,0,NV_WHEEL_MOMENTUM);
+    assert(realOffset>previous);
+  }
+  stretched=realOffset;
   toquerol_vincular(&preciseRow,(GfxRect){0,0,1920,1200},1,0,110,0,&realOffset);
   assert(realOffset==stretched);
   phased(500,200,0,0,NV_WHEEL_MOMENTUM|NV_WHEEL_END);
@@ -149,6 +182,23 @@ int main(void) {
   inerciaQuadro(SDL_GetTicks()+16);
   assert(realOffset>beforeWheel);
   pararInercia();
+  // Draw at enlarged text scale, deliver outside that layer, cross into another row.
+  ponteiro_quadro(SDL_GetTicks());drawScale=1.5f;ponteiro_rolagem(scaledRows);fecharQuadro();drawScale=1;
+  pixels=0;
+  phased(500,200,-1,0,NV_WHEEL_BEGIN);
+  assert(capturedScale==1.5f && latchedRow==1);
+  phased(500,500,-2,0,0);
+  phased(500,500,0,0,NV_WHEEL_END);
+  phased(500,600,-.25f,0,NV_WHEEL_MOMENTUM);
+  assert(latchedRow==1 && fabsf(pixels+3.25f)<.001f && drawScale==1);
+  phased(500,600,0,0,NV_WHEEL_MOMENTUM|NV_WHEEL_END);
+  // One click must focus and activate an initially unfocused card.
+  ponteiro_quadro(SDL_GetTicks());ponteiro_alvo(100,100,500,500,focus,context,8,9);fecharQuadro();
+  int oldContexts=contexts;
+  e=(SDL_Event){0};e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_LEFT;e.button.x=200;e.button.y=200;
+  ponteiro_evento(&e,deliver);e.type=SDL_MOUSEBUTTONUP;ponteiro_evento(&e,deliver);
+  assert(contexts==oldContexts+1);
+  puts("PASS: 1x/2x and three window sizes, scaled callback, latched row across pointer movement and momentum, single click");
   puts("PASS: precise deltas and momentum remain fractional across redraw; rubber-band survives redraw and settles exactly at bound");
   puts("PASS: hover updates focus without scrolling; fractional pixels; no Mac double momentum; left/right edges; one Back per phase sequence; row ownership; panel reverse; cancelled momentum; disabled swipe preference; click activation");
   SDL_Quit();return 0;

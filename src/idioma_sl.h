@@ -1948,6 +1948,7 @@
   T("Classificação indicativa no player", "Starostna oznaka v predvajalniku"),
   T("Classificação máxima", "Najvišja ocena"),
   T("Classificação no player", "Starostna omejitev v predvajalniku"),
+  T("Clique para avaliar", "Kliknite za oceno"),
   T("Clube retrô", "Retro club"),
   T("Clássico", "Klasično"),
   T("Cobertura", "Pokritost"),

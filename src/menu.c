@@ -26,7 +26,11 @@ static float desktopReveal=1, desktopRevealV;
 void menu_desktop_revelar(void) { desktopOverlay=1; }
 void menu_desktop_hover(float x) {
   if (x < 8.0f) desktopOverlay=1;
-  else if (x > NV_DESKTOP_SIDEBAR_W / NV_DESKTOP_SCALE + 16) desktopOverlay=0;
+  else {
+    SDL_Window *window=SDL_GL_GetCurrentWindow();int w=1280,h=800;
+    if(window) SDL_GetWindowSize(window,&w,&h);
+    if(layout_window_x(x,w,h)>NV_DESKTOP_SIDEBAR_W+24) desktopOverlay=0;
+  }
 }
 static void desktopRecolher(int collapsed) {
   desktopCollapsed = collapsed; desktopOverlay=0;
@@ -1351,8 +1355,11 @@ static void desktopDesenhar(void) {
   if (!getenv("NV_CAPTURA_GL")) {
     gfx_sem_recorte();
     desktop_native_sidebar(w / NV_TELA_W,reveal);
-    float point=NV_TELA_H / fmaxf(1, nv_layout_h / NV_DESKTOP_SCALE);
-    gfx_furo_raio((GfxRect){8*point-(1-reveal)*w,36*point,w-16*point,NV_TELA_H-44*point},16*point/(NV_TELA_H-44*point));
+    SDL_Window *window=SDL_GL_GetCurrentWindow();int ww=1280,wh=800;
+    if(window) SDL_GetWindowSize(window,&ww,&wh);
+    float point=layout_window_units(ww,wh)/gfx_escala();
+    float inset=desktop_native_fullscreen()?8:36;
+    gfx_furo_raio((GfxRect){8*point-(1-reveal)*w,inset*point,w-16*point,NV_TELA_H-(inset+8)*point},16*point/fmaxf(1,NV_TELA_H-(inset+8)*point));
     return; // AppKit owns the material and controls in the real window.
   }
 #endif

@@ -27,7 +27,8 @@ static void layoutAtualizar(void) {
 #ifdef NV_DESKTOP_UI
   modoMobile = janelaW < NV_DESKTOP_BREAKPOINT;
   if (!modoMobile) {
-    float scale = fmaxf(NV_DESKTOP_SCALE, 1200.0f / janelaH);
+    // One uniform transform: fit the 1920x1080 design, extend the other axis.
+    float scale = layout_window_units(janelaW,janelaH);
     nv_layout_w = janelaW * scale;
     nv_layout_h = janelaH * scale;
   } else

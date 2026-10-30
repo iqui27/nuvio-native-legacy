@@ -1948,6 +1948,7 @@
   T("Classificação indicativa no player", "Klasyfikacja wiekowa w odtwarzaczu"),
   T("Classificação máxima", "Maksymalna ocena"),
   T("Classificação no player", "Kategoria wiekowa w odtwarzaczu"),
+  T("Clique para avaliar", "Kliknij, aby ocenić"),
   T("Clube retrô", "Retro club"),
   T("Clássico", "Klasyczne"),
   T("Cobertura", "Pokrycie"),

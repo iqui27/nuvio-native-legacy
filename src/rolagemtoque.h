@@ -58,6 +58,9 @@ static inline int toquerol_evento(ToqueRolagem *r, const PonteiroRolagem *e) {
   if (e->fase == PONT_ROL_MOVER || e->fase == PONT_ROL_INERCIA) {
     float antes = *r->offset;
     *r->offset = layout_scroll_delta(antes, e->delta / r->escala, r->minimo, r->maximo);
+#ifdef NV_DESKTOP_UI
+    ponteiro_scroll_offset(-1,-1,*r->offset);
+#endif
     return fabsf(*r->offset - antes) > 0.001f;
   }
   return 1;

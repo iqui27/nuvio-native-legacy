@@ -1948,6 +1948,7 @@
   T("Classificação indicativa no player", "التصنيف العمري في المشغل"),
   T("Classificação máxima", "الحد الأقصى للتقييم"),
   T("Classificação no player", "تصنيف المحتوى في المشغل"),
+  T("Clique para avaliar", "انقر للتقييم"),
   T("Clube retrô", "نادي الكلاسيكيات"),
   T("Clássico", "كلاسيكي"),
   T("Cobertura", "التغطية"),
