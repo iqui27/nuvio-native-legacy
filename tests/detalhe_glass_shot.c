@@ -718,6 +718,7 @@ static void abrir(int i, int nv, int sec, int col) {
 #include "detalhe_b2_checks.h"
 #ifdef NV_SHOT_HOOKS
 #include "vidro_c9_cache.h"
+#include "frost_stability.h"
 #endif
 
 static int quer(int argc, char **argv, const char *id) {
@@ -814,6 +815,7 @@ int main(int argc, char **argv) {
 #endif
   cacheFrases();
 #ifdef NV_SHOT_HOOKS
+  if (getenv("NUVIO_FROST_STABILITY")) return fs_run();
   if (getenv("NUVIO_C9_CACHE")) return vc_run();
 #endif
   if (getenv("NUVIO_TRAKT_CHECK")) return trakt_checks();
