@@ -8264,7 +8264,7 @@ static float desenhaTituloFil(int r, float y, const char *rot, int cr, int cg, i
     char nb[16] = "";
     if (f->n > 0) snprintf(nb, sizeof nb, "%d", f->n);
     TxtLinha tn = txt_linha(TXT_HERO_META, nb[0] ? nb : " ", 168, 173, 181, 255);
-    *tl = txt_linha_corta(TXT_ROW_TITULO, rot, cr, cg, cb, 255, maxW - 120.0f);
+    *tl = txt_linha_corta(TXT_ROW_TITULO, rot, 255, 255, 255, 255, maxW - 120.0f);
     const float isz = tl->h * 0.56f, ph = tl->h + 4.0f;
     const float w = 22.0f + isz + 12.0f + tl->w + (nb[0] ? 18.0f + tn.w : 0.0f) + 22.0f;
     GfxRect p = { x0, y - 2.0f, w, ph };
@@ -8276,7 +8276,7 @@ static float desenhaTituloFil(int r, float y, const char *rot, int cr, int cg, i
     gfx_icone((GfxRect){ x0 + 22.0f, y - 2.0f + (ph - isz) * 0.5f, isz, isz }, tfIcone(f),
               0.66f + (ar - 0.66f) * k, 0.68f + (ag - 0.68f) * k, 0.71f + (ab - 0.71f) * k, 1.0f);
     float tx = x0 + 22.0f + isz + 12.0f;
-    txt_desenhar(*tl, tx, y);
+    txt_desenhar_tom(*tl, tx, y, cr / 255.0f, cg / 255.0f, cb / 255.0f, 1);
     if (nb[0]) {
       float dx = tx + tl->w + 9.0f;
       gfx_cor((GfxRect){ dx, y - 2.0f + ph * 0.3f, 1.5f, ph * 0.4f }, 0.0f, 1, 1, 1, 0.20f);
@@ -8308,14 +8308,16 @@ static float desenhaTituloFil(int r, float y, const char *rot, int cr, int cg, i
     const float eh = gfx_escala(), yT = y + NV_LEGACY_ROW_HEAD_H - retPt(RET_TIT_ACIMA_PT);
     const float kT = eh / retFator(RET_TIPO_P);
     gfx_escala_sair(retFator(RET_TIPO_P));
-    *tl = txt_linha_corta(TXT_ROW_TITULO, rot, cr, cg, cb, 255, maxW * kT);
-    if (desenhar) txt_desenhar(*tl, x0 * kT, yT * kT);
+    *tl = txt_linha_corta(TXT_ROW_TITULO, rot, 255, 255, 255, 255, maxW * kT);
+    if (desenhar) txt_desenhar_tom(*tl, x0 * kT, yT * kT,
+                                 cr / 255.0f, cg / 255.0f, cb / 255.0f, 1);
     gfx_escala_sair(eh);
     tl->w = (int)((float)tl->w / kT + 0.5f);
     tl->h = (int)((float)tl->h / kT + 2.0f * (yT - y) + 0.5f);
   } else {
-    *tl = txt_linha_corta(TXT_ROW_TITULO, rot, cr, cg, cb, 255, maxW);
-    if (desenhar) txt_desenhar(*tl, x0, y);
+    // Focus color changes every spring frame; keep it out of the raster cache key.
+    *tl = txt_linha_corta(TXT_ROW_TITULO, rot, 255, 255, 255, 255, maxW);
+    if (desenhar) txt_desenhar_tom(*tl, x0, y, cr / 255.0f, cg / 255.0f, cb / 255.0f, 1);
   }
   if (est == 3) {   // ACENTO
     const float bw = 10.0f + 44.0f * k, bh = 10.0f - 3.0f * k;
