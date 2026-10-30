@@ -985,7 +985,7 @@ static void vod_filter(void){
 static int vod_position(void){int id=focus>=VOD_ITEM?focus:vod_return_focus;int p=id-VOD_ITEM;return p>=0&&p<vod_size?p:0;}
 static int vod_row_at(int position){for(int r=0;r<vod_rows;r++)if(position>=vod_layout[r].start&&position<vod_layout[r].start+vod_layout[r].count)return r;return 0;}
 #include "guiav5_vodload.inc"
-static void vod_select(int position,int play){
+static void vod_select(int position){
   if(position<0||position>=vod_size||vod_order[position]<0)return;G5Item *it=vod_item(vod_order[position]);if(!it)return;
   if(vod_data.refs[vod_order[position]].item>=0){int i=vod_data.refs[vod_order[position]].item;select_item(i);}
   else{
@@ -993,21 +993,12 @@ static void vod_select(int position,int play){
     if(vod_selected_slot<0||vod_selected_slot>=count){G5Item *items=realloc(inventory,(count<G5_CAP?G5_CAP:count+1)*sizeof *items);if(!items)return;inventory=items;vod_selected_slot=count++;}
     inventory[vod_selected_slot]=copy;select_item(vod_selected_slot);
   }
-  if(play&&!restricted(&inventory[selected])&&inventory[selected].kind!=G5_SERIES)playing=1;
 }
 static void vod_navigate(SDL_Keycode k){
   int p=vod_position(),r=vod_row_at(p),col=p-vod_layout[r].start;
-  if(focus==810){if(k==SDLK_DOWN)focus=vod_size?807:VOD_ITEM;else if(k==SDLK_UP)nav=3;return;}
-  if(focus==807||focus==808||focus==809){
-    if(k==SDLK_UP&&vod_failed)focus=810;
-    else if(k==SDLK_UP)nav=3;
-    else if(k==SDLK_DOWN)focus=vod_item_focus(vod_return_focus);
-    else if(k==SDLK_RIGHT)focus=focus==809?807:808;
-    else if(k==SDLK_LEFT)focus=focus==808?807:809;
-    return;
-  }
+  if(focus==810){if(k==SDLK_DOWN)focus=vod_item_focus(vod_return_focus);else if(k==SDLK_UP)nav=3;return;}
   if(focus<VOD_ITEM){if(k==SDLK_DOWN)focus=VOD_ITEM;else if(k==SDLK_UP)nav=3;return;}
-  if(k==SDLK_UP&&r==0){vod_return_focus=focus;focus=!strcmp(screen,"vod-busca")?804:807;return;}
+  if(k==SDLK_UP&&r==0){vod_return_focus=focus;if(!strcmp(screen,"vod-busca"))focus=804;else nav=3;return;}
   if(k==SDLK_UP||k==SDLK_DOWN){int next=r+(k==SDLK_DOWN?1:-1);if(next>=0&&next<vod_rows)focus=VOD_ITEM+vod_layout[next].start+(col<vod_layout[next].count?col:vod_layout[next].count-1);}
   else if(k==SDLK_RIGHT&&col+1<vod_layout[r].count)focus++;
   else if(k==SDLK_LEFT&&col>0)focus--;
@@ -1030,7 +1021,7 @@ static float stream_footer(const char *name,const char *source,const char *forma
   return line.w+24;
 }
 static void catalog(void){
-  int series=!strcmp(screen,"vod-series"),search=!strcmp(screen,"vod-busca");
+  int search=!strcmp(screen,"vod-busca");
   vod_filter();nindices=vod_size;
   if(focus>=VOD_ITEM+vod_size)focus=VOD_ITEM;
   int position=vod_position(),active=vod_row_at(position);
@@ -1106,10 +1097,6 @@ static void catalog(void){
       if(hero->age>=0){snprintf(pill,sizeof pill,i18n("%d+"),hero->age);vod_chip(mx,310,NULL,pill,0);}
       if(hero->plot[0])label(TXT_ILHA_CORPO,hero->plot,left+16,363,area*.73f,1);
     }
-    button(809,i18n(hero->kind==G5_SERIES?"Temporadas":"Assistir"),"aj_play",left+16,412,hero->kind==G5_SERIES?290:220,56,0);
-    float bx=left+(hero->kind==G5_SERIES?320:250);
-    button(807,i18n("Detalhes"),"aj_info",bx,412,220,56,0);
-    button(808,i18n(series?"Filmes":"Séries"),"aj_tv-minimal-play",bx+234,412,230,56,0);
   }
   float top=search?280:514,row_h=396;
   vod_scroll=anim_mola2(&vod_scroll_v,vod_scroll,active*row_h,gv_dt,T21_SCROLL);
@@ -1489,8 +1476,7 @@ static void activate(int id){
   if(!strncmp(screen,"vod-",4)){
     if(id==810){vod_lazy=1;vod_failed=0;memset(vod_done_count,0,sizeof vod_done_count);source_loaded=0;vod_begin();return;}
     if(id==800){episodes_mode=0;catalog_group[0]=0;go("vod-filmes");}else if(id==801){episodes_mode=0;catalog_group[0]=0;go("vod-series");}else if(id==802||id==804){go("vod-busca");input(5,"Buscar",query,0);}
-    else if(id==808){vod_sidebar=0;go(!strcmp(screen,"vod-series")?"vod-filmes":"vod-series");}
-    else if(id==803)go("fontes-gerenciar");else if(id==805){catalog_group[0]=0;focus=VOD_ITEM;}else if(id==806)go("setup-tipo");else if((id==807||id==809)&&vod_size)vod_select(vod_hero,id==809);else if(id>=820&&id<820+group_count){snprintf(catalog_group,sizeof catalog_group,"%s",groups[id-820]);focus=VOD_ITEM;}else if(id>=VOD_ITEM&&id<VOD_ITEM+vod_size)vod_select(id-VOD_ITEM,0);else if(query[0])query[0]=0;else go("setup-tipo");
+    else if(id==803)go("fontes-gerenciar");else if(id==805){catalog_group[0]=0;focus=VOD_ITEM;}else if(id==806)go("setup-tipo");else if(id>=820&&id<820+group_count){snprintf(catalog_group,sizeof catalog_group,"%s",groups[id-820]);focus=VOD_ITEM;}else if(id>=VOD_ITEM&&id<VOD_ITEM+vod_size)vod_select(id-VOD_ITEM);else if(query[0])query[0]=0;else go("setup-tipo");
     if(id==800||id==801||id==805||(id>=820&&id<820+group_count)){vod_sidebar=0;focus=vod_return_focus=VOD_ITEM;}
     return;
   }
