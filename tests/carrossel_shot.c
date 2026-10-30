@@ -53,7 +53,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "../src/detail.c" // Capture exact background endpoints without changing the public app API.
+// Inject only texture readiness and the frame clock; use the real GL renderer.
+static int veuMissing;
+static Uint32 veuNow;
+static GLuint veuHero(const char *path) { return veuMissing ? 0 : tex_obter_hero(path); }
+static Uint32 veuTicks(void) { return veuNow ? veuNow : SDL_GetTicks(); }
+#define tex_obter_hero veuHero
+#define SDL_GetTicks veuTicks
+#include "../src/detail.c"
+#undef SDL_GetTicks
+#undef tex_obter_hero
 
 #define NA 40
 static const char *NOMES[] = {
@@ -184,6 +193,8 @@ static void ajusta(int layout, int vidro) {
   posterprov_preferir_addon(ajustes_poster_addon());
   col_arte_conta(ajustes_col_arte_conta());
 }
+
+#include "veutrans.inc"
 
 int main(int argc, char **argv) {
   const char *saida = argc > 1 ? argv[1] : nvt("/nv-carrossel/c");
@@ -341,6 +352,7 @@ int main(int argc, char **argv) {
     }
     cat_definir_episodios(j,eps,6);
   }
+  if (getenv("NV_VEU_TRANS")) { veuTrans(saida); goto fim; }
   quadros(90, NULL);
   {
     int q, r, n = 0;
