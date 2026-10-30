@@ -15,5 +15,6 @@ int aioui_addons_mover(int foco, int dx, int dy);
 int aioui_detectar(int addon);
 #ifdef NV_SHOT_HOOKS
 void aioui_shot(int pagina, const AioSnapshot *s);
+void aioui_shot_connect(int state);
 #endif
 #endif

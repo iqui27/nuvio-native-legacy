@@ -2,6 +2,14 @@ name = "nuvio-recomendacoes"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 
+[[durable_objects.bindings]]
+name = "AIOPAIR"
+class_name = "AioPair"
+
+[[migrations]]
+tag = "v1-aiopair"
+new_sqlite_classes = ["AioPair"]
+
 [build]
 command = "bash ../../tools/recomendacoes-guard.sh"
 

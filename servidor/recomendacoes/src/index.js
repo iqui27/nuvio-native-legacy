@@ -10,6 +10,8 @@
 // e-mail, IP. A identidade e um identificador estavel e um nome de exibicao.
 
 import { rotaXtream } from "./xtream.js";
+import { routeAioPair } from "./aiopair.js";
+export { AioPair } from "./aiopair.js";
 import { codigoRegistro } from "./codigo.js";
 import { rotaTrailerImdb, rotaTrailerYoutube } from "./trailer.js";
 import { rotaNoticia, rotaNoticiaImg } from "./noticia.js";
@@ -929,6 +931,7 @@ export default {
     const rota = url.pathname;
 
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+    if (rota === "/aio/" || rota.startsWith("/v1/aiopair/")) return routeAioPair(req, env);
     if (rota === "/v1/saude") return json({ ok: 1, t: agora() });
 
     // TV VIDAA: o site (/tv/*) e o proxy dela (/v1/proxy) moram em OUTRO

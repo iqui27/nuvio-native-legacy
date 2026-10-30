@@ -1,5 +1,6 @@
 // Native, offline screenshots of approved AIOStreams routes. No credentials.
 #include "aiostreamsui.h"
+#include "aiopair.h"
 #include "addonsui.h"
 #include "addons.h"
 #include "ajustes.h"
@@ -56,7 +57,7 @@ int main(int argc,char **argv) {
   s.addon[s.addons++]=(AioItem){.nome="OpenSubtitles v3 Plus",.ativo=1,.legenda=1};
   s.addon[s.addons++]=(AioItem){.nome="SubDL",.ativo=1,.legenda=1};
   if(getenv("AIO_SHOT_STATES")) {
-    static AioSnapshot states[3]; states[0]=s;
+    static AioSnapshot states[4]; states[0]=s; states[0].configAccess=AIO_AVAILABLE;
     states[1]=s; states[1].configurada=0; states[1].servicos=states[1].addons=states[1].detalhes=0;
     memset(states[1].regras,0,sizeof states[1].regras);
     memset(states[1].resumo,0,sizeof states[1].resumo);
@@ -71,11 +72,32 @@ int main(int argc,char **argv) {
     memset(states[1].http,0,sizeof states[1].http); states[1].http[0]=states[1].http[1]=200;
     states[2].estatisticas=states[2].erros=states[2].filtrados=-1;
     states[2].http[0]=503; states[2].http[1]=503;
-    const char *stateNames[]={"full-config","manifest-only","error"};
-    for(int i=0;i<3;i++) {
-      ajustes_definir_vidro(1); aioui_shot(5,&states[i]);
+    states[3]=s; states[3].configurada=0; states[3].addons=states[3].servicos=states[3].detalhes=0;
+    states[3].configAccess=AIO_RESTRICTED;
+    const char *stateNames[]={"full-config","manifest-only","error","locked"};
+    for(int i=0;i<4;i++) for(int g=0;g<2;g++) {
+      char name[160]; snprintf(name,sizeof name,"%s-%s",stateNames[i],g?"glass":"solid");
+      ajustes_definir_vidro(g); aioui_shot(5,&states[i]);
       for(int tick=0;tick<120;tick++) { frame(10); SDL_Delay(2); }
-      save(argv[1],stateNames[i]);
+      save(argv[1],name);
+      if(i==3) {
+        SDL_Event key={0}; key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_LEFT; aioui_evento(&key); frame(400);
+        snprintf(name,sizeof name,"sidebar-%s",g?"glass":"solid"); save(argv[1],name);
+      }
+    }
+    return 0;
+  }
+  if(getenv("AIO_SHOT_CONNECT")) {
+    // Connect sheet on the dashboard, both materials. Key path only: DOWN DOWN
+    // LEFT lands on the connect action, RETURN opens what the user sees.
+    for(int g=0;g<2;g++) {
+      ajustes_definir_vidro(g); aioui_shot(5,&s);
+      for(int f=0;f<80;f++) frame(10);
+      SDL_Event key={0}; key.type=SDL_KEYDOWN;
+      aioui_shot_connect(AIOPAIR_WAITING);
+      for(int f=0;f<60;f++) frame(10);
+      save(argv[1],g?"connect-glass":"connect-solid");
+      key.key.keysym.sym=SDLK_ESCAPE; aioui_evento(&key); aioui_evento(&key); frame(200);
     }
     return 0;
   }
