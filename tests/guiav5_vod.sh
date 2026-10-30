@@ -1,10 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-out=/Volumes/ExternalSSD/tmp/rev/vodui
+out=/Volumes/ExternalSSD/tmp/rev/vodbotoes
 mkdir -p "$out"
 # Reuse unchanged objects across visual iterations; header changes invalidate all.
-work=/Volumes/ExternalSSD/tmp/rev/vodui/.build
+work="$out/.build"
 mkdir -p "$work"
 
 export NUVIO_DADOS="$work/data"
@@ -25,9 +25,9 @@ for source in "${sources[@]}"; do
   objects+=("$object")
 done
 libs=(-L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL)
-git show 7b8ece3b4:src/guiav5ui.c > "$work/before.c"
+git show 1e7b771d6771d95e47db73cd237c0f40fe60f751:src/guiav5ui.c > "$work/before.c"
 cc "${flags[@]}" -DVOD_BASELINE -DGUIAV5_UNDER_TEST=\""$work/before.c"\" tests/guiav5_vod.c "${objects[@]}" "${libs[@]}" -o "$work/before"
 "$work/before" "$out"
 cc "${flags[@]}" tests/guiav5_vod.c "${objects[@]}" "${libs[@]}" -o "$work/after"
 "$work/after" "$out"
-magick "$out/before.png" "$out/after.png" +append "$out/before-after.png"
+magick identify -format '%f: %wx%h\n' "$out/before.png" "$out/after.png"
