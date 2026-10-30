@@ -93,6 +93,9 @@ static int buTelefone(void) {
 }
 static int buRetratoTelefone(void) { return buRetrato() && buTelefone(); }
 static int buTecladoNativo(void) {
+#ifdef NV_DESKTOP_UI
+  return 1;
+#endif
   return st_ime_disponivel() && st_teclado_modo() != 1 &&
          (buTelefone() || st_abre_sozinho());
 }
@@ -1092,7 +1095,9 @@ static int menuNoResultado(void) {
 static int retMover(SDL_Keycode key);
 #endif
 static int desktopTexto(const SDL_Event *e) {
-  if (!layout_desktop_ativo()) return 0;
+#ifndef NV_DESKTOP_UI
+  return 0;
+#endif
   if (e->type == SDL_TEXTINPUT) { painel = 0; campoAcrescentar(e->text.text); return 1; }
   if (e->type == SDL_KEYDOWN && !(e->key.keysym.mod & (KMOD_CTRL | KMOD_ALT | KMOD_GUI))) {
     if (e->key.keysym.sym == SDLK_BACKSPACE) { campoApagar(); return 1; }

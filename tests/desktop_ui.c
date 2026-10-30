@@ -56,8 +56,10 @@ int main(void) {
   menu_desktop_revelar(); assert(desktopOverlay && desktopCollapsed);
   menu_desktop_expandir(); assert(!desktopCollapsed && sidebarSaved[0]=='0');
   menu_abrir(); key(SDLK_UP);
-  assert(linha == MENU_BUSCAR);
+  assert(linha == MENU_BUSCAR && menu_desktop_foco()==MENU_BUSCAR);
+  assert(menu_destino()==MENU_INICIO);
   key(SDLK_RIGHT);
+  assert(menu_desktop_foco()==-1);
   assert(menu_destino() == MENU_BUSCAR && !menu_aberto() && menu_visivel());
   menu_abrir(); key(SDLK_AC_BACK);
   assert(!menu_aberto() && menu_destino() == MENU_BUSCAR);

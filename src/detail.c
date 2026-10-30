@@ -1227,11 +1227,11 @@ static float vaoAntes(int r) {
 static float epDyFone;
 static void recalcularLayout(void) {
   static int ready, lastSeries, counts[N_SECOES];
-  static float heights[N_SECOES], lastScale;
+  static float heights[N_SECOES], lastScale, lastWidth, lastHeight;
   float scale=gfx_escala_tela_txt();
   static int lastFone;
   int fone=detalheRetratoFone() && !heroServidor();
-  int changed=!ready || lastSeries!=ehSerie() || lastScale!=scale || lastFone!=fone;
+  int changed=!ready || lastSeries!=ehSerie() || lastScale!=scale || lastFone!=fone || lastWidth!=NV_TELA_W || lastHeight!=NV_TELA_H;
   for (int r=0;r<N_SECOES;r++) {
     int n=secaoN(r); float h=n>0 ? alturaSecao(r) : 0;
     if (counts[r]!=n || heights[r]!=h) changed=1;
@@ -1239,6 +1239,7 @@ static void recalcularLayout(void) {
   }
   if (!changed) return;
   ready=1; lastSeries=ehSerie(); lastScale=scale; lastFone=fone;
+  lastWidth=NV_TELA_W; lastHeight=NV_TELA_H;
   float y=heroServidor() ? NV_TELA_H + 60 : fone ? retPt(636) :
     layout_desktop_ativo() ? NV_TELA_H * .66f + 56 : ANC(NV_DET21_FIM + 56);
   const int *order=ordemSecoes();
@@ -1925,6 +1926,9 @@ void detail_mostrar_pessoa(long tmdb, const char *nome, const char *foto) {
   pessoaAberta = 1;
   pessoaFoco = 0;
   pessoaLinha = 0;
+#ifdef NV_DESKTOP_UI
+  filmo_abrir();
+#endif
 #ifdef NV_TOUCH_UI
   toquerol_limpar(&toquePessoa); toquePessoaOffset = 0;
 #endif
@@ -3098,6 +3102,9 @@ static void detail_evento_(const SDL_Event *e) {
   if (musicaui_visivel()) { if (musicaui_aberta()) musicaui_evento(e); return; }
   pediuRelogio = 0;
   if (sinopse_aberta()) { sinopse_evento(e); return; }
+#ifdef NV_DESKTOP_UI
+  if(pessoaAberta) { filmo_evento(e); return; }
+#endif
 #ifdef NV_TOUCH_UI
   toqueDetalheSincronizarModo();
 #endif
@@ -4093,7 +4100,13 @@ static void detail_atualizar_(float dt, Uint32 agora) {
     }
   }
   if (!aberto) { blocoAnt[0] = blocoAnt[1] = blocoAnt[2] = -1.0f; return; }
-  if (pessoaAberta && filmo_atualizar(dt)) pessoaAberta = 0;
+#ifdef NV_DESKTOP_UI
+  if (pessoaAberta) {
+    if(filmo_atualizar(dt)) pessoaAberta=0;
+    int credit=filmo_titulo();
+    if(credit>=0) { pessoaFoco=credit;abrirCredito(); }
+  }
+#endif
   if (pessoaAberta && pessoa_falhou()) {
     pessoaAberta = 0;
     ilha_avisar("det-elenco-sem-pagina", ILHA_INFO, NULL,
@@ -5565,7 +5578,7 @@ static void heroWeb(float a, float desloc) {
       if (fabsf(alvo - hSinVis) < 0.5f) hSinVis = alvo;
     }
     hSinInit = 1;
-    hSin = hSinVis; }
+    hSin = layout_desktop_ativo() ? fmaxf(alvo,hSinVis) : hSinVis; }
   const char *arqLogo = logoDe(idx);
   const char *nome = mostrarNomeLogo(ci, arqLogo && tex_falhou(arqLogo) ? NULL : arqLogo,
                                     0, desc_tmdb_idioma()) ? tituloDe(idx) : NULL;
@@ -9130,6 +9143,9 @@ static void desenhaEsqueletoElenco(float a) {
 // o mesmo raio dos outros.
 
 static void desenhaPessoa(float a) {
+#ifdef NV_DESKTOP_UI
+  filmo_desenhar(a);return;
+#endif
   GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
   gfx_cor(tela, 0.0f, NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, a);
 

@@ -1184,8 +1184,9 @@ static void trocarTela(Tela nova) {
 void app_desktop_preview(const char *screen) {
   if (!uiPreview) return;
   if (!strcmp(screen,"filmography")) {
-    detail_fechar_seco();menu_fechar();
-    const ColFolder *folder=col_folder(0); if(folder) vertudo_colecao(folder); return;
+    vertudo_fechar_seco();menu_fechar();
+    if(!detail_aberto()) { int title=cat_indice_por_imdb("tt12637874");if(title>=0)abrirPorIndice(title); }
+    detail_mostrar_pessoa(525,"Christopher Nolan","");return;
   }
   detail_fechar_seco(); vertudo_fechar_seco(); conquistas_ocultar(); menu_fechar();
   if (!strcmp(screen,"home")) { menu_ir(MENU_INICIO); trocarTela(TELA_HOME); home_ir_topo(); }
@@ -8267,8 +8268,11 @@ void app_desenhar(Uint32 agora) {
     } else ilha_atividade_detalhes(NULL, NULL);
   } else ilha_atividade_detalhes(NULL, NULL);
   if (guia_atualizando_lista()) ilha_atividade(i18n("Atualizando a lista de canais…"), -1.0f);
-  if (!registro_aberto() && !player_aberto() && sessao_logada() &&
-      tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL) {
+  if (!registro_aberto() && !player_aberto() && (sessao_logada()
+#ifdef NV_DESKTOP_UI
+      || uiPreview
+#endif
+      ) && tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL) {
     ilha_relogio_visivel(relogioCabe() && ajustes_relogio_ligado());
     ilha_posicionar(tela==TELA_AJUSTES?3:detail_tem_servidores()?2:1);
     // O painel de Salvos que nasceu da pilula recolhe para ela (o retangulo

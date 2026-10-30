@@ -54,6 +54,7 @@ void menu_desktop_revelar(void);
 void menu_desktop_servico(int index);
 void menu_desktop_perfil(void);
 int menu_desktop_streaming(void);
+int menu_desktop_foco(void);
 #endif
 // Shared active-profile avatar, in the caller's coordinate layer.
 void menu_avatar(float x, float y, float size, float alpha);

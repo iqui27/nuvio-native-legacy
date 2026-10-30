@@ -23,7 +23,13 @@ Desktop-only changes are guarded by `NV_DESKTOP_UI`; Cocoa lives in
 - macOS uses a transparent unified title bar, NSGlassEffectView on macOS 26+
   with NSVisualEffectView Sidebar/BehindWindow fallback on older systems,
   system symbols and AppKit buttons. The GL sidebar is cleared to alpha zero.
-  A live scene copy under the glass preserves artwork beneath the alpha hole.
+  A scene copy under the glass preserves artwork beneath the alpha hole.
+  It updates at most 10 Hz through a pixel pack buffer; an Apple GL fence
+  prevents mapping unfinished GPU work. A GPU framebuffer blit flips the
+  image, replacing the per-frame synchronous read and CPU scanline reversal.
+  Native symbols share one blue tint. Pending keyboard/gamepad selection
+  has an accent ring, distinct from the active destination. Destination and
+  group labels refresh when the interface language changes.
   The titled window clips its content layer to rounded corners. Native labels
   avoid the straight-alpha GL text artifacts seen during the
   first transparent-window capture. The sidebar follows system appearance.
@@ -34,11 +40,17 @@ Desktop-only changes are guarded by `NV_DESKTOP_UI`; Cocoa lives in
   to tagged Mac trackpad events. Notched wheels use app inertia. Left/right
   margin horizontal gestures open navigation/Saved, respect the system swipe
   preference, and do not capture gestures starting inside horizontal rows.
+- Desktop person pages use the actual Filmography renderer and input handler.
+  Filmography grid hit targets follow the visible free-scroll range and remain
+  clipped beneath its filters. The offline proof opens the production person
+  route with isolated person JSON, then scrolls beyond the initial viewport,
+  hovers a card and opens its options.
 - Home, Search, Library, Detail, collection Timeline and shared touch scroll
   consumers now accept continuous desktop input. Shared bounds support desktop
   rubber-band displacement and spring return. Existing phone/TV mode decisions
   remain separate from desktop geometry.
-- Search uses SDL_TEXTINPUT, including composed Unicode, from any result focus.
+- Search uses SDL_TEXTINPUT, including composed Unicode, from any result focus,
+  including desktop windows narrower than 1000 points.
   The title-bar field displays the query. No desktop Search keyboard or phone QR
   is drawn. Cmd/Ctrl+F opens Search; ordinary `f` no longer toggles fullscreen.
 - Window-point layout keeps at least 1200 logical vertical units in shorter
@@ -46,7 +58,10 @@ Desktop-only changes are guarded by `NV_DESKTOP_UI`; Cocoa lives in
   rasterization. Home hero fills the window height, extends beneath the sidebar,
   and scrolls away with its title and metadata. Library reserves the
   toolbar and separates tabs, source filters and grid. Detail information moves
-  upward and reserves its source line. Timeline restores clipping after card
+  upward and reserves its source line. Its section layout invalidates on canvas
+  resize so seasons follow metadata at both proof sizes; synopsis height never
+  reserves less than the current text during a metadata change. Home metadata
+  and GL sidebar labels use a 15-point minimum at the default desktop scale. Timeline restores clipping after card
   helpers and scales its sidebar offset correctly. Guide avoids traffic lights.
   Shared remote-control hint bars are suppressed on desktop.
 
@@ -66,6 +81,9 @@ with its avatar or initials. Proof data uses an isolated fictional profile.
 Capture safety: `tools/desktop-polish-capture.py` launches with `NV_CAPTURA=1`
 and `SDL_MAC_BACKGROUND_APP=1`. SDL disables activation before initialization;
 AppKit uses Accessory policy and `orderBack`, never a key window or Dock icon.
+Capture disables swap-interval waiting: covered windows can receive no display
+refresh signal, which otherwise stalls the first SDL swap. Normal desktop
+windows keep vsync; the desktop frame limiter still caps capture rendering.
 Capture windows start hidden before AppKit orders them behind other windows.
 The helper never changes system appearance, focus, or cursor position. A private
 `NV_CAPTURA_DIR` isolates commands and screenshots from any owner app using the
@@ -75,9 +93,10 @@ use in-process GL readback with the shared GL sidebar (`NV_CAPTURA_GL=1`).
 Only the two native material/corner proofs use `screencapture -l ID -o -x` on
 the covered window. Light/dark appearance is set on that window alone.
 The GL sidebar transition loop records three opening and closing frames over
-20 cycles. Native GL readback flips scanlines before publishing a fixed-width
-scene image; all AppKit layer updates disable implicit animations. Every
-launched process is terminated and reaped, including failure paths. Do not use
+20 cycles. Native backdrop sampling flips rows with a GPU blit before publishing
+a completed pixel pack buffer; all AppKit layer updates disable implicit animations. Every
+launched process is terminated and reaped, including failure paths. Capture
+commands and readback allow 90 seconds under shared-machine load. Do not use
 system input synthesis or activate a capture window while the owner works.
 
 From the worktree root:
@@ -88,6 +107,9 @@ bash tests/desktop-build.sh
 bash tests/desktop-packages.sh
 python3 tools/desktop-polish-capture.py
 python3 tools/desktop-polish-capture.py --native-only --reuse-transitions
+# Focused refresh; start a fresh process per size for retained Filmography state.
+python3 tools/desktop-polish-capture.py --affected-only --size 1280 --reuse-transitions
+python3 tools/desktop-polish-capture.py --affected-only --size 1920 --gl-only --reuse-transitions
 python3 tools/desktop-polish-proof.py
 python3 tools/desktop-proof.py
 python3 tools/desktop-proof.py --mount-only
@@ -102,7 +124,8 @@ Homebrew mpv dependency closure. Packages are ad-hoc signed, not notarized.
 
 `desktop-polish.sh` covers collapse reload, menu routes, streaming ordering,
 fractional wheel input, no Mac double momentum, both edges, swipe-disabled
-preference, mouse hover/click separation, bounce return, Unicode Search,
+preference, mouse hover/click separation, bounce return, wide/narrow Unicode Search,
+Filmography free scroll with hover and activation beyond the first viewport,
 fullscreen translation and Mac/Windows/shared-TV syntax.
 
 ## Evidence
@@ -133,6 +156,13 @@ artwork through the panel, with alpha zero at all four window corners.
 Capture-only appearance names map to AppKit's named constants.
 
 ## Remaining limitations
+
+- Final native light/dark recapture was rejected by `screencapture` with
+  "could not create image from window" after covered-window rendering resumed.
+  The retained native PNGs were refreshed earlier in this correction cycle;
+  final GL screen proofs and both packages include the capture-vsync fix.
+  Those retained native PNGs must not be treated as a fresh native runtime
+  check of the final package.
 
 - Transition frames use GL readback. Native frame sequences contain the alpha
   hole, not composited AppKit controls; they do not independently prove every

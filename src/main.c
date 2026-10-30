@@ -1607,7 +1607,7 @@ int main(int argc, char **argv) {
   // primeiro quadro. No aparelho o SDL2 e o de verdade e o vsync fica ligado,
   // que e o que mantem os 60fps estaveis la.
   #ifdef NV_DESKTOP_UI
-  SDL_GL_SetSwapInterval(1);
+  SDL_GL_SetSwapInterval(getenv("NV_CAPTURA") ? 0 : 1);
 #else
   SDL_GL_SetSwapInterval(0);
 #endif

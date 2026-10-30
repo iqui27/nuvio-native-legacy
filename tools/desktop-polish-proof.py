@@ -10,7 +10,7 @@ import subprocess
 OUT = Path('/Volumes/ExternalSSD/tmp/rev/desktop')
 PROOF = OUT / 'polish'
 SCREENS = ('hero-scroll-0','hero-scroll-50','hero-scroll-100','context-menu','sidebar-edge-reveal','detail-scrolled','home', 'detail', 'detail-from-library', 'continue-hover', 'continue-menu', 'library-popup', 'sidebar-expanded', 'sidebar-collapsed', 'streaming', 'search-typing',
-           'library', 'lists', 'filmography', 'filmography-scrolled', 'settings', 'guide',
+           'library', 'lists', 'filmography', 'filmography-grid', 'filmography-scrolled', 'filmography-activated', 'settings', 'guide',
            'sports', 'achievements', 'player-overlay')
 images = []
 for directory,prefix in (('sidebar-frames','sidebar'),('native-sidebar-frames','native-sidebar')):
@@ -27,6 +27,9 @@ for width, height in ((1280, 800), (1920, 1080)):
         assert struct.unpack('>II', data[16:24]) == (width, height), path
         assert len(data) > 10000, path
         images.append(str(path))
+narrow=PROOF/'search-narrow-900x800.png'
+assert struct.unpack('>II',narrow.read_bytes()[16:24])==(900,800)
+images.append(str(narrow))
 for appearance in ('Aqua', 'DarkAqua'):
     path = PROOF / f'native-{appearance}.png'
     assert path.read_bytes().startswith(b'\x89PNG\r\n\x1a\n')

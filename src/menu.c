@@ -1287,6 +1287,7 @@ static void desktopEscolher(int d, int b) {
 }
 #ifdef NV_DESKTOP_UI
 int menu_desktop_streaming(void) { return desktopStreaming; }
+int menu_desktop_foco(void) { return aberto ? linha : -1; }
 void menu_desktop_servico(int index) { desktopEscolher(MENU_ST0+index,0); }
 void menu_desktop_perfil(void) { desktopEscolher(MENU_RODAPE,0); }
 #endif
@@ -1376,7 +1377,7 @@ static void desktopDesenhar(void) {
     GfxRect r = {24, y, w - 48, 51};
 #ifdef NV_DESKTOP_UI
     if (d==MENU_INICIO || d==MENU_LISTAS || d==MENU_STREAMING) {
-      const char *group=d==MENU_INICIO?"Browse":d==MENU_LISTAS?"You":"Services";
+      const char *group=i18n(d==MENU_INICIO?"Navegar":d==MENU_LISTAS?"Você":"Serviços");
       TxtLinha label=txt_linha(TXT_MINI,group,145,147,152,255);
       txt_desenhar_alpha(label,r.x+6,r.y-28,reveal);
     }
@@ -1401,7 +1402,7 @@ static void desktopDesenhar(void) {
       }
     }
     if (!collapsed) {
-      TxtLinha l = txt_linha_corta(TXT_DET_META2, i18n(rot), c, c, c, 255, w - 104);
+      TxtLinha l = txt_linha_corta(TXT_HERO_META, i18n(rot), c, c, c, 255, w - 104);
       txt_desenhar_alpha(l, 90, y + (r.h - l.h) * .5f,reveal);
       if (d==MENU_RODAPE) {
         TxtLinha chevron=txt_linha(TXT_DET_META2,"›",c,c,c,255);

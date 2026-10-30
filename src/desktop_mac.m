@@ -1,6 +1,8 @@
 #if defined(NV_DESKTOP_UI) && defined(__APPLE__)
 #import <Cocoa/Cocoa.h>
 #import <OpenGL/OpenGL.h>
+#import <OpenGL/glext.h>
+int ajustes_idioma(void);
 #import <QuartzCore/QuartzCore.h>
 #include <SDL2/SDL_syswm.h>
 #include "desktop_native.h"
@@ -15,6 +17,10 @@ static NSWindow *nativeWindow;
 static NSView *sidebar, *sidebarControls;
 static NSView *sidebarBackdrop;
 static NSBitmapImageRep *sidebarPixels;
+static GLuint sidebarPbo, sidebarFence, sidebarFbo, sidebarTexture;
+static int sidebarPending;
+static Uint32 sidebarCopied;
+static int sidebarLanguage = -1;
 static NSMutableArray<NSTextField *> *groupLabels;
 static NSTextField *profileChevron;
 static float sidebarFraction, sidebarReveal;
@@ -53,7 +59,7 @@ static NSView *serviceContent;
 - (void)activate:(id)sender {
   if(self.tag == MENU_STREAMING) { menu_ir(MENU_STREAMING);menu_desktop_expandir(); return; }
   if(self.tag >= MENU_N) {
-    const int *folders; int n=home_streaming_barra(&folders), k=(int)self.tag-MENU_N;
+    const int *folders; int n=home_streaming_barra(&folders), k=(int)self.tag-MENU_N-1;
     if(k<n) menu_desktop_servico(k);
     return;
   }
@@ -72,10 +78,11 @@ static void sidebarRows(void) {
     NVSidebarButton *button=[NVSidebarButton new]; button.tag=destinations[i];
     button.title=[NSString stringWithUTF8String:i18n(menu_rotulo(destinations[i]))];
     button.image=[NSImage imageWithSystemSymbolName:symbols[i] accessibilityDescription:button.title];
+    button.image.template=YES;
     button.image.size=NSMakeSize(18,18);
     button.imagePosition=NSImageLeft; button.imageHugsTitle=NO; button.alignment=NSTextAlignmentLeft;
     button.font=[NSFont systemFontOfSize:15 weight:NSFontWeightRegular];
-    button.bordered=NO; button.bezelStyle=NSBezelStyleInline; button.contentTintColor=NSColor.controlAccentColor;
+    button.bordered=NO; button.bezelStyle=NSBezelStyleInline; button.contentTintColor=NSColor.systemBlueColor;
     button.cell.lineBreakMode=NSLineBreakByTruncatingTail;
     button.cell.usesSingleLineMode=YES;
     button.attributedTitle=[[NSAttributedString alloc] initWithString:button.title attributes:@{NSForegroundColorAttributeName:NSColor.labelColor,NSFontAttributeName:button.font}];
@@ -88,7 +95,7 @@ static void sidebarRows(void) {
   profile.wantsLayer=YES;profile.layer.cornerRadius=6;
   [sidebarControls addSubview:profile];
   groupLabels=[NSMutableArray new];
-  for (NSString *title in @[@"Browse", @"You", @"Services"]) {
+  for (NSString *title in @[@"", @"", @""]) {
     NSTextField *label=[NSTextField labelWithString:title];
     label.font=[NSFont systemFontOfSize:11 weight:NSFontWeightMedium];
     label.textColor=NSColor.secondaryLabelColor;
@@ -186,26 +193,60 @@ void desktop_native_sidebar(float fraction, float reveal) {
   if (getenv("NV_CAPTURA_GL")) fraction=0;
   sidebarFraction=fraction; sidebarReveal=reveal;
   if (!sidebar || fraction<=0) return;
-  // Preserve the live rendered scene beneath glass before GL clears its hole.
-  // Every frame is copied, including hero transitions and scrolling.
+  // Sample at most 10 Hz; a fence keeps mapping off the render critical path.
+  // Flip on the GPU into a small FBO, then publish only a completed PBO.
   GLint viewport[4]; glGetIntegerv(GL_VIEWPORT,viewport);
   int width=MAX(1,(int)(viewport[2]*fraction)), height=viewport[3];
   if (sidebarPixels.pixelsWide!=width || sidebarPixels.pixelsHigh!=height) {
+    if(sidebarPbo) glDeleteBuffers(1,&sidebarPbo);
+    if(sidebarFence) glDeleteFencesAPPLE(1,&sidebarFence);
+    if(sidebarFbo) glDeleteFramebuffersEXT(1,&sidebarFbo);
+    if(sidebarTexture) glDeleteTextures(1,&sidebarTexture);
+    sidebarPbo=sidebarFence=sidebarFbo=sidebarTexture=0;sidebarPending=0;sidebarCopied=0;
     [sidebarPixels release];
     sidebarPixels=[[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:width pixelsHigh:height bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:width*4 bitsPerPixel:32];
   }
-  glReadPixels(0,0,width,height,GL_RGBA,GL_UNSIGNED_BYTE,sidebarPixels.bitmapData);
-  // GL rows start at the bottom. Normalize once before publishing the image;
-  // never animate a layer transform through an inverted intermediate frame.
-  unsigned char *pixels=sidebarPixels.bitmapData;
-  size_t stride=(size_t)width*4;
-  for (int y=0;y<height/2;y++) {
-    unsigned char *top=pixels+y*stride,*bottom=pixels+(height-1-y)*stride;
-    for (size_t x=0;x<stride;x++) { unsigned char v=top[x];top[x]=bottom[x];bottom[x]=v; }
+  GLint pack;glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING,&pack);
+  if(sidebarPending) {
+    if(!glTestFenceAPPLE(sidebarFence)) return;
+    glBindBuffer(GL_PIXEL_PACK_BUFFER,sidebarPbo);
+    const void *pixels=glMapBuffer(GL_PIXEL_PACK_BUFFER,GL_READ_ONLY);
+    if(pixels) {
+      memcpy(sidebarPixels.bitmapData,pixels,(size_t)width*height*4);
+      glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+      [CATransaction begin];[CATransaction setDisableActions:YES];
+      sidebarBackdrop.layer.contents=(id)sidebarPixels.CGImage;
+      [CATransaction commit];
+    }
+    glBindBuffer(GL_PIXEL_PACK_BUFFER,pack);sidebarPending=0;
   }
-  [CATransaction begin]; [CATransaction setDisableActions:YES];
-  sidebarBackdrop.layer.contents=(id)sidebarPixels.CGImage;
-  [CATransaction commit];
+  Uint32 now=SDL_GetTicks();
+  if(sidebarCopied && now-sidebarCopied<100) return;
+  GLint readFbo,drawFbo,texture;
+  glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING_EXT,&readFbo);
+  glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING_EXT,&drawFbo);
+  glGetIntegerv(GL_TEXTURE_BINDING_2D,&texture);
+  if(!sidebarPbo) {
+    glGenBuffers(1,&sidebarPbo);glBindBuffer(GL_PIXEL_PACK_BUFFER,sidebarPbo);
+    glBufferData(GL_PIXEL_PACK_BUFFER,(size_t)width*height*4,NULL,GL_STREAM_READ);
+    glGenFencesAPPLE(1,&sidebarFence);
+    glGenTextures(1,&sidebarTexture);glBindTexture(GL_TEXTURE_2D,sidebarTexture);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,width,height,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
+    glGenFramebuffersEXT(1,&sidebarFbo);glBindFramebufferEXT(GL_DRAW_FRAMEBUFFER_EXT,sidebarFbo);
+    glFramebufferTexture2DEXT(GL_DRAW_FRAMEBUFFER_EXT,GL_COLOR_ATTACHMENT0_EXT,GL_TEXTURE_2D,sidebarTexture,0);
+    glBindTexture(GL_TEXTURE_2D,texture);
+  }
+  GLboolean scissor=glIsEnabled(GL_SCISSOR_TEST);glDisable(GL_SCISSOR_TEST);
+  glBindFramebufferEXT(GL_DRAW_FRAMEBUFFER_EXT,sidebarFbo);
+  glBlitFramebufferEXT(0,0,width,height,0,height,width,0,GL_COLOR_BUFFER_BIT,GL_NEAREST);
+  glBindFramebufferEXT(GL_READ_FRAMEBUFFER_EXT,sidebarFbo);
+  glBindBuffer(GL_PIXEL_PACK_BUFFER,sidebarPbo);
+  glReadPixels(0,0,width,height,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
+  glSetFenceAPPLE(sidebarFence);sidebarPending=1;sidebarCopied=now;
+  glBindBuffer(GL_PIXEL_PACK_BUFFER,pack);
+  glBindFramebufferEXT(GL_READ_FRAMEBUFFER_EXT,readFbo);
+  glBindFramebufferEXT(GL_DRAW_FRAMEBUFFER_EXT,drawFbo);
+  if(scissor)glEnable(GL_SCISSOR_TEST);
 }
 void desktop_native_finish(void) {
   float fraction=sidebarFraction;
@@ -226,6 +267,16 @@ void desktop_native_finish(void) {
   sidebarBackdrop.frame=frame;
   sidebarBackdrop.layer.contentsRect=CGRectMake(8/(bounds.size.width*fraction),titleInset/bounds.size.height,frame.size.width/(bounds.size.width*fraction),frame.size.height/bounds.size.height);
   sidebarRows();
+  if(sidebarLanguage!=ajustes_idioma()) {
+    sidebarLanguage=ajustes_idioma();
+    for(NSButton *row in rows) {
+      row.title=[NSString stringWithUTF8String:i18n(menu_rotulo((int)row.tag))];
+      row.attributedTitle=[[NSAttributedString alloc] initWithString:row.title attributes:@{NSForegroundColorAttributeName:NSColor.labelColor,NSFontAttributeName:row.font}];
+      row.image.accessibilityDescription=row.title;
+    }
+    const char *keys[]={"Navegar","Você","Serviços"};
+    for(NSUInteger i=0;i<groupLabels.count;i++)groupLabels[i].stringValue=[NSString stringWithUTF8String:i18n(keys[i])];
+  }
   CGFloat w=frame.size.width,h=frame.size.height; BOOL collapsed=w<120;
   BOOL sportsEnabled=NO;for(int i=0;i<esportes_modalidades_n();i++)sportsEnabled|=esportes_habilitado(i);
   for(NSButton *row in rows) {
@@ -237,11 +288,16 @@ void desktop_native_finish(void) {
     if(!NSEqualRects(row.frame,rowFrame)) row.frame=rowFrame;
     if(row.imagePosition!=(collapsed?NSImageOnly:NSImageLeft)) row.imagePosition=collapsed?NSImageOnly:NSImageLeft;
     BOOL hovered=NSPointInRect([row convertPoint:nativeWindow.mouseLocationOutsideOfEventStream fromView:nil],row.bounds);
-    row.layer.backgroundColor=(row.tag==menu_destino()?[NSColor.controlAccentColor colorWithAlphaComponent:.18]:hovered?[NSColor.labelColor colorWithAlphaComponent:.08]:NSColor.clearColor).CGColor;
+    BOOL focused=row.tag==menu_desktop_foco();
+    row.layer.borderWidth=focused?2:0;
+    row.layer.borderColor=[NSColor.systemBlueColor colorWithAlphaComponent:.55].CGColor;
+    row.layer.backgroundColor=(row.tag==menu_destino()?[NSColor.systemBlueColor colorWithAlphaComponent:.18]:focused||hovered?[NSColor.labelColor colorWithAlphaComponent:.08]:NSColor.clearColor).CGColor;
   }
   const CGFloat groupTop[]={55,188,356};
   for (NSUInteger i=0;i<groupLabels.count;i++)
     groupLabels[i].frame=NSMakeRect(16,h-groupTop[i]-14,w-32,14);
+  profile.layer.borderWidth=menu_desktop_foco()==MENU_N?2:0;
+  profile.layer.borderColor=[NSColor.systemBlueColor colorWithAlphaComponent:.55].CGColor;
   profileChevron.frame=NSMakeRect(w-27,23,14,20);
   const ContaPerfil *active=perfis_item_ativo();
   NSString *profileTitle=active?[NSString stringWithUTF8String:active->nome]:[NSString stringWithUTF8String:i18n("Sua conta")];
@@ -274,8 +330,8 @@ void desktop_native_finish(void) {
   const int *folders;int count=menu_desktop_streaming()?home_streaming_barra(&folders):0;
   while(services.count<(NSUInteger)count){
     NVSidebarButton *button=[NVSidebarButton new];button.bordered=NO;button.alignment=NSTextAlignmentLeft;
-    button.font=[NSFont systemFontOfSize:13];button.target=button;button.action=@selector(activate:);
-    button.tag=MENU_N+services.count;button.wantsLayer=YES;button.layer.cornerRadius=5;[serviceContent addSubview:button];[services addObject:button];
+    button.font=[NSFont systemFontOfSize:15];button.target=button;button.action=@selector(activate:);
+    button.tag=MENU_N+1+services.count;button.wantsLayer=YES;button.layer.cornerRadius=5;[serviceContent addSubview:button];[services addObject:button];
   }
   CGFloat serviceTop=h-12-9*35-84+(sportsEnabled?0:35);
   CGFloat serviceHeight=MIN(count*29,MAX(0,serviceTop-130));
@@ -285,6 +341,8 @@ void desktop_native_finish(void) {
     int k=(int)[services indexOfObjectIdenticalTo:button];button.hidden=k>=count||collapsed;
     if(k<count){const ColFolder *folder=col_folder(folders[k]);button.title=folder?[NSString stringWithUTF8String:folder->title]:@"";}
     button.frame=NSMakeRect(4,count*29-(k+1)*29,w-48,28);
+    button.layer.borderWidth=menu_desktop_foco()==MENU_N+1+k?2:0;
+    button.layer.borderColor=[NSColor.systemBlueColor colorWithAlphaComponent:.55].CGColor;
   }
   for(NSButton *row in rows) if(row.tag==MENU_FONTES){NSRect r=row.frame;r.origin.y-=serviceHeight;row.frame=r;}
   [CATransaction commit];

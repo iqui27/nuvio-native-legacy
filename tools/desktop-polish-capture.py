@@ -36,8 +36,12 @@ def native_photo(appearance):
     windows = re.findall(r'\[desktop-native\] window=(\d+)', LOG.read_text(errors='replace'))
     if not windows:
         raise RuntimeError('Native window ID missing')
-    subprocess.run(['screencapture', '-l', windows[-1], '-o', '-x',
-                    str(PROOF / f'native-{appearance}.png')], check=True)
+    for attempt in range(3):
+        result=subprocess.run(['screencapture', '-l', windows[-1], '-o', '-x',
+                               str(PROOF / f'native-{appearance}.png')])
+        if result.returncode==0: return
+        time.sleep(1)
+    result.check_returncode()
 
 
 def command(value, delay=.7):
@@ -45,7 +49,7 @@ def command(value, delay=.7):
     staging=IPC / 'nuvio-key-polish'
     staging.write_text(value.replace("edge-leave:","mover:") + '\n')
     staging.replace(pending)
-    deadline=time.monotonic()+10
+    deadline=time.monotonic()+90
     while pending.exists() and pending.stat().st_size and time.monotonic()<deadline:
         time.sleep(.02)
     if pending.exists() and pending.stat().st_size: raise RuntimeError('Command not consumed: '+value)
@@ -57,7 +61,7 @@ def photo(name, width, height):
     source = IPC / 'nuvio-shot.bmp'
     source.unlink(missing_ok=True)
     (IPC / 'nuvio-shot-req').write_text('1\n')
-    deadline = time.monotonic() + 30
+    deadline = time.monotonic() + 90
     retry = time.monotonic() + 8
     while time.monotonic() < deadline:
         if source.exists():
@@ -101,6 +105,13 @@ with tempfile.TemporaryDirectory(prefix='nuvio-catalog-') as work:
     'linha desktop_more_3\t0\t3\t1\t0\tMore to explore\n'
     'linha collection_streaming\t0\t4\t1\t0\tStreaming\n'
     'linha collection_directors\t0\t5\t1\t0\tDirectors\n')
+(DATA / 'desktop-person.json').write_text(json.dumps({
+    'name':'Christopher Nolan','known_for_department':'Directing',
+    'biography':'Offline person fixture for desktop Timeline and Filmography interaction proof.',
+    'combined_credits':{'crew':[{'id':10000+i,'title':f'Film {i+1:02}',
+        'media_type':'movie','job':'Director','release_date':f'{1980+i//3}-01-01',
+        'vote_count':500,'poster_path':str(OUT / f'scene-resources/art/poster/{i%8:02}.jpg')}
+        for i in range(90)]}}))
 (DATA / 'desktop-sidebar.txt').write_text('0\n')
 (DATA / 'perfis.txt').write_text('1\t0\t1\t0\t#777B83\tDesktop Viewer\t\t\t0\n')
 if '--native-only' not in sys.argv:
@@ -114,7 +125,61 @@ if '--native-only' not in sys.argv:
                 time.sleep(.2)
             time.sleep(1)
             for width, height in ((1280, 800), (1920, 1080)):
+                if '--size' in sys.argv and sys.argv[sys.argv.index('--size')+1]!=str(width):
+                    continue
                 command(f'janela:{width},{height}')
+                if '--filmography-only' in sys.argv:
+                    command('preview:library')
+                    command('abrir:tt12637874',2)
+                    command('preview:filmography',2)
+                    photo('filmography',width,height)
+                    command('mover:410,263',.5)
+                    command('clicar:410,263',1)
+                    photo('filmography-grid',width,height)
+                    command(f'wheel:{width//2},{height*3//4},0,-1400',1)
+                    command(f'mover:{int(width*.55)},{int(height*.60)}')
+                    photo('filmography-scrolled',width,height)
+                    command(f'mover:{int(width*.55)},{int(height*.50)}',.5)
+                    command(f'clicar:{int(width*.55)},{int(height*.50)}',1)
+                    photo('filmography-activated',width,height)
+                    command('back')
+                    command('mover:327,88',.3)
+                    command('clicar:327,88',1)
+                    command('back')
+                    continue
+                if '--affected-only' in sys.argv:
+                    command('preview:home',2)
+                    command('preview:expand')
+                    photo('home',width,height)
+                    photo('sidebar-expanded',width,height)
+                    command('preview:streaming')
+                    photo('streaming',width,height)
+                    command('preview:streaming')
+                    for screen in ('search','library','sports'):
+                        command('preview:'+screen)
+                        if screen=='search': command('input:Fallout é')
+                        photo('search-typing' if screen=='search' else screen,width,height)
+                    command('preview:library')
+                    command('abrir:tt12637874',3)
+                    photo('detail',width,height)
+                    command(f'wheel:{width//2},{height*3//4},0,{-height*.65}',1)
+                    photo('detail-scrolled',width,height)
+                    command('preview:filmography',2)
+                    photo('filmography',width,height)
+                    command('mover:410,263',.5)
+                    command('clicar:410,263',1)
+                    photo('filmography-grid',width,height)
+                    command(f'wheel:{width//2},{height*3//4},0,-1400',1)
+                    command(f'mover:{int(width*.55)},{int(height*.60)}')
+                    photo('filmography-scrolled',width,height)
+                    command(f'mover:{int(width*.55)},{int(height*.50)}',.5)
+                    command(f'clicar:{int(width*.55)},{int(height*.50)}',1)
+                    photo('filmography-activated',width,height)
+                    command('back')
+                    command('mover:327,88',.3)
+                    command('clicar:327,88',1)
+                    command('back')
+                    continue
                 command('preview:home',2)
                 command('preview:expand')
                 photo('home', width, height)
@@ -161,13 +226,32 @@ if '--native-only' not in sys.argv:
                 photo('detail-from-library', width, height)
                 command('preview:filmography', 2.5)
                 photo('filmography', width, height)
-                command(f"wheel:{width//2},{height*3//4},0,-180",.5)
+                command('mover:410,263',.5)
+                command('clicar:410,263',1)
+                command(f'mover:{width//2},{height*3//4}',.3)
+                photo('filmography-grid',width,height)
+                command(f"wheel:{width//2},{height*3//4},0,-1400",1)
+                command(f'mover:{int(width*.55)},{int(height*.60)}')
                 photo('filmography-scrolled', width, height)
+                command(f'mover:{int(width*.55)},{int(height*.50)}',.5)
+                command(f'clicar:{int(width*.55)},{int(height*.50)}',1)
+                photo('filmography-activated',width,height)
+                command('back')
+                command('mover:327,88',.3)
+                command('clicar:327,88',1)
+                command('back')
                 command('preview:home')
                 for i in range(45):
                     command(f'wheel:{width//2},{height*3//4},0,-12', .009)
                 time.sleep(.5)
                 photo('scroll', width, height)
+            command('preview:home')
+            for i in range(45):
+                command('wheel:640,600,0,-12',.009)
+            command('preview:search')
+            command('janela:900,800')
+            command('input:café')
+            photo('search-narrow',900,800)
             command('preview:home')
             command('janela:1280,800')
             command('preview:collapse',1)
@@ -183,7 +267,7 @@ if '--native-only' not in sys.argv:
             command('preview:expand',1.2)
             command('abrir:tt12637874',2)
             clip = OUT / 'sintel-trailer.mp4'
-            if clip.exists():
+            if clip.exists() and '--affected-only' not in sys.argv and '--filmography-only' not in sys.argv:
                 command("janela:1280,800")
                 (IPC / 'nuvio-video').write_text(str(clip) + '\n')
                 time.sleep(5)
