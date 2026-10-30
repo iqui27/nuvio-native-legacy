@@ -16,6 +16,10 @@ python3 - <<'PY'
 from pathlib import Path
 source = Path('src/aiostreamsui.c').read_text()
 workspace = source.split('static void workspace(void) {', 1)[1].split('if(pagina==TITULO)', 1)[0]
-assert 'dashboard();' in workspace and 'if(lateral) { navigationCount=0; sidebar(); }' in workspace
-print('aiostreams dashboard: focused sidebar rendered above cards')
+dashboard = workspace.index('dashboard();')
+focused = workspace.index('if(lateral)', dashboard)
+scrim = workspace.index('gfx_cor((GfxRect){72,148,1776,858}', focused)
+assert 'T21_VEIL' in workspace[scrim:]
+assert dashboard < focused < scrim < workspace.index('navigationCount=0; sidebar();', scrim)
+print('aiostreams dashboard: scrim below opaque focused sidebar')
 PY
