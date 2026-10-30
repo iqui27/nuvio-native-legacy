@@ -214,6 +214,7 @@ ctr_run --rm --platform "$BUILD_PLATFORM" --env-file "$ENVF" \
     -I$SR/usr/include -I$SR/usr/include/SDL2 \
     $RUST_LIBS -lSDL2 -lSDL2_image -lSDL2_ttf -lGLESv2 -lEGL $P2P_LIBS -ldl -lpthread -lz -lm $ASS_LIBS $DTS_LIBS $DV7_LIBS \
     -Wl,--export-dynamic-symbol=pthread_create -Wl,--exclude-libs,ALL
+  bash tools/webos-abi-check.sh nuvio-proto.arm
   # #317: --exclude-libs,ALL tira da tabela dinamica tudo o que vem de arquivo
   # .a (FreeType/harfbuzz do libass, libstdc++ do P2P, FFmpeg). Sem ele o ld
   # exportava 178 FT_* (+ TT_RunIns/TT_New_Context) do nosso FreeType 2.13,
