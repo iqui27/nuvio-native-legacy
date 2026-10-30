@@ -4477,9 +4477,23 @@ static const char *idiomaDa(const Stream *s) {
 static int temAudioPreferido(const Stream *s) {
   const char *pref = idiomaFiltroAudio();
   // An explicit "All" (or an unresolved "Original") is not a guessed
-  // language. Otherwise require declared audio metadata, never subtitles,
-  // filenames or generic "dub/dual" labels whose language is unknown.
-  return !pref[0] || audioDeclaradoEm(s, pref);
+  // language. Declared audio wins; release-label hints (audioRotulos: flags
+  // and language codes outside subtitle sections) are the fallback only when
+  // the add-on declares no audio (upstream PR #611, via Matis94 277737242).
+  if (!pref[0]) return 1;
+  if (s->audioIdiomas[0]) return audioDeclaradoEm(s, pref);
+  for (const char *p = s->audioRotulos, *fim = p + strnlen(p, sizeof s->audioRotulos); p < fim; ) {
+    const char *f = memchr(p, ',', (size_t)(fim - p)), *ate = f ? f : fim;
+    char raw[sizeof s->audioRotulos], codigo[32];
+    while (p < ate && isspace((unsigned char)*p)) p++;
+    while (ate > p && isspace((unsigned char)ate[-1])) ate--;
+    memcpy(raw, p, (size_t)(ate - p)); raw[ate - p] = 0;
+    const char *cod = faixaIdiomaDoNome(raw);
+    if (!cod && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo)) cod = codigo;
+    if (cod && ling_casa(cod, pref)) return 1;
+    p = f ? f + 1 : fim;
+  }
+  return 0;
 }
 static const char *ajudaFiltroAudio(void) {
   static char ajuda[512];

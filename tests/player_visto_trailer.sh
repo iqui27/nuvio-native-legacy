@@ -5,8 +5,16 @@ dir=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-visto-trailer.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
 export NUVIO_DADOS="$dir/dados"
 mkdir -p "$NUVIO_DADOS"
-flags=(-O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2
-  -Wno-deprecated-declarations -Wno-macro-redefined)
+flags=(-O1 -g -Isrc -Wno-deprecated-declarations -Wno-macro-redefined)
+libs=(-lSDL2 -lSDL2_image -lSDL2_ttf -lz)
+if [ "$(uname -s)" = Darwin ]; then
+  flags+=(-I/opt/homebrew/include -I/opt/homebrew/include/SDL2)
+  libs+=(-L/opt/homebrew/lib -framework OpenGL)
+else
+  read -r -a sdl_flags <<< "$(pkg-config --cflags sdl2)"
+  flags+=("${sdl_flags[@]}")
+  libs+=(-lGL -lm -lpthread -ldl)
+fi
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 renomes=()
 for nome in tocar parar pausar buscar pausa_confirmada tocando pronto ativo falhou conflito_recurso pos duracao url_atual bufferando_ms iniciar_auto terminou creditos; do
@@ -36,5 +44,5 @@ for source in src/*.c src/dts/*.c; do
   sources+=("$source")
 done
 cc "${flags[@]}" -DNV_SHOT_HOOKS "${sources[@]}" "${1:-tests/player_visto_trailer.c}" "$dir/video.o" "$dir/trakt.o" "$dir/visto.o" "$dir/ajustes.o" "$dir/descoberta.o" "$dir/player.o" "$dir/rede.o" \
-  -o "$dir/test" -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
+  -o "$dir/test" "${libs[@]}"
 "$dir/test"
