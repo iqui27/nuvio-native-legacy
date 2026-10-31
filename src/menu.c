@@ -21,6 +21,7 @@
 #endif
 #ifdef NV_DESKTOP_UI
 #include "dados.h"
+#include "desktop_input_log.h"
 static int desktopCollapsed, desktopOverlay;
 static float desktopReveal=1, desktopRevealV;
 void menu_desktop_revelar(void) { desktopOverlay=1; }
@@ -34,6 +35,7 @@ void menu_desktop_hover(float x) {
 }
 static void desktopRecolher(int collapsed) {
   desktopCollapsed = collapsed; desktopOverlay=0;
+  desktop_input_note("event=sidebar collapsed=%d", collapsed);
   dados_gravar("desktop-sidebar.txt", desktopCollapsed ? "1\n" : "0\n");
 }
 void menu_desktop_alternar(void) { desktopRecolher(!desktopCollapsed); }

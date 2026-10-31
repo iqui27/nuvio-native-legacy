@@ -453,6 +453,28 @@ static int inEixoY;
 static Uint32 inUltMs;
 static PonteiroRolagemFn arrRolagem, inRolagem;
 static float inX, inY;
+#ifdef NV_DESKTOP_UI
+// SDL registers AppleMomentumScrollSupported=NO, so AppKit may never send
+// momentum. A trackpad release flings like NSScrollView; OS momentum, when it
+// does arrive, takes the gesture back (flingOwner) without a double push.
+#define PONT_FLING_MIN 0.15f   // logical px/ms at finger-up
+#define PONT_FLING_TAU 325.0f  // ms: AppKit's ~0.95 per 60 Hz frame
+static float inTau;
+static PonteiroRolagemFn flingOwner;
+static float flingD[8];
+static Uint32 flingT[8];
+static int flingN;
+// Velocity over the last 100 ms of finger movement; a pause before lift is 0.
+static float flingVelocidade(Uint32 agora) {
+  float sum = 0; Uint32 first = agora;
+  for (int i = 0; i < 8 && i < flingN; i++) {
+    int k = (flingN - 1 - i) & 7;
+    if (agora - flingT[k] > 100) break;
+    sum += flingD[k]; first = flingT[k];
+  }
+  return sum / (float)(agora - first + 8);
+}
+#endif
 static void (*entregarToque)(const SDL_Event *);
 static int porToque;   // 1 durante focar/ativar disparados por dedo
 
@@ -506,6 +528,10 @@ static void encerrarInercia(int fase) {
   PonteiroRolagemFn fn = inRolagem;
   inRolagem = NULL;
   inercia = 0; inVel = inAcum = 0.0f;
+#ifdef NV_DESKTOP_UI
+  if (inTau > 0) desktop_input_note("event=momentum source=synthetic state=%s", fase == PONT_ROL_FIM ? "rest" : "stopped");
+  inTau = 0;
+#endif
   rolagemEntregar(fn, fase, inEixoY, 0.0f, 0.0f, inX, inY);
 }
 static void pararInercia(void) { encerrarInercia(PONT_ROL_CANCELAR); }
@@ -748,7 +774,8 @@ static void inerciaQuadro(Uint32 agora) {
     PonteiroRolagemFn fn = inRolagem;
     float d = inVel * (float)dt;
 #ifdef NV_DESKTOP_UI
-    inVel *= expf(-(float)dt / 100.0f);
+    inVel *= expf(-(float)dt / (inTau > 0 ? inTau : 100.0f));
+    if (inTau > 0) nv_desktop_wheel_until = agora + 100;  // bounds settle after the fling
 #else
     inVel *= expf(-(float)dt / PONT_INERCIA_TAU);
 #endif
@@ -890,6 +917,10 @@ static int ponteiroEvento(const SDL_Event *e, void (*entregar)(const SDL_Event *
 
     case SDL_MOUSEWHEEL: {
       if (e->wheel.which == SDL_TOUCH_MOUSEID) return 1;
+#ifdef NV_DESKTOP_UI
+      // OS momentum over a synthetic fling hands over below instead of stopping it.
+      if (!(e->wheel.which == NV_DESKTOP_PIXEL_WHEEL && (e->wheel.x & NV_WHEEL_MOMENTUM) && inRolagem && inRolagem == flingOwner))
+#endif
       invalidarToque();
 #ifdef NV_DESKTOP_UI
       float dxp = e->wheel.preciseX, dyp = e->wheel.preciseY;
@@ -918,6 +949,7 @@ static int ponteiroEvento(const SDL_Event *e, void (*entregar)(const SDL_Event *
           int hit=ponteiro_achar(lista[pronto],nLista[pronto],px,py);
           scrollRow=hit<0?-1:lista[pronto][hit].a;
           scrollItem=hit<0?-1:lista[pronto][hit].b;scrollOffset=0;
+          flingN=0;flingOwner=NULL;
         }
         if(phase & NV_WHEEL_CANCEL) {
           if(owner) rolagemEntregar(owner,PONT_ROL_CANCELAR,vertical,0,0,originX,originY);
@@ -926,6 +958,11 @@ static int ponteiroEvento(const SDL_Event *e, void (*entregar)(const SDL_Event *
         // Cocoa may start with MayBegin/Changed (e.g. a monitor installed mid-contact).
         if(!active && !(phase & NV_WHEEL_MOMENTUM) && (dxp || dyp)) {
           active=1;route=0;distance=0;owner=NULL;originX=px;originY=py;
+        }
+        if((phase & NV_WHEEL_MOMENTUM) && !active && flingOwner && inRolagem==flingOwner) {
+          inercia=0;inRolagem=NULL;inVel=0;inTau=0;
+          owner=flingOwner;flingOwner=NULL;active=1;route=5;
+          desktop_input_note("event=momentum source=os state=handoff");
         }
         if(!active) return 1; // Orphan momentum cannot start navigation.
         nv_desktop_scroll_active=!(phase & (NV_WHEEL_END|NV_WHEEL_UNPHASED));
@@ -940,14 +977,22 @@ static int ponteiroEvento(const SDL_Event *e, void (*entregar)(const SDL_Event *
             else {
               owner=listaRolagem[pronto];
               if(owner && !rolagemEntregar(owner,PONT_ROL_INICIO,vertical,(vertical?dyp:dxp)*units,0,originX,originY)) owner=NULL;
-              route=owner?5:!vertical && dxp>0 && desktop_native_swipes()?4:6;
+              // Like Safari: Back, or forward with no forward history opens Saved.
+              route=owner?5:!vertical && desktop_native_swipes()?(dxp>0?4:2):6;
             }
+            if(route<5) desktop_input_note("event=swipe state=start route=%d dx=%.1f dy=%.1f",route,dxp,dyp);
           }
-          if(route==5 && owner) rolagemEntregar(owner,PONT_ROL_MOVER,vertical,(vertical?dyp:dxp)*units,0,originX,originY);
+          if(route==5 && owner) {
+            float d=(vertical?dyp:dxp)*units;
+            rolagemEntregar(owner,PONT_ROL_MOVER,vertical,d,0,originX,originY);
+            if(!(phase & NV_WHEEL_MOMENTUM)) { flingD[flingN&7]=d;flingT[flingN&7]=agora;flingN++; }
+          }
           else if(route<5) {
             distance+=dxp;
             if((route==2?-distance:distance)>48 || (phase & NV_WHEEL_SWIPE)) {
               int action=route;route=6; // Latch before callbacks change the layer.
+              static const char *const names[]={"","reveal-sidebar","open-panel","close-panel","back"};
+              desktop_input_note("event=swipe state=end action=%s",names[action]);
               if(action==1) menu_desktop_revelar();
               else if(action==2) spainel_abrir();
               else if(action==3) spainel_fechar();
@@ -961,6 +1006,14 @@ static int ponteiroEvento(const SDL_Event *e, void (*entregar)(const SDL_Event *
           if(phase & NV_WHEEL_MOMENTUM) {
             if(owner) rolagemEntregar(owner,PONT_ROL_FIM,vertical,0,0,originX,originY);
             owner=NULL;active=0;
+          } else if(owner && route==5) {
+            float v=flingVelocidade(agora);
+            if(fabsf(v)>=PONT_FLING_MIN) {
+              inercia=1;inRolagem=owner;inVel=v;inTau=PONT_FLING_TAU;inEixoY=vertical;
+              inUltMs=agora;inX=originX;inY=originY;
+              flingOwner=owner;owner=NULL;active=0;
+              desktop_input_note("event=momentum source=synthetic state=start velocity=%.3f",v);
+            }
           }
         }
         return 1;

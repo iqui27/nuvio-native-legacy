@@ -36,6 +36,12 @@ int desktop_native_fullscreen(void);
 void desktop_native_capture_fullscreen(int width, int height);
 int desktop_native_dark(void);
 int desktop_native_swipes(void);
+// NSAlert sheet on the window: buttons translated, [0] default (destructive),
+// last = Escape; `text` adds a field. 0 when shown; the answer arrives once via
+// desktop_native_alert_result (-1 while pending; else button index + field text).
+int desktop_native_alert(const char *title, const char *message, const char *const *buttons, int count,
+                         int destructive, const char *text, int secure);
+int desktop_native_alert_result(char *text, int size);
 #else
 #if !defined(NV_DESKTOP_UI) || !defined(_WIN32)
 static inline void desktop_native_init(SDL_Window *window) { (void)window; }
