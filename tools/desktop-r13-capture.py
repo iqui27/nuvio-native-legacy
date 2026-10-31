@@ -91,7 +91,7 @@ environment = dict(NUVIO_DADOS=str(DATA), NUVIO_UI_PREVIEW='1', NV_CAPTURA='1',
 launch = ['open', '-n', '-g', '-j']
 # Playback at 1440x900 (window points): 'Normalize volume' row and its switch.
 ROW = (700, 341)
-SWITCH = (1135, 341)
+SWITCH = (1097, 341)
 def crop_mean(png, x, y, w, h):
     out = subprocess.check_output(['magick', str(png), '-crop', f'{w}x{h}+{x}+{y}', '+repage',
                                    '-colorspace', 'gray', '-format', '%[fx:mean]', 'info:'], text=True)
@@ -141,11 +141,11 @@ try:
         command('clicar:%d,%d' % SWITCH,1.2)
         click = photo('settings-click-1440x900',1440,900)
         shots += [rest, hover, click]
-        # Hover: the row under the cursor takes the highlight (bold name, description opens).
-        a = crop_mean(rest['file'], 560, 330, 300, 40); b = crop_mean(hover['file'], 560, 330, 300, 40)
+        # Hover: the row under the cursor takes the highlight (lifted name; the inspector follows).
+        a = crop_mean(rest['file'], 583, 330, 120, 22); b = crop_mean(hover['file'], 583, 330, 120, 22)
         assert abs(b - a) > .005, ('hover did not highlight the row', a, b)
         # Click: one click on the row's switch flips it (knob/track pixels change).
-        c = crop_mean(hover['file'], 1120, 333, 32, 16); d = crop_mean(click['file'], 1120, 333, 32, 16)
+        c = crop_mean(hover['file'], 1082, 333, 32, 16); d = crop_mean(click['file'], 1082, 333, 32, 16)
         assert abs(d - c) > .05, ('click did not toggle', c, d)
         print('PASS: hover lifts row %.3f->%.3f; click toggles switch %.3f->%.3f' % (a, b, c, d), flush=True)
         assert front() != pid

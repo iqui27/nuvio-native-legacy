@@ -2028,11 +2028,6 @@ int main(int argc, char **argv) {
       if (desktop_event(&e, win, texto_sistema_aberto() || teclado_aberto() || !strcmp(app_tela_nome(), "busca"))) continue;
 #endif
 #ifdef NV_DESKTOP_UI
-      // Cmd+, opens Settings, like every Mac app; already there = no-op.
-      if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_COMMA && (e.key.keysym.mod & KMOD_GUI)) {
-        if (!e.key.repeat && menu_destino() != MENU_AJUSTES) { menu_ir(MENU_AJUSTES); menu_fechar(); }
-        continue;
-      }
       // Returning the pointer to content also returns keyboard ownership.
       if (layout_desktop_ativo() && !menu_sobre() &&
           (e.type == SDL_MOUSEMOTION || e.type == SDL_MOUSEBUTTONDOWN)) {

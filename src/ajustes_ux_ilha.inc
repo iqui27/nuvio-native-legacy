@@ -215,7 +215,8 @@ static void ajDesenharInspetor(void) {
     if (ef && ef[0]) {
       const char *t = i18n(ef);
       TxtLinha lp = ajTxt(TXT_V3_INSP_B, "O que muda:");
-      float hh = txt_bloco(TXT_V3_INSP, t, 0, 0, 0, x, -4000, w, 37.0f, 0, 4) + 37.0f;
+      int resto = layout_desktop_ativo() ? 6 : 3;   // desktop: the whole sentence, the inspector is tall
+      float hh = txt_bloco(TXT_V3_INSP, t, 0, 0, 0, x, -4000, w, 37.0f, 0, resto + 1) + 37.0f;
       if (y + 4.0f + hh <= fim - reserva) {
         // A primeira linha continua depois do rotulo em negrito: as palavras
         // que cabem nela; o resto quebra normalmente embaixo.
@@ -249,8 +250,8 @@ static void ajDesenharInspetor(void) {
         while (t[ult] == ' ') ult++;
         if (t[ult]) {
           if (rtl) y += txt_bloco_dir(TXT_V3_INSP, t + ult, 243, 242, 239,
-                                     x + w, y, w, 37.0f, 0.70f, 3);
-          else y += ajBloco(TXT_V3_INSP, t + ult, x, y, w, 37.0f, 0.70f, 3);
+                                     x + w, y, w, 37.0f, 0.70f, resto);
+          else y += ajBloco(TXT_V3_INSP, t + ult, x, y, w, 37.0f, 0.70f, resto);
         }
       }
     }
