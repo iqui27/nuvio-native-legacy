@@ -4,25 +4,30 @@
 #include "video_acb_lg.c"
 #undef main
 int main(void) {
-  char text[192];
+  char text[96]; // The exact player OSD capacity, including selection and HTTP suffix.
   test_buffer_preset = 3;
   movie_active = 1;
   movie_snapshot = (DtsBufferInfo){.ready_bytes=84*1048576LL+524288,
-                                  .capacity_bytes=128*1048576LL};
+                                  .capacity_bytes=128*1048576LL,.http_workers=1};
   video_buffer_test_text(text, sizeof text);
-  assert(!strcmp(text, "Buffer: 84.5 / 128 MiB total (256 MiB selected)"));
+  assert(!strcmp(text, "Buffer: 84.5 / 128 MiB total (256 MiB selected) · HTTP: 1 (Native)"));
   for (int cap = 64; cap <= 256; cap *= 2) {
     movie_snapshot.capacity_bytes = (int64_t)cap * 1048576;
     movie_snapshot.ready_bytes = movie_snapshot.capacity_bytes;
     video_buffer_test_text(text, sizeof text);
     char expected[192];
-    snprintf(expected, sizeof expected, "Buffer: %.1f / %d MiB total%s", (double)cap, cap,
+    snprintf(expected, sizeof expected, "Buffer: %.1f / %d MiB total%s · HTTP: 1 (Native)", (double)cap, cap,
              cap == 256 ? "" : " (256 MiB selected)");
     assert(!strcmp(text, expected));
   }
+  for(int workers=1;workers<=4;workers++) {
+    movie_snapshot.http_workers=workers;video_buffer_test_text(text,sizeof text);
+    char suffix[40];snprintf(suffix,sizeof suffix,"HTTP: %d (Native)",workers);
+    assert(strstr(text,suffix)); // Snapshot wins over the current getter (1).
+  }
   movie_snapshot = (DtsBufferInfo){0};
   video_buffer_test_text(text, sizeof text);assert(!strcmp(text, "Buffer: system"));
-  movie_snapshot = (DtsBufferInfo){.ready_bytes=20*1048576LL,.capacity_bytes=64*1048576LL};
+  movie_snapshot = (DtsBufferInfo){.ready_bytes=20*1048576LL,.capacity_bytes=64*1048576LL,.http_workers=1};
   movie_active = -1;
   video_buffer_test_text(text, sizeof text);assert(!strcmp(text, "Buffer: system"));
   movie_active = 0;
@@ -30,9 +35,14 @@ int main(void) {
   movie_active = 1;dtsSessao = (DtsPlayback *)(uintptr_t)1;
   pump_status=(DtsPlaybackStatus){.prepared=1,
     .buffer={.ready_bytes=12*1048576LL,.capacity_bytes=132*1048576LL,
-             .total=100*1048576LL,.contiguous_bytes=6*1048576LL},.buffered_until=14};
+             .total=100*1048576LL,.contiguous_bytes=6*1048576LL,.http_workers=1},.buffered_until=14};
   video_buffer_test_text(text, sizeof text);
-  assert(!strcmp(text, "Buffer: 12.0 / 132 MiB total (256 MiB selected)"));
+  assert(!strcmp(text, "Buffer: 12.0 / 132 MiB total (256 MiB selected) · HTTP: 1 (DTS/DV)"));
+  for(int workers=1;workers<=4;workers++) {
+    pump_status.buffer.http_workers=workers;video_buffer_test_text(text,sizeof text);
+    char suffix[40];snprintf(suffix,sizeof suffix,"HTTP: %d (DTS/DV)",workers);
+    assert(strstr(text,suffix)); // Snapshot wins over the current getter (4).
+  }
   posSeg=10;durSeg=100;bufferSeg=0;
   assert(fabs(video_buffer_fim()-16)<.001); // Stop at a gap, not all 12 MiB ready.
   pump_status.buffered_until=25;
@@ -44,11 +54,11 @@ int main(void) {
   assert(video_buffer_fim()==0);
   pump_status=(DtsPlaybackStatus){0};
   dtsSessao = NULL;test_buffer_preset = 1;
-  video_buffer_test_text(text, sizeof text);assert(!strcmp(text, "Buffer: 20.0 / 64 MiB total"));
+  video_buffer_test_text(text, sizeof text);assert(!strcmp(text, "Buffer: 20.0 / 64 MiB total · HTTP: 1 (Native)"));
   movie_snapshot.ready_bytes = -100;
-  video_buffer_test_text(text, sizeof text);assert(!strcmp(text, "Buffer: 0.0 / 64 MiB total"));
+  video_buffer_test_text(text, sizeof text);assert(!strcmp(text, "Buffer: 0.0 / 64 MiB total · HTTP: 1 (Native)"));
   movie_snapshot.ready_bytes = 100*1048576LL;
-  video_buffer_test_text(text, sizeof text);assert(!strcmp(text, "Buffer: 64.0 / 64 MiB total"));
+  video_buffer_test_text(text, sizeof text);assert(!strcmp(text, "Buffer: 64.0 / 64 MiB total · HTTP: 1 (Native)"));
   movie_active = 0;
   char tiny[2] = {1,1};video_buffer_test_text(tiny, sizeof tiny);assert(tiny[1] == 0);
   video_buffer_test_text(NULL, 0);

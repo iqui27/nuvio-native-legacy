@@ -29,6 +29,7 @@ int main(int argc,char **argv) {
   puts("STEADY");fflush(stdout);assert(getchar()=='\n');
   bytes(e,source,96*1048576,1048576);bytes(e,source,123,65536);
   DtsBufferInfo info;dts_engine_buffer_info(e,&info);
+  assert(info.http_workers==workers); // Published session snapshot survives settings changes.
   assert(info.capacity_bytes<=64*1048576LL && info.ready_bytes>=0);
   uint64_t before=clock_ns(CLOCK_MONOTONIC);dts_engine_cancel(e);dts_engine_destroy(e);
   assert(clock_ns(CLOCK_MONOTONIC)-before<3000000000ULL);

@@ -38,6 +38,7 @@ void dts_engine_set_ahead_mib(int mib);
 typedef struct {
   int64_t ready_bytes, capacity_bytes, position, total;
   int64_t contiguous_bytes; /* Ready bytes up to the first missing range. */
+  int http_workers; /* Pinned session download limit, not live TCP connections. */
 } DtsBufferInfo;
 void dts_engine_buffer_info(DtsEngine *, DtsBufferInfo *);
 DtsEngine *dts_engine_source_create(const char *url, const char *headers, int mib);

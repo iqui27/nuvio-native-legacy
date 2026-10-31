@@ -976,10 +976,12 @@ void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *b) {
   if(!e)return;
   pthread_mutex_lock(&e->range_lock);
   if(e->source_stream) {
+    b->http_workers=e->http_workers;
     b->position=e->pos;b->total=e->total;b->capacity_bytes=e->fx_buf?e->fx_cap:0;
     if(e->fx_req<0 && e->pos>=e->fx_lo && e->pos<=e->fx_hi)b->ready_bytes=e->fx_hi-e->pos;
     b->contiguous_bytes=b->ready_bytes;
   } else if(!e->remux && e->range_threads && !cancelled(e)) {
+    b->http_workers=e->http_workers;
     // Called only by the conversion worker: it owns pos/cache. Completed
     // speculative ranges belong to the network workers and need range_lock.
     b->position=e->source_range?e->source_position:e->pos; b->total=e->total;

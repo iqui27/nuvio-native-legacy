@@ -3767,6 +3767,10 @@ void video_buffer_test_text(char *out, size_t n) {
     if (b.ready_bytes > b.capacity_bytes) b.ready_bytes = b.capacity_bytes;
     cacheboost_buffer_texto(out, n, b.ready_bytes, b.capacity_bytes, ajustes_buffer_preset());
   } else cacheboost_buffer_texto(out, n, 0, 0, ajustes_buffer_preset());
+  if(out && n && b.http_workers>=1 && b.http_workers<=4) {
+    size_t used=strlen(out);
+    snprintf(out+used,n-used," · HTTP: %d (%s)",b.http_workers,dtsSessao?"DTS/DV":"Native");
+  }
 }
 #endif
 // webOS: so o buffer em SEGUNDOS e real (bufferRange do uMS); bytes, conexoes

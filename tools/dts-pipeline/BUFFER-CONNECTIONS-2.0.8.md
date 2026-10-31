@@ -36,6 +36,14 @@ Both preferences are device-local, independent, and apply to the next playback
 session. They do not propagate through account sync or device backup. Invalid
 values recover the defaults. Each engine pins its connection limit, so changing
 a setting cannot alter an in-progress playback or another reader.
+When Buffer data is enabled, its existing OSD line adds a short session label,
+for example `HTTP: 1 (Native)` or `HTTP: 4 (DTS/DV)`. It reports the pinned
+download limit from the active engine's telemetry, not a live socket count or
+a setting changed for a future video. Unsupported/inactive fallbacks do not
+invent a connection count.
+The OSD uses soft off-white and wraps in its right-hand column if a larger
+interface/font cannot fit the complete size, selected-size and HTTP label on
+one line. It does not truncate those details or cross the title's left column.
 
 The ordinary default keeps the existing single sequential HTTP ring reader.
 Parallel native modes use the existing bounded range queue and one local player

@@ -37,7 +37,7 @@ static atomic_llong buffer_contiguous = 20*1048576LL;
 void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *out) {
  (void)e;
  *out=(DtsBufferInfo){.ready_bytes=atomic_load(&buffer_ready),.capacity_bytes=68*1048576LL,
-                     .position=1048576,.total=300*1048576LL,.contiguous_bytes=atomic_load(&buffer_contiguous)};
+                     .position=1048576,.total=300*1048576LL,.contiguous_bytes=atomic_load(&buffer_contiguous),.http_workers=4};
 }
 static atomic_llong stall_wall_ns;
 static int64_t frozen_clock, original_stall_clock;
@@ -325,6 +325,15 @@ static DtsPlaybackStatus wait_status(DtsPlayback *p,int fail,int eof) {
  for(i=0;i<1500;i++) { dts_playback_status(p,&s);if((fail?s.failed:s.prepared) && (!eof || s.eof))return s;nap(); }
  fprintf(stderr,"status prepared=%d failed=%d eof=%d error=%s\n",s.prepared,s.failed,s.eof,s.error);assert(0);return s;
 }
+static DtsPlaybackStatus wait_audio_status(DtsPlayback *p,int stream) {
+ DtsPlaybackStatus s={0};
+ for(int i=0;i<1500;i++) {
+  dts_playback_status(p,&s);
+  if(s.prepared && s.info.audio_stream==stream)return s;
+  assert(!s.failed);nap();
+ }
+ assert(!"audio metadata revision was not published");return s;
+}
 static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ordinal,int total) {
  dts_playback_next_p7(!getenv("DV7_OFF"));
  DtsPlayback *p=dts_playback_start("fixture://movie","X-Token: fixture",stream,0,paused,"window",0,selected,ordinal,total);assert(p);return p;
@@ -441,21 +450,23 @@ int main(int argc,char **argv) {
    assert(!strcmp(s.info.audio_codec,"aac") && s.info.channels==2);
    // No fixed mode may leak from a rejected start or into SDR playback.
    dts_playback_audio_at(p,9,2);wait_count(&loads,2);
-   s=wait_status(p,0,0);assert(!strcmp(s.info.audio_codec,"ac3") && s.info.channels==6);
+   s=wait_audio_status(p,9);assert(!strcmp(s.info.audio_codec,"ac3") && s.info.channels==6);
   } else {
    assert(s.info.channels==(mode==2?6:2));
    flush_refuse=refused;
    dts_playback_audio_at(p,9,2);
    if(refused) wait_count(&loads,2);else wait_count(&flushes,1);
    if(!paused)wait_count(&plays,2);
-   s=wait_status(p,0,0);
+   // Flush is acknowledged before the worker publishes the audio revision,
+   // especially while paused: prepared alone can still describe the old track.
+   s=wait_audio_status(p,9);
    assert(s.info.audio_stream==9 && s.info.dovi_profile==8);
    assert(!strcmp(s.info.audio_codec,mode==2?"ac3":"aac") && s.info.channels==(mode==2?6:2));
    assert(s.load_revision==(refused?2:1) && count(&opens)==1);
    if(!refused) {
     dts_playback_audio_at(p,4,3);wait_count(&flushes,2);
     if(!paused)wait_count(&plays,3);
-    s=wait_status(p,0,0);assert(s.info.audio_stream==4 && s.load_revision==1);
+    s=wait_audio_status(p,4);assert(s.info.audio_stream==4 && s.load_revision==1);
     assert(count(&loads)==1 && count(&creates)==1 && count(&destroys)==0);
    }
   }
@@ -643,6 +654,7 @@ int main(int argc,char **argv) {
   int i;
   for(i=0;i<1500;i++) { dts_playback_status(p,&s);if(s.buffer.ready_bytes==21*1048576LL)break;nap(); }
   assert(i<1500 && s.buffer.capacity_bytes==68*1048576LL && s.buffered_until>=0);
+  assert(s.buffer.http_workers==4);
   atomic_store(&buffer_ready,23*1048576LL);
   for(i=0;i<1500;i++) { dts_playback_status(p,&s);if(s.buffer.ready_bytes==23*1048576LL)break;nap(); }
   assert(i<1500); // Pausing does not freeze telemetry while prefetch completes.

@@ -7217,8 +7217,16 @@ static float fileiraFormato(Uint32 agora, float x, float y, float ac, int medir,
 static void bufferDadosDesenhar(float direita,float y,float alpha) {
   if(!ajustes_buffer_dados())return;
   char b[96];video_buffer_test_text(b,sizeof b);
-  TxtLinha l=txt_linha(TXT_G19M,b,230,230,230,210);
-  txt_desenhar_alpha(l,direita-l.w,y-l.h-14.0f,alpha);
+  TxtLinha l=txt_linha(TXT_G19M,b,210,210,210,210);
+  // Episode/title details use the left 60%; leave a gap before this column.
+  float width=fmaxf(1.0f,(direita-PLR_MARGEM)*0.38f);
+  if(l.w<=width)txt_desenhar_alpha(l,direita-l.w,y-l.h-14.0f,alpha);
+  else {
+    // Keep selected size and HTTP details visible with larger UI/fonts too.
+    float leading=l.h+4.0f;
+    float h=txt_bloco_dir(TXT_G19M,b,210,210,210,direita,0,width,leading,0,0);
+    txt_bloco_dir(TXT_G19M,b,210,210,210,direita,y-h-14.0f,width,leading,alpha*(210.0f/255.0f),0);
+  }
 }
 #endif
 
