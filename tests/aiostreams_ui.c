@@ -22,10 +22,12 @@ void gfx_rect(GfxRect r,GLuint t,GfxModo m,float a,float b,float c,float d,float
 void gfx_sombra_sob(GfxRect r,float a,float b,float c,float d,float e,float f,float g,GfxRect s,float h,float i) { }
 void gfx_vidro(GfxRect r,float a,int b,float c,float d,float e) { }
 void gfx_luz_canto(GfxRect r,float a,float b,float c,float d,float e,float f,float g,float h) { }
+void gfx_anel(GfxRect r,float a,float b,float c,float d,float e,float f) { }
+void gfx_anel_fora(GfxRect r,float a,float b,float c,float d,float e,float f,float g) { }
 void gfx_cor(GfxRect r,float a,float b,float c,float d,float e) {
   if(r.x==72 && r.w==315 && e>0) {
     sidebarDrawn++;
-    if(r.y==148 && r.h==858 && e==.88f && b==21/255.f && c==22/255.f && d==26/255.f) sidebarOpaque++;
+    if(r.y==148 && r.h==858 && e==.94f && b==21/255.f && c==23/255.f && d==28/255.f) sidebarOpaque++;
   }
 }
 void gfx_icone(GfxRect r,const char *s,float a,float b,float c,float d) { }
