@@ -50,7 +50,9 @@ assert "ponteiro_alvo" not in toolbar and "mt_biblioteca" not in toolbar and "ME
 app=Path("src/app.c").read_text()
 assert app.index("if (!ctx_aberto()) menu_desktop_busca_desenhar();") < app.index("    menu_desenhar(agora);",app.index("if (!ctx_aberto()) menu_desktop_busca_desenhar();"))
 assert "menu_desktop_foco()" in native and "sidebarLanguage!=ajustes_idioma()" in native
-assert 'button.image.template=YES' in native and 'button.contentTintColor=NSColor.systemBlueColor' in native
+assert 'image.template=YES' in native and 'systemBlueColor' not in native and 'imageWithSystemSymbolName:symbols' not in native
+assert 'sidebarIcon("mt_' not in native and '"mt_busca","mt_inicio"' in native and 'ajustes_acento_tinta(&r,&g,&b)' in native
+assert 'glass.tintColor' in native and 'NSAppearanceNameDarkAqua];  // never light grey' in native
 assert '@"Browse"' not in native and '@"Services"' not in native
 app=Path('src/app.c').read_text()
 route=app.split('if (!strcmp(screen,"filmography"))',1)[1].split('detail_fechar_seco()',1)[0]
