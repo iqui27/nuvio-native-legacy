@@ -465,6 +465,10 @@ IGNORAR = {
     "a?b?de?ghijklmn?o?prtuw", "românia",
     # Nome proprio e sigla: iguais nos dois idiomas.
     "IMDb", "Trakt", "YouTube", "PIN", "AI-powered", "NUVIO",
+    # Marca do material de vidro (guiav5ui.c) e prefixo de id de add-on
+    # comparado com strncasecmp (addons.c, deteccao do AIOStreams): nome e
+    # identificador, iguais em toda lingua. Nenhum dos dois e rotulo de tela.
+    "Material Glass", "com.aiostreams.",
     # Tabela de acentos -> letra base da normalizacao de titulo (trailerapple.c):
     # dado, nao rotulo.
     "ÀÁÂÃÄÅàáâãäåÈÉÊËèéêëÌÍÎÏìíîïÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÝýÿÑñÇç",
