@@ -768,6 +768,7 @@ static const char *V_PALCO_FUNDO[] = { "Cortina", "Como está", "Só arte", "Pre
 static const char *V_TITULO_FIL[] = { "Clássico", "Ilha", "Editorial", "Acento" };
 static const char *V_DEGRADES[] = { "Automático", "Forte", "Desligado" };
 static const char *V_BUFFER_CONNECTIONS[] = { "Standard (1)", "Parallel - 2", "Parallel - 3", "Parallel - 4" };
+static const char *V_BUFFER_CONVERSION_CONNECTIONS[] = { "Standard (1) - Not recommended", "Parallel - 2", "Parallel - 3", "Parallel - 4 - Recommended" };
 static const char *V_DV_AUDIO_FIXO[] = { "Original audio", "AAC stereo", "Dolby Digital 5.1" };
 static const char *V_VIDRO_QUALIDADE[] = { "Automática", "Desempenho", "Alta" };
 static const char *V_FUNDO_DIN[] = { "Cinza", "Cor", "Imersivo", "Cinza escuro" };
@@ -1881,7 +1882,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Dolby Vision MP4 (experimental)", V_LIGA, 2),
   ESC("Dolby Vision P7 mapping (experimental)", V_LIGA, 2),
   ESC("Standard native-player buffering", V_BUFFER_CONNECTIONS, 4),
-  ESC("DTS/TrueHD and DV7 buffering", V_BUFFER_CONNECTIONS, 4),
+  ESC("DTS/TrueHD and DV7 buffering", V_BUFFER_CONVERSION_CONNECTIONS, 4),
   ESC("Diagnostics QR", V_LIGA, 2),
 };
 
