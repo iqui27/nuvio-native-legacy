@@ -601,6 +601,9 @@ void aioui_evento(const SDL_Event *e) {
     if(next>=0 && next<7) { foco=next; previa(next); }
     return;
   }
+  if(lateral && pagina>=PAINEL && pagina<=SAUDE && k==SDLK_RIGHT) {
+    lateral=0; foco=pagina==PAINEL?dashboardFoco:0; navigationCount=0; return;
+  }
   if(pagina==PAINEL && lateral && k==SDLK_RIGHT) { lateral=0; foco=dashboardFoco; navigationCount=0; return; }
   if(k==SDLK_UP || k==SDLK_DOWN || k==SDLK_LEFT || k==SDLK_RIGHT) {
     int first=0,total=0,step=(k==SDLK_DOWN)-(k==SDLK_UP);

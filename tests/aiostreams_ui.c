@@ -8,6 +8,7 @@ void aiopair_close(void) { }
 int aiopair_state(char *s,size_t n) { if(n)s[0]=0;return AIOPAIR_UNAVAILABLE; }
 int aiopair_take(char *a,size_t n,char *o,size_t no) { return 0; }
 void ajustes_acento(float *r,float *g,float *b) { *r=*g=*b=.9f; }
+float ajustes_acento_tinta(float *r,float *g,float *b) { ajustes_acento(r,g,b); return .071f; }
 void plrui_material(GfxRect r,float radius,int modal,float a) { }
 GfxRecorteAnt gfx_recorte_dentro(float x,float y,float w,float h) { return (GfxRecorteAnt){0}; }
 void gfx_recorte_voltar(GfxRecorteAnt r) { }
@@ -23,10 +24,12 @@ void gfx_sombra_sob(GfxRect r,float a,float b,float c,float d,float e,float f,fl
 void gfx_vidro(GfxRect r,float a,int b,float c,float d,float e) { }
 void gfx_luz_canto(GfxRect r,float a,float b,float c,float d,float e,float f,float g,float h) { }
 void gfx_cor(GfxRect r,float a,float b,float c,float d,float e) {
-  if(r.x==72 && r.w==315 && e>0) {
+  // The open rail: its own lighter surface, then the focused item filled in the accent.
+  if(r.x==72 && r.w==320 && e>0) {
     sidebarDrawn++;
-    if(r.y==148 && r.h==858 && e==.88f && b==21/255.f && c==22/255.f && d==26/255.f) sidebarOpaque++;
+    if(r.y==148 && r.h==884 && e==.06f && b==1 && c==1 && d==1) sidebarOpaque++;
   }
+  if(r.x==84 && r.y==248 && e>.9f) sidebarHighlight++;
 }
 void gfx_icone(GfxRect r,const char *s,float a,float b,float c,float d) { }
 void plrui_linha_foco(GfxRect r,float radius,float alpha) {
@@ -249,15 +252,17 @@ int main(void) {
     movimento(.5f); sidebarOpen=1; sidebarDrawn=sidebarHighlight=sidebarOpaque=0; navigationCount=0;
     sidebar();
     assert(pagina==PAINEL && sidebarDrawn && sidebarOpaque==1 && sidebarHighlight && navigationCount==7);
-    down.key.keysym.sym=SDLK_DOWN; aioui_evento(&down); assert(lateral && foco==1);
-    down.key.keysym.sym=SDLK_RIGHT; aioui_evento(&down);
-    assert(!lateral && foco==row*3);
+    // Moving on the rail previews the section; entering it and going Back restores the card.
+    down.key.keysym.sym=SDLK_DOWN; aioui_evento(&down); assert(lateral && foco==1 && pagina==CATALOGOS);
+    down.key.keysym.sym=SDLK_RIGHT; aioui_evento(&down); assert(!lateral && foco==0 && pagina==CATALOGOS);
+    down.key.keysym.sym=SDLK_ESCAPE; aioui_evento(&down);
+    assert(!lateral && pagina==PAINEL && foco==row*3);
   }
   lateral=0; glassEnabled=0;
   pagina=PAINEL; foco=3; dashboardFoco=3; lateral=1; foco=1; acao();
-  assert(pagina==CATALOGOS && !lateral && dashboardReturn);
-  down.key.keysym.sym=SDLK_RIGHT; aioui_evento(&down);
-  assert(pagina==PAINEL && foco==3 && !dashboardReturn);
+  assert(pagina==CATALOGOS && !lateral && !dashboardReturn);
+  down.key.keysym.sym=SDLK_ESCAPE; aioui_evento(&down);
+  assert(pagina==PAINEL && foco==3 && !lateral);
   lateral=1; foco=5; acao(); assert(pagina==FILTROS && !lateral);
   down.key.keysym.sym=SDLK_ESCAPE; aioui_evento(&down);
   assert(pagina==PAINEL && foco==3 && !lateral);
