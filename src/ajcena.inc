@@ -75,6 +75,7 @@ static float ajc_passo_t(float periodo) {
   return f * f * (3.0f - 2.0f * f);
 }
 
+static GfxRecorteAnt ajcRecorteAnt;
 static float ajc_comecar(float x, float y, float w, float a) {
   GfxRect q;
   C.x = x; C.y = y; C.w = w; C.s = w / AJC_W; C.h = w * AJC_H / AJC_W; C.a = a;
@@ -91,10 +92,10 @@ static float ajc_comecar(float x, float y, float w, float a) {
   gfx_cor(q, 22.0f * C.s / C.h, 0.075f, 0.082f, 0.102f, a);
   gfx_luz_canto(q, 22.0f * C.s / C.h, w * 0.86f, -C.h * 0.25f, C.h * 1.05f, C.ar, C.ag, C.ab, 0.20f * a);
   gfx_luz_canto(q, 22.0f * C.s / C.h, w * 0.08f, C.h * 1.15f, C.h * 0.9f, 0.45f, 0.55f, 0.75f, 0.07f * a);
-  gfx_recorte(x, y, w, C.h);
+  ajcRecorteAnt = gfx_recorte_dentro(x, y, w, C.h);   // dentro do recorte de quem chama (o corte do estagio)
   return C.h;
 }
-static void ajc_fim(void) { gfx_sem_recorte(); }
+static void ajc_fim(void) { gfx_recorte_voltar(ajcRecorteAnt); }
 static float subX, subY, subS;
 static void ajc_sub(float x, float y, float escala) {
   subX = C.x; subY = C.y; subS = C.s;

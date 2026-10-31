@@ -314,7 +314,19 @@ static void ajDesenharMais(int item, float y, float f, float a) {
   TxtLinha r, v;
   if (a <= 0.004f) return;
   ajFocoLinha(ln, 20.0f, f, aTx);
+  if (ajFocoCompart && aj2FocoNaLista(item)) triSupReportar(ln);
   if (aTx <= 0.004f) return;
+  if (triBladeLayout()) {   // Palco (mockup claude-c): "Mais opcoes   3 tecnicas ›"
+    char q[48];
+    ajIcone("aj_sliders-horizontal", ln.x + 18.0f, yc - 14.0f, 28.0f, (f > 0.5f ? 0.95f : 0.62f) * aTx);
+    r = ajTxt(TXT_AJ_ROTULO, "Mais opções");
+    txt_desenhar_alpha(r, ln.x + AJ_PALCO_TX, yc - r.h * 0.5f, (f > 0.5f ? 1.0f : 0.88f) * aTx);
+    aj2Chevron(xDir, yc, (f > 0.5f ? 0.7f : 0.32f) * aTx);
+    snprintf(q, sizeof q, i18n("%d técnicas"), n);
+    v = ajTxtC(TXT_AJ_VALOR, aberto ? i18n("Esconder") : q, 220.0f);
+    txt_desenhar_alpha(v, xDir - 34.0f - v.w, yc - v.h * 0.5f, (f > 0.5f ? 0.95f : 0.72f) * aTx);
+    return;
+  }
   ajIcone("aj_sliders-horizontal", ln.x + 20.0f, yc - 12.0f, 24.0f, (f > 0.5f ? 0.9f : 0.6f) * aTx);
   snprintf(rot, sizeof rot, "%s · %d", i18n("Mais opções"), n);
   r = ajTxt(f > 0.5f ? TXT_V2_LN_B : TXT_V2_LN, rot);

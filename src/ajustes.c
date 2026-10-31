@@ -2376,11 +2376,14 @@ static int maisAberto[AJ_MAX_SECOES];
 static int maisItem[AJ_MAX_SECOES];   // indice em TELA do IT_MAIS da categoria (-1 = nao tem)
 #define AJ_TRI_POLISH 1
 static int triSubmenu = -1;         // TELA topic index; presentation only
+static int triBladeLayout(void);   // ajustes_tri_desenho.inc
 static int triTopico(int i) {
   if (i < 0 || i >= AJ_N_TELA || TELA[i].tipo != IT_ROT) return 0;
   int end = i + 1;
   while (end < AJ_N_TELA && TELA[end].tipo == IT_OPC) end++;
-  return end - i - 1 >= 8;
+  // Palco (mockup claude-c): todo bloco vira uma linha que abre um blade, com
+  // o icone e a contagem; fora dele so os blocos grandes (8+) viram topico.
+  return end - i - 1 >= (triBladeLayout() ? 1 : 8);
 }
 static int triDono(int i) {
   if (i < 0 || i >= AJ_N_TELA || TELA[i].tipo != IT_OPC) return -1;
@@ -11663,18 +11666,20 @@ int ajustes_teste_quadro(const char *id) {
     perfis_teste_definir(nomes, NULL, 1, 1);
     for (i = 0; i < AJ_N_TELA; i++)
       if (TELA[i].tipo == IT_ROT) {
-        if (!strcmp(TELA[i].titulo, "Cores e vidro")) rotCores = i;
+        if (rotCores < 0 && !strcmp(TELA[i].titulo, "Cores e vidro")) rotCores = i;   // o 1.º (o de apresentacao)
         else if (!strcmp(TELA[i].titulo, "Durante e depois")) rotDurante = i;
       }
     triIniciar(); pfTela = 0; uxVeioBusca = 0; valor[AJ_AVANCADAS] = 1; valor[AJ_TEMA] = 6;
     valor[AJ_IDIOMA] = 0; idiomaEfetivo = IDIOMA_PT; valor[AJ_HOME_LAYOUT] = 1;
-    valor[AJ_QUALIDADE] = 1;
+    valor[AJ_QUALIDADE] = 1; uxCancelar();
     if (strstr(id, "frost")) { valor[AJ_VIDRO] = 2; valor[AJ_VIDRO_FOSCO] = 1; }
     else if (strstr(id, "vidro")) { valor[AJ_VIDRO] = 2; valor[AJ_VIDRO_FOSCO] = 0; }
     else if (strstr(id, "solido")) { valor[AJ_VIDRO] = 1; }
-    if (!strcmp(id, "bl-indice")) { }
+    if (!strcmp(id, "bl-indice") || strstr(id, "-indice")) { }   // bl-frost-indice etc.: o indice no vidro
     else if (!strcmp(id, "bl-secao")) { triEntrar(5); }
-    else if (!strcmp(id, "bl-topico")) { triEntrar(5); if (rotCores >= 0) triSubEntrar(rotCores); }
+    else if (!strcmp(id, "bl-topico") || strstr(id, "solido") || strstr(id, "frost") || strstr(id, "vidro")) {
+      triEntrar(5); if (rotCores >= 0) triSubEntrar(rotCores);
+    }
     else if (!strcmp(id, "bl-paleta")) { triEntrar(5); if (rotCores >= 0) triSubEntrar(rotCores); focarOpcao(AJ_TEMA); uxAbrirEditor(AJ_TEMA); uxPendente = valor[AJ_TEMA]; }
     else if (!strcmp(id, "bl-chave")) { triEntrar(0); if (rotDurante >= 0) triSubEntrar(rotDurante); focarOpcao(AJ_PAUSA_COMENTARIOS); }
     else return 0;

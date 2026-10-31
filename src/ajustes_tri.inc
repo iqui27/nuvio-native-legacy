@@ -39,6 +39,33 @@ static int triLinha, triAcao;      // linha e acao (pilulas) da rota utilitaria
 static int triTrocarPerfil;        // "Trocar de perfil" pedido na folha do perfil
 static float triProfF;             // a profundidade ANIMADA (0..3, mola de tela)
 static int triBladeLayout(void);   // ajustes_tri_desenho.inc: o layout Palco esta ativo
+static int triEditorLargo(int op); // idem: editores que tomam o palco (nao viram blade)
+// PALCO: a pilha de blades lida do estado (triPilha) e o que cada nivel mostrou
+// por ultimo: um nivel que fecha continua desenhado (o "fantasma") enquanto a
+// mola da profundidade o leva embora. triPgT = segundos desde que o nivel abriu
+// (a entrada escalonada das linhas).
+enum { TRI_PG_SEC = 1, TRI_PG_SUB, TRI_PG_ED, TRI_PG_UTIL };
+static int triPgTipo[4], triPgVal[4], triPgPend[4], triPgVivos;
+static float triPgT[4];
+// A SUPERFICIE DE FOCO unica do Palco: o desenho informa o retangulo da linha
+// em foco (triSupAlvo), triAtualizar leva a superficie ate la com a mola. Ela
+// atravessa blades (abrir/fechar) sem pular.
+static float triSup[4], triSupAlvo[4], triSupA;
+static int triSupTem, triSupDono = -2, triSupDonoAlvo = -2, triSupCruza;
+// O estagio: cena atual e a anterior (cruzamento por mola), a legenda que sobe
+// e os fatos que rolam quando o valor muda.
+static int triCenaSec[2] = { -2, -2 }, triCenaOp[2] = { -2, -2 }, triLegChave = -1, triFatoChave = -1;
+static float triCenaF = 1.0f, triLegF = 1.0f, triFatoF = 1.0f;
+// O valor da linha em foco ROLA quando muda (o antigo sobe, o novo vem de baixo).
+static int triRolOp = -1;
+static char triRolAgora[96], triRolVelho[96];
+static float triRolF = 1.0f;
+// A ajuda da linha em foco recolhe quando um blade de editor abre por cima.
+static float triAjudaF = 1.0f;
+// O interruptor da linha em foco: mola com um pouco de passagem (o botao
+// passa do ponto e volta), so desenho.
+static int triChaveOp = -1;
+static float triChaveP, triChaveV;
 static float triChipF[TRI_C_N], triSecF[AJ_MAX_SECOES + 1], triUtilF[AJ_N];
 static float triUtilRol, triUtilRolAlvo;   // rolagem das rotas utilitarias: o desenho acha o alvo, triAtualizar segue
 static float triSecRolY, triSecRolYAlvo;   // ilha 1: rola ate a secao em foco quando nao cabe (texto grande)
@@ -88,19 +115,25 @@ static void triIniciar(void) {
   triSecFoco = secAtual; triSecaoDeixada = -1;
 }
 // A PROFUNDIDADE da pilha de blades, LIDA DO ESTADO (nada de duplicar contagem):
-//   0 = o indice (menu aberto), 1 = a secao, 2 = o topico ou uma rota utilitaria,
-//   3 = o editor de escolha/paleta aberto por cima do topico.
+//   0 = o indice (menu aberto), 1 = a secao ou uma rota utilitaria, 2 = o
+//   topico, 3 = o editor de escolha/paleta aberto por cima do topico.
 // A paleta e os editores de escolha "de blade" contam; os inline (segmentado,
 // interruptor) nao: ficam na linha, como o mockup manda.
 static int triEditorBlade(void) {
   return uxEditor == 1 && uxOp >= 0 && (uxOp == AJ_TEMA || uxOp == AJ_FUNDO_DIN_COR || !ajEmLinha(uxOp));
 }
-static int triProfundidade(void) {
-  if (triUtil) return 2;
-  if (triEditorBlade()) return 1 + (triSubmenu >= 0) + 1;
+// Os niveis abertos, de baixo para cima: secao, topico, editor (ou a rota
+// utilitaria sozinha). Os editores largos ficam no palco, fora da pilha.
+static int triPilha(int *tipo, int *val, int *pend) {
+  int n = 0;
+  if (triUtil) { tipo[0] = TRI_PG_UTIL; val[0] = triUtil; pend[0] = 0; return 1; }
   if (triIlha == TRI_SECOES || triIlha == TRI_CHIPS) return 0;
-  return 1 + (triSubmenu >= 0);
+  tipo[n] = TRI_PG_SEC; val[n] = secAtual; pend[n++] = 0;
+  if (triSubmenu >= 0) { tipo[n] = TRI_PG_SUB; val[n] = triSubmenu; pend[n++] = 0; }
+  if (triEditorBlade() && !triEditorLargo(uxOp)) { tipo[n] = TRI_PG_ED; val[n] = uxOp; pend[n++] = uxPendente; }
+  return n;
 }
+static int triProfundidade(void) { int t[4], v[4], p[4]; return triPilha(t, v, p); }
 // Foco direto numa opcao (busca, atalhos, tour): a lista da secao dela.
 static void triFocar(int op) {
   (void)op;
@@ -457,7 +490,7 @@ static void triAtualizar(float dt) {
   }
   { float alvo = triIlha == TRI_LISTA && !triUtil ? 1.0f : 0.0f;
     triListaF = red ? alvo : anim_mola(triListaF, alvo, dt, alvo > triListaF ? NV_MOLA_FOCO : NV_MOLA_DESFOCO); }
-  { float alvo = uxEditor == 1 && uxOp >= 0 && aj2EditorPainel() ? 1.0f : 0.0f;
+  { float alvo = uxEditor == 1 && uxOp >= 0 && (aj2EditorPainel() || triEditorBlade()) ? 1.0f : 0.0f;
     triEditorF = red ? alvo : anim_mola(triEditorF, alvo, dt, alvo > triEditorF ? NV_MOLA_FOCO : NV_MOLA_DESFOCO); }
   if (!triUtil) triUtilRolAlvo = 0.0f;
   // No celular o dedo manda enquanto a regiao esta "livre" (ajToqueRolar); a
@@ -472,8 +505,45 @@ static void triAtualizar(float dt) {
   triSecRolY = red ? triSecRolYAlvo : anim_mola(triSecRolY, triSecRolYAlvo, dt, NV_MOLA_FOCO);
   if (triUtil != triUtilVisto) { triUtilVisto = triUtil; triUtilA = 0.0f; }
   triUtilA = red ? 1.0f : anim_rampa(triUtilA, 1.0f, dt, 220.0f);
-  { float alvo = (float)triProfundidade();   // o Palco: a pilha desliza com a mola de tela
-    triProfF = red ? alvo : anim_mola(triProfF, alvo, dt, NV_MOLA_TELA); }
+  { int t[4], v[4], p[4], n = triPilha(t, v, p), k;   // o Palco: a pilha desliza com a mola de tela
+    float alvo = (float)n;
+    triProfF = red ? alvo : anim_mola(triProfF, alvo, dt, NV_MOLA_TELA);
+    for (k = 0; k < 4; k++) {
+      if (k < n) {
+        if (k >= triPgVivos || triPgTipo[k] != t[k] || triPgVal[k] != v[k]) triPgT[k] = 0.0f;
+        triPgTipo[k] = t[k]; triPgVal[k] = v[k]; triPgPend[k] = p[k];
+      }
+      if (triPgT[k] < 10.0f) triPgT[k] += dt;
+    }
+    triPgVivos = n; }
+  // A superficie de foco: dentro de uma lista ela anda com a mola do foco; ao
+  // trocar de blade (abrir, fechar, menu -> lista) atravessa com a de tela.
+  if (triSupTem) {
+    int k;
+    if (triSupDonoAlvo != triSupDono) { triSupCruza = triSupA > 0.05f; triSupDono = triSupDonoAlvo; }
+    if (triSupA < 0.02f || red) { for (k = 0; k < 4; k++) triSup[k] = triSupAlvo[k]; triSupCruza = 0; }
+    for (k = 0; k < 4; k++) triSup[k] = anim_mola(triSup[k], triSupAlvo[k], dt, triSupCruza ? NV_MOLA_TELA : NV_MOLA_FOCO);
+    if (triSupCruza && fabsf(triSup[0] - triSupAlvo[0]) < 2.0f && fabsf(triSup[1] - triSupAlvo[1]) < 2.0f) triSupCruza = 0;
+  }
+  triSupA = red ? (float)triSupTem : anim_mola(triSupA, triSupTem ? 1.0f : 0.0f, dt, NV_MOLA_FOCO);
+  triSupTem = 0;
+  // O estagio: cena, legenda e fatos sobem/cruzam com a mola de tela.
+  triCenaF = red ? 1.0f : anim_mola(triCenaF, 1.0f, dt, NV_MOLA_TELA);
+  triLegF = red ? 1.0f : anim_mola(triLegF, 1.0f, dt, NV_MOLA_TELA);
+  triFatoF = red ? 1.0f : anim_mola(triFatoF, 1.0f, dt, NV_MOLA_TELA);
+  triRolF = red ? 1.0f : anim_mola(triRolF, 1.0f, dt, NV_MOLA_TELA * 1.6f);
+  { float alvo = triEditorBlade() ? 0.0f : 1.0f;
+    triAjudaF = red ? alvo : anim_mola(triAjudaF, alvo, dt, NV_MOLA_TELA); }
+  // O botao do interruptor: mola subamortecida (zeta 0,45), passa ~20% e volta.
+  if (triChaveOp >= 0 && triChaveOp < AJ_N) {
+    float alvo = lig(triChaveOp) ? 1.0f : 0.0f, w = 26.0f, h = fminf(dt, 0.05f) / 4.0f;
+    int s;
+    if (red) { triChaveP = alvo; triChaveV = 0.0f; }
+    else for (s = 0; s < 4; s++) {
+      triChaveV += (w * w * (alvo - triChaveP) - 2.0f * 0.45f * w * triChaveV) * h;
+      triChaveP += triChaveV * h;
+    }
+  }
   ajMovAtualizar(dt);
   ajCenaTrocaAtualizar(dt);
 }
