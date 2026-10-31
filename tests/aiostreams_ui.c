@@ -3,6 +3,14 @@
 #include <assert.h>
 static int keyboardResult, keyboardMasked, p2p, activeProfile=1;
 static int sidebarDrawn, sidebarHighlight, sidebarOpaque, glassEnabled;
+int aiopair_start(const char *s) { (void)s; return 0; }
+void aiopair_close(void) { }
+int aiopair_state(char *s,size_t n) { if(n)s[0]=0;return AIOPAIR_UNAVAILABLE; }
+int aiopair_take(char *a,size_t n,char *o,size_t no) { return 0; }
+void ajustes_acento(float *r,float *g,float *b) { *r=*g=*b=.9f; }
+void plrui_material(GfxRect r,float radius,int modal,float a) { }
+GfxRecorteAnt gfx_recorte_dentro(float x,float y,float w,float h) { return (GfxRecorteAnt){0}; }
+void gfx_recorte_voltar(GfxRecorteAnt r) { }
 float gfx_opacidade_grupo=1;
 float gfx_escala_txt(void) { return 1; }
 float gfx_escala_txt_entrar(void) { return 1; }
@@ -14,17 +22,17 @@ void gfx_rect(GfxRect r,GLuint t,GfxModo m,float a,float b,float c,float d,float
 void gfx_sombra_sob(GfxRect r,float a,float b,float c,float d,float e,float f,float g,GfxRect s,float h,float i) { }
 void gfx_vidro(GfxRect r,float a,int b,float c,float d,float e) { }
 void gfx_luz_canto(GfxRect r,float a,float b,float c,float d,float e,float f,float g,float h) { }
+void gfx_anel(GfxRect r,float a,float b,float c,float d,float e,float f) { }
+void gfx_anel_fora(GfxRect r,float a,float b,float c,float d,float e,float f,float g) { }
 void gfx_cor(GfxRect r,float a,float b,float c,float d,float e) {
   if(r.x==72 && r.w==315 && e>0) {
     sidebarDrawn++;
-    if(r.y==148 && r.h==858 && a==T21_R_MODAL/r.h && e==1 &&
-       b==(glassEnabled?.055f:.071f) && c==(glassEnabled?.059f:.075f) &&
-       d==(glassEnabled?.071f:.086f)) sidebarOpaque++;
+    if(r.y==148 && r.h==858 && e==.94f && b==21/255.f && c==23/255.f && d==28/255.f) sidebarOpaque++;
   }
 }
 void gfx_icone(GfxRect r,const char *s,float a,float b,float c,float d) { }
 void plrui_linha_foco(GfxRect r,float radius,float alpha) {
-  if(r.x==91 && r.y==265 && alpha>.9f) sidebarHighlight++;
+  if(r.x==86 && r.y==265 && alpha>.9f) sidebarHighlight++;
 }
 TxtLinha txt_linha_corta(TxtEstilo e,const char *s,int r,int g,int b,int a,float w) { return (TxtLinha){0}; }
 void txt_desenhar(TxtLinha l,float x,float y) { }
@@ -228,17 +236,19 @@ int main(void) {
   down.key.keysym.sym=SDLK_DOWN; aioui_evento(&down); assert(foco==4);
   strcpy(host,"https://example.invalid");
   strcpy(base,"https://example.invalid/manifest.json");
-  foco=9; acao(); assert(entrada==4 && keyboardMasked);
+  foco=9; acao(); assert(connectOpen && !entrada);
+  down.key.keysym.sym=SDLK_RIGHT; aioui_evento(&down);
+  down.key.keysym.sym=SDLK_RETURN; aioui_evento(&down); assert(!connectOpen && entrada==4 && keyboardMasked);
   receber("sample-uuid"); assert(entrada==5 && keyboardMasked);
   receber("sample-password"); assert(!entrada && configAuth[0] && !configUuid[0]);
   pagina=PAINEL; lateral=0; foco=3; acao();
   assert(pagina==FILTROS && regraSelecionada==7);
-  // Both first-column cards reach an opaque, highlighted sidebar in either material.
+  // Both first-column cards reach the distinct sidebar and restore their card.
   for(glassEnabled=0;glassEnabled<2;glassEnabled++) for(int row=0;row<2;row++) {
     pagina=PAINEL; lateral=0; foco=row*3;
     down.key.keysym.sym=SDLK_LEFT; aioui_evento(&down);
     assert(lateral && foco==0);
-    movimento(.5f); sidebarDrawn=sidebarHighlight=sidebarOpaque=0; navigationCount=0;
+    movimento(.5f); sidebarOpen=1; sidebarDrawn=sidebarHighlight=sidebarOpaque=0; navigationCount=0;
     sidebar();
     assert(pagina==PAINEL && sidebarDrawn && sidebarOpaque==1 && sidebarHighlight && navigationCount==7);
     down.key.keysym.sym=SDLK_DOWN; aioui_evento(&down); assert(lateral && foco==1);
@@ -246,6 +256,13 @@ int main(void) {
     assert(!lateral && foco==row*3);
   }
   lateral=0; glassEnabled=0;
+  pagina=PAINEL; foco=3; dashboardFoco=3; lateral=1; foco=1; acao();
+  assert(pagina==CATALOGOS && !lateral && dashboardReturn);
+  down.key.keysym.sym=SDLK_RIGHT; aioui_evento(&down);
+  assert(pagina==PAINEL && foco==3 && !dashboardReturn);
+  lateral=1; foco=5; acao(); assert(pagina==FILTROS && !lateral);
+  down.key.keysym.sym=SDLK_ESCAPE; aioui_evento(&down);
+  assert(pagina==PAINEL && foco==3 && !lateral);
   // Same-origin refresh authenticates; importing another instance must not.
   int headers=authorizationHeaders;
   refreshSaved(); assert(authorizationHeaders==headers+1);
