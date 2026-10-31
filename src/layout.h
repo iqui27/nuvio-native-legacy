@@ -45,6 +45,7 @@ int layout_modo_mobile(void);
 #define NV_DESKTOP_WINDOW_H 800
 #define NV_DESKTOP_BREAKPOINT 1000
 #define NV_DESKTOP_SCALE 1.5f
+#define NV_DESKTOP_AJUSTES_DENSIDADE .78f   // Settings canvas grows 1/.78: ~13pt rows text
 #ifdef NV_DESKTOP_UI
 // Points -> layout; Retina pixels are used only to size the GL drawable.
 static inline float layout_window_units(int w, int h) {

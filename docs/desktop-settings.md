@@ -25,3 +25,11 @@ never compile the list. `tests/desktop_settings.c` checks the table.
 Wording: "This TV" reads "This device"; "Limits of this TV", "Not available on
 this TV", "Saved on this TV" and "Press OK to connect" map to existing neutral keys
 (`src/idioma.c`).
+
+## Desktop density and shortcuts
+
+Settings draw at `NV_DESKTOP_AJUSTES_DENSIDADE` (src/layout.h) on desktop: the
+settings canvas grows by 1/0.78, so rows and text land near Mac sizes (~13 pt
+text, ~30 pt rows) instead of 10-foot sizes. Every Settings measure already
+divides by `ajustes_tamanho_ajustes()`, so the factor lives there only; TV
+builds never compile it. Cmd+, opens Settings (no-op when already there).

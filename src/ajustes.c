@@ -3310,6 +3310,9 @@ float ajustes_tamanho_ajustes(void) {
   float s = v >= 0 && v < 3 ? F[v] : 1.0f;
   if (gfx_escala_ui_base() < 1) s *= gfx_escala_ui_base();
   s *= gfx_escala_txt();
+#ifdef NV_DESKTOP_UI
+  s *= NV_DESKTOP_AJUSTES_DENSIDADE;   // pointer density: Mac-sized rows and text, not 10-foot
+#endif
   return ajRetrato() ? s * 1.25f : s;
 }
 // The phone always uses List. Keep the stored TV preference unchanged.
