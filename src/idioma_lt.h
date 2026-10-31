@@ -193,6 +193,7 @@
   T("%d temporada", "Sezonų: %d"),
   T("%d temporadas", "Sezonų: %d"),
   T("%d texturas", "%d tekstūrų"),
+  T("%d técnicas", "%d techninių"),
   T("%d título", "%d pavadinimas"),
   T("%d título assistido", "%d title watched"),
   T("%d título em andamento", "%d title in progress"),

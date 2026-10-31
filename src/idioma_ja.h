@@ -193,6 +193,7 @@
   T("%d temporada", "%d シーズン"),
   T("%d temporadas", "%d シーズン"),
   T("%d texturas", "テクスチャ %d"),
+  T("%d técnicas", "技術的 %d 件"),
   T("%d título", "%d作品"),
   T("%d título assistido", "%d title watched"),
   T("%d título em andamento", "%d title in progress"),

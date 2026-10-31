@@ -193,6 +193,7 @@
   T("%d temporada", "%d stagione"),
   T("%d temporadas", "%d stagioni"),
   T("%d texturas", "%d texture"),
+  T("%d técnicas", "%d tecniche"),
   T("%d título", "%d titolo"),
   T("%d título assistido", "%d titolo visto"),
   T("%d título em andamento", "%d titolo in corso"),

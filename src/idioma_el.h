@@ -193,6 +193,7 @@
   T("%d temporada", "%d σεζόν"),
   T("%d temporadas", "%d σεζόν"),
   T("%d texturas", "%d υφές"),
+  T("%d técnicas", "%d τεχνικές"),
   T("%d título", "%d τίτλος"),
   T("%d título assistido", "%d title watched"),
   T("%d título em andamento", "%d title in progress"),

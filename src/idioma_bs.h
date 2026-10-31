@@ -193,6 +193,7 @@
   T("%d temporada", "Sezona: %d"),
   T("%d temporadas", "Sezona: %d"),
   T("%d texturas", "%d tekstura"),
+  T("%d técnicas", "%d tehničkih"),
   T("%d título", "%d naslov"),
   T("%d título assistido", "%d title watched"),
   T("%d título em andamento", "%d title in progress"),

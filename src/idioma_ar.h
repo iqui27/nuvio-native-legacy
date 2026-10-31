@@ -193,6 +193,7 @@
   T("%d temporada", "%d موسم"),
   T("%d temporadas", "%d مواسم"),
   T("%d texturas", "%d نسيج"),
+  T("%d técnicas", "%d تقنية"),
   T("%d título", "%d عنوان"),
   T("%d título assistido", "%d title watched"),
   T("%d título em andamento", "%d title in progress"),

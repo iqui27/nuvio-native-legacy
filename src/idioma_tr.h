@@ -193,6 +193,7 @@
   T("%d temporada", "%d sezon"),
   T("%d temporadas", "%d sezon"),
   T("%d texturas", "%d doku"),
+  T("%d técnicas", "%d teknik"),
   T("%d título", "%d yapım"),
   T("%d título assistido", "%d title watched"),
   T("%d título em andamento", "%d title in progress"),
