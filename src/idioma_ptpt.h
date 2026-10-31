@@ -1954,6 +1954,7 @@
   T("Classificação indicativa no player", "Classificação etária no leitor"),
   T("Classificação máxima", "Classificação máxima"),
   T("Classificação no player", "Classificação no leitor"),
+  T("Clique para avaliar", "Clique para avaliar"),
   T("Clube retrô", "Retro club"),
   T("Clássico", "Clássico"),
   T("Cobertura", "Cobertura"),

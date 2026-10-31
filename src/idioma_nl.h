@@ -1954,6 +1954,7 @@
   T("Classificação indicativa no player", "Leeftijdsclassificatie in de speler"),
   T("Classificação máxima", "Maximale beoordeling"),
   T("Classificação no player", "Kijkwijzer in de speler"),
+  T("Clique para avaliar", "Klik om te beoordelen"),
   T("Clube retrô", "Retro club"),
   T("Clássico", "Klassiek"),
   T("Cobertura", "Dekking"),

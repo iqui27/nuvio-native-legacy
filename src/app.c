@@ -7846,8 +7846,8 @@ static void desenharAtrasDoPainel(void *ctx) {
 #endif
     menu_pilula_mostrar(pilula);
     CAMADA_SE(menu_aberto() && !layout_desktop_ativo());
-    menu_desenhar(agora);
     if (!ctx_aberto()) menu_desktop_busca_desenhar();
+    menu_desenhar(agora);
   }
   // Palco: o holofote escurece a home e a barra, nunca um menu ou a pagina.
   if (tela == TELA_HOME && !detail_aberto() && !vertudo_aberta() && !ctx_aberto() && !menu_aberto())

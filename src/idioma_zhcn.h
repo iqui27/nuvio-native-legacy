@@ -1954,6 +1954,7 @@
   T("Classificação indicativa no player", "播放器中的年龄分级"),
   T("Classificação máxima", "最大额定值"),
   T("Classificação no player", "播放器中的年龄分级"),
+  T("Clique para avaliar", "点击评分"),
   T("Clube retrô", "Retro club"),
   T("Clássico", "经典"),
   T("Cobertura", "覆盖率"),

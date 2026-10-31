@@ -1043,7 +1043,7 @@ static void guiaDesenhar(void) {
 static void guiaAtualizar(float dt) {
   if (!guiaAberto) return;
 #ifdef NV_TOUCH_UI
-  if (!ajTelaCheia() || !ajToqueLivre[AJT_LISTA]) {
+  if (!ajRolagemLivre() || !ajToqueLivre[AJT_LISTA]) {
 #endif
   guiaRolar();
   guiaRol = ajustes_animacoes_reduzidas() ? guiaRolAlvo : anim_mola2(&guiaRolV, guiaRol, guiaRolAlvo, dt, 14.0f);

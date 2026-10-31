@@ -26,7 +26,11 @@ static float desktopReveal=1, desktopRevealV;
 void menu_desktop_revelar(void) { desktopOverlay=1; }
 void menu_desktop_hover(float x) {
   if (x < 8.0f) desktopOverlay=1;
-  else if (x > NV_DESKTOP_SIDEBAR_W / NV_DESKTOP_SCALE + 16) desktopOverlay=0;
+  else {
+    SDL_Window *window=SDL_GL_GetCurrentWindow();int w=1280,h=800;
+    if(window) SDL_GetWindowSize(window,&w,&h);
+    if(layout_window_x(x,w,h)>NV_DESKTOP_SIDEBAR_W+24) desktopOverlay=0;
+  }
 }
 static void desktopRecolher(int collapsed) {
   desktopCollapsed = collapsed; desktopOverlay=0;
@@ -40,7 +44,6 @@ static void desktopRestaurar(void) {
   nv_desktop_sidebar = desktopCollapsed ? 0.0f : NV_DESKTOP_SIDEBAR_W;
   desktopReveal=desktopCollapsed?0:1; desktopRevealV=0;
 }
-static void desktopToggle(int a, int b) { (void)a; (void)b; menu_desktop_alternar(); }
 #endif
 #include "ilha.h"
 #include "iconeapp.h"
@@ -1298,26 +1301,13 @@ int menu_desktop_foco(void) { return aberto ? linha : -1; }
 void menu_desktop_servico(int index) { desktopEscolher(MENU_ST0+index,0); }
 void menu_desktop_perfil(void) { desktopEscolher(MENU_RODAPE,0); }
 #endif
-static void desktopBusca(int a, int b) { (void)a; (void)b; menu_ir(MENU_BUSCAR); }
 void menu_desktop_busca_desenhar(void) {
   if (!layout_desktop_ativo()) return;
   float ant = gfx_escala();
   gfx_escala_sair(1.0f);
   // A soft title-bar fade protects traffic lights without a solid strip.
   gfx_brilho_topo((GfxRect){0,0,NV_TELA_W,150},0,1,0,0,0,.65f);
-#ifdef NV_DESKTOP_UI
-  float tx = fmaxf(144, NV_DESKTOP_RAIL_W + 18);
-  gfx_icone((GfxRect){tx, 24, 28, 28}, "mt_biblioteca", .8f,.8f,.82f,1);
-  ponteiro_alvo(tx - 10, 12, 52, 56, NULL, desktopToggle, 0, 0);
-  if (desktopCollapsed) { gfx_escala_sair(ant); return; }
-#endif
-  GfxRect r = {NV_TELA_W - 414.0f, 13.0f, 390.0f, 46.0f};
-  gfx_vidro_folha(r, .5f, 1.0f);
-  iconeTraco(MENU_BUSCAR, r.x + 26, r.y + r.h * .5f, 26, .95f, .95f, .95f, .7f);
-  const char *query = menu_destino() == MENU_BUSCAR ? busca_consulta() : "";
-  TxtLinha l = txt_linha_corta(TXT_DET_META2, *query ? query : menu_rotulo(MENU_BUSCAR), 220, 220, 224, 255, r.w - 70);
-  txt_desenhar(l, r.x + 54, r.y + (r.h - l.h) * .5f);
-  ponteiro_alvo(r.x, r.y, r.w, r.h, NULL, desktopBusca, 0, 0);
+  // Desktop navigation lives in the sidebar.
   gfx_escala_sair(ant);
 }
 static float desktopLayout(float *ys) {
@@ -1365,8 +1355,11 @@ static void desktopDesenhar(void) {
   if (!getenv("NV_CAPTURA_GL")) {
     gfx_sem_recorte();
     desktop_native_sidebar(w / NV_TELA_W,reveal);
-    float point=NV_TELA_H / fmaxf(1, nv_layout_h / NV_DESKTOP_SCALE);
-    gfx_furo_raio((GfxRect){8*point-(1-reveal)*w,36*point,w-16*point,NV_TELA_H-44*point},16*point/(NV_TELA_H-44*point));
+    SDL_Window *window=SDL_GL_GetCurrentWindow();int ww=1280,wh=800;
+    if(window) SDL_GetWindowSize(window,&ww,&wh);
+    float point=layout_window_units(ww,wh)/gfx_escala();
+    float inset=desktop_native_fullscreen()?8:36;
+    gfx_furo_raio((GfxRect){8*point-(1-reveal)*w,inset*point,w-16*point,NV_TELA_H-(inset+8)*point},16*point/fmaxf(1,NV_TELA_H-(inset+8)*point));
     return; // AppKit owns the material and controls in the real window.
   }
 #endif

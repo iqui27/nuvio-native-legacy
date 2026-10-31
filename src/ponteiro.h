@@ -118,6 +118,9 @@ void ponteiro_camada(void);
 // tras. No preview, sem registro ou com INICIO recusado o arrasto e consumido
 // sem navegacao nem clique. Nas TVs, conserva a rolagem por setas.
 void ponteiro_rolagem(PonteiroRolagemFn fn);
+#ifdef NV_DESKTOP_UI
+void ponteiro_scroll_offset(int row, int item, float offset);
+#endif
 #ifdef NV_TOUCH_UI
 // Puxar a borda esquerda da camada para a direita abre a navegacao diretamente.
 // A largura segue a escala do desenho. Nova camada descarta o registro.

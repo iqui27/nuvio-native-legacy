@@ -1953,6 +1953,7 @@
   { "Classificação indicativa no player", "Age rating in the player" },
   { "Classificação máxima", "Maximum rating" },
   { "Classificação no player", "Content rating in the player" },
+  { "Clique para avaliar", "Click to rate" },
   { "Clube retrô", "Retro club" },
   { "Clássico", "Classic" },
   { "Cobertura", "Coverage" },

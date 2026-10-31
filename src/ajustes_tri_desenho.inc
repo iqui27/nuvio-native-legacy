@@ -159,7 +159,7 @@ static void triIlhaSecoes(void) {
   // celular, pelo dedo. Os alvos ficam recortados a parte visivel.
   total = triSecoesAltura();
 #ifdef NV_TOUCH_UI
-  if (ajTelaCheia() && !uxEditor && !ajModalAberto())
+  if (ajRolagemLivre() && !uxEditor && !ajModalAberto())
     triSecRolY = ajToqueRegistrar(AJT_SECOES, (GfxRect){ ilha.x, topo, ilha.w, base - topo }, &triSecRolY, total - (base - topo), triSecRolY, 0);
 #endif
   y = topo - triSecRolY;
@@ -262,7 +262,7 @@ static void triLista(void) {
   } else triListaCabecalho(ilha, s->titulo, sub, k);
   if (ajustes_animacoes_reduzidas()) dy = 0.0f;
 #ifdef NV_TOUCH_UI
-  if (ajTelaCheia() && ajPontLista) {
+  if (ajRolagemLivre() && ajPontLista) {
     float total = 0.0f;
     for (int q = secIni[sec]; q < secFim(sec); q++) total += alturaItem(q);
     ajToqueRegistrar(AJT_LISTA, (GfxRect){fr.x, topo, fr.w, base - topo}, &scrollY, total - (base - topo), scrollY, sec);
@@ -344,7 +344,7 @@ static float triUtilBase(void) { return TRI_BASE - 30.0f - 56.0f - 16.0f; }
 // altura do conteudo, que o desenho sabe de antemao.
 static float triUtilRolToque(GfxRect fr, float topo, float base, float total) {
 #ifdef NV_TOUCH_UI
-  if (ajTelaCheia() && ajPontUtil)
+  if (ajRolagemLivre() && ajPontUtil)
     triUtilRol = ajToqueRegistrar(AJT_UTIL, (GfxRect){ fr.x, topo, fr.w, base - topo }, &triUtilRol, total - (base - topo), triUtilRol, triUtil);
 #else
   (void)fr; (void)topo; (void)base; (void)total;

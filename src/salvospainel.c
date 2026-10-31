@@ -16,6 +16,7 @@
 // atalho mais rapido do controle abriria vazio por ~20 s toda vez que a TV
 // liga, que e justamente quando alguem aperta.
 #include "salvospainel.h"
+#include "desktop_native.h"
 #include "home.h"
 #include "cwretido.h"
 #include "salvos.h"
@@ -3770,6 +3771,17 @@ static void desenhaPop(float a) {
   float e, h, w, x, y, topoL, janela;
   int i, vis, algumIcone;
   if (!pop) return;
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+  if(layout_desktop_ativo() && pop!=POP_EXCLUIR) {
+    DesktopMenuItem items[POP_MAX];
+    for(int k=0;k<popN;k++) items[k]=(DesktopMenuItem){i18n(popL[k].rot),"slider.horizontal.3",k+1,popL[k].marcado,0};
+    SDL_Window *window=SDL_GL_GetCurrentWindow();int ww=1280,hh=800;
+    if(window) SDL_GetWindowSize(window,&ww,&hh);
+    int selected=desktop_native_menu(items,popN,ponteiro_x()*ww/NV_TELA_W,ponteiro_y()*hh/NV_TELA_H);
+    if(selected>0 && selected<=popN) {popFoco=selected-1;popOk();} else pop=POP_NADA;
+    return;
+  }
+#endif
   ponteiro_camada();   // a escolha aberta tem o teclado: a lista de tras nao vale
   e = anim_suave(popEntrada) * a;
   vis = popN < POP_VISIVEIS ? popN : POP_VISIVEIS;

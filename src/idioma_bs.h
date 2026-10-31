@@ -1954,6 +1954,7 @@
   T("Classificação indicativa no player", "Dobna oznaka u plejeru"),
   T("Classificação máxima", "Maksimalna ocjena"),
   T("Classificação no player", "Starosna oznaka u playeru"),
+  T("Clique para avaliar", "Kliknite za ocjenu"),
   T("Clube retrô", "Retro club"),
   T("Clássico", "Klasično"),
   T("Cobertura", "Pokrivenost"),

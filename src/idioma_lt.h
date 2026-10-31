@@ -1954,6 +1954,7 @@
   T("Classificação indicativa no player", "Amžiaus cenzas grotuve"),
   T("Classificação máxima", "Maksimalus įvertinimas"),
   T("Classificação no player", "Amžiaus vertinimas grotuve"),
+  T("Clique para avaliar", "Spustelėkite, kad įvertintumėte"),
   T("Clube retrô", "Retro club"),
   T("Clássico", "Klasikinis"),
   T("Cobertura", "Aprėptis"),

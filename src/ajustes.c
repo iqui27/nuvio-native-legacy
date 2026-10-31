@@ -150,6 +150,7 @@ static int ajRetrato(void) {
 #endif
 }
 #define AJ_ESCALA_INI() float ajEscalaAnt_ = gfx_escala(); gfx_escala_sair(ajustes_tamanho_ajustes())
+static int ajRolagemLivre(void) { return layout_rolagem_livre(); }
 static int ajTelaCheia(void) {
 #ifdef NV_TOUCH_UI
   return layout_modo_mobile();
@@ -2836,7 +2837,7 @@ static void ajToqueLimpar(void) {
 }
 static void ajToqueCamada(void) { ajToqueN = 0; }
 static int ajToqueRolar(const PonteiroRolagem *e) {
-  if (!layout_modo_mobile()) return 0;
+  if (!layout_rolagem_livre()) return 0;
   if (e->fase == PONT_ROL_INICIO) {
     for (int i = ajToqueN - 1; i >= 0; i--) {
       AjToqueRegiao *r = &ajToqueRegioes[i];
@@ -2851,7 +2852,10 @@ static int ajToqueRolar(const PonteiroRolagem *e) {
     for (int i = ajToqueN - 1; i >= 0; i--) if (ajToqueRegioes[i].id == ajToqueAtivo) {
       AjToqueRegiao *r = &ajToqueRegioes[i];
       float antes = *r->offset;
-      *r->offset = anim_clamp(antes - e->delta / r->escala, 0.0f, r->maximo);
+      *r->offset = layout_scroll_delta(antes,e->delta/r->escala,0,r->maximo);
+#ifdef NV_DESKTOP_UI
+      ponteiro_scroll_offset(ajToqueAtivo,-1,*r->offset);
+#endif
       return fabsf(*r->offset - antes) > 0.001f;
     }
     return 0;
@@ -2861,14 +2865,19 @@ static int ajToqueRolar(const PonteiroRolagem *e) {
 }
 // Guarda a escala durante o desenho: no fio de eventos a escala ja voltou a 1.
 static float ajToqueRegistrarEixo(int id, GfxRect r, float *offset, float maximo, float alvo, int chave, int eixoX) {
-  if (!ajTelaCheia()) return alvo;
+  if (!ajTelaCheia() && !layout_desktop_ativo()) return alvo;
   float s = gfx_escala();
   if (ajToqueChave[id] != chave) {
     ajToqueLivre[id] = 0; ajToqueChave[id] = chave;
     if (ajToqueAtivo == id) ajToqueAtivo = -1;
   }
   if (!ajToqueLivre[id]) *offset = alvo;
-  maximo = fmaxf(0.0f, maximo); *offset = anim_clamp(*offset, 0.0f, maximo);
+  maximo = fmaxf(0.0f, maximo);
+#ifdef NV_DESKTOP_UI
+  if(ajToqueLivre[id]) *offset=layout_scroll_assentar(*offset,0,maximo,1.0f/60);
+  else
+#endif
+  *offset = anim_clamp(*offset, 0.0f, maximo);
   if (ajToqueN < AJT_N && s > 0.0f && r.w > 0.0f && r.h > 0.0f) {
     ajToqueRegioes[ajToqueN++] = (AjToqueRegiao){ {r.x * s, r.y * s, r.w * s, r.h * s}, offset, maximo, s, id, eixoX };
     ponteiro_rolagem(ajToqueRolar);
@@ -10678,7 +10687,7 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   if (alvo < 0.0f) alvo = 0.0f;
   // (O "cabecalho inteiro ou nenhum" saiu: o cabecalho agora e fixo na folha.)
 #ifdef NV_TOUCH_UI
-  if (ajTelaCheia() && ajToqueLivre[AJT_LISTA]) velY = 0.0f;
+  if (ajRolagemLivre() && ajToqueLivre[AJT_LISTA]) velY = 0.0f;
   else
 #endif
     scrollY = anim_mola2_reduzida(&velY, scrollY, alvo, dt, NV_MOLA2_SCROLL,

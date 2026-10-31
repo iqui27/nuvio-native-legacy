@@ -1,9 +1,9 @@
 #if defined(NV_DESKTOP_UI) && defined(__APPLE__)
 #import <Cocoa/Cocoa.h>
 #import <OpenGL/OpenGL.h>
-#import <OpenGL/glext.h>
 int ajustes_idioma(void);
 #import <QuartzCore/QuartzCore.h>
+#import <objc/runtime.h>
 #include <SDL2/SDL_syswm.h>
 #include "desktop_native.h"
 #include "menu.h"
@@ -15,22 +15,80 @@ int ajustes_idioma(void);
 #include "tex_cache.h"
 static NSWindow *nativeWindow;
 static NSView *sidebar, *sidebarControls;
-static NSView *sidebarBackdrop;
-static NSBitmapImageRep *sidebarPixels;
-static GLuint sidebarPbo, sidebarFence, sidebarFbo, sidebarTexture;
-static int sidebarPending;
-static Uint32 sidebarCopied;
 static int sidebarLanguage = -1;
 static NSMutableArray<NSTextField *> *groupLabels;
 static NSTextField *profileChevron;
 static float sidebarFraction, sidebarReveal;
 static id hoverMonitor;
 static id scrollMonitor;
+static BOOL menuTracking, nativeScrollLatched;
+static NSPoint nativeScrollPoint;
+static BOOL captureFullscreen;
+static IMP sidebarOriginalHit;
+static BOOL firstMouse(id self, SEL cmd, NSEvent *event) { return YES; }
+// Preserve SDL's class behavior; make decorative overlay regions transparent to input.
+static NSView *sidebarHit(id self, SEL cmd, NSPoint point) {
+  NSView *view=self;
+  if(view.hidden || view.alphaValue<.001 || !NSPointInRect(point,view.frame)) return nil;
+  NSView *hit=((NSView *(*)(id,SEL,NSPoint))sidebarOriginalHit)(self,cmd,point);
+  for(NSView *v=hit;v && v!=view;v=v.superview)
+    if([v isKindOfClass:NSControl.class] || [v isKindOfClass:NSScrollView.class]) return hit;
+  return nil;
+}
+static void specializeView(NSView *view, const char *name, SEL method, IMP implementation, const char *types) {
+  Class cls=objc_getClass(name);
+  if(!cls) {
+    cls=objc_allocateClassPair(object_getClass(view),name,0);
+    class_addMethod(cls,method,implementation,types);objc_registerClassPair(cls);
+  }
+  object_setClass(view,cls);
+}
 static NSMutableArray<NSButton *> *rows;
 static NSButton *profile;
 static NSMutableArray<NSButton *> *services;
 static NSScrollView *serviceScroll;
 static NSView *serviceContent;
+@interface NVMenuTarget : NSObject
+@property NSInteger selected;
+- (void)choose:(NSMenuItem *)item;
+@end
+@implementation NVMenuTarget
+- (void)choose:(NSMenuItem *)item { self.selected = item.tag; }
+@end
+int desktop_native_menu(const DesktopMenuItem *items, int count, float x, float y) {
+  if (!nativeWindow || count <= 0) return -1;
+  NSMenu *menu = [[NSMenu alloc] initWithTitle:@""];
+  menu.autoenablesItems = NO;
+  NVMenuTarget *target = [NVMenuTarget new]; target.selected = -1;
+  for (int i=0; i<count; i++) {
+    if (items[i].separator && menu.numberOfItems) [menu addItem:NSMenuItem.separatorItem];
+    NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:[NSString stringWithUTF8String:items[i].title] action:@selector(choose:) keyEquivalent:@""];
+    item.tag = items[i].action; item.target = target;
+    item.enabled = items[i].action != 0;
+    item.state = items[i].checked ? NSControlStateValueOn : NSControlStateValueOff;
+    if (items[i].symbol) {
+      item.image = [NSImage imageWithSystemSymbolName:[NSString stringWithUTF8String:items[i].symbol] accessibilityDescription:item.title];
+      if (@available(macOS 27.0, *)) item.preferredImageVisibility = NSMenuItemImageVisibilityVisible;
+    }
+    [menu addItem:item]; [item release];
+  }
+  NSView *view = nativeWindow.contentView;
+  NSPoint point = NSMakePoint(x, view.isFlipped ? y : view.bounds.size.height-y);
+  printf("[desktop-menu] native=NSMenu items=%d window=%ld\n",count,(long)nativeWindow.windowNumber); fflush(stdout);
+  // Proof tracking uses only an app-local timer; no activation or global input.
+  NSTimer *dismiss = nil;
+  if (getenv("NV_CAPTURA_MENU")) {
+    dismiss = [NSTimer timerWithTimeInterval:8 repeats:NO block:^(NSTimer *timer) { [menu cancelTracking]; }];
+    [[NSRunLoop mainRunLoop] addTimer:dismiss forMode:NSEventTrackingRunLoopMode];
+  }
+  menuTracking=YES;
+  [menu popUpMenuPositioningItem:nil atLocation:point inView:view];
+  menuTracking=NO;
+  [dismiss invalidate];
+  int selected = (int)target.selected;
+  [menu release]; [target release];
+  return selected;
+}
 // Keep every symbol centred in one column, independent of its intrinsic width.
 @interface NVSidebarCell : NSButtonCell
 @end
@@ -125,6 +183,7 @@ void desktop_native_init(SDL_Window *window) {
   nativeWindow.opaque = NO;
   nativeWindow.backgroundColor = NSColor.clearColor;
   NSView *content = nativeWindow.contentView;
+  specializeView(content,"NVFirstMouseSDLView",@selector(acceptsFirstMouse:),(IMP)firstMouse,"c@:@");
   [content setWantsLayer:YES];
   content.layer.opaque = NO;
   NSView *container = content.superview;
@@ -140,132 +199,121 @@ void desktop_native_init(SDL_Window *window) {
   if (@available(macOS 26.0, *)) {
     NSGlassEffectView *glass = [NSGlassEffectView new];
     glass.cornerRadius = 16;
-    glass.style = NSGlassEffectViewStyleClear;
-    glass.tintColor = NSColor.clearColor;
+    glass.style = NSGlassEffectViewStyleRegular;
     glass.contentView = sidebarControls;
     sidebar = glass;
   } else {
     NSVisualEffectView *effect = [NSVisualEffectView new];
     effect.material = NSVisualEffectMaterialSidebar;
     effect.blendingMode = NSVisualEffectBlendingModeBehindWindow;
-    effect.state = NSVisualEffectStateFollowsWindowActiveState;
+    effect.state = NSVisualEffectStateActive;
     sidebar = effect;
     [sidebar addSubview:sidebarControls];
   }
+  sidebarOriginalHit=class_getMethodImplementation(object_getClass(sidebar),@selector(hitTest:));
+  specializeView(sidebar,"NVSidebarHitView",@selector(hitTest:),(IMP)sidebarHit,
+    method_getTypeEncoding(class_getInstanceMethod(NSView.class,@selector(hitTest:))));
+  sidebar.hidden=YES;
   sidebar.wantsLayer = YES;
   sidebar.layer.cornerRadius = 16;
   sidebar.layer.masksToBounds = YES;
-  sidebarBackdrop = [NSView new];
-  sidebarBackdrop.wantsLayer = YES;
-  sidebarBackdrop.layer.cornerRadius = 16;
-  sidebarBackdrop.layer.masksToBounds = YES;
-  [container addSubview:sidebarBackdrop positioned:NSWindowAbove relativeTo:content];
-  [container addSubview:sidebar positioned:NSWindowAbove relativeTo:sidebarBackdrop];
-  sidebarBackdrop.layer.shadowOpacity=.18;
-  sidebarBackdrop.layer.shadowRadius=12;
-  sidebarBackdrop.layer.shadowOffset=CGSizeMake(0,-3);
+  // The GL surface has an alpha hole only over this native material.
+  [container addSubview:sidebar positioned:NSWindowAbove relativeTo:content];
   GLint opaque = 0;
   [[NSOpenGLContext currentContext] setValues:&opaque forParameter:NSOpenGLContextParameterSurfaceOpacity];
   // SDL normalizes Cocoa precise deltas into wheel ticks. Preserve native
   // pixels, phases and OS momentum in a tagged SDL event instead.
-  scrollMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskScrollWheel handler:^NSEvent *(NSEvent *event) {
-    if (event.window != nativeWindow || !event.hasPreciseScrollingDeltas) return event;
+  scrollMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskScrollWheel|NSEventMaskSwipe handler:^NSEvent *(NSEvent *event) {
+    BOOL swipe = event.type == NSEventTypeSwipe;
+    if(menuTracking) return event;
+    BOOL momentum=event.momentumPhase!=NSEventPhaseNone;
+    // Momentum may carry no window after the finger leaves. Its initial
+    // window and point remain authoritative, even over another row/view.
+    if(event.window!=nativeWindow && !(event.window==nil && momentum && nativeScrollLatched)) return event;
+    if(event.phase==NSEventPhaseNone && !momentum) nativeScrollLatched=NO;
+    NSPoint p=momentum && nativeScrollLatched?nativeScrollPoint:[content convertPoint:event.locationInWindow fromView:nil];
+    if(!nativeScrollLatched || (event.phase & NSEventPhaseBegan)) {
+      NSPoint containerPoint=[sidebar.superview convertPoint:event.locationInWindow fromView:nil];
+      if([sidebar hitTest:containerPoint]) return event;
+      nativeScrollPoint=p;nativeScrollLatched=YES;
+    }
     SDL_Event wheel = {0}; wheel.type = SDL_MOUSEWHEEL;
     wheel.wheel.windowID = SDL_GetWindowID(window);
     wheel.wheel.which = NV_DESKTOP_PIXEL_WHEEL;
-    wheel.wheel.preciseX = event.scrollingDeltaX;
-    wheel.wheel.preciseY = event.scrollingDeltaY;
-    wheel.wheel.y = event.phase == NSEventPhaseBegan ? 1 : 0;
+    float unit=event.hasPreciseScrollingDeltas?1:36;
+    wheel.wheel.preciseX = swipe ? event.deltaX * 60 : event.scrollingDeltaX*unit;
+    wheel.wheel.preciseY = swipe ? event.deltaY * 60 : event.scrollingDeltaY*unit;
+    // Keep both native phases losslessly for session diagnostics/replay.
+    wheel.wheel.y=(int)event.phase|((int)event.momentumPhase<<8)|(event.hasPreciseScrollingDeltas?0:1<<16);
+    wheel.wheel.x = NV_WHEEL_PHASED;
+    if (event.phase & NSEventPhaseBegan) wheel.wheel.x |= NV_WHEEL_BEGIN;
+    if ((event.phase | event.momentumPhase) & NSEventPhaseEnded) wheel.wheel.x |= NV_WHEEL_END;
+    if ((event.phase | event.momentumPhase) & NSEventPhaseCancelled) wheel.wheel.x |= NV_WHEEL_CANCEL;
+    if (event.momentumPhase != NSEventPhaseNone) wheel.wheel.x |= NV_WHEEL_MOMENTUM;
+    // Magic Mouse has precise deltas without a finger lifecycle. Keep its
+    // pixel route; the consumer ends ownership after a short quiet interval.
+    if (event.phase == NSEventPhaseNone && event.momentumPhase == NSEventPhaseNone)
+      wheel.wheel.x = NV_WHEEL_UNPHASED;
+    if (swipe) wheel.wheel.x = NV_WHEEL_PHASED|NV_WHEEL_BEGIN|NV_WHEEL_END|NV_WHEEL_SWIPE;
     wheel.wheel.timestamp = SDL_GetTicks();
-    NSPoint p = [content convertPoint:event.locationInWindow fromView:nil];
-    wheel.wheel.mouseX = p.x; wheel.wheel.mouseY = content.bounds.size.height - p.y;
+    wheel.wheel.mouseX = p.x; wheel.wheel.mouseY = content.isFlipped?p.y:content.bounds.size.height-p.y;
     SDL_PushEvent(&wheel);
+    if((event.phase&NSEventPhaseCancelled) || (event.momentumPhase&(NSEventPhaseEnded|NSEventPhaseCancelled))) nativeScrollLatched=NO;
     return nil;
   }];
   nativeWindow.acceptsMouseMovedEvents=YES;
-  hoverMonitor=[NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskMouseMoved|NSEventMaskLeftMouseDragged handler:^NSEvent *(NSEvent *event) {
-    if(event.window==nativeWindow) menu_desktop_hover(event.locationInWindow.x);
-    return event;
+  // Cocoa and SDL disagree on the content origin after FullSizeContentView.
+  // Use the very same view conversion for move, click and scroll; no focus-only click.
+  hoverMonitor=[NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskMouseMoved|NSEventMaskLeftMouseDragged|NSEventMaskLeftMouseDown|NSEventMaskLeftMouseUp|NSEventMaskRightMouseDown|NSEventMaskRightMouseUp handler:^NSEvent *(NSEvent *event) {
+    if(menuTracking || event.window!=nativeWindow) return event;
+    NSPoint p=[content convertPoint:event.locationInWindow fromView:nil];
+    for(NSWindowButton button=NSWindowCloseButton;button<=NSWindowZoomButton;button++) {
+      NSButton *control=[nativeWindow standardWindowButton:button];
+      if(control && NSPointInRect([control convertPoint:event.locationInWindow fromView:nil],control.bounds)) return event;
+    }
+    menu_desktop_hover(p.x);
+    NSPoint containerPoint=[sidebar.superview convertPoint:event.locationInWindow fromView:nil];
+    if([sidebar hitTest:containerPoint]) return event;
+    SDL_Event mouse={0};
+    BOOL move=event.type==NSEventTypeMouseMoved || event.type==NSEventTypeLeftMouseDragged;
+    float y=content.isFlipped?p.y:content.bounds.size.height-p.y;
+    if(move) {
+      mouse.type=SDL_MOUSEMOTION;mouse.motion.windowID=SDL_GetWindowID(window);
+      mouse.motion.x=p.x;mouse.motion.y=y;
+    } else {
+      BOOL down=event.type==NSEventTypeLeftMouseDown || event.type==NSEventTypeRightMouseDown;
+      mouse.type=down?SDL_MOUSEBUTTONDOWN:SDL_MOUSEBUTTONUP;
+      mouse.button.windowID=SDL_GetWindowID(window);
+      mouse.button.button=event.type==NSEventTypeRightMouseDown || event.type==NSEventTypeRightMouseUp || (event.modifierFlags&NSEventModifierFlagControl)?SDL_BUTTON_RIGHT:SDL_BUTTON_LEFT;
+      mouse.button.state=down?SDL_PRESSED:SDL_RELEASED;
+      mouse.button.x=p.x;mouse.button.y=y;
+    }
+    SDL_PushEvent(&mouse);
+    return nil;
   }];
+  int ww,wh,dw,dh;SDL_GetWindowSize(window,&ww,&wh);SDL_GL_GetDrawableSize(window,&dw,&dh);
+  printf("[desktop-coordinates] window=%dx%d view=%.0fx%.0f drawable=%dx%d flipped=%d\n",ww,wh,content.bounds.size.width,content.bounds.size.height,dw,dh,content.isFlipped);
   printf("[desktop-native] window=%ld material=Sidebar transparent=1 glass=%d radius=%.1f\n", (long)nativeWindow.windowNumber, [sidebar isKindOfClass:NSClassFromString(@"NSGlassEffectView")], radius);
 }
 void desktop_native_sidebar(float fraction, float reveal) {
   if (getenv("NV_CAPTURA_GL")) fraction=0;
   sidebarFraction=fraction; sidebarReveal=reveal;
-  if (!sidebar || fraction<=0) return;
-  // Sample at most 10 Hz; a fence keeps mapping off the render critical path.
-  // Flip on the GPU into a small FBO, then publish only a completed PBO.
-  GLint viewport[4]; glGetIntegerv(GL_VIEWPORT,viewport);
-  int width=MAX(1,(int)(viewport[2]*fraction)), height=viewport[3];
-  if (sidebarPixels.pixelsWide!=width || sidebarPixels.pixelsHigh!=height) {
-    if(sidebarPbo) glDeleteBuffers(1,&sidebarPbo);
-    if(sidebarFence) glDeleteFencesAPPLE(1,&sidebarFence);
-    if(sidebarFbo) glDeleteFramebuffersEXT(1,&sidebarFbo);
-    if(sidebarTexture) glDeleteTextures(1,&sidebarTexture);
-    sidebarPbo=sidebarFence=sidebarFbo=sidebarTexture=0;sidebarPending=0;sidebarCopied=0;
-    [sidebarPixels release];
-    sidebarPixels=[[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:width pixelsHigh:height bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:width*4 bitsPerPixel:32];
-  }
-  GLint pack;glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING,&pack);
-  if(sidebarPending) {
-    if(!glTestFenceAPPLE(sidebarFence)) return;
-    glBindBuffer(GL_PIXEL_PACK_BUFFER,sidebarPbo);
-    const void *pixels=glMapBuffer(GL_PIXEL_PACK_BUFFER,GL_READ_ONLY);
-    if(pixels) {
-      memcpy(sidebarPixels.bitmapData,pixels,(size_t)width*height*4);
-      glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
-      [CATransaction begin];[CATransaction setDisableActions:YES];
-      sidebarBackdrop.layer.contents=(id)sidebarPixels.CGImage;
-      [CATransaction commit];
-    }
-    glBindBuffer(GL_PIXEL_PACK_BUFFER,pack);sidebarPending=0;
-  }
-  Uint32 now=SDL_GetTicks();
-  if(sidebarCopied && now-sidebarCopied<100) return;
-  GLint readFbo,drawFbo,texture;
-  glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING_EXT,&readFbo);
-  glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING_EXT,&drawFbo);
-  glGetIntegerv(GL_TEXTURE_BINDING_2D,&texture);
-  if(!sidebarPbo) {
-    glGenBuffers(1,&sidebarPbo);glBindBuffer(GL_PIXEL_PACK_BUFFER,sidebarPbo);
-    glBufferData(GL_PIXEL_PACK_BUFFER,(size_t)width*height*4,NULL,GL_STREAM_READ);
-    glGenFencesAPPLE(1,&sidebarFence);
-    glGenTextures(1,&sidebarTexture);glBindTexture(GL_TEXTURE_2D,sidebarTexture);
-    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,width,height,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
-    glGenFramebuffersEXT(1,&sidebarFbo);glBindFramebufferEXT(GL_DRAW_FRAMEBUFFER_EXT,sidebarFbo);
-    glFramebufferTexture2DEXT(GL_DRAW_FRAMEBUFFER_EXT,GL_COLOR_ATTACHMENT0_EXT,GL_TEXTURE_2D,sidebarTexture,0);
-    glBindTexture(GL_TEXTURE_2D,texture);
-  }
-  GLboolean scissor=glIsEnabled(GL_SCISSOR_TEST);glDisable(GL_SCISSOR_TEST);
-  glBindFramebufferEXT(GL_DRAW_FRAMEBUFFER_EXT,sidebarFbo);
-  glBlitFramebufferEXT(0,0,width,height,0,height,width,0,GL_COLOR_BUFFER_BIT,GL_NEAREST);
-  glBindFramebufferEXT(GL_READ_FRAMEBUFFER_EXT,sidebarFbo);
-  glBindBuffer(GL_PIXEL_PACK_BUFFER,sidebarPbo);
-  glReadPixels(0,0,width,height,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
-  glSetFenceAPPLE(sidebarFence);sidebarPending=1;sidebarCopied=now;
-  glBindBuffer(GL_PIXEL_PACK_BUFFER,pack);
-  glBindFramebufferEXT(GL_READ_FRAMEBUFFER_EXT,readFbo);
-  glBindFramebufferEXT(GL_DRAW_FRAMEBUFFER_EXT,drawFbo);
-  if(scissor)glEnable(GL_SCISSOR_TEST);
 }
 void desktop_native_finish(void) {
   float fraction=sidebarFraction;
   if (!sidebar) return;
-  if(fraction<=0) {sidebar.hidden=YES;sidebarBackdrop.hidden=YES;return;}
+  if(fraction<=0 || sidebarReveal<.001f) {sidebar.hidden=YES;return;}
   [CATransaction begin]; [CATransaction setDisableActions:YES];
   NSRect bounds=nativeWindow.contentView.bounds;
-  BOOL fullscreen=(nativeWindow.styleMask & NSWindowStyleMaskFullScreen)!=0;
+  BOOL fullscreen=desktop_native_fullscreen();
   nativeWindow.contentView.layer.cornerRadius=fullscreen?0:16;
   nativeWindow.contentView.superview.layer.cornerRadius=fullscreen?0:16;
   CGFloat titleInset=fullscreen?8:36;
   NSRect frame=NSMakeRect(8-(1-sidebarReveal)*bounds.size.width*fraction,8,MAX(1,bounds.size.width*fraction-16),bounds.size.height-titleInset-8);
-  sidebar.alphaValue=.86f*sidebarReveal; sidebarBackdrop.alphaValue=sidebarReveal;
+  sidebar.alphaValue=sidebarReveal;
   if(!NSEqualRects(sidebar.frame,frame)) sidebar.frame = frame;
   if(sidebar.hidden) sidebar.hidden=NO;
   sidebarControls.frame=sidebar.bounds;
-  sidebarBackdrop.hidden=NO;
-  sidebarBackdrop.frame=frame;
-  sidebarBackdrop.layer.contentsRect=CGRectMake(8/(bounds.size.width*fraction),titleInset/bounds.size.height,frame.size.width/(bounds.size.width*fraction),frame.size.height/bounds.size.height);
   sidebarRows();
   if(sidebarLanguage!=ajustes_idioma()) {
     sidebarLanguage=ajustes_idioma();
@@ -358,6 +406,17 @@ void desktop_native_appearance(const char *name) {
     [sidebarControls setNeedsDisplay:YES];
     [nativeWindow displayIfNeeded];
   }
+}
+int desktop_native_fullscreen(void) {
+  return captureFullscreen || (nativeWindow.styleMask&NSWindowStyleMaskFullScreen)!=0;
+}
+void desktop_native_capture_fullscreen(int width, int height) {
+  if(!getenv("NV_CAPTURA") || !nativeWindow) return;
+  captureFullscreen=YES;
+  // Borderless full-size window behind the foreground app; no Space switch or activation.
+  nativeWindow.styleMask=NSWindowStyleMaskBorderless;
+  NSRect screen=nativeWindow.screen.frame;
+  [nativeWindow setFrame:NSMakeRect(screen.origin.x,screen.origin.y,width,height) display:YES];
 }
 int desktop_native_dark(void) {
   return [[nativeWindow.effectiveAppearance bestMatchFromAppearancesWithNames:@[NSAppearanceNameDarkAqua, NSAppearanceNameAqua]] isEqualToString:NSAppearanceNameDarkAqua];

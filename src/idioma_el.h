@@ -1954,6 +1954,7 @@
   T("Classificação indicativa no player", "Καταλληλότητα στο πρόγραμμα αναπαραγωγής"),
   T("Classificação máxima", "Μέγιστη βαθμολογία"),
   T("Classificação no player", "Ηλικιακή ένδειξη στο πρόγραμμα αναπαραγωγής"),
+  T("Clique para avaliar", "Κάντε κλικ για αξιολόγηση"),
   T("Clube retrô", "Retro club"),
   T("Clássico", "Κλασικό"),
   T("Cobertura", "Κάλυψη"),

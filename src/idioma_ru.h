@@ -1953,6 +1953,7 @@
   T("Classificação indicativa no player", "Возрастной рейтинг в плеере"),
   T("Classificação máxima", "Максимальный рейтинг"),
   T("Classificação no player", "Возрастной рейтинг в плеере"),
+  T("Clique para avaliar", "Нажмите, чтобы оценить"),
   T("Clube retrô", "Retro club"),
   T("Clássico", "Классический"),
   T("Cobertura", "Охват"),

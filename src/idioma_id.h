@@ -1954,6 +1954,7 @@
   T("Classificação indicativa no player", "Rating usia di pemutar"),
   T("Classificação máxima", "Peringkat maksimal"),
   T("Classificação no player", "Klasifikasi usia di pemutar"),
+  T("Clique para avaliar", "Klik untuk menilai"),
   T("Clube retrô", "Retro club"),
   T("Clássico", "Klasik"),
   T("Cobertura", "Cakupan"),

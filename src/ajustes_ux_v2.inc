@@ -304,7 +304,7 @@ static void aj2MenuAtualizar(float dt) {
     if (alvo > fim - janela + AJ2_MENU_FADE) alvo = fim - janela + AJ2_MENU_FADE;
     if (alvo < 0) alvo = 0;
 #ifdef NV_TOUCH_UI
-    if (ajTelaCheia() && ajToqueLivre[AJT_MENU]) aj2MRolV = 0.0f;
+    if (ajRolagemLivre() && ajToqueLivre[AJT_MENU]) aj2MRolV = 0.0f;
     else
 #endif
     if (!aj2MIni || red) { aj2MRol = alvo; aj2MRolV = 0; }
@@ -352,7 +352,7 @@ static void aj2DesenharMenu(const Aj2Pose *p) {
   if (p->mA <= 0.003f) return;
   aj2MenuMedir();
 #ifdef NV_TOUCH_UI
-  if (ajTelaCheia() && !ajModalAberto() && !uxEditor && p->mA > 0.1f && p->mS > 0.0f) {
+  if (ajRolagemLivre() && !ajModalAberto() && !uxEditor && p->mA > 0.1f && p->mS > 0.0f) {
     GfxRect r = aj2MenuToqueRect((GfxRect){m.x, topo, m.w, base - topo}, m, p);
     ajToqueRegistrar(AJT_MENU, r, &aj2MRol, aj2MenuY(n - 1) + aj2MH[n - 1] - (base - topo) + AJ2_MENU_FADE, aj2MRol, 0);
     if (ajToqueN) ajToqueRegioes[ajToqueN - 1].escala *= p->mS;
@@ -990,7 +990,7 @@ static void aj2LAtualizar(float dt) {
   } else if (total > jan && focoIndice && uxTopo >= 0) alvo = 0;
   else if (total > jan) alvo = aj2LRol;
 #ifdef NV_TOUCH_UI
-  if (ajTelaCheia() && ajToqueLivre[AJT_INDICE]) aj2LRol = anim_clamp(aj2LRol, 0.0f, fmaxf(0.0f, total - jan));
+  if (ajRolagemLivre() && ajToqueLivre[AJT_INDICE]) aj2LRol = layout_scroll_assentar(aj2LRol,0,fmaxf(0,total-jan),dt);
   else
 #endif
   if (ajustes_animacoes_reduzidas()) aj2LRol = alvo;
@@ -1119,7 +1119,7 @@ static void aj2DesenharGrade(float a) {
   ajPaginaIlha(g, 40.0f, 1);
   if (a >= 0.999f && !ajModalAberto() && !uxEditor) {
 #ifdef NV_TOUCH_UI
-    if (ajTelaCheia() && (aj2Lista() || ajRetrato())) {
+    if (ajRolagemLivre() && (aj2Lista() || ajRetrato())) {
       float total; aj2LYRel(0, &total);
       ajToqueRegistrar(AJT_INDICE, (GfxRect){g.x, aj2LTopo(), g.w, aj2LBase() - aj2LTopo()},
                        &aj2LRol, total - (aj2LBase() - aj2LTopo()), aj2LRol, 0);

@@ -63,6 +63,7 @@
 //      ao topo empurra o cabecalho para fora da tela na primeira descida.
 #include "menu.h"
 #include "biblioteca.h"
+#include "desktop_native.h"
 #include "botoes.h"
 #include "teclavoltar.h"
 #include "jfid.h"
@@ -860,7 +861,12 @@ static float toqueBibliotecaMax(void) {
   if (estado() != EST_ITENS && linhas > BIB_MAX_LINHAS) linhas = BIB_MAX_LINHAS;
   return linhas > 0 ? fmaxf(0.0f, gradeY() + (linhas - 1) * passoLinha() + alturaLinha() - BIB_GRADE_BASE) : 0.0f;
 }
-static int toqueBibliotecaRolar(const PonteiroRolagem *e) {
+static int toqueBibliotecaRolar(const PonteiroRolagem *input) {
+  const PonteiroRolagem *e=input;
+#ifdef NV_DESKTOP_UI
+  PonteiroRolagem local=*input;
+  float scale=gfx_escala();local.x/=scale;local.y/=scale;local.delta/=scale;e=&local;
+#endif
   if (!layout_rolagem_livre()) { toqueLivre = 0; return 0; }
   if (e->fase == PONT_ROL_INICIO) {
     if (!e->eixoY || e->x < bibX() || e->x >= bibX() + bibW() || e->y < gradeY() || e->y >= BIB_GRADE_BASE || nCelulas < 1 || teclado_aberto()) return 0;
@@ -870,6 +876,9 @@ static int toqueBibliotecaRolar(const PonteiroRolagem *e) {
   if (e->fase == PONT_ROL_MOVER || e->fase == PONT_ROL_INERCIA) {
     float antes = scrollY;
     scrollY = layout_scroll_delta(scrollY, e->delta, 0.0f, toqueBibliotecaMax());
+#ifdef NV_DESKTOP_UI
+    ponteiro_scroll_offset(-1,-1,scrollY);
+#endif
     if (estado() == EST_ITENS && scrollY >= toqueBibliotecaMax() - 2.0f * passoLinha()) lst_itens_mais();
     return fabsf(scrollY - antes) > 0.001f;
   }
@@ -3765,6 +3774,27 @@ static void origemMarca(GfxRect r, const char *icon, const char *logo, float alp
   else gfx_icone(r, icon, .94f, .94f, .94f, alpha);
 }
 static void desenhaOrigens(void) {
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+  if(layout_desktop_ativo()) {
+    if(!origensAbertas) return;
+    int n=modo==MODO_LISTAS?BIB_N_FONTES:nOrigens();
+    DesktopMenuItem items[n>0?n:1];
+    for(int i=0;i<n;i++) {
+      const char *name,*description,*icon,*logo;int count;
+      origemDados(i,&name,&description,&count,&icon,&logo);
+      items[i]=(DesktopMenuItem){i18n(name),"square.stack",i+1,i==origemAtual(),0};
+    }
+    SDL_Window *window=SDL_GL_GetCurrentWindow();int w=1280,h=800;
+    if(window) SDL_GetWindowSize(window,&w,&h);
+    int selected=desktop_native_menu(items,n,ponteiro_x()*w/NV_TELA_W,ponteiro_y()*h/NV_TELA_H);
+    if(selected>0 && selected<=n) {
+      ponteiroOrigem(selected-1,0);
+      SDL_Event event={0};event.type=SDL_KEYDOWN;event.key.keysym.sym=SDLK_RETURN;SDL_PushEvent(&event);
+      event.type=SDL_KEYUP;SDL_PushEvent(&event);
+    } else {origensAbertas=0;focoOrigem=0;}
+    return;
+  }
+#endif
   // Shared Lists island, reversible spring, clipping and row focus.
   GfxRect panel = {paginaX(), gradeY(), ANC(320), fminf(ANC(650), ANC(T21_SAFE_B) - gradeY())};
   int n = modo == MODO_LISTAS ? BIB_N_FONTES : nOrigens();

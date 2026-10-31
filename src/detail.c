@@ -952,7 +952,7 @@ static float docFim = NV_DETP_FIM;
 static int progTemNotas(void);   // definida adiante, junto da grade
 static const char *dicaSecao(int r) {
   switch (r) {
-    case SEC_TRAILERS:     return "OK abre no player, com som";
+    case SEC_TRAILERS:     return layout_desktop_ativo() ? NULL : "OK abre no player, com som";
     case SEC_COMENTARIOS:  return "Trakt · ordenado por curtidas";
     case SEC_PROGTEMP:     return progTemNotas() ? "IMDb · traço = visto" : NULL;
     case SEC_COLECAO:      return ehSerie() ? NULL : "ordem de lançamento";
@@ -1433,7 +1433,7 @@ static void desenhaNotasTiles(float x,float y,float a) {
         int minha=notaMinha();
         snprintf(v,sizeof v,minha ? "%d" : "★",minha);
         txt_desenhar_alpha(txt_linha(TXT_G52B,v,ar*255,ag*255,ab*255,255),tx+24,ty+54.4f,a);
-        txt_desenhar_alpha(txt_linha(TXT_G18R,i18n("OK para avaliar"),243,242,239,160),tx+24,ty+132.8f,a);
+        txt_desenhar_alpha(txt_linha(TXT_G18R,i18n(layout_desktop_ativo() ? "Clique para avaliar" : "OK para avaliar"),243,242,239,160),tx+24,ty+132.8f,a);
       } else {
         AmigosTitulo am;
         if (amigosDoTitulo(&am)) {
@@ -2418,6 +2418,7 @@ static int nLinhasDetalhe(void) {
 // filme e ao culling. Antes cada numero destes vivia cravado no meio do
 // desenho, e uma secao nova herdava a altura do elenco em silencio.
 static float secaoAlvo(int r) {
+  if (layout_desktop_ativo()) return 1.f;
   if (r == SEC_TEMPORADAS && ajustes_home_layout() == HOME_LAYOUT_MODERNA) return 1.f;
   return nivel>=1 && foco.fileira!=r ? .42f : 1.f;
 }
@@ -4027,6 +4028,10 @@ static int toqueDetalheRolar(const PonteiroRolagem *e) {
     } else if (toqueSecAtiva >= 0) r = toquerol_evento(&toqueSec[toqueSecAtiva], e);
   }
   if (r) {
+#ifdef NV_DESKTOP_UI
+    ponteiro_scroll_offset(e->eixoY?-1:toqueSecAtiva,-1,
+      e->eixoY?scrollY:toqueSecAtiva>=0?scrollSec[toqueSecAtiva]:0);
+#endif
     toqueDetalhe.livre = 1; velY = 0;
     if (toqueSecAtiva >= 0) velSec[toqueSecAtiva] = 0;
     if (e->eixoY) { nivel = 1; carCheia = 1; }
@@ -4059,7 +4064,7 @@ static void detail_atualizar_(float dt, Uint32 agora) {
   colListaEntrada=anim_mola(colListaEntrada,colListaAberta ? 1 : 0,dt,NV_MOLA_FOCO);
   lowerEnter=anim_clamp(anim_mola(lowerEnter,lowerList ? 1 : 0,dt,NV_MOLA_FOCO),0,1);
 #ifdef NV_TOUCH_UI
-  if (toquerol_livre(&toqueLower)) { lowerTarget=lowerScroll; lowerScrollVel=0; }
+  if (toquerol_livre(&toqueLower)) { lowerScroll=layout_scroll_assentar(lowerScroll,toqueLower.minimo,toqueLower.maximo,dt); lowerTarget=lowerScroll; lowerScrollVel=0; }
   else
 #endif
   lowerScroll=anim_mola2(&lowerScrollVel,lowerScroll,lowerTarget,dt,NV_MOLA2_SCROLL);
@@ -4135,7 +4140,7 @@ static void detail_atualizar_(float dt, Uint32 agora) {
     if (alvo > maxY) alvo = maxY;
     if (alvo < 0.0f) alvo = 0.0f;
 #ifdef NV_TOUCH_UI
-    if (toqueColecao.livre) { colListaScroll = toquerol_clamp(colListaScroll, 0, maxY); colListaVel = 0; }
+    if (toqueColecao.livre) { colListaScroll = layout_scroll_assentar(colListaScroll, 0, maxY,dt); colListaVel = 0; }
     else
 #endif
     colListaScroll = anim_mola2(&colListaVel, colListaScroll, alvo, dt, NV_MOLA2_SCROLL);
@@ -4590,7 +4595,7 @@ static void detail_atualizar_(float dt, Uint32 agora) {
     } }
   for (int r=0;r<N_SECOES;r++) {
 #ifdef NV_TOUCH_UI
-    if (toqueSec[r].livre) { alvoScrollSec[r]=scrollSec[r]; velSec[r]=0; continue; }
+    if (toqueSec[r].livre) { scrollSec[r]=layout_scroll_assentar(scrollSec[r],toqueSec[r].minimo,toqueSec[r].maximo,dt); alvoScrollSec[r]=scrollSec[r]; velSec[r]=0; continue; }
 #endif
     scrollSec[r]=anim_mola2_reduzida(&velSec[r],scrollSec[r],alvoScrollSec[r],dt,
                                     NV_MOLA2_SCROLL,anim_politica_reduzida);
@@ -4650,7 +4655,7 @@ static void detail_atualizar_(float dt, Uint32 agora) {
     if (alvoY < 0.0f) alvoY = 0.0f;
   }
 #ifdef NV_TOUCH_UI
-  if (toqueDetalhe.livre) { scrollY = toquerol_clamp(scrollY, 0, fmaxf(0, docFim - NV_TELA_H)); velY = 0; }
+  if (toqueDetalhe.livre) { scrollY = layout_scroll_assentar(scrollY, 0, fmaxf(0, docFim - NV_TELA_H),dt); velY = 0; }
   else
 #endif
   {

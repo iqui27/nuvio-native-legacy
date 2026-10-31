@@ -1531,6 +1531,9 @@ static int toqueBuscaRolar(const PonteiroRolagem *e) {
         if (e->y >= y && e->y < y + filAlt(r)) { toqueFileira = r; break; }
       }
       if (toqueFileira < 0) return 0;
+#ifdef NV_DESKTOP_UI
+      if (e->delta > 0 && scrollX[toqueFileira] <= .5f) return 0;
+#endif
       toqueLivreX[toqueFileira] = 1; velX[toqueFileira] = 0.0f;
     }
     toqueLivreY = 1; velY = 0.0f; scrollAlvo = scrollY;
