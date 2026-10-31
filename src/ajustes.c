@@ -3310,6 +3310,7 @@ float ajustes_tamanho_ajustes(void) {
   float s = v >= 0 && v < 3 ? F[v] : 1.0f;
   if (gfx_escala_ui_base() < 1) s *= gfx_escala_ui_base();
   s *= gfx_escala_txt();
+  if (layout_desktop_ativo()) s *= NV_DESKTOP_AJUSTES_DENSIDADE;   // pointer density: Mac-sized rows, not 10-foot
   return ajRetrato() ? s * 1.25f : s;
 }
 // The phone always uses List. Keep the stored TV preference unchanged.
@@ -7932,7 +7933,16 @@ static void focarOpcao(int op) {
 // A frase responde "o que isto E". O que MUDA na pratica vai em efeitoOpcao,
 // separado de proposito: as duas perguntas sao diferentes e juntas viram um
 // paragrafo que ninguem le do sofa.
+static const char *ajudaOpcaoTv(int op);
+// Desktop layout: a description naming a TV platform or the remote is hidden.
 static const char *ajudaOpcaoBase(int op) {
+  const char *s = ajudaOpcaoTv(op);
+#ifdef NV_DESKTOP_UI
+  if (ajDesktopTextoTv(s)) return "";
+#endif
+  return s;
+}
+static const char *ajudaOpcaoTv(int op) {
   if (ajLegendaPrincipal(op) || op == AJ_LEG1_RESTAURAR)
     return "Tamanho, fonte, cores, fundo e posição das legendas.";
   if (op >= AJ_LEG2_FONTE && op <= AJ_LEG2_RESTAURAR)
@@ -8728,6 +8738,9 @@ static const char *ajudaOpcao(int op);
 static const char *uxBeneficio(int op) {
   static char b[400];
   const char *p = beneficioProprio(op);
+#ifdef NV_DESKTOP_UI
+  if (ajDesktopTextoTv(p)) p = NULL;
+#endif
   if (p) return i18n(p);
   return primeiraFrase(i18n(ajudaOpcao(op)), b, sizeof b);
 }

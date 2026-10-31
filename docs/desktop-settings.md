@@ -25,3 +25,15 @@ never compile the list. `tests/desktop_settings.c` checks the table.
 Wording: "This TV" reads "This device"; "Limits of this TV", "Not available on
 this TV", "Saved on this TV" and "Press OK to connect" map to existing neutral keys
 (`src/idioma.c`).
+
+## Desktop density and shortcuts
+
+Settings draw at `NV_DESKTOP_AJUSTES_DENSIDADE` (src/layout.h) while
+`layout_desktop_ativo()` (window at or above `NV_DESKTOP_BREAKPOINT`): the
+settings canvas grows by 1/0.78, so rows and text land near Mac sizes (~13 pt
+text, ~30 pt rows) instead of 10-foot sizes. The same gate widens the category
+column (470) and the inspector (560), lets "What changes" use up to 7 lines and
+hides descriptions that name a TV platform or the remote (`ajDesktopTextoTv`).
+Below the breakpoint every value is the TV one. Cmd+, opens Settings through
+the guarded handler in `app_evento` (ignored with the player or keyboard open;
+closes the title page first). `tests/desktop_settings_r13.sh` covers it.
