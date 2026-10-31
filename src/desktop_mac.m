@@ -2,6 +2,9 @@
 #import <Cocoa/Cocoa.h>
 #import <OpenGL/OpenGL.h>
 int ajustes_idioma(void);
+void ajustes_acento(float *r, float *g, float *b);
+float ajustes_acento_tinta(float *r, float *g, float *b);
+void gfx_arte_caminho(const char *rel, char *out, unsigned n);
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 #include <SDL2/SDL_syswm.h>
@@ -129,6 +132,45 @@ int desktop_native_menu(const DesktopMenuItem *items, int count, float x, float 
   [menu release]; [target release];
   return selected;
 }
+// App look (DESIGN.md "Glass UI — ilha"): --fg ink, accent pill for the page,
+// white 12 % for hover/focus. Read every frame, so theme changes apply live.
+static NSColor *sidebarInk(CGFloat a) { return [NSColor colorWithSRGBRed:243/255. green:242/255. blue:239/255. alpha:a]; }
+static BOOL sidebarUnder(NSView *v) {
+  // Capture-only: NV_CAPTURA_HOVER=<row tag> proves hover without moving the user's cursor.
+  const char *proof=getenv("NV_CAPTURA") ? getenv("NV_CAPTURA_HOVER") : NULL;
+  if(proof) return v.tag==atoi(proof);
+  return NSPointInRect([v convertPoint:nativeWindow.mouseLocationOutsideOfEventStream fromView:nil],v.bounds);
+}
+static void paintRow(NSButton *row, BOOL hovered) {
+  BOOL selected=row.tag>=0 && row.tag<MENU_N && row.tag==menu_destino();
+  BOOL lit=hovered || (row.tag==-1?MENU_N:row.tag)==menu_desktop_foco();
+  float r,g,b,ink=ajustes_acento_tinta(&r,&g,&b);
+  NSColor *fg=selected?[NSColor colorWithSRGBRed:ink green:ink blue:ink alpha:1]:sidebarInk(lit?1:.78);
+  row.layer.backgroundColor=(selected?[NSColor colorWithSRGBRed:r green:g blue:b alpha:1]:lit?[NSColor colorWithWhite:1 alpha:.12]:NSColor.clearColor).CGColor;
+  if(![row.contentTintColor isEqual:fg]) row.contentTintColor=fg;
+  NSAttributedString *t=row.attributedTitle;
+  if(row.title.length && ![[t attribute:NSForegroundColorAttributeName atIndex:0 effectiveRange:NULL] isEqual:fg])
+    row.attributedTitle=[[[NSAttributedString alloc] initWithString:row.title attributes:@{NSForegroundColorAttributeName:fg,NSFontAttributeName:row.font}] autorelease];
+}
+// The app's own stroke icons (art/icones, white on alpha) as template images.
+static NSImage *sidebarIcon(const char *name) {
+  char rel[96], path[600]; snprintf(rel,sizeof rel,"icones/%s.png",name); gfx_arte_caminho(rel,path,sizeof path);
+  NSImage *image=[[[NSImage alloc] initWithContentsOfFile:[NSString stringWithUTF8String:path]] autorelease];
+  if(!image) image=[NSImage imageWithSystemSymbolName:@"circle" accessibilityDescription:nil];
+  image.template=YES; image.size=NSMakeSize(20,20);
+  return image;
+}
+// InterDisplay ships beside art/ (Resources/fonts, deploy/app/fonts).
+static NSFont *sidebarFont(CGFloat size, BOOL bold) {
+  static BOOL registered;
+  if(!registered) {
+    registered=YES; char art[600]; gfx_arte_caminho("",art,sizeof art);
+    NSString *fonts=[[[NSString stringWithUTF8String:art] stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"fonts"];
+    for(NSString *f in @[@"InterDisplay-Medium.ttf",@"InterDisplay-Bold.ttf"])
+      CTFontManagerRegisterFontsForURL((CFURLRef)[NSURL fileURLWithPath:[fonts stringByAppendingPathComponent:f]],kCTFontManagerScopeProcess,NULL);
+  }
+  return [NSFont fontWithName:bold?@"InterDisplay-Bold":@"InterDisplay-Medium" size:size] ?: [NSFont systemFontOfSize:size weight:bold?NSFontWeightBold:NSFontWeightMedium];
+}
 // Keep every symbol centred in one column, independent of its intrinsic width.
 @interface NVSidebarCell : NSButtonCell
 @end
@@ -147,8 +189,8 @@ int desktop_native_menu(const DesktopMenuItem *items, int count, float x, float 
 @end
 @implementation NVSidebarButton
 + (Class)cellClass { return NVSidebarCell.class; }
-- (void)mouseEntered:(NSEvent *)event { self.layer.backgroundColor = [NSColor.labelColor colorWithAlphaComponent:.08].CGColor; [[NSCursor pointingHandCursor] set]; }
-- (void)mouseExited:(NSEvent *)event { self.layer.backgroundColor = (self.tag==menu_destino()?[NSColor.controlAccentColor colorWithAlphaComponent:.18]:NSColor.clearColor).CGColor; [[NSCursor arrowCursor] set]; }
+- (void)mouseEntered:(NSEvent *)event { paintRow(self,YES); [[NSCursor pointingHandCursor] set]; }
+- (void)mouseExited:(NSEvent *)event { paintRow(self,NO); [[NSCursor arrowCursor] set]; }
 - (void)updateTrackingAreas {
   for (NSTrackingArea *area in self.trackingAreas) [self removeTrackingArea:area];
   [self addTrackingArea:[[NSTrackingArea alloc] initWithRect:self.bounds options:NSTrackingMouseEnteredAndExited|NSTrackingActiveAlways|NSTrackingInVisibleRect owner:self userInfo:nil]];
@@ -171,36 +213,33 @@ static void sidebarRows(void) {
   serviceScroll=[NSScrollView new];serviceScroll.drawsBackground=NO;serviceScroll.hasVerticalScroller=YES;serviceScroll.autohidesScrollers=YES;
   serviceContent=[NSView new];serviceScroll.documentView=serviceContent;[sidebarControls addSubview:serviceScroll];
   const int destinations[]={MENU_BUSCAR,MENU_INICIO,MENU_BIBLIOTECA,MENU_GUIA,MENU_LISTAS,MENU_CONQUISTAS,MENU_JUNTOS,MENU_ESPORTES,MENU_STREAMING,MENU_FONTES,MENU_AJUSTES};
-  NSArray *symbols=@[@"magnifyingglass",@"house",@"square.stack",@"tv",@"list.bullet",@"trophy",@"person.2",@"sportscourt",@"play.rectangle",@"puzzlepiece.extension",@"gearshape"];
+  // mt_* = the TV sidebar's stroke set; aj_* = the same Lucide style for desktop-only rows.
+  const char *icons[]={"mt_busca","mt_inicio","mt_biblioteca","mt_guia","aj_list","aj_ribbon","aj_users","menu_sports","aj_tv-minimal-play","aj_puzzle","mt_ajustes"};
   for(unsigned i=0;i<sizeof destinations/sizeof *destinations;i++) {
     NVSidebarButton *button=[NVSidebarButton new]; button.tag=destinations[i];
     button.title=[NSString stringWithUTF8String:i18n(menu_rotulo(destinations[i]))];
-    button.image=[NSImage imageWithSystemSymbolName:symbols[i] accessibilityDescription:button.title];
-    button.image.template=YES;
-    button.image.size=NSMakeSize(18,18);
+    button.image=sidebarIcon(icons[i]); button.image.accessibilityDescription=button.title;
     button.imagePosition=NSImageLeft; button.imageHugsTitle=NO; button.alignment=NSTextAlignmentLeft;
-    button.font=[NSFont systemFontOfSize:15 weight:NSFontWeightRegular];
-    button.bordered=NO; button.bezelStyle=NSBezelStyleInline; button.contentTintColor=NSColor.systemBlueColor;
+    button.font=sidebarFont(15,NO);
+    button.bordered=NO; button.bezelStyle=NSBezelStyleInline;
     button.cell.lineBreakMode=NSLineBreakByTruncatingTail;
     button.cell.usesSingleLineMode=YES;
-    button.attributedTitle=[[NSAttributedString alloc] initWithString:button.title attributes:@{NSForegroundColorAttributeName:NSColor.labelColor,NSFontAttributeName:button.font}];
-    button.target=button; button.action=@selector(activate:);button.wantsLayer=YES;button.layer.cornerRadius=8;
+    button.target=button; button.action=@selector(activate:);button.wantsLayer=YES;button.layer.cornerRadius=10;
     [sidebarControls addSubview:button];[rows addObject:button];
   }
   profile=[NVSidebarButton new];profile.tag=-1;profile.bordered=NO;profile.alignment=NSTextAlignmentLeft;
-  profile.font=[NSFont systemFontOfSize:15 weight:NSFontWeightSemibold];profile.target=profile;profile.action=@selector(activate:);
-  profile.image=[NSImage imageWithSystemSymbolName:@"person.crop.circle.fill" accessibilityDescription:nil];
-  profile.wantsLayer=YES;profile.layer.cornerRadius=6;
+  profile.font=sidebarFont(15,YES);profile.target=profile;profile.action=@selector(activate:);
+  profile.wantsLayer=YES;profile.layer.cornerRadius=10;
   [sidebarControls addSubview:profile];
   groupLabels=[NSMutableArray new];
   for (NSString *title in @[@"", @"", @""]) {
     NSTextField *label=[NSTextField labelWithString:title];
-    label.font=[NSFont systemFontOfSize:11 weight:NSFontWeightMedium];
-    label.textColor=NSColor.secondaryLabelColor;
+    label.font=sidebarFont(12,NO);
+    label.textColor=[NSColor colorWithSRGBRed:145/255. green:147/255. blue:152/255. alpha:1];
     [sidebarControls addSubview:label];[groupLabels addObject:label];
   }
   profileChevron=[NSTextField labelWithString:@"›"];
-  profileChevron.textColor=NSColor.secondaryLabelColor;
+  profileChevron.textColor=sidebarInk(.55);
   [sidebarControls addSubview:profileChevron];
 }
 void desktop_native_init(SDL_Window *window) {
@@ -246,6 +285,8 @@ void desktop_native_init(SDL_Window *window) {
     NSGlassEffectView *glass = [NSGlassEffectView new];
     glass.cornerRadius = 16;
     glass.style = NSGlassEffectViewStyleRegular;
+    // The island's cold dark core (DESIGN.md ilha-vidro-miolo), not grey system glass.
+    glass.tintColor = [NSColor colorWithSRGBRed:14/255. green:15/255. blue:18/255. alpha:.72];
     glass.contentView = sidebarControls;
     sidebar = glass;
   } else {
@@ -260,6 +301,7 @@ void desktop_native_init(SDL_Window *window) {
   specializeView(sidebar,"NVSidebarHitView",@selector(hitTest:),(IMP)sidebarHit,
     method_getTypeEncoding(class_getInstanceMethod(NSView.class,@selector(hitTest:))));
   sidebar.hidden=YES;
+  sidebar.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];  // never light grey
   sidebar.wantsLayer = YES;
   sidebar.layer.cornerRadius = 16;
   sidebar.layer.masksToBounds = YES;
@@ -379,7 +421,6 @@ void desktop_native_finish(void) {
     sidebarLanguage=ajustes_idioma();
     for(NSButton *row in rows) {
       row.title=[NSString stringWithUTF8String:i18n(menu_rotulo((int)row.tag))];
-      row.attributedTitle=[[NSAttributedString alloc] initWithString:row.title attributes:@{NSForegroundColorAttributeName:NSColor.labelColor,NSFontAttributeName:row.font}];
       row.image.accessibilityDescription=row.title;
     }
     const char *keys[]={"Navegar","Você","Serviços"};
@@ -395,17 +436,11 @@ void desktop_native_finish(void) {
     NSRect rowFrame=NSMakeRect(10,h-top-35,w-20,35);
     if(!NSEqualRects(row.frame,rowFrame)) row.frame=rowFrame;
     if(row.imagePosition!=(collapsed?NSImageOnly:NSImageLeft)) row.imagePosition=collapsed?NSImageOnly:NSImageLeft;
-    BOOL hovered=NSPointInRect([row convertPoint:nativeWindow.mouseLocationOutsideOfEventStream fromView:nil],row.bounds);
-    BOOL focused=row.tag==menu_desktop_foco();
-    row.layer.borderWidth=focused?2:0;
-    row.layer.borderColor=[NSColor.systemBlueColor colorWithAlphaComponent:.55].CGColor;
-    row.layer.backgroundColor=(row.tag==menu_destino()?[NSColor.systemBlueColor colorWithAlphaComponent:.18]:focused||hovered?[NSColor.labelColor colorWithAlphaComponent:.08]:NSColor.clearColor).CGColor;
+    paintRow(row,sidebarUnder(row));
   }
   const CGFloat groupTop[]={55,188,356};
   for (NSUInteger i=0;i<groupLabels.count;i++)
     groupLabels[i].frame=NSMakeRect(16,h-groupTop[i]-14,w-32,14);
-  profile.layer.borderWidth=menu_desktop_foco()==MENU_N?2:0;
-  profile.layer.borderColor=[NSColor.systemBlueColor colorWithAlphaComponent:.55].CGColor;
   profileChevron.frame=NSMakeRect(w-27,23,14,20);
   const ContaPerfil *active=perfis_item_ativo();
   NSString *profileTitle=active?[NSString stringWithUTF8String:active->nome]:[NSString stringWithUTF8String:i18n("Sua conta")];
@@ -416,6 +451,9 @@ void desktop_native_finish(void) {
   if(![previousAvatar isEqualToString:avatarKey]) {
     [previousAvatar release]; previousAvatar=[avatarKey copy];
     NSImage *avatar=avatarPath?[[NSImage alloc] initWithContentsOfFile:[NSString stringWithUTF8String:avatarPath]]:nil;
+    // No photo: the profile's own colour, like the app (menu.c corAvatar).
+    unsigned hex=0x1E88E5; if(active && active->corHex[0]=='#') sscanf(active->corHex+1,"%6x",&hex);
+    NSColor *avatarTint=[NSColor colorWithSRGBRed:(hex>>16&255)/255. green:(hex>>8&255)/255. blue:(hex&255)/255. alpha:1];
     NSMutableString *initials=[NSMutableString new];
     for(NSString *word in [profileTitle componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceCharacterSet]) {
       if(word.length) [initials appendString:[[word substringWithRange:[word rangeOfComposedCharacterSequenceAtIndex:0]] uppercaseString]];
@@ -425,7 +463,7 @@ void desktop_native_finish(void) {
       [[NSBezierPath bezierPathWithOvalInRect:rect] addClip];
       if(avatar) [avatar drawInRect:rect fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1];
       else {
-        [NSColor.systemGrayColor setFill]; NSRectFill(rect);
+        [avatarTint setFill]; NSRectFill(rect);
         NSDictionary *attributes=@{NSFontAttributeName:[NSFont systemFontOfSize:11 weight:NSFontWeightSemibold],NSForegroundColorAttributeName:NSColor.whiteColor};
         NSSize size=[initials sizeWithAttributes:attributes];
         [initials drawAtPoint:NSMakePoint((28-size.width)*.5,(28-size.height)*.5) withAttributes:attributes];
@@ -433,13 +471,14 @@ void desktop_native_finish(void) {
       return YES;
     }];
   }
-  NSRect profileFrame=NSMakeRect(14,16,w-28,32);if(!NSEqualRects(profile.frame,profileFrame))profile.frame=profileFrame;
+  NSRect profileFrame=NSMakeRect(10,14,w-20,36);if(!NSEqualRects(profile.frame,profileFrame))profile.frame=profileFrame;
+  paintRow(profile,sidebarUnder(profile));
   if(profile.imagePosition!=(collapsed?NSImageOnly:NSImageLeft))profile.imagePosition=collapsed?NSImageOnly:NSImageLeft;
   const int *folders;int count=menu_desktop_streaming()?home_streaming_barra(&folders):0;
   while(services.count<(NSUInteger)count){
     NVSidebarButton *button=[NVSidebarButton new];button.bordered=NO;button.alignment=NSTextAlignmentLeft;
-    button.font=[NSFont systemFontOfSize:15];button.target=button;button.action=@selector(activate:);
-    button.tag=MENU_N+1+services.count;button.wantsLayer=YES;button.layer.cornerRadius=5;[serviceContent addSubview:button];[services addObject:button];
+    button.font=sidebarFont(14,NO);button.target=button;button.action=@selector(activate:);
+    button.tag=MENU_N+1+services.count;button.wantsLayer=YES;button.layer.cornerRadius=8;[serviceContent addSubview:button];[services addObject:button];
   }
   CGFloat serviceTop=h-12-9*35-84+(sportsEnabled?0:35);
   CGFloat serviceHeight=MIN(count*29,MAX(0,serviceTop-130));
@@ -447,10 +486,9 @@ void desktop_native_finish(void) {
   serviceContent.frame=NSMakeRect(0,0,w-38,count*29);
   for(NSButton *button in services){
     int k=(int)[services indexOfObjectIdenticalTo:button];button.hidden=k>=count||collapsed;
-    if(k<count){const ColFolder *folder=col_folder(folders[k]);button.title=folder?[NSString stringWithUTF8String:folder->title]:@"";}
+    if(k<count){const ColFolder *folder=col_folder(folders[k]);NSString *t=folder?[NSString stringWithUTF8String:folder->title]:@"";if(![button.title isEqualToString:t])button.title=t;}
     button.frame=NSMakeRect(4,count*29-(k+1)*29,w-48,28);
-    button.layer.borderWidth=menu_desktop_foco()==MENU_N+1+k?2:0;
-    button.layer.borderColor=[NSColor.systemBlueColor colorWithAlphaComponent:.55].CGColor;
+    paintRow(button,sidebarUnder(button));
   }
   for(NSButton *row in rows) if(row.tag==MENU_FONTES){NSRect r=row.frame;r.origin.y-=serviceHeight;row.frame=r;}
   [CATransaction commit];
@@ -459,7 +497,7 @@ void desktop_native_appearance(const char *name) {
   if (getenv("NV_CAPTURA")) {
     NSAppearance *appearance=[NSAppearance appearanceNamed:!strcmp(name,"Aqua")?NSAppearanceNameAqua:NSAppearanceNameDarkAqua];
     NSApp.appearance=appearance;
-    nativeWindow.appearance=appearance;sidebar.appearance=appearance;sidebarControls.appearance=appearance;
+    nativeWindow.appearance=appearance;
     nativeWindow.contentView.appearance=appearance;
     [nativeWindow.contentView setNeedsDisplay:YES];
     [sidebar setNeedsDisplay:YES];
