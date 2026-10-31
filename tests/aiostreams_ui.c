@@ -155,15 +155,13 @@ int main(void) {
   }
   mudar(FILTROS);
   pagina=FILTROS; foco=5; down.key.keysym.sym=SDLK_DOWN;
-  aioui_evento(&down); assert(foco==7); acao(); assert(regraSelecionada==7);
-  regraSelecionada=-1; foco=8; aioui_evento(&down); assert(foco==10);
+  aioui_evento(&down); assert(foco==6); acao(); assert(regraSelecionada==6);
+  regraSelecionada=-1; foco=8; aioui_evento(&down); assert(foco==9);
   foco=11; pendente=0; acao(); assert(pendente==1);
-  // Both footer buttons retain their column when entering/leaving the grid.
-  for(int col=0;col<2;col++) {
-    mudar(FILTROS); foco=8+col;
-    down.key.keysym.sym=SDLK_DOWN; aioui_evento(&down); assert(foco==10+col);
-    down.key.keysym.sym=SDLK_UP; aioui_evento(&down); assert(foco==8+col);
-  }
+  // Groups are one list now: Down from the last group reaches the footer, Up returns.
+  mudar(FILTROS); foco=9;
+  down.key.keysym.sym=SDLK_DOWN; aioui_evento(&down); assert(foco==10);
+  down.key.keysym.sym=SDLK_UP; aioui_evento(&down); assert(foco==9);
   pendente=0;
   pagina=CATALOGOS; foco=nLinhas()-1; pendente=0; acao();
   assert(pagina==CATALOGOS && pendente==1);
