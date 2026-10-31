@@ -62,7 +62,10 @@ int prog_oculto_soltar(const char *id, long long ms) { (void)id; (void)ms; retur
 unsigned recomenda_geracao(void)         { return 0; }   // social generation: no social layer here
 int   ajustes_cw_ordem(void)               { return 0; }   // Padrao (issue #127)
 int   ajustes_cw_mostrar_nao_exibidos(void) { return 1; }
-const char *i18n(const char *s)         { return s; }
+static int fakePolish;
+const char *i18n(const char *s)         {
+  return fakePolish && !strcmp(s,"Episódio %d") ? "Odcinek %d" : s;
+}
 const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nomePt; }
 static const char *fakeDados = "";
 const char *dados_dir(void)             { return fakeDados; }
@@ -347,7 +350,62 @@ static void abrir(void) {
   buscarEps(NULL);
 }
 
+static void cloudEpisodeNames(void) {
+  CatEp cloud[4],cine[4],original[4];
+  fakePolish=1;
+  assert(nomeEpisodioArquivo("Lupin.S04E01.1080p.WEB.H265.mkv"));
+  assert(nomeEpisodioArquivo("[Cloud] Lupin.S04E01.2160p.WEB.H265"));
+  assert(nomeEpisodioArquivo("Folder/Long release.MKV  "));
+  assert(!nomeEpisodioArquivo("1080p"));
+  assert(!nomeEpisodioArquivo("Chapter 1: The Web"));
+  assert(!nomeEpisodioArquivo("Mr. Robot"));
+  const char *files="{\"videos\":["
+    "{\"id\":\"cloud:source:1\",\"season\":4,\"episode\":1,\"name\":\"Lupin.S04E01.FRENCH.1080p.WEB.H265-SUPPLY.mkv\"},"
+    "{\"id\":\"cloud:source:2\",\"season\":4,\"episode\":2,\"name\":\"[Cloud] Lupin.S04E02.1080p.H265.mkv\"},"
+    "{\"id\":\"cloud:source:3\",\"season\":4,\"episode\":3,\"name\":\"Episode 1080p\"},"
+    "{\"id\":\"cloud:source:4\",\"season\":4,\"episode\":4,\"name\":\"Lupin.S04E04.mkv\",\"title\":\"Real episode title\"}]}";
+  assert(parsearEpisodios(files,cloud,4)==4);
+  assert(!strcmp(cloud[0].nome,"Odcinek 1") && !strcmp(cloud[1].nome,"Odcinek 2"));
+  assert(!strcmp(cloud[2].nome,"Episode 1080p") && !strcmp(cloud[3].nome,"Real episode title"));
+  memcpy(original,cloud,sizeof cloud);
+  assert(parsearEpisodios("{\"videos\":[{\"id\":\"canonical:1\",\"season\":4,\"episode\":1,\"name\":\"Canonical episode title\"}]}",cine,4)==1);
+  desc_mesclar_episodios(cloud,4,cine,1,DESC_MESCLA_VAZIOS);
+  assert(!strcmp(cloud[0].nome,"Canonical episode title"));
+  assert(!strcmp(cloud[1].nome,"Odcinek 2")); // Missing season/episode stays visible.
+  desc_mesclar_episodios(cloud,4,original,4,DESC_MESCLA_TEXTO);
+  assert(!strcmp(cloud[0].nome,"Canonical episode title")); // File donor cannot replace real title.
+  const char *tmdb="{\"episodes\":[{\"episode_number\":1,\"name\":\"Other title\"},"
+    "{\"episode_number\":2,\"name\":\"TMDB episode title\"}]}";
+  assert(desc_tmdb_notas_temporada_ex(tmdb,cloud,4,4,DESC_EPT_SO_VAZIO)==1);
+  assert(!strcmp(cloud[0].nome,"Canonical episode title"));
+  assert(!strcmp(cloud[1].nome,"TMDB episode title"));
+  for(int i=0;i<4;i++) {
+    assert(cloud[i].temporada==original[i].temporada && cloud[i].episodio==original[i].episodio);
+    assert(!strcmp(cloud[i].vid,original[i].vid));
+  }
+  // Full fetch/publication: a small cloud list (not the large-file-list
+  // heuristic) adds season 4 while Cinemeta supplies one canonical name.
+  char cloudMeta[4096];
+  snprintf(cloudMeta,sizeof cloudMeta,"{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\",\"name\":\"Lupin\",%s}",files+1);
+  cineSerie="{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\",\"name\":\"Lupin\",\"videos\":["
+    "{\"id\":\"canonical:1\",\"season\":4,\"episode\":1,\"name\":\"Canonical episode title\"}]}}";
+  nFake=nRotas=0;addonMeta=1;addonTipo="/series/";addonResp=cloudMeta;
+  const char *previousLanguage=fakeIdioma;fakeIdioma="en-US";
+  limparCacheMeta();catalogoCom("tt13293588","series","Lupin");abrir();
+  assert(cat_n_episodios(0)==4 && cat_item(0)->nTemporadas==1 && cat_item(0)->temporadas[0]==4);
+  assert(!strcmp(cat_episodio(0,0)->nome,"Canonical episode title"));
+  assert(!strcmp(cat_episodio(0,1)->nome,"Odcinek 2"));
+  for(int i=0;i<4;i++) {
+    const CatEp *published=cat_episodio(0,i);
+    assert(published->temporada==4 && published->episodio==i+1 && !strcmp(published->vid,original[i].vid));
+  }
+  addonMeta=0;addonResp=cineSerie=NULL;fakeIdioma=previousLanguage;limparCacheMeta();
+  fakePolish=0;
+  puts("ok  cloud filenames become localized episode labels, canonical names recover them, source IDs and season pairs stay unchanged");
+}
+
 int main(void) {
+  cloudEpisodeNames();
   const char *js =
     "{\"videos\":["
     "{\"id\":\"a:1\",\"season\":1,\"episode\":1,\"name\":\"Izuku Midoriya: Origin\"},"
@@ -768,7 +826,7 @@ int main(void) {
     catalogoDe("tt13293588", "series", "Serie", "org.fx");
     abrir();
     assert(cat_n_episodios(0) == 20);
-    assert(!strcmp(cat_episodio(0, 0)->nome, "C1") && strstr(cat_episodio(0, 19)->nome, ".mkv"));
+    assert(!strcmp(cat_episodio(0, 0)->nome, "C1") && !strcmp(cat_episodio(0, 19)->nome, "Episódio 20"));
     puts("ok  catalogo primeiro: lista de arquivos com mais episodios fica");
     // EMPATE NAO E DA LISTA DE ARQUIVOS, nem com a preferencia pela ficha do
     // addon ligada: 12 distintos x 5 variantes contra os mesmos 12.

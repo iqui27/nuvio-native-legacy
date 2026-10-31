@@ -7315,6 +7315,38 @@ int desc_nome_episodio_generico(const char *nome, int episodio) {
   return achou && palavras <= 1;
 }
 
+// Presentation only: cloud metadata can use a release filename as the episode
+// name. Neither the video ID nor the provider's season/episode pair is changed.
+static int nomeEpisodioArquivo(const char *nome) {
+  static const char *ext[] = {".mkv", ".mp4", ".m4v", ".avi", ".webm", ".mov", ".wmv", ".ts", ".m2ts"};
+  char baixo[1024];
+  size_t n = strlen(nome);
+  while(n && (unsigned char)nome[n-1] <= ' ') n--;
+  for(unsigned i=0;i<sizeof ext/sizeof *ext;i++) {
+    size_t k=strlen(ext[i]);
+    if(n>k && !strncasecmp(nome+n-k,ext[i],k))return 1;
+  }
+  // Also catch truncated/extensionless release names. Require both an episode
+  // token and technical tags separated like a filename, not just "1080p".
+  if(n>=sizeof baixo)n=sizeof baixo-1;
+  for(size_t i=0;i<n;i++)baixo[i]=nome[i]>='A'&&nome[i]<='Z'?nome[i]+('a'-'A'):nome[i];
+  baixo[n]=0;
+  if(!strchr(baixo,'.') && !strchr(baixo,'_'))return 0;
+  for(const char *p=baixo;*p;p++)if(*p=='s' && p[1]>='0' && p[1]<='9') {
+    const char *q=p+1;
+    while(*q>='0' && *q<='9')q++;
+    if(*q=='e' && q[1]>='0' && q[1]<='9' &&
+       (strstr(baixo,"1080p") || strstr(baixo,"2160p") || strstr(baixo,"720p") ||
+        strstr(baixo,"h265") || strstr(baixo,"h264") || strstr(baixo,"x265") || strstr(baixo,"x264")))return 1;
+  }
+  return 0;
+}
+static int nomeEpisodioReserva(const char *nome,int episodio) {
+  char reserva[64];
+  snprintf(reserva,sizeof reserva,i18n("Episódio %d"),episodio);
+  return nomeEpisodioArquivo(nome) || !strcmp(nome,reserva);
+}
+
 int desc_tmdb_notas_temporada(const char *json, CatEp *eps, int n,
                               int temporada) {
   return desc_tmdb_notas_temporada_ex(json, eps, n, temporada, DESC_EPT_SINOPSE);
@@ -7358,10 +7390,11 @@ int desc_tmdb_notas_temporada_ex(const char *json, CatEp *eps, int n,
           // traducao o TMDB devolve "Episodio 3", pior que o titulo original —
           // por isso o generico nao entra (desc_nome_episodio_generico), e o
           // nome que ja estava fica.
-          if ((textos & DESC_EPT_NOME) &&
+          if (((textos & DESC_EPT_NOME) || nomeEpisodioReserva(eps[i].nome,num)) &&
               js_texto(p, f, "name", nome, sizeof nome) && nome[0] &&
+              !nomeEpisodioArquivo(nome) &&
               !desc_nome_episodio_generico(nome, num) &&
-              strcmp(nome, eps[i].nome) && (!soVazio || !eps[i].nome[0])) {
+              strcmp(nome, eps[i].nome) && (!soVazio || !eps[i].nome[0] || nomeEpisodioReserva(eps[i].nome,num))) {
             snprintf(eps[i].nome, sizeof eps[i].nome, "%s", nome);
             mudou = 1;
           }
@@ -7583,12 +7616,21 @@ static int parsearEpisodios(const char *corpo, CatEp *eps, int max) {
         if (rating<=0) rating=js_num(p,f,"rating",0.0);
         if (rating > 0.0 && rating <= 10.0)
           e->notaImdb = (int)(rating * 10.0 + 0.5); }
-      js_texto(p, f, "name", e->nome, sizeof e->nome);
+      char nome[1024] = "";
+      js_texto_raiz_em(p, f, "name", nome, sizeof nome);
       // O id do video (cat_id_stream): e ele que se manda aos addons de fonte
       // quando o titulo nao e do IMDb. Addon que usa "title" no lugar de "name"
       // (o Kitsu) tambem tem o nome lido.
       js_texto_raiz_em(p, f, "id", e->vid, sizeof e->vid);
-      if (!e->nome[0]) js_texto(p, f, "title", e->nome, sizeof e->nome);
+      if (!nome[0]) js_texto_raiz_em(p, f, "title", nome, sizeof nome);
+      if(nomeEpisodioArquivo(nome)) {
+        char alternativo[1024] = "";
+        js_texto_raiz_em(p,f,"title",alternativo,sizeof alternativo);
+        if(alternativo[0] && !nomeEpisodioArquivo(alternativo))
+          snprintf(nome,sizeof nome,"%s",alternativo);
+        else snprintf(nome,sizeof nome,i18n("Episódio %d"),ne);
+      }
+      snprintf(e->nome,sizeof e->nome,"%s",nome);
       js_texto(p, f, "overview", e->sinopse, sizeof e->sinopse);
       if (!e->sinopse[0]) js_texto(p, f, "description", e->sinopse, sizeof e->sinopse);
       js_texto(p, f, "thumbnail", e->thumb, sizeof e->thumb);
@@ -7655,11 +7697,15 @@ void desc_mesclar_episodios(CatEp *base, int nb, const CatEp *outro, int no, int
              : base[i].episodio > outro[j].episodio ? 1 : 0);
     if (c < 0) { i++; continue; }
     if (c > 0) { j++; continue; }
+    // A filename/our temporary label is missing display metadata, even when
+    // the addon is preferred. A temporary donor must not overwrite a title.
+    int semNome=!base[i].nome[0] || nomeEpisodioReserva(base[i].nome,base[i].episodio);
+    if(outro[j].nome[0] && (semNome || !nomeEpisodioReserva(outro[j].nome,outro[j].episodio)) &&
+       (modo==DESC_MESCLA_TEXTO || semNome))
+      snprintf(base[i].nome,sizeof base[i].nome,"%s",outro[j].nome);
     if (modo == DESC_MESCLA_TEXTO) {
-      if (outro[j].nome[0])    snprintf(base[i].nome, sizeof base[i].nome, "%s", outro[j].nome);
       if (outro[j].sinopse[0]) snprintf(base[i].sinopse, sizeof base[i].sinopse, "%s", outro[j].sinopse);
     } else {
-      if (!base[i].nome[0])    snprintf(base[i].nome, sizeof base[i].nome, "%s", outro[j].nome);
       if (!base[i].sinopse[0]) snprintf(base[i].sinopse, sizeof base[i].sinopse, "%s", outro[j].sinopse);
     }
     // O que o addon nao traz (still, duracao, data) vem da outra lista nos
@@ -7956,7 +8002,7 @@ static int episodiosDoAddon(int alvoItem, const char *serie, const char *titulo,
            titulo, melhorNome, melhor, nCine);
     fflush(stdout);
     publicarEpisodiosSubstituir(melhorCorpo, alvoItem, titulo,
-                                aplicar ? corpoCine : NULL,
+                                corpoCine,
                                 DESC_MESCLA_VAZIOS, tp);
     arte_reserva_episodios(serie, melhorCorpo);
     usouTexto = aplicar;
