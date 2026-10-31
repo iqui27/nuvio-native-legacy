@@ -89,7 +89,13 @@ environment = dict(NUVIO_DADOS=str(DATA), NUVIO_UI_PREVIEW='1', NV_CAPTURA='1',
                    NV_CAPTURA_GL='1', NV_CAPTURA_DIR=str(ipc), SDL_MAC_BACKGROUND_APP='1',
                    SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN='1')
 launch = ['open', '-n', '-g', '-j']
-HOVER = ('760,330',)
+# Playback at 1440x900 (window points): 'Normalize volume' row and its switch.
+ROW = (700, 341)
+SWITCH = (1135, 341)
+def crop_mean(png, x, y, w, h):
+    out = subprocess.check_output(['magick', str(png), '-crop', f'{w}x{h}+{x}+{y}', '+repage',
+                                   '-colorspace', 'gray', '-format', '%[fx:mean]', 'info:'], text=True)
+    return float(out)
 for key, value in environment.items():
     launch += ['--env', key + '=' + value]
 launch += ['-a', str(APP), '--args', str(ART)]
@@ -125,10 +131,23 @@ try:
         command('janela:1440,900',2)
         command('preview:settings',2)
         for _ in range(14): command('up',.15)
-        command('right',.6)
-        for spot in HOVER: command('mover:'+spot,.4)
-        time.sleep(.8)
-        shots.append(photo('settings-hover-1440x900',1440,900))
+        time.sleep(1)
+        rest = photo('settings-rest-1440x900',1440,900)
+        # A real mouse sends a stream; the first event after arrow keys only anchors
+        # the jitter guard (ponteiro.c tremorDaSeta, re-anchored after 300ms), so warm up 80pt away just before.
+        command('mover:%d,%d' % (ROW[0], ROW[1] + 80),.02)
+        command('mover:%d,%d' % ROW,.8)
+        hover = photo('settings-hover-1440x900',1440,900)
+        command('clicar:%d,%d' % SWITCH,1.2)
+        click = photo('settings-click-1440x900',1440,900)
+        shots += [rest, hover, click]
+        # Hover: the row under the cursor takes the highlight (bold name, description opens).
+        a = crop_mean(rest['file'], 560, 330, 300, 40); b = crop_mean(hover['file'], 560, 330, 300, 40)
+        assert abs(b - a) > .005, ('hover did not highlight the row', a, b)
+        # Click: one click on the row's switch flips it (knob/track pixels change).
+        c = crop_mean(hover['file'], 1120, 333, 32, 16); d = crop_mean(click['file'], 1120, 333, 32, 16)
+        assert abs(d - c) > .05, ('click did not toggle', c, d)
+        print('PASS: hover lifts row %.3f->%.3f; click toggles switch %.3f->%.3f' % (a, b, c, d), flush=True)
         assert front() != pid
 finally:
     if pid:

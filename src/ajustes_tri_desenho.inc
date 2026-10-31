@@ -9,7 +9,11 @@ _Static_assert(AJS_HOME == 4 && AJS_CONTAS == 8, "triGrupo segue a ordem dos SEC
 #define TRI_TOPO      232.0f
 #define TRI_BASE     (NV_VTELA_H - 80.0f)
 #define TRI_VAO        16.0f
+#ifdef NV_DESKTOP_UI
+#define TRI_SEC_W     470.0f   // Mac density: full category names, no ellipsis
+#else
 #define TRI_SEC_W     400.0f
+#endif
 #define TRI_INSP_W    480.0f
 #define TRI_SEC_LN     (ajRetrato() ? AJ2_LN_H : 54.0f)
 #define TRI_LISTA_CAB  104.0f
