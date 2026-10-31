@@ -4706,6 +4706,7 @@
   T("Mostrar o que assisti recentemente", "最近視聴した作品を表示"),
   T("Mostrar opções avançadas", "詳細オプションを表示"),
   T("Mostrar ou ocultar", "表示/非表示"),
+  T("Mostrar ou ocultar a barra lateral", "サイドバーを表示/非表示"),
   T("Mostrar sinopse no destaque", "注目枠にあらすじを表示"),
   T("Mostrar trailer", "トレーラーを表示する"),
   T("Mostrar vistos", "視聴済みを表示"),

@@ -168,6 +168,8 @@ static Foco  focoRes;
 static int   painel = 0;
 static GfxMini fundoBusca;
 static int buResultadosPagina(void) { return buTecladoNativo() && painel == 1; }
+// Desktop has no other query surface since the toolbar pill went away.
+static int buCampoVisivel(void) { return layout_desktop_ativo() || !buResultadosPagina(); }
 static char  consulta[BU_MAX_CONSULTA];
 static int   nConsulta = 0;
 static char consultaFiltrada[BU_MAX_CONSULTA];
@@ -303,8 +305,7 @@ static int  kbTemLayout;                   // a tecla de layout aparece?
 static int  pagSim;                        // 1 = pagina de acentos e sinais (?!#)
 static int  KB_COLUNAS[BU_KB_MAX_FIL + 1] = { 6, 6, 6, 6, 6, 6, 3 };
 static float buResY(void) {
-  if (layout_desktop_ativo()) return ANC(NV_DESKTOP_TOOLBAR_H + 48);
-  if (buResultadosPagina()) return buTopoEsq();
+  if (!layout_desktop_ativo() && buResultadosPagina()) return buTopoEsq();
   if (buTecladoNativo()) return buTopoEsq() + BU_CAMPO_H + 44.0f;
   if (!buRetrato()) return ANC(64.0f);
   return BU_KB_Y + 2.0f * BU_KB_PAD + (kbFil + 1) * BU_TECLA_W
@@ -2384,7 +2385,7 @@ static void busca_desenhar_(Uint32 agora) {
 #ifdef NV_TOUCH_UI
   if (buRetratoTelefone()) { desenhaBuscaRetrato(agora); return; }
 #endif
-  if (!layout_desktop_ativo() && !buResultadosPagina()) {
+  if (buCampoVisivel()) {
     desenhaCampo(agora);
     desenhaTeclado();
   }

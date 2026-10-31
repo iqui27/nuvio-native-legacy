@@ -4706,6 +4706,7 @@
   T("Mostrar o que assisti recentemente", "顯示我最近觀看的內容"),
   T("Mostrar opções avançadas", "顯示進階選項"),
   T("Mostrar ou ocultar", "顯示或隱藏"),
+  T("Mostrar ou ocultar a barra lateral", "顯示或隱藏側邊欄"),
   T("Mostrar sinopse no destaque", "在焦點推薦中顯示劇情簡介"),
   T("Mostrar trailer", "顯示預告片"),
   T("Mostrar vistos", "顯示已看"),

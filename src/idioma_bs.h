@@ -4706,6 +4706,7 @@
   T("Mostrar o que assisti recentemente", "Prikaži šta sam nedavno gledao"),
   T("Mostrar opções avançadas", "Prikaži napredne opcije"),
   T("Mostrar ou ocultar", "Prikaži ili sakrij"),
+  T("Mostrar ou ocultar a barra lateral", "Prikaži ili sakrij bočnu traku"),
   T("Mostrar sinopse no destaque", "Prikaži sinopsis u izdvojenom"),
   T("Mostrar trailer", "Prikaži trailer"),
   T("Mostrar vistos", "Prikaži pogledano"),

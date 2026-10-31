@@ -4706,6 +4706,7 @@
   T("Mostrar o que assisti recentemente", "Tampilkan yang baru kutonton"),
   T("Mostrar opções avançadas", "Tampilkan opsi lanjutan"),
   T("Mostrar ou ocultar", "Tampilkan atau sembunyikan"),
+  T("Mostrar ou ocultar a barra lateral", "Tampilkan atau sembunyikan bilah samping"),
   T("Mostrar sinopse no destaque", "Tampilkan sinopsis di sorotan"),
   T("Mostrar trailer", "Tampilkan cuplikan"),
   T("Mostrar vistos", "Tampilkan yang ditonton"),

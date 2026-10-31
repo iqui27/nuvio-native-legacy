@@ -4706,6 +4706,7 @@
   T("Mostrar o que assisti recentemente", "Nemrég nézettek megjelenítése"),
   T("Mostrar opções avançadas", "Speciális beállítások megjelenítése"),
   T("Mostrar ou ocultar", "Megjelenítés vagy elrejtés"),
+  T("Mostrar ou ocultar a barra lateral", "Oldalsáv megjelenítése vagy elrejtése"),
   T("Mostrar sinopse no destaque", "Cselekmény megjelenítése a kiemelésben"),
   T("Mostrar trailer", "Előzetes megjelenítése"),
   T("Mostrar vistos", "Megtekintettek mutatása"),
