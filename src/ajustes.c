@@ -9736,6 +9736,13 @@ static int definirValorDireto(int op, int novo) {
   if (novo == 0) notaLigarPar(op);
   { int ok; ajOrigem = ajOrigemDireto; ok = gravar(); ajOrigem = 0;
     if (!ok) { valor[op] = antes; valor[AJ_LEG2_POSICAO] = posicaoAntes; memoriaEscolhida = memoriaAntes; bibliotecaFonteEscolhida = bibliotecaAntes; return 0; } }
+#ifdef NV_HTTP_BUFFER_DIAG
+  if (op == AJ_BUFFER_NATIVE_CONNECTIONS || op == AJ_BUFFER_CONVERSION_CONNECTIONS) {
+    printf("[http-setting] path=%s old=%d selected=%d applies=next-video saved=1\n",
+      op == AJ_BUFFER_NATIVE_CONNECTIONS ? "native" : "conversion", antes + 1, novo + 1);
+    fflush(stdout);
+  }
+#endif
   if ((op == AJ_DV_MKV || op == AJ_DV7) && antes != 0 && novo == 0) video_dv_guard_reiniciar();
   if (op == AJ_LIVETV_SUGERIR) guia_sugestoes_mudaram();
   if (op == AJ_FIL_LIMITE) {

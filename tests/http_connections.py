@@ -28,17 +28,36 @@ class Origin(http.server.BaseHTTPRequestHandler):
   except (BrokenPipeError,ConnectionResetError):pass
 server=http.server.ThreadingHTTPServer(('127.0.0.1',0),Origin);server.daemon_threads=True
 threading.Thread(target=server.serve_forever,daemon=True).start()
+def run_case(route,mode,sequence,label):
+ base=f'/{route}/{label}'
+ p=subprocess.Popen([sys.argv[1],f'http://127.0.0.1:{server.server_port}{base}',mode,','.join(map(str,sequence))],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
+ phases=0;created=[];closed=set()
+ try:
+  for line in p.stdout:
+   print(line,end='')
+   if line.startswith('[http-engine] '):
+    fields=dict(re.findall(r'(\w+)=([^ ]+)',line.strip()))
+    if fields.get('event')=='create':created.append(int(fields['id']))
+    if fields.get('event')=='media-close-done':
+     assert all(int(fields[k])==0 for k in ('workers','active','queued','ready','readyKiB','cooldownMs')),fields
+     closed.add(int(fields['id']))
+   if line.startswith('STEADY '):
+    _,phase,selected=line.split();phase=int(phase);selected=int(selected)
+    assert phase==phases and selected==sequence[phase],(mode,line,sequence)
+    measured_path=f"/{'public-native' if route=='cross-native' else route}/{label}/{phase}"
+    with lock:observed=peak.get(measured_path,0)
+    assert observed==selected,(mode,phase,selected,observed)
+    p.stdin.write('\n');p.stdin.flush();phases+=1
+  assert p.wait(timeout=10)==0,(mode,sequence)
+  assert phases==len(sequence) and len(created)==phases and set(created)==closed,(phases,created,closed)
+  assert created==sorted(set(created)),created
+  print(f'PASS: {mode}, sequence={sequence}, measured HTTP limits and complete teardown in one process',flush=True)
+ finally:
+  if p.poll() is None:p.kill();p.wait()
+  p.stdin.close();p.stdout.close()
 try:
  for route,mode in [('native','native'),('dts','dts'),('dv','dv'),('cross-native','native')]:
-  for workers in (1,2,3,4):
-   measured_path=f"/{'public-native' if route=='cross-native' else route}/{workers}"
-   p=subprocess.Popen([sys.argv[1],f'http://127.0.0.1:{server.server_port}/{route}/{workers}',mode,str(workers)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
-   for line in p.stdout:
-    print(line,end='')
-    if line.strip()=='STEADY':
-     with lock:observed=peak.get(measured_path,0)
-     assert observed==workers,(mode,workers,observed)
-     p.stdin.write('\n');p.stdin.flush()
-   assert p.wait(timeout=10)==0,(mode,workers)
-   print(f'PASS: {mode}, selected={workers}, observed concurrent HTTP requests={observed}',flush=True)
+  for workers in (1,2,3,4):run_case(route,mode,[workers],str(workers))
+  # Reconfigure and reopen in the same application process, without restarting.
+  run_case(route,mode,[1,4,1,4],'switch')
 finally:server.shutdown();server.server_close()

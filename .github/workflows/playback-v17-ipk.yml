@@ -42,11 +42,12 @@ jobs:
           bash tests/dv7_mapping_settings.sh
           bash tests/dv7.sh
           NV_TEST_P7_MAPPING=1 SANITIZE=1 bash tests/dts_playback.sh
-      - name: Diagnostic QR absence and normal phone input
+      - name: Diagnostics QR opt-in, sanitized export and normal phone input
         timeout-minutes: 3
         run: |
-          bash tests/no_qr_export.sh
-          CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular.sh
+          bash tests/diagnostics_qr_settings.sh
+          SANITIZE=1 bash tests/logexport.sh
+          CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular_export.sh
       - name: Native buffering regressions
         timeout-minutes: 8
         run: |

@@ -116,6 +116,9 @@ typedef struct {
 } NvMp4Pair;
 #endif
 struct DtsEngine {
+#ifdef NV_HTTP_BUFFER_DIAG
+  unsigned diag_id;
+#endif
   DtsMediaInfo info;
   char error[160], *url, *headers, *cache;
   char *source_public_headers;
@@ -180,7 +183,7 @@ struct DtsEngine {
   int pad_count, pad_samples;
   int timeline, has_core;
   DtsEngineMetrics metrics;
-#ifdef NV_DTS_DEBUG
+#if defined(NV_DTS_DEBUG) || defined(NV_HTTP_BUFFER_DIAG)
   DtsEngineMetrics logged_metrics;
   uint64_t logged_at_ns;
 #endif
@@ -190,6 +193,31 @@ static uint64_t clock_ns(clockid_t clock) {
   if(clock_gettime(clock,&t)) return 0;
   return (uint64_t)t.tv_sec*UINT64_C(1000000000)+(uint64_t)t.tv_nsec;
 }
+#ifdef NV_HTTP_BUFFER_DIAG
+static unsigned http_diag_next;
+/* Only lifecycle events: no polling thread, URLs or per-packet allocations. */
+static void http_session_diag(DtsEngine *e, const char *event, uint64_t elapsed_ns) {
+  int queued=0, active=0, ready=0, workers;
+  uint64_t bytes=0, cooldown=0, now=clock_ns(CLOCK_MONOTONIC);
+  pthread_mutex_lock(&e->range_lock);
+  workers=e->range_threads;
+  for(int i=0;i<RANGE_SLOTS_MAX;i++) {
+    DtsRangeJob *j=&e->ranges[i];
+    queued+=j->state==1; active+=j->state==2; ready+=j->state==3;
+    if(j->state==3 && j->count>0)bytes+=(uint64_t)j->count;
+  }
+  for(int i=0;i<2;i++)if(e->rate_until_ns[i]>now && e->rate_until_ns[i]-now>cooldown)
+    cooldown=e->rate_until_ns[i]-now;
+  pthread_mutex_unlock(&e->range_lock);
+  printf("[http-engine] id=%u event=%s selected=%d workers=%d active=%d queued=%d ready=%d readyKiB=%llu cooldownMs=%llu elapsedMs=%llu\n",
+    e->diag_id,event,e->http_workers,workers,active,queued,ready,
+    (unsigned long long)(bytes/1024),(unsigned long long)(cooldown/1000000),
+    (unsigned long long)(elapsed_ns/1000000));
+  fflush(stdout);
+}
+#else
+#define http_session_diag(e,event,elapsed_ns) ((void)0)
+#endif
 void dts_engine_metrics(DtsEngine *e,DtsEngineMetrics *out) {
   if(out) { if(e) *out=e->metrics; else memset(out,0,sizeof(*out)); }
 }
@@ -406,7 +434,9 @@ static int start_ranges(DtsEngine *e) {
   }
   e->range_next=e->pos;
   int ok=e->range_threads>0;
-  pthread_mutex_unlock(&e->range_lock); return ok;
+  pthread_mutex_unlock(&e->range_lock);
+  http_session_diag(e,"range-start",0);
+  return ok;
 }
 #ifdef NV_NATIVE_SEEK_TEST
 /* Worker-owned repositions may need an earlier keyframe that has just left
@@ -931,6 +961,10 @@ static int packet_read_error(DtsEngine *e,int code) {
   return fail(e,"Container read",code);
 }
 static void close_media(DtsEngine *e) {
+#ifdef NV_HTTP_BUFFER_DIAG
+  uint64_t httpCloseBeg=clock_ns(CLOCK_MONOTONIC);
+  http_session_diag(e,"media-close-start",0);
+#endif
   fx_close(e);
   pthread_mutex_lock(&e->range_lock);
   e->range_stop=1;
@@ -962,12 +996,19 @@ static void close_media(DtsEngine *e) {
   free(e->cache); e->cache=NULL; free(e->url); e->url=NULL;
   free(e->headers); e->headers=NULL;
   free(e->source_public_headers); e->source_public_headers=NULL;
+#ifdef NV_HTTP_BUFFER_DIAG
+  http_session_diag(e,"media-close-done",clock_ns(CLOCK_MONOTONIC)-httpCloseBeg);
+#endif
 }
 DtsEngine *dts_engine_create(void) {
   DtsEngine *e=calloc(1,sizeof(*e));
   if(e) { e->http_workers=__atomic_load_n(&g_conversion_workers,__ATOMIC_RELAXED);
     if(e->http_workers>RANGE_WORKERS)e->http_workers=RANGE_WORKERS;
     e->total=-1; e->range_bytes=RANGE_BYTES; e->range_slots=RANGE_SLOTS; pthread_mutex_init(&e->range_lock,NULL); pthread_cond_init(&e->range_wake,NULL); }
+#ifdef NV_HTTP_BUFFER_DIAG
+  if(e) { e->diag_id=__atomic_add_fetch(&http_diag_next,1,__ATOMIC_RELAXED);
+    http_session_diag(e,"create",0); }
+#endif
   return e;
 }
 void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *b) {
@@ -1018,6 +1059,7 @@ DtsEngine *dts_engine_source_create(const char *url,const char *headers,int mib)
   e->http_workers=__atomic_load_n(&g_source_workers,__ATOMIC_RELAXED);
   if(e->http_workers>RANGE_WORKERS)e->http_workers=RANGE_WORKERS;
   e->source_stream=e->http_workers==1;e->source_range=!e->source_stream;
+  http_session_diag(e,"native-configure",0);
   if(e->source_range) {
     e->range_bytes=RANGE_BYTES_DV;
     e->range_slots=(int)((int64_t)buffer_mib(mib)*1024*1024/e->range_bytes)-1;
@@ -1102,6 +1144,7 @@ const void *dts_engine_subtitle_parameters(DtsEngine *e,int i) {
 const char *dts_engine_error(DtsEngine *e) { return e?e->error:"No DTS engine"; }
 void dts_engine_cancel(DtsEngine *e) {
   if(!e) return;
+  http_session_diag(e,"cancel",0);
   __atomic_store_n(&e->cancelled,1,__ATOMIC_RELAXED);
   pthread_mutex_lock(&e->range_lock);
   __atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
@@ -1197,7 +1240,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
   __atomic_store_n(&e->range_live,0,__ATOMIC_RELAXED);
   close_media(e); memset(&e->info,0,sizeof(e->info)); e->error[0]=0;
   memset(&e->metrics,0,sizeof(e->metrics));
-#ifdef NV_DTS_DEBUG
+#if defined(NV_DTS_DEBUG) || defined(NV_HTTP_BUFFER_DIAG)
   memset(&e->logged_metrics,0,sizeof(e->logged_metrics)); e->logged_at_ns=0;
 #endif
   e->pos=0; e->total=-1; e->cache_size=0; e->has_core=0;
@@ -1639,7 +1682,7 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
     f->data=e->dv7_buffer; f->size=(int)size;
     break;
   }
-#ifdef NV_DTS_DEBUG
+#if defined(NV_DTS_DEBUG) || defined(NV_HTTP_BUFFER_DIAG)
   if(e) {
     uint64_t now=clock_ns(CLOCK_MONOTONIC);
     if(!e->logged_at_ns) e->logged_at_ns=now;
@@ -1663,6 +1706,7 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
              (unsigned long long)((m->range_blocked_ns-last->range_blocked_ns)/1000000),
              (unsigned long long)(m->range_max_wait_ns/1000000),
              (unsigned long long)(m->range_short_reads-last->range_short_reads));
+      http_session_diag(e,"sample",0);
       e->logged_metrics=*m; e->logged_at_ns=now;
     }
   }

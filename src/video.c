@@ -2956,6 +2956,14 @@ void video_parar(void) {
 
 static void pararSessao(void) {
   char b[128];
+#ifdef NV_HTTP_BUFFER_DIAG
+  long httpStopBeg = agoraMs();
+  unsigned httpOldGeneration = __atomic_load_n(&sessao, __ATOMIC_ACQUIRE);
+  printf("[http-session] generation=%u event=stop-start converter=%d playing=%d pending=%d nativeSelected=%d conversionSelected=%d\n",
+    httpOldGeneration, dtsSessao != NULL, tocando, bindPendente,
+    ajustes_buffer_native_connections(), ajustes_buffer_conversion_connections());
+  fflush(stdout);
+#endif
   seekView=(NvSeekView){0};
   /* Invalidate native callbacks before closing the DTS worker. A closing
    * pipeline must not queue an error for the replacement source. */
@@ -2997,6 +3005,11 @@ static void pararSessao(void) {
   reconErroPend = reconErroRede = 0;
   ackMidia = 0; ack_publicar();
   erroTexto[0] = 0;
+#ifdef NV_HTTP_BUFFER_DIAG
+  printf("[http-session] generation=%u event=stop-done nextGeneration=%u elapsedMs=%ld converter=0\n",
+    httpOldGeneration, __atomic_load_n(&sessao, __ATOMIC_ACQUIRE), agoraMs()-httpStopBeg);
+  fflush(stdout);
+#endif
 }
 
 
@@ -3274,6 +3287,12 @@ static int iniciarDts(int stream) {
   dts_playback_next_seamless(1);
 #else
   dts_playback_next_seamless(0);
+#endif
+#ifdef NV_HTTP_BUFFER_DIAG
+  printf("[http-session] generation=%u event=conversion-start selected=%d dv=%d audio=%d target=%.3f paused=%d\n",
+    __atomic_load_n(&sessao, __ATOMIC_ACQUIRE), ajustes_buffer_conversion_connections(),
+    dtsModoDv, stream, alvo, paused);
+  fflush(stdout);
 #endif
   dtsSessao = dts_playback_start(urlAtual, cabsHttp, stream, alvo,
                                paused, expWin, 0, (a || trocada) ? &selected : NULL, ordinal, count);

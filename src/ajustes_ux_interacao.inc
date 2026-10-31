@@ -260,6 +260,13 @@ static void uxAplicar(void) {
       for(int i=0;i<count;i++)valor[ops[i]]=old[i];
       uxNotificar("Não foi possível salvar. O valor anterior foi mantido.");return;
     }
+#ifdef NV_HTTP_BUFFER_DIAG
+    if (count == 6 && (old[4] != valor[AJ_BUFFER_NATIVE_CONNECTIONS] || old[5] != valor[AJ_BUFFER_CONVERSION_CONNECTIONS])) {
+      printf("[http-setting] event=restore oldNative=%d native=%d oldConversion=%d conversion=%d applies=next-video saved=1\n",
+        old[4]+1, ajustes_buffer_native_connections(), old[5]+1, ajustes_buffer_conversion_connections());
+      fflush(stdout);
+    }
+#endif
     uxCancelar();return;
   }
   if(uxOp==AJ_GUIA_CATEGORIAS) {
