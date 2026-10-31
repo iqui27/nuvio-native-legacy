@@ -361,3 +361,4 @@
   1, /* preserve P7 mapping experiment: Off (V_LIGA), device-local opt-in */
   0, /* ordinary native buffering: Standard / one sequential connection */
   3, /* DTS/TrueHD/DV7 buffering: up to four HTTP range downloads */
+  1, /* Diagnostics QR: Off (V_LIGA); normal logs stay active */

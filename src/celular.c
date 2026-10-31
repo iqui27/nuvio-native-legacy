@@ -6,6 +6,7 @@
 #ifdef __EMSCRIPTEN__
 int  celular_disponivel(void) { return 0; }
 int  celular_abrir(const char *t) { (void)t; return 0; }
+int celular_abrir_relatorio(const char *p) { (void)p; return 0; }
 void celular_fechar(void) {}
 int  celular_estado(void) { return CEL_PARADO; }
 const char *celular_url(void) { return ""; }
@@ -49,6 +50,8 @@ static char token[CEL_TOKEN_N + 1], url[96], hostLan[64], hostLocal[64], origem[
 static char recebido[CEL_CORPO_MAX + 1];
 static int  temRecebido;
 static time_t expira;
+static FILE *relatorio; /* Sanitized, immutable snapshot; never the original log. */
+static long envioPrazo;
 // Montadas na abertura (thread do app, por causa do i18n); o fio so le.
 static char pagina[12288], pagEnviado[8192], pagUsado[8192];
 
@@ -81,6 +84,10 @@ static int privado(in_addr_t a) {
 // responde nem recebe). Sem rota padrao (rede so local), a primeira interface
 // IPv4 privada que estiver de pe.
 static int ipLan(char *dst, size_t n) {
+#ifdef NV_CEL_TEST_LOOPBACK
+  /* Explicit test builds only: CI has no LAN interface. Never a runtime option. */
+  snprintf(dst, n, "127.0.0.1"); return 1;
+#endif
   struct sockaddr_in alvo, eu;
   socklen_t tam = sizeof eu;
   struct ifaddrs *lista = NULL, *i;
@@ -264,12 +271,21 @@ static int esperar(int fd, long prazo) {
   }
 }
 
-static void enviarTudo(int c, const char *b, size_t n) {
+static int enviarTudo(int c, const char *b, size_t n) {
   while (n) {
     ssize_t w = send(c, b, n, MSG_NOSIGNAL);
-    if (w <= 0) return;
+    if (w < 0 && errno == EINTR) continue;
+    if (w < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+      struct pollfd p[2] = {{c, POLLOUT, 0}, {acorda[0], POLLIN, 0}};
+      long left = envioPrazo - agoraMs();
+      if (left <= 0 || poll(p, 2, left > 250 ? 250 : (int)left) < 0 ||
+          p[1].revents || (p[0].revents & (POLLERR | POLLHUP | POLLNVAL))) return 0;
+      continue;
+    }
+    if (w <= 0) return 0;
     b += w; n -= (size_t)w;
   }
+  return 1;
 }
 
 static void responder(int c, int cod, const char *corpo) {
@@ -283,10 +299,53 @@ static void responder(int c, int cod, const char *corpo) {
     "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: same-origin\r\n"
     "X-Frame-Options: DENY\r\n"
     "Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; "
-    "script-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'\r\n"
-    "%sConnection: close\r\n\r\n", cod, txt, n, cod == 405 ? "Allow: GET, POST\r\n" : "");
+    "script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'\r\n"
+    "%sConnection: close\r\n\r\n", cod, txt, n, cod == 405 ? (relatorio ? "Allow: GET, HEAD\r\n" : "Allow: GET, HEAD, POST\r\n") : "");
   enviarTudo(c, cab, (size_t)k);
   if (n) enviarTudo(c, corpo, n);
+}
+
+/* No log data is interpolated into HTML or script. textContent prevents XSS.
+ * The browser owns filtering memory, not the TV. No external services/assets. */
+static const char paginaRelatorio[] =
+  "<!doctype html><html lang=en><meta charset=utf-8>"
+  "<meta name=viewport content='width=device-width,initial-scale=1'>"
+  "<title>Nuvio diagnostics</title><style>body{background:#11151c;color:#e8edf4;"
+  "font:16px system-ui;margin:24px}header{position:sticky;top:0;background:#11151c;padding:12px 0}"
+  "input,a,button{font:inherit;padding:10px;border-radius:8px;margin:4px;color:inherit;background:#263449}"
+  "pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px ui-monospace,monospace;line-height:1.6}"
+  "input{width:min(420px,80vw)}p{color:#aebaca}</style><header><h1>Nuvio diagnostics</h1>"
+  "<p>All categories. Frozen snapshot, not live. Recognized secrets are masked. Review before sharing.</p>"
+  "<a href='?download=1'>Download .txt</a><button id=copy>Copy filtered log</button><br>"
+  "<input id=q placeholder='Filter, e.g. dts, error, failover, playback-diag'><span id=count></span>"
+  "</header><pre id=log>Loading snapshot...</pre><script>"
+  "let lines=[],shown='';const log=document.getElementById('log'),q=document.getElementById('q');"
+  "function show(){let term=q.value.toLowerCase(),a=lines.filter(x=>x.toLowerCase().includes(term));"
+  "shown=a.join('\n');log.textContent=shown;document.getElementById('count').textContent=a.length+' lines';}"
+  "q.oninput=show;fetch('?text=1',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error();return r.text()})"
+  ".then(t=>{lines=t.split('\n');show()}).catch(()=>{log.textContent='Snapshot unavailable. Reopen export on TV.'});"
+  "document.getElementById('copy').onclick=()=>{if(navigator.clipboard){navigator.clipboard.writeText(shown)"
+  ".catch(()=>alert('Use Download .txt or select the text.'));}else alert('Use Download .txt or select the text.');};"
+  "</script></html>";
+
+static void responderRelatorio(int c, int text, int download, int head) {
+  char cab[1024], b[8192];
+  size_t n;
+  long length;
+  if (text || download) {
+    if (fseek(relatorio, 0, SEEK_END) || (length = ftell(relatorio)) < 0 ||
+        fseek(relatorio, 0, SEEK_SET)) { responder(c, 400, NULL); return; }
+  } else length = (long)strlen(paginaRelatorio);
+  n = (size_t)snprintf(cab, sizeof cab,
+    "HTTP/1.1 200 OK\r\nContent-Type: %s; charset=utf-8\r\nContent-Length: %ld\r\n"
+    "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\n"
+    "X-Frame-Options: DENY\r\nContent-Security-Policy: default-src 'none'; "
+    "style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'\r\n"
+    "%sConnection: close\r\n\r\n", text || download ? "text/plain" : "text/html", length,
+    download ? "Content-Disposition: attachment; filename=\"nuvio-diagnostics.txt\"\r\n" : "");
+  if (!enviarTudo(c, cab, n) || head) return;
+  if (!text && !download) { enviarTudo(c, paginaRelatorio, (size_t)length); return; }
+  while ((n = fread(b, 1, sizeof b, relatorio))) if (!enviarTudo(c, b, n)) break;
 }
 
 // Valor do cabecalho `nome` (sem diferenciar caixa) em `cab`, copiado para dst.
@@ -350,7 +409,8 @@ static int atender(int c, int *erros) {
   long prazo = agoraMs() + CEL_PRAZO_MS, cl;
   size_t n = 0, fimCab, temCorpo;
   char *sep;
-  int r;
+  int r, download = 0, text = 0;
+  envioPrazo = agoraMs() + 30000;
   memset(cab, 0, sizeof cab);
   for (;;) {
     ssize_t k;
@@ -388,11 +448,16 @@ static int atender(int c, int *erros) {
       return 0;
     }
   }
-  { char *q = strchr(caminho, '?'); if (q) *q = 0; }
+  { char *q = strchr(caminho, '?'); if (q) { download = !strcmp(q, "?download=1"); text = !strcmp(q, "?text=1"); *q = 0; } }
   if (caminho[0] != '/' || strcmp(caminho + 1, token)) {
     // O favicon que todo navegador pede nao e tentativa de adivinhar o token.
     if (strcmp(caminho, "/favicon.ico")) (*erros)++;
     responder(c, 404, NULL);
+    return 0;
+  }
+  if (relatorio) {
+    if (strcmp(metodo, "GET") && strcmp(metodo, "HEAD")) { responder(c, 405, NULL); return 0; }
+    responderRelatorio(c, text, download, !strcmp(metodo, "HEAD"));
     return 0;
   }
   if (!strcmp(metodo, "GET") || !strcmp(metodo, "HEAD")) {
@@ -450,6 +515,7 @@ static void *servir(void *arg) {
     if (p[0].revents & POLLIN) {
       int c = accept(ouvir, NULL, NULL);
       if (c < 0) continue;
+      fcntl(c, F_SETFL, fcntl(c, F_GETFL, 0) | O_NONBLOCK);
 #ifdef SO_NOSIGPIPE
       { int um = 1; setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &um, sizeof um); }
 #endif
@@ -471,6 +537,7 @@ void celular_fechar(void) {
     pthread_join(fio, NULL);
     fioVivo = 0;
   }
+  if (relatorio) { fclose(relatorio); relatorio = NULL; }
   if (ouvir >= 0) { close(ouvir); ouvir = -1; }
   if (acorda[0] >= 0) { close(acorda[0]); close(acorda[1]); acorda[0] = acorda[1] = -1; }
   pthread_mutex_lock(&trava);
@@ -483,7 +550,7 @@ void celular_fechar(void) {
   estado = CEL_PARADO;
 }
 
-int celular_abrir(const char *titulo) {
+static int abrir(const char *titulo, const char *snapshot) {
   struct sockaddr_in a;
   socklen_t tam = sizeof a;
   char ip[48];
@@ -509,7 +576,10 @@ int celular_abrir(const char *titulo) {
   snprintf(hostLocal, sizeof hostLocal, "127.0.0.1:%d", porta);
   snprintf(origem, sizeof origem, "http://%s", hostLan);
   snprintf(url, sizeof url, "http://%s/%s", hostLan, token);
-  montarPaginas(titulo);
+  if (snapshot) {
+    relatorio = fopen(snapshot, "rb");
+    if (!relatorio) { celular_fechar(); return 0; }
+  } else montarPaginas(titulo);
   expira = time(NULL) + CEL_VALIDADE_S;
   estado = CEL_ESPERANDO;
   if (pthread_create(&fio, NULL, servir, NULL)) { celular_fechar(); return 0; }
@@ -517,5 +587,9 @@ int celular_abrir(const char *titulo) {
   // Sem IP nem token no log: so que subiu.
   printf("[celular] servidor no ar (porta %d)\n", porta);
   return 1;
+}
+int celular_abrir(const char *titulo) { return abrir(titulo, NULL); }
+int celular_abrir_relatorio(const char *snapshot) {
+  return snapshot && *snapshot ? abrir("Export diagnostics", snapshot) : 0;
 }
 #endif

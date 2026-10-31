@@ -733,6 +733,7 @@ typedef enum {
   AJ_DV7_MAPPING, // isolated P7 RPU mapping experiment; append-only, default OFF
   AJ_BUFFER_NATIVE_CONNECTIONS, // append-only; ordinary player defaults to 1
   AJ_BUFFER_CONVERSION_CONNECTIONS, // append-only; DTS/TrueHD/DV7 defaults to 4
+  AJ_DIAGNOSTICS_QR, // opt-in, device-local QR log export, default off
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1881,6 +1882,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Dolby Vision P7 mapping (experimental)", V_LIGA, 2),
   ESC("Standard native-player buffering", V_BUFFER_CONNECTIONS, 4),
   ESC("DTS/TrueHD and DV7 buffering", V_BUFFER_CONNECTIONS, 4),
+  ESC("Diagnostics QR", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2222,6 +2224,7 @@ static const char *CHAVE[] = {
   "dv7PreserveMappingTestLocal",
   "nativeBufferConnectionsLocal",
   "conversionBufferConnectionsLocal",
+  "diagnosticsQrLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2998,6 +3001,7 @@ int ajustes_fonte_grupo(void) { return ajustes_fonte_prioridade() != 3 && lig(AJ
 int ajustes_fonte_grupo_sessoes(void) { return lig(AJ_FONTE_GRUPO_SESSOES); }
 int ajustes_link_reusar(void) { return lig(AJ_LINK_REUSAR); }
 int ajustes_log_rede(void) { return lig(AJ_LOG_REDE); }
+int ajustes_diagnostics_qr(void) { return lig(AJ_DIAGNOSTICS_QR); }
 unsigned ajustes_link_prazo_s(void) {
   int v = valor[AJ_LINK_PRAZO], n = (int)(sizeof LINK_PRAZO_H / sizeof *LINK_PRAZO_H);
   if (v < 0 || v >= n) v = 5;
@@ -6069,6 +6073,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_QUALIDADE_IMG:  /* resolucao da arte decodificada: idem */
     case AJ_ENVIO_AUTO:     /* consentimento de envio de registro deste aparelho */
     case AJ_LOG_REDE:       /* pagina de registro na rede desta casa */
+    case AJ_DIAGNOSTICS_QR: /* local export, not account data */
     case AJ_ANIM:           /* animacoes reduzidas: acessibilidade nesta TV */
     case AJ_IDIOMA:         /* idioma da interface deste aparelho */
     case AJ_FIL_LIMITE:     /* fileiras da home: por aparelho (fileirasui-p<N>.txt) */
@@ -6152,7 +6157,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_AUDIO_OFFSET:   /* audio presentation calibration belongs to this TV */
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
-    case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
+    case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS: case AJ_DIAGNOSTICS_QR:
     case AJ_HIST_CONTA: case AJ_SOCIAL: /* por perfil desta TV (perfilLocal); o web nao tem */
     case AJ_TAM_MAX: case AJ_TAM_MIN: /* o web nao tem a faixa de tamanho */
     case AJ_ESPACO_FILEIRAS: case AJ_ESPACO_TITULOS: /* o web nao tem espacamento */
@@ -6247,7 +6252,7 @@ static int soNaTv(int op) {
     case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY:
     case AJ_P2P_LIGADO: case AJ_JF_LIGADO: case AJ_POSTER_PROV: case AJ_EPG_PAIS:
     case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: case AJ_RELOGIO_12H:
-    case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
+    case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS: case AJ_DIAGNOSTICS_QR:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
     case AJ_TUNNELING: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO:
@@ -8176,6 +8181,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_PLAYER_ANIME: return "Player só para anime (kitsu, MAL, AniList, ou animação japonesa). Igual ao Player usa a escolha acima. O player externo não sincroniza o progresso.";
     case AJ_BUFFER_NATIVE_CONNECTIONS: return "Standard (default) downloads ordinary video through one sequential connection. Parallel 2, 3 or 4 uses that many HTTP range workers inside the same RAM buffer limit. Automatic uses a 64 MB buffer for parallel mode, subject to the RAM safety floor. Applies to the next video. Live/HLS/DASH keep their existing player path.";
     case AJ_BUFFER_CONVERSION_CONNECTIONS: return "HTTP range downloads for DTS/TrueHD conversion and DV7 processing. Parallel 4 is the existing default. Standard limits this path to one download at a time; Parallel 2 or 3 allows fewer simultaneous downloads. RAM buffer limits stay the same. Applies to the next video.";
+    case AJ_DIAGNOSTICS_QR: return "Enable QR log download in the log panel (Blue/F10). Off by default. Normal logs stay active. The temporary snapshot is created only when opened.";
     case AJ_BUFFER: return "Quanto vídeo o app guarda à frente. Automático é o de sempre; 64, 128 ou 256 MB ajudam arquivos 4K pesados e caem sozinhos se faltar memória na TV. No webOS vale para a conversão de DTS e Dolby Vision. Vale a partir do próximo vídeo.";
     case AJ_FONTE_IDIOMA_AUDIO: return "Na escolha automática, fontes com o seu Idioma do áudio ou áudio duplo passam na frente na mesma resolução. Não é filtro: sem elas, a melhor das outras toca.";
     case AJ_CACHE_SEEK: return "Com retomada rápida, guarda só o último título por até 3 horas. Trocar de perfil ou pouco espaço apagam o trecho.";
@@ -10907,7 +10913,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_SALVOS_DEST: case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_HIST_CONTA: case AJ_SOCIAL:
       return AJPV_RASTREIO;
     case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_ENVIAR_LOG: case AJ_GUIA: case AJ_NOVIDADES20: case AJ_DICASCONTROLE: case AJ_APOIAR:
-    case AJ_ENVIO_AUTO: case AJ_VER_REGISTRO: case AJ_LOG_REDE:
+    case AJ_ENVIO_AUTO: case AJ_VER_REGISTRO: case AJ_LOG_REDE: case AJ_DIAGNOSTICS_QR:
 #ifdef NV_ANDROID
     case AJ_BAIXAR_REGISTRO:
 #endif

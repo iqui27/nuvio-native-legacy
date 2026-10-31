@@ -33,7 +33,7 @@
 #include "gfx.h"
 #include "ponteiro.h"
 
-enum { CELB_NENHUM = 0, CELB_SPOT, CELB_BUSCA, CELB_TECLADO, CELB_AMIGO, CELB_N };
+enum { CELB_NENHUM = 0, CELB_SPOT, CELB_BUSCA, CELB_TECLADO, CELB_AMIGO, CELB_LOG, CELB_N };
 
 int  celb_disponivel(void);
 // Desenha o botao em `r` (quadrado) e registra o alvo do ponteiro: passar por

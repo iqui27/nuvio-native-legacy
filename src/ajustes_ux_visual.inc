@@ -312,6 +312,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_ATUALIZAR: return "aj_download";
     case AJ_AVISO_LEGAL: return "aj_file-text";
     case AJ_VER_REGISTRO: return "aj_scroll-text";
+    case AJ_DIAGNOSTICS_QR: return "aj_download";
     case AJ_ENVIAR_LOG: return "aj_send";
     case AJ_ENVIO_AUTO: case AJ_LOG_REDE: return "aj_scroll-text";
     case AJ_GPU_EFEITOS: return "aj_zap";

@@ -1,6 +1,9 @@
 // Ver celbotao.h para o porque.
 #include "celbotao.h"
 #include "celular.h"
+#include "logexport.h"
+#include "registro.h"
+#include <unistd.h>
 #include "text.h"
 #include "anim.h"
 #include "layout.h"
@@ -31,6 +34,18 @@ static float   animBotao[CELB_N];
 static int     focoBotao[CELB_N];     // o que o ultimo desenho pediu
 static char    titulo[96];
 static GfxRect cartao;
+static char logSnapshot[128];
+static GLuint texQr;
+static char texQrDe[96];
+static void abrirServidor(void) {
+  celular_fechar();
+  if (logSnapshot[0]) { unlink(logSnapshot); logSnapshot[0] = 0; }
+  if (dono == CELB_LOG) {
+    if (logexport_create(registro_arquivo(), logSnapshot, sizeof logSnapshot))
+      celular_abrir_relatorio(logSnapshot);
+    else puts("[log-export] snapshot failed");
+  } else celular_abrir(titulo);
+}
 
 int celb_disponivel(void) { return celular_disponivel(); }
 int celb_aberto(void) { return aberto; }
@@ -44,6 +59,7 @@ void celb_atualizar(float dt) {
     animBotao[d] = ajustes_animacoes_reduzidas() ? alvo : anim_mola(animBotao[d], alvo, dt, NV_MOLA_FOCO);
     focoBotao[d] = 0;   // o proximo desenho repoe; botao que sumiu apaga
   }
+  if (aberto && dono == CELB_LOG && !ajustes_diagnostics_qr()) celb_fechar();
   if (!aberto) { animCartao = 0.0f; return; }
   animCartao = ajustes_animacoes_reduzidas() ? 1.0f : anim_mola(animCartao, 1.0f, dt, NV_MOLA_TELA);
 }
@@ -77,6 +93,7 @@ void celb_botao(int d, GfxRect r, int focado, PonteiroFn focar, int a, int b, fl
 }
 
 int celb_abrir(int d, const char *t) {
+  if (d == CELB_LOG && !ajustes_diagnostics_qr()) return 0;
   if (d <= CELB_NENHUM || d >= CELB_N || !celular_disponivel()) return 0;
   snprintf(titulo, sizeof titulo, "%s", t ? t : "");
   dono = d;
@@ -85,7 +102,7 @@ int celb_abrir(int d, const char *t) {
   animCartao = 0.0f;
   // Sem rede o cartao abre assim mesmo e diz por que nao ha codigo: um OK que
   // nao faz nada pareceria botao quebrado.
-  celular_abrir(titulo);
+  abrirServidor();
   printf("[celular] cartao aberto (dono %d)\n", d);
   return 1;
 }
@@ -102,6 +119,9 @@ void celb_fechar(void) {
   aberto = 0;
   embutido = 0;
   celular_fechar();
+  if (texQr) glDeleteTextures(1, &texQr);
+  texQr = 0; texQrDe[0] = 0;
+  if (logSnapshot[0]) { unlink(logSnapshot); logSnapshot[0] = 0; }
 }
 void celb_fechar_dono(int d) { if (aberto && dono == d) celb_fechar(); }
 
@@ -113,7 +133,7 @@ int celb_pegar(int d, char *dst, size_t n) {
 }
 
 static void regerar(void) {
-  if (aberto) celular_abrir(titulo);
+  if (aberto) abrirServidor();
 }
 static void fecharPonteiro(int a, int b) { (void)a; (void)b; celb_fechar(); }
 static void regerarPonteiro(int a, int b) { (void)a; (void)b; regerar(); }
@@ -156,8 +176,7 @@ int celb_evento(const SDL_Event *e) {
 // QR como TEXTURA (como login.c): a versao 3-4 tem ~1000 modulos, e um
 // retangulo por modulo por quadro custaria mais que o cartao inteiro. NEAREST:
 // modulo borrado e o jeito mais rapido de a camera nao ler.
-static GLuint texQr;
-static char   texQrDe[96];
+
 static void qrTextura(const char *u) {
   Qr q;
   int lado, x, y;
@@ -252,6 +271,7 @@ static void celb_desenharCorpo_(void) {
   if (y < 24.0f) y = 24.0f;
   if (x < 32.0f) x = 32.0f;
   if (x + w > NV_TELA_W - 32.0f) x = NV_TELA_W - 32.0f - w;
+  if (dono == CELB_LOG) { x = (NV_TELA_W - w) * 0.5f; y = fmaxf(24.0f, (NV_TELA_H - h) * 0.5f); }
   y += (1.0f - a) * -10.0f;
   cartao = (GfxRect){ x, y, w, h };
 
@@ -272,7 +292,7 @@ static void celb_desenharCorpo_(void) {
     else gfx_cor(cartao, raio, .098f, .102f, .118f, .99f * a);
     if (!vid) gfx_luz_canto(cartao, raio, w * .25f, -h * .25f, w * .9f, ar, ag, ab, .08f * a); }
 
-  { TxtLinha t = txt_linha_corta(TXT_CALLOUT, i18n("Digitar pelo celular"), 245, 248, 255, 255,
+  { TxtLinha t = txt_linha_corta(TXT_CALLOUT, i18n(dono == CELB_LOG ? "Baixar registro" : "Digitar pelo celular"), 245, 248, 255, 255,
                                  w - 2 * CB_PAD - 40.0f);
     float ty = y + CB_PAD + (CB_TITULO_H - t.h) * 0.5f;
     gfx_icone((GfxRect){ x + CB_PAD, y + CB_PAD + (CB_TITULO_H - 28.0f) * 0.5f, 28.0f, 28.0f }, "aj_smartphone",
@@ -281,7 +301,7 @@ static void celb_desenharCorpo_(void) {
   y += CB_PAD + CB_TITULO_H;
 
   if (!temQr) {
-    txt_bloco(TXT_BODY, i18n(msgSemQr(est)), 200, 204, 212, x + CB_PAD, y + 16.0f, w - 2 * CB_PAD, CB_LINHA_H + 6.0f, a, 3);
+    txt_bloco(TXT_BODY, i18n(dono == CELB_LOG ? "Não foi possível carregar. OK para tentar novamente." : msgSemQr(est)), 200, 204, 212, x + CB_PAD, y + 16.0f, w - 2 * CB_PAD, CB_LINHA_H + 6.0f, a, 3);
     return;
   }
   y += 18.0f;

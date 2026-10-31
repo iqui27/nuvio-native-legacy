@@ -1,5 +1,6 @@
 #include "app_id.h"
 #include "registro.h"
+#include "celbotao.h"
 #include "dados.h"
 #include "gfx.h"
 #include "text.h"
@@ -608,6 +609,9 @@ int registro_evento(const SDL_Event *e) {
   // Daqui para baixo o painel e MODAL: nenhuma tecla chega a tela de tras.
   if (e->type == SDL_KEYDOWN) {
     SDL_Keycode k = e->key.keysym.sym;
+    if ((e->key.keysym.scancode == 489 || k == SDLK_F10) && !e->key.repeat) {
+      if (ajustes_diagnostics_qr()) celb_abrir(CELB_LOG, i18n("Baixar registro")); engolirSoltura(e); return 1;
+    }
     if (nv_tecla_voltar(e)) { aberto = 0; engolirSoltura(e); return 1; }
     if (semFonte || !nLin) {
       if (ehOk(k)) { recarregar(); engolirSoltura(e); }

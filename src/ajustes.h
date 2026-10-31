@@ -878,5 +878,6 @@ int ajustes_shot_valor(const char *chave, int v);   // capturas: opcao pela chav
 /* Separate, device-local HTTP concurrency for the next playback session. */
 int ajustes_buffer_native_connections(void);
 int ajustes_buffer_conversion_connections(void);
+int ajustes_diagnostics_qr(void); // on-demand QR log export, default OFF
 
 #endif
