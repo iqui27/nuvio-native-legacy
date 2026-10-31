@@ -8064,7 +8064,6 @@
   T("Todos controlam", "Ovládajú všetci"),
   T("Todos os add-ons", "Všetky doplnky"),
   T("Todos os ajustes, organizados", "Všetky úpravy, organizované"),
-  T("Todos os jogos. Do seu jeito.", "Všetky hry. Vaša cesta."),
   T("Todos os perfis desta TV", "Všetky profily na tomto televízore"),
   T("Todos os plugins ligados", "Všetky zapnuté pluginy"),
   T("Todos os resultados recebidos, na ordem do AIOStreams.", "Každý vrátený výsledok v poradí AIOStreams."),

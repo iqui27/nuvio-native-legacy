@@ -8063,7 +8063,6 @@
   T("Todos controlam", "Управляют все"),
   T("Todos os add-ons", "Все аддоны"),
   T("Todos os ajustes, organizados", "Все настройки организованы"),
-  T("Todos os jogos. Do seu jeito.", "Все игры. Ваш путь."),
   T("Todos os perfis desta TV", "Все профили на этом телевизоре"),
   T("Todos os plugins ligados", "Все включённые плагины"),
   T("Todos os resultados recebidos, na ordem do AIOStreams.", "Каждый возвращаемый результат в порядке AIOStreams."),

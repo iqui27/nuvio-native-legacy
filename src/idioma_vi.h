@@ -8064,7 +8064,6 @@
   T("Todos controlam", "Ai cũng điều khiển"),
   T("Todos os add-ons", "Tất cả tiện ích"),
   T("Todos os ajustes, organizados", "Mọi điều chỉnh, tổ chức"),
-  T("Todos os jogos. Do seu jeito.", "Tất cả các trò chơi. Theo cách của bạn."),
   T("Todos os perfis desta TV", "Tất cả hồ sơ trên TV này"),
   T("Todos os plugins ligados", "Mọi plugin đang bật"),
   T("Todos os resultados recebidos, na ordem do AIOStreams.", "Mọi kết quả trả về đều theo thứ tự AIOStream."),

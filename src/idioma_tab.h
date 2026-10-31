@@ -8063,7 +8063,6 @@
   { "Todos controlam", "Everyone controls" },
   { "Todos os add-ons", "All add-ons" },
   { "Todos os ajustes, organizados", "All adjustments, organized" },
-  { "Todos os jogos. Do seu jeito.", "All games. Your way." },
   { "Todos os perfis desta TV", "All profiles on this TV" },
   { "Todos os plugins ligados", "All enabled plugins" },
   { "Todos os resultados recebidos, na ordem do AIOStreams.", "Every returned result, in AIOStreams order." },

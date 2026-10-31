@@ -8064,7 +8064,6 @@
   T("Todos controlam", "Alla styr"),
   T("Todos os add-ons", "Alla add-ons"),
   T("Todos os ajustes, organizados", "Alla justeringar, organiserade"),
-  T("Todos os jogos. Do seu jeito.", "Alla spel. Ditt sätt."),
   T("Todos os perfis desta TV", "Alla profiler på den här TV:n"),
   T("Todos os plugins ligados", "Alla aktiva plugin"),
   T("Todos os resultados recebidos, na ordem do AIOStreams.", "Varje returnerat resultat, i AIOStreams ordning."),

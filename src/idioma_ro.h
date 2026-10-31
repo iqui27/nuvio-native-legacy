@@ -8063,7 +8063,6 @@
   T("Todos controlam", "Toți controlează"),
   T("Todos os add-ons", "Toate addon-urile"),
   T("Todos os ajustes, organizados", "Toate ajustările, organizate"),
-  T("Todos os jogos. Do seu jeito.", "Toate jocurile. În felul tău."),
   T("Todos os perfis desta TV", "Toate profilurile de pe acest TV"),
   T("Todos os plugins ligados", "Toate pluginurile activate"),
   T("Todos os resultados recebidos, na ordem do AIOStreams.", "Fiecare rezultat returnat, în ordinea AIOStreams."),

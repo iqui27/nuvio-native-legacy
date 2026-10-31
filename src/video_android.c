@@ -1242,9 +1242,15 @@ void video_janela_fonte(int sx, int sy, int sw, int sh, int dx, int dy, int dw, 
   X  = (int)(dx - sx * ex + (dx - sx * ex < 0 ? -0.5 : 0.5));
   Y  = (int)(dy - sy * ey + (dy - sy * ey < 0 ? -0.5 : 0.5));
 
-  printf("[video] android recorte %d,%d %dx%d de %.0fx%.0f -> janela %d,%d %dx%d\n",
-         sx, sy, sw, sh, qw, qh, X, Y, W, H);
-  fflush(stdout);
+  // O chamador repete a mesma janela todo quadro (preview do guia, multiview):
+  // logar so a mudanca — o logcat da TV afogava (~30 linhas/s) sem informacao.
+  { static int lSx = -1, lSy, lSw, lSh, lX, lY, lW, lH;
+    if (sx != lSx || sy != lSy || sw != lSw || sh != lSh || X != lX || Y != lY || W != lW || H != lH) {
+      lSx = sx; lSy = sy; lSw = sw; lSh = sh; lX = X; lY = Y; lW = W; lH = H;
+      printf("[video] android recorte %d,%d %dx%d de %.0fx%.0f -> janela %d,%d %dx%d\n",
+             sx, sy, sw, sh, qw, qh, X, Y, W, H);
+      fflush(stdout);
+    } }
   ultX = X; ultY = Y; ultW = W; ultH = H; temUlt = 1;
   janelaSeMudou(X, Y, W, H, 0);
 }

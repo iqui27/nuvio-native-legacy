@@ -8064,7 +8064,6 @@
   T("Todos controlam", "Herkes kontrol eder"),
   T("Todos os add-ons", "Tüm eklentiler"),
   T("Todos os ajustes, organizados", "Tüm ayarlamalar organize edildi"),
-  T("Todos os jogos. Do seu jeito.", "Tüm oyunlar. Senin yolun."),
   T("Todos os perfis desta TV", "Bu TV'deki tüm profiller"),
   T("Todos os plugins ligados", "Tüm açık eklentiler (plugin)"),
   T("Todos os resultados recebidos, na ordem do AIOStreams.", "Döndürülen her sonuç, AIOStreams sırasına göre."),

@@ -74,8 +74,18 @@ static G5Item *inventory, *staging;
 static int count, staging_count, staging_total, total, profile=-1, dirty;
 static char account[96], screen[48], previous[48], query[140], message[160], catalog_group[64];
 static int focus, nav=-1, selected, edit=-1, playing, selected_season=1, credential_field;
-static int mode=2, mv_count, mv_main, mv_focus, mv_target;
+typedef struct{float x,y,w,h,vx,vy,vw,vh;int ok;}GVGlide;
+static int mode=2, mv_count, mv_main, mv_target;
 static GfxRect mv_rect(int slot);
+static void mv_tick(void);
+static void mv_picker_build(void);
+static void mv_alts_build(void);
+/* Per-slot source key, playback controller and display state (see guiav5.h). */
+static char mv_fonte[4][24];
+static G5MvCtl mvctl;
+static int mv_disp[4], mv_extra_on[4], mv_main_req, mv_aberto;
+static Uint32 mv_born[4];
+static GVGlide mv_glide[4];   /* slot rects morph on the focus spring */
 static float gv_side,gv_side_v;
 static int gv_return_zone,gv_return_focus,gv_side_open;
 static int vod_return_focus,vod_sidebar,vod_selected_slot=-1;
@@ -119,8 +129,14 @@ static void gv_snapshot(void);
 static int gv_snap_force;
 static void gv_side_enter(void);
 static void gv_side_leave(void);
-static G5Item mv_items[4], locked_item, picker_items[48];
-static int picker_count;
+static G5Item mv_items[4], locked_item;
+/* Picker rows: a header per configured Live TV source, then its channels
+ * (favourites first), disabled when the source is at its connection limit. */
+typedef struct{G5Item it;char fonte_nome[96],fonte_key[24];int cap,uso,fav,header,disabled;}MvPick;
+static MvPick picks[192];
+static int npicks;
+static MvPick mv_alts[32];
+static int mv_nalt;
 static G5Rules rules={.hide_adult=1,.max_age=18};
 static G5Lease lease;
 static int lease_seconds=7200, pin_settings, pin_result, rules_mode;
@@ -369,7 +385,7 @@ static void go(const char *name){
     if(i){pg_n=i-1;volta=1;vfoco=pg_pilha[pg_n].foco;}
     else if(!fecha&&pg_n<16){snprintf(pg_pilha[pg_n].nome,sizeof pg_pilha[0].nome,"%s",screen);pg_pilha[pg_n++].foco=focus;}
   }
-  snprintf(screen,sizeof screen,"%s",name);focus=volta?vfoco:!strcmp(name,"multiview-escolher")?900:!strcmp(name,"multiview-limite")?810:modal_tela(name)?-1:!strncmp(name,"vod-",4)&&strcmp(name,"vod-titulo")&&strcmp(name,"vod-serie-temporadas")?VOD_ITEM:0;nav=-1;message[0]=0;
+  snprintf(screen,sizeof screen,"%s",name);focus=volta?vfoco:!strcmp(name,"multiview-escolher")?899:!strcmp(name,"multiview-limite")?810:modal_tela(name)?-1:!strncmp(name,"vod-",4)&&strcmp(name,"vod-titulo")&&strcmp(name,"vod-serie-temporadas")?VOD_ITEM:0;nav=-1;message[0]=0;
 }
 static void gv_voltar(void);
 static void pg_voltar(void){if(pg_n)go(pg_pilha[pg_n-1].nome);else gv_voltar();}
@@ -377,7 +393,8 @@ static void pg_voltar(void){if(pg_n)go(pg_pilha[pg_n-1].nome);else gv_voltar();}
  * opener; without history, the page's fixed parent. */
 static void pg_tras(void){
   if(pg_n&&pg_nivel(screen))pg_voltar();
-  else if(!strcmp(screen,"multiview-escolher")||!strcmp(screen,"multiview-limite"))go(mode==4?"multiview-4":mode==3?"multiview-3":"multiview-2");
+  else if(!strcmp(screen,"multiview-fonte"))go("multiview-slot");
+  else if(!strncmp(screen,"multiview-",10)&&modal_tela(screen))go(mode==4?"multiview-4":mode==3?"multiview-3":"multiview-2");
   else if(!strcmp(screen,"parental-desbloqueio")||!strcmp(screen,"parental-lista"))go("parental-ajustes");
   else if(!strncmp(screen,"setup-",6)&&strcmp(screen,"setup-tipo"))go("setup-tipo");
   else gv_voltar();
@@ -412,25 +429,37 @@ void g5ui_open(const char *name){context();if(gv_is(screen)&&!gv_is(name))gv_dei
   if(!strncmp(name,"setup-",6)&&strcmp(name,"setup-tipo")&&use_saved)load_saved_credentials();
   if(!strcmp(name,"parental-ajustes")){want_pin(1);return;}
   if(!strncmp(name,"multiview-",10)&&!modal_tela(name)){
+    /* Fresh entry (not a layout switch, that is go()): one slot preloaded
+     * with the channel on the air (the guide preview) or, failing that, the
+     * first allowed channel. Never reopens a stream already playing — the
+     * app-side request is id-guarded. */
+    if(!mv_aberto){
+      mv_main=0;mv_count=0;memset(mv_items,0,sizeof mv_items);memset(mv_fonte,0,sizeof mv_fonte);
+      memset(&mvctl,0,sizeof mvctl);memset(mv_disp,0,sizeof mv_disp);memset(mv_extra_on,0,sizeof mv_extra_on);
+      memset(mv_born,0,sizeof mv_born);mv_main_req=0;for(int i=0;i<4;i++)mv_glide[i].ok=0;
+      video_mv_parar_todos();
+      const char *noAr=player_id_canal();
+      int picked=-1;
+      for(int pass=0;pass<2&&picked<0;pass++)
+        for(int i=0;i<4096;i++){
+          const char *id,*title,*logo,*group,*base;
+          if(!guia_canal_campos(i,&id,&title,&logo,&group,&base))continue;
+          if(!g5ui_channel_allowed(id,title,group,base))continue;
+          if(!pass&&(!noAr[0]||strcmp(id,noAr)))continue;   /* pass 0: the channel on the air */
+          picked=i;break;
+        }
+      if(picked>=0){
+        const char *id,*title,*logo,*group,*base;
+        guia_canal_campos(picked,&id,&title,&logo,&group,&base);
+        G5Item *it=&mv_items[0];memset(it,0,sizeof *it);it->kind=G5_LIVE;it->age=-1;
+        snprintf(it->id,sizeof it->id,"%s",id);snprintf(it->name,sizeof it->name,"%s",title);snprintf(it->poster,sizeof it->poster,"%s",logo);snprintf(it->group,sizeof it->group,"%s",group);snprintf(it->source,sizeof it->source,"%s",base);
+        const char *k=guia_canal_fonte(picked);snprintf(mv_fonte[0],sizeof mv_fonte[0],"%s",k?k:"");
+        mv_count=1;mv_born[0]=SDL_GetTicks();
+      }
+    }
     mode=!strcmp(name,"multiview-4")?4:!strcmp(name,"multiview-3")?3:2;
-    mv_main=0;mv_count=0;mv_focus=0;memset(mv_items,0,sizeof mv_items);
-    for(int i=0;i<4096&&mv_count<1;i++){
-      const char *id,*title,*logo,*group,*base;if(!guia_canal_campos(i,&id,&title,&logo,&group,&base))continue;
-      if(!g5ui_channel_allowed(id,title,group,base))continue;G5Item *it=&mv_items[mv_count++];memset(it,0,sizeof *it);it->kind=G5_LIVE;it->age=-1;
-      snprintf(it->id,sizeof it->id,"%s",id);snprintf(it->name,sizeof it->name,"%s",title);snprintf(it->poster,sizeof it->poster,"%s",logo);snprintf(it->group,sizeof it->group,"%s",group);snprintf(it->source,sizeof it->source,"%s",base);
-    }
-    if(mv_count)mv_focus=1;
   }
-  if(!strncmp(name,"multiview-",10)){
-    picker_count=0;
-    for(int i=0;i<4096&&picker_count<48;i++){
-      const char *id,*title,*logo,*group,*base;if(!guia_canal_campos(i,&id,&title,&logo,&group,&base))continue;
-      if(!g5ui_channel_allowed(id,title,group,base))continue;
-      G5Item *it=&picker_items[picker_count++];memset(it,0,sizeof *it);it->kind=G5_LIVE;it->age=-1;
-      snprintf(it->id,sizeof it->id,"%s",id);snprintf(it->name,sizeof it->name,"%s",title);snprintf(it->poster,sizeof it->poster,"%s",logo);snprintf(it->group,sizeof it->group,"%s",group);snprintf(it->source,sizeof it->source,"%s",base);
-    }
-    for(int i=0;i<count&&picker_count<48;i++)if(inventory[i].kind==G5_LIVE&&!restricted(&inventory[i])&&group_allowed(inventory[i].group))picker_items[picker_count++]=inventory[i];
-  }
+  if(!strcmp(name,"multiview-escolher")){mv_picker_build();query[0]=0;}
   if(!strncmp(name,"setup-",6)&&!draft.live&&!draft.movies&&!draft.series){draft.live=draft.movies=draft.series=draft.epg=1;}
   if((!strcmp(name,"setup-credenciais")||!strcmp(name,"fontes-gerenciar"))&&use_saved)load_saved_credentials();
   if(!strcmp(name,"fontes-gerenciar")){sources_key[0]=0;sources_remove=-1;if(!committed)draft.epg=draft.live=draft.movies=draft.series=1;}
@@ -607,7 +636,7 @@ static void modal(float x,float y,float w,float h){
   t21_ilha_folha((GfxRect){x,y,w,h},T21_R_SHEET,1);
 }
 static int modal_tela(const char *s){
-  return !strcmp(s,"parental-pin")||!strcmp(s,"parental-desbloqueio")||!strcmp(s,"multiview-escolher")||!strcmp(s,"multiview-limite");
+  return !strcmp(s,"parental-pin")||!strcmp(s,"parental-desbloqueio")||!strcmp(s,"multiview-escolher")||!strcmp(s,"multiview-limite")||!strcmp(s,"multiview-slot")||!strcmp(s,"multiview-fonte");
 }
 /* D-pad order: each control registers its rectangle while drawing; arrows go
  * to the nearest control in that direction (left/right stay on the row). */
@@ -637,7 +666,6 @@ static int nav_spatial(SDL_Keycode k){
 }
 /* Focus glides between controls on the guide's spring. */
 #define GV_MOLA_FOCO 22.0f
-typedef struct{float x,y,w,h,vx,vy,vw,vh;int ok;}GVGlide;
 static float gv_dt;
 static GfxRect gv_glide(GVGlide *g,GfxRect r){
   if(!g->ok||gv_dt<=0){*g=(GVGlide){r.x,r.y,r.w,r.h,0,0,0,0,1};return r;}
@@ -646,6 +674,7 @@ static GfxRect gv_glide(GVGlide *g,GfxRect r){
   return (GfxRect){g->x,g->y,g->w,g->h};
 }
 static GVGlide foco_glide;
+
 static int foco_visto;   /* a focused control was drawn this frame */
 static GfxRect foco_rect(GfxRect r){foco_visto=1;r.x+=gv_edge_x;r.y+=gv_edge_y;return gv_glide(&foco_glide,r);}
 static int button_lit;   /* next button is the selected one of a segment */
@@ -1233,35 +1262,289 @@ void g5ui_multiview_rect(float *x,float *y,float *w,float *h){
   }
   GfxRect r=mv_rect(mv_main);*x=r.x;*y=r.y;*w=r.w;*h=r.h;
 }
+/* Slot area below the multiview control row; the slots are always 16:9 and
+ * the leftover is letterbox (g5_mv_layout), never a squashed rectangle. */
+#define MV_CTRL_Y (layout_desktop_ativo()?204.0f:156.0f)
+#define MV_AREA_Y (MV_CTRL_Y+80.0f)
+#define MV_AREA_H (1056.0f-MV_AREA_Y)
 static GfxRect mv_rect(int i){
-  if(mode==3)return (GfxRect){i==0?48:1232,i==2?575:238,i==0?1160:640,i==0?650:313};
-  return (GfxRect){48+(i%2)*928,238+(i/2)*340,904,mode==4?324:650};
+  G5MvRect rs[4];
+  g5_mv_layout(mode,48,MV_AREA_Y,1824,MV_AREA_H,24,rs);
+  return i>=0&&i<4?(GfxRect){rs[i].x,rs[i].y,rs[i].w,rs[i].h}:(GfxRect){0,0,0,0};
+}
+/* The slot's drawn rect: springs to the target on layout switch (morph). */
+static GfxRect mv_rect_anim(int i){return gv_glide(&mv_glide[i],mv_rect(i));}
+static int mv_xtream_max(void){XtreamConta c;return xtream_conta(&c)&&c.maxConexoes>0?c.maxConexoes:1;}
+/* Slots of one source already filled (skip = the slot being replaced). */
+static int mv_uso(const char *key,int skip){
+  int u=0;if(!key||!key[0])return 0;
+  for(int i=0;i<4;i++)if(i!=skip&&mv_items[i].id[0]&&!strcmp(mv_fonte[i],key))u++;
+  return u;
+}
+static const char *mv_fonte_nome(const char *key,char *buf,size_t n){
+  for(int i=0;;i++){GuiaFonteSaude s;if(!guia_fonte_saude(i,&s))break;
+    if(s.chave&&key&&!strcmp(s.chave,key)){snprintf(buf,n,"%s",s.nome);return buf;}}
+  if(key&&!strcmp(key,"xt"))snprintf(buf,n,"%s",draft.name[0]?draft.name:"Xtream");
+  else if(key&&!strcmp(key,"g5m3u"))snprintf(buf,n,"%s",draft.name[0]?draft.name:"M3U");
+  else snprintf(buf,n,"%s",key&&key[0]?key:"Live TV");
+  return buf;
+}
+/* Direct URL for the extra decoders: Xtream live or the list's own URL.
+ * Addon/Stalker channels need the resolver/session of the main player. */
+static int mv_url(const G5Item *it,char *url,size_t n){
+  if(it->url[0]){snprintf(url,n,"%s",it->url);return 1;}
+  if(!strcmp(it->source,"xtream")||!strncmp(it->id,"xtream:",7)){
+    char id[96];
+    if(!strncmp(it->id,"xtream:",7))snprintf(id,sizeof id,"%s",it->id);
+    else snprintf(id,sizeof id,"xtream:%s",it->id);
+    return xtream_url(id,url,(unsigned)n);
+  }
+  return 0;
+}
+static void mv_label_c(TxtEstilo st,const char *s,float cx,float y,float maxw){
+  TxtLinha l=txt_linha_corta_bruta(st,s,243,242,239,255,maxw);txt_desenhar(l,cx-(float)l.w/2,y);
+}
+/* Mini diagram of a layout for the switch chips: tiny 16:9 blocks. */
+static void mv_diagrama(int m,float x,float y,float w,float h,float alfa){
+  G5MvRect rs[4];g5_mv_layout(m,x,y,w,h,2.0f,rs);
+  for(int i=0;i<m;i++)gfx_cor((GfxRect){rs[i].x,rs[i].y,rs[i].w,rs[i].h},.3f,1,1,1,alfa);
+}
+/* Control row: kicker, segmented layout switch with mini diagrams, then the
+ * global actions. No footer row — the slots own the vertical space. */
+static void mv_topo(void){
+  label(TXT_ILHA_SUB,"MULTIVIEW",48,MV_CTRL_Y+18,160,1);
+  float y=MV_CTRL_Y,h=56,x=228,w=3*108+8;
+  if(ajustes_vidro())gfx_cor((GfxRect){x,y,w,h},.5f,1,1,1,T21_SEG_TRACK);
+  else gfx_cor((GfxRect){x,y,w,h},.5f,.114f,.118f,.137f,1);
+  for(int i=0;i<3;i++){
+    int m=i==0?2:i==1?3:4,id=800+i;
+    GfxRect r={x+4+i*108,y+4,100,h-8};
+    int on=mode==m,f=nav<0&&focus==id&&!sem_foco;
+    if(f)plrui_pilula_foco(foco_rect(r),1);
+    else if(on){if(ajustes_vidro())gfx_cor(r,.5f,1,1,1,T21_SEG_SELECTED);else gfx_cor(r,.5f,.204f,.212f,.243f,1);}
+    float c=f?ajustes_tinta_foco()/255.0f:on?.95f:.55f;
+    mv_diagrama(m,r.x+10,r.y+(r.h-24)/2,34,24,c*.9f);
+    TxtLinha l=txt_linha_bruta(TXT_ILHA_CORPO,i==0?"2":i==1?"1 + 2":"2 × 2",(int)(c*255),(int)(c*255),(int)(c*255),255);
+    txt_desenhar(l,r.x+52,r.y+(r.h-(float)l.h)/2);
+    if(!sem_foco){ponteiro_alvo(r.x,r.y,r.w,r.h,point_focus,point_activate,id,0);reg_focus(id,r.x,r.y,r.w,r.h);}
+  }
+  {const char *l1=i18n("Limites desta TV"),*l2=i18n("Voltar ao guia");
+   float w2=(float)txt_linha(TXT_ILHA_CORPO,l2,243,242,239,255).w+92;
+   float w1=(float)txt_linha(TXT_ILHA_CORPO,l1,243,242,239,255).w+92;
+   button(806,l2,"aj_log-out",1872-w2,MV_CTRL_Y,w2,56,0);
+   button(805,l1,"aj_info",1872-w2-w1-12,MV_CTRL_Y,w1,56,0);}
+}
+/* The overlay of a filled slot: glass chip with channel + source, and the
+ * audio badge (accent pill) on the main slot. Never pauses the video. */
+static void mv_slot_overlay(int i,G5Item *it,GfxRect r,int live){
+  char fonte[96];mv_fonte_nome(mv_fonte[i],fonte,sizeof fonte);
+  TxtLinha ln=txt_linha_corta_bruta(TXT_ILHA_NOME,restricted(it)?i18n("Conteúdo bloqueado"):it->name,243,242,239,255,r.w-160);
+  float cw=(float)ln.w+48,chh=74;
+  GfxRect cr={r.x+20,r.y+r.h-chh-16,cw,chh};
+  plrui_material_video(cr,22,1);
+  txt_desenhar(ln,cr.x+24,cr.y+12);
+  label(TXT_ILHA_SUB,fonte,cr.x+24,cr.y+46,cw-40,1);
+  if(i==mv_main){
+    float ar,ag,ab;ajustes_acento(&ar,&ag,&ab);
+    TxtLinha la=txt_linha_bruta(TXT_ILHA_CORPO,i18n("Áudio"),(int)(ar*255),(int)(ag*255),(int)(ab*255),255);
+    GfxRect b={r.x+r.w-(float)la.w-96,r.y+18,(float)la.w+78,44};
+    gfx_cor(b,.5f,ar,ag,ab,.22f);
+    gfx_icone((GfxRect){b.x+16,b.y+10,24,24},"aj_volume-2",ar,ag,ab,1);
+    txt_desenhar(la,b.x+50,b.y+(44-(float)la.h)/2);
+  }
+  (void)live;
+}
+static void mv_slot(int i){
+  GfxRect r=mv_rect_anim(i),alvo=mv_rect(i);
+  G5Item *it=mv_items[i].id[0]?&mv_items[i]:NULL;
+  int focused=nav<0&&focus==i&&!sem_foco;
+  float t=1;
+  if(it&&mv_born[i]){float e=(float)(SDL_GetTicks()-mv_born[i])/260.0f;t=anim_suave(e>1?1:e);}
+  float og=gfx_opacidade_grupo;
+  if(t<1){gfx_transformar(r.x+r.w/2,r.y+r.h/2,anim_mistura(.94f,1,t),0,0);gfx_opacidade_grupo=og*t;}
+  int principal=i==mv_main;
+  int live=it&&principal&&player_mini_no_guia_ativo()&&video_pronto();
+  int extra_live=it&&!principal&&mv_extra_on[i]&&video_mv_estado(i)==2;
+  panel(r.x,r.y,r.w,r.h);
+  if(live||extra_live)gfx_furo_raio(r,22/r.h);
+  else if(it&&it->poster[0]&&!restricted(it)){GLuint tx=tex_obter_larg(it->poster,r.w);if(tx)gfx_rect(r,tx,GFX_CARD,0,0,0,22/r.h,1,1,1,1);}
+  if(!it){
+    /* Empty slot: an inviting Add-channel tile, not a grey box. */
+    float cx=r.x+r.w/2,cy=r.y+r.h/2;
+    gfx_cor((GfxRect){cx-40,cy-78,80,80},.5f,1,1,1,.08f);
+    gfx_icone((GfxRect){cx-19,cy-57,38,38},"aj_plus",.95f,.95f,.95f,.9f);
+    mv_label_c(TXT_ILHA_NOME,i18n("Adicionar canal"),cx,cy+18,400);
+  }else{
+    int disp=principal?(video_falhou()?G5_MV_ERRO:live||mvctl.slot[i].estado==G5_MV_TOCANDO?G5_MV_TOCANDO:G5_MV_ABRINDO):mv_disp[i];
+    if(disp==G5_MV_SEM_FONTE||disp==G5_MV_SEM_DECODER||disp==G5_MV_ERRO){
+      float cx=r.x+r.w/2,cy=r.y+r.h/2;
+      const char *icon=disp==G5_MV_ERRO?"aj_refresh-cw":disp==G5_MV_SEM_FONTE?"aj_lock":"aj_tv-minimal-play";
+      char reason[160];
+      if(disp==G5_MV_SEM_FONTE){int cap=g5_mv_source_cap(mv_fonte[i],mv_xtream_max());
+        if(cap>0)snprintf(reason,sizeof reason,i18n("Esta fonte permite %d tela(s)"),cap);
+        else snprintf(reason,sizeof reason,"%s",i18n("Só toca no quadro principal"));}
+      else if(disp==G5_MV_SEM_DECODER)snprintf(reason,sizeof reason,i18n("Esta TV decodifica %d canal(is) por vez"),video_mv_max()+1);
+      else snprintf(reason,sizeof reason,"%s",i18n(mvctl.slot[i].tentativas<4?"Erro no canal — tentando de novo":"Erro no canal"));
+      gfx_icone((GfxRect){cx-19,cy-58,38,38},icon,.75f,.75f,.78f,1);
+      mv_label_c(TXT_ILHA_CORPO,reason,cx,cy+6,r.w-160);
+    }else if(disp==G5_MV_ABRINDO){
+      mv_label_c(TXT_ILHA_SUB,i18n("Abrindo…"),r.x+r.w/2,r.y+r.h-60,300);
+    }
+    mv_slot_overlay(i,it,r,live||extra_live);
+  }
+  if(live&&!player_janela_animando(NULL,NULL,NULL,NULL))player_mini_no_guia(alvo.x,alvo.y,alvo.w,alvo.h);
+  if(focused){
+    float ar,ag,ab;ajustes_acento(&ar,&ag,&ab);
+    GfxRect fr=foco_rect(alvo);
+    plrui_linha_foco(fr,22,1);
+    gfx_anel_fora(fr,22/fr.h,4,2.5f,ar,ag,ab,.9f);
+  }
+  if(!sem_foco){ponteiro_alvo(alvo.x,alvo.y,alvo.w,alvo.h,point_focus,point_activate,i,0);
+    reg_focus(i,alvo.x,alvo.y,alvo.w,alvo.h);}
+  if(t<1){gfx_sem_transformar();gfx_opacidade_grupo=og;}
 }
 static void multiview_screen(void){
-  label(TXT_HEADLINE,i18n("Todos os jogos. Do seu jeito."),48,145,900,0);
-  button_lit=mode==2;button(800,"2","aj_layout-dashboard",1180,132,180,64,0);
-  button_lit=mode==3;button(801,"1 + 2","aj_layout-dashboard",1380,132,220,64,0);
-  button_lit=mode==4;button(802,"2 × 2","aj_layout-dashboard",1620,132,250,64,0);
-  int n=mode;
-  for(int i=0;i<n;i++){
-    GfxRect r=mv_rect(i);float x=r.x,y=r.y,w=r.w,h=r.h;
-    panel(x,y,w,h);
-    G5Item *it=i<mv_count&&mv_items[i].id[0]?&mv_items[i]:NULL;
-    int live=it && i==mv_main && player_mini_no_guia_ativo()&&video_pronto();
-    if(live)gfx_furo_raio(r,22/h);
-    else if(it&&it->poster[0]&&!restricted(it)){GLuint t=tex_obter_larg(it->poster,w);if(t)gfx_rect(r,t,GFX_CARD,0,0,0,22/h,1,1,1,1);}
-    int audio=it&&i==mv_main;
-    gfx_icone((GfxRect){x+26,y+26,28,28},"aj_volume-2",.95f,.95f,.94f,audio?1:.4f);
-    label(TXT_ILHA_SUB,i18n(audio?"Ao vivo · áudio ligado":"Prévia estática · sem áudio"),x+66,y+28,w-92,0);
-    if(it)label(TXT_HEADLINE,restricted(it)?i18n("Conteúdo bloqueado"):it->name,x+26,y+h-130,w-52,0);
-    if(live&&!player_janela_animando(NULL,NULL,NULL,NULL))player_mini_no_guia(x,y,w,h);
-    if(focus==i&&!sem_foco)plrui_linha_foco(r,22,1);
-    button(i,i18n(it?"Trocar canal":"Adicionar canal"),it?"aj_arrow-left-right":"aj_plus",x+24,y+h-80,w-48,56,0);
+  mv_topo();
+  for(int i=0;i<mode;i++)mv_slot(i);
+}
+/* Channel name without case and quality tags, so "Globo HD" and "globo"
+ * from two sources are the same channel for Change-source. */
+static void mv_norm(const char *s,char *d,size_t n){
+  size_t i=0;for(;s[i]&&i+1<n;i++)d[i]=(char)tolower((unsigned char)s[i]);d[i]=0;
+  static const char *tags[]={" full hd"," fhd"," uhd"," 4k"," hd"," sd"," h265"," hevc",0};
+  for(;;){
+    size_t L=strlen(d);while(L&&d[L-1]==' ')d[--L]=0;
+    if(!L)break;int cut=0;
+    for(int k=0;tags[k];k++){size_t m=strlen(tags[k]);if(L>m&&!memcmp(d+L-m,tags[k],m)){d[L-m]=0;cut=1;break;}}
+    if(!cut)break;
   }
-  button(803,i18n("Adicionar canal"),"aj_plus",48,920,360,64,0);
-  button(804,i18n("Trocar principal"),"aj_volume-2",440,920,360,64,0);
-  button(805,i18n("Limites desta TV"),"aj_info",840,920,360,64,0);
-  button(806,i18n("Voltar ao guia"),"aj_log-out",1232,920,360,64,0);
+}
+static void mv_pick_fill(MvPick *p,int guia_idx,const G5Item *inv,int xtmax){
+  memset(p,0,sizeof *p);
+  if(guia_idx>=0){
+    const char *id,*title,*logo,*group,*base;
+    guia_canal_campos(guia_idx,&id,&title,&logo,&group,&base);
+    p->it.kind=G5_LIVE;p->it.age=-1;
+    snprintf(p->it.id,sizeof p->it.id,"%s",id);snprintf(p->it.name,sizeof p->it.name,"%s",title);
+    snprintf(p->it.poster,sizeof p->it.poster,"%s",logo);snprintf(p->it.group,sizeof p->it.group,"%s",group);
+    snprintf(p->it.source,sizeof p->it.source,"%s",base);
+    const char *k=guia_canal_fonte(guia_idx);snprintf(p->fonte_key,sizeof p->fonte_key,"%s",k?k:"");
+    p->fav=guia_e_favorito(id);
+  }else if(inv){
+    p->it=*inv;
+    snprintf(p->fonte_key,sizeof p->fonte_key,"%s",!strcmp(inv->source,"xtream")?"xt":"g5m3u");
+  }
+  mv_fonte_nome(p->fonte_key,p->fonte_nome,sizeof p->fonte_nome);
+  p->cap=g5_mv_source_cap(p->fonte_key,xtmax);
+  p->uso=mv_uso(p->fonte_key,mv_target);
+  p->disabled=p->cap>0&&p->uso>=p->cap;
+}
+/* Picker rows: one section per configured Live TV source (order of the
+ * guide's sources), favourites first inside each, query-filtered. */
+static void mv_picker_build(void){
+  npicks=0;int xtmax=mv_xtream_max();
+  static MvPick raw[192];int nr=0;
+  for(int i=0;i<4096&&nr<160;i++){
+    const char *id,*title,*logo,*group,*base;
+    if(!guia_canal_campos(i,&id,&title,&logo,&group,&base))continue;
+    if(!g5ui_channel_allowed(id,title,group,base)||!match_query(title))continue;
+    mv_pick_fill(&raw[nr++],i,NULL,xtmax);
+  }
+  for(int i=0;i<count&&nr<192;i++)
+    if(inventory[i].kind==G5_LIVE&&!restricted(&inventory[i])&&group_allowed(inventory[i].group)&&match_query(inventory[i].name))
+      mv_pick_fill(&raw[nr++],-1,&inventory[i],xtmax);
+  unsigned char done[192]={0};
+  for(;;){
+    int first=-1;for(int i=0;i<nr;i++)if(!done[i]){first=i;break;}
+    if(first<0||npicks>=190)break;
+    MvPick *h=&picks[npicks++];memset(h,0,sizeof *h);h->header=1;
+    snprintf(h->fonte_key,sizeof h->fonte_key,"%s",raw[first].fonte_key);
+    snprintf(h->fonte_nome,sizeof h->fonte_nome,"%s",raw[first].fonte_nome);
+    h->cap=raw[first].cap;
+    for(int pass=0;pass<2;pass++)
+      for(int i=0;i<nr&&npicks<192;i++)
+        if(!done[i]&&!strcmp(raw[i].fonte_key,h->fonte_key)&&(pass||raw[i].fav)){
+          done[i]=1;picks[npicks]=raw[i];npicks++;
+        }
+  }
+}
+/* Sources carrying the same channel as mv_target, for Change source. */
+static void mv_alts_build(void){
+  mv_nalt=0;
+  if(mv_target<0||mv_target>3||!mv_items[mv_target].id[0])return;
+  char want[160];mv_norm(mv_items[mv_target].name,want,sizeof want);
+  int xtmax=mv_xtream_max();
+  for(int i=0;i<4096&&mv_nalt<32;i++){
+    const char *id,*title,*logo,*group,*base;
+    if(!guia_canal_campos(i,&id,&title,&logo,&group,&base))continue;
+    if(!g5ui_channel_allowed(id,title,group,base))continue;
+    char n[160];mv_norm(title,n,sizeof n);
+    if(strcmp(n,want))continue;
+    const char *k=guia_canal_fonte(i);
+    if(!strcmp(k?k:"",mv_fonte[mv_target]))continue;
+    mv_pick_fill(&mv_alts[mv_nalt],i,NULL,xtmax);
+    int dup=0;for(int j=0;j<mv_nalt;j++)if(!strcmp(mv_alts[j].fonte_key,mv_alts[mv_nalt].fonte_key))dup=1;
+    if(!dup)mv_nalt++;
+  }
+  for(int i=0;i<count&&mv_nalt<32;i++)
+    if(inventory[i].kind==G5_LIVE&&!restricted(&inventory[i])){
+      char n[160];mv_norm(inventory[i].name,n,sizeof n);if(strcmp(n,want))continue;
+      const char *k=!strcmp(inventory[i].source,"xtream")?"xt":"g5m3u";
+      if(!strcmp(k,mv_fonte[mv_target]))continue;
+      int dup=0;for(int j=0;j<mv_nalt;j++)if(!strcmp(mv_alts[j].fonte_key,k))dup=1;
+      if(dup)continue;
+      mv_pick_fill(&mv_alts[mv_nalt],-1,&inventory[i],xtmax);mv_nalt++;
+    }
+}
+/* Playback per slot: the main slot runs on the app player (its watchdog owns
+ * the retries); the others ask the platform for an extra decoder. Opens are
+ * edge-triggered by the controller; periodic refreshes never re-open. */
+static void mv_tick(void){
+  unsigned agora=SDL_GetTicks();
+  int extras=video_mv_max(),xtmax=mv_xtream_max();
+  static int main_ant=-1;
+  if(main_ant!=mv_main){   /* audio/main moved: both slots reopen on the right decoder */
+    if(main_ant>=0&&main_ant<4)g5_mv_ctl_set(&mvctl,main_ant,"",NULL,agora);
+    if(mv_main>=0&&mv_main<4){
+      if(mv_extra_on[mv_main]){mv_extra_on[mv_main]=0;video_mv_parar(mv_main);}
+      g5_mv_ctl_set(&mvctl,mv_main,"",NULL,agora);
+    }
+    main_ant=mv_main;
+  }
+  for(int i=0;i<4;i++){
+    int ativo=i<mode&&mv_items[i].id[0];
+    g5_mv_ctl_set(&mvctl,i,ativo?mv_items[i].id:"",ativo?mv_fonte[i]:"",agora);
+    if(!ativo){if(mv_extra_on[i]){mv_extra_on[i]=0;video_mv_parar(i);}mv_disp[i]=G5_MV_VAZIO;continue;}
+    if(i==mv_main){
+      if(g5_mv_ctl_abrir(&mvctl,i,agora))mv_main_req=1;
+      if(player_mini_no_guia_ativo()&&video_pronto())g5_mv_ctl_pronto(&mvctl,i);
+      continue;
+    }
+    int ord=i-(i>mv_main?1:0);
+    char url[2100];
+    int cap=g5_mv_source_cap(mv_fonte[i],xtmax);
+    int bloq=ord>=extras?G5_MV_SEM_DECODER:!mv_url(&mv_items[i],url,sizeof url)?G5_MV_SEM_FONTE:
+             cap>0&&mv_uso(mv_fonte[i],i)>=cap?G5_MV_SEM_FONTE:0;
+    if(bloq){
+      if(mv_extra_on[i]){mv_extra_on[i]=0;video_mv_parar(i);}
+      if(mv_disp[i]!=bloq)printf("[mv] slot %d parado: %s\n",i,bloq==G5_MV_SEM_DECODER?"limite de decodificadores da TV":"limite de conexoes da fonte"),fflush(stdout);
+      mv_disp[i]=bloq;continue;
+    }
+    mv_disp[i]=mvctl.slot[i].estado;
+    if(g5_mv_ctl_abrir(&mvctl,i,agora)){
+      if(!video_mv_abrir(i,url)){mv_extra_on[i]=1;printf("[mv] slot %d: decodificador extra ativo (%d de %d)\n",i,ord+1,extras);fflush(stdout);}
+      else{mv_disp[i]=G5_MV_SEM_DECODER;printf("[mv] slot %d: decodificador extra indisponivel\n",i);fflush(stdout);}
+    }
+    if(mv_extra_on[i]){
+      int st=video_mv_estado(i);
+      if(st==2)g5_mv_ctl_pronto(&mvctl,i);
+      else if(st<0&&mvctl.slot[i].estado!=G5_MV_ERRO){
+        g5_mv_ctl_erro(&mvctl,i,agora);mv_extra_on[i]=0;video_mv_parar(i);
+        printf("[mv] slot %d: erro na transmissao (tentativa %d de 4)\n",i,mvctl.slot[i].tentativas);fflush(stdout);
+      }
+      GfxRect r=mv_rect(i);video_mv_janela(i,(int)r.x,(int)r.y,(int)r.w,(int)r.h);
+    }
+  }
 }
 /* Modals over their page (PIN, temporary unlock, multiview picker/limits). */
 static void modal_draw(const char *s){
@@ -1284,20 +1567,86 @@ static void modal_draw(const char *s){
     char time[64];snprintf(time,sizeof time,i18n("%d horas"),lease_seconds/3600);button(10,time,"aj_clock",586,500,740,64,0);button(11,i18n("Continuar com PIN"),"aj_lock",586,650,740,64,0);
   }
   if(!strcmp(s,"multiview-escolher")){
-    modal(1130,128,742,848);label(TXT_HEADLINE,i18n(mv_target<4&&mv_items[mv_target].id[0]?"Trocar canal":"Adicionar canal"),1174,174,630,0);
-    static int start;if(focus>=900&&focus<900+picker_count)start=(focus-900)/7*7;if(start>=picker_count)start=0;
-    for(int i=start;i<picker_count&&i<start+7;i++)button(900+i,picker_items[i].name,"aj_plus",1174,250+(i-start)*84,654,68,1);
-    if(!picker_count)label(TXT_ILHA_CORPO,i18n("Nenhum canal na lista"),1174,262,630,1);
-    if(!picker_count){if(focus==900)focus=899;button(899,i18n("Cancelar"),"aj_x",1174,810,654,56,0);}
-    label(TXT_ILHA_SUB,i18n("Um vídeo ao vivo. Os demais são prévias."),1174,906,630,1);
+    /* Channel picker: sheet over Multiview, search on top, results grouped by
+     * source. A source at its connection limit keeps its rows visible but
+     * disabled, with the reason; selecting one replaces that source's slot. */
+    static char ultima[140];if(strcmp(ultima,query)){snprintf(ultima,sizeof ultima,"%s",query);mv_picker_build();}
+    modal(1050,128,822,848);
+    label(TXT_ILHA_SUB,"MULTIVIEW",1094,174,600,1);
+    label(TXT_TITULO2,i18n(mv_target<4&&mv_items[mv_target].id[0]?"Trocar canal":"Adicionar canal"),1094,214,700,0);
+    button(899,query[0]?query:i18n("Buscar canal"),"aj_search",1094,284,734,64,0);
+    static int start;
+    if(focus>=900&&focus<900+npicks){if(focus-900<start)start=focus-900;else if(focus-900>=start+8)start=focus-900-7;}
+    if(start>npicks-8)start=npicks-8>0?npicks-8:0;
+    float y=364;
+    for(int i=start;i<npicks&&y<900;i++){
+      MvPick *p=&picks[i];
+      if(p->header){
+        GfxRect hr={1094,y+22,734,1};gfx_cor(hr,0,1,1,1,.08f);
+        label(TXT_ILHA_SUB,p->fonte_nome,1094,y+32,520,1);
+        if(p->cap>0){char c8[48];snprintf(c8,sizeof c8,i18n("%d tela(s)"),p->cap);label(TXT_ILHA_SUB,c8,1640,y+32,188,1);}
+        y+=84;continue;
+      }
+      GfxRect r={1094,y,734,64};
+      int focused=nav<0&&focus==900+i&&!sem_foco;
+      if(focused)plrui_linha_foco(foco_rect(r),20,1);
+      int c=p->disabled?120:240;   /* focused rows keep the label readable */
+      if(p->fav)gfx_icone((GfxRect){r.x+22,y+20,24,24},"aj_star",c/255.0f,c/255.0f,c/255.0f,1);
+      TxtLinha l=txt_linha_corta_bruta(TXT_ILHA_CORPO,p->it.name,c,c,c,255,p->disabled?300:600);
+      txt_desenhar(l,r.x+58,y+(64-(float)l.h)/2);
+      if(p->disabled)label(TXT_ILHA_SUB,i18n("Fonte no limite"),r.x+r.w-230,y+22,214,1);
+      ponteiro_alvo(r.x,r.y,r.w,r.h,point_focus,point_activate,900+i,0);reg_focus(900+i,r.x,r.y,r.w,r.h);
+      y+=72;
+    }
+    if(!npicks)label(TXT_ILHA_CORPO,i18n("Nenhum canal na lista"),1094,380,700,1);
+  }
+  if(!strcmp(s,"multiview-slot")){
+    /* Per-slot actions, where the footer row used to be. */
+    G5Item *it=mv_target>=0&&mv_target<4&&mv_items[mv_target].id[0]?&mv_items[mv_target]:NULL;
+    modal(630,240,660,620);
+    label(TXT_ILHA_SUB,"MULTIVIEW",678,292,560,1);
+    label(TXT_TITULO2,it?it->name:"",678,332,560,0);
+    if(it){char fonte[96];label(TXT_ILHA_CORPO,mv_fonte_nome(mv_fonte[mv_target],fonte,sizeof fonte),678,414,560,1);}
+    float y=484;
+    button(850,i18n("Trocar canal"),"aj_arrow-left-right",678,y,564,64,1);y+=82;
+    if(mv_nalt){button(851,i18n("Trocar fonte"),"aj_refresh-cw",678,y,564,64,1);y+=82;}
+    if(it&&mv_target!=mv_main){button(852,i18n("Áudio principal"),"aj_volume-2",678,y,564,64,1);y+=82;}
+    button(853,i18n("Remover canal"),"aj_x",678,y,564,64,1);
+  }
+  if(!strcmp(s,"multiview-fonte")){
+    /* Same channel from another configured source, with the capacity left. */
+    modal(630,240,660,320+82*(mv_nalt>0?mv_nalt:1));
+    label(TXT_ILHA_SUB,"MULTIVIEW",678,292,560,1);
+    label(TXT_TITULO2,i18n("Trocar fonte"),678,332,560,0);
+    label(TXT_ILHA_CORPO,i18n("O mesmo canal por outra fonte configurada."),678,414,560,1);
+    float y=486;
+    for(int i=0;i<mv_nalt;i++){
+      MvPick *p=&mv_alts[i];
+      GfxRect r={678,y,564,64};
+      int focused=nav<0&&focus==860+i&&!sem_foco;
+      if(focused)plrui_linha_foco(foco_rect(r),20,1);
+      int c=p->disabled?120:240;
+      TxtLinha l=txt_linha_corta_bruta(TXT_ILHA_CORPO,p->fonte_nome,c,c,c,255,300);
+      txt_desenhar(l,r.x+24,y+(64-(float)l.h)/2);
+      char cap[64];
+      if(p->cap>0)snprintf(cap,sizeof cap,i18n("%d de %d tela(s) livre(s)"),p->cap-p->uso,p->cap);
+      else snprintf(cap,sizeof cap,"%s",i18n("Sem limite"));
+      label(TXT_ILHA_SUB,cap,r.x+r.w-260,y+22,244,1);
+      ponteiro_alvo(r.x,r.y,r.w,r.h,point_focus,point_activate,860+i,0);reg_focus(860+i,r.x,r.y,r.w,r.h);
+      y+=82;
+    }
+    if(!mv_nalt)label(TXT_ILHA_CORPO,i18n("Nenhuma outra fonte tem este canal."),678,500,560,1);
   }
   if(!strcmp(s,"multiview-limite")){
     modal(490,235,940,650);
-    label(TXT_ILHA_SUB,"MULTIVIEW",546,288,800,1);label(TXT_TITULO2,i18n("Mantenha esta TV fluida."),546,345,820,0);
-    label(TXT_ILHA_CORPO,i18n("Esta TV reproduz um vídeo ao vivo."),546,460,820,0);
-    label(TXT_ILHA_CORPO,i18n("Outros quadros mostram arte estática da fonte."),546,530,820,1);
-    label(TXT_ILHA_CORPO,i18n("Reduzir a qualidade não cria outro decodificador."),546,610,820,1);
-    button(810,i18n("Usar um vídeo e prévias"),"aj_check",546,735,820,70,0);
+    label(TXT_ILHA_SUB,"MULTIVIEW",546,288,800,1);label(TXT_TITULO2,i18n("Limites desta TV"),546,345,820,0);
+    char linha[192];
+    snprintf(linha,sizeof linha,i18n("Esta TV decodifica até %d canal(is) ao mesmo tempo."),video_mv_max()+1);
+    label(TXT_ILHA_CORPO,linha,546,460,820,0);
+    if(xtream_configurado()){snprintf(linha,sizeof linha,i18n("Sua conta Xtream permite %d tela(s) por vez."),mv_xtream_max());label(TXT_ILHA_CORPO,linha,546,530,820,0);}
+    label(TXT_ILHA_CORPO,i18n("Listas M3U e addons não têm limite de conta."),546,600,820,1);
+    label(TXT_ILHA_CORPO,i18n("Um quadro por fonte evita bloqueio da conta."),546,660,820,1);
+    button(810,i18n("Entendi"),"aj_check",546,735,820,70,0);
   }
 }
 /* The page a modal sits on, drawn still under the veil. PIN never shows a
@@ -1481,32 +1830,74 @@ static void activate(int id){
     return;
   }
   if(!strncmp(screen,"multiview-",10)){
-    if(id==899){pg_tras();return;}
-    if(id>=900&&id<900+picker_count){
-      G5Item *it=&picker_items[id-900];
-      if(restricted(it))return;
-      if(mv_target>=mode){go("multiview-limite");return;}
-      mv_items[mv_target]=*it;if(mv_target>=mv_count)mv_count=mv_target+1;
-      if(!mv_items[mv_main].id[0])mv_main=mv_target;
-      if(mv_target==mv_main)mv_focus=1;
-      pg_tras();focus=mv_target;return;}
-    if(id==800||id==801||id==802){mode=id==800?2:id==801?3:4;
-      if(mv_main>=mode){mv_main=0;mv_focus=mv_count>0;}
-      go(mode==4?"multiview-4":mode==3?"multiview-3":"multiview-2");focus=id;
-      if(player_mini_no_guia_ativo()){float x,y,w,h;g5ui_multiview_rect(&x,&y,&w,&h);player_mini_no_guia(x,y,w,h);}}
-    else if(id==803||(id>=0&&id<mode)){
-      mv_target=id;
-      if(id==803)for(mv_target=0;mv_target<mode&&mv_items[mv_target].id[0];mv_target++);
-      if(mv_target>=mode){go("multiview-limite");return;}
-      g5ui_open("multiview-escolher");
+    unsigned agora=SDL_GetTicks();
+    if(!strcmp(screen,"multiview-slot")){
+      if(id==850){int t=mv_target;g5ui_open("multiview-escolher");mv_target=t;return;}
+      if(id==851&&mv_nalt){go("multiview-fonte");return;}
+      if(id==852&&mv_target>=0&&mv_target<4&&mv_items[mv_target].id[0]&&mv_target!=mv_main){
+        mv_main=mv_target;   /* mv_tick reopens the two slots on the right decoders */
+        pg_tras();focus=mv_target;return;
+      }
+      if(id==853&&mv_target>=0&&mv_target<4){
+        memset(&mv_items[mv_target],0,sizeof mv_items[0]);mv_fonte[mv_target][0]=0;
+        g5_mv_ctl_set(&mvctl,mv_target,"",NULL,agora);
+        if(mv_target==mv_main){mv_main=0;for(int s=0;s<4;s++)if(mv_items[s].id[0]){mv_main=s;break;}}
+        pg_tras();focus=mv_target;return;
+      }
+      return;
     }
-    else if(id==805)go("multiview-limite");
-    else if(id==810)pg_tras();
-    else if(id==806){mv_focus=0;gv_voltar();}
-    else if(id==804&&mv_count){
-      int target=mv_main;
-      do{target=(target+1)%mode;}while(target!=mv_main&&!mv_items[target].id[0]);
-      mv_main=target;mv_focus=1;
+    if(!strcmp(screen,"multiview-fonte")){
+      if(id>=860&&id<860+mv_nalt){
+        MvPick *p=&mv_alts[id-860];
+        if(p->disabled){snprintf(message,sizeof message,"%s",i18n("Fonte no limite"));return;}
+        mv_items[mv_target]=p->it;snprintf(mv_fonte[mv_target],sizeof mv_fonte[0],"%s",p->fonte_key);
+        g5_mv_ctl_set(&mvctl,mv_target,p->it.id,p->fonte_key,agora);mv_born[mv_target]=agora;
+        printf("[mv] slot %d: mesma programacao por outra fonte\n",mv_target);fflush(stdout);
+        go(mode==4?"multiview-4":mode==3?"multiview-3":"multiview-2");focus=mv_target;return;
+      }
+      return;
+    }
+    if(!strcmp(screen,"multiview-escolher")){
+      if(id==899){input(5,"Buscar canal",query,0);return;}
+      if(id>=900&&id<900+npicks){
+        MvPick *p=&picks[id-900];
+        if(p->header)return;
+        if(restricted(&p->it))return;
+        if(p->disabled){
+          /* Source at its connection limit: replace that source's slot. */
+          int j=-1;for(int s=0;s<4;s++)if(mv_items[s].id[0]&&!strcmp(mv_fonte[s],p->fonte_key)){j=s;break;}
+          if(j<0){snprintf(message,sizeof message,"%s",i18n("Fonte no limite"));return;}
+          mv_items[j]=p->it;g5_mv_ctl_set(&mvctl,j,p->it.id,p->fonte_key,agora);mv_born[j]=agora;
+          snprintf(message,sizeof message,"%s",i18n("Canal trocado no quadro dessa fonte"));
+          pg_tras();focus=j;return;
+        }
+        if(mv_target>=mode)mv_target=0;
+        mv_items[mv_target]=p->it;
+        snprintf(mv_fonte[mv_target],sizeof mv_fonte[0],"%s",p->fonte_key);
+        if(mv_target>=mv_count)mv_count=mv_target+1;
+        g5_mv_ctl_set(&mvctl,mv_target,p->it.id,p->fonte_key,agora);mv_born[mv_target]=agora;
+        if(!mv_items[mv_main].id[0])mv_main=mv_target;
+        pg_tras();focus=mv_target;return;
+      }
+      return;
+    }
+    if(!strcmp(screen,"multiview-limite")){if(id==810)pg_tras();return;}
+    if(id==800||id==801||id==802){
+      int ant=mode;
+      mode=id==800?2:id==801?3:4;
+      for(int i=ant;i<mode;i++)if(!mv_glide[i].ok)mv_born[i]=agora;   /* new slots fade in */
+      if(mv_main>=mode){mv_main=0;for(int s=0;s<mode;s++)if(mv_items[s].id[0]){mv_main=s;break;}}
+      go(mode==4?"multiview-4":mode==3?"multiview-3":"multiview-2");focus=id;
+      if(player_mini_no_guia_ativo()){float x,y,w,h;g5ui_multiview_rect(&x,&y,&w,&h);player_mini_no_guia(x,y,w,h);}
+      return;
+    }
+    if(id==805){go("multiview-limite");return;}
+    if(id==806){gv_voltar();return;}
+    if(id>=0&&id<mode){
+      mv_target=id;
+      if(mv_items[id].id[0]){mv_alts_build();go("multiview-slot");}
+      else g5ui_open("multiview-escolher");
+      return;
     }
     return;
   }
@@ -1559,34 +1950,11 @@ static int g5ui_event_inner(const SDL_Event *e){
   if(k==SDLK_TAB){if(!md)nav=nav<0?0:-1;return 1;}
   if(nav>=0){if(vod&&k==SDLK_LEFT&&nav==0){vod_return_focus=vod_item_focus(focus);vod_sidebar=1;nav=-1;focus=800;return 1;}if(k==SDLK_LEFT&&nav>0)nav--;if(k==SDLK_RIGHT&&nav<5)nav++;
     if(k==SDLK_DOWN){nav=-1;if(vod)focus=vod_item_focus(vod_return_focus);}if((k==SDLK_RETURN||k==SDLK_KP_ENTER)&&!e->key.repeat)activate(1100+nav);return 1;}
+  /* Multiview: every control (slots, layout chips, global chips, picker rows)
+   * registers its rect while drawing; the arrows follow the spatial map. */
   if(gv_arrow(k)&&!strncmp(screen,"multiview-",10)){
-    if(!strcmp(screen,"multiview-escolher")){
-      int d=k==SDLK_DOWN?1:k==SDLK_UP?-1:0;
-      int next=focus+d;if(next>=900&&next<900+picker_count)focus=next;return 1;
-    }
-    if(!strcmp(screen,"multiview-limite"))return 1;
-    if(focus>=0&&focus<mode){
-      int i=focus;
-      if(k==SDLK_UP){if(mode==4&&i>=2)focus=i-2;else if(mode==3&&i==2)focus=1;else focus=800+(i?1:0);}
-      if(k==SDLK_DOWN){if(mode==4&&i<2)focus=i+2;else if(mode==3&&i==1)focus=2;else focus=803+(i%2);}
-      if(k==SDLK_LEFT&&i%2)focus=mode==3?0:i-1;
-      if(k==SDLK_LEFT&&mode==3&&i==2)focus=0;
-      if(k==SDLK_RIGHT&&i==0)focus=1;
-      if(k==SDLK_RIGHT&&mode==4&&i==2)focus=3;
-      return 1;
-    }
-    if(focus>=800&&focus<=802){
-      if(k==SDLK_LEFT&&focus>800)focus--;
-      else if(k==SDLK_RIGHT&&focus<802)focus++;
-      else if(k==SDLK_DOWN)focus=focus==800?0:1;
-      return 1;
-    }
-    if(focus>=803&&focus<=806){
-      if(k==SDLK_LEFT&&focus>803)focus--;
-      else if(k==SDLK_RIGHT&&focus<806)focus++;
-      else if(k==SDLK_UP)focus=mode==4?2+(focus>803):mode==3?2:focus==803?0:1;
-      return 1;
-    }
+    if(!nav_spatial(k)&&k==SDLK_UP&&!modal_tela(screen))nav=0;
+    return 1;
   }
   if(k==SDLK_UP||k==SDLK_DOWN||k==SDLK_LEFT||k==SDLK_RIGHT){
     if(!strcmp(screen,"parental-pin")&&focus>=20&&focus<=31){
@@ -1601,9 +1969,7 @@ static int g5ui_event_inner(const SDL_Event *e){
         int t=focus+d,ok=t>=0&&(rules_mode?guia_canal_regra_campos(t,NULL,NULL,NULL,NULL,NULL):t<group_count);
         if(ok){focus=t;return 1;}
       }
-      if(!strcmp(screen,"multiview-escolher")&&focus>=900&&focus<900+picker_count){
-        int t=focus+d;if(t>=900&&t<900+picker_count)focus=t;return 1;
-      }
+
       if(!strcmp(screen,"setup-categorias")&&focus>=2&&focus<2+group_count){
         int vis[G5_GROUPS],nv=cat_vis(vis),p=0;for(int j=0;j<nv;j++)if(vis[j]==focus-2)p=j;
         int t=p+2*d;if(d>0&&t>=nv&&(p/2+1)*2<nv)t=nv-1;
@@ -1629,6 +1995,13 @@ void g5ui_update(void){
   context();
   if(gv_is(screen))gv_tick();
   gs_tick();
+  {int agora=!strncmp(screen,"multiview-",10);
+   if(mv_aberto&&!agora){   /* left Multiview: extra decoders stop at once */
+     video_mv_parar_todos();memset(&mvctl,0,sizeof mvctl);memset(mv_extra_on,0,sizeof mv_extra_on);
+     mv_main_req=0;for(int i=0;i<4;i++){mv_glide[i].ok=0;mv_born[i]=0;}
+   }
+   mv_aberto=agora;
+   if(agora)mv_tick();}
   if(atomic_load_explicit(&metadata.ready,memory_order_acquire)){
     atomic_store(&metadata.ready,0);atomic_store(&metadata.busy,0);
     if(metadata.ok&&metadata.profile==profile&&!strcmp(metadata.account,account)&&metadata.revision==vod_revision){vod_info=vod_info_pending;vod_info_ref=metadata.ref;}
@@ -1792,10 +2165,19 @@ int g5ui_check_channel(const CatItem *item){
 }
 int g5ui_preview_sem_som(void){return gv_is(screen)&&ajustes_guia_previa_sem_som();}
 int g5ui_multiview_channel(CatItem *item){
-  if(strncmp(screen,"multiview-",10)||modal_tela(screen)||!mv_focus||mv_main>=mv_count)return 0;mv_focus=0;G5Item *it=&mv_items[mv_main];if(restricted(it))return 0;
+  /* The main slot's open request, edge-triggered by mv_tick's controller.
+   * Never reopens the channel already on the air (layout switch, entry with
+   * the preview playing): a slot is (re)opened only on a channel change or a
+   * real stream error with backoff — periodic refreshes never reach here. */
+  if(strncmp(screen,"multiview-",10)||!mv_main_req)return 0;
+  mv_main_req=0;
+  if(mv_main<0||mv_main>3)return 0;
+  G5Item *it=&mv_items[mv_main];if(!it->id[0]||restricted(it))return 0;
+  memset(item,0,sizeof *item);
+  snprintf(item->imdb,sizeof item->imdb,it->url[0]?"g5live:%s":!strcmp(it->source,"xtream")&&!strchr(it->id,':')?"xtream:%s":"%s",it->id);
+  if(!strcmp(player_id_canal(),item->imdb))return 0;
   XtreamConta c;int max=-1,used=0;if(xtream_conta(&c)){max=c.maxConexoes;used=c.conexoes;}
   if(!g5_live_slots(1,1,max,used)){go("multiview-limite");return 0;}
-  memset(item,0,sizeof *item);snprintf(item->imdb,sizeof item->imdb,it->url[0]?"g5live:%s":!strcmp(it->source,"xtream")&&!strchr(it->id,':')?"xtream:%s":"%s",it->id);
   snprintf(item->titulo,sizeof item->titulo,"%s",it->name);snprintf(item->tipo,sizeof item->tipo,"channel");return 1;
 }
 int g5ui_live(const char *id,char *url,size_t cap){

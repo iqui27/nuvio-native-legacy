@@ -8064,7 +8064,6 @@
   T("Todos controlam", "Valdo visi"),
   T("Todos os add-ons", "Visi papildiniai"),
   T("Todos os ajustes, organizados", "Visi derinimai, sutvarkyti"),
-  T("Todos os jogos. Do seu jeito.", "Visi žaidimai. Tavo būdas."),
   T("Todos os perfis desta TV", "Visi šio televizoriaus profiliai"),
   T("Todos os plugins ligados", "Visi įjungti įskiepiai"),
   T("Todos os resultados recebidos, na ordem do AIOStreams.", "Kiekvienas grąžintas rezultatas AIOStreams tvarka."),

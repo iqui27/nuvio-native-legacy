@@ -8064,7 +8064,6 @@
   T("Todos controlam", "Iedereen bestuurt"),
   T("Todos os add-ons", "Alle add-ons"),
   T("Todos os ajustes, organizados", "Alle aanpassingen, overzichtelijk"),
-  T("Todos os jogos. Do seu jeito.", "Alle spellen. Op jouw manier."),
   T("Todos os perfis desta TV", "Alle profielen op deze tv"),
   T("Todos os plugins ligados", "Alle ingeschakelde plug-ins"),
   T("Todos os resultados recebidos, na ordem do AIOStreams.", "Elk geretourneerd resultaat, in AIOStreams-volgorde."),
