@@ -16,12 +16,21 @@ copy would prevent restoring a track for long URLs accepted by upstream.
 
 ## Settings
 
-Playback > Image and sound > Buffer size, with two adjacent selectors:
+Playback > Image and sound > Buffer size. Its editor contains the four size
+presets, then an HTTP connections section with two nested selectors:
 
 | Selector | Default | Choices |
 | --- | --- | --- |
-| Standard native-player buffering | Standard (1) | Standard (1), Parallel 2, 3, 4 |
-| DTS/TrueHD and DV7 buffering | Parallel 4 | Standard (1), Parallel 2, 3, 4 |
+| Native player | Standard (1) | Standard (1), Parallel 2, 3, 4 |
+| DTS/TrueHD and DV7 | Parallel 4 | Standard (1), Parallel 2, 3, 4 |
+
+The buffer-data, RAM-overlay and green-button switches share one row below
+connections. Up/Down navigates the sizes and connection rows; Left/Right moves
+between the three switches, and OK toggles them immediately. A connection
+selector saves only on Confirm. Confirm or Back returns to Buffer size with
+its previous focus and unconfirmed size draft intact. Restoring the whole
+Buffer size page restores size, both connection defaults and the switches;
+restoring a child affects only that child's connection preference.
 
 Both preferences are device-local, independent, and apply to the next playback
 session. They do not propagate through account sync or device backup. Invalid
@@ -55,6 +64,8 @@ DTS/TrueHD output, P7 conversion/mapping and audio routing are separate choices.
 - Existing native sequential buffer, resolver/429 recovery, cache reuse, adapter,
   asynchronous load/fallback and settings regressions remain in CI.
 - Settings exercise all 16 independent combinations through disk reload.
+- Nested selectors exercise remote/pointer entry, child save/cancel/restore,
+  parent draft preservation, failed writes, focus return and whole-page reset.
 - End-to-end native parallel proxy: 2/3/4 workers with every 64/128/256 MiB
   budget, replacement of an open player request, byte equality, forward/backward
   seeks, HEAD, memory bounds, shutdown, MIME sniffing and unsupported playlists.

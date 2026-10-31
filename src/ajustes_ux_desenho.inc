@@ -23,6 +23,7 @@ static const char *uxResumo(int op) {
   return ajudaOpcao(op);
 }
 static int uxOpcaoNaTela(int op) {
+  if (uxBufferConexao(op)) return AJ_BUFFER;
   if (op == AJ_FILTRO_TAM_MAX || op == AJ_FILTRO_GRUPOS) return AJ_FILTROS_FONTES;
   return op >= AJ_FALHA_RD_LIMITE && op <= AJ_FALHA_AD_LIMITE
     ? AJ_FALHA_PROVEDOR_ORDEM : op;

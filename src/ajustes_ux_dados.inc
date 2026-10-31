@@ -30,6 +30,9 @@ static int uxValorAtual(int op) {
 }
 
 static int uxDiferente(int op) {
+  if(op==AJ_BUFFER && uxBufferConexoesDisponivel() &&
+     (valor[AJ_BUFFER_NATIVE_CONNECTIONS]!=valorPadrao[AJ_BUFFER_NATIVE_CONNECTIONS] ||
+      valor[AJ_BUFFER_CONVERSION_CONNECTIONS]!=valorPadrao[AJ_BUFFER_CONVERSION_CONNECTIONS]))return 1;
   if(op==AJ_BUFFER && uxBufferDadosDisponivel() && (valor[AJ_BUFFER_DADOS]!=valorPadrao[AJ_BUFFER_DADOS] || valor[AJ_RAM_OVERLAY]!=valorPadrao[AJ_RAM_OVERLAY] || valor[AJ_RAM_VERDE]!=valorPadrao[AJ_RAM_VERDE]))return 1;
   return uxTemPadrao(op) && uxValorAtual(op) != uxValorPadrao(op);
 }
@@ -269,7 +272,7 @@ static const char *uxSinonimos(int op) {
     case AJ_ESTAT_LADO: return "estatisticas ao vivo stats nerds lado direita esquerda direito esquerdo posicao painel live statistics side left right position";
     case AJ_PLAYER_ANIME: return "player anime externo igual vlc mx outro app video kitsu mal";
     case AJ_PLAYER_EXTERNO: return "player externo interno perguntar vlc mx outro app video external ask";
-    case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS: case AJ_BUFFER: return "buffer tamanho memoria 64 128 256 mb travando carregando rede instavel stats nerds";
+    case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS: case AJ_BUFFER: return "buffer tamanho memoria 64 128 256 mb travando carregando rede instavel stats nerds http connections parallel native dts truehd dv7";
     case AJ_CACHE_SEEK: return "cache seek buffer disco armazenamento voltar avancar travando carregando";
     case AJ_TMDB_IDIOMA: return "idioma metadados titulo sinopse traducao tmdb";
     case AJ_HERO_GENERO: return "genero destaque hero logo titulo categoria esconder mostrar card genre";

@@ -2807,6 +2807,20 @@ void ajustes_voltar_de_lista(int plugins) { uxVoltarOp = plugins ? AJ_PLUGINS : 
 static int uxDifs[AJ_N], uxNDifs, uxDifFoco;
 static int uxEditor, uxOp, uxPendente, uxOriginal, uxRodape;
 static int uxBufferDados, uxBufferDadosFoco;
+static struct { int ativo, pendente, original, foco; } uxBufferPai;
+static int uxBufferConexoesDisponivel(void) {
+#ifdef NV_WEBOS
+  return 1;
+#else
+  return 0;
+#endif
+}
+static int uxBufferConexao(int op) {
+  return op==AJ_BUFFER_NATIVE_CONNECTIONS || op==AJ_BUFFER_CONVERSION_CONNECTIONS;
+}
+static const char *uxBufferNome(int op) {
+  return op==AJ_BUFFER_NATIVE_CONNECTIONS?"Native player":"DTS/TrueHD and DV7";
+}
 static int uxBufferDadosDisponivel(void) {
 #ifdef NV_HTTP_BUFFER_DIAG
   return 1;
@@ -6781,11 +6795,8 @@ static void focarOpcao(int op);
 // D1: "Posicao do relogio" 238 pessoas, "Sincronia por audio" 157, "Zoom do
 // trailer" 86, P2P no .wgt 6), escondendo o aviso que importa.
 static int foraDestaPlataforma(int op) {
-#ifndef NV_WEBOS
-  if(op==AJ_BUFFER_NATIVE_CONNECTIONS || op==AJ_BUFFER_CONVERSION_CONNECTIONS)return 1;
-#endif
   // Child of AJ_BUFFER's editor, intentionally not a standalone Settings row.
-  if(op==AJ_BUFFER_DADOS || op==AJ_RAM_OVERLAY || op==AJ_RAM_VERDE)return 1;
+  if(op==AJ_BUFFER_DADOS || op==AJ_RAM_OVERLAY || op==AJ_RAM_VERDE || uxBufferConexao(op))return 1;
   // Os limites dos provedores sao editados dentro da folha de ordem.
   if (op >= AJ_FALHA_RD_LIMITE && op <= AJ_FALHA_AD_LIMITE) return 1;
   // Only the shared parent appears in the category; these editors are its children.
