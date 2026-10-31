@@ -11672,8 +11672,10 @@ int ajustes_teste_quadro(const char *id) {
     triIniciar(); pfTela = 0; uxVeioBusca = 0; valor[AJ_AVANCADAS] = 1; valor[AJ_TEMA] = 6;
     valor[AJ_IDIOMA] = 0; idiomaEfetivo = IDIOMA_PT; valor[AJ_HOME_LAYOUT] = 1;
     valor[AJ_QUALIDADE] = 1; uxCancelar();
-    if (strstr(id, "frost")) { valor[AJ_VIDRO] = 2; valor[AJ_VIDRO_FOSCO] = 1; }
-    else if (strstr(id, "vidro")) { valor[AJ_VIDRO] = 2; valor[AJ_VIDRO_FOSCO] = 0; }
+    // Ligado (0), nao Automatico: o automatico da captura (sem GPU medida) fica sem vidro.
+    // Fundo "Arte" como o mockup: o vidro precisa de algo por tras para aparecer.
+    if (strstr(id, "frost")) { valor[AJ_VIDRO] = 0; valor[AJ_VIDRO_FOSCO] = 1; valor[AJ_FUNDO] = 0; }
+    else if (strstr(id, "vidro")) { valor[AJ_VIDRO] = 0; valor[AJ_VIDRO_FOSCO] = 0; valor[AJ_FUNDO] = 0; }
     else if (strstr(id, "solido")) { valor[AJ_VIDRO] = 1; }
     if (!strcmp(id, "bl-indice") || strstr(id, "-indice")) { }   // bl-frost-indice etc.: o indice no vidro
     else if (!strcmp(id, "bl-secao")) { triEntrar(5); }
