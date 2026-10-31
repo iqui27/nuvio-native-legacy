@@ -1914,7 +1914,7 @@ static int g5ui_event_inner(const SDL_Event *e){
       if(row+d<0&&sources_offset){sources_offset-=4;sources_key[0]=0;focus=112+col;return 1;}
       if(row+d==4&&guia_fonte_saude(sources_offset+4,&source)){sources_offset+=4;sources_key[0]=0;focus=100+col;return 1;}
     }
-    sources_key[0]=0;nav_spatial(k);return 1;
+    sources_key[0]=0;if(!nav_spatial(k)&&k==SDLK_UP)nav=0;return 1;
   }
   int vod=!strncmp(screen,"vod-",4)&&strcmp(screen,"vod-titulo")&&strcmp(screen,"vod-serie-temporadas");
   if(vod&&vod_sidebar&&(k==SDLK_RIGHT||k==SDLK_ESCAPE||k==SDLK_AC_BACK||k==SDLK_BACKSPACE)){
@@ -1953,6 +1953,12 @@ static int g5ui_event_inner(const SDL_Event *e){
   /* Multiview: every control (slots, layout chips, global chips, picker rows)
    * registers its rect while drawing; the arrows follow the spatial map. */
   if(gv_arrow(k)&&!strncmp(screen,"multiview-",10)){
+    if(!strcmp(screen,"multiview-escolher")&&(k==SDLK_UP||k==SDLK_DOWN)&&focus>=900&&focus<900+npicks){
+      int t=focus-900+(k==SDLK_DOWN?1:-1);
+      while(t>=0&&t<npicks&&picks[t].header)t+=(k==SDLK_DOWN?1:-1);
+      if(t>=0&&t<npicks){focus=900+t;return 1;}
+      if(k==SDLK_UP){focus=899;return 1;}
+    }
     if(!nav_spatial(k)&&k==SDLK_UP&&!modal_tela(screen))nav=0;
     return 1;
   }

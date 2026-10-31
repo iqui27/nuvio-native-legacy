@@ -100,7 +100,7 @@ object NvExtra {
                 override fun onPlayerError(error: PlaybackException) {
                     if (s.geracao != minha) return
                     s.estado = -1
-                    Log.i(TAG, "[mv] slot $slot: erro ${errorCodeNameSafe(errorCode)}")
+                    Log.i(TAG, "[mv] slot $slot: erro codigo=${error.errorCode}")
                 }
             })
             p.setMediaItem(itemMidia(url))
@@ -109,8 +109,6 @@ object NvExtra {
             s.janela?.let { aplicarJanela(s, it) }
         }
     }
-
-    private fun errorCodeNameSafe(code: Int): String = "codigo=$code"
 
     private fun aplicarJanela(s: Slot, j: IntArray) {
         val c = camada ?: return
