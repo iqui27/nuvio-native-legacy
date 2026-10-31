@@ -31,8 +31,8 @@ source = Path('src/aiostreamsui.c').read_text()
 workspace = source.split('static void workspace(void) {', 1)[1].split('if(pagina==TITULO)', 1)[0]
 assert 'dashboard();' in workspace and 'sidebar();' in workspace
 assert 'T21_VEIL' not in workspace
-assert 'float left=184+227*anim_clamp(sidebarOpen,0,1)' in source
-assert 'gfx_icone((GfxRect){x+22,y+112,24,24},"aj_lock"' in source
+assert 'float L=72+88+28+232*anim_clamp(sidebarOpen,0,1)' in source
+assert '"aj_lock"' in source and 'dashboardCartao(c,(GfxRect){L+c*(tw+20),400,tw,110},1)' in source
 assert 'Connect with UUID and password' not in source
 print('aiostreams dashboard: persistent rail, content reflow, compact locked state')
 PY
