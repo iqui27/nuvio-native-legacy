@@ -192,7 +192,7 @@ int main(int argc, char **argv) {
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
   w = SDL_CreateWindow("Nuvio: revisao dos Ajustes", SDL_WINDOWPOS_CENTERED,
                        SDL_WINDOWPOS_CENTERED, 1920, 1080,
-                       SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
+                       SDL_WINDOW_OPENGL | (getenv("NUVIO_SHOT_OCULTA") ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN));
   assert(w);
   gl = SDL_GL_CreateContext(w);
   assert(gl);
@@ -450,9 +450,12 @@ int main(int argc, char **argv) {
         const char *keys=getenv("NUVIO_SHOT_MOTION");
         for(const char *k=keys;*k;k++)
           tecla(*k=='d'?SDLK_DOWN:*k=='u'?SDLK_UP:*k=='l'?SDLK_LEFT:*k=='r'?SDLK_RIGHT:*k=='o'?SDLK_RETURN:SDLK_ESCAPE);
-        static const int frames[]={1,3,3,5,48};
+        // NUVIO_SHOT_MOTION_FINO=1: 10 frames, 2 apart (the Palco strips need >= 8).
+        static const int grosso[]={1,3,3,5,48}, fino[]={2,2,2,2,2,2,2,2,4,40};
+        const int *frames = getenv("NUVIO_SHOT_MOTION_FINO") ? fino : grosso;
+        int nf = getenv("NUVIO_SHOT_MOTION_FINO") ? 10 : 5;
         int elapsed=0;
-        for(int f=0;f<5;f++) {
+        for(int f=0;f<nf;f++) {
           elapsed+=frames[f];quadrosCaptura=frames[f];
           snprintf(nome,sizeof nome,"%s-%s-motion-%02d.png",saida,id,elapsed);
           captura(nome,w);

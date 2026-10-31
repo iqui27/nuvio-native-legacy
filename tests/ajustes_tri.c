@@ -39,7 +39,9 @@ int main(void) {
   key(SDLK_DOWN); assert(triIlha == TRI_SECOES && triSecFoco == 0);
   // Right in the list never changes a value; in the Palco it opens the
   // drill-in (the choice editor as a blade) without touching the value.
-  triEntrar(0); { int v = valor[focoOp]; key(SDLK_RIGHT);
+  // (Palco: every block is a drill row, so Right first opens the block.)
+  triEntrar(0); if (triTopico(focoItem)) { key(SDLK_RIGHT); assert(triSubmenu >= 0 && focoOp >= 0); }
+  { int v = valor[focoOp]; key(SDLK_RIGHT);
     assert(valor[focoOp] == v && triIlha == TRI_LISTA);
     assert(uxEditor == 1); uxCancelar(); assert(!uxEditor && triIlha == TRI_LISTA); }
 
