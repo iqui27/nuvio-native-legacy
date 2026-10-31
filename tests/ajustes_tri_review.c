@@ -87,8 +87,11 @@ int main(int argc,char **argv) {
   expect(seen[0],"difference count follows saved values");
   // A focused row explains itself in the inspector, with scope and recommended value.
   focarOpcao(AJ_QUALIDADE);
-  watch("Qualidade máxima","Vale para","Recomendado",NULL);frame(win,output,"opcao");
-  expect(seen[0]&&!clipped[0]&&seen[1]&&seen[2],"inspector shows title, scope and recommended value");
+  // Palco (mock claude-c): the stage facts name the factory value "Padrão".
+  watch("Qualidade máxima","Vale para",triBladeLayout()?"Padrão":"Recomendado",NULL);frame(win,output,"opcao");
+  // Palco: the inspector is the stage, which draws the full title; the 464-wide
+  // blade row may shorten its own copy of the label next to the value.
+  expect(seen[0]&&(triBladeLayout()?seen[0]>clipped[0]:!clipped[0])&&seen[1]&&seen[2],"inspector shows title, scope and recommended value");
   // Dependencies explain themselves on the row and OK enables both.
   valor[AJ_CW_LIGADO]=0;valor[AJ_CW_THUMB]=1;valor[AJ_CW_BLUR_PROX]=1;
   focarOpcao(AJ_CW_BLUR_PROX);

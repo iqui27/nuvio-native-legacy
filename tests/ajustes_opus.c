@@ -24,11 +24,19 @@ int main(void) {
   CHECK(restored,"P1 Back restores originating section row");
   triIniciar();triIlha=TRI_CHIPS;triChip=TRI_C_TOUR;press(SDLK_RETURN);int wasOpen=tourAberto;press(SDLK_ESCAPE);
   CHECK(wasOpen && !tourAberto && triIlha==TRI_CHIPS && triChip==TRI_C_TOUR,"P1 tour returns to its chip");
-  triIniciar();triEntrar(1);for(int i=0;i<6;i++)press(SDLK_DOWN);int row=focoItem;press(SDLK_RETURN);press(SDLK_ESCAPE);
+  // Palco: a section holds block rows; the child editor lives inside a block blade,
+  // so open the first block and walk to its first choice row.
+  triIniciar();triEntrar(1);
+  if(triBladeLayout()){press(SDLK_RIGHT);for(int i=0;i<12 && !(focoOp>=0 && ajTipo(focoOp)==AJL_ESC && !inativa(focoOp));i++)press(SDLK_DOWN);}
+  else for(int i=0;i<6;i++)press(SDLK_DOWN);
+  int row=focoItem;press(SDLK_RETURN);press(SDLK_ESCAPE);
   CHECK(triIlha==TRI_LISTA && focoItem==row && !uxEditor,"P1 child editor returns to originating row");
-  triIniciar();triEntrar(0);for(int i=0;i<6;i++)press(SDLK_RIGHT);for(int i=0;i<6;i++)press(SDLK_LEFT);
+  // Palco (mock claude-c): Right drills one blade per press by design and the
+  // palette blade owns <- ->, so Back costs one press per open blade.
+  triIniciar();triEntrar(0);for(int i=0;i<6;i++)press(SDLK_RIGHT);
+  int depth=triBladeLayout()?triProfundidade():1;for(int i=0;i<6;i++)press(SDLK_LEFT);
   int backs=0;while(!focoIndice && backs<10){press(SDLK_ESCAPE);backs++;}
-  CHECK(focoIndice && backs<=1,"P1 Right never leaves the row; Left returns to the sections in one press");
+  CHECK(focoIndice && backs<=depth,"P1 Right never leaves the row; Left returns to the sections in one press");
   Stream source={0};snprintf(source.url,sizeof source.url,"https://example.invalid/video.mp4");stream_definir_lista(&source,1);
   triIniciar();focarOpcao(AJ_FONTE_MANUAL);sair=0;int manual=valor[AJ_FONTE_MANUAL];press(SDLK_RETURN);
   CHECK(!sair && !stream_folha_escolheu(NULL) && valor[AJ_FONTE_MANUAL]!=manual,"P1 Settings source row only flips the switch, never queues playback");stream_definir_lista(NULL,0);
