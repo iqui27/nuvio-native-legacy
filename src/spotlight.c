@@ -244,7 +244,7 @@ static int   kbCmd[6], kbNCmd;
 
 static int ditadoDisponivel(void) { return st_voz_disponivel(); }
 // DIGITAR PELO CELULAR (celbotao.h): o disco no fim da barra, depois do Falar.
-static int celDisponivel(void) { return celb_disponivel(); }
+static int celDisponivel(void) { return celb_digitar_disponivel(); }
 static void spotAbrirBase(int voz, int tecladoAuto);
 static int primeiraFocavel(void);
 // Largura que os botoes da direita (Falar, Celular) tiram da barra.

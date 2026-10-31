@@ -4492,6 +4492,21 @@ void player_evento(const SDL_Event *e) {
     alternarTocando(); botao = PLR_PLAY; barraFoco = 0; skipFoco = 0;
     acordar(); return;
   }
+#ifdef NV_DESKTOP_UI
+  // Desktop: Space is play/pause and F is fullscreen wherever the focus is.
+  if (!(e->key.keysym.mod & (KMOD_GUI | KMOD_CTRL | KMOD_ALT)) && !pausao_visivel()) {
+    if (k == SDLK_SPACE) {
+      if (!e->key.repeat) { alternarTocando(); botao = PLR_PLAY; barraFoco = 0; skipFoco = 0; acordar(); }
+      return;
+    }
+    if (k == SDLK_f) {
+      SDL_Window *w = SDL_GL_GetCurrentWindow();
+      if (w && !e->key.repeat)
+        SDL_SetWindowFullscreen(w, SDL_GetWindowFlags(w) & SDL_WINDOW_FULLSCREEN_DESKTOP ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
+      return;
+    }
+  }
+#endif
   if (pausao_visivel()) {
     int r = pausao_evento(e);
     if (r == PAUSAO_RETOMAR) { alternarTocando(); acordar(); return; }

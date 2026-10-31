@@ -347,6 +347,17 @@ const char *i18n(const char *s) {
   int lg;
   idioma_registrar(s);
   if (!s || !*s) return s;
+#ifdef NV_DESKTOP_UI
+  // TV wording on a computer: map to an existing, already translated key.
+  { static const char *const DESKTOP[][2] = {
+      { "Esta TV", "Este aparelho" }, { "Limites desta TV", "Limites" },
+      { "Não disponível nesta TV", "Não neste aparelho" },
+      { "Ajuste salvo nesta TV.", "Salvo" }, { "Salvo nesta TV", "Salvo" },
+      { "Aperte OK para ligar", "Conectar" } };
+    size_t d;
+    for (d = 0; d < sizeof DESKTOP / sizeof *DESKTOP; d++)
+      if (!strcmp(s, DESKTOP[d][0])) { s = DESKTOP[d][1]; break; } }
+#endif
   lg = ajustes_idioma();
   if (lg == IDIOMA_PT) return s;
   if (ordemOk < 0) conferirOrdem();

@@ -116,6 +116,7 @@
 #include "trailer.h"
 #include "ponteiro.h"
 #include "entrada_texto.h"
+#include "teclado.h"
 #include "gif.h"
 #include "idioma.h"
 #include "idiomaauto.h"
@@ -2024,7 +2025,7 @@ int main(int argc, char **argv) {
       }
 #endif
 #ifdef NV_DESKTOP_RELEASE
-      if (desktop_event(&e, win, texto_sistema_aberto() || !strcmp(app_tela_nome(), "busca"))) continue;
+      if (desktop_event(&e, win, texto_sistema_aberto() || teclado_aberto() || !strcmp(app_tela_nome(), "busca"))) continue;
 #endif
 #ifdef NV_DESKTOP_UI
       // Returning the pointer to content also returns keyboard ownership.

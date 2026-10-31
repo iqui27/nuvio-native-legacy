@@ -727,8 +727,10 @@ static void wizard(void){
     panel(1218,340,610,112);gfx_icone((GfxRect){1246,365,28,28},"aj_smartphone",.9,.9,.9,1);
     txt_bloco(TXT_ILHA_CORPO,i18n("Leia o QR e continue no celular."),180,182,190,1288,362,510,32,1,2);
     button(4,i18n("Configurar pelo celular"),"aj_smartphone",1218,471,610,60,0);
+#ifndef NV_DESKTOP_UI /* desktop types in the field itself */
     const char *keys="ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890.:/-@";
     for(int i=0;i<42;i++){char key[2]={i<41?keys[i]:'<',0};button(100+i,key,NULL,1218+(i%7)*88,549+(i/7)*56,80,48,0);}
+#endif
     button(5,i18n("Voltar"),"pl_chevron-left",474,880,150,60,0);
     button(3,i18n("Testar conexão"),"aj_chevron-right",646,880,330,60,0);
   }else if(step==2){
@@ -1367,6 +1369,9 @@ int g5ui_draw(void){
     gfx_sem_transformar();gfx_opacidade_grupo=og;
   }
   if(!foco_visto)foco_glide.ok=0;
+#ifdef NV_DESKTOP_UI
+  if(edit>=0)teclado_desenhar(SDL_GetTicks());   /* input(): the desktop text field */
+#endif
   return 1;
 }
 static void activate(int id){
@@ -1618,6 +1623,9 @@ static int g5ui_event_inner(const SDL_Event *e){
 }
 int g5ui_event(const SDL_Event *e){
   int old_focus=focus,old_nav=nav,old_zone=gv_zone;
+#ifdef NV_DESKTOP_UI
+  if(screen[0]&&edit>=0&&teclado_aberto()){teclado_evento(e);return 1;}
+#endif
   if(e->type==SDL_KEYDOWN&&gv_arrow(e->key.keysym.sym))gv_exit_armed=0;
   int handled=g5ui_event_inner(e);
   if(e->type==SDL_KEYDOWN&&gv_arrow(e->key.keysym.sym)&&old_focus==focus&&old_nav==nav&&old_zone==gv_zone){
@@ -1627,6 +1635,9 @@ int g5ui_event(const SDL_Event *e){
 }
 void g5ui_update(void){
   context();
+#ifdef NV_DESKTOP_UI
+  if(edit>=0)teclado_atualizar(1.0f/60,SDL_GetTicks());
+#endif
   if(gv_is(screen))gv_tick();
   gs_tick();
   if(atomic_load_explicit(&metadata.ready,memory_order_acquire)){

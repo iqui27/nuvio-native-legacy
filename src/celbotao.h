@@ -36,6 +36,9 @@
 enum { CELB_NENHUM = 0, CELB_SPOT, CELB_BUSCA, CELB_TECLADO, CELB_AMIGO, CELB_ADDON, CELB_IMPORTAR, CELB_N };
 
 int  celb_disponivel(void);
+// "Type on your phone" for text fields. Desktop types on the physical keyboard;
+// pairing flows that need the phone for other reasons keep celb_disponivel().
+int  celb_digitar_disponivel(void);
 // Desenha o botao em `r` (quadrado) e registra o alvo do ponteiro: passar por
 // cima chama focar(a, b) do dono; o clique entrega OK, que o dono trata como
 // OK no botao (celb_abrir). `focado` = o foco do dono esta no botao agora.

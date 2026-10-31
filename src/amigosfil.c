@@ -221,12 +221,12 @@ void amigosfil_ok(int coluna) {
     return;
   }
   if (amigosfil_convite()) {
-    if (ajustes_amigos_estilo() == 0 && recomenda_ativo() && celb_disponivel()) {
+    if (ajustes_amigos_estilo() == 0 && recomenda_ativo() && celb_digitar_disponivel()) {
       celb_abrir_embutido(CELB_AMIGO, i18n("Código do amigo")); return;
     }
     // O QR DO CELULAR quando o pacote tem o servidor dele; senao a tela de
     // amigos com o codigo; sem o servico de recomendacoes, Ajustes.
-    if (recomenda_ativo() && celb_disponivel()) { celb_abrir(CELB_AMIGO, "Código do amigo"); return; }
+    if (recomenda_ativo() && celb_digitar_disponivel()) { celb_abrir(CELB_AMIGO, "Código do amigo"); return; }
     if (recomenda_ativo() && recenviar_abrir_amigos()) return;
     temAjustes = 1;
     return;
@@ -337,7 +337,7 @@ static void desenhaConvite(float x0, float y, float alt, int focada, Uint32 agor
   float f = focada ? 1.0f : 0.0f, raio = 26.0f / h;
   GfxRect r;
   const char *cod = recomenda_meu_codigo();
-  int cel = recomenda_ativo() && celb_disponivel();
+  int cel = recomenda_ativo() && celb_digitar_disponivel();
   float tx, tw, bd = 92.0f;
   (void)agora;
   if (w > 1180.0f) w = 1180.0f;

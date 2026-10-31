@@ -114,6 +114,7 @@ static float buResY(void);
 #define BU_TOPO_VAO 28.0f
 static float buTopoEsq(void) {
   float px, py, pw, ph;
+  if (layout_desktop_ativo()) return ANC(NV_DESKTOP_TOOLBAR_H);   // under the title bar
   if (menu_pilula_rect(&px, &py, &pw, &ph)) return ANC(fmaxf(64.0f, py + ph + BU_TOPO_VAO));
   return ANC(64.0f);
 }
@@ -303,7 +304,7 @@ static int  kbTemLayout;                   // a tecla de layout aparece?
 static int  pagSim;                        // 1 = pagina de acentos e sinais (?!#)
 static int  KB_COLUNAS[BU_KB_MAX_FIL + 1] = { 6, 6, 6, 6, 6, 6, 3 };
 static float buResY(void) {
-  if (layout_desktop_ativo()) return ANC(NV_DESKTOP_TOOLBAR_H + 48);
+  if (layout_desktop_ativo()) return buTopoEsq() + BU_CAMPO_H + ANC(32.0f);   // below the typed field
   if (buResultadosPagina()) return buTopoEsq();
   if (buTecladoNativo()) return buTopoEsq() + BU_CAMPO_H + 44.0f;
   if (!buRetrato()) return ANC(64.0f);
@@ -1112,6 +1113,13 @@ static int desktopTexto(const SDL_Event *e) {
   return 0;
 #endif
   if (e->type == SDL_TEXTINPUT) { painel = 0; campoAcrescentar(e->text.text); return 1; }
+  if (e->type == SDL_KEYDOWN && (e->key.keysym.mod & (KMOD_CTRL | KMOD_GUI)) && e->key.keysym.sym == SDLK_v) {
+    char *c = SDL_GetClipboardText(), *q;
+    if (!c) return 1;
+    for (q = c; *q; q++) if ((unsigned char)*q < ' ') *q = ' ';
+    painel = 0; campoAcrescentar(c); SDL_free(c);
+    return 1;
+  }
   if (e->type == SDL_KEYDOWN && !(e->key.keysym.mod & (KMOD_CTRL | KMOD_ALT | KMOD_GUI))) {
     if (e->key.keysym.sym == SDLK_BACKSPACE) { campoApagar(); return 1; }
     // SDL_TEXTINPUT owns letters, punctuation and composed Unicode.
@@ -1227,7 +1235,7 @@ static void busca_evento_(const SDL_Event *e) {
       // DIREITA anda campo -> Falar -> Celular, o que existir aqui.
       case SDLK_RIGHT:
         if (campoFoco == 1 && st_voz_disponivel()) campoFoco = 2;
-        else if (campoFoco < 3 && celb_disponivel()) campoFoco = 3;
+        else if (campoFoco < 3 && celb_digitar_disponivel()) campoFoco = 3;
         return;
       case SDLK_LEFT:
         if (campoFoco == 3 && st_voz_disponivel()) campoFoco = 2;
@@ -1281,7 +1289,7 @@ static void busca_evento_(const SDL_Event *e) {
         if (!moverTecla(0, -1)) {
           if (st_ime_disponivel()) campoFoco = 1;
           else if (st_voz_disponivel()) campoFoco = 2;
-          else if (celb_disponivel()) campoFoco = 3;
+          else if (celb_digitar_disponivel()) campoFoco = 3;
           else if (ajustes_menu_topo()) sair = 1;
           else pediuRelogio = 1;
         }
@@ -1972,7 +1980,7 @@ static void desenhaCampo(Uint32 agora) {
   float ar, ag, ab;
   ajustes_acento(&ar, &ag, &ab);
   ajustes_ui_ilha(c, 38.0f, 0);
-  { int temIme = st_ime_disponivel(), temVoz = st_voz_disponivel(), temCel = celb_disponivel();
+  { int temIme = st_ime_disponivel(), temVoz = st_voz_disponivel(), temCel = celb_digitar_disponivel();
     float d = c.h - 20.0f, my = c.y + 10.0f;
     float cx = c.x + c.w - 10.0f - d;
     float mx = temCel ? cx - 10.0f - d : cx;
@@ -2384,6 +2392,7 @@ static void busca_desenhar_(Uint32 agora) {
 #ifdef NV_TOUCH_UI
   if (buRetratoTelefone()) { desenhaBuscaRetrato(agora); return; }
 #endif
+  if (layout_desktop_ativo()) desenhaCampo(agora);   // the physical keyboard types here
   if (!layout_desktop_ativo() && !buResultadosPagina()) {
     desenhaCampo(agora);
     desenhaTeclado();
