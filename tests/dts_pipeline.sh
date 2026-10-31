@@ -10,6 +10,7 @@ for abi in 0 1; do
   if [ "$abi" = 1 ]; then generation=4; fi
   g++ -std=c++11 -fPIC -shared -D_GLIBCXX_USE_CXX11_ABI=$abi -Isrc -Itests/dts_pipeline_sdk tests/dts_pipeline_native.cpp "$tmp/js.o" -o "$tmp/native/libplayerAPIs.so.$generation"
   g++ -std=c++11 -fPIC -shared -D_GLIBCXX_USE_CXX11_ABI=$abi -DDTS_NO_VOLUME -Isrc -Itests/dts_pipeline_sdk tests/dts_pipeline_native.cpp "$tmp/js.o" -o "$tmp/native/libplayerAPIs.so.$generation.none"
+  g++ -std=c++11 -fPIC -shared -D_GLIBCXX_USE_CXX11_ABI=$abi -DDTS_NO_SEEK -Isrc -Itests/dts_pipeline_sdk tests/dts_pipeline_native.cpp "$tmp/js.o" -o "$tmp/native/libplayerAPIs.so.$generation.noseek"
   g++ -std=c++11 -fPIC -shared -D_GLIBCXX_USE_CXX11_ABI=$abi -Isrc -Isrc/dts/adapter -Itests/dts_pipeline_sdk src/dts/adapter/starfish.cpp "$tmp/js.o" -o "$tmp/good/dts-starfish-webos$generation.so" -ldl -pthread
  done
 cc -fPIC -shared -Isrc -Isrc/dts/adapter tests/dts_pipeline_bad.c -o "$tmp/bad/dts-starfish-webos4.so"
@@ -23,6 +24,8 @@ for generation in 3 4; do
   DTS_MEDIA_ID_PHASE=preroll LD_LIBRARY_PATH="$tmp/native" "$tmp/test" "$tmp/good" "$tmp/bad"
   DTS_FOREGROUND_FALSE=1 DTS_MEDIA_ID_PHASE=preroll LD_LIBRARY_PATH="$tmp/native" "$tmp/test" "$tmp/good" "$tmp/bad"
   DTS_DEFER_COMPLETION=1 DTS_MEDIA_ID_PHASE=preroll LD_LIBRARY_PATH="$tmp/native" "$tmp/test" "$tmp/good" "$tmp/bad"
+  ln -sf "libplayerAPIs.so.$generation.noseek" "$tmp/native/libplayerAPIs.so"
+  DTS_EXPECT_NO_SEEK=1 LD_LIBRARY_PATH="$tmp/native" "$tmp/test" "$tmp/good" "$tmp/bad"
   ln -sf "libplayerAPIs.so.$generation.none" "$tmp/native/libplayerAPIs.so"
   DTS_EXPECT_NO_VOLUME=1 LD_LIBRARY_PATH="$tmp/native" "$tmp/test" "$tmp/good" "$tmp/bad"
 done

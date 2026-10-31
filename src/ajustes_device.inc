@@ -7,7 +7,7 @@
 // filename; neither JSON property names nor a remote path reach filesystem APIs.
 static int ajusteAparelho(int op) {
   switch (op) {
-    case AJ_DV7: return 0;
+    case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS: return 0;
     case AJ_VIDRO: case AJ_VIDRO_CONTORNO: case AJ_FUNDO:
     case AJ_VIDRO_OPAC: case AJ_VIDRO_FOSCO: case AJ_RAIL_BLUR:
     case AJ_PROVEDORES_ESCOPO: case AJ_AUDIO_OFFSET:

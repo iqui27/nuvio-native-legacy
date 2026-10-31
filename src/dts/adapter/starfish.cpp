@@ -24,7 +24,7 @@ struct Native {
   bool (*load)(SF *, const char *, Callback, void *) = nullptr;
   std::string (*feed)(SF *, const char *) = nullptr;
   bool (*play)(SF *) = nullptr, (*pause)(SF *) = nullptr,
-       (*flush)(SF *, const char *) = nullptr, (*eos)(SF *) = nullptr,
+       (*seek)(SF *, const char *) = nullptr, (*eos)(SF *) = nullptr,
        (*unload)(SF *) = nullptr, (*foreground)(SF *) = nullptr;
   const char *(*id)(SF *) = nullptr;
   bool (*volume)(SF *,const char *) = nullptr;
@@ -52,13 +52,13 @@ struct Native {
 #else
     const char *feed_symbol = "_ZN17StarfishMediaAPIs4FeedEPKc";
 #endif
+    seek = reinterpret_cast<decltype(seek)>(dlsym(lib,"_ZN17StarfishMediaAPIs4SeekEPKc")); /* Optional: reload remains available. */
     volume = reinterpret_cast<decltype(volume)>(dlsym(lib,"_ZN17StarfishMediaAPIs9setVolumeEPKc")); /* Optional. */
     return symbol(ctor,"_ZN17StarfishMediaAPIsC1EPKc") &&
       symbol(dtor,"_ZN17StarfishMediaAPIsD1Ev") &&
       symbol(load,"_ZN17StarfishMediaAPIs4LoadEPKcPFvixS1_PvES2_") &&
       symbol(feed,feed_symbol) && symbol(play,"_ZN17StarfishMediaAPIs4PlayEv") &&
       symbol(pause,"_ZN17StarfishMediaAPIs5PauseEv") &&
-      symbol(flush,"_ZN17StarfishMediaAPIs5flushEPKc") &&
       symbol(eos,"_ZN17StarfishMediaAPIs7pushEOSEv") &&
       symbol(unload,"_ZN17StarfishMediaAPIs6UnloadEv") &&
       symbol(id,"_ZN17StarfishMediaAPIs10getMediaIDEv") &&
@@ -79,6 +79,7 @@ struct Pipeline {
   std::string app, window, media, error;
   std::mutex media_lock;
   void (*event)(void *, const char *) = nullptr; void *user = nullptr;
+  std::atomic<bool> seeking{false};
   std::atomic<bool> completed{false}, alive{true}, callback_seen{false};
   /* Accepted controls belong to the worker. Native state callbacks never
    * clear these guards: a late/duplicate callback must not reissue controls. */
@@ -120,7 +121,11 @@ static void callback(int type, int64_t value, const char *str, void *ctx) {
     char detail[48]; snprintf(detail,sizeof detail,"type=%d",type);
     stage(p,"native-callback",detail);
   }
-  if (type != PF_EVENT_TYPE_STR_VIDEO_INFO && type != PF_EVENT_TYPE_FRAMEREADY && type != PF_EVENT_TYPE_INT_ERROR &&
+  /* Seek is asynchronous. Old-segment frame clocks cannot acknowledge the
+   * new position; wait for the native SEEKDONE before publishing them. */
+  if (type == PF_EVENT_TYPE_FRAMEREADY && p->seeking) return;
+  if (type == PF_EVENT_TYPE_STR_STATE_UPDATE__SEEKDONE && !p->seeking.exchange(false)) return;
+  if (type != PF_EVENT_TYPE_STR_STATE_UPDATE__SEEKDONE && type != PF_EVENT_TYPE_STR_VIDEO_INFO && type != PF_EVENT_TYPE_FRAMEREADY && type != PF_EVENT_TYPE_INT_ERROR &&
       type != PF_EVENT_TYPE_STR_ERROR && type != PF_EVENT_TYPE_STR_STATE_UPDATE__LOADCOMPLETED &&
       type != PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING && type != PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED &&
       type != PF_EVENT_TYPE_STR_STATE_UPDATE__ENDOFSTREAM && type != 0x2c && type != 0x2d && type != 0x2e)
@@ -137,6 +142,7 @@ static void callback(int type, int64_t value, const char *str, void *ctx) {
   if (p->event) {
     const char *name = nullptr;
     switch (type) {
+      case PF_EVENT_TYPE_STR_STATE_UPDATE__SEEKDONE: name = "seekDone"; break;
       case PF_EVENT_TYPE_STR_STATE_UPDATE__LOADCOMPLETED: name = "loadCompleted"; break;
       case PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING: name = "playing"; break;
       case PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED: name = "paused"; break;
@@ -244,7 +250,7 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
 static int play(void *ctx) {
   auto *p = static_cast<Pipeline *>(ctx); p->want_play = true;
   if (!p->loaded || p->poisoned) return 0;
-  if (!p->completed) return 1; /* Intent is applied on worker feed/eos after preroll. */
+  if (!p->completed || p->seeking) return 1; /* Intent is applied on worker feed/eos after preroll. */
   /* Some firmware completes Load synchronously before accepting any packets.
    * Both configured streams need their first packet before initial Play.
    * Once started, pause/resume controls keep their normal immediate ordering. */
@@ -310,7 +316,7 @@ static int feed(void *ctx,const DtsFrame *f) {
 static int pause(void *ctx) {
   auto *p = static_cast<Pipeline *>(ctx); p->want_play = false;
   if (!p->loaded || p->poisoned) return 0;
-  if (!p->completed) return 1;
+  if (!p->completed || p->seeking) return 1;
   if (p->pause_issued) return 1;
   if (!p->n.pause(p->sf)) { p->error = "Starfish Pause refused"; return 0; }
   p->play_issued = false; p->pause_issued = true;
@@ -321,15 +327,27 @@ static int pause(void *ctx) {
 static int flush(void *ctx,double target) {
   auto *p = static_cast<Pipeline *>(ctx);
   if (!p->loaded || p->poisoned || !valid_target(target)) return 0;
-  std::string j = "{\"ptsToDecode\":" + std::to_string(target_ns(target)) + "}";
-  if (!p->n.flush(p->sf,j.c_str())) { p->error = "Starfish flush refused"; return 0; }
-  /* Flush stops/pauses the firmware decoders even if their prior Play or
-   * Pause was accepted. Those controls must be issued again for this seek.
-   * A flush does not promise a second LOADCOMPLETED notification. */
-  p->play_issued = p->pause_issued = false;
+  /* The ABI table retains its historic name "flush". A raw flush with
+   * ptsToDecode does not reset the BUFFERSTREAM segment on the C5. Use the
+   * public native Seek protocol instead: decimal MILLISECONDS, not JSON/ns.
+   * See the pinned webOS Chromium reference in tools/dts-pipeline/README.md.
+   * No access to SDK private padding/player/pipeline layouts is required. */
+  if (!p->n.seek) {
+    p->error = "Starfish Seek unavailable";
+    stage(p,"native-seek-unavailable"); return 0;
+  }
+  const auto ms = static_cast<int64_t>(target * 1000.0);
+  const std::string payload = std::to_string(ms);
+  p->seeking = true; // Set before the call: SEEKDONE may be synchronous.
+  if (!p->n.seek(p->sf,payload.c_str())) {
+    p->seeking = false; p->error = "Starfish Seek refused";
+    stage(p,"native-seek-refused"); return 0;
+  }
+  p->error.clear();
+  p->play_issued = p->pause_issued = p->started = false;
   p->audio_fed = p->video_fed = false;
   p->refused_feeds = 0;
-  stage(p,"native-flush-accepted");
+  stage(p,"native-seek-accepted",payload.c_str());
   return 1;
 }
 static int eos(void *ctx) {

@@ -902,13 +902,34 @@ static float aj2CabecalhoEditor(GfxRect m) {
 // clique e o de sempre (aplicar / perguntar se restaura).
 static int ajPontEditor;
 static int ajPontEdVale(void) { return uxEditor == 1 && uxOp >= 0 && !uxRestaurar && !uxAvisoRisco; }
-static void ajPontEdRodape(int a, int b) { (void)a; (void)b; if (ajPontEdVale() && uxTemPadrao(uxOp)) uxRodape = 1; }
+static void ajPontEdRodape(int a, int b) { (void)a; (void)b; if (ajPontEdVale() && uxTemPadrao(uxOp)) { uxRodape = 1;uxBufferDadosFoco=0; } }
 static void ajPontEdValor(int i, int b) {
   (void)b;
   if (!ajPontEdVale() || i < 0 || i >= nValores(uxOp) || (!uxRodape && uxPendente == i)) return;
   if (uxOp == AJ_TEX_MB && texAcima(i)) return;
   if (uxOp == AJ_SALVOS_DEST && !ajustes_fonte_oferecida(i, trakt_ativo(), simkl_ativo())) return;
-  uxRodape = 0; uxPendente = i;
+  uxRodape = 0; uxPendente = i;uxBufferDadosFoco=0;
+}
+static void ajPontBufferDados(int a,int b) {
+  (void)a;(void)b;
+  if(ajPontEdVale() && uxOp==AJ_BUFFER && uxBufferDadosDisponivel()) {
+    uxRodape=0;uxBufferDadosFoco=1;uxPendente=uxOriginal;
+  }
+}
+static void ajPontBufferAlternar(int a,int b) {
+  ajPontBufferDados(a,b);
+  if(ajPontEdVale() && uxOp==AJ_BUFFER && uxBufferDadosDisponivel())uxBufferDadosAlternar();
+}
+static void ajPontRamFoco(int a,int b) {
+  (void)b;
+  if(ajPontEdVale() && uxOp==AJ_BUFFER && uxBufferDadosDisponivel()) {
+    uxRodape=0;uxBufferDadosFoco=a;uxPendente=uxOriginal;
+  }
+}
+static void ajPontRamAlternar(int a,int b) {
+  ajPontRamFoco(a,b);
+  if(ajPontEdVale() && uxOp==AJ_BUFFER && uxBufferDadosDisponivel())
+    uxBufferOpcaoAlternar(a==2?AJ_RAM_OVERLAY:AJ_RAM_VERDE);
 }
 static void ajIptvToqueEscolher(int i,int b) {
   if(!ajPontEdVale() || (uxOp!=AJ_GUIA_CATEGORIAS && uxOp!=AJ_IPTV_CONTA && !ajIptvMenu(uxOp)) || i<0 || i>=nValores(uxOp))return;
@@ -934,14 +955,15 @@ static void aj2RodapeEditor(GfxRect m, float colW, const AjDica *d, int n) {
   if(uxOp==AJ_GUIA_CATEGORIAS)return;
   if (ajRetrato()) y -= 76.0f;
   if (uxTemPadrao(uxOp)) {
-    TxtLinha t = uxRodape ? ajTxtT(TXT_V2_SEG, "Restaurar padrão") : ajTxt(TXT_V2_SEG, "Restaurar padrão");
+    int foco=uxRodape==1;
+    TxtLinha t = foco ? ajTxtT(TXT_V2_SEG, "Restaurar padrão") : ajTxt(TXT_V2_SEG, "Restaurar padrão");
     float w = 24 + 24 + 10 + t.w + 24;
     if (ajPontEditor) ponteiro_alvo(m.x + 52, y, w, 64, ajPontEdRodape, NULL, 0, 0);
-    if (uxRodape) ajPilulaAcento((GfxRect){ m.x + 52, y, w, 64 }, 32, 1);
+    if (foco) ajPilulaAcento((GfxRect){ m.x + 52, y, w, 64 }, 32, 1);
     else ajNeutro((GfxRect){ m.x + 52, y, w, 64 }, 32, 0.08f, AJ_CHIP_SOL, 1);
-    if (uxRodape) ajIconeT("aj_rotate-ccw-clock", m.x + 52 + 24, y + 20, 24, 1);
+    if (foco) ajIconeT("aj_rotate-ccw-clock", m.x + 52 + 24, y + 20, 24, 1);
     else ajIcone("aj_rotate-ccw-clock", m.x + 52 + 24, y + 20, 24, 0.85f);
-    txt_desenhar_alpha(t, m.x + 52 + 58, y + (64 - t.h) * 0.5f, uxRodape ? 1.0f : 0.85f);
+    txt_desenhar_alpha(t, m.x + 52 + 58, y + (64 - t.h) * 0.5f, foco ? 1.0f : 0.85f);
   }
 #ifdef NV_TOUCH_UI
   if (ajPontEditor && (ajTelaCheia() || uxOp == AJ_INTERFACE_MODO)) return;
@@ -996,7 +1018,7 @@ static float aj2PreviaEditor(int op, float x, float y, float w) {
   return ajPreviaEditor(op, x, y, w);
 }
 static float aj2EditorBase(GfxRect m) {
-  return m.y + m.h - 40.0f - 64.0f - 24.0f - (ajRetrato() ? 76.0f : 0.0f);
+  return m.y + m.h - 40.0f - 64.0f - 24.0f - (ajRetrato() ? 76.0f : 0.0f) - (uxOp==AJ_BUFFER && uxBufferDadosDisponivel()?160.0f:0.0f);
 }
 static void aj2EditorNumero(GfxRect m) {
   const Opcao *o = &OPCOES[uxOp];
@@ -1104,7 +1126,7 @@ static void aj2EditorEscolha(GfxRect m) {
   if (m.w - 104 - pw - 56 < 560) pw = 0;
   lx = m.x + 52; lw = pw > 0 ? m.w - 104 - pw - 56 : m.w - 104;
   vis = (int)((aj2EditorBase(m) - y) / passo);
-  if (vis < (uxOp==AJ_GUIA_CATEGORIAS?1:3)) vis = uxOp==AJ_GUIA_CATEGORIAS?1:3;
+  if (vis < ((uxOp==AJ_GUIA_CATEGORIAS || uxOp==AJ_BUFFER)?1:3)) vis = (uxOp==AJ_GUIA_CATEGORIAS || uxOp==AJ_BUFFER)?1:3;
   primeiro = uxPendente - vis / 2;
   if (primeiro + vis > n) primeiro = n - vis;
   if (primeiro < 0) primeiro = 0;
@@ -1126,7 +1148,7 @@ static void aj2EditorEscolha(GfxRect m) {
     // aparece na lista do editor, clicar nele nao pode dar passo algum.
     if (uxOp == AJ_SALVOS_DEST && !ajustes_fonte_oferecida(i, trakt_ativo(), simkl_ativo())) { y += 100; continue; }
     char t[160];
-    int foco = !uxRodape && i == uxPendente;
+    int foco = !uxRodape && !uxBufferDadosFoco && i == uxPendente;
     GfxRect r = { lx, y, lw, passo-4.0f };
     int fv;
     uxValorTexto(uxOp, i, t, sizeof t);
@@ -1196,6 +1218,35 @@ static void aj2EditorEscolha(GfxRect m) {
 #ifdef NV_TOUCH_UI
   if (ajTelaCheia()) gfx_sem_recorte();
 #endif
+  if(uxOp==AJ_BUFFER && uxBufferDadosDisponivel()) {
+    GfxRect row={lx,aj2EditorBase(m)+8.0f,lw,64.0f};
+    if(uxBufferDadosFoco==1)ajFocoLinha(row,28,1,1);
+    const char *label=idiomaEfetivo==IDIOMA_PL ? "Dane bufora w playerze" : "Show buffer data in player";
+    TxtLinha t=ajTxtC(TXT_V2_24,label,row.w-220.0f);
+    txt_desenhar_alpha(t,row.x+24,row.y+(row.h-t.h)*0.5f,uxBufferDadosFoco==1?1.0f:0.85f);
+    aj2PilulaEstado(-1,row.x+row.w-24,row.y+row.h*0.5f,uxBufferDados==0,1);
+    if(ajPontEditor)ponteiro_alvo(row.x,row.y,row.w,row.h,ajPontBufferDados,ajPontBufferAlternar,0,0);
+    row.y+=72.0f;
+    GfxRect main=row;
+    float pillW=64.0f+fmaxf(ajTxt(TXT_V3_PILL,"Desligado").w,ajTxt(TXT_V3_PILL,"Ligado").w);
+    float greenW=fminf(300.0f,fmaxf(160.0f,row.w-pillW-172.0f));
+    GfxRect green={row.x+row.w-24.0f-pillW-24.0f-greenW,row.y,greenW,row.h};
+    if(uxBufferDadosFoco==2)ajFocoLinha(main,28,1,1);
+    if(uxBufferDadosFoco==3)ajFocoLinha(green,28,1,1);
+    float labelW=green.x-main.x-48.0f;
+    const char *ramLabel=labelW<160.0f?"RAM":idiomaEfetivo==IDIOMA_PL?"Dane RAM":"RAM overlay";
+    t=ajTxtC(TXT_V2_24,ramLabel,labelW);
+    txt_desenhar_alpha(t,main.x+24,main.y+(main.h-t.h)*0.5f,0.85f);
+    aj2PilulaEstado(-1,main.x+main.w-24,main.y+main.h*0.5f,ajustes_ram_overlay(),1);
+    t=ajTxtC(TXT_V2_24,idiomaEfetivo==IDIOMA_PL?"Zielony przycisk":"Green button",green.w-110.0f);
+    txt_desenhar_alpha(t,green.x+12,green.y+(green.h-t.h)*0.5f,0.85f);
+    aj2ChipLiga(AJ_RAM_VERDE,green.x+green.w-24,green.y+green.h*0.5f,ajustes_ram_verde(),1);
+    if(ajPontEditor) {
+      ponteiro_alvo(main.x,main.y,green.x-main.x,main.h,ajPontRamFoco,ajPontRamAlternar,2,0);
+      ponteiro_alvo(green.x,green.y,green.w,green.h,ajPontRamFoco,ajPontRamAlternar,3,0);
+      ponteiro_alvo(green.x+green.w,main.y,main.x+main.w-green.x-green.w,main.h,ajPontRamFoco,ajPontRamAlternar,2,0);
+    }
+  }
   if (pw > 0 && uxOp == AJ_P2P_DESTINO) ajUsbPainel(m.x + m.w - 52 - pw, y0, pw, 1);
   else if (pw > 0) aj2PreviaPendente(m.x + m.w - 52 - pw, y0, pw);
   { AjDica d[3] = { { "↑ ↓", "Escolher" }, { "OK", uxOp==AJ_GUIA_CATEGORIAS?"Selecionar":"Confirmar" }, { "Voltar", "Cancelar" } };

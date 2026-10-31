@@ -15,6 +15,7 @@
 // um veu e uns vinte retangulos pequenos. Com Animacoes reduzidas tudo nasce
 // no lugar (anim_mola* obedecem a politica) e a varredura fica parada.
 #include "dvtela.h"
+#include "video.h"
 #include "ajustes.h"
 #include "anim.h"
 #include "botoes.h"
@@ -348,7 +349,14 @@ void dvtela_abertura_zonas(float marca[4], float linha[4]) {
 // Acende no acento quando o perfil aparece no arquivo.
 void dvtela_abertura_marca(int canto, float x, float topo, float a) {
   float r, g, b, luz = molas.luz;
-  a *= dvtela_alfa();
+  VideoDvFase mp4;
+  video_dv_fase(&mp4);
+  if(mp4.mp4Inicial && !dvtela_estado()->ativa) {
+    /* Reuse the same opening-only gate as the status line. The accent lights
+     * after the worker validates the source; the caller supplies the normal
+     * cinema fade. No playback, mute, focus or MKV screen state is changed. */
+    luz=mp4.fonteAberta?1.0f:0.0f;
+  } else a *= dvtela_alfa();
   ZONA(zonaMarca, ((GfxRect){ 0, 0, 0, 0 }));
   if (a < 0.004f) return;
   ajustes_acento(&r, &g, &b);
@@ -371,10 +379,18 @@ float dvtela_abertura_linha(int canto, float x, float y, float a) {
   char lin[96];
   const char *p;
   float k = dvtela_alfa();
+  /* MP4 recovery begins after native startup error 204, so it did not enter
+   * the MKV DV screen at Play. Reuse only this existing text slot: no extra
+   * artwork, input capture, player mute or playback state changes. */
+  VideoDvFase mp4;
+  video_dv_fase(&mp4);
+  int aberturaMp4=mp4.mp4Inicial && !e->ativa;
+  if(aberturaMp4)k=1.0f;
   a *= k;
   ZONA(zonaLinha, ((GfxRect){ 0, 0, 0, 0 }));
   if (a < 0.004f) return 34.0f * k;
-  if (e->passo >= DVT_PASSO_IMAGEM) p = i18n("Preparando a imagem");
+  if(aberturaMp4) p=i18n(mp4.carregado?"Preparando a imagem":mp4.caminho?"Abrindo a fonte":"Lendo o arquivo");
+  else if (e->passo >= DVT_PASSO_IMAGEM) p = i18n("Preparando a imagem");
   else if (e->passo >= DVT_PASSO_ABRIR) p = i18n("Abrindo a fonte");
   else if (e->audioTrocado && e->passo >= DVT_PASSO_AUDIO)
     { snprintf(lin, sizeof lin, i18n("Áudio %s trocado por %s"), nomeCodec(e->audioDe), nomeCodec(e->audioPara)); p = lin; }

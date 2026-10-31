@@ -11,7 +11,12 @@ static int fake_sleep(const struct timespec *, struct timespec *);
 #undef nanosleep
 
 /* The official native HTTP payload reads device buffering preferences. */
-int ajustes_buffer_preset(void) { return 0; }
+static int test_buffer_preset;
+int ajustes_buffer_preset(void) { return test_buffer_preset; }
+int ajustes_buffer_native_connections(void) { return 1; }
+int ajustes_buffer_conversion_connections(void) { return 4; }
+void dts_engine_set_source_workers(int n) { (void)n; }
+void dts_engine_set_http_workers(int n) { (void)n; }
 long memlog_livre_mb(void) { return 4096; }
 /* No HTTP or decoder is started by native dispatcher fixtures. */
 static DtsBufferInfo movie_snapshot;
@@ -20,8 +25,11 @@ static unsigned movie_stop_session;
 int moviebuffer_url(const char *s,const char *h,int m,char *o,size_t n) {
   (void)s;(void)h;(void)m;(void)o;(void)n;return 0;
 }
+static int movie_ready;
+int moviebuffer_ready(void) { return movie_ready; }
 int moviebuffer_info(DtsBufferInfo *out) { *out=movie_snapshot;return movie_active; }
 void moviebuffer_stop(void) { movie_stops++;movie_stop_session=sessao;movie_active=0; }
+void dts_playback_next_seamless(int on) { (void)on; }
 static DtsPlaybackStatus pump_status;
 static const char *pump_events[8];
 static int pump_read, pump_count;
@@ -31,8 +39,10 @@ int dts_playback_event(DtsPlayback *p,char *out,size_t n) { (void)p;if (pump_rea
 void dts_playback_close(DtsPlayback *p) { (void)p;assert(0); }
 void dts_playback_pause(DtsPlayback *p,int paused) { (void)p;(void)paused;assert(0); }
 void mkvass_aceitar_imagem(int sim) { (void)sim; }
-void dts_playback_seek(DtsPlayback *p,double t) { (void)p;(void)t;assert(0); }
+static int seek_commands;
+void dts_playback_seek(DtsPlayback *p,double t) { assert(p && t>=0);seek_commands++; }
 void dts_playback_audio(DtsPlayback *p,int stream) { (void)p;(void)stream;assert(0); }
+void dts_playback_audio_at(DtsPlayback *p,int stream,double t) { (void)p;(void)stream;(void)t;assert(0); }
 void dts_playback_subtitle(DtsPlayback *p,int stream) { (void)p;(void)stream;assert(0); }
 int dts_overlay_draw(DtsPlayback *p,double t,float x,float y,float w,float h,int vw,int vh,float a) {
   (void)p;(void)t;(void)x;(void)y;(void)w;(void)h;(void)vw;(void)vh;(void)a;assert(0);return 0;
@@ -101,6 +111,51 @@ static int fake_startup_call(LSHandle *h,const char *uri,const char *payload,
   return 1;
 }
 int main(void) {
+#ifdef NV_DV_TRUEHD_TEST
+  dtsSessao=(DtsPlayback *)(uintptr_t)1;dtsModoDv=1;
+  nAudio=1;audioAtual=0;strcpy(faixaAudio[0].codec,"truehd");dtsSaida[0]=0;
+  assert(!video_truehd_convertido()); // Selection alone is not a prepared conversion.
+  strcpy(dtsSaida,"TrueHD → AAC Stereo");assert(!video_truehd_convertido());
+  faixaAudio[0].stream_index=18;pump_status.prepared=1;pump_status.info.audio_stream=17;
+  assert(!video_truehd_convertido()); // Previous track output is still prepared.
+  pump_status.info.audio_stream=18;assert(video_truehd_convertido());
+  falhou=1;assert(!video_truehd_convertido());falhou=0;
+  terminou=1;assert(!video_truehd_convertido());terminou=0;
+  strcpy(faixaAudio[0].codec,"eac3");assert(!video_truehd_convertido());
+  strcpy(faixaAudio[0].codec,"truehd");dtsModoDv=0;assert(!video_truehd_convertido());
+  dtsSessao=NULL;nAudio=0;dtsSaida[0]=0;pump_status=(DtsPlaybackStatus){0};
+#endif
+#ifdef NV_NATIVE_SEEK_TEST
+  dtsSessao=(DtsPlayback *)(uintptr_t)1;pronto=tocando=1;
+  pausaPedida=falhou=terminou=0;bindPendente=1;
+  assert(video_iniciando()); // Native playing may precede the ACB plane bind.
+  bindPendente=0;__atomic_store_n(&bindVivo,1,__ATOMIC_RELEASE);
+  assert(video_iniciando());
+  __atomic_store_n(&bindVivo,0,__ATOMIC_RELEASE);assert(!video_iniciando());
+  dtsImagemAtualizar();assert(video_dts_imagem_exibida());
+  tocando=0;assert(video_iniciando());
+  dtsImagemAtualizar();assert(video_dts_imagem_exibida()); // seek pause
+  pronto=0;bindPendente=1;
+  dtsImagemAtualizar();assert(video_dts_imagem_exibida()); // fallback Load
+  falhou=1;assert(!video_dts_imagem_exibida());falhou=0;
+  terminou=1;assert(!video_dts_imagem_exibida());terminou=0;
+  dtsImagemExibida=0;pronto=tocando=1;bindPendente=0;
+  dtsModoDv=1;strcpy(vidHdr,"HDR10");
+  dtsImagemAtualizar();assert(!video_dts_imagem_exibida()); // First DV confirmation is still required.
+  strcpy(vidHdr,"DolbyVision");bindPendente=1;
+  dtsImagemAtualizar();assert(!video_dts_imagem_exibida());
+  bindPendente=0;bindVivo=1;dtsImagemAtualizar();assert(!video_dts_imagem_exibida());
+  bindVivo=0;dtsImagemAtualizar();assert(video_dts_imagem_exibida());
+  pronto=tocando=0;bindPendente=1;
+  dtsImagemAtualizar();assert(video_dts_imagem_exibida()); // DV seek/TrueHD native Load keeps cover closed.
+  dtsImagemExibida=0;pronto=tocando=1;strcpy(vidHdr,"none");
+  dtsModoDv=0;bindPendente=1;dtsImagemAtualizar();assert(!dtsImagemExibida);
+  bindPendente=0;bindVivo=1;dtsImagemAtualizar();assert(!dtsImagemExibida);
+  bindVivo=0;tocando=0;dtsImagemAtualizar();assert(!dtsImagemExibida);
+  pausaPedida=1;assert(!video_iniciando()); // A deliberate pause is not startup.
+  dtsSessao=NULL;pronto=tocando=pausaPedida=0;
+  puts("LG converted startup: waits for native playback and completed video-plane bind");
+#endif
   /* #625: successful load must start playback before track discovery.
    * TS and HLS both use this callback; native default tracks need no selection. */
   lsPayload=fake_load_payload;lsCall=fake_startup_call;
@@ -244,6 +299,7 @@ int main(void) {
   pump_count=3;pump_read=0;
   bombearDts();assert(pump_read==0 && !video_pronto() && !video_decoder_anunciou());
   pump_status.prepared=pump_status.native_loaded=pump_status.revision=1;
+  pump_status.load_revision=1;
   pump_status.info.width=1920;pump_status.info.height=1080;
   snprintf(pump_status.media_id,sizeof pump_status.media_id,"exported-dts-media");
   bombearDts();
@@ -259,12 +315,46 @@ int main(void) {
   int old_windows=exported_windows;
   bombearDts();assert(pump_read==0 && exported_windows==old_windows);
   pump_status.prepared=pump_status.native_loaded=1;pump_status.revision=2;
+  pump_status.load_revision=2;
   snprintf(pump_status.media_id,sizeof pump_status.media_id,"recovered-dts-media");
   bombearDts();
   assert(pump_read==3 && dtsRevisao==2 && !strcmp(midia,"recovered-dts-media"));
   assert(video_pronto() && video_tocando() && video_decoder_anunciou());
   assert(!strcmp(vidHdr,"HDR10") && exported_windows>old_windows);
   old_windows=exported_windows;bombearDts();assert(exported_windows==old_windows);
+  /* A compatible audio metadata revision keeps the confirmed DV picture and
+   * its existing plane. A real Load still rebinds, even with a recycled ID. */
+  pump_count=pump_read=0;dtsModoDv=1;
+  snprintf(vidHdr,sizeof vidHdr,"DolbyVision");
+  pump_status.revision=3;
+  pump_status.info.n_tracks=1;pump_status.info.audio_stream=9;
+  pump_status.info.tracks[0]=(DtsTrack){.kind=DTS_AUDIO,.stream_index=9,.channels=6};
+  strcpy(pump_status.info.tracks[0].codec,"ac3");
+  bombearDts();
+  assert(pronto && tocando && viuVideo && !bindPendente);
+  assert(exported_windows==old_windows && !strcmp(vidHdr,"DolbyVision"));
+  assert(nAudio==1 && audioAtual==0 && faixaAudio[0].stream_index==9);
+  pump_status.revision=4;pump_status.load_revision=3;
+  bombearDts();assert(pronto && !tocando && !viuVideo && exported_windows>old_windows);
+  dtsModoDv=0;
+  /* A stale clock may update subtitles/playback, but never undo the chosen
+   * progress-bar position during the 350ms debounce or decoder preroll. */
+  ligado=pronto=1;dtsSessao=NULL;posSeg=posNativa=100;
+  snprintf(midia,sizeof midia,"seek-ui");
+  video_buscar(500);assert(video_pos()==500);
+  eventoPayload("{\"currentTime\":{\"currentTime\":100200}}",sessao);
+  assert(posNativa==100.2 && video_pos()==500);
+  nv_seekview_sent(&seekView,SDL_GetTicks());
+  eventoPayload("{\"currentTime\":{\"currentTime\":498500}}",sessao);
+  assert(posNativa==498.5 && video_pos()==500);
+  eventoPayload("{\"currentTime\":{\"currentTime\":500100}}",sessao);
+  assert(video_pos()==500.1);
+  dtsSessao=(DtsPlayback *)(uintptr_t)1;
+  video_buscar(200);assert(video_pos()==200);seekAgora(200);assert(seek_commands==1);
+  eventoPayload("{\"currentTime\":{\"currentTime\":500200}}",sessao);
+  assert(posNativa==500.2 && video_pos()==200);
+  eventoPayload("{\"currentTime\":{\"currentTime\":200100}}",sessao);
+  assert(video_pos()==200.1);dtsSessao=NULL;seekView=(NvSeekView){0};
   puts("webOS ACB dispatch snapshot, stale generations, deferred VIDEO/MSE transitions, overrides and failed-init retry, early webOS 6 exported-window events and replacement pipeline tests passed");
   return 0;
 }

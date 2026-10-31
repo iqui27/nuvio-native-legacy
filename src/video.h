@@ -39,11 +39,15 @@ int  video_tocar(const char *url);
 // MediaItem antes de prepare; o ack e da geracao desta abertura. Estado:
 // 0 aguardando, 1 aceito, -1 abertura normal (seek tardio como fallback).
 int  video_tocar_posicao(const char *url, double segundos);
-// Como a de cima, mais o percentual (0..100) para quando nao ha segundos
-// exatos (retomada da conta: Trakt/Simkl so dao percentual). O Kotlin aplica
-// sobre a duracao do container ANTES do primeiro quadro; mesmo ack/estado.
+#endif
+#if defined(NV_ANDROID) || defined(NV_NATIVE_SEEK_TEST)
+// Initial seconds, or an account percentage resolved with container duration.
+// Android applies it in Media3; the webOS experiment applies it to the first
+// DTS Load. State: 0 preparing, 1 applied, -1 use the ordinary native seek.
 int  video_tocar_retomada(const char *url, double segundos, double pct);
 int  video_retomada_inicial_estado(void);
+#endif
+#ifdef NV_ANDROID
 // Fonte preparada na pagina do titulo: player pausado, sem imagem, audio ou
 // eventos da sessao de reproducao. Token identifica o dono; zero cancela todos.
 int  video_precarregar(const char *url, const char *cabecalhos, double segundos,
@@ -116,6 +120,10 @@ double video_duracao(void);  // 0 enquanto desconhecida
 // baixado para descobrir o idioma das faixas — ver mkv.h. Vale so para MKV com
 // capitulos; quem chama precisa de um plano B.
 double video_creditos(void);
+#ifdef NV_HTTP_BUFFER_DIAG
+#include <stddef.h>
+void video_buffer_test_text(char *, size_t);
+#endif
 double video_buffer_fim(void); // ate onde o buffer cobre (s); 0 se desconhecido
 // Ha quanto tempo (ms) o pipeline esta parado esperando dados, do par de
 // eventos bufferingStart/bufferingEnd do uMS; 0 quando NAO esta bufferizando.
@@ -251,6 +259,7 @@ typedef struct {
   int tocando;         // `playing` no caminho
   int recusa;          // VIDEO_DV_NAO_*: o DV desta fonte nao vai acontecer
   int falhou;          // a fonte falhou de vez (video_falhou)
+  int mp4Inicial;      // MP4 recovery opening only; never a same-source seek/audio change
 } VideoDvFase;
 void video_dv_fase(VideoDvFase *f);
 // 1 quando a PROXIMA abertura de `url` vai tentar Dolby Vision em MKV: a fonte
@@ -275,6 +284,14 @@ void video_dv_segurar(int segurar);
 int  video_iniciando(void);
 // 1 once the current source has played on webOS (kept across reloads of it).
 int video_fonte_tocou(void);
+#ifdef NV_NATIVE_SEEK_TEST
+// The packet player has already played with its video plane bound on this source.
+// Later seeks/reloads must not restore the initial loading artwork/card.
+int video_dts_imagem_exibida(void);
+#endif
+#ifdef NV_DV_TRUEHD_TEST
+int video_truehd_convertido(void); // Selected TrueHD audio has a prepared AAC/AC3 output.
+#endif
 const char *video_dts_saida(void);  // actual local conversion output, empty for native playback
 int    video_audio_nao_suportado(void);  // uMS errorCode 200: video segue sem som
 int    video_seek_desistiu(void);  // webOS: seek recusado 3x; segue tocando de onde esta

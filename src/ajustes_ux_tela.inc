@@ -51,11 +51,23 @@ static const Item TELA[] = {
       OPC(AJ_DV_MKV),
 #ifdef NV_DV7_CONVERSION
       OPC(AJ_DV7),
+#if defined(NV_DV7_MAPPING_TEST) && defined(NV_WEBOS)
+      OPC(AJ_DV7_MAPPING),
+#endif
+#endif
+#if defined(NV_MP4_BD_TEST) && defined(NV_WEBOS) && defined(NV_DV7_CONVERSION)
+      OPC(AJ_MP4_BD_TEST),
+#endif
+#if defined(NV_DV_FIXED_AUDIO_TEST) && defined(NV_WEBOS)
+      OPC(AJ_DV_AUDIO_FIXO),
 #endif
 #endif
       OPC(AJ_CACHE_SEEK), OPC(AJ_MANTER_VIDEO), OPC(AJ_RETOMADA_MORNA), OPC(AJ_MANTER_PRAZO), OPC(AJ_SEEKR_AJUSTE),
 #if defined(NV_ANDROID) || (!defined(NV_TPK) && !defined(__EMSCRIPTEN__))
-      OPC(AJ_BUFFER),   // webOS: DTS/Dolby Vision conversion read-ahead
+      OPC(AJ_BUFFER),   // webOS: native and conversion RAM read-ahead
+#ifdef NV_WEBOS
+      OPC(AJ_BUFFER_NATIVE_CONNECTIONS), OPC(AJ_BUFFER_CONVERSION_CONNECTIONS),
+#endif
 #endif
 #ifdef NV_ANDROID
       OPC(AJ_PLAYER_EXTERNO),

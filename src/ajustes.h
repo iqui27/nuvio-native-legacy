@@ -610,6 +610,11 @@ int   ajustes_p2p_usb(void);                    // #205: 1 = cache P2P em pendri
 int   ajustes_player_externo(int anime);     // #501/#205: 0 Interno, 1 Externo, 2 Perguntar, 3 app (pacote em ajustes_player_pacote); anime: -1 = Igual ao Player
 const char *ajustes_player_pacote(int anime); // #205: pacote do app escolhido ("" = nenhum)
 int   ajustes_buffer_preset(void);           // #338: 0 Automatico, 1 = 64, 2 = 128, 3 = 256 MiB
+int   ajustes_buffer_dados(void);            // Text diagnostics only; buffered progress remains visible.
+int   ajustes_ram_overlay(void);
+int   ajustes_ram_verde(void);
+int   ajustes_mp4_bd_test(void);
+int   ajustes_ram_overlay_alternar(void); // Saves immediately, retains old state on failure.
 int   ajustes_cache_seek_mb(void);           // F07: seek cache limit in MB for the next video (0 = off / not on this TV)
 #ifdef AJUSTES_TESTE
 void  ajustes_teste_escala(int percentual); // fixture only; does not persist
@@ -672,6 +677,8 @@ int   ajustes_amigos_estilo(void); // 0 Feed, 1 Live, 2 Stories, 3 Presence, 4 P
 int   ajustes_social(void);              // 1 = friends/social features on (per profile, default on)
 int   ajustes_dv_mkv(void);              // 1 = Dolby Vision MKV through our demux (webOS, local, default off)
 int   ajustes_dv7(void);
+int   ajustes_dv7_mapping(void); // device-local P7 mapping test, default off
+int   ajustes_dv_audio_fixo(void);       // experiment: 0 v12, 1 AAC stereo, 2 AC3 5.1
 int   ajustes_cw_retido_tambem(void);   // 1 = o titulo da ilha/Retomar tambem fica em Continuar assistindo
 // Percentual (70-98, padrao 90) a partir do qual o episodio conta como
 // assistido: sai do Continuar assistindo e o card passa ao proximo. Local.
@@ -867,5 +874,9 @@ void ajustes_perfil_padrao(void);
 #ifdef NV_SHOT_HOOKS
 int ajustes_shot_valor(const char *chave, int v);   // capturas: opcao pela chave
 #endif
+
+/* Separate, device-local HTTP concurrency for the next playback session. */
+int ajustes_buffer_native_connections(void);
+int ajustes_buffer_conversion_connections(void);
 
 #endif

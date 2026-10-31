@@ -1,0 +1,240 @@
+name: Build buffer DTS DV connection test 2.0.8
+on:
+  push:
+    branches: [buffer-dts-dv-test-2.0.8]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: buffer-dts-dv-test-2.0.8
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      NUVIO_BUILD_PLATFORM: linux/amd64
+      NUVIO_CONTAINER_RUNTIME: docker
+      NUVIO_BUILD_JOBS: '3'
+      NUVIO_DTS_FFMPEG: '1'
+      NUVIO_DV7: '1'
+      NUVIO_RUST_MKVCORE: '1'
+      NUVIO_REQUIRE_ALL: '1'
+      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify application source
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --exit-code
+          git diff --check
+      - name: Install host test dependencies
+        timeout-minutes: 6
+        run: bash .github/build/host_deps.sh
+      - name: P7 mapping settings, metadata and session isolation
+        timeout-minutes: 6
+        env:
+          RUSTUP_TOOLCHAIN: 1.88.0
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          bash tests/dv7_mapping_settings.sh
+          bash tests/dv7.sh
+          NV_TEST_P7_MAPPING=1 SANITIZE=1 bash tests/dts_playback.sh
+      - name: Diagnostic QR absence and normal phone input
+        timeout-minutes: 3
+        run: |
+          bash tests/no_qr_export.sh
+          CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular.sh
+      - name: Native buffering regressions
+        timeout-minutes: 8
+        run: |
+          bash tests/video_http_buffer.sh
+          bash tests/video_http_buffer_build.sh
+          bash tests/video_moviebuffer.sh
+          bash tests/video_buffer_test_osd.sh
+          bash tests/video_acb_lg.sh
+          bash tests/player_loading.sh
+          bash tests/player_truehd_notice.sh
+          bash tests/truehd_conversion_ready.sh
+          cc -std=c11 -Wall -Wextra -Werror -Isrc tests/player_dts_notice.c -o /tmp/dts-notice-test
+          /tmp/dts-notice-test
+          cc -std=c11 -O1 -g -Wall -Wextra -Werror -Isrc tests/video_seekview.c -lm -o /tmp/seek-view-test
+          /tmp/seek-view-test
+          bash tests/dvaudio.sh
+          bash tests/dvaudio_lg.sh
+          bash tests/dts_pipeline.sh
+          NV_TEST_MP4_BUILD=1 bash tests/dts_playback.sh
+          cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Isrc src/cacheboost.c tests/buffer_tamanho.c -lpthread -lm -o /tmp/buffer-policy-test
+          /tmp/buffer-policy-test
+          cc -std=gnu11 -Wall -Wextra -Werror -Isrc -c src/dts/dts_engine.c -o /tmp/dts-noffmpeg.o
+      - name: Consecutive MP4 seek reuse and bounded fallback
+        timeout-minutes: 3
+        run: NV_TEST_MP4=1 SANITIZE=1 bash tests/dts_playback.sh
+      - name: TrueHD DV routing and audio controls
+        timeout-minutes: 6
+        run: |
+          NV_TEST_TRUEHD=1 bash tests/dvaudio_lg.sh
+          NV_TEST_TRUEHD=1 bash tests/video_acb_lg.sh
+          NV_TEST_TRUEHD=1 SANITIZE=1 bash tests/dts_playback.sh
+      - name: Fixed DV audio routing and local settings
+        timeout-minutes: 8
+        run: |
+          bash tests/ajustes_secoes.sh
+          bash tests/dv_fixed_audio_settings.sh
+          bash tests/mp4_bd_settings.sh
+          SANITIZE=1 bash tests/mp4_loading.sh
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tests/mp4_bd_rpu.c -o /tmp/mp4-rpu-test
+          /tmp/mp4-rpu-test
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tests/mp4_hevc_sps.c -o /tmp/mp4-sps-test
+          /tmp/mp4-sps-test
+          NV_TEST_MP4=1 bash tests/dvaudio_lg.sh
+          bash tests/player_buffer_data.sh
+          bash tests/player_ram_controls.sh
+          NV_TEST_MP4=1 bash tests/buffer_player_settings.sh
+          NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_P7_MAPPING=1 bash tests/dvaudio_lg.sh
+      - name: Build host FFmpeg and test real HTTP buffering
+        timeout-minutes: 12
+        env:
+          NUVIO_DTS_HOST: '1'
+          CC: gcc
+          NUVIO_DTS_ROOT: /tmp/nuvio-dts-host
+          NUVIO_DTS_JOBS: '3'
+        run: |
+          bash .github/build/host_ffmpeg.sh
+          bash tests/moviebuffer.sh
+          bash tests/dts_buffer_reporting.sh
+          bash tests/dts_cached_seek.sh
+          SANITIZE=1 NV_TEST_CACHE_REUSE=1 bash tests/dts_cached_seek.sh
+          bash tests/dts_range_retry.sh
+          SANITIZE=1 bash tests/dts_resolver_reuse.sh
+          SANITIZE=1 bash tests/http_connections.sh
+          NV_TEST_HTTP_WORKERS=1 bash tests/dts_engine.sh
+      - name: Install package tool and Rust target
+        run: |
+          npm install --prefix .build-tools --no-audit --no-fund @webosose/ares-cli@2.4.0
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup target add --toolchain 1.88.0 armv7-unknown-linux-gnueabi
+      - name: DV7 conversion regressions
+        env:
+          RUSTUP_TOOLCHAIN: 1.88.0
+          NUVIO_DTS_ROOT: /tmp/nuvio-dts-host
+        run: |
+          bash tests/dv7.sh
+          bash tests/dv7_engine.sh
+          NV_TEST_HTTP_WORKERS=1 NV_TEST_TRUEHD=1 bash tests/dv7_engine.sh
+          NV_TEST_TRUEHD=1 bash tests/dv7_engine.sh
+          NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_CACHE_REUSE=1 bash tests/dv7_engine.sh
+          NV_TEST_P7_MAPPING=1 NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_CACHE_REUSE=1 bash tests/dv7_engine.sh
+      - name: MP4 P7/P8 recovery and MKV isolation
+        timeout-minutes: 12
+        env:
+          RUSTUP_TOOLCHAIN: 1.88.0
+          NUVIO_DTS_ROOT: /tmp/nuvio-dts-host
+        run: |
+          SANITIZE=1 bash tests/mp4_bd_engine.sh
+          NV_TEST_P7_MAPPING=1 SANITIZE=1 bash tests/mp4_bd_engine.sh
+      - name: Restore application configuration from verified official release
+        run: |
+          mkdir -p .build-private
+          curl -fsSL --retry 3 https://github.com/iqui27/nuvio-native-legacy/releases/download/v2.0.8/space.nuvio.native.legacy_2.0.8_arm.ipk -o .build-private/official.ipk
+          curl -fsSL --retry 3 https://github.com/iqui27/nuvio-native-legacy/releases/download/v2.0.8/SHA256SUMS -o .build-private/SHA256SUMS
+          python3 .github/build/release_config.py .build-private/official.ipk .build-private/SHA256SUMS local.properties
+      - name: Restore SDK cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .build-cache/sdk.tar.zst
+          key: native-v14-fixed-audio-sdk-amd64-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh') }}
+      - name: Build webOS SDK, libass, FFmpeg and Rust
+        run: |
+          if [ -f .build-cache/sdk.tar.zst ]; then
+            zstd -dc .build-cache/sdk.tar.zst | docker load
+          else
+            cp tools/Dockerfile tools/Dockerfile.review
+            python3 .github/build/sdk_links.py tools/Dockerfile.review
+            docker build -f tools/Dockerfile.review --platform linux/amd64 --build-arg NUVIO_DV_TRUEHD=1 --build-arg SDK_URL=https://github.com/openlgtv/buildroot-nc4/releases/download/webos-a38c582/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz -t nuvio-webos-sdk tools/
+            rm tools/Dockerfile.review
+            mkdir -p .build-cache
+            docker save nuvio-webos-sdk | zstd -T2 -3 -o .build-cache/sdk.tar.zst
+          fi
+      - name: Save SDK cache
+        uses: actions/cache/save@v4
+        with:
+          path: .build-cache/sdk.tar.zst
+          key: native-v14-fixed-audio-sdk-amd64-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh') }}
+      - name: Restore P2P cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .build-p2p
+          key: custom207-p2p-amd64-${{ hashFiles('tools/p2p-motor/build-arm.sh', 'tools/p2p-motor/pasta.sh', 'tools/p2p-motor/janela-334.patch') }}
+      - name: Build official pinned P2P engine for ARM
+        run: |
+          export NUVIO_P2P_MOTOR="$GITHUB_WORKSPACE/.build-p2p"
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path("tools/p2p-motor/build-arm.sh")
+          script = p.read_text().replace("--platform linux/arm64", "--platform linux/amd64")
+          # The standalone PoC is not part of the IPK. Link and ABI checks are
+          # performed on the actual application, using the same engine archives.
+          script = script[:script.index("  SR=$NUVIO_SYSROOT")] + "'\n"
+          p.write_text(script)
+          PY
+          NV_JOBS=2 bash tools/p2p-motor/build-arm.sh "$NUVIO_P2P_MOTOR/arm"
+          git checkout -- tools/p2p-motor/build-arm.sh
+      - name: Save P2P cache
+        uses: actions/cache/save@v4
+        with:
+          path: .build-p2p
+          key: custom207-p2p-amd64-${{ hashFiles('tools/p2p-motor/build-arm.sh', 'tools/p2p-motor/pasta.sh', 'tools/p2p-motor/janela-334.patch') }}
+      - name: Compile and package buffer DTS DV test
+        run: |
+          export RUSTUP_HOME="$HOME/.rustup"
+          export CARGO_HOME="$HOME/.cargo"
+          export RUSTUP_TOOLCHAIN=1.88.0
+          export NUVIO_P2P_MOTOR="$GITHUB_WORKSPACE/.build-p2p"
+          export NUVIO_ARES_PACKAGE="$GITHUB_WORKSPACE/.build-tools/node_modules/.bin/ares-package"
+          export NUVIO_RELEASE_OUT="$GITHUB_WORKSPACE/output"
+          python3 - <<'PY'
+          import json, pathlib
+          p = pathlib.Path("deploy/app/appinfo.json")
+          data = json.loads(p.read_text())
+          assert data["version"] == "2.0.8"
+          assert data["id"] == "space.nuvio.native.legacy"
+          data["title"] = "Nuvio Legacy (buffer DTS DV test)"
+          p.write_text(json.dumps(data, indent=2)+"\n")
+          PY
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path("tools/arm.sh")
+          source = p.read_text()
+          hook = "cp nuvio-proto.arm deploy/app/nuvio-proto"
+          assert source.count(hook) == 1
+          p.write_text(source.replace(hook, "python3 .github/build/strip_app.py\n" + hook))
+          PY
+          bash tools/arm.sh --ipk --build
+          git checkout -- tools/arm.sh
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-buffer-dts-dv-test.ipk
+      - name: Check ARM dynamic dependencies
+        run: |
+          readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
+          readelf -d nuvio-proto.arm | grep NEEDED
+          python3 - <<'PY'
+          import re, subprocess
+          versions = re.findall(r"GLIBC_(\d+)\.(\d+)", subprocess.check_output(["readelf", "--version-info", "nuvio-proto.arm"], text=True))
+          assert versions and max(tuple(map(int,v)) for v in versions) <= (2,12), "Unexpected minimum glibc"
+          dependencies = subprocess.check_output(["readelf", "-d", "nuvio-proto.arm"], text=True)
+          assert "libcurl" not in dependencies
+          print("ARM ABI and glibc requirements verified.")
+          PY
+      - name: Upload IPK
+        uses: actions/upload-artifact@v4
+        with:
+          name: buffer-dts-dv-test-2.0.8-full-arm-ipk
+          path: output/*.ipk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Remove temporary configuration
+        if: always()
+        run: rm -rf local.properties .build-private

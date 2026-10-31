@@ -3,6 +3,7 @@
 #include <string.h>
 #if !defined(NV_DTS_FFMPEG) || defined(__EMSCRIPTEN__) || defined(NV_ANDROID)
 int moviebuffer_url(const char *s,const char *h,int m,char *o,size_t n) { (void)s;(void)h;(void)m;(void)o;(void)n;return 0; }
+int moviebuffer_ready(void) { return -1; }
 void moviebuffer_stop(void) {}
 int moviebuffer_info(DtsBufferInfo *i) { if(i) memset(i,0,sizeof *i);return 0; }
 #else
@@ -30,7 +31,6 @@ struct MovieBuffer {
   pthread_t threads[MB_CLIENTS];
   Client clients[MB_CLIENTS];
   int fd, sockets[MB_CLIENTS], threads_n, stop, fallback, probe_done, probe_ok, preemptible;
-  pthread_cond_t probe_wake;
   char source[8192], path[96], mime[40];
 };
 static MovieBuffer *current;
@@ -92,13 +92,14 @@ static int probe_source(MovieBuffer *s) {
   }
   return total>0 && !s->fallback;
 }
+static void *worker(void *opaque);
 static void *probe_worker(void *opaque) {
   MovieBuffer *s=opaque;
   int ok=probe_source(s);
   pthread_mutex_lock(&s->clients_lock);
   s->probe_ok=ok;s->probe_done=1;
-  pthread_cond_signal(&s->probe_wake);
   pthread_mutex_unlock(&s->clients_lock);
+  if(ok && !stopped(s)) worker(&s->clients[0]);
   return NULL;
 }
 static void serve(MovieBuffer *s,int fd) {
@@ -201,12 +202,19 @@ void moviebuffer_stop(void) {
   pthread_mutex_unlock(&s->clients_lock);
   for(int i=0;i<s->threads_n;i++)pthread_join(s->threads[i],NULL);
   close(s->fd);dts_engine_destroy(s->input);
-  pthread_cond_destroy(&s->probe_wake);
   pthread_mutex_destroy(&s->clients_lock);free(s);
+}
+int moviebuffer_ready(void) {
+  MovieBuffer *s=current;if(!s)return -1;
+  pthread_mutex_lock(&s->clients_lock);
+  int ready=!s->probe_done ? 0 : s->probe_ok ? 1 : -1;
+  pthread_mutex_unlock(&s->clients_lock);
+  return ready;
 }
 int moviebuffer_info(DtsBufferInfo *info) {
   if(info) memset(info,0,sizeof *info);
   if(!current)return 0;
+  if(moviebuffer_ready()<0)return -1;
   if(__atomic_load_n(&current->fallback,__ATOMIC_RELAXED))return -1;
   dts_engine_buffer_info(current->input,info);return 1;
 }
@@ -219,7 +227,6 @@ int moviebuffer_url(const char *source,const char *headers,int mib,char *out,siz
   MovieBuffer *s=calloc(1,sizeof *s);if(!s)return 0;
   s->fd=-1;for(int i=0;i<MB_CLIENTS;i++)s->sockets[i]=-1;
   pthread_mutex_init(&s->clients_lock,NULL);
-  pthread_cond_init(&s->probe_wake,NULL);
   s->input=dts_engine_source_create(source,headers,mib);
   s->fd=socket(AF_INET,SOCK_STREAM,0);current=s;
   if(!s->input||s->fd<0) { moviebuffer_stop();return 0; }
@@ -235,25 +242,15 @@ int moviebuffer_url(const char *source,const char *headers,int mib,char *out,siz
   if(path_n>=4&&!strncasecmp(source+path_n-4,".mkv",4))ext="mkv";
   else if(path_n>=4&&!strncasecmp(source+path_n-4,".mp4",4))ext="mp4";
   snprintf(s->mime,sizeof s->mime,"%s",!strcmp(ext,"mkv")?"video/x-matroska":!strcmp(ext,"mp4")?"video/mp4":"application/octet-stream");
-  /* Origin I/O stays off the UI thread; abandon cache startup after 500 ms. */
-  if(pthread_create(&s->threads[0],NULL,probe_worker,s)) {moviebuffer_stop();return 0;}
-  s->threads_n=1;
-  struct timespec until;clock_gettime(CLOCK_REALTIME,&until);
-  until.tv_nsec+=500000000;
-  if(until.tv_nsec>=1000000000) {until.tv_sec++;until.tv_nsec-=1000000000;}
-  pthread_mutex_lock(&s->clients_lock);
-  while(!s->probe_done) {
-    if(pthread_cond_timedwait(&s->probe_wake,&s->clients_lock,&until)==ETIMEDOUT)break;
-  }
-  int ready=s->probe_done && s->probe_ok;
-  pthread_mutex_unlock(&s->clients_lock);
-  if(!ready) {moviebuffer_stop();return 0;}
-  pthread_join(s->threads[0],NULL);s->threads_n=0;
   snprintf(s->source,sizeof s->source,"%s",source);snprintf(s->path,sizeof s->path,"/%s/movie%s%s",token,*ext?".":"",ext);
   int count=snprintf(out,n,"http://127.0.0.1:%u%s",ntohs(addr.sin_port),s->path);
   if(count<0||(size_t)count>=n) {moviebuffer_stop();return 0;}
-  for(int i=0;i<MB_CLIENTS;i++) {s->clients[i]=(Client){s,i};if(pthread_create(&s->threads[i],NULL,worker,&s->clients[i]))break;s->threads_n++;}
-  if(!s->threads_n) {moviebuffer_stop();return 0;}
+  /* Keep origin preflight asynchronous. video.c waits for ready before Load,
+   * so slow providers retain the cache and unsupported sources retain native
+   * bufferControl. Cancellation joins this same worker, not a detached probe. */
+  s->clients[0]=(Client){s,0};
+  if(pthread_create(&s->threads[0],NULL,probe_worker,s)) {moviebuffer_stop();return 0;}
+  s->threads_n=1;
   printf("[movie-buffer] single-connection native URI cache enabled: %d MiB\n",mib);fflush(stdout);
   return 1;
 }

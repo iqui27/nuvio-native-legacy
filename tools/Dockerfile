@@ -39,10 +39,11 @@ RUN chmod +x /tmp/build-ass-arm.sh \
 # Local DTS conversion is part of the normal webOS build. Specialized images
 # can omit the dependency with --build-arg NUVIO_DTS_FFMPEG=0.
 ARG NUVIO_DTS_FFMPEG=1
+ARG NUVIO_DV_TRUEHD=0
 ENV NUVIO_DTS_ROOT=/opt/nuvio-dts
 COPY build-dts-ffmpeg.sh /tmp/build-dts-ffmpeg.sh
 RUN if [ "$NUVIO_DTS_FFMPEG" = 1 ]; then \
-      CC=arm-webos-linux-gnueabi-gcc /bin/sh /tmp/build-dts-ffmpeg.sh; \
+      NUVIO_DV_TRUEHD="$NUVIO_DV_TRUEHD" CC=arm-webos-linux-gnueabi-gcc /bin/sh /tmp/build-dts-ffmpeg.sh; \
     fi \
   && rm -f /tmp/build-dts-ffmpeg.sh
 

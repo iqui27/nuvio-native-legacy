@@ -24,6 +24,7 @@ corpo = re.sub(r"^\s*#[^\n]*", "", corpo, flags=re.M)  # #ifdef NV_ANDROID slots
 opcoes = [n.strip() for n in corpo.split(",") if n.strip() and n.strip() != "AJ_N"]
 # Retired from the screen on purpose; the enum slot stays (positional valor[]/CHAVE[]).
 RETIRADAS = {
+    "AJ_BUFFER_DADOS", "AJ_RAM_OVERLAY", "AJ_RAM_VERDE",  # nested overlay controls
     "AJ_RELOGIO_POS",  # 1.8: clock island is always top-right (inativa() == 1)
     "AJ_DESCOBRIR",    # 2.0.3: the web Discover screen does not exist on the TV (inativa() == 1)
     "AJ_AVANCADAS",    # 2.0.3: lives in the "Avancadas" pill at the top of the index

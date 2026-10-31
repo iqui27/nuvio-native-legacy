@@ -1,5 +1,6 @@
 /* Actual HTTP transport with injected failures: exact bytes and queue ownership. */
 #define NV_DTS_FFMPEG
+#define NV_NATIVE_SEEK_TEST
 #ifndef NV_TEST_LEGACY_RECOVERY
 #define NV_DTS_WEBOS_RECOVERY
 #endif
@@ -28,6 +29,31 @@ int main(int argc,char **argv) {
   int boot=strstr(argv[1],"live-boot")!=NULL;
   __atomic_store_n(&e->range_live,!boot,__ATOMIC_RELAXED);
   bytes(e,65536);
+  if(strstr(argv[1],"live-dripspec")) {
+   uint64_t until=clock_ns(CLOCK_MONOTONIC)+UINT64_C(14500000000);int done=0;
+   do {
+    pthread_mutex_lock(&e->range_lock);DtsRangeJob *j=job_at(e,fault_at);done=j && j->state==3 && j->data;
+    pthread_mutex_unlock(&e->range_lock);if(!done)usleep(10000);
+   } while(!done && clock_ns(CLOCK_MONOTONIC)<until);assert(done);
+  }
+  if(strstr(argv[1],"live-drip") && !strstr(argv[1],"live-dripspec")) {
+   bytes(e,(int)fault_at-65536);
+   uint64_t until=clock_ns(CLOCK_MONOTONIC)+UINT64_C(2000000000);
+   char *saved=NULL;int slot=-1;
+   do {
+    pthread_mutex_lock(&e->range_lock);
+    for(int i=0;i<e->range_slots;i++) if(e->ranges[i].start>fault_at && e->ranges[i].state==3 && e->ranges[i].data) {saved=e->ranges[i].data;slot=i;break;}
+    pthread_mutex_unlock(&e->range_lock);if(!saved)usleep(1000);
+   } while(!saved && clock_ns(CLOCK_MONOTONIC)<until);assert(saved);
+   bytes(e,1); // Only the blocked interval retries; future buffers stay owned.
+   pthread_mutex_lock(&e->range_lock);assert(e->ranges[slot].data==saved);pthread_mutex_unlock(&e->range_lock);
+   bytes(e,(int)(9LL*e->range_bytes-fault_at-1));
+   double seconds=(clock_ns(CLOCK_MONOTONIC)-begun)/1e9;
+   // A confirmed gap must recover before the previous five-second guard,
+   // while retaining the successful later payloads and exact byte stream.
+   assert(seconds>=2.8 && seconds<(strstr(argv[1],"live-dripall")?19:5));
+   dts_engine_destroy(e);printf("PASS DV slow trickle: %.3fs, exact bytes, retained future allocations, bounded retry\n",seconds);return 0;
+  }
   if(strstr(argv[1],"live-speculative")) {
    uint64_t until=clock_ns(CLOCK_MONOTONIC)+UINT64_C(11000000000);int done=0;
    do {

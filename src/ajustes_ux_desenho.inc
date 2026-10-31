@@ -445,6 +445,10 @@ static int ajTipo(int op) {
 static const char *ajRotSeg(int op, int i) {
   static char b[3][96];
   char *p;
+  if (op == AJ_DV_AUDIO_FIXO) {
+    static const char *const nomes[] = { "Original", "AAC 2.0", "DD 5.1" };
+    return nomes[i];
+  }
   snprintf(b[i % 3], sizeof b[0], "%s", i18n(OPCOES[op].valores[i]));
   p = strstr(b[i % 3], " (");
   if (p && p != b[i % 3] && op != AJ_AMPLIAR_UI) *p = 0;

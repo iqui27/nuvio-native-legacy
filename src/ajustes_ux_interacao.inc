@@ -19,6 +19,7 @@ static void uxCancelar(void) {
   free(uxCategorias);uxCategorias=NULL;uxNCategorias=0;
   free(uxCategoriasAbertura);uxCategoriasAbertura=NULL;
   uxEditor = uxRestaurar = uxConfirmar = uxRodape = uxAvisoRisco = 0;
+  uxBufferDadosFoco=0;
   emEdicao = 0;
   if (faRetornarFolha) { frAberta = faRetornarFolha; faRetornarFolha = 0; faAddonEditar[0] = 0; }
 }
@@ -129,6 +130,10 @@ static void uxAbrirEditor(int op) {
     iptvListaSessao=nv_perfil_sessao_ler();
   }
   uxOp = op; uxOriginal = uxValorAtual(op); uxPendente = uxOriginal;
+  if(op==AJ_BUFFER && uxBufferDadosDisponivel()) {
+    uxBufferDados=valor[AJ_BUFFER_DADOS];
+    uxBufferDadosFoco=0;
+  }
   if(op==AJ_IPTV_CONTA || ajIptvGerenciador(op))iptvListaSessao=nv_perfil_sessao_ler();
   if(ajIptvGerenciador(op))iptvTipoPagina=ajIptvTipo(op);
   uxEditor = inativa(op) ? 2 : 1;
@@ -214,7 +219,30 @@ static int uxRiscoFinal(int op, int novo) {
   if (op == AJ_ITENS_FILEIRA && novo > 0 && novo > uxValorAtual(op)) return SEG_AVISO_ITENS;
   return 0;
 }
+static void uxBufferOpcaoAlternar(int op) {
+  if(!overlayAlternar(op))uxNotificar("Não foi possível salvar. O valor anterior foi mantido.");
+  uxBufferDados=valor[AJ_BUFFER_DADOS];
+}
+static void uxBufferDadosAlternar(void) { uxBufferOpcaoAlternar(AJ_BUFFER_DADOS); }
+
 static void uxAplicar(void) {
+  if(uxOp==AJ_BUFFER && uxBufferDadosDisponivel()) {
+    if(valor[AJ_BUFFER]!=uxOriginal) {
+      uxOriginal=uxPendente=valor[AJ_BUFFER];
+      uxBufferDados=valor[AJ_BUFFER_DADOS];
+      uxRestaurar=uxConfirmar=0;
+      uxNotificar("O valor mudou em outra tela. Confira antes de confirmar.");return;
+    }
+    const int ops[]={AJ_BUFFER,AJ_BUFFER_DADOS,AJ_RAM_OVERLAY,AJ_RAM_VERDE};
+    int old[4];for(int i=0;i<4;i++)old[i]=valor[ops[i]];
+    valor[AJ_BUFFER]=uxRestaurar?valorPadrao[AJ_BUFFER]:uxPendente;
+    if(uxRestaurar)for(int i=1;i<4;i++)valor[ops[i]]=valorPadrao[ops[i]];
+    if(!gravar()) {
+      for(int i=0;i<4;i++)valor[ops[i]]=old[i];
+      uxNotificar("Não foi possível salvar. O valor anterior foi mantido.");return;
+    }
+    uxCancelar();return;
+  }
   if(uxOp==AJ_GUIA_CATEGORIAS) {
     if(!nv_perfil_sessao_atual(iptvListaSessao)) { uxCancelar();return; }
     int n=0;
@@ -342,6 +370,24 @@ static int uxEvento(SDL_Keycode k) {
         else if(!uxRodape)uxRodape=1;
       }
       return 1;
+    }
+    if(uxEditor==1 && uxOp==AJ_BUFFER && uxBufferDadosDisponivel()) {
+      if(uxBufferDadosFoco) {
+        if(uxOk(k))uxBufferOpcaoAlternar(uxBufferDadosFoco==1?AJ_BUFFER_DADOS:uxBufferDadosFoco==2?AJ_RAM_OVERLAY:AJ_RAM_VERDE);
+        else if(k==SDLK_LEFT || k==SDLK_RIGHT) {
+          if(uxBufferDadosFoco==1)uxBufferDadosAlternar();
+          else uxBufferDadosFoco=k==SDLK_LEFT?3:2;
+        } else if(k==SDLK_UP)uxBufferDadosFoco=uxBufferDadosFoco==1?0:1;
+        else if(k==SDLK_DOWN) {
+          if(uxBufferDadosFoco==1)uxBufferDadosFoco=2;
+          else { uxBufferDadosFoco=0;uxRodape=1; }
+        }
+        return 1;
+      }
+      if(k==SDLK_DOWN && (uxRodape || uxPendente==nValores(uxOp)-1)) {
+        uxRodape=0;uxBufferDadosFoco=1;uxPendente=uxOriginal;return 1;
+      }
+      if(k==SDLK_UP && uxRodape) { uxRodape=0;uxBufferDadosFoco=2;uxPendente=uxOriginal;return 1; }
     }
     // NA LINHA (segmentado, interruptor, cor de destaque): as setas laterais
     // movem o valor pendente; nao ha rodape de "Restaurar padrao" ali.

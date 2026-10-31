@@ -96,4 +96,7 @@ int cacheboost_backend_buffer_mb(void);
 // Host captures/tests: pretend the backend supports (1) or not (0) the
 // features; -1 = the build's real answer.
 void cacheboost_simular_suporte(int s);
+#ifdef NV_HTTP_BUFFER_DIAG
+void cacheboost_buffer_texto(char *, size_t, long long, long long, int);
+#endif
 #endif

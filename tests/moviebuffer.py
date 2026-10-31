@@ -15,6 +15,7 @@ class Origin(http.server.BaseHTTPRequestHandler):
     def log_message(self,*a): pass
     def do_GET(self):
         requests.append((self.path,self.headers.get('Range')))
+        if self.path=='/slow':time.sleep(1.1)
         if self.path=='/downgrade':
             self.send_response(307);self.send_header('Location',origin+'/bare');self.send_header('Content-Length','0');self.end_headers();return
         bare=self.path=='/bare'
@@ -97,18 +98,18 @@ def request(url,start,end=None,method='GET'):
 mode=sys.argv[4] if len(sys.argv)>4 else 'all'
 if mode in ('all','startup'):
     source=origin+'/stall'
-    p=subprocess.Popen([sys.argv[1],source,'64'],stdin=subprocess.PIPE,stdout=subprocess.PIPE)
+    p=subprocess.Popen([sys.argv[1],source,'64','pending'],stdin=subprocess.PIPE,stdout=subprocess.PIPE)
     begun=time.monotonic()
     output=b''
     try:
-        while b'URL OFF\n' not in output:
+        while b'STARTED\n' not in output:
             assert time.monotonic()-begun<2, 'startup blocked UI for over two seconds'
             if select.select([p.stdout],[],[],.05)[0]:output+=p.stdout.read1(4096)
         p.stdin.write(b'q\n');p.stdin.flush();p.communicate(timeout=2)
         assert p.returncode==0
     finally:
         if p.poll() is None:p.kill();p.communicate()
-    print('PASS stalled startup: bounded fallback and cancellation',flush=True)
+    print('PASS stalled startup: asynchronous preflight and immediate cancellation',flush=True)
     if mode=='startup':sys.exit(0)
 if mode in ('all','preempt'):
     p,url=daemon('/movie.mkv',64)
@@ -160,6 +161,13 @@ for mib in [64,128,256]:
             active,used,cap=stats(p);assert active==1 and cap==mib*1024*1024 and 0<=used<=cap
             if used>cap-5*1024*1024:break
             assert time.monotonic()<deadline,(mib,used,cap);time.sleep(.05)
+        # Replacements inside the measured cache use its existing connection.
+        before=len(requests)
+        for start in [11*1024*1024+17,12*1024*1024+31,11*1024*1024+99]:
+            status,h,b=request(url,start,start+4095)
+            assert status==206 and b==content(start,4096)
+        assert len(requests)==before, 'cached seeks restarted the origin transfer'
+        assert stats(p)[2]==cap, 'cached seek enlarged the RAM ring'
         for start in [11*1024*1024+17,TOTAL-333,123,280*1024*1024+7]:
             n=min(65536,TOTAL-start);status,h,b=request(url,start,start+n-1)
             assert b==content(start,n)
@@ -219,9 +227,12 @@ try:
     assert not leaks, 'caller headers leaked after downgrade'
 finally:close(p)
 print('PASS TLS downgrade: no caller headers on probe, stream or seek',flush=True)
-p,url=daemon('/stall',64)
+p,url=daemon('/slow',64)
 try:
-    assert url=='OFF', 'failed startup probe must preserve native buffering'
+    assert url!='OFF', 'a source slower than 500 ms must keep its read-ahead buffer'
+    status,h,b=request(url,0,1023)
+    assert status==206 and b==content(0,1024)
+    assert stats(p)[2]==64*1024*1024
 finally:close(p)
-print('PASS single connection: stalled origin cancellation stays below 8 seconds',flush=True)
+print('PASS delayed provider: real cache and unchanged capacity after >500 ms preflight',flush=True)
 server.shutdown();tls.shutdown()

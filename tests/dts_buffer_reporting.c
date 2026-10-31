@@ -31,6 +31,18 @@ int main(int argc,char **argv) {
     DtsFrame frame;assert(dts_engine_next(e,&frame)>0);
     dts_engine_buffer_info(e,&b);
     assert(b.ready_bytes>=0 && b.ready_bytes<=b.capacity_bytes);
+    assert(dts_engine_audio(e,2,0,1.0)==0);
+    assert(dts_engine_info(e)->audio_stream==2);
+    dts_engine_buffer_info(e,&b);
+    assert(b.capacity_bytes==(mib/4+1)*(4*MiB-1));
+    int audio=0;
+    for(int i=0;i<100 && !audio;i++) {
+      assert(dts_engine_next(e,&frame)>0);
+      if(frame.kind==DTS_AUDIO) { assert(frame.stream_index==2);audio=1; }
+    }
+    assert(audio);
+    assert(dts_engine_audio(e,999,0,0)<0);
+    assert(dts_engine_info(e)->audio_stream==2); // Invalid selection is non-destructive.
     dts_engine_destroy(e);
   }
   dts_engine_set_ahead_mib(0);
