@@ -73,6 +73,8 @@ void ajustes_abrir_fileiras(void);
 // Ajustes › Aparência na linha "Interface de vidro". Mesma regra da cor.
 void ajustes_abrir_no_layout(void);
 void ajustes_abrir_no_vidro(void);
+// Capture previews: the next Settings opening starts in category `s`.
+void ajustes_abrir_na_secao(int s);
 // O "Reconectar" do modal do Trakt na ilha (02/10): pousa na linha do Trakt,
 // onde o OK comeca o pareamento.
 void ajustes_abrir_no_trakt(void);

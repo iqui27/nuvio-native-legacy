@@ -149,7 +149,7 @@ static int imeOk(void) { return forcaIme >= 0 ? forcaIme : st_ime_disponivel(); 
 static int vozOk(void) {
   return forcaVoz >= 0 ? forcaVoz : st_voz_disponivel() && !texto_sistema_voz_pelo_teclado();
 }
-static int celOk(void) { return (forcaCel >= 0 ? forcaCel : celb_disponivel()) && !semCel; }
+static int celOk(void) { return (forcaCel >= 0 ? forcaCel : celb_digitar_disponivel()) && !semCel; }
 // Ajuste "Teclado" (Android): 0 automatico, 1 so a grade do app, 2 o teclado do
 // sistema direto. Onde o ajuste nao existe (Mac) st_teclado_modo() e 0.
 static int modoTeclado(void) { return st_teclado_modo(); }
@@ -541,6 +541,15 @@ static int utf8Inteiro(const char *s, int n) {
   return n;
 }
 
+#ifdef NV_DESKTOP_UI
+// DESKTOP: no grid. One text field with caret and selection; the physical
+// keyboard and the system IME type into it (SDL_TEXTINPUT/SDL_TEXTEDITING).
+// Byte offsets into `texto`, always on UTF-8 boundaries.
+enum { TE_D_CAMPO = 0, TE_D_CANCELAR, TE_D_PRONTO, TE_D_MASCARA };
+static int deCaret, deAncora, deFoco;
+static char deComp[SDL_TEXTEDITINGEVENT_TEXT_SIZE];
+static float deRolagem, deTextoX;
+#endif
 void teclado_abrir(const char *titulo, const char *dica, int max) {
   teclado_abrir_com(titulo, dica, max, NULL, NULL);
 }
@@ -599,6 +608,11 @@ void teclado_abrir_com(const char *titulo, const char *dica, int max,
     fileira = -1; coluna = campoFocavel() ? TE_B_CAMPO : TE_B_IME;
     pendIme = 1;
   }
+#ifdef NV_DESKTOP_UI
+  // Inline physical-keyboard field: used when the Mac sheet is unavailable.
+  deCaret = deAncora = n; deFoco = TE_D_CAMPO; deComp[0] = 0; deRolagem = 0;
+  SDL_StartTextInput();
+#endif
 #if defined(NV_DESKTOP_UI) && defined(__APPLE__)
   nativoPend = layout_desktop_ativo();
 #endif
@@ -608,25 +622,25 @@ void teclado_abrir_com(const char *titulo, const char *dica, int max,
 // a-z0-9, o MAC e 0-9a-f — caixa alta vira baixa quando so a baixa existe, e
 // o que nao existe nele (acento, emoji) fica de fora. Com teclado_aceitar_utf8
 // o caractere fora do ASCII entra INTEIRO (sequencia UTF-8 valida) se couber.
-static void definirDoSistema(const char *t) {
+static int filtrar(const char *t, char *dst, int cap, int utf8) {
   const char *a = alfa();
   int w = 0;
-  for (; *t && w < maxN; t++) {
+  for (; *t && w < cap; t++) {
     unsigned char c = (unsigned char)*t;
     if (c >= 0x80) {
-      int l = aceitaUtf8 ? utf8Tam((const unsigned char *)t) : 0;
-      if (l && w + l > maxN) break;          // nao cabe inteiro: para aqui
-      if (l) { memcpy(texto + w, t, (size_t)l); w += l; t += l - 1; }
+      int l = utf8 ? utf8Tam((const unsigned char *)t) : 0;
+      if (l && w + l > cap) break;           // nao cabe inteiro: para aqui
+      if (l) { memcpy(dst + w, t, (size_t)l); w += l; t += l - 1; }
       continue;
     }
-    if (!c) continue;
-    if (strchr(a, c)) texto[w++] = (char)c;
-    else if (isupper(c) && strchr(a, tolower(c))) texto[w++] = (char)tolower(c);
-    else if (islower(c) && strchr(a, toupper(c))) texto[w++] = (char)toupper(c);
+    if (strchr(a, c)) dst[w++] = (char)c;
+    else if (isupper(c) && strchr(a, tolower(c))) dst[w++] = (char)tolower(c);
+    else if (islower(c) && strchr(a, toupper(c))) dst[w++] = (char)toupper(c);
   }
-  texto[w] = 0;
-  n = w;
+  dst[w] = 0;
+  return w;
 }
+static void definirDoSistema(const char *t) { n = filtrar(t, texto, maxN, aceitaUtf8); }
 
 #if defined(NV_DESKTOP_UI) && defined(__APPLE__)
 // Mac: the same contract as an NSAlert sheet with a text field. Opened on the
@@ -818,8 +832,125 @@ static void aplicar(void) {
   fechar(TECLADO_PRONTO);
 }
 
+#ifdef NV_DESKTOP_UI
+// Accents, IME and emoji reach free-text fields (both cases and a space);
+// codes, PINs, MAC and lowercase-only fields keep the caller's alphabet.
+static int deLivre(void) { return aceitaUtf8 || (strchr(alfa(), ' ') && strchr(alfa(), 'A')); }
+static int dePasso(int i, int d) {
+  if (d < 0) { if (i > 0) do i--; while (i > 0 && ((unsigned char)texto[i] & 0xC0) == 0x80); }
+  else if (i < n) do i++; while (i < n && ((unsigned char)texto[i] & 0xC0) == 0x80);
+  return i;
+}
+static void deLimitar(void) {
+  if (deCaret > n) deCaret = n;
+  if (deAncora > n) deAncora = n;
+}
+static void deApagarSelecao(void) {
+  int a = deAncora < deCaret ? deAncora : deCaret, b = deAncora < deCaret ? deCaret : deAncora;
+  memmove(texto + a, texto + b, (size_t)(n - b + 1));
+  n -= b - a; deCaret = deAncora = a;
+}
+static void deInserir(const char *s) {
+  char f[TECLADO_LONGO + 1];
+  int k;
+  deApagarSelecao();
+  k = filtrar(s, f, maxN - n, deLivre());
+  memmove(texto + deCaret + k, texto + deCaret, (size_t)(n - deCaret + 1));
+  memcpy(texto + deCaret, f, (size_t)k);
+  n += k; deCaret = deAncora = deCaret + k;
+}
+static void deConcluir(void) {
+  if (n < 1 && !abriuComValor && !confirmarVazio) return;
+  fechar(TECLADO_PRONTO);
+}
+static void deAcionar(int id, int b) {
+  (void)b;
+  if (!aberto) return;
+  if (id == TE_D_CANCELAR) fechar(TECLADO_CANCELOU);
+  else if (id == TE_D_MASCARA && ehSenha) mascarar = !mascarar;
+  else if (id == TE_D_PRONTO) deConcluir();
+}
+// Click in the field: caret at the nearest character boundary.
+static void deClique(int id, int b) {
+  char pre[TECLADO_LONGO + 1];
+  int i = 0, melhor = 0;
+  float x = ponteiro_x() - deTextoX, dist = 1e9f;
+  (void)id; (void)b;
+  if (!aberto || mascarar) { deCaret = deAncora = n; deFoco = TE_D_CAMPO; return; }
+  for (;;) {
+    float w, d;
+    memcpy(pre, texto, (size_t)i); pre[i] = 0;
+    w = (float)txt_largura(TXT_AJ_INSP, pre); d = fabsf(w - x);
+    if (d < dist) { dist = d; melhor = i; }
+    if (i >= n) break;
+    i = dePasso(i, 1);
+  }
+  deCaret = deAncora = melhor; deFoco = TE_D_CAMPO;
+}
+static void deEvento(const SDL_Event *e) {
+  SDL_Keycode k;
+  int cmd, sh, a, b;
+  deLimitar();
+  if (e->type == SDL_TEXTEDITING) { snprintf(deComp, sizeof deComp, "%s", e->edit.text); return; }
+  if (e->type == SDL_TEXTINPUT) { deComp[0] = 0; deFoco = TE_D_CAMPO; deInserir(e->text.text); return; }
+  if (e->type != SDL_KEYDOWN) return;
+  k = e->key.keysym.sym;
+  cmd = (e->key.keysym.mod & (KMOD_GUI | KMOD_CTRL)) != 0;
+  sh = (e->key.keysym.mod & KMOD_SHIFT) != 0;
+  if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || e->key.keysym.scancode == NV_SCANCODE_BACK) {
+    if (deComp[0]) return;   // Esc first cancels an IME composition
+    fechar(TECLADO_CANCELOU); return;
+  }
+  if (deComp[0]) return;     // the IME owns the keys while composing
+  a = deAncora < deCaret ? deAncora : deCaret; b = deAncora < deCaret ? deCaret : deAncora;
+  if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+    if (!e->key.repeat) { if (deFoco == TE_D_CAMPO) deConcluir(); else deAcionar(deFoco, 0); }
+    return;
+  }
+  if (k == SDLK_TAB) {
+    static const int ordem[] = { TE_D_CAMPO, TE_D_MASCARA, TE_D_CANCELAR, TE_D_PRONTO };
+    int i = 0, d = sh ? 3 : 1;
+    while (ordem[i] != deFoco) i++;
+    do i = (i + d) % 4; while (ordem[i] == TE_D_MASCARA && !ehSenha);
+    deFoco = ordem[i]; return;
+  }
+  if (cmd && k == SDLK_a) { deAncora = 0; deCaret = n; return; }
+  if (cmd && (k == SDLK_c || k == SDLK_x)) {
+    if (mascarar || a == b) return;   // a password never leaves through the clipboard
+    { char sel[TECLADO_LONGO + 1];
+      memcpy(sel, texto + a, (size_t)(b - a)); sel[b - a] = 0;
+      SDL_SetClipboardText(sel); }
+    if (k == SDLK_x) deApagarSelecao();
+    return;
+  }
+  if (cmd && k == SDLK_v) {
+    char *c = SDL_GetClipboardText(), *q;
+    if (!c) return;
+    for (q = c; *q; q++) if ((unsigned char)*q < ' ') *q = ' ';   // one line
+    deInserir(c); SDL_free(c);
+    return;
+  }
+  if (k == SDLK_BACKSPACE || k == SDLK_DELETE) {
+    if (a == b) deAncora = cmd ? (k == SDLK_BACKSPACE ? 0 : n) : dePasso(deCaret, k == SDLK_BACKSPACE ? -1 : 1);
+    deApagarSelecao(); return;
+  }
+  if (k == SDLK_LEFT || k == SDLK_RIGHT || k == SDLK_HOME || k == SDLK_END || k == SDLK_UP || k == SDLK_DOWN) {
+    int ini = k == SDLK_HOME || k == SDLK_UP || (cmd && k == SDLK_LEFT);
+    int fim = k == SDLK_END || k == SDLK_DOWN || (cmd && k == SDLK_RIGHT);
+    int c = ini ? 0 : fim ? n : (!sh && a != b) ? (k == SDLK_LEFT ? a : b)
+          : dePasso(deCaret, k == SDLK_LEFT ? -1 : 1);
+    deCaret = c; if (!sh) deAncora = c;
+    deFoco = TE_D_CAMPO;
+  }
+}
+#endif
+
 static void teclado_evento_(const SDL_Event *e) {
   SDL_Keycode k;
+#ifdef NV_DESKTOP_UI
+  if (aberto) deEvento(e);
+  return;
+#endif
   if (aberto && st_evento(e)) return;   // teclado da TV: valor inteiro por sistexto
   if (!aberto || e->type != SDL_KEYDOWN) return;
   k = e->key.keysym.sym;
@@ -1360,9 +1491,120 @@ void teclado_evento(const SDL_Event *e) { if (teNativo()) return; TXT_INI(); tec
 void teclado_atualizar(float dt, Uint32 agora) { if (teNativo()) return; TXT_INI(); teclado_atualizar_(dt, agora); TXT_FIM(); }
 
 static void teDesenhar(Uint32 agora);
+#ifdef NV_DESKTOP_UI
+static int deGradeDesenhos;   // tests: the TV grid never draws on desktop
+static float deBotao(const char *rotulo, float xDir, float y, int id, int ativo, float a) {
+  TxtLinha t = txt_linha(TXT_ILHA_SEG, rotulo, 243, 242, 239, 255);
+  float w = t.w + 48.0f, h = 56.0f, x = xDir - w, ar, ag, ab;
+  int destaque = id == TE_D_PRONTO;
+  ajustes_acento(&ar, &ag, &ab);
+  if (destaque) gfx_cor((GfxRect){ x, y, w, h }, 0.5f, ar, ag, ab, (ativo ? 1.0f : 0.4f) * a);
+  else teNeutro((GfxRect){ x, y, w, h }, h * 0.5f, 0.10f, 0.17f, 0.18f, 0.20f, a);
+  if (deFoco == id) gfx_anel_fora((GfxRect){ x, y, w, h }, 0.5f, 2.0f, 3.0f, ar, ag, ab, 0.8f * a);
+  if (destaque) {
+    int tom = ajustes_tinta_foco();
+    t = txt_linha(TXT_ILHA_SEG, rotulo, tom, tom, tom, 255);
+  }
+  txt_desenhar_alpha(t, x + 24.0f, y + (h - t.h) * 0.5f, (ativo ? 1.0f : 0.5f) * a);
+  if (aberto && ponteiro_ativo()) ponteiro_alvo(x, y, w, h, NULL, deAcionar, id, 0);
+  return x;
+}
+static void deDesenhar(Uint32 agora) {
+  float a = anim_suave(anim), pw, px, py, ph, x, y, ew, dy, ar, ag, ab;
+  char vis[TECLADO_LONGO * 3 + SDL_TEXTEDITINGEVENT_TEXT_SIZE + 1];
+  int i, k = 0, cv = 0, av = 0, pv;
+  if (anim < 0.01f) return;
+  deLimitar();
+  ajustes_acento(&ar, &ag, &ab);
+  if (aberto && ponteiro_ativo()) {
+    ponteiro_camada();
+    ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, NULL, 0, 0);
+  }
+  gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, 0.55f * anim);
+  pw = fminf(820.0f, NV_TELA_W - 80.0f); ew = pw - 96.0f;
+  ph = 48.0f + (kickerAtual[0] ? 26.0f : 0.0f) + 50.0f +
+       (dicaAtual[0] ? 10.0f + txt_bloco(TXT_AJ_SUB, dicaAtual, 0, 0, 0, 0, 0, ew, 28.5f, 0, 3) : 0.0f) +
+       28.0f + 72.0f + 36.0f + 56.0f + 40.0f;
+  dy = (1.0f - a) * 24.0f;
+  px = (NV_TELA_W - pw) * 0.5f; py = (NV_TELA_H - ph) * 0.5f + dy;
+  { GfxRect p = { px, py, pw, ph };
+    float raio = 28.0f / p.h;
+    gfx_rect((GfxRect){ p.x - 20, p.y - 6, p.w + 40, p.h + 46 }, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.40f * a);
+    if (ajustes_vidro()) {
+      gfx_vidro_material(p, raio, GFX_VIDRO_DENS_MODAL, a);
+      gfx_luz_canto(p, raio, p.w * 0.22f, -p.h * 0.40f, p.h * 0.62f, 1, 1, 1, 0.10f * a);
+    } else gfx_cor(p, raio, 0.082f, 0.086f, 0.102f, a);
+    if (aberto && ponteiro_ativo()) ponteiro_alvo(p.x, p.y, p.w, p.h, NULL, NULL, 0, 0); }
+  x = px + 48.0f; y = py + 48.0f;
+  if (kickerAtual[0]) { teCaps(kickerAtual, x, y + 2, ew, a); y += 26.0f; }
+  { TxtLinha t = txt_linha_corta(TXT_ILHA_TITULO, tituloAtual, 243, 242, 239, 255, ew);
+    txt_desenhar_alpha(t, x, y, a); y += 50.0f; }
+  if (dicaAtual[0]) { y += 10.0f; y += txt_bloco(TXT_AJ_SUB, dicaAtual, 243, 242, 239, x, y, ew, 28.5f, 0.58f * a, 3); }
+  y += 28.0f;
+  // The visible string: masked dots or the text, with the IME composition at
+  // the caret. cv/av/pv are byte offsets of caret, anchor and composition end.
+  for (i = 0; i < n && k < (int)sizeof vis - 4; ) {
+    int j = dePasso(i, 1);
+    if (i == deCaret) { cv = k; }
+    if (i == deAncora) { av = k; }
+    if (i == deCaret && deComp[0]) { int l = (int)strlen(deComp); memcpy(vis + k, deComp, (size_t)l); k += l; }
+    if (mascarar) { memcpy(vis + k, "\xE2\x80\xA2", 3); k += 3; }
+    else { memcpy(vis + k, texto + i, (size_t)(j - i)); k += j - i; }
+    i = j;
+  }
+  if (deCaret >= n) { cv = k; if (deComp[0]) { int l = (int)strlen(deComp); memcpy(vis + k, deComp, (size_t)l); k += l; } }
+  if (deAncora >= n) av = deCaret >= n ? cv : k;
+  vis[k] = 0;
+  pv = cv + (int)strlen(deComp);
+  { GfxRect campo = { x, y, ew, 72.0f };
+    float tx = campo.x + 22.0f, larg = campo.w - 44.0f, xc, xa, xp;
+    char pre[sizeof vis];
+    teNeutro(campo, 14, 0.07f, 0.125f, 0.129f, 0.153f, a);
+    if (deFoco == TE_D_CAMPO)
+      gfx_anel_fora(campo, 14.0f / campo.h, 1.0f, 3.0f, ar, ag, ab, 0.7f * a);
+    memcpy(pre, vis, (size_t)cv); pre[cv] = 0; xc = (float)txt_largura(TXT_AJ_INSP, pre);
+    memcpy(pre, vis, (size_t)av); pre[av] = 0; xa = (float)txt_largura(TXT_AJ_INSP, pre);
+    memcpy(pre, vis, (size_t)pv); pre[pv] = 0; xp = (float)txt_largura(TXT_AJ_INSP, pre);
+    if (xp - deRolagem > larg - 4.0f) deRolagem = xp - larg + 4.0f;
+    if (xc - deRolagem < 0.0f) deRolagem = xc;
+    if (deRolagem < 0.0f) deRolagem = 0.0f;
+    deTextoX = tx - deRolagem;
+    if (aberto && ponteiro_ativo()) ponteiro_alvo(campo.x, campo.y, campo.w, campo.h, NULL, deClique, 0, 0);
+    gfx_recorte(tx - 2.0f, campo.y, larg + 4.0f, campo.h);
+    if (xa != xc && !deComp[0]) {
+      float s0 = fminf(xa, xc), s1 = fmaxf(xa, xc);
+      gfx_cor((GfxRect){ deTextoX + s0, campo.y + 16, s1 - s0, campo.h - 32 }, 0.1f, ar, ag, ab, 0.38f * a);
+    }
+    if (k) {
+      TxtLinha t = txt_linha_bruta(TXT_AJ_INSP, vis, 243, 242, 239, 255);
+      txt_desenhar_alpha(t, deTextoX, campo.y + (campo.h - t.h) * 0.5f, a);
+    } else {
+      TxtLinha t = txt_linha_corta(TXT_AJ_INSP, tituloAtual, 243, 242, 239, 255, larg);
+      txt_desenhar_alpha(t, tx, campo.y + (campo.h - t.h) * 0.5f, 0.32f * a);
+    }
+    if (deComp[0]) gfx_cor((GfxRect){ deTextoX + xc, campo.y + campo.h - 18, xp - xc, 2 }, 0, 243 / 255.0f, 242 / 255.0f, 239 / 255.0f, 0.7f * a);
+    if (deFoco == TE_D_CAMPO) {
+      float op = ajustes_animacoes_reduzidas() ? 0.95f : (agora / 530 % 2 ? 0.0f : 0.95f);
+      gfx_cor((GfxRect){ deTextoX + xp, campo.y + 18, 2, campo.h - 36 }, 0, ar, ag, ab, op * a);
+    }
+    gfx_sem_recorte();
+    y += campo.h + 36.0f; }
+  { float xd = px + pw - 48.0f;
+    xd = deBotao("Concluir", xd, y, TE_D_PRONTO, n > 0 || abriuComValor || confirmarVazio, a) - 14.0f;
+    deBotao("Cancelar", xd, y, TE_D_CANCELAR, 1, a);
+    if (ehSenha) {
+      TxtLinha t = txt_linha(TXT_ILHA_SEG, mascarar ? "mostrar" : "ocultar", 243, 242, 239, 255);
+      deBotao(mascarar ? "mostrar" : "ocultar", x + t.w + 48.0f, y, TE_D_MASCARA, 1, a);
+    } }
+}
+#endif
 // TV follows text scale; the virtual viewport keeps the modal centered.
 void teclado_desenhar(Uint32 agora) {
   if (teNativo()) return;
+#ifdef NV_DESKTOP_UI
+  { TXT_INI(); deDesenhar(agora); TXT_FIM(); }
+  return;
+#endif
 #ifdef NV_TOUCH_UI
   if (teTelefoneIme()) {
     ESCALA_INI();
@@ -1378,6 +1620,9 @@ void teclado_desenhar(Uint32 agora) {
 static void teDesenhar(Uint32 agora) {
   float a = anim_suave(anim), dy, x, y, ew;
   int f, c, i;
+#ifdef NV_DESKTOP_UI
+  deGradeDesenhos++;
+#endif
   teMedir();
   if (anim < 0.01f) {
 #ifdef NV_TOUCH_UI

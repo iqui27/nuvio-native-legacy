@@ -1196,6 +1196,14 @@ void app_desktop_preview(const char *screen) {
   else if (!strcmp(screen,"library")) { menu_ir(MENU_BIBLIOTECA); trocarTela(TELA_BIBLIOTECA); }
   else if (!strcmp(screen,"lists")) { menu_definir_destino(MENU_LISTAS); trocarTela(TELA_BIBLIOTECA); biblioteca_abrir_listas(); }
   else if (!strcmp(screen,"settings")) { menu_ir(MENU_AJUSTES); trocarTela(TELA_AJUSTES); }
+  else if (!strncmp(screen,"settings:",9)) { ajustes_abrir_na_secao(atoi(screen+9)); menu_ir(MENU_AJUSTES); trocarTela(TELA_AJUSTES); }
+  else if (!strncmp(screen,"form:",5)) {
+    // Text-field proof over Settings: a URL field, a password, a free-text name.
+    menu_ir(MENU_AJUSTES); trocarTela(TELA_AJUSTES); teclado_contexto("TV ao vivo");
+    if (!strcmp(screen+5,"password")) { teclado_abrir_com("Senha Xtream","",TECLADO_MAX,"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-@!#$%&*+=",NULL); teclado_tipo(TECLADO_TIPO_SENHA); }
+    else if (!strcmp(screen+5,"name")) teclado_abrir_com("Nome da conta","",95,"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .-",NULL);
+    else teclado_abrir_com("Servidor Xtream","",TECLADO_MAX,"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.:-/?=&%~_",NULL);
+  }
   else if (!strcmp(screen,"guide")) { trocarTela(TELA_GUIA); }
   else if (!strcmp(screen,"sports")) { trocarTela(TELA_ESPORTES); }
   else if (!strcmp(screen,"achievements")) { menu_definir_destino(MENU_CONQUISTAS); conquistas_abrir(); }
@@ -4213,6 +4221,14 @@ static void spotAbrir(int voz) {
   ultimo = t;
   if (menu_aberto()) menu_fechar();
   if (ctx_aberto()) return;
+#ifdef NV_DESKTOP_UI
+  // Desktop types in the Search field; the Spotlight grid is a remote surface.
+  (void)voz;
+  if (detail_aberto()) detail_fechar();
+  if (tela != TELA_BUSCA) menu_ir(MENU_BUSCAR);
+  SDL_StartTextInput();
+  return;
+#endif
   spot_abrir(voz);
 }
 // Pessoa do TMDB esperando a pagina do titulo dela chegar (ver SPOT_PESSOA).
@@ -4530,8 +4546,13 @@ static int relogioPedidoPagina(void) {
 
 void app_evento(const SDL_Event *e) {
 #ifdef NV_DESKTOP_UI
-  if (e->type == SDL_KEYDOWN && (e->key.keysym.mod & (KMOD_GUI | KMOD_CTRL))) {
+  if (e->type == SDL_KEYDOWN && (e->key.keysym.mod & (KMOD_GUI | KMOD_CTRL)) && !teclado_aberto() && !player_aberto()) {
     if (e->key.keysym.sym == SDLK_b) { if (!e->key.repeat) menu_desktop_alternar(); return; }
+    if (e->key.keysym.sym == SDLK_COMMA) {
+      if (detail_aberto()) detail_fechar();
+      if (tela != TELA_AJUSTES) menu_ir(MENU_AJUSTES);
+      menu_fechar(); return;
+    }
     if (e->key.keysym.sym == SDLK_f) {
       if (detail_aberto()) detail_fechar();
       if (tela != TELA_BUSCA) menu_ir(MENU_BUSCAR);

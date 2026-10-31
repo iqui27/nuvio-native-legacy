@@ -2778,6 +2778,7 @@ int  ajustes_opcao_em_foco(void) { return focoOp; }
 // Categoria mostrada na lista. Com o foco no indice ela e a categoria em foco
 // la; com o foco na lista, a do item.
 static int secAtual = 0;
+void ajustes_abrir_na_secao(int s) { if (s >= 0 && s < nSecoes) secAtual = s; }
 // 1 = o foco esta na COLUNA DE CATEGORIAS. E ONDE A TELA ABRE (como o web, que
 // abre na navegacao lateral): a primeira coisa que a pessoa ve e o mapa das
 // nove categorias, e nao a quinta linha de uma delas.
@@ -2981,6 +2982,9 @@ int ajustes_interface_mobile(void) {
 #elif defined(NV_IOS)
   automaticoMobile = ios_interface_mobile_auto();
 #endif
+#ifdef NV_DESKTOP_UI
+  return layout_modo_resolver(2, automaticoMobile);   // the window decides; the row is hidden
+#endif
   return layout_modo_resolver(valor[AJ_INTERFACE_MODO], automaticoMobile);
 #else
   return 0;
@@ -3048,7 +3052,12 @@ int ajustes_conquistas(void)       { return lig(AJ_CONQ_LIGADO); }
 int ajustes_conquistas_aviso(void) { return lig(AJ_CONQ_LIGADO) && lig(AJ_CONQ_AVISO); }
 int ajustes_conquistas_dicas(void) { return lig(AJ_CONQ_DICAS); }
 int ajustes_busca_cinemeta(void)   { return lig(AJ_BUSCA_CINEMETA); }
-int ajustes_esmaecer(void)         { int v = valor[AJ_ESMAECER]; return v < 0 || v > 5 ? 3 : v; }
+int ajustes_esmaecer(void) {
+#ifdef NV_DESKTOP_UI
+  return 0;   // the computer has its own screen saver; the row is hidden
+#endif
+  int v = valor[AJ_ESMAECER]; return v < 0 || v > 5 ? 3 : v;
+}
 int ajustes_descanso_estilo(void)  { int v = valor[AJ_DESCANSO_ESTILO]; return v < 0 || v > 2 ? 0 : v; }
 int ajustes_descanso_fonte(void)   { int v = valor[AJ_DESCANSO_FONTE]; return v < 0 || v > 1 ? 0 : v; }
 // #202: -1 = ultimo modo usado; 0..7 = PlrAspecto a aplicar ao abrir o video.
@@ -3305,7 +3314,13 @@ float ajustes_tamanho_ajustes(void) {
 }
 // The phone always uses List. Keep the stored TV preference unchanged.
 static int ajLayoutSelecionavel(void) { return !telefoneui_ativo(); }
+#ifdef NV_DESKTOP_UI
+#include "ajustes_desktop.inc"
+#endif
 static int ajOpcaoDisponivel(int op) {
+#ifdef NV_DESKTOP_UI
+  if (ajDesktopOculta(op)) return 0;
+#endif
   // These controls use active-profile stores rather than the edited value array.
   if (edPerfil && (ajFalhaBackend(op) || op == AJ_PROVEDORES_ESCOPO || op == AJ_FILTROS_FONTES ||
                    op == AJ_FALHA_PROVEDOR_ORDEM || op == AJ_FALHA_ADDON_ORDEM ||

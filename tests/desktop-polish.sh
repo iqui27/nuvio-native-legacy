@@ -13,6 +13,10 @@ cc tests/desktop_search.c src/buscanorm.c "${flags[@]}" -Wl,-undefined,dynamic_l
 "$work/search"
 cc tests/desktop_filmo.c "${flags[@]}" -Wl,-undefined,dynamic_lookup -L/opt/homebrew/lib -lSDL2 -o "$work/filmo"
 "$work/filmo"
+for t in desktop_teclado desktop_settings; do
+  cc "tests/$t.c" "${flags[@]}" -Wl,-undefined,dynamic_lookup -L/opt/homebrew/lib -lSDL2 -o "$work/$t"
+  "$work/$t"
+done
 for mode in desktop tv; do
   detail_flags=()
   if [ "$mode" = desktop ]; then detail_flags=(-DNV_TOUCH_UI -DNV_DESKTOP_UI); fi
@@ -20,7 +24,7 @@ for mode in desktop tv; do
   "$work/detail-$mode"
 done
 bash tests/desktop_ui_syntax.sh
-cc -fsyntax-only -DNV_DESKTOP_UI -DNV_TOUCH_UI -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 src/detail.c src/vertudo.c src/guiav5ui.c src/ctxmenu.c src/main.c src/amigosfil.c -Wno-deprecated-declarations
+cc -fsyntax-only -DNV_DESKTOP_UI -DNV_TOUCH_UI -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 src/detail.c src/vertudo.c src/guiav5ui.c src/ctxmenu.c src/main.c src/amigosfil.c src/guiav5ui.c src/teclado.c src/busca.c src/player.c src/idioma.c src/spotlight.c -Wno-deprecated-declarations
 python3 - <<'PY'
 import ast
 from pathlib import Path

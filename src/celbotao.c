@@ -33,6 +33,13 @@ static char    titulo[96];
 static GfxRect cartao;
 
 int celb_disponivel(void) { return celular_disponivel(); }
+int celb_digitar_disponivel(void) {
+#ifdef NV_DESKTOP_UI
+  return 0;
+#else
+  return celb_disponivel();
+#endif
+}
 int celb_aberto(void) { return aberto; }
 int celb_dono(void) { return aberto ? dono : CELB_NENHUM; }
 GfxRect celb_cartao_rect(void) { return aberto ? cartao : (GfxRect){ 0, 0, 0, 0 }; }

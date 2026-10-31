@@ -60,7 +60,8 @@ static inline int desktop_event(SDL_Event *e, SDL_Window *window, int typing) {
         SDL_SetWindowFullscreen(window, SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN_DESKTOP ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
       return 1;
     }
-    if (k == SDLK_ESCAPE || (k == SDLK_BACKSPACE && !typing)) e->key.keysym.sym = SDLK_AC_BACK;
+    if (k == SDLK_ESCAPE || (k == SDLK_BACKSPACE && !typing) ||
+        (k == SDLK_LEFTBRACKET && (e->key.keysym.mod & KMOD_GUI) && !typing)) e->key.keysym.sym = SDLK_AC_BACK;
   }
   return 0;
 }

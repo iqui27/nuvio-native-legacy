@@ -320,7 +320,7 @@ static void afAtualizar(float dt, int focada, int *colunaP) {
 #endif
     scroll = anim_mola2_reduzida(&vScroll, scroll, afScrollTarget, dt, NV_MOLA2_SCROLL, ajustes_animacoes_reduzidas());
   if (!socialvis_n_amigos() && ajustes_amigos_estilo() == 0 && focada) {
-    if (!afConviteEntrou && recomenda_ativo() && celb_disponivel())
+    if (!afConviteEntrou && recomenda_ativo() && celb_digitar_disponivel())
       celb_abrir_embutido(CELB_AMIGO, i18n("Código do amigo"));
     afConviteEntrou = 1;
   } else {
