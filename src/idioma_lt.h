@@ -4706,6 +4706,7 @@
   T("Mostrar o que assisti recentemente", "Rodyti, ką neseniai žiūrėjau"),
   T("Mostrar opções avançadas", "Rodyti išplėstines parinktis"),
   T("Mostrar ou ocultar", "Rodyti arba slėpti"),
+  T("Mostrar ou ocultar a barra lateral", "Rodyti arba slėpti šoninę juostą"),
   T("Mostrar sinopse no destaque", "Rodyti siužetą išskirtiniame"),
   T("Mostrar trailer", "Rodyti anonsą"),
   T("Mostrar vistos", "Rodyti žiūrėtus"),

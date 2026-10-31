@@ -4706,6 +4706,7 @@
   T("Mostrar o que assisti recentemente", "Vis det jeg har sett nylig"),
   T("Mostrar opções avançadas", "Vis avanserte innstillinger"),
   T("Mostrar ou ocultar", "Vis eller skjul"),
+  T("Mostrar ou ocultar a barra lateral", "Vis eller skjul sidefeltet"),
   T("Mostrar sinopse no destaque", "Vis sammendrag i fremhevet"),
   T("Mostrar trailer", "Vis trailer"),
   T("Mostrar vistos", "Vis sette"),

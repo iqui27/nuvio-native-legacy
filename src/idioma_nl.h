@@ -4706,6 +4706,7 @@
   T("Mostrar o que assisti recentemente", "Tonen wat ik onlangs heb bekeken"),
   T("Mostrar opções avançadas", "Geavanceerde opties tonen"),
   T("Mostrar ou ocultar", "Tonen of verbergen"),
+  T("Mostrar ou ocultar a barra lateral", "Navigatiekolom tonen of verbergen"),
   T("Mostrar sinopse no destaque", "Synopsis tonen in uitgelicht"),
   T("Mostrar trailer", "Toon aanhangwagen"),
   T("Mostrar vistos", "Bekeken tonen"),

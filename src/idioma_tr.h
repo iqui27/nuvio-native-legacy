@@ -4706,6 +4706,7 @@
   T("Mostrar o que assisti recentemente", "Son izlediklerimi göster"),
   T("Mostrar opções avançadas", "Gelişmiş seçenekleri göster"),
   T("Mostrar ou ocultar", "Göster veya gizle"),
+  T("Mostrar ou ocultar a barra lateral", "Kenar çubuğunu göster veya gizle"),
   T("Mostrar sinopse no destaque", "Öne çıkanda özeti göster"),
   T("Mostrar trailer", "Fragmanı göster"),
   T("Mostrar vistos", "İzlenenleri göster"),

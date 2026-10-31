@@ -4705,6 +4705,7 @@
   T("Mostrar o que assisti recentemente", "Показувати, що я нещодавно дивився"),
   T("Mostrar opções avançadas", "Показувати додаткові параметри"),
   T("Mostrar ou ocultar", "Показати або сховати"),
+  T("Mostrar ou ocultar a barra lateral", "Показати або сховати бічну панель"),
   T("Mostrar sinopse no destaque", "Показувати синопсис у добірці"),
   T("Mostrar trailer", "Показати трейлер"),
   T("Mostrar vistos", "Показати переглянуте"),

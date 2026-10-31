@@ -4705,6 +4705,7 @@
   T("Mostrar o que assisti recentemente", "Arată ce am vizionat recent"),
   T("Mostrar opções avançadas", "Arată opțiunile avansate"),
   T("Mostrar ou ocultar", "Arată sau ascunde"),
+  T("Mostrar ou ocultar a barra lateral", "Arată sau ascunde bara laterală"),
   T("Mostrar sinopse no destaque", "Afișează synopsisul în evidențiere"),
   T("Mostrar trailer", "Arată trailerul"),
   T("Mostrar vistos", "Arată vizionatele"),

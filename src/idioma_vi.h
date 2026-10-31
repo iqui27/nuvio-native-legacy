@@ -4706,6 +4706,7 @@
   T("Mostrar o que assisti recentemente", "Hiển thị nội dung tôi đã xem gần đây"),
   T("Mostrar opções avançadas", "Hiện tùy chọn nâng cao"),
   T("Mostrar ou ocultar", "Hiện hoặc ẩn"),
+  T("Mostrar ou ocultar a barra lateral", "Hiện hoặc ẩn thanh bên"),
   T("Mostrar sinopse no destaque", "Hiện tóm tắt ở mục nổi bật"),
   T("Mostrar trailer", "Hiển thị đoạn giới thiệu"),
   T("Mostrar vistos", "Hiện đã xem"),

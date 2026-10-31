@@ -4706,6 +4706,7 @@
   T("Mostrar o que assisti recentemente", "Показвай какво гледам наскоро"),
   T("Mostrar opções avançadas", "Показване на разширените опции"),
   T("Mostrar ou ocultar", "Покажи или скрий"),
+  T("Mostrar ou ocultar a barra lateral", "Покажи или скрий страничната лента"),
   T("Mostrar sinopse no destaque", "Показване на сюжета в акцента"),
   T("Mostrar trailer", "Покажете трейлър"),
   T("Mostrar vistos", "Покажи гледаното"),

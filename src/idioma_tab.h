@@ -4705,6 +4705,7 @@
   { "Mostrar o que assisti recentemente", "Show what I watched recently" },
   { "Mostrar opções avançadas", "Show advanced options" },
   { "Mostrar ou ocultar", "Show or hide" },
+  { "Mostrar ou ocultar a barra lateral", "Show or hide the sidebar" },
   { "Mostrar sinopse no destaque", "Show synopsis on hero" },
   { "Mostrar trailer", "Show trailer" },
   { "Mostrar vistos", "Show watched" },

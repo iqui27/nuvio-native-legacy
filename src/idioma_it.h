@@ -4706,6 +4706,7 @@
   T("Mostrar o que assisti recentemente", "Mostra cosa ho guardato di recente"),
   T("Mostrar opções avançadas", "Mostra le opzioni avanzate"),
   T("Mostrar ou ocultar", "Mostra o nascondi"),
+  T("Mostrar ou ocultar a barra lateral", "Mostra o nascondi la barra laterale"),
   T("Mostrar sinopse no destaque", "Mostra la trama in primo piano"),
   T("Mostrar trailer", "Mostra trailer"),
   T("Mostrar vistos", "Mostra visti"),

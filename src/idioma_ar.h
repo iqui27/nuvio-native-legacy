@@ -4706,6 +4706,7 @@
   T("Mostrar o que assisti recentemente", "إظهار ما شاهدته مؤخرًا"),
   T("Mostrar opções avançadas", "إظهار الخيارات المتقدمة"),
   T("Mostrar ou ocultar", "إظهار أو إخفاء"),
+  T("Mostrar ou ocultar a barra lateral", "إظهار الشريط الجانبي أو إخفاؤه"),
   T("Mostrar sinopse no destaque", "إظهار الملخص في الواجهة"),
   T("Mostrar trailer", "عرض مقطورة"),
   T("Mostrar vistos", "Show watched"),

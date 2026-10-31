@@ -4706,6 +4706,7 @@
   T("Mostrar o que assisti recentemente", "Visa vad jag nyligen har sett"),
   T("Mostrar opções avançadas", "Visa avancerade alternativ"),
   T("Mostrar ou ocultar", "Visa eller dölj"),
+  T("Mostrar ou ocultar a barra lateral", "Visa eller dölj sidofältet"),
   T("Mostrar sinopse no destaque", "Visa synopsis i utvalt"),
   T("Mostrar trailer", "Visa trailer"),
   T("Mostrar vistos", "Visa sedda"),

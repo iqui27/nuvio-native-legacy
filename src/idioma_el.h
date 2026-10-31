@@ -4706,6 +4706,7 @@
   T("Mostrar o que assisti recentemente", "Εμφάνιση όσων είδα πρόσφατα"),
   T("Mostrar opções avançadas", "Εμφάνιση σύνθετων επιλογών"),
   T("Mostrar ou ocultar", "Εμφάνιση ή απόκρυψη"),
+  T("Mostrar ou ocultar a barra lateral", "Εμφάνιση ή απόκρυψη πλαϊνής στήλης"),
   T("Mostrar sinopse no destaque", "Εμφάνιση σύνοψης στο προβεβλημένο"),
   T("Mostrar trailer", "Εμφάνιση τρέιλερ"),
   T("Mostrar vistos", "Εμφάνιση όσων είδατε"),
