@@ -355,8 +355,8 @@ void desktop_native_init(SDL_Window *window) {
   NVMenuTarget *toggleTarget = [NVMenuTarget new];
   sidebarToggle = [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"sidebar.left" accessibilityDescription:nil]
                                      target:toggleTarget action:@selector(toggleSidebar:)];
-  if (@available(macOS 26.0, *)) sidebarToggle.bezelStyle = NSBezelStyleGlass;
-  else sidebarToggle.bordered = NO;
+  sidebarToggle.bordered = NO;
+  sidebarToggle.contentTintColor = [NSColor colorWithWhite:1 alpha:0.78];
   sidebarToggle.toolTip = [NSString stringWithUTF8String:i18n("Mostrar ou ocultar a barra lateral")];
   sidebarToggle.accessibilityLabel = sidebarToggle.toolTip;
   sidebarToggle.frame = NSMakeRect(NSMaxX(zoom.frame) + 14, NSMidY(zoom.frame) - 14, 36, 28);
