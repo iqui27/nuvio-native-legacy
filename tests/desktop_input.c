@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
+#include <unistd.h>
 #define janelaW layoutWindowW
 #define janelaH layoutWindowH
 #include "../src/layout.c"
@@ -57,12 +58,47 @@ static void phased(int x,int y,float dx,float dy,int phase) {
   e.wheel.x=NV_WHEEL_PHASED|phase;
   ponteiro_evento(&e,deliver);
 }
+static Uint32 fakeNow;
+static Uint32 fakeClock(void) { return fakeNow; }
+static ToqueRolagem replayRow;
+static float replayOffset;
+static int replayOwner(const PonteiroRolagem *e) { return toquerol_evento(&replayRow,e); }
+static void replayFrame(void) {
+  ponteiro_quadro(fakeNow);ponteiro_rolagem(replayOwner);
+  toquerol_vincular(&replayRow,(GfxRect){0,0,1920,1200},1,-1e7f,1e7f,1,&replayOffset);
+  fecharQuadro();
+}
+// Exactly what the Cocoa monitor pushes for one NSEvent.
+static void cocoa(int x,int y,float dx,float dy,int phase,int momentum) {
+  int flags=NV_WHEEL_PHASED;
+  if(phase&1) flags|=NV_WHEEL_BEGIN;
+  if((phase|momentum)&8) flags|=NV_WHEEL_END;
+  if((phase|momentum)&16) flags|=NV_WHEEL_CANCEL;
+  if(momentum) flags|=NV_WHEEL_MOMENTUM;
+  if(!phase && !momentum) flags=NV_WHEEL_UNPHASED;
+  SDL_Event e={0};e.type=SDL_MOUSEWHEEL;e.wheel.which=NV_DESKTOP_PIXEL_WHEEL;
+  e.wheel.mouseX=x;e.wheel.mouseY=y;e.wheel.preciseX=dx;e.wheel.preciseY=dy;
+  e.wheel.x=flags;e.wheel.y=phase|momentum<<8;
+  ponteiro_evento(&e,deliver);
+}
+static int notes(const char *needle) {
+  char path[600],line[512];int n=0;
+  snprintf(path,sizeof path,"%s/Library/Logs/Nuvio/input.log",getenv("HOME"));
+  FILE *f=fopen(path,"r");
+  while(f && fgets(line,sizeof line,f)) n+=strstr(line,needle)!=NULL;
+  if(f) fclose(f);
+  return n;
+}
 static void wheel(int x,int y,float dx,float dy) {
   SDL_Event e={0};e.type=SDL_MOUSEWHEEL;e.wheel.which=NV_DESKTOP_PIXEL_WHEEL;
   e.wheel.mouseX=x;e.wheel.mouseY=y;e.wheel.preciseX=dx;e.wheel.preciseY=dy;
   ponteiro_evento(&e,deliver);
 }
 int main(void) {
+  char home[]="/tmp/nuvio-desktop-input.XXXXXX";
+  assert(mkdtemp(home));setenv("HOME",home,1); // never the owner's input.log
+  char logs[600];snprintf(logs,sizeof logs,"%s/Library",home);mkdir(logs,0700);
+  snprintf(logs,sizeof logs,"%s/Library/Logs",home);mkdir(logs,0700);
   assert(SDL_Init(SDL_INIT_TIMER)==0);
   float offset=100;
   ToqueRolagem realRow={0};
@@ -121,8 +157,8 @@ int main(void) {
   phased(500,200,60,0,1);assert(backs==3); // Fresh gesture at row start.
   phased(500,200,0,0,2);
   row=0;
-  phased(500,200,-100,0,1);assert(backs==3 && saved==1); // No forward history.
-  phased(500,200,0,0,2);
+  phased(500,200,-100,0,1);assert(backs==3 && saved==2 && panel); // No forward history: Saved.
+  phased(500,200,0,0,2);spainel_fechar();saved=1;
   phased(1275,200,0,0,1);phased(800,200,-60,0,0);assert(saved==2 && panel);
   phased(800,200,-100,0,8);assert(saved==2);
   phased(800,200,0,0,8|2);
@@ -198,6 +234,78 @@ int main(void) {
   e=(SDL_Event){0};e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_LEFT;e.button.x=200;e.button.y=200;
   ponteiro_evento(&e,deliver);e.type=SDL_MOUSEBUTTONUP;ponteiro_evento(&e,deliver);
   assert(contexts==oldContexts+1);
+  // REAL INPUT: the owner's recorded session (0 OS momentum events) replayed
+  // through the exact Cocoa monitor encoding, at a 16 ms display refresh.
+  ponteiro_teste_relogio(fakeClock);fakeNow=100000;replayOffset=0;
+  int startsBefore=notes("event=momentum source=synthetic state=start");
+  FILE *log=fopen("tests/fixtures/desktop-trackpad-dono-2203.txt","r");
+  assert(log);
+  char line[256];int ms,ph,mph,x,y,events=0,flings=0,coasted=0;float dx,dy;
+  Uint32 base=fakeNow,endedAt=0;float endedOffset=0,lastStep=0;int decaying=0;
+  while(fgets(line,sizeof line,log)) {
+    if(line[0]=='#') continue;
+    assert(sscanf(line,"%d %d %d %f %f %d %d",&ms,&ph,&mph,&dx,&dy,&x,&y)==7);
+    assert(mph==0);
+    while(fakeNow+16<=base+(Uint32)ms) {
+      fakeNow+=16;float before=replayOffset;replayFrame();
+      float step=fabsf(replayOffset-before);
+      if(decaying && inRolagem) {
+        // Smooth: every refresh moves, each step no larger than the previous.
+        assert(step>0 && step<=lastStep*1.0001f+.0001f);
+        if(fakeNow-endedAt>=300 && replayOffset!=endedOffset) coasted|=1;
+      }
+      lastStep=step;
+      if(decaying && !inRolagem) decaying=0;
+    }
+    fakeNow=base+(Uint32)ms;
+    cocoa(x,y,dx,dy,ph,mph);events++;
+    if(ph==8) {
+      endedAt=fakeNow;endedOffset=replayOffset;
+      if(inRolagem) { flings++;decaying=1;lastStep=1e9f; }
+    }
+  }
+  fclose(log);
+  for(int i=0;i<400 && inRolagem;i++) { fakeNow+=16;replayFrame(); }
+  assert(events==677 && flings>=20 && coasted && !inRolagem);
+  assert(notes("event=momentum source=synthetic state=start")-startsBefore==flings);
+  assert(notes("event=momentum source=synthetic state=rest")>=1);
+  // The first real flick keeps moving past 300 ms after phase=8 and rests.
+  fakeNow+=1000;replayOffset=0;base=fakeNow;
+  log=fopen("tests/fixtures/desktop-trackpad-dono-2203.txt","r");
+  while(fgets(line,sizeof line,log)) {
+    if(line[0]=='#') continue;
+    sscanf(line,"%d %d %d %f %f %d %d",&ms,&ph,&mph,&dx,&dy,&x,&y);
+    fakeNow=base+(Uint32)ms;replayFrame();cocoa(x,y,dx,dy,ph,mph);
+    if(ph==8) break;
+  }
+  fclose(log);
+  endedOffset=replayOffset;endedAt=fakeNow;float at300=0;
+  while(inRolagem) { fakeNow+=16;replayFrame();if(fakeNow-endedAt<=300) at300=replayOffset; }
+  assert(fabsf(at300-endedOffset)>50 && fabsf(replayOffset-at300)>1 && fakeNow-endedAt>300);
+  printf("PASS: owner's real flick coasts %u ms after phase=8 (%.0f px) and decays to rest\n",fakeNow-endedAt,fabsf(replayOffset-endedOffset));
+  // OS momentum, when AppKit does send it, takes over without a double push.
+  int handoffs=notes("event=momentum source=os state=handoff");
+  cocoa(451,384,0,40,1,0);fakeNow+=8;cocoa(451,384,0,60,4,0);cocoa(451,384,0,0,8,0);
+  assert(inRolagem);float handed=replayOffset;
+  fakeNow+=8;cocoa(451,384,0,30,0,1);
+  assert(!inRolagem && fabsf(fabsf(replayOffset-handed)-30*NV_TELA_W/1280)<.01f);
+  assert(notes("event=momentum source=os state=handoff")==handoffs+1);
+  cocoa(451,384,0,0,0,8);
+  // Horizontal-dominant two-finger swipe: Back exactly once for the gesture.
+  realScroll=0;row=0;ponteiro_quadro(fakeNow);ponteiro_rolagem(scrolling);fecharQuadro();
+  int backsBefore=backs;fakeNow+=500;
+  cocoa(640,400,3,1,1,0);
+  for(int i=0;i<12;i++) { fakeNow+=8;cocoa(640,400,9,1,4,0); }
+  cocoa(640,400,0,0,8,0);
+  assert(backs==backsBefore+1 && notes("action=back")>=1);
+  // Right-edge inward swipe opens the Saved panel.
+  panel=0;int savedBefore=saved;fakeNow+=500;
+  cocoa(1270,400,-2,0,1,0);
+  for(int i=0;i<8;i++) { fakeNow+=8;cocoa(1270,400,-12,1,4,0); }
+  cocoa(1270,400,0,0,8,0);
+  assert(saved==savedBefore+1 && panel && notes("action=open-panel")>=1);
+  puts("PASS: OS momentum hands over once; horizontal two-finger swipe = one Back; right-edge inward swipe opens Saved");
+  ponteiro_teste_relogio(NULL);
   puts("PASS: 1x/2x and three window sizes, scaled callback, latched row across pointer movement and momentum, single click");
   puts("PASS: precise deltas and momentum remain fractional across redraw; rubber-band survives redraw and settles exactly at bound");
   puts("PASS: hover updates focus without scrolling; fractional pixels; no Mac double momentum; left/right edges; one Back per phase sequence; row ownership; panel reverse; cancelled momentum; disabled swipe preference; click activation");

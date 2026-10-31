@@ -1858,21 +1858,29 @@ static float botaoConf(int i, float x, float y, const char *rot, float f, float 
   return r.w;
 }
 
-static void desenhaConfirmar(const CatItem *ci, float a) {
-  char pergunta[240];
-  const char *texto = itemASeguir(ci)
+// Question, body, kicker and confirm label of page 2 (GL island or Mac sheet).
+static const char *confTextos(const CatItem *ci, char *pergunta, size_t n,
+                              const char **texto, const char **kicker) {
+  const char *botao = "Tirar da fileira";
+  *texto = itemASeguir(ci)
     ? i18n("A série sai da fileira. Ela volta quando você assistir um episódio novo.")
     : i18n("O ponto onde você parou é apagado. O título volta para a fileira se você assistir de novo.");
-  const char *kicker = "Continuar assistindo", *botao = "Tirar da fileira";
-  float tw = CONF_W - 2.0f * CONF_PAD, hTit, hTxt, alt, x, y, bx;
-  snprintf(pergunta, sizeof pergunta, i18n("Tirar %s da fileira?"), ci->titulo);
+  *kicker = "Continuar assistindo";
+  snprintf(pergunta, n, i18n("Tirar %s da fileira?"), ci->titulo);
   if (confExtra >= 0 && confExtra < nExtras) {
     const CtxExtra *x0 = &extras[confExtra];
-    snprintf(pergunta, sizeof pergunta, i18n(x0->pergunta ? x0->pergunta : "%s"), ci->titulo);
-    texto = i18n(x0->texto ? x0->texto : "");
-    kicker = x0->kicker ? x0->kicker : "";
+    snprintf(pergunta, n, i18n(x0->pergunta ? x0->pergunta : "%s"), ci->titulo);
+    *texto = i18n(x0->texto ? x0->texto : "");
+    *kicker = x0->kicker ? x0->kicker : "";
     botao = x0->rot;
   }
+  return botao;
+}
+
+static void desenhaConfirmar(const CatItem *ci, float a) {
+  char pergunta[240];
+  const char *texto, *kicker, *botao = confTextos(ci, pergunta, sizeof pergunta, &texto, &kicker);
+  float tw = CONF_W - 2.0f * CONF_PAD, hTit, hTxt, alt, x, y, bx;
   { GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
     gfx_cor(tela, 0.0f, 0, 0, 0, 0.55f * a); }
   // Medir antes de desenhar (alfa 0): a pergunta pode quebrar com um nome
@@ -2299,8 +2307,29 @@ static int desktopLists(DesktopMenuItem *items, char names[LST_MAX][96]) {
 }
 // Called after SwapWindow: AppKit tracks over a complete Home frame, then
 // returns the original action ID to the SDL main loop's existing dispatcher.
+// Page 2 on the Mac is an NSAlert sheet: destructive default, Cancel = Escape.
+static int confNativo;
+// Offline proof: the production "Tirar da fileira" confirmation of a title.
+void ctx_desktop_preview_confirmar(int indice) {
+  ctx_abrir(indice);
+  if(aberto) { pagina=2;confFoco=0;confExtra=-1; }
+}
+static void desktopConfirmar(void) {
+  if(!confNativo) {
+    char pergunta[240];const char *texto,*kicker,*botao=confTextos(itemAtual(),pergunta,sizeof pergunta,&texto,&kicker);
+    const char *botoes[]={i18n(botao),i18n("Cancelar")};
+    (void)kicker;confNativo=!desktop_native_alert(pergunta,texto,botoes,2,1,NULL,0);
+    return;
+  }
+  int r=desktop_native_alert_result(NULL,0);
+  if(r<0) return;
+  confNativo=0;
+  if(r==0) aplicar();
+  pagina=0;confExtra=-1;aberto=0;anim=0;
+}
 void ctx_desktop_menu(void) {
-  if (!layout_desktop_ativo() || !aberto || pagina==2) return;
+  if (!layout_desktop_ativo() || !aberto) return;
+  if (pagina==2) { desktopConfirmar(); return; }
   // Never enter synchronous NSMenu tracking while the main loop must poll lists.
   if (pagina==3 && lst_minhas_carregando()) return;
   DesktopMenuItem items[LST_MAX+CTX_MAX+FIL_TIPO_N*FIL_ESTILO_TAMS+FIL_ORD_N+PALCO_N+1];
@@ -2344,7 +2373,7 @@ void ctx_desktop_menu(void) {
 #endif
 void ctx_desenhar(Uint32 agora) {
 #if defined(NV_DESKTOP_UI) && defined(__APPLE__)
-  if(layout_desktop_ativo() && pagina!=2) return;
+  if(layout_desktop_ativo() && (pagina!=2 || confNativo)) return;
 #endif
   ESCALA_INI();
   if(layout_desktop_ativo() && pagina!=1 && pagina!=2 && !doLista) {

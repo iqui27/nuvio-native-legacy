@@ -1648,6 +1648,11 @@ static void tecladoNome(int para, const char *inicial) {
                     SP_NOME_LETRAS, ALFA_NOME, inicial);
 }
 
+#ifdef NV_DESKTOP_UI
+// Offline proof: the production "Nova categoria" field.
+void spainel_desktop_preview_categoria(void) { tecladoNome(TK_CRIAR, NULL); }
+#endif
+
 // OK numa opcao da escolha aberta.
 static void popOk(void) {
   int v;
