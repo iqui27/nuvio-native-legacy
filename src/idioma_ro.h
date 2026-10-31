@@ -1951,6 +1951,7 @@
   T("Classificação indicativa no player", "Clasificarea de vârstă în player"),
   T("Classificação máxima", "Rating maxim"),
   T("Classificação no player", "Clasificare în player"),
+  T("Clique para avaliar", "Clic pentru a evalua"),
   T("Clube retrô", "Retro club"),
   T("Clássico", "Clasic"),
   T("Cobertura", "Acoperire"),

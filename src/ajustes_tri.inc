@@ -431,11 +431,11 @@ static void triAtualizar(float dt) {
   // No celular o dedo manda enquanto a regiao esta "livre" (ajToqueRolar); a
   // mola volta a seguir o foco na primeira tecla (ajToqueLimpar).
 #ifdef NV_TOUCH_UI
-  if (!(ajTelaCheia() && ajToqueLivre[AJT_UTIL]))
+  if (!(ajRolagemLivre() && ajToqueLivre[AJT_UTIL]))
 #endif
   triUtilRol = red ? triUtilRolAlvo : anim_mola(triUtilRol, triUtilRolAlvo, dt, NV_MOLA_FOCO);
 #ifdef NV_TOUCH_UI
-  if (!(ajTelaCheia() && ajToqueLivre[AJT_SECOES]))
+  if (!(ajRolagemLivre() && ajToqueLivre[AJT_SECOES]))
 #endif
   triSecRolY = red ? triSecRolYAlvo : anim_mola(triSecRolY, triSecRolYAlvo, dt, NV_MOLA_FOCO);
   if (triUtil != triUtilVisto) { triUtilVisto = triUtil; triUtilA = 0.0f; }

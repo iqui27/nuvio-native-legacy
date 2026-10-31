@@ -1952,6 +1952,7 @@
   T("Classificação indicativa no player", "Korhatár-besorolás a lejátszóban"),
   T("Classificação máxima", "Maximális értékelés"),
   T("Classificação no player", "Korhatár-besorolás a lejátszóban"),
+  T("Clique para avaliar", "Kattintson az értékeléshez"),
   T("Clube retrô", "Retro club"),
   T("Clássico", "Klasszikus"),
   T("Cobertura", "Lefedettség"),

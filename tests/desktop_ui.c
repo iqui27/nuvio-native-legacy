@@ -69,7 +69,7 @@ int main(void) {
   assert(menu_pediu_colecao() == 5 && !menu_aberto());
   desktopEscolher(MENU_RODAPE, 0);
   assert(menu_pediu_trocar() && !menu_aberto());
-  desktopBusca(0, 0);
+  desktopEscolher(MENU_BUSCAR, 0);
   assert(menu_destino() == MENU_BUSCAR && !menu_aberto());
   menu_ir(MENU_CONQUISTAS); assert(menu_mudou_destino());
   menu_ir(MENU_CONQUISTAS); assert(menu_mudou_destino());
@@ -85,7 +85,7 @@ int main(void) {
   menu_abrir_sobre(0); menu_fechar(); assert(menu_destino()==MENU_BIBLIOTECA);
 
   layout_janela_definir(1000, 500);
-  assert(layout_desktop_ativo() && nv_layout_w == 2400);
+  assert(layout_desktop_ativo() && nv_layout_w == 2160);
   menu_abrir(); linha = MENU_ST0 + 2;
   desktopAtualizar(); desktopLayout(ys);
   assert(ys[linha] + 56 - tvRolar <= nv_layout_h - 142);

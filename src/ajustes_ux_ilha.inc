@@ -427,7 +427,7 @@ static void ajDesenharFolha(void) {
   topo = AJ_TOPO;
   base = AJ_BASE;
 #ifdef NV_TOUCH_UI
-  if (ajTelaCheia() && ajPontLista) {
+  if (ajRolagemLivre() && ajPontLista) {
     float total = 0.0f;
     for (int k = secIni[sec]; k < secFim(sec); k++) total += alturaItem(k);
     ajToqueRegistrar(AJT_LISTA, (GfxRect){fr.x, topo, fr.w, base - topo}, &scrollY, total - (base - topo), scrollY, sec);
@@ -1231,7 +1231,7 @@ static void aj2DesenharDiferencas(void) {
   float rol = triUtilRol, total = uxNDifs * 78.0f + 16.0f;
   int i;
 #ifdef NV_TOUCH_UI
-  if (ajTelaCheia() && (ajPontLista || ajPontUtil))
+  if (ajRolagemLivre() && (ajPontLista || ajPontUtil))
     rol = triUtilRol = ajToqueRegistrar(AJT_DIFS, (GfxRect){fr.x, topo, fr.w, base - topo}, &triUtilRol, total - (base - topo), triUtilRol, 0);
 #endif
   y = topo + 8.0f - rol;

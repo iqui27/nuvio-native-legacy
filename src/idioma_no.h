@@ -1952,6 +1952,7 @@
   T("Classificação indicativa no player", "Aldersgrense i spilleren"),
   T("Classificação máxima", "Maksimal vurdering"),
   T("Classificação no player", "Aldersgrense i spilleren"),
+  T("Clique para avaliar", "Klikk for å vurdere"),
   T("Clube retrô", "Retro club"),
   T("Clássico", "Klassisk"),
   T("Cobertura", "Dekning"),

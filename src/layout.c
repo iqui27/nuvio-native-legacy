@@ -18,6 +18,7 @@ static int modoMobile;
 static int janelaW = NV_DESKTOP_WINDOW_W, janelaH = NV_DESKTOP_WINDOW_H;
 float nv_desktop_sidebar = NV_DESKTOP_SIDEBAR_W;
 Uint32 nv_desktop_wheel_until;
+int nv_desktop_scroll_active;
 #endif
 float nv_inset_e, nv_inset_t, nv_inset_d, nv_inset_b;
 static float insetFr[4];
@@ -26,7 +27,8 @@ static void layoutAtualizar(void) {
 #ifdef NV_DESKTOP_UI
   modoMobile = janelaW < NV_DESKTOP_BREAKPOINT;
   if (!modoMobile) {
-    float scale = fmaxf(NV_DESKTOP_SCALE, 1200.0f / janelaH);
+    // One uniform transform: fit the 1920x1080 design, extend the other axis.
+    float scale = layout_window_units(janelaW,janelaH);
     nv_layout_w = janelaW * scale;
     nv_layout_h = janelaH * scale;
   } else

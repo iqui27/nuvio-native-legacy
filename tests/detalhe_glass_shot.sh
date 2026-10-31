@@ -30,6 +30,10 @@ for s in src/*.c src/dts/*.c; do
   case "$s" in src/main.c|src/detail.c) continue;; esac
   extra=""
   o="$OBJ/$(basename "$s" .c).o"
+  if [ "$s" = src/gfx.c ] && [ -n "${NUVIO_FF_GFX_SOURCE:-}" ]; then
+    s="$NUVIO_FF_GFX_SOURCE"
+    o="$OBJ/gfx-flicker.o"
+  fi
   # Count the shared wrapping helper too, without production instrumentation.
   if [ "$s" = src/agendaui.c ] && [ -n "${NUVIO_TRAKT_CHECK:-}" ]; then
     o="$OBJ/agendaui-trakt.o"
@@ -78,4 +82,4 @@ if [ -n "${NUVIO_DETAIL_SOURCE:-}" ]; then
 fi
 cc $FL "${shot_extra[@]}" tests/detalhe_glass_shot.c "${objs[@]}" -o "$OBJ/shot" \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
-"$OBJ/shot" "$@"
+if [ -z "${NUVIO_FF_COMPILE_ONLY:-}" ]; then "$OBJ/shot" "$@"; fi

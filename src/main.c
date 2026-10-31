@@ -503,13 +503,19 @@ static void teclasInjetadas(void (*entregar)(const SDL_Event *)) {
 #ifdef NV_DESKTOP_RELEASE
 #ifdef NV_DESKTOP_UI
     if (dp && !strncmp(linha,"preview:",8)) { app_desktop_preview(dp+1); continue; }
+    if (dp && !strncmp(linha,"fullscreen:",11) && getenv("NV_CAPTURA")) {
+      int w,h;if(sscanf(dp+1,"%d,%d",&w,&h)==2 && w>=320 && h>=320) desktop_native_capture_fullscreen(w,h);
+      continue;
+    }
     if (dp && !strncmp(linha,"appearance:",11)) { desktop_native_appearance(dp+1); continue; }
     if (dp && !strncmp(linha,"wheel:",6)) {
-      SDL_Event wheel={0}; float dx,dy; int x,y;
-      if(sscanf(dp+1,"%d,%d,%f,%f",&x,&y,&dx,&dy)==4) {
+      SDL_Event wheel={0}; float dx,dy; int x,y,phase=0;
+      if(sscanf(dp+1,"%d,%d,%f,%f,%d",&x,&y,&dx,&dy,&phase)>=4) {
         wheel.type=SDL_MOUSEWHEEL;wheel.wheel.which=NV_DESKTOP_PIXEL_WHEEL;
         wheel.wheel.windowID=SDL_GetWindowID(SDL_GL_GetCurrentWindow());
         wheel.wheel.mouseX=x;wheel.wheel.mouseY=y;wheel.wheel.preciseX=dx;wheel.wheel.preciseY=dy;
+        // Same packed fields as the Cocoa monitor: phase and momentumPhase.
+        wheel.wheel.y=phase&~31;wheel.wheel.x=phase&31;
         SDL_PushEvent(&wheel);
       }
       continue;
@@ -1140,6 +1146,7 @@ int main(int argc, char **argv) {
   SDL_SetHint(SDL_HINT_EMSCRIPTEN_ASYNCIFY, "0");
 #endif
 #ifdef NV_DESKTOP_UI
+  SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH,"1");
   if (getenv("NV_CAPTURA")) {
     SDL_SetHint(SDL_HINT_MAC_BACKGROUND_APP, "1");
     SDL_SetHint(SDL_HINT_WINDOW_NO_ACTIVATION_WHEN_SHOWN, "1");
@@ -2474,17 +2481,31 @@ int main(int argc, char **argv) {
 #ifdef NV_DESKTOP_MPV
     video_desktop_swap();
 #endif
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+    ctx_desktop_menu();
+#endif
 #ifndef __EMSCRIPTEN__
     { unsigned wait = player_frame_wait(playerUi, SDL_GetTicks() - frameStarted);
 #ifdef NV_DESKTOP_UI
+      SDL_DisplayMode display;
+      int hz = SDL_GetCurrentDisplayMode(SDL_GetWindowDisplayIndex(win), &display) == 0 && display.refresh_rate > 0 ? display.refresh_rate : 60;
+      // Foreground swaps already wait for display refresh. Only background
+      // proof runs disable vsync and need a software frame deadline.
       if (!playerUi) {
-        SDL_DisplayMode display;
-        int hz = SDL_GetCurrentDisplayMode(SDL_GetWindowDisplayIndex(win), &display) == 0 && display.refresh_rate > 0 ? display.refresh_rate : 60;
         unsigned target = 1000u / hz, elapsed = SDL_GetTicks() - frameStarted;
-        wait = elapsed < target ? target - elapsed : 0;
+        wait = getenv("NV_CAPTURA") && elapsed < target ? target - elapsed : 0;
       }
-      if (getenv("NUVIO_DESKTOP_FRAME_LOG") && (Sint32)(SDL_GetTicks() - nv_desktop_wheel_until) < 0)
-        printf("[desktop-scroll] t=%u work_ms=%u wait_ms=%u\n",SDL_GetTicks(),SDL_GetTicks()-frameStarted,wait);
+      if (getenv("NUVIO_DESKTOP_FRAME_LOG")) {
+        static Uint64 previous; static unsigned frames, dropped;
+        Uint64 now=SDL_GetPerformanceCounter();
+        double interval=previous ? (now-previous)*1000.0/SDL_GetPerformanceFrequency() : 0;
+        previous=now;
+        if (nv_desktop_scroll_active || (Sint32)(SDL_GetTicks()-nv_desktop_wheel_until)<0) {
+          frames++; if(interval>1500.0/hz) dropped+=(unsigned)(interval*hz/1000.0+.5)-1;
+          printf("[desktop-scroll] frame=%u interval_ms=%.3f refresh_hz=%d dropped=%u work_ms=%u wait_ms=%u\n",frames,interval,hz,dropped,SDL_GetTicks()-frameStarted,wait);
+          fflush(stdout);
+        }
+      }
 #endif
       if (wait) SDL_Delay(wait); }
 #else
