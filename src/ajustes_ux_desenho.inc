@@ -837,13 +837,16 @@ static const char *ajSelo(int op) {
   // no inspetor ("Vale para") e as tecnicas ja estao atras de "Mais opcoes".
   return NULL;
 }
-// O aviso de dependencia ("Precisa ligar X — OK liga as duas") em 1 ou 2
+// O aviso de dependencia ("Precisa ligar X — OK liga as duas") em 1 a 3
 // linhas: a lista de 2.1 e mais estreita que a de 2.0.3 e o texto nao pode ser cortado.
 static int ajAvisoLinhas(int i) {
   char t[300];
   float w = aj2ListaR().w - 36.0f - 44.0f - (ajLinhaFilha(i) ? 34.0f : 0.0f) - 34.0f;
   ajAvisoTexto(TELA[i].op, t, sizeof t);
-  return (float)txt_largura(TXT_V3_BEN, t) > w ? 2 : 1;
+  // Palco blades are ~500 wide: a long prerequisite name needs a third line
+  // (word wrap wastes up to ~10% per line, hence the slack).
+  float tw = (float)txt_largura(TXT_V3_BEN, t);
+  return tw > w * 1.8f ? 3 : tw > w ? 2 : 1;
 }
 static float ajLinhaH(int i) {
   int op = TELA[i].op;
@@ -1150,7 +1153,9 @@ static float triInterruptor(float xDir, float yc, float on, float a) {
   ajustes_acento(&ar, &ag, &ab);
   gfx_cor(r, 0.5f, 1, 1, 1, 0.14f * (1.0f - c) * a);
   if (c > 0.005f) gfx_cor(r, 0.5f, ar, ag, ab, c * a);
-  gfx_cor((GfxRect){ r.x + 5.0f + 26.0f * on, yc - 12.0f, 24.0f, 24.0f }, 0.5f, 0.953f, 0.949f, 0.937f, (0.8f + 0.2f * c) * a);
+  // A light accent (white/cream themes) would swallow the white knob: go dark on it.
+  float k = 0.953f - (0.299f * ar + 0.587f * ag + 0.114f * ab > 0.72f ? 0.82f * c : 0.0f);
+  gfx_cor((GfxRect){ r.x + 5.0f + 26.0f * on, yc - 12.0f, 24.0f, 24.0f }, 0.5f, k, k, k * 0.99f, (0.8f + 0.2f * c) * a);
   return 60.0f;
 }
 float ajustes_ui_interruptor(float xDir, float yc, float on, float a) {
@@ -1252,7 +1257,9 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
   float cauda = 0, icoX = palco ? AJ_PALCO_TX - 22.0f : 0.0f;   // Palco: o icone Lucide antes do rotulo
   // O valor usa o que o rotulo deixa (A3: a linha e larga; cortar o valor com
   // espaco sobrando era o "Back to home (minimize..." da captura em Montserrat).
-  float rotFim = ln.x + 22.0f + icoX + recuo + (float)txt_largura(TXT_V2_LN, rotuloOpcao(op)) + 28.0f;
+  // Palco: the label is measured in its own (focused) style, so the value gives way first.
+  float rotFim = ln.x + 22.0f + icoX + recuo + 28.0f +
+                 (float)txt_largura(palco ? (emFoco ? TXT_V2_SEG : TXT_AJ_ROTULO) : TXT_V2_LN, rotuloOpcao(op));
 #define AJ_VMAX(xx) ((xx) - rotFim < 160.0f ? 160.0f : (xx) - rotFim)
   if (palco && !aviso) yc = y + AJ2_LN_H * 0.5f;   // a linha cresce para baixo: o rotulo fica
   if (a <= 0.004f) return;
@@ -1449,7 +1456,7 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
     float tx = ln.x + 22.0f + recuo, aw = ln.w - 44.0f - recuo - 34.0f;
     ajAvisoTexto(op, t, sizeof t);
     gfx_icone((GfxRect){ tx, y + AJ2_LN_LINHA1 - 8.0f + (AJ2_LN_BEN - 24.0f) * 0.5f, 24, 24 }, "aj_triangle-alert", 0.91f, 0.69f, 0.36f, aTx);
-    txt_bloco(TXT_V3_BEN, t, 232, 176, 92, tx + 32.0f, y + AJ2_LN_LINHA1 - 8.0f + 1.0f, aw, AJ2_LN_BEN, aTx, 2);
+    txt_bloco(TXT_V3_BEN, t, 232, 176, 92, tx + 32.0f, y + AJ2_LN_LINHA1 - 8.0f + 1.0f, aw, AJ2_LN_BEN, aTx, 3);
   }
   // 2.0.3: a frase de beneficio (mockup v3: "Ate onde a fonte pode ir...").
   if (beneficio)
