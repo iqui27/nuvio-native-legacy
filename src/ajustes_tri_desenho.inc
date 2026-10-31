@@ -168,7 +168,6 @@ static void triCabecalho(void) {
       float a = fchips;
       for (i = TRI_C_N - 1; i >= 0; i--) {
         float f = triChipF[i];
-        int rotulo = 1;
         float w = triChipLargura(i, i18n(rot[i]), n[i]);
         GfxRect r = { xd - w, 36.0f, w, 56.0f };
         TxtLinha t = f > 0.5f ? ajTxtT(TXT_V2_SEG, rot[i]) : ajTxt(TXT_V2_SEG, rot[i]);
@@ -314,15 +313,17 @@ static void triIlhaSecoes(void) {
     if (condK < 0.99f) {
       const ContaPerfil *pf = perfis_item_ativo();
       char k[160];
-      float a = 1.0f - condK;
+      float a = (1.0f - condK) * (1.0f - condK);   // some antes de a pilula estreitar
       gfx_opacidade_grupo = a;
+      gfx_recorte(ilha.x, ilha.y, ilha.w, 104.0f);
       if (pf && pf->nome[0]) snprintf(k, sizeof k, "Nuvio · %s", pf->nome);
       else snprintf(k, sizeof k, "Nuvio");
       if (!menu_pilula_titulo()) {
         ajKicker(k, ilha.x + 28.0f, ilha.y + 22.0f, 1);
-        { TxtLinha t = ajTxtC(TXT_V3_NOME, "Ajustes", ilha.w - 56.0f);
+        { TxtLinha t = ajTxtC(TXT_V3_NOME, "Ajustes", 380.0f - 56.0f);   // largura cheia: o recorte corta
           txt_desenhar(t, ilha.x + 28.0f, ilha.y + 48.0f); }
       }
+      gfx_sem_recorte();
       gfx_opacidade_grupo = 1.0f;
     }
     if (condK > 0.01f) {
@@ -377,11 +378,11 @@ static void triIlhaSecoes(void) {
     } else
     ajIcone(icone, ix, r.y + (r.h - iconH) * 0.5f, iconH, al);
     if (condK < 0.99f) {
-      { float width = r.w - 62.0f - 48.0f;
+      { float width = (palco ? 380.0f - 28.0f : r.w) - 62.0f - 48.0f;   // Palco: mede no menu aberto; o recorte da ilha corta
         int style = primaria || foco ? TXT_W20_24B : TXT_AJ_SUB;
         if (primaria && txt_largura(style, i18n(titulo)) > width) style = TXT_ILHA_SECAO;
         TxtLinha t = ajTxtC(style, titulo, width);
-        txt_desenhar_alpha(t, r.x + 62.0f, r.y + (r.h - t.h) * 0.5f, al * (1.0f - condK)); }
+        txt_desenhar_alpha(t, r.x + 62.0f, r.y + (r.h - t.h) * 0.5f, al * (1.0f - condK) * (1.0f - condK)); }
       if (!triParental(j)) {
         char c[16]; int nOp; TxtLinha t;
         { int nAv; triContar(j, &nOp, &nAv); nOp += nAv; }
@@ -978,6 +979,7 @@ static float triCenaPintar(int sec, int op, float x, float y, float w) {
   float h;
   if (op == -2) {
     GfxRect r = triPalcoR();
+    r.x = x; r.w = w;
     ajImg(ajArte(AJA_FUNDO, ajCenaArteN(sec)), r, 28.0f, 1.0f);
     if (sec == AJS_REPRODUCAO) {
       float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f;
@@ -994,8 +996,10 @@ static float triCenaPintar(int sec, int op, float x, float y, float w) {
   if (op >= 0) valor[op] = salvo;
   return h;
 }
+static float triEstagioBorda;   // o estagio comeca onde o blade mais a direita termina (ele empurra)
 static void triEstagio(void) {
   GfxRect p = triPalcoR();
+  if (triEstagioBorda > p.x) p.x = triEstagioBorda;   // empurrado pelo blade que entra/sai
   int indice = focoIndice || triIlha == TRI_SECOES || triIlha == TRI_CHIPS;
   int parental = indice && triParental(triSecFoco);
   int sec = secAtual, op = -1, topico = -1, naMais = 0, chave;
@@ -1107,6 +1111,21 @@ static void triPalcoDesenhar(int modal, float g0) {
   int sm = triSubmenu, pl = ajPontLista, ue = uxEditor, uo = uxOp, up = uxPendente, uu = triUtil;
   float sc = scrollY;
   while (ate < 4 && triProfF - (float)ate > 0.01f) ate++;
+  // O estagio vai POR BAIXO e comeca na borda direita do blade mais a direita
+  // (com a escala e o deslize da entrada): o blade que abre empurra a cena,
+  // nada aparece atraves do blade semitransparente.
+  triEstagioBorda = 0.0f;
+  for (k = 0; k < ate; k++) {
+    float e = triClamp(triProfF - (float)k, 0.0f, 1.0f);
+    GfxRect b;
+    if (triBladeA(k) * e <= 0.01f || !triPgTipo[k]) continue;
+    triNivelDesenho = k; b = triIlha2R();
+    { float borda = b.x + 80.0f * (1.0f - e) + b.w * (0.96f + 0.04f * e) + 16.0f;
+      if (k >= triProfundidade()) borda = b.x + (borda - b.x) * e;   // o fantasma que sai solta a cena
+      triEstagioBorda = fmaxf(triEstagioBorda, borda); }
+  }
+  triNivelDesenho = -1;
+  if (triTemInsp() && !(ajPenParentEditor >= 0 || (uxEditor == 1 && uxOp >= 0 && triEditorLargo(uxOp))) && !triUtil) triEstagio();
   // A superficie de foco mora no blade da lista em foco; com o editor aberto
   // por cima, fica na linha que o abriu (o pai), sem trocar de dono.
   if (n >= 2 && triPgTipo[n - 1] == TRI_PG_ED) dono = n - 2;
@@ -1164,7 +1183,6 @@ static void triPalcoDesenhar(int modal, float g0) {
     } else {
       if (triUtil == TRI_U_DIF) aj2InspetorDiferencas();
       else if (triUtil) triUtilInspetor(triInspMiolo());
-      else triEstagio();
     }
     gfx_opacidade_grupo = g0;
   }
