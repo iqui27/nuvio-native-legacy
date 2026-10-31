@@ -315,6 +315,8 @@ static GfxRect triListaR(void);
 static GfxRect triInspMiolo(void);
 static GfxRect triInspR(void);
 static int triTemInsp(void);
+static int triProfundidade(void);   // ajustes_tri.inc: 0 indice, 1 secao, 2 topico, 3 escolha
+static int triBladeLayout(void);    // ajustes_tri_desenho.inc: o layout Palco (pilha de blades)
 static float ajX0(void) { return (48.0f + ajustes_rail_largura_fixa()) / ajustes_tamanho_ajustes(); }
 static float ajFolhaX(void) { return ajX0() + AJI_IDX_W + 24.0f; }
 // TAMANHO DA INTERFACE (escala.h): na tela virtual menor as tres ilhas nao
@@ -369,7 +371,7 @@ static float aj2X0(void) {
   return ((ajTelaCheia() && rail <= 0.0f ? 0.0f : 48.0f) + rail) / AJ2_S;
 }
 // A3: linhas compactas (58 + 2 de vao, rotulo 24), o dobro de linhas na tela.
-#define AJ2_LN_H        (ajRetrato() ? 96.0f : 60.0f)
+#define AJ2_LN_H        (ajRetrato() ? 96.0f : (triBladeLayout() ? 70.0f : 60.0f))
 #define AJ2_LN_GAP       2.0f
 #define AJ2_LN_SUB      (ajRetrato() ? 120.0f : 76.0f)
 #define AJ2_LN_LINHA1   AJ2_LN_H
@@ -829,8 +831,9 @@ static float ajLinhaH(int i) {
   if (op == AJ_GUIA) h = AJ2_LN_SUB;
   else if (ajLinhaAviso(i)) return AJ2_LN_LINHA1 - 6.0f + AJ2_LN_BEN * ajAvisoLinhas(i) + 10.0f;
   // A regua de cores abre NA LINHA, com e sem inspetor: o inspetor mostra a
-  // previa viva e as medidas da cor (aj2PreviaCor).
-  if (ajPaleta(op) && ajEditandoLinha(op) && aj2FocoNaLista(i))
+  // previa viva e as medidas da cor (aj2PreviaCor). No Palco (prof. 3) a
+  // paleta vira um BLADE proprio: a linha nao abre a regua inline.
+  if (ajPaleta(op) && ajEditandoLinha(op) && aj2FocoNaLista(i) && triProfundidade() < 3)
     baixo += op == AJ_FUNDO_DIN_COR ? 2 * AJ_REGUA_FILA + 4 : AJ_REGUA_H;
   if (op == AJ_FUNDO && aj2FocoNaLista(i)) baixo += AJ2_FUNDO_BAIXO;
   if (baixo > 0) return AJ2_LN_LINHA1 + 20.0f + baixo;
@@ -1258,6 +1261,17 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
           x -= 30.0f;
         }
       } }
+    // Palco (mockup claude-c): escolhas curtas mostram o valor ROLANDO e os
+    // PIPS da posicao na propria linha (o palco nao tem controle nenhum).
+    if (triBladeLayout() && ajSegmentada(op) && !desligada) {
+      int pn = nValores(op), pv = uxValorAtual(op), p_;
+      if (pn > 5) pn = 5;
+      if (ed && uxOp == op) pv = uxPendente;
+      for (p_ = 0; p_ < pn; p_++)
+        gfx_cor((GfxRect){ x - 12.0f - p_ * 12.0f, yc - 2.5f, 5.0f, 5.0f }, 0.5f, 1, 1, 1,
+                (p_ == pv ? 0.85f : 0.25f) * aT);
+      x -= pn * 12.0f + 6.0f;
+    }
     cauda = xDir - x;
   } else if (tipo == AJL_ACAO) {
     const char *st = ajEstadoAcao(op);
@@ -1366,7 +1380,8 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
       ajAjudaLinhaDesenhar(op, ln.x + 22.0f + recuo, y + AJ2_LN_LINHA1 - 8.0f, aTx);
   }
   // A REGUA DA COR DE DESTAQUE (editando): claros, profundos, dinamicas, Textura.
-  if (ajPaleta(op) && abre && ed) aj2Regua(op, ln, y + AJ2_LN_LINHA1 + 20.0f, a);
+  // No Palco (prof. 3) a paleta e um blade proprio, nao a regua na linha.
+  if (ajPaleta(op) && abre && ed && triProfundidade() < 3) aj2Regua(op, ln, y + AJ2_LN_LINHA1 + 20.0f, a);
 #undef AJ_VMAX
 }
 

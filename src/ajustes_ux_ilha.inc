@@ -159,8 +159,9 @@ static void ajDesenharInspetor(void) {
       ajMiniRotuloV2 = 0;
       if (ed) valor[opPv] = salvo;
       // O segmentado da opcao em foco, no canto de baixo da previa, sobre um
-      // fundo escuro (a arte por tras pode ser clara).
-      if (op >= 0 && ajSegmentada(op) && !inativa(op)) {
+      // fundo escuro (a arte por tras pode ser clara). No Palco o estagio nao
+      // tem controle nenhum: os pips moram na linha (mockup claude-c).
+      if (op >= 0 && ajSegmentada(op) && !inativa(op) && !triBladeLayout()) {
         int n = nValores(op);
         float bx = x + w - 26.0f, by = y + (ph > 0 && ph < caixa ? ph : caixa) - 26.0f - 31.5f, sw;
         if (n > 3) n = 3;

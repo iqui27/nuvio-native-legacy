@@ -3,6 +3,7 @@ static int aj2GrupoDe(int s);   // ajustes_ux_v2.inc: o grupo (coluna da grade) 
 enum { AJ2_T_BUSCA = 0, AJ2_T_AV, AJ2_T_PERFIL, AJ2_T_DIF, AJ2_T_LAYOUT, AJ2_T_TOUR, AJ2_T_RESOLVER, AJ2_T_N };
 static int aj2TopoVisivel(int t) { return t >= 0 && t < AJ2_T_N && (t != AJ2_T_LAYOUT || ajLayoutSelecionavel()); }
 static int ajEmLinha(int op);
+static int triBladeLayout(void);   // ajustes_tri_desenho.inc: o layout Palco
 static int ajPaleta(int op) { return op == AJ_TEMA || op == AJ_FUNDO_DIN_COR; }
 static int ajReguaMover(int op, int v, int dx, int dy);
 // Interação do seletor: só OK aplica; foco e rascunho nunca persistem.
@@ -364,7 +365,7 @@ static int uxEvento(SDL_Keycode k) {
     // A REGUA DA COR: ← → na fileira, ↑ ↓ entre as fileiras (claros,
     // profundos, dinamicas, Textura), na ordem da tela.
     if (ajPaleta(uxOp) && ajEmLinha(uxOp) && uxEditor == 1 &&
-        uxOp != AJ_TEMA &&
+        (uxOp != AJ_TEMA || triBladeLayout()) &&
         (k == SDLK_LEFT || k == SDLK_RIGHT || k == SDLK_UP || k == SDLK_DOWN)) {
       uxPendente = ajReguaMover(uxOp, uxPendente, k == SDLK_RIGHT ? 1 : k == SDLK_LEFT ? -1 : 0,
                                 k == SDLK_DOWN ? 1 : k == SDLK_UP ? -1 : 0);

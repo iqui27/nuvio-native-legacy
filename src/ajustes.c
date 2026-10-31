@@ -11657,6 +11657,29 @@ int ajustes_teste_quadro(const char *id) {
     else return 0;
     return 1;
   }
+  if (!strncmp(id, "bl-", 3)) {   // 2.1 PALCO (mockup claude-c, aprovado 30/10)
+    static const char *const nomes[] = { "Marina" };
+    int rotCores = -1, rotDurante = -1, i;
+    perfis_teste_definir(nomes, NULL, 1, 1);
+    for (i = 0; i < AJ_N_TELA; i++)
+      if (TELA[i].tipo == IT_ROT) {
+        if (!strcmp(TELA[i].titulo, "Cores e vidro")) rotCores = i;
+        else if (!strcmp(TELA[i].titulo, "Durante e depois")) rotDurante = i;
+      }
+    triIniciar(); pfTela = 0; uxVeioBusca = 0; valor[AJ_AVANCADAS] = 1; valor[AJ_TEMA] = 6;
+    valor[AJ_IDIOMA] = 0; idiomaEfetivo = IDIOMA_PT; valor[AJ_HOME_LAYOUT] = 1;
+    valor[AJ_QUALIDADE] = 1;
+    if (strstr(id, "frost")) { valor[AJ_VIDRO] = 2; valor[AJ_VIDRO_FOSCO] = 1; }
+    else if (strstr(id, "vidro")) { valor[AJ_VIDRO] = 2; valor[AJ_VIDRO_FOSCO] = 0; }
+    else if (strstr(id, "solido")) { valor[AJ_VIDRO] = 1; }
+    if (!strcmp(id, "bl-indice")) { }
+    else if (!strcmp(id, "bl-secao")) { triEntrar(5); }
+    else if (!strcmp(id, "bl-topico")) { triEntrar(5); if (rotCores >= 0) triSubEntrar(rotCores); }
+    else if (!strcmp(id, "bl-paleta")) { triEntrar(5); if (rotCores >= 0) triSubEntrar(rotCores); focarOpcao(AJ_TEMA); uxAbrirEditor(AJ_TEMA); uxPendente = valor[AJ_TEMA]; }
+    else if (!strcmp(id, "bl-chave")) { triEntrar(0); if (rotDurante >= 0) triSubEntrar(rotDurante); focarOpcao(AJ_PAUSA_COMENTARIOS); }
+    else return 0;
+    return 1;
+  }
   if (!strncmp(id, "v2-", 3)) {   // Ajustes v2 (ajustes-v2.html): os quadros do mockup
     valor[AJ_TEMA] = getenv("NUVIO_SHOT_TEMA") ? tema : 2;   // Oceano, como o mockup
     valor[AJ_LANDSCAPE] = 1;   // o mockup: "Pôsteres horizontais" desligado

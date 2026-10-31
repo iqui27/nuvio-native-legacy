@@ -15,6 +15,7 @@
 #include "admin.h"
 static void ajMovAtualizar(float dt);        // ajustes_ux_desenho.inc
 static int aj2EditorPainel(void);            // ajustes_ux_ilha.inc
+static int ajSegmentada(int op);             // idem: escolha curta na linha
 static void triUtilRolar(float topoLinha, float baseLinha, float topo, float base, float total);   // ajustes_tri_desenho.inc
 static float triUtilBase(void);             // idem: o pe da lista das rotas (acima das pilulas)
 static int triRota(void);                    // a rota (ilha + rota utilitaria), lida pelos testes
@@ -36,6 +37,8 @@ static int triUtilLinhaVolta;      // e a linha dela (o preset escolhido)
 static int triSecaoDeixada = -1;   // a secao de onde ← saiu: → volta a mesma linha; outra entra na 1.ª
 static int triLinha, triAcao;      // linha e acao (pilulas) da rota utilitaria
 static int triTrocarPerfil;        // "Trocar de perfil" pedido na folha do perfil
+static float triProfF;             // a profundidade ANIMADA (0..3, mola de tela)
+static int triBladeLayout(void);   // ajustes_tri_desenho.inc: o layout Palco esta ativo
 static float triChipF[TRI_C_N], triSecF[AJ_MAX_SECOES + 1], triUtilF[AJ_N];
 static float triUtilRol, triUtilRolAlvo;   // rolagem das rotas utilitarias: o desenho acha o alvo, triAtualizar segue
 static float triSecRolY, triSecRolYAlvo;   // ilha 1: rola ate a secao em foco quando nao cabe (texto grande)
@@ -83,6 +86,20 @@ static void triIniciar(void) {
   triIlha = TRI_SECOES; triChip = 0; triUtil = TRI_U_NADA; triUtilVolta = 0;
   triLinha = triAcao = 0; triTrocarPerfil = 0; triUtilRol = triUtilRolAlvo = 0;
   triSecFoco = secAtual; triSecaoDeixada = -1;
+}
+// A PROFUNDIDADE da pilha de blades, LIDA DO ESTADO (nada de duplicar contagem):
+//   0 = o indice (menu aberto), 1 = a secao, 2 = o topico ou uma rota utilitaria,
+//   3 = o editor de escolha/paleta aberto por cima do topico.
+// A paleta e os editores de escolha "de blade" contam; os inline (segmentado,
+// interruptor) nao: ficam na linha, como o mockup manda.
+static int triEditorBlade(void) {
+  return uxEditor == 1 && uxOp >= 0 && (uxOp == AJ_TEMA || uxOp == AJ_FUNDO_DIN_COR || !ajEmLinha(uxOp));
+}
+static int triProfundidade(void) {
+  if (triUtil) return 2;
+  if (triEditorBlade()) return 1 + (triSubmenu >= 0) + 1;
+  if (triIlha == TRI_SECOES || triIlha == TRI_CHIPS) return 0;
+  return 1 + (triSubmenu >= 0);
 }
 // Foco direto numa opcao (busca, atalhos, tour): a lista da secao dela.
 static void triFocar(int op) {
@@ -267,6 +284,21 @@ static int triListaEvento(SDL_Keycode k) {
     return 1;
   }
   if ((uxOk(k) || k == SDLK_RIGHT) && triTopico(focoItem)) { triSubEntrar(focoItem); return 1; }
+  // Palco (mockup claude-c): a Direita ABRE o drill-in da linha de escolha
+  // (o editor vira blade); o valor continua mudando so no OK.
+  if (k == SDLK_RIGHT && triBladeLayout() && focoOp >= 0 && !inativa(focoOp) && !soLeitura(focoOp) &&
+      (OPCOES[focoOp].tipo == OP_ESCOLHA || OPCOES[focoOp].tipo == OP_NUMERO) && !ajEmLinha(focoOp)) {
+    uxAbrirEditor(focoOp); return 1;
+  }
+  // Escolha CURTA (ate 3 valores, o segmentado da linha): o OK RODA o valor
+  // (mockup claude-c, "rolling value + pips, OK cycles") e grava na hora.
+  if (uxOk(k) && triBladeLayout() && focoOp >= 0 && !inativa(focoOp) && !soLeitura(focoOp) &&
+      ajSegmentada(focoOp) && nValores(focoOp) <= 3 && focoOp != AJ_LAYOUT_AJUSTES && focoOp != AJ_GUIA) {
+    int n = nValores(focoOp), next = uxValorAtual(focoOp) + 1;
+    if (next >= n) next = 0;
+    uxOp = focoOp; uxOriginal = uxValorAtual(focoOp); uxPendente = next;
+    uxAplicar(); return 1;
+  }
   if (k == SDLK_UP || k == SDLK_DOWN) {
     if (!triNavLista(k == SDLK_DOWN ? 1 : -1) && k == SDLK_UP) {
       if (triSubmenu >= 0) { triSubVoltar(); return 1; }
@@ -440,6 +472,8 @@ static void triAtualizar(float dt) {
   triSecRolY = red ? triSecRolYAlvo : anim_mola(triSecRolY, triSecRolYAlvo, dt, NV_MOLA_FOCO);
   if (triUtil != triUtilVisto) { triUtilVisto = triUtil; triUtilA = 0.0f; }
   triUtilA = red ? 1.0f : anim_rampa(triUtilA, 1.0f, dt, 220.0f);
+  { float alvo = (float)triProfundidade();   // o Palco: a pilha desliza com a mola de tela
+    triProfF = red ? alvo : anim_mola(triProfF, alvo, dt, NV_MOLA_TELA); }
   ajMovAtualizar(dt);
   ajCenaTrocaAtualizar(dt);
 }
