@@ -7,6 +7,8 @@
 #include <time.h>
 int main(int argc,char **argv) {
   assert(argc==3 || argc==4);
+  const char *workers=getenv("NV_TEST_NATIVE_WORKERS");
+  if(workers)dts_engine_set_source_workers(atoi(workers));
   if(argc==4 && strcmp(argv[3],"pending"))rede_discord_ca(argv[3]);
   char url[512],line[64];setvbuf(stdout,NULL,_IOLBF,0);
   int ok=moviebuffer_url(argv[1],"Authorization: Bearer fixture\nReferer: https://fixture.invalid/\nUser-Agent: FixturePlayer",atoi(argv[2]),url,sizeof url);

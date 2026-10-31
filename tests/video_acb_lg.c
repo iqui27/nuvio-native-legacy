@@ -330,7 +330,13 @@ int main(void) {
   pump_status.info.n_tracks=1;pump_status.info.audio_stream=9;
   pump_status.info.tracks[0]=(DtsTrack){.kind=DTS_AUDIO,.stream_index=9,.channels=6};
   strcpy(pump_status.info.tracks[0].codec,"ac3");
+  /* Upstream accepts 8191-byte source URLs. Remembering the DV audio choice
+   * must retain the same identity through a metadata/audio revision. */
+  memset(urlAtual,'x',sizeof urlAtual-1);urlAtual[sizeof urlAtual-1]=0;
+  memcpy(urlAtual,"https://fixture.invalid/",24);
   bombearDts();
+  assert(!strcmp(dvMemUrl,urlAtual) && dvMemOrd==0);
+  urlAtual[0]=0;
   assert(pronto && tocando && viuVideo && !bindPendente);
   assert(exported_windows==old_windows && !strcmp(vidHdr,"DolbyVision"));
   assert(nAudio==1 && audioAtual==0 && faixaAudio[0].stream_index==9);

@@ -104,6 +104,7 @@ jobs:
         run: |
           bash .github/build/host_ffmpeg.sh
           bash tests/moviebuffer.sh
+          bash tests/moviebuffer.sh parallel
           bash tests/dts_buffer_reporting.sh
           bash tests/dts_cached_seek.sh
           SANITIZE=1 NV_TEST_CACHE_REUSE=1 bash tests/dts_cached_seek.sh

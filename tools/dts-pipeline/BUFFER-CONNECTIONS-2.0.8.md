@@ -11,6 +11,8 @@ No diagnostic QR or source formatter changes are imported. The upstream folder
 hero setting keeps its enum position and persisted key; playback settings append
 after it. The native asynchronous load and conversion URL copies accept the
 upstream `NV_MEDIA_URL_MAX` limit.
+The remembered DV audio-source identity uses that limit as well; a 1024-byte
+copy would prevent restoring a track for long URLs accepted by upstream.
 
 ## Settings
 
@@ -53,6 +55,22 @@ DTS/TrueHD output, P7 conversion/mapping and audio routing are separate choices.
 - Existing native sequential buffer, resolver/429 recovery, cache reuse, adapter,
   asynchronous load/fallback and settings regressions remain in CI.
 - Settings exercise all 16 independent combinations through disk reload.
+- End-to-end native parallel proxy: 2/3/4 workers with every 64/128/256 MiB
+  budget, replacement of an open player request, byte equality, forward/backward
+  seeks, HEAD, memory bounds, shutdown, MIME sniffing and unsupported playlists.
+- An 8191-byte URL survives a real DV metadata revision and the asynchronous
+  native load/fallback. The DV identity regression fails with the old 1024-byte
+  copy and passes with the upstream-sized buffer.
+
+## Upstream compatibility audit
+
+The full Linux application compiles and links. The real webOS video translation
+unit compiles with the complete playback feature flags and FFmpeg headers.
+Compiled settings exports from clean upstream `7cac4f25` and this branch match
+for every existing numeric ID, key, default, initial value, label, choice, type
+and numeric bound. New settings append after the upstream folder-details item.
+The ARM package is checked by the branch workflow; host compilation does not
+substitute for that check or playback on a television.
 
 One worker can be correct while still too slow for a high-bitrate remux on a
 particular CDN/TV. The experimental choices need playback testing on the LG;

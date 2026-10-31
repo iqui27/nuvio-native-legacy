@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Native-URI cache: real HTTP, all budgets, seek/concurrent clients/fallback."""
-import concurrent.futures,http.server,pathlib,re,select,ssl,subprocess,sys,threading,time,urllib.request,urllib.error
+import concurrent.futures,http.server,os,pathlib,re,select,ssl,subprocess,sys,threading,time,urllib.request,urllib.error
 requests=[]
 leaks=[]
 origin_stalled=threading.Event()
@@ -96,6 +96,40 @@ def request(url,start,end=None,method='GET'):
     with urllib.request.urlopen(urllib.request.Request(url,headers={'Range':r},method=method),timeout=15) as f:
         return f.status,dict(f.headers),f.read()
 mode=sys.argv[4] if len(sys.argv)>4 else 'all'
+if mode=='parallel':
+    for workers in (2,3,4):
+        os.environ['NV_TEST_NATIVE_WORKERS']=str(workers)
+        for mib in (64,128,256):
+            p,url=daemon('/movie.mkv',mib)
+            old=None
+            try:
+                assert url!='OFF'
+                old=urllib.request.urlopen(urllib.request.Request(url,headers={'Range':'bytes=0-'}),timeout=3)
+                assert old.read(1024)==content(0,1024)
+                begun=time.monotonic()
+                assert request(url,TOTAL-1024,TOTAL-1)[2]==content(TOTAL-1024,1024)
+                assert time.monotonic()-begun<2, 'parallel reader did not preempt old player request'
+                old.close();old=None
+                for start in (123,11*1048576+17,300*1048576):
+                    status,h,b=request(url,start,start+4095)
+                    assert status==206 and b==content(start,4096) and h['Content-Type']=='video/x-matroska'
+                active,used,cap=stats(p)
+                assert active==1 and 0<=used<=cap<=mib*1048576 and cap>=mib*1048576-1048576
+                assert request(url,0,1,'HEAD')[2]==b''
+            finally:
+                if old:old.close()
+                close(p)
+            print(f'PASS native parallel proxy: {workers} workers, {mib} MiB, replacement request, exact bytes, seeks, HEAD, RAM bound and shutdown',flush=True)
+        for path in ('/cross','/opaque','/opaque-mp4','/unsupported','/finite-playlist'):
+            p,url=daemon(path,64)
+            try:
+                if path in ('/unsupported','/finite-playlist'):assert url=='OFF'
+                else:
+                    status,h,b=request(url,4096,5119)
+                    assert status==206 and b==content(4096,1024)
+                    if path.startswith('/opaque'):assert h['Content-Type']==('video/mp4' if path.endswith('mp4') else 'video/x-matroska')
+            finally:close(p)
+    server.shutdown();tls.shutdown();sys.exit(0)
 if mode in ('all','startup'):
     source=origin+'/stall'
     p=subprocess.Popen([sys.argv[1],source,'64','pending'],stdin=subprocess.PIPE,stdout=subprocess.PIPE)

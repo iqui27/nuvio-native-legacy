@@ -251,7 +251,7 @@ int moviebuffer_url(const char *source,const char *headers,int mib,char *out,siz
   s->clients[0]=(Client){s,0};
   if(pthread_create(&s->threads[0],NULL,probe_worker,s)) {moviebuffer_stop();return 0;}
   s->threads_n=1;
-  printf("[movie-buffer] single-connection native URI cache enabled: %d MiB\n",mib);fflush(stdout);
+  printf("[movie-buffer] native URI cache enabled: %d MiB\n",mib);fflush(stdout);
   return 1;
 }
 #endif
