@@ -56,7 +56,7 @@ typedef struct { float x, y, w, h; } G5MvRect;
 int g5_mv_layout(int mode, float x, float y, float w, float h, float gap, G5MvRect out[4]);
 
 /* Simultaneous-stream cap of one source, -1 = unlimited. The key is the
- * guide's stable source key ("xt" Xtream, "st" Stalker, "m…" M3U, "a…"
+ * guide's stable source key ("xt"/"xta<id>" Xtream, "st"/"sta<id>" Stalker, "m…" M3U, "a…"
  * addon). Xtream uses the account max_connections (<=0 or unknown: 1, the
  * safe default that never risks a ban). Stalker portals: 1. M3U files/lists
  * and addons carry no account cap. */
@@ -80,7 +80,6 @@ typedef struct { G5MvSlot slot[4]; int aberturas; } G5MvCtl;
 void g5_mv_ctl_set(G5MvCtl *c, int slot, const char *id, const char *fonte, unsigned agora);
 void g5_mv_ctl_erro(G5MvCtl *c, int slot, unsigned agora);
 void g5_mv_ctl_pronto(G5MvCtl *c, int slot);
-void g5_mv_ctl_refresh(G5MvCtl *c);   /* periodic data refresh: never reopens */
 /* 1 once when the slot must open/reopen now (edge: ABRINDO stays silent). */
 int g5_mv_ctl_abrir(G5MvCtl *c, int slot, unsigned agora);
 #endif

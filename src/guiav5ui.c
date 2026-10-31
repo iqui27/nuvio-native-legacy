@@ -1274,7 +1274,20 @@ static GfxRect mv_rect(int i){
 }
 /* The slot's drawn rect: springs to the target on layout switch (morph). */
 static GfxRect mv_rect_anim(int i){return gv_glide(&mv_glide[i],mv_rect(i));}
-static int mv_xtream_max(void){XtreamConta c;return xtream_conta(&c)&&c.maxConexoes>0?c.maxConexoes:1;}
+/* Account snapshot of one source key: "xt" the main Xtream account,
+ * "xta<id>" an added one (its own max_connections, never another's). */
+static int mv_conta(const char *key,XtreamConta *c){
+  unsigned id=0;char sobra;
+  memset(c,0,sizeof *c);
+  if(key&&!strcmp(key,"xt"))return xtream_fonte_conta(0,c);
+  if(key&&!strncmp(key,"xta",3)&&strlen(key)==11&&sscanf(key+3,"%8x%c",&id,&sobra)==1)return xtream_fonte_conta(id,c);
+  return 0;
+}
+static int mv_cap(const char *key){
+  XtreamConta c;int max=mv_conta(key,&c)?c.maxConexoes:-1;
+  return g5_mv_source_cap(key,max);
+}
+static int mv_xtream_max(void){return mv_cap("xt");}
 /* Slots of one source already filled (skip = the slot being replaced). */
 static int mv_uso(const char *key,int skip){
   int u=0;if(!key||!key[0])return 0;
@@ -1289,10 +1302,19 @@ static const char *mv_fonte_nome(const char *key,char *buf,size_t n){
   else snprintf(buf,n,"%s",key&&key[0]?key:"Live TV");
   return buf;
 }
-/* Direct URL for the extra decoders: Xtream live or the list's own URL.
+/* Direct URL for the extra decoders: Xtream live, a guide M3U channel (with
+ * its User-Agent/Referer) or the list's own URL. Never logged.
  * Addon/Stalker channels need the resolver/session of the main player. */
-static int mv_url(const G5Item *it,char *url,size_t n){
+static int mv_url(const G5Item *it,char *url,size_t n,char *cab,size_t nc){
+  cab[0]=0;
   if(it->url[0]){snprintf(url,n,"%s",it->url);return 1;}
+  {char ua[256],ref[256];
+   if(guia_m3u_canal(it->id,url,n,ua,sizeof ua,ref,sizeof ref)){
+     size_t u=0;
+     if(ua[0])u+=(size_t)snprintf(cab,nc,"User-Agent: %s\n",ua);
+     if(ref[0]&&u<nc)snprintf(cab+u,nc-u,"Referer: %s\n",ref);
+     return 1;
+   }}
   if(!strcmp(it->source,"xtream")||!strncmp(it->id,"xtream:",7)){
     char id[96];
     if(!strncmp(it->id,"xtream:",7))snprintf(id,sizeof id,"%s",it->id);
@@ -1380,7 +1402,7 @@ static void mv_slot(int i){
       float cx=r.x+r.w/2,cy=r.y+r.h/2;
       const char *icon=disp==G5_MV_ERRO?"aj_refresh-cw":disp==G5_MV_SEM_FONTE?"aj_lock":"aj_tv-minimal-play";
       char reason[160];
-      if(disp==G5_MV_SEM_FONTE){int cap=g5_mv_source_cap(mv_fonte[i],mv_xtream_max());
+      if(disp==G5_MV_SEM_FONTE){int cap=mv_cap(mv_fonte[i]);
         if(cap>0)snprintf(reason,sizeof reason,i18n("Esta fonte permite %d tela(s)"),cap);
         else snprintf(reason,sizeof reason,"%s",i18n("Só toca no quadro principal"));}
       else if(disp==G5_MV_SEM_DECODER)snprintf(reason,sizeof reason,i18n("Esta TV decodifica %d canal(is) por vez"),video_mv_max()+1);
@@ -1419,7 +1441,7 @@ static void mv_norm(const char *s,char *d,size_t n){
     if(!cut)break;
   }
 }
-static void mv_pick_fill(MvPick *p,int guia_idx,const G5Item *inv,int xtmax){
+static void mv_pick_fill(MvPick *p,int guia_idx,const G5Item *inv){
   memset(p,0,sizeof *p);
   if(guia_idx>=0){
     const char *id,*title,*logo,*group,*base;
@@ -1435,24 +1457,24 @@ static void mv_pick_fill(MvPick *p,int guia_idx,const G5Item *inv,int xtmax){
     snprintf(p->fonte_key,sizeof p->fonte_key,"%s",!strcmp(inv->source,"xtream")?"xt":"g5m3u");
   }
   mv_fonte_nome(p->fonte_key,p->fonte_nome,sizeof p->fonte_nome);
-  p->cap=g5_mv_source_cap(p->fonte_key,xtmax);
+  p->cap=mv_cap(p->fonte_key);
   p->uso=mv_uso(p->fonte_key,mv_target);
   p->disabled=p->cap>0&&p->uso>=p->cap;
 }
 /* Picker rows: one section per configured Live TV source (order of the
  * guide's sources), favourites first inside each, query-filtered. */
 static void mv_picker_build(void){
-  npicks=0;int xtmax=mv_xtream_max();
+  npicks=0;
   static MvPick raw[192];int nr=0;
   for(int i=0;i<4096&&nr<160;i++){
     const char *id,*title,*logo,*group,*base;
     if(!guia_canal_campos(i,&id,&title,&logo,&group,&base))continue;
     if(!g5ui_channel_allowed(id,title,group,base)||!match_query(title))continue;
-    mv_pick_fill(&raw[nr++],i,NULL,xtmax);
+    mv_pick_fill(&raw[nr++],i,NULL);
   }
   for(int i=0;i<count&&nr<192;i++)
     if(inventory[i].kind==G5_LIVE&&!restricted(&inventory[i])&&group_allowed(inventory[i].group)&&match_query(inventory[i].name))
-      mv_pick_fill(&raw[nr++],-1,&inventory[i],xtmax);
+      mv_pick_fill(&raw[nr++],-1,&inventory[i]);
   unsigned char done[192]={0};
   for(;;){
     int first=-1;for(int i=0;i<nr;i++)if(!done[i]){first=i;break;}
@@ -1473,7 +1495,6 @@ static void mv_alts_build(void){
   mv_nalt=0;
   if(mv_target<0||mv_target>3||!mv_items[mv_target].id[0])return;
   char want[160];mv_norm(mv_items[mv_target].name,want,sizeof want);
-  int xtmax=mv_xtream_max();
   for(int i=0;i<4096&&mv_nalt<32;i++){
     const char *id,*title,*logo,*group,*base;
     if(!guia_canal_campos(i,&id,&title,&logo,&group,&base))continue;
@@ -1482,7 +1503,7 @@ static void mv_alts_build(void){
     if(strcmp(n,want))continue;
     const char *k=guia_canal_fonte(i);
     if(!strcmp(k?k:"",mv_fonte[mv_target]))continue;
-    mv_pick_fill(&mv_alts[mv_nalt],i,NULL,xtmax);
+    mv_pick_fill(&mv_alts[mv_nalt],i,NULL);
     int dup=0;for(int j=0;j<mv_nalt;j++)if(!strcmp(mv_alts[j].fonte_key,mv_alts[mv_nalt].fonte_key))dup=1;
     if(!dup)mv_nalt++;
   }
@@ -1493,7 +1514,7 @@ static void mv_alts_build(void){
       if(!strcmp(k,mv_fonte[mv_target]))continue;
       int dup=0;for(int j=0;j<mv_nalt;j++)if(!strcmp(mv_alts[j].fonte_key,k))dup=1;
       if(dup)continue;
-      mv_pick_fill(&mv_alts[mv_nalt],-1,&inventory[i],xtmax);mv_nalt++;
+      mv_pick_fill(&mv_alts[mv_nalt],-1,&inventory[i]);mv_nalt++;
     }
 }
 /* Playback per slot: the main slot runs on the app player (its watchdog owns
@@ -1501,7 +1522,7 @@ static void mv_alts_build(void){
  * edge-triggered by the controller; periodic refreshes never re-open. */
 static void mv_tick(void){
   unsigned agora=SDL_GetTicks();
-  int extras=video_mv_max(),xtmax=mv_xtream_max();
+  int extras=video_mv_max();
   static int main_ant=-1;
   if(main_ant!=mv_main){   /* audio/main moved: both slots reopen on the right decoder */
     if(main_ant>=0&&main_ant<4)g5_mv_ctl_set(&mvctl,main_ant,"",NULL,agora);
@@ -1521,18 +1542,20 @@ static void mv_tick(void){
       continue;
     }
     int ord=i-(i>mv_main?1:0);
-    char url[2100];
-    int cap=g5_mv_source_cap(mv_fonte[i],xtmax);
-    int bloq=ord>=extras?G5_MV_SEM_DECODER:!mv_url(&mv_items[i],url,sizeof url)?G5_MV_SEM_FONTE:
+    char url[2100],cab[600];
+    int cap=mv_cap(mv_fonte[i]);
+    int bloq=ord>=extras?G5_MV_SEM_DECODER:!mv_url(&mv_items[i],url,sizeof url,cab,sizeof cab)?G5_MV_SEM_FONTE:
              cap>0&&mv_uso(mv_fonte[i],i)>=cap?G5_MV_SEM_FONTE:0;
     if(bloq){
       if(mv_extra_on[i]){mv_extra_on[i]=0;video_mv_parar(i);}
+      /* stopped: reopen once the block lifts (cap freed, slot swapped) */
+      if(mvctl.slot[i].pediu){mvctl.slot[i].pediu=0;mvctl.slot[i].estado=G5_MV_ABRINDO;}
       if(mv_disp[i]!=bloq)printf("[mv] slot %d parado: %s\n",i,bloq==G5_MV_SEM_DECODER?"limite de decodificadores da TV":"limite de conexoes da fonte"),fflush(stdout);
       mv_disp[i]=bloq;continue;
     }
     mv_disp[i]=mvctl.slot[i].estado;
     if(g5_mv_ctl_abrir(&mvctl,i,agora)){
-      if(!video_mv_abrir(i,url)){mv_extra_on[i]=1;printf("[mv] slot %d: decodificador extra ativo (%d de %d)\n",i,ord+1,extras);fflush(stdout);}
+      if(!video_mv_abrir(i,url,cab)){mv_extra_on[i]=1;printf("[mv] slot %d: decodificador extra ativo (%d de %d)\n",i,ord+1,extras);fflush(stdout);}
       else{mv_disp[i]=G5_MV_SEM_DECODER;printf("[mv] slot %d: decodificador extra indisponivel\n",i);fflush(stdout);}
     }
     if(mv_extra_on[i]){
@@ -2182,7 +2205,12 @@ int g5ui_multiview_channel(CatItem *item){
   memset(item,0,sizeof *item);
   snprintf(item->imdb,sizeof item->imdb,it->url[0]?"g5live:%s":!strcmp(it->source,"xtream")&&!strchr(it->id,':')?"xtream:%s":"%s",it->id);
   if(!strcmp(player_id_canal(),item->imdb))return 0;
-  XtreamConta c;int max=-1,used=0;if(xtream_conta(&c)){max=c.maxConexoes;used=c.conexoes;}
+  /* Capacity of the requested channel's own account; the main session it
+   * replaces frees its connection when it belongs to that same account. */
+  XtreamConta c;int max=-1,used=0;
+  if(mv_conta(mv_fonte[mv_main],&c)){max=c.maxConexoes;used=c.conexoes;
+    char ch[LTV_CHAVE];
+    if(used>0&&player_id_canal()[0]&&guia_fonte_do_canal(player_id_canal(),ch,sizeof ch)&&!strcmp(ch,mv_fonte[mv_main]))used--;}
   if(!g5_live_slots(1,1,max,used)){go("multiview-limite");return 0;}
   snprintf(item->titulo,sizeof item->titulo,"%s",it->name);snprintf(item->tipo,sizeof item->tipo,"channel");return 1;
 }

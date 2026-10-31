@@ -18,7 +18,7 @@ static jmethodID mMvAbrir, mMvJanela, mMvParar, mMvPararTodos, mMvEstado, mMvMax
 static int mvTentou, mvOk;
 
 static int mvResolver(JNIEnv *env) {
-  mMvAbrir = (*env)->GetStaticMethodID(env, mvCls, "abrir", "(ILjava/lang/String;)V");
+  mMvAbrir = (*env)->GetStaticMethodID(env, mvCls, "abrir", "(ILjava/lang/String;Ljava/lang/String;)V");
   mMvJanela = (*env)->GetStaticMethodID(env, mvCls, "janela", "(IIIII)V");
   mMvParar = (*env)->GetStaticMethodID(env, mvCls, "parar", "(I)V");
   mMvPararTodos = (*env)->GetStaticMethodID(env, mvCls, "pararTodos", "()V");
@@ -72,12 +72,14 @@ int video_mv_max(void) {
   return n < 0 ? 0 : n > MV_MAX ? MV_MAX : n;
 }
 
-int video_mv_abrir(int slot, const char *url) {
+int video_mv_abrir(int slot, const char *url, const char *cab) {
   JNIEnv *env = mvAmbiente();
   if (!env || !url || !url[0] || slot < 0 || slot >= MV_MAX) return -1;
   jstring u = (*env)->NewStringUTF(env, url);
-  (*env)->CallStaticVoidMethod(env, mvCls, mMvAbrir, slot, u);
+  jstring h = (*env)->NewStringUTF(env, cab ? cab : "");
+  (*env)->CallStaticVoidMethod(env, mvCls, mMvAbrir, slot, u, h);
   (*env)->DeleteLocalRef(env, u);
+  (*env)->DeleteLocalRef(env, h);
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); return -1; }
   return 0;
 }
@@ -114,7 +116,7 @@ int video_mv_estado(int slot) {
 #else  /* !NV_ANDROID: plataformas de um pipeline so */
 
 int  video_mv_max(void) { return 0; }
-int  video_mv_abrir(int slot, const char *url) { (void)slot; (void)url; return -1; }
+int  video_mv_abrir(int slot, const char *url, const char *cab) { (void)slot; (void)url; (void)cab; return -1; }
 void video_mv_janela(int slot, int x, int y, int w, int h) { (void)slot; (void)x; (void)y; (void)w; (void)h; }
 void video_mv_parar(int slot) { (void)slot; }
 void video_mv_parar_todos(void) {}

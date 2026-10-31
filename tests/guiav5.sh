@@ -10,3 +10,4 @@ cc -std=gnu11 -Wall -Wextra -Werror -Isrc tests/guiav5_episodes.c src/guiav5.c s
 cc -std=gnu11 -Isrc -Itests src/celular.c tests/guiav5_phone.c -lpthread -o "$work/phone"
 "$work/phone"
 bash tests/guia_hold.sh
+bash tests/guiav5_multiview.sh

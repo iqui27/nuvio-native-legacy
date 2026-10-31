@@ -593,7 +593,8 @@ int video_luna(const char *uri, const char *payload, void (*callback)(const char
 // plataformas de um pipeline so). Estado por slot: 0 parado, 1 preparando,
 // 2 tocando, -1 erro. Sem URL, usuario ou senha em nenhum log.
 int  video_mv_max(void);
-int  video_mv_abrir(int slot, const char *url);   // 0 pedido aceito, -1 indisponivel
+// cab: "Nome: valor\n" (User-Agent/Referer do canal M3U), "" sem cabecalho.
+int  video_mv_abrir(int slot, const char *url, const char *cab);   // 0 pedido aceito, -1 indisponivel
 void video_mv_janela(int slot, int x, int y, int w, int h);
 void video_mv_parar(int slot);
 void video_mv_parar_todos(void);

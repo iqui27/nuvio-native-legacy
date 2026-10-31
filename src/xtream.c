@@ -1000,6 +1000,9 @@ int xtream_conta_canal(const char *id, XtreamConta *out) {
   unsigned f; if (!iptvid_ler("xtream:", id, &f, NULL, 0)) return 0;
   unsigned a = usarFonte(f); int r = xtream_conta(out); usarFonte(a); return r;
 }
+int xtream_fonte_conta(unsigned id, XtreamConta *out) {
+  unsigned a = usarFonte(id); int r = xtream_conta(out); usarFonte(a); return r;
+}
 void xtream_formato_canal_funcionou(const char *id, const char *url) {
   unsigned f; if (!iptvid_ler("xtream:", id, &f, NULL, 0)) return;
   unsigned a = usarFonte(f); xtream_formato_funcionou(url); usarFonte(a);

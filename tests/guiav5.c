@@ -76,20 +76,20 @@ int main(void) {
    * M3U/addons unlimited; usage counts per source, independently. */
   assert(g5_mv_source_cap("xt", 3) == 3 && g5_mv_source_cap("xt", 0) == 1 && g5_mv_source_cap("xt", -1) == 1);
   assert(g5_mv_source_cap("st", 9) == 1);
+  assert(g5_mv_source_cap("xta00000003", 2) == 2 && g5_mv_source_cap("xta00000003", 0) == 1 && g5_mv_source_cap("sta00000003", 4) == 1);
   assert(g5_mv_source_cap("mabcdef12", 1) == -1 && g5_mv_source_cap("a00ff00", 1) == -1 && g5_mv_source_cap("g5m3u", 1) == -1);
   { char keys[4][24] = {{"xt"},{"xt"},{"mabcdef12"},{""}};
     assert(g5_mv_source_use(keys, 4, "xt") == 2 && g5_mv_source_use(keys, 4, "mabcdef12") == 1);
     /* two channels from two different sources both fit: caps do not mix */
     assert(g5_mv_source_use(keys, 4, "st") == 0); }
 
-  /* Slot controller: 120 simulated seconds with a periodic data refresh every
-   * 30 s and EPG ticks per second — zero re-opens of a playing slot. */
+  /* Slot controller: one open per slot over 120 simulated seconds (the real
+   * update/refresh path is tests/guiav5_multiview.sh). */
   { G5MvCtl c; memset(&c, 0, sizeof c);
     g5_mv_ctl_set(&c, 0, "xtream:11", "xt", 0);
     g5_mv_ctl_set(&c, 1, "g5live:22", "mabcdef12", 0);
     int opens = 0;
     for (unsigned t = 0; t <= 120000; t += 50) {
-      if (t % 30000 == 0) g5_mv_ctl_refresh(&c);   /* the 30 s data refresh */
       if (t == 300) g5_mv_ctl_pronto(&c, 0);
       if (t == 400) g5_mv_ctl_pronto(&c, 1);
       opens += g5_mv_ctl_abrir(&c, 0, t) + g5_mv_ctl_abrir(&c, 1, t);

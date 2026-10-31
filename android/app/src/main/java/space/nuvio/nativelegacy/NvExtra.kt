@@ -62,7 +62,7 @@ object NvExtra {
         return b.build()
     }
 
-    @JvmStatic fun abrir(slot: Int, url: String) {
+    @JvmStatic fun abrir(slot: Int, url: String, cabecalhos: String) {
         principal.post {
             val act = activity ?: return@post
             val c = camada ?: return@post
@@ -84,6 +84,17 @@ object NvExtra {
                 .setAllowCrossProtocolRedirects(true)
                 .setConnectTimeoutMs(10_000)
                 .setReadTimeoutMs(10_000)
+            // M3U channel headers (User-Agent/Referer), same format as NvPlayer.
+            val props = HashMap<String, String>()
+            for (linha in cabecalhos.split('\n')) {
+                val i = linha.indexOf(':')
+                if (i <= 0) continue
+                val nome = linha.substring(0, i).trim()
+                val valor = linha.substring(i + 1).trim()
+                if (nome.equals("User-Agent", ignoreCase = true)) http.setUserAgent(valor)
+                else if (nome.isNotEmpty()) props[nome] = valor
+            }
+            http.setDefaultRequestProperties(props)
             val p = ExoPlayer.Builder(act)
                 .setLoadControl(load)
                 .setMediaSourceFactory(DefaultMediaSourceFactory(act).setDataSourceFactory(http))

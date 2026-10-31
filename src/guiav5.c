@@ -193,9 +193,9 @@ int g5_mv_layout(int mode,float x,float y,float w,float h,float gap,G5MvRect out
 }
 int g5_mv_source_cap(const char *key,int xtream_max){
   if(!key||!key[0])return -1;
-  if(!strcmp(key,"xt"))return xtream_max>0?xtream_max:1;
-  if(!strcmp(key,"st"))return 1;
-  return -1;   /* m<hash> M3U, a<hash> addon, g5m3u: no account cap */
+  if(!strcmp(key,"xt")||!strncmp(key,"xta",3))return xtream_max>0?xtream_max:1;
+  if(!strcmp(key,"st")||!strncmp(key,"sta",3))return 1;
+  return -1;   /* m<hash>/ma<id> M3U, a<hash> addon, g5m3u: no account cap */
 }
 int g5_mv_source_use(const char keys[][24],int n,const char *key){
   int u=0;if(!key||!key[0])return 0;
@@ -229,7 +229,6 @@ void g5_mv_ctl_pronto(G5MvCtl *c,int slot){
   G5MvSlot *s=&c->slot[slot];
   if(s->id[0]){s->estado=G5_MV_TOCANDO;s->tentativas=0;s->proxima=0;}
 }
-void g5_mv_ctl_refresh(G5MvCtl *c){(void)c;}
 int g5_mv_ctl_abrir(G5MvCtl *c,int slot,unsigned agora){
   if(slot<0||slot>3)return 0;
   G5MvSlot *s=&c->slot[slot];

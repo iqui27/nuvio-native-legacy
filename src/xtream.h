@@ -169,6 +169,7 @@ int xtream_fonte_estado(unsigned id, int *http);
 void xtream_fonte_esquecer(unsigned id);
 int xtream_formatos_canal(const char *id, const char *ext[2]);
 int xtream_conta_canal(const char *id, XtreamConta *out);
+int xtream_fonte_conta(unsigned id, XtreamConta *out);   // xtream_conta of account `id`
 void xtream_formato_canal_funcionou(const char *id, const char *url);
 void xtream_fontes_invalidar(void);
 #endif
