@@ -6073,7 +6073,6 @@ static int somenteDesteAparelho(int op) {
     case AJ_QUALIDADE_IMG:  /* resolucao da arte decodificada: idem */
     case AJ_ENVIO_AUTO:     /* consentimento de envio de registro deste aparelho */
     case AJ_LOG_REDE:       /* pagina de registro na rede desta casa */
-    case AJ_DIAGNOSTICS_QR: /* local export, not account data */
     case AJ_ANIM:           /* animacoes reduzidas: acessibilidade nesta TV */
     case AJ_IDIOMA:         /* idioma da interface deste aparelho */
     case AJ_FIL_LIMITE:     /* fileiras da home: por aparelho (fileirasui-p<N>.txt) */
