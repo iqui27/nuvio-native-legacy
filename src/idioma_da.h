@@ -8081,7 +8081,6 @@
   T("Todos controlam", "Alle styrer"),
   T("Todos os add-ons", "Alle add-ons"),
   T("Todos os ajustes, organizados", "Alle justeringer, organiseret"),
-  T("Todos os jogos. Do seu jeito.", "Alle spil. Din måde."),
   T("Todos os perfis desta TV", "Alle profiler på dette tv"),
   T("Todos os plugins ligados", "Alle aktive plugins"),
   T("Todos os resultados recebidos, na ordem do AIOStreams.", "Hvert returneret resultat i AIOstreams rækkefølge."),

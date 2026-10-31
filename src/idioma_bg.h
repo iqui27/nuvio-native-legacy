@@ -8081,7 +8081,6 @@
   T("Todos controlam", "Всички управляват"),
   T("Todos os add-ons", "Всички добавки"),
   T("Todos os ajustes, organizados", "Всички корекции, организирани"),
-  T("Todos os jogos. Do seu jeito.", "Всички игри. Вашият начин."),
   T("Todos os perfis desta TV", "Всички профили на този телевизор"),
   T("Todos os plugins ligados", "Всички включени плъгини"),
   T("Todos os resultados recebidos, na ordem do AIOStreams.", "Всеки върнат резултат в реда на AIOStreams."),

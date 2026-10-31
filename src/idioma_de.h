@@ -8080,7 +8080,6 @@
   T("Todos controlam", "Alle steuern"),
   T("Todos os add-ons", "Alle Addons"),
   T("Todos os ajustes, organizados", "Alle Anpassungen, organisiert"),
-  T("Todos os jogos. Do seu jeito.", "Alle Spiele. Dein Weg."),
   T("Todos os perfis desta TV", "Alle Profile an diesem TV"),
   T("Todos os plugins ligados", "Alle aktiven Plugins"),
   T("Todos os resultados recebidos, na ordem do AIOStreams.", "Jedes zurückgegebene Ergebnis, in AIOStreams-Reihenfolge."),

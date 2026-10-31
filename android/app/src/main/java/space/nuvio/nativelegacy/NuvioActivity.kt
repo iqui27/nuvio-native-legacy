@@ -236,6 +236,7 @@ class NuvioActivity : SDLActivity() {
         mSurface.setZOrderMediaOverlay(true)
         mSurface.holder.setFormat(PixelFormat.TRANSLUCENT)
         NvPlayer.iniciar(this, camada)
+        NvExtra.iniciar(this, camada)
         NvPlayer.interfaceModo(interfaceMobile)
     }
 
@@ -784,6 +785,7 @@ class NuvioActivity : SDLActivity() {
         fontImport.fechar()
         vigia?.parar()
         fecharRede()
+        NvExtra.pararTodos()
         NvPlayer.encerrar()
         val saindo = isFinishing
         super.onDestroy()

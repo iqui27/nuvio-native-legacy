@@ -8081,7 +8081,6 @@
   T("Todos controlam", "Semua mengontrol"),
   T("Todos os add-ons", "Semua addon"),
   T("Todos os ajustes, organizados", "Semua penyesuaian, terorganisir"),
-  T("Todos os jogos. Do seu jeito.", "Semua permainan. caramu."),
   T("Todos os perfis desta TV", "Semua profil di TV ini"),
   T("Todos os plugins ligados", "Semua plugin aktif"),
   T("Todos os resultados recebidos, na ordem do AIOStreams.", "Setiap hasil yang dikembalikan, dalam urutan AIOStreams."),

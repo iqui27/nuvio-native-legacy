@@ -161,3 +161,80 @@ int g5_live_slots(int requested,int decoders,int provider_max,int used){
   if(provider_max>=0 && n>provider_max-used)n=provider_max-used;
   return n<0?0:n;
 }
+
+/* --- multiview ------------------------------------------------------------ */
+int g5_mv_layout(int mode,float x,float y,float w,float h,float gap,G5MvRect out[4]){
+  if(mode<2)mode=2;if(mode>4)mode=4;
+  const float A=16.0f/9.0f;
+  if(mode==2){
+    float sw=(w-gap)/2.0f,sh=sw/A;
+    if(sh>h){sh=h;sw=h*A;}
+    float x0=x+(w-(2*sw+gap))/2.0f,y0=y+(h-sh)/2.0f;
+    out[0]=(G5MvRect){x0,y0,sw,sh};out[1]=(G5MvRect){x0+sw+gap,y0,sw,sh};
+  }else if(mode==4){
+    float sh=(h-gap)/2.0f,sw=sh*A;
+    if(2*sw+gap>w){sw=(w-gap)/2.0f;sh=sw/A;}
+    float x0=x+(w-(2*sw+gap))/2.0f,y0=y+(h-(2*sh+gap))/2.0f;
+    out[0]=(G5MvRect){x0,y0,sw,sh};out[1]=(G5MvRect){x0+sw+gap,y0,sw,sh};
+    out[2]=(G5MvRect){x0,y0+sh+gap,sw,sh};out[3]=(G5MvRect){x0+sw+gap,y0+sh+gap,sw,sh};
+  }else{
+    /* Big left (2hr+gap tall) + two stacked right, all 16:9:
+     * W = A*(3*hr+gap)+gap <= w  and  2*hr+gap <= h. */
+    float hr=(h-gap)/2.0f,lim=((w-gap)/A-gap)/3.0f;
+    if(lim<hr)hr=lim;
+    if(hr<1)hr=1;
+    float wr=hr*A,hb=2*hr+gap,wb=hb*A;
+    float x0=x+(w-(wb+gap+wr))/2.0f,y0=y+(h-hb)/2.0f;
+    out[0]=(G5MvRect){x0,y0,wb,hb};
+    out[1]=(G5MvRect){x0+wb+gap,y0,wr,hr};
+    out[2]=(G5MvRect){x0+wb+gap,y0+hr+gap,wr,hr};
+  }
+  return mode;
+}
+int g5_mv_source_cap(const char *key,int xtream_max){
+  if(!key||!key[0])return -1;
+  if(!strcmp(key,"xt")||!strncmp(key,"xta",3))return xtream_max>0?xtream_max:1;
+  if(!strcmp(key,"st")||!strncmp(key,"sta",3))return 1;
+  return -1;   /* m<hash>/ma<id> M3U, a<hash> addon, g5m3u: no account cap */
+}
+int g5_mv_source_use(const char keys[][24],int n,const char *key){
+  int u=0;if(!key||!key[0])return 0;
+  for(int i=0;i<n;i++)if(!strcmp(keys[i],key))u++;
+  return u;
+}
+void g5_mv_ctl_set(G5MvCtl *c,int slot,const char *id,const char *fonte,unsigned agora){
+  if(slot<0||slot>3)return;
+  G5MvSlot *s=&c->slot[slot];
+  const char *i=id?id:"",*f=fonte?fonte:"";
+  if(!strcmp(s->id,i)&&!strcmp(s->fonte,f))return;   /* same channel: no re-open */
+  memset(s,0,sizeof *s);
+  snprintf(s->id,sizeof s->id,"%s",i);
+  snprintf(s->fonte,sizeof s->fonte,"%s",f);
+  s->estado=i[0]?G5_MV_ABRINDO:G5_MV_VAZIO;
+  (void)agora;
+}
+void g5_mv_ctl_erro(G5MvCtl *c,int slot,unsigned agora){
+  if(slot<0||slot>3)return;
+  G5MvSlot *s=&c->slot[slot];
+  if(!s->id[0])return;
+  if(s->tentativas<4){
+    static const unsigned espera[4]={1000,3000,6000,10000};
+    s->proxima=agora+espera[s->tentativas];
+    s->tentativas++;
+  }else s->proxima=0;   /* gave up: stays in error until a user action */
+  s->estado=G5_MV_ERRO;
+}
+void g5_mv_ctl_pronto(G5MvCtl *c,int slot){
+  if(slot<0||slot>3)return;
+  G5MvSlot *s=&c->slot[slot];
+  if(s->id[0]){s->estado=G5_MV_TOCANDO;s->tentativas=0;s->proxima=0;}
+}
+int g5_mv_ctl_abrir(G5MvCtl *c,int slot,unsigned agora){
+  if(slot<0||slot>3)return 0;
+  G5MvSlot *s=&c->slot[slot];
+  if(s->estado==G5_MV_ERRO&&s->proxima&&(int)(agora-s->proxima)>=0){
+    s->estado=G5_MV_ABRINDO;s->pediu=0;
+  }
+  if(s->estado==G5_MV_ABRINDO&&s->id[0]&&!s->pediu){s->pediu=1;c->aberturas++;return 1;}
+  return 0;
+}

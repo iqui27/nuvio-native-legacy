@@ -8081,7 +8081,6 @@
   T("Todos controlam", "Controllano tutti"),
   T("Todos os add-ons", "Tutti gli add-on"),
   T("Todos os ajustes, organizados", "Tutti gli aggiustamenti, organizzati"),
-  T("Todos os jogos. Do seu jeito.", "Tutti i giochi. A modo tuo."),
   T("Todos os perfis desta TV", "Tutti i profili di questa TV"),
   T("Todos os plugins ligados", "Tutti i plugin attivi"),
   T("Todos os resultados recebidos, na ordem do AIOStreams.", "Ogni risultato restituito, nell'ordine AIOStreams."),

@@ -8081,7 +8081,6 @@
   T("Todos controlam", "所有人都能控制"),
   T("Todos os add-ons", "所有附加元件"),
   T("Todos os ajustes, organizados", "一切調整，井井有條"),
-  T("Todos os jogos. Do seu jeito.", "所有遊戲。你的方式。"),
   T("Todos os perfis desta TV", "此電視上的所有個人檔案"),
   T("Todos os plugins ligados", "所有已啟用的外掛"),
   T("Todos os resultados recebidos, na ordem do AIOStreams.", "每個回傳的結果均按 AIOStreams 順序排列。"),

@@ -586,4 +586,17 @@ void video_simular(const VideoSimulacao *s);
 #if !defined(NV_TPK) && !defined(NV_ANDROID)
 int video_luna(const char *uri, const char *payload, void (*callback)(const char *, void *), void *context);
 #endif
+
+// MULTIVIEW — decodificadores EXTRA (alem da sessao principal). Slots sem
+// audio, janela exata em pixels de layout 1920x1080, so URLs diretas (HLS/TS).
+// video_mv_max(): quantos decodificadores extras o aparelho sustenta (0 em
+// plataformas de um pipeline so). Estado por slot: 0 parado, 1 preparando,
+// 2 tocando, -1 erro. Sem URL, usuario ou senha em nenhum log.
+int  video_mv_max(void);
+// cab: "Nome: valor\n" (User-Agent/Referer do canal M3U), "" sem cabecalho.
+int  video_mv_abrir(int slot, const char *url, const char *cab);   // 0 pedido aceito, -1 indisponivel
+void video_mv_janela(int slot, int x, int y, int w, int h);
+void video_mv_parar(int slot);
+void video_mv_parar_todos(void);
+int  video_mv_estado(int slot);
 #endif

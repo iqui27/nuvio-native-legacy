@@ -8081,7 +8081,6 @@
   T("Todos controlam", "全員が操作"),
   T("Todos os add-ons", "すべてのアドオン"),
   T("Todos os ajustes, organizados", "すべての調整を整理して"),
-  T("Todos os jogos. Do seu jeito.", "すべてのゲーム。あなたのやり方で。"),
   T("Todos os perfis desta TV", "このテレビのすべてのプロフィール"),
   T("Todos os plugins ligados", "有効なすべてのプラグイン"),
   T("Todos os resultados recebidos, na ordem do AIOStreams.", "AIOStreams の順序で返されたすべての結果。"),

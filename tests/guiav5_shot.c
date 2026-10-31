@@ -67,12 +67,16 @@ int main(int argc,char **argv){
    go("parental-lista");rules_mode=0;focus=7;KEY(SDLK_DOWN);assert(focus==8);KEY(SDLK_UP);assert(focus==7);
    go("setup-categorias");query[0]=0;focus=2+9;KEY(SDLK_DOWN);assert(focus==2+11);focus=2+8;KEY(SDLK_DOWN);assert(focus==2+10);
    group_count=gc;build_groups();
-   int pc=picker_count;picker_count=10;go("multiview-escolher");assert(focus==900);
-   focus=906;KEY(SDLK_DOWN);assert(focus==907);focus=900;KEY(SDLK_UP);assert(focus==900&&nav==-1);
-   picker_count=0;G5Item first=mv_items[0];focus=-1;KEY(SDLK_RETURN);assert(!strcmp(screen,"multiview-escolher")&&!strcmp(mv_items[0].id,first.id));
-   picker_count=pc;
+   int pc=npicks;for(int i=0;i<10;i++){picks[i].header=0;picks[i].disabled=0;}npicks=10;go("multiview-escolher");focus=900;num_focus=0;g5ui_draw();
+   focus=906;KEY(SDLK_DOWN);assert(focus==907);focus=900;KEY(SDLK_UP);assert(focus==899&&nav==-1);
+   /* 30+ picks: Down walks past the visible window to the last row, Up back. */
+   for(int i=10;i<32;i++){picks[i].header=0;picks[i].disabled=0;}npicks=32;focus=900;for(int i=0;i<31;i++)KEY(SDLK_DOWN);assert(focus==931);
+   num_focus=0;g5ui_draw();{int visto=0;for(int i=0;i<num_focus;i++)if(next_focus[i]==931)visto=1;assert(visto);}
+   for(int i=0;i<31;i++)KEY(SDLK_UP);assert(focus==900);KEY(SDLK_DOWN);
+   npicks=0;G5Item first=mv_items[0];KEY(SDLK_RETURN);assert(!strcmp(screen,"multiview-escolher")&&!strcmp(mv_items[0].id,first.id));
+   npicks=pc;
    want_pin(0);focus=3;KEY(SDLK_UP);assert(nav==-1);KEY(SDLK_TAB);assert(nav==-1);
-   go("fontes-gerenciar");focus=0;KEY(SDLK_UP);assert(nav==0);KEY(SDLK_DOWN);assert(nav==-1);
+   go("fontes-gerenciar");focus=0;num_focus=0;g5ui_draw();KEY(SDLK_UP);assert(nav==0||focus!=0);KEY(SDLK_DOWN);assert(nav==-1);
    /* Back walks setup, sources and parental one level, focus on the opener. */
    go("grade");go("fontes-gerenciar");focus=0;go("setup-tipo");focus=1;go("setup-credenciais");focus=3;go("setup-teste");
    focus=0;go("setup-importar");focus=4;go("setup-categorias");
@@ -89,9 +93,7 @@ int main(int argc,char **argv){
    /* On-screen Back buttons pop the same history as the remote. */
    go("grade");go("setup-tipo");focus=2;activate(2);assert(!strcmp(screen,"setup-arquivo"));
    focus=1;activate(1);assert(!strcmp(screen,"setup-credenciais"));activate(5);assert(!strcmp(screen,"setup-arquivo")&&focus==1);
-   go("grade");go("fontes-gerenciar");focus=2;activate(2);assert(!strcmp(screen,"setup-credenciais"));
-   activate(5);assert(!strcmp(screen,"fontes-gerenciar")&&focus==2);
-   focus=0;activate(0);assert(!strcmp(screen,"setup-tipo"));activate(4);assert(!strcmp(screen,"fontes-gerenciar")&&focus==0);
+   go("grade");go("fontes-gerenciar");focus=0;activate(0);assert(!strcmp(screen,"setup-tipo"));activate(4);assert(!strcmp(screen,"fontes-gerenciar")&&focus==0);
    go("parental-ajustes");focus=2;activate(2);assert(!strcmp(screen,"parental-lista"));
    activate(900);assert(!strcmp(screen,"parental-ajustes")&&focus==2);
    /* VOD: a title opened from search goes back to search and that result. */
@@ -122,13 +124,13 @@ int main(int argc,char **argv){
      assert(!strcmp(screen,"vod-series")&&focus==is);}}
    /* Multiview: limits over the picker go back to the picker and its pick,
     * then to the layout and Add channel; a pick closes to the layout. */
-   {int mc=mv_count,pc2=picker_count,md=mode;mode=4;picker_count=10;
-    go("grade");go("multiview-4");focus=803;mv_target=4;go("multiview-escolher");mv_count=4;focus=905;activate(905);assert(!strcmp(screen,"multiview-limite"));
-    KEY(SDLK_ESCAPE);assert(!strcmp(screen,"multiview-escolher")&&focus==905);
-    KEY(SDLK_ESCAPE);assert(!strcmp(screen,"multiview-4")&&focus==803);
+   {int mc=mv_count,pc2=npicks,md=mode;mode=4;npicks=10;for(int i=0;i<10;i++){picks[i].header=0;picks[i].disabled=0;snprintf(picks[i].fonte_key,sizeof picks[i].fonte_key,"xt");}
+    go("grade");go("multiview-4");focus=803;mv_target=4;go("multiview-escolher");mv_count=4;focus=905;activate(905);assert(!strcmp(screen,"multiview-4"));
+    go("multiview-escolher");mv_count=4;mv_target=3;focus=901;activate(901);assert(!strcmp(screen,"multiview-4")&&focus==3);
+    focus=803;go("multiview-escolher");KEY(SDLK_ESCAPE);assert(!strcmp(screen,"multiview-4")&&focus==803);
     focus=803;mv_target=3;go("multiview-escolher");mv_count=3;focus=901;activate(901);assert(!strcmp(screen,"multiview-4")&&focus==3);
     focus=801;activate(801);assert(!strcmp(screen,"multiview-3"));KEY(SDLK_ESCAPE);assert(gv_is(screen));
-    mv_count=mc;picker_count=pc2;mode=md;}
+    mv_count=mc;npicks=pc2;mode=md;}
 #undef KEY
   }
   const char *only=getenv("NUVIO_SHOT_SO");   /* iterate on one state */

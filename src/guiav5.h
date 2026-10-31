@@ -45,4 +45,41 @@ void g5_grant(G5Lease *lease, int profile, const char *source, const char *id,
               time_t now, int seconds, int verified);
 int g5_live_slots(int requested, int decoders, int provider_max, int provider_used);
 int g5_http_url(const char *url);
+
+/* --- multiview ------------------------------------------------------------
+ * Pure layout/limits/playback-controller shared by the UI (guiav5ui.c) and
+ * the tests. No SDL, no GL, no I/O. */
+typedef struct { float x, y, w, h; } G5MvRect;
+/* Largest 16:9 slots that fit the area, letterboxed (centered), never
+ * squashed. mode 2: side by side; 3: big left + two stacked right; 4: 2x2.
+ * Returns the slot count (mode clamped to 2..4). */
+int g5_mv_layout(int mode, float x, float y, float w, float h, float gap, G5MvRect out[4]);
+
+/* Simultaneous-stream cap of one source, -1 = unlimited. The key is the
+ * guide's stable source key ("xt"/"xta<id>" Xtream, "st"/"sta<id>" Stalker, "m…" M3U, "a…"
+ * addon). Xtream uses the account max_connections (<=0 or unknown: 1, the
+ * safe default that never risks a ban). Stalker portals: 1. M3U files/lists
+ * and addons carry no account cap. */
+int g5_mv_source_cap(const char *key, int xtream_max);
+/* How many of the n slots hold a channel of `key`. */
+int g5_mv_source_use(const char keys[][24], int n, const char *key);
+
+/* Slot playback controller. A slot opens ONCE per channel change and is only
+ * re-opened after a real stream error, with backoff (1/3/6/10 s, 4 tries).
+ * Periodic data refreshes (EPG, lists, keepalive) are not playback events and
+ * never re-open a playing slot. */
+enum { G5_MV_VAZIO = 0, G5_MV_ABRINDO, G5_MV_TOCANDO, G5_MV_ERRO,
+       G5_MV_SEM_FONTE, G5_MV_SEM_DECODER };
+typedef struct {
+  char id[80], fonte[24];
+  int estado, tentativas, pediu;
+  unsigned proxima;      /* ms: next retry instant while estado == G5_MV_ERRO */
+} G5MvSlot;
+typedef struct { G5MvSlot slot[4]; int aberturas; } G5MvCtl;
+/* Channel now wanted in a slot ("" clears). Same id as current: no-op. */
+void g5_mv_ctl_set(G5MvCtl *c, int slot, const char *id, const char *fonte, unsigned agora);
+void g5_mv_ctl_erro(G5MvCtl *c, int slot, unsigned agora);
+void g5_mv_ctl_pronto(G5MvCtl *c, int slot);
+/* 1 once when the slot must open/reopen now (edge: ABRINDO stays silent). */
+int g5_mv_ctl_abrir(G5MvCtl *c, int slot, unsigned agora);
 #endif

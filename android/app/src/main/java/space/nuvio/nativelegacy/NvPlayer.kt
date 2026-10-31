@@ -1834,6 +1834,11 @@ object NvPlayer {
         aplicarJanela()
     }
 
+    // NvExtra (multiview) converte as coordenadas de layout 1920x1080 com a
+    // mesma regra do player principal.
+    fun larguraLogicaPublica(): Float = larguraLogica()
+    fun alturaLogicaPublica(): Float = alturaLogica()
+
     private fun larguraLogica(): Float {
         val c = camada
         return if (interfaceMobile && c != null && c.width > 0 && c.height > 0)

@@ -8081,7 +8081,6 @@
   T("Todos controlam", "Everyone controls"),
   T("Todos os add-ons", "كل الإضافات"),
   T("Todos os ajustes, organizados", "جميع التعديلات منظمة"),
-  T("Todos os jogos. Do seu jeito.", "All games. Your way."),
   T("Todos os perfis desta TV", "جميع ملفات هذه التلفاز"),
   T("Todos os plugins ligados", "كل الملحقات المفعّلة"),
   T("Todos os resultados recebidos, na ordem do AIOStreams.", "كل النتائج المستلمة، بترتيب AIOStreams."),

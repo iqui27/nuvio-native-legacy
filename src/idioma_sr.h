@@ -8081,7 +8081,6 @@
   T("Todos controlam", "Svi upravljaju"),
   T("Todos os add-ons", "Svi dodaci"),
   T("Todos os ajustes, organizados", "Sva prilagođavanja, organizovana"),
-  T("Todos os jogos. Do seu jeito.", "Sve igre. Tvoj način."),
   T("Todos os perfis desta TV", "Svi profili na ovom televizoru"),
   T("Todos os plugins ligados", "Svi uključeni plugini"),
   T("Todos os resultados recebidos, na ordem do AIOStreams.", "Svaki vraćeni rezultat, u AIOStreams redosledu."),

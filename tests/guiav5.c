@@ -56,5 +56,60 @@ int main(void) {
   assert(!strcmp(g5_item_category(items,0),"News"));
   items[0].group[0]=0;
   assert(!strcmp(g5_item_category(items,0),"Globo"));
+
+  /* MULTIVIEW layout: every slot keeps 16:9 (+/-1%) in every mode, inside the
+   * area, letterboxed (never squashed). */
+  for (int m = 2; m <= 4; m++) {
+    G5MvRect r[4];
+    assert(g5_mv_layout(m, 48, 240, 1824, 816, 24, r) == m);
+    for (int i = 0; i < m; i++) {
+      float a = r[i].w / r[i].h;
+      assert(a > 16.0f/9*0.99f && a < 16.0f/9*1.01f);
+      assert(r[i].x >= 47.9f && r[i].y >= 239.9f && r[i].x + r[i].w <= 1872.1f && r[i].y + r[i].h <= 1056.1f);
+    }
+  }
+  /* Narrow area: still 16:9, still inside. */
+  { G5MvRect r[4]; g5_mv_layout(4, 0, 0, 900, 800, 16, r);
+    for (int i = 0; i < 4; i++) { float a = r[i].w / r[i].h; assert(a > 16.0f/9*0.99f && a < 16.0f/9*1.01f); } }
+
+  /* Per-source caps: Xtream honors max_connections (default 1), Stalker 1,
+   * M3U/addons unlimited; usage counts per source, independently. */
+  assert(g5_mv_source_cap("xt", 3) == 3 && g5_mv_source_cap("xt", 0) == 1 && g5_mv_source_cap("xt", -1) == 1);
+  assert(g5_mv_source_cap("st", 9) == 1);
+  assert(g5_mv_source_cap("xta00000003", 2) == 2 && g5_mv_source_cap("xta00000003", 0) == 1 && g5_mv_source_cap("sta00000003", 4) == 1);
+  assert(g5_mv_source_cap("mabcdef12", 1) == -1 && g5_mv_source_cap("a00ff00", 1) == -1 && g5_mv_source_cap("g5m3u", 1) == -1);
+  { char keys[4][24] = {{"xt"},{"xt"},{"mabcdef12"},{""}};
+    assert(g5_mv_source_use(keys, 4, "xt") == 2 && g5_mv_source_use(keys, 4, "mabcdef12") == 1);
+    /* two channels from two different sources both fit: caps do not mix */
+    assert(g5_mv_source_use(keys, 4, "st") == 0); }
+
+  /* Slot controller: one open per slot over 120 simulated seconds (the real
+   * update/refresh path is tests/guiav5_multiview.sh). */
+  { G5MvCtl c; memset(&c, 0, sizeof c);
+    g5_mv_ctl_set(&c, 0, "xtream:11", "xt", 0);
+    g5_mv_ctl_set(&c, 1, "g5live:22", "mabcdef12", 0);
+    int opens = 0;
+    for (unsigned t = 0; t <= 120000; t += 50) {
+      if (t == 300) g5_mv_ctl_pronto(&c, 0);
+      if (t == 400) g5_mv_ctl_pronto(&c, 1);
+      opens += g5_mv_ctl_abrir(&c, 0, t) + g5_mv_ctl_abrir(&c, 1, t);
+    }
+    assert(opens == 2);   /* one open per slot, ever */
+    /* Real error: backoff 1/3/6/10 s, then gives up until a user action. */
+    g5_mv_ctl_erro(&c, 0, 120000);
+    assert(!g5_mv_ctl_abrir(&c, 0, 120500));
+    assert(g5_mv_ctl_abrir(&c, 0, 121000));
+    g5_mv_ctl_erro(&c, 0, 121000);
+    assert(g5_mv_ctl_abrir(&c, 0, 124000) && !g5_mv_ctl_abrir(&c, 0, 124100));
+    g5_mv_ctl_erro(&c, 0, 124000); assert(g5_mv_ctl_abrir(&c, 0, 130000));
+    g5_mv_ctl_erro(&c, 0, 130000); assert(g5_mv_ctl_abrir(&c, 0, 140000));
+    g5_mv_ctl_erro(&c, 0, 140000);   /* 4 retries used */
+    assert(!g5_mv_ctl_abrir(&c, 0, 300000));
+    /* User action (channel change) reopens immediately. */
+    g5_mv_ctl_set(&c, 0, "xtream:99", "xt", 300000);
+    assert(g5_mv_ctl_abrir(&c, 0, 300000));
+    /* The other slot was never touched. */
+    assert(c.aberturas == 2 + 4 + 1);
+  }
   puts("PASS: bounded native catalogs, streamed playlist, scoped PIN leases, decoder/provider caps");
 }

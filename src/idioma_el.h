@@ -8081,7 +8081,6 @@
   T("Todos controlam", "Ελέγχουν όλοι"),
   T("Todos os add-ons", "Όλα τα πρόσθετα"),
   T("Todos os ajustes, organizados", "Όλες οι ρυθμίσεις, οργανωμένες"),
-  T("Todos os jogos. Do seu jeito.", "Όλα τα παιχνίδια. Ο τρόπος σου."),
   T("Todos os perfis desta TV", "Όλα τα προφίλ αυτής της τηλεόρασης"),
   T("Todos os plugins ligados", "Όλα τα ενεργά plugins"),
   T("Todos os resultados recebidos, na ordem do AIOStreams.", "Κάθε επιστρεφόμενο αποτέλεσμα, με σειρά AIOStreams."),

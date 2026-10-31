@@ -8081,7 +8081,6 @@
   T("Todos controlam", "Mindenki irányít"),
   T("Todos os add-ons", "Minden bővítmény"),
   T("Todos os ajustes, organizados", "Minden beállítás, rendszerezett"),
-  T("Todos os jogos. Do seu jeito.", "Minden játék. A te utat."),
   T("Todos os perfis desta TV", "A tévé összes profilja"),
   T("Todos os plugins ligados", "Minden bekapcsolt plugin"),
   T("Todos os resultados recebidos, na ordem do AIOStreams.", "Minden visszaadott eredmény, AIOStreams sorrendben."),
