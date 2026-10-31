@@ -1148,11 +1148,12 @@ static void superficie(GfxRect r,float raio,float claro,float foco) {
 }
 // State pill: tinted fill, dot and label in the state colour; off is plain grey.
 static float selo(float x,float y,const char *s,const float *c,int ligado,int direita) {
-  float tw=largura(TXT_AJ_CHIP,s), w=tw+(ligado?40:28);
+  float e=gfx_escala_txt(), h=32*fmaxf(1,e), tw=largura(TXT_AJ_CHIP,s), w=tw+(ligado?40:28);
   if(direita) x-=w;
-  gfx_cor((GfxRect){x,y,w,32},.5f,c[0],c[1],c[2],ligado?.16f:.08f);
-  if(ligado) gfx_cor((GfxRect){x+14,y+11.5f,9,9},.5f,c[0],c[1],c[2],1);
-  txtCor(TXT_AJ_CHIP,s,x+(ligado?29:14),y+6,tw+4,c,ligado?1:.72f,0);
+  y-=(h-32)/2;
+  gfx_cor((GfxRect){x,y,w,h},.5f,c[0],c[1],c[2],ligado?.16f:.08f);
+  if(ligado) gfx_cor((GfxRect){x+14,y+h/2-4.5f,9,9},.5f,c[0],c[1],c[2],1);
+  txtCor(TXT_AJ_CHIP,s,x+(ligado?29:14),y+6*fmaxf(1,e),tw+4,c,ligado?1:.72f,0);
   return w;
 }
 static void monograma(const char *nome,float x,float y,float d) {
@@ -1441,7 +1442,10 @@ static void secFato(const char *a,const char *b,const float *cor) {
 static void secBotoesFatos(int config,int atualizar) {
   float s=gfx_escala_txt(), ch=T21_CTRL_H*s, y=1032-28-ch;
   botaoIc(atualizar,i18n("Atualizar"),"aj_rotate-cw",secFX+28,y,384);
-  botaoIc(config,i18n("Configuração no celular"),"aj_smartphone",secFX+28,y-12-ch,384);
+  // Large text scales: the short label keeps the pill inside the island.
+  const char *nome=i18n("Configuração no celular");
+  if(botao_largura(nome,"aj_smartphone",0)*s>384) nome=i18n("No celular");
+  botaoIc(config,nome,"aj_smartphone",secFX+28,y-12-ch,384);
 }
 // List island footer; wraps to a second line before it leaves the island.
 static float secBotoes(const int *ids,const char *const *nomes,int n) {
@@ -1480,7 +1484,8 @@ static void secLista(float fim) {
     float yy=top+e->y-off;
     int cabeca=e->grupo && (!grupo || strcmp(grupo,e->grupo)); grupo=e->grupo;
     if(yy+92<248 || yy-36>fim) continue;
-    float alpha=gfx_opacidade_grupo, edge=anim_clamp(fminf((yy+92-248)/24,(fim-yy)/24),0,1);
+    // Rows cut by the island edge fade by how much of them is still visible.
+    float alpha=gfx_opacidade_grupo, edge=anim_clamp(fminf(yy+92-248,fim-yy)/92,0,1); edge*=edge;
     float entry=entradaDe(0,k<8?k:8);
     gfx_opacidade_grupo=alpha*edge*entry; yy+=(1-entry)*NV_ENTRA_DY;
     if(cabeca) plrui_kicker(e->grupo,x+22,yy-30,243,242,239,.55f);
