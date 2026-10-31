@@ -36,6 +36,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <ctype.h>
 #include <time.h>
 
 enum { SEM, INSTANCIA, IMPORTAR, SERVICOS, PRONTO, PAINEL, CATALOGOS, FONTES, LINKS, LEGENDAS, FILTROS, SAUDE, TITULO };
@@ -85,7 +86,7 @@ static void dashboardMovimento(float dt);
 static void movimento(float dt) {
   abertura=t21_entrada(abertura,dt,!saindo);
   dashboardMovimento(dt);
-  sidebarOpen=anim_mola(sidebarOpen,lateral?1:0,dt,NV_MOLA_FOCO);
+  sidebarOpen=anim_mola(sidebarOpen,lateral || pagina!=PAINEL?1:0,dt,NV_MOLA_FOCO);
   if(paginaAnterior<0) {
     paginaAnterior=pagina; regraVisivel=regraSelecionada; evidenciaVisivel=evidenciaSelecionada;
     corpo=0; entradaTempo=0;
@@ -411,11 +412,11 @@ static int fileira(int c) {
   for(int i=0;i<fil_n();i++) if(!strcmp(fil_chave(i),chave)) return i;
   return -1;
 }
+static void previa(int i);
 static void acao(void) {
   if(lateral) {
-    int target=PAINEL+foco;
-    if(pagina==PAINEL) { lateral=0; foco=dashboardFoco; mudar(target); dashboardReturn=target!=PAINEL; }
-    else { mudar(target); lateral=0; }
+    if(PAINEL+foco!=pagina) previa(foco);
+    lateral=0; foco=pagina==PAINEL?dashboardFoco:0; navigationCount=0;
     return;
   }
   if(pagina>=CATALOGOS && pagina<=SAUDE && foco>=nLinhas()-2) {
@@ -503,6 +504,55 @@ static void manualConnect(void) {
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_",NULL);
   teclado_mascarar(1);
 }
+static void irRail(void) { dashboardFoco=foco; lateral=1; foco=0; navigationCount=0; }
+// Rail preview: swap the section without stacking history; Back from any section returns to the overview.
+static void previa(int i) {
+  int target=PAINEL+i;
+  if(target==pagina) return;
+  historyCount=0;
+  if(target!=PAINEL) { history[0].page=PAINEL; history[0].focus=dashboardFoco; history[0].side=0; historyCount=1; }
+  pagina=target; dashboardReturn=0; mensagem[0]=0;
+  regraSelecionada=-1; linkSelecionado=-1; evidenciaSelecionada=0; celular_fechar();
+}
+static int dashboardCompleto(void);
+static int cabecalhoIds(int *ids);
+static int dashboardCta(void);
+static int dashboardVis[6]={3,3,3,3,3,3};
+// D-pad follows the drawn grid: header actions, then the banner or the stat row, then cards.
+static void dashboardTecla(SDL_Keycode k) {
+  int ids[3],n=cabecalhoIds(ids),hi=-1,cta=dashboardCta(),completo=dashboardCompleto();
+  for(int i=0;i<n;i++) if(ids[i]==foco) hi=i;
+  int up=k==SDLK_UP, down=k==SDLK_DOWN, left=k==SDLK_LEFT, right=k==SDLK_RIGHT;
+  if(hi>=0) {
+    if(left) { if(hi) foco=ids[hi-1]; else irRail(); }
+    else if(right) { if(hi<n-1) foco=ids[hi+1]; }
+    else if(down) foco=completo?(hi<2?hi:2):cta;
+    return;
+  }
+  if(foco==cta) {
+    if(up) foco=ids[n-1]; else if(down) foco=0; else if(left) irRail();
+    return;
+  }
+  if(foco>=6) { foco=completo?0:cta; return; }
+  int rolavel=completo || foco>=4;
+  int total=dashboardTotal(foco), vis=dashboardVis[foco], step=down-up;
+  if(rolavel && step && dashboardLinha[foco]+step>=0 && dashboardLinha[foco]+step<=total-vis) { dashboardLinha[foco]+=step; return; }
+  if(completo) {
+    if(up) foco=foco>=3?foco-3:ids[foco<n?foco:n-1];
+    else if(down) { if(foco<3) foco+=3; }
+    else if(left) { if(foco%3) foco--; else irRail(); }
+    else if(right && foco%3<2) foco++;
+  } else if(foco<4) {
+    if(left) { if(foco) foco--; else irRail(); }
+    else if(right) { if(foco<3) foco++; }
+    else if(up) foco=cta;
+    else if(down) foco=foco<2?4:5;
+  } else {
+    if(left) { if(foco==5) foco=4; else irRail(); }
+    else if(right) foco=5;
+    else if(up) foco=foco==4?0:2;
+  }
+}
 void aioui_evento(const SDL_Event *e) {
   if(!aberto) return;
   if(saindo) return;
@@ -543,18 +593,12 @@ void aioui_evento(const SDL_Event *e) {
     return;
   }
   if(pagina==PAINEL && !lateral && (k==SDLK_UP || k==SDLK_DOWN || k==SDLK_LEFT || k==SDLK_RIGHT)) {
-    if(foco<6) {
-      int total=dashboardTotal(foco), step=(k==SDLK_DOWN)-(k==SDLK_UP);
-      if(step && dashboardLinha[foco]+step>=0 && dashboardLinha[foco]+step<=total-3) dashboardLinha[foco]+=step;
-      else if(k==SDLK_UP) foco=foco>=3?foco-3:10;
-      else if(k==SDLK_DOWN) foco=foco<3?foco+3:6;
-      else if(k==SDLK_LEFT) { if(foco%3) foco--; else { dashboardFoco=foco; lateral=1; foco=0; navigationCount=0; } }
-      else if(k==SDLK_RIGHT && foco%3<2) foco++;
-    } else if(k==SDLK_DOWN) foco=foco==10?2:foco;
-    else if(k==SDLK_UP) foco=foco==10?0:foco==9?3:5;
-    else if(k==SDLK_RIGHT && foco==9) foco=6;
-    else if(k==SDLK_LEFT && foco==6) foco=9;
-    else if(k==SDLK_LEFT) { dashboardFoco=foco; lateral=1; foco=0; navigationCount=0; }
+    dashboardTecla(k); return;
+  }
+  // Moving along the rail previews each section at once, so the rail visibly opens pages.
+  if(lateral && pagina>=PAINEL && pagina<=SAUDE && (k==SDLK_UP || k==SDLK_DOWN)) {
+    int next=foco+(k==SDLK_DOWN?1:-1);
+    if(next>=0 && next<7) { foco=next; previa(next); }
     return;
   }
   if(pagina==PAINEL && lateral && k==SDLK_RIGHT) { lateral=0; foco=dashboardFoco; navigationCount=0; return; }
@@ -1103,114 +1147,270 @@ static void dashboardRow(int card,int row,char *title,size_t nt,char *value,size
     snprintf(title,nt,"%s",e->titulo); snprintf(value,nv,"%s",e->descricao);
   }
 }
-static void dashboardText(TxtEstilo style,const char *s,float x,float y,float w,float opacity) {
+// Dashboard palette (DESIGN.md §3): values primary, labels a step down; the
+// accent marks state and the key action; green/amber/red only say healthy,
+// partial or failed. Measured on the solid card: 14.9:1 and 7.5:1.
+static const float aioTexto[3]={243/255.f,242/255.f,239/255.f};
+static const float aioOk[3]={.373f,.827f,.553f}, aioErr[3]={1,.482f,.447f}, aioWarn[3]={.949f,.757f,.306f};
+static float txtCor(TxtEstilo e,const char *s,float x,float y,float w,const float *c,float a,int direita) {
   float scale=gfx_escala_txt(); TXT_INI();
-  TxtLinha line=txt_linha_corta(style,s,T21_TEXT_R,T21_TEXT_G,T21_TEXT_B,(int)(255*opacity),w/scale);
-  txt_desenhar(line,x/scale,y/scale); TXT_FIM();
+  TxtLinha l=txt_linha_corta(e,s,(int)(c[0]*255),(int)(c[1]*255),(int)(c[2]*255),(int)(255*a),w/scale);
+  float lw=l.w*scale;
+  txt_desenhar(l,(direita?x-lw:x)/scale,y/scale); TXT_FIM();
+  return lw;
 }
-static void dashboard(void) {
-  float left=184+227*anim_clamp(sidebarOpen,0,1), width=1848-left;
-  float start=left+32, inner=width-64, cardW=(inner-40)/3;
-  painel(left,148,width,858);
-  const char *name=snap.nome[0]?snap.nome:"AIOStreams";
-  texto(TXT_ILHA_TITULO,name,start,182,inner-290,243);
-  char status[320], updated[32]="";
-  if(ultimaAtualizacao) { struct tm t; localtime_r(&ultimaAtualizacao,&t); strftime(updated,sizeof updated,"%H:%M:%S",&t); }
-  snprintf(status,sizeof status,"%s · %s%s%s · %s %s",snap.valida?i18n("Disponível"):i18n("Instância indisponível"),
-    snap.versaoInstancia[0]?snap.versaoInstancia:snap.versao[0]?snap.versao:i18n("Não informado"),snap.canal[0]?" · ":"",snap.canal,
-    i18n("Atualizado"),updated[0]?updated:i18n("Ainda não"));
-  float r,g,b; ajustes_acento(&r,&g,&b);
-  gfx_cor((GfxRect){start+2,247,9,9},.5f,snap.valida?r:.8f,snap.valida?g:.3f,snap.valida?b:.28f,1);
-  texto(TXT_ILHA_SUB,status,start+24,239,inner-24,190);
-  botaoIc(10,i18n("Atualizar"),"aj_rotate-cw",1578,190,225);
-  const char *labels[]={"Add-ons","Serviços","Regras e preferências","Catálogos"};
-  int numbers[]={snap.addons,snap.servicos,snap.detalhes,snap.catalogos};
-  for(int i=0;i<4;i++) {
-    float x=start+i*inner/4;
-    char n[32]; if((!snap.configurada && i<3) || (!snap.valida && i==3)) strcpy(n,"—"); else snprintf(n,sizeof n,"%d",numbers[i]);
-    texto(TXT_ILHA_PERGUNTA,n,x,294,390,238);
-    dashboardText(TXT_ILHA_SUB_L,i18n(labels[i]),x,341,inner/4-16,T21_TEXT_SECONDARY);
+static float largura(TxtEstilo e,const char *s) { return t21_texto_linha(e,s,255,255,255,255,4000).w; }
+// One surface per card, never a panel behind them; focus lifts it a step lighter, no ring.
+static void superficie(GfxRect r,float raio,float claro,float foco) {
+  float g=6*foco; r=(GfxRect){r.x-g,r.y-g,r.w+2*g,r.h+2*g};
+  plrui_material(r,raio,0,1);
+  gfx_cor(r,raio/r.h,1,1,1,claro+.075f*foco);
+}
+// State pill: tinted fill, dot and label in the state colour; off is plain grey.
+static float selo(float x,float y,const char *s,const float *c,int ligado,int direita) {
+  float tw=largura(TXT_AJ_CHIP,s), w=tw+(ligado?40:28);
+  if(direita) x-=w;
+  gfx_cor((GfxRect){x,y,w,32},.5f,c[0],c[1],c[2],ligado?.16f:.08f);
+  if(ligado) gfx_cor((GfxRect){x+14,y+11.5f,9,9},.5f,c[0],c[1],c[2],1);
+  txtCor(TXT_AJ_CHIP,s,x+(ligado?29:14),y+6,tw+4,c,ligado?1:.72f,0);
+  return w;
+}
+static void monograma(const char *nome,float x,float y,float d) {
+  char m[3]={0}; int n=0, novo=1;
+  for(const unsigned char *p=(const unsigned char *)nome;*p && n<2;p++) {
+    if(isalnum(*p)) { if(novo || isupper(*p)) m[n++]=(char)toupper(*p); novo=0; } else novo=1;
   }
-  const char *titles[]={"Add-ons e presets","Serviços","Filtros e limites","Ordenação e formato","Catálogos","Saúde"};
+  gfx_cor((GfxRect){x,y,d,d},.5f,1,1,1,.09f);
+  txtCor(TXT_G16B,m,x+(d-largura(TXT_G16B,m))/2,y+d/2-10,d,aioTexto,1,0);
+}
+static void disco(const char *icone,float x,float y,float d) {
+  gfx_cor((GfxRect){x,y,d,d},.5f,1,1,1,.09f);
+  gfx_icone((GfxRect){x+d*.25f,y+d*.25f,d*.5f,d*.5f},icone,.953f,.949f,.937f,.9f);
+}
+static int dashboardCompleto(void) { return snap.valida && snap.configurada; }
+static int cabecalhoIds(int *ids) {
+  int n=0; if(snap.valida) ids[n++]=10;
+  ids[n++]=6; if(dashboardCompleto()) ids[n++]=9;
+  return n;
+}
+static int dashboardCta(void) { return dashboardCompleto()?-1:snap.valida?9:10; }
+static const char *botaoNome(int id) {
+  return i18n(id==6?"Inspecionar título":id==9?(snap.configAccess==AIO_AVAILABLE?"Reconectar":"Conectar pelo celular"):!snap.valida?"Tentar de novo":"Atualizar");
+}
+static const char *botaoIcone(int id) { return id==6?"aj_funnel":id==9?"aj_smartphone":"aj_rotate-cw"; }
+static void botaoPrimario(int i,float xd,float y) {
+  const char *nome=botaoNome(i), *ic=botaoIcone(i);
+  float scale=gfx_escala_txt(), w=botao_largura(nome,ic,1);
+  GfxRect r={xd/scale-w,y/scale,w,T21_CTRL_H};
+  // At rest the key action keeps an accent tint, so it reads as the way forward before focus.
+  float ar,ag,ab; ajustes_acento(&ar,&ag,&ab);
+  gfx_cor((GfxRect){r.x*scale,r.y*scale,r.w*scale,r.h*scale},.5f,ar,ag,ab,.24f*(1-focoDe(i,0)));
+  TXT_INI(); botao_pilula(r,nome,ic,focoDe(i,0),1,0,1); TXT_FIM();
+  ponteiro_alvo(r.x*scale,r.y*scale,r.w*scale,r.h*scale,pointer,click,i,0);
+}
+static void dashboardLinhaDesenhar(int c,int row,float x,float y,float w) {
+  char t[192],v[384]; dashboardRow(c,row,t,sizeof t,v,sizeof v);
+  float xl=x+22, xr=x+w-22, cy=y+36, room=w-44;
+  if(c==0 || (c==1 && row<snap.servicos)) {
+    AioItem *it=c?&snap.servico[row]:&snap.addon[row];
+    monograma(it->nome,xl,cy-21,42);
+    float sw=selo(xr,cy-16,i18n(it->ativo?"Ativado":"Desligado"),it->ativo?aioOk:aioTexto,it->ativo,1);
+    txtCor(TXT_G22M,it->nome,xl+56,cy-14,room-70-sw,aioTexto,1,0);
+  } else if(c==1) {
+    disco("aj_cloud",xl,cy-21,42);
+    float vw=txtCor(TXT_G18R,v,xr,cy-11,room*.5f,aioTexto,.68f,1);
+    txtCor(TXT_G22M,t,xl+56,cy-14,room-70-vw,aioTexto,1,0);
+  } else if(c==2) {
+    float tw=fminf(largura(TXT_AJ_CHIP,v),room*.55f)+28;
+    gfx_cor((GfxRect){xr-tw,cy-16,tw,32},.5f,1,1,1,.1f);
+    txtCor(TXT_AJ_CHIP,v,xr-tw+14,cy-10,tw-20,aioTexto,1,0);
+    txtCor(TXT_G20M,t,xl,cy-13,room-tw-16,aioTexto,.68f,0);
+  } else if(c==3) {
+    int i=dashboardDetail(3,row); char n[8], chave[64]; const char *rumo="";
+    snprintf(n,sizeof n,"%d",row+1);
+    gfx_cor((GfxRect){xl,cy-21,42,42},.5f,1,1,1,.09f);
+    txtCor(TXT_G16B,n,xl+(42-largura(TXT_G16B,n))/2,cy-10,42,aioTexto,1,0);
+    if(i>=0 && !strncmp(snap.detalhe[i].nome,"sortCriteria.",13)) {
+      size_t k=0; const char *s=snap.detalhe[i].valor;
+      while(s[k] && s[k]!=' ' && s[k]!='(' && k<sizeof chave-1) { chave[k]=s[k]; k++; }
+      chave[k]=0; snprintf(t,sizeof t,"%s",valorRegra(chave));
+      rumo=strstr(s,"desc")?i18n("Maior primeiro"):strstr(s,"asc")?i18n("Menor primeiro"):"";
+    } else rumo=v;
+    float vw=txtCor(TXT_G18R,rumo,xr,cy-11,room*.45f,aioTexto,.68f,1);
+    txtCor(TXT_G22M,t,xl+56,cy-14,room-70-vw,aioTexto,1,0);
+  } else if(c==4) {
+    disco(!strcmp(snap.catalogo[row].tipo,"series")?"aj_tv":"aj_film",xl,cy-21,42);
+    float vw=txtCor(TXT_G18R,v,xr,cy-11,room*.4f,aioTexto,.68f,1);
+    txtCor(TXT_G22M,t,xl+56,cy-14,room-70-vw,aioTexto,1,0);
+  } else if(row<3) {
+    int k=row==2?3:row, code=snap.http[k], ok=code>=200 && code<300;
+    const float *cor=!code?aioTexto:ok?aioOk:aioErr;
+    gfx_cor((GfxRect){xl+4,cy-5,10,10},.5f,cor[0],cor[1],cor[2],code?1:.4f);
+    float vw;
+    if(ok) {
+      char ms[24],http[24]; snprintf(ms,sizeof ms,"%d ms",snap.ms[k]); snprintf(http,sizeof http,"HTTP %d",code);
+      vw=txtCor(TXT_G20B,ms,xr,cy-12,140,aioTexto,1,1);
+      vw+=14+txtCor(TXT_G18R,http,xr-vw-14,cy-11,140,aioTexto,.68f,1);
+    } else if(code) {
+      char http[24]; snprintf(http,sizeof http,"HTTP %d",code);
+      vw=txtCor(TXT_G20B,http,xr,cy-12,160,aioErr,1,1);
+    } else vw=txtCor(TXT_G18R,v,xr,cy-11,room*.5f,aioTexto,.68f,1);
+    txtCor(TXT_G22M,t,xl+30,cy-14,room-44-vw,aioTexto,1,0);
+  } else {
+    float vw=txtCor(TXT_G18R,v,xr,cy-11,room*.5f,aioTexto,.68f,1);
+    txtCor(TXT_G22M,t,xl,cy-14,room-14-vw,aioTexto,1,0);
+  }
+}
+static void dashboardCartao(int c,GfxRect r,int compacto) {
+  float f=focoDe(c,0), y=r.y, alpha=itemInicio(c%3,c/3,&y); r.y=y;
+  superficie(r,26,.035f,f);
+  float ar,ag,ab, ink=ajustes_acento_tinta(&ar,&ag,&ab);
+  GfxRect d={r.x+20,r.y+18,48,48};
+  gfx_cor(d,15/48.f,1,1,1,.08f*(1-f)); gfx_cor(d,15/48.f,ar,ag,ab,f);
+  float ic=.953f*(1-f)+ink*f;
   const char *ico[]={"aj_puzzle","aj_shield-check","aj_sliders-horizontal","aj_layers","aj_library","aj_activity"};
-  for(int c=0;c<6;c++) {
-    float x=start+c%3*(cardW+20), y=397+c/3*270;
-    float alpha=itemInicio(c%3,c/3,&y);
-    plrui_cartao((GfxRect){x,y,cardW,248},24,1);
-    plrui_linha_foco((GfxRect){x,y,cardW,248},24,focoDe(c,0));
-    gfx_icone((GfxRect){x+20,y+20,25,25},ico[c],.8f,.84f,.87f,1);
-    texto(TXT_ILHA_SECAO,i18n(titles[c]),x+57,y+19,cardW-124,243);
-    int total=dashboardTotal(c), missing=!snap.configurada && c<4;
-    dashboardLinha[c]=(int)anim_clamp(dashboardLinha[c],0,fmaxf(0,total-3));
-    char count[48]; if(missing) strcpy(count,"—"); else snprintf(count,sizeof count,"%d / %d",total?dashboardLinha[c]+1:0,total);
-    texto(TXT_ILHA_HORA,count,x+cardW-66,y+25,54,158);
-    if(missing) {
-      gfx_icone((GfxRect){x+22,y+112,24,24},"aj_lock",.953f,.949f,.937f,.72f);
-      dashboardText(TXT_ILHA_SUB_L,i18n(snap.valida?"Acesso à configuração necessário":"Instância indisponível"),x+60,y+112,cardW-80,T21_TEXT_SECONDARY);
+  const char *titles[]={"Add-ons e presets","Serviços","Filtros e limites","Ordenação e formato","Catálogos","Saúde"};
+  gfx_icone((GfxRect){d.x+11,d.y+11,26,26},ico[c],ic,ic,ic,1);
+  int total=dashboardTotal(c), travado=(!snap.configurada && c<4) || (!snap.valida && c<5);
+  if(compacto) {
+    texto(TXT_ILHA_NOME,i18n(titles[c]),r.x+82,r.y+28,r.w-104,243);
+    gfx_icone((GfxRect){r.x+24,r.y+76,22,22},"aj_lock",.953f,.949f,.937f,.68f);
+    txtCor(TXT_ILHA_SUB_L,i18n(snap.valida?"Acesso à configuração necessário":"Instância indisponível"),r.x+58,r.y+74,r.w-80,aioTexto,.68f,0);
+  } else {
+    char count[16]; if(travado) strcpy(count,"—"); else snprintf(count,sizeof count,"%d",c==1?snap.servicos:total);
+    float cw=largura(TXT_AJ_CHIP,count)+26;
+    gfx_cor((GfxRect){r.x+r.w-20-cw,r.y+28,cw,30},.5f,1,1,1,.07f);
+    txtCor(TXT_AJ_CHIP,count,r.x+r.w-20-cw+13,r.y+33,cw,aioTexto,.72f,0);
+    texto(TXT_ILHA_NOME,i18n(titles[c]),r.x+82,r.y+28,r.w-124-cw,243);
+    int vis=(int)((r.h-88)/72); dashboardVis[c]=vis<1?1:vis;
+    if(travado) {
+      gfx_icone((GfxRect){r.x+24,r.y+92,24,24},"aj_server-crash",.953f,.949f,.937f,.68f);
+      txtCor(TXT_ILHA_SUB_L,i18n("Manifesto indisponível. Atualize para tentar novamente."),r.x+60,r.y+91,r.w-84,aioTexto,.68f,0);
     } else if(!total) {
-      bloco(i18n(c==4?(!snap.valida?"Manifesto indisponível. Atualize para tentar novamente.":"Nenhum catálogo publicado pelo manifesto."):c==0?"Nenhum preset declarado nesta configuração.":"Sem regras personalizadas nesta seção."),x+20,y+82,cardW-40,3);
+      bloco(i18n(c==4?"Nenhum catálogo publicado pelo manifesto.":c==0?"Nenhum preset declarado nesta configuração.":"Sem regras personalizadas nesta seção."),r.x+24,r.y+92,r.w-48,3);
     } else {
-      GfxRecorteAnt clip=gfx_recorte_dentro(x+16,y+65,cardW-32,173);
-      float scroll=anim_clamp(dashboardScroll[c],0,fmaxf(0,total-3));
-      int first=(int)scroll;
-      for(int row=first;row<total && row<=first+3;row++) {
-        char title[192],value[384]; dashboardRow(c,row,title,sizeof title,value,sizeof value);
-        float ry=y+73+(row-scroll)*56;
-        dashboardText(TXT_ILHA_NUM,title,x+20,ry,cardW-44,T21_TEXT_SECONDARY);
-        dashboardText(TXT_ILHA_SUB_L,value,x+20,ry+23,cardW-44,1);
-      }
+      vis=dashboardVis[c];
+      dashboardLinha[c]=(int)anim_clamp(dashboardLinha[c],0,fmaxf(0,total-vis));
+      GfxRecorteAnt clip=gfx_recorte_dentro(r.x,r.y+76,r.w,r.h-84);
+      float scroll=anim_clamp(dashboardScroll[c],0,fmaxf(0,total-vis));
+      for(int row=(int)scroll;row<total && row<=(int)scroll+vis;row++)
+        dashboardLinhaDesenhar(c,row,r.x,r.y+80+(row-scroll)*72,r.w);
       gfx_recorte_voltar(clip);
-      if(total>3) {
-        float h=fmaxf(12,160*3.f/total), sy=y+73+(160-h)*scroll/(total-3);
-        gfx_cor((GfxRect){x+cardW-15,sy,3,h},.5f,.65f,.7f,.72f,.55f);
+      if(total>vis) {
+        float th=r.h-104, h=fmaxf(24,th*vis/total), sy=r.y+86+(th-h)*scroll/(total-vis);
+        gfx_cor((GfxRect){r.x+r.w-11,r.y+86,4,th},.5f,1,1,1,.07f*f);
+        gfx_cor((GfxRect){r.x+r.w-11,sy,4,h},.5f,ar,ag,ab,f);
       }
     }
-    if(!lateral) ponteiro_alvo(x,y,cardW,248,pointer,click,c,0);
-    gfx_opacidade_grupo=alpha;
   }
-  const char *connectLabel=i18n(snap.configAccess==AIO_AVAILABLE?"Reconectar":"Conectar pelo celular");
-  float connectWidth=botao_largura(connectLabel,"aj_smartphone",1)*gfx_escala_txt();
-  GfxRect connectRect={start,943,connectWidth,56};
-  botao_pilula(connectRect,connectLabel,"aj_smartphone",focoDe(9,0),0,0,1);
-  ponteiro_alvo(connectRect.x,connectRect.y,connectRect.w,connectRect.h,pointer,click,9,0);
-  botaoIc(6,i18n("Inspecionar título"),"aj_funnel",1466,943,337);
-  char source[256]; snprintf(source,sizeof source,"%s%s%s",configStatus(),snap.detalhesOmitidos?" · ":"",snap.detalhesOmitidos?i18n("Configuração no celular"):"");
-  dashboardText(TXT_ILHA_HORA,source,start+370,963,inner-740,T21_TEXT_SECONDARY);
+  if(!lateral) ponteiro_alvo(r.x,r.y,r.w,r.h,pointer,click,c,0);
+  gfx_opacidade_grupo=alpha;
 }
+static void dashboard(void) {
+  float L=72+88+28+232*anim_clamp(sidebarOpen,0,1), W=1848-L;
+  int completo=dashboardCompleto();
+  int ids[3],n=cabecalhoIds(ids); float bx=1848, scale=gfx_escala_txt();
+  for(int i=n-1;i>=0;i--) {
+    bx-=botao_largura(botaoNome(ids[i]),botaoIcone(ids[i]),0)*scale;
+    botaoIc(ids[i],botaoNome(ids[i]),botaoIcone(ids[i]),bx,160,0); bx-=16;
+  }
+  texto(TXT_ILHA_TITULO,snap.nome[0]?snap.nome:"AIOStreams",L,146,bx-L-24,243);
+  char updated[32]="", status[320];
+  if(ultimaAtualizacao) { struct tm t; localtime_r(&ultimaAtualizacao,&t); strftime(updated,sizeof updated,"%H:%M:%S",&t); }
+  const float *cor=!snap.valida?aioErr:snap.configurada?aioOk:aioWarn;
+  float pw=selo(L,202,i18n(!snap.valida?"Indisponível":snap.configurada?"Conectado":"Só streams"),cor,1,0);
+  if(snap.valida) snprintf(status,sizeof status,"%s%s%s · %s %s%s%s",snap.versaoInstancia[0]?snap.versaoInstancia:snap.versao[0]?snap.versao:i18n("Não informado"),
+    snap.canal[0]?" · ":"",snap.canal,i18n("Atualizado"),updated[0]?updated:i18n("Ainda não"),snap.detalhesOmitidos?" · ":"",snap.detalhesOmitidos?i18n("Configuração no celular"):"");
+  else snprintf(status,sizeof status,"HTTP %d · %s %s",snap.http[0],i18n("Atualizado"),updated[0]?updated:i18n("Ainda não"));
+  txtCor(TXT_ILHA_SUB_L,status,L+pw+14,205,bx-L-pw-30,aioTexto,.68f,0);
+  if(completo) {
+    const char *labels[]={"Add-ons","Serviços","Regras e preferências","Catálogos"};
+    const char *tileIc[]={"aj_puzzle","aj_shield-check","aj_sliders-horizontal","aj_library"};
+    int on[2]={0,0}, filmes=0;
+    for(int i=0;i<snap.addons;i++) on[0]+=snap.addon[i].ativo;
+    for(int i=0;i<snap.servicos;i++) on[1]+=snap.servico[i].ativo;
+    for(int i=0;i<snap.catalogos;i++) filmes+=!strcmp(snap.catalogo[i].tipo,"movie");
+    int numbers[]={snap.addons,snap.servicos,snap.detalhes,snap.catalogos};
+    float tw=(W-60)/4;
+    for(int i=0;i<4;i++) {
+      float x=L+i*(tw+20), y=248, alpha=itemInicio(i,0,&y);
+      superficie((GfxRect){x,y,tw,132},24,.035f,0);
+      gfx_icone((GfxRect){x+tw-54,y+22,30,30},tileIc[i],.953f,.949f,.937f,.42f);
+      char num[16], sub[96]; snprintf(num,sizeof num,"%d",numbers[i]);
+      if(i<2) snprintf(sub,sizeof sub,i18n("%d de %d ativos"),on[i],numbers[i]);
+      else if(i==2) snprintf(sub,sizeof sub,i18n("%d filtros · %d ordenação"),dashboardTotal(2),dashboardTotal(3));
+      else snprintf(sub,sizeof sub,i18n("%d filmes · %d séries"),filmes,snap.catalogos-filmes);
+      texto(TXT_AJ_NUM58,num,x+24,y+12,tw-90,243);
+      txtCor(TXT_G20B,i18n(labels[i]),x+24,y+76,tw-48,aioTexto,1,0);
+      txtCor(TXT_ILHA_GENERO,sub,x+24,y+101,tw-48,aioTexto,.68f,0);
+      gfx_opacidade_grupo=alpha;
+    }
+    float cw=(W-40)/3;
+    for(int c=0;c<6;c++) dashboardCartao(c,(GfxRect){L+c%3*(cw+20),400+c/3*326,cw,306},0);
+  } else {
+    float ar,ag,ab; ajustes_acento(&ar,&ag,&ab);
+    float bc[3]={snap.valida?ar:aioErr[0],snap.valida?ag:aioErr[1],snap.valida?ab:aioErr[2]};
+    superficie((GfxRect){L,248,W,132},26,.075f,0);
+    gfx_cor((GfxRect){L+30,278,72,72},22/72.f,bc[0],bc[1],bc[2],.2f);
+    gfx_icone((GfxRect){L+47,295,38,38},snap.valida?"aj_smartphone":"aj_server-crash",bc[0]*.6f+.4f,bc[1]*.6f+.4f,bc[2]*.6f+.4f,1);
+    int cta=dashboardCta();
+    float cw=botao_largura(botaoNome(cta),botaoIcone(cta),1)*scale, tx=L+W-30-cw;
+    botaoPrimario(cta,L+W-30,286);
+    if(snap.valida) {
+      char num[16]; snprintf(num,sizeof num,"%d",snap.catalogos);
+      txtCor(TXT_LOG_N44,num,tx-30,270,200,aioTexto,1,1);
+      float lw=largura(TXT_ILHA_GENERO,i18n("Catálogos"));
+      txtCor(TXT_ILHA_GENERO,i18n("Catálogos"),tx-30-lw,324,lw+4,aioTexto,.68f,0);
+      tx-=40+fmaxf(lw,60);
+    }
+    char sub[256];
+    if(snap.valida) snprintf(sub,sizeof sub,"%s",i18n("Add-ons, serviços e regras aparecem depois de entrar pelo celular. Os streams já funcionam."));
+    else snprintf(sub,sizeof sub,i18n("O servidor devolveu HTTP %d. Em HTTP 429, aguarde antes de tentar de novo."),snap.http[0]);
+    txtCor(TXT_G30B,i18n(snap.valida?"Veja sua configuração completa":"A instância não respondeu"),L+128,278,tx-L-150,aioTexto,1,0);
+    txtCor(TXT_ILHA_TEXTO,sub,L+128,322,tx-L-150,aioTexto,.68f,0);
+    float tw=(W-60)/4, gw=(W-20)/2;
+    for(int c=0;c<4;c++) dashboardCartao(c,(GfxRect){L+c*(tw+20),400,tw,110},1);
+    for(int c=4;c<6;c++) dashboardCartao(c,(GfxRect){L+(c-4)*(gw+20),530,gw,502},0);
+  }
+}
+// The rail is its own island: lighter than the cards and tinted toward the
+// accent, so it never reads as page. Focus opens it and pushes the page.
 static void sidebar(void) {
-  float h=pagina==PAINEL?858:824;
-  float opened=pagina==PAINEL?anim_clamp(sidebarOpen,0,1):1;
-  float w=88+227*opened;
-  plrui_material((GfxRect){72,148,w,h},32,1,1);
-  // Main sidebar surface, visibly separate from the page island.
-  gfx_cor((GfxRect){72,148,w,h},32/h,21/255.f,22/255.f,26/255.f,.88f);
-  gfx_cor((GfxRect){72+w-1,180,1,h-64},0,1,1,1,.08f);
-  GfxRecorteAnt sidebarClip=gfx_recorte_dentro(72,148,w,h);
-  float sidebarAlpha=gfx_opacidade_grupo;
-  gfx_opacidade_grupo=sidebarAlpha*opened*opened;
-  texto(TXT_ILHA_NOME,"AIOStreams",160,181,200,240);
-  texto(TXT_ILHA_NUM,i18n("Seu addon conectado"),160,218,200,163);
-  GLuint logo=tex_obter(arteLogo); if(logo) gfx_rect((GfxRect){110,190,26,26},logo,GFX_MARCA,0,0,0,0,1,1,1,1);
-  gfx_opacidade_grupo=sidebarAlpha;
-  float ar,ag,ab; ajustes_acento(&ar,&ag,&ab);
+  float open=anim_clamp(sidebarOpen,0,1), w=88+232*open, h=pagina==PAINEL?884:824, raio=44-12*open;
+  GfxRect r={72,148,w,h};
+  float ar,ag,ab, ink=ajustes_acento_tinta(&ar,&ag,&ab);
+  plrui_material(r,raio,1,1);
+  gfx_cor(r,raio/h,1,1,1,.06f); gfx_cor(r,raio/h,ar,ag,ab,.09f);
+  GfxRecorteAnt clip=gfx_recorte_dentro(72,148,w,h);
+  float base=gfx_opacidade_grupo, rot=open*open;
+  gfx_cor((GfxRect){86,164,60,60},.5f,1,1,1,.08f);
+  GLuint logo=tex_obter(arteLogo); if(logo) gfx_rect((GfxRect){100,178,32,32},logo,GFX_MARCA,0,0,0,0,1,1,1,1);
+  gfx_opacidade_grupo=base*rot;
+  texto(TXT_ILHA_NOME,"AIOStreams",164,170,200,243);
+  texto(TXT_ILHA_NUM,i18n("Seu addon conectado"),164,204,200,174);
+  gfx_opacidade_grupo=base;
   const char *nav[]={i18n("Visão geral"),i18n("Catálogos"),i18n("Fontes e serviços"),i18n("Links"),i18n("Legendas"),i18n("Filtros e ordenação"),i18n("Saúde")};
   for(int i=0;i<7;i++) {
-    float y=265+i*70;
-    plrui_linha_foco((GfxRect){86,y,w-28,64},20,fmaxf(focoDe(i,1),pagina==PAINEL+i?.35f:0));
-    gfx_icone((GfxRect){103,y+19,25,25},icons[i],.953f,.949f,.937f,pagina==PAINEL+i?1:.72f);
-    gfx_opacidade_grupo=sidebarAlpha*opened*opened;
-    texto(TXT_ILHA_ITEM,nav[i],150,y+19,210,243);
-    gfx_opacidade_grupo=sidebarAlpha;
-    if(pagina==PAINEL+i) gfx_cor((GfxRect){78,y+30,5,5},.5f,ar,ag,ab,1);
-    ponteiro_alvo(86,y,w-28,64,pointer,click,i,1);
+    GfxRect it={84,248+i*76,w-24,64};
+    int ativa=pagina==PAINEL+i; float f=focoDe(i,1);
+    if(ativa) gfx_cor(it,.5f,ar,ag,ab,.24f*(1-f));
+    if(f>.002f) gfx_cor(it,.5f,ar,ag,ab,f);
+    float c[3]; for(int k=0;k<3;k++) { float b=ativa?(k==0?ar:k==1?ag:ab)*.6f+.4f:.953f; c[k]=b*(1-f)+ink*f; }
+    gfx_icone((GfxRect){it.x+19,it.y+19,26,26},icons[i],c[0],c[1],c[2],ativa||f>.5f?1:.72f);
+    gfx_opacidade_grupo=base*rot;
+    txtCor(TXT_ILHA_ITEM,nav[i],it.x+64,it.y+20,it.w-80,c,1,0);
+    gfx_opacidade_grupo=base;
+    ponteiro_alvo(it.x,it.y,it.w,it.h,pointer,click,i,1);
   }
-  gfx_opacidade_grupo=sidebarAlpha*opened*opened;
-  gfx_cor((GfxRect){91,830,277,1},0,1,1,1,.08f);
-  gfx_cor((GfxRect){108,850,254,34},.2f,.25f,.32f,.34f,.55f);
-  texto(TXT_ILHA_HORA,configStatus(),118,860,234,192);
-  texto(TXT_ILHA_SUB,snap.nome[0]?snap.nome:"AIOStreams",108,891,252,190);
-  gfx_opacidade_grupo=sidebarAlpha;
-  gfx_recorte_voltar(sidebarClip);
+  float by=148+h-66;
+  gfx_cor((GfxRect){94,by,44,44},.5f,1,1,1,.1f);
+  gfx_icone((GfxRect){105,by+11,22,22},open>.5f?"pl_chevron-left":"aj_chevron-right",.953f,.949f,.937f,1);
+  const float *cor=!snap.valida?aioErr:snap.configurada?aioOk:aioWarn;
+  gfx_opacidade_grupo=base*rot;
+  gfx_cor((GfxRect){156,by+17,10,10},.5f,cor[0],cor[1],cor[2],1);
+  txtCor(TXT_ILHA_SUB_L,i18n(!snap.valida?"Indisponível":snap.configurada?"Conectado":"Só streams"),176,by+10,w-120,aioTexto,.72f,0);
+  gfx_opacidade_grupo=base;
+  gfx_recorte_voltar(clip);
 }
 static void workspace(void) {
   if(pagina==PAINEL) {
@@ -1501,29 +1701,62 @@ static void connectClick(int i,int unused) {
 static void connectPointer(int i,int unused) { (void)unused; connectFocus=i; }
 static void connectDraw(Uint32 agora) {
   gfx_cor((GfxRect){0,0,1920,1080},0,0,0,0,T21_VEIL);
-  gfx_cor((GfxRect){360,208,1200,664},32/664.f,.055f,.059f,.071f,1);
-  painel(360,208,1200,664);
-  texto(TXT_ILHA_HORA,"AIOSTREAMS",412,252,600,175);
-  texto(TXT_ILHA_TITULO,i18n("Conectar pelo celular"),412,290,1096,243);
-  const char *description=connectState==AIOPAIR_SYNCED?"Sincronizado":
+  GfxRect folha={330,150,1260,780};
+  plrui_material(folha,34,1,1);
+  gfx_cor(folha,34/780.f,1,1,1,.035f);
+  plrui_kicker("AIOStreams",382,196,243,242,239,.55f);
+  texto(TXT_ILHA_TITULO,i18n("Conectar pelo celular"),382,226,1150,243);
+  int synced=connectState==AIOPAIR_SYNCED;
+  if(connectUrl[0] && !synced) qrDesenhar(connectUrl,382,326,400);
+  else {
+    gfx_cor((GfxRect){382,326,400,400},26/400.f,1,1,1,.06f);
+    gfx_icone((GfxRect){542,486,80,80},synced?"aj_check":"aj_smartphone",.953f,.949f,.937f,.9f);
+  }
+  // Steps follow the real pairing states: scan, validate on the instance, deliver once.
+  const char *titulos3[]={"Aponte a câmera para o código","Entre com UUID e senha","A TV sincroniza sozinha"};
+  const char *subs3[]={"O celular abre a página de conexão, em HTTPS.","O celular confere direto na sua instância.","Entrega única, em caixa temporária de 5 minutos."};
+  int atual=synced?3:connectState==AIOPAIR_CHECKING?1:0;
+  float ar,ag,ab, ink=ajustes_acento_tinta(&ar,&ag,&ab);
+  for(int i=0;i<3;i++) {
+    float y=330+i*86;
+    if(i<atual) {
+      gfx_cor((GfxRect){840,y,44,44},.5f,aioOk[0],aioOk[1],aioOk[2],.22f);
+      gfx_icone((GfxRect){851,y+11,22,22},"aj_check",aioOk[0],aioOk[1],aioOk[2],1);
+    } else {
+      float c[3]={i==atual?ink:.953f,i==atual?ink:.949f,i==atual?ink:.937f};
+      if(i==atual) gfx_cor((GfxRect){840,y,44,44},.5f,ar,ag,ab,1);
+      else gfx_cor((GfxRect){840,y,44,44},.5f,1,1,1,.1f);
+      char n[4]; snprintf(n,sizeof n,"%d",i+1);
+      txtCor(TXT_G20B,n,862-largura(TXT_G20B,n)/2,y+10,30,c,1,0);
+    }
+    txtCor(TXT_G23B,i18n(titulos3[i]),904,y-2,640,aioTexto,1,0);
+    txtCor(TXT_ILHA_SUB_L,i18n(subs3[i]),904,y+30,640,aioTexto,.68f,0);
+  }
+  const char *description=synced?"Sincronizado":
     connectState==AIOPAIR_CHECKING?"Validando sua instância…":
     connectState==AIOPAIR_ERROR?"Acesso recusado. Confira UUID e senha.":
     connectState==AIOPAIR_EXPIRED?"Pareamento expirado. Gere outro QR.":
     connectState==AIOPAIR_UNAVAILABLE?"Pareamento indisponível. Tente novamente ou use a TV.":
-    connectState==AIOPAIR_STARTING?"Preparando conexão segura…":"Escaneie o QR e entre na sua instância. A TV sincroniza automaticamente.";
-  if(connectUrl[0] && connectState!=AIOPAIR_SYNCED) qrDesenhar(connectUrl,412,392,248);
-  else gfx_icone((GfxRect){490,460,72,72},connectState==AIOPAIR_SYNCED?"aj_check":"aj_smartphone",.953f,.949f,.937f,1);
-  blocoEstilo(TXT_ILHA_NOME,i18n(description),716,398,772,36,4);
-  if(connectState==AIOPAIR_STARTING || connectState==AIOPAIR_CHECKING) plrui_anel(730,574,32,1,agora,1);
-  if(connectUrl[0] && connectState!=AIOPAIR_SYNCED) {
-    texto(TXT_ILHA_HORA,i18n("Ou abra este endereço no celular"),412,665,1096,190);
-    texto(TXT_ILHA_SUB,connectUrl,412,698,1096,230);
+    connectState==AIOPAIR_STARTING?"Preparando conexão segura…":"Aguardando o celular";
+  int falhou=connectState==AIOPAIR_ERROR || connectState==AIOPAIR_EXPIRED || connectState==AIOPAIR_UNAVAILABLE;
+  const float *cor=falhou?aioErr:synced?aioOk:NULL;
+  float pulso=.55f+.45f*sinf(agora/260.f);
+  if(connectState==AIOPAIR_STARTING || connectState==AIOPAIR_CHECKING) plrui_anel(851,602,22,1,agora,1);
+  else gfx_cor((GfxRect){845,596,12,12},.5f,cor?cor[0]:ar,cor?cor[1]:ag,cor?cor[2]:ab,falhou||synced?1:pulso);
+  txtCor(TXT_G20M,i18n(description),872,588,660,cor?cor:aioTexto,1,0);
+  if(connectUrl[0] && !synced) {
+    txtCor(TXT_ILHA_HORA_L,i18n("Ou abra este endereço no celular"),840,648,700,aioTexto,.6f,0);
+    txtCor(TXT_ILHA_SUB_L,connectUrl,840,676,700,aioTexto,.82f,0);
   }
-  const char *labels[]={i18n(connectState==AIOPAIR_SYNCED?"Concluir":"Gerar novo QR"),i18n("Digitar na TV")};
+  const char *labels[]={i18n(synced?"Concluir":"Gerar novo QR"),i18n("Digitar na TV")};
+  const char *ic[]={synced?"aj_check":"aj_rotate-cw","aj_keyboard"};
+  float x=382, scale=gfx_escala_txt();
   for(int i=0;i<2;i++) {
-    GfxRect rect={412+i*550,774,526,56};
-    botao_pilula(rect,labels[i],i?"aj_keyboard":"aj_rotate-cw",connectFocus==i,0,0,1);
-    ponteiro_alvo(rect.x,rect.y,rect.w,rect.h,connectPointer,connectClick,i,0);
+    float w=botao_largura(labels[i],ic[i],0);
+    GfxRect rect={x/scale,830/scale,w,T21_CTRL_H};
+    TXT_INI(); botao_pilula(rect,labels[i],ic[i],connectFocus==i,0,0,1); TXT_FIM();
+    ponteiro_alvo(x,830,w*scale,T21_CTRL_H*scale,connectPointer,connectClick,i,0);
+    x+=w*scale+16;
   }
 }
 static void desenhar(Uint32 agora);
