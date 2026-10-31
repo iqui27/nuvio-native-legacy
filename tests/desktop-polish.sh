@@ -62,6 +62,10 @@ assert 'filmo_desenhar(a);return;' in detail
 assert "SDL_WINDOW_HIDDEN" in Path("src/main.c").read_text()
 assert 'SDL_GL_SetSwapInterval(getenv("NV_CAPTURA") ? 0 : 1)' in Path('src/main.c').read_text()
 assert "if (getenv(\"NV_CAPTURA\"))" in Path("src/main.c").read_text()
+tip="Mostrar ou ocultar a barra lateral"
+assert 'i18n("%s")' % tip in native
+for f in Path("src").glob("idioma_*.h"):
+    assert ('"%s"' % tip) in f.read_text(), f
 PY
 cc -fsyntax-only -DNV_DESKTOP_UI -DNV_TOUCH_UI -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 src/desktop_mac.m -Wno-deprecated-declarations
 git diff --check

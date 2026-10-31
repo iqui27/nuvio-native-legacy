@@ -169,6 +169,8 @@ static Foco  focoRes;
 static int   painel = 0;
 static GfxMini fundoBusca;
 static int buResultadosPagina(void) { return buTecladoNativo() && painel == 1; }
+// Desktop has no other query surface since the toolbar pill went away.
+static int buCampoVisivel(void) { return layout_desktop_ativo() || !buResultadosPagina(); }
 static char  consulta[BU_MAX_CONSULTA];
 static int   nConsulta = 0;
 static char consultaFiltrada[BU_MAX_CONSULTA];
@@ -2392,8 +2394,7 @@ static void busca_desenhar_(Uint32 agora) {
 #ifdef NV_TOUCH_UI
   if (buRetratoTelefone()) { desenhaBuscaRetrato(agora); return; }
 #endif
-  if (layout_desktop_ativo()) desenhaCampo(agora);   // the physical keyboard types here
-  if (!layout_desktop_ativo() && !buResultadosPagina()) {
+  if (buCampoVisivel()) {   // desktop: the physical keyboard types here, no grid
     desenhaCampo(agora);
     desenhaTeclado();
   }

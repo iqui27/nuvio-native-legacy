@@ -54,7 +54,47 @@ static NSView *serviceContent;
 @end
 @implementation NVMenuTarget
 - (void)choose:(NSMenuItem *)item { self.selected = item.tag; }
+- (void)toggleSidebar:(id)sender { menu_desktop_alternar(); }
 @end
+static NSButton *sidebarToggle;
+static NSInteger alertAnswer = -1;
+static NSString *alertText;
+// Window-modal NSAlert sheet; SDL keeps pumping while it is up.
+int desktop_native_alert(const char *title, const char *message, const char *const *buttons, int count,
+                         int destructive, const char *text, int secure) {
+  if (!nativeWindow || nativeWindow.attachedSheet || count < 1) return -1;
+  NSAlert *alert = [NSAlert new];
+  alert.messageText = [NSString stringWithUTF8String:title ? title : ""];
+  alert.informativeText = [NSString stringWithUTF8String:message ? message : ""];
+  for (int i = 0; i < count; i++) {
+    NSButton *button = [alert addButtonWithTitle:[NSString stringWithUTF8String:buttons[i]]];
+    if (i == 0 && destructive) button.hasDestructiveAction = YES;
+    if (i == count - 1 && count > 1) button.keyEquivalent = @"\033";
+  }
+  NSTextField *field = nil;
+  if (text) {
+    field = secure ? [NSSecureTextField new] : [NSTextField new];
+    field.stringValue = [NSString stringWithUTF8String:text];
+    field.frame = NSMakeRect(0, 0, 260, 24);
+    alert.accessoryView = field;
+    alert.window.initialFirstResponder = field;
+  }
+  alertAnswer = -2;
+  [alert beginSheetModalForWindow:nativeWindow completionHandler:^(NSModalResponse response) {
+    [alertText release]; alertText = [field.stringValue copy];
+    alertAnswer = response - NSAlertFirstButtonReturn;
+    [field release]; [alert release];
+  }];
+  printf("[desktop-sheet] window=%ld parent=%ld field=%d\n", (long)alert.window.windowNumber,
+         (long)nativeWindow.windowNumber, text != NULL); fflush(stdout);
+  return 0;
+}
+int desktop_native_alert_result(char *text, int size) {
+  if (alertAnswer < 0) return -1;
+  int answer = (int)alertAnswer; alertAnswer = -1;
+  if (text && size > 0) snprintf(text, size, "%s", alertText ? alertText.UTF8String : "");
+  return answer;
+}
 int desktop_native_menu(const DesktopMenuItem *items, int count, float x, float y) {
   if (!nativeWindow || count <= 0) return -1;
   NSMenu *menu = [[NSMenu alloc] initWithTitle:@""];
@@ -182,6 +222,12 @@ void desktop_native_init(SDL_Window *window) {
   nativeWindow.titlebarSeparatorStyle = NSTitlebarSeparatorStyleNone;
   nativeWindow.opaque = NO;
   nativeWindow.backgroundColor = NSColor.clearColor;
+  // SDL registers AppleMomentumScrollSupported=NO (Cocoa_RegisterApp), so AppKit
+  // never generated trackpad momentum for this app. Restore the system default.
+  BOOL sdlMomentum = [NSUserDefaults.standardUserDefaults boolForKey:@"AppleMomentumScrollSupported"];
+  [NSUserDefaults.standardUserDefaults registerDefaults:@{@"AppleMomentumScrollSupported": @YES}];
+  printf("[desktop-momentum] sdl=%d now=%d\n", sdlMomentum,
+         [NSUserDefaults.standardUserDefaults boolForKey:@"AppleMomentumScrollSupported"]);
   NSView *content = nativeWindow.contentView;
   specializeView(content,"NVFirstMouseSDLView",@selector(acceptsFirstMouse:),(IMP)firstMouse,"c@:@");
   [content setWantsLayer:YES];
@@ -225,7 +271,7 @@ void desktop_native_init(SDL_Window *window) {
   // pixels, phases and OS momentum in a tagged SDL event instead.
   scrollMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskScrollWheel|NSEventMaskSwipe handler:^NSEvent *(NSEvent *event) {
     BOOL swipe = event.type == NSEventTypeSwipe;
-    if(menuTracking) return event;
+    if(menuTracking || nativeWindow.attachedSheet) return event;
     BOOL momentum=event.momentumPhase!=NSEventPhaseNone;
     // Momentum may carry no window after the finger leaves. Its initial
     // window and point remain authoritative, even over another row/view.
@@ -262,15 +308,29 @@ void desktop_native_init(SDL_Window *window) {
     return nil;
   }];
   nativeWindow.acceptsMouseMovedEvents=YES;
+  // Titlebar sidebar button, beside the traffic lights like Finder and Notes.
+  NSButton *zoom = [nativeWindow standardWindowButton:NSWindowZoomButton];
+  NVMenuTarget *toggleTarget = [NVMenuTarget new];
+  sidebarToggle = [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"sidebar.left" accessibilityDescription:nil]
+                                     target:toggleTarget action:@selector(toggleSidebar:)];
+  if (@available(macOS 26.0, *)) sidebarToggle.bezelStyle = NSBezelStyleGlass;
+  else sidebarToggle.bordered = NO;
+  sidebarToggle.toolTip = [NSString stringWithUTF8String:i18n("Mostrar ou ocultar a barra lateral")];
+  sidebarToggle.accessibilityLabel = sidebarToggle.toolTip;
+  sidebarToggle.frame = NSMakeRect(NSMaxX(zoom.frame) + 14, NSMidY(zoom.frame) - 14, 36, 28);
+  sidebarToggle.autoresizingMask = NSViewMinYMargin;
+  [zoom.superview addSubview:sidebarToggle];
   // Cocoa and SDL disagree on the content origin after FullSizeContentView.
   // Use the very same view conversion for move, click and scroll; no focus-only click.
   hoverMonitor=[NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskMouseMoved|NSEventMaskLeftMouseDragged|NSEventMaskLeftMouseDown|NSEventMaskLeftMouseUp|NSEventMaskRightMouseDown|NSEventMaskRightMouseUp handler:^NSEvent *(NSEvent *event) {
-    if(menuTracking || event.window!=nativeWindow) return event;
+    // A sheet blocks its parent: let AppKit refuse the event, never forward it.
+    if(menuTracking || event.window!=nativeWindow || nativeWindow.attachedSheet) return event;
     NSPoint p=[content convertPoint:event.locationInWindow fromView:nil];
     for(NSWindowButton button=NSWindowCloseButton;button<=NSWindowZoomButton;button++) {
       NSButton *control=[nativeWindow standardWindowButton:button];
       if(control && NSPointInRect([control convertPoint:event.locationInWindow fromView:nil],control.bounds)) return event;
     }
+    if(!sidebarToggle.hidden && NSPointInRect([sidebarToggle convertPoint:event.locationInWindow fromView:nil],sidebarToggle.bounds)) return event;
     menu_desktop_hover(p.x);
     NSPoint containerPoint=[sidebar.superview convertPoint:event.locationInWindow fromView:nil];
     if([sidebar hitTest:containerPoint]) return event;

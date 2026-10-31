@@ -6,7 +6,7 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-aio-shot.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 if [ "${AIO_SHOT_BIN:-}" ]; then
   mkdir -p "$out"
-  printf 'idioma 0\nvidroLocal 0\nfonteInterface 0\n' > "$work/ajustes.txt"
+  printf 'idioma %s\nvidroLocal 0\nfonteInterface 0\n' "${AIO_SHOT_LANGUAGE:-0}" > "$work/ajustes.txt"
   NUVIO_DADOS="$work" NUVIO_TESTE_DIR="$work" "$AIO_SHOT_BIN" "$out"
   exit
 fi
@@ -17,6 +17,6 @@ cc -DNV_SHOT_HOOKS "${sources[@]}" tests/aiostreams_shot.c -Isrc -o "$work/shot"
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined
 mkdir -p "$out"
-printf 'idioma 0\nvidroLocal 0\nfonteInterface 0\n' > "$work/ajustes.txt"
+printf 'idioma %s\nvidroLocal 0\nfonteInterface 0\n' "${AIO_SHOT_LANGUAGE:-0}" > "$work/ajustes.txt"
 NUVIO_DADOS="$work" NUVIO_TESTE_DIR="$work" "$work/shot" "$out"
 cp "$work/shot" /tmp/nuvio-aiostreams-shot

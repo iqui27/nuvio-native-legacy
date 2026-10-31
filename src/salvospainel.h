@@ -18,6 +18,9 @@
 #include "gfx.h"
 
 void spainel_abrir(void);
+#ifdef NV_DESKTOP_UI
+void spainel_desktop_preview_categoria(void);
+#endif
 void spainel_fechar(void);
 // Restore the same tab, row and scroll after closing a title opened here.
 void spainel_voltar_titulo(void);

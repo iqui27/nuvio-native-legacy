@@ -26,6 +26,7 @@ void ctx_abrir(int indice);
 void ctx_desktop_ancorar(float x, float y);
 #if defined(__APPLE__)
 void ctx_desktop_menu(void);
+void ctx_desktop_preview_confirmar(int indice);
 #endif
 int ctx_desktop_pedido(int *action); // 0 title, 1 play, 2 trailer; returns catalog index
 #endif

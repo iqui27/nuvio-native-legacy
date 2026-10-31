@@ -5,11 +5,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <stdarg.h>
 // Numeric input diagnostics only. Never include catalog or account strings.
-static inline void desktop_input_log(const SDL_Event *e, float x, float y,
-                                     int row, int item, float offset) {
+static inline FILE *desktop_input_file(void) {
   const char *home=getenv("HOME");
-  if (!home) return;
+  if (!home) return NULL;
   char path[4096], old[4104];
   snprintf(path,sizeof path,"%s/Library/Logs/Nuvio",home);
   mkdir(path,0700);
@@ -18,7 +18,20 @@ static inline void desktop_input_log(const SDL_Event *e, float x, float y,
   if (!stat(path,&st) && st.st_size>=2*1024*1024) {
     snprintf(old,sizeof old,"%s.1",path);rename(path,old);
   }
-  FILE *f=fopen(path,"a");
+  return fopen(path,"a");
+}
+// Gesture decisions: momentum source, swipe start/action, sidebar toggle.
+static inline void desktop_input_note(const char *format, ...) {
+  FILE *f=desktop_input_file();
+  if (!f) return;
+  struct timespec now;clock_gettime(CLOCK_REALTIME,&now);
+  fprintf(f,"time=%.3f ",now.tv_sec+now.tv_nsec/1e9);
+  va_list args;va_start(args,format);vfprintf(f,format,args);va_end(args);
+  fputc('\n',f);fclose(f);
+}
+static inline void desktop_input_log(const SDL_Event *e, float x, float y,
+                                     int row, int item, float offset) {
+  FILE *f=desktop_input_file();
   if (!f) return;
   int wheel=e->type==SDL_MOUSEWHEEL;
   int native=wheel && e->wheel.which==NV_DESKTOP_PIXEL_WHEEL;

@@ -56,6 +56,13 @@ static void compor(const char *s) {
   e.type = SDL_TEXTEDITING; snprintf(e.edit.text, sizeof e.edit.text, "%s", s);
   teclado_evento(&e);
 }
+// Mac NSAlert sheet: -1 = unavailable, so the inline field is the fallback.
+static int folhaOk, folhaR = -1, folhas;
+static char folhaTxt[64];
+int desktop_native_alert(const char *t, const char *m, const char *const *b, int c, int d, const char *x, int s) {
+  (void)t; (void)m; (void)b; (void)c; (void)d; (void)x; (void)s; folhas++; return folhaOk ? 0 : -1;
+}
+int desktop_native_alert_result(char *t, int n) { if (folhaR >= 0) snprintf(t, (size_t)n, "%s", folhaTxt); return folhaR; }
 #define LIVRE "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .-"
 
 int main(void) {
@@ -120,7 +127,15 @@ int main(void) {
   assert(teclado_aberto());
   assert(!celOk());                  // no "type on your phone" on desktop
   tecla(SDLK_ESCAPE, 0);
-  puts("PASS: desktop text field types accents/IME/paste, edits by caret, keeps alphabets, masks passwords, no on-screen grid");
+  // Sheet available: the prompt lives in the sheet, the in-app field stays hidden.
+  folhaOk = 1; folhas = 0; desenhado[0] = 0;
+  teclado_abrir_com("Nome da nova lista", "", 60, LIVRE, NULL);
+  teclado_desenhar(1000);
+  assert(folhas == 1 && teclado_aberto() && !desenhado[0]);
+  strcpy(folhaTxt, "Filmes"); folhaR = 0;
+  teclado_atualizar(0.016f, 1000);
+  assert(!teclado_aberto() && teclado_resultado() == TECLADO_PRONTO && !strcmp(teclado_texto(), "Filmes"));
+  puts("PASS: Mac sheet when available; desktop text field types accents/IME/paste, edits by caret, keeps alphabets, masks passwords, no on-screen grid");
 }
 int st_ime_disponivel(void) { return 0; }
 void st_fechar(int dono) { (void)dono; }

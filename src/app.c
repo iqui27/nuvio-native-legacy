@@ -1210,6 +1210,10 @@ void app_desktop_preview(const char *screen) {
   else if (!strcmp(screen,"collapse")) menu_desktop_alternar();
   else if (!strcmp(screen,"expand")) menu_desktop_expandir();
   else if (!strcmp(screen,"streaming")) menu_ir(MENU_STREAMING);
+#ifdef __APPLE__
+  else if (!strcmp(screen,"category")) { spainel_abrir(); spainel_desktop_preview_categoria(); }
+  else if (!strcmp(screen,"confirm")) { menu_ir(MENU_INICIO); trocarTela(TELA_HOME); ctx_desktop_preview_confirmar(cat_indice_por_imdb("tt12637874")); }
+#endif
 }
 #endif
 static void abrirTelaFilha(Tela nova) {

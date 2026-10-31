@@ -15,6 +15,7 @@
 #include "celular.h"
 #include "telefoneui.h"
 #include "rolagemtoque.h"
+#include "desktop_native.h"
 #include <ctype.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -263,6 +264,9 @@ static const char *alfa(void) { return alfabetoAtual ? alfabetoAtual : ALFABETO;
 static char  texto[TECLADO_LONGO + 1];
 static int   n, maxN, resultado;
 static int   confirmarVazio;
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+static int   nativo, nativoPend;   // NSAlert sheet pending / on screen
+#endif
 static char  tituloAtual[96], dicaAtual[160];
 static int   celRecebido;
 // SENHA (#216): o campo mostra pontos, nunca o texto. A modal fica na tela e
@@ -605,8 +609,12 @@ void teclado_abrir_com(const char *titulo, const char *dica, int max,
     pendIme = 1;
   }
 #ifdef NV_DESKTOP_UI
+  // Inline physical-keyboard field: used when the Mac sheet is unavailable.
   deCaret = deAncora = n; deFoco = TE_D_CAMPO; deComp[0] = 0; deRolagem = 0;
   SDL_StartTextInput();
+#endif
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+  nativoPend = layout_desktop_ativo();
 #endif
 }
 
@@ -634,6 +642,32 @@ static int filtrar(const char *t, char *dst, int cap, int utf8) {
 }
 static void definirDoSistema(const char *t) { n = filtrar(t, texto, maxN, aceitaUtf8); }
 
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+// Mac: the same contract as an NSAlert sheet with a text field. Opened on the
+// first poll, after the caller's teclado_tipo/permitir_vazio.
+static void fechar(int r);
+static int teNativo(void) {
+  if (!aberto) { nativo = nativoPend = 0; return 0; }
+  if (nativoPend) {
+    const char *botoes[] = { i18n("Concluir"), i18n("Cancelar") };
+    nativoPend = 0;
+    nativo = !desktop_native_alert(i18n(tituloAtual), dicaAtual[0] ? i18n(dicaAtual) : "", botoes, 2, 0, texto, ehSenha);
+  }
+  if (!nativo) return 0;
+  char digitado[sizeof texto];
+  int r = desktop_native_alert_result(digitado, sizeof digitado);
+  if (r < 0) return 1;
+  nativo = 0;
+  if (r == 0) {
+    definirDoSistema(digitado);
+    if (n > 0 || abriuComValor || confirmarVazio) { fechar(TECLADO_PRONTO); return 1; }
+  }
+  fechar(TECLADO_CANCELOU);
+  return 1;
+}
+#else
+static int teNativo(void) { return 0; }
+#endif
 static void fechar(int r) {
   aberto = 0;
   pendIme = 0;
@@ -1453,8 +1487,8 @@ static void tePhoneDesenhar(Uint32 agora) {
 }
 #endif
 
-void teclado_evento(const SDL_Event *e) { TXT_INI(); teclado_evento_(e); TXT_FIM(); }
-void teclado_atualizar(float dt, Uint32 agora) { TXT_INI(); teclado_atualizar_(dt, agora); TXT_FIM(); }
+void teclado_evento(const SDL_Event *e) { if (teNativo()) return; TXT_INI(); teclado_evento_(e); TXT_FIM(); }
+void teclado_atualizar(float dt, Uint32 agora) { if (teNativo()) return; TXT_INI(); teclado_atualizar_(dt, agora); TXT_FIM(); }
 
 static void teDesenhar(Uint32 agora);
 #ifdef NV_DESKTOP_UI
@@ -1566,6 +1600,7 @@ static void deDesenhar(Uint32 agora) {
 #endif
 // TV follows text scale; the virtual viewport keeps the modal centered.
 void teclado_desenhar(Uint32 agora) {
+  if (teNativo()) return;
 #ifdef NV_DESKTOP_UI
   { TXT_INI(); deDesenhar(agora); TXT_FIM(); }
   return;
