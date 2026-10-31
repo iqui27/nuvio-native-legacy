@@ -12,6 +12,7 @@ typedef struct {
   DtsBufferInfo buffer;
   double buffered_until;
   double start_position; /* Position applied by the latest successful Load. */
+  unsigned buffering_ms; /* Worker-managed refill; user pause remains separate. */
 } DtsPlaybackStatus;
 /* All expensive work and native Feed calls are serialized on one worker.
  * Callers own a session; close joins it before freeing callback context. */

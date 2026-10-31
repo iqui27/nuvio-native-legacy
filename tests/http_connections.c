@@ -24,6 +24,16 @@ static void session(const char *url,const char *mode,int workers,int phase) {
   assert(e->http_workers==workers);
   // Settings changed for future sessions must not alter an existing engine.
   dts_engine_set_http_workers(5);dts_engine_set_source_workers(0);assert(e->http_workers==workers);
+  if(!strcmp(mode,"priority")) {
+    /* One lane proves the awaited interval wins over older speculation. */
+    assert(workers==1);
+    pthread_mutex_lock(&e->range_lock);queue_ranges(e);
+    __atomic_store_n(&e->ranges[4].urgent,2,__ATOMIC_RELAXED);
+    pthread_mutex_unlock(&e->range_lock);assert(start_ranges(e));
+    pthread_mutex_lock(&e->range_lock);
+    e->range_next=(int64_t)e->range_slots*e->range_bytes;
+    pthread_mutex_unlock(&e->range_lock);
+  }
   bytes(e,source,0,1048576);
   struct timespec pause={0,150000000};nanosleep(&pause,NULL);
   printf("STEADY %d %d\n",phase,workers);fflush(stdout);assert(getchar()=='\n');

@@ -32,12 +32,19 @@ static atomic_llong hold_wall_offset;
 static atomic_int handoff_cancelled;
 static int last_p7,mp4_fixture,mp4_seek_case;
 static atomic_int mp4_no_clock;
+#ifdef DTS_REFILL_FIXTURE
+static atomic_int refill_eof;
+static atomic_int refill_tail;
+#endif
 static atomic_llong buffer_ready = 21*1048576LL;
 static atomic_llong buffer_contiguous = 20*1048576LL;
 void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *out) {
  (void)e;
  *out=(DtsBufferInfo){.ready_bytes=atomic_load(&buffer_ready),.capacity_bytes=68*1048576LL,
                      .position=1048576,.total=300*1048576LL,.contiguous_bytes=atomic_load(&buffer_contiguous),.http_workers=4};
+#ifdef DTS_REFILL_FIXTURE
+ if(atomic_load(&refill_tail))out->total=out->position+out->contiguous_bytes;
+#endif
 }
 static atomic_llong stall_wall_ns;
 static int64_t frozen_clock, original_stall_clock;
@@ -136,6 +143,9 @@ void dts_subtitles_destroy(DtsSubtitles *s) {
  pthread_mutex_lock(&fixture);sub_destroyed++;pthread_mutex_unlock(&fixture);free(s);
 }
 int dts_engine_next(DtsEngine *e,DtsFrame *f) {
+#ifdef DTS_REFILL_FIXTURE
+ if(atomic_load(&refill_eof))return 0;
+#endif
  if(atomic_load(&prime_block) && e->base>0 && (!handoff_fixture || e->info.audio_stream==9)) {
   atomic_store(&prime_entered,1);
   while(!atomic_load(&prime_release) && !atomic_load(&e->cancelled))nap();

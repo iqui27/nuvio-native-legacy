@@ -1,6 +1,6 @@
 import http.server,re,subprocess,threading,time,sys
 TOTAL=128*1048576
-pattern=bytes(range(251));active={};peak={};lock=threading.Lock()
+pattern=bytes(range(251));active={};peak={};first={};lock=threading.Lock()
 class Origin(http.server.BaseHTTPRequestHandler):
  protocol_version='HTTP/1.1'
  def log_message(self,*args):pass
@@ -16,6 +16,7 @@ class Origin(http.server.BaseHTTPRequestHandler):
   lo=int(m[1]);hi=min(int(m[2]) if m[2] else TOTAL-1,TOTAL-1)
   measured=hi-lo+1>256
   if measured:
+   with lock:first.setdefault(self.path,lo)
    # Canceled origin handlers can outlive the previous child process. Count
    # each unique fixture path separately so they cannot inflate the next case.
    with lock:active[self.path]=active.get(self.path,0)+1;peak[self.path]=max(peak.get(self.path,0),active[self.path])
@@ -51,6 +52,8 @@ def run_case(route,mode,sequence,label):
   assert p.wait(timeout=10)==0,(mode,sequence)
   assert phases==len(sequence) and len(created)==phases and set(created)==closed,(phases,created,closed)
   assert created==sorted(set(created)),created
+  if mode=='priority':
+   with lock:assert first[base+'/0']==4*1048576,first
   print(f'PASS: {mode}, sequence={sequence}, measured HTTP limits and complete teardown in one process',flush=True)
  finally:
   if p.poll() is None:p.kill();p.wait()
@@ -60,4 +63,5 @@ try:
   for workers in (1,2,3,4):run_case(route,mode,[workers],str(workers))
   # Reconfigure and reopen in the same application process, without restarting.
   run_case(route,mode,[1,4,1,4],'switch')
+ run_case('priority','priority',[1],'critical')
 finally:server.shutdown();server.server_close()

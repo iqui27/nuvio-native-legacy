@@ -7,7 +7,9 @@ Playback port: `Matis94/nuvio-native-legacy` `build/playback-v17-no-qr`
 
 Only playback modules, buffer/playback settings, their build dependencies and
 regressions are ported. Other upstream application changes are preserved.
-No diagnostic QR or source formatter changes are imported. The upstream folder
+The initial port omitted diagnostics QR and source formatter changes. Diagnostics
+QR was subsequently added as a separate device-local, default-OFF switch.
+The upstream folder
 hero setting keeps its enum position and persisted key; playback settings append
 after it. The native asynchronous load and conversion URL copies accept the
 upstream `NV_MEDIA_URL_MAX` limit.
@@ -15,6 +17,31 @@ The remembered DV audio-source identity uses that limit as well; a 1024-byte
 copy would prevent restoring a track for long URLs accepted by upstream.
 
 ## Settings
+
+### Recovery after seeking or underflow
+
+The webOS conversion worker pauses the existing native pipeline when the current
+continuous byte window runs low, or when a seek needs a new continuous window.
+It resumes after both audio/video have two seconds queued and the reader has a
+continuous payload reserve (one quarter of its capacity, capped at 16 MiB).
+Unrelated later ranges do not count toward that reserve. EOF and user pause,
+seek, audio changes and cancellation remain separate from automatic refill.
+Refill has a 20-second active wait budget; a persistent failure retains the
+existing terminal recovery policy. No second player, frame queue, HTTP lane or
+larger buffer allocation is introduced. The usual RAM safety floor stays active.
+
+An awaited DV gap has priority over speculative queued ranges. Its three/five
+second retry window is extended while at least 64 KiB arrives during that window
+and the transfer is not idle. Stalled or negligible transfers still retry; the
+existing whole-request timeout remains in force. Partial bodies that progress
+are retained instead of repeatedly restarting the same four-MiB interval.
+
+`tests/dts_rebuffer.sh` exercises SDR/DV refill, user pause, seek, audio changes,
+EOF, cancellation and bounded failure. `tests/range_progress.sh` uses real HTTP
+to distinguish useful progress, idle and negligible trickles. The HTTP connection
+matrix also verifies 1/4/1/4 sessions and prioritization without exceeding limits.
+
+### Buffer controls
 
 Playback > Image and sound > Buffer size. Its editor contains the four size
 presets, then an HTTP connections section with two nested selectors:

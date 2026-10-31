@@ -3223,6 +3223,7 @@ typedef struct {
   int64_t start, end, total, requested, limit;
   volatile int *cancel, *urgent;
   uint64_t progress_ms, urgent_ms;
+  uint64_t urgent_bytes;
   int urgent_started;
   long long progress_bytes;
   unsigned idle_ms;
@@ -3322,20 +3323,31 @@ static int dtsRangeProgress(void *user, long long dt, long long dn,
   if(dn!=r->progress_bytes) { r->progress_bytes=dn; r->progress_ms=now; }
   int urgent=r->urgent?__atomic_load_n(r->urgent,__ATOMIC_RELAXED):0;
   if(urgent>=2) {
-    if(!r->urgent_started) { r->urgent_started=1;r->urgent_ms=now; }
+    if(!r->urgent_started) {
+      r->urgent_started=1;r->urgent_ms=now;r->urgent_bytes=r->body.n;
+    }
     int complete=r->valid && r->end>=r->start &&
       r->body.n>=(uint64_t)(r->end-r->start+1);
-    // A hole with later completed ranges should recover before the native
-    // decoder empties. Give a nearly finished body the original five seconds;
-    // a slow trickle below 75% gets a three-second critical-gap budget.
+    // Retry a stalled hole quickly, but keep useful bytes that still arrive.
+    // Repeatedly restarting a progressing 4 MiB body can itself create a gap.
+    // The existing whole-request timeout still bounds a slow origin.
     uint64_t budget=5000;
     if(urgent>=3 && r->valid && r->end>=r->start &&
        r->body.n<(uint64_t)(r->end-r->start+1)*3/4)budget=3000;
     if(!complete && now>=r->urgent_ms && now-r->urgent_ms>=budget) {
-      if(r->stalled) *r->stalled=1;
-      printf("[range-budget] start=%lld waitMs=%llu got=%llu budgetMs=%llu\n",(long long)r->requested,
-        (unsigned long long)(now-r->urgent_ms),(unsigned long long)r->body.n,(unsigned long long)budget);
-      fflush(stdout);return 1;
+      uint64_t gained=r->body.n>=r->urgent_bytes?r->body.n-r->urgent_bytes:0;
+      if(gained>=65536 && now>=r->progress_ms &&
+         now-r->progress_ms<(r->idle_ms?r->idle_ms:2500)) {
+        printf("[range-progress] start=%lld waitMs=%llu got=%llu gained=%llu kept=1\n",
+          (long long)r->requested,(unsigned long long)(now-r->urgent_ms),
+          (unsigned long long)r->body.n,(unsigned long long)gained);
+        fflush(stdout);r->urgent_ms=now;r->urgent_bytes=r->body.n;
+      } else {
+        if(r->stalled) *r->stalled=1;
+        printf("[range-budget] start=%lld waitMs=%llu got=%llu budgetMs=%llu\n",(long long)r->requested,
+          (unsigned long long)(now-r->urgent_ms),(unsigned long long)r->body.n,(unsigned long long)budget);
+        fflush(stdout);return 1;
+      }
     }
   } else r->urgent_started=0;
   if(r->urgent && r->idle_ms && now>=r->progress_ms &&

@@ -49,9 +49,9 @@ int main(int argc,char **argv) {
    pthread_mutex_lock(&e->range_lock);assert(e->ranges[slot].data==saved);pthread_mutex_unlock(&e->range_lock);
    bytes(e,(int)(9LL*e->range_bytes-fault_at-1));
    double seconds=(clock_ns(CLOCK_MONOTONIC)-begun)/1e9;
-   // A confirmed gap must recover before the previous five-second guard,
-   // while retaining the successful later payloads and exact byte stream.
-   assert(seconds>=2.8 && seconds<(strstr(argv[1],"live-dripall")?19:5));
+   // Keep the first body while it makes useful progress, including when the
+   // origin needs more than three seconds; preserve all later allocations.
+   assert(seconds>=5.5 && seconds<15);
    dts_engine_destroy(e);printf("PASS DV slow trickle: %.3fs, exact bytes, retained future allocations, bounded retry\n",seconds);return 0;
   }
   if(strstr(argv[1],"live-speculative")) {

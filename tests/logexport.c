@@ -34,6 +34,10 @@ int main(void) {
   const char *safe = "[playback-diag] tick=123 generation=2 pos=123.456 readyBytes=268435456 availableKiB=245760";
   logexport_redact(safe, out, sizeof out); assert(!strcmp(safe, out));
   const char *range_logs[]={
+    "[range-progress] start=4194303 waitMs=3012 got=2031616 gained=2031616 kept=1",
+    "[dts-rebuffer] event=start reason=seek target=9282.482 contiguousKiB=4095 readyKiB=135167",
+    "[dts-rebuffer] event=end ms=6430 aheadA=2.10 aheadV=2.00 contiguousKiB=20480",
+    "[dts-rebuffer] event=timeout ms=20050 contiguousKiB=0 readyKiB=163840",
     "[http-setting] path=conversion old=1 selected=4 applies=next-video saved=1",
     "[http-setting] event=restore oldNative=3 native=1 oldConversion=1 conversion=4 applies=next-video saved=1",
     "[http-session] generation=17 event=stop-start converter=1 playing=1 pending=0 nativeSelected=1 conversionSelected=4",

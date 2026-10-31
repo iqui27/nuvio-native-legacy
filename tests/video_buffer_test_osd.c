@@ -49,6 +49,13 @@ int main(void) {
   assert(fabs(video_buffer_fim()-25)<.001); // Frames already fed to native playback.
   pump_status.buffer.contiguous_bytes=100*1048576LL;
   assert(video_buffer_fim()==100); // File-duration clamp.
+  bufferandoDesde=1;pausaPedida=0;pump_status.buffering_ms=7300;
+  assert(video_bufferando_ms()==7300);
+  bombearDts();assert(dtsRefillVisto);
+  pausaPedida=1;assert(!video_bufferando_ms());
+  pausaPedida=0;pump_status.buffering_ms=0;
+  bombearDts();assert(!dtsRefillVisto && !bufferandoDesde);
+  assert(!video_bufferando_ms()); // Refill completion survives retired callback queues.
   pump_status.failed=1;
   video_buffer_test_text(text, sizeof text);assert(!strcmp(text, "Buffer: system"));
   assert(video_buffer_fim()==0);

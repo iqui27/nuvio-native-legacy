@@ -364,7 +364,13 @@ static void *range_worker(void *opaque) {
       if(!cancelled(e)) {
         for(int i=0;i<RANGE_SLOTS_MAX;i++) {
           DtsRangeJob *candidate=&e->ranges[i];
-          if(candidate->state==1 && (!job || candidate->start<job->start)) job=candidate;
+          if(candidate->state!=1)continue;
+          int priority=0,best=0;
+#ifdef NV_DTS_WEBOS_RECOVERY
+          priority=__atomic_load_n(&candidate->urgent,__ATOMIC_RELAXED)>=2;
+          best=job && __atomic_load_n(&job->urgent,__ATOMIC_RELAXED)>=2;
+#endif
+          if(!job || priority>best || (priority==best && candidate->start<job->start))job=candidate;
         }
       }
       if(job) break;
@@ -771,7 +777,8 @@ static int optional_p2p_tail(DtsEngine *e) {
 }
 /* Under range_lock. Only the actively awaited DV interval can escalate; a
  * paused consumer or an ordinary speculative download keeps its full budget.
- * Two later payloads prove a local hole rather than a generally slow origin. */
+ * Later payloads identify a hole, but do not prove the origin is fast. The
+ * HTTP guard retains a progressing body instead of restarting every 3 s. */
 static void range_wait_priority(DtsEngine *e,DtsRangeJob *job) {
 #if defined(NV_NATIVE_SEEK_TEST) && defined(NV_DTS_WEBOS_RECOVERY)
   if(!e->dv || e->remux || !__atomic_load_n(&e->range_live,__ATOMIC_RELAXED) ||

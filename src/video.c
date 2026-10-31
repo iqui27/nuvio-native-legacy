@@ -802,6 +802,7 @@ static double bufferSeg;
 // bufferSeg ja tem aqui — a leitura errada custa um quadro de decisao, nunca
 // um estado invalido.
 static Uint32 bufferandoDesde;
+static int dtsRefillVisto;
 
 static void esperar(int ms) { struct timespec t; t.tv_sec = ms / 1000;
   t.tv_nsec = (long)(ms % 1000) * 1000000L; nanosleep(&t, NULL); }
@@ -2969,6 +2970,7 @@ static void pararSessao(void) {
    * pipeline must not queue an error for the replacement source. */
   __atomic_add_fetch(&sessao, 1, __ATOMIC_ACQ_REL);
   bufferLoad.session=0;
+  dtsRefillVisto=0;
   moviebuffer_stop();
   int tinhaDts = dtsSessao != NULL;
   DtsPlayback *antigoDts = dtsSessao;
@@ -3477,6 +3479,10 @@ static void bombearDts(void) {
   sincronizarPlanoDts(&st);
   while (dts_playback_event(dtsSessao, event, sizeof event))
     if (!logDtsStage(event)) eventoPayload(event, sessao);
+  /* A source/track reconfiguration may retire queued native callbacks. The
+   * worker snapshot remains authoritative for the managed refill spinner. */
+  if(st.buffering_ms)dtsRefillVisto=1;
+  else if(dtsRefillVisto) {dtsRefillVisto=0;bufferandoDesde=0;}
 }
 
 void video_pausar(int pausado) {
@@ -3910,6 +3916,10 @@ int    video_seek_desistiu(void) { return seekRetry.desistiu; }
 int    video_terminou(void) { return terminou; }
 int    video_conflito_recurso(void) { return 0; }
 unsigned video_bufferando_ms(void) {
+  if (dtsSessao) {
+    DtsPlaybackStatus st;dts_playback_status(dtsSessao,&st);
+    if(st.buffering_ms)return pausaPedida?0:st.buffering_ms;
+  }
   Uint32 d = bufferandoDesde;
   // Esperando para reconectar nao e "fonte que morreu sem dizer": o watchdog
   // (app.c) nao pode trocar de fonte enquanto a maquina de reconexao decide.
