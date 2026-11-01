@@ -1886,7 +1886,7 @@ static void activate(int id){
       return;
     }
     if(!strcmp(screen,"multiview-escolher")){
-      if(id==899){input(5,"Buscar canal",query,0);return;}
+      if(id==899){input(5,i18n("Buscar canal"),query,0);return;}
       if(id>=900&&id<900+npicks){
         MvPick *p=&picks[id-900];
         if(p->header)return;
