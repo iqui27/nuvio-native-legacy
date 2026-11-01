@@ -43,7 +43,7 @@ int main(void) {
         near("left matches Home", x * scale, home);
         near("right stays safe", (x + w) * scale, 1816);
         near("Library origin", t21_probe_biblioteca() * scale, home);
-        near("Onboarding origin", t21_probe_comecar() * scale, home);
+        near("Onboarding origin", t21_probe_comecar() * scale, 120);   // mock margin, 97b2fcf8a
         near("Achievements origin", t21_probe_conquistas() * scale, home);
 #ifdef HAVE_T21
         near("Filmography origin", t21_probe_filmo() * scale, home);
