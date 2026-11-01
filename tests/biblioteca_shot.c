@@ -941,7 +941,9 @@ int main(int argc, char **argv) {
     snprintf(nome, sizeof nome, "%s-propria-chips.bmp", saida);
     captura(nome);
     // Ate Ordem (chip 4) e liga.
-    for (k = 0; k < 4; k++) tecla(SDLK_RIGHT);
+    // Approved 6B (dcb1da63b): wrapped actions; spatial focus (d34e0a548)
+    // follows their rendered positions: Pin -> Home -> Order.
+    tecla(SDLK_RIGHT); tecla(SDLK_RIGHT);
     biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
     ASSERTA(acao == 4, "o foco alcanca Ordem pelo D-pad (veio %d)", acao);
     tecla(SDLK_RETURN); solta(SDLK_RETURN);
@@ -966,8 +968,9 @@ int main(int argc, char **argv) {
     snprintf(nome, sizeof nome, "%s-propria-ordem-falha.bmp", saida);
     captura(nome);
     // Compartilhar (chip 6): QR por cima, qualquer tecla fecha.
-    AO_TOPO();
-    for (k = 0; k < 2; k++) tecla(SDLK_RIGHT);
+    // From title 1 back to Order, then down to Trail and left to Share.
+    tecla(SDLK_UP); tecla(SDLK_UP);
+    tecla(SDLK_DOWN); tecla(SDLK_LEFT);
     biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
     ASSERTA(acao == 6, "o foco alcanca Compartilhar (veio %d)", acao);
     tecla(SDLK_RETURN); solta(SDLK_RETURN);
@@ -979,7 +982,9 @@ int main(int argc, char **argv) {
     biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
     ASSERTA(comp == 0, "uma tecla fecha o QR");
     // Notas (chip 5): liga, OK no titulo abre o teclado, Back fecha o teclado e depois o modo.
-    tecla(SDLK_LEFT);
+    // Share -> Movies -> Description -> Order -> Notes.
+    tecla(SDLK_UP);
+    tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT);
     tecla(SDLK_RETURN); solta(SDLK_RETURN);
     biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
     ASSERTA(ed == 2, "Notas liga (ed %d)", ed);
@@ -993,9 +998,10 @@ int main(int argc, char **argv) {
     biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
     ASSERTA(ed == 0, "Back conclui Notas (ed %d)", ed);
     // Descricao (chip 3): teclado com a descricao atual.
-    AO_TOPO();
-    for (k = 0; k < 8; k++) tecla(SDLK_LEFT);
-    for (k = 0; k < 3; k++) tecla(SDLK_RIGHT);
+    // Refresh hit targets after "Concluir notas" shrinks back to "Notas".
+    quadros(1);
+    // Return from the first title to Notes, then left to Description.
+    tecla(SDLK_UP); tecla(SDLK_LEFT); tecla(SDLK_LEFT);
     tecla(SDLK_RETURN); solta(SDLK_RETURN);
     ASSERTA(teclado_aberto(), "Descricao abre o teclado");
     snprintf(nome, sizeof nome, "%s-propria-descricao.bmp", saida);
