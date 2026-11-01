@@ -27,6 +27,7 @@
 #include "ilha.h"
 #include "recomenda.h"
 #include "listasescrita.h"
+#include "posterprov.h"
 #include "homefil.h"
 #include "atividade.h"
 #include "recenviar.h"
@@ -2078,7 +2079,11 @@ static void desenhaLista(float a) {
     CatItem it;
     const char *u = NULL;
     GLuint t = 0;
-    if (lst_item(i, &it)) u = it.poster[0] ? it.poster : it.backdrop[0] ? it.backdrop : NULL;
+    // Mesma regra dos cartazes de fileira (#708): o servico de posteres
+    // personalizados tambem vale na capa da lista Popular/Ver tudo.
+    if (lst_item(i, &it)) u = posterprov_card_addon(it.origem, it.imdb, it.tmdb, it.tipo, it.poster);
+    if (u && !u[0]) u = NULL;
+    if (!u) u = it.backdrop[0] ? it.backdrop : NULL;
     if (u) t = tex_obter_larg(u, capaW);
     if (t) {
       gfx_tex_aspect_atual = tex_aspecto(u);
