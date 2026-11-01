@@ -5,6 +5,9 @@
 // largura nao chegou ao fim; ao fechar, o rotulo sai antes de a largura
 // encolher. O desenho do rotulo INTEIRO (txt_linha, sem txt_linha_corta) e
 // conferido pelo .sh no codigo da detail.c.
+// SCOPE: this is a unit test of anim_expande only. The grouped branch that
+// uses it is off in production (acoesAgrupadas() returns 0 since 13b4a5c83);
+// the reachable button is run by tests/expandebotao_detalhe.c.
 #include <assert.h>
 #include <stdio.h>
 #include "../src/anim.h"
