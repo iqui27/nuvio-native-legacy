@@ -14,6 +14,8 @@ cc -O1 -g -Wall -Isrc $sani \
 # the direct path arms the manual deadline and never falls back behind the screen.
 grep -q 'if (manual) abrirFonteManualDireta(s);' src/app.c
 grep -A10 '^static void abrirFonteManualDireta' src/app.c | grep -q 'fonteManualDesde = SDL_GetTicks();'
-! grep -q 'fonteescolha_cai_para_proxima' src/app.c
+if grep -q 'fonteescolha_cai_para_proxima' src/app.c; then
+  echo "FAIL fiacao app.c: manual pick falls back to the next source" >&2; exit 1
+fi
 test "$(grep -c 'sondarAposRecusa();' src/app.c)" -ge 2
 echo "ok fiacao app.c"
