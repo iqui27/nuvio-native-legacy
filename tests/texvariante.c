@@ -42,6 +42,15 @@ char *redeTeste(const char *url, int timeout, long *n) {
   return lerArq(arqOrig, n);
 }
 
+/* Since 211efce22 a stopped cache drops fetched responses: the direct calls
+   below run as the live network thread would. */
+static int baixarVivo(int idx, const char *url, char *dst, size_t tam, int *foi, TexFetchTrace *tr) {
+  int antes = rodando, r;
+  rodando = 1; r = baixarParaItem(idx, url, dst, tam, foi, tr); rodando = antes;
+  return r;
+}
+#define baixarParaItem baixarVivo
+
 static const char *ORIG = "https://image.tmdb.org/t/p/original/fIhXD6m9LJgC7yDMOHMpYgkYAJ.jpg";
 static const char *W780 = "https://image.tmdb.org/t/p/w780/fIhXD6m9LJgC7yDMOHMpYgkYAJ.jpg";
 
@@ -94,6 +103,7 @@ int main(int argc, char **argv) {
   assert(mkdtemp(dir));
   memset(itens, 0, sizeof itens);
   nMax = 8;
+  orcamento = 128L * 1048576;   /* fetches wait on the shared budget (211efce22) */
   mtx = SDL_CreateMutex(); cond = SDL_CreateCond();
   condDec = SDL_CreateCond(); condLivre = SDL_CreateCond();
   assert(mtx && cond && condDec && condLivre);
