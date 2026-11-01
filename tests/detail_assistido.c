@@ -20,16 +20,30 @@ static void abrir(int indice) {
   detail_abrir(&hi);
 }
 
-static void marcar(void) {
+static void tecla(SDL_Keycode k) {
   SDL_Event e = {0};
+  e.type = SDL_KEYDOWN; e.key.keysym.sym = k; detail_evento(&e);
+  e.type = SDL_KEYUP; detail_evento(&e);
+}
+// Since 397c75e4b the TV row is Play / List / More: "watched" lives in More.
+static void marcar(void) {
   maisAcoes = 1;
   for (botao = 0; botao < nBotoes(); botao++)
-    if (acaoEm(botao) == ACAO_ASSISTIDO) break;
+    if (acaoEm(botao) == ACAO_ASSISTIDO || acaoEm(botao) == ACAO_MAIS) break;
   assert(botao < nBotoes());
-  e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_RETURN;
-  detail_evento(&e);
-  e.type = SDL_KEYUP;
-  detail_evento(&e);
+  int viaMais = acaoEm(botao) == ACAO_MAIS;
+  tecla(SDLK_RETURN);
+  if (viaMais) {
+    assert(detmais_aberto());
+    for (int i = 0; i < detmais_n(); i++) {
+      int a = detmais_acao(detmais_foco());
+      if (a == DMAIS_VISTO || a == DMAIS_VISTO_SAI) break;
+      tecla(SDLK_DOWN);
+    }
+    int a = detmais_acao(detmais_foco());
+    assert(a == DMAIS_VISTO || a == DMAIS_VISTO_SAI);
+    tecla(SDLK_RETURN);
+  }
   assert(pedAssistido);
 }
 
