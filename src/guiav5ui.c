@@ -2253,10 +2253,12 @@ int g5ui_provider_epg(void){return !committed||(sources_adding?sources_saved_dra
  * e "agora", cartoes, esportes e os estados de folha/erro/vazio. Os dados vem
  * do guia de sempre (guia.c) pelas funcoes publicas — nenhuma fixture aqui.
  * ========================================================================== */
-#define GV_X 48.0f
+/* Desktop: start right of the native sidebar, like Home/Explore; TV keeps 48..1872. */
+#define GV_X (layout_desktop_ativo()?ajustes_conteudo_x():48.0f)
+#define GV_W (layout_desktop_ativo()?NV_TELA_W-48.0f-GV_X:1824.0f)
 #define GV_SB_W 360.0f
-#define GV_MX (48.0f+384.0f*gv_side)
-#define GV_MW (1824.0f-384.0f*gv_side)
+#define GV_MX (GV_X+384.0f*gv_side)
+#define GV_MW (GV_W-384.0f*gv_side)
 #define GV_TOP_Y (layout_desktop_ativo()?64.0f:24.0f)
 #define GV_TOP_H 56.0f
 #define GV_CHIP_Y (layout_desktop_ativo()?136.0f:96.0f)
@@ -2580,18 +2582,18 @@ static void gv_chips_row(void){
   if(gv_zone==4){
     if(at<gv_source_off)gv_source_off=at;
     float w=0;for(int i=gv_source_off;i<=at;i++)w+=gv_source_chip(slots[i],0,0);
-    while(w>1824&&gv_source_off<at)w-=gv_source_chip(slots[gv_source_off++],0,0);
+    while(w>GV_W&&gv_source_off<at)w-=gv_source_chip(slots[gv_source_off++],0,0);
   }
   if(gv_source_off>=n)gv_source_off=0;
   float x=GV_X;
-  if(gv_source_off>0)gfx_icone((GfxRect){24,GV_SOURCE_Y+5,20,20},"aj_chevron-left",.6f,.6f,.6f,1);
+  if(gv_source_off>0)gfx_icone((GfxRect){GV_X-24,GV_SOURCE_Y+5,20,20},"aj_chevron-left",.6f,.6f,.6f,1);
   GVCh *channel=gv_hero_channel(gv_focus());
   char source[96]="";
   if(channel)for(int i=0;guia_fonte_saude(i,&f);i++)if(!strcmp(f.chave,gv_fonte[0]?gv_fonte:guia_canal_fonte(gv_lin))){snprintf(source,sizeof source,"%s",f.nome);break;}
   float metadata=channel?stream_footer(channel->nome,source,"",1):0;
   for(int i=gv_source_off;i<n;i++){
     float w=gv_source_chip(slots[i],0,0);
-    if(x+w-10>1872-metadata){gfx_icone((GfxRect){1876,GV_SOURCE_Y+5,20,20},"aj_chevron-right",.6f,.6f,.6f,1);break;}
+    if(x+w-10>GV_X+GV_W-metadata){gfx_icone((GfxRect){GV_X+GV_W+4,GV_SOURCE_Y+5,20,20},"aj_chevron-right",.6f,.6f,.6f,1);break;}
     gv_source_chip(slots[i],x,1);x+=w;
   }
 }
@@ -3046,14 +3048,15 @@ static void gv_vazio(void){
   const char *ds[]={"Um endereço .m3u ou .m3u8 com a sua lista de canais.","Servidor, usuário e senha do seu provedor.","Programação dos canais que você já tem."};
   const char *bs[]={"Digitar URL","Informar acesso","Digitar URL"};
   const char *icons[]={"aj_link","aj_key","aj_file-text"};
+  float cw=fminf(464,(GV_MW-48)/3);   /* TV: always 464 */
   for(int i=0;i<3;i++){
-    float x=GV_MX+i*488;GfxRect r={x,GV_BASE+150,464,384};
+    float x=GV_MX+i*(cw+24);GfxRect r={x,GV_BASE+150,cw,384};
     if(ajustes_vidro())gfx_cor(r,28.0f/384,1,1,1,.04f);else gfx_cor(r,28.0f/384,.086f,.094f,.11f,1);
     gfx_cor((GfxRect){x+32,GV_BASE+182,72,72},20.0f/72,.141f,.149f,.173f,1);
     gfx_icone((GfxRect){x+50,GV_BASE+200,36,36},icons[i],.95f,.95f,.95f,1);
-    gv_label(TXT_TITULO2,i18n(ts[i]),x+32,GV_BASE+280,400,0);
-    txt_bloco(TXT_ILHA_CORPO,i18n(ds[i]),154,156,158,x+32,GV_BASE+344,400,32,1,3);
-    gv_button(1700+i,i18n(bs[i]),NULL,x+32,GV_BASE+466,320,0,0);
+    gv_label(TXT_TITULO2,i18n(ts[i]),x+32,GV_BASE+280,cw-64,0);
+    txt_bloco(TXT_ILHA_CORPO,i18n(ds[i]),154,156,158,x+32,GV_BASE+344,cw-64,32,1,3);
+    gv_button(1700+i,i18n(bs[i]),NULL,x+32,GV_BASE+466,fminf(320,cw-64),0,0);
   }
   if(!layout_desktop_ativo()) gfx_icone((GfxRect){GV_MX,GV_BASE+600,28,28},"aj_smartphone",.7f,.71f,.72f,1);
   if(!layout_desktop_ativo()) gv_label(TXT_ILHA_CORPO,i18n("Digitar um endereço longo é lento: escolha “Digitar no celular” na próxima tela."),GV_MX+40,GV_BASE+606,1200,1);
@@ -3838,7 +3841,8 @@ static int gv_event(SDL_Keycode k,int repeat){
     if(gv_sports()){gs_back();return 1;}
     if(gv_overlay()){gv_numero[0]=0;gv_voltar();return 1;}
     if(gv_sports()||gv_past()){gv_go(gv_cartoes()?"cartoes":"grade");if(gv_zone!=6)gv_zone=0;return 1;}
-    if(gv_exit_armed){guia_fechar();g5ui_close();gv_exit_armed=0;return 1;}
+    /* Desktop: the native sidebar is always there, so Back leaves the page. */
+    if(gv_exit_armed||layout_desktop_ativo()){guia_fechar();g5ui_close();gv_exit_armed=0;return 1;}
     if(gv_zone==0||gv_zone==6){gv_side_enter();return 1;}
     /* Retrace the vertical controls before leaving content. */
     if(gv_total_n){
