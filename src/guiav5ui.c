@@ -1044,13 +1044,14 @@ static float vod_chip(float x,float y,const char *icon,const char *text,int conn
 }
 static const char *gv_quali(const char *nome);
 /* Existing bottom margin only; metadata is confirmed, never inferred codecs. */
-static float stream_footer(const char *name,const char *source,const char *format,int draw){
+static float stream_footer_at(const char *name,const char *source,const char *format,int draw,float right){
   VideoInfo info={0};if(strncmp(screen,"vod-",4)&&guia_preview_no_ar())video_informacoes(&info);
   char text[280];snprintf(text,sizeof text,"%s%s%s%s%s%s%s",source&&*source?source:"",gv_quali(name)[0]?" · ":"",gv_quali(name),info.codec[0]?" · ":"",info.codec,format&&*format?" · ":"",format?format:"");
   TxtLinha line=txt_linha_corta_bruta(TXT_ILHA_APOIO,text,154,156,158,255,600);
-  if(draw)txt_desenhar(line,1872-line.w,1049);
+  if(draw)txt_desenhar(line,right-line.w,1049);
   return line.w+24;
 }
+static float stream_footer(const char *name,const char *source,const char *format,int draw){return stream_footer_at(name,source,format,draw,1872);}
 static void catalog(void){
   int search=!strcmp(screen,"vod-busca");
   vod_filter();nindices=vod_size;
@@ -2567,6 +2568,22 @@ static float gv_source_chip(int slot,float x,int draw){
   if(draw)gv_chip(x,GV_SOURCE_Y,w,text,icon,sel,gv_chip_foc(slot),dot,1200+slot);
   return w+10;
 }
+#define GV_META_R (GV_X+GV_W)   /* metadata right edge; TV: 1872 */
+/* Chip widths w[0..n) (each with its 10 gap) in a row of avail units after the
+ * metadata reserve. Scrolls *off so slot at (-1 = no scroll) fits; returns the
+ * end index of the visible run. Desktop scrolls with the same budget it draws;
+ * TV keeps its old scroll budget (scroll = 1814, i.e. sum > 1824). */
+static int gv_chips_fit(const float *w,int n,int at,int *off,float avail,float scroll){
+  if(at>=0){
+    if(at<*off)*off=at;
+    float s=0;for(int i=*off;i<=at;i++)s+=w[i];
+    while(s-10>scroll&&*off<at)s-=w[(*off)++];
+  }
+  if(*off>=n)*off=0;
+  float s=0;int end=*off;
+  while(end<n&&s+w[end]-10<=avail)s+=w[end++];
+  return end;
+}
 static void gv_chips_row(void){
   /* Selected source stays visible; long source lists use the existing focus spring. */
   int slots[72],n=0;slots[n++]=0;
@@ -2579,23 +2596,17 @@ static void gv_chips_row(void){
   }
   if(!gv_chip_tem(gv_chipi))gv_chipi=0;
   int at=0;for(int i=0;i<n;i++)if(slots[i]==gv_chipi)at=i;
-  if(gv_zone==4){
-    if(at<gv_source_off)gv_source_off=at;
-    float w=0;for(int i=gv_source_off;i<=at;i++)w+=gv_source_chip(slots[i],0,0);
-    while(w>GV_W&&gv_source_off<at)w-=gv_source_chip(slots[gv_source_off++],0,0);
-  }
-  if(gv_source_off>=n)gv_source_off=0;
-  float x=GV_X;
-  if(gv_source_off>0)gfx_icone((GfxRect){GV_X-24,GV_SOURCE_Y+5,20,20},"aj_chevron-left",.6f,.6f,.6f,1);
   GVCh *channel=gv_hero_channel(gv_focus());
   char source[96]="";
   if(channel)for(int i=0;guia_fonte_saude(i,&f);i++)if(!strcmp(f.chave,gv_fonte[0]?gv_fonte:guia_canal_fonte(gv_lin))){snprintf(source,sizeof source,"%s",f.nome);break;}
-  float metadata=channel?stream_footer(channel->nome,source,"",1):0;
-  for(int i=gv_source_off;i<n;i++){
-    float w=gv_source_chip(slots[i],0,0);
-    if(x+w-10>GV_X+GV_W-metadata){gfx_icone((GfxRect){GV_X+GV_W+4,GV_SOURCE_Y+5,20,20},"aj_chevron-right",.6f,.6f,.6f,1);break;}
-    gv_source_chip(slots[i],x,1);x+=w;
-  }
+  float right=GV_META_R;
+  float metadata=channel?stream_footer_at(channel->nome,source,"",1,right):0;
+  float w[72];for(int i=0;i<n;i++)w[i]=gv_source_chip(slots[i],0,0);
+  float avail=GV_W-metadata;
+  int end=gv_chips_fit(w,n,gv_zone==4?at:-1,&gv_source_off,avail,layout_desktop_ativo()?avail:1814);
+  if(gv_source_off>0)gfx_icone((GfxRect){GV_X-24,GV_SOURCE_Y+5,20,20},"aj_chevron-left",.6f,.6f,.6f,1);
+  if(end<n)gfx_icone((GfxRect){right+4,GV_SOURCE_Y+5,20,20},"aj_chevron-right",.6f,.6f,.6f,1);
+  float x=GV_X;for(int i=gv_source_off;i<end;i++){gv_source_chip(slots[i],x,1);x+=w[i];}
 }
 
 /* --- barra lateral: Biblioteca e Categorias ------------------------------ */

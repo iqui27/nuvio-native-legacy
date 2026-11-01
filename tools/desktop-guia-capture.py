@@ -93,8 +93,8 @@ for key, value in environment.items():
     launch += ['--env', key + '=' + value]
 launch += ['-a', str(APP), '--args', str(ART)]
 # Sidebar "Guia TV" row in window points per size (GUIA_ROW_<w> overrides).
-ROWS = {1440: os.environ.get('GUIA_ROW_1440', ''), 900: os.environ.get('GUIA_ROW_900', '')}
-PREV = {1440: os.environ.get('GUIA_PREV_1440', ''), 900: os.environ.get('GUIA_PREV_900', '')}
+ROWS = {1440: os.environ.get('GUIA_ROW_1440', ''), 900: os.environ.get('GUIA_ROW_900', ''), 1280: '', 2560: ''}
+PREV = {1440: os.environ.get('GUIA_PREV_1440', ''), 900: os.environ.get('GUIA_PREV_900', ''), 1280: '', 2560: ''}
 def jpg(shot):
     dest = Path(shot['file']).with_suffix('.jpg')
     subprocess.run(['magick', shot['file'], '-resize', '1000x1000>', '-quality', '82', str(dest)], check=True)
@@ -114,7 +114,7 @@ try:
     assert front() != pid
     command('appearance:DarkAqua')
     command('back')
-    for w, h in ((1440, 900), (900, 700)):
+    for w, h in ((1440, 900), (900, 700), (1280, 800), (2560, 1000)):
         command(f'janela:{w},{h}', 2)
         command('preview:home', 3)
         shots.append(jpg(photo(f'guia-{TAG}-{w}x{h}-home', w, h)))
