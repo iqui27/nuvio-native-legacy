@@ -1,9 +1,11 @@
 // Menu real e caso do dono (TCL, 10/10): voltar de T3 para T2E6.
 // So o envio externo e capturado; mapa, lapides, grafico e eventos sao reais.
 #define visto_episodios capturarEnvio
+#define visto_episodios_item capturarEnvioItem /* the menu sends per item since e2d98f5f0 */
 #define visto_destinos destinosTeste
 #include "../src/episodios.c"
 #undef visto_episodios
+#undef visto_episodios_item
 #undef visto_destinos
 #include "vistonao.h"
 #include "temporadas_grafico.h"
@@ -23,6 +25,10 @@ int capturarEnvio(const char *id, const char *tipo, const VistoPar *p, int n, in
   totalEnviados += n;
   enviados = n; sentido = v; chamadas++;
   return 1;
+}
+int capturarEnvioItem(int indice, const char *id, const char *tipo, const VistoPar *p, int n, int v, int d) {
+  (void)indice;
+  return capturarEnvio(id, tipo, p, n, v, d);
 }
 static void teclaTeste(SDL_Keycode k) {
   SDL_Event ev = {0}; ev.type = SDL_KEYDOWN; ev.key.keysym.sym = k;
