@@ -232,8 +232,10 @@ static const Item TELA[] = {
       OPC(AJ_DET_TRAILER),
     ROT("Som e imagem"),
       OPC(AJ_HERO_TRAILER_SOM), OPC(AJ_TRAILER_FONTE),
-#ifdef __EMSCRIPTEN__
-      OPC(AJ_TRAILER_AUDIO),   // the dubbed trailer is a YouTube id: native players cannot play it
+#if defined(__EMSCRIPTEN__) || defined(NV_TPK) || (!defined(NV_ANDROID) && !defined(NV_VIDAA) && !defined(__APPLE__) && !defined(NV_LINUX_DESKTOP) && !defined(_WIN32))
+      // Onde o YouTube toca o trailer dublado: iframe no .wgt, AppControl
+      // no .tpk, navegador no ipk da LG. VIDAA/Android/desktop: escondido.
+      OPC(AJ_TRAILER_AUDIO),
 #endif
 #ifdef NV_TPK
       OPC(AJ_TRAILER_ZOOM_TPK),
