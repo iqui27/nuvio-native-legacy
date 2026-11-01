@@ -63,6 +63,30 @@ const char *rede_url_publica(const char *url, char *d, unsigned tam) {
   snprintf(d, tam, "%s", url); return d;
 }
 const char *rede_ultimo_erro(void) { return ""; }
+// aio path goes through rede_pedir (post-6f0f6c5); bridge it to the URL
+// fixture. aio_resultados parses the payload; autoplay only counts calls.
+#include "rede.h"
+#include "aiostreams.h"
+int rede_pedir(const RedePedido *p, RedeResposta *r) {
+  memset(r, 0, sizeof *r);
+  r->corpo = rede_baixar(p->url, (int)(p->prazo_ms / 1000u));
+  r->n_corpo = r->corpo ? strlen(r->corpo) : 0;
+  r->status = r->corpo ? 200 : 0;
+  r->erro = r->corpo ? REDE_OK : REDE_TRANSPORTE;
+  return 0;
+}
+void rede_resposta_limpar(RedeResposta *r) { free(r->corpo); r->corpo = NULL; }
+void aio_resultados(AioSnapshot *s, const char *json) { (void)s; (void)json; }
+char *rede_baixar_medido(const char *url, int seconds, const char *const *headers, RedeMedida *m) {
+  int st = 0; char *r = rede_baixar_st(url, seconds, headers, &st);
+  *m = (RedeMedida){ .status = st };
+  return r;
+}
+int servidores_tem(const char *id, const char *tipo) { (void)id; (void)tipo; return 0; }
+void servidores_rotular(Stream *l, int n) { (void)l; (void)n; }
+void addonstats_aio_complete(const char *key, const char *type, const char *json, int http, int transport, unsigned long ms, int retryAfter) {
+  (void)key; (void)type; (void)json; (void)http; (void)transport; (void)ms; (void)retryAfter; }
+int addonstats_aio_wait(const char *key, const char *type) { (void)key; (void)type; return 0; }
 void stream_filtro_tipo(const char *type) { (void)type; }
 void stream_folha_canal(int enabled) { (void)enabled; }
 char *rede_baixar(const char *url, int timeout);
@@ -73,6 +97,8 @@ char *rede_baixar_st(const char *url, int seconds, const char *const *headers, i
 }
 char *rede_baixar(const char *url, int timeout) {
   (void)timeout;
+  if (strstr(url, "/manifest.json"))
+    return strdup("{\"resources\":[\"stream\"]}");
   assert(strstr(url, "/stream/") && strstr(url, ".json"));
   // O id que vai ao addon e sempre o do episodio, nunca o cru.
   assert(strstr(url, "tt9%3A1%3A1") || strstr(url, "tt9:1:1"));

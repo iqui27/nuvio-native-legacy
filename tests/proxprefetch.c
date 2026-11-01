@@ -1,6 +1,7 @@
 // Posplay + cache + addons reais; transporte controlado, sem rede/video/debrid.
 #define main teste_vod_existente
 #define rede_baixar transporte_fixture
+#define FONTECACHE_VOD_SEM_PEDIR 1
 #include "fontecache_vod.c"
 #undef rede_baixar
 #undef main
@@ -18,6 +19,10 @@ int rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
 void rede_resposta_limpar(RedeResposta *resposta) {
   (void)resposta; abort();
 }
+// No watch-together hold in this fixture: the next episode is never held.
+int travaui_proximo_segura(const char *imdb, int idxCat, int t, int e) {
+  (void)imdb; (void)idxCat; (void)t; (void)e; return 0;
+}
 
 static CatItem titulo;
 static CatEp episodios[2];
@@ -28,6 +33,12 @@ char *rede_baixar(const char *url, int timeout) {
   atomic_store(&entrou, 1);
   while (atomic_load(&bloquear)) usleep(1000);
   return transporte_fixture(url, timeout);
+}
+// addons.c fetches streams through the measured call; route it via the wrapper.
+char *rede_baixar_medido(const char *url, int seconds, const char *const *headers, RedeMedida *m) {
+  char *r = rede_baixar(url, seconds); (void)headers;
+  *m = (RedeMedida){ .status = r ? 200 : 0 };
+  return r;
 }
 const CatItem *cat_item(int i) { (void)i; return &titulo; }
 int cat_indice_vivo(int i, const char *id) { (void)id; return i; }

@@ -51,8 +51,32 @@ char *rede_baixar_st(const char *url, int seconds, const char *const *headers, i
   (void)headers; char *body = rede_baixar(url, seconds);
   if (status) *status = body ? 200 : 0; return body;
 }
+// aio transport and the in-worker manifest probe (6f0f6c5, 179148c) go
+// through these; the manifest fetch is not a stream request.
+#include "rede.h"
+#include "aiostreams.h"
+#ifndef FONTECACHE_VOD_SEM_PEDIR
+char *rede_baixar_medido(const char *url, int seconds, const char *const *headers, RedeMedida *m) {
+  int st = 0; char *r = rede_baixar_st(url, seconds, headers, &st);
+  *m = (RedeMedida){ .status = st };
+  return r;
+}
+#endif
+void aio_resultados(AioSnapshot *s, const char *json) { (void)s; (void)json; }
+#ifndef FONTECACHE_VOD_SEM_PEDIR
+int rede_pedir(const RedePedido *p, RedeResposta *r) {
+  memset(r, 0, sizeof *r);
+  r->corpo = rede_baixar(p->url, (int)(p->prazo_ms / 1000u));
+  r->n_corpo = r->corpo ? strlen(r->corpo) : 0;
+  r->status = r->corpo ? 200 : 0;
+  r->erro = r->corpo ? REDE_OK : REDE_TRANSPORTE;
+  return 0;
+}
+void rede_resposta_limpar(RedeResposta *r) { free(r->corpo); r->corpo = NULL; }
+#endif
 char *rede_baixar(const char *url, int timeout) {
   (void)timeout;
+  if (strstr(url, "/manifest.json")) return strdup("{\"resources\":[\"stream\"]}");
   assert(strstr(url, "/stream/") && strstr(url, ".json"));
   atomic_fetch_add(&pedidos, 1);
   if (strstr(url, "erro.invalid")) return NULL;

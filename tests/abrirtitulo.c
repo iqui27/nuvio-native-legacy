@@ -34,6 +34,8 @@ void perfis_sessao_destravar(void) {}
 #include "../src/descoberta.c"
 Uint32 SDL_GetTicks(void) { return 0; }
 #include "../src/progresso.h"
+#include "ilhaacao.h"
+#include "diario.h"
 #include <assert.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -170,6 +172,18 @@ int   trakt_lista_cresc(const char *q, CatItem **s, int m) { (void)q; (void)s; (
 // O servico social proprio (recomenda.c) fica fora deste teste: a uniao e so o que o Trakt trouxe.
 int   recomenda_social_mesclar(CatItem *i, int nTrakt, int max) { (void)i; (void)max; return nTrakt; }
 int   recomenda_social_mesclar_sessao(CatItem *i, int nTrakt, int max, uint64_t g) { (void)g; return recomenda_social_mesclar(i, nTrakt, max); }
+int   recomenda_alcance(void) { return 0; }
+int   recomenda_cabecalhos_local(const char **cab, char *aut, size_t na, char *via, size_t nv, char *perfil, size_t np) {
+  (void)cab; (void)aut; (void)na; (void)via; (void)nv; (void)perfil; (void)np; return 0; }
+int   sessao_logada(void) { return 0; }
+char *dados_ler(const char *nome) { (void)nome; return NULL; }
+int   dados_gravar(const char *nome, const char *conteudo) { (void)nome; (void)conteudo; return 1; }
+int   dados_gravar_leve(const char *nome, const char *conteudo) { (void)nome; (void)conteudo; return 1; }
+int   dados_apagar(const char *nome) { (void)nome; return 1; }
+void  ilhaacao_feita(const IlhaAcao *a) { (void)a; }
+long long prox_data_ms(const char *data) { (void)data; return 0; }
+unsigned diario_geracao(int perfil) { (void)perfil; return 0; }
+int diario_titulo(int perfil, const char *id, DiarioTitulo *saida) { (void)perfil; (void)id; (void)saida; return 0; }
 int   trakt_social(CatItem *s, int m)      { (void)s; (void)m; return 0; }
 const char *nuvem_trakt_cliente(void)      { return ""; }
 // Um addon de metadados, ligado so no caso 7 (o resto do teste roda sem addon).

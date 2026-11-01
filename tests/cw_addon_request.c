@@ -2,6 +2,9 @@
 #define main addonslista_fixture_main
 #define rede_baixar fixture_legacy_download
 #define rede_baixar_st fixture_legacy_download_st
+#define NV_TEST_REDE_PEDIR_OVERLAY 1
+#define NV_TEST_REDE_BAIXAR_ST_OVERLAY 1
+#define NV_TEST_REDE_BAIXAR_MEDIDO_OVERLAY 1
 #include "addonslista.c"
 #undef main
 #undef rede_baixar
