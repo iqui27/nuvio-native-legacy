@@ -28,7 +28,8 @@ pulados=0
 semProva=0
 # cache_contrato.sh and nav21.sh are required gates; never exclude them.
 # nav21 compiles the native host and renders every fixture in the foreground.
-# Testes rodam em paralelo (TEST_JOBS, padrao = nucleos); cada um grava
+# Testes rodam em paralelo (TEST_JOBS, padrao = nucleos; limite por teste 420 s:
+# os testes que compilam src/*.c inteiro levam ~2 min so no cc); cada um grava
 # $LOGS/<teste>.log e uma linha de resultado em $LOGS/<teste>.res, e o resumo
 # sai na ordem alfabetica, igual ao modo serial.
 roda_um() {
@@ -58,7 +59,7 @@ for f in tests/*.sh; do
   esac
   lista+=("$f")
 done
-printf '%s\0' "${lista[@]}" | xargs -0 -n1 -P "${TEST_JOBS:-4}" bash -c 'roda_um "$1"' _
+printf '%s\0' "${lista[@]}" | xargs -0 -n1 -P "${TEST_JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc)}" bash -c 'roda_um "$1"' _
 for f in "${lista[@]}"; do
   n=$(basename "$f")
   linha=$(cat "$LOGS/$n.res" 2>/dev/null) || linha="FALHA $n (sem .res)"
