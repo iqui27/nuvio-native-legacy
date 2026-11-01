@@ -266,17 +266,22 @@ int main(void) {
   assert(SDL_Init(SDL_INIT_TIMER | SDL_INIT_EVENTS) == 0);
   dados_iniciar(getenv("NUVIO_DADOS")); ajustes_iniciar();
   cat_quadro();
-  // A arte da busca vence um provedor global, para topo e linhas.
+  // The poster service applies to Spotlight cards like any portrait card
+  // (#708, fd438a50b); the top row keeps the result's own background.
   PosterProvCfg pp = {0}; pp.prov = PP_MODELO;
   strcpy(pp.modelo, "https://posters.example/{imdb}.jpg");
   posterprov_configurar(&pp);
   CatItem arteItem = item("tt14688458", "series", "2023", 81);
-  check(!strcmp(arteDe(&arteItem, 0), arteItem.poster), "linha preserva poster do resultado com provedor ligado");
+  const char *prov = "https://posters.example/tt14688458.jpg";
+  check(!strcmp(arteDe(&arteItem, 0), prov), "linha usa o servico de posteres com provedor ligado");
   check(!strcmp(arteDe(&arteItem, 1), arteItem.backdrop), "topo preserva background do resultado");
   arteItem.backdrop[0] = 0;
-  check(!strcmp(arteDe(&arteItem, 1), arteItem.poster), "topo sem fundo preserva poster do resultado");
+  check(!strcmp(arteDe(&arteItem, 1), prov), "topo sem fundo usa o servico de posteres");
+  posterprov_configurar(&(PosterProvCfg){0});
+  check(!strcmp(arteDe(&arteItem, 0), arteItem.poster), "sem provedor a linha usa o poster do resultado");
   strcpy(arteItem.backdrop, "fundo-do-resultado"); arteItem.poster[0] = 0;
-  check(!strcmp(arteDe(&arteItem, 0), arteItem.backdrop), "linha sem poster usa fundo antes do provedor");
+  check(!strcmp(arteDe(&arteItem, 0), arteItem.backdrop), "linha sem poster nem provedor usa o fundo");
+  posterprov_configurar(&pp);
   arteItem.backdrop[0] = 0;
   check(!strcmp(arteDe(&arteItem, 0), "https://posters.example/tt14688458.jpg"), "provedor por ID so quando resultado nao tem arte");
   arteItem = item("tt14688458", "series", "2023", 81);
