@@ -135,6 +135,27 @@ int main(void) {
   optionsAvailable = 1; requiredGenre = 1; fontes[0].genre[0] = 0;
   openSource(); assert(genSel == 0 && !strcmp(openedGenre, "Action"));
   genAplicar(-1); assert(genSel == 0);
+
+  // Issue #700: "Ver tudo" de uma fileira ligada a uma fonte de colecao com
+  // `genre` abria o catalogo SEM o filtro, e vtGenre="" reaproveitava a
+  // lista para qualquer aba do mesmo catalogo.
+  { const char *json =
+      "[{\"title\":\"G\",\"id\":\"g1\",\"folders\":[{\"id\":\"f1\","
+      "\"title\":\"Movies\",\"sources\":["
+      "{\"addonBaseUrl\":\"https://addon.example\",\"type\":\"movie\","
+      "\"catalogId\":\"popular\",\"title\":\"Action\",\"genre\":\"Action\"},"
+      "{\"addonBaseUrl\":\"https://addon.example\",\"type\":\"movie\","
+      "\"catalogId\":\"popular\",\"title\":\"Comedy\",\"genre\":\"Comedy\"}]}]}]";
+    assert(col_definir_json(json) == 1);
+    requiredGenre = 0; optionsAvailable = 0;
+    openedGenre[0] = 'x'; openedGenre[1] = 0;
+    vertudo_abrir("https://addon.example", "movie", "popular", "Movies");
+    assert(!strcmp(openedGenre, "Action"));
+    // And the in-page reader is marked for THIS source, so reopening another
+    // genre of the same catalog does not reuse the first list.
+    const ColFolder *f = col_por_catalogo("https://addon.example", "movie", "popular");
+    assert(f && f->nSources == 2 && !strcmp(f->sources[1].genre, "Comedy"));
+  }
   puts("colecao_genero: PASS");
   return 0;
 }

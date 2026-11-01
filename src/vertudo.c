@@ -780,7 +780,12 @@ void vertudo_abrir(const char *base, const char *tipo, const char *catId,
   resolverLayout();
   genAtivo = genN = 0;
   if (collection) genCarregar(&collection->sources[source]);
-  desc_vertudo_abrir(base, tipo, catId);
+  // O `genre` da fonte casada entra no pedido, como em carregarFonte: sem ele
+  // a grade abria o catalogo SEM o filtro da colecao, e vtGenre="" fazia o
+  // guardado valer para qualquer fonte do mesmo catalogo — todas as
+  // categorias mostravam a mesma lista (#700).
+  desc_vertudo_filtro_desde(base, tipo, catId,
+      collection ? (genTem() ? genPedido() : collection->sources[source].genre) : "", 0);
 }
 
 void vertudo_servidores(const char *chave) {
