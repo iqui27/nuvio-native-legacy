@@ -304,6 +304,9 @@ static void triIlhaSecoes(void) {
   int j, g = -1;
   int palco = triBladeLayout();
   float condK = palco ? triClamp(triProfF - 1.0f, 0.0f, 1.0f) : 0.0f;   // 1 = menu condensado (104)
+  // Labels and counts are gone before the gliding icons reach x+62 (condK ~0.12).
+  float rotA = triClamp(1.0f - condK / 0.11f, 0.0f, 1.0f);
+  rotA *= rotA;
   if (ilha.w <= 0.0f) return;
   ajustes_acento(&ar, &ag, &ab);
   ajIlha(ilha, 28.0f, 1, 0);
@@ -313,7 +316,7 @@ static void triIlhaSecoes(void) {
     if (condK < 0.99f) {
       const ContaPerfil *pf = perfis_item_ativo();
       char k[160];
-      float a = (1.0f - condK) * (1.0f - condK);   // some antes de a pilula estreitar
+      float a = rotA;   // gone before the gear icon reaches the title
       gfx_opacidade_grupo = a;
       gfx_recorte(ilha.x, ilha.y, ilha.w, 104.0f);
       if (pf && pf->nome[0]) snprintf(k, sizeof k, "Nuvio · %s", pf->nome);
@@ -354,7 +357,7 @@ static void triIlhaSecoes(void) {
     if (gj != g) {
       if (g >= 0) y += 6.0f;
       g = gj;
-      if (condK < 0.99f) { gfx_opacidade_grupo = 1.0f - condK; ajKicker(triGrupoNome(g), ilha.x + 32.0f, y + 10.0f, 1); gfx_opacidade_grupo = 1.0f; }
+      if (condK < 0.99f) { gfx_opacidade_grupo = rotA; ajKicker(triGrupoNome(g), ilha.x + 32.0f, y + 10.0f, 1); gfx_opacidade_grupo = 1.0f; }
       y += 10.0f + 15.0f + 6.0f;
     }
     float inset = ajRetrato() ? 0.0f : 14.0f;
@@ -382,13 +385,13 @@ static void triIlhaSecoes(void) {
         int style = primaria || foco ? TXT_W20_24B : TXT_AJ_SUB;
         if (primaria && txt_largura(style, i18n(titulo)) > width) style = TXT_ILHA_SECAO;
         TxtLinha t = ajTxtC(style, titulo, width);
-        txt_desenhar_alpha(t, r.x + 62.0f, r.y + (r.h - t.h) * 0.5f, al * (1.0f - condK) * (1.0f - condK)); }
+        txt_desenhar_alpha(t, r.x + 62.0f, r.y + (r.h - t.h) * 0.5f, al * rotA); }
       if (!triParental(j)) {
         char c[16]; int nOp; TxtLinha t;
         { int nAv; triContar(j, &nOp, &nAv); nOp += nAv; }
         snprintf(c, sizeof c, "%d", nOp);
         t = ajTxt(TXT_V2_18, c);
-        txt_desenhar_alpha(t, r.x + r.w - 20.0f - t.w, r.y + (r.h - t.h) * 0.5f, (foco ? 0.6f : 0.42f) * (1.0f - condK));
+        txt_desenhar_alpha(t, r.x + r.w - 20.0f - t.w, r.y + (r.h - t.h) * 0.5f, (foco ? 0.6f : 0.42f) * rotA);
       }
     }
     y += TRI_SEC_LN;
@@ -433,22 +436,22 @@ static const char *triTopicoIcone(int item) {
   for (i = 0; i < sizeof M / sizeof *M; i++) if (!strcmp(TELA[item].titulo, M[i][0])) return M[i][1];
   return "aj_sliders-horizontal";
 }
+static int triRotItem = -1;   // the topic row triLinhaUtil is drawing (long-label wrap/marquee)
 static void triTopicoDesenhar(int item, float y, float a) {
   GfxRect fr = triListaR(), r = {fr.x + 18, y + AJ2_LN_GAP, fr.w - 36, ajAlturaItem(item) - AJ2_LN_GAP};
   int n = 0;
-static int triRotItem = -1;   // the topic row triLinhaUtil is drawing (long-label wrap/marquee)
   for (int i = item + 1; i < secFim(secAtual) && TELA[i].tipo == IT_OPC; i++) if (visivel(i)) n++;
   char count[48];
   // Palco: a contagem pura ("8 ›"), como o mockup; fora dele "8 opcoes".
   if (triBladeLayout()) snprintf(count, sizeof count, "%d", n);
   else snprintf(count, sizeof count, i18n("%d opções"), n);
   if (ajFocoCompart && aj2FocoNaLista(item)) triSupReportar(r);
+  triRotItem = triBladeLayout() ? item : -1;
   triLinhaUtil(r, animItem[item], a, triBladeLayout() ? triTopicoIcone(item) : "aj_sliders-horizontal", TELA[item].titulo, NULL, count, 1, -1);
+  triRotItem = -1;
   if (ajPontLista) ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, AJ_TOPO, AJ_BASE, ajPonteiroItem, NULL, item, 0);
 }
-  triRotItem = triBladeLayout() ? item : -1;
 static void triLista(void) {
-  triRotItem = -1;
   GfxRect ilha = triIlha2R(), fr = triListaR();
   float topo = AJ_TOPO, base = AJ_BASE, y, k = anim_suave(paginaA), dy = 18.0f * (1.0f - k);
   float g0 = gfx_opacidade_grupo, tPg = 10.0f;
@@ -478,11 +481,13 @@ static void triLista(void) {
     { TxtLinha t = ajTxtC(TXT_V3_NOME, i18n(tit), ilha.w - 60.0f);
       txt_desenhar_alpha(t, ilha.x + 30.0f, ilha.y + 48.0f, 1.0f); }
     // A SUPERFICIE DE FOCO unica (mola em triAtualizar): por baixo das linhas,
-    // fora do recorte (atravessa de um blade para o outro).
+    // clipped to its blade (gliding between blades it must not cross the gap).
     if (ajFocoCompart && triSupA > 0.01f) {
+      GfxRecorteAnt ra = gfx_recorte_dentro(ilha.x, ilha.y, ilha.w, ilha.h);
       ajFocoCompart = 0;
       ajFocoLinha((GfxRect){ triSup[0], triSup[1], triSup[2], triSup[3] }, 20.0f, triSupA, 1.0f);
       ajFocoCompart = 1;
+      gfx_recorte_voltar(ra);
     }
   } else if (triSubmenu >= 0 || ajRetrato()) {
     GfxRect back = {ilha.x + 18, ilha.y + 18, 56, 56};
