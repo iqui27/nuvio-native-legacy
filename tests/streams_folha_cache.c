@@ -24,6 +24,9 @@ static float headlessBlock(TxtEstilo e, const char *s, int r, int g, int b,
 #define txt_tracking(e,s,r,g,b,x,y,a,t) ((float)strlen(s) * 8)
 #define gfx_recorte(...) ((void)0)
 #define gfx_sem_recorte() ((void)0)
+// The focused filename marquee clips inside the row (af04cde38).
+#define gfx_recorte_dentro(...) ((GfxRecorteAnt){0})
+#define gfx_recorte_voltar(...) ((void)0)
 #include "addons.h"
 static unsigned addonRevision;
 static unsigned testAddonRevision(void) { return addons_parcial_rev() + addonRevision; }
