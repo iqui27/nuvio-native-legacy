@@ -12,6 +12,7 @@ static int focusFixture(void){
 }
 static void openFixture(void){
   biblioteca_iniciar();modo=fixture?MODO_LISTAS:MODO_PARAVER;focoOrigem=focoPainel=focoCont=estadoFoco=0;temAberta=0;
+  origensAbertas=1;   // the Origins panel toggles and persists per profile (1c7d6a7b3)
   if(fixture){listaTab=0;lst_ler_trakt("[{\"name\":\"Fixture list\",\"ids\":{\"trakt\":1},\"item_count\":12}]",0);}
   for(int i=0;i<cat_n();i++){CatItem item=*cat_item(i);item.naLista=1;item.listaFontes=~0u;cat_atualizar_item(i,&item);}
   reconstruirFonte(ajustes_fonte_biblioteca());
