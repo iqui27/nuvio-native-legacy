@@ -802,8 +802,37 @@ static double bufferSeg;
 // bufferSeg ja tem aqui — a leitura errada custa um quadro de decisao, nunca
 // um estado invalido.
 static Uint32 bufferandoDesde;
+static double bufferandoPos;
+static unsigned bufferandoAvancos;
 static unsigned dtsRefillMs;
 static Uint32 dtsRefillEm;
+
+static void bufferandoFim(void) {
+  bufferandoDesde=0;
+  bufferandoAvancos=0;
+}
+static int bufferandoSeekPendente(void) {
+  return seekEm || seekEnvEm || seekRetryEm || seekView.active;
+}
+/* Do not depend on bufferingEnd arriving, or arriving after bufferingStart.
+ * Require consecutive natural clock steps with data ahead; a seek jump, an
+ * unchanged clock or residual audio over an empty buffer is not recovery.
+ * This retires only the native marker, never the converter's managed refill. */
+static void bufferandoClock(double actual) {
+  if(!bufferandoDesde)return;
+  double step=actual-bufferandoPos;
+  bufferandoPos=actual;
+  if(!pronto || !tocando || pausaPedida || falhou || terminou ||
+     bufferandoSeekPendente() || !isfinite(step) || step<0.01 || step>1.5 ||
+     bufferSeg<actual+0.5) {
+    bufferandoAvancos=0;
+    return;
+  }
+  if(++bufferandoAvancos>=2) {
+    bufferandoFim();
+    marco("buffering FIM (clock progressing with data ahead)");
+  }
+}
 
 static void esperar(int ms) { struct timespec t; t.tv_sec = ms / 1000;
   t.tv_nsec = (long)(ms % 1000) * 1000000L; nanosleep(&t, NULL); }
@@ -1384,14 +1413,18 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
     // So o PRIMEIRO de uma sequencia carimba. O uMS repete o bufferingStart
     // enquanto nao enche; reiniciar o relogio a cada repeticao daria um "faz
     // 0 ms que travou" eterno, que e exatamente o caso que se quer detectar.
-    if (!bufferandoDesde) bufferandoDesde = SDL_GetTicks();
+    if (!bufferandoDesde) {
+      bufferandoDesde = SDL_GetTicks();
+      bufferandoPos=posNativa;
+      bufferandoAvancos=0;
+    }
     snprintf(m, sizeof m, "buffering INICIO (buffer %+.1fs a frente)",
              bufferSeg - posSeg);
     marco(m);
   }
   if (strstr(p, "bufferingEnd")) {
     char m[64];
-    bufferandoDesde = 0;
+    bufferandoFim();
     snprintf(m, sizeof m, "buffering FIM (buffer %+.1fs a frente)",
              bufferSeg - posSeg);
     marco(m);
@@ -1399,6 +1432,10 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
   if (strstr(p, "playing")) {
     pausaConfirmada = 0;
     tocando = 1;
+    if(bufferandoDesde && !pausaPedida && !bufferandoSeekPendente()) {
+      bufferandoFim();
+      marco("buffering FIM (playing)");
+    }
     dvSilenciarTv();
     if (acb && midia[0]) {
       long tarefa = 0;
@@ -1527,6 +1564,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
   }
   { double v = numeroDe(p, "\"currentTime\":");
     if (v >= 0) {
+      bufferandoClock(v/1000.0);
       nv_seekview_clock(&seekView,v/1000.0);
       posSeg = posNativa = v / 1000.0;
       // Primeiro quadro com avanco: o numero de inicio de verdade.
@@ -2971,6 +3009,7 @@ static void pararSessao(void) {
    * pipeline must not queue an error for the replacement source. */
   __atomic_add_fetch(&sessao, 1, __ATOMIC_ACQ_REL);
   bufferLoad.session=0;
+  bufferandoFim();
   dtsRefillMs=0;
   dtsRefillEm=0;
   moviebuffer_stop();
@@ -3355,6 +3394,12 @@ static void bombearDts(void) {
   int i;
   memset(&st, 0, sizeof st);
   dts_playback_status(dtsSessao, &st);
+  /* A seek/track reconfiguration can clear refill before metadata is ready.
+   * Update even during preroll, before draining any fresh native starvation
+   * events, so ending an old refill cannot erase a new bufferingStart. */
+  if(dtsRefillMs && !st.buffering_ms)bufferandoFim();
+  if(st.buffering_ms && (st.buffering_ms!=dtsRefillMs || pausaPedida))dtsRefillEm=SDL_GetTicks();
+  dtsRefillMs=st.buffering_ms;
   if (st.failed) {
     /* A fast startup failure can happen before the main thread sees its stages. */
     while (dts_playback_event(dtsSessao, event, sizeof event)) logDtsStage(event);
@@ -3481,11 +3526,6 @@ static void bombearDts(void) {
   sincronizarPlanoDts(&st);
   while (dts_playback_event(dtsSessao, event, sizeof event))
     if (!logDtsStage(event)) eventoPayload(event, sessao);
-  /* A source/track reconfiguration may retire queued native callbacks. The
-   * worker snapshot remains authoritative for the managed refill spinner. */
-  if(dtsRefillMs && !st.buffering_ms)bufferandoDesde=0;
-  if(st.buffering_ms && (st.buffering_ms!=dtsRefillMs || pausaPedida))dtsRefillEm=SDL_GetTicks();
-  dtsRefillMs=st.buffering_ms;
 }
 
 void video_pausar(int pausado) {

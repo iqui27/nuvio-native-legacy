@@ -60,6 +60,7 @@ jobs:
           bash tests/video_http_buffer_build.sh
           bash tests/video_moviebuffer.sh
           bash tests/video_buffer_test_osd.sh
+          SANITIZE=1 bash tests/video_buffering_state.sh
           bash tests/video_acb_lg.sh
           bash tests/player_loading.sh
           bash tests/player_truehd_notice.sh
