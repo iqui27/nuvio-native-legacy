@@ -1352,12 +1352,16 @@ const CatItem *cat_item(int i) {
 }
 
 // ":<digitos>:<digitos>" e so isso — o sufixo de temporada/episodio.
-static int ehSufixoEp(const char *r) {
+static int ehSufixoEp(const char *r, int anime) {
   int n = 0;
   if (*r != ':') return 0;
   r++;
   while (*r >= '0' && *r <= '9') { r++; n++; }
-  if (!n || *r != ':') return 0;
+  // Anime carrega o episodio ABSOLUTO num so sufixo ("kitsu:7442:17",
+  // idbase.h). Sem este ramo o id de progresso nao achava o proprio titulo e
+  // o Next abria o item do indice -1 embrulhado — um show sem relacao (#697).
+  if (!*r) return anime && n;
+  if (*r != ':') return 0;
   r++; n = 0;
   while (*r >= '0' && *r <= '9') { r++; n++; }
   return n && !*r;
@@ -1385,7 +1389,7 @@ static int mesmoTitulo(const char *a, const char *b) {
     size_t nc = na > nb ? nb : na;
     const char *r = lon + nc;
     if (strncmp(lon, cur, nc)) return 0;
-    return ehSufixoEp(r); }
+    return ehSufixoEp(r, !idbase_e_imdb(lon) || !idbase_e_imdb(cur)); }
 }
 
 void cat_dir_gravacao(const char *dir) {
