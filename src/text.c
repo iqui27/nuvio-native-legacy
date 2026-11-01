@@ -1189,6 +1189,10 @@ static int carregarFamilia(TxtFamilia familia) {
   if (familiaCarregada[familia]) return 1;
   if (familiaTentada[familia]) return 0;
   familiaTentada[familia] = 1;
+  // Antes de txt_iniciar os caminhos ainda sao vazios: nao tenta ler (falharia
+  // e marcaria a familia como ausente para sempre), e deixa a tentativa real
+  // para quando txt_iniciar preencher caminhoPeso.
+  if (!caminhoPeso[familia][0][0]) { familiaTentada[familia] = 0; return 0; }
   for (int p = 0; p < 3; p++) {
     int j;
     for (j = 0; j < p; j++)
