@@ -668,7 +668,10 @@ int main(int argc, char **argv) {
       assert(gfx_fill_modo[GFX_AVATAR] > 0 && "collection image must use circular cover");
       assert(gfx_fill_modo[GFX_DISCO] > 0 && "collection placeholder and focus must be circular");
       assert(gfx_fill_modo[GFX_CARD] == 0 && "collection must not draw rectangular art");
-      assert(gfx_fill_modo[GFX_COR] == 0 && "collection must not draw a rectangular ring");
+      /* Since 8633fccfa the optional focus ring is svd_aro_foco(disco, .5f):
+         a GFX_COR fill with half-side corners, i.e. a circle (shape pinned by
+         tests/colecaoround.sh). Nothing else may fill GFX_COR here. */
+      assert((gfx_fill_modo[GFX_COR] == 0 || ajustes_borda_foco()) && "collection must not draw a rectangular ring");
       float w, h, step, caption;
       home_vitrine_medida(&w, &h, &step, &caption, 1);
       assert(w == h && caption > 0);

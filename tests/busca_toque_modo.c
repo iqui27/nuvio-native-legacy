@@ -8,6 +8,7 @@
 #define st_abre_sozinho teste_abre_sozinho
 #define st_ime_abrir teste_abrir_ime
 #define celb_disponivel teste_cel
+#define celb_digitar_disponivel teste_cel /* 85ac74587: busca asks this; == celb_disponivel off desktop */
 #define desc_buscar limite_buscar
 #define desc_busca_n_alvos limite_alvos
 #define desc_busca_alvo_n limite_n
@@ -28,6 +29,7 @@
 #undef st_abre_sozinho
 #undef st_ime_abrir
 #undef celb_disponivel
+#undef celb_digitar_disponivel
 #undef desc_buscar
 #undef desc_busca_n_alvos
 #undef desc_busca_alvo_n
