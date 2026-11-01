@@ -40,9 +40,10 @@ int main(void) {
   menu_servidores(1);
   int order[NV_MENU_FOCOS_TV];
   int n = tvOrdem(order);
-  assert(n == 12);
+  assert(n == 11);
   assert(order[4] == MENU_LISTAS && order[5] == MENU_CONQUISTAS);
-  assert(order[6] == MENU_JUNTOS && order[8] == MENU_STREAMING);
+  assert(order[6] == MENU_JUNTOS && order[7] == MENU_STREAMING);
+  for (int i = 0; i < n; i++) assert(order[i] != MENU_ESPORTES); // Sports lives in the Guide, as on the TV.
   assert(order[0] == MENU_BUSCAR && order[1] == MENU_INICIO);
   assert(order[n - 2] == MENU_AJUSTES && order[n - 1] == MENU_RODAPE);
   assert(tvPastas(NULL) == 0); // Services open only through the Streaming entry.
@@ -64,7 +65,7 @@ int main(void) {
   menu_abrir(); key(SDLK_AC_BACK);
   assert(!menu_aberto() && menu_destino() == MENU_BUSCAR);
   desktopEscolher(MENU_STREAMING,0); assert(tvPastas(NULL)==3);
-  n=tvOrdem(order);assert(order[9]==MENU_ST0 && order[10]==MENU_ST0+1 && order[12]==MENU_FONTES);
+  n=tvOrdem(order);assert(order[8]==MENU_ST0 && order[9]==MENU_ST0+1 && order[11]==MENU_FONTES);
   desktopEscolher(MENU_ST0 + 1, 0);
   assert(menu_pediu_colecao() == 5 && !menu_aberto());
   desktopEscolher(MENU_RODAPE, 0);
