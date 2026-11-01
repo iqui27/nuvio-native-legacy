@@ -51,4 +51,11 @@ void lsreg_deu_certo(LsRegEstado *e);
 // 1 quando o automatico ja desistiu nesta sessao (para o log dizer uma vez).
 int  lsreg_desistiu(const LsRegEstado *e);
 
+// SCREENSAVER (#706). O ack que cancela o screensaver so vale com filme DE
+// VERDADE na tela: midia carregada, pipeline tocando, sem pausa nossa, sem
+// erro e sem endOfStream. A funcao pura fica aqui para o teste do Mac cobrir
+// o predicado sem precisar de barramento.
+int video_segura_screensaver(int temMidia, int tocando, int pausaPedida,
+                             int falhou, int terminou);
+
 #endif

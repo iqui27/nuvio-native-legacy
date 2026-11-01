@@ -1190,7 +1190,7 @@ static int aoPedidoScreensaver(LSHandle *h, LSMessage *m, void *u) {
   while (*t && *t != ',' && *t != '}' && n < (int)sizeof ts - 1) ts[n++] = *t++;
   ts[n] = 0;
   if (!n) return 1;
-  segurar = midia[0] && !pausaPedida;
+  segurar = video_segura_screensaver(midia[0], tocando, pausaPedida, falhou, terminou);
   snprintf(b, sizeof b, "{\"clientName\":\"space.nuvio.native.legacy\",\"ack\":%s,\"timestamp\":%s}",
            segurar ? "false" : "true", ts);
   printf("[video] screensaver pedido: %s\n", segurar ? "seguro (filme tocando)" : "liberado");
@@ -1199,10 +1199,12 @@ static int aoPedidoScreensaver(LSHandle *h, LSMessage *m, void *u) {
            b, NULL, NULL, "responseScreenSaverRequest");
   return 1;
 }
+// So marca ligado se o hub aceitou a assinatura: marcar antes e a chamada
+// falhar deixava o protetor morto pela sessao inteira.
 static void protegerScreensaver(void) {
   if (protetorLigado) return;
-  protetorLigado = 1;
-  lsChamar("luna://com.webos.service.tvpower/power/registerScreenSaverRequest",
+  if (!bus) return;
+  protetorLigado = lsChamar("luna://com.webos.service.tvpower/power/registerScreenSaverRequest",
            "{\"subscribe\":true,\"clientName\":\"space.nuvio.native.legacy\"}",
            aoPedidoScreensaver, NULL, "registerScreenSaverRequest");
 }
@@ -1234,7 +1236,6 @@ static int iniciar(int automatico) {
   if (!lsreg_pode_tentar(&regEstado, SDL_GetTicks(), automatico)) {
     if (lsreg_desistiu(&regEstado) && !regAvisouDesistir) {
       regAvisouDesistir = 1;
-  protegerScreensaver();
       printf("[video] registro recusado %d vez(es) (%s): o trailer para de tentar "
              "nesta sessao; play ainda tenta\n", regEstado.falhas,
              lsreg_nome_codigo(regEstado.ultimoCodigo)
@@ -1362,6 +1363,9 @@ static int iniciar(int automatico) {
   // desenho custaria quadros. As respostas chegam neste fio e so mexem em
   // variaveis simples, lidas pelo desenho sem trava.
   pthread_create(&fio, NULL, rodarLaco, NULL);
+  // Com o barramento no ar ja da para segurar o screensaver (#706): antes isto
+  // morava no ramo de desistencia do LSRegister, onde o bus ainda era NULL.
+  protegerScreensaver();
 
   if (A) {
     lerAjustesAcb();
@@ -2291,6 +2295,7 @@ void video_encerrar(void) {
     erroLimpar();
     bus = NULL;
   }
+  protetorLigado = 0;
   ligado = 0;
 }
 // O uMS desenha a legenda embutida sozinho: nada para o app pintar.

@@ -53,3 +53,8 @@ void lsreg_deu_certo(LsRegEstado *e) {
   if (!e) return;
   e->falhas = 0; e->ultimoCodigo = 0; e->proximaMs = 0;
 }
+
+int video_segura_screensaver(int temMidia, int tocando, int pausaPedida,
+                             int falhou, int terminou) {
+  return temMidia && tocando && !pausaPedida && !falhou && !terminou;
+}

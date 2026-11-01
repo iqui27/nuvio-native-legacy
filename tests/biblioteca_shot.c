@@ -72,6 +72,8 @@ static void medir(const char *rotulo) {
   fflush(stdout);
 }
 
+static unsigned char pixQuadro[1920 * 1080 * 4];
+
 static void captura(const char *nome) {
   unsigned char *pix;
   SDL_Surface *s;
@@ -87,8 +89,8 @@ static void captura(const char *nome) {
   glClear(GL_COLOR_BUFFER_BIT);
   biblioteca_desenhar(SDL_GetTicks());
   rail_shot_desenhar(MENU_BIBLIOTECA);
-  pix = malloc(1920 * 1080 * 4);
-  assert(pix);
+  // Vai para o buffer estatico: os asserts de pixel leem depois do free.
+  pix = pixQuadro;
   glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pix);
   s = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
   assert(s);
@@ -96,7 +98,6 @@ static void captura(const char *nome) {
     memcpy((char *)s->pixels + y * s->pitch, pix + (1079 - y) * 1920 * 4, 1920 * 4);
   assert(SDL_SaveBMP(s, nome) == 0);
   SDL_FreeSurface(s);
-  free(pix);
   SDL_GL_SwapWindow(win);
   printf("captura: %s\n", nome);
 }
@@ -319,6 +320,34 @@ int main(int argc, char **argv) {
   tecla(SDLK_DOWN);
   snprintf(nome, sizeof nome, "%s-salvos-cartaz-rolado.bmp", saida);
   captura(nome);
+
+  // O pedaco da fileira de cima que ainda cabe no viewport tem PIXEL: com o
+  // foco na segunda fileira a rolagem minima deixa um resto da primeira
+  // visivel logo abaixo do corte (gradeY ~300). Um bug que apagasse a fileira
+  // inteira quando ela comeca a sair deixaria a faixa so com o fundo.
+  {
+    int x, y, y0 = 0, nVis = 0;
+    for (y = 300; y < 700 && !y0; y++) {
+      int s = 0;
+      for (x = 200; x < 1800; x += 40) {
+        const unsigned char *p = pixQuadro + (1079 - y) * 1920 * 4 + x * 4;
+        if (p[0] > 60 || p[1] > 60 || p[2] > 60) { s = 1; break; }
+      }
+      if (s) y0 = y;
+    }
+    if (y0)
+      for (y = y0; y < 1080; y++)
+        for (x = 200; x < 1800; x += 40) {
+          const unsigned char *p = pixQuadro + (1079 - y) * 1920 * 4 + x * 4;
+          if (p[0] > 60 || p[1] > 60 || p[2] > 60) { nVis++; break; }
+        }
+    // Linhas com conteudo entre o topo da grade e a fileira focada: o resto
+    // da fileira de cima. Zero = a fileira sumiu inteira (o bug), bem menos
+    // que uma fileira inteira tambem suspeito; qualquer coisa acima e a
+    // fileira rolada nao saiu nada.
+    assert(nVis > 0 && nVis < 487);
+    printf("pixel: topo rolado visivel em %d linhas de grade\n", nVis);
+  }
 
   // 2. A BARRA DE MODOS COM O FOCO NELA: escolhido + em foco, realce cheio.
   AO_TOPO();
