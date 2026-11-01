@@ -51,6 +51,12 @@ static int linhaInterruptor(void) {
 static void hoverEClique(void) {
   int i, op, antes, sec = secAtual; float rol = scrollY;
   const PonteiroAlvo *a;
+  // Since 502a111b5 the rows live in topic submenus, and the Palco shows the
+  // list only after entering the category: enter it, then open topics in
+  // order, as a click on the topic row would, until one shows an on/off row.
+  if (!triProfundidade()) { triFocarSecao(secAtual); triEntrar(secAtual); quadros(60); }
+  for (int t = secIni[secAtual] + 1; linhaInterruptor() < 0 && t < secFim(secAtual); t++)
+    if (triTopico(t)) { focar(t); triSubEntrar(t); quadros(20); sec = secAtual; rol = scrollY; }
   i = linhaInterruptor();
   confere(i >= 0, "desktop: Playback has a pointer target on an on/off row");
   if (i < 0) return;
