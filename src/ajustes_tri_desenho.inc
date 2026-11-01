@@ -908,6 +908,25 @@ static void triPontSwatch(int v, int b) {
   (void)b;
   if (uxEditor == 1 && ajPaleta(uxOp)) uxPendente = v;
 }
+// Amostra de uma dinamica (Dinamicas/Textura): TEMA_ACENTO dela nao tem cor
+// (o disco saia preto, vazio). O disco leva a cor que ela tiraria da arte agora
+// (aj2CorDin, como a regua antiga) e o icone do que ela faz.
+static void triBolinhaDin(int v, float cx, float cy, int foco, int gravada) {
+  static const char *const IC[5] = { "aj_pipette", "aj_blend", "aj_spotlight", "aj_paint-roller", "aj_feather" };
+  const char *ic = v == AJ_TEMA_DINAMICA ? IC[0] : v == AJ_TEMA_GRADIENTE ? IC[1] : v == AJ_TEMA_IMERSIVA ? IC[2] :
+                   v == AJ_TEMA_TEXTURA ? IC[3] : IC[4];
+  float c1[3], c2[3], k, d = (foco ? 66.0f : 56.0f) * aj2BolinhaK, s = 26.0f * aj2BolinhaK;
+  int i;
+  aj2CorDin(v, ajFundoArte(), c1, c2);
+  if (v == AJ_TEMA_GRADIENTE) for (i = 0; i < 3; i++) c1[i] = (c1[i] + c2[i]) * 0.5f;
+  if (foco) {
+    gfx_cor((GfxRect){ cx - d * 0.5f - 6, cy - d * 0.5f - 6, d + 12, d + 12 }, 0.5f, 0.953f, 0.949f, 0.937f, 0.92f);
+    gfx_cor((GfxRect){ cx - d * 0.5f - 3.5f, cy - d * 0.5f - 3.5f, d + 7, d + 7 }, 0.5f, 0.055f, 0.059f, 0.071f, 1);
+  }
+  gfx_cor((GfxRect){ cx - d * 0.5f, cy - d * 0.5f, d, d }, 0.5f, c1[0], c1[1], c1[2], 1);
+  k = 0.2126f * c1[0] + 0.7152f * c1[1] + 0.0722f * c1[2] > 0.6f ? 18.0f / 255.0f : 1.0f;
+  gfx_icone((GfxRect){ cx - s * 0.5f, cy - s * 0.5f, s, s }, gravada ? "aj_check" : ic, k, k, k, 1);
+}
 // O BLADE DA PALETA (prof. 3, mockup claude-c): as fileiras de acentos, a
 // amostroca em foco cresce, a gravada leva o visto; embaixo o nome e a ajuda.
 static void triPaletaBlade(GfxRect m) {
@@ -940,7 +959,8 @@ static void triPaletaBlade(GfxRect m) {
 #ifdef NV_TOUCH_UI
         if (f < 2) ajToqueEscolhaAlvo(r, v, uxOp, AJ_TOPO, AJ_BASE);
 #endif
-        aj2Bolinha(uxOp == AJ_FUNDO_DIN_COR ? FUNDO_DIN_TEMA[v] : v, cx, cy, foco, v == sel && !foco, 1);
+        if (f >= 2 && uxOp != AJ_FUNDO_DIN_COR) triBolinhaDin(v, cx, cy, foco, v == sel && !foco);
+        else aj2Bolinha(uxOp == AJ_FUNDO_DIN_COR ? FUNDO_DIN_TEMA[v] : v, cx, cy, foco, v == sel && !foco, 1);
         lx += d + 8.0f;
       }
       aj2BolinhaK = 1.0f;
