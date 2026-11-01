@@ -51,7 +51,9 @@ int main(void) {
   assert(video_buffer_fim()==100); // File-duration clamp.
   bufferandoDesde=1;pausaPedida=0;pump_status.buffering_ms=7300;
   bombearDts();assert(dtsRefillMs==7300);
-  assert(video_bufferando_ms()==7300);
+  assert(video_bufferando_ms()>=7300 && video_bufferando_ms()<7400);
+  dtsRefillEm-=1000;
+  assert(video_bufferando_ms()>=8300); // The UI timer advances during a blocked HTTP read.
   pausaPedida=1;assert(!video_bufferando_ms());
   pausaPedida=0;pump_status.buffering_ms=0;
   bombearDts();assert(!dtsRefillMs && !bufferandoDesde);
