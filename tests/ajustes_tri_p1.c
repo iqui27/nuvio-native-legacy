@@ -102,7 +102,7 @@ static void retrato(void) {
   confere(secoes >= 3 && !mesmaLinha, "Portrait: sections register vertical list targets");
   key(SDLK_DOWN); confere(triIlha == TRI_SECOES && triSecFoco == 1 && secAtual == 1, "Portrait: Down selects next section");
   key(SDLK_UP); confere(triIlha == TRI_SECOES && triSecFoco == 0 && !sair, "Portrait: Up selects previous section");
-  key(SDLK_RIGHT); confere(triIlha == TRI_LISTA && secAtual == 0 && focoOp >= 0, "Portrait: Right opens section page");
+  key(SDLK_RETURN); confere(triIlha == TRI_LISTA && secAtual == 0 && focoOp >= 0, "Portrait: OK opens section page");   // c526959cc: Right no longer opens on the phone
   quadros(30); png("p1-retrato-lista");
   key(SDLK_UP); confere(triIlha == TRI_SECOES && triSecFoco == 0, "Retrato: Cima da 1a linha volta a faixa");
   key(SDLK_UP); confere(triIlha == TRI_CHIPS, "Retrato: Cima da faixa vai aos chips");
@@ -282,10 +282,10 @@ static const PonteiroAlvo *alvoAtivar(PonteiroFn fn) {
 static void inlineToque(void) {
   int ops[2] = { AJ_TEMA, -1 }, antes[AJ_N];
   memcpy(antes, valor, sizeof antes);
+  layout_modo_definir(1); tela(1080, 1920); assert(ajTelaCheia());   // pick the op in the layout under test
   for (int i = 0; i < AJ_N_TELA && ops[1] < 0; i++)
     if (TELA[i].tipo == IT_OPC && TELA[i].op != AJ_TEMA && ajSegmentada(TELA[i].op) && triDisponivel(TELA[i].op) && !inativa(TELA[i].op)) ops[1] = TELA[i].op;
   assert(ops[1] >= 0);
-  layout_modo_definir(1); tela(1080, 1920); assert(ajTelaCheia());
   for (int k = 0; k < 2; k++) {
     int op = ops[k], salvo; const PonteiroAlvo *a;
     char msg[160];
@@ -370,9 +370,52 @@ static void escalas(void) {
   valor[AJ_TAMANHO_AJUSTES] = antesT; valor[AJ_ESCALA_TEXTO] = antesE; gfx_escala_txt_definir(ajustes_escala_texto());
   layout_modo_definir(0); tela(1920, 1080); sair = 0;
 }
+// Review 6, P1-a: in the Palco (TV, blade stack) short 2-3 value choices are
+// "segmented": the row shows the rolling value + pips and OK cycles inline
+// (no depth-3 blade). The old rule measured the v2 pill bar against the blade.
+static void palcoSegmentada(void) {
+  int antes[AJ_N], op = AJ_ESTAT_LADO, prof, v, esperado;
+  char msg[160];
+  memcpy(antes, valor, sizeof antes);
+  layout_modo_definir(0); tela(1920, 1080);
+  confere(triBladeLayout(), "Palco: 1920x1080 TV is the blade layout");
+  confere(ajSegmentada(op), "Palco: statistics side uses the inline value and pips at TV blade width");
+  if (!ajSegmentada(op)) return;
+  triIniciar(); focarOpcao(op); triFocar(op); quadros(40);
+  prof = triProfundidade(); v = valor[op]; esperado = (v + 1) % nValores(op);
+  key(SDLK_RETURN); quadros(40);
+  snprintf(msg, sizeof msg, "Palco %s: OK cycles the value inline (%d -> %d), no editor blade", CHAVE[op], v, valor[op]);
+  confere(valor[op] == esperado && !uxEditor && triProfundidade() == prof, msg);
+  png("p1-palco-segmentada");
+  if (uxEditor) { key(SDLK_ESCAPE); quadros(20); }
+  memcpy(valor, antes, sizeof antes);
+  triIniciar(); quadros(5);
+}
+// Review 6, P1-b: a depth-3 editor blade opened from a SCROLLED parent list
+// keeps the parent's scroll: the opener row stays on screen and keeps the
+// shared focus surface (the old draw zeroed scrollY for every non-top blade).
+static void palcoProfundoRolado(void) {
+  char msg[240];
+  layout_modo_definir(0); tela(1920, 1080);
+  triIniciar(); focarOpcao(AJ_PLR_FORMATO); triFocar(AJ_PLR_FORMATO); quadros(120);
+  float y = AJ_TOPO + yDoItem(focoItem) - scrollY;
+  confere(focoOp == AJ_PLR_FORMATO && scrollY > 100.0f && y >= AJ_TOPO && y + ajLinhaH(focoItem) <= AJ_BASE &&
+          AJ_TOPO + yDoItem(focoItem) > AJ_BASE + 4.0f, "Palco: scrolled opener visible before opening (off screen without scroll)");
+  key(SDLK_RETURN); quadros(60);
+  confere(uxEditor == 1 && uxOp == AJ_PLR_FORMATO && triProfundidade() == 3, "Palco: OK opens depth-3 format editor");
+  snprintf(msg, sizeof msg, "Palco format depth 3 (parent scroll %.0f): opener row visible with focus surface (y %.0f..%.0f, a %.2f)",
+           scrollY, triSupAlvo[1], triSupAlvo[1] + triSupAlvo[3], triSupA);
+  confere(triSupTem && triSupA > 0.9f && triSupDonoAlvo == 1 &&
+          triSupAlvo[1] >= AJ_TOPO - 1.0f && triSupAlvo[1] + triSupAlvo[3] <= AJ_BASE + 1.0f, msg);
+  png("p1-palco-prof3-rolado");
+  key(SDLK_ESCAPE); quadros(20);
+  triIniciar(); quadros(5);
+}
 int main(int argc, char **argv) {
+  setvbuf(stdout, NULL, _IONBF, 0);
   char dir[1024];
-  if (argc > 1) dirPng = argv[1];
+  int palcoOnly = argc > 1 && !strcmp(argv[1], "--palco");
+  if (argc > 1 + palcoOnly) dirPng = argv[1 + palcoOnly];
   snprintf(dir, sizeof dir, "%s/nuvio-ajustes-tri-p1-XXXXXX", nvt_dir());
   assert(mkdtemp(dir)); assert(setenv("NUVIO_DADOS", dir, 1) == 0);
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
@@ -386,6 +429,10 @@ int main(int argc, char **argv) {
   layout_modo_definir(0); layout_tela_definir(1920, 1080);
   ponteiro_iniciar(); ponteiro_teste_toque(1); ponteiro_teste_relogio(agora); ponteiro_teste_janela(1920, 1080);
   quadros(5);
+  if (palcoOnly) {
+    palcoSegmentada(); palcoProfundoRolado();
+    return falhas ? 1 : 0;
+  }
   retrato();
   alvosUtil();
   rolagem();
@@ -393,6 +440,8 @@ int main(int argc, char **argv) {
   toque();
   difJanela();
   inlineToque();
+  palcoSegmentada();
+  palcoProfundoRolado();
   previaNaoAplica();
   escalas();
   if (!falhas) puts("PASS: three-island Settings P1s: portrait rail, utility targets, scrolling, parental chooser");

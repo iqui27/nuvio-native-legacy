@@ -198,6 +198,7 @@
   T("%d temporada", "%d évad"),
   T("%d temporadas", "%d évad"),
   T("%d texturas", "%d textúra"),
+  T("%d técnicas", "%d technikai"),
   T("%d título", "%d cím"),
   T("%d título assistido", "%d title watched"),
   T("%d título em andamento", "%d title in progress"),

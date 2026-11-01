@@ -159,8 +159,9 @@ static void ajDesenharInspetor(void) {
       ajMiniRotuloV2 = 0;
       if (ed) valor[opPv] = salvo;
       // O segmentado da opcao em foco, no canto de baixo da previa, sobre um
-      // fundo escuro (a arte por tras pode ser clara).
-      if (op >= 0 && ajSegmentada(op) && !inativa(op)) {
+      // fundo escuro (a arte por tras pode ser clara). No Palco o estagio nao
+      // tem controle nenhum: os pips moram na linha (mockup claude-c).
+      if (op >= 0 && ajSegmentada(op) && !inativa(op) && !triBladeLayout()) {
         int n = nValores(op);
         float bx = x + w - 26.0f, by = y + (ph > 0 && ph < caixa ? ph : caixa) - 26.0f - 31.5f, sw;
         if (n > 3) n = 3;
@@ -314,7 +315,23 @@ static void ajDesenharMais(int item, float y, float f, float a) {
   TxtLinha r, v;
   if (a <= 0.004f) return;
   ajFocoLinha(ln, 20.0f, f, aTx);
+  if (ajFocoCompart && aj2FocoNaLista(item)) triSupReportar(ln);
   if (aTx <= 0.004f) return;
+  if (triBladeLayout()) {   // Palco (mockup claude-c): "Mais opcoes   3 tecnicas ›"
+    char q[48];
+    ajIcone("aj_sliders-horizontal", ln.x + 18.0f, yc - 14.0f, 28.0f, (f > 0.5f ? 0.95f : 0.62f) * aTx);
+    // Label and count share the row (ru "Другие параметры" + "39 технических" overlapped).
+    float livre = xDir - 34.0f - (ln.x + AJ_PALCO_TX) - 16.0f;
+    snprintf(q, sizeof q, i18n("%d técnicas"), n);
+    if (txt_largura(TXT_AJ_VALOR, q) > livre - txt_largura(TXT_AJ_ROTULO, "Mais opções")) snprintf(q, sizeof q, "%d", n);   // "39", never "39…"
+    v = ajTxtC(TXT_AJ_VALOR, aberto ? i18n("Esconder") : q,
+               fmaxf(120.0f, fminf(220.0f, livre - (float)txt_largura(TXT_AJ_ROTULO, "Mais opções"))));
+    r = ajTxtC(TXT_AJ_ROTULO, "Mais opções", livre - v.w);
+    txt_desenhar_alpha(r, ln.x + AJ_PALCO_TX, yc - r.h * 0.5f, (f > 0.5f ? 1.0f : 0.88f) * aTx);
+    aj2Chevron(xDir, yc, (f > 0.5f ? 0.7f : 0.32f) * aTx);
+    txt_desenhar_alpha(v, xDir - 34.0f - v.w, yc - v.h * 0.5f, (f > 0.5f ? 0.95f : 0.72f) * aTx);
+    return;
+  }
   ajIcone("aj_sliders-horizontal", ln.x + 20.0f, yc - 12.0f, 24.0f, (f > 0.5f ? 0.9f : 0.6f) * aTx);
   snprintf(rot, sizeof rot, "%s · %d", i18n("Mais opções"), n);
   r = ajTxt(f > 0.5f ? TXT_V2_LN_B : TXT_V2_LN, rot);
@@ -327,7 +344,7 @@ static void ajDesenharMais(int item, float y, float f, float a) {
 
 static float ajAlturaItem(int i) {
   if (!triMostrar(i) || !visivel(i)) return 0.0f;
-  if (triTopico(i)) return AJ2_LN_GAP + AJ2_LN_H;
+  if (triTopico(i)) return AJ2_LN_GAP + AJ2_LN_H + (triBladeLayout() && ajRotDuas(i) ? AJ_ROT_LH * animItem[i] : 0.0f);
   switch (TELA[i].tipo) {
     case IT_SEC: return 0.0f;
     case IT_ROT: return AJ2_GRUPO_H;

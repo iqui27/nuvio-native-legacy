@@ -198,6 +198,7 @@
   T("%d temporada", "%d seizoen"),
   T("%d temporadas", "%d seizoenen"),
   T("%d texturas", "%d texturen"),
+  T("%d técnicas", "%d technische"),
   T("%d título", "%d titel"),
   T("%d título assistido", "%d titel bekeken"),
   T("%d título em andamento", "%d titel bezig"),

@@ -125,7 +125,7 @@ static void ajMiniHome(AjMini o, float ox, float oy, float W) {
 #define MR(x, y, w, h) (GfxRect){ MX(x), MY(y), (w) * s, (h) * s }
   ajustes_acento(&ar, &ag, &ab);
   gfx_cor(quad, rr / H, 0.047f, 0.051f, 0.063f, a);
-  gfx_recorte(ox, oy, W, H);
+  GfxRecorteAnt ra = gfx_recorte_dentro(ox, oy, W, H);   // dentro do recorte de quem chama (o estagio)
   if (o.lay == HOME_LAYOUT_PADRAO) {
     gfx_cor(quad, rr / H, 0.071f, 0.075f, 0.09f, a);
     ajImg(ajArte(AJA_FUNDO, o.art), MR(0, 0, 1920, 600), rr, a);
@@ -216,7 +216,7 @@ static void ajMiniHome(AjMini o, float ox, float oy, float W) {
     if (l.w) txt_desenhar_alpha(l, px + 40 * s, MY(36) + (96 * s - l.h) * 0.5f, a);
     gfx_cor((GfxRect){ px + 40 * s + tw + 22 * s, MY(36 + 22), 52 * s, 52 * s }, 0.5f, 0.486f, 0.361f, 1.0f, a);
   }
-  gfx_sem_recorte();
+  gfx_recorte_voltar(ra);
 #undef MX
 #undef MY
 #undef MR

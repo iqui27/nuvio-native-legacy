@@ -197,6 +197,7 @@
   { "%d temporada", "%d season" },
   { "%d temporadas", "%d seasons" },
   { "%d texturas", "%d textures" },
+  { "%d técnicas", "%d technical" },
   { "%d título", "%d title" },
   { "%d título assistido", "%d title watched" },
   { "%d título em andamento", "%d title in progress" },

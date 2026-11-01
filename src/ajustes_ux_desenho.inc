@@ -172,9 +172,20 @@ static void ajIlhaMiolo(GfxRect r, float raioPx, float miolo) {
     gfx_vidro_material(r, raio, miolo, 1);
   } else gfx_cor_painel(r, raio, 0.082f, 0.086f, 0.102f, 1);
 }
+// PALCO: a superficie de foco e UMA so (triSup, ajustes_tri.inc). Enquanto o
+// menu e os blades desenham as linhas, ajFocoCompart cala a placa de cada
+// linha; a linha em foco so informa onde esta (triSupReportar) e o desenho
+// do dono (ajSupNivel: -1 o menu, k o blade) poe a placa deslizante por baixo.
+static const char *ajVisualIcone(int op);   // ajustes_ux_visual.inc
+static int ajFocoCompart, ajSupNivel = -2;
+static int ajFocoMudo;   // Palco parent/ghost list blades: no per-row focus plate
+static void triSupReportar(GfxRect r) {
+  triSupAlvo[0] = r.x; triSupAlvo[1] = r.y; triSupAlvo[2] = r.w; triSupAlvo[3] = r.h;
+  triSupTem = 1; triSupDonoAlvo = ajSupNivel;
+}
 // Superficie de FOCO de linha: um degrau mais clara (vidro 12%, solido #2B2D34).
 static void ajFocoLinha(GfxRect r, float raioPx, float f, float a) {
-  if (f <= 0.01f) return;
+  if (f <= 0.01f || ajFocoCompart || ajFocoMudo) return;
   if (gfx_foco_placa(r, raioPx / r.h, f, a)) return;
   if (ajVid()) {
     gfx_cor(r, raioPx / r.h, 1, 1, 1, 0.12f * f * a);
@@ -315,6 +326,8 @@ static GfxRect triListaR(void);
 static GfxRect triInspMiolo(void);
 static GfxRect triInspR(void);
 static int triTemInsp(void);
+static int triProfundidade(void);   // ajustes_tri.inc: 0 indice, 1 secao, 2 topico, 3 escolha
+static int triBladeLayout(void);    // ajustes_tri_desenho.inc: o layout Palco (pilha de blades)
 static float ajX0(void) { return (48.0f + ajustes_rail_largura_fixa()) / ajustes_tamanho_ajustes(); }
 static float ajFolhaX(void) { return ajX0() + AJI_IDX_W + 24.0f; }
 // TAMANHO DA INTERFACE (escala.h): na tela virtual menor as tres ilhas nao
@@ -369,7 +382,7 @@ static float aj2X0(void) {
   return ((ajTelaCheia() && rail <= 0.0f ? 0.0f : 48.0f) + rail) / AJ2_S;
 }
 // A3: linhas compactas (58 + 2 de vao, rotulo 24), o dobro de linhas na tela.
-#define AJ2_LN_H        (ajRetrato() ? 96.0f : 60.0f)
+#define AJ2_LN_H        (ajRetrato() ? 96.0f : (triBladeLayout() ? 70.0f : 60.0f))
 #define AJ2_LN_GAP       2.0f
 #define AJ2_LN_SUB      (ajRetrato() ? 120.0f : 76.0f)
 #define AJ2_LN_LINHA1   AJ2_LN_H
@@ -450,6 +463,13 @@ static int ajSegmentada(int op) {
   if (n < 2 || n > 3 || !OPCOES[op].valores) return 0;
   // O segmentado so fica na linha se o nome da opcao cabe ao lado dele;
   // senao a escolha abre no editor.
+  // Palco: no bar, the row shows the rolling value + position pips (ajDesenharLinha),
+  // so measure that form against the blade (label, widest value, pips, icon, padding).
+  if (triBladeLayout()) {
+    char vb[96]; float vw = 0.0f; int i;
+    for (i = 0; i < n; i++) { uxValorTexto(op, i, vb, sizeof vb); vw = fmaxf(vw, (float)txt_largura(TXT_AJ_VALOR, vb)); }
+    return 88.0f + (float)txt_largura(TXT_V2_SEG, rotuloOpcao(op)) + 24.0f + vw + 51.0f <= aj2ListaWRef() - 58.0f;
+  }
   { float w = aj2SegLargura(op, n);
     if (w + (float)txt_largura(TXT_V2_ROT, rotuloOpcao(op)) + 60.0f + 20.0f > aj2ListaWRef() - 44.0f) return 0;
     return w < 560.0f; }
@@ -554,8 +574,9 @@ static int ajReguaMover(int op, int v, int dx, int dy) {
 static int ajTemaNovo(int v) { return v >= 16 && v <= 21; }
 // Bolinha de um acento fixo: 56 (o mockup a 1,15x); a em foco 1,18x com o
 // anel escuro de 3 e o claro de 2 por fora; a gravada leva o visto na tinta.
+static float aj2BolinhaK = 1.0f;   // escala (o blade da paleta do Palco: 9 por fileira em 500)
 static void aj2Bolinha(int v, float cx, float cy, int foco, int gravada, float a) {
-  float r, g, b, d = foco ? 66.0f : 56.0f;
+  float r, g, b, d = (foco ? 66.0f : 56.0f) * aj2BolinhaK;
   corDeHex(TEMA_ACENTO[v].fill, &r, &g, &b);
   if (foco) {
     gfx_rect((GfxRect){ cx - d * 0.5f - 14, cy - d * 0.5f, d + 28, d + 34 }, 0, GFX_SOMBRA, 1, 0, 0, 0.5f, 0, 0, 0, 0.5f * a);
@@ -668,6 +689,53 @@ static float ajBeneficioH(int op) {
   if (op < 0) return 0;
   h = txt_bloco(TXT_V2_18, uxBeneficio(op), 0, 0, 0, 0, -4000, ajBeneficioLargura(), AJ2_LN_BEN, 0, 2);
   return h < 1.0f ? 0.0f : h > 2 * AJ2_LN_BEN ? 2 * AJ2_LN_BEN : h;
+}
+// Palco: a ajuda da linha em foco (19/27, ate 3 linhas) alinhada ao rotulo,
+// depois do icone (18 + 28 + 14 da borda da linha).
+#define AJ_PALCO_TX 60.0f
+#define AJ_PALCO_AJ_LH 27.0f
+static float ajPalcoAjudaW(void) { return aj2ListaR().w - 36.0f - 36.0f; }   // a ajuda alinha com o icone
+// Long labels in the narrow blades: the focused row wraps to 2 lines; if even
+// that is not enough (a word wider than the column, or 3+ lines) the label
+// scrolls while focused. Measured only when label, width or language change.
+#define AJ_ROT_LH 31.0f
+static int ajRotDuas(int i) { return ajRotModo[i] == 1 || (ajRotModo[i] == 2 && ajustes_animacoes_reduzidas()); }
+static int ajRotMedir(TxtEstilo e, const char *chave, float maxW) {
+  static const char *c0;
+  static int id0 = -1, m0;
+  static float w0;
+  const char *p;
+  char w[160];
+  if (chave == c0 && id0 == ajustes_idioma() && fabsf(maxW - w0) < 0.5f) return m0;
+  if (chave != c0) ajRotT = 0.0f;
+  c0 = chave; id0 = ajustes_idioma(); w0 = maxW; m0 = 0;
+  if (txt_largura(e, chave) <= maxW) return m0;
+  m0 = txt_bloco(e, chave, 0, 0, 0, 0, -4000, maxW, AJ_ROT_LH, 0, 0) > 2.5f * AJ_ROT_LH ? 2 : 1;
+  for (p = i18n(chave); m0 == 1 && *p;) {
+    size_t n = txt_token_tam(p);
+    if (!n) { p++; continue; }
+    snprintf(w, sizeof w, "%.*s", (int)n, p);
+    if (txt_largura_familia(e, w, txt_fonte_interface()) > maxW) m0 = 2;
+    p += n;
+  }
+  return m0;
+}
+// The marquee: hold, then scroll left at 48 px/s with a second copy trailing,
+// clipped to the label column. One cached line, no allocation per frame.
+static void ajLetreiro(TxtEstilo e, const char *chave, float tx, float yc, float maxW, float a) {
+  TxtLinha t = ajTxt(e, chave);
+  float per = (float)t.w + 64.0f, ciclo = 1.6f + per / 48.0f, u = fmodf(ajRotT, ciclo);
+  float off = u < 1.6f ? 0.0f : (u - 1.6f) * 48.0f;
+  GfxRecorteAnt ra = gfx_recorte_dentro(tx, yc - (float)t.h, maxW, 2.0f * (float)t.h);
+  txt_desenhar_alpha(t, tx - off, yc - t.h * 0.5f, a);
+  if (off > 0.0f) txt_desenhar_alpha(t, tx - off + per, yc - t.h * 0.5f, a);
+  gfx_recorte_voltar(ra);
+}
+static float ajPalcoAjudaH(int op) {
+  float h;
+  if (op < 0) return 0;
+  h = txt_bloco(TXT_ILHA_SUB, uxResumo(op), 0, 0, 0, 0, -4000, ajPalcoAjudaW(), AJ_PALCO_AJ_LH, 0, 3);
+  return h < 1.0f ? 0.0f : h > 3 * AJ_PALCO_AJ_LH ? 3 * AJ_PALCO_AJ_LH : h;
 }
 // SEM INSPETOR (#339 "Lista", ou 120%): o "o que muda" da opcao em foco abre
 // embaixo da propria linha — a ajuda inteira (ate 4 linhas, numa medida de
@@ -813,13 +881,16 @@ static const char *ajSelo(int op) {
   // no inspetor ("Vale para") e as tecnicas ja estao atras de "Mais opcoes".
   return NULL;
 }
-// O aviso de dependencia ("Precisa ligar X — OK liga as duas") em 1 ou 2
+// O aviso de dependencia ("Precisa ligar X — OK liga as duas") em 1 a 3
 // linhas: a lista de 2.1 e mais estreita que a de 2.0.3 e o texto nao pode ser cortado.
 static int ajAvisoLinhas(int i) {
   char t[300];
   float w = aj2ListaR().w - 36.0f - 44.0f - (ajLinhaFilha(i) ? 34.0f : 0.0f) - 34.0f;
   ajAvisoTexto(TELA[i].op, t, sizeof t);
-  return (float)txt_largura(TXT_V3_BEN, t) > w ? 2 : 1;
+  // Palco blades are ~500 wide: a long prerequisite name needs a third line
+  // (word wrap wastes up to ~10% per line, hence the slack).
+  float tw = (float)txt_largura(TXT_V3_BEN, t);
+  return tw > w * 1.8f ? 3 : tw > w ? 2 : 1;
 }
 static float ajLinhaH(int i) {
   int op = TELA[i].op;
@@ -829,11 +900,22 @@ static float ajLinhaH(int i) {
   if (op == AJ_GUIA) h = AJ2_LN_SUB;
   else if (ajLinhaAviso(i)) return AJ2_LN_LINHA1 - 6.0f + AJ2_LN_BEN * ajAvisoLinhas(i) + 10.0f;
   // A regua de cores abre NA LINHA, com e sem inspetor: o inspetor mostra a
-  // previa viva e as medidas da cor (aj2PreviaCor).
-  if (ajPaleta(op) && ajEditandoLinha(op) && aj2FocoNaLista(i))
+  // previa viva e as medidas da cor (aj2PreviaCor). No Palco (prof. 3) a
+  // paleta vira um BLADE proprio: a linha nao abre a regua inline.
+  if (ajPaleta(op) && ajEditandoLinha(op) && aj2FocoNaLista(i) && !triBladeLayout())
     baixo += op == AJ_FUNDO_DIN_COR ? 2 * AJ_REGUA_FILA + 4 : AJ_REGUA_H;
-  if (op == AJ_FUNDO && aj2FocoNaLista(i)) baixo += AJ2_FUNDO_BAIXO;
+  if (op == AJ_FUNDO && aj2FocoNaLista(i) && !triBladeLayout()) baixo += AJ2_FUNDO_BAIXO;
   if (baixo > 0) return AJ2_LN_LINHA1 + 20.0f + baixo;
+  // Palco (mockup claude-c): a linha em foco CRESCE com a mola do foco e mostra
+  // a ajuda (ate 3 linhas); a que perde o foco encolhe no mesmo passo.
+  if (triBladeLayout()) {
+    if (op != AJ_GUIA && animItem[i] > 0.002f) {
+      float b = ajPalcoAjudaH(op);
+      if (b > 0.0f) h = AJ2_LN_H + (b + 6.0f) * animItem[i] * triAjudaF;
+      if (ajRotDuas(i)) h += AJ_ROT_LH * animItem[i];   // the wrapped label's 2nd line
+    }
+    return h;
+  }
   if (!aj2TemInsp() && aj2FocoNaLista(i) && op != AJ_GUIA) return AJ2_LN_LINHA1 - 6.0f + ajAjudaLinhaH(op) + 18.0f;
   // 2.0.3: a linha em foco ganha a frase de beneficio embaixo do rotulo.
   if (h == AJ2_LN_H && aj2TemInsp() && aj2FocoNaLista(i) && op != AJ_GUIA) {
@@ -1108,6 +1190,19 @@ static float aj2PilulaEstado(int op, float xDir, float yc, int ligado, float a) 
   // linha, para o deslize acompanhar o OK.
   return ajustes_ui_interruptor(xDir, yc, op >= 0 ? aj2PilulaOn(op, ligado) : (float)(ligado ? 1 : 0), a);
 }
+// Palco (mockup claude-c): 60 x 34, botao 24. `on` pode passar de 0..1 (a mola
+// com passagem): o botao vai alem e volta, o trilho satura.
+static float triInterruptor(float xDir, float yc, float on, float a) {
+  float ar, ag, ab, c = on < 0 ? 0 : on > 1 ? 1 : on;
+  GfxRect r = { xDir - 60.0f, yc - 17.0f, 60.0f, 34.0f };
+  ajustes_acento(&ar, &ag, &ab);
+  gfx_cor(r, 0.5f, 1, 1, 1, 0.14f * (1.0f - c) * a);
+  if (c > 0.005f) gfx_cor(r, 0.5f, ar, ag, ab, c * a);
+  // A light accent (white/cream themes) would swallow the white knob: go dark on it.
+  float k = 0.953f - (0.299f * ar + 0.587f * ag + 0.114f * ab > 0.72f ? 0.82f * c : 0.0f);
+  gfx_cor((GfxRect){ r.x + 5.0f + 26.0f * on, yc - 12.0f, 24.0f, 24.0f }, 0.5f, k, k, k * 0.99f, (0.8f + 0.2f * c) * a);
+  return 60.0f;
+}
 float ajustes_ui_interruptor(float xDir, float yc, float on, float a) {
   float ar, ag, ab;
   float w = 52.0f, h = 30.0f;
@@ -1198,22 +1293,30 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
   GfxRect ln = { fr.x + 18.0f, y, fr.w - 36.0f, h };
   int desligada = inativa(op), emFoco = f > 0.5f, ed = ajEditandoLinha(op);
   int sub = op == AJ_GUIA, aviso = ajLinhaAviso(item), filha = ajLinhaFilha(item);
-  int abre = h > AJ2_LN_SUB + 0.5f && !aviso && !(aj2TemInsp() && aj2FocoNaLista(item) && op != AJ_FUNDO && !(ajPaleta(op) && ed));
-  int beneficio = !sub && !aviso && aj2TemInsp() && aj2FocoNaLista(item) && op != AJ_FUNDO && !(ajPaleta(op) && ed) && h > AJ2_LN_H + 0.5f;
+  int palco = triBladeLayout();
+  int abre = !palco && h > AJ2_LN_SUB + 0.5f && !aviso && !(aj2TemInsp() && aj2FocoNaLista(item) && op != AJ_FUNDO && !(ajPaleta(op) && ed));
+  int beneficio = !palco && !sub && !aviso && aj2TemInsp() && aj2FocoNaLista(item) && op != AJ_FUNDO && !(ajPaleta(op) && ed) && h > AJ2_LN_H + 0.5f;
   float recuo = filha ? 34.0f : 0.0f;
   float aT = a * (desligada ? 0.45f : 1.0f), aTx = a * aj2TextoLista;
   float xDir = ln.x + ln.w - 22.0f, yc = (abre || beneficio || aviso) ? y + AJ2_LN_LINHA1 * 0.5f : y + h * 0.5f;
-  float cauda = 0;
+  float cauda = 0, icoX = palco ? AJ_PALCO_TX - 22.0f : 0.0f;   // Palco: o icone Lucide antes do rotulo
   // O valor usa o que o rotulo deixa (A3: a linha e larga; cortar o valor com
   // espaco sobrando era o "Back to home (minimize..." da captura em Montserrat).
-  float rotFim = ln.x + 22.0f + recuo + (float)txt_largura(TXT_V2_LN, rotuloOpcao(op)) + 28.0f;
+  // Palco: the label is measured in its own (focused) style, so the value gives way first.
+  float rotFim = ln.x + 22.0f + icoX + recuo + 28.0f +
+                 (float)txt_largura(palco ? (emFoco ? TXT_V2_SEG : TXT_AJ_ROTULO) : TXT_V2_LN, rotuloOpcao(op));
 #define AJ_VMAX(xx) ((xx) - rotFim < 160.0f ? 160.0f : (xx) - rotFim)
+  if (palco && !aviso) yc = y + AJ2_LN_H * 0.5f;   // a linha cresce para baixo: o rotulo fica
   if (a <= 0.004f) return;
   // O texto da lista some quando o editor entra por cima (a lista fica so
   // superficie): aTx leva esse alfa; a superficie de foco fica.
   aT *= aj2TextoLista;
   ajFocoLinha(ln, 20.0f, f, aTx);
+  if (ajFocoCompart && aj2FocoNaLista(item)) triSupReportar(ln);
   if (aTx <= 0.004f) return;
+  if (palco)   // o icone Lucide 28 da opcao (mockup claude-c)
+    gfx_icone((GfxRect){ ln.x + 18.0f + recuo, yc - 14.0f, 28, 28 }, ajVisualIcone(op), 0.953f, 0.949f, 0.937f,
+              (emFoco ? 0.95f : 0.62f) * aT);
   // A3: o segmentado da opcao em foco fica sobre a arte (ajDesenharInspetor);
   // a linha mostra o valor, como as outras escolhas.
   // Sem a arte (#339 "Lista", 120%), o segmentado da escolha em foco fica na linha.
@@ -1226,6 +1329,14 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
     TxtLinha t = ajTxt(TXT_V2_24, lig(op) ? "Ligado" : "Desligado");
     txt_desenhar_alpha(t, xDir - t.w, yc - t.h * 0.5f, 0.72f * aT);
     cauda = t.w;
+  } else if (tipo == AJL_TOG && palco) {
+    // Palco: interruptor 60 x 34, botao 24; o da linha em foco passa do ponto e volta.
+    float on = aj2PilulaOn(op, lig(op));
+    if (emFoco) {
+      if (triChaveOp != op) { triChaveOp = op; triChaveP = lig(op) ? 1.0f : 0.0f; triChaveV = 0.0f; }
+      on = triChaveP;
+    }
+    cauda = triInterruptor(xDir, yc, on, aT);   // o custo mora nos fatos do estagio
   } else if (tipo == AJL_TOG) {
     cauda = aj2PilulaEstado(op, xDir, yc, lig(op), aT);
     cauda += ajCustoIcones(op, xDir - cauda - 14.0f, yc, aT) + (ajCusto(op) ? 14.0f : 0.0f);
@@ -1247,10 +1358,25 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
         marca_formato((FormatoMarca)fv, x - mw, yc - 15.0f, 30.0f, 1, 1, 1, (emFoco ? 0.85f : 0.6f) * aT);
         x -= mw;
       } else {
-        TxtLinha t = ajTxtC(TXT_V2_24, v, AJ_VMAX(x) - (op == AJ_TEMA ? 30.0f : 0.0f) - (ajCusto(op) ? 40.0f : 0.0f));
-        txt_desenhar_alpha(t, x - t.w, yc - t.h * 0.5f, (emFoco ? 0.95f : 0.72f) * aT);
+        float vw = AJ_VMAX(x) - (op == AJ_TEMA ? 30.0f : 0.0f) - (ajCusto(op) && !palco ? 40.0f : 0.0f), dy = 0, va = 1;
+        TxtLinha t = ajTxtC(palco ? TXT_AJ_VALOR : TXT_V2_24, v, vw);
+        // Palco: o valor da linha em foco ROLA (o antigo sobe e some, o novo vem de baixo).
+        if (palco && emFoco) {
+          if (triRolOp != op) { triRolOp = op; snprintf(triRolAgora, sizeof triRolAgora, "%s", v); triRolF = 1.0f; }
+          else if (strcmp(triRolAgora, v)) {
+            snprintf(triRolVelho, sizeof triRolVelho, "%s", triRolAgora);
+            snprintf(triRolAgora, sizeof triRolAgora, "%s", v);
+            triRolF = 0.0f;
+          }
+          if (triRolF < 0.995f) {
+            TxtLinha o = ajTxtC(TXT_AJ_VALOR, triRolVelho, vw);
+            txt_desenhar_alpha(o, x - o.w, yc - o.h * 0.5f - 26.0f * triRolF, 0.95f * (1.0f - triRolF) * aT);
+            dy = 26.0f * (1.0f - triRolF); va = triRolF;
+          }
+        }
+        txt_desenhar_alpha(t, x - t.w, yc - t.h * 0.5f + dy, (emFoco ? 0.95f : 0.72f) * va * aT);
         x -= t.w;
-        if (ajCusto(op) && !desligada) x -= ajCustoIcones(op, x - 10.0f, yc, aT) + 10.0f;
+        if (ajCusto(op) && !desligada && !palco) x -= ajCustoIcones(op, x - 10.0f, yc, aT) + 10.0f;
         if (op == AJ_TEMA) {
           float sr, sg, sb;
           ajustes_acento(&sr, &sg, &sb);
@@ -1258,6 +1384,22 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
           x -= 30.0f;
         }
       } }
+    // Palco (mockup claude-c): escolhas curtas mostram o valor ROLANDO e os
+    // PIPS da posicao na propria linha (o palco nao tem controle nenhum).
+    if (triBladeLayout() && ajSegmentada(op) && !desligada) {
+      int pn = nValores(op), pv = uxValorAtual(op), p_;
+      if (pn > 5) pn = 5;
+      if (ed && uxOp == op) pv = uxPendente;
+      // O pip da posicao cresce em pilula quando o valor rola (mesma mola).
+      float g = emFoco && triRolOp == op ? triRolF : 1.0f, px = x - 6.0f;
+      for (p_ = pn - 1; p_ >= 0; p_--) {
+        float pw = p_ == pv ? 5.0f + 9.0f * g : 5.0f;
+        px -= pw;
+        gfx_cor((GfxRect){ px, yc - 2.5f, pw, 5.0f }, 2.5f, 1, 1, 1, (p_ == pv ? 0.25f + 0.6f * g : 0.25f) * aT);
+        px -= 7.0f;
+      }
+      x = px;
+    }
     cauda = xDir - x;
   } else if (tipo == AJL_ACAO) {
     const char *st = ajEstadoAcao(op);
@@ -1302,9 +1444,14 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
     gfx_cor((GfxRect){ cx, y + 10.0f, 2.0f, yc - y - 10.0f }, 0, 1, 1, 1, 0.30f * aTx);
     gfx_cor((GfxRect){ cx, yc - 1.0f, 14.0f, 2.0f }, 0, 1, 1, 1, 0.30f * aTx);
   }
-  { float tx = ln.x + 22.0f + recuo, maxW = ln.w - 44.0f - recuo - cauda - 16.0f, tyc = yc;
-    TxtLinha r = ajTxtC(TXT_V2_LN, rotuloOpcao(op), maxW);
+  { float tx = ln.x + 22.0f + icoX + recuo, maxW = ln.w - 44.0f - icoX - recuo - cauda - 16.0f, tyc = yc;
+    TxtLinha r = ajTxtC(palco ? (emFoco ? TXT_V2_SEG : TXT_AJ_ROTULO) : TXT_V2_LN, rotuloOpcao(op), maxW);
     float rx;
+    int longo = 0;   // Palco, focused: 1 = wrapped in two lines, 2 = marquee
+    if (palco && emFoco && !sub && !aviso) {
+      if (aj2FocoNaLista(item)) ajRotModo[item] = (unsigned char)ajRotMedir(TXT_V2_SEG, rotuloOpcao(op), maxW);
+      longo = ajRotDuas(item) ? 1 : ajRotModo[item];
+    }
     if (sub) tyc = y + 12.0f + 16.0f;
     if (sub) {
       char t[200];
@@ -1315,8 +1462,11 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
       s = ajTxtC(TXT_V2_18, t, maxW);
       txt_desenhar_alpha(s, tx, y + 12.0f + 32.0f + 4.0f + (22.0f - s.h) * 0.5f, 0.5f * aT);
     }
-    txt_desenhar_alpha(r, tx, tyc - r.h * 0.5f, (emFoco ? 1.0f : 0.88f) * aT);
-    rx = tx + r.w;
+    if (longo == 1)
+      txt_bloco_corta(TXT_V2_SEG, rotuloOpcao(op), 243, 242, 239, tx, tyc - r.h * 0.5f, maxW, AJ_ROT_LH, aT, 2);
+    else if (longo == 2) ajLetreiro(TXT_V2_SEG, rotuloOpcao(op), tx, tyc, maxW, aT);
+    else txt_desenhar_alpha(r, tx, tyc - r.h * 0.5f, (emFoco ? 1.0f : 0.88f) * aT);
+    rx = longo ? tx + maxW : tx + r.w;   // the marks do not fit beside a long label
     { int fm = marcaDaOpcao(op);
       if (fm >= 0) {
         float mw = marca_formato_largura((FormatoMarca)fm, 30.0f);
@@ -1346,13 +1496,20 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
         if (rx + 18 + w < tx + maxW) ajCaps(TXT_G22M, selo, 1.0f, rx + 18, tyc - 11, 0.42f * aT);
       } }
   }
+  // Palco: a ajuda da linha em foco aparece enquanto a superficie cresce (19/27, 3 linhas).
+  if (palco && !aviso && !sub && h > AJ2_LN_H + 1.0f) {
+    GfxRecorteAnt ra = gfx_recorte_dentro(ln.x, y, ln.w, h);
+    txt_bloco_corta(TXT_ILHA_SUB, uxResumo(op), 243, 242, 239, ln.x + 18.0f, y + 58.0f + (ajRotDuas(item) ? AJ_ROT_LH : 0.0f), ajPalcoAjudaW(), AJ_PALCO_AJ_LH,
+                    0.66f * f * f * triAjudaF * aT, 3);
+    gfx_recorte_voltar(ra);
+  }
   // 2.0.3: o que falta para a linha valer, na propria linha (ambar).
   if (aviso) {
     char t[300];
     float tx = ln.x + 22.0f + recuo, aw = ln.w - 44.0f - recuo - 34.0f;
     ajAvisoTexto(op, t, sizeof t);
     gfx_icone((GfxRect){ tx, y + AJ2_LN_LINHA1 - 8.0f + (AJ2_LN_BEN - 24.0f) * 0.5f, 24, 24 }, "aj_triangle-alert", 0.91f, 0.69f, 0.36f, aTx);
-    txt_bloco(TXT_V3_BEN, t, 232, 176, 92, tx + 32.0f, y + AJ2_LN_LINHA1 - 8.0f + 1.0f, aw, AJ2_LN_BEN, aTx, 2);
+    txt_bloco(TXT_V3_BEN, t, 232, 176, 92, tx + 32.0f, y + AJ2_LN_LINHA1 - 8.0f + 1.0f, aw, AJ2_LN_BEN, aTx, 3);
   }
   // 2.0.3: a frase de beneficio (mockup v3: "Ate onde a fonte pode ir...").
   if (beneficio)
@@ -1366,7 +1523,8 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
       ajAjudaLinhaDesenhar(op, ln.x + 22.0f + recuo, y + AJ2_LN_LINHA1 - 8.0f, aTx);
   }
   // A REGUA DA COR DE DESTAQUE (editando): claros, profundos, dinamicas, Textura.
-  if (ajPaleta(op) && abre && ed) aj2Regua(op, ln, y + AJ2_LN_LINHA1 + 20.0f, a);
+  // No Palco (prof. 3) a paleta e um blade proprio, nao a regua na linha.
+  if (ajPaleta(op) && abre && ed && !palco) aj2Regua(op, ln, y + AJ2_LN_LINHA1 + 20.0f, a);
 #undef AJ_VMAX
 }
 

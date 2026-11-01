@@ -198,6 +198,7 @@
   T("%d temporada", "%d mùa"),
   T("%d temporadas", "%d mùa"),
   T("%d texturas", "%d texture"),
+  T("%d técnicas", "%d kỹ thuật"),
   T("%d título", "%d tựa"),
   T("%d título assistido", "%d title watched"),
   T("%d título em andamento", "%d title in progress"),

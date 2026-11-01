@@ -197,6 +197,7 @@
   T("%d temporada", "%d сезон"),
   T("%d temporadas", "Сезонов: %d"),
   T("%d texturas", "%d текстур"),
+  T("%d técnicas", "%d технических"),
   T("%d título", "%d название"),
   T("%d título assistido", "%d title watched"),
   T("%d título em andamento", "%d title in progress"),

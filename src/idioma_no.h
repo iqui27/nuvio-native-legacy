@@ -198,6 +198,7 @@
   T("%d temporada", "%d sesong"),
   T("%d temporadas", "%d sesonger"),
   T("%d texturas", "%d teksturer"),
+  T("%d técnicas", "%d tekniske"),
   T("%d título", "%d tittel"),
   T("%d título assistido", "%d title watched"),
   T("%d título em andamento", "%d title in progress"),

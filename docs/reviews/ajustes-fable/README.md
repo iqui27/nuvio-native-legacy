@@ -125,3 +125,35 @@ Both reported assertions also failed on plain `integracao/2.1` in a detached tem
 - Linhas de 60 px com a frase curta só na linha em foco (2.0.3), não 76 px com frase em todas: cabem 9 opções por tela em vez de 7, e a ilha 3 já explica tudo.
 - O "alterado" é o ponto discreto depois do rótulo (2.0.3), não um chip no acento: o chip "Diferente do padrão · N" do cabeçalho já conta.
 - O kicker do cabeçalho é "Nuvio · <perfil>" (o nome da TV não existe no app).
+
+## 7. Palco: the blade shell (mockup claude-c, 31/10)
+
+On a wide screen (`triBladeLayout()`: not portrait, not "Lista", not phone,
+≥ 1240 px of content) Settings is a **stack of blades** next to a **stage**:
+
+- **Depth is read from state, never counted twice.** `triPilha()` (ajustes_tri.inc)
+  lists the open levels: section → topic (`triSubmenu`) → choice/palette
+  editor (`triEditorBlade()`), or one utility route alone (Presets, Diff,
+  Review, Parental = depth 1). `triProfF` is the depth on the screen spring
+  (`NV_MOLA_TELA`); everything else derives from it: the menu 380 → 104 pill,
+  the breadcrumb segments, the stage anchor (476/1396/640 → 940 → 1192 from
+  `triX0()`, centred with its caption).
+- **Index (depth 0) has no column.** The menu, the section art on the wide
+  stage, kicker/title/help and the section's block chips.
+- **Every block is a drill row** (`triTopico()` is true for any ROT in the
+  Palco) with its Lucide icon and count; "Mais opções" shows "N técnicas".
+- **Motion, all springs and interruptible.** A level that opens slides in
+  from the right with scale 0.96 → 1 and fade; a level that closes stays drawn
+  as a ghost (`triPgTipo/Val/Pend` remember what it showed) until the spring
+  takes it away; at depth 3 the oldest blade slides out left. Rows enter
+  staggered (34 px, 22 ms, critical spring). One shared focus surface
+  (`triSup*`) glides between rows and across blades and grows to reveal the
+  help line. The stage crossfades with scale/parallax, the caption slides up,
+  the "Agora" fact rolls; the focused switch knob overshoots; the value rolls
+  and the pip grows. The stage draws under the blades and is pushed by the
+  incoming blade's edge, so nothing shows through a translucent blade.
+- **Nothing on the stage is interactive**; values change only on OK; Right
+  opens the drill-in; Back closes one blade and lands on the opener row.
+- Contract: `tests/ajustes_tri_blades.sh` (fails on 239b6fe6c, passes now).
+  With an output dir it also captures every state (solid/Frost/Glass) and
+  10-frame motion strips.

@@ -198,6 +198,7 @@
   T("%d temporada", "%d 季"),
   T("%d temporadas", "%d 季"),
   T("%d texturas", "%d 个纹理"),
+  T("%d técnicas", "%d 个技术项"),
   T("%d título", "%d部"),
   T("%d título assistido", "%d title watched"),
   T("%d título em andamento", "%d title in progress"),
