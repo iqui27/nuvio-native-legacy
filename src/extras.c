@@ -2378,7 +2378,15 @@ int extras_hero_trailer_idioma_preferido(const char *imdb) {
 // Abre o trailer no app nativo da plataforma. O app nao tem reprodutor de
 // YouTube embutido; em vez de prometer e nao cumprir, entrega o video ao
 // componente que cada plataforma ja tem: o navegador do webOS (via luna-send)
-// ou o browser do desktop (open). Na Samsung, nada (ver abaixo).
+// ou o browser do desktop (open). Na Samsung .tpk, o app do YouTube por
+// AppControl (ponte do host; o .wgt continua sem abrir nada fora, #136).
+#ifdef NV_TPK
+// O host .NET (tizen-tpk/Apps.cs) registra o lancador de verdade por esta
+// exportacao; sem ele (host antigo, mesa) fica o log de antes.
+static void (*tpkYoutube)(const char *url);
+__attribute__((visibility("default")))
+void nv_tpk_youtube_registrar(void (*f)(const char *url)) { tpkYoutube = f; }
+#endif
 void extras_trailer_abrir(int i) {
   const char *yt = extras_trailer_yt(i);
   if (!yt[0]) return;
@@ -2387,12 +2395,24 @@ void extras_trailer_abrir(int i) {
 #ifdef NV_VIDAA
   printf("[extras] youtube externo indisponivel no VIDAA\n");
   fflush(stdout);
-#elif defined(__EMSCRIPTEN__) || defined(NV_TPK) || defined(NV_ANDROID)
-  // SAMSUNG (e Android, por ora; TODO Intent ACTION_VIEW): NAO abre mais nada (#136). No wgt o window.open trocava a
-  // propria pagina do app pelo youtube.com/watch — o video tocava, mas o
-  // Voltar nao tinha mais o Nuvio para onde voltar. O trailer da Samsung
-  // toca dentro do app (detail.c, SEC_TRAILERS); chegar aqui e defeito de
-  // quem chamou, e fica no registro.
+#elif defined(NV_TPK)
+  // SAMSUNG .tpk: o trailer no idioma da pessoa (TMDB) e um id do YouTube,
+  // que o plano de video nao toca. Em vez de cair no ingles ou ficar sem
+  // trailer, entrega ao app do YouTube da TV pela ponte do host
+  // (nv_tpk_youtube_registrar -> Apps.cs, AppControl VIEW). Sem a ponte
+  // (host antigo) fica o registro, como antes.
+  if (tpkYoutube) tpkYoutube(url);
+  else {
+    printf("[trailer] extras_trailer_abrir sem lancador de YouTube neste host (%s)\n", url);
+    fflush(stdout);
+  }
+#elif defined(__EMSCRIPTEN__) || defined(NV_ANDROID)
+  // SAMSUNG .wgt (e Android, por ora; TODO Intent ACTION_VIEW): NAO abre
+  // nada fora (#136). No wgt o window.open trocava a propria pagina do app
+  // pelo youtube.com/watch — o video tocava, mas o Voltar nao tinha mais o
+  // Nuvio para onde voltar. O trailer da Samsung toca dentro do app
+  // (detail.c, SEC_TRAILERS); chegar aqui e defeito de quem chamou, e fica
+  // no registro.
   printf("[trailer] extras_trailer_abrir na Samsung ignorado (%s)\n", url);
   fflush(stdout);
 #elif defined(NV_LINUX_DESKTOP) || defined(NV_IOS) || defined(_WIN32)

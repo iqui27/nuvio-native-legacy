@@ -6985,8 +6985,11 @@ static int foraDestaPlataforma(int op) {
   if (op == AJ_DESCOBRIR) return 1;
   // #509: um so interruptor de som; AJ_DET_TRAILER_SOM fica so para a migracao.
   if (op == AJ_DET_TRAILER_SOM) return 1;
-#ifndef __EMSCRIPTEN__
-  // O trailer dublado e um id do YouTube: o player nativo nao toca.
+// Esconder so onde o YouTube nao chega de jeito nenhum: VIDAA mt (iframe
+// bloqueado pelo COEP), Android e o preview de mesa — sem lancador.
+#if (defined(NV_VIDAA) && defined(NV_UM_FIO)) || defined(NV_ANDROID) || \
+    (!defined(__EMSCRIPTEN__) && !defined(NV_TPK) && \
+     (defined(__APPLE__) || defined(NV_LINUX_DESKTOP) || defined(_WIN32)))
   if (op == AJ_TRAILER_AUDIO) return 1;
 #endif
 #ifndef NV_TPK
