@@ -66,6 +66,10 @@ static float triAjudaF = 1.0f;
 // passa do ponto e volta), so desenho.
 static int triChaveOp = -1;
 static float triChaveP, triChaveV;
+// The focused row's long label (de, ru, hu...): 0 fits, 1 wraps to two lines
+// (the row grows with the focus spring), 2 marquee (not even two lines fit).
+static unsigned char ajRotModo[AJ_N_TELA];
+static float ajRotT;   // marquee clock; restarts when the focused label changes
 static float triChipF[TRI_C_N], triSecF[AJ_MAX_SECOES + 1], triUtilF[AJ_N];
 static float triUtilRol, triUtilRolAlvo;   // rolagem das rotas utilitarias: o desenho acha o alvo, triAtualizar segue
 static float triSecRolY, triSecRolYAlvo;   // ilha 1: rola ate a secao em foco quando nao cabe (texto grande)
@@ -544,6 +548,7 @@ static void triAtualizar(float dt) {
       triChaveP += triChaveV * h;
     }
   }
+  ajRotT += dt;
   ajMovAtualizar(dt);
   ajCenaTrocaAtualizar(dt);
 }

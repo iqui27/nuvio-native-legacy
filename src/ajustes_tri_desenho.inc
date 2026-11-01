@@ -434,8 +434,9 @@ static const char *triTopicoIcone(int item) {
   return "aj_sliders-horizontal";
 }
 static void triTopicoDesenhar(int item, float y, float a) {
-  GfxRect fr = triListaR(), r = {fr.x + 18, y + AJ2_LN_GAP, fr.w - 36, AJ2_LN_H};
+  GfxRect fr = triListaR(), r = {fr.x + 18, y + AJ2_LN_GAP, fr.w - 36, ajAlturaItem(item) - AJ2_LN_GAP};
   int n = 0;
+static int triRotItem = -1;   // the topic row triLinhaUtil is drawing (long-label wrap/marquee)
   for (int i = item + 1; i < secFim(secAtual) && TELA[i].tipo == IT_OPC; i++) if (visivel(i)) n++;
   char count[48];
   // Palco: a contagem pura ("8 ›"), como o mockup; fora dele "8 opcoes".
@@ -445,7 +446,9 @@ static void triTopicoDesenhar(int item, float y, float a) {
   triLinhaUtil(r, animItem[item], a, triBladeLayout() ? triTopicoIcone(item) : "aj_sliders-horizontal", TELA[item].titulo, NULL, count, 1, -1);
   if (ajPontLista) ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, AJ_TOPO, AJ_BASE, ajPonteiroItem, NULL, item, 0);
 }
+  triRotItem = triBladeLayout() ? item : -1;
 static void triLista(void) {
+  triRotItem = -1;
   GfxRect ilha = triIlha2R(), fr = triListaR();
   float topo = AJ_TOPO, base = AJ_BASE, y, k = anim_suave(paginaA), dy = 18.0f * (1.0f - k);
   float g0 = gfx_opacidade_grupo, tPg = 10.0f;
@@ -563,7 +566,16 @@ static void triLinhaUtil(GfxRect r, float f, float a, const char *icone, const c
       float th = tt.h + 4.0f + s.h;
       txt_desenhar_alpha(tt, tx, yc - th * 0.5f, (f > 0.5f ? 1.0f : 0.88f) * aT);
       txt_desenhar_alpha(s, tx, yc - th * 0.5f + tt.h + 4.0f, 0.5f * aT);
-    } else txt_desenhar_alpha(tt, tx, yc - tt.h * 0.5f, (f > 0.5f ? 1.0f : 0.88f) * aT);
+    } else {
+      int longo = 0, it = triRotItem;
+      if (it >= 0 && f > 0.5f) {
+        if (aj2FocoNaLista(it)) ajRotModo[it] = (unsigned char)ajRotMedir(TXT_V2_LN, titulo, maxW);
+        longo = ajRotDuas(it) ? 1 : ajRotModo[it];
+      }
+      if (longo == 1) txt_bloco_corta(TXT_V2_LN, titulo, 243, 242, 239, tx, yc - (AJ_ROT_LH + tt.h) * 0.5f, maxW, AJ_ROT_LH, aT, 2);
+      else if (longo == 2) ajLetreiro(TXT_V2_LN, titulo, tx, yc, maxW, aT);
+      else txt_desenhar_alpha(tt, tx, yc - tt.h * 0.5f, (f > 0.5f ? 1.0f : 0.88f) * aT);
+    }
   }
 }
 // A linha em foco de uma rota utilitaria fica visivel: o desenho sabe onde ela

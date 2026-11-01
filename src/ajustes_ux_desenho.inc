@@ -687,6 +687,42 @@ static float ajBeneficioH(int op) {
 #define AJ_PALCO_TX 60.0f
 #define AJ_PALCO_AJ_LH 27.0f
 static float ajPalcoAjudaW(void) { return aj2ListaR().w - 36.0f - 36.0f; }   // a ajuda alinha com o icone
+// Long labels in the narrow blades: the focused row wraps to 2 lines; if even
+// that is not enough (a word wider than the column, or 3+ lines) the label
+// scrolls while focused. Measured only when label, width or language change.
+#define AJ_ROT_LH 31.0f
+static int ajRotDuas(int i) { return ajRotModo[i] == 1 || (ajRotModo[i] == 2 && ajustes_animacoes_reduzidas()); }
+static int ajRotMedir(TxtEstilo e, const char *chave, float maxW) {
+  static const char *c0;
+  static int id0 = -1, m0;
+  static float w0;
+  const char *p;
+  char w[160];
+  if (chave == c0 && id0 == ajustes_idioma() && fabsf(maxW - w0) < 0.5f) return m0;
+  if (chave != c0) ajRotT = 0.0f;
+  c0 = chave; id0 = ajustes_idioma(); w0 = maxW; m0 = 0;
+  if (txt_largura(e, chave) <= maxW) return m0;
+  m0 = txt_bloco(e, chave, 0, 0, 0, 0, -4000, maxW, AJ_ROT_LH, 0, 0) > 2.5f * AJ_ROT_LH ? 2 : 1;
+  for (p = i18n(chave); m0 == 1 && *p;) {
+    size_t n = txt_token_tam(p);
+    if (!n) { p++; continue; }
+    snprintf(w, sizeof w, "%.*s", (int)n, p);
+    if (txt_largura_familia(e, w, txt_fonte_interface()) > maxW) m0 = 2;
+    p += n;
+  }
+  return m0;
+}
+// The marquee: hold, then scroll left at 48 px/s with a second copy trailing,
+// clipped to the label column. One cached line, no allocation per frame.
+static void ajLetreiro(TxtEstilo e, const char *chave, float tx, float yc, float maxW, float a) {
+  TxtLinha t = ajTxt(e, chave);
+  float per = (float)t.w + 64.0f, ciclo = 1.6f + per / 48.0f, u = fmodf(ajRotT, ciclo);
+  float off = u < 1.6f ? 0.0f : (u - 1.6f) * 48.0f;
+  GfxRecorteAnt ra = gfx_recorte_dentro(tx, yc - (float)t.h, maxW, 2.0f * (float)t.h);
+  txt_desenhar_alpha(t, tx - off, yc - t.h * 0.5f, a);
+  if (off > 0.0f) txt_desenhar_alpha(t, tx - off + per, yc - t.h * 0.5f, a);
+  gfx_recorte_voltar(ra);
+}
 static float ajPalcoAjudaH(int op) {
   float h;
   if (op < 0) return 0;
@@ -868,6 +904,7 @@ static float ajLinhaH(int i) {
     if (op != AJ_GUIA && animItem[i] > 0.002f) {
       float b = ajPalcoAjudaH(op);
       if (b > 0.0f) h = AJ2_LN_H + (b + 6.0f) * animItem[i] * triAjudaF;
+      if (ajRotDuas(i)) h += AJ_ROT_LH * animItem[i];   // the wrapped label's 2nd line
     }
     return h;
   }
@@ -1402,6 +1439,11 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
   { float tx = ln.x + 22.0f + icoX + recuo, maxW = ln.w - 44.0f - icoX - recuo - cauda - 16.0f, tyc = yc;
     TxtLinha r = ajTxtC(palco ? (emFoco ? TXT_V2_SEG : TXT_AJ_ROTULO) : TXT_V2_LN, rotuloOpcao(op), maxW);
     float rx;
+    int longo = 0;   // Palco, focused: 1 = wrapped in two lines, 2 = marquee
+    if (palco && emFoco && !sub && !aviso) {
+      if (aj2FocoNaLista(item)) ajRotModo[item] = (unsigned char)ajRotMedir(TXT_V2_SEG, rotuloOpcao(op), maxW);
+      longo = ajRotDuas(item) ? 1 : ajRotModo[item];
+    }
     if (sub) tyc = y + 12.0f + 16.0f;
     if (sub) {
       char t[200];
@@ -1412,8 +1454,11 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
       s = ajTxtC(TXT_V2_18, t, maxW);
       txt_desenhar_alpha(s, tx, y + 12.0f + 32.0f + 4.0f + (22.0f - s.h) * 0.5f, 0.5f * aT);
     }
-    txt_desenhar_alpha(r, tx, tyc - r.h * 0.5f, (emFoco ? 1.0f : 0.88f) * aT);
-    rx = tx + r.w;
+    if (longo == 1)
+      txt_bloco_corta(TXT_V2_SEG, rotuloOpcao(op), 243, 242, 239, tx, tyc - r.h * 0.5f, maxW, AJ_ROT_LH, aT, 2);
+    else if (longo == 2) ajLetreiro(TXT_V2_SEG, rotuloOpcao(op), tx, tyc, maxW, aT);
+    else txt_desenhar_alpha(r, tx, tyc - r.h * 0.5f, (emFoco ? 1.0f : 0.88f) * aT);
+    rx = longo ? tx + maxW : tx + r.w;   // the marks do not fit beside a long label
     { int fm = marcaDaOpcao(op);
       if (fm >= 0) {
         float mw = marca_formato_largura((FormatoMarca)fm, 30.0f);
@@ -1446,7 +1491,7 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
   // Palco: a ajuda da linha em foco aparece enquanto a superficie cresce (19/27, 3 linhas).
   if (palco && !aviso && !sub && h > AJ2_LN_H + 1.0f) {
     GfxRecorteAnt ra = gfx_recorte_dentro(ln.x, y, ln.w, h);
-    txt_bloco_corta(TXT_ILHA_SUB, uxResumo(op), 243, 242, 239, ln.x + 18.0f, y + 58.0f, ajPalcoAjudaW(), AJ_PALCO_AJ_LH,
+    txt_bloco_corta(TXT_ILHA_SUB, uxResumo(op), 243, 242, 239, ln.x + 18.0f, y + 58.0f + (ajRotDuas(item) ? AJ_ROT_LH : 0.0f), ajPalcoAjudaW(), AJ_PALCO_AJ_LH,
                     0.66f * f * f * triAjudaF * aT, 3);
     gfx_recorte_voltar(ra);
   }
