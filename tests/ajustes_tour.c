@@ -34,6 +34,8 @@ static void previewFim(void) {}
 #define txt_desenhar_alpha previewDesenhar
 #define gfx_recorte previewRecorte
 #define gfx_sem_recorte previewFim
+#define gfx_recorte_dentro(...) ((GfxRecorteAnt){0})
+#define gfx_recorte_voltar(...) ((void)0)
 #include "../src/ajustes.c"
 
 static int naTela(int op) {
@@ -102,12 +104,16 @@ static void tourNavigation(void) {
     if (nextFrame) tourAtualizar(dt);
     key(SDLK_ESCAPE);
     tourAtualizar(dt);
-    // 2.1: the pending "Where it is" lands on the row first; that Back then
-    // goes up one level, to the sections island, never out of Settings.
-    assert(!sair && !tourPend && !tourAberto && !uxEditor && focoIndice);
-    assert(secAtual == uxSecaoDe(AJ_SEEKR_LIGADO) && triIlha == TRI_SECOES && triSecFoco == secAtual);
+    // 2.1: the pending "Where it is" lands on the row first; each Back goes up
+    // one level, never out of Settings. Since topic submenus (502a111b5) the
+    // Seekr row sits inside a topic: Back -> topic row, Back -> sections island.
+    assert(!sair && !tourPend && !tourAberto && !uxEditor && !focoIndice);
+    assert(secAtual == uxSecaoDe(AJ_SEEKR_LIGADO) && triIlha == TRI_LISTA && triSubmenu < 0 && triTopico(focoItem));
     assert(tourVis > 0 && tourVis < 1);
-    key(SDLK_RIGHT);
+    key(SDLK_ESCAPE);
+    assert(!sair && focoIndice);
+    assert(secAtual == uxSecaoDe(AJ_SEEKR_LIGADO) && triIlha == TRI_SECOES && triSecFoco == secAtual);
+    key(SDLK_RIGHT); key(SDLK_RIGHT);
     assert(!focoIndice && focoOp == AJ_SEEKR_LIGADO && !sair);
   }
 
