@@ -1044,12 +1044,8 @@ static int tvOrdem(int *lista) {
 #ifdef NV_DESKTOP_UI
   if (layout_desktop_ativo()) {
     static const int order[] = {MENU_BUSCAR, MENU_INICIO, MENU_BIBLIOTECA, MENU_GUIA,
-      MENU_LISTAS, MENU_CONQUISTAS, MENU_JUNTOS, MENU_ESPORTES, MENU_STREAMING, MENU_FONTES};
+      MENU_LISTAS, MENU_CONQUISTAS, MENU_JUNTOS, MENU_STREAMING, MENU_FONTES};
     for (unsigned k = 0; k < sizeof order / sizeof *order; k++) {
-      if (order[k] == MENU_ESPORTES) {
-        int enabled=0; for(int sport=0;sport<esportes_modalidades_n();sport++) enabled |= esportes_habilitado(sport);
-        if(!enabled) continue;
-      }
       lista[n++] = order[k];
       if (order[k] == MENU_STREAMING) for (i = 0; i < np; i++) lista[n++] = MENU_ST0 + i;
     }
