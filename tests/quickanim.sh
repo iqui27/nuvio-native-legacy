@@ -6,7 +6,8 @@ out=/Volumes/ExternalSSD/tmp/rev/quickanim
 mkdir -p "$out"
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-quickanim.XXXXXX")
 trap 'rm -rf "$work"' EXIT
-base=$(git rev-parse integracao/2.1)
+# "Before" = the sources just before the fix (c0532919d), now that 2.1 has it.
+base=$(git rev-parse c0532919d^)
 git show "$base:src/central.c" > "$work/central.c"
 git show "$base:src/ilha.c" > "$work/ilha.c"
 # Preserve central.c's relative includes when included from the temporary path.
@@ -32,6 +33,6 @@ if [ "$rc" != 1 ]; then echo "Expected integration regression failure, got $rc";
 if ! grep -q 'FAIL: no content pixels' "$out/before.log" || ! grep -q 'FAIL: content alpha' "$out/before.log"; then
   echo 'Integration failed for an unexpected reason'; exit 1
 fi
-printf 'PASS: integracao/2.1 %s reproduces opacity and clipping failures\n' "$base"
+printf 'PASS: pre-fix %s reproduces opacity and clipping failures\n' "$base"
 compile src/ilha.c "$PWD/src/central.c"
 NUVIO_DADOS="$work/after" "$work/test" "$out/after.png" | tee "$out/after.log"
