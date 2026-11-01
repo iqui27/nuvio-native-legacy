@@ -366,11 +366,12 @@ static void metaTitulo(const CatItem *ci, char *dst, size_t n) {
 static const char *arteDe(const CatItem *ci, int paisagem) {
   const char *a;
   if (paisagem && ci->backdrop[0]) return ci->backdrop;
-  // A busca preserva a arte do resultado; provedor por ID so sem nenhuma.
-  if (ci->poster[0]) return ci->poster;
+  // O servico de posteres vale aqui como em qualquer card em pe (#708): antes
+  // a linha preservava o cartaz do resultado e o provedor so entrava sem arte.
+  a = posterprov_card_addon(ci->origem, ci->imdb, ci->tmdb, ci->tipo, ci->poster);
+  if (a && a[0]) return a;
   if (ci->backdrop[0]) return ci->backdrop;
-  a = posterprov_card_addon(ci->origem, ci->imdb, ci->tmdb, ci->tipo, "");
-  return a && a[0] ? a : "";
+  return "";
 }
 
 static void linhaTitulo(int tipo, int idx) {
