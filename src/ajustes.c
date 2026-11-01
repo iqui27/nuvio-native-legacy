@@ -11670,7 +11670,8 @@ int ajustes_teste_quadro(const char *id) {
         else if (!strcmp(TELA[i].titulo, "Durante e depois")) rotDurante = i;
       }
     triIniciar(); pfTela = 0; uxVeioBusca = 0; valor[AJ_AVANCADAS] = 1; valor[AJ_TEMA] = 6;
-    valor[AJ_IDIOMA] = 0; idiomaEfetivo = IDIOMA_PT; valor[AJ_HOME_LAYOUT] = 1;
+    if (!getenv("NUVIO_SHOT_IDIOMA")) { valor[AJ_IDIOMA] = 0; idiomaEfetivo = IDIOMA_PT; }   // long-title proof: de, ru...
+    valor[AJ_HOME_LAYOUT] = 1;
     valor[AJ_QUALIDADE] = 1; uxCancelar();
     // Ligado (0), nao Automatico: o automatico da captura (sem GPU medida) fica sem vidro.
     // Fundo "Arte" como o mockup: o vidro precisa de algo por tras para aparecer.
@@ -11684,6 +11685,11 @@ int ajustes_teste_quadro(const char *id) {
     }
     else if (!strcmp(id, "bl-paleta")) { triEntrar(5); if (rotCores >= 0) triSubEntrar(rotCores); focarOpcao(AJ_TEMA); uxAbrirEditor(AJ_TEMA); uxPendente = valor[AJ_TEMA]; }
     else if (!strcmp(id, "bl-chave")) { triEntrar(0); if (rotDurante >= 0) triSubEntrar(rotDurante); focarOpcao(AJ_PAUSA_COMENTARIOS); }
+    else if (!strcmp(id, "bl-secao-longo")) {   // the focused topic row with the longest label
+      triEntrar(0);
+      for (i = secIni[0]; i < secFim(0); i++) if (TELA[i].tipo == IT_ROT && !strcmp(TELA[i].titulo, "Miniatura ao avançar")) focar(i);
+    }
+    else if (!strcmp(id, "bl-longo")) { triEntrar(0); if (rotDurante >= 0) triSubEntrar(rotDurante); focarOpcao(AJ_ESTAT_TAMANHO); }
     else return 0;
     return 1;
   }
