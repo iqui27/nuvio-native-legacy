@@ -23,7 +23,9 @@ for source in "$source_root"/src/*.c "$source_root"/src/dts/*.c; do
   sources+=("$source")
 done
 binary="$NUVIO_DADOS/teste"
-if [ "$#" -gt 0 ]; then mkdir -p "$1"; fi
+if [ "${1:-}" = --palco ]; then
+  if [ "$#" -gt 1 ]; then mkdir -p "$2"; fi
+elif [ "$#" -gt 0 ]; then mkdir -p "$1"; fi
 sed "s#../src/ajustes.c#$source_root/src/ajustes.c#" tests/ajustes_tri_p1.c > "$NUVIO_DADOS/ajustes_tri_p1.c"
 cc "${sources[@]}" "$NUVIO_DADOS/ajustes_tri_p1.c" -DNV_TOUCH_UI -DAJUSTES_TESTE -I"$source_root/src" -Itests -o "$binary" \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \

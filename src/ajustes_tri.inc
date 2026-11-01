@@ -47,6 +47,7 @@ static int triEditorLargo(int op); // idem: editores que tomam o palco (nao vira
 enum { TRI_PG_SEC = 1, TRI_PG_SUB, TRI_PG_ED, TRI_PG_UTIL };
 static int triPgTipo[4], triPgVal[4], triPgPend[4], triPgVivos;
 static float triPgT[4];
+static float triPgRol[4];   // each list blade's own scroll (the deepest list level owns the live scrollY)
 // A SUPERFICIE DE FOCO unica do Palco: o desenho informa o retangulo da linha
 // em foco (triSupAlvo), triAtualizar leva a superficie ate la com a mola. Ela
 // atravessa blades (abrir/fechar) sem pular.
@@ -516,6 +517,8 @@ static void triAtualizar(float dt) {
       if (k < n) {
         if (k >= triPgVivos || triPgTipo[k] != t[k] || triPgVal[k] != v[k]) triPgT[k] = 0.0f;
         triPgTipo[k] = t[k]; triPgVal[k] = v[k]; triPgPend[k] = p[k];
+        if ((t[k] == TRI_PG_SEC || t[k] == TRI_PG_SUB) && !(k + 1 < n && (t[k + 1] == TRI_PG_SEC || t[k + 1] == TRI_PG_SUB)))
+          triPgRol[k] = scrollY;
       }
       if (triPgT[k] < 10.0f) triPgT[k] += dt;
     }

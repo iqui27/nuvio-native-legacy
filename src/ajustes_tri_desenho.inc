@@ -991,7 +991,7 @@ static void triPaletaBlade(GfxRect m) {
 // O realce leve da linha que abriu o blade filho, desenhado no blade pai.
 static void triBladeRealce(int item, float a) {
   GfxRect fr = triListaR();
-  float y = AJ_TOPO;
+  float y = AJ_TOPO - scrollY;   // the parent blade's own scroll (triPalcoDesenhar)
   int i;
   if (item <= secIni[secAtual] || item >= secFim(secAtual)) return;
   gfx_recorte(fr.x, AJ_TOPO, fr.w, AJ_BASE - AJ_TOPO);
@@ -1158,7 +1158,7 @@ static void triPalcoDesenhar(int modal, float g0) {
     if (triBladeA(k) * e <= 0.01f || !triPgTipo[k]) continue;
     triNivelDesenho = k; b = triIlha2R();
     { float borda = b.x + 80.0f * (1.0f - e) + b.w * (0.96f + 0.04f * e) + 16.0f;
-      if (k >= triProfundidade()) borda = b.x + (borda - b.x) * e;   // o fantasma que sai solta a cena
+      // Keep the stage beyond the ghost until the ghost stops drawing.
       triEstagioBorda = fmaxf(triEstagioBorda, borda); }
   }
   triNivelDesenho = -1;
@@ -1178,7 +1178,10 @@ static void triPalcoDesenhar(int modal, float g0) {
     if (mov) gfx_transformar(b.x, b.y + b.h * 0.5f, 0.96f + 0.04f * e, 80.0f * (1.0f - e), 0.0f);
     ajPontLista = topo ? pl : 0;
     ajFocoCompart = k == dono && !fant; ajSupNivel = k;
-    if (!topo) scrollY = 0;
+    // Each list blade keeps its own scroll: the live list (dono with an editor
+    // blade on top) uses scrollY, its parents the scroll they had.
+    if (tipo == TRI_PG_SEC || tipo == TRI_PG_SUB) { if (!topo && k != dono) scrollY = triPgRol[k]; }
+    else if (!topo) scrollY = 0;
     if (tipo == TRI_PG_UTIL) {
       triUtil = val;
       if (triUtil == TRI_U_DIF) { ajIlha(b, 28.0f, 1, 0); triListaCabecalho(b, "Diferente do padrão", uxNDifs ? "" : "Tudo está no padrão", 1); aj2DesenharDiferencas();
@@ -1195,7 +1198,9 @@ static void triPalcoDesenhar(int modal, float g0) {
       else triEditor(b);
     } else {
       triSubmenu = tipo == TRI_PG_SUB ? val : -1;
+      ajFocoMudo = k != dono;   // parents/ghosts: no per-row focus plate (realce / the shared surface mark the row)
       triLista();
+      ajFocoMudo = 0;
       // A linha que abriu o filho leva o realce leve no pai.
       if (!topo && !fant && k != dono && k + 1 < n) triBladeRealce(triPgTipo[k + 1] == TRI_PG_SUB ? triPgVal[k + 1] : focoItem, 0.55f);
     }

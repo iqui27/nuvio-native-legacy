@@ -178,13 +178,14 @@ static void ajIlhaMiolo(GfxRect r, float raioPx, float miolo) {
 // do dono (ajSupNivel: -1 o menu, k o blade) poe a placa deslizante por baixo.
 static const char *ajVisualIcone(int op);   // ajustes_ux_visual.inc
 static int ajFocoCompart, ajSupNivel = -2;
+static int ajFocoMudo;   // Palco parent/ghost list blades: no per-row focus plate
 static void triSupReportar(GfxRect r) {
   triSupAlvo[0] = r.x; triSupAlvo[1] = r.y; triSupAlvo[2] = r.w; triSupAlvo[3] = r.h;
   triSupTem = 1; triSupDonoAlvo = ajSupNivel;
 }
 // Superficie de FOCO de linha: um degrau mais clara (vidro 12%, solido #2B2D34).
 static void ajFocoLinha(GfxRect r, float raioPx, float f, float a) {
-  if (f <= 0.01f || ajFocoCompart) return;
+  if (f <= 0.01f || ajFocoCompart || ajFocoMudo) return;
   if (gfx_foco_placa(r, raioPx / r.h, f, a)) return;
   if (ajVid()) {
     gfx_cor(r, raioPx / r.h, 1, 1, 1, 0.12f * f * a);
@@ -462,6 +463,13 @@ static int ajSegmentada(int op) {
   if (n < 2 || n > 3 || !OPCOES[op].valores) return 0;
   // O segmentado so fica na linha se o nome da opcao cabe ao lado dele;
   // senao a escolha abre no editor.
+  // Palco: no bar, the row shows the rolling value + position pips (ajDesenharLinha),
+  // so measure that form against the blade (label, widest value, pips, icon, padding).
+  if (triBladeLayout()) {
+    char vb[96]; float vw = 0.0f; int i;
+    for (i = 0; i < n; i++) { uxValorTexto(op, i, vb, sizeof vb); vw = fmaxf(vw, (float)txt_largura(TXT_AJ_VALOR, vb)); }
+    return 88.0f + (float)txt_largura(TXT_V2_SEG, rotuloOpcao(op)) + 24.0f + vw + 51.0f <= aj2ListaWRef() - 58.0f;
+  }
   { float w = aj2SegLargura(op, n);
     if (w + (float)txt_largura(TXT_V2_ROT, rotuloOpcao(op)) + 60.0f + 20.0f > aj2ListaWRef() - 44.0f) return 0;
     return w < 560.0f; }
