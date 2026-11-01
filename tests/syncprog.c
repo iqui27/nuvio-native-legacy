@@ -288,12 +288,57 @@ static void pullDoPerfilAnteriorNaoSeMistura(void) {
   puts("ok  pull do perfil anterior e descartado depois da troca de perfil");
 }
 
+// #698: Nuvio-account progress only; no tracker services participate.
+static void completedEpisodeCannotResume(void) {
+  ProgRegistro resume;
+  zerar();
+  agora = 1757000300000LL;
+  assert(prog_gravar_local("tt1234567", 2, 6, 2699, 3000, 1));
+  assert(prog_continuar_de_perfil(perfil, 90, &resume));
+  assert(resume.temporada == 2 && resume.episodio == 6);
+  agora++;
+  assert(prog_gravar_local("tt1234567", 2, 6, 2700, 3000, 1));
+  assert(!prog_continuar_de_perfil(perfil, 90, &resume));
+
+  // Player closing a completed episode saves duration as position. Keep that
+  // evidence: deleting it locally would let an old cloud row return.
+  agora++;
+  assert(prog_gravar_local("tt1234567", 2, 6, 3000, 3000, 1));
+  proximaResposta =
+    "[{\"content_id\":\"tt1234567\",\"season\":2,\"episode\":6,"
+    "\"position\":1200000,\"duration\":3000000,\"last_watched\":1757000000000}]";
+  assert(syncprog_puxar() == 1);
+  assert(syncprog_aplicar(NULL) == 0); // pending completion beats old pull
+  assert(syncprog_empurrar() == 1);
+  assert(tem("\"progress_key\":\"tt1234567_s2e6\""));
+  assert(tem("\"position\":3000000") && tem("\"duration\":3000000"));
+  assert(!prog_continuar_de_perfil(perfil, 90, &resume));
+
+  // Push confirmation and a process-style reload retain completion evidence.
+  prog_invalidar();
+  assert(syncprog_puxar() == 1 && syncprog_aplicar(NULL) == 0);
+  assert(porChave("tt1234567_s2e6").posSeg == 3000);
+  assert(!prog_continuar_de_perfil(perfil, 90, &resume));
+
+  // An intentional replay can resume, then disappears when completed again.
+  agora++;
+  assert(prog_gravar_local("tt1234567", 2, 6, 1200, 3000, 1));
+  assert(prog_continuar_de_perfil(perfil, 90, &resume));
+  agora++;
+  assert(prog_gravar_local("tt1234567", 2, 6, 3000, 3000, 1));
+  assert(syncprog_empurrar() == 1);
+  assert(syncprog_puxar() == 1 && syncprog_aplicar(NULL) == 0);
+  assert(!prog_continuar_de_perfil(perfil, 90, &resume));
+  puts("ok  #698: completed S2E6 stays out of resume after replay and stale cloud pulls");
+}
+
 int main(void) {
   prog_definir_relogio(relogio);
   pushNoFormatoDoWeb();
   pushFalhoMantemPendente();
   pullAceitaOsFormatosDoServidor();
   rollbackNaoAcontece();
+  completedEpisodeCannotResume();
   migradoSobeComChaveCerta();
   confirmacaoPreservaEscritaNovaEPerfil();
   pullRecusaNumerosForaDaFaixa();
