@@ -23,7 +23,7 @@ _Static_assert(AJS_HOME == 4 && AJS_CONTAS == 8, "triGrupo segue a ordem dos SEC
 #define TRI_P_COL       500.0f
 #define TRI_P_VAO        20.0f
 #define TRI_P_TOPO      112.0f
-#define TRI_P_H         932.0f
+#define TRI_P_H         (NV_VTELA_H - 148.0f)   /* 932 at 1080; shrinks with text/Settings scale */
 #define TRI_P_X1        452.0f
 #define TRI_P_X2        176.0f
 // triProfF (a profundidade animada, mola NV_MOLA_TELA) e o estado em
@@ -81,7 +81,7 @@ static int triTopoNivel(void) { int n = triProfundidade(); return n > 0 ? n - 1 
 
 // Portrait reuses the section island as a grouped list, then opens its page.
 static float triIlhaTopo(void) { return triBladeLayout() ? TRI_P_TOPO : TRI_TOPO; }
-static float triBaseTela(void) { return triBladeLayout() ? TRI_P_TOPO + TRI_P_H : TRI_BASE; }
+static float triBaseTela(void) { return triBladeLayout() ? TRI_P_TOPO + TRI_P_H : NV_VTELA_H - 80.0f; }
 static int triTemInsp(void) {
   if (ajustes_layout_lista() || ajRetrato()) return 0;
   return triBladeLayout() || triXFim() - triX0() - TRI_SEC_W - TRI_VAO - TRI_INSP_W - TRI_VAO >= 560.0f;
