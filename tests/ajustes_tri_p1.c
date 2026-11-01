@@ -102,7 +102,7 @@ static void retrato(void) {
   confere(secoes >= 3 && !mesmaLinha, "Portrait: sections register vertical list targets");
   key(SDLK_DOWN); confere(triIlha == TRI_SECOES && triSecFoco == 1 && secAtual == 1, "Portrait: Down selects next section");
   key(SDLK_UP); confere(triIlha == TRI_SECOES && triSecFoco == 0 && !sair, "Portrait: Up selects previous section");
-  key(SDLK_RIGHT); confere(triIlha == TRI_LISTA && secAtual == 0 && focoOp >= 0, "Portrait: Right opens section page");
+  key(SDLK_RETURN); confere(triIlha == TRI_LISTA && secAtual == 0 && focoOp >= 0, "Portrait: OK opens section page");   // c526959cc: Right no longer opens on the phone
   quadros(30); png("p1-retrato-lista");
   key(SDLK_UP); confere(triIlha == TRI_SECOES && triSecFoco == 0, "Retrato: Cima da 1a linha volta a faixa");
   key(SDLK_UP); confere(triIlha == TRI_CHIPS, "Retrato: Cima da faixa vai aos chips");
@@ -282,10 +282,10 @@ static const PonteiroAlvo *alvoAtivar(PonteiroFn fn) {
 static void inlineToque(void) {
   int ops[2] = { AJ_TEMA, -1 }, antes[AJ_N];
   memcpy(antes, valor, sizeof antes);
+  layout_modo_definir(1); tela(1080, 1920); assert(ajTelaCheia());   // pick the op in the layout under test
   for (int i = 0; i < AJ_N_TELA && ops[1] < 0; i++)
     if (TELA[i].tipo == IT_OPC && TELA[i].op != AJ_TEMA && ajSegmentada(TELA[i].op) && triDisponivel(TELA[i].op) && !inativa(TELA[i].op)) ops[1] = TELA[i].op;
   assert(ops[1] >= 0);
-  layout_modo_definir(1); tela(1080, 1920); assert(ajTelaCheia());
   for (int k = 0; k < 2; k++) {
     int op = ops[k], salvo; const PonteiroAlvo *a;
     char msg[160];
