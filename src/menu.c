@@ -17,9 +17,6 @@
 #include "desktop_native.h"
 #include "busca.h"
 #ifdef NV_DESKTOP_UI
-#include "esportes.h"
-#endif
-#ifdef NV_DESKTOP_UI
 #include "dados.h"
 #include "desktop_input_log.h"
 static int desktopCollapsed, desktopOverlay;

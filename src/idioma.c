@@ -353,6 +353,8 @@ const char *i18n(const char *s) {
       { "Esta TV", "Este aparelho" }, { "Limites desta TV", "Limites" },
       { "Não disponível nesta TV", "Não neste aparelho" },
       { "Ajuste salvo nesta TV.", "Salvo" }, { "Salvo nesta TV", "Salvo" },
+      { "Só nesta TV", "Só neste aparelho" }, { "Todos os perfis desta TV", "Todos os perfis deste aparelho" },
+      { "Só este perfil, nesta TV", "Só este perfil, neste aparelho" },
       { "Aperte OK para ligar", "Conectar" } };
     size_t d;
     for (d = 0; d < sizeof DESKTOP / sizeof *DESKTOP; d++)
