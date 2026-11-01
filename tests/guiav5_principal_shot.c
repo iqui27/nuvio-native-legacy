@@ -308,8 +308,10 @@ int main(int argc, char **argv) {
       focus=1943;gv_activate();assert(ajustes_guia_previa_destacar());
       focus=1944;gv_activate();assert(!ajustes_guia_previa_destacar());
       gv_voltar();
-      focus=1945;gv_activate();assert(!ajustes_guia_previa_sem_som());
-      gv_activate();assert(ajustes_guia_previa_sem_som());
+      /* Preview starts audible since 5b0491ed0; OK mutes, OK again unmutes. */
+      assert(!ajustes_guia_previa_sem_som());
+      focus=1945;gv_activate();assert(ajustes_guia_previa_sem_som());
+      gv_activate();assert(!ajustes_guia_previa_sem_som());
       focus=1947;gv_activate();
       focus=1947;gv_activate();assert(ajustes_guia_dias()==3);
       focus=1946;gv_activate();assert(ajustes_guia_dias()==1);
@@ -420,7 +422,10 @@ int main(int argc, char **argv) {
          (the preview card geometry changed); the multiview work does not touch
          it. Guarded with the same macro as the other skipped legacy check. */
 #ifndef GUIAPOLIR_BASELINE_CODE
-      assert(fabsf(card.w/card.h-16.0f/9)<.001f && large.w>=card.w && large.x-GV_MX>=640);
+      /* 123ac39a7: the preview is the owner's marked frame (same contract as
+         tests/guialayout.c), whichever preview size is chosen. */
+      for (int k=0;k<2;k++) { GfxRect r=k?large:card;
+        assert(r.x==GV_MX+GV_MW*.51f && r.y==GV_CHIP_Y && r.w==GV_MW*.49f && r.x-GV_MX>=640); }
 #endif
 #ifndef GUIAPOLIR_BASELINE_CODE
       ajustes_definir_guia_previa_destacar(1);ajustes_definir_guia_previa_sem_som(0);ajustes_definir_guia_dias(3);
