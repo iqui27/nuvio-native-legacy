@@ -12,9 +12,13 @@ TxtLinha test_source_text(TxtEstilo, const char *, int, int, int, int, float);
 #define gfx_furo_raio(...) ((void)0)
 #define txt_desenhar(l,x,y) ((void)0)
 #define t21_ilha(...) ((void)0)
+#define t21_ilha_folha(...) ((void)0)
 #define gfx_icone(...) ((void)0)
 #define plrui_botao_repouso(...) ((void)0)
 #define plrui_pilula_foco(...) ((void)0)
+#define plrui_linha_foco(...) ((void)0)
+#define plrui_kicker(...) ((void)0)
+#define ajustes_ui_interruptor(...) ((void)0)
 #ifndef GUIAV5_UNDER_TEST
 #define GUIAV5_UNDER_TEST "../src/guiav5ui.c"
 #endif
