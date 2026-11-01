@@ -39,7 +39,7 @@ int fundo_din_escuro_testar(const char *dir, void (*render)(int, const char *)) 
   valor[AJ_FUNDO_DIN] = 4; assert(ajustes_fundo_din() == 0);
   valor[AJ_FUNDO_DIN] = 3;
   assert(limita(AJ_FUNDO_DIN, -1) == 3 && limita(AJ_FUNDO_DIN, 4) == 3);
-  assert(somenteDesteAparelho(AJ_FUNDO_DIN) && !dePerfil(AJ_FUNDO_DIN));
+  assert(somenteDesteAparelho(AJ_FUNDO_DIN) && escopoDe(AJ_FUNDO_DIN) == ESC_PERFIL_LOCAL); // f40ae2c10: profile-local, never account
   assert(ajustes_aplicar_blob("{\"fundoDinamicaLocal\":0}") >= 0);
   assert(ajustes_fundo_din() == 3);
   for (int i = 0; i < 2; i++) {
