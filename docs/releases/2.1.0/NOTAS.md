@@ -9,6 +9,7 @@ Draft based on local `v2.0.8..HEAD` history. Release scope, issue attribution, d
 - **Library and profiles:** redesigned library views and per-profile controls (`e28a6df66`, `a52915384`).
 - **AIOStreams:** a dedicated dashboard, configuration access, catalog inventory and diagnostics (`130cf8044`, `45d9801a0`, `e2de8a9d2`).
 - **Settings Palco:** redesigned blades for navigating settings (`bb31fa345`).
+- **Multiview:** several channels on one screen in a 16:9 grid — the main tile plays live video while the other tiles show static channel previews; the picker lists each source's channels with per-source and per-account limits (`fc92c0b91`, `a76364a22`).
 
 ## New
 
@@ -33,7 +34,8 @@ Draft based on local `v2.0.8..HEAD` history. Release scope, issue attribution, d
 - **#708:** custom posters apply to Spotlight rows and list covers (`fd438a50b`, `bc6ed43c2`).
 - **#700:** collection genre pages fetch titles for the selected genre (`bff0cbc4b`).
 - **#650, #687:** localized YouTube trailer launch on native targets, including Samsung .tpk via the YouTube app (`729c81b37`, `950aca515`).
-- Subtitle add-ons that were not probed are preserved in episode searches (`cf40fa40f`); confirm applicability to #692 before claiming closure.
+- **#692:** subtitle add-ons that were not probed stay in episode searches, so the Subtitle Sync add-on keeps contributing results (`cf40fa40f`, covered by `tests/addons_legendas.sh` against the real manifest).
+- **#706:** the webOS screensaver request is answered during playback via `protegerScreensaver`/`responseScreenSaverRequest`, so the TV screensaver does not fire mid-session (LG webOS; `e7f76855d`, `11b687b96`; covered by `tests/lsregistro.sh`).
 
 ## Platforms and files
 
@@ -47,8 +49,6 @@ Draft based on local `v2.0.8..HEAD` history. Release scope, issue attribution, d
 
 ## Known issues
 
-- #692 needs confirmation that the merged subtitle add-on changes resolve the reported sync add-on issue.
-- #706 screensaver activation during playback needs investigation and device confirmation; local history reviewed for this draft does not establish a fix.
 - Review the older 2.0.8 device-validation follow-ups and verify release artifacts on target devices before publication.
 
 ## Community
@@ -63,4 +63,4 @@ Local history records merges for #619, #627, #633, #654, #669, #673, #685, #686,
 
 ## Issues closed or addressed
 
-See **Fixed** for commit-level evidence. #692 and #706 remain pending verification and are not claimed closed.
+See **Fixed** for commit-level evidence, including #692 and #706.

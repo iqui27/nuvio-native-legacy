@@ -8774,7 +8774,7 @@
   T("VÁ DIRETO AO PONTO", "GA DIRECT TOT HET PUNT"),
   T("Vá em %s e digite", "Ga naar %s en voer in"),
   T("Vá para a aba \"Fora da Home\" (↑ e depois →) e aperte OK numa fileira para adicioná-la.", "Ga naar het tabblad \"Niet op Start\" (↑ dan →) en druk op OK bij een rij om die toe te voegen."),
-  T("Vários canais ao mesmo tempo na mesma tela, em grade 16:9. O seletor mostra os canais vivos de cada fonte, com limite por fonte e por conta.", "Meerdere kanalen tegelijk op hetzelfde scherm, in een 16:9-raster. De kiezer toont de live kanalen van elke bron, met een limiet per bron en per account."),
+  T("Vários canais na mesma tela, em grade 16:9: o quadro principal toca ao vivo e os demais mostram uma prévia parada do canal. O seletor lista os canais de cada fonte, com limite por fonte e por conta.", "Meerdere kanalen op hetzelfde scherm in een 16:9-raster: het hoofdvak speelt live en de rest toont een stilstaande voorvertoning van het kanaal. De kiezer toont de kanalen van elke bron, met een limiet per bron en per account."),
   T("Vídeo", "Video"),
   T("Vídeo atrás do menu na Samsung, retomar pelo card e séries no seu idioma.", "Video achter het menu op Samsung, hervatten via de kaart en series in je eigen taal."),
   T("Vídeo automático", "Automatische video"),

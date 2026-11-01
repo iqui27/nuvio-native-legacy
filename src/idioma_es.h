@@ -8773,7 +8773,7 @@
   T("VÁ DIRETO AO PONTO", "VAYA DIRECTO AL PUNTO"),
   T("Vá em %s e digite", "Ve a %s e introduce"),
   T("Vá para a aba \"Fora da Home\" (↑ e depois →) e aperte OK numa fileira para adicioná-la.", "Ve a la pestaña \"Fuera del Inicio\" (↑ y luego →) y pulsa OK en una fila para añadirla."),
-  T("Vários canais ao mesmo tempo na mesma tela, em grade 16:9. O seletor mostra os canais vivos de cada fonte, com limite por fonte e por conta.", "Varios canales a la vez en la misma pantalla, en una cuadrícula 16:9. El selector muestra los canales en vivo de cada fuente, con límite por fuente y por cuenta."),
+  T("Vários canais na mesma tela, em grade 16:9: o quadro principal toca ao vivo e os demais mostram uma prévia parada do canal. O seletor lista os canais de cada fonte, com limite por fonte e por conta.", "Varios canales en la misma pantalla, en cuadrícula 16:9: el cuadro principal reproduce en vivo y los demás muestran una vista estática del canal. El selector lista los canales de cada fuente, con límite por fuente y por cuenta."),
   T("Vídeo", "Vídeo"),
   T("Vídeo atrás do menu na Samsung, retomar pelo card e séries no seu idioma.", "Vídeo detrás del menú en Samsung, retomar desde la tarjeta y series en tu idioma."),
   T("Vídeo automático", "Vídeo automático"),

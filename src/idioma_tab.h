@@ -8773,7 +8773,7 @@
   { "VÁ DIRETO AO PONTO", "GO DIRECT TO THE POINT" },
   { "Vá em %s e digite", "Go to %s and enter" },
   { "Vá para a aba \"Fora da Home\" (↑ e depois →) e aperte OK numa fileira para adicioná-la.", "Go to the \"Not on Home\" tab (↑ then →) and press OK on a row to add it." },
-  { "Vários canais ao mesmo tempo na mesma tela, em grade 16:9. O seletor mostra os canais vivos de cada fonte, com limite por fonte e por conta.", "Several channels at once on the same screen, in a 16:9 grid. The picker shows the live channels from each source, with per-source and per-account limits." },
+  { "Vários canais na mesma tela, em grade 16:9: o quadro principal toca ao vivo e os demais mostram uma prévia parada do canal. O seletor lista os canais de cada fonte, com limite por fonte e por conta.", "Several channels on the same screen in a 16:9 grid: the main tile plays live and the others show a still preview of the channel. The picker lists each source's channels, with per-source and per-account limits." },
   { "Vídeo", "Video" },
   { "Vídeo atrás do menu na Samsung, retomar pelo card e séries no seu idioma.", "Samsung video behind the menu, resuming from the card and shows in your language." },
   { "Vídeo automático", "Automatic video" },

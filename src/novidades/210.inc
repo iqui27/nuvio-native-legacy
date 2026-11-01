@@ -9,7 +9,7 @@ static const NovItem ITENS_210[] = {
   { .grupo = "Destaques", .icone = "aj_users", .nome = "Assistir Juntos",
     .frase = "Abra uma sala na página do título, convide quem você conhece e escolham a fonte juntos. Quando todos marcarem pronto, a sessão de cinema começa para a sala inteira.", .linhas = 6 },
   { .icone = "aj_tv-minimal-play", .nome = "Multiview",
-    .frase = "Vários canais ao mesmo tempo na mesma tela, em grade 16:9. O seletor mostra os canais vivos de cada fonte, com limite por fonte e por conta.", .linhas = 6 },
+    .frase = "Vários canais na mesma tela, em grade 16:9: o quadro principal toca ao vivo e os demais mostram uma prévia parada do canal. O seletor lista os canais de cada fonte, com limite por fonte e por conta.", .linhas = 6 },
   { .icone = "aj_book-open", .nome = "Diário",
     .frase = "O que você assistiu, por perfil: minutos do que tocou no Nuvio, importação do histórico do Trakt e cópia opcional na sua conta, só para você.", .linhas = 6 },
   { .icone = "aj_trophy", .nome = "Conquistas",
@@ -73,7 +73,8 @@ static void visual210(GfxRect p, float t, float a, int c) {
     }
     gfx_cor((GfxRect){x + w * .32f, y + 400, w * .36f, 44}, .5f, .92f, .1f, .12f, .9f * a * e);
   } else if (c == 1) {
-    // Multiview: grade 16:9 com quatro canais vivos.
+    // Multiview: grade 16:9 — o quadro principal toca ao vivo; os demais
+    // mostram a arte do canal (prévia parada, sem decodificador extra na TV).
     for (int j = 0; j < 4; j++) {
       float cw = (w - 16) / 2, ch = cw * 9 / 16;
       GfxRect r = {x + (j % 2) * (cw + 16), y + (j / 2) * (ch + 16), cw, ch};
