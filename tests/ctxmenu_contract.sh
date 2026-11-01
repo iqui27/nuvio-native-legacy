@@ -37,15 +37,23 @@ rg -q 'home.c:.*NV_HOLD_MS.*KEYUP' src/ctxmenu.h
 # em ops[3]. O sintoma foi a ultima linha nunca acender, porque focoAnim so era
 # animado ate CTX_MAX. Aqui se cobra que o numero de opcoes que montar() pode
 # empilhar nunca passe do vetor, e que ops[] so seja escrito por juntar().
-ctx_max=$(rg -n '^#define CTX_MAX ' src/ctxmenu.c | sed 's/.*CTX_MAX *//')
+# Since 6e712de79 CTX_MAX is per build: desktop 16, TV 10 (the #else).
+ctx_desk=$(rg '^#define CTX_MAX ' src/ctxmenu.c | sed -n 1p | sed 's/.*CTX_MAX *//')
+ctx_tv=$(rg '^#define CTX_MAX ' src/ctxmenu.c | sed -n 2p | sed 's/.*CTX_MAX *//')
 # O menu de LISTA (72fc391f: Abrir lista / Biblioteca / Home, ops OP_L_*) e um
 # ramo que termina em `return` dentro de montar(): nunca empilha com as demais,
 # entao so as linhas de juntar() de fora dele contam contra o teto.
 # O menu da FILEIRA (Home 2.1: fixar, mover, ocultar; ops OP_F_*) e o mesmo tipo
-# de ramo, com `return` no fim: nao empilha com as opcoes do cartaz.
-n_juntar=$(rg '^\s*juntar\(' src/ctxmenu.c | rg -vc 'OP_L_|OP_F_')
-[ "$n_juntar" -le "$ctx_max" ] || {
-  echo "ctxmenu: $n_juntar opcoes possiveis para CTX_MAX=$ctx_max" >&2; exit 1; }
+# de ramo, com `return` no fim: nao empilha com as opcoes do cartaz. O seletor
+# de listas (OP_PICK_LISTA, aviso "Carregando listas") tambem: ate CTX_PICK_MAX.
+# As quatro linhas do desktop (layout_desktop_ativo) so existem no build desktop.
+pick_max=$(rg '^#define CTX_PICK_MAX ' src/ctxmenu.c | sed 's/.*CTX_PICK_MAX *//')
+[ "$pick_max" -lt "$ctx_tv" ]
+cartaz=$(rg '^\s*juntar\(' src/ctxmenu.c | rg -v 'OP_L_|OP_F_|OP_PICK_LISTA|Carregando listas')
+n_desk=$(printf '%s\n' "$cartaz" | grep -c .)
+n_tv=$(printf '%s\n' "$cartaz" | rg -vc 'OP_DESKTOP_|"Ver título",OP_DETALHES')
+[ "$n_desk" -le "$ctx_desk" ] && [ "$n_tv" -le "$ctx_tv" ] || {
+  echo "ctxmenu: $n_tv/$n_desk opcoes possiveis para CTX_MAX=$ctx_tv/$ctx_desk" >&2; exit 1; }
 rg -q 'ops\[nOps\]\.rot = rot' src/ctxmenu.c
 [ "$(rg -c 'ops\[nOps\]' src/ctxmenu.c)" -eq 1 ] || {
   echo 'ctxmenu: ops[nOps] escrito fora de juntar()' >&2; exit 1; }
