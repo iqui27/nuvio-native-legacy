@@ -135,6 +135,7 @@ static const char *abrir(void) {
   assert(dvPronto());
   dtsModoDv = 1; partidas = 0;
 #ifdef NV_NATIVE_SEEK_TEST
+  unsigned retiredSession=sessao;
   bufferandoDesde=12345;
 #endif
   assert(iniciarDts(-1) && partidas == 1);
@@ -142,7 +143,14 @@ static const char *abrir(void) {
   assert(partidaFixedAudio==2);
 #endif
 #ifdef NV_NATIVE_SEEK_TEST
-  assert(bufferandoDesde==12345); // DV buffering behavior is unchanged.
+  // The unloaded URI session cannot finish its old buffering event. Its stamp
+  // must retire on DV handoff; the new converter still has its own preroll.
+  assert(!video_pronto() && dtsSessao && dtsModoDv);
+  assert(!bufferandoDesde && !video_bufferando_ms());
+  eventoPayload("{\"bufferingStart\":{}}",retiredSession);
+  assert(!video_bufferando_ms()); // Retired callbacks cannot revive the stamp.
+  evento("{\"bufferingStart\":{}}");assert(video_bufferando_ms()>0);
+  evento("{\"bufferingEnd\":{}}");assert(!video_bufferando_ms());
 #endif
   dtsSessao = NULL;
   return partidaComFaixa ? partidaFaixa.language : "";
