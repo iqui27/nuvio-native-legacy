@@ -27,7 +27,7 @@ async function probe() {
     let aborted = false;
     const module = {};
     const run = vm.runInNewContext('(function(metodo,url,cabs,corpo,prazo,teto,modo){' +
-      bridge('src/rede.c','nv_http_iniciar_assinc') + '})', {
+      bridge('src/rede.c','nv_http_iniciar_bruto') + '})', {
       Module:module,UTF8ToString:x=>x,setTimeout,clearTimeout,Uint8Array,
       AbortController:class {abort(){aborted=true;}},
       fetch:async()=>({status:200,url:'url',headers:{get:key=>key==='content-length'?raw:null},
@@ -149,7 +149,7 @@ async function deadlines() {
   const module = {};
   let aborted = false, elapsed;
   const run = vm.runInNewContext('(function(metodo,url,cabs,corpo,prazo,teto,modo){' +
-    bridge('src/rede.c','nv_http_iniciar_assinc') + '})', {
+    bridge('src/rede.c','nv_http_iniciar_bruto') + '})', {
     Module:module,UTF8ToString:x=>x,AbortController:class {abort(){aborted=true;}},
     setTimeout:(fn,ms)=>{elapsed=ms;fn();return 1;},clearTimeout(){},
     fetch:()=>new Promise(()=>{})
@@ -162,7 +162,7 @@ async function deadlines() {
 
 async function limits() {
   const source = fs.readFileSync('src/rede.c','utf8');
-  const body = source.match(/EM_JS\(int, nv_http_iniciar_assinc,[\s\S]*?, \{([\s\S]*?)\n\}\);/)[1];
+  const body = source.match(/EM_JS\(int, nv_http_iniciar_bruto,[\s\S]*?, \{([\s\S]*?)\n\}\);/)[1];
   const module = {};
   let reads = 0, aborted = false;
   const response = {status:200,url:'url',headers:{get:()=>null},
