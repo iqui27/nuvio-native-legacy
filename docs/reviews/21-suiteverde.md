@@ -1,0 +1,528 @@
+# 21-suiteverde: release gate 2.1.0 test suite
+
+## Runner
+`tools/testa-tudo.sh` now runs tests with `xargs -P $(sysctl -n hw.ncpu)` (`TEST_JOBS` overrides), same skip list, per-test log + `.res`, summary in alphabetical order, same summary line. A test with no `.res` counts as failed.
+Per-test limit raised 120 -> 420 s (`TEST_TIMEOUT` overrides): tests that compile all of `src/*.c` take ~118 s in `cc` alone, serially. **Deviation from "same per-test timeout"; owner to confirm.**
+
+## Result (full parallel run, 10 jobs)
+`testes: 770 passaram, 505 falharam, 2 SKIP sem prova, 203 fora da suite` (logs `nuvio-testes.WYLzoK`). 18 more fixed after that run started (targeted reruns pass) -> **487 still failing. Gate NOT green.**
+Caveat: that run overlapped temporary edits to `src/ajustes_tri.inc` (reverted); a few Settings results may reflect a transient tree.
+
+## Fixed
+| Test | Class | Fix | Commit |
+|---|---|---|---|
+| aac_failover | a | stub `juntos_precarregando` (app.c consumer gained it in 0d0f2bb00); Android decoder check made opt-in (needs kotlin cache, ENV) | a7021dddb |
+| abrirtitulo | a | link caca/metaep/rewatch/cacadados/cacavisto/conquista; stub recomenda/dados/diario/ilhaacao/prox | a7021dddb |
+| addonguia | b | semAro grep order updated to gfx.c as reshaped by f17166e60 | a7021dddb |
+| addons_sync_ui | a | stub `aioui_addons_mover` (addonsui uses it since AIO page) | a7021dddb |
+| addons_legendas_merge | a | link legenda.c/watchstate.c; stub assrender_* | a7021dddb |
+| ajustes_padroes | b | enum tail: AJ_LIVETV_AGRUPAR, AJ_MENU_ESPORTES appended after AJ_PS_TAMANHO | a7021dddb |
+| addonslista, addonurl, autoplay_alvo, addons_proveniencia, addons_frostview_presumido, addons_manifest_gate, addons_stream_pending, cw_addon_request, fontecache_vod, proxprefetch | a | AIO path moved to `rede_pedir` + in-worker manifest probe (6f0f6c5ef, 179148c79): fixtures bridge rede_pedir/rede_baixar_medido, uncounted manifest reply, link addonmodo/watchstate; overlay guards for fixtures that bring their own transport. Real addonstats.c kept (no stats stub). | a7021dddb, 42c9cc234 |
+| busca_titulo, addonguia_upgrade, + ~20 rc=124 | runner | full-src compile alone takes ~118 s; per-test limit 120 -> 420 s | a7021dddb, c14f1c745 |
+| ajustes_tour | a+b | segfault: fixture lacked gfx_recorte_dentro/voltar stubs (ajcena); Back from Where-it-is now climbs the topic level first (topic submenus 502a111b5, owner OK 29/10 via a945c1d74) | 4e4aabb6f |
+| cast_addon, cast_empty, cwremover(part 1), detail_cast_memoria, detalheanime, epsrapido, farah, herosinopse, herosinopse_corrida, localizar_corrida, logorapido, montagem_cedo, title_identity524 | a | link src/metaep.c (descoberta resolves TVDB episode ids) | c22444dea |
+| bordafileira, cwremover, cwretido, fimfileira, herorotacao | a | weak idle `menu_ocupado` in home_boundary_stub.c (home.c, 22e53b627) | a2462293d |
+
+No app code changed. No assertion removed or weakened; ajustes_tour gained an assertion level (topic row, then sections island, then back to the same option).
+
+## Not fixed (487), by class
+Classes: ENV = needs a tool/artifact absent on this Mac (cannot install per job rules); LINK/COMPILE = stale fixture source list or stubs (class a, fixable); CRASH = rc 134/139, needs triage (a or c); ASSERT = failing check, needs triage (b or c); TIMEOUT = > 420 s.
+
+### ENV (107)
+- aiostreams_round2_mockups: Error: Cannot find module '/Volumes/ExternalSSD/tmp/loading-mock/tools/node_modules/puppeteer-core'
+- android_lite_apks: FileNotFoundError: [Errno 2] No such file or directory: '/Users/henrique/Library/Android/sdk/build-tools/35.0.
+- android_live_ts: StopIteration
+- android_phone: Missing cached kotlin-stdlib:2.0.21; run Android Gradle build first
+- android_speed_room: Please visit http://www.java.com for information on installing Java.
+- android_storage: stdlib = jar('org.jetbrains.kotlin', 'kotlin-stdlib', '2.0.21')
+- android_storage_build: android.sh: JDK 17 nao achado (JAVA_HOME)
+- android_superficie_solta: Missing cached kotlin-stdlib:2.0.21; run Android Gradle build first
+- armazenamento-tpk: tests/armazenamento-tpk.sh: line 30: /Users/henrique/.dotnet/dotnet: No such file or directory
+- ass_fonte_local: tests/ass_fonte_local.sh: line 5: pkg-config: command not found
+- audio_offset: tests/audio_offset.sh: line 8: pkg-config: command not found
+- avaliar21_pngs: identify: unable to open image '/Volumes/ExternalSSD/tmp/rev/avaliar21-png/reacao-simples.png': No such file o
+- avisofonte_build: rust-mkvcore: cargo not found
+- biblioteca_sources: tests/biblioteca_sources.sh: line 17: ccache: command not found
+- c9_dv_arm_offline: rust-mkvcore: cargo not found
+- conexlim: ok  tizen: lista http por POST NV_REC_URL/v1/xtream, url no corpo
+- decodefila-tizen: decodefila-tizen.sh: emcc nao encontrado em /Users/henrique/emsdk
+- descanso_wake: tests/descanso_wake.sh: line 29: pkg-config: command not found
+- desktop-build: android.sh: JDK 17 nao achado (JAVA_HOME)
+- desktop-final: Install extraction tool: brew install sevenzip
+- detail21_legacy_proof: fatal: invalid object name 'integracao/2.0.5'.
+- detail21_reviews_proof: fatal: invalid object name 'integracao/2.1'.
+- detail_cast_mac_build: rust-mkvcore: cargo not found
+- diagnostico: ok  compiled platform dispatch: tizen_tpk
+- dinpalco: tests/home-trailer-timer.sh: line 7: emcc: command not found
+- discord_ca_assets: tizen-art.sh: nenhuma pasta de arte derivada de src — abortado
+- dts-pr531: tests/dts-pr531.sh: line 9: pkg-config: command not found
+- dts_p2p_tail: tests/dts_p2p_tail.sh: line 7: pkg-config: command not found
+- dv7_mkvcore_link: rust-mkvcore: cargo not found
+- dv7_opt_in: tests/dv7_opt_in.sh: line 46: pkg-config: command not found
+- esportes619: tests/esportes_ui.sh: line 9: pkg-config: command not found
+- fontes_cabecalho: capture: /Volumes/ExternalSSD/tmp/rev/fontecab/after/player-1.png
+- fontes_sombra: capture: /Volumes/ExternalSSD/tmp/fontessombra/after/no-clock-1.png
+- gifavatar: [tex] decode falhou (Couldn't open /Volumes/ExternalSSD/tmp/rev/gif621/a1-500x207.gif: No such file or directo
+- gifbanco-tizen: gifbanco-tizen.sh: emcc nao encontrado em /Users/henrique/emsdk
+- guianav: Missing cached kotlin-stdlib:2.0.21; run Android Gradle build first
+- guiaopcoes: subprocess.CalledProcessError: Command ['cc', '-O1', '-g', '-DNV_TOUCH_UI', '-Isrc', '-I/opt/homebrew/include'
+- guiapreview: Missing cached kotlin-stdlib:2.0.21; run Android Gradle build first
+- guiasetup: /Volumes/ExternalSSD/tmp/rev/guiasetup/build/baseline.c:1873:13: note: 'gv_fonte' declared here
+- guiasetup_builds: android.sh: JDK 17 nao achado (JAVA_HOME)
+- guiasom: Missing cached kotlin-stdlib:2.0.21; run Android Gradle build first
+- guiav5_vod: [dados] gravando em /Volumes/ExternalSSD/tmp/rev/vodbotoes/.build/data
+- hdr_android_debug: android.sh: JDK 17 nao achado (JAVA_HOME)
+- home-trailer-timer: tests/home-trailer-timer.sh: line 7: emcc: command not found
+- i613: Please visit http://www.java.com for information on installing Java.
+- interface_font: tests/interface_font.sh: line 25: pkg-config: command not found
+- ios_m3: tests/ios_m3.sh: line 23: ccache: command not found
+- ios_m3_tv: tests/ios_m3_tv.sh: line 16: ccache: command not found
+- j4_round2: captura: /Volumes/ExternalSSD/tmp/rev/diretor21/21-j4/achievements-hub.png
+- juntos_fluido: stdlib = next(cache.glob('org.jetbrains.kotlin/kotlin-stdlib/2.0.21/*/*.jar'))
+- juntos_lobby: captura: /Volumes/ExternalSSD/tmp/rev/diretor21/21-j5/r7-lobby/native/n-matrix-3-100-solid.bmp
+- juntos_ready: [tex] decode falhou (Couldn't open /Volumes/ExternalSSD/tmp/rev/juntoscinema-nativo-png/v3/assets/duna-backdro
+- juntos_transitions: captura: /Volumes/ExternalSSD/tmp/rev/21-juntosfluxo-p1/after-preload-gated.png
+- juntos_ux: captura: /Volumes/ExternalSSD/tmp/rev/juntosux/after-1-cinema-start.png
+- juntos_ux_regressions: stdlib = next(cache.glob('org.jetbrains.kotlin/kotlin-stdlib/2.0.21/*/*.jar'))
+- kaptain: /Volumes/ExternalSSD/tmp/kaptain.Ji76vN/split.c:37:9: error: call to undeclared function 'fil_origem_de'; ISO 
+- legfontes: tests/legfontes.sh: line 20: pkg-config: command not found
+- listastrava: tests/listastrava.sh: line 16: ccache: command not found
+- listastrava_android: android.sh: JDK 17 nao achado (JAVA_HOME)
+- listastrava_before: tests/listastrava.sh: line 16: ccache: command not found
+- listasux: tests/listasux.sh: line 23: ccache: command not found
+- mkvcore_paridade: rust-mkvcore: cargo not found
+- mkvcore_webos_abi: rust-mkvcore: cargo not found
+- musica_visual: Error: Cannot find module '/Volumes/ExternalSSD/tmp/musica-visual/render.cjs'
+- nav21: PNG: /Volumes/ExternalSSD/tmp/rev/diretor21/redesign/social/fixed/social-100-glass.png
+- notaordem: captura: /Volumes/ExternalSSD/tmp/rev/notasep/after-title.png  (35 desenhos gfx no quadro)
+- pengu: fatal: invalid object name 'v2.0.6'.
+- plainass: tests/plainass.sh: line 4: pkg-config: command not found
+- player_back: PASS: tizen Back regression
+- plugins_fontes: tests/plugins_fontes.sh: line 27: /Volumes/ExternalSSD/nv-f09-tmp/plugfontes.1H5tmc/t: No such file or directo
+- posterserv_build: rust-mkvcore: cargo not found
+- pr567-followup: StopIteration
+- pr567-metadata-packs: StopIteration
+- pr567-review: StopIteration
+- rede_postar_wasm: tests/rede_postar_wasm.sh: line 5: cannot create temp file for here document: No space left on device
+- servidores_review: ld: open() failed, errno=2 (No such file or directory) for '/Volumes/ExternalSSD/tmp/rev/diretor21/21-j2/revie
+- servidores_review_png: ld: open() failed, errno=2 (No such file or directory) for '/Volumes/ExternalSSD/tmp/rev/diretor21/21-j2/revie
+- servidores_wizard: ld: open() failed, errno=2 (No such file or directory) for '/Volumes/ExternalSSD/tmp/rev/diretor21/21-j2/wizar
+- subtitle_fallback_bold: tests/subtitle_fallback_bold.sh: line 15: pkg-config: command not found
+- texgif-tizen: texgif-tizen.sh: emcc nao encontrado em /Users/henrique/emsdk
+- textoescala_fix2_prova: error: unable to open output file '/new/o/src_video_tizen.c.o': 'No such file or directory'
+- textoescala_prova: error: unable to open output file '/new/o/src_video_tizen.c.o': 'No such file or directory'
+- textoescala_rapida: error: unable to open output file '/new/o/src_video_tizen.c.o': 'No such file or directory'
+- tizen-config-guard: tests/tizen-config-guard.sh: line 10: cannot create temp file for here document: No space left on device
+- tizen-globalthis: tests/tizen-globalthis.sh: line 8: LEGACY_NODE: Set LEGACY_NODE to a Node 10 executable
+- tizen-memory: tests/tizen-memory.sh: line 7: /Users/henrique/emsdk/upstream/emscripten/emcc: No such file or directory
+- tizen3-lite: - /Volumes/Cache/wt/nv-21-21-suiteverde/tests/tizen3-lite.cjs
+- tizen_ass_fixture: 216f848b56292f2dd84c3b859900c915af5c42b0933bf0061a49c68de8dba259  /Volumes/Cache/jobtmp/21-suiteverde/nuvio-ti
+- tizen_fribb_asyncify: tests/tizen_fribb_asyncify.sh: line 4: cannot create temp file for here document: No space left on device
+- tizen_manual_network: tests/tizen_manual_network.sh: line 7: cannot create temp file for here document: No space left on device
+- tizen_wgt_stale: tests/tizen_wgt_stale.sh: line 26: cannot create temp file for here document: No space left on device
+- tpk-responsive: tests/tpk-responsive.sh: line 7: /Users/henrique/.dotnet/dotnet: No such file or directory
+- tpk_build_offline: tests/tpk_build_offline.sh: line 12: /Users/henrique/.dotnet/dotnet: No such file or directory
+- trailer-hero-contract: Node.js v26.3.1
+- trailer-nativo-igual: fatal: invalid object name 'integracao/2.0.5'.
+- ui720: fatal: invalid object name 'integracao/2.0.5'.
+- ui720b: fatal: invalid object name 'integracao/2.0.5'.
+- velocidade: StopIteration
+- versao_208: FAIL: tools/tizen-config.xml lacks version="2.0.8"
+- veutrans_build: android.sh: JDK 17 nao achado (JAVA_HOME)
+- veutrans_check: AssertionError: /Volumes/ExternalSSD/tmp/rev/veutrans/after/L2-glass: incomplete frame sequence
+- video_android_cacheboost: Please visit http://www.java.com for information on installing Java.
+- video_android_janela: Please visit http://www.java.com for information on installing Java.
+- video_android_live_window: Please visit http://www.java.com for information on installing Java.
+- video_android_retomada: Please visit http://www.java.com for information on installing Java.
+- video_desktop_mpv: Install extraction tool: brew install sevenzip
+- vidromenu_fix: captura: /Volumes/ExternalSSD/tmp/vidromenu/fix/after/carmesim-solido.png
+
+### LINK (103)
+- addons_legendas: clang: error: linker command failed with exit code 1 (use -v to see invocation)
+- aiostream_instances: missing: addons_parcial_abas, ajustes_fonte_ocultar
+- amigos_polish: missing: celular_abrir_link, celular_abrir_sessao, celular_conectado, celular_status
+- cncverse_live: missing: g5ui_channel_allowed, perfis_ativo
+- cncverse_regression: missing: addonmodo_id, addonmodo_resposta
+- colfiltro: missing: caca_filme, caca_itens, caca_n_filmes, caca_por_chave, caca_previa_lista, mus_listar ...
+- collections: missing: caca_itens, caca_por_chave, servidores_pagina
+- contaoffline: missing: ajustes_edicao_encerrar, ajustes_edicao_perfil, ajustes_migrar_escopo, diario_dono, diario_esquecer, g5ui_forget ...
+- contaoffline_limites: missing: ajustes_edicao_encerrar, ajustes_migrar_escopo, diario_dono, diario_esquecer, g5ui_forget, perfil_infantil_esquecer ...
+- ctxmenu_semfio: missing: tirarremoto_capturar
+- custom_id_stream: missing: addonmodo_id, addonmodo_nova_busca, addonmodo_resposta
+- cw205_diagnostico: missing: metaep_buscar_tvdb, metaep_existe, metaep_lancamento, metaep_nome, metaep_proximo, metaep_tvdb_video ...
+- cw_prioridade: missing: rewatch_alvo, rewatch_ativa_n, rewatch_n_ativas, rewatch_parcial_de
+- cwdesmarcado: missing: ajustes_fonte_biblioteca, ajustes_nota_episodio, ajustes_ocultar_nao_lancados, caca_itens, caca_por_chave, dados_caminho ...
+- cwdup244: missing: ajustes_fonte_biblioteca, ajustes_nota_episodio, ajustes_ocultar_nao_lancados, caca_itens, caca_por_chave, dados_caminho ...
+- cwleg: missing: metaep_buscar_tvdb, metaep_existe, metaep_lancamento, metaep_nome, metaep_proximo, metaep_tvdb_video ...
+- cwordem: missing: fil_chave, fil_n, metaep_tvdb_video
+- cwthumb: missing: arte_fonte_chave_fanart, audiomem_definir_perfil, curadoria_definir_url, dados_apagar, dados_aparelho_id, dados_caminho ...
+- dts_debug: clang: error: linker command failed with exit code 1 (use -v to see invocation)
+- embybib: clang: error: linker command failed with exit code 1 (use -v to see invocation)
+- epg_accounts: missing: g5ui_channel_allowed, ltv_fonte_ligada
+- episodiosdup: missing: caca_itens, caca_por_chave, rewatch_alvo, rewatch_ativa_n, rewatch_n_ativas, rewatch_parcial_de
+- eps555: missing: caca_itens, caca_por_chave, metaep_tvdb_video, rewatch_alvo, rewatch_ativa_n, rewatch_n_ativas ...
+- erro409: missing: extplayer_tentar, faixas_reiniciar_preparada, video_precarregar, video_precarregar_adotar, video_precarregar_cancelar, video_precarregar_estado ...
+- fonte_ordem_addon: missing: addonmodo_get, addonmodo_permite, addons_parcial_abas, addons_parcial_rev, ajustes_dolby_atmos, ajustes_dolby_vision ...
+- fontesmortas: missing: addonmodo_get, addonmodo_permite, addons_parcial_abas, ajustes_fonte_ocultar, i18n
+- fontesmortas_orcamento: missing: addonmodo_get, addonmodo_permite, addons_consultar_sessao, ajustes_fonte_ocultar, guia_canal_origem, guia_canal_tipo ...
+- gpuauto: missing: ajustes_efeitos_automaticos
+- gpunivel: missing: ajustes_efeitos_automaticos
+- gpunivel_r2: missing: ajustes_efeitos_automaticos
+- guia_catalogo_tv: missing: g5ui_channel_allowed, perfis_ativo
+- guia_grande: missing: ajustes_livetv_agrupar, g5ui_channel_hidden
+- guiabusca_incremental: missing: g5ui_channel_allowed
+- imgbaixa: missing: gpun_ampliacao_ativa, gpun_efeito_ativo, gpun_fosco_reiniciar, gpun_fosco_vetado
+- inicio_rapido: missing: aio_resultados
+- issue607_subtitle: missing: legenda_desligar, legenda_idioma
+- j3_sheets: missing: gfx_escala, gfx_vidro_painel_sem_aro, plrui_pilula_foco, plrui_tinta, ponteiro_mouse
+- legauto: missing: ajustes_fonte_manual, ajustes_fonte_prioridade, fontefalha_sessao_liberar, fontesmortas_idade, fontevolta_esquecer_alvo, fontevolta_toca_guardada ...
+- legenda_borda_preta: missing: fontefalha_addon_limite, fontefalha_addons, fontefalha_filtro, fontefalha_provedor_limite, fontefalha_provedores, legfontes_dir ...
+- legmem_383: missing: legenda_idioma
+- legmemoria: missing: legenda_idioma, xtream_url_limitada
+- lg_subtitle_selection: missing: xtream_url_limitada
+- library639: missing: ajustes_edicao_encerrar, ajustes_migrar_escopo, diario_dono, diario_esquecer, g5ui_forget, perfil_infantil_esquecer ...
+- login418: missing: dados_sincronizar_logo, perfis_invalidar_sessao, perfis_sessao_destravar, perfis_sessao_geracao, perfis_sessao_travar, trava_invalidar_autorizacoes
+- menu_perf: missing: menu_desktop_busca_desenhar
+- montagem_estrutura: missing: addons_catalogo_chave, addons_identidade_recebida, addons_lista_destravar, addons_lista_travar, addons_manifesto_recebido, ajustes_fonte_biblioteca ...
+- notas0: missing: ajustes_jellyfin_ligado, cat_indice_por_imdb, cat_item, ling_conta_audio_valor, posterprov_card, rede_baixar ...
+- notas1: missing: ajustes_jellyfin_ligado, cat_indice_por_imdb, cat_item, ling_conta_audio_valor, posterprov_card, rede_baixar ...
+- ondever_android_apps: missing: perfil_regra_compras
+- ondever_lookup: missing: perfil_regra_compras
+- p2p_dica486: missing: addonmodo_get, addonmodo_permite, fontefalha_addon_chave
+- perfil_tracker: missing: diario_perfil_dados, perfis_item_ativo
+- plain_tv: missing: caca_itens, caca_por_chave, metaep_tvdb_video, rewatch_alvo, rewatch_ativa_n, rewatch_n_ativas ...
+- player_identity524: missing: nv_identity_scrobble_alvo
+- player_identity524_guards: missing: nv_identity_scrobble_alvo
+- player_scrobble_trailer: clang: error: linker command failed with exit code 1 (use -v to see invocation)
+- poster_modelo_longo: missing: texto_teste_crash_outro, texto_teste_webos_major
+- pr536_fixes: missing: legfontes_selecionada, player_leg_estilo_restaurar, player_leg_fonte_definir, player_leg_fonte_local_definir
+- pr567-owners: missing: ajustes_audio_normalizar, ajustes_hdr10p_strip, dts_engine_set_normalize, dts_remux_set_hdr10p_strip, ling_audio_preferido, ling_prefere_original ...
+- pr670_stream_ids: missing: addonmodo_id, addonmodo_resposta
+- proximo_desfoque_home: missing: arte_fonte_chave_fanart, audiomem_definir_perfil, curadoria_definir_url, dados_aparelho_id, dados_dir, dados_fs_liberar ...
+- psfundo: missing: ajustes_fonte_biblioteca, desc_tmdb_idioma
+- resolver: clang: error: linker command failed with exit code 1 (use -v to see invocation)
+- retomar_copias: missing: ajustes_fonte_biblioteca, desc_tmdb_idioma
+- seekr_vivo: missing: ajustes_relogio_12h, perftv_enabled, perftv_uploads
+- selo_visto_modo: clang: error: linker command failed with exit code 1 (use -v to see invocation)
+- selos_lista_viva: missing: addonmodo_get, addonmodo_permite
+- servidores_library: missing: addons_parcial_abas, addons_parcial_rev, ajustes_dolby_atmos, ajustes_dolby_vision, ajustes_dv_mkv, ajustes_fonte_escopo ...
+- servidores_origem: missing: addonmodo_id, addonmodo_resposta, addonstats_aio_complete, addonstats_aio_wait, addonstats_segunda_s, emby_legendas ...
+- servidores_playlist: missing: ajustes_idioma, ajustes_idioma_ingles, ajustes_ocultar_filmes_vistos, ajustes_ocultar_nao_lancados, cat_copiar_por_id, cat_revisao_itens ...
+- servidores_visao: missing: addons_base_por_id_copiar, ajustes_abas_estilo, ajustes_colecao_exibicao, ajustes_definir_abas_estilo, ajustes_ocultar_filmes_vistos, cat_revisao_itens ...
+- sessao_corrida: missing: trava_invalidar_autorizacoes
+- sessao_fora: missing: trava_invalidar_autorizacoes
+- sessao_parcial: missing: trava_invalidar_autorizacoes
+- simkl_scrobble: missing: fichameta_ler, metaprov_idioma, rede_baixar_st_retry, rede_pedir, rede_resposta_limpar, simklauth_token_perfil
+- snapshot_falha: missing: addons_catalogo_chave, addons_identidade_recebida, addons_manifesto_recebido, ajustes_fonte_biblioteca, ajustes_nota_episodio, caca_itens ...
+- streamfit_sheet: missing: ajustes_fonte_ocultar
+- streams_idade: missing: addonmodo_get, addonmodo_permite
+- sync_resumo_corrida: missing: ajustes_edicao_encerrar, ajustes_edicao_perfil, ajustes_migrar_escopo, diario_dono, diario_esquecer, g5ui_forget ...
+- syncaddons: missing: g5ui_forget
+- synccolecoes: missing: addons_catalogo_chave, addons_destravar_lista, addons_travar_lista, addons_versao, ajustes_edicao_encerrar, ajustes_edicao_perfil ...
+- syncordem: missing: ajustes_edicao_encerrar, ajustes_edicao_perfil, ajustes_migrar_escopo, diario_dono, diario_esquecer, g5ui_forget ...
+- teclado_webos: clang: error: linker command failed with exit code 1 (use -v to see invocation)
+- tirarremoto: missing: metaep_buscar_tvdb, metaep_existe, metaep_lancamento, metaep_nome, metaep_proximo, metaep_tvdb_video ...
+- tpk-cdn: missing: ajustes_audio_normalizar, ajustes_hdr10p_strip, dts_engine_set_normalize, dts_remux_set_hdr10p_strip, ling_audio_preferido, ling_prefere_original ...
+- tpk-dts-legendas: missing: ajustes_audio_normalizar, ajustes_audio_offset_ms, ajustes_hdr10p_strip, debrid_tb_link, dts_engine_set_normalize, dts_remux_set_audio_offset_ms ...
+- tpk-dts-reabrir: missing: ajustes_audio_normalizar, ajustes_audio_offset_ms, ajustes_hdr10p_strip, dts_engine_set_normalize, dts_remux_set_audio_offset_ms, dts_remux_set_hdr10p_strip ...
+- tpk-escolha: missing: ajustes_audio_normalizar, dts_engine_set_normalize, ling_audio_preferido, ling_prefere_original
+- tpk-live-hls: missing: ajustes_audio_normalizar, dts_engine_set_normalize, ling_audio_preferido, ling_prefere_original
+- tpk-preso: missing: ajustes_audio_normalizar, dts_engine_set_normalize, ling_audio_preferido, ling_prefere_original, video_taxa_efetiva
+- trakt_arranque: missing: rede_baixar_st_retry, rede_pedir, rede_resposta_limpar, simkl_e_a_seguir
+- trakt_cw_dup: missing: rede_baixar_st_retry, rede_pedir, rede_resposta_limpar, simkl_e_a_seguir
+- trakt_cw_vistas: missing: rede_baixar_st_retry, rede_pedir, rede_resposta_limpar, simkl_e_a_seguir
+- trakt_ep_cinemeta: missing: simkl_e_a_seguir
+- trakt_filmes_vistos: missing: rede_baixar_st_retry, rede_pedir, rede_resposta_limpar
+- trakt_play_corrida: missing: rede_baixar_st_retry, rede_pedir, rede_resposta_limpar, simkl_e_a_seguir
+- trakt_season_meta: missing: rede_baixar_st_retry, rede_pedir, rede_resposta_limpar, simkl_e_a_seguir
+- traktauth: missing: sessao_identidade_local_copiar, sessao_usuario
+- traktcoment: missing: ajustes_jellyfin_ligado, cat_indice_por_imdb, cat_item, ling_conta_audio_valor, posterprov_card, rede_baixar ...
+- tvplay: missing: caca_itens, caca_por_chave, metaep_tvdb_video, rewatch_alvo, rewatch_ativa_n, rewatch_n_ativas ...
+- vertfileira: missing: gfx_escala, gfx_escala_sair, gfx_escala_tela_txt, gfx_escala_txt, gfx_escala_txt_entrar, gfx_poster_k ...
+- visto: missing: cat_episodio_tvdb, cat_versao_episodios, simklauth_token_perfil
+- watchstate_poda: missing: sync_sujar_addons
+
+### COMPILE (51)
+- addons_pull_enabled: subprocess.CalledProcessError: Command ['cc', '-w', '-Isrc', '-ffunction-sections', '-fdata-sections', '-Wl,-d
+- bibfonte_baseline: 10 errors generated.
+- busca_voice_regression: 1 error generated.
+- colecoes_teto: 1 error generated.
+- colestilos: 2 errors generated.
+- colfileiras_sync: 1 error generated.
+- colordem: 1 error generated.
+- cominteiro: 3 errors generated.
+- detail_cast_ok: 1 error generated.
+- detail_epinfo: 4 errors generated.
+- divididosplit: 1 error generated.
+- dts_buffer64: tests/dts_buffer64.sh: line 24:  2764 Terminated: 15          python3 tests/dts_engine_server.py "$tmp" "$tmp/
+- dts_buffer_reporting: tests/dts_buffer_reporting.sh: line 23:  2825 Terminated: 15          python3 tests/dts_engine_server.py "$tmp
+- dts_engine: 1 error generated.
+- dts_range_retry: tests/dts_range_retry.sh: line 20:  3216 Terminated: 15          python3 tests/dts_engine_server.py "$task_tmp
+- dts_recovery_scope: 1 error generated.
+- dts_sonda_repetida: clang++: error: unknown argument: '-fno-gnu-unique'
+- dts_subtitles: 1 error generated.
+- dts_timestamp_engine: 1 error generated.
+- dv_autoplay: 1 error generated.
+- epcoment: 2 errors generated.
+- epescala: 4 errors generated.
+- escala_ancoras: 1 error generated.
+- escala_upcoming: 1 error generated.
+- fileiraredonda: 6 errors generated.
+- fileiras_removidas: |             ^~~~~~~~~~~~
+- fontefalha_playback: 1 error generated.
+- fontefalha_worker: 1 error generated.
+- fontes_chips_ocultos: tests/fontes_chips_ocultos.sh: line 15: 67559 Bus error: 10           NUVIO_DADOS="$work" "$work/test"
+- guiafiltro: 1 error generated.
+- herobotaofrost: RuntimeError: compilation failed
+- home_relogio: 20 errors generated.
+- homecarga_ilha: |               ^~~
+- legpre: 7 errors generated.
+- merge21_notes: reacao: tudo ok (sem servico)
+- ordemperfil: 1 error generated.
+- player_loading: 2 errors generated.
+- rebuffer_review: 8 errors generated.
+- rede_pedido: tests/rede_pedido.sh: line 30: 62471 Terminated: 15          python3 tests/rede_pedido_server.py "$tmp/ports" 
+- sportsux_nav: 1 error generated.
+- sync_aplicar_perf: 1 error generated.
+- sync_prioridade: fatal error: too many errors emitted, stopping now [-ferror-limit=]
+- textoescala_fix2: subprocess.CalledProcessError: Command ['cc', '/Volumes/Cache/jobtmp/21-suiteverde/tmpxsfe7kjo/test.c', '-o', 
+- tizen_source_network: 1 error generated.
+- torrentdica: 1 error generated.
+- trakt610: 3 errors generated.
+- troca_perfil_espera_conta: |      ^
+- vertudo_painel_cartaz: subprocess.CalledProcessError: Command ['cc', '/Volumes/Cache/jobtmp/21-suiteverde/tmphcrukaqo/painel.c', '-o'
+- vistos_regressoes: subprocess.CalledProcessError: Command ['cc', '/Volumes/Cache/jobtmp/21-suiteverde/tmph0ktdpe5/test.c', '-o', 
+- warm_resume_offline: 2 errors generated.
+- wgt_voz: 1 error generated.
+
+### CRASH (53)
+- ajustes_iptv: tests/ajustes_iptv.sh: line 28: 96086 Abort trap: 6           "$task_dir/teste"
+- ajustes_polish: tests/ajustes_polish.sh: line 28:  7874 Abort trap: 6           "$binary" "$@"
+- ajustes_ux_interacao: tests/ajustes_ux_interacao.sh: line 19: 17511 Abort trap: 6           "$binary"
+- ajustes_ux_toque_modo: tests/ajustes_ux_toque_modo.sh: line 26: 17848 Segmentation fault: 11  "$binary"
+- ajustes_ux_toque_modo_desktop: tests/ajustes_ux_toque_modo_desktop.sh: line 21: 19428 Segmentation fault: 11  "$binary"
+- artehero: tests/artehero.sh: line 20: 19759 Abort trap: 6           ${TMPDIR:-/tmp}/nuvio-artehero-tests
+- artetamanho: tests/artetamanho.sh: line 31: 25922 Abort trap: 6           ${TMPDIR:-/tmp}/nuvio-texvariante ${TMPDIR:-/tmp}
+- busca_toque_modo: tests/busca_toque_modo.sh: line 19: 50492 Abort trap: 6           "$work/t"
+- colecaoround: tests/homelayouts_shot.sh: line 57: 66816 Abort trap: 6           "$NUVIO_DADOS/shot" "$saida/h" "${2:-012}"
+- desktop-r9: tests/desktop-r9.sh: line 16: 70752 Segmentation fault: 11  "$work/native-events"
+- detail_assistido: tests/detail_assistido.sh: line 19: 77407 Abort trap: 6           "${TMPDIR}/nuvio-detail-assistido-tests"
+- detail_ep_fonte_foco: tests/streams_folha_cache.sh: line 18: 93689 Segmentation fault: 11  "$CACHE_DIR/test" "$@"
+- detail_layout: tests/detail_layout.sh: line 19: 96622 Abort trap: 6           ${TMPDIR:-/tmp}/nuvio-detail-layout-tests
+- diagnostico_persistencia: tests/diagnostico_persistencia.sh: line 17: 98452 Abort trap: 6           "$binary"
+- dts_pipeline: tests/dts_pipeline.sh: line 18:  3033 Abort trap: 6           LD_LIBRARY_PATH="$tmp/native" "$tmp/test" "$tmp/
+- dvaudio_lg: tests/dvaudio_lg.sh: line 22:  8639 Abort trap: 6           "$dir/test"
+- dvretry_lg: tests/dvretry_lg.sh: line 22: 10110 Abort trap: 6           "$dir/test"
+- dvsonda_contentor: tests/dvsonda_contentor.sh: line 21: 12197 Abort trap: 6           "$dir/test"
+- espaco: tests/espaco.sh: line 28: 36934 Abort trap: 6           "$bin"
+- esportes_polir: tests/guialayout.sh: line 29: 27511 Segmentation fault: 11  "$work/test"
+- fonte_qualidade: tests/fonte_qualidade.sh: line 13: 57402 Abort trap: 6           "$dir/teste"
+- fonteincompat: tests/fonteincompat.sh: line 27: 45259 Segmentation fault: 11  NUVIO_DADOS="$D/data" NUVIO_TESTE_DIR="$D/data"
+- fontenome: tests/fontenome.sh: line 20: 49352 Abort trap: 6           NUVIO_DADOS="$work/data" NUVIO_TESTE_DIR="$work/dat
+- fundo_din_escuro: tests/fundo_din_escuro.sh: line 21: 73501 Abort trap: 6           "$NUVIO_DADOS/test"
+- fundo_paleta: tests/fundo_paleta.sh: line 15: 76070 Abort trap: 6           "$binary"
+- gifperfis: tests/gifperfis.sh: line 17: 79104 Abort trap: 6           NUVIO_DADOS="$work/data" NUVIO_TESTE_DIR="$work/dat
+- guia_previa_grande: tests/guia_previa_grande.sh: line 23: 85511 Abort trap: 6           "$work/test"
+- guialayout: tests/guialayout.sh: line 29: 80904 Segmentation fault: 11  "$work/test"
+- guiaoverlay_ok: tests/guiaoverlay_ok.sh: line 82: 89569 Abort trap: 6           ${TMPDIR:-/tmp}/nuvio-guiaoverlay-ok "$@"
+- guiapolir: tests/guiapolir.sh: line 24: 89661 Abort trap: 6           "$work/test" "$out"
+- guiapolir_related: tests/guiav5_bugs.sh: line 23: 92707 Segmentation fault: 11  "$work/test"
+- guiav5_bugs: tests/guiav5_bugs.sh: line 23: 90365 Segmentation fault: 11  "$work/test"
+- ilha_medidor_trailer: tests/ilha_medidor_trailer.sh: line 12:  2447 Segmentation fault: 11  "$dir/test"
+- ilha_relogio_largura: tests/ilha_relogio_largura.sh: line 10:  2471 Segmentation fault: 11  "$dir/test"
+- intro: tests/intro.sh: line 17:  4887 Abort trap: 6           ${TMPDIR:-/tmp}/nuvio-intro-tests
+- medidor_trailer_pausa: tests/medidor_trailer_pausa.sh: line 13: 20543 Segmentation fault: 11  "$TR_DIR/test"
+- menu_avatar: tests/menu_avatar.sh: line 9: 20607 Abort trap: 6           ${TMPDIR:-/tmp}/nuvio-menu-avatar
+- menu_geometry: tests/menu_geometry.sh: line 9: 20644 Abort trap: 6           ${TMPDIR:-/tmp}/nuvio-menu-geometry
+- menu_topo: tests/menu_topo.sh: line 18: 26853 Abort trap: 6           ${TMPDIR:-/tmp}/nuvio-menu-topo
+- player_fonte_duracao: tests/player_fonte_duracao.sh: line 24: 46090 Abort trap: 6           "$dir/test"
+- plrui_osd_alfa: tests/plrui_osd_alfa.sh: line 7: 48444 Abort trap: 6           "$B/t"
+- poweroff_resume: tests/poweroff_resume.sh: line 32: 60781 Abort trap: 6           NUVIO_DADOS="$work/$mode" "$work/test" "$mode
+- rede_sonda: tests/rede_sonda.sh: line 55: 63684 Abort trap: 6           "$tmp/teste" "http://127.0.0.1:$(cat "$tmp/porta")
+- resolucao: tests/resolucao.sh: line 16: 97473 Abort trap: 6           "${TMPDIR:-/tmp}/nuvio-resolucao-teste"
+- sidebaratv_geometry: tests/sidebaratv_geometry.sh: line 9: 13538 Abort trap: 6           ${TMPDIR:-/tmp}/nuvio-sidebaratv-geometry
+- streams_folha_cache: tests/streams_folha_cache.sh: line 18: 46590 Abort trap: 6           "$CACHE_DIR/test" "$@"
+- tex_memory: tests/tex_memory.sh: line 10: 43226 Abort trap: 6           "$out"
+- texcorpo: tests/texcorpo.sh: line 44: 61260 Abort trap: 6           "$tmp/teste" "$(cat "$tmp/porta")" "$tmp/batidas"
+- texlento: tests/texlento.sh: line 15: 79627 Abort trap: 6           ${TMPDIR:-/tmp}/nuvio-texlento "$@"
+- tmdb_idioma_conta: tests/tmdb_idioma_conta.sh: line 18: 88230 Abort trap: 6           ${TMPDIR:-/tmp}/nuvio-tmdb-idioma-conta
+- trailer-native-state: tests/trailer-native-state.sh: line 9: 82626 Segmentation fault: 11  "$TR_DIR/test"
+- ui_sizing: tests/ui_sizing.sh: line 24: 91874 Abort trap: 6           "$work/test"
+- video_juntos: tests/video_juntos.sh: line 11: 92354 Abort trap: 6           "$work/test"
+
+### TIMEOUT (4)
+- detail_servers: tests/detail_servers.sh: line 27: 17620 Terminated: 15          cc "${flags[@]}" ${extra[@]+"${extra[@]}"} tes
+- sem_tmp_fixo: FALHA tests/conquistas_shot.sh:11: /tmp fixo host-side: NUVIO_DADOS=$(mktemp -d /tmp/nuvio-conquistas-shot.XXX
+- veutrans: 
+- veutrans_late: 
+
+### ASSERT (169)
+- arte_recomendacao: arte_recomendacao: 27 checks FAILED
+- atualizacao_android: tests/atualizacao_android.sh: line 9: flags[@]: unbound variable
+- biblioteca_menu_index: idiomas: 84 problema(s)
+- cachearte-wasm: 
+- carrossel_cede: FALHA: a pre-busca nao cedeu (pedido de verdade esperou)
+- central: 1 falha(s)
+- central_rotulos: 1 nome(s) nao cabem
+- conta: [nuvem] SEM CONFIGURACAO (url=vazia chave=vazia): login e sync desligados
+- ctxlista: tests/ctxlista.sh: line 27: 64259 Terminated: 15          python3 tests/ctxlista_servidor.py $PORTA 2> "$tmp/s
+- ctxmenu_contract: 10
+- desktop-packages: 
+- desktop_settings_r13: PASS: Cmd+, is ignored while the keyboard is open
+- desmarcarfrente: desmarcarfrente: FALHOU (6319 falhas)
+- detalhe_espaco: 
+- detalheglass: tests/detalhe_glass_shot.sh: line 83: shot_extra[@]: unbound variable
+- detalheglass_configs: 
+- detalheglass_fix: 
+- detalheglass_review: 
+- detmaisglass: tests/detalhe_glass_shot.sh: line 83: shot_extra[@]: unbound variable
+- diarionuvem_servidor: 
+- dts_sonda_cache: ok: webOS desconhecido, nao NAO guardado: 5 tentativas (falhou 10x, pronto 0x)
+- dv7: tests/dv7.sh: line 6: cargo: command not found
+- dv7_engine: tests/dv7_engine.sh: line 7: cargo: command not found
+- entrada_texto_wgt: 
+- epfoco: 
+- episode_identity512: tests/episode_identity512.sh: line 6: flags[@]: unbound variable
+- estatvivo_cabe: /Volumes/Cache/jobtmp/21-suiteverde/nuvio-estatvivo-cabe.IYTfas/3840x2160-1.5-en-inter 3840x2160 en font 0 sca
+- expandebotao: ok #205: expanding pill shows the label only at full width, unclipped
+- fio1: tests/fio1.sh: emsdk nao encontrado em /Users/henrique/emsdk
+- fio1-pilha: tests/fio1-pilha.sh: emsdk nao encontrado em /Users/henrique/emsdk
+- fonte_troca: ValueError: substring not found
+- fonteescolha: ok fonteescolha
+- fontepref_manual: ok    fontepref_guardar so no escolheu da folha
+- frost_flicker: 
+- gfx_din_adiado_split: PASS: corner light split path keeps background deferred
+- gfx_vidro_preguica: FAIL: pass 2, glass=1 programs=51 (start 49), after-glass pixel=255,0,0
+- guia_logos: fatal: Not a valid object name integracao/2.0.5
+- heroisA: Hero A runner: rc=128, elapsed=0s
+- i18n: idiomas: 84 problema(s)
+- i607: }
+- i612-build: IndexError: list index out of range
+- i616: PASS picker: focus moves preserve list offset; focused option visible
+- idiomaauto: FALHOU mapear("ar") = 30, esperava -1
+- ios_build: FAIL: build
+- ios_bundle_seguro: FAIL: build
+- ios_m2_p1: tests/ios_m2_p1.sh: line 44:  5235 Terminated: 15          python3 tests/ios_m2_http_server.py > "$work/port"
+- ios_m3_builds: android rc=1
+- ios_m3_i18n: AssertionError
+- issue647_legasync: FAIL: account sync is discoverable as LegaSync
+- issue_triagem_checklist: ModuleNotFoundError: No module named 'yaml'
+- j1_matrix: tests/j1_matrix.sh: line 5: $1: unbound variable
+- j4_compile: tests/j4_compile.sh: line 5: $1: unbound variable
+- j4_sheet_motion: FAIL: minimum effects cut body fade
+- juntos_sources: 
+- legconta378: FALHOU: linha do log nao separa conta de em vigor
+- legref: precisa de ffmpeg e mkvmerge
+- legref_fixtures: precisa de ffmpeg e mkvmerge
+- legsync: precisa de ffmpeg e mkvmerge
+- listastrava_checks: AssertionError: Run Android asset staging first
+- menu_tvos: tests/menu_tvos.sh: line 9: flags[@]: unbound variable
+- menuep: menuep: 2 FALHA(S)
+- mkvass: tests/mkvass.sh: line 129: 25781 Terminated: 15          python3 tests/servidor_range.py "$DIR" > "$DIR/porta.
+- moviebuffer: AssertionError: replacement range starved behind open movie GET
+- mural_largura_titulos: FALHA o ladrilho pequeno do Mural nao encolhe com VT_CW
+- perfil_fundo_cobre: FAIL: perfil picker draws a covered full-screen clear
+- pinrows: ValueError: substring not found
+- player_loading_artwork: RESULT checks=39 failures=3
+- player_rewatch: tests/player_rewatch.sh: line 8: cannot create temp file for here document: No space left on device
+- player_skip_loading: tests/player_skip_loading.sh: line 6: cannot create temp file for here document: No space left on device
+- player_trava: tests/player_trava.sh: line 6: cannot create temp file for here document: No space left on device
+- playinfo: unverified: .NET SDK unavailable
+- plugins_fila: idiomas: 84 problema(s)
+- ponteiro_telas: FALHOU: 9 falha(s)
+- poster_url_longa: PASSOU
+- pr536_review: AssertionError: ['authored ASS receives tracked per-field settings']
+- quickanim: 'git <command> [<revision>...] -- [<file>...]'
+- recamigos: recamigos: 2 falha(s)
+- rede_parada: FALHOU  rajada: pedido falhou (1 ms)
+- rede_reuso: FALHOU: pedido 0
+- regex_entrada: regex_entrada: 88 padrao(oes) alterado(s) pelo filtro do campo
+- registro_cabeca: tests/registro_cabeca.sh: line 7: cannot create temp file for here document: No space left on device
+- release_apk_abis: tests/release_apk_abis.sh: line 5: cannot create temp file for here document: No space left on device
+- relogio_foco: tests/relogio_foco.sh: line 7: cannot create temp file for here document: No space left on device
+- resolver_retrato: mktemp: mkdtemp failed on /tmp/nuvio-resolver-retrato.U8FxZZ: No space left on device
+- rewatch_hero: tests/rewatch_hero.sh: line 7: cannot create temp file for here document: No space left on device
+- rewatch_quit: tests/rewatch_quit.sh: line 7: cannot create temp file for here document: No space left on device
+- rust_mkvcore: tests/rust_mkvcore.sh: line 8: cargo: command not found
+- salvos_segurar: FALHOU
+- salvospainel: FALHOU
+- sdl_simbolos_antigos: tests/sdl_simbolos_antigos.sh: line 5: cannot create temp file for here document: No space left on device
+- seekr_pacote: tests/seekr_pacote.sh: line 5: cannot create temp file for here document: No space left on device
+- sem_docker: tests/sem_docker.sh: line 5: cannot create temp file for here document: No space left on device
+- servidores_detail_controls: mktemp: mkdtemp failed on /var/folders/kv/tqtbz5jx56s23887x7pnnjj40000gn/T/tmp.LGxgn3Qpft: No space left on de
+- servidores_material: mktemp: mkdtemp failed on /var/folders/kv/tqtbz5jx56s23887x7pnnjj40000gn/T/tmp.auGWmOv8t8: No space left on de
+- sessao_email: tests/sessao_email.sh: line 9: cannot create temp file for here document: No space left on device
+- setuptv: idiomas: 84 problema(s)
+- shufflepos: shufflepos: 2 FALHA(S)
+- shuffleserie: shuffleserie: 1 FALHA(S)
+- sidebaratv_fonte: tests/sidebaratv_fonte.sh: line 12: cannot create temp file for here document: No space left on device
+- sigalarm_saida: tests/sigalarm_saida.sh: line 24: cannot create temp file for here document: No space left on device
+- simkl_cw: tests/simkl_cw.sh: line 18: cannot create temp file for here document: No space left on device
+- simkl_library: mktemp: mkdtemp failed on /var/folders/kv/tqtbz5jx56s23887x7pnnjj40000gn/T/tmp.CNyK1fvZN8: No space left on de
+- sinopse_tamanho: mktemp: mkdtemp failed on /tmp/nuvio-sinopse.taqCIs: No space left on device
+- source_exclusion_languages: mktemp: mkdtemp failed on /tmp/nuvio-exclusion-languages.iFh118: No space left on device
+- spot_ch: tests/spot_ch.sh: line 5: cannot create temp file for here document: No space left on device
+- spotlight_regressao: RESULTADO: 3 falhas
+- srvsetup_essence: tests/srvsetup_essence.sh: line 6: cannot create temp file for here document: No space left on device
+- stream_mp4: 6879:    if (s) video_definir_mp4(stream_e_mp4(s));
+- syncjank: main thread file edit detection: 0.625 ms
+- synopsis_review: mktemp: mkstemp failed on /tmp/nuvio-synopsis-review.vkItzY: No space left on device
+- teclas_ch: tests/teclas_ch.sh: line 5: cannot create temp file for here document: No space left on device
+- tela21: FAIL Filmography origin at 130%: 120.000 != 104.000
+- telaspolir: PASS: P1 input: capture transitions use SDL events
+- tex_pressao: tests/tex_pressao.sh: line 5: cannot create temp file for here document: No space left on device
+- text_familias: mktemp: mkdtemp failed on /var/folders/kv/tqtbz5jx56s23887x7pnnjj40000gn/T/tmp.C0su2oaQWq: No space left on de
+- textoescala_layout: mktemp: mkdtemp failed on /tmp/nv-text-layout-CZkQ5h: No space left on device
+- textoescala_rev3: tests/textoescala_rev3.sh: line 5: cannot create temp file for here document: No space left on device
+- textoescala_rev4: tests/textoescala_rev4.sh: line 5: cannot create temp file for here document: No space left on device
+- texturas_pacote: mktemp: mkdtemp failed on /var/folders/kv/tqtbz5jx56s23887x7pnnjj40000gn/T/tmp.prdWjeCzcO: No space left on de
+- tizen-despedida: 
+- tombstone: 
+- topx_catalogs: tests/topx_catalogs.sh: line 6: cannot create temp file for here document: No space left on device
+- tpk-roi: tests/tpk-roi.sh: line 12: cannot create temp file for here document: No space left on device
+- tpk-trailer-audio: tests/tpk-trailer-audio.sh: line 7: cannot create temp file for here document: No space left on device
+- tpk-vod-end: tests/tpk-vod-end.sh: line 7: cannot create temp file for here document: No space left on device
+- tpk40_overlay: tests/tpk40_overlay.sh: line 6: cannot create temp file for here document: No space left on device
+- tpk40_rede_teto: tests/tpk40_rede_teto.sh: line 5: cannot create temp file for here document: No space left on device
+- tpk40_teclas: tests/tpk40_teclas.sh: line 6: cannot create temp file for here document: No space left on device
+- tpk65_window: tests/tpk65_window.sh: line 5: cannot create temp file for here document: No space left on device
+- tpk_aspecto: tests/tpk_aspecto.sh: line 6: cannot create temp file for here document: No space left on device
+- tpk_breadcrumb: mktemp: mkdtemp failed on /var/folders/kv/tqtbz5jx56s23887x7pnnjj40000gn/T/tmp.8PrF54wvJA: No space left on de
+- tpk_context: tests/tpk_context.sh: line 7: cannot create temp file for here document: No space left on device
+- tpk_lifecycle: unverified: .NET SDK unavailable
+- tpk_live_geometry: tests/tpk_live_geometry.sh: line 6: cannot create temp file for here document: No space left on device
+- tpk_player_cadence: tests/tpk_player_cadence.sh: line 5: cannot create temp file for here document: No space left on device
+- tpk_primary_subtitle: mktemp: mkdtemp failed on /var/folders/kv/tqtbz5jx56s23887x7pnnjj40000gn/T/tmp.3HlzuHjhgr: No space left on de
+- tpk_sdk_arm32: Apple Container system not running. Start with: container system start
+- tpk_stale_package: tests/tpk_stale_package.sh: line 4: cannot create temp file for here document: No space left on device
+- tpk_startup_pause: unverified: .NET SDK unavailable
+- tpk_texto_flag: tests/tpk_texto_flag.sh: line 9: cannot create temp file for here document: No space left on device
+- tpk_voz: tests/tpk_voz.sh: line 8: cannot create temp file for here document: No space left on device
+- tpk_voz_host: tests/tpk_voz_host.sh: line 9: cannot create temp file for here document: No space left on device
+- tpk_window_metrics: unverified: .NET SDK unavailable
+- tpk_x64: tests/tpk_x64.sh: line 5: cannot create temp file for here document: No space left on device
+- trailer-recorte: mktemp: mkdtemp failed on /var/folders/kv/tqtbz5jx56s23887x7pnnjj40000gn/T/tmp.AdrvBAaJvf: No space left on de
+- trailercinema: mktemp: mkdtemp failed on /var/folders/kv/tqtbz5jx56s23887x7pnnjj40000gn/T/tmp.9WUa7SO36j: No space left on de
+- trakt_cine_neg: trakt_cine_neg: PASS error-meta-retry
+- traktult: traktult: ok
+- triagem_branches_velhas: tests/triagem_branches_velhas.sh: line 4: cannot create temp file for here document: No space left on device
+- trilhas: mktemp: mkdtemp failed on /tmp/nuvio-trilhas.GrXvBC: No space left on device
+- trilhas_nav: mktemp: mkdtemp failed on /tmp/nuvio-trilhas.DZTsQk: No space left on device
+- trilhasfix: subprocess.CalledProcessError: Command ['bash', 'tests/trilhas.sh'] returned non-zero exit status 1.
+- troca_perfil_esquece_contalib: 
+- troca_perfil_repete_desc: 
+- vertudo_abastopo: AttributeError: 'NoneType' object has no attribute 'group'
+- vertudo_timeline_geo: NameError: name 'NV_CHROME_EDGE' is not defined
+- vidro_c9_cache: FAIL: baseline unexpectedly passed
+- vidro_c9_webos_compile: Apple Container system not running. Start with: container system start
+- vidro_ilhas_fix: FAIL: sharp negative control under-panel dx=39.68 variance=13837.48 source=2 (stripes alone ~26)
+- vidro_neutro: vidro_neutro: FALHA
+- vidro_padrao: FAIL src/vertudo.c: missing gfx_vidro_ou_solido
+- vidro_todo: vidro todo: FAIL
+- vidro_video: vidro_video: FALHA
+- vodcarga: |                                         ^
+- webos_network_build_results: AssertionError: webos
+- webos_network_builds: android build: rc=1 (output withheld; may contain configured credentials)
+- webos_network_hotfix: fatal: not a valid object name: v2.0.8
+- webp: tests/webp.sh: line 8: san[@]: unbound variable
+- xtvod_regression: guiav5_bugs: FAIL (request output withheld)
