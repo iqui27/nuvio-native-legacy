@@ -36,3 +36,9 @@ int ajustes_hdr10p_strip(void) { return 0; }
 void dts_remux_set_hdr10p_strip(int on) { (void)on; }
 
 __attribute__((weak)) int debrid_tb_link(int u,int i,int a,char *url,unsigned n) { (void)u;(void)i;(void)a;if(n)*url=0;return 0; }
+// Audio normalization in the .tpk open path, off in tests.
+int ajustes_audio_normalizar(void) { return 0; }
+void dts_engine_set_normalize(int on) { (void)on; }
+// audioescolha.c reads the language preferences (linguas.c is not linked).
+int ling_prefere_original(void) { return 0; }
+const char *ling_audio_preferido(void) { return ""; }
