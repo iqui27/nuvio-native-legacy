@@ -7940,11 +7940,11 @@ static void focarOpcao(int op) {
 // separado de proposito: as duas perguntas sao diferentes e juntas viram um
 // paragrafo que ninguem le do sofa.
 static const char *ajudaOpcaoTv(int op);
-// Desktop layout: a description naming a TV platform or the remote is hidden.
+// Desktop layout: the sentences naming a TV platform or the remote are hidden.
 static const char *ajudaOpcaoBase(int op) {
   const char *s = ajudaOpcaoTv(op);
 #ifdef NV_DESKTOP_UI
-  if (ajDesktopTextoTv(s)) return "";
+  s = ajDesktopSemTv(s);
 #endif
   return s;
 }

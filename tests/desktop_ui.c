@@ -9,8 +9,6 @@ int ajustes_menu_explorar(void) { return 1; }
 int ajustes_menu_guia(void) { return 1; }
 int ajustes_menu_agenda(void) { return 1; }
 int ajustes_menu_perfil(void) { return 1; }
-int esportes_modalidades_n(void) { return 1; }
-int esportes_habilitado(int sport) { (void)sport; return 1; }
 int ajustes_menu_topo(void) { return 0; }
 int ajustes_rail_recolhida(void) { return 0; }
 float gfx_escala_ui_base(void) { return 1; }

@@ -24,6 +24,44 @@ static int ajDesktopTextoTv(const char *s) {
   for (i = 0; i < sizeof tv / sizeof *tv; i++) if (strstr(s, tv[i])) return 1;
   return 0;
 }
+// End of the sentence that starts at s: ". ", "! ", "? ", "。" or the end.
+static size_t ajFraseFim(const char *s) {
+  size_t i;
+  for (i = 0; s[i]; i++) {
+    if ((s[i] == '.' || s[i] == '!' || s[i] == '?') && (s[i + 1] == ' ' || !s[i + 1])) return i + 1;
+    if ((unsigned char)s[i] == 0xE3 && (unsigned char)s[i + 1] == 0x80 && (unsigned char)s[i + 2] == 0x82) return i + 3;
+  }
+  return i;
+}
+// `s` (pt source) without the sentences that name a TV platform or the remote.
+// None does: `s` itself. Otherwise the kept sentences, already translated (the
+// translation drops the same sentence index; i18n passes the result through);
+// "" when nothing is left.
+static const char *ajDesktopSemTv(const char *s) {
+  static char b[2048];
+  char f[1024];
+  unsigned long long tv = 0;
+  const char *t, *p;
+  size_t n, o = 0;
+  int k, np = 0, nt = 0;
+  if (!ajDesktopTextoTv(s)) return s;
+  for (p = s; *p && np < 64; np++) {
+    while (*p == ' ') p++;
+    n = ajFraseFim(p); snprintf(f, sizeof f, "%.*s", (int)n, p); p += n;
+    if (ajDesktopTextoTv(f)) tv |= 1ull << np;
+  }
+  t = i18n(s);
+  for (p = t; *p; nt++) { while (*p == ' ') p++; p += ajFraseFim(p); }
+  b[0] = 0;
+  for (p = t, k = 0; *p; k++) {
+    while (*p == ' ') p++;
+    n = ajFraseFim(p); snprintf(f, sizeof f, "%.*s", (int)n, p); p += n;
+    if (!f[0] || (nt == np ? (tv >> k) & 1 : ajDesktopTextoTv(f))) continue;
+    o += (size_t)snprintf(b + o, o < sizeof b ? sizeof b - o : 0, "%s%s", o ? " " : "", f);
+    if (o >= sizeof b) break;
+  }
+  return b;
+}
 static int ajDesktopOculta(int op) {
   size_t i;
   for (i = 0; i < sizeof AJ_DESKTOP_OCULTAS / sizeof *AJ_DESKTOP_OCULTAS; i++)
