@@ -47,6 +47,7 @@ static void limparFonteVOD(void) { fonteVODAutomatica = 0; }
 static void nomeParaFolha(void) {}
 static void stream_folha_abrir(void) { sheet++; }
 static void erroSemFonte(void) { message++; }
+static int juntos_precarregando(void) { return 0; }
 #include "consumer.c"
 int main(void) {
   aguardandoFonte = 2; fonteEscolhida = 2; fonteVODTentativas = 2;

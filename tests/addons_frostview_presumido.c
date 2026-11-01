@@ -43,11 +43,6 @@ char *rede_baixar_st(const char *url, int seconds, const char *const *headers, i
   if (status) *status = body ? 200 : 0;
   return body;
 }
-char *rede_baixar_medido(const char *url, int seconds, const char *const *headers, RedeMedida *m) {
-  int st = 0; char *r = rede_baixar_st(url, seconds, headers, &st);
-  *m = (RedeMedida){ .status = st };
-  return r;
-}
 
 static void shapes(void) {
   int a = addons_adicionar("Shape str", "https://shape-str.test/manifest.json");

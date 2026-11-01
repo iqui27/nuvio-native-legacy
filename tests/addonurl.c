@@ -41,14 +41,36 @@ char *rede_baixar_st(const char *url, int seconds, const char *const *headers, i
   return body;
 }
 const char *rede_ultimo_erro(void) { return ""; }
+// aio path goes through rede_pedir (post-6f0f6c5); bridge it to the URL
+// fixture. aio_resultados parses the payload; the URL test only counts calls.
+#include "rede.h"
+#include "aiostreams.h"
+int rede_pedir(const RedePedido *p, RedeResposta *r) {
+  memset(r, 0, sizeof *r);
+  r->corpo = rede_baixar(p->url, (int)(p->prazo_ms / 1000u));
+  r->n_corpo = r->corpo ? strlen(r->corpo) : 0;
+  r->status = r->corpo ? 200 : 0;
+  r->erro = r->corpo ? REDE_OK : REDE_TRANSPORTE;
+  return 0;
+}
+void rede_resposta_limpar(RedeResposta *r) { free(r->corpo); r->corpo = NULL; }
+void aio_resultados(AioSnapshot *s, const char *json) { (void)s; (void)json; }
+char *rede_baixar_medido(const char *url, int seconds, const char *const *headers, RedeMedida *m) {
+  int st = 0; char *r = rede_baixar_st(url, seconds, headers, &st);
+  *m = (RedeMedida){ .status = st };
+  return r;
+}
 int dados_gravar_leve(const char *n, const char *c) { (void)n; (void)c; return 1; }
 char *rede_baixar(const char *url, int s) {
   (void)s;
   // O que rede.c faz no OPT_URL: apelido de URL grande -> URL inteira (#203).
   char *grande = nv_longa_expandir(url);
-  nPedidos++;
-  if (strstr(url, "grande.test")) nPedidosGrande++;
-  snprintf(pedido, sizeof pedido, "%s", grande ? grande : url);
+  // manifest.json probes are the resolver's work, not a stream request
+  if (!strstr(url, "/manifest.json")) {
+    nPedidos++;
+    if (strstr(url, "grande.test")) nPedidosGrande++;
+    snprintf(pedido, sizeof pedido, "%s", grande ? grande : url);
+  }
   free(grande);
   return strdup("{\"streams\":[{\"url\":\"https://x/a.mp4\"}]}");
 }

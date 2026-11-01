@@ -224,7 +224,7 @@ int main(void) {
   assert(AJ_N > AJ_CONQ_DICAS && AJ_CONQ_LIGADO == AJ_MENU_TOPO + 1);
   assert(AJ_GUIA_PREVIA_GRANDE == AJ_DET_ELENCO_VISTO + 1 && AJ_AUD_ORIGINAL == AJ_GUIA_PREVIA_GRANDE + 1);
   assert(AJ_HERO_PASTA_DETALHES == AJ_LEG_ESTILO_LIGADO + 1);
-  assert(AJ_FONTE_OCULTAR_DV == AJ_GUIA_DIAS + 1 && AJ_TV_HOME == AJ_FONTE_OCULTAR_VIDEO + 1 && AJ_PS_TAMANHO == AJ_TV_HOME + 1 && AJ_N == AJ_PS_TAMANHO + 1);
+  assert(AJ_FONTE_OCULTAR_DV == AJ_GUIA_DIAS + 1 && AJ_TV_HOME == AJ_FONTE_OCULTAR_VIDEO + 1 && AJ_PS_TAMANHO == AJ_TV_HOME + 1 && AJ_LIVETV_AGRUPAR == AJ_PS_TAMANHO + 1 && AJ_MENU_ESPORTES == AJ_LIVETV_AGRUPAR + 1 && AJ_N == AJ_MENU_ESPORTES + 1);
   assert(ajustes_tv_home() && valorPadrao[AJ_TV_HOME] == 0 && escopoDe(AJ_TV_HOME) == ESC_TV);
   assert(!strcmp(CHAVE[AJ_TV_HOME], "androidTvHomeLocal"));
   const char *capKeys[] = {"fonteOcultarDvLocal", "fonteOcultarAudioLocal", "fonteOcultarVideoLocal"};

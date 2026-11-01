@@ -75,7 +75,27 @@ char *rede_baixar_st(const char *url, int seconds, const char *const *headers, i
   if (status) *status = body ? 200 : 0;
   return body;
 }
+#include "rede.h"
 const char *rede_ultimo_erro(void) { return ""; }
+// aio path now goes through rede_pedir (src/addons.c post-6f0f6c5): bridge it
+// to the same URL fixture so no real network is touched. aio_resultados parses
+// the payload; the fixture already asserts response shape, so keep it empty.
+#include "aiostreams.h"
+int rede_pedir(const RedePedido *p, RedeResposta *r) {
+  memset(r, 0, sizeof *r);
+  r->corpo = rede_baixar(p->url, (int)(p->prazo_ms / 1000u));
+  r->n_corpo = r->corpo ? strlen(r->corpo) : 0;
+  r->status = r->corpo ? 200 : 0;
+  r->erro = r->corpo ? REDE_OK : REDE_TRANSPORTE;
+  return 0;
+}
+void rede_resposta_limpar(RedeResposta *r) { free(r->corpo); r->corpo = NULL; }
+void aio_resultados(AioSnapshot *s, const char *json) { (void)s; (void)json; }
+char *rede_baixar_medido(const char *url, int seconds, const char *const *headers, RedeMedida *m) {
+  int st = 0; char *r = rede_baixar_st(url, seconds, headers, &st);
+  *m = (RedeMedida){ .status = st };
+  return r;
+}
 char *rede_baixar(const char *url, int s) {
   const char *r;
   if (strstr(url, "/manifest.json") && !strstr(url, "legenda.test"))

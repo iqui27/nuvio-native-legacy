@@ -39,6 +39,15 @@ const char *i18n(const char *s) { return s; }
 void ilha_avisar(const char *k, int t, const char *i, const char *s, unsigned ms, int tecla) {
   (void)k; (void)t; (void)i; (void)s; (void)ms; (void)tecla; avisos++;
 }
+int aioui_addons_mover(int f, int dx, int dy) {
+  int n = addons_n(), ult = n + 2;
+  if (dx || dy) {
+    if (dy < 0 && f > 0) return f - 1;
+    if (dy > 0 && f < ult) return f + 1;
+  }
+  (void)dx;
+  return f;
+}
 static void tecla(SDL_Keycode k) {
   SDL_Event e = {0}; e.type = SDL_KEYDOWN; e.key.keysym.sym = k; addonsui_evento(&e);
 }

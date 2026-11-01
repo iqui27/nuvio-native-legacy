@@ -28,30 +28,46 @@ pulados=0
 semProva=0
 # cache_contrato.sh and nav21.sh are required gates; never exclude them.
 # nav21 compiles the native host and renders every fixture in the foreground.
-for f in tests/*.sh; do
-  n=$(basename "$f")
-  case "$n" in
-    *_shot.sh|cinematic.sh|director.sh|webp-tizen.sh|webp-vidaa-st.sh|tizen-clock.sh|salvospainel_perf.sh|fluidez_perf_player.sh|fluidez_perf_guia.sh) pulados=$((pulados + 1)); continue;;
-  esac
-  limit=${TEST_TIMEOUT:-120}
+# Testes rodam em paralelo (TEST_JOBS, padrao = nucleos); cada um grava
+# $LOGS/<teste>.log e uma linha de resultado em $LOGS/<teste>.res, e o resumo
+# sai na ordem alfabetica, igual ao modo serial.
+roda_um() {
+  f=$1; n=$(basename "$f")
+  limit=${TEST_TIMEOUT:-420}
   [ "$n" = nav21.sh ] && limit=${NAV21_TIMEOUT:-360}
   if timeout -k 5 "$limit" bash "$f" >"$LOGS/$n.log" 2>&1; then
     # SKIP (ex.: p2pmotor_real.sh sem o motor compilado) sai com 0 mas NAO
     # provou nada: nao conta como passou.
     if grep -Eq '(^|[^A-Za-z])SKIP([^A-Za-z]|$)' "$LOGS/$n.log"; then
       echo "SKIP  $n (NAO verificado: $(grep -Em1 'SKIP' "$LOGS/$n.log" | cut -c1-90))"
-      semProva=$((semProva + 1)); continue
-    fi
-    if grep -Eq 'PULADO|pulados|sem resultado' "$LOGS/$n.log"; then
+    elif grep -Eq 'PULADO|pulados|sem resultado' "$LOGS/$n.log"; then
       echo "ok*   $n (ver casos pulados no log)"
     else
       echo "ok    $n"
     fi
-    passaram=$((passaram + 1))
   else
-    rc=$?
-    echo "FALHA $n (rc=$rc)"; tail -15 "$LOGS/$n.log"; falhou=$((falhou + 1))
-  fi
+    echo "FALHA $n (rc=$?)"
+  fi >"$LOGS/$n.res"
+}
+export -f roda_um
+export LOGS
+lista=()
+for f in tests/*.sh; do
+  case "$(basename "$f")" in
+    *_shot.sh|cinematic.sh|director.sh|webp-tizen.sh|webp-vidaa-st.sh|tizen-clock.sh|salvospainel_perf.sh|fluidez_perf_player.sh|fluidez_perf_guia.sh) pulados=$((pulados + 1)); continue;;
+  esac
+  lista+=("$f")
+done
+printf '%s\0' "${lista[@]}" | xargs -0 -n1 -P "${TEST_JOBS:-4}" bash -c 'roda_um "$1"' _
+for f in "${lista[@]}"; do
+  n=$(basename "$f")
+  linha=$(cat "$LOGS/$n.res" 2>/dev/null) || linha="FALHA $n (sem .res)"
+  echo "$linha"
+  case "$linha" in
+    SKIP*) semProva=$((semProva + 1));;
+    ok*) passaram=$((passaram + 1));;
+    *) tail -15 "$LOGS/$n.log"; falhou=$((falhou + 1));;
+  esac
 done
 if [ "$san" = 1 ]; then
   echo "== sanitizadores (tools/sanitiza.sh) =="
