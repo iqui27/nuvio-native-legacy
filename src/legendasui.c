@@ -373,8 +373,15 @@ static void montarLinhas(void) {
   }
   // FOCUS BY IDENTITY: find the row with the remembered key; if it vanished
   // (a list was replaced), stay at the same position and adopt that row.
-  for (i = 0; i < nLinhasV; i++) if (!strcmp(linhas[i].chave, focoChave)) break;
-  if (i < nLinhasV) foco = i;
+  // #681: the key is a hash of provider+URL, and two addons CAN return the
+  // same file (same URL, dup rows). Picking the FIRST match pulled the focus
+  // back one row on every key press, so the last row was unreachable. Keep
+  // the match nearest the previous position instead.
+  { int best = -1;
+    for (i = 0; i < nLinhasV; i++)
+      if (!strcmp(linhas[i].chave, focoChave) && (best < 0 || abs(i - foco) < abs(best - foco))) best = i;
+    i = best; }
+  if (i >= 0) foco = i;
   else {
     if (foco >= nLinhasV) foco = nLinhasV - 1;
     if (foco < 0) foco = 0;
