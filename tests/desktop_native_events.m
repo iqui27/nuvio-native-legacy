@@ -5,6 +5,18 @@
 #include <assert.h>
 #include "../src/desktop_native.h"
 void menu_desktop_hover(float x) { (void)x; }
+// Native sidebar (fbb448224, 6fb8eee66) calls into the app; inert stubs for this harness.
+void menu_desktop_alternar(void) {}
+void menu_desktop_expandir(void) {}
+void menu_desktop_servico(int i) { (void)i; }
+void menu_desktop_perfil(void) {}
+int menu_desktop_foco(void) { return -2; }
+void menu_fechar(void) {}
+void menu_ir(int d) { (void)d; }
+int menu_destino(void) { return 0; }
+int home_streaming_barra(const int **p) { if (p) *p = 0; return 0; }
+const char *i18n(const char *s) { return s; }
+float ajustes_acento_tinta(float *r, float *g, float *b) { *r = *g = *b = 1; return 0; }
 @interface NVProofScroll : NSEvent
 @property(assign) NSWindow *proofWindow;
 @property NSPoint proofPoint;
