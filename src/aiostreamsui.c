@@ -534,7 +534,7 @@ static void dashboardTecla(SDL_Keycode k) {
     return;
   }
   if(foco>=6) { foco=completo?0:cta; return; }
-  int rolavel=completo || foco>=4;
+  int rolavel=completo || (foco>=4 && (snap.valida || foco==5));
   int total=dashboardTotal(foco), vis=dashboardVis[foco], step=down-up;
   if(rolavel && step && dashboardLinha[foco]+step>=0 && dashboardLinha[foco]+step<=total-vis) { dashboardLinha[foco]+=step; return; }
   if(completo) {
@@ -546,7 +546,12 @@ static void dashboardTecla(SDL_Keycode k) {
     if(left) { if(foco) foco--; else irRail(); }
     else if(right) { if(foco<3) foco++; }
     else if(up) foco=cta;
-    else if(down) foco=foco<2?4:5;
+    else if(down) foco=!snap.valida?4:foco<2?4:5;
+  } else if(!snap.valida) {
+    // Unavailable catalogs collapse to a row above the full-width diagnostics.
+    if(left) irRail();
+    else if(up) foco=foco==5?4:0;
+    else if(down && foco==4) foco=5;
   } else {
     if(left) { if(foco==5) foco=4; else irRail(); }
     else if(right) foco=5;
@@ -1199,8 +1204,8 @@ static void dashboardLinhaDesenhar(int c,int row,float x,float y,float w) {
     txtCor(TXT_G22M,it->nome,xl+56,cy-14,room-70-sw,aioTexto,1,0);
   } else if(c==1) {
     disco("aj_cloud",xl,cy-21,42);
-    float vw=txtCor(TXT_G18R,v,xr,cy-11,room*.5f,aioTexto,.68f,1);
-    txtCor(TXT_G22M,t,xl+56,cy-14,room-70-vw,aioTexto,1,0);
+    txtCor(TXT_G20M,t,xl+56,cy-25,room-56,aioTexto,1,0);
+    txtCor(TXT_G18R,v,xl+56,cy+4,room-56,aioTexto,.68f,0);
   } else if(c==2) {
     float tw=fminf(largura(TXT_AJ_CHIP,v),room*.55f)+28;
     gfx_cor((GfxRect){xr-tw,cy-16,tw,32},.5f,1,1,1,.1f);
@@ -1244,17 +1249,14 @@ static void dashboardLinhaDesenhar(int c,int row,float x,float y,float w) {
 }
 static void dashboardCartao(int c,GfxRect r,int compacto) {
   float f=focoDe(c,0), y=r.y, alpha=itemInicio(c%3,c/3,&y); r.y=y;
-  superficie(r,26,.035f,f);
-  float ar,ag,ab, ink=ajustes_acento_tinta(&ar,&ag,&ab);
-  GfxRect d={r.x+20,r.y+18,48,48};
-  gfx_cor(d,15/48.f,1,1,1,.08f*(1-f)); gfx_cor(d,15/48.f,ar,ag,ab,f);
-  float ic=.953f*(1-f)+ink*f;
+  superficie(r,26,0,0);
+  plrui_linha_foco(r,26,f);
   const char *ico[]={"aj_puzzle","aj_shield-check","aj_sliders-horizontal","aj_layers","aj_library","aj_activity"};
   const char *titles[]={"Add-ons e presets","Serviços","Filtros e limites","Ordenação e formato","Catálogos","Saúde"};
-  gfx_icone((GfxRect){d.x+11,d.y+11,26,26},ico[c],ic,ic,ic,1);
+  gfx_icone((GfxRect){r.x+24,r.y+29,26,26},ico[c],aioTexto[0],aioTexto[1],aioTexto[2],.72f+.28f*f);
   int total=dashboardTotal(c), travado=(!snap.configurada && c<4) || (!snap.valida && c<5);
   if(compacto) {
-    texto(TXT_ILHA_NOME,i18n(titles[c]),r.x+82,r.y+28,r.w-104,243);
+    texto(TXT_ILHA_NOME,i18n(titles[c]),r.x+66,r.y+28,r.w-88,243);
     gfx_icone((GfxRect){r.x+24,r.y+76,22,22},"aj_lock",.953f,.949f,.937f,.68f);
     txtCor(TXT_ILHA_SUB_L,i18n(snap.valida?"Acesso à configuração necessário":"Instância indisponível"),r.x+58,r.y+74,r.w-80,aioTexto,.68f,0);
   } else {
@@ -1262,7 +1264,8 @@ static void dashboardCartao(int c,GfxRect r,int compacto) {
     float cw=largura(TXT_AJ_CHIP,count)+26;
     gfx_cor((GfxRect){r.x+r.w-20-cw,r.y+28,cw,30},.5f,1,1,1,.07f);
     txtCor(TXT_AJ_CHIP,count,r.x+r.w-20-cw+13,r.y+33,cw,aioTexto,.72f,0);
-    texto(TXT_ILHA_NOME,i18n(titles[c]),r.x+82,r.y+28,r.w-124-cw,243);
+    texto(TXT_ILHA_NOME,i18n(titles[c]),r.x+66,r.y+28,r.w-108-cw,243);
+    gfx_cor((GfxRect){r.x+24,r.y+76,r.w-48,1},0,1,1,1,.08f);
     int vis=(int)((r.h-88)/72); dashboardVis[c]=vis<1?1:vis;
     if(travado) {
       gfx_icone((GfxRect){r.x+24,r.y+92,24,24},"aj_server-crash",.953f,.949f,.937f,.68f);
@@ -1280,7 +1283,7 @@ static void dashboardCartao(int c,GfxRect r,int compacto) {
       if(total>vis) {
         float th=r.h-104, h=fmaxf(24,th*vis/total), sy=r.y+86+(th-h)*scroll/(total-vis);
         gfx_cor((GfxRect){r.x+r.w-11,r.y+86,4,th},.5f,1,1,1,.07f*f);
-        gfx_cor((GfxRect){r.x+r.w-11,sy,4,h},.5f,ar,ag,ab,f);
+        gfx_cor((GfxRect){r.x+r.w-11,sy,4,h},.5f,aioTexto[0],aioTexto[1],aioTexto[2],.72f*f);
       }
     }
   }
@@ -1295,15 +1298,21 @@ static void dashboard(void) {
     bx-=botao_largura(botaoNome(ids[i]),botaoIcone(ids[i]),0)*scale;
     botaoIc(ids[i],botaoNome(ids[i]),botaoIcone(ids[i]),bx,160,0); bx-=16;
   }
-  texto(TXT_ILHA_TITULO,snap.nome[0]?snap.nome:"AIOStreams",L,146,bx-L-24,243);
+  // Keep the official product mark visible even while the navigation rail is collapsed.
+  GLuint logo=tex_obter(arteLogo);
+  if(logo) gfx_rect((GfxRect){L,148,64,64},logo,GFX_MARCA,0,0,0,0,1,1,1,1);
+  float hx=logo?L+82:L;
+  texto(TXT_ILHA_TITULO,snap.nome[0]?snap.nome:"AIOStreams",hx,146,bx-hx-24,243);
   char updated[32]="", status[320];
   if(ultimaAtualizacao) { struct tm t; localtime_r(&ultimaAtualizacao,&t); strftime(updated,sizeof updated,"%H:%M:%S",&t); }
   const float *cor=!snap.valida?aioErr:snap.configurada?aioOk:aioWarn;
-  float pw=selo(L,202,i18n(!snap.valida?"Indisponível":snap.configurada?"Conectado":"Só streams"),cor,1,0);
+  const char *estado=snap.valida && snap.configurada && snap.configEmbedded?configStatus():
+    i18n(!snap.valida?"Indisponível":snap.configurada?"Conectado":"Só streams");
+  float pw=selo(hx,202,estado,cor,1,0);
   if(snap.valida) snprintf(status,sizeof status,"%s%s%s · %s %s%s%s",snap.versaoInstancia[0]?snap.versaoInstancia:snap.versao[0]?snap.versao:i18n("Não informado"),
     snap.canal[0]?" · ":"",snap.canal,i18n("Atualizado"),updated[0]?updated:i18n("Ainda não"),snap.detalhesOmitidos?" · ":"",snap.detalhesOmitidos?i18n("Configuração no celular"):"");
   else snprintf(status,sizeof status,"HTTP %d · %s %s",snap.http[0],i18n("Atualizado"),updated[0]?updated:i18n("Ainda não"));
-  txtCor(TXT_ILHA_SUB_L,status,L+pw+14,205,bx-L-pw-30,aioTexto,.68f,0);
+  txtCor(TXT_ILHA_SUB_L,status,hx+pw+14,205,1848-hx-pw-14,aioTexto,.68f,0);
   if(completo) {
     const char *labels[]={"Add-ons","Serviços","Regras e preferências","Catálogos"};
     const char *tileIc[]={"aj_puzzle","aj_shield-check","aj_sliders-horizontal","aj_library"};
@@ -1312,10 +1321,12 @@ static void dashboard(void) {
     for(int i=0;i<snap.servicos;i++) on[1]+=snap.servico[i].ativo;
     for(int i=0;i<snap.catalogos;i++) filmes+=!strcmp(snap.catalogo[i].tipo,"movie");
     int numbers[]={snap.addons,snap.servicos,snap.detalhes,snap.catalogos};
-    float tw=(W-60)/4;
+    // One quiet summary island; the six actionable sections carry the hierarchy.
+    superficie((GfxRect){L,248,W,132},24,.02f,0);
+    float tw=W/4;
     for(int i=0;i<4;i++) {
-      float x=L+i*(tw+20), y=248, alpha=itemInicio(i,0,&y);
-      superficie((GfxRect){x,y,tw,132},24,.035f,0);
+      float x=L+i*tw, y=248, alpha=itemInicio(i,0,&y);
+      if(i) gfx_cor((GfxRect){x,y+24,1,84},0,1,1,1,.08f);
       gfx_icone((GfxRect){x+tw-54,y+22,30,30},tileIc[i],.953f,.949f,.937f,.42f);
       char num[16], sub[96]; snprintf(num,sizeof num,"%d",numbers[i]);
       if(i<2) snprintf(sub,sizeof sub,i18n("%d de %d ativos"),on[i],numbers[i]);
@@ -1351,7 +1362,12 @@ static void dashboard(void) {
     txtCor(TXT_ILHA_TEXTO,sub,L+128,322,tx-L-150,aioTexto,.68f,0);
     float tw=(W-60)/4, gw=(W-20)/2;
     for(int c=0;c<4;c++) dashboardCartao(c,(GfxRect){L+c*(tw+20),400,tw,110},1);
-    for(int c=4;c<6;c++) dashboardCartao(c,(GfxRect){L+(c-4)*(gw+20),530,gw,502},0);
+    if(snap.valida) {
+      for(int c=4;c<6;c++) dashboardCartao(c,(GfxRect){L+(c-4)*(gw+20),530,gw,502},0);
+    } else {
+      dashboardCartao(4,(GfxRect){L,530,W,98},1);
+      dashboardCartao(5,(GfxRect){L,648,W,384},0);
+    }
   }
 }
 // The rail is its own island: lighter than the cards and tinted toward the
