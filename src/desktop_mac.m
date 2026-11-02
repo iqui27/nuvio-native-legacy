@@ -16,6 +16,27 @@ void gfx_arte_caminho(const char *rel, char *out, unsigned n);
 #include "idioma.h"
 #include "esportes.h"
 #include "tex_cache.h"
+#include "busca.h"
+static NSSearchField *searchField;
+static BOOL searchDrawn;
+static Uint32 searchWindowID;
+@interface NVSearchTarget : NSObject <NSSearchFieldDelegate>
+@end
+@implementation NVSearchTarget
+- (void)controlTextDidChange:(NSNotification *)notification {
+  busca_desktop_editar(searchField.stringValue.UTF8String);
+}
+- (BOOL)control:(NSControl *)control textView:(NSTextView *)view doCommandBySelector:(SEL)selector {
+  SDL_Keycode key=selector==@selector(moveDown:)?SDLK_DOWN:
+    selector==@selector(moveUp:)?SDLK_UP:selector==@selector(insertNewline:)?SDLK_RETURN:
+    selector==@selector(cancelOperation:)?SDLK_ESCAPE:0;
+  if(!key) return NO;
+  [control.window makeFirstResponder:control.window.contentView];
+  SDL_Event event={0};event.type=SDL_KEYDOWN;event.key.windowID=searchWindowID;event.key.keysym.sym=key;
+  SDL_PushEvent(&event);event.type=SDL_KEYUP;SDL_PushEvent(&event);
+  return YES;
+}
+@end
 static NSWindow *nativeWindow;
 static NSView *sidebar, *sidebarControls;
 static int sidebarLanguage = -1;
@@ -349,6 +370,7 @@ void desktop_native_init(SDL_Window *window) {
     if((event.phase&NSEventPhaseCancelled) || (event.momentumPhase&(NSEventPhaseEnded|NSEventPhaseCancelled))) nativeScrollLatched=NO;
     return nil;
   }];
+  searchWindowID=SDL_GetWindowID(window);
   nativeWindow.acceptsMouseMovedEvents=YES;
   // Titlebar sidebar button, beside the traffic lights like Finder and Notes.
   NSButton *zoom = [nativeWindow standardWindowButton:NSWindowZoomButton];
@@ -373,6 +395,9 @@ void desktop_native_init(SDL_Window *window) {
       if(control && NSPointInRect([control convertPoint:event.locationInWindow fromView:nil],control.bounds)) return event;
     }
     if(!sidebarToggle.hidden && NSPointInRect([sidebarToggle convertPoint:event.locationInWindow fromView:nil],sidebarToggle.bounds)) return event;
+    if(!searchField.hidden && searchField && NSPointInRect([searchField convertPoint:event.locationInWindow fromView:nil],searchField.bounds)) return event;
+    if(event.type==NSEventTypeLeftMouseDown && searchField.currentEditor)
+      [nativeWindow makeFirstResponder:content];
     menu_desktop_hover(p.x);
     NSPoint containerPoint=[sidebar.superview convertPoint:event.locationInWindow fromView:nil];
     if([sidebar hitTest:containerPoint]) return event;
@@ -401,7 +426,37 @@ void desktop_native_sidebar(float fraction, float reveal) {
   if (getenv("NV_CAPTURA_GL")) fraction=0;
   sidebarFraction=fraction; sidebarReveal=reveal;
 }
+int desktop_native_search(const char *query,float x,float y,float w,float h) {
+  if(!nativeWindow) return 0;
+  searchDrawn=YES;
+  if(getenv("NV_CAPTURA_GL")) return 0;
+  BOOL appearing=!searchField || searchField.hidden;
+  if(!searchField) {
+    searchField=[[NSSearchField alloc] init];
+    searchField.delegate=[NVSearchTarget new];
+    searchField.sendsSearchStringImmediately=YES;
+    searchField.font=[NSFont systemFontOfSize:14];
+    searchField.placeholderString=[NSString stringWithUTF8String:i18n("Buscar")];
+    searchField.accessibilityLabel=searchField.placeholderString;
+    [nativeWindow.contentView addSubview:searchField];
+    printf("[desktop-search] control=NSSearchField\n"); fflush(stdout);
+  }
+  NSView *content=nativeWindow.contentView;
+  NSRect bounds=content.bounds;
+  searchField.frame=NSMakeRect(x*bounds.size.width,content.isFlipped?y*bounds.size.height:(1-y-h)*bounds.size.height,w*bounds.size.width,h*bounds.size.height);
+  NSString *value=[NSString stringWithUTF8String:query];
+  if(![searchField.stringValue isEqualToString:value]) searchField.stringValue=value;
+  searchField.hidden=NO;
+  if(appearing && nativeWindow.isKeyWindow && !getenv("NV_CAPTURA"))
+    [nativeWindow makeFirstResponder:searchField];
+  return 1;
+}
 void desktop_native_finish(void) {
+  if(!searchDrawn && !searchField.hidden) {
+    if(searchField.currentEditor) [nativeWindow makeFirstResponder:nativeWindow.contentView];
+    searchField.hidden=YES;
+  }
+  searchDrawn=NO;
   float fraction=sidebarFraction;
   if (!sidebar) return;
   if(fraction<=0 || sidebarReveal<.001f) {sidebar.hidden=YES;return;}

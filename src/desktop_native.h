@@ -30,6 +30,8 @@ typedef struct {
 int desktop_native_menu(const DesktopMenuItem *items, int count, float x, float y);
 void desktop_native_init(SDL_Window *window);
 void desktop_native_sidebar(float fraction, float reveal);
+// Query field geometry is normalized to the content view; returns 0 for GL proof.
+int desktop_native_search(const char *query, float x, float y, float w, float h);
 void desktop_native_finish(void);
 void desktop_native_appearance(const char *name);
 int desktop_native_fullscreen(void);
@@ -47,6 +49,7 @@ int desktop_native_alert_result(char *text, int size);
 static inline void desktop_native_init(SDL_Window *window) { (void)window; }
 #endif
 static inline void desktop_native_sidebar(float fraction, float reveal) { (void)fraction; (void)reveal; }
+static inline int desktop_native_search(const char *q,float x,float y,float w,float h) { (void)q;(void)x;(void)y;(void)w;(void)h;return 0; }
 static inline void desktop_native_finish(void) {}
 static inline void desktop_native_appearance(const char *name) { (void)name; }
 static inline int desktop_native_fullscreen(void) { return 0; }
