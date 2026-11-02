@@ -20,6 +20,10 @@ if rg -q 'synthetic-password|sample-uuid|Authorization:|instance.invalid' "$work
 fi
 cat "$work/pair.log"
 node tests/aiopair.mjs
+cc tests/aiopair_qr.c src/qr.c -Isrc -o "$work/qr" -O1 -g \
+  -ffunction-sections -fdata-sections -Wl,-dead_strip -Wno-deprecated-declarations \
+  -I/opt/homebrew/include -I/opt/homebrew/include/SDL2
+"$work/qr"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
   -addext subjectAltName=DNS:localhost -keyout "$work/key.pem" -out "$work/cert.pem" > "$work/cert.log" 2>&1
 cc tests/aiopair_live.c src/rede.c src/redeurl.c src/aiostreams.c src/js.c src/jsw.c -Isrc -o "$work/live" -O1 -g \

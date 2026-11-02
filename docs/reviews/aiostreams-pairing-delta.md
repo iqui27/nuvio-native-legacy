@@ -1,0 +1,19 @@
+# AIOStreams QR/pairing delta — 2026-11-02
+
+Base: `fab11c7bf`, branch `agente/21-aiostreams-pairing`. Prior `aiodash2`/`aiokimi` branches, prompts and review logs were checked. Secure pairing (`7f101143e`) and the later dashboard merge (`e2de8a9d2`) are already ancestors of this base. This delta reuses their dashboard, rail, focus and five-minute HTTPS pairing service.
+
+QR flow: dashboard connection action → `connectStart` → worker session creation → fragment capability → existing local QR generator/texture. Creation now requires a valid waiting acknowledgement. Regeneration resets UI state immediately. Expiry/service failure removes the stale code. The renderer previously kept drawing an old texture after failed generation and truncated its cache key at 95 characters; both are fixed. Supported URLs remain bounded by the existing 134-byte generator. The texture includes the standard four-module white margin.
+
+Pairing flow: phone page → pinned exact HTTPS instance origin → read-only Basic-auth GET `/api/v1/user` → successful official user envelope → POST to the existing HTTPS inbox → TV poll → independent same-origin validation → acknowledged result → one-time dashboard authorization consumption. No redirect, alternate credential origin, credential query, persistence or account write is introduced. Password limits now match the TV's UTF-8 byte buffers.
+
+The inbox previously deleted delivery before the TV received/confirmed it. It now retains delivery in memory until confirmation; repeated TV reads recover a lost response. Confirmation is idempotent. TV retries transient polling and confirmation failure, and does not accept authorization without acknowledgement. Cancellation during creation/validation cleans up without accepting credentials. Phone input stays disabled during delivery, passwords clear after verification attempts, and origin changes stop submission.
+
+Errors distinguish instance HTTP 401/403, 429/5xx, invalid response, browser network/TLS/CORS failure and pairing-service failure. Native diagnostics expose only operation/status/transport. Browser error bodies and transport details are not echoed. A terminal native instance network/server failure requires a fresh QR; the phone does not offer submission to a stopped TV poller.
+
+Backend requirement: deploy the updated pairing worker; retain the existing `AIOPAIR` binding and apply `v1-aiopair` if absent. No new migration, secret or database is needed. The inspected official v2.37 CORS middleware permits only `Content-Type`, so instances retaining that default must also allow `Authorization` in preflight responses for the pairing page. Credentials are never proxied to bypass that restriction. Current remote deployment/CORS state was not tested. Manual TV entry remains available.
+
+base-dono: existing AIO dashboard/connection composition, owner's original board language and TV Glass UI reference. No new visual direction or Sketch changes. Existing connection text now shows the instance origin instead of the private QR capability, allowing origin verification without displaying a secret as text. Geometry, controls, materials and focus are retained. No screenshots were needed for these state/transport fixes; only the owner's sanitized official JPG was opened.
+
+Validation: new expiry regression failed on the original code with rc 134 because the stale QR remained. Final `bash tests/aiostreams.sh` passed with rc 0, including UI regeneration/manual fallback, actual shared QR texture code, shipped phone script and worker, valid/wrong access, origin mismatch, expiry, cancellation, network/server failures, lost delivery/confirmation, successful receipt and sanitized logs. Local HTTPS end-to-end uses a fake instance and the real native transport; no real account or instance was contacted. One `bash tools/build-local.sh` passed with rc 0.
+
+No push, deployment, release, public issue action, account writes or TV keys were performed.

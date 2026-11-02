@@ -3,9 +3,10 @@
 #include <assert.h>
 static int keyboardResult, keyboardMasked, p2p, activeProfile=1;
 static int sidebarDrawn, sidebarHighlight, sidebarOpaque, glassEnabled;
-int aiopair_start(const char *s) { (void)s; return 0; }
+static int pairStarts, pairStatus=AIOPAIR_UNAVAILABLE;
+int aiopair_start(const char *s) { assert(!strcmp(s,host)); pairStarts++; return 1; }
 void aiopair_close(void) { }
-int aiopair_state(char *s,size_t n) { if(n)s[0]=0;return AIOPAIR_UNAVAILABLE; }
+int aiopair_state(char *s,size_t n) { if(n)s[0]=0;return pairStatus; }
 int aiopair_take(char *a,size_t n,char *o,size_t no) { return 0; }
 void ajustes_acento(float *r,float *g,float *b) { *r=*g=*b=.9f; }
 float ajustes_acento_tinta(float *r,float *g,float *b) { ajustes_acento(r,g,b); return .071f; }
@@ -235,7 +236,13 @@ int main(void) {
   down.key.keysym.sym=SDLK_DOWN; aioui_evento(&down); assert(foco==4);
   strcpy(host,"https://example.invalid");
   strcpy(base,"https://example.invalid/manifest.json");
-  foco=9; acao(); assert(connectOpen && !entrada);
+  pairStatus=AIOPAIR_STARTING;
+  foco=9; acao(); assert(connectOpen && !entrada && pairStarts==1 && connectState==AIOPAIR_STARTING);
+  strcpy(connectUrl,"https://stale.invalid/"); connectState=AIOPAIR_EXPIRED;
+  down.key.keysym.sym=SDLK_RETURN; aioui_evento(&down);
+  assert(pairStarts==2 && connectState==AIOPAIR_STARTING && !connectUrl[0]);
+  down.key.keysym.sym=SDLK_ESCAPE; aioui_evento(&down); assert(!connectOpen);
+  foco=9; acao(); assert(connectOpen && pairStarts==3);
   down.key.keysym.sym=SDLK_RIGHT; aioui_evento(&down);
   down.key.keysym.sym=SDLK_RETURN; aioui_evento(&down); assert(!connectOpen && entrada==4 && keyboardMasked);
   receber("sample-uuid"); assert(entrada==5 && keyboardMasked);

@@ -164,21 +164,22 @@ int celb_evento(const SDL_Event *e) {
 // retangulo por modulo por quadro custaria mais que o cartao inteiro. NEAREST:
 // modulo borrado e o jeito mais rapido de a camera nao ler.
 static GLuint texQr;
-static char   texQrDe[96];
-static void qrTextura(const char *u) {
+static char   texQrDe[QR_MAX_BYTES+1];
+static int qrTextura(const char *u) {
   Qr q;
   int lado, x, y;
   unsigned char *px;
-  if (!u[0] || (texQr && !strcmp(texQrDe, u))) return;
-  if (!qr_gerar(&q, u)) return;
-  lado = q.lado + 4;
+  if (!u || !u[0]) return 0;
+  if (texQr && !strcmp(texQrDe, u)) return 1;
+  if (!qr_gerar(&q, u)) return 0;
+  lado = q.lado + 8; // Four white modules on every edge (ISO quiet zone).
   px = (unsigned char *)malloc((size_t)lado * lado * 3);
-  if (!px) return;
+  if (!px) return 0;
   memset(px, 255, (size_t)lado * lado * 3);
   for (y = 0; y < q.lado; y++)
     for (x = 0; x < q.lado; x++)
       if (qr_modulo(&q, x, y)) {
-        size_t i = ((size_t)(y + 2) * lado + (x + 2)) * 3;
+        size_t i = ((size_t)(y + 4) * lado + (x + 4)) * 3;
         px[i] = px[i + 1] = px[i + 2] = 0;
       }
   if (!texQr) glGenTextures(1, &texQr);
@@ -191,13 +192,13 @@ static void qrTextura(const char *u) {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   free(px);
   snprintf(texQrDe, sizeof texQrDe, "%s", u);
+  return 1;
 }
 
 // A moldura branca e o QR, com o canto de cima em (x, y): o MESMO desenho no
 // cartao e hospedado na tela do dono.
 static void qrDesenhar(const char *u, float x, float y, float a) {
-  qrTextura(u);
-  if (!texQr) return;
+  if (!qrTextura(u)) return;
   gfx_cor((GfxRect){ x, y, CB_QR + 2 * CB_MOLDURA, CB_QR + 2 * CB_MOLDURA }, 0.06f, 1.0f, 1.0f, 1.0f, a);
   gfx_tex_aspect_atual = 0.0f;
   gfx_rect((GfxRect){ x + CB_MOLDURA, y + CB_MOLDURA, CB_QR, CB_QR }, texQr, GFX_SNAP, 0, 0.0f, 0.0f, 0.0f, 0, 0, 0, a);
@@ -208,8 +209,7 @@ float celb_qr_lado(void) { return CB_QR + 2 * CB_MOLDURA; }
 void  celb_qr_desenhar(const char *url, float x, float y, float a) { qrDesenhar(url, x, y, a); }
 void celb_qr_desenhar_lado(const char *url, float x, float y, float lado, float a) {
   float m = lado * CB_MOLDURA / celb_qr_lado();
-  qrTextura(url);
-  if (!texQr) return;
+  if (!qrTextura(url)) return;
   gfx_cor((GfxRect){ x, y, lado, lado }, 0.06f, 1.0f, 1.0f, 1.0f, a);
   gfx_tex_aspect_atual = 0.0f;
   gfx_rect((GfxRect){ x + m, y + m, lado - 2 * m, lado - 2 * m }, texQr, GFX_SNAP, 0, 0.0f, 0.0f, 0.0f, 0, 0, 0, a);
@@ -222,8 +222,7 @@ void celb_desenhar_qr_em(int d, GfxRect r, float alpha) {
               190, 190, 200, r.x, r.y, r.w, 26, alpha, 4);
     return;
   }
-  qrTextura(u);
-  if (!texQr) return;
+  if (!qrTextura(u)) return;
   gfx_tex_aspect_atual = 0;
   gfx_rect(r, texQr, GFX_SNAP, 0, 0, 0, 0, 0, 0, 0, alpha);
 }
