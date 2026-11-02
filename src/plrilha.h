@@ -43,7 +43,7 @@ typedef struct {
   int centro;               // 1 = cartao SOZINHO no meio da tela (sem relogio nem medidor); so o corpo
   GfxRect destino;           // optional final rectangle, in the island layer
   int semContorno;           // borderless island material, including glass fallback
-  int baixa;                // 1 = prioridade baixa: cede a qualquer outro pedido do quadro (a guia parental)
+  int baixa;                // 1 = opening guide: yields to panels and amber warnings, keeps ordinary notices behind it
   int respira;              // 1 = o ponto que respira antes da frase (atividade: o canal sintonizando)
   int voltaRelogio;         // 1 = ao acabar, o corpo vira a pilula da HORA, segura um instante e so entao sai (guia parental). Relogio desligado: encolhe e some no lugar
   // PONTEIRO (#99): a pilula SEM corpo e clicavel. Vira o `focar` de um alvo do
@@ -82,6 +82,8 @@ int  plrilha_rect(GfxRect *r);
 // O pedido deste quadro tem corpo e ele ja esta assentado (para quem
 // precisa saber se o corpo esta de pe, como o foco do erro).
 float plrilha_corpo_alfa(void);
+// The opening guide won the last frame and was not hidden by another layer.
+int plrilha_baixa_visivel(void);
 int plrilha_centro_visivel(void);
 
 #ifdef NV_SHOT_HOOKS

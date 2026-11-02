@@ -103,6 +103,8 @@ int plrilha_centro_visivel(void) { return cenA >= .01f || temCen; }
 #define HORA_SEGURA_MS 800u
 static Uint32 horaAte;
 static int prevVolta;
+static int baixaVisivel;
+int plrilha_baixa_visivel(void) { return baixaVisivel; }
 
 void plrilha_pedir(const PlrIlhaPedido *p) {
   if (p->centro && p->w > 0.0f && p->h > 0.0f) {
@@ -110,10 +112,10 @@ void plrilha_pedir(const PlrIlhaPedido *p) {
     temCen = 1;
     return;
   }
-  // BAIXA PRIORIDADE (guia parental): nunca derruba um pedido que ja esta no
-  // quadro, e qualquer outro pedido a derruba, venha antes ou depois dela.
-  if (p->baixa && temPed) return;
-  if (temPed && ped.baixa) temPed = 0;
+  // The opening guide yields to panels and amber warnings, in either order.
+  // Ordinary notices wait behind its body, like notices behind other panels.
+  if (p->baixa && temPed && (ped.w > 0.0f || ped.corIcone == 1)) return;
+  if (temPed && ped.baixa && (p->w > 0.0f || p->corIcone == 1)) temPed = 0;
   // Quem tem corpo vence quem e so aviso: a lista aberta nao vira toast.
   if (temPed && ped.w > 0.0f && p->w <= 0.0f) return;
   copiar(&ped, p, pedTexto, pedDir, pedIcone);
@@ -378,6 +380,7 @@ static void plrilha_desenharCorpo_(Uint32 agora) {
     if (!corpo && corpoA < 0.02f) { corpoA = 0.0f; temUlt = 0; } }
   textoA = anim_mola(textoA, 1.0f, dt, 12.0f);
 
+  baixaVisivel = !escondida && temPed && ped.baixa;
   temPed = 0; relA = 0.0f; escondida = 0;
   if (A < 0.01f) { ultOk = 0; W = H = 0.0f; vW = vH = 0.0f; return; }
 
