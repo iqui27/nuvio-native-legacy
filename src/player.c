@@ -369,6 +369,11 @@ static int skipFoco = 0;
 // a fileira que o CIMA abre a partir da barra (depois do botao de pular, se
 // houver). `capSel` e o capitulo em foco; `capAnim` a mola da fileira.
 static int capFoco, capSel;
+// Rolagem da fileira de capitulos (px a partir do primeiro chip). Persistente:
+// so anda o necessario para o chip em foco caber — com o ponteiro do Magic
+// Remote/dedo, passar por um chip visivel nao pode fazer a fileira pular.
+static float capRol;
+static void capituloPular(const MkvCap *c, int i);
 static float capAnim;
 static int trechoPulavel(double *fim);
 
@@ -3786,6 +3791,7 @@ static int abrirCapitulos(void) {
   if (n < 2) return 0;
   capSel = capituloEm(c, n, posSeg);
   if (capSel < 0) capSel = 0;
+  capRol = 0.0f;   // abre como antes: do comeco, e o chip em foco rola para dentro
   capFoco = 1; skipFoco = 0; barraFoco = 1;
   return 1;
 }
@@ -4532,15 +4538,7 @@ void player_evento(const SDL_Event *e) {
     if (k == SDLK_LEFT) { if (capSel > 0) capSel--; }
     else if (k == SDLK_RIGHT) { if (capSel < n - 1) capSel++; }
     else if (k == SDLK_DOWN) capFoco = 0;
-    else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
-      double de = posSeg, alvo = c[capSel].inicio;
-      if (scrubbing) terminarSalto();
-      posSeg = (float)alvo;
-      recuarAutomatico(de, alvo);
-      if (comVideo) buscarUsuario(alvo);
-      printf("[seg] capitulo %d \"%s\" em %.1fs\n", capSel, c[capSel].nome, alvo); fflush(stdout);
-      capFoco = 0;
-    }
+    else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) capituloPular(c, capSel);
     acordar();
     return;
   }
@@ -7214,17 +7212,54 @@ static float fileiraFormato(Uint32 agora, float x, float y, float ac, int medir,
 // abertura/resumo/encerramento/pos-creditos sao as de plrui_barra, sempre), o
 // nome do capitulo atual acima da barra, a direita, e — aberta pelo CIMA — a
 // fileira de capitulos no lugar do titulo, ESQUERDA/DIREITA e OK.
+// OK num capitulo (tecla, clique ou dedo): busca o comeco dele e fecha a fileira.
+static void capituloPular(const MkvCap *c, int i) {
+  double de = posSeg, alvo = c[i].inicio;
+  if (scrubbing) terminarSalto();
+  posSeg = (float)alvo;
+  recuarAutomatico(de, alvo);
+  if (comVideo) buscarUsuario(alvo);
+  printf("[seg] capitulo %d \"%s\" em %.1fs\n", i, c[i].nome, alvo); fflush(stdout);
+  capFoco = 0;
+}
+
+// PONTEIRO NA FILEIRA (Magic Remote da LG, dedo no Android Mobile). Os chips
+// sao os mesmos da tecla: passar por cima foca (como ESQUERDA/DIREITA),
+// clicar/tocar e o OK. Chip cortado na borda: o clique so o traz para dentro
+// (como a seta faria), sem buscar — buscar um capitulo que nem se le inteiro
+// seria um toque as cegas. `b` = 1 quando o chip estava inteiro no quadro.
+static void ponteiroCapFocar(int i, int b) {
+  (void)b;
+  if (!capFoco) return;
+  capSel = i; acordar();
+}
+static void ponteiroCapitulo(int i, int inteiro) {
+  MkvCap c[MKV_MAX_CAPS];
+  int n = capitulosDoArquivo(c, MKV_MAX_CAPS);
+  acordar();
+  if (!capFoco || i < 0 || i >= n) return;
+  capSel = i;
+  if (inteiro) capituloPular(c, i);
+}
+// O nome do capitulo acima da barra: clicar/tocar abre a fileira (o CIMA do
+// controle). No Android Mobile e o unico jeito de abri-la — nao ha seta.
+static void ponteiroAbrirCapitulos(int a, int b) {
+  (void)a; (void)b;
+  if (abrirCapitulos()) acordar();
+}
+
 static void desenharCapitulos(Uint32 agora, float bx, float bw, float yBarra, float a, float ac) {
   static Uint32 capT;
   MkvCap c[MKV_MAX_CAPS];
   float dt = capT ? (float)(agora - capT) / 1000.0f : 0.0f, ticks[MKV_MAX_CAPS];
-  int n = duracaoSeg > 1.0f ? capitulosDoArquivo(c, MKV_MAX_CAPS) : 0, i, nt = 0, atual;
+  int n = duracaoSeg > 1.0f ? capitulosDoArquivo(c, MKV_MAX_CAPS) : 0, i, nt = 0, atual, pont;
   char buf[32];
   capT = agora;
   if (dt > 0.1f) dt = 0.1f;
   if (n < 2) capFoco = 0;
   capAnim = anim_mola(capAnim, capFoco ? 1.0f : 0.0f, dt, NV_MOLA_FOCO);
   if (n < 2 || a <= 0.002f) return;
+  pont = ponteiroNoPlayer() && a > 0.3f;
   for (i = 0; i < n; i++)
     if (c[i].inicio > 0.5) ticks[nt++] = (float)(c[i].inicio / duracaoSeg);
   plrui_barra_capitulos(bx, yBarra, bw, barraFoco && !capFoco, ticks, nt, a);
@@ -7232,12 +7267,19 @@ static void desenharCapitulos(Uint32 agora, float bx, float bw, float yBarra, fl
   if (atual >= 0 && capAnim < 0.99f) {
     TxtLinha l = txt_linha_corta(TXT_CAPTION2, capituloNome(c, atual, buf, sizeof buf),
                                  243, 242, 239, 200, bw * 0.4f);
-    txt_desenhar_alpha(l, bx + bw - (float)l.w, yBarra - 10.0f - (float)l.h, ac * (1.0f - capAnim));
+    float lx = bx + bw - (float)l.w, ly = yBarra - 10.0f - (float)l.h;
+    txt_desenhar_alpha(l, lx, ly, ac * (1.0f - capAnim));
+    // Fechada a fileira, o nome e o alvo que a abre (folga para o dedo).
+    if (pont && !capFoco) {
+      float f = ponteiro_tem_toque() ? 16.0f : 6.0f;
+      ponteiro_alvo(lx - f, ly - f, (float)l.w + f * 2.0f, (float)l.h + f * 2.0f,
+                    NULL, ponteiroAbrirCapitulos, 0, 0);
+    }
   }
   if (capAnim > 0.01f) {
     // Chips: nome + inicio (m:ss / h:mm:ss). A fileira rola para o foco caber.
     const float H = 56.0f, VAO = 12.0f, PAD = 22.0f, y = yBarra - 36.0f - H + (1.0f - capAnim) * 12.0f;
-    float w[MKV_MAX_CAPS], x0 = 0.0f, xi;
+    float w[MKV_MAX_CAPS], x0 = 0.0f, total = 0.0f, xi;
     TxtLinha nome[MKV_MAX_CAPS], hora[MKV_MAX_CAPS];
     for (i = 0; i < n; i++) {
       int s = (int)c[i].inicio;
@@ -7251,9 +7293,14 @@ static void desenharCapitulos(Uint32 agora, float bx, float bw, float yBarra, fl
       w[i] = PAD + (float)nome[i].w + 10.0f + (float)hora[i].w + PAD;
     }
     for (i = 0; i < capSel && i < n; i++) x0 += w[i] + VAO;
-    // Rolagem: o chip em foco fica dentro da largura da barra.
-    x0 = x0 + w[capSel] > bw ? x0 + w[capSel] - bw : 0.0f;
-    xi = bx - x0;
+    for (i = 0; i < n; i++) total += w[i] + (i ? VAO : 0.0f);
+    // Rolagem: o chip em foco fica dentro da largura da barra, andando so o
+    // necessario (capRol persiste entre quadros).
+    if (x0 + w[capSel] - capRol > bw) capRol = x0 + w[capSel] - bw;
+    if (x0 < capRol) capRol = x0;
+    if (capRol > total - bw) capRol = total - bw;
+    if (capRol < 0.0f) capRol = 0.0f;
+    xi = bx - capRol;
     for (i = 0; i < n; i++) {
       GfxRect r = { xi, y, w[i], H };
       float aa = ac * capAnim;
@@ -7264,6 +7311,14 @@ static void desenharCapitulos(Uint32 agora, float bx, float bw, float yBarra, fl
         txt_desenhar_alpha(nome[i], xi + PAD, y + (H - (float)nome[i].h) * 0.5f, aa);
         txt_desenhar_alpha(hora[i], xi + PAD + (float)nome[i].w + 10.0f,
                            y + (H - (float)hora[i].h) * 0.5f + 1.0f, aa);
+        if (pont && capFoco && capAnim > 0.9f) {
+          // Alvo recortado a largura da barra; so o chip inteiro foca por cima
+          // (o cortado rolaria a fileira por baixo do cursor).
+          float x1 = xi < bx ? bx : xi, x2 = xi + w[i] > bx + bw ? bx + bw : xi + w[i];
+          int inteiro = xi >= bx - 1.0f && xi + w[i] <= bx + bw + 1.0f;
+          if (x2 > x1) ponteiro_alvo(x1, y, x2 - x1, H, inteiro ? ponteiroCapFocar : NULL,
+                                     ponteiroCapitulo, i, inteiro);
+        }
       }
       xi += w[i] + VAO;
     }
