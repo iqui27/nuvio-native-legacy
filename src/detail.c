@@ -5730,6 +5730,7 @@ static void heroWeb(float a, float desloc) {
     { float f = (float)(SDL_GetTicks() - logoDesde) / 260.0f;
       if (f < 1.0f) aLogo *= f < 0.0f ? 0.0f : f; }
   } else logoVisto[0] = 0;
+  GfxRect morphLogo = {0};   // Last visible TV logo for the existing A3/B3 opening.
   float srvTitleH = heroServidor() ? txt_bloco_corta(TXT_TITULO1, tituloDe(idx),
     243, 242, 239, -1, 0, 700, 76, 0, 2) : 0;
   if (heroServidor()) {
@@ -5759,6 +5760,7 @@ static void heroWeb(float a, float desloc) {
     float h = hLogoVis, w = h * asp;
     if (w > larguraLogoHero()) { w = larguraLogoHero(); h = w / asp; }
     GfxRect r = { NV_DETW2_X, baseLogo - h, w, h };
+    morphLogo = r;
     gfx_tex_aspect_atual = 0.0f;   // o logo ja vem na proporcao certa
     // LOGO PRETO VIRA BRANCO. O TMDB serve a mesma marca em versao clara e
     // escura e NAO diz qual e qual — nao ha campo para isso, e o ranking do
@@ -5871,6 +5873,7 @@ static void heroWeb(float a, float desloc) {
       r.y += dy;
       desenhaBotao(r, i ? NULL : rot, i ? ACAO_LISTA : ACAO_PRIMARIO,
                    focoBotao(i, heroFocus && botao == i), a * k);
+      if (!i) player_morph_de(morphLogo, r);
       if (a > .3f) ponteiro_alvo(r.x,r.y,r.w,r.h,ponteiroDetalhe,NULL,-1,i);
       if (i && heroFocus && botao == i)
         desenhaDicaBotao(r,i18n(ci && ci->naLista ? "Remover da biblioteca" : "Adicionar à biblioteca"),a);
