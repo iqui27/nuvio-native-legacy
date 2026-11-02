@@ -27,6 +27,12 @@ typedef struct {
   int action, checked, separator;
 } DesktopMenuItem;
 #if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+#define NV_DESKTOP_NATIVE_CONTROLS 1
+// AppKit draws the controls into cached GL textures; SDL rows own hit testing.
+// kind: 0 switch, 1 popup, 2 button, 3 search, 4 label (state = font points).
+// Coordinates use the caller's canvas.
+int desktop_native_control(int slot, int kind, const char *title, int state, int enabled,
+                           float x, float y, float w, float h, float alpha);
 int desktop_native_menu(const DesktopMenuItem *items, int count, float x, float y);
 void desktop_native_init(SDL_Window *window);
 void desktop_native_sidebar(float fraction, float reveal);
@@ -46,6 +52,11 @@ int desktop_native_alert_result(char *text, int size);
 #if !defined(NV_DESKTOP_UI) || !defined(_WIN32)
 static inline void desktop_native_init(SDL_Window *window) { (void)window; }
 #endif
+static inline int desktop_native_control(int slot, int kind, const char *title, int state, int enabled,
+                                         float x, float y, float w, float h, float alpha) {
+  (void)slot; (void)kind; (void)title; (void)state; (void)enabled;
+  (void)x; (void)y; (void)w; (void)h; (void)alpha; return 0;
+}
 static inline void desktop_native_sidebar(float fraction, float reveal) { (void)fraction; (void)reveal; }
 static inline void desktop_native_finish(void) {}
 static inline void desktop_native_appearance(const char *name) { (void)name; }

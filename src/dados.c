@@ -379,6 +379,20 @@ void dados_iniciar(const char *dirArte) {
   const char *candidatos[5];
   int n = 0, i;
 
+#ifdef NV_DESKTOP_UI
+  // Capture must never probe a developer profile if its explicit directory fails.
+  if (getenv("NV_CAPTURA")) {
+    if (!env || env[0] != '/' || strlen(env) >= sizeof dir || !serve(env)) {
+      fputs("[dados] capture requires a writable isolated data directory\n", stderr);
+      exit(EXIT_FAILURE);
+    }
+    snprintf(dir, sizeof dir, "%s", env);
+    printf("[dados] gravando em %s\n", dir);
+    fflush(stdout);
+    return;
+  }
+#endif
+
 #ifdef __EMSCRIPTEN__
   // Primeiro candidato, e nao mais um da fila: no navegador todos os outros
   // caminhos existem e aceitam escrita (MEMFS aceita tudo), entao qualquer um

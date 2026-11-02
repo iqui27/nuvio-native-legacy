@@ -16,6 +16,78 @@ void gfx_arte_caminho(const char *rel, char *out, unsigned n);
 #include "idioma.h"
 #include "esportes.h"
 #include "tex_cache.h"
+#include "gfx.h"
+#include "layout.h"
+// Use real AppKit controls for system styling, including in GL readback proofs.
+// Cache per visible catalog option; changing state/title invalidates only its texture.
+int desktop_native_control(int slot, int kind, const char *title, int state, int enabled,
+                           float x, float y, float w, float h, float alpha) {
+  static struct { NSString *key; GLuint texture; } cache[1024];
+  if (slot < 0 || slot >= 1024 || w <= 0 || h <= 0) return 0;
+  @autoreleasepool {
+    NSString *text = [NSString stringWithUTF8String:title ? title : ""];
+    int ww = 1440, wh = 900;
+    SDL_Window *window = SDL_GL_GetCurrentWindow();
+    if (window) SDL_GetWindowSize(window, &ww, &wh);
+    float points = gfx_escala() / layout_window_units(ww, wh);
+    NSRect bounds = NSMakeRect(0, 0, w * points, h * points);
+    NSString *key = [NSString stringWithFormat:@"%d:%d:%d:%.2f:%.2f:%@", kind, state, enabled, bounds.size.width, bounds.size.height, text];
+    if (![cache[slot].key isEqualToString:key]) {
+      NSControl *control;
+      if (kind == 0) {
+        NSSwitch *toggle = [[NSSwitch alloc] initWithFrame:bounds];
+        toggle.state = state ? NSControlStateValueOn : NSControlStateValueOff;
+        control = toggle;
+      } else if (kind == 1) {
+        NSPopUpButton *popup = [[NSPopUpButton alloc] initWithFrame:bounds pullsDown:NO];
+        [popup addItemWithTitle:text]; popup.bezelStyle = NSBezelStyleAccessoryBar;
+        control = popup;
+      } else if (kind == 4) {
+        NSTextField *label = [[NSTextField labelWithString:text] retain];
+        label.frame = bounds; label.textColor = NSColor.whiteColor;
+        control = label;
+      } else if (kind == 3) {
+        NSSearchField *search = [[NSSearchField alloc] initWithFrame:bounds];
+        search.placeholderString = text;
+        control = search;
+      } else {
+        NSButton *button = [[NSButton alloc] initWithFrame:bounds];
+        button.title = text; button.bezelStyle = NSBezelStyleAccessoryBar;
+        control = button;
+      }
+      control.enabled = enabled;
+      control.font = [NSFont systemFontOfSize:kind == 4 ? state : 13];
+      control.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+      NSBitmapImageRep *bitmap = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+        pixelsWide:(NSInteger)ceil(bounds.size.width * 2) pixelsHigh:(NSInteger)ceil(bounds.size.height * 2) bitsPerSample:8 samplesPerPixel:4
+        hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bitmapFormat:0
+        bytesPerRow:(NSInteger)ceil(bounds.size.width * 2)*4 bitsPerPixel:32];
+      bitmap.size = bounds.size;
+      [control.appearance performAsCurrentDrawingAppearance:^{
+        [control cacheDisplayInRect:bounds toBitmapImageRep:bitmap];
+      }];
+      // Quartz draws premultiplied RGBA; the shared GL compositor uses straight alpha.
+      for (NSInteger i = 0; i < bitmap.pixelsWide * bitmap.pixelsHigh; i++) {
+        unsigned char *p = bitmap.bitmapData + i * 4;
+        if (p[3]) for (int c = 0; c < 3; c++) p[c] = MIN(255, p[c] * 255 / p[3]);
+      }
+      GLint binding; glGetIntegerv(GL_TEXTURE_BINDING_2D, &binding);
+      if (!cache[slot].texture) glGenTextures(1, &cache[slot].texture);
+      glBindTexture(GL_TEXTURE_2D, cache[slot].texture);
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)bitmap.pixelsWide, (GLsizei)bitmap.pixelsHigh,
+                   0, GL_RGBA, GL_UNSIGNED_BYTE, bitmap.bitmapData);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+      glBindTexture(GL_TEXTURE_2D, (GLuint)binding);
+      [cache[slot].key release]; cache[slot].key = [key copy];
+      [bitmap release]; [control release];
+    }
+    gfx_rect((GfxRect){x,y,w,h}, cache[slot].texture, GFX_TEXTO, 0, 0, 0, 0, 1,1,1,alpha);
+    return 1;
+  }
+}
 static NSWindow *nativeWindow;
 static NSView *sidebar, *sidebarControls;
 static int sidebarLanguage = -1;
