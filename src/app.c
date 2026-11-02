@@ -461,6 +461,7 @@ static int    fonteVODRetentou;
 // Retomar pela fonte guardada em curso (tocarFonteGuardada); 0 = caminho normal.
 static int    voltaAtiva;
 static Stream voltaFonte;  // fonte aberta fora da lista; vive alem da conferencia
+static void bingeDaFonteAtual(void);
 // O episodio que o Next abriu buscando (sem preparo): a escolha dele pensa
 // primeiro no bingeGroup da fonte que tocava (escolhaDoNext).
 static char buscaNextAlvo[64];
@@ -515,6 +516,9 @@ static void marcarFonteMorta(int indice) {
 static void definirFonteVOD(const char *url) {
   fonteVODRetentou = 0;
   vodRenovou = 0;
+  // Publish the new source before sourceInfo can select remembered audio.
+  // Waiting until the next frame can still expose the previous episode's group.
+  bingeDaFonteAtual();
   provaZerar(); player_definir_fonte(url);
 }
 #define CANAL_FONTE_PRAZO_MS 25000
@@ -3497,13 +3501,11 @@ static void lembrarAutomatica(void) {
 // copiado aqui, no fio do app, a cada troca de fonte ou de lista. A escolha do
 // audio no Android roda no fio do Kotlin e nao pode ler a lista de fontes.
 static void bingeDaFonteAtual(void) {
-  static int ultAtual = -2;
-  static unsigned ultGer;
   int at = stream_atual();
-  const Stream *s;
-  if (at == ultAtual && stream_lista_geracao() == ultGer) return;
-  ultAtual = at; ultGer = stream_lista_geracao();
-  s = at >= 0 ? stream_item(at) : NULL;
+  const Stream *s = at >= 0 ? stream_item(at) : NULL;
+  // Saved links are deliberately outside the source list (index -1). Their
+  // group still identifies the track chosen manually in this playback.
+  if (!s && voltaFonte.url[0]) s = &voltaFonte;
   audioesc_fonte_binge(s ? s->bingeGroup : "");
 }
 

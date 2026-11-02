@@ -82,7 +82,8 @@ int audioesc_escolher(const AudioCand *c, int n, int *origem);
 // O mesmo, puro, com tudo explicito (teste). `lembrada` pode ser NULL; prefs
 // vazias ou repetidas sao puladas. Sem bingeGroup (escolher_com) nao ha faixa
 // exata; com `binge` igual ao da lembrada, a faixa do mesmo numero (e do mesmo
-// idioma, quando os dois tem etiqueta) vence a parecenca.
+// idioma, quando os dois tem etiqueta) vence a parecenca, desde que codec e
+// canais conhecidos nao contradigam a escolha gravada.
 int audioesc_escolher_com(const AudioCand *c, int n, const AudioLembrada *lembrada,
                           const char *pref1, const char *pref2, const char *original, int *origem);
 int audioesc_escolher_binge(const AudioCand *c, int n, const AudioLembrada *lembrada, const char *binge,
