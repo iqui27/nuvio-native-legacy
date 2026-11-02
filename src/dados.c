@@ -379,6 +379,22 @@ void dados_iniciar(const char *dirArte) {
   const char *candidatos[5];
   int n = 0, i;
 
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+  if (getenv("NV_CAPTURA")) {
+    struct stat st;
+    // A delayed background launch can outlive its disposable directory.
+    // Capture must stop here, before even considering a default profile.
+    if (!env || !*env || strlen(env) >= sizeof dir || lstat(env,&st) ||
+        !S_ISDIR(st.st_mode) || !serve(env)) {
+      fputs("[dados] capture isolation unavailable; refusing default data\n",stderr);
+      exit(78);
+    }
+    snprintf(dir,sizeof dir,"%s",env);
+    printf("[dados] gravando em %s\n",dir);fflush(stdout);
+    return;
+  }
+#endif
+
 #ifdef __EMSCRIPTEN__
   // Primeiro candidato, e nao mais um da fila: no navegador todos os outros
   // caminhos existem e aceitam escrita (MEMFS aceita tudo), entao qualquer um

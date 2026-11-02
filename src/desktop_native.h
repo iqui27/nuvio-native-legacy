@@ -27,6 +27,14 @@ typedef struct {
   int action, checked, separator;
 } DesktopMenuItem;
 #if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+// Sources chrome is AppKit; its capture texture is the same native controls.
+typedef struct {
+  float x, y, w, h;
+  int action, selected, enabled, kind; // 0 push, 1 filter, 2 close, 3 primary
+  char title[160];
+} DesktopSourceControl;
+unsigned desktop_native_sources(const DesktopSourceControl *controls, int count, void (*activate)(int),
+                                float x, float y, float w, float h, float scale, float alpha);
 int desktop_native_menu(const DesktopMenuItem *items, int count, float x, float y);
 void desktop_native_init(SDL_Window *window);
 void desktop_native_sidebar(float fraction, float reveal);
