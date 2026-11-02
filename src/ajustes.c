@@ -754,6 +754,7 @@ typedef enum {
   AJ_WEBOS_HLS_MODE,
   AJ_WEBOS_HLS_TS,     // HLS test: this TV starts HLS in MPEG-TS, learned by the player (device-local, no row)
   AJ_UPDATE_NOTIFICATIONS, // device-local; automatic update notices, off by default
+  AJ_REMEMBER_PROFILE, // device-wide startup preference; off by default
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1926,6 +1927,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("HLS (experimental)", V_LIGA, 2),
   ESC("HLS: MPEG-TS (Experimental)", V_LIGA, 2),
   ESC("Update notifications", V_LIGA, 2),
+  ESC("Remember last profile", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2284,6 +2286,7 @@ static const char *CHAVE[] = {
   "webosHlsModeLocal",
   "webosHlsTsLocal",
   "updateNotificationsLocal",
+  "rememberLastProfileLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3077,6 +3080,7 @@ int ajustes_fonte_grupo_sessoes(void) { return lig(AJ_FONTE_GRUPO_SESSOES); }
 int ajustes_link_reusar(void) { return lig(AJ_LINK_REUSAR); }
 int ajustes_log_rede(void) { return lig(AJ_LOG_REDE); }
 int ajustes_update_notifications(void) { return lig(AJ_UPDATE_NOTIFICATIONS); }
+int ajustes_lembrar_perfil(void) { return lig(AJ_REMEMBER_PROFILE); }
 unsigned ajustes_link_prazo_s(void) {
   int v = valor[AJ_LINK_PRAZO], n = (int)(sizeof LINK_PRAZO_H / sizeof *LINK_PRAZO_H);
   if (v < 0 || v >= n) v = 5;
@@ -6180,6 +6184,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_TEX_MB:         /* teto de memoria de imagem: depende da RAM */
     case AJ_QUALIDADE_IMG:  /* resolucao da arte decodificada: idem */
     case AJ_ENVIO_AUTO:     /* consentimento de envio de registro deste aparelho */
+    case AJ_REMEMBER_PROFILE: /* startup choice belongs to this TV */
     case AJ_UPDATE_NOTIFICATIONS: /* automatic notices on this TV */
     case AJ_LOG_REDE:       /* pagina de registro na rede desta casa */
     case AJ_ANIM:           /* animacoes reduzidas: acessibilidade nesta TV */
@@ -6365,6 +6370,7 @@ static int soNaTv(int op) {
     case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
     case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: case AJ_EXT_AUDIO_ORDEM: case AJ_EXT_AUDIO_BUFOR:
     case AJ_WEBOS_HLS_DTS: case AJ_WEBOS_HLS_DV7: case AJ_WEBOS_HLS_MODE: case AJ_WEBOS_HLS_TS:
+    case AJ_UPDATE_NOTIFICATIONS: case AJ_REMEMBER_PROFILE:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
     case AJ_TUNNELING: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO:
@@ -8343,6 +8349,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_CACHE_SEEK: return "Com retomada rápida, guarda só o último título por até 3 horas. Trocar de perfil ou pouco espaço apagam o trecho.";
     case AJ_ANIM: return "Use Reduzidas para movimentos mais discretos ao navegar pela interface.";
     case AJ_RESOLUCAO: return "Resolução controla a nitidez; efeitos controlam a velocidade. Automática nunca baixa para 720p. Reinicie após mudar a resolução; o vídeo não muda.";
+    case AJ_REMEMBER_PROFILE: return "Open the last selected profile when starting the app. Off by default, on this TV only. Protected profiles still require their PIN. You can always switch profiles from the menu.";
     case AJ_PERFIL_ATIVO: return "Perfil em uso nesta TV. Trocar de perfil é feito na tela de perfis, ao abrir o app.";
     case AJ_SYNC: return "Estado da última troca de dados com a sua conta: addons, progresso, coleções e preferências.";
     case AJ_ADDONS: return "Abre a lista de addons da sua conta, para ligar e desligar cada um nesta TV.";
@@ -11170,7 +11177,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_ESMAECER: case AJ_BRILHO_PLAYER: case AJ_HDR_UI: case AJ_MANTER_VIDEO:
     case AJ_DESCANSO_ESTILO: case AJ_DESCANSO_FONTE:
       return AJPV_INTERFACE;
-    case AJ_PERFIL_ATIVO: case AJ_SYNC: case AJ_SAIR:
+    case AJ_PERFIL_ATIVO: case AJ_REMEMBER_PROFILE: case AJ_SYNC: case AJ_SAIR:
     case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_ADDONS_PRINCIPAL: case AJ_PROVEDORES_ESCOPO: case AJ_ENQUETES:
       return AJPV_CONTA;
     case AJ_SALVOS_DEST: case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_HIST_CONTA: case AJ_SOCIAL:

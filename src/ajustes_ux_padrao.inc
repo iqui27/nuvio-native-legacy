@@ -386,3 +386,4 @@
   1, /* Experimental HLS mode: Off (V_LIGA) */
   1, /* HLS MPEG-TS segments (test): Off (V_LIGA) */
   1, /* Update notifications: Off by default (Matis94 cc737eea0), device-local */
+  1, /* Remember last profile: Off (V_LIGA), device-wide opt-in */

@@ -297,6 +297,30 @@ static void etapaDois(void) {
   assert(perfis_ativo() == 2);
   assert(perfis_precisa_escolher() == 1);
 
+  // Remember last profile is opt-in; it never confirms a PIN or an absent
+  // profile, and it does not change the explicit chooser's list policy.
+  perfis_lembrar_ultimo_configurar(1);
+  assert(perfis_precisa_escolher() == 0 && perfis_ativo() == 2);
+  assert(perfis_sem_escolha() == 0); // Switch profile still stays open.
+  perfis_lembrar_ultimo_configurar(0);
+  assert(perfis_precisa_escolher() == 1);
+  perfis_lembrar_ultimo_configurar(1);
+  respPerfis = PERFIS_JSON;
+  respLocks = "[{\"profile_id\":1,\"pin_enabled\":false},"
+              "{\"profile_id\":2,\"pin_enabled\":true},"
+              "{\"profile_id\":3,\"pin_enabled\":true}]";
+  assert(perfis_puxar() == 3);
+  assert(perfis_precisa_escolher() == 1 && !perfis_pode_dispensar());
+  respPerfis = UM_PERFIL_JSON; respLocks = UM_LOCK_LIVRE;
+  assert(perfis_puxar() == 1);
+  assert(perfis_ativo() == 2 && perfis_item_ativo() == NULL);
+  assert(perfis_precisa_escolher() == 1 && !perfis_sem_escolha());
+  respPerfis = PERFIS_JSON; respLocks = LOCKS_JSON;
+  assert(perfis_puxar() == 3);
+  assert(perfis_precisa_escolher() == 0 && perfis_ativo() == 2);
+  perfis_lembrar_ultimo_configurar(0);
+  assert(perfis_precisa_escolher() == 1);
+
   // 3. E ela abre com o cursor em quem estava, nao no primeiro da fila.
   assert(perfis_indice_sugerido() == 1);
 
@@ -313,6 +337,10 @@ static void etapaDois(void) {
   assert(dados_ler("perfis.txt") == NULL);
   assert(dados_ler("perfil.txt") == NULL);
 
+  perfis_lembrar_ultimo_configurar(1);
+  assert(perfis_puxar() == 3);
+  assert(perfis_precisa_escolher() == 1); // No saved choice after logout.
+  perfis_esquecer();
   puts("etapa 2 (o segundo arranque, sem rede): OK");
 }
 
