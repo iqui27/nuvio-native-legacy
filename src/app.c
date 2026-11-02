@@ -1017,6 +1017,12 @@ static void idDoAlvo(const CatItem *ci, char *dst, size_t n) {
     // cat_id_stream: "tt:T:E" no IMDb; o id do video do addon nos demais
     // ("kitsu:41370:5"). Os dois callers passam o item do detalhe.
     cat_id_stream(detail_indice(), t, e, dst, (unsigned)n);
+  else if (!strcmp(ci->tipo, "series") && idbase_e_imdb(ci->imdb) &&
+           !idbase_tem_episodio(ci->imdb))
+    // Match addons' immediate S1E1 fallback before metadata arrives. A later
+    // S1E1 list is the same target, not a reason to clear/refetch its sources.
+    // Canonical renumbering to another episode still changes this ID normally.
+    snprintf(dst, n, "%s:1:1", ci->imdb);
   else
     snprintf(dst, n, "%s", ci->imdb);
 }
