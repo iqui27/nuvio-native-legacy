@@ -19,6 +19,12 @@ static void ok(int cond, const char *o) {
   if (!cond) falhas++;
 }
 
+static const MkvSeg *achaSeg(const MkvSeg *s, int n, int tipo) {
+  int i;
+  for (i = 0; i < n; i++) if (s[i].tipo == tipo) return &s[i];
+  return NULL;
+}
+
 // --- montagem de EBML -------------------------------------------------------
 static unsigned char buf[4096];
 static long n;
@@ -181,6 +187,69 @@ int main(void) {
   { int i; for (i = 0; i < 64; i++) { unsigned char b = (unsigned char)(i * 7); put(&b, 1); } }
   k = lerCapitulos(buf, n, caps, MKV_MAX_CAPS);
   ok(k >= 0 && k <= MKV_MAX_CAPS, "lixo nao trava nem estoura");
+
+  // 7. SEGMENTOS (feat/mkv-chapter-segments): regras do NuvioTV + nomes extra.
+  printf("segmentos dos capitulos (NuvioTV + extra)\n");
+  { MkvSeg s[6]; int ns;
+#define CAPS(...) MkvCap c[] = { __VA_ARGS__ }; int nc = (int)(sizeof c / sizeof c[0])
+#define ACHA(tp) achaSeg(s, ns, tp)
+    // Classificacao de nomes soltos.
+    int f;
+    ok(mkv_classificar_nome("OP", &f) == MKV_SEG_ABERTURA && f == 3, "\"OP\" estrito");
+    ok(mkv_classificar_nome("OP 2", &f) == MKV_SEG_ABERTURA && f == 3, "\"OP 2\" estrito");
+    ok(mkv_classificar_nome("Opening Credits", &f) == MKV_SEG_ABERTURA && f == 3, "\"Opening Credits\" e abertura");
+    ok(mkv_classificar_nome("Ending Theme", &f) == MKV_SEG_CREDITOS && f == 3, "\"Ending Theme\" estrito");
+    ok(mkv_classificar_nome("End Credits", &f) == MKV_SEG_CREDITOS && f == 3, "\"End Credits\" estrito");
+    ok(mkv_classificar_nome("Previously on Silo", &f) == MKV_SEG_RESUMO && f == 3, "\"Previously on ...\" e resumo");
+    ok(mkv_classificar_nome("Recap", &f) == MKV_SEG_RESUMO, "\"Recap\" e resumo");
+    ok(mkv_classificar_nome("Post-Credits", &f) == MKV_SEG_POSCRED, "\"Post-Credits\" e pos-creditos");
+    ok(mkv_classificar_nome("Mid Credits Scene", &f) == MKV_SEG_POSCRED, "\"Mid Credits Scene\" e pos-creditos");
+    ok(mkv_classificar_nome("The Opening Scene", &f) == MKV_SEG_ABERTURA && f == 1,
+       "\"The Opening Scene\" nao e estrito (so extra)");
+    ok(mkv_classificar_nome("Alternate Ending", &f) == MKV_SEG_CREDITOS && f == 1,
+       "\"Alternate Ending\" nao e estrito (so extra)");
+    ok(mkv_classificar_nome("Cr\xc3\xa9" "ditos", &f) == MKV_SEG_CREDITOS && f == 1, "\"Creditos\" (extra)");
+    ok(mkv_classificar_nome("Yokoku", &f) == MKV_SEG_PREVIA, "\"Yokoku\" e previa");
+    ok(mkv_classificar_nome("Part A", &f) == MKV_SEG_NENHUM, "\"Part A\" nada");
+
+    { CAPS({0, "Prologue"}, {90, "OP"}, {180, "Part A"}, {1260, "ED"}, {1350, "Epilogue"});
+      ns = mkv_segmentos(c, nc, 1440, s, 6);
+      ok(ns == 2 && ACHA(MKV_SEG_CREDITOS) && ACHA(MKV_SEG_CREDITOS)->fim == 1350,
+         "anime: ED acaba no capitulo seguinte (cena depois nao some)"); }
+    { CAPS({0, "Prologue"}, {90, "OP"}, {180, "Part A"}, {1260, "ED"}, {1350, "Post-Credits"});
+      ns = mkv_segmentos(c, nc, 1440, s, 6);
+      ok(ACHA(MKV_SEG_POSCRED) && ACHA(MKV_SEG_POSCRED)->inicio == 1350 &&
+         ACHA(MKV_SEG_CREDITOS)->fim == 1350, "pos-creditos marcada depois do ED"); }
+    { CAPS({0, "Recap"}, {60, "Intro"}, {150, "Part A"}, {1300, "Credits"});
+      ns = mkv_segmentos(c, nc, 1400, s, 6);
+      ok(ACHA(MKV_SEG_RESUMO) && ACHA(MKV_SEG_ABERTURA) && ACHA(MKV_SEG_ABERTURA)->inicio == 60,
+         "\"Intro\" vira abertura sem OP; resumo lido"); }
+    { CAPS({0, "Intro"}, {60, "OP"}, {150, "Part A"}, {1300, "Credits"});
+      ns = mkv_segmentos(c, nc, 1400, s, 6);
+      ok(ACHA(MKV_SEG_ABERTURA) && ACHA(MKV_SEG_ABERTURA)->inicio == 60, "com OP, \"Intro\" nao conta"); }
+    { CAPS({0, "The Opening Scene"}, {200, "Opening"}, {290, "Part A"}, {1300, "ED"});
+      ns = mkv_segmentos(c, nc, 1400, s, 6);
+      ok(ACHA(MKV_SEG_ABERTURA) && ACHA(MKV_SEG_ABERTURA)->inicio == 200, "estrito vence o extra do mesmo tipo"); }
+    { CAPS({0, "Prologo"}, {60, "Abertura"}, {150, "Parte A"}, {1300, "Encerramento"});
+      ns = mkv_segmentos(c, nc, 1400, s, 6);
+      ok(ACHA(MKV_SEG_ABERTURA) && ACHA(MKV_SEG_CREDITOS) && ACHA(MKV_SEG_CREDITOS)->inicio == 1300,
+         "nomes em portugues/espanhol continuam valendo"); }
+    { CAPS({0, "Part A"}, {3, "OP"}, {6, "Part B"});
+      ns = mkv_segmentos(c, nc, 1400, s, 6);
+      ok(!ACHA(MKV_SEG_ABERTURA), "abertura de 3 s descartada (< 5 s)"); }
+    { CAPS({0, "Part A"}, {60, "OP"}, {600, "Part B"});
+      ns = mkv_segmentos(c, nc, 1400, s, 6);
+      ok(!ACHA(MKV_SEG_ABERTURA), "abertura de 9 min descartada (> 240 s)"); }
+    { CAPS({0, "Movie"}, {6000, "End Credits"}, {6600, "Post-Credits Scene"});
+      ns = mkv_segmentos(c, nc, 6700, s, 6);
+      ok(ACHA(MKV_SEG_CREDITOS) && ACHA(MKV_SEG_CREDITOS)->fim == 6600 && ACHA(MKV_SEG_POSCRED),
+         "filme: creditos de 10 min aceitos e param na cena"); }
+    { CAPS({0, "Chapter 1"}, {600, "Chapter 2"}, {1200, "Chapter 3"});
+      ns = mkv_segmentos(c, nc, 1400, s, 6);
+      ok(ns == 0, "capitulos sem nome util: nenhum segmento"); }
+#undef CAPS
+#undef ACHA
+  }
 
   printf(falhas ? "\nFALHOU\n" : "\nmkv capitulos: PASS (nanossegundos, nome, acento, sem nome, lixo)\n");
   return falhas ? 1 : 0;

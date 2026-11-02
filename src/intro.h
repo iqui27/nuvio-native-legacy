@@ -20,7 +20,9 @@
 // `end_ms: null` dos creditos. Quem consome tem de tratar esse caso — ver
 // intro_ativo.
 typedef struct { double inicio,fim; int tipo; int ani; } IntroTrecho; // ani 1 = veio do AniSkip
-enum { INTRO_ABERTURA=1, INTRO_RESUMO=2, INTRO_CREDITOS=3, INTRO_PREVIA=4 };
+// INTRO_POS_CREDITOS: cena depois dos creditos (capitulo "Post-Credits" ou
+// IntroDB post_credits). Marcada na barra e nunca pulada (feat/mkv-chapter-segments).
+enum { INTRO_ABERTURA=1, INTRO_RESUMO=2, INTRO_CREDITOS=3, INTRO_PREVIA=4, INTRO_POS_CREDITOS=5 };
 // `temporada` e `episodio` ZERO = filme: a consulta sai so com o imdb.
 void intro_pedir(const char *imdb,int temporada,int episodio);
 // Igual a intro_pedir, mas diz a duracao (s) dos episodios E-1 e E+1 quando o

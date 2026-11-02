@@ -24,7 +24,7 @@ static int botaoVis;static double botaoFim;static int botaoTipo;
 // mais que TheIntroDB/AniSkip, porque descrevem ESTE corte. Ficam a parte para
 // sobreviver a uma resposta da rede que chegue depois (baixar) e sao fundidos
 // por tipo: um tipo que o arquivo declara substitui o da rede.
-static IntroTrecho capTr[4];static int nCapTr;
+static IntroTrecho capTr[6];static int nCapTr;
 static void fundirCapitulos(void);   // chamar COM a trava
 static unsigned verGer;
 // Memoria unica do automatico, inclusive recuo antes de uma resposta tardia.
@@ -667,7 +667,7 @@ static void fundirCapitulos(void){
 void intro_definir_capitulos(const IntroTrecho *v,int n){
   pthread_mutex_lock(&trava);
   nCapTr=0;
-  for(int i=0;v&&i<n&&nCapTr<4;i++)capTr[nCapTr++]=v[i];
+  for(int i=0;v&&i<n&&nCapTr<6;i++)capTr[nCapTr++]=v[i];
   fundirCapitulos();
   if(nCapTr>0&&temUltimo){printf("[intro] %s S%02dE%02d: fonte=capitulos, %d marcadores\n",
       ultimo.id,ultimo.t,ultimo.e,nTrechos);fflush(stdout);}
@@ -701,11 +701,11 @@ void intro_definir_duracao(double dur,int filme){
 // filme. Limites: creditos <= 15 min, abertura/resumo <= 3 min, e creditos de
 // FILME nao comecam antes de 50% da duracao. Sem duracao conhecida (dur<=0) so
 // vale o que da para medir (fim explicito); o auto-hide do botao cobre o resto.
-static int fimDeObra(int tipo){return tipo==INTRO_CREDITOS||tipo==INTRO_PREVIA;}
+static int fimDeObra(int tipo){return tipo==INTRO_CREDITOS||tipo==INTRO_PREVIA||tipo==INTRO_POS_CREDITOS;}
 
 int intro_janela_ok(int tipo,double ini,double fim,double dur,int filme,const char **motivo){
   double fimEf=fim>0.0?fim:dur,jan=fimEf>0.0?fimEf-ini:0.0;
-  double max=tipo==INTRO_CREDITOS?900.0:180.0;
+  double max=(tipo==INTRO_CREDITOS||tipo==INTRO_POS_CREDITOS)?900.0:180.0;
   if(motivo)*motivo="ok";
   if(jan>max){if(motivo)*motivo="janela longa";return 0;}
   // CREDITOS/PREVIA SEM A DURACAO DO VIDEO NAO SE ACEITAM (Silo T2E6, TCL
@@ -806,7 +806,7 @@ static int ativoInterno(double pos,double*fim,int*tipo,int automatico){
     int dentro=trechos[i].fim>0.0
                ? (pos>=trechos[i].inicio&&pos<trechos[i].fim)
                : (pos>=trechos[i].inicio);
-    if(trechos[i].tipo==INTRO_PREVIA)continue;   // sem botao proprio (CHAVES)
+    if(trechos[i].tipo==INTRO_PREVIA||trechos[i].tipo==INTRO_POS_CREDITOS)continue;   // sem botao proprio (CHAVES); a cena nunca se pula
     if(dentro&&valido(i)){
       double f=fimEmendado(i);
       if(automatico&&trechos[i].tipo==INTRO_CREDITOS){
@@ -844,7 +844,7 @@ int intro_botao(double pos,double agora,int osd,int focado,double*fim,int*tipo){
   pthread_mutex_lock(&trava);
   for(i=0;i<nTrechos;i++){
     int dentro=trechos[i].fim>0.0?(pos>=trechos[i].inicio&&pos<trechos[i].fim):(pos>=trechos[i].inicio);
-    if(trechos[i].tipo==INTRO_PREVIA)continue;
+    if(trechos[i].tipo==INTRO_PREVIA||trechos[i].tipo==INTRO_POS_CREDITOS)continue;
     if(dentro&&valido(i)){idx=i;break;}
   }
   if(idx<0){botaoIdx=-1;botaoVis=0;pthread_mutex_unlock(&trava);return 0;}
