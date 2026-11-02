@@ -42,4 +42,14 @@ void nav21_filmo(void){
   nav21_motion(s,internalNext,"Title, OK: sheet transition >=150ms");
   nav21_motion(s,internalBack,"Title options, Back: sheet transition >=150ms");
   nav21_expect(s.name,"Title options, Back: previous page",aba,1);nav21_expect(s.name,"Title options, Back: previous focus",focusFixture(),40000);
+  fixture=0;openFixture();for(int i=0;i<90;i++)stepFixture(1.f/60);
+  nav21_expect("Filmography/hero","Open: hero action row",zona,0);
+  internalBack();
+  nav21_expect("Filmography/hero","Hero, Back: exit requested",saindo,1);
+  fixture=0;openFixture();for(int i=0;i<90;i++)stepFixture(1.f/60);zona=4;col=0;
+  internalBack();
+  nav21_expect("Filmography/back-stack","Content, Back: selected tab focus",zona,1);
+  nav21_expect("Filmography/back-stack","Content, Back: tab column",col,aba);
+  internalBack();
+  nav21_expect("Filmography/back-stack","Tab, Back: exit requested",saindo,1);
 }
