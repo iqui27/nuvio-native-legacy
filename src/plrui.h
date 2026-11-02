@@ -71,6 +71,9 @@ float plrui_seg(const char *const *rotulos, const int *contagem, int n, float se
 // trilho branco 20% com cantos redondos, o buffer a 30%, o andado no acento.
 // `foco` engorda 6 -> 10 e poe a cabeca branca. `caps` sao os cortes da
 // abertura/creditos (fracoes), `nCaps` quantos.
+// Riscos finos de capitulo sobre o trilho (feat/mkv-chapter-segments): mais
+// discretos que as marcas de abertura/creditos de plrui_barra.
+void plrui_barra_capitulos(float x, float y, float w, int foco, const float *ticks, int n, float a);
 void plrui_barra(float x, float y, float w, float frac, float buf, int foco,
                  const float *caps, int nCaps, float a);
 

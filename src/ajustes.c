@@ -3,6 +3,7 @@
 // cancela. A lista mostra valor e chevron, a ficha explica alcance e padrao.
 // IDs, chaves persistidas e indices de valores continuam os legados.
 #include "ajustes.h"
+#include "segfontes.h"
 #include "legfontes.h"
 #include "logrede.h"
 #include "jsw.h"
@@ -725,6 +726,12 @@ typedef enum {
   // Hero logo and information size (0 Normal, 1 Grande, 2 Muito grande). LOCAL, append-only.
   AJ_HERO_TAMANHO,
   AJ_HERO_PASTA_DETALHES, // Device-local folder hero details, append-only; on by default.
+  // feat/mkv-chapter-segments: capitulos do arquivo no player (marcas na barra,
+  // nome do capitulo e a fileira do CIMA). LOCAL, DESLIGADO de fabrica, append-only.
+  AJ_CAPITULOS,
+  // Client ID PESSOAL do Anime-Skip (segfontes.h). O valor mora em
+  // animeskip.txt (dados), por aparelho; vazio usa o da conta Nuvio. Append-only.
+  AJ_ANIMESKIP_ID,
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1726,7 +1733,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Pular a abertura automaticamente", V_LIGA, 2),   // local: pularAberturaLocal
   ESC("Pular o resumo automaticamente", V_LIGA, 2),   // local: pularResumoLocal
   ESC("Tocar o próximo episódio automaticamente", V_LIGA, 2),   // local: proximoAutoLocal
-  ESC("Pular os créditos automaticamente", V_LIGA, 2),   // local: pularCreditosLocal
+  ESC("Pular o encerramento automaticamente", V_LIGA, 2),   // local: pularCreditosLocal
   NUM("Contagem do próximo episódio", 1, 60, 1, "s"),
   ESC("Modo da interface", V_INTERFACE_MODO, 3),
   ESC("Botão de microfone na busca", V_MIC_BUSCA, 3),   // local: micBuscaLocal (.tpk)
@@ -1863,6 +1870,8 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Suavizar degradês", V_DEGRADES, 3),
   ESC("Tamanho do destaque", V_HERO_TAMANHO, 3),       // local: heroSizeLocal
   ESC("Mostrar detalhes da pasta no destaque", V_LIGA, 2),
+  ESC("Capítulos no player", V_LIGA, 2),               // local: chaptersLocal
+  ACAO("ID do Anime-Skip"),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2196,6 +2205,9 @@ static const char *CHAVE[] = {
   "suavizarDegradesLocal",
   "heroSizeLocal",
   "heroFolderDetailsLocal",
+  "chaptersLocal",
+  // "-": o VALOR mora em animeskip.txt (dados); credencial, fora do ajustes.txt.
+  "-animeSkipId",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2899,6 +2911,7 @@ int ajustes_pular_resumo(void)        { return lig(AJ_PULAR_RESUMO); }
 int ajustes_proximo_auto(void)        { return lig(AJ_PROXIMO_AUTO); }
 int ajustes_proximo_contagem(void)    { int n = valor[AJ_PROXIMO_CONTAGEM]; return n < 1 ? 1 : n > 60 ? 60 : n; }
 int ajustes_pular_creditos(void)      { return lig(AJ_PULAR_CREDITOS); }
+int ajustes_capitulos(void)           { return lig(AJ_CAPITULOS); }
 int ajustes_medidor_desempenho(void)  { return valor[AJ_MEDIDOR]; }
 int ajustes_fonte_manual(void)        { return lig(AJ_FONTE_MANUAL); }
 int ajustes_fonte_primeira(void)      { return ajustes_fonte_prioridade() == 3 || valor[AJ_FONTE_AUTO] == 1; }
@@ -4156,6 +4169,38 @@ static const char *fanartMascarada(void) {
   return m;
 }
 
+// CLIENT ID DO ANIME-SKIP (feat/mkv-chapter-segments): o da PESSOA, em
+// animeskip.txt (dados), como a chave do fanart.tv — nunca no ajustes.txt.
+// Vazio volta ao da conta Nuvio (sync.c -> segfontes_animeskip_id_conta).
+static char animeskipId[96];
+static void animeskipLimpar(char *dst, size_t n, const char *t) {
+  size_t i, k = 0;
+  for (i = 0; t && t[i] && k + 1 < n; i++)
+    if ((t[i] >= '0' && t[i] <= '9') || (t[i] >= 'a' && t[i] <= 'z') ||
+        (t[i] >= 'A' && t[i] <= 'Z') || t[i] == '-' || t[i] == '_') dst[k++] = t[i];
+  dst[k] = 0;
+}
+static void animeskipCarregar(void) {
+  char *t = dados_ler("animeskip.txt");
+  animeskipLimpar(animeskipId, sizeof animeskipId, t);
+  free(t);
+  segfontes_animeskip_id_local(animeskipId);
+}
+static void animeskipDefinir(const char *txt) {
+  animeskipLimpar(animeskipId, sizeof animeskipId, txt);
+  if (animeskipId[0]) dados_gravar("animeskip.txt", animeskipId);
+  else dados_apagar("animeskip.txt");
+  segfontes_animeskip_id_local(animeskipId);
+}
+static const char *animeskipMascarado(void) {
+  static char m[24];
+  char conta[96];
+  size_t n = strlen(animeskipId);
+  if (!n) return segfontes_animeskip_id(conta, sizeof conta)[0] ? i18n("Da conta Nuvio") : i18n("Não configurado");
+  snprintf(m, sizeof m, "····%s", n > 4 ? animeskipId + n - 4 : "");
+  return m;
+}
+
 // Somente a chave propria em seekr.txt, local e mascarada. Remover a chave
 // desliga o uso efetivo; os limites sao os do plano da pessoa no Seekr.
 static const char *seekrPedirChave(void) {
@@ -4780,6 +4825,7 @@ void ajustes_dir(const char *dir) {
   valor[AJ_TAMANHO_UI] = UI_SIZE_AUTO;
   fonteregra_carregar();
   fanartCarregar();
+  animeskipCarregar();
   seekrCarregar();
   p2pCarregar();
   ppCarregar();
@@ -6134,6 +6180,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_PAUSA_NOTAS: /* nem as notas */
     case AJ_PAUSA_ELENCO: /* nem o elenco */
     case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PROXIMO_AUTO: case AJ_PULAR_CREDITOS: case AJ_PROXIMO_CONTAGEM: /* idem: local desta TV */
+    case AJ_CAPITULOS: /* idem */
     case AJ_PLR_FORMATO: case AJ_PLR_FORMATO_POS: case AJ_PLR_CODEC: /* o web nao tem a fileira de formato */
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE: /* o web nao tem o Seekr */
     case AJ_MENU_EXPLORAR: case AJ_MENU_GUIA: case AJ_MENU_AGENDA: case AJ_MENU_PERFIL:
@@ -7191,6 +7238,7 @@ static const char *textoLeitura(int op) {
       return bufConta; }
   }
   if (op == AJ_FANART_CHAVE) return fanartMascarada();
+  if (op == AJ_ANIMESKIP_ID) return animeskipMascarado();
   if (op == AJ_SEEKR_CHAVE) return seekrMascarada();
   if (op == AJ_SEEKR_TESTAR) return skTesteTexto();
   if (op == AJ_SELOS_PACOTE_ADD) return spAddTexto();
@@ -7722,7 +7770,9 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_PAUSA_OVERLAY: return "Ao pausar, sobe uma ficha com a sinopse e os dados do que você está vendo.";
     case AJ_PULAR_ABERTURA: return "Pula a abertura sozinho quando o episódio tem o trecho marcado, e avisa na tela. Sem marcador, nada é pulado. O botão Pular abertura continua valendo.";
     case AJ_PULAR_RESUMO: return "Pula o resumo do episódio anterior sozinho quando o episódio tem o trecho marcado, e avisa na tela. Sem marcador, nada é pulado.";
-    case AJ_PULAR_CREDITOS: return "Pula os créditos sozinho, e avisa na tela, só quando o marcador diz onde eles começam e onde acabam. Sem marcador completo, e nos créditos que vão até o fim do episódio, nada é pulado: quem cuida é o próximo episódio.";
+    case AJ_PULAR_CREDITOS: return "Pula o encerramento sozinho, de série ou de filme, e avisa na tela, só quando o marcador diz onde ele começa e onde acaba. Com uma cena pós-créditos depois, para no começo da cena. Sem marcador completo, nada é pulado.";
+    case AJ_CAPITULOS: return "Mostra os capítulos do arquivo no player: uma marca na barra em cada capítulo, o nome do capítulo atual e, com Para cima na barra, a fileira de capítulos para pular com Esquerda/Direita. Abertura, resumo, encerramento e pós-créditos aparecem na barra mesmo desligado.";
+    case AJ_ANIMESKIP_ID: return "Seu Client ID do Anime-Skip, mais uma fonte de abertura e encerramento de anime. Vazio usa o da sua conta Nuvio. Fica só nesta TV e aparece mascarado.";
     case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: {
       static char b[512];
       snprintf(b, sizeof b, i18n("Nos créditos, uma contagem de %d s toca o próximo episódio enquanto eles ainda rolam. Voltar cancela e deixa os créditos terminarem. Desligado, o cartão espera você apertar OK."), ajustes_proximo_contagem());
@@ -9954,6 +10004,13 @@ static void eventoTela(const SDL_Event *e) {
       if (a >= 0 && selospacote_da_tv(a)) { selospacote_remover(a); spResultado = -1; spEspelhar(); }
       return;
     }
+    if (focoOp == AJ_ANIMESKIP_ID) {
+      // Como a chave do fanart: o ID nao volta para o campo; vazio usa o da conta.
+      stCampo = focoOp;
+      teclado_abrir_com("ID do Anime-Skip", "Seu Client ID em anime-skip.com. Vazio usa o da conta Nuvio.",
+                        64, PST_ALFA_CHAVE, NULL);
+      return;
+    }
     if (focoOp == AJ_FANART_CHAVE) {
       // A chave NUNCA volta para o campo (a modal fica na tela e a tela vira
       // foto); confirmar vazio esquece a que estava.
@@ -10091,6 +10148,7 @@ void ajustes_atualizar(float dt, Uint32 agora) {
       else if (stCampo == AJ_XTREAM_SENHA)    xtream_definir_senha(teclado_texto());
       else if (stCampo == PF_CAMPO) { if (pfDigitado(teclado_texto())) r = TECLADO_NADA; }
       else if (stCampo == AJ_FANART_CHAVE)    fanartDefinir(teclado_texto());
+      else if (stCampo == AJ_ANIMESKIP_ID)    animeskipDefinir(teclado_texto());
       else if (stCampo == AJ_SEEKR_CHAVE)     { seekrDefinir(teclado_texto()); atomic_store_explicit(&skTeste, 0, memory_order_release); }
       else if (stCampo == AJ_SELOS_PACOTE_ADD) spAdicionar(teclado_texto());
       else if (stCampo == AJ_URL_M3U_ADD || stCampo == AJ_URL_XMLTV_ADD)
@@ -10755,6 +10813,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_FONTE_PRIORIDADE: case AJ_FONTE_HDR: case AJ_FONTE_IDIOMA_AUDIO:
     case AJ_SELOS_PACOTE:
     case AJ_REACAO_CREDITOS: case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PROXIMO_AUTO: case AJ_PULAR_CREDITOS: case AJ_PROXIMO_CONTAGEM:
+    case AJ_CAPITULOS: case AJ_ANIMESKIP_ID:
     case AJ_FONTE_PRAZO: case AJ_TAM_MAX: case AJ_TAM_MIN: case AJ_PROPORCAO_PADRAO: case AJ_DTS_AC3:
     case AJ_FONTE_ESCOPO: case AJ_FONTE_ADDONS_PERM: case AJ_FONTE_PLUGINS_PERM: case AJ_FONTE_OUTROS:
     case AJ_FONTE_REGEX: case AJ_FONTE_REGEX_PADRAO: case AJ_FONTE_REGEX_MODELO:
