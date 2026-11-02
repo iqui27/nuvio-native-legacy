@@ -56,13 +56,14 @@ int main(void) {
   OK("sucesso zera; volta do SDL_GetTicks nao trava o recuo");
 
   // SCREENSAVER (#706): o ack:false so vale com filme tocando de verdade.
-  assert(video_segura_screensaver(1, 1, 0, 0, 0) == 1);
-  assert(video_segura_screensaver(0, 1, 0, 0, 0) == 0);  // sem midia
-  assert(video_segura_screensaver(1, 0, 0, 0, 0) == 0);  // pipeline parado
-  assert(video_segura_screensaver(1, 1, 1, 0, 0) == 0);  // pausa nossa
-  assert(video_segura_screensaver(1, 1, 0, 1, 0) == 0);  // erro
-  assert(video_segura_screensaver(1, 1, 0, 0, 1) == 0);  // endOfStream
-  OK("screensaver: segura so com midia + tocando, solta em pausa/erro/fim");
+  assert(video_segura_screensaver(1, 1, 0, 0, 0, 0) == 1);
+  assert(video_segura_screensaver(0, 1, 0, 0, 0, 0) == 0);  // sem midia
+  assert(video_segura_screensaver(1, 0, 0, 0, 0, 0) == 0);  // pipeline parado
+  assert(video_segura_screensaver(1, 1, 1, 0, 0, 0) == 0);  // pausa nossa
+  assert(video_segura_screensaver(1, 1, 0, 1, 0, 0) == 0);  // erro
+  assert(video_segura_screensaver(1, 1, 0, 0, 1, 0) == 0);  // endOfStream
+  assert(video_segura_screensaver(1, 1, 0, 0, 0, 1) == 0);  // preview Home
+  OK("screensaver: segura so com midia + tocando, solta em pausa/erro/fim/preview");
 
   puts("lsregistro: tudo ok");
   return 0;

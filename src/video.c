@@ -7,6 +7,7 @@
 #include "mkvass.h"
 #include "js.h"
 #include "lsregistro.h"
+#include "trailer.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -1078,7 +1079,7 @@ static int soLog(LSHandle *h, LSMessage *m, void *u) {
 // global com o LSRegister nem com outra chamada em outro fio. A falha agora diz
 // o motivo, e a mensagem e liberada (antes ficava alocada a cada recusa).
 static int lsChamar(const char *uri, const char *carga, Filtro cb, void *ctx,
-                    const char *rotulo) {
+                    const char *rotulo, int *codigoErro) {
   union { NvLsErro e; char folga[256]; } er;
   unsigned long tok = 0;
   int ok;
@@ -1090,6 +1091,7 @@ static int lsChamar(const char *uri, const char *carga, Filtro cb, void *ctx,
     printf("[video] %s falhou: code=%d (%s) msg=%.200s\n", rotulo, er.e.code,
            nome ? nome : "?", er.e.message ? er.e.message : "(vazio)");
   }
+  if (codigoErro) *codigoErro = ok ? 0 : er.e.code;
   if (er.e.message && lsErroLiberar) lsErroLiberar(&er);
   return ok;
 }
@@ -1097,7 +1099,7 @@ static int lsChamar(const char *uri, const char *carga, Filtro cb, void *ctx,
 static void chamar(const char *metodo, const char *carga, Filtro cb) {
   char uri[128];
   snprintf(uri, sizeof uri, "luna://com.webos.media/%s", metodo);
-  lsChamar(uri, carga, cb, NULL, metodo);
+  lsChamar(uri, carga, cb, NULL, metodo, NULL);
 }
 
 // Variante para callbacks que precisam saber a qual sessao pertencem. O
@@ -1107,7 +1109,7 @@ static void chamarCtx(const char *metodo, const char *carga, Filtro cb,
                       void *ctx) {
   char uri[128];
   snprintf(uri, sizeof uri, "luna://com.webos.media/%s", metodo);
-  lsChamar(uri, carga, cb, ctx, metodo);
+  lsChamar(uri, carga, cb, ctx, metodo, NULL);
 }
 
 // Chamada a OUTRO servico. O recorte de fonte NAO mora no com.webos.media: ele
@@ -1125,7 +1127,7 @@ static void chamarEm(const char *servico, const char *metodo,
   char uri[160], rot[160];
   snprintf(uri, sizeof uri, "luna://%s/%s", servico, metodo);
   snprintf(rot, sizeof rot, "%s/%s", servico, metodo);
-  lsChamar(uri, carga, cb, NULL, rot);
+  lsChamar(uri, carga, cb, NULL, rot, NULL);
 }
 
 static int aoCarregar(LSHandle *h, LSMessage *m, void *u) {
@@ -1175,7 +1177,44 @@ static void *rodarLaco(void *u) { (void)u; loopRodar(laco); return NULL; }
 // screensaver vai ativar chega state "Active" + timestamp, e responder ack:false
 // com o MESMO timestamp o cancela. Sem filme tocando respondemos ack:true para
 // nao segurar o screensaver normal da TV.
-static int protetorLigado;
+static int protetorLigado, protetorPendente;
+static unsigned protetorGeracao;
+static LsRegEstado protetorReg;
+
+static int respostaProtetorOk(const char *p) {
+  if (!p) return 0;
+  if (strstr(p, "\"returnValue\":false")) return 0;
+  if (strstr(p, "\"errorCode\"")) return 0;
+  return 1;
+}
+
+static void protetorMarcarFalha(unsigned g, int codigo) {
+  if (g != protetorGeracao || !ligado) return;
+  protetorPendente = 0;
+  protetorLigado = 0;
+  lsreg_falhou(&protetorReg, codigo ? codigo : LSR_UNKNOWN_ERROR, SDL_GetTicks());
+}
+
+static int aoRegistroScreensaver(LSHandle *h, LSMessage *m, void *u) {
+  const char *p = lsPayload(m);
+  unsigned g = (unsigned)(uintptr_t)u;
+  (void)h;
+  if (g != protetorGeracao) return 1;
+  protetorPendente = 0;
+  if (!ligado || !bus) return 1;
+  if (respostaProtetorOk(p)) {
+    lsreg_deu_certo(&protetorReg);
+    protetorLigado = 1;
+    printf("[video] screensaver assinatura confirmada\n");
+    fflush(stdout);
+  } else {
+    printf("[video] screensaver assinatura recusada: %.120s\n", p ? p : "(nulo)");
+    fflush(stdout);
+    protetorMarcarFalha(g, LSR_UNKNOWN_ERROR);
+  }
+  return 1;
+}
+
 static int aoPedidoScreensaver(LSHandle *h, LSMessage *m, void *u) {
   const char *p = lsPayload(m), *t;
   char ts[64], b[160];
@@ -1190,23 +1229,41 @@ static int aoPedidoScreensaver(LSHandle *h, LSMessage *m, void *u) {
   while (*t && *t != ',' && *t != '}' && n < (int)sizeof ts - 1) ts[n++] = *t++;
   ts[n] = 0;
   if (!n) return 1;
-  segurar = video_segura_screensaver(midia[0], tocando, pausaPedida, falhou, terminou);
+  segurar = protetorLigado && video_segura_screensaver(midia[0], tocando, pausaPedida,
+      falhou, terminou, trailer_preview_home());
   snprintf(b, sizeof b, "{\"clientName\":\"space.nuvio.native.legacy\",\"ack\":%s,\"timestamp\":%s}",
            segurar ? "false" : "true", ts);
   printf("[video] screensaver pedido: %s\n", segurar ? "seguro (filme tocando)" : "liberado");
   fflush(stdout);
   lsChamar("luna://com.webos.service.tvpower/power/responseScreenSaverRequest",
-           b, NULL, NULL, "responseScreenSaverRequest");
+           b, NULL, NULL, "responseScreenSaverRequest", NULL);
   return 1;
 }
-// So marca ligado se o hub aceitou a assinatura: marcar antes e a chamada
-// falhar deixava o protetor morto pela sessao inteira.
+
+static int aoHubScreensaver(LSHandle *h, LSMessage *m, void *u) {
+  const char *p = lsPayload(m);
+  if (p && strstr(p, "\"Active\"")) return aoPedidoScreensaver(h, m, u);
+  return aoRegistroScreensaver(h, m, u);
+}
+
+// LSCall so enfileira; a assinatura vale quando o hub confirma. Falhas imediatas
+// e respostas assincronas negativas entram no recuo de lsregistro e voltam pelo
+// video_bombear(), sem empilhar chamadas enquanto protetorPendente.
 static void protegerScreensaver(void) {
-  if (protetorLigado) return;
-  if (!bus) return;
-  protetorLigado = lsChamar("luna://com.webos.service.tvpower/power/registerScreenSaverRequest",
-           "{\"subscribe\":true,\"clientName\":\"space.nuvio.native.legacy\"}",
-           aoPedidoScreensaver, NULL, "registerScreenSaverRequest");
+  unsigned g;
+  int codigo = 0;
+  if (protetorLigado || protetorPendente) return;
+  if (!bus || !ligado) return;
+  if (!lsreg_pode_tentar(&protetorReg, SDL_GetTicks(), 1)) return;
+  g = ++protetorGeracao;
+  protetorPendente = 1;
+  if (lsChamar("luna://com.webos.service.tvpower/power/registerScreenSaverRequest",
+               "{\"subscribe\":true,\"clientName\":\"space.nuvio.native.legacy\"}",
+               aoHubScreensaver, (void *)(uintptr_t)g,
+               "registerScreenSaverRequest", &codigo)) {
+    return;
+  }
+  protetorMarcarFalha(g, codigo);
 }
 
 // O ACB EXIGE um callback de verdade. Passar NULL nao e ignorado: no primeiro
@@ -1619,6 +1676,7 @@ void video_bombear(void) {
   // melhor (contador de quadros, ou o proprio perfil lido do MKV).
   (void)dvNaCarga; (void)dvRecuado; (void)viuVideo;
   (void)msDoLoad; (void)urlAtual; (void)agoraMs; (void)tocarInterno;
+  protegerScreensaver();
 }
 
 // CABECALHOS EXIGIDOS PELO ADDON, ver video.h.
@@ -2295,7 +2353,10 @@ void video_encerrar(void) {
     erroLimpar();
     bus = NULL;
   }
+  protetorGeracao++;
   protetorLigado = 0;
+  protetorPendente = 0;
+  lsreg_deu_certo(&protetorReg);
   ligado = 0;
 }
 // O uMS desenha a legenda embutida sozinho: nada para o app pintar.

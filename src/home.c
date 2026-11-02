@@ -3230,7 +3230,7 @@ void home_trailer_passo(int topo, float dt, Uint32 agora) {
       heroTrailerFonte = ultima ? 2 : 1;
       heroTrailerQual = qual;
       heroTrailerPreparandoAte = heroTrailerPrazoPreparacao(agora);
-      trailer_abrir(u, heroArteRect, 0, 0);
+      trailer_abrir_preview_home(u, heroArteRect);
       // trailer_abrir e void por compatibilidade com o player nativo; no
       // browser ainda pode recusar a criacao (canvas ausente). Tratar isso
       // como erro da fonte evita deixar a tentativa marcada para sempre.

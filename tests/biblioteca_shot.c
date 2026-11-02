@@ -19,6 +19,7 @@
 #include "extras.h"
 #include "catalogo.h"
 #include "dados.h"
+#include "layout.h"
 #include "gfx.h"
 #include "text.h"
 #include "tex_cache.h"
@@ -244,6 +245,7 @@ int main(int argc, char **argv) {
   int comecaLista = argc > 2 && !strcmp(argv[2], "lista");
   const char *quero = getenv("NUVIO_DADOS");
   char nome[600];
+  int pixelFalhou = 0;
   SDL_GLContext gl;
 
   if (!quero || !*quero) {
@@ -321,32 +323,34 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-salvos-cartaz-rolado.bmp", saida);
   captura(nome);
 
-  // O pedaco da fileira de cima que ainda cabe no viewport tem PIXEL: com o
-  // foco na segunda fileira a rolagem minima deixa um resto da primeira
-  // visivel logo abaixo do corte (gradeY ~300). Um bug que apagasse a fileira
-  // inteira quando ela comeca a sair deixaria a faixa so com o fundo.
+  // O pedaco da fileira de cima (fileira 0) que ainda cabe no viewport: medir
+  // so essa faixa, nao a fileira focada nem o resto da tela.
   {
-    int x, y, y0 = 0, nVis = 0;
-    for (y = 300; y < 700 && !y0; y++) {
-      int s = 0;
+    const float gy = 300.0f;  /* BIB_GRADE_Y_TITULOS */
+    const float passo = NV_BIB_LINHA_PASSO;
+    const float alt = NV_BIB_POSTER_H + NV_BIB_TIT_GAP + 37.8f;
+    const float gradeBase = NV_TELA_H - NV_MARGEM_Y;
+    float scrollAlvo, topo1, visTop, visBot;
+    int x, y, nVis = 0;
+    topo1 = gy + passo;
+    scrollAlvo = topo1 + alt - gradeBase;
+    if (topo1 - scrollAlvo < gy) scrollAlvo = topo1 - gy;
+    if (scrollAlvo < 0.0f) scrollAlvo = 0.0f;
+    visTop = gy;
+    visBot = gy - scrollAlvo + alt;
+    if (visBot > gradeBase) visBot = gradeBase;
+    for (y = (int)visTop; y < (int)visBot; y++) {
       for (x = 200; x < 1800; x += 40) {
         const unsigned char *p = pixQuadro + (1079 - y) * 1920 * 4 + x * 4;
-        if (p[0] > 60 || p[1] > 60 || p[2] > 60) { s = 1; break; }
+        if (p[0] > 60 || p[1] > 60 || p[2] > 60) { nVis++; break; }
       }
-      if (s) y0 = y;
     }
-    if (y0)
-      for (y = y0; y < 1080; y++)
-        for (x = 200; x < 1800; x += 40) {
-          const unsigned char *p = pixQuadro + (1079 - y) * 1920 * 4 + x * 4;
-          if (p[0] > 60 || p[1] > 60 || p[2] > 60) { nVis++; break; }
-        }
-    // Linhas com conteudo entre o topo da grade e a fileira focada: o resto
-    // da fileira de cima. Zero = a fileira sumiu inteira (o bug), bem menos
-    // que uma fileira inteira tambem suspeito; qualquer coisa acima e a
-    // fileira rolada nao saiu nada.
-    assert(nVis > 0 && nVis < 487);
-    printf("pixel: topo rolado visivel em %d linhas de grade\n", nVis);
+    if (!(nVis > 0 && nVis < (int)alt)) {
+      pixelFalhou = 1;
+      printf("pixel FALHOU: resto da fileira 0 em %d linhas (esperado 1..%d)\n",
+             nVis, (int)alt - 1);
+    } else
+      printf("pixel: fileira 0 rolada visivel em %d linhas\n", nVis);
   }
 
   // 2. A BARRA DE MODOS COM O FOCO NELA: escolhido + em foco, realce cheio.
@@ -432,5 +436,6 @@ int main(int argc, char **argv) {
   captura(nome);
 
   printf("pronto\n");
+  assert(!pixelFalhou);
   return 0;
 }

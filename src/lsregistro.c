@@ -55,6 +55,7 @@ void lsreg_deu_certo(LsRegEstado *e) {
 }
 
 int video_segura_screensaver(int temMidia, int tocando, int pausaPedida,
-                             int falhou, int terminou) {
+                             int falhou, int terminou, int previewHome) {
+  if (previewHome) return 0;
   return temMidia && tocando && !pausaPedida && !falhou && !terminou;
 }

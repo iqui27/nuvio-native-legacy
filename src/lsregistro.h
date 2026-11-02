@@ -56,6 +56,6 @@ int  lsreg_desistiu(const LsRegEstado *e);
 // erro e sem endOfStream. A funcao pura fica aqui para o teste do Mac cobrir
 // o predicado sem precisar de barramento.
 int video_segura_screensaver(int temMidia, int tocando, int pausaPedida,
-                             int falhou, int terminou);
+                             int falhou, int terminou, int previewHome);
 
 #endif

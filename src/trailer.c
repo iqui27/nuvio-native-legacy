@@ -12,7 +12,7 @@
 #define NV_REC_URL ""
 #endif
 
-static int    aberto, cheia, comSom;
+static int    aberto, cheia, comSom, previewHome;
 static int    falhouUltima;
 static GfxRect rect;
 static char   fonteAtual[1024];
@@ -259,9 +259,17 @@ static void nativoAplicar(void) {
 }
 #endif
 
+void trailer_abrir_preview_home(const char *fonte, GfxRect r) {
+  trailer_abrir(fonte, r, 0, 0);
+  if (aberto) previewHome = 1;
+}
+
+int trailer_preview_home(void) { return aberto && previewHome; }
+
 void trailer_abrir(const char *fonte, GfxRect r, int som, int modoCheia) {
   int nova;
   if (!trailer_suportado() || !fonte || !fonte[0]) return;
+  previewHome = 0;
   // SAMSUNG E SEMPRE MUDO, tambem em tela cheia (dono, 22/09/2026: "trailer
   // fica mudo"). A trava fica AQUI, no unico caminho ate o elemento, e nao so
   // em quem chama: um `som` 1 esquecido num chamador novo desmutaria o embed
@@ -322,7 +330,7 @@ void trailer_fechar(void) {
 #else
   video_parar();
 #endif
-  aberto = 0; cheia = 0; fonteAtual[0] = 0;
+  aberto = 0; cheia = 0; previewHome = 0; fonteAtual[0] = 0;
 }
 
 int trailer_aberto(void)  { return aberto; }
