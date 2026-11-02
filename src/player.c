@@ -5817,7 +5817,11 @@ static void desenharAcoesEpisodioCorpo(void){
     // da ilha, na margem de 96 (era 64). Com o OSD escondido ela fica sozinha
     // embaixo a esquerda, ja cheia no acento — OK pula direto; com o OSD de pe
     // sobe para a direita, acima da barra, e so e cheia com o foco nela.
+    // Creditos com cena depois (feat/mkv-chapter-segments, Nuvio TV "Skip to
+    // Post-Credits"): o pulo para no comeco da cena, e o rotulo diz isso.
+    int paraCena=tipo==INTRO_CREDITOS&&intro_cena_pos(duracaoSeg,NULL,NULL,NULL);
     const char *rot=tipo==INTRO_RESUMO?"Pular resumo":
+                    paraCena?"P\xc3\xb3s-cr\xc3\xa9" "ditos":
                     tipo==INTRO_CREDITOS?"Pular cr\xc3\xa9" "ditos":"Pular abertura";
     int sel=(skipFoco&&visivel)||!visivel;
     TxtLinha t=txt_linha(TXT_G21B,rot,255,255,255,255);

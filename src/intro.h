@@ -66,6 +66,14 @@ long intro_kitsu_mal(const char *json);
 void intro_definir_capitulos(const IntroTrecho *v,int n);
 void intro_desligar(void);
 int  intro_ativo(double posSeg,double *fim,int *tipo);
+// CENA DEPOIS DOS CREDITOS (feat/mkv-chapter-segments, followingPostCreditsScene
+// do Nuvio TV): 1 quando o ultimo trecho de creditos ACEITO e seguido por uma
+// cena — explicita (INTRO_POS_CREDITOS: capitulo "Post-Credits" ou IntroDB
+// post_credits) ou deduzida (mais de INTRO_CENA_FOLGA_S entre o fim explicito
+// dos creditos, ja emendado com a previa, e o fim da midia). `ini`/`fim` da
+// cena, `explicita` 1/0. Creditos "ate o fim" nunca tem cena. `dur` em s.
+#define INTRO_CENA_FOLGA_S 5.0
+int intro_cena_pos(double dur,double *ini,double *fim,int *explicita);
 // Segundo em que os creditos comecam, ou 0 quando nao ha marcador. Serve ao
 // posplay.c, que precisa do INSTANTE e nao de "estou dentro".
 double intro_creditos_seg(void);

@@ -966,6 +966,23 @@ int intro_creditos_aniskip(void){
   for(int i=0;i<nTrechos;i++)if(trechos[i].tipo==INTRO_CREDITOS&&trechos[i].ani)r=1;
   pthread_mutex_unlock(&trava);return r;
 }
+int intro_cena_pos(double dur,double *ini,double *fim,int *explicita){
+  int c=-1,ok=0;double fe,a=0,b=0;int ex=0;
+  pthread_mutex_lock(&trava);
+  for(int i=0;i<nTrechos;i++)
+    if(trechos[i].tipo==INTRO_CREDITOS&&valido(i)&&(c<0||trechos[i].inicio>trechos[c].inicio))c=i;
+  if(c>=0&&(fe=fimEmendado(c))>0.0){
+    for(int k=0;k<nTrechos;k++)
+      if(trechos[k].tipo==INTRO_POS_CREDITOS&&trechos[k].inicio>=trechos[c].fim-2.0&&
+         (!(dur>0.0)||trechos[k].inicio<dur)&&(!ok||trechos[k].inicio<a)){
+        a=trechos[k].inicio;b=trechos[k].fim>0.0?trechos[k].fim:dur;ex=1;ok=1;
+      }
+    if(!ok&&dur>0.0&&dur-fe>INTRO_CENA_FOLGA_S){a=fe;b=dur;ok=1;}
+  }
+  pthread_mutex_unlock(&trava);
+  if(ok){if(ini)*ini=a;if(fim)*fim=b;if(explicita)*explicita=ex;}
+  return ok;
+}
 double intro_creditos_seg(void){
   double s=0.0;pthread_mutex_lock(&trava);
   for(int i=0;i<nTrechos;i++)
