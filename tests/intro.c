@@ -203,19 +203,23 @@ static void testarBackup(void){
   assert(intro_extrair_backup("{\"imdb_id\":\"tt0460681\"","tt0460681",1,1,v,8)==-1);
   const char *movie="{\"imdb_id\":\"tt1375666\",\"media_type\":\"movie\",\"is_movie\":true,"
     "\"outro\":{\"start_sec\":8000,\"end_sec\":8500},\"post_credits\":{\"start_sec\":8300,\"end_sec\":8400}}";
-  assert(intro_extrair_backup(movie,"tt1375666",0,0,v,8)==1&&v[0].fim==8300);
+  assert(intro_extrair_backup(movie,"tt1375666",0,0,v,8)==2&&v[0].fim==8300&&
+         v[1].tipo==INTRO_POS_CREDITOS&&v[1].inicio==8300&&v[1].fim==8400);
   const char *invalid="{\"imdb_id\":\"tt0460681\",\"media_type\":\"tv\",\"is_movie\":false,\"season\":1,\"episode\":1,"
     "\"intro\":{\"start_sec\":-1,\"end_sec\":20},\"recap\":{\"start_sec\":20,\"end_sec\":20},\"outro\":{\"start_sec\":2700,\"end_sec\":null}}";
   assert(intro_extrair_backup(invalid,"tt0460681",1,1,v,8)==0);
   puts("ok  IntroDB /segments: identidade, segundos/ms, especiais, intervalos e cena pos-creditos");
 
   intro_definir_buscador(fakeBuscar);
+  // ORDEM DO NUVIO TV (feat/mkv-chapter-segments): IntroDB primeiro; com as tres
+  // categorias dele, o TheIntroDB nem e consultado.
+  pthread_mutex_lock(&fakeTrava);int db0=dbPedidos;pthread_mutex_unlock(&fakeTrava);
   intro_pedir_ids_mapeados("tt9900001",9900001,4,92,1,2,0,0);
   assert(esperar(3)==3);n=intro_trechos(v,8);
-  assert(achar(v,n,INTRO_ABERTURA)->inicio==10); // prioridade do principal
+  assert(achar(v,n,INTRO_ABERTURA)->inicio==20); // IntroDB vence o TheIntroDB
   assert(achar(v,n,INTRO_RESUMO)->fim==8&&achar(v,n,INTRO_CREDITOS)->fim==2960);
   pthread_mutex_lock(&fakeTrava);
-  assert(strstr(ultimaUrl,"tmdb_id=9900001&season=4&episode=92"));
+  assert(dbPedidos==db0);
   assert(strstr(ultimaBackup,"imdb_id=tt9900001&season=1&episode=2"));antes=backupPedidos;
   pthread_mutex_unlock(&fakeTrava);
   intro_definir_duracao(3000,0);usleep(200000);
@@ -230,7 +234,7 @@ static void testarBackup(void){
   intro_pedir_ids("tt9900002",0,1,2,0,0);assert(esperar(3)==3);
   n=intro_trechos(v,8);assert(achar(v,n,INTRO_ABERTURA)->inicio==20);
   intro_pedir_ids("tt9900003",0,1,2,0,0);assert(esperar(3)==3);usleep(100000);
-  pthread_mutex_lock(&fakeTrava);assert(backupPedidos==antes+1);backupErro=500;pthread_mutex_unlock(&fakeTrava);
+  pthread_mutex_lock(&fakeTrava);assert(backupPedidos==antes+2);backupErro=500;pthread_mutex_unlock(&fakeTrava);
   intro_pedir_ids("tt9900004",0,1,2,0,0);assert(esperar(1)==1);usleep(100000);
   pthread_mutex_lock(&fakeTrava);backupErro=0;pthread_mutex_unlock(&fakeTrava);
   intro_pedir_ids("tt9900004",0,1,2,0,0);assert(esperar(3)==3);
@@ -238,11 +242,10 @@ static void testarBackup(void){
   intro_pedir_ids("tt9900005",0,1,2,0,0);assert(esperar(1)==1);usleep(100000);
   pthread_mutex_lock(&fakeTrava);backupErro=0;pthread_mutex_unlock(&fakeTrava);
   intro_pedir_ids("tt9900005",0,1,2,0,0);assert(esperar(3)==3);
-  puts("ok  backup preenche tipos ausentes; principal/capitulos preservados; cache e falhas recuperaveis");
+  puts("ok  IntroDB primeiro, TheIntroDB so pelo que falta; capitulos preservados; cache e falhas recuperaveis");
 
   pthread_mutex_lock(&fakeTrava);backupBloquear=1;backupLiberar=backupEntrou=0;pthread_mutex_unlock(&fakeTrava);
   intro_pedir_ids("tt9900006",0,1,2,0,0);
-  assert(esperar(1)==1); // principal ja disponivel durante GET do backup
   pthread_mutex_lock(&fakeTrava);
   while(!backupEntrou)pthread_cond_wait(&backupCond,&fakeTrava);
   pthread_mutex_unlock(&fakeTrava);
@@ -250,7 +253,20 @@ static void testarBackup(void){
   pthread_mutex_lock(&fakeTrava);backupLiberar=1;pthread_cond_broadcast(&backupCond);pthread_mutex_unlock(&fakeTrava);
   usleep(200000);assert(intro_trechos(v,8)==0);
   pthread_mutex_lock(&fakeTrava);backupBloquear=0;pthread_mutex_unlock(&fakeTrava);
-  puts("ok  backup lento nao atrasa marcadores existentes nem publica depois de sair do video");
+  puts("ok  IntroDB lento nao publica depois de sair do video");
+
+  // FILME (D6/D13, como o Nuvio TV): com algo da rede, a rede vence inteira e o
+  // capitulo de creditos do arquivo nao a substitui. Sem nada da rede, vale.
+  { // Inception: o TheIntroDB so tem a abertura (0-38 s).
+    intro_pedir_ids("tt1375666",0,0,0,0,0);assert(esperar(1)>=1);
+    n=intro_trechos(v,8);assert(achar(v,n,INTRO_ABERTURA)&&!achar(v,n,INTRO_CREDITOS));
+    IntroTrecho capf={8000,0,INTRO_CREDITOS,0};intro_definir_capitulos(&capf,1);
+    n=intro_trechos(v,8);assert(achar(v,n,INTRO_ABERTURA)&&!achar(v,n,INTRO_CREDITOS));
+    intro_pedir_ids("tt7777777",0,0,0,0,0);usleep(200000);
+    intro_definir_capitulos(&capf,1);
+    n=intro_trechos(v,8);assert(n==1&&achar(v,n,INTRO_CREDITOS)->inicio==capf.inicio);
+    intro_desligar(); }
+  puts("ok  filme: a rede vence os capitulos quando trouxe algo; sem rede, valem os capitulos");
 }
 
 int main(int argc,char **argv) {
@@ -557,7 +573,7 @@ int main(int argc,char **argv) {
     assert(intro_resposta_confere("{\"season\":0,\"episode\":1}", 0, 1));
     assert(!intro_resposta_confere("{\"season\":1,\"episode\":1}", 0, 1));
     intro_montar_url_aniskip(url, sizeof url, 21, 1, 1500.0);
-    assert(strstr(url, "skip-times/21/1?types[]=op&types[]=ed&types[]=recap&episodeLength=1500"));
+    assert(strstr(url, "skip-times/21/1?types[]=op&types[]=ed&types[]=recap&types[]=mixed-op&types[]=mixed-ed&episodeLength=1500"));
     puts("ok  URLs: tmdb_id + par do TMDB + duration_ms; imdb sozinho no filme; AniSkip");
   }
   intro_definir_buscador(fakeBuscar);

@@ -4,6 +4,7 @@
 #include "js.h"
 #include "credfonte.h"
 #include "dados.h"
+#include "segfontes.h"
 #include <stdint.h>
 #include <math.h>
 #include <ctype.h>
@@ -18,6 +19,9 @@
 static pthread_mutex_t trava=PTHREAD_MUTEX_INITIALIZER;
 static IntroTrecho trechos[8];static int nTrechos;static unsigned geracao;
 static IntroTrecho creditosLimitados[8];static int nCreditosLimitados;
+// O que a REDE trouxe (IntroDB/Anime-Skip/AniSkip/TheIntroDB), guardado a parte:
+// `trechos` e sempre rede + capitulos refeito por fundirCapitulos.
+static IntroTrecho rede[8];static int nRede;
 static int botaoIdx=-1;static double botaoDesde;
 static int botaoVis;static double botaoFim;static int botaoTipo;
 // Trechos que o PROPRIO ARQUIVO declara (capitulos do MKV, 203-capitulos): valem
@@ -26,6 +30,8 @@ static int botaoVis;static double botaoFim;static int botaoTipo;
 // por tipo: um tipo que o arquivo declara substitui o da rede.
 static IntroTrecho capTr[6];static int nCapTr;
 static void fundirCapitulos(void);   // chamar COM a trava
+// DURACAO DA MIDIA E O TIPO (filme/serie), para recusar janelas absurdas.
+static double durMidia;static int ehFilme;
 static unsigned verGer;
 // Memoria unica do automatico, inclusive recuo antes de uma resposta tardia.
 static unsigned autoGer;static double autoFim[4],autoDe,autoAte;static int autoRecuou;
@@ -89,8 +95,11 @@ static int buscarInterno(const char *url,char **corpo,int *status);
 // marcado. Como o AIOMetadata: fica o mais perto da nossa duracao, e se ele
 // difere mais que INTRO_ANISKIP_TOLERA (10%) e outro corte e nao vale.
 int intro_extrair_aniskip(const char *j,double dur,IntroTrecho *out,int max){
-  static const struct{const char *nome;int tipo;}T[]={
-    {"\"op\"",INTRO_ABERTURA},{"\"ed\"",INTRO_CREDITOS},{"\"recap\"",INTRO_RESUMO}};
+  // mixed-op/mixed-ed (abertura/encerramento por cima de cena) contam como
+  // abertura/creditos, como no Nuvio TV (AutoSkipSegmentType.fromSkipIntervalType).
+  static const struct{const char *nome;int tipo,slot;}T[]={
+    {"\"op\"",INTRO_ABERTURA,0},{"\"ed\"",INTRO_CREDITOS,1},{"\"recap\"",INTRO_RESUMO,2},
+    {"\"mixed-op\"",INTRO_ABERTURA,0},{"\"mixed-ed\"",INTRO_CREDITOS,1}};
   const char *p;int n=0;size_t k;
   double melhorDif[3]={-1,-1,-1};int melhorIdx[3]={-1,-1,-1};
   IntroTrecho cand[3];
@@ -102,16 +111,17 @@ int intro_extrair_aniskip(const char *j,double dur,IntroTrecho *out,int max){
     double dif;
     tp=strstr(p,"\"skipType\"");
     if(!tp||tp>f||b<=a||a<0)continue;
-    for(k=0;k<3;k++){
+    for(k=0;k<sizeof T/sizeof T[0];k++){
       const char *v=strstr(tp,T[k].nome);
+      int s=T[k].slot;
       if(!v||v>f||v-tp>16)continue;
       // DURACAO: sem a nossa ou sem a do lancamento nao ha como comparar.
       dif=(dur>1.0&&len>1.0)?(len>dur?len-dur:dur-len)/dur:0.0;
       if(dur>1.0&&len>1.0&&dif>INTRO_ANISKIP_TOLERA)break;
-      if(melhorIdx[k]<0||dif<melhorDif[k]){
-        melhorIdx[k]=1;melhorDif[k]=dif;
+      if(melhorIdx[s]<0||dif<melhorDif[s]){
+        melhorIdx[s]=1;melhorDif[s]=dif;
         // fim no fim da midia (ED ate o ultimo segundo): "ate o fim".
-        cand[k]=(IntroTrecho){a,(len>1.0&&b>=len-0.5)?0.0:b,T[k].tipo,1};
+        cand[s]=(IntroTrecho){a,(len>1.0&&b>=len-0.5)?0.0:b,T[k].tipo,1};
       }
       break;
     }
@@ -121,7 +131,7 @@ int intro_extrair_aniskip(const char *j,double dur,IntroTrecho *out,int max){
 }
 
 void intro_montar_url_aniskip(char *url,size_t n,long mal,int ep,double dur){
-  snprintf(url,n,"https://api.aniskip.com/v2/skip-times/%ld/%d?types[]=op&types[]=ed&types[]=recap&episodeLength=%.0f",
+  snprintf(url,n,"https://api.aniskip.com/v2/skip-times/%ld/%d?types[]=op&types[]=ed&types[]=recap&types[]=mixed-op&types[]=mixed-ed&episodeLength=%.0f",
            mal,ep,dur>1.0?dur:0.0);
 }
 
@@ -423,19 +433,23 @@ int intro_extrair_backup(const char *j,const char *id,int t,int e,IntroTrecho *o
     if(n<max&&trechoBackup(j,"intro",INTRO_ABERTURA,&out[n]))n++;
     if(n<max&&trechoBackup(j,"recap",INTRO_RESUMO,&out[n]))n++;
   }else if(strcmp(tipo,"movie")||strcmp(filme,"true"))return -1;
-  if(n<max&&trechoBackup(j,"outro",INTRO_CREDITOS,&out[n])){
-    IntroTrecho cena;
-    // Como no Nuvio TV, nao pular uma cena pos-creditos junto com os creditos.
-    if(!e&&trechoBackup(j,"post_credits",INTRO_PREVIA,&cena)&&
-       cena.inicio<out[n].fim&&cena.fim>out[n].inicio)out[n].fim=cena.inicio;
-    if(out[n].fim>out[n].inicio)n++;
+  {
+    IntroTrecho cena;int temCena=!e&&trechoBackup(j,"post_credits",INTRO_POS_CREDITOS,&cena);
+    if(n<max&&trechoBackup(j,"outro",INTRO_CREDITOS,&out[n])){
+      // Como no Nuvio TV, nao pular uma cena pos-creditos junto com os creditos.
+      if(temCena&&cena.inicio<out[n].fim&&cena.fim>out[n].inicio)out[n].fim=cena.inicio;
+      if(out[n].fim>out[n].inicio)n++;
+    }
+    // A cena entra como POS_CREDITOS (era so o corte dos creditos): marcada,
+    // nunca pulada, e o cartao do fim espera o arquivo acabar (D12/D13).
+    if(temCena&&n<max)out[n++]=cena;
   }
   return n;
 }
 
 // Cache pequeno, por identidade original e sem duracao: a resposta nao muda
 // quando o player descobre a duracao. Rede/5xx/resposta errada nao viram miss.
-static struct{char id[24];int t,e,n;time_t quando;IntroTrecho v[3];}backupCache[32];
+static struct{char id[24];int t,e,n;time_t quando;IntroTrecho v[4];}backupCache[32];
 static int backupProx;
 static int pedirBackup(const Pedido *p,IntroTrecho *v,int *falha){
   char url[256],*j=NULL;int st=0,n=-1;time_t agora=time(NULL);
@@ -450,7 +464,7 @@ static int pedirBackup(const Pedido *p,IntroTrecho *v,int *falha){
   if(n>=0)return n;
   if(buscar==buscarPadrao)buscarPrazo(url,&j,&st,6000,32768);else buscar(url,&j,&st);
   if(st==404||st==204)n=0;
-  else if(st>=200&&st<300&&j&&strlen(j)<=32768)n=intro_extrair_backup(j,p->id,p->imdbT,p->imdbE,v,3);
+  else if(st>=200&&st<300&&j&&strlen(j)<=32768)n=intro_extrair_backup(j,p->id,p->imdbT,p->imdbE,v,4);
   free(j);
   printf("[intro] IntroDB backup %s S%02dE%02d: HTTP %d, %d marcadores%s\n",
          p->id,p->imdbT,p->imdbE,st,n<0?0:n,n<0?" (resposta indisponivel/invalida)":"");fflush(stdout);
@@ -461,13 +475,6 @@ static int pedirBackup(const Pedido *p,IntroTrecho *v,int *falha){
   backupCache[i].t=p->imdbT;backupCache[i].e=p->imdbE;backupCache[i].n=n;backupCache[i].quando=agora;
   memcpy(backupCache[i].v,v,(size_t)n*sizeof *v);
   pthread_mutex_unlock(&trava);return n;
-}
-static int faltaBackup(const IntroTrecho *v,int n,int episodio){
-  int tipos=0;
-  for(int i=0;i<n;i++)tipos|=1<<v[i].tipo;
-  int alvo=1<<INTRO_CREDITOS;
-  if(episodio)alvo|=(1<<INTRO_ABERTURA)|(1<<INTRO_RESUMO);
-  return (tipos&alvo)!=alvo;
 }
 
 // SEM MARCADOR DESTE EPISODIO: olha os vizinhos da mesma temporada (E-1 e
@@ -505,33 +512,50 @@ static int falhou,tentativas;static long falhouEm;
 #define INTRO_RETENTA_S     30L    // falha (5xx/rede): nova tentativa depois
 #define INTRO_RETENTA_MAX   3
 
-// ANIME PRIMEIRO NO ANISKIP. Sem MAL, sem resposta ou sem trecho: segue para o
-// TheIntroDB quando ha imdb/tmdb para perguntar (item kitsu/mal costuma nao ter).
-static int pedirAniskip(const Pedido *p,IntroTrecho *v,int max,int *falha){
-  long mal;char url[256],*j=NULL;int st=0,n=0,ep=p->e;
-  *falha=0;
-  if(ep<1)return 0;
+// IDS DE ANIME (feat/mkv-chapter-segments, como o Nuvio TV/PC): Simkl primeiro
+// (MAL e AniList da TEMPORADA certa e o episodio dentro dela); sem Simkl, o
+// caminho de antes: kitsu:/mal: pelo proprio id e IMDb/TMDB pela lista Fribb,
+// so com evidencia de anime do TMDB.
+static void idsAnime(const Pedido *p,long *mal,long *anilist,int *ep){
+  SegIds s;
+  *mal=0;*anilist=0;*ep=p->e;
+  if(p->e<1)return;
   if(!strncmp(p->id,"kitsu:",6)||!strncmp(p->id,"mal:",4)){
-    if(p->t!=1)return 0; // id do addon ja e uma temporada MAL; especial exige mapa proprio
-    mal=malDe(p->id);
-  }else{
-    if(!p->anime)return 0;
+    int kitsu=p->id[0]=='k';
+    if(p->t!=1)return; // id do addon ja e uma temporada MAL; especial exige mapa proprio
+    *mal=malDe(p->id);
+    if(segfontes_simkl(kitsu?"kitsu":"mal",p->id+(kitsu?6:4),0,p->e,&s)){
+      if(!*mal)*mal=s.mal;
+      *anilist=s.anilist;
+    }
+    return;
+  }
+  if(imdbValido(p->id)&&segfontes_simkl("imdb",p->id,p->imdbT,p->imdbE,&s)&&s.anime){
+    *mal=s.mal;*anilist=s.anilist;*ep=s.ep>0?s.ep:p->e;
+  }
+  if(*mal<=0&&p->anime){
 #ifdef __EMSCRIPTEN__
     // Fribb streams through rede_pedir on this worker. That reaches an
     // EM_ASYNC_JS outside the deliberately narrow ASYNCIFY_ONLY list.
     printf("[intro] Fribb mapping disabled on Tizen WGT: worker fetch is outside ASYNCIFY_ONLY\n");
     fflush(stdout);
-    return 0;
 #else
-    mal=malMapeado(p->id,p->tmdb,p->t,&ep);
+    int e2=p->e;long m=malMapeado(p->id,p->tmdb,p->t,&e2);
+    if(m>0){*mal=m;*ep=e2;}
 #endif
   }
-  if(mal<=0)return 0;
+}
+
+static int pedirAniskipIds(const Pedido *p,long mal,int ep,IntroTrecho *v,int max,int *falha){
+  char url[320],*j=NULL;int st=0,n=0;
+  *falha=0;
+  if(mal<=0||ep<1)return 0;
   intro_montar_url_aniskip(url,sizeof url,mal,ep,p->dur);
   buscar(url,&j,&st);
   if(st>=200&&st<=299&&j)n=intro_extrair_aniskip(j,p->dur,v,max);
   else if(st!=404&&st!=204)*falha=1;
   free(j);
+  printf("[seg] AniSkip mal %ld ep %d: HTTP %d, %d trechos\n",mal,ep,st,n);fflush(stdout);
   return n;
 }
 
@@ -551,59 +575,110 @@ int intro_completar(IntroTrecho *dst,int n,const IntroTrecho *src,int ns,int max
   return n;
 }
 
+// CATEGORIAS DO PC (segmentCategory): abertura, resumo, creditos. Filme so
+// precisa dos creditos. A previa e a cena pos-creditos nao contam.
+static int faltaCategoria(const IntroTrecho *v,int n,int filme){
+  int m=0,alvo=filme?(1<<INTRO_CREDITOS):((1<<INTRO_ABERTURA)|(1<<INTRO_RESUMO)|(1<<INTRO_CREDITOS));
+  for(int i=0;i<n;i++)if(v[i].tipo>=0&&v[i].tipo<31)m|=1<<v[i].tipo;
+  return (m&alvo)!=alvo;
+}
+// Junta `w` em `v` por tipo (a fonte anterior manda: mergeByPriority do PC).
+// Creditos que entram com inicio e fim EXPLICITOS desta fonte vao tambem para
+// os limitados (auto-pular). `expl` (opcional): a lista dos explicitos da fonte;
+// NULL = todo credito com fim > inicio e explicito.
+static int juntar(IntroTrecho *v,int n,const IntroTrecho *w,int nw,IntroTrecho *lim,int *nl,
+                  const IntroTrecho *expl,int nexpl,int ani,const char *fonte,char *log,size_t nlog){
+  int n0=n,i,k;
+  n=intro_completar(v,n,w,nw,8);
+  // intro_completar zera `ani`; o AniSkip volta a marcar os seus.
+  if(ani)for(i=n0;i<n;i++)v[i].ani=1;
+  for(i=n0;i<n;i++){
+    int e=0;
+    if(v[i].tipo!=INTRO_CREDITOS)continue;
+    if(!expl)e=v[i].fim>v[i].inicio;
+    else for(k=0;k<nexpl;k++)if(expl[k].inicio==v[i].inicio&&expl[k].fim==v[i].fim)e=1;
+    if(e&&*nl<8)lim[(*nl)++]=v[i];
+  }
+  if(n>n0){size_t l=strlen(log);snprintf(log+l,nlog-l,"%s%s(%d)",l?" + ":"",fonte,n-n0);}
+  return n;
+}
+static void publicarRede(const Pedido *p,const IntroTrecho *v,int n,const IntroTrecho *lim,int nl){
+  pthread_mutex_lock(&trava);
+  if(p->g==geracao&&n>0){
+    memcpy(rede,v,(size_t)n*sizeof *v);nRede=n;
+    memcpy(creditosLimitados,lim,(size_t)nl*sizeof *lim);nCreditosLimitados=nl;
+    fundirCapitulos();
+  }
+  pthread_mutex_unlock(&trava);
+}
+
+// A ORDEM DO NUVIO TV/PC (SkipIntroRepository.getSkipIntervals), cada fonte so
+// preenchendo a categoria que as anteriores nao deram:
+//   serie: IntroDB -> Anime-Skip -> AniSkip -> TheIntroDB (fallback)
+//   filme: IntroDB (creditos + cena pos-creditos) -> TheIntroDB (fallback)
+// O AniSkip continua escolhendo o lancamento pela duracao (10%).
 static void *baixar(void *u){
-  Pedido*p=u;char*j=NULL;IntroTrecho v[8],limitados[8];
-  int caps=0,total=0,falhaAni=0,n=pedirAniskip(p,v,8,&falhaAni),r=R_VAZIO,temCred=0,vale,deAni=n>0;
-  int nl=0,deBackup=0;
+  Pedido*p=u;char*j=NULL;IntroTrecho v[8],limitados[8],w[8];
+  int n=0,nl=0,nw,f,falha=0,r,caps=0,total=0,vale,temCred=0,deAni=0;
+  int filme=p->e<=0;
   int temIdOutro=p->tmdb>0||!strncmp(p->id,"tt",2);
-  for(int i=0;i<n;i++)if(v[i].tipo==INTRO_CREDITOS)temCred=1;
-  if(temIdOutro&&!intro_tipos_completos(v,n)){
-    IntroTrecho w[8];int nw;
-    int rj=pedirEp(p,p->t,p->e,p->dur,&j);
-    nw=j?intro_extrair(j,w,8):0;
-    nl=j&&!temCred?creditosjson_extrair(j,limitados,8):0;
-    n=intro_completar(v,n<0?0:n,w,nw,8);
-    r=rj==R_FALHA?R_FALHA:n>0?R_OK:rj;
+  char log[160]="";
+  // 1. IntroDB.
+  if(geracaoVale(p->g)&&imdbValido(p->id)){
+    nw=pedirBackup(p,w,&f);if(f)falha=1;
+    n=juntar(v,n,w,nw,limitados,&nl,NULL,0,0,"IntroDB",log,sizeof log);
+    publicarRede(p,v,n,limitados,nl);
   }
-  else if(n<=0&&falhaAni)r=R_FALHA;
-  else if(n>0)r=R_OK;
-  if(n<0)n=0;
-  if(deAni)
-    for(int i=0;i<n&&nl<8;i++)
-      if(v[i].ani&&v[i].tipo==INTRO_CREDITOS&&v[i].fim>v[i].inicio)limitados[nl++]=v[i];
-  free(j);
-  if(geracaoVale(p->g)&&imdbValido(p->id)&&faltaBackup(v,n,p->imdbE>0)){
-    // Publica o que ja chegou antes de esperar ate 6 s pelo complemento.
-    pthread_mutex_lock(&trava);
-    if(p->g==geracao&&n>0){
-      memcpy(trechos,v,(size_t)n*sizeof *v);nTrechos=n;
-      memcpy(creditosLimitados,limitados,(size_t)nl*sizeof *limitados);nCreditosLimitados=nl;
-      fundirCapitulos();
+  if(!filme&&geracaoVale(p->g)&&faltaCategoria(v,n,0)){
+    long mal,anilist;int ep;
+    idsAnime(p,&mal,&anilist,&ep);
+    // 2. Anime-Skip (Client ID da pessoa ou da conta).
+    if(anilist>0&&faltaCategoria(v,n,0)){
+      char cid[96];segfontes_animeskip_id(cid,sizeof cid);
+      nw=segfontes_animeskip(anilist,ep,cid,w,8,&f);if(f)falha=1;
+      n=juntar(v,n,w,nw,limitados,&nl,NULL,0,0,"Anime-Skip",log,sizeof log);
+      publicarRede(p,v,n,limitados,nl);
     }
-    pthread_mutex_unlock(&trava);
-    IntroTrecho w[3];int falhaBackup=0,n0=n,nw=pedirBackup(p,w,&falhaBackup);
-    n=intro_completar(v,n,w,nw,8);deBackup=n-n0;
-    for(int i=n0;i<n&&nl<8;i++)if(v[i].tipo==INTRO_CREDITOS)limitados[nl++]=v[i];
-    if(falhaBackup)r=R_FALHA;else if(n>0&&r!=R_FALHA)r=R_OK;
-    if(deBackup){printf("[intro] IntroDB backup: %d tipos ausentes adicionados\n",deBackup);fflush(stdout);}
+    // 3. AniSkip.
+    if(mal>0&&faltaCategoria(v,n,0)&&geracaoVale(p->g)){
+      int n0=n;
+      nw=pedirAniskipIds(p,mal,ep,w,8,&f);if(f)falha=1;
+      n=juntar(v,n,w,nw,limitados,&nl,NULL,0,1,"AniSkip",log,sizeof log);
+      deAni=n>n0;
+      publicarRede(p,v,n,limitados,nl);
+    }
   }
+  // 4. TheIntroDB, so pelo que ainda falta.
+  if(temIdOutro&&faltaCategoria(v,n,filme)&&geracaoVale(p->g)){
+    IntroTrecho expl[8];int ne;
+    int rj=pedirEp(p,p->t,p->e,p->dur,&j);
+    if(rj==R_FALHA)falha=1;
+    nw=j?intro_extrair(j,w,8):0;
+    ne=j?creditosjson_extrair(j,expl,8):0;
+    n=juntar(v,n,w,nw,limitados,&nl,expl,ne,0,"TheIntroDB",log,sizeof log);
+    free(j);j=NULL;
+  }
+  // Falha de uma fonte que AINDA era necessaria deixa o pedido "falho" mesmo com
+  // o parcial publicado: o retry de 30 s recupera as categorias que faltaram.
+  r=falha?R_FALHA:n>0?R_OK:R_VAZIO;
   for(int i=0;i<n;i++)if(v[i].tipo==INTRO_CREDITOS)temCred=1;
+  (void)deAni;
   pthread_mutex_lock(&trava);
   vale=p->g==geracao;
   if(vale){
     falhou=r==R_FALHA;
     if(falhou)falhouEm=(long)time(NULL);
     if(!falhou||n>0){
-      memcpy(trechos,v,(size_t)n*sizeof *v);nTrechos=n;
+      memcpy(rede,v,(size_t)n*sizeof *v);nRede=n;
       memcpy(creditosLimitados,limitados,(size_t)nl*sizeof *limitados);nCreditosLimitados=nl;
     }
     fundirCapitulos();caps=nCapTr;total=nTrechos;
   }
   pthread_mutex_unlock(&trava);
   if(vale&&r!=R_FALHA){
-    printf("[intro] %s S%02dE%02d: fonte=%s%s, %d marcadores, dur %.0fs\n",p->id,p->t,p->e,
-           caps?"capitulos":deAni?"AniSkip":n>deBackup?"TheIntroDB":deBackup?"IntroDB":"nenhuma",
-           deBackup&&n>deBackup?" + IntroDB":caps&&n>0?(deAni?" + AniSkip":" + TheIntroDB"):"",total,p->dur);fflush(stdout);
+    printf("[intro] %s S%02dE%02d: fonte=%s%s%s, %d marcadores, dur %.0fs\n",p->id,p->t,p->e,
+           log[0]?log:"nenhuma",caps?" + capitulos":"",caps&&filme&&n>0?" (filme: rede vence)":"",total,p->dur);
+    fflush(stdout);
     if(!temCred&&temIdOutro)tentarVizinhos(p);
   }
   free(p);return NULL;
@@ -615,7 +690,7 @@ static void disparar(const Pedido *base,double dur,int novo){
   p=malloc(sizeof*p);if(!p)return;
   *p=*base;p->dur=dur;
   pthread_mutex_lock(&trava);
-  if(novo){nTrechos=0;nCreditosLimitados=0;nCapTr=0;refeitos=0;tentativas=0;}
+  if(novo){nTrechos=0;nRede=0;nCreditosLimitados=0;nCapTr=0;refeitos=0;tentativas=0;}
   falhou=0;
   p->anime=animeDe(p->id,p->tmdb);
   p->g=++geracao;ultimo=*p;temUltimo=1;enviadoDur=dur;
@@ -652,16 +727,23 @@ void intro_pedir_vizinhos(const char *imdb,int t,int e,double durAnt,double durP
 void intro_pedir(const char *imdb,int t,int e){intro_pedir_vizinhos(imdb,t,e,0.0,0.0);}
 
 static int tipoDeCap(int t){return t==INTRO_ABERTURA?1:t==INTRO_RESUMO?2:3;}   // creditos e previa andam juntos
+// Refaz `trechos` = rede + capitulos. SERIE: o tipo que o arquivo declara
+// substitui o da rede (creditos, previa e cena andam juntos). FILME (D6, como
+// o Nuvio TV mergeSkipIntervals): a rede vence inteira quando trouxe algo; os
+// capitulos so valem sem nada da rede.
 static void fundirCapitulos(void){
-  int i,k,j=0;
-  if(nCapTr<=0)return;
-  for(i=0;i<nTrechos;i++){
-    int sub=0;
-    for(k=0;k<nCapTr;k++)if(tipoDeCap(capTr[k].tipo)==tipoDeCap(trechos[i].tipo))sub=1;
-    if(!sub)trechos[j++]=trechos[i];
+  int i,k,j=0,filme=temUltimo?ultimo.e<=0:ehFilme;
+  if(filme&&nRede>0){
+    memcpy(trechos,rede,(size_t)nRede*sizeof *rede);nTrechos=nRede;
+  }else{
+    for(i=0;i<nRede;i++){
+      int sub=0;
+      for(k=0;k<nCapTr;k++)if(tipoDeCap(capTr[k].tipo)==tipoDeCap(rede[i].tipo))sub=1;
+      if(!sub)trechos[j++]=rede[i];
+    }
+    nTrechos=j;
+    for(k=0;k<nCapTr&&nTrechos<8;k++)trechos[nTrechos++]=capTr[k];
   }
-  nTrechos=j;
-  for(k=0;k<nCapTr&&nTrechos<8;k++)trechos[nTrechos++]=capTr[k];
   verGer=geracao+1;   // forca valido() a reavaliar os vereditos por indice
 }
 void intro_definir_capitulos(const IntroTrecho *v,int n){
@@ -673,10 +755,9 @@ void intro_definir_capitulos(const IntroTrecho *v,int n){
       ultimo.id,ultimo.t,ultimo.e,nTrechos);fflush(stdout);}
   pthread_mutex_unlock(&trava);
 }
-void intro_desligar(void){pthread_mutex_lock(&trava);geracao++;nTrechos=nCreditosLimitados=0;nCapTr=0;botaoVis=0;botaoIdx=-1;temUltimo=0;falhou=0;pthread_mutex_unlock(&trava);}
+void intro_desligar(void){pthread_mutex_lock(&trava);geracao++;nTrechos=nRede=nCreditosLimitados=0;nCapTr=0;botaoVis=0;botaoIdx=-1;temUltimo=0;falhou=0;pthread_mutex_unlock(&trava);}
 
 // DURACAO DA MIDIA E O TIPO (filme/serie), para recusar janelas absurdas.
-static double durMidia;static int ehFilme;
 // E O GATILHO DO PEDIDO DE NOVO (2.0.3, como o plugin oficial): a duracao real
 // chegou ou mudou mais que INTRO_REFAZ_DUR_S desde o ultimo pedido -> pede com
 // `duration_ms`; uma falha (5xx/rede) tenta de novo a cada INTRO_RETENTA_S.
