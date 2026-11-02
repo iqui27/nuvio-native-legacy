@@ -226,9 +226,25 @@ static void ajAcento8(int *r, int *g, int *b) {
 // (txt_desenhar_alpha), nao na rasterizacao: uma textura por opacidade
 // encheria o cache de linhas.
 #define AJ_TX 243, 242, 239, 255
-static TxtLinha ajTxt(TxtEstilo e, const char *s) { return txt_linha(e, s, AJ_TX); }
-static TxtLinha ajTxtC(TxtEstilo e, const char *s, float maxW) { return txt_linha_corta(e, s, AJ_TX, maxW); }
-static TxtLinha ajTxtT(TxtEstilo e, const char *s) { int t = ajTinta(); return txt_linha(e, s, t, t, t, 255); }
+#ifdef NV_DESKTOP_UI
+// Match the board's readable Mac labels without changing row geometry or TV fonts.
+static TxtEstilo ajDesktopTexto(TxtEstilo e) {
+  if (layout_desktop_ativo()) {
+    if (e == TXT_V2_LN) return TXT_V3_LN;
+    if (e == TXT_V2_LN_B) return TXT_V3_LN_B;
+    if (e == TXT_V2_24) return TXT_V2_28;
+    if (e == TXT_V2_18) return TXT_AJ_TEXTO;
+    if (e == TXT_V3_INSP) return TXT_V3_VAL;
+  }
+  return e;
+}
+#define AJ_TEXTO(e) ajDesktopTexto(e)
+#else
+#define AJ_TEXTO(e) (e)
+#endif
+static TxtLinha ajTxt(TxtEstilo e, const char *s) { return txt_linha(AJ_TEXTO(e), s, AJ_TX); }
+static TxtLinha ajTxtC(TxtEstilo e, const char *s, float maxW) { return txt_linha_corta(AJ_TEXTO(e), s, AJ_TX, maxW); }
+static TxtLinha ajTxtT(TxtEstilo e, const char *s) { int t = ajTinta(); return txt_linha(AJ_TEXTO(e), s, t, t, t, 255); }
 // Caixa alta espacada (kicker): i18n antes, maiusculas (latim + acentos) e tracking.
 static float ajCapsRGB(TxtEstilo e, const char *s, float track, float x, float y, float al, int cr, int cg, int cb) {
   char up[200];
@@ -285,7 +301,7 @@ static void ajIconeT(const char *nome, float x, float y, float lado, float a) {
 }
 // Bloco de texto com a cor do mockup e o alfa no desenho.
 static float ajBloco(TxtEstilo e, const char *s, float x, float y, float w, float lh, float al, int maxL) {
-  return txt_bloco(e, s, 243, 242, 239, x, y, w, lh, al, maxL);
+  return txt_bloco(AJ_TEXTO(e), s, 243, 242, 239, x, y, w, lh, al, maxL);
 }
 
 // --- FUNDO ----------------------------------------------------------------------

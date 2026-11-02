@@ -319,10 +319,14 @@ void desktop_native_init(SDL_Window *window) {
   if (!SDL_GetWindowWMInfo(window, &info)) return;
   nativeWindow = info.info.cocoa.window;
   BOOL capture = getenv("NV_CAPTURA") != NULL;
-  [NSApp setActivationPolicy:capture ? NSApplicationActivationPolicyAccessory : NSApplicationActivationPolicyRegular];
+  BOOL readback = capture && getenv("NV_CAPTURA_GL");
+  [NSApp setActivationPolicy:readback ? NSApplicationActivationPolicyProhibited :
+                            capture ? NSApplicationActivationPolicyAccessory : NSApplicationActivationPolicyRegular];
   if (capture) {
     nativeWindow.hidesOnDeactivate = NO;
-    [nativeWindow orderBack:nil];
+    nativeWindow.ignoresMouseEvents = YES;
+    if (readback) [nativeWindow orderOut:nil];
+    else [nativeWindow orderBack:nil];
   } else {
     [NSApp activateIgnoringOtherApps:YES];
     [nativeWindow makeKeyAndOrderFront:nil];

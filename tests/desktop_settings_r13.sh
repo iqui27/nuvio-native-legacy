@@ -46,7 +46,10 @@ if [ -n "${NV_DESKTOP_SETTINGS_BIN:-}" ]; then
   cc -c "$root/src/app.c" "${flags[@]}" -o "$work/app-real.o"
   cc -c "$root/src/ajustes.c" "${flags[@]}" -o "$work/ajustes.o"
   cc -c "$root/src/main.c" "${flags[@]}" -o "$work/main.o"
-  cc "${objects[@]}" "$work/app-real.o" "$work/ajustes.o" "$work/main.o" -o "$NV_DESKTOP_SETTINGS_BIN" "${libs[@]}"
+  frameworks="${NUVIO_DESKTOP_CACHE:-/Volumes/ExternalSSD/tmp/rev/desktop/cache}/frameworks"
+  cc "${objects[@]}" "$work/app-real.o" "$work/ajustes.o" "$work/main.o" -o "$NV_DESKTOP_SETTINGS_BIN" \
+    -F"$frameworks" -framework SDL2 -framework SDL2_image -framework SDL2_ttf -lz \
+    -framework OpenGL -framework Cocoa -framework QuartzCore -Wl,-rpath,"$frameworks"
   mkdir -p "$NV_DESKTOP_SETTINGS_BIN.objects"
   cp "$work/app-real.o" "$work/ajustes.o" "$work/main.o" "$NV_DESKTOP_SETTINGS_BIN.objects/"
 fi

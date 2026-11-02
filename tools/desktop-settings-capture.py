@@ -71,7 +71,8 @@ for path in (DATA / 'ajustes.txt', DATA / 'ajustes-p1.txt'):
 (DATA / 'perfis.txt').write_text('1\t0\t1\t0\t#777B83\tPerfil local\t\t\t0\n')
 (DATA / 'aparencia-20.txt').write_text('1\n')
 (DATA / 'seguro.txt').unlink(missing_ok=True)
-(DATA / 'atualizacao-vista.txt').write_text('2.1.0\n')
+# The remote 2.0.8 release notice has already been seen in this offline fixture.
+(DATA / 'atualizacao-vista.txt').write_text('2.0.8\n')
 (DATA / 'desktop-sidebar.txt').write_text('0\n')
 helper_source = RUNTIME / 'front.m'
 helper_source.write_text('#import <Cocoa/Cocoa.h>\nint main(void) { @autoreleasepool { printf("%d\\n", NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier); } }\n')
@@ -89,6 +90,7 @@ def command(value):
         assert time.monotonic() < deadline, value
         time.sleep(.05)
     time.sleep(.6)
+    assert front() != pid, 'capture activated during ' + value
 def photo(name):
     source = IPC / 'nuvio-shot.bmp'
     source.unlink(missing_ok=True)
@@ -126,7 +128,6 @@ try:
     assert front() != pid
     assert '[dados] gravando em ' + str(DATA) + '\n' in LOG.read_text(errors='replace')
     command('appearance:DarkAqua')
-    command('back')
     command('janela:1440,900')
     command('preview:settings:0')
     command('mover:1380,880')

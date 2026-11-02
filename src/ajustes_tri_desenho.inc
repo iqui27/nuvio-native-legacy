@@ -276,19 +276,23 @@ static void triCabecalho(void) {
       txt_desenhar(title, x, y + 30);
     }
     for (i = 0; i < AJ_N; i++) if (TELA[i].tipo == IT_OPC && ajOpcaoDisponivel(TELA[i].op) && uxDiferente(TELA[i].op) && triMutavel(TELA[i].op)) difs++;
+    const float points = (4.0f / 3.0f) / AJ2_S;
+    static const float widths[] = {190, 118, 182, 150};
+    static const float gaps[] = {0, 8, 18, 60};
+    xd -= 38 * points;
     for (i = TRI_C_N - 1; i >= 0; i--) {
       char label[200];
       snprintf(label, sizeof label, "%s", i18n(rot[i]));
       if (i == TRI_C_DIF && difs) snprintf(label, sizeof label, "%s · %d", i18n(rot[i]), difs);
-      float w = i == TRI_C_BUSCA ? 380 : txt_largura(TXT_V2_SEG, label) + 44;
-      GfxRect r = {xd - w, y + 64, w, 48};
+      float w = fmaxf(widths[i] * points, txt_largura(TXT_V2_SEG, label) + 44);
+      GfxRect r = {xd - w, 100 * points, w, 24 * points};
       if (!desktop_native_control(i, i == TRI_C_BUSCA ? 3 : 2, label, 0, 1, r.x, r.y, r.w, r.h, 1)) {
         ajNeutro(r, 8, .08f, AJ_CHIP_SOL, 1);
         TxtLinha t = ajTxtC(TXT_V2_SEG, label, r.w - 24);
         txt_desenhar(t, r.x + 12, r.y + (r.h - t.h) * .5f);
       }
       ponteiro_alvo(r.x, r.y, r.w, r.h, triPontChip, NULL, i, 0);
-      xd = r.x - (i == TRI_C_TOUR ? 120 : 32);
+      xd = r.x - gaps[i] * points;
     }
     return;
   }
