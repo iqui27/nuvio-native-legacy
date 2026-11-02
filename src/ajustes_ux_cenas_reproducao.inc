@@ -766,9 +766,77 @@ static void rPercentual(void) {
   ajc_cartaz(440, 48, 64, 64, 3, 0.9f);
 }
 
+// Video opening: Cinema holds title art until the first frame; Detailed reveals
+// source, add-on and steps. Related opening options all update this same preview.
+static void rTelaAbertura(int op) {
+  float detalhada = rK(ajcValor(AJ_TELA_ABERTURA));
+  float cinema = 1.0f - detalhada;
+  float addon = ajcLig(AJ_ABERTURA_ADDON);
+  float fundo = rK(ajcValor(AJ_ABERTURA_FUNDO) * 0.5f);
+  float canto = rK(ajcValor(AJ_ABERTURA_ESTILO));
+  float carga = 0.22f + 0.72f * ajc_onda(3.4f);
+  float faseVideo = ajc_passo_t(3.2f);
+  float logoX = rMix(320.0f, 132.0f, canto), logoY = rMix(116.0f, 238.0f, canto);
+  float progressoY = rMix(252.0f, 300.0f, canto);
+  int etapa = ajc_passo(4.8f, 3), i;
+  ajc_video(0, 0, 640, 360, 0, 0.34f + 0.66f * fundo);
+  ajc_veu(0, 0, 640, 360, 0, 0.38f + 0.30f * (1.0f - fundo));
+  ajc_veu(0, 220, 640, 140, 0, 0.68f);
+
+  ajc_barra(logoX - 92.0f, logoY, 184.0f, 0.76f * cinema);
+  ajc_barra(logoX - 58.0f, logoY + 16.0f, 116.0f, 0.36f * cinema);
+  ajc_progresso(logoX - 166.0f, progressoY, 332.0f, carga, cinema);
+  if (addon > 0.01f) ajc_barra(logoX - 44.0f, progressoY + 14.0f, 88.0f, 0.42f * addon * cinema);
+  if (faseVideo > 0.82f) ajc_play(logoX, logoY + 64.0f, 34.0f, cinema * (faseVideo - 0.82f) / 0.18f);
+
+  ajc_vidro(36, 48, 386, 264, 18, detalhada);
+  ajc_barra(102, 70, 188, 0.72f * detalhada);
+  ajc_barra(102, 85, 124, 0.36f * detalhada);
+  for (i = 0; i < 3; i++) {
+    float y = 116.0f + i * 58.0f;
+    float pronta = i < etapa ? 1.0f : i == etapa ? ajc_passo_t(1.6f) : 0.0f;
+    float ligada = i != 1 || addon > 0.5f;
+    ajc_neutro(58, y, 342, 46, 12, detalhada * (ligada ? i <= etapa ? 0.92f : 0.38f : 0.22f));
+    if (!ligada) ajc_icone("aj_x", 84, y + 23, 16, 0.35f * detalhada);
+    else if (i < etapa) ajc_icone("aj_check", 84, y + 23, 18, detalhada);
+    else if (i == etapa) ajc_anel(84, y + 23, 10, pronta, detalhada);
+    else ajc_icone("aj_loader", 84, y + 23, 17, 0.42f * detalhada);
+    ajc_barra(108, y + 13, i == 0 ? 176 : 142, 0.72f * detalhada * (0.45f + 0.55f * pronta));
+    ajc_barra(108, y + 28, i == 2 ? 82 : 112, 0.31f * detalhada);
+  }
+  (void)op;
+}
+
+// Buffer: selected capacity changes the read-ahead window while chunks move
+// into it. Reduced motion holds a complete, readable buffer state.
+static void rBuffer(void) {
+  float v = rK(ajcValor(AJ_BUFFER) / 3.0f);
+  float onda = ajc_onda(3.0f), cap = v < 0.01f ? 0.58f : 0.22f + 0.72f * v;
+  float w = 430.0f * cap, x = 78.0f + (430.0f - w) * onda;
+  int i, n = (int)(cap * 8.0f + 0.5f);
+  ajc_video(0, 0, 640, 360, 0, 0.76f);
+  ajc_veu(0, 220, 640, 140, 0, 0.78f);
+  ajc_icone("aj_play", 78, 176, 34, 0.9f);
+  ajc_ret(118, 172, 430, 8, 4, 1, 1, 1, 0.18f);
+  for (i = 0; i < 8; i++) {
+    float bx = 118.0f + i * 54.0f;
+    ajc_neutro(bx, 158, 46, 34, 8, 0.72f);
+    if (i < n) ajc_acento_ret(bx, 158, 46, 34, 8, 0.78f);
+  }
+  ajc_acento_ret(x, 205, w, 6, 3, 0.9f);
+  ajc_bolinha(x + w * fminf(onda, 0.92f), 208, 14, 1, 1, 1, 0.9f);
+  for (i = 0; i < 3; i++) {
+    float q = fmodf(onda + i / 3.0f, 1.0f);
+    ajc_bolinha(118.0f + q * 430.0f, 252, 7, 1, 1, 1, 0.25f + 0.55f * (1.0f - q));
+  }
+}
+
 static int ajcNovaReproducao(int sec, int op) {
   (void)sec;
   switch (op) {
+    case AJ_TELA_ABERTURA: case AJ_ABERTURA_ADDON: case AJ_ABERTURA_FUNDO: case AJ_ABERTURA_ESTILO:
+      rTelaAbertura(op); return 1;
+    case AJ_BUFFER: rBuffer(); return 1;
     case AJ_FONTE_HDR: rHdr(); return 1;
     case AJ_DV: rDv(op); return 1;
     case AJ_ATMOS: rAtmos(op); return 1;

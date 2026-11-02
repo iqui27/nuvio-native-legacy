@@ -27,6 +27,7 @@ _Static_assert(AJS_HOME == 4 && AJS_CONTAS == 8, "triGrupo segue a ordem dos SEC
 #define TRI_P_H         (NV_VTELA_H - 148.0f)   /* 932 at 1080; shrinks with text/Settings scale */
 #define TRI_P_X1        452.0f
 #define TRI_P_X2        176.0f
+static float triBladeLargura(void) { return TRI_P_COL; }
 // triProfF (a profundidade animada, mola NV_MOLA_TELA) e o estado em
 // ajustes_tri.inc, incluido antes deste arquivo: enxergamos direto.
 
@@ -1009,23 +1010,13 @@ static void triBladeRealce(int item, float a) {
 static int triCenaHome(int sec, int op) {
   return op == AJ_TEMA || op == AJ_COR_LOGO || op == AJ_INTERFACE_MODO || (op < 0 && sec == AJS_APARENCIA);
 }
-// op -2: o indice. A cena e a arte da secao no corte largo do estagio (a
-// Reproducao leva o pause no meio, como o mockup).
+// op -2: indice. Cada secao usa sua cena gerada no corte largo do estagio;
+// cartaz de filme nao explica categorias como Reproducao ou Conta.
 static int triCenaChave(int sec, int op) { return op == -2 ? 3000 + sec : triCenaHome(sec, op) ? -100 : op >= 0 ? op : 2000 + sec; }
 static float triCenaPintar(int sec, int op, float x, float y, float w) {
   int salvo = op >= 0 ? valor[op] : 0;
   float h;
-  if (op == -2) {
-    GfxRect r = triPalcoR();
-    r.x = x; r.w = w;
-    ajImg(ajArte(AJA_FUNDO, ajCenaArteN(sec)), r, 28.0f, 1.0f);
-    if (sec == AJS_REPRODUCAO) {
-      float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f;
-      gfx_cor((GfxRect){ cx - 52.0f, cy - 52.0f, 104.0f, 104.0f }, 0.5f, 0.08f, 0.08f, 0.1f, 0.42f);
-      ajIcone("aj_pause", cx - 22.0f, cy - 22.0f, 44.0f, 0.9f);
-    }
-    return r.h;
-  }
+  if (op == -2) return ajVisualCena(sec, -1, x, y, w);
   if (op >= 0 && uxEditor == 1 && uxOp == op && op != AJ_FUNDO) valor[op] = uxPendente;   // so desenho
   if (triCenaHome(sec, op)) h = ajPreviaHome(x, y, w);
   else if (op < 0 && sec == AJS_REPRODUCAO) { h = ajc_comecar(x, y, w, 1.0f); ajcCenaPlayer(-1); ajc_fim(); }

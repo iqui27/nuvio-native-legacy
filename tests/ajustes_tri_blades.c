@@ -70,6 +70,19 @@ int main(void) {
   key(SDLK_ESCAPE); settle();
   assert(triProfundidade() == 0 && triIlha == TRI_SECOES && triSecFoco == AJS_APARENCIA);
 
+  // Measuring this two-value choice while editor state is active must not
+  // recurse through list geometry, whether this host fits it inline or not.
+  focarOpcao(AJ_TELA_ABERTURA);
+  assert(nValores(AJ_TELA_ABERTURA) == 2);
+  {
+    int depth = triProfundidade() + !ajEmLinha(AJ_TELA_ABERTURA);
+    uxAbrirEditor(AJ_TELA_ABERTURA);
+    assert(uxEditor == 1 && uxOp == AJ_TELA_ABERTURA);
+    assert(triProfundidade() == depth);
+  }
+  uxCancelar();
+  triIrSecoes(); settle();
+
   // Values change only on OK: Right on a switch does nothing, OK flips it.
   triEntrar(AJS_REPRODUCAO);
   int durante = block(AJS_REPRODUCAO, "Durante e depois");

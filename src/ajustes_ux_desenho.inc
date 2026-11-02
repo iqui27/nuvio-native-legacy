@@ -328,6 +328,7 @@ static GfxRect triInspR(void);
 static int triTemInsp(void);
 static int triProfundidade(void);   // ajustes_tri.inc: 0 indice, 1 secao, 2 topico, 3 escolha
 static int triBladeLayout(void);    // ajustes_tri_desenho.inc: o layout Palco (pilha de blades)
+static float triBladeLargura(void); // ajustes_tri_desenho.inc: TRI_P_COL
 static float ajX0(void) { return (48.0f + ajustes_rail_largura_fixa()) / ajustes_tamanho_ajustes(); }
 static float ajFolhaX(void) { return ajX0() + AJI_IDX_W + 24.0f; }
 // TAMANHO DA INTERFACE (escala.h): na tela virtual menor as tres ilhas nao
@@ -463,12 +464,12 @@ static int ajSegmentada(int op) {
   if (n < 2 || n > 3 || !OPCOES[op].valores) return 0;
   // O segmentado so fica na linha se o nome da opcao cabe ao lado dele;
   // senao a escolha abre no editor.
-  // Palco: no bar, the row shows the rolling value + position pips (ajDesenharLinha),
-  // so measure that form against the blade (label, widest value, pips, icon, padding).
+  // Palco: measure against fixed blade width; querying list geometry re-enters
+  // triEditorBlade -> ajEmLinha -> ajSegmentada while editor depth is computed.
   if (triBladeLayout()) {
     char vb[96]; float vw = 0.0f; int i;
     for (i = 0; i < n; i++) { uxValorTexto(op, i, vb, sizeof vb); vw = fmaxf(vw, (float)txt_largura(TXT_AJ_VALOR, vb)); }
-    return 88.0f + (float)txt_largura(TXT_V2_SEG, rotuloOpcao(op)) + 24.0f + vw + 51.0f <= aj2ListaWRef() - 58.0f;
+    return 88.0f + (float)txt_largura(TXT_V2_SEG, rotuloOpcao(op)) + 24.0f + vw + 51.0f <= triBladeLargura() - 58.0f;
   }
   { float w = aj2SegLargura(op, n);
     if (w + (float)txt_largura(TXT_V2_ROT, rotuloOpcao(op)) + 60.0f + 20.0f > aj2ListaWRef() - 44.0f) return 0;
