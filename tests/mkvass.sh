@@ -41,14 +41,16 @@ L.append("Dialogue: 0,%s,%s,Default,,0,0,0,,%s"%(t(118.0),t(119.75),long_text))
 open(sys.argv[1],"w").write("\n".join(L)+"\n")
 EOF
 
+# Fixture font: a small stable TTF. InterDisplay grew to 1 MB with legacy
+# kerning (ee3f17266) and alone broke the "< 2 %" byte budget.
 # 1500 kbps para o arquivo ter tamanho de verdade (uns 20 MB): a asserção de
 # "< 2 % dos bytes" nao faz sentido num MKV de 200 KB.
 "$FFMPEG" -v error -y \
   -f lavfi -i "testsrc2=size=640x360:rate=24:duration=120" \
   -f lavfi -i "sine=frequency=440:duration=120" \
   -i "$DIR/ref.ass" -map 0:v -map 1:a -map 2:s \
-  -attach deploy/app/fonts/InterDisplay-Regular.ttf \
-  -metadata:s:t:0 mimetype=font/ttf -metadata:s:t:0 filename=InterDisplay-Regular.ttf \
+  -attach deploy/app/fonts/JetBrainsSans-Regular.ttf \
+  -metadata:s:t:0 mimetype=font/ttf -metadata:s:t:0 filename=JetBrainsSans-Regular.ttf \
   -c:v libx264 -preset ultrafast -b:v 1500k -c:a aac -c:s ass "$DIR/t.mkv"
 # O no-go de codec: a mesma legenda como S_TEXT/UTF8 (SRT).
 "$FFMPEG" -v error -y \

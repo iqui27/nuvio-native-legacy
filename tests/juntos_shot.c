@@ -375,7 +375,9 @@ int main(int argc, char **argv) {
       IlhaCartao card; int qual;
       assert(ilha_pediu(&card, &qual) == ILHA_PEDIU_TOCAR && qual == ILHA_JUNTOS);
       assert(juntos_reentrar() && abrirPedido && escolhendo);
-      assert(!strcmp(abrirImdb, "tt15239678")); abrirPedido = escolhendo = 0;
+      assert(!strcmp(abrirImdb, "tt15239678"));
+      // Back out of the rejoined player: the room card lives outside playback (765368e4c).
+      assert(!juntos_ao_voltar() && !abrirPedido && !escolhendo);
       quadros(45);
       assert(juntos_banner());
       spainel_ir_aba(2); assert(spainel_aba_atual() == 2); quadros(80);
@@ -390,7 +392,7 @@ int main(int argc, char **argv) {
       // Host source selection opens through the real app handoff.
       const CatItem item = {.imdb="tt15239678", .tipo="movie", .titulo="Duna: Parte 2"};
       cat_definir(&item, 1);
-      fase = JF_PREPARADO; fonteSolicitada = 0;
+      fase = JF_PREPARADO; fonteSolicitada = 0; foraDoPlayer = 0;   // the room opens its player again
       snprintf(abrirImdb, sizeof abrirImdb, "tt15239678");
       snprintf(abrirTitulo, sizeof abrirTitulo, "Duna: Parte 2");
       abrirT = abrirE = 0; abrirPedido = 1; motor.temSala = 0;

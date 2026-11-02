@@ -8,6 +8,10 @@
 #include <SDL2/SDL.h>
 void *SDL_AndroidGetJNIEnv(void);
 void *SDL_AndroidGetActivity(void);
+// Sample stamps come from nv_ticks64 since a877c0f7c; drive it from the fake clock.
+#define NV_TICKS_H
+#include <stdint.h>
+static uint64_t nv_ticks64(void);
 #include "../src/video_android.c"
 // capmkv.c (capitulos do MKV) nao faz parte deste teste.
 int juntos_precarregando(void) { return 0; }
@@ -36,6 +40,7 @@ void *SDL_AndroidGetJNIEnv(void) { return semEnv ? NULL : &env; }
 void *SDL_AndroidGetActivity(void) { return NULL; }
 Uint32 SDL_GetTicks(void) { return relogio; }
 Uint64 SDL_GetTicks64(void) { return relogio; }
+static uint64_t nv_ticks64(void) { return relogio; }
 SDL_mutex *SDL_CreateMutex(void) { return (SDL_mutex *)(uintptr_t)1; }
 void marco(const char *s) { (void)s; }
 const char *ling_audio(void) { return ""; }

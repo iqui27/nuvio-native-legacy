@@ -192,7 +192,7 @@ static int opcoes(int *o){const FmEstado *s=fd_ficha()->st+selecionado;int n=0;o
 static int evento(const SDL_Event *e){if(e->type!=SDL_KEYDOWN||e->key.repeat)return 0;preparar();const FdFicha *d=fd_ficha();SDL_Keycode k=e->key.keysym.sym;int back=nv_tecla_voltar(e);int ok=k==SDLK_RETURN||k==SDLK_KP_ENTER;
   if(layout_desktop_ativo() && (k==SDLK_UP || k==SDLK_DOWN || k==SDLK_LEFT || k==SDLK_RIGHT)) desktopFree=0;
   if(conquistas_aviso_evento(e))return 0;
-  if(back){if(camada){camada=0;op=0;trailer_fechar();return 0;}saindo=1;return 0;}
+  if(back){if(camada){camada=0;op=0;trailer_fechar();return 0;}if(zona>=2){zona=1;col=aba;return 0;}saindo=1;return 0;}
   if(camada){
     if(camada==5){if(k==SDLK_DOWN)bioPagina++;if(k==SDLK_UP&&bioPagina)bioPagina--;if(ok)camada=0;return 0;}
     int o[5],no=camada==1?opcoes(o):0,max=camada==1?no:camada==2?6:camada==3?3:3;

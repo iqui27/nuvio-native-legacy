@@ -1,6 +1,7 @@
 // Exercise the production video contract without opening media or networking.
 #include "video.h"
 #include "cacheboost.h"
+#include "nv_ticks.h"  // video stamps use nv_ticks64 since a877c0f7c
 #include <SDL2/SDL.h>
 #include <assert.h>
 #include <math.h>
@@ -28,15 +29,15 @@ int main(void) {
 
   VideoSimulacao sim = {0};
   sim.pos = 12.5; sim.pronto = 1;
-  before = SDL_GetTicks64();
+  before = nv_ticks64();
   video_simular(&sim);
-  after = SDL_GetTicks64();
+  after = nv_ticks64();
   assert(fabs(video_pos_amostra(&stamp) - 12.5) < 1e-9);
   assert(stamp >= before && stamp <= after);
   SDL_Delay(10);
   Uint64 same;
   assert(video_pos_amostra(&same) == 12.5 && same == stamp);
-  before = SDL_GetTicks64();
+  before = nv_ticks64();
   video_simular(&sim); // Equal values still represent a fresh sample.
   assert(video_pos_amostra(&same) == 12.5 && same >= before && same > stamp);
   assert(video_pos_amostra(NULL) == 12.5);

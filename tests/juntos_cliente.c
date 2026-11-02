@@ -26,6 +26,9 @@ void video_taxa_sync(int r) { rate = r; }
 
 int main(void) {
   double stamp;
+  // Playback hooks only act while the room owns the player (2b3d254b0).
+  pVel(NULL, 95); assert(rate == 0);
+  fase = JF_PREPARADO;
   assert(pPos(NULL, &stamp) == 12.5 && stamp == 4294967400.0);
   pVel(NULL, 95); assert(rate == 950);
   pVel(NULL, 100); assert(rate == 1000);

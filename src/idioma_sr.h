@@ -1507,7 +1507,7 @@
   T("Ações ao focar, elenco alinhado e temporadas mais compactas.", "Actions on focus, aligned cast labels and smaller season pills."),
   T("Ações mais leves", "Lighter actions"),
   T("B (sem seleção de faixa)", "B (bez izbora trake)"),
-  T("BG · България", "BG · Bъlgariя"),
+  T("BG · България", "BG · България"),
   T("BIBLIOTECA", "BIBLIOTEKA"),
   T("BORDA E ATRASO", "IVA I KAŠNjENjE"),
   T("BR · Brasil", "BR · Brasil"),

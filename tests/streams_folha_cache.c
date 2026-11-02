@@ -24,8 +24,13 @@ static float headlessBlock(TxtEstilo e, const char *s, int r, int g, int b,
 #define txt_tracking(e,s,r,g,b,x,y,a,t) ((float)strlen(s) * 8)
 #define gfx_recorte(...) ((void)0)
 #define gfx_sem_recorte() ((void)0)
-// The focused filename marquee clips inside the row (af04cde38).
-#define gfx_recorte_dentro(...) ((GfxRecorteAnt){0})
+// Filename marquee (af04cde38): raw lines and a nested clip, headless too.
+#define txt_linha_bruta headlessLine
+#define txt_linha_corta_bruta headlessCut
+static GfxRecorteAnt headlessClip(float x, float y, float w, float h) {
+  (void)x; (void)y; (void)w; (void)h; return (GfxRecorteAnt){0};
+}
+#define gfx_recorte_dentro headlessClip
 #define gfx_recorte_voltar(...) ((void)0)
 #include "addons.h"
 static unsigned addonRevision;

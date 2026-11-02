@@ -311,7 +311,7 @@ int main(int argc, char **argv) {
        "sidecar preserva integralmente o evento acima de 1 KiB"); }
   { struct stat fonteOriginal, fonteCache;
     dados_caminho(caminhoSidecar, sizeof caminhoSidecar, sidecarFontes);
-    ok(stat("deploy/app/fonts/InterDisplay-Regular.ttf", &fonteOriginal) == 0 &&
+    ok(stat("deploy/app/fonts/JetBrainsSans-Regular.ttf", &fonteOriginal) == 0 &&
        stat(caminhoSidecar, &fonteCache) == 0 && fonteCache.st_size > fonteOriginal.st_size,
        "fontes anexadas salvas no cache versionado"); }
   { LegendaCue *v = NULL; int n = corpo ? legenda_extrair_ass(corpo, &v) : 0;

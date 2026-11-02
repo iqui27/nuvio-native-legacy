@@ -15,7 +15,8 @@ for screen in biblioteca comecar conquistas filmo; do
     biblioteca) origin='return paginaX();';;
     comecar) origin='origem(); return ox + MARGEM;';;
     conquistas) origin='origem(); return ox + MG;';;
-    filmo) origin='return paginaX() + 72;';;
+    # Filmography grid tab: the History tab keeps the mock's 120 px (db0f8404a).
+    filmo) origin='int a = aba; aba = 1; float r = paginaX() + 72; aba = a; return r;';;
   esac
   printf '#include "%s/src/%s.c"\nfloat t21_probe_%s(void) { %s }\n' \
     "$PWD" "$screen" "$screen" "$origin" > "$work/$screen.c"
@@ -24,9 +25,15 @@ cc tests/tela21.c "$work"/*.c -Isrc -I/opt/homebrew/include -I/opt/homebrew/incl
   -O1 -ffunction-sections -fdata-sections "${strip[@]}" -lm -o "$work/test"
 "$work/test"
 # Instrument only the two production screens; keep the real renderer and input.
+# filmo.c wraps ponteiro_alvo behind #undef (d34e0a548); keep the wrapper's
+# real call instrumented too.
+sed 's|^#undef ponteiro_alvo$|#undef ponteiro_alvo\
+#define ponteiro_alvo t21_checked_target|; s|^#define ponteiro_alvo navigationTarget$|#undef ponteiro_alvo\
+#define ponteiro_alvo navigationTarget|' src/filmo.c > "$work/filmo-src.c"
 for screen in filmo conquistas; do
-  printf '#include "%s/tests/tela21_shot.h"\n#include "%s/src/%s.c"\n' \
-    "$PWD" "$PWD" "$screen" > "$work/render-$screen.c"
+  src="$PWD/src/$screen.c"; [ "$screen" = filmo ] && src="$work/filmo-src.c"
+  printf '#include "%s/tests/tela21_shot.h"\n#include "%s"\n' \
+    "$PWD" "$src" > "$work/render-$screen.c"
 done
 sources=()
 for source in src/*.c src/dts/*.c; do

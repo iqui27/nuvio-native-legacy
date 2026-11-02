@@ -10,6 +10,7 @@
 #include "gfx.h"
 #include "text.h"
 #include "plrui.h"
+#include "botoes.h"
 #include "ponteiro.h"
 #include "tex_cache.h"
 #include <SDL2/SDL_image.h>
@@ -48,6 +49,9 @@ void t21_checked_material(GfxRect r,float radius,int modal,float a) {
 }
 void t21_checked_button(GfxRect r,float a) {
   bounds(r,"control"); controls++; plrui_botao_repouso(r,a);
+}
+void t21_checked_pill(GfxRect r,const char *label,const char *icon,float focus,int primary,int align,float a) {
+  bounds(r,"control"); controls++; botao_pilula_sem_aro(r,label,icon,focus,primary,align,a);
 }
 void t21_checked_target(float x,float y,float w,float h,PonteiroFn focus,PonteiroFn activate,int a,int b) {
   // Pointer registration does not inherit gfx group transforms.
@@ -99,7 +103,9 @@ int main(int argc,char **argv) {
     ajustes_dir(dados_dir()); gfx_escala_txt_definir(scales[i]);
     int save=rail&&(i==1||i==2||i==4);
     filmo_abrir(); capture(argv[1],"history",0,save);
-    key(SDLK_DOWN); key(SDLK_RETURN); assert(filmo_camada()==1); capture(argv[1],"options",0,save);
+    // History focus walks tabs, chapters, years, then posters (d34e0a548).
+    for(int q=0;q<4;q++) key(SDLK_DOWN);
+    key(SDLK_RETURN); assert(filmo_camada()==1); capture(argv[1],"options",0,save);
     key(SDLK_ESCAPE); key(SDLK_ESCAPE); key(SDLK_RIGHT); capture(argv[1],"page",0,save);
     key(SDLK_DOWN); key(SDLK_DOWN); capture(argv[1],"grid",0,save);
     key(SDLK_ESCAPE); key(SDLK_RIGHT); capture(argv[1],"about",0,save);

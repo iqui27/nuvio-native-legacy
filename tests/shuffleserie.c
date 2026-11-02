@@ -324,7 +324,7 @@ int main(int argc, char **argv) {
   abrir(0);
   focar(SEC_TEMPORADAS, 1);
   quadros(60);
-  CONFERE(secaoN(SEC_TEMPORADAS) == 5, "serie: quatro abas e UMA coluna a mais, o botao de aleatorio");
+  CONFERE(secaoN(SEC_TEMPORADAS) == 6, "serie: quatro abas, o botao de aleatorio e o seletor de spoilers (ce2fe50b6)");
 
   // --- B. alcance pelo controle ---------------------------------------------
   { int temp0 = temporada;
