@@ -38,6 +38,7 @@
 #include "dados.h"
 #include "ilha.h"
 #include "vazao.h"
+#include "trailer.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -1530,7 +1531,7 @@ static int soLog(LSHandle *h, LSMessage *m, void *u) {
 // global com o LSRegister nem com outra chamada em outro fio. A falha agora diz
 // o motivo, e a mensagem e liberada (antes ficava alocada a cada recusa).
 static int lsChamar(const char *uri, const char *carga, Filtro cb, void *ctx,
-                    const char *rotulo) {
+                    const char *rotulo, int *codigoErro) {
   union { NvLsErro e; char folga[256]; } er;
   unsigned long tok = 0;
   int ok;
@@ -1543,6 +1544,7 @@ static int lsChamar(const char *uri, const char *carga, Filtro cb, void *ctx,
     printf("[video] %s falhou: code=%d (%s) msg=%.200s\n", rotulo, er.e.code,
            nome ? nome : "?", er.e.message ? er.e.message : "(vazio)");
   }
+  if (codigoErro) *codigoErro = ok ? 0 : er.e.code;
   if (er.e.message && lsErroLiberar) lsErroLiberar(&er);
   return ok;
 }
@@ -1586,7 +1588,7 @@ int video_luna(const char *uri, const char *carga, void (*cb)(const char *, void
 static void chamar(const char *metodo, const char *carga, Filtro cb) {
   char uri[128];
   snprintf(uri, sizeof uri, "luna://com.webos.media/%s", metodo);
-  lsChamar(uri, carga, cb, NULL, metodo);
+  lsChamar(uri, carga, cb, NULL, metodo, NULL);
 }
 
 // Variante para callbacks que precisam saber a qual sessao pertencem. O
@@ -1596,7 +1598,7 @@ static int chamarCtx(const char *metodo, const char *carga, Filtro cb,
                       void *ctx) {
   char uri[128];
   snprintf(uri, sizeof uri, "luna://com.webos.media/%s", metodo);
-  return lsChamar(uri, carga, cb, ctx, metodo);
+  return lsChamar(uri, carga, cb, ctx, metodo, NULL);
 }
 
 // Chamada a OUTRO servico. O recorte de fonte NAO mora no com.webos.media: ele
@@ -1614,7 +1616,7 @@ static void chamarEm(const char *servico, const char *metodo,
   char uri[160], rot[160];
   snprintf(uri, sizeof uri, "luna://%s/%s", servico, metodo);
   snprintf(rot, sizeof rot, "%s/%s", servico, metodo);
-  lsChamar(uri, carga, cb, NULL, rot);
+  lsChamar(uri, carga, cb, NULL, rot, NULL);
 }
 
 static void protegerScreensaver(void);
@@ -1688,7 +1690,9 @@ static void *rodarLaco(void *u) { (void)u; loopRodar(laco); return NULL; }
 // screensaver vai ativar chega state "Active" + timestamp, e responder ack:false
 // com o MESMO timestamp o cancela. Sem filme tocando respondemos ack:true para
 // nao segurar o screensaver normal da TV.
-static int protetorLigado;
+static int protetorLigado, protetorPendente;
+static unsigned protetorGeracao;
+static LsRegEstado protetorReg;
 // O ACK e publicado pelos setters e eventos, mesmo sem desenho (#205/#428).
 // O callback le so o retrato atomico; o bombeamento fica como retaguarda.
 // Serializa os publicadores para um retrato calculado antes nao sobrescrever
@@ -1710,16 +1714,54 @@ static void ack_publicar(void) {
   if (pausaPedida) e |= ACK_PAUSA;
   if (terminou) e |= ACK_FIM;
   if (falhou) e |= ACK_ERRO;
-  if ((e & (ACK_MIDIA | ACK_TOCANDO | ACK_PAUSA | ACK_FIM | ACK_ERRO)) ==
-      (ACK_MIDIA | ACK_TOCANDO)) e |= ACK_SEGURAR;
+  if (video_segura_screensaver(ackMidia, tocando, pausaPedida, falhou, terminou, 0))
+    e |= ACK_SEGURAR;
   else if (esmaecer_segura_protetor_tv()) e |= ACK_DESCANSO;
   __atomic_store_n(&ackEstado, e, __ATOMIC_RELEASE);
   pthread_mutex_unlock(&mutex);
 }
+
+static int respostaProtetorOk(const char *p) {
+  char retorno[16] = "";
+  return p && js_bruto(p, NULL, "returnValue", retorno, sizeof retorno) &&
+         !strcmp(retorno, "true") && js_num(p, NULL, "errorCode", 0) == 0;
+}
+
+static void protetorMarcarFalha(unsigned g, int codigo) {
+  if (g != __atomic_load_n(&protetorGeracao, __ATOMIC_ACQUIRE) || !ligado ||
+      __atomic_load_n(&encerrando, __ATOMIC_ACQUIRE)) return;
+  __atomic_store_n(&protetorLigado, 0, __ATOMIC_RELEASE);
+  lsreg_falhou(&protetorReg, codigo ? codigo : LSR_UNKNOWN_ERROR, SDL_GetTicks());
+  __atomic_store_n(&protetorPendente, 0, __ATOMIC_RELEASE);
+}
+
+static int aoRegistroScreensaver(LSHandle *h, LSMessage *m, void *u) {
+  const char *p = lsPayload(m);
+  unsigned g = (unsigned)(uintptr_t)u;
+  (void)h;
+  if (g != __atomic_load_n(&protetorGeracao, __ATOMIC_ACQUIRE)) return 1;
+  if (!ligado || !bus || __atomic_load_n(&encerrando, __ATOMIC_ACQUIRE)) {
+    __atomic_store_n(&protetorPendente, 0, __ATOMIC_RELEASE);
+    return 1;
+  }
+  if (respostaProtetorOk(p)) {
+    lsreg_deu_certo(&protetorReg);
+    __atomic_store_n(&protetorLigado, 1, __ATOMIC_RELEASE);
+    __atomic_store_n(&protetorPendente, 0, __ATOMIC_RELEASE);
+    printf("[video] screensaver assinatura confirmada\n");
+    fflush(stdout);
+  } else {
+    printf("[video] screensaver assinatura recusada: %.120s\n", p ? p : "(nulo)");
+    fflush(stdout);
+    protetorMarcarFalha(g, js_num(p, NULL, "errorCode", LSR_UNKNOWN_ERROR));
+  }
+  return 1;
+}
+
 static int aoPedidoScreensaver(LSHandle *h, LSMessage *m, void *u) {
   const char *p = lsPayload(m);
   char estado[24], ts[64], b[192];
-  int e, segurar;
+  int e, segurar, midiaSegura;
   (void)h; (void)u;
   if (__atomic_load_n(&encerrando, __ATOMIC_ACQUIRE) || !ligado || !bus || !p ||
       !js_texto_raiz(p, "state", estado, sizeof estado) || strcmp(estado, "Active")) return 1;
@@ -1733,25 +1775,52 @@ static int aoPedidoScreensaver(LSHandle *h, LSMessage *m, void *u) {
     if (*fim) return 1;
   }
   e = __atomic_load_n(&ackEstado, __ATOMIC_ACQUIRE);
-  segurar = (e & ACK_SEGURAR) ? 1 : (e & ACK_DESCANSO) ? 2 : 0;
+  midiaSegura = video_segura_screensaver(!!(e & ACK_MIDIA), !!(e & ACK_TOCANDO),
+      !!(e & ACK_PAUSA), !!(e & ACK_ERRO), !!(e & ACK_FIM), trailer_preview_home());
+  segurar = __atomic_load_n(&protetorLigado, __ATOMIC_ACQUIRE) &&
+            ((e & ACK_DESCANSO) || midiaSegura);
   snprintf(b, sizeof b, "{\"clientName\":\"" NV_APP_ID "\",\"ack\":%s,\"timestamp\":%s}",
            segurar ? "false" : "true", ts);
   printf("[video] screensaver pedido: %s timestamp=%s midia=%d tocando=%d pausa=%d fim=%d erro=%d\n",
-         segurar == 2 ? "seguro (tela de descanso do Nuvio)"
+         (e & ACK_DESCANSO) && segurar ? "seguro (tela de descanso do Nuvio)"
                       : segurar ? "seguro (filme tocando)" : "liberado",
          ts, !!(e & ACK_MIDIA), !!(e & ACK_TOCANDO), !!(e & ACK_PAUSA),
          !!(e & ACK_FIM), !!(e & ACK_ERRO));
   fflush(stdout);
   lsChamar("luna://com.webos.service.tvpower/power/responseScreenSaverRequest",
-           b, NULL, NULL, "responseScreenSaverRequest");
+           b, NULL, NULL, "responseScreenSaverRequest", NULL);
   return 1;
 }
+
+static int aoHubScreensaver(LSHandle *h, LSMessage *m, void *u) {
+  const char *p = lsPayload(m);
+  char estado[24], timestamp[64];
+  if (p && js_texto_raiz(p, "state", estado, sizeof estado) &&
+      js_bruto(p, NULL, "timestamp", timestamp, sizeof timestamp))
+    return aoPedidoScreensaver(h, m, u);
+  return aoRegistroScreensaver(h, m, u);
+}
+
+// LSCall so enfileira; a assinatura vale quando o hub confirma. Falhas imediatas
+// e respostas assincronas negativas entram no recuo de lsregistro e voltam pelo
+// video_bombear(), sem empilhar chamadas enquanto protetorPendente.
 static void protegerScreensaver(void) {
-  if (protetorLigado || !ligado || !bus) return;
+  unsigned g;
+  int codigo = 0;
+  if (__atomic_load_n(&protetorLigado, __ATOMIC_ACQUIRE) ||
+      __atomic_load_n(&protetorPendente, __ATOMIC_ACQUIRE)) return;
+  if (!bus || !ligado || __atomic_load_n(&encerrando, __ATOMIC_ACQUIRE)) return;
+  if (!lsreg_pode_tentar(&protetorReg, SDL_GetTicks(), 1)) return;
   esmaecer_protetor_publicador(ack_publicar);
-  protetorLigado = lsChamar("luna://com.webos.service.tvpower/power/registerScreenSaverRequest",
-           "{\"subscribe\":true,\"clientName\":\"" NV_APP_ID "\"}",
-           aoPedidoScreensaver, NULL, "registerScreenSaverRequest");
+  g = __atomic_add_fetch(&protetorGeracao, 1, __ATOMIC_ACQ_REL);
+  __atomic_store_n(&protetorPendente, 1, __ATOMIC_RELEASE);
+  if (lsChamar("luna://com.webos.service.tvpower/power/registerScreenSaverRequest",
+               "{\"subscribe\":true,\"clientName\":\"" NV_APP_ID "\"}",
+               aoHubScreensaver, (void *)(uintptr_t)g,
+               "registerScreenSaverRequest", &codigo)) {
+    return;
+  }
+  protetorMarcarFalha(g, codigo);
 }
 
 // O ACB EXIGE um callback de verdade. Passar NULL nao e ignorado: no primeiro
@@ -2544,6 +2613,7 @@ void video_bombear(void) {
   // melhor (contador de quadros, ou o proprio perfil lido do MKV).
   (void)dvNaCarga; (void)dvRecuado; (void)viuVideo;
   (void)msDoLoad; (void)urlAtual; (void)agoraMs; (void)tocarInterno;
+  protegerScreensaver();
 }
 
 // CABECALHOS EXIGIDOS PELO ADDON, ver video.h.
@@ -3990,6 +4060,9 @@ static int encerrarLaco(void *l) {
 
 void video_encerrar(void) {
   if (!ligado) return;
+  __atomic_add_fetch(&protetorGeracao, 1, __ATOMIC_ACQ_REL);
+  __atomic_store_n(&protetorPendente, 0, __ATOMIC_RELEASE);
+  __atomic_store_n(&protetorLigado, 0, __ATOMIC_RELEASE);
   video_parar();
   // Ate aqui o unload ainda vale (bus vivo). Daqui em diante nenhum
   // callback do laco age, e o fio e parado/ESPERADO antes do handle sumir.
@@ -4010,7 +4083,9 @@ void video_encerrar(void) {
     erroLimpar();
     bus = NULL;
   }
-  protetorLigado = 0;
+  __atomic_store_n(&protetorLigado, 0, __ATOMIC_RELEASE);
+  __atomic_store_n(&protetorPendente, 0, __ATOMIC_RELEASE);
+  lsreg_deu_certo(&protetorReg);
   ligado = 0;
   ack_publicar();
 }

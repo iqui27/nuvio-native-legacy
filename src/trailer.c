@@ -17,7 +17,7 @@
 #define NV_REC_URL ""
 #endif
 
-static int    aberto, cheia, comSom;
+static int    aberto, cheia, comSom, previewHome;
 static unsigned geracao;   // invalida a prova do player mesmo depois do trailer fechar
 static int    falhouUltima;
 static GfxRect rect;
@@ -412,8 +412,23 @@ static GfxRect naTela(GfxRect r) {
 
 static int bloqueadoMusica;
 void trailer_bloquear_musica(int sim) { bloqueadoMusica = sim; }
+
+void trailer_abrir_preview_home(const char *fonte, GfxRect r, int som, int cheia) {
+  int mesma = aberto && fonte && !strcmp(fonteAtual, fonte);
+  unsigned antes = geracao;
+  __atomic_store_n(&previewHome, 0, __ATOMIC_RELEASE);
+  if (bloqueadoMusica || !trailer_suportado() || !fonte || !fonte[0]) return;
+  trailer_abrir(fonte, r, som, cheia);
+  if (aberto && (mesma || geracao != antes))
+    __atomic_store_n(&previewHome, 1, __ATOMIC_RELEASE);
+}
+
+int trailer_preview_home(void) {
+  return __atomic_load_n(&previewHome, __ATOMIC_ACQUIRE);
+}
 void trailer_abrir(const char *fonte, GfxRect r, int som, int modoCheia) {
   int nova;
+  __atomic_store_n(&previewHome, 0, __ATOMIC_RELEASE);
   if (bloqueadoMusica) return;
   if (!trailer_suportado() || !fonte || !fonte[0]) return;
   r = naTela(r);
@@ -500,7 +515,9 @@ void trailer_fechar(void) {
 #else
   video_parar();
 #endif
-  aberto = 0; cheia = 0; fonteAtual[0] = 0;
+  aberto = 0; cheia = 0;
+  __atomic_store_n(&previewHome, 0, __ATOMIC_RELEASE);
+  fonteAtual[0] = 0;
 #ifndef __EMSCRIPTEN__
   tocouFonte = 0;
 #endif

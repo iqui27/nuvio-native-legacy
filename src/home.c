@@ -6902,8 +6902,8 @@ static void home_trailer_passo_(int topo, float dt, Uint32 agora) {
       // (.wgt) trailer_abrir forca mudo de qualquer jeito.
       heroTrailerNoCartao = destCartao;
       trailer_no_cartao(destCartao);
-      trailer_abrir(u, destCartao ? cartaoVideoRect(cartaoTrailerRect) : heroArteRect,
-                    ajustes_trailer_som(), 0);
+      trailer_abrir_preview_home(u, destCartao ? cartaoVideoRect(cartaoTrailerRect) : heroArteRect,
+                                 ajustes_trailer_som(), 0);
       trailer_marcar_dono(TRAILER_DONO_HOME, ci->imdb);
       // trailer_abrir e void por compatibilidade com o player nativo; no
       // browser ainda pode recusar a criacao (canvas ausente). Tratar isso

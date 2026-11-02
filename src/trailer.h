@@ -35,6 +35,9 @@ int  trailer_suportado(void);
 // `cheia` marca o modo de tela
 // cheia com teclado proprio.
 void trailer_abrir(const char *fonte, GfxRect r, int som, int cheia);
+// Preview automatico da Home (hero mudo): nao segura o screensaver da TV.
+void trailer_abrir_preview_home(const char *fonte, GfxRect r, int som, int cheia);
+int  trailer_preview_home(void);
 void trailer_rect(GfxRect r);
 // O proximo trailer_abrir (e os trailer_rect dele) toca DENTRO DE UM CARTAZ da
 // home (modo "No card"). So muda algo no .tpk: la o recorte de fonte vira um
