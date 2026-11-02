@@ -67,6 +67,9 @@ static void hoverEClique(void) {
   float rol;
   const PonteiroAlvo *a;
   if (triBladeLayout()) abrirTopico();
+  else if (!triProfundidade()) { triFocarSecao(secAtual); triEntrar(secAtual); quadros(60); }
+  for (int t = secIni[secAtual] + 1; linhaInterruptor() < 0 && t < secFim(secAtual); t++)
+    if (triTopico(t)) { focar(t); triSubEntrar(t); quadros(20); }
   sec = secAtual; rol = scrollY;
   i = linhaInterruptor();
   confere(i >= 0, "desktop: Playback has a pointer target on an on/off row");

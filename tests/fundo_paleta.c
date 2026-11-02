@@ -52,6 +52,28 @@ int main(void) {
     assert(ajEditandoLinha(AJ_FUNDO_DIN_COR));
     // Palette pixels must be present in the expanded row, not just empty space.
     unsigned char rgb[3];
+    unsigned fill = TEMA_ACENTO[16].fill; // first background swatch: Champagne
+    if (triBladeLayout()) {
+      // Settings Palco (bb31fa345): the palette is an editor blade, not an
+      // expanded row. The drawn frame must hold a solid Champagne swatch
+      // (the blade disc measures ~1200 exact pixels; 0 when the palette is absent).
+      for (int i = 0; i < 60; i++) {
+        SDL_PumpEvents(); ponteiro_quadro(1000); txt_novo_quadro(); tex_novo_quadro();
+        ajustes_atualizar(1.0f / 60.0f, 1000);
+        glClearColor(0.025f, 0.025f, 0.03f, 1); glClear(GL_COLOR_BUFFER_BIT);
+        ajustes_desenhar(1000);
+      }
+      unsigned char *px = malloc(1920 * 1080 * 3); int hits = 0;
+      assert(px);
+      glPixelStorei(GL_PACK_ALIGNMENT, 1);
+      glReadPixels(0, 0, 1920, 1080, GL_RGB, GL_UNSIGNED_BYTE, px);
+      for (int i = 0; i < 1920 * 1080; i++)
+        hits += abs(px[3*i] - (int)((fill >> 16) & 255)) <= 1 &&
+                abs(px[3*i+1] - (int)((fill >> 8) & 255)) <= 1 &&
+                abs(px[3*i+2] - (int)(fill & 255)) <= 1;
+      free(px);
+      assert(hits > 800);
+    } else {
     GfxRect row = aj2ListaR();
     float kcol = row.w - 36 - 30 - 9 * 72 - 8;
     if (kcol > 176) kcol = 176;
@@ -61,11 +83,11 @@ int main(void) {
     glReadPixels((int)(row.x + 18 + 30 + kcol + 28),
                  1079 - (int)(AJ_TOPO + AJ2_LN_LINHA1 + 20 + 32), 1, 1,
                  GL_RGB, GL_UNSIGNED_BYTE, rgb);
-    unsigned fill = TEMA_ACENTO[16].fill; // first background swatch: Champagne
     assert(abs(rgb[0] - (int)((fill >> 16) & 255)) <= 1);
     assert(abs(rgb[1] - (int)((fill >> 8) & 255)) <= 1);
     assert(abs(rgb[2] - (int)(fill & 255)) <= 1);
     assert(ajLinhaH(focoItem) > AJ2_LN_LINHA1 + 2 * AJ_REGUA_FILA);
+    }
     key(SDLK_UP); assert(uxPendente == 14); // Ocean -> Lavender, same palette column
     key(SDLK_DOWN); assert(uxPendente == 12); // Lavender -> Ocean (white omitted)
     key(SDLK_RIGHT); assert(uxPendente == 13); // Indigo
@@ -81,6 +103,8 @@ int main(void) {
     valor[AJ_FUNDO_DIN_COR] = 12;
   }
   if (!getenv("PALETTE_BEFORE")) {
+    // Accent grid moves only in the Palco layout since 239b6fe6c.
+    valor[AJ_LAYOUT_AJUSTES] = 0;
     focarOpcao(AJ_TEMA); key(SDLK_RETURN); uxPendente = 0;
     key(SDLK_DOWN); assert(uxPendente == 1);
     key(SDLK_DOWN); assert(uxPendente == AJ_TEMA_DINAMICA);

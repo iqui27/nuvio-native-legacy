@@ -2717,7 +2717,7 @@
   T("Documentário", "Документальный"),
   T("Documentários", "Документальные"),
   T("Dolby Atmos", "Долби Атмос"),
-  T("Dolby Vision", "Долби Видение"),
+  T("Dolby Vision", "Dolby Vision"),
   T("Dolby Vision P7", "Долби Видение P7"),
   T("Dolby Vision P7 para P8.1 (experimental)", "Dolby Vision P7 в P8.1 (экспериментально)"),
   T("Dolby Vision desligado: o app fechou 2 vezes com ele. Religue em Ajustes para tentar de novo.", "Dolby Vision отключён: приложение закрылось 2 раза, пока он был включён. Включите его снова в настройках, чтобы повторить попытку."),

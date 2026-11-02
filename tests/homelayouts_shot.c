@@ -47,6 +47,7 @@
 #include <string.h>
 #ifdef NV_DINPALCO_AUDIT
 #include "../src/home.c"
+#include "svdesenho.h"
 #endif
 
 #define NA 40
@@ -662,13 +663,39 @@ int main(int argc, char **argv) {
       assert(ajustes_borda_foco());
       assert(fileiras[collection].estiloCol == FILEIRA_REDONDA);
       assert(fabsf(larguraFil(collection) - alturaFil(collection)) < .01f);
-      gfx_novo_quadro();
-      desenhaAtalhos(collection, 200);
-      // A rectangular image or placeholder leaks into the circle's corners.
-      assert(gfx_fill_modo[GFX_AVATAR] > 0 && "collection image must use circular cover");
-      assert(gfx_fill_modo[GFX_DISCO] > 0 && "collection placeholder and focus must be circular");
-      assert(gfx_fill_modo[GFX_CARD] == 0 && "collection must not draw rectangular art");
-      assert(gfx_fill_modo[GFX_COR] == 0 && "collection must not draw a rectangular ring");
+      {
+        float yAtalhos = 200.0f, w = larguraFil(collection), h = alturaFil(collection);
+        int col = foco.coluna;
+        float x0 = homeFileiraX(collection, col);
+        float f = animFoco[collection][col];
+        float esc = 1.0f + escalaDe(FILEIRA_CATALOGOS) * f;
+        float cw = w * esc, ch = h * esc;
+        float x = x0 - (cw - w) * 0.5f, cy = yAtalhos - (ch - h) * 0.5f;
+        GfxRect disco = {x, cy, cw, ch};
+        double corAnel = 0;
+        if (ajustes_borda_foco() && f > 0.01f && !ajustes_vidro()) {
+          gfx_novo_quadro();
+          svd_aro_foco(disco, .5f, f, 1.0f);
+          corAnel = gfx_fill_modo[GFX_COR];
+        }
+        gfx_novo_quadro();
+        desenhaAtalhos(collection, yAtalhos);
+        // A rectangular image or placeholder leaks into the circle's corners.
+        assert(gfx_fill_modo[GFX_AVATAR] > 0 && "collection image must use circular cover");
+        assert(gfx_fill_modo[GFX_DISCO] > 0 && "collection placeholder and focus must be circular");
+        assert(gfx_fill_modo[GFX_CARD] == 0 && "collection must not draw rectangular art");
+        /* Solid: only the circular svd_aro_foco ring may use GFX_COR. Glass: the
+           ring is gfx_vidro_cartao, so no raw GFX_COR at all (both pinned in
+           tests/colecaoround.sh). */
+        if (ajustes_vidro())
+          assert(gfx_fill_modo[GFX_COR] == 0 &&
+                 "glass round shortcuts must not use raw GFX_COR");
+        else if (ajustes_borda_foco() && f > 0.01f)
+          assert(fabs(gfx_fill_modo[GFX_COR] - corAnel) < 0.002 &&
+                 "round shortcuts must not add rectangular GFX_COR beyond the focus ring");
+        else
+          assert(gfx_fill_modo[GFX_COR] == 0);
+      }
       float w, h, step, caption;
       home_vitrine_medida(&w, &h, &step, &caption, 1);
       assert(w == h && caption > 0);

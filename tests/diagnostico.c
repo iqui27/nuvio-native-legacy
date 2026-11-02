@@ -187,12 +187,13 @@ static void margem(void) {
   PtvMedida a, b;
   const char *m = NULL;
 
-  // Android de 2 GB: 300 MB e candidato para imagens, nao compromisso de
+  // LG de 2 GB: 300 MB e candidato para imagens, nao compromisso de
   // aplicar. Sem ganho/arte descartada, 128 MB continuam; sob pressao, sobe.
+  // (Android saiu deste caso: teto = automatico desde 211efce22.)
   { PtvPerfil atual, cand;
-    ptv_padrao(PTV_ANDROID, 2245, &atual);
-    ptv_candidato(PTV_ANDROID, 2245, PTV_QUALIDADE, 0, &cand);
-    assert(atual.texMb == 128 && cand.texMb == 192);
+    ptv_padrao(PTV_LG, 2245, &atual);
+    ptv_candidato(PTV_LG, 2245, PTV_QUALIDADE, 0, &cand);
+    assert(atual.texMb == 128 && cand.texMb == 300);
     a = medida(1000, 0, 33, 0); b = medida(950, 0, 33, 0);
     assert(ptv_decidir(&atual, &cand, &a, &b, 0, &m) == PTV_DEC_RUIDO);
     assert(ptv_decidir(&atual, &cand, &a, &b, 2, &m) == PTV_DEC_APLICAR); }
@@ -391,28 +392,22 @@ static void android_policy(void) {
     for (int i=0;i<N_RAMS;i++) {
       long mem = RAMS[i];
       PtvPerfil a, old;
-      assert(ptv_tex_auto_mb(PTV_ANDROID,mem) == ptv_tex_auto_mb(PTV_LG,mem));
-      // Android < 3 GB fica um degrau abaixo do teto da LG: numa TCL de 2,4 GB
-      // 300 MB de textura + buffer de video derrubaram o app (lmkd).
-      if (mem && mem < 3000 && mem >= 2000)
-        assert(ptv_tex_teto_mb(PTV_ANDROID,mem) == 192);
-      else
-        assert(ptv_tex_teto_mb(PTV_ANDROID,mem) == ptv_tex_teto_mb(PTV_LG,mem));
+      // Android has its own texture table and its ceiling is the automatic
+      // budget (211efce22, 395189bf0: TCL lmkd kills at 2-3 GB). Threads and
+      // hero width still follow the LG policy.
+      int teto = ptv_tex_teto_mb(PTV_ANDROID,mem);
+      assert(teto == ptv_tex_auto_mb(PTV_ANDROID,mem));
       ptv_padrao(PTV_ANDROID,mem,&a); ptv_padrao(PTV_LG,mem,&old);
-      assert(!memcmp(&a,&old,sizeof a));
-      // Onde o teto diverge (< 3 GB), o candidato de Qualidade e o limitar
-      // divergem junto; compara contra o teto proprio.
-      int diverge = mem && mem >= 2000 && mem < 3000;
+      assert(a.texMb == teto && a.fiosRede == old.fiosRede && a.heroiLarg == old.heroiLarg);
       for (int mode=0;mode<2;mode++) for (int j=0;j<6;j++) {
         ptv_candidato(PTV_ANDROID,mem,(PtvModo)mode,locks[j],&a);
         ptv_candidato(PTV_LG,mem,(PtvModo)mode,locks[j],&old);
-        if (!diverge) assert(!memcmp(&a,&old,sizeof a));
-        else assert(a.texMb <= 192);
+        assert(a.fiosRede == old.fiosRede && a.heroiLarg == old.heroiLarg);
+        assert(a.texMb <= teto && (locks[j] || a.texMb == teto));
       }
       a = (PtvPerfil){999,9,3840}; old = a;
       assert(ptv_limitar(PTV_ANDROID,mem,&a) == ptv_limitar(PTV_LG,mem,&old));
-      if (!diverge) assert(!memcmp(&a,&old,sizeof a));
-      else assert(a.texMb == 192);
+      assert(a.texMb == teto && a.fiosRede == old.fiosRede && a.heroiLarg == old.heroiLarg);
     }
   }
   ptv_definir_gpu_fraca(0);
