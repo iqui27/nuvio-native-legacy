@@ -88,9 +88,12 @@ int main(void) {
   puts("ok  Simkl: episodio do item fora do objeto tvdb");
   { int antes = pedidosSimkl;
     assert(segfontes_simkl("imdb", "tt2560140", 2, 3, &ids) && ids.mal == 25777);
+    assert(segfontes_simkl("imdb", "tt2560140", 2, 1, &ids) && ids.mal == 25777 && ids.ep == 1);
     assert(pedidosSimkl == antes); }
-  puts("ok  Simkl: cache por id/temporada/episodio");
+  puts("ok  Simkl: outro episodio da mesma temporada nao pede nada (ids e mapa em cache)");
   assert(segfontes_simkl("imdb", "tt0903747", 1, 1, &ids) && !ids.anime && !ids.mal);
+  { int antes = pedidosSimkl;
+    assert(segfontes_simkl("imdb", "tt0903747", 1, 2, &ids) && pedidosSimkl == antes); }
   puts("ok  Simkl: serie que nao e anime nao ganha MAL");
 
   // Anime-Skip.

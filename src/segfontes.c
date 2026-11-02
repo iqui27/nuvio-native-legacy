@@ -167,62 +167,107 @@ static int simklDetalhes(long simkl, const char *tipo, SegIds *o) {
   return ok ? (temporada > 0 ? temporada : -1) : 0;
 }
 
+// Cache em DOIS niveis: a entrada (ids da temporada) por fonte:id:temporada — a
+// mesma para todos os episodios dela, sem pedido nenhum do segundo em diante —
+// e o mapa de episodios (so anime) por entrada Simkl, copiado como pares.
+typedef struct { int t, e, ep; } SimklEp;
+typedef struct { long simkl; int n; SimklEp v[400]; } SimklEps;
+static SimklEps epsCache[4];
+static int epsProx;
+
+static int simklEpCache(long simkl, int t, int e, int *ep) {
+  int i, k, achou = -1;
+  pthread_mutex_lock(&trava);
+  for (i = 0; i < 4; i++)
+    if (epsCache[i].simkl == simkl) {
+      achou = 0;
+      for (k = 0; k < epsCache[i].n; k++)
+        if (epsCache[i].v[k].t == t && epsCache[i].v[k].e == e) { *ep = epsCache[i].v[k].ep; achou = 1; break; }
+      break;
+    }
+  pthread_mutex_unlock(&trava);
+  return achou;   // -1 = mapa nao baixado, 0 = baixado sem o episodio, 1 = achou
+}
+static void simklEpGuardar(long simkl, const char *json) {
+  SimklEps *c;
+  const char *p = json ? js_raiz_array(json) : NULL;
+  pthread_mutex_lock(&trava);
+  c = &epsCache[epsProx]; epsProx = (epsProx + 1) % 4;
+  c->simkl = simkl; c->n = 0;
+  for (; p && c->n < 400; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p), *tvFim = NULL, *tv = objeto(p, f, "tvdb", &tvFim);
+    int ep;
+    if (!tv) continue;
+    ep = (int)numFora(p, f, "episode", tv, tvFim, 0);
+    if (ep <= 0) continue;
+    c->v[c->n].t = (int)js_num(tv, tvFim, "season", 0);
+    c->v[c->n].e = (int)js_num(tv, tvFim, "episode", 0);
+    c->v[c->n].ep = ep;
+    if (c->v[c->n].t > 0 && c->v[c->n].e > 0) c->n++;
+  }
+  pthread_mutex_unlock(&trava);
+}
+
 int segfontes_simkl(const char *fonte, const char *id, int t, int e, SegIds *out) {
   char chave[40], cam[160], tipo[16] = "", *j = NULL;
   SegIds o;
   long simkl;
-  int i, temporada, ok = 0;
+  int i, temporada, ok = 0, ep;
   if (!out) return 0;
   memset(out, 0, sizeof *out);
   if (!fonte || !id || !id[0] || !nuvem_simkl_cliente()[0]) return 0;
-  snprintf(chave, sizeof chave, "%s:%s:%d:%d", fonte, id, t, e);
+  snprintf(chave, sizeof chave, "%s:%s:%d", fonte, id, t);
   pthread_mutex_lock(&trava);
   for (i = 0; i < 16; i++)
-    if (!strcmp(cache[i].chave, chave)) { *out = cache[i].ids; ok = cache[i].ok; break; }
+    if (!strcmp(cache[i].chave, chave)) { o = cache[i].ids; ok = cache[i].ok; break; }
   pthread_mutex_unlock(&trava);
-  if (i < 16) return ok;
 
-  memset(&o, 0, sizeof o);
-  o.ep = e;
-  snprintf(cam, sizeof cam, "/search/id?%s=%s", fonte, id);
-  simklGet(cam, &j);
-  simkl = j ? segfontes_simkl_busca(j, tipo, sizeof tipo) : 0;
-  free(j); j = NULL;
-  if (simkl > 0) {
-    o.anime = !strcmp(tipo, "anime");
-    temporada = simklDetalhes(simkl, tipo, &o);
-    ok = temporada != 0;
-    // IMDb de anime com varias temporadas: a temporada TVDB pedida e OUTRA
-    // entrada no Simkl (e outro id no MAL). Mesmo caminho do PC.
-    if (ok && o.anime && !strcmp(fonte, "imdb") && t > 0 && temporada != t) {
-      long irmao;
-      snprintf(cam, sizeof cam, "/%s/%ld?extended=full_anime_seasons", tipo, simkl);
-      simklGet(cam, &j);
-      irmao = j ? segfontes_simkl_temporada(j, t) : 0;
-      free(j); j = NULL;
-      if (irmao > 0 && irmao != simkl) {
-        SegIds s = o;
-        if (simklDetalhes(irmao, tipo, &s)) o = s;
+  if (i == 16) {
+    memset(&o, 0, sizeof o);
+    snprintf(cam, sizeof cam, "/search/id?%s=%s", fonte, id);
+    simklGet(cam, &j);
+    simkl = j ? segfontes_simkl_busca(j, tipo, sizeof tipo) : 0;
+    free(j); j = NULL;
+    if (simkl > 0) {
+      o.anime = !strcmp(tipo, "anime");
+      temporada = simklDetalhes(simkl, tipo, &o);
+      ok = temporada != 0;
+      // IMDb de anime com varias temporadas: a temporada TVDB pedida e OUTRA
+      // entrada no Simkl (e outro id no MAL). Mesmo caminho do PC.
+      if (ok && o.anime && !strcmp(fonte, "imdb") && t > 0 && temporada != t) {
+        long irmao;
+        snprintf(cam, sizeof cam, "/%s/%ld?extended=full_anime_seasons", tipo, simkl);
+        simklGet(cam, &j);
+        irmao = j ? segfontes_simkl_temporada(j, t) : 0;
+        free(j); j = NULL;
+        if (irmao > 0 && irmao != simkl) {
+          SegIds s = o;
+          if (simklDetalhes(irmao, tipo, &s)) o = s;
+        }
       }
     }
-    // TVDB T/E -> episodio dentro da entrada do anime.
-    if (ok && o.anime && !strcmp(fonte, "imdb") && t > 0 && e > 0) {
-      int ep;
-      snprintf(cam, sizeof cam, "/%s/episodes/%ld", tipo, o.simkl);
+    pthread_mutex_lock(&trava);
+    snprintf(cache[cacheProx].chave, sizeof cache[cacheProx].chave, "%s", chave);
+    cache[cacheProx].ids = o; cache[cacheProx].ok = ok;
+    cacheProx = (cacheProx + 1) % 16;
+    pthread_mutex_unlock(&trava);
+  }
+  // TVDB T/E -> episodio dentro da entrada do anime (um mapa por entrada).
+  o.ep = e;
+  if (ok && o.anime && o.simkl > 0 && !strcmp(fonte, "imdb") && t > 0 && e > 0) {
+    int r = simklEpCache(o.simkl, t, e, &ep);
+    if (r < 0) {
+      snprintf(cam, sizeof cam, "/anime/episodes/%ld", o.simkl);
       simklGet(cam, &j);
-      ep = j ? segfontes_simkl_ep(j, t, e) : 0;
+      if (j) simklEpGuardar(o.simkl, j);
       free(j); j = NULL;
-      if (ep > 0) o.ep = ep;
+      r = simklEpCache(o.simkl, t, e, &ep);
     }
+    if (r > 0) o.ep = ep;
   }
   printf("[seg] Simkl %s=%s T%dE%d: simkl=%ld anime=%d mal=%ld anilist=%ld ep=%d\n",
          fonte, id, t, e, o.simkl, o.anime, o.mal, o.anilist, o.ep);
   fflush(stdout);
-  pthread_mutex_lock(&trava);
-  snprintf(cache[cacheProx].chave, sizeof cache[cacheProx].chave, "%s", chave);
-  cache[cacheProx].ids = o; cache[cacheProx].ok = ok;
-  cacheProx = (cacheProx + 1) % 16;
-  pthread_mutex_unlock(&trava);
   *out = o;
   return ok;
 }
@@ -352,6 +397,7 @@ const char *segfontes_animeskip_id(char *buf, size_t n) {
 void segfontes_limpar_cache(void) {
   pthread_mutex_lock(&trava);
   memset(cache, 0, sizeof cache); cacheProx = 0;
+  memset(epsCache, 0, sizeof epsCache); epsProx = 0;
   memset(showCache, 0, sizeof showCache); showProx = 0;
   pthread_mutex_unlock(&trava);
 }
