@@ -311,7 +311,10 @@ static void gs_empty_draw(float y,int state,int action){
     float alpha=.06f+.025f*sinf(SDL_GetTicks()*.003f);
     for(int j=0;j<3;j++){
       float x=GV_MX+j*GS_CARD_STEP;plrui_cartao((GfxRect){x,y,GS_CARD_W,290},22,1);
-      gfx_cor((GfxRect){x+24,y+24,210,14},.5f,1,1,1,alpha);
+      if(!j){
+        plrui_anel_solto(x+36,y+33,22,SDL_GetTicks(),.8f);
+        gv_label(TXT_ILHA_SUB,i18n("Carregando…"),x+58,y+22,GS_CARD_W-82,1);
+      }else gfx_cor((GfxRect){x+24,y+24,210,14},.5f,1,1,1,alpha);
       for(int p=0;p<2;p++){
         gfx_cor((GfxRect){x+24,y+64+p*76,60,60},.5f,1,1,1,alpha);
         gfx_cor((GfxRect){x+104,y+86+p*76,240,18},.5f,1,1,1,alpha);
@@ -499,7 +502,11 @@ static void gv_sports_screen(void){
   }
   gfx_sem_recorte();
   if(!gs_n)gs_empty(420);
-  if(esportes_erro()&&gs_n)gv_label(TXT_ILHA_SUB,i18n("Não foi possível atualizar os eventos"),GV_MX,970,GV_MW,1);
+  if(esportes_erro()&&gs_n){
+    /* Keep stale-feed status above the cards, including their focus lift. */
+    gfx_icone((GfxRect){GV_MX,372,22,22},"aj_wifi-off",.65f,.67f,.7f,1);
+    gv_label(TXT_ILHA_SUB,i18n("Não foi possível atualizar os eventos"),GV_MX+34,372,GV_MW-34,1);
+  }
   gs_pager(gs_n,3);
 }
 static int gs_activate(void){
