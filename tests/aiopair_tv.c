@@ -9,7 +9,7 @@ static int testSleep(unsigned usec) { (void)usec; return 0; }
 enum { GOOD, BAD_AUTH, WRONG_ORIGIN, REDIRECT, EXPIRED, POLL_NETWORK,
        POLL_SERVER, CREATE_HTML, CONFIRM_SERVER, CANCEL_CREATE, CANCEL_VALIDATE,
        INSTANCE_NETWORK, INSTANCE_SERVER, BAD_RESPONSE, RETRY_CONFIRM, RETRY_TAKE, CASES };
-static int mode, takes, instanceCalls, results, closes;
+static int mode, takes, instanceCalls, results, closes, workerOpen;
 static char sentResult[32];
 int rede_pedir(const RedePedido *q,RedeResposta *r) {
   memset(r,0,sizeof *r); r->status=200; r->erro=REDE_OK;
@@ -19,6 +19,8 @@ int rede_pedir(const RedePedido *q,RedeResposta *r) {
     char op[24]; js_texto_raiz(q->corpo,"op",op,sizeof op);
     assert(!strstr(q->corpo,"synthetic-password"));
     if(!strcmp(op,"create")) {
+      if(workerOpen) { r->status=409; return 0; }
+      workerOpen=1;
       if(mode==CANCEL_CREATE) aiopair_close();
       r->corpo=strdup(mode==CREATE_HTML?"<html>missing route</html>":"{\"state\":\"waiting\"}");
     } else if(!strcmp(op,"take")) {
@@ -35,7 +37,7 @@ int rede_pedir(const RedePedido *q,RedeResposta *r) {
       char response[64]; snprintf(response,sizeof response,"{\"state\":\"%s\"}",sentResult);
       r->corpo=strdup(response);
     } else {
-      assert(!strcmp(op,"close")); closes++; r->corpo=strdup("{\"state\":\"closed\"}");
+      assert(!strcmp(op,"close")); closes++; workerOpen=0; r->corpo=strdup("{\"state\":\"closed\"}");
     }
   } else {
     instanceCalls++; assert(!strcmp(q->url,"https://instance.invalid/api/v1/user"));
@@ -53,7 +55,7 @@ int rede_pedir(const RedePedido *q,RedeResposta *r) {
 void rede_resposta_limpar(RedeResposta *r) { free(r->corpo); free(r->cabecalhos); memset(r,0,sizeof *r); }
 int main(void) {
   for(mode=0;mode<CASES;mode++) {
-    aiopair_close(); takes=instanceCalls=results=closes=0; sentResult[0]=0;
+    aiopair_close(); takes=instanceCalls=results=closes=0; workerOpen=0; sentResult[0]=0;
     Pair *p=calloc(1,sizeof *p); p->generation=generation;
     strcpy(p->origin,"https://instance.invalid");
     assert(randomKey(p->id) && randomKey(p->tv) && randomKey(p->phone));
@@ -70,10 +72,23 @@ int main(void) {
     if(mode==CANCEL_CREATE || mode==CANCEL_VALIDATE) assert(final==AIOPAIR_OFF && !url[0] && closes==1);
     if(mode==CANCEL_CREATE || mode==CREATE_HTML || mode==EXPIRED || mode==POLL_NETWORK || mode==POLL_SERVER)
       assert(!instanceCalls && !results);
-    if(mode==WRONG_ORIGIN) assert(!instanceCalls && !strcmp(sentResult,"error"));
+    if(mode==INSTANCE_NETWORK || mode==INSTANCE_SERVER) assert(closes==1 && !workerOpen);
+    if(mode==WRONG_ORIGIN) assert(!instanceCalls && !strcmp(sentResult,"error") && final==AIOPAIR_ERROR && !url[0] && takes==1 && closes==1 && !workerOpen);
     if(mode==RETRY_CONFIRM) assert(results==2);
     assert(!aiopair_take(auth,sizeof auth,origin,sizeof origin));
     memset(auth,0,sizeof auth);
+  }
+  for(int failure=0;failure<2;failure++) {
+    mode=failure?INSTANCE_SERVER:INSTANCE_NETWORK;
+    aiopair_close(); workerOpen=0; takes=instanceCalls=results=closes=0; sentResult[0]=0;
+    Pair *p=calloc(1,sizeof *p); p->generation=generation; strcpy(p->origin,"https://instance.invalid");
+    assert(randomKey(p->id) && randomKey(p->tv) && randomKey(p->phone)); run(p);
+    assert(closes==1 && !workerOpen);
+    aiopair_close(); mode=GOOD; takes=instanceCalls=results=closes=0; sentResult[0]=0;
+    Pair *retry=calloc(1,sizeof *retry); retry->generation=generation; strcpy(retry->origin,"https://instance.invalid");
+    assert(randomKey(retry->id) && randomKey(retry->tv) && randomKey(retry->phone)); run(retry);
+    char auth[2048],origin[256]; assert(aiopair_take(auth,sizeof auth,origin,sizeof origin));
+    assert(!strcmp(origin,"https://instance.invalid")); memset(auth,0,sizeof auth);
   }
   aiopair_close(); assert(state==AIOPAIR_OFF && !savedAuth[0] && !savedOrigin[0] && !pairUrl[0]);
   assert(!aiopair_start("http://instance.invalid"));

@@ -126,13 +126,14 @@ static void *run(void *arg) {
           pthread_mutex_lock(&pairLock);
           if(p->generation==generation) {
             state=valid?AIOPAIR_SYNCED:!strcmp(reason,"network") || !strcmp(reason,"server")?AIOPAIR_UNAVAILABLE:AIOPAIR_ERROR;
-            if(state!=AIOPAIR_ERROR) memset(pairUrl,0,sizeof pairUrl);
+            if(state!=AIOPAIR_ERROR || !strcmp(reason,"origin")) memset(pairUrl,0,sizeof pairUrl);
             if(valid) { snprintf(savedAuth,sizeof savedAuth,"%s",auth); snprintf(savedOrigin,sizeof savedOrigin,"%s",p->origin); ready=1; }
           }
           pthread_mutex_unlock(&pairLock);
         }
         memset(auth,0,sizeof auth);
-        if(active(p) && (valid || !strcmp(reason,"network") || !strcmp(reason,"server"))) goto done;
+        if(active(p) && valid) goto done;
+        if(active(p) && (!strcmp(reason,"origin") || !strcmp(reason,"network") || !strcmp(reason,"server"))) goto close;
       }
       memset(origin,0,sizeof origin); memset(uuid,0,sizeof uuid); memset(password,0,sizeof password);
     }
