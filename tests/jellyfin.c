@@ -300,6 +300,8 @@ static void testarVistoProg(void) {
   printf("visto/prog ok\n");
 }
 
+#include "server_playback.inc"
+
 static void testarIntegracao(void) {
   char nome[700], *arq, senha[64];
   struct stat st;
@@ -510,6 +512,7 @@ static void testarIntegracao(void) {
   // Quick Connect through the worker, then sign out (server logout queued).
   assert(jellyfin_entrar_quick_connect());
   assert(esperarEstado(JF_EST_CONECTADO, 8000) == JF_EST_CONECTADO);
+  testarPlaybackLocal(0);
   free(controle("reset"));
   jellyfin_esquecer();
   assert(jellyfin_estado(NULL, 0) == JF_EST_SEM_SERVIDOR);
