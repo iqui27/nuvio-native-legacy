@@ -101,7 +101,7 @@ int main(void) {
     ajustes_dir(dir); assert(!ajustes_menu_esportes());
     hidden = fopen(path, "a"); assert(hidden);
     fputs("menuEsportesLocal 0\n", hidden); fclose(hidden);
-    ajustes_dir(dir); assert(mostra(MENU_ESPORTES));
+    ajustes_dir(dir); assert(!mostra(MENU_ESPORTES)); // Sports lives inside Guide on TV.
 #endif
   }
   return 0;

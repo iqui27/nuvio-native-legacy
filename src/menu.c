@@ -181,7 +181,8 @@ static int mostra(int i) {
     case MENU_SERVIDORES: return servidorConectado;
     case MENU_EXPLORAR: return ajustes_menu_explorar();
     case MENU_GUIA:     return ajustes_menu_guia();
-    case MENU_ESPORTES: return ajustes_menu_esportes();
+    /* Sports remains a Guide destination; mobile keeps its existing entry. */
+    case MENU_ESPORTES: return layout_modo_mobile() && ajustes_menu_esportes();
     case MENU_AGENDA:   return ajustes_menu_agenda();
     case MENU_PERFIL:   return ajustes_menu_perfil();
     default:            return 1;
