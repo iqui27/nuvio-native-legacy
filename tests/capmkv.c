@@ -226,6 +226,25 @@ int main(void) {
   ok(capmkv_creditos(1400) == 0.0, "B sem creditos vindos de A");
   ok(nGravado == 0, "B sem trechos de intro vindos de A");
 
+  // LG (video.c lerMkv): o fio da sonda le os capitulos por conta propria e
+  // publica com a geracao guardada ao dispara-lo. Abrir B no meio invalida A.
+  puts("capmkv: LG - sonda de A atrasada nao publica capitulos em B");
+  { MkvCap lg[3] = { { 90, "Opening" }, { 180, "Part A" }, { 1260, "Ending" } }, out[MKV_MAX_CAPS];
+    unsigned gA, gB;
+    capmkv_zerar(); gA = capmkv_geracao();               // abriu A, disparou a sonda
+    capmkv_zerar(); gB = capmkv_geracao();               // abriu B antes de a sonda de A voltar
+    chamadas = 0; nGravado = 0;
+    ok(gA != gB, "cada abertura muda a geracao");
+    ok(capmkv_aplicar_ger(lg, 3, gA) == 0, "sonda de A com geracao velha: recusada");
+    ok(capmkv_lista(out, MKV_MAX_CAPS) == 0, "B sem lista de capitulos vinda de A");
+    ok(capmkv_creditos(1400) == 0.0 && chamadas == 0, "B sem creditos nem trechos vindos de A");
+    ok(capmkv_aplicar_ger(lg, 3, gB) == 1, "sonda do proprio B publica");
+    ok(capmkv_lista(out, MKV_MAX_CAPS) == 3 && perto(out[2].inicio, 1260), "B com os seus capitulos");
+    ok(nGravado == 2, "B entrega abertura e creditos ao modulo de intro");
+    capmkv_zerar();                                      // C sem capitulos depois de B
+    ok(capmkv_lista(out, MKV_MAX_CAPS) == 0 && capmkv_creditos(1400) == 0.0, "C sem capitulos: nada de B fica");
+    ok(capmkv_aplicar_ger(lg, 3, gB) == 0, "sonda de B atrasada depois de C: recusada"); }
+
   printf("%s\n", falhas ? "FALHOU" : "capmkv: ok");
   return falhas ? 1 : 0;
 }

@@ -133,6 +133,12 @@ static int publicar(const MkvCap *caps, int n, int checa, unsigned g) {
 }
 
 void capmkv_aplicar(const MkvCap *caps, int n) { publicar(caps, n, 0, 0); }
+int capmkv_aplicar_ger(const MkvCap *caps, int n, unsigned g) { return publicar(caps, n, 1, g); }
+unsigned capmkv_geracao(void) {
+  unsigned g;
+  pthread_mutex_lock(&trava); g = ger; pthread_mutex_unlock(&trava);
+  return g;
+}
 
 double capmkv_creditos(double dur) {
   double a, b;
