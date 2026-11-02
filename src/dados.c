@@ -378,6 +378,17 @@ void dados_iniciar(const char *dirArte) {
   const char *home = getenv("HOME");
   const char *candidatos[5];
   int n = 0, i;
+#ifdef NV_DESKTOP_UI
+  // Proofs must never probe a default folder if their isolated directory fails.
+  if (getenv("NV_CAPTURA")) {
+    if (!env || !*env || strlen(env) >= sizeof dir || !serve(env)) {
+      fputs("[dados] capture requires writable isolated NUVIO_DADOS\n", stderr);
+      exit(1);
+    }
+    snprintf(dir, sizeof dir, "%s", env);
+    printf("[dados] gravando em %s\n", dir); fflush(stdout); return;
+  }
+#endif
 
 #ifdef __EMSCRIPTEN__
   // Primeiro candidato, e nao mais um da fila: no navegador todos os outros

@@ -27,6 +27,10 @@ typedef struct {
   int action, checked, separator;
 } DesktopMenuItem;
 #if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+#include "gfx.h"
+void desktop_native_profile_text(const char *text, float cx, float y, float size, int bold, float ink, float alpha);
+void desktop_native_profile_button(GfxRect rect, const char *title, int enabled, int selected, float alpha,
+                                  void (*activate)(int, int), int tag, int slot);
 int desktop_native_menu(const DesktopMenuItem *items, int count, float x, float y);
 void desktop_native_init(SDL_Window *window);
 void desktop_native_sidebar(float fraction, float reveal);

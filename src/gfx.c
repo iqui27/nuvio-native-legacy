@@ -696,6 +696,21 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // GFX_FUNDO — arte desfocada por mipmap (uFoco carrega o bias), com o
   // gradiente medido no aparelho: claro no topo, quase preto na base, vinheta
   "void main(){\n"
+#ifdef NV_DESKTOP_UI
+  // Approved Mac picker: sharp upper art, progressively softer lower art.
+  "  if (uPar.x > 0.5) {\n"
+  "    vec2 uv=vUv; float ratio=uAspect/max(uTexAsp,0.001);\n"
+  "    if(ratio>1.0) uv.y=(uv.y-0.5)/ratio+0.5; else uv.x=(uv.x-0.5)*ratio+0.5;\n"
+  // Backdrops intentionally have no mip pyramid; use a small Gaussian kernel.
+  "    vec2 step=vec2(14.0/1440.0,14.0/867.0)*smoothstep(0.12,0.85,vUv.y);\n"
+  "    vec3 c=vec3(0.0);\n"
+  "    for(int y=-2;y<=2;y++) for(int x=-2;x<=2;x++) {\n"
+  "      float wx=x==0?6.0:(x==-1||x==1?4.0:1.0),wy=y==0?6.0:(y==-1||y==1?4.0:1.0);\n"
+  "      c+=texture2D(uTex,clamp(uv+vec2(float(x),float(y))*step,0.0,1.0)).rgb*wx*wy/256.0;\n"
+  "    }\n"
+  "    gl_FragColor=nv_dither(mix(c,uCor.rgb,uFoco),uCor.a); return;\n"
+  "  }\n"
+#endif
   "  // A textura ja chega desfocada pelo gaussiano de duas passadas.\n"
   "  vec3 cb = texture2D(uTex, vec2(vUv.x, 1.0 - vUv.y)).rgb;\n"
   // Curva conferida contra uma captura do app da Apple na mesma TV: a base

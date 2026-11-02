@@ -16,6 +16,7 @@ void gfx_arte_caminho(const char *rel, char *out, unsigned n);
 #include "idioma.h"
 #include "esportes.h"
 #include "tex_cache.h"
+#include "layout.h"
 static NSWindow *nativeWindow;
 static NSView *sidebar, *sidebarControls;
 static int sidebarLanguage = -1;
@@ -60,6 +61,94 @@ static NSView *serviceContent;
 - (void)toggleSidebar:(id)sender { menu_desktop_alternar(); }
 @end
 static NSButton *sidebarToggle;
+static NSButton *profileButtons[3];
+static BOOL profileButtonUsed[3];
+static void (*profileButtonActions[3])(int, int);
+@interface NVProfileButton : NSButton
+@property int actionTag;
+@end
+@implementation NVProfileButton
+- (void)chooseProfile:(id)sender {
+  if (profileButtonActions[self.tag]) profileButtonActions[self.tag](self.actionTag, 0);
+}
+@end
+
+// Native SF glyphs and NSButton snapshots are also used by GL readback proofs.
+// Cache only this screen's small, bounded set of labels and controls.
+static GLuint profileBitmap(NSBitmapImageRep *bitmap) {
+  int w=(int)bitmap.pixelsWide,h=(int)bitmap.pixelsHigh;
+  unsigned char *pixels=malloc((size_t)w*h*4);
+  for(int y=0;y<h;y++) for(int x=0;x<w;x++) {
+    NSColor *c=[[bitmap colorAtX:x y:y] colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+    size_t p=((size_t)y*w+x)*4;
+    pixels[p]=c.redComponent*255; pixels[p+1]=c.greenComponent*255;
+    pixels[p+2]=c.blueComponent*255; pixels[p+3]=c.alphaComponent*255;
+  }
+  GLuint texture; glGenTextures(1,&texture); glBindTexture(GL_TEXTURE_2D,texture);
+  glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+  free(pixels); return texture;
+}
+void desktop_native_profile_text(const char *text, float cx, float y, float size, int bold, float ink, float alpha) {
+  static NSMutableDictionary *cache;
+  if(!cache) cache=[NSMutableDictionary new];
+  NSString *string=[NSString stringWithUTF8String:text];
+  NSString *key=[NSString stringWithFormat:@"%@:%g:%d",string,size,bold];
+  NSArray *entry=cache[key];
+  if(!entry) {
+    if(cache.count>=64) {
+      for(NSArray *old in cache.allValues) {GLuint t=[old[0] unsignedIntValue];gfx_tex_esquecer(t);glDeleteTextures(1,&t);}
+      [cache removeAllObjects];
+    }
+    NSDictionary *attrs=@{NSFontAttributeName:[NSFont systemFontOfSize:size weight:bold?NSFontWeightSemibold:NSFontWeightRegular],NSForegroundColorAttributeName:NSColor.whiteColor};
+    NSSize s=[string sizeWithAttributes:attrs]; s.width=ceil(s.width);s.height=ceil(s.height);
+    NSImage *image=[[[NSImage alloc] initWithSize:s] autorelease];
+    [image lockFocusFlipped:YES];[string drawAtPoint:NSZeroPoint withAttributes:attrs];[image unlockFocus];
+    NSBitmapImageRep *bitmap=[NSBitmapImageRep imageRepWithData:image.TIFFRepresentation];
+    entry=@[@(profileBitmap(bitmap)),@(s.width),@(s.height)]; cache[key]=entry;
+  }
+  float w=[entry[1] floatValue],h=[entry[2] floatValue];
+  gfx_rect((GfxRect){cx-w*.5f,y,w,h},[entry[0] unsignedIntValue],GFX_TEXTO,0,1,0,0,ink,ink,ink,alpha);
+}
+void desktop_native_profile_button(GfxRect rect, const char *title, int enabled, int selected, float alpha,
+                                  void (*activate)(int,int), int tag, int slot) {
+  if(!nativeWindow || slot<0 || slot>=3) return;
+  NVProfileButton *button=(NVProfileButton *)profileButtons[slot];
+  if(!button) {
+    button=[NVProfileButton new];profileButtons[slot]=button;
+    button.tag=slot;button.target=button;button.action=@selector(chooseProfile:);
+    button.bezelStyle=slot==2?NSBezelStyleCircular:NSBezelStyleRounded;
+    button.controlSize=NSControlSizeLarge;
+    button.appearance=[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+    button.font=[NSFont systemFontOfSize:15];
+    [nativeWindow.contentView addSubview:button];
+  }
+  profileButtonUsed[slot]=YES;profileButtonActions[slot]=activate;button.actionTag=tag;
+  NSView *view=nativeWindow.contentView;
+  float scale=view.bounds.size.width/NV_TELA_W;
+  button.frame=NSMakeRect(rect.x*scale,view.bounds.size.height-(rect.y+rect.h)*scale,rect.w*scale,rect.h*scale);
+  button.title=[NSString stringWithUTF8String:title];button.enabled=enabled;button.alphaValue=alpha;
+  [button highlight:selected];button.hidden=NO;
+  if(getenv("NV_CAPTURA_GL")) {
+    static GLuint textures[3];static NSString *keys[3];
+    NSString *key=[NSString stringWithFormat:@"%@:%d:%d:%g:%g",button.title,enabled,selected,rect.w,rect.h];
+    if(![keys[slot] isEqual:key]) {
+      [keys[slot] release];keys[slot]=[key copy];
+      if(textures[slot]) {gfx_tex_esquecer(textures[slot]);glDeleteTextures(1,&textures[slot]);}
+      NSImage *image=[[[NSImage alloc] initWithSize:button.bounds.size] autorelease];
+      [button.effectiveAppearance performAsCurrentDrawingAppearance:^{
+        [image lockFocusFlipped:YES];
+        [button.cell drawWithFrame:button.bounds inView:button];
+        [image unlockFocus];
+      }];
+      NSBitmapImageRep *bitmap=[NSBitmapImageRep imageRepWithData:image.TIFFRepresentation];
+      textures[slot]=profileBitmap(bitmap);
+    }
+    button.hidden=YES;
+    gfx_rect(rect,textures[slot],GFX_TEXTO,0,0,0,0,1,1,1,alpha);
+  }
+}
 static NSInteger alertAnswer = -1;
 static NSString *alertText;
 // Window-modal NSAlert sheet; SDL keeps pumping while it is up.
@@ -402,6 +491,10 @@ void desktop_native_sidebar(float fraction, float reveal) {
   sidebarFraction=fraction; sidebarReveal=reveal;
 }
 void desktop_native_finish(void) {
+  for(int i=0;i<3;i++) {
+    if(!profileButtonUsed[i]) profileButtons[i].hidden=YES;
+    profileButtonUsed[i]=NO;
+  }
   float fraction=sidebarFraction;
   if (!sidebar) return;
   if(fraction<=0 || sidebarReveal<.001f) {sidebar.hidden=YES;return;}
