@@ -32,6 +32,13 @@ static IntroTrecho capTr[6];static int nCapTr;
 static void fundirCapitulos(void);   // chamar COM a trava
 // DURACAO DA MIDIA E O TIPO (filme/serie), para recusar janelas absurdas.
 static double durMidia;static int ehFilme;
+// Anime nesta reproducao: evidencia TMDB do pedido, ou AniSkip/Anime-Skip
+// trouxeram algo. Decide os palpites por duracao e a regra da previa.
+static int redeAnime;
+static IntroTrecho capPalp[4];static int nCapPalp;
+// Chamar com a trava: evidencia TMDB do pedido, AniSkip/Anime-Skip responderam,
+// ou um trecho veio do AniSkip.
+static int ehAnime(void);
 static unsigned verGer;
 // Memoria unica do automatico, inclusive recuo antes de uma resposta tardia.
 static unsigned autoGer;static double autoFim[4],autoDe,autoAte;static int autoRecuou;
@@ -622,7 +629,7 @@ static void publicarRede(const Pedido *p,const IntroTrecho *v,int n,const IntroT
 // O AniSkip continua escolhendo o lancamento pela duracao (10%).
 static void *baixar(void *u){
   Pedido*p=u;char*j=NULL;IntroTrecho v[8],limitados[8],w[8];
-  int n=0,nl=0,nw,f,falha=0,r,caps=0,total=0,vale,temCred=0,deAni=0;
+  int n=0,nl=0,nw,f,falha=0,r,caps=0,total=0,vale,temCred=0,deAni=0,deAs=0;
   int filme=p->e<=0;
   int temIdOutro=p->tmdb>0||!strncmp(p->id,"tt",2);
   char log[160]="";
@@ -639,7 +646,7 @@ static void *baixar(void *u){
     if(anilist>0&&faltaCategoria(v,n,0)){
       char cid[96];segfontes_animeskip_id(cid,sizeof cid);
       nw=segfontes_animeskip(anilist,ep,cid,w,8,&f);if(f)falha=1;
-      n=juntar(v,n,w,nw,limitados,&nl,NULL,0,0,"Anime-Skip",log,sizeof log);
+      {int n0=n;n=juntar(v,n,w,nw,limitados,&nl,NULL,0,0,"Anime-Skip",log,sizeof log);if(nw>0)deAs=1;(void)n0;}
       publicarRede(p,v,n,limitados,nl);
     }
     // 3. AniSkip.
@@ -664,6 +671,8 @@ static void *baixar(void *u){
   // Falha de uma fonte que AINDA era necessaria deixa o pedido "falho" mesmo com
   // o parcial publicado: o retry de 30 s recupera as categorias que faltaram.
   r=falha?R_FALHA:n>0?R_OK:R_VAZIO;
+  // AniSkip/Anime-Skip so respondem para anime: tambem vale como evidencia.
+  if(deAni||deAs){pthread_mutex_lock(&trava);if(p->g==geracao)redeAnime=1;pthread_mutex_unlock(&trava);}
   for(int i=0;i<n;i++)if(v[i].tipo==INTRO_CREDITOS)temCred=1;
   (void)deAni;
   pthread_mutex_lock(&trava);
@@ -693,7 +702,7 @@ static void disparar(const Pedido *base,double dur,int novo){
   p=malloc(sizeof*p);if(!p)return;
   *p=*base;p->dur=dur;
   pthread_mutex_lock(&trava);
-  if(novo){nTrechos=0;nRede=0;nCreditosLimitados=0;nCapTr=0;refeitos=0;tentativas=0;}
+  if(novo){nTrechos=0;nRede=0;nCreditosLimitados=0;nCapTr=0;nCapPalp=0;redeAnime=0;refeitos=0;tentativas=0;}
   falhou=0;
   p->anime=animeDe(p->id,p->tmdb);
   p->g=++geracao;ultimo=*p;temUltimo=1;enviadoDur=dur;
@@ -734,6 +743,13 @@ static int tipoDeCap(int t){return t==INTRO_ABERTURA?1:t==INTRO_RESUMO?2:3;}   /
 // substitui o da rede (creditos, previa e cena andam juntos). FILME (D6, como
 // o Nuvio TV mergeSkipIntervals): a rede vence inteira quando trouxe algo; os
 // capitulos so valem sem nada da rede.
+static int ehAnime(void){
+  int i;
+  if(redeAnime||(temUltimo&&ultimo.anime))return 1;
+  for(i=0;i<nRede;i++)if(rede[i].ani)return 1;
+  for(i=0;i<nTrechos;i++)if(trechos[i].ani)return 1;
+  return 0;
+}
 static void fundirCapitulos(void){
   int i,k,j=0,filme=temUltimo?ultimo.e<=0:ehFilme;
   if(filme&&nRede>0){
@@ -746,8 +762,22 @@ static void fundirCapitulos(void){
     }
     nTrechos=j;
     for(k=0;k<nCapTr&&nTrechos<8;k++)trechos[nTrechos++]=capTr[k];
+    // Palpites por duracao (capitulos sem nome): anime, e so o tipo que falta.
+    if(ehAnime())
+      for(k=0;k<nCapPalp&&nTrechos<8;k++){
+        int tem=0;
+        for(i=0;i<nTrechos;i++)if(trechos[i].tipo==capPalp[k].tipo)tem=1;
+        if(!tem)trechos[nTrechos++]=capPalp[k];
+      }
   }
   verGer=geracao+1;   // forca valido() a reavaliar os vereditos por indice
+}
+void intro_definir_capitulos_palpite(const IntroTrecho *v,int n){
+  pthread_mutex_lock(&trava);
+  nCapPalp=0;
+  for(int i=0;v&&i<n&&nCapPalp<4;i++)capPalp[nCapPalp++]=v[i];
+  fundirCapitulos();
+  pthread_mutex_unlock(&trava);
 }
 void intro_definir_capitulos(const IntroTrecho *v,int n){
   pthread_mutex_lock(&trava);
@@ -758,7 +788,7 @@ void intro_definir_capitulos(const IntroTrecho *v,int n){
       ultimo.id,ultimo.t,ultimo.e,nTrechos);fflush(stdout);}
   pthread_mutex_unlock(&trava);
 }
-void intro_desligar(void){pthread_mutex_lock(&trava);geracao++;nTrechos=nRede=nCreditosLimitados=0;nCapTr=0;botaoVis=0;botaoIdx=-1;temUltimo=0;falhou=0;pthread_mutex_unlock(&trava);}
+void intro_desligar(void){pthread_mutex_lock(&trava);geracao++;nTrechos=nRede=nCreditosLimitados=0;nCapTr=0;nCapPalp=0;redeAnime=0;botaoVis=0;botaoIdx=-1;temUltimo=0;falhou=0;pthread_mutex_unlock(&trava);}
 
 // DURACAO DA MIDIA E O TIPO (filme/serie), para recusar janelas absurdas.
 // E O GATILHO DO PEDIDO DE NOVO (2.0.3, como o plugin oficial): a duracao real
@@ -882,6 +912,19 @@ static double fimEmendado(int i){
   return f;
 }
 
+// ONDE "PULAR ENCERRAMENTO" CAI: no fim do proprio encerramento, ou antes, no
+// comeco de uma PREVIA que comece dentro dele (rede "ate o fim" + capitulo
+// "PV"/"Preview"). Quem pula o encerramento quer ver a previa; quem nao quer usa
+// o cartao do proximo. Chamar com a trava.
+static double fimPulo(int i){
+  double f=trechos[i].fim;
+  if(trechos[i].tipo!=INTRO_CREDITOS)return f;
+  for(int k=0;k<nTrechos;k++)
+    if(trechos[k].tipo==INTRO_PREVIA&&trechos[k].inicio>trechos[i].inicio+1.0&&
+       (f<=0.0||trechos[k].inicio<f-1.0)&&valido(k))f=trechos[k].inicio;
+  return f;
+}
+
 // Chamar com a trava: manual e automatico compartilham a escolha/janela.
 static int ativoInterno(double pos,double*fim,int*tipo,int automatico){
   int ok=0;
@@ -892,7 +935,9 @@ static int ativoInterno(double pos,double*fim,int*tipo,int automatico){
                : (pos>=trechos[i].inicio);
     if(trechos[i].tipo==INTRO_PREVIA||trechos[i].tipo==INTRO_POS_CREDITOS)continue;   // sem botao proprio (CHAVES); a cena nunca se pula
     if(dentro&&valido(i)){
-      double f=fimEmendado(i);
+      // "Pular encerramento" cai no fim do proprio encerramento: a previa ou a
+      // cena que vem depois e assistida (quem nao quer ve-la usa o cartao).
+      double f=fimPulo(i);
       if(automatico&&trechos[i].tipo==INTRO_CREDITOS){
         int explicito=0;
         autoSincronizar();
@@ -906,7 +951,7 @@ static int ativoInterno(double pos,double*fim,int*tipo,int automatico){
           if(creditosLimitados[k].inicio==trechos[i].inicio&&
              creditosLimitados[k].fim==trechos[i].fim)explicito=1;
         if(!explicito)continue;
-        f=trechos[i].fim; // nao pula a previa/cena depois dos creditos
+        f=fimPulo(i); // nao pula a previa/cena depois dos creditos
       }
       if(fim)*fim=f;if(tipo)*tipo=trechos[i].tipo;ok=1;break;
     }
@@ -936,7 +981,7 @@ int intro_botao(double pos,double agora,int osd,int focado,double*fim,int*tipo){
   if(!mostrado[idx]){mostrado[idx]=1;botaoDesde=agora;}
   if(focado)botaoDesde=agora;                 // nao some debaixo do foco
   vis=(agora-botaoDesde<INTRO_BOTAO_SEG)||osd;
-  botaoVis=vis;botaoFim=fimEmendado(idx);botaoTipo=trechos[idx].tipo;
+  botaoVis=vis;botaoFim=fimPulo(idx);botaoTipo=trechos[idx].tipo;
   if(vis){if(fim)*fim=botaoFim;if(tipo)*tipo=botaoTipo;}
   pthread_mutex_unlock(&trava);return vis;
 }
@@ -980,7 +1025,14 @@ int intro_cena_pos(double dur,double *ini,double *fim,int *explicita){
          (!(dur>0.0)||trechos[k].inicio<dur)&&(!ok||trechos[k].inicio<a)){
         a=trechos[k].inicio;b=trechos[k].fim>0.0?trechos[k].fim:dur;ex=1;ok=1;
       }
+    // Deduzida: mais de 5 s depois do encerramento sem nada dizendo o que e.
+    // So nome/fonte faz disso uma previa (gag de 30 s existe): na duvida, cena.
     if(!ok&&dur>0.0&&dur-fe>INTRO_CENA_FOLGA_S){a=fe;b=dur;ok=1;}
+    // "ED - Part C - Next time": a previa marcada depois da cena a encerra.
+    if(ok)
+      for(int k=0;k<nTrechos;k++)
+        if(trechos[k].tipo==INTRO_PREVIA&&trechos[k].inicio>a+1.0&&(b<=0.0||trechos[k].inicio<b)&&valido(k))
+          b=trechos[k].inicio;
   }
   pthread_mutex_unlock(&trava);
   if(ok){if(ini)*ini=a;if(fim)*fim=b;if(explicita)*explicita=ex;}

@@ -73,7 +73,13 @@ int  intro_ativo(double posSeg,double *fim,int *tipo);
 // dos creditos, ja emendado com a previa, e o fim da midia). `ini`/`fim` da
 // cena, `explicita` 1/0. Creditos "ate o fim" nunca tem cena. `dur` em s.
 #define INTRO_CENA_FOLGA_S 5.0
+// Uma PREVIA marcada depois da cena ("ED - Part C - Next time") fecha a cena:
+// `fim` = inicio da previa, e o cartao do proximo sobe nela, nao no fim do arquivo.
 int intro_cena_pos(double dur,double *ini,double *fim,int *explicita);
+// PALPITES por duracao (capitulos sem nome util, mkv_segmentos_palpite): so
+// para anime (evidencia TMDB, ou AniSkip/Anime-Skip responderam) e so nos tipos
+// que nem capitulo com nome nem a rede deram. n=0 limpa.
+void intro_definir_capitulos_palpite(const IntroTrecho *v,int n);
 // Segundo em que os creditos comecam, ou 0 quando nao ha marcador. Serve ao
 // posplay.c, que precisa do INSTANTE e nao de "estou dentro".
 double intro_creditos_seg(void);

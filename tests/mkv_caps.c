@@ -337,6 +337,31 @@ int main(void) {
   ok(k == 3 && caps[0].inicio == 0 && caps[1].inicio == 120 && caps[2].inicio == 300 &&
      !strcmp(caps[1].nome, "B"), "ordenado por inicio, sem inicio repetido");
 
+  // --- PV, "Next time" e palpite por duracao (teste na C9) ---------------------
+  { MkvCap c[8]; MkvSeg s2[6]; int ns2;
+    memset(c, 0, sizeof c);
+    c[0].inicio = 0;    snprintf(c[0].nome, sizeof c[0].nome, "Part A");
+    c[1].inicio = 1300; snprintf(c[1].nome, sizeof c[1].nome, "ED");
+    c[2].inicio = 1390; snprintf(c[2].nome, sizeof c[2].nome, "PV");
+    ns2 = mkv_segmentos(c, 3, 1420, s2, 6);
+    ok(ns2 == 2 && s2[1].tipo == MKV_SEG_PREVIA && s2[1].inicio == 1390, "\"PV\" no fim e previa");
+    snprintf(c[2].nome, sizeof c[2].nome, "Next Time");
+    ns2 = mkv_segmentos(c, 3, 1420, s2, 6);
+    ok(ns2 == 2 && s2[1].tipo == MKV_SEG_PREVIA, "\"Next Time\" no fim e previa");
+    ok(mkv_classificar_nome("UPVOTE", NULL) == MKV_SEG_NENHUM, "\"PV\" so como palavra");
+    // Attack on Titan da C9: "Chapter 1".."Chapter 5", sem nome util.
+    for (k = 0; k < 5; k++) snprintf(c[k].nome, sizeof c[k].nome, "Chapter %d", k + 1);
+    c[0].inicio = 0; c[1].inicio = 10; c[2].inicio = 102; c[3].inicio = 1320; c[4].inicio = 1410;
+    ns2 = mkv_segmentos_palpite(c, 5, s2, 6);
+    ok(ns2 == 2 && s2[0].tipo == MKV_SEG_ABERTURA && s2[0].inicio == 10 && s2[0].fim == 102 &&
+       s2[1].tipo == MKV_SEG_CREDITOS && s2[1].inicio == 1320 && s2[1].fim == 1410,
+       "palpite: OP 10-102 s e ED 1320-1410 s pela duracao");
+    snprintf(c[3].nome, sizeof c[3].nome, "Ending");
+    ok(mkv_segmentos_palpite(c, 5, s2, 6) == 0, "palpite so sem nenhum nome util");
+    c[0].inicio = 0; c[1].inicio = 600; c[2].inicio = 1200;
+    for (k = 0; k < 3; k++) snprintf(c[k].nome, sizeof c[k].nome, "Chapter %d", k + 1);
+    ok(mkv_segmentos_palpite(c, 3, s2, 6) == 0, "palpite: capitulos de 10 min nao viram nada"); }
+
   printf(falhas ? "\nFALHOU\n" : "\nmkv capitulos: PASS (nanossegundos, nome, acento, sem nome, lixo)\n");
   return falhas ? 1 : 0;
 }

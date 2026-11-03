@@ -593,7 +593,8 @@ static int nomeAbertura(const char *m) {
 // Previa do proximo episodio (anime: "Preview", "Next Episode", "Yokoku"):
 // vem DEPOIS do ED e nao e o inicio dos creditos.
 static int nomePrevia(const char *m) {
-  return strstr(m, "preview") || strstr(m, "next episode") || strstr(m, "next time") ||
+  // "PV" so como palavra (anime: a previa curta do proximo episodio).
+  return temPalavra(m, "pv") || strstr(m, "preview") || strstr(m, "next episode") || strstr(m, "next time") ||
          strstr(m, "yokoku") || strstr(m, "avance") || strstr(m, "previa") ||
          strstr(m, "prévia");
 }
@@ -724,6 +725,34 @@ int mkv_segmentos(const MkvCap *caps, int n, double dur, MkvSeg *out, int max) {
     out[k].cap = i;
     k++;
   }
+  return k;
+}
+
+// PALPITES POR DURACAO (capitulos sem nome util: "Chapter 1".."Chapter 5", o
+// Attack on Titan da C9). So quando NENHUM capitulo tem nome que classifique.
+// Abertura e encerramento de anime tem ~1:30: um capitulo de 75-105 s entre os
+// tres primeiros (comecando antes dos 10 min) e a abertura; um entre os tres
+// ultimos, depois dela, e o encerramento. O ultimo capitulo nao tem medida sem
+// a duracao e fica de fora. intro.c so usa os palpites em anime.
+#define MKV_PALPITE_MIN_S 75.0
+#define MKV_PALPITE_MAX_S 105.0
+int mkv_segmentos_palpite(const MkvCap *caps, int n, MkvSeg *out, int max) {
+  int i, op = -1, ed = -1, k = 0;
+  if (!caps || n < 3 || !out || max <= 0) return 0;
+  if (n > MKV_MAX_CAPS) n = MKV_MAX_CAPS;
+  for (i = 0; i < n; i++) if (mkv_classificar_nome(caps[i].nome, NULL)) return 0;
+  for (i = 0; i < n - 1 && i < 3 && op < 0; i++) {
+    double len = caps[i + 1].inicio - caps[i].inicio;
+    if (len >= MKV_PALPITE_MIN_S && len <= MKV_PALPITE_MAX_S && caps[i].inicio < 600.0) op = i;
+  }
+  for (i = n - 2; i >= 0 && i >= n - 4 && i > op; i--) {
+    double len = caps[i + 1].inicio - caps[i].inicio;
+    if (len >= MKV_PALPITE_MIN_S && len <= MKV_PALPITE_MAX_S) { ed = i; break; }
+  }
+  if (op >= 0 && k < max)
+    out[k++] = (MkvSeg){ caps[op].inicio, caps[op + 1].inicio, MKV_SEG_ABERTURA, 0, op };
+  if (ed >= 0 && k < max)
+    out[k++] = (MkvSeg){ caps[ed].inicio, caps[ed + 1].inicio, MKV_SEG_CREDITOS, 0, ed };
   return k;
 }
 

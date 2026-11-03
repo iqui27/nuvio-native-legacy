@@ -297,6 +297,8 @@ static int tipoAnimeSkip(const char *nome) {
   if (!strcmp(m, "intro") || !strcmp(m, "new intro") || !strcmp(m, "mixed intro")) return INTRO_ABERTURA;
   if (!strcmp(m, "credits") || !strcmp(m, "new credits") || !strcmp(m, "mixed credits")) return INTRO_CREDITOS;
   if (!strcmp(m, "recap")) return INTRO_RESUMO;
+  // A previa (PV/yokoku) e marcada pelo Anime-Skip: nao e cena pos-creditos.
+  if (!strcmp(m, "preview")) return INTRO_PREVIA;
   return 0;
 }
 
@@ -306,7 +308,7 @@ int segfontes_animeskip_ep(const char *json, int ep, IntroTrecho *out, int max) 
     const char *f = js_fim(p), *ts;
     char num[16] = "";
     double at[64];
-    int tp[64], nt = 0, i, j, n = 0;
+    int tp[64], canon[64], nt = 0, i, j, n = 0, cred = -1;
     // "number" vem como TEXTO ("12"); o "at" dos timestamps e numero.
     if (!js_texto(p, f, "number", num, sizeof num) || atoi(num) != ep) continue;
     for (ts = js_array(p, f, "timestamps"); ts && nt < 64; ts = js_prox(js_fim(ts))) {
@@ -315,13 +317,18 @@ int segfontes_animeskip_ep(const char *json, int ep, IntroTrecho *out, int max) 
       double a = js_num(ts, tf, "at", -1);
       if (a < 0) continue;
       if (ty) js_texto(ty, tyFim, "name", nome, sizeof nome);
-      at[nt] = a; tp[nt] = tipoAnimeSkip(nome); nt++;
+      at[nt] = a; tp[nt] = tipoAnimeSkip(nome);
+      { char l[16]; size_t q; snprintf(l, sizeof l, "%s", nome);
+        for (q = 0; l[q]; q++) if (l[q] >= 'A' && l[q] <= 'Z') l[q] = (char)(l[q] - 'A' + 'a');
+        canon[nt] = !strcmp(l, "canon"); }
+      nt++;
     }
     // Ordena por `at` (insercao: sao poucos).
     for (i = 1; i < nt; i++)
       for (j = i; j > 0 && at[j] < at[j - 1]; j--) {
-        double ta = at[j]; int tt = tp[j];
-        at[j] = at[j - 1]; tp[j] = tp[j - 1]; at[j - 1] = ta; tp[j - 1] = tt;
+        double ta = at[j]; int tt = tp[j], tc = canon[j];
+        at[j] = at[j - 1]; tp[j] = tp[j - 1]; canon[j] = canon[j - 1];
+        at[j - 1] = ta; tp[j - 1] = tt; canon[j - 1] = tc;
       }
     // Fim = proximo timestamp; o ultimo vai "ate o fim" (0), como o PC.
     for (i = 0; i < nt && n < max; i++) {
@@ -330,7 +337,12 @@ int segfontes_animeskip_ep(const char *json, int ep, IntroTrecho *out, int max) 
       for (k = 0; k < n; k++) if (out[k].tipo == tp[i]) ja = 1;   // primeiro por tipo
       if (ja) continue;
       out[n++] = (IntroTrecho){ at[i], i + 1 < nt ? at[i + 1] : 0.0, tp[i], 0 };
+      if (tp[i] == INTRO_CREDITOS && cred < 0) cred = i;
     }
+    // Historia ("Canon") LOGO depois dos creditos: cena pos-creditos de
+    // verdade (o "C-part"), marcada e nunca pulada.
+    if (cred >= 0 && cred + 1 < nt && canon[cred + 1] && n < max)
+      out[n++] = (IntroTrecho){ at[cred + 1], cred + 2 < nt ? at[cred + 2] : 0.0, INTRO_POS_CREDITOS, 0 };
     return n;
   }
   return 0;

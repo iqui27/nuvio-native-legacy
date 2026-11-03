@@ -748,14 +748,29 @@ int main(int argc,char **argv) {
     assert(n == 1 && v[0].tipo == INTRO_ABERTURA && mesmoSeg(v[0].fim, 53.0));
     puts("ok  filme: janela de creditos 12% (5-15 min), abertura so no comeco, 3 min/90 s fixos");
   }
-  // PREVIA: emendada nos creditos, o "Pular creditos" pula as duas; sem
+  // PREVIA: emendada nos creditos, "Pular encerramento" cai NELA (quem pula o
+  // encerramento quer ver a previa; o cartao cuida de quem nao quer); sem
   // creditos, ela marca o fim para o cartao.
 #ifdef NV_SHOT_HOOKS
   { double fim; int tipo;
     n = intro_extrair(fixture("onepiece_s01e01.json"), v, 8);
     intro_shot_definir(v, n);
     intro_definir_duracao(1500.0, 0);
-    assert(intro_botao(1400.0, 9000.0, 0, 0, &fim, &tipo) && tipo == INTRO_CREDITOS && mesmoSeg(fim, 1500.0));
+    assert(intro_botao(1400.0, 9000.0, 0, 0, &fim, &tipo) && tipo == INTRO_CREDITOS && mesmoSeg(fim, 1459.0));
+    assert(!intro_cena_pos(1500.0, NULL, NULL, NULL));   // previa emendada nao e cena
+    // "ED - Part C - Next time": a parte depois do ED e cena (o botao cai nela,
+    // rotulo "Post credits"); a previa marcada a fecha e o cartao sobe nela.
+    { IntroTrecho t[2] = {{1300.0, 1380.0, INTRO_CREDITOS, 0}, {1410.0, 0.0, INTRO_PREVIA, 0}};
+      double a0 = 0, b0 = 0; int ex = 1;
+      intro_shot_definir(t, 2); intro_definir_duracao(1440.0, 0);
+      assert(intro_cena_pos(1440.0, &a0, &b0, &ex) && mesmoSeg(a0, 1380.0) && mesmoSeg(b0, 1410.0) && !ex);
+      assert(intro_botao(1310.0, 9100.0, 0, 0, &fim, &tipo) && tipo == INTRO_CREDITOS && mesmoSeg(fim, 1380.0)); }
+    // Sobra sem nada dizendo o que e (AniSkip, 42 s): na duvida e cena (gag de
+    // 30 s existe). So nome ou fonte faz dela uma previa.
+    { IntroTrecho t[1] = {{1320.0, 1410.0, INTRO_CREDITOS, 1}};
+      intro_shot_definir(t, 1); intro_definir_duracao(1452.0, 0);
+      assert(intro_cena_pos(1452.0, NULL, NULL, NULL)); }
+    puts("ok  previa: Pular encerramento cai nela; ED-Part C-Next time = cena fechada pela previa; sobra sem sinal = cena");
     assert(!intro_botao(1470.0, 9020.0, 0, 0, &fim, &tipo) || tipo != INTRO_PREVIA);
     n = intro_extrair(fixture("aot_s01e01.json"), v, 8);
     intro_shot_definir(v, n);
@@ -763,7 +778,7 @@ int main(int argc,char **argv) {
     assert(mesmoSeg(intro_creditos_seg(), 1432.0));
     // trecho com inicio e fim nulos e descartado (como o plugin oficial)
     assert(intro_extrair("{\"intro\":[{\"start_ms\":null,\"end_ms\":null}]}", v, 8) == 0);
-    puts("ok  previa: emendada pula junto com os creditos; sozinha marca o fim");
+    puts("ok  previa: emendada, o pulo cai nela; sozinha marca o fim");
   }
 #endif
 #ifdef NV_SHOT_HOOKS
@@ -815,9 +830,23 @@ int main(int argc,char **argv) {
   { simklCid = "cid-teste"; segfontes_definir_buscador(simklFake); segfontes_limpar_cache();
     intro_pedir_ids("tt9800001", 0, 1, 1, 0, 0); usleep(300000);
     assert(__atomic_load_n(&simklPedidos, __ATOMIC_SEQ_CST) == 0);
+    // Palpite por duracao (capitulos sem nome): so em anime, e so o tipo que
+    // nenhuma fonte deu.
+    { IntroTrecho op = {10.0, 102.0, INTRO_ABERTURA, 0}, t[8]; int k, n2, achou = 0;
+      intro_definir_capitulos_palpite(&op, 1);
+      n2 = intro_trechos(t, 8);
+      for (k = 0; k < n2; k++) if (t[k].tipo == INTRO_ABERTURA && t[k].inicio == 10.0) achou = 1;
+      assert(!achou); }
     intro_registrar_tmdb("tt9800002", 0, "{\"original_language\":\"ja\",\"genres\":[{\"id\":16}]}");
     intro_pedir_ids("tt9800002", 0, 1, 1, 0, 0); usleep(300000);
     assert(__atomic_load_n(&simklPedidos, __ATOMIC_SEQ_CST) > 0);
+    { IntroTrecho op = {10.0, 102.0, INTRO_ABERTURA, 0}, t[8]; int k, n2, achou = 0;
+      intro_definir_capitulos_palpite(&op, 1);
+      n2 = intro_trechos(t, 8);
+      for (k = 0; k < n2; k++) if (t[k].tipo == INTRO_ABERTURA && t[k].inicio == 10.0) achou = 1;
+      assert(achou);
+      intro_definir_capitulos_palpite(NULL, 0); }
+    puts("ok  palpite por duracao: so anime");
     simklCid = ""; segfontes_definir_buscador(NULL);
     { char c[NVT_MAX]; usleep(300000);   // o anime sem MAL caiu na Fribb, que grava o indice
       if (dados_caminho(c, sizeof c, "anime-fribb.idx")) unlink(c); }

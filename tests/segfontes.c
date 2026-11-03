@@ -80,6 +80,12 @@ static int fakePost(const char *url, const char *corpo, const char *cid, char **
         "{\"at\":120,\"type\":{\"name\":\"Mixed Intro\"}},"
         "{\"at\":210,\"type\":{\"name\":\"Canon\"}},"
         "{\"at\":1440,\"type\":{\"name\":\"Preview\"}}]}]}}";
+  else if (strstr(corpo, "findShowsByExternalId") && strstr(corpo, "30000"))
+    r = "{\"data\":{\"findShowsByExternalId\":[{\"id\":\"show-cpart\"}]}}";
+  else if (strstr(corpo, "findEpisodesByShowId") && strstr(corpo, "show-cpart"))
+    r = "{\"data\":{\"findEpisodesByShowId\":[{\"season\":\"1\",\"number\":\"5\",\"timestamps\":["
+        "{\"at\":0,\"type\":{\"name\":\"Canon\"}},{\"at\":1290,\"type\":{\"name\":\"Credits\"}},"
+        "{\"at\":1380,\"type\":{\"name\":\"Canon\"}},{\"at\":1410,\"type\":{\"name\":\"Preview\"}}]}]}}";
   else if (strstr(corpo, "findShowsByExternalId"))
     r = "{\"data\":{\"findShowsByExternalId\":[]}}";
   if (!r) { *status = 500; return 500; }
@@ -136,11 +142,20 @@ int main(void) {
   assert(segfontes_animeskip(20958, 3, "", v, 8, &f) == 0 && pedidosAs == 0);
   puts("ok  Anime-Skip: sem Client ID nao vai a rede");
   n = segfontes_animeskip(20958, 3, "meu-id", v, 8, &f);
-  assert(n == 3 && !f && !strcmp(ultimoCid, "meu-id"));
+  assert(n == 4 && !f && !strcmp(ultimoCid, "meu-id"));
+  // "Preview" do Anime-Skip vira PREVIA (antes era jogado fora e a sobra virava cena).
+  assert(acha(v, n, INTRO_PREVIA) && acha(v, n, INTRO_PREVIA)->inicio == 1440);
   assert(acha(v, n, INTRO_RESUMO)->inicio == 0 && acha(v, n, INTRO_RESUMO)->fim == 45);
   assert(acha(v, n, INTRO_ABERTURA)->inicio == 120 && acha(v, n, INTRO_ABERTURA)->fim == 210);
   assert(acha(v, n, INTRO_CREDITOS)->inicio == 1350.5 && acha(v, n, INTRO_CREDITOS)->fim == 1440);
   puts("ok  Anime-Skip: ordena por 'at', fim = proximo timestamp, Mixed Intro = abertura");
+  // ED - Part C - Next time: historia logo depois dos creditos = cena; a previa fecha.
+  n = segfontes_animeskip(30000, 5, "meu-id", v, 8, &f);
+  assert(acha(v, n, INTRO_CREDITOS) && acha(v, n, INTRO_CREDITOS)->fim == 1380);
+  assert(acha(v, n, INTRO_POS_CREDITOS) && acha(v, n, INTRO_POS_CREDITOS)->inicio == 1380 &&
+         acha(v, n, INTRO_POS_CREDITOS)->fim == 1410);
+  assert(acha(v, n, INTRO_PREVIA) && acha(v, n, INTRO_PREVIA)->inicio == 1410);
+  puts("ok  Anime-Skip: Canon logo apos os creditos = cena pos-creditos; Preview = previa");
   { int antes = pedidosAs;
     assert(segfontes_animeskip(1, 3, "meu-id", v, 8, &f) == 0 && !f);
     assert(segfontes_animeskip(1, 3, "meu-id", v, 8, &f) == 0 && pedidosAs == antes + 1); }

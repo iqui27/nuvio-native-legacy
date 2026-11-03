@@ -186,6 +186,10 @@ int mkv_segmentos(const MkvCap *caps, int n, double dur, MkvSeg *out, int max);
 // Os capitulos escondidos/desligados ficam de fora, vale a edicao padrao e a
 // lista sai em ordem de inicio (como o NuvioTV).
 void mkv_capitulos_idioma(const char *iso);
+// Palpite por DURACAO quando nenhum capitulo tem nome util (so anime decide
+// usar, intro.c): abertura = capitulo de 75-105 s entre os 3 primeiros,
+// encerramento = um de 75-105 s entre os 3 ultimos (depois da abertura).
+int mkv_segmentos_palpite(const MkvCap *caps, int n, MkvSeg *out, int max);
 
 // CASA as legendas que a TV lista com as TrackEntry de legenda do arquivo (#92).
 //

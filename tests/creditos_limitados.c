@@ -137,7 +137,7 @@ int main(void) {
   trechos[1] = (IntroTrecho){950, 980, INTRO_PREVIA}; nTrechos = 2;
   creditosLimitados[0] = trechos[0];
   double fim; int tipo;
-  assert(intro_ativo(910, &fim, &tipo) && fim == 980);
+  assert(intro_ativo(910, &fim, &tipo) && fim == 950);   // "Pular encerramento" cai na previa
   assert(intro_auto_ativo(910, &fim, &tipo) && fim == 950 && tipo == INTRO_CREDITOS);
   assert(intro_auto_pular(tipo, fim, 1000, 0, 0, 1));
   intro_auto_marcar(tipo, fim);
