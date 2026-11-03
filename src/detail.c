@@ -6804,6 +6804,9 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
     if (hit >= 0) abs = hit;
   }
   const CatEp *ep = cat_episodio(idx, abs);
+  // Catalog refresh can empty the row under an open menu: draw nothing until
+  // the episode is back rather than invent one.
+  if (!ep) return;
   GfxRect th = { r.x, r.y, r.w, epThumbH() };
   float raioTh = NV_DETP_EP_RAIO / epThumbH();
 
