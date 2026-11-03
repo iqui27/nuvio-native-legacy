@@ -15192,6 +15192,15 @@
    "ref": "integracao/2.1 (142ae407f, 3d6cb830a, 79f234560, 6c39c62ba, e6da2772a, c4e40c05f, 68a24febb, 2fccfee60, ce49f2e3a)",
    "resultado": "inconclusivo",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/triagem-perdidos.md (leitura de arvore/grep em integracao/2.1; nenhum build executado)"
+  },
+  {
+   "data": "2026-11-03 13:19",
+   "quem": "Claude Code (coordenacao de integracao)",
+   "o_que": "Integração TV 2.1: 11 merges, testes focados, i18n, builds local/Android/ARM, APK release instalado na TCL e deploy isolado do AIOPair Worker.",
+   "issues": [],
+   "ref": "integracao/2.1@b211d91e7ffe8f119824c9dcc3a37f40fe457f3f",
+   "resultado": "passou com limites externos: C9 SSH timeout; CORS Authorization 0/7 hosts AIO padrão",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/status-tv.md; APK SHA-256 b67b6afea5438036e1ee622466b8080c1b5ad58c67702e6fadf97ad25e34d6d5; build/install/Worker smoke rc=0; sem D-pad ou escrita em conta"
   }
  ],
  "decisoes": [
