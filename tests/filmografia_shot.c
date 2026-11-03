@@ -109,23 +109,26 @@ static void motion_strip(const char *prefix,const char *mode) {
 }
 static void shot(const char *prefix,const char *suffix){for(int i=0;i<150;i++){j4_frame(.01f,proof_step,proof_draw);}j4_art_ready();txt_novo_quadro();tex_novo_quadro();gfx_novo_quadro();glClear(GL_COLOR_BUFFER_BIT);proof_draw();unsigned char *px=malloc(1920*1080*4);assert(px);glReadPixels(0,0,1920,1080,GL_RGBA,GL_UNSIGNED_BYTE,px);SDL_Surface *s=SDL_CreateRGBSurfaceWithFormat(0,1920,1080,32,SDL_PIXELFORMAT_RGBA32);assert(s);for(int y=0;y<1080;y++)memcpy((char*)s->pixels+y*s->pitch,px+(1079-y)*1920*4,1920*4);char path[600];snprintf(path,sizeof path,"%s-%s.png",prefix,suffix);assert(IMG_SavePNG(s,path)==0);puts(path);SDL_FreeSurface(s);free(px);}
 static void caption_check(const char *prefix) {
-  const int x=700,y=850,w=220,h=160,lineW=184,lineH=32;
-  unsigned char actual[220*160*4],expected[184*32*4];
+  float scale=gfx_escala_txt(),lineK=(1020/scale-60)/970;
+  if(lineK>1)lineK=1;
+  int x=724,y=(int)((622/scale+276*lineK+14+28)*scale)+20,w=184,h=48,lineW=184,lineH=32;
+  unsigned char actual[184*48*4],expected[184*32*4];
   glReadPixels(x,1080-y-h,w,h,GL_RGBA,GL_UNSIGNED_BYTE,actual);
   glClearColor(0,0,0,1);glClear(GL_COLOR_BUFFER_BIT);
   txt_novo_quadro();
   float previous=gfx_escala_txt_entrar();
-  TxtLinha line=txt_linha_corta(TXT_ILHA_SUB,"2024 · Protagonista",170,170,178,255,lineW/gfx_escala_txt());
+  TxtLinha line=txt_linha_corta(TXT_ILHA_SUB,"2024 · Protagonista",170,170,178,255,lineW/scale);
   txt_desenhar_alpha(line,0,0,1);
   gfx_escala_sair(previous);
   glReadPixels(0,1080-lineH,lineW,lineH,GL_RGBA,GL_UNSIGNED_BYTE,expected);
+  // Search only below poster/title, so bright artwork cannot impersonate glyphs.
   int ink=0,matched=0,best=0;
   for(int yy=1;yy<lineH-4;yy++)for(int xx=1;xx<lineW-1;xx++)ink+=expected[(yy*lineW+xx)*4]>65;
-  for(int oy=0;oy<=h-lineH;oy++)for(int ox=0;ox<=w-lineW;ox++){
+  for(int oy=0;oy<=h-lineH;oy++){
     int hits=0;
     for(int yy=1;yy<lineH-4;yy++)for(int xx=1;xx<lineW-1;xx++)if(expected[(yy*lineW+xx)*4]>65){
       int found=0;
-      for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++)found|=actual[((oy+yy+dy)*w+ox+xx+dx)*4]>65;
+      for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++)found|=actual[((oy+yy+dy)*w+xx+dx)*4]>65;
       hits+=found;
     }
     if(hits>best)best=hits;
