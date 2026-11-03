@@ -169,9 +169,12 @@ static int simklDetalhes(long simkl, const char *tipo, SegIds *o) {
 
 // Cache em DOIS niveis: a entrada (ids da temporada) por fonte:id:temporada — a
 // mesma para todos os episodios dela, sem pedido nenhum do segundo em diante —
-// e o mapa de episodios (so anime) por entrada Simkl, copiado como pares.
-typedef struct { int t, e, ep; } SimklEp;
-typedef struct { long simkl; int n; SimklEp v[400]; } SimklEps;
+// e o mapa de episodios (so anime) por entrada Simkl E temporada TVDB, so com
+// os pares dessa temporada. Uma entrada longa (One Piece, Conan: 1000+
+// episodios numa so) nao cabe inteira; a temporada cabe, e um episodio tardio
+// nao cai no numero do TVDB (que pediria os tempos de outro episodio).
+typedef struct { int e, ep; } SimklEp;
+typedef struct { long simkl; int t, n; SimklEp v[400]; } SimklEps;
 static SimklEps epsCache[4];
 static int epsProx;
 
@@ -179,31 +182,30 @@ static int simklEpCache(long simkl, int t, int e, int *ep) {
   int i, k, achou = -1;
   pthread_mutex_lock(&trava);
   for (i = 0; i < 4; i++)
-    if (epsCache[i].simkl == simkl) {
+    if (epsCache[i].simkl == simkl && epsCache[i].t == t) {
       achou = 0;
       for (k = 0; k < epsCache[i].n; k++)
-        if (epsCache[i].v[k].t == t && epsCache[i].v[k].e == e) { *ep = epsCache[i].v[k].ep; achou = 1; break; }
+        if (epsCache[i].v[k].e == e) { *ep = epsCache[i].v[k].ep; achou = 1; break; }
       break;
     }
   pthread_mutex_unlock(&trava);
   return achou;   // -1 = mapa nao baixado, 0 = baixado sem o episodio, 1 = achou
 }
-static void simklEpGuardar(long simkl, const char *json) {
+static void simklEpGuardar(long simkl, int t, const char *json) {
   SimklEps *c;
   const char *p = json ? js_raiz_array(json) : NULL;
   pthread_mutex_lock(&trava);
   c = &epsCache[epsProx]; epsProx = (epsProx + 1) % 4;
-  c->simkl = simkl; c->n = 0;
+  c->simkl = simkl; c->t = t; c->n = 0;
   for (; p && c->n < 400; p = js_prox(js_fim(p))) {
     const char *f = js_fim(p), *tvFim = NULL, *tv = objeto(p, f, "tvdb", &tvFim);
     int ep;
-    if (!tv) continue;
+    if (!tv || (int)js_num(tv, tvFim, "season", 0) != t) continue;
     ep = (int)numFora(p, f, "episode", tv, tvFim, 0);
     if (ep <= 0) continue;
-    c->v[c->n].t = (int)js_num(tv, tvFim, "season", 0);
     c->v[c->n].e = (int)js_num(tv, tvFim, "episode", 0);
     c->v[c->n].ep = ep;
-    if (c->v[c->n].t > 0 && c->v[c->n].e > 0) c->n++;
+    if (c->v[c->n].e > 0) c->n++;
   }
   pthread_mutex_unlock(&trava);
 }
@@ -259,7 +261,7 @@ int segfontes_simkl(const char *fonte, const char *id, int t, int e, SegIds *out
     if (r < 0) {
       snprintf(cam, sizeof cam, "/anime/episodes/%ld", o.simkl);
       simklGet(cam, &j);
-      if (j) simklEpGuardar(o.simkl, j);
+      if (j) simklEpGuardar(o.simkl, t, j);
       free(j); j = NULL;
       r = simklEpCache(o.simkl, t, e, &ep);
     }

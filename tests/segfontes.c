@@ -34,6 +34,24 @@ static int fakeGet(const char *url, char **corpo, int *status) {
       r = "[{\"episode\":1,\"title\":\"a\",\"tvdb\":{\"season\":2,\"episode\":1}},"
           "{\"tvdb\":{\"season\":2,\"episode\":2},\"episode\":2},"
           "{\"episode\":3,\"tvdb\":{\"season\":2,\"episode\":3}}]";
+    // Entrada longa (One Piece): UMA entrada Simkl, 1100 episodios; a
+    // temporada 21 do TVDB comeca no episodio 892 do anime.
+    else if (strstr(url, "/search/id?imdb=tt0388629"))
+      r = "[{\"type\":\"anime\",\"ids\":{\"simkl\":38000}}]";
+    else if (strstr(url, "/anime/38000?extended=full_anime_seasons"))
+      r = "{\"ids\":{\"simkl\":38000},\"mapped_tvdb_seasons\":[{\"simkl_id\":38000,\"tvdb_season\":1}]}";
+    else if (strstr(url, "/anime/38000?extended=full"))
+      r = "{\"season\":1,\"ids\":{\"simkl\":38000,\"mal\":21,\"anilist\":21}}";
+    else if (strstr(url, "/anime/episodes/38000")) {
+      static char longo[1100 * 64];
+      size_t l = 0;
+      longo[l++] = '[';
+      for (int i = 1; i <= 1100; i++)
+        l += (size_t)snprintf(longo + l, sizeof longo - l, "%s{\"episode\":%d,\"tvdb\":{\"season\":%d,\"episode\":%d}}",
+                              i > 1 ? "," : "", i, i < 892 ? 20 : 21, i < 892 ? i : i - 891);
+      longo[l++] = ']'; longo[l] = 0;
+      r = longo;
+    }
     else if (strstr(url, "/search/id?imdb=tt0903747"))
       r = "[{\"type\":\"show\",\"ids\":{\"simkl\":17465}}]";
     else if (strstr(url, "/tv/17465?extended=full"))
@@ -95,6 +113,12 @@ int main(void) {
   { int antes = pedidosSimkl;
     assert(segfontes_simkl("imdb", "tt0903747", 1, 2, &ids) && pedidosSimkl == antes); }
   puts("ok  Simkl: serie que nao e anime nao ganha MAL");
+  // Episodio tardio de uma entrada com mais de 400 episodios: o mapa e por
+  // temporada TVDB, entao S21E1 vira o 892 (antes: 1, o numero do TVDB).
+  assert(segfontes_simkl("imdb", "tt0388629", 21, 1, &ids) && ids.mal == 21 && ids.ep == 892);
+  assert(segfontes_simkl("imdb", "tt0388629", 21, 209, &ids) && ids.ep == 1100);
+  assert(segfontes_simkl("imdb", "tt0388629", 20, 300, &ids) && ids.ep == 300);
+  puts("ok  Simkl: entrada longa (1100 episodios): episodio tardio mapeado pela temporada");
 
   // Anime-Skip.
   assert(segfontes_animeskip(20958, 3, "", v, 8, &f) == 0 && pedidosAs == 0);
