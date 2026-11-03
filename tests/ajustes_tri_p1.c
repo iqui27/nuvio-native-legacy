@@ -451,7 +451,21 @@ static void openingPreviews(void) {
     valor[opts[i]] = changed[i];
     ajMovReiniciar(); b = cenaHash(opts[i], 1.4f);
     confere(a != b, names[i]);
+    if (opts[i] == AJ_ABERTURA_FUNDO) {
+      unsigned long long blurred;
+      valor[AJ_ABERTURA_FUNDO] = 2;
+      ajMovReiniciar(); blurred = cenaHash(AJ_TELA_ABERTURA, 1.4f);
+      confere(a != blurred && b != blurred, "opening blurred background differs from Art and Off");
+    }
   }
+  for (int j = 0; j < 5; j++) valor[opts[j]] = base[j];
+  valor[AJ_TELA_ABERTURA] = 1;
+  ajMovReiniciar();
+  unsigned long long detailedAddonOff = cenaHash(AJ_TELA_ABERTURA, 1.4f);
+  valor[AJ_ABERTURA_ADDON] = 0;
+  ajMovReiniciar();
+  unsigned long long detailedAddonOn = cenaHash(AJ_TELA_ABERTURA, 1.4f);
+  confere(detailedAddonOff == detailedAddonOn, "Detailed opening keeps source/add-on step regardless of Cinema label toggle");
   for (int i = 0; i < 5; i++) valor[opts[i]] = saved[i];
   ajMovReiniciar(); ajustes_teste_cena_t(-1.0f);
   if (dirPng) {

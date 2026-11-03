@@ -772,15 +772,25 @@ static void rTelaAbertura(int op) {
   float detalhada = rK(ajcValor(AJ_TELA_ABERTURA));
   float cinema = 1.0f - detalhada;
   float addon = ajcLig(AJ_ABERTURA_ADDON);
-  float fundo = rK(ajcValor(AJ_ABERTURA_FUNDO) * 0.5f);
+  int fundo = (int)(rK(ajcValor(AJ_ABERTURA_FUNDO) * 0.5f) * 2.0f + 0.5f);
   float canto = rK(ajcValor(AJ_ABERTURA_ESTILO));
   float carga = 0.22f + 0.72f * ajc_onda(3.4f);
   float faseVideo = ajc_passo_t(3.2f);
   float logoX = rMix(320.0f, 132.0f, canto), logoY = rMix(116.0f, 238.0f, canto);
   float progressoY = rMix(252.0f, 300.0f, canto);
   int etapa = ajc_passo(4.8f, 3), i;
-  ajc_video(0, 0, 640, 360, 0, 0.34f + 0.66f * fundo);
-  ajc_veu(0, 0, 640, 360, 0, 0.38f + 0.30f * (1.0f - fundo));
+  if (fundo == 0) ajc_ret(0, 0, 640, 360, 0, 0.02f, 0.022f, 0.03f, cinema);
+  else if (fundo == 1) {
+    ajc_video(0, 0, 640, 360, 0, cinema);
+    ajc_veu(0, 0, 640, 360, 0, 0.30f * cinema);
+  } else {
+    float bruma = ajc_onda(4.2f);
+    ajc_video(0, 0, 640, 360, 0, 0.42f * cinema);
+    ajc_luz(0, 0, 640, 360, 0, 180 + 250 * bruma, 112, 420, 0.55f, 0.38f, 0.85f, 0.30f * cinema);
+    ajc_luz(0, 0, 640, 360, 0, 480 - 220 * bruma, 240, 360, 0.25f, 0.48f, 0.75f, 0.24f * cinema);
+    ajc_veu(0, 0, 640, 360, 0, 0.52f * cinema);
+  }
+  ajc_video(0, 0, 640, 360, 0, 0.26f * detalhada);
   ajc_veu(0, 220, 640, 140, 0, 0.68f);
 
   ajc_barra(logoX - 92.0f, logoY, 184.0f, 0.76f * cinema);
@@ -795,10 +805,8 @@ static void rTelaAbertura(int op) {
   for (i = 0; i < 3; i++) {
     float y = 116.0f + i * 58.0f;
     float pronta = i < etapa ? 1.0f : i == etapa ? ajc_passo_t(1.6f) : 0.0f;
-    float ligada = i != 1 || addon > 0.5f;
-    ajc_neutro(58, y, 342, 46, 12, detalhada * (ligada ? i <= etapa ? 0.92f : 0.38f : 0.22f));
-    if (!ligada) ajc_icone("aj_x", 84, y + 23, 16, 0.35f * detalhada);
-    else if (i < etapa) ajc_icone("aj_check", 84, y + 23, 18, detalhada);
+    ajc_neutro(58, y, 342, 46, 12, detalhada * (i <= etapa ? 0.92f : 0.38f));
+    if (i < etapa) ajc_icone("aj_check", 84, y + 23, 18, detalhada);
     else if (i == etapa) ajc_anel(84, y + 23, 10, pronta, detalhada);
     else ajc_icone("aj_loader", 84, y + 23, 17, 0.42f * detalhada);
     ajc_barra(108, y + 13, i == 0 ? 176 : 142, 0.72f * detalhada * (0.45f + 0.55f * pronta));
