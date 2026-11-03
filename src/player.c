@@ -3705,7 +3705,9 @@ int player_janela_proximo(double antecedencia) {
     // SANIDADE: ver a nota de credJanela acima. Marcador que sobra mais que a
     // janela nao e credito, e dado errado — cai na regra de baixo.
     double resta = duracaoSeg - cred, janela = credJanela();
-    int aceito = resta <= janela;
+    // O mesmo veredito do botao (intro.c): capitulo do arquivo confirmado, ou
+    // fonte cujo FIM cai na janela ("ED - Part C - Next time").
+    int pelaJanela = resta <= janela, aceito = pelaJanela || intro_creditos_aceito(cred);
     // UMA LINHA POR MARCADOR, e nao por quadro. Os dois lados sao registrados
     // de proposito: so o recusado aparecia no log, e por isso "ainda aparece
     // antes do final" nao tinha como ser medido — nao dava para saber se quem
@@ -3714,8 +3716,8 @@ int player_janela_proximo(double antecedencia) {
     if (!credAvisado || credAvisadoEm != cred || credAvisadoDur != (double)duracaoSeg) {
       credAvisado = 1; credAvisadoEm = cred; credAvisadoDur = (double)duracaoSeg;
       printf("[posplay] creditos %s: comecam em %.0fs de %.0fs (sobram %.0fs, janela %.0fs)\n",
-             aceito ? "aceito" : "RECUSADO", cred, (double)duracaoSeg,
-             resta, janela);
+             aceito ? (pelaJanela ? "aceito" : "aceito pelo marcador (arquivo/fim)") : "RECUSADO",
+             cred, (double)duracaoSeg, resta, janela);
       fflush(stdout);
     }
     // HA MARCADOR ACEITO: ELE MANDA, E SO ELE.
@@ -3729,7 +3731,8 @@ int player_janela_proximo(double antecedencia) {
     // E a mesma guarda que o filme ganhou na 1.0.35 (posplay.c: "ha marcador e
     // ele ainda nao chegou: NAO cair no plano B"). A serie tinha ficado de
     // fora.
-    if (aceito) return player_regra_proximo(posAntecipada, duracaoSeg, cred);
+    if (aceito) return pelaJanela ? player_regra_proximo(posAntecipada, duracaoSeg, cred)
+                                  : posAntecipada >= cred;
   }
   // FALLBACK sem dado de ninguem. Se a duracao estiver errada, e ELE quem abre
   // o cartao cedo — por isso a linha abaixo diz de onde veio.

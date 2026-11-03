@@ -352,7 +352,8 @@ static void prepararProximo(int ehSerie, double resta) {
 // 2.0.3: a parte final do FILME e a de intro_creditos_janela_filme (12%,
 // 5-15 min), a mesma do botao de pular creditos; era o ultimo quarto.
 static int credAceito(double durSeg, double cred) {
-  return cred > 1.0 && cred < durSeg && durSeg - cred <= intro_creditos_janela_filme(durSeg);
+  return cred > 1.0 && cred < durSeg &&
+         (durSeg - cred <= intro_creditos_janela_filme(durSeg) || intro_creditos_aceito(cred));
 }
 
 // A REGRA DO FILME, sem estado (o teste chama direto).

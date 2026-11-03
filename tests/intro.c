@@ -804,6 +804,27 @@ int main(int argc,char **argv) {
         assert(achar(t, nt2, INTRO_ABERTURA)->inicio == 45 && achar(t, nt2, INTRO_ABERTURA)->fim == 135); }
       intro_definir_capitulos_marcas(NULL, 0); intro_desligar();
       puts("ok  casar com capitulo: OP/ED/previa da fonte viram o capitulo de mesma duracao; resumo fica"); }
+    // LOG DA C9 (tt1655610 S01E02): Intro 0, OP 30.9, Part A, Part B, ED 1204,
+    // Part C 1294, Next Time 1416, fim 1436. O ED sobra 232 s (> janela de 215 s)
+    // e era recusado: sem botao, e o cartao caia na estimativa (1386 s).
+    { IntroTrecho cap[3] = {{30.9, 120.8, INTRO_ABERTURA, 0, 0}, {1204, 1294, INTRO_CREDITOS, 0, 0},
+                            {1416, 0, INTRO_PREVIA, 0, 0}};
+      double a0 = 0, b0 = 0; int ex = 1;
+      intro_desligar(); intro_definir_duracao(1436.0, 0);
+      intro_definir_capitulos(cap, 3);
+      assert(intro_ativo(1210.0, &fim, &tipo) && tipo == INTRO_CREDITOS && fim == 1294);   // botao no ED
+      assert(intro_creditos_aceito(1204.0));                                                // o cartao aceita
+      assert(intro_cena_pos(1436.0, &a0, &b0, &ex) && a0 == 1294 && b0 == 1416);             // Part C ate o Next Time
+      intro_definir_capitulos(NULL, 0); intro_desligar(); }
+    // Fonte sozinha (sem capitulo que confirme): medida pelo FIM do encerramento.
+    { IntroTrecho r1 = {1204, 1294, INTRO_CREDITOS, 0, 0}, r2 = {1100, 1150, INTRO_CREDITOS, 0, 0},
+                  r3 = {300, 400, INTRO_CREDITOS, 0, 0};
+      intro_definir_duracao(1436.0, 0);
+      intro_shot_rede(&r1, 1, NULL, 0); assert(intro_creditos_aceito(1204.0));    // fim 142 s antes: aceito
+      intro_shot_rede(&r2, 1, NULL, 0); assert(!intro_creditos_aceito(1100.0));   // fim 286 s antes: recusado
+      intro_shot_rede(&r3, 1, NULL, 0); assert(!intro_creditos_aceito(300.0));    // meio do episodio
+      intro_desligar(); }
+    puts("ok  encerramento: capitulo do arquivo sem guarda; fonte medida pelo fim (ED - Part C - Next time)");
     assert(!intro_botao(1470.0, 9020.0, 0, 0, &fim, &tipo) || tipo != INTRO_PREVIA);
     n = intro_extrair(fixture("aot_s01e01.json"), v, 8);
     intro_shot_definir(v, n);

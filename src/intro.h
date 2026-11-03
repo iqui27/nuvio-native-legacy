@@ -19,7 +19,10 @@
 // `fim` ZERO QUER DIZER "ATE O FIM DA MIDIA", que e como a API representa o
 // `end_ms: null` dos creditos. Quem consome tem de tratar esse caso — ver
 // intro_ativo.
-typedef struct { double inicio,fim; int tipo; int ani; } IntroTrecho; // ani 1 = veio do AniSkip
+// ani 1 = veio do AniSkip. arquivo 1 = o proprio arquivo confirma (capitulo com
+// nome, ou trecho da fonte casado com capitulo de mesma duracao): sem a guarda
+// de "parte final" (intro_janela_ok_de).
+typedef struct { double inicio,fim; int tipo; int ani; int arquivo; } IntroTrecho;
 // INTRO_POS_CREDITOS: cena depois dos creditos (capitulo "Post-Credits" ou
 // IntroDB post_credits). Marcada na barra e nunca pulada (feat/mkv-chapter-segments).
 enum { INTRO_ABERTURA=1, INTRO_RESUMO=2, INTRO_CREDITOS=3, INTRO_PREVIA=4, INTRO_POS_CREDITOS=5 };
@@ -100,6 +103,12 @@ void intro_definir_duracao(double dur,int filme);
 // trecho com fim explicito alem da duracao (marcador de outro corte). `motivo`
 // (opcional) diz o porque.
 int  intro_janela_ok(int tipo,double ini,double fim,double dur,int filme,const char **motivo);
+// O mesmo, com `arquivo` 1 = trecho que o proprio arquivo confirma: so as
+// guardas de dado impossivel (duracao, alem do fim, janela longa) valem.
+int  intro_janela_ok_de(int tipo,double ini,double fim,double dur,int filme,int arquivo,const char **motivo);
+// O cartao do proximo (player.c/posplay.c) usa o MESMO veredito do botao: 1 se
+// ha um trecho de creditos aceito comecando em `ini` (+-0.5 s).
+int  intro_creditos_aceito(double ini);
 
 // ONDE OS CREDITOS DE UM EPISODIO PODEM COMECAR (2.0.3). Um marcador de creditos
 // so vale se sobrar ate esta janela de episodio depois dele: 15% da duracao,

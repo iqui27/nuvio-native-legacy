@@ -771,6 +771,7 @@ static int casarCapitulo(IntroTrecho *t,unsigned long long *usado){
   }
   if(melhor<0)return 0;
   if(usado&&melhor<64)*usado|=1ULL<<melhor;
+  t->arquivo=1;
   t->inicio=marcas[melhor];
   if(t->fim>0.0)t->fim=melhor+1<nMarcas?marcas[melhor+1]:durMidia;
   return 1;
@@ -808,7 +809,7 @@ static void fundirCapitulos(void){
       if(!sub){trechos[j]=rede[i];casarComLog(&trechos[j],&usado);j++;}
     }
     nTrechos=j;
-    for(k=0;k<nCapTr&&nTrechos<8;k++)trechos[nTrechos++]=capTr[k];
+    for(k=0;k<nCapTr&&nTrechos<8;k++){trechos[nTrechos]=capTr[k];trechos[nTrechos++].arquivo=1;}
     // Palpites por duracao (capitulos sem nome): anime, e so o tipo que falta.
     if(ehAnime())
       for(k=0;k<nCapPalp&&nTrechos<8;k++){
@@ -872,6 +873,9 @@ void intro_definir_duracao(double dur,int filme){
 static int fimDeObra(int tipo){return tipo==INTRO_CREDITOS||tipo==INTRO_PREVIA||tipo==INTRO_POS_CREDITOS;}
 
 int intro_janela_ok(int tipo,double ini,double fim,double dur,int filme,const char **motivo){
+  return intro_janela_ok_de(tipo,ini,fim,dur,filme,0,motivo);
+}
+int intro_janela_ok_de(int tipo,double ini,double fim,double dur,int filme,int arquivo,const char **motivo){
   double fimEf=fim>0.0?fim:dur,jan=fimEf>0.0?fimEf-ini:0.0;
   double max=(tipo==INTRO_CREDITOS||tipo==INTRO_POS_CREDITOS)?900.0:180.0;
   if(motivo)*motivo="ok";
@@ -886,12 +890,22 @@ int intro_janela_ok(int tipo,double ini,double fim,double dur,int filme,const ch
   // FIM EXPLICITO DEPOIS DO FIM DA MIDIA: o marcador foi feito sobre um corte
   // mais longo (outro lancamento). 10 s de folga para arredondamento.
   if(dur>0.0&&fim>dur+10.0){if(motivo)*motivo="fim alem da duracao (outro corte)";return 0;}
-  if(fimDeObra(tipo)&&filme&&dur>0.0&&ini<dur*0.5){if(motivo)*motivo="inicio antes de 50% do filme";return 0;}
+  // O PROPRIO ARQUIVO CONFIRMA (capitulo com nome, ou fonte casada com um
+  // capitulo de mesma duracao): ele descreve ESTA copia, as guardas abaixo
+  // existem para dado de outro lancamento/episodio. Fica so o impossivel acima.
+  if(arquivo)return 1;
+  if(fimDeObra(tipo)&&dur>0.0&&ini<dur*0.5){
+    if(motivo)*motivo=filme?"inicio antes de 50% do filme":"inicio antes de 50% do episodio";
+    return 0;
+  }
   // 2.0.3: creditos (e previa) no meio da obra nao sao creditos. Era isso que
   // punha o botao "Pular creditos" (e o cartao) no meio do episodio. Filme tem
   // janela propria, mais larga (creditos de filme passam de 10 min).
+  // EPISODIO: medido no FIM explicito quando ha ("ED - Part C - Next time": o
+  // que vem depois nao empurra o encerramento para fora); sem fim, e em filme,
+  // no inicio como antes.
   if(fimDeObra(tipo)&&dur>0.0&&
-     dur-ini>(filme?intro_creditos_janela_filme(dur):intro_creditos_janela(dur))){
+     dur-(!filme&&fim>0.0?fim:ini)>(filme?intro_creditos_janela_filme(dur):intro_creditos_janela(dur))){
     if(motivo)*motivo=filme?"creditos fora da parte final do filme":"creditos fora da parte final do episodio";return 0;}
   if(!fimDeObra(tipo)&&dur>0.0&&ini>dur*(filme?INTRO_ABERTURA_FILME_FRAC:0.5)){
     if(motivo)*motivo="abertura/resumo fora da parte inicial";return 0;}
@@ -943,7 +957,7 @@ static char mostrado[8];          // o botao deste trecho ja apareceu sozinho
 static int valido(int i){
   const char *m;int ok;
   if(verGer!=geracao){memset(veredito,0,sizeof veredito);memset(mostrado,0,sizeof mostrado);verGer=geracao;botaoIdx=-1;botaoVis=0;}
-  ok=intro_janela_ok(trechos[i].tipo,trechos[i].inicio,trechos[i].fim,durMidia,ehFilme,&m);
+  ok=intro_janela_ok_de(trechos[i].tipo,trechos[i].inicio,trechos[i].fim,durMidia,ehFilme,trechos[i].arquivo,&m);
   // Loga uma vez por veredito (muda se a duracao real chegar depois).
   if(veredito[i]!=(ok?1:-1)){
     veredito[i]=(signed char)(ok?1:-1);
@@ -1093,6 +1107,12 @@ int intro_cena_pos(double dur,double *ini,double *fim,int *explicita){
   pthread_mutex_unlock(&trava);
   if(ok){if(ini)*ini=a;if(fim)*fim=b;if(explicita)*explicita=ex;}
   return ok;
+}
+int intro_creditos_aceito(double ini){
+  int r=0;pthread_mutex_lock(&trava);
+  for(int i=0;i<nTrechos&&!r;i++)
+    if(trechos[i].tipo==INTRO_CREDITOS&&fabs(trechos[i].inicio-ini)<=0.5&&valido(i))r=1;
+  pthread_mutex_unlock(&trava);return r;
 }
 double intro_creditos_seg(void){
   double s=0.0;pthread_mutex_lock(&trava);
