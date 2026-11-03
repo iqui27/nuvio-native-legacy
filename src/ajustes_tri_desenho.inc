@@ -1140,17 +1140,15 @@ static void triPalcoDesenhar(int modal, float g0) {
   int sm = triSubmenu, pl = ajPontLista, ue = uxEditor, uo = uxOp, up = uxPendente, uu = triUtil;
   float sc = scrollY;
   while (ate < 4 && triProfF - (float)ate > 0.01f) ate++;
-  // O estagio vai POR BAIXO e comeca na borda direita do blade mais a direita
-  // (com a escala e o deslize da entrada): o blade que abre empurra a cena,
-  // nada aparece atraves do blade semitransparente.
+  // O blade ativo empurra o estagio; o fantasma que fecha fica por cima,
+  // sem segurar o estagio na direita durante o retorno.
   triEstagioBorda = 0.0f;
   for (k = 0; k < ate; k++) {
     float e = triClamp(triProfF - (float)k, 0.0f, 1.0f);
     GfxRect b;
-    if (triBladeA(k) * e <= 0.01f || !triPgTipo[k]) continue;
+    if (k >= n || triBladeA(k) * e <= 0.01f || !triPgTipo[k]) continue;
     triNivelDesenho = k; b = triIlha2R();
     { float borda = b.x + 80.0f * (1.0f - e) + b.w * (0.96f + 0.04f * e) + 16.0f;
-      // Keep the stage beyond the ghost until the ghost stops drawing.
       triEstagioBorda = fmaxf(triEstagioBorda, borda); }
   }
   triNivelDesenho = -1;

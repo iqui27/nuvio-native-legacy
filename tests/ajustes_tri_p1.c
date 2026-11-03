@@ -475,6 +475,20 @@ static void openingPreviews(void) {
     ajustes_teste_cena_t(-1.0f); valor[AJ_TELA_ABERTURA] = saved[0]; ajMovReiniciar();
   }
 }
+static void palcoRetorno(void) {
+  layout_modo_definir(0); tela(1920, 1080);
+  triIniciar(); triEntrar(AJS_REPRODUCAO); quadros(60);
+  triIrSecoes(); quadros(4);
+  GfxRect p = triPalcoR();
+  confere(triProfF > 0.1f && triProfF < 0.9f && triEstagioBorda <= p.x + 1.0f,
+          "returning stage follows depth while the Playback blade leaves");
+  valor[AJ_ANIM] = 1;
+  triEntrar(AJS_REPRODUCAO); quadros(1);
+  triIrSecoes(); quadros(1);
+  confere(triProfF == 0.0f && triEstagioBorda == 0.0f,
+          "reduced motion returns the stage immediately");
+  valor[AJ_ANIM] = 0;
+}
 int main(int argc, char **argv) {
   setvbuf(stdout, NULL, _IONBF, 0);
   char dir[1024];
@@ -494,7 +508,7 @@ int main(int argc, char **argv) {
   ponteiro_iniciar(); ponteiro_teste_toque(1); ponteiro_teste_relogio(agora); ponteiro_teste_janela(1920, 1080);
   quadros(5);
   if (palcoOnly) {
-    palcoSegmentada(); palcoProfundoRolado(); palcoChoiceEditorRender(); openingPreviews();
+    palcoRetorno(); palcoSegmentada(); palcoProfundoRolado(); palcoChoiceEditorRender(); openingPreviews();
     return falhas ? 1 : 0;
   }
   retrato();
