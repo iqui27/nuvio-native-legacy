@@ -475,13 +475,29 @@ static void openingPreviews(void) {
     ajustes_teste_cena_t(-1.0f); valor[AJ_TELA_ABERTURA] = saved[0]; ajMovReiniciar();
   }
 }
+static float palcoX(void) { return fmaxf(triPalcoR().x, triEstagioBorda); }
 static void palcoRetorno(void) {
   layout_modo_definir(0); tela(1920, 1080);
   triIniciar(); triEntrar(AJS_REPRODUCAO); quadros(60);
+  float inicial = palcoX();
   triIrSecoes(); quadros(4);
-  GfxRect p = triPalcoR();
-  confere(triProfF > 0.1f && triProfF < 0.9f && triEstagioBorda <= p.x + 1.0f,
+  confere(triProfF > 0.1f && triProfF < 0.9f && palcoX() < inicial - 40.0f,
           "returning stage follows depth while the Playback blade leaves");
+  triIniciar(); triEntrar(AJS_REPRODUCAO); quadros(4);
+  float antes = palcoX();
+  triIrSecoes();
+  int continuo = 1;
+  for (int i = 0; i < 20; i++) { quadros(1); if (fabsf(palcoX() - antes) >= 90.0f) continuo = 0; antes = palcoX(); }
+  confere(continuo, "reversing entry keeps stage position continuous on every frame");
+  triEntrar(AJS_REPRODUCAO); quadros(60);
+  int bloco = -1;
+  for (int i = secIni[secAtual] + 1; i < secFim(secAtual); i++)
+    if (triTopico(i)) { bloco = i; break; }
+  assert(bloco >= 0);
+  triSubmenu = bloco; quadros(4);
+  antes = palcoX(); triSubmenu = -1; continuo = 1;
+  for (int i = 0; i < 20; i++) { quadros(1); if (fabsf(palcoX() - antes) >= 90.0f) continuo = 0; antes = palcoX(); }
+  confere(continuo, "reversing nested entry keeps stage position continuous on every frame");
   valor[AJ_ANIM] = 1;
   triEntrar(AJS_REPRODUCAO); quadros(1);
   triIrSecoes(); quadros(1);
