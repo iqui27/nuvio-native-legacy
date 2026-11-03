@@ -10,6 +10,8 @@
 // MAIS() da categoria: uma linha "Mais opcoes · N" fechada no fim da lista, que
 // o OK abre no lugar (sem terceira tela). A pilula "Avancadas" do indice abre
 // todas de uma vez. uxAvancada() le esta tabela; nao ha outra lista.
+// Um nome de bloco aparece uma vez por categoria: a avancada de um bloco que
+// ja existe antes do MAIS() entra nele como OPCA() (continua avancada).
 static const Item TELA[] = {
   // ---- ASSISTIR ------------------------------------------------------------------
   SEC("Reprodução", "Qualidade, som e o que o player faz", "aj_circle-play"),
@@ -24,6 +26,18 @@ static const Item TELA[] = {
       OPC(AJ_FONTE_REPOR), OPC(AJ_TAM_MAX),
       OPC(AJ_FONTE_GRUPO), OPC(AJ_FONTE_GRUPO_SESSOES),
       OPC(AJ_LINK_REUSAR), OPC(AJ_LINK_PRAZO),
+      // #310: o "Auto-play streams" do oficial (fonteregra.h).
+      OPCA(AJ_FONTE_REGEX), OPCA(AJ_FONTE_REGEX_PADRAO), OPCA(AJ_FONTE_REGEX_MODELO),
+      OPCA(AJ_FONTE_ESCOPO), OPCA(AJ_FONTE_ADDONS_PERM), OPCA(AJ_FONTE_PLUGINS_PERM),
+      OPCA(AJ_FONTE_ORDEM), OPCA(AJ_FONTE_ORDEM_USO), OPCA(AJ_FONTE_OUTROS),
+      OPCA(AJ_FONTE_AUTO), OPCA(AJ_FONTE_TOCAR_CONFERINDO), OPCA(AJ_FONTE_AQUECER),
+      OPCA(AJ_FONTE_CONFERIR_VARIAS), OPCA(AJ_FONTE_PREPARAR),
+#ifdef NV_ANDROID
+      OPCA(AJ_FONTE_PRECARREGAR),   // so o Android tem o preload do player
+#endif
+      OPCA(AJ_FONTE_OCULTAR_DV), OPCA(AJ_FONTE_OCULTAR_AUDIO), OPCA(AJ_FONTE_OCULTAR_VIDEO),
+      OPCA(AJ_TAM_MIN), OPCA(AJ_FONTE_TEXTO), OPCA(AJ_FONTE_ORDEM_ADDON), OPCA(AJ_SELOS_CORES),
+      OPCA(AJ_SELOS_PACOTE), OPCA(AJ_SELOS_PACOTE_ADD), OPCA(AJ_SELOS_PACOTE_REM),
     ROT("Durante e depois"),
       OPC(AJ_PAUSA_OVERLAY), OPC(AJ_PAUSA_COMENTARIOS), OPC(AJ_PAUSA_NOTAS), OPC(AJ_PAUSA_ELENCO), OPC(AJ_TELA_ABERTURA), OPC(AJ_ABERTURA_ADDON), OPC(AJ_ABERTURA_FUNDO), OPC(AJ_ABERTURA_ESTILO), OPC(AJ_ESTAT_TAMANHO), OPC(AJ_ESTAT_LADO), OPC(AJ_PLR_CLASSIF), OPC(AJ_PULAR_ABERTURA), OPC(AJ_PULAR_RESUMO),
       OPC(AJ_PULAR_CREDITOS), OPC(AJ_PROXIMO_AUTO), OPC(AJ_PROXIMO_CONTAGEM), OPC(AJ_REACAO_CREDITOS), OPC(AJ_CW_CONCLUIDO), OPC(AJ_CW_MINIMO),
@@ -31,19 +45,6 @@ static const Item TELA[] = {
     ROT("Miniatura ao avançar"),
       OPC(AJ_SEEKR_LIGADO), OPC(AJ_SEEKR_CHAVE), OPC(AJ_SEEKR_TESTAR), OPC(AJ_SEEKR_FITA),
     MAIS(),
-    ROT("Escolha da fonte"),
-      // #310: o "Auto-play streams" do oficial (fonteregra.h).
-      OPC(AJ_FONTE_REGEX), OPC(AJ_FONTE_REGEX_PADRAO), OPC(AJ_FONTE_REGEX_MODELO),
-      OPC(AJ_FONTE_ESCOPO), OPC(AJ_FONTE_ADDONS_PERM), OPC(AJ_FONTE_PLUGINS_PERM),
-      OPC(AJ_FONTE_ORDEM), OPC(AJ_FONTE_ORDEM_USO), OPC(AJ_FONTE_OUTROS),
-      OPC(AJ_FONTE_AUTO), OPC(AJ_FONTE_TOCAR_CONFERINDO), OPC(AJ_FONTE_AQUECER),
-      OPC(AJ_FONTE_CONFERIR_VARIAS), OPC(AJ_FONTE_PREPARAR),
-#ifdef NV_ANDROID
-      OPC(AJ_FONTE_PRECARREGAR),   // so o Android tem o preload do player
-#endif
-      OPC(AJ_FONTE_OCULTAR_DV), OPC(AJ_FONTE_OCULTAR_AUDIO), OPC(AJ_FONTE_OCULTAR_VIDEO),
-      OPC(AJ_TAM_MIN), OPC(AJ_FONTE_TEXTO), OPC(AJ_FONTE_ORDEM_ADDON), OPC(AJ_SELOS_CORES),
-      OPC(AJ_SELOS_PACOTE), OPC(AJ_SELOS_PACOTE_ADD), OPC(AJ_SELOS_PACOTE_REM),
     ROT("Som e vídeo desta TV"),
       OPC(AJ_DTS_AC3),
 #if defined(NV_TPK) || defined(NV_WEBOS)
@@ -79,7 +80,7 @@ static const Item TELA[] = {
   SEC("Idiomas e legendas", "Idioma da interface, áudio, legenda e metadados", "aj_languages"),
     ROT("Idiomas"),
       OPC(AJ_IDIOMA), OPC(AJ_AUD_LINGUA), OPC(AJ_AUD_ORIGINAL), OPC(AJ_AUD_LINGUA2), OPC(AJ_LEG_LINGUA), OPC(AJ_LEG_FORCADA),
-      OPC(AJ_LEG_MOSTRAR), OPC(AJ_LEG_SYNC_AUTO),
+      OPC(AJ_LEG_MOSTRAR), OPC(AJ_LEG_SYNC_AUTO), OPCA(AJ_TMDB_IDIOMA),
 #ifdef NV_ANDROID
       // Sincronia pelo audio (F06): so o player do Android entrega o PCM. Na LG e
       // na Samsung a linha so diria "indisponivel nesta plataforma" (decisao do
@@ -97,7 +98,6 @@ static const Item TELA[] = {
       OPC(AJ_LEG2_NEGRITO), OPC(AJ_LEG2_ATRASO), OPC(AJ_LEG2_RESTAURAR), OPC(AJ_LEG2_POS),
       OPC(AJ_LEG_CONTORNO_COR),
     MAIS(),
-    ROT("Idiomas"), OPC(AJ_TMDB_IDIOMA),
 
   // Tudo o que decide DE ONDE vem o video: os addons, os debrid e os servidores.
   // A escolha da fonte foi para Reproducao (mockup v3, tela 02).
@@ -137,9 +137,8 @@ static const Item TELA[] = {
       OPC(AJ_GUIA_PREVIA_DESTACAR), OPC(AJ_GUIA_PREVIA_SOM), OPC(AJ_GUIA_DIAS),
     ROT("Se o canal não abre"),
       OPC(AJ_LIVETV_DIAG), OPC(AJ_LIVETV_RES), OPC(AJ_LIVETV_ESPERA),
+      OPCA(AJ_LIVETV_FORMATO), OPCA(AJ_LIVETV_MODO), OPCA(AJ_LIVETV_PROXY),
     MAIS(),
-    ROT("Se o canal não abre"),
-      OPC(AJ_LIVETV_FORMATO), OPC(AJ_LIVETV_MODO), OPC(AJ_LIVETV_PROXY),
 
   // ---- TELAS ---------------------------------------------------------------------
   SEC("Tela inicial", "Estilo, fileiras, barra lateral e Continuar assistindo", "aj_layout-dashboard"),
@@ -149,7 +148,7 @@ static const Item TELA[] = {
       OPC(AJ_HERO_CATALOGOS), OPC(AJ_HERO_GENERO),
       OPC(AJ_HERO_SINOPSE), OPC(AJ_HERO_NOTAS), OPC(AJ_HERO_ANO), OPC(AJ_HERO_DURACAO),
       OPC(AJ_HERO_PASTA_DETALHES),
-      OPC(AJ_HERO_TAMANHO), OPC(AJ_HERO_SINOPSE_TAM),
+      OPC(AJ_HERO_TAMANHO), OPC(AJ_HERO_SINOPSE_TAM), OPCA(AJ_HERO_TRANSICAO),
     ROT("Fileiras"),
       OPC(AJ_FIL_ORDEM), OPC(AJ_FIL_LIMITE), OPC(AJ_ITENS_FILEIRA),
       OPC(AJ_ESPACO_FILEIRAS), OPC(AJ_ESPACO_TITULOS),
@@ -157,23 +156,21 @@ static const Item TELA[] = {
       OPC(AJ_OCULTAR_FILMES_VISTOS), OPC(AJ_BIB_HOME), OPC(AJ_AMIGOS_ESTILO),
       // A curadoria da fileira Herói (#205): a fonte do cartão único.
       OPC(AJ_CURADORIA_URL),
+      OPCA(AJ_ROTULOS), OPCA(AJ_NOME_ADDON), OPCA(AJ_SUFIXO_TIPO),
     ROT("Coleções"), OPC(AJ_COLECAO_EXIBICAO),
     ROT("Continuar assistindo"),
       OPC(AJ_CW_LIGADO), OPC(AJ_CW_OK), OPC(AJ_CW_ESTILO), OPC(AJ_CW_THUMB),
       OPC(AJ_CW_BLUR_PROX), OPC(AJ_CW_ORDEM), OPC(AJ_CW_NAO_EXIBIDOS),
-      OPC(AJ_CW_RETIDO_TAMBEM),
+      OPC(AJ_CW_RETIDO_TAMBEM), OPCA(AJ_CW_FURTHEST),
     ROT("Barra lateral"),
       OPC(AJ_MENU_TOPO), OPC(AJ_RAIL_MODERNA), OPC(AJ_RAIL), OPC(AJ_MENU_EXPLORAR),
       OPC(AJ_MENU_GUIA), OPC(AJ_MENU_ESPORTES), OPC(AJ_MENU_AGENDA), OPC(AJ_MENU_PERFIL),
+      OPCA(AJ_RAIL_BLUR),
+#if (defined(NV_TPK) || defined(__EMSCRIPTEN__)) && !defined(NV_TPK40)
+      OPCA(AJ_MIC_BUSCA),
+#endif
     ROT("Escolha de perfil"), OPC(AJ_PS_FUNDO), OPC(AJ_PS_CONTINUAR), OPC(AJ_PS_TAMANHO),
     MAIS(),
-    ROT("Estilo"), OPC(AJ_HERO_TRANSICAO),
-    ROT("Fileiras"), OPC(AJ_ROTULOS), OPC(AJ_NOME_ADDON), OPC(AJ_SUFIXO_TIPO),
-    ROT("Continuar assistindo"), OPC(AJ_CW_FURTHEST),
-    ROT("Barra lateral"), OPC(AJ_RAIL_BLUR),
-#if (defined(NV_TPK) || defined(__EMSCRIPTEN__)) && !defined(NV_TPK40)
-      OPC(AJ_MIC_BUSCA),
-#endif
 
   SEC("Aparência", "Cor, transparência, fonte, animações e relógio", "aj_palette"),
 #ifdef NV_TOUCH_UI
@@ -184,6 +181,7 @@ static const Item TELA[] = {
 #endif
     ROT("Cores e vidro"),
       OPC(AJ_TEMA), OPC(AJ_ARTE_TOM), OPC(AJ_FUNDO), OPC(AJ_COR_LOGO), OPC(AJ_VIDRO), OPC(AJ_VIDRO_CONTORNO), OPC(AJ_FOCO_ACENTO), OPC(AJ_SUAVIZAR_DEGRADES),
+      OPCA(AJ_VIDRO_OPAC), OPCA(AJ_VIDRO_FOSCO), OPCA(AJ_VIDRO_QUALIDADE),
     ROT("Fileiras"), OPC(AJ_TITULO_FIL), OPC(AJ_PALCO_FUNDO),
     ROT("Logo e abertura"),
       OPC(AJ_LOGO_APP), OPC(AJ_ABERTURA), OPC(AJ_ICONE_APP),
@@ -194,7 +192,6 @@ static const Item TELA[] = {
     ROT("Tela de descanso"),
       OPC(AJ_ESMAECER), OPC(AJ_DESCANSO_ESTILO), OPC(AJ_DESCANSO_FONTE),
     MAIS(),
-    ROT("Cores e vidro"), OPC(AJ_VIDRO_OPAC), OPC(AJ_VIDRO_FOSCO), OPC(AJ_VIDRO_QUALIDADE),
 
   // NOTAS (decisao do dono, 07/10): as onze "Notas no titulo" ficam a vista.
   // Os oito AJ_MDB_* (qual fonte o MDBList baixa) ficam em Mais opcoes (2.1: nada
@@ -206,30 +203,35 @@ static const Item TELA[] = {
       OPC(AJ_NT_IMDB), OPC(AJ_NT_TOMATES), OPC(AJ_NT_AUDIENCIA), OPC(AJ_NT_META),
       OPC(AJ_NT_METAUSER), OPC(AJ_NT_TRAKT), OPC(AJ_NT_TMDB), OPC(AJ_NT_LETTER),
       OPC(AJ_NT_MAL), OPC(AJ_NT_EBERT), OPC(AJ_NT_SCORE), OPC(AJ_NT_ORDEM), OPC(AJ_NT_EP), OPC(AJ_MDB_CHAVE),
+      OPCA(AJ_MDB_LIGADO),
+      OPCA(AJ_MDB_IMDB), OPCA(AJ_MDB_TRAKT), OPCA(AJ_MDB_TMDB), OPCA(AJ_MDB_TOMATES),
+      OPCA(AJ_MDB_AUDIENCIA), OPCA(AJ_MDB_META), OPCA(AJ_MDB_LETTER), OPCA(AJ_MDB_MAL),
     ROT("Dados do título"),
       OPC(AJ_TMDB_LIGADO),
+      OPCA(AJ_TMDB_ARTE), OPCA(AJ_TMDB_BASICO),
+      OPCA(AJ_TMDB_FICHA), OPCA(AJ_TMDB_DATAS), OPCA(AJ_TMDB_ELENCO),
+      OPCA(AJ_TMDB_PROD), OPCA(AJ_TMDB_REDES), OPCA(AJ_TMDB_EPS),
+      OPCA(AJ_TMDB_TRAILERS), OPCA(AJ_TMDB_MAIS), OPCA(AJ_TMDB_COL), OPCA(AJ_TMDB_CW),
+      OPCA(AJ_DET_META_EXT), OPCA(AJ_DET_SO_CINEMETA),
     MAIS(),
-    ROT("Notas"), OPC(AJ_MDB_LIGADO),
-      OPC(AJ_MDB_IMDB), OPC(AJ_MDB_TRAKT), OPC(AJ_MDB_TMDB), OPC(AJ_MDB_TOMATES),
-      OPC(AJ_MDB_AUDIENCIA), OPC(AJ_MDB_META), OPC(AJ_MDB_LETTER), OPC(AJ_MDB_MAL),
-    ROT("Dados do título"),
-      OPC(AJ_TMDB_ARTE), OPC(AJ_TMDB_BASICO),
-      OPC(AJ_TMDB_FICHA), OPC(AJ_TMDB_DATAS), OPC(AJ_TMDB_ELENCO),
-      OPC(AJ_TMDB_PROD), OPC(AJ_TMDB_REDES), OPC(AJ_TMDB_EPS),
-      OPC(AJ_TMDB_TRAILERS), OPC(AJ_TMDB_MAIS), OPC(AJ_TMDB_COL), OPC(AJ_TMDB_CW),
-      OPC(AJ_DET_META_EXT), OPC(AJ_DET_SO_CINEMETA),
 
   // Cartazes e arte + Trailers numa categoria so (mockup v3, tela 01).
   SEC("Cartazes e trailers", "Cartaz em foco, de onde vem a arte e trailers", "aj_clapperboard"),
     ROT("Cartaz em foco"),
       OPC(AJ_EXPANDIR), OPC(AJ_EXPANDIR_ATRASO), OPC(AJ_BORDA_FOCO), OPC(AJ_MENU_CARTAZ),
+      OPCA(AJ_GRAD_CLASSICO), OPCA(AJ_MURAL_TITULOS),
     ROT("Forma"),
-      OPC(AJ_LARGURA_DP), OPC(AJ_RAIO_DP), OPC(AJ_PROF),
+      OPC(AJ_LARGURA_DP), OPC(AJ_RAIO_DP), OPC(AJ_PROF), OPCA(AJ_PROF_BRILHO),
     ROT("De onde vem a arte"),
       OPC(AJ_HERO_FUNDO), OPC(AJ_HERO_ARTE_DIF), OPC(AJ_POSTER_PROV), OPC(AJ_FANART_CHAVE),
+      OPCA(AJ_ADDON_POSTER), OPCA(AJ_ADDON_FUNDO), OPCA(AJ_ADDON_LOGO),
+      OPCA(AJ_COL_ARTE_CONTA), OPCA(AJ_POSTER_INST), OPCA(AJ_POSTER_TOKEN),
+      OPCA(AJ_POSTER_EXTRA), OPCA(AJ_POSTER_CHAVE), OPCA(AJ_POSTER_MODELO),
+      OPCA(AJ_POSTER_TESTAR),
     ROT("Trailers"),
       OPC(AJ_HERO_TRAILER), OPC(AJ_FOCO_TRAILER), OPC(AJ_DET_TRAILER_AUTO),
       OPC(AJ_DET_TRAILER),
+      OPCA(AJ_HERO_TRAILER_ESPERA), OPCA(AJ_TRAILER_QUAL), OPCA(AJ_TRAILER_ASPECTO),
     ROT("Som e imagem"),
       OPC(AJ_HERO_TRAILER_SOM), OPC(AJ_TRAILER_FONTE),
 #if defined(__EMSCRIPTEN__) || defined(NV_TPK) || (!defined(NV_ANDROID) && !defined(NV_VIDAA) && !defined(__APPLE__) && !defined(NV_LINUX_DESKTOP) && !defined(_WIN32))
@@ -242,16 +244,6 @@ static const Item TELA[] = {
 #endif
       OPC(AJ_LOGO_TRAILER),
     MAIS(),
-    ROT("Cartaz em foco"), OPC(AJ_GRAD_CLASSICO), OPC(AJ_MURAL_TITULOS),
-    ROT("Forma"),
-      OPC(AJ_PROF_BRILHO),
-    ROT("De onde vem a arte"),
-      OPC(AJ_ADDON_POSTER), OPC(AJ_ADDON_FUNDO), OPC(AJ_ADDON_LOGO),
-      OPC(AJ_COL_ARTE_CONTA), OPC(AJ_POSTER_INST), OPC(AJ_POSTER_TOKEN),
-      OPC(AJ_POSTER_EXTRA), OPC(AJ_POSTER_CHAVE), OPC(AJ_POSTER_MODELO),
-      OPC(AJ_POSTER_TESTAR),
-    ROT("Trailers"),
-      OPC(AJ_HERO_TRAILER_ESPERA), OPC(AJ_TRAILER_QUAL), OPC(AJ_TRAILER_ASPECTO),
 
   // ---- CONTA E SISTEMA -----------------------------------------------------------
   SEC("Conta e serviços", "Perfil, sincronização, Trakt, Simkl e avisos", "aj_user-round"),

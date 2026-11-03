@@ -50,7 +50,7 @@ tabela = re.search(r"static const Item TELA\[\] = \{(.*?)\n\};", catalogo, re.S)
 if not tabela:
     sys.exit("FALHA: static const Item TELA[] nao encontrado em " + args.catalogo)
 corpo_tela = re.sub(r"//[^\n]*", "", tabela.group(1))
-itens = re.findall(r'\b(SEC|GRP|ROT|OPC)\(\s*("(?:[^"\\]|\\.)*"|AJ_[A-Z_0-9]+)', corpo_tela)
+itens = re.findall(r'\b(SEC|GRP|ROT|OPC)A?\(\s*("(?:[^"\\]|\\.)*"|AJ_[A-Z_0-9]+)', corpo_tela)
 
 falhas = []
 if not itens:
@@ -99,16 +99,16 @@ else:
         falhas.append("%d categorias e %d frases em SECAO_AJUDA" % (n_sec, n_ajuda))
 
 # 2.0.3: avançada = vem depois do MAIS() da propria categoria (a linha "Mais
-# opcoes"). Cada categoria tem no maximo um, e ele nao fica vazio.
+# opcoes") ou e OPCA() num bloco basico. Cada categoria tem no maximo um, e ele nao fica vazio.
 avancadas = []
 mais_por_sec, depois, sec_atual = {}, False, None
-for t, v in re.findall(r'\b(SEC|ROT|OPC|MAIS)\(\s*("(?:[^"\\]|\\.)*"|AJ_[A-Z_0-9]+)?', corpo_tela):
+for t, v in re.findall(r'\b(SEC|ROT|OPCA?|MAIS)\(\s*("(?:[^"\\]|\\.)*"|AJ_[A-Z_0-9]+)?', corpo_tela):
     if t == "SEC":
         sec_atual, depois = v, False
     elif t == "MAIS":
         mais_por_sec[sec_atual] = mais_por_sec.get(sec_atual, 0) + 1
         depois = True
-    elif t == "OPC" and depois:
+    elif t == "OPCA" or (t == "OPC" and depois):
         avancadas.append(v)
 for sec, n in mais_por_sec.items():
     if n > 1:

@@ -2339,13 +2339,15 @@ typedef char conferi_uma_chave_por_opcao[
 // Toda opcao do enum aparece aqui UMA vez: conferirTela() grita no log no
 // arranque e tests/ajustes_secoes.sh falha na suite.
 // IT_MAIS (2.0.3): a linha "Mais opcoes · N" no fim da categoria. Tudo o que
-// vem depois dela, na mesma categoria, e avancado (uxAvancada).
+// vem depois dela, na mesma categoria, e avancado (uxAvancada). OPCA() e a
+// avancada dentro de um bloco basico de mesmo nome (sem repetir o bloco).
 typedef enum { IT_SEC, IT_GRP, IT_ROT, IT_OPC, IT_MAIS } ItemTipo;
 typedef struct {
   ItemTipo    tipo;
   int         op;               // IT_OPC
   const char *titulo, *sub;     // SEC/GRP/ROT; `sub` e o subtitulo (SEC, GRP)
   const char *icone;            // SEC, GRP: basename em art/icones (aj_* do Lucide)
+  int         avancada;         // OPCA
 } Item;
 #define SEC(t, s, ic) { IT_SEC, -1, t, s, ic }
 #define GRP(t, s, ic) { IT_GRP, -1, t, s, ic }
@@ -2353,6 +2355,7 @@ typedef struct {
 // Rotulo com a nota a direita no lugar da contagem ("para quem faz o app").
 #define ROTS(t, s)    { IT_ROT, -1, t, s, NULL }
 #define OPC(o)        { IT_OPC, o, NULL, NULL, NULL }
+#define OPCA(o)       { IT_OPC, o, NULL, NULL, NULL, 1 }
 #define MAIS()        { IT_MAIS, -1, "Mais opções", NULL, "aj_sliders-horizontal" }
 
 #include "ajustes_ux_tela.inc"
@@ -2409,7 +2412,7 @@ static void montarTela(void) {
     } else if (it->tipo == IT_GRP) g = i;
     else if (it->tipo == IT_ROT) g = -1;   // rotulo fecha o grupo anterior
     else if (it->tipo == IT_MAIS) { depois = 1; if (s >= 0) maisItem[s] = i; }
-    else if (it->tipo == IT_OPC && depois && it->op >= 0 && it->op < AJ_N) uxAvancadaTab[it->op] = 1;
+    else if (it->tipo == IT_OPC && (depois || it->avancada) && it->op >= 0 && it->op < AJ_N) uxAvancadaTab[it->op] = 1;
     secDoItem[i] = s < 0 ? 0 : s;
     grupoDoItem[i] = it->tipo == IT_OPC ? g : -1;
   }
@@ -7835,9 +7838,9 @@ static int maisContar(int sec, char *resumo, size_t n) {
   size_t u = 0;
   if (resumo && n) resumo[0] = 0;
   if (sec < 0 || sec >= nSecoes || maisItem[sec] < 0) return 0;
-  for (i = maisItem[sec] + 1; i < secFim(sec); i++) {
+  for (i = secIni[sec] + 1; i < secFim(sec); i++) {
     int op = TELA[i].op;
-    if (TELA[i].tipo != IT_OPC) continue;
+    if (TELA[i].tipo != IT_OPC || !uxAvancadaTab[op]) continue;
     if ((op == AJ_PERFIL_PESQ || op == AJ_PERFIL_EDITAR) && !recomenda_ativo()) continue;
     if (op == AJ_ICONE_APP && !apoiador_ativo()) continue;
     if (resumo && u + 4 < n && k < 6) {
