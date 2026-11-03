@@ -411,6 +411,70 @@ static void palcoProfundoRolado(void) {
   key(SDLK_ESCAPE); quadros(20);
   triIniciar(); quadros(5);
 }
+static void palcoChoiceEditorRender(void) {
+  int salvo = valor[AJ_TELA_ABERTURA];
+  layout_modo_definir(0); tela(1920, 1080);
+  triIniciar(); focarOpcao(AJ_TELA_ABERTURA); triFocar(AJ_TELA_ABERTURA);
+  confere(nValores(AJ_TELA_ABERTURA) == 2, "Palco: video-opening choice has two values");
+  uxAbrirEditor(AJ_TELA_ABERTURA);
+  quadros(4);
+  confere(uxEditor == 1 && uxOp == AJ_TELA_ABERTURA && triProfundidade() == 3,
+          "Palco: video-opening editor renders without recursive geometry");
+  key(SDLK_ESCAPE); quadros(20);
+  confere(!uxEditor && focoOp == AJ_TELA_ABERTURA && valor[AJ_TELA_ABERTURA] == salvo,
+          "Palco: Back cancels choice editor and restores opener");
+  uxAbrirEditor(AJ_TELA_ABERTURA); quadros(4);
+  key(SDLK_ESCAPE); quadros(20);
+  confere(!uxEditor && triProfundidade() == 2, "Palco: repeated choice open and Back remain stable");
+  valor[AJ_TELA_ABERTURA] = salvo;
+  triIniciar(); quadros(5);
+}
+static unsigned long long cenaHash(int op, float t) {
+  static unsigned char px[960 * 540 * 4];
+  unsigned long long h = 1469598103934665603ull;
+  glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT);
+  ajustes_teste_cena_desenhar(op, t, 0, 0, 960);
+  glReadPixels(0, 540, 960, 540, GL_RGBA, GL_UNSIGNED_BYTE, px);
+  for (size_t i = 0; i < sizeof px; i++) h = (h ^ px[i]) * 1099511628211ull;
+  return h;
+}
+static void openingPreviews(void) {
+  static const int opts[] = { AJ_TELA_ABERTURA, AJ_ABERTURA_ADDON, AJ_ABERTURA_FUNDO, AJ_ABERTURA_ESTILO, AJ_BUFFER };
+  static const int base[] = { 0, 1, 1, 0, 0 }, changed[] = { 1, 0, 0, 1, 3 };
+  static const char *const names[] = { "opening mode", "opening addon", "opening background", "opening layout", "player buffer" };
+  int saved[5];
+  for (int i = 0; i < 5; i++) saved[i] = valor[opts[i]];
+  for (int i = 0; i < 5; i++) {
+    unsigned long long a, b;
+    for (int j = 0; j < 5; j++) valor[opts[j]] = base[j];
+    ajMovReiniciar(); a = cenaHash(opts[i], 1.4f);
+    valor[opts[i]] = changed[i];
+    ajMovReiniciar(); b = cenaHash(opts[i], 1.4f);
+    confere(a != b, names[i]);
+    if (opts[i] == AJ_ABERTURA_FUNDO) {
+      unsigned long long blurred;
+      valor[AJ_ABERTURA_FUNDO] = 2;
+      ajMovReiniciar(); blurred = cenaHash(AJ_TELA_ABERTURA, 1.4f);
+      confere(a != blurred && b != blurred, "opening blurred background differs from Art and Off");
+    }
+  }
+  for (int j = 0; j < 5; j++) valor[opts[j]] = base[j];
+  valor[AJ_TELA_ABERTURA] = 1;
+  ajMovReiniciar();
+  unsigned long long detailedAddonOff = cenaHash(AJ_TELA_ABERTURA, 1.4f);
+  valor[AJ_ABERTURA_ADDON] = 0;
+  ajMovReiniciar();
+  unsigned long long detailedAddonOn = cenaHash(AJ_TELA_ABERTURA, 1.4f);
+  confere(detailedAddonOff == detailedAddonOn, "Detailed opening keeps source/add-on step regardless of Cinema label toggle");
+  for (int i = 0; i < 5; i++) valor[opts[i]] = saved[i];
+  ajMovReiniciar(); ajustes_teste_cena_t(-1.0f);
+  if (dirPng) {
+    triIniciar(); focarOpcao(AJ_TELA_ABERTURA); ajustes_teste_cena_t(1.4f);
+    valor[AJ_TELA_ABERTURA] = 0; ajMovReiniciar(); quadros(40); png("video-abertura-cinema");
+    valor[AJ_TELA_ABERTURA] = 1; ajMovReiniciar(); quadros(40); png("video-abertura-detalhada");
+    ajustes_teste_cena_t(-1.0f); valor[AJ_TELA_ABERTURA] = saved[0]; ajMovReiniciar();
+  }
+}
 int main(int argc, char **argv) {
   setvbuf(stdout, NULL, _IONBF, 0);
   char dir[1024];
@@ -430,7 +494,7 @@ int main(int argc, char **argv) {
   ponteiro_iniciar(); ponteiro_teste_toque(1); ponteiro_teste_relogio(agora); ponteiro_teste_janela(1920, 1080);
   quadros(5);
   if (palcoOnly) {
-    palcoSegmentada(); palcoProfundoRolado();
+    palcoSegmentada(); palcoProfundoRolado(); palcoChoiceEditorRender(); openingPreviews();
     return falhas ? 1 : 0;
   }
   retrato();
@@ -442,6 +506,8 @@ int main(int argc, char **argv) {
   inlineToque();
   palcoSegmentada();
   palcoProfundoRolado();
+  palcoChoiceEditorRender();
+  openingPreviews();
   previaNaoAplica();
   escalas();
   if (!falhas) puts("PASS: three-island Settings P1s: portrait rail, utility targets, scrolling, parental chooser");

@@ -11680,6 +11680,8 @@ int ajustes_teste_quadro(const char *id) {
     else if (!strcmp(id, "tri-opcao")) { focarOpcao(AJ_FONTE_PRIORIDADE); }
     else if (!strcmp(id, "tri-mais")) { maisAberto[0] = 1; focarOpcao(AJ_DTS_AC3); }
     else if (!strcmp(id, "tri-editor")) { focarOpcao(AJ_AUD_LINGUA); uxAbrirEditor(AJ_AUD_LINGUA); }
+    else if (!strcmp(id, "tri-video-row")) { focarOpcao(AJ_TELA_ABERTURA); }
+    else if (!strcmp(id, "tri-video-editor")) { focarOpcao(AJ_TELA_ABERTURA); uxAbrirEditor(AJ_TELA_ABERTURA); }
     else if (!strcmp(id, "tri-numero")) { focarOpcao(AJ_LEG1_TAMANHO); uxAbrirEditor(AJ_LEG1_TAMANHO); }
     else if (!strcmp(id, "tri-cor")) { focarOpcao(AJ_TEMA); uxAbrirEditor(AJ_TEMA); uxPendente = 3; }
     else if (!strcmp(id, "tri-presets")) { triUtilAbrir(TRI_U_PRESETS); }
