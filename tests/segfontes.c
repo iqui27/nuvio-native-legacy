@@ -15,11 +15,13 @@ const char *nuvem_simkl_app(void) { return "nuvio"; }
 static int pedidosSimkl, pedidosAs;
 static char ultimoCid[64];
 
+static int simklCaido;   // > 0: os proximos N pedidos ao Simkl caem (rede)
 static int fakeGet(const char *url, char **corpo, int *status) {
   const char *r = NULL;
   *corpo = NULL;
   if (strstr(url, "api.simkl.com")) {
     pedidosSimkl++;
+    if (simklCaido > 0) { simklCaido--; *status = 0; return 0; }
     assert(strstr(url, "client_id=cid-teste"));
     if (strstr(url, "/search/id?imdb=tt2560140"))
       r = "[{\"type\":\"anime\",\"title\":\"Attack on Titan\",\"ids\":{\"simkl\":38636,\"slug\":\"aot\"}}]";
@@ -119,6 +121,16 @@ int main(void) {
   assert(segfontes_simkl("imdb", "tt0388629", 21, 209, &ids) && ids.ep == 1100);
   assert(segfontes_simkl("imdb", "tt0388629", 20, 300, &ids) && ids.ep == 300);
   puts("ok  Simkl: entrada longa (1100 episodios): episodio tardio mapeado pela temporada");
+  // Rede caiu no primeiro episodio: nada vai para o cache, e o seguinte pergunta
+  // de novo (antes: o "nao achei" ficava ate o app reabrir).
+  segfontes_limpar_cache();
+  simklCaido = 1;
+  assert(!segfontes_simkl("imdb", "tt2560140", 2, 3, &ids) && !ids.mal);
+  assert(segfontes_simkl("imdb", "tt2560140", 2, 3, &ids) && ids.mal == 25777);
+  { int antes = pedidosSimkl;   // 404 e resposta de verdade: guardada
+    assert(!segfontes_simkl("imdb", "tt0000404", 1, 1, &ids));
+    assert(!segfontes_simkl("imdb", "tt0000404", 1, 2, &ids) && pedidosSimkl == antes + 1); }
+  puts("ok  Simkl: falha de rede nao fica no cache; 404 fica");
 
   // Anime-Skip.
   assert(segfontes_animeskip(20958, 3, "", v, 8, &f) == 0 && pedidosAs == 0);

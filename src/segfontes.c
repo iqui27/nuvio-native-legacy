@@ -154,13 +154,17 @@ static int simklGet(const char *caminho, char **corpo) {
   if (st < 200 || st > 299 || !*corpo) { free(*corpo); *corpo = NULL; }
   return st;
 }
+// Sem resposta de verdade (rede, timeout, 5xx, 429): nao e "nao conhece". O
+// cache so guarda respostas reais, senao um tropeco no primeiro episodio
+// desligava o Simkl daquela temporada ate o app reabrir.
+static int simklFalhou(int st) { return st < 200 || (st > 299 && st != 404 && st != 204); }
 
 // Entrada Simkl -> ids (detalhes). `tipo`: "anime"/"tv"/"movies".
-static int simklDetalhes(long simkl, const char *tipo, SegIds *o) {
+static int simklDetalhes(long simkl, const char *tipo, SegIds *o, int *falha) {
   char cam[96], *j = NULL;
   int temporada = 0, ok;
   snprintf(cam, sizeof cam, "/%s/%ld?extended=full", tipo, simkl);
-  simklGet(cam, &j);
+  if (simklFalhou(simklGet(cam, &j))) *falha = 1;
   ok = j && segfontes_simkl_detalhes(j, &o->mal, &o->anilist, &temporada);
   free(j);
   o->simkl = simkl;
@@ -214,7 +218,7 @@ int segfontes_simkl(const char *fonte, const char *id, int t, int e, SegIds *out
   char chave[40], cam[160], tipo[16] = "", *j = NULL;
   SegIds o;
   long simkl;
-  int i, temporada, ok = 0, ep;
+  int i, temporada, ok = 0, ep, falha = 0;
   if (!out) return 0;
   memset(out, 0, sizeof *out);
   if (!fonte || !id || !id[0] || !nuvem_simkl_cliente()[0]) return 0;
@@ -227,32 +231,34 @@ int segfontes_simkl(const char *fonte, const char *id, int t, int e, SegIds *out
   if (i == 16) {
     memset(&o, 0, sizeof o);
     snprintf(cam, sizeof cam, "/search/id?%s=%s", fonte, id);
-    simklGet(cam, &j);
+    if (simklFalhou(simklGet(cam, &j))) falha = 1;
     simkl = j ? segfontes_simkl_busca(j, tipo, sizeof tipo) : 0;
     free(j); j = NULL;
     if (simkl > 0) {
       o.anime = !strcmp(tipo, "anime");
-      temporada = simklDetalhes(simkl, tipo, &o);
+      temporada = simklDetalhes(simkl, tipo, &o, &falha);
       ok = temporada != 0;
       // IMDb de anime com varias temporadas: a temporada TVDB pedida e OUTRA
       // entrada no Simkl (e outro id no MAL). Mesmo caminho do PC.
       if (ok && o.anime && !strcmp(fonte, "imdb") && t > 0 && temporada != t) {
         long irmao;
         snprintf(cam, sizeof cam, "/%s/%ld?extended=full_anime_seasons", tipo, simkl);
-        simklGet(cam, &j);
+        if (simklFalhou(simklGet(cam, &j))) falha = 1;
         irmao = j ? segfontes_simkl_temporada(j, t) : 0;
         free(j); j = NULL;
         if (irmao > 0 && irmao != simkl) {
           SegIds s = o;
-          if (simklDetalhes(irmao, tipo, &s)) o = s;
+          if (simklDetalhes(irmao, tipo, &s, &falha)) o = s;
         }
       }
     }
-    pthread_mutex_lock(&trava);
-    snprintf(cache[cacheProx].chave, sizeof cache[cacheProx].chave, "%s", chave);
-    cache[cacheProx].ids = o; cache[cacheProx].ok = ok;
-    cacheProx = (cacheProx + 1) % 16;
-    pthread_mutex_unlock(&trava);
+    if (!falha) {
+      pthread_mutex_lock(&trava);
+      snprintf(cache[cacheProx].chave, sizeof cache[cacheProx].chave, "%s", chave);
+      cache[cacheProx].ids = o; cache[cacheProx].ok = ok;
+      cacheProx = (cacheProx + 1) % 16;
+      pthread_mutex_unlock(&trava);
+    }
   }
   // TVDB T/E -> episodio dentro da entrada do anime (um mapa por entrada).
   o.ep = e;
