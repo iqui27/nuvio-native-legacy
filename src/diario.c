@@ -805,17 +805,8 @@ int diario_avaliar(int perfil, const char *idEnt, char tipo, int nota10) {
       enfileirar(p, DIARIO_EV_ALTERADA, L, x);
     }
     r = 1;
-  } else if (nota10 > 0) {
-    DiarioEntrada d;
-    memset(&d, 0, sizeof d);
-    snprintf(d.id, sizeof d.id, "%s", id);
-    d.tipo = tipo ? tipo : DIARIO_FILME;
-    d.origem = DIARIO_ORIG_MANUAL;
-    d.quando = agora(); d.hora = -1;
-    d.nota10 = (unsigned char)nota10;
-    d.flags = DIARIO_F_DATA_APROX;
-    r = adicionarSemTrava(p, L, &d, 1, 0) >= 0;
   }
+  (void)tipo;
   pthread_mutex_unlock(&trava);
   return r;
 }
