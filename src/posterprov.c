@@ -420,9 +420,11 @@ static uint32_t falhou[PP_FALHAS];
 static int nFalhou, seguidas;
 static long disjuntorAte;
 
-#define PP_SLOTS 256
+#define PP_SLOTS_BITS 10
+#define PP_SLOTS (1 << PP_SLOTS_BITS)
 typedef struct { uint32_t chave; char ok; char url[PP_URL_MAX]; } Slot;
 static Slot slots[PP_SLOTS];
+static int modeloTemShape;   // landscape cards only exist for templates with {shape}
 
 static int (*hookEstado)(const char *url);
 static long (*hookRelogio)(void);
@@ -462,6 +464,9 @@ void posterprov_configurar(const PosterProvCfg *c) {
   cfg.chave[sizeof cfg.chave - 1] = 0;
   cfg.modelo[sizeof cfg.modelo - 1] = 0;
   prefixo_de(&cfg);
+  { char decoded[PP_MODELO_MAX];
+    modeloTemShape = cfg.prov == PP_MODELO && modelo_decodificar(cfg.modelo, decoded) &&
+                     (strstr(decoded, "{shape}") || strstr(decoded, "{shape?}")); }
   memset(falhou, 0, sizeof falhou);
   memset(slots, 0, sizeof slots);
   nFalhou = seguidas = 0;
@@ -537,13 +542,9 @@ const char *posterprov_card_formato(const char *origem, const char *imdb, long t
                                     const char *tipo, const char *orig, int landscape) {
   uint32_t k;
   Slot *s;
-  const char *r = orig;
+  const char *r;
   if (cfg.prov == PP_DESLIGADO || posterprov_addon_vence(origem, orig)) return orig;
-  if (landscape) {
-    char decoded[PP_MODELO_MAX];
-    if (cfg.prov != PP_MODELO || !modelo_decodificar(cfg.modelo, decoded) ||
-        (!strstr(decoded, "{shape}") && !strstr(decoded, "{shape?}"))) return orig;
-  }
+  if (landscape && !modeloTemShape) return orig;
   pthread_mutex_lock(&trava);
   if (disjuntorAte) {
     if (agora() < disjuntorAte) { pthread_mutex_unlock(&trava); return orig; }
@@ -552,7 +553,8 @@ const char *posterprov_card_formato(const char *origem, const char *imdb, long t
   }
   k = hash_item(imdb, tmdb, tipo) ^ (landscape ? 0x80000000u : 0);
   if (falhou_tem(k)) { pthread_mutex_unlock(&trava); return orig; }
-  s = &slots[k % PP_SLOTS];
+  // Landscape is the top bit of k; index by the high bits of a mixed hash.
+  s = &slots[(k * 2654435761u) >> (32 - PP_SLOTS_BITS)];
   if (s->chave != k) {
     memset(s, 0, sizeof *s);
     s->chave = k;
