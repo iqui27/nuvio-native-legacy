@@ -14,7 +14,7 @@ fi
 work="$(mktemp -d ${TMPDIR:-/tmp}/nuvio-catalogo21.XXXXXX)"
 trap 'rm -rf "$work"' EXIT
 {
-  git show "$ref:src/ajustes_ux_tela.inc" | grep -o 'OPC(AJ_[A-Z0-9_]*' | sed 's/OPC(//'
+  git show "$ref:src/ajustes_ux_tela.inc" | grep -oE 'OPCA?\(AJ_[A-Z0-9_]*' | sed -E 's/OPCA?\(//'
   for f in $(git ls-tree --name-only "$ref" src/ | grep '^src/ajustes_pen'); do
     git show "$ref:$f" | grep -o '{AJ_[A-Z0-9_]*,"' | sed 's/[{,"]//g'
   done
@@ -27,7 +27,7 @@ guard() { sed '/AJ_BAIXAR_REGISTRO/{s/^/#ifdef NV_ANDROID\n/;s/$/\n#endif/;}'; }
   echo "static const char *const CAT21_NOME[] = {"; sed 's/.*/"&",/' "$work/ops" | guard; echo "};"
   # Rows of every build, as written (platform rows sit behind #ifdef).
   echo "static const char *const TELA_FONTE[] = {"
-  grep -o 'OPC(AJ_[A-Z0-9_]*' src/ajustes_ux_tela.inc | sed 's/OPC(\(.*\)/"\1",/'; echo "};"
+  grep -oE 'OPCA?\(AJ_[A-Z0-9_]*' src/ajustes_ux_tela.inc | sed -E 's/OPCA?\((.*)/"\1",/'; echo "};"
 } > "$work/cat21.h"
 
 # Removed options: neither the key nor its getter may be read outside Settings.

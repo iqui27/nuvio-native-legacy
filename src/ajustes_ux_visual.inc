@@ -360,17 +360,17 @@ static TxtEstilo ajEstiloPxS(float px, int forte) { return ajEstiloPx(px < 6.0f 
 // repete: sao as 40 amostras de deploy/app/art.
 // -1 = a categoria nao tem esse bloco.
 #define AJ_ARTE_BLOCOS 10
-// Os blocos de "Mais opcoes" (depois do MAIS() da categoria) repetem a arte do
-// bloco basico de mesmo nome: e a mesma parte do app, so que tecnica.
+// Os blocos de "Mais opcoes" (depois do MAIS() da categoria) repetem a arte de
+// um bloco basico: e a mesma parte do app, so que tecnica.
 static const signed char AJ_ARTE_SEC[AJS_N + 1][AJ_ARTE_BLOCOS] = {
-  { 18,  7, 22, 32,  7, 18, 19, -1, -1, -1 },   // Reproducao: Imagem e som, Escolha da fonte, Durante e depois, Miniatura; Mais: fonte, som e video, P2P
-  { 21, 34, 24, 21, -1, -1, -1, -1, -1, -1 },   // Idiomas e legendas: Idiomas, Legenda principal, Segunda legenda; Mais: idiomas
+  { 18,  7, 22, 32, 18, 19, -1, -1, -1, -1 },   // Reproducao: Imagem e som, Escolha da fonte, Durante e depois, Miniatura; Mais: som e video, P2P
+  { 21, 34, 24, -1, -1, -1, -1, -1, -1, -1 },   // Idiomas e legendas: Idiomas, Legenda principal, Segunda legenda
   {  5, 28, 37, 10, -1, -1, -1, -1, -1, -1 },   // Fontes e addons: Addons, Falha na reproducao, Debrid, Servidores
-  {  2, 19, 14, 14, -1, -1, -1, -1, -1, -1 },   // TV ao vivo: Contas, Guia de TV, Se o canal nao abre; Mais
-  { 12,  0, 29, 20,  1, 31, 12,  0, 20,  1 },   // Tela inicial: Estilo, Fileiras, Colecoes, Continuar, Barra lateral, Escolha de perfil; Mais
-  {  9, 36, 39, 38,  6, 11,  9, -1, -1, -1 },   // Aparencia: Cores e vidro, Fileiras, Logo e abertura, Texto e tamanho, Movimento e relogio, Tela de descanso; Mais
-  {  3,  4, 17,  4, 17, -1, -1, -1, -1, -1 },   // Pagina do titulo: O que aparece, Notas, Dados do titulo; Mais: notas, dados
-  { 13, 35, 27, 15, 16, 13, 35, 27, 15, -1 },   // Cartazes e trailers: Cartaz em foco, Forma, Arte, Trailers, Som e imagem; Mais
+  {  2, 19, 14, -1, -1, -1, -1, -1, -1, -1 },   // TV ao vivo: Contas, Guia de TV, Se o canal nao abre
+  { 12,  0, 29, 20,  1, 31, -1, -1, -1, -1 },   // Tela inicial: Estilo, Fileiras, Colecoes, Continuar, Barra lateral, Escolha de perfil
+  {  9, 36, 39, 38,  6, 11, -1, -1, -1, -1 },   // Aparencia: Cores e vidro, Fileiras, Logo e abertura, Texto e tamanho, Movimento e relogio, Tela de descanso
+  {  3,  4, 17, -1, -1, -1, -1, -1, -1, -1 },   // Pagina do titulo: O que aparece, Notas, Dados do titulo
+  { 13, 35, 27, 15, 16, -1, -1, -1, -1, -1 },   // Cartazes e trailers: Cartaz em foco, Forma, Arte, Trailers, Som e imagem
   { 23, 33,  8, 28, -1, -1, -1, -1, -1, -1 },   // Conta e servicos: Perfil, Trakt e Simkl, Notificacoes
   { 26, -1, -1, -1, -1, -1, -1, -1, -1, -1 },   // Esta TV (Mais: Memoria)
   { 30, 25, -1, -1, -1, -1, -1, -1, -1, -1 },   // Sobre e ajuda: (guia e) App, Registro
