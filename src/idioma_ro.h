@@ -4396,6 +4396,7 @@
   T("Pular créditos", "Sari peste generic de final"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "Sari peste generic dispare singur. Canalul se reconectează."),
+  T("Pular encerramento", "Sari peste final"),
   T("Pular letra", "Sari la literă"),
   T("Pular o encerramento automaticamente", "Sari automat peste finalul"),
   T("Pular o resumo automaticamente", "Sari automat peste rezumat"),

@@ -4396,6 +4396,7 @@
   { "Pular créditos", "Skip credits" },
   { "Pular créditos automaticamente", "Automatically skip credits" },
   { "Pular créditos some sozinho. O canal reconecta.", "Skip credits hides itself. Channels reconnect." },
+  { "Pular encerramento", "Skip ending" },
   { "Pular letra", "Jump letter" },
   { "Pular o encerramento automaticamente", "Skip the ending automatically" },
   { "Pular o resumo automaticamente", "Skip the recap automatically" },

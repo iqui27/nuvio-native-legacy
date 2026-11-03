@@ -4397,6 +4397,7 @@
   T("Pular créditos", "Aftiteling overslaan"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "Aftiteling-knop verdwijnt vanzelf. Zenders herverbinden."),
+  T("Pular encerramento", "Einde overslaan"),
   T("Pular letra", "Letter overslaan"),
   T("Pular o encerramento automaticamente", "Einde automatisch overslaan"),
   T("Pular o resumo automaticamente", "Terugblik automatisch overslaan"),

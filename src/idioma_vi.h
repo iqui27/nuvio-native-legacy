@@ -4397,6 +4397,7 @@
   T("Pular créditos", "Bỏ qua phần credit"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "Bỏ qua phần giới thiệu tự ẩn. Kênh tự kết nối lại."),
+  T("Pular encerramento", "Bỏ qua phần kết"),
   T("Pular letra", "Nhảy chữ"),
   T("Pular o encerramento automaticamente", "Tự động bỏ qua phần kết"),
   T("Pular o resumo automaticamente", "Tự động bỏ qua phần tóm tắt"),

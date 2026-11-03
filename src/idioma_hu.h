@@ -4397,6 +4397,7 @@
   T("Pular créditos", "Stáblista átugrása"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "A stáblista átugrása magától eltűnik. A csatorna újracsatlakozik."),
+  T("Pular encerramento", "Vége átugrása"),
   T("Pular letra", "Betű ugrás"),
   T("Pular o encerramento automaticamente", "Vége automatikus átugrása"),
   T("Pular o resumo automaticamente", "Összefoglaló automatikus átugrása"),

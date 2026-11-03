@@ -4396,6 +4396,7 @@
   T("Pular créditos", "Saltar créditos"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "Saltar créditos se oculta solo. El canal se reconecta."),
+  T("Pular encerramento", "Saltar final"),
   T("Pular letra", "Saltar letra"),
   T("Pular o encerramento automaticamente", "Saltar el final automáticamente"),
   T("Pular o resumo automaticamente", "Saltar el resumen automáticamente"),

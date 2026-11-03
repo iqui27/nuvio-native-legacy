@@ -4397,6 +4397,7 @@
   T("Pular créditos", "Spring rulletekster over"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "Spring rulletekster over skjuler sig selv. Kanalen forbinder igen."),
+  T("Pular encerramento", "Spring slutningen over"),
   T("Pular letra", "Spring bogstav"),
   T("Pular o encerramento automaticamente", "Spring slutningen over automatisk"),
   T("Pular o resumo automaticamente", "Spring resumé over automatisk"),

@@ -4396,6 +4396,7 @@
   T("Pular créditos", "Пропустить титры"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "Пропуск титров скрывается сам. Канал переподключается."),
+  T("Pular encerramento", "Пропустить финал"),
   T("Pular letra", "Перейти к букве"),
   T("Pular o encerramento automaticamente", "Автоматически пропускать финал"),
   T("Pular o resumo automaticamente", "Автоматически пропускать пересказ"),

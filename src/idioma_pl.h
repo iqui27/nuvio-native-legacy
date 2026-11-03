@@ -4397,6 +4397,7 @@
   T("Pular créditos", "Pomiń napisy końcowe"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "Pomiń napisy chowa się sam. Kanał łączy się ponownie."),
+  T("Pular encerramento", "Pomiń zakończenie"),
   T("Pular letra", "Skocz do litery"),
   T("Pular o encerramento automaticamente", "Automatycznie pomijaj zakończenie"),
   T("Pular o resumo automaticamente", "Automatycznie pomijaj podsumowanie"),

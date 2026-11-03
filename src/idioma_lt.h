@@ -4397,6 +4397,7 @@
   T("Pular créditos", "Praleisti titrus"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "Praleisti titrus pasislepia pats. Kanalas prisijungia iš naujo."),
+  T("Pular encerramento", "Praleisti pabaigą"),
   T("Pular letra", "Peršokti raidę"),
   T("Pular o encerramento automaticamente", "Automatiškai praleisti pabaigą"),
   T("Pular o resumo automaticamente", "Automatiškai praleisti santrauką"),

@@ -4397,6 +4397,7 @@
   T("Pular créditos", "Salta titoli di coda"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "Salta i titoli si nasconde da solo. Il canale si riconnette."),
+  T("Pular encerramento", "Salta il finale"),
   T("Pular letra", "Salta lettera"),
   T("Pular o encerramento automaticamente", "Salta il finale automaticamente"),
   T("Pular o resumo automaticamente", "Salta il riepilogo automaticamente"),

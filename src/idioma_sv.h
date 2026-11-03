@@ -4397,6 +4397,7 @@
   T("Pular créditos", "Hoppa över eftertexter"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "Hoppa över eftertexter döljs av sig själv. Kanalen ansluter igen."),
+  T("Pular encerramento", "Hoppa över slutet"),
   T("Pular letra", "Hoppa bokstav"),
   T("Pular o encerramento automaticamente", "Hoppa över slutet automatiskt"),
   T("Pular o resumo automaticamente", "Hoppa över sammanfattningen automatiskt"),

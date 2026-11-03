@@ -5901,9 +5901,12 @@ static void desenharAcoesEpisodioCorpo(void){
     // Creditos com cena depois (feat/mkv-chapter-segments, Nuvio TV "Skip to
     // Post-Credits"): o pulo para no comeco da cena, e o rotulo diz isso.
     int paraCena=tipo==INTRO_CREDITOS&&intro_cena_pos(duracaoSeg,NULL,NULL,NULL);
+    // Rotulos do NuvioTV: "Skip Ending" no fim de episodio, "Skip Credits" so
+    // em filme (epE <= 0), e "Post credits" so com cena de verdade depois.
     const char *rot=tipo==INTRO_RESUMO?"Pular resumo":
                     paraCena?"P\xc3\xb3s-cr\xc3\xa9" "ditos":
-                    tipo==INTRO_CREDITOS?"Pular cr\xc3\xa9" "ditos":"Pular abertura";
+                    tipo==INTRO_CREDITOS&&epE<=0?"Pular cr\xc3\xa9" "ditos":
+                    tipo==INTRO_CREDITOS?"Pular encerramento":"Pular abertura";
     int sel=(skipFoco&&visivel)||!visivel;
     TxtLinha t=txt_linha(TXT_G21B,rot,255,255,255,255);
     const float h=64.0f;

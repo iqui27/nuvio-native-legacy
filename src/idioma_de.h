@@ -4396,6 +4396,7 @@
   T("Pular créditos", "Abspann überspringen"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "Abspann-Knopf versteckt sich. Sender verbinden neu."),
+  T("Pular encerramento", "Ende überspringen"),
   T("Pular letra", "Buchstaben springen"),
   T("Pular o encerramento automaticamente", "Ende automatisch überspringen"),
   T("Pular o resumo automaticamente", "Rückblick automatisch überspringen"),

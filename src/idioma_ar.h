@@ -4397,6 +4397,7 @@
   T("Pular créditos", "تخطي الشارة"),
   T("Pular créditos automaticamente", "تخطي الشارة تلقائيًا"),
   T("Pular créditos some sozinho. O canal reconecta.", "تخطي الشارة يختفي وحده. القنوات تعيد الاتصال."),
+  T("Pular encerramento", "تخطي النهاية"),
   T("Pular letra", "القفز إلى حرف"),
   T("Pular o encerramento automaticamente", "تخطي النهاية تلقائيًا"),
   T("Pular o resumo automaticamente", "تخطي الملخص تلقائيًا"),

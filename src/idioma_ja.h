@@ -4397,6 +4397,7 @@
   T("Pular créditos", "クレジットをスキップ"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "クレジットのスキップは自動で消え、チャンネルは再接続します。"),
+  T("Pular encerramento", "エンディングをスキップ"),
   T("Pular letra", "文字へジャンプ"),
   T("Pular o encerramento automaticamente", "エンディングを自動でスキップ"),
   T("Pular o resumo automaticamente", "あらすじを自動でスキップ"),

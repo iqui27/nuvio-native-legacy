@@ -4397,6 +4397,7 @@
   T("Pular créditos", "Bitiş jeneriğini atla"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "Jenerik atla kendiliğinden gizlenir. Kanal yeniden bağlanır."),
+  T("Pular encerramento", "Bitişi atla"),
   T("Pular letra", "Harf atla"),
   T("Pular o encerramento automaticamente", "Bitişi otomatik atla"),
   T("Pular o resumo automaticamente", "Özeti otomatik atla"),

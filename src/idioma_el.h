@@ -4397,6 +4397,7 @@
   T("Pular créditos", "Παράλειψη τίτλων τέλους"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "Το Παράλειψη τίτλων κρύβεται μόνο του. Το κανάλι ξανασυνδέεται."),
+  T("Pular encerramento", "Παράλειψη τέλους"),
   T("Pular letra", "Μετάβαση σε γράμμα"),
   T("Pular o encerramento automaticamente", "Αυτόματη παράλειψη του τέλους"),
   T("Pular o resumo automaticamente", "Αυτόματη παράλειψη περίληψης"),

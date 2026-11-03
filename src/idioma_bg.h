@@ -4397,6 +4397,7 @@
   T("Pular créditos", "Пропусни надписите"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "Скриване на надписите само. Каналът се свързва пак."),
+  T("Pular encerramento", "Пропусни края"),
   T("Pular letra", "Скок на буква"),
   T("Pular o encerramento automaticamente", "Автоматично пропускане на края"),
   T("Pular o resumo automaticamente", "Автоматично пропускане на резюмето"),

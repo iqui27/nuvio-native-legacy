@@ -4397,6 +4397,7 @@
   T("Pular créditos", "Preskočiť titulky"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "Preskočiť titulky sa skryje samo. Kanál sa znova pripojí."),
+  T("Pular encerramento", "Preskočiť záver"),
   T("Pular letra", "Skok na písmeno"),
   T("Pular o encerramento automaticamente", "Automaticky preskakovať záver"),
   T("Pular o resumo automaticamente", "Preskakovať zhrnutie automaticky"),

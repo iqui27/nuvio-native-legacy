@@ -4396,6 +4396,7 @@
   T("Pular créditos", "Passer le générique de fin"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "Passer le générique se cache seul. La chaîne se reconnecte."),
+  T("Pular encerramento", "Passer la fin"),
   T("Pular letra", "Sauter de lettre"),
   T("Pular o encerramento automaticamente", "Passer la fin automatiquement"),
   T("Pular o resumo automaticamente", "Passer le résumé automatiquement"),

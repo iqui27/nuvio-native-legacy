@@ -4397,6 +4397,7 @@
   T("Pular créditos", "跳过片尾字幕"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "跳过片尾会自动隐藏，频道会自动重连。"),
+  T("Pular encerramento", "跳过片尾"),
   T("Pular letra", "跳到字母"),
   T("Pular o encerramento automaticamente", "自动跳过片尾"),
   T("Pular o resumo automaticamente", "自动跳过前情回顾"),
