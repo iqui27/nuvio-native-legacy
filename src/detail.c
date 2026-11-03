@@ -2514,8 +2514,14 @@ static float alturaSecao(int r) {
     case SEC_FRASES:    return 300;
     case SEC_NOTAS:     return notaAltura();
     case SEC_NOTAS_EP:  return 0.0f;
-    case SEC_PROGTEMP:  return epModerno() ? (progTemNotas() ? 292 : tgraf_altura_dados(tgraf_dados(idx)))
-                                        : tgraf_altura_dados(tgraf_dados(idx)) + (progTemNotas() ? 360 : 0);
+    case SEC_PROGTEMP: {
+      const TgDados *td = tgraf_dados(idx);
+      float hTg = tgraf_existe(td) ? tgraf_altura_dados(td) : 0.0f;
+      if (!progTemNotas()) return hTg;
+      { float hGrade = epModerno() ? 292.0f : 360.0f;
+        float gap = hTg > 0.0f ? 28.0f : 0.0f;
+        return hTg + gap + hGrade; }
+    }
     case SEC_MUSICAS:   return MUS_H;
   }
   return 0.0f;
@@ -8666,7 +8672,7 @@ static void desenhaGradeProgresso(float x, float y, float a) {
     gfx_anel((GfxRect){x,y+10+row*56,28,28},.5f,3,1,1,1,.18f*a);
     // ARCO DA FILEIRA (mockup v2): a fracao vista da temporada no circulo,
     // no acento — o mesmo anel da aba de temporada.
-    { int tv=0,tev=0;
+    if (vistoep_conhecido(ci->imdb)) { int tv=0,tev=0;
       for (int j=0;j<cat_n_episodios(idx);j++) {
         const CatEp *q0=cat_episodio(idx,j);
         if (!q0 || q0->temporada!=temp[row] || epNaoExibido(q0)) continue;
@@ -8690,7 +8696,8 @@ static void desenhaGradeProgresso(float x, float y, float a) {
       idioma_decimal_texto(nota,ajustes_idioma());
       TxtLinha l=txt_linha(TXT_G18M,nota,243,242,239,255);
       txt_desenhar_alpha(l,cell.x+(cell.w-l.w)*.5f,cell.y+(cell.h-l.h)*.5f,a);
-      if (vistoep_estado(ci->imdb,p->temporada,p->episodio)==1)
+      if (vistoep_conhecido(ci->imdb) &&
+          vistoep_estado(ci->imdb,p->temporada,p->episodio)==1)
         gfx_cor((GfxRect){cell.x+14,cell.y+38,cell.w-28,3},.5f,cr,cg,cb,a);
     }
   }
@@ -8737,7 +8744,7 @@ static void desenhaGradeProgresso(float x, float y, float a) {
       yl+=40;
     }
     { int vis=0,exib=0;
-      if (extras_progresso_serie(&vis,&exib) && exib>0) {
+      if (vistoep_conhecido(ci->imdb) && extras_progresso_serie(&vis,&exib) && exib>0) {
         char linha[96]; snprintf(linha,sizeof linha,i18n("Você viu %d de %d"),vis,exib);
         txt_desenhar_alpha(txt_linha_corta(TXT_G22M,linha,189,189,189,255,760),x+944,yl,a);
       } }
@@ -8985,13 +8992,16 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
   }
   // O grafico e UM desenho; as colunas focaveis sao posicoes dentro dele.
   if (r == SEC_PROGTEMP) {
-    if (epModerno() && progTemNotas()) {
-      desenhaGradeProgresso(NV_DETP_X,y,a); return;
+    const TgDados *td = tgraf_dados(idx);
+    float yGrade = y;
+    if (tgraf_existe(td))
+      tgraf_desenhar(td, NV_DETP_X, y, NV_TELA_W - NV_DETP_X * 2,
+                     !progTemNotas() && nivel >= 1 && foco.fileira == SEC_PROGTEMP ? foco.coluna : -1,
+                     temporadaEm(temporada), a, agora);
+    if (progTemNotas()) {
+      if (tgraf_existe(td)) yGrade += tgraf_altura_dados(td) + 28.0f;
+      desenhaGradeProgresso(NV_DETP_X, yGrade, a);
     }
-    tgraf_desenhar(tgraf_dados(idx), NV_DETP_X, y, NV_TELA_W - NV_DETP_X * 2,
-                   !progTemNotas() && nivel >= 1 && foco.fileira == SEC_PROGTEMP ? foco.coluna : -1,
-                   temporadaEm(temporada), a, agora);
-    if (progTemNotas()) desenhaGradeProgresso(NV_DETP_X, y + tgraf_altura_dados(tgraf_dados(idx)) + 28, a);
     return;
   }
 

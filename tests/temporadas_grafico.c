@@ -124,6 +124,7 @@ int main(void) {
   // nunca vira "0 visto" (sabe=0, vistos=0 so quer dizer "nao sabemos").
   tgraf_montar(&d, eps, nEps, 0, 3, 5, 0, NULL);
   assert(!d.sabe && d.vistos == 0 && d.n > 0 && d.exibidos > 0 && tgraf_existe(&d));
+  assert(d.completas == 0);
 
   // Com mapa e nada visto (zero conhecido): o bloco existe e mostra 0 de verdade.
   nEps = 0;
