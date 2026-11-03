@@ -8697,10 +8697,14 @@ static void menuDeVisto(Uint32 agora) {
       int dir;
       float fade=fabsf(2*episodios_menu_transicao(&dir)-1);
       float content=anim_clamp(episodios_menu_anim(),0,1)*fade*fade*(3-2*fade);
+      int clip = ajustes_home_layout() == HOME_LAYOUT_DINAMICA;
+      GfxRecorteAnt anterior;
+      if (clip) anterior = gfx_recorte_dentro(summary.x, summary.y, summary.w, summary.h);
       gfx_transformar(summary.x, summary.y, scale, dir*8*(1-fade), 0);
       summary.w=420; summary.h=740;
       desenhaEpisodioEm(summary, menuOrigemCol, 0, content, agora, 1);
       gfx_sem_transformar();
+      if (clip) gfx_recorte_voltar(anterior);
       ESCALA_REAL_FIM();
     }
   }

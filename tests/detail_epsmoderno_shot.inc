@@ -43,6 +43,8 @@ static void epsModernoShots(const char *root) {
       const CatEp *ep = cat_episodio(idx, epAbsoluto(columns[k])); assert(ep);
       episodios_menu_visto(idx, ep->temporada, ep->episodio, ep->nome);
       quadros(1);
+      GfxRect initial = {0};
+      if (layout == HOME_LAYOUT_MODERNA) assert(episodios_menu_resumo(&initial));
       if (getenv("NV_EPSMODERNO_VERIFY") && layout == HOME_LAYOUT_DINAMICA) {
         GfxRect summary, menu;
         float ui = gfx_escala_ui(), t = anim_clamp(episodios_menu_anim(), 0, 1);
@@ -51,8 +53,15 @@ static void epsModernoShots(const char *root) {
         assert(t < .2f && episodios_menu_resumo(&summary) && episodios_menu_caixa(&menu));
         assert(fabsf(summary.x - x) < 65.0f && fabsf(summary.y - y) < 65.0f);
         assert(fabsf(menu.x - (x + epCardW()/ui)) < 100.0f);
+        assert(fabsf(fxSummaryClipHeight - summary.h * ui) < 2.0f);
       }
       quadros(120);
+      if (layout == HOME_LAYOUT_MODERNA) {
+        GfxRect settled;
+        assert(episodios_menu_resumo(&settled));
+        assert(fabsf(initial.x - settled.x) < .01f && fabsf(initial.y - settled.y) < .01f);
+        assert(fabsf(initial.w - settled.w) < .01f && fabsf(initial.h - settled.h) < .01f);
+      }
       // Same source fixture reproduces the empty HDR separator defect.
       vaiTocar.tem = 1; vaiTocar.temporada=ep->temporada; vaiTocar.episodio=ep->episodio;
       vaiTocarIdx=idx; vaiTocarT=ep->temporada; vaiTocarE=ep->episodio; vaiTocarEm=fx_ticks();

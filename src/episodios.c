@@ -672,7 +672,7 @@ static void menuDesenhar(GfxRect area, float a0) {
     vmResumo=(GfxRect){left,top,summaryW,740};
     m.x=left+summaryW+gap; m.y=top;
     comentarios=(GfxRect){m.x+MW+gap,top,676,624};
-    if (vmTemAncora) {
+    if (vmTemAncora && ajustes_home_layout() == HOME_LAYOUT_DINAMICA) {
       float t = anim_clamp(vmAnim, 0.0f, 1.0f);
       vmResumo.x = vmAncora.x + (vmResumo.x - vmAncora.x) * t;
       vmResumo.y = vmAncora.y + (vmResumo.y - vmAncora.y) * t;
@@ -1304,7 +1304,7 @@ static void episodios_menu_desenharCorpo_(void) {
       fitted=fminf(scale,(NV_LAYOUT_REAL_W-96.0f)/(420+24+vmLarg+24+676));
       fitted=fminf(fitted,(NV_LAYOUT_REAL_H-96.0f)/fmaxf(menuAltura(),740));
       gfx_escala_sair(fitted);
-      if (vmTemAncora && fitted != scale)
+      if (vmTemAncora && fitted != scale && ajustes_home_layout() == HOME_LAYOUT_DINAMICA)
         vmAncora = (GfxRect){anchor.x*scale/fitted, anchor.y*scale/fitted,
                              anchor.w*scale/fitted, anchor.h*scale/fitted};
     }
