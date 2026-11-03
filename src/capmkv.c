@@ -112,14 +112,17 @@ static void logSegmentos(const MkvCap *caps, int n) {
 // checagem, os creditos e a entrega ao modulo de intro ficam na MESMA secao
 // critica que capmkv_zerar usa para invalidar e limpar (revisao 2.0.3, achado
 // 8). Ordem de travas: capmkv -> intro (intro.c nunca chama capmkv).
+// Tudo que classifica nomes (regex, ~6 ms para 64 capitulos num PC) roda ANTES
+// da trava: o player le a lista com a mesma trava a cada quadro (capmkv_lista).
 static int publicar(const MkvCap *caps, int n, int checa, unsigned g) {
   IntroTrecho v[6];
   int k = n > 0 ? capmkv_trechos(caps, n, v, 6) : 0;
-  double a, b;
+  double a = n > 0 ? mkv_creditos_nomeados(caps, n) : 0.0;
+  double b = n > 0 ? mkv_creditos_ultimo(caps, n) : 0.0;
   pthread_mutex_lock(&trava);
   if (checa && g != ger) { pthread_mutex_unlock(&trava); return 0; }
-  nomeado = a = n > 0 ? mkv_creditos_nomeados(caps, n) : 0.0;
-  ultimo = b = n > 0 ? mkv_creditos_ultimo(caps, n) : 0.0;
+  nomeado = a;
+  ultimo = b;
   nLista = n > MKV_MAX_CAPS ? MKV_MAX_CAPS : (n > 0 ? n : 0);
   if (nLista > 0) memcpy(lista, caps, (size_t)nLista * sizeof *caps);
   if (k > 0) intro_definir_capitulos(v, k);
