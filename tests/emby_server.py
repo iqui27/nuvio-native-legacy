@@ -208,6 +208,11 @@ class Handler(BaseHTTPRequestHandler):
             b = self.body()
             if b.get("UserId") != USER_ID or "DeviceProfile" not in b:
                 return self.reply(400)
+            prof = b["DeviceProfile"]
+            with lock:
+                state["events"].append({"direct": b.get("EnableDirectPlay"), "stream": b.get("EnableDirectStream"),
+                                        "transcoding": b.get("EnableTranscoding"), "bitrate": b.get("MaxStreamingBitrate"),
+                                        "profileBitrate": prof.get("MaxStreamingBitrate"), "staticBitrate": prof.get("MaxStaticBitrate")})
             return self.reply(200, {"PlaySessionId": "ps1", "MediaSources": [media_source(m.group(1))]})
         if p in ("/Sessions/Playing", "/Sessions/Playing/Progress", "/Sessions/Playing/Stopped") and method == "POST":
             b = self.body()

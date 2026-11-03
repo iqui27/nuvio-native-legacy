@@ -424,6 +424,7 @@ int main(int argc,char **argv){
     {USERS,1,"setup-jellyfin-usuario"},{USERS,2,"setup-emby-usuario"},
     {PASSWORD,1,"setup-jellyfin-senha"},{PASSWORD,2,"setup-emby-senha"},{CONNECT_PASSWORD,2,"setup-emby-credentials"},
     {LIBRARIES,0,"setup-plex-bibliotecas"},{LIBRARIES,1,"setup-bibliotecas"},{LIBRARIES,2,"setup-emby-bibliotecas"},
+    {PLAYBACK,0,"playback-plex"},{PLAYBACK,1,"playback-jellyfin"},{PLAYBACK,2,"playback-emby"},
     {READY,0,"setup-plex-pronto"},{READY,1,"setup-pronto"},{READY,2,"setup-emby-pronto"},
     {MANAGE,0,"servidores-gerenciar"},{REMOVE,0,"servidor-remover"},{ERROR_SCREEN,2,"servidor-offline"},
     {ERROR_SCREEN,1,"setup-credencial-expirada"},{ROWS,0,"fileira-adicionar-servidor"},
@@ -448,6 +449,7 @@ int main(int argc,char **argv){
       if(screen!=CODE && screen!=CONNECT_CODE)
         for(int p=0;p<3;p++) if(live || p==scenes[i].p || screen==CHOOSE) snprintf(shotServerNames[p],96,"%s",snames[p]); }
     if(screen==LIBRARIES) selected=3;
+    if(screen==PLAYBACK) { playbackDraft=(SrvPlayback){0}; playbackHls=1; }
     if(screen==ADDRESS) selected=1;
     if(screen==PASSWORD || screen==CONNECT_PASSWORD) selected=2;
     for(int j=0;j<2;j++){
@@ -491,6 +493,25 @@ int main(int argc,char **argv){
       capture(argv[1],name);motionCapture=0;
     }
     capture(argv[1],scenes[i].name);worker.alive=0;
+    if (screen == PLAYBACK) {
+      selected=0; key(SDLK_RETURN); assert(playbackDraft.direto);
+      key(SDLK_DOWN); assert(selected==1);
+      int n=provider?6:3;
+      for (int k=0;k<n;k++) {
+        key(SDLK_RETURN);
+        assert(srv_playback_bitrate(playbackDraft,provider?SRV_JF_BITRATE_MAX:SRV_PX_BITRATE_MAX)<= (provider?SRV_JF_BITRATE_MAX:SRV_PX_BITRATE_MAX));
+      }
+      assert(!playbackDraft.bitrate);
+      key(SDLK_RETURN); assert(playbackDraft.bitrate==5000000);
+      key(SDLK_DOWN); assert(selected==2); key(SDLK_RIGHT); assert(selected==3);
+      selected=0;
+      char direct[128]; snprintf(direct,sizeof direct,"%s-direct",scenes[i].name); capture(argv[1],direct);
+      if (provider) {
+        playbackHls=0; selected=0; key(SDLK_DOWN); assert(selected==1); key(SDLK_RIGHT); assert(selected==2);
+        selected=0; snprintf(direct,sizeof direct,"%s-no-hls",scenes[i].name); capture(argv[1],direct);
+        playbackHls=1;
+      }
+    }
     assert(screen==expectedScreen);
     if (gfx_escala_txt() > 1) {
       selected = targets() - 1;

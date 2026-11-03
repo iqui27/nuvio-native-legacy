@@ -321,7 +321,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(400)
             iid = m.group(1)
             with lock:
-                state["events"].append({"op": "playbackinfo", "profile": prof.get("Name")})
+                state["events"].append({"op": "playbackinfo", "profile": prof.get("Name"),
+                                        "direct": b.get("EnableDirectPlay"), "stream": b.get("EnableDirectStream"),
+                                        "transcoding": b.get("EnableTranscoding"), "bitrate": b.get("MaxStreamingBitrate"),
+                                        "profileBitrate": prof.get("MaxStreamingBitrate"), "staticBitrate": prof.get("MaxStaticBitrate")})
             return self.reply(200, {"PlaySessionId": "ps0001", "MediaSources": [
                 {"Protocol": "File", "Id": iid, "Path": "/srv/private/path/film.mkv", "Container": "mkv",
                  "Size": 21474836480, "Name": "Film - 2160p", "SupportsDirectPlay": True,

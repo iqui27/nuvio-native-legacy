@@ -32,6 +32,7 @@
 #ifndef NV_PLEX_H
 #define NV_PLEX_H
 #include <stddef.h>
+#include "srvprefs.h"
 #include "catalogo.h"
 #include "jfid.h"
 #include "jellyfin.h"
@@ -116,6 +117,7 @@ typedef struct {
   char servidorNome[96];
   char versao[24];
   char usuario[96];        // plex.tv display name (never the e-mail)
+  SrvPlayback playback;    // local connection + Nuvio profile; never account sync
   char bibliotecas[256];   // selected section IDs, newline-delimited; empty means all
   char tokenConta[96];     // plex.tv account token — never logged
   char token[96];          // server access token — never logged

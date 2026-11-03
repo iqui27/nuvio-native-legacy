@@ -39,6 +39,7 @@
 #ifndef NV_JELLYFIN_H
 #define NV_JELLYFIN_H
 #include <stddef.h>
+#include "srvprefs.h"
 #include "catalogo.h"
 #include "addons.h"
 #include "jfid.h"
@@ -96,6 +97,7 @@ typedef struct {
   char usuarioId[40];
   char usuarioNome[96];
   char token[JF_TOKEN_MAX]; // never logged
+  SrvPlayback playback;    // local connection + Nuvio profile; never account sync
   char bibliotecas[256];   // selected library IDs, newline-delimited; empty means all
   char connectUser[64], connectKey[128]; // Emby exchange credentials, never logged
   char dispositivoId[80];  // per device + profile (Jellyfin binds tokens to it)
@@ -196,6 +198,8 @@ double jf_seg(long long ticks);
 
 // ------------------------------------------------------- app integration
 // Onboarding worker snapshots; acceptance checks both profile and generation.
+// True only after this connection has actually offered an HLS source.
+int jf_playback_hls(int emby);
 unsigned jf_setup_conta(int emby, JfConta *out, int *perfil);
 int jf_setup_aceitar(int emby, const JfConta *c, int perfil, unsigned generation);
 int  jellyfin_disponivel(void);     // strict HTTP present on this backend

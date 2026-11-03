@@ -244,6 +244,8 @@ static void testarProtocolo(void) {
 }
 
 // ------------------------------------------------------------- integration
+#include "server_playback.inc"
+
 static void integracao(void) {
   char det[160], arq[640], urlDireta[2048], urlStream[2048];
   CatItem *itens = malloc(sizeof(CatItem) * JF_FIL_MAX * JF_POR_FILEIRA);
@@ -428,6 +430,8 @@ static void integracao(void) {
   perfilAtivo = 1;
   emby_perfil_trocou();
   assert(emby_conectado());
+
+  testarPlaybackLocal(1);
 
   // ---- sign out: the server hears about it, the file goes
   emby_esquecer();
