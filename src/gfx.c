@@ -2294,7 +2294,10 @@ static void vidroDesenho(GfxRect r, GLuint tex, GfxModo modo, float foco, float 
     if (P->jan >= 0) vidroSoma(modo == GFX_TEXTURA ? txUv : gfx_janela_atual, sizeof txUv);
     if (P->veu >= 0) vidroSoma(gfx_veu_card_atual, sizeof gfx_veu_card_atual);
     if (P->heroiVeu >= 0) vidroSoma(gfx_card_heroi_veu_atual, sizeof gfx_card_heroi_veu_atual);
-    if (P->tempo >= 0) vidroSoma(&nv_tempo_viva, sizeof nv_tempo_viva);
+    if (P->tempo >= 0) {
+      float tq = floorf(nv_tempo_viva * 12.0f);   // same 12 Hz as ambAssar / frost
+      vidroSoma(&tq, sizeof tq);
+    }
     if (P->reg0 >= 0) vidroSoma(nv_ambiente_viva, sizeof nv_ambiente_viva);
     if (P->grad0 >= 0) vidroSoma(nv_grad_viva, sizeof nv_grad_viva);
     if (P->din >= 0) vidroSoma(dinPend, sizeof dinPend);
