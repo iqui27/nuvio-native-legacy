@@ -1,5 +1,4 @@
 /* Sports shelves share the match texture cache and guide focus registration. */
-static float gs_shelf_scroll[6],gs_shelf_velocity[6];
 static void gs_hub(void){
   const int section[]={1,0,2,3,4,5};
   float tab=(GV_MW-60)/6;
@@ -54,7 +53,11 @@ static void gs_hub(void){
       }
     }
     if(!n){
-      if((s==0||s==2||s==3)&&(esportes_catalogo_carregando()||esportes_carregando())){gs_empty(y+58);continue;}
+      int state=gs_empty_state(gs_pages[section[s]]);
+      if(state){
+        int reg=gv_reg;gv_reg=reg&&y+58>=380&&y+288<=1024;
+        gs_empty_draw(y+58,state,3000+s*400);gv_reg=reg;continue;
+      }
       GfxRect r={GV_MX,y+58,GV_MW,232};plrui_cartao(r,24,1);
       gfx_icone((GfxRect){r.x+28,r.y+30,44,44},gs_icons[section[s]],.65f,.67f,.7f,1);
       gv_label(TXT_ILHA_NOME,i18n(s==1?"Escolha seus times favoritos":"Nenhum resultado"),r.x+96,r.y+34,r.w-120,0);
@@ -71,7 +74,10 @@ static int gs_hub_activate(void){
   int s=(focus-3000)/400,at=(focus-3000)%400;
   if(at>=gs_shelf_n[s]){
     const int section[]={1,0,2,3,4,5};
-    gs_open(gs_pages[section[s]]);return 1;
+    if(gs_empty_state(gs_pages[section[s]])<0){gs_retry();return 1;}
+    if(s==1){gs_choosing=1;gs_sport=-1;gs_open("esportes-modalidades");}
+    else gs_open(gs_pages[section[s]]);
+    return 1;
   }
   if(s<4)gs_event_open(&gs_games[gs_shelf_ids[s][at]]);
   else if(s==4){
