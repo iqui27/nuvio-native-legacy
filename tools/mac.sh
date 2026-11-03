@@ -29,11 +29,14 @@ export NUVIO_DADOS="${NUVIO_DADOS:-$HOME/.nuvio}"
 BIN="${NUVIO_MAC_BIN:-${TMPDIR:-/tmp}/nuvio-native-legacy-mac}"
 # Nucleo EBML/NAL do mkv.c em Rust, ligado por padrao (docs/plans/rust-mapa.md);
 # NUVIO_RUST_MKVCORE=0 volta ao caminho C.
-RUST_D=()
-[ "${NUVIO_RUST_MKVCORE:-1}" = 1 ] && RUST_D=(-DNV_RUST_MKVCORE "$(tools/rust-mkvcore.sh)")
-eval cc src/*.c src/dts/*.c -o "$BIN" -O1 -g "$ENV_D" ${RUST_D[@]+'"${RUST_D[@]}"'} \
-  -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-  -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz \
-  -framework OpenGL -Wno-deprecated-declarations
+RUST_D="" RUST_LIB=""
+[ "${NUVIO_RUST_MKVCORE:-1}" = 1 ] && RUST_D=-DNV_RUST_MKVCORE RUST_LIB=$(tools/rust-mkvcore.sh)
+CFLAGS="-O1 -g $ENV_D $RUST_D -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -Wno-deprecated-declarations"
+# Paralelo e incremental, como o build da TV; flags novas = pasta nova de objetos.
+OBJ=build/mac-objects/$(echo "$CFLAGS" | shasum | cut -c1-12)
+SRC=$(echo src/*.c src/dts/*.c)
+make -s -j"$(sysctl -n hw.ncpu)" -f tools/native-objects.mk CC=cc OBJDIR="$OBJ" SOURCES="$SRC" NATIVE_FLAGS="$CFLAGS"
+cc $(for f in $SRC; do echo "$OBJ/${f%.c}.o"; done) $RUST_LIB -o "$BIN" \
+  -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
 [ -n "$NUVIO_MAC_SO_COMPILAR" ] && exit 0
 exec "$BIN" "$(pwd)/deploy/app/art" "$@"
