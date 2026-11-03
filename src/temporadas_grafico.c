@@ -132,8 +132,12 @@ int tgraf_montar(TgDados *d, const TgEp *eps, int n, int sabe, int agT, int agE,
   return d->n;
 }
 
+// Existe quando ha episodio no ar para mostrar. Antes so existia com visto
+// conhecido ou amigos, e a pagina reservava a altura do bloco (detail.c) sem
+// desenhar nada: o progresso sumia para quem ainda nao tinha mapa do vistoep.
+// O desconhecido continua sem preencher (desenho usa d->sabe), nunca vira zero.
 int tgraf_existe(const TgDados *d) {
-  return d && d->n > 0 && ((d->sabe && d->vistos > 0) || d->nAmg > 0);
+  return d && d->n > 0 && (d->exibidos > 0 || d->nAmg > 0);
 }
 
 void tgraf_frase_amigos(const TgDados *d, char *dst, size_t tam) {

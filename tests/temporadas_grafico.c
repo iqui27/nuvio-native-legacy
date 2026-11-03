@@ -120,14 +120,16 @@ int main(void) {
   assert(d.vistos == 0 && d.meuT == 0 && d.nFrente == 0 && tgraf_existe(&d));
   tgraf_frase_amigos(&d, frase, sizeof frase);
   assert(!strcmp(frase, "Onde seus amigos estão"));
+  // Sem mapa e sem amigos o bloco AINDA existe (o total aparece): o desconhecido
+  // nunca vira "0 visto" (sabe=0, vistos=0 so quer dizer "nao sabemos").
   tgraf_montar(&d, eps, nEps, 0, 3, 5, 0, NULL);
-  assert(!tgraf_existe(&d));
+  assert(!d.sabe && d.vistos == 0 && d.n > 0 && d.exibidos > 0 && tgraf_existe(&d));
 
-  // Com mapa mas nada visto e sem amigos: nao ha o que mostrar.
+  // Com mapa e nada visto (zero conhecido): o bloco existe e mostra 0 de verdade.
   nEps = 0;
   for (i = 1; i <= 6; i++) ep(1, i, 0);
   tgraf_montar(&d, eps, nEps, 1, 0, 0, 0, NULL);
-  assert(d.n == 1 && d.vistos == 0 && !tgraf_existe(&d));
+  assert(d.n == 1 && d.sabe && d.vistos == 0 && tgraf_existe(&d));
 
   // Id de Continuar assistindo: a segunda consulta reutiliza a montagem.
   { CatItem item = {0}; CatEp episodio = {0}; const TgDados *cache;
