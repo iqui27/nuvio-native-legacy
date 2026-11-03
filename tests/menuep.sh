@@ -26,4 +26,10 @@ if ! cc "${sources[@]}" tests/menuep.c -Isrc -o "$NUVIO_DADOS/teste" \
   cat "$NUVIO_DADOS/build.log" >&2
   exit 1
 fi
-"$NUVIO_DADOS/teste" "$@"
+if [ "${NV_EP_MENU_ALL:-}" = 1 ]; then
+  for layout in 0 1 2; do
+    NV_EP_MENU_LAYOUT="$layout" "$NUVIO_DADOS/teste" "${1:-$NUVIO_DADOS/menu}-$layout"
+  done
+else
+  "$NUVIO_DADOS/teste" "$@"
+fi
