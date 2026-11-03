@@ -117,28 +117,32 @@ static void caption_check(const char *prefix) {
   glClearColor(0,0,0,1);glClear(GL_COLOR_BUFFER_BIT);
   txt_novo_quadro();
   float previous=gfx_escala_txt_entrar();
-  TxtLinha line=txt_linha_corta(TXT_ILHA_SUB,"2024 · Protagonista",170,170,178,255,lineW/scale);
-  txt_desenhar_alpha(line,0,0,1);
-  gfx_escala_sair(previous);
-  glReadPixels(0,1080-lineH,lineW,lineH,GL_RGBA,GL_UNSIGNED_BYTE,expected);
+  TxtLinha line=txt_linha_corta(TXT_ILHA_SUB,"2024 · Protagonista",170,170,178,255,lineW);
+  int tx=(int)(200*scale+.5f),ty=(int)(200*scale+.5f);
+  gfx_sem_transformar();txt_desenhar_alpha(line,200,200,1);gfx_escala_sair(previous);
+  glReadPixels(tx,1080-ty-lineH,lineW,lineH,GL_RGBA,GL_UNSIGNED_BYTE,expected);
   // Search only below poster/title, so bright artwork cannot impersonate glyphs.
-  int ink=0,matched=0,best=0,bestActual=0;
+  int ink=0,matched=0,best=0,bestExtra=w*lineH;
   for(int yy=1;yy<lineH-4;yy++)for(int xx=1;xx<lineW-1;xx++)ink+=expected[(yy*lineW+xx)*4]>65;
   for(int oy=0;oy<=h-lineH;oy++){
-    int hits=0,actualInk=0;
-    for(int yy=0;yy<lineH;yy++)for(int xx=0;xx<w;xx++)actualInk+=actual[((oy+yy)*w+xx)*4]>65;
+    int hits=0,extra=0;
     for(int yy=1;yy<lineH-4;yy++)for(int xx=1;xx<lineW-1;xx++)if(expected[(yy*lineW+xx)*4]>65){
       int found=0;
       for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++)found|=actual[((oy+yy+dy)*w+xx+dx)*4]>65;
       hits+=found;
     }
-    if(hits>best){best=hits;bestActual=actualInk;}
+    for(int yy=0;yy<lineH;yy++)for(int xx=0;xx<w;xx++)if(actual[((oy+yy)*w+xx)*4]>65){
+      int found=0;
+      for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++)if(xx+dx>=0&&xx+dx<lineW&&yy+dy>=0&&yy+dy<lineH)found|=expected[((yy+dy)*lineW+xx+dx)*4]>65;
+      extra+=!found;
+    }
+    if(hits>best||(hits==best&&extra<bestExtra)){best=hits;bestExtra=extra;}
   }
   matched=best;
   char path[700];snprintf(path,sizeof path,"%s-caption.txt",prefix);FILE *f=fopen(path,"w");assert(f);
-  int ok=ink>20&&matched>=ink*.95f&&bestActual<=ink*1.5f&&matched>=bestActual*.75f;
+  int ok=ink>20&&matched>=ink*.95f&&bestExtra<=ink*.05f;
   fprintf(f,"%s\n",ok?"PASS":"FAIL");fclose(f);
-  printf("caption %s: %d/%d glyph pixels; foreground %d\n",prefix,matched,ink,bestActual);
+  printf("caption %s: %d/%d glyph pixels; extra %d\n",prefix,matched,ink,bestExtra);
   assert(ok);
 }
 int main(int argc,char **argv){assert(argc==2||argc==3);dados_iniciar(NULL);assert(!strcmp(dados_dir(),getenv("NUVIO_DADOS")));assert(dados_gravar("ajustes.txt","idioma 0\nselected_theme 2\n"));ajustes_dir(dados_dir());SDL_SetHint("SDL_MAC_BACKGROUND_APP","1");assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));IMG_Init(IMG_INIT_PNG);SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2);SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);SDL_Window *win=SDL_CreateWindow("filmo",0,0,64,64,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);assert(win);assert(SDL_GL_CreateContext(win));GLuint tex,fbo;glGenTextures(1,&tex);glBindTexture(GL_TEXTURE_2D,tex);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,1920,1080,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);glGenFramebuffers(1,&fbo);glBindFramebuffer(GL_FRAMEBUFFER,fbo);glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,tex,0);assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);glViewport(0,0,1920,1080);gfx_tamanho_alvo(1920,1080);assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));tex_iniciar(256);char *art=realpath("deploy/app/art",NULL);assert(art);gfx_icones_dir(art);free(art);
