@@ -404,7 +404,9 @@ static float scrollSec[N_SECOES];    // rolagem HORIZONTAL de cada fileira
 static float scrollY = 0.0f;         // rolagem VERTICAL do documento
 static int notaMinha(void) {
   const CatItem *ci=cat_item(idx); DiarioTitulo d;
-  return ci && diario_titulo(0,ci->imdb,&d) ? d.nota10 : 0;
+  if (!ci) return 0;
+  int nota = reacao_nota(ci->imdb);
+  return nota ? nota : diario_titulo(0,ci->imdb,&d) ? d.nota10 : 0;
 }
 static void notaAbrir(void) {
   reacao_detalhe_abrir(cat_item(idx));

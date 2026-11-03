@@ -138,8 +138,11 @@ int main(void) {
   // 5. Nota, flags, tags, data, apagar.
   assert(diario_avaliar(0, "tt0001", 'm', 9));
   assert(diario_titulo(0, "tt0001", &t) && t.nota10 == 9);
-  assert(diario_avaliar(0, "tt5555", 'm', 6));             // sem entrada: cria 'm' aproximada
-  assert(diario_titulo(0, "tt5555", &t) && t.vezes == 1 && (t.flags & DIARIO_F_DATA_APROX));
+  assert(!diario_avaliar(0, "tt5555", 'm', 6)); // nota sem reproducao nao cria visita
+  assert(!diario_titulo(0, "tt5555", &t) && t.vezes == 0);
+  assert(diario_n_titulos(0) == 2);
+  assert(!diario_avaliar(0, "tt5555", 'm', 0));
+  assert(!diario_titulo(0, "tt5555", &t) && t.vezes == 0);
   assert(diario_definir_flags(0, "tt0001", 0, 0, 0, DIARIO_F_CORACAO | DIARIO_F_REVER, 0));
   assert(diario_por_titulo(0, "tt0001", v, 16) == 3 && (v[2].flags & DIARIO_F_CORACAO));
   assert(v[2].flags & DIARIO_F_REVER);   // REVER nao e mexido por fora
@@ -147,9 +150,12 @@ int main(void) {
   assert(!diario_definir_nota(0, "tt0001", 0, 0, 0, 11));
   assert(diario_definir_data(0, "tt0900", 2, 1, T0 + 5000, T0 + 9000));
   assert(diario_episodio(0, "tt0900", 2, 1, &q) == 1 && q == T0 + 9000);
-  assert(diario_apagar(0, "tt5555", 0, 0, 0));
-  assert(!diario_titulo(0, "tt5555", &t));
   assert(!diario_apagar(0, "tt5555", 0, 0, 0));
+  e = ent("tt5555", 'p', T0 + 30000);
+  assert(diario_adicionar(0, &e) == 1);
+  assert(diario_avaliar(0, "tt5555", 'm', 6));
+  assert(diario_titulo(0, "tt5555", &t) && t.vezes == 1 && t.nota10 == 6);
+  assert(diario_apagar(0, "tt5555", 0, 0, 0));
 
   // 6. Sono PARCIAL nao conta como vez nem como episodio.
   e = ent("tt0900:3:1", 'p', T0 + 20000); e.flags = DIARIO_F_PARCIAL | DIARIO_F_DORMIU_SUS; e.dormiuSeg = 1500;

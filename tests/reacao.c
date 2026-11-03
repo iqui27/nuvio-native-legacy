@@ -15,6 +15,7 @@
 #include "trakt.h"
 #include "ilhaacao.h"
 #include "diario.h"
+#include "cacavisto.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -153,6 +154,10 @@ static void nota(void) {
   CHECA(reacao_nota("tt0903747") == 8, "atalho Gostei grava nota 8");
   CHECA(reacao_nota("tt9999999") == 0, "sem nota = 0");
   DiarioTitulo diario;
+  DiarioEntrada vista = {0};
+  snprintf(vista.id, sizeof vista.id, "%s", "tt0111161");
+  vista.origem = DIARIO_ORIG_PLAYER; vista.tipo = DIARIO_FILME;
+  CHECA(diario_adicionar(0, &vista) >= 0, "real viewing before rating");
   reacao_nota_definir("tt0111161", 9);
   CHECA(diario_titulo(0, "tt0111161", &diario) && diario.nota10 == 9, "diary preserves exact rating 9");
   CHECA(reacao_nota("tt0111161") == 9 && reacao_estado("tt0111161") == REACAO_GOSTEI,
@@ -182,15 +187,21 @@ static void nota(void) {
     e = tecla(SDLK_RIGHT); reacao_evento(&e, 0);
     e = tecla(SDLK_RETURN); reacao_evento(&e, 0);
     CHECA(reacao_nota(f.imdb) == 9, "island Up/Right saves 4.5 stars");
-    CHECA(diario_titulo(0, f.imdb, &diario) && diario.nota10 == 9, "island diary saves 9");
+    CHECA(!diario_titulo(0, f.imdb, &diario) && diario.vezes == 0, "rating unseen title does not mark watched");
+    CHECA(!cacavisto_filme(f.imdb, 0, NULL), "rating does not count in Caca");
+    CHECA(reacao_nota(f.imdb) == 9, "unseen rating is available");
     e = tecla(SDLK_LEFT); reacao_evento(&e, 0);
     e = tecla(SDLK_RETURN); reacao_evento(&e, 0);
     CHECA(reacao_nota(f.imdb) == 0 && reacao_estado(f.imdb) == REACAO_NENHUMA,
           "saved island undo restores unrated title");
-    CHECA(diario_titulo(0, f.imdb, &diario) && diario.nota10 == 0, "undo clears diary rating");
+    CHECA(!diario_titulo(0, f.imdb, &diario) && diario.vezes == 0, "undo does not mark watched");
     reacao_fechar();
     perfis_definir_ativo(2); perfis_definir_ativo(1);
     CHECA(reacao_nota(f.imdb) == 0, "undo removal survives profile reload");
+    reacao_nota_definir(f.imdb, 7);
+    perfis_definir_ativo(2); perfis_definir_ativo(1);
+    CHECA(reacao_nota(f.imdb) == 7, "unseen rating survives profile reload");
+    CHECA(!cacavisto_filme(f.imdb, 0, NULL), "reloaded rating does not count in Caca");
   }
   reacao_nota_definir("tt0111161", 11);
   CHECA(reacao_nota("tt0111161") == 1, "nota fora de 1 a 10 ignorada");

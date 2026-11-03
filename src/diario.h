@@ -11,7 +11,7 @@
 //   'c' conta    — sync_pull_watched_items (contalib), no perfil ativo
 //   't' Trakt    — watched/* + history do ano corrente
 //   'l' Letterboxd — importacao feita pela propria pessoa (celular)
-//   'm' manual   — a pessoa marcou/avaliou na TV
+//   'm' manual   — a pessoa marcou como assistido na TV
 // FUSAO: a mesma (id, temporada, episodio) com `quando` a menos de 6 h e a
 // MESMA vez; fica a fonte de mais confianca (p > t > c > l > m) e os campos
 // que ela nao tem vem da outra (nota, cor, seg...). Fora da janela e outra vez.
@@ -158,8 +158,8 @@ int  diario_definir_data(int perfil, const char *id, int t, int e, long long qua
 int  diario_apagar(int perfil, const char *id, int t, int e, long long quando);
 
 // Nota de TITULO (pagina do titulo, reacao dos creditos): grava na entrada de
-// nivel de titulo mais recente; sem nenhuma, cria uma 'm' agora com DATA_APROX.
-// Devolve 1 se gravou.
+// nivel de titulo mais recente; sem nenhuma, nao cria uma vez assistida.
+// A nota independente e guardada por reacao. Devolve 1 se gravou no diario.
 int  diario_avaliar(int perfil, const char *id, char tipo, int nota10);
 // Reacao dos creditos (REACAO_GOSTEI=1 / MAIS_MENOS=0 / NAO=-1) -> 8 / 5 / 2.
 int  diario_nota_da_reacao(int reacao);
