@@ -475,6 +475,36 @@ static void openingPreviews(void) {
     ajustes_teste_cena_t(-1.0f); valor[AJ_TELA_ABERTURA] = saved[0]; ajMovReiniciar();
   }
 }
+static float palcoX(void) { return fmaxf(triPalcoR().x, triEstagioBorda); }
+static void palcoRetorno(void) {
+  layout_modo_definir(0); tela(1920, 1080);
+  triIniciar(); triEntrar(AJS_REPRODUCAO); quadros(60);
+  float inicial = palcoX();
+  triIrSecoes(); quadros(4);
+  confere(triProfF > 0.1f && triProfF < 0.9f && palcoX() < inicial - 40.0f,
+          "returning stage follows depth while the Playback blade leaves");
+  triIniciar(); triEntrar(AJS_REPRODUCAO); quadros(4);
+  float antes = palcoX();
+  triIrSecoes();
+  int continuo = 1;
+  for (int i = 0; i < 20; i++) { quadros(1); if (fabsf(palcoX() - antes) >= 90.0f) continuo = 0; antes = palcoX(); }
+  confere(continuo, "reversing entry keeps stage position continuous on every frame");
+  triEntrar(AJS_REPRODUCAO); quadros(60);
+  int bloco = -1;
+  for (int i = secIni[secAtual] + 1; i < secFim(secAtual); i++)
+    if (triTopico(i)) { bloco = i; break; }
+  assert(bloco >= 0);
+  triSubmenu = bloco; quadros(4);
+  antes = palcoX(); triSubmenu = -1; continuo = 1;
+  for (int i = 0; i < 20; i++) { quadros(1); if (fabsf(palcoX() - antes) >= 90.0f) continuo = 0; antes = palcoX(); }
+  confere(continuo, "reversing nested entry keeps stage position continuous on every frame");
+  valor[AJ_ANIM] = 1;
+  triEntrar(AJS_REPRODUCAO); quadros(1);
+  triIrSecoes(); quadros(1);
+  confere(triProfF == 0.0f && triEstagioBorda == 0.0f,
+          "reduced motion returns the stage immediately");
+  valor[AJ_ANIM] = 0;
+}
 int main(int argc, char **argv) {
   setvbuf(stdout, NULL, _IONBF, 0);
   char dir[1024];
@@ -494,7 +524,7 @@ int main(int argc, char **argv) {
   ponteiro_iniciar(); ponteiro_teste_toque(1); ponteiro_teste_relogio(agora); ponteiro_teste_janela(1920, 1080);
   quadros(5);
   if (palcoOnly) {
-    palcoSegmentada(); palcoProfundoRolado(); palcoChoiceEditorRender(); openingPreviews();
+    palcoRetorno(); palcoSegmentada(); palcoProfundoRolado(); palcoChoiceEditorRender(); openingPreviews();
     return falhas ? 1 : 0;
   }
   retrato();
