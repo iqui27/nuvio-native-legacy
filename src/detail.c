@@ -951,12 +951,11 @@ static float docFim = NV_DETP_FIM;
 // A DIREITA do cabecalho, a linha de contexto do mockup v2 ("OK abre no
 // player, com som", "Trakt · ordenado por curtidas"): cinza 21px, alinhada
 // na margem direita. NULL = sem linha (Notas ja tem a classificacao ali).
-static int progTemNotas(void);   // definida adiante, junto da grade
 static const char *dicaSecao(int r) {
   switch (r) {
     case SEC_TRAILERS:     return layout_desktop_ativo() ? NULL : "OK abre no player, com som";
     case SEC_COMENTARIOS:  return "Trakt · ordenado por curtidas";
-    case SEC_PROGTEMP:     return progTemNotas() ? "IMDb · traço = visto" : NULL;
+    case SEC_PROGTEMP:     return NULL;
     case SEC_COLECAO:      return ehSerie() ? NULL : "ordem de lançamento";
     default:               return NULL;
   }
@@ -969,7 +968,7 @@ static const char *cabecalhoDe(int r) {
   // DENTRO da secao, e ao lado do "Trailers" e do "Estúdios" do filme parecia
   // de outra pagina. Agora e o mesmo TXT_HEADLINE, com o mesmo vao.
   if (r == SEC_NOTAS) return "Notas";
-  if (r == SEC_PROGTEMP) return "Seu progresso · nota de cada episódio";
+  if (r == SEC_PROGTEMP) return "Seu progresso";
   if (r == SEC_NOTAS_EP) return "Notas por episódio";
   if (r == SEC_RELACIONADOS) return "Mais como este";
   if (r == SEC_MUSICAS) return "Músicas";
@@ -1339,17 +1338,84 @@ static int notaDe(int i) {
 // cai na reserva do catalogo quando o MDBList nao respondeu) e, em serie, as
 // funcoes que entregam as notas por episodio. Barata: e chamada varias vezes
 // por quadro (empilhamento, foco, desenho).
+// Join real catalog and Trakt episodes by season and episode number.
+static int notasCatTemp(int t) {
+  if (t < nTemps()) return temporadaEm(t);
+  t -= nTemps();
+  for (int k = 0; k < extras_n_temporadas(); k++) {
+    int num = extras_temporada_numero(k), existe = 0;
+    for (int j = 0; j < nTemps(); j++) if (temporadaEm(j) == num) existe = 1;
+    if (!existe && t-- == 0) return num;
+  }
+  return -1;
+}
+static int notasCatNTemp(void) {
+  int n = nTemps();
+  for (int k = 0; k < extras_n_temporadas(); k++) {
+    int existe = 0;
+    for (int j = 0; j < nTemps(); j++) if (temporadaEm(j) == extras_temporada_numero(k)) existe = 1;
+    if (!existe) n++;
+  }
+  return n;
+}
+static int notasExtraTemp(int num) {
+  for (int t = 0; t < extras_n_temporadas(); t++) if (extras_temporada_numero(t) == num) return t;
+  return -1;
+}
+static const CatEp *notasCatPorNumero(int temp, int numero) {
+  for (int k = 0; k < cat_n_episodios(idx); k++) {
+    const CatEp *ep = cat_episodio(idx, k);
+    if (ep && ep->temporada == temp && ep->episodio == numero) return ep;
+  }
+  return NULL;
+}
+static int notasCatNumero(int t, int i) {
+  int num = notasCatTemp(t), et = notasExtraTemp(num);
+  if (et >= 0 && i < extras_n_eps(et)) return extras_ep_numero(et, i);
+  if (et >= 0) i -= extras_n_eps(et);
+  for (int k = 0; k < cat_n_episodios(idx); k++) {
+    const CatEp *ep = cat_episodio(idx, k);
+    int existe = 0;
+    if (!ep || ep->temporada != num) continue;
+    if (et >= 0) for (int j = 0; j < extras_n_eps(et); j++)
+      if (extras_ep_numero(et, j) == ep->episodio) existe = 1;
+    if (!existe && i-- == 0) return ep->episodio;
+  }
+  return 0;
+}
+static int notasCatNEps(int t) {
+  int num = notasCatTemp(t), et = notasExtraTemp(num), n = 0;
+  for (int k = 0; k < cat_n_episodios(idx); k++) {
+    const CatEp *ep = cat_episodio(idx, k);
+    if (ep && ep->temporada == num) n++;
+  }
+  if (et >= 0) for (int k = 0; k < extras_n_eps(et); k++)
+    if (!notasCatPorNumero(num, extras_ep_numero(et, k))) n++;
+  return n;
+}
+static int notasCatNota(int t, int i) {
+  int num = notasCatTemp(t), ep = notasCatNumero(t, i), et = notasExtraTemp(num);
+  if (et >= 0) for (int k = 0; k < extras_n_eps(et); k++)
+    if (extras_ep_numero(et, k) == ep && extras_ep_nota(et, k) > 0) return extras_ep_nota(et, k);
+  const CatEp *e = notasCatPorNumero(num, ep);
+  return e ? e->nota : 0;
+}
+static int notasCatDisponiveis(void) {
+  for (int k = 0; k < cat_n_episodios(idx); k++) {
+    const CatEp *ep = cat_episodio(idx, k);
+    if (ep && ep->nota > 0) return 1;
+  }
+  return 0;
+}
 static const NotasSecao *notasDados(void) {
   static NotasSecao s;
   int i;
   for (i = 0; i < EX_NFONTES; i++) s.cru[i] = extras_nota(i);
   if (!s.cru[EX_IMDB] && ajustes_mdblist_fonte(EX_IMDB)) s.cru[EX_IMDB] = notaDe(idx);
   s.notaPessoal = reacao_nota(cat_item(idx)->imdb);
-  s.nTemp = ehSerie() ? extras_n_temporadas() : 0;
-  s.tempNum = extras_temporada_numero;
-  s.nEps = extras_n_eps;
-  s.epNum = extras_ep_numero;
-  s.epNota = extras_ep_nota;
+  s.nTemp = ehSerie() && (extras_n_temporadas() || notasCatDisponiveis()) ? notasCatNTemp() : 0;
+  s.tempNum = notasCatTemp; s.nEps = notasCatNEps;
+  s.epNum = notasCatNumero; s.epNota = notasCatNota;
   return &s;
 }
 
@@ -2437,29 +2503,6 @@ static float epAppleExtra(void) { return epApple() ? epCardH() - 414.0f : 0.0f; 
 // Topo do cabecalho: fundo dos cartoes de episodio + o vao antes das notas (60,
 // o mesmo de vaoAntes).
 // O GRAFICO DE TEMPORADAS ("Seu progresso") vem antes das Notas e as empurra.
-static int progVizinho(int col, int dy) {
-  const CatEp *ep = cat_episodio(idx, col);
-  int alvo = 0;
-  if (!ep) return -1;
-  for (int i=0; i<cat_n_episodios(idx); i++) {
-    const CatEp *p = cat_episodio(idx, i);
-    if (!p || (dy > 0 ? p->temporada <= ep->temporada : p->temporada >= ep->temporada)) continue;
-    if (!alvo || (dy > 0 ? p->temporada < alvo : p->temporada > alvo)) alvo = p->temporada;
-  }
-  int melhor=-1;
-  for (int i=0; alvo && i<cat_n_episodios(idx); i++) {
-    const CatEp *p=cat_episodio(idx,i);
-    if (p && p->temporada==alvo && (melhor<0 ||
-        abs(p->episodio-ep->episodio)<abs(cat_episodio(idx,melhor)->episodio-ep->episodio))) melhor=i;
-  }
-  return melhor;
-}
-static int progTemNotas(void) {
-  for (int i=0; i<cat_n_episodios(idx); i++) {
-    const CatEp *ep=cat_episodio(idx,i); if (ep && ep->nota>0) return 1;
-  }
-  return 0;
-}
 static float progTopoSerie(void) { return epRowY() + epCardH() + 60.0f; }
 static float progBloco(void) {
   return secaoN(SEC_PROGTEMP) > 0 ? alturaSecao(SEC_PROGTEMP) + 60.0f : 0.0f;
@@ -2520,11 +2563,7 @@ static float alturaSecao(int r) {
     case SEC_NOTAS_EP:  return 0.0f;
     case SEC_PROGTEMP: {
       const TgDados *td = tgraf_dados(idx);
-      float hTg = tgraf_existe(td) ? tgraf_altura_dados(td) : 0.0f;
-      if (!progTemNotas()) return hTg;
-      { float hGrade = epModerno() ? 292.0f : 360.0f;
-        float gap = hTg > 0.0f ? 28.0f : 0.0f;
-        return hTg + gap + hGrade; }
+      return tgraf_existe(td) ? tgraf_altura_dados(td) : 0.0f;
     }
     case SEC_MUSICAS:   return MUS_H;
   }
@@ -2650,11 +2689,15 @@ static int secaoN(int r) {
     // Sem a lista de episodios do Trakt o bloco NAO EXISTE: as notas por
     // episodio e os numeros dos episodios saem todos do
     // `seasons?extended=episodes,full`.
-    case SEC_AUD_ARCO: return 0;
-    case -2: {
+    case SEC_AUD_ARCO: {
       int t = audTemp(), n;
-      if (t < 0) return 0;
-      n = extras_n_eps(t);
+      if (t < 0) {
+        n = notasDados()->nTemp ? notasCatNEps(temporada) : 0;
+        return n < SA_EP_MAX ? n : SA_EP_MAX;
+      }
+      int pos = 0, num = extras_temporada_numero(t);
+      while (pos < notasDados()->nTemp && notasDados()->tempNum(pos) != num) pos++;
+      n = pos < notasDados()->nTemp ? notasDados()->nEps(pos) : 0;
       return n < SA_EP_MAX ? n : SA_EP_MAX;
     }
     case SEC_AUD_RADAR:
@@ -2692,7 +2735,6 @@ static int secaoN(int r) {
       const TgDados *d;
       if (!ehSerie()) return 0;
       d = tgraf_dados(idx);
-      if (progTemNotas()) return cat_n_episodios(idx) < N_ITENS ? cat_n_episodios(idx) : N_ITENS;
       return tgraf_existe(d) ? (d->n < N_ITENS ? d->n : N_ITENS) : 0;
     }
   }
@@ -3448,16 +3490,7 @@ static void detail_evento_(const SDL_Event *e) {
     } else if (foco.fileira == SEC_COLECAO) {
       abrirListaColecao();
     } else if (foco.fileira == SEC_PROGTEMP) {
-      if (progTemNotas()) {
-        const CatEp *ep = cat_episodio(idx, foco.coluna);
-        const CatItem *ci = cat_item(idx);
-        if (ep && ci) {
-          for (int k=0; k<ci->nTemporadas; k++) if (ci->temporadas[k]==ep->temporada) { temporada=k; break; }
-          for (int k=0; k<epVisiveis(); k++) if (epAbsoluto(k)==foco.coluna) {
-            foco.fileira=SEC_EPISODIOS; foco.coluna=k; epAncora=k; pedReproduzir=1; break;
-          }
-        }
-      } else progAbrirTemporada(foco.coluna);
+      progAbrirTemporada(foco.coluna);
     } else if (foco.fileira == SEC_TEMPORADAS && ehShuffle(foco.coluna)) {
       // Botao de episodio aleatorio: toque curto ou longo, o gesto e o mesmo.
       tocarAleatorio();
@@ -3734,18 +3767,6 @@ static void detail_evento_(const SDL_Event *e) {
   // Nao e mais preciso: secaoN devolve a contagem DA ABA ATIVA, entao a fileira
   // ou tem colunas de verdade (e o foco pousa no que esta desenhado) ou tem
   // zero, e focus_mover pula sozinho.
-  if (foco.fileira == SEC_PROGTEMP && progTemNotas()) {
-    if (k == SDLK_UP || k == SDLK_DOWN) {
-      int c=progVizinho(foco.coluna, k==SDLK_DOWN ? 1 : -1);
-      if (c>=0 && c<N_ITENS) { foco.coluna=c; return; }
-    }
-    if (k == SDLK_LEFT || k == SDLK_RIGHT) {
-      int c=foco.coluna+(k==SDLK_RIGHT ? 1 : -1);
-      const CatEp *a=cat_episodio(idx,foco.coluna), *b=cat_episodio(idx,c);
-      if (a && b && c>=0 && c<N_ITENS && a->temporada==b->temporada) foco.coluna=c;
-      return;
-    }
-  }
   // FILEIRA DE EPISODIOS DE SERIE: a fileira e horizontal, entao esquerda/
   // direita ANDAM pelos episodios e, na PONTA, passam para a temporada vizinha
   // (dono, 03/10: trocar de temporada so apertando para os lados em cima do
@@ -4287,7 +4308,7 @@ static void detail_atualizar_(float dt, Uint32 agora) {
 
   // "Seu progresso" entra pela coluna da temporada escolhida na pagina.
   if (ehSerie() && foco.fileira != SEC_PROGTEMP) {
-    int c = progTemNotas() ? epAbsoluto(epAncora) : tgraf_coluna(tgraf_dados(idx), temporadaEm(temporada));
+    int c = tgraf_coluna(tgraf_dados(idx), temporadaEm(temporada));
     if (c >= 0) foco.colunaLembrada[SEC_PROGTEMP] = c;
   }
 
@@ -6636,17 +6657,25 @@ static void desenhaShuffle(GfxRect r, float f, float a) {
 // estados, nenhum deles contorno: nada (so texto a 55%), ESCOLHIDA (branco
 // 14% / #34363E, texto branco) e FOCADA (pilula cheia no acento com a luz,
 // tinta de contraste). A contagem de episodios vai ao lado, em 16 a 35%.
+static float temporadaBrilho(int sel) {
+  return !sel ? 0.0f : epApple() && !epModerno() && nivel >= 1 && foco.fileira == SEC_EPISODIOS ? 1.0f : .6f;
+}
+static float temporadaFocoVisual(int sel, float f) {
+  return sel && epApple() && !epModerno() && nivel >= 1 && foco.fileira == SEC_EPISODIOS ? 1.0f : f;
+}
 static void desenhaTemporada(GfxRect r, int c, float f, float a) {
   char rot[32]; rotuloTemporada(c,rot,sizeof rot);
   int real=c<colTemp(nTemporadasReais()) && !ehShuffle(c), sel=real && posTemp(c)==temporada;
   float ar,ag,ab; ajustes_acento(&ar,&ag,&ab);
   float fr, fg, fb, ti = ajustes_acento_tinta(&fr, &fg, &fb);
+  f = temporadaFocoVisual(sel, f);
   if (epModerno()) {
     gfx_cor(r, .5f, 1, 1, 1, (sel ? .14f : 0)*a);
     if (ajustes_vidro()) gfx_vidro_pilula_cheia(r, .5f, f, a);
     else gfx_cor(r, .5f, fr, fg, fb, anim_clamp(f, 0, 1)*a);
   } else {
-    float br=sel ? fr*.6f : .133f, bg=sel ? fg*.6f : .133f, bb=sel ? fb*.6f : .133f;
+    float luz=temporadaBrilho(sel);
+    float br=sel ? fr*luz : .133f, bg=sel ? fg*luz : .133f, bb=sel ? fb*luz : .133f;
     foco_anel(r, .5f, f, a);
     if (ajustes_vidro()) {
       if (sel) gfx_vidro_painel_acento(r,.5f,.5f,a); else gfx_vidro_painel(r,.5f,.4f,a);
@@ -6676,13 +6705,15 @@ static void desenhaTemporada(GfxRect r, int c, float f, float a) {
     return;
   }
   if (!epModerno()) {
-    const TgDados *d=tgraf_dados(idx);
-    int pc=real ? tgraf_coluna(d,temporadaEm(posTemp(c))) : -1;
-    if (pc>=0 && d->sabe && d->t[pc].exibidos>0) {
-      GfxRect bar={r.x+22,r.y+r.h-8,r.w-44,3};
-      gfx_cor(bar,.5f,1,1,1,.12f*a);
-      bar.w*=d->t[pc].vistos/(float)d->t[pc].exibidos;
-      gfx_cor(bar,.5f,fr,fg,fb,a);
+    if (!epApple()) {
+      const TgDados *d=tgraf_dados(idx);
+      int pc=real ? tgraf_coluna(d,temporadaEm(posTemp(c))) : -1;
+      if (pc>=0 && d->sabe && d->t[pc].exibidos>0) {
+        GfxRect bar={r.x+22,r.y+r.h-8,r.w-44,3};
+        gfx_cor(bar,.5f,1,1,1,.12f*a);
+        bar.w*=d->t[pc].vistos/(float)d->t[pc].exibidos;
+        gfx_cor(bar,.5f,fr,fg,fb,a);
+      }
     }
     int color=ajustes_vidro() ? (f>.5f ? (int)(ti*255+.5f) : sel ? 245 : 179)
                              : (sel || f>.5f) ? (int)(ti*255+.5f) : 179;
@@ -8468,15 +8499,16 @@ static float desenhaChamada(float x, float y, const char *titulo,
 static void desenhaNumeros(float x, float y, float a) {
   SaBloco b;
   int t = audTemp();
-  if (t < 0) return;
+  int numero = t < 0 ? temporadaEm(temporada) : extras_temporada_numero(t);
   memset(&b, 0, sizeof b);
-  b.temporada = extras_temporada_numero(t);
-  b.tempIdx = t;
+  b.temporada = numero;
+  b.tempIdx = 0;
+  while (b.tempIdx < notasDados()->nTemp && notasDados()->tempNum(b.tempIdx) != numero) b.tempIdx++;
   b.sel = (nivel >= 1 && foco.fileira == SEC_NUMEROS) ? foco.coluna
                                                       : foco.colunaLembrada[SEC_NUMEROS];
   if (b.sel < 0 || b.sel >= secaoN(SEC_NUMEROS)) b.sel = 0;
-  b.selEp = extras_ep_numero(t, b.sel);
-  b.aberto = audAberta && audTempAberta == b.temporada;
+  b.selEp = notasDados()->epNum(b.tempIdx, b.sel);
+  b.aberto = audTemp() >= 0 && audAberta && audTempAberta == b.temporada;
   b.notas = notasDados();
   serieaud_bloco(x, y, &b, a);
 }
@@ -8609,10 +8641,6 @@ static int moverFileira(int dy) {
     if (foco.nColunas[r] > 0) {
       int alvo = foco.colunaLembrada[r];
       if (foco.fileira==SEC_EPISODIOS && r==SEC_TEMPORADAS) alvo=colTemp(temporada);
-      if (foco.fileira==SEC_EPISODIOS && r==SEC_PROGTEMP && progTemNotas()) alvo=epAbsoluto(foco.coluna);
-      if (foco.fileira==SEC_PROGTEMP && r==SEC_EPISODIOS && progTemNotas()) {
-        for (int c=0;c<epVisiveis();c++) if (epAbsoluto(c)==foco.coluna) { alvo=c; break; }
-      }
       foco.colunaLembrada[foco.fileira] = foco.coluna;
       if (alvo >= foco.nColunas[r]) alvo = foco.nColunas[r] - 1;
       if (alvo < 0) alvo = 0;
@@ -8673,119 +8701,6 @@ static void menuDeVisto(Uint32 agora) {
     }
   }
   menuOrigem.w = 0.0f;   // so vale a caixa do quadro em que a peca foi desenhada
-}
-
-static int progMelhorNaoVisto(int *t, int *e) {
-  const CatItem *ci=cat_item(idx); int melhor=0; *t=*e=0;
-  for (int i=0; ci && i<cat_n_episodios(idx); i++) {
-    const CatEp *ep=cat_episodio(idx,i);
-    if (ep && ep->nota>melhor && !epNaoExibido(ep) &&
-        vistoep_estado(ci->imdb,ep->temporada,ep->episodio)!=1) {
-      melhor=ep->nota; *t=ep->temporada; *e=ep->episodio;
-    }
-  }
-  return melhor;
-}
-
-static void desenhaGradeProgresso(float x, float y, float a) {
-  int focoGrade=nivel>=1 && foco.fileira==SEC_PROGTEMP;
-  int alvo=focoGrade ? foco.coluna : epAbsoluto(epAncora);
-  const CatEp *ep=cat_episodio(idx,alvo);
-  const CatItem *ci=cat_item(idx);
-  if (!ci || !ep) return;
-
-  int temp[5]={0}, nt=0;
-  // Window around the selected season; at most fifty cells, no image textures.
-  int inicio=ep->temporada>2 ? ep->temporada-2 : 0;
-  for (int i=0; i<cat_n_episodios(idx) && nt<5; i++) {
-    const CatEp *p=cat_episodio(idx,i);
-    if (p && p->temporada>=inicio && (!nt || temp[nt-1]!=p->temporada)) temp[nt++]=p->temporada;
-  }
-  int primeiro=((ep->episodio-1)/10)*10+1;
-  float cr,cg,cb; ajustes_acento(&cr,&cg,&cb);
-  for (int row=0; row<nt; row++) {
-    char nome[32]; snprintf(nome,sizeof nome,"T%d",temp[row]);
-    txt_desenhar_alpha(txt_linha(TXT_G22M,nome,243,242,239,220),x+44,y+8+row*56,a);
-    gfx_anel((GfxRect){x,y+10+row*56,28,28},.5f,3,1,1,1,.18f*a);
-    // ARCO DA FILEIRA (mockup v2): a fracao vista da temporada no circulo,
-    // no acento — o mesmo anel da aba de temporada.
-    if (vistoep_conhecido(ci->imdb)) { int tv=0,tev=0;
-      for (int j=0;j<cat_n_episodios(idx);j++) {
-        const CatEp *q0=cat_episodio(idx,j);
-        if (!q0 || q0->temporada!=temp[row] || epNaoExibido(q0)) continue;
-        tev++;
-        if (vistoep_estado(ci->imdb,q0->temporada,q0->episodio)==1) tv++;
-      }
-      if (tev>0 && tv>0) {
-        float fracao=tv/(float)tev; if (fracao>1.0f) fracao=1.0f;
-        gfx_arco((GfxRect){x,y+10+row*56,28,28},3.0f,0.0f,fracao,cr,cg,cb,a);
-      } }
-    for (int i=0; i<cat_n_episodios(idx); i++) {
-      const CatEp *p=cat_episodio(idx,i);
-      if (!p || p->temporada!=temp[row] || p->episodio<primeiro || p->episodio>=primeiro+10) continue;
-      GfxRect cell={x+110+(p->episodio-primeiro)*76,y+4+row*56,68,46};
-      int sel=focoGrade && i==alvo;
-      float tone=.03f+anim_clamp((p->nota-72)/26.0f,0,1)*.32f;
-      gfx_cor(cell,10.0f/46,1,1,1,tone*a);
-      float fc=sel && i<N_ITENS ? animFoco[SEC_PROGTEMP][i] : 0;
-      cell=detalheFoco(cell,10.0f/46,fc,.12f,a);
-      char nota[24]; if (p->nota>0) snprintf(nota,sizeof nota,"%d.%d",p->nota/10,p->nota%10); else snprintf(nota,sizeof nota,"—");
-      idioma_decimal_texto(nota,ajustes_idioma());
-      TxtLinha l=txt_linha(TXT_G18M,nota,243,242,239,255);
-      txt_desenhar_alpha(l,cell.x+(cell.w-l.w)*.5f,cell.y+(cell.h-l.h)*.5f,a);
-      if (vistoep_conhecido(ci->imdb) &&
-          vistoep_estado(ci->imdb,p->temporada,p->episodio)==1)
-        gfx_cor((GfxRect){cell.x+14,cell.y+38,cell.w-28,3},.5f,cr,cg,cb,a);
-    }
-  }
-  char pos[200]; snprintf(pos,sizeof pos,i18n("T%d:E%d"),ep->temporada,ep->episodio);
-  // Mock panel title: "T1:E3 · Uma estrada lamacenta" unless spoilers hide it.
-  if (!epOculto(ep) && ep->nome[0]) { size_t k=strlen(pos); snprintf(pos+k,sizeof pos-k," · %s",ep->nome); }
-  txt_desenhar_alpha(txt_linha(TXT_G28B,pos,243,242,239,255),x+944,y+4,a);
-  char detail[160];
-  snprintf(detail,sizeof detail,"IMDb %d.%d",ep->nota/10,ep->nota%10);
-  { const CatItem *si=cat_item(idx); size_t k=strlen(detail);
-    if (epOculto(ep)) snprintf(detail+k,sizeof detail-k," · %s",i18n("Sem spoilers"));
-    else if (si && si->progresso>0 && si->restanteMin>0 && si->temporada==ep->temporada && si->episodio==ep->episodio) {
-      snprintf(detail+k,sizeof detail-k," · "); k=strlen(detail);
-      snprintf(detail+k,sizeof detail-k,i18n("faltam %d min"),si->restanteMin); } }
-  idioma_decimal_texto(detail,ajustes_idioma());
-  txt_desenhar_alpha(txt_linha(TXT_G22M,detail,189,189,189,255),x+944,y+48,a);
-  int bt=0,be=0,nota=progMelhorNaoVisto(&bt,&be);
-  { // PAINEL do mockup v2: melhor temporada, melhor episodio (nao visto) e o
-    // total da serie. A linha "ritmo atual" do mock pede dado que o app nao
-    // tem (velocidade de consumo); o resto sai das notas dos episodios.
-    float yl=y+112;
-    int melhorT=0; float melhorNota=0;
-    for (int t0=1;t0<64;t0++) {
-      int soma=0,q=0;
-      for (int j=0;j<cat_n_episodios(idx);j++) {
-        const CatEp *q0=cat_episodio(idx,j);
-        if (q0 && q0->temporada==t0 && q0->nota>0) { soma+=q0->nota; q++; }
-      }
-      if (q>=3) {
-        float m=soma/(float)q/10.0f;
-        if (m>melhorNota) { melhorNota=m; melhorT=t0; }
-      } else if (q==0 && t0>1) break;   // acabaram as temporadas com nota
-    }
-    if (melhorT>0) {
-      char l[96]; snprintf(l,sizeof l,i18n("Melhor temporada T%d · %.1f"),melhorT,melhorNota);
-      idioma_decimal_texto(l,ajustes_idioma());
-      txt_desenhar_alpha(txt_linha_corta(TXT_G22M,l,189,189,189,255,760),x+944,yl,a);
-      yl+=40;
-    }
-    if (nota>0) {
-      char melhor[160]; snprintf(melhor,sizeof melhor,i18n("Melhor episódio T%d:E%d · %.1f · não visto"),bt,be,nota/10.0);
-      idioma_decimal_texto(melhor,ajustes_idioma());
-      txt_desenhar_alpha(txt_linha_corta(TXT_G22M,melhor,189,189,189,255,760),x+944,yl,a);
-      yl+=40;
-    }
-    { int vis=0,exib=0;
-      if (vistoep_conhecido(ci->imdb) && extras_progresso_serie(&vis,&exib) && exib>0) {
-        char linha[96]; snprintf(linha,sizeof linha,i18n("Você viu %d de %d"),vis,exib);
-        txt_desenhar_alpha(txt_linha_corta(TXT_G22M,linha,189,189,189,255,760),x+944,yl,a);
-      } }
-  }
 }
 
 static float secaoAlpha(int r) { return secA[r]; }
@@ -9030,15 +8945,10 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
   // O grafico e UM desenho; as colunas focaveis sao posicoes dentro dele.
   if (r == SEC_PROGTEMP) {
     const TgDados *td = tgraf_dados(idx);
-    float yGrade = y;
     if (tgraf_existe(td))
       tgraf_desenhar(td, NV_DETP_X, y, NV_TELA_W - NV_DETP_X * 2,
-                     !progTemNotas() && nivel >= 1 && foco.fileira == SEC_PROGTEMP ? foco.coluna : -1,
+                     nivel >= 1 && foco.fileira == SEC_PROGTEMP ? foco.coluna : -1,
                      temporadaEm(temporada), a, agora);
-    if (progTemNotas()) {
-      if (tgraf_existe(td)) yGrade += tgraf_altura_dados(td) + 28.0f;
-      desenhaGradeProgresso(NV_DETP_X, yGrade, a);
-    }
     return;
   }
 
