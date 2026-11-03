@@ -388,11 +388,21 @@ int segfontes_animeskip(long anilist, int ep, const char *clientId,
 
 // ---------------------------------------------------------------- Client ID
 static char idConta[96], idLocal[96];
+// O ID vai no cabecalho X-Client-ID: so letras, digitos, '-' e '_' (o mesmo
+// filtro do campo de ajustes). O da conta vem do servidor sem filtro nenhum —
+// um CR/LF ali viraria outro cabecalho no pedido.
+static void idLimpo(char *dst, size_t n, const char *t) {
+  size_t i, k = 0;
+  for (i = 0; t && t[i] && k + 1 < n; i++)
+    if ((t[i] >= '0' && t[i] <= '9') || (t[i] >= 'a' && t[i] <= 'z') ||
+        (t[i] >= 'A' && t[i] <= 'Z') || t[i] == '-' || t[i] == '_') dst[k++] = t[i];
+  dst[k] = 0;
+}
 void segfontes_animeskip_id_conta(const char *id) {
-  pthread_mutex_lock(&trava); snprintf(idConta, sizeof idConta, "%s", id ? id : ""); pthread_mutex_unlock(&trava);
+  pthread_mutex_lock(&trava); idLimpo(idConta, sizeof idConta, id); pthread_mutex_unlock(&trava);
 }
 void segfontes_animeskip_id_local(const char *id) {
-  pthread_mutex_lock(&trava); snprintf(idLocal, sizeof idLocal, "%s", id ? id : ""); pthread_mutex_unlock(&trava);
+  pthread_mutex_lock(&trava); idLimpo(idLocal, sizeof idLocal, id); pthread_mutex_unlock(&trava);
 }
 const char *segfontes_animeskip_id(char *buf, size_t n) {
   if (!buf || !n) return "";

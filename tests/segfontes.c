@@ -154,6 +154,11 @@ int main(void) {
   segfontes_animeskip_id_local("");
   assert(!strcmp(segfontes_animeskip_id(buf, sizeof buf), "da-conta"));
   puts("ok  Client ID: ajuste digitado vence; vazio usa o da conta Nuvio");
+  // O da conta vem do servidor: nada de CR/LF ou ':' no cabecalho X-Client-ID.
+  segfontes_animeskip_id_conta("ab-12_Z\r\nX-Evil: 1");
+  assert(!strcmp(segfontes_animeskip_id(buf, sizeof buf), "ab-12_ZX-Evil1"));
+  segfontes_animeskip_id_conta("");
+  puts("ok  Client ID da conta: so letras, digitos, '-' e '_' (sem CR/LF no cabecalho)");
 
   puts("segfontes: tudo ok");
   return 0;
