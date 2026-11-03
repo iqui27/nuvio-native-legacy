@@ -36,6 +36,8 @@ static double durMidia;static int ehFilme;
 // trouxeram algo. Decide os palpites por duracao e a regra da previa.
 static int redeAnime;
 static IntroTrecho capPalp[4];static int nCapPalp;
+// Inicio de cada capitulo do arquivo (capmkv): tempos EXATOS deste arquivo.
+static double marcas[64];static int nMarcas;
 // Chamar com a trava: evidencia TMDB do pedido, AniSkip/Anime-Skip responderam,
 // ou um trecho veio do AniSkip.
 static int ehAnime(void);
@@ -743,6 +745,37 @@ static int tipoDeCap(int t){return t==INTRO_ABERTURA?1:t==INTRO_RESUMO?2:3;}   /
 // substitui o da rede (creditos, previa e cena andam juntos). FILME (D6, como
 // o Nuvio TV mergeSkipIntervals): a rede vence inteira quando trouxe algo; os
 // capitulos so valem sem nada da rede.
+// CASAR COM O CAPITULO: um trecho da rede (abertura, encerramento, previa;
+// o resumo nao) com inicio e fim vira o capitulo do arquivo de MESMA duracao (+-5 s)
+// que comeca perto (+-30 s). A fonte diz O QUE e, o capitulo diz ONDE, exato para este arquivo. Sem capitulo assim, fica o da
+// fonte (outro lancamento). Previa "ate o fim" casa so pelo inicio (+-5 s) com
+// o ultimo capitulo. `usado`: um capitulo serve a um trecho so. Com a trava.
+#define INTRO_CASA_DUR_S 5.0
+#define INTRO_CASA_POS_S 30.0
+static int casarCapitulo(IntroTrecho *t,unsigned long long *usado){
+  int j,melhor=-1;double nota=1e9,ini=t->inicio,len=t->fim-t->inicio;
+  // O RESUMO fica com os tempos da fonte (decisao do dono): so abertura,
+  // encerramento e previa casam com capitulo.
+  if(t->tipo!=INTRO_ABERTURA&&t->tipo!=INTRO_CREDITOS&&t->tipo!=INTRO_PREVIA)return 0;
+  for(j=0;j<nMarcas;j++){
+    double cs=marcas[j],ce=j+1<nMarcas?marcas[j+1]:(durMidia>0.0?durMidia:0.0),d;
+    if(usado&&(*usado>>j&1ULL))continue;
+    if(t->fim>t->inicio){
+      if(ce<=cs||fabs((ce-cs)-len)>INTRO_CASA_DUR_S||fabs(cs-ini)>INTRO_CASA_POS_S)continue;
+      d=fabs(cs-ini)+fabs((ce-cs)-len);
+    }else{
+      if(t->tipo!=INTRO_PREVIA||j+1<nMarcas||fabs(cs-ini)>INTRO_CASA_DUR_S)continue;
+      d=fabs(cs-ini);
+    }
+    if(d<nota){nota=d;melhor=j;}
+  }
+  if(melhor<0)return 0;
+  if(usado&&melhor<64)*usado|=1ULL<<melhor;
+  t->inicio=marcas[melhor];
+  if(t->fim>0.0)t->fim=melhor+1<nMarcas?marcas[melhor+1]:durMidia;
+  return 1;
+}
+
 static int ehAnime(void){
   int i;
   if(redeAnime||(temUltimo&&ultimo.anime))return 1;
@@ -750,15 +783,29 @@ static int ehAnime(void){
   for(i=0;i<nTrechos;i++)if(trechos[i].ani)return 1;
   return 0;
 }
+// Uma linha por trecho casado (para conferir na TV), sem repetir a cada fusao.
+static void casarComLog(IntroTrecho *t,unsigned long long *usado){
+  static const char *NOME[]={"-","abertura","resumo","creditos","previa","pos-creditos"};
+  static double ultIni[6],ultFim[6];
+  double a=t->inicio,b=t->fim;
+  if(!casarCapitulo(t,usado))return;
+  if(t->tipo>=0&&t->tipo<6&&(ultIni[t->tipo]!=t->inicio||ultFim[t->tipo]!=t->fim)){
+    ultIni[t->tipo]=t->inicio;ultFim[t->tipo]=t->fim;
+    printf("[seg] %s da fonte %.1f-%.1fs -> capitulo %.1f-%.1fs\n",NOME[t->tipo],a,b,t->inicio,t->fim);
+    fflush(stdout);
+  }
+}
 static void fundirCapitulos(void){
   int i,k,j=0,filme=temUltimo?ultimo.e<=0:ehFilme;
+  unsigned long long usado=0;
   if(filme&&nRede>0){
     memcpy(trechos,rede,(size_t)nRede*sizeof *rede);nTrechos=nRede;
+    for(i=0;i<nTrechos;i++)casarComLog(&trechos[i],&usado);
   }else{
     for(i=0;i<nRede;i++){
       int sub=0;
       for(k=0;k<nCapTr;k++)if(tipoDeCap(capTr[k].tipo)==tipoDeCap(rede[i].tipo))sub=1;
-      if(!sub)trechos[j++]=rede[i];
+      if(!sub){trechos[j]=rede[i];casarComLog(&trechos[j],&usado);j++;}
     }
     nTrechos=j;
     for(k=0;k<nCapTr&&nTrechos<8;k++)trechos[nTrechos++]=capTr[k];
@@ -771,6 +818,13 @@ static void fundirCapitulos(void){
       }
   }
   verGer=geracao+1;   // forca valido() a reavaliar os vereditos por indice
+}
+void intro_definir_capitulos_marcas(const double *v,int n){
+  pthread_mutex_lock(&trava);
+  nMarcas=0;
+  for(int i=0;v&&i<n&&nMarcas<64;i++)marcas[nMarcas++]=v[i];
+  fundirCapitulos();
+  pthread_mutex_unlock(&trava);
 }
 void intro_definir_capitulos_palpite(const IntroTrecho *v,int n){
   pthread_mutex_lock(&trava);
@@ -788,7 +842,7 @@ void intro_definir_capitulos(const IntroTrecho *v,int n){
       ultimo.id,ultimo.t,ultimo.e,nTrechos);fflush(stdout);}
   pthread_mutex_unlock(&trava);
 }
-void intro_desligar(void){pthread_mutex_lock(&trava);geracao++;nTrechos=nRede=nCreditosLimitados=0;nCapTr=0;nCapPalp=0;redeAnime=0;botaoVis=0;botaoIdx=-1;temUltimo=0;falhou=0;pthread_mutex_unlock(&trava);}
+void intro_desligar(void){pthread_mutex_lock(&trava);geracao++;nTrechos=nRede=nCreditosLimitados=0;nCapTr=0;nCapPalp=0;nMarcas=0;redeAnime=0;botaoVis=0;botaoIdx=-1;temUltimo=0;falhou=0;pthread_mutex_unlock(&trava);}
 
 // DURACAO DA MIDIA E O TIPO (filme/serie), para recusar janelas absurdas.
 // E O GATILHO DO PEDIDO DE NOVO (2.0.3, como o plugin oficial): a duracao real
@@ -947,9 +1001,11 @@ static int ativoInterno(double pos,double*fim,int*tipo,int automatico){
         for(int k=0;k<nCapTr;k++)
           if(capTr[k].tipo==INTRO_CREDITOS&&capTr[k].inicio==trechos[i].inicio&&
              capTr[k].fim==trechos[i].fim&&capTr[k].fim>capTr[k].inicio)explicito=1;
-        for(int k=0;k<nCreditosLimitados;k++)
-          if(creditosLimitados[k].inicio==trechos[i].inicio&&
-             creditosLimitados[k].fim==trechos[i].fim)explicito=1;
+        for(int k=0;k<nCreditosLimitados;k++){
+          IntroTrecho c=creditosLimitados[k];
+          if(!(c.inicio==trechos[i].inicio&&c.fim==trechos[i].fim))casarCapitulo(&c,NULL);   // casado com o capitulo
+          if(c.inicio==trechos[i].inicio&&c.fim==trechos[i].fim)explicito=1;
+        }
         if(!explicito)continue;
         f=fimPulo(i); // nao pula a previa/cena depois dos creditos
       }
@@ -1070,6 +1126,14 @@ int intro_creditos_limitados(IntroTrecho *saida,int max){
   pthread_mutex_unlock(&trava);return n;
 }
 #ifdef NV_SHOT_HOOKS
+// Teste: trechos da REDE (passam pela fusao com capitulos/marcas).
+void intro_shot_rede(const IntroTrecho *v,int n,const IntroTrecho *lim,int nl){
+  pthread_mutex_lock(&trava);geracao++;
+  nRede=n<8?n:8;if(nRede>0)memcpy(rede,v,(size_t)nRede*sizeof *v);
+  nCreditosLimitados=nl<8?nl:8;if(nCreditosLimitados>0)memcpy(creditosLimitados,lim,(size_t)nCreditosLimitados*sizeof *lim);
+  fundirCapitulos();
+  pthread_mutex_unlock(&trava);
+}
 void intro_shot_definir(const IntroTrecho *v,int n){
   pthread_mutex_lock(&trava);geracao++;
   nCreditosLimitados=0;

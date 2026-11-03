@@ -123,6 +123,9 @@ static int publicar(const MkvCap *caps, int n, int checa, unsigned g) {
   MkvSeg ps[2];
   int np = n > 0 ? mkv_segmentos_palpite(caps, n, ps, 2) : 0, i;
   for (i = 0; i < np; i++) pv[i] = (IntroTrecho){ ps[i].inicio, ps[i].fim, ps[i].tipo, 0 };
+  double mc[MKV_MAX_CAPS];
+  int nm = n > MKV_MAX_CAPS ? MKV_MAX_CAPS : (n > 0 ? n : 0);
+  for (i = 0; i < nm; i++) mc[i] = caps[i].inicio;
   pthread_mutex_lock(&trava);
   if (checa && g != ger) { pthread_mutex_unlock(&trava); return 0; }
   nomeado = a;
@@ -131,6 +134,7 @@ static int publicar(const MkvCap *caps, int n, int checa, unsigned g) {
   if (nLista > 0) memcpy(lista, caps, (size_t)nLista * sizeof *caps);
   if (k > 0) intro_definir_capitulos(v, k);
   intro_definir_capitulos_palpite(np > 0 ? pv : NULL, np);
+  intro_definir_capitulos_marcas(nm > 0 ? mc : NULL, nm);
   pthread_mutex_unlock(&trava);
   if (n > 0) {
     printf("[mkv] %d capitulos; creditos nomeados em %.0fs, ultimo em %.0fs\n", n, a, b);
@@ -219,6 +223,7 @@ void capmkv_zerar(void) {
   ger++; nomeado = ultimo = 0.0; nLista = 0;
   intro_definir_capitulos(NULL, 0);   // sob a trava: nenhum fio publica no meio
   intro_definir_capitulos_palpite(NULL, 0);
+  intro_definir_capitulos_marcas(NULL, 0);
   pthread_mutex_unlock(&trava);
 }
 

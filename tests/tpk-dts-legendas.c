@@ -32,6 +32,7 @@ void mkvass_aceitar_texto(int sim) { (void)sim; }
 void mkvass_aceitar_imagem(int sim) { (void)sim; }
 void intro_definir_capitulos(const IntroTrecho *v, int n) { (void)v; (void)n; }
 void intro_definir_capitulos_palpite(const IntroTrecho *v, int n) { (void)v; (void)n; }
+void intro_definir_capitulos_marcas(const double *v, int n) { (void)v; (void)n; }
 char *rede_baixar_trecho_st(const char *url, int segundos, long long ini, long long fim,
                             long *tam, int *status, int *erro, char *final, unsigned tamFinal) {
   (void)url; (void)segundos; (void)ini; (void)fim; (void)final; (void)tamFinal;

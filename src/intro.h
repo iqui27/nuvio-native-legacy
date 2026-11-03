@@ -80,6 +80,11 @@ int intro_cena_pos(double dur,double *ini,double *fim,int *explicita);
 // para anime (evidencia TMDB, ou AniSkip/Anime-Skip responderam) e so nos tipos
 // que nem capitulo com nome nem a rede deram. n=0 limpa.
 void intro_definir_capitulos_palpite(const IntroTrecho *v,int n);
+// Inicio de cada capitulo do arquivo (capmkv). Um trecho da rede com a MESMA
+// duracao (+-5 s) de um capitulo que comeca perto (+-30 s) passa a usar os
+// tempos exatos do capitulo; o tipo continua o da fonte. Abertura, encerramento
+// e previa; o resumo fica com os tempos da fonte. n=0 limpa.
+void intro_definir_capitulos_marcas(const double *v,int n);
 // Segundo em que os creditos comecam, ou 0 quando nao ha marcador. Serve ao
 // posplay.c, que precisa do INSTANTE e nao de "estou dentro".
 double intro_creditos_seg(void);
@@ -170,6 +175,7 @@ int  intro_trechos(IntroTrecho *saida,int max);
 // resposta atual. Sem fim, vizinhos, capitulos e estimativas nao entram.
 int  intro_creditos_limitados(IntroTrecho *saida,int max);
 #ifdef NV_SHOT_HOOKS
-void intro_shot_definir(const IntroTrecho *v,int n);   // capturas: trechos fixos
+void intro_shot_definir(const IntroTrecho *v,int n);
+void intro_shot_rede(const IntroTrecho *v,int n,const IntroTrecho *lim,int nl);   // teste: trechos da rede   // capturas: trechos fixos
 #endif
 #endif

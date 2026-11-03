@@ -771,6 +771,39 @@ int main(int argc,char **argv) {
       intro_shot_definir(t, 1); intro_definir_duracao(1452.0, 0);
       assert(intro_cena_pos(1452.0, NULL, NULL, NULL)); }
     puts("ok  previa: Pular encerramento cai nela; ED-Part C-Next time = cena fechada pela previa; sobra sem sinal = cena");
+    // CASAR COM O CAPITULO: a fonte diz o tipo, o capitulo de mesma duracao
+    // (+-5 s) que comeca perto (+-30 s) diz o tempo exato deste arquivo.
+    { static const double aot[] = {0, 10, 102, 1320, 1410};
+      IntroTrecho r[3] = {{12, 101, INTRO_ABERTURA, 0}, {1322, 1408, INTRO_CREDITOS, 0}, {1411, 1450, INTRO_PREVIA, 0}};
+      IntroTrecho t[8]; double fim2; int tp2, nt2;
+      intro_desligar(); intro_definir_capitulos(NULL, 0); intro_definir_capitulos_palpite(NULL, 0);
+      intro_definir_duracao(1452.0, 0);
+      intro_definir_capitulos_marcas(aot, 5);
+      intro_shot_rede(r, 3, &r[1], 1);
+      nt2 = intro_trechos(t, 8);
+      assert(achar(t, nt2, INTRO_ABERTURA)->inicio == 10 && achar(t, nt2, INTRO_ABERTURA)->fim == 102);
+      assert(achar(t, nt2, INTRO_CREDITOS)->inicio == 1320 && achar(t, nt2, INTRO_CREDITOS)->fim == 1410);
+      assert(achar(t, nt2, INTRO_PREVIA)->inicio == 1410 && mesmoSeg(achar(t, nt2, INTRO_PREVIA)->fim, 1452));
+      // O pulo automatico do encerramento continua valendo no trecho casado.
+      assert(intro_auto_ativo(1330.0, &fim2, &tp2) && tp2 == INTRO_CREDITOS && fim2 == 1410);
+      // Previa "ate o fim" casa so pelo inicio (+-5 s) com o ultimo capitulo.
+      { IntroTrecho pv = {1412, 0, INTRO_PREVIA, 0};
+        intro_shot_rede(&pv, 1, NULL, 0); nt2 = intro_trechos(t, 8);
+        assert(achar(t, nt2, INTRO_PREVIA)->inicio == 1410 && achar(t, nt2, INTRO_PREVIA)->fim == 0); }
+      // Longe demais (inicio 50 s fora) ou duracao diferente (70 x 92 s): fica a fonte.
+      { IntroTrecho op[2] = {{60, 150, INTRO_ABERTURA, 0}, {1322, 1342, INTRO_CREDITOS, 0}};
+        intro_shot_rede(op, 2, NULL, 0); nt2 = intro_trechos(t, 8);
+        assert(achar(t, nt2, INTRO_ABERTURA)->inicio == 60 && achar(t, nt2, INTRO_ABERTURA)->fim == 150);
+        assert(achar(t, nt2, INTRO_CREDITOS)->inicio == 1322 && achar(t, nt2, INTRO_CREDITOS)->fim == 1342); }
+      // O RESUMO fica com os tempos da fonte; a abertura casa.
+      { static const double rc[] = {0, 45, 135, 600};
+        IntroTrecho rr[2] = {{1, 44, INTRO_RESUMO, 0}, {46, 134, INTRO_ABERTURA, 0}};
+        intro_definir_capitulos_marcas(rc, 4);
+        intro_shot_rede(rr, 2, NULL, 0); nt2 = intro_trechos(t, 8);
+        assert(achar(t, nt2, INTRO_RESUMO)->inicio == 1 && achar(t, nt2, INTRO_RESUMO)->fim == 44);
+        assert(achar(t, nt2, INTRO_ABERTURA)->inicio == 45 && achar(t, nt2, INTRO_ABERTURA)->fim == 135); }
+      intro_definir_capitulos_marcas(NULL, 0); intro_desligar();
+      puts("ok  casar com capitulo: OP/ED/previa da fonte viram o capitulo de mesma duracao; resumo fica"); }
     assert(!intro_botao(1470.0, 9020.0, 0, 0, &fim, &tipo) || tipo != INTRO_PREVIA);
     n = intro_extrair(fixture("aot_s01e01.json"), v, 8);
     intro_shot_definir(v, n);

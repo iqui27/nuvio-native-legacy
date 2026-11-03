@@ -113,6 +113,7 @@ void intro_definir_capitulos(const IntroTrecho *v, int n) {
   if (n > 0) memcpy(gravado, v, (size_t)n * sizeof *v);
 }
 void intro_definir_capitulos_palpite(const IntroTrecho *v, int n) { (void)v; (void)n; }
+void intro_definir_capitulos_marcas(const double *v, int n) { (void)v; (void)n; }
 
 static int falhas;
 
