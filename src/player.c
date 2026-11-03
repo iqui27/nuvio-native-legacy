@@ -7269,11 +7269,16 @@ static void desenharCapitulos(Uint32 agora, float bx, float bw, float yBarra, fl
                                  243, 242, 239, 200, bw * 0.4f);
     float lx = bx + bw - (float)l.w, ly = yBarra - 10.0f - (float)l.h;
     txt_desenhar_alpha(l, lx, ly, ac * (1.0f - capAnim));
-    // Fechada a fileira, o nome e o alvo que a abre (folga para o dedo).
+    // Fechada a fileira, o nome e o alvo que a abre (folga para o dedo). Ele e
+    // registrado DEPOIS da barra e ganha onde se sobrepoem: a base fica 4 px
+    // acima do trilho, o mesmo do Magic Remote, para tocar/arrastar no trilho
+    // debaixo do nome continuar buscando no Android Mobile.
     if (pont && !capFoco) {
       float f = ponteiro_tem_toque() ? 16.0f : 6.0f;
-      ponteiro_alvo(lx - f, ly - f, (float)l.w + f * 2.0f, (float)l.h + f * 2.0f,
-                    NULL, ponteiroAbrirCapitulos, 0, 0);
+      float y0 = ly - f, y1 = ly + (float)l.h + f;
+      if (y1 > yBarra - 4.0f) y1 = yBarra - 4.0f;
+      if (y1 > y0)
+        ponteiro_alvo(lx - f, y0, (float)l.w + f * 2.0f, y1 - y0, NULL, ponteiroAbrirCapitulos, 0, 0);
     }
   }
   if (capAnim > 0.01f) {

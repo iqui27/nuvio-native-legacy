@@ -69,6 +69,22 @@ int main(void) {
   a = alvos();
   ok(a.nome == 1, "nome do capitulo acima da barra e um alvo");
   ok(a.n == 0, "fileira fechada: nenhum chip recebe toque");
+  { // O nome e registrado depois da barra (ganha na sobreposicao): tocar no
+    // trilho debaixo dele tem de continuar buscando, nao abrir a fileira.
+    const PonteiroAlvo *v; int nv = ponteiro_teste_lista(&v), j, barra = -1, perdeu = 0;
+    for (j = 0; j < nv; j++) if (v[j].ativar == ponteiroBuscar) barra = j;
+    assert(barra >= 0);
+    for (j = 0; j < nv; j++)
+      if (v[j].ativar == ponteiroAbrirCapitulos) {
+        float x, yTrilho = v[barra].y + v[barra].h * 0.5f - 3.0f;   // topo do trilho de 6 px
+        for (x = v[j].x; x < v[j].x + v[j].w; x += 8.0f) {
+          if (x < v[barra].x || x >= v[barra].x + v[barra].w) continue;   // folga alem da ponta da barra
+          int k = ponteiro_achar(v, nv, x, yTrilho), k2 = ponteiro_achar(v, nv, x, yTrilho + 5.0f);
+          if (k != barra || k2 != barra) perdeu = 1;
+        }
+      }
+    ok(!perdeu, "tocar no trilho debaixo do nome busca (o nome nao cobre a barra)");
+  }
 
   puts("capitulos/ponteiro: tocar no nome abre a fileira");
   ponteiroAbrirCapitulos(0, 0);
@@ -138,6 +154,7 @@ int main(void) {
   quadros(&t, 4);
   a = alvos();
   ok(a.nome == 0 && a.n == 0 && capFoco == 0, "nenhum alvo, fileira fechada");
+
 
   SDL_Quit();
   printf("%s\n", falhas ? "FALHOU" : "player_capitulos_ponteiro: ok");
