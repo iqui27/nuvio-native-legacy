@@ -6789,8 +6789,21 @@ static void epMeta(char *dst, size_t n, const char *a, const char *b, const char
   }
 }
 
+static int epCatalogoTempEp(int t, int e) {
+  for (int i = 0; i < cat_n_episodios(idx); i++) {
+    const CatEp *p = cat_episodio(idx, i);
+    if (p && p->temporada == t && p->episodio == e) return i;
+  }
+  return -1;
+}
+
 static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, int resumo) {
-  const CatEp *ep = cat_episodio(idx, epAbsoluto(c));
+  int mt = 0, me = 0, abs = epAbsoluto(c);
+  if (resumo && episodios_menu_fontes(&mt, &me)) {
+    int hit = epCatalogoTempEp(mt, me);
+    if (hit >= 0) abs = hit;
+  }
+  const CatEp *ep = cat_episodio(idx, abs);
   GfxRect th = { r.x, r.y, r.w, epThumbH() };
   float raioTh = NV_DETP_EP_RAIO / epThumbH();
 
@@ -6894,8 +6907,8 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
       float ar,ag,ab; ajustes_acento(&ar,&ag,&ab);
       gfx_cor((GfxRect){r.x,r.y+232,r.w*serie->progresso/100.0f,4},0,ar,ag,ab,a);
     }
-    float x=resumo ? r.x : 96, yy=r.y+268;
-    float textW=resumo ? r.w : 1100;
+    float x=resumo ? r.x + 18.0f : 96, yy=r.y+268;
+    float textW=resumo ? fmaxf(48.0f, r.w - 36.0f) : 1100;
     char title[240],meta[240];
     snprintf(title,sizeof title,"%d · %s",epNum,epNome ? epNome : i18n("Episódio"));
     float titleH = txt_bloco_corta(TXT_G30M,title,243,242,239,x,yy,textW,36,a,2);
@@ -6927,7 +6940,7 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
     return;
   }
   if (epApple()) {
-    float textX = r.x + 18.0f, textW = r.w - 36.0f;
+    float textX = r.x + 18.0f, textW = resumo ? fmaxf(48.0f, r.w - 36.0f) : r.w - 36.0f;
     float textY = r.y + epThumbH() + 18.0f;
     GfxRect info = {r.x,textY-8,r.w,epCardH()-epThumbH()-18};
     if (f > .005f) {
@@ -6993,6 +7006,8 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
   }
 
   float tx = r.x + NV_DETP_EP_PAD;
+  float epTextoW = resumo ? fmaxf(48.0f, r.w - 2.0f * NV_DETP_EP_PAD)
+                        : NV_DETP_EP_TEXTO_W;
 
   // Ausencia de check nao afirma que o historico ja chegou. Evita um selo
   // "nao assistido" inventado enquanto o Trakt ainda esta consultando.
@@ -7063,7 +7078,7 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
     if (!nome) { snprintf(reserva, sizeof reserva, i18n("Episódio %d"), epNum);
                  nome = reserva; }
     TxtLinha l = txt_linha_corta(TXT_PLR_CORPO, nome, 255, 255, 255, 255,
-                                 NV_DETP_EP_TEXTO_W);
+                                 epTextoW);
     txt_peso(l, tx, r.y + NV_DETP_EP_TIT_Y, a, 1.4f); }
 
   // Sinopse: tres linhas, como a referencia, com truncamento do bloco.
@@ -7075,7 +7090,7 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
   // card do layout Apple (logo acima), com a entrelinha dele (NV_LD_CAPTION).
   if (epSin)
     txt_bloco_corta(TXT_CAPTION, epSin, 255, 255, 255, tx,
-                    r.y + NV_DETP_EP_SIN_Y, NV_DETP_EP_TEXTO_W,
+                    r.y + NV_DETP_EP_SIN_Y, epTextoW,
                     NV_DETP_EP_LD_SIN, a * 0.9f, 3);
 
   // Meta: relogio + duracao + data, 20/400 rgb(179,179,179), com 38 de folga
@@ -7162,7 +7177,7 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
         ci->episodio == ep->episodio) prog = ci->progresso;
     else if (ep) prog = extras_ep_progresso(ep->temporada, ep->episodio);
     if (prog > 2 && prog < 98) {
-      GfxRect tr = { tx, r.y + NV_DETP_EP_BARRA_Y, NV_DETP_EP_TEXTO_W,
+      GfxRect tr = { tx, r.y + NV_DETP_EP_BARRA_Y, epTextoW,
                      NV_DETP_EP_BARRA_H };
       // Anda do valor que esta tela mostrava ate o novo (revela.h): na volta
       // do player a barra do episodio cresce ate onde a pessoa parou.
@@ -8606,6 +8621,21 @@ static float   menuOrigemF, menuOrigemA;
 static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora);
 static void menuDeVisto(Uint32 agora) {
   if (!episodios_menu_visivel()) { episodios_menu_desenhar(); return; }
+  if (foco.fileira == SEC_EPISODIOS && !episodios_menu_painel()) {
+    int mt = 0, me = 0, col = foco.coluna;
+    if (episodios_menu_fontes(&mt, &me)) {
+      for (int c0 = 0; c0 < epVisiveis(); c0++) {
+        const CatEp *e0 = cat_episodio(idx, epAbsoluto(c0));
+        if (e0 && e0->temporada == mt && e0->episodio == me) { col = c0; break; }
+      }
+    }
+    { float x = xItem(SEC_EPISODIOS, col) - scrollSec[SEC_EPISODIOS];
+      float y = epRowY() - scrollY;
+      menuOrigem = (GfxRect){ x, y, epCardW(), epCardH() };
+      menuOrigemCol = col;
+      menuOrigemF = animFoco[SEC_EPISODIOS][col];
+      menuOrigemA = 1.0f; }
+  }
   if (menuOrigem.w > 8.0f && (foco.fileira == SEC_EPISODIOS || foco.fileira == SEC_TEMPORADAS)) {
     float e = gfx_escala_ui();
     episodios_menu_ancora((GfxRect){ menuOrigem.x / e, menuOrigem.y / e, menuOrigem.w / e, menuOrigem.h / e });
