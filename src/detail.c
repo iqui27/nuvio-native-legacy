@@ -2417,7 +2417,9 @@ static int nLinhasDetalhe(void) {
 // desenho, e uma secao nova herdava a altura do elenco em silencio.
 static float secaoAlvo(int r) {
   if (layout_desktop_ativo()) return 1.f;
-  if (r == SEC_TEMPORADAS && ajustes_home_layout() == HOME_LAYOUT_MODERNA) return 1.f;
+  // Temporadas continuam acesas enquanto o foco esta nos episodios.
+  if (r == SEC_TEMPORADAS && (ajustes_home_layout() == HOME_LAYOUT_MODERNA ||
+                              (nivel >= 1 && foco.fileira == SEC_EPISODIOS))) return 1.f;
   return nivel>=1 && foco.fileira!=r ? .42f : 1.f;
 }
 static int epModerno(void) { return ajustes_home_layout() == HOME_LAYOUT_MODERNA; }
