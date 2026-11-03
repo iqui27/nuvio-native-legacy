@@ -413,6 +413,11 @@ static int fileira(int c) {
   return -1;
 }
 static void previa(int i);
+static void connectStart(void) {
+  connectUrl[0]=0;
+  aiopair_start(host);
+  connectState=aiopair_state(connectUrl,sizeof connectUrl);
+}
 static void acao(void) {
   if(lateral) {
     if(PAINEL+foco!=pagina) previa(foco);
@@ -452,8 +457,7 @@ static void acao(void) {
     else if(foco==7) mudar(FONTES);
     else if(foco==8) fechar();   // back to Complementos, where this screen opens from
     else if(foco==9) {
-      connectOpen=1; connectFocus=0; connectUrl[0]=0;
-      aiopair_start(host); connectState=aiopair_state(connectUrl,sizeof connectUrl);
+      connectOpen=1; connectFocus=0; connectStart();
     }
     else { geracao++; atualizarRede(0); }
   } else if(pagina==CATALOGOS) {
@@ -566,7 +570,7 @@ void aioui_evento(const SDL_Event *e) {
     else if((k==SDLK_RETURN || k==SDLK_KP_ENTER) && !e->key.repeat) {
       if(connectFocus) manualConnect();
       else if(connectState==AIOPAIR_SYNCED) { connectOpen=0; aiopair_close(); }
-      else aiopair_start(host);
+      else connectStart();
     }
     return;
   }
@@ -1756,7 +1760,8 @@ static void connectDraw(Uint32 agora) {
   plrui_kicker("AIOStreams",382,196,243,242,239,.55f);
   texto(TXT_ILHA_TITULO,i18n("Conectar pelo celular"),382,226,1150,243);
   int synced=connectState==AIOPAIR_SYNCED;
-  if(connectUrl[0] && !synced) qrDesenhar(connectUrl,382,326,400);
+  int showQr=connectUrl[0] && (connectState==AIOPAIR_WAITING || connectState==AIOPAIR_CHECKING || connectState==AIOPAIR_ERROR);
+  if(showQr) qrDesenhar(connectUrl,382,326,400);
   else {
     gfx_cor((GfxRect){382,326,400,400},26/400.f,1,1,1,.06f);
     gfx_icone((GfxRect){542,486,80,80},synced?"aj_check":"aj_smartphone",.953f,.949f,.937f,.9f);
@@ -1793,9 +1798,9 @@ static void connectDraw(Uint32 agora) {
   if(connectState==AIOPAIR_STARTING || connectState==AIOPAIR_CHECKING) plrui_anel(851,602,22,1,agora,1);
   else gfx_cor((GfxRect){845,596,12,12},.5f,cor?cor[0]:ar,cor?cor[1]:ag,cor?cor[2]:ab,falhou||synced?1:pulso);
   txtCor(TXT_G20M,i18n(description),872,588,660,cor?cor:aioTexto,1,0);
-  if(connectUrl[0] && !synced) {
-    txtCor(TXT_ILHA_HORA_L,i18n("Ou abra este endereço no celular"),840,648,700,aioTexto,.6f,0);
-    txtCor(TXT_ILHA_SUB_L,connectUrl,840,676,700,aioTexto,.82f,0);
+  if(showQr) {
+    txtCor(TXT_ILHA_HORA_L,i18n("Instância"),840,648,700,aioTexto,.6f,0);
+    txtCor(TXT_ILHA_SUB_L,host,840,676,700,aioTexto,.82f,0);
   }
   const char *labels[]={i18n(synced?"Concluir":"Gerar novo QR"),i18n("Digitar na TV")};
   const char *ic[]={synced?"aj_check":"aj_rotate-cw","aj_keyboard"};
