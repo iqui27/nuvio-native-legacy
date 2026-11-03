@@ -30,7 +30,8 @@ void studioOpenFixture(const ColFolder *f) { (void)f; }
 int studioVisibleFixture(void) { return 0; }
 void studioEventFixture(const SDL_Event *e) { (void)e; }
 int ratingFixture(int f) { (void)f; return 0; }
-int seasonCountFixture(void) { return 1; }
+static int seasonCount = 1;
+int seasonCountFixture(void) { return seasonCount; }
 int seasonNumberFixture(int t) { (void)t; return 1; }
 int episodeCountFixture(int t) { (void)t; return 6; }
 int togetherAvailableFixture(void) { return 0; }
@@ -111,6 +112,11 @@ int main(void) {
   CHECK(secaoN(SEC_PROGTEMP) == 1);
   CHECK(secaoN(SEC_NUMEROS) == 6);
   CHECK(notasDados()->nTemp == 1);
+  seasonCount = 0; ratSinc = 0;
+  CHECK(secaoN(SEC_NUMEROS) == 6);
+  CHECK(notasDados()->nTemp == 1 && notasDados()->epNota(0, 0) == 75);
+  CHECK(notasDados()->epNum(0, 5) == 6);
+  seasonCount = 1;
   CHECK(!vistoep_conhecido(serieItem.imdb));
   CHECK(d->vistos == 0 && !d->sabe && d->exibidos == 6);
 
@@ -120,6 +126,11 @@ int main(void) {
   CHECK(d->sabe && d->vistos == 0 && tgraf_existe(d));
 
   layoutHome(HOME_LAYOUT_DINAMICA);
+  nivel=1; foco.fileira=SEC_EPISODIOS;
+  CHECK(temporadaBrilho(1) == 1.0f);
+  CHECK(temporadaBrilho(0) == 0.0f);
+  foco.fileira=SEC_TEMPORADAS; CHECK(temporadaBrilho(1) == .6f);
+  foco.fileira=SEC_EPISODIOS;
   recalcularLayout();
   h = alturaSecao(SEC_PROGTEMP);
   hTg = tgraf_altura_dados(tgraf_dados(idx));
