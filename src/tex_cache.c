@@ -4465,7 +4465,7 @@ long   tex_upl_bytes;
 #define NV_TEX_FAIXA_BYTES ((long)cachePerfil().uploadKiB * 1024)
 // Rastro do envio em faixas: os mesmos numeros do upload-total.
 static Uint32 uplEm, uplGlMs, uplFila;
-static char uplPath[512];
+static char uplPath[NV_TEX_URL_MAX];
 
 // A failed allocation/stripe/mipmap is not publishable. Keep the old artwork
 // on promotion; first uploads use the existing failure backoff.
@@ -4702,7 +4702,7 @@ int tex_bombear(int max_por_quadro) {
     //    nao segura o heroi, que e o que a pessoa esta olhando.
     SDL_Surface *sup = NULL; int alvo = -1, nivel = -1, classe = 0;
     Uint32 filaEm = 0, filaWait = 0;
-    char uploadPath[512] = "";
+    char uploadPath[NV_TEX_URL_MAX] = "";
     // Defer queued work if a network/decode worker holds the cache lock.
     if (SDL_TryLockMutex(mtx) != 0) break;
     for (int i = 0; i < nMax; i++)
