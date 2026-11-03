@@ -1894,6 +1894,9 @@ void player_abrir(int indiceCatalogo, const char *url) {
   desc_episodios_garantir(idx);
   fonteAcaoInvalidar();
   aberto = 1; saindo = 0; pediuSair = 0; barraFoco = 0;
+  // Fileira de capitulos do titulo anterior nao fica aberta no novo (o indice
+  // e a rolagem eram de outra lista).
+  capFoco = 0; capSel = 0; capRol = 0.0f;
   // Titulo novo: um avanco em curso do anterior mandaria a posicao velha ao
   // pipeline novo assim que o silencio vencesse.
   scrubbing = 0; scrubPassos = 0; scrubTocava = 0; scrubDir = 0; scrubToque = 0; scrubInicio = 0.0;
@@ -7257,6 +7260,10 @@ static void desenharCapitulos(Uint32 agora, float bx, float bw, float yBarra, fl
   capT = agora;
   if (dt > 0.1f) dt = 0.1f;
   if (n < 2) capFoco = 0;
+  // A lista pode ter encolhido com a fileira aberta (capmkv publica de outro
+  // fio): o indice nunca passa do fim — w[capSel] abaixo seria lixo.
+  if (capSel >= n) capSel = n > 0 ? n - 1 : 0;
+  if (capSel < 0) capSel = 0;
   capAnim = anim_mola(capAnim, capFoco ? 1.0f : 0.0f, dt, NV_MOLA_FOCO);
   if (n < 2 || a <= 0.002f) return;
   pont = ponteiroNoPlayer() && a > 0.3f;

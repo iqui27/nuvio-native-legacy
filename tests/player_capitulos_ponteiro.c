@@ -155,6 +155,18 @@ int main(void) {
   a = alvos();
   ok(a.nome == 0 && a.n == 0 && capFoco == 0, "nenhum alvo, fileira fechada");
 
+  puts("capitulos/fileira: lista encolhe com a fileira aberta");
+  { static const MkvCap tres[] = { { 0, "Intro" }, { 90, "Main" }, { 1300, "Credits" } };
+    capmkv_aplicar(caps, (int)(sizeof caps / sizeof *caps));
+    quadros(&t, 2);
+    ponteiroAbrirCapitulos(0, 0);
+    capSel = n - 1;
+    quadros(&t, 60);   // a mola chega: chips viram alvos
+    capmkv_zerar(); capmkv_aplicar(tres, 3);   // outro arquivo, 3 capitulos
+    quadros(&t, 2);
+    a = alvos();
+    ok(capSel >= 0 && capSel < 3, "o indice volta para dentro da lista nova");
+    ok(a.n > 0 && a.n <= 3, "so chips da lista nova sao alvos"); }
 
   SDL_Quit();
   printf("%s\n", falhas ? "FALHOU" : "player_capitulos_ponteiro: ok");
