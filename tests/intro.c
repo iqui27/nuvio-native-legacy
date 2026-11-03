@@ -39,6 +39,13 @@ void dados_fs_travar(void){}
 void dados_fs_liberar(void){}
 void dados_marcar_sujo(int leve){(void)leve;}
 static int fakeBuscar(const char *,char **,int *);
+// Simkl desligado (client_id vazio) em todo o teste, menos no caso que o liga.
+#include "../src/segfontes.h"
+static const char *simklCid = "";
+const char *nuvem_simkl_cliente(void){return simklCid;}
+static int simklPedidos;
+static int simklFake(const char *url,char **corpo,int *st){
+  (void)url;__atomic_add_fetch(&simklPedidos,1,__ATOMIC_SEQ_CST);*corpo=NULL;*st=404;return 404;}
 static const char *fribbFonte;
 int rede_pedir(const RedePedido *p, RedeResposta *r) {
   char *j=NULL;memset(r,0,sizeof *r);
@@ -803,6 +810,18 @@ int main(int argc,char **argv) {
     assert(na == 2 && a[0].ani == 1 && a[0].inicio == 10.0);   // OP do AniSkip fica
     assert(a[1].tipo == INTRO_CREDITOS && a[1].ani == 0);      // ED vem do TheIntroDB
     puts("ok  fontes completam por tipo, com origem por trecho"); }
+  // Simkl so para serie com evidencia de anime do TMDB: sem ela o TheIntroDB
+  // (a fonte de quem nao e anime) esperava a busca no Simkl a cada temporada.
+  { simklCid = "cid-teste"; segfontes_definir_buscador(simklFake); segfontes_limpar_cache();
+    intro_pedir_ids("tt9800001", 0, 1, 1, 0, 0); usleep(300000);
+    assert(__atomic_load_n(&simklPedidos, __ATOMIC_SEQ_CST) == 0);
+    intro_registrar_tmdb("tt9800002", 0, "{\"original_language\":\"ja\",\"genres\":[{\"id\":16}]}");
+    intro_pedir_ids("tt9800002", 0, 1, 1, 0, 0); usleep(300000);
+    assert(__atomic_load_n(&simklPedidos, __ATOMIC_SEQ_CST) > 0);
+    simklCid = ""; segfontes_definir_buscador(NULL);
+    { char c[NVT_MAX]; usleep(300000);   // o anime sem MAL caiu na Fribb, que grava o indice
+      if (dados_caminho(c, sizeof c, "anime-fribb.idx")) unlink(c); }
+    puts("ok  Simkl: serie sem evidencia de anime nao pergunta; anime pergunta"); }
   assert(!rmdir(dadosTeste));
   puts("intro: tudo ok");
   // #329/#331: pular sozinho. Assinatura: (tipo, fim, dur, abertura, resumo, creditos).

@@ -530,7 +530,10 @@ static void idsAnime(const Pedido *p,long *mal,long *anilist,int *ep){
     }
     return;
   }
-  if(imdbValido(p->id)&&segfontes_simkl("imdb",p->id,p->imdbT,p->imdbE,&s)&&s.anime){
+  // So com evidencia de anime do TMDB (p->anime, a mesma da Fribb): sem ela o
+  // Simkl entrava para TODA serie e o TheIntroDB, a fonte de quem nao e anime,
+  // esperava a busca + detalhes (ate 10 s cada) a cada temporada nova.
+  if(p->anime&&imdbValido(p->id)&&segfontes_simkl("imdb",p->id,p->imdbT,p->imdbE,&s)&&s.anime){
     *mal=s.mal;*anilist=s.anilist;*ep=s.ep>0?s.ep:p->e;
   }
   if(*mal<=0&&p->anime){
