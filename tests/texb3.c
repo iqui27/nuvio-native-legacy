@@ -94,6 +94,23 @@ int main(void) {
     free(lido); SDL_FreeSurface(copia);
     puts("ok  heroi sobe em faixas, so publica inteiro, pixels identicos"); }
 
+  // 1a. URL de mais de 511 bytes (provedor de poster com estilo na query): a
+  // comparacao entre faixas usava uma copia de 512 bytes e o envio recomecava
+  // para sempre, travando a fila inteira.
+  { static char longa[NV_TEX_URL_MAX];
+    SDL_Surface *s = superficie(1920, 1080, 8);
+    int chamadas = 0, subiu = 0, n;
+    n = snprintf(longa, sizeof longa, "https://poster.example/poster?id=tt0111161");
+    while (n < 900) n += snprintf(longa + n, sizeof longa - (size_t)n, "&opt%d=valor", n);
+    decodificado(0, longa, s, 1);
+    while (!subiu && chamadas < 20) {
+      subiu = tex_bombear(3);
+      chamadas++;
+      if (!subiu) { tex_novo_quadro(); itens[0].ultimoQuadro = quadroAtual; }
+    }
+    assert(subiu && chamadas == 8 && itens[0].estado == PRONTO);
+    puts("ok  URL de 900 bytes sobe em faixas e publica"); }
+
   // 1b. Item que deixa de ser o pedido no meio do envio: a textura reservada
   // vai embora e nada e publicado.
   { SDL_Surface *s = superficie(1920, 1080, 9);

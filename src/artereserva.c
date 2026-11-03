@@ -1,4 +1,5 @@
 #include "artereserva.h"
+#include "arteurl.h"
 #include <pthread.h>
 #include "descoberta.h"
 #include "rede.h"
@@ -403,7 +404,6 @@ static int reservaStill(const char *chave, const char *id, int temp, int ep,
 // URLs distintas, ou antes disso se a arena for preenchida por URLs longas,
 // novas reservas sao omitidas de forma explicita.
 #define AR_REG 4096u
-#define AR_URL_MAX 512u
 #define AR_TEXT_MAX (2u * 1024u * 1024u)
 typedef struct {
   uint32_t h;
@@ -446,11 +446,11 @@ int arte_reserva_registrar(const char *url, const char *imdb, int poster) {
   if (strstr(url, "images.metahub.space") || strstr(url, "image.tmdb.org") ||
       strstr(url, "episodes.metahub.space")) return 0; // esses ja se resolvem sozinhos
   n = strlen(url);
-  if (n >= AR_URL_MAX) {
+  if (n >= NV_ARTE_URL_MAX) {
     pthread_mutex_lock(&regTrava);
     if (!regAvisouUrlLonga) {
       regAvisouUrlLonga = 1;
-      fprintf(stderr, "[tex] reserva addon: URL excede limite de %u bytes\n", AR_URL_MAX - 1u);
+      fprintf(stderr, "[tex] reserva addon: URL excede limite de %d bytes\n", NV_ARTE_URL_MAX - 1);
     }
     pthread_mutex_unlock(&regTrava);
     return 0;
