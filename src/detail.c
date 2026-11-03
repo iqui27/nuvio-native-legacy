@@ -1338,26 +1338,68 @@ static int notaDe(int i) {
 // cai na reserva do catalogo quando o MDBList nao respondeu) e, em serie, as
 // funcoes que entregam as notas por episodio. Barata: e chamada varias vezes
 // por quadro (empilhamento, foco, desenho).
-// Catalog ratings remain available while the Trakt season list is pending.
-static int notasCatTemp(int t) { return temporadaEm(t); }
-static const CatEp *notasCatEp(int t, int i) {
-  int numero = notasCatTemp(t);
-  for (int k = 0; k < cat_n_episodios(idx); k++) {
-    const CatEp *ep = cat_episodio(idx, k);
-    if (ep && ep->temporada == numero && i-- == 0) return ep;
+// Join real catalog and Trakt episodes by season and episode number.
+static int notasCatTemp(int t) {
+  if (t < nTemps()) return temporadaEm(t);
+  t -= nTemps();
+  for (int k = 0; k < extras_n_temporadas(); k++) {
+    int num = extras_temporada_numero(k), existe = 0;
+    for (int j = 0; j < nTemps(); j++) if (temporadaEm(j) == num) existe = 1;
+    if (!existe && t-- == 0) return num;
   }
-  return NULL;
+  return -1;
 }
-static int notasCatNEps(int t) {
-  int n = 0;
-  for (int k = 0; k < cat_n_episodios(idx); k++) {
-    const CatEp *ep = cat_episodio(idx, k);
-    if (ep && ep->temporada == notasCatTemp(t)) n++;
+static int notasCatNTemp(void) {
+  int n = nTemps();
+  for (int k = 0; k < extras_n_temporadas(); k++) {
+    int existe = 0;
+    for (int j = 0; j < nTemps(); j++) if (temporadaEm(j) == extras_temporada_numero(k)) existe = 1;
+    if (!existe) n++;
   }
   return n;
 }
-static int notasCatNumero(int t, int i) { const CatEp *e = notasCatEp(t, i); return e ? e->episodio : 0; }
-static int notasCatNota(int t, int i) { const CatEp *e = notasCatEp(t, i); return e ? e->nota : 0; }
+static int notasExtraTemp(int num) {
+  for (int t = 0; t < extras_n_temporadas(); t++) if (extras_temporada_numero(t) == num) return t;
+  return -1;
+}
+static const CatEp *notasCatPorNumero(int temp, int numero) {
+  for (int k = 0; k < cat_n_episodios(idx); k++) {
+    const CatEp *ep = cat_episodio(idx, k);
+    if (ep && ep->temporada == temp && ep->episodio == numero) return ep;
+  }
+  return NULL;
+}
+static int notasCatNumero(int t, int i) {
+  int num = notasCatTemp(t), et = notasExtraTemp(num);
+  if (et >= 0 && i < extras_n_eps(et)) return extras_ep_numero(et, i);
+  if (et >= 0) i -= extras_n_eps(et);
+  for (int k = 0; k < cat_n_episodios(idx); k++) {
+    const CatEp *ep = cat_episodio(idx, k);
+    int existe = 0;
+    if (!ep || ep->temporada != num) continue;
+    if (et >= 0) for (int j = 0; j < extras_n_eps(et); j++)
+      if (extras_ep_numero(et, j) == ep->episodio) existe = 1;
+    if (!existe && i-- == 0) return ep->episodio;
+  }
+  return 0;
+}
+static int notasCatNEps(int t) {
+  int num = notasCatTemp(t), et = notasExtraTemp(num), n = 0;
+  for (int k = 0; k < cat_n_episodios(idx); k++) {
+    const CatEp *ep = cat_episodio(idx, k);
+    if (ep && ep->temporada == num) n++;
+  }
+  if (et >= 0) for (int k = 0; k < extras_n_eps(et); k++)
+    if (!notasCatPorNumero(num, extras_ep_numero(et, k))) n++;
+  return n;
+}
+static int notasCatNota(int t, int i) {
+  int num = notasCatTemp(t), ep = notasCatNumero(t, i), et = notasExtraTemp(num);
+  if (et >= 0) for (int k = 0; k < extras_n_eps(et); k++)
+    if (extras_ep_numero(et, k) == ep && extras_ep_nota(et, k) > 0) return extras_ep_nota(et, k);
+  const CatEp *e = notasCatPorNumero(num, ep);
+  return e ? e->nota : 0;
+}
 static int notasCatDisponiveis(void) {
   for (int k = 0; k < cat_n_episodios(idx); k++) {
     const CatEp *ep = cat_episodio(idx, k);
@@ -1371,16 +1413,9 @@ static const NotasSecao *notasDados(void) {
   for (i = 0; i < EX_NFONTES; i++) s.cru[i] = extras_nota(i);
   if (!s.cru[EX_IMDB] && ajustes_mdblist_fonte(EX_IMDB)) s.cru[EX_IMDB] = notaDe(idx);
   s.notaPessoal = reacao_nota(cat_item(idx)->imdb);
-  s.nTemp = ehSerie() ? extras_n_temporadas() : 0;
-  s.tempNum = extras_temporada_numero;
-  s.nEps = extras_n_eps;
-  s.epNum = extras_ep_numero;
-  s.epNota = extras_ep_nota;
-  if (ehSerie() && s.nTemp == 0 && notasCatDisponiveis()) {
-    s.nTemp = nTemps();
-    s.tempNum = notasCatTemp; s.nEps = notasCatNEps;
-    s.epNum = notasCatNumero; s.epNota = notasCatNota;
-  }
+  s.nTemp = ehSerie() && (extras_n_temporadas() || notasCatDisponiveis()) ? notasCatNTemp() : 0;
+  s.tempNum = notasCatTemp; s.nEps = notasCatNEps;
+  s.epNum = notasCatNumero; s.epNota = notasCatNota;
   return &s;
 }
 
@@ -2657,10 +2692,12 @@ static int secaoN(int r) {
     case SEC_AUD_ARCO: {
       int t = audTemp(), n;
       if (t < 0) {
-        n = !extras_n_temporadas() && notasDados()->nTemp ? notasCatNEps(temporada) : 0;
+        n = notasDados()->nTemp ? notasCatNEps(temporada) : 0;
         return n < SA_EP_MAX ? n : SA_EP_MAX;
       }
-      n = extras_n_eps(t);
+      int pos = 0, num = extras_temporada_numero(t);
+      while (pos < notasDados()->nTemp && notasDados()->tempNum(pos) != num) pos++;
+      n = pos < notasDados()->nTemp ? notasDados()->nEps(pos) : 0;
       return n < SA_EP_MAX ? n : SA_EP_MAX;
     }
     case SEC_AUD_RADAR:
@@ -6623,11 +6660,15 @@ static void desenhaShuffle(GfxRect r, float f, float a) {
 static float temporadaBrilho(int sel) {
   return !sel ? 0.0f : epApple() && !epModerno() && nivel >= 1 && foco.fileira == SEC_EPISODIOS ? 1.0f : .6f;
 }
+static float temporadaFocoVisual(int sel, float f) {
+  return sel && epApple() && !epModerno() && nivel >= 1 && foco.fileira == SEC_EPISODIOS ? 1.0f : f;
+}
 static void desenhaTemporada(GfxRect r, int c, float f, float a) {
   char rot[32]; rotuloTemporada(c,rot,sizeof rot);
   int real=c<colTemp(nTemporadasReais()) && !ehShuffle(c), sel=real && posTemp(c)==temporada;
   float ar,ag,ab; ajustes_acento(&ar,&ag,&ab);
   float fr, fg, fb, ti = ajustes_acento_tinta(&fr, &fg, &fb);
+  f = temporadaFocoVisual(sel, f);
   if (epModerno()) {
     gfx_cor(r, .5f, 1, 1, 1, (sel ? .14f : 0)*a);
     if (ajustes_vidro()) gfx_vidro_pilula_cheia(r, .5f, f, a);
@@ -8458,14 +8499,15 @@ static float desenhaChamada(float x, float y, const char *titulo,
 static void desenhaNumeros(float x, float y, float a) {
   SaBloco b;
   int t = audTemp();
-  if (t < 0) t = temporada;
+  int numero = t < 0 ? temporadaEm(temporada) : extras_temporada_numero(t);
   memset(&b, 0, sizeof b);
-  b.temporada = notasDados()->tempNum(t);
-  b.tempIdx = t;
+  b.temporada = numero;
+  b.tempIdx = 0;
+  while (b.tempIdx < notasDados()->nTemp && notasDados()->tempNum(b.tempIdx) != numero) b.tempIdx++;
   b.sel = (nivel >= 1 && foco.fileira == SEC_NUMEROS) ? foco.coluna
                                                       : foco.colunaLembrada[SEC_NUMEROS];
   if (b.sel < 0 || b.sel >= secaoN(SEC_NUMEROS)) b.sel = 0;
-  b.selEp = notasDados()->epNum(t, b.sel);
+  b.selEp = notasDados()->epNum(b.tempIdx, b.sel);
   b.aberto = audTemp() >= 0 && audAberta && audTempAberta == b.temporada;
   b.notas = notasDados();
   serieaud_bloco(x, y, &b, a);

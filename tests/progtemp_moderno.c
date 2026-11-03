@@ -11,6 +11,8 @@
 #define extras_n_temporadas seasonCountFixture
 #define extras_temporada_numero seasonNumberFixture
 #define extras_n_eps episodeCountFixture
+#define extras_ep_numero episodeNumberFixture
+#define extras_ep_nota episodeRatingFixture
 #define seriefrases_n quoteCountFixture
 #define seriefrases_n_fatos factCountFixture
 #define extras_comentario_spoiler comSpoilerFixture
@@ -33,7 +35,10 @@ int ratingFixture(int f) { (void)f; return 0; }
 static int seasonCount = 1;
 int seasonCountFixture(void) { return seasonCount; }
 int seasonNumberFixture(int t) { (void)t; return 1; }
-int episodeCountFixture(int t) { (void)t; return 6; }
+static int episodeCount = 6;
+int episodeCountFixture(int t) { (void)t; return episodeCount; }
+int episodeNumberFixture(int t, int i) { (void)t; return i+1; }
+int episodeRatingFixture(int t, int i) { (void)t; return i == 0 ? 0 : 90; }
 int togetherAvailableFixture(void) { return 0; }
 int lockAvailableFixture(void) { return 0; }
 void togetherOpenFixture(int i,int t,int e) { (void)i; (void)t; (void)e; }
@@ -112,6 +117,12 @@ int main(void) {
   CHECK(secaoN(SEC_PROGTEMP) == 1);
   CHECK(secaoN(SEC_NUMEROS) == 6);
   CHECK(notasDados()->nTemp == 1);
+  CHECK(notasDados()->epNota(0, 0) == 75);
+  CHECK(notasDados()->epNota(0, 1) == 90);
+  episodeCount = 2;
+  CHECK(notasDados()->nEps(0) == 6);
+  CHECK(notasDados()->epNum(0, 5) == 6 && notasDados()->epNota(0, 5) == 80);
+  episodeCount = 6;
   seasonCount = 0; ratSinc = 0;
   CHECK(secaoN(SEC_NUMEROS) == 6);
   CHECK(notasDados()->nTemp == 1 && notasDados()->epNota(0, 0) == 75);
@@ -129,12 +140,33 @@ int main(void) {
   nivel=1; foco.fileira=SEC_EPISODIOS;
   CHECK(temporadaBrilho(1) == 1.0f);
   CHECK(temporadaBrilho(0) == 0.0f);
+  for (int vidro=0; vidro<2; vidro++) {
+    ajustes_definir_vidro(vidro);
+    CHECK(temporadaFocoVisual(1, 0) == 1);
+    CHECK(temporadaFocoVisual(0, 0) == 0);
+  }
   foco.fileira=SEC_TEMPORADAS; CHECK(temporadaBrilho(1) == .6f);
   foco.fileira=SEC_EPISODIOS;
+  layoutHome(HOME_LAYOUT_PADRAO); CHECK(temporadaFocoVisual(1, 0) == 0);
+  layoutHome(HOME_LAYOUT_MODERNA); CHECK(temporadaFocoVisual(1, 0) == 0);
+  layoutHome(HOME_LAYOUT_DINAMICA);
   recalcularLayout();
   h = alturaSecao(SEC_PROGTEMP);
   hTg = tgraf_altura_dados(tgraf_dados(idx));
   CHECK(fabsf(h - hTg) < 0.5f);
+
+  serieItem.temporadas[1] = 2; serieItem.nTemporadas = 2;
+  cat_definir_tudo(&serieItem, 1, NULL, 0);
+  for (int i=0; i<3; i++) {
+    memset(&eps[6+i], 0, sizeof eps[6+i]);
+    eps[6+i].temporada=2; eps[6+i].episodio=i+1; eps[6+i].nota=81+i;
+  }
+  cat_definir_episodios(0, eps, 9);
+  seasonCount=1; ratSinc=0; temporada=1;
+  CHECK(notasDados()->nTemp == 2);
+  CHECK(notasDados()->tempNum(1) == 2 && notasDados()->nEps(1) == 3);
+  CHECK(notasDados()->epNota(1, 0) == 81);
+  CHECK(secaoN(SEC_NUMEROS) == 3);
 
   printf(falhas ? "FALHAS: %d\n" : "PASS: progtemp_moderno\n", falhas);
   SDL_Quit();
