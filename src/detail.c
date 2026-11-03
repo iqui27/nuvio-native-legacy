@@ -4090,7 +4090,7 @@ static void detail_atualizar_(float dt, Uint32 agora) {
   // telas e app.c chama todas do mesmo jeito.
   (void)agora;
   episodios_menu_atualizar(dt);   // as molas do menu de visto / painel da temporada
-  if (aberto && epModerno() && episodios_menu_visivel()) {
+  if (aberto && episodios_menu_visivel()) {
     int t, e;
     if (episodios_menu_trocou(&t, &e)) {
       for (int c=0; c<nTemporadasReais(); c++) if (temporadaEm(c)==t) temporada=c;
@@ -8598,8 +8598,8 @@ static int moverFileira(int dy) {
 }
 
 // Anchor season menus to their tab. Episode menus cover the original row;
-// Modern Detail reuses its renderer in a reserved summary column beside the
-// actions. All menu rectangles are virtual; Detail uses UI-scaled pixels.
+// Detail reuses its renderer in a reserved summary column beside the actions.
+// All menu rectangles are virtual; Detail uses UI-scaled pixels.
 static GfxRect menuOrigem;
 static int     menuOrigemCol;
 static float   menuOrigemF, menuOrigemA;
@@ -8613,7 +8613,7 @@ static void menuDeVisto(Uint32 agora) {
   episodios_menu_desenhar();
   if (menuOrigem.w <= 8.0f) return;
   if (episodios_menu_painel()) desenhaTemporada(menuOrigem, colTemp(menuOrigemCol), menuOrigemF, menuOrigemA);
-  else if (epModerno() && foco.fileira == SEC_EPISODIOS) {
+  else if (foco.fileira == SEC_EPISODIOS) {
     GfxRect summary;
     if (episodios_menu_resumo(&summary)) {
       float e = gfx_escala_ui();

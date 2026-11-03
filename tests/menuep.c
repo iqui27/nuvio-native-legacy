@@ -379,6 +379,7 @@ int main(int argc, char **argv) {
     fprintf(fa, "notaEpisodio 1\nselected_theme 2\nbordaFocoCartaz 1\n");
 #endif
     if (f && *f) fprintf(fa, "fonteInterface %d\n", atoi(f));
+    if (getenv("NV_EP_MENU_LAYOUT")) fprintf(fa, "homeLayoutLocal %d\n", atoi(getenv("NV_EP_MENU_LAYOUT")));
     fclose(fa); }
   setenv("NUVIO_TAMANHO_UI", "1", 1); // Geometry assertions use 1080p layout units.
   SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");
@@ -423,6 +424,25 @@ int main(int argc, char **argv) {
   focar(SEC_EPISODIOS, 5);
   quadros(120);
   acordar(); quadros(2);
+
+  if (getenv("NV_EP_MENU_LAYOUT")) {
+    const CatEp *ep=cat_episodio(idx,epAbsoluto(foco.coluna));
+    assert(ep && ep->nome[0]);
+    int t=ep->temporada,e=ep->episodio,mt=0,me=0; GfxRect resumo;
+    segurarOk();quadros(120);
+    CONFERE(episodios_menu_aberto() && episodios_menu_fontes(&mt,&me) && mt==t && me==e,
+            "menu conserva temporada e episodio do card focado");
+    CONFERE(episodios_menu_resumo(&resumo) && resumo.w>0 && resumo.h>0,
+            "menu reserva resumo visual do episodio focado");
+    gravar("resumo-episodio");
+    tecla(SDL_KEYDOWN,SDLK_UP);tecla(SDL_KEYUP,SDLK_UP);
+    tecla(SDL_KEYDOWN,SDLK_RIGHT);tecla(SDL_KEYUP,SDLK_RIGHT);quadros(60);
+    episodios_menu_fontes(&mt,&me);
+    const CatEp *atual=cat_episodio(idx,epAbsoluto(foco.coluna));
+    CONFERE(atual && mt==atual->temporada && me==atual->episodio && me==e+1,
+            "resumo acompanha episodio seguinte no menu");
+    return falhas ? 1 : 0;
+  }
 
 #ifdef NV_TEST_EPCOMENT
   CONFERE(epRequests == 0 && epRatings == 0, "plain focus makes no episode requests");
