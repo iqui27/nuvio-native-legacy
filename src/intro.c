@@ -839,12 +839,16 @@ int intro_auto_ativo(double pos,double*fim,int*tipo){
 // O BOTAO DE PULAR, com tempo: aparece sozinho UMA vez por trecho, some em
 // 10 s se nao estiver focado, e so volta enquanto os controles (osd) estao de
 // pe dentro da janela. Chamado a cada quadro; `agora` em segundos monotonicos.
-int intro_botao(double pos,double agora,int osd,int focado,double*fim,int*tipo){
+int intro_botao_config(double pos,double agora,int osd,int focado,double*fim,int*tipo,
+                        int mostrarIntro,int mostrarResumo,int mostrarCreditos){
   int i,idx=-1,vis=0;
   pthread_mutex_lock(&trava);
   for(i=0;i<nTrechos;i++){
     int dentro=trechos[i].fim>0.0?(pos>=trechos[i].inicio&&pos<trechos[i].fim):(pos>=trechos[i].inicio);
     if(trechos[i].tipo==INTRO_PREVIA)continue;
+    if((trechos[i].tipo==INTRO_ABERTURA&&!mostrarIntro)||
+       (trechos[i].tipo==INTRO_RESUMO&&!mostrarResumo)||
+       (trechos[i].tipo==INTRO_CREDITOS&&!mostrarCreditos))continue;
     if(dentro&&valido(i)){idx=i;break;}
   }
   if(idx<0){botaoIdx=-1;botaoVis=0;pthread_mutex_unlock(&trava);return 0;}
@@ -855,6 +859,11 @@ int intro_botao(double pos,double agora,int osd,int focado,double*fim,int*tipo){
   botaoVis=vis;botaoFim=fimEmendado(idx);botaoTipo=trechos[idx].tipo;
   if(vis){if(fim)*fim=botaoFim;if(tipo)*tipo=botaoTipo;}
   pthread_mutex_unlock(&trava);return vis;
+}
+
+// Existing callers retain the all-buttons-enabled policy.
+int intro_botao(double pos,double agora,int osd,int focado,double*fim,int*tipo){
+  return intro_botao_config(pos,agora,osd,focado,fim,tipo,1,1,1);
 }
 
 // O que o ultimo intro_botao decidiu: as teclas pulam so o que esta na tela.

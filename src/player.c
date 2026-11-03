@@ -463,7 +463,15 @@ static double posLegenda(void) {
 }
 // Creditos tambem sao pulaveis — e o "Skip Outro" do web.
 static int skipDisponivel(void), skipLiberado;
-static int trechoPulavel(double *fim) { int tipo; return skipDisponivel() && intro_botao_visivel(fim, &tipo); }
+static int skipBotaoPermitido(int tipo) {
+  return tipo == INTRO_ABERTURA ? ajustes_show_skip_intro() :
+         tipo == INTRO_RESUMO ? ajustes_show_skip_recap() :
+         tipo == INTRO_CREDITOS ? ajustes_show_skip_credits() : 0;
+}
+static int trechoPulavel(double *fim) {
+  int tipo;
+  return skipDisponivel() && intro_botao_visivel(fim, &tipo) && skipBotaoPermitido(tipo);
+}
 static float duracaoSeg = PLR_DUR_PADRAO;
 // O fim ZERO do TheIntroDB quer dizer "ate o fim da midia" (intro.c): mirar
 // fim+0.25 ai seria um salto para o COMECO do arquivo — o alvo resolve o nulo.
@@ -6185,7 +6193,7 @@ static int skipDisponivel(void) {
                    !video_bufferando_ms();
   return skipLiberado && fontePrincipal();
 }
-static void ponteiroSkip(int a, int b) { (void)a; (void)b; if (!skipDisponivel()) return; skipFoco = 1; barraFoco = 1; acordar(); }
+static void ponteiroSkip(int a, int b) { (void)a; (void)b; if (!trechoPulavel(NULL)) return; skipFoco = 1; barraFoco = 1; acordar(); }
 
 static void desenharAcoesEpisodioCorpo(void);
 // O botao de pular e OSD: camada ampliada (escala.h), na tela virtual.
@@ -6198,7 +6206,8 @@ static void desenharAcoesEpisodioCorpo(void){
   const CatEp *prox=player_proximo_episodio();double fim;int tipo=0;
   if (!skipDisponivel()) { skipFoco = 0; return; }
   intro_definir_duracao(duracaoReal ? (double)duracaoSeg : 0.0, epE <= 0);
-  int trecho=intro_botao(posSeg,monoSeg(),visivel,skipFoco&&visivel,&fim,&tipo);
+  int trecho=intro_botao_config(posSeg,monoSeg(),visivel,skipFoco&&visivel,&fim,&tipo,
+    ajustes_show_skip_intro(),ajustes_show_skip_recap(),ajustes_show_skip_credits());
   // A CAIXA DE "Próximo episódio" QUE FICAVA AQUI FOI APAGADA. Era um retangulo
   // de posicao fixa em {420,720} que caia por cima da barra de tempo, sem foco
   // e sem parecer clicavel — o dono fotografou. O proximo episodio agora e um

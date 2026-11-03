@@ -257,6 +257,9 @@ static const char *uxSinonimos(int op) {
     case AJ_EXT_AUDIO_COPIAS: return "audio another source duplicates copies hide same file duplikaty kopie ukryj";
     case AJ_EXT_AUDIO_AUTO: return "audio another version match automatically start auto sync dopasuj automatycznie start";
     case AJ_EXT_AUDIO_AVISO: return "audio another version sync adjusted message notice toast komunikat synchronizacja poprawiona";
+    case AJ_SHOW_SKIP_INTRO: return "show hide skip intro button opening pokaz ukryj przycisk intro";
+    case AJ_SHOW_SKIP_RECAP: return "show hide skip recap button summary poprzednio przypomnienie";
+    case AJ_SHOW_SKIP_CREDITS: return "show hide skip outro credits button ending napisy koncowe przycisk";
     case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: return "proximo episodio automatico autoplay creditos contagem netflix sozinho next episode auto play countdown";
     case AJ_CW_MINIMO: return "minimo continuar assistindo porcentagem percentual entrar fileira retomada progresso quanto assistir comecou piso minimum percent continue watching threshold row";
     case AJ_FONTE_PREPARAR: return "preparar fonte ao abrir titulo antecipar resolver antecipado play instantaneo inicio rapido debrid painel arquivo prepare source ahead instant start";
@@ -517,3 +520,4 @@ int ajustes_buscar(const char *consulta, AjusteBuscaResultado *resultados, int c
   }
   return total;
 }
+

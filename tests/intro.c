@@ -787,6 +787,40 @@ int main(int argc,char **argv) {
     assert(na == 2 && a[0].ani == 1 && a[0].inicio == 10.0);   // OP do AniSkip fica
     assert(a[1].tipo == INTRO_CREDITOS && a[1].ani == 0);      // ED vem do TheIntroDB
     puts("ok  fontes completam por tipo, com origem por trecho"); }
+  // Manual visibility is independent for every segment and OSD/focus state.
+  // Hidden markers remain available to automatic skip and credits detection.
+  {
+    IntroTrecho markers[]={{10,90,INTRO_ABERTURA,0},{0,8,INTRO_RESUMO,0},{2850,2900,INTRO_CREDITOS,0}};
+    const double positions[]={40,4,2860};
+    const int types[]={INTRO_ABERTURA,INTRO_RESUMO,INTRO_CREDITOS};
+    for(int mask=0;mask<8;mask++)for(int osd=0;osd<2;osd++)for(int focused=0;focused<2;focused++)
+      for(int k=0;k<3;k++){
+        intro_shot_definir(markers,3);intro_definir_duracao(3000,0);
+        double end=-1;int type=-1,enabled=!!(mask&(1<<k));
+        assert(intro_botao_config(positions[k],100,osd,focused,&end,&type,mask&1,mask&2,mask&4)==enabled);
+        assert(intro_botao_visivel(NULL,NULL)==enabled);
+        if(enabled)assert(type==types[k]&&end==markers[k].fim);
+        else assert(end==-1&&type==-1);
+        assert(intro_ativo(positions[k],&end,&type)&&type==types[k]);
+        assert(intro_creditos_seg()==2850);
+        assert(intro_auto_pular(types[k],markers[k].fim,3000,1,1,1));
+      }
+    intro_shot_definir(markers,3);intro_definir_duracao(3000,0);
+    assert(intro_botao_config(40,100,0,0,NULL,NULL,1,1,1));
+    assert(!intro_botao_config(40,101,1,1,NULL,NULL,0,1,1));
+    assert(!intro_botao_visivel(NULL,NULL)); // no stale actionable button
+    assert(intro_botao_config(40,102,0,0,NULL,NULL,1,1,1));
+    assert(!intro_botao_config(40,113,0,0,NULL,NULL,1,1,1));
+    assert(intro_botao_config(40,114,1,0,NULL,NULL,1,1,1));
+    intro_botao_esconder(115);assert(!intro_botao_visivel(NULL,NULL));
+    // An overlapping disabled intro must not block an enabled recap.
+    markers[1]=(IntroTrecho){20,70,INTRO_RESUMO,0};
+    intro_shot_definir(markers,3);intro_definir_duracao(3000,0);
+    double end;int type;
+    assert(intro_botao_config(40,200,0,0,&end,&type,0,1,0)&&type==INTRO_RESUMO&&end==70);
+    assert(intro_botao(40,201,0,0,&end,&type)&&type==INTRO_ABERTURA); // compatibility wrapper
+    puts("ok  independent intro/recap/outro button visibility: all 8 combinations, OSD/focus, live toggles, timers, overlap and unchanged markers/automatic skips");
+  }
   assert(!rmdir(dadosTeste));
   puts("intro: tudo ok");
   // #329/#331: pular sozinho. Assinatura: (tipo, fim, dur, abertura, resumo, creditos).

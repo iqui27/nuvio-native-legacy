@@ -755,6 +755,9 @@ typedef enum {
   AJ_WEBOS_HLS_TS,     // HLS test: this TV starts HLS in MPEG-TS, learned by the player (device-local, no row)
   AJ_UPDATE_NOTIFICATIONS, // device-local; automatic update notices, off by default
   AJ_REMEMBER_PROFILE, // device-wide startup preference; off by default
+  AJ_SHOW_SKIP_INTRO, // button visibility only; profile-local, default ON
+  AJ_SHOW_SKIP_RECAP,
+  AJ_SHOW_SKIP_CREDITS, // outro and credits share the same marker type
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1928,6 +1931,9 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("HLS: MPEG-TS (Experimental)", V_LIGA, 2),
   ESC("Update notifications", V_LIGA, 2),
   ESC("Remember last profile", V_LIGA, 2),
+  ESC("Show intro skip button", V_LIGA, 2),
+  ESC("Show recap skip button", V_LIGA, 2),
+  ESC("Show outro / credits skip button", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2287,6 +2293,9 @@ static const char *CHAVE[] = {
   "webosHlsTsLocal",
   "updateNotificationsLocal",
   "rememberLastProfileLocal",
+  "showSkipIntroButtonLocal",
+  "showSkipRecapButtonLocal",
+  "showSkipCreditsButtonLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3028,6 +3037,9 @@ int ajustes_audio_externo_ocultar_copias(void) { return lig(AJ_EXT_AUDIO_COPIAS)
 int ajustes_audio_externo_ordem_addon(void) { return lig(AJ_EXT_AUDIO_ORDEM); }
 int ajustes_audio_externo_bufor_mib(void) { int v = valor[AJ_EXT_AUDIO_BUFOR]; return v == 1 ? 16 : v == 2 ? 32 : 8; }
 int ajustes_pular_creditos(void)      { return lig(AJ_PULAR_CREDITOS); }
+int ajustes_show_skip_intro(void)     { return lig(AJ_SHOW_SKIP_INTRO); }
+int ajustes_show_skip_recap(void)     { return lig(AJ_SHOW_SKIP_RECAP); }
+int ajustes_show_skip_credits(void)   { return lig(AJ_SHOW_SKIP_CREDITS); }
 int ajustes_medidor_desempenho(void)  { return valor[AJ_MEDIDOR]; }
 int ajustes_fonte_manual(void)        { return lig(AJ_FONTE_MANUAL); }
 int ajustes_fonte_primeira(void)      { return ajustes_fonte_prioridade() == 3 || valor[AJ_FONTE_AUTO] == 1; }
@@ -6331,6 +6343,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_OCULTAR_FILMES_VISTOS: /* por perfil desta TV; fora do blob da conta */
     case AJ_BIB_HOME:       /* #507: idem */
     case AJ_REACAO_CREDITOS: /* o web nao tem a pergunta */
+    case AJ_SHOW_SKIP_INTRO: case AJ_SHOW_SKIP_RECAP: case AJ_SHOW_SKIP_CREDITS:
     case AJ_PAUSA_COMENTARIOS: /* o web nao tem os comentarios do Trakt no painel de pausa */
     case AJ_PAUSA_NOTAS: /* nem as notas */
     case AJ_PAUSA_ELENCO: /* nem o elenco */
@@ -7980,6 +7993,9 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_EXT_AUDIO_SEGUIR: return "Another cut only (theatrical audio, extended picture): in scenes the other version lacks, this file's own audio plays until shared scenes return. Uses some CPU.";
     case AJ_EXT_AUDIO_SERIE: return "When you pick audio from another version in a series, the next episodes use the same version (same release in their source list), the same track (e.g. one of two English) and the same sync, as soon as it appears there.";
     case AJ_PULAR_ABERTURA: return "Pula a abertura sozinho quando o episódio tem o trecho marcado, e avisa na tela. Sem marcador, nada é pulado. O botão Pular abertura continua valendo.";
+    case AJ_SHOW_SKIP_INTRO: return "Show the manual Skip intro button when an intro marker is available. Turning this off hides the button, including while player controls are open. Automatic intro skipping is controlled separately.";
+    case AJ_SHOW_SKIP_RECAP: return "Show the manual Skip recap button when a recap marker is available. Turning this off hides only this button. Automatic recap skipping is controlled separately.";
+    case AJ_SHOW_SKIP_CREDITS: return "Show the manual Skip outro / credits button when a credits marker is available. Outro and credits use the same marker type. Automatic credits skipping and next-episode playback are controlled separately.";
     case AJ_PULAR_RESUMO: return "Pula o resumo do episódio anterior sozinho quando o episódio tem o trecho marcado, e avisa na tela. Sem marcador, nada é pulado.";
     case AJ_PULAR_CREDITOS: return "Pula os créditos sozinho, e avisa na tela, só quando o marcador diz onde eles começam e onde acabam. Sem marcador completo, e nos créditos que vão até o fim do episódio, nada é pulado: quem cuida é o próximo episódio.";
     case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: {
@@ -11128,6 +11144,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_SELOS_PACOTE:
     case AJ_REACAO_CREDITOS: case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PROXIMO_AUTO: case AJ_PULAR_CREDITOS: case AJ_PROXIMO_CONTAGEM:
     case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: case AJ_EXT_AUDIO_ORDEM: case AJ_EXT_AUDIO_BUFOR:
+    case AJ_SHOW_SKIP_INTRO: case AJ_SHOW_SKIP_RECAP: case AJ_SHOW_SKIP_CREDITS:
     case AJ_FONTE_PRAZO: case AJ_TAM_MAX: case AJ_TAM_MIN: case AJ_PROPORCAO_PADRAO: case AJ_DTS_AC3:
     case AJ_FONTE_ESCOPO: case AJ_FONTE_ADDONS_PERM: case AJ_FONTE_PLUGINS_PERM: case AJ_FONTE_OUTROS:
     case AJ_FONTE_REGEX: case AJ_FONTE_REGEX_PADRAO: case AJ_FONTE_REGEX_MODELO:
