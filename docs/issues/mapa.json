@@ -15201,6 +15201,15 @@
    "ref": "integracao/2.1@b211d91e7ffe8f119824c9dcc3a37f40fe457f3f",
    "resultado": "passou com limites externos: C9 SSH timeout; CORS Authorization 0/7 hosts AIO padrão",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/status-tv.md; APK SHA-256 b67b6afea5438036e1ee622466b8080c1b5ad58c67702e6fadf97ad25e34d6d5; build/install/Worker smoke rc=0; sem D-pad ou escrita em conta"
+  },
+  {
+   "data": "2026-11-03 14:05",
+   "quem": "Claude Code (teste/build); Codex Terra e Sol (review)",
+   "o_que": "Temporadas permanecem acesas ao focar episódios nos layouts de TV, com vidro ligado ou desligado.",
+   "issues": [],
+   "ref": "agente/21-episodetabs@7bf0fb394b278fbaf939d7facd59c023377f49f4",
+   "resultado": "passou testes, reviews e build Android de prova; instalação pendente do próximo lote de integração",
+   "evidencia": "Baseline: alpha 0,42 em Padrão/Dinâmico; fix: alpha 1,00 em seis combinações. shuffleserie.sh e build-local rc=0; Terra/Sol OK sem P0/P1. APK de prova SHA-256 8e1a3ac9725c554a7d642b7b706102fa727541b21d2938d7aed537375ae2a81d; /Volumes/ExternalSSD/tmp/rev/status-tv.md; sem D-pad."
   }
  ],
  "decisoes": [
