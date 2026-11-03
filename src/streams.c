@@ -1550,11 +1550,18 @@ int stream_filme_consultar(const AddonsConsulta *consulta, const char *id,
 }
 int stream_filme_fontes(const char *id) {
   if (!id || !*id || strcmp(id, alvoLista) || addons_ocupado()) return -1;
-  int qtd = 0;
+  // Called per frame by the title page; recount only when the list or the services change.
+  static unsigned ger, rev; static int deb = -1, p2p = -1, qtd;
   pthread_mutex_lock(&verTrava);
-  for (int i = 0; i < n; i++) if (stream_fonte_disponivel(&lista[i])) qtd++;
+  unsigned r = atomic_load(&folhaRevisao);
+  int d = debrid_ativo(), p = p2p_ativo();
+  if (ger != listaGeracao || rev != r || deb != d || p2p != p) {
+    ger = listaGeracao; rev = r; deb = d; p2p = p; qtd = 0;
+    for (int i = 0; i < n; i++) if (stream_fonte_disponivel(&lista[i])) qtd++;
+  }
+  int res = qtd;
   pthread_mutex_unlock(&verTrava);
-  return qtd;
+  return res;
 }
 
 // PLAYLIST HLS SEM UM SEGMENTO SEQUER e fonte MORTA, e ela passava na

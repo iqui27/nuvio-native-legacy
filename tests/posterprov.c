@@ -313,6 +313,17 @@ int main(void) {
     assert(posterprov_e_provedor(posterprov_card("tt0108052", 0, "movie", "n"))); }
   ok("card: cartaz normal quando falha/nao entende, lembra a falha, config zera");
 
+  // Portrait and landscape of one title keep separate slots: one consult each.
+  { PosterProvCfg m;
+    memset(&m, 0, sizeof m); m.prov = PP_MODELO;
+    snprintf(m.modelo, sizeof m.modelo, "https://x.com/{imdb}?shape={shape}");
+    posterprov_configurar(&m);
+    estadoFalso = 1; nConsultas = 0;
+    for (int i = 0; i < 4; i++) posterprov_card_formato(NULL, "tt0111161", 0, "movie", "n", i & 1);
+    assert(nConsultas == 2);
+    posterprov_configurar(&c); }
+  ok("card: cartaz em pe e deitado do mesmo titulo nao se despejam");
+
   // ---------------------------------------------------------- poster do addon
   // Desligado (padrao): o provedor vence, com ou sem origem. Ligado: o cartaz
   // proprio de um item de catalogo de addon vence; sem origem (Trakt, Salvos)
