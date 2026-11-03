@@ -223,9 +223,8 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 // De quanto o bloco desliza para baixo quando escondido. Pequeno de proposito:
 // o que faz o movimento ser lido nao e a distancia, e a mola somada ao fade.
 #define PLR_DESLIZE       46.0f
-// Quanto tempo a guia parental fica na tela, contando do primeiro quadro com
-// imagem, e quanto dura o esmaecimento final. Depois disso ela nao volta nesta
-// reproducao.
+// The opening guide gets its established six seconds while it owns the island.
+// Hidden frames pause this window; after expiry it does not return this playback.
 //
 // ERAM SETE SEGUNDOS, e a conta que os justificava media LEITURA, nao quadros.
 // Sete segundos sao o bastante para ler quatro linhas curtas a 60 fps. No
@@ -398,7 +397,7 @@ static Uint32 abertoEm;
 static int    medirAbertura, tocouMedido;
 static Uint32 loadEm;          // quando a URL foi entregue ao pipeline (0 = ainda nao)
 // Quando os selos do guia parental entraram na tela. Ver a nota no desenho.
-static Uint32 pgDesde;
+static Uint32 pgDesde, pgQuadro;
 // AS DUAS VARIAVEIS DE MIDIA. Todo o resto do arquivo le so daqui — quando o
 // video real entrar, sao elas que passam a ser preenchidas pelo decodificador.
 static int   comVideo = 0;
@@ -1935,7 +1934,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
   encolhe = 1.0f; encolheAlvo = 0.0f; encolheT = 0.0f; encolheEm = 0;
   posplay_fechar();   // titulo novo, painel do anterior nao vale mais
   reacao_fechar();
-  pgDesde = 0;
+  pgDesde = pgQuadro = 0;
   epgIdx = -1;
   // Canal ao vivo nao tem classificacao por titulo: o id "cs:channel:..." nao
   // existe na base parental e o pedido so gastaria uma requisicao.
@@ -2953,7 +2952,7 @@ static void fecharSessao(int manter, int trocaFonte) {
   // fechamento faria a proxima reproducao achar que a janela do aviso ja tinha
   // corrido — o aviso simplesmente nao entraria, sem nada no log dizendo por
   // que. Ver a nota no desenho da guia parental.
-  inicioImagem = 0; pgDesde = 0;
+  inicioImagem = 0; pgDesde = pgQuadro = 0;
 }
 
 void player_encerrar(void) {
@@ -6528,6 +6527,16 @@ static void capaReabertura(GfxRect furo, const CatItem *c, Uint32 agora) {
 
 void player_desenhar(Uint32 agora) {
   if (!player_visivel()) return;
+  // Keep the established reading windows while their island content is hidden.
+  // The player has one replaceable toast slot; no second queue is needed.
+  if (pgQuadro) {
+    Uint32 dt = agora - pgQuadro;
+    if (pgDesde && (float)(pgQuadro - pgDesde) / 1000.0f < PG_SEG_TOTAL &&
+        !plrilha_baixa_visivel()) pgDesde += dt;
+    if (plrilha_baixa_visivel() && toastAte > pgQuadro &&
+        (!toastTexto[0] || !toastCor) && toastAte != durFonteAcaoAte) toastAte += dt;
+  }
+  pgQuadro = agora;
   const CatItem *c = item();
   // COR VIVA: o titulo que TOCA manda na cor (abrindo, OSD, pausa, pos-play),
   // acima de tudo. A chave e a arte da tela de abertura logo abaixo; se ela
@@ -6726,8 +6735,7 @@ void player_desenhar(Uint32 agora) {
     static Uint32 dtsDesde;
     int e = player_carregando() || ehCanal() ? VIDEO_DTS_NENHUM : video_dts_estado();
     if (e != dtsVisto) { dtsVisto = e; dtsDesde = agora; }
-    // A guia parental (tambem na ilha, de prioridade baixa) vem primeiro: o
-    // aviso do DTS espera ela fechar, em vez de derruba-la.
+    // The opening guide comes first: DTS notices wait for its reading window.
     if (pgDesde && (float)(agora - pgDesde) / 1000.0f < PG_SEG_TOTAL) dtsDesde = agora;
     if (e != VIDEO_DTS_NENHUM && e != VIDEO_DTS_PREPARANDO && agora - dtsDesde >= 1500u) {
       Uint32 dur = e == VIDEO_DTS_FALHOU || e == VIDEO_DTS_SEM_SOM ? 10000u : 5000u;
@@ -6958,7 +6966,7 @@ void player_desenhar(Uint32 agora) {
     // tres causas — a guia nunca chegou, chegou e a janela ja tinha fechado, ou
     // chegou, abriu e algo a derrubou antes dos sete segundos. Uma linha por
     // abertura e uma por fechamento, nunca por quadro.
-    if (np > 0 && tg >= 0.0f && !pgDesde && tg < PG_LIMITE_SEG) {
+    if (!saindo && np > 0 && tg >= 0.0f && !pgDesde && tg < PG_LIMITE_SEG) {
       pgDesde = agora;
       printf("[pg] abriu: %d selos, %.1fs depois da imagem\n", np, tg);
       fflush(stdout);
@@ -6972,11 +6980,11 @@ void player_desenhar(Uint32 agora) {
       fflush(stdout);
     }
     if (np < 1) pgDesde = 0;
-    if (np > 0 && pgDesde &&
+    if (!saindo && np > 0 && pgDesde &&
         (float)(agora - pgDesde) / 1000.0f < PG_SEG_TOTAL) {
       tg = (float)(agora - pgDesde) / 1000.0f;
       // NASCE DA ILHA DO RELOGIO (plrguia.c): a pilula cresce ate o corpo com
-      // as linhas e volta a hora quando a janela fecha. Cede aos outros pedidos.
+      // as linhas e volta a hora quando a janela fecha. Ordinary notices wait.
       { const CatItem *ci = item();
         plrguia_pedir(tg, anim, ci ? ci->classificacao : ""); }
     }
