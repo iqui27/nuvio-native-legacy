@@ -80,7 +80,7 @@ int main(int argc,char **argv) {
       ajustes_definir_vidro(g); aioui_shot(5,&states[i]);
       for(int tick=0;tick<120;tick++) { frame(10); SDL_Delay(2); }
       save(argv[1],name);
-      if(i==3) {
+      if(i==3 && !getenv("AIO_SHOT_STATES_ONLY")) {
         SDL_Event key={0}; key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_LEFT; aioui_evento(&key); frame(400);
         snprintf(name,sizeof name,"sidebar-%s",g?"glass":"solid"); save(argv[1],name);
       }

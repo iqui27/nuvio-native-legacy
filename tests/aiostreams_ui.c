@@ -4,13 +4,17 @@
 static int keyboardResult, keyboardMasked, p2p, activeProfile=1;
 static int sidebarDrawn, sidebarHighlight, sidebarOpaque, glassEnabled;
 static int pairStarts, pairStatus=AIOPAIR_UNAVAILABLE;
+static int dashboardDrawing, summarySurfaces, dashboardLogo, cardFocus, accentHeaders, manifestLabel;
+int anim_politica_reduzida;
 int aiopair_start(const char *s) { assert(!strcmp(s,host)); pairStarts++; return 1; }
 void aiopair_close(void) { }
 int aiopair_state(char *s,size_t n) { if(n)s[0]=0;return pairStatus; }
 int aiopair_take(char *a,size_t n,char *o,size_t no) { return 0; }
 void ajustes_acento(float *r,float *g,float *b) { *r=*g=*b=.9f; }
 float ajustes_acento_tinta(float *r,float *g,float *b) { ajustes_acento(r,g,b); return .071f; }
-void plrui_material(GfxRect r,float radius,int modal,float a) { }
+void plrui_material(GfxRect r,float radius,int modal,float a) {
+  if(dashboardDrawing && r.y==248 && r.h==132) summarySurfaces++;
+}
 GfxRecorteAnt gfx_recorte_dentro(float x,float y,float w,float h) { return (GfxRecorteAnt){0}; }
 void gfx_recorte_voltar(GfxRecorteAnt r) { }
 float gfx_opacidade_grupo=1;
@@ -19,12 +23,15 @@ float gfx_escala_txt_entrar(void) { return 1; }
 void gfx_escala_sair(float s) { (void)s; }
 int ajustes_vidro(void) { return glassEnabled; }
 float gfx_vidro_opacidade(void) { return 1; }
-GLuint tex_obter(const char *p) { (void)p; return 0; }
-void gfx_rect(GfxRect r,GLuint t,GfxModo m,float a,float b,float c,float d,float e,float f,float g,float h) { }
+GLuint tex_obter(const char *p) { (void)p; return 1; }
+void gfx_rect(GfxRect r,GLuint t,GfxModo m,float a,float b,float c,float d,float e,float f,float g,float h) {
+  if(dashboardDrawing && t && m==GFX_MARCA && r.w>=56 && r.h>=56 && r.y<248) dashboardLogo++;
+}
 void gfx_sombra_sob(GfxRect r,float a,float b,float c,float d,float e,float f,float g,GfxRect s,float h,float i) { }
 void gfx_vidro(GfxRect r,float a,int b,float c,float d,float e) { }
 void gfx_luz_canto(GfxRect r,float a,float b,float c,float d,float e,float f,float g,float h) { }
 void gfx_cor(GfxRect r,float a,float b,float c,float d,float e) {
+  if(dashboardDrawing && r.w==48 && r.h==48 && e>.9f) accentHeaders++;
   // The open rail: its own lighter surface, then the focused item filled in the accent.
   if(r.x==72 && r.w==320 && e>0) {
     sidebarDrawn++;
@@ -34,10 +41,17 @@ void gfx_cor(GfxRect r,float a,float b,float c,float d,float e) {
 }
 void gfx_icone(GfxRect r,const char *s,float a,float b,float c,float d) { }
 void plrui_linha_foco(GfxRect r,float radius,float alpha) {
+  if(dashboardDrawing && r.w>300 && r.h>100 && alpha>.9f) cardFocus++;
   if(r.x==86 && r.y==265 && alpha>.9f) sidebarHighlight++;
 }
-TxtLinha txt_linha_corta(TxtEstilo e,const char *s,int r,int g,int b,int a,float w) { return (TxtLinha){0}; }
+TxtLinha txt_linha_corta(TxtEstilo e,const char *s,int r,int g,int b,int a,float w) {
+  if(dashboardDrawing && !strcmp(s,"Configuração do manifesto")) manifestLabel++;
+  return (TxtLinha){0};
+}
 void txt_desenhar(TxtLinha l,float x,float y) { }
+float txt_bloco_corta(TxtEstilo e,const char *s,int r,int g,int b,float x,float y,float w,float leading,float alpha,int lines) { return leading; }
+float botao_largura(const char *s,const char *icon,int primary) { return 200; }
+void botao_pilula(GfxRect r,const char *s,const char *icon,float f,int primary,int align,float alpha) { }
 #undef ponteiro_alvo
 void ponteiro_alvo(float x,float y,float w,float h,PonteiroFn f,PonteiroFn a,int i,int b) { }
 static const char *keyboardText="";
@@ -317,6 +331,32 @@ int main(void) {
   assert(conectada()); // Config denial must not disconnect the installation.
   assert(snap.manifestAccess==AIO_AVAILABLE && snap.searchAccess==AIO_AVAILABLE);
   assert(snap.configAccess==AIO_RESTRICTED && snap.analyticsAccess==AIO_UNKNOWN);
+  // Draw the actual dashboard contract: one summary surface, visible product
+  // art, standard neutral card focus, and all six existing action targets.
+  pagina=PAINEL; lateral=0; foco=0; sidebarOpen=0; entradaTempo=2;
+  snap=(AioSnapshot){.valida=1,.configurada=1};
+  memset(focoAnim,0,sizeof focoAnim); focoAnim[0][0]=1;
+  for(int state=0;state<4;state++) for(glassEnabled=0;glassEnabled<2;glassEnabled++) {
+    snap.valida=state!=3; snap.configurada=state<2; snap.configEmbedded=state==1;
+    dashboardDrawing=1; summarySurfaces=dashboardLogo=cardFocus=accentHeaders=manifestLabel=0; navigationCount=0;
+    dashboard(); dashboardDrawing=0;
+    assert(dashboardLogo==1 && "dashboard must show existing AIOStreams art beside its title");
+    assert(summarySurfaces==1 && "summary counts share one surface, not four competing tiles");
+    assert(cardFocus==1 && !accentHeaders && "card focus uses the standard neutral surface");
+    assert((manifestLabel>0)==(state==1) && "embedded configuration is not authenticated API access");
+    for(int i=0;i<6;i++) {
+      int found=0; for(int j=0;j<navigationCount;j++) found+=navigationIds[j]==i;
+      assert(found==1);
+    }
+    if(!snap.valida) {
+      for(int j=0;j<navigationCount;j++) if(navigationIds[j]==4) {
+        assert(navigationRects[j].w==1660 && navigationRects[j].h<=110 && "unavailable catalogs must not leave an empty half-grid");
+      }
+      foco=0; down.key.keysym.sym=SDLK_DOWN; dashboardTecla(SDLK_DOWN); assert(foco==4);
+      dashboardTecla(SDLK_DOWN); assert(foco==5);
+      dashboardTecla(SDLK_UP); assert(foco==4);
+    }
+  }
   activeProfile=2; aioui_atualizar(0,100); assert(aioui_aberto());
   aioui_atualizar(.2f,300); assert(!aioui_aberto() && !base[0]);
   puts("aiostreams UI: setup, masked import, P2P, navigation and profile isolation passed");
