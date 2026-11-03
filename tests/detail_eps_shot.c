@@ -113,11 +113,14 @@ static float fx_sinopse_corta(TxtEstilo original, const char *texto, int r, int 
                               float alpha, int maxLinhas);
 #include "episodios.h"
 static float fxSummaryRight, fxSummaryScale;
+static int fxSummaryClipHeight;
 static void fx_summary_transform(float x, float y, float scale, float dx, float dy) {
   GfxRect summary;
   if (episodios_menu_resumo(&summary) && fabsf(x-summary.x*gfx_escala_ui()) < .1f) {
     fxSummaryScale = gfx_escala();
     fxSummaryRight = (x + 420*scale + dx) * gfx_escala();
+    GLint box[4] = {0};
+    fxSummaryClipHeight = glIsEnabled(GL_SCISSOR_TEST) ? (glGetIntegerv(GL_SCISSOR_BOX, box), box[3]) : 0;
   }
   gfx_transformar(x,y,scale,dx,dy);
 }
