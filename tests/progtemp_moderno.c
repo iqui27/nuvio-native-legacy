@@ -1,5 +1,5 @@
-// Modern detail + episode ratings: Seu progresso (tgraf) must stack above the
-// IMDb grade, not replace it. Also guards unknown watch history vs known zero.
+// Progress uses one season chart; the colored ratings and retention stay together
+// in the existing season numbers block. Unknown history is not known zero.
 #define extras_n_estudios studioCountFixture
 #define extras_estudio_tmdb studioIdFixture
 #define extras_estudio_nome studioNameFixture
@@ -8,6 +8,9 @@
 #define vertudo_aberta studioVisibleFixture
 #define vertudo_evento studioEventFixture
 #define extras_nota ratingFixture
+#define extras_n_temporadas seasonCountFixture
+#define extras_temporada_numero seasonNumberFixture
+#define extras_n_eps episodeCountFixture
 #define seriefrases_n quoteCountFixture
 #define seriefrases_n_fatos factCountFixture
 #define extras_comentario_spoiler comSpoilerFixture
@@ -27,6 +30,9 @@ void studioOpenFixture(const ColFolder *f) { (void)f; }
 int studioVisibleFixture(void) { return 0; }
 void studioEventFixture(const SDL_Event *e) { (void)e; }
 int ratingFixture(int f) { (void)f; return 0; }
+int seasonCountFixture(void) { return 1; }
+int seasonNumberFixture(int t) { (void)t; return 1; }
+int episodeCountFixture(int t) { (void)t; return 6; }
 int togetherAvailableFixture(void) { return 0; }
 int lockAvailableFixture(void) { return 0; }
 void togetherOpenFixture(int i,int t,int e) { (void)i; (void)t; (void)e; }
@@ -96,14 +102,15 @@ int main(void) {
 
   layoutHome(HOME_LAYOUT_MODERNA);
   recalcularLayout();
-  CHECK(progTemNotas());
   d = tgraf_dados(idx);
   CHECK(tgraf_existe(d));
   hTg = tgraf_altura_dados(d);
   h = alturaSecao(SEC_PROGTEMP);
-  CHECK(h > 292.0f + 100.0f);
-  CHECK(fabsf(h - (hTg + 28.0f + 292.0f)) < 0.5f);
-  CHECK(secaoN(SEC_PROGTEMP) == 6);
+  CHECK(h > 0.0f);
+  CHECK(fabsf(h - hTg) < 0.5f);
+  CHECK(secaoN(SEC_PROGTEMP) == 1);
+  CHECK(secaoN(SEC_NUMEROS) == 6);
+  CHECK(notasDados()->nTemp == 1);
   CHECK(!vistoep_conhecido(serieItem.imdb));
   CHECK(d->vistos == 0 && !d->sabe && d->exibidos == 6);
 
@@ -116,7 +123,7 @@ int main(void) {
   recalcularLayout();
   h = alturaSecao(SEC_PROGTEMP);
   hTg = tgraf_altura_dados(tgraf_dados(idx));
-  CHECK(fabsf(h - (hTg + 28.0f + 360.0f)) < 0.5f);
+  CHECK(fabsf(h - hTg) < 0.5f);
 
   printf(falhas ? "FALHAS: %d\n" : "PASS: progtemp_moderno\n", falhas);
   SDL_Quit();
