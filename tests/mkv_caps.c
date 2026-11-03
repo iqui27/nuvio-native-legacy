@@ -69,6 +69,23 @@ static void capitulo(unsigned long long ns, const char *nome) {
 }
 
 static void comeca(void) { n = 0; }
+// Varios ChapterDisplay (um por idioma), FlagHidden/FlagEnabled (feat/mkv-chapters-all-platforms).
+static void display(const char *nome, const char *lang, const char *bcp) {
+  long d; id1(0x80); d = tam4(); id1(0x85); str(nome);
+  if (lang) { id2(0x437C); str(lang); }
+  if (bcp) { id2(0x437D); str(bcp); }
+  fecha(d);
+}
+static void atomo(unsigned long long seg, int hidden, int enabled, const char *a, const char *la,
+                  const char *b, const char *lb) {
+  long t; id1(0xB6); t = tam4(); id1(0x91); uint8b(seg * 1000000000ULL);
+  if (hidden >= 0) { unsigned char h[3] = {0x98, 0x81, (unsigned char)hidden}; put(h, 3); }
+  if (enabled >= 0) { unsigned char e[4] = {0x45, 0x98, 0x81, (unsigned char)enabled}; put(e, 4); }
+  if (a) display(a, la, NULL);
+  if (b) display(b, lb, NULL);
+  fecha(t);
+}
+
 static long abreChapters(void) { long c; id4(0x1043A770UL); c = tam4(); return c; }
 
 int main(void) {
@@ -250,6 +267,75 @@ int main(void) {
 #undef CAPS
 #undef ACHA
   }
+
+
+  // --- feat/mkv-chapters-all-platforms: como o NuvioTV le os capitulos ---------
+  printf("capitulos: idioma do nome, escondidos, edicao padrao, ordem\n");
+  // Ingles + russo no mesmo capitulo (o Fight Club da C9): antes ficava o
+  // ULTIMO display, o russo.
+#define RU_OP "\xd0\x92\xd1\x81\xd1\x82\xd1\x83\xd0\xbf\xd0\xbb\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5"
+  comeca();
+  { long c = abreChapters(), e; id2(0x45B9UL); e = tam4();
+    atomo(0, -1, -1, "Opening", "eng", RU_OP, "rus");
+    atomo(90, -1, -1, RU_OP, "rus", "Main", "eng");
+    atomo(600, -1, -1, "Huvuddel", "swe", "Main", "eng");
+    fecha(e); fecha(c); }
+  mkv_capitulos_idioma("en");
+  k = lerCapitulos(buf + 8, n - 8, caps, MKV_MAX_CAPS);
+  ok(k == 3 && !strcmp(caps[0].nome, "Opening") && !strcmp(caps[1].nome, "Main") &&
+     !strcmp(caps[2].nome, "Main"), "app em ingles: nome ingles (era o ultimo)");
+  mkv_capitulos_idioma("sv");
+  k = lerCapitulos(buf + 8, n - 8, caps, MKV_MAX_CAPS);
+  ok(k == 3 && !strcmp(caps[0].nome, "Opening") && !strcmp(caps[2].nome, "Huvuddel"),
+     "app em sueco: sueco quando ha, senao ingles");
+  mkv_capitulos_idioma("ru");
+  k = lerCapitulos(buf + 8, n - 8, caps, MKV_MAX_CAPS);
+  ok(k == 3 && !strcmp(caps[0].nome, RU_OP) && !strcmp(caps[2].nome, "Main"),
+     "app em russo: russo quando ha");
+  mkv_capitulos_idioma("en");
+  // So russo: fica o russo (nao ha outro).
+  comeca();
+  { long c = abreChapters(), e; id2(0x45B9UL); e = tam4();
+    atomo(0, -1, -1, RU_OP, "rus", NULL, NULL); atomo(90, -1, -1, "Part", NULL, NULL, NULL);
+    fecha(e); fecha(c); }
+  k = lerCapitulos(buf + 8, n - 8, caps, MKV_MAX_CAPS);
+  ok(k == 2 && !strcmp(caps[0].nome, RU_OP) && !strcmp(caps[1].nome, "Part"), "so um idioma: ele mesmo");
+#undef RU_OP
+  // Escondido (FlagHidden=1) e desligado (FlagEnabled=0) ficam de fora.
+  comeca();
+  { long c = abreChapters(), e; id2(0x45B9UL); e = tam4();
+    atomo(0, -1, -1, "Part A", NULL, NULL, NULL); atomo(60, 1, -1, "Hidden", NULL, NULL, NULL);
+    atomo(120, -1, 0, "Disabled", NULL, NULL, NULL); atomo(180, 0, 1, "Part B", NULL, NULL, NULL);
+    fecha(e); fecha(c); }
+  k = lerCapitulos(buf + 8, n - 8, caps, MKV_MAX_CAPS);
+  ok(k == 2 && !strcmp(caps[0].nome, "Part A") && !strcmp(caps[1].nome, "Part B"),
+     "escondido e desligado ficam de fora");
+  // Duas edicoes: vale a marcada como padrao; edicao escondida nunca.
+  comeca();
+  { long c = abreChapters(), e;
+    id2(0x45B9UL); e = tam4(); atomo(0, -1, -1, "Ed1 A", NULL, NULL, NULL); atomo(60, -1, -1, "Ed1 B", NULL, NULL, NULL); fecha(e);
+    id2(0x45B9UL); e = tam4(); { unsigned char d[4] = {0x45, 0xDB, 0x81, 1}; put(d, 4); }
+      atomo(0, -1, -1, "Ed2 A", NULL, NULL, NULL); atomo(60, -1, -1, "Ed2 B", NULL, NULL, NULL); fecha(e);
+    fecha(c); }
+  k = lerCapitulos(buf + 8, n - 8, caps, MKV_MAX_CAPS);
+  ok(k == 2 && !strcmp(caps[0].nome, "Ed2 A"), "edicao padrao vence a primeira");
+  comeca();
+  { long c = abreChapters(), e;
+    id2(0x45B9UL); e = tam4(); { unsigned char h[4] = {0x45, 0xBD, 0x81, 1}; put(h, 4); }
+      atomo(0, -1, -1, "Oculta A", NULL, NULL, NULL); atomo(60, -1, -1, "Oculta B", NULL, NULL, NULL); fecha(e);
+    id2(0x45B9UL); e = tam4(); atomo(0, -1, -1, "Vista A", NULL, NULL, NULL); atomo(60, -1, -1, "Vista B", NULL, NULL, NULL); fecha(e);
+    fecha(c); }
+  k = lerCapitulos(buf + 8, n - 8, caps, MKV_MAX_CAPS);
+  ok(k == 2 && !strcmp(caps[0].nome, "Vista A"), "edicao escondida e pulada");
+  // Fora de ordem e inicio repetido: ordenado, um por inicio.
+  comeca();
+  { long c = abreChapters(), e; id2(0x45B9UL); e = tam4();
+    atomo(300, -1, -1, "C", NULL, NULL, NULL); atomo(0, -1, -1, "A", NULL, NULL, NULL);
+    atomo(120, -1, -1, "B", NULL, NULL, NULL); atomo(120, -1, -1, "B2", NULL, NULL, NULL);
+    fecha(e); fecha(c); }
+  k = lerCapitulos(buf + 8, n - 8, caps, MKV_MAX_CAPS);
+  ok(k == 3 && caps[0].inicio == 0 && caps[1].inicio == 120 && caps[2].inicio == 300 &&
+     !strcmp(caps[1].nome, "B"), "ordenado por inicio, sem inicio repetido");
 
   printf(falhas ? "\nFALHOU\n" : "\nmkv capitulos: PASS (nanossegundos, nome, acento, sem nome, lixo)\n");
   return falhas ? 1 : 0;

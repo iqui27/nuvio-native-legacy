@@ -33,8 +33,9 @@ _Static_assert(sizeof(NvDiagOut) == 32, "NvDiagOut layout");
 int nv_mkvcore_contentor(const unsigned char *p, long n);
 int nv_mkvcore_quadro_tem_rpu(const unsigned char *p, long n, int nalTam,
                               int *rpuTipo, int *rpuPerfil);
+// `pref`: idiomas do nome do capitulo, "sv,swe" (mkv.c capitulos_pref; "" = so ingles/primeiro).
 int nv_mkvcore_achar_tracks(const unsigned char *p, long n, MkvFaixa *saida, int max,
-                            MkvCap *caps, int maxCaps, NvMkvScan *sc);
+                            MkvCap *caps, int maxCaps, const char *pref, NvMkvScan *sc);
 // Data size of the element at p when it is `quer` (-1: not it / unknown);
 // *hdr = header length. Generic sibling of nv_mkvcore_cap_cabecalho.
 long long nv_mkvcore_elem_cabecalho(const unsigned char *p, long n,
@@ -45,4 +46,4 @@ void nv_mkvcore_diag_trecho(const unsigned char *p, long n, int faixa, int nalTa
                             NvDiagOut *out);
 // Data size of the Chapters element at p (-1: not one / unknown size); *hdr = header length.
 long long nv_mkvcore_cap_cabecalho(const unsigned char *p, long n, int *hdr);
-int nv_mkvcore_capitulos(const unsigned char *p, long n, MkvCap *caps, int max);
+int nv_mkvcore_capitulos(const unsigned char *p, long n, MkvCap *caps, int max, const char *pref);

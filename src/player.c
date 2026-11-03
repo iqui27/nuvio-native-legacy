@@ -107,6 +107,7 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "relogio.h"
 #include "intro.h"
 #include "capmkv.h"
+#include "idiomacod.h"
 #include "proximo.h"
 #include "creditosauto.h"
 #include "credfonte.h"
@@ -1982,6 +1983,8 @@ void player_abrir(int indiceCatalogo, const char *url) {
   toastAte = 0; toastTexto[0] = 0; avisouAudio = 0;
   // Reconexao so no filme/episodio: canal ao vivo tem o watchdog de app.c.
   video_definir_reconexao(!ehCanal());
+  // Nome do capitulo no idioma do app quando o arquivo traz varios (mkv.c).
+  mkv_capitulos_idioma(idioma_iso(ajustes_idioma()));
   video_definir_modo_live(ehCanal() ? guia_modo_do_canal(player_id_canal(), ajustes_livetv_modo()) : 0);
   // F07: seek cache for this open (live channels never; the backend also
   // refuses HLS/DASH). Arms only the next video_tocar: trailers stay uncached.
@@ -2179,6 +2182,8 @@ static void tocarFonteInterno(const char *url) {
   skipLiberado = 0;
   loadEm = SDL_GetTicks();   // #202: do pipeline ao primeiro quadro ("[player] load->1o quadro")
   video_definir_reconexao(!ehCanal());
+  // Nome do capitulo no idioma do app quando o arquivo traz varios (mkv.c).
+  mkv_capitulos_idioma(idioma_iso(ajustes_idioma()));
   video_definir_modo_live(ehCanal() ? guia_modo_do_canal(player_id_canal(), ajustes_livetv_modo()) : 0);
   cacheboost_backend_cache(ehCanal() ? 0 : ajustes_cache_seek_mb());   // F07, ver player_abrir
   armarTituloGuardado();

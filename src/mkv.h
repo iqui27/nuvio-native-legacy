@@ -180,6 +180,12 @@ typedef struct {
 int mkv_classificar_nome(const char *nome, int *forca);
 // No maximo um segmento por tipo, na ordem do tempo. Devolve quantos.
 int mkv_segmentos(const MkvCap *caps, int n, double dur, MkvSeg *out, int max);
+// Idioma do app ("sv", "pt", "en"...; ISO 639-1) para escolher o NOME do
+// capitulo quando o arquivo traz o mesmo capitulo em varios idiomas: o do app,
+// senao ingles, senao o primeiro. Chamar antes de abrir o video (player.c).
+// Os capitulos escondidos/desligados ficam de fora, vale a edicao padrao e a
+// lista sai em ordem de inicio (como o NuvioTV).
+void mkv_capitulos_idioma(const char *iso);
 
 // CASA as legendas que a TV lista com as TrackEntry de legenda do arquivo (#92).
 //
