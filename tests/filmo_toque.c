@@ -22,4 +22,9 @@ camada=1;registrarToque();assert(count==0);
 /* Compact layout rides a spring: mid targets sit between anchors. */
 camada=0;aba=1;zona=2;compactoT=.5f;registrarToque();
 {int ok=0;for(int i=0;i<count;i++)if(targets[i].a==2&&targets[i].b==0){assert(fabsf(targets[i].y-py(compacta(CONTEUDO_Y,230)))<.01f&&targets[i].y>py(230)&&targets[i].y<py(CONTEUDO_Y));ok=1;}assert(ok);}
-puts("filmography touch: PASS");}
+puts("filmography touch: PASS");
+ aba=0;na=3;anos[0]=2000;anos[1]=2001;anos[2]=2002;ano=2001;gesto=0;zona=3;
+ PonteiroRolagem h={.fase=PONT_ROL_INICIO,.eixoY=0,.y=600};assert(rolagem(&h));
+ h.fase=PONT_ROL_MOVER;h.delta=100;assert(rolagem(&h));
+ assert(fabsf(gesto-(-19))<.01f);
+ puts("history timeline stride: PASS");}

@@ -1928,9 +1928,7 @@ void detail_mostrar_pessoa(long tmdb, const char *nome, const char *foto) {
   pessoaAberta = 1;
   pessoaFoco = 0;
   pessoaLinha = 0;
-#ifdef NV_DESKTOP_UI
   filmo_abrir();
-#endif
 #ifdef NV_TOUCH_UI
   toquerol_limpar(&toquePessoa); toquePessoaOffset = 0;
 #endif
@@ -3105,9 +3103,7 @@ static void detail_evento_(const SDL_Event *e) {
   if (musicaui_visivel()) { if (musicaui_aberta()) musicaui_evento(e); return; }
   pediuRelogio = 0;
   if (sinopse_aberta()) { sinopse_evento(e); return; }
-#ifdef NV_DESKTOP_UI
-  if(pessoaAberta) { filmo_evento(e); return; }
-#endif
+  if (pessoaAberta) { filmo_evento(e); return; }
 #ifdef NV_TOUCH_UI
   toqueDetalheSincronizarModo();
 #endif
@@ -4107,13 +4103,11 @@ static void detail_atualizar_(float dt, Uint32 agora) {
     }
   }
   if (!aberto) { blocoAnt[0] = blocoAnt[1] = blocoAnt[2] = -1.0f; return; }
-#ifdef NV_DESKTOP_UI
   if (pessoaAberta) {
-    if(filmo_atualizar(dt)) pessoaAberta=0;
-    int credit=filmo_titulo();
-    if(credit>=0) { pessoaFoco=credit;abrirCredito(); }
+    if (filmo_atualizar(dt)) pessoaAberta = 0;
+    int credit = filmo_titulo();
+    if (credit >= 0) { pessoaFoco = credit; abrirCredito(); }
   }
-#endif
   if (pessoaAberta && pessoa_falhou()) {
     pessoaAberta = 0;
     ilha_avisar("det-elenco-sem-pagina", ILHA_INFO, NULL,
@@ -9156,9 +9150,9 @@ static void desenhaEsqueletoElenco(float a) {
 // o mesmo raio dos outros.
 
 static void desenhaPessoa(float a) {
-#ifdef NV_DESKTOP_UI
-  filmo_desenhar(a);return;
-#endif
+  filmo_desenhar(a);
+  return;
+#if 0 /* legacy cast grid — replaced by filmo 2.1 on TV and desktop */
   GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
   gfx_cor(tela, 0.0f, NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, a);
 
@@ -9255,6 +9249,7 @@ static void desenhaPessoa(float a) {
     gfx_sem_recorte();
 #endif
   }
+#endif
 }
 
 
