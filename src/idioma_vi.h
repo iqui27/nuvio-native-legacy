@@ -3731,6 +3731,7 @@
   T("Gargalo principal", "Điểm nghẽn chính"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Quản lý"),
+  T("Gerenciar add-ons", "Quản lý tiện ích"),
   T("Gerenciar conexões", "Quản lý kết nối"),
   T("Gerenciar fontes", "Quản lý phông chữ"),
   T("Gerenciar legendas no celular", "Quản lý phụ đề trên điện thoại"),

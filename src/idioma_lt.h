@@ -3731,6 +3731,7 @@
   T("Gargalo principal", "Pagrindinė kliūtis"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Tvarkyti"),
+  T("Gerenciar add-ons", "Tvarkyti papildinius"),
   T("Gerenciar conexões", "Valdyti ryšius"),
   T("Gerenciar fontes", "Tvarkyti šriftus"),
   T("Gerenciar legendas no celular", "Tvarkyti subtitrus telefone"),

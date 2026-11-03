@@ -141,7 +141,7 @@ static void folhaDesktopDesenhar(Uint32 now) {
   }
   DesktopSourceControl *manage=&controls[count++];
   manage->x=extraX;manage->y=panel.h-86;manage->w=192;manage->h=46;
-  manage->action=200;manage->enabled=ptr;manage->kind=3;snprintf(manage->title,sizeof manage->title,"%s",i18n("Gerenciar fontes"));
+  manage->action=200;manage->enabled=ptr;manage->kind=3;snprintf(manage->title,sizeof manage->title,"%s",i18n("Gerenciar add-ons"));
   if(ptr) ponteiro_alvo(panel.x+manage->x,panel.y+manage->y,manage->w,manage->h,NULL,folhaDesktopGerenciar,0,0);
   unsigned native=desktop_native_sources(controls,count,folhaDesktopAcao,panel.x,panel.y,panel.w,panel.h,
                                         gfx_escala(),anim);

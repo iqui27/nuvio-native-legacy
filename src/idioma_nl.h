@@ -3731,6 +3731,7 @@
   T("Gargalo principal", "Grootste knelpunt"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Beheren"),
+  T("Gerenciar add-ons", "Add-ons beheren"),
   T("Gerenciar conexões", "Verbindingen beheren"),
   T("Gerenciar fontes", "Beheer lettertypen"),
   T("Gerenciar legendas no celular", "Beheer ondertitels op de telefoon"),

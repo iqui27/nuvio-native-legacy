@@ -3731,6 +3731,7 @@
   T("Gargalo principal", "Ana darboğaz"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Yönet"),
+  T("Gerenciar add-ons", "Eklentileri yönet"),
   T("Gerenciar conexões", "Bağlantıları yönet"),
   T("Gerenciar fontes", "Yazı tiplerini yönet"),
   T("Gerenciar legendas no celular", "Telefondaki altyazıları yönet"),

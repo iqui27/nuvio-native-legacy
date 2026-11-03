@@ -3731,6 +3731,7 @@
   T("Gargalo principal", "Principal estrangulamento"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Gerir"),
+  T("Gerenciar add-ons", "Gerir add-ons"),
   T("Gerenciar conexões", "Gerir ligações"),
   T("Gerenciar fontes", "Gerenciar fontes"),
   T("Gerenciar legendas no celular", "Gerir legendas no telefone"),

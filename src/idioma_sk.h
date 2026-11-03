@@ -3731,6 +3731,7 @@
   T("Gargalo principal", "Hlavné úzke miesto"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Spravovať"),
+  T("Gerenciar add-ons", "Spravovať doplnky"),
   T("Gerenciar conexões", "Spravovať pripojenia"),
   T("Gerenciar fontes", "Spravovať písma"),
   T("Gerenciar legendas no celular", "Spravujte titulky v telefóne"),

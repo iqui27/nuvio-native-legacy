@@ -3731,6 +3731,7 @@
   T("Gargalo principal", "Hambatan utama"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Kelola"),
+  T("Gerenciar add-ons", "Kelola addon"),
   T("Gerenciar conexões", "Kelola koneksi"),
   T("Gerenciar fontes", "Kelola font"),
   T("Gerenciar legendas no celular", "Kelola subtitle di ponsel"),

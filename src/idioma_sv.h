@@ -3731,6 +3731,7 @@
   T("Gargalo principal", "Främsta flaskhals"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Hantera"),
+  T("Gerenciar add-ons", "Hantera add-ons"),
   T("Gerenciar conexões", "Hantera anslutningar"),
   T("Gerenciar fontes", "Hantera teckensnitt"),
   T("Gerenciar legendas no celular", "Hantera undertexter på telefonen"),

@@ -3730,6 +3730,7 @@
   T("Gargalo principal", "Основне вузьке місце"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Керувати"),
+  T("Gerenciar add-ons", "Керувати аддонами"),
   T("Gerenciar conexões", "Керувати підключеннями"),
   T("Gerenciar fontes", "Керуйте шрифтами"),
   T("Gerenciar legendas no celular", "Керуйте субтитрами на телефоні"),

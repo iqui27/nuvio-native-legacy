@@ -3731,6 +3731,7 @@
   T("Gargalo principal", "Collo di bottiglia principale"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Gestisci"),
+  T("Gerenciar add-ons", "Gestisci add-on"),
   T("Gerenciar conexões", "Gestisci connessioni"),
   T("Gerenciar fontes", "Gestisci i caratteri"),
   T("Gerenciar legendas no celular", "Gestisci i sottotitoli sul telefono"),

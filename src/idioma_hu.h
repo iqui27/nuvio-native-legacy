@@ -3731,6 +3731,7 @@
   T("Gargalo principal", "Fő szűk keresztmetszet"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Kezelés"),
+  T("Gerenciar add-ons", "Bővítmények kezelése"),
   T("Gerenciar conexões", "Kapcsolatok kezelése"),
   T("Gerenciar fontes", "Betűtípusok kezelése"),
   T("Gerenciar legendas no celular", "Feliratok kezelése telefonon"),

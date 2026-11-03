@@ -3730,6 +3730,7 @@
   T("Gargalo principal", "Cuello de botella principal"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Gestionar"),
+  T("Gerenciar add-ons", "Administrar add-ons"),
   T("Gerenciar conexões", "Gestionar conexiones"),
   T("Gerenciar fontes", "Administrar fuentes"),
   T("Gerenciar legendas no celular", "Administrar subtítulos en el teléfono"),

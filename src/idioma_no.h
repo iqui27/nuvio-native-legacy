@@ -3731,6 +3731,7 @@
   T("Gargalo principal", "Hovedflaskehals"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Administrer"),
+  T("Gerenciar add-ons", "Administrer add-ons"),
   T("Gerenciar conexões", "Administrer tilkoblinger"),
   T("Gerenciar fontes", "Administrer fonter"),
   T("Gerenciar legendas no celular", "Administrer undertekster på telefonen"),
