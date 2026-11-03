@@ -26,6 +26,13 @@ static void epsModernoShots(const char *root) {
     }
     cat_definir_episodios(0, episodios, T1_N + T2_N + T3_N);
     semear(1, T1_N, 3); abrir(0, 0); nosEpisodios(0);
+    if (getenv("NV_EPSMODERNO_VERIFY") && layout == HOME_LAYOUT_MODERNA) {
+      char label[32]; int col = colTemp(0);
+      rotuloTemporada(col, label, sizeof label);
+      float text = txt_largura(TXT_G22M, label), width = larguraTemporada(col);
+      assert(width >= text + 70.0f && width <= text + 78.0f);
+      assert(xItem(SEC_TEMPORADAS, col + 1) >= xItem(SEC_TEMPORADAS, col) + width);
+    }
     for (int i = 0; i < 40; i++) { SDL_Delay(10); quadros(1); }
     snprintf(path, sizeof path, "%s/%s-row.png", out, layout ? "dynamic" : "modern"); gravar(path);
     foco.fileira = SEC_TEMPORADAS; foco.coluna = colTemp(temporada); quadros(120);
@@ -35,6 +42,16 @@ static void epsModernoShots(const char *root) {
       nosEpisodios(columns[k]);
       const CatEp *ep = cat_episodio(idx, epAbsoluto(columns[k])); assert(ep);
       episodios_menu_visto(idx, ep->temporada, ep->episodio, ep->nome);
+      quadros(1);
+      if (getenv("NV_EPSMODERNO_VERIFY") && layout == HOME_LAYOUT_DINAMICA) {
+        GfxRect summary, menu;
+        float ui = gfx_escala_ui(), t = anim_clamp(episodios_menu_anim(), 0, 1);
+        float x = (xItem(SEC_EPISODIOS, columns[k]) - scrollSec[SEC_EPISODIOS]) / ui;
+        float y = (epRowY() - scrollY) / ui;
+        assert(t < .2f && episodios_menu_resumo(&summary) && episodios_menu_caixa(&menu));
+        assert(fabsf(summary.x - x) < 65.0f && fabsf(summary.y - y) < 65.0f);
+        assert(fabsf(menu.x - (x + epCardW()/ui)) < 100.0f);
+      }
       quadros(120);
       // Same source fixture reproduces the empty HDR separator defect.
       vaiTocar.tem = 1; vaiTocar.temporada=ep->temporada; vaiTocar.episodio=ep->episodio;

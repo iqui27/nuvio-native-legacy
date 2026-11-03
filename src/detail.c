@@ -3884,8 +3884,6 @@ static float larguraItem(int r, int c) {
 }
 // x do item `c` DENTRO da fileira (antes da rolagem horizontal).
 static float xItem(int r, int c) {
-  if (epModerno() && r==SEC_TEMPORADAS && c>=colTemp(nTemporadasReais()) && !temporadaLembrete(c))
-    return fmaxf(1624,NV_DETP_X+c*226);
   if (r == SEC_NOTAS) return NV_DETP_X + notaX(c);
   float x = NV_DETP_X;
   for (int k = 0; k < c; k++) {
@@ -3916,6 +3914,8 @@ static float xItem(int r, int c) {
     if (r == SEC_TEMPORADAS) x += larguraTemporada(k) + NV_DETP_TEMP_GAP;
     else x += larguraAbaInfo(k) + NV_DETP_ABA_SEP * 2 + 9.0f;  // 9 = largura do "|"
   }
+  if (epModerno() && r==SEC_TEMPORADAS && c>=colTemp(nTemporadasReais()) && !temporadaLembrete(c))
+    x = fmaxf(1624, x);
   return x;
 }
 
@@ -6478,7 +6478,11 @@ static float larguraTemporada(int c) {
     char rot[32]; rotuloTemporada(c, rot, sizeof rot);
     return txt_linha(TXT_CALLOUT, rot, 255, 255, 255, 255).w + NV_DETP_TEMP_PADX * 2;
   }
-  return c<colTemp(nTemporadasReais()) ? 212 : 200;
+  if (c < colTemp(nTemporadasReais())) {
+    char rot[32]; rotuloTemporada(c, rot, sizeof rot);
+    return txt_largura(TXT_G22M, rot) + 76.0f;
+  }
+  return 200;
 }
 // As abas da serie no SEGMENTADO do Glass UI (DESIGN.md §5: substitui abas
 // com separador), o mesmo das temporadas: 19/600, 20 de cada lado.
