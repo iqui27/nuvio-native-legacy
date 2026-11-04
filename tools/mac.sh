@@ -29,11 +29,19 @@ export NUVIO_DADOS="${NUVIO_DADOS:-$HOME/.nuvio}"
 BIN="${NUVIO_MAC_BIN:-${TMPDIR:-/tmp}/nuvio-native-legacy-mac}"
 # Nucleo EBML/NAL do mkv.c em Rust, ligado por padrao (docs/plans/rust-mapa.md);
 # NUVIO_RUST_MKVCORE=0 volta ao caminho C.
-RUST_D=()
-[ "${NUVIO_RUST_MKVCORE:-1}" = 1 ] && RUST_D=(-DNV_RUST_MKVCORE "$(tools/rust-mkvcore.sh)")
-eval cc src/*.c src/dts/*.c -o "$BIN" -O1 -g "$ENV_D" ${RUST_D[@]+'"${RUST_D[@]}"'} \
-  -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-  -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz \
-  -framework OpenGL -Wno-deprecated-declarations
+FLAGS="-O1 -g $ENV_D -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -Wno-deprecated-declarations"
+RUST_A=""
+if [ "${NUVIO_RUST_MKVCORE:-1}" = 1 ]; then FLAGS="$FLAGS -DNV_RUST_MKVCORE"; RUST_A=$(tools/rust-mkvcore.sh); fi
+# Mesmo construtor de objetos da TV: so recompila o .c alterado e quem inclui o
+# header alterado. Flags/compilador diferentes = pasta de objetos diferente.
+KEY=$( { printf "%s\n" "$FLAGS"; cc --version; cat tools/mac.sh tools/native-objects.mk; } | shasum -a 256 | cut -d" " -f1)
+O="build/mac-objects/$KEY"
+SRC=(src/*.c src/dts/*.c)
+# make passa a receita pelo sh: os -D do env.sh chegam ao cc como no antigo eval.
+make -s -f tools/native-objects.mk -j "$(getconf _NPROCESSORS_ONLN)" CC=cc OBJDIR="$O" \
+  SOURCES="${SRC[*]}" NATIVE_FLAGS="${FLAGS//\$/\$\$}"
+OBJ=("${SRC[@]/%.c/.o}")
+cc "${OBJ[@]/#/$O/}" -o "$BIN" ${RUST_A:+"$RUST_A"} \
+  -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
 [ -n "$NUVIO_MAC_SO_COMPILAR" ] && exit 0
 exec "$BIN" "$(pwd)/deploy/app/art" "$@"
