@@ -77,7 +77,10 @@ const char *legmem_preferencia(const char *ajuste, const LegMem *doTitulo,
 // A FAIXA EXATA da escolha guardada na lista de agora, ou -1. Indice na lista
 // combinada (embutidas, depois addons), como ling_legenda_auto. Puro.
 //   embutida: mesmo numero e mesmo idioma (ling_casa); faixa sem etiqueta dos
-//             dois lados casa pelo numero e pelo nome.
+//             dois lados casa pelo numero e pelo nome. Numero -1 guardado antes
+//             de #83aa66f2b (PGS recuperada) casa com a unica faixa recuperada
+//             (numero <= -2) do mesmo idioma; varias do mesmo idioma ficam
+//             ambiguas e nao escolhem sozinhas.
 //   addon:    mesmo id (provedor + url).
 int legmem_exata(const LegMem *m,
                  const int *numeros, const char *const *idiomas, const char *const *nomes, int nEmb,
