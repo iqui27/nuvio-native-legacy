@@ -13275,6 +13275,15 @@
  "validacoes": [
   {
    "data": "2026-11-04",
+   "quem": "Job mini, revisão independente Zima e coordenação TV (modelos servidos não comprovados)",
+   "o_que": "Reabertura de episódio preserva identidade do título durante publicação do catálogo",
+   "issues": [697],
+   "ref": "ca4c99014; merge 672ff9a27aff0b704ac4274214a7277fb76e84ac",
+   "resultado": "teste direcionado e revisão passaram; relação com relato e aceitação em TV pendentes",
+   "evidencia": "Job relata teste com publicação determinística FAIL rc=134 antes e PASS após correção, build Mac rc=0; teste não executa fluxo completo nem reproduziu corrida em TV. Coordenação: proxepisodioid.sh pós-merge e varredura-i18n.py rc=0. Revisão j-rev-697-0411.log VEREDITO OK, sem P0/P1; P2: título sem ID pode conservar índice inválido ou deslocado, comportamento anterior não corrigido; item removido pode ser reinserido sem fileira. Job não teve acesso ao relato sanitizado; relação com #697 não demonstrada, #747 não investigada. fonte_troca.sh e pr567-review.py falharam também na base segundo job; juntos_rejoin.sh retornou 0 mas parou antes de compilar. Nenhuma validação física ou build de plataforma de TV."
+  },
+  {
+   "data": "2026-11-04",
    "quem": "Jobs mini (modelo servido não comprovado), revisão independente Zima e coordenação TV",
    "o_que": "PR 757: fila de imagens e reserva de arte com URLs longas",
    "issues": [],
