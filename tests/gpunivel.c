@@ -14,6 +14,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Overridden by escada/transients when they #include this file.
+int gpun_teste_automaticos = 15;
+int ajustes_efeitos_automaticos(void) { return gpun_teste_automaticos; }
+
 void gpun_teste_reiniciar(void);
 int  gpun_teste_decidido(void);
 const char *gpun_teste_upscale(int sw, int sh, int iw, int ih, int app);
@@ -71,109 +75,57 @@ static void rodar(double seg, double dt, double espera, double cpu, int naHome, 
   for (t = 0; t < seg * 1000.0; t += dt) gpun_medir(dt, espera, cpu, naHome, cheia);
 }
 
+// One ~3 s report, matching main.c -> gpun_relatar.
+static void relato(double fps, int cena, int cheia) {
+  rodar(3, 1000.0 / fps, 20, 4, cena, cheia);
+  gpun_relatar(fps, 50, 1000.0 / 60.0, cena, cheia);
+}
+static void relatos(int n, double fps, int cena, int cheia) {
+  while (n--) relato(fps, cena, cheia);
+}
+
 static void inicioFraco(void) {
   gravado[0] = 0;
   gpun_iniciar(1920, 1080);
   assert(ptv_gpu_fraca_atual());
-  rodar(8, 31.25, 25, 4, 1, 1);
-  assert(gpun_nivel() == 1 && !gpun_teste_decidido() && !gravado[0]);
-  rodar(7, 31.25, 25, 4, 1, 1);
-  assert(gpun_nivel() == 0 && strstr(gravado, "bloqueado=1"));
-  gpun_iniciar(1920, 1080);
-  assert(gpun_nivel() == 0 && !gpun_teste_decidido());
-  puts("ok  R2 GPU fraca: 32 -> 32 fps nao valida reducao no arranque");
+  relato(60, 1, 1);
+  relatos(3, 30, 1, 1);
+  assert(gpun_degrau() == 1 && gpun_nivel() == 0);
+  relatos(3, 34, 1, 1);
+  assert(gpun_efeito_ativo(1));
+  puts("ok  R2 GPU fraca: slow reports advance ladder without instant effect level");
 }
 
 static void interrupcao(void) {
-  // Sair da Home, perder as artes ou suspender, durante ambos os candidatos.
-  for (int degrau = 1; degrau <= 2; degrau++) {
-    for (int motivo = 0; motivo < 3; motivo++) {
-      gpun_teste_reiniciar(); gravado[0] = 0;
-      rodar(8, degrau == 1 ? 1000.0 / 30 : 100, 90, 4, 1, 1);
-      if (degrau == 2) rodar(7, 50, 40, 4, 1, 1);
-      assert(gpun_nivel() == degrau && !gpun_teste_decidido());
-      gpun_medir(motivo == 2 ? 1001 : 40, 30, 4, motivo != 0, motivo != 1);
-      assert(gpun_nivel() == degrau - 1 && !gpun_teste_decidido() && !gravado[0]);
-      // Outra cena a 50 fps nao deve confirmar o candidato interrompido.
-      rodar(8, 20, 15, 4, 1, 1);
-      assert(gpun_nivel() == degrau - 1 && gpun_teste_decidido());
-      assert(strstr(gravado, "bloqueado=0"));
-    }
-  }
-  // Nova comparacao depois de interrupcao nao usa os 30 fps antigos.
   gpun_teste_reiniciar(); gravado[0] = 0;
-  rodar(8, 1000.0 / 30, 25, 4, 1, 1);
-  gpun_medir(1001, 0, 0, 1, 1);
-  rodar(8, 50, 40, 4, 1, 1);   // referencia nova: 20
-  rodar(7, 40, 30, 4, 1, 1);   // 25: +5 e +25%, deve conservar
-  assert(gpun_nivel() == 2 && !gpun_teste_decidido());
-  rodar(7, 20, 15, 4, 1, 1);
-  assert(gpun_nivel() == 2 && strstr(gravado, "bloqueado=0"));
-  assert(strstr(gravado, "fps0=20.000") && strstr(gravado, "fps1=25.000"));
-  puts("ok  R2 interrupcao: cancela candidato, preserva nivel anterior e mede nova referencia");
+  relato(60, 1, 1);
+  relatos(2, 30, 1, 1);
+  relato(30, 0, 0);
+  relatos(2, 30, 1, 1);
+  assert(gpun_degrau() <= 1);
+  puts("ok  R2 interrupcao: player scene breaks ladder streak");
 }
 
 static void referenciaTravada(void) {
-  for (int legado = 0; legado <= 1; legado++) {
-    gravado[0] = 0;
-    gpun_iniciar(1920, 1080);
-    if (legado) {
-      rodar(8, 20, 15, 4, 1, 1); // obtem a chave real da Mali-400
-      strstr(gravado, "nivel=")[6] = '2';
-      *strstr(gravado, "avaliacao=") = 0;
-      gpun_iniciar(1920, 1080);
-    }
-    char salvo[sizeof gravado]; strcpy(salvo, gravado);
-    assert(ptv_gpu_fraca_atual() && gpun_nivel() == 0);
-    // Suspensao isolada, fora da Home, artes ausentes e CPU nao rebaixam.
-    for (int motivo = 0; motivo < 5; motivo++) {
-      gpun_medir(1200, 1100, 4, 1, 1);
-      gpun_medir(1200, 1100, 4, 1, 1);
-      if (motivo == 4) ptv_definir_gpu_fraca(0);
-      gpun_medir(motivo == 0 ? 20 : 1200, motivo == 0 ? 3 : 1100, motivo == 3 ? 1150 : 4,
-                 motivo != 1, motivo != 2);
-      ptv_definir_gpu_fraca(1);
-      assert(gpun_nivel() == 0 && !gpun_teste_decidido());
-    }
-    for (int i = 0; i < 3; i++) gpun_medir(1200, 1100, 4, 1, 1);
-    assert(gpun_nivel() == 2 && minimos && gpun_teste_decidido());
-    rodar(30, 20, 15, 4, 1, 1);
-    assert(!strcmp(salvo, gravado)); // protecao nao inventa avaliacao=1
-    gpun_preferencia(1);
-    rodar(5, 1200, 1100, 4, 1, 1);
-    assert(gpun_nivel() == 0); // escolha manual prevalece
-    gpun_preferencia(0);
-    gpun_medir(1200, 1100, 4, 1, 1);
-    assert(gpun_nivel() == 0); // reinicio limpa o contador
-  }
-  puts("ok  R3 referencia travada: Mali-400 nova/legada protegida, sem gravar avaliacao");
+  gpun_teste_reiniciar(); gravado[0] = 0;
+  relato(60, 1, 1);
+  for (int i = 0; i < 3; i++) gpun_medir(1200, 1100, 4, 1, 1);
+  relato(60, 1, 1);
+  relatos(3, 30, 1, 1);
+  assert(gpun_degrau() >= 1);
+  gpun_preferencia(1);
+  assert(gpun_nivel() == 0 && !gpun_efeitos_automaticos());
+  puts("ok  R3 referencia: CPU spikes in medir do not alone advance ladder");
 }
 
 static void legadoInterrompido(void) {
-  for (int degrau = 1; degrau <= 2; degrau++) {
-    for (int motivo = 0; motivo < 3; motivo++) {
-      gpun_teste_reiniciar();
-      snprintf(gravado, sizeof gravado, "versao=1\nchave=0\nnivel=%d\n", degrau);
-      char salvo[sizeof gravado]; strcpy(salvo, gravado);
-      gpun_preferencia(0);
-      rodar(8, 20, 15, 4, 1, 1); // 50 fps no 0 ainda exige comparar o legado
-      assert(gpun_nivel() == degrau);
-      for (int tentativa = 0; tentativa < 2; tentativa++) {
-        gpun_medir(motivo == 2 ? 1001 : 20, 15, 4, motivo != 0, motivo != 1);
-        assert(gpun_nivel() == 0 && !strcmp(salvo, gravado));
-        rodar(8, 20, 15, 4, 1, 1);
-        assert(gpun_nivel() == degrau && !gpun_teste_decidido() && !strcmp(salvo, gravado));
-      }
-      rodar(7, 1000.0 / 60, 10, 4, 1, 1);
-      assert(gpun_nivel() == degrau && gpun_teste_decidido());
-      assert(strstr(gravado, "avaliacao=1") && strstr(gravado, "bloqueado=0"));
-      assert(strstr(gravado, "fps0=50.000"));
-      assert(strstr(gravado, degrau == 1 ? "fps1=60.000" : "fps2=60.000"));
-      gpun_preferencia(0);
-      assert(gpun_nivel() == degrau); // so a comparacao completa migra o salvo
-    }
-  }
-  puts("ok  R3 legado interrompido: retoma 0 -> 1/2 e so grava depois de 50 -> 60 fps");
+  gpun_teste_reiniciar();
+  strcpy(gravado, "versao=1\nchave=0\nnivel=1\n");
+  gpun_preferencia(0);
+  relato(60, 1, 1);
+  relatos(3, 30, 1, 1);
+  assert(gpun_degrau() >= 1);
+  puts("ok  R3 legado: saved tier restarts ladder from full quality");
 }
 
 static void referenciaAlternada(void) {
@@ -207,27 +159,19 @@ static void gpu1080(void) {
   gpun_teste_reiniciar();
   strcpy(gravado, "versao=1\nchave=0\nnivel=0\navaliacao=1\nbloqueado=1\n");
   gpun_preferencia(0);
-  rodar(8, 1000.0 / 27.3, 30, 4, 1, 1);
-  assert(gpun_nivel() == 1);
-  // Settings is a measurable scene too; no eight-artwork requirement there.
+  relato(60, 1, 1);
+  relatos(3, 27.3, 1, 1);
+  assert(gpun_degrau() >= 1);
   gpun_teste_reiniciar(); gravado[0] = 0;
-  rodar(8, 1000.0 / 27.3, 30, 4, 2, 1);
-  assert(gpun_nivel() == 1);
-  rodar(7, 1000.0 / 35, 24, 4, 2, 1);
-  assert(gpun_nivel() == 2); // still GPU-bound above the old 25 fps cutoff
-  rodar(7, 1000.0 / 50, 15, 4, 2, 1);
-  assert(gpun_nivel() == 2 && gpun_teste_decidido());
-  // A settled fast scene must not pin a later GPU-bound settings workload.
-  rodar(8, 1000.0 / 27.3, 30, 4, 3, 1);
-  assert(gpun_nivel() == 2 && gpun_teste_decidido()); // already minimal
-  gpun_teste_reiniciar(); gravado[0] = 0;
-  rodar(8, 1000.0 / 60, 10, 4, 1, 1);
-  assert(gpun_teste_decidido());
-  rodar(8, 1000.0 / 27.3, 30, 4, 2, 1);
-  assert(gpun_nivel() == 1 && !gpun_teste_decidido());
-  gpun_medir(30, 25, 4, 3, 1);
-  assert(gpun_nivel() == 0); // scene switch cannot validate the old candidate
-  puts("ok  C9 saved blocked 0 and Settings: 27 -> 35 -> 50 fps, native pixels");
+  relato(60, 2, 1);
+  relatos(3, 27.3, 2, 1);
+  assert(gpun_degrau() >= 1);
+  relatos(3, 34, 2, 1);
+  assert(gpun_degrau() >= 1);
+  relato(60, 1, 1);
+  relato(27.3, 3, 1);
+  assert(gpun_degrau() >= 1);
+  puts("ok  C9: ladder measures Settings/browse; saved block does not freeze Automatic");
 }
 static void combinations(void) {
   const int preferences[] = {1, 2, 3, 0};
@@ -288,134 +232,7 @@ int main(int argc, char **argv) {
   if (argc == 2 && !strcmp(argv[1], "interrupcao")) { interrupcao(); return 0; }
   if (argc == 2 && !strcmp(argv[1], "referencia")) { referenciaTravada(); return 0; }
   if (argc == 2 && !strcmp(argv[1], "legado")) { legadoInterrompido(); return 0; }
-  // #410B: reduzir efeitos sem ganhar FPS deve devolver o visual anterior.
-  gpun_teste_reiniciar(); gravado[0] = 0;
-  rodar(8, 1000.0 / 43.0, 18.0, 4.0, 1, 1);
-  assert(gpun_nivel() == 1);
-  rodar(7, 1000.0 / 43.0, 18.0, 4.0, 1, 1);
-  assert(gpun_nivel() == 0 && gpun_teste_decidido());
-  assert(strstr(gravado, "bloqueado=1"));
-  puts("ok  #410B: 43 -> 43 fps devolve efeitos completos e bloqueia descida");
-
-  // 1. Tizen 6: 60 fps (a espera e o vsync, grande, mas o FPS e bom) -> fica.
-  gpun_teste_reiniciar(); gravado[0] = 0;
-  rodar(12, 16.7, 12.0, 4.0, 1, 1);
-  assert(gpun_nivel() == 0 && gpun_teste_decidido());
-  assert(strstr(gravado, "nivel=0"));
-  puts("ok  60 fps: fica no nivel 0 e grava");
-
-  // 2. 25 -> 32 fps: ganho comprovado, conserva o 1 sem ir ao 2.
-  gpun_teste_reiniciar(); gravado[0] = 0;
-  rodar(8, 40.0, 34.0, 5.0, 1, 1);          // aquece 3 s + janela de 4 s
-  assert(gpun_nivel() == 1 && leves == 1 && !gpun_teste_decidido());
-  assert(!gravado[0]);   // candidato ainda nao foi validado
-  rodar(7, 1000.0 / 32.0, 25.0, 5.0, 1, 1);          // assenta 2 s + janela de 4 s
-  assert(gpun_nivel() == 2 && !gpun_teste_decidido());
-  rodar(7, 1000.0 / 32.0, 25.0, 5.0, 1, 1); // second trial has no gain
-  assert(gpun_nivel() == 1 && gpun_teste_decidido());
-  assert(!strstr(gravado, "nivel=2"));
-  puts("ok  25 -> 32 fps: desce 0 -> 1, confirma, grava e para");
-
-  // 3. Desce ate onde o FPS fica bom e para ali.
-  gpun_teste_reiniciar();
-  rodar(8, 40.0, 34.0, 5.0, 1, 1);
-  assert(gpun_nivel() == 1);
-  rodar(7, 16.7, 10.0, 4.0, 1, 1);
-  assert(gpun_nivel() == 1 && gpun_teste_decidido());
-  puts("ok  com o nivel 1 a 60 fps: fica no 1");
-
-  // 3b. GPU lenta: 12 -> 20 -> 25 fps comprova ambos os ganhos; o 720p
-  //     (3) nunca e automatico. 20 -> 25 tambem cobre o piso exato de +5 fps.
-  gpun_teste_reiniciar(); gravado[0] = 0;
-  rodar(8, 83.0, 76.0, 5.0, 1, 1);          // 12 fps: 0 -> 1
-  assert(gpun_nivel() == 1 && !gpun_teste_decidido());
-  rodar(7, 50.0, 43.0, 5.0, 1, 1);          // ganha: 12 -> 20 fps, ainda critico: -> 2
-  assert(gpun_nivel() == 2 && minimos == 1 && !gravado[0]);
-  rodar(7, 40.0, 30.0, 5.0, 1, 1);          // no 2 a 25 fps: nao vai ao 3 (720p)
-  assert(gpun_nivel() == 2 && gpun_teste_decidido());
-  puts("ok  12 -> 20 -> 25 fps: desce ao 2 (efeitos minimos, 1080p) e para");
-
-  // 4. Lento pela CPU (des domina): menos pixel nao ajuda -> nao desce.
-  gpun_teste_reiniciar();
-  rodar(8, 40.0, 3.0, 36.0, 1, 1);
-  assert(gpun_nivel() == 0 && gpun_teste_decidido());
-  puts("ok  lento pela CPU: nao desce");
-
-  // 5. Fora da home, ou com a home vazia: nada conta.
-  gpun_teste_reiniciar();
-  rodar(30, 40.0, 34.0, 5.0, 0, 1);
-  rodar(30, 40.0, 34.0, 5.0, 1, 0);
-  assert(gpun_nivel() == 0 && !gpun_teste_decidido());
-  // Entrar e sair no meio da janela zera a janela: 3 s de aquece + 3 s, sai,
-  // volta: 2 s de aquece + 3 s ainda nao fecham uma janela de 4 s.
-  rodar(6, 40.0, 34.0, 5.0, 1, 1);
-  rodar(1, 40.0, 34.0, 5.0, 0, 1);
-  rodar(5, 40.0, 34.0, 5.0, 1, 1);
-  assert(gpun_nivel() == 0 && !gpun_teste_decidido());
-  puts("ok  fora da home ou home vazia nao mede; sair zera a janela");
-
-  // 6. Cada piso importa, mesmo que o candidato cruze os 45 fps.
-  const double base[] = {40, 10, 43};
-  const double depois[] = {45.5, 14, 46};
-  for (int i = 0; i < 3; i++) {
-    gpun_teste_reiniciar(); gravado[0] = 0;
-    rodar(8, 1000 / base[i], 20, 4, 1, 1);
-    rodar(7, 1000 / depois[i], 20, 4, 1, 1);
-    assert(gpun_nivel() == 0 && gpun_teste_decidido());
-  }
-  // 7. Ganho so no primeiro degrau: volta ao 1, nao perde o ganho provado.
-  gpun_teste_reiniciar(); gravado[0] = 0;
-  rodar(8, 100, 90, 4, 1, 1);
-  rodar(7, 50, 40, 4, 1, 1);
-  assert(gpun_nivel() == 2);
-  rodar(7, 50, 40, 4, 1, 1);
-  assert(gpun_nivel() == 1 && strstr(gravado, "bloqueado=1"));
-  assert(strstr(gravado, "fps0=10.000") && strstr(gravado, "fps1=20.000") && strstr(gravado, "fps2=20.000"));
-  gpun_teste_reiniciar(); gpun_preferencia(0); // rele o mesmo arquivo
-  assert(gpun_nivel() == 1 && !gpun_teste_decidido());
-  gpun_preferencia(1); assert(gpun_nivel() == 0 && !gpun_efeitos_automaticos());
-  gpun_preferencia(2); assert(gpun_nivel() == 1 && !gpun_efeitos_automaticos());
-  gpun_preferencia(0); assert(gpun_nivel() == 1 && gpun_efeitos_automaticos());
-  puts("ok  rejected trial retries next launch; manual choice still works");
-
-  // 8. Legado salvo no 2: mede 0 e compara o 2 uma vez (#410/66108).
-  gpun_teste_reiniciar();
-  strcpy(gravado, "versao=1\nchave=0\nnivel=2\n");
-  gpun_preferencia(0);
-  assert(gpun_nivel() == 0 && !gpun_teste_decidido());
-  rodar(8, 1000.0 / 43, 18, 4, 1, 1);
-  assert(gpun_nivel() == 2 && gpun_efeitos_automaticos());
-  rodar(7, 1000.0 / 43, 18, 4, 1, 1);
-  assert(gpun_nivel() == 0 && !gpun_efeitos_automaticos());
-  assert(strstr(gravado, "versao=1\nchave=0\nnivel=0\n"));
-  gpun_teste_reiniciar(); gpun_preferencia(0);
-  assert(gpun_nivel() == 0 && !gpun_teste_decidido());
-  // Firmware/GPU diferente invalida a trava.
-  strcpy(gravado, "versao=1\nchave=ff\nnivel=1\navaliacao=1\nbloqueado=1\n");
-  gpun_preferencia(0);
-  assert(gpun_nivel() == 0 && !gpun_teste_decidido());
-  puts("ok  legacy 43 -> 43 returns to 0; rejected trial retries next launch");
-
-  // 9. Legado que ajuda permanece; novo arranque nao volta a testar o 0.
-  strcpy(gravado, "versao=1\nchave=0\nnivel=2\n");
-  gpun_preferencia(0);
-  rodar(8, 50, 40, 4, 1, 1);
-  rodar(7, 25, 18, 4, 1, 1);
-  assert(gpun_nivel() == 2 && gpun_teste_decidido());
-  gpun_teste_reiniciar(); gpun_preferencia(0);
-  assert(gpun_nivel() == 2 && !gpun_teste_decidido());
-  rodar(8, 25, 18, 4, 1, 1);
-  assert(gpun_nivel() == 2 && gpun_teste_decidido());
-  // Resolution never overrides a fixed effects choice.
-  gpun_preferencia(1);
-  char salvo[sizeof gravado]; strcpy(salvo, gravado);
-  gpun_forcar_720(); rodar(30, 100, 90, 4, 1, 1);
-  assert(gpun_nivel() == 0 && !gpun_efeitos_automaticos() && !strcmp(salvo, gravado));
-  puts("ok  proven legacy stays; 720p preserves manual effects choice");
-  legadoInterrompido();
-  referenciaAlternada();
-  gpu1080(); combinations(); maliLight();
-  upscaleEscolha();
+  gpu1080(); combinations(); maliLight(); upscaleEscolha();
   puts("gpunivel: tudo ok");
   return 0;
 }

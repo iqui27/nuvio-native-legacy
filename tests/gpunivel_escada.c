@@ -3,8 +3,7 @@
 #include "gpunivel.c"
 #undef main
 
-static int automatic = 15;
-int ajustes_efeitos_automaticos(void) { return automatic; }
+extern int gpun_teste_automaticos;
 static void reports(int n, double fps) {
   while (n--) gpun_relatar(fps, 40, 1000.0 / 60, 1, 1);
 }
@@ -32,9 +31,9 @@ int main(int argc, char **argv) {
   if (argc > 1 && !strcmp(argv[1], "frost-automatic")) {
     fresh();
     gpun_preferencia(3);
-    automatic &= ~2; // Frost On does not reset the hardware mark.
+    gpun_teste_automaticos &= ~2; // Frost On does not reset the hardware mark.
     assert(gpun_nivel() == 2);
-    automatic |= 2; // Settings calls this when Frost returns to Automatic.
+    gpun_teste_automaticos |= 2; // Settings calls this when Frost returns to Automatic.
     gpun_fosco_reiniciar();
     assert(!gpun_fosco_vetado());
     assert(gpun_nivel() == 2);
@@ -66,14 +65,14 @@ int main(int argc, char **argv) {
   reports(3, 30); assert(gpun_degrau() == 3);
   assert(!gpun_efeito_ativo(1) && !gpun_efeito_ativo(2));
 
-  for (automatic = 0; automatic < 16; automatic++) {
+  for (gpun_teste_automaticos = 0; gpun_teste_automaticos < 16; gpun_teste_automaticos++) {
     fresh();
     for (int step = 1; step <= 4; step++) {
       reports(3, 30); assert(gpun_degrau() == step);
-      if (automatic & (1 << (step - 1))) reports(3, 34);
+      if (gpun_teste_automaticos & (1 << (step - 1))) reports(3, 34);
     }
   }
-  automatic = 15;
+  gpun_teste_automaticos = 15;
   fresh();
   // Decode/upload and CPU/list/network stalls cannot advance the ladder.
   for (int window = 0; window < 6; window++) {

@@ -3,8 +3,7 @@
 #include "gpunivel.c"
 #undef main
 
-static int automatic = 15;
-int ajustes_efeitos_automaticos(void) { return automatic; }
+extern int gpun_teste_automaticos;
 static void report(double fps, int scene, int clean) {
   gpun_relatar(fps, 47.4, 1000.0 / 60, scene, clean);
 }
@@ -33,14 +32,14 @@ int main(void) {
   reports(30, 59.5); assert(gpun_degrau() == 0);
   gpun_iniciar(1920, 1080); assert(gpun_degrau() == 0);
   // Forced effects still consume separate rungs; never 0 -> 3.
-  automatic = 4; fresh(); report(60, 1, 1);
+  gpun_teste_automaticos = 4; fresh(); report(60, 1, 1);
   for (int step = 1; step <= 3; step++) {
     reports(3, 40); assert(gpun_degrau() == step);
   }
   reports(3, 50.4); assert(gpun_efeito_ativo(3));
   reports(10, 59.5); assert(!gpun_efeito_ativo(3));
   // A single favorable post-trial sample cannot save a frost veto.
-  automatic = 15; fresh(); report(60, 1, 1);
+  gpun_teste_automaticos = 15; fresh(); report(60, 1, 1);
   reports(3, 40); reports(3, 50.4);
   reports(3, 40); reports(1, 50.4);
   gpun_iniciar(1920, 1080); assert(!gpun_fosco_vetado());
