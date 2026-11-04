@@ -120,6 +120,11 @@ static void cancelarPreparo(int apagar) {
 // o cartao volta inteiro no fim real. So a acao da UI espera: visto/progresso
 // seguem no limiar de creditos (player.c, concluiuAgora).
 static int    cenaPendente, cenaNoFim, aguardaCena;
+// Cena pos-creditos dos TRECHOS (intro_cena_pos), por quadro; so para o log de mudanca.
+static int    cenaIntro;
+// Fim da cena (intro_cena_pos): antes do fim do arquivo quando uma previa
+// marcada vem depois ("ED - Part C - Next time"); o cartao sobe ali.
+static double cenaFim;
 int posplay_visivel(void) { return visivel; }
 // Preserve a pending card/Next; a dismissed card leaves no choice at EOF.
 int posplay_aguarda_escolha(void) {
@@ -348,7 +353,8 @@ static void prepararProximo(int ehSerie, double resta) {
 // 2.0.3: a parte final do FILME e a de intro_creditos_janela_filme (12%,
 // 5-15 min), a mesma do botao de pular creditos; era o ultimo quarto.
 static int credAceito(double durSeg, double cred) {
-  return cred > 1.0 && cred < durSeg && durSeg - cred <= intro_creditos_janela_filme(durSeg);
+  return cred > 1.0 && cred < durSeg &&
+         (durSeg - cred <= intro_creditos_janela_filme(durSeg) || intro_creditos_aceito(cred));
 }
 
 // A REGRA DO FILME, sem estado (o teste chama direto).
@@ -453,7 +459,27 @@ void posplay_atualizar(float dt, Uint32 agora, double posSeg, double durSeg,
     preVideoTentou = preVideoRenovou = 0;
   }
 
-  if (ehSerie) {
+  // CENA DEPOIS DOS CREDITOS (feat/mkv-chapter-segments, D12/D13): com cena
+  // marcada ou deduzida pelos trechos (intro_cena_pos), nem o cartao do proximo
+  // episodio nem o "Mais como este" sobem nos creditos ou na cena — so quando o
+  // arquivo acaba (PP_FIM_TOL_S antes do fim, para o EOF achar o cartao no ar).
+  { double ci0 = 0, cf0 = 0; int cex = 0;
+    int cena = intro_cena_pos(durSeg, &ci0, &cf0, &cex);
+    cenaFim = cena ? cf0 : 0.0;
+    if (cena != cenaIntro) {
+      cenaIntro = cena;
+      if (cena) printf("[posplay] cena pos-creditos %.0f-%.0fs (%s): cartao so no fim do arquivo\n",
+                       ci0, cf0, cex ? "marcada" : "deduzida");
+      else printf("[posplay] sem cena pos-creditos: cartao pela regra de sempre\n");
+      fflush(stdout);
+    } }
+
+  if (cenaIntro) {
+    // Depois da cena: no fim do arquivo, ou ja na previa que a segue.
+    int depois = durSeg - posSeg <= PP_FIM_TOL_S ||
+                 (cenaFim > 1.0 && cenaFim < durSeg - PP_FIM_TOL_S && posSeg >= cenaFim);
+    deveAparecer = durEstavel >= PP_DUR_ESTAVEL_S && depois && (!ehSerie || janelaSerie);
+  } else if (ehSerie) {
     // A JANELA quem decide e o player: ele e o unico que sabe se os creditos
     // comecaram (intro_ativo/INTRO_CREDITOS) alem dos dois minutos finais. Era
     // a mesma condicao que a caixa antiga de "Próximo episódio" usava, e passar

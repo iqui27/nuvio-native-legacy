@@ -5,7 +5,7 @@ python3 - <<'PY'
 from pathlib import Path
 
 source = Path('src/intro.c').read_text()
-start = source.index('static int pedirAniskip(')
+start = source.index('static void idsAnime(')
 end = source.index('\n}', start)
 body = source[start:end]
 guard = body.index('#ifdef __EMSCRIPTEN__')

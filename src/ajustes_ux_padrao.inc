@@ -369,3 +369,5 @@
   1, /* Profile picker avatar size: Medium. */
   0, /* Group channel variants: enabled. */
   0, /* Sports menu entry: enabled. */
+  1, /* chapters in the player: Off (V_LIGA 1) */
+  0, /* Anime-Skip Client ID: action, value lives in animeskip.txt */
