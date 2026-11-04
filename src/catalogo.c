@@ -1477,6 +1477,11 @@ int cat_indice_vivo(int indice, const char *imdb) {
   return cat_indice_titulo(imdb, indice);
 }
 
+int cat_indice_reabrir(int indice, const CatItem *copia) {
+  int i = cat_indice_vivo(indice, copia ? copia->imdb : NULL);
+  return i < 0 ? cat_acrescentar(copia) : i;
+}
+
 static int normalizarIndice(int indice) {
   int i = cat_n();
   if (i < 1) return -1;

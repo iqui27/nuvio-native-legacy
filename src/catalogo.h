@@ -328,6 +328,10 @@ int cat_indice_titulo(const char *imdb, int preferido);
 // um strcmp), senao cat_indice_titulo. -1 se o titulo nao esta mais no
 // catalogo. Sem id, devolve `indice` como antes.
 int cat_indice_vivo(int indice, const char *imdb);
+// Same, for a title the caller is reopening from a copy taken before closing
+// the player: if it left the catalog meanwhile the copy goes back in. -1 only
+// when that fails; never pass -1 to player_abrir, it wraps to another title.
+int cat_indice_reabrir(int indice, const CatItem *copia);
 
 // Acrescenta um titulo ao FIM e devolve o indice, ou -1. Para o titulo que veio
 // de fora do catalogo (filmografia de ator, "Mais como este"). Ver a nota sobre
