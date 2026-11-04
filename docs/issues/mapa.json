@@ -13275,6 +13275,15 @@
  "validacoes": [
   {
    "data": "2026-11-04",
+   "quem": "Coordenação TV",
+   "o_que": "Builds webOS e Samsung WGT com correções de imagens e reabertura de episódio",
+   "issues": [697],
+   "ref": "141a87daa8e88036ff7387f9141f2c78082e023e; PR 757 e merge 672ff9a27",
+   "resultado": "builds e pacotes gerados; validação em TVs pendente",
+   "evidencia": "Checkouts isolados no HEAD indicado e fontes rastreadas limpas antes e depois. WebOS --ipk --build rc=0 com libass habilitado: IPK 75944008 bytes, SHA-256 541a106fc17cdc918769b6a41f156e6423c4c00aa43ce9efb788bbc3f5c6e256, formato Debian com membros ar esperados. WGT: libwebp WASM 1.4.0 compilada, build normal rc=0 com libass e libwebp; tentativa inicial de empacotar rc=3 por ausência de configuração no comando de pacote, repetida com NUVIO_PROPERTIES rc=0. WGT sem assinatura 46341706 bytes, SHA-256 eb8aeb3f6660955fb0ff93aaa5104733871a67989ac9e52e78b9923434555dbb, unzip -tq rc=0. Compiladores emitiram warnings. Não houve teste físico, verificação funcional em TV, nem demonstração de relação com relato #697. Logs build-tv-141a87d-webos.log, build-tv-141a87d-wgt-completo.log, build-tv-141a87d-wgt-pacote-retry.log."
+  },
+  {
+   "data": "2026-11-04",
    "quem": "Job mini, revisão independente Zima e coordenação TV (modelos servidos não comprovados)",
    "o_que": "Reabertura de episódio preserva identidade do título durante publicação do catálogo",
    "issues": [697],
