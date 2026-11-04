@@ -274,6 +274,7 @@ static const char *VS =
 #define NV_STR(x) NV_STR_(x)
 
 #include "gfx_sgsr.h"
+#include "arte_medida.h"
 #include "gfx_upscale.h"
 
 static const char *FS_CABECA =
@@ -2485,6 +2486,23 @@ void gfx_rect_furos(GfxRect r, GLuint tex, GfxModo modo, float foco,
   memcpy(subAtual, saved, sizeof saved);
 }
 
+// ARTWORK DRAW PROBE (arte_medida.h, NV_ART_DRAW_MEASURE=1): decoded cache
+// size against the physical px of this draw on the screen target. Off-screen
+// passes (snapshot, mini, ambient, any target != screen), rotation, text and
+// the Texture-mode title surface are skipped; non-cache textures fail lookup.
+static void arteMedir(GfxRect r, GLuint tex, GfxModo modo) {
+  char l[320];
+  if (arte_medida_ligada < 0 && !arte_medida_resolver()) return;
+  if (modo == GFX_TEXTO || modo == GFX_TEXTURA || snapAtivo || miniAtiva || giroOn ||
+      telaW != telaRealW || telaH != telaRealH) return;
+  float ex = (float)telaW / NV_TELA_W, ey = (float)telaH / NV_TELA_H;
+  if (arte_medida_amostra(tex, (int)modo, gfx_tex_aspect_atual,
+                          modo == GFX_CARD && gfx_card_forcar_cover_atual < 0.5f,
+                          r.x * ex, (NV_TELA_H - (r.y + r.h)) * ey, (r.x + r.w) * ex, (NV_TELA_H - r.y) * ey,
+                          recorteAtivo ? (const int *)recorteBox : NULL, telaW, telaH,
+                          escAtiva * (gfxTr.on ? gfxTr.s : 1.0f), ex, tex_dims_gl, l, sizeof l))
+    fputs(l, stdout);
+}
 void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
               float parx, float pary, float raio,
               float cr, float cg, float cb, float ca) {
@@ -2549,6 +2567,7 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
     parx = r.h >= 30.0f ? txVeu : 0.0f;   // o veu e atras do ROTULO: barra e disco nao tem
     pary = txVeuBranco;
   }
+  if (arte_medida_ligada && tex) arteMedir(r, tex, modo);   // opt-in; one compare when off
   // Efeitos leves: os dois realces que so enfeitam (brilho no alto do card,
   // luz de canto de painel) nao sao desenhados. Nenhum carrega informacao — o
   // foco continua marcado pelo anel e pelo especular do GFX_CARD.
