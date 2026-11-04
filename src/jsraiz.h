@@ -93,10 +93,12 @@ static inline int blocoRaiz(const char *ini, const char *fim, const char *chave,
   return 1;
 }
 // Iterates elements of an array value [ai, af): returns the next element start.
+// Stops at '}' and NUL too: depoisElemento does not move on either of them, so a
+// caller's loop would never end ("Guid":[1}], or an object where an array belongs).
 static inline const char *elemento(const char *p, const char *af) {
   while (p && p < af && (*p == ' ' || *p == ',' || *p == '\n' || *p == '\r' || *p == '\t' || *p == '['))
     p++;
-  if (!p || p >= af || *p == ']') return NULL;
+  if (!p || p >= af || !*p || *p == ']' || *p == '}') return NULL;
   return p;
 }
 static inline const char *depoisElemento(const char *p) {
