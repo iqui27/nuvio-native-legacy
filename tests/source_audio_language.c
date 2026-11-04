@@ -112,6 +112,12 @@ int main(void) {
     {"tr","\"title\":\"Frozen.2013.1080p.WEB-DL.x264\\nSubtitles:\\nTurkish\"",0},
     // Provider name never counts; title survives next to a description.
     {"tr","\"title\":\"Frozen 2013\"",0,"Turkish.1080p.WEB-DL.x264"},
+    {"tr","\"description\":\"Frozen.2013.1080p.WEB-DL.mkv\"",0,"\xF0\x9F\x87\xB9\xF0\x9F\x87\xB7 IPTV"},
+    {"es","\"description\":\"Frozen.2013.1080p.WEB-DL.mkv\"",0,"\xF0\x9F\x87\xAA\xF0\x9F\x87\xB8 IPTV"},
+    {"tr","\"name\":\"\xF0\x9F\x87\xB9\xF0\x9F\x87\xB7 1080p\",\"description\":\"Frozen.2013.1080p.WEB-DL.mkv\"",1,"\xF0\x9F\x87\xAA\xF0\x9F\x87\xB8 IPTV"},
+    {"tr","\"description\":\"Frozen.2013.1080p.WEB-DL.Turkish.mkv\"",1,"\xF0\x9F\x87\xAA\xF0\x9F\x87\xB8 IPTV"},
+    {"tr","\"audioLanguages\":[\"en\"],\"description\":\"Frozen.2013.1080p.WEB-DL.Turkish.mkv\"",0,"\xF0\x9F\x87\xB9\xF0\x9F\x87\xB7 IPTV"},
+    {"en","\"audioLanguages\":[\"en\"],\"description\":\"Frozen.2013.1080p.WEB-DL.Turkish.mkv\"",1,"\xF0\x9F\x87\xB9\xF0\x9F\x87\xB7 IPTV"},
     {"tr","\"title\":\"Frozen.2013.1080p.WEB-DL.Turkish.x264.mkv\",\"description\":\"2.1 GB\"",1},
     {"tr","\"name\":\"Addon 1080p\",\"title\":\"Frozen.2013.1080p.WEB-DL.Turkish.x264.mkv\",\"description\":\"Frozen 2013\\n2.1 GB\"",1},
   };

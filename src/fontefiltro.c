@@ -241,7 +241,7 @@ static int nomeTecnico(const char *s);
 static int legendaToken(const char *s) {
   return algum(s,"subtitle","subtitles","legendas","legenda") || algum(s,"subs","sub",NULL,NULL);
 }
-static void textoSeguro(const char *s, char *dst, size_t n) {
+static void textoSeguro(const char *s, char *dst, size_t n, int linguas) {
   size_t u = 0;
   int legendas = 0;
   dst[0] = 0;
@@ -251,8 +251,9 @@ static void textoSeguro(const char *s, char *dst, size_t n) {
     while (*s && *s != '\n') { if (k + 1 < sizeof linha) linha[k++] = *s; s++; }
     linha[k] = 0; if (*s) s++;
     /* "Subtitles:" sozinho: os valores seguem nas proximas linhas, ate
-       outro rotulo ou o nome do release. */
-    if (legendas && !strchr(linha,':') && !nomeTecnico(linha)) continue;
+       outro rotulo ou o nome do release. So os idiomas pulam essas linhas;
+       1080p, HDR ou x265 nelas continuam tags da fonte. */
+    if (linguas && legendas && !strchr(linha,':') && !nomeTecnico(linha)) continue;
     legendas = 0;
     if (legendaToken(linha)) {
       size_t f = k;
@@ -451,7 +452,7 @@ void fontefiltro_linguas_texto(const char *filename, const char *texto, char *ds
   char nome[4096], txt[8192];
   if (!dst || !n) return;
   dst[0] = 0;
-  textoSeguro(filename,nome,sizeof nome); textoSeguro(texto,txt,sizeof txt);
+  textoSeguro(filename,nome,sizeof nome,1); textoSeguro(texto,txt,sizeof txt,1);
   /* Bandeiras univocas do AIOStreams, tambem fora das opcoes fixas. */
   static const char flags[] = "TRtrRUruSAarTHthVNviIDidILheIRfaUAukGRelLTltLVlvEEetSKskHUhuROroBGbgRSsrHRhrSIslNLnlDKdaFIfiSEsvNOnoMYmsBDbnPKpa";
   for (int f = 0; f < 2; f++) {
@@ -539,12 +540,18 @@ static uint64_t linguasDeclaradas(const char *s) {
   return v;
 }
 
+static uint64_t linguasSeguras(const FonteFiltroEntrada *e) {
+  char nome[4096], texto[8192];
+  textoSeguro(e->filename,nome,sizeof nome,1); textoSeguro(e->texto,texto,sizeof texto,1);
+  return linguasNome(nome) | linguasTexto(texto);
+}
+
 void fontefiltro_classificar(const FonteFiltroEntrada *e, FonteFiltroDados *d) {
   char nome[4096], texto[8192], busca[12290];
   if (!d) return;
   memset(d,0,sizeof *d);
   if (!e) return;
-  textoSeguro(e->filename,nome,sizeof nome); textoSeguro(e->texto,texto,sizeof texto);
+  textoSeguro(e->filename,nome,sizeof nome,0); textoSeguro(e->texto,texto,sizeof texto,0);
   snprintf(busca,sizeof busca,"%s\n%s",nome,texto);
   const char *audio[] = {e->audio, busca};
   for (int i = 0; i < 2; i++) if (audio[i])
@@ -566,7 +573,7 @@ void fontefiltro_classificar(const FonteFiltroEntrada *e, FonteFiltroDados *d) {
       continue;
     }
     if (!d->valores[c] && !(campos[c] && (token(campos[c],"unknown") || token(campos[c],"desconhecido"))))
-      d->valores[c] = c == FONTEFILTRO_LINGUAS ? linguasNome(nome) | linguasTexto(texto) :
+      d->valores[c] = c == FONTEFILTRO_LINGUAS ? linguasSeguras(e) :
                       c == FONTEFILTRO_QUALIDADE ? qualidadeFallback(busca) : fontefiltro_valores(c,busca);
   }
   d->tamanhoBytes = e->tamanhoBytes;
