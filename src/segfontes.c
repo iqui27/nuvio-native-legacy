@@ -308,7 +308,7 @@ int segfontes_animeskip_ep(const char *json, int ep, IntroTrecho *out, int max) 
     const char *f = js_fim(p), *ts;
     char num[16] = "";
     double at[64];
-    int tp[64], canon[64], nt = 0, i, j, n = 0, cred = -1;
+    int tp[64], canon[64], marca[64], nt = 0, i, j, n = 0, cred = -1;
     // "number" vem como TEXTO ("12"); o "at" dos timestamps e numero.
     if (!js_texto(p, f, "number", num, sizeof num) || atoi(num) != ep) continue;
     for (ts = js_array(p, f, "timestamps"); ts && nt < 64; ts = js_prox(js_fim(ts))) {
@@ -320,15 +320,17 @@ int segfontes_animeskip_ep(const char *json, int ep, IntroTrecho *out, int max) 
       at[nt] = a; tp[nt] = tipoAnimeSkip(nome);
       { char l[16]; size_t q; snprintf(l, sizeof l, "%s", nome);
         for (q = 0; l[q]; q++) if (l[q] >= 'A' && l[q] <= 'Z') l[q] = (char)(l[q] - 'A' + 'a');
-        canon[nt] = !strcmp(l, "canon"); }
+        canon[nt] = !strcmp(l, "canon");
+        // Logo/cartao/transicao: nao e historia nem cena.
+        marca[nt] = !strcmp(l, "branding") || !strcmp(l, "title card") || !strcmp(l, "transition"); }
       nt++;
     }
     // Ordena por `at` (insercao: sao poucos).
     for (i = 1; i < nt; i++)
       for (j = i; j > 0 && at[j] < at[j - 1]; j--) {
-        double ta = at[j]; int tt = tp[j], tc = canon[j];
-        at[j] = at[j - 1]; tp[j] = tp[j - 1]; canon[j] = canon[j - 1];
-        at[j - 1] = ta; tp[j - 1] = tt; canon[j - 1] = tc;
+        double ta = at[j]; int tt = tp[j], tc = canon[j], tm = marca[j];
+        at[j] = at[j - 1]; tp[j] = tp[j - 1]; canon[j] = canon[j - 1]; marca[j] = marca[j - 1];
+        at[j - 1] = ta; tp[j - 1] = tt; canon[j - 1] = tc; marca[j - 1] = tm;
       }
     // Fim = proximo timestamp; o ultimo vai "ate o fim" (0), como o PC.
     for (i = 0; i < nt && n < max; i++) {
@@ -336,13 +338,21 @@ int segfontes_animeskip_ep(const char *json, int ep, IntroTrecho *out, int max) 
       if (!tp[i]) continue;
       for (k = 0; k < n; k++) if (out[k].tipo == tp[i]) ja = 1;   // primeiro por tipo
       if (ja) continue;
-      out[n++] = (IntroTrecho){ at[i], i + 1 < nt ? at[i + 1] : 0.0, tp[i], 0 };
+      { int k = i + 1;
+        // Os creditos vao ate o proximo marcador que NAO seja logo/cartao:
+        // "Branding" logo depois do ED e parte dele, nao cena pos-creditos.
+        if (tp[i] == INTRO_CREDITOS) while (k < nt && marca[k]) k++;
+        out[n++] = (IntroTrecho){ at[i], k < nt ? at[k] : 0.0, tp[i], 0 }; }
       if (tp[i] == INTRO_CREDITOS && cred < 0) cred = i;
     }
     // Historia ("Canon") LOGO depois dos creditos: cena pos-creditos de
     // verdade (o "C-part"), marcada e nunca pulada.
-    if (cred >= 0 && cred + 1 < nt && canon[cred + 1] && n < max)
-      out[n++] = (IntroTrecho){ at[cred + 1], cred + 2 < nt ? at[cred + 2] : 0.0, INTRO_POS_CREDITOS, 0 };
+    if (cred >= 0) {
+      int c = cred + 1;
+      while (c < nt && marca[c]) c++;   // pula o logo entre os creditos e a cena
+      if (c < nt && canon[c] && n < max)
+        out[n++] = (IntroTrecho){ at[c], c + 1 < nt ? at[c + 1] : 0.0, INTRO_POS_CREDITOS, 0 };
+    }
     return n;
   }
   return 0;

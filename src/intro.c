@@ -1095,9 +1095,9 @@ int intro_cena_pos(double dur,double *ini,double *fim,int *explicita){
          (!(dur>0.0)||trechos[k].inicio<dur)&&(!ok||trechos[k].inicio<a)){
         a=trechos[k].inicio;b=trechos[k].fim>0.0?trechos[k].fim:dur;ex=1;ok=1;
       }
-    // Deduzida: mais de 5 s depois do encerramento sem nada dizendo o que e.
+    // Deduzida: 17 s ou mais depois do encerramento sem nada dizendo o que e.
     // So nome/fonte faz disso uma previa (gag de 30 s existe): na duvida, cena.
-    if(!ok&&dur>0.0&&dur-fe>INTRO_CENA_FOLGA_S){a=fe;b=dur;ok=1;}
+    if(!ok&&dur>0.0&&dur-fe>=INTRO_CENA_DEDUZIDA_MIN_S){a=fe;b=dur;ok=1;}
     // "ED - Part C - Next time": a previa marcada depois da cena a encerra.
     if(ok)
       for(int k=0;k<nTrechos;k++)

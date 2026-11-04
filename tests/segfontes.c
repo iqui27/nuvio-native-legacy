@@ -80,6 +80,13 @@ static int fakePost(const char *url, const char *corpo, const char *cid, char **
         "{\"at\":120,\"type\":{\"name\":\"Mixed Intro\"}},"
         "{\"at\":210,\"type\":{\"name\":\"Canon\"}},"
         "{\"at\":1440,\"type\":{\"name\":\"Preview\"}}]}]}}";
+  else if (strstr(corpo, "findShowsByExternalId") && strstr(corpo, "30001"))
+    r = "{\"data\":{\"findShowsByExternalId\":[{\"id\":\"show-logo\"}]}}";
+  else if (strstr(corpo, "findEpisodesByShowId") && strstr(corpo, "show-logo"))
+    r = "{\"data\":{\"findEpisodesByShowId\":[{\"season\":\"1\",\"number\":\"2\",\"timestamps\":["
+        "{\"at\":0,\"type\":{\"name\":\"Canon\"}},{\"at\":1290,\"type\":{\"name\":\"Credits\"}},"
+        "{\"at\":1380,\"type\":{\"name\":\"Branding\"}},{\"at\":1392,\"type\":{\"name\":\"Canon\"}},"
+        "{\"at\":1420,\"type\":{\"name\":\"Preview\"}}]}]}}";
   else if (strstr(corpo, "findShowsByExternalId") && strstr(corpo, "30000"))
     r = "{\"data\":{\"findShowsByExternalId\":[{\"id\":\"show-cpart\"}]}}";
   else if (strstr(corpo, "findEpisodesByShowId") && strstr(corpo, "show-cpart"))
@@ -156,6 +163,13 @@ int main(void) {
          acha(v, n, INTRO_POS_CREDITOS)->fim == 1410);
   assert(acha(v, n, INTRO_PREVIA) && acha(v, n, INTRO_PREVIA)->inicio == 1410);
   puts("ok  Anime-Skip: Canon logo apos os creditos = cena pos-creditos; Preview = previa");
+  // Logo ("Branding") logo depois dos creditos e parte deles; a historia depois
+  // do logo ainda e a cena.
+  n = segfontes_animeskip(30001, 2, "meu-id", v, 8, &f);
+  assert(acha(v, n, INTRO_CREDITOS) && acha(v, n, INTRO_CREDITOS)->fim == 1392);
+  assert(acha(v, n, INTRO_POS_CREDITOS) && acha(v, n, INTRO_POS_CREDITOS)->inicio == 1392 &&
+         acha(v, n, INTRO_POS_CREDITOS)->fim == 1420);
+  puts("ok  Anime-Skip: Branding apos o ED faz parte dele, nao e cena");
   { int antes = pedidosAs;
     assert(segfontes_animeskip(1, 3, "meu-id", v, 8, &f) == 0 && !f);
     assert(segfontes_animeskip(1, 3, "meu-id", v, 8, &f) == 0 && pedidosAs == antes + 1); }

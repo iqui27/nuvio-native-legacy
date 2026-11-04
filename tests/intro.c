@@ -824,6 +824,13 @@ int main(int argc,char **argv) {
       intro_shot_rede(&r2, 1, NULL, 0); assert(!intro_creditos_aceito(1100.0));   // fim 286 s antes: recusado
       intro_shot_rede(&r3, 1, NULL, 0); assert(!intro_creditos_aceito(300.0));    // meio do episodio
       intro_desligar(); }
+    // Cena DEDUZIDA so com 17 s ou mais (log 04/11: 11 s depois do ED viravam cena).
+    { IntroTrecho t1 = {1320, 1410, INTRO_CREDITOS, 0, 0};
+      intro_shot_definir(&t1, 1); intro_definir_duracao(1421.0, 0);
+      assert(!intro_cena_pos(1421.0, NULL, NULL, NULL));     // 11 s: logo/toco, nao cena
+      intro_definir_duracao(1427.0, 0);
+      assert(intro_cena_pos(1427.0, NULL, NULL, NULL));      // 17 s: cena
+      intro_desligar(); }
     puts("ok  encerramento: capitulo do arquivo sem guarda; fonte medida pelo fim (ED - Part C - Next time)");
     assert(!intro_botao(1470.0, 9020.0, 0, 0, &fim, &tipo) || tipo != INTRO_PREVIA);
     n = intro_extrair(fixture("aot_s01e01.json"), v, 8);
