@@ -62,9 +62,11 @@ check "nothing left of the tuning test" "! grep -qiE 'tuning|seg0 cut|dts-ajuste
 "$work/test" "$port" cancelar "$work" > "$work/t3.log" 2>&1 || fail=1
 grep -E '^(ok|FAIL)' "$work/t3.log"
 fechou=$(sed -n 's/^closed-at //p' "$work/t3.log")
+abriu=$(sed -n 's/^hold-open //p' "$work/origem.log" | head -1)
 solto=$(sed -n 's/^hold-closed //p' "$work/origem.log" | head -1)
-check "cancel: the probe's request to the source ended within 2 s of the close (closed ${fechou:-?}, source saw ${solto:-nothing})" \
-  "[ -n '$solto' ] && [ -n '$fechou' ] && awk 'BEGIN{exit !($solto - $fechou < 2.0)}'"
+# Timestamps are rounded to milliseconds, so ordering can differ by at most 1 ms.
+check "cancel: origin connection was open at close and ended within 2 s (open ${abriu:-?}, closed ${fechou:-?}, source saw ${solto:-nothing})" \
+  "[ -n '$abriu' ] && [ -n '$solto' ] && [ -n '$fechou' ] && awk 'BEGIN{exit !($abriu <= $fechou + 0.001 && $solto >= $fechou - 0.001 && $solto - $fechou < 2.0)}'"
 check "cancel: no 'did not open' line for a cancelled probe" "! grep -q 'a fonte nao abriu no conversor' '$work/t3.log'"
 
 # 3. Audio far ahead of its video: the AC3 queue stops at its cap (blocker 2).
