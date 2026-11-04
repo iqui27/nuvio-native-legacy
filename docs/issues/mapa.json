@@ -1,6 +1,14 @@
 {
  "atualizado_em": "2026-10-25T21:56:42-03:00",
  "base": "6330e8be0",
+ "validacao_pr_758_2026_11_04": {
+  "implementacao": "5e09562b0",
+  "merge_integracao": "8bcdd2c24",
+  "revisao": "Estática independente OK, sem P0/P1; não executou testes.",
+  "validacoes": "Pós-merge: tests/mac_objects.sh, tools/varredura-i18n.py e tools/build-local.sh rc 0, com HOME, NUVIO_DADOS e TMPDIR descartáveis.",
+  "limites": "Rust real não validado: Cargo indisponível no PATH; arquivo Rust sintético não comprova integração com Cargo. Sem abertura do app ou aceitação em dispositivo.",
+  "evidencia": "docs/issues/pr758-validacao-2026-11-04.md"
+ },
  "nota": "Local snapshot sync 2026-10-25T21:56:42-03:00, HEAD 6330e8be0. Added 0 issues. Device validation remains pending; see external estado.md. Previous history retained in item notes.",
  "itens": [
   {
