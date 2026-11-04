@@ -4380,6 +4380,18 @@ float tex_aspecto(const char *caminho) {
   return a;
 }
 
+// Decoded size of a cache texture by GL name, for the opt-in artwork draw
+// probe (arte_medida.h). Only on a probe dedup miss, at most ARTE_MEDIDA_BUSCAS
+// times per process; names that fail are not looked up again.
+int tex_dims_gl(unsigned t, int *w, int *h) {
+  int ok = 0;
+  SDL_LockMutex(mtx);
+  for (int i = 0; i < nMax && !ok; i++)
+    if (itens[i].tex == t && itens[i].estado == PRONTO) { *w = itens[i].w; *h = itens[i].h; ok = 1; }
+  SDL_UnlockMutex(mtx);
+  return ok;
+}
+
 int tex_opaca(const char *caminho) {
   int r = 0;
   unsigned long h;

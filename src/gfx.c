@@ -274,6 +274,7 @@ static const char *VS =
 #define NV_STR(x) NV_STR_(x)
 
 #include "gfx_sgsr.h"
+#include "arte_medida.h"
 #include "gfx_upscale.h"
 
 static const char *FS_CABECA =
@@ -2485,6 +2486,27 @@ void gfx_rect_furos(GfxRect r, GLuint tex, GfxModo modo, float foco,
   memcpy(subAtual, saved, sizeof saved);
 }
 
+// ARTWORK DRAW PROBE (arte_medida.h, NV_ART_DRAW_MEASURE=1): decoded cache
+// size against the physical px of this draw on the screen target. Off-screen
+// passes (snapshot, mini, ambient: telaW != screen; borrao/desfocado
+// scratch passes: ARTE_FORA scope), rotation, text and
+// the Texture-mode title surface are skipped; non-cache textures fail lookup.
+// gfx_rect_furos strips (subAtual != 0,0,1,1) are skipped in arte_medida.c.
+// Called after every early return of gfx_rect, with the uAspect it sends.
+static void arteMedir(GfxRect r, GLuint tex, GfxModo modo) {
+  char l[320];
+  if (arte_medida_ligada < 0 && !arte_medida_resolver()) return;
+  if (modo == GFX_TEXTO || modo == GFX_TEXTURA || snapAtivo || miniAtiva || giroOn ||
+      telaW != telaRealW || telaH != telaRealH) return;
+  float ex = (float)telaW / NV_TELA_W, ey = (float)telaH / NV_TELA_H;
+  if (arte_medida_amostra(tex, (int)modo, gfx_tex_aspect_atual,
+                          modo == GFX_CARD && gfx_card_forcar_cover_atual < 0.5f,
+                          r.h > 0 ? r.w / r.h : 1.0f, subAtual,
+                          r.x * ex, (NV_TELA_H - (r.y + r.h)) * ey, (r.x + r.w) * ex, (NV_TELA_H - r.y) * ey,
+                          recorteAtivo ? (const int *)recorteBox : NULL, telaW, telaH,
+                          escAtiva * (gfxTr.on ? gfxTr.s : 1.0f), ex, tex_dims_gl, l, sizeof l))
+    fputs(l, stdout);
+}
 void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
               float parx, float pary, float raio,
               float cr, float cg, float cb, float ca) {
@@ -2717,6 +2739,7 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
     gfx_fill_gpu += ag;
     if (blendLigado && !comAmb && !opaco) gfx_fill_gpu_mist += ag;
   }
+  if (arte_medida_ligada && tex) arteMedir(r, tex, modo);   // opt-in; one compare when off
   Programa *P = &progs[modo];
   if (progAtual != (int)modo) { glUseProgram(P->prog); progAtual = (int)modo; gfx_n_prog++; }
   // Uniform que o shader do modo nao declara volta como -1 do link; passar -1
@@ -4969,6 +4992,7 @@ void gfx_borrao_gerar(int via, unsigned int tex, float texAspecto) {
     if (nLog < 40) { nLog++; printf("[transicao] desfoque de fundo (FBO %s) t=%u\n", via ? "home" : "detalhe", (unsigned)SDL_GetTicks()); } }
   ESC_REAL_INI();
   GFX_OUTRO_INI();
+  ARTE_FORA_INI();   // borW x borH scratch target, telaW unchanged: not the screen
   GLint fboAnt = fboLigado(), vpAnt[4];
   glGetIntegerv(GL_VIEWPORT, vpAnt);
   gfxBlend(0);
@@ -4996,6 +5020,7 @@ void gfx_borrao_gerar(int via, unsigned int tex, float texAspecto) {
   // Volta ao alvo de ANTES (a janela, ou o alvo interno do nivel 2), e nao ao 0.
   glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)fboAnt);
   glViewport(vpAnt[0], vpAnt[1], vpAnt[2], vpAnt[3]);
+  ARTE_FORA_FIM();
   GFX_OUTRO_FIM();
   ESC_REAL_FIM();
 }
@@ -5151,6 +5176,7 @@ GLuint gfx_desfocado(GLuint src, const char *chave) {
     glDisable(GL_SCISSOR_TEST);
     gfxBlend(0);
     gfx_tex_aspect_atual = 0.0f;   // a arte INTEIRA, esticada; o card recorta depois
+    ARTE_FORA_INI();   // desfPasso: scratch FBO, telaW unchanged
     // Escrever num FBO inverte o eixo y (ver GFX_SNAP): cada passada inverte, e
     // as quatro deixam o resultado de pe para o GFX_CARD, como uma arte comum.
     // 1-2: reducao, horizontal e depois vertical, taps a um texel da arte.
@@ -5159,6 +5185,7 @@ GLuint gfx_desfocado(GLuint src, const char *chave) {
     // 3-4: desfoque gaussiano, horizontal e depois vertical, no alvo 96x54.
     desfPasso(desfTmp, desfTmp2, NV_DESF_W, NV_DESF_H, NV_DESF_PASSO / (float)NV_DESF_W, 0.0f);
     desfPasso(desfTmp2, dst, NV_DESF_W, NV_DESF_H, 0.0f, NV_DESF_PASSO / (float)NV_DESF_H);
+    ARTE_FORA_FIM();
     gfx_tex_aspect_atual = aspAnt;
     glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)fboAnt);
     glViewport(vp[0], vp[1], vp[2], vp[3]);
