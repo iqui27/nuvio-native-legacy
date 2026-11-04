@@ -487,9 +487,10 @@ static void activate(void) {
         JfConta jf; PxConta px; int p; unsigned g;
         if (!provider) g = px_setup_conta(&px, &p); else g = jf_setup_conta(provider == 2, &jf, &p);
         char *selection = provider ? jf.bibliotecas : px.bibliotecas; selection[0] = 0;
+        size_t cap = provider ? sizeof jf.bibliotecas : sizeof px.bibliotecas;
         for (int i = 0; i < nLibraries; i++) if (checked[i]) {
           size_t k = strlen(selection); const char *id = libraries[i].chave + strlen(prefix[provider]);
-          if (k + strlen(id) + 2 < 256) snprintf(selection + k, 256 - k, "%s%s", k ? "\n" : "", id);
+          if (k + strlen(id) + 2 < cap) snprintf(selection + k, cap - k, "%s%s", k ? "\n" : "", id);
         }
         int ok = provider ? jf_setup_aceitar(provider == 2, &jf, p, g) : px_setup_aceitar(&px, p, g);
         wipe(&jf, sizeof jf); wipe(&px, sizeof px);

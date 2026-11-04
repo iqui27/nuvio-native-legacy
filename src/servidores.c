@@ -169,8 +169,9 @@ int servidores_contem_item(const CatItem *it, int provider) {
   return servidores_tem(it->imdb, it->tipo);
 }
 int servidores_catalogo_copiar(CatItem *out, int max) {
-  CatFileira fils[SRV_FIL_MAX]; int n = 0;
+  CatFileira *fils; int n = 0;
   if (!out || max <= 0 || !ajustes_jellyfin_ligado()) return 0;
+  if (!(fils = calloc(SRV_FIL_MAX, sizeof *fils))) return 0;
   for (int p = 0; p < 3 && n < max; p++) {
     int ni = 0;
     if (p == 0) plex_fileiras_copiar(out + n, max - n, fils, SRV_FIL_MAX, &ni);
@@ -178,6 +179,7 @@ int servidores_catalogo_copiar(CatItem *out, int max) {
     else emby_fileiras_copiar(out + n, max - n, fils, SRV_FIL_MAX, &ni);
     n += ni;
   }
+  free(fils);
   return n;
 }
 

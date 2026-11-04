@@ -529,6 +529,69 @@ static void testarIntegracao(void) {
     ix = controle("index");
     assert(strstr(ix, "\"episodes\": 1"));
     free(ix); }
+  // Many libraries (#468). Catalog views cycle movies, tvshows (real Series),
+  // boxsets, mixed and untyped. 26 eligible views keep every row past the old
+  // cap of 16, 42 stop at the ceiling of 32; rows get fewer items so the
+  // 144-item budget still holds the Next Up row.
+  { CatFileira *muitas = calloc(JF_FIL_MAX + 4, sizeof *muitas); int k, por; JfConta cc; int pc; unsigned g; char *ix;
+    assert(muitas && JF_FIL_MAX == 32 && JF_ITENS_MAX == 144);
+    free(controle("catalogs?n=24"));
+    jellyfin_recarregar_bibliotecas();
+    fim = ms() + 5000;   // an older refresh may land first: wait for the new views
+    while ((n = jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, muitas, JF_FIL_MAX + 4, &ni)) != 27 && ms() < fim) dormir(20);
+    por = (JF_ITENS_MAX - JF_POR_FILEIRA) / 26;
+    assert(n == 27 && ni <= JF_ITENS_MAX);
+    assert(strstr(muitas[0].titulo, "Movies") && muitas[0].n == por && strstr(muitas[1].titulo, "Shows"));
+    for (k = 2; k < 26; k++) {
+      int serie = (k - 2) % 5 == 1;
+      assert(!strcmp(muitas[k].tipo, serie ? "series" : "movie") && muitas[k].n == (serie ? 2 : por));
+      assert(!strcmp(itens[muitas[k].ini].tipo, serie ? "series" : "movie"));
+    }
+    assert(strstr(muitas[25].titulo, "Catalog 23"));
+    assert(strstr(muitas[26].chave, "_nextup") && muitas[26].n == 1 && muitas[26].ini + 1 == ni);
+    free(controle("catalogs?n=40"));
+    jellyfin_recarregar_bibliotecas();
+    fim = ms() + 5000;
+    while ((n = jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, muitas, JF_FIL_MAX + 4, &ni)) != 33 && ms() < fim) dormir(20);
+    por = (JF_ITENS_MAX - JF_POR_FILEIRA) / 32;
+    assert(n == 33 && ni <= JF_ITENS_MAX && muitas[0].n == por && muitas[31].n == por);
+    assert(strstr(muitas[31].titulo, "Catalog 29") && strstr(muitas[32].chave, "_nextup") && muitas[32].ini + 1 == ni);
+    // A 30-library selection is saved whole (was 256 bytes: 7 ids), filters
+    // the rows and the index (ParentIds), and comes back from disk.
+    g = jf_setup_conta(0, &cc, &pc);
+    { size_t q = (size_t)snprintf(cc.bibliotecas, sizeof cc.bibliotecas, "%s",
+                                  "1111aaaa2222bbbb3333cccc4444dddd\n5555eeee6666ffff7777aaaa8888bbbb");
+      for (k = 0; k < 28 && q < sizeof cc.bibliotecas; k++)
+        q += (size_t)snprintf(cc.bibliotecas + q, sizeof cc.bibliotecas - q, "\n%032x", 0xca7a1000u + (unsigned)k); }
+    free(controle("index"));
+    assert(jf_setup_aceitar(0, &cc, pc, g));
+    fim = ms() + 5000;
+    while ((n = jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, muitas, JF_FIL_MAX + 4, &ni)) != 31 && ms() < fim) dormir(20);
+    assert(n == 31 && strstr(muitas[29].titulo, "Catalog 27") && strstr(muitas[30].chave, "_nextup"));
+    ix = controle("index");
+    assert(strstr(ix, "\"parents\": 30"));
+    free(ix);
+    arq = dados_ler("jellyfin-p1.txt");
+    assert(arq && strstr(arq, "000000000000000000000000ca7a101b"));   // Catalog 27
+    free(arq);
+    perfilAtivo = 2;
+    jellyfin_perfil_trocou();
+    perfilAtivo = 1;
+    jellyfin_perfil_trocou();
+    jellyfin_recarregar_bibliotecas();
+    fim = ms() + 5000;
+    while ((n = jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, muitas, JF_FIL_MAX + 4, &ni)) != 31 && ms() < fim) dormir(20);
+    assert(n == 31 && strstr(muitas[29].titulo, "Catalog 27"));
+    g = jf_setup_conta(0, &cc, &pc);
+    cc.bibliotecas[0] = 0;   // back to every library
+    assert(jf_setup_aceitar(0, &cc, pc, g));
+    memset(&cc, 0, sizeof cc);
+    free(controle("catalogs?n=0"));
+    jellyfin_recarregar_bibliotecas();
+    fim = ms() + 5000;
+    while (jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, muitas, JF_FIL_MAX + 4, &ni) != 3 && ms() < fim) dormir(20);
+    assert(jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, muitas, JF_FIL_MAX + 4, &ni) == 3);
+    free(muitas); }
   free(controle("revoke"));
   jellyfin_recarregar_bibliotecas();
   assert(esperarEstado(JF_EST_EXPIROU, 5000) == JF_EST_EXPIROU);

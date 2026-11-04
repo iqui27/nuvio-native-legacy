@@ -795,7 +795,7 @@ int jf_ler_indice(const char *corpo, size_t nCorpo, const char *serie, SrvIdx *x
 int jf_indice(const JfConta *c, RedeJob *job, int inicio, int limite, long long desde,
               SrvIdx *x, int *total) {
   RedeResposta r;
-  char caminho[640], raiz[96], iso[40] = "";
+  char caminho[640 + JF_SELECAO_MAX], raiz[96], iso[40] = "";
   int n, e;
   if (total) *total = 0;
   if (inicio < 0 || limite < 0 || limite > 500) return JF_ERR_ENTRADA;
@@ -807,7 +807,7 @@ int jf_indice(const JfConta *c, RedeJob *job, int inicio, int limite, long long 
            "&EnableImages=false&EnableUserData=true&SortBy=DateCreated,SortName&SortOrder=Ascending"
            "&StartIndex=%d&Limit=%d%s%s", raiz, inicio, limite, iso[0] ? "&MinDateLastSaved=" : "", iso);
   if (c->bibliotecas[0]) {
-    char ids[256]; copiar(ids, sizeof ids, c->bibliotecas);
+    char ids[JF_SELECAO_MAX]; copiar(ids, sizeof ids, c->bibliotecas);
     for (char *p = ids; *p; p++) if (*p == '\n') *p = ',';
     if (strspn(ids, "0123456789abcdefABCDEF-,") != strlen(ids)) return JF_ERR_ENTRADA;
     size_t used = strlen(caminho);
@@ -1279,7 +1279,7 @@ typedef struct JfInst {
   char detalhe[160];
   int qcPermitido;
   CatItem *snapItens;
-  CatFileira snapFils[JF_FIL_MAX];
+  CatFileira snapFils[JF_FIL_MAX + 1];   // libraries + Next Up
   int nSnapFils, nSnapItens, hlsVisto;
   unsigned snapVersao;
   char fontesAlvo[JFID_MAX];
@@ -1372,7 +1372,7 @@ static void linha(char *dst, size_t tam, size_t *k, const char *chave, const cha
 // 0600 and atomic rename: the token file is never world-readable on POSIX
 // backends (dados_gravar uses fopen's default mode).
 static int gravarConta(JfInst *I, const JfConta *c, int perfil) {
-  char nome[40], caminho[640], tmp[660], txt[2048 + JF_TOKEN_MAX];
+  char nome[40], caminho[640], tmp[660], txt[2048 + JF_TOKEN_MAX + JF_SELECAO_MAX];
   size_t k = 0;
   int fd, ok = 0;
   arquivo(I, nome, sizeof nome, perfil);
@@ -1385,7 +1385,7 @@ static int gravarConta(JfInst *I, const JfConta *c, int perfil) {
   linha(txt, sizeof txt, &k, "unome", c->usuarioNome);
   linha(txt, sizeof txt, &k, "dev", c->dispositivoId);
   linha(txt, sizeof txt, &k, "token", c->token);
-  char selection[256]; copiar(selection, sizeof selection, c->bibliotecas);
+  char selection[JF_SELECAO_MAX]; copiar(selection, sizeof selection, c->bibliotecas);
   for (char *p = selection; *p; p++) if (*p == '\n') *p = ',';
   linha(txt, sizeof txt, &k, "libs", selection);
   char bitrate[16]; snprintf(bitrate, sizeof bitrate, "%d", c->playback.bitrate);
@@ -2176,11 +2176,12 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   RedeJob *j = abrirTarefa(I, t, &c);
   JfBiblioteca libs[JF_FIL_MAX];
   CatItem *itens;
-  CatFileira fils[JF_FIL_MAX];
+  CatFileira *fils;                      // libraries + Next Up, heap (see JF_FIL_MAX)
   int nl, nf = 0, ni = 0, e = JF_OK, i, por;
   if (!j) return;
   itens = calloc((size_t)JF_ITENS_MAX, sizeof *itens);
-  if (!itens) { fecharTarefa(I, j); return; }
+  fils = calloc((size_t)JF_FIL_MAX + 1, sizeof *fils);
+  if (!itens || !fils) { free(itens); free(fils); fecharTarefa(I, j); return; }
   if (c.tipo == JF_TIPO_EMBY && c.connectKey[0] && c.connectUser[0]) {
     EmConnectServidor server = {0};
     copiar(server.id, sizeof server.id, c.servidorId); copiar(server.chave, sizeof server.chave, c.connectKey);
@@ -2213,7 +2214,7 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   // NextUp episodes need the series index to become catalogue identities.
   if (e == JF_OK) indexar(I, t, j, &c);
   // Optional NextUp: an unsupported endpoint must not hide libraries.
-  if (e == JF_OK && nf < JF_FIL_MAX && ni < JF_ITENS_MAX) {
+  if (e == JF_OK && ni < JF_ITENS_MAX) {
     int room = JF_ITENS_MAX - ni;
     int n = jfi_atividade(I, "nextup", itens + ni, room < JF_POR_FILEIRA ? room : JF_POR_FILEIRA);
     if (n > 0) {
@@ -2246,6 +2247,7 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   }
   pthread_mutex_unlock(&I->trava);
   free(itens);
+  free(fils);
   apagarSegredo(&c, sizeof c);
   fecharTarefa(I, j);
 }
