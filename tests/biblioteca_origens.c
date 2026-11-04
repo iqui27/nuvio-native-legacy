@@ -189,6 +189,20 @@ int main(void) {
   key(SDLK_DOWN); assert(focoOrigem);
   key(SDLK_UP); assert(!focoOrigem && !focoBotaoOrig && foco.fileira == BIB_FIL_MODO);
   key(SDLK_DOWN); assert(focoOrigem);
+  // A pointer click on a mode tab (focus callback + synthetic OK) must pick
+  // the tab, not the source row that held focus.
+  int origemAntes = origem, abertas = origensAbertas, vista = exibicao;
+  ponteiroModo(MODO_ASSISTIDOS, 0); key(SDLK_RETURN);
+  assert(modo == MODO_ASSISTIDOS && !focoOrigem && foco.fileira == BIB_FIL_MODO);
+  assert(origem == origemAntes && origensAbertas == abertas);
+  ponteiroModo(MODO_PARAVER, 0); key(SDLK_RETURN);
+  assert(modo == MODO_PARAVER);
+  // Same for a picker chip and a poster: the panel stays open.
+  ponteiroOrigem(origemAntes, 0); ponteiroCelula(0, 0); key(SDLK_RETURN);
+  assert(!focoOrigem && foco.fileira == gradeIni() && origensAbertas == abertas);
+  ponteiroOrigem(origemAntes, 0); ponteiroPicker(pickMin(), 0); key(SDLK_RETURN);
+  assert(!focoOrigem && foco.fileira == BIB_FIL_PICK && origensAbertas == abertas);
+  exibicao = vista; reconstruir(); ponteiroOrigem(origemAntes, 0);
   for (int i = 0; i < BIB_N_ORIG + 1; i++) key(SDLK_DOWN);
   key(SDLK_RETURN);
   assert(origem == BIB_N_ORIG + 1);
