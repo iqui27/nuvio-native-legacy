@@ -6,6 +6,7 @@
 #include "trakt.h"
 #include "artefontes.h"
 #include "artetamanho.h"
+#include "arteurl.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -403,7 +404,7 @@ static int reservaStill(const char *chave, const char *id, int temp, int ep,
 // URLs distintas, ou antes disso se a arena for preenchida por URLs longas,
 // novas reservas sao omitidas de forma explicita.
 #define AR_REG 4096u
-#define AR_URL_MAX 512u
+#define AR_URL_MAX ((unsigned)NV_ARTE_URL_MAX)
 #define AR_TEXT_MAX (2u * 1024u * 1024u)
 typedef struct {
   uint32_t h;
