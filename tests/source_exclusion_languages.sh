@@ -9,7 +9,7 @@ cc -O1 -g -Isrc -I/opt/homebrew/include "${flags[@]}" \
   src/stream_parse.c src/js.c src/badges.c src/fontefiltro.c src/linguas.c \
   tests/source_exclusion_languages.c -o "$dir/test"
 rc=0
-for finding in accents mixed; do
+for finding in accents mixed subtitles; do
   if "$dir/test" "$finding"; then echo "$finding: PASS"; else rc=1; fi
 done
 exit "$rc"

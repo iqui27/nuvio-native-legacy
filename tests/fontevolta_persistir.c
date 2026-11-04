@@ -43,6 +43,7 @@ int main(void) {
 
   strcpy(a.audioIdiomas, "en");
   strcpy(a.legendaIdiomas, "pt");
+  strcpy(a.audioTexto, "tr");
   strcpy(a.descricao, "Structured metadata only");
   a.filtroLido = 1;
   a.filtro.valores[FONTEFILTRO_LINGUAS] = fontefiltro_valores(FONTEFILTRO_LINGUAS, "en");
@@ -68,7 +69,7 @@ int main(void) {
   assert(!strcmp(g.arquivo, a.arquivo) && !strcmp(g.bingeGroup, a.bingeGroup) && !strcmp(g.provedor, a.provedor));
   assert(g.altura == 2160 && g.dolbyVision == 1 && g.fileIdx == 3 && g.tamanhoMB == 4200);
   assert(g.filtroLido && !memcmp(&g.filtro, &a.filtro, sizeof a.filtro));
-  assert(!strcmp(g.audioIdiomas, "en") && !strcmp(g.legendaIdiomas, "pt"));
+  assert(!strcmp(g.audioIdiomas, "en") && !strcmp(g.legendaIdiomas, "pt") && !strcmp(g.audioTexto, "tr"));
   assert(g.tamanhoBytes == a.tamanhoBytes && !strcmp(g.descricao, a.descricao));
   { FonteFiltroConfig excluded = {0};
     excluded.excluir[FONTEFILTRO_LINGUAS] = fontefiltro_valores(FONTEFILTRO_LINGUAS, "en");
