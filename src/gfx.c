@@ -3846,7 +3846,7 @@ static int vidCapturar(const float reg[][4], int n, GLuint dst, GLuint dstFbo, G
     float o = (float)telaW / qw * 0.5f - 1.0f;
     vidPassada(source ? source : vidGrab, vidQaFbo, qw, qh, uv, k, o / telaW, o / telaH);
   }
-  if (efeitosLeves) {
+  if (efeitosLeves || ajustes_vidro_qualidade() == 3) {
     // One Kawase instead of two; sqrt(.35^2 + .75^2) keeps the blur spread.
     // Glass stays frosted at native UI resolution; level 2 keeps its old rule.
     vidPassada(vidQa, dstFbo, qw, qh, uv, k, 0.828f / qw, 0.828f / qh);

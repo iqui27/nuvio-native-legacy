@@ -1,6 +1,7 @@
 // "Qualidade do vidro": Alta / Desempenho / Automatica and its governor.
 //   bash tests/vidro_qualidade.sh
 #include "gfx.h"
+#include "gpunivel.h"
 #include "ajustes.h"
 #include "dados.h"
 #include "ilha.h"
@@ -13,6 +14,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+void gpun_teste_reiniciar(void);
 static const int LW = 1920, LH = 1080;
 static int falhas;
 
@@ -206,6 +208,20 @@ int main(void) {
   ajustes_definir_vidro(1);
   roda(30, &t);
   confere(cap == 1 && fonte > 0, "glass back on: frost captures the backdrop again");
+
+  // Automatic ladder, rung 1: one Kawase pass less, the glass stays frosted.
+  setenv("NUVIO_SHOT_VIDRO_QUAL", "0", 1); ajustes_teste_vidro_env();
+  gfx_vidro_governar_zerar();
+  gpun_teste_reiniciar();
+  roda(30, &t);
+  { int completo = pas;
+    gpun_relatar(60, 40, 1000.0 / 60, 1, 1);
+    for (i = 0; i < 3; i++) gpun_relatar(30, 40, 1000.0 / 60, 1, 1);
+    assert(gpun_efeito_ativo(1));
+    roda(30, &t);
+    printf("Degrau 1: cap<=%d pas<=%d (completo %d) fonte=%d\n", cap, pas, completo, fonte);
+    confere(cap == 1 && pas == completo - 1 && fonte > 0, "ladder rung 1: cheaper blur before any glass or frost removal");
+  }
 
   unlink(cam);
   { char tt[700]; snprintf(tt, sizeof tt, "%s/ajustes.tmp", dir); unlink(tt); }
