@@ -13274,6 +13274,15 @@
  ],
  "validacoes": [
   {
+   "data": "2026-11-04",
+   "quem": "Jobs mini (modelo servido não comprovado), revisão independente Zima e coordenação TV",
+   "o_que": "PR 757: fila de imagens e reserva de arte com URLs longas",
+   "issues": [],
+   "ref": "PR 757 f54918d66bc5789881dd9540f76c7d9d83420fc7, autor maxdewald; commits cbb781eda e 1aa3ebed8, merge c55f22418a519c4827c27d187f4dadba1ae10125",
+   "resultado": "passou",
+   "evidencia": "Jobs: texb3.sh falhou antes rc=134 e passou depois; artereserva.sh falhou antes rc=1 e passou depois, inclusive SANITIZE=1; artefontes.sh rc=0. Revisão independente j-rev-757-final-0411.log VEREDITO OK, sem P0/P1; P2: tamanho de URL no rótulo é aproximado. Coordenação: texb3.sh e artereserva.sh pós-merge rc=0; varredura-i18n.py rc=0. Build Mac tools/build-local.sh rc=0 no commit cbb781eda, antes do complemento; warning ATOMIC_VAR_INIT. Mini: tentativas WGT, Tizen 3, webOS e TPK pararam antes de compilar por toolchains ausentes; identidade do commit na cópia remota não verificada. Nenhum build de plataforma nem teste em TV antiga comprovado. Logs /Volumes/ExternalSSD/tmp/rev/j-757-filaurl-0411.log, j-757-reserva-0411.log, j-rev-757-final-0411.log."
+  },
+  {
    "data": "2026-10-09 17:42",
    "quem": "Codex gpt-6-astra (revisão estática)",
    "o_que": "Revisão r4 do #402: prefixo só de símbolo antes de FHD",
