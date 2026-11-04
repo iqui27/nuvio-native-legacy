@@ -266,6 +266,8 @@ def contexto(txt, i):
 # "nao sei o que e": sem esta lista a ferramenta nao pode virar teste, e sem
 # virar teste ela nao impede a proxima regressao.
 IGNORAR = {
+    # mkv.c: chapter language code aliases used for matching, not labels.
+    "pt,por,pob", "de,ger,deu", "da,dan",
     # Guide v5 internal screen routes, never rendered as labels.
     "fontes-gerenciar", "parental-perfil-infantil", "vod-titulo",
     # Verified non-UI literals on the 2.1 feature branch:
@@ -608,7 +610,7 @@ IGNORAR = {
     "abertura/resumo fora da parte inicial", "creditos fora da parte final do episodio",
     "creditos fora da parte final do filme", "fim alem da duracao (outro corte)",
     "inicio alem da duracao",
-    "inicio antes de 50% do filme",  # intro.c:399, secao 2: so o log [marcador]
+    "inicio antes de 50% do filme", "inicio antes de 50% do episodio",  # intro.c: motivo no log [marcador]
     "codec nao e de texto (ASS/SRT/WebVTT): a TV desenha",
     "legenda nativa desligada", # faixas.c: argumento ternario do printf, so log
     "confirmada pelo relogio do pipeline", "enviado ao ExoPlayer",
