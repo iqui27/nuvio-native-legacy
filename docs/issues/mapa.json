@@ -13275,6 +13275,18 @@
  "validacoes": [
   {
    "data": "2026-11-04",
+   "quem": "Claude Code (build e verificação)",
+   "o_que": "Builds webOS IPK e Samsung WGT da integração após correções de parser, PGS e progresso.",
+   "issues": [
+    665,
+    698
+   ],
+   "ref": "integracao/2.1@99dac1e82bef519be97c1919fd812bc606a0644f",
+   "resultado": "ambas builds rc=0 com avisos; IPK reconhecido como Debian e WGT passou unzip -tq. Sem instalação, teste físico ou prova de reprodução. Escolha PGS antiga -1 não encontra correspondência exata; compatibilidade em investigação.",
+   "evidencia": "IPK SHA256 b1d29bb6067bac2767b21a419490c26f3a7243a24fd9bbcebfeb8803c3dc544f (75943622 bytes); WGT SHA256 424def87f295f696d26587c19c9ef16e0b067739f871aac5394fb9f017b6a16a (46340973 bytes); /Volumes/ExternalSSD/tmp/rev/build-lg-99dac1e.log; /Volumes/ExternalSSD/tmp/rev/build-wgt-99dac1e.log"
+  },
+  {
+   "data": "2026-11-04",
    "quem": "job mini; revisão independente Zima; Claude Code (integração)",
    "o_que": "Marcar episódio como visto pelo menu conclui progresso local e remove retomada pendente.",
    "issues": [
