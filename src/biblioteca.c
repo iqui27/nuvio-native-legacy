@@ -2444,7 +2444,7 @@ static void ponteiroModo(int a, int b) {
 #endif
   (void)b;
   if (estado() == EST_ITENS || a < 0 || a >= BIB_N_MODOS) return;
-  foco.fileira = BIB_FIL_MODO; foco.coluna = a; focoBotaoOrig = 0;
+  foco.fileira = BIB_FIL_MODO; foco.coluna = a; focoBotaoOrig = focoOrigem = 0;
 }
 static void ponteiroPicker(int p, int b) {
 #ifdef NV_TOUCH_UI
@@ -2452,7 +2452,7 @@ static void ponteiroPicker(int p, int b) {
 #endif
   (void)b;
   if (estado() == EST_ITENS || p < 0 || p >= bibNPicks()) return;
-  pickSel = p; foco.fileira = BIB_FIL_PICK; foco.coluna = p; focoBotaoOrig = 0;
+  pickSel = p; foco.fileira = BIB_FIL_PICK; foco.coluna = p; focoBotaoOrig = focoOrigem = 0;
 }
 static void ponteiroBotaoOrig(int a, int b) {
   (void)a; (void)b;
@@ -2476,7 +2476,7 @@ static void ponteiroCelula(int i, int b) {
 #ifdef NV_TOUCH_UI
   toqueLivre = 0;
 #endif
-  foco.fileira = gradeIni() + i / nc; foco.coluna = i % nc; focoBotaoOrig = 0;
+  foco.fileira = gradeIni() + i / nc; foco.coluna = i % nc; focoBotaoOrig = focoOrigem = 0;
 }
 
 static void desenhaModos(void) {
