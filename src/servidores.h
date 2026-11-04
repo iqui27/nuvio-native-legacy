@@ -13,9 +13,10 @@
 #include "plex.h"
 
 // Rows a Home can receive from all servers together.
-// Jellyfin and Emby add a Next Up row after their libraries; items stay as before.
+// Jellyfin and Emby add a Next Up row after their libraries. The item budget
+// is fixed (the old 16+16+6 rows of 24): more rows never mean more items.
 #define SRV_FIL_MAX (JF_FIL_MAX + 1 + JF_FIL_MAX + 1 + PX_FIL_MAX)
-#define SRV_ITENS_MAX ((JF_FIL_MAX + JF_FIL_MAX + PX_FIL_MAX) * JF_POR_FILEIRA)
+#define SRV_ITENS_MAX ((16 + 16 + PX_FIL_MAX) * JF_POR_FILEIRA)
 #define SRV_VISAO_MAX (SRV_FIL_MAX + 6)
 
 void servidores_carregar(void);          // active profile's connections

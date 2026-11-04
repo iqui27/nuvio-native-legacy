@@ -789,7 +789,7 @@ void vertudo_abrir(const char *base, const char *tipo, const char *catId,
 }
 
 void vertudo_servidores(const char *chave) {
-  CatFileira fils[SRV_VISAO_MAX];
+  static CatFileira fils[SRV_VISAO_MAX];   // ~190 KB: off the UI stack
   int n = servidores_bibliotecas(fils, SRV_VISAO_MAX), escolhido = 0;
   if (!n) return;
   memset(&servidor, 0, sizeof servidor);

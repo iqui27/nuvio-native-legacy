@@ -44,6 +44,7 @@ state = {
     "index_calls": [],      # (StartIndex, Limit, MinDateLastSaved) of index requests
     "episode_index": 0,
     "catalogs": 0,          # > 0: that many populated catalog views (/control/catalogs)
+    "index_parents": 0,     # ParentIds count of the last index request
 }
 
 
@@ -52,7 +53,7 @@ def catalog_views():
     if not n:
         return CATALOG_VIEWS
     return [{"Name": "Catalog %d" % i, "Id": "%032x" % (0xca7a1000 + i),
-             "CollectionType": ["movies", "tvshows", "boxsets", ""][i % 4]} for i in range(n)]
+             "CollectionType": ["movies", "tvshows", "boxsets", "mixed", ""][i % 5]} for i in range(n)]
 
 
 def ver_tuple():
@@ -264,7 +265,8 @@ class Handler(BaseHTTPRequestHandler):
             elif parent == LIB_MOVIES:
                 allitems = movies
             elif state["catalogs"] and parent in [v["Id"] for v in catalog_views()]:
-                allitems = movies[:10]
+                view = [v for v in catalog_views() if v["Id"] == parent][0]
+                allitems = shows if view["CollectionType"] == "tvshows" else movies[:10]
             elif parent == LIB_SHOWS:
                 allitems = shows + [{"Name": "Ignored episode", "Id": episode_id(1, 1), "Type": "Episode"}]
             elif not parent and q.get("Recursive", [""])[0] == "true":
@@ -275,6 +277,7 @@ class Handler(BaseHTTPRequestHandler):
                     allitems = [x for x in allitems if x.get("DateLastSaved", "")[:19] >= since[:19]]
                 with lock:
                     state["index_calls"].append([start, limit, since])
+                    state["index_parents"] = len([x for x in q.get("ParentIds", [""])[0].split(",") if x])
             else:
                 allitems = []
             return self.reply(200, {"Items": allitems[start:start + limit], "TotalRecordCount": len(allitems),
@@ -384,7 +387,8 @@ class Handler(BaseHTTPRequestHandler):
                 state["tokens"].clear()
                 body = b"{}"
             elif p == "/control/index":
-                body = json.dumps({"calls": state["index_calls"], "episodes": state["episode_index"]}).encode()
+                body = json.dumps({"calls": state["index_calls"], "episodes": state["episode_index"],
+                                   "parents": state["index_parents"]}).encode()
                 state["index_calls"] = []
                 state["episode_index"] = 0
             elif p == "/control/add":
