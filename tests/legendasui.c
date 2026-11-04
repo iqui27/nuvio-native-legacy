@@ -1,6 +1,7 @@
 // Subtitle selector regression: model invariants retained across the #425 UI.
 #include "../src/legendasui.c"
 #include "linguas.h"
+#include "faixasmkv.h"
 #include "../src/legauto.c"
 #include <assert.h>
 
@@ -405,6 +406,20 @@ int main(void) {
     }
     mais = ver = 0;
   }
+
+  // Recovered PGS rows stay distinct: OK plays the focused track, not the first.
+  { MkvFaixa fx[] = {{.tipo = 17, .codec = "S_HDMV/PGS", .idioma = "eng"},
+                     {.tipo = 17, .codec = "S_HDMV/PGS", .idioma = "por"},
+                     {.tipo = 17, .codec = "S_HDMV/PGS", .idioma = "spa"}};
+    nAdd = 0; ativaEmb = -1; alvo = 0; mais = 1; escolhidaEmb = -99;
+    nEmb = faixasmkv_acrescentar_imagem(emb, 0, 8, fx, 3); assert(nEmb == 3);
+    montarLinhas();
+    for (i = 0; i < nEmb; i++) {
+      char id[24]; legendasui_id_embutida(&emb[i], id);
+      snprintf(key, sizeof key, "m|%s", id); focarChave(key);
+      agoraMs += 1000; tecla(SDLK_RETURN); assert(escolhidaEmb == i);
+    }
+    mais = 0; }
 
   puts("legendasui: identities, formats, kinds, full list, late arrivals, second-slot refusals, offsets, AutoSync, settings, active-outside-recommendations, track titles OK");
   return 0;
