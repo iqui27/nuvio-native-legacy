@@ -13,7 +13,8 @@ DIR=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-mkvcore-par.XXXXXX")
 trap 'rm -rf "$DIR"' EXIT
 NOMES="mkv_diag mkv_quadro_tem_rpu mkv_rpu_alem mkv_faixas mkv_faixas_e_caps mkv_contentor mkv_ultimo_contentor \
 mkv_contentor_definitivo mkv_contentor_nome mkv_faixas_do_trecho mkv_creditos_nomeados mkv_creditos_ultimo \
-mkv_capitulos_alem mkv_intro_nomeada mkv_previa_nomeada mkv_casar_legendas mkv_tracks_alem"
+mkv_capitulos_alem mkv_intro_nomeada mkv_previa_nomeada mkv_casar_legendas mkv_tracks_alem \
+mkv_classificar_nome mkv_segmentos mkv_capitulos_idioma mkv_segmentos_palpite"
 ren() { for n in $NOMES; do printf -- '-D%s=%s%s ' "$n" "$1" "$n"; done; }
 CF="-Isrc -O1 -g -Wall -Wno-deprecated-declarations -I/opt/homebrew/include"
 cc $CF $(ren ref_) -c src/mkv.c -o "$DIR/ref.o"

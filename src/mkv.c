@@ -6,7 +6,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
+#include <regex.h>
 
 // Quanto do arquivo baixar. O elemento Tracks fica logo apos o SeekHead e o
 // Info, antes do primeiro Cluster — na pratica dentro dos primeiros 200 KB.
@@ -21,6 +23,68 @@
 // em TODA reproducao. Perder o idioma num arquivo desses e melhor que engasgar
 // o video em todos.
 #define MKV_TRECHO  (320L * 1024)
+
+// --- capitulos: idioma do nome e ordem (C e nucleo Rust) ----------------------
+//
+// NOME DO CAPITULO NO IDIOMA DO APP. Um ChapterAtom pode ter um ChapterDisplay
+// por idioma (ChapLanguage ISO 639-2 "swe", ou ChapLanguageBCP47 "sv-SE"; sem
+// nenhum dos dois o Matroska diz "eng"). Vale: o idioma do app > ingles > o
+// primeiro. `capPref` aponta para uma das listas fixas abaixo (troca atomica de
+// ponteiro: o player escreve, o fio do capmkv le).
+static const char *const CAP_PREFS[][2] = {
+  { "en", "en,eng" }, { "pt", "pt,por,pob" }, { "ro", "ro,rum,ron" }, { "uk", "uk,ukr" },
+  { "ru", "ru,rus" }, { "fr", "fr,fre,fra" }, { "de", "de,ger,deu" }, { "es", "es,spa" },
+  { "it", "it,ita" }, { "nl", "nl,dut,nld" }, { "pl", "pl,pol" }, { "tr", "tr,tur" },
+  { "sv", "sv,swe" }, { "da", "da,dan" }, { "no", "no,nor,nob,nno" }, { "cs", "cs,cze,ces" },
+  { "sk", "sk,slo,slk" }, { "sl", "sl,slv" }, { "hu", "hu,hun" }, { "lt", "lt,lit" },
+  { "bs", "bs,bos" }, { "sr", "sr,srp" }, { "bg", "bg,bul" }, { "el", "el,gre,ell" },
+  { "id", "id,ind" }, { "vi", "vi,vie" }, { "ja", "ja,jpn" }, { "zh", "zh,chi,zho" },
+  { "ar", "ar,ara" },
+};
+static const char *capPref = "";
+void mkv_capitulos_idioma(const char *iso) {
+  const char *l = "";
+  size_t i;
+  for (i = 0; iso && i < sizeof CAP_PREFS / sizeof CAP_PREFS[0]; i++)
+    if (!strncasecmp(iso, CAP_PREFS[i][0], 2)) { l = CAP_PREFS[i][1]; break; }
+  __atomic_store_n(&capPref, l, __ATOMIC_RELEASE);
+}
+__attribute__((unused)) static const char *capitulos_pref(void) {
+  return __atomic_load_n(&capPref, __ATOMIC_ACQUIRE);
+}
+// `cod` (ate '-' ou '_') e um dos itens de `lista` ("sv,swe")?
+static int capLangNa(const char *cod, const char *lista) {
+  size_t n = 0;
+  while (cod[n] && cod[n] != '-' && cod[n] != '_') n++;
+  if (!n) return 0;
+  while (*lista) {
+    const char *f = strchr(lista, ',');
+    size_t k = f ? (size_t)(f - lista) : strlen(lista);
+    if (k == n && !strncasecmp(cod, lista, n)) return 1;
+    lista += k + (f ? 1 : 0);
+  }
+  return 0;
+}
+// 3 = idioma do app, 2 = ingles (ou sem idioma: o padrao do Matroska), 1 = outro.
+__attribute__((unused)) static int capitulos_nota(const char *lang, const char *bcp, const char *pref) {
+  const char *cod = bcp && bcp[0] ? bcp : lang && lang[0] ? lang : "eng";
+  if (pref && pref[0] && capLangNa(cod, pref)) return 3;
+  if (capLangNa(cod, "en,eng")) return 2;
+  return 1;
+}
+// Ordena por inicio (estavel) e tira inicio repetido: o player e as regras de
+// segmento contam com a lista em ordem (NuvioTV PlayerChapters.normalize).
+static int capitulos_normalizar(MkvCap *c, int n) {
+  int i, j, k = 0;
+  for (i = 1; i < n; i++) {
+    MkvCap t = c[i];
+    for (j = i; j > 0 && c[j - 1].inicio > t.inicio; j--) c[j] = c[j - 1];
+    c[j] = t;
+  }
+  for (i = 0; i < n; i++)
+    if (!k || c[i].inicio != c[k - 1].inicio) c[k++] = c[i];
+  return k;
+}
 
 #ifndef NV_RUST_MKVCORE
 // --- EBML: inteiros de tamanho variavel --------------------------------------
@@ -237,64 +301,101 @@ static int lerTracks(const unsigned char *p, long n, MkvFaixa *saida, int max) {
 // ChapterTimeStart e em NANOSSEGUNDOS ABSOLUTOS, e nao em unidades de
 // TimecodeScale — e a excecao do formato, e trocar os dois daria um numero mil
 // vezes errado sem parecer errado (um filme de 105 min viraria 105 ms).
-static int lerCapitulos(const unsigned char *p, long n, MkvCap *saida, int max) {
-  long o = 0;
-  int achou = 0;
-  while (o < n && achou < max) {
-    int ui = 0, ut = 0;
-    unsigned long id = lerId(p + o, n - o, &ui);
-    long tam;
-    if (!id) break;
-    tam = lerTam(p + o + ui, n - o - ui, &ut);
-    if (tam < 0) break;
-    o += ui + ut;
-    if (o + tam > n) break;
-    if (id == ID_EDITION) {
-      // Uma edicao contem os atomos; descer sem pular. So a PRIMEIRA edicao
-      // vale: varias edicoes concatenadas bagunçariam a ordem ("ultimo
-      // capitulo") e repetiriam nomes.
-      if (!achou) achou += lerCapitulos(p + o, tam, saida + achou, max - achou);
-    } else if (id == ID_CHAPATOM) {
-      MkvCap c;
-      long q = 0;
-      int temInicio = 0;
-      memset(&c, 0, sizeof c);
-      while (q < tam) {
-        int vi = 0, vt = 0;
-        unsigned long fid = lerId(p + o + q, tam - q, &vi);
-        long ftam;
-        if (!fid) break;
-        ftam = lerTam(p + o + q + vi, tam - q - vi, &vt);
-        if (ftam < 0) break;
-        q += vi + vt;
-        if (q + ftam > tam) break;
-        { const unsigned char *v = p + o + q;
-          if (fid == ID_CHAPSTART) {
-            c.inicio = (double)lerUint(v, ftam) / 1000000000.0;
-            temInicio = 1;
-          } else if (fid == ID_CHAPDISPLAY) {
-            // O nome mora um nivel abaixo, em ChapString.
-            long r = 0;
-            while (r < ftam) {
-              int di = 0, dt = 0;
-              unsigned long did = lerId(v + r, ftam - r, &di);
-              long dtam;
-              if (!did) break;
-              dtam = lerTam(v + r + di, ftam - r - di, &dt);
-              if (dtam < 0) break;
-              r += di + dt;
-              if (r + dtam > ftam) break;
-              if (did == ID_CHAPSTRING) lerTexto(v + r, dtam, c.nome, sizeof c.nome);
-              r += dtam;
-            }
-          } }
-        q += ftam;
+#define ID_CHAPHIDDEN  0x98UL
+#define ID_CHAPENABLED 0x4598UL
+#define ID_CHAPLANG    0x437CUL
+#define ID_CHAPBCP47   0x437DUL
+#define ID_EDHIDDEN    0x45BDUL
+#define ID_EDDEFAULT   0x45DBUL
+
+// Um elemento-filho a cada chamada: devolve o id (0 = fim/invalido), o dado em
+// *v/*vn e avanca *q. Os mesmos limites de antes (nada passa de `n`).
+static unsigned long filho(const unsigned char *p, long n, long *q, const unsigned char **v, long *vn) {
+  int ui = 0, ut = 0;
+  unsigned long id;
+  long tam;
+  if (*q >= n) return 0;
+  id = lerId(p + *q, n - *q, &ui);
+  if (!id) return 0;
+  tam = lerTam(p + *q + ui, n - *q - ui, &ut);
+  if (tam < 0 || *q + ui + ut + tam > n) return 0;
+  *v = p + *q + ui + ut; *vn = tam;
+  *q += ui + ut + tam;
+  return id;
+}
+static int flagDe(const unsigned char *p, long n, unsigned long quer, int padrao) {
+  long q = 0, vn;
+  const unsigned char *v;
+  unsigned long id;
+  while ((id = filho(p, n, &q, &v, &vn)) != 0)
+    if (id == quer) return lerUint(v, vn) != 0;
+  return padrao;
+}
+
+// Um ChapterAtom: inicio, nome no idioma preferido, e se aparece (escondido ou
+// desligado nao entra, como no NuvioTV). Devolve 1 quando vale.
+static int lerAtomo(const unsigned char *p, long n, MkvCap *c) {
+  long q = 0, vn;
+  const unsigned char *v;
+  unsigned long id;
+  int temInicio = 0, melhor = 0;
+  const char *pref = capitulos_pref();
+  memset(c, 0, sizeof *c);
+  while ((id = filho(p, n, &q, &v, &vn)) != 0) {
+    if (id == ID_CHAPSTART) { c->inicio = (double)lerUint(v, vn) / 1000000000.0; temInicio = 1; }
+    else if (id == ID_CHAPHIDDEN && lerUint(v, vn)) return 0;
+    else if (id == ID_CHAPENABLED && vn > 0 && !lerUint(v, vn)) return 0;
+    else if (id == ID_CHAPDISPLAY) {
+      // Varios ChapterDisplay = o mesmo nome em varios idiomas. Antes ficava o
+      // ULTIMO (um arquivo ingles + russo mostrava o russo).
+      long r = 0, dn;
+      const unsigned char *d;
+      unsigned long did;
+      char nome[sizeof c->nome] = "", lang[16] = "", bcp[16] = "";
+      while ((did = filho(v, vn, &r, &d, &dn)) != 0) {
+        if (did == ID_CHAPSTRING) lerTexto(d, dn, nome, sizeof nome);
+        else if (did == ID_CHAPLANG) lerTexto(d, dn, lang, sizeof lang);
+        else if (did == ID_CHAPBCP47) lerTexto(d, dn, bcp, sizeof bcp);
       }
-      if (temInicio) saida[achou++] = c;
+      if (nome[0]) {
+        int nota = capitulos_nota(lang, bcp, pref);
+        if (nota > melhor) { melhor = nota; memcpy(c->nome, nome, sizeof c->nome); }
+      }
     }
-    o += tam;
+  }
+  return temInicio;
+}
+
+static int lerAtomos(const unsigned char *p, long n, MkvCap *saida, int max) {
+  long q = 0, vn;
+  const unsigned char *v;
+  unsigned long id;
+  int achou = 0;
+  while (achou < max && (id = filho(p, n, &q, &v, &vn)) != 0) {
+    MkvCap c;   // so escreve na saida o que vale (como antes e como o Rust)
+    if (id == ID_CHAPATOM && lerAtomo(v, vn, &c)) saida[achou++] = c;
   }
   return achou;
+}
+
+// O conteudo de um Chapters: a edicao marcada como padrao, senao a primeira que
+// nao e escondida (NuvioTV MatroskaChapterParser). Sem EditionEntry nenhum,
+// atomos soltos no proprio Chapters. Ordenado por inicio, sem inicio repetido.
+static int lerCapitulos(const unsigned char *p, long n, MkvCap *saida, int max) {
+  long q = 0, vn, en = -1;
+  const unsigned char *v, *ed = NULL;
+  unsigned long id;
+  int edicoes = 0, achou;
+  while ((id = filho(p, n, &q, &v, &vn)) != 0) {
+    if (id != ID_EDITION) continue;
+    edicoes++;
+    if (flagDe(v, vn, ID_EDHIDDEN, 0)) continue;
+    if (!ed) { ed = v; en = vn; }
+    if (flagDe(v, vn, ID_EDDEFAULT, 0)) { ed = v; en = vn; break; }
+  }
+  if (ed) achou = lerAtomos(ed, en, saida, max);
+  else achou = edicoes ? 0 : lerAtomos(p, n, saida, max);
+  return capitulos_normalizar(saida, achou);
 }
 
 #endif  // !NV_RUST_MKVCORE (EBML core: rust/mkvcore)
@@ -322,8 +423,8 @@ static long long segIni, posChapters, posTracks;
 static int acharTracks(const unsigned char *p, long n, MkvFaixa *saida, int max,
                        MkvCap *caps, int maxCaps, int *nCaps) {
   NvMkvScan sc;
-  int nFaixas = nv_mkvcore_achar_tracks(p, n, saida, max, caps, maxCaps, &sc);
-  if (nCaps) *nCaps = sc.n_caps;
+  int nFaixas = nv_mkvcore_achar_tracks(p, n, saida, max, caps, maxCaps, capitulos_pref(), &sc);
+  if (nCaps) *nCaps = caps ? capitulos_normalizar(caps, sc.n_caps) : sc.n_caps;
   tracksCortado = sc.tracks_cortado;
   tkAchado = sc.tk_achado;
   tkTam = (long)sc.tk_tam;
@@ -343,7 +444,7 @@ static int acharTracks(const unsigned char *p, long n, MkvFaixa *saida, int max,
 // nucleo Rust.
 __attribute__((unused))
 static int lerCapitulos(const unsigned char *p, long n, MkvCap *saida, int max) {
-  return nv_mkvcore_capitulos(p, n, saida, max);
+  return capitulos_normalizar(saida, nv_mkvcore_capitulos(p, n, saida, max, capitulos_pref()));
 }
 #else
 #define ID_SEEKHEAD 0x114D9B74UL
@@ -492,38 +593,168 @@ static int nomeAbertura(const char *m) {
 // Previa do proximo episodio (anime: "Preview", "Next Episode", "Yokoku"):
 // vem DEPOIS do ED e nao e o inicio dos creditos.
 static int nomePrevia(const char *m) {
-  return strstr(m, "preview") || strstr(m, "next episode") || strstr(m, "next time") ||
+  // "PV" so como palavra (anime: a previa curta do proximo episodio).
+  return temPalavra(m, "pv") || strstr(m, "preview") || strstr(m, "next episode") || strstr(m, "next time") ||
          strstr(m, "yokoku") || strstr(m, "avance") || strstr(m, "previa") ||
          strstr(m, "prévia");
 }
 
-double mkv_creditos_nomeados(const MkvCap *caps, int n) {
-  static const char *NOMES[] = { "credit", "crédit", "credito", "crédito",
+// Nomes EXTRA (os que o master ja aceitava): so valem para o tipo em que
+// nenhum capitulo casou pela regra estrita do NuvioTV (mkv_segmentos).
+static int nomeCreditosExtra(const char *m) {
+  static const char *NOMES[] = { "credit", "cr\xc3\xa9" "dit", "credito", "cr\xc3\xa9" "dito",
                                  "end title", "outro", "encerrament", "ending" };
-  int i, k;
-  for (i = n - 1; i >= 0; i--) {
-    char m[64];
-    nomeMinusculo(caps[i].nome, m, sizeof m);
-    if (nomeAbertura(m)) continue;
-    // ANIME (2.0.3): "Ending" e "ED" sao os creditos. "ED" so como palavra.
-    if (temPalavra(m, "ed")) return caps[i].inicio;
-    for (k = 0; k < (int)(sizeof NOMES / sizeof NOMES[0]); k++)
-      if (strstr(m, NOMES[k])) return caps[i].inicio;
-  }
+  int k;
+  if (nomeAbertura(m)) return 0;
+  // ANIME (2.0.3): "Ending" e "ED" sao os creditos. "ED" so como palavra.
+  if (temPalavra(m, "ed")) return 1;
+  for (k = 0; k < (int)(sizeof NOMES / sizeof NOMES[0]); k++)
+    if (strstr(m, NOMES[k])) return 1;
+  return 0;
+}
+
+double mkv_creditos_nomeados(const MkvCap *caps, int n) {
+  MkvSeg s[6];
+  int k = caps && n > 0 ? mkv_segmentos(caps, n, 0.0, s, 6) : 0, i;
+  for (i = 0; i < k; i++) if (s[i].tipo == MKV_SEG_CREDITOS) return s[i].inicio;
   return 0.0;
 }
 
+// O ULTIMO capitulo que nao e previa nem cena pos-creditos (essas vem DEPOIS
+// do ED e nao sao o inicio dos creditos).
 double mkv_creditos_ultimo(const MkvCap *caps, int n) {
   int i;
   if (!caps || n < 2) return 0.0;
   for (i = n - 1; i > 0; i--) {
-    char m[64];
-    nomeMinusculo(caps[i].nome, m, sizeof m);
-    if (!nomePrevia(m)) return caps[i].inicio;
+    int t = mkv_classificar_nome(caps[i].nome, NULL);
+    if (t != MKV_SEG_PREVIA && t != MKV_SEG_POSCRED) return caps[i].inicio;
   }
   return 0.0;
 }
 
+// --- SEGMENTOS (feat/mkv-chapter-segments) -------------------------------------
+//
+// As expressoes sao as do NuvioTV (ChapterSkipIntervals.kt) em ERE: \s vira
+// [[:space:]] e \d vira [0-9]. Compiladas a cada chamada: so roda quando os
+// capitulos chegam (uma vez por reproducao), e assim nao ha estado estatico
+// para dividir entre o fio lateral do capmkv e o fio do player.
+static const char *RX_POS   = "(post|mid|after)[[:space:]-]credits";
+static const char *RX_OP    = "^[[:space:]]*(op|opening)([[:space:]]*(credits|theme))?[[:space:]]*[0-9]*[[:space:]]*$";
+static const char *RX_ED    = "^[[:space:]]*(ed|ending)([[:space:]]*(credits|theme))?[[:space:]]*[0-9]*[[:space:]]*$";
+static const char *RX_CRED  = "^[[:space:]]*(end|closing)?[[:space:]]*credits[[:space:]]*$";
+static const char *RX_RECAP = "^[[:space:]]*(recap|previously([[:space:]]+on.*)?)[[:space:]]*$";
+static const char *RX_INTRO = "^[[:space:]]*intro[[:space:]]*$";
+
+static int casa(const char *rx, const char *s) {
+  regex_t r;
+  int ok;
+  if (regcomp(&r, rx, REG_EXTENDED | REG_ICASE | REG_NOSUB) != 0) return 0;
+  ok = regexec(&r, s, 0, NULL, 0) == 0;
+  regfree(&r);
+  return ok;
+}
+
+int mkv_classificar_nome(const char *nome, int *forca) {
+  char m[64];
+  int f = 0, t = MKV_SEG_NENHUM;
+  if (nome && nome[0]) {
+    // Pos-creditos primeiro: "Post-Credits" tambem diria "credits".
+    if (casa(RX_POS, nome))        { t = MKV_SEG_POSCRED;  f = 3; }
+    else if (casa(RX_OP, nome))    { t = MKV_SEG_ABERTURA; f = 3; }
+    else if (casa(RX_ED, nome) || casa(RX_CRED, nome)) { t = MKV_SEG_CREDITOS; f = 3; }
+    else if (casa(RX_RECAP, nome)) { t = MKV_SEG_RESUMO;   f = 3; }
+    else if (casa(RX_INTRO, nome)) { t = MKV_SEG_ABERTURA; f = 2; }
+    else {
+      nomeMinusculo(nome, m, sizeof m);
+      if (nomePrevia(m))             { t = MKV_SEG_PREVIA;   f = 1; }
+      else if (nomeAbertura(m))      { t = MKV_SEG_ABERTURA; f = 1; }
+      else if (nomeCreditosExtra(m)) { t = MKV_SEG_CREDITOS; f = 1; }
+    }
+  }
+  if (forca) *forca = f;
+  return t;
+}
+
+int mkv_segmentos(const MkvCap *caps, int n, double dur, MkvSeg *out, int max) {
+  int tipo[MKV_MAX_CAPS], forca[MKV_MAX_CAPS];
+  int i, t, k = 0, temOpEstrito = 0, estrito[6] = { 0 }, escolhido[6];
+  if (!caps || n <= 0 || !out || max <= 0) return 0;
+  if (n > MKV_MAX_CAPS) n = MKV_MAX_CAPS;
+  for (i = 0; i < n; i++) {
+    tipo[i] = mkv_classificar_nome(caps[i].nome, &forca[i]);
+    if (tipo[i] == MKV_SEG_ABERTURA && forca[i] == 3) temOpEstrito = 1;
+  }
+  // "Intro" vira abertura so quando nao ha capitulo OP/Opening (NuvioTV).
+  for (i = 0; i < n; i++)
+    if (forca[i] == 2) { if (temOpEstrito) tipo[i] = MKV_SEG_NENHUM; else forca[i] = 3; }
+  for (i = 0; i < n; i++) if (tipo[i] && forca[i] == 3) estrito[tipo[i]] = 1;
+
+  for (t = 0; t < 6; t++) escolhido[t] = -1;
+  for (i = 0; i < n; i++) {
+    double ini = caps[i].inicio, fim, len;
+    int ultimo = i + 1 >= n;
+    t = tipo[i];
+    if (!t) continue;
+    if (estrito[t] && forca[i] != 3) continue;     // o estrito manda no tipo
+    fim = !ultimo ? caps[i + 1].inicio : (dur > 0.0 ? dur : 0.0);
+    if (fim > 0.0 && fim <= ini) continue;
+    len = fim > 0.0 ? fim - ini : -1.0;             // -1: ate o fim, sem medida
+    if (len >= 0.0 && len < MKV_SEG_MIN_S) continue;
+    if ((t == MKV_SEG_ABERTURA || t == MKV_SEG_RESUMO) && (len < 0.0 || len > MKV_SEG_MAX_S)) continue;
+    // A previa so como ULTIMO capitulo (regra do master): no meio, e cena.
+    if (t == MKV_SEG_PREVIA && !ultimo) continue;
+    // Creditos: o ULTIMO que casa (#115, "Opening Credits" + "End Credits").
+    // Os outros: o primeiro.
+    if (t == MKV_SEG_CREDITOS || escolhido[t] < 0) escolhido[t] = i;
+  }
+  // Cena pos-creditos antes dos creditos escolhidos nao e pos-creditos.
+  if (escolhido[MKV_SEG_POSCRED] >= 0 && escolhido[MKV_SEG_CREDITOS] >= 0 &&
+      escolhido[MKV_SEG_POSCRED] < escolhido[MKV_SEG_CREDITOS]) {
+    int j = -1;
+    for (i = escolhido[MKV_SEG_CREDITOS] + 1; i < n && j < 0; i++)
+      if (tipo[i] == MKV_SEG_POSCRED) j = i;
+    escolhido[MKV_SEG_POSCRED] = j;
+  }
+  for (i = 0; i < n && k < max; i++) {
+    for (t = 1; t < 6; t++) if (escolhido[t] == i) break;
+    if (t == 6) continue;
+    out[k].inicio = caps[i].inicio;
+    out[k].fim = i + 1 < n ? caps[i + 1].inicio : (dur > 0.0 ? dur : 0.0);
+    out[k].tipo = t;
+    out[k].estrito = forca[i] == 3;
+    out[k].cap = i;
+    k++;
+  }
+  return k;
+}
+
+// PALPITES POR DURACAO (capitulos sem nome util: "Chapter 1".."Chapter 5", o
+// Attack on Titan da C9). So quando NENHUM capitulo tem nome que classifique.
+// Abertura e encerramento de anime tem ~1:30: um capitulo de 75-105 s entre os
+// tres primeiros (comecando antes dos 10 min) e a abertura; um entre os tres
+// ultimos, depois dela, e o encerramento. O ultimo capitulo nao tem medida sem
+// a duracao e fica de fora. intro.c so usa os palpites em anime.
+#define MKV_PALPITE_MIN_S 75.0
+#define MKV_PALPITE_MAX_S 105.0
+int mkv_segmentos_palpite(const MkvCap *caps, int n, MkvSeg *out, int max) {
+  int i, op = -1, ed = -1, k = 0;
+  if (!caps || n < 3 || !out || max <= 0) return 0;
+  if (n > MKV_MAX_CAPS) n = MKV_MAX_CAPS;
+  for (i = 0; i < n; i++) if (mkv_classificar_nome(caps[i].nome, NULL)) return 0;
+  for (i = 0; i < n - 1 && i < 3 && op < 0; i++) {
+    double len = caps[i + 1].inicio - caps[i].inicio;
+    if (len >= MKV_PALPITE_MIN_S && len <= MKV_PALPITE_MAX_S && caps[i].inicio < 600.0) op = i;
+  }
+  for (i = n - 2; i >= 0 && i >= n - 4 && i > op; i--) {
+    double len = caps[i + 1].inicio - caps[i].inicio;
+    if (len >= MKV_PALPITE_MIN_S && len <= MKV_PALPITE_MAX_S) { ed = i; break; }
+  }
+  if (op >= 0 && k < max)
+    out[k++] = (MkvSeg){ caps[op].inicio, caps[op + 1].inicio, MKV_SEG_ABERTURA, 0, op };
+  if (ed >= 0 && k < max)
+    out[k++] = (MkvSeg){ caps[ed].inicio, caps[ed + 1].inicio, MKV_SEG_CREDITOS, 0, ed };
+  return k;
+}
 
 // --- capitulos fora da janela (203-capitulos) ----------------------------------
 //
@@ -616,7 +847,7 @@ static int capsPorPosicao(const char *url, long long pos, MkvCap *caps, int max,
     if (!b || n < need) { free(b); return 0; }
   }
 #ifdef NV_RUST_MKVCORE
-  achou = nv_mkvcore_capitulos((const unsigned char *)b + ui + ut, tam, caps, max);
+  achou = capitulos_normalizar(caps, nv_mkvcore_capitulos((const unsigned char *)b + ui + ut, tam, caps, max, capitulos_pref()));
 #else
   achou = lerCapitulos((const unsigned char *)b + ui + ut, tam, caps, max);
 #endif
@@ -641,24 +872,22 @@ int mkv_capitulos_alem(const char *url, const unsigned char *cab, long cabN,
 }
 
 int mkv_intro_nomeada(const MkvCap *caps, int n, double *ini, double *fim) {
-  int i;
-  for (i = 0; caps && i < n - 1; i++) {
-    char m[64];
-    nomeMinusculo(caps[i].nome, m, sizeof m);
-    if (nomeAbertura(m) && caps[i + 1].inicio > caps[i].inicio) {
-      if (ini) *ini = caps[i].inicio;
-      if (fim) *fim = caps[i + 1].inicio;
+  MkvSeg s[6];
+  int k = caps && n > 0 ? mkv_segmentos(caps, n, 0.0, s, 6) : 0, i;
+  for (i = 0; i < k; i++)
+    if (s[i].tipo == MKV_SEG_ABERTURA && s[i].fim > s[i].inicio) {
+      if (ini) *ini = s[i].inicio;
+      if (fim) *fim = s[i].fim;
       return 1;
     }
-  }
   return 0;
 }
 
 double mkv_previa_nomeada(const MkvCap *caps, int n) {
-  char m[64];
-  if (!caps || n < 2) return 0.0;
-  nomeMinusculo(caps[n - 1].nome, m, sizeof m);
-  return nomePrevia(m) ? caps[n - 1].inicio : 0.0;
+  MkvSeg s[6];
+  int k = caps && n >= 2 ? mkv_segmentos(caps, n, 0.0, s, 6) : 0, i;
+  for (i = 0; i < k; i++) if (s[i].tipo == MKV_SEG_PREVIA) return s[i].inicio;
+  return 0.0;
 }
 
 // --- RPU de Dolby Vision em banda (203-dvrpu) ----------------------------------

@@ -920,9 +920,12 @@ int video_tocar_retomada(const char *u, double segundos, double pct) {
   int fracao = !inicioMs && isfinite(pct) && pct > 0.0 && pct < 100.0
     ? (int)(pct * 100.0 + 0.5) : 0;
   snprintf(urlAtual, sizeof urlAtual, "%s", u ? u : "");
-  if (limited) capmkv_zerar(); else capmkv_iniciar(urlAtual);
   nv_recon_zerar(&recon);
   reconPermitida = reconProxima; reconProxima = 0;
+  // Canal ao vivo (player.c: !ehCanal()) ou Xtream limitado: sem leitura
+  // lateral de capitulos, como no .tpk — conexao a mais no provedor de IPTV
+  // pode derrubar a sessao, e canal nao tem capitulo para mostrar.
+  if (limited || !reconPermitida) capmkv_zerar(); else capmkv_iniciar(urlAtual);
   reconIniciou = 0; reconErroPend = 0;
   reconAudio = reconLeg = -1; reconFaixasPend = 0; reconBuscarMs = -1; reconPausado = 0;
   recarregarPausa = -1;

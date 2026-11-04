@@ -106,6 +106,8 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "mkvass.h"
 #include "relogio.h"
 #include "intro.h"
+#include "capmkv.h"
+#include "idiomacod.h"
 #include "proximo.h"
 #include "creditosauto.h"
 #include "credfonte.h"
@@ -364,6 +366,16 @@ static Uint32 ultimoInput = 0;
 // barra vai para ele, BAIXO volta, OK pula. Quando os controles acordam com um
 // trecho no ar o foco ja nasce nele — e o que a mao faz: "pra cima" e OK.
 static int skipFoco = 0;
+// CAPITULOS DO ARQUIVO (feat/mkv-chapter-segments, ajuste "Capitulos no player"):
+// a fileira que o CIMA abre a partir da barra (depois do botao de pular, se
+// houver). `capSel` e o capitulo em foco; `capAnim` a mola da fileira.
+static int capFoco, capSel;
+// Rolagem da fileira de capitulos (px a partir do primeiro chip). Persistente:
+// so anda o necessario para o chip em foco caber — com o ponteiro do Magic
+// Remote/dedo, passar por um chip visivel nao pode fazer a fileira pular.
+static float capRol;
+static void capituloPular(const MkvCap *c, int i);
+static float capAnim;
 static int trechoPulavel(double *fim);
 
 // UMA COR DE ACENTO SO NO PLAYER (Glass UI): ajustes_acento(), a mesma das
@@ -1883,6 +1895,9 @@ void player_abrir(int indiceCatalogo, const char *url) {
   desc_episodios_garantir(idx);
   fonteAcaoInvalidar();
   aberto = 1; saindo = 0; pediuSair = 0; barraFoco = 0;
+  // Fileira de capitulos do titulo anterior nao fica aberta no novo (o indice
+  // e a rolagem eram de outra lista).
+  capFoco = 0; capSel = 0; capRol = 0.0f;
   // Titulo novo: um avanco em curso do anterior mandaria a posicao velha ao
   // pipeline novo assim que o silencio vencesse.
   scrubbing = 0; scrubPassos = 0; scrubTocava = 0; scrubDir = 0; scrubToque = 0; scrubInicio = 0.0;
@@ -1968,6 +1983,8 @@ void player_abrir(int indiceCatalogo, const char *url) {
   toastAte = 0; toastTexto[0] = 0; avisouAudio = 0;
   // Reconexao so no filme/episodio: canal ao vivo tem o watchdog de app.c.
   video_definir_reconexao(!ehCanal());
+  // Nome do capitulo no idioma do app quando o arquivo traz varios (mkv.c).
+  mkv_capitulos_idioma(idioma_iso(ajustes_idioma()));
   video_definir_modo_live(ehCanal() ? guia_modo_do_canal(player_id_canal(), ajustes_livetv_modo()) : 0);
   // F07: seek cache for this open (live channels never; the backend also
   // refuses HLS/DASH). Arms only the next video_tocar: trailers stay uncached.
@@ -2165,6 +2182,8 @@ static void tocarFonteInterno(const char *url) {
   skipLiberado = 0;
   loadEm = SDL_GetTicks();   // #202: do pipeline ao primeiro quadro ("[player] load->1o quadro")
   video_definir_reconexao(!ehCanal());
+  // Nome do capitulo no idioma do app quando o arquivo traz varios (mkv.c).
+  mkv_capitulos_idioma(idioma_iso(ajustes_idioma()));
   video_definir_modo_live(ehCanal() ? guia_modo_do_canal(player_id_canal(), ajustes_livetv_modo()) : 0);
   cacheboost_backend_cache(ehCanal() ? 0 : ajustes_cache_seek_mb());   // F07, ver player_abrir
   armarTituloGuardado();
@@ -2540,7 +2559,8 @@ static double credEfetivo(void) {
   CredEntrada e; int f; double s;
   memset(&e, 0, sizeof e);
   e.dur = duracaoSeg;
-  e.capitulo = video_creditos();
+  e.capitulo = capmkv_creditos_nomeado();
+  e.capituloUltimo = capmkv_creditos_ultimo(duracaoSeg);
   { double ic = intro_creditos_seg();
     if (intro_creditos_aniskip()) e.aniskip = ic; else e.introdb = ic; }
   if (c && c->imdb[0] && epT >= 0 && epE > 0) {
@@ -3686,7 +3706,9 @@ int player_janela_proximo(double antecedencia) {
     // SANIDADE: ver a nota de credJanela acima. Marcador que sobra mais que a
     // janela nao e credito, e dado errado — cai na regra de baixo.
     double resta = duracaoSeg - cred, janela = credJanela();
-    int aceito = resta <= janela;
+    // O mesmo veredito do botao (intro.c): capitulo do arquivo confirmado, ou
+    // fonte cujo FIM cai na janela ("ED - Part C - Next time").
+    int pelaJanela = resta <= janela, aceito = pelaJanela || intro_creditos_aceito(cred);
     // UMA LINHA POR MARCADOR, e nao por quadro. Os dois lados sao registrados
     // de proposito: so o recusado aparecia no log, e por isso "ainda aparece
     // antes do final" nao tinha como ser medido — nao dava para saber se quem
@@ -3695,8 +3717,8 @@ int player_janela_proximo(double antecedencia) {
     if (!credAvisado || credAvisadoEm != cred || credAvisadoDur != (double)duracaoSeg) {
       credAvisado = 1; credAvisadoEm = cred; credAvisadoDur = (double)duracaoSeg;
       printf("[posplay] creditos %s: comecam em %.0fs de %.0fs (sobram %.0fs, janela %.0fs)\n",
-             aceito ? "aceito" : "RECUSADO", cred, (double)duracaoSeg,
-             resta, janela);
+             aceito ? (pelaJanela ? "aceito" : "aceito pelo marcador (arquivo/fim)") : "RECUSADO",
+             cred, (double)duracaoSeg, resta, janela);
       fflush(stdout);
     }
     // HA MARCADOR ACEITO: ELE MANDA, E SO ELE.
@@ -3710,7 +3732,8 @@ int player_janela_proximo(double antecedencia) {
     // E a mesma guarda que o filme ganhou na 1.0.35 (posplay.c: "ha marcador e
     // ele ainda nao chegou: NAO cair no plano B"). A serie tinha ficado de
     // fora.
-    if (aceito) return player_regra_proximo(posAntecipada, duracaoSeg, cred);
+    if (aceito) return pelaJanela ? player_regra_proximo(posAntecipada, duracaoSeg, cred)
+                                  : posAntecipada >= cred;
   }
   // FALLBACK sem dado de ninguem. Se a duracao estiver errada, e ELE quem abre
   // o cartao cedo — por isso a linha abaixo diz de onde veio.
@@ -3743,7 +3766,47 @@ static void acordar(void) { abrecine_acordou(&cine, player_carregando()); visive
 // Tira os controles da frente (BAIXO na fileira, CIMA no topo, #305). Nao
 // chama acordar(): isso os recolocaria no mesmo evento e o comando pareceria
 // quebrado. O proximo toque direcional os revela de novo.
-static void esconderControles(void) { barraFoco = 0; visivel = 0; ultimoInput = SDL_GetTicks(); }
+static void esconderControles(void) { barraFoco = 0; capFoco = 0; visivel = 0; ultimoInput = SDL_GetTicks(); }
+
+// Os capitulos do arquivo como o Nuvio TV os mostra (PlayerChapters.normalize):
+// em ordem, um por inicio, e so com dois ou mais — "Chapter 1" sozinho no 0 nao
+// tem para onde pular. Com o ajuste desligado, nenhum.
+static int capitulosDoArquivo(MkvCap *c, int max) {
+  int n, i, j, k = 0;
+  if (!ajustes_capitulos() || ehCanal() || max <= 0) return 0;
+  n = capmkv_lista(c, max);
+  for (i = 1; i < n; i++)
+    for (j = i; j > 0 && c[j].inicio < c[j - 1].inicio; j--) { MkvCap t = c[j]; c[j] = c[j - 1]; c[j - 1] = t; }
+  for (i = 0; i < n; i++) {
+    if (!(c[i].inicio >= 0.0)) continue;
+    if (duracaoReal && duracaoSeg > 1.0f && c[i].inicio >= duracaoSeg) continue;
+    if (k > 0 && c[i].inicio - c[k - 1].inicio < 0.001) continue;
+    c[k++] = c[i];
+  }
+  return k >= 2 ? k : 0;
+}
+// O capitulo tocando em `pos` (-1 antes do primeiro).
+static int capituloEm(const MkvCap *c, int n, double pos) {
+  int i, r = -1;
+  for (i = 0; i < n; i++) if (c[i].inicio <= pos + 0.25) r = i;
+  return r;
+}
+static const char *capituloNome(const MkvCap *c, int i, char *buf, size_t n) {
+  if (c[i].nome[0]) return c[i].nome;
+  snprintf(buf, n, i18n("Capítulo %d"), i + 1);
+  return buf;
+}
+// CIMA na barra (ou no botao de pular): abre a fileira no capitulo que toca.
+static int abrirCapitulos(void) {
+  MkvCap c[MKV_MAX_CAPS];
+  int n = capitulosDoArquivo(c, MKV_MAX_CAPS);
+  if (n < 2) return 0;
+  capSel = capituloEm(c, n, posSeg);
+  if (capSel < 0) capSel = 0;
+  capRol = 0.0f;   // abre como antes: do comeco, e o chip em foco rola para dentro
+  capFoco = 1; skipFoco = 0; barraFoco = 1;
+  return 1;
+}
 
 // AS DUAS LINHAS DO CANAL no OSD: "AGORA hh:mm–hh:mm · titulo" e "A SEGUIR
 // hh:mm · titulo", da grade EPG. Sem grade real o canal se mostra como
@@ -4313,6 +4376,7 @@ void player_evento(const SDL_Event *e) {
     // Back dismisses exactly one layer. Loading/buffering keeps its exit path.
     if (pausao_visivel()) { pausao_fechar(); acordar(); return; }
     if (!erroFonte && !player_carregando() && !video_bufferando_ms()) {
+      if (capFoco) { capFoco = 0; return; }
       if (skipFoco) { skipFoco = 0; return; }
       if (visivel || anim > 0.004f) {
         if (scrubbing) terminarSalto();
@@ -4475,6 +4539,22 @@ void player_evento(const SDL_Event *e) {
     return;
   }
 
+  // FILEIRA DE CAPITULOS (feat/mkv-chapter-segments): ESQUERDA/DIREITA andam,
+  // OK busca o comeco do capitulo (busca exata, como o Nuvio TV), BAIXO volta a
+  // barra. CH+/CH- nao mexem em capitulo (pedido do dono).
+  if (capFoco) {
+    MkvCap c[MKV_MAX_CAPS];
+    int n = capitulosDoArquivo(c, MKV_MAX_CAPS);
+    if (n < 2) { capFoco = 0; acordar(); return; }
+    if (capSel >= n) capSel = n - 1;
+    if (k == SDLK_LEFT) { if (capSel > 0) capSel--; }
+    else if (k == SDLK_RIGHT) { if (capSel < n - 1) capSel++; }
+    else if (k == SDLK_DOWN) capFoco = 0;
+    else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) capituloPular(c, capSel);
+    acordar();
+    return;
+  }
+
   // CONTROLES EM PE: o foco anda pelos botoes e o OK aperta o botao em foco.
   if (skipFoco) {
     double fim;
@@ -4483,7 +4563,11 @@ void player_evento(const SDL_Event *e) {
       pularTrecho(puloDestino(fim)); if (comVideo) buscarUsuario(posSeg);
       skipFoco = 0; acordar(); return;
     } else if (k == SDLK_DOWN) { skipFoco = 0; acordar(); return; }
-    else if (k == SDLK_UP) { skipFoco = 0; esconderControles(); return; }   // #305
+    else if (k == SDLK_UP) {   // #305; com capitulos, acima do botao fica a fileira (D10)
+      skipFoco = 0;
+      if (abrirCapitulos()) acordar(); else esconderControles();
+      return;
+    }
     // CIMA nao abre mais a folha de Audio daqui (pedido do dono, 03/10): acima
     // do botao de pular nao ha nada. Esquerda/direita: nada ao lado.
     else { acordar(); return; }
@@ -4509,6 +4593,7 @@ void player_evento(const SDL_Event *e) {
     if (!barraFoco && transporteMoverLinha(-1)) { acordar(); return; }
     if (!barraFoco) barraFoco = 1;
     else if (trechoPulavel(NULL)) skipFoco = 1;
+    else if (abrirCapitulos()) {}              // D10: sem botao de pular, a fileira de capitulos
     else { esconderControles(); return; }   // #305: CIMA no topo tira a interface da frente
     acordar();
     return;
@@ -5102,7 +5187,7 @@ void player_atualizar(float dt, Uint32 agora) {
 #ifdef NV_TPK
       && !vooAtivo   // the bar stays while the TV is still seeking
 #endif
-      ) visivel = 0;
+      ) { visivel = 0; capFoco = 0; }
   if (epE > 0 && !strstr(linhaEp, " · ")) player_definir_episodio(epT, epE);
   introTmdbTardio(agora);
 
@@ -5800,7 +5885,7 @@ static void desenharAcoesEpisodio(void){
 }
 static void desenharAcoesEpisodioCorpo(void){
   const CatEp *prox=player_proximo_episodio();double fim;int tipo=0;
-  if (!skipDisponivel()) { skipFoco = 0; return; }
+  if (!skipDisponivel() || capFoco) { skipFoco = 0; return; }
   intro_definir_duracao(duracaoReal ? (double)duracaoSeg : 0.0, epE <= 0);
   int trecho=intro_botao(posSeg,monoSeg(),visivel,skipFoco&&visivel,&fim,&tipo);
   // A CAIXA DE "Próximo episódio" QUE FICAVA AQUI FOI APAGADA. Era um retangulo
@@ -5817,8 +5902,15 @@ static void desenharAcoesEpisodioCorpo(void){
     // da ilha, na margem de 96 (era 64). Com o OSD escondido ela fica sozinha
     // embaixo a esquerda, ja cheia no acento — OK pula direto; com o OSD de pe
     // sobe para a direita, acima da barra, e so e cheia com o foco nela.
+    // Creditos com cena depois (feat/mkv-chapter-segments, Nuvio TV "Skip to
+    // Post-Credits"): o pulo para no comeco da cena, e o rotulo diz isso.
+    int paraCena=tipo==INTRO_CREDITOS&&intro_cena_pos(duracaoSeg,NULL,NULL,NULL);
+    // Rotulos do NuvioTV: "Skip Ending" no fim de episodio, "Skip Credits" so
+    // em filme (epE <= 0), e "Post credits" so com cena de verdade depois.
     const char *rot=tipo==INTRO_RESUMO?"Pular resumo":
-                    tipo==INTRO_CREDITOS?"Pular cr\xc3\xa9" "ditos":"Pular abertura";
+                    paraCena?"P\xc3\xb3s-cr\xc3\xa9" "ditos":
+                    tipo==INTRO_CREDITOS&&epE<=0?"Pular cr\xc3\xa9" "ditos":
+                    tipo==INTRO_CREDITOS?"Pular encerramento":"Pular abertura";
     int sel=(skipFoco&&visivel)||!visivel;
     TxtLinha t=txt_linha(TXT_G21B,rot,255,255,255,255);
     const float h=64.0f;
@@ -7130,6 +7222,133 @@ static float fileiraFormato(Uint32 agora, float x, float y, float ac, int medir,
 #undef ENTRADA
   return H;
 }
+// CAPITULOS NA BARRA (feat/mkv-chapter-segments). Com o ajuste ligado e dois ou
+// mais capitulos: um risco fino em cada comeco de capitulo (as marcas de
+// abertura/resumo/encerramento/pos-creditos sao as de plrui_barra, sempre), o
+// nome do capitulo atual acima da barra, a direita, e — aberta pelo CIMA — a
+// fileira de capitulos no lugar do titulo, ESQUERDA/DIREITA e OK.
+// OK num capitulo (tecla, clique ou dedo): busca o comeco dele e fecha a fileira.
+static void capituloPular(const MkvCap *c, int i) {
+  double de = posSeg, alvo = c[i].inicio;
+  if (scrubbing) terminarSalto();
+  posSeg = (float)alvo;
+  recuarAutomatico(de, alvo);
+  if (comVideo) buscarUsuario(alvo);
+  printf("[seg] capitulo %d \"%s\" em %.1fs\n", i, c[i].nome, alvo); fflush(stdout);
+  capFoco = 0;
+}
+
+// PONTEIRO NA FILEIRA (Magic Remote da LG, dedo no Android Mobile). Os chips
+// sao os mesmos da tecla: passar por cima foca (como ESQUERDA/DIREITA),
+// clicar/tocar e o OK. Chip cortado na borda: o clique so o traz para dentro
+// (como a seta faria), sem buscar — buscar um capitulo que nem se le inteiro
+// seria um toque as cegas. `b` = 1 quando o chip estava inteiro no quadro.
+static void ponteiroCapFocar(int i, int b) {
+  (void)b;
+  if (!capFoco) return;
+  capSel = i; acordar();
+}
+static void ponteiroCapitulo(int i, int inteiro) {
+  MkvCap c[MKV_MAX_CAPS];
+  int n = capitulosDoArquivo(c, MKV_MAX_CAPS);
+  acordar();
+  if (!capFoco || i < 0 || i >= n) return;
+  capSel = i;
+  if (inteiro) capituloPular(c, i);
+}
+// O nome do capitulo acima da barra: clicar/tocar abre a fileira (o CIMA do
+// controle). No Android Mobile e o unico jeito de abri-la — nao ha seta.
+static void ponteiroAbrirCapitulos(int a, int b) {
+  (void)a; (void)b;
+  if (abrirCapitulos()) acordar();
+}
+
+static void desenharCapitulos(Uint32 agora, float bx, float bw, float yBarra, float a, float ac) {
+  static Uint32 capT;
+  MkvCap c[MKV_MAX_CAPS];
+  float dt = capT ? (float)(agora - capT) / 1000.0f : 0.0f, ticks[MKV_MAX_CAPS];
+  int n = duracaoSeg > 1.0f ? capitulosDoArquivo(c, MKV_MAX_CAPS) : 0, i, nt = 0, atual, pont;
+  char buf[32];
+  capT = agora;
+  if (dt > 0.1f) dt = 0.1f;
+  if (n < 2) capFoco = 0;
+  // A lista pode ter encolhido com a fileira aberta (capmkv publica de outro
+  // fio): o indice nunca passa do fim — w[capSel] abaixo seria lixo.
+  if (capSel >= n) capSel = n > 0 ? n - 1 : 0;
+  if (capSel < 0) capSel = 0;
+  capAnim = anim_mola(capAnim, capFoco ? 1.0f : 0.0f, dt, NV_MOLA_FOCO);
+  if (n < 2 || a <= 0.002f) return;
+  pont = ponteiroNoPlayer() && a > 0.3f;
+  for (i = 0; i < n; i++)
+    if (c[i].inicio > 0.5) ticks[nt++] = (float)(c[i].inicio / duracaoSeg);
+  plrui_barra_capitulos(bx, yBarra, bw, barraFoco && !capFoco, ticks, nt, a);
+  atual = capituloEm(c, n, posSeg);
+  if (atual >= 0 && capAnim < 0.99f) {
+    TxtLinha l = txt_linha_corta(TXT_CAPTION2, capituloNome(c, atual, buf, sizeof buf),
+                                 243, 242, 239, 200, bw * 0.4f);
+    float lx = bx + bw - (float)l.w, ly = yBarra - 10.0f - (float)l.h;
+    txt_desenhar_alpha(l, lx, ly, ac * (1.0f - capAnim));
+    // Fechada a fileira, o nome e o alvo que a abre (folga para o dedo). Ele e
+    // registrado DEPOIS da barra e ganha onde se sobrepoem: a base fica 4 px
+    // acima do trilho, o mesmo do Magic Remote, para tocar/arrastar no trilho
+    // debaixo do nome continuar buscando no Android Mobile.
+    if (pont && !capFoco) {
+      float f = ponteiro_tem_toque() ? 16.0f : 6.0f;
+      float y0 = ly - f, y1 = ly + (float)l.h + f;
+      if (y1 > yBarra - 4.0f) y1 = yBarra - 4.0f;
+      if (y1 > y0)
+        ponteiro_alvo(lx - f, y0, (float)l.w + f * 2.0f, y1 - y0, NULL, ponteiroAbrirCapitulos, 0, 0);
+    }
+  }
+  if (capAnim > 0.01f) {
+    // Chips: nome + inicio (m:ss / h:mm:ss). A fileira rola para o foco caber.
+    const float H = 56.0f, VAO = 12.0f, PAD = 22.0f, y = yBarra - 36.0f - H + (1.0f - capAnim) * 12.0f;
+    float w[MKV_MAX_CAPS], x0 = 0.0f, total = 0.0f, xi;
+    TxtLinha nome[MKV_MAX_CAPS], hora[MKV_MAX_CAPS];
+    for (i = 0; i < n; i++) {
+      int s = (int)c[i].inicio;
+      char h[16];
+      if (s >= 3600) snprintf(h, sizeof h, "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60);
+      else snprintf(h, sizeof h, "%d:%02d", s / 60, s % 60);
+      int f = i == capSel;
+      int tinta = f ? plrui_tinta() : 243;
+      nome[i] = txt_linha_corta(TXT_G21B, capituloNome(c, i, buf, sizeof buf), tinta, tinta, tinta, 255, 360.0f);
+      hora[i] = txt_linha(TXT_CAPTION2, h, tinta, tinta, tinta, f ? 220 : 150);
+      w[i] = PAD + (float)nome[i].w + 10.0f + (float)hora[i].w + PAD;
+    }
+    for (i = 0; i < capSel && i < n; i++) x0 += w[i] + VAO;
+    for (i = 0; i < n; i++) total += w[i] + (i ? VAO : 0.0f);
+    // Rolagem: o chip em foco fica dentro da largura da barra, andando so o
+    // necessario (capRol persiste entre quadros).
+    if (x0 + w[capSel] - capRol > bw) capRol = x0 + w[capSel] - bw;
+    if (x0 < capRol) capRol = x0;
+    if (capRol > total - bw) capRol = total - bw;
+    if (capRol < 0.0f) capRol = 0.0f;
+    xi = bx - capRol;
+    for (i = 0; i < n; i++) {
+      GfxRect r = { xi, y, w[i], H };
+      float aa = ac * capAnim;
+      if (xi + w[i] >= bx - 1.0f && xi <= bx + bw + 1.0f) {
+        if (i == capSel) plrui_pilula_foco(r, aa);
+        else if (ajustes_vidro()) gfx_vidro_chip(r, 0.5f, 0.55f, aa);
+        else gfx_cor(r, 0.5f, 1, 1, 1, 0.16f * aa);
+        txt_desenhar_alpha(nome[i], xi + PAD, y + (H - (float)nome[i].h) * 0.5f, aa);
+        txt_desenhar_alpha(hora[i], xi + PAD + (float)nome[i].w + 10.0f,
+                           y + (H - (float)hora[i].h) * 0.5f + 1.0f, aa);
+        if (pont && capFoco && capAnim > 0.9f) {
+          // Alvo recortado a largura da barra; so o chip inteiro foca por cima
+          // (o cortado rolaria a fileira por baixo do cursor).
+          float x1 = xi < bx ? bx : xi, x2 = xi + w[i] > bx + bw ? bx + bw : xi + w[i];
+          int inteiro = xi >= bx - 1.0f && xi + w[i] <= bx + bw + 1.0f;
+          if (x2 > x1) ponteiro_alvo(x1, y, x2 - x1, H, inteiro ? ponteiroCapFocar : NULL,
+                                     ponteiroCapitulo, i, inteiro);
+        }
+      }
+      xi += w[i] + VAO;
+    }
+  }
+}
+
 static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) {
   // O bloco inteiro desliza junto: titulo, barra e botoes sao UM objeto que
   // sobe, acompanhando o OSD (`anim`) e a abertura da tela (`entrada`, numa
@@ -7176,7 +7395,8 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
       }
       for (i = 0; i < nCaps; i++) if (caps[i] <= 0.0f || caps[i] >= 1.0f) caps[i--] = caps[--nCaps];
     }
-    plrui_barra(bx, yBarra, bw, frac, bufFrac, barraFoco, caps, nCaps, a); }
+    plrui_barra(bx, yBarra, bw, frac, bufFrac, barraFoco && !capFoco, caps, nCaps, a); }
+  desenharCapitulos(agora, bx, bw, yBarra, a, ac);
 
   // --- O TITULO: o LOGO, e o texto so na falta dele -------------------------
   // (O dono tinha pedido texto em 2026-09; o mockup aprovado em 03/10 volta ao
@@ -7184,6 +7404,9 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
   // claro, GFX_MARCA, como no detalhe.) Embaixo do logo, a linha do episodio
   // ("T1E3 · The Head", o codigo em negrito e o nome apagado) ou, num filme,
   // a meta do catalogo com pontos entre os campos.
+  // A fileira de capitulos ocupa o lugar do titulo: ele apaga enquanto ela esta aberta.
+  float acSemTitulo = ac;
+  ac *= 1.0f - capAnim;
   { float yBase = yBarra - 36.0f;
     const char *marca = (!canalSessao && c) ? artehero_logo_sessao(c) : NULL;
     GLuint logo = marca ? tex_obter_larg_qualquer(marca, 480) : 0;
@@ -7242,6 +7465,7 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
         txt_desenhar_alpha(lt, cx, yBase - (float)lt.h, ac);
       }
     } }
+  ac = acSemTitulo;
   // Depois do titulo: a miniatura fica POR CIMA dele enquanto a pessoa procura.
   seekrMiniatura(bx, bw, frac, yBarra, a);
 
