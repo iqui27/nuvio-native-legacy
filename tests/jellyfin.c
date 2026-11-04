@@ -536,12 +536,83 @@ static void testarIntegracao(void) {
   printf("integration ok\n");
 }
 
+// Restart: a Quick Connect sign-in with the fake's ~600-char token, saved by
+// one process ("qc-save") and used by a fresh one ("qc-reload").
+static void campoArquivo(const char *chave, char *dst, size_t tam) {
+  char *arq = dados_ler("jellyfin-p1.txt"), *v, *e;
+  size_t nk = strlen(chave);
+  assert(arq);
+  dst[0] = 0;
+  for (v = arq; v; v = (e = strchr(v, '\n')) ? e + 1 : NULL)
+    if (!strncmp(v, chave, nk) && v[nk] == '=') {
+      v += nk + 1;
+      e = strchr(v, '\n');
+      snprintf(dst, tam, "%.*s", e ? (int)(e - v) : (int)strlen(v), v);
+      break;
+    }
+  free(arq);
+}
+
+static void testarReinicio(const char *modo) {
+  char esperado[JF_TOKEN_MAX], tok[JF_TOKEN_MAX], dev[128], nome[700];
+  struct stat st;
+  unsigned v0;
+  int i, ni;
+  snprintf(esperado, sizeof esperado, "qctoken");
+  for (i = 0; i < 75; i++) strcat(esperado, "Ab0-_z9Y");
+  dados_caminho(nome, sizeof nome, "jellyfin-p1.txt");
+  jellyfin_carregar();
+  if (!strcmp(modo, "qc-save")) {
+    assert(jellyfin_estado(NULL, 0) == JF_EST_SEM_SERVIDOR);
+    assert(jellyfin_definir_servidor(base));
+    assert(esperarEstado(JF_EST_SERVIDOR_OK, 5000) == JF_EST_SERVIDOR_OK);
+    assert(jellyfin_entrar_quick_connect());
+    assert(esperarEstado(JF_EST_CONECTADO, 8000) == JF_EST_CONECTADO);
+  } else {
+    assert(!strcmp(modo, "qc-reload"));
+    campoArquivo("dev", dev, sizeof dev);
+    assert(jellyfin_estado(NULL, 0) == JF_EST_CONECTADO);
+    // The fake only knows the exact token: a truncated one expires here.
+    v0 = jellyfin_fileiras_versao();
+    jellyfin_recarregar_bibliotecas();
+    for (unsigned long long fim = ms() + 5000; jellyfin_fileiras_versao() == v0 && ms() < fim;) dormir(20);
+    assert(jellyfin_estado(NULL, 0) == JF_EST_CONECTADO);
+    { CatItem *itens = calloc(JF_ITENS_MAX, sizeof *itens);
+      CatFileira fils[JF_FIL_MAX];
+      assert(jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, fils, JF_FIL_MAX, &ni) >= 2 && ni > 0);
+      free(itens); }
+    campoArquivo("dev", tok, sizeof tok);
+    assert(!strcmp(tok, dev));
+    // Another profile never sees this connection.
+    perfilAtivo = 2;
+    jellyfin_perfil_trocou();
+    assert(jellyfin_estado(NULL, 0) == JF_EST_SEM_SERVIDOR);
+    perfilAtivo = 1;
+    jellyfin_perfil_trocou();
+    assert(jellyfin_estado(NULL, 0) == JF_EST_CONECTADO);
+  }
+  assert(stat(nome, &st) == 0 && (st.st_mode & 077) == 0);
+  campoArquivo("token", tok, sizeof tok);
+  assert(!strcmp(tok, esperado));
+  campoArquivo("dev", dev, sizeof dev);
+  assert(!strncmp(dev, "nuvio-", 6) && strstr(dev, "-p1"));
+  dados_caminho(nome, sizeof nome, "jellyfin-p2.txt");
+  assert(stat(nome, &st) != 0);
+  memset(tok, 0, sizeof tok);
+  printf("restart %s ok\n", modo);
+}
+
 int main(int argc, char **argv) {
-  assert(argc == 3);
+  assert(argc == 3 || argc == 4);
   snprintf(raiz, sizeof raiz, "%s", argv[1]);
   snprintf(base, sizeof base, "%s/jf", argv[1]);
   snprintf(dirDados, sizeof dirDados, "%s", argv[2]);
   setvbuf(stdout, NULL, _IOLBF, 0);
+  if (argc == 4) {
+    testarReinicio(argv[3]);
+    jellyfin_encerrar();
+    return 0;
+  }
   testarIds();
   testarUrl();
   testarVistoProg();
