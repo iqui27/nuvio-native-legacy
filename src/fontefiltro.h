@@ -39,6 +39,11 @@ const char *fontefiltro_rotulo(int categoria);
 uint64_t fontefiltro_bit(int categoria, int opcao);
 uint64_t fontefiltro_desconhecido(int categoria);
 uint64_t fontefiltro_valores(int categoria, const char *texto);
+/* Release text names an audio language outside the fixed options (Turkish).
+   Same scope as the classifier; 0 when `classificado` came from declared
+   metadata instead of this text. */
+int fontefiltro_lingua_texto(const char *filename, const char *texto,
+                             uint64_t classificado, const char *pref);
 
 int fontefiltro_config_validar(const FonteFiltroConfig *cfg);
 /* Valida e normaliza CSV, preservando saida original em caso de erro. */

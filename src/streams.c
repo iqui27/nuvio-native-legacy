@@ -4323,8 +4323,13 @@ static int temAudioPreferido(const Stream *s) {
   // classifier, which excludes subtitle-only and URL text.
   if (!pref[0]) return 1;
   if (s->audioIdiomas[0]) return audioDeclaradoEm(s, pref);
-  return s->filtroLido && (s->filtro.valores[FONTEFILTRO_LINGUAS] &
-         fontefiltro_valores(FONTEFILTRO_LINGUAS, pref)) != 0;
+  if (!s->filtroLido) return 0;
+  uint64_t m = fontefiltro_valores(FONTEFILTRO_LINGUAS, pref);
+  if (m) return (s->filtro.valores[FONTEFILTRO_LINGUAS] & m) != 0;
+  // Languages outside the fixed filter options (Turkish) read the same text.
+  char texto[sizeof s->rotulo + sizeof s->descricao + 2];
+  snprintf(texto, sizeof texto, "%s\n%s", s->rotulo, s->descricao);
+  return fontefiltro_lingua_texto(s->arquivo, texto, s->filtro.valores[FONTEFILTRO_LINGUAS], pref);
 }
 static const char *ajudaFiltroAudio(void) {
   static char ajuda[512];

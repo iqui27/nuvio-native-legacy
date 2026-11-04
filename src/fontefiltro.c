@@ -67,6 +67,8 @@ static int tokenCanal(const char *s, const char *canal) {
 static int tokenEspanhol(const char *s) {
   for (const char *p = s; *p; p++) {
     if ((p != s && isalnum((unsigned char)p[-1])) || strncasecmp(p,"es",2) || isalnum((unsigned char)p[2])) continue;
+    /* DTS-ES e codec, nao idioma. */
+    if (p-s >= 4 && !strncasecmp(p-4,"dts",3) && strchr("-. _",p[-1])) continue;
     /* es-419/es-la e Latino, nao uma segunda faixa de Espanhol. Mantem
        um codigo es independente quando o arquivo anuncia ambos. */
     if (p[2] == '-' || p[2] == '_') {
@@ -235,15 +237,26 @@ int fontefiltro_config_validar(const FonteFiltroConfig *cfg) {
 
 /* Apenas texto de metadados: URLs e legendas nao sao tags da faixa de audio.
    Copias limitadas evitam depender do tamanho dos campos de um addon. */
+static int nomeTecnico(const char *s);
 static void textoSeguro(const char *s, char *dst, size_t n) {
   size_t u = 0;
+  int legendas = 0;
   dst[0] = 0;
   if (!s) return;
   while (*s && u + 1 < n) {
     char linha[2048]; size_t k = 0;
     while (*s && *s != '\n') { if (k + 1 < sizeof linha) linha[k++] = *s; s++; }
     linha[k] = 0; if (*s) s++;
-    if (strstr(linha,"://") || token(linha,"subtitle") || token(linha,"subtitles") || token(linha,"legendas") || token(linha,"legenda") || token(linha,"subs") || token(linha,"sub")) continue;
+    /* "Subtitles:" sozinho: os valores seguem nas proximas linhas, ate
+       outro rotulo ou o nome do release. */
+    if (legendas && !strchr(linha,':') && !nomeTecnico(linha)) continue;
+    legendas = 0;
+    if (token(linha,"subtitle") || token(linha,"subtitles") || token(linha,"legendas") || token(linha,"legenda") || token(linha,"subs") || token(linha,"sub")) {
+      while (k && isspace((unsigned char)linha[k-1])) k--;
+      legendas = k && linha[k-1] == ':';
+      continue;
+    }
+    if (strstr(linha,"://")) continue;
     if (u) dst[u++] = '\n';
     size_t z = strlen(linha); if (z > n-u-1) z = n-u-1;
     memcpy(dst+u,linha,z); u += z; dst[u] = 0;
@@ -268,6 +281,16 @@ static uint64_t linguasFlags(const char *s) {
     i += 7;
   }
   return v;
+}
+
+static int tagTecnica(const char *s, const char *p) {
+  static const char *const tags[] = {"2160p","2160","1440p","1440","1080p","1080","720p","720","576p","576","480p","480","360p","360","4k","2k","uhd","fhd","remux","bluray","blu-ray","bdrip","brrip","web-dl","webdl","webrip","hdrip","hdtv","hevc","h265","h.265","x265","avc","h264","h.264","x264","av1","xvid","divx"};
+  if (p != s && isalnum((unsigned char)p[-1])) return 0;
+  for (size_t i = 0; i < sizeof tags / sizeof tags[0]; i++) {
+    size_t n = strlen(tags[i]);
+    if (!strncasecmp(p,tags[i],n) && !isalnum((unsigned char)p[n])) return 1;
+  }
+  return 0;
 }
 
 static uint64_t linguasNome(const char *s) {
@@ -300,14 +323,7 @@ static uint64_t linguasNome(const char *s) {
         if (valido) v |= marcas;
       }
     }
-    if (p == s || !isalnum((unsigned char)p[-1])) {
-      static const char *const tags[] = {"2160p","2160","1440p","1440","1080p","1080","720p","720","576p","576","480p","480","360p","360","4k","2k","uhd","fhd","remux","bluray","blu-ray","bdrip","brrip","web-dl","webdl","webrip","hdrip","hdtv","hevc","h265","h.265","x265","avc","h264","h.264","x264","av1","xvid","divx"};
-      for (size_t i = 0; i < sizeof tags / sizeof tags[0]; i++) {
-        size_t n = strlen(tags[i]);
-        if (!strncasecmp(p,tags[i],n) && !isalnum((unsigned char)p[n])) { anchor = p; break; }
-      }
-      if (anchor) break;
-    }
+    if (tagTecnica(s,p)) { anchor = p; break; }
   }
   if (anchor) v |= fontefiltro_valores(FONTEFILTRO_LINGUAS,anchor);
   return v | linguasFlags(s);
@@ -371,6 +387,60 @@ static uint64_t linguasTexto(const char *s) {
     if (nomeTecnico(p)) v |= linguasNome(p);
   }
   return v;
+}
+
+/* Palavras inteiras que sao idioma conhecido. Depois de '-' vem grupo ou
+   codec (DTS-HD, x264-FiN), nunca idioma da faixa. */
+static int linguaPalavras(const char *s, const char *pref) {
+  for (const char *p = s; *p;) {
+    while (*p && !isalnum((unsigned char)*p)) p++;
+    const char *a = p;
+    while (isalnum((unsigned char)*p)) p++;
+    size_t k = (size_t)(p-a);
+    char w[32], cod[16];
+    if (!k || k >= sizeof w || (a != s && a[-1] == '-')) continue;
+    memcpy(w,a,k); w[k] = 0;
+    ling_normalizar(w,cod,sizeof cod);
+    if (cod[0] && strcasecmp(ling_nome(cod),cod) && ling_casa(cod,pref)) return 1;
+  }
+  return 0;
+}
+static int linguaRelease(const char *s, const char *pref) {
+  for (const char *p = s; *p; p++) if (tagTecnica(s,p)) return linguaPalavras(p,pref);
+  return 0;
+}
+
+int fontefiltro_lingua_texto(const char *filename, const char *texto, uint64_t classificado, const char *pref) {
+  char nome[4096], txt[8192];
+  if (!pref || !*pref) return 0;
+  textoSeguro(filename,nome,sizeof nome); textoSeguro(texto,txt,sizeof txt);
+  if (classificado != (linguasNome(nome) | linguasTexto(txt))) return 0;
+  /* Bandeiras univocas do AIOStreams fora das opcoes fixas. */
+  static const char flags[] = "TRtrRUruSAarTHthVNviIDidILheIRfaUAukGRelLTltLVlvEEetSKskHUhuROroBGbgRSsrHRhrSIslNLnlDKdaFIfiSEsvNOnoMYmsBDbnPKpa";
+  for (int f = 0; f < 2; f++) {
+    const unsigned char *p = (const unsigned char *)(f ? txt : nome);
+    for (; *p; p++) {
+      if (p[0] != 0xF0 || p[1] != 0x9F || p[2] != 0x87 || p[3] < 0xA6 || p[3] > 0xBF ||
+          p[4] != 0xF0 || p[5] != 0x9F || p[6] != 0x87 || p[7] < 0xA6 || p[7] > 0xBF) continue;
+      for (const char *q = flags; *q; q += 4) {
+        char cod[3] = {q[2],q[3],0};
+        if (p[3]-0xA6 == q[0]-'A' && p[7]-0xA6 == q[1]-'A' && ling_casa(cod,pref)) return 1;
+      }
+      p += 7;
+    }
+  }
+  if (linguaRelease(nome,pref)) return 1;
+  for (const char *s = txt; *s;) {
+    char linha[2048]; size_t n = 0;
+    while (*s && *s != '\n') { if (n+1 < sizeof linha) linha[n++] = *s; s++; }
+    linha[n] = 0; if (*s) s++;
+    const char *p = linha; while (*p == ' ' || *p == '\t') p++;
+    static const char *const prefixos[] = {"languages:","language:","langs:","lang:","audio:","audio languages:","audio language:","idiomas:","idioma:"};
+    for (size_t i = 0; i < sizeof prefixos / sizeof prefixos[0]; i++)
+      if (!strncasecmp(p,prefixos[i],strlen(prefixos[i])) && linguaPalavras(p+strlen(prefixos[i]),pref)) return 1;
+    if (nomeTecnico(p) && linguaRelease(p,pref)) return 1;
+  }
+  return 0;
 }
 
 static void grupoNome(const char *s, char dst[80]) {
