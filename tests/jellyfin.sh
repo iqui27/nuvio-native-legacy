@@ -27,6 +27,11 @@ if [ "${SANITIZE:-0}" = thread -o "${NV_TSAN:-0}" = 1 ]; then flags+=(-fsanitize
 cc "${flags[@]}" tests/jellyfin.c src/jellyfin.c src/srvidx.c src/rede.c src/redeurl.c src/js.c src/jsw.c src/srvcache.c src/srvsetup_net.c \
   -o "$tmp/teste"
 "$tmp/teste" "$base" "$tmp/dados" > "$tmp/log" 2>&1 || { cat "$tmp/log"; exit 1; }
+# Restart: Quick Connect saves the long token, a fresh process signs in with it.
+mkdir -p "$tmp/dados-qc"
+for modo in qc-save qc-reload; do
+  "$tmp/teste" "$base" "$tmp/dados-qc" "$modo" >> "$tmp/log" 2>&1 || { cat "$tmp/log"; exit 1; }
+done
 # tests/servidores_log.sh collects every server test's log and scans it.
 if [ -n "${NV_SRV_LOG:-}" ]; then cat "$tmp/log" >> "$NV_SRV_LOG"; fi
 # Logs carry operation/status/latency only: no token, password or media path.
