@@ -2559,7 +2559,8 @@ static double credEfetivo(void) {
   CredEntrada e; int f; double s;
   memset(&e, 0, sizeof e);
   e.dur = duracaoSeg;
-  e.capitulo = video_creditos();
+  e.capitulo = capmkv_creditos_nomeado();
+  e.capituloUltimo = capmkv_creditos_ultimo(duracaoSeg);
   { double ic = intro_creditos_seg();
     if (intro_creditos_aniskip()) e.aniskip = ic; else e.introdb = ic; }
   if (c && c->imdb[0] && epT >= 0 && epE > 0) {

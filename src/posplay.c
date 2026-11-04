@@ -1,5 +1,6 @@
 #include "posplay.h"
 #include "intro.h"
+#include "capmkv.h"
 #include "proximo.h"
 #include "fontecache.h"
 #include "proximopreparo.h"
@@ -427,8 +428,11 @@ void posplay_atualizar(float dt, Uint32 agora, double posSeg, double durSeg,
   //
   // O segundo cobre o caso que antes so tinha estimativa: filme em MP4, que nao
   // tem capitulo nenhum para ler.
-  double creditosSeg = video_creditos();
+  // Capitulo que se chama creditos > fontes (IntroDB, casadas com capitulo) >
+  // "ultimo capitulo" (palpite sobre capitulos sem nome, 2.0.3).
+  double creditosSeg = capmkv_creditos_nomeado();
   if (creditosSeg <= 1.0) creditosSeg = intro_creditos_seg();
+  if (creditosSeg <= 1.0) creditosSeg = video_creditos();
   anim = anim_mola(anim, visivel ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
   // A CADA QUADRO, e nao so na abertura do painel (#190): com o cartao no ar o
   // `idx` guardado envelhecia junto com o catalogo.

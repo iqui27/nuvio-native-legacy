@@ -153,10 +153,21 @@ unsigned capmkv_geracao(void) {
 }
 
 double capmkv_creditos(double dur) {
-  double a, b;
-  pthread_mutex_lock(&trava); a = nomeado; b = ultimo; pthread_mutex_unlock(&trava);
-  if (a > 1.0) return a;
-  if (b > 1.0 && dur > 1.0 && b > dur * 0.75) return b;
+  double a = capmkv_creditos_nomeado();
+  return a > 1.0 ? a : capmkv_creditos_ultimo(dur);
+}
+double capmkv_creditos_nomeado(void) {
+  double a;
+  pthread_mutex_lock(&trava); a = nomeado; pthread_mutex_unlock(&trava);
+  return a > 1.0 ? a : 0.0;
+}
+// "Ultimo capitulo = creditos" (2.0.3): so depois de 75% e deixando ao menos
+// CAPMKV_ULTIMO_FOLGA_S. Um toco no fim do arquivo (Ch07 1420 de 1421 s, log da
+// C9 em 04/11) nao e creditos: o cartao ficava com 1 s.
+double capmkv_creditos_ultimo(double dur) {
+  double b;
+  pthread_mutex_lock(&trava); b = ultimo; pthread_mutex_unlock(&trava);
+  if (b > 1.0 && dur > 1.0 && b > dur * 0.75 && dur - b >= CAPMKV_ULTIMO_FOLGA_S) return b;
   return 0.0;
 }
 

@@ -28,6 +28,12 @@ void capmkv_zerar(void);
 // 0 = ainda desconhecida): o capitulo NOMEADO vale sempre; o ultimo capitulo so
 // vale se comecar no ultimo quarto (mesma regra da LG).
 double capmkv_creditos(double dur);
+// As duas metades de capmkv_creditos, para quem ordena fontes (player.c): o
+// capitulo que SE CHAMA creditos (0 = nao ha), e o "ultimo capitulo depois de
+// 75%" com folga minima ate o fim (0 = nao vale).
+#define CAPMKV_ULTIMO_FOLGA_S 10.0
+double capmkv_creditos_nomeado(void);
+double capmkv_creditos_ultimo(double dur);
 // Entrega capitulos ja lidos (LG/.wgt): guarda para capmkv_creditos e alimenta
 // o modulo de intro (abertura/creditos/previa).
 void capmkv_aplicar(const MkvCap *caps, int n);

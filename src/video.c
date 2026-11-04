@@ -1985,7 +1985,8 @@ double video_creditos(void) {
   dur = video_duracao();
   // O ultimo capitulo so vale como creditos se comecar no ultimo quarto: em
   // disco com um capitulo a cada cinco minutos, o ultimo e uma cena qualquer.
-  if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75)
+  if (creditosUltimo > 1.0 && dur > 1.0 && creditosUltimo > dur * 0.75 &&
+      dur - creditosUltimo >= CAPMKV_ULTIMO_FOLGA_S)   // toco no fim nao e creditos
     return creditosUltimo;
   return 0.0;
 }

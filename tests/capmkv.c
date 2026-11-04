@@ -191,7 +191,12 @@ int main(void) {
     capmkv_aplicar(sn, 3);
     ok(capmkv_creditos(0) == 0.0, "ultimo capitulo sem duracao: nao vale");
     ok(capmkv_creditos(1400) > 1299 && capmkv_creditos(1400) < 1301, "ultimo capitulo no ultimo quarto vale");
-    ok(capmkv_creditos(2400) == 0.0, "ultimo capitulo antes dos 75% nao vale"); }
+    ok(capmkv_creditos(2400) == 0.0, "ultimo capitulo antes dos 75% nao vale");
+    // Toco no fim (log da C9 04/11: Ch07 em 1420 de 1421 s): nao e creditos.
+    ok(capmkv_creditos(1305) == 0.0 && capmkv_creditos_ultimo(1305) == 0.0,
+       "ultimo capitulo a menos de 10 s do fim: nao vale");
+    ok(capmkv_creditos_nomeado() == 0.0 && capmkv_creditos_ultimo(1400) > 1299,
+       "nomeado e ultimo separados (o player ordena as fontes)"); }
   (void)filme; (void)semNome;
 
   puts("capmkv: fio lateral e cache por URL");
