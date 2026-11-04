@@ -48,8 +48,14 @@ check "seg0 is about 2 s ($(dur "$work/t1/seg0.ts") s)" "awk 'BEGIN{d=$(dur "$wo
 check "seg1 is about 2 s ($(dur "$work/t1/seg1.ts") s)" "awk 'BEGIN{d=$(dur "$work/t1/seg1.ts"); exit !(d > 1.8 && d < 2.3)}'"
 check "the session line names the segment length" "grep -q 'segmentos de 2 s' '$work/t1.log'"
 check "one memory line at the end" "[ \$(grep -c '^\[dts-tpk\] mem: ' '$work/t1.log') = 1 ]"
-check "memory line has RSS, MemAvailable and the rings (auto: 32 MiB here)" \
-  "grep -qE '^\[dts-tpk\] mem: sessao [0-9]+, .*RAM [0-9]+ MB; app RSS peak [1-9][0-9]* MB .*MemAvailable low [0-9]+ MB .*reader rings peak [12] = (32|64) MiB' '$work/t1.log'"
+if [ "$(uname -s)" = Darwin ]; then
+  echo "skip RSS and MemAvailable checks: /proc metrics unavailable on macOS"
+  check "memory line has the rings (auto: 32 MiB here)" \
+    "grep -qE '^\[dts-tpk\] mem: sessao [0-9]+, .*reader rings peak [12] = (32|64) MiB' '$work/t1.log'"
+else
+  check "memory line has RSS, MemAvailable and the rings (auto: 32 MiB here)" \
+    "grep -qE '^\[dts-tpk\] mem: sessao [0-9]+, .*RAM [0-9]+ MB; app RSS peak [1-9][0-9]* MB .*MemAvailable low [0-9]+ MB .*reader rings peak [12] = (32|64) MiB' '$work/t1.log'"
+fi
 check "nothing left of the tuning test" "! grep -qiE 'tuning|seg0 cut|dts-ajuste' '$work/t1.log'"
 
 # 2. Stop/back during the probe hangs up on the source at once (blocker 1).
@@ -65,8 +71,12 @@ check "cancel: no 'did not open' line for a cancelled probe" "! grep -q 'a fonte
 "$work/test" "$port" fila "$work" > "$work/t4.log" 2>&1 || fail=1
 grep -E '^(ok|FAIL)' "$work/t4.log"
 check "queue: the error names the audio queue cap" "grep -q 'Audio queue over 60 s' '$work/t4.log'"
-check "queue: the converter stayed under 100 MB RSS ($(sed -n 's/.*app RSS peak \([0-9]*\) MB.*/\1/p' "$work/t4.log") MB)" \
-  "[ \"\$(sed -n 's/.*app RSS peak \([0-9]*\) MB.*/\1/p' '$work/t4.log')\" -lt 100 ]"
+if [ "$(uname -s)" = Darwin ]; then
+  echo "skip queue RSS limit: /proc metrics unavailable on macOS"
+else
+  check "queue: the converter stayed under 100 MB RSS ($(sed -n 's/.*app RSS peak \([0-9]*\) MB.*/\1/p' "$work/t4.log") MB)" \
+    "[ \"\$(sed -n 's/.*app RSS peak \([0-9]*\) MB.*/\1/p' '$work/t4.log')\" -lt 100 ]"
+fi
 
 # 4. Listeners: HLS on 127.0.0.1 only; no thread before the token (blocker 3).
 "$work/test" "$port" escuta "$work" > "$work/t5.log" 2>&1 || fail=1
