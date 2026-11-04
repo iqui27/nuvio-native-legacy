@@ -1,6 +1,21 @@
 {
  "atualizado_em": "2026-10-25T21:56:42-03:00",
  "base": "6330e8be0",
+ "validacao_pr_611_legendas_2026_11_04": {
+  "implementacao": "b5432e54905b70c228c8757cddbe58f758b5c413",
+  "merge_integracao": "67505e3abffa70225367f6db15fca2ccca35d03a",
+  "revisao": "Independente OK, sem P0/P1; teste alvo FAIL para PASS.",
+  "validacoes": "Pós-merge no host: source_exclusion_languages, source_audio_language, source_audio_diag, varredura-i18n e build-local rc 0; dados descartáveis, NUVIO_PROPERTIES=/dev/null.",
+  "limites": "Sem aceitação em TV. P2: códigos de legenda ts/dv/cam/dd podem virar falsas tags técnicas; linha semelhante a release pode gerar grupo falso; seção separada pode perder tag técnica final.",
+  "evidencia": "docs/issues/pr611-subtitle-validacao-2026-11-04.md"
+ },
+ "validacao_pr_761_arte_2026_11_04": {
+  "merge_pr761": "6b886e1e1262f36aacdd126892d79624cc6de47c",
+  "merge_arte": "86998755a9db7886a419d674397da0fc54af31f8",
+  "validacoes": "Oito testes de módulos e build local C rc 0; paridade C/Rust 25512 casos. Varredura i18n inicialmente rc 1; correção revisada integrada em d5b757f4d, varredura e tests/i18n.sh passaram após merge.",
+  "limites": "Sem teste em TV ou build de aplicação Rust; revisão de conflitos sem P0/P1, P2 e limites documentados. P2 na varredura: exceções de texto exato são globais.",
+  "evidencia": "docs/issues/pr761-artwork-validacao-2026-11-04.md"
+ },
  "validacao_pr_611_2026_11_04": {
   "status": "integrada_aguardando_validacao_especifica",
   "branch": "refs/heads/agente/pr611-source-language",
