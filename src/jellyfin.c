@@ -1267,7 +1267,7 @@ typedef struct JfInst {
   char detalhe[160];
   int qcPermitido;
   CatItem *snapItens;
-  CatFileira snapFils[JF_FIL_MAX];
+  CatFileira snapFils[JF_FIL_MAX + 1];   // libraries + Next Up
   int nSnapFils, nSnapItens, hlsVisto;
   unsigned snapVersao;
   char fontesAlvo[JFID_MAX];
@@ -2164,7 +2164,7 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   RedeJob *j = abrirTarefa(I, t, &c);
   JfBiblioteca libs[JF_FIL_MAX];
   CatItem *itens;
-  CatFileira fils[JF_FIL_MAX];
+  CatFileira fils[JF_FIL_MAX + 1];       // libraries + Next Up
   int nl, nf = 0, ni = 0, e = JF_OK, i, por;
   if (!j) return;
   itens = calloc((size_t)JF_ITENS_MAX, sizeof *itens);
@@ -2201,7 +2201,7 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   // NextUp episodes need the series index to become catalogue identities.
   if (e == JF_OK) indexar(I, t, j, &c);
   // Optional NextUp: an unsupported endpoint must not hide libraries.
-  if (e == JF_OK && nf < JF_FIL_MAX && ni < JF_ITENS_MAX) {
+  if (e == JF_OK && ni < JF_ITENS_MAX) {
     int room = JF_ITENS_MAX - ni;
     int n = jfi_atividade(I, "nextup", itens + ni, room < JF_POR_FILEIRA ? room : JF_POR_FILEIRA);
     if (n > 0) {

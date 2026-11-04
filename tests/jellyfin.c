@@ -502,6 +502,27 @@ static void testarIntegracao(void) {
     ix = controle("index");
     assert(strstr(ix, "\"episodes\": 1"));
     free(ix); }
+  // 26 eligible views (Movies, Shows, 24 catalogs of every supported type):
+  // the first JF_FIL_MAX are kept, each row gets fewer items, and the item
+  // budget reserved for Next Up still brings its row.
+  { CatFileira muitas[JF_FIL_MAX + 4]; int k, por = (JF_ITENS_MAX - JF_POR_FILEIRA) / JF_FIL_MAX;
+    free(controle("catalogs?n=24"));
+    jellyfin_recarregar_bibliotecas();
+    fim = ms() + 5000;   // an older refresh may land first: wait for the new views
+    while ((n = jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, muitas, JF_FIL_MAX + 4, &ni)) < JF_FIL_MAX &&
+           ms() < fim) dormir(20);
+    assert(n == JF_FIL_MAX + 1 && ni <= JF_ITENS_MAX);
+    assert(strstr(muitas[0].titulo, "Movies") && muitas[0].n == por && strstr(muitas[1].titulo, "Shows"));
+    for (k = 2; k < JF_FIL_MAX; k++) assert(muitas[k].n == por);
+    assert(!strcmp(muitas[2].tipo, "movie") && !strcmp(muitas[3].tipo, "series"));   // movies, tvshows
+    assert(!strcmp(muitas[4].tipo, "movie") && !strcmp(muitas[5].tipo, "movie"));    // boxsets, untyped
+    assert(strstr(muitas[JF_FIL_MAX - 1].titulo, "Catalog 13"));
+    assert(strstr(muitas[JF_FIL_MAX].chave, "_nextup") && muitas[JF_FIL_MAX].n == 1);
+    free(controle("catalogs?n=0"));
+    jellyfin_recarregar_bibliotecas();
+    fim = ms() + 5000;
+    while (jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, muitas, JF_FIL_MAX + 4, &ni) != 3 && ms() < fim) dormir(20);
+    assert(jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, muitas, JF_FIL_MAX + 4, &ni) == 3); }
   free(controle("revoke"));
   jellyfin_recarregar_bibliotecas();
   assert(esperarEstado(JF_EST_EXPIROU, 5000) == JF_EST_EXPIROU);

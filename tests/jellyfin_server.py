@@ -43,7 +43,16 @@ state = {
     "gone": set(),          # movie numbers deleted on the server
     "index_calls": [],      # (StartIndex, Limit, MinDateLastSaved) of index requests
     "episode_index": 0,
+    "catalogs": 0,          # > 0: that many populated catalog views (/control/catalogs)
 }
+
+
+def catalog_views():
+    n = state["catalogs"]
+    if not n:
+        return CATALOG_VIEWS
+    return [{"Name": "Catalog %d" % i, "Id": "%032x" % (0xca7a1000 + i),
+             "CollectionType": ["movies", "tvshows", "boxsets", ""][i % 4]} for i in range(n)]
 
 
 def ver_tuple():
@@ -222,8 +231,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, {"Items": [
                 {"Name": "Movies", "Id": LIB_MOVIES, "CollectionType": "movies"},
                 {"Name": "Shows", "Id": LIB_SHOWS, "CollectionType": "tvshows"},
-                {"Name": "Music", "Id": LIB_MUSIC, "CollectionType": "music"}] + CATALOG_VIEWS,
-                "TotalRecordCount": 3 + len(CATALOG_VIEWS)})
+                {"Name": "Music", "Id": LIB_MUSIC, "CollectionType": "music"}] + catalog_views(),
+                "TotalRecordCount": 3 + len(catalog_views())})
         if p == "/Playlists/00000000000000000000000000005002/Items":
             items = [dict(Id=episode_id(1, 2), Type="Episode", SeriesId=SERIES,
                           SeriesName="Show", Name="Second", ParentIndexNumber=1, IndexNumber=2),
@@ -254,6 +263,8 @@ class Handler(BaseHTTPRequestHandler):
                 allitems = [movie(7)]
             elif parent == LIB_MOVIES:
                 allitems = movies
+            elif state["catalogs"] and parent in [v["Id"] for v in catalog_views()]:
+                allitems = movies[:10]
             elif parent == LIB_SHOWS:
                 allitems = shows + [{"Name": "Ignored episode", "Id": episode_id(1, 1), "Type": "Episode"}]
             elif not parent and q.get("Recursive", [""])[0] == "true":
@@ -388,6 +399,9 @@ class Handler(BaseHTTPRequestHandler):
                 body = b"{}"
             elif p == "/control/version":
                 state["version"] = q.get("v", ["10.10.3"])[0]
+                body = b"{}"
+            elif p == "/control/catalogs":
+                state["catalogs"] = int(q.get("n", ["0"])[0])
                 body = b"{}"
             elif p == "/control/slow":
                 state["slow"] = float(q.get("s", ["4"])[0])
