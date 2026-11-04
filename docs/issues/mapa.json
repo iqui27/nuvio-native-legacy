@@ -13287,6 +13287,15 @@
   {
    "data": "2026-11-04",
    "quem": "Claude Code (build e verificação)",
+   "o_que": "Builds webOS IPK e Samsung WGT após correção de compatibilidade das legendas PGS salvas.",
+   "issues": [665, 698],
+   "ref": "integracao/2.1@86cb9c791f12fcf2f9b1d240d0ef26e8e48e4883",
+   "resultado": "Ambas builds rc=0 com avisos; estrutura Debian do IPK e integridade ZIP do WGT verificadas. Sem instalação ou validação em TV; WGT sem assinatura conforme distribuição normal.",
+   "evidencia": "IPK SHA256 1146a632efb9e9a71f76c1ed97757f1b6ed35f079aa86f8efa5b22e170bb7d9e (75943178 bytes); WGT SHA256 4c536890850c15668d9c8ec2bed3d5a05b422f86a6be65081f2fc706eecaceed (46340206 bytes); /Volumes/ExternalSSD/tmp/rev/build-lg-86cb9c7.log; /Volumes/ExternalSSD/tmp/rev/build-wgt-86cb9c7.log"
+  },
+  {
+   "data": "2026-11-04",
+   "quem": "Claude Code (build e verificação)",
    "o_que": "Builds webOS IPK e Samsung WGT da integração após correções de parser, PGS e progresso.",
    "issues": [
     665,
