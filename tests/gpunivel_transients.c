@@ -70,6 +70,84 @@ static void resolution_refresh(void) {
   assert(a.estado == RES_AUTO_4K);
 }
 
+// One report as src/main.c feeds it: read the refresh, then sample.
+static int step(ResAuto *a, int hz, double fps, double p90) {
+  int changed = res_auto_hz(a, hz);
+  return res_auto_amostra(a, fps, p90, !changed);
+}
+
+// A refresh change discards old samples and re-evaluates under the new limits.
+static void resolution_refresh_change(void) {
+  ResAuto a; ResVigia v;
+  int i, r, seen;
+  assert(res_hz(47) == 60 && res_hz(48) == 48 && res_hz(59) == 59 && res_hz(60) == 60);
+  // No GPU clock, 60 -> 50 Hz: a healthy 50 Hz panel passes, on two new windows.
+  reset_auto(&a, 60);
+  assert(step(&a, 60, 59, 0) == RES_AUTO_NADA && a.validas == 1);
+  assert(step(&a, 50, 49.9, 0) == RES_AUTO_NADA && a.validas == 0); // Straddled.
+  assert(step(&a, 50, 49.9, 0) == RES_AUTO_NADA);
+  assert(step(&a, 50, 49.9, 0) == RES_AUTO_APROVOU);
+  // No GPU clock, 50 -> 60 Hz: the same FPS now fails.
+  reset_auto(&a, 50);
+  assert(step(&a, 50, 49.9, 0) == RES_AUTO_NADA);
+  assert(step(&a, 60, 49.9, 0) == RES_AUTO_NADA);
+  assert(step(&a, 60, 49.9, 0) == RES_AUTO_NADA);
+  assert(step(&a, 60, 49.9, 0) == RES_AUTO_REBAIXOU);
+  // The straddled window itself cannot condemn the TV.
+  reset_auto(&a, 60);
+  assert(step(&a, 50, 5, 0) == RES_AUTO_NADA && a.estado == RES_AUTO_SONDAR);
+  assert(step(&a, 50, 49.9, 0) == RES_AUTO_NADA);
+  assert(step(&a, 50, 49.9, 0) == RES_AUTO_APROVOU);
+  // GPU clock, 50 -> 60 Hz: a p90 fine at 50 Hz does not count against 60 Hz...
+  reset_auto(&a, 50);
+  assert(step(&a, 50, 49.9, 14) == RES_AUTO_NADA && a.pior == 14);
+  assert(step(&a, 60, 59, 10) == RES_AUTO_NADA && a.pior == 0);
+  assert(step(&a, 60, 59, 10) == RES_AUTO_NADA);
+  assert(step(&a, 60, 59, 10) == RES_AUTO_APROVOU && a.pior == 10);
+  // ...and the new limit applies to what comes after.
+  reset_auto(&a, 50);
+  assert(step(&a, 50, 49.9, 14) == RES_AUTO_NADA);
+  assert(step(&a, 60, 59, 14) == RES_AUTO_NADA);
+  assert(step(&a, 60, 59, 14) == RES_AUTO_NADA);
+  assert(step(&a, 60, 59, 14) == RES_AUTO_REBAIXOU);
+  // A timer that disappears with the mode: FPS decides under the new refresh.
+  reset_auto(&a, 60);
+  assert(step(&a, 60, 59, 10) == RES_AUTO_NADA);
+  assert(step(&a, 50, 49.9, 0) == RES_AUTO_NADA && a.pior == 0);
+  assert(step(&a, 50, 49.9, 0) == RES_AUTO_NADA);
+  assert(step(&a, 50, 49.9, 0) == RES_AUTO_APROVOU);
+  // Refresh unreadable for one report: both edges discard, then it resumes.
+  reset_auto(&a, 50);
+  assert(step(&a, 50, 49.9, 0) == RES_AUTO_NADA);
+  assert(step(&a, 0, 49.9, 0) == RES_AUTO_NADA);
+  assert(step(&a, 50, 49.9, 0) == RES_AUTO_NADA && a.validas == 0);
+  assert(step(&a, 50, 49.9, 0) == RES_AUTO_NADA);
+  assert(step(&a, 50, 49.9, 0) == RES_AUTO_APROVOU);
+  // Flapping refresh: bounded, no verdict either way.
+  reset_auto(&a, 60); seen = 0;
+  for (i = 1; i <= RES_AUTO_SUJAS; i++) {
+    r = step(&a, i % 2 ? 50 : 60, 59, 0);
+    if (i < RES_AUTO_SUJAS) assert(r == RES_AUTO_NADA);
+    else seen = r;
+  }
+  assert(seen == RES_AUTO_INCONCLUSIVA && a.estado == RES_AUTO_1080);
+  // Approved 4K, no GPU clock: the 60 Hz streak does not survive 50 Hz...
+  reset_auto(&a, 60); a.estado = RES_AUTO_4K;
+  assert(step(&a, 60, 39, 0) == RES_AUTO_NADA && step(&a, 60, 39, 0) == RES_AUTO_NADA);
+  assert(step(&a, 50, 39, 0) == RES_AUTO_NADA && a.ruins == 0);
+  for (i = 0; i < 9; i++) assert(step(&a, 50, 39, 0) == RES_AUTO_NADA);
+  assert(a.estado == RES_AUTO_4K);
+  // ...and 60 Hz limits apply, from zero, after going back.
+  assert(step(&a, 60, 39, 0) == RES_AUTO_NADA);
+  assert(step(&a, 60, 39, 0) == RES_AUTO_NADA && step(&a, 60, 39, 0) == RES_AUTO_NADA);
+  assert(step(&a, 60, 39, 0) == RES_AUTO_REBAIXOU);
+  // Manual watch: same rule, no GPU clock.
+  memset(&v, 0, sizeof v); v.hz = 60;
+  for (i = 0; i < 3; i++) assert(!res_vigia_hz(&v, 60) && !res_vigia_amostra(&v, 39, 0, 1));
+  assert(res_vigia_hz(&v, 50) && v.hz == 50 && v.ruins == 0);
+  for (i = 0; i < 9; i++) assert(!res_vigia_amostra(&v, 39, 0, 1));
+}
+
 // The resolution probe and the ladder judge the same window.
 static void shared_eligibility(void) {
   double fps;
@@ -138,6 +216,7 @@ static void bounded_persistence(void) {
 }
 int main(void) {
   resolution_refresh();
+  resolution_refresh_change();
   shared_eligibility();
   serialized_trials();
   bounded_persistence();

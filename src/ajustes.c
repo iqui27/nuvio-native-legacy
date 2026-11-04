@@ -3018,8 +3018,8 @@ static int perfilSeguro;
 #else
 #define SEGURO perfilSeguro
 #endif
-static int saidaLimitada;
-void ajustes_ui_saida(int w, int h) { saidaLimitada = w > 0 && h > 0 && (w < 3840 || h < 2160); }
+static int saidaLimitada, saidaH;
+void ajustes_ui_saida(int w, int h) { saidaLimitada = w > 0 && h > 0 && (w < 3840 || h < 2160); saidaH = h; }
 int ajustes_ampliar_app(void) {
   // Automatic keeps the existing panel check and GPU gate in gpun_ampliar_app.
   return painel4k() && (valor[AJ_AMPLIAR_UI] == 1 || valor[AJ_AMPLIAR_UI] == 2) && !SEGURO;
@@ -8523,6 +8523,15 @@ static const char *ajudaOpcao(int op) {
     snprintf(b, sizeof b, "%s\n%s", i18n(base), logrede_url());
     return b;
   }
+  // Automatic does not say what it chose: show what this session really draws.
+  if (op == AJ_RESOLUCAO && ajustes_res_auto() && saidaH > 0 && !ajTelaCheia()) {
+    char res[16], atual[64];
+    if (!saidaLimitada && !gpun_alvo_1080_ativo()) snprintf(res, sizeof res, "4K");
+    else snprintf(res, sizeof res, "%dp", saidaH < 1080 ? saidaH : 1080);
+    snprintf(atual, sizeof atual, i18n("Atual: %s"), res);
+    snprintf(b, sizeof b, "%s\n%s", i18n(base), atual);
+    return b;
+  }
   if (op == AJ_AMPLIAR_UI && saidaLimitada && ampliarUiVale()) {
     snprintf(b, sizeof b, "%s\n%s",
       i18n("A saída da interface nesta TV está limitada a 1080p. O app amplia até esse limite; a TV completa até 4K."), i18n(base));
@@ -8706,7 +8715,6 @@ static const char *beneficioProprio(int op) {
     case AJ_HERO_ARTE_DIF: return "O destaque pode usar outra arte que não a do cartaz.";
     case AJ_HERO_TRAILER: return "Com o foco parado no destaque, o trailer toca no lugar da arte.";
     case AJ_FOCO_TRAILER: return "Com o foco parado num cartaz, o trailer toca no destaque.";
-    case AJ_RESOLUCAO: return "Automática começa em 1080p e só usa 4K se a TV aguentar.";
     case AJ_PERFIL_PESQ: return "Deixa amigos acharem você pela busca.";
     case AJ_HIST_CONTA: return "O que você assiste neste perfil vai para a conta Nuvio.";
     case AJ_SOCIAL: return "Amigos, a atividade deles e recomendações.";

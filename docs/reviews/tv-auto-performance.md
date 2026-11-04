@@ -50,15 +50,17 @@ Manual **Full / Light / Minimal** and forced glass/frost/animation choices skip 
 
 Automatic probe: two clean windows with GPU p90 below the pass limit, or FPS at or above it without a GPU clock. One window beyond the bad limit fails at once. The verdict is saved per app version in `resolucao-auto.txt`. An approved 4K demotes after 3 bad reports in a row. A probe with **20** visible-interface reports and no clean window drops to 1080p for the session and saves nothing, so a TV whose frames always look CPU-bound does not stay on the expensive surface.
 
-Limits follow the panel: 50–59 Hz scale; unknown, faster and sub-48 Hz modes use the 60 Hz row, so 4K30 stays rejected in favor of the 1080p the same TV runs faster.
+Limits follow the panel: 48–59 Hz scale with the refresh; unknown, faster and sub-48 Hz modes use the 60 Hz row, so 4K30 stays rejected in favor of the 1080p the same TV runs faster. The refresh is read on every report. When it changes, the probe's windows and worst p90 or the bad-report streak (approved 4K, manual watch) are discarded, along with the report that straddled the change, and evaluation restarts under the new limits. That report spends the probe's 20-report budget, so a flapping rate ends in 1080p for the session with nothing saved.
 
-| Limit | 60 Hz | 50 Hz |
+| Limit | 60 Hz | 50 Hz (example) |
 |-------|-------|-------|
 | Auto pass: GPU p90 under / FPS at least | 12 ms / 55 | 14.4 ms / 45 |
 | Auto bad: GPU p90 over / FPS under | 25 ms / 40 | 30 ms / 33.3 |
 | Manual watch bad, 4 reports: GPU median over / FPS under | 30 ms / 40 | 36 ms / 33.3 |
 
 The manual watch counts GPU-clock windows on any interface screen; bare FPS needs a clean window.
+
+On Automatic, Settings help ends with what the session really draws (`Atual: 4K`, `Atual: 1080p`, including after a mid-session fallback).
 
 Falling back mid-session (`gpun_alvo_1080`) draws into a 1920x1080 target, re-keys `gpu-nivel.txt` and measures effects again from full quality.
 

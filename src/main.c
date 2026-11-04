@@ -2710,9 +2710,11 @@ int main(int argc, char **argv) {
             int interfaceVisivel = SDL_GetTicks() > 8000u && !abertura_ativa() &&
                                    !player_aberto() && !player_mini_ativo();
             double p90 = gN > 0 ? gP90 : 0.0;
+            int hzMudou = res_auto_hz(&ra, telaHz());
+            if (hzMudou) printf("[4k] automatico: tela em %d Hz, medidas anteriores descartadas\n", ra.hz);
             // One trial at a time: an effects trial's windows judge that trial.
             int r = interfaceVisivel && !gpun_em_teste()
-                    ? res_auto_amostra(&ra, fpsJan, p90, janelaLimpa) : RES_AUTO_NADA;
+                    ? res_auto_amostra(&ra, fpsJan, p90, janelaLimpa && !hzMudou) : RES_AUTO_NADA;
             if (r == RES_AUTO_APROVOU) {
               printf("[4k] automatico: 4K (gpu p90=%.1f ms) fps=%.1f\n", ra.pior, fpsJan);
               dados_gravar(RES_ARQ_AUTO, "4k " NV_VERSAO "\n");
@@ -2734,11 +2736,11 @@ int main(int argc, char **argv) {
         // Only the interface counts: no player, no opening, 10 s of warm-up.
         if (pediu4k && janelaTv && dw > (int)NV_TELA_W && !gpun_alvo_1080_ativo()) {
           static ResVigia vigia4k;
+          int hzMudou = res_vigia_hz(&vigia4k, telaHz());
           // The GPU clock is evidence on any screen; bare FPS needs a clean window.
-          int valida = SDL_GetTicks() > 10000u && !abertura_ativa() &&
+          int valida = !hzMudou && SDL_GetTicks() > 10000u && !abertura_ativa() &&
                        !player_aberto() && !player_mini_ativo() &&
                        !gpun_em_teste() && (gN > 0 || janelaLimpa);
-          vigia4k.hz = telaHz();
           if (res_vigia_amostra(&vigia4k, fpsJan, gN > 0 ? gMed : 0.0, valida)) {
             printf("[4k] recuo: gpu=%.1fms fps=%.1f em %d relatorios seguidos -> 1080p nesta "
                    "sessao e nas proximas\n", gN > 0 ? gMed : 0.0, fpsJan, RES_4K_SEGUIDAS);

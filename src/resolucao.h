@@ -17,7 +17,9 @@
 //     would accept count (gpun_janela_elegivel), the ladder waits for the probe
 //     and the probe skips ladder trials. No clean window for RES_AUTO_SUJAS
 //     reports: 1080p for this session, nothing saved, probe again next launch.
-//   - All limits below are written for 60 Hz and scale at 50-59 Hz (res_hz).
+//   - All limits below are written for 60 Hz and scale at 48-59 Hz (res_hz). A
+//     refresh change discards what was measured under the old rate (res_auto_hz,
+//     res_vigia_hz).
 //   - 4K by choice: if the GPU cannot keep up (gpu-tempo median > 30 ms, or
 //     FPS < 40 in a clean window where the GPU clock is not available) for a
 //     sustained stretch, the session falls back to 1080p (internal 1920x1080
@@ -61,10 +63,18 @@ static inline int res_migrar(int antigo) {
 typedef struct { int ruins; int recuou; int hz; } ResVigia;
 
 // The millisecond and FPS limits here are written for 60 Hz and scale with the
-// panel refresh (`hz`, SDL's integer rate). 50-59 Hz only: 0 (unknown), faster
+// panel refresh (`hz`, SDL's integer rate). 48-59 Hz only: 0 (unknown), faster
 // panels and 24/30 Hz modes keep the 60 Hz rule, so 4K30 stays rejected in favor
 // of the 1080p the same old TV runs at 60.
 static inline double res_hz(int hz) { return hz >= 48 && hz < 60 ? hz : 60.0; }
+
+// The panel refresh changed: the streak was judged under the old limits. Returns
+// 1 when it did, so the caller also invalidates this window, which straddled it.
+static inline int res_vigia_hz(ResVigia *v, int hz) {
+  if (!v || v->hz == hz) return 0;
+  v->hz = hz; v->ruins = 0;
+  return 1;
+}
 
 // Returns 1 exactly once: on the sample that decides the fallback. A good
 // sample resets the streak (a scroll burst is not "sustained"); an invalid one
@@ -121,6 +131,15 @@ static inline int res_auto_ler(const char *txt, const char *versao) {
 
 typedef struct { int estado; int validas; int ruins; double pior; int hz; int sujas; } ResAuto;
 enum { RES_AUTO_NADA = 0, RES_AUTO_APROVOU = 1, RES_AUTO_REBAIXOU = 2, RES_AUTO_INCONCLUSIVA = 3 };
+
+// Same as res_vigia_hz for the probe and the approved-4K streak. `sujas` stays:
+// it bounds the wait, and invalidating the window spends it, so a flapping rate
+// ends the probe (RES_AUTO_INCONCLUSIVA) instead of holding it forever.
+static inline int res_auto_hz(ResAuto *a, int hz) {
+  if (!a || a->hz == hz) return 0;
+  a->hz = hz; a->validas = a->ruins = 0; a->pior = 0.0;
+  return 1;
+}
 
 // One sample per report, with the window's GPU p90 (`p90` <= 0: no GPU clock,
 // FPS decides: >= refresh - 5 passes the probe, < 2/3 of refresh is bad). Limits
