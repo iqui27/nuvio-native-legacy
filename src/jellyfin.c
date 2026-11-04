@@ -310,7 +310,9 @@ int jf_qc_conferir(const JfConta *c, RedeJob *job, const char *segredo) {
 // the buffer: it holds the access token.
 int jf_ler_autenticacao(JfConta *c, char *corpo, size_t n) {
   const char *ui, *uf;
-  char tok[JF_TOKEN_MAX + 1] = "", uid[64] = "", nome[96] = "", limpo[40];
+  // Leave room for a complete UTF-8 character beyond the accepted limit;
+  // the JSON decoder may otherwise discard a partially fitting escape.
+  char tok[JF_TOKEN_MAX + 4] = "", uid[64] = "", nome[96] = "", limpo[40];
   txtRaiz(corpo, corpo + n, "AccessToken", tok, sizeof tok);
   if (blocoRaiz(corpo, corpo + n, "User", &ui, &uf)) {
     txtRaiz(ui, uf, "Id", uid, sizeof uid);
