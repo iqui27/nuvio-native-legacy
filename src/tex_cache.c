@@ -4381,7 +4381,8 @@ float tex_aspecto(const char *caminho) {
 }
 
 // Decoded size of a cache texture by GL name, for the opt-in artwork draw
-// probe (arte_medida.h). Only called on a probe miss, never per frame.
+// probe (arte_medida.h). Only on a probe dedup miss, at most ARTE_MEDIDA_BUSCAS
+// times per process; names that fail are not looked up again.
 int tex_dims_gl(unsigned t, int *w, int *h) {
   int ok = 0;
   SDL_LockMutex(mtx);
