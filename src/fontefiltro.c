@@ -270,8 +270,10 @@ static void textoSeguro(const char *s, char *dst, size_t n, int linguas) {
         if (sub) break;
         corte = j; ini = j + sep; j += sep - 1;
       }
-      if (!corte) continue;
-      linha[corte] = 0;
+      /* Sem secao antes da legenda, "Multi Subs 1080p" ainda traz tags
+         tecnicas; so os idiomas descartam a linha inteira. */
+      if (corte) linha[corte] = 0;
+      else if (linguas) continue;
     }
     if (strstr(linha,"://")) continue;
     if (u) dst[u++] = '\n';
