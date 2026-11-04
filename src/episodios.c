@@ -424,6 +424,20 @@ static int aplicarVisto(int modo, int visto) {
   }
   if (n < 1) return 0;
   mudou = vistoep_aplicar(ci->imdb, lote, n, visto, envio, &ja);
+  // #698: marked watched ends the resume, even if the map already said watched.
+  // Complete the row like the player does: deleting it lets an old cloud row return.
+  if (visto) {
+    int fechou = 0;
+    for (int i = 0; i < n; i++) {
+      ProgRegistro pr;
+      char chave[192];
+      prog_chave(chave, sizeof chave, ci->imdb, lote[i].temporada, lote[i].episodio);
+      if (prog_por_chave(chave, &pr) && pr.posSeg < pr.durSeg &&
+          prog_gravar_local(ci->imdb, lote[i].temporada, lote[i].episodio,
+                            pr.durSeg, pr.durSeg, pr.tocou)) fechou = 1;
+    }
+    if (fechou) { sync_sujar_progresso(); desc_refazer_continuar(); }
+  }
   if (visto && rewatch_ativa(ci->imdb)) {
     memcpy(envio,lote,sizeof lote[0]*(size_t)n);
     mudou=n;
