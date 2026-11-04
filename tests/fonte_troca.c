@@ -1,4 +1,5 @@
 // #570: execute the app's source-switch block with real player/catalog/progress.
+#include "streams.h"
 #include "descoberta.h"
 #include "intro.h"
 #include "video.h"
@@ -16,6 +17,7 @@ static int ready(void) { return 1; }
 
 #define SERIES "tt0903747"
 #define MOVIE "tt0111161"
+void app_shot_escolher_fonte(int fonte);
 static int rebuilt;
 static void rebuild_cw(void) {
   CatItem cw[2] = {0};
@@ -25,10 +27,8 @@ static void rebuild_cw(void) {
   cat_trocar_continuar(cw, 2);
   rebuilt++;
 }
-static void consumirFolhaTocar(int *t, int *e) { (void)t; (void)e; }
-static void diagnostico_cancelar_vazao(void) {}
 static void switch_source(void) {
-#include "fonte_troca_app.inc"
+  app_shot_escolher_fonte(0);
 }
 static void fixture(void) {
   CatItem v[3] = {0}; CatFileira rows[2] = {0};
@@ -41,6 +41,10 @@ static void fixture(void) {
   cat_definir_tudo(v, 3, rows, 2);
   CatEp ep = {.temporada = 2, .episodio = 4};
   cat_definir_episodios(1, &ep, 1);
+  Stream src = {0};
+  snprintf(src.url, sizeof src.url, "https://example.invalid/ep.mp4");
+  stream_definir_alvo(SERIES ":2:4");
+  stream_definir_lista(&src, 1);
   player_abrir(1, NULL); player_definir_episodio(2, 4);
   comVideo = duracaoReal = 1; esperandoFonte = erroFonte = 0;
   zerarAssistido();
