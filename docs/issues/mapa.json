@@ -13276,6 +13276,15 @@
   {
    "data": "2026-11-04",
    "quem": "job mini; revisão independente Zima; Claude Code (integração)",
+   "o_que": "Teste de regressão da troca de fonte #570 recuperado usando caminho real do aplicativo.",
+   "issues": [570],
+   "ref": "integracao/2.1@c9ef9759b443ef626642ec85a853dd2ed33370e3",
+   "resultado": "Teste e i18n passaram pós-merge; teste compilou com dois avisos. Job relata controle de mutação detectado; revisão OK com notas P2. Sem novo defeito de produção comprovado, sem teste em TV.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-test570-0411.log; /Volumes/ExternalSSD/tmp/rev/j-rev-test570-0411.log; /Volumes/ExternalSSD/tmp/rev/test570-pos-merge.log"
+  },
+  {
+   "data": "2026-11-04",
+   "quem": "job mini; revisão independente Zima; Claude Code (integração)",
    "o_que": "Compatibilidade de escolha PGS salva como -1 antes de IDs distintos.",
    "issues": [
     665
