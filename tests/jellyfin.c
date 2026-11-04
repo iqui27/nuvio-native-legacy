@@ -127,6 +127,33 @@ static void testarIds(void) {
   printf("ids ok\n");
 }
 
+static void testarTokenLimite(void) {
+  JfConta c = {0};
+  char json[2300];
+  const char *prefix = "{\"AccessToken\":\"";
+  const char *suffix = "\",\"User\":{\"Id\":\"0123456789abcdef0123456789abcdef\"}}";
+  size_t p = strlen(prefix);
+  memcpy(json, prefix, p);
+  memset(json + p, 'a', 2047);
+  strcpy(json + p + 2047, "\\u00e9");
+  strcat(json, suffix);
+  assert(jf_ler_autenticacao(&c, json, strlen(json)) == JF_ERR_FORMATO);
+  memcpy(json, prefix, p);
+  memset(json + p, 'a', 2047);
+  strcpy(json + p + 2047, suffix);
+  assert(jf_ler_autenticacao(&c, json, strlen(json)) == JF_OK);
+  assert(strlen(c.token) == 2047 && strspn(c.token, "a") == 2047);
+  memcpy(json, prefix, p);
+  memset(json + p, 'a', 2048);
+  strcpy(json + p + 2048, suffix);
+  assert(jf_ler_autenticacao(&c, json, strlen(json)) == JF_ERR_FORMATO);
+  snprintf(json, sizeof json, "%sabc\\u0000def%s", prefix, suffix);
+  assert(jf_ler_autenticacao(&c, json, strlen(json)) == JF_ERR_FORMATO);
+  snprintf(json, sizeof json, "%sabc\\\\u0000def%s", prefix, suffix);
+  assert(jf_ler_autenticacao(&c, json, strlen(json)) == JF_OK);
+  assert(!strcmp(c.token, "abc\\u0000def"));
+}
+
 static void testarUrl(void) {
   char u[512];
   assert(jf_url_normalizar("192.168.1.5:8096", u, sizeof u) == JF_OK && !strcmp(u, "http://192.168.1.5:8096"));
@@ -543,6 +570,7 @@ int main(int argc, char **argv) {
   snprintf(dirDados, sizeof dirDados, "%s", argv[2]);
   setvbuf(stdout, NULL, _IOLBF, 0);
   testarIds();
+  testarTokenLimite();
   testarUrl();
   testarVistoProg();
   testarProtocolo();
