@@ -309,17 +309,27 @@ int jf_qc_conferir(const JfConta *c, RedeJob *job, const char *segredo) {
 // Parses an AuthenticateBy* answer (same shape on Jellyfin and Emby). Wipes
 // the buffer: it holds the access token.
 int jf_ler_autenticacao(JfConta *c, char *corpo, size_t n) {
-  const char *ui, *uf;
+  const char *ui, *uf, *v;
+  int nul = 0;
   // Leave room for a complete UTF-8 character beyond the accepted limit;
   // the JSON decoder may otherwise discard a partially fitting escape.
   char tok[JF_TOKEN_MAX + 4] = "", uid[64] = "", nome[96] = "", limpo[40];
+  v = valorRaiz(corpo, corpo + n, "AccessToken");
+  if (v && *v == '"') {
+    for (v++; v < corpo + n && *v && *v != '"'; v++) {
+      if (*v == '\\' && v + 1 < corpo + n) {
+        if (corpo + n - v >= 6 && !memcmp(v, "\\u0000", 6)) nul = 1;
+        v++;
+      }
+    }
+  }
   txtRaiz(corpo, corpo + n, "AccessToken", tok, sizeof tok);
   if (blocoRaiz(corpo, corpo + n, "User", &ui, &uf)) {
     txtRaiz(ui, uf, "Id", uid, sizeof uid);
     txtRaiz(ui, uf, "Name", nome, sizeof nome);
   }
   apagarSegredo(corpo, n);
-  if (!tok[0] || strlen(tok) >= sizeof c->token || !jfid_hex_limpo(uid, limpo, 32)) {
+  if (nul || !tok[0] || strlen(tok) >= sizeof c->token || !jfid_hex_limpo(uid, limpo, 32)) {
     apagarSegredo(tok, sizeof tok);
     return JF_ERR_FORMATO;
   }

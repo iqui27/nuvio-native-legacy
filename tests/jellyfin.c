@@ -147,6 +147,11 @@ static void testarTokenLimite(void) {
   memset(json + p, 'a', 2048);
   strcpy(json + p + 2048, suffix);
   assert(jf_ler_autenticacao(&c, json, strlen(json)) == JF_ERR_FORMATO);
+  snprintf(json, sizeof json, "%sabc\\u0000def%s", prefix, suffix);
+  assert(jf_ler_autenticacao(&c, json, strlen(json)) == JF_ERR_FORMATO);
+  snprintf(json, sizeof json, "%sabc\\\\u0000def%s", prefix, suffix);
+  assert(jf_ler_autenticacao(&c, json, strlen(json)) == JF_OK);
+  assert(!strcmp(c.token, "abc\\u0000def"));
 }
 
 static void testarUrl(void) {
