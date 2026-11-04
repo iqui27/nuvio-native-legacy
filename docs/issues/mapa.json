@@ -13275,6 +13275,15 @@
  "validacoes": [
   {
    "data": "2026-11-04",
+   "quem": "Claude Code (build e verificação)",
+   "o_que": "Builds webOS e Samsung após integração do desempenho automático.",
+   "issues": [],
+   "ref": "integracao/2.1@d4b46f0383a515dcc36501f06c58432a1fab82b6",
+   "resultado": "Ambas builds rc=0; estrutura Debian do IPK e integridade ZIP do WGT verificadas. Sem instalação ou medição em TV.",
+   "evidencia": "IPK SHA256 e81f5aa4f31c05739dad6eecc365c01e5d29d17e3525b55988336705f4c940b1 (75944552 bytes); WGT SHA256 7a9470ecf3db7b0e93f3d2da717fdeeb72ec3860eaec1b071aa08c72a87278ed (46341061 bytes); /Volumes/ExternalSSD/tmp/rev/build-lg-d4b46f0.log; /Volumes/ExternalSSD/tmp/rev/build-wgt-d4b46f0.log"
+  },
+  {
+   "data": "2026-11-04",
    "quem": "job mini; revisões independentes Zima; Claude Code (integração)",
    "o_que": "Desempenho automático: janelas elegíveis, tentativas serializadas, resolução por frequência, recuperação e efeito inicial de menor custo.",
    "issues": [],
