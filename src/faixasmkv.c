@@ -277,8 +277,8 @@ static int acrescentarOverlay(VideoFaixa *leg, int nLeg, int max, const MkvFaixa
     for (k = 0; k < nLeg; k++) if (leg[k].ordinalMkv == ord - 1 && !strcmp(leg[k].codec, fx[j].codec)) break;
     if (k < nLeg) continue;
     memset(&leg[nLeg], 0, sizeof leg[nLeg]);
-    // Unique negative identities keep recovered text tracks distinct in the selector.
-    leg[nLeg].numero = texto ? -2 - (ord - 1) : -1;
+    // Unique negative identities keep recovered tracks distinct in the selector.
+    leg[nLeg].numero = -2 - (ord - 1);
     leg[nLeg].stream_index = -1;
     snprintf(leg[nLeg].codec, sizeof leg[nLeg].codec, "%s", fx[j].codec);
     leg[nLeg].ordinalMkv = ord - 1;
