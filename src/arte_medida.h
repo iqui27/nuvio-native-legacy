@@ -19,6 +19,13 @@
 // this int before anything else, so the disabled path is one compare.
 extern int arte_medida_ligada;
 int arte_medida_resolver(void);   // reads env/property once; returns the new state
+// 1 while a scratch pass (gfx_borrao_gerar, gfx_desfocado) draws into its own FBO
+// without changing telaW/H: those draws are not the screen and are dropped
+// before dims, ordinal and cap. The intended screen target (window or the
+// gpunivel internal FBO) runs with 0. Save/restore, so scopes nest.
+extern int arte_medida_fora;
+#define ARTE_FORA_INI() int arteForaAnt_ = arte_medida_fora; arte_medida_fora = 1
+#define ARTE_FORA_FIM() arte_medida_fora = arteForaAnt_
 
 // One draw. (x0,y0)-(x1,y1): the whole quad in render-target px, after layer
 // scale and group transform. clip: scissor {x, y, w, h} in the same px or

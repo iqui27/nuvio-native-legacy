@@ -1,7 +1,8 @@
 // Artwork draw measurement (src/arte_medida.c): opt-in default off, the
 // decoded-vs-physical math with layer scale, cover crop, card contain and
 // clipping, shader aspect vs non-uniform target scale, sub-rect strips
-// excluded, bounded cache lookups on misses, invalid input, dedup, and the
+// excluded, scratch-pass scope (nested) excluded, FBO screen target measured,
+// bounded cache lookups on misses, invalid input, dedup, and the
 // hard process cap.
 #include "arte_medida.h"
 #include <stdio.h>
@@ -51,6 +52,26 @@ int main(void) {
   const float faixa[4] = { 0.0f, 0.0f, 0.5f, 1.0f };
   buscas = 0;
   OK(!amostraA(8, 1, 300.0f / 450.0f, 0, 960.0f / 540.0f, faixa, 0, 0, 960, 540, NULL, 1.5f, l) && !l[0]);
+  OK(buscas == 0);
+
+  // Scratch pass (gfx_borrao_gerar / gfx_desfocado use ARTE_FORA_INI/FIM):
+  // a cache texture drawn into a small FBO while telaW still says screen is
+  // dropped before the lookup and the ordinal, also in a nested scope and
+  // after the inner scope restores. Leaving the outer scope re-enables it.
+  buscas = 0;
+  {
+    ARTE_FORA_INI();
+    OK(!amostra(8, 1, 300.0f / 450.0f, 0, 0, 0, 1920, 1080, NULL, 1.0f, l) && !l[0]);
+    {
+      ARTE_FORA_INI();
+      OK(!amostra(7, 1, 0.0f, 0, 0, 0, 1920, 1080, NULL, 1.0f, l) && !l[0]);
+      ARTE_FORA_FIM();
+    }
+    OK(arte_medida_fora == 1);
+    OK(!amostra(8, 1, 300.0f / 450.0f, 0, 0, 0, 1920, 1080, NULL, 1.0f, l) && !l[0]);
+    ARTE_FORA_FIM();
+  }
+  OK(arte_medida_fora == 0);
   OK(buscas == 0);
 
   // Cover: 2:3 poster in a 16:9 quad of 960x540 px. The quad crops the
@@ -135,6 +156,15 @@ int main(void) {
   OK(buscas <= ARTE_MEDIDA_BUSCAS);
   OK(arte_medida_ligada == 0);
   OK(!amostra(8, 1, 1.0f, 0, 0, 0, 77, 77, NULL, 1.0f, l));
+
+  // Screen target that is itself an FBO (gpunivel internal 1280x720 target,
+  // telaW = telaRealW = 1280 via gfx_tamanho_alvo): outside a scratch scope
+  // it is measured; the policy does not look at the FBO name.
+  OK(arte_medida_resolver() == 1);
+  buscas = 0;
+  OK(arte_medida_amostra(7, 1, 0.0f, 0, 16.0f / 9.0f, inteiro, 0, 0, 640, 360, NULL, 1280, 720,
+                         1.0f, 1280.0f / 1920.0f, dims, l, sizeof l));
+  OK(buscas == 1 && strstr(l, "art=1 ") && strstr(l, "rt=1280x720 "));
 
   if (falhas) { printf("arte_medida: %d FAIL\n", falhas); return 1; }
   printf("arte_medida: PASS\n");

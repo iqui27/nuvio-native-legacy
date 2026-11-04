@@ -8,6 +8,7 @@
 #endif
 
 int arte_medida_ligada = -1;
+int arte_medida_fora;
 // One slot per resource seen; as many as the cap, so it never fills first.
 static struct { unsigned tex; int w, h; } vistos[ARTE_MEDIDA_TETO];
 // Names whose lookup failed (not a ready cache texture, or a bad size).
@@ -35,7 +36,7 @@ int arte_medida_amostra(unsigned tex, int modo, float texAsp, int contem,
                         int rtW, int rtH, float esc, float pxUnit,
                         int (*dims)(unsigned tex, int *w, int *h),
                         char *out, size_t n) {
-  if (arte_medida_ligada <= 0 || !tex || rtW <= 0 || rtH <= 0 || !dims) return 0;
+  if (arte_medida_ligada <= 0 || arte_medida_fora || !tex || rtW <= 0 || rtH <= 0 || !dims) return 0;
   // gfx_rect_furos strips: the quad is only a uSub window of the rect.
   if (!sub || sub[0] != 0.0f || sub[1] != 0.0f || sub[2] != 1.0f || sub[3] != 1.0f) return 0;
   if (!isfinite(x0) || !isfinite(y0) || !isfinite(x1) || !isfinite(y1) || !isfinite(texAsp) ||

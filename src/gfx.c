@@ -2488,7 +2488,8 @@ void gfx_rect_furos(GfxRect r, GLuint tex, GfxModo modo, float foco,
 
 // ARTWORK DRAW PROBE (arte_medida.h, NV_ART_DRAW_MEASURE=1): decoded cache
 // size against the physical px of this draw on the screen target. Off-screen
-// passes (snapshot, mini, ambient, any target != screen), rotation, text and
+// passes (snapshot, mini, ambient: telaW != screen; borrao/desfocado
+// scratch passes: ARTE_FORA scope), rotation, text and
 // the Texture-mode title surface are skipped; non-cache textures fail lookup.
 // gfx_rect_furos strips (subAtual != 0,0,1,1) are skipped in arte_medida.c.
 // Called after every early return of gfx_rect, with the uAspect it sends.
@@ -4991,6 +4992,7 @@ void gfx_borrao_gerar(int via, unsigned int tex, float texAspecto) {
     if (nLog < 40) { nLog++; printf("[transicao] desfoque de fundo (FBO %s) t=%u\n", via ? "home" : "detalhe", (unsigned)SDL_GetTicks()); } }
   ESC_REAL_INI();
   GFX_OUTRO_INI();
+  ARTE_FORA_INI();   // borW x borH scratch target, telaW unchanged: not the screen
   GLint fboAnt = fboLigado(), vpAnt[4];
   glGetIntegerv(GL_VIEWPORT, vpAnt);
   gfxBlend(0);
@@ -5018,6 +5020,7 @@ void gfx_borrao_gerar(int via, unsigned int tex, float texAspecto) {
   // Volta ao alvo de ANTES (a janela, ou o alvo interno do nivel 2), e nao ao 0.
   glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)fboAnt);
   glViewport(vpAnt[0], vpAnt[1], vpAnt[2], vpAnt[3]);
+  ARTE_FORA_FIM();
   GFX_OUTRO_FIM();
   ESC_REAL_FIM();
 }
@@ -5173,6 +5176,7 @@ GLuint gfx_desfocado(GLuint src, const char *chave) {
     glDisable(GL_SCISSOR_TEST);
     gfxBlend(0);
     gfx_tex_aspect_atual = 0.0f;   // a arte INTEIRA, esticada; o card recorta depois
+    ARTE_FORA_INI();   // desfPasso: scratch FBO, telaW unchanged
     // Escrever num FBO inverte o eixo y (ver GFX_SNAP): cada passada inverte, e
     // as quatro deixam o resultado de pe para o GFX_CARD, como uma arte comum.
     // 1-2: reducao, horizontal e depois vertical, taps a um texel da arte.
@@ -5181,6 +5185,7 @@ GLuint gfx_desfocado(GLuint src, const char *chave) {
     // 3-4: desfoque gaussiano, horizontal e depois vertical, no alvo 96x54.
     desfPasso(desfTmp, desfTmp2, NV_DESF_W, NV_DESF_H, NV_DESF_PASSO / (float)NV_DESF_W, 0.0f);
     desfPasso(desfTmp2, dst, NV_DESF_W, NV_DESF_H, 0.0f, NV_DESF_PASSO / (float)NV_DESF_H);
+    ARTE_FORA_FIM();
     gfx_tex_aspect_atual = aspAnt;
     glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)fboAnt);
     glViewport(vp[0], vp[1], vp[2], vp[3]);

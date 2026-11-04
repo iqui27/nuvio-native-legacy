@@ -62,10 +62,13 @@ env, never per frame. Not validated on a physical TV yet.
 - Decoded size: `itens[].w/h` through `tex_dims_gl` (src/tex_cache.c:4386), the
   same fields `tex_aspecto` reads (src/tex_cache.c:4372).
 - Aspect: `gfx_tex_aspect_atual`, the value sent as `uTexAsp`.
+- Scratch scope: `arte_medida_fora` (save/restore, `ARTE_FORA_INI/FIM`) set
+  by `gfx_borrao_gerar` and `gfx_desfocado`, which bind their own FBO without
+  changing `telaW/H`; checked before dims, ordinal and cap.
 - Scale/target: `escAtiva`, `gfxTr`, `telaW/H`, `recorteBox`. Same conversion
   as `fillGpuArea` (src/gfx.c:124).
 - Hook: one line in `gfx_rect` right before the program bind, after every
-  early return (src/gfx.c:2741), helper `arteMedir` (src/gfx.c:2495). Pure
+  early return (src/gfx.c:2742), helper `arteMedir` (src/gfx.c:2496). Pure
   math, strip exclusion, dedup, miss memory, budget and cap live in
   src/arte_medida.c.
 
@@ -73,13 +76,19 @@ env, never per frame. Not validated on a physical TV yet.
 
 - Covered: every textured `gfx_rect` on the screen target that reaches the
   draw and whose texture is a READY tex_cache texture, drawn whole (`uSub` =
-  0,0,1,1). That includes `gfx_arte_veu`, texA of `gfx_hero_camadas`, and a
-  `gfx_rect_furos` call whose holes miss the rect (one full strip).
-- Not covered: `gfx_rect_furos` strips and any other partial `uSub` window
+  0,0,1,1). That includes `gfx_arte_veu` and texA of `gfx_hero_camadas`.
+  The screen target may itself be an FBO (gpunivel internal target): it is
+  measured, the policy never looks at the FBO name.
+- Not covered: `gfx_rect_furos` (no caller in src/ today; its strips carry a
+  computed `uSub`, so even a whole-rect strip is not reliably 0,0,1,1) and
+  any other partial `uSub` window
   (skipped before the lookup; no strip/hole crop telemetry);
   texB of `gfx_hero_camadas` (bound directly); text (`GFX_TEXTO`);
   the Texture-mode title surface (`GFX_TEXTURA`); FBO/snapshot/mini/ambient
-  passes (any target other than the screen); rotated groups; and any texture
+  passes (`telaW/H` not the screen); `gfx_borrao_gerar`/`gfx_desfocado`
+  scratch passes (scratch scope, no lookup, no ordinal); the gpunivel
+  upscale/RCAS copies sample `intTex`/`rcasTex`, not cache textures (one
+  remembered miss each, no line); rotated groups; and any texture
   that is not in the cache (lookup fails, no line).
 - The probe runs after every early return of `gfx_rect` (light/minimal
   effects, disabled modes, ambient veil, full-screen clear), so a line means
@@ -132,7 +141,8 @@ tests/stub_android (a stand-in `<sys/system_properties.h>`) and a fake
 `__system_property_get`: property unset/empty/`0`/`11`/`true` off, exactly
 `1` on, one read per resolve, env switch still on. It
 checks: default off; `gfx_rect_furos` strip skipped with no lookup and no
-ordinal; cover crop at a 1.5 layer scale and 2 px/unit; card contain;
+ordinal; scratch scope (nested, restored) skipped with no lookup and no
+ordinal; a 1280x720 FBO screen target measured; cover crop at a 1.5 layer scale and 2 px/unit; card contain;
 stretch; integer `fit`; non-uniform target (x 2, y 1) where the px aspect
 would wrongly pick contain/crop but `uAspect` does not; target and scissor
 clipping; invalid input (zero, NaN, a texture not in the cache, an empty
