@@ -13,3 +13,6 @@ case "$HOME" in "$real_home"|"$real_home"/.nuvio*) echo "FAIL: data dir not isol
 cc -Wall -Wextra -O2 tests/arte_medida.c src/arte_medida.c -Isrc -o "$tmp/t" -lm
 "$tmp/t"
 [ -z "$(ls -A "$HOME")" ] || { echo "FAIL: test wrote to data dir"; exit 1; }
+cc -Wall -Wextra -O2 -DNV_ANDROID -Itests/stub_android tests/arte_medida_android.c src/arte_medida.c -Isrc -o "$tmp/ta" -lm
+"$tmp/ta"
+[ -z "$(ls -A "$HOME")" ] || { echo "FAIL: test wrote to data dir"; exit 1; }

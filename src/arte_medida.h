@@ -1,7 +1,8 @@
 #ifndef ARTE_MEDIDA_H
 #define ARTE_MEDIDA_H
 #include <stddef.h>
-// ARTWORK DRAW MEASUREMENT, opt-in (NV_ART_DRAW_MEASURE=1), default off.
+// ARTWORK DRAW MEASUREMENT, opt-in (NV_ART_DRAW_MEASURE=1, or on Android the
+// property debug.nuvio.artdraw=1), default off.
 // Pairs the decoded size of a tex_cache texture with the physical pixels one
 // gfx_rect draw covers on the render target. One "[art-draw]" line per
 // resource and meaningful size change, at most ARTE_MEDIDA_TETO per process.
@@ -17,7 +18,7 @@
 // -1 = not resolved yet, 0 = off (also after the cap), 1 = on. gfx_rect tests
 // this int before anything else, so the disabled path is one compare.
 extern int arte_medida_ligada;
-int arte_medida_resolver(void);   // reads the env once; returns the new state
+int arte_medida_resolver(void);   // reads env/property once; returns the new state
 
 // One draw. (x0,y0)-(x1,y1): the whole quad in render-target px, after layer
 // scale and group transform. clip: scissor {x, y, w, h} in the same px or

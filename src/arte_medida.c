@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef NV_ANDROID
+#include <sys/system_properties.h>
+#endif
 
 int arte_medida_ligada = -1;
 // One slot per resource seen; as many as the cap, so it never fills first.
@@ -14,6 +17,12 @@ static int nVistos, nLinhas, nFaltas, nBuscas;
 int arte_medida_resolver(void) {
   const char *e = getenv("NV_ART_DRAW_MEASURE");
   arte_medida_ligada = e && !strcmp(e, "1");
+#ifdef NV_ANDROID
+  // The launcher does not pass adb env; same switch as a property, exact "1":
+  //   adb shell setprop debug.nuvio.artdraw 1   (read once, at the first draw)
+  char pv[PROP_VALUE_MAX] = "";
+  arte_medida_ligada |= __system_property_get("debug.nuvio.artdraw", pv) > 0 && !strcmp(pv, "1");
+#endif
   nVistos = nLinhas = nFaltas = nBuscas = 0;
   return arte_medida_ligada;
 }

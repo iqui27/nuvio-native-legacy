@@ -16,6 +16,12 @@ actually covers. `[art-draw]` pairs the two.
 `NV_ART_DRAW_MEASURE=1` in the app environment. Anything else, or unset, means
 off. Read once on the first textured `gfx_rect`.
 
+Android: a normal launcher start does not inherit `adb shell` env, so the
+probe is also on when the system property `debug.nuvio.artdraw` is exactly
+`1` (same pattern as `debug.nuvio.perf` / `debug.nuvio.gputempo`). Unset,
+empty, `0` or any other value means off. Read at the same single point as the
+env, never per frame. Not validated on a physical TV yet.
+
 - Off: `gfx_rect` does `if (arte_medida_ligada && tex)`. One int compare, no
   lock, no scan, no log.
 - On: dedup runs first (no lock, at most 48 slots). The cache lookup
@@ -108,10 +114,23 @@ off. Read once on the first textured `gfx_rect`.
 3. Collect stdout. Keep `[art-draw]`, `[gpu-nivel]` and `[tex-trace]` lines.
    Read them separately (see "No request timeline").
 
+Android TV (needs separate authorization; nothing here was run):
+
+1. Save the old value: `adb shell getprop debug.nuvio.artdraw`.
+2. Before the owner's next normal start: `adb shell setprop debug.nuvio.artdraw 1`.
+   Do not launch the app, send keys or clear logcat.
+3. Listen passively (`adb logcat`) while the owner uses the TV as usual.
+4. Afterwards restore the saved value (`adb shell setprop debug.nuvio.artdraw
+   <old>`, or `""` if it was unset).
+
 ## Check
 
 `bash tests/arte_medida.sh` compiles src/arte_medida.c with tests/arte_medida.c
 under a fresh temp `HOME`, and fails closed if that `HOME` is not isolated. It
+also builds src/arte_medida.c with `-DNV_ANDROID` against
+tests/stub_android (a stand-in `<sys/system_properties.h>`) and a fake
+`__system_property_get`: property unset/empty/`0`/`11`/`true` off, exactly
+`1` on, one read per resolve, env switch still on. It
 checks: default off; `gfx_rect_furos` strip skipped with no lookup and no
 ordinal; cover crop at a 1.5 layer scale and 2 px/unit; card contain;
 stretch; integer `fit`; non-uniform target (x 2, y 1) where the px aspect
