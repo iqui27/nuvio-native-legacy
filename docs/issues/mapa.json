@@ -13280,7 +13280,7 @@
    "issues": [],
    "ref": "0141d95efa98830937b2ab18c4fe60bfedde238b; implementação 83292c0d5",
    "resultado": "revisão OK e testes direcionados pós-merge passaram; sem validação em TV",
-   "evidencia": "Job relatou 20 falhas por timeout antes e PASS após; jsraiz_progresso.sh passou em worktree e pós-merge; plex.sh, jellyfin.sh e varredura-i18n.py passaram pós-merge. Revisão j-rev-json-progresso-0411.log VEREDITO OK; limites: teste POSIX, respostas malformadas podem perder elementos posteriores e não retornam erro de formato. Sem teste em dispositivo nem build de plataforma nesta rodada."
+   "evidencia": "Job relatou 20 falhas por timeout antes e PASS após; jsraiz_progresso.sh passou em worktree e pós-merge; plex.sh, jellyfin.sh e varredura-i18n.py passaram pós-merge; plex.sh registrou ConnectionResetError no servidor HTTP de teste apesar de rc=0. Revisão j-rev-json-progresso-0411.log VEREDITO OK; limites: teste POSIX, respostas malformadas podem perder elementos posteriores e não retornam erro de formato. Sem teste em dispositivo nem build de plataforma nesta rodada."
   },
   {
    "data": "2026-11-04",
