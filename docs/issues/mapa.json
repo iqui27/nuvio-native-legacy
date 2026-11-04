@@ -13275,6 +13275,17 @@
  "validacoes": [
   {
    "data": "2026-11-04",
+   "quem": "job mini; revisão independente Zima; Claude Code (integração)",
+   "o_que": "Compatibilidade de escolha PGS salva como -1 antes de IDs distintos.",
+   "issues": [
+    665
+   ],
+   "ref": "integracao/2.1@06bd4f41235bbb06d7eaf18af4727f4e0fa6c996",
+   "resultado": "job relata FAIL antes e PASS depois; revisão OK com P2 em desempate por nome e cobertura sem idioma. Testes pós-merge passaram com dois warnings. Faixas ambíguas seguem fallback automático; sem prova em TV ou fluxo persistido completo.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-pgs-saved-0411.log; /Volumes/ExternalSSD/tmp/rev/j-rev-pgs-saved-0411.log; tests/legmem_pgs_legacy.sh, tests/legendasui.sh e tools/varredura-i18n.py rc=0 pós-merge"
+  },
+  {
+   "data": "2026-11-04",
    "quem": "Claude Code (build e verificação)",
    "o_que": "Builds webOS IPK e Samsung WGT da integração após correções de parser, PGS e progresso.",
    "issues": [
