@@ -13275,6 +13275,15 @@
  "validacoes": [
   {
    "data": "2026-11-04",
+   "quem": "job mini; revisões independentes Zima; Claude Code (integração)",
+   "o_que": "Desempenho automático: janelas elegíveis, tentativas serializadas, resolução por frequência, recuperação e efeito inicial de menor custo.",
+   "issues": [],
+   "ref": "integracao/2.1@781dec15ad7dd679b59015e3e5e56875fd6479c5",
+   "resultado": "Duas revisões OK; testes gpunivel_transients, gpuauto, gpunivel_ajuda, vidro_qualidade e i18n passaram pós-merge. Job relata falhas preexistentes em resolucao.sh e testes dependentes de ambiente. Sem prova de ganho visual ou desempenho em TV.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-auto-performance-fix-0411.log; /Volumes/ExternalSSD/tmp/rev/j-auto-review-fix-0411.log; /Volumes/ExternalSSD/tmp/rev/j-rev-auto-performance-0411.log; /Volumes/ExternalSSD/tmp/rev/j-rev-auto-refresh-0411.log"
+  },
+  {
+   "data": "2026-11-04",
    "quem": "job mini; revisão independente Zima; Claude Code (integração)",
    "o_que": "Teste de regressão da troca de fonte #570 recuperado usando caminho real do aplicativo.",
    "issues": [570],
