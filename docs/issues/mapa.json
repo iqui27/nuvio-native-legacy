@@ -1,6 +1,16 @@
 {
  "atualizado_em": "2026-10-25T21:56:42-03:00",
  "base": "6330e8be0",
+ "validacao_pr_611_2026_11_04": {
+  "status": "integrada_aguardando_validacao_especifica",
+  "branch": "refs/heads/agente/pr611-source-language",
+  "implementacao": "2b07bb8b592f82553d78f447ace048d30573c184",
+  "merge_integracao": "2824505da44f225c9f5a7a9d9a9ad45f81ac3028",
+  "revisao": "Independente OK, sem P0/P1; aproximadamente 45 casos isolados de classificador em Linux.",
+  "validacoes": "Pós-merge no host: source_audio_language, source_exclusion_languages, source_audio_diag, fontevolta_persistir, varredura-i18n e build-local rc 0, com dados descartáveis e NUVIO_PROPERTIES=/dev/null.",
+  "limites": "Sem aceitação em app ou dispositivo. Fontes persistidas antigas precisam ser buscadas novamente para preencher audioTexto; heurística preexistente pode descartar tags técnicas na mesma linha de legendas (P2). language singular na raiz não suportado; inferência turca não amplia taxonomia de filtro salvo; pilha adicional não medida na TV; equivalência exata à PR original não comprovada.",
+  "evidencia": "docs/issues/pr611-validacao-2026-11-04.md"
+ },
  "validacao_pr_758_2026_11_04": {
   "implementacao": "5e09562b0",
   "merge_integracao": "8bcdd2c24",
