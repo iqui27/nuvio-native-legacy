@@ -14820,6 +14820,42 @@
  "validacoes": [
   {
    "data": "2026-11-04",
+   "quem": "Central Nuvio Legacy (integração e testes); revisão independente Zima estática",
+   "o_que": "Integração de 32 bibliotecas Jellyfin/Emby e Next Up, teste real de fechamento de episódio, teste de reinício Quick Connect e reparo de link da suíte.",
+   "issues": [],
+   "ref": "integracao/2.1@18fa79f55",
+   "resultado": "Central relata jellyfin.sh, emby.sh, servidores_library.sh, ep_close_proof.sh, varredura-i18n.py e build-local.sh rc=0; sem aceitação física",
+   "evidencia": "docs/issues/validacao-integracao-2026-11-04.md; /Volumes/ExternalSSD/tmp/rev/rastreio/mutirao-20261104/postmerge-18fa79f55/; merges 990ef9e16, e032efe4e, 5268898d9 e 18fa79f55. Revisões estáticas OK; PGS não validada."
+  },
+  {
+   "data": "2026-11-04",
+   "quem": "Claude Code (integração e testes)",
+   "o_que": "Jellyfin: integração das correções de limite Unicode e NUL escapado em token.",
+   "issues": [],
+   "ref": "integracao/2.1@b65553aa91d5cb9fdaf53e54b4652201bd69df8e",
+   "resultado": "bash tests/jellyfin.sh e python3 tools/varredura-i18n.py pós-merge rc=0; sem teste físico",
+   "evidencia": "Merge de b44727b e 643db385, revisões independentes estáticas OK; testes sintéticos offline. Sem conta real ou dispositivo."
+  },
+  {
+   "data": "2026-11-04",
+   "quem": "Agente de implementação (teste); revisor independente (análise estática)",
+   "o_que": "Jellyfin: rejeitar NUL escapado em token JSON sem rejeitar barra invertida literal.",
+   "issues": [],
+   "ref": "agente/21-jellyfin-tokenlimite-0411@643db3854333c4b6b84700407754f959fae2e0b0",
+   "resultado": "executor relata teste offline FAIL→PASS e build local aprovado; revisão estática OK; commit não integrado",
+   "evidencia": "Token sintético com NUL escapado era aceito como prefixo truncado; teste cobre rejeição e barra invertida literal. Revisor não executou testes; sem conta real ou dispositivo."
+  },
+  {
+   "data": "2026-11-04",
+   "quem": "Agente de implementação (teste); revisor independente (análise estática)",
+   "o_que": "Jellyfin: rejeitar token JSON excessivo com caractere Unicode escapado junto ao limite.",
+   "issues": [],
+   "ref": "agente/21-jellyfin-tokenlimite-0411@b44727b",
+   "resultado": "executor relata teste offline FAIL→PASS e build local aprovado; revisão estática OK sem achados novos; não integrado",
+   "evidencia": "Token sintético de 2047 bytes ASCII seguido de escape Unicode de dois bytes era aceito truncado. 2047 ASCII aceitos e 2048 rejeitados. Revisor não executou teste; cenários Unicode adicionais sem cobertura. Token com NUL escapado é risco preexistente investigado separadamente; sem aparelho ou conta real."
+  },
+  {
+   "data": "2026-11-04",
    "quem": "Central Desktop (teste); revisor independente Zima (revisão estática)",
    "o_que": "PR 651: perda da fileira Next Up com 16 bibliotecas preenchidas, correção parcial em worktree isolado.",
    "issues": [],
