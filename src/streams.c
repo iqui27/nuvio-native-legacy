@@ -4319,10 +4319,12 @@ static const char *idiomaDa(const Stream *s) {
 }
 static int temAudioPreferido(const Stream *s) {
   const char *pref = idiomaFiltroAudio();
-  // An explicit "All" (or an unresolved "Original") is not a guessed
-  // language. Otherwise require declared audio metadata, never subtitles,
-  // filenames or generic "dub/dual" labels whose language is unknown.
-  return !pref[0] || audioDeclaradoEm(s, pref);
+  // Declared tracks take precedence; otherwise use the existing release
+  // classifier, which excludes subtitle-only and URL text.
+  if (!pref[0]) return 1;
+  if (s->audioIdiomas[0]) return audioDeclaradoEm(s, pref);
+  return s->filtroLido && (s->filtro.valores[FONTEFILTRO_LINGUAS] &
+         fontefiltro_valores(FONTEFILTRO_LINGUAS, pref)) != 0;
 }
 static const char *ajudaFiltroAudio(void) {
   static char ajuda[512];

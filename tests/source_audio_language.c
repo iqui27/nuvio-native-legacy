@@ -31,6 +31,22 @@ int main(void) {
   ling_local_audio("~"); ling_definir_original("pl");
   snprintf(s.audioIdiomas, sizeof s.audioIdiomas, "Polish");
   assert(passaChips(0));
+  const char *cases[] = {
+    "\"title\":\"Movie.1080p.es.mkv\"",
+    "\"title\":\"Movie.1080p.spa.mkv\"",
+    "\"title\":\"Movie.1080p.es-ES.mkv\"",
+    "\"title\":\"Movie.1080p.es.mkv\",\"audioLanguages\":[\"en\"]",
+    "\"title\":\"Subtitles: Spanish\"",
+    "\"subtitleLanguages\":[\"es\"]"
+  };
+  for (int i = 0; i < 6; i++) {
+    char json[512]; Stream *v = NULL;
+    snprintf(json, sizeof json, "{\"streams\":[{\"url\":\"https://example.test/v\",%s}]}", cases[i]);
+    assert(stream_extrair(json, "fixture", &v) == 1);
+    ling_local_audio("es"); lista = v; n = 1; soDub = 1;
+    assert(passaChips(0) == (i < 3));
+    free(v);
+  }
   puts("source audio language: ok");
   return 0;
 }
