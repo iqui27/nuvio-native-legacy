@@ -832,8 +832,9 @@ static const char *V_BRILHO_PLAYER[] = { "100%", "80%", "65%", "50%" };
 static const char *V_DTS_SAIDA[] = { "Desligado", "5.1 (Dolby Digital)", "Estéreo (AAC)" };
 #define N_DTS_SAIDA 3
 #else
-static const char *V_DTS_SAIDA[] = { "Estéreo (AAC)", "5.1 (Dolby Digital)" };
-#define N_DTS_SAIDA 2
+/* Append-only: LG saved modes 0=AAC and 1=AC3 remain unchanged. */
+static const char *V_DTS_SAIDA[] = { "Estéreo (AAC)", "5.1 (Dolby Digital)", "Desligado (nativo)" };
+#define N_DTS_SAIDA 3
 #endif
 static const char *V_PROPORCAO[] = { "Último usado", "Original", "Recortar", "Esticar", "Zoom leve", "Zoom cinema", "Zoom ultra", "Ajustar altura", "Ajustar largura" };
 static const char *V_LOGO_APP[] = { "Novo", "Clássico" };
@@ -3884,6 +3885,14 @@ int ajustes_cw_ordem(void)            { return valor[AJ_CW_ORDEM]; }
 int ajustes_cw_retido_tambem(void)    { return lig(AJ_CW_RETIDO_TAMBEM); }
 int ajustes_ps_continuar(void)        { return lig(AJ_PS_CONTINUAR); }
 int ajustes_dts_ac3(void)             { return valor[AJ_DTS_AC3] == 1; }
+/* .tpk already uses 0=off; LG appends 2=off to avoid reinterpreting saved preferences. */
+int ajustes_dts_desligado(void) {
+#ifdef NV_TPK
+  return valor[AJ_DTS_AC3] == 0;
+#else
+  return valor[AJ_DTS_AC3] == 2;
+#endif
+}
 // .tpk: HLS (o TS continuo e so a troca automatica de video_tpk.c) ou desligado.
 int ajustes_dts_tpk_modo(void) {
 #ifdef NV_TPK
@@ -8148,7 +8157,7 @@ static const char *ajudaOpcaoBase(int op) {
 #ifdef NV_TPK
     case AJ_DTS_AC3: return "Esta TV não toca DTS nem TrueHD: o app converte o som na hora. 5.1 (Dolby Digital) mantém o surround para barra de som e receiver; 7.1, Atmos e DTS:X viram 5.1, sem os objetos. Estéreo (AAC) serve qualquer TV. Desligado: esses vídeos tocam sem som, como antes. Vale a partir do próximo vídeo.";
 #else
-    case AJ_DTS_AC3: return "Como o áudio DTS é entregue à TV quando o app o converte (só na LG). Estéreo (AAC) é o modo provado e serve qualquer TV. 5.1 (Dolby Digital) mantém o som surround para barra de som e receiver por ARC/eARC; vale a partir do próximo vídeo.";
+    case AJ_DTS_AC3: return "Como o áudio DTS é entregue à TV quando o app o converte (só na LG). Estéreo (AAC) é o modo provado e serve qualquer TV. 5.1 (Dolby Digital) mantém o som surround para barra de som e receiver por ARC/eARC. Desligado (nativo) deixa o DTS original para a TV, por exemplo com DTS Restore Plus; sem suporte nativo pode ficar sem som. Para Dolby Vision P7 e MP4 com DTS selecionado, a conversão de vídeo não pode substituir o áudio DTS por AAC/AC3 neste modo, por isso a fonte fica no player nativo. Vale a partir do próximo vídeo."
 #endif
     case AJ_PS_CONTINUAR: return "Ligado, cada perfil mostra na escolha de perfil o cartão com o que ele estava assistindo. Desligado, a tela mostra só os perfis.";
     case AJ_HIST_CONTA: return "Ligado (padrão): o que você assiste neste perfil sobe para a conta Nuvio, com o progresso e os vistos. Desligado: nada disso é enviado à conta; o Trakt e o Simkl vinculados a este perfil continuam recebendo. Vale só para este perfil.";
