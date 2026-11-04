@@ -13275,6 +13275,17 @@
  "validacoes": [
   {
    "data": "2026-11-04",
+   "quem": "job mini; revisão independente Zima; Claude Code (integração)",
+   "o_que": "Marcar episódio como visto pelo menu conclui progresso local e remove retomada pendente.",
+   "issues": [
+    698
+   ],
+   "ref": "integracao/2.1@f4e786fe307a8ec0c1dbabbc7ceb1b40a4ccd7ba",
+   "resultado": "job relata FAIL antes e PASS depois; revisão OK com ressalvas P2; testes pós-merge passaram com aviso de compilação. Relato após reprodução até o fim não reproduzido; sincronização real e TV não testadas.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-tv-progress-0411.log; /Volumes/ExternalSSD/tmp/rev/j-rev-tv-progress-0411.log; tests/visto_menu_cw698.sh, tests/syncprog.sh e tools/varredura-i18n.py rc=0 pós-merge"
+  },
+  {
+   "data": "2026-11-04",
    "quem": "job mini (implementação); revisão independente Zima; Claude Code (integração)",
    "o_que": "Identidade distinta para faixas PGS recuperadas no seletor de legendas; cenário com três faixas.",
    "issues": [
