@@ -11,7 +11,7 @@ for source in src/*.c src/dts/*.c; do
   [ "$source" != src/main.c ] && sources+=("$source")
 done
 cc "${sources[@]}" tests/vidro_qualidade.c -Isrc -o "$work/test" \
-  -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
+  -DNV_GPUN_TESTE -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined
 mkdir -p "$work/dados"

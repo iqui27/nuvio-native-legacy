@@ -665,7 +665,7 @@ int   ajustes_vidro_fosco(void);
 // Raw Automatic preferences: quality/frost/animations/glass, bits 0..3.
 int   ajustes_efeitos_automaticos(void);
 float ajustes_suavizar_degrades(void); // Noise amplitude: Automatic 1, Strong 2, Off 0.
-int   ajustes_vidro_qualidade(void);   // 0 Automatica (frost + governor), 1 Desempenho (smoked glass, no blur), 2 Alta (frost)
+int   ajustes_vidro_qualidade(void);   // 0 Automatica (frost + governor), 1 Desempenho (smoked glass, no blur), 2 Alta (frost), 3 Automatica on ladder rung 1 (frost, one blur pass)
 void  ajustes_teste_vidro_env(void);   // so capturas        // 1 = arte borrada atras do vidro
 int   ajustes_icone_app(void);
 // 2.0 (N1): 0 = Novo (default), 1 = Classico. Local to this TV.

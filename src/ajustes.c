@@ -3240,7 +3240,7 @@ int ajustes_efeitos_automaticos(void) {
          (valor[AJ_ANIM] == 2 ? 4 : 0) | (valor[AJ_VIDRO] == 2 ? 8 : 0);
 }
 float ajustes_suavizar_degrades(void) { return valor[AJ_SUAVIZAR_DEGRADES] == 2 ? 0.0f : valor[AJ_SUAVIZAR_DEGRADES] == 1 ? 2.0f : 1.0f; }
-int ajustes_vidro_qualidade(void) { return valor[AJ_VIDRO_QUALIDADE] == 1 ? 1 : valor[AJ_VIDRO_QUALIDADE] == 2 ? 2 : gpun_efeito_ativo(1) ? 1 : 0; }   // 0 Automatica, 1 Desempenho, 2 Alta
+int ajustes_vidro_qualidade(void) { return valor[AJ_VIDRO_QUALIDADE] == 1 ? 1 : valor[AJ_VIDRO_QUALIDADE] == 2 ? 2 : gpun_efeito_ativo(1) ? 3 : 0; }   // 0 Automatica, 1 Desempenho, 2 Alta, 3 Automatica in the ladder's one-pass blur
 // Capturas do teste do vidro: NUVIO_SHOT_VIDRO_OPAC=60|70|78|86|92 e
 // NUVIO_SHOT_VIDRO_FOSCO=1 e NUVIO_SHOT_VIDRO_QUAL=0|1|2 (sem gravar nada). INTENCIONAL no release: so os
 // tests/*_shot.c e ajustes_teste_ux_captura a chamam; nenhum caminho de src/ chega aqui na TV.

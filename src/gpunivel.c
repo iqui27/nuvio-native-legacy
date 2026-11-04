@@ -60,7 +60,7 @@ static int bloqueado;
 static double fpsNivel[3]; // Retained in the version-1 disk format.
 static int relatoCena, relatosLentos, relatosRapidos, relatosValidos;
 static int relatoTentativa = -1;
-static int degrau, foscoVetado, recuperacaoEspera;
+static int degrau, foscoVetado, vetoArranques, recuperacaoEspera, provaResolucao;
 static void aplicar(int n, const char *motivo);
 static unsigned efeitos, semGanho;
 static int testePasso, testeAntes;
@@ -164,11 +164,12 @@ static void logExtensoes(const char *ext) {
 
 static void gravar(void) {
   char buf[1024];
-  if (!adaptativo) return;
+  // Manual effects skip the ladder, but clearing the frost mark must still stick.
+  if (!adaptativo && !prefFixa) return;
   snprintf(buf, sizeof buf, "versao=1\nchave=%lx\nnivel=%d\ngpu=%s\ngl=%s\nmodelo=%s\ntizen=%s\n"
-           "avaliacao=1\nbloqueado=%d\nfps0=%.3f\nfps1=%.3f\nfps2=%.3f\nfoscoVetado=%d\n",
+           "avaliacao=1\nbloqueado=%d\nfps0=%.3f\nfps1=%.3f\nfps2=%.3f\nfoscoVetado=%d\nvetoArranques=%d\n",
            chave, nivel, renderer, versaoGl, modelo, tizen,
-           bloqueado, fpsNivel[0], fpsNivel[1], fpsNivel[2], foscoVetado);
+           bloqueado, fpsNivel[0], fpsNivel[1], fpsNivel[2], foscoVetado, vetoArranques);
   if (!dados_gravar(GPUN_ARQ, buf)) printf("[gpu-nivel] nao gravou %s\n", GPUN_ARQ);
 }
 
@@ -176,13 +177,14 @@ static void gravar(void) {
 static void ler(void) {
   char *t = dados_ler(GPUN_ARQ);
   unsigned long c = 0;
-  int v = 0, n = -1, veto = 0;
+  int v = 0, n = -1, veto = 0, arranques = 0;
   const char *p;
   if (!t) { printf("[gpu-nivel] sem %s: comeca do 0\n", GPUN_ARQ); return; }
   if ((p = strstr(t, "versao=")) != NULL) v = atoi(p + 7);
   if ((p = strstr(t, "chave=")) != NULL) c = strtoul(p + 6, NULL, 16);
   if ((p = strstr(t, "nivel=")) != NULL) n = atoi(p + 6);
   if ((p = strstr(t, "foscoVetado=")) != NULL) veto = atoi(p + 12) == 1;
+  if ((p = strstr(t, "vetoArranques=")) != NULL) arranques = atoi(p + 14);
   free(t);
   if (v != 1 || n < 0 || n > 3) { printf("[gpu-nivel] %s invalido: comeca do 0\n", GPUN_ARQ); return; }
   if (c != chave) {
@@ -192,7 +194,7 @@ static void ler(void) {
   }
   // Reprobe recoverable effects from full quality on every launch. Only the
   // frost veto is hardware evidence worth retaining across sessions.
-  foscoVetado = veto;
+  foscoVetado = veto; vetoArranques = arranques;
   nivel = degrau = 0;
 }
 #endif
@@ -369,6 +371,15 @@ void gpun_iniciar(int w, int h) {
   adaptativo = 1;
   origem = "adaptativo";
   ler();
+  // The frost veto is evidence, not a life sentence: same fingerprint, frost is
+  // proven again every GPUN_VETO_ARRANQUES launches (~18 s of ladder if still slow).
+  if (foscoVetado) {
+    if (++vetoArranques >= GPUN_VETO_ARRANQUES) {
+      foscoVetado = vetoArranques = 0;
+      printf("[gpu-escada] frost veto expired, measuring again\n");
+    }
+    gravar();
+  }
   // Mesmo GPU fraca precisa da referencia no 0 antes de reduzir efeitos.
 #else
   { const char *e = getenv("NUVIO_GPU_NIVEL");
@@ -442,9 +453,11 @@ int gpun_alvo_1080_ativo(void) { return alvo1080; }
 
 int gpun_nivel(void) { return nivel; }
 int gpun_degrau(void) { return degrau; }
-int gpun_fosco_vetado(void) { return foscoVetado || gpun_efeito_ativo(2); }
+int gpun_em_teste(void) { return testePasso != 0; }
+void gpun_resolucao_em_prova(int ativa) { provaResolucao = ativa; }
+int gpun_fosco_vetado(void) { return !prefFixa && (foscoVetado || gpun_efeito_ativo(2)); }
 void gpun_fosco_reiniciar(void) {
-  foscoVetado = 0;
+  foscoVetado = vetoArranques = 0;
   efeitos &= ~2u; semGanho &= ~2u;
   if (testePasso) efeitos &= ~(1u << (testePasso - 1));
   testePasso = 0; relatosLentos = relatosRapidos = 0;
@@ -453,7 +466,10 @@ void gpun_fosco_reiniciar(void) {
   if (adaptativo) aplicarEscada();
   gravar();
 }
-int gpun_efeitos_automaticos(void) { return adaptativo && nivel > 0; }
+int gpun_efeitos_automaticos(void) {
+  return adaptativo && (nivel > 0 || efeitos ||
+                        (foscoVetado && (ajustes_efeitos_automaticos() & 2)));
+}
 void gpun_definir_nivel(int n) { aplicar(n, "definido por gpun_definir_nivel"); }
 
 void gpun_log_perfil(long memMB, int texMb, int fios, int heroi) {
@@ -643,18 +659,28 @@ const char *gpun_teste_upscale(int sw, int sh, int iw, int ih, int app) {
 }
 #endif
 
+int gpun_janela_elegivel(double *fps, double pior, int cena, int cheia) {
+  if (medidaTransiente) cheia = 0;
+  if (medidaN) {
+    if (medidaRuim > (medidaMs + medidaRuim) * 0.2 || medidaN < 10) cheia = 0;
+    if (medidaMs > 0) *fps = medidaN * 1000.0 / medidaMs;
+  } else if (medidaRuim > 0) cheia = 0;
+  return cena && cheia && *fps > 0 && pior <= 1000.0;
+}
+
 void gpun_relatar(double fps, double pior, double periodo, int cena, int cheia) {
   double alvo = periodo > 0 ? 1000.0 / periodo : 60.0;
   int automaticos = ajustes_efeitos_automaticos();
-  if (medidaTransiente) cheia = 0;
+  int limpa = gpun_janela_elegivel(&fps, pior, cena, cheia);
   medidaTransiente = 0;
-  if (medidaN) {
-    if (medidaRuim > (medidaMs + medidaRuim) * 0.2 || medidaN < 10) cheia = 0;
-    if (medidaMs > 0) fps = medidaN * 1000.0 / medidaMs;
-  } else if (medidaRuim > 0) cheia = 0;
   medidaMs = medidaRuim = 0; medidaN = 0;
   if (!adaptativo || nivel > GPUN_NIVEL_AUTO_MAX) return;
   if (alvo > 60.0) alvo = 60.0;
+  if (provaResolucao) { // The pending 4K verdict goes first: it is less visible.
+    relatoCena = cena;
+    relatosLentos = relatosRapidos = relatosValidos = 0;
+    return;
+  }
   if (cena != relatoCena) {
     if (testePasso) {
       efeitos &= ~(1u << (testePasso - 1)); degrau = testeAntes;
@@ -666,7 +692,7 @@ void gpun_relatar(double fps, double pior, double periodo, int cena, int cheia) 
     relatosLentos = relatosRapidos = relatosValidos = 0;
     return; // Discard the first window after a scene/player transition.
   }
-  if (!cena || !cheia || !(fps > 0) || pior > 1000.0) {
+  if (!limpa) {
     relatosLentos = relatosRapidos = 0;
     if (testePasso) {
       efeitos &= ~(1u << (testePasso - 1)); degrau = testeAntes;
@@ -684,7 +710,7 @@ void gpun_relatar(double fps, double pior, double periodo, int cena, int cheia) 
     if (!ganho) {
       efeitos &= ~(1u << (passo - 1)); semGanho |= 1u << (passo - 1);
       degrau = testeAntes; aplicarEscada();
-    } else if (passo == 2) { foscoVetado = 1; gravar(); }
+    } else if (passo == 2) { foscoVetado = 1; vetoArranques = 0; gravar(); }
     printf("[gpu-escada] step %d -> %d fps %.1f/%.1f, %s, %s\n",
            testeAntes, passo, testeFps, fps, ganho ? "kept" : "reverted",
            ganho ? "gain >=10% and >=3 fps" : "no gain this boot");
@@ -706,6 +732,8 @@ void gpun_relatar(double fps, double pior, double periodo, int cena, int cheia) 
       recuperacaoEspera = 100;
       relatoTentativa = -1;
     }
+  } else if (relatosRapidos >= 10 && !degrau) {
+    relatoTentativa = -1; // Recovery held: a later slowdown is not its failure.
   } else if (relatosRapidos >= 10 && degrau > 0 && !recuperacaoEspera) {
     relatoTentativa = degrau;
     proximo--;

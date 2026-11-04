@@ -37,6 +37,25 @@ int main(void) {
   }
   gpun_teste_reiniciar();
   assert(!strcmp(ajudaOpcao(AJ_VIDRO), ajudaOpcaoBase(AJ_VIDRO)));
+  // Rungs 1-2 keep level 0 but are real reductions: Settings must say so.
+  memcpy(valor, valorPadrao, sizeof valor);
+  valor[AJ_IDIOMA] = IDIOMA_PT + 1;
+  gpun_teste_reiniciar();
+  gpun_relatar(60, 40, 1000.0 / 60, 1, 1);
+  for (int rung = 1; rung <= 2; rung++) {
+    for (int i = 0; i < 3; i++) gpun_relatar(30, 40, 1000.0 / 60, 1, 1);
+    if (rung == 1) {
+      assert(gpun_nivel() == 0 && gpun_efeito_ativo(1) && ajustes_vidro_qualidade() == 3);
+      assert(strcmp(ajudaOpcao(AJ_VIDRO), ajudaOpcaoBase(AJ_VIDRO)));
+    }
+    for (int i = 0; i < 3; i++) gpun_relatar(34, 40, 1000.0 / 60, 1, 1);
+  }
+  // Recovery leaves only the frost mark: reduced under Frost Automatic, not Frost On.
+  for (int i = 0; i < 20; i++) gpun_relatar(60, 40, 1000.0 / 60, 1, 1);
+  assert(gpun_fosco_vetado() && gpun_degrau() == 0 && gpun_nivel() == 0);
+  assert(strcmp(ajudaOpcao(AJ_VIDRO), ajudaOpcaoBase(AJ_VIDRO)));
+  valor[AJ_VIDRO_FOSCO] = 1;
+  assert(!strcmp(ajudaOpcao(AJ_VIDRO), ajudaOpcaoBase(AJ_VIDRO)));
   puts("gpunivel_ajuda: 13 opcoes, 30 idiomas, minimos/leves automaticos e manual ok");
   return 0;
 }

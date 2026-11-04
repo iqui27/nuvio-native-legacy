@@ -13,9 +13,13 @@
 //     under RES_AUTO_P90_MS for RES_AUTO_PROVA reports, 4K stays; otherwise it
 //     drops to 1080p at once. The verdict is saved per TV and per app version
 //     (RES_ARQ_AUTO) so an update re-checks. Once 4K, RES_AUTO_GPU_MS for
-//     RES_AUTO_SEGUIDAS reports demotes it.
-//   - 4K by choice: if the GPU cannot keep up (gpu-tempo
-//     median > 30 ms, or FPS < 40 where the GPU clock is not available) for a
+//     RES_AUTO_SEGUIDAS reports demotes it. Only windows the effects ladder
+//     would accept count (gpun_janela_elegivel), the ladder waits for the probe
+//     and the probe skips ladder trials. No clean window for RES_AUTO_SUJAS
+//     reports: 1080p for this session, nothing saved, probe again next launch.
+//   - All limits below are written for 60 Hz and scale at 50-59 Hz (res_hz).
+//   - 4K by choice: if the GPU cannot keep up (gpu-tempo median > 30 ms, or
+//     FPS < 40 in a clean window where the GPU clock is not available) for a
 //     sustained stretch, the session falls back to 1080p (internal 1920x1080
 //     target scaled to the 4K surface, gpun_alvo_1080), the island says so
 //     once, and RES_ARQ_RECUO makes the next launches start at 1080p. Picking
@@ -54,7 +58,13 @@ static inline int res_migrar(int antigo) {
 #ifndef RES_4K_SEGUIDAS
 #define RES_4K_SEGUIDAS   4
 #endif      // 4 bad reports in a row = ~12 s sustained
-typedef struct { int ruins; int recuou; } ResVigia;
+typedef struct { int ruins; int recuou; int hz; } ResVigia;
+
+// The millisecond and FPS limits here are written for 60 Hz and scale with the
+// panel refresh (`hz`, SDL's integer rate). 50-59 Hz only: 0 (unknown), faster
+// panels and 24/30 Hz modes keep the 60 Hz rule, so 4K30 stays rejected in favor
+// of the 1080p the same old TV runs at 60.
+static inline double res_hz(int hz) { return hz >= 48 && hz < 60 ? hz : 60.0; }
 
 // Returns 1 exactly once: on the sample that decides the fallback. A good
 // sample resets the streak (a scroll burst is not "sustained"); an invalid one
@@ -62,7 +72,8 @@ typedef struct { int ruins; int recuou; } ResVigia;
 static inline int res_vigia_amostra(ResVigia *v, double fps, double gpuMs, int valida) {
   int ruim;
   if (!v || v->recuou || !valida) return 0;
-  ruim = gpuMs > 0.0 ? gpuMs > RES_4K_GPU_MS : fps < RES_4K_FPS_MIN;
+  { double h = res_hz(v->hz);
+    ruim = gpuMs > 0.0 ? gpuMs > RES_4K_GPU_MS * 60.0 / h : fps < RES_4K_FPS_MIN * h / 60.0; }
   v->ruins = ruim ? v->ruins + 1 : 0;
   if (v->ruins < RES_4K_SEGUIDAS) return 0;
   v->recuou = 1;
@@ -90,6 +101,13 @@ enum { RES_AUTO_SONDAR = 0, RES_AUTO_4K = 1, RES_AUTO_1080 = 2 };
 #define RES_AUTO_SEGUIDAS 3
 #endif    // approved 4K: bad reports in a row (~9 s) to demote
 
+#ifndef RES_AUTO_FPS_MIN
+#define RES_AUTO_FPS_MIN  40.0
+#endif   // without the GPU clock, FPS below this = too heavy
+#ifndef RES_AUTO_SUJAS
+#define RES_AUTO_SUJAS    20
+#endif   // visible-interface reports (~60 s) a probe may wait for a clean window
+
 static inline int res_auto_ler(const char *txt, const char *versao) {
   int n = 0;
   if (!txt) return RES_AUTO_SONDAR;
@@ -101,25 +119,36 @@ static inline int res_auto_ler(const char *txt, const char *versao) {
   return n;
 }
 
-typedef struct { int estado; int validas; int ruins; double pior; } ResAuto;
-enum { RES_AUTO_NADA = 0, RES_AUTO_APROVOU = 1, RES_AUTO_REBAIXOU = 2 };
+typedef struct { int estado; int validas; int ruins; double pior; int hz; int sujas; } ResAuto;
+enum { RES_AUTO_NADA = 0, RES_AUTO_APROVOU = 1, RES_AUTO_REBAIXOU = 2, RES_AUTO_INCONCLUSIVA = 3 };
 
 // One sample per report, with the window's GPU p90 (`p90` <= 0: no GPU clock,
-// FPS decides: >= 55 passes the probe, < 40 is bad). Returns RES_AUTO_APROVOU
-// or RES_AUTO_REBAIXOU exactly once; `a->pior` holds the worst p90 seen.
+// FPS decides: >= refresh - 5 passes the probe, < 2/3 of refresh is bad). Limits
+// follow `a->hz` (res_hz). `valida` = the window passed gpun_janela_elegivel;
+// the caller skips reports without the interface on screen. Returns
+// RES_AUTO_APROVOU or RES_AUTO_REBAIXOU exactly once; `a->pior` holds the worst
+// p90 seen. A probe that never gets a clean window returns RES_AUTO_INCONCLUSIVA
+// once: the caller drops to 1080p for the session and saves nothing.
 static inline int res_auto_amostra(ResAuto *a, double fps, double p90, int valida) {
+  double h, ms;
   int ruim;
-  if (!a || !valida || a->estado == RES_AUTO_1080) return RES_AUTO_NADA;
+  if (!a || a->estado == RES_AUTO_1080) return RES_AUTO_NADA;
+  if (!valida) {
+    if (a->estado != RES_AUTO_SONDAR || ++a->sujas < RES_AUTO_SUJAS) return RES_AUTO_NADA;
+    a->estado = RES_AUTO_1080;
+    return RES_AUTO_INCONCLUSIVA;
+  }
+  h = res_hz(a->hz); ms = 60.0 / h;
+  ruim = p90 > 0.0 ? p90 > RES_AUTO_GPU_MS * ms : fps < RES_AUTO_FPS_MIN * h / 60.0;
   if (p90 > a->pior) a->pior = p90;
   if (a->estado == RES_AUTO_SONDAR) {
-    if (p90 > 0.0 ? p90 > RES_AUTO_GPU_MS : fps < 40.0) { a->estado = RES_AUTO_1080; return RES_AUTO_REBAIXOU; }
+    if (ruim) { a->estado = RES_AUTO_1080; return RES_AUTO_REBAIXOU; }
     a->validas++;
     if (a->validas < RES_AUTO_PROVA) return RES_AUTO_NADA;
-    if (p90 > 0.0 ? a->pior >= RES_AUTO_P90_MS : fps < 55.0) { a->estado = RES_AUTO_1080; return RES_AUTO_REBAIXOU; }
+    if (p90 > 0.0 ? a->pior >= RES_AUTO_P90_MS * ms : fps < h - 5.0) { a->estado = RES_AUTO_1080; return RES_AUTO_REBAIXOU; }
     a->estado = RES_AUTO_4K; a->ruins = 0;
     return RES_AUTO_APROVOU;
   }
-  ruim = p90 > 0.0 ? p90 > RES_AUTO_GPU_MS : fps < 40.0;
   a->ruins = ruim ? a->ruins + 1 : 0;
   if (a->ruins < RES_AUTO_SEGUIDAS) return RES_AUTO_NADA;
   a->estado = RES_AUTO_1080;

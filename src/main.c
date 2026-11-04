@@ -669,6 +669,10 @@ static void resolucaoTvViewportMudou(Uint32 agora, int mudouModo) {
 // allow one report interval to settle, then require a whole unchanged TV
 // interval. Every report still harvests/resets GPU stats, including skipped
 // reports, so a Mobile or resize window cannot decide the TV's saved verdict.
+static int telaHz(void) {
+  SDL_DisplayMode modo;
+  return SDL_GetCurrentDisplayMode(0, &modo) == 0 ? modo.refresh_rate : 0;
+}
 static int resolucaoTvJanela(Uint32 agora, Uint32 inicio, int w, int h, int pedidoW, int pedidoH) {
 #ifdef NV_TOUCH_UI
   if (!resolucaoDaTv()) return 0;
@@ -2684,10 +2688,18 @@ int main(int argc, char **argv) {
       { double gMed = 0, gPior, gUlt, gP90 = gputempo_p90(); int gN = gputempo_colher(&gMed, &gPior, &gUlt);
         int janelaTv = resolucaoTvJanela(agora, ultRelato, dw, dh, pedeW, pedeH);
         if (gN > 0) printf("[gpu-tempo] med=%.1fms pior=%.1fms ult=%.1fms n=%d\n", gMed, gPior, gUlt, gN);
+        double fpsJan = quadros * 1000.0 / (double)(agora - ultRelato);
+        // The window the effects ladder would accept (gpun_relatar, below).
+#if defined(NV_TPK) || defined(NV_ANDROID) || defined(NV_WEBOS)
+        int janelaLimpa = gpun_janela_elegivel(&fpsJan, pior, gpuRelatoMisto ? 0 : gpuRelatoCena, gpuRelatoCheia);
+#else
+        int janelaLimpa = 1;
+#endif
+        gpun_resolucao_em_prova(0);
         // AUTOMATIC 4K (resolucao.h): probe, then watch. Same validity rule as below.
         if (autoPediu && janelaTv) {
           static ResAuto ra; static int iniciou, avisouSem;
-          if (!iniciou) { iniciou = 1; ra.estado = autoEst == RES_AUTO_4K ? RES_AUTO_4K : RES_AUTO_SONDAR; }
+          if (!iniciou) { iniciou = 1; ra.estado = autoEst == RES_AUTO_4K ? RES_AUTO_4K : RES_AUTO_SONDAR; ra.hz = telaHz(); }
           if (dw <= (int)NV_TELA_W) {
             if (!avisouSem) {
               avisouSem = 1;
@@ -2695,11 +2707,12 @@ int main(int argc, char **argv) {
               dados_gravar(RES_ARQ_AUTO, "1080 " NV_VERSAO "\n");
             }
           } else if (!gpun_alvo_1080_ativo() && ra.estado != RES_AUTO_1080) {
-            double fpsJan = quadros * 1000.0 / (double)(agora - ultRelato);
-            int valida = SDL_GetTicks() > 8000u && !abertura_ativa() &&
-                         !player_aberto() && !player_mini_ativo();
+            int interfaceVisivel = SDL_GetTicks() > 8000u && !abertura_ativa() &&
+                                   !player_aberto() && !player_mini_ativo();
             double p90 = gN > 0 ? gP90 : 0.0;
-            int r = res_auto_amostra(&ra, fpsJan, p90, valida);
+            // One trial at a time: an effects trial's windows judge that trial.
+            int r = interfaceVisivel && !gpun_em_teste()
+                    ? res_auto_amostra(&ra, fpsJan, p90, janelaLimpa) : RES_AUTO_NADA;
             if (r == RES_AUTO_APROVOU) {
               printf("[4k] automatico: 4K (gpu p90=%.1f ms) fps=%.1f\n", ra.pior, fpsJan);
               dados_gravar(RES_ARQ_AUTO, "4k " NV_VERSAO "\n");
@@ -2710,16 +2723,22 @@ int main(int argc, char **argv) {
               if (autoEst == RES_AUTO_4K)
                 ilha_avisar("res-4k-recuo", ILHA_INFO, NULL,
                             i18n("Interface em 1080p: esta TV não aguenta 4K"), 8000u, 0);
+            } else if (r == RES_AUTO_INCONCLUSIVA) {
+              printf("[4k] automatico: 1080p nesta sessao (sonda sem janela limpa)\n");
+              gpun_alvo_1080();
             }
+            gpun_resolucao_em_prova(ra.estado == RES_AUTO_SONDAR);
           }
         }
         // 4K WATCH (resolucao.h): the person picked 4K and the TV granted it.
         // Only the interface counts: no player, no opening, 10 s of warm-up.
         if (pediu4k && janelaTv && dw > (int)NV_TELA_W && !gpun_alvo_1080_ativo()) {
           static ResVigia vigia4k;
-          double fpsJan = quadros * 1000.0 / (double)(agora - ultRelato);
+          // The GPU clock is evidence on any screen; bare FPS needs a clean window.
           int valida = SDL_GetTicks() > 10000u && !abertura_ativa() &&
-                       !player_aberto() && !player_mini_ativo();
+                       !player_aberto() && !player_mini_ativo() &&
+                       !gpun_em_teste() && (gN > 0 || janelaLimpa);
+          vigia4k.hz = telaHz();
           if (res_vigia_amostra(&vigia4k, fpsJan, gN > 0 ? gMed : 0.0, valida)) {
             printf("[4k] recuo: gpu=%.1fms fps=%.1f em %d relatorios seguidos -> 1080p nesta "
                    "sessao e nas proximas\n", gN > 0 ? gMed : 0.0, fpsJan, RES_4K_SEGUIDAS);
