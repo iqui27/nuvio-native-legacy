@@ -185,10 +185,29 @@ const char *legmem_preferencia(const char *ajuste, const LegMem *doTitulo,
   return r;
 }
 
+// Before #83aa66f2b recovered PGS tracks all used numero -1; they now use -2, -3, …
+static int legmem_exata_recuperada(const LegMem *m,
+                                   const int *numeros, const char *const *idiomas,
+                                   const char *const *nomes, int nEmb) {
+  int i, cand = -1, quantos = 0;
+  if (!m || m->tipo != 'e' || m->numero != -1) return -1;
+  for (i = 0; i < nEmb; i++) {
+    const char *idi = idiomas && idiomas[i] ? idiomas[i] : "";
+    int casa = 0;
+    if (!numeros || numeros[i] > -2) continue;
+    if (m->idioma[0] && idi[0] && ling_casa(idi, m->idioma)) casa = 1;
+    else if (!m->idioma[0] && !idi[0] && nomes && nomes[i] && m->nome[0] && !strcmp(nomes[i], m->nome)) casa = 1;
+    if (!casa) continue;
+    cand = i;
+    if (++quantos > 1) return -1;
+  }
+  return quantos == 1 ? cand : -1;
+}
+
 int legmem_exata(const LegMem *m,
                  const int *numeros, const char *const *idiomas, const char *const *nomes, int nEmb,
                  const char *const *idsAdd, int nAdd) {
-  int i;
+  int i, r;
   if (!m) return -1;
   if (m->tipo == 'e') {
     for (i = 0; i < nEmb; i++) {
@@ -197,6 +216,7 @@ int legmem_exata(const LegMem *m,
       if (m->idioma[0] && idi[0] && ling_casa(idi, m->idioma)) return i;
       if (!m->idioma[0] && !idi[0] && nomes && nomes[i] && !strcmp(nomes[i], m->nome)) return i;
     }
+    if ((r = legmem_exata_recuperada(m, numeros, idiomas, nomes, nEmb)) >= 0) return r;
   } else if (m->tipo == 'a' && m->id[0]) {
     for (i = 0; i < nAdd; i++)
       if (idsAdd && idsAdd[i] && !strcmp(idsAdd[i], m->id)) return nEmb + i;
