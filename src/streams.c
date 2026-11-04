@@ -4317,19 +4317,27 @@ static const char *idiomaDa(const Stream *s) {
   if (temNoTexto(s, "legendado") || temNoTexto(s, "leg")) return "Legendado";
   return NULL;
 }
+// -1 = no audio-language evidence, 0 = evidence of other languages, 1 = match.
+// Declared tracks take precedence; otherwise the release classifier, which
+// excludes subtitle-only and URL text, and the codes it read in that text.
+static int evidenciaAudio(const Stream *s, const char *pref) {
+  if (s->audioIdiomas[0]) return audioDeclaradoEm(s, pref);
+  if (!s->filtroLido) return -1;
+  uint64_t v = s->filtro.valores[FONTEFILTRO_LINGUAS] & ~fontefiltro_desconhecido(FONTEFILTRO_LINGUAS);
+  uint64_t m = fontefiltro_valores(FONTEFILTRO_LINGUAS, pref);
+  if (m && (v & m)) return 1;
+  // Languages outside the fixed filter options (Turkish).
+  for (const char *p = s->audioTexto; !m && *p;) {
+    char cod[16]; size_t k = strcspn(p, ",");
+    snprintf(cod, sizeof cod, "%.*s", (int)k, p);
+    if (ling_casa(cod, pref)) return 1;
+    p += k + (p[k] == ',');
+  }
+  return v || s->audioTexto[0] ? 0 : -1;
+}
 static int temAudioPreferido(const Stream *s) {
   const char *pref = idiomaFiltroAudio();
-  // Declared tracks take precedence; otherwise use the existing release
-  // classifier, which excludes subtitle-only and URL text.
-  if (!pref[0]) return 1;
-  if (s->audioIdiomas[0]) return audioDeclaradoEm(s, pref);
-  if (!s->filtroLido) return 0;
-  uint64_t m = fontefiltro_valores(FONTEFILTRO_LINGUAS, pref);
-  if (m) return (s->filtro.valores[FONTEFILTRO_LINGUAS] & m) != 0;
-  // Languages outside the fixed filter options (Turkish) read the same text.
-  char texto[sizeof s->rotulo + sizeof s->descricao + 2];
-  snprintf(texto, sizeof texto, "%s\n%s", s->rotulo, s->descricao);
-  return fontefiltro_lingua_texto(s->arquivo, texto, s->filtro.valores[FONTEFILTRO_LINGUAS], pref);
+  return !pref[0] || evidenciaAudio(s, pref) == 1;
 }
 static const char *ajudaFiltroAudio(void) {
   static char ajuda[512];
@@ -4731,6 +4739,38 @@ static void montarBase(int automatica) {
   }
   alturaTotal = y + medirDicaTorrents();
 }
+// AUDIO-LANGUAGE DIAGNOSTICS (#611): bounded counters, no source names,
+// URLs or preference text. Each source has missing evidence, a mismatch or a
+// match (see evidenciaAudio). A match may also be hidden by saved source
+// rules, Only MP4, In cache or the selected addon tab; these reasons overlap
+// and each is counted on its own; a TV-incompatible match is only missing
+// from match_visible. Counted per snapshot, never per draw.
+enum { AUD_TOTAL, AUD_SEM, AUD_DIFERE, AUD_CASA, AUD_VISIVEL,
+       AUD_REGRAS, AUD_MP4, AUD_CACHE, AUD_ADDON, AUD_N };
+static int audioDiag[AUD_N], audioDiagLog[AUD_N], audioDiagEmitido;
+static void audioDiagEmitir(void) {
+  static const char *const nomes[AUD_N] = {"sources", "missing", "mismatch", "match",
+    "match_visible", "hidden_rules", "hidden_mp4", "hidden_cache", "hidden_addon"};
+  if (!audioDiag[AUD_TOTAL]) return;
+  printf("[fonte] audio-lang chip=%d", soDub ? 1 : 0);
+  for (int k = 0; k < AUD_N; k++) printf(" %s=%d", nomes[k], audioDiag[k]);
+  putchar('\n');
+  memcpy(audioDiagLog, audioDiag, sizeof audioDiag);
+  audioDiagEmitido = 1;
+}
+static void audioDiagContar(int i, const char *pref, int permitida, int visivel) {
+  const Stream *s = &lista[i];
+  int e = evidenciaAudio(s, pref);
+  audioDiag[AUD_TOTAL]++;
+  audioDiag[e < 0 ? AUD_SEM : e ? AUD_CASA : AUD_DIFERE]++;
+  if (e <= 0) return;
+  int addon = filtro > 0 && filtro < nProvedores && !doProvedor(s, filtro);
+  audioDiag[AUD_REGRAS] += !permitida;
+  audioDiag[AUD_MP4] += !s->filtro.naoVod && soMp4 && !s->mp4;
+  audioDiag[AUD_CACHE] += !s->filtro.naoVod && soCache && !cacheConfirmado(s);
+  audioDiag[AUD_ADDON] += addon;
+  audioDiag[AUD_VISIVEL] += visivel && !addon;
+}
 // Fixed-size settings snapshot: checking it never walks the source list.
 static void folhaDados(void) {
   static int busy, valid;
@@ -4769,9 +4809,13 @@ static void folhaDados(void) {
   busy = 1;
   atualizarProvedores();
   memset(folhaContagens, 0, sizeof folhaContagens);
+  memset(audioDiag, 0, sizeof audioDiag);
   folhaOcultos = 0;
+  const char *pref = idiomaFiltroAudio();
   for (int i = 0; i < n; i++) {
-    if (passaChips(i)) {
+    int passa = passaChips(i);
+    if (pref[0]) audioDiagContar(i, pref, canalFolha || stream_filtro_permite(&lista[i]), passa);
+    if (passa) {
       folhaContagens[0]++;
       for (int p = 1; p < nProvedores; p++)
         if (doProvedor(&lista[i], p)) { folhaContagens[p]++; break; }
@@ -4781,6 +4825,7 @@ static void folhaDados(void) {
   folhaBloqueada = stream_filtro_bloqueou();
   folhaVisiveis = filtrosVisiveisCalcular();
   folhaAuto = automaticoDaFolhaModoCalcular();
+  if (memcmp(audioDiag, audioDiagLog, sizeof audioDiag)) audioDiagEmitir();
   key.valores[2] = filtro; // Provider arrivals can move the selected tab.
   anterior = key; valid = 1; folhaDadosVersao++;
   busy = 0;
@@ -4941,6 +4986,7 @@ void stream_folha_canais_abrir(const char *titulo) {
 int stream_folha_canais_aberta(void) { return canaisFolha && aberta; }
 void stream_folha_canais_fechar(void) { if(canaisFolha){aberta=0;fontescanais_limpar();} }
 void stream_folha_abrir(void) {
+  audioDiagEmitido = 0;
   filtroServidor=-1;
   canaisFolha=0;fontescanais_limpar();
   // A busca nova pode estar na fila enquanto a lista ainda e do episodio
@@ -4990,6 +5036,8 @@ void stream_folha_abrir(void) {
   printf("[fonte] folha: %d de %d na lista (%d addon(s); %d torrent(s) sem debrid "
          "descartado(s); %d ja recusada(s) pelo automatico, continuam na folha)\n",
          nFiltrados(), n, nProvedores - 1, descartadosSemDebrid, excl);
+  // Once per open: the snapshot above may already have logged it.
+  if (!audioDiagEmitido) audioDiagEmitir();
   int conhecidos = 0, pesados = 0, diag = 0, pass = 0;
   for (int i = 0; i < fitN; i++) {
     conhecidos += fitClasses[i] != SF_DESCONHECIDA;

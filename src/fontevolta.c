@@ -112,8 +112,10 @@ static void gravarSemTrava(void) {
     for (int j = 0; j < FONTEFILTRO_N; j++)
       k += (size_t)snprintf(buf + k, cap - k, "%llu\t", (unsigned long long)s->filtro.valores[j]);
     if (k + 1 < cap)
-      k += (size_t)snprintf(buf + k, cap - k, "%d\t%d\t%d\t%d\t%d\t%ld\t%d\n", s->altura, s->dolbyVision,
+      k += (size_t)snprintf(buf + k, cap - k, "%d\t%d\t%d\t%d\t%d\t%ld\t%d\t", s->altura, s->dolbyVision,
                             s->dolbyAtmos, s->mp4, s->fileIdx, s->tamanhoMB, s->debridServico);
+    esc(tmp, tmpTam, s->audioTexto);
+    if (k + 1 < cap) k += (size_t)snprintf(buf + k, cap - k, "%s\n", tmp);
   }
   arqGravar(ARQUIVO, buf);
   free(buf); free(tmp);
@@ -174,6 +176,7 @@ static void carregarSemTrava(void) {
     e->s.fileIdx = atoi(campo(&p));
     e->s.tamanhoMB = atol(campo(&p));
     e->s.debridServico = atoi(campo(&p));
+    desesc(e->s.audioTexto, sizeof e->s.audioTexto, campo(&p));
     if (!e->alvo[0] || !e->conta[0] || !e->s.url[0] || e->obtidoS <= 0) continue;
     nEnt++;
   }

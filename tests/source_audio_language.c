@@ -49,7 +49,7 @@ int main(void) {
   }
   // Release labels without declared tracks: languages outside the fixed
   // filter options, subtitle scopes, generic dubs, transport text, codecs.
-  static const struct { const char *pref, *campos; int esperado; } c[] = {
+  static const struct { const char *pref, *campos; int esperado; const char *prov; } c[] = {
     {"tr","\"title\":\"Frozen.2013.1080p.WEB-DL.Turkish.x264.mkv\"",1},
     {"tr","\"title\":\"Frozen.2013.1080p.WEB-DL.TR.x264.mkv\"",1},
     {"tr","\"title\":\"Frozen.2013.1080p.WEB-DL.tur.x264.mkv\"",1},
@@ -78,16 +78,66 @@ int main(void) {
     {"es","\"description\":\"Subtitles:\\n\xF0\x9F\x87\xAA\xF0\x9F\x87\xB8\"",0},
     {"tr","\"language\":\"en\",\"title\":\"Frozen.2013.1080p.WEB-DL.Turkish.mkv\"",0},
     {"*","\"title\":\"Frozen.2013.1080p.WEB-DL.mkv\"",1},
+    // Generic languages: explicit audio fields win; unknown values never match.
+    {"tr","\"languages\":[\"tr\"],\"title\":\"Frozen.2013.1080p.WEB-DL.mkv\"",1},
+    {"tr","\"parsed\":{\"languages\":[\"Turkish\"]},\"title\":\"Frozen 2013\"",1},
+    {"tr","\"languages\":[\"tr\"],\"audioLanguages\":[\"en\"]",0},
+    {"en","\"languages\":[\"tr\"],\"audioLanguages\":[\"en\"]",1},
+    {"tr","\"streamData\":{\"parsedFile\":{\"languages\":[\"Turkish\"]}},\"audioTracks\":[{\"language\":\"en\"}]",0},
+    {"tr","\"languages\":[\"tr\"],\"description\":\"Audio: English\"",1},
+    {"en","\"languages\":[\"tr\"],\"description\":\"Audio: English\"",0},
+    {"tr","\"languages\":[\"und\"],\"title\":\"Frozen.2013.1080p.WEB-DL.Turkish.x264.mkv\"",0},
+    {"tr","\"languages\":[\"Dual Audio\"]",0},
+    {"tr","\"languages\":[]",0},
+    {"en","\"languages\":[\"tr\"],\"subtitles\":[{\"lang\":\"en\",\"url\":\"https://example.test/s.srt\"}]",0},
+    {"tr","\"subtitles\":[{\"lang\":\"tr\",\"url\":\"https://example.test/s.srt\"}],\"title\":\"Frozen 2013\"",0},
+    // A bracketed language name before the technical tags.
+    {"tr","\"title\":\"Frozen (2013) [Turkish] 1080p WEB-DL x264\"",1},
+    {"tr","\"title\":\"Frozen.2013.[Turkish].1080p.WEB-DL.x264.mkv\"",1},
+    {"tr","\"behaviorHints\":{\"filename\":\"Frozen.2013.(Turkish).1080p.BluRay.x264.mkv\"}",1},
+    {"en","\"title\":\"The.English.Patient.1996.1080p.BluRay.x264.mkv\"",0},
+    {"en","\"title\":\"[English Patient] 1996 1080p BluRay x264\"",0},
+    {"it","\"title\":\"It.2017.1080p.BluRay.x264.mkv\"",0},
+    {"it","\"title\":\"[It] 2017 1080p BluRay x264\"",0},
+    {"tr","\"title\":\"[Tron] 2010 1080p BluRay x264\"",0},
+    {"tr","\"title\":\"Frozen 2013 [Dubbed] 1080p WEB-DL x264\"",0},
+    {"tr","\"title\":\"Frozen 2013 [Dual] 1080p WEB-DL x264\"",0},
+    {"tr","\"title\":\"Frozen 2013 [Multi] 1080p WEB-DL x264\"",0},
+    // Subtitle sections sharing a line with audio or the release name.
+    {"tr","\"description\":\"Audio: Turkish | Subs: English\"",1},
+    {"en","\"description\":\"Audio: Turkish | Subs: English\"",0},
+    {"tr","\"title\":\"Frozen.2013.1080p.WEB-DL.Turkish.x264 | Subs: English\"",1},
+    {"en","\"title\":\"Frozen.2013.1080p.WEB-DL.Turkish.x264 | Subs: English\"",0},
+    {"tr","\"title\":\"Frozen.2013.1080p.WEB-DL.x264 | Subs: Turkish\"",0},
+    {"tr","\"title\":\"Frozen.2013.1080p.WEB-DL.x264\\nSubtitles:\\nTurkish\"",0},
+    // Provider name never counts; title survives next to a description.
+    {"tr","\"title\":\"Frozen 2013\"",0,"Turkish.1080p.WEB-DL.x264"},
+    {"tr","\"title\":\"Frozen.2013.1080p.WEB-DL.Turkish.x264.mkv\",\"description\":\"2.1 GB\"",1},
+    {"tr","\"name\":\"Addon 1080p\",\"title\":\"Frozen.2013.1080p.WEB-DL.Turkish.x264.mkv\",\"description\":\"Frozen 2013\\n2.1 GB\"",1},
   };
+  int falhas = 0;
   for (unsigned i = 0; i < sizeof c / sizeof *c; i++) {
     char json[1024]; Stream *v = NULL;
     snprintf(json, sizeof json, "{\"streams\":[{\"url\":\"https://example.test/v\",%s}]}", c[i].campos);
-    assert(stream_extrair(json, "fixture", &v) == 1);
+    assert(stream_extrair(json, c[i].prov ? c[i].prov : "fixture", &v) == 1);
     ling_local_audio(c[i].pref); lista = v; n = 1; soDub = 1;
     int r = passaChips(0);
     printf("case %02u %s\n", i, r == c[i].esperado ? "ok" : "FAIL");
-    assert(r == c[i].esperado);
+    falhas += r != c[i].esperado;
     free(v);
+  }
+  assert(!falhas);
+  // Original audio and the saved-filter mask follow the same evidence.
+  {
+    Stream *v = NULL;
+    assert(stream_extrair("{\"streams\":[{\"url\":\"https://example.test/v\",\"languages\":[\"en\"],\"audioLanguages\":[\"tr\"]}]}", "fixture", &v) == 1);
+    assert(!(v->filtro.valores[FONTEFILTRO_LINGUAS] & fontefiltro_bit(FONTEFILTRO_LINGUAS, 0)) && "explicit audio wins in the filter mask");
+    ling_local_audio("~"); ling_definir_original("tr"); lista = v; n = 1; soDub = 1;
+    assert(passaChips(0) && "Original follows declared audio");
+    ling_definir_original("en");
+    assert(!passaChips(0));
+    free(v);
+    puts("case mask/original ok");
   }
   puts("source audio language: ok");
   return 0;

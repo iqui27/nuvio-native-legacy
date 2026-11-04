@@ -188,7 +188,7 @@ static uint64_t bytesTextoFiltro(const char *texto) {
 }
 
 static void metadadosFiltro(const char *obj, const char *fim, const char *nome,
-                             const char *descricao, const char *titulo, Stream *s) {
+                             const char *descricao, const char *titulo, int explicito, Stream *s) {
   const char *cr = objetoRaiz(obj, fim, "clientResolve");
   const char *st = cr ? objetoRaiz(cr, js_fim(cr), "stream") : NULL;
   const char *raw = st ? objetoRaiz(st, js_fim(st), "raw") : NULL;
@@ -216,7 +216,8 @@ static void metadadosFiltro(const char *obj, const char *fim, const char *nome,
     camposFiltro(objetos, 6, fim, chaves[k], campos[k], sizeof campos[k]);
   // O leitor de faixas ja validou audioTracks/languages. Legendas nao sao
   // evidencia de audio, e a preferencia de idioma nao declara uma faixa.
-  if (!campos[FONTEFILTRO_LINGUAS][0] && s->audioIdiomas[0])
+  // Faixas de audio explicitas valem mais que um languages generico.
+  if ((explicito || !campos[FONTEFILTRO_LINGUAS][0]) && s->audioIdiomas[0])
     snprintf(campos[FONTEFILTRO_LINGUAS], sizeof campos[FONTEFILTRO_LINGUAS], "%s", s->audioIdiomas);
   static const char *const grupoChaves[] = {"group", "releaseGroup", "release_group", NULL};
   camposFiltro(objetos, 6, fim, grupoChaves, grupo, sizeof grupo);
@@ -243,6 +244,9 @@ static void metadadosFiltro(const char *obj, const char *fim, const char *nome,
   };
   fontefiltro_classificar(&e, &s->filtro);
   s->filtroLido = 1;
+  // Nenhum campo de audio: o mesmo texto do classificador, sem provedor.
+  if (!campos[FONTEFILTRO_LINGUAS][0])
+    fontefiltro_linguas_texto(nomeCompleto, texto, s->audioTexto, sizeof s->audioTexto);
 }
 
 
@@ -731,7 +735,20 @@ static void faixasCampoTexto(const char *obj, const char *fim, const char *campo
   if (!s->audioIdiomas[0]) memcpy(s->audioIdiomas, audio, sizeof audio);
   if (!s->legendaIdiomas[0]) memcpy(s->legendaIdiomas, subs, sizeof subs);
 }
-static void metadadosFaixas(const char *obj, const char *fim, Stream *s) {
+// languages generico fora dos caminhos documentados: so idiomas conhecidos.
+static void faixasGenerico(const char *obj, char *dst, unsigned tam) {
+  char lido[512] = "";
+  if (!obj) return;
+  faixasCampo(obj, js_fim(obj), "languages", lido, sizeof lido, 0);
+  for (const char *p = lido; *p;) {
+    const char *e = strchr(p, ',');
+    if (!e) e = p + strlen(p);
+    if (faixaIdiomaTextoConhecido(p, e)) faixaIdiomaAdicionar(dst, tam, p, e);
+    p = *e ? e + 1 : e;
+  }
+}
+// 1 quando campos explicitos de audio declararam as faixas.
+static int metadadosFaixas(const char *obj, const char *fim, Stream *s) {
   const char *cr = objetoRaiz(obj, fim, "clientResolve");
   const char *st = cr ? objetoRaiz(cr, js_fim(cr), "stream") : NULL;
   const char *raw = st ? objetoRaiz(st, js_fim(st), "raw") : NULL;
@@ -761,16 +778,21 @@ static void metadadosFaixas(const char *obj, const char *fim, Stream *s) {
     }
   }
   // AIOStreams separa explicitamente languages (audio) de subtitles no
-  // ParsedFile. So estes caminhos documentados autorizam o nome generico.
+  // ParsedFile. So estes caminhos documentados autorizam o nome generico,
+  // e so quando nenhum campo explicito de audio respondeu.
   // https://github.com/Viren070/AIOStreams/blob/main/packages/core/src/db/schemas.ts
+  int explicito = s->audioIdiomas[0] != 0;
   if (parsedFile) {
-    faixasCampo(parsedFile, js_fim(parsedFile), "languages", s->audioIdiomas, sizeof s->audioIdiomas, 0);
+    if (!explicito) faixasCampo(parsedFile, js_fim(parsedFile), "languages", s->audioIdiomas, sizeof s->audioIdiomas, 0);
     faixasCampo(parsedFile, js_fim(parsedFile), "subtitles", s->legendaIdiomas, sizeof s->legendaIdiomas, 0);
   }
   if (parsed) {
-    faixasCampo(parsed, js_fim(parsed), "languages", s->audioIdiomas, sizeof s->audioIdiomas, 0);
+    if (!explicito) faixasCampo(parsed, js_fim(parsed), "languages", s->audioIdiomas, sizeof s->audioIdiomas, 0);
     faixasCampo(parsed, js_fim(parsed), "subtitles", s->legendaIdiomas, sizeof s->legendaIdiomas, 0);
   }
+  // O classificador tambem le languages no parsed da raiz e na propria fonte.
+  if (!s->audioIdiomas[0]) faixasGenerico(parsedRaiz, s->audioIdiomas, sizeof s->audioIdiomas);
+  if (!s->audioIdiomas[0]) faixasGenerico(obj, s->audioIdiomas, sizeof s->audioIdiomas);
   // Stremio stream.subtitles sao legendas anexadas a ESTA fonte. Nao buscar
   // no objeto de resposta/titulo, nem afirmar que estas faixas sao embutidas.
   faixasCampo(obj, fim, "subtitles", s->legendaIdiomas, sizeof s->legendaIdiomas, 1);
@@ -779,6 +801,7 @@ static void metadadosFaixas(const char *obj, const char *fim, Stream *s) {
   // provedor, filename, filtro de idiomas ou faixas descobertas pelo player.
   faixasCampoTexto(obj, fim, "description", s);
   faixasCampoTexto(obj, fim, "title", s);
+  return explicito;
 }
 
 // Decimal integers only, parsed without double rounding. Numeric strings
@@ -1114,8 +1137,8 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
       int cache = cacheDeclarado(p, fim);
       s.emCache = cache > 0 || (cache == 0 && marcaEmCache(p, fim));
       s.cacheNegado = cache < 0;
-      metadadosFaixas(p, fim, &s);
-      metadadosFiltro(p, fim, nomeFonte, s.descricao, titulo, &s);
+      int explicito = metadadosFaixas(p, fim, &s);
+      metadadosFiltro(p, fim, nomeFonte, s.descricao, titulo, explicito, &s);
       // behaviorHints.bingeGroup — ANCORADO NO OBJETO, e nao procurado solto.
       //
       // Duas coisas separadas, e as duas custam uma linha:

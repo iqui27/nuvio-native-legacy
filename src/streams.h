@@ -59,6 +59,10 @@ typedef struct Stream {
   // Legendas anexadas pelo addon tambem contam, sem afirmar que sao embutidas.
   char audioIdiomas[512];
   char legendaIdiomas[512];
+  // Audio language codes named only by the release text (title/description/
+  // filename), never by provider, headers or URL. Matching only: playback
+  // tracks keep audioIdiomas. Empty when any audio field was declared.
+  char audioTexto[64];
   // Metadados canonicos para as exclusoes compartilhadas. Independentes dos
   // badges importados e do tamanho exato exigido pelo StreamFit.
   FonteFiltroDados filtro;

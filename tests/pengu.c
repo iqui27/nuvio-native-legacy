@@ -120,6 +120,9 @@ int debrid_ativo(void) { return 0; }
 void fontefiltro_classificar(const FonteFiltroEntrada *entrada, FonteFiltroDados *out) {
   (void)entrada; (void)out;
 }
+void fontefiltro_linguas_texto(const char *filename, const char *texto, char *dst, unsigned n) {
+  (void)filename; (void)texto; if (n) dst[0] = 0;
+}
 
 int main(void) {
   char *body = fixture("stream");
