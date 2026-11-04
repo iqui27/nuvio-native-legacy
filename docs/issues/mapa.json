@@ -13275,6 +13275,17 @@
  "validacoes": [
   {
    "data": "2026-11-04",
+   "quem": "job mini (implementação); revisão independente Zima; Claude Code (integração)",
+   "o_que": "Identidade distinta para faixas PGS recuperadas no seletor de legendas; cenário com três faixas.",
+   "issues": [
+    665
+   ],
+   "ref": "integracao/2.1@725ad8b5aa02a3a1e5807d330d1bd92374ae11ce",
+   "resultado": "teste direcionado FAIL antes e PASS depois conforme job; revisão OK com hipótese P2 de colisão; testes pós-merge passaram com dois avisos do compilador. Não comprova solução integral da issue nem compatibilidade de preferências salvas ou reprodução em TV.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-tv-sub-0411.log; /Volumes/ExternalSSD/tmp/rev/j-rev-tv-sub-0411.log; tests/legendasui.sh, tests/lg_missing_subtitles.sh e tools/varredura-i18n.py rc=0 pós-merge"
+  },
+  {
+   "data": "2026-11-04",
    "quem": "Job mini, revisão independente Zima e coordenação TV (modelos servidos não comprovados)",
    "o_que": "Parser Plex e Jellyfin encerra iteração de arrays com JSON malformado em vez de travar",
    "issues": [],
