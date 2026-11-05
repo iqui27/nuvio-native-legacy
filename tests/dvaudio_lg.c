@@ -255,6 +255,26 @@ static void testarRoteamentoRecuperado(void) {
   bindVivo=bindPendente=0;acb=modoLoad=0;
   assert(iniciarDts(-1) && dtsModoDv && partidaPos==745.286 && partidaPaused);
   dtsSessao=NULL;fixtureMkvEnabled=1;dvSilencio=0;
+  // A reopen can prepare P8 after native confirmation/probe were reset.
+  DtsMediaInfo prepared={0};strcpy(prepared.video_codec,"hevc");
+  prepared.dovi_profile=8;prepared.dovi_bl_present=prepared.dovi_rpu_present=1;
+  prepared.dovi_bl_compatibility_id=1;
+  dtsModoDv=dvHabilitado=0;dvNao=VIDEO_DV_NAO_FALHOU;
+  dvMkvRpu=0;strcpy(vidHdr,"none");sincronizarRotaDts(&prepared);
+  assert(dtsModoDv && dvHabilitado && !dvNao);
+  // Output truth wins even when native return temporarily forced HDR10.
+  dtsModoDv=dvHabilitado=0;semDVForcado=1;sincronizarRotaDts(&prepared);
+  assert(dtsModoDv && dvHabilitado);semDVForcado=0;
+  for(int invalid=0;invalid<5;invalid++) {
+    DtsMediaInfo bad=prepared;
+    if(invalid==0)bad.dovi_profile=0;
+    if(invalid==1)bad.dovi_rpu_present=0;
+    if(invalid==2)bad.dovi_el_present=1;
+    if(invalid==3)bad.dovi_profile=7;
+    if(invalid==4)strcpy(bad.video_codec,"h264");
+    dtsModoDv=dvHabilitado=0;sincronizarRotaDts(&bad);assert(!dtsModoDv && !dvHabilitado);
+  }
+  puts("PASS prepared DV routing: reopen after inconclusive probe uses actual output; HDR10 and invalid/layered profiles stay unchanged");
   puts("PASS recovered audio: empty P7 native list retains file default, initial saved position and DV overlay state; native-confirmed DV8 retains DV routing");
 }
 

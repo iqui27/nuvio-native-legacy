@@ -21,7 +21,7 @@ static atomic_int allow_decode_failure, transport_stalled, release_transport, st
 static atomic_int jam_native, native_full, seek_failure;
 static atomic_int timestamp_fault, timestamp_fail_open, timestamp_block_open, timestamp_open_entered;
 static int last_dv, audio_reconfigs, audio_fail_once, missing_dv;
-static int truehd_fixture, hidden_dts_fixture;
+static int truehd_fixture, hidden_dts_fixture, late_dv_fixture;
 static atomic_int prime_block, prime_entered, prime_release;
 static int prime_serial;
 static int seamless_fixture, flush_refuse, audio_format_change, stale_clock;
@@ -94,7 +94,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,
  memset(&e->info,0,sizeof e->info);strcpy(e->info.video_codec,"hevc");strcpy(e->info.audio_codec,"aac");
  e->info.width=1920;e->info.height=1080;e->info.audio_stream=stream<0?4:stream;e->info.channels=2;e->info.sample_rate=48000;
  e->info.duration_ns=fixture_duration;
- if(last_dv && !missing_dv) { e->info.dovi_profile=8;e->info.dovi_bl_present=e->info.dovi_rpu_present=1;strcpy(e->info.hdr,"DolbyVision"); }
+ if((last_dv || late_dv_fixture) && !missing_dv) { e->info.dovi_profile=8;e->info.dovi_bl_present=e->info.dovi_rpu_present=1;strcpy(e->info.hdr,"DolbyVision"); }
  e->info.n_tracks=4;
  e->info.tracks[0]=(DtsTrack){.stream_index=0,.kind=DTS_VIDEO};
  e->info.tracks[1]=(DtsTrack){.stream_index=1,.kind=DTS_AUDIO,.channels=2};strcpy(e->info.tracks[1].codec,"aac");strcpy(e->info.tracks[1].language,"en");
@@ -377,6 +377,20 @@ int main(int argc,char **argv) {
   dts_playback_seek(p,5);wait_count(&seeks,1);
   dts_playback_close(p);assert(count(&creates)==count(&destroys));
   printf("PASS %s: identical-language DTS identified by full file ordinal, AAC output, audio switch and seek with one source\n",argv[1]);return 0;
+ }
+ if(!strcmp(argv[1],"late-dv")) {
+  // Small UI probe missed RPU, but the real demux output is single-layer P8.
+  // Late discovery must use DV pause/prime/seek and audio-hold policy.
+  late_dv_fixture=seamless_fixture=1;scenario=SEEK_PREROLL;
+  dts_playback_next_dv(0);dts_playback_next_seamless(1);
+  p=start(0,4,NULL,0,0);s=wait_status(p,0,0);wait_count(&plays,1);
+  assert(last_dv && s.info.dovi_profile==8);
+  dts_playback_seek(p,2);wait_count(&flushes,1);wait_count(&plays,2);
+  assert(count(&pauses)>0 && count(&loads)==1);
+  dts_playback_audio_at(p,9,2);s=wait_audio_status(p,9);wait_count(&flushes,2);
+  assert(!s.failed && s.info.dovi_profile==8 && count(&opens)==1 && count(&loads)==1);
+  dts_playback_close(p);assert(count(&creates)==count(&destroys));
+  puts("PASS late DV8 output discovery: DV worker policy, primed seek and audio switch with one source/native Load");return 0;
  }
 #ifdef NV_DV7_MAPPING_TEST
  if(!strcmp(argv[1],"p7-mapping")) {

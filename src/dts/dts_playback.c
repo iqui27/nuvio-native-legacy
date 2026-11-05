@@ -253,6 +253,15 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
     }
   }
   info = dts_engine_info(p->engine);
+  /* The demuxer can prove native P5/P8 even when the UI's short MKV probe
+   * could not. Keep the worker's seek/audio recovery policy on that same
+   * path; never infer DV merely from a filename or HDR transfer function. */
+  if(!p->dv && info && (info->dovi_profile==5 || info->dovi_profile==8) &&
+     !strcmp(info->video_codec,"hevc") && info->dovi_bl_present &&
+     info->dovi_rpu_present && !info->dovi_el_present) {
+    p->dv=1;dts_engine_dv(p->engine,1);
+    nativeEvent(p,"{\"dtsStage\":{\"name\":\"prepared-dv-route\"}}");
+  }
   int pct_resume=p->resume_pct>0;
   if(pct_resume) {
     double pct=p->resume_pct;p->resume_pct=0;
