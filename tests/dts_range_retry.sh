@@ -26,6 +26,7 @@ done
 "$task_tmp/test" "http://127.0.0.1:$port/retry-rate-exhaust/range.bin"
 "$task_tmp/test" "http://127.0.0.1:$port/retry-rate-cancel/range.bin"
 "$task_tmp/test" seek-queued
+"$task_tmp/test" "http://127.0.0.1:$port/race-seek/range.bin"
 cc "${flags[@]}" -DRANGE_WORKERS=1 -DNV_TEST_LEGACY_RECOVERY -I"$prefix/include" tests/dts_range_retry.c src/rede.c src/redeurl.c -o "$task_tmp/serial" \
  -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
 "$task_tmp/serial" "http://127.0.0.1:$port/retry-rate/range.bin"
@@ -60,6 +61,7 @@ assert counts[('/retry-once/dv.bin',4*1024*1024-1)]==2
 assert counts[('/retry-rate/range.bin',0)]==4
 assert counts[('/retry-rate-exhaust/range.bin',0)]==4
 assert counts[('/retry-rate-cancel/range.bin',0)]==1
+assert counts[('/race-seek/range.bin',1024)]==2
 queue=[r['lo'] for r in rows if r['path']=='/queue-seek/range.bin']
 assert queue[:2]==[0,4096],queue
 for mode,want in [('hang',2),('bodyhang',2),('hangall',3),('steady',1),('speculative',1),('boot',1),('cancel',1)]:

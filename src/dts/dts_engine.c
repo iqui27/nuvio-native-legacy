@@ -593,11 +593,14 @@ static int read_range(void *opaque,uint8_t *dst,int n) {
   if (e->total>=0 && e->pos>=e->total) return AVERROR_EOF;
   if (!e->cache || e->pos<e->cache_start || e->pos-e->cache_start>=e->cache_size) {
     uint64_t wait_started=clock_ns(CLOCK_MONOTONIC);
+retry_range:
+    if(cancelled(e) || __atomic_load_n(&e->interrupt,__ATOMIC_RELAXED)) return AVERROR_EXIT;
     if(!start_ranges(e)) return AVERROR(ENOMEM);
     pthread_mutex_lock(&e->range_lock);
     DtsRangeJob *job=NULL;
     for(int i=0;i<RANGE_SLOTS_MAX;i++)
-      if(e->ranges[i].state && e->ranges[i].start==e->pos) job=&e->ranges[i];
+      if(e->ranges[i].state && e->ranges[i].start==e->pos &&
+         !__atomic_load_n(&e->ranges[i].cancel,__ATOMIC_RELAXED)) job=&e->ranges[i];
     if(!job) {
       pthread_mutex_unlock(&e->range_lock);
       /* Seek or short 206: discard obsolete speculative ranges and restart
@@ -613,7 +616,8 @@ static int read_range(void *opaque,uint8_t *dst,int n) {
     int optional=optional_p2p_tail(e);
     struct timespec deadline;
     if(optional) { clock_gettime(CLOCK_REALTIME,&deadline); deadline.tv_sec++; }
-    while(job->state!=3 && !cancelled(e) && !__atomic_load_n(&e->interrupt,__ATOMIC_RELAXED)) {
+    while(job->state!=3 && job->state!=0 && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED) &&
+          !cancelled(e) && !__atomic_load_n(&e->interrupt,__ATOMIC_RELAXED)) {
       if(optional) {
         if(pthread_cond_timedwait(&e->range_wake,&e->range_lock,&deadline)==ETIMEDOUT && job->state!=3) {
           pthread_mutex_unlock(&e->range_lock);
@@ -625,6 +629,11 @@ static int read_range(void *opaque,uint8_t *dst,int n) {
       } else pthread_cond_wait(&e->range_wake,&e->range_lock);
     }
     if(cancelled(e) || __atomic_load_n(&e->interrupt,__ATOMIC_RELAXED)) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
+    if(job->state==0 || __atomic_load_n(&job->cancel,__ATOMIC_RELAXED)) {
+      pthread_mutex_unlock(&e->range_lock);
+      clear_ranges(e,"cancelled-range");
+      goto retry_range;
+    }
     long count=job->count; int status=job->status; int64_t total=job->total, end=job->end;
     uint64_t ready_at=clock_ns(CLOCK_MONOTONIC);
     if(ready_at>=wait_started) e->metrics.range_blocked_ns+=ready_at-wait_started;
