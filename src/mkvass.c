@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <math.h>
 #include <limits.h>
+#include <zlib.h>
 
 // --- parametros --------------------------------------------------------------
 
@@ -514,6 +515,11 @@ typedef struct {
   // BlockDuration; sem ele o quadro fica na tela ate o proximo.
   int      imagem, durCerta;
   Pgs     *pgs;
+  // Matroska ContentEncodings of the PGS track. Blocks stay compressed in `pend`
+  // and are restored just before decoding.
+  int      pgsCodif;       // 0 none, 1 zlib, 2 header stripping
+  unsigned char pgsTira[64];
+  int      pgsTiraN;
   struct PendImg { double ini, fim; unsigned char *b; long n; } *pend;
   int      nPend, capPend;
   size_t   bytesPend;
@@ -1632,6 +1638,43 @@ static void prebuscaTextoSoltar(Fio *f);
 
 // Devolve: 1 achou a faixa e e ASS (ou texto simples aceito); 0 nao achou;
 // -1 achou e nao serve.
+
+// ContentEncodings (0x6D80) of a PGS track: one frame-scoped compression only.
+// 0 = understood (f->pgsCodif set), -1 = anything the decoder could not read.
+static int lerCodificacaoPgs(Fio *f, const unsigned char *d, long n) {
+  Iter a; unsigned long id; const unsigned char *v; long t; int vistos = 0;
+  a.p = d; a.n = n; a.o = 0;
+  f->pgsCodif = 0; f->pgsTiraN = 0;
+  while (proximo(&a, &id, &v, &t)) {
+    Iter b; unsigned long id2; const unsigned char *v2; long t2;
+    unsigned long escopo = 1; int temComp = 0;
+    unsigned long algo = 0; const unsigned char *cfg = NULL; long cfgN = 0;
+    if (id != 0x6240) continue;
+    if (++vistos > 1) return -1;
+    b.p = v; b.n = t; b.o = 0;
+    while (proximo(&b, &id2, &v2, &t2)) {
+      if (id2 == 0x5032) escopo = (unsigned long)lerUint(v2, t2);
+      else if (id2 == 0x5035) return -1;   // encrypted
+      else if (id2 == 0x5034) {
+        Iter c; unsigned long id3; const unsigned char *v3; long t3;
+        temComp = 1;
+        c.p = v2; c.n = t2; c.o = 0;
+        while (proximo(&c, &id3, &v3, &t3)) {
+          if (id3 == 0x4254) algo = (unsigned long)lerUint(v3, t3);
+          else if (id3 == 0x4255) { cfg = v3; cfgN = t3; }
+        }
+      }
+    }
+    if (!temComp || !(escopo & 1)) continue;
+    if (algo == 0) f->pgsCodif = 1;
+    else if (algo == 3 && cfgN >= 0 && (size_t)cfgN <= sizeof f->pgsTira) {
+      f->pgsCodif = 2; f->pgsTiraN = (int)cfgN;
+      if (cfgN) memcpy(f->pgsTira, cfg, (size_t)cfgN);
+    } else return -1;
+  }
+  return 0;
+}
+
 static int lerTracks(Fio *f, const unsigned char *p, long n) {
   Iter it = { p, n, 0 }; unsigned long id; const unsigned char *d; long t;
   int ordinalLeg = 0;
@@ -1639,6 +1682,7 @@ static int lerTracks(Fio *f, const unsigned char *p, long n) {
   while (proximo(&it, &id, &d, &t)) {
     Iter j; unsigned long fid; const unsigned char *fd; long ft;
     int numero = 0, tipo = 0, ehAss = 0, ehTexto = 0, ehPgs = 0, refInvalida = 0; const unsigned char *priv = NULL; long privN = 0;
+    const unsigned char *codif = NULL; long codifN = 0;
     if (id != ID_TRACKENTRY) continue;
     j.p = d; j.n = t; j.o = 0;
     while (proximo(&j, &fid, &fd, &ft)) {
@@ -1653,7 +1697,7 @@ static int lerTracks(Fio *f, const unsigned char *p, long n) {
       }
       else if (fid == ID_CODECPRIV) { priv = fd; privN = ft; }
       else if (fid == 0x55AA && lerUint(fd, ft)) refInvalida = 1;
-      else if (fid == 0x6D80) refInvalida = 1;
+      else if (fid == 0x6D80) { refInvalida = 1; codif = fd; codifN = ft; }
       else if (fid == 0x536E) {
         char nome[96]; size_t k = (size_t)ft < sizeof nome - 1 ? (size_t)ft : sizeof nome - 1;
         memcpy(nome, fd, k); nome[k] = 0;
@@ -1679,6 +1723,11 @@ static int lerTracks(Fio *f, const unsigned char *p, long n) {
       return 1;
     }
     if (ehPgs && aceitaImagem) {
+      if (codif && lerCodificacaoPgs(f, codif, codifN) < 0) {
+        printf("[mkvass] faixa %d: PGS com ContentEncoding sem suporte\n", f->faixa);
+        fflush(stdout);
+        return -1;
+      }
       f->pgs = pgs_novo();
       if (!f->pgs) return -1;
       f->texto = f->imagem = 1;
@@ -3181,30 +3230,70 @@ static void guardarReferencia(Fio *f) {
 
 static int contarDesistidos(const Fio *f);
 
+// Bound temporary decompression; display sets larger than 8 MiB are unsupported.
+#define PGS_BLOCO_MAX (8u << 20)
+
+// Restores a stored block. Returns a new buffer (caller frees) or NULL on failure.
+static unsigned char *pgsRestaurar(const Fio *f, const unsigned char *b, long n, size_t *saida) {
+  unsigned char *o;
+  if (f->pgsCodif == 2) {
+    *saida = (size_t)f->pgsTiraN + (size_t)n;
+    o = malloc(*saida ? *saida : 1);
+    if (!o) return NULL;
+    if (f->pgsTiraN) memcpy(o, f->pgsTira, (size_t)f->pgsTiraN);
+    memcpy(o + f->pgsTiraN, b, (size_t)n);
+    return o;
+  } else {
+    z_stream z;
+    size_t cap = 256u << 10;
+    int r;
+    memset(&z, 0, sizeof z);
+    o = malloc(cap);
+    if (!o) return NULL;
+    if (inflateInit(&z) != Z_OK) { free(o); return NULL; }
+    z.next_in = (Bytef *)b; z.avail_in = (uInt)n;
+    z.next_out = o; z.avail_out = (uInt)cap;
+    while ((r = inflate(&z, Z_NO_FLUSH)) == Z_OK && z.avail_out == 0 && cap < PGS_BLOCO_MAX) {
+      unsigned char *g = realloc(o, cap * 2);
+      if (!g) { r = Z_MEM_ERROR; break; }
+      o = g;
+      z.next_out = o + cap; z.avail_out = (uInt)cap;
+      cap *= 2;
+    }
+    *saida = z.total_out;
+    inflateEnd(&z);
+    if (r != Z_STREAM_END) { free(o); return NULL; }
+    return o;
+  }
+}
+
 // Decodifica os blocos pendentes para o armazem do desenho. O corpo vazio so
 // confere (e toma) o dono do overlay: se a legenda trocou de dono, o lote some.
 static void entregarImagens(Fio *f) {
   int i, n;
-  PgsQuadro *dec;
   if (!f->nPend) return;
-  // RLE + paleta de um PGS 1080p passa de um quadro. O passo do player
-  // tambem toma S.trava; a decodificacao fica fora dela. entregarCorpoSeAtual
-  // ja toma a trava so para conferir o dono.
   n = (f->entregas >= 0 && entregarCorpoSeAtual(f, "")) ? f->nPend : 0;
-  dec = n ? calloc((size_t)n, sizeof *dec) : NULL;
-  if (n && !dec) n = 0;
-  for (i = 0; i < n; i++)
-    if (!pgs_decodificar(f->pgs, f->pend[i].b, (size_t)f->pend[i].n, &dec[i])) dec[i].n = -1;
-  for (i = 0; i < n; i++) {
-    int publica;
-    if (dec[i].n < 0) continue;
+  // Decode and publish one frame at a time. A batch of compressed packets
+  // can expand far beyond the 48 MiB queue limit if all bitmaps coexist.
+  for (i = 0; i < n && minhaVez(f); i++) {
+    PgsQuadro dec = {0};
+    const unsigned char *bloco = f->pend[i].b;
+    size_t tam = (size_t)f->pend[i].n;
+    unsigned char *restaurado = NULL;
+    if (f->pgsCodif) {
+      restaurado = pgsRestaurar(f, bloco, f->pend[i].n, &tam);
+      if (!restaurado) continue;
+      bloco = restaurado;
+    }
+    int decoded = pgs_decodificar(f->pgs, bloco, tam, &dec);
+    free(restaurado);
+    if (!decoded) continue;
     pthread_mutex_lock(&estadoDoFio(f)->trava);
-    publica = f->g == estadoDoFio(f)->geracao && !estadoDoFio(f)->parar;
+    int publica = f->g == estadoDoFio(f)->geracao && !estadoDoFio(f)->parar;
     pthread_mutex_unlock(&estadoDoFio(f)->trava);
-    if (publica) imgsub_por(f->legG, f->pend[i].ini, f->pend[i].fim, &dec[i]);
-    else pgs_quadro_liberar(&dec[i]);
+    if (publica) imgsub_por(f->legG, f->pend[i].ini, f->pend[i].fim, &dec);
+    else pgs_quadro_liberar(&dec);
   }
-  free(dec);
   soltarPendentes(f);
 }
 

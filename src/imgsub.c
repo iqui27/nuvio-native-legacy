@@ -47,7 +47,10 @@ static unsigned donoGeracao;
 void imgsub_por(unsigned dono, double ini, double fim, PgsQuadro *src) {
   ImgsubQuadro *f = src ? calloc(1, sizeof *f) : NULL;
   int i, pos, cabe;
-  if (!f) return;
+  if (!f) {
+    if (src) { for (i = 0; i < PGS_MAX_OBJ; i++) free(src->obj[i].rgba); memset(src->obj, 0, sizeof src->obj); src->n = 0; }
+    return;
+  }
   f->ini = ini; f->fim = fim; f->refs = 1;
   f->tela_w = src->tela_w; f->tela_h = src->tela_h; f->n = src->n;
   memcpy(f->obj, src->obj, sizeof f->obj);   // transfere o rgba; sem copia
