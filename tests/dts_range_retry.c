@@ -22,6 +22,23 @@ int main(int argc,char **argv) {
  assert(argc==2);DtsEngine *e=dts_engine_create();assert(e);assert(!e->allow_p7);e->range_slots=8;
  e->url=strdup(argv[1]);e->headers=strdup("Authorization: Bearer engine-test\nX-Fixture: yes");
  if(strstr(argv[1],"dv.bin")){e->dv=1;e->range_bytes=RANGE_BYTES_DV;}
+ if(strstr(argv[1],"seek-queued")) {
+  e->ranges[0].start=512; e->ranges[0].end=1023;
+  e->ranges[0].state=3; e->ranges[0].data=strdup("ready");
+  assert(seek_range(e,512,SEEK_SET)==512);
+  assert(e->ranges[0].state==3 && e->ranges[0].data);
+  assert(seek_range(e,513,SEEK_SET)==513);
+  assert(e->ranges[0].state==0 && !e->ranges[0].data);
+  dts_engine_destroy(e); puts("PASS: seek keeps exact queued range"); return 0;
+ }
+ if(strstr(argv[1],"retry-rate")) {
+  e->dv=1; snprintf(e->final_url,sizeof e->final_url,"%s",argv[1]);
+  free(e->url); e->url=strdup("http://127.0.0.1:1/should-not-resolve");
+  DtsRangeJob job={0}; job.end=1023; int stalled=0;
+  range_fetch(e,&job,0,&stalled);
+  assert(!job.data && job.status==429 && e->final_url[0]);
+  dts_engine_destroy(e); puts("PASS: CDN rate limit keeps resolved address"); return 0;
+ }
  int64_t fault_at=e->dv?RANGE_BYTES_DV:4*1024*1024;
  uint64_t begun=clock_ns(CLOCK_MONOTONIC);
  if(strstr(argv[1],"retry-live-")) {

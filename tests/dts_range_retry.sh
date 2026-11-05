@@ -22,6 +22,8 @@ for mode in once twice short wrong hard exhaust cancel seek live-hang live-bodyh
  "$task_tmp/test" "http://127.0.0.1:$port/retry-$mode/range.bin"
 done
 "$task_tmp/test" "http://127.0.0.1:$port/retry-once/dv.bin"
+"$task_tmp/test" "http://127.0.0.1:$port/retry-rate/range.bin"
+"$task_tmp/test" seek-queued
 # The real demux/DTS/AAC path must produce the same audio/video bytes after
 # an HTTP failure as it does from the local source; silence must not be needed.
 printf '1\n00:00:00,500 --> 00:00:01,500\nRange recovery fixture\n' > "$task_tmp/input.srt"

@@ -246,7 +246,9 @@ static void range_fetch(DtsEngine *e,DtsRangeJob *job,int fast,int *stalled) {
 #endif
     uint64_t first=clock_ns(CLOCK_MONOTONIC);
     int first_status=job->status, first_ok=job->data!=NULL;
-    if(direct && !job->data && !*stalled && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED)) {
+    /* A 429 throttles the CDN, not an expired link. Keep it for the bounded
+     * retry instead of immediately hitting the resolver and the same CDN. */
+    if(direct && !job->data && job->status!=429 && !*stalled && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED)) {
       pthread_mutex_lock(&e->range_lock);
       if(!strcmp(e->final_url,target)) e->final_url[0]=0;
       pthread_mutex_unlock(&e->range_lock);
@@ -680,8 +682,15 @@ static int64_t seek_range(void *opaque,int64_t offset,int whence) {
   int64_t base=whence==SEEK_SET?0:whence==SEEK_CUR?e->pos:whence==SEEK_END?e->total:-1;
   if (base<0 || (offset>0 && base>INT64_MAX-offset) || (offset<0 && offset<-base)) return AVERROR(EINVAL);
   e->pos=base+offset;
-  if(!e->cache || e->pos<e->cache_start || e->pos-e->cache_start>=e->cache_size)
-    clear_ranges(e,"seek");
+  if(!e->cache || e->pos<e->cache_start || e->pos-e->cache_start>=e->cache_size) {
+    int queued=0;
+    pthread_mutex_lock(&e->range_lock);
+    for(int i=0;i<RANGE_SLOTS_MAX;i++)
+      if(e->ranges[i].state && e->ranges[i].start==e->pos &&
+         (e->ranges[i].state!=3 || e->ranges[i].data)) { queued=1; break; }
+    pthread_mutex_unlock(&e->range_lock);
+    if(!queued) clear_ranges(e,"seek");
+  }
   return e->pos;
 }
 static int64_t ns(int64_t value,AVRational tb) {

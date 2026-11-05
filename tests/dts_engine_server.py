@@ -51,6 +51,10 @@ class Handler(BaseHTTPRequestHandler):
                        (mode in ('hard', 'exhaust', 'cancel') or attempt <= (2 if mode == 'twice' else 1)))
         if live and lo==fault_at and mode in ('hang','speculative','cancel','boot') and attempt==1: time.sleep(4 if mode=='boot' else 8)
         if live and lo==fault_at and mode=='hangall': time.sleep(8 if attempt<3 else 4)
+        if mode == 'rate':
+            self.send_response(429); self.send_header('Content-Length', '0'); self.end_headers()
+            with lock: active -= 1
+            return
         if failing and mode in ('once', 'twice', 'hard', 'exhaust', 'cancel', 'seek') and not live:
             if mode not in ('hard', 'exhaust', 'cancel'): time.sleep(.25)
             self.send_response(403 if mode == 'hard' else 503)
