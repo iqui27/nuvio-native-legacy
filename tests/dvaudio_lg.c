@@ -116,7 +116,8 @@ static void montar(const Mkv *m, int nm, const Tv *t, int nt, int atual) {
   snprintf(midia, sizeof midia, "fixture-hdr10");
   snprintf(urlAtual, sizeof urlAtual, "http://h/remux.dv.mkv");
   dvHabilitado = 1; dvNao = 0; dvSondado = 1;
-  dvMkvPerfil = 8; dvMkvBl = 1; dvMkvRpu = 1; dvMkvEl = 0;
+  dvMkvPerfil = nm ? 8 : 0; dvMkvBl = dvMkvRpu = nm ? 1 : 0; dvMkvEl = 0;
+  snprintf(vidHdr,sizeof vidHdr,"none");
   dvMemOrd = -1;
   for (i = 0; i < nm; i++) {
     snprintf(dvAudioCodec[i], sizeof dvAudioCodec[0], "%s", m[i].codec);
@@ -215,6 +216,48 @@ static void testarDtsOculto(void) {
   puts("PASS hidden DTS controller: HDR10/DV8, both exact DTS, paused/current position, compatible switches, native FLAC return, refreshed lists and stale probes");
 }
 
+
+static void testarRoteamentoRecuperado(void) {
+  // LG P7: empty native list, English TrueHD/AC3, recovered French DTS.
+  // Discovery alone must not turn the first recovered DTS into the selection.
+  audioMkvNovaFonte();
+  Mkv m[]={{"A_TRUEHD","en","Original"},{"A_AC3","en","Surround"},{"A_DTS","fr","French"}};
+  montar(m,3,NULL,0,0);fonteMp4=0;dvMkvPerfil=7;dvMkvEl=dvMkvBl=dvMkvRpu=1;
+  MkvFaixa fx[4]={0};fx[0].tipo=1;fx[0].numero=1;
+  for(int i=0;i<3;i++) {
+    fx[i+1].tipo=2;fx[i+1].numero=i+2;fx[i+1].canais=6;
+    snprintf(fx[i+1].codec,sizeof fx[i+1].codec,"%s",m[i].codec);
+    snprintf(fx[i+1].idioma,sizeof fx[i+1].idioma,"%s",m[i].idioma);
+    dvAudioCanais[i]=6;
+  }
+  completarAudioMkv(fx,4,audioMkvEpoch);audioMkvAplicar();
+  assert(nAudio==1 && audioAtual==-1 && !video_faixa_dts(video_audio(audioAtual)));
+  bindVivo=bindPendente=0;acb=modoLoad=0;semDVForcado=0;dvMemOrd=-1;
+  assert(dvPronto());dtsModoDv=1;dvSilencio=1;dvEntradaSeg=0;posSeg=0;
+  converterResumeRequested=1;converterResumeUsed=0;fonteTocou=0;
+  converterResumeSeconds=7534.103;converterResumePct=0;
+  dvSegurar=1;assert(dvPodeIniciar());
+  seekEm=seekEnvEm=seekRetryEm=0;partidas=0;
+  assert(iniciarDts(-1));
+  assert(dtsModoDv && partidas==1 && !partidaComFaixa && partidaContagem==0);
+  assert(partidaPos==7534.103 && converterResumeUsed);
+  assert(!dvPodeIniciar());dvSegurar=0;
+  pronto=tocando=1;strcpy(vidHdr,"DolbyVision");
+  VideoDvFase fase;video_dv_fase(&fase);assert(fase.caminho && fase.carregado && fase.dvConfirmado && fase.tocando);
+  dtsSessao=NULL;
+  // Native DV8 already confirmed by LG is stronger than an inconclusive
+  // small MKV probe. A DTS handoff must retain DV control/seek policy.
+  audioMkvNovaFonte();
+  Mkv d[]={{"A_DTS","en","Original"}};Tv tv[]={{"en","dts",6}};
+  montar(d,1,tv,1,0);dvMkvRpu=0;strcpy(vidHdr,"DolbyVision");
+  dtsModoDv=0;fixtureMkvEnabled=0;semDVForcado=0;dvSondado=1;
+  converterResumeRequested=0;dvSilencio=0;posSeg=745.286;pausaPedida=1;
+  bindVivo=bindPendente=0;acb=modoLoad=0;
+  assert(iniciarDts(-1) && dtsModoDv && partidaPos==745.286 && partidaPaused);
+  dtsSessao=NULL;fixtureMkvEnabled=1;dvSilencio=0;
+  puts("PASS recovered audio: empty P7 native list retains file default, initial saved position and DV overlay state; native-confirmed DV8 retains DV routing");
+}
+
 int main(void) {
 #ifdef NV_NATIVE_SEEK_TEST
   (void)SDL_GetTicks();SDL_Delay(2); // Keep test events away from the zero timestamp sentinel.
@@ -225,7 +268,7 @@ int main(void) {
   setvbuf(stdout, NULL, _IOLBF, 0);
   lsCall = fakeCall; lsPayload = fakePayload;
   bus = (LSHandle *)(uintptr_t)1; sessao = 40;
-  if(getenv("NV_TEST_MISSING_DTS")){testarDtsOculto();return 0;}
+  if(getenv("NV_TEST_MISSING_DTS")){testarDtsOculto();testarRoteamentoRecuperado();return 0;}
 #ifdef NV_DV_TRUEHD_TEST
   // Keep the exact selected TrueHD track at startup instead of substituting
   // another language/codec or handing the picture back to the URI player.
