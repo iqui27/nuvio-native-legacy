@@ -2532,7 +2532,7 @@ void video_bombear(void) {
     dtsModoDv = 1;
     iniciarDts(-1);
   }
-  else if (dtsHabilitado && !ajustes_dts_desligado() && !dtsNativePending && !dtsTentou && !modoLoad && urlAtual[0]) {
+  else if (dtsHabilitado && !dtsNativePending && !dtsTentou && !modoLoad && urlAtual[0]) {
     // SO COM FAIXA DTS CONHECIDA (teste na C9, 06/10): o erro 200 tambem vem
     // de TrueHD e de faixa ainda sem codec; o fallback derrubava a reproducao
     // nativa, que na 2.0.0 seguia. Sem a lista de faixas, espera ela chegar.
@@ -3243,28 +3243,6 @@ static int iniciarDts(int stream) {
   if (bindAtivo()) return 0;
   DtsTrack selected;
   const VideoFaixa *a = video_audio(audioAtual);
-  /* DTS off is a native-player bypass, not a disable switch for the shared
-   * DV video engine. Preserve MP4/P7 conversion for non-DTS audio, and leave
-   * DTS audio to the original URI player (including on rooted TVs).
-   * Native HTTP buffer/connections remain independent from DV conversion. */
-  if (ajustes_dts_desligado()) {
-    int m = dvAudioMkvOrd >= 0 ? dvAudioMkvOrd : dvAudioMkvAtual;
-    int mkvDts = dtsModoDv && m >= 0 && m < dvAudios &&
-                 (!strncasecmp(dvAudioCodec[m], "A_DTS", 5) ||
-                  !strncasecmp(dvAudioCodec[m], "dts", 3));
-    if (video_faixa_dts(a) || mkvDts) {
-      printf("[dts] original DTS requested; app conversion bypassed (DV=%d)\n", dtsModoDv);
-      fflush(stdout);
-      dtsTentou = 1; /* avoid retrying the same native DTS source each pump */
-      if (dtsModoDv) {
-        dvHabilitado = 0; dtsModoDv = 0; dvNao = VIDEO_DV_NAO_AUDIO;
-      }
-#ifdef NV_MP4_BD_TEST
-      mp4TestPending = 0;
-#endif
-      return 0;
-    }
-  }
   // A POSICAO DE PARTIDA. Um seek pedido ao player da TV e ainda nao feito (o
   // ponto salvo da retomada, mandado 350 ms depois do pedido, ou ja enviado sem
   // seekDone) e a posicao certa; posSeg nao, porque o currentTime da TV volta a
@@ -4078,8 +4056,7 @@ void video_escolher_audio(int i) {
   const VideoFaixa *f = video_audio(i);
   if (dtsSessao && f) {
     if (f->stream_index < 0) return;
-    if (nv_dts_audio_feeds(f->codec,dtsModoDv) &&
-        !(ajustes_dts_desligado() && video_faixa_dts(f))) {
+    if (nv_dts_audio_feeds(f->codec,dtsModoDv)) {
 #ifdef NV_NATIVE_SEEK_TEST
       if (i == audioAtual) return;
       dts_playback_audio_at(dtsSessao, f->stream_index, posSeg);
