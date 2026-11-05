@@ -22,6 +22,7 @@ int imgsub_desenhar(double t, float x, float y, float w, float h, float alpha) {
   if (!legenda_ligada_em(imgsub_dono_atual())) f = NULL;
   else f = imgsub_pegar(t);
   if (!f || f->n < 1) {
+    imgsub_apresentado(NULL, t);
     imgsub_soltar(f);
     imgsub_gl_limpar();
     return 0;
@@ -48,6 +49,7 @@ int imgsub_desenhar(double t, float x, float y, float w, float h, float alpha) {
     gfx_rect(r, tex[i], GFX_TEXTO, 0, 0, 0, 0, 1, 1, 1, alpha);
     ok = 1;
   }
+  imgsub_apresentado(ok ? f : NULL, t);
   imgsub_soltar(f);
   return ok;
 }
