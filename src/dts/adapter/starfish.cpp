@@ -2,6 +2,9 @@
 #include "adapter.h"
 extern "C" {
 #include "js.h"
+#ifdef NV_HTTP_BUFFER_DIAG
+#include "../dts_video_diag.h"
+#endif
 }
 #include <starfish-media-pipeline/StarfishMediaAPIs.h>
 #include <dlfcn.h>
@@ -88,6 +91,10 @@ struct Pipeline {
   bool backpressure_reported = false;
   uint64_t refused_feeds = 0;
   unsigned play_count = 0, pause_count = 0;
+#ifdef NV_HTTP_BUFFER_DIAG
+  unsigned picture_epoch=1, picture_count=0, picture_logged=0;
+  std::string picture_codec;
+#endif
   std::vector<unsigned char> pending;
   ~Pipeline() {
     alive = false;
@@ -139,6 +146,12 @@ static void callback(int type, int64_t value, const char *str, void *ctx) {
   const char *video_json = type == PF_EVENT_TYPE_STR_VIDEO_INFO ? str : nullptr;
   if (str && strnlen(str,129) > 128) str = "native detail exceeds event budget";
   if (type == PF_EVENT_TYPE_STR_STATE_UPDATE__LOADCOMPLETED) p->completed = true;
+#ifdef NV_HTTP_BUFFER_DIAG
+  if(type==PF_EVENT_TYPE_INT_ERROR || type==PF_EVENT_TYPE_STR_ERROR) {
+    char detail[64];snprintf(detail,sizeof detail,"type=%d code=%lld",type,(long long)value);
+    stage(p,"native-error",detail);
+  }
+#endif
   if (p->event) {
     const char *name = nullptr;
     switch (type) {
@@ -239,6 +252,15 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
   if (!p->n.foreground(p->sf)) stage(p,"native-foreground-refused","continuing to Load");
   { char d[96]; snprintf(d,sizeof d,"dv=%d profile=%d audio=%s ch=%d",int(dv),m->dovi_profile,
       pass ? pass : "AAC",m->channels); stage(p,"native-load-requested",d); }
+#ifdef NV_HTTP_BUFFER_DIAG
+  p->picture_codec=m->video_codec;
+  { char detail[160];snprintf(detail,sizeof detail,
+      "size=%dx%d fps=%d/%d colour=%d/%d/%d dv=%d compat=%d rpu=%d el=%d bl=%d",
+      m->width,m->height,m->fps_num,m->fps_den,m->color_primaries,m->color_transfer,m->color_matrix,
+      m->dovi_profile,m->dovi_bl_compatibility_id,m->dovi_rpu_present,m->dovi_el_present,m->dovi_bl_present);
+    stage(p,"native-video-config",detail);
+  }
+#endif
   if (!p->n.load(p->sf,j.str().c_str(),callback,p)) {
     p->error = "Starfish Load refused"; return 0;
   }
@@ -273,7 +295,21 @@ static int feed(void *ctx,const DtsFrame *f) {
   char j[256];
   snprintf(j,sizeof j,"{\"bufferAddr\":\"%p\",\"bufferSize\":%zu,\"pts\":%lld,\"esData\":%d}",
     p->pending.data(),p->pending.size(),static_cast<long long>(f->pts_ns),f->kind);
+#ifdef NV_HTTP_BUFFER_DIAG
+  const bool inspect=f->kind==DTS_VIDEO && nv_video_picture_sample(p->picture_count+1) &&
+    p->picture_logged!=p->picture_count+1;
+  const int copy_ok=inspect ? !memcmp(f->data,p->pending.data(),f->size) : -1;
+#endif
   const std::string result = p->n.feed(p->sf,j);
+#ifdef NV_HTTP_BUFFER_DIAG
+  const bool accepted=result.find("Pending")==std::string::npos && result.find("Ok")!=std::string::npos;
+  if(inspect) {
+    DtsFrame copy=*f;copy.data=p->pending.data();
+    nv_video_picture_log("native-copy",p->picture_epoch,p->picture_count+1,&copy,p->picture_codec.c_str(),accepted?1:0,copy_ok);
+    p->picture_logged=p->picture_count+1;
+  }
+  if(f->kind==DTS_VIDEO && accepted && p->picture_count<120)p->picture_count++;
+#endif
   if (result.find("Pending") == std::string::npos && result.find("BufferFull") != std::string::npos) {
     p->pending.clear();
     ++p->refused_feeds;
@@ -347,6 +383,9 @@ static int flush(void *ctx,double target) {
   p->play_issued = p->pause_issued = p->started = false;
   p->audio_fed = p->video_fed = false;
   p->refused_feeds = 0;
+#ifdef NV_HTTP_BUFFER_DIAG
+  p->picture_epoch++;p->picture_count=p->picture_logged=0;
+#endif
   stage(p,"native-seek-accepted",payload.c_str());
   return 1;
 }

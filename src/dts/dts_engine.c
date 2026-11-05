@@ -2,6 +2,9 @@
 #include "dts_audio_codec.h"
 #include "dv7.h"
 #include "dv7_mp4.h"
+#ifdef NV_HTTP_BUFFER_DIAG
+#include "dts_video_diag.h"
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -117,7 +120,7 @@ typedef struct {
 #endif
 struct DtsEngine {
 #ifdef NV_HTTP_BUFFER_DIAG
-  unsigned diag_id;
+  unsigned diag_id, picture_epoch, picture_count;
 #endif
   DtsMediaInfo info;
   char error[160], *url, *headers, *cache;
@@ -1243,6 +1246,9 @@ static int configure_audio(DtsEngine *e,int core,double start) {
   return start>0?dts_engine_seek(e,start):0;
 }
 int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,int core,double start) {
+#ifdef NV_HTTP_BUFFER_DIAG
+  if(e){e->picture_epoch++;e->picture_count=0;}
+#endif
   if (!e || !url || !*url) return -1;
   __atomic_store_n(&e->range_live,0,__ATOMIC_RELAXED);
   close_media(e); memset(&e->info,0,sizeof(e->info)); e->error[0]=0;
@@ -1689,6 +1695,13 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
     f->data=e->dv7_buffer; f->size=(int)size;
     break;
   }
+#ifdef NV_HTTP_BUFFER_DIAG
+  if(result==1 && f->kind==DTS_VIDEO && e->picture_count<120) {
+    e->picture_count++;
+    if(nv_video_picture_sample(e->picture_count))
+      nv_video_picture_log("engine",e->picture_epoch,e->picture_count,f,e->info.video_codec,-1,-1);
+  }
+#endif
 #if defined(NV_DTS_DEBUG) || defined(NV_HTTP_BUFFER_DIAG)
   if(e) {
     uint64_t now=clock_ns(CLOCK_MONOTONIC);
@@ -1741,6 +1754,9 @@ int dts_engine_seek(DtsEngine *e,double seconds) {
 #endif
   r=avformat_seek_file(e->fmt,-1,INT64_MIN,timestamp,timestamp,AVSEEK_FLAG_BACKWARD);
   if(r<0) return fail(e,"Container seek",r);
+#ifdef NV_HTTP_BUFFER_DIAG
+  e->picture_epoch++;e->picture_count=0;
+#endif
   if(e->passthrough) {
     if(e->bsf) av_bsf_flush(e->bsf);
     av_packet_unref(e->in); av_packet_unref(e->out);

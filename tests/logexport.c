@@ -34,6 +34,11 @@ int main(void) {
   const char *safe = "[playback-diag] tick=123 generation=2 pos=123.456 readyBytes=268435456 availableKiB=245760";
   logexport_redact(safe, out, sizeof out); assert(!strcmp(safe, out));
   const char *range_logs[]={
+    "[picture-diag] phase=native-copy epoch=1 packet=120 bytes=545678 ptsNs=118292000000 dtsNs=118292000000 hash=91ca40ff scanned=545678 clipped=0 nals=6 vcl=20 slices=1 irap=1 vps=1 sps=1 pps=1 sei=1 rpu=1 el=0 headerErr=0 spsOk=1 size=3840x2160 depth=10 colour=9/16/9 full=0 feed=1 copyOk=1",
+    "[dts] stage=native-video-config size=3840x2160 fps=24000/1001 colour=9/16/9 dv=8 compat=1 rpu=1 el=0 bl=1",
+    "[dts] stage=native-error type=18 code=204",
+    "[dts] stage=prepared-dv-route ",
+    "[audio-route] event=prepared-dv profile=8 compat=1 controllerDv=1",
     "[video-packet] epoch=2 sample=1 bytes=286395 ptsNs=7536918000000 dtsNs=7536800000000 durNs=41708000 vcl=21 irap=1 vps=1 sps=1 pps=1 rpu=0 el=0 scanned=4096 clipped=1 headerErr=0 feed=1",
     "[audio-route] profile=7 rpu=1 nativeDv=0 controllerDv=1 known=0 ordinal=-1 count=0 target=7534.103 paused=0 resumePct=0.000",
     "[dv-state] generation=3 profile=7 probe=1 path=1 loaded=1 confirmed=1 playing=1 failed=0 refusal=0 audio=0",

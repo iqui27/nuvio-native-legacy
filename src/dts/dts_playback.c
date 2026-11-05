@@ -986,19 +986,19 @@ static void *run(void *user) {
         rate.paced++; rest(p); continue;
       }
       double feed_started = clockSeconds(CLOCK_MONOTONIC);
+#ifdef NV_HTTP_BUFFER_DIAG
+      if(frame.kind==DTS_VIDEO && nv_video_picture_sample(p->picture_samples+1) &&
+         (frame.pts_ns!=p->picture_last_pts || frame.size!=p->picture_last_size)) {
+        const DtsMediaInfo *mi=dts_engine_info(p->engine);
+        p->picture_last_pts=frame.pts_ns;p->picture_last_size=frame.size;
+        nv_video_picture_log("worker",p->picture_epoch,p->picture_samples+1,&frame,mi?mi->video_codec:"",-1,-1);
+      }
+#endif
       int r = dts_pipeline_feed(p->pipeline, &frame);
       double feed_ended = clockSeconds(CLOCK_MONOTONIC);
       if (feed_started >= 0 && feed_ended >= feed_started) rate.feed_wall += feed_ended-feed_started;
 #ifdef NV_HTTP_BUFFER_DIAG
-      if(frame.kind==DTS_VIDEO && p->picture_samples<4 &&
-         (frame.pts_ns!=p->picture_last_pts || frame.size!=p->picture_last_size)) {
-        const DtsMediaInfo *mi=dts_engine_info(p->engine);
-        NvVideoPacketDiag d=nv_video_packet_diag(frame.data,frame.size,mi?mi->video_codec:"");
-        p->picture_samples++;p->picture_last_pts=frame.pts_ns;p->picture_last_size=frame.size;
-        printf("[video-packet] epoch=%u sample=%u bytes=%zu ptsNs=%lld dtsNs=%lld durNs=%lld vcl=%d irap=%d vps=%d sps=%d pps=%d rpu=%d el=%d scanned=%u clipped=%d headerErr=%d feed=%d\n",
-          p->picture_epoch,p->picture_samples,frame.size,(long long)frame.pts_ns,(long long)frame.dts_ns,
-          (long long)frame.duration_ns,d.vcl,d.irap,d.vps,d.sps,d.pps,d.rpu,d.el,d.scanned,d.clipped,d.invalid,r);fflush(stdout);
-      }
+      if(frame.kind==DTS_VIDEO && r>0 && p->picture_samples<120)p->picture_samples++;
 #endif
       if (r < 0) { fail(p, dts_pipeline_error(p->pipeline)); break; }
       if (r) {
