@@ -34,6 +34,9 @@ int main(void) {
   const char *safe = "[playback-diag] tick=123 generation=2 pos=123.456 readyBytes=268435456 availableKiB=245760";
   logexport_redact(safe, out, sizeof out); assert(!strcmp(safe, out));
   const char *range_logs[]={
+    "[dts] stage=hevc-sei found=1 removed=1 malformed=0 oversize=0 before=1200 after=1050 prefix=2 suffix=1",
+    "[dts] stage=hevc-sei found=0 removed=0 malformed=0 oversize=0 before=1200 after=1200 prefix=2 suffix=1",
+    "[dts] stage=hevc-sei-drop metadata-only packet; waiting for picture",
     "[picture-diag] phase=native-copy epoch=1 packet=120 bytes=545678 ptsNs=118292000000 dtsNs=118292000000 hash=91ca40ff scanned=545678 clipped=0 nals=6 vcl=20 slices=1 irap=1 vps=1 sps=1 pps=1 sei=1 rpu=1 el=0 headerErr=0 spsOk=1 size=3840x2160 depth=10 colour=9/16/9 full=0 feed=1 copyOk=1",
     "[dts] stage=native-video-config size=3840x2160 fps=24000/1001 colour=9/16/9 dv=8 compat=1 rpu=1 el=0 bl=1",
     "[dts] stage=native-error type=18 code=204",

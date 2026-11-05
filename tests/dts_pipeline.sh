@@ -3,6 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 diag_flags=()
 if [[ ${NV_TEST_VIDEO_DIAG:-0} == 1 ]];then diag_flags+=(-DNV_HTTP_BUFFER_DIAG);fi
+if [[ ${NV_TEST_HEVC_SEI:-0} == 1 ]];then diag_flags+=(-DNV_HEVC_SEI_TEST);fi
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/good" "$tmp/bad" "$tmp/native"
@@ -17,9 +18,15 @@ for abi in 0 1; do
  done
 cc -fPIC -shared -Isrc -Isrc/dts/adapter tests/dts_pipeline_bad.c -o "$tmp/bad/dts-starfish-webos4.so"
 cc -std=c11 -Wall -Wextra -Werror -Isrc tests/dts_pipeline.c src/dts/dts_pipeline.c src/webosver.c -ldl -pthread -o "$tmp/test"
+if [[ ${NV_TEST_HEVC_SEI:-0} == 1 ]];then
+  cc -std=c11 -Wall -Wextra -Werror -Isrc tests/hevc_sei_pipeline.c src/dts/dts_pipeline.c src/webosver.c -ldl -pthread -o "$tmp/sei-test"
+fi
 # Each runtime exports only its real generation Feed ABI. Auto probe must fall back correctly.
 for generation in 3 4; do
   ln -sf "libplayerAPIs.so.$generation" "$tmp/native/libplayerAPIs.so"
+  if [[ ${NV_TEST_HEVC_SEI:-0} == 1 ]];then
+    DTS_SEI_PACKET=1 LD_LIBRARY_PATH="$tmp/native" "$tmp/sei-test" "$tmp/good"
+  fi
   # Explicit other-generation probes must reject the Feed ABI mismatch.
   LD_LIBRARY_PATH="$tmp/native" "$tmp/test" "$tmp/good" "$tmp/bad"
   DTS_MEDIA_ID_PHASE=load LD_LIBRARY_PATH="$tmp/native" "$tmp/test" "$tmp/good" "$tmp/bad"

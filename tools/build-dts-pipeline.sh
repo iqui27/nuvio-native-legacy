@@ -30,6 +30,9 @@ diag_flags=()
 case " ${NUVIO_EXTRA_CFLAGS:-} " in
   *" -DNV_HTTP_BUFFER_DIAG "*) diag_flags+=(-DNV_HTTP_BUFFER_DIAG);;
 esac
+case " ${NUVIO_EXTRA_CFLAGS:-} " in
+  *" -DNV_HEVC_SEI_TEST "*) diag_flags+=(-DNV_HEVC_SEI_TEST);;
+esac
 "$cc" -std=c11 -D_GNU_SOURCE -O2 -fPIC -Isrc -c src/js.c -o "$tmp/js.o"
 for abi in 0 1; do
   generation=3

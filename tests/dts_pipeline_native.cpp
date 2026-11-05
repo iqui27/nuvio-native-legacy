@@ -68,6 +68,16 @@ extern "C" void dts_fixture_complete_load() {
 std::string StarfishMediaAPIs::Feed(const char *j) {
  void *address=nullptr; size_t size=0; long long pts=0; int kind=0;
  assert(sscanf(j,"{\"bufferAddr\":\"%p\",\"bufferSize\":%zu,\"pts\":%lld,\"esData\":%d}",&address,&size,&pts,&kind)==4);
+ if(getenv("DTS_SEI_PACKET")) {
+  const unsigned char expected[]={0,0,1,40,1,0xaa,0xbb,128,0,0,0,1,124,1,0x44,128};
+  assert(pts==3000000000LL && (kind==1 || kind==2));
+  if(kind==1) {assert(size==sizeof expected && !memcmp(address,expected,size));}
+  else {assert(size==4 && static_cast<unsigned char *>(address)[0]==2);}
+  static int refused=0;
+  if(kind==1 && getenv("DTS_SEI_REFUSE") && !refused++)return "BufferFull";
+  if(!complete)dts_fixture_complete_load();
+  callback(0,pts,reinterpret_cast<const char *>(uintptr_t(1)),context);return "Ok";
+ }
  assert(size==4 && pts==3000000000LL && (kind==1 || kind==2));
  auto *data=static_cast<unsigned char *>(address);
  if(data[0]==1) return "BufferFull";
