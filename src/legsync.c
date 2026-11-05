@@ -43,7 +43,7 @@ static struct {
   // referencia
   uint64_t refPedido;
   LegendaDocumento *refDoc;
-  int refFaixa, ultimaFaixa;
+  int refFaixa, ultimaFaixa, refAlt;
   int excl[16], nExcl;
   long long bytesSessao;
   LegRefMotivo refMotivo;
@@ -95,7 +95,7 @@ void legsync_definir_trocador(LegSyncTrocador t) {
 }
 
 static void soltarRef(void) {
-  legenda_documento_liberar(L.refDoc); L.refDoc = NULL; L.refFaixa = 0;
+  legenda_documento_liberar(L.refDoc); L.refDoc = NULL; L.refFaixa = 0; L.refAlt = 0;
 }
 
 static void zerarAnalise(void) {
@@ -457,7 +457,12 @@ static void autoEncerrar(const char *motivo) {
 }
 
 static void autoFalhou(int semReferencia) {
-  if (semReferencia) { autoEncerrar("sem referencia para julgar outra"); return; }
+  if (semReferencia) {
+    // Sem referencia nao e "baixa confianca": o log e a pilula dizem o motivo
+    // real (a UI de Android/LG segue igual: os dois viram o mesmo texto la).
+    if (L.autoFalha == AUTOSYNC_OK) L.autoFalha = AUTOSYNC_NO_REFERENCE;
+    autoEncerrar("sem referencia para julgar outra"); return;
+  }
   if (L.autoTrocasEp == 0 && L.nAutoTent < LS_AUTO_MAX && L.primIdioma[0]) {
     L.autoPend = 1;
     printf("[legsync] automatico: referencia recusou; troca uma vez\n"); fflush(stdout);
@@ -487,7 +492,7 @@ static void autoPasso(void) {
         if (!L.refPedido) { L.querModo = -1; if (audioPossivel()) { L.autoEtapa = 2; iniciarAudio(); } else autoFalhou(1); }
       }
     } else if (audioPossivel()) { L.autoEtapa = 2; iniciarAudio(); }
-    else autoEncerrar("sem referencia nesta plataforma");
+    else { if (L.autoFalha == AUTOSYNC_OK) L.autoFalha = AUTOSYNC_NO_REFERENCE; autoEncerrar("sem referencia nesta plataforma"); }
     return;
   }
   e = autosync_estado(L.sync, 0);
@@ -570,6 +575,12 @@ int legsync_acao(int acao) {
                        acao == LEGSYNC_ACAO_AUDIO ? "audio" : "outra";
     L.manualFase = ok ? 1 : 3; L.manualLog = L.manualFase;
     if (L.autoFase == 1 && ok) { L.autoFase = 0; L.autoEtapa = 9; L.autoPend = 0; }   // a mao assume
+#ifdef NV_TPK
+    // .tpk: o menu oferece Completa/Outra/Por audio DEPOIS que a automatica
+    // desistiu (legsyncui.c). O resultado desse pedido e o que a linha mostra,
+    // nao o "nao deu" antigo da automatica.
+    if (L.autoFase == 3 && ok) { L.autoFase = 0; L.autoEtapa = 9; L.autoPend = 0; }
+#endif
     printf("[legsync] manual: %s -> %s (%s)\n", nome, ok ? "aceita" : "recusada",
            ok ? "trabalhando" : !dona() ? "legenda nao e externa" : !L.ref ? "sem referencia nesta plataforma" :
            L.semOutra ? "sem outra faixa" : "estado atual nao permite");
@@ -632,7 +643,7 @@ void legsync_passo(const char *url, double pos, double folga, int sensivel, unsi
       if (st.faixa) { L.ultimaFaixa = st.faixa; snprintf(L.idiomaRef, sizeof L.idiomaRef, "%s", st.idioma); }
       if (st.fase == LEGREF_PRONTO) {
         L.refDoc = legref_tomar(L.ref, L.refPedido);
-        L.refFaixa = st.faixa; L.bytesSessao += st.bytes; L.refPedido = 0;
+        L.refFaixa = st.faixa; L.refAlt = st.alternativas; L.bytesSessao += st.bytes; L.refPedido = 0;
         if (!L.refDoc) { L.refMotivo = LEGREF_INCOMPLETO; L.querModo = -1; }
       } else if (st.fase == LEGREF_INDISPONIVEL || st.fase == LEGREF_CANCELADO) {
         L.refMotivo = st.motivo; L.bytesSessao += st.bytes; L.refPedido = 0; L.querModo = -1;
@@ -757,6 +768,11 @@ static LegSyncMotivo motivoRef(LegRefMotivo m) {
 static LegSyncMotivo motivoFalhaAuto(AutoSyncMotivo m) {
   switch (m) {
     case AUTOSYNC_REGION_DISAGREEMENT: return LEGSYNC_M_REGION_DISAGREEMENT;
+#ifdef NV_TPK
+    // .tpk: a pilula diz "sem legenda embutida para comparar" em vez de um
+    // generico "nao sincronizada".
+    case AUTOSYNC_NO_REFERENCE: return LEGSYNC_M_SEM_REFERENCIA;
+#endif
     case AUTOSYNC_LOW_CONFIDENCE: case AUTOSYNC_AMBIGUOUS: return LEGSYNC_M_CONFIANCA;
     default: return LEGSYNC_M_CONFIANCA;
   }
@@ -800,6 +816,14 @@ LegSyncVisao legsync_visao(int slot) {
   snprintf(v.autoNome, sizeof v.autoNome, "%s", L.autoNome);
   // F06: so com o ajuste ligado o audio aparece (oferecido ou com o motivo).
   v.motivoAudio = L.audLigado ? motivoAudio() : LEGSYNC_M_NENHUM;
+#ifdef NV_TPK
+  // .tpk: o audio so existe com o conversor DTS/TrueHD tocando. Fora dele nao
+  // ha nada que a pessoa possa ligar: nenhum aviso de "por audio indisponivel".
+  if (v.motivoAudio == LEGSYNC_M_AUD_PLATAFORMA || v.motivoAudio == LEGSYNC_M_AUD_SEM_AUDIO)
+    v.motivoAudio = LEGSYNC_M_NENHUM;
+#endif
+  v.outrasRef = L.refAlt;
+  v.jaCompleta = L.ultimoModo == AUTOSYNC_THOROUGH && L.solicitou;
   audOk = L.audLigado && v.motivoAudio == LEGSYNC_M_NENHUM;
   base = (L.ref ? LEGSYNC_ACAO_RAPIDA | LEGSYNC_ACAO_COMPLETA : 0) | (audOk ? LEGSYNC_ACAO_AUDIO : 0);
   v.audio = L.audUltimo;

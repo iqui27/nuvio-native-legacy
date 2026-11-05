@@ -78,6 +78,8 @@ typedef struct {
   // automatico, com ou sem o automatico ligado. 0 nenhum, 1 trabalhando,
   // 2 aceita, 3 nao deu (inclusive recusado na hora).
   int manualFase;
+  int outrasRef;              // outras faixas do arquivo que ainda dariam referencia (modo so indice)
+  int jaCompleta;             // a ultima analise da embutida ja foi a Completa
 } LegSyncVisao;
 
 void legsync_iniciar(const char *urlMidia);
