@@ -5,7 +5,7 @@ DIR=$(mktemp -d /tmp/nuvio-mkvass-pgs.XXXXXX)
 trap 'rm -rf "$DIR"' EXIT
 # MKV minimo com uma faixa S_HDMV/PGS: um display set (objeto 6x2 em 1920x1080)
 # e outro que so limpa a tela. Sem video real.
-for MODE in plain zlib strip; do
+for MODE in ${PGS_MODES:-plain zlib strip longstrip malformed}; do
 python3 - "$DIR" "$MODE" <<'PY'
 import sys, pathlib, zlib
 p=pathlib.Path(sys.argv[1])
@@ -23,10 +23,15 @@ mostra=(pcs(0x80,1)+seg(0x14,bytes([0,0,1,235,128,128,255,2,16,128,128,128]))
 limpa=pcs(0x80,0)+seg(0x80,b'')
 mode=sys.argv[2] if len(sys.argv)>2 else 'plain'
 settings=b'\x16' if mode == 'strip' else b''
-encoding=(el(0x6d80,el(0x6240,el(0x5034,u(0x4254,3 if mode == 'strip' else 0)+el(0x4255,settings)))) if mode != 'plain' else b'')
+if mode == 'longstrip':
+    settings=seg(0x81,b'\0'*80)
+    mostra,limpa=settings+mostra,settings+limpa
+comp=u(0x4254,3 if mode in ('strip','longstrip') else 0)+el(0x4255,settings)
+if mode == 'malformed': comp=u(0x4254,3)+b'\x42'
+encoding=(el(0x6d80,el(0x6240,el(0x5034,comp))) if mode != 'plain' else b'')
 tr=el(0x1654ae6b,el(0xae,u(0xd7,6)+u(0x83,17)+el(0x86,b'S_HDMV/PGS')+el(0x22b59c,b'eng')+encoding))
 if mode == 'zlib': mostra,limpa=zlib.compress(mostra),zlib.compress(limpa)
-if mode == 'strip':
+if mode in ('strip','longstrip'):
     assert mostra.startswith(settings) and limpa.startswith(settings)
     mostra,limpa=mostra[len(settings):],limpa[len(settings):]
 body=u(0xe7,1000); rel=[]
@@ -42,6 +47,6 @@ p.joinpath('pgs.mkv').write_bytes(el(0x1a45dfa3,el(0x4282,b'matroska'))+el(0x185
 PY
 cc -Isrc -O1 -g -Wall -Wextra -DMKVASS_RANGES_POR_SEG=1000 tests/mkvass_pgs.c src/mkvass.c src/imgsub.c src/pgs.c src/legenda.c tests/mkvass_i18n.c src/assrender.c src/dados.c -lz -o "$DIR/test"
 mkdir "$DIR/dados"
-NUVIO_DADOS="$DIR/dados" "$DIR/test" "$DIR/pgs.mkv"
+NUVIO_DADOS="$DIR/dados" "$DIR/test" "$DIR/pgs.mkv" "$MODE"
 rm -rf "$DIR/dados"
 done

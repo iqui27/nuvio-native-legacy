@@ -53,11 +53,17 @@ static void parar(void) {
   assert(!mkvass_ocupado());
 }
 int main(int argc, char **argv) {
-  assert(argc == 2); dados_iniciar(".");
+  assert(argc == 3); dados_iniciar(".");
   arquivo = argv[1];
   legenda_desligar(); imgsub_limpar();
   mkvass_aceitar_imagem(1);
   mkvass_iniciar_ordinal(esperado, 0);
+  if (!strcmp(argv[2], "malformed")) {
+    usleep(500000);
+    assert(!imgsub_pegar(1.5));
+    parar();
+    return 0;
+  }
   ImgsubQuadro *q = NULL;
   for (int i = 0; !q && i < 2000; i++) { q = imgsub_pegar(1.5); if (!q) usleep(10000); }
   assert(q && q->n == 1);

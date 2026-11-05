@@ -518,8 +518,8 @@ typedef struct {
   // Matroska ContentEncodings of the PGS track. Blocks stay compressed in `pend`
   // and are restored just before decoding.
   int      pgsCodif;       // 0 none, 1 zlib, 2 header stripping
-  unsigned char pgsTira[64];
-  int      pgsTiraN;
+  unsigned char *pgsTira;
+  size_t   pgsTiraN;
   struct PendImg { double ini, fim; unsigned char *b; long n; } *pend;
   int      nPend, capPend;
   size_t   bytesPend;
@@ -1639,37 +1639,53 @@ static void prebuscaTextoSoltar(Fio *f);
 // Devolve: 1 achou a faixa e e ASS (ou texto simples aceito); 0 nao achou;
 // -1 achou e nao serve.
 
+// Bound temporary PGS restoration and stored header prefixes to 8 MiB.
+#define PGS_BLOCO_MAX (8u << 20)
+
 // ContentEncodings (0x6D80) of a PGS track: one frame-scoped compression only.
 // 0 = understood (f->pgsCodif set), -1 = anything the decoder could not read.
 static int lerCodificacaoPgs(Fio *f, const unsigned char *d, long n) {
   Iter a; unsigned long id; const unsigned char *v; long t; int vistos = 0;
   a.p = d; a.n = n; a.o = 0;
   f->pgsCodif = 0; f->pgsTiraN = 0;
-  while (proximo(&a, &id, &v, &t)) {
+  while (a.o < a.n) {
+    if (!proximo(&a, &id, &v, &t)) return -1;
     Iter b; unsigned long id2; const unsigned char *v2; long t2;
     unsigned long escopo = 1; int temComp = 0;
     unsigned long algo = 0; const unsigned char *cfg = NULL; long cfgN = 0;
     if (id != 0x6240) continue;
     if (++vistos > 1) return -1;
     b.p = v; b.n = t; b.o = 0;
-    while (proximo(&b, &id2, &v2, &t2)) {
-      if (id2 == 0x5032) escopo = (unsigned long)lerUint(v2, t2);
+    while (b.o < b.n) {
+      if (!proximo(&b, &id2, &v2, &t2)) return -1;
+      if (id2 == 0x5032) {
+        if (t2 < 1 || t2 > 8) return -1;
+        escopo = (unsigned long)lerUint(v2, t2);
+      }
       else if (id2 == 0x5035) return -1;   // encrypted
       else if (id2 == 0x5034) {
         Iter c; unsigned long id3; const unsigned char *v3; long t3;
         temComp = 1;
         c.p = v2; c.n = t2; c.o = 0;
-        while (proximo(&c, &id3, &v3, &t3)) {
-          if (id3 == 0x4254) algo = (unsigned long)lerUint(v3, t3);
+        while (c.o < c.n) {
+          if (!proximo(&c, &id3, &v3, &t3)) return -1;
+          if (id3 == 0x4254) {
+            if (t3 < 1 || t3 > 8) return -1;
+            algo = (unsigned long)lerUint(v3, t3);
+          }
           else if (id3 == 0x4255) { cfg = v3; cfgN = t3; }
         }
       }
     }
     if (!temComp || !(escopo & 1)) continue;
     if (algo == 0) f->pgsCodif = 1;
-    else if (algo == 3 && cfgN >= 0 && (size_t)cfgN <= sizeof f->pgsTira) {
-      f->pgsCodif = 2; f->pgsTiraN = (int)cfgN;
-      if (cfgN) memcpy(f->pgsTira, cfg, (size_t)cfgN);
+    else if (algo == 3 && cfgN >= 0 && (size_t)cfgN <= PGS_BLOCO_MAX) {
+      if (cfgN) {
+        f->pgsTira = malloc((size_t)cfgN);
+        if (!f->pgsTira) return -1;
+        memcpy(f->pgsTira, cfg, (size_t)cfgN);
+      }
+      f->pgsCodif = 2; f->pgsTiraN = (size_t)cfgN;
     } else return -1;
   }
   return 0;
@@ -3230,14 +3246,12 @@ static void guardarReferencia(Fio *f) {
 
 static int contarDesistidos(const Fio *f);
 
-// Bound temporary decompression; display sets larger than 8 MiB are unsupported.
-#define PGS_BLOCO_MAX (8u << 20)
-
 // Restores a stored block. Returns a new buffer (caller frees) or NULL on failure.
 static unsigned char *pgsRestaurar(const Fio *f, const unsigned char *b, long n, size_t *saida) {
   unsigned char *o;
   if (f->pgsCodif == 2) {
-    *saida = (size_t)f->pgsTiraN + (size_t)n;
+    if (n < 0 || (size_t)n > PGS_BLOCO_MAX - f->pgsTiraN) return NULL;
+    *saida = f->pgsTiraN + (size_t)n;
     o = malloc(*saida ? *saida : 1);
     if (!o) return NULL;
     if (f->pgsTiraN) memcpy(o, f->pgsTira, (size_t)f->pgsTiraN);
@@ -3900,7 +3914,7 @@ fim:
   estadoDoFio(f)->vivos--;
   pthread_cond_broadcast(&estadoDoFio(f)->sinal);
   pthread_mutex_unlock(&estadoDoFio(f)->trava);
-  soltarPendentes(f); free(f->pend); pgs_liberar(f->pgs);
+  soltarPendentes(f); free(f->pend); pgs_liberar(f->pgs); free(f->pgsTira);
   free(f->pontos); free(f->corpo); liberarFontes(f); soltarEstado(f->dono); free(f);
   return NULL;
 }
