@@ -31,13 +31,29 @@ int main(int argc,char **argv) {
   assert(e->ranges[0].state==0 && !e->ranges[0].data);
   dts_engine_destroy(e); puts("PASS: seek keeps exact queued range"); return 0;
  }
+ if(strstr(argv[1],"queue-seek")) {
+  assert(RANGE_WORKERS==1); e->range_slots=8; e->range_bytes=1024;
+  assert(start_ranges(e)); pthread_mutex_lock(&e->range_lock); queue_ranges(e); pthread_mutex_unlock(&e->range_lock);
+  uint64_t deadline=clock_ns(CLOCK_MONOTONIC)+UINT64_C(2000000000); int active=0;
+  do { pthread_mutex_lock(&e->range_lock); DtsRangeJob *j=job_at(e,0); active=j && j->state==2; pthread_mutex_unlock(&e->range_lock); if(!active) usleep(1000); } while(!active && clock_ns(CLOCK_MONOTONIC)<deadline);
+  assert(active); usleep(200000);
+  pthread_mutex_lock(&e->range_lock); DtsRangeJob *inflight=job_at(e,0);
+  assert(inflight && inflight->state==2); pthread_mutex_unlock(&e->range_lock);
+  uint64_t begun=clock_ns(CLOCK_MONOTONIC);
+  assert(seek_range(e,4096,SEEK_SET)==4096); bytes(e,1);
+  assert(clock_ns(CLOCK_MONOTONIC)-begun<UINT64_C(2500000000));
+  dts_engine_destroy(e); puts("PASS: queued seek preempts obsolete work"); return 0;
+ }
  if(strstr(argv[1],"retry-rate")) {
-  e->dv=1; snprintf(e->final_url,sizeof e->final_url,"%s",argv[1]);
-  free(e->url); e->url=strdup("http://127.0.0.1:1/should-not-resolve");
-  DtsRangeJob job={0}; job.end=1023; int stalled=0;
-  range_fetch(e,&job,0,&stalled);
-  assert(!job.data && job.status==429 && e->final_url[0]);
-  dts_engine_destroy(e); puts("PASS: CDN rate limit keeps resolved address"); return 0;
+  e->dv=1; e->range_slots=1; snprintf(e->final_url,sizeof e->final_url,"%s",argv[1]);
+  int exhaust=strstr(argv[1],"rate-exhaust")!=NULL, cancel=strstr(argv[1],"rate-cancel")!=NULL;
+  if(!exhaust && !cancel) { char *p=strstr(e->url,"/retry-rate/"); assert(p); memmove(p,p+11,strlen(p+11)+1); }
+  if(cancel) {
+   pthread_t t; assert(!pthread_create(&t,NULL,cancel_later,e)); uint8_t b;
+   assert(read_range(e,&b,1)==AVERROR_EXIT); pthread_join(t,NULL);
+  } else if(exhaust) { uint8_t b; assert(read_range(e,&b,1)==AVERROR(EIO)); }
+  else bytes(e,1);
+  dts_engine_destroy(e); puts("PASS: bounded CDN recovery"); return 0;
  }
  int64_t fault_at=e->dv?RANGE_BYTES_DV:4*1024*1024;
  uint64_t begun=clock_ns(CLOCK_MONOTONIC);
