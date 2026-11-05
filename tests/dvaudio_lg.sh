@@ -33,3 +33,5 @@ done
 cc "${flags[@]}" "${sources[@]}" tests/dvaudio_lg.c -o "$dir/test" \
   "${libs[@]}"
 "$dir/test"
+
+NV_TEST_MISSING_DTS=1 "$dir/test"

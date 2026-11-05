@@ -49,13 +49,13 @@ static void dubleAudioAt(DtsPlayback *p,int stream,double target) {
 static DtsTrack partidaFaixa;
 static double partidaPos, partidaPct;
 static void dubleResumePct(double pct) { partidaPct=pct; }
-static int partidas, partidaOrdinal, partidaContagem, partidaComFaixa;
+static int partidas, partidaOrdinal, partidaContagem, partidaComFaixa,partidaStream,partidaPaused;
 static DtsPlayback *dublePartida(const char *url, const char *headers, int audio_stream,
                                  double position, int paused, const char *window,
                                  int webos_major, const DtsTrack *selected, int ordinal,
                                  int count) {
   (void)url; (void)headers; (void)audio_stream; (void)paused; (void)window;
-  partidaPos=position;
+  partidaPos=position;partidaStream=audio_stream;partidaPaused=paused;
   (void)webos_major;
   partidas++; partidaOrdinal = ordinal; partidaContagem = count;
   partidaComFaixa = selected != NULL;
@@ -86,9 +86,13 @@ static void fixtureNextDvAudio(int mode) { partidaFixedAudio=mode; }
 #undef __APPLE__
 #include "../src/video.c"
 
+static int nativeSelectCalls,nativeSelectedIndex;
 static int fakeCall(LSHandle *h, const char *uri, const char *carga, Filtro cb,
                     void *ctx, unsigned long *tok, void *erro) {
-  (void)h; (void)uri; (void)carga; (void)cb; (void)ctx; (void)tok; (void)erro;
+  (void)h; (void)cb; (void)ctx; (void)tok; (void)erro;
+  if(strstr(uri,"/selectTrack") && strstr(carga,"\"type\":\"audio\"")) {
+    nativeSelectCalls++;nativeSelectedIndex=(int)js_num(carga,NULL,"index",-1);
+  }
   return 1;
 }
 static const char *fakePayload(LSMessage *m) { return (const char *)m; }
@@ -126,6 +130,7 @@ static void montar(const Mkv *m, int nm, const Tv *t, int nt, int atual) {
     snprintf(faixaAudio[i].idioma, sizeof faixaAudio[i].idioma, "%s", t[i].idioma);
     snprintf(faixaAudio[i].codec, sizeof faixaAudio[i].codec, "%s", t[i].codec);
     faixaAudio[i].canais = t[i].canais;
+    faixaAudio[i].numero = i; faixaAudio[i].ordinalMkv = -1;
     faixaAudio[i].stream_index = faixaAudio[i].stream_id = -1;
   }
   nAudio = nt; audioAtual = atual;
@@ -156,6 +161,60 @@ static const char *abrir(void) {
   return partidaComFaixa ? partidaFaixa.language : "";
 }
 
+static void testarDtsOculto(void) {
+  for(int profile=0;profile<=8;profile+=8)for(int pick=0;pick<2;pick++) {
+    audioMkvNovaFonte();
+    Mkv m[]={{"A_DTS","en","Original DTS-ES Surround Mix"},{"A_DTS","en","2026 Surround Remix"},
+      {"A_FLAC","en","Commentary 1"},{"A_FLAC","en","Commentary 2"},
+      {"A_FLAC","en","Commentary 3"},{"A_FLAC","en","Commentary 4"}};
+    Tv tv[]={{"en","flac",2},{"en","flac",2},{"en","flac",2},{"en","flac",2}};
+    montar(m,6,tv,4,0);dtsHabilitado=1;dvMkvPerfil=profile;
+    dvMkvEl=0;dvMkvBl=dvMkvRpu=!!profile;semDVForcado=0;
+    bindVivo=bindPendente=0;acb=0;modoLoad=0;seekEm=seekEnvEm=seekRetryEm=0;dvSilencio=0;
+    posSeg=745.286;pausaPedida=pick;
+    MkvFaixa fx[7]={0};fx[0].tipo=1;fx[0].numero=1;
+    for(int i=0;i<6;i++) {
+      fx[i+1].tipo=2;fx[i+1].numero=i+2;fx[i+1].canais=i<2?6:2;
+      snprintf(fx[i+1].codec,sizeof fx[i+1].codec,"%s",m[i].codec);
+      snprintf(fx[i+1].idioma,sizeof fx[i+1].idioma,"en");
+      snprintf(fx[i+1].nome,sizeof fx[i+1].nome,"%s",m[i].nome);
+      dvAudioCanais[i]=fx[i+1].canais;
+    }
+    completarAudioMkv(fx,7,audioMkvEpoch);audioMkvAplicar();
+    assert(nAudio==6 && audioAtual==0 && faixaAudio[4].stream_id==2 && faixaAudio[5].stream_id==3);
+    nativeSelectCalls=partidas=0;
+    video_escolher_audio(4+pick);assert(nativeSelectCalls==0 && partidas==0);
+    video_escolher_audio(0);assert(!audioMkvPedido && nativeSelectCalls==1);
+    audioMkvPedidoBombear();assert(!partidas);
+    nativeSelectCalls=0;video_escolher_audio(4+pick);
+    audioMkvPedidoBombear();
+    assert(partidas==1 && partidaOrdinal==pick && partidaContagem==6 && partidaStream==-1);
+    assert(partidaPaused==pick && partidaPos==745.286 && !strcmp(partidaFaixa.codec,"dts"));
+    assert(dtsModoDv==!!profile && dtsSessao);
+    // Native IDs differ from demux indices. A metadata revision preserves
+    // native return indices and the distinct identities of both hidden DTS.
+    nAudio=6;
+    for(int i=0;i<6;i++) {
+      VideoFaixa *f=&faixaAudio[i];memset(f,0,sizeof *f);f->numero=i;f->stream_index=i+1;
+      f->canais=i<2?6:2;strcpy(f->codec,i<2?"dts":"flac");strcpy(f->idioma,"en");
+    }
+    audioMkvConvertido();audioAtual=pick;posSeg=745.286;
+    assert(faixaAudio[0].numero==-1 && faixaAudio[1].numero==-1 && faixaAudio[5].numero==3);
+    seekCalls=audioCalls=0;video_escolher_audio(!pick);
+    assert(audioCalls==1 && chosenStream==(!pick)+1 && !seekCalls && dtsSessao && dtsModoDv==!!profile);
+    // A return to the fourth same-language FLAC must select native index 3,
+    // rather than fail as ambiguous or accidentally choose another commentary.
+    dtsNativeTarget=faixaAudio[5];dtsNativePending=1;dtsSessao=NULL;fonteMp4=1;
+    audioAoCarregar=-1;falhou=0;nativeSelectCalls=0;
+    snprintf(midia,sizeof midia,"returned-native");
+    evento("{\"sourceInfo\":{\"audioTrackInfo\":[{\"language\":\"en\",\"codec\":\"flac\",\"channels\":2},{\"language\":\"en\",\"codec\":\"flac\",\"channels\":2},{\"language\":\"en\",\"codec\":\"flac\",\"channels\":2},{\"language\":\"en\",\"codec\":\"flac\",\"channels\":2}],\"subtitleTrackInfo\":[]}}");
+    assert(!falhou && !dtsNativePending && nativeSelectCalls==1 && nativeSelectedIndex==3 && nAudio==6);
+    unsigned retired=audioMkvEpoch;audioMkvNovaFonte();
+    completarAudioMkv(fx,7,retired);assert(audioMkvCount==0 && !audioMkvPending);
+  }
+  puts("PASS hidden DTS controller: HDR10/DV8, both exact DTS, paused/current position, compatible switches, native FLAC return, refreshed lists and stale probes");
+}
+
 int main(void) {
 #ifdef NV_NATIVE_SEEK_TEST
   (void)SDL_GetTicks();SDL_Delay(2); // Keep test events away from the zero timestamp sentinel.
@@ -166,6 +225,7 @@ int main(void) {
   setvbuf(stdout, NULL, _IOLBF, 0);
   lsCall = fakeCall; lsPayload = fakePayload;
   bus = (LSHandle *)(uintptr_t)1; sessao = 40;
+  if(getenv("NV_TEST_MISSING_DTS")){testarDtsOculto();return 0;}
 #ifdef NV_DV_TRUEHD_TEST
   // Keep the exact selected TrueHD track at startup instead of substituting
   // another language/codec or handing the picture back to the URI player.

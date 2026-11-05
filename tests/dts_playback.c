@@ -21,7 +21,7 @@ static atomic_int allow_decode_failure, transport_stalled, release_transport, st
 static atomic_int jam_native, native_full, seek_failure;
 static atomic_int timestamp_fault, timestamp_fail_open, timestamp_block_open, timestamp_open_entered;
 static int last_dv, audio_reconfigs, audio_fail_once, missing_dv;
-static int truehd_fixture;
+static int truehd_fixture, hidden_dts_fixture;
 static atomic_int prime_block, prime_entered, prime_release;
 static int prime_serial;
 static int seamless_fixture, flush_refuse, audio_format_change, stale_clock;
@@ -99,6 +99,9 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,
  e->info.tracks[1]=(DtsTrack){.stream_index=1,.kind=DTS_AUDIO,.channels=2};strcpy(e->info.tracks[1].codec,"aac");strcpy(e->info.tracks[1].language,"en");
  e->info.tracks[2]=(DtsTrack){.stream_index=4,.kind=DTS_AUDIO,.channels=6};strcpy(e->info.tracks[2].codec,"dts");strcpy(e->info.tracks[2].language,"pt");
  e->info.tracks[3]=(DtsTrack){.stream_index=9,.kind=DTS_AUDIO,.channels=2};strcpy(e->info.tracks[3].codec,"dts");strcpy(e->info.tracks[3].language,"ja");
+ if(hidden_dts_fixture) {
+  for(int i=2;i<4;i++) {strcpy(e->info.tracks[i].language,"en");e->info.tracks[i].channels=6;}
+ }
  if(scenario==DV_MAPPING) {
   // Same-language/channel AC3 and DTS must not be conflated on the DV path.
   strcpy(e->info.tracks[2].codec,"ac3");strcpy(e->info.tracks[2].language,"ru");
@@ -350,6 +353,21 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
+ if(!strcmp(argv[1],"hidden-dts-first") || !strcmp(argv[1],"hidden-dts-second") ||
+    !strcmp(argv[1],"hidden-dts-dv")) {
+  hidden_dts_fixture=1;int second=!strcmp(argv[1],"hidden-dts-second");
+  int dv=!strcmp(argv[1],"hidden-dts-dv");scenario=NORMAL;
+  dts_playback_next_dv(dv);
+  DtsTrack track={.kind=DTS_AUDIO,.channels=6};strcpy(track.codec,"dts");strcpy(track.language,"en");
+  p=start(0,-1,&track,second?2:1,3);s=wait_status(p,0,0);
+  assert(!s.failed && s.info.audio_stream==(second?9:4) && s.info.dovi_profile==(dv?8:0));
+  assert(!strcmp(s.info.audio_codec,"aac"));
+  dts_playback_audio_at(p,second?4:9,2);s=wait_audio_status(p,second?4:9);
+  assert(!s.failed && count(&opens)==1 && s.info.dovi_profile==(dv?8:0));
+  dts_playback_seek(p,5);wait_count(&seeks,1);
+  dts_playback_close(p);assert(count(&creates)==count(&destroys));
+  printf("PASS %s: identical-language DTS identified by full file ordinal, AAC output, audio switch and seek with one source\n",argv[1]);return 0;
+ }
 #ifdef NV_DV7_MAPPING_TEST
  if(!strcmp(argv[1],"p7-mapping")) {
   dts_playback_next_p7_mapping(1);

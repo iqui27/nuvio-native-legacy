@@ -69,6 +69,7 @@ jobs:
           /tmp/dts-notice-test
           cc -std=c11 -O1 -g -Wall -Wextra -Werror -Isrc tests/video_seekview.c -lm -o /tmp/seek-view-test
           /tmp/seek-view-test
+          SANITIZE=1 bash tests/video_audio_mkv.sh
           bash tests/dvaudio.sh
           bash tests/dvaudio_lg.sh
           bash tests/dts_pipeline.sh

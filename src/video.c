@@ -10,6 +10,7 @@
 #include "video_seekretry.h"
 #include "video_dvretry.h"
 #include "video_dvaudio.h"
+#include "video_audio_mkv.h"
 #include "idioma.h"
 #include "linguas.h"
 #include "audioescolha.h"
@@ -94,6 +95,16 @@ static char dvAudioIdioma[NV_FAIXA_MAX][8];   // idioma/nome de cada faixa DO MK
 static char dvAudioNome[NV_FAIXA_MAX][48];
 static int  dvAudioCanais[NV_FAIXA_MAX];       // Audio > Channels de cada faixa DO MKV (0 = nao informado)
 static volatile int dvAudios;
+static pthread_mutex_t audioMkvLock=PTHREAD_MUTEX_INITIALIZER;
+static NvAudioMkvTrack audioMkvTracks[NV_FAIXA_MAX];
+static int audioMkvNative[NV_FAIXA_MAX],audioMkvCount,audioMkvPending,audioMkvPedido;
+static unsigned audioMkvEpoch=1;
+static void audioMkvAplicar(void);
+static void audioMkvPedidoBombear(void);
+static void audioMkvNovaFonte(void);
+static int audioMkvOrdinal(int track,int *count,NvAudioMkvTrack *copy);
+static int audioMkvNativo(int track);
+static void audioMkvConvertido(void);
 // Faixa do MKV (ordinal entre as de audio) escolhida pelo dvPronto no lugar de uma
 // que o caminho nao alimenta; -1 = nenhuma. O iniciarDts a entrega ao motor.
 static int dvAudioMkvOrd = -1;
@@ -1102,6 +1113,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
       q = strstr(p, "\"trickable\":");
       srcTrickable = q ? (strncmp(q + 12, "true", 4) == 0) : -1; }
     const char *q;
+    pthread_mutex_lock(&audioMkvLock);
     nAudio = nLeg = 0;
     vidAtmos = 0;
     // Empty strings/arrays mean no tracks. Stay inside each track array so
@@ -1115,7 +1127,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
         VideoFaixa *f = &faixaAudio[nAudio];
         char cod[16] = "", ch[8] = "", imm[16] = "";
         memset(f, 0, sizeof *f);
-        f->numero = nAudio;
+        f->numero = nAudio;f->ordinalMkv=-1;
         f->stream_index = -1; f->stream_id = -1;
         { const char *l = strstr(o, "\"language\":\"");
           if (l && (!fo || l < fo)) {
@@ -1164,6 +1176,8 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
         o = js_prox(fo);
       }
     }
+    pthread_mutex_unlock(&audioMkvLock);
+    audioMkvAplicar();
     // DIAGNOSTICO: despeja o sourceInfo CRU uma vez por titulo. A TV nao
     // devolve idioma de legenda nos arquivos do dono (todas saem como
     // "Legenda N"), e sem ver o JSON de verdade qualquer conserto e chute —
@@ -1209,8 +1223,10 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
 
     if (dtsNativePending) {
       int match = -1, matches = 0;
+      int exact=audioMkvNativo(dtsNativeTarget.stream_id);
       for (int i = 0; i < nAudio; i++) {
         const VideoFaixa *f = &faixaAudio[i];
+        if (f->numero<0 || (exact>=0 && f->numero!=exact))continue;
         if (!strcasecmp(f->codec, dtsNativeTarget.codec) &&
             (!dtsNativeTarget.idioma[0] || ling_casa(f->idioma, dtsNativeTarget.idioma)) &&
             (!dtsNativeTarget.canais || f->canais == dtsNativeTarget.canais)) {
@@ -1239,7 +1255,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
         c[i].idioma = faixaAudio[i].idioma; c[i].codec = faixaAudio[i].codec;
         c[i].rotulo = faixaAudio[i].rotulo; c[i].canais = faixaAudio[i].canais;
         c[i].dts = audioesc_dts_truehd(faixaAudio[i].codec, faixaAudio[i].rotulo); c[i].pode = 1;
-        c[i].numero = faixaAudio[i].numero;
+        c[i].numero = video_audio_numero_memoria(&faixaAudio[i]);
       }
       k = audioesc_escolher(c, nAudio, &o);
       if (k >= 0 && k != audioAtual) {
@@ -2079,31 +2095,109 @@ double video_creditos(void) {
   return 0.0;
 }
 
-/* LG can omit an unsupported audio track entirely from sourceInfo. Recover
- * its identity only when the file has a single audio track; a filtered list
- * with several tracks does not tell us which one native playback selected. */
-static void completarAudioMkv(const MkvFaixa *fx, int n) {
-  const MkvFaixa *audio = NULL;
-  int count = 0;
-  for (int i = 0; i < n; i++) {
-    if (fx[i].tipo == 2) { audio = &fx[i]; count++; }
+/* A detached header probe publishes metadata, never a partially rebuilt UI
+ * list. sourceInfo and the main-thread pump apply it under one short lock. */
+static void audioMkvNovaFonte(void) {
+  pthread_mutex_lock(&audioMkvLock);
+  audioMkvEpoch++;audioMkvCount=audioMkvPedido=0;
+  __atomic_store_n(&audioMkvPending,0,__ATOMIC_RELEASE);
+  for(int i=0;i<NV_FAIXA_MAX;i++)audioMkvNative[i]=-1;
+  pthread_mutex_unlock(&audioMkvLock);
+}
+static int audioMkvOrdinal(int track,int *count,NvAudioMkvTrack *copy) {
+  int found=-1;
+  pthread_mutex_lock(&audioMkvLock);
+  if(count)*count=audioMkvCount;
+  for(int i=0;i<audioMkvCount;i++)if(audioMkvTracks[i].numero==track){found=i;if(copy)*copy=audioMkvTracks[i];break;}
+  pthread_mutex_unlock(&audioMkvLock);return found;
+}
+static int audioMkvNativo(int track) {
+  int found=-1;
+  pthread_mutex_lock(&audioMkvLock);
+  for(int i=0;i<audioMkvCount;i++)if(audioMkvTracks[i].numero==track){found=audioMkvNative[i];break;}
+  pthread_mutex_unlock(&audioMkvLock);return found;
+}
+static void completarAudioMkv(const MkvFaixa *fx,int n,unsigned epoch) {
+  pthread_mutex_lock(&audioMkvLock);
+  if(epoch==audioMkvEpoch) {
+    int count=0;
+    for(int i=0;i<n && count<NV_FAIXA_MAX;i++)if(fx[i].tipo==2) {
+      NvAudioMkvTrack *f=&audioMkvTracks[count++];
+      f->numero=fx[i].numero;f->canais=fx[i].canais;
+      snprintf(f->codec,sizeof f->codec,"%s",fx[i].codec);
+      snprintf(f->idioma,sizeof f->idioma,"%s",fx[i].idioma);
+      snprintf(f->nome,sizeof f->nome,"%s",fx[i].nome);
+    }
+    audioMkvCount=count;__atomic_store_n(&audioMkvPending,1,__ATOMIC_RELEASE);
   }
-  if (count != 1 || nAudio > 1 || (nAudio && faixaAudio[0].codec[0])) return;
-  VideoFaixa *f = &faixaAudio[0];
-  if (!nAudio) {
-    memset(f, 0, sizeof *f);
-    f->stream_index = f->stream_id = -1;
-    f->ordinalMkv = 0;
-    audioAtual = 0;
+  pthread_mutex_unlock(&audioMkvLock);
+}
+static void audioMkvAplicar(void) {
+  if(dtsSessao) {
+    if(dtsRevisao)audioMkvConvertido();
+    __atomic_store_n(&audioMkvPending,0,__ATOMIC_RELEASE);return;
   }
-  snprintf(f->codec, sizeof f->codec, "%s", !strncmp(audio->codec, "A_DTS", 5) ? "dts" : audio->codec);
-  if (!f->idioma[0] && strcmp(audio->idioma, "und"))
-    snprintf(f->idioma, sizeof f->idioma, "%s", audio->idioma);
-  if (!f->canais) f->canais = audio->canais;
-  snprintf(f->rotulo, sizeof f->rotulo, "%s", audio->nome[0] ? audio->nome : audio->codec);
-  nAudio = 1;
-  printf("[dts] MKV recovered single audio track: codec=%s channels=%d\n", f->codec, f->canais);
-  fflush(stdout);
+  pthread_mutex_lock(&audioMkvLock);
+  if(audioMkvCount) {
+    int before=nAudio;
+    nAudio=nv_audio_mkv_merge(faixaAudio,nAudio,NV_FAIXA_MAX,audioMkvTracks,audioMkvCount,audioMkvNative);
+    if(audioMkvPedido)for(int i=0;i<nAudio;i++)
+      if(faixaAudio[i].numero<0 && faixaAudio[i].stream_id==audioMkvPedido)audioAtual=i;
+    if(nAudio>before) {
+      printf("[audio-mkv] native=%d file=%d visible=%d recoveredDts=%d\n",before,audioMkvCount,nAudio,nAudio-before);
+      fflush(stdout);
+    }
+  }
+  __atomic_store_n(&audioMkvPending,0,__ATOMIC_RELEASE);
+  pthread_mutex_unlock(&audioMkvLock);
+}
+static void audioMkvPedidoBombear(void) {
+  if(__atomic_load_n(&audioMkvPending,__ATOMIC_ACQUIRE)) {
+    int before=nAudio;audioMkvAplicar();
+    if(nAudio>before && audioesc_tem_lembrada()) {
+      AudioCand c[NV_FAIXA_MAX];int origem=0;
+      for(int i=0;i<nAudio;i++) {
+        VideoFaixa *f=&faixaAudio[i];
+        c[i]=(AudioCand){.idioma=f->idioma,.codec=f->codec,.rotulo=f->rotulo,.canais=f->canais,
+          .dts=audioesc_dts_truehd(f->codec,f->rotulo),.pode=1,.numero=video_audio_numero_memoria(f)};
+      }
+      int k=audioesc_escolher(c,nAudio,&origem);
+      if(k>=0 && k!=audioAtual && origem==AUDIOESC_LEMBRADA)video_escolher_audio(k);
+    }
+  }
+  if(dtsSessao || !dvSondado || bindAtivo())return;
+  pthread_mutex_lock(&audioMkvLock);
+  int pedido=audioMkvPedido;
+  pthread_mutex_unlock(&audioMkvLock);
+  if(!pedido || !ligado || modoLoad || !dtsHabilitado)return;
+  int row=-1;
+  for(int i=0;i<nAudio;i++)if(faixaAudio[i].numero<0 && faixaAudio[i].stream_id==pedido){row=i;break;}
+  if(row<0)return;
+  audioAtual=row;dvAudioMkvOrd=faixaAudio[row].ordinalMkv;
+  dtsModoDv=!semDVForcado && nv_dv7_profile(dvMkvPerfil,dvMkvEl,dvMkvBl,dvMkvRpu) &&
+            nv_dv7_selected(dvMkvPerfil,ajustes_dv_mkv(),ajustes_dv7());
+  if(dtsModoDv)dvHabilitado=1;
+  printf("[audio-mkv] start DTS track=%d ordinal=%d dvProfile=%d dv=%d\n",pedido,dvAudioMkvOrd,dvMkvPerfil,dtsModoDv);fflush(stdout);
+  iniciarDts(-1);
+  pthread_mutex_lock(&audioMkvLock);
+  if(audioMkvPedido==pedido)audioMkvPedido=0;
+  pthread_mutex_unlock(&audioMkvLock);
+}
+static void audioMkvConvertido(void) {
+  pthread_mutex_lock(&audioMkvLock);
+  if(nAudio==audioMkvCount)for(int i=0;i<nAudio;i++) {
+    VideoFaixa *f=&faixaAudio[i];const NvAudioMkvTrack *m=&audioMkvTracks[i];
+    NvDvAudioTrack a={f->codec,f->idioma,f->canais},b={m->codec,m->idioma,m->canais};
+    if(!nv_dvaudio_par(&a,&b,ling_casa,audioinfo_codec))continue;
+    f->ordinalMkv=i;f->stream_id=m->numero;
+    snprintf(f->nome,sizeof f->nome,"%s",m->nome);
+    if(audioMkvNative[i]>=0)f->numero=audioMkvNative[i];
+    else if(nv_audio_mkv_dts(m->codec)) {
+      f->numero=-1;
+      snprintf(f->rotulo,sizeof f->rotulo,"%.34s · DTS",m->nome[0]?m->nome:m->idioma);
+    }
+  }
+  pthread_mutex_unlock(&audioMkvLock);
 }
 
 static void *lerMkv(void *arg) {
@@ -2111,7 +2205,7 @@ static void *lerMkv(void *arg) {
   MkvCap   caps[MKV_MAX_CAPS];
   char url[sizeof urlAtual];
   int n, i, j, casou = 0, nCaps = 0;
-  (void)arg;
+  unsigned audioEpoch=(unsigned)(uintptr_t)arg;
 
   snprintf(url, sizeof url, "%s", urlAtual);
 
@@ -2192,7 +2286,7 @@ static void *lerMkv(void *arg) {
     fioMkvVivo = 0; return NULL;
   }
 
-  completarAudioMkv(fx, n);
+  completarAudioMkv(fx,n,audioEpoch);
   { int na = 0, achouVideo = 0;
     for (j = 0; j < n; j++) {
       if (fx[j].tipo == 1 && !achouVideo) {
@@ -2452,6 +2546,7 @@ int video_tocar_retomada(const char *url,double seconds,double pct) {
 }
 #endif
 int video_tocar(const char *url) {
+  audioMkvNovaFonte();
 #ifdef NV_NATIVE_SEEK_TEST
   dtsImagemExibida=0;
   converterResumeRequested=converterResumeUsed=0;
@@ -2521,6 +2616,7 @@ void video_bombear(void) {
   mkvRetryBombear();
   acbBindRecolher();
   if (ligado) acbConfigurarTipo(dtsSessao != NULL);
+  audioMkvPedidoBombear();
   if (dtsSessao) bombearDts();
 #ifdef NV_MP4_BD_TEST
   else if(mp4TestPending && ligado && !modoLoad && urlAtual[0] && !dtsTentou) {
@@ -3241,8 +3337,12 @@ static int iniciarDts(int stream) {
   /* Retry from the next pump before unloading or spawning a native worker.
    * The old bind must finish before its ACB handle can become MSE. */
   if (bindAtivo()) return 0;
-  DtsTrack selected;
-  const VideoFaixa *a = video_audio(audioAtual);
+  DtsTrack selected;VideoFaixa selectedRow;
+  pthread_mutex_lock(&audioMkvLock);
+  int audioIndex=audioAtual,nativeCount=nAudio,requested=audioMkvPedido;
+  const VideoFaixa *a=video_audio(audioIndex);
+  if(a){selectedRow=*a;a=&selectedRow;}
+  pthread_mutex_unlock(&audioMkvLock);
   // A POSICAO DE PARTIDA. Um seek pedido ao player da TV e ainda nao feito (o
   // ponto salvo da retomada, mandado 350 ms depois do pedido, ou ja enviado sem
   // seekDone) e a posicao certa; posSeg nao, porque o currentTime da TV volta a
@@ -3267,7 +3367,7 @@ static int iniciarDts(int stream) {
   }
 #endif
 #endif
-  int paused = pausaPedida, ordinal = audioAtual, count = nAudio, trocada = 0;
+  int paused = pausaPedida, ordinal = audioIndex, count = nativeCount, trocada = 0;
   memset(&selected, 0, sizeof selected);
   if (a) {
     snprintf(selected.language, sizeof selected.language, "%s", a->idioma);
@@ -3276,8 +3376,18 @@ static int iniciarDts(int stream) {
   }
   // Both a direct match and an automatic replacement use the COMPLETE file
   // ordinal/count. The native list can omit DTS/TrueHD and shift every index.
-  int mkvAudio = dvAudioMkvOrd >= 0 ? dvAudioMkvOrd : dvAudioMkvAtual;
-  if (dtsModoDv && mkvAudio >= 0 && mkvAudio < dvAudios) {
+  int mkvAudio = a && a->numero<0 ? audioMkvOrdinal(a->stream_id,NULL,NULL) :
+                 dvAudioMkvOrd >= 0 ? dvAudioMkvOrd : dvAudioMkvAtual;
+  NvAudioMkvTrack requestedTrack;
+  int requestedOrdinal=requested?audioMkvOrdinal(requested,&count,&requestedTrack):-1;
+  if(requestedOrdinal>=0) {
+    ordinal=requestedOrdinal;trocada=1;
+    memset(&selected,0,sizeof selected);selected.channels=requestedTrack.canais;
+    snprintf(selected.language,sizeof selected.language,"%s",requestedTrack.idioma);
+    snprintf(selected.codec,sizeof selected.codec,"dts");
+  } else if(a && a->numero<0 && mkvAudio>=0) {
+    ordinal=mkvAudio;audioMkvOrdinal(a->stream_id,&count,NULL);trocada=1;
+  } else if (dtsModoDv && mkvAudio >= 0 && mkvAudio < dvAudios) {
     memset(&selected, 0, sizeof selected);
     snprintf(selected.language, sizeof selected.language, "%s", dvAudioIdioma[mkvAudio]);
     snprintf(selected.codec, sizeof selected.codec, "%s", dvAudioCodec[mkvAudio]);
@@ -3478,6 +3588,7 @@ static void bombearDts(void) {
       snprintf(f->rotulo, sizeof f->rotulo, "%.26s · %.12s", t->language[0] ?
                i18n(ling_nome(t->language)) : i18n("Faixa"), t->codec);
     }
+    audioMkvConvertido();
     legAtual = -1;
     if (initial) {
       int matches = 0, match = -1;
@@ -4000,7 +4111,8 @@ void video_sondar_mkv_agora(void) {
   printf("[mkv] sonda do cabecalho disparada (buffer %.0f s a frente)\n", bufferSeg - posSeg);
   fflush(stdout);
   mkvFioSessao = __atomic_load_n(&sessao, __ATOMIC_ACQUIRE);
-  if (pthread_create(&fioMkv, NULL, lerMkv, NULL) != 0) fioMkvVivo = 0;
+  pthread_mutex_lock(&audioMkvLock);unsigned audioEpoch=audioMkvEpoch;pthread_mutex_unlock(&audioMkvLock);
+  if (pthread_create(&fioMkv, NULL, lerMkv, (void *)(uintptr_t)audioEpoch) != 0) fioMkvVivo = 0;
   else pthread_detach(fioMkv);
 }
 int  video_audio_atual(void)   { return audioAtual; }
@@ -4082,6 +4194,12 @@ void video_escolher_audio(int i) {
   }
 
   if (!ligado || !midia[0] || !f) return;
+  if(f->numero<0 && f->stream_id>0 && nv_audio_mkv_dts(f->codec)) {
+    if(!dtsHabilitado || modoLoad)return;
+    pthread_mutex_lock(&audioMkvLock);audioMkvPedido=f->stream_id;pthread_mutex_unlock(&audioMkvLock);
+    audioAtual=i;return;
+  }
+  pthread_mutex_lock(&audioMkvLock);audioMkvPedido=0;pthread_mutex_unlock(&audioMkvLock);
   /* Unsupported audio belongs to the previous selection. Give the new native
    * track a chance before allowing its own codec error to trigger conversion. */
   if (i != audioAtual) audioNaoSup = 0;

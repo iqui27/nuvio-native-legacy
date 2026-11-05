@@ -385,7 +385,7 @@ typedef struct {
 
 // Identity used by candidates and manual audio memory, separate from selectTrack.
 static inline int video_audio_numero_memoria(const VideoFaixa *f) {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   // MKV TrackNumber occupies a separate namespace from native player indices.
   if (f->numero < 0 && f->stream_id > 0) return 0x40000000 | f->stream_id;
 #endif
