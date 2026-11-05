@@ -80,8 +80,8 @@ void mkvass_iniciar_ordinal(const char *url, int ordinalFaixa);
 // colheita. Barato — so compara e acorda o fio quando a posicao andou.
 void mkvass_passo(double posSeg);
 // Quanto buffer de VIDEO ha a frente do playhead, em segundos; negativo =
-// desconhecido. So a VARREDURA usa: abaixo de 20 s ela pausa, para nao
-// disputar a conexao com o video. Chamar junto com mkvass_passo.
+// desconhecido. Abaixo de 20 s a varredura pausa; PGS conserva progresso
+// com Ranges pequenos e espacados, inclusive com folga zero. Chamar junto com mkvass_passo.
 void mkvass_folga(double segundosAFrente);
 
 // Nova tentativa da MESMA url e faixa do ultimo pedido, depois de um no-go
@@ -191,6 +191,23 @@ int  mkvass_nogo(void);
 int  mkvass_varredura(void);
 // 1 enquanto ha fio de colheita vivo (o teste espera por isto).
 int  mkvass_ocupado(void);
+
+// Snapshot counters are per reader generation, not inferred screen output.
+// Network bytes include container/video headers read while finding subtitles.
+enum { MKVASS_SCAN_IDLE, MKVASS_SCAN_READING, MKVASS_SCAN_BUDGET,
+       MKVASS_SCAN_WINDOW, MKVASS_SCAN_VIDEO, MKVASS_SCAN_RETRY };
+typedef struct {
+  uint64_t packets, payload_bytes, pending_drops, parse_errors;
+  uint64_t decode_attempts, decoded, decode_errors, restore_errors, emitted;
+  uint64_t range_failures, late;
+  double max_lateness, reader_seconds, playback_seconds, video_headroom;
+  long long reader_byte;
+  size_t buffered_bytes, pending_bytes;
+  int pending_packets, state, scanning, throttled, scan_state;
+  unsigned generation;
+  long requests, network_bytes;
+} MkvassDiagnostico;
+void mkvass_diagnostico(MkvassDiagnostico *out);
 
 // Telemetria: Ranges feitos, bytes baixados, blocos colhidos e total de
 // blocos indexados. Qualquer ponteiro pode ser NULL. `colhidos` conta o que ja
