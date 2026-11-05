@@ -34,6 +34,9 @@ int main(void) {
   const char *safe = "[playback-diag] tick=123 generation=2 pos=123.456 readyBytes=268435456 availableKiB=245760";
   logexport_redact(safe, out, sizeof out); assert(!strcmp(safe, out));
   const char *range_logs[]={
+    "[hevc-structure] phase=demux epoch=2 packet=1 ptsNs=600000000000 dtsNs=600000000000 durNs=41708000 keyframe=1 corrupt=0 length=4 bytes=542367 nals=11 vcl=1 vclBytes=541998 vclHash=af82c9f4 params=3 paramHash=2f3194b3 rpu=0 rpuHash=811c9dc5 sei=3 seiHash=0d56c47e firstSlice=1 slicePps=0 spsId=0 ppsId=0 ppsSps=0 vpsId=0 dependent=0 extraBits=0 tiles=0 wpp=1 clipped=0 malformed=0 syntaxUnknown=0 mapClipped=0 nalMap=32/0/1;24;af82c9f4;0;-1,33/0/1;51;2f3194b3;0;0,20/0/1;541998;af82c9f4;-1;0",
+    "[video-timing] phase=engine epoch=2 packet=24 ptsNs=601000000000 dtsNs=600916666667 durNs=41666667 deltaPtsNs=-83333333 deltaDtsNs=41666667 ptsBack=11 dtsBack=0 missingPts=0 missingDts=0 minStepNs=-83333333 maxStepNs=208333333",
+    "[video-demux] epoch=2 packet=1 stream=0 pos=10042092337 flags=1 tb=1/1000 extradataBytes=121 extradataHash=2f3194b3",
     "[dts] stage=hevc-sei found=1 removed=1 malformed=0 oversize=0 before=1200 after=1050 prefix=2 suffix=1",
     "[dts] stage=hevc-sei found=0 removed=0 malformed=0 oversize=0 before=1200 after=1200 prefix=2 suffix=1",
     "[dts] stage=hevc-sei-drop metadata-only packet; waiting for picture",

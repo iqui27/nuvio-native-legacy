@@ -121,6 +121,8 @@ typedef struct {
 struct DtsEngine {
 #ifdef NV_HTTP_BUFFER_DIAG
   unsigned diag_id, picture_epoch, picture_count;
+  unsigned demux_picture_count;
+  NvVideoTiming demux_timing, output_timing;
 #endif
   DtsMediaInfo info;
   char error[160], *url, *headers, *cache;
@@ -951,6 +953,34 @@ static int64_t seek_range(void *opaque,int64_t offset,int whence) {
 static int64_t ns(int64_t value,AVRational tb) {
   return value==AV_NOPTS_VALUE?INT64_MIN:av_rescale_q(value,tb,NS);
 }
+#ifdef NV_HTTP_BUFFER_DIAG
+static void video_diag_reset(DtsEngine *e) {
+  e->picture_epoch++;e->picture_count=e->demux_picture_count=0;
+  memset(&e->demux_timing,0,sizeof e->demux_timing);
+  memset(&e->output_timing,0,sizeof e->output_timing);
+}
+static void video_demux_diag(DtsEngine *e) {
+  if(e->demux_picture_count>=120)return;
+  AVPacket *p=e->in;AVStream *v=e->fmt->streams[e->info.video_stream];
+  AVCodecParameters *c=v->codecpar;
+  unsigned ordinal=++e->demux_picture_count;
+  int emit=nv_video_picture_sample(ordinal);
+  int64_t pts=ns(p->pts,v->time_base),dts=ns(p->dts,v->time_base),duration=ns(p->duration,v->time_base);
+  nv_video_timing_log(&e->demux_timing,"demux",e->picture_epoch,pts,dts,duration,emit);
+  if(!emit)return;
+  size_t extra_size=0;const uint8_t *extra=av_packet_get_side_data(p,AV_PKT_DATA_NEW_EXTRADATA,&extra_size);
+  printf("[video-demux] epoch=%u packet=%u stream=%d pos=%lld flags=%d tb=%d/%d extradataBytes=%d extradataHash=%08x newExtraBytes=%zu newExtraHash=%08x\n",
+    e->picture_epoch,ordinal,p->stream_index,(long long)p->pos,p->flags,v->time_base.num,v->time_base.den,
+    c->extradata_size,(unsigned)nv_video_picture_hash(c->extradata,c->extradata_size>0?(size_t)c->extradata_size:0),
+    extra_size,(unsigned)nv_video_picture_hash(extra,extra_size));
+  if(c->codec_id==AV_CODEC_ID_HEVC) {
+    unsigned length=c->extradata && c->extradata_size>=23 && c->extradata[0]==1?(c->extradata[21]&3)+1:0;
+    nv_hevc_diag_log("demux",e->picture_epoch,ordinal,p->data,p->size,length,pts,dts,duration,
+      !!(p->flags&AV_PKT_FLAG_KEY),!!(p->flags&AV_PKT_FLAG_CORRUPT));
+  }
+  fflush(stdout);
+}
+#endif
 static void copy_metadata(char *out,size_t size,AVDictionary *m,const char *key) {
   AVDictionaryEntry *v=av_dict_get(m,key,NULL,0);
   snprintf(out,size,"%s",v?v->value:"");
@@ -1247,7 +1277,7 @@ static int configure_audio(DtsEngine *e,int core,double start) {
 }
 int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,int core,double start) {
 #ifdef NV_HTTP_BUFFER_DIAG
-  if(e){e->picture_epoch++;e->picture_count=0;}
+  if(e)video_diag_reset(e);
 #endif
   if (!e || !url || !*url) return -1;
   __atomic_store_n(&e->range_live,0,__ATOMIC_RELAXED);
@@ -1586,6 +1616,9 @@ static int next_frame_passthrough(DtsEngine *e,DtsFrame *f) {
       return frame_out(e,f,DTS_AUDIO,tb);
     }
     if(e->in->stream_index==e->info.video_stream) {
+#ifdef NV_HTTP_BUFFER_DIAG
+      video_demux_diag(e);
+#endif
       if(!e->bsf) { av_packet_move_ref(e->out,e->in); return frame_out(e,f,DTS_VIDEO,tb); }
       r=av_bsf_send_packet(e->bsf,e->in);
       av_packet_unref(e->in);
@@ -1657,6 +1690,9 @@ static int next_frame(DtsEngine *e,DtsFrame *f) {
       if(r<0) { av_packet_unref(e->in); return fail(e,"DTS decode input",r); }
     }
     else if(e->in->stream_index==e->info.video_stream) {
+#ifdef NV_HTTP_BUFFER_DIAG
+      video_demux_diag(e);
+#endif
       if(!e->bsf) {
         AVRational tb=e->fmt->streams[e->info.video_stream]->time_base;
         av_packet_move_ref(e->out,e->in);
@@ -1698,6 +1734,8 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
 #ifdef NV_HTTP_BUFFER_DIAG
   if(result==1 && f->kind==DTS_VIDEO && e->picture_count<120) {
     e->picture_count++;
+    nv_video_timing_log(&e->output_timing,"engine",e->picture_epoch,f->pts_ns,f->dts_ns,f->duration_ns,
+      nv_video_picture_sample(e->picture_count));
     if(nv_video_picture_sample(e->picture_count))
       nv_video_picture_log("engine",e->picture_epoch,e->picture_count,f,e->info.video_codec,-1,-1);
   }
@@ -1755,7 +1793,7 @@ int dts_engine_seek(DtsEngine *e,double seconds) {
   r=avformat_seek_file(e->fmt,-1,INT64_MIN,timestamp,timestamp,AVSEEK_FLAG_BACKWARD);
   if(r<0) return fail(e,"Container seek",r);
 #ifdef NV_HTTP_BUFFER_DIAG
-  e->picture_epoch++;e->picture_count=0;
+  video_diag_reset(e);
 #endif
   if(e->passthrough) {
     if(e->bsf) av_bsf_flush(e->bsf);

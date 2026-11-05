@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include "dts_media.h"
 #include "mp4_hevc_sps.h"
+#include "dts_hevc_diag.h"
 typedef struct { unsigned scanned,nals; int vcl,irap,vps,sps,pps,rpu,el,clipped,invalid,sei,vcl_count,sps_ok; NvMp4Sps format; } NvVideoPacketDiag;
 /* Diagnostic only: bounded inspection of borrowed Annex-B bytes. A missing
  * NAL in a clipped sample is inconclusive; never alter or copy the picture. */
@@ -67,5 +68,9 @@ static inline void nv_video_picture_log(const char *phase,unsigned epoch,unsigne
     d.irap,d.vps,d.sps,d.pps,d.sei,d.rpu,d.el,d.invalid,d.sps_ok,d.format.width,d.format.height,
     d.format.depth,d.format.primaries,d.format.transfer,d.format.matrix,d.format.full_range,feed,copy_ok);
   fflush(stdout);
+  if(!strcmp(codec,"hevc") && strcmp(phase,"worker")) {
+    nv_hevc_diag_log(phase,epoch,ordinal,f->data,f->size,0,f->pts_ns,f->dts_ns,f->duration_ns,-1,-1);
+    fflush(stdout);
+  }
 }
 #endif
