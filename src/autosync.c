@@ -88,7 +88,11 @@ const char *autosync_motivo(AutoSyncMotivo m) {
 
 /* --- falas --------------------------------------------------------------- */
 typedef struct { double ini, fim; } Fala;
-typedef struct { Fala *v; int n; double ini, fim; } Falas;
+/* estimado: the reference's ends are partly estimated (LEGENDA_DOC_FIM_ESTIMADO,
+ * .tpk index-only reference). Starts are the container's own timestamps, so
+ * matching then leans on starts (same weights as NuvioTV's retimer). Zero for
+ * every other document: the costs below are exactly the previous ones. */
+typedef struct { Fala *v; int n; double ini, fim; int estimado; } Falas;
 static int cmpHash(const void *a,const void *b){uint64_t x=*(const uint64_t*)a,y=*(const uint64_t*)b;return x<y?-1:x>y;}
 static int cmpFala(const void *a,const void *b) {
   const Fala *x=a,*y=b;
@@ -116,6 +120,7 @@ static AutoSyncMotivo preparar(const LegendaDocumento *doc,Falas *f,Controle *c,
   int n=0,i,usados=0,sinais=0,naJanela=0;const LegendaCue *v=legenda_documento_dados(doc,&n);
   uint64_t *hashes=NULL;
   if(!info||!v)return AUTOSYNC_NO_REFERENCE;
+  f->estimado=(info->flags&LEGENDA_DOC_FIM_ESTIMADO)!=0;
   if(!(info->flags&LEGENDA_DOC_COMPLETO)||n>=AS_MAX_CUES)return AUTOSYNC_INCOMPLETE;
   if(info->flags&(LEGENDA_DOC_FORCED|LEGENDA_DOC_SINAIS))return AUTOSYNC_FORCED_SIGNS;
   f->v=malloc((size_t)n*sizeof *f->v);hashes=malloc((size_t)n*sizeof *hashes);
@@ -276,6 +281,8 @@ static double custoGrupo(const double *ts,const double *te,int i,int na,const Fa
   for(int k=1;k<nb;k++)if(b->v[j+k].fim>re)re=b->v[j+k].fim;
   for(int k=1;k<na;k++)if(te[i+k]>ae)ae=te[i+k];
   double rd=fmax(.001,re-rs),ad=fmax(.001,ae-as);
+  if(b->estimado)   /* the inferred end is useful, but never outweighs the real start */
+    return .58*fabs(rs-as)/1.25+.16*fabs(re-ae)/1.25+.16*fabs((rs+re)/2-(as+ae)/2)/1.5+.10*fabs(rd-ad)/2.0;
   return .34*fabs(rs-as)/1.25+.34*fabs(re-ae)/1.25+.18*fabs((rs+re)/2-(as+ae)/2)/1.5+.14*fabs(rd-ad)/2.0;
 }
 /* Alvo [i0,i1) ja transformado em ts/te (indices absolutos) contra a
@@ -491,7 +498,9 @@ static int rotular(const Falas *a,const Falas *b,const Transf *cand,int nc,Peca 
       int j=primeiraApos(b,ts-1);
       /* Mais apertado que o custo de grupo: aqui so importa qual trecho
        * poe a fala em cima de uma da referencia. */
-      for(;j<b->n&&b->v[j].ini<=ts+1;j++)cm=fmin(cm,(fabs(b->v[j].ini-ts)+fabs(b->v[j].fim-te))/.5);
+      for(;j<b->n&&b->v[j].ini<=ts+1;j++)
+        cm=fmin(cm,b->estimado?(1.6*fabs(b->v[j].ini-ts)+.4*fabs(b->v[j].fim-te))/.5
+                              :(fabs(b->v[j].ini-ts)+fabs(b->v[j].fim-te))/.5);
       double fica=i?d[(i-1)*nc+k]:0,troca=i?melhorAnt+AS_TROCA:1e30;
       d[i*nc+k]=cm+(fica<=troca?fica:troca);de[i*nc+k]=(unsigned char)(fica<=troca?k:ka);
     }
@@ -535,6 +544,8 @@ static int grupoFirme(const Falas *a,const Falas *b,Transf t,const Grupo *g) {
   double fa=a->v[g->i].fim,fb=b->v[g->j].fim;
   for(int k=1;k<g->na;k++)fa=fmax(fa,a->v[g->i+k].fim);
   for(int k=1;k<g->nb;k++)fb=fmax(fb,b->v[g->j+k].fim);
+  /* Estimated reference end: it says nothing firm; the start must be tighter. */
+  if(b->estimado)return fabs(b->v[g->j].ini-aplicar(t,a->v[g->i].ini))<=.25;
   return fabs(b->v[g->j].ini-aplicar(t,a->v[g->i].ini))<=.35&&fabs(fb-aplicar(t,fa))<=.35;
 }
 static int firme(const Falas *a,const Falas *b,const Peca *pc,const Grupo *g,int ng,int ini) {
