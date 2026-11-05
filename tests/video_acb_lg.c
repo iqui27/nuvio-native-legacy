@@ -168,6 +168,7 @@ int main(void) {
     assert(startup_plays == 1 && startup_subscribes == 1);
   }
   midia[0]=0;
+  audioMkvNovaFonte();
   /* OLED A1: LG rejects DTS and returns an empty string, followed by a video
    * array. That video must never become a fake H264 audio track. */
   eventoPayload("{\"sourceInfo\":{\"programInfo\":[{\"numAudioTracks\":0,\"audioTrackInfo\":\"\",\"videoTrackInfo\":[{\"codec\":\"H264\"}],\"subtitleTrackInfo\":\"\"}]}}",sessao);
@@ -179,24 +180,36 @@ int main(void) {
   };
   eventoPayload("{\"error\":{\"errorCode\":200,\"errorText\":\"Audio Codec Not Supported\"}}",sessao);
   assert(audioNaoSup && !video_faixa_dts(video_audio(audioAtual)));
-  completarAudioMkv(tracks,3);
+  completarAudioMkv(tracks,3,audioMkvEpoch);
+  assert(nAudio == 0 && audioMkvPending); /* probe publishes metadata only */
+  audioMkvAplicar();
   assert(nAudio == 1 && audioAtual == 0 && video_faixa_dts(video_audio(0)) > 0);
   assert(audioNaoSup && video_faixa_dts(video_audio(audioAtual))); /* fallback trigger */
   assert(!strcmp(faixaAudio[0].codec,"dts") && faixaAudio[0].canais == 6);
-  assert(faixaAudio[0].stream_index == -1 && faixaAudio[0].stream_id == -1);
-  /* Empty arrays also stay empty; multiple hidden tracks are ambiguous. */
+  assert(faixaAudio[0].numero == -1 && faixaAudio[0].stream_index == -1 &&
+         faixaAudio[0].stream_id == 2 && faixaAudio[0].ordinalMkv == 0);
+  /* Distinct file TrackNumbers recover multiple omitted DTS tracks safely. */
+  audioMkvNovaFonte();
   eventoPayload("{\"sourceInfo\":{\"audioTrackInfo\":[],\"videoTrackInfo\":[{\"codec\":\"H264\"}],\"subtitleTrackInfo\":[]}}",sessao);
   assert(nAudio == 0 && nLeg == 0);
-  tracks[2] = (MkvFaixa){.tipo=2,.codec="A_DTS"};
-  completarAudioMkv(tracks,3);assert(nAudio == 0);
+  tracks[2] = (MkvFaixa){.numero=3,.tipo=2,.codec="A_DTS"};
+  completarAudioMkv(tracks,3,audioMkvEpoch);assert(nAudio == 0);
+  audioMkvAplicar();assert(nAudio == 2);
+  assert(faixaAudio[0].stream_id == 2 && faixaAudio[1].stream_id == 3);
+  assert(faixaAudio[0].numero == -1 && faixaAudio[1].numero == -1);
   /* Error 200 also covers TrueHD; it must not trigger a DTS conversion. */
+  audioMkvNovaFonte();nAudio=0;
   snprintf(tracks[1].codec,sizeof tracks[1].codec,"A_TRUEHD");
   snprintf(tracks[1].nome,sizeof tracks[1].nome,"TrueHD");
-  completarAudioMkv(tracks,2);assert(nAudio == 1 && !video_faixa_dts(video_audio(0)));
+  completarAudioMkv(tracks,2,audioMkvEpoch);audioMkvAplicar();
+  assert(nAudio == 1 && !video_faixa_dts(video_audio(0)));
+  assert(!strcmp(faixaAudio[0].codec,"A_TRUEHD"));
   /* Real native audio remains authoritative; iteration stops at the array. */
   eventoPayload("{\"sourceInfo\":{\"audioTrackInfo\":[{\"codec\":\"aac\",\"channels\":2}],\"videoTrackInfo\":[{\"codec\":\"H264\"}],\"subtitleTrackInfo\":[]}}",sessao);
   assert(nAudio == 1 && !strcmp(faixaAudio[0].codec,"aac"));
-  completarAudioMkv(tracks,2);assert(!strcmp(faixaAudio[0].codec,"aac"));
+  completarAudioMkv(tracks,2,audioMkvEpoch);audioMkvAplicar();
+  assert(!strcmp(faixaAudio[0].codec,"aac"));
+  audioMkvNovaFonte();
   nAudio = nLeg = 0; audioNaoSup = 0;
 
   /* Native DTS is preferred even with fallback enabled. An unsupported error

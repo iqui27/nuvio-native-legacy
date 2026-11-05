@@ -50,5 +50,13 @@ int main(void) {
   assert(nv_audio_mkv_merge(list,0,NV_FAIXA_MAX,file,2,map)==2);
   for(int i=0;i<4;i++)list[i]=native("flac","en",2,i);
   assert(nv_audio_mkv_merge(list,4,5,file,6,map)==5); // bounded capacity
+  NvAudioMkvTrack truehd={2,8,"A_TRUEHD","en","Original TrueHD"};
+  assert(nv_audio_mkv_merge(list,0,NV_FAIXA_MAX,&truehd,1,map)==1);
+  assert(list[0].numero==0 && !strcmp(list[0].codec,"A_TRUEHD") && list[0].canais==8);
+  assert(!nv_audio_mkv_dts(list[0].codec)); // no DTS trigger without DTS
+  list[0]=native("aac","en",2,0);
+  assert(nv_audio_mkv_merge(list,1,NV_FAIXA_MAX,&truehd,1,map)==1);
+  assert(!strcmp(list[0].codec,"aac")); // native metadata stays authoritative
+  assert(nv_audio_mkv_merge(list,0,0,&truehd,1,map)==0);
   puts("PASS missing MKV DTS: two repeated DTS + four FLAC, stable native indices, exact identities, refresh, ambiguity, single-track and capacity");
 }

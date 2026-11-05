@@ -31,6 +31,12 @@ static inline int nv_audio_mkv_merge(VideoFaixa *list,int n,int cap,
     native[i]=-1;
     mkv[i]=(NvDvAudioTrack){file[i].codec,file[i].idioma,file[i].canais};
   }
+  /* Preserve the earlier single-track metadata fallback for other codecs
+   * too (e.g. TrueHD). It is not a synthetic DTS conversion request. */
+  if(!original && cap>0 && count==1 && file[0].numero>0 && !nv_audio_mkv_dts(file[0].codec)) {
+    VideoFaixa *f=&list[original++];memset(f,0,sizeof *f);
+    f->stream_index=f->stream_id=-1;f->ordinalMkv=0;
+  }
   for(int i=0;i<original;i++)
     tv[i]=(NvDvAudioTrack){list[i].codec,list[i].idioma,list[i].canais};
   for(int i=0;i<original;i++) {
