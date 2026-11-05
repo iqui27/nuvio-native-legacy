@@ -18,10 +18,61 @@ static DtsRangeJob *job_at(DtsEngine *e,int64_t at) {
  return NULL;
 }
 static void *cancel_later(void *e) {usleep(50000);dts_engine_cancel(e);return NULL;}
+static void *cancel_timeout(void *e) {sleep(4);dts_engine_cancel(e);return NULL;}
 int main(int argc,char **argv) {
  assert(argc==2);DtsEngine *e=dts_engine_create();assert(e);assert(!e->allow_p7);e->range_slots=8;
  e->url=strdup(argv[1]);e->headers=strdup("Authorization: Bearer engine-test\nX-Fixture: yes");
  if(strstr(argv[1],"dv.bin")){e->dv=1;e->range_bytes=RANGE_BYTES_DV;}
+ if(strstr(argv[1],"seek-queued")) {
+  e->ranges[0].start=512; e->ranges[0].end=1023;
+  e->ranges[0].state=3; e->ranges[0].data=strdup("ready");
+  assert(seek_range(e,512,SEEK_SET)==512);
+  assert(e->ranges[0].state==3 && e->ranges[0].data);
+  assert(seek_range(e,513,SEEK_SET)==513);
+  assert(e->ranges[0].state==0 && !e->ranges[0].data);
+  dts_engine_destroy(e); puts("PASS: seek keeps exact queued range"); return 0;
+ }
+ if(strstr(argv[1],"race-seek")) {
+  assert(RANGE_WORKERS>=2); e->range_slots=2; e->range_bytes=1024;
+  assert(start_ranges(e)); pthread_mutex_lock(&e->range_lock); queue_ranges(e); pthread_mutex_unlock(&e->range_lock);
+  uint64_t deadline=clock_ns(CLOCK_MONOTONIC)+UINT64_C(2000000000); int ready=0;
+  do { pthread_mutex_lock(&e->range_lock); DtsRangeJob *a=job_at(e,0),*b=job_at(e,1024);
+   ready=a && a->state==3 && a->data && b && b->state==2; pthread_mutex_unlock(&e->range_lock);
+   if(!ready) usleep(1000);
+  } while(!ready && clock_ns(CLOCK_MONOTONIC)<deadline);
+  assert(ready); usleep(200000);
+  assert(seek_range(e,0,SEEK_SET)==0);
+  pthread_mutex_lock(&e->range_lock); DtsRangeJob *future=job_at(e,1024);
+  assert(future && future->state==2 && __atomic_load_n(&future->cancel,__ATOMIC_RELAXED));
+  pthread_mutex_unlock(&e->range_lock);
+  pthread_t watchdog; assert(!pthread_create(&watchdog,NULL,cancel_timeout,e));
+  bytes(e,1025); pthread_cancel(watchdog); pthread_join(watchdog,NULL);
+  dts_engine_destroy(e); puts("PASS: cancelled future range refetched without deadlock"); return 0;
+ }
+ if(strstr(argv[1],"queue-seek")) {
+  assert(RANGE_WORKERS==1); e->range_slots=8; e->range_bytes=1024;
+  assert(start_ranges(e)); pthread_mutex_lock(&e->range_lock); queue_ranges(e); pthread_mutex_unlock(&e->range_lock);
+  uint64_t deadline=clock_ns(CLOCK_MONOTONIC)+UINT64_C(2000000000); int active=0;
+  do { pthread_mutex_lock(&e->range_lock); DtsRangeJob *j=job_at(e,0); active=j && j->state==2; pthread_mutex_unlock(&e->range_lock); if(!active) usleep(1000); } while(!active && clock_ns(CLOCK_MONOTONIC)<deadline);
+  assert(active); usleep(200000);
+  pthread_mutex_lock(&e->range_lock); DtsRangeJob *inflight=job_at(e,0);
+  assert(inflight && inflight->state==2); pthread_mutex_unlock(&e->range_lock);
+  uint64_t begun=clock_ns(CLOCK_MONOTONIC);
+  assert(seek_range(e,4096,SEEK_SET)==4096); bytes(e,1);
+  assert(clock_ns(CLOCK_MONOTONIC)-begun<UINT64_C(2500000000));
+  dts_engine_destroy(e); puts("PASS: queued seek preempts obsolete work"); return 0;
+ }
+ if(strstr(argv[1],"retry-rate")) {
+  e->dv=1; e->range_slots=1; snprintf(e->final_url,sizeof e->final_url,"%s",argv[1]);
+  int exhaust=strstr(argv[1],"rate-exhaust")!=NULL, cancel=strstr(argv[1],"rate-cancel")!=NULL;
+  if(!exhaust && !cancel) { char *p=strstr(e->url,"/retry-rate/"); assert(p); memmove(p,p+11,strlen(p+11)+1); }
+  if(cancel) {
+   pthread_t t; assert(!pthread_create(&t,NULL,cancel_later,e)); uint8_t b;
+   assert(read_range(e,&b,1)==AVERROR_EXIT); pthread_join(t,NULL);
+  } else if(exhaust) { uint8_t b; assert(read_range(e,&b,1)==AVERROR(EIO)); }
+  else bytes(e,1);
+  dts_engine_destroy(e); puts("PASS: bounded CDN recovery"); return 0;
+ }
  int64_t fault_at=e->dv?RANGE_BYTES_DV:4*1024*1024;
  uint64_t begun=clock_ns(CLOCK_MONOTONIC);
  if(strstr(argv[1],"retry-live-")) {

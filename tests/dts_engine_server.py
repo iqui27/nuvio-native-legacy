@@ -25,11 +25,15 @@ class Handler(BaseHTTPRequestHandler):
         mode = retry.group(1) if retry else ''
         live = mode.startswith('live-')
         if live: mode=mode.removeprefix('live-')
+        race_seek = self.path.startswith('/race-seek/')
+        queued_seek = self.path.startswith('/queue-seek/')
         slow = self.path.startswith('/slow/')
         parallel = self.path.startswith('/parallel/')
         prefetch = self.path.startswith('/prefetch/')
         telemetry = self.path.startswith('/telemetry/')
         path = self.path.removeprefix('/slow') if slow else self.path.removeprefix('/parallel')
+        if race_seek: path = self.path.removeprefix('/race-seek')
+        if queued_seek: path = self.path.removeprefix('/queue-seek')
         if prefetch: path = self.path.removeprefix('/prefetch')
         if telemetry: path = self.path.removeprefix('/telemetry')
         if retry: path = self.path[retry.end()-1:]
@@ -51,12 +55,18 @@ class Handler(BaseHTTPRequestHandler):
                        (mode in ('hard', 'exhaust', 'cancel') or attempt <= (2 if mode == 'twice' else 1)))
         if live and lo==fault_at and mode in ('hang','speculative','cancel','boot') and attempt==1: time.sleep(4 if mode=='boot' else 8)
         if live and lo==fault_at and mode=='hangall': time.sleep(8 if attempt<3 else 4)
+        if mode.startswith('rate'):
+            self.send_response(429); self.send_header('Content-Length', '0'); self.end_headers()
+            with lock: active -= 1
+            return
         if failing and mode in ('once', 'twice', 'hard', 'exhaust', 'cancel', 'seek') and not live:
             if mode not in ('hard', 'exhaust', 'cancel'): time.sleep(.25)
             self.send_response(403 if mode == 'hard' else 503)
             self.send_header('Content-Length', '0'); self.end_headers()
             with lock: active -= 1
             return
+        if race_seek and lo == 1024 and attempt == 1: time.sleep(3)
+        if queued_seek and lo < 4096: time.sleep(3)
         if parallel: time.sleep(.12)
         if prefetch: time.sleep(.8 if lo == 8*1024*1024 else .02)
         if telemetry and lo == 4*1024*1024-1: time.sleep(2)
