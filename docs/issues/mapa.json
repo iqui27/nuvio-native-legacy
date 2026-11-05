@@ -243,7 +243,7 @@
   {
    "numero": 716,
    "titulo": "subtitle synchronization error Samsung tizen",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "Samsung Tizen (.wgt)",
    "tipo": "a confirmar",
    "status": "aberta",
@@ -652,7 +652,7 @@
   {
    "numero": 744,
    "titulo": "Subtitlesync não funciona",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "LG webOS (.ipk)",
    "tipo": "a confirmar",
    "status": "aberta",
@@ -12760,7 +12760,7 @@
   {
    "numero": 621,
    "titulo": "Distorted gif avatars",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "bug",
    "status": "integrada",
@@ -13965,7 +13965,7 @@
   {
    "numero": 649,
    "titulo": "Lighter fork without p2p engine",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "?",
    "status": "integrada",
@@ -14227,7 +14227,7 @@
   {
    "numero": 683,
    "titulo": "Black screen",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "bug",
    "status": "aberta",
@@ -14848,6 +14848,44 @@
     "aceitacao_especifica": "falha_reproduzida_pelo_relator_sem_reteste_independente",
     "fonte": "/Volumes/ExternalSSD/tmp/rev/rastreio/mutirao-20261104/issues.json"
    }
+  },
+  {
+   "numero": 764,
+   "titulo": "Optional USB write-ahead cache for debrid/direct streams to smooth high-bitrate playback",
+   "estado_github": "aberta",
+   "plataforma": "?",
+   "tipo": "pedido",
+   "status": "aberta",
+   "release": "-",
+   "conserto": [],
+   "ultima_resposta": {
+    "nos": true,
+    "data": "2026-11-05",
+    "ultimo_comentario_por": "iqui27",
+    "ultima_nossa": "2026-11-05"
+   },
+   "proximo_passo": "Ask for actionable playback evidence; evaluate cache separately",
+   "notas": "Reconciliação de 2026-11-05: Direct-stream USB cache requested; reported stalls lack log code and exact model. Comentário verificado: https://github.com/iqui27/nuvio-native-legacy/issues/764#issuecomment-6659642379. Evidência: docs/issues/central-ledger-2026-11-05.json.",
+   "url": "https://github.com/iqui27/nuvio-native-legacy/issues/764"
+  },
+  {
+   "numero": 765,
+   "titulo": "Samsung RU7100 Tizen 5.0 – No playback sources in Nuvio Legacy 2.0.8",
+   "estado_github": "aberta",
+   "plataforma": "Samsung Tizen 5.0",
+   "tipo": "bug",
+   "status": "aberta",
+   "release": "-",
+   "conserto": [],
+   "ultima_resposta": {
+    "nos": true,
+    "data": "2026-11-05",
+    "ultimo_comentario_por": "iqui27",
+    "ultima_nossa": "2026-11-05"
+   },
+   "proximo_passo": "Central TV: inspect supplied log and source-detection/exit paths; reporter: title and addon names",
+   "notas": "Reconciliação de 2026-11-05: No source add-on detected plus separate Where to Watch app exit. Comentário verificado: https://github.com/iqui27/nuvio-native-legacy/issues/765#issuecomment-6659643328. Evidência: docs/issues/central-ledger-2026-11-05.json.",
+   "url": "https://github.com/iqui27/nuvio-native-legacy/issues/765"
   }
  ],
  "validacoes": [
