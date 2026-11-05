@@ -2,6 +2,8 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+#include <time.h>
 
 #define MAX_QUADROS 512
 #define MAX_BYTES (48u << 20)   // PGS 1080p cheio e ~8 MB; o comum e dezenas de KB
@@ -11,6 +13,15 @@ static ImgsubQuadro *q[MAX_QUADROS];    // ordenado por ini
 static int nq;
 static size_t bytes;
 static unsigned proximoId;
+static ImgsubDiagnostico diag;
+static unsigned selecionado, desenhado;
+static pthread_once_t logOnce = PTHREAD_ONCE_INIT;
+static int logAtivo;
+static time_t logSegundo;
+static void configurarLog(void) {
+  const char *v = getenv("NUVIO_PGS_DIAGNOSTICS");
+  logAtivo = v && !strcmp(v, "1");
+}
 static double ultimo;                   // ultimo `t` pedido: o que fica longe sai primeiro
 
 static size_t pesoDe(const ImgsubQuadro *f) {
@@ -47,7 +58,14 @@ static unsigned donoGeracao;
 void imgsub_por(unsigned dono, double ini, double fim, PgsQuadro *src) {
   ImgsubQuadro *f = src ? calloc(1, sizeof *f) : NULL;
   int i, pos, cabe;
-  if (!f) return;
+  if (!f) {
+    if (src) {
+      for (i = 0; i < PGS_MAX_OBJ; i++) { free(src->obj[i].rgba); src->obj[i].rgba = NULL; }
+      src->n = 0;
+    }
+    pthread_mutex_lock(&trava); diag.rejected++; pthread_mutex_unlock(&trava);
+    return;
+  }
   f->ini = ini; f->fim = fim; f->refs = 1;
   f->tela_w = src->tela_w; f->tela_h = src->tela_h; f->n = src->n;
   memcpy(f->obj, src->obj, sizeof f->obj);   // transfere o rgba; sem copia
@@ -55,6 +73,7 @@ void imgsub_por(unsigned dono, double ini, double fim, PgsQuadro *src) {
   src->n = 0;
   pthread_mutex_lock(&trava);
   if (dono < donoGeracao) {
+    diag.rejected++;
     pthread_mutex_unlock(&trava);
     for (i = 0; i < PGS_MAX_OBJ; i++) free(f->obj[i].rgba);
     free(f);
@@ -69,15 +88,17 @@ void imgsub_por(unsigned dono, double ini, double fim, PgsQuadro *src) {
     int longe = 0;
     for (i = 1; i < nq; i++) if (dist(q[i]) > dist(q[longe])) longe = i;
     if (dist(q[longe]) < dist(f)) break;
+    diag.evicted++;
     tira(longe);
   }
-  cabe = nq < MAX_QUADROS && (nq == 0 || bytes + pesoDe(f) <= MAX_BYTES);
+  cabe = nq < MAX_QUADROS && bytes + pesoDe(f) <= MAX_BYTES;
   if (cabe) {
     for (pos = 0; pos < nq && q[pos]->ini < ini; pos++) {}
     memmove(q + pos + 1, q + pos, (size_t)(nq - pos) * sizeof *q);
     q[pos] = f; nq++;
     bytes += pesoDe(f);
-  }
+    diag.queued++;
+  } else diag.rejected++;
   pthread_mutex_unlock(&trava);
   if (!cabe) { int k; for (k = 0; k < PGS_MAX_OBJ; k++) free(f->obj[k].rgba); free(f); }
 }
@@ -91,6 +112,7 @@ unsigned imgsub_dono_atual(void) {
 void imgsub_limpar(void) {
   pthread_mutex_lock(&trava);
   donoGeracao = 0;
+  memset(&diag, 0, sizeof diag); selecionado = 0;
   while (nq) tira(nq - 1);
   pthread_mutex_unlock(&trava);
 }
@@ -109,6 +131,8 @@ ImgsubQuadro *imgsub_pegar(double t) {
     if (fim < 0) fim = (c->n == 0 && i + 1 < nq) ? q[i + 1]->ini : c->ini + IMGSUB_DUR_PADRAO;
     if (t < fim) { f = c; f->refs++; }
   }
+  if (f && f->id != selecionado) diag.selected++;
+  selecionado = f ? f->id : 0;
   pthread_mutex_unlock(&trava);
   return f;
 }
@@ -118,4 +142,37 @@ void imgsub_soltar(ImgsubQuadro *f) {
   pthread_mutex_lock(&trava);
   solta(f);
   pthread_mutex_unlock(&trava);
+}
+
+void imgsub_diagnostico(ImgsubDiagnostico *out) {
+  if (!out) return;
+  pthread_mutex_lock(&trava);
+  *out = diag; out->frames = nq; out->bytes = bytes; out->owner = donoGeracao;
+  pthread_mutex_unlock(&trava);
+}
+
+void imgsub_apresentado(const ImgsubQuadro *f, double t) {
+  int logar = 0;
+  unsigned atual = f && f->n > 0 ? f->id : 0;
+  pthread_once(&logOnce, configurarLog);
+  pthread_mutex_lock(&trava);
+  if (atual != desenhado) {
+    if (atual) {
+      diag.drawn++;
+      if (t - f->ini > diag.max_draw_lateness) diag.max_draw_lateness = t - f->ini;
+    } else if (desenhado) diag.cleared++;
+    desenhado = atual;
+  }
+  if (logAtivo && time(NULL) - logSegundo >= 5) { logSegundo = time(NULL); logar = 1; }
+  pthread_mutex_unlock(&trava);
+  if (logar) {
+    ImgsubDiagnostico d;
+    imgsub_diagnostico(&d);
+    printf("[pgs-overlay] owner=%u queued=%llu rejected=%llu evicted=%llu selected=%llu "
+           "drawn=%llu cleared=%llu frames=%d bytes=%zu max_draw_late=%.3f\n",
+           d.owner, (unsigned long long)d.queued, (unsigned long long)d.rejected,
+           (unsigned long long)d.evicted, (unsigned long long)d.selected,
+           (unsigned long long)d.drawn, (unsigned long long)d.cleared,
+           d.frames, d.bytes, d.max_draw_lateness);
+  }
 }
