@@ -419,8 +419,30 @@ static int autoTroca(const char *idioma, const uint64_t *tent, int n, int voltar
   return 0;
 }
 
+// A troca pedida pela RESERVA POR AUDIO (Android, 06/11): o audio encaixa a
+// legenda de add-on com esta URL. Liga pelo mesmo caminho; a pilula segue.
+static int autoTrocaUrl(const char *url, char *nome, unsigned tamNome) {
+  Legenda *v = malloc(sizeof *v * LEG_MAX);
+  int nv, j, ok = 0;
+  if (!v || !url || !url[0]) { free(v); return 0; }
+  nv = addons_legendas_copiar(v, LEG_MAX, NULL, NULL);
+  for (j = 0; j < nv && !ok; j++) {
+    if (strcmp(v[j].url, url)) continue;
+    snprintf(nome, tamNome, "%s", v[j].provedor[0] ? v[j].provedor : v[j].rotulo);
+    pil.troca = 1;
+    emTroca = 1; faixas_escolher_externa(&v[j]); emTroca = 0;
+    pilProvedorCurto(nome, pilProvedor, sizeof pilProvedor); pilHash = legsync_hash_url(v[j].url);
+    if (pil.espera) pilEsperaHash = pilHash;
+    if (pil.estado == PIL_APLICADA && !pil.espera) pilIr(PIL_SINCRONIZANDO, pilAgora());
+    ok = 1;
+  }
+  free(v);
+  return ok;
+}
+
 static void reiniciarFaixas(int preservarPrebusca) {
   legsync_definir_trocador(autoTroca);
+  legsync_definir_trocador_url(autoTrocaUrl);
   legExterna = -1; legExternaId[0] = 0; legOverlay = legOverlayNoGo = legOverlayEsperando = -1; aberta = 0;
   legOverlayFalhas = legOverlayRecusas = legOverlayNoGoEstado = 0; legOverlayRetomar = 0;
   legOverlayTV = legOverlayColhidos = 0;
@@ -945,8 +967,6 @@ static void lembrarManual(int i) {
 
 static void aplicar(void) {
   if (coluna == 0) {
-    // F06: outra faixa de audio = outras falas; a escuta em curso nao vale mais.
-    if (video_audio_atual() != foco[0]) legsync_audio_trocou();
     // A ordem automatica (audioescolha.h) volta a esta faixa neste titulo, e
     // nos outros episodios: gravada no perfil (audiomemoria.h), com o numero
     // dela para a mesma release (bingeGroup).

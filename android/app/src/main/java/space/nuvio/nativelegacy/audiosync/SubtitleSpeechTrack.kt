@@ -1,0 +1,101 @@
+package space.nuvio.nativelegacy.audiosync
+
+/** Dialogue intervals of a subtitle file, in subtitle time (milliseconds). */
+internal class SubtitleSpeechTrack private constructor(
+    val startsMs: LongArray,
+    val endsMs: LongArray,
+) {
+    val size: Int get() = startsMs.size
+
+    /**
+     * Fractional on-screen coverage per 32 ms frame for frames [fromFrame, toFrame) after mapping
+     * subtitle time t to media time t * [scale].
+     */
+    fun render(fromFrame: Int, toFrame: Int, scale: Double): DoubleArray {
+        val out = DoubleArray((toFrame - fromFrame).coerceAtLeast(0))
+        if (out.isEmpty()) return out
+        val frameMs = SpeechTimeline.FRAME_DURATION_MS
+        for (i in startsMs.indices) {
+            val a = startsMs[i] * scale / frameMs - fromFrame
+            val b = endsMs[i] * scale / frameMs - fromFrame
+            if (b <= 0.0 || a >= out.size) continue
+            val start = a.coerceAtLeast(0.0)
+            val end = b.coerceAtMost(out.size.toDouble())
+            val first = start.toInt()
+            val last = end.toInt()
+            if (first == last) {
+                out[first] += end - start
+            } else {
+                out[first] += first + 1 - start
+                for (f in first + 1 until last) out[f] += 1.0
+                if (last < out.size) out[last] += end - last
+            }
+        }
+        for (i in out.indices) if (out[i] > 1.0) out[i] = 1.0
+        return out
+    }
+
+    /** Number of cues whose mapped interval overlaps media time [fromMs, toMs). */
+    fun countCuesIn(fromMs: Double, toMs: Double, scale: Double, shiftMs: Double): Int {
+        var count = 0
+        for (i in startsMs.indices) {
+            val a = startsMs[i] * scale + shiftMs
+            val b = endsMs[i] * scale + shiftMs
+            if (b > fromMs && a < toMs) count++
+        }
+        return count
+    }
+
+    companion object {
+        private val musicOnly = Regex("^[\\s♪♫#*~-]*$")
+        private val musicWrapped = Regex("^\\s*[♪♫#].*[♪♫#]?\\s*$")
+
+        /** Builds the track from (startMs, endMs, text) cues, dropping sound-effect and lyric-only cues. */
+        fun fromCues(cues: List<Triple<Long, Long, String>>): SubtitleSpeechTrack {
+            val kept = cues
+                .asSequence()
+                .filter { (start, end, _) -> start >= 0L && end > start && end - start < MAX_CUE_DURATION_MS }
+                .filter { (_, _, text) -> isDialogue(text) }
+                .sortedBy { it.first }
+                .toList()
+            return SubtitleSpeechTrack(
+                startsMs = LongArray(kept.size) { kept[it].first },
+                endsMs = LongArray(kept.size) { kept[it].second },
+            )
+        }
+
+        internal fun isDialogue(text: String): Boolean {
+            if (text.isBlank()) return true // Bitmap or styled cues without text still mark dialogue.
+            val filtered = SubtitleSdhFilter.filterPlainText(text) ?: return false
+            val lines = filtered.lines().filterNot { musicOnly.matches(it) || musicWrapped.matches(it) }
+            return lines.any { line -> line.any(Char::isLetterOrDigit) }
+        }
+
+        private const val MAX_CUE_DURATION_MS = 20_000L
+    }
+}
+
+/** Hearing-impaired markers dropped before a cue counts as dialogue (Reshaped's SubtitleSdhFilter). */
+internal object SubtitleSdhFilter {
+    private val squareBrackets = Regex("\\[[^]]*][ \\t]*")
+    // ">>" marks a speaker change and ">>>" a topic change in CEA-608 style captions.
+    private val speakerChevrons = Regex("[<>]{2,}[ \t]*")
+    private val parentheses = Regex(
+        "(?:\\((?=[A-Za-z0-9 '#.,\\\"\\\\\\-\\r\\n]*\\))(?![0-9]*\\))[^)]*\\)|" +
+            "\uFF08(?=[A-Za-z0-9 '#.,\\\"\\\\\\-\\r\\n]*\uFF09)(?![0-9]*\uFF09)[^\uFF09]*\uFF09)[ \\t]*"
+    )
+    private val speakerLabel = Regex(
+        "(?m)^([ \\t]*-[ \\t]*)?(?:[A-Za-z0-9 ()'#.,]+|\\[[^]\\r\\n]*]):(?=\\s|$)[ \\t]*"
+    )
+
+    fun filterPlainText(text: String): String? {
+        var filtered = speakerChevrons.replace(text, "")
+        filtered = speakerLabel.replace(filtered) { match -> match.groups[1]?.value.orEmpty() }
+        filtered = squareBrackets.replace(filtered, "")
+        filtered = parentheses.replace(filtered, "")
+        return filtered.lines()
+            .filter { line -> line.any { !it.isWhitespace() && it != '-' } }
+            .joinToString("\n")
+            .takeIf(String::isNotBlank)
+    }
+}

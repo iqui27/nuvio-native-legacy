@@ -147,5 +147,7 @@ dependencies {
     }
     implementation("androidx.core:core-ktx:1.13.1")
     testImplementation("junit:junit:4.13.2")
+    // Audio sync tests ported from NuvioTV-Reshaped use kotlin.test (on JUnit 4).
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.0.21")
 }
 

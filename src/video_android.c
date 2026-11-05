@@ -39,7 +39,11 @@
 #include "linguas.h"
 #include "audioescolha.h"
 #include "streamfitpassiva.h"
-#include "audsync.h"
+#include "legsync.h"
+#include "legenda.h"
+#include "addons.h"
+#include "rede.h"
+#include <stdlib.h>
 #include "cacheboost.h"
 #include "tex_cache.h"
 #include "velocidade.h"
@@ -74,6 +78,10 @@ static jmethodID mTitulo, mDescartar, mMorno, mQuadro;
 // #202 (opcional, como os de cima): velocidade(centesimos). Casca sem ele =
 // sem a linha da velocidade.
 static jmethodID mVelocidade;
+// Reserva por audio da sincronia de legenda (06/11, opcional): casca sem
+// estes metodos = plataforma sem audio (o plano so tem a faixa embutida).
+static jmethodID mAudioSyncArmar, mAudioSyncAssumir, mAudioSyncParar;
+static void ligarReservaAudio(void);
 
 static int resolverMetodos(JNIEnv *env) {
   mAbrir    = (*env)->GetStaticMethodID(env, gCls, "abrir", "(Ljava/lang/String;Ljava/lang/String;)V");
@@ -123,6 +131,14 @@ static int resolverMetodos(JNIEnv *env) {
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mAbrirPreparada = NULL; }
   mPararMantendoPreparo = (*env)->GetStaticMethodID(env, gCls, "pararMantendoPreparo", "(I)V");
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mPararMantendoPreparo = NULL; }
+  mAudioSyncArmar = (*env)->GetStaticMethodID(env, gCls, "audioSyncArmar", "(I)V");
+  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mAudioSyncArmar = NULL; }
+  mAudioSyncAssumir = (*env)->GetStaticMethodID(env, gCls, "audioSyncAssumir",
+                                                "(Ljava/lang/String;Ljava/lang/String;[J[J[Ljava/lang/String;)V");
+  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mAudioSyncAssumir = NULL; }
+  mAudioSyncParar = (*env)->GetStaticMethodID(env, gCls, "audioSyncParar", "()V");
+  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mAudioSyncParar = NULL; }
+  ligarReservaAudio();
   return mAbrir && mParar && mPausar && mBuscar && mVolume && mJanela && mEscolher;
 }
 
@@ -135,18 +151,12 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeIniciar(JNIE
   fflush(stdout);
 }
 
-// --- F06: PCM do audio tocando (AudioSyncTap.kt) -----------------------------
-// O tap so existe numa casca que o anuncia: o primeiro nativeAudioEstado
-// registra o backend. Casca antiga = plataforma sem PCM (o ajuste diz isso).
-static void ligarTap(int on);
+// --- formato na entrada do AudioSink (SaidaAudioSink.kt) ---------------------
+// 0 nenhum, 1 PCM, 2 bitstream (passthrough/offload). Ate 06/11 isto tambem
+// ligava a sincronia por audio em C (audsync.c, apagado); hoje so decide o
+// reforco de volume (F07): com bitstream o processador nao ve amostras.
 JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioEstado(JNIEnv *env, jclass cls, jint fmt) {
-  static int registrado;
   (void)env; (void)cls;
-  if (!registrado) { registrado = 1; audsync_backend(ligarTap); }
-  audsync_formato((int)fmt);
-  // F07: the same sink-input format decides the boost. AudioSyncTap FMT_*
-  // (0 none, 1 PCM, 2 bitstream) maps 1:1 to CB_GANHO_* (unknown, PCM,
-  // passthrough): with bitstream the gain processor never sees samples.
   { static int ultimoGanho = -1;
     int g = fmt == 1 ? CB_GANHO_PCM : fmt == 2 ? CB_GANHO_PASSTHROUGH : CB_GANHO_DESCONHECIDO;
     cacheboost_ganho_relato(g);
@@ -155,16 +165,6 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioEstado(
       fflush(stdout);
     }
     ultimoGanho = g; }
-}
-// Fio de reproducao do ExoPlayer. Copia para a pilha e entrega ao anel
-// limitado do audsync.c: nenhuma alocacao, nunca espera o analisador.
-JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioPcm(JNIEnv *env, jclass cls, jshortArray pcm, jint n, jlong ptsUs) {
-  jshort b[2048];
-  (void)cls;
-  if (!pcm || n <= 0 || n > (jint)(sizeof b / sizeof *b)) return;
-  (*env)->GetShortArrayRegion(env, pcm, 0, n, b);
-  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); return; }
-  audsync_pcm((const int16_t *)b, (int)n, (int64_t)ptsUs);
 }
 
 // Plano B se o Kotlin nao chamou nativeIniciar antes do primeiro uso (lib
@@ -323,12 +323,212 @@ void video_precarregar_cancelar(unsigned token) {
 }
 void video_precarregar_adotar(unsigned token) { preparoAdotar = token <= INT_MAX ? token : 0; }
 
-// escolher(3, on): liga/desliga o tap no Kotlin (so posta ao fio principal).
-static void ligarTap(int on) {
+// --- RESERVA POR AUDIO DA SINCRONIA DE LEGENDA (06/11; legsync.h) -----------
+// A sincronia por audio do NuvioTV-Reshaped mora na casca (ReservaAudio.kt).
+// legsync chama estas tres no fio do player, fora do proprio lock; o Kotlin so
+// posta ao fio principal. As falas da legenda vao prontas: o C ja baixou e leu.
+static void raArmar(int dadosMoveis) {
   JNIEnv *env = ambiente();
-  if (!env) return;
-  (*env)->CallStaticVoidMethod(env, gCls, mEscolher, (jint)3, (jint)(on ? 1 : 0));
+  if (!env || !mAudioSyncArmar) return;
+  (*env)->CallStaticVoidMethod(env, gCls, mAudioSyncArmar, (jint)(dadosMoveis ? 1 : 0));
   fimChamada(env);
+}
+
+// UTF-8 longo -> jstring (paraJString tem teto de URL).
+static jstring jstringLongo(JNIEnv *env, const char *s) {
+  size_t n = s ? strlen(s) : 0, k = 0;
+  jchar *buf = malloc((n + 1) * sizeof *buf);
+  const unsigned char *p = (const unsigned char *)(s ? s : "");
+  jstring r;
+  if (!buf) return NULL;
+  while (*p) {
+    unsigned c = *p++, extra = 0;
+    if (c >= 0xF0) { c &= 0x07; extra = 3; }
+    else if (c >= 0xE0) { c &= 0x0F; extra = 2; }
+    else if (c >= 0xC0) { c &= 0x1F; extra = 1; }
+    else if (c >= 0x80) c = 0xFFFD;
+    while (extra-- && (*p & 0xC0) == 0x80) c = (c << 6) | (*p++ & 0x3F);
+    if (c >= 0x10000) { c -= 0x10000; buf[k++] = (jchar)(0xD800 + (c >> 10)); buf[k++] = (jchar)(0xDC00 + (c & 0x3FF)); }
+    else buf[k++] = (jchar)c;
+  }
+  r = (*env)->NewString(env, buf, (jsize)k);
+  free(buf);
+  return r;
+}
+
+static void raAssumir(const char *chave, const char *idioma, const LegendaDocumento *doc) {
+  JNIEnv *env = ambiente();
+  const LegendaCue *v;
+  int n = 0, i;
+  jlongArray ini = NULL, fim = NULL;
+  jobjectArray txt = NULL;
+  jclass cStr;
+  jstring jc = NULL, ji = NULL;
+  if (!env || !mAudioSyncAssumir || !doc) return;
+  v = legenda_documento_dados(doc, &n);
+  if (n < 0) n = 0;
+  cStr = (*env)->FindClass(env, "java/lang/String");
+  ini = (*env)->NewLongArray(env, n);
+  fim = (*env)->NewLongArray(env, n);
+  txt = cStr ? (*env)->NewObjectArray(env, n, cStr, NULL) : NULL;
+  jc = jstringLongo(env, chave); ji = paraJString(env, idioma ? idioma : "");
+  if (ini && fim && txt && jc && ji) {
+    jlong *a = malloc((size_t)(n ? n : 1) * sizeof *a), *b = malloc((size_t)(n ? n : 1) * sizeof *b);
+    if (a && b) {
+      for (i = 0; i < n; i++) {
+        jstring t = jstringLongo(env, v[i].texto);
+        a[i] = (jlong)llround(v[i].inicio * 1000.0); b[i] = (jlong)llround(v[i].fim * 1000.0);
+        if (t) { (*env)->SetObjectArrayElement(env, txt, i, t); (*env)->DeleteLocalRef(env, t); }
+      }
+      (*env)->SetLongArrayRegion(env, ini, 0, n, a);
+      (*env)->SetLongArrayRegion(env, fim, 0, n, b);
+      (*env)->CallStaticVoidMethod(env, gCls, mAudioSyncAssumir, jc, ji, ini, fim, txt);
+    }
+    free(a); free(b);
+  }
+  fimChamada(env);
+  if (jc) (*env)->DeleteLocalRef(env, jc);
+  if (ji) (*env)->DeleteLocalRef(env, ji);
+  if (ini) (*env)->DeleteLocalRef(env, ini);
+  if (fim) (*env)->DeleteLocalRef(env, fim);
+  if (txt) (*env)->DeleteLocalRef(env, txt);
+  if (cStr) (*env)->DeleteLocalRef(env, cStr);
+}
+
+static void raParar(void) {
+  JNIEnv *env = ambiente();
+  if (!env || !mAudioSyncParar) return;
+  (*env)->CallStaticVoidMethod(env, gCls, mAudioSyncParar);
+  fimChamada(env);
+}
+
+static const LegSyncAudio reservaAudio = { raArmar, raAssumir, raParar };
+static void ligarReservaAudio(void) {
+  legsync_audio_backend(mAudioSyncArmar && mAudioSyncAssumir && mAudioSyncParar ? &reservaAudio : NULL);
+}
+
+// Do Kotlin (fio principal, a cada mudanca do mapa).
+JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioSyncModelo(JNIEnv *env, jclass cls,
+    jstring chave, jlongArray de, jdoubleArray escala, jdoubleArray desloc, jboolean estimado) {
+  char k[1024];
+  LegSyncAudioTrecho t[LEGSYNC_AUDIO_TRECHOS];
+  jsize n, i;
+  (void)cls;
+  deJString(env, chave, k, sizeof k);
+  n = de ? (*env)->GetArrayLength(env, de) : 0;
+  if (escala && (*env)->GetArrayLength(env, escala) < n) n = (*env)->GetArrayLength(env, escala);
+  if (desloc && (*env)->GetArrayLength(env, desloc) < n) n = (*env)->GetArrayLength(env, desloc);
+  if (!escala || !desloc) n = 0;
+  if (n > LEGSYNC_AUDIO_TRECHOS) n = LEGSYNC_AUDIO_TRECHOS;
+  for (i = 0; i < n; i++) {
+    jlong d; jdouble e, s;
+    (*env)->GetLongArrayRegion(env, de, i, 1, &d);
+    (*env)->GetDoubleArrayRegion(env, escala, i, 1, &e);
+    (*env)->GetDoubleArrayRegion(env, desloc, i, 1, &s);
+    t[i].deMs = (long long)d; t[i].escala = (double)e; t[i].deslocMs = (double)s;
+  }
+  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); return; }
+  legsync_audio_modelo(k, t, (int)n, estimado ? 1 : 0);
+}
+
+JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioSyncFalhou(JNIEnv *env, jclass cls,
+    jstring chave, jstring motivo) {
+  char k[1024], m[128];
+  (void)cls;
+  deJString(env, chave, k, sizeof k); deJString(env, motivo, m, sizeof m);
+  legsync_audio_falhou(k, m);
+}
+
+JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioSyncTrocar(JNIEnv *env, jclass cls,
+    jstring chave, jstring url) {
+  char k[1024], u[1024];
+  (void)cls;
+  deJString(env, chave, k, sizeof k); deJString(env, url, u, sizeof u);
+  legsync_audio_trocar(k, u);
+}
+
+JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioSyncLog(JNIEnv *env, jclass cls, jstring texto) {
+  char t[512];
+  (void)cls;
+  deJString(env, texto, t, sizeof t);
+  printf("%s\n", t);
+  fflush(stdout);
+}
+
+// Separadores das listas que voltam ao Kotlin (ReservaAudio.kt): registro
+// 0x1E, campo 0x1F; tirados do texto, que nunca os tem de proposito.
+static void raJuntar(char **buf, size_t *n, size_t *cap, const char *s, int limpar) {
+  size_t k = strlen(s ? s : "");
+  if (*n + k + 2 > *cap) {
+    size_t novo = (*cap ? *cap * 2 : 4096); char *b;
+    while (novo < *n + k + 2) novo *= 2;
+    b = realloc(*buf, novo);
+    if (!b) return;
+    *buf = b; *cap = novo;
+  }
+  for (size_t i = 0; i < k; i++) {
+    char c = s[i];
+    if (limpar && (c == 0x1E || c == 0x1F)) c = ' ';
+    (*buf)[(*n)++] = c;
+  }
+  (*buf)[*n] = 0;
+}
+
+// As legendas dos add-ons desta sessao (candidatas da troca): url, idioma, nome.
+JNIEXPORT jstring JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioSyncCandidatas(JNIEnv *env, jclass cls) {
+  Legenda *v = malloc(sizeof *v * LEG_MAX);
+  char *buf = NULL; size_t n = 0, cap = 0;
+  int nv, i;
+  jstring r;
+  (void)cls;
+  if (!v) return NULL;
+  nv = addons_legendas_copiar(v, LEG_MAX, NULL, NULL);
+  for (i = 0; i < nv; i++) {
+    if (!v[i].url[0]) continue;
+    if (n) raJuntar(&buf, &n, &cap, "\x1e", 0);
+    raJuntar(&buf, &n, &cap, v[i].url, 1); raJuntar(&buf, &n, &cap, "\x1f", 0);
+    raJuntar(&buf, &n, &cap, legenda_idioma(v[i].idioma, v[i].arquivo), 1); raJuntar(&buf, &n, &cap, "\x1f", 0);
+    raJuntar(&buf, &n, &cap, v[i].provedor[0] ? v[i].provedor : v[i].rotulo, 1);
+  }
+  free(v);
+  r = jstringLongo(env, buf ? buf : "");
+  free(buf);
+  return r;
+}
+
+// Baixa e le uma legenda pelo caminho de sempre (rede, charset, SRT/ASS/VTT):
+// "inicioMs 0x1F fimMs 0x1F texto" por registro. Bloqueante: so dos fios do
+// controlador Kotlin, nunca do principal.
+JNIEXPORT jstring JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioSyncFalas(JNIEnv *env, jclass cls, jstring url) {
+  char u[1024], num[48];
+  long nb = 0;
+  char *bruto, *buf = NULL; size_t n = 0, cap = 0;
+  LegendaDocumentoInfo info;
+  LegendaDocumento *doc;
+  const LegendaCue *v;
+  int nc = 0, i;
+  jstring r;
+  (void)cls;
+  deJString(env, url, u, sizeof u);
+  if (!u[0]) return NULL;
+  bruto = rede_baixar_bin(u, 20, &nb);
+  if (!bruto) return NULL;
+  memset(&info, 0, sizeof info);
+  info.flags = LEGENDA_DOC_COMPLETO;
+  doc = legenda_documento_bytes(bruto, nb, &info);
+  free(bruto);
+  if (!doc) return NULL;
+  v = legenda_documento_dados(doc, &nc);
+  for (i = 0; i < nc; i++) {
+    if (n) raJuntar(&buf, &n, &cap, "\x1e", 0);
+    snprintf(num, sizeof num, "%lld\x1f%lld\x1f", (long long)llround(v[i].inicio * 1000.0), (long long)llround(v[i].fim * 1000.0));
+    raJuntar(&buf, &n, &cap, num, 0);
+    raJuntar(&buf, &n, &cap, v[i].texto, 1);
+  }
+  legenda_documento_liberar(doc);
+  r = buf ? jstringLongo(env, buf) : NULL;
+  free(buf);
+  return r;
 }
 
 // --- estado ------------------------------------------------------------------

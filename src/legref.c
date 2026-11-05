@@ -776,8 +776,9 @@ static LegendaDocumento *coletarMp4(Job *j, LegRefStatus *st, const unsigned cha
 #define LR_ASS_RAJADA     1.0     // +-1 s
 #define LR_ASS_RAJADA_N   5       // 5 inicios nessa janela = karaoke/efeito
 
+// 06/11 (dono): o que e melhor no Tizen vale para a LG e o Android tambem.
 static int modoIndice =
-#if defined(NV_TPK) && !defined(NV_TPK40)
+#if (defined(NV_TPK) && !defined(NV_TPK40)) || defined(NV_WEBOS) || defined(NV_ANDROID)
   1;
 #else
   0;
