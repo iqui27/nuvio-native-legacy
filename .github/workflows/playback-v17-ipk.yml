@@ -51,7 +51,8 @@ jobs:
       - name: Conversion refill and progressing HTTP gaps
         timeout-minutes: 3
         run: |
-          SANITIZE=1 bash tests/dts_rebuffer.sh
+          SANITIZE=1 bash tests/video_packet_diag.sh
+          NV_TEST_VIDEO_DIAG=1 SANITIZE=1 bash tests/dts_rebuffer.sh
           SANITIZE=1 bash tests/range_progress.sh
       - name: Native buffering regressions
         timeout-minutes: 8

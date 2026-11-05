@@ -35,6 +35,7 @@ static atomic_int mp4_no_clock;
 #ifdef DTS_REFILL_FIXTURE
 static atomic_int refill_eof;
 static atomic_int refill_tail;
+static atomic_llong refill_limit_pts;
 #endif
 static atomic_llong buffer_ready = 21*1048576LL;
 static atomic_llong buffer_contiguous = 20*1048576LL;
@@ -222,6 +223,11 @@ int dts_pipeline_load(DtsPipeline *p,const DtsMediaInfo *m,double t) {
 }
 int dts_pipeline_feed(DtsPipeline *p,const DtsFrame *f) {
  assert(p->loaded);int refused=0;
+#ifdef DTS_REFILL_FIXTURE
+ if(!p->running && atomic_load(&refill_limit_pts)>0 && f->pts_ns>atomic_load(&refill_limit_pts)) {
+  atomic_fetch_add(&native_full,1);return 0;
+ }
+#endif
  if(scenario==SEEK_SEGMENT && p->broken_segment && f->kind==DTS_VIDEO) return 0;
  if(scenario>=NATIVE_STALL &&
     ((scenario==NATIVE_REPEAT && p->packets>=4) ||
@@ -277,8 +283,12 @@ int dts_pipeline_feed(DtsPipeline *p,const DtsFrame *f) {
 }
 int dts_pipeline_play(DtsPipeline *p) {
  if(hold_fixture && p->flushed && !hold_slow_reads && !hold_deadline) {
-  assert(fed_audio_pts>=(int64_t)((p->target+2)*1e9));
-  assert(fed_video_pts>=(int64_t)((p->target+2)*1e9));
+  double need=2;
+#ifdef DTS_REFILL_FIXTURE
+  if(atomic_load(&refill_limit_pts)>0)need=.25;
+#endif
+  assert(fed_audio_pts>=(int64_t)((p->target+need)*1e9));
+  assert(fed_video_pts>=(int64_t)((p->target+need)*1e9));
   assert(atomic_load(&buffer_contiguous)>=16*1048576LL);
  }
  p->running=1;pthread_mutex_lock(&fixture);plays++;

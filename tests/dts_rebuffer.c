@@ -14,7 +14,8 @@ static DtsPlaybackStatus refill_status(DtsPlayback *p,int active) {
 }
 int main(int argc,char **argv) {
   assert(argc==2);const char *mode=argv[1];
-  int dv=strcmp(mode,"sdr")!=0;
+  int dv=strstr(mode,"sdr")==NULL;
+  int limited=!strncmp(mode,"native-",7);
   scenario=SEEK_PREROLL;hold_fixture=1;
   dts_playback_next_dv(dv);dts_playback_next_seamless(1);
   DtsPlayback *p=start(0,4,NULL,0,0);
@@ -26,9 +27,10 @@ int main(int argc,char **argv) {
   atomic_store(&buffer_ready,160*1048576LL);
   atomic_store(&buffer_contiguous,4*1048576LL);
   char event[128];snprintf(event,sizeof event,"{\"currentTime\":{\"currentTime\":%lld}}",(long long)(end/1000000-100));
+  if(limited)atomic_store(&refill_limit_pts,end+INT64_C(1700000000));
   emit(event);refill_status(p,1);wait_count(&pauses,1);
   wait_settled();assert(count(&plays)==1 && count(&loads)==1 && count(&opens)==1);
-  if(!strcmp(mode,"cancel")) {
+  if(!strcmp(mode,"cancel") || !strcmp(mode,"native-cancel")) {
     dts_playback_close(p);assert(count(&creates)==count(&destroys));return 0;
   }
   if(!strcmp(mode,"timeout")) {
@@ -51,14 +53,15 @@ int main(int argc,char **argv) {
     assert(count(&loads)==1);
     dts_playback_close(p);return 0;
   }
-  if(!strcmp(mode,"paused")) {
+  if(!strcmp(mode,"paused") || !strcmp(mode,"native-paused")) {
     dts_playback_pause(p,1);wait_settled();
     atomic_store(&buffer_contiguous,20*1048576LL);
     atomic_fetch_add(&hold_wall_offset,INT64_C(60000000000));
     wait_settled();DtsPlaybackStatus st;dts_playback_status(p,&st);
     assert(!st.failed && count(&plays)==1);
     dts_playback_pause(p,0);
-  } else if(!strcmp(mode,"seek")) {
+  } else if(!strcmp(mode,"seek") || !strcmp(mode,"native-seek")) {
+    if(limited)atomic_store(&refill_limit_pts,INT64_C(51800000000));
     dts_playback_seek(p,50);wait_count(&flushes,1);refill_status(p,1);
     wait_settled();assert(count(&plays)==1 && last_seek==50);
     atomic_store(&buffer_contiguous,20*1048576LL);
@@ -66,11 +69,17 @@ int main(int argc,char **argv) {
     atomic_store(&buffer_contiguous,20*1048576LL);
     dts_playback_audio_at(p,9,8);wait_count(&audio_reconfigs,1);
   } else {
+    // Native fullness alone must never bypass an unfilled network gap.
+    if(limited) {
+      for(int i=0;i<4000 && atomic_load(&native_full)<20;i++)nap();
+      assert(atomic_load(&native_full)>=20 && count(&plays)==1);
+    }
     atomic_fetch_add(&hold_wall_offset,INT64_C(9000000000));
     wait_settled();assert(count(&plays)==1);
     atomic_store(&buffer_contiguous,20*1048576LL);
   }
   wait_count(&plays,2);DtsPlaybackStatus st=refill_status(p,0);
+  if(limited)assert(atomic_load(&native_full)>0);
   assert(!st.failed && count(&opens)==1 && count(&loads)==1);
   dts_playback_close(p);assert(count(&creates)==count(&destroys));
   printf("PASS refill %s: continuous bytes, preserved pipeline/cache, user controls and cleared loading snapshot\n",mode);

@@ -34,6 +34,10 @@ int main(void) {
   const char *safe = "[playback-diag] tick=123 generation=2 pos=123.456 readyBytes=268435456 availableKiB=245760";
   logexport_redact(safe, out, sizeof out); assert(!strcmp(safe, out));
   const char *range_logs[]={
+    "[video-packet] epoch=2 sample=1 bytes=286395 ptsNs=7536918000000 dtsNs=7536800000000 durNs=41708000 vcl=21 irap=1 vps=1 sps=1 pps=1 rpu=0 el=0 scanned=4096 clipped=1 headerErr=0 feed=1",
+    "[audio-route] profile=7 rpu=1 nativeDv=0 controllerDv=1 known=0 ordinal=-1 count=0 target=7534.103 paused=0 resumePct=0.000",
+    "[dv-state] generation=3 profile=7 probe=1 path=1 loaded=1 confirmed=1 playing=1 failed=0 refusal=0 audio=0",
+    "[dts-rebuffer] event=end ms=812 aheadA=1.85 aheadV=1.88 contiguousKiB=262567 reason=native-full",
     "[range-progress] start=4194303 waitMs=3012 got=2031616 gained=2031616 kept=1",
     "[dts-rebuffer] event=start reason=seek target=9282.482 contiguousKiB=4095 readyKiB=135167",
     "[dts-rebuffer] event=end ms=6430 aheadA=2.10 aheadV=2.00 contiguousKiB=20480",
