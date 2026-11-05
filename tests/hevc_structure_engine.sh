@@ -36,7 +36,40 @@ for key,d in demux.items():
     assert d['slicePps']==o['slicePps']=='0'
 timing=[dict(re.findall(r'(\w+)=([^ ]+)',l)) for l in lines if l.startswith('[video-timing]')]
 assert len(timing)==36 and any(int(d['ptsBack'])>0 for d in timing)
-assert all(d['dtsBack']=='0' for d in timing)
+reference=[dict(re.findall(r'(\w+)=([^ ]+)',l)) for l in lines if l.startswith('[fixture-video]')]
+assert len(reference)==360
+# Container/FFmpeg versions may infer DTS differently, especially without a
+# software HEVC decoder. Check the diagnostic against every actual output
+# timestamp; backward DTS is an observation, not a reason to fail this test.
+missing=-(2**63)
+expected={}
+for epoch in ('1','2','3'):
+    previous=None
+    pts_back=dts_back=missing_pts=missing_dts=0
+    steps=[]
+    packets=[d for d in reference if d['epoch']==epoch]
+    assert [int(d['packet']) for d in packets]==list(range(1,121))
+    for d in packets:
+        pts,dts=int(d['ptsNs']),int(d['dtsNs'])
+        dp=dd=0
+        if previous:
+            if pts!=missing and previous[0]!=missing:
+                dp=pts-previous[0];steps.append(dp);pts_back+=dp<0
+            if dts!=missing and previous[1]!=missing:
+                dd=dts-previous[1];dts_back+=dd<0
+        missing_pts+=pts==missing;missing_dts+=dts==missing
+        expected[epoch,d['packet']]={
+            'ptsNs':pts,'dtsNs':dts,'durNs':int(d['durNs']),
+            'deltaPtsNs':dp,'deltaDtsNs':dd,'ptsBack':pts_back,'dtsBack':dts_back,
+            'missingPts':missing_pts,'missingDts':missing_dts,
+            'minStepNs':min(steps) if steps else 0,'maxStepNs':max(steps) if steps else 0,
+        }
+        previous=pts,dts
+for d in timing:
+    # This fixture has one input packet per output packet and a timestamp-
+    # preserving Annex-B filter; both observations must match the reference.
+    e=expected[d['epoch'],d['packet']]
+    assert all(int(d[k])==v for k,v in e.items()),(d,e)
 assert '[hevc-structure]' not in open(sys.argv[2]).read()
 print('PASS real HEVC/DTS diagnostic isolation: byte-identical audio/video/timestamps, framing-independent VCL signatures, expected B-frame reordering and three bounded open/seek epochs')
 PY

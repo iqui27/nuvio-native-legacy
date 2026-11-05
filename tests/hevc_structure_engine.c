@@ -16,8 +16,12 @@ int main(int argc,char **argv) {
         assert(fwrite(&f.kind,sizeof f.kind,1,out)==1);
         assert(fwrite(&f.size,sizeof f.size,1,out)==1);
         assert(fwrite(&f.pts_ns,sizeof f.pts_ns,1,out)==1);
+        assert(fwrite(&f.dts_ns,sizeof f.dts_ns,1,out)==1);
+        assert(fwrite(&f.duration_ns,sizeof f.duration_ns,1,out)==1);
         assert(fwrite(f.data,1,f.size,out)==f.size);
         video+=f.kind==DTS_VIDEO;audio+=f.kind==DTS_AUDIO;
+        if(f.kind==DTS_VIDEO)printf("[fixture-video] epoch=%u packet=%u ptsNs=%lld dtsNs=%lld durNs=%lld\n",
+          epoch+1,video,(long long)f.pts_ns,(long long)f.dts_ns,(long long)f.duration_ns);
       }
     }
     assert(audio>0);
