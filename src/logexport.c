@@ -163,9 +163,6 @@ int logexport_create(const char *source, char *path, size_t size) {
     "Automatic redaction is best effort: review before sharing publicly.\n"
     "Source bytes: %ld; retained input limit: %ld; older bytes omitted: %ld\n\n",
     (long long)time(NULL), total, SNAPSHOT_MAX, start);
-#ifdef NV_PLAYBACK_TEST_BUILD
-  fprintf(out,"Experimental playback build: v%d\n\n",NV_PLAYBACK_TEST_BUILD);
-#endif
   left = total - start;
   /* Discard an incomplete first line when taking the tail. */
   if (start) { int c; while (left-- > 0 && (c = fgetc(in)) != EOF && c != '\n') {} }

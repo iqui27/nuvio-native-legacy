@@ -123,10 +123,7 @@ int main(void) {
   struct stat st; assert(!stat(path, &st) && (st.st_mode & 0777) == 0600);
   f = fopen(path, "rb"); assert(f); size_t n = fread(out, 1, sizeof out - 1, f); out[n] = 0; fclose(f);
   assert(strstr(out, safe) && strstr(out, "[video] error=300") && strstr(out, "recovery=1"));
-#ifdef NV_PLAYBACK_TEST_BUILD
-  char build[64];snprintf(build,sizeof build,"Experimental playback build: v%d",NV_PLAYBACK_TEST_BUILD);
-  assert(strstr(out,build));
-#endif
+  assert(!strstr(out,"Experimental playback build:"));
   assert(!strstr(out, "shortpw") && !strstr(out, "secondpw") && !strstr(out, "ENDSECRET"));
   assert(strstr(out, "oversized log line")); unlink(path);
   /* Taking a tail cannot leak the partial first line. */
