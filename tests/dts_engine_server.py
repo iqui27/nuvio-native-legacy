@@ -25,6 +25,7 @@ class Handler(BaseHTTPRequestHandler):
         mode = retry.group(1) if retry else ''
         live = mode.startswith('live-')
         if live: mode=mode.removeprefix('live-')
+        shared = self.path.startswith(('/shared-retry/', '/shared-cancel/', '/shared-legacy/', '/shared-isolation/', '/shared-seek/'))
         race_seek = self.path.startswith('/race-seek/')
         queued_seek = self.path.startswith('/queue-seek/')
         slow = self.path.startswith('/slow/')
@@ -32,6 +33,7 @@ class Handler(BaseHTTPRequestHandler):
         prefetch = self.path.startswith('/prefetch/')
         telemetry = self.path.startswith('/telemetry/')
         path = self.path.removeprefix('/slow') if slow else self.path.removeprefix('/parallel')
+        if shared: path = self.path[self.path.index('/', 1):]
         if race_seek: path = self.path.removeprefix('/race-seek')
         if queued_seek: path = self.path.removeprefix('/queue-seek')
         if prefetch: path = self.path.removeprefix('/prefetch')
@@ -47,7 +49,12 @@ class Handler(BaseHTTPRequestHandler):
             attempts[key] = attempts.get(key, 0) + 1
             attempt = attempts[key]
             log.write(json.dumps({'path':self.path, 'lo':lo, 'hi':hi, 'auth':authorized, 'active':active,
-                                 'connection':self.client_address[1], 'attempt':attempt})+'\n')
+                                 'connection':self.client_address[1], 'attempt':attempt, 'time':time.monotonic()})+'\n')
+        if shared and lo == 0 and attempt == 1:
+            self.send_response(429); self.send_header('Retry-After', '1'); self.send_header('Content-Length', '0'); self.end_headers()
+            with lock: active -= 1
+            return
+        if shared and lo == 1024 and attempt == 1: time.sleep(.3)
         fault_at = (4*1024*1024-1 if path.endswith('dv.bin') else
                     0 if mode in ('hard', 'exhaust', 'boot') or (mode=='cancel' and not live) else
                     1024*1024 if path.endswith('.mkv') else 4*1024*1024)

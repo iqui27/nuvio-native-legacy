@@ -111,6 +111,9 @@ struct DtsEngine {
   pthread_cond_t range_wake;
   DtsRangeJob ranges[RANGE_SLOTS_MAX];
   DtsRangeJob *range_priority; /* guarded by range_lock */
+#ifdef NV_DTS_WEBOS_RECOVERY
+  uint64_t range_retry_until; /* monotonic, guarded by range_lock */
+#endif
   DtsRangeWorker workers[RANGE_WORKERS];
   int range_threads, range_stop;
   volatile int range_live;
@@ -213,13 +216,41 @@ static int range_backoff(DtsEngine *e,DtsRangeJob *job,int ms) {
   int ok=!e->range_stop && !cancelled(e) && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED);
   pthread_mutex_unlock(&e->range_lock); return ok;
 }
+#ifdef NV_DTS_WEBOS_RECOVERY
+/* ponytail: one cooldown per playback source; cap waits at 30s so broken
+ * providers cannot stall playback indefinitely. */
+static void range_throttled(void *opaque,int seconds) {
+  DtsEngine *e=opaque;
+  if(seconds>30) seconds=30;
+  uint64_t until=clock_ns(CLOCK_MONOTONIC)+(uint64_t)seconds*UINT64_C(1000000000);
+  pthread_mutex_lock(&e->range_lock);
+  if(until>e->range_retry_until) e->range_retry_until=until;
+  pthread_cond_broadcast(&e->range_wake);
+  pthread_mutex_unlock(&e->range_lock);
+}
+static int range_wait_throttle(DtsEngine *e,DtsRangeJob *job) {
+  pthread_mutex_lock(&e->range_lock);
+  while(!e->range_stop && !cancelled(e) && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED)) {
+    uint64_t now=clock_ns(CLOCK_MONOTONIC);
+    if(now>=e->range_retry_until) break;
+    uint64_t ns=e->range_retry_until-now;
+    struct timespec until; clock_gettime(CLOCK_REALTIME,&until);
+    until.tv_sec+=(time_t)(ns/1000000000); until.tv_nsec+=(long)(ns%1000000000);
+    if(until.tv_nsec>=1000000000L) { until.tv_sec++; until.tv_nsec-=1000000000L; }
+    int r=pthread_cond_timedwait(&e->range_wake,&e->range_lock,&until);
+    if(r && r!=ETIMEDOUT) break;
+  }
+  int ok=!e->range_stop && !cancelled(e) && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED);
+  pthread_mutex_unlock(&e->range_lock); return ok;
+}
+#endif
 static void range_fetch(DtsEngine *e,DtsRangeJob *job,int fast,int *stalled) {
   uint64_t begun=clock_ns(CLOCK_MONOTONIC);
   if(!e->dv && !e->remux) {
 #ifdef NV_DTS_WEBOS_RECOVERY
-    job->data=rede_baixar_trecho64_vigiado(e->url,e->headers,job->start,job->end,
+    job->data=rede_baixar_trecho64_vigiado_retry(e->url,e->headers,job->start,job->end,
       &job->count,&job->total,&job->status,&job->cancel,NULL,NULL,
-      fast?&job->urgent:NULL,2500,stalled);
+      fast?&job->urgent:NULL,2500,stalled,range_throttled,e);
 #else
     job->data=rede_baixar_trecho64_cab(e->url,e->headers,job->start,job->end,
       &job->count,&job->total,&job->status,&job->cancel);
@@ -235,9 +266,9 @@ static void range_fetch(DtsEngine *e,DtsRangeJob *job,int fast,int *stalled) {
     snprintf(target,sizeof target,"%s",direct?e->final_url:e->url);
     pthread_mutex_unlock(&e->range_lock);
 #ifdef NV_DTS_WEBOS_RECOVERY
-    job->data=rede_baixar_trecho64_vigiado(target,direct&&cross?"":e->headers,job->start,job->end,
+    job->data=rede_baixar_trecho64_vigiado_retry(target,direct&&cross?"":e->headers,job->start,job->end,
       &job->count,&job->total,&job->status,&job->cancel,fin,&cross,
-      fast?&job->urgent:NULL,2500,stalled);
+      fast?&job->urgent:NULL,2500,stalled,range_throttled,e);
 #else
     job->data=rede_baixar_trecho64_final(target,direct&&cross?"":e->headers,job->start,job->end,
       &job->count,&job->total,&job->status,&job->cancel,fin,&cross);
@@ -252,9 +283,10 @@ static void range_fetch(DtsEngine *e,DtsRangeJob *job,int fast,int *stalled) {
       if(!strcmp(e->final_url,target)) e->final_url[0]=0;
       pthread_mutex_unlock(&e->range_lock);
 #ifdef NV_DTS_WEBOS_RECOVERY
-      job->data=rede_baixar_trecho64_vigiado(e->url,e->headers,job->start,job->end,
+      if(!range_wait_throttle(e,job)) return;
+      job->data=rede_baixar_trecho64_vigiado_retry(e->url,e->headers,job->start,job->end,
         &job->count,&job->total,&job->status,&job->cancel,fin,&cross,
-        fast?&job->urgent:NULL,2500,stalled);
+        fast?&job->urgent:NULL,2500,stalled,range_throttled,e);
 #else
       job->data=rede_baixar_trecho64_final(e->url,e->headers,job->start,job->end,
         &job->count,&job->total,&job->status,&job->cancel,fin,&cross);
@@ -306,6 +338,9 @@ static void *range_worker(void *opaque) {
     for(;attempt<attempts;attempt++) {
       if(cancelled(e) || __atomic_load_n(&job->cancel,__ATOMIC_RELAXED)) break;
       int stalled=0;
+#ifdef NV_DTS_WEBOS_RECOVERY
+      if(!range_wait_throttle(e,job)) break;
+#endif
       range_fetch(e,job,attempt+1<attempts,&stalled);
       if(job->data || !range_retryable(job->status) || cancelled(e) ||
          __atomic_load_n(&job->cancel,__ATOMIC_RELAXED)) break;
@@ -348,6 +383,7 @@ static void clear_ranges(DtsEngine *e,const char *reason) {
     __atomic_store_n(&job->cancel,1,__ATOMIC_RELAXED);
     if(job->state==1) job->state=0;
   }
+  pthread_cond_broadcast(&e->range_wake);
   for(int i=0;i<RANGE_SLOTS_MAX;i++) {
     DtsRangeJob *job=&e->ranges[i];
     while(job->state==2) pthread_cond_wait(&e->range_wake,&e->range_lock);
@@ -736,6 +772,9 @@ static void close_media(DtsEngine *e) {
   for(int i=0;i<RANGE_SLOTS_MAX;i++) free(e->ranges[i].data);
   pthread_mutex_lock(&e->range_lock);
   memset(e->ranges,0,sizeof e->ranges); e->range_priority=NULL; e->range_threads=0; e->range_stop=0;
+#ifdef NV_DTS_WEBOS_RECOVERY
+  e->range_retry_until=0;
+#endif
   pthread_mutex_unlock(&e->range_lock);
   av_packet_free(&e->in); av_packet_free(&e->out);
   av_frame_free(&e->decoded); av_frame_free(&e->encoded);
