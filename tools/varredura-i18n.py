@@ -177,6 +177,10 @@ IGNORAR_FUNCAO = {
     # tambem ficam em portugues no vetor e so viram ingles no desenho. i18n()
     # aqui prenderia a lista no idioma de quando a tela abriu.
     "ajustes.c:167",
+    # legendasui.c:325 (chaveIdioma) usa ling_nome() so como CHAVE de grupo
+    # ("en", "eng" e "en-US" no mesmo grupo), comparada com strcmp e nunca
+    # desenhada; o nome na tela sai de nomeIdioma(), com i18n.
+    "legendasui.c:325",
 }
 
 def achar_rotulo_sem_i18n(txt, linha_de, ctx_fn, re_desenho, re_nao_e_tela, nome_arq):
@@ -230,6 +234,10 @@ NAO_E_TELA = ("printf", "fprintf", "puts", "fputs", "perror", "marco",
               # DADO DE MENTIRA da central de avisos (NUVIO_AVISOS_DEMO): imita
               # o que a rede traria, nao e rotulo de tela.
               "demoAviso",
+              # legsync.c: o motivo so vai para o log [legsync] (printf dentro
+              # de assumirAudio/autoEncerrar); a pilula e o menu usam os textos
+              # traduzidos de legsyncui.c.
+              "assumirAudio", "autoEncerrar",
               # LEITOR DE JSON de recomenda.c: objeto(r, "agora") e chave da
               # resposta do servidor, nao rotulo.
               "objeto(")
@@ -268,6 +276,9 @@ IGNORAR = {
     "daqui em diante",  # episodios.c nomeModo: so no log [visto] menu, nunca rotulo
     "fechar",  # main.c: nome do evento de janela so no log "[ciclo] janela="
     "ime-sem-osk",  # entrada_texto.c #642: motivo de terminar(), so no log [texto]
+    # legsync.c autoPasso: motivo de autoEncerrar(), so no log [legsync]. O
+    # ";" do outro ramo do ternario corta o contexto antes do autoEncerrar(.
+    "legenda sem falas legiveis; fica a da tela",
     # PR #567: motivos so de log ([fonte] lembrada / auto / link guardado).
     "lancamento sem grupo", "todos os add-ons permitidos responderam", "relogio para tras",
     # video_tpk.c: motivos de cartaoModo()/cartaoEncaixar(), so no log "[video] tpk cartao".
