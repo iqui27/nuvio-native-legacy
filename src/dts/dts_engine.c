@@ -2,6 +2,7 @@
 #include "dts_audio_codec.h"
 #include "dv7.h"
 #include "dv7_mp4.h"
+#include "hevc_annexb.h"
 #ifdef NV_HTTP_BUFFER_DIAG
 #include "dts_video_diag.h"
 #endif
@@ -169,6 +170,12 @@ struct DtsEngine {
   AVIOContext *io;
   AVCodecContext *dec, *enc;
   AVBSFContext *bsf;
+  /* HEVC hvcC: own Annex-B conversion instead of bsf (keeps the stream's
+   * VPS/SPS/PPS, see hevc_annexb.h). hevc_annexb.sets!=NULL means active. */
+  NvHevcAnnexB hevc_annexb;
+#ifdef NV_HTTP_BUFFER_DIAG
+  unsigned annexb_modes[4], annexb_logged;
+#endif
   SwrContext *swr;
   AVAudioFifo *fifo;
   AVPacket *in, *out;
@@ -1022,6 +1029,7 @@ static void close_media(DtsEngine *e) {
   av_frame_free(&e->decoded); av_frame_free(&e->encoded);
   avcodec_free_context(&e->dec); avcodec_free_context(&e->enc);
   av_bsf_free(&e->bsf); swr_free(&e->swr); av_audio_fifo_free(e->fifo); e->fifo=NULL;
+  nv_hevc_annexb_close(&e->hevc_annexb);
   av_freep(&e->dv7_buffer); e->dv7_capacity=0; e->dv7=0; e->mapping_reported=0;
 #ifdef NV_MP4_BD_TEST
   e->mp4_p8_compat_verified=0;
@@ -1395,6 +1403,19 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
   e->info.fps_num=v->avg_frame_rate.num; e->info.fps_den=v->avg_frame_rate.den;
   e->info.color_primaries=vp->color_primaries; e->info.color_transfer=vp->color_trc; e->info.color_matrix=vp->color_space;
   snprintf(e->info.hdr,sizeof(e->info.hdr),"%s",e->info.dovi_profile?"DolbyVision":vp->color_trc==AVCOL_TRC_SMPTE2084?"PQ":vp->color_trc==AVCOL_TRC_ARIB_STD_B67?"HLG":"SDR");
+  if(vp->codec_id==AV_CODEC_ID_HEVC) {
+    /* An hvcC this code reads is converted by hevc_annexb_packet; anything
+     * else keeps FFmpeg's hevc_mp4toannexb exactly as before. */
+    int own=nv_hevc_annexb_open(&e->hevc_annexb,vp->extradata,vp->extradata_size>0?(size_t)vp->extradata_size:0);
+    if(own<0) return fail(e,"Video filter allocation",AVERROR(ENOMEM));
+    if(own) filter=NULL;
+#ifdef NV_HTTP_BUFFER_DIAG
+    memset(e->annexb_modes,0,sizeof e->annexb_modes); e->annexb_logged=0;
+    printf("[hevc-annexb] converter=%s lengthSize=%d hvccSetBytes=%zu\n",own?"own":"ffmpeg",
+      e->hevc_annexb.length_size,e->hevc_annexb.sets_size);
+    fflush(stdout);
+#endif
+  }
   if(filter) {
     const AVBitStreamFilter *video_filter=av_bsf_get_by_name(filter);
     if(!video_filter) return fail(e,"Video filter absent",0);
@@ -1577,6 +1598,35 @@ static int encode_fifo(DtsEngine *e,int final) {
   r=avcodec_send_frame(e->enc,e->encoded);
   return r<0?fail(e,"Audio encode",r):1;
 }
+/* Video packet in e->in -> Annex B in place (new buffer, same props and side
+ * data). Same output and same rejections as hevc_mp4toannexb, except that an
+ * IRAP packet's own VPS/SPS/PPS are never followed by older hvcC copies. */
+static int hevc_annexb_packet(DtsEngine *e) {
+  AVPacket *p=e->in; size_t size=0; int mode=0;
+  if(nv_hevc_annexb_packet(&e->hevc_annexb,p->data,p->size>0?(size_t)p->size:0,NULL,0,&size,&mode)<0)
+    return AVERROR_INVALIDDATA;
+  if(size>(size_t)(INT_MAX-AV_INPUT_BUFFER_PADDING_SIZE)) return AVERROR_INVALIDDATA;
+  AVBufferRef *b=av_buffer_alloc(size+AV_INPUT_BUFFER_PADDING_SIZE);
+  if(!b) return AVERROR(ENOMEM);
+  if(nv_hevc_annexb_packet(&e->hevc_annexb,p->data,p->size>0?(size_t)p->size:0,b->data,size,&size,NULL)<0) {
+    av_buffer_unref(&b); return AVERROR_INVALIDDATA;
+  }
+  memset(b->data+size,0,AV_INPUT_BUFFER_PADDING_SIZE);
+  av_buffer_unref(&p->buf); p->buf=b; p->data=b->data; p->size=(int)size;
+#ifdef NV_HTTP_BUFFER_DIAG
+  unsigned count=++e->annexb_modes[mode&3];
+  if((mode==NV_HEVC_ANNEXB_INBAND || mode==NV_HEVC_ANNEXB_MIXED) && (e->annexb_logged<8 || !(count&255))) {
+    static const char *const names[4]={"no-irap","container","inband","mixed"};
+    AVStream *v=e->fmt->streams[e->info.video_stream];
+    e->annexb_logged++;
+    printf("[hevc-annexb] mode=%s ptsNs=%lld count=%u container=%u inband=%u mixed=%u\n",names[mode&3],
+      (long long)ns(p->pts,v->time_base),count,e->annexb_modes[NV_HEVC_ANNEXB_CONTAINER],
+      e->annexb_modes[NV_HEVC_ANNEXB_INBAND],e->annexb_modes[NV_HEVC_ANNEXB_MIXED]);
+    fflush(stdout);
+  }
+#endif
+  return 0;
+}
 static int frame_out(DtsEngine *e,DtsFrame *f,int kind,AVRational tb) {
   f->kind=kind; f->stream_index=kind==DTS_SUBTITLE?e->out->stream_index:kind==DTS_AUDIO?e->info.audio_stream:e->info.video_stream;
   f->data=e->out->data; f->size=e->out->size;
@@ -1619,7 +1669,10 @@ static int next_frame_passthrough(DtsEngine *e,DtsFrame *f) {
 #ifdef NV_HTTP_BUFFER_DIAG
       video_demux_diag(e);
 #endif
-      if(!e->bsf) { av_packet_move_ref(e->out,e->in); return frame_out(e,f,DTS_VIDEO,tb); }
+      if(!e->bsf) {
+        if(e->hevc_annexb.sets && (r=hevc_annexb_packet(e))<0) { av_packet_unref(e->in); return fail(e,"Compressed video output",r); }
+        av_packet_move_ref(e->out,e->in); return frame_out(e,f,DTS_VIDEO,tb);
+      }
       r=av_bsf_send_packet(e->bsf,e->in);
       av_packet_unref(e->in);
       if(r<0) return fail(e,"Compressed video input",r);
@@ -1695,6 +1748,7 @@ static int next_frame(DtsEngine *e,DtsFrame *f) {
 #endif
       if(!e->bsf) {
         AVRational tb=e->fmt->streams[e->info.video_stream]->time_base;
+        if(e->hevc_annexb.sets && (r=hevc_annexb_packet(e))<0) { av_packet_unref(e->in); return fail(e,"Compressed video output",r); }
         av_packet_move_ref(e->out,e->in);
         return frame_out(e,f,DTS_VIDEO,tb);
       }
