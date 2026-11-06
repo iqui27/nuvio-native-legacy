@@ -23,6 +23,7 @@ int main(void) {
   SeekrFonte y = x; y.url="synthetic-edition-b";
   chaveArquivo(&x,a,sizeof a,""); chaveArquivo(&y,b,sizeof b,"");
   assert(a[0] && b[0] && strcmp(a,b));
+  x.cabecalhos="Authorization: synthetic-a"; chaveArquivo(&x,a,sizeof a,""); assert(!a[0]);
   x.url=NULL; chaveArquivo(&x,a,sizeof a,""); assert(!a[0]);
   return 0;
 }

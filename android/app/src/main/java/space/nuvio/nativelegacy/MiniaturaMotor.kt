@@ -1343,13 +1343,12 @@ object MiniaturaMotor {
                     val usa = cobre && n <= pedido * 3 / 2 + (1 shl 20)
                     if (faixas.size > 1 || !usa) Log.i(TAG, "batch of ${faixas.size} ranges answered as ONE range $a-$b (${n / 1024} KB for ${pedido / 1024} KB asked)" +
                         if (usa) ": used as the batch" else ": single ranges from now on")
-                    if (!usa) { multiOk = false; MediaHttpBudget.close(c); return null }
+                    if (!usa) { multiOk = false; return null }
                     val d = ByteArray(n.toInt())
                     var got = 0
                     val timedBody = ThumbnailReadTiming(c.inputStream)
                     timedBody.use { s -> while (got < d.size) { val r = s.read(d, got, d.size - got); if (r < 0) break; got += r } }
                     if (got != d.size) throw IOException("short read")
-                    MediaHttpBudget.close(c)
                     lidos += got; lidosTotal += got; requisicoes++
                     if (direto) marcarTaxa(got.toLong(), ini + (MediaHttpBudget.threadWaitNanos() - permitBase) / 1_000_000)
                     msRede += (android.os.SystemClock.elapsedRealtime() - ini - (MediaHttpBudget.threadWaitNanos() - permitBase) / 1_000_000).coerceAtLeast(0)
@@ -1371,54 +1370,13 @@ object MiniaturaMotor {
                     // same title started over (05/11/2026, R2: 7 refused multi-range requests in one title).
                     try { c.url.host?.let { semMultiRange.add(it.lowercase()); MediaHttpBudget.allowThumbnailLanes(it); ThumbnailHostMemory.recordRefusal(it) } } catch (_: Exception) {}
                     Log.w(TAG, "multi-range not served here (http $code, $tipo): single ranges from now on")
-                    MediaHttpBudget.close(c)
                     return null
                 }
-                val fronteira = Regex("boundary=\"?([^\";]+)").find(tipo)?.groupValues?.get(1) ?: run { multiOk = false; MediaHttpBudget.close(c); return null }
-                // Parsed AS IT ARRIVES, each part read straight into an array of its exact size: no whole-body buffer
-                // (readBytes grows by doubling) and no copy per part. Measured 23/10 next to a 4K remux (the player holds
-                // ~84 MB of samples on the same heap): those transient 10-20 MB per batch drove the heap to 0 % free,
-                // GC stalls of up to 0.8 s, and audio hitches of ~0.5 s.
-                val partes = ArrayList<Pair<Long, ByteArray>>()
-                var total = 0
-                val marca = "--$fronteira"
                 val timedMultipart = ThumbnailReadTiming(c.inputStream)
-                timedMultipart.buffered(16 * 1024).use { ins ->
-                    fun linha(): String? {
-                        val sb = StringBuilder()
-                        while (true) {
-                            val x = ins.read()
-                            if (x < 0) return if (sb.isEmpty()) null else sb.toString()
-                            if (x == '\n'.code) return sb.toString().trimEnd('\r')
-                            sb.append(x.toChar())
-                            if (sb.length > 4096) return null
-                        }
-                    }
-                    var l = linha()
-                    while (l != null && !l.startsWith(marca)) l = linha()
-                    while (l != null && l.startsWith(marca) && !l.startsWith("$marca--")) {
-                        var a = -1L; var b = -1L
-                        while (true) {
-                            val h = linha() ?: break
-                            if (h.isEmpty()) break
-                            Regex("^Content-Range:\\s*bytes\\s+(\\d+)-(\\d+)/", RegexOption.IGNORE_CASE).find(h)?.let {
-                                a = it.groupValues[1].toLong(); b = it.groupValues[2].toLong()
-                            }
-                        }
-                        if (a < 0 || b < a || b >= tamanho || b - a + 1 > (16L shl 20)) break
-                        // a server may merge or reorder ranges (RFC 9110): each part is stored where ITS Content-Range says
-                        val d = ByteArray((b - a + 1).toInt())
-                        var got = 0
-                        while (got < d.size) { val r = ins.read(d, got, d.size - got); if (r < 0) break; got += r }
-                        if (got != d.size) break
-                        partes += a to d
-
-                        total += d.size
-                        registrarBaixa(a, d.size)
-                        l = linha()                                     // the CRLF ending the part
-                        while (l != null && !l.startsWith(marca)) l = linha()
-                    }
-                }
+                val partes = ThumbnailPayloadExchange.readBounded(
+                    c, faixas, 8L shl 20, ::checkHttpCancelled, timedMultipart, tamanho
+                ) { a, d -> registrarBaixa(a, d.size) }
+                val total = partes.sumOf { it.second.size }
                 lidos += total
                 lidosTotal += total
                 if (direto) marcarTaxa(total.toLong(), ini + (MediaHttpBudget.threadWaitNanos() - permitBase) / 1_000_000)
@@ -1427,11 +1385,9 @@ object MiniaturaMotor {
                 auditFetch("multipart", auditStart, auditHeaders, timedMultipart, total, MediaHttpBudget.threadWaitNanos() - permitBase)
                 nLotes++; bytesLotes += total; kfLotes += faixas.size
                 resultado((android.os.SystemClock.elapsedRealtime() - ini - (MediaHttpBudget.threadWaitNanos() - permitBase) / 1_000_000).coerceAtLeast(0), true, total)
-                MediaHttpBudget.close(c)
                 if (partes.isEmpty()) { multiOk = false; return null }
                 return partes
             } catch (e: IOException) {
-                MediaHttpBudget.close(c)
                 checkHttpCancelled()
                 speedPacing.failure(android.os.SystemClock.elapsedRealtime())
                 resultado(0, false)
@@ -1441,6 +1397,8 @@ object MiniaturaMotor {
                     Log.w(TAG, "connection refused: stopping this title")
                 }
                 throw e
+            } finally {
+                MediaHttpBudget.close(c)
             }
         }
 

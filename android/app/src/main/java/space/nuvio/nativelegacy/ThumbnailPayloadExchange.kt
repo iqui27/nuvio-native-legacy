@@ -14,9 +14,10 @@ internal object ThumbnailPayloadExchange {
                       val bodyStartNs: Long=0, val bodyEndNs: Long=0)
     class Limited(val status: Int): IOException("thumbnail HTTP $status")
     fun read(c: HttpURLConnection, requested: List<LongArray>, publish: (Long,ByteArray)->Unit = { _,_-> }): List<Pair<Long,ByteArray>> =
-        readBounded(c,requested,8L shl 20,{},publish)
+        readBounded(c,requested,8L shl 20,{},publish = publish)
     fun readBounded(c: HttpURLConnection, requested: List<LongArray>, maxBytes: Long,
-                    checkCancelled: () -> Unit, publish: (Long,ByteArray)->Unit = { _,_-> }): List<Pair<Long,ByteArray>> {
+                    checkCancelled: () -> Unit, body: InputStream? = null, maxEnd: Long = Long.MAX_VALUE,
+                    publish: (Long,ByteArray)->Unit = { _,_-> }): List<Pair<Long,ByteArray>> {
         val limit=maxBytes.coerceIn(1,8L shl 20)
         if(c.responseCode in listOf(401,403,429,503,509)) throw Limited(c.responseCode)
         if(c.responseCode!=206) throw IOException("thumbnail HTTP ${c.responseCode}")
@@ -24,8 +25,9 @@ internal object ThumbnailPayloadExchange {
         var bytes=0L
         fun range(value: String): Pair<Long,Long> {
             val m=Regex("bytes\\s+(\\d+)-(\\d+)/",RegexOption.IGNORE_CASE).find(value) ?: throw IOException("missing content range")
-            val a=m.groupValues[1].toLong(); val b=m.groupValues[2].toLong()
-            if(a<0 || b<a || b-a+1>limit-bytes) throw IOException("payload response exceeds budget")
+            val a=m.groupValues[1].toLongOrNull() ?: throw IOException("invalid content range")
+            val b=m.groupValues[2].toLongOrNull() ?: throw IOException("invalid content range")
+            if(a<0 || b<a || b>=maxEnd || b-a>=limit-bytes) throw IOException("payload response exceeds budget")
             return a to b
         }
         fun take(input: InputStream,a: Long,b: Long) {
@@ -34,7 +36,7 @@ internal object ThumbnailPayloadExchange {
             while(n<data.size) { checkCancelled(); val count=input.read(data,n,data.size-n); if(count<0) throw IOException("short payload"); n+=count }
             result.add(a to data); bytes+=data.size; publish(a,data)
         }
-        c.inputStream.buffered(16384).use { input ->
+        (body ?: c.inputStream).buffered(16384).use { input ->
             val type=c.contentType ?: ""
             if(!type.lowercase().startsWith("multipart/byteranges")) {
                 val (a,b)=range(c.getHeaderField("Content-Range") ?: ""); take(input,a,b)

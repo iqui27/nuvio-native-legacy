@@ -7,6 +7,20 @@ import java.net.*
 import java.util.concurrent.*
 
 class ThumbnailPayloadExchangeTest {
+    @Test fun overflowedContentRangeIsReportedAsIOException() {
+        val body = "--b\r\nContent-Range: bytes 999999999999999999999-999999999999999999999/10\r\n\r\nx\r\n--b--\r\n".toByteArray()
+        try {
+            ThumbnailPayloadExchange.read(Response("", body, "multipart/byteranges; boundary=b"), listOf(longArrayOf(0, 0)))
+            fail("overflow accepted")
+        } catch (_: IOException) {}
+    }
+    @Test fun repeatedMultipartPartsAreBounded() {
+        val body = ("--b\r\nContent-Range: bytes 0-0/1\r\n\r\nx\r\n".repeat(33) + "--b--\r\n").toByteArray()
+        try {
+            ThumbnailPayloadExchange.read(Response("", body, "multipart/byteranges; boundary=b"), listOf(longArrayOf(0, 0)))
+            fail("too many parts accepted")
+        } catch (_: IOException) {}
+    }
     @Test fun headerProbeCannotAcceptLargeMergedBody() {
         try {
             ThumbnailPayloadExchange.readBounded(Response("bytes 0-999/1000",ByteArray(1000)),listOf(longArrayOf(0,11)),64,{})

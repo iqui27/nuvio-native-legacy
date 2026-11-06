@@ -1334,7 +1334,8 @@ static int conferir(Job *j, long long hA, long long hB, long durA, long durB, An
 
 static void chaveArquivo(const SeekrFonte *f, char *out, size_t n, const char *modo) {
   char id[700];
-  if (!f->url || !f->url[0]) { if (n) out[0] = 0; return; }
+  // Source headers may select a private account or edition: do not reuse persistent cache without identity.
+  if (!f->url || !f->url[0] || (f->cabecalhos && f->cabecalhos[0])) { if (n) out[0] = 0; return; }
   const char *nome = f->arquivo && f->arquivo[0] ? f->arquivo : "";
   const char *barra = strrchr(nome, '/');
   if (barra) nome = barra + 1;
