@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 flags=()
-if [[ ${NV_TEST_VIDEO_DIAG:-0} == 1 ]];then flags+=(-DNV_HTTP_BUFFER_DIAG);fi
+if [[ ${NV_TEST_VIDEO_DIAG:-0} == 1 ]];then flags+=(-DNV_HTTP_BUFFER_DIAG -DNV_PICTURE_DIAG);fi
 if [[ ${NV_TEST_P7_MAPPING:-0} == 1 ]];then flags+=(-DNV_DV7_MAPPING_TEST);fi
 if [[ ${NV_TEST_MP4:-0} == 1 || ${NV_TEST_MP4_BUILD:-0} == 1 ]]; then flags+=(-DNV_MP4_BD_TEST); fi
 if [[ ${NV_TEST_TRUEHD:-0} == 1 ]]; then flags+=(-DNV_DV_TRUEHD_TEST); fi

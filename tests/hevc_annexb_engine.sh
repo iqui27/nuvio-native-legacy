@@ -9,7 +9,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 prefix=${NUVIO_DTS_ROOT:-/tmp/nuvio-dts-host}
 tmp=$(mktemp -d);trap 'rm -rf "$tmp"' EXIT
-flags=(-std=gnu11 -O1 -g -Wall -Wextra -Werror -DNV_DTS_FFMPEG -DNV_DTS_WEBOS_RECOVERY -DNV_HTTP_BUFFER_DIAG -Isrc -I"$prefix/include")
+flags=(-std=gnu11 -O1 -g -Wall -Wextra -Werror -DNV_DTS_FFMPEG -DNV_DTS_WEBOS_RECOVERY -DNV_HTTP_BUFFER_DIAG -DNV_PICTURE_DIAG -Isrc -I"$prefix/include")
 if [[ ${SANITIZE:-0} == 1 ]];then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer);fi
 x265='pools=1:frame-threads=1:log-level=error:keyint=24:min-keyint=24:scenecut=0:repeat-headers=1:hdr10=1:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc'
 part() { # $1 name, $2 source, $3 extra x265 params (PPS-only differences)

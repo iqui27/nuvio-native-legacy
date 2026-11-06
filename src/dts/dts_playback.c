@@ -4,7 +4,8 @@
 #include "dts_audio_codec.h"
 #include "dts_engine.h"
 #include "dts_pipeline.h"
-#ifdef NV_HTTP_BUFFER_DIAG
+#include "dts_picture_diag.h"
+#ifdef NV_DTS_PICTURE_DIAG
 #include "dts_video_diag.h"
 #endif
 #include "../js.h"
@@ -47,7 +48,7 @@ struct DtsPlayback {
   int seamless, seamless_disabled, clock_guard;
   double clock_target, clock_anchor;
   int clock_advances;
-#ifdef NV_HTTP_BUFFER_DIAG
+#ifdef NV_DTS_PICTURE_DIAG
   unsigned picture_epoch,picture_samples;
   int64_t picture_last_pts;
   size_t picture_last_size;
@@ -360,7 +361,7 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
       info->dovi_el_present,info->dovi_rpu_present,reused,target);
     nativeEvent(p,event);
   }
-#ifdef NV_HTTP_BUFFER_DIAG
+#ifdef NV_DTS_PICTURE_DIAG
   p->picture_epoch++;p->picture_samples=0;p->picture_last_pts=INT64_MIN;p->picture_last_size=0;
 #endif
   p->pipeline = dts_pipeline_create(NV_APP_ID, p->window,
@@ -445,7 +446,7 @@ static int reposition(DtsPlayback *p,int stream,int core,double target,DtsFrame 
   }
   p->suppress_events=0;
   pthread_mutex_unlock(&p->lock);
-#ifdef NV_HTTP_BUFFER_DIAG
+#ifdef NV_DTS_PICTURE_DIAG
   if(ok){p->picture_epoch++;p->picture_samples=0;p->picture_last_pts=INT64_MIN;p->picture_last_size=0;}
 #endif
   if(format_changed) return REPOSITION_FORMAT_CHANGED; /* No duplicate demux seek. */
@@ -995,7 +996,7 @@ static void *run(void *user) {
         rate.paced++; rest(p); continue;
       }
       double feed_started = clockSeconds(CLOCK_MONOTONIC);
-#ifdef NV_HTTP_BUFFER_DIAG
+#ifdef NV_DTS_PICTURE_DIAG
       if(frame.kind==DTS_VIDEO && nv_video_picture_sample(p->picture_samples+1) &&
          (frame.pts_ns!=p->picture_last_pts || frame.size!=p->picture_last_size)) {
         const DtsMediaInfo *mi=dts_engine_info(p->engine);
@@ -1006,7 +1007,7 @@ static void *run(void *user) {
       int r = dts_pipeline_feed(p->pipeline, &frame);
       double feed_ended = clockSeconds(CLOCK_MONOTONIC);
       if (feed_started >= 0 && feed_ended >= feed_started) rate.feed_wall += feed_ended-feed_started;
-#ifdef NV_HTTP_BUFFER_DIAG
+#ifdef NV_DTS_PICTURE_DIAG
       if(frame.kind==DTS_VIDEO && r>0 && p->picture_samples<120)p->picture_samples++;
 #endif
       if (r < 0) { fail(p, dts_pipeline_error(p->pipeline)); break; }

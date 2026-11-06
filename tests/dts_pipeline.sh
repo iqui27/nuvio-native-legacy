@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 diag_flags=()
-if [[ ${NV_TEST_VIDEO_DIAG:-0} == 1 ]];then diag_flags+=(-DNV_HTTP_BUFFER_DIAG);fi
+if [[ ${NV_TEST_VIDEO_DIAG:-0} == 1 ]];then diag_flags+=(-DNV_HTTP_BUFFER_DIAG -DNV_PICTURE_DIAG);fi
 if [[ ${NV_TEST_HEVC_SEI:-0} == 1 ]];then diag_flags+=(-DNV_HEVC_SEI_TEST);fi
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT

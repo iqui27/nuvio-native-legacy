@@ -3,7 +3,8 @@
 #include "dv7.h"
 #include "dv7_mp4.h"
 #include "hevc_annexb.h"
-#ifdef NV_HTTP_BUFFER_DIAG
+#include "dts_picture_diag.h"
+#ifdef NV_DTS_PICTURE_DIAG
 #include "dts_video_diag.h"
 #endif
 #include <stdlib.h>
@@ -128,7 +129,10 @@ typedef struct {
 #endif
 struct DtsEngine {
 #ifdef NV_HTTP_BUFFER_DIAG
-  unsigned diag_id, picture_epoch, picture_count;
+  unsigned diag_id;
+#endif
+#ifdef NV_DTS_PICTURE_DIAG
+  unsigned picture_epoch, picture_count;
   unsigned demux_picture_count;
   NvVideoTiming demux_timing, output_timing;
 #endif
@@ -181,7 +185,7 @@ struct DtsEngine {
   /* HEVC hvcC: own Annex-B conversion instead of bsf (keeps the stream's
    * VPS/SPS/PPS, see hevc_annexb.h). hevc_annexb.sets!=NULL means active. */
   NvHevcAnnexB hevc_annexb;
-#ifdef NV_HTTP_BUFFER_DIAG
+#ifdef NV_DTS_PICTURE_DIAG
   unsigned annexb_modes[4], annexb_logged;
 #endif
   SwrContext *swr;
@@ -972,7 +976,7 @@ static int64_t seek_range(void *opaque,int64_t offset,int whence) {
 static int64_t ns(int64_t value,AVRational tb) {
   return value==AV_NOPTS_VALUE?INT64_MIN:av_rescale_q(value,tb,NS);
 }
-#ifdef NV_HTTP_BUFFER_DIAG
+#ifdef NV_DTS_PICTURE_DIAG
 static void video_diag_reset(DtsEngine *e) {
   e->picture_epoch++;e->picture_count=e->demux_picture_count=0;
   memset(&e->demux_timing,0,sizeof e->demux_timing);
@@ -1296,7 +1300,7 @@ static int configure_audio(DtsEngine *e,int core,double start) {
   return start>0?dts_engine_seek(e,start):0;
 }
 int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,int core,double start) {
-#ifdef NV_HTTP_BUFFER_DIAG
+#ifdef NV_DTS_PICTURE_DIAG
   if(e)video_diag_reset(e);
 #endif
   if (!e || !url || !*url) return -1;
@@ -1453,7 +1457,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
     int own=nv_hevc_annexb_open(&e->hevc_annexb,vp->extradata,vp->extradata_size>0?(size_t)vp->extradata_size:0);
     if(own<0) return fail(e,"Video filter allocation",AVERROR(ENOMEM));
     if(own) filter=NULL;
-#ifdef NV_HTTP_BUFFER_DIAG
+#ifdef NV_DTS_PICTURE_DIAG
     memset(e->annexb_modes,0,sizeof e->annexb_modes); e->annexb_logged=0;
     printf("[hevc-annexb] converter=%s lengthSize=%d hvccSetBytes=%zu\n",own?"own":"ffmpeg",
       e->hevc_annexb.length_size,e->hevc_annexb.sets_size);
@@ -1657,7 +1661,7 @@ static int hevc_annexb_packet(DtsEngine *e) {
   }
   memset(b->data+size,0,AV_INPUT_BUFFER_PADDING_SIZE);
   av_buffer_unref(&p->buf); p->buf=b; p->data=b->data; p->size=(int)size;
-#ifdef NV_HTTP_BUFFER_DIAG
+#ifdef NV_DTS_PICTURE_DIAG
   unsigned count=++e->annexb_modes[mode&3];
   if((mode==NV_HEVC_ANNEXB_INBAND || mode==NV_HEVC_ANNEXB_MIXED) && (e->annexb_logged<8 || !(count&255))) {
     static const char *const names[4]={"no-irap","container","inband","mixed"};
@@ -1710,7 +1714,7 @@ static int next_frame_passthrough(DtsEngine *e,DtsFrame *f) {
       return frame_out(e,f,DTS_AUDIO,tb);
     }
     if(e->in->stream_index==e->info.video_stream) {
-#ifdef NV_HTTP_BUFFER_DIAG
+#ifdef NV_DTS_PICTURE_DIAG
       video_demux_diag(e);
 #endif
       if(!e->bsf) {
@@ -1787,7 +1791,7 @@ static int next_frame(DtsEngine *e,DtsFrame *f) {
       if(r<0) { av_packet_unref(e->in); return fail(e,"DTS decode input",r); }
     }
     else if(e->in->stream_index==e->info.video_stream) {
-#ifdef NV_HTTP_BUFFER_DIAG
+#ifdef NV_DTS_PICTURE_DIAG
       video_demux_diag(e);
 #endif
       if(!e->bsf) {
@@ -1829,7 +1833,7 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
     f->data=e->dv7_buffer; f->size=(int)size;
     break;
   }
-#ifdef NV_HTTP_BUFFER_DIAG
+#ifdef NV_DTS_PICTURE_DIAG
   if(result==1 && f->kind==DTS_VIDEO && e->picture_count<120) {
     e->picture_count++;
     nv_video_timing_log(&e->output_timing,"engine",e->picture_epoch,f->pts_ns,f->dts_ns,f->duration_ns,
@@ -1890,7 +1894,7 @@ int dts_engine_seek(DtsEngine *e,double seconds) {
 #endif
   r=avformat_seek_file(e->fmt,-1,INT64_MIN,timestamp,timestamp,AVSEEK_FLAG_BACKWARD);
   if(r<0) return fail(e,"Container seek",r);
-#ifdef NV_HTTP_BUFFER_DIAG
+#ifdef NV_DTS_PICTURE_DIAG
   video_diag_reset(e);
 #endif
   if(e->passthrough) {

@@ -12,14 +12,20 @@ ffmpeg -hide_banner -loglevel error \
   -map 0 -map 1 -c:v libx265 -pix_fmt yuv420p10le \
   -x265-params 'pools=1:frame-threads=1:log-level=error:keyint=24:min-keyint=24:scenecut=0:repeat-headers=1:hdr10=1:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc' \
   -c:a dca -strict -2 -b:a 768k "$task_tmp/input.mkv"
-for mode in normal diag;do
-  diag=();if [[ $mode == diag ]];then diag+=(-DNV_HTTP_BUFFER_DIAG);fi
+for mode in normal http diag;do
+  # http: release buffer/HTTP diagnostics only, without the picture lines.
+  diag=();if [[ $mode == http ]];then diag+=(-DNV_HTTP_BUFFER_DIAG);fi
+  if [[ $mode == diag ]];then diag+=(-DNV_HTTP_BUFFER_DIAG -DNV_PICTURE_DIAG);fi
   cc "${flags[@]}" "${diag[@]}" src/dts/dts_engine.c tests/hevc_structure_engine.c \
     -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group \
     -lm -pthread -o "$task_tmp/$mode"
   "$task_tmp/$mode" "$task_tmp/input.mkv" "$task_tmp/$mode.bytes" > "$task_tmp/$mode.log" 2>&1 || { cat "$task_tmp/$mode.log";exit 1; }
 done
 cmp "$task_tmp/normal.bytes" "$task_tmp/diag.bytes"
+cmp "$task_tmp/normal.bytes" "$task_tmp/http.bytes"
+if grep -E '^\[(hevc-structure|video-timing|video-demux|picture-diag|hevc-annexb)\]' "$task_tmp/http.log";then
+  echo 'FAIL picture diagnostics without NV_PICTURE_DIAG';exit 1
+fi
 python3 - "$task_tmp/diag.log" "$task_tmp/normal.log" <<'PY'
 import re,sys
 lines=open(sys.argv[1]).read().splitlines()
