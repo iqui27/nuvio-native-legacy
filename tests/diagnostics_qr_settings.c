@@ -9,7 +9,7 @@ int fontefalha_addon_limite(const char *s){(void)s;return 0;}
 int main(void) {
   assert(AJ_DIAGNOSTICS_QR==AJ_BUFFER_CONVERSION_CONNECTIONS+1 && AJ_N==AJ_DIAGNOSTICS_QR+1);
   assert(ajustes_buffer_native_connections()==1);
-  assert(ajustes_buffer_conversion_connections()==4);
+  assert(ajustes_buffer_conversion_connections()==1 && ajustes_buffer_conversion_stream());
   assert(valor[AJ_DIAGNOSTICS_QR]==1 && valorPadrao[AJ_DIAGNOSTICS_QR]==1);
   assert(!ajustes_diagnostics_qr());
   assert(!strcmp(ajVisualIcone(AJ_DIAGNOSTICS_QR),"aj_download"));

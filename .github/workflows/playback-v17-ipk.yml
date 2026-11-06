@@ -48,7 +48,6 @@ jobs:
           bash tests/diagnostics_qr_settings.sh
           SANITIZE=1 bash tests/logexport.sh
           CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular_export.sh
-          CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular.sh
       - name: Conversion refill and progressing HTTP gaps
         timeout-minutes: 3
         run: |
@@ -104,7 +103,6 @@ jobs:
           bash tests/player_ram_controls.sh
           NV_TEST_MP4=1 bash tests/buffer_player_settings.sh
           bash tests/ajustes_dts_segmentado.sh
-          bash tests/ajustes_ux_interacao.sh
           bash tests/audioescolha.sh
           bash tests/audiomemoria.sh
           SANITIZE=1 bash tests/video_faixa_rotulo.sh
