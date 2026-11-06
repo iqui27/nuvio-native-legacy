@@ -149,16 +149,16 @@ static LegUiCand cand[LEGUI_MAX_CAND];
 static int nCand;
 
 static int nEmbVivo(void) { int n = video_n_legenda(); return n > NV_FAIXA_MAX ? NV_FAIXA_MAX : n < 0 ? 0 : n; }
+// Copia por quadro (montarLinhas roda todo quadro): buffer estatico, e nao um
+// malloc de LEG_MAX (256 x 1,5 KB passaria do limiar do mmap a cada quadro).
+static Legenda capturaAdd[LEG_MAX];
 static void capturar(void) {
   const VideoFaixa *emb[NV_FAIXA_MAX];
-  Legenda *add = NULL;
   int nE = nEmbVivo(), nA = 0, i;
   for (i = 0; i < nE; i++) emb[i] = video_legenda(i);
   // Live channels have no addon subtitles (faixas.c, tests/faixas_canal).
-  if (!player_id_canal()[0] && (add = malloc(sizeof *add * LEG_MAX)))
-    nA = addons_legendas_copiar(add, LEG_MAX, NULL, NULL);
-  nCand = legendasui_montar(emb, nE, add, nA, cand, LEGUI_MAX_CAND);
-  free(add);
+  if (!player_id_canal()[0]) nA = addons_legendas_copiar(capturaAdd, LEG_MAX, NULL, NULL);
+  nCand = legendasui_montar(emb, nE, capturaAdd, nA, cand, LEGUI_MAX_CAND);
 }
 
 static void idPrimario(char out[24]) {
@@ -184,11 +184,15 @@ void legendasui_definir_sync(const LegendasSyncProvider *p) {
 }
 
 // --- rows --------------------------------------------------------------------------
-typedef enum { LR_CAND, LR_NENHUMA, LR_MAIS, LR_SYNC, LR_ALVO, LR_ATRASO, LR_PAR } LuiTipo;
+// LR_IDIOMA (06/11, dono): um GRUPO de idioma. OK abre as fontes daquele
+// idioma (a lista "ver"), nunca escolhe uma direto.
+typedef enum { LR_CAND, LR_NENHUMA, LR_MAIS, LR_SYNC, LR_ALVO, LR_ATRASO, LR_PAR, LR_IDIOMA } LuiTipo;
 typedef struct {
   LuiTipo tipo;
   int slot, cand;
   char chave[96];
+  char idioma[16];   // LR_IDIOMA: um codigo do grupo ("" = desconhecido)
+  int n;             // LR_IDIOMA: quantas fontes
 } LuiLinha;
 #define LUI_MAX_LINHAS (LEGUI_MAX_CAND + 8)
 static LuiLinha linhas[LUI_MAX_LINHAS];
@@ -196,6 +200,7 @@ static int nLinhasV;
 
 static int mais, alvo, aberto;
 static int menu, menuFoco, okPendente, okLongo;
+static void abrirIdioma(const LuiLinha *l);
 static Uint32 okDesde;
 static char menuVolta[96], verIdioma[16];
 static LuiLinha okLinha;
@@ -258,10 +263,11 @@ static int recomendada(const char *pref, int secundaria) {
   int na = 0;
   if (!pref || !*pref || !strcasecmp(pref, "none") || !strcmp(pref, "forced")) return -1;
   if (!secundaria) {
+    int fmts[LEGUI_MAX_CAND];
     for (i = 0; i < nCand; i++) if (cand[i].embutida) {
-      emb[ne] = cand[i].idioma; tipos[ne] = cand[i].tipo; mapa[ne++] = i;
+      emb[ne] = cand[i].idioma; tipos[ne] = cand[i].tipo; fmts[ne] = ling_formato_legenda(cand[i].codec); mapa[ne++] = i;
     }
-    r = ling_legenda_auto_tipo(pref, "", 0, emb, tipos, ne, 1, NULL, 0, 1);
+    r = ling_legenda_auto_fmt(pref, "", 0, emb, tipos, fmts, ne, 1, NULL, 0, 1);
     if (r >= 0) return mapa[r];
   }
   add = malloc(sizeof *add * LEG_MAX);
@@ -296,8 +302,6 @@ static uint64_t recAssinatura(void) {
   }
   return h;
 }
-static int recP = -2, recQ = -2;   // cache de montarLinhas; -2 = nunca calculado
-static uint64_t recAssin;
 
 static int temPreferencia(void) {
   const char *p = prefLinha(0);
@@ -309,29 +313,125 @@ static void linhaCandidata(int i, int slot, const char *chave) {
   linhas[nLinhasV - 1].cand = i;
 }
 
+// --- grupos de idioma (06/11, dono) ------------------------------------------------
+// A CHAVE do grupo e o nome do idioma (ling_nome): "en", "eng" e "en-US" sao o
+// mesmo grupo; "pt" e "pt-BR" sao dois. Sem etiqueta, "und"/"mis"/"zxx" =
+// Desconhecido ("").
+static const char *chaveIdioma(const char *cod) {
+  if (!cod || !cod[0] || !strcasecmp(cod, "und") || !strcasecmp(cod, "mis") || !strcasecmp(cod, "zxx")) return "";
+  return ling_nome(cod);
+}
+static int mesmoGrupo(const char *a, const char *b) { return !strcmp(chaveIdioma(a), chaveIdioma(b)); }
+static const char *nomeGrupo(const char *cod) {
+  return chaveIdioma(cod)[0] ? nomeIdioma(cod) : i18n("Desconhecido");
+}
+
+typedef struct { char cod[16]; int n, nAdd, ordem; } LuiGrupo;
+static LuiGrupo grupos[LEGUI_MAX_CAND];
+static int nGruposV;
+// Ordem da lista inteira: preferidos (na ordem), idiomas dos addons (mais
+// resultados primeiro), Desconhecido, os outros so embutidos (pelo nome).
+static int rankGrupo(const LuiGrupo *g) {
+  const char *p0 = prefLinha(0), *p1 = prefLinha(1);
+  if (p0[0] && strcmp(p0, "forced") && strcmp(p0, "*") && mesmoGrupo(g->cod, p0) && chaveIdioma(g->cod)[0]) return 0;
+  if (p1[0] && strcmp(p1, "forced") && mesmoGrupo(g->cod, p1) && chaveIdioma(g->cod)[0]) return 1;
+  if (!chaveIdioma(g->cod)[0]) return 3;
+  return g->nAdd ? 2 : 4;
+}
+static int cmpGrupo(const void *a, const void *b) {
+  const LuiGrupo *x = a, *y = b;
+  int rx = rankGrupo(x), ry = rankGrupo(y), c;
+  if (rx != ry) return rx - ry;
+  if (rx == 2 && x->nAdd != y->nAdd) return y->nAdd - x->nAdd;
+  c = strcasecmp(nomeGrupo(x->cod), nomeGrupo(y->cod));
+  return c ? c : x->ordem - y->ordem;
+}
+static void agrupar(void) {
+  int i, g;
+  nGruposV = 0;
+  for (i = 0; i < nCand; i++) {
+    for (g = 0; g < nGruposV; g++) if (mesmoGrupo(grupos[g].cod, cand[i].idioma)) break;
+    if (g == nGruposV) {
+      memset(&grupos[g], 0, sizeof grupos[g]);
+      snprintf(grupos[g].cod, sizeof grupos[g].cod, "%s", cand[i].idioma);
+      grupos[g].ordem = nGruposV++;
+    }
+    grupos[g].n++;
+    if (!cand[i].embutida) grupos[g].nAdd++;
+  }
+  qsort(grupos, (size_t)nGruposV, sizeof *grupos, cmpGrupo);
+}
+static void linhaIdioma(const LuiGrupo *g, const char *prefixo) {
+  char k[96];
+  snprintf(k, sizeof k, "%sg|%s", prefixo, chaveIdioma(g->cod));
+  linhaFixa(LR_IDIOMA, 0, k);
+  snprintf(linhas[nLinhasV - 1].idioma, sizeof linhas[nLinhasV - 1].idioma, "%s", g->cod);
+  linhas[nLinhasV - 1].n = g->n;
+}
+static const LuiGrupo *grupoDe(const char *cod) {
+  for (int g = 0; g < nGruposV; g++) if (mesmoGrupo(grupos[g].cod, cod)) return &grupos[g];
+  return NULL;
+}
+static int cmpAddonOrdem(const void *a, const void *b) {
+  const LegUiCand *x = &cand[*(const int *)a], *y = &cand[*(const int *)b];
+  if (x->leg.addonIndice != y->leg.addonIndice) return x->leg.addonIndice - y->leg.addonIndice;
+  return *(const int *)a - *(const int *)b;
+}
+// A fonte do topo de um idioma: a mesma regra da escolha automatica
+// (embutida antes, ASS > texto > imagem; entre addons, legauto). Calculada so
+// quando os candidatos ou o idioma mudam (montarLinhas roda todo quadro).
+static int topoCache = -1;
+static uint64_t topoAssin;
+static int topoDoIdioma(const char *cod) {
+  uint64_t h = recHashStr(recAssinatura(), chaveIdioma(cod));
+  if (h != topoAssin) {
+    int r = chaveIdioma(cod)[0] ? recomendada(cod, 0) : -1;
+    topoCache = r >= 0 && mesmoGrupo(cand[r].idioma, cod) ? r : -1;
+    topoAssin = h;
+  }
+  return topoCache;
+}
+
 static void montarLinhas(void) {
   char prim[24];
   const char *sec = legenda2_identidade();
-  int i, slot;
+  int i, slot, g;
   capturar();
+  agrupar();
   idPrimario(prim);
   nLinhasV = 0;
-  if (!mais && !ver) {
-    uint64_t assin = recAssinatura();
-    int p, q, ativa = -1;
-    if (assin != recAssin) {
-      recP = recomendada(prefLinha(0), 0); recQ = recomendada(prefLinha(1), 0); recAssin = assin;
+  if (ver) {
+    // As FONTES de um idioma: Usar como, Atraso, e entao a de topo (a escolha
+    // automatica, sem marca nenhuma), as embutidas e as dos addons na ordem
+    // dos addons instalados. So a que toca leva a marca (dono, 06/11).
+    int topo = topoDoIdioma(verIdioma), ordem[LEGUI_MAX_CAND], n = 0;
+    linhaFixa(LR_ALVO, alvo, "v|alvo");
+    linhaFixa(LR_ATRASO, alvo, "v|atraso");
+    if (topo >= 0) ordem[n++] = topo;
+    for (i = 0; i < nCand; i++)
+      if (i != topo && cand[i].embutida && mesmoGrupo(cand[i].idioma, verIdioma)) ordem[n++] = i;
+    { int a0 = n;
+      for (i = 0; i < nCand; i++)
+        if (i != topo && !cand[i].embutida && mesmoGrupo(cand[i].idioma, verIdioma)) ordem[n++] = i;
+      qsort(ordem + a0, (size_t)(n - a0), sizeof *ordem, cmpAddonOrdem); }
+    for (i = 0; i < n && nLinhasV < LUI_MAX_LINHAS; i++) {
+      char k[96];
+      snprintf(k, sizeof k, "v|%s", cand[ordem[i]].id);
+      linhaCandidata(ordem[i], alvo, k);
     }
-    p = recP; q = recQ;
+  } else if (!mais) {
+    // Recomendadas: Desligada, o idioma preferido e o secundario (cada um um
+    // grupo: OK abre as fontes dele), o par atual, a sincronia, Todas.
+    const LuiGrupo *gp = temPreferencia() ? grupoDe(prefLinha(0)) : NULL;
+    const LuiGrupo *gs = prefLinha(1)[0] ? grupoDe(prefLinha(1)) : NULL;
+    const LuiGrupo *ga = NULL;
     linhaFixa(LR_NENHUMA, 0, "p|-");
-    if (p >= 0) linhaCandidata(p, 0, "rec|p");
-    if (q >= 0 && q != p) linhaCandidata(q, 0, "rec|s");
-    // A principal ATIVA que nao e nenhuma das recomendadas (escolha manual,
-    // idioma fora da preferencia) e nao tem linha em "par" (sem segunda
-    // legenda) ficava SEM linha — e o foco ao abrir caia em "Desligada".
-    // Linha propria, marcada pelo ativoNoSlot de sempre.
-    for (i = 0; i < nCand; i++) if (prim[0] && !strcmp(prim, cand[i].id)) ativa = i;
-    if (ativa >= 0 && ativa != p && ativa != q && !sec[0]) linhaCandidata(ativa, 0, "rec|a");
+    if (gp && chaveIdioma(gp->cod)[0]) linhaIdioma(gp, "");
+    if (gs && gs != gp && chaveIdioma(gs->cod)[0]) linhaIdioma(gs, "");
+    // A legenda ATIVA fora dos dois idiomas tambem tem linha (o grupo dela):
+    // senao o foco ao abrir caia em "Desligada".
+    for (i = 0; i < nCand; i++) if (prim[0] && !strcmp(prim, cand[i].id)) ga = grupoDe(cand[i].idioma);
+    if (ga && ga != gp && ga != gs) linhaIdioma(ga, "");
     if (sec[0]) {
       linhaFixa(LR_PAR, 0, "par");
       for (i = 0; i < nCand; i++) if (!strcmp(prim, cand[i].id)) linhas[nLinhasV - 1].cand = i;
@@ -340,36 +440,13 @@ static void montarLinhas(void) {
       if (estadoSync(slot)) linhaFixa(LR_SYNC, slot, slot ? "sync|s" : "sync|p");
     linhaFixa(LR_MAIS, 0, "mais");
   } else {
-    // Same full list and per-slot delay controls as before; the language
-    // submenu merely filters this list, without introducing another screen.
+    // Todas as legendas: Usar como, Atraso, Desligada, Sincronizacao e um
+    // grupo por idioma, na ordem de rankGrupo.
     linhaFixa(LR_ALVO, alvo, "m|alvo");
     linhaFixa(LR_ATRASO, alvo, "m|atraso");
     linhaFixa(LR_NENHUMA, alvo, "m|-");
-    // Sem idioma preferido (ou com "mostrar todas") o painel abre direto aqui
-    // e a linha do AutoSync, que so existia em Recomendadas, sumia.
-    if (!ver && estadoSync(alvo)) linhaFixa(LR_SYNC, alvo, alvo ? "m|sync|s" : "m|sync|p");
-    // Dono, 11/10: a lista junta as do MESMO idioma (as embutidas e as dos
-    // addons chegavam intercaladas). Os idiomas da preferencia primeiro, os
-    // outros na ordem em que aparecem; dentro do grupo, a ordem de sempre.
-    { int ordem[LEGUI_MAX_CAND], usado[LEGUI_MAX_CAND] = { 0 }, n = 0, j, g;
-      const char *pref[2] = { prefLinha(0), prefLinha(1) };
-      // Sem preferencia, o idioma da legenda ATIVA abre a lista.
-      if (!pref[0][0]) for (i = 0; i < nCand; i++)
-        if (prim[0] && !strcmp(prim, cand[i].id) && cand[i].idioma[0]) { pref[0] = cand[i].idioma; break; }
-      for (g = 0; g < 3; g++)
-        for (i = 0; i < nCand; i++) {
-          if (usado[i] || (g < 2 && !ling_casa(cand[i].idioma, pref[g]))) continue;
-          for (j = i; j < nCand; j++)
-            if (!usado[j] && (cand[i].idioma[0] ? cand[j].idioma[0] && ling_casa(cand[j].idioma, cand[i].idioma)
-                                                : !cand[j].idioma[0])) { usado[j] = 1; ordem[n++] = j; }
-        }
-      for (j = 0; j < n && nLinhasV < LUI_MAX_LINHAS; j++) {
-        char k[96];
-        i = ordem[j];
-        if (ver && !ling_casa(cand[i].idioma, verIdioma)) continue;
-        snprintf(k, sizeof k, "m|%s", cand[i].id);
-        linhaCandidata(i, alvo, k);
-      } }
+    if (estadoSync(alvo)) linhaFixa(LR_SYNC, alvo, alvo ? "m|sync|s" : "m|sync|p");
+    for (g = 0; g < nGruposV && nLinhasV < LUI_MAX_LINHAS; g++) linhaIdioma(&grupos[g], "m|");
   }
   // FOCUS BY IDENTITY: find the row with the remembered key; if it vanished
   // (a list was replaced), stay at the same position and adopt that row.
@@ -399,11 +476,14 @@ void legendasui_abrir(void) {
   aberto = 1; mais = ajustes_legendas_todas() || !temPreferencia(); ver = 0; menu = okPendente = okLongo = 0; alvo = 0; rolagemZerar(); aviso[0] = 0;
   focoChave[0] = 0; foco = 0;
   montarLinhas();
-  // Open on the row of the active primary, else on the first row.
+  // Open on the language row of the active primary (or the current pair),
+  // else on "Desligada".
   idPrimario(prim);
-  for (i = 0; i < nLinhasV; i++)
-    if ((linhas[i].tipo == LR_CAND || linhas[i].tipo == LR_PAR) && linhas[i].slot == 0 && linhas[i].cand >= 0 &&
-        !strcmp(cand[linhas[i].cand].id, prim)) break;
+  { const char *idAtivo = NULL;
+    for (i = 0; i < nCand; i++) if (prim[0] && !strcmp(cand[i].id, prim)) idAtivo = cand[i].idioma;
+    for (i = 0; i < nLinhasV; i++)
+      if ((linhas[i].tipo == LR_PAR && linhas[i].cand >= 0 && !strcmp(cand[linhas[i].cand].id, prim)) ||
+          (linhas[i].tipo == LR_IDIOMA && idAtivo && mesmoGrupo(linhas[i].idioma, idAtivo))) break; }
   if (i == nLinhasV && !prim[0])
     for (i = 0; i < nLinhasV; i++) if (linhas[i].tipo == LR_NENHUMA && linhas[i].slot == 0) break;
   focar(i < nLinhasV ? i : 0);
@@ -523,11 +603,24 @@ static void abrirMenu(void) {
   snprintf(menuVolta, sizeof menuVolta, "%s", l->chave);
 }
 
+// As fontes do idioma da linha; Voltar devolve a esta mesma linha. Foco na
+// que toca, senao na de topo (logo depois de Usar como / Atraso).
+static void abrirIdioma(const LuiLinha *l) {
+  LuiLinha g = *l;   // `l` aponta para linhas[], que montarLinhas reescreve
+  int k;
+  snprintf(verGrupo, sizeof verGrupo, "%s", g.chave);
+  snprintf(verIdioma, sizeof verIdioma, "%s", g.idioma);
+  ver = 1; if (!mais) alvo = 0; rolagemZerar(); focoChave[0] = 0; foco = 0;
+  montarLinhas();
+  for (k = 0; k < nLinhasV; k++) if (linhas[k].tipo == LR_CAND && ativoNoSlot(alvo, &cand[linhas[k].cand])) break;
+  focar(k < nLinhasV ? k : nLinhasV > 2 ? 2 : 0);
+}
+
 void legendasui_atualizar(float dt) {
   // Molas do dropdown, por quadro (faixas_atualizar): abertura e foco por linha.
   menuT = anim_mola(menuT, menu ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
   for (int i = 0; i < 3; i++) menuFocoA[i] = anim_mola(menuFocoA[i], menu && i == menuFoco ? 1.0f : 0.0f, dt, NV_MOLA_FOCO);
-  if (aberto && !menu && okPendente && !okLongo && SDL_GetTicks() - okDesde >= NV_HOLD_MS) {
+  if (aberto && !menu && okPendente && !okLongo && okLinha.tipo != LR_IDIOMA && SDL_GetTicks() - okDesde >= NV_HOLD_MS) {
     okLongo = 1;
     abrirMenu();
   }
@@ -538,7 +631,7 @@ static void menuEscolher(void) {
   if (acao == 1 && menuTiraSecundaria()) { menu = 0; escolher(1, NULL); return; }
   menu = 0;
   if (acao == 2) {
-    if (!menuCand.id[0]) return;
+    if (!menuCand.id[0] || ver) return;
     snprintf(verGrupo, sizeof verGrupo, "%s", menuVolta);
     snprintf(verIdioma, sizeof verIdioma, "%s", menuCand.idioma);
     ver = 1; alvo = 0; rolagem = foco = 0; focoChave[0] = 0;
@@ -578,10 +671,13 @@ int legendasui_evento(const SDL_Event *e) {
       // Apply the identity captured on keydown, even if addons arrived meanwhile.
       if (okLinha.tipo == LR_CAND) escolher(okLinha.slot, &okCand);
       else if (okLinha.tipo == LR_NENHUMA) escolher(okLinha.slot, NULL);
+      // Grupo de idioma no SOLTAR: a TV entrega o OK segurado como varios
+      // KEYDOWN; abrir no primeiro faria os seguintes cairem numa fonte.
+      else if (okLinha.tipo == LR_IDIOMA) abrirIdioma(&okLinha);
       return LEGUI_TRATADO;
     }
   } else if (e->type == SDL_KEYUP) return LEGUI_NADA;
-  else if (ok && (temMenu(l) || menu)) {
+  else if (ok && (temMenu(l) || menu || (l && l->tipo == LR_IDIOMA))) {
     if (!okPendente) {
       okPendente = 1; okDesde = SDL_GetTicks(); okLongo = 0;
       if (l) { okLinha = *l; memset(&okCand, 0, sizeof okCand);
@@ -593,7 +689,7 @@ int legendasui_evento(const SDL_Event *e) {
   if (menu) {
     if (k == SDLK_LEFT || k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE) menu = 0;
     else if (k == SDLK_UP && menuFoco > 0) menuFoco--;
-    else if (k == SDLK_DOWN && menuFoco < (menuCand.id[0] ? 2 : 1)) menuFoco++;
+    else if (k == SDLK_DOWN && menuFoco < (menuCand.id[0] && !ver ? 2 : 1)) menuFoco++;
     else if (ok) menuEscolher();
     return LEGUI_TRATADO;
   }
@@ -625,6 +721,7 @@ int legendasui_evento(const SDL_Event *e) {
         montarLinhas(); focar(nLinhasV > 3 ? 3 : 0);
         break;
       case LR_NENHUMA: escolher(l->slot, NULL); break;
+      case LR_IDIOMA: abrirIdioma(l); break;
       case LR_PAR: // already playing: keep the current pair without reloading
         break;
       case LR_CAND: escolher(l->slot, l->cand >= 0 ? &cand[l->cand] : NULL); break;
@@ -818,6 +915,21 @@ static void textoLinha(const LuiLinha *l, char *nome, size_t tn, char *sub, size
       *icone = "pl_eye-off";
       *ativo = l->slot ? !legenda2_identidade()[0] : !legendasui_slot_identidade(0)[0];
       break;
+    case LR_IDIOMA: {
+      // O idioma; embaixo, o titulo da que toca quando ela e deste idioma.
+      int k;
+      snprintf(nome, tn, "%s", nomeGrupo(l->idioma));
+      if (chaveIdioma(l->idioma)[0]) *idioma = l->idioma; else *icone = "pl_captions";
+      for (k = 0; k < nCand; k++)
+        if (mesmoGrupo(cand[k].idioma, l->idioma) && ativoNoSlot(0, &cand[k])) {
+          char t[96];
+          legendasui_titulo(cand, nCand, k, t, sizeof t);
+          juntar(sub, ts, t);
+          juntar(sub, ts, cand[k].embutida ? i18n("Embutida") : cand[k].origem);
+          *ativo = 1;
+          break;
+        }
+      break; }
     case LR_MAIS:
       snprintf(nome, tn, "%s", i18n("Todas as legendas"));
       snprintf(sub, ts, "%s", i18n("Todas as legendas, com detalhes"));
@@ -912,9 +1024,21 @@ static void desenharLinha(const LuiLinha *l, int idx, int sel, float x, float y,
     // row, so the details (release name) get the width.
     if (ativo) dir -= pilulaSlot(l->slot, dir, y + LU_LN_H * 0.5f, sel, aL) + 12.0f;
   }
+  // GRUPO DE IDIOMA: quantas fontes e o chevron (OK abre as fontes).
+  if (l->tipo == LR_IDIOMA) {
+    char nb[16];
+    TxtLinha t;
+    gfx_icone((GfxRect){ dir - 24.0f, y + (LU_LN_H - 24.0f) * 0.5f, 24.0f, 24.0f }, "pl_chevron-right", 1, 1, 1, (sel ? 0.9f : 0.5f) * aL);
+    dir -= 24.0f + 10.0f;
+    snprintf(nb, sizeof nb, "%d", l->n);
+    t = txt_linha(TXT_G16B, nb, 243, 242, 239, sel ? 230 : 150);
+    dir -= (float)t.w;
+    txt_desenhar_alpha(t, dir, y + (LU_LN_H - (float)t.h) * 0.5f, aL);
+    dir -= 14.0f;
+  }
   // O chevron diz "tem mais atras deste OK" (o das Ajustes): a linha com acoes
   // (segure OK) e "Todas as legendas". Mesmo icone do resto do app.
-  if (!mais && !ver && (temMenu(l) || l->tipo == LR_MAIS)) {
+  else if (!mais && !ver && (temMenu(l) || l->tipo == LR_MAIS)) {
     gfx_icone((GfxRect){ dir - 24.0f, y + (LU_LN_H - 24.0f) * 0.5f, 24.0f, 24.0f }, "pl_chevron-right", 1, 1, 1, (sel ? 0.9f : 0.5f) * aL);
     if (pont && l->tipo != LR_MAIS) ponteiro_alvo(dir - 40.0f, y, 40.0f, LU_LN_H, ponteiroLinha, ponteiroMenuAbrir, idx, 0);
     dir -= 24.0f + 10.0f;
@@ -1032,7 +1156,7 @@ static void desenharMenu(GfxRect c, float a) {
   if (menuT > 0.9f) ponteiro_camada();
   for (int i = 0; i < 3; i++) {
     GfxRect r = { m.x + LU_MENU_PAD, m.y + LU_MENU_PAD + i * ctx_menu_passo(), m.w - LU_MENU_PAD * 2.0f, 60.0f };
-    int disponivel = i != 2 || menuCand.id[0];
+    int disponivel = i != 2 || (menuCand.id[0] && !ver);
     ctx_menu_linha(r, menuRot(i), menuIcone(i), menuFocoA[i], disponivel ? a : a * 0.35f, -1.0f);
     if (disponivel && menuT > 0.9f) ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroMenu, ponteiroMenuEscolher, i, 0);
   }
