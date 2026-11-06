@@ -47,6 +47,8 @@ void menu_servidores(int conectado);
 // Persistent desktop chrome; search opens the existing Search destination.
 void menu_desktop_busca_desenhar(void);
 #ifdef NV_DESKTOP_UI
+// Destination before the last sidebar choice, for the desktop Guide's Back route.
+int menu_destino_anterior(void);
 void menu_desktop_alternar(void);
 void menu_desktop_expandir(void);
 void menu_desktop_hover(float windowX);

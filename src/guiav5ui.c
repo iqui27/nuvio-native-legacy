@@ -2551,7 +2551,7 @@ static int gv_chip_tem(int i){
 }
 static int gv_chip_foc(int i){return gv_zone==4&&!gv_overlay()&&gv_chipi==i;}
 static GVCh *gv_hero_channel(GVCh *selected);
-static float gv_source_chip(int slot,float x,int draw){
+static float gv_source_chip(int slot,float x,int draw,float budget){
   char text[256];const char *icon=NULL;int sel=0,dot=0;
   int index=gv_source_index(slot);GuiaFonteSaude f;
   if(index>=0&&guia_fonte_saude(index,&f)){
@@ -2565,6 +2565,7 @@ static float gv_source_chip(int slot,float x,int draw){
   else{snprintf(text,sizeof text,"EPG");icon="aj_calendar";}
   float w;TXT_INI();w=(float)txt_largura_familia(TXT_ILHA_APOIO,text,txt_fonte_interface());TXT_FIM();
   w=w*gfx_escala_txt()+18+(dot?14:icon?22:0);
+  if(layout_desktop_ativo()&&w>budget)w=budget;
   if(draw)gv_chip(x,GV_SOURCE_Y,w,text,icon,sel,gv_chip_foc(slot),dot,1200+slot);
   return w+10;
 }
@@ -2601,12 +2602,12 @@ static void gv_chips_row(void){
   if(channel)for(int i=0;guia_fonte_saude(i,&f);i++)if(!strcmp(f.chave,gv_fonte[0]?gv_fonte:guia_canal_fonte(gv_lin))){snprintf(source,sizeof source,"%s",f.nome);break;}
   float right=GV_META_R;
   float metadata=channel?stream_footer_at(channel->nome,source,"",1,right):0;
-  float w[72];for(int i=0;i<n;i++)w[i]=gv_source_chip(slots[i],0,0);
   float avail=GV_W-metadata;
+  float w[72];for(int i=0;i<n;i++)w[i]=gv_source_chip(slots[i],0,0,avail);
   int end=gv_chips_fit(w,n,gv_zone==4?at:-1,&gv_source_off,avail,layout_desktop_ativo()?avail:1814);
   if(gv_source_off>0)gfx_icone((GfxRect){GV_X-24,GV_SOURCE_Y+5,20,20},"aj_chevron-left",.6f,.6f,.6f,1);
   if(end<n)gfx_icone((GfxRect){right+4,GV_SOURCE_Y+5,20,20},"aj_chevron-right",.6f,.6f,.6f,1);
-  float x=GV_X;for(int i=gv_source_off;i<end;i++){gv_source_chip(slots[i],x,1);x+=w[i];}
+  float x=GV_X;for(int i=gv_source_off;i<end;i++){gv_source_chip(slots[i],x,1,avail);x+=w[i];}
 }
 
 /* --- barra lateral: Biblioteca e Categorias ------------------------------ */

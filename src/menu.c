@@ -219,6 +219,10 @@ int menu_ocupado(Uint32 agora) {
 static int   pediuTrocar = 0;
 static int   aberto  = 0;
 static int   destino = MENU_INICIO;
+#ifdef NV_DESKTOP_UI
+static int destinoAnterior = MENU_INICIO;
+int menu_destino_anterior(void) { return destinoAnterior; }
+#endif
 static int   linha   = MENU_INICIO;   // destaque; so vira destino ao escolher
 static int   mudou   = 0;
 // POR CIMA DE UMA CAMADA (a pagina do titulo, dono 03/10): a barra abre sobre
@@ -478,6 +482,9 @@ int menu_iniciar(void) {
 #endif
   menuEntradaEm = 0;
   aberto = 0; destino = MENU_INICIO; linha = MENU_INICIO; mudou = 0;
+#ifdef NV_DESKTOP_UI
+  destinoAnterior = MENU_INICIO;
+#endif
   desliza = 0.0f; expande = 0.0f; expandeV = 0.0f;
   for (int i = 0; i < MENU_N; i++) animFoco[i] = 0.0f;
   return 1;
@@ -553,7 +560,12 @@ static void escolher(void) {
 #ifdef NV_DESKTOP_UI
       || linha == MENU_CONQUISTAS || linha == MENU_JUNTOS || linha == MENU_LISTAS
 #endif
-     ) { destino = linha; mudou = 1; }
+     ) {
+#ifdef NV_DESKTOP_UI
+    destinoAnterior = destino;
+#endif
+    destino = linha; mudou = 1;
+  }
   aberto = 0;
 }
 

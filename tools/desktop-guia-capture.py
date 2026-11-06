@@ -10,6 +10,53 @@ import struct
 import subprocess
 import tempfile
 import time
+import sys
+
+# All entry points require explicit disposable state; never fall back to ~/.nuvio.
+for key in ('HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'NUVIO_DADOS', 'TMPDIR'):
+    value = os.environ.get(key, '')
+    if not value or not Path(value).is_absolute() or not Path(value).is_dir() or Path(value).resolve().is_relative_to('/Users') or Path(value).resolve() == Path('/'):
+        raise RuntimeError('Fresh isolated directory required: ' + key)
+
+if len(sys.argv) > 1 and sys.argv[1] == '--synthetic':
+    # Same background SDL + GL readback flow, using the populated local test fixture.
+    binary, output = Path(sys.argv[2]).resolve(), Path(sys.argv[3]).resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='guide-capture-', dir=os.environ['TMPDIR']) as tmp:
+        runtime = Path(tmp)
+        source = runtime / 'front.m'
+        source.write_text('#import <Cocoa/Cocoa.h>\nint main(void){@autoreleasepool{printf("%d\\n",NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier);}}\n')
+        helper = runtime / 'front'
+        subprocess.run(['cc', str(source), '-framework', 'Cocoa', '-o', str(helper)], check=True)
+        def foreground_pid():
+            return int(subprocess.check_output([str(helper)]))
+        before = foreground_pid()
+        shots = []
+        for w, h in ((1280, 800), (2560, 1000)):
+            bitmap = runtime / f'guide-{w}x{h}.bmp'
+            environment = dict(os.environ, NV_CAPTURA='1', NV_CAPTURA_GL='1', SDL_MAC_BACKGROUND_APP='1', SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN='1')
+            for key in ('HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'NUVIO_DADOS', 'TMPDIR'):
+                directory = runtime / str(w) / key
+                directory.mkdir(parents=True)
+                environment[key] = str(directory)
+            child = subprocess.Popen([str(binary), '--capture', str(bitmap), str(w), str(h)], env=environment)
+            try:
+                assert foreground_pid() == before, 'Foreground changed at fixture launch'
+                rc = child.wait(timeout=90)
+                assert rc == 0, ('Capture fixture failed', rc)
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                    child.wait()
+            assert foreground_pid() == before, 'Foreground changed during fixture'
+            jpg = output / f'guia-synthetic-{w}x{h}.jpg'
+            subprocess.run(['magick', str(bitmap), '-resize', '2400x2400>', '-quality', '88', str(jpg)], check=True)
+            shots.append(str(jpg))
+        after = foreground_pid()
+        (output / 'focus-synthetic.json').write_text(json.dumps(dict(before=before, after=after, shots=shots), indent=2))
+        assert before == after
+        print('PASS: populated synthetic Guide captures; foreground PID unchanged', flush=True)
+    raise SystemExit(0)
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = Path('/Volumes/ExternalSSD/tmp/rev/desktop')
@@ -17,7 +64,7 @@ OUT = BASE / 'guia'
 import sys
 SOURCE_APP = Path(sys.argv[1])
 TAG = sys.argv[2] if len(sys.argv) > 2 else 'after'
-RUNTIME = Path(tempfile.mkdtemp(prefix='nuvio-desktop-guia-', dir='/private/tmp'))
+RUNTIME = Path(tempfile.mkdtemp(prefix='nuvio-desktop-guia-', dir=os.environ['TMPDIR']))
 OUT.mkdir(parents=True, exist_ok=True)
 APP = RUNTIME / 'Nuvio.app'
 subprocess.run(['ditto', str(SOURCE_APP), str(APP)], check=True)
@@ -85,9 +132,10 @@ def photo(name, width, height):
     assert struct.unpack('>II', dest.read_bytes()[16:24]) == (width,height)
     print(dest, flush=True)
     return dict(file=str(dest), drawable=[w,h], output=[width,height])
-environment = dict(NUVIO_DADOS=str(DATA), NUVIO_UI_PREVIEW='1', NV_CAPTURA='1',
+environment = {key: os.environ[key] for key in ('HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'TMPDIR')}
+environment.update(dict(NUVIO_DADOS=str(DATA), NUVIO_UI_PREVIEW='1', NV_CAPTURA='1',
                    NV_CAPTURA_GL='1', NV_CAPTURA_DIR=str(ipc), SDL_MAC_BACKGROUND_APP='1',
-                   SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN='1')
+                   SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN='1'))
 launch = ['open', '-n', '-g', '-j']
 for key, value in environment.items():
     launch += ['--env', key + '=' + value]

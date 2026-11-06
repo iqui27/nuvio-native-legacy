@@ -1133,10 +1133,13 @@ static int cacaDoPerfil;
 
 static struct { Tela page; int menu, profile; } routeHistory[32];
 static int routeCount, routeOpening;
+static void abrirTelaFilha(Tela nova);
 static void trocarTela(Tela nova) {
   tituloDoPainel = 0;
   if (nova == tela) return;
 #ifdef NV_DESKTOP_UI
+  // Every desktop Guide entry retains its parent through the existing Back stack.
+  if(nova==TELA_GUIA && !routeOpening && !perfil_infantil_ativo()){abrirTelaFilha(nova);return;}
   // Child overlays keep the current parent; page destinations select themselves.
   if(nova==TELA_ESPORTES) menu_definir_destino(MENU_ESPORTES);
   else if(nova==TELA_GUIA) menu_definir_destino(MENU_GUIA);
@@ -1219,7 +1222,11 @@ void app_desktop_preview(const char *screen) {
 static void abrirTelaFilha(Tela nova) {
   if(nova==tela)return;
   if(nova==TELA_GUIA && perfil_infantil_ativo()){trocarTela(nova);return;}
-  if(routeCount<32){routeHistory[routeCount].page=tela;routeHistory[routeCount].menu=menu_destino();routeHistory[routeCount++].profile=perfis_ativo();}
+  int parentMenu=menu_destino();
+#ifdef NV_DESKTOP_UI
+  if(nova==TELA_GUIA && parentMenu==MENU_GUIA)parentMenu=menu_destino_anterior();
+#endif
+  if(routeCount<32){routeHistory[routeCount].page=tela;routeHistory[routeCount].menu=parentMenu;routeHistory[routeCount++].profile=perfis_ativo();}
   // Suspended pages retain their own focus and scroll until Back resumes them.
   routeOpening=1;trocarTela(nova);routeOpening=0;
 }
