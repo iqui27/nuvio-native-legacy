@@ -19,6 +19,7 @@ static int64_t last_sub_pts;
 static atomic_int allow_decode_failure, transport_stalled, release_transport, stall_transport;
 static atomic_int jam_native, native_full, seek_failure, refill_block, refill_blocked, refill_eof;
 static atomic_int timestamp_fault, timestamp_fail_open, timestamp_block_open, timestamp_open_entered;
+static atomic_int refill_info_barrier, refill_info_entered, refill_timestamp;
 static int last_dv;
 static int last_p7;
 static atomic_llong buffer_ready = 21*1048576LL, buffer_contiguous = 20*1048576LL;
@@ -39,6 +40,11 @@ static int timestampScenario(void) { return scenario>=TIMESTAMP_ONCE && scenario
 struct DtsEngine { DtsMediaInfo info; atomic_int cancelled, interrupted; unsigned char packet[98304]; int serial, core; double base; };
 struct DtsPipeline { void (*event)(void *,const char *); void *user; int loaded, completed, running, flushed, audio_ready, video_ready, generation, packets, broken_segment; double target; };
 static void nap(void) { struct timespec t={0,1000000};nanosleep(&t,NULL); }
+void dts_test_refill_entry(void) {
+ if(!atomic_load(&refill_info_barrier)) return;
+ atomic_store(&refill_info_entered,1);
+ while(atomic_load(&refill_info_barrier)) nap();
+}
 static void emit(const char *json) {
  void (*cb)(void *,const char *);void *u;
  pthread_mutex_lock(&fixture);cb=native_event;u=native_user;pthread_mutex_unlock(&fixture);
@@ -99,6 +105,7 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
  }
  if(scenario==BLOCK_READ) { while(!atomic_load(&e->cancelled)) nap();return -1; }
  pthread_mutex_lock(&fixture);int already_paused=pauses>0;pthread_mutex_unlock(&fixture);
+ if(scenario==SUSTAINED && already_paused && atomic_exchange(&timestamp_fault,0)) return -1;
  if(scenario==SUSTAINED && already_paused && atomic_exchange(&refill_eof,0)) return 0;
  if(scenario==SUSTAINED && atomic_load(&refill_block) && already_paused) {
   atomic_store(&refill_blocked,1);
@@ -150,7 +157,8 @@ void dts_engine_cancel(DtsEngine *e) { atomic_store(&e->cancelled,1); }
 void dts_engine_interrupt(DtsEngine *e,int on) { atomic_store(&e->interrupted,on); }
 void dts_engine_destroy(DtsEngine *e) { free(e); }
 const char *dts_engine_error(DtsEngine *e) {
- (void)e;if(timestampScenario()) return (opens>1 && atomic_load(&timestamp_fail_open)) ? "fixture reopen failure" : DTS_ENGINE_TIMESTAMP_DISCONTINUITY;
+ (void)e;if(atomic_load(&refill_timestamp)) return DTS_ENGINE_TIMESTAMP_DISCONTINUITY;
+ if(timestampScenario()) return (opens>1 && atomic_load(&timestamp_fail_open)) ? "fixture reopen failure" : DTS_ENGINE_TIMESTAMP_DISCONTINUITY;
 return scenario==CORE_RECOVERY || scenario==NO_CORE_FAIL ? "DTS decode fixture failure" : "fixture engine failure";
 }
 int dts_pipeline_available(int major) { (void)major;return 1; }
@@ -260,6 +268,32 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
+ if(!strcmp(argv[1],"refillrace") || !strcmp(argv[1],"refillracepause") || !strcmp(argv[1],"refillraceaudio")) {
+  scenario=SUSTAINED;p=start(0,4,NULL,0,0);wait_count(&accepted,10);
+  atomic_store(&refill_info_barrier,1);atomic_store(&buffer_contiguous,0);
+  emit("{\"currentTime\":{\"currentTime\":1000}}");
+  for(int i=0;i<1500 && !atomic_load(&refill_info_entered);i++) nap();
+  assert(atomic_load(&refill_info_entered));atomic_store(&refill_block,1);
+  int pause=!strcmp(argv[1],"refillracepause"), audio=!strcmp(argv[1],"refillraceaudio");
+  if(pause) dts_playback_pause(p,1);
+  else if(audio) dts_playback_audio(p,9);
+  else dts_playback_seek(p,20);
+  atomic_store(&refill_info_barrier,0);
+  if(pause) wait_count(&pauses,1);else wait_count(&loads,2);
+  if(audio) assert(last_stream==9);
+  dts_playback_close(p);return 0;
+ }
+ if(!strcmp(argv[1],"refillrecovery")) {
+  atomic_store(&refill_wall_ns,100000000000LL);scenario=SUSTAINED;
+  p=start(0,4,NULL,0,0);wait_count(&accepted,10);
+  emit("{\"currentTime\":{\"currentTime\":1000}}");atomic_store(&buffer_contiguous,0);
+  wait_count(&pauses,1);atomic_store(&timestamp_block_open,1);
+  atomic_store(&refill_timestamp,1);atomic_store(&timestamp_fault,1);
+  for(int i=0;i<1500 && !atomic_load(&timestamp_open_entered);i++) nap();
+  assert(atomic_load(&timestamp_open_entered));atomic_store(&refill_wall_ns,121000000000LL);
+  for(int i=0;i<300;i++) nap();dts_playback_status(p,&s);
+  assert(!s.failed);dts_playback_close(p);return 0;
+ }
  if(!strcmp(argv[1],"refilleof")) {
   scenario=SUSTAINED;p=start(0,4,NULL,0,0);wait_count(&accepted,10);
   emit("{\"currentTime\":{\"currentTime\":1000}}");
