@@ -3446,6 +3446,7 @@ static int iniciarDts(int stream) {
   dtsMarcarAbertas(dtsAbertasSemFechar() + 1);
   dts_engine_set_ac3(ajustes_dts_ac3());
   dts_engine_set_http_workers(ajustes_buffer_conversion_connections());
+  dts_engine_set_conversion_stream(ajustes_buffer_conversion_stream());
   dts_engine_set_ahead_mib(cacheboost_backend_buffer_mb());   // #338: Settings > Buffer size
   dts_playback_next_dv(dtsModoDv);
 #ifdef NV_DV7_MAPPING_TEST

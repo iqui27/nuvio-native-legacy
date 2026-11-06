@@ -30,8 +30,14 @@ int main(void) {
     ajustes_dir(dir);
     assert(ajustes_buffer_native_connections()==native && ajustes_buffer_conversion_connections()==conversion);
   }
+  /* "Stream (1) - Test": one connection over one continuous request. */
+  assert(!ajustes_buffer_conversion_stream());
+  assert(definirValorDireto(AJ_BUFFER_CONVERSION_CONNECTIONS,4));
+  ajustes_dir(dir);
+  assert(ajustes_buffer_conversion_stream() && ajustes_buffer_conversion_connections()==1);
   assert(definirValorDireto(AJ_BUFFER_NATIVE_CONNECTIONS,0));
   assert(definirValorDireto(AJ_BUFFER_CONVERSION_CONNECTIONS,3));
+  assert(!ajustes_buffer_conversion_stream());
   // Both selectors belong to Buffer size, with no duplicate category rows.
   for(unsigned i=0;i<sizeof TELA/sizeof *TELA;i++)
     assert(TELA[i].tipo!=IT_OPC || !uxBufferConexao(TELA[i].op));

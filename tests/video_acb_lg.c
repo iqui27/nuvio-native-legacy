@@ -15,8 +15,10 @@ static int test_buffer_preset;
 int ajustes_buffer_preset(void) { return test_buffer_preset; }
 int ajustes_buffer_native_connections(void) { return 1; }
 int ajustes_buffer_conversion_connections(void) { return 4; }
+int ajustes_buffer_conversion_stream(void) { return 0; }
 void dts_engine_set_source_workers(int n) { (void)n; }
 void dts_engine_set_http_workers(int n) { (void)n; }
+void dts_engine_set_conversion_stream(int on) { (void)on; }
 long memlog_livre_mb(void) { return 4096; }
 /* No HTTP or decoder is started by native dispatcher fixtures. */
 static DtsBufferInfo movie_snapshot;

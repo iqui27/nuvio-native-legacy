@@ -31,6 +31,9 @@ void dts_engine_set_ring_mib(int mib);
 /* Range read-ahead of dts_engine_open for engines opened after the call, in
  * MiB (Settings > Buffer size): 0 = default (32 MiB), else 4 MiB ranges. */
 void dts_engine_set_ahead_mib(int mib);
+/* Test option: conversion opened after this reads over one continuous HTTP
+ * request (ring = buffer size) instead of range requests. */
+void dts_engine_set_conversion_stream(int on);
 /* Measured payload for native HTTP and conversion read-ahead. Native capacity
  * is the allocated ring; conversion capacity includes its active range plus
  * the queued range budget. Conversion snapshots must be taken on the engine's
