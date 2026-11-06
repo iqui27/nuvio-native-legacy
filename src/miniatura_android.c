@@ -71,7 +71,8 @@ void miniatura_preaquecer(const char *url, const char *cabecalhos) { (void)url; 
 #define MIN_DESVIO 4.0
 #define MIN_POR_QUARTO 2
 #define TOMADA_MS 8000               // candidates this far from the best are another shot
-#define TENTATIVAS 8                 // smaller copies tried per title (a wrong runtime/codec costs only the header, ~1 s)
+#define TENTATIVAS 12                // copies tried per title, 1080p backups included (a dead link or wrong runtime costs ~1-5 s)
+#define PESADA_MBPS 20.0             // a 1080p copy above this (a disc remux) is not worth reading for thumbnails
 
 enum { M_PARADO = 0, M_BUSCANDO, M_PRONTO, M_FALHOU };
 
@@ -89,6 +90,7 @@ typedef struct {
   int altura;
   unsigned long long tamanho;
   char nome[160];
+  char fonte[FONTEFALHA_CHAVE];   // the add-on it came from (copy failures are remembered per source)
 } Copia;
 
 typedef struct {
@@ -136,6 +138,7 @@ typedef struct {
   // Optimistic copy-first: thumbnails start at offset 0 while the screen check runs on its own thread.
   // dCheck 0 none, 1 running, 2 accepted (tiles relabelled to the measured offset), 3 rejected (all discarded).
   volatile int dCheck; pthread_t dCheckT; int dCheckRodando;
+  char dFonte[FONTEFALHA_CHAVE];           // the chosen copy's source (its verdict is remembered)
   volatile int parar;
   int vivo;
 } Job;
@@ -806,8 +809,8 @@ static unsigned long long tamanho(const Stream *s) {
 // a resolution below the playing file's, or the same one at <= half its size, the 1080p 0.80 rule, bitrate floors).
 // Up to TENTATIVAS, smallest first; unknown sizes last. `motivos` gets the counts behind the choice.
 static int escolherCopias(const Stream *play, Copia *out, long durMs, char *motivos, size_t nmot) {
-  enum { R_CACHE, R_RES, R_EDICAO, R_AMOSTRA, R_REPETIDA, R_BITRATE, R_1080, R_N };
-  static const char *NOMES[R_N] = { "not-cached", "resolution", "edition", "sample", "duplicate", "bitrate", "1080-rule" };
+  enum { R_CACHE, R_RES, R_EDICAO, R_AMOSTRA, R_REPETIDA, R_BITRATE, R_1080, R_PESADA, R_N };
+  static const char *NOMES[R_N] = { "not-cached", "resolution", "edition", "sample", "duplicate", "bitrate", "1080-rule", "heavy" };
   int rej[R_N] = {0}, nv = 0, cap = stream_n() > 0 ? stream_n() : 1;
   int *v = malloc(sizeof(int) * (size_t)cap);
   unsigned edA = edicoes(play);
@@ -849,23 +852,34 @@ static int escolherCopias(const Stream *play, Copia *out, long durMs, char *moti
     const Stream *c = stream_item(v[k]);
     if (c->altura == 720 && tamanho(c) && (!min720 || tamanho(c) < min720)) min720 = tamanho(c);
   }
-  int m = 0;
+  // 1080p copies the 0.80 rule sets aside are BACKUPS, tried after every smaller copy (06/11/2026: Dune on PenguPlay,
+  // six 720p copies dead or not seekable while twelve 1080p copies were never tried). A heavy copy (over PESADA_MBPS,
+  // a disc remux) stays out: its keyframes cost nearly what the 4K file's do.
+  int m = 0, nr = 0, *reserva = malloc(sizeof(int) * (size_t)cap);
+  if (!reserva) { free(v); return 0; }
   for (int k = 0; k < nv; k++) {
     const Stream *c = stream_item(v[k]);
-    if (c->altura >= 1080 && min720 && (!tamanho(c) || tamanho(c) > (unsigned long long)(min720 * RAZAO_1080))) { rej[R_1080]++; continue; }
+    unsigned long long tc = tamanho(c);
+    if (c->altura >= 1080 && tc && durMs > 60000 && tc * 8.0 / (durMs / 1000.0) / 1e6 > PESADA_MBPS) { rej[R_PESADA]++; continue; }
+    if (c->altura >= 1080 && min720 && (!tc || tc > (unsigned long long)(min720 * RAZAO_1080))) { rej[R_1080]++; reserva[nr++] = v[k]; continue; }
     v[m++] = v[k];
   }
   nv = m;
-  for (int x = 1; x < nv; x++) {        // smallest first, unknown sizes last (insertion sort: lists are short)
-    int y = x, cur = v[x];
-    unsigned long long tcur = tamanho(stream_item(cur));
-    while (y > 0) {
-      unsigned long long tp = tamanho(stream_item(v[y - 1]));
-      if (!(tcur && (!tp || tcur < tp))) break;
-      v[y] = v[y - 1]; y--;
+  for (int lista = 0; lista < 2; lista++) {   // smallest first, unknown sizes last (insertion sort: lists are short)
+    int *w = lista ? reserva : v, nw = lista ? nr : nv;
+    for (int x = 1; x < nw; x++) {
+      int y = x, cur = w[x];
+      unsigned long long tcur = tamanho(stream_item(cur));
+      while (y > 0) {
+        unsigned long long tp = tamanho(stream_item(w[y - 1]));
+        if (!(tcur && (!tp || tcur < tp))) break;
+        w[y] = w[y - 1]; y--;
+      }
+      w[y] = cur;
     }
-    v[y] = cur;
   }
+  for (int k = 0; k < nr; k++) v[nv++] = reserva[k];
+  free(reserva);
   int n = nv < TENTATIVAS ? nv : TENTATIVAS;
   for (int k = 0; k < n; k++) {
     const Stream *c = stream_item(v[k]);
@@ -874,9 +888,10 @@ static int escolherCopias(const Stream *play, Copia *out, long durMs, char *moti
     out[k].altura = c->altura;
     out[k].tamanho = tamanho(c);
     snprintf(out[k].nome, sizeof out[k].nome, "%s", c->arquivo[0] ? c->arquivo : c->rotulo);
+    snprintf(out[k].fonte, sizeof out[k].fonte, "%s", c->addonChave[0] ? c->addonChave : "?");
   }
-  size_t o = (size_t)snprintf(motivos, nmot, "eligible %d (trying %d), rejected:", nv, n);
-  for (int r = 0; r < R_N && o < nmot; r++) if (rej[r]) o += (size_t)snprintf(motivos + o, nmot - o, " %s %d", NOMES[r], rej[r]);
+  size_t o = (size_t)snprintf(motivos, nmot, "eligible %d (trying %d, %d of them 1080p backups), rejected:", nv, n, nr);
+  for (int r = 0; r < R_N && o < nmot; r++) if (rej[r] && r != R_1080) o += (size_t)snprintf(motivos + o, nmot - o, " %s %d", NOMES[r], rej[r]);
   free(v);
   return n;
 }
@@ -2365,6 +2380,7 @@ static int trabalharDireto(Job *j, long long *hA) {
 // relabelled to the measured offset (exact: a tile's copy time is its play time + the old offset). Rejected: the
 // engine stops and trabalhar() discards the copy's tiles.
 typedef struct { Job *j; long long hB; long durB; } CheckCopia;
+static void fonteAnotar(const char *chave, int aceita);
 static void *checarCopia(void *u) {
   CheckCopia *c = u;
   Job *j = c->j;
@@ -2395,6 +2411,7 @@ static void *checarCopia(void *u) {
   snprintf(j->motivos + o, sizeof j->motivos - o, " | check:%s", r == 1 ? "ACCEPTED" : r == 0 ? "rejected" : "no-screen");
   pthread_mutex_unlock(&mu);
   fflush(stdout);
+  if (r != -1 || !parou(j)) fonteAnotar(j->dFonte, r == 1);   // a check cut short by the title ending decides nothing
   free(c);
   return NULL;
 }
@@ -2412,18 +2429,94 @@ static void limparDireto(Job *j) {
   if (j->arq[0]) remove(j->arq);
 }
 
+// ---- copy sources that keep failing (06/11/2026) ----
+// PenguPlay's smaller copies were dead (410/502), not seekable (HTTP 200 to a range) or another cut on every title
+// tried, costing ~30 s before the playing file's own pass started. Per source (the add-on), the copies tried since
+// the last accepted one are kept for FONTE_DIAS. On a FAST device (CPU route measured <= RAPIDO_MS per 4K thumbnail:
+// the playing file is quick anyway) a source at FONTE_TENTATIVAS is skipped. On a slow one every copy is still tried:
+// a copy saves it ten minutes or more.
+#define FONTE_TENTATIVAS 6
+#define FONTE_DIAS 3
+#define RAPIDO_MS 800
+#define FONTE_MAX 64
+static pthread_mutex_t muFontes = PTHREAD_MUTEX_INITIALIZER;
+typedef struct { char chave[FONTEFALHA_CHAVE]; int tentativas; long quando; } FonteCopia;
+static int fontesLer(FonteCopia *f, char *caminho, size_t n) {
+  char dir[512];
+  caminho[0] = 0;
+  if (!dados_caminho(dir, sizeof dir, "miniaturas")) return 0;
+  snprintf(caminho, n, "%s/copias-fontes.txt", dir);
+  FILE *a = fopen(caminho, "r");
+  if (!a) return 0;
+  int k = 0;
+  long agora = (long)time(NULL);
+  char linha[160];
+  while (k < FONTE_MAX && fgets(linha, sizeof linha, a)) {
+    char *t1 = strchr(linha, '\t'), *t2 = t1 ? strchr(t1 + 1, '\t') : NULL;
+    if (!t2) continue;
+    *t1 = 0;
+    snprintf(f[k].chave, sizeof f[k].chave, "%s", linha);
+    f[k].tentativas = atoi(t1 + 1); f[k].quando = atol(t2 + 1);
+    if (agora - f[k].quando <= FONTE_DIAS * 86400L) k++;    // older than FONTE_DIAS: forgotten, tried again
+  }
+  fclose(a);
+  return k;
+}
+static int fonteTentativas(const char *chave) {
+  FonteCopia f[FONTE_MAX]; char c[600];
+  pthread_mutex_lock(&muFontes);
+  int n = fontesLer(f, c, sizeof c), r = 0;
+  for (int k = 0; k < n; k++) if (!strcmp(f[k].chave, chave)) r = f[k].tentativas;
+  pthread_mutex_unlock(&muFontes);
+  return r;
+}
+static void fonteAnotar(const char *chave, int aceita) {
+  if (!chave || !chave[0] || strpbrk(chave, "\t\n")) return;
+  FonteCopia f[FONTE_MAX + 1]; char c[600];
+  pthread_mutex_lock(&muFontes);
+  int n = fontesLer(f, c, sizeof c), achou = -1;
+  for (int k = 0; k < n; k++) if (!strcmp(f[k].chave, chave)) achou = k;
+  if (achou < 0 && n < FONTE_MAX) { achou = n++; snprintf(f[achou].chave, sizeof f[achou].chave, "%s", chave); f[achou].tentativas = 0; }
+  if (achou >= 0) { f[achou].tentativas = aceita ? 0 : f[achou].tentativas + 1; f[achou].quando = (long)time(NULL); }
+  if (c[0]) {
+    FILE *a = fopen(c, "w");
+    if (a) { for (int k = 0; k < n; k++) if (f[k].tentativas) fprintf(a, "%s\t%d\t%ld\n", f[k].chave, f[k].tentativas, f[k].quando); fclose(a); }
+  }
+  pthread_mutex_unlock(&muFontes);
+}
+static int aparelhoRapido(void) {
+  PerfilCpu pf;
+  perfilLer(&pf);
+  return pf.n[1] >= CPU_AMOSTRAS && pf.ms[1] <= RAPIDO_MS;
+}
+
 static int escolherCopiaRapida(Job *j) {
-  printf("[miniatura] copy-first: playing %dp %.1f min, %d smaller cop%s (%s)\n", j->alturaA, j->dur / 60000.0, j->nCopias,
-         j->nCopias == 1 ? "y" : "ies", j->motivos);
+  int rapido = aparelhoRapido();
+  printf("[miniatura] copy-first: playing %dp %.1f min, %d smaller cop%s (%s); %s device\n", j->alturaA, j->dur / 60000.0, j->nCopias,
+         j->nCopias == 1 ? "y" : "ies", j->motivos, rapido ? "fast (failing sources skipped)" : "slow (every copy tried)");
   fflush(stdout);
   esperarPlayer(j);
+  // What EARLIER titles taught, read once: this title's own attempts only count from the next one (06/11/2026: read
+  // per copy, six dead 720p copies made the same title skip its six 1080p backups untried). A test run (the cold
+  // marker) tries everything.
+  int anteriores[TENTATIVAS];
+  for (int c = 0; c < j->nCopias; c++) anteriores[c] = j->auditarRede ? 0 : fonteTentativas(j->copias[c].fonte);
   for (int c = 0; c < j->nCopias && !parou(j); c++) {
+    size_t o = strlen(j->motivos);
+    int falhas = anteriores[c];
+    if (rapido && falhas >= FONTE_TENTATIVAS) {
+      printf("[miniatura] copy-first: copy %d (%dp) skipped: %d copies from its source tried in the last %d days, none usable\n",
+             c + 1, j->copias[c].altura, falhas, FONTE_DIAS);
+      fflush(stdout);
+      snprintf(j->motivos + o, sizeof j->motivos - o, " | c%d:source-skipped", c + 1);
+      continue;
+    }
     Uint32 c0 = SDL_GetTicks();
     long long hB = mAbrir(j->copias[c].url, j->copias[c].cab, 1);
-    size_t o = strlen(j->motivos);
     if (!hB) {
       printf("[miniatura] copy-first: copy %d (%dp) would not open\n", c + 1, j->copias[c].altura); fflush(stdout);
       snprintf(j->motivos + o, sizeof j->motivos - o, " | c%d:no-open", c + 1);
+      fonteAnotar(j->copias[c].fonte, 0);
       continue;
     }
     long long ib[6];
@@ -2449,6 +2542,7 @@ static int escolherCopiaRapida(Job *j) {
         if (!j->dCheckRodando) { free(cc); j->dCheck = 0; }
       }
       if (j->dCheckRodando) {
+        snprintf(j->dFonte, sizeof j->dFonte, "%s", j->copias[c].fonte);   // the check thread notes the verdict
         j->dCopia = 1; j->dA = 1.0; j->dB = 0.0; j->dAltura = j->copias[c].altura;
         snprintf(j->dUrl, sizeof j->dUrl, "%s", alvo[0] ? alvo : j->copias[c].url);
         snprintf(j->dCab, sizeof j->dCab, "%s", j->copias[c].cab);
@@ -2469,6 +2563,7 @@ static int escolherCopiaRapida(Job *j) {
     printf("[miniatura] copy-first: copy %d %s in %.1f s\n", c + 1, por ? por : "ACCEPTED", (SDL_GetTicks() - c0) / 1000.0);
     fflush(stdout);
     snprintf(j->motivos + o, sizeof j->motivos - o, " | c%d:%s", c + 1, por ? por : "ACCEPTED");
+    fonteAnotar(j->copias[c].fonte, !por);
     if (por) continue;
     j->dCopia = 1; j->dA = mapa.a; j->dB = mapa.b; j->dAltura = j->copias[c].altura;
     snprintf(j->dUrl, sizeof j->dUrl, "%s", alvo[0] ? alvo : j->copias[c].url);
@@ -2522,8 +2617,11 @@ static void *trabalhar(void *u) {
     snprintf(j->arq, sizeof j->arq, "%s", j->arqDireto);
     if (carregarInformado(j)) { avisoPronto = j->g; goto fim; }   // a complete saved set: no network at all
     pthread_mutex_lock(&mu); j->direto = 0; pthread_mutex_unlock(&mu);
-    { int d = 0; long long pre = adotarPre(j, &d); if (pre) mFechar(pre); }   // the 4K pre-warm is not needed
+    // The 4K pre-warm (file open + hardware decoder made during the opening load) is kept until a copy is CHOSEN:
+    // when every copy fails, direct mode adopts it as before. 06/11/2026 (2.0.21): closed up front, an R2 title whose
+    // four PenguPlay copies were dead or ignored Range fell back to the CPU route, 458 s instead of ~190 s.
     if (escolherCopiaRapida(j)) {
+      { int d = 0; long long pre = adotarPre(j, &d); if (pre) mFechar(pre); }   // a copy is used: the 4K session goes
       diretoTentado = 1;
       int r = trabalharDireto(j, &hA);
       if (r && j->dCheck == 3 && !parou(j)) {      // optimistic copy rejected: its tiles go, the playing file starts
