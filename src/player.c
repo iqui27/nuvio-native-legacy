@@ -7105,8 +7105,12 @@ static float fileiraFormato(Uint32 agora, float x, float y, float ac, int medir,
   }
 #endif
   if (video_tem_atmos())        selos[nSelos++] = FMT_ATMOS;
-  if (marcaDtsAtual() >= 0)     selos[nSelos++] = (FormatoMarca)marcaDtsAtual();
   const char *rotAudio = ehCanal() ? "" : rotuloAudioOsd();
+  // PILULA: o DTS ja aparece na pilula do audio ("Inglês · DTS 5.1"); repetir
+  // ao lado do Dolby Vision ("Dolby Vision | DTS") somava ruido (dono, 06/11).
+  // Os outros estilos (marcas, selos, texto) continuam mostrando a marca.
+  if (marcaDtsAtual() >= 0 && !(pil && rotAudio[0] && ajustes_plr_codec() && textoAudioAtual()[0]))
+    selos[nSelos++] = (FormatoMarca)marcaDtsAtual();
   if (!nSelos && !rotAudio[0]) return 0.0f;
   // SELOS: os do pacote que o dono configurou (Ajustes > Selos), a mesma arte
   // da folha de Fontes, casados com o que foi MEDIDO (o codec da faixa entra

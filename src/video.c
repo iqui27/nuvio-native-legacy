@@ -11,6 +11,7 @@
 #include "video_dvretry.h"
 #include "video_dvaudio.h"
 #include "video_audio_mkv.h"
+#include "video_faixa_rotulo.h"
 #include "idioma.h"
 #include "linguas.h"
 #include "audioescolha.h"
@@ -2196,8 +2197,11 @@ static void audioMkvConvertido(void) {
     snprintf(f->nome,sizeof f->nome,"%s",m->nome);
     if(audioMkvNative[i]>=0)f->numero=audioMkvNative[i];
     else if(nv_audio_mkv_dts(m->codec)) {
+      char sub[40];
       f->numero=-1;
-      snprintf(f->rotulo,sizeof f->rotulo,"%.34s · DTS",m->nome[0]?m->nome:m->idioma);
+      if(!audioinfo_texto(m->codec,m->canais,0,sub,sizeof sub))snprintf(sub,sizeof sub,"DTS");
+      nv_rotulo_faixa(f->rotulo,sizeof f->rotulo,m->nome,
+                      m->idioma[0]?i18n(ling_nome(m->idioma)):i18n("Faixa"),sub);
     }
   }
   pthread_mutex_unlock(&audioMkvLock);
@@ -3633,8 +3637,17 @@ static void bombearDts(void) {
       if (!strcmp(t->codec, "ass") || !strcmp(t->codec, "ssa"))
         snprintf(f->codec, sizeof f->codec, "S_TEXT/ASS");
       snprintf(f->idioma, sizeof f->idioma, "%.7s", t->language);
-      snprintf(f->rotulo, sizeof f->rotulo, "%.26s · %.12s", t->language[0] ?
-               i18n(ling_nome(t->language)) : i18n("Faixa"), t->codec);
+      if (t->kind == DTS_AUDIO) {
+        /* Track name from the file ("Commentary by ...") when it has one;
+         * the codec line readable ("FLAC 2.0") — video_faixa_rotulo.h. */
+        char sub[40];
+        if (!audioinfo_texto(t->codec, t->channels, 0, sub, sizeof sub)) snprintf(sub, sizeof sub, "%.12s", t->codec);
+        snprintf(f->nome, sizeof f->nome, "%s", t->title);
+        nv_rotulo_faixa(f->rotulo, sizeof f->rotulo, t->title,
+                        t->language[0] ? i18n(ling_nome(t->language)) : i18n("Faixa"), sub);
+      } else
+        snprintf(f->rotulo, sizeof f->rotulo, "%.26s · %.12s", t->language[0] ?
+                 i18n(ling_nome(t->language)) : i18n("Faixa"), t->codec);
     }
     audioMkvConvertido();
     legAtual = -1;
