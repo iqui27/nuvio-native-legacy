@@ -66,8 +66,8 @@ typedef unsigned char *(*LegRefLer)(void *u, const char *url, long long ini, lon
                                     int (*parar)(void *), void *pu);
 
 typedef struct LegRef LegRef;
-// 1 quando a plataforma tem pedido HTTP cancelavel (rede_pedir). WGT/AVPlay e
-// os .tpk ficam de fora ate prova em aparelho.
+// 1 quando a plataforma tem pedido HTTP cancelavel (rede_pedir): .tpk 4/5 e 6+,
+// LG, Android. O WGT/AVPlay fica de fora.
 int legref_disponivel(void);
 // ler NULL = HTTP Range via rede_pedir. Cria o fio; nao faz rede.
 LegRef *legref_criar(LegRefLer ler, void *u);

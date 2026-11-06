@@ -776,9 +776,10 @@ static LegendaDocumento *coletarMp4(Job *j, LegRefStatus *st, const unsigned cha
 #define LR_ASS_RAJADA     1.0     // +-1 s
 #define LR_ASS_RAJADA_N   5       // 5 inicios nessa janela = karaoke/efeito
 
-// 06/11 (dono): o que e melhor no Tizen vale para a LG e o Android tambem.
+// 06/11 (dono): o que e melhor no Tizen vale para a LG e o Android tambem,
+// e para o .tpk 4/5 (Tizen 4.0-5.5) igual ao 6+.
 static int modoIndice =
-#if (defined(NV_TPK) && !defined(NV_TPK40)) || defined(NV_WEBOS) || defined(NV_ANDROID)
+#if defined(NV_TPK) || defined(NV_WEBOS) || defined(NV_ANDROID)
   1;
 #else
   0;
@@ -1252,10 +1253,12 @@ static unsigned char *lerHttp(void *u, const char *url, long long ini, long n, l
 }
 
 int legref_disponivel(void) {
-  // Samsung .tpk 6+: ligado, no MODO SO INDICE (2-4 Ranges, nada durante o
-  // filme). O canario da #462 lia os blocos e ficou desligado por isso.
-  // O 4/5 fica fora: rede sem TLS por fio, outro carregador.
-#if defined(__EMSCRIPTEN__) || defined(NV_TPK40)
+  // Samsung .tpk (4/5 e 6+): ligado, no MODO SO INDICE (2-4 Ranges, nada
+  // durante o filme). O canario da #462 lia os blocos e ficou desligado por isso.
+  // O 4/5 tambem: o estado por fio da rede ja e pthread_key (rede.c, #137/#180),
+  // o rede_pedir e o mesmo que Plex/Jellyfin usam la, e esta unidade nao tem TLS
+  // (nao cita NV_TPK40, entao o tools/tpk.sh reusa o objeto comum; tpk40_tls.sh).
+#if defined(__EMSCRIPTEN__)
   return 0;
 #else
   return (rede_pedido_capacidades() & REDE_CAP_JOB) != 0;
