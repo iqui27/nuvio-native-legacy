@@ -106,14 +106,12 @@ static void audioMkvNovaFonte(void);
 static int audioMkvOrdinal(int track,int *count,NvAudioMkvTrack *copy);
 static int audioMkvNativo(int track);
 static void audioMkvConvertido(void);
-/* DTS rows (owner, 06/11/2026): "<language> <channels> · DTS <channels>"
- * ("Angielski 5.1 · DTS 5.1") instead of the file's track name; FLAC and the
- * other codecs keep the file's name (video_faixa_rotulo.h). */
-static void dtsRotulo(char *out, size_t n, const char *idioma, int canais, const char *sub) {
-  char nome[64];
-  const char *ch = audioinfo_canais(canais);
-  snprintf(nome, sizeof nome, "%s%s%s", idioma && idioma[0] ? i18n(ling_nome(idioma)) : i18n("Faixa"),
-           ch[0] ? " " : "", ch);
+/* Track rows in the DTS/DV path (owner, 06/11/2026): the language only
+ * ("Francuski"); codec and channels are on the line below ("DTS 5.1").
+ * Only FLAC keeps the file's track name (commentaries), unless that name is
+ * the release/file name (video_faixa_rotulo.h). */
+static void idiomaRotulo(char *out, size_t n, const char *idioma, const char *sub) {
+  const char *nome = idioma && idioma[0] ? i18n(ling_nome(idioma)) : i18n("Faixa");
   nv_rotulo_faixa(out, n, nome, nome, sub);
 }
 // Faixa do MKV (ordinal entre as de audio) escolhida pelo dvPronto no lugar de uma
@@ -2212,7 +2210,7 @@ static void audioMkvConvertido(void) {
       char sub[40];
       f->numero=-1;
       if(!audioinfo_texto(m->codec,m->canais,0,sub,sizeof sub))snprintf(sub,sizeof sub,"DTS");
-      dtsRotulo(f->rotulo,sizeof f->rotulo,m->idioma,m->canais,sub);
+      idiomaRotulo(f->rotulo,sizeof f->rotulo,m->idioma,sub);
     }
   }
   pthread_mutex_unlock(&audioMkvLock);
@@ -3659,12 +3657,12 @@ static void bombearDts(void) {
         snprintf(f->codec, sizeof f->codec, "S_TEXT/ASS");
       snprintf(f->idioma, sizeof f->idioma, "%.7s", t->language);
       if (t->kind == DTS_AUDIO) {
-        /* Track name from the file ("Commentary by ...") when it has one;
-         * the codec line readable ("FLAC 2.0") — video_faixa_rotulo.h. */
+        /* Language on top, readable codec line below ("DTS 5.1"); FLAC keeps
+         * the file's track name ("Commentary by ...") — idiomaRotulo above. */
         char sub[40];
         if (!audioinfo_texto(t->codec, t->channels, 0, sub, sizeof sub)) snprintf(sub, sizeof sub, "%.12s", t->codec);
         snprintf(f->nome, sizeof f->nome, "%s", t->title);
-        if (nv_audio_mkv_dts(t->codec)) dtsRotulo(f->rotulo, sizeof f->rotulo, t->language, t->channels, sub);
+        if (strcmp(audioinfo_codec(t->codec), "FLAC")) idiomaRotulo(f->rotulo, sizeof f->rotulo, t->language, sub);
         else nv_rotulo_faixa(f->rotulo, sizeof f->rotulo, t->title,
                              t->language[0] ? i18n(ling_nome(t->language)) : i18n("Faixa"), sub);
       } else
