@@ -1935,6 +1935,7 @@ static void *cpuTrabalho(void *u) {
 // preSlotIdentityGen: which miniatura_preaquecer() round owns the parked handle; a job only releases in fim/timeout
 // when its preIdentityGen matches, so a late old-job fim cannot drop a newer identical pre-warm.
 static pthread_mutex_t muPre = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t preCv = PTHREAD_COND_INITIALIZER;
 static char preUrl[4096], preCab[512];
 static long long preH;
 static unsigned preGen;
@@ -1968,6 +1969,7 @@ static void preSoltar(const char *url, const char *cab, int esquecer, unsigned i
     h = preH; preH = 0; preDec = 0; preRodando = 0; preGen++;
     preSlotIdentityGen = 0;
   }
+  pthread_cond_broadcast(&preCv);
   pthread_mutex_unlock(&muPre);
   if (h) mFechar(h);
 }
@@ -1987,6 +1989,7 @@ static void *preTrabalho(void *u) {
     preRodando = 0;   // parked: adoption must not spin on rodando while preH is ready
     h = 0;
   }
+  pthread_cond_broadcast(&preCv);
   pthread_mutex_unlock(&muPre);
   if (h) mFechar(h);                            // replaced, timed out or shut down meanwhile
   free(a);
@@ -2016,6 +2019,7 @@ void miniatura_preaquecer(const char *url, const char *cabecalhos) {
       preGen++;
       preUrl[0] = preCab[0] = 0;   // init failed: allow immediate retry for the same link
     }
+    pthread_cond_broadcast(&preCv);
     pthread_mutex_unlock(&muPre);
     return;
   }
@@ -2033,6 +2037,7 @@ void miniatura_preaquecer(const char *url, const char *cabecalhos) {
       preGen++;
       preUrl[0] = preCab[0] = 0;
     }
+    pthread_cond_broadcast(&preCv);
     pthread_mutex_unlock(&muPre);
     return;
   }
@@ -2053,6 +2058,7 @@ void miniatura_preaquecer(const char *url, const char *cabecalhos) {
       preGen++;
       preUrl[0] = preCab[0] = 0;
     } else if (preGen == gen) preRodando = 0;
+    pthread_cond_broadcast(&preCv);
     pthread_mutex_unlock(&muPre);
   }
   pthread_attr_destroy(&at);
@@ -2063,7 +2069,8 @@ static long long adotarPre(Job *j, int *dec) {
   if (!j) return 0;
   if (!j->preIdentityGen) return 0;
   unsigned identityGen = j->preIdentityGen;
-  for (int i = 0; i < 50; i++) {
+  Uint32 deadline = SDL_GetTicks() + 5000;
+  for (;;) {
     int mesmo;
     pthread_mutex_lock(&muPre);
     mesmo = preMesmo(j->urlA, j->cabA);
@@ -2076,6 +2083,7 @@ static long long adotarPre(Job *j, int *dec) {
     pthread_mutex_unlock(&muPre);
     if (h) break;
     if (!mesmo || parou(j)) break;
+    if ((int)(SDL_GetTicks() - deadline) >= 0) break;   // 5 s wall, driven by the same clock as dormir()
     dormir(j, 100);
   }
   if (!h) preSoltar(j->urlA, j->cabA, 0, identityGen);

@@ -36,9 +36,15 @@ typedef struct { unsigned char *jpg; } Tile;
 typedef struct {
   char urlA[4096], cabA[512]; int parar, vivo, n;
   unsigned preIdentityGen;
+  int g;
   Tile *tiles; unsigned char *tentado, *slotState; long *slotFrame, *framePts, *slotKey;
 } Job;
-enum { M_PARADO };
+typedef struct {
+  const char *imdb; int t, e; long durMs;
+  const char *url;
+  const char *cabecalhos;
+} SeekrFonte;
+enum { M_PARADO, M_FALHOU, M_BUSCANDO, M_PRONTO };
 static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
 static Job *job; static int estado; static char urlAtual[4096]; static char cabAtual[512]; static int geracao;
 static void texLimpar(void) {}
@@ -47,12 +53,20 @@ static int jni_ok = 1;
 static int jniPreparar(void) { return jni_ok; }
 static void mConfigurar(int b) { (void)b; }
 static void tex_aliviar(void) {}
-static Uint32 SDL_GetTicks(void) { return 0; }
+static volatile Uint32 fakeNowMs;
+static Uint32 SDL_GetTicks(void) { return fakeNowMs; }
+static void fake_advance_ms(int ms) { fakeNowMs += (Uint32)ms; }
 static int video_pronto(void) { return 0; }
 static int video_tocando(void) { return 0; }
 static int video_falhou(void) { return 0; }
 static int parou(Job *j) { return j->parar; }
-static void dormir(Job *j, int ms) { (void)j; (void)ms; }
+static void dormir(Job *j, int ms) {
+  Uint32 end = fakeNowMs + (Uint32)ms;
+  while (fakeNowMs < end && (!j || !parou(j))) fakeNowMs++;
+}
+static void encerrar(void);
+static void job_bind_pre_identity(Job *j);
+static void *trabalhar(void *u);
 
 #define MAXH 64
 static pthread_mutex_t g = PTHREAD_MUTEX_INITIALIZER;
@@ -93,7 +107,31 @@ static int tcreate(pthread_t *t, const pthread_attr_t *at, void *(*fn)(void *), 
 '''
 
 main = r'''
-#undef pthread_create
+static void *trabalhar(void *u) { (void)u; return NULL; }
+static void pPedir(const SeekrFonte *f) {
+  if (!f || !f->url || strncmp(f->url, "http", 4) || f->durMs < 60000) return;
+  encerrar();
+  if (!jniPreparar()) return;
+  Job *j = calloc(1, sizeof *j);
+  if (!j) return;
+  snprintf(j->urlA, sizeof j->urlA, "%s", f->url);
+  snprintf(j->cabA, sizeof j->cabA, "%s", f->cabecalhos ? f->cabecalhos : "");
+  job_bind_pre_identity(j);
+  pthread_mutex_lock(&mu);
+  j->g = ++geracao;
+  j->vivo = 1;
+  job = j;
+  estado = M_BUSCANDO;
+  snprintf(urlAtual, sizeof urlAtual, "%s", f->url);
+  snprintf(cabAtual, sizeof cabAtual, "%s", f->cabecalhos ? f->cabecalhos : "");
+  pthread_mutex_unlock(&mu);
+  pthread_t t;
+  pthread_attr_t at;
+  pthread_attr_init(&at);
+  pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
+  if (pthread_create(&t, &at, trabalhar, j)) { pthread_mutex_lock(&mu); j->vivo = 0; pthread_mutex_unlock(&mu); encerrar(); }
+  pthread_attr_destroy(&at);
+}
 static int fails;
 // Bounded: a pre-warm that never starts reports FAIL instead of hanging.
 static void waitFor(int *v, int n) {
@@ -104,18 +142,10 @@ static void waitFor(int *v, int n) {
 }
 /* Wait until production pre-slot holds a parked handle (preH), not synthetic live count. */
 static void waitPreReady(void) {
-  struct timespec dead; clock_gettime(CLOCK_REALTIME, &dead); dead.tv_sec += 3;
-  for (;;) {
-    pthread_mutex_lock(&muPre);
-    int ok = preH != 0;
-    pthread_mutex_unlock(&muPre);
-    if (ok) break;
-    struct timespec now; clock_gettime(CLOCK_REALTIME, &now);
-    if (now.tv_sec > dead.tv_sec || (now.tv_sec == dead.tv_sec && now.tv_nsec >= dead.tv_nsec)) {
-      fprintf(stderr, "FAIL pre slot never parked (preH)\n"); fails++; break;
-    }
-    usleep(1000);
-  }
+  struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts); ts.tv_sec += 3;
+  pthread_mutex_lock(&muPre);
+  while (!preH) if (pthread_cond_timedwait(&preCv, &muPre, &ts)) { fprintf(stderr, "FAIL pre slot never parked (preH)\n"); fails++; break; }
+  pthread_mutex_unlock(&muPre);
 }
 static void release(void) { pthread_mutex_lock(&g); gateOpen = 1; pthread_cond_broadcast(&cv); pthread_mutex_unlock(&g); }
 static void block(void) { pthread_mutex_lock(&g); gateOpen = 0; pthread_mutex_unlock(&g); }
@@ -124,6 +154,7 @@ static Job mk(const char *u, const char *c) { Job j; memset(&j, 0, sizeof j); sn
 #define CHECK(c, msg) do { if (!(c)) { fprintf(stderr, "FAIL %s\n", msg); fails++; } } while (0)
 int main(void) {
   int d, fin = 0, st = 0;
+  fakeNowMs = 1;
   // 1. late completion after the player exits: the open finishes after pDesligar and must close.
   block();
   miniatura_preaquecer("http://synthetic.invalid/slow-a", "X-Fake: 1"); waitFor(&started, ++st);
@@ -141,6 +172,7 @@ int main(void) {
   block();
   miniatura_preaquecer("http://synthetic.invalid/slow-c", "X-Fake: 1"); waitFor(&started, ++st);
   Job jc = mk("http://synthetic.invalid/slow-c", "X-Fake: 1"); job_bind_pre_identity(&jc);
+  fake_advance_ms(6000);
   CHECK(adotarPre(&jc, &d) == 0, "timeout adopts nothing");
   release(); waitFor(&finished, ++fin);
   CHECK(live() == 0, "late pre-warm after the adoption timeout stays open");
@@ -244,10 +276,47 @@ int main(void) {
   waitPreReady();
   Job j_stale = mk("http://synthetic.invalid/stale-id", "X-Fake: z");
   j_stale.preIdentityGen = staleGen;
+  fake_advance_ms(6000);
   CHECK(adotarPre(&j_stale, &d) == 0, "stale same-identity job must not adopt newer pre-warm");
   Job j_fresh = mk("http://synthetic.invalid/stale-id", "X-Fake: z"); job_bind_pre_identity(&j_fresh);
   h = adotarPre(&j_fresh, &d);
   CHECK(h && !strcmp(hUrl[h], "http://synthetic.invalid/stale-id"), "fresh-bound job adopts current slot");
+  mFechar(h);
+  pDesligar(); release();
+  // 10. zero pre-identity at job creation: late pre-warm parks until bind+adopt.
+  block();
+  miniatura_preaquecer("http://synthetic.invalid/slow-zero", "X-Fake: 1"); waitFor(&started, ++st);
+  Job jz = mk("http://synthetic.invalid/slow-zero", "X-Fake: 1");
+  CHECK(jz.preIdentityGen == 0 && adotarPre(&jz, &d) == 0, "zero token adopts nothing before bind");
+  release(); waitFor(&finished, ++fin);
+  waitPreReady();
+  job_bind_pre_identity(&jz);
+  h = adotarPre(&jz, &d);
+  CHECK(h && !strcmp(hUrl[h], "http://synthetic.invalid/slow-zero"), "bind after pre-warm still adopts");
+  mFechar(h);
+  pDesligar(); release();
+  // 11. pthread_create fails in pPedir: encerrar cleans job, no dangling open.
+  fail_pthread_create = 1;
+  SeekrFonte sf = {0};
+  sf.url = "http://synthetic.invalid/pedir-fail";
+  sf.cabecalhos = "X-Fake: 1";
+  sf.durMs = 120000;
+  pPedir(&sf);
+  fail_pthread_create = 0;
+  pthread_mutex_lock(&mu);
+  Job *jLeak = job;
+  pthread_mutex_unlock(&mu);
+  CHECK(!jLeak, "pPedir create failure must clear job");
+  CHECK(live() == 0, "pPedir create failure must not leak synthetic session");
+  pDesligar(); release();
+  // 12. parou set after bind: adoption still takes parked handle (one open only).
+  miniatura_preaquecer("http://synthetic.invalid/stop-adopt", "X-Fake: 1"); waitFor(&finished, ++fin); st++;
+  waitPreReady();
+  Job jp = mk("http://synthetic.invalid/stop-adopt", "X-Fake: 1");
+  job_bind_pre_identity(&jp);
+  jp.parar = 1;
+  h = adotarPre(&jp, &d);
+  CHECK(h && !strcmp(hUrl[h], "http://synthetic.invalid/stop-adopt"), "parou after bind still adopts parked handle");
   mFechar(h);
   pDesligar(); release();
   for (int k = 1; k <= opens; k++) CHECK(closes[k] == 1, "every synthetic session closes exactly once");
