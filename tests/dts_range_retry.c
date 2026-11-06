@@ -35,7 +35,15 @@ int main(int argc,char **argv) {
  if(strstr(argv[1],"shared-")) {
   assert(RANGE_WORKERS>=2); e->range_slots=3; e->range_bytes=1024;
 #ifdef NV_DTS_WEBOS_RECOVERY
-  if(strstr(argv[1],"shared-isolation")) {
+  if(strstr(argv[1],"shared-seek")) {
+   assert(start_ranges(e)); pthread_mutex_lock(&e->range_lock); queue_ranges(e); pthread_mutex_unlock(&e->range_lock);
+   uint64_t limit=clock_ns(CLOCK_MONOTONIC)+UINT64_C(1000000000); int throttled=0;
+   do { pthread_mutex_lock(&e->range_lock); throttled=e->range_retry_until>clock_ns(CLOCK_MONOTONIC); pthread_mutex_unlock(&e->range_lock); if(!throttled) usleep(1000); } while(!throttled && clock_ns(CLOCK_MONOTONIC)<limit);
+   assert(throttled); usleep(450000);
+   uint64_t start=clock_ns(CLOCK_MONOTONIC);
+   assert(seek_range(e,8192,SEEK_SET)==8192);
+   assert(clock_ns(CLOCK_MONOTONIC)-start<UINT64_C(400000000));
+  } else if(strstr(argv[1],"shared-isolation")) {
    assert(start_ranges(e)); pthread_mutex_lock(&e->range_lock); queue_ranges(e); pthread_mutex_unlock(&e->range_lock);
    uint64_t limit=clock_ns(CLOCK_MONOTONIC)+UINT64_C(1000000000); int throttled=0;
    do { pthread_mutex_lock(&e->range_lock); throttled=e->range_retry_until>clock_ns(CLOCK_MONOTONIC); pthread_mutex_unlock(&e->range_lock); if(!throttled) usleep(1000); } while(!throttled && clock_ns(CLOCK_MONOTONIC)<limit);

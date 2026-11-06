@@ -25,7 +25,7 @@ class Handler(BaseHTTPRequestHandler):
         mode = retry.group(1) if retry else ''
         live = mode.startswith('live-')
         if live: mode=mode.removeprefix('live-')
-        shared = self.path.startswith(('/shared-retry/', '/shared-cancel/', '/shared-legacy/', '/shared-isolation/'))
+        shared = self.path.startswith(('/shared-retry/', '/shared-cancel/', '/shared-legacy/', '/shared-isolation/', '/shared-seek/'))
         race_seek = self.path.startswith('/race-seek/')
         queued_seek = self.path.startswith('/queue-seek/')
         slow = self.path.startswith('/slow/')

@@ -383,6 +383,7 @@ static void clear_ranges(DtsEngine *e,const char *reason) {
     __atomic_store_n(&job->cancel,1,__ATOMIC_RELAXED);
     if(job->state==1) job->state=0;
   }
+  pthread_cond_broadcast(&e->range_wake);
   for(int i=0;i<RANGE_SLOTS_MAX;i++) {
     DtsRangeJob *job=&e->ranges[i];
     while(job->state==2) pthread_cond_wait(&e->range_wake,&e->range_lock);
