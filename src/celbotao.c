@@ -10,6 +10,7 @@
 #include "ajustes.h"
 #include "idioma.h"
 #include "qr.h"
+#include "dados.h"
 #define NV_ESCALA_TELA   // o arquivo inteiro mede pela tela virtual (escala.h)
 #include "escala.h"
 #include <stdio.h>
@@ -37,10 +38,24 @@ static GfxRect cartao;
 static char logSnapshot[128];
 static GLuint texQr;
 static char texQrDe[96];
+// ENDERECO FIXO DO DIAGNOSTICO (dono, 06/11/2026): o registro e aberto no
+// navegador do COMPUTADOR, entao o endereco tem de ser o mesmo a cada abertura
+// (favorito), em vez de um QR novo a cada vez. O token fica salvo na pasta de
+// dados; a porta e CEL_RELATORIO_PORTA. O servidor so existe com o cartao
+// aberto, como antes.
+#define CB_TOKEN_DIAG "diag_lan_token.txt"
+static void tokenDiagnostico(void) {
+  char t[16] = "", *salvo = dados_ler(CB_TOKEN_DIAG);
+  if (salvo) { snprintf(t, sizeof t, "%.8s", salvo); free(salvo); }
+  if (strlen(t) != 8 && celular_gerar_token(t, sizeof t)) dados_gravar(CB_TOKEN_DIAG, t);
+  celular_relatorio_fixo(t, CEL_RELATORIO_PORTA);
+  memset(t, 0, sizeof t);
+}
 static void abrirServidor(void) {
   celular_fechar();
   if (logSnapshot[0]) { unlink(logSnapshot); logSnapshot[0] = 0; }
   if (dono == CELB_LOG) {
+    tokenDiagnostico();
     if (logexport_create(registro_arquivo(), logSnapshot, sizeof logSnapshot))
       celular_abrir_relatorio(logSnapshot);
     else puts("[log-export] snapshot failed");
@@ -166,7 +181,9 @@ int celb_evento(const SDL_Event *e) {
   if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && !e->key.repeat) {
     // OK com o codigo na tela nao faz nada: quem aperta OK ali esta
     // "confirmando", e fechar levaria o codigo embora antes do envio.
-    if (celular_estado() != CEL_ESPERANDO) regerar();
+    // DIAGNOSTICO: OK tira um registro novo no MESMO endereco (o navegador do
+    // computador so recarrega a pagina).
+    if (dono == CELB_LOG || celular_estado() != CEL_ESPERANDO) regerar();
     return 1;
   }
   return 1;
@@ -237,7 +254,14 @@ static const char *msgSemQr(int est) {
 // Altura do miolo, pela mesma conta que o desenho usa.
 #define CB_TITULO_H   40.0f
 #define CB_LINHA_H    26.0f
+// DIAGNOSTICO: sem QR (o endereco e aberto no computador), mais largo para o
+// endereco caber grande numa linha.
+#define CB_W_LOG  700.0f
+#define CB_URL_LOG_H 44.0f
+static const char *FRASE_LOG = "Abra este endereço no navegador do computador, na mesma rede. Ele não muda: salve nos favoritos. OK atualiza o registro.";
 static float alturaCartao(int temQr) {
+  if (dono == CELB_LOG && temQr)
+    return CB_PAD + CB_TITULO_H + 20.0f + CB_URL_LOG_H + 14.0f + 3 * CB_LINHA_H + CB_PAD;
   if (!temQr) return CB_PAD + CB_TITULO_H + 16.0f + 3 * CB_LINHA_H + CB_PAD;
   return CB_PAD + CB_TITULO_H + 18.0f + CB_QR + 2 * CB_MOLDURA + 18.0f + 30.0f + 10.0f +
          3 * CB_LINHA_H + CB_PAD - 6.0f;
@@ -262,7 +286,7 @@ static void celb_desenharCorpo_(void) {
   temQr = est == CEL_ESPERANDO && u[0];
   r = ancora[dono];
   { float e = gfx_escala_ui(); r.x /= e; r.y /= e; r.w /= e; r.h /= e; }
-  w = CB_W; h = alturaCartao(temQr);
+  w = dono == CELB_LOG ? CB_W_LOG : CB_W; h = alturaCartao(temQr);
   // ANCORADO NO BOTAO: abaixo dele, com a borda direita alinhada a dele; sem
   // espaco embaixo, em cima; nunca fora da tela.
   x = r.x + r.w - w;
@@ -302,6 +326,16 @@ static void celb_desenharCorpo_(void) {
 
   if (!temQr) {
     txt_bloco(TXT_BODY, i18n(dono == CELB_LOG ? "Não foi possível carregar. OK para tentar novamente." : msgSemQr(est)), 200, 204, 212, x + CB_PAD, y + 16.0f, w - 2 * CB_PAD, CB_LINHA_H + 6.0f, a, 3);
+    return;
+  }
+  if (dono == CELB_LOG) {
+    // O endereco inteiro, grande, sem QR; embaixo, como usar.
+    TxtLinha t = txt_linha_corta(TXT_CALLOUT, u, 245, 248, 255, 255, w - 2 * CB_PAD);
+    y += 20.0f;
+    gfx_cor((GfxRect){ x + CB_PAD - 12.0f, y, w - 2 * CB_PAD + 24.0f, CB_URL_LOG_H }, 0.3f, 1, 1, 1, 0.07f * a);
+    txt_desenhar_alpha(t, x + (w - t.w) * 0.5f, y + (CB_URL_LOG_H - t.h) * 0.5f, a);
+    y += CB_URL_LOG_H + 14.0f;
+    txt_bloco(TXT_CAPTION2, i18n(FRASE_LOG), 170, 174, 184, x + CB_PAD, y, w - 2 * CB_PAD, CB_LINHA_H, a * 0.9f, 3);
     return;
   }
   y += 18.0f;

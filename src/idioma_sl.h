@@ -478,6 +478,7 @@
   T("Abra Fontes para escolher outra opção.", "Odprite Viri in izberite drugo možnost."),
   T("Abra Fontes para escolher uma fonte direta.", "Odprite Viri in izberite neposreden vir."),
   T("Abra Painel › Quick Connect e digite", "Odprite Nadzorna plošča › Quick Connect in vnesite"),
+  T("Abra este endereço no navegador do computador, na mesma rede. Ele não muda: salve nos favoritos. OK atualiza o registro.", "Odprite ta naslov v brskalniku računalnika v istem omrežju. Ne spreminja se: shranite ga med zaznamke. OK osveži dnevnik."),
   T("Abra o Guia de TV e escolha outro canal.", "Odprite TV-vodnik in izberite drug kanal."),
   T("Abra o guia numa fileira com canais e volte aqui.", "Odprite vodnik v vrsti s kanali in se vrnite sem."),
   T("Abra plex.tv/link e digite", "Odprite plex.tv/link in vnesite"),

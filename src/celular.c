@@ -12,6 +12,8 @@ int  celular_estado(void) { return CEL_PARADO; }
 const char *celular_url(void) { return ""; }
 int  celular_pegar(char *d, size_t n) { (void)d; (void)n; return 0; }
 int  celular_porta(void) { return 0; }
+int  celular_gerar_token(char *d, size_t n) { if (d && n) d[0] = 0; return 0; }
+void celular_relatorio_fixo(const char *t, int p) { (void)t; (void)p; }
 #else
 
 #include "idioma.h"
@@ -51,6 +53,10 @@ static char recebido[CEL_CORPO_MAX + 1];
 static int  temRecebido;
 static time_t expira;
 static FILE *relatorio; /* Sanitized, immutable snapshot; never the original log. */
+/* Diagnostics only: the same address every time (owner, 06/11/2026), so the
+ * computer keeps it as a bookmark. Set by celbotao.c from the saved token. */
+static char tokenFixo[CEL_TOKEN_N + 1];
+static int portaFixa;
 static long envioPrazo;
 // Montadas na abertura (thread do app, por causa do i18n); o fio so le.
 static char pagina[12288], pagEnviado[8192], pagUsado[8192];
@@ -124,8 +130,9 @@ static int ipLan(char *dst, size_t n) {
 // --- token ----------------------------------------------------------------------
 // 31 simbolos sem os que se confundem (0/o, 1/l/i): quem nao tem camera digita
 // o endereco. 8 deles = 39 bits.
-static int gerarToken(void) {
-  static const char A[] = "abcdefghjkmnpqrstuvwxyz23456789";
+static const char TOKEN_A[] = "abcdefghjkmnpqrstuvwxyz23456789";
+static int gerarTokenEm(char *dst) {
+  const char *A = TOKEN_A;
   unsigned char b[CEL_TOKEN_N * 2];
   int f = open("/dev/urandom", O_RDONLY), i, k = 0;
   size_t lidos = 0;
@@ -138,10 +145,28 @@ static int gerarToken(void) {
   close(f);
   // Rejeicao (248 = 8 x 31) para nao enviesar os primeiros simbolos.
   for (i = 0; i < (int)sizeof b && k < CEL_TOKEN_N; i++)
-    if (b[i] < 248) token[k++] = A[b[i] % 31];
-  token[k] = 0;
+    if (b[i] < 248) dst[k++] = A[b[i] % 31];
+  dst[k] = 0;
   memset(b, 0, sizeof b);
   return k == CEL_TOKEN_N;
+}
+static int gerarToken(void) { return gerarTokenEm(token); }
+static int tokenValido(const char *t) {
+  size_t i;
+  if (!t || strlen(t) != CEL_TOKEN_N) return 0;
+  for (i = 0; i < CEL_TOKEN_N; i++) if (!strchr(TOKEN_A, t[i]) || !t[i]) return 0;
+  return 1;
+}
+int celular_gerar_token(char *dst, size_t n) {
+  char t[CEL_TOKEN_N + 1];
+  if (!dst || n <= CEL_TOKEN_N || !gerarTokenEm(t)) { if (dst && n) dst[0] = 0; return 0; }
+  snprintf(dst, n, "%s", t);
+  memset(t, 0, sizeof t);
+  return 1;
+}
+void celular_relatorio_fixo(const char *t, int p) {
+  snprintf(tokenFixo, sizeof tokenFixo, "%s", tokenValido(t) ? t : "");
+  portaFixa = p > 1024 && p < 65536 ? p : 0;
 }
 
 // --- paginas --------------------------------------------------------------------
@@ -557,7 +582,9 @@ static int abrir(const char *titulo, const char *snapshot) {
   int um = 1;
   celular_fechar();
   if (!ipLan(ip, sizeof ip)) { puts("[celular] sem IP de rede local"); return 0; }
-  if (!gerarToken() || pipe(acorda)) { acorda[0] = acorda[1] = -1; return 0; }
+  if (snapshot && tokenValido(tokenFixo)) snprintf(token, sizeof token, "%s", tokenFixo);
+  else if (!gerarToken()) return 0;
+  if (pipe(acorda)) { acorda[0] = acorda[1] = -1; return 0; }
   ouvir = socket(AF_INET, SOCK_STREAM, 0);
   if (ouvir < 0) { celular_fechar(); return 0; }
   setsockopt(ouvir, SOL_SOCKET, SO_REUSEADDR, &um, sizeof um);
@@ -565,8 +592,24 @@ static int abrir(const char *titulo, const char *snapshot) {
   a.sin_family = AF_INET;
   a.sin_addr.s_addr = htonl(INADDR_ANY);   // a LAN e o 127.0.0.1 dos testes
   a.sin_port = 0;                          // porta livre, do sistema
-  if (bind(ouvir, (struct sockaddr *)&a, sizeof a) || listen(ouvir, 4) ||
+  // DIAGNOSTICO: a porta fixa primeiro (endereco de favorito); ocupada, a do
+  // sistema, e o cartao mostra o endereco novo.
+  if (snapshot && portaFixa) {
+    a.sin_port = htons((unsigned short)portaFixa);
+    if (bind(ouvir, (struct sockaddr *)&a, sizeof a)) {
+      printf("[celular] porta fixa %d ocupada (errno %d): porta do sistema\n", portaFixa, errno);
+      close(ouvir);
+      ouvir = socket(AF_INET, SOCK_STREAM, 0);
+      if (ouvir < 0) { celular_fechar(); return 0; }
+      setsockopt(ouvir, SOL_SOCKET, SO_REUSEADDR, &um, sizeof um);
+      a.sin_port = 0;
+    } else goto ligado;
+  }
+  if (bind(ouvir, (struct sockaddr *)&a, sizeof a)) goto falhou;
+ligado:
+  if (listen(ouvir, 4) ||
       getsockname(ouvir, (struct sockaddr *)&a, &tam)) {
+falhou:
     printf("[celular] servidor nao subiu (errno %d)\n", errno);
     celular_fechar();
     return 0;
@@ -580,7 +623,7 @@ static int abrir(const char *titulo, const char *snapshot) {
     relatorio = fopen(snapshot, "rb");
     if (!relatorio) { celular_fechar(); return 0; }
   } else montarPaginas(titulo);
-  expira = time(NULL) + CEL_VALIDADE_S;
+  expira = time(NULL) + (snapshot ? CEL_VALIDADE_RELATORIO_S : CEL_VALIDADE_S);
   estado = CEL_ESPERANDO;
   if (pthread_create(&fio, NULL, servir, NULL)) { celular_fechar(); return 0; }
   fioVivo = 1;

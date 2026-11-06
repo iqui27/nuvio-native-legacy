@@ -478,6 +478,7 @@
   T("Abra Fontes para escolher outra opção.", "Buka Sumber untuk memilih opsi lain."),
   T("Abra Fontes para escolher uma fonte direta.", "Buka Sumber untuk memilih sumber langsung."),
   T("Abra Painel › Quick Connect e digite", "Buka Dasbor › Quick Connect lalu ketik"),
+  T("Abra este endereço no navegador do computador, na mesma rede. Ele não muda: salve nos favoritos. OK atualiza o registro.", "Buka alamat ini di browser komputer, di jaringan yang sama. Alamatnya tidak berubah: simpan sebagai bookmark. OK memperbarui log."),
   T("Abra o Guia de TV e escolha outro canal.", "Buka Panduan TV dan pilih kanal lain."),
   T("Abra o guia numa fileira com canais e volte aqui.", "Buka panduan di baris yang berisi kanal, lalu kembali ke sini."),
   T("Abra plex.tv/link e digite", "Buka plex.tv/link lalu ketik"),

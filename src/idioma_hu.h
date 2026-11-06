@@ -478,6 +478,7 @@
   T("Abra Fontes para escolher outra opção.", "Nyisd meg a Forrásokat, és válassz másik lehetőséget."),
   T("Abra Fontes para escolher uma fonte direta.", "Nyisd meg a Forrásokat, és válassz közvetlen forrást."),
   T("Abra Painel › Quick Connect e digite", "Nyisd meg: Irányítópult › Quick Connect, és írd be"),
+  T("Abra este endereço no navegador do computador, na mesma rede. Ele não muda: salve nos favoritos. OK atualiza o registro.", "Nyisd meg ezt a címet a számítógép böngészőjében, ugyanazon a hálózaton. Nem változik: mentsd el a könyvjelzők közé. Az OK frissíti a naplót."),
   T("Abra o Guia de TV e escolha outro canal.", "Nyisd meg a TV-útmutatót, és válassz másik csatornát."),
   T("Abra o guia numa fileira com canais e volte aqui.", "Nyisd meg az útmutatót egy csatornákat tartalmazó soron, és gyere vissza ide."),
   T("Abra plex.tv/link e digite", "Nyisd meg a plex.tv/link oldalt, és írd be"),

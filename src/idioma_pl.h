@@ -478,6 +478,7 @@
   T("Abra Fontes para escolher outra opção.", "Otwórz Źródła, aby wybrać inną opcję."),
   T("Abra Fontes para escolher uma fonte direta.", "Otwórz Źródła, aby wybrać źródło bezpośrednie."),
   T("Abra Painel › Quick Connect e digite", "Otwórz Panel › Quick Connect i wpisz"),
+  T("Abra este endereço no navegador do computador, na mesma rede. Ele não muda: salve nos favoritos. OK atualiza o registro.", "Otwórz ten adres w przeglądarce na komputerze, w tej samej sieci. Adres się nie zmienia: dodaj go do zakładek. OK odświeża dziennik."),
   T("Abra o Guia de TV e escolha outro canal.", "Otwórz Przewodnik TV i wybierz inny kanał."),
   T("Abra o guia numa fileira com canais e volte aqui.", "Otwórz przewodnik w rzędzie z kanałami i wróć tutaj."),
   T("Abra plex.tv/link e digite", "Otwórz plex.tv/link i wpisz"),

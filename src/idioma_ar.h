@@ -478,6 +478,7 @@
   T("Abra Fontes para escolher outra opção.", "افتح المصادر لاختيار خيار آخر."),
   T("Abra Fontes para escolher uma fonte direta.", "افتح المصادر لاختيار مصدر مباشر."),
   T("Abra Painel › Quick Connect e digite", "افتح لوحة التحكم › Quick Connect واكتب"),
+  T("Abra este endereço no navegador do computador, na mesma rede. Ele não muda: salve nos favoritos. OK atualiza o registro.", "افتح هذا العنوان في متصفح الكمبيوتر على الشبكة نفسها. لا يتغير: احفظه في الإشارات المرجعية. يحدّث OK السجل."),
   T("Abra o Guia de TV e escolha outro canal.", "افتح دليل التلفاز واختر قناة أخرى."),
   T("Abra o guia numa fileira com canais e volte aqui.", "افتح الدليل على صف فيه قنوات ثم عد إلى هنا."),
   T("Abra plex.tv/link e digite", "افتح plex.tv/link واكتب"),

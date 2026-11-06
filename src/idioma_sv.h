@@ -478,6 +478,7 @@
   T("Abra Fontes para escolher outra opção.", "Öppna Källor för att välja ett annat alternativ."),
   T("Abra Fontes para escolher uma fonte direta.", "Öppna Källor för att välja en direktkälla."),
   T("Abra Painel › Quick Connect e digite", "Öppna Kontrollpanel › Quick Connect och skriv"),
+  T("Abra este endereço no navegador do computador, na mesma rede. Ele não muda: salve nos favoritos. OK atualiza o registro.", "Öppna den här adressen i datorns webbläsare, på samma nätverk. Den ändras inte: spara den som bokmärke. OK uppdaterar loggen."),
   T("Abra o Guia de TV e escolha outro canal.", "Öppna TV-guiden och välj en annan kanal."),
   T("Abra o guia numa fileira com canais e volte aqui.", "Öppna guiden på en rad med kanaler och kom tillbaka hit."),
   T("Abra plex.tv/link e digite", "Öppna plex.tv/link och skriv"),

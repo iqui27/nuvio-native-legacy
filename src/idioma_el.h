@@ -478,6 +478,7 @@
   T("Abra Fontes para escolher outra opção.", "Άνοιξε τις Πηγές για να διαλέξεις άλλη επιλογή."),
   T("Abra Fontes para escolher uma fonte direta.", "Άνοιξε τις Πηγές για να διαλέξεις άμεση πηγή."),
   T("Abra Painel › Quick Connect e digite", "Ανοίξτε Πίνακας › Quick Connect και πληκτρολογήστε"),
+  T("Abra este endereço no navegador do computador, na mesma rede. Ele não muda: salve nos favoritos. OK atualiza o registro.", "Ανοίξτε αυτή τη διεύθυνση στο πρόγραμμα περιήγησης του υπολογιστή, στο ίδιο δίκτυο. Δεν αλλάζει: αποθηκεύστε τη στους σελιδοδείκτες. Το OK ανανεώνει το αρχείο καταγραφής."),
   T("Abra o Guia de TV e escolha outro canal.", "Άνοιξε τον Τηλεοπτικό Οδηγό και διάλεξε άλλο κανάλι."),
   T("Abra o guia numa fileira com canais e volte aqui.", "Άνοιξε τον οδηγό σε μια σειρά με κανάλια και γύρνα εδώ."),
   T("Abra plex.tv/link e digite", "Ανοίξτε το plex.tv/link και πληκτρολογήστε"),

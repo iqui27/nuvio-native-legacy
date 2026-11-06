@@ -478,6 +478,7 @@
   T("Abra Fontes para escolher outra opção.", "Başka bir seçenek seçmek için Kaynaklar'ı aç."),
   T("Abra Fontes para escolher uma fonte direta.", "Doğrudan bir kaynak seçmek için Kaynaklar'ı aç."),
   T("Abra Painel › Quick Connect e digite", "Pano › Quick Connect'i açıp yazın"),
+  T("Abra este endereço no navegador do computador, na mesma rede. Ele não muda: salve nos favoritos. OK atualiza o registro.", "Bu adresi aynı ağdaki bilgisayarın tarayıcısında açın. Adres değişmez: yer imlerine ekleyin. OK günlüğü yeniler."),
   T("Abra o Guia de TV e escolha outro canal.", "TV Rehberi'ni aç ve başka bir kanal seç."),
   T("Abra o guia numa fileira com canais e volte aqui.", "Rehberi kanalların olduğu bir sırada aç ve buraya dön."),
   T("Abra plex.tv/link e digite", "plex.tv/link adresini açıp yazın"),

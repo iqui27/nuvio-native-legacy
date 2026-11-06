@@ -478,6 +478,7 @@
   T("Abra Fontes para escolher outra opção.", "「ソース」を開いて、別のオプションを選んでください。"),
   T("Abra Fontes para escolher uma fonte direta.", "「ソース」を開いて、直接ソースを選んでください。"),
   T("Abra Painel › Quick Connect e digite", "ダッシュボード › Quick Connect を開いて入力"),
+  T("Abra este endereço no navegador do computador, na mesma rede. Ele não muda: salve nos favoritos. OK atualiza o registro.", "同じネットワークのパソコンのブラウザーでこのアドレスを開いてください。アドレスは変わりません。ブックマークに保存してください。OKでログを更新します。"),
   T("Abra o Guia de TV e escolha outro canal.", "テレビガイドを開いて別のチャンネルを選びます。"),
   T("Abra o guia numa fileira com canais e volte aqui.", "チャンネルのある列でガイドを開いてから、ここに戻ってください。"),
   T("Abra plex.tv/link e digite", "plex.tv/link を開いて入力"),

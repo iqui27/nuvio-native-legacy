@@ -478,6 +478,7 @@
   T("Abra Fontes para escolher outra opção.", "開啟「片源」選擇其他選項。"),
   T("Abra Fontes para escolher uma fonte direta.", "開啟「片源」選擇一個直連片源。"),
   T("Abra Painel › Quick Connect e digite", "開啟 控制台 › Quick Connect 並輸入"),
+  T("Abra este endereço no navegador do computador, na mesma rede. Ele não muda: salve nos favoritos. OK atualiza o registro.", "在同一網路中的電腦瀏覽器開啟此網址。網址不會改變：請加入書籤。按 OK 重新整理記錄。"),
   T("Abra o Guia de TV e escolha outro canal.", "開啟電視指南，選擇其他頻道。"),
   T("Abra o guia numa fileira com canais e volte aqui.", "請在有頻道的列中開啟指南，然後回到這裡。"),
   T("Abra plex.tv/link e digite", "開啟 plex.tv/link 並輸入"),

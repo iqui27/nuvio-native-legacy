@@ -477,6 +477,7 @@
   T("Abra Fontes para escolher outra opção.", "Deschide Surse pentru a alege altă opțiune."),
   T("Abra Fontes para escolher uma fonte direta.", "Deschide Surse pentru a alege o sursă directă."),
   T("Abra Painel › Quick Connect e digite", "Deschide Tablou de bord › Quick Connect și tastează"),
+  T("Abra este endereço no navegador do computador, na mesma rede. Ele não muda: salve nos favoritos. OK atualiza o registro.", "Deschide această adresă în browserul calculatorului, în aceeași rețea. Nu se schimbă: salveaz-o la favorite. OK reîmprospătează jurnalul."),
   T("Abra o Guia de TV e escolha outro canal.", "Deschide Ghidul TV și alege alt canal."),
   T("Abra o guia numa fileira com canais e volte aqui.", "Deschide ghidul pe un rând cu canale și revino aici."),
   T("Abra plex.tv/link e digite", "Deschide plex.tv/link și tastează"),

@@ -477,6 +477,7 @@
   T("Abra Fontes para escolher outra opção.", "Откройте «Источники», чтобы выбрать другой вариант."),
   T("Abra Fontes para escolher uma fonte direta.", "Откройте «Источники», чтобы выбрать прямой источник."),
   T("Abra Painel › Quick Connect e digite", "Откройте Панель › Quick Connect и введите"),
+  T("Abra este endereço no navegador do computador, na mesma rede. Ele não muda: salve nos favoritos. OK atualiza o registro.", "Откройте этот адрес в браузере компьютера в той же сети. Он не меняется: добавьте его в закладки. OK обновляет журнал."),
   T("Abra o Guia de TV e escolha outro canal.", "Откройте ТВ-гид и выберите другой канал."),
   T("Abra o guia numa fileira com canais e volte aqui.", "Откройте гид на ряду с каналами и вернитесь сюда."),
   T("Abra plex.tv/link e digite", "Откройте plex.tv/link и введите"),

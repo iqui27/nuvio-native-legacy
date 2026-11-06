@@ -478,6 +478,7 @@
   T("Abra Fontes para escolher outra opção.", "Atidarykite Šaltinius, kad pasirinktumėte kitą parinktį."),
   T("Abra Fontes para escolher uma fonte direta.", "Atidarykite Šaltinius ir pasirinkite tiesioginį šaltinį."),
   T("Abra Painel › Quick Connect e digite", "Atidarykite Skydelis › Quick Connect ir įveskite"),
+  T("Abra este endereço no navegador do computador, na mesma rede. Ele não muda: salve nos favoritos. OK atualiza o registro.", "Atidarykite šį adresą kompiuterio naršyklėje tame pačiame tinkle. Jis nesikeičia: įsirašykite jį į žymes. OK atnaujina žurnalą."),
   T("Abra o Guia de TV e escolha outro canal.", "Atidarykite TV vadovą ir pasirinkite kitą kanalą."),
   T("Abra o guia numa fileira com canais e volte aqui.", "Atidarykite vadovą eilutėje su kanalais ir grįžkite čia."),
   T("Abra plex.tv/link e digite", "Atidarykite plex.tv/link ir įveskite"),

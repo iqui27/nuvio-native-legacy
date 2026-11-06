@@ -477,6 +477,7 @@
   { "Abra Fontes para escolher outra opção.", "Open Sources to pick another option." },
   { "Abra Fontes para escolher uma fonte direta.", "Open Sources to pick a direct source." },
   { "Abra Painel › Quick Connect e digite", "Open Dashboard › Quick Connect and type" },
+  { "Abra este endereço no navegador do computador, na mesma rede. Ele não muda: salve nos favoritos. OK atualiza o registro.", "Open this address in your computer's browser, on the same network. It doesn't change: bookmark it. OK refreshes the log." },
   { "Abra o Guia de TV e escolha outro canal.", "Open the TV Guide and pick another channel." },
   { "Abra o guia numa fileira com canais e volte aqui.", "Open the guide on a row with channels and come back here." },
   { "Abra plex.tv/link e digite", "Open plex.tv/link and type" },
