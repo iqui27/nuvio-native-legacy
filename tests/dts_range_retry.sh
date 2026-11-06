@@ -18,7 +18,7 @@ flags=(-std=gnu11 -O1 -g -Wall -Wextra -Werror -Wno-misleading-indentation)
 if [[ ${SANITIZE:-0} == 1 ]];then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer);fi
 cc "${flags[@]}" -I"$prefix/include" tests/dts_range_retry.c src/rede.c src/redeurl.c -o "$task_tmp/test" \
  -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
-for mode in once twice short wrong hard exhaust cancel seek live-hang live-bodyhang live-hangall live-steady live-speculative live-boot live-cancel;do
+for mode in once twice short wrong hard exhaust cancel seek live-hang live-bodyhang live-hangall live-steady live-speculative live-boot live-cancel live-interrupt;do
  "$task_tmp/test" "http://127.0.0.1:$port/retry-$mode/range.bin"
 done
 "$task_tmp/test" "http://127.0.0.1:$port/retry-once/dv.bin"

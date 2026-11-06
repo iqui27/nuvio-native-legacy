@@ -186,6 +186,14 @@ static int fail(DtsEngine *e,const char *msg,int code) {
 static int cancelled(void *opaque) {
   return __atomic_load_n(&((DtsEngine *)opaque)->cancelled,__ATOMIC_RELAXED);
 }
+static int read_interrupted(void *opaque) {
+#ifdef NV_DTS_WEBOS_RECOVERY
+  DtsEngine *e = opaque;
+  return cancelled(e) || __atomic_load_n(&e->interrupt,__ATOMIC_RELAXED);
+#else
+  return cancelled(opaque);
+#endif
+}
 /* Persistent HTTP lanes retain independent curl connection caches. The bounded
  * queue keeps fetching while native playback backpressures the demux consumer,
  * so a slow future request can finish before playback needs its bytes. Payload
@@ -930,7 +938,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
   e->io=avio_alloc_context(buffer,32768,0,e,read_range,NULL,seek_range);
   if (!e->io) { av_free(buffer); return fail(e,"IO allocation",0); }
   e->fmt->pb=e->io; e->fmt->flags|=AVFMT_FLAG_CUSTOM_IO;
-  e->fmt->interrupt_callback=(AVIOInterruptCB){cancelled,e};
+  e->fmt->interrupt_callback=(AVIOInterruptCB){read_interrupted,e};
   /* Never give libavformat the signed URL; custom AVIO is its sole transport.
    * No decoder logs are enabled, including malformed metadata containing URLs. */
   av_log_set_level(AV_LOG_QUIET);
@@ -1072,7 +1080,7 @@ int dts_engine_open_demux(DtsEngine *e,const char *url,const char *headers) {
   e->io=avio_alloc_context(buffer,65536,0,e,read_fluxo,NULL,seek_fluxo);
   if (!e->io) { av_free(buffer); return fail(e,"IO allocation",0); }
   e->fmt->pb=e->io; e->fmt->flags|=AVFMT_FLAG_CUSTOM_IO;
-  e->fmt->interrupt_callback=(AVIOInterruptCB){cancelled,e};
+  e->fmt->interrupt_callback=(AVIOInterruptCB){read_interrupted,e};
   AVDictionary *opts=NULL;
   av_dict_set(&opts,"format_whitelist","matroska,webm,mov",0);
   av_dict_set(&opts,"probesize","1048576",0);
