@@ -3768,6 +3768,7 @@ int    video_seek_desistiu(void) { return seekRetry.desistiu; }
 int    video_terminou(void) { return terminou; }
 int    video_conflito_recurso(void) { return 0; }
 unsigned video_bufferando_ms(void) {
+  if (dtsSessao) { DtsPlaybackStatus st = {0}; dts_playback_status(dtsSessao, &st); if (st.buffering_ms) return st.buffering_ms; }
   Uint32 d = bufferandoDesde;
   // Esperando para reconectar nao e "fonte que morreu sem dizer": o watchdog
   // (app.c) nao pode trocar de fonte enquanto a maquina de reconexao decide.

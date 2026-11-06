@@ -18,6 +18,7 @@ static DtsRangeJob *job_at(DtsEngine *e,int64_t at) {
  return NULL;
 }
 static void *cancel_later(void *e) {usleep(50000);dts_engine_cancel(e);return NULL;}
+static void *interrupt_later(void *e) {usleep(50000);dts_engine_interrupt(e,1);return NULL;}
 static void *cancel_timeout(void *e) {sleep(4);dts_engine_cancel(e);return NULL;}
 int main(int argc,char **argv) {
  assert(argc==2);DtsEngine *e=dts_engine_create();assert(e);assert(!e->allow_p7);e->range_slots=8;
@@ -120,8 +121,9 @@ int main(int argc,char **argv) {
     pthread_mutex_unlock(&e->range_lock);if(!done)usleep(10000);
    } while(!done && clock_ns(CLOCK_MONOTONIC)<until);assert(done);
   }
-  if(strstr(argv[1],"live-cancel")) {
-   bytes(e,4*1024*1024-65536);pthread_t t;assert(!pthread_create(&t,NULL,cancel_later,e));uint8_t b;
+  if(strstr(argv[1],"live-cancel") || strstr(argv[1],"live-interrupt")) {
+   bytes(e,4*1024*1024-65536);pthread_t t;
+   assert(!pthread_create(&t,NULL,strstr(argv[1],"live-interrupt")?interrupt_later:cancel_later,e));uint8_t b;
    uint64_t t0=clock_ns(CLOCK_MONOTONIC);assert(read_range(e,&b,1)==AVERROR_EXIT);pthread_join(t,NULL);
    assert(clock_ns(CLOCK_MONOTONIC)-t0<UINT64_C(1500000000));
   } else bytes(e,(int)(9LL*e->range_bytes)-65536);

@@ -48,6 +48,10 @@ struct DtsPlayback {
   int source_ordinal, source_count, selected_known;
   double target, presented, preroll_target;
   DtsPlaybackStatus status;
+#ifdef NV_DTS_WEBOS_RECOVERY
+  int refill_active, refill_interrupted, watchdog_stop;
+  double refill_watch_since;
+#endif
 };
 
 static void clearSubtitles(DtsPlayback *p) {
@@ -286,6 +290,30 @@ static double clockSeconds(clockid_t clock) {
   struct timespec t;
   return clock_gettime(clock, &t) ? -1 : t.tv_sec + t.tv_nsec / 1e9;
 }
+#ifdef NV_DTS_WEBOS_RECOVERY
+static void *refillWatch(void *user) {
+  DtsPlayback *p = user;
+  const struct timespec interval = {0, 100000000};
+  for (;;) {
+    nanosleep(&interval, NULL);
+    pthread_mutex_lock(&p->lock);
+    if (p->watchdog_stop || p->stop) { pthread_mutex_unlock(&p->lock); break; }
+    if (p->refill_active && !p->refill_interrupted) {
+      double now = clockSeconds(CLOCK_MONOTONIC);
+      if (p->pause) p->refill_watch_since = now;
+      else if (now >= 0 && now - p->refill_watch_since >= 20) {
+        p->refill_interrupted = 1;
+        p->status.failed = 1;
+        snprintf(p->status.error, sizeof p->status.error, "%s",
+                 p->dv ? DTS_PLAYBACK_STARVED : "DTS buffer recovery timed out");
+        dts_engine_interrupt(p->engine, 1);
+      }
+    }
+    pthread_mutex_unlock(&p->lock);
+  }
+  return NULL;
+}
+#endif
 typedef struct {
   double start, read_wall, decode_cpu, feed_wall;
   unsigned audio, video, full, paced;
@@ -347,7 +375,12 @@ static void *run(void *user) {
   unsigned stall_retries = 0, timestamp_retries = 0;
   double timestamp_anchor = position;
   int native_unhealthy = 0;
-  int recovery_waiting = 0;
+  int recovery_waiting = 0, refill = 0, force_reopen = 0;
+#ifdef NV_DTS_WEBOS_RECOVERY
+  double refill_since = 0, refill_target = 0;
+  pthread_t watchdog;
+  int watchdog_started = 0;
+#endif
   resetStall(&stall, position);
   if (!prepare(p, stream, core, position)) goto done;
   stream = dts_engine_info(p->engine)->audio_stream;
@@ -367,17 +400,75 @@ static void *run(void *user) {
     presented = p->presented; preroll = p->preroll_target;
     volume = p->volume; volume_dirty = p->volume_dirty; p->volume_dirty = 0;
     subtitle = p->subtitle_dirty; p->subtitle_dirty = 0; subtitle_stream = p->subtitle_stream;
+#ifdef NV_DTS_WEBOS_RECOVERY
+    if (!stop && p->refill_interrupted && (seek || audio)) {
+      p->refill_interrupted = 0; force_reopen = 1;
+      dts_engine_interrupt(p->engine, 0);
+    }
+#endif
     pthread_mutex_unlock(&p->lock);
     if (stop) break;
     double wall = clockSeconds(CLOCK_MONOTONIC);
+#ifdef NV_DTS_WEBOS_RECOVERY
+    if (refill && (seek || audio)) { refill = 0; resetStall(&stall, presented); }
+    if (!refill && !seek && !audio && !pause && !eof && complete && clock_seen && !seek_preroll &&
+        (fed_audio - presented < 0.5 || fed_video - presented < 0.5)) {
+      DtsBufferInfo b; dts_engine_buffer_info(p->engine, &b);
+#ifdef DTS_PLAYBACK_TEST_HOOKS
+      extern void dts_test_refill_entry(void);
+      dts_test_refill_entry();
+#endif
+      int64_t goal = b.capacity_bytes / 4;
+      if (goal > 16 * 1048576LL) goal = 16 * 1048576LL;
+      if (goal > 0 && b.contiguous_bytes < goal &&
+          !(b.total > 0 && b.position >= b.total - b.contiguous_bytes)) {
+        pthread_mutex_lock(&p->lock);
+        if (p->stop || p->status.failed || p->pause || p->pause_dirty || p->seek_dirty || p->audio_dirty) {
+          p->pause_dirty |= pause_dirty;
+          p->volume_dirty |= volume_dirty;
+          p->subtitle_dirty |= subtitle;
+          p->native_audio_error |= audio_error;
+          pthread_mutex_unlock(&p->lock);
+          continue;
+        }
+        refill = 1; refill_since = wall; refill_target = presented; p->starved = 0;
+        p->refill_active = 1; p->refill_watch_since = wall;
+        pthread_mutex_unlock(&p->lock);
+        if (!watchdog_started) {
+          if (pthread_create(&watchdog, NULL, refillWatch, p)) {
+            fail(p, "DTS refill watchdog unavailable"); break;
+          }
+          watchdog_started = 1;
+        }
+      }
+    }
+    if (refill) {
+      DtsBufferInfo b; dts_engine_buffer_info(p->engine, &b);
+      int64_t goal = b.capacity_bytes / 4;
+      if (goal > 16 * 1048576LL) goal = 16 * 1048576LL;
+      if (pause) refill_since = wall;
+      if (!pause && fed_audio >= refill_target + 2 && fed_video >= refill_target + 2 &&
+          (goal <= 0 || b.contiguous_bytes >= goal ||
+           (b.total > 0 && b.position >= b.total - b.contiguous_bytes))) {
+        refill = 0; pause_dirty = 1; resetStall(&stall, presented); native_unhealthy = 0;
+        rate = (DtsRate){.start = wall};
+      } else if (!pause && wall - refill_since >= 20) {
+        fail(p, p->dv ? DTS_PLAYBACK_STARVED : "DTS buffer recovery timed out"); break;
+      }
+    }
+    pthread_mutex_lock(&p->lock);
+    if (!refill) p->refill_active = 0;
+    p->status.buffering_ms = p->refill_active ? (unsigned)(fmax(0, wall - refill_since) * 1000) + 1 : 0;
+    pthread_mutex_unlock(&p->lock);
+#endif
     if (clock_seen && presented > stall.position + 0.001) {
       stall.advanced = 1; stall.position = presented; stall.changed_at = wall;
       native_unhealthy = 0;
       recovery_waiting = 0;
     }
-    if ((recovery_waiting || (complete && clock_seen)) && stalled(&stall, wall, DTS_STALL_SEEK_SECONDS)) native_unhealthy = 1;
-    if (pause || (!recovery_waiting && (!complete || !clock_seen || seek_preroll)) || eof) stall.full_since = -1;
-    reportRate(p, &rate, presented, fed_audio, fed_video, clock_seen, pause, complete, seek_preroll);
+    if (!refill && (recovery_waiting || (complete && clock_seen)) && stalled(&stall, wall, DTS_STALL_SEEK_SECONDS)) native_unhealthy = 1;
+    if (pause || refill || (!recovery_waiting && (!complete || !clock_seen || seek_preroll)) || eof) stall.full_since = -1;
+    reportRate(p, &rate, presented, fed_audio, fed_video, clock_seen, pause || refill, complete, seek_preroll);
     /* Media IDs may appear only after native Load/preroll. Publish them even
      * when the source metadata revision has not changed; ACB needs the actual
      * firmware identity, never the app ID or an invented placeholder. */
@@ -397,7 +488,7 @@ static void *run(void *user) {
     }
     int seek_reload = !audio && seek;
     int stall_seek = seek_reload && native_unhealthy;
-    int stall_reload = !audio && !seek && !pause && !eof && (recovery_waiting || (complete && clock_seen)) &&
+    int stall_reload = !audio && !seek && !pause && !refill && !eof && (recovery_waiting || (complete && clock_seen)) &&
                        stalled(&stall, wall, DTS_STALL_SECONDS);
     if (stall_reload || seek_reload) {
       if (stall_reload && stall_retries >= DTS_STALL_RETRIES) {
@@ -421,7 +512,8 @@ static void *run(void *user) {
        * metadata and reset demux/decoder/encoder through engine_seek. The LG
        * native pipeline still receives a fresh Load and codec preroll. Error
        * recovery keeps a full source reopen; a failed seek also falls back. */
-      if (!prepareMode(p, stream, core, target,seek_reload && !stall_seek)) break;
+      if (!prepareMode(p, stream, core, target,seek_reload && !stall_seek && !force_reopen)) break;
+      force_reopen = 0;
       char event[256];
       snprintf(event, sizeof event,
         "{\"dtsStage\":{\"name\":\"%s\",\"detail\":\"at=%.3f attempt=%u seek=%d blocked=%d pts=%.3f stale=%.1fs\"}}",
@@ -444,6 +536,7 @@ static void *run(void *user) {
       stream = new_stream; core = core_tried = 0;
       timestamp_retries = 0; timestamp_anchor = target;
       if (!prepare(p, stream, core, target)) break;
+      force_reopen = 0;
       position = preroll = presented = target; complete = clock_seen = 0;
       fed_audio = fed_video = target;
       have_frame = 0; eof = 0; pause_dirty = 1; volume_dirty = 1;
@@ -455,17 +548,18 @@ static void *run(void *user) {
     if (subtitle && !selectSubtitle(p, subtitle_stream)) {
       fail(p, "DTS subtitle decoder unavailable"); break;
     }
-    if ((complete && pause_dirty) || paused != pause) {
-      if (!(pause ? dts_pipeline_pause(p->pipeline) : dts_pipeline_play(p->pipeline))) {
+    int hold_pause = pause || refill;
+    if ((complete && pause_dirty) || paused != hold_pause) {
+      if (!(hold_pause ? dts_pipeline_pause(p->pipeline) : dts_pipeline_play(p->pipeline))) {
         fail(p, "DTS pause/play failed"); break;
       }
-      paused = pause;
+      paused = hold_pause;
     }
     /* Native volume is optional. Reapply after each Load completion. */
     if (volume_dirty) (void)dts_pipeline_volume(p->pipeline, volume);
     reportBuffer(p, fed_audio, fed_video);
     /* Native load completion needs preroll even when opened paused. */
-    if (paused && !seek_preroll && (complete || position > preroll + 2.0)) {
+    if (paused && !refill && !seek_preroll && (complete || position > preroll + 2.0)) {
       cpu_window = clockSeconds(CLOCK_MONOTONIC); cpu_used = 0;
       rest(p); continue;
     }
@@ -480,6 +574,12 @@ static void *run(void *user) {
       if (begun >= 0 && ended >= begun) rate.decode_cpu += ended - begun;
       if (read_started >= 0 && now >= read_started) rate.read_wall += now - read_started;
       if (stopped(p)) break;
+#ifdef NV_DTS_WEBOS_RECOVERY
+      pthread_mutex_lock(&p->lock);
+      int control_interrupt = p->refill_interrupted && (p->seek_dirty || p->audio_dirty);
+      pthread_mutex_unlock(&p->lock);
+      if (control_interrupt) continue;
+#endif
       const char *error = r < 0 ? dts_engine_error(p->engine) : "";
       if (r < 0 && !strcmp(error, DTS_ENGINE_TIMESTAMP_DISCONTINUITY)) {
 #ifndef NV_DTS_WEBOS_RECOVERY
@@ -488,9 +588,16 @@ static void *run(void *user) {
         /* Use the latest presentation clock, never a packet fed ahead.
          * Pending user seek/track requests are handled by the next iteration. */
         int pending_control;
+#ifdef DTS_PLAYBACK_TEST_HOOKS
+        extern void dts_test_recovery_entry(void);
+        dts_test_recovery_entry();
+#endif
         pthread_mutex_lock(&p->lock);
         target = p->presented;
-        pending_control = p->seek_dirty || p->audio_dirty;
+        pending_control = p->stop || p->status.failed || p->seek_dirty || p->audio_dirty;
+#ifdef NV_DTS_WEBOS_RECOVERY
+        if (!pending_control) { p->refill_active = 0; p->status.buffering_ms = 0; }
+#endif
         pthread_mutex_unlock(&p->lock);
         if (pending_control) continue;
         if (timestamp_retries && target >= timestamp_anchor + DTS_TIMESTAMP_PROGRESS_SECONDS)
@@ -504,6 +611,7 @@ static void *run(void *user) {
           fail(p, "DTS timestamp recovery exhausted after two reload attempts");
           break;
         }
+        refill = 0;
         timestamp_retries++; timestamp_anchor = target;
         printf("[dts] timestamp-recovery-request at=%.3f attempt=%u core=%d stream=%d dv=%d\n",
                target, timestamp_retries, core, stream, p->dv);
@@ -530,7 +638,20 @@ static void *run(void *user) {
                         cpu_used > (now - cpu_window) * 0.80;
       if (now >= 0 && now - cpu_window >= 5.0) { cpu_window = now; cpu_used = 0; }
       if (decode_error || encoder_error || cpu_overrun) {
-        pthread_mutex_lock(&p->lock); presented = p->presented; pthread_mutex_unlock(&p->lock);
+#ifdef DTS_PLAYBACK_TEST_HOOKS
+        extern void dts_test_recovery_entry(void);
+        dts_test_recovery_entry();
+#endif
+        pthread_mutex_lock(&p->lock);
+#ifdef NV_DTS_WEBOS_RECOVERY
+        int pending_control = p->stop || p->status.failed || p->seek_dirty || p->audio_dirty;
+        if (!pending_control) { p->refill_active = 0; p->status.buffering_ms = 0; }
+#endif
+        presented = p->presented; pthread_mutex_unlock(&p->lock);
+#ifdef NV_DTS_WEBOS_RECOVERY
+        if (pending_control) continue;
+#endif
+        refill = 0;
         if (recover(p, &core, &core_tried, stream, presented, decode_error || cpu_overrun)) {
           seek_preroll = 0;
           position = presented; have_frame = 0; eof = 0;
@@ -544,8 +665,25 @@ static void *run(void *user) {
         if (!stopped(p)) fail(p, cpu_overrun ? "DTS conversion exceeds the sustained CPU budget" : error);
         break;
       }
-      if (r < 0) { fail(p, error); break; }
+      if (r < 0) {
+#ifdef NV_DTS_WEBOS_RECOVERY
+        pthread_mutex_lock(&p->lock);
+        int pending_control = p->stop || p->status.failed || p->seek_dirty || p->audio_dirty;
+        if (!pending_control) { p->refill_active = 0; p->status.buffering_ms = 0; }
+        pthread_mutex_unlock(&p->lock);
+        if (pending_control) continue;
+#endif
+        fail(p, error); break;
+      }
       if (r == 0) {
+        if (refill) {
+          refill = 0; pause_dirty = 1;
+#ifdef NV_DTS_WEBOS_RECOVERY
+          pthread_mutex_lock(&p->lock);
+          p->refill_active = 0; p->status.buffering_ms = 0;
+          pthread_mutex_unlock(&p->lock);
+#endif
+        }
         seek_preroll = 0;
         if (!dts_pipeline_eos(p->pipeline)) { fail(p, "DTS end of stream failed"); break; }
         pthread_mutex_lock(&p->lock);
@@ -629,10 +767,14 @@ static void *run(void *user) {
     }
   }
 done:
+#ifdef NV_DTS_WEBOS_RECOVERY
+  pthread_mutex_lock(&p->lock); p->watchdog_stop = 1; pthread_mutex_unlock(&p->lock);
+  if (watchdog_started) pthread_join(watchdog, NULL);
+#endif
   /* Ignore closing callbacks after terminal failure, too. */
   pthread_mutex_lock(&p->lock); p->suppress_events = 1; pthread_mutex_unlock(&p->lock);
   pthread_mutex_lock(&p->lock);
-  p->status.buffer = (DtsBufferInfo){0};p->status.buffered_until = 0;
+  p->status.buffer = (DtsBufferInfo){0};p->status.buffered_until = 0;p->status.buffering_ms = 0;
   pthread_mutex_unlock(&p->lock);
   dts_subtitles_destroy(p->subtitle_decoder); p->subtitle_decoder = NULL;
   dts_pipeline_destroy(p->pipeline);
@@ -702,15 +844,35 @@ void dts_playback_volume(DtsPlayback *p, int percent) {
   pthread_cond_signal(&p->wake);
   pthread_mutex_unlock(&p->lock);
 }
+#ifdef NV_DTS_WEBOS_RECOVERY
+/* Caller holds p->lock; the worker reopens after the interrupted demux read. */
+static void interruptRefill(DtsPlayback *p) {
+  if (p->refill_active && !p->refill_interrupted) {
+    p->refill_active = 0; p->refill_interrupted = 1;
+    dts_engine_interrupt(p->engine, 1);
+  }
+}
+#endif
 void dts_playback_pause(DtsPlayback *p, int paused) {
   if (!p) return;
   pthread_mutex_lock(&p->lock);
-  if (p->pause != !!paused) { p->pause = !!paused; p->pause_dirty = 1; }
+  if (p->pause != !!paused) {
+    p->pause = !!paused; p->pause_dirty = 1;
+#ifdef NV_DTS_WEBOS_RECOVERY
+    if (paused && p->refill_active) {
+      if (!p->seek_dirty && !p->audio_dirty) { p->target = p->presented; p->seek_dirty = 1; }
+      interruptRefill(p);
+    }
+#endif
+  }
   pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
 }
 void dts_playback_seek(DtsPlayback *p, double seconds) {
   if (!p || !isfinite(seconds) || seconds >= 9e9) return;
   pthread_mutex_lock(&p->lock); p->target = seconds < 0 ? 0 : seconds; p->seek_dirty = 1;
+#ifdef NV_DTS_WEBOS_RECOVERY
+  interruptRefill(p);
+#endif
   p->status.buffer = (DtsBufferInfo){0};p->status.buffered_until = 0;
   pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
 }
@@ -719,6 +881,9 @@ void dts_playback_audio(DtsPlayback *p, int stream) {
   pthread_mutex_lock(&p->lock);
   if (!p->seek_dirty) p->target = p->presented;
   p->audio_stream = stream; p->audio_dirty = 1;
+#ifdef NV_DTS_WEBOS_RECOVERY
+  interruptRefill(p);
+#endif
   p->status.buffer = (DtsBufferInfo){0};p->status.buffered_until = 0;
   pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
 }

@@ -60,7 +60,7 @@ class Handler(BaseHTTPRequestHandler):
                     1024*1024 if path.endswith('.mkv') else 4*1024*1024)
         failing = bool(mode and lo == fault_at and
                        (mode in ('hard', 'exhaust', 'cancel') or attempt <= (2 if mode == 'twice' else 1)))
-        if live and lo==fault_at and mode in ('hang','speculative','cancel','boot') and attempt==1: time.sleep(4 if mode=='boot' else 8)
+        if live and lo==fault_at and mode in ('hang','speculative','cancel','interrupt','boot') and attempt==1: time.sleep(4 if mode=='boot' else 8)
         if live and lo==fault_at and mode=='hangall': time.sleep(8 if attempt<3 else 4)
         if mode.startswith('rate'):
             self.send_response(429); self.send_header('Content-Length', '0'); self.end_headers()
