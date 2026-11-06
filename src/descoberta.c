@@ -7573,6 +7573,22 @@ static int metaArquivosCompativeis(const char *arquivos, const char *catalogo) {
     if (k && pares[0].v && pares[0].v[epSetCasa(&pares[0], k)]) contidos++;
   }
   if ((unsigned long long)contidos * 10 < (unsigned long long)pares[1].n * 9) ok = 0;
+  // A file list may add episodes only where the catalogue can still grow: its
+  // last regular season (episodes not listed yet) and seasons after it. An
+  // older season the catalogue lists gets no extra episodes: releases numbered
+  // another way are not new episodes (Lupin from MediaFusion, 06/11/2026:
+  // 21/15/14 "episodes" in seasons 1-3 against the catalogue's 5/5/7).
+  if (ok && pares[0].v && pares[1].v && temps[1].v) {
+    int ultima = 0;
+    for (j = 0; j < temps[1].cap; j++)
+      if (temps[1].v[j] && (int)(temps[1].v[j] >> 32) - 1 > ultima)
+        ultima = (int)(temps[1].v[j] >> 32) - 1;
+    for (j = 0; ok && j < pares[0].cap; j++) {
+      unsigned long long k = pares[0].v[j];
+      int t = k ? (int)(k >> 32) - 1 : 0;
+      if (t > 0 && t < ultima && !pares[1].v[epSetCasa(&pares[1], k)]) ok = 0;
+    }
+  }
   for (i = 0; i < 2; i++) { free(pares[i].v); free(temps[i].v); }
   return ok;                             // sem memoria, conserva o catalogo
 }
@@ -7804,6 +7820,9 @@ static void temporadasDosEps(const CatEp *eps, int n, TempsPub *tp) {
   }
 }
 
+// Merge mode for a base that is a source addon's file list: the other list's
+// text (DESC_MESCLA_TEXTO) and only its art.
+#define DESC_MESCLA_ARQUIVOS 3
 static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
                                        const char *titulo, const char *sobre,
                                        int modo, TempsPub *tp, int cedo,
@@ -7813,6 +7832,13 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
   if (!eps) return 0;
   n = parsearEpisodios(corpo, eps, VIDEOS_MAX);
   if (tp && n) temporadasDosEps(eps, n, tp);
+  if (modo == DESC_MESCLA_ARQUIVOS) {
+    // A source addon's file list carries no episode art (MediaFusion sends the
+    // poster as every thumbnail): the other list's still, or the series
+    // backdrop when there is none (detail.c).
+    for (int i = 0; i < n; i++) eps[i].thumb[0] = 0;
+    modo = DESC_MESCLA_TEXTO;
+  }
   if (sobre && n) {
     CatEp *o = malloc(sizeof(CatEp) * VIDEOS_MAX);
     if (o) {
@@ -7995,7 +8021,7 @@ static int episodiosDoAddon(int alvoItem, const char *serie, const char *titulo,
            titulo, melhorNome, melhor, nCine);
     fflush(stdout);
     publicarEpisodiosSubstituir(melhorCorpo, alvoItem, titulo, corpoCine,
-                                DESC_MESCLA_TEXTO, tp);
+                                DESC_MESCLA_ARQUIVOS, tp);
     arte_reserva_episodios(serie, melhorCorpo);
   } else if (melhor > nCine || (aplicar && melhor >= nCine)) {
     printf("[desc] %s: %s tem %d episodios contra %d do Cinemeta; usando a lista do addon\n",
@@ -8581,7 +8607,7 @@ static int episodiosDoCatalogo(int alvoItem, const char *titulo, const char *ser
     if (i != fonte && nEp[i] > 0 && mf->cine[i]) outro = i;
   // Uma lista real menor do addon conserva os pares do Cinemeta e aplica
   // o texto localizado, como episodiosDoAddon.
-  int modo = arq[fonte] ? DESC_MESCLA_TEXTO : DESC_MESCLA_VAZIOS;
+  int modo = arq[fonte] ? DESC_MESCLA_ARQUIVOS : DESC_MESCLA_VAZIOS;
   if (outro >= 0 && !arq[fonte] && nEp[outro] > nEp[fonte]) {
     int addon = fonte; fonte = outro; outro = addon;
     modo = DESC_MESCLA_TEXTO;

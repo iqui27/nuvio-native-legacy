@@ -953,6 +953,101 @@ int main(void) {
       }
       puts("ok  catalogo primeiro: lista de arquivos que ficou nao trava a traducao do TMDB");
     }
+    // LUPIN FROM MEDIAFUSION (06/11/2026): the catalogue has 5/5/7/8; the
+    // source addon's file list numbers the same releases as 21/15/14/8 with
+    // the poster as every thumbnail. Extra episodes in seasons the catalogue
+    // lists before its last one are not new episodes: the catalogue stays,
+    // with its stills. (Any id the fake Cinemeta answers: tt21975436.)
+    {
+      static const int cineT[4] = { 5, 5, 7, 8 }, arqT[4] = { 21, 15, 14, 8 };
+      size_t lc = 1u << 20, kk;
+      char *lcine = malloc(lc), *larq = malloc(lc);
+      int t, e, v, n0 = 0, via;
+      assert(lcine && larq);
+      kk = (size_t)snprintf(lcine, lc, "{\"meta\":{\"id\":\"tt21975436\",\"type\":\"series\","
+                            "\"name\":\"Lupin\",\"description\":\"S.\",\"videos\":[");
+      for (t = 1; t <= 4; t++)
+        for (e = 1; e <= cineT[t - 1]; e++)
+          kk += (size_t)snprintf(lcine + kk, lc - kk,
+                                 "%s{\"id\":\"tt21975436:%d:%d\",\"season\":%d,\"episode\":%d,"
+                                 "\"name\":\"L%dE%d\",\"thumbnail\":\"https://still.test/%d/%d.jpg\"}",
+                                 n0++ ? "," : "", t, e, t, e, t, e, t, e);
+      snprintf(lcine + kk, lc - kk, "]}}");
+      n0 = 0;
+      kk = (size_t)snprintf(larq, lc, "{\"meta\":{\"id\":\"tt21975436\",\"type\":\"series\","
+                            "\"name\":\"Lupin\",\"videos\":[");
+      for (v = 0; v < 4; v++)
+        for (t = 1; t <= 4; t++)
+          for (e = 1; e <= arqT[t - 1]; e++)
+            kk += (size_t)snprintf(larq + kk, lc - kk,
+                                   "%s{\"id\":\"mf%d_%d_%d\",\"season\":%d,\"episode\":%d,"
+                                   "\"name\":\"Lupin.S%02dE%02d.v%d.mkv\","
+                                   "\"thumbnail\":\"https://poster.test/lupin.jpg\"}",
+                                   n0++ ? "," : "", v, t, e, t, e, t, e, v);
+      snprintf(larq + kk, lc - kk, "]}}");
+      assert(kk < lc - 8);
+      assert(desc_meta_n_episodios(lcine) == 25 && desc_meta_n_episodios(larq) == 58);
+      for (via = 0; via < 2; via++) {
+        nFake = 0; nRotas = 0; addonMeta = 1; addonTipo = "/series/";
+        fakeMetaExterno = 0; fakeSoCinemeta = 0; fakeIdioma = "en-US";
+        cineSerie = lcine; addonResp = larq;
+        if (via) {
+          addonMeta = 0; addonResp = NULL; nFake = 1;
+          fake[0] = (FakeAddon){ "MediaFusion", "https://mf.test/SEGREDO", "org.mf", "tt", 0 };
+          rota("mf.test/SEGREDO/meta/series/tt21975436.json", larq);
+        }
+        limparCacheMeta();
+        if (via) catalogoDe("tt21975436", "series", "Lupin", "org.mf");
+        else catalogoCom("tt21975436", "series", "Lupin");
+        abrir();
+        printf("Lupin catalogo-primeiro=%d: %d episodios, %d temporadas\n",
+               via, cat_n_episodios(0), cat_item(0)->nTemporadas);
+        assert(cat_n_episodios(0) == 25 && cat_item(0)->nTemporadas == 4);
+        assert(!strcmp(cat_episodio(0, 0)->vid, "tt21975436:1:1"));
+        assert(cat_episodio(0, 17)->temporada == 4 && cat_episodio(0, 17)->episodio == 1);
+        assert(!strcmp(cat_episodio(0, 17)->thumb, "https://still.test/4/1.jpg"));
+        for (e = 0; e < 25; e++) assert(!strstr(cat_episodio(0, e)->thumb, "poster.test"));
+      }
+      free(lcine); free(larq);
+      puts("ok  lista de arquivos nao infla temporadas que o catalogo ja lista (Lupin)");
+    }
+    // A FILE LIST THAT STAYS (more episodes in the last season) still gives no
+    // art: shared episodes take the catalogue's still, the extra ones none.
+    {
+      static char sc[4096];
+      size_t lc = 1u << 20, kk;
+      char *sa = malloc(lc);
+      assert(sa);
+      kk = (size_t)snprintf(sc, sizeof sc, "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\","
+                            "\"name\":\"Serie\",\"description\":\"S.\",\"videos\":[");
+      for (ep = 1; ep <= 12; ep++)
+        kk += (size_t)snprintf(sc + kk, sizeof sc - kk,
+                               "%s{\"id\":\"tt13293588:1:%d\",\"season\":1,\"episode\":%d,"
+                               "\"name\":\"C%d\",\"thumbnail\":\"https://still.test/%d.jpg\"}",
+                               ep > 1 ? "," : "", ep, ep, ep, ep);
+      snprintf(sc + kk, sizeof sc - kk, "]}}");
+      kk = (size_t)snprintf(sa, lc, "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\","
+                            "\"name\":\"Serie\",\"videos\":[");
+      for (i = 0; i < 80; i++)
+        kk += (size_t)snprintf(sa + kk, lc - kk,
+                               "%s{\"id\":\"v%d\",\"season\":1,\"episode\":%d,"
+                               "\"name\":\"Serie.S01E%02d.v%d.mkv\","
+                               "\"thumbnail\":\"https://poster.test/p.jpg\"}", i ? "," : "",
+                               i, i % 20 + 1, i % 20 + 1, i / 20);
+      snprintf(sa + kk, lc - kk, "]}}");
+      nFake = 0; nRotas = 0; addonMeta = 1; addonTipo = "/series/";
+      fakeMetaExterno = 0; fakeSoCinemeta = 0; fakeIdioma = "en-US";
+      cineSerie = sc; addonResp = sa;
+      limparCacheMeta();
+      catalogoCom("tt13293588", "series", "Serie");
+      abrir();
+      assert(cat_n_episodios(0) == 20);
+      assert(!strcmp(cat_episodio(0, 0)->thumb, "https://still.test/1.jpg"));
+      assert(!strcmp(cat_episodio(0, 11)->thumb, "https://still.test/12.jpg"));
+      assert(!cat_episodio(0, 19)->thumb[0]);
+      free(sa);
+      puts("ok  lista de arquivos que fica nao da miniatura aos episodios");
+    }
     // CONJUNTO CHEIO sem poder crescer: 1023 pares entram (sobra a casa vazia
     // que encerra a sondagem), repetido segue repetido, e o 1024o nunca e
     // guardado — responde "novo" toda vez, sem travar a procura.
