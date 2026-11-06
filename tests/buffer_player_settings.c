@@ -30,7 +30,7 @@ int main(void) {
     ajustes_dir(dir);
     assert(ajustes_buffer_native_connections()==native && ajustes_buffer_conversion_connections()==conversion);
   }
-  /* "Stream (1) - Test": one connection over one continuous request. */
+  /* "Stream (1) - Tizen - Test": one connection over one continuous request. */
   assert(!ajustes_buffer_conversion_stream());
   assert(definirValorDireto(AJ_BUFFER_CONVERSION_CONNECTIONS,4));
   ajustes_dir(dir);

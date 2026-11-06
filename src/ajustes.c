@@ -768,7 +768,7 @@ static const char *V_PALCO_FUNDO[] = { "Cortina", "Como está", "Só arte", "Pre
 static const char *V_TITULO_FIL[] = { "Clássico", "Ilha", "Editorial", "Acento" };
 static const char *V_DEGRADES[] = { "Automático", "Forte", "Desligado" };
 static const char *V_BUFFER_CONNECTIONS[] = { "Standard (1)", "Parallel - 2", "Parallel - 3", "Parallel - 4" };
-static const char *V_BUFFER_CONVERSION_CONNECTIONS[] = { "Standard (1) - Not recommended", "Parallel - 2", "Parallel - 3", "Parallel - 4 - Recommended", "Stream (1) - Test" };
+static const char *V_BUFFER_CONVERSION_CONNECTIONS[] = { "Standard (1) - Not recommended", "Parallel - 2", "Parallel - 3", "Parallel - 4 - Recommended", "Stream (1) - Tizen - Test" };
 static const char *V_DV_AUDIO_FIXO[] = { "Original audio", "AAC stereo", "Dolby Digital 5.1" };
 static const char *V_VIDRO_QUALIDADE[] = { "Automática", "Desempenho", "Alta" };
 static const char *V_FUNDO_DIN[] = { "Cinza", "Cor", "Imersivo", "Cinza escuro" };
@@ -3347,7 +3347,7 @@ int ajustes_ram_verde(void) { return lig(AJ_RAM_VERDE); }
 static int bufferConnections(int op,int fallback) { return valor[op]>=0 && valor[op]<4?valor[op]+1:fallback; }
 int ajustes_buffer_native_connections(void) { return bufferConnections(AJ_BUFFER_NATIVE_CONNECTIONS,1); }
 int ajustes_buffer_conversion_connections(void) {
-  /* "Stream (1) - Test" (value 4) is one connection too. */
+  /* "Stream (1) - Tizen - Test" (value 4) is one connection too. */
   return valor[AJ_BUFFER_CONVERSION_CONNECTIONS]==4?1:bufferConnections(AJ_BUFFER_CONVERSION_CONNECTIONS,4);
 }
 /* Test option: the conversion reads over one continuous request (dts_engine). */
