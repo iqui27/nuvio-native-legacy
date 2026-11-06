@@ -32,24 +32,31 @@ if len(sys.argv) > 1 and sys.argv[1] == '--synthetic':
             return int(subprocess.check_output([str(helper)]))
         before = foreground_pid()
         shots = []
-        for w, h in ((1280, 800), (2560, 1000)):
-            bitmap = runtime / f'guide-{w}x{h}.bmp'
+        cases = ((1280, 800, 'fresh'), (2560, 1000, 'fresh'))
+        if os.environ.get('DESKTOP_GUIA_CAPTURE_DIAGNOSTIC'):
+            cases = ((1280, 800, 'fresh'), (2560, 1000, 'existing'), (2560, 1000, 'fresh'))
+        for w, h, sequence in cases:
+            bitmap = runtime / f'guide-{w}x{h}-{sequence}.bmp'
             environment = dict(os.environ, NV_CAPTURA='1', NV_CAPTURA_GL='1', SDL_MAC_BACKGROUND_APP='1', SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN='1')
+            environment.pop('DESKTOP_GUIA_CAPTURE_FRESH', None)
+            if sequence == 'fresh':
+                environment['DESKTOP_GUIA_CAPTURE_FRESH'] = '1'
             for key in ('HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'NUVIO_DADOS', 'TMPDIR'):
-                directory = runtime / str(w) / key
+                directory = runtime / f'{w}-{sequence}' / key
                 directory.mkdir(parents=True)
                 environment[key] = str(directory)
             child = subprocess.Popen([str(binary), '--capture', str(bitmap), str(w), str(h)], env=environment)
             try:
                 assert foreground_pid() == before, 'Foreground changed at fixture launch'
                 rc = child.wait(timeout=90)
+                print(f'CAPTURE_RC: sequence={sequence} size={w}x{h} rc={rc}', flush=True)
                 assert rc == 0, ('Capture fixture failed', rc)
             finally:
                 if child.poll() is None:
                     child.kill()
                     child.wait()
             assert foreground_pid() == before, 'Foreground changed during fixture'
-            jpg = output / f'guia-synthetic-{w}x{h}.jpg'
+            jpg = output / f'guia-synthetic-{w}x{h}-{sequence}.jpg'
             subprocess.run(['magick', str(bitmap), '-resize', '2400x2400>', '-quality', '88', str(jpg)], check=True)
             shots.append(str(jpg))
         after = foreground_pid()

@@ -33,6 +33,7 @@ for flags in "-DNV_TOUCH_UI -DNV_DESKTOP_UI -DNV_DESKTOP_RELEASE" ""; do
     -O1 -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
     -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
     -Wno-deprecated-declarations -Wno-macro-redefined -Wl,-undefined,dynamic_lookup
+  shasum -a 256 "$work/test"
   "$work/test" || result=$?
   if test -n "$flags" && test "$result" -eq 0 && test -n "${DESKTOP_GUIA_CAPTURE_OUT:-}"; then
     python3 tools/desktop-guia-capture.py --synthetic "$work/test" "$DESKTOP_GUIA_CAPTURE_OUT"

@@ -75,8 +75,12 @@ static void desktop_guia_capture(SDL_Window *window,const char *path,int width,i
   SDL_SetWindowSize(window,width,height);layout_janela_definir(width,height);
   glViewport(0,0,width,height);gfx_tamanho_alvo(width,height);
   gv_zone=4;gv_chipi=2;gv_source_off=0;gv_pag_t=1;gv_hh=GV_HERO_H;
-  for(int i=0;i<3;i++){
-    txt_novo_quadro();gfx_novo_quadro();glClear(GL_COLOR_BUFFER_BIT);
+  int fresh=getenv("DESKTOP_GUIA_CAPTURE_FRESH")!=NULL;
+  printf("SEQUENCE: %s layout=%.0fx%.0f\n",fresh?"fresh":"existing",(double)NV_TELA_W,(double)NV_TELA_H);
+  for(int i=0;i<(fresh?1:3);i++){
+    txt_novo_quadro();gfx_novo_quadro();
+    if(fresh){gfx_sem_recorte();glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);glClearColor(0,0,0,1);}
+    glClear(GL_COLOR_BUFFER_BIT);
     assert(g5ui_draw());menu_desenhar(SDL_GetTicks());glFinish();
   }
   unsigned char *pixels=malloc((size_t)width*height*4);assert(pixels);
@@ -100,6 +104,8 @@ int main(int argc,char **argv) {
 #endif
   SDL_Window *window=SDL_CreateWindow("Synthetic Desktop Guide",0,0,width,height,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);
   assert(window);SDL_GLContext gl=SDL_GL_CreateContext(window);assert(gl);
+  int fresh=getenv("DESKTOP_GUIA_CAPTURE_FRESH")!=NULL;
+  if(fresh)layout_janela_definir(width,height);
   gfx_tamanho_alvo(width,height);assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));
   tex_iniciar(64);
   gfx_icones_dir("deploy/app/art");
@@ -109,7 +115,8 @@ int main(int argc,char **argv) {
   int failures=0;
 #ifdef NV_DESKTOP_UI
   if(argc==1)failures+=desktop_guia_route();
-  g5ui_open("grade");layout_janela_definir(1280,800);gv_side=1;
+  g5ui_open("grade");layout_janela_definir(fresh?width:1280,fresh?height:800);gv_side=1;
+  if(fresh&&width>1280)snprintf(ltvF[0].nome,sizeof ltvF[0].nome,"Synthetic Local Provider");
   failures+=desktop_guia_footer();
   if(argc==5&&!strcmp(argv[1],"--capture")){
     assert(getenv("NV_CAPTURA")&&getenv("NV_CAPTURA_GL"));
