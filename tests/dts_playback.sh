@@ -35,6 +35,10 @@ for scenario in resume-init-pct resume-init-seconds resume-init-paused resume-in
  "$tmp/test" "$scenario"
 done
 
+for scenario in seek-queue-series seek-queue-timeout seek-queue-paused seek-queue-cancel seek-queue-audio; do
+ "$tmp/test" "$scenario"
+done
+
 for scenario in buffered-seek buffered-audio buffered-paused buffered-dv buffered-refused buffered-format buffered-stall buffered-stale buffered-dv-stall buffered-dv-paused buffered-dv-prime buffered-dv-cancel; do
  "$tmp/test" "$scenario"
 done

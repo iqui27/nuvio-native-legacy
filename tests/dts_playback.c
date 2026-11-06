@@ -413,39 +413,43 @@ int main(int argc,char **argv) {
   puts("PASS P7 mapping session snapshot: OFF, ON, rejected start, seek/audio retention, no leak, DV/P7 gating");return 0;
  }
 #endif
- if(!strncmp(argv[1],"mp4-seek-",9)) {
-  int off=!strcmp(argv[1],"mp4-seek-off"),timeout=!strcmp(argv[1],"mp4-seek-timeout");
-  int pause=!strcmp(argv[1],"mp4-seek-paused"),cancel=!strcmp(argv[1],"mp4-seek-cancel");
-  int audio=!strcmp(argv[1],"mp4-seek-audio");
+ /* Seamless reposition queue: mp4-seek-* (MP4 recovery build) and the same
+  * cases on an ordinary DTS/DV session (seek-queue-*, mp4-seek-off). A second
+  * seek or a track change before the firmware clock must not reload. */
+ if(!strncmp(argv[1],"mp4-seek-",9) || !strncmp(argv[1],"seek-queue-",11)) {
+  const char *kind=argv[1]+(argv[1][0]=='m'?9:11);
+  int off=argv[1][0]=='s' || !strcmp(kind,"off"),timeout=!strcmp(kind,"timeout");
+  int pause=!strcmp(kind,"paused"),cancel=!strcmp(kind,"cancel");
+  int audio=!strcmp(kind,"audio");
   mp4_fixture=!off;mp4_seek_case=seamless_fixture=1;scenario=SEEK_PREROLL;
   dts_playback_next_mp4_test(mp4_fixture);dts_playback_next_dv(1);dts_playback_next_seamless(1);
   p=start(0,4,NULL,0,0);wait_count(&plays,1);wait_count(&accepted,4);
   atomic_store(&mp4_no_clock,1);dts_playback_seek(p,2);wait_count(&flushes,1);wait_count(&plays,2);
   dts_playback_seek(p,8);
-  if(off) {wait_count(&loads,2);assert(count(&opens)==1);}
-  else {
-   wait_settled();assert(count(&loads)==1 && count(&flushes)==1);
-   dts_playback_seek(p,12);wait_settled();assert(count(&loads)==1 && count(&flushes)==1);
-   if(cancel) {dts_playback_close(p);assert(count(&creates)==count(&destroys));return 0;}
-   if(timeout) {
-    atomic_fetch_add(&hold_wall_offset,INT64_C(13000000000));wait_count(&loads,2);
-    assert(last_load_target==12 && count(&opens)==1);
-   } else if(pause) {
-    dts_playback_pause(p,1);wait_count(&flushes,2);assert(last_seek==12);
-   } else if(audio) {
-    dts_playback_audio_at(p,9,2);wait_count(&loads,2);
-    assert(last_audio_target==12 && last_stream==9);
-   } else {
-    atomic_store(&mp4_no_clock,0);
-    for(int i=0;i<4;i++) {
-     char event[96];snprintf(event,sizeof event,"{\"currentTime\":{\"currentTime\":%d}}",2600+i*100);
-     emit(event);nap();
-    }
-    wait_count(&flushes,2);assert(last_seek==12);
+  wait_settled();assert(count(&loads)==1 && count(&flushes)==1);
+  dts_playback_seek(p,12);wait_settled();assert(count(&loads)==1 && count(&flushes)==1);
+  if(cancel) {dts_playback_close(p);assert(count(&creates)==count(&destroys));return 0;}
+  if(timeout) {
+   atomic_fetch_add(&hold_wall_offset,INT64_C(13000000000));wait_count(&loads,2);
+   assert(last_load_target==12 && count(&opens)==1);
+  } else if(pause) {
+   dts_playback_pause(p,1);wait_count(&flushes,2);assert(last_seek==12);
+  } else {
+   if(audio) {
+    /* The track change waits with the queued seek, then both go seamless. */
+    dts_playback_audio_at(p,9,2);wait_settled();
+    assert(count(&loads)==1 && count(&flushes)==1 && count(&audio_reconfigs)==0);
    }
-   if(!timeout && !audio)assert(count(&loads)==1 && count(&opens)==1);
-   if(audio)assert(count(&loads)==2 && count(&opens)==1);
+   atomic_store(&mp4_no_clock,0);
+   for(int i=0;i<4;i++) {
+    char event[96];snprintf(event,sizeof event,"{\"currentTime\":{\"currentTime\":%d}}",2600+i*100);
+    emit(event);nap();
+   }
+   wait_count(&flushes,2);
+   if(audio) assert(last_audio_target==12 && last_stream==9);
+   else assert(last_seek==12);
   }
+  if(!timeout)assert(count(&loads)==1 && count(&opens)==1);
   dts_playback_status(p,&s);assert(!s.failed);dts_playback_close(p);
   assert(count(&creates)==count(&destroys));printf("PASS %s: latest target, bounded fallback and one source cache\n",argv[1]);return 0;
  }

@@ -550,9 +550,9 @@ static void *run(void *user) {
   double timestamp_anchor = position;
   int native_unhealthy = 0;
   int recovery_waiting = 0, fast_pending = 0;
-#ifdef NV_MP4_BD_TEST
-  int queued_seek=0;double queued_target=0;
-#endif
+  /* Seamless seek/track requests that arrive before the firmware reported
+   * the previous reposition's clock: only the latest one is kept. */
+  int queued_seek=0,queued_audio=0;double queued_target=0;
   int dv_audio_hold=0;
 #ifdef NV_DTS_WEBOS_RECOVERY
   int network_hold=0;
@@ -693,26 +693,35 @@ static void *run(void *user) {
         fast_target,(wall-fast_since)*1000,(wall-fast_started)*1000);fflush(stdout);
       nativeEvent(p,"{\"dtsStage\":{\"name\":\"native-seek-fallback\",\"detail\":\"no presentation progress\"}}");
     }
-#ifdef NV_MP4_BD_TEST
     /* A second command can arrive before firmware reports the first accepted
-     * seek's clock. Feed that seek to completion and retain only the latest
-     * target, instead of treating the missing intermediate clock as failure.
-     * Existing no-progress deadlines and reload fallback remain authoritative. */
-    if(p->mp4_recovery) {
-      if(seek && fast_pending && !fast_failed && !pause && !audio &&
-         p->seamless && !p->seamless_disabled && !native_unhealthy && complete && !eof) {
+     * seamless reposition's clock (LG: a quick second seek, or a track change
+     * right after a seek). Without this the missing clock made the request
+     * take the fresh-Load path: the picture reloaded on every quick seek.
+     * Feed the pending reposition to completion and keep only the latest
+     * target/track; the existing no-progress deadline and reload fallback
+     * stay authoritative (a failed reposition reloads at the latest target). */
+    {
+      int can_queue=fast_pending && !fast_failed && !pause && p->seamless && !p->seamless_disabled &&
+                    !native_unhealthy && complete && !eof;
+      if(seek && !audio && can_queue) {
         queued_seek=1;queued_target=target;seek=0;
-        printf("[mp4-seek] deferred target=%.3f pending=%.3f\n",queued_target,fast_target);fflush(stdout);
+        printf("[dts-seek] deferred target=%.3f pending=%.3f\n",queued_target,fast_target);fflush(stdout);
       }
-      if(queued_seek && (!fast_pending || pause || audio)) {
-        if(!seek)target=queued_target;
-        if(fast_failed)fast_target=target;
-        else if(!audio)seek=1;
-        printf("[mp4-seek] latest target=%.3f reload=%d audio=%d\n",target,fast_failed,audio);fflush(stdout);
-        queued_seek=0;
+      if(audio && !seek && can_queue) {
+        queued_audio=1;audio=0;
+        printf("[dts-seek] deferred audio stream=%d pending=%.3f\n",new_stream,fast_target);fflush(stdout);
+      }
+      if((queued_seek || queued_audio) && (!fast_pending || pause || audio || seek)) {
+        /* A fresh seek wins; a queued seek gives its target to a track change;
+         * a track change alone starts where the picture is now. */
+        if(!seek) target=queued_seek?queued_target:audio?target:presented;
+        if(queued_audio) audio=1;
+        if(fast_failed && !audio) fast_target=target;
+        else if(queued_seek && !audio) seek=1;
+        printf("[dts-seek] latest target=%.3f reload=%d audio=%d\n",target,fast_failed,audio);fflush(stdout);
+        queued_seek=queued_audio=0;
       }
     }
-#endif
     /* The adapter now requests a native segment seek and gates controls on
      * SEEKDONE. Test both DV and DTS while retaining one bounded cache/player. */
     int audio_prepared=0;
