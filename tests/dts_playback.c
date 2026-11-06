@@ -21,13 +21,13 @@ static atomic_int jam_native, native_full, seek_failure;
 static atomic_int timestamp_fault, timestamp_fail_open, timestamp_block_open, timestamp_open_entered;
 static int last_dv;
 static int last_p7;
-static atomic_llong buffer_ready = 21*1048576LL;
+static atomic_llong buffer_ready = 21*1048576LL, buffer_contiguous = 20*1048576LL;
 void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *out) {
  (void)e;
  *out=(DtsBufferInfo){.ready_bytes=atomic_load(&buffer_ready),.capacity_bytes=68*1048576LL,
-                     .position=1048576,.total=300*1048576LL,.contiguous_bytes=20*1048576LL};
+                     .position=1048576,.total=300*1048576LL,.contiguous_bytes=atomic_load(&buffer_contiguous)};
 }
-static atomic_llong stall_wall_ns;
+static atomic_llong stall_wall_ns, refill_wall_ns;
 static int64_t frozen_clock, original_stall_clock;
 static int64_t stall_audio_pts, stall_video_pts;
 static int64_t fed_audio_pts, fed_video_pts;
@@ -251,6 +251,22 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
+ if(!strcmp(argv[1],"refill") || !strcmp(argv[1],"refilltimeout")) {
+  int timeout=!strcmp(argv[1],"refilltimeout");
+  if(timeout) atomic_store(&refill_wall_ns,100000000000LL);
+  scenario=SUSTAINED;p=start(0,4,NULL,0,0);wait_count(&accepted,10);
+  emit("{\"currentTime\":{\"currentTime\":1000}}");
+  atomic_store(&buffer_contiguous,0);
+  wait_count(&pauses,1);
+  if(timeout) {
+   atomic_store(&refill_wall_ns,121000000000LL);
+   s=wait_status(p,1,0);assert(strstr(s.error,"timed out"));dts_playback_close(p);return 0;
+  }
+  int before=count(&plays);atomic_store(&buffer_contiguous,20*1048576LL);
+  wait_count(&plays,before+1);
+  dts_playback_status(p,&s);assert(!s.failed);dts_playback_close(p);
+  puts("DTS refill pauses and resumes after contiguous bytes recover.");return 0;
+ }
  if(!strcmp(argv[1],"buffer")) {
   assert(getenv("DV7_OFF"));scenario=NORMAL;p=start(1,4,NULL,0,0);
   wait_status(p,0,0);wait_count(&pauses,1);assert(!last_dv && !last_p7);
@@ -550,6 +566,9 @@ int dts_pipeline_volume(DtsPipeline *p,int pct) {
 /* Deterministic CPU-budget check; native waits still use the real wall clock. */
 int __real_clock_gettime(clockid_t,struct timespec *);
 int __wrap_clock_gettime(clockid_t clock,struct timespec *out) {
+ if(scenario==SUSTAINED && clock==CLOCK_MONOTONIC && atomic_load(&refill_wall_ns)) {
+  int64_t ns=atomic_load(&refill_wall_ns);out->tv_sec=ns/INT64_C(1000000000);out->tv_nsec=ns%INT64_C(1000000000);return 0;
+ }
  if(scenario>=NATIVE_STALL && clock==CLOCK_MONOTONIC) {
   int64_t ns=atomic_load(&stall_wall_ns);out->tv_sec=ns/INT64_C(1000000000);out->tv_nsec=ns%INT64_C(1000000000);return 0;
  }
