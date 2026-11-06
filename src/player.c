@@ -5553,7 +5553,7 @@ static void desenharLegendaExternaCorpo(void) {
    * where the primary's bottom stack starts (topo). Geometry is explicit. */
   PlrRect av = areaVideoLegenda();
   int junto = ajustes_leg2_junto();
-  LegendasGeo g2 = { av.x, av.y, av.w, av.h, anim * entrada, entrada, posLegenda(), junto, 0.0f };
+  LegendasGeo g2 = { av.x, av.y, av.w, av.h, anim * entrada, entrada, posLegenda(), junto, 0.0f, 0 };
   float topo = -1.0f;
   // "Junto da principal": A SECUNDARIA FICA EMBAIXO (dono, 05/10/2026; antes
   // ia em cima). A principal sobe a altura dela e ela termina onde a principal
@@ -5561,6 +5561,15 @@ static void desenharLegendaExternaCorpo(void) {
   // continua em cima, estimada como sempre.
   leg2Reserva = 0.0f;
   g2.baseY = baseLegendaPrincipal();   // safe anchor for an explicit secondary position
+  if (legendasui_principal_letreiros()) {
+    // 06/11 (dono): a Signs & Songs main (libass places the signs) leaves the
+    // dialogue spot to the second, which ends where the main's text would.
+    legendasui_banda_zerar();
+    desenharLegendaPrincipal(&topo);
+    g2.lugarPrincipal = 1;
+    legendasui_desenhar_secundaria(&g2);
+    return;
+  }
   if (junto) legendasui_banda_zerar(); else legendasui_desenhar_secundaria(&g2);
   if (junto && (!assrender_ativo() || assrender_texto_simples())) {
     float h2 = legendasui_altura_secundaria(&g2);

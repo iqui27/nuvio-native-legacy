@@ -47,6 +47,7 @@ void faixas_escolher_externa(const Legenda *l) {
 }
 const char *faixas_legenda_marca(int i) { (void)i; return NULL; }
 const char *i18n(const char *s) { return s; }
+const char *legenda_idioma(const char *i, const char *a) { (void)a; return i ? i : ""; }
 static const char *tocando = "https://h.invalid/Show.S01E01.WEB.mkv";
 const char *video_url_atual(void) { return tocando; }
 uint64_t legsync_hash_url(const char *u) { uint64_t h = 1469598103934665603ull; while (*u) h = (h ^ (unsigned char)*u++) * 1099511628211ull; return h; }
@@ -145,15 +146,19 @@ int main(int argc, char **argv) {
   if (!strcmp(caso, "lista")) {
     assert(nLinhasV == 4);
     assert(linhas[0].tipo == LR_NENHUMA && linhas[1].tipo == LR_IDIOMA && linhas[2].tipo == LR_IDIOMA && linhas[3].tipo == LR_MAIS);
+    // 06/11: from Recommended the row decides the slot: no "Usar como",
+    // only Delay above the sources (main language rows pick the main).
     focar(1); tecla(SDLK_RETURN);
-    assert(ver && escolhidaEmb == -99 && nLinhasV == 2 + 3);            // pt: 2 embedded + 1 add-on
-    assert(cand[linhas[2].cand].embutida && cand[linhas[2].cand].indice == 0);
-    focar(2); tecla(SDLK_RETURN); assert(escolhidaEmb == 0 && ver);
+    assert(ver && escolhidaEmb == -99 && nLinhasV == 1 + 3);            // pt: 2 embedded + 1 add-on
+    assert(linhas[0].tipo == LR_ATRASO && linhaDe("v|alvo") < 0 && alvo == 0);
+    assert(cand[linhas[1].cand].embutida && cand[linhas[1].cand].indice == 0);
+    focar(1); tecla(SDLK_RETURN); assert(escolhidaEmb == 0 && ver);
     tecla(SDLK_ESCAPE); assert(!ver && foco == 1);
-    focar(2); tecla(SDLK_RETURN); assert(ver && nLinhasV == 2 + 2);   // en: two add-ons
+    // The Settings secondary language (en) is a MAIN row: it only orders lists.
+    focar(2); tecla(SDLK_RETURN); assert(ver && alvo == 0 && nLinhasV == 1 + 2);   // en: two add-ons
     // The top source is the automatic pick (release name), listed once.
-    assert(linhas[2].cand >= 0 && !strcmp(cand[linhas[2].cand].leg.url, add[2].url));
-    focar(2); agoraMs += 1000; tecla(SDLK_RETURN);
+    assert(linhas[1].cand >= 0 && !strcmp(cand[linhas[1].cand].leg.url, add[2].url));
+    focar(1); agoraMs += 1000; tecla(SDLK_RETURN);
     assert(escolhidasExt == 1 && !strcmp(escolhidaExtUrl, add[2].url));
     tecla(SDLK_ESCAPE); assert(!ver);
   } else if (!strcmp(caso, "direita")) {
@@ -163,13 +168,13 @@ int main(int argc, char **argv) {
     // Holding OK on a language opens its sources, never a menu.
     focar(2); segurar(); assert(!menu && ver);
     // Hold OK on a source opens the dropdown instead.
-    focar(2); segurar(); assert(menu);
+    focar(1); segurar(); assert(menu);
     tecla(SDLK_DOWN); tecla(SDLK_RETURN);
     assert(secEscolhas == 1 && escolhidaEmb == -99 && escolhidasExt == 0);
   } else if (!strcmp(caso, "segurar")) {
     SDL_Event e = {0}; e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_RETURN;
     focar(2); tecla(SDLK_RETURN); assert(ver);
-    focar(2); legendasui_evento(&e);
+    focar(1); legendasui_evento(&e);
     assert(escolhidaEmb == -99 && escolhidasExt == 0 && !menu);
     agoraMs += 701; legendasui_evento(&e); // TV repeat=0
     e.type = SDL_KEYUP; legendasui_evento(&e);
@@ -184,7 +189,7 @@ int main(int argc, char **argv) {
   } else if (!strcmp(caso, "voltar")) {
     // Back closes the dropdown first, then the source list, then the panel.
     focar(2); tecla(SDLK_RETURN); assert(ver);
-    focar(2); segurar(); assert(menu);
+    focar(1); segurar(); assert(menu);
     assert(tecla(SDLK_ESCAPE) == LEGUI_TRATADO && !menu && aberto && ver);
     assert(tecla(SDLK_ESCAPE) == LEGUI_TRATADO && !ver && aberto);
     assert(tecla(SDLK_ESCAPE) == LEGUI_FECHAR && !aberto);
@@ -209,17 +214,21 @@ int main(int argc, char **argv) {
     tecla(SDLK_ESCAPE); assert(!ver);
   }
   if (!strcmp(caso, "lista")) {
-    // Pair is a fourth row; accepting it does not reload either slot.
-    char id[24]; legendasui_id_addon(&add[1], id);
+    // 06/11: the second's language row (here en, so it stands in for the
+    // Settings en row); opening it reloads neither slot.
+    char id[24], s2[96]; legendasui_id_addon(&add[1], id);
+    snprintf(s2, sizeof s2, "s|g|%s", chaveIdioma("en"));
     snprintf(sec, sizeof sec, "%s", id); montarLinhas();
-    assert(nLinhasV == 5 && linhaDe("par") >= 0);
-    int before = escolhidasExt; focarChave("par"); tecla(SDLK_RETURN);
-    assert(escolhidasExt == before && !strcmp(sec, id));
+    assert(nLinhasV == 4 && linhaDe(s2) >= 0);
+    int before = escolhidasExt; focarChave(s2); tecla(SDLK_RETURN);
+    assert(escolhidasExt == before && !strcmp(sec, id) && ver && alvo == 1);
+    tecla(SDLK_ESCAPE);
     ativaEmb = -1; extId[0] = 0; montarLinhas();
-    assert(linhaDe("par") >= 0); // second slot remains visible with primary off
+    assert(linhaDe(s2) >= 0); // second slot remains visible with primary off
+    sec[0] = 0; montarLinhas();
     // Pending short OK retains the chosen file across late addon replacements.
     focar(2); tecla(SDLK_RETURN); assert(ver);
-    focar(2); SDL_Event ev = {0};
+    focar(1); SDL_Event ev = {0};
     ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_RETURN; legendasui_evento(&ev);
     snprintf(add[2].url, sizeof add[2].url, "https://h.invalid/new");
     agoraMs += NV_HOLD_MS - 1; // short release, past the duplicate guard

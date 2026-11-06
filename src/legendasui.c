@@ -186,7 +186,10 @@ void legendasui_definir_sync(const LegendasSyncProvider *p) {
 // --- rows --------------------------------------------------------------------------
 // LR_IDIOMA (06/11, dono): um GRUPO de idioma. OK abre as fontes daquele
 // idioma (a lista "ver"), nunca escolhe uma direto.
-typedef enum { LR_CAND, LR_NENHUMA, LR_MAIS, LR_SYNC, LR_ALVO, LR_ATRASO, LR_PAR, LR_IDIOMA } LuiTipo;
+// LR_IDIOMA slot 1 (06/11, dono): the SECOND subtitle's language in the
+// Recommended view; it replaced the "Combinacao atual" pair row. OK opens its
+// sources for the second, with Off on top.
+typedef enum { LR_CAND, LR_NENHUMA, LR_MAIS, LR_SYNC, LR_ALVO, LR_ATRASO, LR_IDIOMA } LuiTipo;
 typedef struct {
   LuiTipo tipo;
   int slot, cand;
@@ -361,13 +364,14 @@ static void agrupar(void) {
   }
   qsort(grupos, (size_t)nGruposV, sizeof *grupos, cmpGrupo);
 }
-static void linhaIdioma(const LuiGrupo *g, const char *prefixo) {
+static void linhaIdiomaCod(const char *cod, int n, const char *prefixo, int slot) {
   char k[96];
-  snprintf(k, sizeof k, "%sg|%s", prefixo, chaveIdioma(g->cod));
-  linhaFixa(LR_IDIOMA, 0, k);
-  snprintf(linhas[nLinhasV - 1].idioma, sizeof linhas[nLinhasV - 1].idioma, "%s", g->cod);
-  linhas[nLinhasV - 1].n = g->n;
+  snprintf(k, sizeof k, "%sg|%s", prefixo, chaveIdioma(cod));
+  linhaFixa(LR_IDIOMA, slot, k);
+  snprintf(linhas[nLinhasV - 1].idioma, sizeof linhas[nLinhasV - 1].idioma, "%s", cod ? cod : "");
+  linhas[nLinhasV - 1].n = n;
 }
+static void linhaIdioma(const LuiGrupo *g, const char *prefixo, int slot) { linhaIdiomaCod(g->cod, g->n, prefixo, slot); }
 static const LuiGrupo *grupoDe(const char *cod) {
   for (int g = 0; g < nGruposV; g++) if (mesmoGrupo(grupos[g].cod, cod)) return &grupos[g];
   return NULL;
@@ -382,14 +386,63 @@ static int cmpAddonOrdem(const void *a, const void *b) {
 // quando os candidatos ou o idioma mudam (montarLinhas roda todo quadro).
 static int topoCache = -1;
 static uint64_t topoAssin;
-static int topoDoIdioma(const char *cod) {
-  uint64_t h = recHashStr(recAssinatura(), chaveIdioma(cod));
+static int topoDoIdioma(const char *cod, int secundaria) {
+  uint64_t h = recHashStr(recAssinatura(), chaveIdioma(cod)) * 33u + (uint64_t)(secundaria ? 1 : 0);
   if (h != topoAssin) {
-    int r = chaveIdioma(cod)[0] ? recomendada(cod, 0) : -1;
+    int r = chaveIdioma(cod)[0] ? recomendada(cod, secundaria) : -1;
     topoCache = r >= 0 && mesmoGrupo(cand[r].idioma, cod) ? r : -1;
     topoAssin = h;
   }
   return topoCache;
+}
+
+// --- MAIN AND SECOND (06/11, dono) -------------------------------------------------
+// The second subtitle never shows the main's language: under "Use as: Second"
+// those rows are hidden, and picking a main in the second's language turns
+// the second off (one subtitle). A Signs & Songs main (an embedded signs
+// track) is the exception: libass draws the signs and the second, in the
+// dialogue spot, may be any language, the main's included. "Unknown" is no
+// language: it never matches anything.
+static char secIdioma[16], secIdiomaId[24];
+static int mesmoIdiomaConhecido(const char *a, const char *b) { return chaveIdioma(a)[0] && chaveIdioma(b)[0] && mesmoGrupo(a, b); }
+// Only an ASS signs track: libass places the signs, so the bottom is free. A
+// forced/signs SRT is drawn at the bottom itself and keeps the normal rules.
+static int letreirosCand(const LegUiCand *c) {
+  return c && c->embutida && c->tipo == LING_LEG_LETREIROS && !strcmp(c->formato, "ASS");
+}
+int legendasui_principal_letreiros(void) {
+  const char *x = faixas_legenda_externa_id();
+  int i = faixas_legenda_ativa();
+  const VideoFaixa *f;
+  char fmt[8];
+  if (x && x[0]) return 0;
+  f = i >= 0 && i < nEmbVivo() ? video_legenda(i) : NULL;
+  if (!f) return 0;
+  formatoDoCodec(f->codec, fmt);
+  // Same kind rule as legendasui_montar (#287).
+  return !strcmp(fmt, "ASS") &&
+         (f->tipoLeg ? f->tipoLeg : f->letreiro ? LING_LEG_LETREIROS : LING_LEG_COMUM) == LING_LEG_LETREIROS;
+}
+// Language of what each slot plays ("" = nothing or unknown). Uses the
+// snapshot of the last montarLinhas; the second falls back to the language
+// remembered when the selector chose it (its add-on may have left the list).
+static const char *idiomaPrincipal(void) {
+  char p[24];
+  int i;
+  idPrimario(p);
+  if (!p[0]) return "";
+  for (i = 0; i < nCand; i++) if (!strcmp(cand[i].id, p)) return cand[i].idioma;
+  return "";
+}
+static const char *idiomaSegunda(void) {
+  const char *s = legenda2_identidade();
+  int i;
+  if (!s[0]) return "";
+  for (i = 0; i < nCand; i++) if (!strcmp(cand[i].id, s)) return cand[i].idioma;
+  return !strcmp(secIdiomaId, s) ? secIdioma : "";
+}
+static int bloqueadoNaSegunda(const char *idioma) {
+  return !legendasui_principal_letreiros() && mesmoIdiomaConhecido(idiomaPrincipal(), idioma);
 }
 
 static void montarLinhas(void) {
@@ -404,8 +457,11 @@ static void montarLinhas(void) {
     // As FONTES de um idioma: Usar como, Atraso, e entao a de topo (a escolha
     // automatica, sem marca nenhuma), as embutidas e as dos addons na ordem
     // dos addons instalados. So a que toca leva a marca (dono, 06/11).
-    int topo = topoDoIdioma(verIdioma), ordem[LEGUI_MAX_CAND], n = 0;
-    linhaFixa(LR_ALVO, alvo, "v|alvo");
+    // From Recommended the row decided the slot (main language rows: main;
+    // the second's row: second, with Off on top): no "Usar como" (dono, 06/11).
+    int topo = topoDoIdioma(verIdioma, alvo), ordem[LEGUI_MAX_CAND], n = 0;
+    if (mais) linhaFixa(LR_ALVO, alvo, "v|alvo");
+    else if (alvo) linhaFixa(LR_NENHUMA, 1, "v|-");
     linhaFixa(LR_ATRASO, alvo, "v|atraso");
     if (topo >= 0) ordem[n++] = topo;
     for (i = 0; i < nCand; i++)
@@ -420,22 +476,24 @@ static void montarLinhas(void) {
       linhaCandidata(ordem[i], alvo, k);
     }
   } else if (!mais) {
-    // Recomendadas: Desligada, o idioma preferido e o secundario (cada um um
-    // grupo: OK abre as fontes dele), o par atual, a sincronia, Todas.
+    // Recomendadas: Desligada (as duas), o idioma preferido e o secundario
+    // dos Ajustes (grupos da PRINCIPAL: o idioma secundario so ordena listas,
+    // nunca escolhe a segunda), a SEGUNDA legenda quando ha uma (escolhida em
+    // Todas as legendas), a sincronia, Todas. Dono, 06/11.
     const LuiGrupo *gp = temPreferencia() ? grupoDe(prefLinha(0)) : NULL;
     const LuiGrupo *gs = prefLinha(1)[0] ? grupoDe(prefLinha(1)) : NULL;
-    const LuiGrupo *ga = NULL;
+    const LuiGrupo *ga = NULL, *g2 = NULL;
+    const char *si = sec[0] ? idiomaSegunda() : "";
+    if (sec[0]) g2 = grupoDe(si);
     linhaFixa(LR_NENHUMA, 0, "p|-");
-    if (gp && chaveIdioma(gp->cod)[0]) linhaIdioma(gp, "");
-    if (gs && gs != gp && chaveIdioma(gs->cod)[0]) linhaIdioma(gs, "");
+    if (gp && chaveIdioma(gp->cod)[0]) linhaIdioma(gp, "", 0);
+    // The second's own row already stands for its language: no twin row.
+    if (gs && gs != gp && chaveIdioma(gs->cod)[0] && !(sec[0] && mesmoGrupo(gs->cod, si))) linhaIdioma(gs, "", 0);
     // A legenda ATIVA fora dos dois idiomas tambem tem linha (o grupo dela):
     // senao o foco ao abrir caia em "Desligada".
     for (i = 0; i < nCand; i++) if (prim[0] && !strcmp(prim, cand[i].id)) ga = grupoDe(cand[i].idioma);
-    if (ga && ga != gp && ga != gs) linhaIdioma(ga, "");
-    if (sec[0]) {
-      linhaFixa(LR_PAR, 0, "par");
-      for (i = 0; i < nCand; i++) if (!strcmp(prim, cand[i].id)) linhas[nLinhasV - 1].cand = i;
-    }
+    if (ga && ga != gp && ga != gs) linhaIdioma(ga, "", 0);
+    if (sec[0]) linhaIdiomaCod(g2 ? g2->cod : si, g2 ? g2->n : 0, "s|", 1);
     for (slot = 0; slot < 2; slot++)
       if (estadoSync(slot)) linhaFixa(LR_SYNC, slot, slot ? "sync|s" : "sync|p");
     linhaFixa(LR_MAIS, 0, "mais");
@@ -446,7 +504,10 @@ static void montarLinhas(void) {
     linhaFixa(LR_ATRASO, alvo, "m|atraso");
     linhaFixa(LR_NENHUMA, alvo, "m|-");
     if (estadoSync(alvo)) linhaFixa(LR_SYNC, alvo, alvo ? "m|sync|s" : "m|sync|p");
-    for (g = 0; g < nGruposV && nLinhasV < LUI_MAX_LINHAS; g++) linhaIdioma(&grupos[g], "m|");
+    // Usar como: Segunda — the main's language is not offered (except with a
+    // Signs & Songs main); the rows mark what the chosen slot plays.
+    for (g = 0; g < nGruposV && nLinhasV < LUI_MAX_LINHAS; g++)
+      if (!alvo || !bloqueadoNaSegunda(grupos[g].cod)) linhaIdioma(&grupos[g], "m|", alvo);
   }
   // FOCUS BY IDENTITY: find the row with the remembered key; if it vanished
   // (a list was replaced), stay at the same position and adopt that row.
@@ -476,14 +537,12 @@ void legendasui_abrir(void) {
   aberto = 1; mais = ajustes_legendas_todas() || !temPreferencia(); ver = 0; menu = okPendente = okLongo = 0; alvo = 0; rolagemZerar(); aviso[0] = 0;
   focoChave[0] = 0; foco = 0;
   montarLinhas();
-  // Open on the language row of the active primary (or the current pair),
-  // else on "Desligada".
+  // Open on the language row of the active primary, else on "Desligada".
   idPrimario(prim);
   { const char *idAtivo = NULL;
     for (i = 0; i < nCand; i++) if (prim[0] && !strcmp(cand[i].id, prim)) idAtivo = cand[i].idioma;
     for (i = 0; i < nLinhasV; i++)
-      if ((linhas[i].tipo == LR_PAR && linhas[i].cand >= 0 && !strcmp(cand[linhas[i].cand].id, prim)) ||
-          (linhas[i].tipo == LR_IDIOMA && idAtivo && mesmoGrupo(linhas[i].idioma, idAtivo))) break; }
+      if (linhas[i].tipo == LR_IDIOMA && linhas[i].slot == 0 && idAtivo && mesmoGrupo(linhas[i].idioma, idAtivo)) break; }
   if (i == nLinhasV && !prim[0])
     for (i = 0; i < nLinhasV; i++) if (linhas[i].tipo == LR_NENHUMA && linhas[i].slot == 0) break;
   focar(i < nLinhasV ? i : 0);
@@ -496,6 +555,7 @@ void legendasui_reiniciar(void) {
   legenda2_reiniciar();
   aberto = menu = okPendente = okLongo = 0;
   mais = 0; ver = 0; alvo = 0; focoChave[0] = 0; foco = 0; rolagemZerar(); aviso[0] = 0;
+  secIdioma[0] = secIdiomaId[0] = 0;
 }
 
 // --- choosing ----------------------------------------------------------------------
@@ -531,12 +591,18 @@ static void escolher(int slot, const LegUiCand *c) {
   char prim[24];
   if (c && repeticao(slot, c)) return;
   if (slot == 0) {
+    const char *s = legenda2_identidade();
+    // A main in the second's language makes it one subtitle: the second goes
+    // (dono, 06/11). Not for a Signs & Songs main: signs + dialogue below.
+    int tira = c && s[0] && !letreirosCand(c) && (!strcmp(s, c->id) || mesmoIdiomaConhecido(idiomaSegunda(), c->idioma));
     if (!c) { faixas_escolher_embutida(-1); return; }
-    if (c->embutida) { int i = embutidaViva(c); if (i >= 0) faixas_escolher_embutida(i); }
+    if (c->embutida) { int i = embutidaViva(c); if (i >= 0) faixas_escolher_embutida(i); else tira = 0; }
     else faixas_escolher_externa(&c->leg);
+    if (tira) legenda2_desligar();
     return;
   }
   if (!c) { legenda2_desligar(); return; }
+  if (bloqueadoNaSegunda(c->idioma)) { avisar(i18n("Já é a principal")); return; }
   if (c->embutida) { avisar(i18n("Embutida como secundária: indisponível")); return; }
   if (!legendasui_cand_secundaria_ok(c)) { avisar(i18n("ASS como secundária: indisponível")); return; }
   if (!(rede_pedido_capacidades() & REDE_CAP_CORPO)) {
@@ -545,7 +611,15 @@ static void escolher(int slot, const LegUiCand *c) {
   }
   idPrimario(prim);
   if (!strcmp(prim, c->id)) { avisar(i18n("Já é a principal")); return; }
+  snprintf(secIdioma, sizeof secIdioma, "%s", c->idioma);
+  snprintf(secIdiomaId, sizeof secIdiomaId, "%s", c->id);
   legenda2_escolher(c->id, c->leg.url, legenda_idioma(c->idioma, c->leg.arquivo), c->origem);
+}
+
+// "Desligada" in Recommended turns both off (dono, 06/11); elsewhere its slot.
+static void desligar(const LuiLinha *l) {
+  escolher(l->slot, NULL);
+  if (l->slot == 0 && !strcmp(l->chave, "p|-")) escolher(1, NULL);
 }
 
 static int ativoNoSlot(int slot, const LegUiCand *c) {
@@ -587,7 +661,7 @@ static int nAcoes(int slot, const char **rot, int max) {
 }
 
 static int temMenu(const LuiLinha *l) {
-  return l && (l->tipo == LR_CAND || l->tipo == LR_NENHUMA || l->tipo == LR_PAR);
+  return l && (l->tipo == LR_CAND || l->tipo == LR_NENHUMA);
 }
 
 static void abrirMenu(void) {
@@ -610,10 +684,13 @@ static void abrirIdioma(const LuiLinha *l) {
   int k;
   snprintf(verGrupo, sizeof verGrupo, "%s", g.chave);
   snprintf(verIdioma, sizeof verIdioma, "%s", g.idioma);
-  ver = 1; if (!mais) alvo = 0; rolagemZerar(); focoChave[0] = 0; foco = 0;
+  // From Recommended the row's slot decides (no "Usar como" there); in Todas
+  // as legendas the "Usar como" choice stays.
+  ver = 1; if (!mais) alvo = g.slot; rolagemZerar(); focoChave[0] = 0; foco = 0;
   montarLinhas();
   for (k = 0; k < nLinhasV; k++) if (linhas[k].tipo == LR_CAND && ativoNoSlot(alvo, &cand[linhas[k].cand])) break;
-  focar(k < nLinhasV ? k : nLinhasV > 2 ? 2 : 0);
+  if (k == nLinhasV) for (k = 0; k < nLinhasV; k++) if (linhas[k].tipo == LR_CAND) break;
+  focar(k < nLinhasV ? k : 0);
 }
 
 void legendasui_atualizar(float dt) {
@@ -670,7 +747,7 @@ int legendasui_evento(const SDL_Event *e) {
     if (!menu) {
       // Apply the identity captured on keydown, even if addons arrived meanwhile.
       if (okLinha.tipo == LR_CAND) escolher(okLinha.slot, &okCand);
-      else if (okLinha.tipo == LR_NENHUMA) escolher(okLinha.slot, NULL);
+      else if (okLinha.tipo == LR_NENHUMA) desligar(&okLinha);
       // Grupo de idioma no SOLTAR: a TV entrega o OK segurado como varios
       // KEYDOWN; abrir no primeiro faria os seguintes cairem numa fonte.
       else if (okLinha.tipo == LR_IDIOMA) abrirIdioma(&okLinha);
@@ -720,10 +797,8 @@ int legendasui_evento(const SDL_Event *e) {
         mais = 1; alvo = 0; rolagemZerar(); focoChave[0] = 0; foco = 0;
         montarLinhas(); focar(nLinhasV > 3 ? 3 : 0);
         break;
-      case LR_NENHUMA: escolher(l->slot, NULL); break;
+      case LR_NENHUMA: desligar(l); break;
       case LR_IDIOMA: abrirIdioma(l); break;
-      case LR_PAR: // already playing: keep the current pair without reloading
-        break;
       case LR_CAND: escolher(l->slot, l->cand >= 0 ? &cand[l->cand] : NULL); break;
       case LR_ALVO: alvo = !alvo; break;
       case LR_ATRASO: break;
@@ -893,24 +968,15 @@ static const char *estadoSecundaria(void) {
   }
 }
 
-static const char *nomeSecundario(void) {
-  for (int i = 0; i < nCand; i++)
-    if (!strcmp(cand[i].id, legenda2_identidade())) return nomeIdioma(cand[i].idioma);
-  return i18n("Secundária");
-}
 
 static void textoLinha(const LuiLinha *l, char *nome, size_t tn, char *sub, size_t ts,
                        const char **idioma, const char **icone, int *ativo, int *apagada) {
   const LegUiCand *c = l->cand >= 0 ? &cand[l->cand] : NULL;
   nome[0] = sub[0] = 0; *idioma = NULL; *icone = NULL; *ativo = 0; *apagada = 0;
   switch (l->tipo) {
-    case LR_PAR:
-      snprintf(nome, tn, "%s + %s", c ? nomeIdioma(c->idioma) : i18n("Desligada"), nomeSecundario());
-      snprintf(sub, ts, "%s", i18n("Combinação atual"));
-      *icone = "pl_captions"; *ativo = 1;
-      break;
     case LR_NENHUMA:
-      snprintf(nome, tn, "%s", i18n(l->slot ? "Sem segunda legenda" : "Desligada"));
+      // The Off on top of the second's sources (Recommended) reads "Desligada".
+      snprintf(nome, tn, "%s", i18n(l->slot && !(ver && !mais) ? "Sem segunda legenda" : "Desligada"));
       snprintf(sub, ts, "%s", i18n("Sem legenda"));
       *icone = "pl_eye-off";
       *ativo = l->slot ? !legenda2_identidade()[0] : !legendasui_slot_identidade(0)[0];
@@ -920,6 +986,23 @@ static void textoLinha(const LuiLinha *l, char *nome, size_t tn, char *sub, size
       int k;
       snprintf(nome, tn, "%s", nomeGrupo(l->idioma));
       if (chaveIdioma(l->idioma)[0]) *idioma = l->idioma; else *icone = "pl_captions";
+      if (l->slot) {
+        // The row of the slot "Usar como" points at: the SECOND's check
+        // (before 06/11 it showed the main's, so Swedish as second had none).
+        const char *s = legenda2_identidade();
+        if (!s[0] || !mesmoGrupo(idiomaSegunda(), l->idioma)) break;
+        for (k = 0; k < nCand; k++)
+          if (!strcmp(cand[k].id, s)) {
+            char t[96];
+            legendasui_titulo(cand, nCand, k, t, sizeof t);
+            juntar(sub, ts, t);
+            juntar(sub, ts, cand[k].origem);
+            break;
+          }
+        *ativo = legenda2_estado() == LEG2_ATIVA;
+        if (!*ativo && estadoSecundaria()) { sub[0] = 0; juntar(sub, ts, estadoSecundaria()); }
+        break;
+      }
       for (k = 0; k < nCand; k++)
         if (mesmoGrupo(cand[k].idioma, l->idioma) && ativoNoSlot(0, &cand[k])) {
           char t[96];
@@ -974,7 +1057,9 @@ static void textoLinha(const LuiLinha *l, char *nome, size_t tn, char *sub, size
         if (l->slot == 0 && marca) juntar(sub, ts, marca);
         }
       }
-      if (l->slot == 1 && !legendasui_cand_secundaria_ok(c)) {
+      if (l->slot == 1 && (ativoNoSlot(0, c) || bloqueadoNaSegunda(c->idioma))) {
+        sub[0] = 0; juntar(sub, ts, i18n("Já é a principal")); *apagada = 1;
+      } else if (l->slot == 1 && !legendasui_cand_secundaria_ok(c)) {
         sub[0] = 0;
         juntar(sub, ts, c->embutida ? i18n("Embutida como secundária: indisponível")
                                     : i18n("ASS como secundária: indisponível"));
@@ -1128,7 +1213,7 @@ static int menuTiraSecundaria(void) {
   const char *sec = legenda2_identidade();
   int i;
   if (!sec[0] || menuTipo == LR_NENHUMA) return 0;
-  if (menuTipo == LR_PAR || !strcmp(menuCand.id, sec)) return 1;
+  if (!strcmp(menuCand.id, sec)) return 1;
   i = menuRecomendada && menuCand.id[0] ? recomendada(menuCand.idioma, 1) : -1;
   return i >= 0 && !strcmp(cand[i].id, sec);
 }
@@ -1354,14 +1439,15 @@ void legendasui_desenhar_secundaria(const LegendasGeo *g) {
   // Minimised player / window animation: the second line has nowhere honest
   // to go, and the primary still identifies the scene.
   if (!g || g->videoW < NV_TELA_W * 0.6f) return;
-  if (posicao >= 0 && g->baseY <= 0.0f) return;   // explicit position needs the real safe anchor
+  if (g->lugarPrincipal) posicao = -1;           // the main's dialogue spot wins (06/11)
+  if ((posicao >= 0 || g->lugarPrincipal) && g->baseY <= 0.0f) return;   // needs the real safe anchor
   n = legenda2_cues(g->pos, cues, LEGENDA_SIMULTANEAS);
   if (n <= 0) return;
   secundario = estiloSecundario(principal, &est, &r, &gg, &b, &fundo, &borda);
   alpha = (e->opacidade == 3 ? .25f : e->opacidade == 2 ? .5f : e->opacidade == 1 ? .75f : 1.f) * g->alpha;
   topo = 48.0f + 72.0f * (g->osd < 0 ? 0 : g->osd > 1 ? 1 : g->osd);
   if (g->videoY > topo) topo = g->videoY + 24.0f;   // letterbox: start on the picture
-  if (posicao < 0 && !g->junto && plrilha_rect(&il)) {
+  if (posicao < 0 && !g->junto && !g->lugarPrincipal && plrilha_rect(&il)) {
     float s = gfx_escala_ui();
     il.x *= s; il.y *= s; il.w *= s; il.h *= s;
     if (il.y < topo + 260.0f && il.y + il.h > topo) {
@@ -1373,7 +1459,12 @@ void legendasui_desenhar_secundaria(const LegendasGeo *g) {
   }
   for (i = 0; i < n && nl < LEG2_LINHAS; i++)
     nl += quebrar(&cues[i], e, est, r, gg, b, borda, ajustes_leg_borda_rgb(e->corBorda), x1 - x0, ln + nl, LEG2_LINHAS - nl);
-  if (g->junto || posicao >= 0) {
+  if (g->lugarPrincipal) {
+    // Signs & Songs main: the second is the dialogue, where the main's would be.
+    for (i = 0; i < nl; i++) altura += (float)ln[i].cor.h + (i ? 5.0f : 0.0f);
+    topo = g->baseY - altura;
+    if (topo < 8.0f) topo = 8.0f;
+  } else if (g->junto || posicao >= 0) {
     // Stacked: the whole block ends just above the primary (2-line cues grow
     // upward, never over it) and stays inside the picture.
     for (i = 0; i < nl; i++) altura += (float)ln[i].cor.h + (i ? 5.0f : 0.0f);
@@ -1391,7 +1482,7 @@ void legendasui_desenhar_secundaria(const LegendasGeo *g) {
     txt_desenhar_alpha(l, x, y, alpha);
     y += (float)l.h + 5.0f;
   }
-  if (posicao < 0 && !g->junto) bandaFim = y;
+  if (posicao < 0 && !g->junto && !g->lugarPrincipal) bandaFim = y;
 }
 
 // Altura do bloco da segunda legenda agora (0 = nada a mostrar). O player usa
