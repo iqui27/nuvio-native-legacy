@@ -32,6 +32,32 @@ int main(int argc,char **argv) {
   assert(e->ranges[0].state==0 && !e->ranges[0].data);
   dts_engine_destroy(e); puts("PASS: seek keeps exact queued range"); return 0;
  }
+ if(strstr(argv[1],"shared-")) {
+  assert(RANGE_WORKERS>=2); e->range_slots=3; e->range_bytes=1024;
+#ifdef NV_DTS_WEBOS_RECOVERY
+  if(strstr(argv[1],"shared-isolation")) {
+   assert(start_ranges(e)); pthread_mutex_lock(&e->range_lock); queue_ranges(e); pthread_mutex_unlock(&e->range_lock);
+   uint64_t limit=clock_ns(CLOCK_MONOTONIC)+UINT64_C(1000000000); int throttled=0;
+   do { pthread_mutex_lock(&e->range_lock); throttled=e->range_retry_until>clock_ns(CLOCK_MONOTONIC); pthread_mutex_unlock(&e->range_lock); if(!throttled) usleep(1000); } while(!throttled && clock_ns(CLOCK_MONOTONIC)<limit);
+   assert(throttled);
+   DtsEngine *other=dts_engine_create(); assert(other); other->range_bytes=1024; other->range_slots=1;
+   other->url=strdup(argv[1]); other->headers=strdup(e->headers);
+   char *p=strstr(other->url,"/shared-isolation/"); assert(p); memmove(p,p+17,strlen(p+17)+1);
+   uint64_t start=clock_ns(CLOCK_MONOTONIC); bytes(other,1);
+   assert(clock_ns(CLOCK_MONOTONIC)-start<UINT64_C(700000000));
+   dts_engine_destroy(other); dts_engine_cancel(e);
+  } else
+#endif
+  if(strstr(argv[1],"shared-cancel")) {
+   pthread_t t; uint8_t b; uint64_t start=clock_ns(CLOCK_MONOTONIC);
+   assert(!pthread_create(&t,NULL,cancel_later,e));
+   assert(read_range(e,&b,1)==AVERROR_EXIT); pthread_join(t,NULL);
+   assert(clock_ns(CLOCK_MONOTONIC)-start<UINT64_C(700000000));
+  } else if(strstr(argv[1],"shared-legacy")) {
+   uint8_t b; assert(read_range(e,&b,1)==AVERROR(EIO));
+  } else bytes(e,3072);
+  dts_engine_destroy(e); puts("PASS: shared cooldown fixture"); return 0;
+ }
  if(strstr(argv[1],"race-seek")) {
   assert(RANGE_WORKERS>=2); e->range_slots=2; e->range_bytes=1024;
   assert(start_ranges(e)); pthread_mutex_lock(&e->range_lock); queue_ranges(e); pthread_mutex_unlock(&e->range_lock);
