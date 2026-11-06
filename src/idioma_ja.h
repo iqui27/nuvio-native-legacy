@@ -1377,6 +1377,7 @@
   T("Como o player escolhe a fonte, qualidade e formatos de áudio, e os idiomas preferidos de áudio e legenda.", "プレーヤーがソース、画質、音声形式をどう選ぶか。優先する音声と字幕の言語もここで設定します。"),
   T("Como o provedor mandou", "プロバイダーの指定どおり"),
   T("Como o título de cada fileira da Home aparece. Clássico (padrão): só o texto. Ilha: numa pílula de vidro. Editorial: com uma linha de categoria acima. Acento: com um ponto de destaque. Vale só nesta TV.", "ホームの各行のタイトルの見せ方です。クラシック（既定）：テキストのみ。アイランド：ガラスのカプセル内。エディトリアル：上にカテゴリ行を表示。アクセント：色のドット付き。このテレビのみ。"),
+  T("Como o áudio DTS é entregue à TV (só na LG). Estéreo (AAC) serve qualquer TV. 5.1 (Dolby Digital) mantém o surround para barra de som e receiver. Desligado: o DTS não é convertido e o vídeo toca pelo player da TV, normalmente sem som. Vale a partir do próximo vídeo.", "DTS音声をテレビに届ける方法（LGのみ）。ステレオ（AAC）はどのテレビでも使えます。5.1（Dolby Digital）はサウンドバーやAVアンプ向けにサラウンドを保ちます。オフ：DTSは変換されず、動画はテレビのプレーヤーで再生され、通常は音が出ません。次の動画から適用されます。"),
   T("Como o áudio DTS é entregue à TV quando o app o converte (só na LG). Estéreo (AAC) é o modo provado e serve qualquer TV. 5.1 (Dolby Digital) mantém o som surround para barra de som e receiver por ARC/eARC; vale a partir do próximo vídeo.", "アプリが DTS 音声を変換するときに、テレビへどう届けるかを選びます (LG のみ)。ステレオ (AAC) は動作確認済みで、どのテレビでも使えます。5.1 (Dolby Digital) は ARC/eARC 経由でサウンドバーやレシーバーにサラウンドをそのまま届けます。次の動画から有効です。"),
   T("Como usar este guia", "このガイドの使い方"),
   T("Como você aparece", "表示名"),

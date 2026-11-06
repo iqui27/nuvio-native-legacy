@@ -9,11 +9,14 @@
 #include <ctype.h>
 #include "dts/dts_audio_codec.h"
 
+/* Settings > DTS "Off" (set by video.c per source): DTS is not converted, so
+ * the Dolby Vision path cannot feed a DTS track and picks AC-3/E-AC-3. */
+static int nv_dvaudio_sem_dts;
 // 0 = o caminho nao alimenta; 1..3 = alimenta (3 = E-AC-3, melhor).
 static inline int nv_dvaudio_nota_codec(const char *c) {
   if (!strcmp(c, "A_EAC3")) return 3;
   if (!strcmp(c, "A_AC3")) return 2;
-  if (!strncmp(c, "A_DTS", 5)) return 1;
+  if (!strncmp(c, "A_DTS", 5)) return nv_dvaudio_sem_dts ? 0 : 1;
   return 0;
 }
 

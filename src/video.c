@@ -699,6 +699,7 @@ static char      erroTexto[96];
 // errorCode 200 "Audio Codec Not Supported": o VIDEO segue tocando e so o
 // audio morre. Ver o tratamento em lerEvento.
 static int       audioNaoSup;
+static int dtsDesligado;   /* Settings > DTS "Off" for this source */
 static int dtsHabilitado, dtsTentou, dtsRevisao, dtsLoadRevisao, dtsFalhaLogada;
 #ifdef NV_MP4_BD_TEST
 static int mp4TestEnabled,mp4TestPending,mp4TestStarted;
@@ -2139,7 +2140,8 @@ static void audioMkvAplicar(void) {
     __atomic_store_n(&audioMkvPending,0,__ATOMIC_RELEASE);return;
   }
   pthread_mutex_lock(&audioMkvLock);
-  if(audioMkvCount) {
+  /* DTS "Off": the recovered DTS rows could not be played; keep the TV's list. */
+  if(audioMkvCount && !dtsDesligado) {
     int before=nAudio;
     nAudio=nv_audio_mkv_merge(faixaAudio,nAudio,NV_FAIXA_MAX,audioMkvTracks,audioMkvCount,audioMkvNative);
     // An omitted native list does not identify the playing/default track.
@@ -2573,12 +2575,20 @@ int video_tocar(const char *url) {
 #endif
   dvRecuado = 0;
   dtsTentou = 0; dtsRevisao = 0; dtsSaida[0] = 0; dtsNativePending = 0; dtsEstado = 0;
-  dtsHabilitado = dts_playback_enabled() && dtsLiberadoNestaTv();
+  { /* Settings > DTS "Off": no DTS conversion. The converter itself stays
+     * available to Dolby Vision (P7/P8 MKV, MP4) with non-DTS audio. */
+    int conversao = dts_playback_enabled() && dtsLiberadoNestaTv();
+    dtsDesligado = ajustes_dts_desligado();
+    nv_dvaudio_sem_dts = dtsDesligado;
+    dtsHabilitado = conversao && !dtsDesligado;
 #ifdef NV_MP4_BD_TEST
-  mp4TestEnabled=ajustes_mp4_bd_test() && dtsHabilitado;
+    mp4TestEnabled=ajustes_mp4_bd_test() && conversao;
+#endif
+  }
+#ifdef NV_MP4_BD_TEST
   mp4TestPending=mp4TestStarted=0;
 #endif
-  printf("[dts] fallback %s\n", dtsHabilitado ? "available" : "unavailable");
+  printf("[dts] fallback %s%s\n", dtsHabilitado ? "available" : "unavailable", dtsDesligado ? " (DTS off in settings)" : "");
   dvSondado = dvMkvPerfil = dvAudios = 0; dtsModoDv = 0; dvAudioMkvOrd = dvAudioMkvAtual = -1; dvSegurar = 0;
   mkvNaoMkv = 0;
   dvNao = 0; dvSessaoN++; dvFonteAberta = 0; dvAudioDe[0] = 0;
@@ -3445,6 +3455,7 @@ static int iniciarDts(int stream) {
   }
   dtsMarcarAbertas(dtsAbertasSemFechar() + 1);
   dts_engine_set_ac3(ajustes_dts_ac3());
+  dts_engine_set_dts_off(dtsDesligado);
   dts_engine_set_http_workers(ajustes_buffer_conversion_connections());
   dts_engine_set_conversion_stream(ajustes_buffer_conversion_stream());
   dts_engine_set_ahead_mib(cacheboost_backend_buffer_mb());   // #338: Settings > Buffer size
@@ -4241,7 +4252,7 @@ void video_escolher_audio(int i) {
   const VideoFaixa *f = video_audio(i);
   if (dtsSessao && f) {
     if (f->stream_index < 0) return;
-    if (nv_dts_audio_feeds(f->codec,dtsModoDv)) {
+    if (nv_dts_audio_feeds_off(f->codec,dtsModoDv,dtsDesligado)) {
 #ifdef NV_NATIVE_SEEK_TEST
       if (i == audioAtual) return;
       dts_playback_audio_at(dtsSessao, f->stream_index, posSeg);

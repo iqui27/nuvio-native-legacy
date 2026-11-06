@@ -1377,6 +1377,7 @@
   T("Como o player escolhe a fonte, qualidade e formatos de áudio, e os idiomas preferidos de áudio e legenda.", "播放器如何選擇片源、畫質和音訊格式，以及你偏好的音訊和字幕語言。"),
   T("Como o provedor mandou", "依供應商原樣顯示"),
   T("Como o título de cada fileira da Home aparece. Clássico (padrão): só o texto. Ilha: numa pílula de vidro. Editorial: com uma linha de categoria acima. Acento: com um ponto de destaque. Vale só nesta TV.", "主頁每一列標題的顯示方式。經典（預設）：僅文字。島：玻璃膠囊內。編輯風：上方帶分類列。強調：帶彩色圓點。僅限此電視。"),
+  T("Como o áudio DTS é entregue à TV (só na LG). Estéreo (AAC) serve qualquer TV. 5.1 (Dolby Digital) mantém o surround para barra de som e receiver. Desligado: o DTS não é convertido e o vídeo toca pelo player da TV, normalmente sem som. Vale a partir do próximo vídeo.", "DTS 音訊如何傳到電視（僅 LG）。立體聲（AAC）適用於任何電視。5.1（Dolby Digital）為聲霸和擴大機保留環繞音效。關閉：不轉換 DTS，影片由電視播放器播放，通常沒有聲音。從下一部影片起生效。"),
   T("Como o áudio DTS é entregue à TV quando o app o converte (só na LG). Estéreo (AAC) é o modo provado e serve qualquer TV. 5.1 (Dolby Digital) mantém o som surround para barra de som e receiver por ARC/eARC; vale a partir do próximo vídeo.", "應用程式轉換 DTS 音訊時，聲音以何種方式送到電視 (僅限 LG)。立體聲 (AAC) 是已驗證的模式，適用於任何電視。5.1 (Dolby Digital) 透過 ARC/eARC 為家庭劇院喇叭或擴大機保留環繞聲；從下一部影片起生效。"),
   T("Como usar este guia", "如何使用本指南"),
   T("Como você aparece", "你的顯示方式"),

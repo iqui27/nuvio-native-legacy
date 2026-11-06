@@ -36,6 +36,11 @@ void dts_engine_set_ahead_mib(int mib) { g_ahead_mib = mib > 0 && mib <= 256 ? m
  * single connection. */
 static volatile int g_conversion_stream;
 void dts_engine_set_conversion_stream(int on) { g_conversion_stream = on ? 1 : 0; }
+/* Settings > DTS "Off": engines opened after this never select or switch to a
+ * DTS track (the controller then hands the source back to the TV player). */
+static volatile int g_dts_off;
+void dts_engine_set_dts_off(int on) { g_dts_off = on ? 1 : 0; }
+int dts_engine_dts_off(void) { return g_dts_off; }
 /* Rings alive (read_fluxo allocates, fx_close frees): the .tpk memory line. */
 static pthread_mutex_t g_rings_lock = PTHREAD_MUTEX_INITIALIZER;
 static DtsEngineRings g_rings;
@@ -157,6 +162,7 @@ struct DtsEngine {
   int dv, dv_audio, passthrough, range_slots, final_cross, opening;
   int source_stream; /* Native HTTP cache; conversion readers retain their behavior. */
   int conv_stream;   /* Conversion over one continuous request (test option). */
+  int dts_off;       /* Settings > DTS "Off", snapshot at open. */
   volatile int source_cancel;
   /* Samsung remux (dts_engine_open_demux): container only, large ranges and
    * the final address reused, like the Dolby Vision path, because the whole
@@ -1326,6 +1332,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
   /* Test option: one continuous request; the ring takes the same RAM the
    * range slots would (Settings > Buffer size, 64 MiB when automatic). */
   e->conv_stream=__atomic_load_n(&g_conversion_stream,__ATOMIC_RELAXED);
+  e->dts_off=__atomic_load_n(&g_dts_off,__ATOMIC_RELAXED);
   if(e->conv_stream) {
     int mib=g_ahead_mib>0?g_ahead_mib:64;
     if(mib<16)mib=16;
@@ -1390,7 +1397,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
       e->info.video_stream=i;
     /* Dolby Vision path: AC-3/E-AC-3 normally pass through; the fixed-output
      * test still selects by SOURCE metadata before configuring its encoder. */
-    if(nv_dts_audio_feeds(avcodec_get_name(p->codec_id),e->dv)
+    if(nv_dts_audio_feeds_off(avcodec_get_name(p->codec_id),e->dv,e->dts_off)
        && e->info.audio_stream<0 && (audio<0 || audio==(int)i)) e->info.audio_stream=i;
     int kind=p->codec_type==AVMEDIA_TYPE_VIDEO?DTS_VIDEO:p->codec_type==AVMEDIA_TYPE_AUDIO?DTS_AUDIO:p->codec_type==AVMEDIA_TYPE_SUBTITLE?DTS_SUBTITLE:0;
     if(kind && e->info.n_tracks<DTS_TRACK_MAX) {
@@ -1480,7 +1487,7 @@ int dts_engine_audio(DtsEngine *e,int stream,int core,double target) {
      target>INT64_MAX/1000000000.0) return -1;
   AVCodecParameters *ap=e->fmt->streams[stream]->codecpar;
   if(ap->codec_type!=AVMEDIA_TYPE_AUDIO ||
-     !nv_dts_audio_feeds(avcodec_get_name(ap->codec_id),e->dv)) return -1;
+     !nv_dts_audio_feeds_off(avcodec_get_name(ap->codec_id),e->dv,e->dts_off)) return -1;
   // Free the previous audio chain before allocating its replacement. The
   // demuxer, video filter, DV conversion state and bounded HTTP queue survive.
   av_packet_free(&e->in); av_packet_free(&e->out);

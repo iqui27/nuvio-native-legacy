@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Conversion over one continuous request (Settings > Buffer size > DTS/TrueHD
-# and DV7: "Stream (1) - Tizen - Test") against a real HTTP origin and real rede.c.
+# and DV7: "Standard (1) - Uses method from Tizen") against a real HTTP origin and real rede.c.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 prefix=${NUVIO_DTS_ROOT:-/tmp/nuvio-dts-host}

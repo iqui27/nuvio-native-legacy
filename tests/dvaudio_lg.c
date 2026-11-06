@@ -288,6 +288,22 @@ int main(void) {
   setvbuf(stdout, NULL, _IOLBF, 0);
   lsCall = fakeCall; lsPayload = fakePayload;
   bus = (LSHandle *)(uintptr_t)1; sessao = 40;
+  { /* Settings > DTS "Off": the DV path cannot feed DTS. AC-3 of the same
+     * language keeps Dolby Vision; a DTS-only file stays on the TV player. */
+    Mkv m[] = {{"A_DTS", "eng", "DTS-HD MA 5.1"}, {"A_AC3", "eng", "DD 5.1"}};
+    Tv t[] = {{"en", "dts", 6}, {"en", "ac3", 6}};
+    montar(m, 2, t, 2, 0); dtsDesligado = 1; nv_dvaudio_sem_dts = 1;
+    (void)abrir();
+    assert(dvAudioMkvOrd == 1 && partidaOrdinal == 1);
+    Mkv d[] = {{"A_DTS", "eng", "DTS 5.1"}}; Tv td[] = {{"en", "dts", 6}};
+    montar(d, 1, td, 1, 0); dtsDesligado = 1; nv_dvaudio_sem_dts = 1;
+    assert(!dvPronto() && dvNao == VIDEO_DV_NAO_AUDIO && !dvHabilitado);
+    /* On again: the same DTS-only file keeps the DV path. */
+    montar(d, 1, td, 1, 0); dtsDesligado = 0; nv_dvaudio_sem_dts = 0;
+    assert(dvPronto() && dvAudioMkvOrd == -1);
+    dtsSessao = NULL;
+    puts("dvaudio_lg: DTS Off keeps DV with AC-3, DTS-only stays native, DTS on unchanged");
+  }
   if(getenv("NV_TEST_MISSING_DTS")){testarDtsOculto();testarRoteamentoRecuperado();return 0;}
 #ifdef NV_DV_TRUEHD_TEST
   // Keep the exact selected TrueHD track at startup instead of substituting

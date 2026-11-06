@@ -195,7 +195,7 @@ static void rest(DtsPlayback *p) {
  * AC-3 and E-AC-3 pass through. The TrueHD experiment converts its audio;
  * anything else belongs to the native player. */
 static int codecFeeds(const DtsPlayback *p, const char *codec) {
-  return nv_dts_audio_feeds(codec,p->dv);
+  return nv_dts_audio_feeds_off(codec,p->dv,dts_engine_dts_off());
 }
 static int trackMatches(DtsPlayback *p, const DtsTrack *t) {
   const char *selected_codec = audioinfo_codec(p->selected.codec);

@@ -27,7 +27,7 @@ for scenario in audio-hold-ready audio-hold-gap audio-hold-paused audio-hold-dea
  "$tmp/test" "$scenario"
 done
 if [[ ${NV_TEST_TRUEHD:-0} == 1 ]]; then "$tmp/test" dv-truehd;exit;fi
-for scenario in startup-same startup-audio startup-fallback startup-no-dv resumeseek seekfallback timestamp timestampbound timestampprogress timestampopenfail timestampcancel timestamppause timestampdv timestampseek timestampaudio preparefail pause backpressure delayedid cancel seek seeksegment pausedseek pacing ordinal filtered ambiguous dv-codec dv-file-ordinal audio audioerror eof eoferror pausedreload eofpause overflow subtitles reordered core nocore volume cpu pausedcore controls stallpaced stallrecover stallbound stallnoclock stalltransient stallpause stallseek stallpausedseek stallrecovernoclock stallrecovercancel stallseeknoclock stallrecoverunloaded sustained; do
+for scenario in startup-same startup-audio startup-fallback startup-no-dv resumeseek seekfallback timestamp timestampbound timestampprogress timestampopenfail timestampcancel timestamppause timestampdv timestampseek timestampaudio preparefail pause backpressure delayedid cancel seek seeksegment pausedseek pacing ordinal filtered ambiguous dv-codec dv-file-ordinal dts-off-dv-ac3 dts-off-dv-dts dts-off-plain audio audioerror eof eoferror pausedreload eofpause overflow subtitles reordered core nocore volume cpu pausedcore controls stallpaced stallrecover stallbound stallnoclock stalltransient stallpause stallseek stallpausedseek stallrecovernoclock stallrecovercancel stallseeknoclock stallrecoverunloaded sustained; do
  "$tmp/test" "$scenario"
 done
 DV7_OFF=1 "$tmp/test" buffer

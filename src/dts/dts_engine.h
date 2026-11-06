@@ -34,6 +34,9 @@ void dts_engine_set_ahead_mib(int mib);
 /* Test option: conversion opened after this reads over one continuous HTTP
  * request (ring = buffer size) instead of range requests. */
 void dts_engine_set_conversion_stream(int on);
+/* Settings > DTS "Off": no DTS track is selected or converted. */
+void dts_engine_set_dts_off(int on);
+int dts_engine_dts_off(void);
 /* Measured payload for native HTTP and conversion read-ahead. Native capacity
  * is the allocated ring; conversion capacity includes its active range plus
  * the queued range budget. Conversion snapshots must be taken on the engine's

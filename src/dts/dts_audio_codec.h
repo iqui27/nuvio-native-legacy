@@ -14,4 +14,10 @@ static inline int nv_dts_audio_feeds(const char *codec,int dv) {
   return !strcmp(codec,"dts") || (dv && (!strcmp(codec,"ac3") ||
          !strcmp(codec,"eac3") || nv_dts_truehd_codec(codec)));
 }
+/* Settings > DTS "Off" (LG): DTS is never converted, so a DTS track is not
+ * fed on any path; AC-3/E-AC-3 (and the TrueHD test) still keep Dolby Vision. */
+static inline int nv_dts_audio_feeds_off(const char *codec,int dv,int dts_off) {
+  if(dts_off && (!strcmp(codec,"dts") || !strncmp(codec,"A_DTS",5))) return 0;
+  return nv_dts_audio_feeds(codec,dv);
+}
 #endif

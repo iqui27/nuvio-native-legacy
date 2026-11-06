@@ -81,6 +81,8 @@ static void fixedInfo(DtsEngine *e) {
   e->info.channels=e->dv_audio==2?6:2;e->info.sample_rate=48000;
  }
 }
+static int test_dts_off;
+int dts_engine_dts_off(void) { return test_dts_off; }
 DtsEngine *dts_engine_create(void) { return calloc(1,sizeof(DtsEngine)); }
 int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,int core,double target) {
  (void)headers;assert(!strcmp(url,"fixture://movie"));
@@ -846,6 +848,23 @@ int main(int argc,char **argv) {
   s=wait_status(p,scenario==MAPPING_BAD,0);
   if(scenario==MAPPING_BAD)assert(strstr(s.error,"safely identify"));else assert(last_stream==9 && count(&opens)==1 && count(&audio_reconfigs)==1);
   dts_playback_close(p);
+ } else if(!strcmp(argv[1],"dts-off-dv-ac3") || !strcmp(argv[1],"dts-off-dv-dts") || !strcmp(argv[1],"dts-off-plain")) {
+  /* Settings > DTS "Off": AC-3 keeps Dolby Vision; a DTS selection is refused
+   * (the controller then returns the source to the TV player). */
+  test_dts_off=1;
+  if(!strcmp(argv[1],"dts-off-plain")) {
+   p=start(0,-1,NULL,1,3);s=wait_status(p,1,0);assert(strstr(s.error,"DTS track"));dts_playback_close(p);
+  } else {
+   scenario=DV_MAPPING;dts_playback_next_dv(1);
+   DtsTrack selected={.kind=DTS_AUDIO,.channels=6};strcpy(selected.language,"rus");
+   int dts=!strcmp(argv[1],"dts-off-dv-dts");
+   strcpy(selected.codec,dts?"A_DTS/LOSSLESS":"A_AC3");
+   p=start(0,-1,&selected,dts?2:0,dts?3:1);
+   if(dts) { s=wait_status(p,1,0);assert(strstr(s.error,"selected audio track")); }
+   else { s=wait_status(p,0,0);assert(s.info.audio_stream==4 && last_dv && count(&opens)==1); }
+   dts_playback_close(p);
+  }
+  test_dts_off=0;
  } else if(!strcmp(argv[1],"dv-codec") || !strcmp(argv[1],"dv-file-ordinal")) {
   scenario=DV_MAPPING;dts_playback_next_dv(1);
   DtsTrack selected={.kind=DTS_AUDIO,.channels=6};strcpy(selected.language,"rus");
