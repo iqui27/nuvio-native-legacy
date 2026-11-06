@@ -588,9 +588,16 @@ static void *run(void *user) {
         /* Use the latest presentation clock, never a packet fed ahead.
          * Pending user seek/track requests are handled by the next iteration. */
         int pending_control;
+#ifdef DTS_PLAYBACK_TEST_HOOKS
+        extern void dts_test_recovery_entry(void);
+        dts_test_recovery_entry();
+#endif
         pthread_mutex_lock(&p->lock);
         target = p->presented;
-        pending_control = p->seek_dirty || p->audio_dirty;
+        pending_control = p->stop || p->status.failed || p->seek_dirty || p->audio_dirty;
+#ifdef NV_DTS_WEBOS_RECOVERY
+        if (!pending_control) { p->refill_active = 0; p->status.buffering_ms = 0; }
+#endif
         pthread_mutex_unlock(&p->lock);
         if (pending_control) continue;
         if (timestamp_retries && target >= timestamp_anchor + DTS_TIMESTAMP_PROGRESS_SECONDS)
@@ -605,11 +612,6 @@ static void *run(void *user) {
           break;
         }
         refill = 0;
-#ifdef NV_DTS_WEBOS_RECOVERY
-        pthread_mutex_lock(&p->lock);
-        p->refill_active = 0; p->status.buffering_ms = 0;
-        pthread_mutex_unlock(&p->lock);
-#endif
         timestamp_retries++; timestamp_anchor = target;
         printf("[dts] timestamp-recovery-request at=%.3f attempt=%u core=%d stream=%d dv=%d\n",
                target, timestamp_retries, core, stream, p->dv);
@@ -636,12 +638,20 @@ static void *run(void *user) {
                         cpu_used > (now - cpu_window) * 0.80;
       if (now >= 0 && now - cpu_window >= 5.0) { cpu_window = now; cpu_used = 0; }
       if (decode_error || encoder_error || cpu_overrun) {
-        refill = 0;
+#ifdef DTS_PLAYBACK_TEST_HOOKS
+        extern void dts_test_recovery_entry(void);
+        dts_test_recovery_entry();
+#endif
         pthread_mutex_lock(&p->lock);
 #ifdef NV_DTS_WEBOS_RECOVERY
-        p->refill_active = 0; p->status.buffering_ms = 0;
+        int pending_control = p->stop || p->status.failed || p->seek_dirty || p->audio_dirty;
+        if (!pending_control) { p->refill_active = 0; p->status.buffering_ms = 0; }
 #endif
         presented = p->presented; pthread_mutex_unlock(&p->lock);
+#ifdef NV_DTS_WEBOS_RECOVERY
+        if (pending_control) continue;
+#endif
+        refill = 0;
         if (recover(p, &core, &core_tried, stream, presented, decode_error || cpu_overrun)) {
           seek_preroll = 0;
           position = presented; have_frame = 0; eof = 0;
@@ -655,7 +665,16 @@ static void *run(void *user) {
         if (!stopped(p)) fail(p, cpu_overrun ? "DTS conversion exceeds the sustained CPU budget" : error);
         break;
       }
-      if (r < 0) { fail(p, error); break; }
+      if (r < 0) {
+#ifdef NV_DTS_WEBOS_RECOVERY
+        pthread_mutex_lock(&p->lock);
+        int pending_control = p->stop || p->status.failed || p->seek_dirty || p->audio_dirty;
+        if (!pending_control) { p->refill_active = 0; p->status.buffering_ms = 0; }
+        pthread_mutex_unlock(&p->lock);
+        if (pending_control) continue;
+#endif
+        fail(p, error); break;
+      }
       if (r == 0) {
         if (refill) {
           refill = 0; pause_dirty = 1;
