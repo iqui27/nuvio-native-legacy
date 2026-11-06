@@ -138,6 +138,7 @@ typedef struct {
   volatile int dCheck; pthread_t dCheckT; int dCheckRodando;
   volatile int parar;
   int vivo;
+  unsigned preIdentityGen;   // pre-warm slot generation this job may release (see preSlotIdentityGen)
 } Job;
 
 static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
@@ -1930,10 +1931,13 @@ static void *cpuTrabalho(void *u) {
 // starts, and trabalharDireto adopts the handle for the same link.
 // Ownership: one slot keyed by link AND headers. Every replacement, timeout, job end and shutdown bumps preGen; a
 // thread finishing under an older generation closes its own handle, so each session closes exactly once.
+// preSlotIdentityGen: which miniatura_preaquecer() round owns the parked handle; a job only releases in fim/timeout
+// when its preIdentityGen matches, so a late old-job fim cannot drop a newer identical pre-warm.
 static pthread_mutex_t muPre = PTHREAD_MUTEX_INITIALIZER;
 static char preUrl[4096], preCab[512];
 static long long preH;
 static unsigned preGen;
+static unsigned preSlotIdentityGen;   // generation of the current url+cab slot (0 = none)
 static int preDec, preRodando;
 typedef struct { char url[4096], cab[512]; unsigned gen; } PreArgs;
 static int preMesmo(const char *url, const char *cab) {
@@ -1941,12 +1945,18 @@ static int preMesmo(const char *url, const char *cab) {
 }
 // Drops this link's slot (url NULL = any). esquecer: real shutdown, the link may pre-warm again; otherwise the
 // identity stays so the player's repeated calls while opening do not reopen it.
-static void preSoltar(const char *url, const char *cab, int esquecer) {
+// identityGen: only clear a non-forgotten slot when it matches preSlotIdentityGen (the job that created this pre pass).
+static void preSoltar(const char *url, const char *cab, int esquecer, unsigned identityGen) {
   long long h = 0;
   pthread_mutex_lock(&muPre);
-  if (!url || preMesmo(url, cab)) {
+  if (esquecer) {
     h = preH; preH = 0; preDec = 0; preRodando = 0; preGen++;
-    if (esquecer) preUrl[0] = preCab[0] = 0;
+    preSlotIdentityGen = 0;
+    preUrl[0] = preCab[0] = 0;
+  } else if (!url || preMesmo(url, cab)) {
+    if (identityGen != preSlotIdentityGen) { pthread_mutex_unlock(&muPre); return; }
+    h = preH; preH = 0; preDec = 0; preRodando = 0; preGen++;
+    preSlotIdentityGen = 0;
   }
   pthread_mutex_unlock(&muPre);
   if (h) mFechar(h);
@@ -1961,7 +1971,12 @@ static void *preTrabalho(void *u) {
          dec ? "created" : "not created", SDL_GetTicks() - t0, video_tocando() ? "running" : "not started yet");
   fflush(stdout);
   pthread_mutex_lock(&muPre);
-  if (a->gen == preGen) { preH = h; preDec = dec; preRodando = 0; h = 0; }
+  if (a->gen == preGen) {
+    preH = h;
+    preDec = dec;
+    preRodando = 0;   // parked: adoption must not spin on rodando while preH is ready
+    h = 0;
+  }
   pthread_mutex_unlock(&muPre);
   if (h) mFechar(h);                            // replaced, timed out or shut down meanwhile
   free(a);
@@ -1976,16 +1991,41 @@ void miniatura_preaquecer(const char *url, const char *cabecalhos) {
   long long velho = preH;
   preH = 0; preDec = 0; preRodando = 0;
   unsigned gen = ++preGen;
+  preSlotIdentityGen = gen;
   snprintf(preUrl, sizeof preUrl, "%s", url);
   snprintf(preCab, sizeof preCab, "%s", cab);
   pthread_mutex_unlock(&muPre);
   if (velho) mFechar(velho);                    // a title that never started its job
-  if (bitsDebug() & 8 || !jniPreparar()) return;
+  if (bitsDebug() & 8 || !jniPreparar()) {
+    pthread_mutex_lock(&muPre);
+    if (preGen == gen && preSlotIdentityGen == gen) {
+      preRodando = 0;
+      preH = 0;
+      preDec = 0;
+      preSlotIdentityGen = 0;
+      preGen++;
+      preUrl[0] = preCab[0] = 0;   // init failed: allow immediate retry for the same link
+    }
+    pthread_mutex_unlock(&muPre);
+    return;
+  }
   mConfigurar(bitsDebug());
   // This entry point is called by the SDL/render thread while opening the player.
   if (bitsDebug() & 131072) { tex_aliviar(); printf("[miniatura] hardware preparation: reclaimed optional artwork caches\n"); fflush(stdout); }
   PreArgs *a = calloc(1, sizeof *a);
-  if (!a) return;
+  if (!a) {
+    pthread_mutex_lock(&muPre);
+    if (preGen == gen && preSlotIdentityGen == gen) {
+      preRodando = 0;
+      preH = 0;
+      preDec = 0;
+      preSlotIdentityGen = 0;
+      preGen++;
+      preUrl[0] = preCab[0] = 0;
+    }
+    pthread_mutex_unlock(&muPre);
+    return;
+  }
   snprintf(a->url, sizeof a->url, "%s", url);
   snprintf(a->cab, sizeof a->cab, "%s", cab);
   a->gen = gen;
@@ -1993,7 +2033,17 @@ void miniatura_preaquecer(const char *url, const char *cabecalhos) {
   pthread_t t; pthread_attr_t at;
   pthread_attr_init(&at); pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
   if (pthread_create(&t, &at, preTrabalho, a)) {
-    free(a); pthread_mutex_lock(&muPre); if (preGen == gen) preRodando = 0; pthread_mutex_unlock(&muPre);
+    free(a);
+    pthread_mutex_lock(&muPre);
+    if (preGen == gen && preSlotIdentityGen == gen) {
+      preRodando = 0;
+      preH = 0;
+      preDec = 0;
+      preSlotIdentityGen = 0;
+      preGen++;
+      preUrl[0] = preCab[0] = 0;
+    } else if (preGen == gen) preRodando = 0;
+    pthread_mutex_unlock(&muPre);
   }
   pthread_attr_destroy(&at);
 }
@@ -2001,14 +2051,19 @@ void miniatura_preaquecer(const char *url, const char *cabecalhos) {
 static long long adotarPre(Job *j, int *dec) {
   long long h = 0;
   for (int i = 0; i < 50; i++) {
+    int mesmo;
     pthread_mutex_lock(&muPre);
-    int mesmo = preMesmo(j->urlA, j->cabA), rodando = preRodando;
-    if (mesmo && !rodando && preH) { h = preH; *dec = preDec; preH = 0; }
+    mesmo = preMesmo(j->urlA, j->cabA);
+    if (mesmo && !preRodando && preH) {
+      h = preH; *dec = preDec; preH = 0;
+      if (h) preSlotIdentityGen = 0;
+    }
     pthread_mutex_unlock(&muPre);
-    if (!mesmo || !rodando || parou(j)) break;
+    if (h) break;
+    if (!mesmo || parou(j)) break;   // wrong identity or job stopped; do not exit early just because preRodando flipped before preH
     dormir(j, 100);
   }
-  if (!h) preSoltar(j->urlA, j->cabA, 0);       // timed out or stopped: a late open closes in its own thread
+  if (!h) preSoltar(j->urlA, j->cabA, 0, j->preIdentityGen);   // timed out or stopped; only our slot generation
   return h;
 }
 
@@ -2511,6 +2566,9 @@ static int escolherCopiaRapida(Job *j) {
 
 static void *trabalhar(void *u) {
   Job *j = u;
+  pthread_mutex_lock(&muPre);
+  j->preIdentityGen = preMesmo(j->urlA, j->cabA) ? preSlotIdentityGen : 0;
+  pthread_mutex_unlock(&muPre);
   long long hA = 0, hB = 0, info[6];
   Mapa mapa = {1.0, 0.0, 0.0, 0};
   int usaB = 0, copiaUsada = 0;
@@ -2816,7 +2874,7 @@ fim:
   if ((*timelineEnv)->ExceptionCheck(timelineEnv)) (*timelineEnv)->ExceptionClear(timelineEnv);
   mFechar(hB);
   mFechar(hA);
-  preSoltar(j->urlA, j->cabA, 0);              // never adopted (complete cache, copy route): no idle decoder held
+  preSoltar(j->urlA, j->cabA, 0, j->preIdentityGen);   // never adopted (complete cache, copy route): no idle decoder held
   resumo(j, t0);
   pthread_mutex_lock(&mu);
   j->vivo = 0;
@@ -3068,7 +3126,7 @@ static const char *pRotulo(int est) {
 }
 static void pUso(SeekrUso *u) { memset(u, 0, sizeof *u); u->persistente = 1; u->chavePropria = 1; }
 static void pTentar(void) { encerrar(); }
-static void pDesligar(void) { encerrar(); preSoltar(NULL, NULL, 1); }   // real shutdown; pPedir's replacement keeps it
+static void pDesligar(void) { encerrar(); preSoltar(NULL, NULL, 1, 0); }   // real shutdown; pPedir's replacement keeps it
 
 static const SeekrProvedor PROVEDOR = {
   pTemChave, pEstado, pRotulo, pUso, pTentar, pPedir, pDesligar, pQuadros, pVelho, pOcioso
