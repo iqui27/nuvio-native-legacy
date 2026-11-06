@@ -732,7 +732,7 @@ typedef enum {
   AJ_MP4_BD_TEST, // experimental separate-track P7 MP4, append-only, default OFF
   AJ_DV7_MAPPING, // isolated P7 RPU mapping experiment; append-only, default OFF
   AJ_BUFFER_NATIVE_CONNECTIONS, // append-only; ordinary player defaults to 1
-  AJ_BUFFER_CONVERSION_CONNECTIONS, // append-only; DTS/TrueHD/DV7 defaults to 4
+  AJ_BUFFER_CONVERSION_CONNECTIONS, // append-only; conversion defaults to Standard (1)
   AJ_DIAGNOSTICS_QR, // opt-in, device-local QR log export, default off
   AJ_N
 } OpcaoId;
@@ -8193,7 +8193,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_PLAYER_EXTERNO: return "Escolha onde o vídeo toca: neste app, em um player instalado (VLC, MX Player...) ou perguntando a cada vez. O player externo não sincroniza o progresso.";
     case AJ_PLAYER_ANIME: return "Player só para anime (kitsu, MAL, AniList, ou animação japonesa). Igual ao Player usa a escolha acima. O player externo não sincroniza o progresso.";
     case AJ_BUFFER_NATIVE_CONNECTIONS: return "Standard (default) downloads ordinary video through one sequential connection. Parallel 2, 3 or 4 uses that many HTTP range workers inside the same RAM buffer limit. Automatic uses a 64 MB buffer for parallel mode, subject to the RAM safety floor. Applies to the next video. Live/HLS/DASH keep their existing player path.";
-    case AJ_BUFFER_CONVERSION_CONNECTIONS: return "HTTP range downloads for DTS/TrueHD conversion and DV7 processing. Parallel 4 is the existing default. Standard limits this path to one download at a time; Parallel 2 or 3 allows fewer simultaneous downloads. RAM buffer limits stay the same. Applies to the next video.";
+    case AJ_BUFFER_CONVERSION_CONNECTIONS: return "HTTP downloads for DTS/TrueHD conversion and DV7 processing. Standard (1), the default, reads the file over one continuous connection, the method of the Samsung (Tizen) converter, without a new request every 4 MB. Parallel 2, 3 or 4 uses that many HTTP range downloads instead. RAM buffer limits stay the same. Applies to the next video.";
     case AJ_DIAGNOSTICS_QR: return "Enable QR log download in the log panel (Blue/F10). Off by default. Normal logs stay active. The temporary snapshot is created only when opened.";
     case AJ_BUFFER: return "Quanto vídeo o app guarda à frente. Automático é o de sempre; 64, 128 ou 256 MB ajudam arquivos 4K pesados e caem sozinhos se faltar memória na TV. No webOS vale para a conversão de DTS e Dolby Vision. Vale a partir do próximo vídeo.";
     case AJ_FONTE_IDIOMA_AUDIO: return "Na escolha automática, fontes com o seu Idioma do áudio ou áudio duplo passam na frente na mesma resolução. Não é filtro: sem elas, a melhor das outras toca.";

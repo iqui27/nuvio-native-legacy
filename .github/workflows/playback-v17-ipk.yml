@@ -20,7 +20,7 @@ jobs:
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
-      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST
+      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST -DNV_HEVC_SEI_TEST
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -48,6 +48,7 @@ jobs:
           bash tests/diagnostics_qr_settings.sh
           SANITIZE=1 bash tests/logexport.sh
           CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular_export.sh
+          CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular.sh
       - name: Conversion refill and progressing HTTP gaps
         timeout-minutes: 3
         run: |
@@ -103,6 +104,10 @@ jobs:
           bash tests/player_ram_controls.sh
           NV_TEST_MP4=1 bash tests/buffer_player_settings.sh
           bash tests/ajustes_dts_segmentado.sh
+          bash tests/ajustes_ux_interacao.sh
+          bash tests/audioescolha.sh
+          bash tests/audiomemoria.sh
+          SANITIZE=1 bash tests/video_faixa_rotulo.sh
           NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_P7_MAPPING=1 bash tests/dvaudio_lg.sh
       - name: Build host FFmpeg and test real HTTP buffering
         timeout-minutes: 12
@@ -122,6 +127,16 @@ jobs:
           SANITIZE=1 bash tests/dts_resolver_reuse.sh
           SANITIZE=1 bash tests/http_connections.sh
           NV_TEST_HTTP_WORKERS=1 bash tests/dts_engine.sh
+          SANITIZE=1 bash tests/hevc_structure_engine.sh
+          SANITIZE=1 bash tests/hevc_annexb.sh
+          SANITIZE=1 bash tests/hevc_annexb_engine.sh
+          SANITIZE=1 bash tests/dts_conversion_stream.sh
+          SANITIZE=1 bash tests/dts_off_engine.sh
+      - name: Experimental HEVC SEI compatibility regressions
+        timeout-minutes: 3
+        run: |
+          SANITIZE=1 bash tests/hevc_sei.sh
+          NV_TEST_HEVC_SEI=1 NV_TEST_VIDEO_DIAG=1 bash tests/dts_pipeline.sh
       - name: Install package tool and Rust target
         run: |
           npm install --prefix .build-tools --no-audit --no-fund @webosose/ares-cli@2.4.0

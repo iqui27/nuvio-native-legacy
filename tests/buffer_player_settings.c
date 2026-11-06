@@ -20,7 +20,8 @@ int main(void) {
   assert(SDL_Init(SDL_INIT_TIMER)==0);setenv("NUVIO_DADOS",dir,1);
   dados_iniciar(dir);snprintf(dirAjustes,sizeof dirAjustes,"%s",dir);ajustes_iniciar();
   assert(gravar());assert(!ajustes_buffer_dados());
-  assert(ajustes_buffer_native_connections()==1 && ajustes_buffer_conversion_connections()==4);
+  assert(ajustes_buffer_native_connections()==1 && ajustes_buffer_conversion_connections()==1);
+  assert(ajustes_buffer_conversion_stream());
   assert(!uxDiferente(AJ_BUFFER));
   assert(ajustes_escopo(AJ_BUFFER_NATIVE_CONNECTIONS)==ESC_TV && ajustes_escopo(AJ_BUFFER_CONVERSION_CONNECTIONS)==ESC_TV);
   assert(!ajustePortavel(AJ_BUFFER_NATIVE_CONNECTIONS) && !ajusteAparelho(AJ_BUFFER_NATIVE_CONNECTIONS));
