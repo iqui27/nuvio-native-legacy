@@ -28,6 +28,9 @@
 // proprio `s`. Nunca devolve NULL se `s` nao for NULL, e o ponteiro
 // devolvido vive tanto quanto o programa (tabela estatica).
 const char *i18n(const char *s);
+/* 1 = i18n() returns every string as is until called with 0 (labels that
+ * stay in English on purpose, e.g. the Buffer screen switches). */
+void i18n_pausar(int pausar);
 
 // Nome do mes para uma DATA por extenso ("29 de julho de 2026"), mes = 1..12,
 // `nomePt` = o nome portugues que e a chave da tabela. Existe porque russo,

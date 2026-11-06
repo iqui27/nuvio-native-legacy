@@ -339,6 +339,8 @@ static void conferirOrdem(void) {
 #define I18N_CACHE 1024
 static struct { unsigned long long h; unsigned n; int idx; } cache[I18N_CACHE];
 
+static int i18nPausado;
+void i18n_pausar(int pausar) { i18nPausado = pausar; }
 const char *i18n(const char *s) {
   int lo = 0, hi = TAB_N - 1;
   unsigned long long h = 1469598103934665603ull;
@@ -347,6 +349,7 @@ const char *i18n(const char *s) {
   int lg;
   idioma_registrar(s);
   if (!s || !*s) return s;
+  if (i18nPausado) return s;
   lg = ajustes_idioma();
   if (lg == IDIOMA_PT) return s;
   if (ordemOk < 0) conferirOrdem();

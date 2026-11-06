@@ -1262,15 +1262,17 @@ static void aj2EditorEscolha(GfxRect m) {
     if(uxBufferDadosDisponivel()) {
       float yy=top+136.0f,cw=lw/3.0f;
       const int ops[]={AJ_BUFFER_DADOS,AJ_RAM_OVERLAY,AJ_RAM_VERDE};
-      const char *labels[]={"Buffer data","RAM overlay","Green button"};   /* translated by the i18n tables */
+      const char *labels[]={"Buffer data","RAM overlay","Green (OSD)"};   /* kept in English (owner, 06/11/2026) */
       gfx_cor((GfxRect){lx,yy-4,lw,1},0,1,1,1,0.14f);
       gfx_anel((GfxRect){lx,yy+4,lw,60},16.0f/60.0f,1,1,1,1,0.12f);
       for(int i=0;i<3;i++) {
         GfxRect r={lx+i*cw,yy+4,cw-4,60};
         if(uxBufferDadosFoco==i+1)ajFocoLinha(r,16,1,1);
-        TxtLinha state=ajTxt(TXT_V3_PILL,lig(ops[i])?"Ligado":"Desligado");
+        i18n_pausar(1);
+        TxtLinha state=ajTxt(TXT_V3_PILL,lig(ops[i])?"On":"Off");
         float switchEnd=r.x+r.w-12-state.w-10;
         TxtLinha t=ajTxtC(TXT_V2_24,labels[i],fmaxf(1,switchEnd-64-r.x-24));
+        i18n_pausar(0);
         txt_desenhar_alpha(t,r.x+12,r.y+(r.h-t.h)*0.5f,0.85f);
         aj2ChipLiga(ops[i],switchEnd,r.y+r.h*0.5f,lig(ops[i]),1);
         txt_desenhar_alpha(state,switchEnd+10,r.y+(r.h-state.h)*0.5f,0.65f);
