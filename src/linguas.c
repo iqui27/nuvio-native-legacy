@@ -545,38 +545,63 @@ int ling_legenda_auto(const char *pref,
   return addFechado ? LING_AUTO_NADA : LING_AUTO_ESPERA;
 }
 
-int ling_legenda_auto_tipo(const char *pref, const char *audio, int forcadaAuto,
-                           const char *const *emb, const int *tipoEmb, int nEmb, int embFechado,
-                           const char *const *add, int nAdd, int addFechado) {
-  int i, passo, forca;
+int ling_formato_legenda(const char *c) {
+  if (!c || !*c) return LING_FMT_TEXTO;   // fora de MKV: sem formato conhecido, todas iguais
+  if (!strncmp(c, "S_TEXT/ASS", 10) || !strncmp(c, "S_TEXT/SSA", 10)) return LING_FMT_ASS;
+  if (!strncmp(c, "S_HDMV/PGS", 10) || !strncmp(c, "S_VOBSUB", 8) || !strncmp(c, "S_DVBSUB", 8)) return LING_FMT_IMAGEM;
+  return LING_FMT_TEXTO;
+}
+
+static int fmtDe(const int *fmtEmb, int i) { return fmtEmb ? fmtEmb[i] : LING_FMT_TEXTO; }
+
+int ling_legenda_auto_fmt(const char *pref, const char *audio, int forcadaAuto,
+                          const char *const *emb, const int *tipoEmb, const int *fmtEmb,
+                          int nEmb, int embFechado,
+                          const char *const *add, int nAdd, int addFechado) {
+  int i, passo, forca, fmt;
   if (!pref || !*pref || !strcasecmp(pref, "none")) return LING_AUTO_NADA;
-  // AUDIO NO IDIOMA DA LEGENDA: a forcada daquele idioma, ou nada. So a
-  // embutida tem tipo; legenda de addon e sempre a inteira. Dentro de cada
-  // tipo o casamento exato de familia vem antes do conjunto (#205).
+  // AUDIO NO IDIOMA DA LEGENDA: a forcada/letreiros daquele idioma, ou nada.
+  // So a embutida tem tipo; legenda de addon e sempre a inteira. Ordem (dono,
+  // 06/11): letreiros ASS, forcada ASS, forcada (outros formatos), letreiros
+  // (outros formatos). Dentro de cada passo, familia exata antes (#205).
   if (forcadaAuto && audio && *audio && ling_casa(audio, pref)) {
-    for (passo = 0; passo < 2; passo++)
+    static const struct { int tipo, soAss; } ordem[4] = {
+      { LING_LEG_LETREIROS, 1 }, { LING_LEG_FORCADA, 1 }, { LING_LEG_FORCADA, 0 }, { LING_LEG_LETREIROS, 0 }
+    };
+    for (passo = 0; passo < 4; passo++)
       for (forca = 1; forca >= 0; forca--)
-        for (i = 0; i < nEmb; i++) {
-          int t = tipoEmb ? tipoEmb[i] : LING_LEG_COMUM;
-          if (t != (passo ? LING_LEG_LETREIROS : LING_LEG_FORCADA)) continue;
-          if (emb[i] && emb[i][0] && ling_casa_forca(emb[i], pref) == forca) return i;
+        for (fmt = LING_FMT_ASS; fmt <= LING_FMT_IMAGEM; fmt++) {
+          if (ordem[passo].soAss ? fmt != LING_FMT_ASS : fmt == LING_FMT_ASS) continue;
+          for (i = 0; i < nEmb; i++) {
+            int t = tipoEmb ? tipoEmb[i] : LING_LEG_COMUM;
+            if (t != ordem[passo].tipo || fmtDe(fmtEmb, i) != fmt) continue;
+            if (emb[i] && emb[i][0] && ling_casa_forca(emb[i], pref) == forca) return i;
+          }
         }
     // A forcada pode estar numa faixa cujo tipo ainda nao chegou (sonda do MKV).
     return embFechado ? LING_AUTO_NADA : LING_AUTO_ESPERA;
   }
-  // A inteira: comum/completa primeiro, SDH so se nao houver outra — e, dentro
-  // de cada tipo, familia exata antes do conjunto "hbs".
+  // A inteira: comum/completa primeiro, SDH so se nao houver outra; dentro de
+  // cada tipo, familia exata antes do conjunto "hbs", e entao ASS > texto > imagem.
   for (passo = 0; passo < 2; passo++)
     for (forca = 1; forca >= 0; forca--)
-      for (i = 0; i < nEmb; i++) {
-        int t = tipoEmb ? tipoEmb[i] : LING_LEG_COMUM;
-        if (t == LING_LEG_FORCADA || t == LING_LEG_LETREIROS) continue;
-        if ((t == LING_LEG_SDH) != passo) continue;
-        if (emb[i] && emb[i][0] && ling_casa_forca(emb[i], pref) == forca) return i;
-      }
+      for (fmt = LING_FMT_ASS; fmt <= LING_FMT_IMAGEM; fmt++)
+        for (i = 0; i < nEmb; i++) {
+          int t = tipoEmb ? tipoEmb[i] : LING_LEG_COMUM;
+          if (t == LING_LEG_FORCADA || t == LING_LEG_LETREIROS) continue;
+          if ((t == LING_LEG_SDH) != passo || fmtDe(fmtEmb, i) != fmt) continue;
+          if (emb[i] && emb[i][0] && ling_casa_forca(emb[i], pref) == forca) return i;
+        }
   if (!embFechado) return LING_AUTO_ESPERA;
   for (forca = 1; forca >= 0; forca--)
     for (i = 0; i < nAdd; i++)
       if (add[i] && add[i][0] && ling_casa_forca(add[i], pref) == forca) return nEmb + i;
   return addFechado ? LING_AUTO_NADA : LING_AUTO_ESPERA;
+}
+
+int ling_legenda_auto_tipo(const char *pref, const char *audio, int forcadaAuto,
+                           const char *const *emb, const int *tipoEmb, int nEmb, int embFechado,
+                           const char *const *add, int nAdd, int addFechado) {
+  return ling_legenda_auto_fmt(pref, audio, forcadaAuto, emb, tipoEmb, NULL, nEmb, embFechado,
+                               add, nAdd, addFechado);
 }

@@ -62,12 +62,20 @@ with tempfile.TemporaryDirectory(prefix="nuvio-cacheboost-android-", dir=os.envi
     deps.append(aar_jar("androidx.core", "core", "1.13.1", tmp))
     deps.append(jar("androidx.annotation", "annotation-jvm", "1.6.0"))
     deps.append(aar_jar("androidx.annotation", "annotation-experimental", "1.4.0", tmp))
+    deps.append(aar_jar("org.jellyfin.media3", "media3-ffmpeg-decoder", "1.8.0+1", tmp))
     guava = jar("com.google.guava", "guava", "33.3.1-android")
     deps.append(guava)
     sources = [kt / n for n in ("NvPlayer.kt", "ParaleloDataSource.kt", "PassivoMedidor.kt", "NuvioActivity.kt",
                                 "CacheSessao.kt", "CacheMidia.kt", "GanhoMath.kt", "GanhoAudioProcessor.kt",
-                                "AudioSyncTap.kt", "AudioSyncSink.kt", "RecriaHdr.kt", "ArranqueVigia.kt",
+                                "SaidaAudioSink.kt", "ReservaAudio.kt", "RecriaHdr.kt", "ArranqueVigia.kt",
                                 "TouchViewport.kt", "Tombstone.kt")]
+    # 06/11: the audio subtitle sync ported from NuvioTV-Reshaped (ReservaAudio.kt uses it).
+    sources += [kt / "audiosync" / n for n in ("AudioSpotSampler.kt", "AudioSubtitleSyncController.kt", "AudioSyncDecoder.kt",
+                                   "AudioSyncExtractors.kt", "AudioSyncTracker.kt", "DialogueSpotPlanner.kt", "Fft.kt",
+                                   "PlaybackAudioTap.kt", "SileroVad.kt", "SpeechAnalyzer.kt", "SpeechTimeline.kt",
+                                   "SubtitleAudioAligner.kt", "SubtitleCandidatePool.kt", "SubtitleSpeechTrack.kt",
+                                   "SyncLog.kt")] + \
+        [kt.parents[2] / "androidx" / "media3" / "decoder" / "ffmpeg" / "AudioSyncFfmpegDecoder.kt"]
     java_roots = []
     if sdl.is_dir():
         java_roots = ["-Xjava-source-roots=" + str(sdl)]

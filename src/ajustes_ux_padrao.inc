@@ -209,7 +209,7 @@
   2, /* Settings size: 100%, independent of global UI zoom */
   1, /* hide corner logo during trailer: Desligado (V_LIGA: 1 = Desligado) */
   0, /* second subtitle language: Da conta (F04) */
-  1, /* subtitle sync by audio: Desligado (V_LIGA: 1 = Desligado) (F06) */
+  0, /* subtitle sync by audio (Android fallback, Reshaped): Ligado (V_LIGA 0) since 06/11; old Desligado migrates once */
   0, /* seek cache on disk: Desligado (F07; free disk is unknown until the player opens) */
   1, /* experimental trailer zoom, .tpk only: Desligado (V_LIGA: 1 = Desligado) (#241) */
   0, /* plugins: action (state lives in plugins.c, F09) */
@@ -353,3 +353,4 @@
   0, /* gradient smoothing: Automatic */
   0, /* hero logo and information size: Normal */
   0, /* folder hero details: On (V_LIGA 0) */
+  1, /* audio sync samples the film on mobile data too: Off (V_LIGA 1) */

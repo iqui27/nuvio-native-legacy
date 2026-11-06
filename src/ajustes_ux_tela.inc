@@ -75,10 +75,9 @@ static const Item TELA[] = {
       OPC(AJ_IDIOMA), OPC(AJ_AUD_LINGUA), OPC(AJ_AUD_LINGUA2), OPC(AJ_LEG_LINGUA), OPC(AJ_LEG_FORCADA),
       OPC(AJ_LEG_MOSTRAR), OPC(AJ_LEG_SYNC_AUTO),
 #ifdef NV_ANDROID
-      // Sincronia pelo audio (F06): so o player do Android entrega o PCM. Na LG e
-      // na Samsung a linha so diria "indisponivel nesta plataforma" (decisao do
-      // dono, 04/10).
-      OPC(AJ_LEG_SYNC_AUDIO),
+      // Sincronia pelo audio: a reserva do Reshaped so existe no Android (dono,
+      // 06/11: saiu do .tpk; a LG nunca teve).
+      OPC(AJ_LEG_SYNC_AUDIO), OPC(AJ_LEG_SYNC_AUDIO_MOVEL),
 #endif
     ROT("Legenda principal"),
       OPC(AJ_LEG1_TAMANHO), OPC(AJ_LEG1_FONTE), OPC(AJ_LEG1_COR), OPC(AJ_LEG1_OPACIDADE),

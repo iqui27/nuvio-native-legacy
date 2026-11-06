@@ -9,6 +9,7 @@
 void *SDL_AndroidGetJNIEnv(void);
 void *SDL_AndroidGetActivity(void);
 #include "../src/video_android.c"
+#include "video_android_reserva_stub.h"
 #include "../src/cacheboost.c"
 #include <assert.h>
 #include <stdarg.h>

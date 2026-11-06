@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Replay real audio diagnostic bodies with Media3 1.8.0 and a controlled clock/log.
-NvPlayer's complete Android compilation is covered by audiosync_android.py.
+NvPlayer's complete Android compilation is covered by cacheboost_android.py and
+streamfit_passiva_android.py.
 """
 from pathlib import Path
 import os

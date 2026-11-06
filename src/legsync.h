@@ -35,13 +35,11 @@
 #define LEGSYNC_ACAO_DESFAZER 4
 #define LEGSYNC_ACAO_OUTRA    8
 #define LEGSYNC_ACAO_PARAR    16
-#define LEGSYNC_ACAO_AUDIO    32   // F06: reference = speech heard in the playing audio
 
 typedef enum {
   LEGSYNC_INDISPONIVEL = 0, LEGSYNC_AGUARDANDO, LEGSYNC_PRONTA, LEGSYNC_LENDO,
   LEGSYNC_ANALISANDO, LEGSYNC_ACEITA, LEGSYNC_RECUSADA, LEGSYNC_PAUSADA,
-  LEGSYNC_DESFEITA, LEGSYNC_DEPOIS,
-  LEGSYNC_OUVINDO              // F06: listening to the playing audio (progresso)
+  LEGSYNC_DESFEITA, LEGSYNC_DEPOIS
 } LegSyncFase;
 
 // Por que (para INDISPONIVEL/RECUSADA). Mapeado a texto traduzido por
@@ -51,9 +49,6 @@ typedef enum {
   LEGSYNC_M_EXTERNA_INCOMPLETA, LEGSYNC_M_SEM_REFERENCIA, LEGSYNC_M_SEM_RANGE,
   LEGSYNC_M_REDE, LEGSYNC_M_ORCAMENTO, LEGSYNC_M_SEM_OUTRA, LEGSYNC_M_CONFIANCA,
   LEGSYNC_M_REGION_DISAGREEMENT,
-  // F06 (Por audio): why the audio reference is not offered / was refused.
-  LEGSYNC_M_AUD_PLATAFORMA, LEGSYNC_M_AUD_PASSTHROUGH, LEGSYNC_M_AUD_SEM_AUDIO,
-  LEGSYNC_M_AUD_SEM_FALA,
   LEGSYNC_M_SEM_TEXTO
 } LegSyncMotivo;
 
@@ -65,19 +60,19 @@ typedef struct {
   int offsetTotalMs;     // manual + automatico, o que o overlay usa
   int progresso;         // 0..100 lendo a referencia
   char idiomaRef[24];    // idioma da faixa embutida usada/lida
-  int audio;             // F06: o estado/resultado atual veio da referencia de AUDIO
-  LegSyncMotivo motivoAudio;  // F06: Sincronia por audio ligada mas "Por audio" nao
-                              // oferecido agora (plataforma/passthrough/sem audio)
+  int audio;             // o estado/resultado atual veio do AUDIO (reserva do Android)
   // R4 (automatico): 0 sem plano, 1 trabalhando, 2 sincronizou, 3 nao deu.
   int autoFase;
   int autoDesligado;          // ajuste local: sem plano nem pílula automáticos
   int falhaDownload;          // callback terminou sem corpo; não é um timeout da UI
   int autoTrocou;             // 1 = a escolhida nao sincronizou e outra legenda entrou no lugar
   char autoNome[64];          // nome da legenda que entrou (autoTrocou)
-  // Sync pedido a mao (Rapida/Completa/Audio/Outra): mesmo ciclo da pilula do
+  // Sync pedido a mao (Rapida/Completa/Outra): mesmo ciclo da pilula do
   // automatico, com ou sem o automatico ligado. 0 nenhum, 1 trabalhando,
   // 2 aceita, 3 nao deu (inclusive recusado na hora).
   int manualFase;
+  int outrasRef;              // outras faixas do arquivo que ainda dariam referencia (modo so indice)
+  int jaCompleta;             // a ultima analise da embutida ja foi a Completa
 } LegSyncVisao;
 
 void legsync_iniciar(const char *urlMidia);
@@ -99,11 +94,35 @@ void legsync_primaria_outra(int embutida);
 
 // Ajuste local, ligado por padrão. Desligar cancela o plano, preserva o manual.
 void legsync_auto_habilitar(int ligado);
-// F06: Ajustes > Sincronia por audio (local, padrao desligado). Barato; o
-// player chama a cada quadro. Desligar no meio cancela a escuta.
+// Ajustes > Sincronia por audio (Android; local, padrao ligado). Barato; o
+// player chama a cada quadro. Desligar no meio para a escuta e tira o mapa.
 void legsync_audio_habilitar(int ligado);
-// F06: a pessoa trocou a faixa de AUDIO: a escuta em curso nao vale mais.
-void legsync_audio_trocou(void);
+
+// RESERVA POR AUDIO (Android, 06/11, dono). A sincronia por audio do
+// NuvioTV-Reshaped roda na casca Kotlin (android/.../audiosync, ReservaAudio):
+// ela ouve enquanto a faixa embutida e tentada e, quando a embutida recusa ou
+// nao existe, sincroniza a legenda escolhida pelo audio. O resultado e um mapa
+// por trechos: a partir de `deMs` do video, tempo da legenda =
+// (video - deslocMs) / escala. legsync o aplica como um mapa aceito.
+// No .tpk, na LG e no web nao ha backend: o plano so tem a embutida.
+typedef struct { long long deMs; double escala, deslocMs; } LegSyncAudioTrecho;
+#define LEGSYNC_AUDIO_TRECHOS 32
+typedef struct {
+  void (*armar)(int dadosMoveis);  // o plano comecou: ouvir enquanto a embutida decide
+  // Sincronizar `chave` (a URL do add-on; `idioma` como o add-on deu) pelo
+  // audio. `doc` vale so durante a chamada.
+  void (*assumir)(const char *chave, const char *idioma, const LegendaDocumento *doc);
+  void (*parar)(void);             // nada para o audio fazer
+} LegSyncAudio;
+// Chamadas ao backend acontecem no fio de legsync_passo, fora do lock.
+void legsync_audio_backend(const LegSyncAudio *b);   // NULL = sem audio nesta plataforma
+void legsync_audio_dados_moveis(int permitido);      // Ajustes: amostrar o filme em rede movel
+// Do backend, qualquer fio. n = 0: a estimativa foi retirada.
+void legsync_audio_modelo(const char *chave, const LegSyncAudioTrecho *t, int n, int estimado);
+void legsync_audio_falhou(const char *chave, const char *motivo);
+// O audio encaixa melhor OUTRA legenda do idioma (url de add-on): troca, se a
+// regra de uma troca por episodio deixar; a legenda nova adota o mapa.
+void legsync_audio_trocar(const char *chave, const char *url);
 
 // R4: SINCRONIA AUTOMATICA. Toda legenda externa que entra como principal
 // (escolha da pessoa ou a automatica de idioma) e sincronizada sozinha contra a
@@ -117,6 +136,9 @@ void legsync_audio_trocou(void);
 typedef int (*LegSyncTrocador)(const char *idioma, const uint64_t *tentadas, int n, int voltar,
                                char *nome, unsigned tamNome);
 void legsync_definir_trocador(LegSyncTrocador t);
+// A troca pedida pelo AUDIO: liga a legenda de add-on com esta URL (faixas.c).
+typedef int (*LegSyncTrocadorUrl)(const char *url, char *nome, unsigned tamNome);
+void legsync_definir_trocador_url(LegSyncTrocadorUrl t);
 uint64_t legsync_hash_url(const char *url);   // identidade opaca usada em `tentadas`
 
 int  legsync_acao(int acao);            // 1 = aceita no estado atual
