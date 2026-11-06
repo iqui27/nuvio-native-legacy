@@ -2515,7 +2515,7 @@
   T("Idioma dos dados do título", "Jazyk údajů o titulu"),
   T("Idioma dos metadados", "Jazyk metadat"),
   T("Idioma dos textos que o TMDB traz (sinopse, títulos). \"Da interface\" segue o idioma do app.", "Jazyk textů, které poskytuje TMDB (popis, názvy). \"Jazyk rozhraní\" se řídí jazykem aplikace."),
-  T("Idioma ligado sozinho quando o vídeo começa. Legendas dos addons aparecem em inglês e no idioma escolhido aqui. \"Da conta\" segue o que está no seu perfil.", "Jazyk, který se zapne sám při spuštění videa. Titulky z doplňků jsou v angličtině a v jazyce zvoleném zde. \"Z účtu\" se řídí profilem."),
+  T("Idioma ligado sozinho quando o vídeo começa. As legendas neste idioma aparecem primeiro na lista. \"Da conta\" segue o que está no seu perfil.", "Jazyk, který se zapne sám při spuštění videa. Titulky v tomto jazyce jsou v seznamu první. \"Z účtu\" se řídí profilem."),
   T("Idioma procurado primeiro nas legendas de cada título, e ligado sozinho quando o vídeo começa. \"Da conta\" segue o que está no seu perfil.", "Jazyk, který se hledá jako první v titulcích každého titulu a zapne se sám při spuštění videa. \"Z účtu\" se řídí vaším profilem."),
   T("Idiomas", "Jazyky"),
   T("Idiomas e legendas", "Jazyky a titulky"),

@@ -2515,7 +2515,7 @@
   T("Idioma dos dados do título", "標題資料語言"),
   T("Idioma dos metadados", "中繼資料語言"),
   T("Idioma dos textos que o TMDB traz (sinopse, títulos). \"Da interface\" segue o idioma do app.", "TMDB 提供的文字（簡介、標題）所用的語言。「介面語言」跟隨應用程式的語言。"),
-  T("Idioma ligado sozinho quando o vídeo começa. Legendas dos addons aparecem em inglês e no idioma escolhido aqui. \"Da conta\" segue o que está no seu perfil.", "影片開始時自動開啟的語言。外掛字幕以英語和此處所選語言列出。「來自帳戶」跟隨你的個人檔案。"),
+  T("Idioma ligado sozinho quando o vídeo começa. As legendas neste idioma aparecem primeiro na lista. \"Da conta\" segue o que está no seu perfil.", "影片開始時自動開啟的語言。此語言的字幕在清單中排在最前。「來自帳戶」跟隨你的個人檔案。"),
   T("Idioma procurado primeiro nas legendas de cada título, e ligado sozinho quando o vídeo começa. \"Da conta\" segue o que está no seu perfil.", "在每部作品的字幕中優先尋找的語言，影片開始時會自動開啟。「來自帳號」跟隨你個人檔案中的設定。"),
   T("Idiomas", "語言"),
   T("Idiomas e legendas", "語言和字幕"),

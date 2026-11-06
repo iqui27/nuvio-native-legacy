@@ -2515,7 +2515,7 @@
   T("Idioma dos dados do título", "لغة بيانات العنوان"),
   T("Idioma dos metadados", "لغة البيانات الوصفية"),
   T("Idioma dos textos que o TMDB traz (sinopse, títulos). \"Da interface\" segue o idioma do app.", "لغة النصوص التي يوفرها TMDB (الملخص، العناوين). \"لغة الواجهة\" تتبع لغة التطبيق."),
-  T("Idioma ligado sozinho quando o vídeo começa. Legendas dos addons aparecem em inglês e no idioma escolhido aqui. \"Da conta\" segue o que está no seu perfil.", "اللغة التي تُفعَّل تلقائيًا عند بدء الفيديو. تُدرج ترجمات الإضافات بالإنجليزية وباللغة المختارة هنا. \"من الحساب\" يتبع ملفك الشخصي."),
+  T("Idioma ligado sozinho quando o vídeo começa. As legendas neste idioma aparecem primeiro na lista. \"Da conta\" segue o que está no seu perfil.", "اللغة التي تُفعَّل تلقائيًا عند بدء الفيديو. تظهر الترجمات بهذه اللغة أولًا في القائمة. \"من الحساب\" يتبع ملفك الشخصي."),
   T("Idioma procurado primeiro nas legendas de cada título, e ligado sozinho quando o vídeo começa. \"Da conta\" segue o que está no seu perfil.", "اللغة التي يُبحث عنها أولًا في ترجمات كل عنوان، وتُفعَّل وحدها عند بدء الفيديو. \"من الحساب\" يتبع ملفك الشخصي."),
   T("Idiomas", "اللغات"),
   T("Idiomas e legendas", "اللغات والترجمة"),

@@ -2515,7 +2515,7 @@
   T("Idioma dos dados do título", "Språk för titeldata"),
   T("Idioma dos metadados", "Språk för metadata"),
   T("Idioma dos textos que o TMDB traz (sinopse, títulos). \"Da interface\" segue o idioma do app.", "Språket för texterna som TMDB ger (sammanfattning, titlar). \"Gränssnittsspråk\" följer appens språk."),
-  T("Idioma ligado sozinho quando o vídeo começa. Legendas dos addons aparecem em inglês e no idioma escolhido aqui. \"Da conta\" segue o que está no seu perfil.", "Språk som slås på automatiskt när videon startar. Undertexter från tillägg visas på engelska och på språket som väljs här. \"Från kontot\" följer din profil."),
+  T("Idioma ligado sozinho quando o vídeo começa. As legendas neste idioma aparecem primeiro na lista. \"Da conta\" segue o que está no seu perfil.", "Språk som slås på automatiskt när videon startar. Undertexter på det här språket visas först i listan. \"Från kontot\" följer din profil."),
   T("Idioma procurado primeiro nas legendas de cada título, e ligado sozinho quando o vídeo começa. \"Da conta\" segue o que está no seu perfil.", "Språket som söks först bland undertexterna för varje titel och slås på automatiskt när videon startar. \"Från kontot\" följer det som finns i din profil."),
   T("Idiomas", "Språk"),
   T("Idiomas e legendas", "Språk och undertexter"),

@@ -152,28 +152,34 @@ int main(void) {
   assert(nLegs == 4 && !strcmp(legs[0].idioma, "ron") && !strcmp(legs[3].idioma, "kor"));
   assert(!strcmp(legs[0].provedor, "OpenSubtitles"));
   ling_local_legenda(""); ling_conta_legenda(""); run(1, "tt123", "movie"); assert(nLegs == 4);
+  // 06/11: idiomas fora da preferencia FICAM (a tela agrupa por idioma);
+  // preferencia primeiro, os outros depois.
   ling_conta_legenda("ro"); ling_conta_legenda2("es"); run(1, "tt123", "movie");
-  assert(nLegs == 3 && !strcmp(legs[0].idioma, "ron") && !strcmp(legs[1].idioma, "spa") && !strcmp(legs[2].idioma, "eng"));
+  assert(nLegs == 4 && !strcmp(legs[0].idioma, "ron") && !strcmp(legs[1].idioma, "spa") &&
+         !strcmp(legs[2].idioma, "eng") && !strcmp(legs[3].idioma, "kor"));
 
-  char primeiro[32000], segundo[32000]; dense(primeiro, sizeof primeiro, 0); dense(segundo, sizeof segundo, 1);
+  static char primeiro[200000], segundo[200000]; dense(primeiro, sizeof primeiro, 0); dense(segundo, sizeof segundo, 1);
   responses[0] = primeiro; responses[1] = segundo;
   run(1, "tt123", "movie");
-  int counts[3] = {0}; const char *langs[] = {"ron", "spa", "eng"};
-  for (int i = 0; i < nLegs; i++) for (int l = 0; l < 3; l++) if (!strcmp(legs[i].idioma, langs[l])) counts[l]++;
-  assert(nLegs == LEG_MAX && counts[0] == LEG_MAX / 3 && counts[1] == LEG_MAX / 3 && counts[2] == LEG_MAX / 3);
+  // Teto POR IDIOMA: 12 nos da preferencia (ro, es, en), 6 no coreano.
+  int counts[4] = {0}; const char *langs[] = {"ron", "spa", "eng", "kor"};
+  for (int i = 0; i < nLegs; i++) for (int l = 0; l < 4; l++) if (!strcmp(legs[i].idioma, langs[l])) counts[l]++;
+  assert(nLegs == 42 && counts[0] == 12 && counts[1] == 12 && counts[2] == 12 && counts[3] == 6);
 
   // First provider has >12 candidates. Both must be requested and contribute,
-  // with principal/secondary/English quotas and real origin attached.
-  int antes = requests; run(2, "tt123", "movie"); assert(requests - antes == 2 && nLegs == LEG_MAX);
+  // with the per-language caps and real origin attached.
+  int antes = requests; run(2, "tt123", "movie"); assert(requests - antes == 2 && nLegs == 42);
   int providers[2] = {0}; memset(counts, 0, sizeof counts);
   for (int i = 0; i < nLegs; i++) {
-    assert(!strcmp(legs[i].idioma, langs[i / (LEG_MAX / 3)]));
+    int g = i < 36 ? i / 12 : 3;
+    assert(!strcmp(legs[i].idioma, langs[g]));
     for (int j = 0; j < 2; j++) if (!strcmp(legs[i].provedor, j ? "Subs.ro" : "OpenSubtitles")) providers[j]++;
-    counts[i / (LEG_MAX / 3)]++;
+    counts[g]++;
   }
-  assert(providers[0] == LEG_MAX / 2 && providers[1] == LEG_MAX / 2 && counts[0] == LEG_MAX / 3 && counts[1] == LEG_MAX / 3 && counts[2] == LEG_MAX / 3);
+  assert(providers[0] == 21 && providers[1] == 21 && counts[0] == 12 && counts[1] == 12 && counts[2] == 12 && counts[3] == 6);
+  // Sem preferencia ("Todas"): todo idioma e "da pessoa", 12 em cada.
   ling_local_legenda("*"); antes = requests; run(2, "tt123", "movie");
-  assert(requests - antes == 2 && nLegs == LEG_MAX);
+  assert(requests - antes == 2 && nLegs == 48);
   for (int i = 0; i < nLegs; i++) assert(!strcmp(legs[i].provedor, (i % 2) ? "Subs.ro" : "OpenSubtitles"));
 
   // Empty, missing array and HTTP404 are distinguishable without blocking the

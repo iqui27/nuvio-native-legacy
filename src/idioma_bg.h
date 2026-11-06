@@ -2515,7 +2515,7 @@
   T("Idioma dos dados do título", "Език на данните за заглавието"),
   T("Idioma dos metadados", "Език на метаданните"),
   T("Idioma dos textos que o TMDB traz (sinopse, títulos). \"Da interface\" segue o idioma do app.", "Езикът на текстовете, които TMDB предоставя (описание, заглавия). \"Език на интерфейса\" следва езика на приложението."),
-  T("Idioma ligado sozinho quando o vídeo começa. Legendas dos addons aparecem em inglês e no idioma escolhido aqui. \"Da conta\" segue o que está no seu perfil.", "Език, който се включва сам при започване на видеото. Субтитрите от добавки се показват на английски и на избрания тук език. „От акаунта“ следва профила ви."),
+  T("Idioma ligado sozinho quando o vídeo começa. As legendas neste idioma aparecem primeiro na lista. \"Da conta\" segue o que está no seu perfil.", "Език, който се включва сам при започване на видеото. Субтитрите на този език се показват първи в списъка. „От акаунта“ следва профила ви."),
   T("Idioma procurado primeiro nas legendas de cada título, e ligado sozinho quando o vídeo começa. \"Da conta\" segue o que está no seu perfil.", "Езикът, който се търси първо в субтитрите на всяко заглавие и се включва сам, когато видеото започне. \"От акаунта\" следва вашия профил."),
   T("Idiomas", "Езици"),
   T("Idiomas e legendas", "Езици и субтитри"),

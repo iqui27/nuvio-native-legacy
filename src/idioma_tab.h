@@ -2514,7 +2514,7 @@
   { "Idioma dos dados do título", "Language of title data" },
   { "Idioma dos metadados", "Metadata language" },
   { "Idioma dos textos que o TMDB traz (sinopse, títulos). \"Da interface\" segue o idioma do app.", "Language of the texts TMDB provides (overview, titles). \"Interface language\" follows the app language." },
-  { "Idioma ligado sozinho quando o vídeo começa. Legendas dos addons aparecem em inglês e no idioma escolhido aqui. \"Da conta\" segue o que está no seu perfil.", "Language turned on automatically when the video starts. Add-on subtitles are listed in English and in the language picked here. \"From account\" follows your profile." },
+  { "Idioma ligado sozinho quando o vídeo começa. As legendas neste idioma aparecem primeiro na lista. \"Da conta\" segue o que está no seu perfil.", "Language turned on automatically when the video starts. Subtitles in this language are listed first. \"From account\" follows your profile." },
   { "Idioma procurado primeiro nas legendas de cada título, e ligado sozinho quando o vídeo começa. \"Da conta\" segue o que está no seu perfil.", "The language looked for first in each title's subtitles, and turned on by itself when the video starts. \"From account\" follows your profile." },
   { "Idiomas", "Languages" },
   { "Idiomas e legendas", "Languages and subtitles" },

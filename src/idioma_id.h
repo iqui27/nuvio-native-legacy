@@ -2515,7 +2515,7 @@
   T("Idioma dos dados do título", "Bahasa data judul"),
   T("Idioma dos metadados", "Bahasa metadata"),
   T("Idioma dos textos que o TMDB traz (sinopse, títulos). \"Da interface\" segue o idioma do app.", "Bahasa teks yang disediakan TMDB (sinopsis, judul). \"Bahasa antarmuka\" mengikuti bahasa aplikasi."),
-  T("Idioma ligado sozinho quando o vídeo começa. Legendas dos addons aparecem em inglês e no idioma escolhido aqui. \"Da conta\" segue o que está no seu perfil.", "Bahasa yang aktif sendiri saat video dimulai. Subtitel add-on ditampilkan dalam bahasa Inggris dan bahasa yang dipilih di sini. \"Dari akun\" mengikuti profil Anda."),
+  T("Idioma ligado sozinho quando o vídeo começa. As legendas neste idioma aparecem primeiro na lista. \"Da conta\" segue o que está no seu perfil.", "Bahasa yang aktif sendiri saat video dimulai. Subtitel dalam bahasa ini ditampilkan paling atas di daftar. \"Dari akun\" mengikuti profil Anda."),
   T("Idioma procurado primeiro nas legendas de cada título, e ligado sozinho quando o vídeo começa. \"Da conta\" segue o que está no seu perfil.", "Bahasa yang dicari lebih dulu di subtitel setiap judul, dan dinyalakan otomatis saat video mulai. \"Dari akun\" mengikuti profilmu."),
   T("Idiomas", "Bahasa"),
   T("Idiomas e legendas", "Bahasa dan subtitle"),

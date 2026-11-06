@@ -2514,7 +2514,7 @@
   T("Idioma dos dados do título", "Язык данных о тайтле"),
   T("Idioma dos metadados", "Язык метаданных"),
   T("Idioma dos textos que o TMDB traz (sinopse, títulos). \"Da interface\" segue o idioma do app.", "Язык текстов, которые предоставляет TMDB (описание, названия). \"Язык интерфейса\" следует языку приложения."),
-  T("Idioma ligado sozinho quando o vídeo começa. Legendas dos addons aparecem em inglês e no idioma escolhido aqui. \"Da conta\" segue o que está no seu perfil.", "Язык, который включается сам в начале видео. Субтитры из аддонов показываются на английском и на выбранном здесь языке. «Из аккаунта» берёт язык из профиля."),
+  T("Idioma ligado sozinho quando o vídeo começa. As legendas neste idioma aparecem primeiro na lista. \"Da conta\" segue o que está no seu perfil.", "Язык, который включается сам в начале видео. Субтитры на этом языке показываются первыми в списке. «Из аккаунта» берёт язык из профиля."),
   T("Idioma procurado primeiro nas legendas de cada título, e ligado sozinho quando o vídeo começa. \"Da conta\" segue o que está no seu perfil.", "Язык, который ищут первым в субтитрах каждого названия и включают автоматически, когда начинается видео. \"Из учётной записи\" берёт значение из вашего профиля."),
   T("Idiomas", "Языки"),
   T("Idiomas e legendas", "Языки и субтитры"),

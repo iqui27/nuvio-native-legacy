@@ -2515,7 +2515,7 @@
   T("Idioma dos dados do título", "A címadatok nyelve"),
   T("Idioma dos metadados", "Metaadatok nyelve"),
   T("Idioma dos textos que o TMDB traz (sinopse, títulos). \"Da interface\" segue o idioma do app.", "A TMDB által adott szövegek nyelve (leírás, címek). A \"Felület nyelve\" az app nyelvét követi."),
-  T("Idioma ligado sozinho quando o vídeo começa. Legendas dos addons aparecem em inglês e no idioma escolhido aqui. \"Da conta\" segue o que está no seu perfil.", "A videó indulásakor magától bekapcsolt nyelv. A kiegészítők feliratai angolul és az itt választott nyelven jelennek meg. A \"Fiókból\" a profilodat követi."),
+  T("Idioma ligado sozinho quando o vídeo começa. As legendas neste idioma aparecem primeiro na lista. \"Da conta\" segue o que está no seu perfil.", "A videó indulásakor magától bekapcsolt nyelv. Az ezen a nyelven elérhető feliratok jelennek meg elsőként a listában. A \"Fiókból\" a profilodat követi."),
   T("Idioma procurado primeiro nas legendas de cada título, e ligado sozinho quando o vídeo começa. \"Da conta\" segue o que está no seu perfil.", "Az a nyelv, amelyet először keres az egyes címek feliratai között, és a videó indulásakor magától bekapcsol. A \"Fiókból\" a profilodat követi."),
   T("Idiomas", "Nyelvek"),
   T("Idiomas e legendas", "Nyelvek és feliratok"),

@@ -221,14 +221,15 @@ int addons_parcial_abas(AddonAba *out, int max);
 
 // --- legendas externas dos addons -------------------------------------------
 // Addon de legenda responde em /subtitles/<tipo>/<id>.json com
-// {"subtitles":[{lang,url,subtitleFileName,...}]}. Sao dezenas por titulo, a
-// maioria em idiomas que nao interessam — por isso a lista e FILTRADA por
-// idioma antes de chegar na tela: 70 linhas para rolar seria pior que nenhuma.
-// 36 = 12 por idioma com tres grupos (principal, secundario, ingles); com um
-// grupo so ("Todas"/sem preferencia) sao 36 de uma vez (#268). Cada Legenda tem
-// ~1,3 KB: copias de LEG_MAX NAO vao para a pilha (fio de 128 KB na LG/Tizen),
+// {"subtitles":[{lang,url,subtitleFileName,...}]}. Sao dezenas por titulo e
+// em VARIOS idiomas (06/11: quem configura o SubSense em sueco recebia zero:
+// a lista so guardava principal, secundario e ingles). Agora todo idioma fica
+// e a tela agrupa por idioma (legendasui.c). Teto POR IDIOMA (addons.c):
+// 12 nos idiomas da preferencia (principal, secundario, ingles), 6 em cada
+// outro. LEG_MAX e so o teto de seguranca da lista inteira. Cada Legenda tem
+// ~1,5 KB: copias de LEG_MAX NAO vao para a pilha (fio de 128 KB na LG/Tizen),
 // usam malloc (faixas.c, legendasui.c, addons.c).
-#define LEG_MAX 36
+#define LEG_MAX 256
 
 typedef struct {
   char rotulo[64];   // "Portugues (BR)  ·  Silo.S01E05.WEB"

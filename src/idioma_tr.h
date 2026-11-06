@@ -2515,7 +2515,7 @@
   T("Idioma dos dados do título", "Başlık verilerinin dili"),
   T("Idioma dos metadados", "Üst veri dili"),
   T("Idioma dos textos que o TMDB traz (sinopse, títulos). \"Da interface\" segue o idioma do app.", "TMDB'nin sağladığı metinlerin dili (özet, başlıklar). \"Arayüz dili\" uygulama dilini izler."),
-  T("Idioma ligado sozinho quando o vídeo começa. Legendas dos addons aparecem em inglês e no idioma escolhido aqui. \"Da conta\" segue o que está no seu perfil.", "Video başlayınca kendiliğinden açılan dil. Eklenti altyazıları İngilizce ve burada seçilen dilde listelenir. \"Hesaptan\" profilinizi izler."),
+  T("Idioma ligado sozinho quando o vídeo começa. As legendas neste idioma aparecem primeiro na lista. \"Da conta\" segue o que está no seu perfil.", "Video başlayınca kendiliğinden açılan dil. Bu dildeki altyazılar listede en üstte görünür. \"Hesaptan\" profilinizi izler."),
   T("Idioma procurado primeiro nas legendas de cada título, e ligado sozinho quando o vídeo começa. \"Da conta\" segue o que está no seu perfil.", "Her başlığın altyazılarında ilk aranan ve video başlarken kendiliğinden açılan dil. \"Hesaptan\" profilini izler."),
   T("Idiomas", "Diller"),
   T("Idiomas e legendas", "Diller ve altyazılar"),

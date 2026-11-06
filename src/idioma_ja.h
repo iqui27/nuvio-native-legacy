@@ -2515,7 +2515,7 @@
   T("Idioma dos dados do título", "作品データの言語"),
   T("Idioma dos metadados", "メタデータの言語"),
   T("Idioma dos textos que o TMDB traz (sinopse, títulos). \"Da interface\" segue o idioma do app.", "TMDB が提供するテキスト（あらすじ、タイトル）の言語です。\"インターフェースの言語\" はアプリの言語に従います。"),
-  T("Idioma ligado sozinho quando o vídeo começa. Legendas dos addons aparecem em inglês e no idioma escolhido aqui. \"Da conta\" segue o que está no seu perfil.", "動画開始時に自動でオンになる言語。アドオンの字幕は英語とここで選んだ言語で表示されます。「アカウントから」はプロフィールに従います。"),
+  T("Idioma ligado sozinho quando o vídeo começa. As legendas neste idioma aparecem primeiro na lista. \"Da conta\" segue o que está no seu perfil.", "動画開始時に自動でオンになる言語。この言語の字幕がリストの先頭に表示されます。「アカウントから」はプロフィールに従います。"),
   T("Idioma procurado primeiro nas legendas de cada título, e ligado sozinho quando o vídeo começa. \"Da conta\" segue o que está no seu perfil.", "各作品の字幕で最初に探す言語で、動画が始まると自動でオンになります。\"アカウントから\" はプロフィールの設定に従います。"),
   T("Idiomas", "言語"),
   T("Idiomas e legendas", "言語と字幕"),

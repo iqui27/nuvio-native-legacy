@@ -2515,7 +2515,7 @@
   T("Idioma dos dados do título", "Pavadinimo duomenų kalba"),
   T("Idioma dos metadados", "Metaduomenų kalba"),
   T("Idioma dos textos que o TMDB traz (sinopse, títulos). \"Da interface\" segue o idioma do app.", "TMDB pateikiamų tekstų (aprašymo, pavadinimų) kalba. \"Sąsajos kalba\" seka programos kalbą."),
-  T("Idioma ligado sozinho quando o vídeo começa. Legendas dos addons aparecem em inglês e no idioma escolhido aqui. \"Da conta\" segue o que está no seu perfil.", "Kalba, įjungiama pati prasidėjus vaizdo įrašui. Priedų subtitrai rodomi anglų ir čia pasirinkta kalba. \"Iš paskyros\" seka jūsų profilį."),
+  T("Idioma ligado sozinho quando o vídeo começa. As legendas neste idioma aparecem primeiro na lista. \"Da conta\" segue o que está no seu perfil.", "Kalba, įjungiama pati prasidėjus vaizdo įrašui. Šios kalbos subtitrai sąraše rodomi pirmi. \"Iš paskyros\" seka jūsų profilį."),
   T("Idioma procurado primeiro nas legendas de cada título, e ligado sozinho quando o vídeo começa. \"Da conta\" segue o que está no seu perfil.", "Kalba, kurios pirmiausia ieškoma kiekvieno pavadinimo subtitruose ir kuri įjungiama pati, kai prasideda vaizdo įrašas. \"Iš paskyros\" seka jūsų profilį."),
   T("Idiomas", "Kalbos"),
   T("Idiomas e legendas", "Kalbos ir subtitrai"),

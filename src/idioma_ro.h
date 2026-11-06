@@ -2514,7 +2514,7 @@
   T("Idioma dos dados do título", "Limba datelor titlului"),
   T("Idioma dos metadados", "Limba metadatelor"),
   T("Idioma dos textos que o TMDB traz (sinopse, títulos). \"Da interface\" segue o idioma do app.", "Limba textelor oferite de TMDB (sinopsis, titluri). \"Limba interfeței\" urmează limba aplicației."),
-  T("Idioma ligado sozinho quando o vídeo começa. Legendas dos addons aparecem em inglês e no idioma escolhido aqui. \"Da conta\" segue o que está no seu perfil.", "Limba pornită automat când începe videoclipul. Subtitrările din addon-uri apar în engleză și în limba aleasă aici. \"Din cont\" urmează profilul tău."),
+  T("Idioma ligado sozinho quando o vídeo começa. As legendas neste idioma aparecem primeiro na lista. \"Da conta\" segue o que está no seu perfil.", "Limba pornită automat când începe videoclipul. Subtitrările în această limbă apar primele în listă. \"Din cont\" urmează profilul tău."),
   T("Idioma procurado primeiro nas legendas de cada título, e ligado sozinho quando o vídeo começa. \"Da conta\" segue o que está no seu perfil.", "Limba căutată prima în subtitrările fiecărui titlu și activată automat când începe videoclipul. \"Din cont\" urmează ce este în profilul tău."),
   T("Idiomas", "Limbi"),
   T("Idiomas e legendas", "Limbi și subtitrări"),

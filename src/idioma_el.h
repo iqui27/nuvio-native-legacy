@@ -2515,7 +2515,7 @@
   T("Idioma dos dados do título", "Γλώσσα στοιχείων τίτλου"),
   T("Idioma dos metadados", "Γλώσσα μεταδεδομένων"),
   T("Idioma dos textos que o TMDB traz (sinopse, títulos). \"Da interface\" segue o idioma do app.", "Η γλώσσα των κειμένων που δίνει το TMDB (περιλήψεις, τίτλοι). Το \"Γλώσσα διεπαφής\" ακολουθεί τη γλώσσα της εφαρμογής."),
-  T("Idioma ligado sozinho quando o vídeo começa. Legendas dos addons aparecem em inglês e no idioma escolhido aqui. \"Da conta\" segue o que está no seu perfil.", "Γλώσσα που ενεργοποιείται μόνη της όταν ξεκινά το βίντεο. Οι υπότιτλοι των πρόσθετων εμφανίζονται στα αγγλικά και στη γλώσσα που επιλέγεται εδώ. Το \"Από τον λογαριασμό\" ακολουθεί το προφίλ σας."),
+  T("Idioma ligado sozinho quando o vídeo começa. As legendas neste idioma aparecem primeiro na lista. \"Da conta\" segue o que está no seu perfil.", "Γλώσσα που ενεργοποιείται μόνη της όταν ξεκινά το βίντεο. Οι υπότιτλοι σε αυτή τη γλώσσα εμφανίζονται πρώτοι στη λίστα. Το \"Από τον λογαριασμό\" ακολουθεί το προφίλ σας."),
   T("Idioma procurado primeiro nas legendas de cada título, e ligado sozinho quando o vídeo começa. \"Da conta\" segue o que está no seu perfil.", "Η γλώσσα που αναζητείται πρώτα στους υπότιτλους κάθε τίτλου και ενεργοποιείται μόνη της όταν ξεκινά το βίντεο. Το \"Από τον λογαριασμό\" ακολουθεί το προφίλ σου."),
   T("Idiomas", "Γλώσσες"),
   T("Idiomas e legendas", "Γλώσσες και υπότιτλοι"),

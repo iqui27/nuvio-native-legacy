@@ -2515,7 +2515,7 @@
   T("Idioma dos dados do título", "Ngôn ngữ dữ liệu phim"),
   T("Idioma dos metadados", "Ngôn ngữ siêu dữ liệu"),
   T("Idioma dos textos que o TMDB traz (sinopse, títulos). \"Da interface\" segue o idioma do app.", "Ngôn ngữ của các văn bản do TMDB cung cấp (tóm tắt, tựa phim). \"Ngôn ngữ giao diện\" theo ngôn ngữ của ứng dụng."),
-  T("Idioma ligado sozinho quando o vídeo começa. Legendas dos addons aparecem em inglês e no idioma escolhido aqui. \"Da conta\" segue o que está no seu perfil.", "Ngôn ngữ tự bật khi video bắt đầu. Phụ đề từ add-on hiển thị bằng tiếng Anh và ngôn ngữ chọn ở đây. \"Từ tài khoản\" theo hồ sơ của bạn."),
+  T("Idioma ligado sozinho quando o vídeo começa. As legendas neste idioma aparecem primeiro na lista. \"Da conta\" segue o que está no seu perfil.", "Ngôn ngữ tự bật khi video bắt đầu. Phụ đề bằng ngôn ngữ này hiển thị đầu tiên trong danh sách. \"Từ tài khoản\" theo hồ sơ của bạn."),
   T("Idioma procurado primeiro nas legendas de cada título, e ligado sozinho quando o vídeo começa. \"Da conta\" segue o que está no seu perfil.", "Ngôn ngữ được tìm đầu tiên trong phụ đề của mỗi tựa phim và tự bật khi video bắt đầu. \"Từ tài khoản\" theo hồ sơ của bạn."),
   T("Idiomas", "Ngôn ngữ"),
   T("Idiomas e legendas", "Ngôn ngữ và phụ đề"),
