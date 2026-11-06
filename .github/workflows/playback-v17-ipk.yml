@@ -102,6 +102,7 @@ jobs:
           bash tests/player_buffer_data.sh
           bash tests/player_ram_controls.sh
           NV_TEST_MP4=1 bash tests/buffer_player_settings.sh
+          bash tests/ajustes_dts_segmentado.sh
           NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_P7_MAPPING=1 bash tests/dvaudio_lg.sh
       - name: Build host FFmpeg and test real HTTP buffering
         timeout-minutes: 12

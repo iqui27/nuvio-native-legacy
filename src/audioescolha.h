@@ -41,7 +41,7 @@ int audioesc_dts_truehd(const char *codec, const char *rotulo);
 // ("" = a fonte nao declarou: nunca ha faixa exata) e `numero` o
 // audio memory identity at that source (video_audio_numero_memoria).
 typedef struct {
-  char idioma[16], codec[24], rotulo[48];
+  char idioma[16], codec[24], rotulo[112];   /* rotulo: as long as VideoFaixa.rotulo */
   int canais;
   int numero;
   char binge[128];

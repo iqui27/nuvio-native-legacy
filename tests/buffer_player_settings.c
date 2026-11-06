@@ -30,7 +30,7 @@ int main(void) {
     ajustes_dir(dir);
     assert(ajustes_buffer_native_connections()==native && ajustes_buffer_conversion_connections()==conversion);
   }
-  /* "Standard (1) - Uses method from Tizen": one continuous request. */
+  /* "Standard (1)": one continuous request (Tizen method). */
   assert(!ajustes_buffer_conversion_stream());
   assert(definirValorDireto(AJ_BUFFER_CONVERSION_CONNECTIONS,0));
   ajustes_dir(dir);
@@ -50,7 +50,7 @@ int main(void) {
     key(SDLK_RETURN);
     assert(uxEditor==1 && uxOp==AJ_BUFFER && uxBufferDadosFoco==row && uxPendente==2 && !uxBufferPai.ativo);
     assert(valor[op]==choice && ajustes_buffer_preset()==0);
-    assert(uxDiferente(AJ_BUFFER)==(ajustes_buffer_native_connections()!=1 || ajustes_buffer_conversion_connections()!=2));
+    assert(uxDiferente(AJ_BUFFER)==(ajustes_buffer_native_connections()!=1 || ajustes_buffer_conversion_connections()!=1));
     key(SDLK_ESCAPE);ajustes_dir(dir);assert(valor[op]==choice);
   }
   // Canceling a child preserves its saved value and the parent's size draft.
@@ -72,7 +72,7 @@ int main(void) {
   assert(ajustes_buffer_native_connections()==1 && ajustes_buffer_conversion_connections()==4);
   ajPontBufferConexaoAbrir(5,0);key(SDLK_RIGHT);key(SDLK_RETURN);key(SDLK_LEFT);key(SDLK_RETURN);
   assert(uxOp==AJ_BUFFER && uxBufferDadosFoco==5 && uxPendente==2);
-  assert(ajustes_buffer_native_connections()==1 && ajustes_buffer_conversion_connections()==2);
+  assert(ajustes_buffer_native_connections()==1 && ajustes_buffer_conversion_connections()==1);
   key(SDLK_ESCAPE);
   assert(!uxDiferente(AJ_BUFFER));
 
@@ -114,7 +114,7 @@ int main(void) {
   assert(!uxEditor && ajustes_buffer_dados() && ajustes_buffer_preset()==2);
   // One confirmation restores size, connections and diagnostic defaults.
   assert(definirValorDireto(AJ_BUFFER_NATIVE_CONNECTIONS,2));
-  assert(definirValorDireto(AJ_BUFFER_CONVERSION_CONNECTIONS,0));
+  assert(definirValorDireto(AJ_BUFFER_CONVERSION_CONNECTIONS,2));
   open_buffer();ajPontRamAlternar(2,0);ajPontRamAlternar(3,0);
   assert(ajustes_ram_overlay() && ajustes_ram_verde());
   memcpy(goodDir,dirAjustes,sizeof goodDir);
@@ -122,11 +122,11 @@ int main(void) {
   uxRestaurar=1;uxAplicar();
   assert(uxEditor && ajustes_buffer_preset()==2 && ajustes_buffer_dados());
   assert(ajustes_ram_overlay() && ajustes_ram_verde());
-  assert(ajustes_buffer_native_connections()==3 && ajustes_buffer_conversion_connections()==1);
+  assert(ajustes_buffer_native_connections()==3 && ajustes_buffer_conversion_connections()==3);
   memcpy(dirAjustes,goodDir,sizeof goodDir);
   uxRestaurar=1;uxAplicar();
   assert(!uxEditor && !ajustes_buffer_dados() && !ajustes_ram_overlay() && !ajustes_ram_verde() && ajustes_buffer_preset()==0);
-  assert(ajustes_buffer_native_connections()==1 && ajustes_buffer_conversion_connections()==2);
+  assert(ajustes_buffer_native_connections()==1 && ajustes_buffer_conversion_connections()==1);
   // Fixed audio preference uses the actual UI save/reload path, not just a getter.
   uxAbrirEditor(AJ_DV_AUDIO_FIXO);assert(uxEditor==1);
   uxPendente=1;uxAplicar();assert(ajustes_dv_audio_fixo()==1);

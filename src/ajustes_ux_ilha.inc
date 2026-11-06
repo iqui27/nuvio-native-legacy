@@ -1262,13 +1262,13 @@ static void aj2EditorEscolha(GfxRect m) {
     if(uxBufferDadosDisponivel()) {
       float yy=top+136.0f,cw=lw/3.0f;
       const int ops[]={AJ_BUFFER_DADOS,AJ_RAM_OVERLAY,AJ_RAM_VERDE};
-      const char *labels[]={idiomaEfetivo==IDIOMA_PL?"Dane bufora":"Buffer data","RAM overlay",idiomaEfetivo==IDIOMA_PL?"Zielony przycisk":"Green button"};
+      const char *labels[]={"Buffer data","RAM overlay","Green button"};   /* translated by the i18n tables */
       gfx_cor((GfxRect){lx,yy-4,lw,1},0,1,1,1,0.14f);
       gfx_anel((GfxRect){lx,yy+4,lw,60},16.0f/60.0f,1,1,1,1,0.12f);
       for(int i=0;i<3;i++) {
         GfxRect r={lx+i*cw,yy+4,cw-4,60};
         if(uxBufferDadosFoco==i+1)ajFocoLinha(r,16,1,1);
-        TxtLinha state=ajTxt(TXT_V3_PILL,lig(ops[i])?"On":"Off");
+        TxtLinha state=ajTxt(TXT_V3_PILL,lig(ops[i])?"Ligado":"Desligado");
         float switchEnd=r.x+r.w-12-state.w-10;
         TxtLinha t=ajTxtC(TXT_V2_24,labels[i],fmaxf(1,switchEnd-64-r.x-24));
         txt_desenhar_alpha(t,r.x+12,r.y+(r.h-t.h)*0.5f,0.85f);
@@ -1281,7 +1281,7 @@ static void aj2EditorEscolha(GfxRect m) {
   } else if(uxOp==AJ_BUFFER && uxBufferDadosDisponivel()) {
     GfxRect row={lx,aj2EditorBase(m)+8.0f,lw,64.0f};
     if(uxBufferDadosFoco==1)ajFocoLinha(row,28,1,1);
-    const char *label=idiomaEfetivo==IDIOMA_PL ? "Dane bufora w playerze" : "Show buffer data in player";
+    const char *label="Show buffer data in player";
     TxtLinha t=ajTxtC(TXT_V2_24,label,row.w-220.0f);
     txt_desenhar_alpha(t,row.x+24,row.y+(row.h-t.h)*0.5f,uxBufferDadosFoco==1?1.0f:0.85f);
     aj2PilulaEstado(-1,row.x+row.w-24,row.y+row.h*0.5f,uxBufferDados==0,1);
@@ -1294,11 +1294,11 @@ static void aj2EditorEscolha(GfxRect m) {
     if(uxBufferDadosFoco==2)ajFocoLinha(main,28,1,1);
     if(uxBufferDadosFoco==3)ajFocoLinha(green,28,1,1);
     float labelW=green.x-main.x-48.0f;
-    const char *ramLabel=labelW<160.0f?"RAM":idiomaEfetivo==IDIOMA_PL?"Dane RAM":"RAM overlay";
+    const char *ramLabel=labelW<160.0f?"RAM":"RAM overlay";
     t=ajTxtC(TXT_V2_24,ramLabel,labelW);
     txt_desenhar_alpha(t,main.x+24,main.y+(main.h-t.h)*0.5f,0.85f);
     aj2PilulaEstado(-1,main.x+main.w-24,main.y+main.h*0.5f,ajustes_ram_overlay(),1);
-    t=ajTxtC(TXT_V2_24,idiomaEfetivo==IDIOMA_PL?"Zielony przycisk":"Green button",green.w-110.0f);
+    t=ajTxtC(TXT_V2_24,"Green button",green.w-110.0f);
     txt_desenhar_alpha(t,green.x+12,green.y+(green.h-t.h)*0.5f,0.85f);
     aj2ChipLiga(AJ_RAM_VERDE,green.x+green.w-24,green.y+green.h*0.5f,ajustes_ram_verde(),1);
     if(ajPontEditor) {
@@ -1312,7 +1312,7 @@ static void aj2EditorEscolha(GfxRect m) {
     float px=m.x+m.w-52-pw,ph=aj2PreviaPendente(px,y0,pw);
     if((uxOp==AJ_BUFFER && uxBufferConexoesDisponivel()) || uxBufferPai.ativo) {
       const char *a=uxOp==AJ_BUFFER?"Choose buffer size and downloads separately.":"Maximum simultaneous HTTP range downloads.";
-      const char *b=uxOp==AJ_BUFFER?"Defaults: native 1 · conversion 4":"Applies to the next playback.";
+      const char *b=uxOp==AJ_BUFFER?"Defaults: native 1 · conversion 1":"Applies to the next playback.";
       float h=ajBloco(TXT_V2_24,a,px,y0+ph+24,pw,32,0.7f,2);
       ajBloco(TXT_V2_24,b,px,y0+ph+24+h+12,pw,32,0.7f,2);
     }

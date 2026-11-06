@@ -466,8 +466,15 @@ static int ajSegmentada(int op) {
   if (n < 2 || n > 3 || !OPCOES[op].valores) return 0;
   // O segmentado so fica na linha se o nome da opcao cabe ao lado dele;
   // senao a escolha abre no editor.
-  { float w = aj2SegLargura(op, n);
-    if (w + (float)txt_largura(TXT_V2_ROT, rotuloOpcao(op)) + 60.0f + 20.0f > aj2ListaWRef() - 44.0f) return 0;
+  { float w = aj2SegLargura(op, n), regua = w;
+    /* DTS output (LG) keeps the in-row choice it had with two values after Off
+     * was appended: with the artwork column the segmented control is drawn
+     * over the artwork, not beside the row label, so the label check uses the
+     * original two values. */
+#ifndef NV_TPK
+    if (op == AJ_DTS_AC3 && n == 3 && aj2TemInsp() && !ajRetrato()) regua = aj2SegLargura(op, 2);
+#endif
+    if (regua + (float)txt_largura(TXT_V2_ROT, rotuloOpcao(op)) + 60.0f + 20.0f > aj2ListaWRef() - 44.0f) return 0;
     return w < 560.0f; }
 }
 // O editor desta opcao acontece NA LINHA (segmentado, interruptor, cor, fundo),

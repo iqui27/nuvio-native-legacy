@@ -768,7 +768,7 @@ static const char *V_PALCO_FUNDO[] = { "Cortina", "Como está", "Só arte", "Pre
 static const char *V_TITULO_FIL[] = { "Clássico", "Ilha", "Editorial", "Acento" };
 static const char *V_DEGRADES[] = { "Automático", "Forte", "Desligado" };
 static const char *V_BUFFER_CONNECTIONS[] = { "Standard (1)", "Parallel - 2", "Parallel - 3", "Parallel - 4" };
-static const char *V_BUFFER_CONVERSION_CONNECTIONS[] = { "Standard (1) - Uses method from Tizen", "Parallel - 2", "Parallel - 3", "Parallel - 4" };
+static const char *V_BUFFER_CONVERSION_CONNECTIONS[] = { "Standard (1)", "Parallel - 2", "Parallel - 3", "Parallel - 4" };
 static const char *V_DV_AUDIO_FIXO[] = { "Original audio", "AAC stereo", "Dolby Digital 5.1" };
 static const char *V_VIDRO_QUALIDADE[] = { "Automática", "Desempenho", "Alta" };
 static const char *V_FUNDO_DIN[] = { "Cinza", "Cor", "Imersivo", "Cinza escuro" };
@@ -3348,8 +3348,8 @@ int ajustes_ram_overlay(void) { return lig(AJ_RAM_OVERLAY); }
 int ajustes_ram_verde(void) { return lig(AJ_RAM_VERDE); }
 static int bufferConnections(int op,int fallback) { return valor[op]>=0 && valor[op]<4?valor[op]+1:fallback; }
 int ajustes_buffer_native_connections(void) { return bufferConnections(AJ_BUFFER_NATIVE_CONNECTIONS,1); }
-int ajustes_buffer_conversion_connections(void) { return bufferConnections(AJ_BUFFER_CONVERSION_CONNECTIONS,2); }
-/* "Standard (1) - Uses method from Tizen": one connection is one continuous
+int ajustes_buffer_conversion_connections(void) { return bufferConnections(AJ_BUFFER_CONVERSION_CONNECTIONS,1); }
+/* "Standard (1)" (default) uses the Tizen method: one connection is one continuous
  * request into the ring (the Samsung converter's reader), not 4 MiB ranges. */
 int ajustes_buffer_conversion_stream(void) { return ajustes_buffer_conversion_connections()==1; }
 int ajustes_dv7_mapping(void) {
@@ -8161,7 +8161,7 @@ static const char *ajudaOpcaoBase(int op) {
 #ifdef NV_TPK
     case AJ_DTS_AC3: return "Esta TV não toca DTS nem TrueHD: o app converte o som na hora. 5.1 (Dolby Digital) mantém o surround para barra de som e receiver; 7.1, Atmos e DTS:X viram 5.1, sem os objetos. Estéreo (AAC) serve qualquer TV. Desligado: esses vídeos tocam sem som, como antes. Vale a partir do próximo vídeo.";
 #else
-    case AJ_DTS_AC3: return "Como o áudio DTS é entregue à TV (só na LG). Estéreo (AAC) serve qualquer TV. 5.1 (Dolby Digital) mantém o surround para barra de som e receiver. Desligado: o DTS não é convertido e o vídeo toca pelo player da TV, normalmente sem som. Vale a partir do próximo vídeo.";
+    case AJ_DTS_AC3: return "Como o áudio DTS é entregue à TV quando o app o converte (só na LG). Estéreo (AAC) é o modo provado e serve qualquer TV. 5.1 (Dolby Digital) mantém o som surround para barra de som e receiver por ARC/eARC; vale a partir do próximo vídeo.";
 #endif
     case AJ_PS_CONTINUAR: return "Ligado, cada perfil mostra na escolha de perfil o cartão com o que ele estava assistindo. Desligado, a tela mostra só os perfis.";
     case AJ_HIST_CONTA: return "Ligado (padrão): o que você assiste neste perfil sobe para a conta Nuvio, com o progresso e os vistos. Desligado: nada disso é enviado à conta; o Trakt e o Simkl vinculados a este perfil continuam recebendo. Vale só para este perfil.";

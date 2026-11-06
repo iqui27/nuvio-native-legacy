@@ -361,7 +361,7 @@ void video_simular_estatisticas(const VideoStats *s);   // capturas; NULL zera
 #define NV_FAIXA_MAX 64
 
 typedef struct {
-  char rotulo[48];   // "Ingles · Atmos 5.1" ou "Legenda 3"
+  char rotulo[112];  // "Ingles · Atmos 5.1" ou "Legenda 3"; 112: the full file track title (the menu cuts by width)
   char idioma[8];    // "en"; vazio quando o arquivo nao etiqueta
   int  numero;       // indice que o selectTrack espera
   int  ordinalMkv;   // ordinal da legenda (AVPlay; no .tpk, o do arquivo, faixasmkv.c); -1 se nao informado

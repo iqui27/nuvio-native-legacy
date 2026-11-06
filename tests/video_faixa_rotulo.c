@@ -22,6 +22,27 @@ int main(void) {
   assert(!strcmp(r, "Remix - 2026 \xc2\xb7 DTS 5.1"));
   nv_rotulo_faixa(r, sizeof r, "Main", "Inglês", "");
   assert(!strcmp(r, "Main"));
-  puts("PASS video_faixa_rotulo: file names, language fallback, UTF-8 safe cut, menu separator");
+  /* A title that is the release/file name shows the language instead. */
+  { char g[112];
+    nv_rotulo_faixa(g, sizeof g, "Game.of.Thrones.S01E01.2160p.BluRay.REMUX.HEVC.TrueHD.7.1.Atmos-FGT", "Angielski", "TrueHD 7.1");
+    assert(!strcmp(g, "Angielski \xc2\xb7 TrueHD 7.1"));
+    nv_rotulo_faixa(g, sizeof g, "Game of Thrones S01E01 2160p", "Francuski", "AC-3 5.1");
+    assert(!strcmp(g, "Francuski \xc2\xb7 AC-3 5.1"));
+    nv_rotulo_faixa(g, sizeof g, "Movie_2026_1080p_WEB-DL", "Inglês", "E-AC-3 5.1");
+    assert(!strcmp(g, "Inglês \xc2\xb7 E-AC-3 5.1"));
+    /* Real titles stay, including ones with dots, digits or an S-word. */
+    nv_rotulo_faixa(g, sizeof g, "Surround 5.1", "Inglês", "DTS 5.1");
+    assert(!strcmp(g, "Surround 5.1 \xc2\xb7 DTS 5.1"));
+    nv_rotulo_faixa(g, sizeof g, "Polski lektor", "Polski", "AC-3 5.1");
+    assert(!strcmp(g, "Polski lektor \xc2\xb7 AC-3 5.1"));
+    nv_rotulo_faixa(g, sizeof g, "DTS-HD.MA", "Inglês", "DTS 7.1");
+    assert(!strcmp(g, "DTS-HD.MA \xc2\xb7 DTS 7.1"));
+    nv_rotulo_faixa(g, sizeof g, "Songs S1", "Inglês", "AC-3 2.0");
+    assert(!strcmp(g, "Songs S1 \xc2\xb7 AC-3 2.0"));
+    /* The 112-byte label keeps a long real title whole (the menu cuts by width). */
+    nv_rotulo_faixa(g, sizeof g, "Commentary by director David Fincher and actors Brad Pitt", "Inglês", "FLAC 2.0");
+    assert(!strcmp(g, "Commentary by director David Fincher and actors Brad Pitt \xc2\xb7 FLAC 2.0"));
+    assert(!nv_titulo_e_arquivo("") && !nv_titulo_e_arquivo(NULL) && !nv_titulo_e_arquivo("Original DTS-ES Surround Mix")); }
+  puts("PASS video_faixa_rotulo: file names, release names, language fallback, UTF-8 safe cut, menu separator");
   return 0;
 }
