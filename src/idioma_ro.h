@@ -1691,6 +1691,7 @@
   T("Diagnóstico e otimização automática", "Diagnosticare și optimizare automată"),
   T("Diagnóstico em andamento", "Diagnosticare în curs"),
   T("Dica", "Sfat"),
+  T("Dica: as miniaturas de filmes em 4K saem bem mais rápido quando os seus add-ons também listam fontes 720p ou 1080p WEB-DL. O Nuvio faz as miniaturas a partir de uma cópia menor do mesmo filme.", "Sfat: previzualizările filmelor 4K se fac mult mai repede când suplimentele tale afișează și surse 720p sau 1080p WEB-DL. Nuvio le face dintr-o copie mai mică a aceluiași film."),
   T("Dicas do controle", "Sfaturi pentru telecomandă"),
   T("Diferentes do padrão", "Diferite de implicit"),
   T("Diferença dentro do ruído: o perfil atual foi mantido", "Diferență în limita zgomotului: profilul actual a fost păstrat"),

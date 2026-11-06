@@ -1692,6 +1692,7 @@
   T("Diagnóstico e otimização automática", "Chẩn đoán và tinh chỉnh tự động"),
   T("Diagnóstico em andamento", "Đang chạy chẩn đoán"),
   T("Dica", "Mẹo"),
+  T("Dica: as miniaturas de filmes em 4K saem bem mais rápido quando os seus add-ons também listam fontes 720p ou 1080p WEB-DL. O Nuvio faz as miniaturas a partir de uma cópia menor do mesmo filme.", "Mẹo: ảnh xem trước của phim 4K được tạo nhanh hơn nhiều khi tiện ích của bạn cũng liệt kê nguồn 720p hoặc 1080p WEB-DL. Nuvio tạo chúng từ một bản sao nhỏ hơn của cùng bộ phim."),
   T("Dicas do controle", "Mẹo dùng điều khiển"),
   T("Diferentes do padrão", "Khác mặc định"),
   T("Diferença dentro do ruído: o perfil atual foi mantido", "Chênh lệch nằm trong nhiễu: giữ cấu hình hiện tại"),

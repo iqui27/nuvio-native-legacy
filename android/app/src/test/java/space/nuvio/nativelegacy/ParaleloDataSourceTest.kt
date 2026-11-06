@@ -18,6 +18,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 class ParaleloDataSourceTest {
 
@@ -144,6 +145,114 @@ class ParaleloDataSourceTest {
         assertEquals(3, aberturas.get())
         assertEquals(listOf(250L, 750L), esperas)
         assertTrue(conexoes.take(2).all { it.desconectou.get() })
+    }
+
+    @Test fun http502DoResolvedorRepeteEDevolveAConexaoBoa() {
+        val aberturas = AtomicInteger()
+        val conexoes = ArrayList<ConexaoFalsa>()
+        val esperas = ArrayList<Long>()
+        val fonte = ParaleloDataSource(null, emptyMap(),
+            novaConexao = { url ->
+                val tentativa = aberturas.incrementAndGet()
+                val c = if (tentativa < 3) object : ConexaoFalsa(url) {
+                    override fun getResponseCode(): Int = HTTP_BAD_GATEWAY
+                } else ConexaoFalsa(url)
+                conexoes += c
+                c
+            },
+            dormir = { esperas += it })
+
+        val c = fonte.conectarComRetry(URL("https://example.invalid/video.mkv"), 0, 1023)
+        fonte.close()
+
+        assertEquals(HttpURLConnection.HTTP_OK, c.responseCode)
+        assertEquals(3, aberturas.get())
+        assertEquals(listOf(ParaleloDataSource.ESPERA_5XX_MS, ParaleloDataSource.ESPERA_5XX_MS), esperas)
+        assertTrue(conexoes.take(2).all { it.desconectou.get() })
+    }
+
+    @Test fun http502PersistenteDevolveOCodigoDepoisDeTresTentativas() {
+        val aberturas = AtomicInteger()
+        val fonte = ParaleloDataSource(null, emptyMap(),
+            novaConexao = { url ->
+                aberturas.incrementAndGet()
+                object : ConexaoFalsa(url) { override fun getResponseCode(): Int = HTTP_BAD_GATEWAY }
+            },
+            dormir = {})
+        val c = fonte.conectarComRetry(URL("https://example.invalid/video.mkv"), 0, 1023)
+        fonte.close()
+        assertEquals(HttpURLConnection.HTTP_BAD_GATEWAY, c.responseCode)
+        assertEquals(3, aberturas.get())
+    }
+
+    @Test fun http404NaoRepete() {
+        val aberturas = AtomicInteger()
+        val fonte = ParaleloDataSource(null, emptyMap(),
+            novaConexao = { url ->
+                aberturas.incrementAndGet()
+                object : ConexaoFalsa(url) { override fun getResponseCode(): Int = HTTP_NOT_FOUND }
+            },
+            dormir = { throw AssertionError("404 nao deve esperar nem repetir") })
+        val c = fonte.conectarComRetry(URL("https://example.invalid/video.mkv"), 0, 1023)
+        fonte.close()
+        assertEquals(HttpURLConnection.HTTP_NOT_FOUND, c.responseCode)
+        assertEquals(1, aberturas.get())
+    }
+
+    // Ignora o Range: 200 com o arquivo inteiro desde o byte 0, como o
+    // video-downloads.googleusercontent.com dos links do PenguPlay.
+    private class ConexaoSemRange(url: URL, private val total: Long, private val lidos: AtomicLong) : ConexaoFalsa(url) {
+        override fun getResponseCode(): Int = HTTP_OK
+        override fun getContentLengthLong(): Long = total
+        override fun getInputStream(): InputStream = object : InputStream() {
+            var p = 0L
+            override fun read(): Int = if (p >= total) -1 else ((p++ % 251).toInt()).also { lidos.incrementAndGet() }
+            override fun skip(n: Long): Long = 0L   // pior caso: skip nao anda
+        }
+    }
+
+    @Test fun servidorSemRangeMarcaASessaoEPulaPequenoNoByteCerto() {
+        val sessao = SessaoSemRange()
+        val lidos = AtomicLong()
+        val fonte = ParaleloDataSource(null, emptyMap(), semRange = sessao,
+            novaConexao = { url -> ConexaoSemRange(url, 1L shl 20, lidos) })
+        try {
+            fonte.open(DataSpec.Builder().setUri(android.net.Uri.parse("https://player.example/video.mkv"))
+                .setPosition(1000).build())
+            assertTrue(sessao.visto)
+            val b = ByteArray(4)
+            assertEquals(4, fonte.read(b, 0, 4))
+            assertEquals((1000 % 251).toByte(), b[0])
+            assertEquals((1003 % 251).toByte(), b[3])
+        } finally { fonte.close() }
+    }
+
+    @Test fun servidorSemRangeFalhaLogoEmPuloGrandeSemBaixarNada() {
+        val sessao = SessaoSemRange()
+        val lidos = AtomicLong()
+        val total = 26L shl 30
+        val fonte = ParaleloDataSource(null, emptyMap(), semRange = sessao,
+            novaConexao = { url -> ConexaoSemRange(url, total, lidos) })
+        try {
+            fonte.open(DataSpec.Builder().setUri(android.net.Uri.parse("https://player.example/video.mkv"))
+                .setPosition(total - (4 shl 20)).build())
+            throw AssertionError("pulo de GBs sem Range deveria falhar")
+        } catch (e: ServidorSemRange) {
+            assertEquals(total - (4 shl 20), e.posicao)
+        } finally { fonte.close() }
+        assertTrue(sessao.visto)
+        assertEquals(0L, lidos.get())
+        assertEquals(4, MediaHttpBudget.available())
+    }
+
+    @Test fun servidorComRangeNaoMarcaASessao() {
+        val sessao = SessaoSemRange()
+        val fonte = ParaleloDataSource(null, emptyMap(), semRange = sessao,
+            novaConexao = { url -> ConexaoFaixa(url, 12L shl 20) })
+        try {
+            fonte.open(DataSpec.Builder().setUri(android.net.Uri.parse("https://player.example/video.mkv")).build())
+            assertFalse(sessao.visto)
+        } finally { fonte.close() }
     }
 
     @Test fun timeoutDeSocketTambemRecebeTresTentativas() {

@@ -28,6 +28,7 @@ static void mini_dovi_gpu_close(void) { gpuCloses++; }
 static int parou(Job *j) { return j->parar; }
 static long memDisponivelKB(void) { return 1024L * 1024; }
 static size_t mini_motor_memoria(MiniMotor *m, int threads) { (void)m; (void)threads; return 1; }
+static void mini_dovi_gpu_close(void) {}
 static int mPacoteCpu(long long h, long k, long *p, unsigned char **pk, int *n) {
   (void)h; (void)k; *p = 42000;
   pthread_mutex_lock(&gate);

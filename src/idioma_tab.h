@@ -1691,6 +1691,7 @@
   { "Diagnóstico e otimização automática", "Diagnostics and automatic tuning" },
   { "Diagnóstico em andamento", "Diagnostics running" },
   { "Dica", "Tip" },
+  { "Dica: as miniaturas de filmes em 4K saem bem mais rápido quando os seus add-ons também listam fontes 720p ou 1080p WEB-DL. O Nuvio faz as miniaturas a partir de uma cópia menor do mesmo filme.", "Tip: 4K seek previews are much faster when your add-ons also list 720p or 1080p WEB-DL sources. Nuvio makes them from a smaller copy of the same film." },
   { "Dicas do controle", "Remote tips" },
   { "Diferentes do padrão", "Different from default" },
   { "Diferença dentro do ruído: o perfil atual foi mantido", "Difference within noise: the current profile was kept" },

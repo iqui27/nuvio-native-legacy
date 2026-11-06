@@ -1691,6 +1691,7 @@
   T("Diagnóstico e otimização automática", "Диагностика и автоматическая оптимизация"),
   T("Diagnóstico em andamento", "Диагностика выполняется"),
   T("Dica", "Совет"),
+  T("Dica: as miniaturas de filmes em 4K saem bem mais rápido quando os seus add-ons também listam fontes 720p ou 1080p WEB-DL. O Nuvio faz as miniaturas a partir de uma cópia menor do mesmo filme.", "Совет: превью для фильмов в 4K создаются намного быстрее, если ваши дополнения показывают и источники 720p или 1080p WEB-DL. Nuvio делает их из уменьшенной копии того же фильма."),
   T("Dicas do controle", "Подсказки для пульта"),
   T("Diferentes do padrão", "Отличные от стандартных"),
   T("Diferença dentro do ruído: o perfil atual foi mantido", "Разница в пределах шума: текущий профиль сохранён"),

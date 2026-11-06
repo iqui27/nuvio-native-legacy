@@ -379,6 +379,7 @@ static int bufferPreset, bufferEnviado;
 // unknown), sent sticky to Kotlin for the buffer size; last seek/track switch
 // so their BUFFERING is not counted as a rebuffer. State under travaStats.
 static int redeKbps, kbpsEnviado = -1;
+static int fonteKbpsSessao; // pinned at source open, retained across reconnects
 static volatile Uint32 acaoMs;
 static int cacheArmado = -1, cacheSessao, cacheEnviado, playerSessao;
 // Warm resume (#492): id of the title the player armed for the next open, the
@@ -799,7 +800,7 @@ static int abrirSessao(int inicioMs, int fracao) {
   hdrAtual = "none"; dvAtual = atmosAtual = 0;
   pthread_mutex_lock(&travaStats); statsValido = 0;
   redeMbps = -1; redeMinMs = redeMaxMs = redeMaxMb = -1;
-  memset(&redeFit, 0, sizeof redeFit); redeKbps = playerSessao ? stream_kbps_atual() : 0;
+  memset(&redeFit, 0, sizeof redeFit); redeKbps = playerSessao ? fonteKbpsSessao : 0;
   pthread_mutex_unlock(&travaStats);
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; legAte = 0;
   nNovasA = nNovasL = 0;
@@ -927,6 +928,12 @@ int video_tocar_retomada(const char *u, double segundos, double pct) {
   reconAudio = reconLeg = -1; reconFaixasPend = 0; reconBuscarMs = -1; reconPausado = 0;
   recarregarPausa = -1;
   playerSessao = cacheArmado >= 0;
+  // Saved-link resume intentionally has no sheet index. Use its URL-scoped
+  // source metadata rather than treating that real source as unknown bitrate.
+  // Pin this value for reconnects: a background source refresh can replace the
+  // sheet list while the same playback session is still using this URL.
+  const Stream *fonte = stream_fonte_reproducao(urlAtual, cabecalhos);
+  fonteKbpsSessao = playerSessao ? stream_kbps(fonte) : 0;
   cacheSessao = cacheArmado > 0 ? cacheArmado : 0;
   cacheArmado = -1;
   snprintf(tituloSessao, sizeof tituloSessao, "%s", playerSessao ? tituloArmado : "");

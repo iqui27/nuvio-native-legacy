@@ -357,8 +357,26 @@ int stream_lista_do_alvo(const char *id) {
   if (!id || !*id || !alvoLista[0] || n < 1) return 0;
   return !strcmp(alvoLista, id);
 }
-void stream_definir_atual(int i) { atual = i >= 0 && i < n ? i : -1; }
+static Stream contextoGuardado;
+void stream_contexto_guardado(const Stream *s) {
+  if (s) contextoGuardado = *s;
+  else memset(&contextoGuardado, 0, sizeof contextoGuardado);
+}
+void stream_definir_atual(int i) {
+  atual = i >= 0 && i < n ? i : -1;
+  // An explicit normal selection must not inherit an older saved source.
+  if (atual >= 0) stream_contexto_guardado(NULL);
+}
 int stream_atual(void) { return atual; }
+const Stream *stream_fonte_reproducao(const char *url, const char *cabecalhos) {
+  const Stream *selected = stream_item(atual);
+  const char *enabled = getenv("NUVIO_SAVED_SOURCE_CONTEXT");
+  if (selected) return selected; // normal selection is unchanged
+  if (enabled && !strcmp(enabled, "0")) return NULL;
+  if (!url || !url[0] || !contextoGuardado.url[0] || strcmp(url, contextoGuardado.url)) return NULL;
+  if (strcmp(cabecalhos ? cabecalhos : "", contextoGuardado.cabecalhos)) return NULL;
+  return &contextoGuardado;
+}
 
 // A FONTE QUE A PESSOA JA TINHA ESCOLHIDO neste titulo, quando ela existe
 // nesta lista. Quem a encontra e fontepref.c (a regra de igualdade mora la);

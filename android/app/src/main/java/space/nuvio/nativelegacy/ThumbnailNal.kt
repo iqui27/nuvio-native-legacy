@@ -4,8 +4,8 @@ import java.nio.ByteBuffer
 
 internal object ThumbnailNal {
     data class Result(val inputBytes: Int,val outputBytes: Int,val removedBytes: Int,val removedNals: Int,val visitedNals: Int)
-    fun write(sample: ByteArray, lengthBytes: Int, out: ByteBuffer): Boolean =
-        writeUnit(sample,lengthBytes,out,0,sample.size,false)!=null
+    fun write(sample: ByteArray, lengthBytes: Int, out: ByteBuffer, start: Int=0, end: Int=sample.size): Boolean =
+        writeUnit(sample,lengthBytes,out,start,end,false)!=null
     fun writeBaseLayer(sample: ByteArray,lengthBytes: Int,out: ByteBuffer,start: Int=0,end: Int=sample.size): Result? =
         writeUnit(sample,lengthBytes,out,start,end,true)
     /** Validate by lengths and headers only, then bulk-copy retained NALs. No payload-byte scan. */

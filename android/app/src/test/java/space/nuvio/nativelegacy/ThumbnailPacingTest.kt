@@ -21,6 +21,26 @@ class ThumbnailPacingTest {
         p.failure(72000)
         assertEquals(ThumbnailPacing.NORMAL,p.policy(90000,true,true,true,12000,0))
     }
+    @Test fun deepBufferIsFastAtOnceButIncidentsStillBlock() {
+        val p = ThumbnailPacing()
+        assertEquals(ThumbnailPacing.FAST, p.policy(0,true,true,true,50000,0))
+        assertEquals(ThumbnailPacing.NORMAL, p.policy(1000,true,true,true,1000,0))      // drained: incident
+        assertEquals(ThumbnailPacing.NORMAL, p.policy(2000,true,true,true,50000,0))     // blocked 15 s
+        assertEquals(ThumbnailPacing.FAST, p.policy(16100,true,true,true,50000,0))
+    }
+    @Test fun startupFillIsNotAnIncidentButALaterDrainIs() {
+        val p = ThumbnailPacing()
+        assertEquals(ThumbnailPacing.NORMAL, p.policy(0,true,true,true,500,0))          // filling
+        assertEquals(ThumbnailPacing.FAST, p.policy(1000,true,true,true,30000,0))       // no 15 s block
+        assertEquals(ThumbnailPacing.NORMAL, p.policy(2000,true,true,true,500,0))       // drained after health
+        assertEquals(ThumbnailPacing.NORMAL, p.policy(3000,true,true,true,30000,0))     // blocked
+    }
+    @Test fun notPlayingYetIsNotAnIncident() {
+        val p = ThumbnailPacing()
+        assertEquals(ThumbnailPacing.NORMAL, p.policy(0,true,false,false,-1,0))
+        assertEquals(ThumbnailPacing.FAST, p.policy(500,true,true,true,30000,0))
+        assertEquals(ThumbnailPacing.NORMAL, p.policy(600,true,true,true,12000,0))      // shallow: warm-up again
+    }
     @Test fun byteCappedStableBufferCanEnterFastBelowTenSeconds() {
         val p = ThumbnailPacing()
         assertEquals(ThumbnailPacing.NORMAL,p.policy(0,true,true,true,4000,0,48,48,true))

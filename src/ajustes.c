@@ -8290,6 +8290,13 @@ static const char *ajudaOpcao(int op) {
     snprintf(b, sizeof b, "%s\n%s", i18n(base), logrede_url());
     return b;
   }
+  // Copy-first (miniatura_android.c): a 4K title's previews come from a smaller copy in the source list, so the
+  // person's add-on filters decide how fast they are. Shown only when the previews are made on this device.
+  if ((op == AJ_PREVIA_PROVEDOR || op == AJ_MINIATURA_RES) && previaLocal()) {
+    snprintf(b, sizeof b, "%s\n%s", i18n(base),
+      i18n("Dica: as miniaturas de filmes em 4K saem bem mais rápido quando os seus add-ons também listam fontes 720p ou 1080p WEB-DL. O Nuvio faz as miniaturas a partir de uma cópia menor do mesmo filme."));
+    return b;
+  }
   if (op == AJ_AMPLIAR_UI && saidaLimitada && ampliarUiVale()) {
     snprintf(b, sizeof b, "%s\n%s",
       i18n("A saída da interface nesta TV está limitada a 1080p. O app amplia até esse limite; a TV completa até 4K."), i18n(base));

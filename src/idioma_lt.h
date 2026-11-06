@@ -1692,6 +1692,7 @@
   T("Diagnóstico e otimização automática", "Diagnostika ir automatinis derinimas"),
   T("Diagnóstico em andamento", "Vykdoma diagnostika"),
   T("Dica", "Patarimas"),
+  T("Dica: as miniaturas de filmes em 4K saem bem mais rápido quando os seus add-ons também listam fontes 720p ou 1080p WEB-DL. O Nuvio faz as miniaturas a partir de uma cópia menor do mesmo filme.", "Patarimas: 4K filmų peržiūros sukuriamos daug greičiau, kai jūsų priedai rodo ir 720p arba 1080p WEB-DL šaltinius. Nuvio jas kuria iš mažesnės to paties filmo kopijos."),
   T("Dicas do controle", "Pultelio patarimai"),
   T("Diferentes do padrão", "Kiti nei numatyti"),
   T("Diferença dentro do ruído: o perfil atual foi mantido", "Skirtumas neviršija triukšmo: išsaugotas dabartinis profilis"),

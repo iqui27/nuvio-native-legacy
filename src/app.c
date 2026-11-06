@@ -726,6 +726,9 @@ static void limparFonteVOD(void) {
   fonteVODAutomatica = 0;
   voltaAtiva = 0;
   memset(&voltaFonte, 0, sizeof voltaFonte);
+#ifdef NV_ANDROID
+  stream_contexto_guardado(NULL);
+#endif
   buscaNextAlvo[0] = 0;
   fonteVODTentativas = 0;
   fonteVODRetentou = 0;
@@ -1348,6 +1351,9 @@ static int tocarFonteGuardada(void) {
   marco("abrir: fonte guardada, sem busca");
   stream_definir_atual(-1);
   voltaFonte = s;
+#ifdef NV_ANDROID
+  stream_contexto_guardado(&s);
+#endif
   video_definir_dv(s.dolbyVision);
   video_definir_cabecalhos(s.cabecalhos);
   video_definir_mp4(stream_e_mp4(&s));

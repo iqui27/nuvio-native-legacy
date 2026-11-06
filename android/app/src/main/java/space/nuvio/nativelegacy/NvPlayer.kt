@@ -160,6 +160,7 @@ object NvPlayer {
     @Volatile private var audioFalhas = 0L
     @JvmStatic fun audioFalhasAgora(): Long = audioFalhas
     @JvmStatic fun contexto(): android.content.Context? = activity?.applicationContext
+
     private var statsTiques = 0
     private var bufferAlvoMs = androidx.media3.exoplayer.DefaultLoadControl.DEFAULT_MAX_BUFFER_MS
     private var bufferMinMs = 0
@@ -661,6 +662,9 @@ object NvPlayer {
         lateinit var rede: (Long) -> DataSource.Factory
         lateinit var renderizadores: androidx.media3.exoplayer.DefaultRenderersFactory
         lateinit var fabricaMidia: DefaultMediaSourceFactory
+        // Servidor desta sessao ignora Range (ParaleloDataSource marca; os
+        // extratores leem): MKV toca sem buscar o Cues no fim do arquivo.
+        val semRange = SessaoSemRange()
         var fontePrecarregada: PreloadMediaSource? = null
         var fioPreparo: HandlerThread? = null
         var seletorPreparo: DefaultTrackSelector? = null
@@ -1131,12 +1135,28 @@ object NvPlayer {
     @Volatile internal var thumbnailBufferMs = -1L
     @Volatile internal var thumbnailState = 0
     @Volatile internal var thumbnailPlaying = false
+    @Volatile internal var thumbnailSourceOpen = false
+    @Volatile internal var thumbnailSourceEpoch = 0L
+    @Volatile internal var thumbnailPlayWhenReady = true
+    @Volatile internal var thumbnailLoading = true
     @Volatile internal var thumbnailHealthAtMs = 0L
     @Volatile internal var thumbnailIncidentAtMs = -1L
+    @Volatile internal var thumbnailIncidentCause = ""
+    private const val SEEK_FILL_MS = 3000L
+    @Volatile private var thumbnailHeadroomSample: ThumbnailHeadroom.Snapshot? = null
+    internal fun thumbnailHeadroom(desiredBufferMs: Long): Int {
+        val sample = thumbnailHeadroomSample ?: return ThumbnailHeadroom.UNAVAILABLE
+        if (!thumbnailSourceOpen) return ThumbnailHeadroom.BLOCKED
+        return ThumbnailHeadroom.evaluate(SystemClock.elapsedRealtime(), sample, desiredBufferMs,
+            thumbnailIncidentAtMs, thumbnailSourceEpoch)
+    }
     internal fun miniaturaPodeCriar(): Boolean = !miniaturaTocando && (!miniaturaTocou || pausaPedida)
 
     @JvmStatic fun pausar(p: Int) {
-        principal.post { pausaPedida = p != 0; player?.playWhenReady = !pausaPedida }
+        principal.post {
+            pausaPedida = p != 0; player?.playWhenReady = !pausaPedida
+            if(pausaPedida) AudioFeedDiagnostics.resetContinuity()
+        }
     }
     // Episode handoff arms this token before the old visible session closes.
     // Stop only that session; the exact selected preload keeps its queues.
@@ -1161,12 +1181,24 @@ object NvPlayer {
     }
     private var seekAuditId = 0
     private val seekAudit = java.util.concurrent.atomic.AtomicReference<SeekAudit?>()
+    @Volatile private var thumbnailSeekAtMs = Long.MIN_VALUE
+    @JvmStatic fun thumbnailSeekRecent(): Boolean =
+        SystemClock.elapsedRealtime() - thumbnailSeekAtMs in 0..15_000
     @JvmStatic fun buscar(ms: Int) {
         val pedido = pedidos.get()
         principal.post {
             if (pedido == pedidos.get()) {
                 val p = player ?: return@post
                 val target = ms.coerceAtLeast(0).toLong()
+                // Fonte cujo servidor ignora Range (SessaoSemRange) abre sem
+                // SeekMap: seekTo nela volta ao 0 (pulo de abertura do PenguPlay,
+                // 05/11/2026: o filme recomecou aos 8 s). So nessas sessoes, para
+                // nao barrar o seek de uma fonte normal antes da timeline chegar.
+                if (recursosAtuais?.semRange?.visto == true && !p.isCurrentMediaItemSeekable) {
+                    Log.i(TAG, "[seek-audit] ignored targetMs=$target beforeMs=${p.currentPosition}: source ignores Range, not seekable")
+                    return@post
+                }
+                thumbnailSeekAtMs = SystemClock.elapsedRealtime()
                 val audit = SeekAudit(++seekAuditId, sessao, target, SystemClock.elapsedRealtime())
                 seekAudit.set(audit)
                 Log.i(TAG, "[seek-audit] request id=${audit.id} session=$sessao targetMs=$target beforeMs=${p.currentPosition} bufferedMs=${p.bufferedPosition} state=${p.playbackState} toleranceBeforeUs=${p.seekParameters.toleranceBeforeUs} toleranceAfterUs=${p.seekParameters.toleranceAfterUs}")
@@ -1288,6 +1320,7 @@ object NvPlayer {
         return n.contains("dolby") || Regex("""\.dv(he|h1|av|a1)""").containsMatchIn(n)
     }
 
+
     // Cold opens and prepared opens share renderers, headers, cache, decoder
     // fallback and memory policy. Only preload's audio callbacks and source
     // factory stay dormant until this same player becomes the active session.
@@ -1365,7 +1398,7 @@ object NvPlayer {
             }
             r.rede = { token ->
                 val rede: DataSource.Factory = if (limited) serialHttp
-                    else ParaleloDataSource.Factory(ua, props, http, medidor, token)
+                    else ParaleloDataSource.Factory(ua, props, http, medidor, token, r.semRange)
                 r.cache?.fabrica(rede) ?: rede
             }
             val origemPreparo = r.cache?.fabrica(serialHttp) ?: serialHttp
@@ -1379,10 +1412,10 @@ object NvPlayer {
                     // Sonic needs integer PCM; float output bypasses audio processors.
                     AudioSyncSink(DefaultAudioSink.Builder(context).setEnableFloatOutput(false)
                         .setEnableAudioTrackPlaybackParams(false)
-                        .setAudioProcessors(arrayOf(r.proc)).build(), r.tap, { r.velocidadePcm })
+                        .setAudioProcessors(arrayOf(r.proc)).build(), r.tap, { r.velocidadePcm }, {r.adotado})
             }.setExtensionRendererMode(androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
                 .setEnableDecoderFallback(true)
-            r.fabricaMidia = DefaultMediaSourceFactory(act)
+            r.fabricaMidia = DefaultMediaSourceFactory(act, ExtratoresSemRange(r.semRange))
                 // ParaleloDataSource faz as tres tentativas de transporte;
                 // nao empilhar outra rodada invisivel do Loader antes da
                 // maquina de reconexao 3/10/25 s do nucleo.
@@ -1493,6 +1526,13 @@ object NvPlayer {
             val p = r.p
             recursosAtuais = r
             player = p
+            thumbnailSourceOpen = true
+            thumbnailSourceEpoch++
+            thumbnailHeadroomSample = null
+            thumbnailBufferStable = false
+            thumbnailBufferHealth.sample(SystemClock.elapsedRealtime(), 0, false)
+            thumbnailPlayWhenReady = true
+            thumbnailLoading = true
 
             processador = r.proc
             r.tap.ligado = tap.ligado
@@ -1586,6 +1626,7 @@ object NvPlayer {
     // Sobe a sessao e solta tudo; qualquer callback pendente do player velho
     // morre na conferencia do numero.
     private fun liberar() {
+        AudioFeedDiagnostics.report(force=true)
         recuperacaoLive?.cancel()
         recuperacaoLive = null
         sessao++
@@ -1597,6 +1638,10 @@ object NvPlayer {
         recursosAtuais = null
         val p = player
         player = null
+        thumbnailSourceOpen = false
+        thumbnailHeadroomSample = null
+        thumbnailPlayWhenReady = false
+        thumbnailLoading = false
         pronto = false
         seekAudit.set(null)
         miniaturaTocou = false; miniaturaTocando = false
@@ -1713,10 +1758,19 @@ object NvPlayer {
             thumbnailBufferMs = (p.bufferedPosition - p.currentPosition).coerceAtLeast(0)
             thumbnailAllocatedBytes = recursosAtuais?.carga?.allocator?.totalBytesAllocated?.toLong() ?: -1L
             thumbnailTargetBytes = recursosAtuais?.carga?.bytes?.toLong() ?: -1L
+            val oldHealthReason=thumbnailBufferHealth.reason
             thumbnailBufferStable = thumbnailBufferHealth.sample(SystemClock.elapsedRealtime(), thumbnailBufferMs, p.isPlaying)
+            if(AudioFeedDiagnostics.enabled && oldHealthReason!=thumbnailBufferHealth.reason)
+                Log.i("AudioFeedTrace","bufferHealth stable=$thumbnailBufferStable reason=${thumbnailBufferHealth.reason} bufferMs=$thumbnailBufferMs referenceMs=${thumbnailBufferHealth.referenceBufferMs} windowMs=${thumbnailBufferHealth.windowMs} sampleGapMs=${thumbnailBufferHealth.sampleGapMs}")
+            AudioFeedDiagnostics.report()
             thumbnailState = p.playbackState
             thumbnailPlaying = p.isPlaying
+            thumbnailPlayWhenReady = p.playWhenReady
+            thumbnailLoading = p.isLoading
             thumbnailHealthAtMs = android.os.SystemClock.elapsedRealtime()
+            thumbnailHeadroomSample = ThumbnailHeadroom.Snapshot(thumbnailHealthAtMs, thumbnailSourceEpoch,
+                thumbnailState, thumbnailPlaying, thumbnailPlayWhenReady, thumbnailBufferMs,
+                thumbnailAllocatedBytes, thumbnailTargetBytes, thumbnailBufferStable)
             if (++statsTiques >= 4) { statsTiques = 0; relatarStats(p) }
             if (cacheMidia != null && cacheEstado == CacheSessao.ATIVO && ++cacheTiques >= CACHE_RELATO_TIQUES) {
                 cacheTiques = 0
@@ -2050,11 +2104,18 @@ object NvPlayer {
             },
         )
         init { recuperacaoLive = live }
+        private var prontoUmaVez = false
+        private var seekEm = -1L shl 40
         override fun onPlaybackStateChanged(state: Int) {
             if (!atual(minha)) return
             val p = player ?: return
             Log.i(TAG, "[player] onPlaybackStateChanged state=$state renderer=audio(${p.audioFormat?.sampleMimeType}),video(${p.videoFormat?.sampleMimeType}) loadMs=${SystemClock.elapsedRealtime() - abriuEm}")
-            if (state == Player.STATE_BUFFERING) thumbnailIncidentAtMs = SystemClock.elapsedRealtime()
+            // Not every BUFFERING is trouble (06/11/2026 Rick and Morty): the first fill and the fill after a seek
+            // (the automatic intro skip) each blocked FAST thumbnail pacing for 15 s, ~5-7 s of a ~16-20 s run.
+            // Real rebuffers, errors and audio underruns still count.
+            if (state == Player.STATE_READY) prontoUmaVez = true
+            if (state == Player.STATE_BUFFERING && prontoUmaVez &&
+                SystemClock.elapsedRealtime() - seekEm > SEEK_FILL_MS) { thumbnailIncidentCause = "rebuffer"; thumbnailIncidentAtMs = SystemClock.elapsedRealtime() }
             when (state) {
                 Player.STATE_BUFFERING -> ev(EV_BUFFER, 0)
                 Player.STATE_READY -> {
@@ -2127,6 +2188,8 @@ object NvPlayer {
                                              newPosition: Player.PositionInfo, reason: Int) {
             if (!atual(minha)) return
             val p = player ?: return
+            if (reason == Player.DISCONTINUITY_REASON_SEEK || reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT)
+                seekEm = SystemClock.elapsedRealtime()
             if (!p.isCurrentMediaItemLive) {
                 Log.i(TAG, "[seek-audit] discontinuity id=$seekAuditId session=$minha reason=$reason oldMs=${oldPosition.positionMs} newMs=${newPosition.positionMs} state=${p.playbackState}")
                 return
@@ -2184,6 +2247,7 @@ object NvPlayer {
 
         override fun onPlayerError(error: PlaybackException) {
             if (!atual(minha)) return
+            thumbnailIncidentCause = "player-error"
             thumbnailIncidentAtMs = SystemClock.elapsedRealtime()
             val exo = error as? ExoPlaybackException
             val p = player
@@ -2307,8 +2371,15 @@ object NvPlayer {
         // Audible gaps: logged with their time so on-device thumbnail work can be lined up against them.
         override fun onAudioUnderrun(eventTime: AnalyticsListener.EventTime, bufferSize: Int, bufferSizeMs: Long, elapsedSinceLastFeedMs: Long) {
             if (!atual(minha)) return
+            thumbnailIncidentCause = "audio-underrun"
             thumbnailIncidentAtMs = SystemClock.elapsedRealtime()
             audioFalhas++
+            if(AudioFeedDiagnostics.enabled) {
+                val callbackMs=SystemClock.elapsedRealtime()
+                Log.i("AudioFeedTrace","underrun eventElapsedMs=${eventTime.realtimeMs} callbackElapsedMs=$callbackMs callbackDelayMs=${callbackMs-eventTime.realtimeMs} sinkBufferMs=$bufferSizeMs lastFeedGapMs=$elapsedSinceLastFeedMs")
+                android.os.Trace.beginSection("NuvioAudioUnderrunCallback");android.os.Trace.endSection()
+                AudioFeedDiagnostics.report(force=true)
+            }
             Log.w(TAG, "[player] audio underrun #$audioFalhas: buffer ${bufferSizeMs} ms, ${elapsedSinceLastFeedMs} ms since the last feed")
         }
 

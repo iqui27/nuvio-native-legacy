@@ -1692,6 +1692,7 @@
   T("Diagnóstico e otimização automática", "Diagnosztika és automatikus hangolás"),
   T("Diagnóstico em andamento", "A diagnosztika fut"),
   T("Dica", "Tipp"),
+  T("Dica: as miniaturas de filmes em 4K saem bem mais rápido quando os seus add-ons também listam fontes 720p ou 1080p WEB-DL. O Nuvio faz as miniaturas a partir de uma cópia menor do mesmo filme.", "Tipp: a 4K-filmek előnézetei sokkal gyorsabban elkészülnek, ha a bővítményeid 720p vagy 1080p WEB-DL forrásokat is listáznak. A Nuvio ugyanannak a filmnek egy kisebb másolatából készíti őket."),
   T("Dicas do controle", "Tippek a távirányítóhoz"),
   T("Diferentes do padrão", "Eltér az alapértelmezettől"),
   T("Diferença dentro do ruído: o perfil atual foi mantido", "A különbség a zajon belül van: a jelenlegi profil megmaradt"),

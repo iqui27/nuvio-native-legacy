@@ -139,7 +139,7 @@ class MiniaturaProbeTest {
         assertEquals(2000L, call("keyframeMs", 2500L))
         call("soltarCache") // force the data request, not just a hit in the tiny fixture's metadata window
         assertTrue((call("prefetch", longArrayOf(0,2500), longArrayOf()) as Int) >= 0)
-        assertEquals(16, call("loteIdeal")) // exact MP4 sizes must update CPU-route batching too
+        assertEquals(32, call("loteIdeal")) // exact MP4 sizes must update CPU-route batching too (tiny keyframes: the 32 cap)
         val output = java.nio.ByteBuffer.allocate(32)
         val packet = call("blocoChave", 2500L, output) as Pair<*, *>
         assertEquals(2_000_000L, packet.first) // microseconds, not nominal 2500 ms cursor

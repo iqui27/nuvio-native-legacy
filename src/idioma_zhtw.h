@@ -1692,6 +1692,7 @@
   T("Diagnóstico e otimização automática", "診斷與自動調校"),
   T("Diagnóstico em andamento", "診斷進行中"),
   T("Dica", "提示"),
+  T("Dica: as miniaturas de filmes em 4K saem bem mais rápido quando os seus add-ons também listam fontes 720p ou 1080p WEB-DL. O Nuvio faz as miniaturas a partir de uma cópia menor do mesmo filme.", "提示：如果你的外掛也列出 720p 或 1080p WEB-DL 片源，4K 電影的預覽會快很多。Nuvio 會用同一部電影的較小副本來製作預覽。"),
   T("Dicas do controle", "遙控器提示"),
   T("Diferentes do padrão", "與預設值不同"),
   T("Diferença dentro do ruído: o perfil atual foi mantido", "差異在誤差範圍內：保留了目前設定檔"),

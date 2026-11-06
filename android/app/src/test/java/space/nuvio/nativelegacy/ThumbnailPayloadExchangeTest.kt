@@ -7,6 +7,21 @@ import java.net.*
 import java.util.concurrent.*
 
 class ThumbnailPayloadExchangeTest {
+    @Test fun headerProbeCannotAcceptLargeMergedBody() {
+        try {
+            ThumbnailPayloadExchange.readBounded(Response("bytes 0-999/1000",ByteArray(1000)),listOf(longArrayOf(0,11)),64,{})
+            fail("probe accepted excess body bytes")
+        } catch (_: IOException) {}
+    }
+    @Test fun headerProbeHonoursCancellationBeforeReadingBody() {
+        var checked=false
+        try {
+            ThumbnailPayloadExchange.readBounded(Response("bytes 0-11/1000",ByteArray(12)),listOf(longArrayOf(0,11)),64,{
+                checked=true; throw InterruptedIOException("cancelled")
+            })
+            fail("probe ignored cancellation")
+        } catch (_: InterruptedIOException) { assertTrue(checked) }
+    }
     private class Response(val range: String, val data: ByteArray, val type: String="application/octet-stream",
                            val barrier: CountDownLatch?=null, val block: Boolean=false,
                            val cancelled: CountDownLatch?=null, val waitFor: CountDownLatch?=null): HttpURLConnection(URL("http://example.test/")) {

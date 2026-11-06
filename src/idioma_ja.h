@@ -1692,6 +1692,7 @@
   T("Diagnóstico e otimização automática", "診断と自動チューニング"),
   T("Diagnóstico em andamento", "診断を実行中"),
   T("Dica", "ヒント"),
+  T("Dica: as miniaturas de filmes em 4K saem bem mais rápido quando os seus add-ons também listam fontes 720p ou 1080p WEB-DL. O Nuvio faz as miniaturas a partir de uma cópia menor do mesmo filme.", "ヒント：アドオンが 720p または 1080p の WEB-DL ソースも表示すると、4K 映画のプレビューがずっと速く作られます。Nuvio は同じ映画の小さいコピーからプレビューを作ります。"),
   T("Dicas do controle", "リモコンのヒント"),
   T("Diferentes do padrão", "初期設定と違うもの"),
   T("Diferença dentro do ruído: o perfil atual foi mantido", "差は誤差の範囲内: 現在のプロファイルを維持しました"),

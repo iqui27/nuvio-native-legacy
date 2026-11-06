@@ -13,8 +13,11 @@ internal object ThumbnailPayloadExchange {
                       val headersMs: Long, val bodyMs: Long, val permitMs: Long,
                       val bodyStartNs: Long=0, val bodyEndNs: Long=0)
     class Limited(val status: Int): IOException("thumbnail HTTP $status")
-    fun read(c: HttpURLConnection, requested: List<LongArray>, publish: (Long,ByteArray)->Unit = { _,_-> }): List<Pair<Long,ByteArray>> {
-        val limit=8L shl 20
+    fun read(c: HttpURLConnection, requested: List<LongArray>, publish: (Long,ByteArray)->Unit = { _,_-> }): List<Pair<Long,ByteArray>> =
+        readBounded(c,requested,8L shl 20,{},publish)
+    fun readBounded(c: HttpURLConnection, requested: List<LongArray>, maxBytes: Long,
+                    checkCancelled: () -> Unit, publish: (Long,ByteArray)->Unit = { _,_-> }): List<Pair<Long,ByteArray>> {
+        val limit=maxBytes.coerceIn(1,8L shl 20)
         if(c.responseCode in listOf(401,403,429,503,509)) throw Limited(c.responseCode)
         if(c.responseCode!=206) throw IOException("thumbnail HTTP ${c.responseCode}")
         val result=ArrayList<Pair<Long,ByteArray>>()
@@ -28,7 +31,7 @@ internal object ThumbnailPayloadExchange {
         fun take(input: InputStream,a: Long,b: Long) {
             if(requested.none { a<=it[0] && b>=it[1] }) throw IOException("unexpected payload range")
             val data=ByteArray((b-a+1).toInt()); var n=0
-            while(n<data.size) { val count=input.read(data,n,data.size-n); if(count<0) throw IOException("short payload"); n+=count }
+            while(n<data.size) { checkCancelled(); val count=input.read(data,n,data.size-n); if(count<0) throw IOException("short payload"); n+=count }
             result.add(a to data); bytes+=data.size; publish(a,data)
         }
         c.inputStream.buffered(16384).use { input ->
@@ -40,6 +43,7 @@ internal object ThumbnailPayloadExchange {
                 if(boundary.length>200) throw IOException("oversized boundary")
                 val marker="--$boundary"
                 fun line(): String {
+                    checkCancelled()
                     val text=StringBuilder()
                     while(text.length<=4096) {
                         val x=input.read(); if(x<0) throw IOException("short multipart headers")
