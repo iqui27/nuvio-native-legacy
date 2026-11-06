@@ -149,4 +149,20 @@ int ling_legenda_auto_tipo(const char *pref, const char *audio, int forcadaAuto,
                            const char *const *emb, const int *tipoEmb, int nEmb, int embFechado,
                            const char *const *add, int nAdd, int addFechado);
 
+// FORMATO DA EMBUTIDA (06/11, dono): entre as faixas do mesmo idioma e tipo,
+// ASS/SSA primeiro, depois texto (SRT/WebVTT), depois imagem (PGS/VobSub). A
+// ASS traz o estilo do lancamento; o texto segue tamanho/opacidade da pessoa;
+// a imagem nao segue nada. Com `forcadaAuto` e o audio no idioma: letreiros
+// ASS, forcada ASS, forcada nos outros formatos, letreiros nos outros. O
+// casamento exato de familia (#205) continua vindo antes do formato.
+// `fmtEmb` = LING_FMT_* por faixa (NULL = todas iguais: a decisao de antes).
+#define LING_FMT_ASS    0
+#define LING_FMT_TEXTO  1
+#define LING_FMT_IMAGEM 2
+int ling_formato_legenda(const char *codecMkv);   // CodecID do Matroska -> LING_FMT_*
+int ling_legenda_auto_fmt(const char *pref, const char *audio, int forcadaAuto,
+                          const char *const *emb, const int *tipoEmb, const int *fmtEmb,
+                          int nEmb, int embFechado,
+                          const char *const *add, int nAdd, int addFechado);
+
 #endif

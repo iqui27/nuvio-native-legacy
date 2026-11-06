@@ -1009,7 +1009,7 @@ static void legendaAutomatica(Uint32 agora) {
   const CatItem *ci;
   const LegMem *mt;
   char tit[64], addIdiomas[LEG_MAX][sizeof ((Legenda *)0)->idioma];
-  int tipos[NV_FAIXA_MAX];
+  int tipos[NV_FAIXA_MAX], formatos[NV_FAIXA_MAX];
   int nEmb, nAdd = 0, embFechado, addFechado = 1, i, r, soForcada, origem, forcadaAuto;
   Uint32 passou;
   if (!legAuto || aberta || !player_aberto() || !player_com_video()) return;
@@ -1040,6 +1040,7 @@ static void legendaAutomatica(Uint32 agora) {
     const VideoFaixa *f = video_legenda(i);
     emb[i] = f ? f->idioma : "";
     tipos[i] = !f ? LING_LEG_COMUM : f->tipoLeg ? f->tipoLeg : f->letreiro ? LING_LEG_LETREIROS : LING_LEG_COMUM;
+    formatos[i] = ling_formato_legenda(f ? f->codec : "");
   }
   fa = video_audio(video_audio_atual());
   audio = fa ? fa->idioma : "";
@@ -1086,8 +1087,8 @@ static void legendaAutomatica(Uint32 agora) {
       return;
     }
   }
-  r = ling_legenda_auto_tipo(pref, audio, forcadaAuto,
-                             emb, tipos, nEmb, embFechado, add, nAdd, addFechado);
+  r = ling_legenda_auto_fmt(pref, audio, forcadaAuto,
+                            emb, tipos, formatos, nEmb, embFechado, add, nAdd, addFechado);
   if (r == LING_AUTO_ESPERA) {
     // Passou do primeiro instante e ainda procura: a ilha diz o que esta fazendo.
     if (!soForcada && passou >= 1200u && pref[0] && strcasecmp(pref, "none")) pilBuscando(pref, agora);
@@ -1154,6 +1155,10 @@ static void legendaAutomatica(Uint32 agora) {
            r < nEmb && tipos[r] == LING_LEG_FORCADA ? ", forcada: audio no mesmo idioma" :
            r < nEmb && tipos[r] == LING_LEG_LETREIROS ? ", letreiros: audio no mesmo idioma" : "",
            (unsigned)passou);
+  if (r >= 0 && r < nEmb)
+    printf("[legenda] automatica: formato=%s tipo=%d (%d embutida(s) no idioma)\n",
+           formatos[r] == LING_FMT_ASS ? "ass" : formatos[r] == LING_FMT_IMAGEM ? "imagem" : "texto",
+           tipos[r], ({ int c = 0; for (int x = 0; x < nEmb; x++) if (emb[x][0] && ling_casa(emb[x], emb[r])) c++; c; }));
   fflush(stdout);
   escolherLegenda(r);
 }
