@@ -153,6 +153,7 @@ int miniatura_direto(void) {
 }
 static unsigned geracao;
 static char urlAtual[4096];
+static char cabAtual[512];
 static volatile long posMs, playheadMs;
 static volatile int scrubbing, bufferando;
 static char origem[48] = "";      // what the thumbnails came from (log + label)
@@ -1943,6 +1944,15 @@ typedef struct { char url[4096], cab[512]; unsigned gen; } PreArgs;
 static int preMesmo(const char *url, const char *cab) {
   return !strncmp(preUrl, url, sizeof preUrl - 1) && !strncmp(preCab, cab ? cab : "", sizeof preCab - 1);
 }
+// Bind the job to this url+cab slot's identity generation at CREATION time (pPedir), so a
+// stopped worker cannot adopt a newer same-identity round started while it was idle.
+static void job_bind_pre_identity(Job *j) {
+  if (!j) return;
+  pthread_mutex_lock(&muPre);
+  if (preMesmo(j->urlA, j->cabA)) j->preIdentityGen = preSlotIdentityGen;
+  else j->preIdentityGen = 0;
+  pthread_mutex_unlock(&muPre);
+}
 // Drops this link's slot (url NULL = any). esquecer: real shutdown, the link may pre-warm again; otherwise the
 // identity stays so the player's repeated calls while opening do not reopen it.
 // identityGen: only clear a non-forgotten slot when it matches preSlotIdentityGen (the job that created this pre pass).
@@ -2050,20 +2060,25 @@ void miniatura_preaquecer(const char *url, const char *cabecalhos) {
 // The pre-warmed session for this link (waits up to 5 s for one still being made); *dec = its decoder exists.
 static long long adotarPre(Job *j, int *dec) {
   long long h = 0;
+  if (!j) return 0;
+  if (!j->preIdentityGen) return 0;
+  unsigned identityGen = j->preIdentityGen;
   for (int i = 0; i < 50; i++) {
     int mesmo;
     pthread_mutex_lock(&muPre);
     mesmo = preMesmo(j->urlA, j->cabA);
-    if (mesmo && !preRodando && preH) {
-      h = preH; *dec = preDec; preH = 0;
+    if (mesmo && !preRodando && preH && identityGen == preSlotIdentityGen) {
+      h = preH;
+      *dec = preDec;
+      preH = 0;
       if (h) preSlotIdentityGen = 0;
     }
     pthread_mutex_unlock(&muPre);
     if (h) break;
-    if (!mesmo || parou(j)) break;   // wrong identity or job stopped; do not exit early just because preRodando flipped before preH
+    if (!mesmo || parou(j)) break;
     dormir(j, 100);
   }
-  if (!h) preSoltar(j->urlA, j->cabA, 0, j->preIdentityGen);   // timed out or stopped; only our slot generation
+  if (!h) preSoltar(j->urlA, j->cabA, 0, identityGen);
   return h;
 }
 
@@ -2566,9 +2581,6 @@ static int escolherCopiaRapida(Job *j) {
 
 static void *trabalhar(void *u) {
   Job *j = u;
-  pthread_mutex_lock(&muPre);
-  j->preIdentityGen = preMesmo(j->urlA, j->cabA) ? preSlotIdentityGen : 0;
-  pthread_mutex_unlock(&muPre);
   long long hA = 0, hB = 0, info[6];
   Mapa mapa = {1.0, 0.0, 0.0, 0};
   int usaB = 0, copiaUsada = 0;
@@ -3027,6 +3039,7 @@ static void encerrar(void) {
   job = NULL;
   estado = M_PARADO;
   urlAtual[0] = 0;
+  cabAtual[0] = 0;
   geracao++;
   int vivo = j && j->vivo;
   if (j) j->parar = 1;
@@ -3056,10 +3069,19 @@ static void pPedir(const SeekrFonte *f) {
     if (e && !eAntes) evErro++;
     bAntes = bufferando; eAntes = e; }
   if (!f->url || strncmp(f->url, "http", 4) || f->durMs < 60000) return;
-  if (!strcmp(urlAtual, f->url)) return;                       // the same title: the worker is on it
+  {
+    const char *c = f->cabecalhos ? f->cabecalhos : "";
+    if (!strcmp(urlAtual, f->url) && !strncmp(cabAtual, c, sizeof cabAtual - 1))
+      return;                                                // same link + headers: worker is on it
+  }
   encerrar();
   motivoSem = 0;
-  if (!jniPreparar()) { estado = M_FALHOU; snprintf(urlAtual, sizeof urlAtual, "%s", f->url); return; }
+  if (!jniPreparar()) {
+    estado = M_FALHOU;
+    snprintf(urlAtual, sizeof urlAtual, "%s", f->url);
+    snprintf(cabAtual, sizeof cabAtual, "%s", f->cabecalhos ? f->cabecalhos : "");
+    return;
+  }
   Job *j = calloc(1, sizeof *j);
   if (!j) return;
   j->dur = f->durMs;
@@ -3090,6 +3112,7 @@ static void pPedir(const SeekrFonte *f) {
   snprintf(cacheMode, sizeof cacheMode, "direct-gpu-kf2-cov1-dvcolour1-w%d", j->larguraSaida);
   chaveArquivo(f, j->arqDireto, sizeof j->arqDireto, cacheMode);
   snprintf(j->cabA, sizeof j->cabA, "%s", f->cabecalhos ? f->cabecalhos : "");
+  job_bind_pre_identity(j);
   const Stream *st = stream_fonte_reproducao(f->url, f->cabecalhos);
   j->alturaA = st ? st->altura : 0;
   j->nCopias = st ? escolherCopias(st, j->copias, f->durMs, j->motivos, sizeof j->motivos) : 0;
@@ -3101,6 +3124,7 @@ static void pPedir(const SeekrFonte *f) {
   job = j;
   estado = M_BUSCANDO;
   snprintf(urlAtual, sizeof urlAtual, "%s", f->url);
+  snprintf(cabAtual, sizeof cabAtual, "%s", f->cabecalhos ? f->cabecalhos : "");
   pthread_mutex_unlock(&mu);
   pthread_t t;
   pthread_attr_t at;

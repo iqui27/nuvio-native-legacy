@@ -30,6 +30,7 @@ prefix = r'''
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 typedef unsigned Uint32;
 typedef struct { unsigned char *jpg; } Tile;
 typedef struct {
@@ -39,7 +40,7 @@ typedef struct {
 } Job;
 enum { M_PARADO };
 static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
-static Job *job; static int estado; static char urlAtual[4096]; static int geracao;
+static Job *job; static int estado; static char urlAtual[4096]; static char cabAtual[512]; static int geracao;
 static void texLimpar(void) {}
 static int bitsDebug(void) { return 0; }
 static int jni_ok = 1;
@@ -51,7 +52,7 @@ static int video_pronto(void) { return 0; }
 static int video_tocando(void) { return 0; }
 static int video_falhou(void) { return 0; }
 static int parou(Job *j) { return j->parar; }
-static void dormir(Job *j, int ms) { (void)j; (void)ms; }   // fake clock: the 5 s wait elapses at once
+static void dormir(Job *j, int ms) { (void)j; (void)ms; }
 
 #define MAXH 64
 static pthread_mutex_t g = PTHREAD_MUTEX_INITIALIZER;
@@ -93,11 +94,6 @@ static int tcreate(pthread_t *t, const pthread_attr_t *at, void *(*fn)(void *), 
 
 main = r'''
 #undef pthread_create
-static void job_bind_pre_identity(Job *j) {
-  pthread_mutex_lock(&muPre);
-  j->preIdentityGen = preMesmo(j->urlA, j->cabA) ? preSlotIdentityGen : 0;
-  pthread_mutex_unlock(&muPre);
-}
 static int fails;
 // Bounded: a pre-warm that never starts reports FAIL instead of hanging.
 static void waitFor(int *v, int n) {
@@ -105,6 +101,21 @@ static void waitFor(int *v, int n) {
   pthread_mutex_lock(&g);
   while (*v < n) if (pthread_cond_timedwait(&cv, &g, &ts)) { fprintf(stderr, "FAIL expected thread event never came\n"); fails++; break; }
   pthread_mutex_unlock(&g);
+}
+/* Wait until production pre-slot holds a parked handle (preH), not synthetic live count. */
+static void waitPreReady(void) {
+  struct timespec dead; clock_gettime(CLOCK_REALTIME, &dead); dead.tv_sec += 3;
+  for (;;) {
+    pthread_mutex_lock(&muPre);
+    int ok = preH != 0;
+    pthread_mutex_unlock(&muPre);
+    if (ok) break;
+    struct timespec now; clock_gettime(CLOCK_REALTIME, &now);
+    if (now.tv_sec > dead.tv_sec || (now.tv_sec == dead.tv_sec && now.tv_nsec >= dead.tv_nsec)) {
+      fprintf(stderr, "FAIL pre slot never parked (preH)\n"); fails++; break;
+    }
+    usleep(1000);
+  }
 }
 static void release(void) { pthread_mutex_lock(&g); gateOpen = 1; pthread_cond_broadcast(&cv); pthread_mutex_unlock(&g); }
 static void block(void) { pthread_mutex_lock(&g); gateOpen = 0; pthread_mutex_unlock(&g); }
@@ -118,7 +129,7 @@ int main(void) {
   miniatura_preaquecer("http://synthetic.invalid/slow-a", "X-Fake: 1"); waitFor(&started, ++st);
   pDesligar(); release(); waitFor(&finished, ++fin);
   CHECK(live() == 0, "late completion after exit leaves an open session");
-  // 2. complete cache: the job never adopts the session; production fim calls preSoltar (same as shutdown for this stub).
+  // 2. complete cache: fim path preSoltar closes the unadopted parked session (production trabalhar fim); this stub mirrors that.
   miniatura_preaquecer("http://synthetic.invalid/b", "X-Fake: 1"); waitFor(&finished, ++fin); st++;
   CHECK(live() == 1, "pre-warm opened");
   Job jb = mk("http://synthetic.invalid/b", "X-Fake: 1"); job_bind_pre_identity(&jb);
@@ -142,6 +153,7 @@ int main(void) {
   long long h = adotarPre(&jd, &d);
   CHECK(h == 0, "adopted a session opened with different headers");
   miniatura_preaquecer("http://synthetic.invalid/d", "X-Fake: two"); waitFor(&finished, ++fin); st++;
+  job_bind_pre_identity(&jd);
   h = adotarPre(&jd, &d);
   CHECK(h && !strcmp(hCab[h], "X-Fake: two") && d, "adopts the session for its own headers");
   mFechar(h);                                     // the job owns it now (trabalhar's fim)
@@ -153,6 +165,7 @@ int main(void) {
   pthread_mutex_lock(&mu); job = &old; pthread_mutex_unlock(&mu);
   encerrar();
   Job je = mk("http://synthetic.invalid/e", "X-Fake: 1");
+  job_bind_pre_identity(&je);
   h = adotarPre(&je, &d);
   CHECK(h && !strcmp(hUrl[h], "http://synthetic.invalid/e"), "pPedir's encerrar dropped the new title's pre-warm");
   mFechar(h);
@@ -168,6 +181,7 @@ int main(void) {
   CHECK(started == st, "repeated calls for the same title reopen it");
   release(); waitFor(&finished, ++fin);
   Job jg = mk("http://synthetic.invalid/g", "X-Fake: 1");
+  job_bind_pre_identity(&jg);
   h = adotarPre(&jg, &d);
   CHECK(h && !strcmp(hUrl[h], "http://synthetic.invalid/g"), "new title adopts its own session");
   mFechar(h);
@@ -184,13 +198,14 @@ int main(void) {
   miniatura_preaquecer("http://synthetic.invalid/other-h", "X-Fake: 1");   // replace slot (other link)
   release(); waitFor(&finished, ++fin);
   block();
-  { int wantFin = finished + 1;
   miniatura_preaquecer("http://synthetic.invalid/slow-h", "X-Fake: h"); waitFor(&started, ++st);
-  release(); waitFor(&finished, wantFin); }
+  release(); waitFor(&finished, ++fin);
+  waitPreReady();
   CHECK(live() == 1, "new identical pre-warm must park a handle");
   preSoltar(j_old.urlA, j_old.cabA, 0, j_old.preIdentityGen);   // stale identity: must not close the new slot
   CHECK(live() == 1, "stale preSoltar must not invalidate newer same-url pre-warm");
-  Job j_new = mk("http://synthetic.invalid/slow-h", "X-Fake: h"); job_bind_pre_identity(&j_new);
+  Job j_new = mk("http://synthetic.invalid/slow-h", "X-Fake: h");
+  job_bind_pre_identity(&j_new);
   h = adotarPre(&j_new, &d);
   CHECK(h && !strcmp(hUrl[h], "http://synthetic.invalid/slow-h"), "adopter still gets the new pre-warm after stale preSoltar");
   mFechar(h);
@@ -199,8 +214,8 @@ int main(void) {
   jni_ok = 0;
   miniatura_preaquecer("http://synthetic.invalid/jni-fail", "X-Fake: 1"); release();
   jni_ok = 1;
-  { int wantSt = started + 1;
-  miniatura_preaquecer("http://synthetic.invalid/jni-fail", "X-Fake: 1"); waitFor(&started, wantSt); }
+  miniatura_preaquecer("http://synthetic.invalid/jni-fail", "X-Fake: 1"); waitFor(&finished, ++fin);
+  waitPreReady();
   CHECK(live() == 1, "jni failure must allow a later pre-warm for the same link");
   Job jj = mk("http://synthetic.invalid/jni-fail", "X-Fake: 1"); job_bind_pre_identity(&jj);
   h = adotarPre(&jj, &d); CHECK(h, "adopt after jni retry"); mFechar(h);
@@ -209,11 +224,31 @@ int main(void) {
   fail_pthread_create = 1;
   miniatura_preaquecer("http://synthetic.invalid/create-fail", "X-Fake: 1"); release();
   fail_pthread_create = 0;
-  { int wantSt = started + 1;
-  miniatura_preaquecer("http://synthetic.invalid/create-fail", "X-Fake: 1"); waitFor(&started, wantSt); }
+  miniatura_preaquecer("http://synthetic.invalid/create-fail", "X-Fake: 1"); waitFor(&finished, ++fin);
+  waitPreReady();
   CHECK(live() == 1, "pthread_create failure must allow a later pre-warm");
   Job jf = mk("http://synthetic.invalid/create-fail", "X-Fake: 1"); job_bind_pre_identity(&jf);
   h = adotarPre(&jf, &d); CHECK(h, "adopt after create-fail retry"); mFechar(h);
+  pDesligar(); release();
+  // 9. stale identity: a job that bound an older round must not adopt the newer same-url pre-warm.
+  miniatura_preaquecer("http://synthetic.invalid/stale-id", "X-Fake: z"); waitFor(&finished, ++fin); st++;
+  Job j_bind = mk("http://synthetic.invalid/stale-id", "X-Fake: z");
+  job_bind_pre_identity(&j_bind);
+  unsigned staleGen = j_bind.preIdentityGen;
+  CHECK(staleGen != 0, "bind must capture slot generation");
+  miniatura_preaquecer("http://synthetic.invalid/other-z", "X-Fake: 1");   // new slot, bumps round
+  release(); waitFor(&finished, ++fin);
+  block();
+  miniatura_preaquecer("http://synthetic.invalid/stale-id", "X-Fake: z"); waitFor(&started, ++st);
+  release(); waitFor(&finished, ++fin);
+  waitPreReady();
+  Job j_stale = mk("http://synthetic.invalid/stale-id", "X-Fake: z");
+  j_stale.preIdentityGen = staleGen;
+  CHECK(adotarPre(&j_stale, &d) == 0, "stale same-identity job must not adopt newer pre-warm");
+  Job j_fresh = mk("http://synthetic.invalid/stale-id", "X-Fake: z"); job_bind_pre_identity(&j_fresh);
+  h = adotarPre(&j_fresh, &d);
+  CHECK(h && !strcmp(hUrl[h], "http://synthetic.invalid/stale-id"), "fresh-bound job adopts current slot");
+  mFechar(h);
   pDesligar(); release();
   for (int k = 1; k <= opens; k++) CHECK(closes[k] == 1, "every synthetic session closes exactly once");
   if (fails) return 1;
