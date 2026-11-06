@@ -371,3 +371,8 @@
   0, /* Sports menu entry: enabled. */
   1, /* chapters in the player: Off (V_LIGA 1) */
   0, /* Anime-Skip Client ID: action, value lives in animeskip.txt */
+  0, /* seek preview provider: Seekr.tv (existing installs unchanged) */
+  0, 0, 0, /* OpenSeek server / pair / status: actions */
+  0, 0, 0, 0, 0, 0, 0, 0, 0, /* OpenSeek shared library: info + offset/undo/reject actions */
+
+  0, // miniaturaResolutionLocal: Auto
