@@ -18,6 +18,7 @@ void miniatura_preaquecer(const char *url, const char *cabecalhos) { (void)url; 
 #include <dirent.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <errno.h>
 #include <utime.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
@@ -108,7 +109,7 @@ typedef struct {
   Uint32 lacunaDesde;        // when the exact-frame gap pass started (0 = not yet)
   Mapa mapa;                 // copy time = a x play time + b, read by the lanes (under mu)
   int otimista;              // lanes are running at offset 0 before the check decided
-  volatile int pararFaixas;  // stop the lanes only (a rejected copy), the job goes on
+  _Atomic int pararFaixas;   // stop the lanes only (a rejected copy), the job goes on
   // per-title summary (one SUMMARY line at the end: the acceptance record of a test)
   char titulo[48], motivos[320], escolhida[200];
   double offset;
@@ -135,8 +136,8 @@ typedef struct {
   int dCopia; double dA, dB; char dUrl[4096], dCab[512]; int dAltura;
   // Optimistic copy-first: thumbnails start at offset 0 while the screen check runs on its own thread.
   // dCheck 0 none, 1 running, 2 accepted (tiles relabelled to the measured offset), 3 rejected (all discarded).
-  volatile int dCheck; pthread_t dCheckT; int dCheckRodando;
-  volatile int parar;
+  _Atomic int dCheck; pthread_t dCheckT; int dCheckRodando;
+  _Atomic int parar;         // set under mu by encerrar; lock-free reads (parou) are C11 atomic, not a data race
   int vivo;
   unsigned preIdentityGen;   // pre-warm slot generation this job may release (see preSlotIdentityGen)
 } Job;
@@ -392,15 +393,18 @@ static int desempacotar(JNIEnv *env, jbyteArray a, long *pts, float sig[SIG_N], 
   free(b);
   return 1;
 }
+static void decLiberar(long long h);   // hardware-decoder lease (see decPreparar)
 static void mSoltar(long long h) {
   JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
   (*env)->CallStaticVoidMethod(env, cls, jSoltar, (jlong)h);
   if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+  decLiberar(h);
 }
 static void mFechar(long long h) {
   JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
   if (h) (*env)->CallStaticVoidMethod(env, cls, jFechar, (jlong)h);
   if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+  decLiberar(h);
 }
 static long long mLidos(long long h) {
   JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
@@ -1952,6 +1956,48 @@ static Job *preOwner;                  // live job allowed to adopt/release this
 static int preOrphan;                  // disowned by encerrar; worker fim may release if still unclaimed
 static int preDec, preRodando;
 typedef struct { char url[4096], cab[512]; unsigned gen; } PreArgs;
+// HARDWARE-DECODER LEASE (lock order mu -> muDec -> muPre; no JNI or network under any of them).
+// At most one thumbnail session has, or is creating, a hardware decoder. decH names that session handle.
+// Acquire (decPreparar): in one mu+muDec section, the caller is still live (job: !parar, the flag encerrar sets
+// under mu; pre-warm: its generation is current under muPre) and the lease is free or already this handle's.
+// A cancel landing after that section cannot be undone mid-JNI, so the guarantee is handoff, not abort: the
+// handle keeps the lease until mSoltar/mFechar(h) releases it (adoption moves h, so the lease moves with it).
+// A successor waits on decCv in its worker thread (never the UI thread) until release, its own cancel (encerrar
+// broadcasts), or 5 s, and then goes on without the decoder (CPU route; retried at the next confirmed pause).
+static pthread_mutex_t muDec = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t decCv = PTHREAD_COND_INITIALIZER;
+static long long decH;
+static void decLiberar(long long h) {
+  if (!h) return;
+  pthread_mutex_lock(&muDec);
+  if (decH == h) { decH = 0; pthread_cond_broadcast(&decCv); }
+  pthread_mutex_unlock(&muDec);
+}
+static void decAcordar(void) { pthread_mutex_lock(&muDec); pthread_cond_broadcast(&decCv); pthread_mutex_unlock(&muDec); }
+// j = the job's worker; j NULL = the pre-warm thread of generation gen.
+static int decPreparar(Job *j, unsigned gen, long long h) {
+  if (!h) return 0;
+  struct timespec ate; clock_gettime(CLOCK_REALTIME, &ate); ate.tv_sec += 5;
+  int ok = 0;
+  for (;;) {
+    pthread_mutex_lock(&mu);
+    pthread_mutex_lock(&muDec);
+    int vivo;
+    if (j) vivo = !j->parar;
+    else { pthread_mutex_lock(&muPre); vivo = gen == preGen; pthread_mutex_unlock(&muPre); }
+    pthread_mutex_unlock(&mu);
+    if (vivo && (!decH || decH == h)) { decH = h; ok = 1; }
+    if (ok || !vivo) { pthread_mutex_unlock(&muDec); break; }
+    MINI_OWNER_HOOK("dec_wait", j);
+    int r = pthread_cond_timedwait(&decCv, &muDec, &ate);
+    pthread_mutex_unlock(&muDec);
+    if (r == ETIMEDOUT) break;
+  }
+  if (!ok) return 0;
+  int r = mPrepararDecoder(h);
+  if (!r) decLiberar(h);
+  return r;
+}
 static int preMesmo(const char *url, const char *cab) {
   return !strncmp(preUrl, url, sizeof preUrl - 1) && !strncmp(preCab, cab ? cab : "", sizeof preCab - 1);
 }
@@ -2007,7 +2053,7 @@ static void *preTrabalho(void *u) {
   Uint32 t0 = SDL_GetTicks();
   long long h = mAbrirDireto(a->url, a->cab);
   int dec = 0;
-  if (h && !video_pronto() && !video_tocando() && !video_falhou()) dec = mPrepararDecoder(h);
+  if (h && !video_pronto() && !video_tocando() && !video_falhou()) dec = decPreparar(NULL, a->gen, h);
   printf("[miniatura] pre-warm: file %s, hardware decoder %s (%u ms, playback %s)\n", h ? "open" : "not usable",
          dec ? "created" : "not created", SDL_GetTicks() - t0, video_tocando() ? "running" : "not started yet");
   fflush(stdout);
@@ -2141,10 +2187,6 @@ static int trabalharDireto(Job *j, long long *hA) {
     pthread_mutex_lock(&mu); int cancelado = j->parar; pthread_mutex_unlock(&mu);
     if (cancelado) { mFechar(*hA); *hA = 0; return 1; }
   }
-#ifdef MINI_PREWARM_TEST
-  (void)motivo;
-  return *hA ? 1 : 0;
-#else
   if (!*hA) {
     printf("[miniatura] direct: the %s cannot be used (see the engine log)%s\n", j->dCopia ? "checked copy" : "playing file",
            j->dCopia ? "" : ": trying the copies");
@@ -2172,14 +2214,20 @@ static int trabalharDireto(Job *j, long long *hA) {
   // THE HARDWARE DECODER AS EARLY AS POSSIBLE: during the player's opening load, before its audio starts, the
   // HDMI underrun that creating it causes (measured 23/10) falls into silence. Then every thumbnail goes through the
   // hardware + GPU (~30/s) from the start, no scrub needed. Once playback runs, creation waits for a confirmed pause.
+  MINI_OWNER_HOOK("direto_before_decoder", j);
   if (decPre) decodificou = 1;
   else if (!video_pronto() && !video_tocando() && !video_falhou()) {
     Uint32 c0 = SDL_GetTicks();
-    decodificou = mPrepararDecoder(*hA);
+    decodificou = decPreparar(j, 0, *hA);
     printf("[miniatura] direct: hardware decoder %s during the opening load (%u ms, playback %s)\n",
            decodificou ? "created" : "NOT created", SDL_GetTicks() - c0, video_tocando() ? "had started" : "not started yet");
   } else printf("[miniatura] direct: playback already running: CPU route until a confirmed pause\n");
   fflush(stdout);
+#ifdef MINI_PREWARM_TEST
+  (void)motivo; (void)perdAntes; (void)janela; (void)folgaAntes; (void)audioAntes; (void)decodificou;
+  (void)nPend; (void)avisouEspera; (void)avisouGrade; (void)admissao;
+  return 1;
+#else
   Uint32 ultimaContencao = 0;
   pthread_mutex_t mp = PTHREAD_MUTEX_INITIALIZER;   // the queue (pend/nPend), shared with the CPU thread
 #ifdef NV_MINI_FFMPEG
@@ -2294,7 +2342,7 @@ static int trabalharDireto(Job *j, long long *hA) {
       cf.fim = 0;
 #endif
       if (!parou(j) && video_pausa_confirmada() && !scrubbing && !bufferando && !video_reconectando()) {
-        decodificou = mPrepararDecoder(*hA);
+        decodificou = decPreparar(j, 0, *hA);
         printf("[miniatura] direct: exclusive paused handover: hardware %s\n", decodificou ? "ready" : "not admitted; CPU fallback");
         fflush(stdout);
       }
@@ -3120,6 +3168,7 @@ static void encerrar(void) {
     if (vivo) preDisown(j);   // same mu section: cancel and ownership revoke are one step
   }
   pthread_mutex_unlock(&mu);
+  decAcordar();   // a canceled worker parked on the decoder lease gives up now
   texLimpar();
   MINI_OWNER_HOOK("encerrar_after_unlock", j);
   if (!vivo && j && preId) preSoltar(j, url, cab, 0, preId);

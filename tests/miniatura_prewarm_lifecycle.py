@@ -37,6 +37,7 @@ prefix = r'''
 #include <string.h>
 #include <time.h>
 #include "miniatura_coverage.h"
+#include "miniatura_lifecycle.h"
 #define GRADE_MS 10000L
 typedef unsigned Uint32;
 typedef struct { unsigned char *jpg; } Tile;
@@ -44,7 +45,10 @@ typedef struct { int altura; } Stream;
 typedef struct { char url[8], cab[8], nome[8]; int altura; unsigned long long tamanho; } Copia;
 typedef struct {
   char urlA[4096], cabA[512], dUrl[4096], dCab[512], arq[640], arqDireto[640], titulo[48], motivos[320];
-  int parar, pararFaixas, vivo, n, dCopia, avisoCompleto, auditarRede, larguraSaida;
+  char escolhida[200];
+  _Atomic int parar, pararFaixas;
+  int vivo, n, dCopia, avisoCompleto, auditarRede, larguraSaida, direto, dAltura;
+  double dA, dB;
   int sharedHeadroom, headerBridge, coverageAudit, alturaA, nCopias;
   unsigned preIdentityGen, g;
   long dur;
@@ -65,6 +69,12 @@ static unsigned geracao, avisoPronto;
 static volatile long posMs, playheadMs;
 static volatile int scrubbing, bufferando, evRebuffer, evErro;
 static int motivoSem;
+static char origem[48];
+static int falhasSeguidas, decodSeguidas;
+static int carregarInformado(Job *j) { (void)j; return 0; }   /* no saved set: direct mode goes on */
+static long long mPerdidos(void) { return 0; }
+static double folgaSeg(Job *j) { (void)j; return -1; }
+static long long mAudioFalhas(void) { return 0; }
 static void texLimpar(void) {}
 static int bitsDebug(void) { return 0; }
 static int jni_ok = 1;
@@ -124,8 +134,9 @@ static void test_free(void *p) {
 }
 #define free test_free
 typedef struct { pthread_mutex_t mu; pthread_cond_t cv; int entered, go; } Gate;
-static Gate hold_direto;
-static int hold_arm;
+static Gate hold_direto, hold_dec;
+static int hold_arm, dec_arm;
+static int dec_waits;   /* under g: a worker is parked on the decoder lease */
 static void gate_init(Gate *s) {
   pthread_mutex_init(&s->mu, NULL); pthread_cond_init(&s->cv, NULL); s->entered = s->go = 0;
 }
@@ -147,6 +158,20 @@ static void mini_hook(const char *name, void *p) {
     pthread_mutex_unlock(&hold_direto.mu);
     return;
   }
+  if (dec_arm && !strcmp(name, "direto_before_decoder")) {   /* after the open-boundary check, before decoder prep */
+    pthread_mutex_lock(&hold_dec.mu);
+    int ticket = ++hold_dec.entered;
+    pthread_cond_broadcast(&hold_dec.cv);
+    struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts); ts.tv_sec += 3;
+    while (hold_dec.go < ticket)
+      if (pthread_cond_timedwait(&hold_dec.cv, &hold_dec.mu, &ts)) {
+        fprintf(stderr, "FAIL decoder barrier timed out\n"); fails++; break;
+      }
+    pthread_mutex_unlock(&hold_dec.mu);
+    return;
+  }
+  if (!strcmp(name, "dec_wait")) { extern pthread_mutex_t g; extern pthread_cond_t cv;
+    pthread_mutex_lock(&g); dec_waits++; pthread_cond_broadcast(&cv); pthread_mutex_unlock(&g); return; }
   if (!strcmp(name, "encerrar_after_unlock")) {
     pthread_mutex_lock(&revokeMu);
     if (revoke_arm && p) {
@@ -169,8 +194,8 @@ static void mini_hook(const char *name, void *p) {
 }
 #define MINI_OWNER_HOOK(name, p) mini_hook(name, (void *)(p))
 #define MAXH 64
-static pthread_mutex_t g = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
+pthread_mutex_t g = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
 static int opens, started, finished, gateOpen, closes[MAXH];
 static char hUrl[MAXH][128], hCab[MAXH][64];
 static long long mAbrirDireto(const char *url, const char *cab) {
@@ -184,10 +209,29 @@ static long long mAbrirDireto(const char *url, const char *cab) {
   pthread_mutex_unlock(&g);
   return h;
 }
-static int mPrepararDecoder(long long h) { return h > 0; }
+/* Synthetic hardware decoders: count live ones; prep_hold parks one worker inside its own prep. */
+static int decOf[MAXH], decLive, decMax, prep_hold_h, prep_in, prep_go, watch_h, closedBeforePrep[MAXH];
+static int mPrepararDecoder(long long h) {
+  if (h <= 0 || h >= MAXH) return 0;
+  pthread_mutex_lock(&g);
+  if (watch_h && watch_h != h) closedBeforePrep[h] = closes[watch_h];   /* predecessor's session already closed? */
+  decOf[h]++; decLive++; if (decLive > decMax) decMax = decLive;
+  if (h == prep_hold_h) {
+    prep_in = 1; pthread_cond_broadcast(&cv);
+    struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts); ts.tv_sec += 3;
+    while (!prep_go) if (pthread_cond_timedwait(&cv, &g, &ts)) { fprintf(stderr, "FAIL prep barrier timed out\n"); fails++; break; }
+  }
+  pthread_mutex_unlock(&g);
+  return 1;
+}
+static void decLiberar(long long h);
+/* mirrors production mFechar: JNI close, then decLiberar(h) */
 static void mFechar(long long h) {
-  if (!h || h >= MAXH) return;
-  pthread_mutex_lock(&g); if (closes[h]) { fprintf(stderr, "FAIL closed twice\n"); fails++; } closes[h]++; pthread_mutex_unlock(&g);
+  if (!h || h >= MAXH) { decLiberar(h); return; }
+  pthread_mutex_lock(&g); if (closes[h]) { fprintf(stderr, "FAIL closed twice\n"); fails++; } closes[h]++;
+  if (decOf[h] == 1) decLive--;
+  pthread_mutex_unlock(&g);
+  decLiberar(h);
 }
 typedef struct { void *(*fn)(void *); void *arg; } Tramp;
 static void *trampoline(void *u) {
@@ -221,13 +265,15 @@ static void *trabalhar(void *u) {
   long long hA = 0;
   if (!fim_only) {
     trabalharDireto(j, &hA);
-    pthread_mutex_lock(&g);
-    if (nrec < MAXW) { snprintf(rec[nrec].url, sizeof rec[nrec].url, "%s", j->urlA); rec[nrec].hA = hA; rec[nrec].done = 1; nrec++; }
-    pthread_cond_broadcast(&cv);
-    pthread_mutex_unlock(&g);
     if (hA) mFechar(hA);
   }
   preSoltar(j, j->urlA, j->cabA, 0, j->preIdentityGen);
+  char wu[128]; snprintf(wu, sizeof wu, "%s", j->urlA);
+  /* completion is recorded only after the worker's own cleanup (session closed, slot released) */
+  pthread_mutex_lock(&g);
+  if (!fim_only && nrec < MAXW) { snprintf(rec[nrec].url, sizeof rec[nrec].url, "%s", wu); rec[nrec].hA = hA; rec[nrec].done = 1; nrec++; }
+  pthread_cond_broadcast(&cv);
+  pthread_mutex_unlock(&g);
   jobAposFim(j);
   return NULL;
 }
@@ -279,6 +325,14 @@ static void wait_entered(int n) {
 static void release_ticket(int n) {
   pthread_mutex_lock(&hold_direto.mu); hold_direto.go = n; pthread_cond_broadcast(&hold_direto.cv); pthread_mutex_unlock(&hold_direto.mu);
 }
+static void wait_entered_g(Gate *s, int n) {
+  struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts); ts.tv_sec += 3;
+  pthread_mutex_lock(&s->mu);
+  while (s->entered < n)
+    if (pthread_cond_timedwait(&s->cv, &s->mu, &ts)) { fprintf(stderr, "FAIL worker did not reach the barrier\n"); fails++; break; }
+  pthread_mutex_unlock(&s->mu);
+}
+static void release_g(Gate *s, int n) { pthread_mutex_lock(&s->mu); s->go = n; pthread_cond_broadcast(&s->cv); pthread_mutex_unlock(&s->mu); }
 static void release(void) { pthread_mutex_lock(&g); gateOpen = 1; pthread_cond_broadcast(&cv); pthread_mutex_unlock(&g); }
 static void block(void) { pthread_mutex_lock(&g); gateOpen = 0; pthread_mutex_unlock(&g); }
 static int live(void) { int n = 0; pthread_mutex_lock(&g); for (int h = 1; h <= opens && h < MAXH; h++) n += !closes[h]; pthread_mutex_unlock(&g); return n; }
@@ -352,8 +406,8 @@ int main(void) {
   miniatura_preaquecer("http://synthetic.invalid/slow-h", "X-Fake: h"); waitFor(&started, ++st);
   Job j_old = mk("http://synthetic.invalid/slow-h", "X-Fake: h");
   pthread_mutex_lock(&muPre); j_old.preIdentityGen = preSlotIdentityGen; pthread_mutex_unlock(&muPre);
-  miniatura_preaquecer("http://synthetic.invalid/other-h", "X-Fake: 1");
-  release(); waitFor(&finished, ++fin);
+  miniatura_preaquecer("http://synthetic.invalid/other-h", "X-Fake: 1"); waitFor(&finished, ++fin); st++;
+  release(); waitFor(&finished, ++fin);   /* the stale slow-h thread too, before the gate closes again */
   block();
   miniatura_preaquecer("http://synthetic.invalid/slow-h", "X-Fake: h"); waitFor(&started, ++st);
   release(); waitFor(&finished, ++fin);
@@ -561,6 +615,42 @@ int main(void) {
   pDesligar(); release();
   hold_arm = 0;
   CHECK(closes[revokeH] == 1, "parked session closed once after revoke");
+  /* 19a. cancel lands AFTER the open-boundary check and BEFORE decoder prep (per-worker barrier).
+     The canceled worker must not create a hardware decoder; the successor creates exactly one. */
+  pthread_mutex_lock(&g); decLive = decMax = 0; pthread_mutex_unlock(&g);
+  gate_init(&hold_dec); dec_arm = 1;
+  sf = fonte("http://synthetic.invalid/dec-stale", "X-Fake: 1");
+  pPedir(&sf);
+  wait_entered_g(&hold_dec, 1);
+  int decStaleH = snap(&opens);
+  { SeekrFonte s4 = fonte("http://synthetic.invalid/dec-succ", "X-Fake: 1"); pPedir(&s4); }   /* real encerrar */
+  wait_entered_g(&hold_dec, 2);
+  int decSuccH = snap(&opens);
+  release_g(&hold_dec, 1);
+  CHECK(wait_rec("http://synthetic.invalid/dec-stale") == decStaleH, "stale worker returned its session");
+  CHECK(snap(&decOf[decStaleH]) == 0, "canceled worker created a hardware decoder after the open-boundary check");
+  release_g(&hold_dec, 2);
+  CHECK(wait_rec("http://synthetic.invalid/dec-succ") == decSuccH, "successor finished");
+  CHECK(snap(&decOf[decSuccH]) == 1, "successor created its hardware decoder");
+  dec_arm = 0;
+  pDesligar();
+  /* 19b. cancel lands WHILE the stale worker is inside its decoder prep: the successor must wait on the
+     lease (worker thread) and create its decoder only after the stale worker's cleanup closed the session. */
+  sf = fonte("http://synthetic.invalid/dec-stale2", "X-Fake: 1");
+  pthread_mutex_lock(&g); prep_hold_h = opens + 1; prep_in = prep_go = 0; dec_waits = 0; int s2H = prep_hold_h; watch_h = s2H; pthread_mutex_unlock(&g);
+  pPedir(&sf);
+  waitFor(&prep_in, 1);
+  { SeekrFonte s5 = fonte("http://synthetic.invalid/dec-succ2", "X-Fake: 1"); pPedir(&s5); }
+  waitFor(&dec_waits, 1);                     /* successor parked on the lease, not decoding beside stale */
+  CHECK(snap(&decMax) <= 1, "two hardware decoders at once during handoff");
+  pthread_mutex_lock(&g); prep_go = 1; pthread_cond_broadcast(&cv); pthread_mutex_unlock(&g);
+  CHECK(wait_rec("http://synthetic.invalid/dec-stale2") == s2H, "stale worker finished");
+  long long succ2 = wait_rec("http://synthetic.invalid/dec-succ2");
+  CHECK(succ2 > 0 && snap(&decOf[succ2]) == 1, "successor got the lease after stale cleanup");
+  CHECK(succ2 > 0 && snap(&closedBeforePrep[succ2]) >= 1, "successor prepared before stale closed its decoder");
+  CHECK(snap(&decMax) <= 1, "two hardware decoders at once");
+  pthread_mutex_lock(&g); prep_hold_h = watch_h = 0; pthread_mutex_unlock(&g);
+  pDesligar(); release();
   for (int k = 1; k <= opens && k < MAXH; k++) CHECK(closes[k] == 1, "every synthetic session closes exactly once");
   if (fails) return 1;
   printf("PASS prewarm lifecycle (%d synthetic sessions)\n", opens);
