@@ -2727,7 +2727,10 @@ static int copiaPrimeiro(Job *j, long long *hA, int *diretoTentado) {
   // decoder: the copy's direct engine needs the one lease; a rejected copy recreates it on the kept session.
   int decGuardado = 0;
   long long preGuardado = adotarPre(j, &decGuardado);
-  if (preGuardado && j->dCheck != 1) { mFechar(preGuardado); preGuardado = 0; }
+  // Only an accepted copy closes it: the check may reject (1 -> 3) while adotarPre waits, and that copy's fallback
+  // still wants the session.
+  int ck = j->dCheck;
+  if (preGuardado && (ck == 0 || ck == 2)) { mFechar(preGuardado); preGuardado = 0; }
   if (preGuardado && decGuardado) mSoltar(preGuardado);
   if (preGuardado) {
     printf("[miniatura] copy-first: 4K session kept until the check decides (decoder %s)\n", decGuardado ? "released" : "not created");

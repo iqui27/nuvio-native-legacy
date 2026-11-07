@@ -24,11 +24,15 @@ static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
 enum { PRE = 7, COPIA = 8 };
 static int escolhe, checkInicial, checkDepois, rCopia, temPre, decPre, adotou, fechou[16], soltou[16];
 static int corridas, hwPreNaCopia, hParaPlay;
+static int checkNaAdocao, pararNaAdocao;    // what the check thread / a cancel does while adotarPre waits
 static long long hwVivo;    // handle holding the (single) hardware decoder, 0 = none
 static int parou(Job *j) { return j->parar; }
 static int escolherCopiaRapida(Job *j) { if (escolhe) { j->dCopia = 1; j->dCheck = checkInicial; } return escolhe; }
 static long long adotarPre(Job *j, int *dec) {
-  (void)j; adotou++; *dec = temPre && decPre; if (*dec) hwVivo = PRE; return temPre ? PRE : 0;
+  adotou++;
+  if (checkNaAdocao) j->dCheck = checkNaAdocao;
+  if (pararNaAdocao) j->parar = 1;
+  *dec = temPre && decPre; if (*dec) hwVivo = PRE; return temPre ? PRE : 0;
 }
 static void mFechar(long long h) { if (h) fechou[h]++; if (hwVivo == h) hwVivo = 0; }
 static void mSoltar(long long h) { soltou[h]++; if (hwVivo == h) hwVivo = 0; }
@@ -80,6 +84,20 @@ int main(void) {
   CHECK(fim && hParaPlay == 0 && fechou[COPIA] == 1, "no pre-warm session: rejected copy opens the playing file anew");
   fim = caso(1, 1, 2, 1, 1, 0, 0, &hA, &t);
   CHECK(fim && !soltou[PRE] && fechou[PRE] == 1, "kept session without a decoder: nothing to release, closed once");
+  checkNaAdocao = 3;                   // the check rejects the copy while adoption waits (1 -> 3)
+  fim = caso(1, 1, 3, 1, 1, 1, 0, &hA, &t);
+  CHECK(fim && hParaPlay == PRE && soltou[PRE] == 1 && !hwPreNaCopia && fechou[PRE] == 1 && fechou[COPIA] == 1,
+        "rejected while adoption waits: kept session reused by the playing-file pass, decoder released first");
+  pararNaAdocao = 1;                   // ... and the job is canceled meanwhile
+  fim = caso(1, 1, 3, 1, 1, 1, 0, &hA, &t);
+  CHECK(fim && corridas == 1 && !hParaPlay && fechou[PRE] == 1 && fechou[COPIA] == 1,
+        "rejected and canceled while adoption waits: kept session closed once, no pass");
+  pararNaAdocao = 0;
+  checkNaAdocao = 2;                   // the check accepts the copy while adoption waits (1 -> 2)
+  fim = caso(1, 1, 2, 1, 1, 1, 0, &hA, &t);
+  CHECK(fim && !hParaPlay && !hwPreNaCopia && fechou[PRE] == 1 && fechou[COPIA] == 1,
+        "accepted while adoption waits: kept session closed once before the copy's engine");
+  checkNaAdocao = 0;
   if (falhas) { printf("FAIL: %d copy pre-warm checks\n", falhas); return 1; }
   puts("PASS: copy-first keeps/reuses/closes the owned 4K session (accept, reject, fallback, cancel)");
   return 0;
