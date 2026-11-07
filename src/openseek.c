@@ -66,6 +66,7 @@ static int  cfgPapel;                          // OS_PAPEL_*: vem do servidor no
 static int  uiEstado = OSU_NAO_CONFIGURADO;   // ultimo resultado de parear/verificar
 static int  pareando;                          // 1 com o fio de pareamento vivo
 static int  verificando;                       // 1 com o fio de conferencia vivo
+static unsigned long long geracaoPareio;       // com a trava; invalida resultados antigos
 
 static void zerar(void *p, size_t n) { volatile unsigned char *v = p; while (n--) *v++ = 0; }
 
@@ -146,6 +147,7 @@ int openseek_definir_endereco(const char *dig) {
   sessaoEncerrar();
   pthread_mutex_lock(&trava);
   if (strcmp(nova, cfgBase)) {
+    geracaoPareio++;
     snprintf(cfgBase, sizeof cfgBase, "%s", nova);
     zerar(cfgPino, sizeof cfgPino); zerar(cfgToken, sizeof cfgToken); cfgDevice[0] = 0; cfgPapel = OS_PAPEL_DONO;
     uiEstado = cfgBase[0] ? OSU_NAO_PAREADO : OSU_NAO_CONFIGURADO;
@@ -158,6 +160,7 @@ void openseek_esquecer(void) {
   openseek_carregar();
   sessaoEncerrar();
   pthread_mutex_lock(&trava);
+  geracaoPareio++;
   zerar(cfgPino, sizeof cfgPino); zerar(cfgToken, sizeof cfgToken); cfgDevice[0] = 0; cfgPapel = OS_PAPEL_DONO;
   uiEstado = cfgBase[0] ? OSU_NAO_PAREADO : OSU_NAO_CONFIGURADO;
   compart.valido = 0;
@@ -226,7 +229,7 @@ static int uiDeErro(const RedeResposta *r) {
 }
 
 // --- pareamento (OSP1) -----------------------------------------------------------
-typedef struct { char base[OS_BASE_MAX], codigo[OSP1_CONVITE_SEGREDO + 4], convite[40], pino[OS_PINO_MAX]; int forma; } Pareio;
+typedef struct { char base[OS_BASE_MAX], codigo[OSP1_CONVITE_SEGREDO + 4], convite[40], pino[OS_PINO_MAX]; int forma; unsigned long long geracao; } Pareio;
 static void *parearFio(void *u) {
   Pareio *pp = u;
   OpenSeekStart s;
@@ -282,7 +285,7 @@ static void *parearFio(void *u) {
     goto fim;
   }
   pthread_mutex_lock(&trava);
-  if (!strcmp(cfgBase, pp->base)) {
+  if (pp->geracao == geracaoPareio) {
     snprintf(cfgPino, sizeof cfgPino, "%s", s.pino);
     snprintf(cfgToken, sizeof cfgToken, "%s", c.token);
     snprintf(cfgDevice, sizeof cfgDevice, "%s", c.deviceId);
@@ -297,7 +300,8 @@ fim:
   zerar(k, sizeof k); zerar(&s, sizeof s); zerar(&c, sizeof c); zerar(corpo, sizeof corpo);
   zerar(prova, sizeof prova); zerar(esperada, sizeof esperada);
   pthread_mutex_lock(&trava);
-  uiEstado = res; pareando = 0;
+  if (pp->geracao == geracaoPareio) uiEstado = res;
+  pareando = 0;
   pthread_mutex_unlock(&trava);
   zerar(pp, sizeof *pp); free(pp);
   return NULL;
@@ -319,11 +323,12 @@ int openseek_parear(const char *codigo) {
   pthread_mutex_lock(&trava);
   if (pareando || !cfgBase[0]) { pthread_mutex_unlock(&trava); zerar(pp, sizeof *pp); free(pp); return 0; }
   snprintf(pp->base, sizeof pp->base, "%s", cfgBase);
+  pp->geracao = geracaoPareio;
   // Parear de novo substitui o anterior so se der certo; ate la nada muda.
   pareando = 1;
   pthread_mutex_unlock(&trava);
   if (pthread_create(&fio, NULL, parearFio, pp) == 0) { pthread_detach(fio); return 1; }
-  pthread_mutex_lock(&trava); pareando = 0; uiEstado = OSU_FALHOU; pthread_mutex_unlock(&trava);
+  pthread_mutex_lock(&trava); pareando = 0; if (pp->geracao == geracaoPareio) uiEstado = OSU_FALHOU; pthread_mutex_unlock(&trava);
   zerar(pp, sizeof *pp); free(pp);
   return 0;
 }
