@@ -1935,6 +1935,10 @@ static void *cpuTrabalho(void *u) {
 // unstopped job) and never overwrites it. encerrar of a live worker disowns the slot without closing the handle
 // and without reading the job again; the worker's fim closes it only when no successor claimed it. A canceled
 // worker must not adopt, open, or release a successor's slot. Each session still closes exactly once.
+// Linearization (lock order mu -> muPre): encerrar sets parar AND revokes preOwner in one mu+muPre section, so
+// adoption (preOwner == j under muPre) happens wholly before the cancel or not at all; the bare parou() reads are
+// only fast paths. No network runs under either lock. An open in flight at cancel is closed by its worker at the
+// open boundary (parar read under mu), so stale work never proceeds beside the successor.
 #ifndef MINI_OWNER_HOOK
 #define MINI_OWNER_HOOK(name, p) do { (void)(name); (void)(p); } while (0)
 #endif
@@ -2133,6 +2137,10 @@ static int trabalharDireto(Job *j, long long *hA) {
   }
   if (*hA) { printf("[miniatura] direct: using the pre-warmed session (decoder %s)\n", decPre ? "ready" : "not created"); fflush(stdout); }
   if (!*hA && !parou(j)) *hA = j->dCopia ? mAbrirDireto(j->dUrl, j->dCab) : mAbrirDireto(j->urlA, j->cabA);
+  if (*hA) {   // open boundary: canceled while opening/adopting = close now, never work beside the successor
+    pthread_mutex_lock(&mu); int cancelado = j->parar; pthread_mutex_unlock(&mu);
+    if (cancelado) { mFechar(*hA); *hA = 0; return 1; }
+  }
 #ifdef MINI_PREWARM_TEST
   (void)motivo;
   return *hA ? 1 : 0;
@@ -3109,12 +3117,12 @@ static void encerrar(void) {
       memcpy(cab, j->cabA, sizeof cab);
     }
     j->parar = 1;
+    if (vivo) preDisown(j);   // same mu section: cancel and ownership revoke are one step
   }
   pthread_mutex_unlock(&mu);
   texLimpar();
   MINI_OWNER_HOOK("encerrar_after_unlock", j);
-  if (vivo) preDisown(j);
-  else if (j && preId) preSoltar(j, url, cab, 0, preId);
+  if (!vivo && j && preId) preSoltar(j, url, cab, 0, preId);
   if (j && !vivo) jobFree(j);
 }
 

@@ -129,6 +129,10 @@ static int hold_arm;
 static void gate_init(Gate *s) {
   pthread_mutex_init(&s->mu, NULL); pthread_cond_init(&s->cv, NULL); s->entered = s->go = 0;
 }
+static pthread_mutex_t revokeMu = PTHREAD_MUTEX_INITIALIZER;
+static int revoke_arm, revoke_seen, revoke_owner_left;   // all under revokeMu
+static pthread_mutex_t muPre;
+static Job *preOwner;
 static void mini_hook(const char *name, void *p) {
   (void)p;
   if (hold_arm && !strcmp(name, "direto_before_bind")) {
@@ -142,6 +146,14 @@ static void mini_hook(const char *name, void *p) {
       }
     pthread_mutex_unlock(&hold_direto.mu);
     return;
+  }
+  if (!strcmp(name, "encerrar_after_unlock")) {
+    pthread_mutex_lock(&revokeMu);
+    if (revoke_arm && p) {
+      pthread_mutex_lock(&muPre); revoke_owner_left += preOwner == (Job *)p; pthread_mutex_unlock(&muPre);
+      revoke_seen++;
+    }
+    pthread_mutex_unlock(&revokeMu);
   }
   if (uaf_arm && !strcmp(name, "encerrar_after_unlock")) {
     pthread_mutex_lock(&uafMu);
@@ -200,11 +212,19 @@ static int tcreate(pthread_t *t, const pthread_attr_t *at, void *(*fn)(void *), 
 
 main = r'''
 static int fim_only;
+/* Per-worker outcome, keyed by url, under g: what the real trabalharDireto handed back. */
+#define MAXW 16
+static struct { char url[128]; long long hA; int done; } rec[MAXW];
+static int nrec;
 static void *trabalhar(void *u) {
   Job *j = u;
   long long hA = 0;
   if (!fim_only) {
     trabalharDireto(j, &hA);
+    pthread_mutex_lock(&g);
+    if (nrec < MAXW) { snprintf(rec[nrec].url, sizeof rec[nrec].url, "%s", j->urlA); rec[nrec].hA = hA; rec[nrec].done = 1; nrec++; }
+    pthread_cond_broadcast(&cv);
+    pthread_mutex_unlock(&g);
     if (hA) mFechar(hA);
   }
   preSoltar(j, j->urlA, j->cabA, 0, j->preIdentityGen);
@@ -221,6 +241,18 @@ static void *uaf_worker(void *u) {
   pthread_mutex_unlock(&uafMu);
   jobAposFim(u);
   return NULL;
+}
+static long long wait_rec(const char *url) {
+  struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts); ts.tv_sec += 3;
+  long long h = -1;
+  pthread_mutex_lock(&g);
+  for (;;) {
+    for (int i = 0; i < nrec; i++) if (!strcmp(rec[i].url, url) && rec[i].done) h = rec[i].hA;
+    if (h >= 0) break;
+    if (pthread_cond_timedwait(&cv, &g, &ts)) { fprintf(stderr, "FAIL worker %s never returned\n", url); fails++; break; }
+  }
+  pthread_mutex_unlock(&g);
+  return h;
 }
 static void on_uaf(int sig) { (void)sig; siglongjmp(uaf_jmp, 1); }
 static int snap(int *v) { pthread_mutex_lock(&g); int n = *v; pthread_mutex_unlock(&g); return n; }
@@ -491,6 +523,44 @@ int main(void) {
     CHECK(!crashed, "encerrar used job memory after orphan free");
   }
   pDesligar(); release();
+  /* 17. cancellation lands while the real trabalharDireto is inside mAbrirDireto (in-flight network open).
+     The stale worker must close that session at the open boundary, not carry it into work beside the successor. */
+  block();
+  { int base = snap(&started);
+    sf = fonte("http://synthetic.invalid/slow-inflight", "X-Fake: 1");
+    pPedir(&sf);
+    waitFor(&started, base + 1); }          /* the only opener: no pre-warm slot for this link */
+  { SeekrFonte s2 = fonte("http://synthetic.invalid/succ-inflight", "X-Fake: 1");
+    pPedir(&s2); }                           /* real encerrar of the stale worker, then the successor */
+  long long succH = wait_rec("http://synthetic.invalid/succ-inflight");
+  CHECK(succH > 0, "successor opened its own session");
+  release();
+  long long staleH = wait_rec("http://synthetic.invalid/slow-inflight");
+  CHECK(staleH == 0, "stale worker kept its in-flight open past cancellation");
+  pDesligar();
+  /* 18. cancel and ownership revoke are one step: right after encerrar drops mu, the canceled live
+     worker must already have lost the parked session (adoption checks preOwner under muPre). */
+  { int base = snap(&finished);
+    miniatura_preaquecer("http://synthetic.invalid/revoke", "X-Fake: 1");
+    waitFor(&finished, base + 1); }
+  { unsigned w; pthread_mutex_lock(&muPre); w = preSlotIdentityGen; pthread_mutex_unlock(&muPre); waitPreReady(w); }
+  int revokeH = snap(&opens);
+  hold_arm = 1; hold_direto.entered = hold_direto.go = 0;
+  sf = fonte("http://synthetic.invalid/revoke", "X-Fake: 1");
+  pPedir(&sf);                               /* real pPedir binds the slot to this job */
+  wait_entered(1);
+  pthread_mutex_lock(&revokeMu); revoke_arm = 1; pthread_mutex_unlock(&revokeMu);
+  { SeekrFonte s3 = fonte("http://synthetic.invalid/revoke-next", "X-Fake: 1"); pPedir(&s3); }
+  pthread_mutex_lock(&revokeMu); revoke_arm = 0; int seen = revoke_seen, left = revoke_owner_left; pthread_mutex_unlock(&revokeMu);
+  CHECK(seen == 1, "revoke hook saw the canceled worker");
+  CHECK(left == 0, "canceled worker still owned the parked session after encerrar released mu");
+  wait_entered(2);
+  release_ticket(2);
+  CHECK(wait_rec("http://synthetic.invalid/revoke") == 0, "canceled worker adopted the parked session");
+  wait_rec("http://synthetic.invalid/revoke-next");
+  pDesligar(); release();
+  hold_arm = 0;
+  CHECK(closes[revokeH] == 1, "parked session closed once after revoke");
   for (int k = 1; k <= opens && k < MAXH; k++) CHECK(closes[k] == 1, "every synthetic session closes exactly once");
   if (fails) return 1;
   printf("PASS prewarm lifecycle (%d synthetic sessions)\n", opens);
