@@ -1930,44 +1930,69 @@ static void *cpuTrabalho(void *u) {
 // opened 13:53:37.7, playing 13:53:40.7, job 13:53:41.7): too late to create the decoder in silence. So the player
 // calls miniatura_preaquecer() while it opens; this thread opens the file and creates the decoder before the audio
 // starts, and trabalharDireto adopts the handle for the same link.
-// Ownership: one slot keyed by link AND headers. Every replacement, timeout, job end and shutdown bumps preGen; a
-// thread finishing under an older generation closes its own handle, so each session closes exactly once.
-// preSlotIdentityGen: which miniatura_preaquecer() round owns the parked handle; a job only releases in fim/timeout
-// when its preIdentityGen matches, so a late old-job fim cannot drop a newer identical pre-warm.
+// Ownership: one slot keyed by link AND headers. preOwner is the only live job that may adopt or preSoltar that
+// generation. A job copies preSlotIdentityGen once (creation, or a late bind while it is still the current
+// unstopped job) and never overwrites it. encerrar of a live worker disowns the slot without closing the handle
+// and without reading the job again; the worker's fim closes it only when no successor claimed it. A canceled
+// worker must not adopt, open, or release a successor's slot. Each session still closes exactly once.
+#ifndef MINI_OWNER_HOOK
+#define MINI_OWNER_HOOK(name, p) do { (void)(name); (void)(p); } while (0)
+#endif
 static pthread_mutex_t muPre = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t preCv = PTHREAD_COND_INITIALIZER;
 static char preUrl[4096], preCab[512];
 static long long preH;
 static unsigned preGen;
 static unsigned preSlotIdentityGen;   // generation of the current url+cab slot (0 = none)
+static Job *preOwner;                  // live job allowed to adopt/release this generation (NULL = none)
+static int preOrphan;                  // disowned by encerrar; worker fim may release if still unclaimed
 static int preDec, preRodando;
 typedef struct { char url[4096], cab[512]; unsigned gen; } PreArgs;
 static int preMesmo(const char *url, const char *cab) {
   return !strncmp(preUrl, url, sizeof preUrl - 1) && !strncmp(preCab, cab ? cab : "", sizeof preCab - 1);
 }
-// Bind the job to this url+cab slot's identity generation at CREATION time (pPedir), so a
-// stopped worker cannot adopt a newer same-identity round started while it was idle.
+// Capture this slot's generation once. Unpublished (pPedir, before vivo) or still the current
+// unstopped job may claim an unowned or already-stopped owner's slot. Never overwrite a generation
+// already stored: a canceled worker must not retarget a successor's identical url+headers.
 static void job_bind_pre_identity(Job *j) {
   if (!j) return;
+  pthread_mutex_lock(&mu);
   pthread_mutex_lock(&muPre);
-  if (preMesmo(j->urlA, j->cabA)) j->preIdentityGen = preSlotIdentityGen;
-  else j->preIdentityGen = 0;
+  int unpublished = !j->vivo;
+  int current = job == j && !j->parar;
+  if (!j->preIdentityGen && (unpublished || current) && preMesmo(j->urlA, j->cabA) && preSlotIdentityGen &&
+      (!preOwner || preOwner == j || preOwner->parar)) {
+    j->preIdentityGen = preSlotIdentityGen;
+    preOwner = j;
+    preOrphan = 0;
+  }
+  pthread_mutex_unlock(&muPre);
+  pthread_mutex_unlock(&mu);
+}
+// Live worker was removed from `job`. Slot stays parked for a successor; fim may close it if nobody claims it.
+static void preDisown(Job *j) {
+  if (!j) return;
+  pthread_mutex_lock(&muPre);
+  if (preOwner == j) { preOwner = NULL; preOrphan = 1; }
+  pthread_cond_broadcast(&preCv);
   pthread_mutex_unlock(&muPre);
 }
 // Drops this link's slot (url NULL = any). esquecer: real shutdown, the link may pre-warm again; otherwise the
 // identity stays so the player's repeated calls while opening do not reopen it.
 // identityGen: only clear a non-forgotten slot when it matches preSlotIdentityGen (the job that created this pre pass).
-static void preSoltar(const char *url, const char *cab, int esquecer, unsigned identityGen) {
+static void preSoltar(Job *who, const char *url, const char *cab, int esquecer, unsigned identityGen) {
   long long h = 0;
   pthread_mutex_lock(&muPre);
   if (esquecer) {
     h = preH; preH = 0; preDec = 0; preRodando = 0; preGen++;
     preSlotIdentityGen = 0;
+    preOwner = NULL; preOrphan = 0;
     preUrl[0] = preCab[0] = 0;
-  } else if (!url || preMesmo(url, cab)) {
-    if (identityGen != preSlotIdentityGen) { pthread_mutex_unlock(&muPre); return; }
+  } else if ((!url || preMesmo(url, cab)) && identityGen && identityGen == preSlotIdentityGen && who &&
+             (preOwner == who || (!preOwner && preOrphan))) {
     h = preH; preH = 0; preDec = 0; preRodando = 0; preGen++;
     preSlotIdentityGen = 0;
+    preOwner = NULL; preOrphan = 0;
   }
   pthread_cond_broadcast(&preCv);
   pthread_mutex_unlock(&muPre);
@@ -2005,6 +2030,7 @@ void miniatura_preaquecer(const char *url, const char *cabecalhos) {
   preH = 0; preDec = 0; preRodando = 0;
   unsigned gen = ++preGen;
   preSlotIdentityGen = gen;
+  preOwner = NULL; preOrphan = 0;
   snprintf(preUrl, sizeof preUrl, "%s", url);
   snprintf(preCab, sizeof preCab, "%s", cab);
   pthread_mutex_unlock(&muPre);
@@ -2016,6 +2042,7 @@ void miniatura_preaquecer(const char *url, const char *cabecalhos) {
       preH = 0;
       preDec = 0;
       preSlotIdentityGen = 0;
+      preOwner = NULL; preOrphan = 0;
       preGen++;
       preUrl[0] = preCab[0] = 0;   // init failed: allow immediate retry for the same link
     }
@@ -2034,6 +2061,7 @@ void miniatura_preaquecer(const char *url, const char *cabecalhos) {
       preH = 0;
       preDec = 0;
       preSlotIdentityGen = 0;
+      preOwner = NULL; preOrphan = 0;
       preGen++;
       preUrl[0] = preCab[0] = 0;
     }
@@ -2055,6 +2083,7 @@ void miniatura_preaquecer(const char *url, const char *cabecalhos) {
       preH = 0;
       preDec = 0;
       preSlotIdentityGen = 0;
+      preOwner = NULL; preOrphan = 0;
       preGen++;
       preUrl[0] = preCab[0] = 0;
     } else if (preGen == gen) preRodando = 0;
@@ -2075,11 +2104,11 @@ static long long adotarPre(Job *j, int *dec) {
     if (parou(j)) break;
     pthread_mutex_lock(&muPre);
     mesmo = preMesmo(j->urlA, j->cabA);
-    if (!parou(j) && mesmo && !preRodando && preH && identityGen == preSlotIdentityGen) {
+    if (!parou(j) && mesmo && !preRodando && preH && identityGen == preSlotIdentityGen && preOwner == j) {
       h = preH;
       *dec = preDec;
       preH = 0;
-      if (h) preSlotIdentityGen = 0;
+      if (h) { preSlotIdentityGen = 0; preOwner = NULL; preOrphan = 0; }
     }
     pthread_mutex_unlock(&muPre);
     if (h || parou(j)) break;
@@ -2087,7 +2116,7 @@ static long long adotarPre(Job *j, int *dec) {
     if ((int)(SDL_GetTicks() - deadline) >= 0) break;   // 5 s wall, driven by the same clock as dormir()
     dormir(j, 100);
   }
-  if (!h && !parou(j)) preSoltar(j->urlA, j->cabA, 0, identityGen);
+  if (!h && !parou(j)) preSoltar(j, j->urlA, j->cabA, 0, identityGen);
   return h;
 }
 
@@ -2096,11 +2125,18 @@ static int trabalharDireto(Job *j, long long *hA) {
   char motivo[96] = "";
   int decPre = 0;
   if (!*hA && !j->dCopia) {
-    job_bind_pre_identity(j);
-    *hA = adotarPre(j, &decPre);
+    MINI_OWNER_HOOK("direto_before_bind", j);
+    if (!parou(j)) {
+      job_bind_pre_identity(j);
+      *hA = adotarPre(j, &decPre);
+    }
   }
   if (*hA) { printf("[miniatura] direct: using the pre-warmed session (decoder %s)\n", decPre ? "ready" : "not created"); fflush(stdout); }
-  if (!*hA) *hA = j->dCopia ? mAbrirDireto(j->dUrl, j->dCab) : mAbrirDireto(j->urlA, j->cabA);
+  if (!*hA && !parou(j)) *hA = j->dCopia ? mAbrirDireto(j->dUrl, j->dCab) : mAbrirDireto(j->urlA, j->cabA);
+#ifdef MINI_PREWARM_TEST
+  (void)motivo;
+  return *hA ? 1 : 0;
+#else
   if (!*hA) {
     printf("[miniatura] direct: the %s cannot be used (see the engine log)%s\n", j->dCopia ? "checked copy" : "playing file",
            j->dCopia ? "" : ": trying the copies");
@@ -2464,6 +2500,7 @@ static int trabalharDireto(Job *j, long long *hA) {
   diretoCoberturaRelatorio(j);
   j->resumido = 0;
   return 1;
+#endif /* MINI_PREWARM_TEST */
 }
 
 // Copy-first: the first copy (smallest first, escolherCopias) whose header is usable and whose runtime is within
@@ -2591,6 +2628,7 @@ static int escolherCopiaRapida(Job *j) {
   return 0;
 }
 
+static void jobAposFim(Job *j);
 static void *trabalhar(void *u) {
   Job *j = u;
   long long hA = 0, hB = 0, info[6];
@@ -2898,16 +2936,9 @@ fim:
   if ((*timelineEnv)->ExceptionCheck(timelineEnv)) (*timelineEnv)->ExceptionClear(timelineEnv);
   mFechar(hB);
   mFechar(hA);
-  preSoltar(j->urlA, j->cabA, 0, j->preIdentityGen);   // never adopted (complete cache, copy route): no idle decoder held
+  preSoltar(j, j->urlA, j->cabA, 0, j->preIdentityGen);   // never adopted (complete cache, copy route): no idle decoder held
   resumo(j, t0);
-  pthread_mutex_lock(&mu);
-  j->vivo = 0;
-  int orfao = job != j;
-  pthread_mutex_unlock(&mu);
-  if (orfao) {                                  // switched off meanwhile: the worker frees its own job
-    for (int k = 0; k < j->n; k++) free(j->tiles[k].jpg);
-    free(j->tiles); free(j->tentado); free(j->slotFrame); free(j->slotState); free(j->framePts); free(j->slotKey); free(j);
-  }
+  jobAposFim(j);
   return NULL;
 }
 
@@ -3045,6 +3076,19 @@ static int pQuadros(double posSeg, int n, GLuint *out, double *cueSeg) {
 static int pVelho(void) { return velho; }
 static void pOcioso(void) { texLimpar(); }
 
+static void jobFree(Job *j) {
+  if (!j) return;
+  for (int k = 0; k < j->n; k++) free(j->tiles[k].jpg);
+  free(j->tiles); free(j->tentado); free(j->slotFrame); free(j->slotState); free(j->framePts); free(j->slotKey); free(j);
+}
+static void jobAposFim(Job *j) {
+  pthread_mutex_lock(&mu);
+  j->vivo = 0;
+  int orfao = job != j;
+  pthread_mutex_unlock(&mu);
+  MINI_OWNER_HOOK("orfao_before_free", j);
+  if (orfao) jobFree(j);
+}
 static void encerrar(void) {
   pthread_mutex_lock(&mu);
   Job *j = job;
@@ -3053,15 +3097,25 @@ static void encerrar(void) {
   urlAtual[0] = 0;
   cabAtual[0] = 0;
   geracao++;
-  int vivo = j && j->vivo;
-  if (j) j->parar = 1;
+  int vivo = 0;
+  unsigned preId = 0;
+  char url[4096], cab[512];
+  url[0] = cab[0] = 0;
+  if (j) {
+    vivo = j->vivo;
+    if (!vivo) {
+      preId = j->preIdentityGen;
+      memcpy(url, j->urlA, sizeof url);
+      memcpy(cab, j->cabA, sizeof cab);
+    }
+    j->parar = 1;
+  }
   pthread_mutex_unlock(&mu);
   texLimpar();
-  if (j && j->preIdentityGen && !vivo) preSoltar(j->urlA, j->cabA, 0, j->preIdentityGen);
-  if (j && !vivo) {
-    for (int k = 0; k < j->n; k++) free(j->tiles[k].jpg);
-    free(j->tiles); free(j->tentado); free(j->slotFrame); free(j->slotState); free(j->framePts); free(j->slotKey); free(j);
-  }
+  MINI_OWNER_HOOK("encerrar_after_unlock", j);
+  if (vivo) preDisown(j);
+  else if (j && preId) preSoltar(j, url, cab, 0, preId);
+  if (j && !vivo) jobFree(j);
 }
 
 static void pPedir(const SeekrFonte *f) {
@@ -3146,7 +3200,13 @@ static void pPedir(const SeekrFonte *f) {
   if (pthread_create(&t, &at, trabalhar, j)) {
     unsigned preId = j->preIdentityGen;
     pthread_mutex_lock(&mu); j->vivo = 0; pthread_mutex_unlock(&mu);
-    if (preId) preSoltar(j->urlA, j->cabA, 0, preId);
+    if (preId) preSoltar(j, j->urlA, j->cabA, 0, preId);
+    pthread_mutex_lock(&muPre);
+    if (!preH && !preRodando && !preSlotIdentityGen) {
+      preUrl[0] = preCab[0] = 0;   // worker never started: same link may pre-warm again
+      preOwner = NULL; preOrphan = 0;
+    }
+    pthread_mutex_unlock(&muPre);
     encerrar();
   }
   pthread_attr_destroy(&at);
@@ -3168,7 +3228,7 @@ static const char *pRotulo(int est) {
 }
 static void pUso(SeekrUso *u) { memset(u, 0, sizeof *u); u->persistente = 1; u->chavePropria = 1; }
 static void pTentar(void) { encerrar(); }
-static void pDesligar(void) { encerrar(); preSoltar(NULL, NULL, 1, 0); }   // real shutdown; pPedir's replacement keeps it
+static void pDesligar(void) { encerrar(); preSoltar(NULL, NULL, NULL, 1, 0); }   // real shutdown; pPedir's replacement keeps it
 
 static const SeekrProvedor PROVEDOR = {
   pTemChave, pEstado, pRotulo, pUso, pTentar, pPedir, pDesligar, pQuadros, pVelho, pOcioso
