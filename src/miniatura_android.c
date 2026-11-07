@@ -2066,27 +2066,28 @@ void miniatura_preaquecer(const char *url, const char *cabecalhos) {
 // The pre-warmed session for this link (waits up to 5 s for one still being made); *dec = its decoder exists.
 static long long adotarPre(Job *j, int *dec) {
   long long h = 0;
-  if (!j) return 0;
+  if (!j || parou(j)) return 0;
   if (!j->preIdentityGen) return 0;
   unsigned identityGen = j->preIdentityGen;
   Uint32 deadline = SDL_GetTicks() + 5000;
   for (;;) {
     int mesmo;
+    if (parou(j)) break;
     pthread_mutex_lock(&muPre);
     mesmo = preMesmo(j->urlA, j->cabA);
-    if (mesmo && !preRodando && preH && identityGen == preSlotIdentityGen) {
+    if (!parou(j) && mesmo && !preRodando && preH && identityGen == preSlotIdentityGen) {
       h = preH;
       *dec = preDec;
       preH = 0;
       if (h) preSlotIdentityGen = 0;
     }
     pthread_mutex_unlock(&muPre);
-    if (h) break;
-    if (!mesmo || parou(j)) break;
+    if (h || parou(j)) break;
+    if (!mesmo) break;
     if ((int)(SDL_GetTicks() - deadline) >= 0) break;   // 5 s wall, driven by the same clock as dormir()
     dormir(j, 100);
   }
-  if (!h) preSoltar(j->urlA, j->cabA, 0, identityGen);
+  if (!h && !parou(j)) preSoltar(j->urlA, j->cabA, 0, identityGen);
   return h;
 }
 
@@ -2094,7 +2095,10 @@ static long long adotarPre(Job *j, int *dec) {
 static int trabalharDireto(Job *j, long long *hA) {
   char motivo[96] = "";
   int decPre = 0;
-  if (!*hA && !j->dCopia) *hA = adotarPre(j, &decPre);
+  if (!*hA && !j->dCopia) {
+    job_bind_pre_identity(j);
+    *hA = adotarPre(j, &decPre);
+  }
   if (*hA) { printf("[miniatura] direct: using the pre-warmed session (decoder %s)\n", decPre ? "ready" : "not created"); fflush(stdout); }
   if (!*hA) *hA = j->dCopia ? mAbrirDireto(j->dUrl, j->dCab) : mAbrirDireto(j->urlA, j->cabA);
   if (!*hA) {
@@ -3053,6 +3057,7 @@ static void encerrar(void) {
   if (j) j->parar = 1;
   pthread_mutex_unlock(&mu);
   texLimpar();
+  if (j && j->preIdentityGen && !vivo) preSoltar(j->urlA, j->cabA, 0, j->preIdentityGen);
   if (j && !vivo) {
     for (int k = 0; k < j->n; k++) free(j->tiles[k].jpg);
     free(j->tiles); free(j->tentado); free(j->slotFrame); free(j->slotState); free(j->framePts); free(j->slotKey); free(j);
@@ -3138,7 +3143,12 @@ static void pPedir(const SeekrFonte *f) {
   pthread_attr_t at;
   pthread_attr_init(&at);
   pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
-  if (pthread_create(&t, &at, trabalhar, j)) { pthread_mutex_lock(&mu); j->vivo = 0; pthread_mutex_unlock(&mu); encerrar(); }
+  if (pthread_create(&t, &at, trabalhar, j)) {
+    unsigned preId = j->preIdentityGen;
+    pthread_mutex_lock(&mu); j->vivo = 0; pthread_mutex_unlock(&mu);
+    if (preId) preSoltar(j->urlA, j->cabA, 0, preId);
+    encerrar();
+  }
   pthread_attr_destroy(&at);
 }
 
