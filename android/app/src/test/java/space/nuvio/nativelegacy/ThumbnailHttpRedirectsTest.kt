@@ -16,30 +16,17 @@ class ThumbnailHttpRedirectsTest {
         override fun getHeaderField(name: String) = if (name == "Location") location else null
     }
     @Test fun crossOriginRedirectDoesNotForwardFakeCredentials() {
-        val destination = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
-        val source = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
-        var sourceAuth: String? = null
-        var destinationAuth: String? = null
-        destination.createContext("/end") { exchange ->
-            destinationAuth = exchange.requestHeaders.getFirst("Authorization")
-            exchange.sendResponseHeaders(206, -1)
-            exchange.close()
+        val requests = mutableListOf<Response>()
+        val c = ThumbnailHttpRedirects.open("http://source.invalid/start",
+            listOf("Authorization" to "synthetic-only"), "bytes=0-0", true, {}) { url ->
+            Response(url, if (requests.isEmpty()) 302 else 206,
+                if (requests.isEmpty()) "http://destination.invalid/end" else null).also { requests.add(it) }
         }
-        source.createContext("/start") { exchange ->
-            sourceAuth = exchange.requestHeaders.getFirst("Authorization")
-            exchange.responseHeaders.add("Location", "http://127.0.0.1:${destination.address.port}/end")
-            exchange.sendResponseHeaders(302, -1)
-            exchange.close()
-        }
-        source.start(); destination.start()
-        try {
-            val c = ThumbnailHttpRedirects.open("http://127.0.0.1:${source.address.port}/start",
-                listOf("Authorization" to "synthetic-only"), "bytes=0-0", true, {})
-            assertEquals(206, c.responseCode)
-            MediaHttpBudget.close(c)
-            assertEquals("synthetic-only", sourceAuth)
-            assertNull(destinationAuth)
-        } finally { source.stop(0); destination.stop(0) }
+        assertEquals(206, c.responseCode)
+        assertEquals(2, requests.size)
+        assertEquals("destination.invalid", requests[1].url.host)
+        assertEquals("synthetic-only", requests[0].getRequestProperty("Authorization"))
+        assertNull(requests[1].getRequestProperty("Authorization"))
     }
 
     @Test fun repeatedRequestsReuseDestinationWithoutSourceCredentials() {
