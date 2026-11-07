@@ -1875,7 +1875,8 @@ object MiniaturaMotor {
 
 
     private var ultimaCriacao = 0L
-    private fun decoder(s: Sessao): MediaCodec? {
+    // hw: the C side holds this session's hardware-decoder lease (decEntrar); without it, software only.
+    private fun decoder(s: Sessao, hw: Boolean): MediaCodec? {
         s.dec?.let { return it }
         if (s.errosCodec >= 2) return null
         synchronized(this) {
@@ -1891,8 +1892,8 @@ object MiniaturaMotor {
         }.map { it.name to true }
         // Up to 1080p the CPU decodes a keyframe in ~50-100 ms (Shield): software FIRST, so thumbnails never take a
         // hardware session next to the player (the Shield's H.264 one gave no frames there, 22/10). Above: hardware.
-        if (altura <= 1088) { tentativas += softs; tentativas += null to false }
-        else { if (s.travadas < 2) tentativas += null to false; tentativas += softs }
+        if (altura <= 1088) { tentativas += softs; if (hw) tentativas += null to false }
+        else { if (hw && s.travadas < 2) tentativas += null to false; tentativas += softs }
         for ((nome, soft) in tentativas) {
             var c: MediaCodec? = null
             try {
@@ -1958,12 +1959,12 @@ object MiniaturaMotor {
     }
 
     @JvmStatic
-    fun quadro(h: Long, tMs: Long, closest: Boolean, jpeg: Boolean): ByteArray? {
+    fun quadro(h: Long, tMs: Long, closest: Boolean, jpeg: Boolean, hw: Boolean): ByteArray? {
         val t0 = android.os.SystemClock.elapsedRealtime()
-        try { return quadroUm(h, tMs, closest, jpeg) } finally { msQuadros += android.os.SystemClock.elapsedRealtime() - t0 }
+        try { return quadroUm(h, tMs, closest, jpeg, hw) } finally { msQuadros += android.os.SystemClock.elapsedRealtime() - t0 }
     }
 
-    private fun quadroUm(h: Long, tMs: Long, closest: Boolean, jpeg: Boolean): ByteArray? {
+    private fun quadroUm(h: Long, tMs: Long, closest: Boolean, jpeg: Boolean, hw: Boolean): ByteArray? {
         val s = sessoes[h] ?: return null
         s.fonte.erroRede = false
         try {
@@ -1972,7 +1973,7 @@ object MiniaturaMotor {
             val st = s.ex.sampleTime
             if (st < 0) return motivo(s, tMs, "seek found no sample")
             if (st == s.ultimoPts && !jpeg) s.ultimoRes?.let { return it }
-            val dec = decoder(s) ?: return motivo(s, tMs, "no decoder")
+            val dec = decoder(s, hw) ?: return motivo(s, tMs, "no decoder")
             dec.flush()
             val info = MediaCodec.BufferInfo()
             var fed = 0
@@ -2129,6 +2130,9 @@ object MiniaturaMotor {
 
     @JvmStatic
     fun decoderPronto(h: Long): Int = if (sessoes[h]?.dec != null) 1 else 0
+
+    @JvmStatic
+    fun decoderHardware(h: Long): Int = if (sessoes[h]?.let { it.dec != null && !it.soft } == true) 1 else 0
 
     @JvmStatic
     fun keyframeMs(h: Long, tMs: Long): Long = try { sessoes[h]?.fonte?.keyframeMs(tMs) ?: -1L } catch (e: Exception) { -1L }
@@ -2431,7 +2435,7 @@ object MiniaturaMotor {
     // whose time is >= tMs. Signature only. For the fine pass of the timeline check, on the small copy only
     // (a 720p GOP is cheap to run through; a 4K one is not).
     @JvmStatic
-    fun quadroExato(h: Long, tMs: Long, jpeg: Boolean): ByteArray? {
+    fun quadroExato(h: Long, tMs: Long, jpeg: Boolean, hw: Boolean): ByteArray? {
         val s = sessoes[h] ?: return null
         s.fonte.erroRede = false
         try {
@@ -2439,7 +2443,7 @@ object MiniaturaMotor {
             s.ex.seekTo(tMs * 1000, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
             if (s.ex.sampleTime < 0) return motivo(s, tMs, "exact: seek found no sample")
             s.fonte.fase = F_EXATO
-            val dec = decoder(s) ?: return null
+            val dec = decoder(s, hw) ?: return null
             dec.flush()
             s.ultimoPts = Long.MIN_VALUE
             val info = MediaCodec.BufferInfo()

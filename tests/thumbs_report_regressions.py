@@ -35,8 +35,9 @@ typedef unsigned GLuint;
 #define GRADE_MS 10000L
 #define VIZINHO_SLOTS 30
 #define TOL_COPIA_MS 8000L
-typedef struct { char *jpg; long pts; } Tile;
-typedef struct { int n; Tile tiles[100]; } Job;
+#include "miniatura_coverage.h"
+typedef struct { char *jpg; long pts; int prov; } Tile;
+typedef struct { int n, direto, vivo; int *slotFrame; MiniCoverage coverage; Tile tiles[100]; } Job;
 static Job storage, *job = &storage;
 static int velho;
 static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
@@ -55,7 +56,7 @@ checks = r'''
 static void tile(int k, long pts) { storage.tiles[k].jpg="jpeg"; storage.tiles[k].pts=pts; }
 int main(void) {
   GLuint out[3]; double cues[3];
-  storage.n=100;
+  storage.n=100; storage.vivo=1;   // a live job: a far neighbour shows the ring
   tile(0, 0); tile(6, 60000); tile(12, 120000);
   assert(pQuadros(60,3,out,cues));
   assert(out[0]==1 && out[1]==7 && out[2]==13);
@@ -69,7 +70,7 @@ int main(void) {
   assert(cues[0]==0 && cues[2]==120);
   assert(pQuadros(60,1,out,cues) && out[0]==7 && cues[0]==60);
   assert(pQuadros(0,3,out,cues) && !out[0] && out[1]==1);
-  memset(&storage,0,sizeof storage); storage.n=100;
+  memset(&storage,0,sizeof storage); storage.n=100; storage.vivo=1;
   assert(!pQuadros(60,3,out,cues));
   assert(!out[0] && !out[1] && !out[2]);
   // Occupied nominal 60s slot displays a 62s keyframe without stale indication.
@@ -103,7 +104,9 @@ int main(void) {
 with tempfile.TemporaryDirectory(prefix="nuvio-thumbs-regression-") as tmp:
     source = Path(tmp) / "regressions.c"
     executable = Path(tmp) / "regressions"
-    source.write_text(prefix + function("src/miniatura_android.c", "static int pQuadros(")
+    macro = next(l for l in (ROOT / "src/miniatura_android.c").read_text().splitlines()
+                 if l.startswith("#define TILE_VISIVEL("))
+    source.write_text(prefix + macro + "\n" + function("src/miniatura_android.c", "static int pQuadros(")
                       + function("src/app.c", "static void idDoAlvo(")
                       + function("src/ajustes.c", "const char *ajustes_tmdb_idioma(") + checks)
     subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", str(source),

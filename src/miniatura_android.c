@@ -217,7 +217,7 @@ static jmethodID jDolbyGpu,jDolbyGpuClose;
 static jmethodID jLanesProprias;   // optional: storage host with its own thumbnail slots (MediaHttpBudget.EXTRA)
 static jmethodID jAbrir, jInfo, jQuadro, jExato, jSoltar, jFechar, jLidos, jRitmo, jFalhaRede, jTela, jPreparar, jCont, jAlvo, jLote,
                  jDiag, jConfig, jPerdidos, jAbrirDireto, jQuadroDireto, jKeyframe, jDiagDireto, jHeap, jAudio, jCodecCpu, jPacoteCpu, jPrepDec,
-                 jPixelsDireto, jPixelsDimensoes, jDecPronto, jPrepararFuturo, jPrepararSondas, jPipelineStart, jPipelineSummary, jPipelineState, jPipelineStop, jHeadroom, jSlotKeyframe, jSeekRecente;
+                 jPixelsDireto, jPixelsDimensoes, jDecPronto, jDecHw, jPrepararFuturo, jPrepararSondas, jPipelineStart, jPipelineSummary, jPipelineState, jPipelineStop, jHeadroom, jSlotKeyframe, jSeekRecente;
 static void prepararPixelsDireto(Job *j, long long h, int k, long pts);
 
 static int jniPreparar(void) {
@@ -238,8 +238,8 @@ static int jniPreparar(void) {
     jDolbyGpuClose=(*env)->GetStaticMethodID(env,c,"fecharDolbyGpu","()V");
     jAbrir = (*env)->GetStaticMethodID(env, c, "abrir", "(Ljava/lang/String;Ljava/lang/String;Z)J");
     jInfo = (*env)->GetStaticMethodID(env, c, "info", "(J)[J");
-    jQuadro = (*env)->GetStaticMethodID(env, c, "quadro", "(JJZZ)[B");
-    jExato = (*env)->GetStaticMethodID(env, c, "quadroExato", "(JJZ)[B");
+    jQuadro = (*env)->GetStaticMethodID(env, c, "quadro", "(JJZZZ)[B");
+    jExato = (*env)->GetStaticMethodID(env, c, "quadroExato", "(JJZZ)[B");
     jSoltar = (*env)->GetStaticMethodID(env, c, "soltarDecoder", "(J)V");
     jFechar = (*env)->GetStaticMethodID(env, c, "fechar", "(J)V");
     jLidos = (*env)->GetStaticMethodID(env, c, "lidos", "(J)J");
@@ -272,13 +272,14 @@ static int jniPreparar(void) {
     jPacoteCpu = (*env)->GetStaticMethodID(env, c, "pacoteCpu", "(JJ)[B");
     jPrepDec = (*env)->GetStaticMethodID(env, c, "prepararDecoder", "(J)I");
     jDecPronto = (*env)->GetStaticMethodID(env, c, "decoderPronto", "(J)I");
+    jDecHw = (*env)->GetStaticMethodID(env, c, "decoderHardware", "(J)I");
     jPixelsDireto = (*env)->GetStaticMethodID(env, c, "pixelsDireto", "(J)Ljava/nio/ByteBuffer;");
     jPixelsDimensoes = (*env)->GetStaticMethodID(env, c, "pixelsDimensoes", "(J)I");
     if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);   // earlier lookups failed: the check below still sees the NULLs
     jLanesProprias = (*env)->GetStaticMethodID(env, c, "lanesProprias", "(J)I");
     if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); jLanesProprias = NULL; }
     if (!jAbrir || !jInfo || !jQuadro || !jExato || !jSoltar || !jFechar || !jLidos || !jRitmo || !jFalhaRede || !jTela || !jPreparar || !jPrepararFuturo || !jPrepararSondas || !jCont || !jAlvo || !jLote ||
-        !jDiag || !jConfig || !jPipelineStart || !jPipelineStop || !jPipelineSummary || !jPipelineState || !jHeadroom || !jPerdidos || !jSeekRecente || !jAbrirDireto || !jQuadroDireto || !jKeyframe || !jSlotKeyframe || !jDiagDireto || !jHeap || !jAudio || !jCodecCpu || !jPacoteCpu || !jPrepDec || !jDecPronto || !jPixelsDireto || !jPixelsDimensoes) {
+        !jDiag || !jConfig || !jPipelineStart || !jPipelineStop || !jPipelineSummary || !jPipelineState || !jHeadroom || !jPerdidos || !jSeekRecente || !jAbrirDireto || !jQuadroDireto || !jKeyframe || !jSlotKeyframe || !jDiagDireto || !jHeap || !jAudio || !jCodecCpu || !jPacoteCpu || !jPrepDec || !jDecPronto || !jDecHw || !jPixelsDireto || !jPixelsDimensoes) {
       (*env)->ExceptionClear(env);
     } else {
       cls = (jclass)(*env)->NewGlobalRef(env, c);
@@ -352,20 +353,28 @@ static int resolverSondas(long long h, long *times, int count) {
   }
   return out;
 }
+static int decEntrar(Job *j, long long h);   // the hardware-decoder lease for lazy decoders (see decPreparar)
+static void decSair(long long h, int lease);
 // One keyframe (closest or at/before tMs).
-static int mQuadro(long long h, long tMs, int closest, int querJpeg, long *pts, float sig[SIG_N], int *temSig,
+static int mQuadro(Job *j, long long h, long tMs, int closest, int querJpeg, long *pts, float sig[SIG_N], int *temSig,
                    unsigned char **jpg, int *nJpg) {
   JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
+  int lease = decEntrar(j, h);
   jbyteArray a = (jbyteArray)(*env)->CallStaticObjectMethod(env, cls, jQuadro, (jlong)h, (jlong)tMs,
-                                                            closest ? JNI_TRUE : JNI_FALSE, querJpeg ? JNI_TRUE : JNI_FALSE);
+                                                            closest ? JNI_TRUE : JNI_FALSE, querJpeg ? JNI_TRUE : JNI_FALSE,
+                                                            lease ? JNI_TRUE : JNI_FALSE);
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); a = NULL; }
+  decSair(h, lease);
   return desempacotar(env, a, pts, sig, temSig, jpg, nJpg);
 }
 // The frame AT tMs (decoded forward from the keyframe), signature only: the fine pass of the check.
-static int mExato(long long h, long tMs, long *pts, float sig[SIG_N], int *temSig, unsigned char **jpg, int *nJpg) {
+static int mExato(Job *j, long long h, long tMs, long *pts, float sig[SIG_N], int *temSig, unsigned char **jpg, int *nJpg) {
   JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
-  jbyteArray a = (jbyteArray)(*env)->CallStaticObjectMethod(env, cls, jExato, (jlong)h, (jlong)tMs, jpg ? JNI_TRUE : JNI_FALSE);
+  int lease = decEntrar(j, h);
+  jbyteArray a = (jbyteArray)(*env)->CallStaticObjectMethod(env, cls, jExato, (jlong)h, (jlong)tMs, jpg ? JNI_TRUE : JNI_FALSE,
+                                                            lease ? JNI_TRUE : JNI_FALSE);
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); a = NULL; }
+  decSair(h, lease);
   return desempacotar(env, a, pts, sig, temSig, jpg, nJpg);
 }
 static int desempacotar(JNIEnv *env, jbyteArray a, long *pts, float sig[SIG_N], int *temSig, unsigned char **jpg, int *nJpg) {
@@ -605,6 +614,12 @@ static int mPrepararDecoder(long long h) {
   JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
   jint r = (*env)->CallStaticIntMethod(env, cls, jPrepDec, (jlong)h);
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); r = 0; }
+  return r;
+}
+static int mDecoderHardware(long long h) {   // the lazy decoder() is a hardware one (decoderDireto always is)
+  JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
+  jint r = (*env)->CallStaticIntMethod(env, cls, jDecHw, (jlong)h);
+  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); r = 1; }   // unknown: keep the lease (safe side)
   return r;
 }
 static int mDecoderPronto(long long h) {
@@ -947,7 +962,7 @@ static int refinar(Job *j, long long hB, const Ancora *anc, const Par *in, int n
       long t = (long)(a * ord[q].pa + b) + DES[d], p; int ok;
       if (t < 0) t = 0;
       esperarPlayer(j);
-      int lido = mExato(hB, t, &p, sb, &ok, NULL, NULL);
+      int lido = mExato(j, hB, t, &p, sb, &ok, NULL, NULL);
       if (falhou(j, lido, hB)) return 0;
       if (!lido || !ok) continue;
       double c = 0;
@@ -1013,7 +1028,7 @@ static int picoExato(Job *j, long long hB, const float *sa, double centro, const
     long alvo = (long)(centro + des[d]), p; int ok;
     if (alvo < 0) alvo = 0;
     esperarPlayer(j);
-    int lido = mExato(hB, alvo, &p, sb, &ok, NULL, NULL);
+    int lido = mExato(j, hB, alvo, &p, sb, &ok, NULL, NULL);
     // A check frame that did not come (a slow forward decode) only skips this probe; a READ failure still backs
     // off, and a refused connection still ends the title (23/10: three exact-frame time-outs ended a good copy).
     if (!lido && mFalhaRede(hB) && falhou(j, lido, hB)) return -1;
@@ -1072,7 +1087,7 @@ static int conferirTela(Job *j, long long hB, long durB, Mapa *mapa) {
       for (int i = 0; i < nt && !parou(j); i++) {
         long alvo = ts[i], p; int okB;
         esperarPlayer(j);
-        int lido = mQuadro(hB, alvo, 1, 0, &p, sb, &okB, NULL, NULL);
+        int lido = mQuadro(j, hB, alvo, 1, 0, &p, sb, &okB, NULL, NULL);
         if (falhou(j, lido, hB)) return 0;
         if (!lido || !okB || p == ultimoKf) continue;
         ultimoKf = p;
@@ -1147,7 +1162,7 @@ static int reconferir(Job *j, long long h, Mapa m, long *pA) {
   for (long d = -1000; d <= 1000 && !parou(j); d += 1000) {
     long alvo = (long)(m.a * *pA + m.b) + d;
     int okB;
-    if (alvo < 0 || !mExato(h, alvo, &p, sb, &okB, NULL, NULL) || !okB) continue;
+    if (alvo < 0 || !mExato(j, h, alvo, &p, sb, &okB, NULL, NULL) || !okB) continue;
     vistos++;
     double c = 0;
     for (int k = 0; k < SIG_N; k++) c += sa[k] * sb[k];
@@ -1181,7 +1196,7 @@ static int reancorar(Job *j, long long h, Mapa m, double *novoB) {
     long ultimoKf = -1;
     for (int i = 0; i < nt && !parou(j); i++) {
       long p; int okB;
-      if (!mQuadro(h, ts[i], 1, 0, &p, sb, &okB, NULL, NULL) || !okB || p == ultimoKf) continue;
+      if (!mQuadro(j, h, ts[i], 1, 0, &p, sb, &okB, NULL, NULL) || !okB || p == ultimoKf) continue;
       ultimoKf = p;
       double c = 0;
       for (int k = 0; k < SIG_N; k++) c += sa[k] * sb[k];
@@ -1221,7 +1236,7 @@ static int conferir(Job *j, long long hA, long long hB, long durA, long durB, An
       unsigned char *jpg = NULL; int nj = 0;
       esperarPlayer(j);
       esperarFolga(j);
-      int lido = mQuadro(hA, tA, 1, 1, &an->pA, an->sig, &an->ok, &jpg, &nj);
+      int lido = mQuadro(j, hA, tA, 1, 1, &an->pA, an->sig, &an->ok, &jpg, &nj);
       if (falhou(j, lido, hA)) { mSoltar(hA); return 0; }
       mSoltar(hA);                                           // the 4K decoder goes back to the player between anchors
       an->estado = lido ? 1 : -1;
@@ -1249,7 +1264,7 @@ static int conferir(Job *j, long long hA, long long hB, long durA, long durB, An
     for (long t = (long)centro - janela; t <= (long)centro + janela && nc < 64 && !parou(j); t += passo) {
       long tb = t < 0 ? 0 : t >= durB ? durB - 1 : t, pB; int okB;
       esperarPlayer(j);
-      int lidoB = mQuadro(hB, tb, 1, 0, &pB, sb, &okB, NULL, NULL);
+      int lidoB = mQuadro(j, hB, tb, 1, 0, &pB, sb, &okB, NULL, NULL);
       if (falhou(j, lidoB, hB)) return 0;
       if (!lidoB) continue;
       chamadasB++;
@@ -1608,7 +1623,7 @@ static void *faixa(void *u) {
     Mapa mp = mapaAtual(j);
     long tB = f->usaB ? (long)(mp.a * alvo + mp.b) : alvo;
     if (tB < 0) tB = 0;
-    int ok = exato ? mExato(f->h, tB, &p, sig, &okS, &jpg, &nj) : mQuadro(f->h, tB, 1, 1, &p, sig, &okS, &jpg, &nj);
+    int ok = exato ? mExato(j, f->h, tB, &p, sig, &okS, &jpg, &nj) : mQuadro(j, f->h, tB, 1, 1, &p, sig, &okS, &jpg, &nj);
     if (falhou(j, ok, f->h)) break;
     if (ok && f->usaB) p = (long)((p - mp.b) / mp.a);                 // back on the playing file's timeline
     long tol = f->usaB && !exato ? TOL_COPIA_MS : TOL_MS;
@@ -1998,6 +2013,23 @@ static int decPreparar(Job *j, unsigned gen, long long h) {
   if (!r) decLiberar(h);
   return r;
 }
+// Lazy decoders (MiniaturaMotor.decoder, made by quadro/quadroExato: the check, fallback and lane paths) follow the
+// same lease, without ever waiting: hardware only while h holds it, taken in one mu+muDec section while the job is
+// live. Without it (busy, or the job canceled) Kotlin makes a software decoder, or none: that frame fails and the
+// next call asks again. 2 = h already has a hardware decoder (it holds the lease until mSoltar/mFechar).
+static int decEntrar(Job *j, long long h) {
+  if (!h) return 0;
+  if (mDecoderHardware(h)) return 2;
+  int ok = 0;
+  pthread_mutex_lock(&mu);
+  pthread_mutex_lock(&muDec);
+  if (j && !j->parar && (!decH || decH == h)) { decH = h; ok = 1; }
+  pthread_mutex_unlock(&muDec);
+  pthread_mutex_unlock(&mu);
+  return ok;
+}
+// Taken for this call but no hardware decoder came (software chosen, creation failed, JNI error): give it back.
+static void decSair(long long h, int lease) { if (lease == 1 && !mDecoderHardware(h)) decLiberar(h); }
 static int preMesmo(const char *url, const char *cab) {
   return !strncmp(preUrl, url, sizeof preUrl - 1) && !strncmp(preCab, cab ? cab : "", sizeof preCab - 1);
 }
@@ -2685,6 +2717,46 @@ static int escolherCopiaRapida(Job *j) {
 }
 
 static void jobAposFim(Job *j);
+// The 4K pre-warm (file open + hardware decoder made during the opening load) stays parked, owned by this job,
+// until a copy is CHOSEN: when every copy fails, direct mode adopts it as before (upstream cbd2e6dd, 06/11/2026).
+// 1 = the job is done (the caller goes to fim). *hA: the session direct mode goes on with when 0 is returned.
+static int copiaPrimeiro(Job *j, long long *hA, int *diretoTentado) {
+  if (!escolherCopiaRapida(j)) return 0;
+  // A copy accepted before any thumbnail: the 4K session goes now. One still being checked (the optimistic
+  // start) keeps the session until the check decides (upstream 55a4575f, 07/11/2026), but not its hardware
+  // decoder: the copy's direct engine needs the one lease; a rejected copy recreates it on the kept session.
+  int decGuardado = 0;
+  long long preGuardado = adotarPre(j, &decGuardado);
+  if (preGuardado && j->dCheck != 1) { mFechar(preGuardado); preGuardado = 0; }
+  if (preGuardado && decGuardado) mSoltar(preGuardado);
+  if (preGuardado) {
+    printf("[miniatura] copy-first: 4K session kept until the check decides (decoder %s)\n", decGuardado ? "released" : "not created");
+    fflush(stdout);
+  }
+  *diretoTentado = 1;
+  int r = trabalharDireto(j, hA);
+  if (r && j->dCheck == 3 && !parou(j)) {      // optimistic copy rejected: its tiles go, the playing file starts
+    if (*hA) { mFechar(*hA); *hA = 0; }
+    limparDireto(j);
+    j->dCopia = 0; j->dCheck = 0;
+    pthread_mutex_lock(&mu); j->direto = 0; pthread_mutex_unlock(&mu);
+    *hA = preGuardado; preGuardado = 0;         // the kept 4K session (its decoder is made again, leased)
+    printf("[miniatura] copy-first: rejected copy discarded: direct mode on the playing file%s\n",
+           *hA ? " with the kept 4K session" : ""); fflush(stdout);
+    trabalharDireto(j, hA);
+    return 1;
+  }
+  if (preGuardado && r) { mFechar(preGuardado); preGuardado = 0; }   // the copy stays (or stopped): it goes
+  if (r) return 1;
+  printf("[miniatura] copy-first: the copy would not open in the direct engine: direct mode on the playing file\n");
+  fflush(stdout);
+  if (*hA) { mFechar(*hA); *hA = 0; }
+  *hA = preGuardado; preGuardado = 0;
+  j->dCopia = 0;
+  pthread_mutex_lock(&mu); j->direto = 0; pthread_mutex_unlock(&mu);
+  *diretoTentado = 0;
+  return 0;
+}
 static void *trabalhar(void *u) {
   Job *j = u;
   long long hA = 0, hB = 0, info[6];
@@ -2725,27 +2797,7 @@ static void *trabalhar(void *u) {
     snprintf(j->arq, sizeof j->arq, "%s", j->arqDireto);
     if (carregarInformado(j)) { avisoPronto = j->g; goto fim; }   // a complete saved set: no network at all
     pthread_mutex_lock(&mu); j->direto = 0; pthread_mutex_unlock(&mu);
-    { int d = 0; long long pre = adotarPre(j, &d); if (pre) mFechar(pre); }   // the 4K pre-warm is not needed
-    if (escolherCopiaRapida(j)) {
-      diretoTentado = 1;
-      int r = trabalharDireto(j, &hA);
-      if (r && j->dCheck == 3 && !parou(j)) {      // optimistic copy rejected: its tiles go, the playing file starts
-        if (hA) { mFechar(hA); hA = 0; }
-        limparDireto(j);
-        j->dCopia = 0; j->dCheck = 0;
-        pthread_mutex_lock(&mu); j->direto = 0; pthread_mutex_unlock(&mu);
-        printf("[miniatura] copy-first: rejected copy discarded: direct mode on the playing file\n"); fflush(stdout);
-        trabalharDireto(j, &hA);
-        goto fim;
-      }
-      if (r) goto fim;
-      printf("[miniatura] copy-first: the copy would not open in the direct engine: direct mode on the playing file\n");
-      fflush(stdout);
-      if (hA) { mFechar(hA); hA = 0; }
-      j->dCopia = 0;
-      pthread_mutex_lock(&mu); j->direto = 0; pthread_mutex_unlock(&mu);
-      diretoTentado = 0;
-    }
+    if (copiaPrimeiro(j, &hA, &diretoTentado)) goto fim;
   }
   if (diretoOk && !diretoTentado) {
     diretoTentado = 1;                           // no esperarPlayer: the decoder goes in during the opening load

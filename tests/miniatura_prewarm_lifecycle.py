@@ -211,6 +211,8 @@ static long long mAbrirDireto(const char *url, const char *cab) {
 }
 /* Synthetic hardware decoders: count live ones; prep_hold parks one worker inside its own prep. */
 static int decOf[MAXH], decLive, decMax, prep_hold_h, prep_in, prep_go, watch_h, closedBeforePrep[MAXH];
+/* lazy-decoder lease (decEntrar/decSair) is cut in but driven by miniatura_lazy_decoder_lease.py */
+__attribute__((unused)) static int mDecoderHardware(long long h) { (void)h; return 0; }
 static int mPrepararDecoder(long long h) {
   if (h <= 0 || h >= MAXH) return 0;
   pthread_mutex_lock(&g);

@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 
 source = Path("src/miniatura_android.c").read_text()
-start = source.index("typedef struct {\n  Job *j; long long h; MiniMotor *cpu;")
+start = source.index("typedef struct CpuFaixa {\n  Job *j; long long h; MiniMotor *cpu;")
 end = source.index("\n#endif", start)
 worker = source[start:end]
 prefix = r'''
@@ -16,7 +16,7 @@ prefix = r'''
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-typedef struct { int parar, cpuFeitos; long cpuMs, cpuDecMs; } Job;
+typedef struct { int parar, cpuFeitos, dCopia; long cpuMs, cpuDecMs; } Job;
 typedef struct { int unused; } MiniMotor;
 typedef struct { unsigned totalMs, decodMs, resizeMs, colourMs, jpegMs; long bytesPacote; } MiniQuadro;
 #define PISO_KB (300L * 1024)
@@ -28,7 +28,8 @@ static void mini_dovi_gpu_close(void) { gpuCloses++; }
 static int parou(Job *j) { return j->parar; }
 static long memDisponivelKB(void) { return 1024L * 1024; }
 static size_t mini_motor_memoria(MiniMotor *m, int threads) { (void)m; (void)threads; return 1; }
-static void mini_dovi_gpu_close(void) {}
+static long dParaPlay(Job *j, long p) { (void)j; return p; }
+static void mini_motor_fechar(MiniMotor *m) { (void)m; }
 static int mPacoteCpu(long long h, long k, long *p, unsigned char **pk, int *n) {
   (void)h; (void)k; *p = 42000;
   pthread_mutex_lock(&gate);
