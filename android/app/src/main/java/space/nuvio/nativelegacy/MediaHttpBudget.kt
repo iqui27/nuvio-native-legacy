@@ -19,8 +19,8 @@ internal object MediaHttpBudget {
     // OBJECT-STORAGE HOSTS (06/11/2026, Cloudflare R2 behind PenguPlay): the 4-connection cap exists for debrid
     // CDNs that limit connections per user (TorBox, 22-23/10). R2 has no such limit, but answers each request only
     // after ~865 ms and serves one range per request; with the player holding all 4 slots for most of the run the
-    // thumbnail lanes got 1-2, and Dune 4K took 12.2 min. Hosts that refused multi-range give thumbnails their own
-    // EXTRA slots; the player keeps all 4 shared ones. The playback gate and the FAST-pacing check still apply.
+    // thumbnail lanes got 1-2, and Dune 4K took 12.2 min. Only an explicit capacity grant gives a host its own
+    // EXTRA slots; refusing multi-range alone says nothing about its connection limit.
     const val EXTRA = 6
     private val extra = Semaphore(EXTRA, true)
     private val extraHosts: MutableSet<String> = ConcurrentHashMap.newKeySet()

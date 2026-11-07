@@ -45,6 +45,28 @@ class ThumbnailHostMemoryTest {
         assertTrue(ThumbnailHostMemory(old).refuses("x.r2.cloudflarestorage.com", 200))
     }
 
+    @Test fun rememberedRefusalDoesNotGrantExtraConnections() {
+        val host = "refusal-budget-test.example"
+        val memory = ThumbnailHostMemory(null)
+        memory.recordRefusal(host, System.currentTimeMillis())
+        val memoryField = ThumbnailHostMemory::class.java.getDeclaredField("refusals").apply { isAccessible = true }
+        val previous = memoryField.get(null)
+        val type = Class.forName("space.nuvio.nativelegacy.MiniaturaMotor\$Fonte")
+        val unsafe = Class.forName("sun.misc.Unsafe")
+        val unsafeField = unsafe.getDeclaredField("theUnsafe").apply { isAccessible = true }
+        val source = unsafe.getMethod("allocateInstance", Class::class.java).invoke(unsafeField.get(null), type)
+        type.getDeclaredField("redirectSession").apply { isAccessible = true }
+            .set(source, ThumbnailHttpRedirects.Session("https://$host/file", emptyList()))
+        try {
+            memoryField.set(null, memory)
+            assertTrue(type.getDeclaredMethod("hostSemMultiRange").apply { isAccessible = true }.invoke(source) as Boolean)
+            assertFalse(MediaHttpBudget.hasOwnLanes(host))
+            assertEquals(MediaHttpBudget.LIMIT, MediaHttpBudget.available())
+        } finally {
+            memoryField.set(null, previous)
+        }
+    }
+
     @Test fun missingOrCorruptFileIsHarmless() {
         val f = File(tmp.root, "hosts.txt")
         f.writeText("garbage\nno-tab-here\nx.com\tnot-a-number\n")

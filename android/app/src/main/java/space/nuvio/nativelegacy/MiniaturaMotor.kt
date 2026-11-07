@@ -1368,7 +1368,7 @@ object MiniaturaMotor {
                     multiOk = false   // whole file: never again for this file (and read nothing more)
                     // Remembered per host: the probe rounds restore multiOk after a refusal, and each new source of the
                     // same title started over (05/11/2026, R2: 7 refused multi-range requests in one title).
-                    try { c.url.host?.let { semMultiRange.add(it.lowercase()); MediaHttpBudget.allowThumbnailLanes(it); ThumbnailHostMemory.recordRefusal(it) } } catch (_: Exception) {}
+                    try { c.url.host?.let { semMultiRange.add(it.lowercase()); ThumbnailHostMemory.recordRefusal(it) } } catch (_: Exception) {}
                     Log.w(TAG, "multi-range not served here (http $code, $tipo): single ranges from now on")
                     return null
                 }
@@ -1547,14 +1547,13 @@ object MiniaturaMotor {
         // Initialize all request/error state before constructor I/O can fail.
         fun lanesProprias(): Boolean = direto && !multiOk && mp4Index == null &&
             MediaHttpBudget.hasOwnLanes(try { redirectSession.host() } catch (_: Exception) { null })
-        // This session's refusals, then the ones remembered across sessions (ThumbnailHostMemory): a remembered host
-        // also gets its own thumbnail slots at once.
+        // This session's refusals, then the ones remembered across sessions (ThumbnailHostMemory).
         fun hostSemMultiRange(): Boolean = try {
             val h = redirectSession.host()?.lowercase()
             when {
                 h == null -> false
                 h in semMultiRange -> true
-                ThumbnailHostMemory.refuses(h) -> { semMultiRange.add(h); MediaHttpBudget.allowThumbnailLanes(h); true }
+                ThumbnailHostMemory.refuses(h) -> { semMultiRange.add(h); true }
                 else -> false
             }
         } catch (_: Exception) { false }
