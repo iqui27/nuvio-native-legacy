@@ -2621,7 +2621,14 @@ static void *trabalhar(void *u) {
     // when every copy fails, direct mode adopts it as before. 06/11/2026 (2.0.21): closed up front, an R2 title whose
     // four PenguPlay copies were dead or ignored Range fell back to the CPU route, 458 s instead of ~190 s.
     if (escolherCopiaRapida(j)) {
-      { int d = 0; long long pre = adotarPre(j, &d); if (pre) mFechar(pre); }   // a copy is used: the 4K session goes
+      // A copy accepted before any thumbnail: the 4K session goes now. One still being checked (the optimistic start)
+      // keeps it until the check decides (07/11/2026, Avengers: the copy failed the check AFTER the session was
+      // closed, and the playing file's pass ran on the CPU at ~2-3 thumbnails a second).
+      long long preGuardado = 0;
+      int decGuardado = 0;
+      if (j->dCheck == 1) preGuardado = adotarPre(j, &decGuardado);
+      else { int d = 0; long long pre = adotarPre(j, &d); if (pre) mFechar(pre); }
+      if (preGuardado) { printf("[miniatura] copy-first: 4K session kept until the check decides (decoder %s)\n", decGuardado ? "ready" : "not created"); fflush(stdout); }
       diretoTentado = 1;
       int r = trabalharDireto(j, &hA);
       if (r && j->dCheck == 3 && !parou(j)) {      // optimistic copy rejected: its tiles go, the playing file starts
@@ -2629,14 +2636,18 @@ static void *trabalhar(void *u) {
         limparDireto(j);
         j->dCopia = 0; j->dCheck = 0;
         pthread_mutex_lock(&mu); j->direto = 0; pthread_mutex_unlock(&mu);
-        printf("[miniatura] copy-first: rejected copy discarded: direct mode on the playing file\n"); fflush(stdout);
+        hA = preGuardado; preGuardado = 0;         // the kept 4K session, hardware decoder included
+        printf("[miniatura] copy-first: rejected copy discarded: direct mode on the playing file%s\n",
+               hA ? " with the kept 4K session" : ""); fflush(stdout);
         trabalharDireto(j, &hA);
         goto fim;
       }
+      if (preGuardado && r) { mFechar(preGuardado); preGuardado = 0; }   // the copy stays: the 4K session goes
       if (r) goto fim;
       printf("[miniatura] copy-first: the copy would not open in the direct engine: direct mode on the playing file\n");
       fflush(stdout);
       if (hA) { mFechar(hA); hA = 0; }
+      hA = preGuardado; preGuardado = 0;
       j->dCopia = 0;
       pthread_mutex_lock(&mu); j->direto = 0; pthread_mutex_unlock(&mu);
       diretoTentado = 0;
