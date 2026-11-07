@@ -408,7 +408,7 @@ typedef struct Sessao {
 } Sessao;
 
 static Sessao *atual;
-static unsigned geracao = 1;
+static unsigned geracao = 1, revisaoVtt;
 static int  estado = SEEKR_DESLIGADO, motivo = OSM_NENHUM;
 static long long retryUtc;
 static unsigned ultimaLatencia; static int ultimoHttp;
@@ -682,6 +682,7 @@ static void trocarVtt(Sessao *s, SeekrVtt *novo) {   // com a trava
   vtt = *novo; memset(novo, 0, sizeof *novo);
   vttChaves = ch;
   vttFolhaChaves = fch;
+  revisaoVtt++;
 }
 
 static int criarTrabalho(Sessao *s) {
@@ -1712,13 +1713,14 @@ static int pQuadros(double posSeg, int n, GLuint *out, double *cueSeg) {
   int np = 0, i, k, nFila = 0, fila[OS_QUERO], achou = 0, subiuAtual = 0, esparso = 0;
   long posMs = (long)(posSeg * 1000.0);
   char chaveAtual[256] = "";
-  unsigned g;
+  unsigned g, rev;
   if (n < 1) return 0;
   if (n > 3) n = 3;
   for (k = 0; k < n; k++) { out[k] = 0; if (cueSeg) cueSeg[k] = -1.0; }
   pthread_mutex_lock(&trava);
   quadroEsparso = 0;
   g = geracao;
+  rev = revisaoVtt;
   if (texG != g) {
     openseek_lru_ini(&texLru, OS_TEX_LRU);
     texG = g;
@@ -1763,8 +1765,11 @@ static int pQuadros(double posSeg, int n, GLuint *out, double *cueSeg) {
     if (pr[k].g == g && openseek_lru_achar(&texLru, pr[k].chaveTex) < 0) {
       const char *prot[6]; int nProt = 0, sl;
       pthread_mutex_lock(&trava);
-      for (int j = 0; j < nFila && j < 6 && vttChaves; j++) prot[nProt++] = vttChaves[fila[j]];
-      sl = openseek_lru_lugar(&texLru, pr[k].chaveTex, prot, nProt);
+      sl = -1;
+      if (g == geracao && rev == revisaoVtt && vttChaves) {
+        for (int j = 0; j < nFila && j < 6; j++) prot[nProt++] = vttChaves[fila[j]];
+        sl = openseek_lru_lugar(&texLru, pr[k].chaveTex, prot, nProt);
+      }
       pthread_mutex_unlock(&trava);
       if (sl >= 0) {
         if (!texs[sl]) glGenTextures(1, &texs[sl]);
@@ -1782,7 +1787,7 @@ static int pQuadros(double posSeg, int n, GLuint *out, double *cueSeg) {
   }
 
   pthread_mutex_lock(&trava);
-  if (g != geracao || !vttChaves || !atual) { pthread_mutex_unlock(&trava); return 0; }
+  if (g != geracao || rev != revisaoVtt || !vttChaves || !atual) { pthread_mutex_unlock(&trava); return 0; }
   if (i >= 0 && i < vtt.nCues) {
     int vis[3], nVis = 0;
     long ptsMs = cuePtsMs(&vtt.cues[i]);
