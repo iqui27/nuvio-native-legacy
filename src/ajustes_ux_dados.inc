@@ -25,7 +25,7 @@ static int uxValorAtual(int op) {
   if(ajIptvGerenciador(op))return ajIptvQuantos(ajIptvTipo(op))?ajIptvAtualTipo(ajIptvTipo(op)):1;
   if (ajLegendaPrincipal(op)) return ajLegendaValor(op);
   if (ajFalhaBackend(op)) return ajFalhaValor(op);
-  if (op == AJ_SEEKR_LIGADO && !seekrChave[0]) return 1;
+  if (op == AJ_SEEKR_LIGADO && !previaCredencial()) return 1;
   return op == AJ_FIL_LIMITE ? fil_limite_gravado() : valor[op];
 }
 
@@ -108,6 +108,7 @@ static void uxValorTexto(int op, int v, char *buf, size_t tam) {
     const char *s=v==(n?n:1)?i18n(ajIptvAdicionarNome(tipo)):!n?i18n("Nenhuma"):ajIptvNome(ajIptvDoTipo(tipo,v));
     snprintf(buf,tam,"%s",s);return;
   }
+  if (op == AJ_MINIATURA_RES) { static const char *labels[] = {"Automático", "180p (320 x 180)", "270p (480 x 270)", "360p (640 x 360)"}; snprintf(buf,tam,"%s",i18n(labels[v >= 0 && v <= 3 ? v : 0])); return; }
   o = &OPCOES[op];
   if (ajFonte(op)) texto = ajFonteNome(op, v);
   else if (o->tipo == OP_ACAO) texto = i18n("Abrir");
@@ -305,6 +306,9 @@ static const char *uxSinonimos(int op) {
       return "lento lenta lentidao travando trava falha erro desempenho diagnostico rede internet";
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE:
       return "seekr miniatura barra tempo previa avanco retrocesso";
+    case AJ_MINIATURA_RES: case AJ_PREVIA_PROVEDOR: case AJ_OPENSEEK_SERVIDOR: case AJ_OPENSEEK_PAREAR: case AJ_OPENSEEK_ESTADO:
+    case AJ_OPENSEEK_COMPART: case AJ_OPENSEEK_AJ_M30: case AJ_OPENSEEK_AJ_M5: case AJ_OPENSEEK_AJ_M1: case AJ_OPENSEEK_AJ_P1: case AJ_OPENSEEK_AJ_P5: case AJ_OPENSEEK_AJ_P30: case AJ_OPENSEEK_DESFAZER: case AJ_OPENSEEK_REJEITAR:
+      return "openseek convite biblioteca compartilhada convidado ajuste seekr servidor proprio miniatura barra tempo previa parear pareamento nas";
     default: return "";
   }
 }

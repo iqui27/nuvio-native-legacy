@@ -176,3 +176,25 @@ const char *rede_url_log(const char *url, char *dst, unsigned tam) {
 #undef RL_POE
   return dst;
 }
+
+// Pino do OpenSeek (rede.h, pino_publico): so "sha256//<44 base64>" e listas
+// separadas por ";". Recusa qualquer outra coisa, inclusive um nome de arquivo
+// (CURLOPT_PINNEDPUBLICKEY tambem aceitaria um caminho de PEM/DER).
+int rede_pino_valido(const char *p) {
+  static const char B64[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  int itens = 0;
+  if (!p || !*p) return 0;
+  for (;;) {
+    int n = 0;
+    if (strncmp(p, "sha256//", 8)) return 0;
+    p += 8;
+    while (*p && *p != ';' && *p != '=') { if (!strchr(B64, *p)) return 0; p++; n++; }
+    if (n != 43 || *p != '=') return 0;   // 32 bytes = 43 simbolos + "="
+    p++;
+    if (++itens > 4) return 0;
+    if (!*p) return 1;
+    if (*p != ';') return 0;
+    p++;
+  }
+}

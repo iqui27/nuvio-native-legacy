@@ -111,6 +111,7 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "credfonte.h"
 #include "credaprende.h"
 #include "seekr.h"
+#include "openseek.h"
 #include "visto.h"     /* fim de episodio/filme para Simkl e conta */
 #include "vistoep.h"   /* o check de "assistido" na lista de episodios (issue #100) */
 #include "pausao.h"
@@ -143,6 +144,7 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "plrui.h"
 #include "escala.h"
 #include "plrilha.h"
+#include "miniatura_android.h"
 #include "neste.h"
 #include "cacheboost.h"
 #include "audioinfo.h"
@@ -290,6 +292,10 @@ static void fonteAcaoInvalidar(void) { if (!++fonteAcaoGeracao) ++fonteAcaoGerac
 static int   tocando = 1;
 static int   pausaPessoa;   // pausa pedida pela pessoa (player_pausa_pessoa, #302)
 static int retomandoSalto; // seek requested playback; buffering is not user pause
+#ifdef NV_ANDROID
+#include "seekpreview.h"
+static SeekPreview seekPreviewAudit;
+#endif
 static CreditosAuto creditosAuto;
 // Uma unica sessao VOD pausada, por no maximo dois minutos. Nao abre conexao
 // especulativa: e o pipeline que ja estava exibindo este titulo.
@@ -4101,6 +4107,9 @@ static void vooPasso(Uint32 agora) {
 #endif
 
 static void iniciarSalto(int toque) {
+#ifdef NV_ANDROID
+  memset(&seekPreviewAudit, 0, sizeof seekPreviewAudit);
+#endif
   scrubInicio = comVideo ? video_pos() : posSeg;
 #ifdef NV_TPK
   // A seek still in flight: start from where the person sent it, not from the
@@ -4157,6 +4166,24 @@ static void saltar(int dir, int repeticao) {
 // Fim do avanco: manda a posicao escolhida e devolve o estado de antes.
 static void terminarSalto(void) {
   if (!scrubbing) return;
+#ifdef NV_ANDROID
+  double cursorTarget = posSeg;
+  if (!seekr_provedor_e(miniatura_provedor()) || !miniatura_direto()) seekPreviewAudit.direct = 0;
+  double pictureTarget = seekpreview_confirmar(&seekPreviewAudit, cursorTarget, duracaoSeg,
+                                               fonteAcaoGeracao, SDL_GetTicks());
+  if (pictureTarget != cursorTarget) {
+    posSeg = (float)pictureTarget;
+    posVis = posSeg; posVisV = 0.0f; posVisSolto = 0;
+    printf("[seek-audit] align cursorMs=%.0f pictureMs=%.0f deltaMs=%.0f\n",
+           cursorTarget * 1000.0, pictureTarget * 1000.0, (pictureTarget - cursorTarget) * 1000.0);
+  }
+  printf("[seek-audit] commit targetMs=%.0f visualMs=%.0f previewShown=%d previewCursorMs=%.0f previewPtsMs=%.0f previewAgeMs=%u stale=%d sameSource=%d\n",
+         posSeg * 1000.0, posVis * 1000.0, seekPreviewAudit.shown,
+         seekPreviewAudit.cursor * 1000.0, seekPreviewAudit.pts * 1000.0,
+         seekPreviewAudit.shown ? SDL_GetTicks() - seekPreviewAudit.when : 0,
+         seekPreviewAudit.stale, seekPreviewAudit.generation == fonteAcaoGeracao);
+  fflush(stdout);
+#endif
   scrubbing = 0;
   // No toque, o gesto inteiro decide a direcao. Ajustar um destino adiantado
   // alguns segundos para tras nao e pedir para rever o episodio.
@@ -4563,6 +4590,93 @@ static void introTmdbTardio(Uint32 agora) {
   }
 }
 
+// OPENSEEK, fonte alternativa para miniaturas (desligada por padrao; ver openseek.h).
+// Metadados dos candidatos saem da lista de fontes que o app JA tem; nenhuma URL
+// vai junto, nenhuma chamada a API de debrid, nenhuma resolucao por miniatura. So
+// candidatos com link utilizavel, em cache no debrid e de ate 1080p entram. A URL
+// de UM candidato so segue se o servidor pedir aquele (openseek_alt_pedido).
+static void openseekAltCand(OpenSeekAltCand *o, const char *cid, const Stream *s, const char *chave, long long durMs) {
+  memset(o, 0, sizeof *o);
+  snprintf(o->cid, sizeof o->cid, "%s", cid);
+  snprintf(o->titleKey, sizeof o->titleKey, "%s", chave);
+  o->altura = s->altura; o->durMs = durMs; o->tamanho = s->tamanhoBytes;
+  o->nome = s->arquivo[0] ? s->arquivo : s->rotulo;
+  o->emCache = s->emCache || s->cacheNativo;
+  o->resolvida = s->url[0] != 0;
+}
+static void openseekAltPasso(const char *imdb, int temporada, int episodio, long durMs, float posSeg) {
+  static unsigned listaGeracao; static int atualAntes = -1; static char chaveAntes[64];
+  OpenSeekAltCand play, cands[OS_ALT_MAX];
+  const Stream *st = stream_item(stream_atual());
+  char chave[64], host[128] = "", cid[24];
+  double bf = video_buffer_fim();
+  long bufMs = bf > 0.5 ? (long)((bf - (double)posSeg) * 1000.0) : -1;
+  const char *u = video_url_atual();
+  int n = 0, nova;
+  if (!st || !openseek_alt_ligado()) return;
+  if (bufMs < 0 && bf > 0.5) bufMs = 0;
+  if (u && !strncmp(u, "http", 4)) {                 // so o host do CDN, nunca o caminho nem a consulta
+    const char *h = strstr(u, "://") + 3;
+    size_t k = strcspn(h, "/:?#");
+    if (k > 0 && k < sizeof host) { memcpy(host, h, k); host[k] = 0; }
+  }
+  snprintf(chave, sizeof chave, "%s:%d:%d", imdb ? imdb : "", temporada, episodio);
+  nova = stream_lista_geracao() != listaGeracao || stream_atual() != atualAntes || strcmp(chave, chaveAntes);
+  if (nova) {
+    openseekAltCand(&play, "play", st, chave, durMs);
+    int pulouUrl = 0, pulouRes = 0, pulouCache = 0, h720 = 0, h1080 = 0;
+    int t2160 = 0, t1440 = 0, t1080 = 0, t720 = 0, tOutro = 0, c1080 = 0, c720 = 0, cConf = 0, cNat = 0, total = 0;
+    for (int i = 0; i < stream_n(); i++) {            // contagem sobre a lista INTEIRA (so numeros)
+      const Stream *c = stream_item(i);
+      if (!c || i == stream_atual() || c->naoVideo || !c->url[0]) continue;
+      int emc = c->emCache || c->cacheNativo;
+      total++;
+      if (c->emCache) cConf++;
+      if (c->cacheNativo) cNat++;
+      if (c->altura == 2160) t2160++;
+      else if (c->altura == 1440) t1440++;
+      else if (c->altura == 1080) { t1080++; c1080 += emc; }
+      else if (c->altura == 720) { t720++; c720 += emc; }
+      else tOutro++;
+    }
+    // Primeiro os de ate 1080p (os unicos que podem servir), depois os demais so para diagnostico; o teto de
+    // OS_ALT_MAX nunca deixa um candidato util de fora por causa de fontes 4K antes dele na lista.
+    for (int passo = 0; passo < 2; passo++) {
+      for (int i = 0; i < stream_n() && n < OS_ALT_MAX; i++) {
+        const Stream *c = stream_item(i);
+        if (!c || i == stream_atual() || c->naoVideo) continue;
+        if (!c->url[0]) { if (passo == 0) pulouUrl++; continue; }
+        int baixa = c->altura > 0 && c->altura <= 1080;
+        if (passo == 0 ? !baixa : baixa) continue;
+        // Manda os candidatos com link (so metadados): quem decide a elegibilidade e o servidor, que sabe dizer
+        // o motivo de cada recusa (resolucao, cache, edicao...). Aqui so se contam, para o log.
+        if (!baixa) pulouRes++;
+        if (!(c->emCache || c->cacheNativo)) pulouCache++;
+        if (c->altura == 720) h720++; else if (c->altura == 1080) h1080++;
+        snprintf(cid, sizeof cid, "s%d", i);
+        openseekAltCand(&cands[n++], cid, c, chave, 0);
+      }
+    }
+    // So contagens (nada de URL, nome ou cabecalho): a lista inteira por resolucao e por cache, e o que foi enviado.
+    printf("[openseek] alt list: total_com_link=%d 2160p=%d 1440p=%d 1080p=%d(em_cache=%d) 720p=%d(em_cache=%d) outras=%d | "
+           "cache_confirmado=%d cache_nativo=%d\n", total, t2160, t1440, t1080, c1080, t720, c720, tOutro, cConf, cNat);
+    printf("[openseek] alt candidates: lista=%d enviados=%d (720p=%d 1080p=%d) pulados: sem_url=%d fora_de_1080p=%d sem_cache=%d\n",
+           stream_n(), n, h720, h1080, pulouUrl, pulouRes, pulouCache);
+    fflush(stdout);
+    listaGeracao = stream_lista_geracao(); atualAntes = stream_atual();
+    snprintf(chaveAntes, sizeof chaveAntes, "%s", chave);
+    openseek_alt_atualizar(&play, cands, n, bufMs, video_bufferando_ms() > 0, host);
+  } else {
+    openseek_alt_atualizar(NULL, NULL, 0, bufMs, video_bufferando_ms() > 0, host);
+  }
+  if (openseek_alt_pedido(cid, sizeof cid)) {         // o servidor pediu UM candidato: entrega a URL dele, uma vez
+    int i = cid[0] == 's' ? atoi(cid + 1) : -1;
+    const Stream *c = i >= 0 && i < stream_n() ? stream_item(i) : NULL;
+    if (c && c->url[0]) openseek_alt_entregar(cid, c->url, c->cabecalhos);
+    else openseek_alt_entregar(cid, "", "");         // sumiu da lista: o fio nao envia nada
+  }
+}
+
 void player_atualizar(float dt, Uint32 agora) {
 #ifdef NV_TOUCH_UI
   playerTelaAtualizar();
@@ -4774,13 +4888,34 @@ void player_atualizar(float dt, Uint32 agora) {
       if (durFonteForaCache) return;
     }
     durFonteContagem(agora);
+    // MINIATURAS NO APARELHO: enquanto o titulo ABRE (antes do audio), o decoder das miniaturas ja nasce.
+    if (!video_pronto() && !ehCanal() && ajustes_seekr_ligado() && seekr_provedor_e(miniatura_provedor()))
+      miniatura_preaquecer(video_url_atual(), video_cabecalhos());
     // MINIATURAS DO SEEKR: so com a duracao REAL (o servico escolhe a versao
     // da folha por ela) e uma vez por titulo — seekr_pedir ignora o repetido.
     if (d > 60.0 && video_pronto() && !ehCanal() && ajustes_seekr_ligado()) {
       const CatItem *cs = item();
-      if (cs && !strncmp(cs->imdb, "tt", 2))
-        seekr_pedir(cs->imdb, strcmp(cs->tipo, "series") ? 0 : epT,
-                    strcmp(cs->tipo, "series") ? 0 : epE, (long)(d * 1000.0));
+      if (!seekr_provedor_alternativo()) {
+        if (cs && !strncmp(cs->imdb, "tt", 2))
+          seekr_pedir(cs->imdb, strcmp(cs->tipo, "series") ? 0 : epT,
+                      strcmp(cs->tipo, "series") ? 0 : epE, (long)(d * 1000.0));
+      } else {
+        // OPENSEEK (servidor proprio): a URL e os cabecalhos do que esta
+        // tocando vao no corpo de um POST com TLS fixado (openseek.c). Barato a
+        // cada passo: so copia o que mudou; o trabalho e de outro fio.
+        const Stream *st = stream_item(stream_atual());
+        int serie = cs && !strcmp(cs->tipo, "series");
+        SeekrFonte f = { cs ? cs->imdb : "", serie ? epT : 0, serie ? epE : 0,
+                         (long)(d * 1000.0), video_url_atual(), video_cabecalhos(),
+                         st ? st->tamanhoBytes : 0, st ? st->videoHash : "",
+                         st ? st->arquivo : "", (long)(posSeg * 1000.0f),
+                         (long)(video_pos() * 1000.0), scrubbing };
+        if (cs) openseekAltPasso(cs->imdb, serie ? epT : 0, serie ? epE : 0, (long)(d * 1000.0), posSeg);
+        { double bf2 = video_buffer_fim(); long bm = bf2 > 0.5 ? (long)((bf2 - (double)posSeg) * 1000.0) : -1;
+          if (bm < 0 && bf2 > 0.5) bm = 0;
+          openseek_contrib_telemetria(bm, video_bufferando_ms() > 0); }      // saude da reproducao (so conta com uma contribuicao ativa)
+        seekr_pedir_fonte(&f);
+      }
     }
     // Retomada so com o pipeline ASSENTADO: pronto + tocando (ou 2,5 s depois
     // de pronto, para quem abre pausado). Seek logo no loadCompleted e o que o
@@ -5200,7 +5335,9 @@ static int seekrStatusLinhas(int est, const SeekrUso *uso, int temChave,
   if (est == SEEKR_PRONTO || est == SEEKR_BUSCANDO ||
       (est == SEEKR_DESLIGADO && temChave) ||
       est < SEEKR_DESLIGADO || est > SEEKR_RELOGIO_INDISPONIVEL) return 0;
-  if (est == SEEKR_DESLIGADO)
+  if (est == SEEKR_DESLIGADO && seekr_provedor_alternativo())   // OpenSeek nao pareado
+    snprintf(linhas[0], 192, "%s", i18n(seekr_estado_rotulo(est)));
+  else if (est == SEEKR_DESLIGADO)
     snprintf(linhas[0], 192, "Seekr · %s", i18n("sem chave"));
   else snprintf(linhas[0], 192, "%s", i18n(seekr_estado_rotulo(est)));
   if (est == SEEKR_LIMITE_LOCAL && uso) {
@@ -5255,9 +5392,13 @@ static void seekrMiniatura(float bx, float bw, float frac, float yBarra, float a
   GLuint t[3] = { 0, 0, 0 };
   double cue[3] = { -1, -1, -1 };
   int fita, n, k, est;
-  const float w = 384.0f, h = 216.0f, ws = 256.0f, hs = 144.0f, vao = 12.0f, linha = 52.0f;
+  // Netflix-sized (owner, 22/10: "the preview is tiny"): 576x324, ~30 % of the 1080p canvas; was 384x216.
+  const float w = 576.0f, h = 324.0f, ws = 384.0f, hs = 216.0f, vao = 14.0f, linha = 56.0f;
   float x, y, tot, xs[3];
   Uint32 agora = SDL_GetTicks();
+#ifdef NV_ANDROID
+  if (scrubbing) seekPreviewAudit.shown = 0;
+#endif
   if (ehCanal() || !(scrubbing || posVisSolto) || a < 0.05f || !ajustes_seekr_habilitado()) return;
   est = seekr_tem_chave() ? seekr_estado() : SEEKR_DESLIGADO;
   if (est != SEEKR_PRONTO && est != SEEKR_BUSCANDO) {
@@ -5268,7 +5409,20 @@ static void seekrMiniatura(float bx, float bw, float frac, float yBarra, float a
   fita = ajustes_seekr_fita();
   n = fita ? 3 : 1;
   { float pv = posVisSolto ? posVis : posSeg;
+#ifdef NV_ANDROID
+  if (scrubbing && seekr_provedor_e(miniatura_provedor()) && miniatura_direto()) pv = posSeg;
+#endif
   if (est == SEEKR_PRONTO) seekr_quadros(pv, n, t, cue);
+#ifdef NV_ANDROID
+  { int centre = n == 1 ? 0 : 1;
+    if (scrubbing && t[centre] && cue[centre] >= 0.0) {
+      seekPreviewAudit.cursor = pv; seekPreviewAudit.pts = cue[centre];
+      seekPreviewAudit.when = agora; seekPreviewAudit.generation = fonteAcaoGeracao;
+      seekPreviewAudit.stale = seekr_quadro_velho(); seekPreviewAudit.shown = 1;
+      seekPreviewAudit.direct = seekr_provedor_e(miniatura_provedor()) && miniatura_direto();
+    } else if (scrubbing) seekPreviewAudit.shown = 0;
+  }
+#endif
   // A sincronia ja entra no tempo do quadro; sem cue ainda (a folha chegando),
   // a posicao com o mesmo ajuste.
   if (cue[n == 1 ? 0 : 1] < 0.0) cue[n == 1 ? 0 : 1] = pv + ajustes_seekr_ajuste_s(); }
@@ -5278,6 +5432,11 @@ static void seekrMiniatura(float bx, float bw, float frac, float yBarra, float a
   if (x + tot > bx + bw) x = bx + bw - tot;
   y = yBarra - 24.0f - (10.0f + h + linha);
   plrui_material((GfxRect){ x, y, tot, 10.0f + h + linha }, 26.0f, 0, a);
+  { OpenSeekCompartInfo ci;   // fonte emprestada de outra versao: sempre dizer que e aproximada
+    if (openseek_compart_info(&ci)) {
+      TxtLinha lb = txt_linha(TXT_G18M, ci.rotulo, 243, 242, 239, 200);
+      txt_desenhar_alpha(lb, x + (tot - (float)lb.w) * 0.5f, y - (float)lb.h - 6.0f, a);
+    } }
   if (fita) { xs[0] = x + 10.0f; xs[1] = xs[0] + ws + vao; xs[2] = xs[1] + w + vao; }
   else xs[0] = x + 10.0f;
   for (k = 0; k < n; k++) {
@@ -5303,6 +5462,14 @@ static void seekrMiniatura(float bx, float bw, float frac, float yBarra, float a
       if (atual) plrui_anel(qx + qw * 0.5f, qy + qh * 0.5f, 44.0f, 1, agora, a);
     }
     plrui_tempo(rot, sizeof rot, cue[k]);
+#ifdef NV_ANDROID
+    if (atual && seekPreviewAudit.shown && seekPreviewAudit.direct &&
+        (seekPreviewAudit.stale || fabs(cue[k] - seekPreviewAudit.cursor) > SEEKPREVIEW_MAX_S)) {
+      char approximate[sizeof rot];
+      snprintf(approximate, sizeof approximate, "~ %.*s", (int)sizeof rot - 3, rot);
+      snprintf(rot, sizeof rot, "%s", approximate);
+    }
+#endif
     { float yc = y + 10.0f + h + linha * 0.5f;
       if (atual) {
         TxtLinha lt = txt_linha(TXT_G26B, rot, 243, 242, 239, 255), lr = { 0 };
@@ -6596,6 +6763,18 @@ void player_desenhar(Uint32 agora) {
         plrilha_pedir(&pd);
       }
     } }
+  // MINIATURAS FEITAS NO APARELHO (miniatura_android.h): o conjunto do titulo ficou completo.
+  int thumbnailMilestone = miniatura_status_agora();
+  if (thumbnailMilestone) {
+    PlrIlhaPedido pd;
+    memset(&pd, 0, sizeof pd);
+    pd.icone = "aj_film";
+    pd.texto = thumbnailMilestone == 4 ? i18n("Miniaturas em cache")
+             : thumbnailMilestone == 1 ? i18n("Miniaturas iniciadas")
+             : thumbnailMilestone == 2 ? i18n("Miniaturas 50%") : i18n("Miniaturas geradas");
+    pd.semFim = 1; pd.aberta = 1;
+    plrilha_pedir(&pd);
+  }
   if (player_carregando() && ehCanal()) {
     // CANAL SINTONIZANDO: a versao COMPACTA, uma linha na propria ilha do
     // relogio (dono, 03/10: "no player do live tv vamos usar a versao compacta

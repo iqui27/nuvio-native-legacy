@@ -106,7 +106,7 @@ static int uxLigarRequisitos(int op, int aplicar) {
   if (!aplicar || !res) return res;
   for (k = 0; k < n; k++)
     if (!definirValorDireto(ligar[k], 0)) {
-      uxNotificar(ligar[k] == AJ_SEEKR_LIGADO && !seekrChave[0] ? seekrPedirChave() :
+      uxNotificar(ligar[k] == AJ_SEEKR_LIGADO && !previaCredencial() ? previaPedirCredencial() :
                   "Não foi possível salvar. O valor anterior foi mantido.");
       return 0;
     }
@@ -264,7 +264,7 @@ static void uxAplicar(void) {
     uxAvisoRisco = bit; uxConfirmar = 0; return;
   }
   if (!definirValorDireto(uxOp, uxPendente)) {
-    uxNotificar(uxOp == AJ_SEEKR_LIGADO && !seekrChave[0] ? seekrPedirChave() :
+    uxNotificar(uxOp == AJ_SEEKR_LIGADO && !previaCredencial() ? previaPedirCredencial() :
                 "Não foi possível salvar. O valor anterior foi mantido.");
     return;
   }
@@ -286,7 +286,7 @@ static int uxAlternarDireto(int op) {
   uxOp = op;
   if (uxRiscoFinal(op, novo)) return 0;
   if (!definirValorDireto(op, novo)) {
-    uxNotificar(op == AJ_SEEKR_LIGADO && !seekrChave[0] ? seekrPedirChave() :
+    uxNotificar(op == AJ_SEEKR_LIGADO && !previaCredencial() ? previaPedirCredencial() :
                 "Não foi possível salvar. O valor anterior foi mantido.");
     return 1;
   }

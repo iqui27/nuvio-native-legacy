@@ -8241,7 +8241,7 @@ int detail_pediu_fontes_ep(int *t, int *e) {
   int tt = pedFontesT, te = pedFontesE;
   pedFontesT = pedFontesE = 0;
   if (t) *t = tt; if (e) *e = te;
-  return tt > 0 && te > 0;
+  return tt >= 0 && te > 0;
 }
 int detail_pediu_explorar(void)   { int v = pedExplorar;   pedExplorar = 0;   return v; }
 // "Reproduzir desde o inicio" ainda cai no mesmo caminho do primario: o

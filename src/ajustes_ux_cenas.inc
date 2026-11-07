@@ -866,7 +866,9 @@ static void ajcCenaPlayer(int op) {
       ajc_vidro(380, 200, 220, 70, 16, k);
       for (i = 0; i < 3; i++) ajc_ladrilho(i == 0 ? "aj_thumbs-up" : i == 1 ? "pl_thumbs-down" : "aj_heart", 420 + i * 70, 235, 40, i == 0, k);
       ajcChaveCanto(ajcLig(op)); break; }
-    case AJ_CACHE_SEEK: case AJ_SEEKR_LIGADO: case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE: case AJ_SEEKR_CHAVE: case AJ_SEEKR_TESTAR: {
+    case AJ_CACHE_SEEK: case AJ_SEEKR_LIGADO: case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE: case AJ_SEEKR_CHAVE: case AJ_SEEKR_TESTAR:
+    case AJ_MINIATURA_RES: case AJ_PREVIA_PROVEDOR: case AJ_OPENSEEK_SERVIDOR: case AJ_OPENSEEK_PAREAR: case AJ_OPENSEEK_ESTADO:
+    case AJ_OPENSEEK_COMPART: case AJ_OPENSEEK_AJ_M30: case AJ_OPENSEEK_AJ_M5: case AJ_OPENSEEK_AJ_M1: case AJ_OPENSEEK_AJ_P1: case AJ_OPENSEEK_AJ_P5: case AJ_OPENSEEK_AJ_P30: case AJ_OPENSEEK_DESFAZER: case AJ_OPENSEEK_REJEITAR: {
       // a fita de miniaturas sobre a barra; o cursor anda nela
       float c = ajc_onda(4.0f);
       for (i = 0; i < 6; i++) ajc_cartaz(40 + i * 94, 210, 84, 48, i, op == AJ_CACHE_SEEK ? 0.5f : 1);

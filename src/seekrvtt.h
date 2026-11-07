@@ -23,6 +23,7 @@ typedef struct {
   long ini, fim;          // ms
   int  folha;             // indice em SeekrVtt.folhas
   int  x, y, w, h;        // recorte dentro da folha, em pixels
+  long rotulo;            // OpenSeek: pts real do quadro (o t= da URL), ms; -1 no Seekr
 } SeekrCue;
 
 typedef struct {
@@ -45,4 +46,18 @@ void seekr_vtt_liberar(SeekrVtt *v);
 // passada a metade vale a seguinte — a regra do "Preview accuracy" da
 // documentacao. Antes da primeira, a primeira; depois da ultima, a ultima.
 int  seekr_vtt_cue(const SeekrVtt *v, long posMs);
+
+// --- Provedor com outra base (OpenSeek, servidor proprio) ---------------------
+// As funcoes acima sao estas com base = https://sprites.seekr.tv; a saida para
+// o Seekr e identica byte a byte (tests/seekr.c, tests/openseek_vtt.c).
+// `base` = "esquema://host[:porta]" sem barra no fim.
+int  seekr_ler_lookup_base(const char *json, const char *base, char *vtt, size_t tam);
+int  seekr_vtt_ler_base(const char *vtt, const char *base, SeekrVtt *out);
+// OpenSeek (CONTRACT-v1 "VTT semantics"): so URLs ABSOLUTAS na origem pareada
+// `origem` (as outras cues sao descartadas: o pino so vale para ela) e so com
+// "t=<pts_ms>"; o t vira cue.rotulo e sai da URL da folha (a chave da folha).
+int  seekr_vtt_ler_openseek(const char *vtt, const char *origem, SeekrVtt *out);
+// Regra do OpenSeek: a cue so vale com ini <= posMs < fim; -1 fora de todas
+// (sem "mais proxima" antes/depois/nos buracos, SCRUBBING.md §3).
+int  seekr_vtt_cue_estrita(const SeekrVtt *v, long posMs);
 #endif
