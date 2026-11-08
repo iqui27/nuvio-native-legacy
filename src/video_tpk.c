@@ -151,6 +151,40 @@ static atomic_int playerPreso = -2;   // -2 = sem aviso (0 e um relogio valido)
 #define TPK_LENTA_VALE_MS 11000u   // ~2 consultas de 5 s seguidas
 static atomic_uint consultaLentaEm;
 static int reconPausa = -1;
+
+// SAIDA E VOLTA DO APP (Home, sono; owner 08/11). O host PARA o player no
+// OnPause (#412: nunca um player vivo no fundo) e nada avisava este lado: a
+// sessao seguia "tocando" com o relogio congelado, cada comando ia para um
+// player que nao existe e a tela voltava preta. Agora o host diz onde o player
+// estava (nv_tpk_video_suspenso), esta sessao fica SUSPENSA (sem comandos, sem
+// watchdog, sem reconexao) e, quando o app volta a tela (nv_tpk_video_voltou),
+// reabre a mesma fonte com as mesmas faixas, MUDA, faz um seek EXATO ao ponto,
+// pausa e so entao devolve o som. Sem quadro em RET_PRAZO_MS, ou erro de novo
+// depois de uma segunda tentativa: o player fecha (player.c), sem cartao de
+// erro. So filme/episodio (reconPermitida); trailer e canal ficam como eram.
+#ifndef RET_PRAZO_MS
+#define RET_PRAZO_MS 20000u
+#endif
+#ifndef RET_PAUSA_MS
+#define RET_PAUSA_MS 8000u
+#endif
+#ifndef RET_BUSCA_MS
+#define RET_BUSCA_MS 12000u
+#endif
+static atomic_int fundoPend, fundoMs = -1, voltouPend;
+static atomic_uint fundoEm;   // quando o host anotou (o player.c aplica antes, com o alvo dele)
+static int suspenso;          // o host parou o player; reabre na volta
+static int retomando;         // reabrindo depois da volta
+static int retDesistiu;       // reabertura desistiu: o player.c fecha a tela
+static atomic_int retEvento;  // para o player.c: 1 = reabrindo, 2 = desistiu
+static double retAlvo;        // posicao a devolver (s, na fonte)
+static const char *retDe = "";
+static int retAudio = -1, retLeg = -1, retDurMs;
+static int retQuerTocar;      // Play apertado durante a reabertura
+static int retBusca;          // 0 = seek nao enviado, 1 = em voo, 2 = pousou (ou nenhum)
+static int retPausaEnviada, retTentativas, retCab;
+static Uint32 retEm, retBuscaEm, retPousouEm, retSuspensoEm;
+static void retZerar(void);
 // Seek enviado sem confirmacao do host: a recuperacao retoma nele.
 static atomic_int buscaAlvoMs = -1;
 static int reconAlvoMs = -1;
@@ -409,6 +443,16 @@ static int mfEsperarAntes(const char *url, const char *cab);
 static atomic_int mfRecusas;   // EV_BUSCA_FALHOU (fio do host)
 static atomic_int mfAviso;     // video_tpk_aviso_busca consome
 static atomic_uint buscaFalhas;  // EV_BUSCA_FALHOU, so cresce (player.c: seek em voo)
+// Toda abertura no host passa aqui. Na reabertura da volta (retCab) leva o
+// pseudo-cabecalho que o host transforma em Muted antes do Prepare (Video.cs);
+// ele nunca vai para a rede.
+static void hostAbrir(const char *url, const char *cab) {
+  char c[sizeof cabecalhos + 32];
+  if (!retCab) { hAbrir(url, cab); return; }
+  snprintf(c, sizeof c, "%s%sX-Nuvio-Resume: 1", cab ? cab : "", cab && *cab ? "\n" : "");
+  hAbrir(url, c);
+}
+
 static void abrirHost(const char *url, const char *cab) {
   char seguros[sizeof cabecalhos];
   const char *orig = strstr(urlAtual, "://"), *dest = url ? strstr(url, "://") : NULL;
@@ -436,12 +480,19 @@ static void abrirHost(const char *url, const char *cab) {
     snprintf(hostCab, sizeof hostCab, "%s", cab ? cab : "");
   }
   if (mfEsperarAntes(url, cab)) return;   // mfBombear abre quando a sonda responder
-  hAbrir(nv_media_url(url), cab);
+  hostAbrir(nv_media_url(url), cab);
 }
 
 __attribute__((visibility("default")))
 void nv_tpk_video_evento(int tipo, int a, int b) {
   if (!ativo) return; // evento tardio depois de sair
+  // Suspensa: o player desta sessao foi parado pelo host; o que chegar (ate o
+  // erro -3 de um Dispose recusado) e dele. A reabertura tenta o Dispose de novo.
+  if (suspenso || retDesistiu) {
+    printf("[fundo] host event %d (%d, %d) ignored: session %s\n", tipo, a, b, suspenso ? "suspended" : "given up");
+    fflush(stdout);
+    return;
+  }
   if ((tipo == EV_TOCANDO && !tocando) || tipo == EV_PAUSADO ||
       (tipo == EV_BUFFER && bufferando != (a < 100)))
     atomic_store(&vigiaReiniciar, 1);
@@ -837,7 +888,7 @@ static void abrirSessao(void) {
     // player_set_streaming_buffering_time (never sent).
     { char pre[48] = ""; int ms = dts_tpk_prebuffer_ms();
       if (ms > 0) snprintf(pre, sizeof pre, "X-Nuvio-Prebuffer: %d", ms);
-      hAbrir(cv.url, pre); }
+      hostAbrir(cv.url, pre); }
   } else {
     char u[256];
     if (mf.ativo && mkvfix_url(u, sizeof u)) abrirHost(u, "");
@@ -862,6 +913,7 @@ static int trilhaPelaOrdem(void);
 static int videoConvertivel(void);
 
 int video_tocar(const char *u) {
+  retZerar();
   cdn.arquivo = 0;
   parado = 0; resgateAte = 0;
   if (cv.ativo || cv.sondando) dts_tpk_fechar();
@@ -1649,6 +1701,7 @@ static void reabrindoVigiar(void) {
   Uint32 agora = SDL_GetTicks();
   double p;
   if (!cv.reabrindo) return;
+  if (retomando) return;   // a volta do fundo solta a capa so com o quadro pausado no ponto
   if (!ativo || falhou || agora - cv.reabriuEm > 60000u) {
     if (ativo && !falhou) { printf("[dts-tpk] reabrindo: sem quadro em 60 s, o app ve o estado real\n"); fflush(stdout); }
     cv.reabrindo = 0; return;
@@ -1667,14 +1720,228 @@ static void reabrindoVigiar(void) {
   cv.reabrindo = 0;
 }
 
+// ---------------------------------------------------------------- SAIDA E VOLTA
+// Host, fio principal do .NET, ANTES do Parar: so anota (o fio do app aplica).
+__attribute__((visibility("default")))
+void nv_tpk_video_suspenso(int ms) {
+  atomic_store(&fundoMs, ms);
+  atomic_store(&fundoEm, SDL_GetTicks());
+  atomic_store(&fundoPend, 1);
+}
+// Host: o app voltou a tela (OnResume / AppControl, janela visivel).
+__attribute__((visibility("default")))
+void nv_tpk_video_voltou(void) { atomic_store(&voltouPend, 1); }
+
+static void retZerar(void) {
+  suspenso = retomando = retDesistiu = 0;
+  retQuerTocar = retBusca = retPausaEnviada = retTentativas = retCab = 0;
+  retAudio = retLeg = -1; retDurMs = 0; retDe = "";
+  atomic_store(&fundoPend, 0); atomic_store(&voltouPend, 0); atomic_store(&retEvento, 0);
+}
+
+// Onde a sessao estava. Ordem: o alvo que o player.c conhece (seek em voo com
+// as tentativas dele, ou o comeco de um scrub), a reabertura em curso, um seek
+// ou reconexao em voo deste lado, e so entao o relogio do host.
+static double fundoPosicao(int hostMs, double alvoPlayer) {
+  int b = atomic_load(&buscaAlvoMs);
+  if (alvoPlayer >= 0.0) { retDe = "player target (seek in flight or scrub start)"; return alvoPlayer; }
+  if (retomando) { retDe = "resume target (left again while reopening)"; return retAlvo; }
+  if (b >= 0) { retDe = "seek in flight"; return b / 1000.0; }
+  if (cv.reabrindo) { retDe = "reopen target"; return cv.posMantida; }
+  if (reconBuscarMs >= 0) { retDe = "reconnect target"; return reconBuscarMs / 1000.0; }
+  if (nv_recon_ativa(&recon) && (recon.pendente || !pronto)) { retDe = "reconnect target"; return recon.alvo; }
+  if (hostMs >= 0 && pronto) {
+    if (cv.ativo && cv.prog) {
+      if (!cv.deslocOk) { retDe = "clock (converted stream, offset unknown)"; return posReal(); }
+      retDe = "host clock + converted stream offset"; return hostMs / 1000.0 + cv.desloc;
+    }
+    retDe = "host clock at stop"; return hostMs / 1000.0;
+  }
+  retDe = "last clock"; return posReal();
+}
+
+// Aplica a parada anotada pelo host. alvoPlayer < 0 = o player.c nao sabe mais.
+static void fundoAplicar(double alvoPlayer) {
+  int ms;
+  if (!atomic_exchange(&fundoPend, 0)) return;
+  ms = atomic_exchange(&fundoMs, -1);
+  if (suspenso) {
+    if (alvoPlayer >= 0.0) { retAlvo = alvoPlayer; retDe = "player target (seek in flight or scrub start)"; }
+    return;
+  }
+  if (!ativo || parado || !reconPermitida || emTrailer || emCartao || terminou || falhou || !urlAtual[0]) {
+    printf("[fundo] host stopped the player: nothing to resume (active=%d stopped=%d vod=%d trailer=%d card=%d ended=%d failed=%d)\n",
+           ativo, parado, reconPermitida, emTrailer, emCartao, terminou, falhou);
+    fflush(stdout);
+    return;
+  }
+  retAlvo = fundoPosicao(ms, alvoPlayer);
+  if (!isfinite(retAlvo) || retAlvo < 0.0) retAlvo = 0.0;
+  if (!retomando) { retAudio = audioAtual; retLeg = legAtual; }
+  if (durMs > 0) retDurMs = durMs;
+  printf("[fundo] session suspended at %.3f s (%s; host %d ms) state: ready=%d playing=%d pause=%d buffering=%d "
+         "converted=%d mkvfix=%d cdn=%d audio=%d sub=%d%s\n",
+         retAlvo, retDe, ms, pronto, tocando, pausaPedida, bufferando, cv.ativo, mf.ativo, cdn.usado,
+         retAudio, retLeg, retomando ? " (was reopening)" : "");
+  fflush(stdout);
+  suspenso = 1; retomando = 0; retDesistiu = 0; retCab = 0;
+  retSuspensoEm = SDL_GetTicks();
+  // Nada deste lado mexe no player que o host esta parando.
+  nv_recon_zerar(&recon);
+  reconErroPend = 0; reconLinhaRede = 0; reconBuscarMs = -1; reconPausa = -1; reconAlvoMs = -1;
+  atomic_store(&buscaAlvoMs, -1); atomic_store(&playerPreso, -2);
+  vigiaAtiva = 0; tocando = 0; bufferando = 0;
+}
+
+// player.c, no ciclo de fundo: aplica a parada com o alvo que so ele conhece.
+int video_tpk_fundo(double alvoPlayer) {
+  fundoAplicar(alvoPlayer);
+  return suspenso;
+}
+
+static void retDesistir(const char *porque) {
+  printf("[fundo] resume gave up after %u ms: %s (target %.3f s, attempt %d): closing the player\n",
+         (unsigned)(SDL_GetTicks() - retEm), porque, retAlvo, retTentativas + 1);
+  fflush(stdout);
+  retomando = 0; retDesistiu = 1; retCab = 0;
+  falhou = 0; reconErroPend = 0;   // o player fecha; nao e o cartao de erro de fonte
+  atomic_store(&retEvento, 2);
+}
+
+// Reabre a mesma fonte, a primeira vez ou depois de um erro.
+static void retAbrir(void) {
+  retBusca = retPausaEnviada = 0; retBuscaEm = retPousouEm = 0;
+  reconAudio = retAudio; reconLeg = retLeg; reconFaixasPend = 1;
+  reconBuscarMs = -1; reconPausa = -1; reconErroPend = 0; reconLinhaRede = 0;
+  nv_recon_zerar(&recon);
+  pausaPedida = !retQuerTocar;
+  retCab = 1;
+  // Capa e relogio no alvo ate o quadro pausado (video_pos, video_tpk_capa).
+  cv.reabrindo = 1; cv.posMantida = retAlvo; cv.reabriuEm = SDL_GetTicks(); cv.reabTocandoEm = 0;
+  if (cv.ativo) {
+    convReabrir(retAlvo, "back from background");
+    if (cv.prog) {
+      // Progressivo: o fluxo novo ja comeca no alvo (?t=); nada de seek cru.
+      cv.deslocOk = 0;
+      if (dts_tpk_url_em(retAlvo, cv.url, sizeof cv.url)) {
+        cv.seekPend = 1; cv.seekAlvo = retAlvo; cv.seekEm = SDL_GetTicks();
+      } else {
+        printf("[fundo] converter gave no stream at %.1f s; reopening the current one\n", retAlvo);
+        fflush(stdout);
+      }
+    }
+  }
+  abrirSessao();
+}
+
+static void retComecar(void) {
+  Uint32 agora = SDL_GetTicks();
+  printf("[fundo] back on screen after %u s: reopening at %.3f s (%s), paused, muted until there\n",
+         (unsigned)((agora - retSuspensoEm) / 1000u), retAlvo, retDe);
+  fflush(stdout);
+  suspenso = 0; retomando = 1; retEm = agora; retTentativas = 0; retQuerTocar = 0;
+  atomic_store(&retEvento, 1);
+  retAbrir();
+}
+
+static void retPronto(Uint32 agora) {
+  double p = posReal();
+  printf("[fundo] resumed in %u ms: clock %.3f s, target %.3f s (off by %+.0f ms), %s, audio %d sub %d\n",
+         (unsigned)(agora - retEm), p, retAlvo, (p - retAlvo) * 1000.0,
+         retQuerTocar ? "playing (Play pressed)" : "paused", audioAtual, legAtual);
+  fflush(stdout);
+  if (hEscolher) hEscolher(5, 0);   // devolve o som
+  retomando = 0; retCab = 0;
+  cv.reabrindo = 0;                 // a capa sai: o quadro pausado e o ponto
+  if (!retQuerTocar) pausaPedida = 1;
+  else {
+    pausaPedida = 0;
+    if (!tocando && hPausar) hPausar(0);
+  }
+  progressoEm = agora; progressoPos = posReal();
+}
+
+// A maquina da reabertura, a cada quadro. 1 = este quadro e dela.
+static int retVigiar(void) {
+  Uint32 agora = SDL_GetTicks();
+  if (!retomando) return 0;
+  if (reconErroPend || falhou) {
+    unsigned cod = (unsigned)reconErroCod;
+    reconErroPend = 0; reconLinhaRede = 0;
+    if (falhou || retTentativas >= 1) { retDesistir(falhou ? "the source failed" : "player error again"); return 1; }
+    retTentativas++;
+    printf("[fundo] player error 0x%x while reopening: one more try\n", cod);
+    fflush(stdout);
+    retAbrir();
+    return 1;
+  }
+  if (retBusca < 2 && agora - retEm >= RET_PRAZO_MS) { retDesistir("no picture in 20 s"); return 1; }
+  if (retBusca == 0) {
+    if (!pronto || !tocando) return 1;
+    if (retAlvo > 1.0 && !(cv.ativo && cv.prog)) {
+      int ms = (int)(retAlvo * 1000.0);
+      atomic_store(&buscaAlvoMs, ms);
+      if (hEscolher) hEscolher(4, ms); else if (hBuscar) hBuscar(ms);   // 4 = seek exato
+      if (cv.ativo) { cv.seekPend = 1; cv.seekAlvo = retAlvo; cv.seekEm = agora; }
+      retBusca = 1; retBuscaEm = agora;
+      printf("[fundo] first frame %u ms after the return: exact seek to %.3f s\n", (unsigned)(agora - retEm), retAlvo);
+    } else {
+      retBusca = 2; retPousouEm = agora;
+      printf("[fundo] first frame %u ms after the return: no seek needed (%s)\n", (unsigned)(agora - retEm),
+             cv.ativo && cv.prog ? "converted stream starts at the target" : "target at the start");
+    }
+    fflush(stdout);
+    // O host segura o Pause ate o seek pousar (pausaPend no Video.cs).
+    if (!retQuerTocar && hPausar) { hPausar(1); retPausaEnviada = 1; }
+    return 1;
+  }
+  if (retBusca == 1) {
+    if (atomic_load(&buscaAlvoMs) >= 0 && agora - retBuscaEm < RET_BUSCA_MS) return 1;
+    if (atomic_load(&buscaAlvoMs) >= 0) {
+      printf("[fundo] seek not confirmed in %u ms: going on from where it is\n", RET_BUSCA_MS);
+      fflush(stdout);
+      atomic_store(&buscaAlvoMs, -1);
+    }
+    retBusca = 2; retPousouEm = agora;
+  }
+  if (!retQuerTocar) {
+    if (tocando) {
+      if (agora - retPousouEm >= RET_PAUSA_MS) { retDesistir("the TV did not pause"); return 1; }
+      if (!retPausaEnviada && hPausar) { hPausar(1); retPausaEnviada = 1; }
+      return 1;
+    }
+  }
+  retPronto(agora);
+  return 1;
+}
+
+// player.c: 1 = a reabertura comecou (tela pausada), 2 = desistiu (fechar).
+int video_tpk_retomada_evento(void) { return atomic_exchange(&retEvento, 0); }
+
 void video_bombear(void) {
   // EOS wins over late polling errors and pending network retries.
   if (terminou) {
+    if (retomando) {
+      printf("[fundo] the title ended while reopening\n");
+      fflush(stdout);
+      if (hEscolher) hEscolher(5, 0);
+      retomando = 0; retCab = 0;
+    }
     nv_recon_zerar(&recon);
     reconErroPend = 0; reconBuscarMs = reconPausa = -1;
     atomic_store(&playerPreso, -2);
     return;
   }
+  // Saida e volta do app: a parada anotada pelo host (se o ciclo nao a viu),
+  // a volta a tela, e nada mais enquanto suspensa ou desistida.
+  // O ciclo de fundo do player.c aplica primeiro (com o alvo da tela); este e
+  // o reserva, se o ciclo nao chegou em 0,5 s.
+  if (atomic_load(&fundoPend) && SDL_GetTicks() - atomic_load(&fundoEm) >= 500u) fundoAplicar(-1.0);
+  if (atomic_exchange(&voltouPend, 0)) {
+    if (atomic_load(&fundoPend)) fundoAplicar(-1.0);   // volta antes do ciclo: aplica ja
+    if (suspenso) retComecar();
+  }
+  if (suspenso || retDesistiu) return;
   cdnBombear();
   mfBombear();
   convBombear();
@@ -1686,11 +1953,15 @@ void video_bombear(void) {
     velEnviada = velPedida;
     hEscolher(3, velEnviada);
   }
+  // Reabrindo depois da volta: a maquina dela decide erro, prazo, seek e
+  // pausa; o watchdog e a reconexao de sempre ficam de fora ate ela terminar.
+  int emRet = retVigiar();
+  if (retDesistiu) return;
   double pos = video_pos();
   int preso = atomic_exchange(&playerPreso, -2);
   // Ao vivo (sem reconexao) a tecla recusada so e ignorada, como antes do #412.
-  if (preso >= -1 && ativo && reconPermitida && !recon.pendente && !falhou) recuperarPlayer(preso);
-  vigiarPlayer(pos);
+  if (!emRet && preso >= -1 && ativo && reconPermitida && !recon.pendente && !falhou) recuperarPlayer(preso);
+  if (emRet) vigiaAtiva = 0; else vigiarPlayer(pos);
   sondaMkv(pos);
   if (pronto && pos > 0.5) reconIniciou = 1;
   if (pronto && !cv.reabrindo && posReal() > 0.5) cv.fonteTocou = 1;
@@ -1808,6 +2079,8 @@ void video_bombear(void) {
   }
 }
 void video_parar(void) {
+  if (suspenso || retomando || retDesistiu) { printf("[fundo] player closed: resume state cleared\n"); fflush(stdout); }
+  retZerar();
   largura = altura = 0; // Stopped stream metadata must not shape the next live open.
   parado = 1; resgateAte = 0;
   cdn.pend = 0; cdn.usado = 0; cdn.arquivo = 0;
@@ -1834,6 +2107,14 @@ void video_parar(void) {
 }
 void video_pausar(int p) {
   int estavaPausado = pausaPedida;
+  // Suspensa nao ha player; reabrindo, a maquina da volta aplica no fim.
+  if (suspenso || retDesistiu) { pausaPedida = p != 0; return; }
+  if (retomando) {
+    retQuerTocar = !p; pausaPedida = p != 0;
+    printf("[fundo] %s pressed while reopening\n", p ? "Pause" : "Play");
+    fflush(stdout);
+    return;
+  }
   pausaPedida = p != 0; vigiaAtiva = 0;
   // Retomar com o link do CDN vencido: abre de novo na posicao com link novo
   // (o player abre tocando). A pausa longa e o caso classico do link que morre.
@@ -1842,6 +2123,22 @@ void video_pausar(int p) {
 int video_pausa_confirmada(void) { return 0; } // host nao fornece ack por sessao
 void video_volume(int pct) { if (hVolume) hVolume(pct); }
 void video_buscar(double s) {
+  if (suspenso || retDesistiu) { retAlvo = s; retDe = "seek while suspended"; return; }
+  if (retomando) {
+    // O alvo da volta passa a ser este; com o seek dela ja enviado, outro exato.
+    retAlvo = s; cv.posMantida = s;
+    if (retBusca > 0 && !(cv.ativo && cv.prog)) {
+      int ms = (int)(s * 1000.0);
+      atomic_store(&buscaAlvoMs, ms);
+      if (hEscolher) hEscolher(4, ms); else if (hBuscar) hBuscar(ms);
+      retBusca = 1; retBuscaEm = SDL_GetTicks();
+    } else if (retBusca > 0) {
+      retAbrir();   // progressivo: fluxo novo no alvo
+    }
+    printf("[fundo] seek to %.3f s while reopening\n", s);
+    fflush(stdout);
+    return;
+  }
   if (nv_recon_ativa(&recon)) {
     recon.alvo = s;
     if (recon.pendente || reconErroPend || !pronto || reconBuscarMs >= 0) { reconBuscarMs = (int)(s * 1000.0); return; }
@@ -2125,12 +2422,15 @@ int video_busca_em_voo(void) {
 }
 unsigned video_busca_falhas(void) { return atomic_load(&buscaFalhas); }
 double video_pos(void) {
+  if (suspenso || retDesistiu) return retAlvo;
   if (terminou && video_duracao() > 0) return video_duracao();
   return cv.reabrindo ? cv.posMantida : posReal();
 }
 double video_duracao(void) {
   // Progressivo: o player ve um fluxo sem fim; a duracao e a da fonte.
   if (cv.ativo && cv.prog) return dts_tpk_duracao();
+  // A reabertura da volta ainda sem Prepare: a barra fica com a duracao de antes.
+  if (durMs <= 0 && (suspenso || retomando || retDesistiu) && retDurMs > 0) return retDurMs / 1000.0;
   return durMs / 1000.0;
 }
 // Capitulos do MKV lidos por um fio lateral (capmkv.c, 203-capitulos).

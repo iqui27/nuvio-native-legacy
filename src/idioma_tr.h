@@ -3386,6 +3386,7 @@
   T("Não deu para converter o áudio DTS", "DTS ses dönüştürülemedi"),
   T("Não deu para enviar o voto. Tente de novo.", "Oy gönderilemedi. Tekrar dene."),
   T("Não deu para ler o arquivo. Tocando em HDR10.", "Dosya okunamadı. HDR10 oynatılıyor."),
+  T("Não deu para retomar o vídeo. Play continua de onde você parou", "Video devam ettirilemedi. Oynat, kaldığınız yerden devam eder"),
   T("Não deu para sincronizar", "Eşitlenemedi"),
   T("Não deu para sincronizar a conta. Tento de novo sozinho.", "Hesap eşitlenemedi. Kendim tekrar deneyeceğim."),
   T("Não deu para sincronizar — usando %s", "Eşitlenemedi — %s kullanılıyor"),

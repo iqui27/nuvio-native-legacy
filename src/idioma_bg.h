@@ -3386,6 +3386,7 @@
   T("Não deu para converter o áudio DTS", "DTS звукът не можа да се преобразува"),
   T("Não deu para enviar o voto. Tente de novo.", "Гласът не можа да бъде изпратен. Опитайте отново."),
   T("Não deu para ler o arquivo. Tocando em HDR10.", "Файлът не можа да бъде прочетен. Пускаме в HDR10."),
+  T("Não deu para retomar o vídeo. Play continua de onde você parou", "Видеото не можа да продължи. Пусни го, за да продължиш откъдето спря"),
   T("Não deu para sincronizar", "Неуспешно синхронизиране"),
   T("Não deu para sincronizar a conta. Tento de novo sozinho.", "Акаунтът не се синхронизира. Ще опитам отново."),
   T("Não deu para sincronizar — usando %s", "Неуспешно синхронизиране — използва се %s"),

@@ -3386,6 +3386,7 @@
   T("Não deu para converter o áudio DTS", "تعذّر تحويل صوت DTS"),
   T("Não deu para enviar o voto. Tente de novo.", "تعذّر إرسال صوتك. حاول مجددًا."),
   T("Não deu para ler o arquivo. Tocando em HDR10.", "تعذّرت قراءة الملف. يُشغَّل بـHDR10."),
+  T("Não deu para retomar o vídeo. Play continua de onde você parou", "تعذّر استئناف الفيديو. التشغيل يتابع من حيث توقفت"),
   T("Não deu para sincronizar", "تعذّرت المزامنة"),
   T("Não deu para sincronizar a conta. Tento de novo sozinho.", "تعذّرت مزامنة حسابك. سأحاول مجددًا وحدي."),
   T("Não deu para sincronizar — usando %s", "تعذّرت المزامنة — يُستخدم %s"),

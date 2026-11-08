@@ -3386,6 +3386,7 @@
   T("Não deu para converter o áudio DTS", "Impossibile convertire l'audio DTS"),
   T("Não deu para enviar o voto. Tente de novo.", "Impossibile inviare il voto. Riprova."),
   T("Não deu para ler o arquivo. Tocando em HDR10.", "Impossibile leggere il file. Riproduzione in HDR10."),
+  T("Não deu para retomar o vídeo. Play continua de onde você parou", "Impossibile riprendere il video. Riproduci continua da dove eri rimasto"),
   T("Não deu para sincronizar", "Sincronizzazione non riuscita"),
   T("Não deu para sincronizar a conta. Tento de novo sozinho.", "Impossibile sincronizzare l’account. Riprovo da solo."),
   T("Não deu para sincronizar — usando %s", "Sincronizzazione non riuscita — uso %s"),
