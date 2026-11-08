@@ -218,6 +218,8 @@ NAO_E_TELA = ("printf", "fprintf", "puts", "fputs", "perror", "marco",
               "fontevolta_", "addons_buscar", "cat_indice_por",
               # video_tpk.c: motivo so vai para o log [mkvfix] (#638)
               "mfLigar",
+              # JNI method names (miniatura_android.c "tela"), never UI copy.
+              "GetStaticMethodID", "GetMethodID",
               # logrede.c: log filter terms and LAN browser page, never TV UI.
               '"[fonte", "[voltafonte"', '"[abrir-diag]"', '"[tocar-diag]"',
               "static const char PAGINA[]",
@@ -260,7 +262,11 @@ def contexto(txt, i):
     j = i
     while j > 0 and txt[j-1] not in ";{}":
         j -= 1
-    return txt[j:i]
+    # A clausula do if termina em "{", entao o literal do "return" ficava sem
+    # contexto e passava batido (openseekproto.c: os rotulos de fonte
+    # compartilhada). O return e parte da mesma instrucao.
+    k = txt.rfind("return", j, i)
+    return txt[k:i] if k >= 0 else txt[j:i]
 
 # NAO E INTERFACE, conferido um a um. Cada entrada aqui e uma decisao, nao um
 # "nao sei o que e": sem esta lista a ferramenta nao pode virar teste, e sem
@@ -501,6 +507,8 @@ IGNORAR = {
     "servidor da conta fora do ar (HTTP %d) · usando a cópia de %s",
     "servidor da conta fora do ar (HTTP %d) · sem cópia salva",
     "conta-%s-p%d.json", "conta-fora",
+    # descoberta.c: metaCache key for the tmdb/tvdb -> IMDb id map, never shown.
+    "imdb-de/%s",
     # Chaves da ilha e do avisodisp da pilula "Episódio" dos comentarios (detail.c).
     "det-com-ep", "dica:comentarios-episodio",
     # Chave do aviso "pessoa sem pagina" do OK no elenco (detail.c): chave
