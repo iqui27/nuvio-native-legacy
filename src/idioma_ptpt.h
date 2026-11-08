@@ -2559,6 +2559,7 @@
   T("Desfazer Já vi", "Desfazer assistido"),
   T("Desfazer coleção", "Desfazer coleção"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Anular o ajuste"),
   T("Desfazer trava", "Remover bloqueio"),
   T("Desfeito", "Anulado"),
   T("Desfeito.", "Anulado."),

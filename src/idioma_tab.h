@@ -2558,6 +2558,7 @@
   { "Desfazer Já vi", "Undo Watched" },
   { "Desfazer coleção", "Remove collection" },
   { "Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide" },
+  { "Desfazer o ajuste", "Undo adjustment" },
   { "Desfazer trava", "Remove lock" },
   { "Desfeito", "Undone" },
   { "Desfeito.", "Undone." },

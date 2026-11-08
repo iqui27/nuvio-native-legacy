@@ -2559,6 +2559,7 @@
   T("Desfazer Já vi", "Annulla guardato"),
   T("Desfazer coleção", "Rimuovi collezione"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Annulla la regolazione"),
   T("Desfazer trava", "Rimuovi blocco"),
   T("Desfeito", "Annullato"),
   T("Desfeito.", "Annullato."),

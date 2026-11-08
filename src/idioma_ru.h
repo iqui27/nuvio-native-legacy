@@ -2558,6 +2558,7 @@
   T("Desfazer Já vi", "Отменить просмотр"),
   T("Desfazer coleção", "Убрать коллекцию"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Отменить подстройку"),
   T("Desfazer trava", "Снять блокировку"),
   T("Desfeito", "Отменено"),
   T("Desfeito.", "Отменено."),

@@ -2559,6 +2559,7 @@
   T("Desfazer Já vi", "撤消观看"),
   T("Desfazer coleção", "移除合集"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "撤销调整"),
   T("Desfazer trava", "解除锁定"),
   T("Desfeito", "已撤销"),
   T("Desfeito.", "已撤销。"),

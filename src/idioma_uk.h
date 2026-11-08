@@ -2558,6 +2558,7 @@
   T("Desfazer Já vi", "Скасувати перегляд"),
   T("Desfazer coleção", "Прибрати колекцію"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Скасувати коригування"),
   T("Desfazer trava", "Зняти блокування"),
   T("Desfeito", "Скасовано"),
   T("Desfeito.", "Скасовано."),

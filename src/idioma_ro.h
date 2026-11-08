@@ -2558,6 +2558,7 @@
   T("Desfazer Já vi", "Anulați vizionarea"),
   T("Desfazer coleção", "Elimină colecția"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Anulează ajustarea"),
   T("Desfazer trava", "Șterge blocarea"),
   T("Desfeito", "Anulat"),
   T("Desfeito.", "Anulat."),

@@ -2559,6 +2559,7 @@
   T("Desfazer Já vi", "Megtekintett visszavonás"),
   T("Desfazer coleção", "Gyűjtemény eltávolítása"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Igazítás visszavonása"),
   T("Desfazer trava", "Zár törlése"),
   T("Desfeito", "Visszavonva"),
   T("Desfeito.", "Visszavonva."),

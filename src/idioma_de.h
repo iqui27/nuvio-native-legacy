@@ -2558,6 +2558,7 @@
   T("Desfazer Já vi", "„Beobachtet“ rückgängig machen"),
   T("Desfazer coleção", "Sammlung entfernen"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Anpassung rückgängig"),
   T("Desfazer trava", "Sperre aufheben"),
   T("Desfeito", "Rückgängig gemacht"),
   T("Desfeito.", "Rückgängig gemacht."),

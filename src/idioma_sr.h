@@ -2559,6 +2559,7 @@
   T("Desfazer Já vi", "Poništi oznaku gledano"),
   T("Desfazer coleção", "Ukloni kolekciju"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Poništi podešavanje"),
   T("Desfazer trava", "Ukloni zaključavanje"),
   T("Desfeito", "Poništeno"),
   T("Desfeito.", "Poništeno."),

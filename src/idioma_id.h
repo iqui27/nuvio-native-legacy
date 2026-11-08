@@ -2559,6 +2559,7 @@
   T("Desfazer Já vi", "Batalkan Ditonton"),
   T("Desfazer coleção", "Hapus koleksi"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Urungkan penyesuaian"),
   T("Desfazer trava", "Hapus kunci"),
   T("Desfeito", "Dibatalkan"),
   T("Desfeito.", "Diurungkan."),

@@ -2559,6 +2559,7 @@
   T("Desfazer Já vi", "Undo Watched"),
   T("Desfazer coleção", "Remove collection"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "التراجع عن الضبط"),
   T("Desfazer trava", "Remove lock"),
   T("Desfeito", "تم التراجع"),
   T("Desfeito.", "تم التراجع."),

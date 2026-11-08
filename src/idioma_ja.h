@@ -2559,6 +2559,7 @@
   T("Desfazer Já vi", "監視を元に戻す"),
   T("Desfazer coleção", "コレクションを解除"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "調整を元に戻す"),
   T("Desfazer trava", "ロックを解除"),
   T("Desfeito", "元に戻しました"),
   T("Desfeito.", "元に戻しました。"),

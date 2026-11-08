@@ -2558,6 +2558,7 @@
   T("Desfazer Já vi", "Deshacer observado"),
   T("Desfazer coleção", "Quitar colección"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Deshacer el ajuste"),
   T("Desfazer trava", "Quitar bloqueo"),
   T("Desfeito", "Deshecho"),
   T("Desfeito.", "Deshecho."),

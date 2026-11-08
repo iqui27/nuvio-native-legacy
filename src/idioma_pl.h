@@ -2559,6 +2559,7 @@
   T("Desfazer Já vi", "Cofnij obejrzane"),
   T("Desfazer coleção", "Usuń kolekcję"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Cofnij dopasowanie"),
   T("Desfazer trava", "Usuń blokadę"),
   T("Desfeito", "Cofnięto"),
   T("Desfeito.", "Cofnięto."),

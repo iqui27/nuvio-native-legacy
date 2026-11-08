@@ -2559,6 +2559,7 @@
   T("Desfazer Já vi", "İzlenenleri Geri Al"),
   T("Desfazer coleção", "Koleksiyonu kaldır"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Ayarı geri al"),
   T("Desfazer trava", "Kilidi kaldır"),
   T("Desfeito", "Geri alındı"),
   T("Desfeito.", "Geri alındı."),

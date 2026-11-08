@@ -2559,6 +2559,7 @@
   T("Desfazer Já vi", "Ångra tittade"),
   T("Desfazer coleção", "Ta bort samling"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Ångra justeringen"),
   T("Desfazer trava", "Ta bort låset"),
   T("Desfeito", "Ångrat"),
   T("Desfeito.", "Ångrat."),

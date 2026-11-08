@@ -39,4 +39,24 @@ cc tests/idioma.c src/idioma.c -Isrc -I/opt/homebrew/include \
 ${TMPDIR:-/tmp}/nuvio-idioma-tests
 python3 tools/idiomas.py
 python3 tools/varredura-i18n.py
+# Settings row AJ_OPENSEEK_DESFAZER. The scanner misses it: ACAO() is not a
+# draw call, and "Desfazer o ajuste" has no accent and no stopword. This check
+# fails if that visible label has no real key in the master or any sibling.
+python3 - <<'PY'
+import re, sys
+sys.path.insert(0, "tools")
+import idiomas
+CHAVE = "Desfazer o ajuste"
+EN = "Undo adjustment"
+src = open("src/ajustes.c", encoding="utf-8").read()
+assert 'ACAO("%s")' % CHAVE in src, "row label left ajustes.c"
+mestra = {pt: en for _, pt, en in idiomas.ler_mestra()}
+assert mestra.get(CHAVE) == EN, "master missing %r (got %r)" % (CHAVE, mestra.get(CHAVE))
+for cod in idiomas.IDIOMAS:
+    val = {pt: v for _, pt, v in idiomas.ler_irma(cod)}.get(CHAVE, "")
+    assert val.strip() and val not in (CHAVE, EN), "%s: %r" % (cod, val)
+    if cod in idiomas.ESCRITA:
+        assert re.search(idiomas.ESCRITA[cod], val), "%s: no script in %r" % (cod, val)
+print("i18n: Desfazer o ajuste presente")
+PY
 echo "i18n: tudo ok"

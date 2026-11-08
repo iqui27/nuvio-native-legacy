@@ -2559,6 +2559,7 @@
   T("Desfazer Já vi", "Vrátit zpět sledování"),
   T("Desfazer coleção", "Odebrat kolekci"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Vrátit úpravu"),
   T("Desfazer trava", "Zrušit zámek"),
   T("Desfeito", "Vráceno zpět"),
   T("Desfeito.", "Vráceno zpět."),

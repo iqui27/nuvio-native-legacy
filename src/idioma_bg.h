@@ -2559,6 +2559,7 @@
   T("Desfazer Já vi", "Отмяна на гледаното"),
   T("Desfazer coleção", "Премахни колекцията"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Отмяна на настройката"),
   T("Desfazer trava", "Премахни заключването"),
   T("Desfeito", "Отменено"),
   T("Desfeito.", "Отменено."),

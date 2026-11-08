@@ -2559,6 +2559,7 @@
   T("Desfazer Já vi", "Αναίρεση παρακολούθησης"),
   T("Desfazer coleção", "Αφαίρεση συλλογής"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Αναίρεση ρύθμισης"),
   T("Desfazer trava", "Αφαίρεση κλειδώματος"),
   T("Desfeito", "Αναιρέθηκε"),
   T("Desfeito.", "Αναιρέθηκε."),

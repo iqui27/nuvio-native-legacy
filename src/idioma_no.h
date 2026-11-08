@@ -2559,6 +2559,7 @@
   T("Desfazer Já vi", "Angre sett"),
   T("Desfazer coleção", "Fjern samling"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Angre justeringen"),
   T("Desfazer trava", "Fjern låsen"),
   T("Desfeito", "Angret"),
   T("Desfeito.", "Angret."),

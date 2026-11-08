@@ -2558,6 +2558,7 @@
   T("Desfazer Já vi", "Annuler le visionnage"),
   T("Desfazer coleção", "Retirer la collection"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Annuler le réglage"),
   T("Desfazer trava", "Supprimer le verrou"),
   T("Desfeito", "Annulé"),
   T("Desfeito.", "Annulé."),

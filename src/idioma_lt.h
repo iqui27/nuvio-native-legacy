@@ -2559,6 +2559,7 @@
   T("Desfazer Já vi", "Anuliuoti žiūrėtą"),
   T("Desfazer coleção", "Pašalinti kolekciją"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Anuliuoti korekciją"),
   T("Desfazer trava", "Panaikinti užraktą"),
   T("Desfeito", "Anuliuota"),
   T("Desfeito.", "Atšaukta."),

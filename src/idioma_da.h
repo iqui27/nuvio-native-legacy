@@ -2559,6 +2559,7 @@
   T("Desfazer Já vi", "Fortryd Overvåget"),
   T("Desfazer coleção", "Fjern samling"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Fortryd justeringen"),
   T("Desfazer trava", "Fjern låsen"),
   T("Desfeito", "Fortrudt"),
   T("Desfeito.", "Fortrudt."),

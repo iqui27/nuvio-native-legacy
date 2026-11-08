@@ -2559,6 +2559,7 @@
   T("Desfazer Já vi", "Hoàn tác đã xem"),
   T("Desfazer coleção", "Bỏ bộ sưu tập"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Hoàn tác điều chỉnh"),
   T("Desfazer trava", "Gỡ khóa"),
   T("Desfeito", "Đã hoàn tác"),
   T("Desfeito.", "Đã hoàn tác."),

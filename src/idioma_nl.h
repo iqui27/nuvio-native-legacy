@@ -2559,6 +2559,7 @@
   T("Desfazer Já vi", "Ongedaan gemaakt Bekeken"),
   T("Desfazer coleção", "Collectie verwijderen"),
   T("Desfazer em Categorias ▸ Mostrar / ocultar", "Undo in Categories ▸ Show / hide"),
+  T("Desfazer o ajuste", "Aanpassing ongedaan maken"),
   T("Desfazer trava", "Vergrendeling opheffen"),
   T("Desfeito", "Ongedaan gemaakt"),
   T("Desfeito.", "Ongedaan gemaakt."),
