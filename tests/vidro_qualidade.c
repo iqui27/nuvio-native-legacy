@@ -57,6 +57,37 @@ static void roda(int n, Uint32 *t) {
   }
 }
 
+// A glass entering a new region must see the same clean backdrop on both
+// frames, even if foreground content was drawn before the glass.
+static float regiao_fundo = .05f;
+static int regiao_veu;
+static void regiao_quadro(int direita, unsigned char pixel[4]) {
+  gfx_novo_quadro();
+  glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT);
+  gfx_cor((GfxRect){0, 0, 1920, 1080}, 0, regiao_fundo, regiao_fundo, regiao_fundo, 1);
+  gfx_cor((GfxRect){1200, 250, 500, 500}, 0, 1, 0, 0, 1);
+  if (regiao_veu) gfx_cor((GfxRect){0, 0, 1920, 1080}, 0, 0, 0, 1, .5f);   // modal veil after foreground
+  gfx_vidro((GfxRect){direita ? 1250 : 100, 300, 300, 300}, .1f, GFX_VIDRO_PAINEL, .1f, .8f, 1);
+  glReadPixels(1400, 1080 - 450, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+}
+// VIDRO_QUAL_SHOT=<file.bmp>: save the current frame (before/after evidence).
+static void regiao_shot(const char *sufixo) {
+  const char *dir = getenv("VIDRO_QUAL_SHOT");
+  char nome[512];
+  unsigned char *pix;
+  SDL_Surface *s;
+  int y;
+  if (!dir) return;
+  snprintf(nome, sizeof nome, "%s/%s.bmp", dir, sufixo);
+  pix = malloc(1920 * 1080 * 4);
+  s = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
+  assert(pix && s);
+  glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pix);
+  for (y = 0; y < 1080; y++) memcpy((char *)s->pixels + y * s->pitch, pix + (1079 - y) * 1920 * 4, 1920 * 4);
+  assert(SDL_SaveBMP(s, nome) == 0);
+  SDL_FreeSurface(s); free(pix);
+}
+
 // One window of the governor: GOV_JANELA frames, each `ms` long, target 16.7.
 static void janela(double ms) { int i; for (i = 0; i < 150; i++) gfx_vidro_governar(ms, 16.7); }
 
@@ -125,6 +156,73 @@ int main(void) {
   assert(ajustes_vidro_qualidade() == 0);
   roda(150, &t); roda(20, &t);
   confere(cap == 1 && fonte > 0 && !gfx_vidro_degradado(), "Automatica: frost at first");
+  {
+    unsigned char p[4], first[4], second[4];
+    gfx_vidro_sujar();
+    for (i = 0; i < 4; i++) regiao_quadro(0, p);
+    regiao_quadro(1, first); regiao_shot("auto-new-region-frame1");
+    double copy1 = gfx_vidro_copia, fill1 = gfx_vidro_fill;
+    int cap1 = gfx_vidro_capturas, pass1 = gfx_vidro_passadas;
+    regiao_quadro(1, second); regiao_shot("auto-new-region-frame2");
+    printf("new region first=%u,%u,%u second=%u,%u,%u copy=%.3f/%.3f fill=%.3f/%.3f captures=%d/%d passes=%d/%d\n", first[0], first[1], first[2], second[0], second[1], second[2], copy1, gfx_vidro_copia, fill1, gfx_vidro_fill, cap1, gfx_vidro_capturas, pass1, gfx_vidro_passadas);
+    confere(abs((int)first[0] - second[0]) <= 1 && abs((int)first[1] - second[1]) <= 1 && abs((int)first[2] - second[2]) <= 1,
+            "new glass region keeps clean backdrop across frames");
+    confere(copy1 == 0.0 && gfx_vidro_copia == 0.0, "static backdrop: new region reuses the retained copy, no screen copy");
+    // Invalidation: the backdrop changes; the stale retained copy must not be
+    // read. Once the new backdrop holds still it is retained again.
+    unsigned char stale[4]; memcpy(stale, second, 4);
+    regiao_fundo = .25f;
+    for (i = 0; i < 40; i++) regiao_quadro(0, p);
+    regiao_quadro(1, first);
+    regiao_quadro(1, second);
+    printf("changed region first=%u,%u,%u second=%u,%u,%u stale=%u copy=%.3f\n", first[0], first[1], first[2], second[0], second[1], second[2], stale[0], gfx_vidro_copia);
+    confere(abs((int)first[0] - second[0]) <= 1 && abs((int)first[1] - second[1]) <= 1 && first[0] > stale[0] + 5,
+            "changed backdrop: retained copy refreshed, never stale");
+    // Out-of-hash invalidation (gfx_vidro_sujar): the retained copy is dropped,
+    // the new region copies the live screen again.
+    regiao_fundo = .05f;
+    for (i = 0; i < 40; i++) regiao_quadro(0, p);
+    gfx_vidro_sujar();
+    regiao_quadro(1, first);
+    printf("sujar region copy=%.3f\n", gfx_vidro_copia);
+    confere(gfx_vidro_copia > 0.0, "gfx_vidro_sujar drops the retained backdrop");
+    // A modal veil after foreground: the glass reads the live screen (veil),
+    // not the retained clean backdrop.
+    for (i = 0; i < 40; i++) regiao_quadro(0, p);
+    regiao_veu = 1; regiao_quadro(1, first); regiao_quadro(1, second); regiao_veu = 0;
+    printf("veil region first=%u,%u,%u second=%u,%u,%u\n", first[0], first[1], first[2], second[0], second[1], second[2]);
+    confere(first[2] > first[1] + 20 && second[2] > second[1] + 20, "modal veil over glass still read from the live screen");
+  }
+  {
+    unsigned char p[4], first[4], second[4];
+    setenv("NUVIO_SHOT_VIDRO_QUAL", "2", 1); ajustes_teste_vidro_env();
+    gfx_vidro_sujar();
+    for (i = 0; i < 4; i++) regiao_quadro(0, p);
+    regiao_quadro(1, first);
+    double copy1 = gfx_vidro_copia, fill1 = gfx_vidro_fill;
+    regiao_quadro(1, second);
+    printf("high region first=%u,%u,%u second=%u,%u,%u copy=%.3f/%.3f fill=%.3f/%.3f\n", first[0], first[1], first[2], second[0], second[1], second[2], copy1, gfx_vidro_copia, fill1, gfx_vidro_fill);
+    confere(abs((int)first[0] - second[0]) <= 1 && abs((int)first[1] - second[1]) <= 1 && abs((int)first[2] - second[2]) <= 1,
+            "High clean backdrop comparison");
+    for (int quality = 0; quality <= 2; quality += 2) {
+      double copied = 0, filled = 0;
+      int captures = 0, passes = 0;
+      setenv("NUVIO_SHOT_VIDRO_QUAL", quality ? "2" : "0", 1); ajustes_teste_vidro_env();
+      regiao_fundo = .05f;
+      gfx_vidro_sujar();
+      for (i = 0; i < 3; i++) regiao_quadro(0, p);
+      for (i = 0; i < 8; i++) {
+        regiao_fundo = .05f + i * .01f;
+        regiao_quadro(0, p);
+        copied += gfx_vidro_copia; filled += gfx_vidro_fill;
+        captures += gfx_vidro_capturas; passes += gfx_vidro_passadas;
+      }
+      printf("changing backdrop quality=%d copy=%.3f fill=%.3f captures=%d passes=%d frames=8\n", quality, copied, filled, captures, passes);
+    }
+    regiao_fundo = .05f;
+    setenv("NUVIO_SHOT_VIDRO_QUAL", "0", 1); ajustes_teste_vidro_env();
+  }
+  roda(1, &t);
   for (i = 0; i < 3; i++) janela(40.0);
   janela(16.7);
   for (i = 0; i < 3; i++) janela(40.0);
