@@ -21,7 +21,8 @@ static inline int nv_dvaudio_nota_codec(const char *c) {
 }
 
 static inline int nv_dvaudio_alimentavel(const char *c) {
-  return nv_dvaudio_nota_codec(c)>0 || nv_dts_truehd_codec(c);
+  /* DTS "Off" stops the TrueHD conversion too: the same-language AC-3/E-AC-3 keeps DV. */
+  return nv_dvaudio_nota_codec(c)>0 || (nv_dts_truehd_codec(c) && !nv_dvaudio_sem_dts);
 }
 
 static inline int nv_dvaudio_tem_atmos(const char *nome) {

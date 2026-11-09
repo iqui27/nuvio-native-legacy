@@ -12,3 +12,7 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i 'testsrc2=size=128x72:rate=24' -
 cc "${flags[@]}" src/dts/dts_engine.c tests/dts_off_engine.c \
   -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -pthread -o "$tmp/test"
 "$tmp/test" "$tmp/input.mkv"
+# The same with the Dolby Vision TrueHD conversion built in (the test builds' flag).
+cc "${flags[@]}" -DNV_DV_TRUEHD_TEST src/dts/dts_engine.c tests/dts_off_engine.c \
+  -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -pthread -o "$tmp/test-truehd"
+"$tmp/test-truehd" "$tmp/input.mkv"

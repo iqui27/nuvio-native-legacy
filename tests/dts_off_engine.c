@@ -22,6 +22,21 @@ static void rules(void) {
   assert(nv_dvaudio_escolher(3, 0, codec, idioma, rotulo, same) == 2);       /* AC-3 keeps DV when off */
   assert(nv_dvaudio_escolher(2, 0, dtsOnly, idioma, rotulo, same) == -1);    /* only DTS: TV player */
   nv_dvaudio_sem_dts = 0;
+#ifdef NV_DV_TRUEHD_TEST
+  /* Owner 09/11: Off stops the TrueHD conversion of the Dolby Vision path too;
+   * the same-language E-AC-3 keeps Dolby Vision, TrueHD alone goes to the TV. */
+  assert(nv_dts_audio_feeds_off("truehd", 1, 0) && nv_dts_audio_feeds_off("A_TRUEHD", 1, 0));
+  assert(!nv_dts_audio_feeds_off("truehd", 1, 1) && !nv_dts_audio_feeds_off("A_TRUEHD", 1, 1));
+  assert(nv_dts_audio_feeds_off("eac3", 1, 1));
+  { const char th[2][16] = { "A_TRUEHD", "A_EAC3" }, thOnly[1][16] = { "A_TRUEHD" };
+    assert(nv_dvaudio_alimentavel("A_TRUEHD"));
+    nv_dvaudio_sem_dts = 1;
+    assert(!nv_dvaudio_alimentavel("A_TRUEHD") && nv_dvaudio_alimentavel("A_EAC3"));
+    assert(nv_dvaudio_escolher(2, 0, th, idioma, rotulo, same) == 1);         /* E-AC-3 keeps DV */
+    assert(nv_dvaudio_escolher(1, 0, thOnly, idioma, rotulo, same) == -1);    /* TrueHD alone: TV player */
+    nv_dvaudio_sem_dts = 0; }
+  puts("dts off: TrueHD rules passed");
+#endif
 }
 static int frames(DtsEngine *e, int n) {
   DtsFrame f; int r, got = 0;

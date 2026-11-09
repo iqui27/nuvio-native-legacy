@@ -8278,6 +8278,14 @@ static const char *ajudaOpcao(int op) {
     snprintf(b, sizeof b, "%s\n%s", i18n(base), logrede_url());
     return b;
   }
+#ifndef NV_TPK
+  // LG: what "Off" does (owner 09/11): no DTS and no TrueHD conversion.
+  if (op == AJ_DTS_AC3) {
+    snprintf(b, sizeof b, "%s %s", i18n(base),
+      i18n("Desligado: nem DTS nem TrueHD são convertidos. Com Dolby Vision, o app usa a faixa AC-3/E-AC-3 do mesmo idioma e o Dolby Vision continua; se só houver DTS ou TrueHD nesse idioma, o vídeo vai para o player da TV (HDR10)."));
+    return b;
+  }
+#endif
   if (op == AJ_AMPLIAR_UI && saidaLimitada && ampliarUiVale()) {
     snprintf(b, sizeof b, "%s\n%s",
       i18n("A saída da interface nesta TV está limitada a 1080p. O app amplia até esse limite; a TV completa até 4K."), i18n(base));

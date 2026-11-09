@@ -1654,6 +1654,7 @@
   T("Desligado, experimental", "关闭，实验性"),
   T("Desligado, o item some da barra lateral. Nada é apagado: ligue de novo para ele voltar.", "关闭后，该项会从侧边栏隐藏。不会删除任何内容，重新开启即可恢复。"),
   T("Desligado: card, destaque e página do título mostram a mesma imagem. Ligado: o card fica com a arte do catálogo e o destaque usa outra foto — TMDB vira outro fundo do TMDB; em Automático, ou se a escolhida repetir o card, usa Apple TV, outro fundo do TMDB, fanart.tv, anime ou Trakt.", "关闭：卡片、主视觉和作品页显示同一张图。开启：卡片保留片库图片，主视觉使用另一张照片——选 TMDB 会换成 TMDB 的另一张背景；选“自动”或所选来源与卡片重复时，会使用 Apple TV、TMDB 的另一张背景、fanart.tv、动漫或 Trakt。"),
+  T("Desligado: nem DTS nem TrueHD são convertidos. Com Dolby Vision, o app usa a faixa AC-3/E-AC-3 do mesmo idioma e o Dolby Vision continua; se só houver DTS ou TrueHD nesse idioma, o vídeo vai para o player da TV (HDR10).", "Off: neither DTS nor TrueHD is converted. With Dolby Vision the app uses the same-language AC-3/E-AC-3 track and Dolby Vision stays; if that language only has DTS or TrueHD, the video goes to the TV player (HDR10)."),
   T("Desligado: o registro só sai quando você mandar. Endereços aparecem só até o host: o caminho pode levar chave.", "关闭：只有你发送时日志才会发出。地址只显示到主机：路径中可能带有密钥。"),
   T("Desligar o Social", "关闭社交"),
   T("Desligar o lembrete", "关闭提醒"),

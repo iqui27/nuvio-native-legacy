@@ -552,7 +552,7 @@ static void rDts(void) {   // DTS -> estereo (2 caixas) ou 5.1 (6 caixas); .tpk 
   int s51 = valor[AJ_DTS_AC3] == 1, i;
   float o = ajc_onda(1.2f);
   ajcSelo("DTS", 90, 26, 16, 0, 1);
-  if (ajustes_dts_desligado()) {   // Off: the source reaches the TV player as is, no sound
+  if (ajustes_dts_desligado()) {   // Off: no DTS/TrueHD conversion; the source reaches the TV player as is
     ajc_tv(250, 110, 140, 78, 1);
     ajc_ret(256, 116, 128, 66, 6, 0.06f, 0.06f, 0.08f, 1);
     ajc_icone("aj_volume-2", 305, 262, 30, 0.35f);

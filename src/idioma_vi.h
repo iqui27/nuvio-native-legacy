@@ -1654,6 +1654,7 @@
   T("Desligado, experimental", "Tắt, thử nghiệm"),
   T("Desligado, o item some da barra lateral. Nada é apagado: ligue de novo para ele voltar.", "Tắt sẽ ẩn mục này khỏi thanh bên. Không có gì bị xóa: bật lại để nó quay lại."),
   T("Desligado: card, destaque e página do título mostram a mesma imagem. Ligado: o card fica com a arte do catálogo e o destaque usa outra foto — TMDB vira outro fundo do TMDB; em Automático, ou se a escolhida repetir o card, usa Apple TV, outro fundo do TMDB, fanart.tv, anime ou Trakt.", "Tắt: thẻ, banner chính và trang tựa phim hiển thị cùng một hình. Bật: thẻ giữ hình của danh mục và banner chính dùng ảnh khác — TMDB sẽ thành một ảnh nền TMDB khác; ở Tự động, hoặc nếu nguồn đã chọn trùng với thẻ, sẽ dùng Apple TV, ảnh nền TMDB khác, fanart.tv, anime hoặc Trakt."),
+  T("Desligado: nem DTS nem TrueHD são convertidos. Com Dolby Vision, o app usa a faixa AC-3/E-AC-3 do mesmo idioma e o Dolby Vision continua; se só houver DTS ou TrueHD nesse idioma, o vídeo vai para o player da TV (HDR10).", "Off: neither DTS nor TrueHD is converted. With Dolby Vision the app uses the same-language AC-3/E-AC-3 track and Dolby Vision stays; if that language only has DTS or TrueHD, the video goes to the TV player (HDR10)."),
   T("Desligado: o registro só sai quando você mandar. Endereços aparecem só até o host: o caminho pode levar chave.", "Tắt: nhật ký chỉ gửi khi bạn gửi. Địa chỉ chỉ hiện tới máy chủ: đường dẫn có thể chứa khóa."),
   T("Desligar o Social", "Tắt Social"),
   T("Desligar o lembrete", "Tắt nhắc nhở"),

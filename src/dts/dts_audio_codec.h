@@ -15,9 +15,13 @@ static inline int nv_dts_audio_feeds(const char *codec,int dv) {
          !strcmp(codec,"eac3") || nv_dts_truehd_codec(codec)));
 }
 /* Settings > DTS "Off" (LG): DTS is never converted, so a DTS track is not
- * fed on any path; AC-3/E-AC-3 (and the TrueHD test) still keep Dolby Vision. */
+ * fed on any path; AC-3/E-AC-3 still keep Dolby Vision. Owner 09/11: Off
+ * stops the TrueHD conversion too (the Dolby Vision test path), so a remux
+ * with TrueHD plays its same-language AC-3/E-AC-3 in Dolby Vision, and only
+ * a TrueHD-only language goes to the TV player (HDR10), like DTS. */
 static inline int nv_dts_audio_feeds_off(const char *codec,int dv,int dts_off) {
   if(dts_off && (!strcmp(codec,"dts") || !strncmp(codec,"A_DTS",5))) return 0;
+  if(dts_off && nv_dts_truehd_codec(codec)) return 0;
   return nv_dts_audio_feeds(codec,dv);
 }
 #endif

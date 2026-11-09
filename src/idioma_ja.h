@@ -1654,6 +1654,7 @@
   T("Desligado, experimental", "オフ、実験的"),
   T("Desligado, o item some da barra lateral. Nada é apagado: ligue de novo para ele voltar.", "オフにすると、項目がサイドバーから隠れます。何も削除されません。オンに戻すと再び表示されます。"),
   T("Desligado: card, destaque e página do título mostram a mesma imagem. Ligado: o card fica com a arte do catálogo e o destaque usa outra foto — TMDB vira outro fundo do TMDB; em Automático, ou se a escolhida repetir o card, usa Apple TV, outro fundo do TMDB, fanart.tv, anime ou Trakt.", "オフ: カード、ヒーロー、作品ページに同じ画像を表示します。オン: カードはカタログのアートのまま、ヒーローは別の写真を使います。TMDB を選ぶと別の TMDB 背景になり、自動の場合や選んだものがカードと同じ場合は、Apple TV、別の TMDB 背景、fanart.tv、アニメ、Trakt のいずれかを使います。"),
+  T("Desligado: nem DTS nem TrueHD são convertidos. Com Dolby Vision, o app usa a faixa AC-3/E-AC-3 do mesmo idioma e o Dolby Vision continua; se só houver DTS ou TrueHD nesse idioma, o vídeo vai para o player da TV (HDR10).", "Off: neither DTS nor TrueHD is converted. With Dolby Vision the app uses the same-language AC-3/E-AC-3 track and Dolby Vision stays; if that language only has DTS or TrueHD, the video goes to the TV player (HDR10)."),
   T("Desligado: o registro só sai quando você mandar. Endereços aparecem só até o host: o caminho pode levar chave.", "オフ：ログは自分で送ったときだけ送信されます。アドレスはホストまでしか表示しません（パスに鍵が含まれることがあるため）。"),
   T("Desligar o Social", "ソーシャルをオフ"),
   T("Desligar o lembrete", "リマインダーをオフにする"),
