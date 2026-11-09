@@ -624,15 +624,16 @@ typedef struct {
 } Envio;
 
 // PEDIDOS CURTOS EM MEMORIA (a volta ao app, 09/11). Ao abrir, o player pede o
-// comeco do arquivo e um trecho curto do fim (o indice/Cues, ~114 KB). Numa
+// comeco do arquivo e um trecho curto do fim (o indice/Cues: 114 KB no log 7,
+// 1,98 MB no log 10). Numa
 // reabertura do mesmo arquivo esse trecho e identico, mas ia de novo ao CDN por
 // uma conexao nova (log 7: 1,3 s, 1 s so no TCP). Os ultimos pedidos curtos
-// (<= 1 MiB, fora do byte 0) ficam aqui, guardados CRUS: a troca do SeekHead e
+// (<= 4 MiB, fora do byte 0; 3 deles, ate 12 MiB) ficam aqui, guardados CRUS: a troca do SeekHead e
 // das legendas escondidas e refeita ao mandar. Chave: tamanho do arquivo +
 // trecho (o link do CDN muda entre aberturas; um arquivo de video de mesmo
 // tamanho exato e outro conteudo nao acontece acima de 64 MiB).
-#define MF_CACHE_N    4
-#define MF_CACHE_MAX  (1024L * 1024)
+#define MF_CACHE_N    3
+#define MF_CACHE_MAX  (4L * 1024 * 1024)
 #define MF_CACHE_MIN_TOTAL (64LL * 1024 * 1024)
 typedef struct { int64_t total, ini, fim; unsigned char *b; } MfCache;
 static MfCache mfCache[MF_CACHE_N];

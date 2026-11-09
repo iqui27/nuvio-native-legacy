@@ -1017,16 +1017,13 @@ namespace NuvioTpk
 #if !NV_TEXTO
             try { voz?.Cancelar(); } catch { }
 #endif
-            // #resume: com "Manter o video pronto ao sair", o player fica pausado
-            // no fundo pelo prazo do ajuste (Video.SegurarNoFundo); sem isso, ou
-            // sem pausa confirmada, o C sabe onde ele estava ANTES do Parar.
+            // #resume: o C sabe onde o player estava ANTES do ciclo e do Parar.
+            // (Segurar o player pausado no fundo foi tentado: a Home da Samsung
+            // toma o decodificador em < 1 s — logs 10/11 —, entao sempre para.)
             voltaPendente = false;
-            int reter = -1;
-            try { reter = NvVid.ReterMs(); } catch (EntryPointNotFoundException) { }
-            bool segurou = video != null && reter >= 0 && video.SegurarNoFundo(reter);
-            if (!segurou) video?.AvisarFundo();
+            video?.AvisarFundo();
             try { nv_tpk_ciclo(0); } catch (EntryPointNotFoundException) { }
-            if (!segurou) video?.PausarPeloSistema();
+            video?.PausarPeloSistema();
             base.OnPause();
             if (recuperar)
             {
@@ -1050,7 +1047,6 @@ namespace NuvioTpk
 
         protected override void OnLowMemory(Tizen.Applications.LowMemoryEventArgs e)
         {
-            video?.LiberarSegurado("low memory");
             try { nv_tpk_ciclo(1); } catch (EntryPointNotFoundException) { }
             base.OnLowMemory(e);
         }
@@ -1070,13 +1066,7 @@ namespace NuvioTpk
         void Voltar(string deOnde)
         {
             if (video == null) return;
-            if (principalVisivel || (!JanelaUnica && glVisivel))
-            {
-                voltaPendente = false;
-                video.VoltarSegurado(deOnde);   // segurado e valido: nada a reabrir
-                video.Voltou(deOnde);
-                return;
-            }
+            if (principalVisivel || (!JanelaUnica && glVisivel)) { voltaPendente = false; video.Voltou(deOnde); return; }
             if (!voltaPendente) Etapa("note resume waits for a visible window (" + deOnde + ")" + Contagem());
             voltaPendente = true;
         }

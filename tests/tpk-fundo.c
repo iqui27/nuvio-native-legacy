@@ -2,8 +2,10 @@
 //
 // (09/11) Plus: the host opens at the point itself (seek before Start, then
 // pause) and answers EV_RETOMADA; the Samsung pause confirmation that "Keep
-// the video ready on exit" needs; and holding the paused player in the
-// background with that setting on.
+// the video ready on exit" needs; a retained session stopped in the
+// background is dropped, not reopened; Samsung's Home taking the decoder is
+// not "another app". (Holding the player on Home was tried and removed:
+// Samsung's Home takes the decoder within a second, logs 10/11.)
 //
 // WHY THIS TEST EXISTS. On Home or TV sleep the host disposes the player
 // (#412: never a live player in the background). Before this fix nothing told
@@ -54,10 +56,7 @@ void nv_tpk_video_voltou(void);
 int video_tpk_fundo(double alvoPlayer);
 int video_tpk_retomada_evento(void);
 int video_pausa_confirmada(void);
-void video_tpk_reter_publicar(int ms, int tela);
-int nv_tpk_video_reter_ms(void);
-void nv_tpk_video_segurado(int sim);
-int video_tpk_segurado(void);
+void video_tpk_tela_publicar(int tela);
 void video_tpk_log_host(const char *linha);
 void video_escolher_audio(int i);
 void video_escolher_legenda(int i);
@@ -141,7 +140,7 @@ static void sairEVoltar(int hostMs, double alvoTela) {
 int main(void) {
   nv_tpk_video_registrar(hAbrir, hSem, hPausar, hBuscar, hInt, hJanela, hPos);
   nv_tpk_video_registrar_faixas(hEscolher);
-  video_tpk_reter_publicar(-1, 1);
+  video_tpk_tela_publicar(1);
 
   // --- 1. Home during playback (setting off: the host stops the player) -----
   tocarFilme("http://x/filme.mp4", 1234000);
@@ -268,46 +267,19 @@ int main(void) {
   video_pausar(0);
   ok("pause: Play clears it", !video_pausa_confirmada());
 
-  // --- 11. hold the paused player on Home (player screen open) -------------
-  video_tpk_reter_publicar(120000, 1);
-  ok("hold rule: VOD offers the setting's time", nv_tpk_video_reter_ms() == 120000);
-  zerarHost();
-  nv_tpk_video_evento(EV_PAUSADO, 1, 0);    // host paused it before holding
-  nv_tpk_video_segurado(1);
-  ok("held: not suspended by the cycle", video_tpk_fundo(-1.0) == 0 && video_tpk_segurado());
-  bombearPor(100);
-  ok("held: paused, confirmed, nothing reopened", !video_tocando() && video_pausa_confirmada() && nAbrir == 0);
-  nv_tpk_video_segurado(0);                 // back, the player still valid
-  nv_tpk_video_voltou();
-  bombearPor(100);
-  ok("held: instant return, no reopen", video_tpk_retomada_evento() == 4 && nAbrir == 0 && !video_tpk_segurado());
-
-  // --- 12. held, then released by the host (time up) with the screen open ---
-  nv_tpk_video_segurado(1);
-  bombearPor(50);
-  nv_tpk_video_suspenso(80000);             // host: time up, stopped at 80 s
-  ok("held then released: suspended", video_tpk_fundo(-1.0) == 1 && !video_tpk_segurado());
-  zerarHost();
-  nv_tpk_video_voltou();
-  video_bombear();
-  ok("held then released: the return reopens", video_tpk_retomada_evento() == 1 && nAbrir == 1);
-  video_parar();
-
-  // --- 13. held with the player screen closed (retained), host releases -----
+  // --- 11. a retained session (player screen closed) stopped on Home -------
   tocarFilme("http://x/retida.mp4", 60000);
   video_pausar(1); nv_tpk_video_evento(EV_PAUSADO, 1, 0);
-  video_tpk_reter_publicar(30000, 0);       // retained: 30 s of the hold left
-  nv_tpk_video_segurado(1);
-  bombearPor(50);
+  video_tpk_tela_publicar(0);               // player left with "Keep the video ready"
   nv_tpk_video_suspenso(60000);
   bombearPor(700);
-  ok("retained released: player.c told to drop it", video_tpk_retomada_evento() == 3);
+  ok("retained stopped in the background: player.c told to drop it", video_tpk_retomada_evento() == 3);
   zerarHost();
   nv_tpk_video_voltou();
   bombearPor(100);
-  ok("retained released: nothing reopened", nAbrir == 0);
+  ok("retained stopped in the background: nothing reopened", nAbrir == 0);
   video_parar();
-  video_tpk_reter_publicar(-1, 1);
+  video_tpk_tela_publicar(1);
 
   // --- 14. live channel / trailer: not touched -------------------------------
   video_definir_reconexao(0);
@@ -315,9 +287,6 @@ int main(void) {
   nv_tpk_video_evento(EV_PRONTO, 0, 0);
   nv_tpk_video_evento(EV_TOCANDO, 0, 0);
   bombearPor(100);
-  video_tpk_reter_publicar(120000, 1);
-  ok("live: never held", nv_tpk_video_reter_ms() == -1);
-  video_tpk_reter_publicar(-1, 1);
   zerarHost();
   nv_tpk_video_suspenso(5000);
   ok("live: not suspended", video_tpk_fundo(-1.0) == 0);

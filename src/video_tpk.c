@@ -176,7 +176,7 @@ static atomic_uint fundoEm;   // quando o host anotou (o player.c aplica antes, 
 static int suspenso;          // o host parou o player; reabre na volta
 static int retomando;         // reabrindo depois da volta
 static int retDesistiu;       // reabertura desistiu: o player.c fecha a tela
-static atomic_int retEvento;  // para o player.c: 1 = reabrindo, 2 = desistiu, 3 = soltar a retida, 4 = voltou ao segurado
+static atomic_int retEvento;  // para o player.c: 1 = reabrindo, 2 = desistiu, 3 = soltar a retida
 static double retAlvo;        // posicao a devolver (s, na fonte)
 static const char *retDe = "";
 static int retAudio = -1, retLeg = -1, retDurMs;
@@ -197,20 +197,15 @@ static void retZerar(void);
 // segurava nada no .tpk (player_suspender exige a confirmacao).
 static atomic_int pausaAck;
 
-// SEGURAR NO FUNDO (Home/sono com "Manter o video pronto ao sair"): o app
-// publica a cada quadro se e por quanto tempo o player pode ficar pausado com o
-// app fora da tela (-1 = nao; 0 = sem limite; >0 = ms). O host le no OnPause,
-// pausa com confirmacao e segura; o relogio corre NO HOST (este fio pode nao
-// rodar no fundo). Soltou (prazo, interrupcao, pouca memoria): o host avisa a
-// parada como antes (nv_tpk_video_suspenso) e a volta reabre ou solta a retida.
-static atomic_int reterPublicado = -1, telaAberta, seguradoFundo, seguroAplicar, seguroVoltou;
-// O app esta indo/esta no fundo (o host avisou a parada ou segurou o player);
+// A tela do player esta aberta (publicado a cada quadro pelo player.c): uma
+// sessao RETIDA (tela fechada) parada pelo host no fundo nao reabre na volta.
+static atomic_int telaAberta = 1;
+// O app esta indo/esta no fundo (o host avisou a parada);
 // apaga quando a tela volta. A Home da Samsung toma o decodificador nesse
 // instante (ResourceConflict) ANTES do "principal visivel=False": sem isto, o
 // conflito "outro app tomou o video" ligava ate o app reiniciar, desligando os
 // trailers e o "Manter o video pronto ao sair" (log 11, 09/11).
 static atomic_int foraDaTela;
-static atomic_uint seguroDesde;
 // Seek enviado sem confirmacao do host: a recuperacao retoma nele.
 static atomic_int buscaAlvoMs = -1;
 static int reconAlvoMs = -1;
@@ -1758,35 +1753,13 @@ static void reabrindoVigiar(void) {
 }
 
 // ---------------------------------------------------------------- SAIDA E VOLTA
-// player.c, a cada quadro: a regra de segurar o player no fundo, e se a tela
-// do player esta aberta (a retida fechada nao reabre na volta: e solta).
-void video_tpk_reter_publicar(int ms, int tela) {
-  atomic_store(&reterPublicado, ms);
-  atomic_store(&telaAberta, tela);
-}
-// Host, no OnPause: -1 = nao segurar; 0 = sem limite; >0 = ms.
-__attribute__((visibility("default")))
-int nv_tpk_video_reter_ms(void) { return ativo && reconPermitida && !emTrailer && !emCartao ? atomic_load(&reterPublicado) : -1; }
-// Host: 1 = segurou o player pausado no fundo; 0 = voltou e ele ainda vale.
-// (Soltar e o nv_tpk_video_suspenso de sempre.)
-__attribute__((visibility("default")))
-void nv_tpk_video_segurado(int sim) {
-  if (sim) {
-    atomic_store(&foraDaTela, 1);
-    atomic_store(&seguroDesde, SDL_GetTicks());
-    atomic_store(&seguradoFundo, 1);
-    atomic_store(&seguroAplicar, 1);
-  } else if (atomic_exchange(&seguradoFundo, 0)) {
-    atomic_store(&seguroVoltou, 1);
-  }
-}
-int video_tpk_segurado(void) { return atomic_load(&seguradoFundo); }
+// player.c, a cada quadro: se a tela do player esta aberta.
+void video_tpk_tela_publicar(int tela) { atomic_store(&telaAberta, tela); }
 
 // Host, fio principal do .NET, ANTES do Parar: so anota (o fio do app aplica).
 __attribute__((visibility("default")))
 void nv_tpk_video_suspenso(int ms) {
   atomic_store(&foraDaTela, 1);
-  atomic_store(&seguradoFundo, 0);
   atomic_store(&fundoMs, ms);
   atomic_store(&fundoEm, SDL_GetTicks());
   atomic_store(&fundoPend, 1);
@@ -1836,7 +1809,7 @@ static void fundoAplicar(double alvoPlayer) {
   if (ativo && !parado && reconPermitida && !atomic_load(&telaAberta)) {
     // A sessao retida (tela do player fechada) que o host soltou no fundo:
     // nada a reabrir; o player.c solta a retida como no prazo.
-    printf("[fundo] host released the held session (player screen closed, host %d ms): dropping it\n", ms);
+    printf("[fundo] host stopped the retained session (player screen closed, host %d ms): dropping it\n", ms);
     fflush(stdout);
     atomic_store(&retEvento, 3);
     return;
@@ -2029,19 +2002,6 @@ void video_bombear(void) {
   // a volta a tela, e nada mais enquanto suspensa ou desistida.
   // O ciclo de fundo do player.c aplica primeiro (com o alvo da tela); este e
   // o reserva, se o ciclo nao chegou em 0,5 s.
-  if (atomic_exchange(&seguroAplicar, 0)) {
-    int r = atomic_load(&reterPublicado);
-    pausaPedida = 1; tocando = 0; vigiaAtiva = 0;
-    printf("[fundo] host holds the paused player in the background (%s%d ms, player screen %s)\n",
-           r == 0 ? "no limit, " : "", r, atomic_load(&telaAberta) ? "open" : "closed");
-    fflush(stdout);
-  }
-  if (atomic_exchange(&seguroVoltou, 0)) {
-    printf("[fundo] back to the held player after %u ms: no reopen\n",
-           (unsigned)(SDL_GetTicks() - atomic_load(&seguroDesde)));
-    fflush(stdout);
-    if (atomic_load(&telaAberta)) atomic_store(&retEvento, 4);
-  }
   if (atomic_load(&fundoPend) && SDL_GetTicks() - atomic_load(&fundoEm) >= 500u) fundoAplicar(-1.0);
   if (atomic_exchange(&voltouPend, 0)) {
     if (atomic_load(&fundoPend)) fundoAplicar(-1.0);   // volta antes do ciclo: aplica ja

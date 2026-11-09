@@ -285,15 +285,10 @@ namespace NuvioTpk
 
         protected override void OnPause()
         {
-            // #resume: com "Manter o video pronto ao sair" o player fica pausado
-            // no fundo pelo prazo do ajuste; sem isso (ou sem pausa confirmada)
-            // o C sabe onde ele estava antes do ciclo e do Parar.
-            int reter = -1;
-            try { reter = NvVid.ReterMs(); } catch (EntryPointNotFoundException) { }
-            bool segurou = video != null && reter >= 0 && video.SegurarNoFundo(reter);
-            if (!segurou) video?.AvisarFundo();
+            // #resume: o C sabe onde o player estava antes do ciclo e do Parar.
+            video?.AvisarFundo();
             NvLib.Ciclo?.Invoke(0);
-            if (!segurou) video?.PausarPeloSistema();
+            video?.PausarPeloSistema();
             base.OnPause();
         }
 
@@ -302,20 +297,17 @@ namespace NuvioTpk
         protected override void OnResume()
         {
             base.OnResume();
-            video?.VoltarSegurado("resume");
             video?.Voltou("resume");
         }
 
         protected override void OnAppControlReceived(Tizen.Applications.AppControlReceivedEventArgs e)
         {
             base.OnAppControlReceived(e);
-            video?.VoltarSegurado("appcontrol");
             video?.Voltou("appcontrol");
         }
 
         protected override void OnLowMemory(Tizen.Applications.LowMemoryEventArgs e)
         {
-            video?.LiberarSegurado("low memory");
             NvLib.Ciclo?.Invoke(1);
             base.OnLowMemory(e);
         }
