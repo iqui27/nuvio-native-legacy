@@ -158,11 +158,13 @@ static void rest(DtsPlayback *p) {
 /* Codecs this session can feed: DTS is converted; on the Dolby Vision path
  * AC-3 and E-AC-3 pass through. Anything else belongs to the native player. */
 static int codecFeeds(const DtsPlayback *p, const char *codec) {
-  return !strcmp(codec, "dts") || (p->dv && (!strcmp(codec, "ac3") || !strcmp(codec, "eac3")));
+  return !strncmp(codec, "dts", 3) || (p->dv && (!strcmp(codec, "ac3") || !strcmp(codec, "eac3")));
 }
 static int trackMatches(DtsPlayback *p, const DtsTrack *t) {
   return t->kind == DTS_AUDIO && codecFeeds(p, t->codec) &&
       (!p->selected.language[0] || ling_casa(t->language, p->selected.language)) &&
+      (!p->selected.codec[0] || !strcmp(t->codec, p->selected.codec) ||
+       (!strcmp(p->selected.codec, "dts") && !strncmp(t->codec, "dts", 3))) &&
       (!p->selected.channels || t->channels == p->selected.channels);
 }
 static double clockSeconds(clockid_t clock);
@@ -719,6 +721,24 @@ void dts_playback_audio(DtsPlayback *p, int stream) {
   pthread_mutex_lock(&p->lock);
   if (!p->seek_dirty) p->target = p->presented;
   p->audio_stream = stream; p->audio_dirty = 1;
+  p->status.buffer = (DtsBufferInfo){0};p->status.buffered_until = 0;
+  pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
+}
+/* Select audio track by metadata (language/codec/channels) instead of stream index.
+ * Used when the track was added to the UI from MKV but the player omitted it. */
+void dts_playback_audio_by_metadata(DtsPlayback *p, const char *language, const char *codec, int channels,
+                                    int ordinal, int count) {
+  if (!p) return;
+  pthread_mutex_lock(&p->lock);
+  if (!p->seek_dirty) p->target = p->presented;
+  memset(&p->selected, 0, sizeof p->selected);
+  snprintf(p->selected.language, sizeof p->selected.language, "%s", language ? language : "");
+  snprintf(p->selected.codec, sizeof p->selected.codec, "%s", codec ? codec : "");
+  p->selected.channels = channels;
+  p->selected_known = 1;
+  p->source_ordinal = ordinal;
+  p->source_count = count;
+  p->audio_stream = -1; p->audio_dirty = 1;
   p->status.buffer = (DtsBufferInfo){0};p->status.buffered_until = 0;
   pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
 }

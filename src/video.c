@@ -278,6 +278,10 @@ static int    pausaConfirmada;
 static int    recarregarPausa = -1;
 // Sonda de MKV pedida, esperando o buffer. Ver a nota no sourceInfo.
 static int    mkvPendente;
+// A sonda do MKV acrescentou faixas DTS a lista: o fio de desenho refaz a
+// ordem do audio (aplicarOrdemAudio) para a preferencia de idioma ver as
+// faixas recuperadas. Escrito por lerMkv, lido por video_bombear.
+static volatile int audioOrdemPendente;
 // 1 quando a fonte foi anunciada como MP4. Ver video_definir_mp4.
 static int    fonteMp4;
 static double seekAlvo;
@@ -995,6 +999,40 @@ static void recorteNoPrimeiroQuadro(void) {
 
 // Definida junto da tela do DV (video_dv_tela), chamada no load e no playing.
 static void dvSilenciarTv(void);
+
+// A ORDEM DO AUDIO (audioescolha.h): a escolhida a mao nesta reproducao, o
+// idioma preferido, o segundo, o original; em cada idioma a que nao e
+// DTS/TrueHD antes (DTS que a TV recusa converte, ver audioNaoSup). Sem
+// regra que decida, NAO se mexe: a escolha do pipeline (faixa 0) e melhor
+// que uma trocada por chute — quem quer outra abre a folha de faixas.
+//
+// Roda no sourceInfo (so as faixas da TV) e de novo quando a sonda do MKV
+// acrescenta as faixas DTS que a TV omitiu — sem a segunda passada a
+// preferencia de idioma nunca ve o DTS recuperado e fica no que o pipeline
+// escolheu (ingles, por exemplo, num arquivo com so DTS em frances).
+static void aplicarOrdemAudio(void) {
+  if (nAudio <= 1) return;
+  AudioCand c[NV_FAIXA_MAX];
+  int i, o, k;
+  for (i = 0; i < nAudio; i++) {
+    c[i].idioma = faixaAudio[i].idioma; c[i].codec = faixaAudio[i].codec;
+    c[i].rotulo = faixaAudio[i].rotulo; c[i].canais = faixaAudio[i].canais;
+    c[i].dts = audioesc_dts_truehd(faixaAudio[i].codec, faixaAudio[i].rotulo); c[i].pode = 1;
+    c[i].numero = faixaAudio[i].numero;
+  }
+  k = audioesc_escolher(c, nAudio, &o);
+  if (k >= 0 && k != audioAtual) {
+    printf("[video] audio pela ordem (%s): %s (faixa %d de %d)\n", audioesc_origem_nome(o),
+           faixaAudio[k].rotulo, k + 1, nAudio);
+    fflush(stdout);
+    // Direto, e nao por audioAoCarregar: aquele campo e da RECUPERACAO
+    // (pipeline morto) e sobrescreve-lo aqui apagaria a faixa que a
+    // pessoa tinha escolhido antes da queda. O sourceInfo chega com o
+    // pipeline ja carregado, entao o selectTrack vale agora.
+    if (audioAoCarregar < 0) video_escolher_audio(k);
+  }
+}
+
 static int eventoPayload(const char *p, unsigned minhaSessao) {
   if (minhaSessao != sessao) return 1;
   if (!p) return 1;
@@ -1159,32 +1197,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
       }
     }
 
-    // A ORDEM DO AUDIO (audioescolha.h): a escolhida a mao nesta reproducao, o
-    // idioma preferido, o segundo, o original; em cada idioma a que nao e
-    // DTS/TrueHD antes (DTS que a TV recusa converte, ver audioNaoSup). Sem
-    // regra que decida, NAO se mexe: a escolha do pipeline (faixa 0) e melhor
-    // que uma trocada por chute — quem quer outra abre a folha de faixas.
-    if (nAudio > 1) {
-      AudioCand c[NV_FAIXA_MAX];
-      int i, o, k;
-      for (i = 0; i < nAudio; i++) {
-        c[i].idioma = faixaAudio[i].idioma; c[i].codec = faixaAudio[i].codec;
-        c[i].rotulo = faixaAudio[i].rotulo; c[i].canais = faixaAudio[i].canais;
-        c[i].dts = audioesc_dts_truehd(faixaAudio[i].codec, faixaAudio[i].rotulo); c[i].pode = 1;
-        c[i].numero = faixaAudio[i].numero;
-      }
-      k = audioesc_escolher(c, nAudio, &o);
-      if (k >= 0 && k != audioAtual) {
-        printf("[video] audio pela ordem (%s): %s (faixa %d de %d)\n", audioesc_origem_nome(o),
-               faixaAudio[k].rotulo, k + 1, nAudio);
-        fflush(stdout);
-        // Direto, e nao por audioAoCarregar: aquele campo e da RECUPERACAO
-        // (pipeline morto) e sobrescreve-lo aqui apagaria a faixa que a
-        // pessoa tinha escolhido antes da queda. O sourceInfo chega com o
-        // pipeline ja carregado, entao o selectTrack vale agora.
-        if (audioAoCarregar < 0) video_escolher_audio(k);
-      }
-    }
+    aplicarOrdemAudio();
 
     // O PIPELINE NAO DA IDIOMA DE LEGENDA. Medido nesta TV, num arquivo com 43
     // legendas: o audioTrackInfo vem com "en"/"es"/"fr"/"it" e TODA entrada do
@@ -1987,7 +2000,9 @@ double video_creditos(void) {
 
 /* LG can omit an unsupported audio track entirely from sourceInfo. Recover
  * its identity only when the file has a single audio track; a filtered list
- * with several tracks does not tell us which one native playback selected. */
+ * with several tracks does not tell us which one native playback selected.
+ * When DTS conversion is enabled, list all DTS/TrueHD tracks from the MKV so
+ * the user can select them even when the player omits them from sourceInfo. */
 static void completarAudioMkv(const MkvFaixa *fx, int n) {
   const MkvFaixa *audio = NULL;
   int count = 0;
@@ -2010,6 +2025,84 @@ static void completarAudioMkv(const MkvFaixa *fx, int n) {
   nAudio = 1;
   printf("[dts] MKV recovered single audio track: codec=%s channels=%d\n", f->codec, f->canais);
   fflush(stdout);
+}
+
+/* When DTS conversion is enabled, list all DTS tracks from the MKV
+ * even when the player omits them from sourceInfo. This allows the user to
+ * select DTS tracks that would otherwise be invisible. TrueHD is not
+ * supported by the webOS pipeline, so it is not listed here. */
+static int audioCompativelMkv(const VideoFaixa *f, const MkvFaixa *m) {
+  const char *ft = audioinfo_codec(f->codec), *fm = audioinfo_codec(m->codec);
+  return (!f->idioma[0] || !m->idioma[0] || !strcmp(m->idioma, "und") || ling_casa(m->idioma, f->idioma)) &&
+         (!ft[0] || !fm[0] || !strcmp(ft, fm)) &&
+         (f->canais <= 0 || m->canais <= 0 || f->canais == m->canais);
+}
+
+static int listarFaixasDtsMkv(const MkvFaixa *fx, int n) {
+  if (!dtsHabilitado) return 0;
+  int dtsCount = 0, adicionadas = 0;
+  for (int i = 0; i < n; i++) {
+    if (fx[i].tipo == 2 && !strncmp(fx[i].codec, "A_DTS", 5)) {
+      dtsCount++;
+    }
+  }
+  if (dtsCount == 0) return 0;
+
+  /* Count existing audio tracks to avoid duplicates */
+  int existingCount = nAudio;
+  for (int i = 0; i < n; i++) {
+    if (fx[i].tipo != 2) continue;
+    if (strncmp(fx[i].codec, "A_DTS", 5)) continue;
+
+    /* Check if this track is already in the list (match by language/codec) */
+    int found = 0;
+    for (int j = 0; j < existingCount; j++) {
+      VideoFaixa *f = &faixaAudio[j];
+      if ((f->idioma[0] && fx[i].idioma[0] && ling_casa(f->idioma, fx[i].idioma)) ||
+          (f->codec[0] && fx[i].codec[0] && audioCompativelMkv(f, &fx[i]))) {
+        found = 1;
+        break;
+      }
+    }
+    if (found) continue;
+
+    /* Add the DTS track to the list */
+    if (nAudio >= NV_FAIXA_MAX) break;
+    VideoFaixa *f = &faixaAudio[nAudio];
+    memset(f, 0, sizeof *f);
+    f->numero = nAudio;
+    f->stream_index = -1; f->stream_id = -1;
+    f->ordinalMkv = i;  /* ordinal among all MKV tracks */
+
+    /* Convert codec to simplified format */
+    if (!strncmp(fx[i].codec, "A_DTS", 5)) {
+      snprintf(f->codec, sizeof f->codec, "dts");
+    } else {
+      snprintf(f->codec, sizeof f->codec, "%s", fx[i].codec);
+    }
+
+    if (fx[i].idioma[0] && strcmp(fx[i].idioma, "und"))
+      snprintf(f->idioma, sizeof f->idioma, "%s", fx[i].idioma);
+    if (fx[i].canais > 0)
+      f->canais = fx[i].canais;
+
+    /* Build label */
+    const char *langName = f->idioma[0] ? i18n(ling_nome(f->idioma)) : i18n("Faixa");
+    const char *codecName = faixasmkv_codec(f->codec);
+    const char *channels = faixasmkv_canais(f->canais);
+    snprintf(f->rotulo, sizeof f->rotulo, "%s  \xc2\xb7  %s%s%s",
+             langName,
+             codecName[0] ? codecName : "DTS",
+             channels[0] ? " " : "",
+             channels[0] ? channels : "");
+
+    nAudio++;
+    adicionadas++;
+    printf("[dts] MKV listed DTS track: codec=%s lang=%s channels=%d\n",
+           f->codec, f->idioma, f->canais);
+    fflush(stdout);
+  }
+  return adicionadas;
 }
 
 static void *lerMkv(void *arg) {
@@ -2099,6 +2192,7 @@ static void *lerMkv(void *arg) {
   }
 
   completarAudioMkv(fx, n);
+  if (listarFaixasDtsMkv(fx, n) > 0) audioOrdemPendente = 1;
   { int na = 0, achouVideo = 0;
     for (j = 0; j < n; j++) {
       if (fx[j].tipo == 1 && !achouVideo) {
@@ -2385,6 +2479,13 @@ void video_bombear(void) {
   mkvRetryBombear();
   acbBindRecolher();
   if (ligado) acbConfigurarTipo(dtsSessao != NULL);
+  if (audioOrdemPendente) {
+    audioOrdemPendente = 0;
+    // A sonda do MKV listou faixas DTS que a TV omitiu: refaz a ordem do
+    // audio para a preferencia de idioma alcancar as recuperadas. Com a
+    // sessao DTS ja ativa a escolha manual vale mais — nao mexe.
+    if (!dtsSessao && !dtsTentou && !dtsNativePending) aplicarOrdemAudio();
+  }
   if (dtsSessao) bombearDts();
   else if (dvHabilitado && !dtsNativePending && !dtsTentou && !modoLoad && urlAtual[0] && !dvSegurar && dvPronto()) {
     dtsModoDv = 1;
@@ -3742,7 +3843,15 @@ void video_escolher_audio(int i) {
   char b[192];
   const VideoFaixa *f = video_audio(i);
   if (dtsSessao && f) {
-    if (f->stream_index < 0) return;
+    if (f->stream_index < 0) {
+      /* Track added from MKV but omitted by player: use metadata matching */
+      if (!strcmp(f->codec, "dts")) {
+        dts_playback_seek(dtsSessao, posSeg);
+        dts_playback_audio_by_metadata(dtsSessao, f->idioma, f->codec, f->canais, i, nAudio);
+        audioAtual = i;
+      }
+      return;
+    }
     if (!strcmp(f->codec, "dts") ||
         (dtsModoDv && (!strcmp(f->codec, "eac3") || !strcmp(f->codec, "ac3")))) {
       dts_playback_seek(dtsSessao, posSeg);
@@ -3765,6 +3874,14 @@ void video_escolher_audio(int i) {
   }
 
   if (!ligado || !midia[0] || !f) return;
+  /* Faixa que so existe no MKV (stream_index -1, adicionada pela sonda):
+   * nao ha selectTrack nativo para ela — o numero e posicao na lista, nao
+   * faixa do pipeline. Fica como atual para o video_bombear abrir a
+   * conversao DTS, que a resolve por metadados. */
+  if (f->stream_index < 0) {
+    if (!strcmp(f->codec, "dts")) audioAtual = i;
+    return;
+  }
   /* Unsupported audio belongs to the previous selection. Give the new native
    * track a chance before allowing its own codec error to trigger conversion. */
   if (i != audioAtual) audioNaoSup = 0;
