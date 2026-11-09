@@ -607,7 +607,7 @@ namespace NuvioTpk
                     }
                     NvVid.Evento(EV_RETOMADA, retPousou, pausou ? 1 : 0);
                     Log("[fundo] reopen at the point done in " + MsDesde(retT0) + " ms (point " + retPousou + " ms, " + (pausou ? "paused" : "playing") + ")");
-                    if (retPousou >= 0) PousouDiag(p, minha, retPousou, retT0);
+                    if (retPousou >= 0) PousouDiag(p, minha, retPousou + (pausou ? RetomarQuadroMs : 0), retT0, true);
                 }
                 if (volPedido)
                 {
@@ -811,7 +811,7 @@ namespace NuvioTpk
                             NvVid.Evento(EV_BUSCOU, ms, 0);
                         }
                     }
-                    if (exata) PousouDiag(p, minha, ms, buscaInicio);
+                    if (exata) PousouDiag(p, minha, ms, buscaInicio, false);
                     if (minha != Volatile.Read(ref sessao)) return;
                     // PlaybackInterrupted pode ter emitido evento 3 durante o seek.
                     if (p.State == PlayerState.Playing) NvVid.Evento(EV_TOCANDO, 0, 0);
@@ -866,17 +866,22 @@ namespace NuvioTpk
             return -1;
         }
 
-        // #resume: onde o seek exato pousou DE VERDADE (o posMs recebe o alvo).
+        // #resume: onde o player esta DE VERDADE depois do seek exato ou da
+        // reabertura (o posMs recebe o alvo; so esta linha le a TV). Na
+        // reabertura, alvo = o ponto + o quadro tocado mudo antes da pausa.
         // Fora da fila, como o Tique: GetPlayPosition pode demorar segundos.
-        void PousouDiag(Player p, int minha, int alvo, long inicio)
+        void PousouDiag(Player p, int minha, int alvo, long inicio, bool reabertura)
         {
             long levou = (Stopwatch.GetTimestamp() - inicio) * 1000 / Stopwatch.Frequency;
             _ = Task.Run(() => {
                 try {
                     if (minha != Volatile.Read(ref sessao) || player != p) return;
                     int real = p.GetPlayPosition();
-                    Log("[fundo] exact seek landed at " + real + " ms (target " + alvo + " ms, off by " +
-                        (real - alvo) + " ms, seek took " + levou + " ms)");
+                    Log(reabertura
+                        ? "[fundo] reopen landed at " + real + " ms (expected " + alvo + " ms, off by " +
+                          (real - alvo) + " ms, open took " + levou + " ms)"
+                        : "[fundo] exact seek landed at " + real + " ms (target " + alvo + " ms, off by " +
+                          (real - alvo) + " ms, seek took " + levou + " ms)");
                 } catch (Exception e) { Log("[fundo] landed position not readable: " + e.GetType().Name); }
             });
         }

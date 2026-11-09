@@ -192,7 +192,7 @@ static atomic_int retHostFim, retHostMs = -1, retHostPausado;
 static void retZerar(void);
 
 // PAUSA CONFIRMADA (Samsung): o host so manda EV_PAUSADO com a=1 depois de ler
-// o player em Paused (Pausar, seek pousado pausado, segurar no fundo). Uma
+// o player em Paused (Pausar, seek pousado pausado, reabertura pausada). Uma
 // interrupcao da TV manda a=0. Sem isto o "Manter o video pronto ao sair" nunca
 // segurava nada no .tpk (player_suspender exige a confirmacao).
 static atomic_int pausaAck;

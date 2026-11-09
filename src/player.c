@@ -3072,7 +3072,7 @@ void player_tpk_fundo_passo(void) {
     saindo = 1; pediuSair = 1;
     glem_aviso_curto(i18n("Não deu para retomar o vídeo. Play continua de onde você parou"));
   } else if (ev == 3 && retido) {
-    printf("[player] sessao retida solta: parada no fundo (%u ms)\n", (unsigned)(agora - retidoDesde));
+    printf("[player] retained session dropped: stopped in the background (%u ms)\n", (unsigned)(agora - retidoDesde));
     fflush(stdout);
     player_descartar_retido();
   }

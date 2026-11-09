@@ -222,7 +222,7 @@ int  player_retido_so_voo(void);
 int  player_retomar_retido(const char *imdb, int temporada, int episodio);
 void player_validar_retido(Uint32 agora);
 #ifdef NV_TPK
-// Saida/volta do app no .tpk: regra de segurar no fundo e avisos da volta.
+// Saida/volta do app no .tpk: a cada quadro, tela aberta e avisos da reabertura.
 void player_tpk_fundo_passo(void);
 #endif
 void player_descartar_retido(void);
