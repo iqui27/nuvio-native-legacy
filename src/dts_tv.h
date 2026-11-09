@@ -1,5 +1,7 @@
 #ifndef NV_DTS_TV_H
 #define NV_DTS_TV_H
+#include <stdio.h>
+#include <string.h>
 /* Does this TV decode DTS itself? Decided from the starfish release major
  * (/etc/starfish-release, "release 11.2" -> 11), never from the TV's answer:
  * newer LGs play the DTS track SILENT instead of raising errorCode 200 (#285,
@@ -14,6 +16,13 @@
 #define NV_DTS_TV_PRIMEIRA_SEM_DTS 5
 static inline int nv_dts_tv_decodifica(int release_major) {
   return release_major <= 0 || release_major < NV_DTS_TV_PRIMEIRA_SEM_DTS;
+}
+/* configd getConfigs reply: does tv.model.edidType mention DTS ("TrueHD+dts")? */
+static inline int nv_dts_edid(const char *json) {
+  const char *k = json ? strstr(json, "\"tv.model.edidType\"") : NULL;
+  char v[32] = "";
+  if (k) sscanf(k + 19, " : \"%31[^\"]", v);
+  return strstr(v, "dts") || strstr(v, "DTS");
 }
 /* Convert now (before any native play) a DTS track on a TV with no DTS. */
 static inline int nv_dts_converter_ja(int release_major, int faixa_dts,

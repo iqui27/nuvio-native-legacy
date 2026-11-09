@@ -70,12 +70,15 @@ with tempfile.TemporaryDirectory() as d:
 
 # 2. The row on the .tpk: three values, its own saved key, both old keys read.
 tpk = re.search(r'#ifdef NV_TPK\nstatic const char \*V_DTS_SAIDA\[\] = \{([^}]*)\};\n#define N_DTS_SAIDA 3\n#else\n'
-                r'static const char \*V_DTS_SAIDA\[\] = \{([^}]*)\};\n#define N_DTS_SAIDA 2', src)
+                r'static const char \*V_DTS_SAIDA\[\] = \{([^}]*)\};\n#define N_DTS_SAIDA 3', src)
 confere(tpk is not None and tpk.group(1).strip() == '"Desligado", "5.1 (Dolby Digital)", "Estéreo (AAC)"',
         '.tpk values: Desligado / 5.1 (Dolby Digital) / Estereo (AAC)')
-confere(tpk is not None and tpk.group(2).strip() == '"Estéreo (AAC)", "5.1 (Dolby Digital)"', 'LG values unchanged')
-confere(re.search(r'#ifdef NV_TPK\n  "dtsTpkLocal",[^\n]*\n#else\n  "dtsSaidaLocal",\n#endif', src) is not None,
-        '.tpk saves the row as dtsTpkLocal, LG keeps dtsSaidaLocal')
+confere(tpk is not None and tpk.group(2).strip() == '"Original", "Estéreo (AAC)", "5.1 (Dolby Digital)"',
+        'LG values: Original / Estereo (AAC) / 5.1 (Dolby Digital)')
+confere(re.search(r'#ifdef NV_TPK\n  "dtsTpkLocal",[^\n]*\n#else\n  "dtsLgLocal",[^\n]*\n#endif', src) is not None,
+        '.tpk saves the row as dtsTpkLocal, LG as dtsLgLocal')
+confere('if (!viuDtsTpk && dtsSaidaAntiga >= 0) valor[AJ_DTS_AC3] = dtsSaidaAntiga == 1 ? 2 : 1;' in src,
+        'LG migrates dtsSaidaLocal (0 = Estereo, 1 = 5.1) to the new order')
 confere('if (!strcmp(chave, "dtsSaidaLocal")) { dtsSaidaAntiga = v; continue; }' in src and
         'if (!strcmp(chave, "dtsTpkModoLocal")) { dtsModoAntigo = v; continue; }' in src and
         'valor[AJ_DTS_AC3] = dtsTpkMigrar(dtsModoAntigo, dtsSaidaAntiga);' in src,
