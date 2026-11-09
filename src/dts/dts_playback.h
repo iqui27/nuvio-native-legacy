@@ -32,6 +32,10 @@ void dts_playback_pause(DtsPlayback *p, int paused);
 void dts_playback_volume(DtsPlayback *p, int percent);
 void dts_playback_seek(DtsPlayback *p, double seconds);
 void dts_playback_audio(DtsPlayback *p, int stream);
+/* Select audio track by metadata when stream index is unknown (e.g., track
+ * added from MKV but omitted by the player). */
+void dts_playback_audio_by_metadata(DtsPlayback *p, const char *language, const char *codec, int channels,
+                                    int ordinal, int count);
 /* -1 off; -2-ordinal restores a native subtitle; >=0 exact source stream. */
 void dts_playback_subtitle(DtsPlayback *p, int stream);
 int dts_playback_subtitle_text(DtsPlayback *p, double seconds, char *out, size_t n);
