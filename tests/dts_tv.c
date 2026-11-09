@@ -19,6 +19,11 @@ int main(void) {
   /* No DTS and no converter: say so instead of playing silent. */
   CHECK(nv_dts_sem_som(26, 1, 0)); CHECK(!nv_dts_sem_som(26, 1, 1));
   CHECK(!nv_dts_sem_som(26, 0, 0)); CHECK(!nv_dts_sem_som(4, 1, 0)); CHECK(!nv_dts_sem_som(0, 1, 0));
+  CHECK(nv_dts_edid("{\"configs\":{\"tv.model.edidType\":\"TrueHD+dts\"},\"returnValue\":true}"));
+  CHECK(nv_dts_edid("{\"tv.model.edidType\" : \"AC3+DTS\"}"));
+  CHECK(!nv_dts_edid("{\"tv.model.edidType\":\"TrueHD\",\"x\":\"dts\"}"));
+  CHECK(!nv_dts_edid("{\"errorText\":\"Not permitted to send to com.webos.service.config\"}"));
+  CHECK(!nv_dts_edid(NULL));
   if (!fails) puts("dts_tv ok");
   return fails != 0;
 }

@@ -664,6 +664,30 @@ static char cabsHttp[512];
 static int iniciarDts(int stream);
 static void bombearDts(void);
 static int dtsLiberadoNestaTv(void);
+// 1 = o tv.model.edidType da TV declara DTS (como o Kodi le): toca nativo.
+// Via HLunaServiceCall (nome do app): o nome com.webos.media.client.* nao pode falar com o configd.
+typedef struct { Filtro cb; void *ud, *x; int multiplo, pub; unsigned long tok; } NvHContext;
+static int edidDts;
+static int edidResposta(LSHandle *h, LSMessage *m, void *u) {
+  const char *r = lsPayload(m);
+  (void)h; (void)u;
+  __atomic_store_n(&edidDts, nv_dts_edid(r), __ATOMIC_RELEASE);
+  printf("[dts] %.160s\n", r ? r : "");
+  fflush(stdout);
+  return 1;
+}
+static int dtsNativo(void) {
+  return __atomic_load_n(&edidDts, __ATOMIC_ACQUIRE);
+}
+static void pedirEdid(void) {
+  static NvHContext ctx = { edidResposta, 0, 0, 0, 1, 0 };
+  static int (*chamar)(const char *, const char *, NvHContext *);
+  void *h;
+  __atomic_store_n(&edidDts, 0, __ATOMIC_RELEASE);
+  if (!chamar && (h = dlopen("libhelpers.so.2", RTLD_NOW))) *(void **)(&chamar) = dlsym(h, "HLunaServiceCall");
+  if (chamar && lsPayload)
+    chamar("luna://com.webos.service.config/getConfigs", "{\"configNames\":[\"tv.model.edidType\"]}", &ctx);
+}
 // RECONEXAO (video_reconexao.h). O erro chega no fio do LS2 e so ANOTA
 // (reconErroPend); a decisao e o recarregar sao do video_bombear, no fio
 // principal, como o `recuperando`.
@@ -2359,7 +2383,9 @@ int video_tocar(const char *url) {
   // hora sem relacao nenhuma com o que esta tocando.
   creditosNomeado = creditosUltimo = 0.0;
   snprintf(urlAtual, sizeof urlAtual, "%s", url ? url : "");
-  return tocarInterno(url, 1);
+  int r = tocarInterno(url, 1);   // liga o LS2 (lsPayload) antes do pedido
+  pedirEdid();
+  return r;
 }
 
 // Chamado uma vez por quadro. So existe para o prazo acima: sem ele o recuo
@@ -2405,8 +2431,9 @@ void video_bombear(void) {
     // de tocar, inclusive os modelos 2023/24 que tem DTS: nao da para detectar
     // o suporte com seguranca (o webOS 26 toca MUDO sem errorCode 200, #285).
     // So a C9 e anteriores (webOS < 5) usam o caminho nativo + errorCode 200.
+    // Excecao: a TV declara DTS no edidType (edidDts).
     if ((audioNaoSup && knownDts) || forcar ||
-        nv_dts_converter_ja(webosMaior(), knownDts, 1, dtsTentou)) {
+        (!dtsNativo() && nv_dts_converter_ja(webosMaior(), knownDts, 1, dtsTentou))) {
       dtsEstado = VIDEO_DTS_PREPARANDO;
       iniciarDts(-1);
     }
@@ -2415,7 +2442,8 @@ void video_bombear(void) {
   // 3/4): se a TV nao tem DTS, o silencio e certo — avisa na ilha em vez de
   // deixar parecer que toca.
   else if (!dtsHabilitado && pronto && (!dtsEstado || dtsEstado == VIDEO_DTS_SEM_SOM))
-    dtsEstado = nv_dts_sem_som(webosMaior(), video_faixa_dts(video_audio(audioAtual)) > 0, 0)
+    dtsEstado = !dtsNativo() &&
+                nv_dts_sem_som(webosMaior(), video_faixa_dts(video_audio(audioAtual)) > 0, 0)
                 ? VIDEO_DTS_SEM_SOM : 0;
   // O ACB demora cerca de 1,5 s para ligar uma sessao. Se o usuario sair e
   // reabrir nesse intervalo, o loadCompleted novo encontra bindVivo=1. Antes
