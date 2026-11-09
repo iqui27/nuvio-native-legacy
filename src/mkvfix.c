@@ -366,6 +366,10 @@ int64_t mkvfix_janela_ini(int64_t cueMs, int64_t cuePos, int64_t proxMs, int64_t
     est = (double)cuePos + (double)(alvoMs - cueMs) / (double)(proxMs - cueMs) * (double)(proxPos - cuePos);
   else
     est = (double)cuePos + (double)(alvoMs - cueMs) * (bytesPorMs > 0 ? bytesPorMs : 0);
+  // Um indice corrompido (posicoes absurdas) nao pode virar uma conversao fora
+  // do int64: limita antes (o chamador ignora uma janela depois do arquivo).
+  if (!(est >= (double)cuePos)) est = (double)cuePos;
+  if (est > 4.0e18) est = 4.0e18;
   ini = (int64_t)est - antes;
   if (ini < cuePos) ini = cuePos;
   if (proxPos > cuePos && ini > proxPos) ini = proxPos;

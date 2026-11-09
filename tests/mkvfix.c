@@ -198,7 +198,9 @@ int main(void) {
       ok(mkvfix_janela_ini(1000, 5 * M, 3000, 6 * M, 1100, 0, 3 * M) == 5 * M, "window: never before the cue");
       ok(mkvfix_janela_ini(1000, 0, 2000, 10 * M, 1999, 0, 0) <= 10 * M, "window: never after the next cue");
       ok(mkvfix_janela_ini(1000, 0, -1, -1, 3000, 2000.0, 1 * M) == 4000000 - M, "window: no next cue -> the file's average rate");
-      ok(mkvfix_janela_ini(-1, -1, -1, -1, 3000, 0, M) == -1, "window: no cue -> -1"); }
+      ok(mkvfix_janela_ini(-1, -1, -1, -1, 3000, 0, M) == -1, "window: no cue -> -1");
+      { int64_t j = mkvfix_janela_ini(0, 0, -1, -1, 1000000, 1e15, 3 * M);   // corrupt index / rate
+        ok(j > 0 && j <= 4000000000000000000LL, "window: absurd values stay in range (no int64 overflow)"); } }
   }
 
   printf(falhas ? "mkvfix: %d FAIL(S)\n" : "mkvfix: ok\n", falhas);
