@@ -377,6 +377,38 @@ int main(void) {
     printf("rung1 zero-region init captures=%d pixel=%u,%u,%u\n", gfx_vidro_capturas, first[0], first[1], first[2]);
     confere(gfx_vidro_capturas == 1 && abs((int)first[0] - first[1]) <= 2,
             "F1c: ladder rung 1 (quality 3) pre-foreground full-screen blur when frost first appears");
+    // F3: gfx_vidro_governar has no production caller (only this test and
+    // other tests). Do not read a pass here as proof a C9 reaches the state.
+    // Force the flag at quality 0, then the ladder moves quality to 3. Smoked
+    // glass is quality 0 only, so quality 3 still frosts and must retain.
+    // The new region appears on a frame whose backdrop color is still
+    // changing, compared with a settled clean control of that same color.
+    gfx_vidro_governar_zerar();
+    gpun_teste_reiniciar();
+    assert(ajustes_vidro_qualidade() == 0);
+    roda(4, &t);
+    for (i = 0; i < 4; i++) janela(40.0);
+    confere(gfx_vidro_degradado(), "F3 setup: governor flag set while quality is still 0");
+    gpun_relatar(60, 40, 1000.0 / 60, 1, 1);
+    for (i = 0; i < 3; i++) gpun_relatar(30, 40, 1000.0 / 60, 1, 1);
+    assert(gpun_efeito_ativo(1) && ajustes_vidro_qualidade() == 3 && gfx_vidro_degradado());
+    roda(4, &t);
+    printf("F3 degraded q=3 fonte=%d chapado=%d copy=%.3f\n", fonte, chapado, copiatot);
+    confere(fonte > 0 && chapado == 0, "F3: degraded flag plus quality 3 still draws frost");
+    regiao_fundo = .20f;
+    for (i = 0; i < 4; i++) regiao_quadro(1, p);
+    regiao_quadro(1, first);
+    unsigned char clean[4]; memcpy(clean, first, 4);
+    for (i = 0; i < 6; i++) { regiao_fundo = .05f + i * .01f; regiao_quadro(0, p); }
+    regiao_fundo = .20f;
+    regiao_quadro(1, second); regiao_shot("rung1-degraded-changing-new-region");
+    printf("F3 changing new region first=%u,%u,%u clean=%u,%u,%u copy=%.3f fill=%.3f captures=%d passes=%d\n",
+           second[0], second[1], second[2], clean[0], clean[1], clean[2],
+           gfx_vidro_copia, gfx_vidro_fill, gfx_vidro_capturas, gfx_vidro_passadas);
+    confere(abs((int)second[0] - clean[0]) <= 1 && abs((int)second[1] - clean[1]) <= 1 && abs((int)second[2] - clean[2]) <= 1,
+            "F3: degraded quality 3 retains clean backdrop on the frame a region appears while the backdrop changes");
+    regiao_fundo = .05f;
+    gfx_vidro_governar_zerar();
   }
 
   unlink(cam);

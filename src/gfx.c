@@ -3894,6 +3894,14 @@ static int vidCapturar(const float reg[][4], int n, GLuint dst, GLuint dstFbo, G
 // changed backdrop captures immediately, including cuts during fades.
 static float fundoReg[VID_NREG][4];
 static int fundoNReg;
+// Smoked glass is quality 1, or Automatic (quality 0) while vidroDegradou.
+// Quality 3 stays frost even if that flag is set. Retention uses this same
+// rule. gfx_vidro_governar has no production caller, so a C9 does not set the
+// flag today; the predicates still have to agree.
+static int vidroFrost(void) {
+  int q = ajustes_vidro_qualidade();
+  return q == 2 || q == 3 || (q == 0 && !vidroDegradou);
+}
 // Copies the whole clean backdrop (the screen before foreground) into
 // vidBackdrop. 0 = no texture (allocation failed): callers copy live regions.
 static int vidReter(void) {
@@ -3919,8 +3927,8 @@ static void vidroFundoFechar(void) {
   // (detail page, title -> season tabs) stays inside them instead of forcing a
   // second, full-screen capture every frame of the scroll.
   float reg[VID_NREG][4];
-  int n = vidroNRegAnt, i, fora = 0, q = ajustes_vidro_qualidade();
-  int ativo = ajustes_vidro() && (q == 2 || ((q == 0 || q == 3) && !vidroDegradou));
+  int n = vidroNRegAnt, i, fora = 0;
+  int ativo = ajustes_vidro() && vidroFrost();
   for (i = 0; i < n; i++) {
     reg[i][0] = vidroRegAnt[i][0] - VID_FOLGA; reg[i][1] = vidroRegAnt[i][1] - VID_FOLGA;
     reg[i][2] = vidroRegAnt[i][2] + VID_FOLGA; reg[i][3] = vidroRegAnt[i][3] + VID_FOLGA;
@@ -4141,7 +4149,7 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   // (Nuvio Arc): the real glass look is the tint plus the in-shader rim/top
   // highlight, never an art stand-in or a flat opaque box. With quality =
   // Desempenho, or once the governor dropped the tier.
-  fumaca = video || ajustes_vidro_qualidade() == 1 || (vidroDegradou && ajustes_vidro_qualidade() == 0);
+  fumaca = video || !vidroFrost();
   if (fumaca) chapado = 1;
   semAro = tipo == GFX_VIDRO_ILHA || vidroNaIlha(tela) || gfx_vidro_sem_aro;
   if (vidroNVidros < VID_N) {
