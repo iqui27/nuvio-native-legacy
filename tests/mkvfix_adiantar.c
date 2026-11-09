@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 
 int debrid_tb_link(int usenet, int item, int file, char *dst, unsigned n) {
   (void)usenet; (void)item; (void)file; if (n) dst[0] = 0; return 0;
@@ -53,6 +54,16 @@ static int pedidosEm(long long ini) {
   while (fgets(l, sizeof l, f)) if (atoll(l) == ini) n++;
   fclose(f);
   return n;
+}
+static uint64_t msAgora(void) {
+  struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
+  return (uint64_t)t.tv_sec * 1000u + (uint64_t)t.tv_nsec / 1000000u;
+}
+// The fake CDN accepts a request starting at x and never answers (-1 = none).
+static void pendurar(long long x) {
+  char p[512]; FILE *f;
+  snprintf(p, sizeof p, "%s/pendurar", dir);
+  if ((f = fopen(p, "w"))) { fprintf(f, "%lld", x); fclose(f); }
 }
 // The TV: one long read "bytes=a-" through the local server, as its player
 // does after a seek; keeps b - a + 1 bytes and checks the pattern.
@@ -208,6 +219,32 @@ int main(int argc, char **argv) {
     mkvfix_adiantar(26.0, 600.0);
     usleep(1500000);
     ok(pedidosEm(x) == 0, "index times that do not match the duration: no prefetch"); }
+
+  // A CDN that never answers the prefetch (accepts, no headers). The reopen's
+  // seek elsewhere must not wait for it, and dropping it must free the way for
+  // the next prefetch within the network loop's check (before: ~2 s and ~5 s,
+  // the stall limit).
+  { long long x1 = segIni + clusterRel[15], y = segIni + clusterRel[25];
+    uint64_t t0; long dt;
+    pendurar(x1);
+    mkvfix_adiantar(31.0, 60.0);
+    for (int i = 0; i < 60 && !pedidosEm(x1); i++) usleep(50000);
+    mkvfix_adiantar_pressa();
+    t0 = msAgora(); st = tvLer(local, y, y + 2 * MIB - 1, &certo); dt = (long)(msAgora() - t0) - 300;
+    printf("  (seek elsewhere: %ld ms)\n", dt);
+    ok(certo && dt < 1000, "silent CDN: the reopen's seek elsewhere does not wait for the prefetch"); }
+  { long long x1 = segIni + clusterRel[15], x2 = segIni + clusterRel[11];
+    int antes = pedidosEm(x1); uint64_t t0; long dt;
+    mkvfix_adiantar(31.0, 60.0);
+    for (int i = 0; i < 60 && pedidosEm(x1) == antes; i++) usleep(50000);
+    mkvfix_adiantar_soltar("test");
+    t0 = msAgora(); mkvfix_adiantar(22.0, 60.0);
+    for (int i = 0; i < 300 && !pedidosEm(x2); i++) usleep(25000);
+    dt = (long)(msAgora() - t0);
+    printf("  (next prefetch reached the CDN after %ld ms)\n", dt);
+    ok(pedidosEm(x2) == 1 && dt < 2500, "silent CDN: dropping the prefetch frees the way for the next one (no stall wait)");
+    pendurar(-1);
+    mkvfix_adiantar_soltar("test"); }
 
   mkvfix_parar();
   printf(falhas ? "mkvfix_adiantar: %d FAIL(S)\n" : "mkvfix_adiantar: ok\n", falhas);

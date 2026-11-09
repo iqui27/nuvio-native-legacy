@@ -790,8 +790,15 @@ static struct { int64_t total, ini; long n; unsigned char *b; uint64_t em; unsig
 // fio antigo para sozinho. Os fios rodam um de cada vez (adiFio), sem que
 // quem pede espere: o host chama na hora do OnPause.
 static atomic_uint adiGen;
-static atomic_int adiPressa, adiBaixando;
+static atomic_int adiPressa;
 static pthread_mutex_t adiFio = PTHREAD_MUTEX_INITIALIZER;
+// Um pedido novo ou soltar corta tambem a conexao que ainda nao respondeu (o
+// ralo so ve a geracao quando chegam bytes; um CDN mudo segurava o fio ate o
+// prazo de 5 s). O fio zera ANTES de conferir a geracao (ordem seq_cst).
+static volatile int adiCancelar;
+// O trecho sendo baixado agora (sob mfCacheTrava): o seek da reabertura so
+// espera o adiantado se comecar dentro dele.
+static struct { int ativo; int64_t total, ini, fim; } adiBaixa;
 static uint64_t agoraMs(void);
 
 // Chamado com mfCacheTrava: tira pedidos curtos (mais velhos primeiro) ate o
@@ -882,6 +889,7 @@ static void *fioAdiantar(void *u) {
   Adi a = {0};
   a.gen = p->gen;
   pthread_mutex_lock(&adiFio);              // o anterior ja saiu (ou esta saindo)
+  __atomic_store_n(&adiCancelar, 0, __ATOMIC_SEQ_CST);   // antes de conferir a geracao
   if (a.gen != atomic_load(&adiGen)) goto sai;
   // O indice ja veio na abertura (pedido curto em memoria): acha o ponto nele.
   pthread_mutex_lock(&mfCacheTrava);
@@ -914,8 +922,10 @@ static void *fioAdiantar(void *u) {
   pthread_mutex_lock(&s->m);
   snprintf(up, sizeof up, "%s", s->up); semCab = s->upSemCab;
   pthread_mutex_unlock(&s->m);
-  atomic_store(&adiBaixando, 1);
-  r = rede_fluxo64(up, semCab ? "" : s->cab, ini, adiRalo, &a, &tot, &st, NULL, NULL, &cross, 5000, &veio);
+  pthread_mutex_lock(&mfCacheTrava);
+  adiBaixa.ativo = 1; adiBaixa.total = total; adiBaixa.ini = ini; adiBaixa.fim = ini + a.max;
+  pthread_mutex_unlock(&mfCacheTrava);
+  r = rede_fluxo64(up, semCab ? "" : s->cab, ini, adiRalo, &a, &tot, &st, &adiCancelar, NULL, &cross, 5000, &veio);
   if (a.gen != atomic_load(&adiGen) || a.n <= 0 || (r < 0 && a.n < a.max && !a.venceu)) {
     int trocado = a.gen != atomic_load(&adiGen);
     printf("[mkvfix] prefetch at %.1f s stopped: %s (%.1f MB in %u ms, HTTP %d)\n", p->alvoSeg,
@@ -933,7 +943,7 @@ static void *fioAdiantar(void *u) {
     adi.total = total; adi.ini = ini; adi.n = a.n; adi.b = a.b; adi.em = agoraMs(); adi.gen = a.gen;
     a.b = NULL;
   }
-  atomic_store(&adiBaixando, 0);
+  adiBaixa.ativo = 0;
   pthread_mutex_unlock(&mfCacheTrava);
   // Vence em 10 min sem uso (o app ficou no fundo): solta a memoria. Usado,
   // trocado ou solto: o fio sai.
@@ -947,7 +957,9 @@ static void *fioAdiantar(void *u) {
     if (!vivo) break;
   }
 sai:
-  atomic_store(&adiBaixando, 0);
+  pthread_mutex_lock(&mfCacheTrava);
+  adiBaixa.ativo = 0;
+  pthread_mutex_unlock(&mfCacheTrava);
   pthread_mutex_unlock(&adiFio);
   free(a.b);
   sessSoltar(s);
@@ -960,6 +972,7 @@ void mkvfix_adiantar(double alvoSeg, double durSeg) {
   AdiPedido *p;
   pthread_t t;
   unsigned gen = atomic_fetch_add(&adiGen, 1) + 1;   // o anterior para sozinho
+  __atomic_store_n(&adiCancelar, 1, __ATOMIC_SEQ_CST);   // mesmo sem ter respondido
   pthread_mutex_lock(&mfCacheTrava);
   adiLimpar(adi.b ? "a new one" : NULL);
   pthread_mutex_unlock(&mfCacheTrava);
@@ -978,18 +991,25 @@ void mkvfix_adiantar_pressa(void) { atomic_store(&adiPressa, 1); }
 
 void mkvfix_adiantar_soltar(const char *porque) {
   atomic_fetch_add(&adiGen, 1);
+  __atomic_store_n(&adiCancelar, 1, __ATOMIC_SEQ_CST);
   pthread_mutex_lock(&mfCacheTrava);
   adiLimpar(porque);
   pthread_mutex_unlock(&mfCacheTrava);
 }
 
 // O seek da reabertura: o comeco vem do adiantado (copia, para nao segurar a
-// trava enquanto manda). Esperando o adiantado terminar: ate 2 s.
+// trava enquanto manda). Esperando o adiantado terminar: ate 2 s, e so se o
+// pedido comeca dentro do trecho sendo baixado (um seek em outro lugar nao
+// espera, nem por um CDN que nao respondeu).
 static unsigned char *adiPegar(int64_t total, int64_t ini, long *n) {
   unsigned char *c = NULL;
-  for (int i = 0; i < 40 && atomic_load(&adiBaixando); i++) usleep(50000);
-  pthread_mutex_lock(&mfCacheTrava);
-  *n = 0;
+  for (int i = 0;; i++) {
+    pthread_mutex_lock(&mfCacheTrava);
+    if (i >= 40 || !adiBaixa.ativo || adiBaixa.total != total || ini < adiBaixa.ini || ini >= adiBaixa.fim) break;
+    pthread_mutex_unlock(&mfCacheTrava);
+    usleep(50000);
+  }
+  *n = 0;   // com mfCacheTrava
   if (adi.b && adi.total == total && ini >= adi.ini && ini < adi.ini + adi.n) {
     *n = (long)(adi.ini + adi.n - ini);
     if ((c = malloc((size_t)*n)) != NULL) memcpy(c, adi.b + (ini - adi.ini), (size_t)*n);
@@ -1139,7 +1159,7 @@ static void *atender(void *u) {
     e.cap = malloc((size_t)(e.fim - e.ini + 1));
   }
   // O seek da reabertura depois da saida do app: o comeco veio adiantado.
-  if (e.parcial && e.ini > 0 && !e.cap && (adi.b || atomic_load(&adiBaixando))) {
+  if (e.parcial && e.ini > 0 && !e.cap) {
     long n = 0;
     unsigned char *c = adiPegar(s->total, e.ini, &n);
     if (c) {

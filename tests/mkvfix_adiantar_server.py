@@ -5,9 +5,12 @@ Serves one virtual Matroska file of TOTAL bytes: the test's header bytes at
 the start, the test's tail bytes (second SeekHead + Cues) at the end, and a
 known pattern everywhere else, so the test can check every byte. Supports
 "bytes=a-b" and "bytes=a-". Every request's start and end go to the log file.
+A request starting at the byte written in DIR/pendurar gets no answer (a
+silent CDN).
 """
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import re
+import time
 import sys
 import threading
 
@@ -36,6 +39,14 @@ class Handler(BaseHTTPRequestHandler):
         hi = min(hi, TOTAL - 1)
         with open(f'{DIR}/pedidos.txt', 'a') as f:
             f.write(f'{lo} {hi}\n')
+        try:
+            with open(f'{DIR}/pendurar') as f:
+                silencio = int(f.read() or -1)
+        except (OSError, ValueError):
+            silencio = -1
+        if lo == silencio:
+            time.sleep(30)
+            return
         self.send_response(206 if m else 200)
         self.send_header('Content-Type', 'video/x-matroska')
         self.send_header('Accept-Ranges', 'bytes')
