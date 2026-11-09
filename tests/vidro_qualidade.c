@@ -192,6 +192,25 @@ int main(void) {
     regiao_veu = 1; regiao_quadro(1, first); regiao_quadro(1, second); regiao_veu = 0;
     printf("veil region first=%u,%u,%u second=%u,%u,%u\n", first[0], first[1], first[2], second[0], second[1], second[2]);
     confere(first[2] > first[1] + 20 && second[2] > second[1] + 20, "modal veil over glass still read from the live screen");
+    // F2a: new glass region appearing while backdrop changes every frame (without fundoPasso).
+    for (i = 0; i < 6; i++) { regiao_fundo = .05f + i * .01f; regiao_quadro(0, p); }
+    regiao_fundo = .11f;
+    regiao_quadro(1, first); regiao_shot("auto-changing-new-region-frame1");
+    regiao_quadro(1, second); regiao_shot("auto-changing-new-region-frame2");
+    printf("changing new region first=%u,%u,%u second=%u,%u,%u\n", first[0], first[1], first[2], second[0], second[1], second[2]);
+    confere(abs((int)first[0] - second[0]) <= 1 && abs((int)first[1] - second[1]) <= 1 && abs((int)first[2] - second[2]) <= 1,
+            "F2a: new glass region during changing backdrop has no foreground contamination");
+    // F2b: backdrop changes and re-settles within <30-frame cooldown, then new glass region appears.
+    regiao_fundo = .08f;
+    for (i = 0; i < 4; i++) regiao_quadro(0, p);
+    regiao_fundo = .22f;
+    for (i = 0; i < 4; i++) regiao_quadro(0, p);
+    regiao_quadro(1, first); regiao_shot("auto-cooldown-new-region-frame1");
+    regiao_quadro(1, second); regiao_shot("auto-cooldown-new-region-frame2");
+    printf("cooldown new region first=%u,%u,%u second=%u,%u,%u\n", first[0], first[1], first[2], second[0], second[1], second[2]);
+    confere(abs((int)first[0] - second[0]) <= 1 && abs((int)first[1] - second[1]) <= 1 && abs((int)first[2] - second[2]) <= 1,
+            "F2b: new glass region within <30 frames after backdrop change has no foreground contamination");
+    regiao_fundo = .05f;
   }
   {
     unsigned char p[4], first[4], second[4];
@@ -205,18 +224,24 @@ int main(void) {
     confere(abs((int)first[0] - second[0]) <= 1 && abs((int)first[1] - second[1]) <= 1 && abs((int)first[2] - second[2]) <= 1,
             "High clean backdrop comparison");
     for (int quality = 0; quality <= 2; quality += 2) {
-      double copied = 0, filled = 0;
-      int captures = 0, passes = 0;
+      double copied = 0, filled = 0, settled_copy = 0, settled_fill = 0;
+      int captures = 0, passes = 0, settled_cap = 0, settled_pass = 0;
       setenv("NUVIO_SHOT_VIDRO_QUAL", quality ? "2" : "0", 1); ajustes_teste_vidro_env();
       regiao_fundo = .05f;
       gfx_vidro_sujar();
       for (i = 0; i < 3; i++) regiao_quadro(0, p);
+      for (i = 0; i < 8; i++) {
+        regiao_quadro(0, p);
+        settled_copy += gfx_vidro_copia; settled_fill += gfx_vidro_fill;
+        settled_cap += gfx_vidro_capturas; settled_pass += gfx_vidro_passadas;
+      }
       for (i = 0; i < 8; i++) {
         regiao_fundo = .05f + i * .01f;
         regiao_quadro(0, p);
         copied += gfx_vidro_copia; filled += gfx_vidro_fill;
         captures += gfx_vidro_capturas; passes += gfx_vidro_passadas;
       }
+      printf("settled backdrop quality=%d copy=%.3f fill=%.3f captures=%d passes=%d frames=8\n", quality, settled_copy, settled_fill, settled_cap, settled_pass);
       printf("changing backdrop quality=%d copy=%.3f fill=%.3f captures=%d passes=%d frames=8\n", quality, copied, filled, captures, passes);
     }
     regiao_fundo = .05f;
@@ -319,6 +344,39 @@ int main(void) {
     roda(30, &t);
     printf("Degrau 1: cap<=%d pas<=%d (completo %d) fonte=%d\n", cap, pas, completo, fonte);
     confere(cap == 1 && pas == completo - 1 && fonte > 0, "ladder rung 1: cheaper blur before any glass or frost removal");
+    assert(ajustes_vidro_qualidade() == 3);
+    unsigned char p[4], first[4], second[4];
+    gfx_vidro_sujar();
+    regiao_fundo = .05f;
+    for (i = 0; i < 4; i++) regiao_quadro(0, p);
+    regiao_quadro(1, first); regiao_shot("rung1-settled-new-region-frame1");
+    double copy_settled = gfx_vidro_copia;
+    regiao_quadro(1, second); regiao_shot("rung1-settled-new-region-frame2");
+    printf("rung1 settled new region first=%u,%u,%u second=%u,%u,%u copy=%.3f/%.3f\n", first[0], first[1], first[2], second[0], second[1], second[2], copy_settled, gfx_vidro_copia);
+    confere(abs((int)first[0] - second[0]) <= 1 && abs((int)first[1] - second[1]) <= 1 && abs((int)first[2] - second[2]) <= 1 && copy_settled == 0.0,
+            "F1a: ladder rung 1 (quality 3) retains clean backdrop for new region");
+    for (i = 0; i < 6; i++) { regiao_fundo = .05f + i * .01f; regiao_quadro(0, p); }
+    regiao_fundo = .11f;
+    regiao_quadro(1, first); regiao_shot("rung1-changing-new-region-frame1");
+    regiao_quadro(1, second); regiao_shot("rung1-changing-new-region-frame2");
+    printf("rung1 changing new region first=%u,%u,%u second=%u,%u,%u\n", first[0], first[1], first[2], second[0], second[1], second[2]);
+    confere(abs((int)first[0] - second[0]) <= 1 && abs((int)first[1] - second[1]) <= 1 && abs((int)first[2] - second[2]) <= 1,
+            "F1b: ladder rung 1 (quality 3) keeps clean backdrop during changing backdrop");
+    // F1c: zero-region initialization when frost first appears in quality 3.
+    gfx_vidro_sujar();
+    gfx_novo_quadro();
+    glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT);
+    gfx_cor((GfxRect){0, 0, 1920, 1080}, 0, .05f, .05f, .05f, 1);
+    gfx_novo_quadro();
+    glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT);
+    gfx_cor((GfxRect){0, 0, 1920, 1080}, 0, .05f, .05f, .05f, 1);
+    gfx_cor((GfxRect){100, 300, 300, 300}, 0, 1, 0, 0, 1);
+    gfx_vidro((GfxRect){100, 300, 300, 300}, .1f, GFX_VIDRO_PAINEL, .1f, .8f, 1);
+    gfx_vidro((GfxRect){1250, 300, 300, 300}, .1f, GFX_VIDRO_PAINEL, .1f, .8f, 1);
+    glReadPixels(250, 1080 - 450, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, first);
+    printf("rung1 zero-region init captures=%d pixel=%u,%u,%u\n", gfx_vidro_capturas, first[0], first[1], first[2]);
+    confere(gfx_vidro_capturas == 1 && abs((int)first[0] - first[1]) <= 2,
+            "F1c: ladder rung 1 (quality 3) pre-foreground full-screen blur when frost first appears");
   }
 
   unlink(cam);

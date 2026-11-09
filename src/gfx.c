@@ -2182,12 +2182,9 @@ static int fundoPasso = -1, fundoPassoCap = -1;
 void gfx_vidro_fundo_passo(int passo) { fundoPasso = passo; }
 // Retained clean backdrop (vidBackdrop, full screen, before foreground), valid
 // apart from the regional blur: a glass entering a new region after foreground
-// blurs from it instead of the live framebuffer. High retains every change;
-// Automatic once the backdrop held still for a frame, at most every
-// RET_INTERVALO frames, so a moving backdrop costs no extra copy.
-#define RET_INTERVALO 30
-static int retidoValido, retidoQuadro, retidoFalhou, retidoIdade = RET_INTERVALO, retidoParado;
-static unsigned retidoHash, retidoHashAnt, retidoDep[VID_DEP_WORDS];
+// blurs from it instead of the live framebuffer.
+static int retidoValido, retidoQuadro, retidoFalhou;
+static unsigned retidoHash, retidoDep[VID_DEP_WORDS];
 static void vidroFundoFechar(void);
 static int vidroFundoModo(GfxRect r, GfxModo m) {
   static const unsigned long long FUNDO =
@@ -2249,7 +2246,7 @@ static int vidroDentro(GfxRect r) {
 // de textura reaproveitado): nenhum vidro reaproveita a captura antiga.
 void gfx_vidro_sujar(void) {
   memset(vidroSlotValido, 0, sizeof vidroSlotValido); fundoValido = 0;
-  retidoValido = retidoQuadro = 0; retidoIdade = RET_INTERVALO;
+  retidoValido = retidoQuadro = 0;
 }
 static void vidroEsquecerFonte(GLuint tex) {
   unsigned word = (tex / 32) % VID_DEP_WORDS, bit = 1u << (tex % 32);
@@ -3914,7 +3911,7 @@ static int vidReter(void) {
   glBindTexture(GL_TEXTURE_2D, 0); texAtual = 0;
   gfx_vidro_copia += (double)telaW * telaH / ((double)telaRealW * telaRealH);
   memcpy(retidoDep, vidroDep, sizeof retidoDep);
-  retidoHash = vidroHash; retidoValido = 1; retidoIdade = 0;
+  retidoHash = vidroHash; retidoValido = 1;
   return 1;
 }
 static void vidroFundoFechar(void) {
@@ -3922,20 +3919,19 @@ static void vidroFundoFechar(void) {
   // (detail page, title -> season tabs) stays inside them instead of forcing a
   // second, full-screen capture every frame of the scroll.
   float reg[VID_NREG][4];
-  int n = vidroNRegAnt, i, fora = 0;
+  int n = vidroNRegAnt, i, fora = 0, q = ajustes_vidro_qualidade();
+  int ativo = ajustes_vidro() && (q == 2 || ((q == 0 || q == 3) && !vidroDegradou));
   for (i = 0; i < n; i++) {
     reg[i][0] = vidroRegAnt[i][0] - VID_FOLGA; reg[i][1] = vidroRegAnt[i][1] - VID_FOLGA;
     reg[i][2] = vidroRegAnt[i][2] + VID_FOLGA; reg[i][3] = vidroRegAnt[i][3] + VID_FOLGA;
   }
   fundoFim = 2;
-  retidoParado = vidroHash == retidoHashAnt; retidoHashAnt = vidroHash;
-  if (retidoIdade < RET_INTERVALO) retidoIdade++;
   if (foscoBloq || !ajustes_vidro_fosco() || efeitosMinimos) return;
   if (!vidPreparar()) return;
   // No glass last frame (frost just resumed or appeared): its regions are
   // unknown, so blur the whole screen once, before foreground, instead of one
   // capture per glass. Not for smoked glass or over a video hole: no backdrop read.
-  if (!n && !vidroNFuros && ajustes_vidro() && (ajustes_vidro_qualidade() == 2 || (ajustes_vidro_qualidade() == 0 && !vidroDegradou))) { reg[0][0] = reg[0][1] = 0; reg[0][2] = NV_TELA_W; reg[0][3] = NV_TELA_H; n = 1; }
+  if (!n && !vidroNFuros && ativo) { reg[0][0] = reg[0][1] = 0; reg[0][2] = NV_TELA_W; reg[0][3] = NV_TELA_H; n = 1; }
   // A copia le a TELA: o fundo da Dinamica adiado tem de sair nela antes
   // (dinAdiado), senao a copia fica com o framebuffer transparente do
   // clear e o vidro le preto/lixo ate a proxima mudanca de hash — a faixa
@@ -3947,9 +3943,7 @@ static void vidroFundoFechar(void) {
   for (i = 0; i < vidroNRegAnt; i++) fora |= !vidroRegContem(fundoReg, fundoNReg, vidroRegAnt[i]);
   retidoQuadro = retidoValido && retidoHash == vidroHash;
   // A step key already reads the whole screen: no region can miss.
-  if (!retidoQuadro && fundoPasso < 0 && ajustes_vidro() &&
-      (ajustes_vidro_qualidade() == 2 ||
-       (ajustes_vidro_qualidade() == 0 && !vidroDegradou && retidoParado && retidoIdade >= RET_INTERVALO)))
+  if (!retidoQuadro && fundoPasso < 0 && ativo)
     retidoQuadro = vidReter();
   if (!fundoValido || fora || (fundoPasso >= 0 ? fundoPasso != fundoPassoCap : fundoHash != vidroHash)) {
 #ifdef NV_SHOT_HOOKS
