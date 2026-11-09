@@ -677,7 +677,7 @@ static int edidResposta(LSHandle *h, LSMessage *m, void *u) {
   return 1;
 }
 static int dtsNativo(void) {
-  return __atomic_load_n(&edidDts, __ATOMIC_ACQUIRE);
+  return __atomic_load_n(&edidDts, __ATOMIC_ACQUIRE) || ajustes_dts_original();
 }
 static void pedirEdid(void) {
   static NvHContext ctx = { edidResposta, 0, 0, 0, 1, 0 };
@@ -2431,7 +2431,7 @@ void video_bombear(void) {
     // de tocar, inclusive os modelos 2023/24 que tem DTS: nao da para detectar
     // o suporte com seguranca (o webOS 26 toca MUDO sem errorCode 200, #285).
     // So a C9 e anteriores (webOS < 5) usam o caminho nativo + errorCode 200.
-    // Excecao: a TV declara DTS no edidType (edidDts).
+    // Excecao: a TV declara DTS no edidType (edidDts), ou o usuario escolheu "Original".
     if ((audioNaoSup && knownDts) || forcar ||
         (!dtsNativo() && nv_dts_converter_ja(webosMaior(), knownDts, 1, dtsTentou))) {
       dtsEstado = VIDEO_DTS_PREPARANDO;

@@ -820,8 +820,8 @@ static const char *V_BRILHO_PLAYER[] = { "100%", "80%", "65%", "50%" };
 static const char *V_DTS_SAIDA[] = { "Desligado", "5.1 (Dolby Digital)", "Estéreo (AAC)" };
 #define N_DTS_SAIDA 3
 #else
-static const char *V_DTS_SAIDA[] = { "Estéreo (AAC)", "5.1 (Dolby Digital)" };
-#define N_DTS_SAIDA 2
+static const char *V_DTS_SAIDA[] = { "Original", "Estéreo (AAC)", "5.1 (Dolby Digital)" };
+#define N_DTS_SAIDA 3
 #endif
 static const char *V_PROPORCAO[] = { "Último usado", "Original", "Recortar", "Esticar", "Zoom leve", "Zoom cinema", "Zoom ultra", "Ajustar altura", "Ajustar largura" };
 static const char *V_LOGO_APP[] = { "Novo", "Clássico" };
@@ -2080,7 +2080,7 @@ static const char *CHAVE[] = {
 #ifdef NV_TPK
   "dtsTpkLocal",   // Desligado / 5.1 / Estereo: outro significado que o dtsSaidaLocal da LG
 #else
-  "dtsSaidaLocal",
+  "dtsLgLocal",   // Original / Estereo / 5.1; o dtsSaidaLocal de antes migra na leitura
 #endif
   "dvMkvLocal",
   "histContaLocal",
@@ -3804,7 +3804,13 @@ int ajustes_cw_mostrar_nao_exibidos(void)  { return lig(AJ_CW_NAO_EXIBIDOS); }
 int ajustes_cw_ordem(void)            { return valor[AJ_CW_ORDEM]; }
 int ajustes_cw_retido_tambem(void)    { return lig(AJ_CW_RETIDO_TAMBEM); }
 int ajustes_ps_continuar(void)        { return lig(AJ_PS_CONTINUAR); }
+#ifdef NV_TPK
 int ajustes_dts_ac3(void)             { return valor[AJ_DTS_AC3] == 1; }
+int ajustes_dts_original(void)        { return 0; }
+#else
+int ajustes_dts_ac3(void)             { return valor[AJ_DTS_AC3] == 2; }
+int ajustes_dts_original(void)        { return valor[AJ_DTS_AC3] == 0; }
+#endif
 // .tpk: HLS (o TS continuo e so a troca automatica de video_tpk.c) ou desligado.
 int ajustes_dts_tpk_modo(void) {
 #ifdef NV_TPK
@@ -4818,7 +4824,10 @@ void ajustes_dir(const char *dir) {
     int medidorAntigo = -1, viuMedidor = 0, resAntiga = -1, viuRes = 0, prazoAntigo = -1, viuEspera = 0;
     int focoAntigo = -1, viuFoco = 0;
     int sinopseAntiga = -1, sinopseQuatro = -1, viuSinopse = 0;
-    int dtsSaidaAntiga = -1, dtsModoAntigo = -1, viuDtsTpk = 0;
+    int dtsSaidaAntiga = -1, viuDtsTpk = 0;
+#ifdef NV_TPK
+    int dtsModoAntigo = -1;
+#endif
     int leg2TamanhoAntigo = -1, viuLeg2Escala = 0;
   while (fgets(linha, sizeof linha, f)) {
     char chave[64]; int v, i, inicio = 0;
@@ -4882,9 +4891,9 @@ void ajustes_dir(const char *dir) {
     if (!strcmp(chave, "fontePrazoLocal")) { prazoAntigo = v; continue; }
     // Trailer do cartaz em foco: era V_LIGA (ver focoTrailerMigrar).
     if (!strcmp(chave, "focusedPosterBackdropTrailerEnabled")) { focoAntigo = v; continue; }
-#ifdef NV_TPK
-    // As duas linhas de DTS de antes (ver dtsTpkMigrar).
+    // As linhas de DTS de antes (ver dtsTpkMigrar; na LG, 0 = Estereo, 1 = 5.1).
     if (!strcmp(chave, "dtsSaidaLocal")) { dtsSaidaAntiga = v; continue; }
+#ifdef NV_TPK
     if (!strcmp(chave, "dtsTpkModoLocal")) { dtsModoAntigo = v; continue; }
 #endif
     if (!strcmp(chave, "idiomaFonteLocal")) {
@@ -4956,7 +4965,7 @@ void ajustes_dir(const char *dir) {
            valor[AJ_DTS_AC3]);
   }
 #else
-  (void)viuDtsTpk; (void)dtsSaidaAntiga; (void)dtsModoAntigo;
+  if (!viuDtsTpk && dtsSaidaAntiga >= 0) valor[AJ_DTS_AC3] = dtsSaidaAntiga == 1 ? 2 : 1;
 #endif
   if (!viuFoco && focoAntigo >= 0) {
     valor[AJ_FOCO_TRAILER] = focoTrailerMigrar(focoAntigo);

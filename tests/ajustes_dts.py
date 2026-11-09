@@ -94,7 +94,7 @@ int main(void) {
   snprintf(path, sizeof path, "%s/ajustes.txt", tmp);
   f = fopen(path, "r"); assert(f);
   n = fread(buf, 1, sizeof buf - 1, f); buf[n] = 0; fclose(f);
-  assert(!strstr(buf, "dtsSaidaLocal"));
+  assert(!strstr(buf, "dtsSaidaLocal") && !strstr(buf, "dtsLgLocal"));
   // Legacy DTS keys are ignored, regardless of spelling,
   // wrapped value or flat value.
   assert(!ajustes_aplicar_blob("{\"dts_saida_local\":{\"type\":\"number\",\"value\":0}}"));
