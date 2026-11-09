@@ -1001,6 +1001,10 @@ int video_tpk_aviso_busca(void);   // video_tpk.c (mkvfix.h)
 // host e a reabre na volta; 1 = reabrindo, 2 = desistiu (fechar a tela).
 int video_tpk_fundo(double alvoPlayer);
 int video_tpk_retomada_evento(void);
+// Segurar no fundo (Home/sono com "Manter o video pronto ao sair"): a regra
+// publicada a cada quadro; o host le no OnPause (video_tpk.c).
+void video_tpk_reter_publicar(int ms, int tela);
+int nv_tpk_video_reter_ms(void);
 void glem_aviso_curto(const char *texto);   // guialembrete.c
 #endif
 // DE QUEM E O PROBLEMA (#205). Sem motivo proprio, o cartao diz o que o erro do
@@ -3044,9 +3048,56 @@ void player_ciclo_evento(Uint32 tipo) {
       if (isfinite(p) && p >= 0) posSeg = (float)p;
       gravarProgressoParcial(1, "background");
     }
-    player_descartar_retido(); retomamorna_cancelar();
+#ifdef NV_TPK
+    // Com a regra de segurar valendo, quem decide e o host: segurou, a retida
+    // fica; nao segurou ou soltou depois, a parada chega e video_tpk.c manda
+    // soltar (evento 3, player_tpk_fundo_passo). Pouca memoria solta sempre.
+    if (tipo == SDL_APP_LOWMEMORY || nv_tpk_video_reter_ms() < 0) player_descartar_retido();
+#else
+    player_descartar_retido();
+#endif
+    retomamorna_cancelar();
   }
 }
+
+#ifdef NV_TPK
+static void acordar(void);
+// A cada quadro (app.c), aberto ou nao: publica a regra de segurar no fundo e
+// atende os avisos da saida/volta do app (video_tpk.c).
+//   regra: so com "Manter o video pronto ao sair"; tela aberta = o prazo todo
+//   do ajuste; sessao ja retida = o que sobra do prazo dela (o relogio e o
+//   mesmo: conta desde a saida do player). -1 = nao segurar, 0 = sem limite.
+void player_tpk_fundo_passo(void) {
+  Uint32 agora = SDL_GetTicks();
+  int ms = -1, ev;
+  if (ajustes_manter_video()) {
+    unsigned prazo = ajustes_manter_video_ms();
+    if (retido && !retidoVoo) {
+      if (!prazo) ms = 0;
+      else {
+        Sint32 resta = (Sint32)prazo - (Sint32)(agora - retidoDesde);
+        ms = resta > 0 ? (int)resta : -1;
+      }
+    } else if (aberto && !saindo && podeReter()) ms = prazo ? (int)prazo : 0;
+  }
+  video_tpk_reter_publicar(ms, aberto && !retido);
+  // 1 = reabrindo, 4 = de volta ao player segurado: controles pausados no
+  // ponto. 2 = a reabertura desistiu: fecha como no Voltar (progresso gravado
+  // na saida). 3 = o host soltou a sessao retida no fundo: solta como no prazo.
+  ev = video_tpk_retomada_evento();
+  if ((ev == 1 || ev == 4) && aberto) { fundoAlvoTela = -1.0; tocando = 0; acordar(); }
+  else if (ev == 2 && aberto && !saindo) {
+    printf("[player] resume after background gave up: closing the player at %.1f s\n", video_pos());
+    fflush(stdout);
+    saindo = 1; pediuSair = 1;
+    glem_aviso_curto(i18n("Não deu para retomar o vídeo. Play continua de onde você parou"));
+  } else if (ev == 3 && retido) {
+    printf("[player] sessao retida solta: o host soltou no fundo (%u ms)\n", (unsigned)(agora - retidoDesde));
+    fflush(stdout);
+    player_descartar_retido();
+  }
+}
+#endif
 
 void player_validar_retido(Uint32 agora) {
   const char *por = NULL;
@@ -4604,19 +4655,6 @@ void player_atualizar(float dt, Uint32 agora) {
   // A TV recusou um seek e o arquivo nao tem indice nenhum (mkvfix.h): diz,
   // em vez de o video seguir como se a tecla nao tivesse feito nada.
   if (video_tpk_aviso_busca() && comVideo) player_toast(i18n("Este arquivo não deixa avançar ou voltar nesta TV"), 5000u);
-  // Volta do app: a tela mostra os controles pausados no ponto enquanto o
-  // video reabre; se ele nao volta, a tela fecha como no Voltar (o progresso
-  // ja foi gravado na saida) e a pagina do titulo fica com o ponto.
-  {
-    int ev = video_tpk_retomada_evento();
-    if (ev == 1 && aberto) { fundoAlvoTela = -1.0; tocando = 0; acordar(); }
-    else if (ev == 2 && aberto && !saindo) {
-      printf("[player] resume after background gave up: closing the player at %.1f s\n", video_pos());
-      fflush(stdout);
-      saindo = 1; pediuSair = 1;
-      glem_aviso_curto(i18n("Não deu para retomar o vídeo. Play continua de onde você parou"));
-    }
-  }
 #endif
   // DV EM MKV NASCE NO PONTO SALVO: enquanto a retomada nao foi pedida ao
   // player da TV, a troca para o caminho do DV espera (video.c, iniciarDts le o

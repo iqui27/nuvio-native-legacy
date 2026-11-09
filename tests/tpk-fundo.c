@@ -1,5 +1,10 @@
 // LEAVING NUVIO DURING PLAYBACK AND COMING BACK (.tpk), exercised with no TV.
 //
+// (09/11) Plus: the host opens at the point itself (seek before Start, then
+// pause) and answers EV_RETOMADA; the Samsung pause confirmation that "Keep
+// the video ready on exit" needs; and holding the paused player in the
+// background with that setting on.
+//
 // WHY THIS TEST EXISTS. On Home or TV sleep the host disposes the player
 // (#412: never a live player in the background). Before this fix nothing told
 // the core: the session kept saying "playing", every key went to a player that
@@ -48,11 +53,16 @@ void nv_tpk_video_suspenso(int ms);
 void nv_tpk_video_voltou(void);
 int video_tpk_fundo(double alvoPlayer);
 int video_tpk_retomada_evento(void);
+int video_pausa_confirmada(void);
+void video_tpk_reter_publicar(int ms, int tela);
+int nv_tpk_video_reter_ms(void);
+void nv_tpk_video_segurado(int sim);
+int video_tpk_segurado(void);
 void video_escolher_audio(int i);
 void video_escolher_legenda(int i);
 void video_bombear(void);
 
-enum { EV_PRONTO = 1, EV_TOCANDO = 2, EV_PAUSADO = 3, EV_ERRO = 5, EV_BUSCOU = 11 };
+enum { EV_PRONTO = 1, EV_TOCANDO = 2, EV_PAUSADO = 3, EV_ERRO = 5, EV_BUSCOU = 11, EV_RETOMADA = 13 };
 
 // The fake host counts what reaches it.
 static int nAbrir, nPausar, ultPausa = -1, nBuscar, nExata, ultExata = -1, nMudo, ultMudo = -1, ultAudio = -1, ultLeg = -1;
@@ -106,22 +116,33 @@ static void tocarFilme(const char *url, int posMs) {
   bombearPor(1300);   // the subtitle write waits out the settle window
 }
 
-// The new player of the reopen: prepared, tracks listed, first frame.
-static void hostReabre(int primeiroQuadroMs) {
+// The new player of the reopen as the host now runs it: prepared, tracks,
+// seek before Start, Start, pause at the point (if asked), EV_RETOMADA.
+static void hostReabre(int pousouMs, int pausado) {
   nv_tpk_video_evento(6, 1920, 1080);
   nv_tpk_video_evento(EV_PRONTO, 5400000, 0);
   nv_tpk_video_faixa(0, 0, "en"); nv_tpk_video_faixa(0, 1, "sv");
   nv_tpk_video_faixa(1, 0, "sv"); nv_tpk_video_faixa(1, 1, "en");
   nv_tpk_video_faixas_fim(0, 1);
   nv_tpk_video_evento(EV_TOCANDO, 0, 0);
-  fakePosMs = primeiroQuadroMs;
+  fakePosMs = pousouMs >= 0 ? pousouMs : 40;
+  if (pausado) nv_tpk_video_evento(EV_PAUSADO, 1, 0);
+  nv_tpk_video_evento(EV_RETOMADA, pousouMs, pausado);
+}
+static void sairEVoltar(int hostMs, double alvoTela) {
+  nv_tpk_video_suspenso(hostMs);
+  video_tpk_fundo(alvoTela);
+  nv_tpk_video_voltou();
+  video_bombear();
+  (void)video_tpk_retomada_evento();
 }
 
 int main(void) {
   nv_tpk_video_registrar(hAbrir, hSem, hPausar, hBuscar, hInt, hJanela, hPos);
   nv_tpk_video_registrar_faixas(hEscolher);
+  video_tpk_reter_publicar(-1, 1);
 
-  // --- 1. Home during playback --------------------------------------------
+  // --- 1. Home during playback (setting off: the host stops the player) -----
   tocarFilme("http://x/filme.mp4", 1234000);
   zerarHost();
   nv_tpk_video_suspenso(1234567);           // host: stopped at 1234.567 s
@@ -135,28 +156,26 @@ int main(void) {
   ok("suspended: nothing sent to the dead player", nPausar == 0 && nAbrir == 0 && nBuscar == 0 && nExata == 0);
   ok("suspended: a late host error does not fail the source", !video_falhou());
 
-  // --- 2. back on screen ----------------------------------------------------
+  // --- 2. back on screen: the host opens AT the point ----------------------
   nv_tpk_video_voltou();
   video_bombear();
   ok("return: player screen told it is reopening", video_tpk_retomada_evento() == 1);
   ok("return: same source reopened", nAbrir == 1 && strstr(ultUrl, "http://x/filme.mp4") != NULL);
-  ok("return: reopen starts muted", strstr(ultCab, "X-Nuvio-Resume: 1") != NULL);
+  ok("return: the host gets the point and 'paused'", strstr(ultCab, "X-Nuvio-Resume: 1234567,1") != NULL);
   ok("return: bar stays at the exact point while reopening", fabs(video_pos() - 1234.567) < 0.0005);
-  hostReabre(40);
-  bombearPor(200);
-  ok("first frame: exact seek to the point", nExata == 1 && ultExata == 1234567);
-  ok("first frame: pause sent", nPausar >= 1 && ultPausa == 1);
-  ok("first frame: sound still off", nMudo == 0);
-  nv_tpk_video_evento(EV_BUSCOU, 1234567, 0);
+  hostReabre(1234567, 1);
   fakePosMs = 1234567;
-  nv_tpk_video_evento(EV_PAUSADO, 0, 0);
-  bombearPor(3000);   // the subtitle write waits the settle window after the seek
-  ok("landed paused: sound given back", nMudo == 1 && ultMudo == 0);
-  ok("landed paused: still paused", !video_tocando());
-  ok("landed paused: position is the exact point", fabs(video_pos() - 1234.567) < 0.0005);
-  ok("landed paused: audio choice restored", ultAudio == 1);
-  ok("landed paused: subtitle choice restored", ultLeg == 0);
-  ok("landed paused: no give-up", video_tpk_retomada_evento() == 0);
+  bombearPor(3000);   // the subtitle write waits the settle window
+  ok("host at the point: no second seek from here", nExata == 0 && nBuscar == 0);
+  ok("host at the point: no pause sent (the host paused)", nPausar == 0);
+  ok("host at the point: sound given back", nMudo == 1 && ultMudo == 0);
+  ok("host at the point: still paused", !video_tocando());
+  ok("host at the point: position is the exact point", fabs(video_pos() - 1234.567) < 0.0005);
+  ok("host at the point: audio choice restored", ultAudio == 1);
+  ok("host at the point: subtitle choice restored", ultLeg == 0);
+  ok("host at the point: pause confirmed", video_pausa_confirmada());
+  ok("host at the point: no give-up", video_tpk_retomada_evento() == 0);
+  video_parar();
 
   // --- 3. seek in flight when leaving: the target wins --------------------
   tocarFilme("http://x/voo.mp4", 600000);
@@ -167,34 +186,45 @@ int main(void) {
   ok("seek in flight: suspended at the seek target", fabs(video_pos() - 900.0) < 0.0005);
   video_parar();
 
-  // --- 4. scrub start from the player screen wins over the clock -----------
+  // --- 4. scrub start wins; Play pressed during the reopen -----------------
   tocarFilme("http://x/scrub.mp4", 300000);
   zerarHost();
-  nv_tpk_video_suspenso(300000);
-  video_tpk_fundo(250.5);
-  ok("scrub: suspended at the player screen's target", fabs(video_pos() - 250.5) < 0.0005);
-
-  // --- 5. Play pressed during the reopen -----------------------------------
-  nv_tpk_video_voltou();
-  video_bombear();
-  (void)video_tpk_retomada_evento();
+  sairEVoltar(300000, 250.5);
+  ok("scrub: reopened at the player screen's target", strstr(ultCab, "X-Nuvio-Resume: 250500,1") != NULL);
   video_pausar(0);                          // Play on the paused controls
-  hostReabre(40);
+  hostReabre(250500, 1);
   bombearPor(200);
-  ok("Play during reopen: exact seek, no pause sent", nExata == 1 && ultExata == 250500 && ultPausa != 1);
-  nv_tpk_video_evento(EV_BUSCOU, 250500, 0);
-  fakePosMs = 250500;
-  bombearPor(200);
-  ok("Play during reopen: sound back, playing", nMudo == 1 && ultMudo == 0 && video_tocando());
+  ok("Play during reopen: sound back, Play sent", nMudo == 1 && ultMudo == 0 && ultPausa == 0 && nExata == 0);
   video_parar();
 
-  // --- 6. the source fails twice: give up so the screen closes -------------
+  // --- 5. the host could not seek before Start: exact seek from here --------
+  tocarFilme("http://x/semseek.mp4", 700000);
+  zerarHost();
+  sairEVoltar(700000, -1.0);
+  hostReabre(-1, 1);
+  bombearPor(100);
+  ok("host did not seek: exact seek sent from here", nExata == 1 && ultExata == 700000);
+  ok("host did not seek: sound still off until it lands", nMudo == 0);
+  nv_tpk_video_evento(EV_BUSCOU, 700000, 0);
+  fakePosMs = 700000;
+  nv_tpk_video_evento(EV_PAUSADO, 1, 0);
+  bombearPor(200);
+  ok("host did not seek: landed paused, sound back", nMudo == 1 && !video_tocando());
+  video_parar();
+
+  // --- 6. target moved while the host was opening --------------------------
+  tocarFilme("http://x/moveu.mp4", 100000);
+  zerarHost();
+  sairEVoltar(100000, -1.0);
+  video_buscar(400.0);                      // the person moved the bar meanwhile
+  hostReabre(100000, 1);
+  bombearPor(100);
+  ok("target moved: exact seek to the new target", nExata == 1 && ultExata == 400000);
+  video_parar();
+
+  // --- 7. the source fails twice: give up so the screen closes -------------
   tocarFilme("http://x/morto.mp4", 100000);
-  nv_tpk_video_suspenso(100000);
-  video_tpk_fundo(-1.0);
-  nv_tpk_video_voltou();
-  video_bombear();
-  (void)video_tpk_retomada_evento();
+  sairEVoltar(100000, -1.0);
   zerarHost();
   nv_tpk_video_evento(EV_ERRO, 0x1234, 0);
   bombearPor(100);
@@ -206,30 +236,87 @@ int main(void) {
   ok("given up: not reported as a failed source", !video_falhou());
   video_parar();
 
-  // --- 7. no frame at all: give up after the deadline ---------------------
+  // --- 8. no frame at all: give up after the deadline ---------------------
   tocarFilme("http://x/mudo.mp4", 50000);
-  nv_tpk_video_suspenso(50000);
-  video_tpk_fundo(-1.0);
-  nv_tpk_video_voltou();
-  video_bombear();
-  (void)video_tpk_retomada_evento();
+  sairEVoltar(50000, -1.0);
   bombearPor(1800);
   ok("no frame: gives up after the deadline", video_tpk_retomada_evento() == 2);
   video_parar();
 
-  // --- 8. the host's report alone (no background cycle reached the app) -----
+  // --- 9. the host's report alone (no background cycle reached the app) -----
   tocarFilme("http://x/reserva.mp4", 70000);
   nv_tpk_video_suspenso(70000);
   bombearPor(700);
   ok("no cycle: suspended by the fallback after 0.5 s", fabs(video_pos() - 70.0) < 0.0005 && !video_tocando());
   video_parar();
 
-  // --- 9. live channel / trailer: not touched -------------------------------
+  // --- 10. Samsung pause confirmation ("Keep the video ready on exit") -----
+  tocarFilme("http://x/pausa.mp4", 80000);
+  video_pausar(1);
+  ok("pause: not confirmed before the host answers", !video_pausa_confirmada());
+  nv_tpk_video_evento(EV_PAUSADO, 1, 0);
+  ok("pause: confirmed by the host's read", video_pausa_confirmada());
+  nv_tpk_video_evento(EV_PAUSADO, 0, 0);    // the TV interrupted the player
+  ok("pause: an interruption is not a confirmation", !video_pausa_confirmada());
+  nv_tpk_video_evento(EV_PAUSADO, 1, 0);
+  video_buscar(90.0);
+  ok("pause: a seek clears it until the host confirms again", !video_pausa_confirmada());
+  nv_tpk_video_evento(EV_BUSCOU, 90000, 0);
+  nv_tpk_video_evento(EV_PAUSADO, 1, 0);
+  ok("pause: confirmed again after the seek", video_pausa_confirmada());
+  video_pausar(0);
+  ok("pause: Play clears it", !video_pausa_confirmada());
+
+  // --- 11. hold the paused player on Home (player screen open) -------------
+  video_tpk_reter_publicar(120000, 1);
+  ok("hold rule: VOD offers the setting's time", nv_tpk_video_reter_ms() == 120000);
+  zerarHost();
+  nv_tpk_video_evento(EV_PAUSADO, 1, 0);    // host paused it before holding
+  nv_tpk_video_segurado(1);
+  ok("held: not suspended by the cycle", video_tpk_fundo(-1.0) == 0 && video_tpk_segurado());
+  bombearPor(100);
+  ok("held: paused, confirmed, nothing reopened", !video_tocando() && video_pausa_confirmada() && nAbrir == 0);
+  nv_tpk_video_segurado(0);                 // back, the player still valid
+  nv_tpk_video_voltou();
+  bombearPor(100);
+  ok("held: instant return, no reopen", video_tpk_retomada_evento() == 4 && nAbrir == 0 && !video_tpk_segurado());
+
+  // --- 12. held, then released by the host (time up) with the screen open ---
+  nv_tpk_video_segurado(1);
+  bombearPor(50);
+  nv_tpk_video_suspenso(80000);             // host: time up, stopped at 80 s
+  ok("held then released: suspended", video_tpk_fundo(-1.0) == 1 && !video_tpk_segurado());
+  zerarHost();
+  nv_tpk_video_voltou();
+  video_bombear();
+  ok("held then released: the return reopens", video_tpk_retomada_evento() == 1 && nAbrir == 1);
+  video_parar();
+
+  // --- 13. held with the player screen closed (retained), host releases -----
+  tocarFilme("http://x/retida.mp4", 60000);
+  video_pausar(1); nv_tpk_video_evento(EV_PAUSADO, 1, 0);
+  video_tpk_reter_publicar(30000, 0);       // retained: 30 s of the hold left
+  nv_tpk_video_segurado(1);
+  bombearPor(50);
+  nv_tpk_video_suspenso(60000);
+  bombearPor(700);
+  ok("retained released: player.c told to drop it", video_tpk_retomada_evento() == 3);
+  zerarHost();
+  nv_tpk_video_voltou();
+  bombearPor(100);
+  ok("retained released: nothing reopened", nAbrir == 0);
+  video_parar();
+  video_tpk_reter_publicar(-1, 1);
+
+  // --- 14. live channel / trailer: not touched -------------------------------
   video_definir_reconexao(0);
   video_tocar("http://x/live.m3u8");
   nv_tpk_video_evento(EV_PRONTO, 0, 0);
   nv_tpk_video_evento(EV_TOCANDO, 0, 0);
   bombearPor(100);
+  video_tpk_reter_publicar(120000, 1);
+  ok("live: never held", nv_tpk_video_reter_ms() == -1);
+  video_tpk_reter_publicar(-1, 1);
   zerarHost();
   nv_tpk_video_suspenso(5000);
   ok("live: not suspended", video_tpk_fundo(-1.0) == 0);
@@ -238,7 +325,7 @@ int main(void) {
   ok("live: nothing reopened", nAbrir == 0 && video_tpk_retomada_evento() == 0);
   video_parar();
 
-  // --- 10. a new title after a suspend starts clean ------------------------
+  // --- 15. a new title after a suspend starts clean ------------------------
   tocarFilme("http://x/a.mp4", 10000);
   nv_tpk_video_suspenso(10000);
   video_tpk_fundo(-1.0);

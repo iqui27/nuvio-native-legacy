@@ -46,6 +46,10 @@ namespace NuvioTpk
         // onde ele estava, e depois que o app voltou a tela (#resume).
         [DllImport("libnuvio.so")] static extern void nv_tpk_video_suspenso(int ms);
         [DllImport("libnuvio.so")] static extern void nv_tpk_video_voltou();
+        // Segurar o player pausado no fundo (Home/sono com "Manter o video
+        // pronto ao sair"): a regra do app e o aviso de que segurou/voltou.
+        [DllImport("libnuvio.so")] static extern int nv_tpk_video_reter_ms();
+        [DllImport("libnuvio.so")] static extern void nv_tpk_video_segurado(int sim);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void RegistrarDel(IntPtr abrir, IntPtr parar, IntPtr pausar, IntPtr buscar, IntPtr volume, IntPtr janela, IntPtr pos);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void EventoDel(int tipo, int a, int b);
@@ -56,6 +60,8 @@ namespace NuvioTpk
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void LogDel(string linha);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void SuspensoDel(int ms);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void VoltouDel();
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate int ReterDel();
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void SeguradoDel(int sim);
 
         // Padrao: as thunks de P/Invoke acima (soname). O NuvioTpk40 repontа na
         // rota ELF.
@@ -70,6 +76,8 @@ namespace NuvioTpk
         // EntryPointNotFoundException (rota DllImport) ou o no-op (rota ELF).
         public static SuspensoDel Suspenso = nv_tpk_video_suspenso;
         public static VoltouDel Voltou = nv_tpk_video_voltou;
+        public static ReterDel ReterMs = nv_tpk_video_reter_ms;
+        public static SeguradoDel Segurado = nv_tpk_video_segurado;
 
         // Repontа tudo por ponteiro de funcao (rota do carregador ELF do
         // NuvioTpk40). resolve(nome) devolve o endereco do simbolo no dynsym.
@@ -89,6 +97,10 @@ namespace NuvioTpk
             Suspenso = p != IntPtr.Zero ? Marshal.GetDelegateForFunctionPointer<SuspensoDel>(p) : new SuspensoDel(_ => { });
             p = resolve("nv_tpk_video_voltou");
             Voltou = p != IntPtr.Zero ? Marshal.GetDelegateForFunctionPointer<VoltouDel>(p) : new VoltouDel(() => { });
+            p = resolve("nv_tpk_video_reter_ms");
+            ReterMs = p != IntPtr.Zero ? Marshal.GetDelegateForFunctionPointer<ReterDel>(p) : new ReterDel(() => -1);
+            p = resolve("nv_tpk_video_segurado");
+            Segurado = p != IntPtr.Zero ? Marshal.GetDelegateForFunctionPointer<SeguradoDel>(p) : new SeguradoDel(_ => { });
         }
     }
 
@@ -109,7 +121,7 @@ namespace NuvioTpk
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int FnPos();
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnEscolher(int tipo, int idx);
 
-        const int EV_PRONTO = 1, EV_TOCANDO = 2, EV_PAUSADO = 3, EV_FIM = 4, EV_ERRO = 5, EV_TAMANHO = 6, EV_BUFFER = 7, EV_VELOCIDADE = 8, EV_PRESO = 9, EV_CONSULTA_LENTA = 10, EV_BUSCOU = 11, EV_BUSCA_FALHOU = 12;
+        const int EV_PRONTO = 1, EV_TOCANDO = 2, EV_PAUSADO = 3, EV_FIM = 4, EV_ERRO = 5, EV_TAMANHO = 6, EV_BUFFER = 7, EV_VELOCIDADE = 8, EV_PRESO = 9, EV_CONSULTA_LENTA = 10, EV_BUSCOU = 11, EV_BUSCA_FALHOU = 12, EV_RETOMADA = 13;
 
         readonly Func<Display> fazDisplay;
         readonly Action<Action> principal;
@@ -509,10 +521,14 @@ namespace NuvioTpk
                         }
                     } catch (Exception ex) { Log("completion state: " + ex.Message); }
                 });
-                p.ErrorOccurred += (s, e) => { if (minha == Volatile.Read(ref sessao)) { Log("erro " + e.Error); NvVid.Evento(EV_ERRO, (int)e.Error, 0); } };
+                p.ErrorOccurred += (s, e) => { if (minha == Volatile.Read(ref sessao)) { Log("erro " + e.Error); NvVid.Evento(EV_ERRO, (int)e.Error, 0); SoltarSeSegurado(minha, "player error " + e.Error); } };
                 p.BufferingProgressChanged += (s, e) => { if (minha == Volatile.Read(ref sessao)) NvVid.Evento(EV_BUFFER, e.Percent, 0); };
-                p.PlaybackInterrupted += (s, e) => { if (minha == Volatile.Read(ref sessao)) { Volatile.Write(ref posAmostraTs, 0); Log("interrompido: " + e.Reason); NvVid.Evento(EV_PAUSADO, 0, 0); } };
+                p.PlaybackInterrupted += (s, e) => { if (minha == Volatile.Read(ref sessao)) { Volatile.Write(ref posAmostraTs, 0); Log("interrompido: " + e.Reason); NvVid.Evento(EV_PAUSADO, 0, 0); SoltarSeSegurado(minha, "interrupted: " + e.Reason); } };
                 p.SubtitleUpdated += (s, e) => { if (minha == Volatile.Read(ref sessao)) NvVid.Legenda(e.Text ?? "", (int)e.Duration); };
+                // #resume: "X-Nuvio-Resume: ms,pausado" = a volta do fundo. Nasce
+                // muda, busca o ponto ANTES do Start e, se pausado, pausa nele.
+                bool retAtivo = false, retPausado = false;
+                int retMs = 0;
                 foreach (var linha in (cabecalhos ?? "").Split('\n'))
                 {
                     int i = linha.IndexOf(':');
@@ -522,7 +538,11 @@ namespace NuvioTpk
                     // devolve o som (Escolher 5) com o video ja pausado no ponto.
                     if (nome == "X-Nuvio-Resume")
                     {
-                        try { p.Muted = true; Log("[fundo] reopen starts muted"); }
+                        var partes = valor.Split(',');
+                        if (!int.TryParse(partes[0].Trim(), out retMs)) retMs = 0;
+                        retPausado = partes.Length > 1 && partes[1].Trim() == "1";
+                        retAtivo = true;
+                        try { p.Muted = true; Log("[fundo] reopen starts muted (point " + retMs + " ms, " + (retPausado ? "paused" : "playing") + ")"); }
                         catch (Exception exMudo) { Log("[fundo] muting the reopen failed: " + exMudo.GetType().Name + " " + exMudo.Message); }
                         continue;
                     }
@@ -544,6 +564,22 @@ namespace NuvioTpk
                 p.SetSource(new MediaUriSource(url));
                 p.Display = fazDisplay();
                 p.DisplaySettings.Mode = PlayerDisplayMode.LetterBox;
+                long retT0 = Stopwatch.GetTimestamp();
+                bool retNoIdle = false;
+                if (retAtivo && retMs > 0)
+                {
+                    // Abrir JA no ponto: o Tizen documenta o seek so depois do
+                    // Prepare, mas o firmware pode aceitar antes. Se recusar, o
+                    // seek vai entre o Prepare e o Start.
+                    try
+                    {
+                        var t0 = p.SetPlayPositionAsync(retMs, true);
+                        _ = t0.ContinueWith(t => { var _e = t.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
+                        retNoIdle = true;
+                        Log("[fundo] seek before Prepare accepted (target " + retMs + " ms)");
+                    }
+                    catch (Exception exIdle) { Log("[fundo] seek before Prepare refused (" + exIdle.GetType().Name + "): seeking after Prepare"); }
+                }
                 await p.PrepareAsync();
                 // A parada e dona unica do descarte, inclusive se o Prepare
                 // terminar depois do pedido de saida ou de outra abertura.
@@ -555,10 +591,61 @@ namespace NuvioTpk
                 AplicaVolume(p, "preparado");
                 NvVid.Evento(EV_PRONTO, dur, 0);
                 if (minha != Volatile.Read(ref sessao)) return;
+                int retPousou = -1;
+                if (retAtivo && retMs > 0)
+                {
+                    long t1 = Stopwatch.GetTimestamp();
+                    bool jaNoPonto = false;
+                    if (retNoIdle)
+                    {
+                        try { int pos = p.GetPlayPosition(); jaNoPonto = Math.Abs(pos - retMs) <= 1000; Log("[fundo] after Prepare the player is at " + pos + " ms"); }
+                        catch (Exception exPos) { Log("[fundo] position after Prepare not readable: " + exPos.GetType().Name); }
+                    }
+                    retPousou = jaNoPonto ? retMs : await SeekAntesDoStart(p, minha, retMs);
+                    if (minha != Volatile.Read(ref sessao)) return;
+                    Log("[fundo] seek before Start " + (retPousou >= 0 ? "ok" : "failed") + " in " + MsDesde(t1) +
+                        " ms (open to here " + MsDesde(retT0) + " ms)");
+                    if (retPousou >= 0) lock (trocaTrava) { if (minha == sessao && player == p) posMs = retPousou; }
+                }
                 p.Start();
                 windowMetrics.Invalidate();
                 AplicaVolume(p, "start");
                 NvVid.Evento(EV_TOCANDO, 0, 0);
+                if (retAtivo)
+                {
+                    bool pausou = false;
+                    if (retPausado)
+                    {
+                        // O quadro so aparece com o Start: toca mudo um instante,
+                        // pausa e volta ao ponto exato com o player parado.
+                        await Task.Delay(RetomarQuadroMs);
+                        if (minha != Volatile.Read(ref sessao) || player != p) return;
+                        try
+                        {
+                            if (p.State == PlayerState.Playing) p.Pause();
+                            if (retPousou >= 0)
+                            {
+                                long t2 = Stopwatch.GetTimestamp();
+                                var volta = p.SetPlayPositionAsync(retPousou, true);
+                                _ = volta.ContinueWith(t => { var _e = t.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
+                                if (await Task.WhenAny(volta, Task.Delay(PrazoBuscarMs)) == volta) { await volta; Log("[fundo] back on the exact point while paused in " + MsDesde(t2) + " ms"); }
+                                else Log("[fundo] exact seek while paused did not finish in " + PrazoBuscarMs + " ms");
+                            }
+                            pausou = p.State == PlayerState.Paused;
+                        }
+                        catch (Exception exP) { Log("[fundo] pause at the point failed: " + exP.GetType().Name + " " + exP.Message); }
+                        if (minha != Volatile.Read(ref sessao) || player != p) return;
+                        lock (trocaTrava)
+                        {
+                            if (retPousou >= 0) posMs = retPousou;
+                            posParadoMs = posMs; Volatile.Write(ref posAmostraTs, 0);
+                        }
+                        NvVid.Evento(EV_PAUSADO, pausou ? 1 : 0, 0);
+                    }
+                    NvVid.Evento(EV_RETOMADA, retPousou, pausou ? 1 : 0);
+                    Log("[fundo] reopen at the point done in " + MsDesde(retT0) + " ms (point " + retPousou + " ms, " + (pausou ? "paused" : "playing") + ")");
+                    if (retPousou >= 0) PousouDiag(p, minha, retPousou, retT0);
+                }
                 if (volPedido)
                 {
                     await System.Threading.Tasks.Task.Delay(1500);
@@ -652,7 +739,12 @@ namespace NuvioTpk
             windowMetrics.Reset();
         }
 
-        public void Parar() { Trocar(null); }
+        public void Parar()
+        {
+            // Qualquer parada (sair do player, outro video, o C) acaba o segurar.
+            lock (seguroTrava) { segurado = false; seguroTimer?.Dispose(); seguroTimer = null; }
+            Trocar(null);
+        }
         public void Encerrar() { Parar(); }
 
         // Dispose confirma a liberacao, independentemente do estado anterior.
@@ -701,8 +793,10 @@ namespace NuvioTpk
                         posParadoMs = posMs + (int)Math.Max(0, Math.Min(5000, dt));
                         Volatile.Write(ref posAmostraTs, 0);
                     }
-                    p.Pause(); NvVid.Evento(EV_PAUSADO, 0, 0);
+                    p.Pause(); NvVid.Evento(EV_PAUSADO, p.State == PlayerState.Paused ? 1 : 0, 0);
                 }
+                // Ja pausado: confirma de novo (o C apaga a confirmacao no Play/seek).
+                else if (pausa && p.State == PlayerState.Paused) NvVid.Evento(EV_PAUSADO, 1, 0);
                 else if (!pausa && (p.State == PlayerState.Paused || p.State == PlayerState.Ready)) { acabou = false; p.Start(); windowMetrics.Invalidate(); NvVid.Evento(EV_TOCANDO, 0, 0); }
             }
             catch (InvalidOperationException e)
@@ -763,7 +857,7 @@ namespace NuvioTpk
                     if (minha != Volatile.Read(ref sessao)) return;
                     // PlaybackInterrupted pode ter emitido evento 3 durante o seek.
                     if (p.State == PlayerState.Playing) NvVid.Evento(EV_TOCANDO, 0, 0);
-                    else if (p.State == PlayerState.Paused) NvVid.Evento(EV_PAUSADO, 0, 0);
+                    else if (p.State == PlayerState.Paused) NvVid.Evento(EV_PAUSADO, 1, 0);
                 }
             }
             catch (InvalidOperationException e) {
@@ -782,6 +876,154 @@ namespace NuvioTpk
             // a transicao que produz evento 3; o cache ja recebeu o alvo aceito.
             if (buscaPend >= 0) { int alvo = buscaPend; buscaPend = -1; Buscar(alvo); }
             else if (pausaPend >= 0) { bool pausa = pausaPend != 0; pausaPend = -1; Pausar(pausa); }
+        }
+
+        // #resume: o Start mostra o primeiro quadro; este e o tempo tocando mudo
+        // antes da pausa (o seek exato com o player pausado devolve ao ponto).
+        const int RetomarQuadroMs = 250;
+
+        static long MsDesde(long ts) { return (Stopwatch.GetTimestamp() - ts) * 1000 / Stopwatch.Frequency; }
+
+        // Seek com o player em Ready (depois do Prepare, antes do Start): exato,
+        // e o rapido se o exato for recusado. -1 = nao buscou (o C busca depois).
+        async Task<int> SeekAntesDoStart(Player p, int minha, int ms)
+        {
+            foreach (bool exata in new[] { true, false })
+            {
+                try
+                {
+                    var t = p.SetPlayPositionAsync(ms, exata);
+                    _ = t.ContinueWith(x => { var _e = x.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
+                    if (await Task.WhenAny(t, Task.Delay(PrazoBuscarMs)) != t) { Log("[fundo] " + (exata ? "exact" : "fast") + " seek before Start timed out"); return -1; }
+                    await t;
+                    return ms;
+                }
+                catch (ObjectDisposedException) { return -1; }
+                catch (Exception e)
+                {
+                    Log("[fundo] " + (exata ? "exact" : "fast") + " seek before Start failed: " + e.GetType().Name + " " + e.Message);
+                    if (minha != Volatile.Read(ref sessao)) return -1;
+                }
+            }
+            return -1;
+        }
+
+        // SEGURAR NO FUNDO (Home/sono com "Manter o video pronto ao sair"). O
+        // OnPause pergunta a regra ao app (NvVid.ReterMs) e chama isto antes de
+        // qualquer Parar: a pausa vai pela fila do player e so vale lida em
+        // Paused em ate 400 ms. Nao confirmou (fila presa, seek em voo, estado
+        // estranho): o OnPause descarta como sempre (#412). Confirmou: o player
+        // fica pausado, e o RELOGIO CORRE AQUI (o fio do app pode nao rodar no
+        // fundo). Prazo, interrupcao da TV (outro app tomou o video), erro ou
+        // pouca memoria soltam: AvisarFundo + Parar, a volta reabre.
+        readonly object seguroTrava = new object();
+        bool segurado;
+        int seguradoSessao;
+        long seguradoDesde, seguradoAte;
+        Timer seguroTimer;
+
+        // Executa na fila do player e espera; false = a fila nao respondeu.
+        bool NaFila(Action a, int esperaMs)
+        {
+            var f = Volatile.Read(ref fio);
+            if (f == null) return false;
+            var feito = new ManualResetEventSlim(false);
+            f.Post(_ => { try { a(); } catch (Exception e) { Log("[fundo] queue: " + e.GetType().Name + " " + e.Message); } finally { feito.Set(); } }, null);
+            return feito.Wait(esperaMs);
+        }
+
+        public bool SegurarNoFundo(int reterMs)
+        {
+            if (reterMs < 0) return false;
+            Player p; int minha;
+            lock (trocaTrava) { p = player; minha = sessao; }
+            if (p == null || playerSessao != minha) { Log("[fundo] not holding: no player"); return false; }
+            bool ok = false; string como = "?";
+            bool chegou = NaFila(() => {
+                if (minha != Volatile.Read(ref sessao) || player != p) { como = "session changed"; return; }
+                if (buscando) { como = "seek in flight"; return; }
+                var st = p.State;
+                if (st == PlayerState.Playing)
+                {
+                    lock (trocaTrava)
+                    {
+                        long ts = Volatile.Read(ref posAmostraTs);
+                        long dt = ts != 0 ? (Stopwatch.GetTimestamp() - ts) * 1000 / Stopwatch.Frequency : 0;
+                        posParadoMs = posMs + (int)Math.Max(0, Math.Min(5000, dt));
+                        Volatile.Write(ref posAmostraTs, 0);
+                    }
+                    p.Pause();
+                    st = p.State;
+                }
+                ok = st == PlayerState.Paused;
+                como = "state " + st;
+                if (ok) NvVid.Evento(EV_PAUSADO, 1, 0);
+            }, 400);
+            if (!chegou || !ok) { Log("[fundo] not holding the player: " + (chegou ? como : "the player queue did not answer in 400 ms")); return false; }
+            lock (seguroTrava)
+            {
+                segurado = true; seguradoSessao = minha;
+                seguradoDesde = Stopwatch.GetTimestamp();
+                seguradoAte = reterMs == 0 ? long.MaxValue : seguradoDesde + (long)reterMs * Stopwatch.Frequency / 1000;
+                seguroTimer?.Dispose();
+                seguroTimer = reterMs == 0 ? null : new Timer(_ => LiberarSegurado("time up"), null, reterMs, Timeout.Infinite);
+            }
+            Log("[fundo] holding the paused player in the background at " + posParadoMs + " ms (" + (reterMs == 0 ? "no limit" : reterMs + " ms") + ")");
+            try { NvVid.Segurado(1); } catch (EntryPointNotFoundException) { }
+            return true;
+        }
+
+        // Solta o player segurado: o C fica sabendo onde ele estava e a volta reabre.
+        public void LiberarSegurado(string porque)
+        {
+            long desde;
+            lock (seguroTrava)
+            {
+                if (!segurado) return;
+                segurado = false; seguroTimer?.Dispose(); seguroTimer = null;
+                desde = seguradoDesde;
+            }
+            Log("[fundo] releasing the held player: " + porque + " (held " + MsDesde(desde) + " ms)");
+            AvisarFundo();
+            Parar();
+        }
+
+        void SoltarSeSegurado(int minha, string porque)
+        {
+            bool meu;
+            lock (seguroTrava) meu = segurado && seguradoSessao == minha;
+            if (meu) Task.Run(() => LiberarSegurado(porque));
+        }
+
+        // Volta a tela: o player segurado ainda vale (prazo, sessao, Paused)?
+        // true = nada a reabrir; false = soltou (se havia) e a volta reabre.
+        public bool VoltarSegurado(string deOnde)
+        {
+            int minha; long desde, ate;
+            lock (seguroTrava)
+            {
+                if (!segurado) return false;
+                minha = seguradoSessao; desde = seguradoDesde; ate = seguradoAte;
+            }
+            if (Stopwatch.GetTimestamp() >= ate) { LiberarSegurado("time up (seen on return)"); return false; }
+            Player p;
+            lock (trocaTrava) p = player;
+            if (p == null || minha != Volatile.Read(ref sessao) || playerSessao != minha) { LiberarSegurado("player gone"); return false; }
+            PlayerState st = PlayerState.Idle; bool lido = false;
+            bool chegou = NaFila(() => { st = p.State; lido = true; }, 400);
+            if (!chegou || !lido || st != PlayerState.Paused)
+            {
+                LiberarSegurado(!chegou ? "the player queue did not answer on return" : "state " + st + " on return");
+                return false;
+            }
+            lock (seguroTrava)
+            {
+                if (!segurado) return false;
+                segurado = false; seguroTimer?.Dispose(); seguroTimer = null;
+            }
+            Log("[fundo] back to the held player (" + deOnde + ", held " + MsDesde(desde) + " ms): no reopen");
+            try { NvVid.Segurado(0); } catch (EntryPointNotFoundException) { }
+            return true;
         }
 
         // #resume: onde o seek exato pousou DE VERDADE (o posMs recebe o alvo).

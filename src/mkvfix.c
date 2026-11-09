@@ -620,7 +620,50 @@ typedef struct {
   int64_t ini, fim, prox;     // bytes [ini, fim] pedidos; prox = o proximo a mandar
   int cabFeito, head, parcial, falhouEnvio;
   unsigned nr;
+  unsigned char *cap;         // copia crua do pedido curto, para o cache (ou NULL)
 } Envio;
+
+// PEDIDOS CURTOS EM MEMORIA (a volta ao app, 09/11). Ao abrir, o player pede o
+// comeco do arquivo e um trecho curto do fim (o indice/Cues, ~114 KB). Numa
+// reabertura do mesmo arquivo esse trecho e identico, mas ia de novo ao CDN por
+// uma conexao nova (log 7: 1,3 s, 1 s so no TCP). Os ultimos pedidos curtos
+// (<= 1 MiB, fora do byte 0) ficam aqui, guardados CRUS: a troca do SeekHead e
+// das legendas escondidas e refeita ao mandar. Chave: tamanho do arquivo +
+// trecho (o link do CDN muda entre aberturas; um arquivo de video de mesmo
+// tamanho exato e outro conteudo nao acontece acima de 64 MiB).
+#define MF_CACHE_N    4
+#define MF_CACHE_MAX  (1024L * 1024)
+#define MF_CACHE_MIN_TOTAL (64LL * 1024 * 1024)
+typedef struct { int64_t total, ini, fim; unsigned char *b; } MfCache;
+static MfCache mfCache[MF_CACHE_N];
+static int mfCacheProx;
+static pthread_mutex_t mfCacheTrava = PTHREAD_MUTEX_INITIALIZER;
+
+static unsigned char *cachePegar(int64_t total, int64_t ini, int64_t fim) {
+  unsigned char *c = NULL;
+  pthread_mutex_lock(&mfCacheTrava);
+  for (int i = 0; i < MF_CACHE_N; i++)
+    if (mfCache[i].b && mfCache[i].total == total && mfCache[i].ini == ini && mfCache[i].fim == fim) {
+      size_t n = (size_t)(fim - ini + 1);
+      if ((c = malloc(n)) != NULL) memcpy(c, mfCache[i].b, n);
+      break;
+    }
+  pthread_mutex_unlock(&mfCacheTrava);
+  return c;
+}
+static void cacheGuardar(int64_t total, int64_t ini, int64_t fim, unsigned char *b) {
+  pthread_mutex_lock(&mfCacheTrava);
+  for (int i = 0; i < MF_CACHE_N; i++)
+    if (mfCache[i].b && mfCache[i].total == total && mfCache[i].ini == ini && mfCache[i].fim == fim) {
+      free(mfCache[i].b); mfCache[i].b = b; b = NULL; break;
+    }
+  if (b) {
+    MfCache *c = &mfCache[mfCacheProx]; mfCacheProx = (mfCacheProx + 1) % MF_CACHE_N;
+    free(c->b);
+    c->total = total; c->ini = ini; c->fim = fim; c->b = b;
+  }
+  pthread_mutex_unlock(&mfCacheTrava);
+}
 
 static int enviarCab(Envio *e) {
   char c[512];
@@ -648,6 +691,7 @@ static int ralo(void *u, const char *dados, size_t n) {
     int64_t sobra = e->fim - e->prox + 1, a, z;
     if ((int64_t)k > sobra) k = (size_t)sobra;
     memcpy(tmp, dados, k);
+    if (e->cap) memcpy(e->cap + (e->prox - e->ini), dados, k);
     a = e->prox > e->s->regiao ? e->prox : e->s->regiao;
     z = e->prox + (int64_t)k < e->s->regiao + e->s->regiaoN ? e->prox + (int64_t)k : e->s->regiao + e->s->regiaoN;
     if (a < z) memcpy(tmp + (a - e->prox), e->s->conserto + (a - e->s->regiao), (size_t)(z - a));
@@ -758,6 +802,18 @@ static void *atender(void *u) {
   e.prox = e.ini;
   if (e.head) { enviarCab(&e); goto sai; }
   t0 = agoraMs();
+  if (e.parcial && e.ini > 0 && e.fim - e.ini + 1 <= MF_CACHE_MAX && s->total >= MF_CACHE_MIN_TOTAL) {
+    unsigned char *c = cachePegar(s->total, e.ini, e.fim);
+    if (c) {
+      ralo(&e, (const char *)c, (size_t)(e.fim - e.ini + 1));
+      free(c);
+      printf("[mkvfix] #%u Range bytes %lld-%lld: sent %lld in %u ms from memory%s\n", e.nr, (long long)e.ini,
+             (long long)e.fim, (long long)(e.prox - e.ini), (unsigned)(agoraMs() - t0), e.falhouEnvio ? " (player closed)" : "");
+      fflush(stdout);
+      goto sai;
+    }
+    e.cap = malloc((size_t)(e.fim - e.ini + 1));
+  }
   for (int tentativa = 0; tentativa < 2; tentativa++) {
     char up[8192];
     int semCab, st = 0, cross = 0, r;
@@ -776,6 +832,11 @@ static void *atender(void *u) {
       fflush(stdout);
     }
     break;
+  }
+  if (e.cap) {
+    if (e.prox > e.fim && !e.falhouEnvio && !s->cancelar) cacheGuardar(s->total, e.ini, e.fim, e.cap);
+    else free(e.cap);
+    e.cap = NULL;
   }
   { int64_t len = e.prox - e.ini;
     int tocou = s->regiaoN > 0 && e.ini < s->regiao + s->regiaoN && e.prox > s->regiao;
