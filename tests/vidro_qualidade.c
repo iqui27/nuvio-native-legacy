@@ -57,6 +57,37 @@ static void roda(int n, Uint32 *t) {
   }
 }
 
+// A glass entering a new region must see the same clean backdrop on both
+// frames, even if foreground content was drawn before the glass.
+static float regiao_fundo = .05f;
+static int regiao_veu;
+static void regiao_quadro(int direita, unsigned char pixel[4]) {
+  gfx_novo_quadro();
+  glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT);
+  gfx_cor((GfxRect){0, 0, 1920, 1080}, 0, regiao_fundo, regiao_fundo, regiao_fundo, 1);
+  gfx_cor((GfxRect){1200, 250, 500, 500}, 0, 1, 0, 0, 1);
+  if (regiao_veu) gfx_cor((GfxRect){0, 0, 1920, 1080}, 0, 0, 0, 1, .5f);   // modal veil after foreground
+  gfx_vidro((GfxRect){direita ? 1250 : 100, 300, 300, 300}, .1f, GFX_VIDRO_PAINEL, .1f, .8f, 1);
+  glReadPixels(1400, 1080 - 450, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+}
+// VIDRO_QUAL_SHOT=<file.bmp>: save the current frame (before/after evidence).
+static void regiao_shot(const char *sufixo) {
+  const char *dir = getenv("VIDRO_QUAL_SHOT");
+  char nome[512];
+  unsigned char *pix;
+  SDL_Surface *s;
+  int y;
+  if (!dir) return;
+  snprintf(nome, sizeof nome, "%s/%s.bmp", dir, sufixo);
+  pix = malloc(1920 * 1080 * 4);
+  s = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
+  assert(pix && s);
+  glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pix);
+  for (y = 0; y < 1080; y++) memcpy((char *)s->pixels + y * s->pitch, pix + (1079 - y) * 1920 * 4, 1920 * 4);
+  assert(SDL_SaveBMP(s, nome) == 0);
+  SDL_FreeSurface(s); free(pix);
+}
+
 // One window of the governor: GOV_JANELA frames, each `ms` long, target 16.7.
 static void janela(double ms) { int i; for (i = 0; i < 150; i++) gfx_vidro_governar(ms, 16.7); }
 
@@ -125,6 +156,98 @@ int main(void) {
   assert(ajustes_vidro_qualidade() == 0);
   roda(150, &t); roda(20, &t);
   confere(cap == 1 && fonte > 0 && !gfx_vidro_degradado(), "Automatica: frost at first");
+  {
+    unsigned char p[4], first[4], second[4];
+    gfx_vidro_sujar();
+    for (i = 0; i < 4; i++) regiao_quadro(0, p);
+    regiao_quadro(1, first); regiao_shot("auto-new-region-frame1");
+    double copy1 = gfx_vidro_copia, fill1 = gfx_vidro_fill;
+    int cap1 = gfx_vidro_capturas, pass1 = gfx_vidro_passadas;
+    regiao_quadro(1, second); regiao_shot("auto-new-region-frame2");
+    printf("new region first=%u,%u,%u second=%u,%u,%u copy=%.3f/%.3f fill=%.3f/%.3f captures=%d/%d passes=%d/%d\n", first[0], first[1], first[2], second[0], second[1], second[2], copy1, gfx_vidro_copia, fill1, gfx_vidro_fill, cap1, gfx_vidro_capturas, pass1, gfx_vidro_passadas);
+    confere(abs((int)first[0] - second[0]) <= 1 && abs((int)first[1] - second[1]) <= 1 && abs((int)first[2] - second[2]) <= 1,
+            "new glass region keeps clean backdrop across frames");
+    confere(copy1 == 0.0 && gfx_vidro_copia == 0.0, "static backdrop: new region reuses the retained copy, no screen copy");
+    // Invalidation: the backdrop changes; the stale retained copy must not be
+    // read. Once the new backdrop holds still it is retained again.
+    unsigned char stale[4]; memcpy(stale, second, 4);
+    regiao_fundo = .25f;
+    for (i = 0; i < 40; i++) regiao_quadro(0, p);
+    regiao_quadro(1, first);
+    regiao_quadro(1, second);
+    printf("changed region first=%u,%u,%u second=%u,%u,%u stale=%u copy=%.3f\n", first[0], first[1], first[2], second[0], second[1], second[2], stale[0], gfx_vidro_copia);
+    confere(abs((int)first[0] - second[0]) <= 1 && abs((int)first[1] - second[1]) <= 1 && first[0] > stale[0] + 5,
+            "changed backdrop: retained copy refreshed, never stale");
+    // Out-of-hash invalidation (gfx_vidro_sujar): the retained copy is dropped,
+    // the new region copies the live screen again.
+    regiao_fundo = .05f;
+    for (i = 0; i < 40; i++) regiao_quadro(0, p);
+    gfx_vidro_sujar();
+    regiao_quadro(1, first);
+    printf("sujar region copy=%.3f\n", gfx_vidro_copia);
+    confere(gfx_vidro_copia > 0.0, "gfx_vidro_sujar drops the retained backdrop");
+    // A modal veil after foreground: the glass reads the live screen (veil),
+    // not the retained clean backdrop.
+    for (i = 0; i < 40; i++) regiao_quadro(0, p);
+    regiao_veu = 1; regiao_quadro(1, first); regiao_quadro(1, second); regiao_veu = 0;
+    printf("veil region first=%u,%u,%u second=%u,%u,%u\n", first[0], first[1], first[2], second[0], second[1], second[2]);
+    confere(first[2] > first[1] + 20 && second[2] > second[1] + 20, "modal veil over glass still read from the live screen");
+    // F2a: new glass region appearing while backdrop changes every frame (without fundoPasso).
+    for (i = 0; i < 6; i++) { regiao_fundo = .05f + i * .01f; regiao_quadro(0, p); }
+    regiao_fundo = .11f;
+    regiao_quadro(1, first); regiao_shot("auto-changing-new-region-frame1");
+    regiao_quadro(1, second); regiao_shot("auto-changing-new-region-frame2");
+    printf("changing new region first=%u,%u,%u second=%u,%u,%u\n", first[0], first[1], first[2], second[0], second[1], second[2]);
+    confere(abs((int)first[0] - second[0]) <= 1 && abs((int)first[1] - second[1]) <= 1 && abs((int)first[2] - second[2]) <= 1,
+            "F2a: new glass region during changing backdrop has no foreground contamination");
+    // F2b: backdrop changes and re-settles within <30-frame cooldown, then new glass region appears.
+    regiao_fundo = .08f;
+    for (i = 0; i < 4; i++) regiao_quadro(0, p);
+    regiao_fundo = .22f;
+    for (i = 0; i < 4; i++) regiao_quadro(0, p);
+    regiao_quadro(1, first); regiao_shot("auto-cooldown-new-region-frame1");
+    regiao_quadro(1, second); regiao_shot("auto-cooldown-new-region-frame2");
+    printf("cooldown new region first=%u,%u,%u second=%u,%u,%u\n", first[0], first[1], first[2], second[0], second[1], second[2]);
+    confere(abs((int)first[0] - second[0]) <= 1 && abs((int)first[1] - second[1]) <= 1 && abs((int)first[2] - second[2]) <= 1,
+            "F2b: new glass region within <30 frames after backdrop change has no foreground contamination");
+    regiao_fundo = .05f;
+  }
+  {
+    unsigned char p[4], first[4], second[4];
+    setenv("NUVIO_SHOT_VIDRO_QUAL", "2", 1); ajustes_teste_vidro_env();
+    gfx_vidro_sujar();
+    for (i = 0; i < 4; i++) regiao_quadro(0, p);
+    regiao_quadro(1, first);
+    double copy1 = gfx_vidro_copia, fill1 = gfx_vidro_fill;
+    regiao_quadro(1, second);
+    printf("high region first=%u,%u,%u second=%u,%u,%u copy=%.3f/%.3f fill=%.3f/%.3f\n", first[0], first[1], first[2], second[0], second[1], second[2], copy1, gfx_vidro_copia, fill1, gfx_vidro_fill);
+    confere(abs((int)first[0] - second[0]) <= 1 && abs((int)first[1] - second[1]) <= 1 && abs((int)first[2] - second[2]) <= 1,
+            "High clean backdrop comparison");
+    for (int quality = 0; quality <= 2; quality += 2) {
+      double copied = 0, filled = 0, settled_copy = 0, settled_fill = 0;
+      int captures = 0, passes = 0, settled_cap = 0, settled_pass = 0;
+      setenv("NUVIO_SHOT_VIDRO_QUAL", quality ? "2" : "0", 1); ajustes_teste_vidro_env();
+      regiao_fundo = .05f;
+      gfx_vidro_sujar();
+      for (i = 0; i < 3; i++) regiao_quadro(0, p);
+      for (i = 0; i < 8; i++) {
+        regiao_quadro(0, p);
+        settled_copy += gfx_vidro_copia; settled_fill += gfx_vidro_fill;
+        settled_cap += gfx_vidro_capturas; settled_pass += gfx_vidro_passadas;
+      }
+      for (i = 0; i < 8; i++) {
+        regiao_fundo = .05f + i * .01f;
+        regiao_quadro(0, p);
+        copied += gfx_vidro_copia; filled += gfx_vidro_fill;
+        captures += gfx_vidro_capturas; passes += gfx_vidro_passadas;
+      }
+      printf("settled backdrop quality=%d copy=%.3f fill=%.3f captures=%d passes=%d frames=8\n", quality, settled_copy, settled_fill, settled_cap, settled_pass);
+      printf("changing backdrop quality=%d copy=%.3f fill=%.3f captures=%d passes=%d frames=8\n", quality, copied, filled, captures, passes);
+    }
+    regiao_fundo = .05f;
+    setenv("NUVIO_SHOT_VIDRO_QUAL", "0", 1); ajustes_teste_vidro_env();
+  }
+  roda(1, &t);
   for (i = 0; i < 3; i++) janela(40.0);
   janela(16.7);
   for (i = 0; i < 3; i++) janela(40.0);
@@ -221,6 +344,71 @@ int main(void) {
     roda(30, &t);
     printf("Degrau 1: cap<=%d pas<=%d (completo %d) fonte=%d\n", cap, pas, completo, fonte);
     confere(cap == 1 && pas == completo - 1 && fonte > 0, "ladder rung 1: cheaper blur before any glass or frost removal");
+    assert(ajustes_vidro_qualidade() == 3);
+    unsigned char p[4], first[4], second[4];
+    gfx_vidro_sujar();
+    regiao_fundo = .05f;
+    for (i = 0; i < 4; i++) regiao_quadro(0, p);
+    regiao_quadro(1, first); regiao_shot("rung1-settled-new-region-frame1");
+    double copy_settled = gfx_vidro_copia;
+    regiao_quadro(1, second); regiao_shot("rung1-settled-new-region-frame2");
+    printf("rung1 settled new region first=%u,%u,%u second=%u,%u,%u copy=%.3f/%.3f\n", first[0], first[1], first[2], second[0], second[1], second[2], copy_settled, gfx_vidro_copia);
+    confere(abs((int)first[0] - second[0]) <= 1 && abs((int)first[1] - second[1]) <= 1 && abs((int)first[2] - second[2]) <= 1 && copy_settled == 0.0,
+            "F1a: ladder rung 1 (quality 3) retains clean backdrop for new region");
+    for (i = 0; i < 6; i++) { regiao_fundo = .05f + i * .01f; regiao_quadro(0, p); }
+    regiao_fundo = .11f;
+    regiao_quadro(1, first); regiao_shot("rung1-changing-new-region-frame1");
+    regiao_quadro(1, second); regiao_shot("rung1-changing-new-region-frame2");
+    printf("rung1 changing new region first=%u,%u,%u second=%u,%u,%u\n", first[0], first[1], first[2], second[0], second[1], second[2]);
+    confere(abs((int)first[0] - second[0]) <= 1 && abs((int)first[1] - second[1]) <= 1 && abs((int)first[2] - second[2]) <= 1,
+            "F1b: ladder rung 1 (quality 3) keeps clean backdrop during changing backdrop");
+    // F1c: zero-region initialization when frost first appears in quality 3.
+    gfx_vidro_sujar();
+    gfx_novo_quadro();
+    glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT);
+    gfx_cor((GfxRect){0, 0, 1920, 1080}, 0, .05f, .05f, .05f, 1);
+    gfx_novo_quadro();
+    glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT);
+    gfx_cor((GfxRect){0, 0, 1920, 1080}, 0, .05f, .05f, .05f, 1);
+    gfx_cor((GfxRect){100, 300, 300, 300}, 0, 1, 0, 0, 1);
+    gfx_vidro((GfxRect){100, 300, 300, 300}, .1f, GFX_VIDRO_PAINEL, .1f, .8f, 1);
+    gfx_vidro((GfxRect){1250, 300, 300, 300}, .1f, GFX_VIDRO_PAINEL, .1f, .8f, 1);
+    glReadPixels(250, 1080 - 450, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, first);
+    printf("rung1 zero-region init captures=%d pixel=%u,%u,%u\n", gfx_vidro_capturas, first[0], first[1], first[2]);
+    confere(gfx_vidro_capturas == 1 && abs((int)first[0] - first[1]) <= 2,
+            "F1c: ladder rung 1 (quality 3) pre-foreground full-screen blur when frost first appears");
+    // F3: gfx_vidro_governar has no production caller (only this test and
+    // other tests). Do not read a pass here as proof a C9 reaches the state.
+    // Force the flag at quality 0, then the ladder moves quality to 3. Smoked
+    // glass is quality 0 only, so quality 3 still frosts and must retain.
+    // The new region appears on a frame whose backdrop color is still
+    // changing, compared with a settled clean control of that same color.
+    gfx_vidro_governar_zerar();
+    gpun_teste_reiniciar();
+    assert(ajustes_vidro_qualidade() == 0);
+    roda(4, &t);
+    for (i = 0; i < 4; i++) janela(40.0);
+    confere(gfx_vidro_degradado(), "F3 setup: governor flag set while quality is still 0");
+    gpun_relatar(60, 40, 1000.0 / 60, 1, 1);
+    for (i = 0; i < 3; i++) gpun_relatar(30, 40, 1000.0 / 60, 1, 1);
+    assert(gpun_efeito_ativo(1) && ajustes_vidro_qualidade() == 3 && gfx_vidro_degradado());
+    roda(4, &t);
+    printf("F3 degraded q=3 fonte=%d chapado=%d copy=%.3f\n", fonte, chapado, copiatot);
+    confere(fonte > 0 && chapado == 0, "F3: degraded flag plus quality 3 still draws frost");
+    regiao_fundo = .20f;
+    for (i = 0; i < 4; i++) regiao_quadro(1, p);
+    regiao_quadro(1, first);
+    unsigned char clean[4]; memcpy(clean, first, 4);
+    for (i = 0; i < 6; i++) { regiao_fundo = .05f + i * .01f; regiao_quadro(0, p); }
+    regiao_fundo = .20f;
+    regiao_quadro(1, second); regiao_shot("rung1-degraded-changing-new-region");
+    printf("F3 changing new region first=%u,%u,%u clean=%u,%u,%u copy=%.3f fill=%.3f captures=%d passes=%d\n",
+           second[0], second[1], second[2], clean[0], clean[1], clean[2],
+           gfx_vidro_copia, gfx_vidro_fill, gfx_vidro_capturas, gfx_vidro_passadas);
+    confere(abs((int)second[0] - clean[0]) <= 1 && abs((int)second[1] - clean[1]) <= 1 && abs((int)second[2] - clean[2]) <= 1,
+            "F3: degraded quality 3 retains clean backdrop on the frame a region appears while the backdrop changes");
+    regiao_fundo = .05f;
+    gfx_vidro_governar_zerar();
   }
 
   unlink(cam);
