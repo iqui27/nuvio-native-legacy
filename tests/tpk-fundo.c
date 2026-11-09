@@ -58,6 +58,7 @@ void video_tpk_reter_publicar(int ms, int tela);
 int nv_tpk_video_reter_ms(void);
 void nv_tpk_video_segurado(int sim);
 int video_tpk_segurado(void);
+void video_tpk_log_host(const char *linha);
 void video_escolher_audio(int i);
 void video_escolher_legenda(int i);
 void video_bombear(void);
@@ -335,6 +336,23 @@ int main(void) {
   nv_tpk_video_voltou();
   bombearPor(100);
   ok("new title: an old return does not reopen anything", nAbrir == 0 && video_tocando());
+
+  // --- 16. Samsung's Home takes the decoder while Nuvio leaves (log 11) -----
+  // The interruption lands before "main window hidden"; it is not another app
+  // and must not switch off the hold and the trailers until Nuvio restarts.
+  video_tpk_log_host("[janela] principal visivel=True t=1.0s");
+  tocarFilme("http://x/home.mp4", 30000);
+  nv_tpk_video_suspenso(30000);             // host: leaving, stopped at 30 s
+  video_tpk_log_host("interrompido: ResourceConflict");
+  ok("Home takes the decoder: not counted as another app", !video_conflito_recurso());
+  video_tpk_fundo(-1.0);
+  nv_tpk_video_voltou();
+  bombearPor(100);
+  video_parar();
+  tocarFilme("http://x/outro.mp4", 30000);
+  video_tpk_log_host("interrompido: ResourceConflict");   // on screen: a real takeover
+  ok("another app takes the video on screen: still counted", video_conflito_recurso());
+  video_parar();
 
   printf("tpk-fundo: %s\n", falhas ? "FALHOU" : "ok");
   return falhas ? 1 : 0;

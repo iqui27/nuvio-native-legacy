@@ -204,6 +204,12 @@ static atomic_int pausaAck;
 // rodar no fundo). Soltou (prazo, interrupcao, pouca memoria): o host avisa a
 // parada como antes (nv_tpk_video_suspenso) e a volta reabre ou solta a retida.
 static atomic_int reterPublicado = -1, telaAberta, seguradoFundo, seguroAplicar, seguroVoltou;
+// O app esta indo/esta no fundo (o host avisou a parada ou segurou o player);
+// apaga quando a tela volta. A Home da Samsung toma o decodificador nesse
+// instante (ResourceConflict) ANTES do "principal visivel=False": sem isto, o
+// conflito "outro app tomou o video" ligava ate o app reiniciar, desligando os
+// trailers e o "Manter o video pronto ao sair" (log 11, 09/11).
+static atomic_int foraDaTela;
 static atomic_uint seguroDesde;
 // Seek enviado sem confirmacao do host: a recuperacao retoma nele.
 static atomic_int buscaAlvoMs = -1;
@@ -1766,6 +1772,7 @@ int nv_tpk_video_reter_ms(void) { return ativo && reconPermitida && !emTrailer &
 __attribute__((visibility("default")))
 void nv_tpk_video_segurado(int sim) {
   if (sim) {
+    atomic_store(&foraDaTela, 1);
     atomic_store(&seguroDesde, SDL_GetTicks());
     atomic_store(&seguradoFundo, 1);
     atomic_store(&seguroAplicar, 1);
@@ -1778,6 +1785,7 @@ int video_tpk_segurado(void) { return atomic_load(&seguradoFundo); }
 // Host, fio principal do .NET, ANTES do Parar: so anota (o fio do app aplica).
 __attribute__((visibility("default")))
 void nv_tpk_video_suspenso(int ms) {
+  atomic_store(&foraDaTela, 1);
   atomic_store(&seguradoFundo, 0);
   atomic_store(&fundoMs, ms);
   atomic_store(&fundoEm, SDL_GetTicks());
@@ -1785,7 +1793,7 @@ void nv_tpk_video_suspenso(int ms) {
 }
 // Host: o app voltou a tela (OnResume / AppControl, janela visivel).
 __attribute__((visibility("default")))
-void nv_tpk_video_voltou(void) { atomic_store(&voltouPend, 1); }
+void nv_tpk_video_voltou(void) { atomic_store(&foraDaTela, 0); atomic_store(&voltouPend, 1); }
 
 static void retZerar(void) {
   suspenso = retomando = retDesistiu = 0;
@@ -2633,6 +2641,11 @@ void video_tpk_log_host(const char *linha) {
     return;
   }
   if (!strstr(linha, "interrompido: ResourceConflict") || !janelaVisivel) return;
+  if (atomic_load(&foraDaTela)) {
+    printf("[fundo] ResourceConflict while leaving the app (Samsung's Home took the video): not another app\n");
+    fflush(stdout);
+    return;
+  }
   tocando = 0;
   if (!conflito) { printf("[video] tpk: outro app tomou o video da TV; trailers automaticos desligados nesta sessao\n"); fflush(stdout); }
   conflito = 1;
