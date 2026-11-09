@@ -134,4 +134,16 @@ int  mkvfix_e_url(const char *url);
 // Fim do video: cancela a sessao e as conexoes (o servidor fica de pe).
 void mkvfix_parar(void);
 
+// ADIANTAR NA SAIDA DO APP (Home/sono, 09/11). Com a sessao suspensa no ponto,
+// baixa ~8 MiB do Cluster do ponto para a memoria (um pedido, ate 4 MiB/s, no
+// maximo 10 s), e o seek da reabertura recebe esse comeco daqui e o resto do
+// CDN na mesma resposta. Nao toca o player nem o decodificador da TV.
+// mkvfix_cues_posicao: no elemento Cues (b,n), o CueClusterPosition (relativo
+// ao Segment) do maior CuePoint <= alvoMs da faixa com mais pontos; -1 sem
+// nenhum. *cueMs = o tempo dele; *maxMs = o maior CueTime (confere a escala).
+int64_t mkvfix_cues_posicao(const unsigned char *b, long n, int64_t alvoMs, int64_t *cueMs, int64_t *maxMs);
+void mkvfix_adiantar(double alvoSeg, double durSeg);
+void mkvfix_adiantar_pressa(void);            // a tela voltou: termina sem o freio
+void mkvfix_adiantar_soltar(const char *porque);
+
 #endif

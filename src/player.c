@@ -1002,6 +1002,7 @@ int video_tpk_aviso_busca(void);   // video_tpk.c (mkvfix.h)
 int video_tpk_fundo(double alvoPlayer);
 int video_tpk_retomada_evento(void);
 void video_tpk_tela_publicar(int tela);
+void mkvfix_adiantar_soltar(const char *porque);   // mkvfix.c
 void glem_aviso_curto(const char *texto);   // guialembrete.c
 #endif
 // DE QUEM E O PROBLEMA (#205). Sem motivo proprio, o cartao diz o que o erro do
@@ -3045,6 +3046,9 @@ void player_ciclo_evento(Uint32 tipo) {
       if (isfinite(p) && p >= 0) posSeg = (float)p;
       gravarProgressoParcial(1, "background");
     }
+#ifdef NV_TPK
+    if (tipo == SDL_APP_LOWMEMORY) mkvfix_adiantar_soltar("low memory");
+#endif
     player_descartar_retido(); retomamorna_cancelar();
   }
 }

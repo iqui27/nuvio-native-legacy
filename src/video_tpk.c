@@ -946,6 +946,7 @@ static int videoConvertivel(void);
 
 int video_tocar(const char *u) {
   retZerar();
+  mkvfix_adiantar_soltar("another video");
   cdn.arquivo = 0;
   parado = 0; resgateAte = 0;
   if (cv.ativo || cv.sondando) dts_tpk_fechar();
@@ -1831,6 +1832,13 @@ static void fundoAplicar(double alvoPlayer) {
   fflush(stdout);
   suspenso = 1; retomando = 0; retDesistiu = 0; retCab = 0;
   retSuspensoEm = SDL_GetTicks();
+  // MKV pelo servidor local: ja baixa o comeco do ponto para a memoria
+  // (mkvfix.h); o seek da reabertura recebe isso sem ir ao CDN. Link do CDN
+  // perto de vencer: a reabertura pede outro, o adiantado nao serviria.
+  if (mf.ativo && !cv.ativo) {
+    if (cdn.usado && cdnVelho()) { printf("[fundo] no prefetch: the CDN link is about to expire\n"); fflush(stdout); }
+    else mkvfix_adiantar(retAlvo, (retDurMs > 0 ? retDurMs : durMs) / 1000.0);
+  }
   // Nada deste lado mexe no player que o host esta parando.
   nv_recon_zerar(&recon);
   reconErroPend = 0; reconLinhaRede = 0; reconBuscarMs = -1; reconPausa = -1; reconAlvoMs = -1;
@@ -1885,6 +1893,7 @@ static void retComecar(void) {
          (unsigned)((agora - retSuspensoEm) / 1000u), retAlvo, retDe);
   fflush(stdout);
   suspenso = 0; retomando = 1; retEm = agora; retTentativas = 0; retQuerTocar = 0;
+  mkvfix_adiantar_pressa();   // ainda baixando: termina sem o freio
   atomic_store(&retEvento, 1);
   retAbrir();
 }
@@ -2147,6 +2156,7 @@ void video_bombear(void) {
 void video_parar(void) {
   if (suspenso || retomando || retDesistiu) { printf("[fundo] player closed: resume state cleared\n"); fflush(stdout); }
   retZerar();
+  mkvfix_adiantar_soltar("player closed");
   largura = altura = 0; // Stopped stream metadata must not shape the next live open.
   parado = 1; resgateAte = 0;
   cdn.pend = 0; cdn.usado = 0; cdn.arquivo = 0;

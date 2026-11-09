@@ -150,6 +150,40 @@ int main(void) {
     ok(mkvfix_cab_fora_da_tv("User-Agent: x\nOrigin: https://a.b\nCookie: c") == 1,
        "headers: one unsupported among supported -> relay"); }
 
+  // ---- the point in the index (prefetch on leaving the app, 09/11) ----------
+  // Cues: video track 1 at 0/2000/4000/6000 ms; subtitle track 3 at 3000 ms
+  // (fewer points: never the chosen track). Positions relative to the Segment.
+  { unsigned char cu[512]; int k = 0, ini;
+    struct { unsigned t, faixa; unsigned pos; } pt[] = {
+      {0, 1, 1000}, {2000, 1, 900000}, {3000, 3, 777777}, {4000, 1, 1800000}, {6000, 1, 2700000} };
+    int64_t cueMs, maxMs, r;
+    cu[k++] = 0x1C; cu[k++] = 0x53; cu[k++] = 0xBB; cu[k++] = 0x6B;
+    cu[k++] = 0x01; cu[k++] = 0; cu[k++] = 0; cu[k++] = 0; cu[k++] = 0; cu[k++] = 0; cu[k++] = 0; cu[k++] = 0; // 8-byte size, set below
+    ini = k;
+    for (unsigned i = 0; i < sizeof pt / sizeof pt[0]; i++) {
+      // CuePoint { CueTime(4 B) CueTrackPositions { CueTrack(1 B) CueClusterPosition(4 B) } }
+      cu[k++] = 0xBB; cu[k++] = 0x80 | 17;
+      cu[k++] = 0xB3; cu[k++] = 0x84;
+      cu[k++] = (unsigned char)(pt[i].t >> 24); cu[k++] = (unsigned char)(pt[i].t >> 16); cu[k++] = (unsigned char)(pt[i].t >> 8); cu[k++] = (unsigned char)pt[i].t;
+      cu[k++] = 0xB7; cu[k++] = 0x80 | 9;
+      cu[k++] = 0xF7; cu[k++] = 0x81; cu[k++] = (unsigned char)pt[i].faixa;
+      cu[k++] = 0xF1; cu[k++] = 0x84;
+      cu[k++] = (unsigned char)(pt[i].pos >> 24); cu[k++] = (unsigned char)(pt[i].pos >> 16); cu[k++] = (unsigned char)(pt[i].pos >> 8); cu[k++] = (unsigned char)pt[i].pos;
+    }
+    cu[11] = (unsigned char)(k - ini);
+    r = mkvfix_cues_posicao(cu, k, 3500, &cueMs, &maxMs);
+    ok(r == 900000 && cueMs == 2000, "index point: 3.5 s -> the video cue at 2 s (not the subtitle cue at 3 s)");
+    ok(maxMs == 6000, "index point: the last video cue time is reported (scale check)");
+    ok(mkvfix_cues_posicao(cu, k, 6000, &cueMs, NULL) == 2700000 && cueMs == 6000, "index point: exactly on a cue");
+    ok(mkvfix_cues_posicao(cu, k, 10, &cueMs, NULL) == 1000 && cueMs == 0, "index point: before the second cue -> the first");
+    ok(mkvfix_cues_posicao(cu, k - 10, 99999, &cueMs, NULL) == 1800000, "index point: a cut index still gives the points that came");
+    ok(mkvfix_cues_posicao(cu + 4, k - 4, 3500, NULL, NULL) < 0, "index point: not a Cues element -> -1");
+    { unsigned char v[600]; memset(v, 0, sizeof v);
+      v[0] = 0xEC; v[1] = 0x80 | 20;               // a Void before the Cues
+      memcpy(v + 22, cu, (size_t)k);
+      ok(mkvfix_cues_posicao(v, 22 + k, 3500, &cueMs, NULL) == 900000, "index point: the Cues after another element is found"); }
+  }
+
   printf(falhas ? "mkvfix: %d FAIL(S)\n" : "mkvfix: ok\n", falhas);
   return falhas != 0;
 }
