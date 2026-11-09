@@ -8161,7 +8161,7 @@ static const char *ajudaOpcaoBase(int op) {
 #ifdef NV_TPK
     case AJ_DTS_AC3: return "Esta TV não toca DTS nem TrueHD: o app converte o som na hora. 5.1 (Dolby Digital) mantém o surround para barra de som e receiver; 7.1, Atmos e DTS:X viram 5.1, sem os objetos. Estéreo (AAC) serve qualquer TV. Desligado: esses vídeos tocam sem som, como antes. Vale a partir do próximo vídeo.";
 #else
-    case AJ_DTS_AC3: return "Como o áudio DTS é entregue à TV quando o app o converte (só na LG). Estéreo (AAC) é o modo provado e serve qualquer TV. 5.1 (Dolby Digital) mantém o som surround para barra de som e receiver por ARC/eARC; vale a partir do próximo vídeo.";
+    case AJ_DTS_AC3: return "Como o app converte o DTS para a TV (LG). Estéreo (AAC) serve qualquer TV; 5.1 (Dolby Digital) mantém o surround para a barra de som. Desligado: sem conversão de DTS nem TrueHD.";
 #endif
     case AJ_PS_CONTINUAR: return "Ligado, cada perfil mostra na escolha de perfil o cartão com o que ele estava assistindo. Desligado, a tela mostra só os perfis.";
     case AJ_HIST_CONTA: return "Ligado (padrão): o que você assiste neste perfil sobe para a conta Nuvio, com o progresso e os vistos. Desligado: nada disso é enviado à conta; o Trakt e o Simkl vinculados a este perfil continuam recebendo. Vale só para este perfil.";
@@ -8278,14 +8278,6 @@ static const char *ajudaOpcao(int op) {
     snprintf(b, sizeof b, "%s\n%s", i18n(base), logrede_url());
     return b;
   }
-#ifndef NV_TPK
-  // LG: what "Off" does (owner 09/11): no DTS and no TrueHD conversion.
-  if (op == AJ_DTS_AC3) {
-    snprintf(b, sizeof b, "%s %s", i18n(base),
-      i18n("Desligado: nem DTS nem TrueHD são convertidos. Com Dolby Vision, o app usa a faixa AC-3/E-AC-3 do mesmo idioma e o Dolby Vision continua; se só houver DTS ou TrueHD nesse idioma, o vídeo vai para o player da TV (HDR10)."));
-    return b;
-  }
-#endif
   if (op == AJ_AMPLIAR_UI && saidaLimitada && ampliarUiVale()) {
     snprintf(b, sizeof b, "%s\n%s",
       i18n("A saída da interface nesta TV está limitada a 1080p. O app amplia até esse limite; a TV completa até 4K."), i18n(base));
