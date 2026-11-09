@@ -388,6 +388,7 @@ void mkvfix_parar(void) {}
 void mkvfix_adiantar(double alvoSeg, double durSeg) { (void)alvoSeg; (void)durSeg; }
 void mkvfix_adiantar_pressa(void) {}
 void mkvfix_adiantar_soltar(const char *porque) { (void)porque; }
+void mkvfix_memoria_soltar(const char *porque) { (void)porque; }
 #else
 
 #include "rede.h"
@@ -995,6 +996,16 @@ void mkvfix_adiantar_soltar(const char *porque) {
   pthread_mutex_lock(&mfCacheTrava);
   adiLimpar(porque);
   pthread_mutex_unlock(&mfCacheTrava);
+}
+
+void mkvfix_memoria_soltar(const char *porque) {
+  long n = 0;
+  mkvfix_adiantar_soltar(porque);
+  pthread_mutex_lock(&mfCacheTrava);
+  for (int i = 0; i < MF_CACHE_N; i++)
+    if (mfCache[i].b) { n += (long)(mfCache[i].fim - mfCache[i].ini + 1); free(mfCache[i].b); mfCache[i].b = NULL; }
+  pthread_mutex_unlock(&mfCacheTrava);
+  if (n) { printf("[mkvfix] kept short reads dropped (%s; %.1f MB)\n", porque ? porque : "", n / 1048576.0); fflush(stdout); }
 }
 
 // O seek da reabertura: o comeco vem do adiantado (copia, para nao segurar a

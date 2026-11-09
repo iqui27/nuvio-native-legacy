@@ -154,5 +154,8 @@ int64_t mkvfix_janela_ini(int64_t cueMs, int64_t cuePos, int64_t proxMs, int64_t
 void mkvfix_adiantar(double alvoSeg, double durSeg);
 void mkvfix_adiantar_pressa(void);            // a tela voltou: termina sem o freio
 void mkvfix_adiantar_soltar(const char *porque);
+// Pouca memoria: solta o adiantado E os pedidos curtos guardados (o indice;
+// ate 12 MiB que senao ficam ate o app fechar). A proxima abertura pede ao CDN.
+void mkvfix_memoria_soltar(const char *porque);
 
 #endif

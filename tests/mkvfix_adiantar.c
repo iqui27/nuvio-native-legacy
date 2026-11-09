@@ -246,6 +246,16 @@ int main(int argc, char **argv) {
     pendurar(-1);
     mkvfix_adiantar_soltar("test"); }
 
+  // Low memory frees the kept index too: the next index read goes to the CDN.
+  { int antes = pedidosEm(tailIni); long n = 0; int64_t tot = -1;
+    char *r = rede_baixar_trecho64_final(local, "", tailIni, TOTAL - 1, &n, &tot, &st, NULL, NULL, NULL);
+    free(r); usleep(300000);
+    ok(pedidosEm(tailIni) == antes, "index read again: served from memory");
+    mkvfix_memoria_soltar("test");
+    r = rede_baixar_trecho64_final(local, "", tailIni, TOTAL - 1, &n, &tot, &st, NULL, NULL, NULL);
+    ok(r && n == TOTAL - tailIni && pedidosEm(tailIni) == antes + 1, "low memory: the index is asked from the CDN again");
+    free(r); usleep(300000); }
+
   mkvfix_parar();
   printf(falhas ? "mkvfix_adiantar: %d FAIL(S)\n" : "mkvfix_adiantar: ok\n", falhas);
   return falhas != 0;
