@@ -285,9 +285,25 @@ namespace NuvioTpk
 
         protected override void OnPause()
         {
+            // #resume: o C sabe onde o player estava antes do ciclo e do Parar.
+            video?.AvisarFundo();
             NvLib.Ciclo?.Invoke(0);
             video?.PausarPeloSistema();
             base.OnPause();
+        }
+
+        // #resume: volta a tela (Home e reabrir, sono e relancamento). O C so
+        // reabre se o OnPause parou um filme/episodio; o resto e no-op.
+        protected override void OnResume()
+        {
+            base.OnResume();
+            video?.Voltou("resume");
+        }
+
+        protected override void OnAppControlReceived(Tizen.Applications.AppControlReceivedEventArgs e)
+        {
+            base.OnAppControlReceived(e);
+            video?.Voltou("appcontrol");
         }
 
         protected override void OnLowMemory(Tizen.Applications.LowMemoryEventArgs e)

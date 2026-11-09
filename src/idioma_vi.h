@@ -3386,6 +3386,7 @@
   T("Não deu para converter o áudio DTS", "Không thể chuyển đổi âm thanh DTS"),
   T("Não deu para enviar o voto. Tente de novo.", "Không gửi được phiếu. Hãy thử lại."),
   T("Não deu para ler o arquivo. Tocando em HDR10.", "Không đọc được tệp. Đang phát ở HDR10."),
+  T("Não deu para retomar o vídeo. Play continua de onde você parou", "Không thể tiếp tục video. Phát sẽ tiếp tục từ chỗ bạn dừng"),
   T("Não deu para sincronizar", "Không đồng bộ được"),
   T("Não deu para sincronizar a conta. Tento de novo sozinho.", "Không đồng bộ được tài khoản. Tôi sẽ tự thử lại."),
   T("Não deu para sincronizar — usando %s", "Không đồng bộ được — đang dùng %s"),

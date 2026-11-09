@@ -235,7 +235,7 @@ namespace NuvioTpk
             // Rastro nunca derruba o arranque: sem esses eventos, o app segue.
             try
             {
-                janela.VisibilityChanged += (s, e) => { if (!e.Visibility) { try { nv_tpk_ciclo(0); } catch (EntryPointNotFoundException) { } } principalVisivel = e.Visibility; Etapa("note main-window visible=" + e.Visibility + Contagem()); Janela("principal visivel=" + e.Visibility, false); };
+                janela.VisibilityChanged += (s, e) => { if (!e.Visibility) { try { nv_tpk_ciclo(0); } catch (EntryPointNotFoundException) { } } principalVisivel = e.Visibility; Etapa("note main-window visible=" + e.Visibility + Contagem()); Janela("principal visivel=" + e.Visibility, false); if (e.Visibility) VoltarSePendente("main-window visible"); };
                 janela.FocusChanged += (s, e) => { Etapa("note main-window focus=" + e.FocusGained + Contagem()); if (e.FocusGained) SobeGlSePreciso("main-window focus"); };
             }
             catch (Exception e) { Etapa("note main-window events unavailable " + e.GetType().Name + ": " + e.Message); }
@@ -585,7 +585,7 @@ namespace NuvioTpk
             NuiWindow.Instance.KeyEvent += (s, e) => Tecla(e.Key, "main");
             try
             {
-                gl.VisibilityChanged += (s, e) => { if (!e.Visibility) { try { nv_tpk_ciclo(0); } catch (EntryPointNotFoundException) { } } glVisivel = e.Visibility; Etapa("note gl-window visible=" + e.Visibility + Contagem()); Janela("gl visivel=" + e.Visibility, false); };
+                gl.VisibilityChanged += (s, e) => { if (!e.Visibility) { try { nv_tpk_ciclo(0); } catch (EntryPointNotFoundException) { } } glVisivel = e.Visibility; Etapa("note gl-window visible=" + e.Visibility + Contagem()); Janela("gl visivel=" + e.Visibility, false); if (e.Visibility) VoltarSePendente("gl-window visible"); };
                 gl.FocusChanged += (s, e) => Etapa("note gl-window focus=" + e.FocusGained + Contagem());
             }
             catch (Exception e) { Etapa("note gl-window events unavailable " + e.GetType().Name + ": " + e.Message); }
@@ -1017,6 +1017,11 @@ namespace NuvioTpk
 #if !NV_TEXTO
             try { voz?.Cancelar(); } catch { }
 #endif
+            // #resume: o C sabe onde o player estava ANTES do ciclo e do Parar.
+            // (Segurar o player pausado no fundo foi tentado: a Home da Samsung
+            // toma o decodificador em < 1 s — logs 10/11 —, entao sempre para.)
+            voltaPendente = false;
+            video?.AvisarFundo();
             try { nv_tpk_ciclo(0); } catch (EntryPointNotFoundException) { }
             video?.PausarPeloSistema();
             base.OnPause();
@@ -1051,7 +1056,21 @@ namespace NuvioTpk
             pausado = false;
             Etapa("note resume" + Contagem() + " mainVisible=" + principalVisivel + (JanelaUnica ? " (glview)" : " glVisible=" + glVisivel));
             base.OnResume();
+            Voltar("resume");
         }
+
+        // #resume: o player parado no OnPause reabre so com o app NA TELA. Sem
+        // janela visivel (AppControl sem OnResume e sem janela, D1 15660), a
+        // volta espera o VisibilityChanged; o C ignora uma volta sem nada parado.
+        bool voltaPendente;
+        void Voltar(string deOnde)
+        {
+            if (video == null) return;
+            if (principalVisivel || (!JanelaUnica && glVisivel)) { voltaPendente = false; video.Voltou(deOnde); return; }
+            if (!voltaPendente) Etapa("note resume waits for a visible window (" + deOnde + ")" + Contagem());
+            voltaPendente = true;
+        }
+        void VoltarSePendente(string deOnde) { if (voltaPendente) Voltar(deOnde); }
 
         protected override void OnTerminate()
         {
@@ -1076,6 +1095,9 @@ namespace NuvioTpk
                 Exit();
                 return;
             }
+            // Relancamento (Shard do sono, lista de apps): alguns firmwares nao
+            // mandam OnResume. Sem player parado, o C nao faz nada.
+            Voltar("appcontrol");
             if (JanelaUnica) { Janela("appcontrol: janela unica (GLView), nada a subir"); return; }
             if (!JANELA_SOBE_GL_APPCONTROL || gl == null) return;
 #if NV_API8

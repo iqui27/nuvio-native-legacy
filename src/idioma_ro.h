@@ -3385,6 +3385,7 @@
   T("Não deu para converter o áudio DTS", "Sunetul DTS nu a putut fi convertit"),
   T("Não deu para enviar o voto. Tente de novo.", "Nu am putut trimite votul. Încearcă din nou."),
   T("Não deu para ler o arquivo. Tocando em HDR10.", "Fișierul nu a putut fi citit. Redăm în HDR10."),
+  T("Não deu para retomar o vídeo. Play continua de onde você parou", "Videoclipul nu a putut fi reluat. Redarea continuă de unde ai rămas"),
   T("Não deu para sincronizar", "Nu s-a putut sincroniza"),
   T("Não deu para sincronizar a conta. Tento de novo sozinho.", "Contul nu s-a putut sincroniza. Încerc din nou singur."),
   T("Não deu para sincronizar — usando %s", "Nu s-a putut sincroniza — se folosește %s"),

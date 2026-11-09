@@ -4935,6 +4935,9 @@ void app_atualizar(float dt, Uint32 agora) {
       else ilha_avisar("dv-mkv", ILHA_INFO, NULL, t, 6000u, 0);
     } }
   player_validar_retido(agora);
+#ifdef NV_TPK
+  player_tpk_fundo_passo();
+#endif
   if (tela == TELA_LOGIN) {
     login_atualizar(dt, agora);
     // A troca so acontece AQUI, quando a sessao existe de verdade — nao no

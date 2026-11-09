@@ -3386,6 +3386,7 @@
   T("Não deu para converter o áudio DTS", "無法轉換 DTS 音訊"),
   T("Não deu para enviar o voto. Tente de novo.", "無法傳送投票，請再試一次。"),
   T("Não deu para ler o arquivo. Tocando em HDR10.", "無法讀取檔案。以 HDR10 播放。"),
+  T("Não deu para retomar o vídeo. Play continua de onde você parou", "無法繼續播放影片。播放將從上次停下的位置繼續"),
   T("Não deu para sincronizar", "無法同步"),
   T("Não deu para sincronizar a conta. Tento de novo sozinho.", "無法同步帳戶。我會自動重試。"),
   T("Não deu para sincronizar — usando %s", "無法同步 — 正在使用%s"),
