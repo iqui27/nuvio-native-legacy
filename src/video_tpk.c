@@ -1761,11 +1761,11 @@ static void reabrindoVigiar(void) {
 void video_tpk_tela_publicar(int tela) { atomic_store(&telaAberta, tela); }
 
 // Adiantar o ponto (mkvfix.h): filme/episodio pelo servidor local, tela do
-// player aberta, link do CDN longe de vencer.
+// player aberta.
 static int adiPode(void) {
-  if (!mf.ativo || cv.ativo || !reconPermitida || emTrailer || emCartao || !atomic_load(&telaAberta)) return 0;
-  if (cdn.usado && cdnVelho()) { printf("[fundo] no prefetch: the CDN link is about to expire\n"); fflush(stdout); return 0; }
-  return 1;
+  // (Link do CDN vencido: o adiantado leva 403 e so desiste. cdnVelho() nao
+  // vale aqui: e sempre 0 com o servidor local ativo.)
+  return mf.ativo && !cv.ativo && reconPermitida && !emTrailer && !emCartao && atomic_load(&telaAberta);
 }
 // Host, fio principal do .NET, ANTES do Parar: so anota (o fio do app aplica).
 __attribute__((visibility("default")))
