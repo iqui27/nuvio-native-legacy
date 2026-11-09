@@ -9,4 +9,13 @@ static inline int nv_dts_notice_show(NvDtsNotice *s,int eligible,uint32_t now) {
   if(!s->shown) { s->shown=s->active=1;s->started=now; }
   return s->active && now-s->started<5000u;
 }
+/* Another audio track picked by hand is a new announcement (owner 09/11: DTS,
+ * then AC-3, then DTS again said nothing; one DTS track to another DTS one
+ * too). Seeks and reloads keep the track,
+ * so they still announce once. -1: unknown (loading), nothing changes. */
+static inline int nv_dts_notice_track(NvDtsNotice *s,int *last,int track) {
+  if(track<0 || track==*last) return 0;
+  *last=track; *s=(NvDtsNotice){0};
+  return 1;   /* the caller restarts its settle wait (the new track loads first) */
+}
 #endif

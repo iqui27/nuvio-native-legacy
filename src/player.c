@@ -381,6 +381,7 @@ static void corFocoPlayer(float *r, float *g, float *b) { ajustes_acento(r, g, b
 static Uint32 inicioImagem = 0;
 static int memQuadroPendente; // Um primeiro quadro por load, nao por volta da ilha.
 static NvDtsNotice dtsConvertedNotice;
+static int dtsNoticeTrack = -1;   // the track the DTS notice belongs to (nv_dts_notice_track)
 #ifdef NV_DV_TRUEHD_TEST
 static NvDtsNotice truehdConvertedNotice;
 static Uint32 truehdDesde;
@@ -2171,7 +2172,7 @@ static int preTituloLegendaUsar(const char *url) {
 
 static void tocarFonteInterno(const char *url);
 static void tocarFonteInterno(const char *url) {
-  dtsConvertedNotice=(NvDtsNotice){0};
+  dtsConvertedNotice=(NvDtsNotice){0}; dtsNoticeTrack=-1;
 #ifdef NV_DV_TRUEHD_TEST
   truehdConvertedNotice=(NvDtsNotice){0};truehdDesde=0;truehdVisto=0;truehdTrack=-1;
 #endif
@@ -6648,6 +6649,8 @@ void player_desenhar(Uint32 agora) {
   { static int dtsVisto;
     static Uint32 dtsDesde;
     int e = player_carregando() || ehCanal() ? VIDEO_DTS_NENHUM : video_dts_estado();
+    { const VideoFaixa *ft = video_audio(video_audio_atual());
+      if (nv_dts_notice_track(&dtsConvertedNotice, &dtsNoticeTrack, ft ? ft->stream_index : -1)) dtsDesde = agora; }
     if (e != dtsVisto) { dtsVisto = e; dtsDesde = agora; }
     // A guia parental (tambem na ilha, de prioridade baixa) vem primeiro: o
     // aviso do DTS espera ela fechar, em vez de derruba-la.

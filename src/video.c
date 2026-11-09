@@ -199,6 +199,10 @@ int video_tpk_dts_estado(void);   // video_tpk.c: enquanto o .tpk converte o DTS
 #endif
 int video_dts_estado(void) {
   if (dtsEstado) return dtsEstado;
+  /* Owner 09/11: switching to a DTS track on the converter (Dolby Vision)
+   * showed "DTS audio native" for a moment before "converted": in a converter
+   * session the TV never plays DTS itself, so nothing until the state comes. */
+  if (dtsSessao) return VIDEO_DTS_NENHUM;
 #ifdef NV_TPK
   { int e = video_tpk_dts_estado(); if (e) return e; }
 #endif
