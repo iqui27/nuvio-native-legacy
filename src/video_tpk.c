@@ -206,6 +206,9 @@ static atomic_int telaAberta = 1;
 // conflito "outro app tomou o video" ligava ate o app reiniciar, desligando os
 // trailers e o "Manter o video pronto ao sair" (log 11, 09/11).
 static atomic_int foraDaTela;
+// O adiantado ja pedido no fio do host (ms; -1 = nenhum): o fio do app so pede
+// de novo se o ponto de verdade for outro (seek em voo, scrub).
+static atomic_int adiPedidoMs = -1;
 // Seek enviado sem confirmacao do host: a recuperacao retoma nele.
 static atomic_int buscaAlvoMs = -1;
 static int reconAlvoMs = -1;
@@ -1757,10 +1760,25 @@ static void reabrindoVigiar(void) {
 // player.c, a cada quadro: se a tela do player esta aberta.
 void video_tpk_tela_publicar(int tela) { atomic_store(&telaAberta, tela); }
 
+// Adiantar o ponto (mkvfix.h): filme/episodio pelo servidor local, tela do
+// player aberta, link do CDN longe de vencer.
+static int adiPode(void) {
+  if (!mf.ativo || cv.ativo || !reconPermitida || emTrailer || emCartao || !atomic_load(&telaAberta)) return 0;
+  if (cdn.usado && cdnVelho()) { printf("[fundo] no prefetch: the CDN link is about to expire\n"); fflush(stdout); return 0; }
+  return 1;
+}
 // Host, fio principal do .NET, ANTES do Parar: so anota (o fio do app aplica).
 __attribute__((visibility("default")))
 void nv_tpk_video_suspenso(int ms) {
   atomic_store(&foraDaTela, 1);
+  // MKV pelo servidor local (o caminho do libass): o adiantado comeca JA, no
+  // fio do host; o fio do app quase nao roda com o app no fundo (log 13: ele
+  // so comecava na volta e disputava a rede com a reabertura).
+  atomic_store(&adiPedidoMs, -1);
+  if (ms > 1000 && ativo && !parado && pronto && adiPode()) {
+    atomic_store(&adiPedidoMs, ms);
+    mkvfix_adiantar(ms / 1000.0, durMs / 1000.0);
+  }
   atomic_store(&fundoMs, ms);
   atomic_store(&fundoEm, SDL_GetTicks());
   atomic_store(&fundoPend, 1);
@@ -1832,13 +1850,15 @@ static void fundoAplicar(double alvoPlayer) {
   fflush(stdout);
   suspenso = 1; retomando = 0; retDesistiu = 0; retCab = 0;
   retSuspensoEm = SDL_GetTicks();
-  // MKV pelo servidor local: ja baixa o comeco do ponto para a memoria
-  // (mkvfix.h); o seek da reabertura recebe isso sem ir ao CDN. Link do CDN
-  // perto de vencer: a reabertura pede outro, o adiantado nao serviria.
-  if (mf.ativo && !cv.ativo) {
-    if (cdn.usado && cdnVelho()) { printf("[fundo] no prefetch: the CDN link is about to expire\n"); fflush(stdout); }
-    else mkvfix_adiantar(retAlvo, (retDurMs > 0 ? retDurMs : durMs) / 1000.0);
-  }
+  // O adiantado ja saiu do fio do host com o relogio dele; o ponto de verdade
+  // e outro (seek em voo, scrub): pede de novo (substitui o anterior).
+  { int pedido = atomic_load(&adiPedidoMs);
+    if (pedido >= 0 && fabs(retAlvo - pedido / 1000.0) > 1.0 && adiPode()) {
+      printf("[fundo] prefetch moved from %.1f s to the real point %.1f s\n", pedido / 1000.0, retAlvo);
+      fflush(stdout);
+      atomic_store(&adiPedidoMs, (int)(retAlvo * 1000.0));
+      mkvfix_adiantar(retAlvo, (retDurMs > 0 ? retDurMs : durMs) / 1000.0);
+    } }
   // Nada deste lado mexe no player que o host esta parando.
   nv_recon_zerar(&recon);
   reconErroPend = 0; reconLinhaRede = 0; reconBuscarMs = -1; reconPausa = -1; reconAlvoMs = -1;

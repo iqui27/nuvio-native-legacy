@@ -182,6 +182,23 @@ int main(void) {
       v[0] = 0xEC; v[1] = 0x80 | 20;               // a Void before the Cues
       memcpy(v + 22, cu, (size_t)k);
       ok(mkvfix_cues_posicao(v, 22 + k, 3500, &cueMs, NULL) == 900000, "index point: the Cues after another element is found"); }
+    { int64_t pm = 0, pp = 0;
+      ok(mkvfix_cues_ponto(cu, k, 3500, &cueMs, NULL, &pm, &pp) == 900000 && pm == 4000 && pp == 1800000,
+         "index point: the next video cue is reported (4 s, not the subtitle cue)");
+      ok(mkvfix_cues_ponto(cu, k, 7000, &cueMs, NULL, &pm, &pp) == 2700000 && pm == -1 && pp == -1,
+         "index point: after the last cue there is no next one"); }
+    // The window (log 13): the TV asks for the Cluster that CONTAINS the second,
+    // 9.9 MB after the cue in run 1 and 6.4 MB in run 2. Between two cues the
+    // local rate places the estimate; the window starts 3 MiB before it.
+    { const int64_t M = 1024 * 1024;
+      int64_t j1 = mkvfix_janela_ini(335240, 0, 340710, 40 * M, 336465, 0, 3 * M);
+      int64_t j2 = mkvfix_janela_ini(340710, 0, 345000, 30 * M, 341914, 0, 3 * M);
+      ok(j1 <= 9884000 && j1 + 8 * M > 9884000, "window: run 1's request (9.9 MB after the cue) falls inside");
+      ok(j2 <= 6357680 && j2 + 8 * M > 6357680, "window: run 2's request (6.4 MB after the cue) falls inside");
+      ok(mkvfix_janela_ini(1000, 5 * M, 3000, 6 * M, 1100, 0, 3 * M) == 5 * M, "window: never before the cue");
+      ok(mkvfix_janela_ini(1000, 0, 2000, 10 * M, 1999, 0, 0) <= 10 * M, "window: never after the next cue");
+      ok(mkvfix_janela_ini(1000, 0, -1, -1, 3000, 2000.0, 1 * M) == 4000000 - M, "window: no next cue -> the file's average rate");
+      ok(mkvfix_janela_ini(-1, -1, -1, -1, 3000, 0, M) == -1, "window: no cue -> -1"); }
   }
 
   printf(falhas ? "mkvfix: %d FAIL(S)\n" : "mkvfix: ok\n", falhas);

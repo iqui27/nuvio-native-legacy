@@ -291,12 +291,18 @@ static int cuePonto(const unsigned char *p, long n, int64_t *tempo, unsigned *fa
   return achou && *tempo >= 0;
 }
 int64_t mkvfix_cues_posicao(const unsigned char *b, long n, int64_t alvoMs, int64_t *cueMs, int64_t *maxMs) {
+  return mkvfix_cues_ponto(b, n, alvoMs, cueMs, maxMs, NULL, NULL);
+}
+int64_t mkvfix_cues_ponto(const unsigned char *b, long n, int64_t alvoMs, int64_t *cueMs, int64_t *maxMs,
+                          int64_t *proxMs, int64_t *proxPos) {
   unsigned contagem[64] = {0}, melhor = 0;
-  int64_t tam, achado = -1, achadoT = -1, maior = -1;
+  int64_t tam, achado = -1, achadoT = -1, maior = -1, depoisT = -1, depoisP = -1;
   long o, fim;
   int ui = 0, us = 0;
   if (cueMs) *cueMs = -1;
   if (maxMs) *maxMs = -1;
+  if (proxMs) *proxMs = -1;
+  if (proxPos) *proxPos = -1;
   if (!b || n < 8) return -1;
   // O trecho guardado pode comecar antes do Cues (o 2o SeekHead, um Void):
   // anda pelos elementos de cima; sem estrutura legivel, procura o ID.
@@ -331,6 +337,7 @@ int64_t mkvfix_cues_posicao(const unsigned char *b, long n, int64_t alvoMs, int6
         else if (faixa == melhor) {
           if (tempo > maior) maior = tempo;
           if (tempo <= alvoMs && tempo > achadoT) { achadoT = tempo; achado = pos; }
+          if (tempo > alvoMs && (depoisT < 0 || tempo < depoisT)) { depoisT = tempo; depoisP = pos; }
         }
       }
       k += vi + vs + t;
@@ -340,7 +347,29 @@ int64_t mkvfix_cues_posicao(const unsigned char *b, long n, int64_t alvoMs, int6
   }
   if (cueMs) *cueMs = achadoT;
   if (maxMs) *maxMs = maior;
+  if (proxMs) *proxMs = depoisT;
+  if (proxPos) *proxPos = depoisP;
   return achado;
+}
+
+// A janela do adiantado (mkvfix.h). O player da TV nao vai ao CuePoint antes do
+// ponto: pede o Cluster que CONTEM o segundo (log 13: 9,9 MB depois do cue,
+// fora dos 8 MB baixados a partir dele). Estima o byte do segundo entre os dois
+// CuePoint em volta (taxa local) ou pela media do arquivo, e comeca `antes`
+// bytes antes dessa estimativa (nunca antes do cue).
+int64_t mkvfix_janela_ini(int64_t cueMs, int64_t cuePos, int64_t proxMs, int64_t proxPos,
+                          int64_t alvoMs, double bytesPorMs, int64_t antes) {
+  double est;
+  int64_t ini;
+  if (cuePos < 0 || cueMs < 0 || alvoMs < cueMs) return cuePos;
+  if (proxMs > cueMs && proxPos > cuePos)
+    est = (double)cuePos + (double)(alvoMs - cueMs) / (double)(proxMs - cueMs) * (double)(proxPos - cuePos);
+  else
+    est = (double)cuePos + (double)(alvoMs - cueMs) * (bytesPorMs > 0 ? bytesPorMs : 0);
+  ini = (int64_t)est - antes;
+  if (ini < cuePos) ini = cuePos;
+  if (proxPos > cuePos && ini > proxPos) ini = proxPos;
+  return ini;
 }
 
 // ---- servidor ----------------------------------------------------------------
@@ -755,9 +784,14 @@ static unsigned char *cachePegar(int64_t total, int64_t ini, int64_t fim) {
 #define MF_ADI_PRAZO_MS 10000u
 #define MF_ADI_VIDA_MS  (10u * 60u * 1000u)
 #define MF_ORCAMENTO    (12L * 1024 * 1024)   // indice + adiantado, juntos
-static struct { int64_t total, ini; long n; unsigned char *b; uint64_t em; } adi;
-static atomic_int adiRodando, adiPressa, adiBaixando;
-static volatile int adiParar;
+#define MF_ADI_ANTES    (3L * 1024 * 1024)   // a janela comeca isto antes da estimativa
+static struct { int64_t total, ini; long n; unsigned char *b; uint64_t em; unsigned gen; } adi;
+// Cada pedido tem uma geracao; um pedido novo (ou soltar) avanca adiGen e o
+// fio antigo para sozinho. Os fios rodam um de cada vez (adiFio), sem que
+// quem pede espere: o host chama na hora do OnPause.
+static atomic_uint adiGen;
+static atomic_int adiPressa, adiBaixando;
+static pthread_mutex_t adiFio = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t agoraMs(void);
 
 // Chamado com mfCacheTrava: tira pedidos curtos (mais velhos primeiro) ate o
@@ -804,13 +838,13 @@ static int enviarCab(Envio *e) {
 }
 
 // ---- adiantar na saida do app (mkvfix.h) -------------------------------------
-typedef struct { unsigned char *b; long n, max; uint64_t t0; int venceu; } Adi;
+typedef struct { unsigned char *b; long n, max; uint64_t t0; int venceu; unsigned gen; } Adi;
 
 static int adiRalo(void *u, const char *d, size_t n) {
   Adi *a = u;
   size_t k;
   uint64_t foi, deve;
-  if (adiParar) return 0;
+  if (a->gen != atomic_load(&adiGen)) return 0;
   if (agoraMs() - a->t0 > MF_ADI_PRAZO_MS) { a->venceu = 1; return 0; }
   k = n > (size_t)(a->max - a->n) ? (size_t)(a->max - a->n) : n;
   memcpy(a->b + a->n, d, k); a->n += (long)k;
@@ -819,7 +853,7 @@ static int adiRalo(void *u, const char *d, size_t n) {
   if (!atomic_load(&adiPressa)) {
     foi = agoraMs() - a->t0;
     deve = (uint64_t)a->n * 1000u / MF_ADI_BPS;
-    while (deve > foi && !adiParar && !atomic_load(&adiPressa)) {
+    while (deve > foi && a->gen == atomic_load(&adiGen) && !atomic_load(&adiPressa)) {
       uint64_t z = deve - foi > 50 ? 50 : deve - foi;
       usleep((useconds_t)(z * 1000u));
       foi = agoraMs() - a->t0;
@@ -834,22 +868,27 @@ static void adiLimpar(const char *porque) {   // com mfCacheTrava
   free(adi.b); adi.b = NULL; adi.n = 0;
 }
 
-typedef struct { Sess *s; double alvoSeg, durSeg; } AdiPedido;
+typedef struct { Sess *s; double alvoSeg, durSeg; unsigned gen; } AdiPedido;
 
 static void *fioAdiantar(void *u) {
   AdiPedido *p = u;
   Sess *s = p->s;
-  int64_t pos = -1, cueMs = -1, maxMs = -1, ini, total = s->total, alvoMs = (int64_t)(p->alvoSeg * 1000.0);
+  int64_t pos = -1, cueMs = -1, maxMs = -1, proxMs = -1, proxPos = -1, ini, total = s->total;
+  int64_t alvoMs = (int64_t)(p->alvoSeg * 1000.0);
   long durMs = (long)(p->durSeg * 1000.0);
   char up[8192];
   int semCab, st = 0, cross = 0, r;
   int64_t veio = 0, tot = -1;
   Adi a = {0};
+  a.gen = p->gen;
+  pthread_mutex_lock(&adiFio);              // o anterior ja saiu (ou esta saindo)
+  if (a.gen != atomic_load(&adiGen)) goto sai;
   // O indice ja veio na abertura (pedido curto em memoria): acha o ponto nele.
   pthread_mutex_lock(&mfCacheTrava);
   for (int i = 0; i < MF_CACHE_N && pos < 0; i++)
     if (mfCache[i].b && mfCache[i].total == total)
-      pos = mkvfix_cues_posicao(mfCache[i].b, (long)(mfCache[i].fim - mfCache[i].ini + 1), alvoMs, &cueMs, &maxMs);
+      pos = mkvfix_cues_ponto(mfCache[i].b, (long)(mfCache[i].fim - mfCache[i].ini + 1), alvoMs, &cueMs, &maxMs,
+                              &proxMs, &proxPos);
   pthread_mutex_unlock(&mfCacheTrava);
   if (pos < 0 || s->segIni < 0) {
     printf("[mkvfix] prefetch at %.1f s skipped: %s\n", p->alvoSeg, s->segIni < 0 ? "not Matroska" : "the index is not in memory");
@@ -862,51 +901,57 @@ static void *fioAdiantar(void *u) {
            p->alvoSeg, (long long)maxMs, durMs);
     fflush(stdout); goto sai;
   }
-  ini = s->segIni + pos;
+  ini = s->segIni + mkvfix_janela_ini(cueMs, pos, proxMs, proxPos, alvoMs,
+                                      durMs > 0 ? (double)total / (double)durMs : 0, MF_ADI_ANTES);
   if (ini <= 0 || ini >= total) goto sai;
   a.max = total - ini < MF_ADI_BYTES ? (long)(total - ini) : MF_ADI_BYTES;
   if (!(a.b = malloc((size_t)a.max))) goto sai;
   a.t0 = agoraMs();
-  printf("[mkvfix] prefetch at %.3f s: index point %.3f s, byte %lld, up to %.1f MB at most %.0f MB/s\n",
-         p->alvoSeg, cueMs / 1000.0, (long long)ini, a.max / 1048576.0, MF_ADI_BPS / 1048576.0);
+  printf("[mkvfix] prefetch at %.3f s: index points %.3f s (byte %lld) and %.3f s, window from byte %lld, "
+         "up to %.1f MB at most %.0f MB/s\n", p->alvoSeg, cueMs / 1000.0, (long long)(s->segIni + pos),
+         proxMs / 1000.0, (long long)ini, a.max / 1048576.0, MF_ADI_BPS / 1048576.0);
   fflush(stdout);
   pthread_mutex_lock(&s->m);
   snprintf(up, sizeof up, "%s", s->up); semCab = s->upSemCab;
   pthread_mutex_unlock(&s->m);
   atomic_store(&adiBaixando, 1);
-  r = rede_fluxo64(up, semCab ? "" : s->cab, ini, adiRalo, &a, &tot, &st, &adiParar, NULL, &cross, 5000, &veio);
-  if (adiParar || a.n <= 0 || (r < 0 && a.n < a.max && !a.venceu)) {
+  r = rede_fluxo64(up, semCab ? "" : s->cab, ini, adiRalo, &a, &tot, &st, NULL, NULL, &cross, 5000, &veio);
+  if (a.gen != atomic_load(&adiGen) || a.n <= 0 || (r < 0 && a.n < a.max && !a.venceu)) {
+    int trocado = a.gen != atomic_load(&adiGen);
     printf("[mkvfix] prefetch at %.1f s stopped: %s (%.1f MB in %u ms, HTTP %d)\n", p->alvoSeg,
-           adiParar ? "cancelled" : "the CDN failed", a.n / 1048576.0, (unsigned)(agoraMs() - a.t0), st);
+           trocado ? "replaced or cancelled" : "the CDN failed", a.n / 1048576.0, (unsigned)(agoraMs() - a.t0), st);
     fflush(stdout);
-    if (adiParar || a.n < 1024 * 1024) goto sai;   // pouco ou cancelado: nao guarda
+    if (trocado || a.n < 1024 * 1024) goto sai;   // pouco ou cancelado: nao guarda
   }
   printf("[mkvfix] prefetch at %.1f s: %.1f MB in %u ms%s\n", p->alvoSeg, a.n / 1048576.0,
          (unsigned)(agoraMs() - a.t0), a.venceu ? " (10 s limit: kept what came)" : "");
   fflush(stdout);
   pthread_mutex_lock(&mfCacheTrava);
-  adiLimpar(NULL);
-  cacheCaber(a.n);
-  adi.total = total; adi.ini = ini; adi.n = a.n; adi.b = a.b; adi.em = agoraMs();
-  a.b = NULL;
+  if (a.gen == atomic_load(&adiGen)) {
+    adiLimpar(NULL);
+    cacheCaber(a.n);
+    adi.total = total; adi.ini = ini; adi.n = a.n; adi.b = a.b; adi.em = agoraMs(); adi.gen = a.gen;
+    a.b = NULL;
+  }
   atomic_store(&adiBaixando, 0);
   pthread_mutex_unlock(&mfCacheTrava);
-  // Vence em 10 min sem uso (o app ficou no fundo): solta a memoria.
-  while (!adiParar) {
+  // Vence em 10 min sem uso (o app ficou no fundo): solta a memoria. Usado,
+  // trocado ou solto: o fio sai.
+  while (a.gen == atomic_load(&adiGen)) {
     int vivo;
     usleep(500000);
     pthread_mutex_lock(&mfCacheTrava);
-    vivo = adi.b != NULL && adi.ini == ini;
+    vivo = adi.b != NULL && adi.gen == a.gen;
     if (vivo && agoraMs() - adi.em > MF_ADI_VIDA_MS) { adiLimpar("10 minutes unused"); vivo = 0; }
     pthread_mutex_unlock(&mfCacheTrava);
     if (!vivo) break;
   }
 sai:
   atomic_store(&adiBaixando, 0);
+  pthread_mutex_unlock(&adiFio);
   free(a.b);
   sessSoltar(s);
   free(p);
-  atomic_store(&adiRodando, 0);
   return NULL;
 }
 
@@ -914,24 +959,25 @@ void mkvfix_adiantar(double alvoSeg, double durSeg) {
   Sess *s;
   AdiPedido *p;
   pthread_t t;
-  mkvfix_adiantar_soltar("a new one");
-  for (int i = 0; i < 40 && atomic_load(&adiRodando); i++) usleep(25000);   // o anterior sai em ate ~1 s
-  if (atomic_load(&adiRodando)) return;
+  unsigned gen = atomic_fetch_add(&adiGen, 1) + 1;   // o anterior para sozinho
+  pthread_mutex_lock(&mfCacheTrava);
+  adiLimpar(adi.b ? "a new one" : NULL);
+  pthread_mutex_unlock(&mfCacheTrava);
   s = sessPegarAtual();
   if (!s) return;
   if (!servivel(s) || s->relay || s->total < MF_CACHE_MIN_TOTAL || alvoSeg < 1.0) { sessSoltar(s); return; }
   p = calloc(1, sizeof *p);
   if (!p) { sessSoltar(s); return; }
-  p->s = s; p->alvoSeg = alvoSeg; p->durSeg = durSeg;
-  adiParar = 0; atomic_store(&adiPressa, 0); atomic_store(&adiRodando, 1);
-  if (pthread_create(&t, NULL, fioAdiantar, p) != 0) { atomic_store(&adiRodando, 0); sessSoltar(s); free(p); return; }
+  p->s = s; p->alvoSeg = alvoSeg; p->durSeg = durSeg; p->gen = gen;
+  atomic_store(&adiPressa, 0);
+  if (pthread_create(&t, NULL, fioAdiantar, p) != 0) { sessSoltar(s); free(p); return; }
   pthread_detach(t);
 }
 
 void mkvfix_adiantar_pressa(void) { atomic_store(&adiPressa, 1); }
 
 void mkvfix_adiantar_soltar(const char *porque) {
-  if (atomic_load(&adiRodando)) adiParar = 1;
+  atomic_fetch_add(&adiGen, 1);
   pthread_mutex_lock(&mfCacheTrava);
   adiLimpar(porque);
   pthread_mutex_unlock(&mfCacheTrava);
@@ -947,9 +993,9 @@ static unsigned char *adiPegar(int64_t total, int64_t ini, long *n) {
   if (adi.b && adi.total == total && ini >= adi.ini && ini < adi.ini + adi.n) {
     *n = (long)(adi.ini + adi.n - ini);
     if ((c = malloc((size_t)*n)) != NULL) memcpy(c, adi.b + (ini - adi.ini), (size_t)*n);
-    free(adi.b); adi.b = NULL; adi.n = 0;   // uma vez so
-    adiParar = 1;                            // o fio do prazo de 10 min sai
-  } else if (adi.b && adi.total == total) {
+    free(adi.b); adi.b = NULL; adi.n = 0;   // uma vez so (o fio do prazo sai)
+  } else if (adi.b && adi.total == total && ini > adi.ini - 64LL * 1024 * 1024 && ini < adi.ini + adi.n + 64LL * 1024 * 1024) {
+    // So perto do palpite: os pedidos normais do comeco do arquivo nao contam.
     printf("[mkvfix] prefetched data not used: the player asked from byte %lld (prefetched %lld-%lld)\n",
            (long long)ini, (long long)adi.ini, (long long)(adi.ini + adi.n - 1));
     fflush(stdout);

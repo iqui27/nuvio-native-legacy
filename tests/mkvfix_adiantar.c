@@ -79,18 +79,19 @@ static int tvLer(const char *local, long long a, long long b, int *certo) {
 int main(int argc, char **argv) {
   unsigned char head[512], tail[4096], cues[3000], sh[64], z[128] = {0}, cab[128];
   long k = 0, nc = 0, ns, segIni, tailIni, cuesRel, sh2Rel;
-  long long clusterRel[31];
+  long long clusterRel[32];
   char orig[256], local[256];
   int certo, st;
   if (argc < 3) return 2;
   dir = argv[1];
   snprintf(orig, sizeof orig, "http://127.0.0.1:%s/f.mkv", argv[2]);
 
-  // Cues: video track 1, a point every 2 s for 60 s; Clusters spread in the file.
-  for (int i = 0; i <= 30; i++) {
+  // Cues: video track 1, a point every 2 s for 60 s (1 MiB/s), then one at
+  // 62 s 14 MiB later (a dense stretch); Clusters spread in the file.
+  for (int i = 0; i <= 31; i++) {
     unsigned char cp[32], tp[16]; long m = 0, t = 0;
     unsigned tempo = (unsigned)i * 2000u;
-    clusterRel[i] = 1 * MIB + (long long)i * 2 * MIB;
+    clusterRel[i] = i < 31 ? 1 * MIB + (long long)i * 2 * MIB : clusterRel[30] + 14 * MIB;
     unsigned char tv[4] = { tempo >> 24, tempo >> 16, tempo >> 8, tempo };
     unsigned char pv[4] = { (unsigned char)(clusterRel[i] >> 24), (unsigned char)(clusterRel[i] >> 16),
                             (unsigned char)(clusterRel[i] >> 8), (unsigned char)clusterRel[i] };
@@ -178,9 +179,33 @@ int main(int argc, char **argv) {
     st = tvLer(local, x, x + 10 * MIB - 1, &certo);
     ok(certo && pedidosEm(x) == 1, "early return: the seek still gets the prefetch, nothing asked twice"); }
 
+  // Dense stretch: the window starts at the estimate of the second, not at the
+  // cue (60 s cue at 61 MiB, 62 s cue 14 MiB later; 61.0 s -> estimate 68 MiB,
+  // window from 65 MiB). The TV asking from 68 MiB is served from memory.
+  { long long cue = segIni + clusterRel[30], jan = cue + 4 * MIB, tv = cue + 7 * MIB;
+    mkvfix_adiantar(61.0, 64.0);
+    for (int i = 0; i < 60 && !pedidosEm(jan); i++) usleep(50000);
+    ok(pedidosEm(jan) == 1 && pedidosEm(cue) == 0, "dense stretch: the window starts at the estimate, not at the cue");
+    sleep(3);
+    st = tvLer(local, tv, tv + 8 * MIB - 1, &certo);
+    ok(certo && pedidosEm(tv) == 0 && pedidosEm(jan + 8 * MIB) == 1,
+       "dense stretch: the TV's request inside the window is served from memory, the rest from the CDN"); }
+
+  // A new request replaces a running one (leaving again; a moved point): no wait.
+  { long long a1 = segIni + clusterRel[3], a2 = segIni + clusterRel[8];
+    mkvfix_adiantar(6.0, 64.0);
+    for (int i = 0; i < 60 && !pedidosEm(a1); i++) usleep(50000);
+    mkvfix_adiantar(16.0, 64.0);
+    for (int i = 0; i < 80 && !pedidosEm(a2); i++) usleep(50000);
+    sleep(3);
+    st = tvLer(local, a2, a2 + 9 * MIB, &certo);
+    ok(certo && pedidosEm(a2) == 1, "replaced: the newer point is served from memory");
+    st = tvLer(local, a1, a1 + 5 * MIB, &certo);
+    ok(certo && pedidosEm(a1) == 2, "replaced: the older point is not kept"); }
+
   // Wrong time scale (index says 60 s, file says 10 min): no prefetch.
-  { long long x = segIni + clusterRel[12];
-    mkvfix_adiantar(24.0, 600.0);
+  { long long x = segIni + clusterRel[13];   // a byte no earlier case asked for
+    mkvfix_adiantar(26.0, 600.0);
     usleep(1500000);
     ok(pedidosEm(x) == 0, "index times that do not match the duration: no prefetch"); }
 
