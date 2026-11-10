@@ -541,9 +541,9 @@ typedef enum {
   // "Continuar assistindo" de cada perfil aparece na tela de escolha de perfil;
   // Desligado = nao e desenhado. LOCAL, desta TV. No fim: valor[]/CHAVE[] posicionais.
   AJ_PS_CONTINUAR,
-  // DTS convertido em: 0 = Estereo (AAC, padrao, o provado), 1 = 5.1 (Dolby
-  // Digital / AC3 640 kbps). So o caminho webOS que converte DTS no app
-  // (src/dts). LOCAL, desta TV. No fim: valor[]/CHAVE[] posicionais.
+  // DTS: na LG, 0 = Original, 1 = Estereo (AAC), 2 = 5.1 (AC3).
+  // No TPK, 0 = Desligado, 1 = 5.1, 2 = Estereo. LOCAL, desta TV.
+  // No fim: valor[]/CHAVE[] posicionais.
   AJ_DTS_AC3,
   // 2.0.2: "Dolby Vision em MKV (experimental)". Ligado = MKV whose dvcC says
   // profile 5/8 single layer plays through our demux with Dolby Vision (webOS

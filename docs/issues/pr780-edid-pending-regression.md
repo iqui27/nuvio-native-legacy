@@ -59,7 +59,7 @@ Also covered here: helper library absent, symbol absent, payload reader absent, 
 
 ## Not this change
 
-`python3 tests/ajustes_dts.py` exits 1 at `assert 'DTS' not in catalog` (`AssertionError: None`). The settings catalog still has the row `DTS convertido em` (`src/ajustes.c`, `dtsTpkMigrar` / `dtsSaidaLocal`). That is the known settings-migration check. It does not compile `pedirEdid`. Left alone. `python3 tests/ajustes_dts_tpk.py` was not re-run.
+An earlier source candidate failed `tests/ajustes_dts.py` on an outdated catalog assertion. The integration candidate updates that test to the current platform-specific DTS settings and the executor reports it and `tests/ajustes_dts_tpk.py` passing. These checks do not exercise `pedirEdid`.
 
 ## Checks
 
