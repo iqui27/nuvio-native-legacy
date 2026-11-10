@@ -1302,7 +1302,6 @@ static int mkvSondaUrl(char *out, size_t n) {
 static int mkvPrecisaCabecalho(void) {
   if (mkvN > 0) return 1;
   if (mf.ativo && mkvfix_ocultas() > 0) return 1;
-  if (mkvEstado == 1 || mkvEstado == 2) return 1;
   if (!fonteMp4) return 0;
   { char u[sizeof urlAtual]; return mkvSondaUrl(u, sizeof u); }
 }
@@ -1401,8 +1400,7 @@ static void sondaMkv(double pos) {
     char sondaUrl[sizeof urlAtual];
     unsigned char *cab = NULL; long cabN = 0;
     mkvOlhou = t;
-    if (!mkvSondaUrl(sondaUrl, sizeof sondaUrl)) return;
-    if (mkvass_cabecalho(sondaUrl, &cab, &cabN)) {
+    if (mkvSondaUrl(sondaUrl, sizeof sondaUrl) && mkvass_cabecalho(sondaUrl, &cab, &cabN)) {
       MkvFaixa *fx = calloc(MKV_MAX_FAIXAS, sizeof *fx);
       int n = fx ? mkv_faixas_do_trecho(cab, cabN, fx, MKV_MAX_FAIXAS, NULL, 0, NULL) : 0;
       printf("[mkv] sonda pelo trecho da pre-busca (%ld bytes, sem rede): %d faixa(s)\n", cabN, n);

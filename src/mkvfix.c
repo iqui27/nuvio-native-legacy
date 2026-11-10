@@ -254,7 +254,6 @@ int64_t mkvfix_tracks_pos(const unsigned char *b, long n, const MkvfixCab *c) {
 
 // ---- servidor ----------------------------------------------------------------
 #if defined(__EMSCRIPTEN__) || defined(NV_ANDROID) || defined(_WIN32) || defined(NV_MKVFIX_SEM_REDE)   // tests: no network
-#ifndef NV_MKVFIX_EXTERNAL
 void mkvfix_sondar(const char *u, const char *c, const char *o) { (void)u; (void)c; (void)o; }
 void mkvfix_sondar_relay(const char *u, const char *c, const char *o) { mkvfix_sondar(u, c, o); }
 int  mkvfix_relay(void) { return 0; }
@@ -266,7 +265,6 @@ int  mkvfix_ocultas(void) { return 0; }
 int  mkvfix_url(char *out, size_t n) { (void)out; (void)n; return 0; }
 int  mkvfix_e_url(const char *u) { (void)u; return 0; }
 void mkvfix_parar(void) {}
-#endif /* NV_MKVFIX_EXTERNAL */
 #else
 
 #include "rede.h"

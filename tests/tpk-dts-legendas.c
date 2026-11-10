@@ -119,6 +119,17 @@ int dts_tpk_prebuffer_ms(void) { return 0; }
 int dts_tpk_sem_indice(void) { return 0; }
 int dts_tpk_e_url(const char *u) { return u && strstr(u, "127.0.0.1") != NULL; }
 int video_faixa_dts(const VideoFaixa *f) { return f && !strncmp(f->codec, "A_DTS", 5); }
+int ajustes_audio_offset_ms(void) { return 0; }
+void dts_remux_set_audio_offset_ms(int ms) { (void)ms; }
+int ajustes_hdr10p_strip(void) { return 0; }
+void dts_remux_set_hdr10p_strip(int on) { (void)on; }
+int ajustes_audio_normalizar(void) { return 0; }
+void dts_engine_set_normalize(int on) { (void)on; }
+int ling_prefere_original(void) { return 0; }
+const char *ling_audio_preferido(void) { return ""; }
+int debrid_tb_link(int u, int i, int a, char *url, unsigned n) {
+  (void)u; (void)i; (void)a; if (n) *url = 0; return 0;
+}
 
 // --- the host ------------------------------------------------------------------
 void nv_tpk_video_registrar(void (*)(const char *, const char *), void (*)(void), void (*)(int),
