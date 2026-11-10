@@ -689,16 +689,22 @@ static int dtsLiberadoNestaTv(void);
 typedef struct { Filtro cb; void *ud, *x; int multiplo, pub; unsigned long tok; } NvHContext;
 #ifdef NV_DTS_EDID_PENDING_TEST
 int nv_dts_edid_test_webos_major = -1;
+#define NV_EDID_ONESHOT 1
 #endif
 static int edidDts;
 static unsigned edidPedidoMs;
 static unsigned edidEsperaMs = 2000;
-static unsigned edidGeracao;
+static int edidResposta(LSHandle *h, LSMessage *m, void *u);
+/* Process-lifetime context. Never rewritten: the helper may keep this
+ * pointer. The callback ignores its opaque argument (HContext* or
+ * userdata). That ABI is not proven on a TV. */
+static NvHContext edidCtx = { edidResposta, 0, 0, 0, 1, 0 };
+static int (*edidChamar)(const char *, const char *, NvHContext *);
+static int edidEnviado;
 static int edidResposta(LSHandle *h, LSMessage *m, void *u) {
   const char *r;
   (void)h;
-  if ((unsigned)(uintptr_t)u != __atomic_load_n(&edidGeracao, __ATOMIC_ACQUIRE))
-    return 1;
+  (void)u;
   r = lsPayload(m);
   __atomic_store_n(&edidDts, nv_dts_edid(r) ? 1 : 0, __ATOMIC_RELEASE);
   printf("[dts] %.160s\n", r ? r : "");
@@ -706,31 +712,25 @@ static int edidResposta(LSHandle *h, LSMessage *m, void *u) {
   return 1;
 }
 static void pedirEdid(void) {
-  static NvHContext ctxs[2];
-  static int (*chamar)(const char *, const char *, NvHContext *);
-  NvHContext *ctx;
-  unsigned g;
   void *h;
-  /* Return value of HLunaServiceCall is not a documented success bit.
-   * Missing helper or payload falls back now; an unanswered call waits. */
-  g = __atomic_add_fetch(&edidGeracao, 1, __ATOMIC_ACQ_REL);
-  ctx = &ctxs[g & 1u];
-  ctx->cb = edidResposta;
-  ctx->ud = (void *)(uintptr_t)g;
-  ctx->x = 0;
-  ctx->multiplo = 0;
-  ctx->pub = 1;
-  ctx->tok = 0;
-  edidPedidoMs = SDL_GetTicks();
-  if (!chamar && (h = dlopen("libhelpers.so.2", RTLD_NOW)))
-    *(void **)(&chamar) = dlsym(h, "HLunaServiceCall");
-  if (!chamar || !lsPayload) {
+  /* One getConfigs for the process. EDID is the TV, not the title.
+   * Another open while this is outstanding does not call again and
+   * does not move edidPedidoMs. No reply: the same 2000 ms deadline
+   * is the fallback for later opens. A reply sticks until relaunch.
+   * ponytail: no EDID refresh if the TV config changes mid-process. */
+  if (edidEnviado) return;
+  if (!edidChamar && (h = dlopen("libhelpers.so.2", RTLD_NOW)))
+    *(void **)(&edidChamar) = dlsym(h, "HLunaServiceCall");
+  if (!edidChamar || !lsPayload) {
     __atomic_store_n(&edidDts, 0, __ATOMIC_RELEASE);
     return;
   }
+  edidEnviado = 1;
+  edidPedidoMs = SDL_GetTicks();
   __atomic_store_n(&edidDts, -1, __ATOMIC_RELEASE);
-  chamar("luna://com.webos.service.config/getConfigs",
-         "{\"configNames\":[\"tv.model.edidType\"]}", ctx);
+  /* Return value is not a documented success bit. */
+  edidChamar("luna://com.webos.service.config/getConfigs",
+             "{\"configNames\":[\"tv.model.edidType\"]}", &edidCtx);
 }
 // RECONEXAO (video_reconexao.h). O erro chega no fio do LS2 e so ANOTA
 // (reconErroPend); a decisao e o recarregar sao do video_bombear, no fio
