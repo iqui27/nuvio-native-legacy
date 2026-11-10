@@ -605,7 +605,7 @@ static void abrir(void) {
 static uint8_t *decodificarEscalado(const unsigned char *dados, size_t n, int w, int h, int lw, int *lh) {
   WpConfig cfg;
   uint8_t *px;
-  size_t linha = (size_t)lw * 4, y;
+  size_t linha = (size_t)lw * 4;
   int alto = (int)(((long)h * lw + w / 2) / w);
   if (alto < 1) alto = 1;
   if (!pCfgInit) return NULL;
@@ -619,15 +619,17 @@ static uint8_t *decodificarEscalado(const unsigned char *dados, size_t n, int w,
   cfg.options.scaled_width  = lw;
   cfg.options.scaled_height = alto;
   cfg.output.colorspace     = WP_MODE_RGBA;
-  if (pDecode(dados, n, &cfg) != 0 || !cfg.output.u.RGBA.rgba) { pFreeBuf(&cfg.output); return NULL; }
-  // Copia para um bloco proprio, contiguo, que `soltar` libera com free():
-  // o da libwebp tem stride proprio e so WebPFreeDecBuffer sabe solta-lo.
-  px = malloc(linha * (size_t)cfg.output.height);
-  if (px)
-    for (y = 0; y < (size_t)cfg.output.height; y++)
-      memcpy(px + y * linha, cfg.output.u.RGBA.rgba + y * (size_t)cfg.output.u.RGBA.stride, linha);
-  *lh = cfg.output.height;
-  pFreeBuf(&cfg.output);
+  // O decoder escreve no bloco proprio: evita alocar e copiar a saida da lib.
+  px = malloc(linha * (size_t)alto);
+  if (!px) return NULL;
+  cfg.output.is_external_memory = 1;
+  cfg.output.u.RGBA.rgba = px;
+  cfg.output.u.RGBA.stride = (int)linha;
+  cfg.output.u.RGBA.size = linha * (size_t)alto;
+  int status = pDecode(dados, n, &cfg);
+  pFreeBuf(&cfg.output);   // nao libera pixels externos; `soltar` e o dono
+  if (status != 0) { free(px); return NULL; }
+  *lh = alto;
   return px;
 }
 
@@ -739,9 +741,8 @@ static uint8_t *decodificar(const unsigned char *dados, size_t n, int largMax,
   return px;
 }
 
-// O bloco da API avancada ja foi copiado para malloc; o do WebPDecodeRGBA e
-// da lib. Os dois passam por aqui: WebPFree e free() sao o mesmo alocador na
-// libwebp, e e por isso que a copia acima pode usar malloc.
+// O bloco da API avancada e malloc proprio; o de WebPDecodeRGBA e da lib.
+// WebPFree e free() usam o mesmo alocador na libwebp.
 static void soltar(uint8_t *px) { if (pFree) pFree(px); else free(px); }
 #endif
 
