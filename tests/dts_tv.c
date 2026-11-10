@@ -24,6 +24,14 @@ int main(void) {
   CHECK(!nv_dts_edid("{\"tv.model.edidType\":\"TrueHD\",\"x\":\"dts\"}"));
   CHECK(!nv_dts_edid("{\"errorText\":\"Not permitted to send to com.webos.service.config\"}"));
   CHECK(!nv_dts_edid(NULL));
+  CHECK(nv_dts_native_agora(-1, 0, 40, 10, 50) == -1);
+  CHECK(nv_dts_native_agora(-1, 0, 100, 10, 50) == 0);
+  CHECK(nv_dts_native_agora(-1, 0, 0, 10, 50) == -1);
+  CHECK(nv_dts_native_agora(-1, 0, 0, 1, 50) == -1);
+  CHECK(nv_dts_native_agora(-1, 0, 60, 10, 50) == 0);
+  CHECK(nv_dts_native_agora(0, 0, 500, 10, 50) == 0);
+  CHECK(nv_dts_native_agora(1, 0, 20, 10, 50) == 1);
+  CHECK(nv_dts_native_agora(-1, 1, 20, 10, 50) == 1);
   if (!fails) puts("dts_tv ok");
   return fails != 0;
 }

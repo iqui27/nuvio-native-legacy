@@ -24,6 +24,15 @@ static inline int nv_dts_edid(const char *json) {
   if (k) sscanf(k + 19, " : \"%31[^\"]", v);
   return strstr(v, "dts") || strstr(v, "DTS");
 }
+/* 0 = convert, 1 = native (EDID or Original), -1 = still waiting for EDID. */
+static inline int nv_dts_native_agora(int edid_dts, int original,
+                                      unsigned agora_ms, unsigned desde_ms,
+                                      unsigned espera_ms) {
+  if (original || edid_dts > 0) return 1;
+  if (edid_dts == 0) return 0;
+  if (!desde_ms || agora_ms < desde_ms) return -1;
+  return agora_ms - desde_ms >= espera_ms ? 0 : -1;
+}
 /* Convert now (before any native play) a DTS track on a TV with no DTS. */
 static inline int nv_dts_converter_ja(int release_major, int faixa_dts,
                                       int conversao_disponivel, int ja_tentou) {
