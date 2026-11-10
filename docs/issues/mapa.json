@@ -14978,6 +14978,7 @@
     "ultimo_comentario_por": "iqui27",
     "ultima_nossa": "2026-11-07"
    },
+   "revisao_final_2026_11_10": "Gate final 2/2, verificador distinto; testes direcionados rc0. Samsung e isolamento/geração tardia pendentes. Fonte: /Volumes/ExternalSSD/tmp/rev/j-verif-issues771-final-20261110.log",
    "proximo_passo": "Validar na Samsung UN43CU7000FXZX e provar cache da última fonte MP4; acompanhar resultado integrado e regressões adjacentes.",
    "notas": "Reconciliação 2026-11-07: relator informa quatro faixas ASS no cabeçalho, nenhuma faixa TEXT no player e apenas legendas de addon no menu, com reprodução funcionando; observações não reproduzidas independentemente. Diferente dos sintomas #665 e #719 e de suporte PGS. PRs #734 e #767 relacionadas não demonstram correção. Log não recuperado; causa e aceitação desconhecidas. Fonte: central-issues commit 4bba75220, docs/issues/central-issue771-20261107.md e central-issue771-2026-11-07.json. Comentário: https://github.com/iqui27/nuvio-native-legacy/issues/771#issuecomment-6712022686.\n2026-11-10: correção ca8c9fc e f7f12aeb integrada em d8a403b713a38cc0f9d63e816fc1e016627f72c2, com ajuste de teste 93ca17f6. Revisão inicial BLOQUEIA ca8 por P0/P1; revisão j-rev2 do f7 OK, sem segundo verificador, sem TV e sem novo build. Revisor registrou matriz MP4 rc0 e baseline rc1 com 4 falhas; 11 falhas adjacentes DTS na base e f7 foram atribuídas à fixture sem reconexão; executor relata ambos scripts rc0 após corrigir fixture e build-local rc0 anterior ao ajuste de teste. Fontes: /Volumes/ExternalSSD/tmp/rev/j-rev2-issues771-20261110.log e docs/issues/issue771-mp4-hidden-regression.md. Não há validação Samsung.",
    "url": "https://github.com/iqui27/nuvio-native-legacy/issues/771"
@@ -15033,7 +15034,7 @@
    "tipo_registro": "pr",
    "titulo": "Android: on-device seek thumbnails with safe decoding and Dolby Vision GPU colours",
    "estado_github": "aberta",
-   "classificacao_catalogo": "parcial",
+   "classificacao_catalogo": "integrado-aguardando-validacao-especifica",
    "proximo_passo": "Obter APK do HEAD integrado e prova Android TV; acompanhar F16 e F17 P2. Runtime MediaCodec, desempenho e revisão linguística completa permanecem sem prova.",
    "evidencia_checkpoint_140": {
     "commits": "Head remoto 55a4575f649be5a43c212e1e82aaef4ef01ae24c confirmado por GET pulls/729; 4 commits, 193 arquivos. PR aberta, merged=false; nenhuma integracao comprovada. Adoção local separada5be4999c632c7d5aa4335fbbacf5a83aea908c44 não ancestral da integração. Não confundir head remoto55a4575f com adoção local.",
@@ -15457,6 +15458,15 @@
   }
  ],
  "validacoes": [
+  {
+   "data": "2026-11-10",
+   "quem": "Investigação independente no host",
+   "o_que": "WebP escalado: validação ASan e UBSan no harness original.",
+   "issues": [],
+   "ref": "1041348ce53513ed2aaed66a1e49116ec5473b4d",
+   "resultado": "ASan+UBSan rc0, seis casos; fonte idêntica à integrada. Timeout anterior rc124 localizado antes do main em carregamento SDL3.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/webp-asan-diag-0brdr9ko/diagnosis.md; bibliotecas pré-compiladas não instrumentadas, sem prova de leaks, concorrência, TV ou FPS."
+  },
   {
    "data": "2026-11-10",
    "quem": "Revisor independente; Central TV",
