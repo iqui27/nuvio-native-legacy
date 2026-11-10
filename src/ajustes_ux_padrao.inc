@@ -244,7 +244,7 @@
 #ifdef NV_TPK
   1, /* DTS/TrueHD on the Samsung .tpk: 5.1 (Dolby Digital) (0 = off, 2 = stereo AAC) */
 #else
-  0, /* DTS converted to: Estereo (AAC) = the proven path */
+  1, /* DTS converted to: Estereo (AAC) = the proven path (0 = Original, 2 = 5.1) */
 #endif
   1, /* Dolby Vision in MKV (2.0.2, experimental): Desligado */
   0, /* send history to the Nuvio account (2.0.2, per profile): Ligado */

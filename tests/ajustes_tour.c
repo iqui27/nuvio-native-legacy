@@ -220,8 +220,15 @@ int main(void) {
     ling_local_legenda2("none");
     valor[AJ_DTS_AC3] = 0;
     off = tourLigadas();
+#ifdef NV_TPK
     valor[AJ_DTS_AC3] = 1;
     assert(tourLigadas() == off + 1);
+#else
+    valor[AJ_DTS_AC3] = 1; /* Stereo does not enable the 5.1 tour item. */
+    assert(tourLigadas() == off);
+    valor[AJ_DTS_AC3] = 2;
+    assert(tourLigadas() == off + 1);
+#endif
     valor[AJ_TAM_MAX] = 0;
     off = tourLigadas();
     valor[AJ_TAM_MAX] = 2;

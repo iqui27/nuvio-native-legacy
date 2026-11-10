@@ -270,7 +270,7 @@ esmaecerLocal
 brilhoPlayerLocal
 manterVideoLocal
 proporcaoPadraoLocal
-dtsSaidaLocal
+dtsLgLocal
 dvMkvLocal
 p2pLimiteLocal
 p2pDestinoLocal
@@ -289,7 +289,7 @@ vidroQualidadeLocal
 escalaTextoLocal
 ```
 
-Reasons: display resolution, HDR/OLED/aspect/zoom and decoder/audio compatibility belong to each TV; memory/image/row quotas, buffers/cache, blur quality and retention budgets depend on hardware; scale and TV/mobile/keyboard/microphone mode depend on screen/input; external players and launch icons require device-installed packages; personal-server, P2P, IPTV and poster-provider configuration depends on local endpoints/credentials; diagnostic overlays and log-upload consent belong to the device. Tizen uses dtsTpkLocal in place of dtsSaidaLocal.
+Reasons: display resolution, HDR/OLED/aspect/zoom and decoder/audio compatibility belong to each TV; memory/image/row quotas, buffers/cache, blur quality and retention budgets depend on hardware; scale and TV/mobile/keyboard/microphone mode depend on screen/input; external players and launch icons require device-installed packages; personal-server, P2P, IPTV and poster-provider configuration depends on local endpoints/credentials; diagnostic overlays and log-upload consent belong to the device. Tizen uses dtsTpkLocal in place of dtsLgLocal.
 
 All action/read-only rows are omitted. Credential stores remain unchanged: sessions, debrid/addon tokens, passwords, TMDB/MDBList/fanart/Seekr keys, IPTV and personal-server credentials, poster URLs/tokens. Imported badge-package URLs/recipes and package selection remain in their existing per-device stores: URLs may contain credentials; account-provided badge definitions still restore through the existing stream_badge_settings reader. No arbitrary data-directory backup.
 
