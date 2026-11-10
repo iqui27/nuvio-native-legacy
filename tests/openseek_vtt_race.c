@@ -32,7 +32,29 @@ static SeekrVtt make_vtt(int count) {
   }
   return v;
 }
+static void test_crop_bounds(void) {
+  const char *vtt = "WEBVTT\n\n"
+    "00:00:00.000 --> 00:00:01.000\n"
+    "https://example.com/image.jpg?t=500#xywh=2147483647,0,1,1\n\n"
+    "00:00:01.000 --> 00:00:02.000\n"
+    "https://example.com/image.jpg?t=1500#xywh=0,2147483647,1,1\n\n";
+  SeekrVtt v = {0};
+  SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(0, 2, 2, 32, SDL_PIXELFORMAT_ABGR8888);
+  assert(surface && seekr_vtt_ler_openseek(vtt, "https://example.com", &v) == 2);
+  for (int i = 0; i < v.nCues; i++) {
+    SeekrCue *q = &v.cues[i];
+    assert(!recorte(surface, q->x, q->y, q->w, q->h));
+  }
+  unsigned char *px = recorte(surface, 1, 1, 1, 1);
+  assert(px);
+  free(px);
+  assert(!recorte(surface, 1, 1, 2, 1));
+  assert(!recorte(surface, 1, 1, 1, 2));
+  seekr_vtt_liberar(&v);
+  SDL_FreeSurface(surface);
+}
 int main(void) {
+  test_crop_bounds();
   Sessao s = {0}; GLuint out = 0;
   atual = &s; estado = SEEKR_PRONTO; s.ultimoQuadrosMs = -1;
   SeekrVtt original = make_vtt(8);

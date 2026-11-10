@@ -1110,7 +1110,8 @@ static SDL_Surface *decodificar(const unsigned char *b, size_t n) {
 }
 static unsigned char *recorte(SDL_Surface *s, int x, int y, int w, int h) {
   unsigned char *px;
-  if (!s || x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > s->w || y + h > s->h) return NULL;
+  if (!s || x < 0 || y < 0 || w <= 0 || h <= 0 || w > s->w || h > s->h ||
+      x > s->w - w || y > s->h - h) return NULL;
   px = malloc((size_t)w * (size_t)h * 4u);
   if (!px) return NULL;
   if (SDL_MUSTLOCK(s)) SDL_LockSurface(s);
