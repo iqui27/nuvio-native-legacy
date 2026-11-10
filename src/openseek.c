@@ -1559,6 +1559,22 @@ int openseek_compart_zerar(void) { return compartIniciar(2, 0); }
 int openseek_compart_rejeitar(void) { return compartIniciar(3, 0); }
 
 // --- provedor (seekr.h) -------------------------------------------------------------
+#ifdef NV_TPK40
+static pthread_key_t rotuloChave;
+static pthread_once_t rotuloOnce = PTHREAD_ONCE_INIT;
+static int rotuloChaveOk;
+static void rotuloCriarChave(void) { rotuloChaveOk = pthread_key_create(&rotuloChave, free) == 0; }
+static OpenSeekCompartInfo *rotuloDoFio(void) {
+  pthread_once(&rotuloOnce, rotuloCriarChave);
+  if (!rotuloChaveOk) return NULL;
+  OpenSeekCompartInfo *ci = pthread_getspecific(rotuloChave);
+  if (!ci) {
+    ci = calloc(1, sizeof *ci);
+    if (ci && pthread_setspecific(rotuloChave, ci)) { free(ci); return NULL; }
+  }
+  return ci;
+}
+#endif
 static int pTemChave(void) { return openseek_pareado(); }
 static int pEstado(void) { int r; pthread_mutex_lock(&trava); r = estado; pthread_mutex_unlock(&trava); return r; }
 static const char *pRotulo(int est) {
@@ -1568,8 +1584,13 @@ static const char *pRotulo(int est) {
     case SEEKR_BUSCANDO: return m == OSM_CONTRIBUINDO ? "Título novo: o servidor está gerando as miniaturas (você contribui)" : "Preparando miniaturas no OpenSeek";
     case SEEKR_PRONTO:
       if (openseek_papel() == OS_PAPEL_CONVIDADO) {
-        static _Thread_local OpenSeekCompartInfo ci;
-        if (openseek_compart_info(&ci) && ci.rotulo[0]) return ci.rotulo;
+#ifdef NV_TPK40
+        OpenSeekCompartInfo *ci = rotuloDoFio();
+#else
+        static _Thread_local OpenSeekCompartInfo local;
+        OpenSeekCompartInfo *ci = &local;
+#endif
+        if (ci && openseek_compart_info(ci) && ci->rotulo[0]) return ci->rotulo;
       }
       return "Miniaturas disponíveis";
     case SEEKR_SEM_PREVIA:
