@@ -180,6 +180,9 @@ static void fonte(const char *codec) {
   dvHabilitado = 0; dtsNativePending = 0; dtsEstado = 0; audioNaoSup = 0;
   dtsHabilitado = 1; modoLoad = 0; edid_original = 0; nAudio = 1; audioAtual = 0;
   nheld = 0; hl_sync = 0; hl_return = 1; hl_sync_reply = NULL;
+#ifdef NV_EDID_ONESHOT
+  edidEnviado = 0;
+#endif
   snprintf(urlAtual, sizeof urlAtual, "http://fixture/a.mkv");
   memset(&faixaAudio[0], 0, sizeof faixaAudio[0]);
   snprintf(faixaAudio[0].codec, sizeof faixaAudio[0].codec, "%s", codec);
@@ -333,18 +336,46 @@ int main(void) {
   CHECK(__atomic_load_n(&edidDts, __ATOMIC_ACQUIRE) == 0);
   CHECK(!dtsTentou && !dtsSessao);
 
+  /* Three opens, one context. Callback is given the context pointer. */
   fonte("dts");
   edid_now = 1000;
   pedirEdid();
   pedirEdid();
-  fire(0, positive);
+  pedirEdid();
+  CHECK(nheld == 1);
   CHECK(__atomic_load_n(&edidDts, __ATOMIC_ACQUIRE) == -1);
-  fire(1, positive);
-  CHECK(__atomic_load_n(&edidDts, __ATOMIC_ACQUIRE) == 1);
-  fire(0, negative);
-  CHECK(__atomic_load_n(&edidDts, __ATOMIC_ACQUIRE) == 1);
+#ifdef NV_EDID_ONESHOT
+  CHECK(edidPedidoMs == 1000);
+#endif
+  held[0].ctx->cb(NULL, (LSMessage *)positive, held[0].ctx);
   pump();
-  CHECK(!dtsTentou);
+  CHECK(__atomic_load_n(&edidDts, __ATOMIC_ACQUIRE) == 1);
+  CHECK(!dtsTentou && !dtsSessao);
+  pedirEdid();
+  CHECK(nheld == 1);
+  CHECK(__atomic_load_n(&edidDts, __ATOMIC_ACQUIRE) == 1);
+
+  /* Later open keeps the first deadline and does not call again. */
+  fonte("dts");
+  edid_now = 1000;
+  pedirEdid();
+  pump();
+  CHECK(!dtsTentou && nheld == 1);
+  edid_now = 2500;
+  pedirEdid();
+  CHECK(nheld == 1);
+#ifdef NV_EDID_ONESHOT
+  CHECK(edidPedidoMs == 1000);
+#endif
+  edid_now = 3000;
+  pump();
+  CHECK(dtsTentou && dtsSessao == dts_started);
+  dtsTentou = 0; dtsSessao = NULL; dts_started = NULL;
+  edid_now = 10000;
+  pedirEdid();
+  CHECK(nheld == 1);
+  pump();
+  CHECK(dtsTentou);
 
 #ifndef NV_EDID_ORIGINAL
   fonte("dts");
