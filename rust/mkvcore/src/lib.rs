@@ -447,49 +447,155 @@ fn ler_tracks(p: &[u8], saida: *mut MkvFaixa, max: c_int) -> c_int {
 
 // --- Chapters ---------------------------------------------------------------------
 
-fn ler_capitulos(p: &[u8], saida: *mut MkvCap, max: c_int, prof: u32) -> c_int {
-    let n = p.len() as i64;
-    let mut o: i64 = 0;
-    let mut achou: c_int = 0;
-    if saida.is_null() {
-        return 0;
+const ID_CHAPHIDDEN: u32 = 0x98;
+const ID_CHAPENABLED: u32 = 0x4598;
+const ID_CHAPLANG: u32 = 0x437C;
+const ID_CHAPBCP47: u32 = 0x437D;
+const ID_EDHIDDEN: u32 = 0x45BD;
+const ID_EDDEFAULT: u32 = 0x45DB;
+
+/// Bytes of a text element up to the first NUL (Matroska pads strings with NUL).
+fn texto(v: &[u8]) -> &[u8] {
+    let k = v.iter().position(|&b| b == 0).unwrap_or(v.len());
+    v.get(..k).unwrap_or(&[])
+}
+
+/// `cod` (up to '-' or '_') is one of the comma-separated items of `lista`.
+fn lang_na(cod: &[u8], lista: &[u8]) -> bool {
+    let k = cod.iter().position(|&b| b == b'-' || b == b'_').unwrap_or(cod.len());
+    let cod = cod.get(..k).unwrap_or(&[]);
+    !cod.is_empty() && lista.split(|&b| b == b',').any(|item| item.eq_ignore_ascii_case(cod))
+}
+
+/// 3 = the app language, 2 = English (or no language: Matroska's default), 1 = other.
+/// Same rule as `capitulos_nota` in src/mkv.c.
+fn nota(lang: &[u8], bcp: &[u8], pref: &[u8]) -> u8 {
+    let cod: &[u8] = if !bcp.is_empty() {
+        bcp
+    } else if !lang.is_empty() {
+        lang
+    } else {
+        b"eng"
+    };
+    if !pref.is_empty() && lang_na(cod, pref) {
+        3
+    } else if lang_na(cod, b"en,eng") {
+        2
+    } else {
+        1
     }
-    while o < n && achou < max {
-        let Some((id, d, tam)) = cabeca(p, o) else { break };
-        o = d;
-        if o.saturating_add(tam) > n {
-            break;
+}
+
+fn flag_de(p: &[u8], quer: u32, padrao: bool) -> bool {
+    let mut r = padrao;
+    let mut visto = false;
+    filhos(p, |id, v| {
+        if id == quer && !visto {
+            r = ler_uint(v) != 0;
+            visto = true;
         }
-        if id == ID_EDITION {
-            // Only the FIRST edition counts: several would scramble the order.
-            if achou == 0 && prof < PROFUNDIDADE_MAX {
-                achou += ler_capitulos(sub(p, o, tam), saida, max, prof + 1);
-            }
-        } else if id == ID_CHAPATOM {
-            let mut c = MkvCap { inicio: 0.0, nome: [0; 64] };
-            let mut tem_inicio = false;
-            filhos(sub(p, o, tam), |fid, v| {
-                if fid == ID_CHAPSTART {
-                    // Absolute NANOSECONDS, not TimecodeScale units.
-                    c.inicio = ler_uint(v) as f64 / 1_000_000_000.0;
-                    tem_inicio = true;
-                } else if fid == ID_CHAPDISPLAY {
-                    filhos(v, |did, dv| {
-                        if did == ID_CHAPSTRING {
-                            ler_texto(dv, &mut c.nome);
-                        }
-                    });
-                }
+    });
+    r
+}
+
+/// One ChapterAtom: start, name in the preferred language, and whether it shows
+/// (hidden or disabled atoms are left out, as in NuvioTV).
+fn ler_atomo(p: &[u8], pref: &[u8]) -> Option<MkvCap> {
+    let mut c = MkvCap { inicio: 0.0, nome: [0; 64] };
+    let mut tem_inicio = false;
+    let mut fora = false;
+    let mut melhor = 0u8;
+    filhos(p, |fid, v| {
+        if fid == ID_CHAPSTART {
+            // Absolute NANOSECONDS, not TimecodeScale units.
+            c.inicio = ler_uint(v) as f64 / 1_000_000_000.0;
+            tem_inicio = true;
+        } else if (fid == ID_CHAPHIDDEN && ler_uint(v) != 0)
+            || (fid == ID_CHAPENABLED && !v.is_empty() && ler_uint(v) == 0)
+        {
+            fora = true;
+        } else if fid == ID_CHAPDISPLAY {
+            let (mut nome, mut lang, mut bcp): (&[u8], &[u8], &[u8]) = (&[], &[], &[]);
+            filhos(v, |did, dv| match did {
+                // Raw bytes, as the C side copies them (lerTexto): same struct bytes.
+                ID_CHAPSTRING => nome = dv,
+                ID_CHAPLANG => lang = texto(dv),
+                ID_CHAPBCP47 => bcp = texto(dv),
+                _ => {}
             });
-            if tem_inicio {
+            if nome.first().is_some_and(|&b| b != 0) {
+                let n = nota(lang, bcp, pref);
+                if n > melhor {
+                    melhor = n;
+                    c.nome = [0; 64];
+                    ler_texto(nome, &mut c.nome);
+                }
+            }
+        }
+    });
+    if tem_inicio && !fora {
+        Some(c)
+    } else {
+        None
+    }
+}
+
+fn ler_atomos(p: &[u8], saida: *mut MkvCap, max: c_int, pref: &[u8]) -> c_int {
+    let mut achou: c_int = 0;
+    filhos(p, |id, v| {
+        if id == ID_CHAPATOM && achou < max {
+            if let Some(c) = ler_atomo(v, pref) {
                 // SAFETY: achou < max and the caller sized `saida` for `max`.
                 unsafe { ptr::write(saida.add(achou as usize), c) };
                 achou += 1;
             }
         }
-        o += tam;
-    }
+    });
     achou
+}
+
+/// Chapters content: the default edition, else the first one not hidden
+/// (NuvioTV MatroskaChapterParser); with no EditionEntry, atoms straight in
+/// Chapters. src/mkv.c sorts the result and drops repeated starts.
+fn ler_capitulos(p: &[u8], saida: *mut MkvCap, max: c_int, pref: &[u8]) -> c_int {
+    if saida.is_null() || max <= 0 {
+        return 0;
+    }
+    let mut edicoes = 0;
+    let mut primeira: Option<&[u8]> = None;
+    let mut padrao: Option<&[u8]> = None;
+    filhos(p, |id, v| {
+        if id != ID_EDITION {
+            return;
+        }
+        edicoes += 1;
+        if flag_de(v, ID_EDHIDDEN, false) {
+            return;
+        }
+        if primeira.is_none() {
+            primeira = Some(v);
+        }
+        if padrao.is_none() && flag_de(v, ID_EDDEFAULT, false) {
+            padrao = Some(v);
+        }
+    });
+    match padrao.or(primeira) {
+        Some(ed) => ler_atomos(ed, saida, max, pref),
+        None if edicoes == 0 => ler_atomos(p, saida, max, pref),
+        None => 0,
+    }
+}
+
+/// The preference list handed over by C (`capitulos_pref`): "sv,swe", or "".
+///
+/// # Safety
+/// Non-NULL `p` must point to a NUL-terminated string that lives for the call.
+unsafe fn pref_de<'a>(p: *const c_char) -> &'a [u8] {
+    if p.is_null() {
+        return &[];
+    }
+    // SAFETY: forwarded contract (NUL-terminated, alive for the call).
+    unsafe { core::ffi::CStr::from_ptr(p) }.to_bytes()
 }
 
 // --- SeekHead / walk to Tracks ----------------------------------------------------
@@ -526,6 +632,7 @@ fn achar_tracks(
     max: c_int,
     caps: *mut MkvCap,
     max_caps: c_int,
+    pref: &[u8],
     sc: &mut NvMkvScan,
 ) -> c_int {
     let n = p.len() as i64;
@@ -573,7 +680,7 @@ fn achar_tracks(
                 sc.pos_chapters = o - hdr;
                 break;
             }
-            sc.n_caps = ler_capitulos(sub(p, o, tam), caps, max_caps, 0);
+            sc.n_caps = ler_capitulos(sub(p, o, tam), caps, max_caps, pref);
             sc.pos_chapters = -1;
             break;
         }
@@ -861,7 +968,8 @@ pub unsafe extern "C" fn nv_mkvcore_quadro_tem_rpu(
 /// bytes, immutable for the call; its address plus `n` must not wrap.
 /// Non-NULL outputs must be aligned and writable for their stated positive
 /// capacities (`sc`: one struct), fit within one allocation and `isize::MAX`
-/// bytes, and be disjoint from the input and each other.
+/// bytes, and be disjoint from the input and each other. Non-NULL `pref` must
+/// be a NUL-terminated string alive for the call.
 #[no_mangle]
 pub unsafe extern "C" fn nv_mkvcore_achar_tracks(
     p: *const u8,
@@ -870,6 +978,7 @@ pub unsafe extern "C" fn nv_mkvcore_achar_tracks(
     max: c_int,
     caps: *mut MkvCap,
     max_caps: c_int,
+    pref: *const c_char,
     sc: *mut NvMkvScan,
 ) -> c_int {
     if sc.is_null() {
@@ -890,7 +999,7 @@ pub unsafe extern "C" fn nv_mkvcore_achar_tracks(
         0
     } else {
         // SAFETY: forwarded contract.
-        achar_tracks(unsafe { buf(p, n) }, saida, max, caps, max_caps, &mut s)
+        achar_tracks(unsafe { buf(p, n) }, saida, max, caps, max_caps, unsafe { pref_de(pref) }, &mut s)
     };
     // SAFETY: NULL checked above.
     unsafe { ptr::write(sc, s) };
@@ -996,15 +1105,17 @@ pub unsafe extern "C" fn nv_mkvcore_ler_tracks(
 /// bytes, immutable for the call; its address plus `n` must not wrap.
 /// Non-NULL `caps` must be aligned, writable for `max` structs when positive,
 /// fit within one allocation and `isize::MAX` bytes, and be disjoint from `p`.
+/// Non-NULL `pref` must be a NUL-terminated string alive for the call.
 #[no_mangle]
 pub unsafe extern "C" fn nv_mkvcore_capitulos(
     p: *const u8,
     n: c_long,
     caps: *mut MkvCap,
     max: c_int,
+    pref: *const c_char,
 ) -> c_int {
-    // SAFETY: forwarded contract.
-    ler_capitulos(unsafe { buf(p, n) }, caps, max, 0)
+    // SAFETY: forwarded contract (buffer and the NUL-terminated `pref`).
+    ler_capitulos(unsafe { buf(p, n) }, caps, max, unsafe { pref_de(pref) })
 }
 
 #[cfg(test)]

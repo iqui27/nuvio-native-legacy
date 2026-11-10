@@ -41,15 +41,19 @@ static void posicao(char ch, int *f, int *c) {
   *c = (int)(p - teclado_alfabeto()) % 6;
 }
 
-// Busca: ESQUERDA na coluna 0 sai da tela, entao o foco e rastreado aqui
-// (focus_mover_grade mantem a coluna ao trocar de fileira).
+// Busca: ESQUERDA na coluna 0 sai da tela, entao o foco e rastreado aqui.
+// The keyboard moves spatially (6bed5d341) and the command row has wider keys
+// (f1b3b5e67), so the space key is reached from the column-0 letter above it,
+// and leaving it upward lands back on that letter.
 static void dpadBusca(const char *s) {
   int f = 0, c = 0, tf, tc;
   for (; *s; s++) {
     posicao(*s, &tf, &tc);
-    if (tf == 6 && c > 2) { repetir(SDLK_LEFT, c - 2); c = 2; }  // fileira de 3
+    if (f == 6) { tecla(SDLK_UP); f = 5; c = 0; }
+    if (tf == 6) { repetir(SDLK_LEFT, c); c = 0; tf = 5; }
     repetir(tf > f ? SDLK_DOWN : SDLK_UP, tf > f ? tf - f : f - tf); f = tf;
     repetir(tc > c ? SDLK_RIGHT : SDLK_LEFT, tc > c ? tc - c : c - tc); c = tc;
+    if (*s == ' ') { tecla(SDLK_DOWN); f = 6; }
     tecla(SDLK_RETURN);
   }
 }

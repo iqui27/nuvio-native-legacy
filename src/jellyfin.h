@@ -39,6 +39,7 @@
 #ifndef NV_JELLYFIN_H
 #define NV_JELLYFIN_H
 #include <stddef.h>
+#include "srvprefs.h"
 #include "catalogo.h"
 #include "addons.h"
 #include "jfid.h"
@@ -85,6 +86,8 @@ enum { JF_TIPO_JELLYFIN = 0, JF_TIPO_EMBY = 1 };
 // Access tokens are opaque: stock Jellyfin/Emby send 32 hex, but compatible
 // servers (AIOStreams) mint encrypted URL-safe base64 of several hundred chars.
 #define JF_TOKEN_MAX 2048
+// Selected library IDs: JF_FIL_MAX ids of up to 32 chars, '\n' after each.
+#define JF_SELECAO_MAX (32 * 33 + 1)
 
 // One connection: everything needed to talk to the server as one user.
 typedef struct {
@@ -96,7 +99,8 @@ typedef struct {
   char usuarioId[40];
   char usuarioNome[96];
   char token[JF_TOKEN_MAX]; // never logged
-  char bibliotecas[256];   // selected library IDs, newline-delimited; empty means all
+  SrvPlayback playback;    // local connection + Nuvio profile; never account sync
+  char bibliotecas[JF_SELECAO_MAX]; // selected library IDs, newline-delimited; empty means all
   char connectUser[64], connectKey[128]; // Emby exchange credentials, never logged
   char dispositivoId[80];  // per device + profile (Jellyfin binds tokens to it)
   char dispositivoNome[48];
@@ -196,6 +200,8 @@ double jf_seg(long long ticks);
 
 // ------------------------------------------------------- app integration
 // Onboarding worker snapshots; acceptance checks both profile and generation.
+// True only after this connection has actually offered an HLS source.
+int jf_playback_hls(int emby);
 unsigned jf_setup_conta(int emby, JfConta *out, int *perfil);
 int jf_setup_aceitar(int emby, const JfConta *c, int perfil, unsigned generation);
 int  jellyfin_disponivel(void);     // strict HTTP present on this backend
@@ -238,7 +244,10 @@ void jellyfin_recarregar_bibliotecas(void);
 // `base` (fixed rows: they do not consume the addon row limit).
 // Libraries per server (AIOMetadata exposes one per catalog, #468). The item
 // budget stays 6 full rows: more libraries just get fewer items each.
-#define JF_FIL_MAX 16
+// Row arrays of this size live on the heap or in statics, not on a thread
+// stack: a CatFileira is ~2.5 KB and fio1 threads get 256 KB.
+#define JF_FIL_MAX 32
+_Static_assert(JF_SELECAO_MAX >= JF_FIL_MAX * 33 + 1, "every library can be selected");
 #define JF_POR_FILEIRA 24
 #define JF_ITENS_MAX (6 * JF_POR_FILEIRA)
 unsigned jellyfin_fileiras_versao(void);

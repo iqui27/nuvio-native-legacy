@@ -793,6 +793,9 @@ static void limparFonteVOD(void) {
   fonteVODAutomatica = 0;
   voltaAtiva = 0;
   memset(&voltaFonte, 0, sizeof voltaFonte);
+#ifdef NV_ANDROID
+  stream_contexto_guardado(NULL);
+#endif
   buscaNextAlvo[0] = 0;
   fonteVODTentativas = 0;
   fonteVODRetentou = 0;
@@ -1113,6 +1116,12 @@ static void abrirTituloDoPainel(void) {
 static void idDoAlvo(const CatItem *ci, char *dst, size_t n) {
   int t = 0, e = 0;
   if (!ci) { if (n) dst[0] = 0; return; }
+  // A sheet opened for a specific episode owns its target until it closes.
+  // Focus beneath the sheet can resolve back to the resume/default episode.
+  if (!strcmp(ci->tipo, "series") && stream_folha_aberta() && folhaTocarT >= 0 && folhaTocarE > 0) {
+    cat_id_stream(detail_indice(), folhaTocarT, folhaTocarE, dst, (unsigned)n);
+    return;
+  }
   if (!strcmp(ci->tipo, "series") && detail_ep_foco(&t, &e) && t >= 0 && e > 0)
     // cat_id_stream: "tt:T:E" no IMDb; o id do video do addon nos demais
     // ("kitsu:41370:5"). Os dois callers passam o item do detalhe.
@@ -1567,6 +1576,9 @@ static int tocarFonteGuardada(void) {
   marco("abrir: fonte guardada, sem busca");
   stream_definir_atual(-1);
   voltaFonte = s;
+#ifdef NV_ANDROID
+  stream_contexto_guardado(&s);
+#endif
   video_definir_dv(s.dolbyVision);
   video_definir_cabecalhos(s.cabecalhos);
   video_definir_mp4(stream_e_mp4(&s));
@@ -2640,12 +2652,24 @@ static int escolhaDoNext(const char *base, char *prov, unsigned tam) {
   alvoPlayer(alvo, sizeof alvo);
   return !strcmp(alvo, buscaNextAlvo) && fontepref_tocando_de(base, prov, tam, NULL, 0);
 }
+// Closing the player does not hold the catalog (fecharSessao itself starts a
+// Continue Watching rebuild), so the index taken before it can slide or the
+// title can leave (#697). Copy before closing, reopen from the copy.
+static CatItem reabrirCopia;
+static void reabrirGuardar(int titulo) {
+  const CatItem *c = cat_item(titulo);
+  if (c) reabrirCopia = *c; else memset(&reabrirCopia, 0, sizeof reabrirCopia);
+}
+static int reabrirTitulo(int titulo) {
+  int i = cat_indice_reabrir(titulo, &reabrirCopia);
+  if (i >= 0) player_abrir(i, NULL);
+  return i;
+}
 static void abrirProximoEpisodio(int t, int e, int apontar) {
   uint64_t sessaoEntrada = nv_perfil_sessao_ler();
   int titulo = player_indice();
-  char atual[64], alvo[64], imdb[64];
-  const CatItem *ci = cat_item(titulo);
-  snprintf(imdb, sizeof imdb, "%s", ci ? ci->imdb : "");
+  char atual[64], alvo[64];
+  reabrirGuardar(titulo);
   alvoPlayer(atual, sizeof atual);
   if (!cat_id_stream(titulo, t, e, alvo, sizeof alvo) || !alvo[0]) {
     player_episodio_pedido_liberar(); return;
@@ -2691,14 +2715,13 @@ static void abrirProximoEpisodio(int t, int e, int apontar) {
   diagnostico_cancelar_vazao();
   player_encerrar();
   limparFonteVOD();
-  if (!nv_perfil_sessao_atual(sessaoPerfil)) {
+  if (!nv_perfil_sessao_atual(sessaoPerfil) || (titulo = reabrirTitulo(titulo)) < 0) {
 #ifdef NV_ANDROID
     if (tokenAdotado) player_precarregar_cancelar(tokenAdotado);
 #endif
     proximopreparo_liberar_resultado(&preparada); proximopreparo_cancelar();
     return;
   }
-  player_abrir(cat_indice_vivo(titulo, imdb), NULL);
   player_definir_episodio(t, e);
   // Abrir/fechar nao seguram a trava de identidade. Conferir outra vez antes
   // de publicar a lista e seu orcamento como uma unica transferencia curta.
@@ -3021,15 +3044,15 @@ static void abrirParte(int fonte, const PartesLista *l, int k) {
   if (!perfilPermiteReproduzir(titulo)) { aguardandoFonte = 0; folhaParaTocar = 0; return; }
   const Stream *s = stream_item(fonte);
   Stream escolhida;
-  char alvo[64], imdb[64];
+  char alvo[64];
   int t = 0, e = 0, serie;
   PartesPonto pt;
   if (!s || !l || k < 0 || k >= l->n) return;
   escolhida = *s; s = &escolhida;
   aguardandoFonte = 0;
   limparFonteVOD();
-  { const CatItem *ci = cat_item(titulo); serie = ci && !strcmp(ci->tipo, "series");
-    snprintf(imdb, sizeof imdb, "%s", ci ? ci->imdb : ""); }
+  { const CatItem *ci = cat_item(titulo); serie = ci && !strcmp(ci->tipo, "series"); }
+  reabrirGuardar(titulo);
   // Save the old file's resume point without completing a manual source switch.
   int retomarSala = juntos_no_player();
   if (player_aberto()) { player_episodio_atual(&t, &e); player_encerrar_fonte(); }
@@ -3044,7 +3067,7 @@ static void abrirParte(int fonte, const PartesLista *l, int k) {
     } else if (k != l->atual || a->tipo != PARTE_EP) t = e = -1;
   }
   diagnostico_cancelar_vazao();
-  player_abrir(cat_indice_vivo(titulo, imdb), NULL);
+  if (reabrirTitulo(titulo) < 0) return;
   if (retomarSala) juntos_retomar_player(0);
   player_definir_episodio(t, e);
   stream_definir_atual(fonte);
@@ -5308,16 +5331,14 @@ static void tocarFonteEscolhida(int fonte, int manual) {
       aguardandoFonte=0;
       limparFonteVOD();
       int titulo = alvo;
-      char imdb[64];
-      const CatItem *ci = cat_item(titulo);
-      snprintf(imdb, sizeof imdb, "%s", ci ? ci->imdb : "");
+      reabrirGuardar(titulo);
       int retomarSala = juntos_no_player(); // Explicit in-session source switch/retry.
       if (player_aberto()) {
         if (manual) player_encerrar_fonte();
         else player_encerrar();
       }
       diagnostico_cancelar_vazao();
-      player_abrir(cat_indice_vivo(titulo, imdb),NULL);
+      if (reabrirTitulo(titulo) < 0) return;
       if (retomarSala) juntos_retomar_player(0);
       player_definir_episodio(t,e);
       if (!manual && juntos_no_player()) {
@@ -6715,6 +6736,17 @@ void app_atualizar(float dt, Uint32 agora) {
       // um "Assistir T2E5" da agenda colaria no pedido.
       int temEp = detail_pediu_fontes_ep(&epT, &epE);
       gravarFolhaTocar(epT, epE, temEp);
+      // Do not expose the previous episode's list during the focus debounce.
+      if (temEp) {
+        const CatItem *ci = cat_item(detail_indice());
+        char alvo[64];
+        cat_id_stream(detail_indice(), epT, epE, alvo, sizeof alvo);
+        if (ci && alvo[0] && !stream_lista_do_alvo(alvo)) {
+          stream_invalidar("episode selected for sources");
+          stream_definir_alvo(alvo);
+          addons_buscar(alvo, ci->tipo);
+        }
+      }
       idBaseDoTitulo(base, sizeof base);
       stream_preferir(base[0] ? fontepref_escolher_manual(base) : -1);
       nomeParaFolha(); stream_folha_abrir();
@@ -7472,11 +7504,10 @@ void app_atualizar(float dt, Uint32 agora) {
       int titulo = retomar ? autorizado : player_indice(), reassistindo=player_reassistindo();
       if (travaui_abrir_espera(titulo, t, e)) goto semEscolhaEpisodio;
       if (episodioNaSala(titulo, t, e)) goto semEscolhaEpisodio;
-      char imdb[64];
-      const CatItem *ci = cat_item(titulo);
-      snprintf(imdb, sizeof imdb, "%s", ci ? ci->imdb : "");
+      reabrirGuardar(titulo);
       diagnostico_cancelar_vazao();
-      player_encerrar(); player_abrir(cat_indice_vivo(titulo, imdb),NULL);
+      player_encerrar();
+      if (reabrirTitulo(titulo) < 0) goto semEscolhaEpisodio;
       player_rewatch(reassistindo);
       player_definir_episodio(t,e);
       buscaNextAlvo[0] = 0;   // episodio escolhido na lista: a memoria do titulo, nao o Next

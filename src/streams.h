@@ -59,6 +59,10 @@ typedef struct Stream {
   // Legendas anexadas pelo addon tambem contam, sem afirmar que sao embutidas.
   char audioIdiomas[512];
   char legendaIdiomas[512];
+  // Audio language codes named only by the release text (title/description/
+  // filename), never by provider, headers or URL. Matching only: playback
+  // tracks keep audioIdiomas. Empty when any audio field was declared.
+  char audioTexto[64];
   // Metadados canonicos para as exclusoes compartilhadas. Independentes dos
   // badges importados e do tamanho exato exigido pelo StreamFit.
   FonteFiltroDados filtro;
@@ -159,6 +163,10 @@ int stream_filtro_permite(const Stream *fonte);
 int stream_filtro_bloqueou(void);
 void stream_definir_atual(int indice);
 int stream_atual(void);
+// Android saved-link resume has no selection in the source sheet. Keep its
+// real Stream outside that list; only its exact playback URL may use it.
+void stream_contexto_guardado(const Stream *fonte); // copies; NULL clears
+const Stream *stream_fonte_reproducao(const char *url, const char *cabecalhos);
 int stream_kbps(const Stream *s);
 int stream_kbps_atual(void);   // declared kbps of stream_atual() (0 = unknown)
 void stream_folha_contexto(const char *texto);

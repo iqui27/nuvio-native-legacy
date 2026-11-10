@@ -56,7 +56,6 @@ extern void cat_historico_definir_tempo(const char *imdb, const char *tipo,
 #define PX_FILA_CTL 8
 #define PX_FILA_REL 32
 #define PX_PAGINA_INDICE 200
-#define PX_TAXA_MAX 20000   // kbps ceiling asked of the universal transcoder
 
 // ------------------------------------------------------------ PIN machine
 void pxpin_iniciar(PxPin *p) {
@@ -792,8 +791,9 @@ static void descreverMidia(const char *mi, const char *mf, Stream *s, int metodo
     for (u = cont; *u; u++) *u = (char)toupper((unsigned char)*u);
   }
   {
-    const char *m = metodo == PX_METODO_DIRETO ? "Direct play" :
-                    metodo == PX_METODO_STREAM ? "Direct stream (HLS)" : "Transcode (HLS)";
+    // The current decision route tests Direct Play only. HLS conversion is
+    // decided later by PMS; do not present the local codec estimate as fact.
+    const char *m = metodo == PX_METODO_DIRETO ? "Direct play" : "HLS";
     if (s->altura) snprintf(s->rotulo, sizeof s->rotulo, "%dp · %s", s->altura, m);
     else copiar(s->rotulo, sizeof s->rotulo, m);
   }
@@ -870,7 +870,7 @@ int px_ler_fontes(const PxConta *c, const char *rk, const char *corpo, size_t n,
       // The HLS alternative: always for the first version, and for any version
       // that cannot play directly. With a video codec this TV opens the server
       // copies the video and converts only what it must (direct stream).
-      if (k == 1 && idx != 0 && pode) continue;
+      if (k == 1 && (c->playback.direto || (idx != 0 && pode))) continue;
       metodo = k == 0 ? PX_METODO_DIRETO
              : idx < nInfo && px_video_suportado(b, info[idx].vcod) ? PX_METODO_STREAM : PX_METODO_TRANSCODE;
       memset(sp, 0, sizeof *sp);
@@ -888,7 +888,7 @@ int px_ler_fontes(const PxConta *c, const char *rk, const char *corpo, size_t n,
                  "&partIndex=0&protocol=hls&fastSeek=1&directPlay=0&directStream=1&subtitleSize=100"
                  "&audioBoost=100&maxVideoBitrate=%d&offset=0&X-Plex-Platform=Nuvio"
                  "&X-Plex-Product=Nuvio&X-Plex-Client-Identifier=%s&X-Plex-Session-Identifier=%s"
-                 "&X-Plex-Token=%s", c->base, rk, idx, PX_TAXA_MAX, c->dispositivoId, sp->sessaoId, c->token);
+                 "&X-Plex-Token=%s", c->base, rk, idx, srv_playback_bitrate(c->playback, SRV_PX_BITRATE_MAX) / 1000, c->dispositivoId, sp->sessaoId, c->token);
       copiar(s->url, sizeof s->url, sp->url);
       copiar(s->provedor, sizeof s->provedor, "Plex");
       s->fileIdx = -1;
@@ -1067,6 +1067,7 @@ int px_escolher(PxConta *c, RedeJob *job, const PxServidor *s) {
     rede_resposta_limpar(&r);
     if (e != PX_OK || strcasecmp(id, s->id)) continue;     // another server on that address
     copiar(c->base, sizeof c->base, cand[i]);
+    if (strcasecmp(c->servidorId, s->id)) c->playback = (SrvPlayback){0};
     copiar(c->servidorId, sizeof c->servidorId, s->id);
     copiar(c->servidorNome, sizeof c->servidorNome, s->nome);
     copiar(c->versao, sizeof c->versao, ver[0] ? ver : s->versao);
@@ -1201,7 +1202,7 @@ int px_decisao(const PxConta *c, RedeJob *job, const char *rk, int midia, JfBack
                "%s/video/:/transcode/universal/decision?path=%%2Flibrary%%2Fmetadata%%2F%s&mediaIndex=%d"
                "&partIndex=0&protocol=hls&directPlay=1&directStream=1&directStreamAudio=1&fastSeek=1&hasMDE=1"
                "&maxVideoBitrate=%d&X-Plex-Client-Profile-Name=Generic&X-Plex-Session-Identifier=%s",
-               c->base, rk, midia, PX_TAXA_MAX, sessao) >= (int)sizeof url)
+               c->base, rk, midia, srv_playback_bitrate(c->playback, SRV_PX_BITRATE_MAX) / 1000, sessao) >= (int)sizeof url)
     return PX_ERR_ENTRADA;
   e = pedirEx(c, url, c->token, "GET", "playback decision", PX_PRAZO_SONDA_MS * 2, job, &r, cab);
   if (e == PX_ERR_CANCELADO) return e;
@@ -1377,6 +1378,9 @@ static int gravarConta(const PxConta *c, int perfil) {
   char selection[256]; copiar(selection, sizeof selection, c->bibliotecas);
   for (char *p = selection; *p; p++) if (*p == '\n') *p = ',';
   linha(txt, sizeof txt, &k, "libs", selection);
+  char bitrate[16]; snprintf(bitrate, sizeof bitrate, "%d", c->playback.bitrate);
+  linha(txt, sizeof txt, &k, "playDirect", c->playback.direto ? "1" : "0");
+  linha(txt, sizeof txt, &k, "playBitrate", bitrate);
   if (k >= sizeof txt) { apagarSegredo(txt, sizeof txt); return 0; }
   snprintf(tmp, sizeof tmp, "%s.tmp", caminho);
   dados_fs_travar();
@@ -1457,6 +1461,10 @@ static void carregarLocked(void) {
     lerCampo(txt, "tokc", conta.tokenConta, sizeof conta.tokenConta);
     lerCampo(txt, "toks", conta.token, sizeof conta.token);
     lerCampo(txt, "libs", conta.bibliotecas, sizeof conta.bibliotecas);
+    char direct[8], bitrate[24];
+    lerCampo(txt, "playDirect", direct, sizeof direct);
+    lerCampo(txt, "playBitrate", bitrate, sizeof bitrate);
+    conta.playback = srv_playback_ler(direct, bitrate, SRV_PX_BITRATE_MAX);
     for (char *p = conta.bibliotecas; *p; p++) if (*p == ',') *p = '\n';
     apagarSegredo(txt, strlen(txt));
     free(txt);
@@ -1472,7 +1480,7 @@ static void carregarLocked(void) {
   idxConferirLocked();
 }
 
-static void soltarSnapshotLocked(void) {
+static void soltarSnapshotLocked(int manterPlayback) {
   int i;
   nSnapFils = nSnapItens = 0;
   snapVersao++;
@@ -1480,6 +1488,9 @@ static void soltarSnapshotLocked(void) {
   free(fontesLista); fontesLista = NULL; nFontes = 0;
   fontesAlvo[0] = 0; fontesEstado = PX_FONTES_NADA;
   for (i = 0; i < PX_SESSOES; i++) {
+    if (manterPlayback && sessoes[i].ativo && sessoes[i].iniciado) {
+      sessoes[i].geracao = geracao; continue;
+    }
     apagarSegredo(sessoes[i].s.url, sizeof sessoes[i].s.url);
     sessoes[i].ativo = 0;
   }
@@ -1492,13 +1503,14 @@ static void relatoriosDescartarLocked(void) {
   if (grupoRel) rede_grupo_avancar(grupoRel);
 }
 
-static void avancarLocked(void) {
+static void avancarComPlaybackLocked(int manterPlayback) {
   geracao++;
   if (grupo) rede_grupo_avancar(grupo);
   if (jobCtl) rede_job_cancelar(jobCtl);
   nCtl = 0;
-  soltarSnapshotLocked();
+  soltarSnapshotLocked(manterPlayback);
 }
+static void avancarLocked(void) { avancarComPlaybackLocked(0); }
 
 static void conferirPerfilLocked(void) {
   if (perfilLido != perfis_ativo()) { avancarLocked(); carregarLocked(); }
@@ -1708,7 +1720,10 @@ int px_setup_aceitar(const PxConta *c, int perfil, unsigned generation) {
   int ok = 0; pthread_mutex_lock(&trava);
   if (perfil == perfis_ativo() && perfil == perfilLido && generation == geracao && c->token[0] && c->servidorId[0]) {
     int selectionChanged = strcmp(conta.bibliotecas, c->bibliotecas) != 0;
-    avancarLocked(); conta = *c; gravarConta(c, perfil);
+    if (!gravarConta(c, perfil)) { pthread_mutex_unlock(&trava); return 0; }
+    int mesmaConta = !selectionChanged && !strcmp(conta.servidorId, c->servidorId) &&
+      !strcmp(conta.base, c->base) && !strcmp(conta.token, c->token);
+    avancarComPlaybackLocked(mesmaConta); conta = *c;
     if (selectionChanged) { srvidx_limpar(&idx); idxTag[0] = 0; srvidx_apagar(perfil, "px"); }
     idxConferirLocked();
     definirEstadoLocked(PX_EST_CONECTADO, c->servidorNome); enfileirarLocked(T_BIBLIOTECAS, ""); ok = 1;

@@ -8,6 +8,10 @@
 #include <SDL2/SDL.h>
 void *SDL_AndroidGetJNIEnv(void);
 void *SDL_AndroidGetActivity(void);
+// Sample stamps come from nv_ticks64 since a877c0f7c; drive it from the fake clock.
+#define NV_TICKS_H
+#include <stdint.h>
+static uint64_t nv_ticks64(void);
 #include "../src/video_android.c"
 // capmkv.c (capitulos do MKV) nao faz parte deste teste.
 int juntos_precarregando(void) { return 0; }
@@ -26,6 +30,7 @@ double capmkv_creditos(double d) { (void)d; return 0.0; }
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 static struct JNINativeInterface_ jni;
 static const struct JNINativeInterface_ *env = &jni;
@@ -35,6 +40,7 @@ void *SDL_AndroidGetJNIEnv(void) { return semEnv ? NULL : &env; }
 void *SDL_AndroidGetActivity(void) { return NULL; }
 Uint32 SDL_GetTicks(void) { return relogio; }
 Uint64 SDL_GetTicks64(void) { return relogio; }
+static uint64_t nv_ticks64(void) { return relogio; }
 SDL_mutex *SDL_CreateMutex(void) { return (SDL_mutex *)(uintptr_t)1; }
 void marco(const char *s) { (void)s; }
 const char *ling_audio(void) { return ""; }
@@ -225,13 +231,15 @@ int main(void) {
   registro[0] = 0;
   video_taxa_sync(1000); video_bombear();
   assert(!strcmp(registro, "V150"));
-  Uint64 stamp;
-  relogio = 1000;
+  /* Sample stamps use nv_ticks64() since a877c0f7c (old webOS SDL lacks
+     SDL_GetTicks64): bracket each with the real monotonic clock. */
+  Uint64 stamp, first, t0 = nv_ticks64();
   Java_space_nuvio_nativelegacy_NvPlayer_nativePos(&env, NULL, 12500, 15000, 0, 0, sessao);
-  relogio = 1200;
-  assert(video_pos_amostra(&stamp) == 12.5 && stamp == 1000);
+  Uint64 t1 = nv_ticks64(); usleep(20000);
+  assert(video_pos_amostra(&first) == 12.5 && first >= t0 && first <= t1);
+  t0 = nv_ticks64();
   Java_space_nuvio_nativelegacy_NvPlayer_nativePos(&env, NULL, 12500, 15000, 0, 0, sessao);
-  assert(video_pos_amostra(&stamp) == 12.5 && stamp == 1200);
+  assert(video_pos_amostra(&stamp) == 12.5 && stamp >= t0 && stamp <= nv_ticks64() && stamp > first);
   registro[0] = 0;
   assert(abrirSessao(0, 0));                     // reconnection / same playback
   Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(&env, NULL, 1, 60000, 0);

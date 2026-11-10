@@ -2,6 +2,7 @@
 // desc_chave_tmdb sao dubles, e o teste olha so o que arte_reserva_url faz
 // com a URL e com a resposta do /find.
 #include "artereserva.h"
+#include "arteurl.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -193,6 +194,23 @@ int main(void) {
        "URL nao registrada nao recebe reserva");
     OK(pedidos == 0 && ultimaUrl[0] == 0, "negativa nao consulta TMDB");
     respostasColisao = 0;
+  }
+  // URL de addon de 900 bytes (limite compartilhado NV_ARTE_URL_MAX): registra e
+  // acha o IMDb no fallback; so a URL de tamanho acima do limite e recusada.
+  {
+    static char longa[NV_ARTE_URL_MAX + 8];
+    memset(longa, 'a', sizeof longa - 1);
+    memcpy(longa, "https://addon/poster/", 21);
+    longa[900] = 0;
+    resposta = "{\"movie_results\":[{\"id\":278,\"poster_path\":\"/longa.jpg\"}],\"tv_results\":[]}";
+    OK(arte_reserva_registrar(longa, "tt0111161", 1) == 1, "registra URL de 900 bytes");
+    OK(arte_reserva_url(longa, s, sizeof s) == 1 &&
+       !strcmp(s, "https://image.tmdb.org/t/p/w342/longa.jpg"),
+       "fallback da URL de 900 bytes acha o IMDb");
+    memset(longa + 900, 'a', NV_ARTE_URL_MAX - 900); longa[NV_ARTE_URL_MAX] = 0;
+    OK(arte_reserva_registrar(longa, "tt0111161", 1) == 0, "URL de NV_ARTE_URL_MAX bytes e recusada");
+    longa[NV_ARTE_URL_MAX - 1] = 0;
+    OK(arte_reserva_registrar(longa, "tt0111161", 1) == 1, "URL de NV_ARTE_URL_MAX-1 bytes e aceita");
   }
   ultimaUrl[0] = 0;
   chave = "";

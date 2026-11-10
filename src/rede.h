@@ -81,7 +81,18 @@ typedef struct {
   /* 1 = media Range read: follow an https->http redirect like the player does
    * (debrid links). Cross-origin hops already drop every caller header. */
   int rebaixar_midia;
+  /* OpenSeek (SR-3): CURLOPT_PINNEDPUBLICKEY, only "sha256//<base64>[;sha256//...]"
+   * (a file name is refused: REDE_ENTRADA). Applied on every hop through the
+   * fail-closed option path: a libcurl/TLS backend without pinning fails the
+   * request with REDE_INDISPONIVEL and curl_erro = the setopt code (4/48),
+   * BEFORE any byte is sent. A mismatch is REDE_TRANSPORTE, curl_erro 90.
+   * Requires https://. Combine with tls_pessoal for a self-signed server: the
+   * pin is still enforced with peer verification off. Never log it. */
+  const char *pino_publico;
 } RedePedido;
+#define REDE_CURL_PINO_DIFERENTE 90 /* CURLE_SSL_PINNEDPUBKEYNOTMATCH */
+/* 1 = the string is a well-formed pin list for pino_publico. */
+int rede_pino_valido(const char *pino);
 typedef struct {
   int status, curl_erro;
   RedeErro erro;        /* HTTP 4xx/5xx e uma resposta, nao erro de transporte */
@@ -135,6 +146,11 @@ char *rede_baixar_trecho64_vigiado(const char *url,const char *headers,
     int64_t start,int64_t end,long *size,int64_t *total,int *status,
     volatile int *cancelled,char *final,int *cross,volatile int *urgent,
     unsigned idle_ms,int *stalled);
+/* Optional notification of a 429 Retry-After on the responding hop. */
+char *rede_baixar_trecho64_vigiado_retry(const char *url,const char *headers,
+    int64_t start,int64_t end,long *size,int64_t *total,int *status,
+    volatile int *cancelled,char *final,int *cross,volatile int *urgent,
+    unsigned idle_ms,int *stalled,void (*retry)(void *,int),void *retry_arg);
 /* One streaming read "bytes=start-" for the Samsung converter: the body goes to
  * sink(opaque, data, n) as it arrives (return 0 to stop; it may block). Same
  * redirect and header rules as rede_baixar_trecho64_final. No limit on the

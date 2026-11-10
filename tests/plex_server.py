@@ -226,6 +226,7 @@ class Handler(BaseHTTPRequestHandler):
             mi = int(q.get("mediaIndex", ["0"])[0])
             with lock:
                 state["decisions"] += 1
+                state["events"].append({"op": "decision", "bitrate": q.get("maxVideoBitrate", [""])[0]})
                 refused = mi in state["refuse"]
             code = 3000 if refused else 1000
             return self.reply(200, {"MediaContainer": {

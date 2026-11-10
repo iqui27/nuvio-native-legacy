@@ -10,6 +10,7 @@ typedef struct {
   char media_id[64], error[160];
   DtsBufferInfo buffer;
   double buffered_until;
+  unsigned buffering_ms;
 } DtsPlaybackStatus;
 /* All expensive work and native Feed calls are serialized on one worker.
  * Callers own a session; close joins it before freeing callback context. */

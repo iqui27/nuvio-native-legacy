@@ -675,9 +675,14 @@ static int faltantes(TTF_Font *fonte, const char *s, Uint32 *primeiro) {
     if (*p < 0x80) { p++; continue; }
     cp = decodifica(p, &tam);
     p += tam;
-    if (cp >= 0x10000 || decorativo(cp)) continue;
-    if (TTF_GlyphIsProvided(fonte, (Uint16)cp)) continue;
-    if (nv_dobra_estilizada(cp)) continue;
+    if (addonVerbatim) {
+      // Provider symbols and supplementary letters need real coverage checks.
+      if (TTF_GlyphIsProvided32(fonte, cp)) continue;
+    } else {
+      if (cp >= 0x10000 || decorativo(cp)) continue;
+      if (TTF_GlyphIsProvided(fonte, (Uint16)cp)) continue;
+      if (nv_dobra_estilizada(cp)) continue;
+    }
     if (!n && primeiro) *primeiro = cp;
     n++;
   }
@@ -847,7 +852,7 @@ static TTF_Font *fonteDe(TxtFamilia familia, TxtEstilo estilo, const char *s) {
   }
   principal = fontes[familia][estilo];
   if (!principal) return NULL;
-  unsigned long long h = 1469598103934665603ull;
+  unsigned long long h = 1469598103934665603ull ^ (unsigned)!!addonVerbatim;
   unsigned n = 0, slot;
   { const unsigned char *p = (const unsigned char *)s;
     while (*p && *p < 0x80) p++;
@@ -883,6 +888,14 @@ static TTF_Font *fonteDeLento(TxtFamilia familia, TxtEstilo estilo, const char *
       if (!faltantes(r, s, &cpInter)) return r;
       cp = cpInter;
     }
+  }
+  if (addonVerbatim && familia != TXT_FAMILIA_ROBOTO) {
+    // Reuse the bundled Roboto for phonetic/small-cap letters missing in Inter.
+    if (!familiaTentada[TXT_FAMILIA_ROBOTO]) carregarFamilia(TXT_FAMILIA_ROBOTO);
+    if (!fontes[TXT_FAMILIA_ROBOTO][estilo] && familiaCarregada[TXT_FAMILIA_ROBOTO])
+      abrirEstiloCamada(TXT_FAMILIA_ROBOTO, estilo);
+    r = fontes[TXT_FAMILIA_ROBOTO][estilo];
+    if (r && !faltantes(r, s, NULL)) return r;
   }
   if (!cp) return principal;
   e = escritaDe(cp);
@@ -1406,6 +1419,8 @@ int txt_iniciar(const char *dirRecursos, float escala) {
   snprintf(tailandesEmbarcada, sizeof tailandesEmbarcada, "%sfonts/NotoSansThai-Regular.ttf", base);
   snprintf(arabeBoldCaminho, sizeof arabeBoldCaminho, "%sfonts/NotoSansArabic-Bold-Subset.ttf", base);
   snprintf(naskhBoldCaminho, sizeof naskhBoldCaminho, "%sfonts/NotoNaskhArabic-Bold.ttf", base);
+  char symbolsEmbarcada[600];
+  snprintf(symbolsEmbarcada, sizeof symbolsEmbarcada, "%sfonts/NotoSansSymbols2-Regular.ttf", base);
   { const char *cand[ESC_N][RES_CAND + 1] = {
       /* ESC_CJK (japones)  */ { "/usr/share/fonts/LG_Display_JP.ttf",
                                  "/usr/share/fonts/DroidSansFallback.ttf",
@@ -1447,7 +1462,8 @@ int txt_iniciar(const char *dirRecursos, float escala) {
                                  "/usr/share/fonts/DroidSans.ttf",
                                  "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
                                  "/system/fonts/NotoSansCJK-Regular.ttc",
-                                 "/system/fonts/Roboto-Regular.ttf", NULL },
+                                 "/system/fonts/Roboto-Regular.ttf",
+                                 symbolsEmbarcada, cjkEmbarcada, NULL },
     };
     const char *nomeEsc[ESC_N] = { "CJK", "CJK-sc", "CJK-tc", "arabe", "tailandes", "resto" };
     // NUVIO_SEM_RESERVA_DE_SISTEMA=1 finge o WASM da Samsung, onde so existe o
@@ -1458,7 +1474,7 @@ int txt_iniciar(const char *dirRecursos, float escala) {
       int n = 0;
       for (int i = 0; cand[e][i] && n < RES_CAND; i++) {
         FILE *fr;
-        if (soEmbarcada && cand[e][i] != cjkEmbarcada && cand[e][i] != arabeEmbarcada &&
+        if (soEmbarcada && cand[e][i] != symbolsEmbarcada && cand[e][i] != cjkEmbarcada && cand[e][i] != arabeEmbarcada &&
             cand[e][i] != naskhEmbarcada && cand[e][i] != tailandesEmbarcada) continue;
         fr = fopen(cand[e][i], "rb");
         if (fr) { fclose(fr);
@@ -1703,13 +1719,17 @@ static int addonAtlasTried;
 static void addonEmojiFechar(void) {
   SDL_FreeSurface(addonAtlas); addonAtlas = NULL; addonAtlasTried = 0;
 }
-// Longest match keeps regional-indicator pairs and variation selectors atomic.
+// Longest match keeps ZWJ, modifiers, flags and optional VS16 atomic.
 static int addonEmoji(const char *s, int *bytes) {
-  unsigned cp[3] = {0}; int ends[3] = {0}, count = 0;
+  unsigned cp[EMOJI_MAX_POINTS] = {0}; int ends[EMOJI_MAX_POINTS] = {0}, count = 0;
   const unsigned char *p = (const unsigned char *)s;
-  while (*p && count < 3) {
+  while (*p && count < EMOJI_MAX_POINTS) {
     int nb;
-    cp[count] = decodifica(p, &nb); p += nb;
+    unsigned point = decodifica(p, &nb); p += nb;
+    // VS15 requests text presentation; never substitute a color image.
+    if (point == 0xFE0E) { if (count) cp[count - 1] = 0xFFFFFFFFu; break; }
+    if (point == 0xFE0F && count) { ends[count - 1] = (int)((const char *)p - s); continue; }
+    cp[count] = point;
     ends[count++] = (int)((const char *)p - s);
   }
   size_t low = 0, high = sizeof emojiKeys / sizeof *emojiKeys;
@@ -1720,7 +1740,7 @@ static int addonEmoji(const char *s, int *bytes) {
   for (int len = count; len > 0; len--)
     for (size_t i = low; i < sizeof emojiKeys / sizeof *emojiKeys && emojiKeys[i][0] == cp[0]; i++) {
       int match = 1;
-      for (int j = 0; j < 3; j++) if (emojiKeys[i][j] != (j < len ? cp[j] : 0)) match = 0;
+      for (int j = 0; j < EMOJI_MAX_POINTS; j++) if (emojiKeys[i][j] != (j < len ? cp[j] : 0)) match = 0;
       if (match) {
         *bytes = ends[len - 1];
         if (!strncmp(s + *bytes, "\xef\xb8\x8f", 3)) *bytes += 3;
@@ -1730,20 +1750,37 @@ static int addonEmoji(const char *s, int *bytes) {
   return -1;
 }
 
-static int addonRun(TxtEstilo style, const char *p, char *run, int *emoji) {
+// The source span includes selectors even when the raster has no separate glyph.
+static int addonClusterBytes(const char *p) {
+  int n;
+  if (addonEmoji(p, &n) >= 0) return n;
+  decodifica((const unsigned char *)p, &n);
+  if (!strncmp(p + n, "\xef\xb8\x8e", 3) || !strncmp(p + n, "\xef\xb8\x8f", 3)) n += 3;
+  return n;
+}
+
+static int addonRun(TxtEstilo style, TxtFamilia family, const char *p,
+                    char *run, int *emoji, TTF_Font **font) {
   int nb;
   *emoji = addonEmoji(p, &nb);
   if (*emoji >= 0) { run[0] = 0; return nb; }
-  int n = 0;
+  int n = 0, used = 0;
+  *font = NULL;
   while (p[n] && n < 2040) {
     int k;
     if (n && addonEmoji(p + n, &k) >= 0) break;
-    decodifica((const unsigned char *)p + n, &k);
+    Uint32 cp = decodifica((const unsigned char *)p + n, &k);
     if (n + k >= 2048) break;
-    memcpy(run + n, p + n, (size_t)k); n += k;
+    // Presentation controls belong to the source cluster, with no glyph or
+    // advance of their own on SDL_ttf builds without HarfBuzz.
+    if (cp == 0xFE0E || cp == 0xFE0F) { n += k; continue; }
+    char point[5]; memcpy(point, p + n, (size_t)k); point[k] = 0;
+    TTF_Font *f = *font && p[n] == ' ' ? *font : fonteDe(family, style, point);
+    if (*font && f != *font) break;
+    *font = f;
+    memcpy(run + used, p + n, (size_t)k); used += k; n += k;
   }
-  run[n] = 0;
-  (void)style;
+  run[used] = 0;
   return n;
 }
 
@@ -1756,11 +1793,17 @@ static SDL_Surface *addonSurface(TxtEstilo style, const char *s, SDL_Color color
   for (pass = 0; pass <= draw; pass++) {
     int x = 0;
     for (const char *p = s; *p;) {
-      char run[2048]; int id, n = addonRun(style, p, run, &id), rw = em, rh = em;
+      TTF_Font *f = NULL;
+      char run[2048]; int id, n = addonRun(style, family, p, run, &id, &f), rw = em, rh = em;
       SDL_Surface *part = NULL;
       if (!n) break;
       if (id < 0) {
-        TTF_Font *f = fonteDe(family, style, run), *a, *b;
+        rw = 0;
+        TTF_Font *a, *b;
+#ifdef NV_GLYPH_RENDER_TEST
+        extern void glyphrender_run(const char *text, TTF_Font *font);
+        glyphrender_run(run, f);
+#endif
         if (f) {
           char vis[4096]; altDe(family, style, f, &a, &b);
           const char *v = visualDe(f, run, vis, sizeof vis);
@@ -2242,8 +2285,7 @@ static AddonLayout *addonLayout(TxtEstilo style, const char *text, float width, 
       char line[2048]; size_t len = 0, word = 0;
       const char *p = s;
       while (p < stop) {
-        int nb, id = addonEmoji(p, &nb);
-        if (id < 0) decodifica((const unsigned char *)p, &nb);
+        int nb = addonClusterBytes(p);
         if (len + nb >= sizeof line) break;
         memcpy(line + len, p, (size_t)nb); line[len + nb] = 0;
         int w = larguraLinha(style, line, fonteInterface, 0);
@@ -2318,8 +2360,12 @@ float txt_addon_previa(TxtEstilo style, const char *s, float x, float y, float w
   if (!s) return 0;
   /* Bound cache copies and scans before layout; never split a UTF-8 code point. */
   char preview[1024];
-  size_t n=strnlen(s,sizeof preview-1);
-  while (n && ((unsigned char)s[n]&0xc0)==0x80) n--;
+  size_t n = 0;
+  while (s[n]) {
+    int bytes = addonClusterBytes(s + n);
+    if (n + bytes >= sizeof preview) break;
+    n += bytes;
+  }
   memcpy(preview,s,n); preview[n]=0;
   return addonBloco(style,preview,x,y,width,gray,alpha,NULL,3);
 }

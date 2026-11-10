@@ -66,8 +66,8 @@ typedef struct {
 int  tgraf_montar(TgDados *d, const TgEp *eps, int n, int sabe, int agT, int agE,
                   int especiais, const AmigosTitulo *amg);
 
-// O bloco existe? Precisa de temporada e de algo a dizer: voce viu ao menos
-// um episodio, ou ha amigo com posicao conhecida.
+// O bloco existe? Temporada com episodio ja exibido, ou amigo com posicao.
+// Sem mapa do vistoep o bloco ainda aparece; o desenho nao afirma zero visto.
 int  tgraf_existe(const TgDados *d);
 
 // Os dados da serie `idxCatalogo` aberta na pagina, refeitos so quando o

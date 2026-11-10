@@ -171,6 +171,10 @@ static volatile int mkvN, mkvEstado, faixasNovas;
 // sonda pela rede voltou sem TrackEntry nenhuma (nao e MKV).
 static volatile int mkvSondarJa, mkvNaoMkv;
 static unsigned mkvGeracao;
+static int legOcultas(void);
+static void legendasDoArquivo(void);
+static int mkvSondaUrl(char *out, size_t n);
+static void guardarMkv(const MkvFaixa *fx, int n);
 // AUDIO QUE A TV RECUSA (#313). A Samsung nao toca DTS (2018+) nem TrueHD: o
 // player so lista as faixas que decodifica, entao um MKV so com DTS chega com a
 // lista de audio vazia e o filme roda mudo, sem erro nenhum. O cabecalho do MKV
@@ -360,7 +364,8 @@ void nv_tpk_video_faixas_fim(int selAudio, int selLeg) {
   // Recarregar de reconexao: as faixas que a pessoa tinha, e nao a preferencia.
   // Sem audio ainda (o host rele em 2 s, #165), o audio fica para a releitura.
   if (reconFaixasPend) {
-    if (!releitura && reconLeg >= 0 && reconLeg < nLeg) video_escolher_legenda(reconLeg);
+    if (legOcultas() && mkvN > 0) legendasDoArquivo();
+    else if (!releitura && reconLeg >= 0 && reconLeg < nLeg) video_escolher_legenda(reconLeg);
     if (nAudio > 0) {
       reconFaixasPend = 0;
       if (reconAudio > 0 && reconAudio < nAudio) video_escolher_audio(reconAudio);
@@ -707,6 +712,21 @@ static void mfLigar(double alvo, const char *porque) {
   printf("[mkvfix] %s at %.1f s: reopening through the local fix\n", porque, alvo);
   fflush(stdout);
   mf.ativo = 1; mf.pend = 0;
+  if (mkvfix_ocultas() > 0 && mkvN <= 0 && urlAtual[0]) {
+    char sondaUrl[sizeof urlAtual];
+    unsigned char *cab = NULL; long cabN = 0;
+    mkvEstado = 1; mkvOlhou = 0; mkvNaoMkv = 0; faixasNovas = 0;
+    if (mkvSondaUrl(sondaUrl, sizeof sondaUrl) && mkvass_cabecalho(sondaUrl, &cab, &cabN)) {
+      MkvFaixa *fx = calloc(MKV_MAX_FAIXAS, sizeof *fx);
+      int n = fx ? mkv_faixas_do_trecho(cab, cabN, fx, MKV_MAX_FAIXAS, NULL, 0, NULL) : 0;
+      if (n > 0) {
+        printf("[mkv] sonda antes de reabrir mkvfix (%ld bytes, sem rede): %d faixa(s)\n", cabN, n);
+        fflush(stdout);
+        guardarMkv(fx, n); mkvEstado = 3;
+      }
+      free(fx); free(cab);
+    }
+  }
   reconAudio = audioAtual; reconLeg = legAtual; reconFaixasPend = 1;
   reconBuscarMs = alvo > 1.0 ? (int)(alvo * 1000.0) : -1;
   cv.reabrindo = 1; cv.posMantida = alvo; cv.reabriuEm = SDL_GetTicks(); cv.reabTocandoEm = 0;
@@ -912,9 +932,10 @@ int video_tocar(const char *u) {
   // ja abre convertido, sem o original mudo antes.
   // Lido sempre que a pre-busca trouxe o cabecalho: as legendas ASS decidem
   // a abertura pelo servidor local (mfEsperarAntes); o conversor, o resto.
-  if (urlAtual[0] && reconPermitida && mkvass_cabecalho(urlAtual, NULL, NULL)) {
+  if (urlAtual[0] && reconPermitida) {
+    char sondaUrl[sizeof urlAtual];
     unsigned char *cab = NULL; long cabN = 0;
-    if (mkvass_cabecalho(urlAtual, &cab, &cabN)) {
+    if (mkvSondaUrl(sondaUrl, sizeof sondaUrl) && mkvass_cabecalho(sondaUrl, &cab, &cabN)) {
       MkvFaixa *fx = calloc(MKV_MAX_FAIXAS, sizeof *fx);
       int n = fx ? mkv_faixas_do_trecho(cab, cabN, fx, MKV_MAX_FAIXAS, NULL, 0, NULL) : 0;
       if (n > 0) {
@@ -1269,7 +1290,23 @@ static void convRefazerProg(void) {
 // achou, ou a TV listou audio: nada muda e nada recarrega.
 // So MP4 anunciado e VOD (duracao conhecida): uma sonda lateral em canal ao vivo
 // abriria outra conexao na fonte, e ha provedor que derruba a primeira.
-static int semCabecalho(void) { return fonteMp4 && durMs > 0; }
+// A fonte foi anunciada como MP4, mas o fluxo ainda precisa do cabecalho
+// Matroska (legendas embutidas / mkvfix, overlay, ordinais).
+static int mkvSondaUrl(char *out, size_t n) {
+  if (!out || n == 0) return 0;
+  if (urlAtual[0] && mkvass_cabecalho(urlAtual, NULL, NULL)) { snprintf(out, n, "%s", urlAtual); return 1; }
+  if (hostUrl[0] && mkvass_cabecalho(hostUrl, NULL, NULL)) { snprintf(out, n, "%s", hostUrl); return 1; }
+  out[0] = 0;
+  return 0;
+}
+static int mkvPrecisaCabecalho(void) {
+  if (mkvN > 0) return 1;
+  if (mf.ativo && mkvfix_ocultas() > 0) return 1;
+  if (!fonteMp4) return 0;
+  { char u[sizeof urlAtual]; return mkvSondaUrl(u, sizeof u); }
+}
+static int sondaMkvCabe(void) { return !fonteMp4 || mkvPrecisaCabecalho(); }
+static int semCabecalho(void) { return fonteMp4 && durMs > 0 && !mkvPrecisaCabecalho(); }
 static int faixasDaTv(void) {
   int i, n = 0;
   for (i = 0; i < nAudio; i++) if (faixaAudio[i].numero >= 0) n++;
@@ -1359,10 +1396,11 @@ static void avaliarAudioTv(void) {
 // rotulos. Sem mutex, como o resto deste arquivo: o rotulo sai de uma vez so.
 static void sondaMkv(double pos) {
   Uint32 t = SDL_GetTicks();
-  if (mkvEstado == 1 && urlAtual[0] && t - mkvOlhou >= 500) {
+  if (mkvEstado == 1 && t - mkvOlhou >= 500) {
+    char sondaUrl[sizeof urlAtual];
     unsigned char *cab = NULL; long cabN = 0;
     mkvOlhou = t;
-    if (mkvass_cabecalho(urlAtual, NULL, NULL) && mkvass_cabecalho(urlAtual, &cab, &cabN)) {
+    if (mkvSondaUrl(sondaUrl, sizeof sondaUrl) && mkvass_cabecalho(sondaUrl, &cab, &cabN)) {
       MkvFaixa *fx = calloc(MKV_MAX_FAIXAS, sizeof *fx);
       int n = fx ? mkv_faixas_do_trecho(cab, cabN, fx, MKV_MAX_FAIXAS, NULL, 0, NULL) : 0;
       printf("[mkv] sonda pelo trecho da pre-busca (%ld bytes, sem rede): %d faixa(s)\n", cabN, n);
@@ -1378,8 +1416,9 @@ static void sondaMkv(double pos) {
         ((faixasLidas && nAudio == 0) || naoSupPend)) mkvSondarJa = 1;
     // Sem pre-busca (ou Tracks fora do trecho): Range proprio, com o video
     // andando. MP4 nao tem TrackEntry: nao vale a descida.
-    if (mkvEstado == 1 && (pronto || (naoSupPend && mkvSondarJa)) && (pos >= 5.0 || mkvSondarJa)) {
-      PedidoMkv *p = fonteMp4 ? NULL : malloc(sizeof *p);
+    if (mkvEstado == 1 && (pronto || (naoSupPend && mkvSondarJa)) && (pos >= 5.0 || mkvSondarJa) &&
+        sondaMkvCabe()) {
+      PedidoMkv *p = malloc(sizeof *p);
       pthread_t fio;
       mkvEstado = 3;
       if (p) {
@@ -2271,7 +2310,7 @@ int  video_legenda_ordinal_mkv(int i) { return (i >= 0 && i < nLeg) ? faixaLeg[i
 // ia ao overlay). 0 enquanto procura, ou com o cabecalho lido e ainda nao
 // aplicado as faixas (sondaMkv, no proximo bombear); 2 quando nao e MKV.
 int  video_mkv_sondado(void) {
-  if (!urlAtual[0] || fonteMp4 || mkvNaoMkv) return 2;
+  if (!urlAtual[0] || (!mkvPrecisaCabecalho() && fonteMp4) || mkvNaoMkv) return 2;
   if (mkvEstado == 1 || mkvEstado == 2) return 0;
   if (faixasNovas && mkvN > 0 && (nAudio || nLeg || faixasmkv_tem_imagem(mkvFx, mkvN))) return 0;
   return 1;

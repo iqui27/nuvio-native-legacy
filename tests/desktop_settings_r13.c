@@ -48,9 +48,29 @@ static int linhaInterruptor(void) {
   return -1;
 }
 
+// Palco (ajustesblades, wide layouts incl. 1440x900): the category list is a
+// blade, every group in it is a topic row and the on/off rows live in the topic
+// blade. One click on the category opens both (depth 2, its first topic).
+static void abrirTopico(void) {
+  const PonteiroAlvo *v; int n = ponteiro_teste_lista(&v), sec = secAtual;
+  for (int k = 0; k < n; k++) if (v[k].focar == triPontSecao && v[k].a == sec) {
+    float x = v[k].x + v[k].w * .5f, y = v[k].y + v[k].h * .5f;
+    mouse(SDL_MOUSEBUTTONDOWN, x, y); relogio += 60; mouse(SDL_MOUSEBUTTONUP, x, y); quadros(40);
+    break;
+  }
+  confere(secAtual == sec && triProfundidade() == 2 && triTopico(triSubmenu),
+          "desktop: one click on a Palco category opens it and its first topic blade");
+}
+
 static void hoverEClique(void) {
-  int i, op, antes, sec = secAtual; float rol = scrollY;
+  int i, op, antes, sec;
+  float rol;
   const PonteiroAlvo *a;
+  if (triBladeLayout()) abrirTopico();
+  else if (!triProfundidade()) { triFocarSecao(secAtual); triEntrar(secAtual); quadros(60); }
+  for (int t = secIni[secAtual] + 1; linhaInterruptor() < 0 && t < secFim(secAtual); t++)
+    if (triTopico(t)) { focar(t); triSubEntrar(t); quadros(20); }
+  sec = secAtual; rol = scrollY;
   i = linhaInterruptor();
   confere(i >= 0, "desktop: Playback has a pointer target on an on/off row");
   if (i < 0) return;
@@ -96,7 +116,8 @@ static void densidade(void) {
   s = ajustes_tamanho_ajustes();
   confere(!layout_desktop_ativo() && !memcmp(&s, &tv, sizeof s) && TRI_SEC_W == 400.0f && TRI_INSP_W == 480.0f,
           "900x700 (below breakpoint): TV scale and column widths, byte-identical");
-  confere(!ajDesktopTextoTv(NULL) && !ajDesktopTextoTv("x webOS") && ajudaOpcao(AJ_AUDIO_NORMALIZAR)[0],
+  confere(!ajDesktopTextoTv(NULL) && !ajDesktopTextoTv("x webOS") && ajudaOpcao(AJ_AUDIO_NORMALIZAR)[0] &&
+          strstr(ajudaOpcao(AJ_RETOMADA_MORNA), "Android"),
           "900x700: TV-platform descriptions untouched");
   janela(1440, 900);
   d = escalaTv() * NV_DESKTOP_AJUSTES_DENSIDADE; if (ajRetrato()) d *= 1.25f;
@@ -105,6 +126,25 @@ static void densidade(void) {
           "1440x900 (desktop): Mac density and wider columns");
   confere(!ajudaOpcao(AJ_AUDIO_NORMALIZAR)[0] && !uxBeneficio(AJ_AUDIO_NORMALIZAR)[0] && ajudaOpcao(AJ_QUALIDADE)[0],
           "1440x900: descriptions naming webOS/Tizen/Android are hidden, others kept");
+  // Only the sentence naming the platform goes; the rest stays (pt and en).
+  { const char *m;
+    int ok, idioma = valor[AJ_IDIOMA];
+    valor[AJ_IDIOMA] = IDIOMA_PT + 1; m = i18n(ajudaOpcao(AJ_RETOMADA_MORNA));
+    ok = !strncmp(m, "Ligado por padrão", 18) && strstr(m, "Retomar.") && !strstr(m, "Android");
+    valor[AJ_IDIOMA] = IDIOMA_EN + 1;
+    m = i18n(ajudaOpcao(AJ_RETOMADA_MORNA));
+    ok = ok && !strncmp(m, "On by default", 13) && !strstr(m, "Android");
+    valor[AJ_IDIOMA] = idioma;
+    confere(ok, "1440x900: only the sentence naming Android leaves the Warm resume description"); }
+  // "Applies to" never says TV on a computer (pt and en).
+  { int tv = 0, idioma = valor[AJ_IDIOMA], k;
+    for (k = 0; k < 2; k++) {
+      valor[AJ_IDIOMA] = k ? IDIOMA_EN + 1 : IDIOMA_PT + 1;
+      for (int op = 0; op < AJ_N; op++) tv += strstr(i18n(uxEscopo(op)), "TV") != NULL;
+      tv += strstr(i18n(uxEscopoValor(AJ_TEMA, AJ_TEMA_DINAMICA)), "TV") != NULL;
+    }
+    valor[AJ_IDIOMA] = idioma;
+    confere(!tv, "desktop: Applies to is device-neutral (no TV)"); }
 }
 
 int main(void) {

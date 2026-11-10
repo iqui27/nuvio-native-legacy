@@ -274,6 +274,7 @@ static const char *VS =
 #define NV_STR(x) NV_STR_(x)
 
 #include "gfx_sgsr.h"
+#include "arte_medida.h"
 #include "gfx_upscale.h"
 
 static const char *FS_CABECA =
@@ -2179,6 +2180,11 @@ static unsigned fundoHash;
 // exact hash path resumes once the key is cleared (-1, every frame).
 static int fundoPasso = -1, fundoPassoCap = -1;
 void gfx_vidro_fundo_passo(int passo) { fundoPasso = passo; }
+// Retained clean backdrop (vidBackdrop, full screen, before foreground), valid
+// apart from the regional blur: a glass entering a new region after foreground
+// blurs from it instead of the live framebuffer.
+static int retidoValido, retidoQuadro, retidoFalhou;
+static unsigned retidoHash, retidoDep[VID_DEP_WORDS];
 static void vidroFundoFechar(void);
 static int vidroFundoModo(GfxRect r, GfxModo m) {
   static const unsigned long long FUNDO =
@@ -2238,10 +2244,14 @@ static int vidroDentro(GfxRect r) {
 }
 // Conteudo que muda sem passar pelo hash (textura reenviada no lugar, nome
 // de textura reaproveitado): nenhum vidro reaproveita a captura antiga.
-void gfx_vidro_sujar(void) { memset(vidroSlotValido, 0, sizeof vidroSlotValido); fundoValido = 0; }
+void gfx_vidro_sujar(void) {
+  memset(vidroSlotValido, 0, sizeof vidroSlotValido); fundoValido = 0;
+  retidoValido = retidoQuadro = 0;
+}
 static void vidroEsquecerFonte(GLuint tex) {
   unsigned word = (tex / 32) % VID_DEP_WORDS, bit = 1u << (tex % 32);
   if (fundoDep[word] & bit) fundoValido = 0;
+  if (retidoDep[word] & bit) retidoValido = retidoQuadro = 0;
   for (int i = 0; i < VID_NSLOTS; i++)
     if (vidroSlotDep[i][word] & bit) vidroSlotValido[i] = 0;
 }
@@ -2294,7 +2304,10 @@ static void vidroDesenho(GfxRect r, GLuint tex, GfxModo modo, float foco, float 
     if (P->jan >= 0) vidroSoma(modo == GFX_TEXTURA ? txUv : gfx_janela_atual, sizeof txUv);
     if (P->veu >= 0) vidroSoma(gfx_veu_card_atual, sizeof gfx_veu_card_atual);
     if (P->heroiVeu >= 0) vidroSoma(gfx_card_heroi_veu_atual, sizeof gfx_card_heroi_veu_atual);
-    if (P->tempo >= 0) vidroSoma(&nv_tempo_viva, sizeof nv_tempo_viva);
+    if (P->tempo >= 0) {
+      float tq = floorf(nv_tempo_viva * 12.0f);   // same 12 Hz as ambAssar / frost
+      vidroSoma(&tq, sizeof tq);
+    }
     if (P->reg0 >= 0) vidroSoma(nv_ambiente_viva, sizeof nv_ambiente_viva);
     if (P->grad0 >= 0) vidroSoma(nv_grad_viva, sizeof nv_grad_viva);
     if (P->din >= 0) vidroSoma(dinPend, sizeof dinPend);
@@ -2338,7 +2351,7 @@ void gfx_novo_quadro(void) {
   memcpy(vidroLeAnt, vidroLeCur, sizeof vidroLeAnt); memset(vidroLeCur, 0, sizeof vidroLeCur);
   memcpy(vidroRegAnt, vidroRegCur, sizeof vidroRegAnt); vidroNRegAnt = vidroNRegCur; vidroNRegCur = 0;
   vidroSlot = -1; vidroRecapturou = 0;
-  fundoFim = fundoDepois = 0; fundoPasso = -1;
+  fundoFim = fundoDepois = 0; fundoPasso = -1; retidoQuadro = 0;
   gfx_vidro_capturas = 0; gfx_vidro_passadas = 0; gfx_vidro_com_fonte = 0; gfx_vidro_chapados = 0; gfx_vidro_area = 0;
   gfx_vidro_fill = gfx_vidro_copia = 0.0;
   ambFonte = 0; dinPendente = 0; dinAdiado = 0; dinNOp = 0;
@@ -2482,6 +2495,27 @@ void gfx_rect_furos(GfxRect r, GLuint tex, GfxModo modo, float foco,
   memcpy(subAtual, saved, sizeof saved);
 }
 
+// ARTWORK DRAW PROBE (arte_medida.h, NV_ART_DRAW_MEASURE=1): decoded cache
+// size against the physical px of this draw on the screen target. Off-screen
+// passes (snapshot, mini, ambient: telaW != screen; borrao/desfocado
+// scratch passes: ARTE_FORA scope), rotation, text and
+// the Texture-mode title surface are skipped; non-cache textures fail lookup.
+// gfx_rect_furos strips (subAtual != 0,0,1,1) are skipped in arte_medida.c.
+// Called after every early return of gfx_rect, with the uAspect it sends.
+static void arteMedir(GfxRect r, GLuint tex, GfxModo modo) {
+  char l[320];
+  if (arte_medida_ligada < 0 && !arte_medida_resolver()) return;
+  if (modo == GFX_TEXTO || modo == GFX_TEXTURA || snapAtivo || miniAtiva || giroOn ||
+      telaW != telaRealW || telaH != telaRealH) return;
+  float ex = (float)telaW / NV_TELA_W, ey = (float)telaH / NV_TELA_H;
+  if (arte_medida_amostra(tex, (int)modo, gfx_tex_aspect_atual,
+                          modo == GFX_CARD && gfx_card_forcar_cover_atual < 0.5f,
+                          r.h > 0 ? r.w / r.h : 1.0f, subAtual,
+                          r.x * ex, (NV_TELA_H - (r.y + r.h)) * ey, (r.x + r.w) * ex, (NV_TELA_H - r.y) * ey,
+                          recorteAtivo ? (const int *)recorteBox : NULL, telaW, telaH,
+                          escAtiva * (gfxTr.on ? gfxTr.s : 1.0f), ex, tex_dims_gl, l, sizeof l))
+    fputs(l, stdout);
+}
 void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
               float parx, float pary, float raio,
               float cr, float cg, float cb, float ca) {
@@ -2714,6 +2748,7 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
     gfx_fill_gpu += ag;
     if (blendLigado && !comAmb && !opaco) gfx_fill_gpu_mist += ag;
   }
+  if (arte_medida_ligada && tex) arteMedir(r, tex, modo);   // opt-in; one compare when off
   Programa *P = &progs[modo];
   if (progAtual != (int)modo) { glUseProgram(P->prog); progAtual = (int)modo; gfx_n_prog++; }
   // Uniform que o shader do modo nao declara volta como -1 do link; passar -1
@@ -3662,6 +3697,7 @@ static void vidLiberar(void) {
   glDeleteTextures(1, &vidFundo); glDeleteFramebuffers(1, &vidFundoFbo);
   vidFundo = vidFundoFbo = 0; fundoValido = 0;
   glDeleteTextures(1, &vidBackdrop); vidBackdrop = 0;
+  retidoValido = retidoQuadro = retidoFalhou = 0;
   gfx_tex_esquecer(0);
 }
 static GLuint vidTex(int w, int h, GLenum fmt) {
@@ -3812,23 +3848,14 @@ static int vidCapturar(const float reg[][4], int n, GLuint dst, GLuint dstFbo, G
   tesoura = glIsEnabled(GL_SCISSOR_TEST);
   if (tesoura) glDisable(GL_SCISSOR_TEST);
   glActiveTexture(GL_TEXTURE0);
-  int retain = dst == vidFundo && ajustes_vidro_qualidade() == 2;
-  if (retain && !vidBackdrop) vidBackdrop = vidTex(telaW, telaH, GL_RGB);
-  glBindTexture(GL_TEXTURE_2D, retain ? vidBackdrop : vidGrab);
-  // A saved backdrop excludes foreground even when this frame adds a region.
+  glBindTexture(GL_TEXTURE_2D, vidGrab);
+  // A retained clean backdrop (source) needs no copy of the live screen.
   for (i = 0; !source && i < k; i++) {
     x0 = (int)floorf(uv[i][0] * telaW); x1 = (int)ceilf(uv[i][2] * telaW);
     y0 = (int)floorf(uv[i][1] * telaH); y1 = (int)ceilf(uv[i][3] * telaH);
-    // High retains the complete backdrop for glass entering a new region
-    // after foreground has drawn. Regional blur still limits shader work.
-    if (retain) {
-      if (i) continue;
-      x0 = y0 = 0; x1 = telaW; y1 = telaH;
-    }
     glCopyTexSubImage2D(GL_TEXTURE_2D, 0, x0, y0, x0, y0, x1 - x0, y1 - y0);
     copia += (double)(x1 - x0) * (y1 - y0);
   }
-  if (retain) source = vidBackdrop;
   glDisable(GL_BLEND);
   glUseProgram(vidProg);
   glUniform1i(vidLocT, 0);
@@ -3843,7 +3870,7 @@ static int vidCapturar(const float reg[][4], int n, GLuint dst, GLuint dstFbo, G
     float o = (float)telaW / qw * 0.5f - 1.0f;
     vidPassada(source ? source : vidGrab, vidQaFbo, qw, qh, uv, k, o / telaW, o / telaH);
   }
-  if (efeitosLeves) {
+  if (efeitosLeves || ajustes_vidro_qualidade() == 3) {
     // One Kawase instead of two; sqrt(.35^2 + .75^2) keeps the blur spread.
     // Glass stays frosted at native UI resolution; level 2 keeps its old rule.
     vidPassada(vidQa, dstFbo, qw, qh, uv, k, 0.828f / qw, 0.828f / qh);
@@ -3867,12 +3894,41 @@ static int vidCapturar(const float reg[][4], int n, GLuint dst, GLuint dstFbo, G
 // changed backdrop captures immediately, including cuts during fades.
 static float fundoReg[VID_NREG][4];
 static int fundoNReg;
+// Smoked glass is quality 1, or Automatic (quality 0) while vidroDegradou.
+// Quality 3 stays frost even if that flag is set. Retention uses this same
+// rule. gfx_vidro_governar has no production caller, so a C9 does not set the
+// flag today; the predicates still have to agree.
+static int vidroFrost(void) {
+  int q = ajustes_vidro_qualidade();
+  return q == 2 || q == 3 || (q == 0 && !vidroDegradou);
+}
+// Copies the whole clean backdrop (the screen before foreground) into
+// vidBackdrop. 0 = no texture (allocation failed): callers copy live regions.
+static int vidReter(void) {
+  if (retidoFalhou) return 0;
+  glActiveTexture(GL_TEXTURE0);
+  if (!vidBackdrop) {
+    vidBackdrop = vidTex(telaW, telaH, GL_RGB);
+    if (!vidBackdrop || glGetError() == GL_OUT_OF_MEMORY) {
+      glDeleteTextures(1, &vidBackdrop); vidBackdrop = 0; retidoFalhou = 1;
+      glBindTexture(GL_TEXTURE_2D, 0); texAtual = 0;
+      return 0;
+    }
+  } else glBindTexture(GL_TEXTURE_2D, vidBackdrop);
+  glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, telaW, telaH);
+  glBindTexture(GL_TEXTURE_2D, 0); texAtual = 0;
+  gfx_vidro_copia += (double)telaW * telaH / ((double)telaRealW * telaRealH);
+  memcpy(retidoDep, vidroDep, sizeof retidoDep);
+  retidoHash = vidroHash; retidoValido = 1;
+  return 1;
+}
 static void vidroFundoFechar(void) {
   // Last frame's read regions plus VID_FOLGA: a glass that scrolled a few px
   // (detail page, title -> season tabs) stays inside them instead of forcing a
   // second, full-screen capture every frame of the scroll.
   float reg[VID_NREG][4];
   int n = vidroNRegAnt, i, fora = 0;
+  int ativo = ajustes_vidro() && vidroFrost();
   for (i = 0; i < n; i++) {
     reg[i][0] = vidroRegAnt[i][0] - VID_FOLGA; reg[i][1] = vidroRegAnt[i][1] - VID_FOLGA;
     reg[i][2] = vidroRegAnt[i][2] + VID_FOLGA; reg[i][3] = vidroRegAnt[i][3] + VID_FOLGA;
@@ -3883,7 +3939,7 @@ static void vidroFundoFechar(void) {
   // No glass last frame (frost just resumed or appeared): its regions are
   // unknown, so blur the whole screen once, before foreground, instead of one
   // capture per glass. Not for smoked glass or over a video hole: no backdrop read.
-  if (!n && !vidroNFuros && ajustes_vidro() && (ajustes_vidro_qualidade() == 2 || (ajustes_vidro_qualidade() == 0 && !vidroDegradou))) { reg[0][0] = reg[0][1] = 0; reg[0][2] = NV_TELA_W; reg[0][3] = NV_TELA_H; n = 1; }
+  if (!n && !vidroNFuros && ativo) { reg[0][0] = reg[0][1] = 0; reg[0][2] = NV_TELA_W; reg[0][3] = NV_TELA_H; n = 1; }
   // A copia le a TELA: o fundo da Dinamica adiado tem de sair nela antes
   // (dinAdiado), senao a copia fica com o framebuffer transparente do
   // clear e o vidro le preto/lixo ate a proxima mudanca de hash — a faixa
@@ -3893,6 +3949,10 @@ static void vidroFundoFechar(void) {
   if (fundoPasso < 0) fundoPassoCap = -1;   // a later crossfade starts with a fresh capture
   if (fundoPasso >= 0) { reg[0][0] = reg[0][1] = 0; reg[0][2] = NV_TELA_W; reg[0][3] = NV_TELA_H; n = 1; }
   for (i = 0; i < vidroNRegAnt; i++) fora |= !vidroRegContem(fundoReg, fundoNReg, vidroRegAnt[i]);
+  retidoQuadro = retidoValido && retidoHash == vidroHash;
+  // A step key already reads the whole screen: no region can miss.
+  if (!retidoQuadro && fundoPasso < 0 && ativo)
+    retidoQuadro = vidReter();
   if (!fundoValido || fora || (fundoPasso >= 0 ? fundoPasso != fundoPassoCap : fundoHash != vidroHash)) {
 #ifdef NV_SHOT_HOOKS
     if (!fundoValido || fundoHash != vidroHash) gfx_vidro_copia_com_din_adiado += dinAdiado;
@@ -3908,7 +3968,7 @@ static void vidroFundoFechar(void) {
     }
     // Copy only the regions it blurs: a full-screen copy on every changed
     // frame (each Home hero crossfade frame) cost a screen of bandwidth.
-    if (n && !vidCapturar((const float (*)[4])reg, n, vidFundo, vidFundoFbo, 0)) return;
+    if (n && !vidCapturar((const float (*)[4])reg, n, vidFundo, vidFundoFbo, retidoQuadro ? vidBackdrop : 0)) return;
     memcpy(fundoReg, reg, n * sizeof fundoReg[0]); fundoNReg = n;
     for (i = 0; i < n; i++) {   // past a screen edge there is nothing to read
       float *f = fundoReg[i];
@@ -3968,8 +4028,7 @@ static GLuint vidroFonte(GfxRect r) {
     const float *reg = fundoDepois ? lido : full;
     vidroSlotValido[sl] = 0;
     // Modal veils need the live framebuffer, but only the island's sampling region.
-    GLuint source = ajustes_vidro_qualidade() == 2 && gfx_vidro_so_fundo &&
-                    fundoFim == 1 && !fundoDepois ? vidBackdrop : 0;
+    GLuint source = retidoQuadro && gfx_vidro_so_fundo && fundoFim == 1 && !fundoDepois ? vidBackdrop : 0;
     if (!vidCapturar((const float (*)[4])reg, 1, *tex, *fbo, source)) return 0;
     memcpy(vidroSlotReg[sl], reg, sizeof vidroSlotReg[sl]);
     memcpy(vidroSlotDep[sl], vidroDep, sizeof vidroDep);
@@ -4090,7 +4149,7 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   // (Nuvio Arc): the real glass look is the tint plus the in-shader rim/top
   // highlight, never an art stand-in or a flat opaque box. With quality =
   // Desempenho, or once the governor dropped the tier.
-  fumaca = video || ajustes_vidro_qualidade() == 1 || (vidroDegradou && ajustes_vidro_qualidade() == 0);
+  fumaca = video || !vidroFrost();
   if (fumaca) chapado = 1;
   semAro = tipo == GFX_VIDRO_ILHA || vidroNaIlha(tela) || gfx_vidro_sem_aro;
   if (vidroNVidros < VID_N) {
@@ -4966,6 +5025,7 @@ void gfx_borrao_gerar(int via, unsigned int tex, float texAspecto) {
     if (nLog < 40) { nLog++; printf("[transicao] desfoque de fundo (FBO %s) t=%u\n", via ? "home" : "detalhe", (unsigned)SDL_GetTicks()); } }
   ESC_REAL_INI();
   GFX_OUTRO_INI();
+  ARTE_FORA_INI();   // borW x borH scratch target, telaW unchanged: not the screen
   GLint fboAnt = fboLigado(), vpAnt[4];
   glGetIntegerv(GL_VIEWPORT, vpAnt);
   gfxBlend(0);
@@ -4993,6 +5053,7 @@ void gfx_borrao_gerar(int via, unsigned int tex, float texAspecto) {
   // Volta ao alvo de ANTES (a janela, ou o alvo interno do nivel 2), e nao ao 0.
   glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)fboAnt);
   glViewport(vpAnt[0], vpAnt[1], vpAnt[2], vpAnt[3]);
+  ARTE_FORA_FIM();
   GFX_OUTRO_FIM();
   ESC_REAL_FIM();
 }
@@ -5148,6 +5209,7 @@ GLuint gfx_desfocado(GLuint src, const char *chave) {
     glDisable(GL_SCISSOR_TEST);
     gfxBlend(0);
     gfx_tex_aspect_atual = 0.0f;   // a arte INTEIRA, esticada; o card recorta depois
+    ARTE_FORA_INI();   // desfPasso: scratch FBO, telaW unchanged
     // Escrever num FBO inverte o eixo y (ver GFX_SNAP): cada passada inverte, e
     // as quatro deixam o resultado de pe para o GFX_CARD, como uma arte comum.
     // 1-2: reducao, horizontal e depois vertical, taps a um texel da arte.
@@ -5156,6 +5218,7 @@ GLuint gfx_desfocado(GLuint src, const char *chave) {
     // 3-4: desfoque gaussiano, horizontal e depois vertical, no alvo 96x54.
     desfPasso(desfTmp, desfTmp2, NV_DESF_W, NV_DESF_H, NV_DESF_PASSO / (float)NV_DESF_W, 0.0f);
     desfPasso(desfTmp2, dst, NV_DESF_W, NV_DESF_H, 0.0f, NV_DESF_PASSO / (float)NV_DESF_H);
+    ARTE_FORA_FIM();
     gfx_tex_aspect_atual = aspAnt;
     glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)fboAnt);
     glViewport(vp[0], vp[1], vp[2], vp[3]);

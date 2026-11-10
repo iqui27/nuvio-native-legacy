@@ -1,0 +1,5 @@
+# Offline validation blockers — 2026-11-04
+
+- **Issue 706, webOS screensaver:** synthetic registration without a callback remains pending, but neither callback loss on an affected TV nor safe cancellation and re-registration is established. Next: obtain the Luna service contract and affected-device evidence before considering a production change. Details: `docs/issues/issue-706-evidencia-2026-11-04.md`.
+- **PGS subtitles:** the existing synthetic SUP fixture was invalid; ASS media does not validate PGS. Existing untracked fixture work is in `/Volumes/ExternalSSD/nv-fixture-pgs-ep`; do not treat it as proof. Next: obtain a trusted, valid PGS sample or a verified fixture generator, then exercise the actual PGS path. Avoid untrusted media and unverified byte guessing.
+- **PR 758, real Rust build:** synthetic archive coverage and the local build passed, but Cargo was unavailable in the checked PATH and user toolchain. Next: run the Rust-enabled build with an available trusted Rust toolchain and record the result. Details: `docs/issues/pr758-validacao-2026-11-04.md`.

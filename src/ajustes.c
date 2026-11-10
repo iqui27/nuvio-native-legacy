@@ -6,6 +6,7 @@
 #ifdef NV_IOS
 #include "ios.h"
 #endif
+#include "segfontes.h"
 #include "legfontes.h"
 #include "logrede.h"
 #include "jsw.h"
@@ -113,6 +114,8 @@ static void navigationRange(float,float,float,float,float,float,PonteiroFn,Ponte
 #include "rede.h"
 #include "debrid.h"
 #include "seekr.h"
+#include "miniatura_android.h"
+#include "openseek.h"
 #include "selospacote.h"
 #include "fonteregra.h"
 #include <dirent.h>
@@ -773,8 +776,25 @@ typedef enum {
   AJ_PS_TAMANHO, // Device-local profile avatar size; append-only.
   AJ_LIVETV_AGRUPAR, // Profile-local, append-only; enabled by default.
   AJ_MENU_ESPORTES, // Device-local menu visibility; append-only, enabled by default.
+  // feat/mkv-chapter-segments: capitulos do arquivo no player (marcas na barra,
+  // nome do capitulo e a fileira do CIMA). LOCAL, DESLIGADO de fabrica, append-only.
+  AJ_CAPITULOS,
+  // Client ID PESSOAL do Anime-Skip (segfontes.h). O valor mora em
+  // animeskip.txt (dados), por aparelho; vazio usa o da conta Nuvio. Append-only.
+  AJ_ANIMESKIP_ID,
+  // MINIATURAS: QUEM as fornece (seekr.h / openseek.h). 0 = Seekr.tv (o de
+  // sempre: instalacoes antigas nao mudam), 1 = OpenSeek, servidor proprio da
+  // pessoa. Ligar/desligar continua sendo AJ_SEEKR_LIGADO. LOCAL, append-only.
+  AJ_PREVIA_PROVEDOR,
+  // OpenSeek: endereco, pareamento (OSP1) e a linha de estado. Acoes; o que
+  // guardam mora em openseek.txt (dados), so desta TV, como o seekr.txt.
+  AJ_OPENSEEK_SERVIDOR, AJ_OPENSEEK_PAREAR, AJ_OPENSEEK_ESTADO,
+  // Aparelho CONVIDADO de uma biblioteca compartilhada: a fonte em uso e os ajustes so deste aparelho.
+  AJ_OPENSEEK_COMPART, AJ_OPENSEEK_AJ_M30, AJ_OPENSEEK_AJ_M5, AJ_OPENSEEK_AJ_M1, AJ_OPENSEEK_AJ_P1, AJ_OPENSEEK_AJ_P5, AJ_OPENSEEK_AJ_P30, AJ_OPENSEEK_DESFAZER, AJ_OPENSEEK_REJEITAR,
+  AJ_MINIATURA_RES,
   AJ_N
 } OpcaoId;
+#define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
                "Native provider Settings caps retain their persisted service IDs");
 
@@ -1411,6 +1431,13 @@ static const char *JF_ALFA_URL =
 static const char *JF_ALFA_SENHA =
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-@!#$%&*+=?/ ";
 
+static const char *V_PREVIA_PROV[] = { "Seekr.tv", "OpenSeek (servidor próprio)", "No aparelho (teste)" };
+// "No aparelho" (miniatura_android.c) so existe no Android.
+#ifdef NV_ANDROID
+#define NV_PREVIA_N 3
+#else
+#define NV_PREVIA_N 2
+#endif
 static const char *V_MANTER_PRAZO[] = { "2 min", "5 min", "10 min", "30 min", "Sem limite" };
 static const char *V_AMIGOS_ESTILO[] = { "Feed de cartões", "Ao vivo em destaque", "Histórias com cartaz", "Faixa de presença", "Cartaz primeiro", "Rostos clássicos" };
 static const char *V_CONEXOES[] = { "Automático", "Ligado", "Desligado" };
@@ -1780,7 +1807,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Pular a abertura automaticamente", V_LIGA, 2),   // local: pularAberturaLocal
   ESC("Pular o resumo automaticamente", V_LIGA, 2),   // local: pularResumoLocal
   ESC("Tocar o próximo episódio automaticamente", V_LIGA, 2),   // local: proximoAutoLocal
-  ESC("Pular os créditos automaticamente", V_LIGA, 2),   // local: pularCreditosLocal
+  ESC("Pular o encerramento automaticamente", V_LIGA, 2),   // local: pularCreditosLocal
   NUM("Contagem do próximo episódio", 1, 60, 1, "s"),
   ESC("Modo da interface", V_INTERFACE_MODO, 3),
   ESC("Botão de microfone na busca", V_MIC_BUSCA, 3),   // local: micBuscaLocal (.tpk)
@@ -1941,6 +1968,17 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Tamanho dos perfis", V_PS_TAMANHO, 3),
   ESC("Agrupar variantes dos canais", V_LIGA, 2),
   ESC("Esportes", V_LIGA, 2),
+  ESC("Capítulos no player", V_LIGA, 2),
+  ACAO("ID do Anime-Skip"),
+  ESC("Provedor das miniaturas", V_PREVIA_PROV, NV_PREVIA_N),          // local: previaProvedorLocal
+  ACAO("Servidor OpenSeek"),
+  ACAO("Parear com o OpenSeek"),
+  ACAO("Estado do OpenSeek"),
+  ACAO("Biblioteca compartilhada"),
+  ACAO("Miniaturas 30 s mais cedo"), ACAO("Miniaturas 5 s mais cedo"), ACAO("Miniaturas 1 s mais cedo"),
+  ACAO("Miniaturas 1 s mais tarde"), ACAO("Miniaturas 5 s mais tarde"), ACAO("Miniaturas 30 s mais tarde"),
+  ACAO("Desfazer o ajuste"), ACAO("Vídeo errado: rejeitar"),
+  NUM("Resolução das miniaturas", 0, 3, 1, NULL),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2290,6 +2328,16 @@ static const char *CHAVE[] = {
   "psTamanhoLocal",
   "liveTvGroupVariantsLocal",
   "menuEsportesLocal",
+  "chaptersLocal",
+  // "-": o VALOR mora em animeskip.txt (dados); credencial, fora do ajustes.txt.
+  "-animeSkipId",
+  // LOCAL (sem "-"): o web nao tem. O resto e acao; endereco, pino e token
+  // moram em openseek.txt (dados), nunca no ajustes.txt nem na conta.
+  "previaProvedorLocal",
+  "-openseekServidor", "-openseekParear", "-openseekEstado",
+  "-openseekCompart", "-openseekAjM30", "-openseekAjM5", "-openseekAjM1", "-openseekAjP1", "-openseekAjP5", "-openseekAjP30",
+  "-openseekDesfazer", "-openseekRejeitar",
+  "miniaturaResolutionLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2339,13 +2387,15 @@ typedef char conferi_uma_chave_por_opcao[
 // Toda opcao do enum aparece aqui UMA vez: conferirTela() grita no log no
 // arranque e tests/ajustes_secoes.sh falha na suite.
 // IT_MAIS (2.0.3): a linha "Mais opcoes · N" no fim da categoria. Tudo o que
-// vem depois dela, na mesma categoria, e avancado (uxAvancada).
+// vem depois dela, na mesma categoria, e avancado (uxAvancada). OPCA() e a
+// avancada dentro de um bloco basico de mesmo nome (sem repetir o bloco).
 typedef enum { IT_SEC, IT_GRP, IT_ROT, IT_OPC, IT_MAIS } ItemTipo;
 typedef struct {
   ItemTipo    tipo;
   int         op;               // IT_OPC
   const char *titulo, *sub;     // SEC/GRP/ROT; `sub` e o subtitulo (SEC, GRP)
   const char *icone;            // SEC, GRP: basename em art/icones (aj_* do Lucide)
+  int         avancada;         // OPCA
 } Item;
 #define SEC(t, s, ic) { IT_SEC, -1, t, s, ic }
 #define GRP(t, s, ic) { IT_GRP, -1, t, s, ic }
@@ -2353,6 +2403,7 @@ typedef struct {
 // Rotulo com a nota a direita no lugar da contagem ("para quem faz o app").
 #define ROTS(t, s)    { IT_ROT, -1, t, s, NULL }
 #define OPC(o)        { IT_OPC, o, NULL, NULL, NULL }
+#define OPCA(o)       { IT_OPC, o, NULL, NULL, NULL, 1 }
 #define MAIS()        { IT_MAIS, -1, "Mais opções", NULL, "aj_sliders-horizontal" }
 
 #include "ajustes_ux_tela.inc"
@@ -2409,7 +2460,7 @@ static void montarTela(void) {
     } else if (it->tipo == IT_GRP) g = i;
     else if (it->tipo == IT_ROT) g = -1;   // rotulo fecha o grupo anterior
     else if (it->tipo == IT_MAIS) { depois = 1; if (s >= 0) maisItem[s] = i; }
-    else if (it->tipo == IT_OPC && depois && it->op >= 0 && it->op < AJ_N) uxAvancadaTab[it->op] = 1;
+    else if (it->tipo == IT_OPC && (depois || it->avancada) && it->op >= 0 && it->op < AJ_N) uxAvancadaTab[it->op] = 1;
     secDoItem[i] = s < 0 ? 0 : s;
     grupoDoItem[i] = it->tipo == IT_OPC ? g : -1;
   }
@@ -2956,9 +3007,39 @@ static void hcAbrir(void);
 static void desenhaFolhaHeroCat(void);
 
 static char seekrChave[96];
+// O provedor das miniaturas e o OpenSeek? (No web nao ha OpenSeek: rede_pedir
+// nao tem TLS fixado ali.)
+static int previaOpenSeek(void) {
+#ifdef __EMSCRIPTEN__
+  return 0;
+#else
+  return valor[AJ_PREVIA_PROVEDOR] == 1;
+#endif
+}
+// As miniaturas sao feitas neste aparelho (miniatura_android.c)?
+static int previaLocal(void) {
+#ifdef NV_ANDROID
+  return valor[AJ_PREVIA_PROVEDOR] == 2;
+#else
+  return 0;
+#endif
+}
+// "Tem credencial" do provedor ativo: a chave do Seekr, o pareamento, ou nada a pedir (no aparelho).
+static int previaCredencial(void) {
+  return previaLocal() ? 1 : previaOpenSeek() ? openseek_pareado() : seekrChave[0] != 0;
+}
 static int lig(int op) {
   if (op == AJ_FALHA_PROVEDORES || op == AJ_FALHA_ADDONS) return ajFalhaValor(op) == 0;
-  return valor[op] == 0 && (op != AJ_SEEKR_LIGADO || seekrChave[0]);
+  return valor[op] == 0 && (op != AJ_SEEKR_LIGADO || previaCredencial());
+}
+// Registra (ou tira) o OpenSeek no seekr.c. So chama quando MUDA: com o Seekr
+// (o padrao, NULL no seekr.c) nada de novo e tocado.
+static void previaAplicar(void) {
+  static int aplicado;
+  int quer = previaLocal() ? 2 : previaOpenSeek();
+  if (quer == aplicado) return;
+  aplicado = quer;
+  seekr_usar_provedor(quer == 2 ? miniatura_provedor() : quer ? openseek_provedor() : NULL);
 }
 // #311: "Buscar no Cinemeta" so governa a BUSCA (o add-on Cinemeta e a reserva
 // do catalogo do Nuvio). Sem o add-on instalado e com o ajuste no padrao ele nao
@@ -3015,8 +3096,8 @@ static int perfilSeguro;
 #else
 #define SEGURO perfilSeguro
 #endif
-static int saidaLimitada;
-void ajustes_ui_saida(int w, int h) { saidaLimitada = w > 0 && h > 0 && (w < 3840 || h < 2160); }
+static int saidaLimitada, saidaH;
+void ajustes_ui_saida(int w, int h) { saidaLimitada = w > 0 && h > 0 && (w < 3840 || h < 2160); saidaH = h; }
 int ajustes_ampliar_app(void) {
   // Automatic keeps the existing panel check and GPU gate in gpun_ampliar_app.
   return painel4k() && (valor[AJ_AMPLIAR_UI] == 1 || valor[AJ_AMPLIAR_UI] == 2) && !SEGURO;
@@ -3046,6 +3127,7 @@ int ajustes_pular_resumo(void)        { return lig(AJ_PULAR_RESUMO); }
 int ajustes_proximo_auto(void)        { return lig(AJ_PROXIMO_AUTO); }
 int ajustes_proximo_contagem(void)    { int n = valor[AJ_PROXIMO_CONTAGEM]; return n < 1 ? 1 : n > 60 ? 60 : n; }
 int ajustes_pular_creditos(void)      { return lig(AJ_PULAR_CREDITOS); }
+int ajustes_capitulos(void)           { return lig(AJ_CAPITULOS); }
 int ajustes_medidor_desempenho(void)  { return valor[AJ_MEDIDOR]; }
 int ajustes_fonte_manual(void)        { return lig(AJ_FONTE_MANUAL); }
 int ajustes_fonte_primeira(void)      { return ajustes_fonte_prioridade() == 3 || valor[AJ_FONTE_AUTO] == 1; }
@@ -3237,7 +3319,7 @@ int ajustes_efeitos_automaticos(void) {
          (valor[AJ_ANIM] == 2 ? 4 : 0) | (valor[AJ_VIDRO] == 2 ? 8 : 0);
 }
 float ajustes_suavizar_degrades(void) { return valor[AJ_SUAVIZAR_DEGRADES] == 2 ? 0.0f : valor[AJ_SUAVIZAR_DEGRADES] == 1 ? 2.0f : 1.0f; }
-int ajustes_vidro_qualidade(void) { return valor[AJ_VIDRO_QUALIDADE] == 1 ? 1 : valor[AJ_VIDRO_QUALIDADE] == 2 ? 2 : gpun_efeito_ativo(1) ? 1 : 0; }   // 0 Automatica, 1 Desempenho, 2 Alta
+int ajustes_vidro_qualidade(void) { return valor[AJ_VIDRO_QUALIDADE] == 1 ? 1 : valor[AJ_VIDRO_QUALIDADE] == 2 ? 2 : gpun_efeito_ativo(1) ? 3 : 0; }   // 0 Automatica, 1 Desempenho, 2 Alta, 3 Automatica in the ladder's one-pass blur
 // Capturas do teste do vidro: NUVIO_SHOT_VIDRO_OPAC=60|70|78|86|92 e
 // NUVIO_SHOT_VIDRO_FOSCO=1 e NUVIO_SHOT_VIDRO_QUAL=0|1|2 (sem gravar nada). INTENCIONAL no release: so os
 // tests/*_shot.c e ajustes_teste_ux_captura a chamam; nenhum caminho de src/ chega aqui na TV.
@@ -4376,10 +4458,75 @@ static const char *fanartMascarada(void) {
   return m;
 }
 
+// CLIENT ID DO ANIME-SKIP (feat/mkv-chapter-segments): o da PESSOA, em
+// animeskip.txt (dados), como a chave do fanart.tv — nunca no ajustes.txt.
+// Vazio volta ao da conta Nuvio (sync.c -> segfontes_animeskip_id_conta).
+static char animeskipId[96];
+static void animeskipLimpar(char *dst, size_t n, const char *t) {
+  size_t i, k = 0;
+  for (i = 0; t && t[i] && k + 1 < n; i++)
+    if ((t[i] >= '0' && t[i] <= '9') || (t[i] >= 'a' && t[i] <= 'z') ||
+        (t[i] >= 'A' && t[i] <= 'Z') || t[i] == '-' || t[i] == '_') dst[k++] = t[i];
+  dst[k] = 0;
+}
+static void animeskipCarregar(void) {
+  char *t = dados_ler("animeskip.txt");
+  animeskipLimpar(animeskipId, sizeof animeskipId, t);
+  free(t);
+  segfontes_animeskip_id_local(animeskipId);
+}
+static void animeskipDefinir(const char *txt) {
+  animeskipLimpar(animeskipId, sizeof animeskipId, txt);
+  if (animeskipId[0]) dados_gravar("animeskip.txt", animeskipId);
+  else dados_apagar("animeskip.txt");
+  segfontes_animeskip_id_local(animeskipId);
+}
+static const char *animeskipMascarado(void) {
+  static char m[24];
+  char conta[96];
+  size_t n = strlen(animeskipId);
+  if (!n) return segfontes_animeskip_id(conta, sizeof conta)[0] ? i18n("Da conta Nuvio") : i18n("Não configurado");
+  snprintf(m, sizeof m, "····%s", n > 4 ? animeskipId + n - 4 : "");
+  return m;
+}
+
 // Somente a chave propria em seekr.txt, local e mascarada. Remover a chave
 // desliga o uso efetivo; os limites sao os do plano da pessoa no Seekr.
 static const char *seekrPedirChave(void) {
   return i18n("Use sua própria chave do Seekr, gratuita em seekr.tv.");
+}
+// OPENSEEK (openseek.h): o que falta para ligar as miniaturas por ele.
+static const char *previaPedirCredencial(void) {
+  if (previaLocal()) return "";
+  if (!previaOpenSeek()) return seekrPedirChave();
+  return openseek_endereco()[0] ? i18n("Pareie com o OpenSeek para ligar as miniaturas.")
+                                : i18n("Informe o endereço do servidor OpenSeek.");
+}
+// Alfabeto do codigo OSP1 (CONTRACT-v1): sem 0/1/I/L/O; o hifen e opcional.
+static const char *OS_ALFA_CODIGO = "23456789ABCDEFGHJKMNPQRSTUVWXYZ-";
+static const char *openseekTexto(int op) {
+  static char buf[192];
+  char host[128];
+  int st;
+  if (!previaOpenSeek()) return "";   // escondidas com o Seekr
+  if (op >= AJ_OPENSEEK_COMPART && op <= AJ_OPENSEEK_ULT) {
+    OpenSeekCompartInfo ci;
+    if (!openseek_compart_info(&ci)) return i18n("Nenhuma fonte compartilhada em uso");
+    if (op == AJ_OPENSEEK_COMPART) {
+      snprintf(buf, sizeof buf, "%s · %s%ld s", i18n(ci.rotulo), ci.offsetMs <= 0 ? "+" : "−",
+               labs(ci.offsetMs) / 1000L);
+      return buf;
+    }
+    return i18n("OK");
+  }
+  if (op == AJ_OPENSEEK_SERVIDOR) return openseek_endereco()[0] ? openseek_endereco() + 8 : i18n("Não configurado");
+  st = openseek_status(host, sizeof host);
+  if (op == AJ_OPENSEEK_PAREAR) {
+    if (st == OSU_PAREANDO) return i18n(openseek_status_rotulo(OSU_PAREANDO));
+    return openseek_pareado() ? i18n("OK pareia de novo") : i18n("OK pareia");
+  }
+  if (st == OSU_PAREADO) { snprintf(buf, sizeof buf, i18n("Pareado com %s"), host); return buf; }
+  return i18n(openseek_status_rotulo(st));
 }
 static int seekrSalvarFalhou;
 static const char *SEEKR_ALFA =
@@ -4420,8 +4567,9 @@ static const char *seekrMascarada(void) {
 }
 int ajustes_seekr_habilitado(void) { return valor[AJ_SEEKR_LIGADO] == 0; }
 int ajustes_seekr_ligado(void) { return lig(AJ_SEEKR_LIGADO); }
+int ajustes_miniatura_largura(void) { static const int w[] = {0,320,480,640}; int i=valor[AJ_MINIATURA_RES]; return w[i >= 0 && i <= 3 ? i : 0]; }
 int ajustes_seekr_fita(void)   { return lig(AJ_SEEKR_FITA); }
-int ajustes_seekr_ajuste_s(void) { return valor[AJ_SEEKR_AJUSTE]; }
+int ajustes_seekr_ajuste_s(void) { return previaOpenSeek() || previaLocal() ? 0 : valor[AJ_SEEKR_AJUSTE]; }
 
 // ENDERECO DO SERVIDOR P2P (p2p.h). Mora em p2p.txt na pasta de dados, por
 // aparelho: e o IP de um PC/NAS da casa desta TV, sem sentido em outra.
@@ -5019,6 +5167,7 @@ void ajustes_dir(const char *dir) {
   valor[AJ_TAMANHO_UI] = UI_SIZE_AUTO;
   fonteregra_carregar();
   fanartCarregar();
+  animeskipCarregar();
   seekrCarregar();
   p2pCarregar();
   ppCarregar();
@@ -5430,6 +5579,7 @@ void ajustes_dir(const char *dir) {
   ajEpgMemoriaAplicar();
   legenda2_atualizar_offset_manual(ajustes_leg2_atraso());
   ppReconciliar();
+  previaAplicar();
   ajSombraSync();   // o que veio do disco nao e mudanca de ninguem
 }
 
@@ -6382,8 +6532,11 @@ static int somenteDesteAparelho(int op) {
     case AJ_PAUSA_NOTAS: /* nem as notas */
     case AJ_PAUSA_ELENCO: /* nem o elenco */
     case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PROXIMO_AUTO: case AJ_PULAR_CREDITOS: case AJ_PROXIMO_CONTAGEM: /* idem: local desta TV */
+    case AJ_CAPITULOS: /* idem */
     case AJ_PLR_FORMATO: case AJ_PLR_FORMATO_POS: case AJ_PLR_CODEC: /* o web nao tem a fileira de formato */
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE: /* o web nao tem o Seekr */
+    case AJ_MINIATURA_RES:
+    case AJ_PREVIA_PROVEDOR:
     case AJ_MENU_EXPLORAR: case AJ_MENU_GUIA: case AJ_MENU_AGENDA: case AJ_MENU_PERFIL: case AJ_MENU_ESPORTES:
     // Linha do titulo: o web nao tem, e nenhuma conta pode desliga-las aqui.
     case AJ_NT_IMDB: case AJ_NT_TOMATES: case AJ_NT_AUDIENCIA: case AJ_NT_META:
@@ -7018,7 +7171,7 @@ static int foraDestaPlataforma(int op) {
   if (op == AJ_HDR10P_STRIP) return 1;
 #endif
 #ifndef NV_ANDROID
-  if (op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO || op == AJ_LIMPAR_CACHE) return 1;
+  if (op == AJ_MINIATURA_RES || op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO || op == AJ_LIMPAR_CACHE) return 1;
 #ifndef AJUSTES_TESTE
   if (op == AJ_TUNNELING || op == AJ_AFR) return 1;
 #endif
@@ -7028,6 +7181,8 @@ static int foraDestaPlataforma(int op) {
 #endif
 #ifdef __EMSCRIPTEN__
   if (op == AJ_P2P_LIGADO || op == AJ_P2P_URL || op == AJ_P2P_TESTAR || op == AJ_P2P_LIMITE || op == AJ_P2P_DESTINO) return 1;
+  // Sem rede_pedir com pino no WASM: nada de OpenSeek (SR-3/SR-4).
+  if (op == AJ_PREVIA_PROVEDOR || (op >= AJ_OPENSEEK_SERVIDOR && op <= AJ_OPENSEEK_ULT)) return 1;
 #endif
   return 0;
 }
@@ -7505,8 +7660,10 @@ static const char *textoLeitura(int op) {
       return bufConta; }
   }
   if (op == AJ_FANART_CHAVE) return fanartMascarada();
+  if (op == AJ_ANIMESKIP_ID) return animeskipMascarado();
   if (op == AJ_SEEKR_CHAVE) return seekrMascarada();
   if (op == AJ_SEEKR_TESTAR) return skTesteTexto();
+  if (op >= AJ_OPENSEEK_SERVIDOR && op <= AJ_OPENSEEK_ULT) return openseekTexto(op);
   if (op == AJ_SELOS_PACOTE_ADD) return spAddTexto();
   if (op == AJ_URL_M3U_ADD || op == AJ_URL_XMLTV_ADD) return urlAddTexto();
   if (op == AJ_URL_REM) return valor[AJ_URL_LISTA] > 0 ? i18n("OK remove") : i18n("nenhuma lista escolhida");
@@ -7750,6 +7907,11 @@ static int inativa(int op) {
     case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE: return !lig(AJ_SEEKR_LIGADO);
     case AJ_FONTE_GRUPO_SESSOES: return !lig(AJ_FONTE_GRUPO);
     case AJ_LINK_PRAZO: return !lig(AJ_LINK_REUSAR);
+    case AJ_OPENSEEK_PAREAR: case AJ_OPENSEEK_ESTADO: return !previaOpenSeek() || !openseek_endereco()[0];
+    case AJ_OPENSEEK_AJ_M30: case AJ_OPENSEEK_AJ_M5: case AJ_OPENSEEK_AJ_M1: case AJ_OPENSEEK_AJ_P1: case AJ_OPENSEEK_AJ_P5: case AJ_OPENSEEK_AJ_P30: case AJ_OPENSEEK_DESFAZER: case AJ_OPENSEEK_REJEITAR: {
+      OpenSeekCompartInfo ci;
+      return !previaOpenSeek() || !openseek_compart_info(&ci);
+    }
     // Remover so vale para o pacote escolhido que foi posto nesta TV.
     case AJ_SELOS_PACOTE_REM: return selospacote_ativo() < 0 || !selospacote_da_tv(selospacote_ativo());
     case AJ_URL_REM: return valor[AJ_URL_LISTA] < 1;
@@ -7835,9 +7997,9 @@ static int maisContar(int sec, char *resumo, size_t n) {
   size_t u = 0;
   if (resumo && n) resumo[0] = 0;
   if (sec < 0 || sec >= nSecoes || maisItem[sec] < 0) return 0;
-  for (i = maisItem[sec] + 1; i < secFim(sec); i++) {
+  for (i = secIni[sec] + 1; i < secFim(sec); i++) {
     int op = TELA[i].op;
-    if (TELA[i].tipo != IT_OPC) continue;
+    if (TELA[i].tipo != IT_OPC || !uxAvancadaTab[op]) continue;
     if ((op == AJ_PERFIL_PESQ || op == AJ_PERFIL_EDITAR) && !recomenda_ativo()) continue;
     if (op == AJ_ICONE_APP && !apoiador_ativo()) continue;
     if (resumo && u + 4 < n && k < 6) {
@@ -7869,6 +8031,13 @@ static int visivel(int i) {
     if (!ajOpcaoDisponivel(op) || !ajIptvLinhaVisivel(op)) return 0;
     // #205: o fundo so existe no layout Dinamica; a cor, so com o fundo "Cor".
     if ((op == AJ_FUNDO_DIN || op == AJ_FUNDO_DIN_COR) && ajustes_home_layout() != HOME_LAYOUT_DINAMICA) return 0;
+    if (op == AJ_MINIATURA_RES && !previaLocal()) return 0;
+    // Miniaturas: so as opcoes do provedor escolhido. A sincronia manual existe
+    // para a folha do Seekr tirada de OUTRA versao; a do OpenSeek e do proprio video.
+    if ((op == AJ_SEEKR_CHAVE || op == AJ_SEEKR_TESTAR || op == AJ_SEEKR_AJUSTE) && (previaOpenSeek() || previaLocal())) return 0;
+    if (op >= AJ_OPENSEEK_SERVIDOR && op <= AJ_OPENSEEK_ULT && !previaOpenSeek()) return 0;
+    // As linhas de biblioteca compartilhada so existem num aparelho CONVIDADO.
+    if (op >= AJ_OPENSEEK_COMPART && op <= AJ_OPENSEEK_ULT && openseek_papel() != OS_PAPEL_CONVIDADO) return 0;
     if (op == AJ_FUNDO_DIN_COR && ajustes_fundo_din() != 1) return 0;
     if ((op == AJ_PERFIL_PESQ || op == AJ_PERFIL_EDITAR) && !recomenda_ativo()) return 0;
     if (op == AJ_BUSCA_CINEMETA && valor[op] == 0 && !cinemetaInstalado()) return 0;
@@ -7940,11 +8109,11 @@ static void focarOpcao(int op) {
 // separado de proposito: as duas perguntas sao diferentes e juntas viram um
 // paragrafo que ninguem le do sofa.
 static const char *ajudaOpcaoTv(int op);
-// Desktop layout: a description naming a TV platform or the remote is hidden.
+// Desktop layout: the sentences naming a TV platform or the remote are hidden.
 static const char *ajudaOpcaoBase(int op) {
   const char *s = ajudaOpcaoTv(op);
 #ifdef NV_DESKTOP_UI
-  if (ajDesktopTextoTv(s)) return "";
+  s = ajDesktopSemTv(s);
 #endif
   return s;
 }
@@ -8062,7 +8231,9 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_PAUSA_OVERLAY: return "Ao pausar, sobe uma ficha com a sinopse e os dados do que você está vendo.";
     case AJ_PULAR_ABERTURA: return "Pula a abertura sozinho quando o episódio tem o trecho marcado, e avisa na tela. Sem marcador, nada é pulado. O botão Pular abertura continua valendo.";
     case AJ_PULAR_RESUMO: return "Pula o resumo do episódio anterior sozinho quando o episódio tem o trecho marcado, e avisa na tela. Sem marcador, nada é pulado.";
-    case AJ_PULAR_CREDITOS: return "Pula os créditos sozinho, e avisa na tela, só quando o marcador diz onde eles começam e onde acabam. Sem marcador completo, e nos créditos que vão até o fim do episódio, nada é pulado: quem cuida é o próximo episódio.";
+    case AJ_PULAR_CREDITOS: return "Pula o encerramento sozinho, de série ou de filme, e avisa na tela, só quando o marcador diz onde ele começa e onde acaba. Com uma cena pós-créditos depois, para no começo da cena. Sem marcador completo, nada é pulado.";
+    case AJ_CAPITULOS: return "Mostra os capítulos do arquivo no player: uma marca na barra em cada capítulo, o nome do capítulo atual e, com Para cima na barra, a fileira de capítulos para pular com Esquerda/Direita. Abertura, resumo, encerramento e pós-créditos aparecem na barra mesmo desligado.";
+    case AJ_ANIMESKIP_ID: return "Seu Client ID do Anime-Skip, mais uma fonte de abertura e encerramento de anime. Vazio usa o da sua conta Nuvio. Fica só nesta TV e aparece mascarado.";
     case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: {
       static char b[512];
       snprintf(b, sizeof b, i18n("Nos créditos, uma contagem de %d s toca o próximo episódio enquanto eles ainda rolam. Voltar cancela e deixa os créditos terminarem. Desligado, o cartão espera você apertar OK."), ajustes_proximo_contagem());
@@ -8490,9 +8661,19 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_MDB_LIGADO: return "O MDBList junta notas de várias fontes na página do título. Desligar esconde a fileira inteira.";
     case AJ_MDB_CHAVE: return "A chave vem da sua conta Nuvio ou do arquivo do pacote. Não dá para digitar nesta TV.";
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_CHAVE: return seekrAjuda(op);
+    case AJ_MINIATURA_RES: return "Tamanho das miniaturas feitas neste aparelho. Automático mantém o perfil recomendado. Vale no próximo vídeo; resoluções maiores usam mais recursos.";
     case AJ_SEEKR_FITA: return "Mostra o quadro anterior e o seguinte ao lado da miniatura, com o tempo de cada um. Deixa claro que há um quadro a cada 10 segundos.";
     case AJ_SEEKR_AJUSTE: return "Use quando a miniatura mostra sempre a cena de alguns segundos antes ou depois. Acontece quando a sua versão do título é diferente da usada pelo Seekr (outro corte, abertura mais longa). Vale para todos os títulos; volte a 0 ao trocar de filme.";
     case AJ_SEEKR_TESTAR: return seekrAjuda(op);
+    case AJ_PREVIA_PROVEDOR: return "Quem faz as miniaturas. Seekr.tv: um serviço na internet, por título. OpenSeek: um servidor seu na rede de casa, que tira os quadros do próprio vídeo que está tocando. O endereço do vídeo vai só para ele, por conexão segura fixada no pareamento.";
+    case AJ_OPENSEEK_SERVIDOR: return "Endereço do computador ou NAS com o OpenSeek na sua rede, por exemplo 192.168.1.5:8787. Fica só nesta TV. Trocar o endereço desfaz o pareamento.";
+    case AJ_OPENSEEK_PAREAR: return "Abra o pareamento no OpenSeek (openseek pair, ou a página de administração no próprio computador) e digite o código de 8 letras que aparece. O cálculo do pareamento leva alguns segundos.";
+    case AJ_OPENSEEK_COMPART: return "Este aparelho usa as miniaturas de OUTRA versão do mesmo título, guardadas no servidor de quem convidou. Elas são aproximadas: a abertura ou o corte podem ser diferentes. Ajuste abaixo se estiverem adiantadas ou atrasadas; vale só para este aparelho e fica guardado para esta versão do vídeo. O vídeo em si nunca é alterado.";
+    case AJ_OPENSEEK_AJ_M30: case AJ_OPENSEEK_AJ_M5: case AJ_OPENSEEK_AJ_M1: return "Use quando a miniatura mostra uma cena que só aparece DEPOIS do ponto da barra. OK desloca as miniaturas para mais cedo.";
+    case AJ_OPENSEEK_AJ_P1: case AJ_OPENSEEK_AJ_P5: case AJ_OPENSEEK_AJ_P30: return "Use quando a miniatura mostra uma cena que já passou. OK desloca as miniaturas para mais tarde.";
+    case AJ_OPENSEEK_DESFAZER: return "Volta ao alinhamento original desta fonte (sem ajuste manual).";
+    case AJ_OPENSEEK_REJEITAR: return "Use quando as miniaturas são de outro filme ou de um corte muito diferente. Este aparelho não receberá mais esta fonte para este vídeo. Nada muda no servidor nem nos outros aparelhos.";
+    case AJ_OPENSEEK_ESTADO: return "OK confere a conexão com o servidor agora. Se aparecer que o certificado mudou, o servidor foi reinstalado ou há algo no meio da rede: pareie de novo só se você reinstalou o OpenSeek.";
     case AJ_FANART_CHAVE: return "Sua chave pessoal do fanart.tv, gratuita em fanart.tv/get-an-api-key. Com ela a fonte fanart.tv entra no Background do hero. Fica só nesta TV e aparece mascarada.";
     case AJ_MDB_TRAKT: case AJ_MDB_IMDB: case AJ_MDB_TMDB:
     case AJ_MDB_LETTER: case AJ_MDB_TOMATES: case AJ_MDB_AUDIENCIA:
@@ -8518,6 +8699,22 @@ static const char *ajudaOpcao(int op) {
   // O endereco da pagina vai junto da ajuda, ao vivo (muda com o IP da TV).
   if (op == AJ_LOG_REDE && logrede_url()[0]) {
     snprintf(b, sizeof b, "%s\n%s", i18n(base), logrede_url());
+    return b;
+  }
+  // Automatic does not say what it chose: show what this session really draws.
+  if (op == AJ_RESOLUCAO && ajustes_res_auto() && saidaH > 0 && !ajTelaCheia()) {
+    char res[16], atual[64];
+    if (!saidaLimitada && !gpun_alvo_1080_ativo()) snprintf(res, sizeof res, "4K");
+    else snprintf(res, sizeof res, "%dp", saidaH < 1080 ? saidaH : 1080);
+    snprintf(atual, sizeof atual, i18n("Atual: %s"), res);
+    snprintf(b, sizeof b, "%s\n%s", i18n(base), atual);
+    return b;
+  }
+  // Copy-first (miniatura_android.c): a 4K title's previews come from a smaller copy in the source list, so the
+  // person's add-on filters decide how fast they are. Shown only when the previews are made on this device.
+  if ((op == AJ_PREVIA_PROVEDOR || op == AJ_MINIATURA_RES) && previaLocal()) {
+    snprintf(b, sizeof b, "%s\n%s", i18n(base),
+      i18n("Dica: as miniaturas de filmes em 4K saem bem mais rápido quando os seus add-ons também listam fontes 720p ou 1080p WEB-DL. O Nuvio faz as miniaturas a partir de uma cópia menor do mesmo filme."));
     return b;
   }
   if (op == AJ_AMPLIAR_UI && saidaLimitada && ampliarUiVale()) {
@@ -8703,7 +8900,6 @@ static const char *beneficioProprio(int op) {
     case AJ_HERO_ARTE_DIF: return "O destaque pode usar outra arte que não a do cartaz.";
     case AJ_HERO_TRAILER: return "Com o foco parado no destaque, o trailer toca no lugar da arte.";
     case AJ_FOCO_TRAILER: return "Com o foco parado num cartaz, o trailer toca no destaque.";
-    case AJ_RESOLUCAO: return "Automática começa em 1080p e só usa 4K se a TV aguentar.";
     case AJ_PERFIL_PESQ: return "Deixa amigos acharem você pela busca.";
     case AJ_HIST_CONTA: return "O que você assiste neste perfil vai para a conta Nuvio.";
     case AJ_SOCIAL: return "Amigos, a atividade deles e recomendações.";
@@ -10077,8 +10273,8 @@ static int definirValorDireto(int op, int novo) {
     if(ok && op==AJ_IPTV_ATIVA)guia_recarregar(1);
     return ok;
   }
-  if (op == AJ_SEEKR_LIGADO && novo == 0 && !seekrChave[0]) {
-    uxNotificar(seekrPedirChave());
+  if (op == AJ_SEEKR_LIGADO && novo == 0 && !previaCredencial()) {
+    uxNotificar(previaPedirCredencial());
     return 0;
   }
   if (op == AJ_XTREAM_CONEXOES) {
@@ -10127,6 +10323,7 @@ static int definirValorDireto(int op, int novo) {
   if(op==AJ_AUD_ORIGINAL)aplicarIdioma(AJ_AUD_LINGUA);
   if (op == AJ_LEG_LINGUA || op == AJ_LEG_LINGUA2 || op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2) aplicarIdioma(op);
   if (op == AJ_IDIOMA) { idiomaEscolhido(); desc_repetir(); }
+  if (op == AJ_PREVIA_PROVEDOR) previaAplicar();
   if (op == AJ_TAMANHO_UI) gfx_escala_ui_definir(ajustes_tamanho_ui());
   if (op == AJ_ESCALA_TEXTO) gfx_escala_txt_definir(ajustes_escala_texto());
   if (op == AJ_INTERFACE_MODO) {
@@ -10439,6 +10636,32 @@ static void eventoTela(const SDL_Event *e) {
       return;
     }
     if (focoOp == AJ_SEEKR_TESTAR) { skTesteIniciar(); return; }
+    if (focoOp == AJ_OPENSEEK_SERVIDOR) {
+      // O endereco volta para o campo (corrigir um digito nao obriga a redigitar).
+      stCampo = focoOp;
+      teclado_abrir_com("Endereço do servidor OpenSeek", "IP e porta na sua rede: 192.168.1.5:8787. Vazio apaga.",
+                        64, ST_ALFA_PORTAL, openseek_endereco()[0] ? openseek_endereco() + 8 : NULL);
+      return;
+    }
+    if (focoOp == AJ_OPENSEEK_PAREAR) {
+      if (!openseek_endereco()[0]) { uxNotificar(previaPedirCredencial()); return; }
+      if (openseek_status(NULL, 0) == OSU_PAREANDO) return;
+      // O codigo NUNCA volta para o campo nem vai para log.
+      stCampo = focoOp;
+      teclado_abrir_com("Código de pareamento ou convite", "8 letras (XXXX-XXXX) ou o convite de 16 letras que o dono enviou.",
+                        200, ST_ALFA_PORTAL, NULL);
+      return;
+    }
+    if (focoOp == AJ_OPENSEEK_ESTADO) { openseek_verificar(); return; }
+    if (focoOp >= AJ_OPENSEEK_AJ_M30 && focoOp <= AJ_OPENSEEK_REJEITAR) {
+      static const long PASSO[] = { -30000L, -5000L, -1000L, 1000L, 5000L, 30000L };
+      int ok;
+      if (focoOp == AJ_OPENSEEK_DESFAZER) ok = openseek_compart_zerar();
+      else if (focoOp == AJ_OPENSEEK_REJEITAR) ok = openseek_compart_rejeitar();
+      else ok = openseek_compart_ajustar(-PASSO[focoOp - AJ_OPENSEEK_AJ_M30]);   // "mais cedo" (-) = deslocamento negativo
+      if (!ok) uxNotificar("Não há fonte compartilhada para ajustar agora");
+      return;
+    }
     if (focoOp == AJ_SELOS_PACOTE_ADD) {
       if (spFioVivo) return;
       stCampo = focoOp;
@@ -10457,6 +10680,13 @@ static void eventoTela(const SDL_Event *e) {
     if (focoOp == AJ_SELOS_PACOTE_REM) {
       int a = selospacote_ativo();
       if (a >= 0 && selospacote_da_tv(a)) { selospacote_remover(a); spResultado = -1; spEspelhar(); }
+      return;
+    }
+    if (focoOp == AJ_ANIMESKIP_ID) {
+      // Como a chave do fanart: o ID nao volta para o campo; vazio usa o da conta.
+      stCampo = focoOp;
+      teclado_abrir_com("ID do Anime-Skip", "Seu Client ID em anime-skip.com. Vazio usa o da conta Nuvio.",
+                        64, PST_ALFA_CHAVE, NULL);
       return;
     }
     if (focoOp == AJ_FANART_CHAVE) {
@@ -10608,11 +10838,17 @@ void ajustes_atualizar(float dt, Uint32 agora) {
       else if (stCampo == AJ_PERFIL_INFANTIL) { kidDigitado(teclado_texto()); teclado_esquecer(); }
       else if (stCampo == PF_CAMPO) { if (pfDigitado(teclado_texto())) r = TECLADO_NADA; }
       else if (stCampo == AJ_FANART_CHAVE)    fanartDefinir(teclado_texto());
+      else if (stCampo == AJ_ANIMESKIP_ID)    animeskipDefinir(teclado_texto());
       else if (stCampo == AJ_SEEKR_CHAVE)     { seekrDefinir(teclado_texto()); atomic_store_explicit(&skTeste, 0, memory_order_release); }
       else if (stCampo == AJ_SELOS_PACOTE_ADD) spAdicionar(teclado_texto());
       else if (stCampo == AJ_URL_M3U_ADD || stCampo == AJ_URL_XMLTV_ADD)
         urlAdicionar(stCampo == AJ_URL_M3U_ADD ? LTV_URL_M3U : LTV_URL_XMLTV, teclado_texto());
       else if (stCampo == AJ_P2P_URL)         ajustes_definir_p2p_url(teclado_texto());
+      else if (stCampo == AJ_OPENSEEK_SERVIDOR) {
+        if (!openseek_definir_endereco(teclado_texto())) uxNotificar("endereço inválido");
+      } else if (stCampo == AJ_OPENSEEK_PAREAR) {
+        if (!openseek_parear(teclado_texto())) uxNotificar("código ou convite inválido");
+      }
       else if (stCampo == AJ_CURADORIA_URL) {
         int e = curadoria_definir_url(teclado_texto());
         uxNotificar(e ? "Ajuste salvo nesta TV." : "endereço inválido");
@@ -10788,6 +11024,7 @@ static int nValores(int op) {
 static const char *textoValor(int op) {
   if (op >= AJ_FONTE_OCULTAR_DV && op <= AJ_FONTE_OCULTAR_VIDEO)
     return i18n(V_LIGA[!ajustes_fonte_ocultar(op - AJ_FONTE_OCULTAR_DV)]);
+  if (op == AJ_MINIATURA_RES) { static const char *labels[] = {"Automático", "180p (320 x 180)", "270p (480 x 270)", "360p (640 x 360)"}; return i18n(labels[valor[op] >= 0 && valor[op] <= 3 ? valor[op] : 0]); }
   if (ajFonte(op)) return ajFonteNome(op, ajFonteAtual(op));
   if (op == AJ_FONTE_AUTO && ajustes_fonte_prioridade() == 3) return i18n("Primeira da lista");
   if(op==AJ_GUIA_CATEGORIAS)return i18n("Abrir");
@@ -10808,7 +11045,7 @@ static const char *textoValor(int op) {
   }
   const Opcao *o = &OPCOES[op];
   if (o->tipo == OP_LEITURA || o->tipo == OP_ACAO) return textoLeitura(op);
-  if (op == AJ_SEEKR_LIGADO && !seekrChave[0]) return i18n("Desligado");
+  if (op == AJ_SEEKR_LIGADO && !previaCredencial()) return i18n("Desligado");
   if (op == AJ_HERO_TRAILER_ESPERA) {
     // Decimos de segundo: 22 le "2,2 s".
     int v = valor[op];
@@ -11275,6 +11512,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_FONTE_PRIORIDADE: case AJ_FONTE_HDR: case AJ_FONTE_IDIOMA_AUDIO:
     case AJ_SELOS_PACOTE:
     case AJ_REACAO_CREDITOS: case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PROXIMO_AUTO: case AJ_PULAR_CREDITOS: case AJ_PROXIMO_CONTAGEM:
+    case AJ_CAPITULOS: case AJ_ANIMESKIP_ID:
     case AJ_FONTE_PRAZO: case AJ_TAM_MAX: case AJ_TAM_MIN: case AJ_PROPORCAO_PADRAO: case AJ_DTS_AC3:
     case AJ_FONTE_ESCOPO: case AJ_FONTE_ADDONS_PERM: case AJ_FONTE_PLUGINS_PERM: case AJ_FONTE_OUTROS:
     case AJ_FONTE_REGEX: case AJ_FONTE_REGEX_PADRAO: case AJ_FONTE_REGEX_MODELO:
@@ -11359,6 +11597,8 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_STALKER_LIMPAR: case AJ_XTREAM_SERVIDOR: case AJ_XTREAM_USUARIO:
     case AJ_XTREAM_SENHA: case AJ_XTREAM_LIMPAR: case AJ_FANART_CHAVE:
     case AJ_SEEKR_CHAVE: case AJ_SEEKR_TESTAR:
+    case AJ_OPENSEEK_SERVIDOR: case AJ_OPENSEEK_PAREAR: case AJ_OPENSEEK_ESTADO:
+    case AJ_OPENSEEK_COMPART: case AJ_OPENSEEK_AJ_M30: case AJ_OPENSEEK_AJ_M5: case AJ_OPENSEEK_AJ_M1: case AJ_OPENSEEK_AJ_P1: case AJ_OPENSEEK_AJ_P5: case AJ_OPENSEEK_AJ_P30: case AJ_OPENSEEK_DESFAZER: case AJ_OPENSEEK_REJEITAR:
     case AJ_SELOS_PACOTE_ADD: case AJ_SELOS_PACOTE_REM:
     case AJ_URL_LISTA: case AJ_URL_M3U_ADD: case AJ_URL_XMLTV_ADD: case AJ_URL_REM:
     case AJ_XTREAM_CONEXOES: case AJ_XTREAM_CONTA: case AJ_GUIA_RECARREGAR: case AJ_M3U_URL: case AJ_M3U_EPG: case AJ_M3U_LIMPAR:
@@ -11680,6 +11920,8 @@ int ajustes_teste_quadro(const char *id) {
     else if (!strcmp(id, "tri-opcao")) { focarOpcao(AJ_FONTE_PRIORIDADE); }
     else if (!strcmp(id, "tri-mais")) { maisAberto[0] = 1; focarOpcao(AJ_DTS_AC3); }
     else if (!strcmp(id, "tri-editor")) { focarOpcao(AJ_AUD_LINGUA); uxAbrirEditor(AJ_AUD_LINGUA); }
+    else if (!strcmp(id, "tri-video-row")) { focarOpcao(AJ_TELA_ABERTURA); }
+    else if (!strcmp(id, "tri-video-editor")) { focarOpcao(AJ_TELA_ABERTURA); uxAbrirEditor(AJ_TELA_ABERTURA); }
     else if (!strcmp(id, "tri-numero")) { focarOpcao(AJ_LEG1_TAMANHO); uxAbrirEditor(AJ_LEG1_TAMANHO); }
     else if (!strcmp(id, "tri-cor")) { focarOpcao(AJ_TEMA); uxAbrirEditor(AJ_TEMA); uxPendente = 3; }
     else if (!strcmp(id, "tri-presets")) { triUtilAbrir(TRI_U_PRESETS); }

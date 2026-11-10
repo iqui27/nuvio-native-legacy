@@ -512,7 +512,9 @@ static void triAtualizar(float dt) {
   triUtilA = red ? 1.0f : anim_rampa(triUtilA, 1.0f, dt, 220.0f);
   { int t[4], v[4], p[4], n = triPilha(t, v, p), k;   // o Palco: a pilha desliza com a mola de tela
     float alvo = (float)n;
-    triProfF = red ? alvo : anim_mola(triProfF, alvo, dt, NV_MOLA_TELA);
+    // Exit moves 95% in ~220 ms, quicker than the 330 ms entrance.
+    float mola = alvo < triProfF ? NV_MOLA_TELA * 1.5f : NV_MOLA_TELA;
+    triProfF = red ? alvo : anim_mola(triProfF, alvo, dt, mola);
     for (k = 0; k < 4; k++) {
       if (k < n) {
         if (k >= triPgVivos || triPgTipo[k] != t[k] || triPgVal[k] != v[k]) triPgT[k] = 0.0f;

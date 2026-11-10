@@ -43,7 +43,17 @@ state = {
     "gone": set(),          # movie numbers deleted on the server
     "index_calls": [],      # (StartIndex, Limit, MinDateLastSaved) of index requests
     "episode_index": 0,
+    "catalogs": 0,          # > 0: that many populated catalog views (/control/catalogs)
+    "index_parents": 0,     # ParentIds count of the last index request
 }
+
+
+def catalog_views():
+    n = state["catalogs"]
+    if not n:
+        return CATALOG_VIEWS
+    return [{"Name": "Catalog %d" % i, "Id": "%032x" % (0xca7a1000 + i),
+             "CollectionType": ["movies", "tvshows", "boxsets", "mixed", ""][i % 5]} for i in range(n)]
 
 
 def ver_tuple():
@@ -222,8 +232,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, {"Items": [
                 {"Name": "Movies", "Id": LIB_MOVIES, "CollectionType": "movies"},
                 {"Name": "Shows", "Id": LIB_SHOWS, "CollectionType": "tvshows"},
-                {"Name": "Music", "Id": LIB_MUSIC, "CollectionType": "music"}] + CATALOG_VIEWS,
-                "TotalRecordCount": 3 + len(CATALOG_VIEWS)})
+                {"Name": "Music", "Id": LIB_MUSIC, "CollectionType": "music"}] + catalog_views(),
+                "TotalRecordCount": 3 + len(catalog_views())})
         if p == "/Playlists/00000000000000000000000000005002/Items":
             items = [dict(Id=episode_id(1, 2), Type="Episode", SeriesId=SERIES,
                           SeriesName="Show", Name="Second", ParentIndexNumber=1, IndexNumber=2),
@@ -254,6 +264,9 @@ class Handler(BaseHTTPRequestHandler):
                 allitems = [movie(7)]
             elif parent == LIB_MOVIES:
                 allitems = movies
+            elif state["catalogs"] and parent in [v["Id"] for v in catalog_views()]:
+                view = [v for v in catalog_views() if v["Id"] == parent][0]
+                allitems = shows if view["CollectionType"] == "tvshows" else movies[:10]
             elif parent == LIB_SHOWS:
                 allitems = shows + [{"Name": "Ignored episode", "Id": episode_id(1, 1), "Type": "Episode"}]
             elif not parent and q.get("Recursive", [""])[0] == "true":
@@ -264,6 +277,7 @@ class Handler(BaseHTTPRequestHandler):
                     allitems = [x for x in allitems if x.get("DateLastSaved", "")[:19] >= since[:19]]
                 with lock:
                     state["index_calls"].append([start, limit, since])
+                    state["index_parents"] = len([x for x in q.get("ParentIds", [""])[0].split(",") if x])
             else:
                 allitems = []
             return self.reply(200, {"Items": allitems[start:start + limit], "TotalRecordCount": len(allitems),
@@ -321,7 +335,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(400)
             iid = m.group(1)
             with lock:
-                state["events"].append({"op": "playbackinfo", "profile": prof.get("Name")})
+                state["events"].append({"op": "playbackinfo", "profile": prof.get("Name"),
+                                        "direct": b.get("EnableDirectPlay"), "stream": b.get("EnableDirectStream"),
+                                        "transcoding": b.get("EnableTranscoding"), "bitrate": b.get("MaxStreamingBitrate"),
+                                        "profileBitrate": prof.get("MaxStreamingBitrate"), "staticBitrate": prof.get("MaxStaticBitrate")})
             return self.reply(200, {"PlaySessionId": "ps0001", "MediaSources": [
                 {"Protocol": "File", "Id": iid, "Path": "/srv/private/path/film.mkv", "Container": "mkv",
                  "Size": 21474836480, "Name": "Film - 2160p", "SupportsDirectPlay": True,
@@ -370,7 +387,8 @@ class Handler(BaseHTTPRequestHandler):
                 state["tokens"].clear()
                 body = b"{}"
             elif p == "/control/index":
-                body = json.dumps({"calls": state["index_calls"], "episodes": state["episode_index"]}).encode()
+                body = json.dumps({"calls": state["index_calls"], "episodes": state["episode_index"],
+                                   "parents": state["index_parents"]}).encode()
                 state["index_calls"] = []
                 state["episode_index"] = 0
             elif p == "/control/add":
@@ -385,6 +403,9 @@ class Handler(BaseHTTPRequestHandler):
                 body = b"{}"
             elif p == "/control/version":
                 state["version"] = q.get("v", ["10.10.3"])[0]
+                body = b"{}"
+            elif p == "/control/catalogs":
+                state["catalogs"] = int(q.get("n", ["0"])[0])
                 body = b"{}"
             elif p == "/control/slow":
                 state["slow"] = float(q.get("s", ["4"])[0])

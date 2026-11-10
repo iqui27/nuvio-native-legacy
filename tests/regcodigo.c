@@ -1,6 +1,6 @@
 // O codigo do registro tem de ser o MESMO que o servidor calcula
 // (servidor/recomendacoes/src/codigo.js): os pares abaixo sairam de
-// `node codigo-registro.mjs <id>`.
+// `node codigo-registro.mjs --id <id>`.
 #include "../src/regcodigo.h"
 #include <assert.h>
 #include <stdio.h>

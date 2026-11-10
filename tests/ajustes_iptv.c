@@ -46,7 +46,10 @@ static int linha(int op) {
   assert(!"Settings row missing");return -1;
 }
 static void tocar(int op) {
-  int i=linha(op);assert(visivel(i) && focavel(i));
+  int i=linha(op),d=triDono(i);
+  // Rows of a topic live in its submenu since 502a111b5: open it like a user.
+  if(d!=triSubmenu){if(triSubmenu>=0)triSubVoltar();if(d>=0){focar(d);triSubEntrar(d);}}
+  assert(visivel(i) && focavel(i));
   ajPonteiroItem(i,0);if(focoOp!=op)fprintf(stderr,"Pointer expected %s, got %d (editor %d op %d)\n",CHAVE[op],focoOp,uxEditor,uxOp);assert(focoOp==op);key(SDLK_RETURN);
 }
 static void salvarTeclado(const char *t) {

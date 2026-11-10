@@ -64,7 +64,7 @@ PORTA=$(awk '/porta/{print $2}' "$DIR/porta.txt")
 
 . tests/mkvcore_flag.sh
 cc -Isrc tests/mkv_legendas.c src/mkv.c src/mkvass.c src/imgsub.c src/pgs.c src/assrender.c src/legenda.c \
-  src/rede.c src/redeurl.c src/dados.c -o ${TMPDIR:-/tmp}/nuvio-mkv-legendas-tests -O1 -g -Wall \
+  src/rede.c src/redeurl.c src/dados.c -lz -o ${TMPDIR:-/tmp}/nuvio-mkv-legendas-tests -O1 -g -Wall \
   -I/opt/homebrew/include -Wno-deprecated-declarations ${MKVCORE_CC[@]+"${MKVCORE_CC[@]}"}
 mkdir -p "$DIR/dados"
 NUVIO_DADOS="$DIR/dados" ${TMPDIR:-/tmp}/nuvio-mkv-legendas-tests "http://127.0.0.1:$PORTA/multi.mkv"

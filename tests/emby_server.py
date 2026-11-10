@@ -21,7 +21,14 @@ PASSWORD = "emby pässword"
 TOKEN = "embytoken0123456789abcdef0123456789"
 
 lock = threading.Lock()
-state = {"events": [], "unknown": []}
+state = {"events": [], "unknown": [], "catalogs": 0}
+
+
+def catalog_views():
+    # AIOMetadata-style: one view per catalog, every supported collection type (#468).
+    return [{"Name": "Catalog %d" % i, "Id": str(600 + i),
+             "CollectionType": ["movies", "tvshows", "boxsets", "mixed", ""][i % 5]}
+            for i in range(state["catalogs"])]
 
 
 def movie(i):
@@ -111,6 +118,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(200, state["events"])
                 if p == "/control/unknown":
                     return self.reply(200, state["unknown"])
+                if p == "/control/catalogs":
+                    state["catalogs"] = int(q.get("n", ["0"])[0])
+                    return self.reply(200, {})
             return self.reply(404)
         if p == "/jf/emby/System/Info/Public":
             return self.reply(200, {"ServerName": "Actually Jellyfin", "Version": "10.10.3",
@@ -144,15 +154,23 @@ class Handler(BaseHTTPRequestHandler):
                               "LastPlayedDate": "2026-10-06T11:00:00Z"}
             return self.reply(200, {"Items": [movie(1), m, ep]})
         if p == "/Shows/NextUp" and method == "GET":
-            return self.reply(200, {"Items": []})
+            if not state["catalogs"]:
+                return self.reply(200, {"Items": []})
+            ep = episodes()[2]
+            ep["SeriesId"] = "2001"
+            ep["SeriesName"] = "Emby Show"
+            return self.reply(200, {"Items": [ep]})
         if p == base + "/Views" and method == "GET":
             return self.reply(200, {"Items": [
                 {"Name": "Movies", "Id": LIB_MOVIES, "CollectionType": "movies"},
                 {"Name": "Shows", "Id": LIB_SHOWS, "CollectionType": "tvshows"},
-                {"Name": "Music", "Id": "33", "CollectionType": "music"}]})
+                {"Name": "Music", "Id": "33", "CollectionType": "music"}] + catalog_views()})
         if p == base + "/Items" and method == "GET":
             parent = q.get("parentid", [""])[0]
             items = [movie(1), movie(2)] if parent == LIB_MOVIES else [SERIES] if parent == LIB_SHOWS else []
+            for v in catalog_views():
+                if parent == v["Id"]:
+                    items = [dict(SERIES)] if v["CollectionType"] == "tvshows" else [movie(i) for i in range(1, 11)]
             if q.get("includeitemtypes", [""])[0] == "BoxSet":
                 return self.reply(200, {"Items": [{"Id": "4001", "Type": "BoxSet", "Name": "Family"}], "TotalRecordCount": 1})
             if q.get("includeitemtypes", [""])[0] == "Playlist":
@@ -208,6 +226,11 @@ class Handler(BaseHTTPRequestHandler):
             b = self.body()
             if b.get("UserId") != USER_ID or "DeviceProfile" not in b:
                 return self.reply(400)
+            prof = b["DeviceProfile"]
+            with lock:
+                state["events"].append({"direct": b.get("EnableDirectPlay"), "stream": b.get("EnableDirectStream"),
+                                        "transcoding": b.get("EnableTranscoding"), "bitrate": b.get("MaxStreamingBitrate"),
+                                        "profileBitrate": prof.get("MaxStreamingBitrate"), "staticBitrate": prof.get("MaxStaticBitrate")})
             return self.reply(200, {"PlaySessionId": "ps1", "MediaSources": [media_source(m.group(1))]})
         if p in ("/Sessions/Playing", "/Sessions/Playing/Progress", "/Sessions/Playing/Stopped") and method == "POST":
             b = self.body()

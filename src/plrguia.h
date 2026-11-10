@@ -5,8 +5,8 @@
 // Era uma ilha propria desenhada logo abaixo da pilula da hora. Agora e um
 // pedido a plrilha: a pilula vira o cabecalho ("Guia parental · 12", mais a
 // hora) e cresce, com a mesma mola das folhas de Audio e Legendas, ate o corpo
-// com as linhas "categoria ... gravidade". Cede a qualquer outro pedido da
-// ilha (carregando, erro, folhas, avisos): pedido de BAIXA prioridade.
+// com as linhas "categoria ... gravidade". Yields to loading, errors and
+// interactive panels; ordinary notices wait for the guide to finish.
 #ifndef NV_PLRGUIA_H
 #define NV_PLRGUIA_H
 

@@ -511,7 +511,7 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
   if (p && p->receber_corpo && p->url && !strncmp(p->url,"https://",8) &&
       (!p->metodo || !strcmp(p->metodo,"GET")) && !p->seguir && !p->cabecalhos &&
       !p->corpo && !p->n_corpo && !p->job && !p->parar && !p->intervalo &&
-      !p->janela_corpo_ms && !p->ca_arquivo && !p->tls_pessoal &&
+      !p->janela_corpo_ms && !p->ca_arquivo && !p->tls_pessoal && !p->pino_publico &&
       !p->max_cabecalhos && p->prazo_ms<=300000 && p->max_bytes<=REDE_CORPO_MAXIMO) {
     unsigned total=0;
     r->erro=nv_http_fluxo(p->url,p->prazo_ms?p->prazo_ms:15000,
@@ -3330,6 +3330,8 @@ typedef struct {
   long long progress_bytes;
   unsigned idle_ms;
   int *stalled;
+  void (*retry)(void *,int);
+  void *retry_arg;
 } DtsRange;
 /* Reject values outside int64_t instead of relying on overflowing scanf. */
 static int dtsRangeNumber(const char **text, int64_t *value) {
@@ -3366,6 +3368,9 @@ static size_t dtsRangeHeader(void *data, size_t size, size_t count, void *user) 
     const char *space = memchr(p, ' ', n);
     r->status = space ? atoi(space + 1) : 0;
     r->valid = 0; r->total = -1; r->range_headers = 0;
+  } else if (r->status == 429 && r->retry && n > 12 && !strncasecmp(p, "Retry-After:", 12)) {
+    int seconds = retrySegundos(p + 12, n - 12);
+    if (seconds > 0) r->retry(r->retry_arg, seconds);
   } else if (n > 14 && !strncasecmp(p, "Content-Range:", 14)) {
     int64_t lo, hi, total = -1;
     const char *value;
@@ -3465,11 +3470,12 @@ static void *dtsRangeHeaders(const char *raw, int public_only) {
 /* `final` (8192 bytes, optional) receives the address that answered 206 when
  * at least one redirect was followed, "" otherwise; `cross` says whether that
  * address is on another origin (credential headers were NOT sent to it). */
-char *rede_baixar_trecho64_vigiado(const char *url, const char *headers,
+char *rede_baixar_trecho64_vigiado_retry(const char *url, const char *headers,
                               int64_t start, int64_t end, long *size,
                               int64_t *total, int *status,
                               volatile int *cancelled, char *final, int *cross,
-                              volatile int *urgent,unsigned idle_ms,int *stalled) {
+                              volatile int *urgent,unsigned idle_ms,int *stalled,
+                              void (*retry)(void *,int),void *retry_arg) {
   char current[8192], range[64], origin[128];
   int hop, public_only = 0, downgraded = 0;
   if(stalled) *stalled=0;
@@ -3494,6 +3500,7 @@ char *rede_baixar_trecho64_vigiado(const char *url, const char *headers,
     memset(&r, 0, sizeof r);
     r.requested = start; r.limit = end - start + 1; r.total = -1; r.cancel = cancelled;
     r.urgent=urgent; r.idle_ms=idle_ms; r.stalled=stalled; r.progress_ms=pedidoAgoraMs();
+    r.retry=retry; r.retry_arg=retry_arg;
     c = pegarHandle(current);
     if (!c) return NULL;
     opcoesComuns(c, 15000);
@@ -3569,6 +3576,13 @@ char *rede_baixar_trecho64_vigiado(const char *url, const char *headers,
     return NULL;
   }
   return NULL;
+}
+char *rede_baixar_trecho64_vigiado(const char *url,const char *headers,
+    int64_t start,int64_t end,long *size,int64_t *total,int *status,
+    volatile int *cancelled,char *final,int *cross,volatile int *urgent,
+    unsigned idle_ms,int *stalled) {
+  return rede_baixar_trecho64_vigiado_retry(url,headers,start,end,size,total,status,
+      cancelled,final,cross,urgent,idle_ms,stalled,NULL,NULL);
 }
 char *rede_baixar_trecho64_final(const char *url,const char *headers,
                               int64_t start,int64_t end,long *size,
@@ -3749,6 +3763,11 @@ char *rede_baixar_trecho64_vigiado(const char *u,const char *h,int64_t s,int64_t
  long *n,int64_t *t,int *st,volatile int *c,char *f,int *x,volatile int *urgent,unsigned idle,int *stalled) {
  (void)urgent;(void)idle;if(stalled)*stalled=0;
  return rede_baixar_trecho64_final(u,h,s,e,n,t,st,c,f,x);
+}
+char *rede_baixar_trecho64_vigiado_retry(const char *u,const char *h,int64_t s,int64_t e,
+ long *n,int64_t *t,int *st,volatile int *c,char *f,int *x,volatile int *urgent,unsigned idle,int *stalled,
+ void (*retry)(void *,int),void *arg) {
+ (void)retry;(void)arg;return rede_baixar_trecho64_vigiado(u,h,s,e,n,t,st,c,f,x,urgent,idle,stalled);
 }
 char *rede_baixar_trecho64_cab(const char *u, const char *h, int64_t s, int64_t e, long *n, int64_t *t, int *st, volatile int *c) {
   (void)u; (void)h; (void)s; (void)e; (void)c;

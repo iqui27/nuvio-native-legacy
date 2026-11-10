@@ -247,6 +247,7 @@ int jf_publico(const char *base, RedeJob *job, JfConta *c) {
       if (c->tipo == JF_TIPO_EMBY ? strstr(prod, "jellyfin") != NULL : strstr(prod, "emby") != NULL)
         return JF_ERR_FORMATO; }
     if (!jfid_hex_limpo(id, limpo, 32) || strlen(limpo) < JFID_TAG) return JF_ERR_FORMATO;
+    if (strcmp(c->servidorId, limpo)) c->playback = (SrvPlayback){0};
     copiar(c->servidorId, sizeof c->servidorId, limpo);
   }
   copiar(c->base, sizeof c->base, base);
@@ -308,15 +309,27 @@ int jf_qc_conferir(const JfConta *c, RedeJob *job, const char *segredo) {
 // Parses an AuthenticateBy* answer (same shape on Jellyfin and Emby). Wipes
 // the buffer: it holds the access token.
 int jf_ler_autenticacao(JfConta *c, char *corpo, size_t n) {
-  const char *ui, *uf;
-  char tok[JF_TOKEN_MAX + 1] = "", uid[64] = "", nome[96] = "", limpo[40];
+  const char *ui, *uf, *v;
+  int nul = 0;
+  // Leave room for a complete UTF-8 character beyond the accepted limit;
+  // the JSON decoder may otherwise discard a partially fitting escape.
+  char tok[JF_TOKEN_MAX + 4] = "", uid[64] = "", nome[96] = "", limpo[40];
+  v = valorRaiz(corpo, corpo + n, "AccessToken");
+  if (v && *v == '"') {
+    for (v++; v < corpo + n && *v && *v != '"'; v++) {
+      if (*v == '\\' && v + 1 < corpo + n) {
+        if (corpo + n - v >= 6 && !memcmp(v, "\\u0000", 6)) nul = 1;
+        v++;
+      }
+    }
+  }
   txtRaiz(corpo, corpo + n, "AccessToken", tok, sizeof tok);
   if (blocoRaiz(corpo, corpo + n, "User", &ui, &uf)) {
     txtRaiz(ui, uf, "Id", uid, sizeof uid);
     txtRaiz(ui, uf, "Name", nome, sizeof nome);
   }
   apagarSegredo(corpo, n);
-  if (!tok[0] || strlen(tok) >= sizeof c->token || !jfid_hex_limpo(uid, limpo, 32)) {
+  if (nul || !tok[0] || strlen(tok) >= sizeof c->token || !jfid_hex_limpo(uid, limpo, 32)) {
     apagarSegredo(tok, sizeof tok);
     return JF_ERR_FORMATO;
   }
@@ -782,7 +795,7 @@ int jf_ler_indice(const char *corpo, size_t nCorpo, const char *serie, SrvIdx *x
 int jf_indice(const JfConta *c, RedeJob *job, int inicio, int limite, long long desde,
               SrvIdx *x, int *total) {
   RedeResposta r;
-  char caminho[640], raiz[96], iso[40] = "";
+  char caminho[640 + JF_SELECAO_MAX], raiz[96], iso[40] = "";
   int n, e;
   if (total) *total = 0;
   if (inicio < 0 || limite < 0 || limite > 500) return JF_ERR_ENTRADA;
@@ -794,7 +807,7 @@ int jf_indice(const JfConta *c, RedeJob *job, int inicio, int limite, long long 
            "&EnableImages=false&EnableUserData=true&SortBy=DateCreated,SortName&SortOrder=Ascending"
            "&StartIndex=%d&Limit=%d%s%s", raiz, inicio, limite, iso[0] ? "&MinDateLastSaved=" : "", iso);
   if (c->bibliotecas[0]) {
-    char ids[256]; copiar(ids, sizeof ids, c->bibliotecas);
+    char ids[JF_SELECAO_MAX]; copiar(ids, sizeof ids, c->bibliotecas);
     for (char *p = ids; *p; p++) if (*p == '\n') *p = ',';
     if (strspn(ids, "0123456789abcdefABCDEF-,") != strlen(ids)) return JF_ERR_ENTRADA;
     size_t used = strlen(caminho);
@@ -853,7 +866,7 @@ int jf_lista_tem(const char *lista, const char *item) {
   return 0;
 }
 
-int jf_perfil_dispositivo(JfBackend b, char *json, size_t tam) {
+static int perfilDispositivo(JfBackend b, int bitrate, char *json, size_t tam) {
   const char *nome, *cont, *vid, *aud;
   if (!jf_capacidades(b, &cont, &vid, &aud)) return 0;
   nome = b == JF_BACKEND_ANDROID ? "Nuvio Android TV" : b == JF_BACKEND_WEBOS ? "Nuvio LG webOS"
@@ -870,7 +883,10 @@ int jf_perfil_dispositivo(JfBackend b, char *json, size_t tam) {
     "\"SubtitleProfiles\":[{\"Format\":\"srt\",\"Method\":\"External\"},{\"Format\":\"subrip\",\"Method\":\"External\"},"
     "{\"Format\":\"vtt\",\"Method\":\"External\"},{\"Format\":\"ass\",\"Method\":\"External\"},"
     "{\"Format\":\"ssa\",\"Method\":\"External\"}]}",
-    nome, JF_TAXA_MAX, JF_TAXA_MAX, cont, vid, aud) < (int)tam;
+    nome, bitrate, JF_TAXA_MAX, cont, vid, aud) < (int)tam;
+}
+int jf_perfil_dispositivo(JfBackend b, char *json, size_t tam) {
+  return perfilDispositivo(b, JF_TAXA_MAX, json, tam);
 }
 
 // Which query name carries the token in player URLs. Jellyfin 12.0 turned the
@@ -909,6 +925,23 @@ void jf_anexar_apikey(const JfConta *c, char *url, size_t tam) {
   snprintf(url + n, tam - n, "%s%s=%s", strchr(url, '?') ? "&" : "?", nome, c->token);
 }
 
+// Capability flags are eligibility, not the negotiated conversion. Only
+// codec choices in the returned URL justify a concrete HLS mode label.
+static const char *modoHls(const char *url) {
+  int video = -1, audio = -1, copiaVideo = 1, copiaAudio = 1;
+  const char *p = strchr(url, '?');
+  while (p && *p) {
+    p++;
+    const char *end = p + strcspn(p, "&");
+    if (end - p > 11 && !strncasecmp(p, "VideoCodec=", 11)) video = end - p == 15 && !strncasecmp(p + 11, "copy", 4);
+    if (end - p > 11 && !strncasecmp(p, "AudioCodec=", 11)) audio = end - p == 15 && !strncasecmp(p + 11, "copy", 4);
+    if (end - p == 26 && !strncasecmp(p, "AllowVideoStreamCopy=false", 26)) copiaVideo = 0;
+    if (end - p == 26 && !strncasecmp(p, "AllowAudioStreamCopy=false", 26)) copiaAudio = 0;
+    p = *end ? end : NULL;
+  }
+  return video == 0 && !copiaVideo ? "Transcode (HLS)" : video == 1 && audio == 1 ? "Remux (HLS)"
+       : video == 1 && audio == 0 && !copiaAudio ? "Direct stream (HLS)" : "HLS";
+}
 static void descreverFonte(const char *msi, const char *msf, Stream *s, int metodo,
                            const char *nomeFonte, const char *container, const char *servidor) {
   const char *p = msi + 1;
@@ -943,8 +976,7 @@ static void descreverFonte(const char *msi, const char *msf, Stream *s, int meto
     for (u = acod; *u; u++) if (*u >= 'a' && *u <= 'z') *u = (char)(*u - 32);
   }
   {
-    const char *m = metodo == JF_METODO_DIRETO ? "Direct play" :
-                    metodo == JF_METODO_STREAM ? "Direct stream" : "Transcode (HLS)";
+    const char *m = metodo == JF_METODO_DIRETO ? "Direct play" : modoHls(s->url);
     if (s->altura) snprintf(s->rotulo, sizeof s->rotulo, "%dp · %s", s->altura, m);
     else copiar(s->rotulo, sizeof s->rotulo, m);
   }
@@ -1069,7 +1101,9 @@ int jf_ler_playbackinfo(const JfConta *c, const char *itemLimpo, const char *cor
       Stream *s = &out->fonte[out->n];
       int metodo;
       if (k == 0 && !direto) continue;
-      if (k == 1 && !transc) continue;
+      // A compatible server may ignore client flags. Enforce Direct Play-only locally.
+      if (k == 1 && (!transc || c->playback.direto ||
+          (!stream && !boolRaiz(p, f, "SupportsTranscoding", 1)))) continue;
       metodo = k == 0 ? JF_METODO_DIRETO : (stream ? JF_METODO_STREAM : JF_METODO_TRANSCODE);
       memset(sp, 0, sizeof *sp);
       memset(s, 0, sizeof *s);
@@ -1102,7 +1136,7 @@ int jf_ler_playbackinfo(const JfConta *c, const char *itemLimpo, const char *cor
       if (blocoRaiz(p, f, "MediaStreams", &msi, &msf))
         descreverFonte(msi, msf, s, metodo, nomeF, cont, nomeSrv);
       else
-        copiar(s->rotulo, sizeof s->rotulo, metodo == JF_METODO_DIRETO ? "Direct play" : "Transcode (HLS)");
+        copiar(s->rotulo, sizeof s->rotulo, metodo == JF_METODO_DIRETO ? "Direct play" : modoHls(s->url));
       out->n++;
     }
     p = f;
@@ -1117,19 +1151,20 @@ int jf_playbackinfo(const JfConta *c, RedeJob *job, const char *itemId, JfBacken
   int e;
   memset(out, 0, sizeof *out);
   if (!jfid_hex_limpo(itemId, limpo, 32)) return JF_ERR_ENTRADA;
-  if (!jf_perfil_dispositivo(b, perfil, sizeof perfil)) return JF_ERR_INDISPONIVEL;
+  int bitrate = srv_playback_bitrate(c->playback, JF_TAXA_MAX);
+  if (!perfilDispositivo(b, bitrate, perfil, sizeof perfil)) return JF_ERR_INDISPONIVEL;
   jsw_iniciar(&w);
   jsw_obj_ini(&w);
   jsw_cs(&w, "UserId", c->usuarioId);
   jsw_chave(&w, "DeviceProfile"); jsw_bruto(&w, perfil);
-  jsw_ci(&w, "MaxStreamingBitrate", JF_TAXA_MAX);
+  jsw_ci(&w, "MaxStreamingBitrate", bitrate);
   // ALWAYS FROM 0. A transcode started at StartTimeTicks restarts the
   // timeline at the offset, and the player's own resume seek would apply the
   // offset twice. Seeking inside a full HLS/direct timeline keeps one clock.
   jsw_ci(&w, "StartTimeTicks", 0);
   jsw_cb(&w, "EnableDirectPlay", 1);
-  jsw_cb(&w, "EnableDirectStream", 1);
-  jsw_cb(&w, "EnableTranscoding", 1);
+  jsw_cb(&w, "EnableDirectStream", !c->playback.direto);
+  jsw_cb(&w, "EnableTranscoding", !c->playback.direto);
   jsw_cb(&w, "AllowVideoStreamCopy", 1);
   jsw_cb(&w, "AllowAudioStreamCopy", 1);
   jsw_cb(&w, "AutoOpenLiveStream", 0);
@@ -1244,8 +1279,8 @@ typedef struct JfInst {
   char detalhe[160];
   int qcPermitido;
   CatItem *snapItens;
-  CatFileira snapFils[JF_FIL_MAX];
-  int nSnapFils, nSnapItens;
+  CatFileira snapFils[JF_FIL_MAX + 1];   // libraries + Next Up
+  int nSnapFils, nSnapItens, hlsVisto;
   unsigned snapVersao;
   char fontesAlvo[JFID_MAX];
   int fontesEstado;
@@ -1337,7 +1372,7 @@ static void linha(char *dst, size_t tam, size_t *k, const char *chave, const cha
 // 0600 and atomic rename: the token file is never world-readable on POSIX
 // backends (dados_gravar uses fopen's default mode).
 static int gravarConta(JfInst *I, const JfConta *c, int perfil) {
-  char nome[40], caminho[640], tmp[660], txt[2048 + JF_TOKEN_MAX];
+  char nome[40], caminho[640], tmp[660], txt[2048 + JF_TOKEN_MAX + JF_SELECAO_MAX];
   size_t k = 0;
   int fd, ok = 0;
   arquivo(I, nome, sizeof nome, perfil);
@@ -1350,9 +1385,12 @@ static int gravarConta(JfInst *I, const JfConta *c, int perfil) {
   linha(txt, sizeof txt, &k, "unome", c->usuarioNome);
   linha(txt, sizeof txt, &k, "dev", c->dispositivoId);
   linha(txt, sizeof txt, &k, "token", c->token);
-  char selection[256]; copiar(selection, sizeof selection, c->bibliotecas);
+  char selection[JF_SELECAO_MAX]; copiar(selection, sizeof selection, c->bibliotecas);
   for (char *p = selection; *p; p++) if (*p == '\n') *p = ',';
   linha(txt, sizeof txt, &k, "libs", selection);
+  char bitrate[16]; snprintf(bitrate, sizeof bitrate, "%d", c->playback.bitrate);
+  linha(txt, sizeof txt, &k, "playDirect", c->playback.direto ? "1" : "0");
+  linha(txt, sizeof txt, &k, "playBitrate", bitrate);
   linha(txt, sizeof txt, &k, "connectUser", c->connectUser);
   linha(txt, sizeof txt, &k, "connectKey", c->connectKey);
   if (k >= sizeof txt) { apagarSegredo(txt, sizeof txt); return 0; }
@@ -1435,6 +1473,10 @@ static void carregarLocked(JfInst *I) {
     lerCampo(txt, "dev", I->conta.dispositivoId, sizeof I->conta.dispositivoId);
     lerCampo(txt, "token", I->conta.token, sizeof I->conta.token);
     lerCampo(txt, "libs", I->conta.bibliotecas, sizeof I->conta.bibliotecas);
+    char direct[8], bitrate[24];
+    lerCampo(txt, "playDirect", direct, sizeof direct);
+    lerCampo(txt, "playBitrate", bitrate, sizeof bitrate);
+    I->conta.playback = srv_playback_ler(direct, bitrate, JF_TAXA_MAX);
     lerCampo(txt, "connectUser", I->conta.connectUser, sizeof I->conta.connectUser);
     lerCampo(txt, "connectKey", I->conta.connectKey, sizeof I->conta.connectKey);
     for (char *p = I->conta.bibliotecas; *p; p++) if (*p == ',') *p = '\n';
@@ -1455,13 +1497,17 @@ static void carregarLocked(JfInst *I) {
 }
 
 // Under I->trava. Drops everything bound to the previous identity.
-static void soltarSnapshotLocked(JfInst *I) {
+static void soltarSnapshotLocked(JfInst *I, int manterPlayback) {
   int i;
   I->nSnapFils = I->nSnapItens = 0;
+  if (!manterPlayback) I->hlsVisto = 0;
   I->snapVersao++;
   free(I->fontesLista); I->fontesLista = NULL; I->nFontes = 0;
   I->fontesAlvo[0] = 0; I->fontesEstado = JF_FONTES_NADA;
   for (i = 0; i < JF_SESSOES; i++) {
+    if (manterPlayback && I->sessoes[i].ativo && I->sessoes[i].iniciado) {
+      I->sessoes[i].geracao = I->geracao; continue;
+    }
     apagarSegredo(I->sessoes[i].s.url, sizeof I->sessoes[i].s.url);
     I->sessoes[i].ativo = 0;
   }
@@ -1477,13 +1523,14 @@ static void relatoriosDescartarLocked(JfInst *I) {
   if (I->grupoRel) rede_grupo_avancar(I->grupoRel);
 }
 
-static void avancarLocked(JfInst *I) {
+static void avancarComPlaybackLocked(JfInst *I, int manterPlayback) {
   I->geracao++;
   if (I->grupo) rede_grupo_avancar(I->grupo);
   if (I->jobCtl) rede_job_cancelar(I->jobCtl);
   I->nCtl = 0;
-  soltarSnapshotLocked(I);
+  soltarSnapshotLocked(I, manterPlayback);
 }
+static void avancarLocked(JfInst *I) { avancarComPlaybackLocked(I, 0); }
 
 static void conferirPerfilLocked(JfInst *I) {
   if (I->perfilLido != perfis_ativo()) { avancarLocked(I); carregarLocked(I); }
@@ -2129,11 +2176,12 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   RedeJob *j = abrirTarefa(I, t, &c);
   JfBiblioteca libs[JF_FIL_MAX];
   CatItem *itens;
-  CatFileira fils[JF_FIL_MAX];
+  CatFileira *fils;                      // libraries + Next Up, heap (see JF_FIL_MAX)
   int nl, nf = 0, ni = 0, e = JF_OK, i, por;
   if (!j) return;
   itens = calloc((size_t)JF_ITENS_MAX, sizeof *itens);
-  if (!itens) { fecharTarefa(I, j); return; }
+  fils = calloc((size_t)JF_FIL_MAX + 1, sizeof *fils);
+  if (!itens || !fils) { free(itens); free(fils); fecharTarefa(I, j); return; }
   if (c.tipo == JF_TIPO_EMBY && c.connectKey[0] && c.connectUser[0]) {
     EmConnectServidor server = {0};
     copiar(server.id, sizeof server.id, c.servidorId); copiar(server.chave, sizeof server.chave, c.connectKey);
@@ -2166,7 +2214,7 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   // NextUp episodes need the series index to become catalogue identities.
   if (e == JF_OK) indexar(I, t, j, &c);
   // Optional NextUp: an unsupported endpoint must not hide libraries.
-  if (e == JF_OK && nf < JF_FIL_MAX && ni < JF_ITENS_MAX) {
+  if (e == JF_OK && ni < JF_ITENS_MAX) {
     int room = JF_ITENS_MAX - ni;
     int n = jfi_atividade(I, "nextup", itens + ni, room < JF_POR_FILEIRA ? room : JF_POR_FILEIRA);
     if (n > 0) {
@@ -2199,6 +2247,7 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   }
   pthread_mutex_unlock(&I->trava);
   free(itens);
+  free(fils);
   apagarSegredo(&c, sizeof c);
   fecharTarefa(I, j);
 }
@@ -2206,6 +2255,7 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
 // Under I->trava. Check-in sessions by URL for freshly listed sources; the
 // oldest one never started is evicted when the table is full.
 static void registrarSessoesLocked(JfInst *I, const JfPlayback *pb, int n) {
+  for (int i = 0; i < n; i++) if (pb->sessao[i].metodo != JF_METODO_DIRETO) I->hlsVisto = 1;
   int i, k;
   for (i = 0; i < n && i < pb->n; i++) {
     int alvo = -1;
@@ -2805,6 +2855,12 @@ static int jfi_ficha(JfInst *I, CatItem *item, CatEp *eps, int maxEps) {
   return ne;
 }
 
+int jf_playback_hls(int emby) {
+  JfInst *I = emby ? &instEm : &instJf;
+  garantir(I); pthread_mutex_lock(&I->trava); conferirPerfilLocked(I);
+  int hls = I->hlsVisto;
+  pthread_mutex_unlock(&I->trava); return hls;
+}
 unsigned jf_setup_conta(int emby, JfConta *out, int *perfil) {
   JfInst *I = emby ? &instEm : &instJf;
   garantir(I); pthread_mutex_lock(&I->trava); conferirPerfilLocked(I);
@@ -2817,7 +2873,10 @@ int jf_setup_aceitar(int emby, const JfConta *c, int perfil, unsigned generation
   if (perfil == perfis_ativo() && perfil == I->perfilLido && generation == I->geracao &&
       c->tipo == I->tipo && c->token[0] && c->usuarioId[0] && c->servidorId[0]) {
     int selectionChanged = strcmp(I->conta.bibliotecas, c->bibliotecas) != 0;
-    avancarLocked(I); I->conta = *c; gravarConta(I, c, perfil);
+    if (!gravarConta(I, c, perfil)) { pthread_mutex_unlock(&I->trava); return 0; }
+    int mesmaConta = !selectionChanged && !strcmp(I->conta.servidorId, c->servidorId) &&
+      !strcmp(I->conta.base, c->base) && !strcmp(I->conta.usuarioId, c->usuarioId) && !strcmp(I->conta.token, c->token);
+    avancarComPlaybackLocked(I, mesmaConta); I->conta = *c;
     if (selectionChanged) { srvidx_limpar(&I->idx); I->idxTag[0] = 0; srvidx_apagar(perfil, I->idxTipo); }
     idxConferirLocked(I);
     definirEstadoLocked(I, JF_EST_CONECTADO, c->servidorNome);

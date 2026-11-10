@@ -34,9 +34,12 @@ static int fake_conta(unsigned id, XtreamConta *c);
 /* --- fakes ---------------------------------------------------------------- */
 static int opened[4], opens[4];
 static char last_url[4][2100], last_cab[4][600];
-static int fake_mv_max(void) { return 2; }
+static GfxRect decoder_rect[3];
+static int decoder_limit = 2;
+static int fake_mv_max(void) { return decoder_limit; }
 static int fake_mv_abrir(int slot, const char *url, const char *cab, ...) {
-  assert(slot >= 0 && slot < 4 && url && url[0]);
+  assert(slot >= 0 && slot < 3 && url && url[0]);
+  if (slot >= decoder_limit) return -1;
   opened[slot] = 1; opens[slot]++;
   snprintf(last_url[slot], sizeof last_url[slot], "%s", url);
   snprintf(last_cab[slot], sizeof last_cab[slot], "%s", cab ? cab : "");
@@ -45,7 +48,10 @@ static int fake_mv_abrir(int slot, const char *url, const char *cab, ...) {
 static int fake_mv_estado(int slot) { return slot >= 0 && slot < 4 && opened[slot] ? 2 : 0; }
 static void fake_mv_parar(int slot) { if (slot >= 0 && slot < 4) opened[slot] = 0; }
 static void fake_mv_parar_todos(void) { memset(opened, 0, sizeof opened); }
-static void fake_mv_janela(int slot, int x, int y, int w, int h) { (void)slot; (void)x; (void)y; (void)w; (void)h; }
+static void fake_mv_janela(int slot, int x, int y, int w, int h) {
+  assert(slot >= 0 && slot < 3);
+  decoder_rect[slot] = (GfxRect){x, y, w, h};
+}
 /* Account 0 ("xt"): 1 of 1 connection in use. Account 3 ("xta00000003"):
  * max 1. Everything else: no snapshot. */
 static int acc3_used;
@@ -120,14 +126,14 @@ int main(void) {
   /* P1-3: a guide M3U channel plays in a secondary slot with its headers. */
   assert(!pick(1, M2));
   tick(2);
-  assert(opens[1] == 1 && !strcmp(last_url[1], "http://m3u.invalid/2.m3u8"));
-  assert(!strcmp(last_cab[1], "User-Agent: FixtureUA/2\nReferer: http://ref.invalid/\n"));
+  assert(opens[0] == 1 && !strcmp(last_url[0], "http://m3u.invalid/2.m3u8"));
+  assert(!strcmp(last_cab[0], "User-Agent: FixtureUA/2\nReferer: http://ref.invalid/\n"));
   assert(mv_disp[1] == G5_MV_TOCANDO);
 
   /* P1-1: added account with max_connections 1: one slot only. */
   assert(!pick(2, X1));
   tick(2);
-  assert(opens[2] == 1 && opened[2]);
+  assert(opens[1] == 1 && opened[1]);
   mv_target = 1; g5ui_open("multiview-escolher");
   { int r = pick_row(X2); assert(r >= 0 && picks[r].disabled && picks[r].cap == 1); }
   pg_tras();
@@ -135,11 +141,11 @@ int main(void) {
   mv_items[1] = mv_items[2]; snprintf(mv_items[1].id, sizeof mv_items[1].id, "%s", X2);
   snprintf(mv_fonte[1], sizeof mv_fonte[1], "%s", "xta00000003");
   tick(2);
-  assert(mv_disp[1] == G5_MV_SEM_FONTE && !opened[1] && opens[1] == 1);
+  assert(mv_disp[1] == G5_MV_SEM_FONTE && !opened[0] && opens[0] == 1);
   /* Both account-3 slots stopped at the cap; freeing it reopens slot 2. */
-  assert(mv_disp[2] == G5_MV_SEM_FONTE && !opened[2]);
+  assert(mv_disp[2] == G5_MV_SEM_FONTE && !opened[1]);
   assert(!pick(1, M2)); tick(2);
-  assert(opens[1] == 2 && opened[1] && opens[2] == 2 && opened[2]);
+  assert(opens[0] == 2 && opened[0] && opens[1] == 2 && opened[1]);
 
   /* Main gate replaces its own connection: X1 on air, account 3 at 1/1,
    * X2 as main is allowed; from an M3U on air it is not. */
@@ -164,7 +170,7 @@ int main(void) {
     tick(1); app_frame();
   }
   for (int i = 0; i < 4; i++) assert(opens[i] == base[i]);
-  assert(main_requests == base_main && opened[1] && opened[2]);
+  assert(main_requests == base_main && opened[0] && opened[1]);
   assert(mv_disp[1] == G5_MV_TOCANDO && mv_disp[2] == G5_MV_TOCANDO);
 
   puts("PASS: multiview per-account caps, source-scoped main gate, M3U slots with headers, 120 s no reopen");

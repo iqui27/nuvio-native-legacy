@@ -31,10 +31,21 @@ double capmkv_creditos(double dur);
 // Entrega capitulos ja lidos (LG/.wgt): guarda para capmkv_creditos e alimenta
 // o modulo de intro (abertura/creditos/previa).
 void capmkv_aplicar(const MkvCap *caps, int n);
-// So a regra, sem estado: capitulos -> trechos de intro.h. Abertura ("Opening"/
-// "OP"), creditos nomeados (ate a previa, se houver) e previa final ("Preview"/
-// "Next Episode"). Devolve quantos preencheu em `out`.
+// A reproducao corrente (muda a cada capmkv_zerar/capmkv_iniciar). Quem le os
+// capitulos num fio proprio (LG, video.c lerMkv) guarda o valor ao disparar o
+// fio e publica com capmkv_aplicar_ger: se o titulo mudou no meio, o fio do
+// anterior nao publica no novo (mesma checagem do fio lateral do .tpk/Android).
+unsigned capmkv_geracao(void);
+// capmkv_aplicar, mas so se `g` ainda e a reproducao corrente. Devolve 1 se
+// publicou (n == 0 tambem conta), 0 se `g` ficou velho e nada mudou.
+int capmkv_aplicar_ger(const MkvCap *caps, int n, unsigned g);
+// So a regra, sem estado: capitulos -> trechos de intro.h pelas regras de
+// mkv_segmentos (abertura, resumo, creditos ate o capitulo seguinte, previa
+// final, cena pos-creditos). Devolve quantos preencheu em `out`.
 int capmkv_trechos(const MkvCap *caps, int n, IntroTrecho *out, int max);
+// Os capitulos da reproducao corrente (todos, com nome), para a barra e a
+// fileira de capitulos do player. Devolve quantos copiou; 0 = nenhum ainda.
+int capmkv_lista(MkvCap *out, int max);
 // Folga antes da leitura lateral (ms): o video abre primeiro. Ajustavel so por teste.
 extern int capmkv_espera_inicial_ms;
 // So para teste (NULL em producao): chamado pelo fio lateral depois de ler os

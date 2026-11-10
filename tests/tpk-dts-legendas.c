@@ -31,6 +31,8 @@ int ling_letreiro(const char *nome, int forcado) { (void)nome; (void)forcado; re
 void mkvass_aceitar_texto(int sim) { (void)sim; }
 void mkvass_aceitar_imagem(int sim) { (void)sim; }
 void intro_definir_capitulos(const IntroTrecho *v, int n) { (void)v; (void)n; }
+void intro_definir_capitulos_palpite(const IntroTrecho *v, int n) { (void)v; (void)n; }
+void intro_definir_capitulos_marcas(const double *v, int n) { (void)v; (void)n; }
 char *rede_baixar_trecho_st(const char *url, int segundos, long long ini, long long fim,
                             long *tam, int *status, int *erro, char *final, unsigned tamFinal) {
   (void)url; (void)segundos; (void)ini; (void)fim; (void)final; (void)tamFinal;
@@ -117,6 +119,17 @@ int dts_tpk_prebuffer_ms(void) { return 0; }
 int dts_tpk_sem_indice(void) { return 0; }
 int dts_tpk_e_url(const char *u) { return u && strstr(u, "127.0.0.1") != NULL; }
 int video_faixa_dts(const VideoFaixa *f) { return f && !strncmp(f->codec, "A_DTS", 5); }
+int ajustes_audio_offset_ms(void) { return 0; }
+void dts_remux_set_audio_offset_ms(int ms) { (void)ms; }
+int ajustes_hdr10p_strip(void) { return 0; }
+void dts_remux_set_hdr10p_strip(int on) { (void)on; }
+int ajustes_audio_normalizar(void) { return 0; }
+void dts_engine_set_normalize(int on) { (void)on; }
+int ling_prefere_original(void) { return 0; }
+const char *ling_audio_preferido(void) { return ""; }
+int debrid_tb_link(int u, int i, int a, char *url, unsigned n) {
+  (void)u; (void)i; (void)a; if (n) *url = 0; return 0;
+}
 
 // --- the host ------------------------------------------------------------------
 void nv_tpk_video_registrar(void (*)(const char *, const char *), void (*)(void), void (*)(int),
@@ -159,6 +172,7 @@ int main(void) {
 
   // A: header known before opening -> converted from the start.
   cabPronto = 1;
+  video_definir_reconexao(1);
   video_tocar("http://h/a.mkv");
   ok(abriuConversor == 1 && dts_tpk_e_url(ultUrl), "A: opens the converted stream directly");
   ok(video_n_legenda() == 3 && nTexto() == 2, "A: menu has the file's 3 subtitles (PGS is drawn by the app)");
@@ -181,6 +195,7 @@ int main(void) {
   // B: original first (TV lists the 2 text subtitles, no audio), then the
   // header arrives and the conversion starts mid-film.
   cabPronto = 0; abriuConversor = 0;
+  video_definir_reconexao(1);
   video_tocar("http://h/b.mkv");
   ok(!abriuConversor && !dts_tpk_e_url(ultUrl), "B: opens the original");
   playerPronto(0, 2);

@@ -387,7 +387,7 @@ static void testarParsers(void) {
   assert(pb->sessao[2].midia == 1 && strstr(pb->sessao[2].url, "start.m3u8") && strstr(pb->sessao[2].url, "mediaIndex=1"));
   assert(pb->sessao[0].duracaoMs == 7200000 && !strcmp(pb->sessao[0].ratingKey, "101"));
   assert(!strcmp(pb->fonte[0].provedor, "Plex") && pb->fonte[0].altura == 1080 && !pb->fonte[0].mp4);
-  assert(!strcmp(pb->fonte[0].rotulo, "1080p · Direct play") && !strcmp(pb->fonte[1].rotulo, "1080p · Direct stream (HLS)"));
+  assert(!strcmp(pb->fonte[0].rotulo, "1080p · Direct play") && !strcmp(pb->fonte[1].rotulo, "1080p · HLS"));
   assert(!strcmp(pb->fonte[1].bingeGroup, "plex|DirectStream") && !strcmp(pb->fonte[0].bingeGroup, "plex|DirectPlay"));
   assert(strstr(pb->fonte[0].descricao, "HEVC · HDR10 · EAC3 5.1 · MKV"));
   assert(pb->fonte[2].altura == 2160 && pb->fonte[2].dolbyVision && !pb->fonte[2].mp4 && strstr(pb->fonte[2].descricao, "Dolby Vision"));
@@ -458,6 +458,9 @@ static int sempreCancela(void *u) { (void)u; return 1; }
 static int plex_consultar_t(const char *id, const char *tipo, int (*cc)(void *), void *ctx, Stream **l) {
   return plex_consultar(id, tipo, NULL, 0, cc, ctx, l);
 }
+
+#define SERVER_PLAYBACK_PLEX
+#include "server_playback.inc"
 
 static void integracao(void) {
   char det[160], *ev;
@@ -685,6 +688,8 @@ static void integracao(void) {
     }
     assert(incr); }                                                              // the reload asked only what changed
   assert(plex_indice_n() >= 5);
+
+  testarPlaybackPlex();
 
   // ---- sign out: file gone, state clean
   plex_esquecer();

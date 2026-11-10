@@ -244,6 +244,8 @@ static void testarProtocolo(void) {
 }
 
 // ------------------------------------------------------------- integration
+#include "server_playback.inc"
+
 static void integracao(void) {
   char det[160], arq[640], urlDireta[2048], urlStream[2048];
   CatItem *itens = malloc(sizeof(CatItem) * JF_FIL_MAX * JF_POR_FILEIRA);
@@ -334,6 +336,62 @@ static void integracao(void) {
     assert(servidores_pagina("emby_playlists", 0, 60, x, 60, &tot, NULL) == 1 && !strcmp(x[0].tipo, "list"));
     assert(servidores_pagina("emby_list_5001", 0, 60, x, 60, &tot, NULL) == 1 && !strcmp(x[0].imdb, "tt0002002"));
     free(x); }
+  // ---- many libraries (#468) through the real emby_* worker and the servidores.c
+  // fan-out: catalog views cycle movies, tvshows (real Series), boxsets, mixed and
+  // untyped. Rows pass the old cap of 16 up to 32 plus Next Up; items per row
+  // shrink so the server's 144 items never grow, whatever the aggregate allows.
+  { CatItem *x = malloc(sizeof(CatItem) * (SRV_ITENS_MAX + 1));
+    CatFileira *f = malloc(sizeof(CatFileira) * (SRV_FIL_MAX + 1));
+    int tot = 0, nr = 0, k, por, fim2;
+    unsigned char *b;
+    assert(x && f && JF_FIL_MAX == 32 && JF_ITENS_MAX == 144 && SRV_FIL_MAX == 72 && SRV_ITENS_MAX == 912);
+    for (int rodada = 0; rodada < 2; rodada++) {
+      int views = rodada ? 40 : 24, linhas = rodada ? 32 : 26;   // + Movies and Shows
+      char rota[32];
+      snprintf(rota, sizeof rota, "catalogs?n=%d", views);
+      free(controle(rota));
+      emby_recarregar_bibliotecas();
+      fim = ms() + 8000;
+      while ((nr = servidores_fileiras_copiar(x, SRV_ITENS_MAX, f, SRV_FIL_MAX, &tot)) != linhas + 1 && ms() < fim) dormir(30);
+      por = (JF_ITENS_MAX - JF_POR_FILEIRA) / linhas;
+      assert(nr == linhas + 1 && tot <= JF_ITENS_MAX);
+      assert(!strcmp(f[0].chave, "emby_11") && f[0].n == 2 && !strcmp(f[1].tipo, "series") && f[1].n == 1);
+      for (k = 0, fim2 = 0; k < nr; k++) {
+        assert(f[k].ini == fim2 && f[k].n > 0 && comeca(f[k].chave, "emby_"));   // rebased, contiguous
+        fim2 += f[k].n;
+      }
+      assert(fim2 == tot);
+      for (k = 0; k < tot; k++) assert(x[k].imdb[0]);
+      for (k = 2; k < linhas; k++) {
+        int serie = (k - 2) % 5 == 1;
+        assert(!strcmp(f[k].tipo, serie ? "series" : "movie") && f[k].n == (serie ? 1 : por));
+        assert(!strcmp(x[f[k].ini].tipo, serie ? "series" : "movie"));
+      }
+      assert(!strcmp(f[linhas - 1].titulo, rodada ? "Catalog 29 · Emby" : "Catalog 23 · Emby"));
+      assert(strstr(f[linhas].chave, "_nextup") && strstr(f[linhas].titulo, "Próximos episódios · ") &&
+             f[linhas].n == 1 && !strcmp(x[f[linhas].ini].tipo, "series"));
+    }
+    // The picker list and the library catalogue see every row of the 32 too.
+    assert(servidores_bibliotecas(f, SRV_FIL_MAX + 1) == 33 + 2);
+    assert(servidores_catalogo_copiar(x, SRV_ITENS_MAX) == tot);
+    // Low row budget: first 5 rows, the next slot untouched.
+    memset(f, 0xa5, sizeof(CatFileira) * (SRV_FIL_MAX + 1));
+    nr = servidores_fileiras_copiar(x, SRV_ITENS_MAX, f, 5, &tot);
+    assert(nr == 5 && f[4].ini + f[4].n == tot && !strcmp(f[4].titulo, "Catalog 2 · Emby"));
+    for (b = (unsigned char *)&f[5], k = 0; k < (int)sizeof *f; k++) assert(b[k] == 0xa5);
+    // Low item budget: rows stop before the one that does not fit (2+1+3+1+3 = 10).
+    memset(x, 0x5a, sizeof(CatItem) * (SRV_ITENS_MAX + 1));
+    nr = servidores_fileiras_copiar(x, 10, f, SRV_FIL_MAX, &tot);
+    assert(nr == 5 && tot == 10 && f[4].ini + f[4].n == 10);
+    for (b = (unsigned char *)&x[10], k = 0; k < (int)sizeof *x; k++) assert(b[k] == 0x5a);
+    assert(servidores_fileiras_copiar(x, 0, f, SRV_FIL_MAX, &tot) == 0 && tot == 0);
+    assert(servidores_fileiras_copiar(x, SRV_ITENS_MAX, f, 0, &tot) == 0 && tot == 0);
+    free(controle("catalogs?n=0"));
+    emby_recarregar_bibliotecas();
+    fim = ms() + 8000;
+    while (servidores_fileiras_copiar(x, SRV_ITENS_MAX, f, SRV_FIL_MAX, &tot) != 2 && ms() < fim) dormir(30);
+    assert(servidores_fileiras_copiar(x, SRV_ITENS_MAX, f, SRV_FIL_MAX, &tot) == 2 && tot == 3);
+    free(x); free(f); }
   // ---- matched catalogue titles: the Emby index (per-user route) and sources
   fim = ms() + 5000;
   while (emby_indice_n() < 3 && ms() < fim) dormir(20);
@@ -428,6 +486,8 @@ static void integracao(void) {
   perfilAtivo = 1;
   emby_perfil_trocou();
   assert(emby_conectado());
+
+  testarPlaybackLocal(1);
 
   // ---- sign out: the server hears about it, the file goes
   emby_esquecer();

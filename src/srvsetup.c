@@ -32,7 +32,7 @@
 #include <time.h>
 
 enum { CHOOSE, DISCOVER, ADDRESS, LOGIN, USERS, PASSWORD, CODE, CONNECT_CODE, CONNECT_PASSWORD,
-       CONNECT_SERVERS, PLEX_SERVERS, LIBRARIES, READY, MANAGE, REMOVE, ERROR_SCREEN, ROWS };
+       CONNECT_SERVERS, PLEX_SERVERS, LIBRARIES, READY, MANAGE, REMOVE, ERROR_SCREEN, ROWS, PLAYBACK };
 enum { JOB_DISCOVER = 1, JOB_USERS, JOB_CONNECT_PIN, JOB_CONNECT_PASSWORD, JOB_CONNECT_SERVERS,
        JOB_CONNECT_EXCHANGE, JOB_PLEX_SERVERS, JOB_PLEX_CHOOSE, JOB_PLEX_MANUAL, JOB_LIBRARIES, JOB_CATALOG, JOB_ROW_CONTENT };
 static const char *providers[] = { "Plex", "Jellyfin", "Emby" };
@@ -65,6 +65,9 @@ static float pw(float w) { return w * contentW / 1624; }
 static float focusValue(int i) { return i >= 0 && i < SRV_VISAO_MAX + 8 ? focusAnim[i] : 0; }
 static char username[128], password[256], addressText[512], message[192], code[24], qrUrl[640];
 static int rowChoice, rowStyle, recoveryAuth, keyboardUpper;
+static SrvPlayback playbackDraft;
+static int playbackHls;
+static unsigned playbackGeneration;
 enum { KEY_FIRST = 4, KEY_SHIFT = 44, KEY_DELETE, KEY_DONE };
 static const char *inlineKeys(int secret) {
   return secret ? "1234567890qwertyuiopasdfghjkl@zxcvbnm._-" : "1234567890qwertyuiopasdfghjkl:zxcvbnm./-";
@@ -356,6 +359,24 @@ static void back(void) {
   keepHistory = backward = 1; change(history[previous].screen); keepHistory = backward = 0;
   selected = focus; authReturned = 1; restartPin = 0;
 }
+static void playbackOpen(void) {
+  JfConta jf; PxConta px; int p;
+  playbackGeneration = provider ? jf_setup_conta(provider == 2, &jf, &p) : px_setup_conta(&px, &p);
+  playbackDraft = provider ? jf.playback : px.playback;
+  playbackHls = !provider || jf_playback_hls(provider == 2);
+  wipe(&jf, sizeof jf); wipe(&px, sizeof px);
+  change(PLAYBACK);
+}
+static void playbackSave(void) {
+  JfConta jf; PxConta px; int p, ok = 0;
+  unsigned g = provider ? jf_setup_conta(provider == 2, &jf, &p) : px_setup_conta(&px, &p);
+  if (p == profile && g == playbackGeneration) {
+    if (provider) { jf.playback = playbackDraft; ok = jf_setup_aceitar(provider == 2, &jf, p, g); }
+    else { px.playback = playbackDraft; ok = px_setup_aceitar(&px, p, g); }
+  }
+  wipe(&jf, sizeof jf); wipe(&px, sizeof px);
+  if (ok) back(); else snprintf(message, sizeof message, "%s", i18n("Falhou"));
+}
 static void activate(void) {
   if ((screen == ADDRESS || screen == PASSWORD) && selected >= KEY_FIRST) { inlineKey(selected); return; }
   if (worker.alive && screen == DISCOVER) {
@@ -440,8 +461,18 @@ static void activate(void) {
     case CONNECT_SERVERS:
       if (selected < worker.n && worker.n > 0) { worker.n = selected; startWorker(JOB_CONNECT_EXCHANGE); }
       else change(CONNECT_PASSWORD); break;
+    case PLAYBACK:
+      if (!selected) playbackDraft.direto = !playbackDraft.direto;
+      else if (selected == 1 && playbackHls) {
+        const int rates[] = {0, 5000000, 10000000, 20000000, 40000000, 80000000};
+        int n = provider ? 6 : 3, i;
+        for (i = 0; i < n && rates[i] != playbackDraft.bitrate; i++) {}
+        playbackDraft.bitrate = rates[(i + 1) % n];
+      } else if (selected == (playbackHls ? 2 : 1)) playbackSave(); else back();
+      break;
     case LIBRARIES:
-      if (libraryRetry && selected == nLibraries) {
+      if (selected == nLibraries + 2) playbackOpen();
+      else if (libraryRetry && selected == nLibraries) {
         if (startWorker(JOB_LIBRARIES)) { libraryRetry = 0; message[0] = 0; }
       }
       else if (selected < nLibraries) checked[selected] = !checked[selected];
@@ -456,9 +487,10 @@ static void activate(void) {
         JfConta jf; PxConta px; int p; unsigned g;
         if (!provider) g = px_setup_conta(&px, &p); else g = jf_setup_conta(provider == 2, &jf, &p);
         char *selection = provider ? jf.bibliotecas : px.bibliotecas; selection[0] = 0;
+        size_t cap = provider ? sizeof jf.bibliotecas : sizeof px.bibliotecas;
         for (int i = 0; i < nLibraries; i++) if (checked[i]) {
           size_t k = strlen(selection); const char *id = libraries[i].chave + strlen(prefix[provider]);
-          if (k + strlen(id) + 2 < 256) snprintf(selection + k, 256 - k, "%s%s", k ? "\n" : "", id);
+          if (k + strlen(id) + 2 < cap) snprintf(selection + k, cap - k, "%s%s", k ? "\n" : "", id);
         }
         int ok = provider ? jf_setup_aceitar(provider == 2, &jf, p, g) : px_setup_aceitar(&px, p, g);
         wipe(&jf, sizeof jf); wipe(&px, sizeof px);
@@ -520,7 +552,8 @@ static int targets(void) {
     case CONNECT_CODE: return 3;
     case PLEX_SERVERS: return (worker.n > 0 ? worker.n : 0) + 2;
     case CONNECT_SERVERS: return (worker.n > 0 ? worker.n : 0) + 1;
-    case LIBRARIES: return nLibraries + 2;
+    case LIBRARIES: return nLibraries + 3;
+    case PLAYBACK: return playbackHls ? 4 : 3;
     case ROWS: return nLibraries + 5;
     default: return 2;
   }
@@ -532,6 +565,14 @@ void srvsetup_evento(const SDL_Event *e) {
   SDL_Keycode k = e->key.keysym.sym;
   if (nv_tecla_voltar(e)) back();
   else if (k == SDLK_LEFT || k == SDLK_UP || k == SDLK_RIGHT || k == SDLK_DOWN) {
+    if (screen == PLAYBACK) {
+      int save = playbackHls ? 2 : 1;
+      if (k == SDLK_DOWN && selected < save) selected++;
+      else if (k == SDLK_UP && selected > 0) selected = selected >= save ? save - 1 : 0;
+      else if (k == SDLK_RIGHT && selected == save) selected = save + 1;
+      else if (k == SDLK_LEFT && selected == save + 1) selected = save;
+      return;
+    }
     int total = screen==USERS || screen==DISCOVER || screen==PLEX_SERVERS || screen==CONNECT_SERVERS ? (!worker.alive && worker.n>0 ? worker.n : 0) :
       screen==LIBRARIES || screen==ROWS ? nLibraries : 0;
     int step = screen==USERS ? (k==SDLK_RIGHT)-(k==SDLK_LEFT) : (k==SDLK_DOWN)-(k==SDLK_UP);
@@ -879,6 +920,7 @@ void srvsetup_desenhar(Uint32 now) {
   else if (screen == PLEX_SERVERS) snprintf(title, sizeof title, "%s", i18n("Escolher servidor Plex"));
   else if (screen == CONNECT_SERVERS) snprintf(title, sizeof title, "%s", i18n("Escolha um servidor compartilhado"));
   else if (screen == LIBRARIES) snprintf(title, sizeof title, "%s", i18n("Escolher bibliotecas"));
+  else if (screen == PLAYBACK) snprintf(title, sizeof title, "%s", i18n("Reprodução"));
   else if (screen == READY) snprintf(title, sizeof title, i18n(provider == 2 ? "%s conectado" : "%s conectada"), srv);
   else if (screen == REMOVE) snprintf(title, sizeof title, i18n("Remover %s deste perfil?"), srv);
   else if (screen == ERROR_SCREEN) { if (recoveryAuth) snprintf(title, sizeof title, "%s", i18n("Entrar novamente")); else snprintf(title, sizeof title, i18n("%s está offline"), srv); }
@@ -902,13 +944,14 @@ void srvsetup_desenhar(Uint32 now) {
     else if (screen == LOGIN) snprintf(intro,sizeof intro,"%s",i18n("Escolha o servidor e use Emby Connect ou uma conta local."));
     else if (screen == DISCOVER || screen == PLEX_SERVERS || screen == CONNECT_SERVERS) snprintf(intro, sizeof intro, "%s", screen == PLEX_SERVERS ? i18n("Conta vinculada · Escolha um servidor ou busque na rede.") : i18n("Conecte um servidor da rede local ou informe o endereço."));
     else if (screen == LIBRARIES) snprintf(intro, sizeof intro, i18n("%s · Acesso como %s. Escolha o que aparece no Nuvio."), srv, username[0] ? username : "Marina");
+    else if (screen == PLAYBACK) snprintf(intro, sizeof intro, "%s", i18n("Para este servidor e perfil. Vale na próxima busca de fontes."));
     else if (screen == READY) { int k=0; for(int i2=0;i2<nLibraries;i2++) k+=checked[i2]; snprintf(intro, sizeof intro, i18n("%d bibliotecas selecionadas · Tudo pronto para assistir."), k); }
     else if (screen == REMOVE) snprintf(intro, sizeof intro, i18n("Isso desconecta o %s · %s desta TV."), providers[provider], srv);
     else if (screen == ERROR_SCREEN) { char stamp[96]; syncLabel(provider, stamp, sizeof stamp); if (recoveryAuth) snprintf(intro, sizeof intro, i18n("%s não aceita mais o login desta TV."), srv); else snprintf(intro, sizeof intro, i18n("Última conexão %s. O catálogo salvo continua disponível."), stamp); }
     else snprintf(intro, sizeof intro, "%s", i18n("Seus servidores"));
     paragraph(intro,200,250,screen==CHOOSE?740:1540);
     const char *steps[] = {i18n("Escolher serviço"),i18n("Conectar"),i18n("Entrar"),i18n("Bibliotecas"),i18n("Pronto")};
-    if (screen != MANAGE) {
+    if (screen != MANAGE && screen != PLAYBACK) {
       float x = px(200), y = ANC(screen==CHOOSE?335:316), at = stepAnim < 0 ? stepOf(screen) : stepAnim;
       float width = plrui_seg(steps, NULL, 5, at, 1, x, y, 1);
       plrui_trilho((GfxRect){x,y+54,width,3},anim_clamp(at/4,0,1),-1,-1,-1,.9f);
@@ -1128,6 +1171,7 @@ void srvsetup_desenhar(Uint32 now) {
     }
     gfx_recorte(contentX, ANC(386), contentW, ANC(592));
     button(nLibraries,libraryRetry?"Tentar novamente":"Continuar",232,832,160); button(nLibraries+1,"Voltar",404,832,120);
+    button(nLibraries+2,"Reprodução",536,832,240);
     text(TXT_V2_GRUPO,"Parte da sua Biblioteca",1020,412,243,700);
     paragraph("As bibliotecas aparecem junto ao Trakt, Simkl e seus títulos salvos.",1020,470,780);
     text(TXT_ILHA_NOME,"Continuar assistindo",1040,544,243,620);
@@ -1156,6 +1200,26 @@ void srvsetup_desenhar(Uint32 now) {
     }
     button(4,"Usuário e senha",1052,710,260);
 
+  } else if(screen==PLAYBACK) {
+    row(0, i18n("Somente Direct Play"), i18n(playbackDraft.direto ? "Ativado" : "Desativado"), 420, -1);
+    char rate[64];
+    snprintf(rate, sizeof rate, "%d Mbps%s", srv_playback_bitrate(playbackDraft, provider ? SRV_JF_BITRATE_MAX : SRV_PX_BITRATE_MAX) / 1000000,
+             playbackDraft.bitrate ? "" : " · ");
+    if (!playbackDraft.bitrate) {
+      size_t n = strlen(rate); snprintf(rate + n, sizeof rate - n, "%s", i18n("Padrão"));
+    }
+    if (playbackHls) row(1, "HLS · Mbps", rate, 544, -1);
+    else { text(TXT_ILHA_NOME,"HLS",232,556,243,686); text(TXT_ILHA_SUB_L,"Indisponível",232,596,155,686); }
+    button(playbackHls?2:1,"Salvar",232,712,180); button(playbackHls?3:2,"Voltar",424,712,120);
+    text(TXT_V2_GRUPO, "Direct Play", 1020, 420, 243, 700);
+    const char *cont, *vid, *aud;
+    if (jf_capacidades(jellyfin_backend(), &cont, &vid, &aud)) {
+      text(TXT_ILHA_SUB_L, cont, 1020, 478, 155, 780);
+      text(TXT_ILHA_SUB_L, vid, 1020, 514, 155, 780);
+      text(TXT_ILHA_SUB_L, aud, 1020, 550, 155, 780);
+    }
+    paragraph("HLS depende do servidor. Jellyfin compatível com AIOStreams usa somente Direct Play.",1020,618,780);
+    paragraph("Direct Play mantém o bitrate original. O buffer do player é separado.",1020,750,780);
   } else if(screen==READY) {
     panel(200,386,750,492,-1); text(TXT_V2_GRUPO,"Tudo em seu lugar",232,420,243,680);
     const char *labels[]={"Biblioteca","Continuar assistindo","Fontes"};

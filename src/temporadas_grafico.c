@@ -132,8 +132,12 @@ int tgraf_montar(TgDados *d, const TgEp *eps, int n, int sabe, int agT, int agE,
   return d->n;
 }
 
+// Existe quando ha episodio no ar para mostrar. Antes so existia com visto
+// conhecido ou amigos, e a pagina reservava a altura do bloco (detail.c) sem
+// desenhar nada: o progresso sumia para quem ainda nao tinha mapa do vistoep.
+// O desconhecido continua sem preencher (desenho usa d->sabe), nunca vira zero.
 int tgraf_existe(const TgDados *d) {
-  return d && d->n > 0 && ((d->sabe && d->vistos > 0) || d->nAmg > 0);
+  return d && d->n > 0 && (d->exibidos > 0 || d->nAmg > 0);
 }
 
 void tgraf_frase_amigos(const TgDados *d, char *dst, size_t tam) {
@@ -286,7 +290,8 @@ static void colunaNumeros(const TgDados *d, float x, float y, float w, int foco,
     } else snprintf(grande, sizeof grande, "%d", d->exibidos);
     if (d->sabe) snprintf(l1, sizeof l1, i18n("%d de %d episódios"), d->vistos, d->exibidos);
     else snprintf(l1, sizeof l1, "%s", i18n("Episódios"));
-    snprintf(l2, sizeof l2, i18n("Temporadas completas: %d de %d"), d->sabe ? d->completas : 0, d->n);
+    if (d->sabe) snprintf(l2, sizeof l2, i18n("Temporadas completas: %d de %d"), d->completas, d->n);
+    else l2[0] = 0;
     if (completa) snprintf(l3, sizeof l3, "%s", i18n("Você está em dia"));
     else if (d->sabe && d->meuT > 0)
       snprintf(l3, sizeof l3, i18n("Último visto: T%dE%d"), d->meuT, d->meuE);

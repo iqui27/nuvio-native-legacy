@@ -17,9 +17,6 @@
 #include "desktop_native.h"
 #include "busca.h"
 #ifdef NV_DESKTOP_UI
-#include "esportes.h"
-#endif
-#ifdef NV_DESKTOP_UI
 #include "dados.h"
 #include "desktop_input_log.h"
 static int desktopCollapsed, desktopOverlay;
@@ -184,7 +181,8 @@ static int mostra(int i) {
     case MENU_SERVIDORES: return servidorConectado;
     case MENU_EXPLORAR: return ajustes_menu_explorar();
     case MENU_GUIA:     return ajustes_menu_guia();
-    case MENU_ESPORTES: return ajustes_menu_esportes();
+    /* Sports remains a Guide destination; mobile keeps its existing entry. */
+    case MENU_ESPORTES: return layout_modo_mobile() && ajustes_menu_esportes();
     case MENU_AGENDA:   return ajustes_menu_agenda();
     case MENU_PERFIL:   return ajustes_menu_perfil();
     default:            return 1;

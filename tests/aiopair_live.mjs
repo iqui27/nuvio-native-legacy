@@ -35,7 +35,7 @@ try {
       const chunks=[];res.on('data',b=>chunks.push(b));res.on('end',()=>resolve(new Response(Buffer.concat(chunks),{status:res.statusCode})));});req.on('error',reject);req.end(opt.body);});
   }
   const context={location:{hash:pairing.hash,pathname:'/aio/'},history:{replaceState(){}},document:{querySelector:s=>elements[s]},
-    setTimeout:()=>1,fetch:fetchLocal,btoa:s=>Buffer.from(s,'binary').toString('base64'),unescape,encodeURIComponent};
+    URL,AbortSignal,TextEncoder,setTimeout:()=>1,fetch:fetchLocal,btoa:s=>Buffer.from(s,'binary').toString('base64'),unescape,encodeURIComponent};
   vm.createContext(context);vm.runInContext(phonePage().match(/<script>([\s\S]*)<\/script>/)[1],context);
   for(let i=0;i<40&&!elements['#origin'].textContent;i++)await new Promise(r=>setTimeout(r,50));
   assert.equal(elements['#origin'].textContent,instanceOrigin);

@@ -151,6 +151,46 @@ int mkv_intro_nomeada(const MkvCap *caps, int n, double *ini, double *fim);
 // "Next Episode"); 0 caso contrario. Nao e credito: marca ate onde os creditos vao.
 double mkv_previa_nomeada(const MkvCap *caps, int n);
 
+// SEGMENTOS PELOS NOMES DOS CAPITULOS (feat/mkv-chapter-segments).
+//
+// Regras do NuvioTV (ChapterSkipIntervals.kt): o titulo tem de SER o rotulo,
+// com numero opcional — "OP", "OP 2", "Opening", "Opening Credits", "ED",
+// "Ending Theme", "End Credits", "Recap", "Previously on ..." — e nao "The
+// Opening Scene". "Intro" so vira abertura sem capitulo OP. "Post-/Mid-/After-
+// credits" e cena depois dos creditos: marcada, NUNCA pulada.
+// Por cima, os nomes que o master ja aceitava (abertura, creditos, encerramento,
+// outro, end title, preview, yokoku, avance, previa...): valem so para o tipo
+// em que nenhum capitulo casou pela regra estrita.
+// O segmento vai do inicio do capitulo ao inicio do seguinte (o ultimo, ate
+// `dur`; dur 0 = desconhecida -> fim 0, "ate o fim"). Abertura/resumo fora de
+// 5..240 s sao descartados; creditos so abaixo de 5 s (a janela de intro.c
+// mede o resto: creditos de filme passam de 4 min).
+// Os numeros dos tipos sao os de intro.h (INTRO_ABERTURA...INTRO_POS_CREDITOS).
+enum { MKV_SEG_NENHUM = 0, MKV_SEG_ABERTURA = 1, MKV_SEG_RESUMO = 2,
+       MKV_SEG_CREDITOS = 3, MKV_SEG_PREVIA = 4, MKV_SEG_POSCRED = 5 };
+typedef struct {
+  double inicio, fim;   // segundos; fim 0 = ate o fim da midia
+  int tipo;             // MKV_SEG_*
+  int estrito;          // 1 = regra do NuvioTV, 0 = nome extra do master
+  int cap;              // indice do capitulo de origem
+} MkvSeg;
+#define MKV_SEG_MIN_S  5.0
+#define MKV_SEG_MAX_S  240.0
+// Tipo de UM titulo (`forca`: 3 estrito, 2 "Intro" estrito, 1 nome extra, 0 nada).
+int mkv_classificar_nome(const char *nome, int *forca);
+// No maximo um segmento por tipo, na ordem do tempo. Devolve quantos.
+int mkv_segmentos(const MkvCap *caps, int n, double dur, MkvSeg *out, int max);
+// Idioma do app ("sv", "pt", "en"...; ISO 639-1) para escolher o NOME do
+// capitulo quando o arquivo traz o mesmo capitulo em varios idiomas: o do app,
+// senao ingles, senao o primeiro. Chamar antes de abrir o video (player.c).
+// Os capitulos escondidos/desligados ficam de fora, vale a edicao padrao e a
+// lista sai em ordem de inicio (como o NuvioTV).
+void mkv_capitulos_idioma(const char *iso);
+// Palpite por DURACAO quando nenhum capitulo tem nome util (so anime decide
+// usar, intro.c): abertura = capitulo de 75-105 s entre os 3 primeiros,
+// encerramento = um de 75-105 s entre os 3 ultimos (depois da abertura).
+int mkv_segmentos_palpite(const MkvCap *caps, int n, MkvSeg *out, int max);
+
 // CASA as legendas que a TV lista com as TrackEntry de legenda do arquivo (#92).
 //
 // O `trackNum` do subtitleTrackInfo da LG NAO e o TrackNumber do Matroska. E o

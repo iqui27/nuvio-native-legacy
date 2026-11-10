@@ -58,8 +58,9 @@ void gpun_redimensionar(int w, int h);
 void gpun_log_perfil(long memMB, int texMb, int fios, int heroi);
 
 // Automatic ladder (only raw Automatic settings participate; forced values skip):
-// 0 full glass, frost on, full animations; 1 glass Performance; 2 frost off;
-// 3 reduced animations; 4 glass off. Each trial needs >=10% AND >=3 FPS gain
+// 0 full glass, two-pass blur, full budget; 1 one-pass blur (still frosted);
+// 2 frost off; 3 gfx light budget (dither, decorative highlights; motion stays,
+// ajustes_animacoes_reduzidas is manual only); 4 glass off. Each trial needs >=10% AND >=3 FPS gain
 // for three clean report windows, otherwise revert and skip it this boot. Only
 // accepted effects remain active. Step 2 persists foscoVetado in gpu-nivel.txt
 // under the existing GPU/driver/firmware/surface key after proven gain.
@@ -72,16 +73,26 @@ void gpun_log_perfil(long memMB, int texMb, int fios, int heroi);
 // player/screen changes and texture work require 3 seconds to settle. Any
 // ineligible frame invalidates its report and cancels a pending trial.
 // Failed recovery delays retries for 100 eligible reports (~5min); no permanent
-// floor. Startup restores full recoverable quality; persisted frost stays off.
+// floor. Startup restores full recoverable quality; persisted frost stays off
+// for GPUN_VETO_ARRANQUES launches, then is proven again. Manual effects ignore
+// the mark without erasing it.
 // The gfx light budget engages only at step 3 with Automatic animations.
 // Global minimal is manual-only: its flat-glass/outline shortcuts override
 // forced frost/outline settings, so Automatic never enables it.
+#define GPUN_VETO_ARRANQUES 20
 int  gpun_degrau(void);
+// Would gpun_relatar accept this ~3 s window? Replaces *fps with the clean-frame
+// FPS and consumes nothing: call it before gpun_relatar in the same report.
+int  gpun_janela_elegivel(double *fps, double pior, int cena, int cheia);
+// One trial at a time: the 4K verdict skips windows of a pending effects trial,
+// and while the probe is pending the ladder holds without building a streak.
+int  gpun_em_teste(void);
+void gpun_resolucao_em_prova(int ativa);
 int  gpun_efeito_ativo(int passo);
 void gpun_fosco_reiniciar(void);
 int  gpun_fosco_vetado(void);
 int  gpun_nivel(void);
-// Efeitos reduzidos pelo automatico, para a ajuda dos Ajustes.
+// Any automatic reduction in effect (any rung or the frost mark), for Settings help.
 int  gpun_efeitos_automaticos(void);
 // Troca o nivel na hora, sem medir nem gravar (captura de teste).
 void gpun_definir_nivel(int n);

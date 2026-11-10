@@ -127,6 +127,33 @@ static void testarIds(void) {
   printf("ids ok\n");
 }
 
+static void testarTokenLimite(void) {
+  JfConta c = {0};
+  char json[2300];
+  const char *prefix = "{\"AccessToken\":\"";
+  const char *suffix = "\",\"User\":{\"Id\":\"0123456789abcdef0123456789abcdef\"}}";
+  size_t p = strlen(prefix);
+  memcpy(json, prefix, p);
+  memset(json + p, 'a', 2047);
+  strcpy(json + p + 2047, "\\u00e9");
+  strcat(json, suffix);
+  assert(jf_ler_autenticacao(&c, json, strlen(json)) == JF_ERR_FORMATO);
+  memcpy(json, prefix, p);
+  memset(json + p, 'a', 2047);
+  strcpy(json + p + 2047, suffix);
+  assert(jf_ler_autenticacao(&c, json, strlen(json)) == JF_OK);
+  assert(strlen(c.token) == 2047 && strspn(c.token, "a") == 2047);
+  memcpy(json, prefix, p);
+  memset(json + p, 'a', 2048);
+  strcpy(json + p + 2048, suffix);
+  assert(jf_ler_autenticacao(&c, json, strlen(json)) == JF_ERR_FORMATO);
+  snprintf(json, sizeof json, "%sabc\\u0000def%s", prefix, suffix);
+  assert(jf_ler_autenticacao(&c, json, strlen(json)) == JF_ERR_FORMATO);
+  snprintf(json, sizeof json, "%sabc\\\\u0000def%s", prefix, suffix);
+  assert(jf_ler_autenticacao(&c, json, strlen(json)) == JF_OK);
+  assert(!strcmp(c.token, "abc\\u0000def"));
+}
+
 static void testarUrl(void) {
   char u[512];
   assert(jf_url_normalizar("192.168.1.5:8096", u, sizeof u) == JF_OK && !strcmp(u, "http://192.168.1.5:8096"));
@@ -299,6 +326,8 @@ static void testarVistoProg(void) {
     srvidx_limpar(&x); }
   printf("visto/prog ok\n");
 }
+
+#include "server_playback.inc"
 
 static void testarIntegracao(void) {
   char nome[700], *arq, senha[64];
@@ -500,6 +529,69 @@ static void testarIntegracao(void) {
     ix = controle("index");
     assert(strstr(ix, "\"episodes\": 1"));
     free(ix); }
+  // Many libraries (#468). Catalog views cycle movies, tvshows (real Series),
+  // boxsets, mixed and untyped. 26 eligible views keep every row past the old
+  // cap of 16, 42 stop at the ceiling of 32; rows get fewer items so the
+  // 144-item budget still holds the Next Up row.
+  { CatFileira *muitas = calloc(JF_FIL_MAX + 4, sizeof *muitas); int k, por; JfConta cc; int pc; unsigned g; char *ix;
+    assert(muitas && JF_FIL_MAX == 32 && JF_ITENS_MAX == 144);
+    free(controle("catalogs?n=24"));
+    jellyfin_recarregar_bibliotecas();
+    fim = ms() + 5000;   // an older refresh may land first: wait for the new views
+    while ((n = jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, muitas, JF_FIL_MAX + 4, &ni)) != 27 && ms() < fim) dormir(20);
+    por = (JF_ITENS_MAX - JF_POR_FILEIRA) / 26;
+    assert(n == 27 && ni <= JF_ITENS_MAX);
+    assert(strstr(muitas[0].titulo, "Movies") && muitas[0].n == por && strstr(muitas[1].titulo, "Shows"));
+    for (k = 2; k < 26; k++) {
+      int serie = (k - 2) % 5 == 1;
+      assert(!strcmp(muitas[k].tipo, serie ? "series" : "movie") && muitas[k].n == (serie ? 2 : por));
+      assert(!strcmp(itens[muitas[k].ini].tipo, serie ? "series" : "movie"));
+    }
+    assert(strstr(muitas[25].titulo, "Catalog 23"));
+    assert(strstr(muitas[26].chave, "_nextup") && muitas[26].n == 1 && muitas[26].ini + 1 == ni);
+    free(controle("catalogs?n=40"));
+    jellyfin_recarregar_bibliotecas();
+    fim = ms() + 5000;
+    while ((n = jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, muitas, JF_FIL_MAX + 4, &ni)) != 33 && ms() < fim) dormir(20);
+    por = (JF_ITENS_MAX - JF_POR_FILEIRA) / 32;
+    assert(n == 33 && ni <= JF_ITENS_MAX && muitas[0].n == por && muitas[31].n == por);
+    assert(strstr(muitas[31].titulo, "Catalog 29") && strstr(muitas[32].chave, "_nextup") && muitas[32].ini + 1 == ni);
+    // A 30-library selection is saved whole (was 256 bytes: 7 ids), filters
+    // the rows and the index (ParentIds), and comes back from disk.
+    g = jf_setup_conta(0, &cc, &pc);
+    { size_t q = (size_t)snprintf(cc.bibliotecas, sizeof cc.bibliotecas, "%s",
+                                  "1111aaaa2222bbbb3333cccc4444dddd\n5555eeee6666ffff7777aaaa8888bbbb");
+      for (k = 0; k < 28 && q < sizeof cc.bibliotecas; k++)
+        q += (size_t)snprintf(cc.bibliotecas + q, sizeof cc.bibliotecas - q, "\n%032x", 0xca7a1000u + (unsigned)k); }
+    free(controle("index"));
+    assert(jf_setup_aceitar(0, &cc, pc, g));
+    fim = ms() + 5000;
+    while ((n = jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, muitas, JF_FIL_MAX + 4, &ni)) != 31 && ms() < fim) dormir(20);
+    assert(n == 31 && strstr(muitas[29].titulo, "Catalog 27") && strstr(muitas[30].chave, "_nextup"));
+    ix = controle("index");
+    assert(strstr(ix, "\"parents\": 30"));
+    free(ix);
+    arq = dados_ler("jellyfin-p1.txt");
+    assert(arq && strstr(arq, "000000000000000000000000ca7a101b"));   // Catalog 27
+    free(arq);
+    perfilAtivo = 2;
+    jellyfin_perfil_trocou();
+    perfilAtivo = 1;
+    jellyfin_perfil_trocou();
+    jellyfin_recarregar_bibliotecas();
+    fim = ms() + 5000;
+    while ((n = jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, muitas, JF_FIL_MAX + 4, &ni)) != 31 && ms() < fim) dormir(20);
+    assert(n == 31 && strstr(muitas[29].titulo, "Catalog 27"));
+    g = jf_setup_conta(0, &cc, &pc);
+    cc.bibliotecas[0] = 0;   // back to every library
+    assert(jf_setup_aceitar(0, &cc, pc, g));
+    memset(&cc, 0, sizeof cc);
+    free(controle("catalogs?n=0"));
+    jellyfin_recarregar_bibliotecas();
+    fim = ms() + 5000;
+    while (jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, muitas, JF_FIL_MAX + 4, &ni) != 3 && ms() < fim) dormir(20);
+    assert(jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, muitas, JF_FIL_MAX + 4, &ni) == 3);
+    free(muitas); }
   free(controle("revoke"));
   jellyfin_recarregar_bibliotecas();
   assert(esperarEstado(JF_EST_EXPIROU, 5000) == JF_EST_EXPIROU);
@@ -510,6 +602,7 @@ static void testarIntegracao(void) {
   // Quick Connect through the worker, then sign out (server logout queued).
   assert(jellyfin_entrar_quick_connect());
   assert(esperarEstado(JF_EST_CONECTADO, 8000) == JF_EST_CONECTADO);
+  testarPlaybackLocal(0);
   free(controle("reset"));
   jellyfin_esquecer();
   assert(jellyfin_estado(NULL, 0) == JF_EST_SEM_SERVIDOR);
@@ -533,13 +626,85 @@ static void testarIntegracao(void) {
   printf("integration ok\n");
 }
 
+// Restart: a Quick Connect sign-in with the fake's ~600-char token, saved by
+// one process ("qc-save") and used by a fresh one ("qc-reload").
+static void campoArquivo(const char *chave, char *dst, size_t tam) {
+  char *arq = dados_ler("jellyfin-p1.txt"), *v, *e;
+  size_t nk = strlen(chave);
+  assert(arq);
+  dst[0] = 0;
+  for (v = arq; v; v = (e = strchr(v, '\n')) ? e + 1 : NULL)
+    if (!strncmp(v, chave, nk) && v[nk] == '=') {
+      v += nk + 1;
+      e = strchr(v, '\n');
+      snprintf(dst, tam, "%.*s", e ? (int)(e - v) : (int)strlen(v), v);
+      break;
+    }
+  free(arq);
+}
+
+static void testarReinicio(const char *modo) {
+  char esperado[JF_TOKEN_MAX], tok[JF_TOKEN_MAX], dev[128], nome[700];
+  struct stat st;
+  unsigned v0;
+  int i, ni;
+  snprintf(esperado, sizeof esperado, "qctoken");
+  for (i = 0; i < 75; i++) strcat(esperado, "Ab0-_z9Y");
+  dados_caminho(nome, sizeof nome, "jellyfin-p1.txt");
+  jellyfin_carregar();
+  if (!strcmp(modo, "qc-save")) {
+    assert(jellyfin_estado(NULL, 0) == JF_EST_SEM_SERVIDOR);
+    assert(jellyfin_definir_servidor(base));
+    assert(esperarEstado(JF_EST_SERVIDOR_OK, 5000) == JF_EST_SERVIDOR_OK);
+    assert(jellyfin_entrar_quick_connect());
+    assert(esperarEstado(JF_EST_CONECTADO, 8000) == JF_EST_CONECTADO);
+  } else {
+    assert(!strcmp(modo, "qc-reload"));
+    campoArquivo("dev", dev, sizeof dev);
+    assert(jellyfin_estado(NULL, 0) == JF_EST_CONECTADO);
+    // The fake only knows the exact token: a truncated one expires here.
+    v0 = jellyfin_fileiras_versao();
+    jellyfin_recarregar_bibliotecas();
+    for (unsigned long long fim = ms() + 5000; jellyfin_fileiras_versao() == v0 && ms() < fim;) dormir(20);
+    assert(jellyfin_estado(NULL, 0) == JF_EST_CONECTADO);
+    { CatItem *itens = calloc(JF_ITENS_MAX, sizeof *itens);
+      CatFileira fils[JF_FIL_MAX];
+      assert(jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, fils, JF_FIL_MAX, &ni) >= 2 && ni > 0);
+      free(itens); }
+    campoArquivo("dev", tok, sizeof tok);
+    assert(!strcmp(tok, dev));
+    // Another profile never sees this connection.
+    perfilAtivo = 2;
+    jellyfin_perfil_trocou();
+    assert(jellyfin_estado(NULL, 0) == JF_EST_SEM_SERVIDOR);
+    perfilAtivo = 1;
+    jellyfin_perfil_trocou();
+    assert(jellyfin_estado(NULL, 0) == JF_EST_CONECTADO);
+  }
+  assert(stat(nome, &st) == 0 && (st.st_mode & 077) == 0);
+  campoArquivo("token", tok, sizeof tok);
+  assert(!strcmp(tok, esperado));
+  campoArquivo("dev", dev, sizeof dev);
+  assert(!strncmp(dev, "nuvio-", 6) && strstr(dev, "-p1"));
+  dados_caminho(nome, sizeof nome, "jellyfin-p2.txt");
+  assert(stat(nome, &st) != 0);
+  memset(tok, 0, sizeof tok);
+  printf("restart %s ok\n", modo);
+}
+
 int main(int argc, char **argv) {
-  assert(argc == 3);
+  assert(argc == 3 || argc == 4);
   snprintf(raiz, sizeof raiz, "%s", argv[1]);
   snprintf(base, sizeof base, "%s/jf", argv[1]);
   snprintf(dirDados, sizeof dirDados, "%s", argv[2]);
   setvbuf(stdout, NULL, _IOLBF, 0);
+  if (argc == 4) {
+    testarReinicio(argv[3]);
+    jellyfin_encerrar();
+    return 0;
+  }
   testarIds();
+  testarTokenLimite();
   testarUrl();
   testarVistoProg();
   testarProtocolo();

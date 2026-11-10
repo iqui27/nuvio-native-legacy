@@ -274,8 +274,8 @@ int main(int argc, char **argv) {
 
   abrir(0);
   quadros(60);
-  CONFERE(secaoN(SEC_TEMPORADAS) == N_TEMPS + 1,
-          "serie: 24 abas e UMA coluna a mais, o botao de aleatorio");
+  CONFERE(secaoN(SEC_TEMPORADAS) == N_TEMPS + 2,
+          "serie: 24 abas, o botao de aleatorio e o seletor de spoilers (ce2fe50b6)");
   CONFERE(ehShuffle(0) && !ehShuffle(1) && !ehShuffle(N_TEMPS),
           "o botao e a PRIMEIRA coluna da fileira, antes da Temporada 1");
   { float sx = xItem(SEC_TEMPORADAS, 0) - scrollSec[SEC_TEMPORADAS];
@@ -303,6 +303,8 @@ int main(int argc, char **argv) {
 
   // --- E. o alvo do ponteiro do botao, com a fileira na tela -----------------
   focar(SEC_TEMPORADAS, 0);
+  // Sections reveal on the wall clock (64ebda087); let the row arrive first.
+  quadros(1); SDL_Delay(1200);
   acordar(); quadros(2);
   { GfxRect q;
     CONFERE(alvoDaPagina(SEC_TEMPORADAS, 0, &q) && q.x >= 0.0f && q.x + q.w <= NV_TELA_W,

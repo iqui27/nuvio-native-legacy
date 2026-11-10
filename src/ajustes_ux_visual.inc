@@ -190,6 +190,8 @@ static const char *ajVisualIcone(int op) {
     case AJ_REACAO_CREDITOS: return "aj_circle-play";
     case AJ_CW_CONCLUIDO: return "aj_circle-play";
     case AJ_CW_MINIMO: return "aj_circle-play";
+    case AJ_ANIMESKIP_ID: return "aj_key-round";
+    case AJ_CAPITULOS:
     case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PULAR_CREDITOS: case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: return "aj_circle-play";
     case AJ_SAIDA_PLAYER: case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: return "aj_circle-play";
     case AJ_SEEKR_LIGADO: return "aj_film";
@@ -197,6 +199,9 @@ static const char *ajVisualIcone(int op) {
     case AJ_SEEKR_TESTAR: return "aj_film";
     case AJ_SEEKR_FITA: return "aj_film";
     case AJ_SEEKR_AJUSTE: return "aj_film";
+    case AJ_PREVIA_PROVEDOR: return "aj_film";
+    case AJ_OPENSEEK_SERVIDOR: case AJ_OPENSEEK_PAREAR: case AJ_OPENSEEK_ESTADO: return "aj_link";
+    case AJ_OPENSEEK_COMPART: case AJ_OPENSEEK_AJ_M30: case AJ_OPENSEEK_AJ_M5: case AJ_OPENSEEK_AJ_M1: case AJ_OPENSEEK_AJ_P1: case AJ_OPENSEEK_AJ_P5: case AJ_OPENSEEK_AJ_P30: case AJ_OPENSEEK_DESFAZER: case AJ_OPENSEEK_REJEITAR: return "aj_film";
     case AJ_IDIOMA: return "aj_languages";
     case AJ_AUD_LINGUA: case AJ_AUD_LINGUA2: case AJ_AUD_ORIGINAL: case AJ_AUDIO_NORMALIZAR: return "aj_audio-lines";
     case AJ_GUIA_PREVIA_GRANDE: return "aj_tv";
@@ -360,17 +365,17 @@ static TxtEstilo ajEstiloPxS(float px, int forte) { return ajEstiloPx(px < 6.0f 
 // repete: sao as 40 amostras de deploy/app/art.
 // -1 = a categoria nao tem esse bloco.
 #define AJ_ARTE_BLOCOS 10
-// Os blocos de "Mais opcoes" (depois do MAIS() da categoria) repetem a arte do
-// bloco basico de mesmo nome: e a mesma parte do app, so que tecnica.
+// Os blocos de "Mais opcoes" (depois do MAIS() da categoria) repetem a arte de
+// um bloco basico: e a mesma parte do app, so que tecnica.
 static const signed char AJ_ARTE_SEC[AJS_N + 1][AJ_ARTE_BLOCOS] = {
-  { 18,  7, 22, 32,  7, 18, 19, -1, -1, -1 },   // Reproducao: Imagem e som, Escolha da fonte, Durante e depois, Miniatura; Mais: fonte, som e video, P2P
-  { 21, 34, 24, 21, -1, -1, -1, -1, -1, -1 },   // Idiomas e legendas: Idiomas, Legenda principal, Segunda legenda; Mais: idiomas
+  { 18,  7, 22, 32, 18, 19, -1, -1, -1, -1 },   // Reproducao: Imagem e som, Escolha da fonte, Durante e depois, Miniatura; Mais: som e video, P2P
+  { 21, 34, 24, -1, -1, -1, -1, -1, -1, -1 },   // Idiomas e legendas: Idiomas, Legenda principal, Segunda legenda
   {  5, 28, 37, 10, -1, -1, -1, -1, -1, -1 },   // Fontes e addons: Addons, Falha na reproducao, Debrid, Servidores
-  {  2, 19, 14, 14, -1, -1, -1, -1, -1, -1 },   // TV ao vivo: Contas, Guia de TV, Se o canal nao abre; Mais
-  { 12,  0, 29, 20,  1, 31, 12,  0, 20,  1 },   // Tela inicial: Estilo, Fileiras, Colecoes, Continuar, Barra lateral, Escolha de perfil; Mais
-  {  9, 36, 39, 38,  6, 11,  9, -1, -1, -1 },   // Aparencia: Cores e vidro, Fileiras, Logo e abertura, Texto e tamanho, Movimento e relogio, Tela de descanso; Mais
-  {  3,  4, 17,  4, 17, -1, -1, -1, -1, -1 },   // Pagina do titulo: O que aparece, Notas, Dados do titulo; Mais: notas, dados
-  { 13, 35, 27, 15, 16, 13, 35, 27, 15, -1 },   // Cartazes e trailers: Cartaz em foco, Forma, Arte, Trailers, Som e imagem; Mais
+  {  2, 19, 14, -1, -1, -1, -1, -1, -1, -1 },   // TV ao vivo: Contas, Guia de TV, Se o canal nao abre
+  { 12,  0, 29, 20,  1, 31, -1, -1, -1, -1 },   // Tela inicial: Estilo, Fileiras, Colecoes, Continuar, Barra lateral, Escolha de perfil
+  {  9, 36, 39, 38,  6, 11, -1, -1, -1, -1 },   // Aparencia: Cores e vidro, Fileiras, Logo e abertura, Texto e tamanho, Movimento e relogio, Tela de descanso
+  {  3,  4, 17, -1, -1, -1, -1, -1, -1, -1 },   // Pagina do titulo: O que aparece, Notas, Dados do titulo
+  { 13, 35, 27, 15, 16, -1, -1, -1, -1, -1 },   // Cartazes e trailers: Cartaz em foco, Forma, Arte, Trailers, Som e imagem
   { 23, 33,  8, 28, -1, -1, -1, -1, -1, -1 },   // Conta e servicos: Perfil, Trakt e Simkl, Notificacoes
   { 26, -1, -1, -1, -1, -1, -1, -1, -1, -1 },   // Esta TV (Mais: Memoria)
   { 30, 25, -1, -1, -1, -1, -1, -1, -1, -1 },   // Sobre e ajuda: (guia e) App, Registro

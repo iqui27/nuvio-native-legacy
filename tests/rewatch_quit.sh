@@ -8,15 +8,18 @@ python3 - "$dir/test.c" <<'PY'
 from pathlib import Path
 import sys
 s=Path('src/app.c').read_text(); a=s.index('  if (rewatchui_aberta())'); b=max(s.index('\n',a),s.index('\n',s.index('if (e->type == SDL_QUIT)')))+1
-# Include both routing statements regardless of their order.
-p=s.rfind('\n',0,a-1)+1
-if 'SDL_QUIT' in s[p:a]: a=p
+# Include both routing statements regardless of their order (and what sits between).
+q=s.find('  if (e->type == SDL_QUIT)')
+if 0<=q<a: a=q
 Path(sys.argv[1]).write_text('''#include <assert.h>
 #define SDL_QUIT 256
 typedef struct { int type; } SDL_Event;
 static int sair, modal=1, consumidos;
 int rewatchui_aberta(void){return modal;}
 void rewatchui_evento(const SDL_Event *e){consumidos++;}
+void retomamorna_cancelar(void){}
+int dicascontrole_ocupado(void){return 0;}
+void dicascontrole_evento(const SDL_Event *e){consumidos++;}
 void evento(const SDL_Event *e){
 '''+s[a:b]+'''
 }

@@ -12,6 +12,7 @@
 //   D. capturas com e sem foco.
 //
 //   bash tests/shuffleserie.sh [prefixo-das-capturas]
+//   NV_EP_SEASON_TAB_ALPHA=1 bash tests/shuffleserie.sh [prefixo]  # abas acesas nos episodios
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
@@ -51,14 +52,30 @@
 static int espRotuloFonte;        // txt_linha("Trakt" | "TMDB") vindos da pagina
 static int espNotaEstilo = -1;    // estilo em que a nota de ensaio saiu
 static const char *espNota;       // a nota que se procura ("7,4")
+static const char *espAbaTemporada;
+static GLuint espAbaTex;
+static int espAbaLinhas,espAbaPendente,espAbaDesenhos;
+static float espAbaAlpha;
 static TxtLinha fx_txt_linha(TxtEstilo estilo, const char *s, int r, int g, int b, int a) {
   if (s && (!strcmp(s, "Trakt") || !strcmp(s, "TMDB"))) espRotuloFonte++;
   if (s && espNota && !strcmp(s, espNota)) espNotaEstilo = (int)estilo;
-  return txt_linha(estilo, s, r, g, b, a);
+  TxtLinha l=txt_linha(estilo, s, r, g, b, a);
+  if (s && espAbaTemporada && !strcmp(s,espAbaTemporada) && r<255) {
+    espAbaTex=l.tex;espAbaPendente=1;espAbaLinhas++;
+  }
+  return l;
+}
+static void fx_txt_alpha(TxtLinha l,float x,float y,float a) {
+  if (espAbaTemporada && espAbaPendente && l.tex==espAbaTex) {
+    espAbaAlpha=a;espAbaDesenhos++;espAbaPendente=0;
+  }
+  txt_desenhar_alpha(l,x,y,a);
 }
 #define txt_linha fx_txt_linha
+#define txt_desenhar_alpha fx_txt_alpha
 #include "../src/detail.c"
 #undef txt_linha
+#undef txt_desenhar_alpha
 #undef recomenda_ativo
 #include "dados.h"
 #include "ponteiro.h"
@@ -269,6 +286,32 @@ static void direita(void) { tecla(SDL_KEYDOWN, SDLK_RIGHT); tecla(SDL_KEYUP, SDL
 static void esquerda(void) { tecla(SDL_KEYDOWN, SDLK_LEFT); tecla(SDL_KEYUP, SDLK_LEFT); quadros(30); }
 static void ok(void) { tecla(SDL_KEYDOWN, SDLK_RETURN); tecla(SDL_KEYUP, SDLK_RETURN); quadros(4); }
 
+static void checarAbasAcesas(void) {
+  for (int layout=0;layout<HOME_LAYOUT_N;layout++) for (int vidro=0;vidro<2;vidro++) {
+    char cam[700],rotulo[32],msg[120];
+    snprintf(cam,sizeof cam,"%s/ajustes.txt",dados_dir());
+    FILE *f=fopen(cam,"w");assert(f);
+    fprintf(f,"idioma 0\nhomeLayoutLocal %d\n",layout);fclose(f);
+    ajustes_dir(dados_dir());ajustes_definir_vidro(vidro);
+    assert(ajustes_home_layout()==layout);
+    abrir(0);focar(SEC_TEMPORADAS,colTemp(1));focar(SEC_EPISODIOS,0);
+    int coluna=colTemp(2);assert(nivel==1&&foco.fileira==SEC_EPISODIOS&&posTemp(coluna)!=temporada);
+    rotuloTemporada(coluna,rotulo,sizeof rotulo);
+    espAbaTemporada=rotulo;espAbaTex=0;espAbaLinhas=espAbaPendente=espAbaDesenhos=0;espAbaAlpha=0;
+    float scrollAnterior=scrollY;scrollY=conteudoSec[SEC_TEMPORADAS]-230;
+    for(int quadro=0;quadro<8;quadro++) {
+      txt_novo_quadro();tex_novo_quadro();gfx_novo_quadro();
+      glBindFramebuffer(GL_FRAMEBUFFER,fbo);glClearColor(0,0,0,1);glClear(GL_COLOR_BUFFER_BIT);
+      desenhaSecao(SEC_TEMPORADAS,1,SDL_GetTicks());
+    }
+    scrollY=scrollAnterior;espAbaTemporada=NULL;
+    snprintf(msg,sizeof msg,"temporada acesa nos episodios (layout=%d vidro=%d, linhas=%d desenhos=%d alpha=%.2f)",layout,vidro,espAbaLinhas,espAbaDesenhos,espAbaAlpha);
+    CONFERE(espAbaDesenhos>0&&espAbaAlpha>.95f,msg);
+    if (saida) { char foto[64];snprintf(foto,sizeof foto,"season-tabs-%d-%d",layout,vidro);gravar(foto); }
+    detail_fechar();quadros(60);
+  }
+}
+
 int main(int argc, char **argv) {
   const char *quero = getenv("NUVIO_DADOS");
   SDL_GLContext gl;
@@ -313,6 +356,7 @@ int main(int argc, char **argv) {
   srand(12345);
 
   montarCatalogo();
+  if (getenv("NV_EP_SEASON_TAB_ALPHA")) { checarAbasAcesas(); return falhas ? 1 : 0; }
 
   // --- A. so serie tem o botao ---------------------------------------------
   abrir(1);
@@ -324,7 +368,7 @@ int main(int argc, char **argv) {
   abrir(0);
   focar(SEC_TEMPORADAS, 1);
   quadros(60);
-  CONFERE(secaoN(SEC_TEMPORADAS) == 5, "serie: quatro abas e UMA coluna a mais, o botao de aleatorio");
+  CONFERE(secaoN(SEC_TEMPORADAS) == 6, "serie: quatro abas, o botao de aleatorio e o seletor de spoilers (ce2fe50b6)");
 
   // --- B. alcance pelo controle ---------------------------------------------
   { int temp0 = temporada;

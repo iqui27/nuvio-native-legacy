@@ -21,6 +21,7 @@
 #define NV_QR_H
 
 #define QR_MAX_LADO 41   // versao 6: 17 + 4*6
+#define QR_MAX_BYTES 134
 
 typedef struct {
   int lado;                                  // 0 quando nao coube

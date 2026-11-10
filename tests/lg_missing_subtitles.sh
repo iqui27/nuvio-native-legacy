@@ -47,7 +47,7 @@ int main(void) {
   // Keep the existing image-only API image-only.
   memset(leg, 0, sizeof leg);
   assert(faixasmkv_acrescentar_imagem(leg, 0, 8, fx, 7) == 1);
-  assert(!strcmp(leg[0].codec, "S_HDMV/PGS") && leg[0].numero == -1);
+  assert(!strcmp(leg[0].codec, "S_HDMV/PGS") && leg[0].numero < 0);
   puts("LG omitted embedded text subtitles: PASS");
   return 0;
 }

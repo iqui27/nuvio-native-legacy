@@ -22,6 +22,7 @@ export class AioPair {
     if (raw.length > 4096) return reply({ error: 'Too large' }, 413);
     let b;
     try { b = JSON.parse(raw); } catch { return reply({ error: 'Invalid request' }, 400); }
+    if (!b || typeof b !== 'object' || Array.isArray(b)) return reply({ error: 'Invalid request' }, 400);
     if (b.op === 'create') {
       if (this.session || !validOrigin(b.origin) || !keyOK(b.tv) || !/^[a-f0-9]{32}$/.test(b.phone))
         return reply({ error: 'Invalid session' }, 400);
@@ -34,23 +35,26 @@ export class AioPair {
     if (!s || Date.now() >= s.expires) { this.session = null; return reply({ error: 'Session expired' }, 410); }
     const tv = b.key === s.tv, phone = b.key === s.phone;
     if (!tv && !phone) return reply({ error: 'Invalid session' }, 403);
-    if (b.op === 'status') return reply({ state: s.state, origin: s.origin });
+    if (b.op === 'status') return reply({ state: s.state, origin: s.origin, reason: s.reason });
     if (b.op === 'send' && phone) {
-      if (s.pending || s.state === 'synced') return reply({ error: 'Already sent' }, 409);
+      if (s.pending || s.state === 'checking' || s.state === 'synced') return reply({ error: 'Already sent' }, 409);
       if (++s.attempts > 5) return reply({ error: 'Too many attempts' }, 429);
       if (b.origin !== s.origin || typeof b.uuid !== 'string' || !/^[a-zA-Z0-9_-]{1,127}$/.test(b.uuid) ||
-          typeof b.password !== 'string' || !b.password.length || b.password.length > 768 || /[\x00-\x1f\x7f]/.test(b.password))
+          typeof b.password !== 'string' || !b.password.length || new TextEncoder().encode(b.password).length > 768 || /[\x00-\x1f\x7f]/.test(b.password))
         return reply({ error: 'Invalid credentials' }, 400);
       s.pending = { origin: s.origin, uuid: b.uuid, password: b.password };
-      s.state = 'checking';
+      s.state = 'checking'; s.reason = undefined;
       return reply({ state: s.state });
     }
     if (b.op === 'take' && tv) {
-      const credentials = s.pending; s.pending = null;
+      // Retain until confirmation: a lost HTTP response must not lose delivery.
+      const credentials = s.pending;
       return reply(credentials ? { state: s.state, ...credentials } : { state: s.state });
     }
     if (b.op === 'result' && tv && ['synced', 'error'].includes(b.state)) {
+      if (s.state !== 'checking' && s.state !== b.state) return reply({ error: 'Invalid state' }, 409);
       s.pending = null; s.state = b.state;
+      s.reason = ['auth', 'origin', 'network', 'server', 'response'].includes(b.reason) ? b.reason : undefined;
       return reply({ state: s.state });
     }
     if (b.op === 'close' && tv) { this.session = null; return reply({ state: 'closed' }); }
@@ -78,17 +82,24 @@ export function phonePage() {
 <button>Connect and sync</button></form><p id="status" role="status" aria-live="polite">Connecting to TV…</p></main>
 <script>
 const key=location.hash.slice(1),id=key.slice(0,8);history.replaceState(null,'',location.pathname);
-const form=document.querySelector('#form'),status=document.querySelector('#status');let origin='',timer,lastState;
-async function api(op,extra={}){const r=await fetch('/v1/aiopair/'+id,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({op,key,...extra}),cache:'no-store',redirect:'error'});if(!r.ok)throw Error('Pairing expired or unavailable. Open a new QR on TV.');return r.json();}
-async function poll(){try{const s=await api('status');origin=s.origin;document.querySelector('#origin').textContent=origin;
-if(s.state!==lastState)status.textContent=s.state==='synced'?'Synced. Your TV is ready.':s.state==='error'?'TV could not verify access. Check UUID and password, then retry.':s.state==='checking'?'TV is checking your instance…':'Ready to connect.';lastState=s.state;
-form.hidden=s.state==='synced';if(s.state!=='synced')timer=setTimeout(poll,1500);}catch(e){status.textContent=e.message;form.hidden=true;}}
-form.onsubmit=async e=>{e.preventDefault();const uuid=document.querySelector('#uuid').value,password=document.querySelector('#password').value;if(!origin)return;
-form.querySelector('button').disabled=true;status.textContent='Checking your instance…';
-try{const r=await fetch(origin+'/api/v1/user',{headers:{Authorization:'Basic '+btoa(unescape(encodeURIComponent(uuid+':'+password)))},redirect:'error',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer'});
-if(!r.ok)throw Error('Instance rejected access. Check UUID and password.');await r.json();
-await api('send',{origin,uuid,password});document.querySelector('#password').value='';status.textContent='TV is syncing…';}
-catch(e){status.textContent='Could not verify your instance. Check UUID, password and instance availability.';}finally{form.querySelector('button').disabled=false;}};
+const form=document.querySelector('#form'),status=document.querySelector('#status'),button=form.querySelector('button');let origin='',timer,lastState,submitting=false;
+button.disabled=true;
+const errors={auth:'Instance rejected access. Check UUID and password.',origin:'Instance origin changed. Open a new QR on TV.',network:'Could not reach your instance. Check network, TLS and browser CORS access for Authorization.',server:'Instance unavailable or rate limited. Try again later.',response:'Instance returned an invalid user response.'};
+async function api(op,extra={}){if(!/^[a-f0-9]{32}$/.test(key)){const e=Error('Invalid pairing link. Open a new QR on TV.');e.terminal=true;throw e;}let r;try{r=await fetch('/v1/aiopair/'+id,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({op,key,...extra}),cache:'no-store',redirect:'error',credentials:'omit',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(12000)});}catch{throw Error('Pairing service unavailable. Try again.');}if(!r.ok){const e=Error(r.status===410?'Pairing expired or cancelled. Open a new QR on TV.':'Pairing service unavailable. Try again or open a new QR on TV.');e.terminal=r.status===410||r.status===403;throw e;}try{return await r.json();}catch{throw Error('Pairing service returned an invalid response. Open a new QR on TV.');}}
+async function poll(){try{const s=await api('status');let u;try{u=new URL(s.origin);}catch{}if(!u||u.protocol!=='https:'||u.username||u.password||u.origin!==s.origin||(origin&&origin!==s.origin)){const e=Error(errors.origin);e.terminal=true;throw e;}
+origin=s.origin;document.querySelector('#origin').textContent=origin;
+const stopped=s.state==='error'&&(s.reason==='network'||s.reason==='server');
+if(!submitting&&(s.state!==lastState||button.disabled))status.textContent=s.state==='synced'?'Synced. Your TV is ready.':stopped?'TV could not reach or verify your instance. Check instance availability, then open a new QR on TV.':s.state==='error'?(errors[s.reason]||'TV could not verify access. Check UUID and password, then retry.'):s.state==='checking'?'TV is checking your instance…':'Ready to connect.';lastState=s.state;
+form.hidden=s.state==='synced'||stopped;button.disabled=submitting||s.state==='checking'||form.hidden;if(s.state!=='synced')timer=setTimeout(poll,1500);}catch(e){status.textContent=e.terminal?e.message:'Pairing service unavailable. Retrying…';button.disabled=true;if(e.terminal)form.hidden=true;else timer=setTimeout(poll,1500);}}
+form.onsubmit=async e=>{e.preventDefault();if(!origin||button.disabled||submitting)return;const uuid=document.querySelector('#uuid').value,password=document.querySelector('#password').value,instance=origin;
+if(!/^[a-zA-Z0-9_-]{1,127}$/.test(uuid)||!password.length||new TextEncoder().encode(password).length>768||/[\\x00-\\x1f\\x7f]/.test(password)){status.textContent=errors.auth;return;}
+submitting=true;button.disabled=true;status.textContent='Checking your instance…';let sent=false;
+try{let r;try{r=await fetch(instance+'/api/v1/user',{headers:{Authorization:'Basic '+btoa(unescape(encodeURIComponent(uuid+':'+password)))},redirect:'error',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(12000)});}catch{throw Error(errors.network);}
+if(!r.ok)throw Error(r.status===401||r.status===403?errors.auth:r.status===429||r.status>=500?errors.server:errors.response);
+let data;try{data=await r.json();}catch{throw Error(errors.response);}const user=data?.data?.userData;if(data?.success!==true||!user||typeof user!=='object'||Array.isArray(user))throw Error(errors.response);
+if(form.hidden||origin!==instance)throw Error(errors.origin);
+await api('send',{origin:instance,uuid,password});sent=true;lastState='checking';status.textContent='TV is syncing…';}
+catch(e){status.textContent=e.message;if(e.terminal)form.hidden=true;}finally{document.querySelector('#password').value='';submitting=false;button.disabled=sent||form.hidden;}};
 poll();
 </script></html>`;
 }

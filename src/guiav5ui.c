@@ -77,6 +77,8 @@ static int focus, nav=-1, selected, edit=-1, playing, selected_season=1, credent
 typedef struct{float x,y,w,h,vx,vy,vw,vh;int ok;}GVGlide;
 static int mode=2, mv_count, mv_main, mv_target;
 static GfxRect mv_rect(int slot);
+/* UI slot indices include the main player; extra decoders are dense 0..2. */
+static int mv_decoder(int slot){return slot-(slot>mv_main);}
 static void mv_tick(void);
 static void mv_picker_build(void);
 static void mv_alts_build(void);
@@ -1389,7 +1391,7 @@ static void mv_slot(int i){
   if(t<1){gfx_transformar(r.x+r.w/2,r.y+r.h/2,anim_mistura(.94f,1,t),0,0);gfx_opacidade_grupo=og*t;}
   int principal=i==mv_main;
   int live=it&&principal&&player_mini_no_guia_ativo()&&video_pronto();
-  int extra_live=it&&!principal&&mv_extra_on[i]&&video_mv_estado(i)==2;
+  int extra_live=it&&!principal&&mv_extra_on[i]&&video_mv_estado(mv_decoder(i))==2;
   panel(r.x,r.y,r.w,r.h);
   if(live||extra_live)gfx_furo_raio(r,22/r.h);
   else if(it&&it->poster[0]&&!restricted(it)){GLuint tx=tex_obter_larg(it->poster,r.w);if(tx)gfx_rect(r,tx,GFX_CARD,0,0,0,22/r.h,1,1,1,1);}
@@ -1421,7 +1423,6 @@ static void mv_slot(int i){
   if(focused){
     float ar,ag,ab;ajustes_acento(&ar,&ag,&ab);
     GfxRect fr=foco_rect(alvo);
-    plrui_linha_foco(fr,22,1);
     gfx_anel_fora(fr,22/fr.h,4,2.5f,ar,ag,ab,.9f);
   }
   if(!sem_foco){ponteiro_alvo(alvo.x,alvo.y,alvo.w,alvo.h,point_focus,point_activate,i,0);
@@ -1527,30 +1528,27 @@ static void mv_tick(void){
   unsigned agora=SDL_GetTicks();
   int extras=video_mv_max();
   static int main_ant=-1;
-  if(main_ant!=mv_main){   /* audio/main moved: both slots reopen on the right decoder */
-    if(main_ant>=0&&main_ant<4)g5_mv_ctl_set(&mvctl,main_ant,"",NULL,agora);
-    if(mv_main>=0&&mv_main<4){
-      if(mv_extra_on[mv_main]){mv_extra_on[mv_main]=0;video_mv_parar(mv_main);}
-      g5_mv_ctl_set(&mvctl,mv_main,"",NULL,agora);
-    }
+  if(main_ant!=mv_main){   /* moving main changes the extra-decoder mapping */
+    video_mv_parar_todos();memset(mv_extra_on,0,sizeof mv_extra_on);
+    for(int i=0;i<4;i++)g5_mv_ctl_set(&mvctl,i,"",NULL,agora);
     main_ant=mv_main;
   }
   for(int i=0;i<4;i++){
     int ativo=i<mode&&mv_items[i].id[0];
     g5_mv_ctl_set(&mvctl,i,ativo?mv_items[i].id:"",ativo?mv_fonte[i]:"",agora);
-    if(!ativo){if(mv_extra_on[i]){mv_extra_on[i]=0;video_mv_parar(i);}mv_disp[i]=G5_MV_VAZIO;continue;}
+    if(!ativo){if(mv_extra_on[i]){mv_extra_on[i]=0;video_mv_parar(mv_decoder(i));}mv_disp[i]=G5_MV_VAZIO;continue;}
     if(i==mv_main){
       if(g5_mv_ctl_abrir(&mvctl,i,agora))mv_main_req=1;
       if(player_mini_no_guia_ativo()&&video_pronto())g5_mv_ctl_pronto(&mvctl,i);
       continue;
     }
-    int ord=i-(i>mv_main?1:0);
+    int ord=mv_decoder(i);
     char url[2100],cab[600];
     int cap=mv_cap(mv_fonte[i]);
     int bloq=ord>=extras?G5_MV_SEM_DECODER:!mv_url(&mv_items[i],url,sizeof url,cab,sizeof cab)?G5_MV_SEM_FONTE:
              cap>0&&mv_uso(mv_fonte[i],i)>=cap?G5_MV_SEM_FONTE:0;
     if(bloq){
-      if(mv_extra_on[i]){mv_extra_on[i]=0;video_mv_parar(i);}
+      if(mv_extra_on[i]){mv_extra_on[i]=0;video_mv_parar(ord);}
       /* stopped: reopen once the block lifts (cap freed, slot swapped) */
       if(mvctl.slot[i].pediu){mvctl.slot[i].pediu=0;mvctl.slot[i].estado=G5_MV_ABRINDO;}
       if(mv_disp[i]!=bloq)printf("[mv] slot %d parado: %s\n",i,bloq==G5_MV_SEM_DECODER?"limite de decodificadores da TV":"limite de conexoes da fonte"),fflush(stdout);
@@ -1558,17 +1556,17 @@ static void mv_tick(void){
     }
     mv_disp[i]=mvctl.slot[i].estado;
     if(g5_mv_ctl_abrir(&mvctl,i,agora)){
-      if(!video_mv_abrir(i,url,cab)){mv_extra_on[i]=1;printf("[mv] slot %d: decodificador extra ativo (%d de %d)\n",i,ord+1,extras);fflush(stdout);}
+      if(!video_mv_abrir(ord,url,cab)){mv_extra_on[i]=1;printf("[mv] slot %d: decodificador extra ativo (%d de %d)\n",i,ord+1,extras);fflush(stdout);}
       else{mv_disp[i]=G5_MV_SEM_DECODER;printf("[mv] slot %d: decodificador extra indisponivel\n",i);fflush(stdout);}
     }
     if(mv_extra_on[i]){
-      int st=video_mv_estado(i);
+      int st=video_mv_estado(ord);
       if(st==2)g5_mv_ctl_pronto(&mvctl,i);
       else if(st<0&&mvctl.slot[i].estado!=G5_MV_ERRO){
-        g5_mv_ctl_erro(&mvctl,i,agora);mv_extra_on[i]=0;video_mv_parar(i);
+        g5_mv_ctl_erro(&mvctl,i,agora);mv_extra_on[i]=0;video_mv_parar(ord);
         printf("[mv] slot %d: erro na transmissao (tentativa %d de 4)\n",i,mvctl.slot[i].tentativas);fflush(stdout);
       }
-      GfxRect r=mv_rect(i);video_mv_janela(i,(int)r.x,(int)r.y,(int)r.w,(int)r.h);
+      GfxRect r=mv_rect(i);video_mv_janela(ord,(int)r.x,(int)r.y,(int)r.w,(int)r.h);
     }
   }
 }
@@ -1599,13 +1597,18 @@ static void modal_draw(const char *s){
     static char ultima[140];if(strcmp(ultima,query)){snprintf(ultima,sizeof ultima,"%s",query);mv_picker_build();}
     modal(1050,128,822,848);
     label(TXT_ILHA_SUB,"MULTIVIEW",1094,174,600,1);
-    label(TXT_TITULO2,i18n(mv_target<4&&mv_items[mv_target].id[0]?"Trocar canal":"Adicionar canal"),1094,214,700,0);
+    label(TXT_TITULO2,i18n(mv_target>=0&&mv_target<mode&&mv_items[mv_target].id[0]?"Trocar canal":"Adicionar canal"),1094,214,700,0);
     button(899,query[0]?query:i18n("Buscar canal"),"aj_search",1094,284,734,64,0);
     static int start;
-    if(focus>=900&&focus<900+npicks){if(focus-900<start)start=focus-900;else if(focus-900>=start+8)start=focus-900-7;}
-    if(start>npicks-8)start=npicks-8>0?npicks-8:0;
+    if(focus==899||start>=npicks)start=0;
+    if(focus>=900&&focus<900+npicks){
+      int target=focus-900,height=0;
+      if(start>target)start=target;
+      for(int i=start;i<=target;i++)height+=picks[i].header?84:72;
+      while(height>900-364&&start<target)height-=picks[start++].header?84:72;
+    }
     float y=364;
-    for(int i=start;i<npicks&&y<900;i++){
+    for(int i=start;i<npicks&&y+(picks[i].header?84:64)<=900;i++){
       MvPick *p=&picks[i];
       if(p->header){
         GfxRect hr={1094,y+22,734,1};gfx_cor(hr,0,1,1,1,.08f);
@@ -1890,7 +1893,7 @@ static void activate(int id){
       if(id==899){input(5,i18n("Buscar canal"),query,0);return;}
       if(id>=900&&id<900+npicks){
         MvPick *p=&picks[id-900];
-        if(p->header)return;
+        if(p->header||mv_target<0||mv_target>=mode)return;
         if(restricted(&p->it))return;
         if(p->disabled){
           /* Source at its connection limit: replace that source's slot. */
@@ -1900,7 +1903,6 @@ static void activate(int id){
           snprintf(message,sizeof message,"%s",i18n("Canal trocado no quadro dessa fonte"));
           pg_tras();focus=j;return;
         }
-        if(mv_target>=mode)mv_target=0;
         mv_items[mv_target]=p->it;
         snprintf(mv_fonte[mv_target],sizeof mv_fonte[0],"%s",p->fonte_key);
         if(mv_target>=mv_count)mv_count=mv_target+1;

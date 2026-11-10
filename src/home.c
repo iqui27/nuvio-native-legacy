@@ -6902,8 +6902,8 @@ static void home_trailer_passo_(int topo, float dt, Uint32 agora) {
       // (.wgt) trailer_abrir forca mudo de qualquer jeito.
       heroTrailerNoCartao = destCartao;
       trailer_no_cartao(destCartao);
-      trailer_abrir(u, destCartao ? cartaoVideoRect(cartaoTrailerRect) : heroArteRect,
-                    ajustes_trailer_som(), 0);
+      trailer_abrir_preview_home(u, destCartao ? cartaoVideoRect(cartaoTrailerRect) : heroArteRect,
+                                 ajustes_trailer_som(), 0);
       trailer_marcar_dono(TRAILER_DONO_HOME, ci->imdb);
       // trailer_abrir e void por compatibilidade com o player nativo; no
       // browser ainda pode recusar a criacao (canvas ausente). Tratar isso
@@ -8455,6 +8455,16 @@ static void homeResidencia(void) {
 }
 
 static void home_desenhar_(Uint32 agora) {
+  // Glass reads a blurred backdrop copy: while the hero crossfades or the stage
+  // backdrop eases, the hash still moves every frame unless we key the capture
+  // (gfx.c fundoPasso; tests/gpu1080_shot.c).
+  if (heroSai > 0.004f || heroDesliza < 0.999f || palcoFundoT < 0.999f || palcoItemA < 0.999f)
+    gfx_vidro_fundo_passo(((heroAnterior * 512 + heroAtual) * 512) +
+                          (int)(heroSai * 255.0f + 0.5f) * 4 +
+                          (int)(heroDesliza * 255.0f + 0.5f) * 2 +
+                          (int)(palcoFundoT * 255.0f + 0.5f));
+  else
+    gfx_vidro_fundo_passo(-1);
   navigationCount=0;
   homeResidencia();
   // Nao conservar ponteiros para o catalogo de outro quadro/perfil quando

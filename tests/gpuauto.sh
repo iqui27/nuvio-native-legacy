@@ -23,4 +23,7 @@ cc src/main.c -DNV_WEBOS -O1 -Isrc -I/opt/homebrew/include \
   -I/opt/homebrew/include/SDL2 -Wno-deprecated-declarations -c -o "$work/main.o"
 nm -u "$work/main.o" > "$work/symbols"
 grep -q '^_gpun_relatar$' "$work/symbols"
+for symbol in gpun_janela_elegivel gpun_em_teste gpun_resolucao_em_prova; do
+  grep -q "^_$symbol\$" "$work/symbols"
+done
 echo 'gpuauto: TV reporter wired'

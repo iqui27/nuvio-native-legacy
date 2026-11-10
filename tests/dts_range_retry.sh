@@ -18,10 +18,19 @@ flags=(-std=gnu11 -O1 -g -Wall -Wextra -Werror -Wno-misleading-indentation)
 if [[ ${SANITIZE:-0} == 1 ]];then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer);fi
 cc "${flags[@]}" -I"$prefix/include" tests/dts_range_retry.c src/rede.c src/redeurl.c -o "$task_tmp/test" \
  -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
-for mode in once twice short wrong hard exhaust cancel seek live-hang live-bodyhang live-hangall live-steady live-speculative live-boot live-cancel;do
+for mode in once twice short wrong hard exhaust cancel seek live-hang live-bodyhang live-hangall live-steady live-speculative live-boot live-cancel live-interrupt;do
  "$task_tmp/test" "http://127.0.0.1:$port/retry-$mode/range.bin"
 done
 "$task_tmp/test" "http://127.0.0.1:$port/retry-once/dv.bin"
+"$task_tmp/test" "http://127.0.0.1:$port/retry-rate/range.bin"
+"$task_tmp/test" "http://127.0.0.1:$port/retry-rate-exhaust/range.bin"
+"$task_tmp/test" "http://127.0.0.1:$port/retry-rate-cancel/range.bin"
+"$task_tmp/test" seek-queued
+"$task_tmp/test" "http://127.0.0.1:$port/race-seek/range.bin"
+cc "${flags[@]}" -DRANGE_WORKERS=1 -DNV_TEST_LEGACY_RECOVERY -I"$prefix/include" tests/dts_range_retry.c src/rede.c src/redeurl.c -o "$task_tmp/serial" \
+ -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
+"$task_tmp/serial" "http://127.0.0.1:$port/retry-rate/range.bin"
+"$task_tmp/serial" "http://127.0.0.1:$port/queue-seek/range.bin"
 # The real demux/DTS/AAC path must produce the same audio/video bytes after
 # an HTTP failure as it does from the local source; silence must not be needed.
 printf '1\n00:00:00,500 --> 00:00:01,500\nRange recovery fixture\n' > "$task_tmp/input.srt"
@@ -49,6 +58,12 @@ for mode,want in [('once',2),('twice',3),('short',2),('wrong',2),('hard',1),('ex
  at=0 if mode in ('hard','exhaust','cancel') else 4*1024*1024
  assert counts[(f'/retry-{mode}/range.bin',at)]==want,(mode,counts)
 assert counts[('/retry-once/dv.bin',4*1024*1024-1)]==2
+assert counts[('/retry-rate/range.bin',0)]==4
+assert counts[('/retry-rate-exhaust/range.bin',0)]==4
+assert counts[('/retry-rate-cancel/range.bin',0)]==1
+assert counts[('/race-seek/range.bin',1024)]==2
+queue=[r['lo'] for r in rows if r['path']=='/queue-seek/range.bin']
+assert queue[:2]==[0,4096],queue
 for mode,want in [('hang',2),('bodyhang',2),('hangall',3),('steady',1),('speculative',1),('boot',1),('cancel',1)]:
  at=0 if mode=='boot' else 4*1024*1024
  assert counts[(f'/retry-live-{mode}/range.bin',at)]==want,(mode,counts)

@@ -424,6 +424,20 @@ static int aplicarVisto(int modo, int visto) {
   }
   if (n < 1) return 0;
   mudou = vistoep_aplicar(ci->imdb, lote, n, visto, envio, &ja);
+  // #698: marked watched ends the resume, even if the map already said watched.
+  // Complete the row like the player does: deleting it lets an old cloud row return.
+  if (visto) {
+    int fechou = 0;
+    for (int i = 0; i < n; i++) {
+      ProgRegistro pr;
+      char chave[192];
+      prog_chave(chave, sizeof chave, ci->imdb, lote[i].temporada, lote[i].episodio);
+      if (prog_por_chave(chave, &pr) && pr.posSeg < pr.durSeg &&
+          prog_gravar_local(ci->imdb, lote[i].temporada, lote[i].episodio,
+                            pr.durSeg, pr.durSeg, pr.tocou)) fechou = 1;
+    }
+    if (fechou) { sync_sujar_progresso(); desc_refazer_continuar(); }
+  }
   if (visto && rewatch_ativa(ci->imdb)) {
     memcpy(envio,lote,sizeof lote[0]*(size_t)n);
     mudou=n;
@@ -664,7 +678,7 @@ static void menuDesenhar(GfxRect area, float a0) {
     if (panelY<VM_BORDA) panelY=VM_BORDA;
     comentarios = (GfxRect){m.x + MW + 24, panelY, pw, ph};
   }
-  if (vmSo && !vmModoTemp && ajustes_home_layout() == HOME_LAYOUT_MODERNA) {
+  if (vmSo && !vmModoTemp) {
     // One complete still/summary, actions, reviews: stable at either row edge.
     float gap=24, summaryW=420, total=summaryW+gap+MW+gap+676;
     float left=(area.w-total)*.5f;
@@ -672,6 +686,17 @@ static void menuDesenhar(GfxRect area, float a0) {
     vmResumo=(GfxRect){left,top,summaryW,740};
     m.x=left+summaryW+gap; m.y=top;
     comentarios=(GfxRect){m.x+MW+gap,top,676,624};
+    if (vmTemAncora && ajustes_home_layout() == HOME_LAYOUT_DINAMICA) {
+      float t = anim_clamp(vmAnim, 0.0f, 1.0f);
+      vmResumo.x = vmAncora.x + (vmResumo.x - vmAncora.x) * t;
+      vmResumo.y = vmAncora.y + (vmResumo.y - vmAncora.y) * t;
+      vmResumo.w = vmAncora.w + (vmResumo.w - vmAncora.w) * t;
+      vmResumo.h = vmAncora.h + (vmResumo.h - vmAncora.h) * t;
+      m.x = vmAncora.x + vmAncora.w + (m.x - vmAncora.x - vmAncora.w) * t;
+      m.y = vmAncora.y + (m.y - vmAncora.y) * t;
+      comentarios.x = m.x + MW + gap;
+      comentarios.y = m.y;
+    }
   }
   if (vmAberto && ponteiro_ativo() && a > .5f) {
     ponteiro_camada();
@@ -1289,22 +1314,13 @@ static void episodios_menu_desenharCorpo_(void) {
   if (vmSo) {
     float scale = gfx_escala(), fitted = scale;
     GfxRect anchor = vmAncora;
-    int modern = !vmModoTemp && ajustes_home_layout() == HOME_LAYOUT_MODERNA;
-    if (modern) {
+    if (!vmModoTemp) {
       fitted=fminf(scale,(NV_LAYOUT_REAL_W-96.0f)/(420+24+vmLarg+24+676));
       fitted=fminf(fitted,(NV_LAYOUT_REAL_H-96.0f)/fmaxf(menuAltura(),740));
       gfx_escala_sair(fitted);
-    } else if (!vmModoTemp && scale > 1.0f) {
-      // Fit complete controls beside the card; shrinking only the panel box
-      // leaves its fixed-width rating chart and review contents overflowing.
-      float right = vmTemAncora ? (anchor.x + anchor.w) * scale + 24.0f : 48.0f;
-      // An anchor near the right edge cannot reserve a right-hand column.
-      if (right > NV_LAYOUT_REAL_W * .5f) right = 48.0f;
-      fitted = fminf(fitted, (NV_LAYOUT_REAL_W - 48.0f - right) / (vmLarg + 24.0f + 676.0f));
-      fitted = fminf(fitted, (NV_LAYOUT_REAL_H - 96.0f) / fmaxf(menuAltura(), 624.0f));
-      gfx_escala_sair(fitted);
-      vmAncora = (GfxRect){anchor.x * scale / fitted, anchor.y * scale / fitted,
-                           anchor.w * scale / fitted, anchor.h * scale / fitted};
+      if (vmTemAncora && fitted != scale && ajustes_home_layout() == HOME_LAYOUT_DINAMICA)
+        vmAncora = (GfxRect){anchor.x*scale/fitted, anchor.y*scale/fitted,
+                             anchor.w*scale/fitted, anchor.h*scale/fitted};
     }
     menuDesenhar((GfxRect){0, 0, NV_LAYOUT_REAL_W / fitted, NV_LAYOUT_REAL_H / fitted}, 1.0f);
     if (vmTemCaixa && fitted != scale)

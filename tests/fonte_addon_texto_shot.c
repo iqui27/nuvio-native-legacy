@@ -86,6 +86,10 @@ void fonte_addon_visible(const char *text, float y, float h) {
 }
 static float lastBottom;
 void fonte_addon_line(const char *text, float y, float w, float h, float limit) {
+#ifdef NV_GLYPH_RENDER_TEST
+  extern void glyphrender_line(const char *text);
+  glyphrender_line(text);
+#endif
   if (!checking) return;
   assert(y >= lastBottom && w <= limit && h > 0);
   lastBottom = y+h; lineCount++;
@@ -147,7 +151,8 @@ int main(int argc, char **argv) {
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fboTex, 0);
   assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
   glViewport(0, 0, LW, LH); gfx_tamanho_alvo(LW, LH); assert(gfx_iniciar());
-  assert(txt_iniciar("deploy/app", 1)); tex_iniciar(64);
+  const char *resources = getenv("NV_ADDON_RESOURCES");
+  assert(txt_iniciar(resources ? resources : "deploy/app", 1)); tex_iniciar(64);
   gfx_icones_dir("deploy/app/art");
   badges_carregar("deploy/app/art");
   { char caminho[700]; FILE *f;
@@ -159,7 +164,8 @@ int main(int argc, char **argv) {
     ajustes_dir(getenv("NUVIO_DADOS")); }
   ajustes_iniciar();
   char fixture[8192];
-  FILE *input = fopen("tests/fixtures/fonte-addon.json", "rb"); assert(input);
+  const char *fixturePath = getenv("NV_ADDON_FIXTURE");
+  FILE *input = fopen(fixturePath ? fixturePath : "tests/fixtures/fonte-addon.json", "rb"); assert(input);
   size_t bytes = fread(fixture, 1, sizeof fixture - 1, input); fclose(input);
   fixture[bytes] = 0;
   count = stream_extrair(fixture, "AIOStreams", &v);
@@ -173,6 +179,12 @@ int main(int argc, char **argv) {
   gfx_cor((GfxRect){ 0, 0, 1, 1 }, 0, 0, 0, 0, 0);
   quadros(50);
   salvar("1-foco-primeira");
+#ifdef NV_GLYPH_RENDER_TEST
+  extern int glyphrender_check(const Stream *streams);
+  int result = glyphrender_check(v);
+  free(v); txt_encerrar();
+  return result;
+#endif
 #ifdef NV_ADDON_LAYOUT_TEST
   int failed = 0;
   // A fresh block is measured once, then reused across layout-only frames.
