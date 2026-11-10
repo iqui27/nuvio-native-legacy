@@ -15271,8 +15271,15 @@
    "tipo_registro": "pr",
    "titulo": "webOS: play DTS natively when the TV supports it, plus an \"Original\" option",
    "estado_github": "aberta",
-   "classificacao_catalogo": "parcial",
+   "classificacao_catalogo": "integrado-aguardando-validacao-especifica",
    "proximo_passo": "Corrigir/validar estado EDID pendente e resposta tardia preservando timeout/erro/Original/áudio não suportado. Revisão do ajuste, execução real de migração e prova webOS. Não declarar ABI HLunaServiceCall comprovada. P2 ajuda/contagem de speakers fica nota.",
+   "integracao_local_2026_11_10": {
+    "merge": "c11873064be4ff4d1026c51bbc565ddc8f66cd98",
+    "candidato": "0c272ad3c9ef50174170e9552a0a46c5214246d0",
+    "resultado": "Revisão independente OK; gate 6/6. EDID, tour e i18n pós-merge rc0. PR remota permanece aberta no snapshot; integração local não implica merge remoto.",
+    "limites": "Sem prova física webOS ou ABI Luna em aparelho; consulta EDID única por processo e resposta tardia não desfaz conversão na abertura corrente.",
+    "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-verif-pr780-0c272ad3c.log"
+   },
    "evidencia_checkpoint_140": {
     "conclusao": "PR segue parcial, não integrada. Revisão local independente documentada agora: BLOQUEIA head2ecc6e08 por P1 EDID pendente tratado como ausência de DTS; nenhuma reprodução integral/TV.",
     "commits": "2ecc6e089cbdd3db7f349c3fcb97cfb0cfac28a4 (head atual, 08:21:32Z; 2 commits: bb9385d68198 edidType DTS nativo + 2ecc6e089cbd opção Original; 13 arquivos); não integrado. Head anterior e7fb0386a078dbd2a282bfdd6321c7fc6b435a3c foi superado.",
@@ -15458,6 +15465,15 @@
   }
  ],
  "validacoes": [
+  {
+   "data": "2026-11-10",
+   "quem": "Revisão independente; Central Issues (gate); Central TV (integração)",
+   "o_que": "PR780: DTS nativo e tratamento EDID pendente.",
+   "issues": [],
+   "ref": "c11873064be4ff4d1026c51bbc565ddc8f66cd98",
+   "resultado": "Gate 6/6; EDID, tour e i18n pós-merge rc0.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-verif-pr780-0c272ad3c.log; sem prova webOS física."
+  },
   {
    "data": "2026-11-10",
    "quem": "Investigação independente no host",
