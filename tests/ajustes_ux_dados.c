@@ -770,8 +770,21 @@ int main(void) {
   assert(indiceResultado(AJ_PS_CONTINUAR, ajustes_buscar("continuar escolha", resultados, AJ_N)) >= 0);
   // DTS convertido em: local, last, default Estereo (AAC) = today, once on screen, findable.
   assert(AJ_DTS_AC3 == AJ_PS_CONTINUAR + 1 && AJ_DTS_AC3 == AJ_FONTE_ESCOPO + 12);
-  assert(!strcmp(CHAVE[AJ_DTS_AC3], "dtsSaidaLocal") && OPCOES[AJ_DTS_AC3].n == 2 && valorPadrao[AJ_DTS_AC3] == 0 && !ajustes_dts_ac3());
+  assert(!strcmp(CHAVE[AJ_DTS_AC3], "dtsLgLocal") && OPCOES[AJ_DTS_AC3].n == 3 && valorPadrao[AJ_DTS_AC3] == 1 && !ajustes_dts_ac3() && !ajustes_dts_original());
   assert(somenteDesteAparelho(AJ_DTS_AC3) && (dePerfil(AJ_DTS_AC3) == (escopoDe(AJ_DTS_AC3) == ESC_PERFIL_CONTA || escopoDe(AJ_DTS_AC3) == ESC_PERFIL_LOCAL)));
+  { int antes = valor[AJ_DTS_AC3]; char *device, *out = NULL;
+    assert(!ajustePortavel(AJ_DTS_AC3) && ajusteAparelho(AJ_DTS_AC3));
+    valor[AJ_DTS_AC3] = 2;
+    device = ajustesDeviceSnapshot();
+    assert(device && strstr(device, "\"c_dtsLgLocal\":2"));
+    free(device);
+    ajustes_aplicar_blob("{\"dtsSaidaLocal\":0,\"dts_saida_local\":1}");
+    assert(valor[AJ_DTS_AC3] == 2);
+    assert(ajustes_mesclar_blob("{\"dts_saida_local\":1}", &out) > 0 && out);
+    assert(strstr(out, "\"dts_saida_local\":1"));
+    free(out);
+    valor[AJ_DTS_AC3] = antes;
+  }
   { int vz = 0, k; for (k = 0; k < AJ_N_TELA; k++) if (TELA[k].tipo == IT_OPC && TELA[k].op == AJ_DTS_AC3) vz++; assert(vz == 1); }
   assert(indiceResultado(AJ_DTS_AC3, ajustes_buscar("dolby digital", resultados, AJ_N)) >= 0);
   assert(AJ_ARTE_TOM == AJ_NT_ORDEM + 1 && AJ_PALCO_FUNDO == AJ_ARTE_TOM + 1 && !strcmp(CHAVE[AJ_PALCO_FUNDO], "palcoFundoLocal"));

@@ -317,7 +317,7 @@ static int       fioMkvVivo;
 // abertura e fazer o load correto ser ignorado.
 static unsigned  sessao;
 
-#if defined(__APPLE__) || defined(_WIN32) || defined(NV_LINUX_DESKTOP)
+#if (defined(__APPLE__) || defined(_WIN32) || defined(NV_LINUX_DESKTOP)) && !defined(NV_DTS_EDID_PENDING_TEST)
 // No Mac nao existe barramento nem plano de video. Os cotos deixam o resto do
 // app compilar e rodar igual, so sem imagem em movimento. As capturas podem
 // simular um video (video_simular, video.h); zerado e o coto mudo.
@@ -684,6 +684,54 @@ static char cabsHttp[512];
 static int iniciarDts(int stream);
 static void bombearDts(void);
 static int dtsLiberadoNestaTv(void);
+// EDID: -1 = aguardando, 0 = sem DTS, 1 = declara DTS. 0 antes da resposta
+// nao vale como "TV sem DTS".
+typedef struct { Filtro cb; void *ud, *x; int multiplo, pub; unsigned long tok; } NvHContext;
+#ifdef NV_DTS_EDID_PENDING_TEST
+int nv_dts_edid_test_webos_major = -1;
+#endif
+static int edidDts;
+static unsigned edidPedidoMs;
+static unsigned edidEsperaMs = 2000;
+static unsigned edidGeracao;
+static int edidResposta(LSHandle *h, LSMessage *m, void *u) {
+  const char *r;
+  (void)h;
+  if ((unsigned)(uintptr_t)u != __atomic_load_n(&edidGeracao, __ATOMIC_ACQUIRE))
+    return 1;
+  r = lsPayload(m);
+  __atomic_store_n(&edidDts, nv_dts_edid(r) ? 1 : 0, __ATOMIC_RELEASE);
+  printf("[dts] %.160s\n", r ? r : "");
+  fflush(stdout);
+  return 1;
+}
+static void pedirEdid(void) {
+  static NvHContext ctxs[2];
+  static int (*chamar)(const char *, const char *, NvHContext *);
+  NvHContext *ctx;
+  unsigned g;
+  void *h;
+  /* Return value of HLunaServiceCall is not a documented success bit.
+   * Missing helper or payload falls back now; an unanswered call waits. */
+  g = __atomic_add_fetch(&edidGeracao, 1, __ATOMIC_ACQ_REL);
+  ctx = &ctxs[g & 1u];
+  ctx->cb = edidResposta;
+  ctx->ud = (void *)(uintptr_t)g;
+  ctx->x = 0;
+  ctx->multiplo = 0;
+  ctx->pub = 1;
+  ctx->tok = 0;
+  edidPedidoMs = SDL_GetTicks();
+  if (!chamar && (h = dlopen("libhelpers.so.2", RTLD_NOW)))
+    *(void **)(&chamar) = dlsym(h, "HLunaServiceCall");
+  if (!chamar || !lsPayload) {
+    __atomic_store_n(&edidDts, 0, __ATOMIC_RELEASE);
+    return;
+  }
+  __atomic_store_n(&edidDts, -1, __ATOMIC_RELEASE);
+  chamar("luna://com.webos.service.config/getConfigs",
+         "{\"configNames\":[\"tv.model.edidType\"]}", ctx);
+}
 // RECONEXAO (video_reconexao.h). O erro chega no fio do LS2 e so ANOTA
 // (reconErroPend); a decisao e o recarregar sao do video_bombear, no fio
 // principal, como o `recuperando`.
@@ -811,6 +859,9 @@ static void esperar(int ms) { struct timespec t; t.tv_sec = ms / 1000;
 // ausente, senao 4), guardado no primeiro uso.
 static int webosMaior(void) {
   static int v, lido;
+#ifdef NV_DTS_EDID_PENDING_TEST
+  if (nv_dts_edid_test_webos_major > 0) return nv_dts_edid_test_webos_major;
+#endif
   if (v) return v;
   v = nv_webos_major();
   if (!lido) {
@@ -2464,7 +2515,9 @@ int video_tocar(const char *url) {
   // capitulos depois de um com nao herda as marcas do anterior.
   capmkv_zerar();
   snprintf(urlAtual, sizeof urlAtual, "%s", url ? url : "");
-  return tocarInterno(url, 1);
+  int r = tocarInterno(url, 1);   // liga o LS2 (lsPayload) antes do pedido
+  pedirEdid();
+  return r;
 }
 
 // Chamado uma vez por quadro. So existe para o prazo acima: sem ele o recuo
@@ -2500,6 +2553,9 @@ void video_bombear(void) {
     // de TrueHD e de faixa ainda sem codec; o fallback derrubava a reproducao
     // nativa, que na 2.0.0 seguia. Sem a lista de faixas, espera ela chegar.
     int knownDts = video_faixa_dts(video_audio(audioAtual)) > 0;
+    int edid = __atomic_load_n(&edidDts, __ATOMIC_ACQUIRE);
+    int nativo = nv_dts_native_agora(edid, ajustes_dts_original(), SDL_GetTicks(),
+                                     edidPedidoMs, edidEsperaMs);
     int forcar = 0;
 #ifdef NV_DTS_DEBUG
     // A C9 decodifica DTS sozinha: sem isto o caminho de conversao nunca roda
@@ -2510,8 +2566,9 @@ void video_bombear(void) {
     // de tocar, inclusive os modelos 2023/24 que tem DTS: nao da para detectar
     // o suporte com seguranca (o webOS 26 toca MUDO sem errorCode 200, #285).
     // So a C9 e anteriores (webOS < 5) usam o caminho nativo + errorCode 200.
+    // Excecao: a TV declara DTS no edidType (edidDts), ou o usuario escolheu "Original".
     if ((audioNaoSup && knownDts) || forcar ||
-        nv_dts_converter_ja(webosMaior(), knownDts, 1, dtsTentou)) {
+        (nativo == 0 && nv_dts_converter_ja(webosMaior(), knownDts, 1, dtsTentou))) {
       dtsEstado = VIDEO_DTS_PREPARANDO;
       iniciarDts(-1);
     }
@@ -2519,9 +2576,14 @@ void video_bombear(void) {
   // Sem conversao nesta TV (adapter ausente, app morreu com ela aberta, webOS
   // 3/4): se a TV nao tem DTS, o silencio e certo — avisa na ilha em vez de
   // deixar parecer que toca.
-  else if (!dtsHabilitado && pronto && (!dtsEstado || dtsEstado == VIDEO_DTS_SEM_SOM))
-    dtsEstado = nv_dts_sem_som(webosMaior(), video_faixa_dts(video_audio(audioAtual)) > 0, 0)
+  else if (!dtsHabilitado && pronto && (!dtsEstado || dtsEstado == VIDEO_DTS_SEM_SOM)) {
+    int edid = __atomic_load_n(&edidDts, __ATOMIC_ACQUIRE);
+    int nativo = nv_dts_native_agora(edid, ajustes_dts_original(), SDL_GetTicks(),
+                                     edidPedidoMs, edidEsperaMs);
+    dtsEstado = nativo == 0 &&
+                nv_dts_sem_som(webosMaior(), video_faixa_dts(video_audio(audioAtual)) > 0, 0)
                 ? VIDEO_DTS_SEM_SOM : 0;
+  }
   // O ACB demora cerca de 1,5 s para ligar uma sessao. Se o usuario sair e
   // reabrir nesse intervalo, o loadCompleted novo encontra bindVivo=1. Antes
   // ele simplesmente desistia para sempre; agora o pedido fica pendente.

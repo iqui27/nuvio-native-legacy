@@ -4,7 +4,7 @@
 
 Requirement: every configured preference returns after logout/login or reinstall/login on the same TV. Hardware preferences must not leak to another TV.
 
-(a) uploaded/restored; (b) restored only; (c) LOCAL without cloud backup; (d) outside ajustes.txt or action/status. No standalone (b) scalar found: existing web fields upload through the web merge, and c_settings_v1 uploads portable values even without a web counterpart. Platform-only rows included; dtsTpkLocal replaces dtsSaidaLocal on TPK.
+(a) uploaded/restored; (b) restored only; (c) LOCAL without cloud backup; (d) outside ajustes.txt or action/status. No standalone (b) scalar found: existing web fields upload through the web merge, and c_settings_v1 uploads portable values even without a web counterpart. Platform-only rows included; dtsTpkLocal replaces dtsLgLocal on TPK.
 
 | Option | Key | Baseline classification | Persistence path |
 | --- | --- | --- | --- |
@@ -263,7 +263,7 @@ Requirement: every configured preference returns after logout/login or reinstall
 | `AJ_PROPORCAO_PADRAO` | `proporcaoPadraoLocal` | (c) LOCAL, never backed up | ajustes.txt; excluded by ajustePortavel |
 | `AJ_CW_RETIDO_TAMBEM` | `cwRetidoTambemLocal` | (a) uploaded + restored | c_settings_v1.values; existing web fields also merged when supported |
 | `AJ_PS_CONTINUAR` | `psContinuarLocal` | (a) uploaded + restored | c_settings_v1.values; existing web fields also merged when supported |
-| `AJ_DTS_AC3` | `dtsSaidaLocal` | (c) LOCAL, never backed up | ajustes.txt; excluded by ajustePortavel |
+| `AJ_DTS_AC3` | `dtsLgLocal` | (c) LOCAL, never backed up | ajustes.txt; excluded by ajustePortavel |
 | `AJ_DV_MKV` | `dvMkvLocal` | (c) LOCAL, never backed up | ajustes.txt; excluded by ajustePortavel |
 | `AJ_HIST_CONTA` | `histContaLocal` | (a) uploaded + restored | c_settings_v1.values; existing web fields also merged when supported |
 | `AJ_SOCIAL` | `socialLocal` | (a) uploaded + restored | c_settings_v1.values; existing web fields also merged when supported |

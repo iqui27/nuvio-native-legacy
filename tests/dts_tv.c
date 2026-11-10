@@ -19,6 +19,24 @@ int main(void) {
   /* No DTS and no converter: say so instead of playing silent. */
   CHECK(nv_dts_sem_som(26, 1, 0)); CHECK(!nv_dts_sem_som(26, 1, 1));
   CHECK(!nv_dts_sem_som(26, 0, 0)); CHECK(!nv_dts_sem_som(4, 1, 0)); CHECK(!nv_dts_sem_som(0, 1, 0));
+  CHECK(nv_dts_edid("{\"configs\":{\"tv.model.edidType\":\"TrueHD+dts\"},\"returnValue\":true}"));
+  CHECK(nv_dts_edid("{\"tv.model.edidType\" : \"AC3+DTS\"}"));
+  CHECK(!nv_dts_edid("{\"tv.model.edidType\":\"TrueHD\",\"x\":\"dts\"}"));
+  CHECK(!nv_dts_edid("{\"errorText\":\"Not permitted to send to com.webos.service.config\"}"));
+  CHECK(!nv_dts_edid(NULL));
+  CHECK(nv_dts_native_agora(-1, 0, 40, 10, 50) == -1);
+  CHECK(nv_dts_native_agora(-1, 0, 100, 10, 50) == 0);
+  CHECK(nv_dts_native_agora(-1, 0, 60, 10, 50) == 0);
+  CHECK(nv_dts_native_agora(-1, 0, 0, 0, 50) == -1);
+  CHECK(nv_dts_native_agora(-1, 0, 49, 0, 50) == -1);
+  CHECK(nv_dts_native_agora(-1, 0, 50, 0, 50) == 0);
+  CHECK(nv_dts_native_agora(-1, 0, 10u, 0xfffffff0u, 50) == -1);
+  CHECK(nv_dts_native_agora(-1, 0, 40u, 0xfffffff0u, 50) == 0);
+  CHECK(nv_dts_native_agora(-1, 0, 0, 10, 50) == 0);
+  CHECK(nv_dts_native_agora(-1, 0, 5, 5, 0) == 0);
+  CHECK(nv_dts_native_agora(0, 0, 500, 10, 50) == 0);
+  CHECK(nv_dts_native_agora(1, 0, 20, 10, 50) == 1);
+  CHECK(nv_dts_native_agora(-1, 1, 20, 10, 50) == 1);
   if (!fails) puts("dts_tv ok");
   return fails != 0;
 }
