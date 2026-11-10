@@ -172,6 +172,7 @@ int main(void) {
 
   // A: header known before opening -> converted from the start.
   cabPronto = 1;
+  video_definir_reconexao(1);
   video_tocar("http://h/a.mkv");
   ok(abriuConversor == 1 && dts_tpk_e_url(ultUrl), "A: opens the converted stream directly");
   ok(video_n_legenda() == 3 && nTexto() == 2, "A: menu has the file's 3 subtitles (PGS is drawn by the app)");
@@ -194,6 +195,7 @@ int main(void) {
   // B: original first (TV lists the 2 text subtitles, no audio), then the
   // header arrives and the conversion starts mid-film.
   cabPronto = 0; abriuConversor = 0;
+  video_definir_reconexao(1);
   video_tocar("http://h/b.mkv");
   ok(!abriuConversor && !dts_tpk_e_url(ultUrl), "B: opens the original");
   playerPronto(0, 2);

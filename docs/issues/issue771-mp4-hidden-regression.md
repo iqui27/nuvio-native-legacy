@@ -33,6 +33,8 @@ Same new `tests/tpk-mp4-mkvfix-legendas.c` linked to `git show ca8c9fc:src/video
 
 ## Adjacent and build
 
-`tests/tpk-dts-legendas.sh` did not link on ca8 or on base (`video_taxa_efetiva`, audio/hdr/debrid/dts normalize, ling helpers). Link now uses `src/video_modo.c` plus local stubs. Assertions still **11 FAIL**, same on the ca8 `video_tpk.c` object and on this tree. Inherited, not this probe change.
+`tests/tpk-dts-legendas.sh` did not link on ca8 or on base (`video_taxa_efetiva`, audio/hdr/debrid/dts normalize, ling helpers). Link now uses `src/video_modo.c` plus local stubs. Preexisting **11 FAIL** on BASE and HEAD: both scenarios never called `video_definir_reconexao`, so header and converter were skipped. Not the probe change.
+
+Post-fixture-fix: `tests/tpk-dts-legendas.c` only, `video_definir_reconexao(1)` before each `video_tocar` (consumed per open). Assertions unchanged. `TMPDIR=/Volumes/ExternalSSD/tmp bash tests/tpk-dts-legendas.sh` rc **0**. `TMPDIR=/Volumes/ExternalSSD/tmp bash tests/tpk-mp4-mkvfix-legendas.sh` rc **0**. No production source change. Full build not rerun (production unchanged since reported build rc 0).
 
 `TMPDIR=/Volumes/ExternalSSD/tmp bash tools/build-local.sh` rc **0** (one deprecated `ATOMIC_VAR_INIT` warning).
