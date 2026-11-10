@@ -4,16 +4,20 @@
 // video_tpk.c se comporta como o master, que e o que esses testes fixam.
 #include "../src/dts/dts_hls_tpk.h"
 #include "../src/video.h"
+static int stubLigado, stubAberturas;
+void dts_tpk_stub_ligar(int on) { stubLigado = on ? 1 : 0; }
+int dts_tpk_stub_aberturas(void) { return stubAberturas; }
 int proxyts_e_url(const char *u) { (void)u; return 0; }
-int ajustes_dts_tpk_modo(void) { return DTSTPK_DESLIGADO; }
+int ajustes_dts_tpk_modo(void) { return stubLigado ? DTSTPK_HLS : DTSTPK_DESLIGADO; }
 int ajustes_dts_ac3(void) { return 1; }
-int dts_tpk_disponivel(void) { return 0; }
-const char *dts_tpk_modo_nome(int m) { (void)m; return "-"; }
+int dts_tpk_disponivel(void) { return stubLigado; }
+const char *dts_tpk_modo_nome(int m) { (void)m; return stubLigado ? "hls" : "-"; }
 int dts_tpk_abrir(const char *url, const char *headers, int audio_ordinal, int stereo_aac,
                   int modo, double inicio, char *out, size_t n) {
   (void)url; (void)headers; (void)audio_ordinal; (void)stereo_aac; (void)modo; (void)inicio;
+  stubAberturas++;
   if (out && n) out[0] = 0;
-  return 0;
+  return stubLigado;
 }
 int dts_tpk_url_em(double s, char *out, size_t n) { (void)s; if (out && n) out[0] = 0; return 0; }
 void dts_tpk_fechar(void) {}
