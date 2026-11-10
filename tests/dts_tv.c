@@ -26,9 +26,14 @@ int main(void) {
   CHECK(!nv_dts_edid(NULL));
   CHECK(nv_dts_native_agora(-1, 0, 40, 10, 50) == -1);
   CHECK(nv_dts_native_agora(-1, 0, 100, 10, 50) == 0);
-  CHECK(nv_dts_native_agora(-1, 0, 0, 10, 50) == -1);
-  CHECK(nv_dts_native_agora(-1, 0, 0, 1, 50) == -1);
   CHECK(nv_dts_native_agora(-1, 0, 60, 10, 50) == 0);
+  CHECK(nv_dts_native_agora(-1, 0, 0, 0, 50) == -1);
+  CHECK(nv_dts_native_agora(-1, 0, 49, 0, 50) == -1);
+  CHECK(nv_dts_native_agora(-1, 0, 50, 0, 50) == 0);
+  CHECK(nv_dts_native_agora(-1, 0, 10u, 0xfffffff0u, 50) == -1);
+  CHECK(nv_dts_native_agora(-1, 0, 40u, 0xfffffff0u, 50) == 0);
+  CHECK(nv_dts_native_agora(-1, 0, 0, 10, 50) == 0);
+  CHECK(nv_dts_native_agora(-1, 0, 5, 5, 0) == 0);
   CHECK(nv_dts_native_agora(0, 0, 500, 10, 50) == 0);
   CHECK(nv_dts_native_agora(1, 0, 20, 10, 50) == 1);
   CHECK(nv_dts_native_agora(-1, 1, 20, 10, 50) == 1);

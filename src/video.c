@@ -308,7 +308,7 @@ static int       fioMkvVivo;
 // abertura e fazer o load correto ser ignorado.
 static unsigned  sessao;
 
-#if defined(__APPLE__) || defined(NV_LINUX_DESKTOP)
+#if (defined(__APPLE__) || defined(NV_LINUX_DESKTOP)) && !defined(NV_DTS_EDID_PENDING_TEST)
 // No Mac nao existe barramento nem plano de video. Os cotos deixam o resto do
 // app compilar e rodar igual, so sem imagem em movimento. As capturas podem
 // simular um video (video_simular, video.h); zerado e o coto mudo.
@@ -668,44 +668,49 @@ static int dtsLiberadoNestaTv(void);
 // nao vale como "TV sem DTS".
 typedef struct { Filtro cb; void *ud, *x; int multiplo, pub; unsigned long tok; } NvHContext;
 #ifdef NV_DTS_EDID_PENDING_TEST
-int (*pedirEdidHl)(const char *, const char *, NvHContext *);
 int nv_dts_edid_test_webos_major = -1;
-#else
-static int (*pedirEdidHl)(const char *, const char *, NvHContext *);
 #endif
 static int edidDts;
 static unsigned edidPedidoMs;
 static unsigned edidEsperaMs = 2000;
+static unsigned edidGeracao;
 static int edidResposta(LSHandle *h, LSMessage *m, void *u) {
-  const char *r = lsPayload(m);
-  (void)h; (void)u;
+  const char *r;
+  (void)h;
+  if ((unsigned)(uintptr_t)u != __atomic_load_n(&edidGeracao, __ATOMIC_ACQUIRE))
+    return 1;
+  r = lsPayload(m);
   __atomic_store_n(&edidDts, nv_dts_edid(r) ? 1 : 0, __ATOMIC_RELEASE);
   printf("[dts] %.160s\n", r ? r : "");
   fflush(stdout);
   return 1;
 }
-static int dtsNativo(void) {
-  int agora = nv_dts_native_agora(__atomic_load_n(&edidDts, __ATOMIC_ACQUIRE),
-                                    ajustes_dts_original(), SDL_GetTicks(),
-                                    edidPedidoMs, edidEsperaMs);
-  return agora > 0;
-}
 static void pedirEdid(void) {
-  static NvHContext ctx = { edidResposta, 0, 0, 0, 1, 0 };
+  static NvHContext ctxs[2];
   static int (*chamar)(const char *, const char *, NvHContext *);
+  NvHContext *ctx;
+  unsigned g;
   void *h;
-  edidPedidoMs = SDL_GetTicks() ? SDL_GetTicks() : 1;
-  __atomic_store_n(&edidDts, -1, __ATOMIC_RELEASE);
-  if (!pedirEdidHl) {
-    if (!chamar && (h = dlopen("libhelpers.so.2", RTLD_NOW))) *(void **)(&chamar) = dlsym(h, "HLunaServiceCall");
-    pedirEdidHl = chamar;
-  }
-  if (pedirEdidHl && lsPayload) {
-    if (!pedirEdidHl("luna://com.webos.service.config/getConfigs",
-                     "{\"configNames\":[\"tv.model.edidType\"]}", &ctx) && edidPedidoMs)
-      __atomic_store_n(&edidDts, 0, __ATOMIC_RELEASE);
-  } else if (edidPedidoMs)
+  /* Return value of HLunaServiceCall is not a documented success bit.
+   * Missing helper or payload falls back now; an unanswered call waits. */
+  g = __atomic_add_fetch(&edidGeracao, 1, __ATOMIC_ACQ_REL);
+  ctx = &ctxs[g & 1u];
+  ctx->cb = edidResposta;
+  ctx->ud = (void *)(uintptr_t)g;
+  ctx->x = 0;
+  ctx->multiplo = 0;
+  ctx->pub = 1;
+  ctx->tok = 0;
+  edidPedidoMs = SDL_GetTicks();
+  if (!chamar && (h = dlopen("libhelpers.so.2", RTLD_NOW)))
+    *(void **)(&chamar) = dlsym(h, "HLunaServiceCall");
+  if (!chamar || !lsPayload) {
     __atomic_store_n(&edidDts, 0, __ATOMIC_RELEASE);
+    return;
+  }
+  __atomic_store_n(&edidDts, -1, __ATOMIC_RELEASE);
+  chamar("luna://com.webos.service.config/getConfigs",
+         "{\"configNames\":[\"tv.model.edidType\"]}", ctx);
 }
 // RECONEXAO (video_reconexao.h). O erro chega no fio do LS2 e so ANOTA
 // (reconErroPend); a decisao e o recarregar sao do video_bombear, no fio

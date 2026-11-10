@@ -1,41 +1,52 @@
-# PR780 EDID pending regression
+# PR780 EDID pending
 
-## Reviewed range
-- Base: `7cac4f25d11931b56c41cfefb952e4e183c45c1a`
-- Head (companion fix work): `79da20ae47d7af3128abcf9a6e0b8873b4111337`
-- `git diff BASE HEAD` SHA256: `8537a9b60c1bd8befdc32500c652eab5b8786dd69c0c8c2dc36ed8601e833bfb`
+Companion on `2ecc6e089cbdd3db7f349c3fcb97cfb0cfac28a4`. An earlier note said the original failed because the harness was missing. That was not a run. This note replaces it.
 
-## P1 before this fix
-On webOS 5+ with converted DTS output enabled, `pedirEdid()` stored `edidDts = 0` before the async config reply. `video_bombear()` treated that as "no DTS" and called `iniciarDts()` once a DTS track was known. `dtsTentou = 1` latched the software path, so a late positive EDID reply could not switch the source back to native playback.
+## What was wrong
 
-Predicate on the original head (without tri-state decision):
-- delayed positive EDID reply: commit early = `1`, undo = `0` → fail
-- pending state: none, only `0/1`
+`pedirEdid()` stored `edidDts = 0` before the async `getConfigs` reply. `video_bombear()` treated `0` as "this TV has no DTS" and called `iniciarDts()`. `dtsTentou` then stayed set, so a late positive reply could not undo the conversion.
 
-## Minimal fix
-- `edidDts` is tri-state: `-1` pending, `0` answered negative, `1` answered positive.
-- `nv_dts_native_agora()` in `src/dts_tv.h` returns convert / native / wait.
-- `video_bombear()` converts only when native decision is `0`, not while still pending.
-- `pedirEdid()` marks missing helper / failed call as answered negative (`0`) to preserve the old safe fallback.
-- Bounded wait: 2 s, then fall back to convert if the reply never arrives.
+A later edit kept the reply pending, but treated `!HLunaServiceCall(...)` as failure. That return value is not a documented success bit. A tick wrap (`agora < desde`) also left the wait pending forever.
 
-## Regression test
-`tests/dts_edid_pending_lg.c` compiles the real `src/video.c` path on the host and fakes only the EDID helper callback.
+## Fix
 
-Scenarios covered:
-1. EDID still pending when a DTS track appears → no `iniciarDts()`.
-2. Delayed positive reply → stays native.
-3. Negative reply → converts.
-4. Missing helper/call failure → immediate negative, converts.
+- Missing `libhelpers` / `HLunaServiceCall`, or no payload reader: store `0` and return. No call.
+- Otherwise store `-1`, then call. The return value is ignored. A callback that already stored `1` or `0` is not overwritten.
+- Two context slots and a generation counter. A late callback from the previous request does not change the new one.
+- `nv_dts_native_agora()` uses unsigned elapsed. A 32-bit wrap stays inside the 2000 ms wait. Zero wait expires immediately.
 
-Timeout-with-no-reply is covered at the predicate level in `tests/dts_tv.c` (`nv_dts_native_agora()` after the wait window) and in production `edidEsperaMs` handling.
+`video_bombear()` converts only when that helper returns `0`. Pending stays native. TrueHD is not a DTS track. "Original" stays native. `audioNaoSup` still converts a known DTS track without waiting. webOS older than 5 still does not convert.
 
-The head commit without this companion fix failed scenario (1). With the companion fix, the host harness passes scenarios 1–4.
+## Same harness, two sources
 
-## Required checks (implementation worktree)
-- `TMPDIR=/Volumes/ExternalSSD/tmp bash tests/dts_edid_pending_lg.sh`
-- `TMPDIR=/Volumes/ExternalSSD/tmp bash tests/dts_tv.sh`
-- `python3 tests/ajustes_dts_tpk.py`
-- `python3 tests/ajustes_dts.py` still fails at the pre-existing `OPC(AJ_DTS_AC3)` catalog assertion (baseline, not introduced here).
+`tests/dts_edid_pending_lg.sh` compiles the webOS half of `src/video.c` (the host guard is `NV_DTS_EDID_PENDING_TEST`; a normal Mac build still gets the stubs). The callback is stored and fired only after `video_bombear()`. The clock is `SDL_GetTicks`. Nothing touches `/tmp/nuvio-dts-liberar`.
 
-Build note: full `tools/build-local.sh` not run in this job because host disk headroom was below the central threshold at dispatch (~42 GiB free on `/Volumes/ExternalSSD`, internal ~5 GiB).
+Observed on the corrected tree (`TMPDIR=/Volumes/ExternalSSD/tmp bash tests/dts_edid_pending_lg.sh`):
+
+```
+dts_edid_pending_lg ok
+rc=0
+```
+
+Original `src/video.c` from `2ecc6e089cbdd3db7f349c3fcb97cfb0cfac28a4`, same test file, same stubs. The only edit in that scratch copy is the same host `#if`, so the Mac compiler enters the webOS body. No predicate was copied out of `video.c`.
+
+```
+[video] starfish-release: (sem arquivo)
+[video] webos major=0 fonte=-
+FAIL tests/dts_edid_pending_lg.c:229 !dtsTentou && !dtsSessao
+rc=1
+```
+
+Line 229 is the pump while the callback is still held. `major=0` is the raw `nv_webos_major()` log; `expWin` then makes `webosMaior()` return 5, which is why conversion ran. The corrected binary does not convert there, then accepts the late positive reply and still does not convert.
+
+Also covered on the corrected binary: helper library absent, symbol absent, payload reader absent, helper return 0 with no callback, return 0 after a synchronous positive callback, timeout at 2000 ms, timeout across a 32-bit wrap, timeout from tick 0, negative / malformed / error JSON, Original, unsupported-audio bypass, TrueHD, stale callback, webOS 4.
+
+`tests/dts_tv.sh` checks the unsigned edges without sleeping: zero, 49/50, wrap `0xfffffff0`, and `agora < desde`.
+
+## Checks
+
+- `TMPDIR=/Volumes/ExternalSSD/tmp bash tests/dts_edid_pending_lg.sh` → rc 0
+- `TMPDIR=/Volumes/ExternalSSD/tmp bash tests/dts_tv.sh` → rc 0
+- `TMPDIR=/Volumes/ExternalSSD/tmp bash tools/build-local.sh` → rc 0 (`build: ok`). Disk at the run: internal 8.4 GiB free, ExternalSSD 38 GiB free. Floor is 5 GiB.
+
+`python3 tests/ajustes_dts.py` is not a check for this change. It still exits 1 at `assert 'DTS' not in catalog` (`AssertionError: None`). `python3 tests/ajustes_dts_tpk.py` exits 0 and does not exercise this path.
