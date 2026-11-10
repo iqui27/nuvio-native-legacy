@@ -14971,7 +14971,7 @@
    "tipo": "bug",
    "status": "integrada",
    "release": null,
-   "conserto": [],
+   "conserto": ["ca8c9fc772b434ae09fc750b35ba2bce183759aa", "f7f12aeb6f2bea21d2ff259f71b9fdbc83e29370", "93ca17f6dcca9ac97f8b9bf0e2c25b332836e4ca"],
    "ultima_resposta": {
     "nos": true,
     "data": "2026-11-07",
@@ -15045,6 +15045,7 @@
     "corte": "2026-11-10T20:25:16Z; evidência histórica, sem revalidação atual"
    },
    "revisao_local_2026_11_10": "BLOQUEIA P1: overflow inteiro em x+w/y+h no recorte OpenSeek pode causar leitura fora dos limites; dois revisores, inspeção estática, sem reprodução runtime. Head local 5be4999c632c7d5aa4335fbbacf5a83aea908c44 distinto do head remoto documental 55a4575f649be5a43c212e1e82aaef4ef01ae24c. F16/F17 P2; veredito histórico BLOQUEIA complete=false/verifier=none; F1 P1 antigo não rechecado. Fonte: /Users/hrocha/Library/Application Support/Claude-3p/side-session-notes/local_fc0e93b3-21f5-4fe9-8183-2a1e2b7f3a30/pr729-gap-review-20261110.md",
+   "revisao_final_2026_11_10": "OK no candidato 1d26322321a6b672a24a256b23389cb2d4e80c75; gate 2/2, revisor e verificador distintos. BLOQUEIA anterior histórico. Fonte: /Volumes/ExternalSSD/tmp/rev/j-rev-pr729-combined-20261110.log",
    "integracao_local_2026_11_10": {
     "merge": "ccc1d596931168247835796f90758894c35c0afa",
     "candidato_revisado": "1d26322321a6b672a24a256b23389cb2d4e80c75",
@@ -15304,6 +15305,8 @@
    "numero": 781,
    "tipo_registro": "issue",
    "titulo": "resume after app close (tpk)",
+   "estado_github": "aberta",
+   "estado_github_verificado_em": "2026-11-10T21:26:41Z",
    "classificacao_catalogo": "evidencia-insuficiente",
    "proximo_passo": "Commit/PR causal, revisao independente, teste-alvo reproduzivel e validacao especifica de resume apos appclose (player mantido, reabertura da fonte, RAM) em aparelho.",
    "evidencia_checkpoint_140": {
@@ -15454,6 +15457,35 @@
   }
  ],
  "validacoes": [
+  {
+   "data": "2026-11-10",
+   "quem": "Revisor independente; Central TV",
+   "o_que": "WebP escalado: saída externa e paridade.",
+   "issues": [],
+   "ref": "1041348ce53513ed2aaed66a1e49116ec5473b4d",
+   "resultado": "Gate 2/2; testes WebP e i18n pós-merge passaram. Cópia 4K para 1920: 16588800 para 8294400 bytes.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-webp-combined-20261110.log; sanitizador expirou rc124; sem prova de ganho CPU ou FPS em TV."
+  },
+  {
+   "data": "2026-11-10",
+   "quem": "Revisor independente; Central Desktop; Central TV",
+   "o_que": "Guia Desktop: navegação, fontes e geometria.",
+   "issues": [],
+   "ref": "06ff883537d1b8469252941b265a861e590e09b5",
+   "resultado": "Gate 2/2, desktop_guia.sh e i18n pós-merge rc0.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/desktop-guide-currentbase-20261110/; chevron ausente no teste; aceite visual e prova em TV pendentes."
+  },
+  {
+   "data": "2026-11-10",
+   "quem": "Revisor independente; Central Issues; Central TV",
+   "o_que": "Legendas MP4 ocultas em Tizen: revisão e verificação final.",
+   "issues": [
+    771
+   ],
+   "ref": "d8a403b713a38cc0f9d63e816fc1e016627f72c2",
+   "resultado": "Revisão final OK e gate 2/2 por verificador distinto; testes direcionados pós-merge passaram.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-verif-issues771-final-20261110.log; Samsung, isolamento de cache e geração tardia sem prova."
+  },
   {
     "data": "2026-11-04",
     "quem": "Claude Code (smoke TCL)",
