@@ -22,6 +22,13 @@
 #include "cdnlink.h"
 
 int ajustes_audio_offset_ms(void) { return 0; }
+int ajustes_audio_normalizar(void) { return 0; }
+int ajustes_hdr10p_strip(void) { return 0; }
+void dts_engine_set_normalize(int on) { (void)on; }
+void dts_remux_set_hdr10p_strip(int on) { (void)on; }
+int ling_prefere_original(void) { return 0; }
+const char *ling_audio_preferido(void) { return ""; }
+int video_taxa_efetiva(void) { return 100; }
 void dts_remux_set_audio_offset_ms(int ms) { (void)ms; }
 const char *i18n(const char *s) { return s; }
 const char *ling_nome(const char *c) { return c; }
@@ -241,12 +248,14 @@ int main(void) {
   video_definir_reconexao(1);
   video_definir_cabecalhos(headers);
   video_tocar("https://addon.test/private.mkv");
+  esperarAbrir(1);
   ok(!strcmp(ultCab, headers), "same origin retains source credentials");
   video_parar();
   cachedUrl = "https://addon.test:8443/other-origin"; nAbriu = 0;
   video_definir_reconexao(1);
   video_definir_cabecalhos(headers);
   video_tocar("https://addon.test/private.mkv");
+  esperarAbrir(1);
   ok(!strstr(ultCab, "secret"), "different port strips source credentials");
   video_parar(); cachedUrl = "https://cdn.test/checked";
   recenteSim = 0; resolveOk = 0; nAbriu = 0;
@@ -299,6 +308,17 @@ int main(void) {
     ok(fileRequests == 1, "proxy expiry requests same TorBox item/file once");
     video_parar(); validadeMs = 150 * 60 * 1000;
   }
+  // A relay for a selected file must retain the file identity for refresh.
+  fileRequests = 0;
+  mkvfix_sondar_arquivo_relay("https://nexus.tb-cdn.st/direct", "", 1, 42, 7);
+  Uint32 relayStart = SDL_GetTicks();
+  while (mkvfix_estado() == MKVFIX_SONDANDO && SDL_GetTicks() - relayStart < 3000) SDL_Delay(5);
+  char relayUrl[256] = "";
+  ok(mkvfix_relay() && mkvfix_url(relayUrl, sizeof relayUrl), "selected file relay starts");
+  expiredStatus = 403;
+  proxyRead(relayUrl);
+  ok(fileRequests == 1, "selected file relay refreshes the same item and file");
+  mkvfix_parar();
   hiddenMkv = 0;
 
   // RESOLVED IN A THREAD: nothing opens until the CDN link is known.

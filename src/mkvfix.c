@@ -260,6 +260,9 @@ int  mkvfix_relay(void) { return 0; }
 void mkvfix_sondar_arquivo(const char *u, const char *c, int usenet, int item, int file) {
   (void)usenet; (void)item; (void)file; mkvfix_sondar(u, c, NULL);
 }
+void mkvfix_sondar_arquivo_relay(const char *u, const char *c, int usenet, int item, int file) {
+  mkvfix_sondar_arquivo(u, c, usenet, item, file);
+}
 int  mkvfix_estado(void) { return MKVFIX_NADA; }
 int  mkvfix_ocultas(void) { return 0; }
 int  mkvfix_url(char *out, size_t n) { (void)out; (void)n; return 0; }
@@ -551,6 +554,9 @@ void mkvfix_sondar_relay(const char *url, const char *cabecalhos, const char *or
 }
 void mkvfix_sondar_arquivo(const char *url, const char *cabecalhos, int usenet, int item, int file) {
   sondar(url, cabecalhos, NULL, usenet, item, file, 0);
+}
+void mkvfix_sondar_arquivo_relay(const char *url, const char *cabecalhos, int usenet, int item, int file) {
+  sondar(url, cabecalhos, NULL, usenet, item, file, 1);
 }
 
 int mkvfix_estado(void) {
