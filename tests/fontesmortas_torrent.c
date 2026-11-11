@@ -5,7 +5,9 @@
 #include "fontesmortas.h"
 #include <assert.h>
 
-static Stream fonte;
+static Stream fontes[2];
+#define fonte fontes[0]
+static int atual, resolvidos, selecoes, cenario;
 static char *disco;
 static Uint32 ticks = 1000;
 static int pronto, abriu, erros, falhou, esperando;
@@ -62,18 +64,23 @@ void stream_falha_identidade(const Stream *s, char *dst, unsigned tam) {
 int stream_falha_aplicar(int indice, unsigned lista, int servico, const char *url) {
   (void)indice; (void)lista; (void)servico; (void)url; return 1;
 }
-const Stream *stream_item(int i) { (void)i; return &fonte; }
+const Stream *stream_item(int i) { return i >= 0 && i < 2 ? &fontes[i] : NULL; }
 const char *video_url_atual(void) { return ""; }
 const char *video_erro_texto(void) { return ""; }
-int stream_atual(void) { return 0; }
+int stream_atual(void) { return atual; }
+void stream_definir_atual(int i) { atual = i; selecoes++; }
 unsigned stream_lista_geracao(void) { return 1; }
-void stream_vod_falhou(int i) { assert(i == 0); fontesmortas_marcar(&fonte); }
+void stream_vod_falhou(int i) { assert(i == (cenario ? 1 : 0)); fontesmortas_marcar(&fontes[i]); }
 int stream_automatico_excluir(int i) { assert(i == 0); return 1; }
 void stream_vod_tocou(int i) { assert(i == 0); fontesmortas_limpar(&fonte); }
 int stream_resolver_escolhida(int i, unsigned g, char *u, unsigned n,
                               char *s, unsigned ns, int *pct) {
-  (void)i; (void)g; (void)u; (void)n; (void)s; (void)ns; (void)pct;
-  assert(!"nenhum pedido pendente"); return 0;
+  assert(cenario && i == 1 && g == 1);
+  assert(!strcmp(fontes[i].infoHash, "11223344") && fontes[i].fileIdx == 7);
+  resolvidos++;
+  snprintf(u, n, "https://video.invalid/resolvido");
+  snprintf(s, ns, "P2P"); *pct = 100;
+  return 1;
 }
 int p2p_ultimo_erro(void) { return 0; }
 void p2pmotor_arquivo_atual(uint64_t *t, uint64_t *m, uint64_t *l) { *t = *m = *l = 0; }
@@ -82,6 +89,54 @@ const char *debrid_sem_plano_frase(int m) { (void)m; return ""; }
 const CatItem *cat_item(int i) { (void)i; return titulo.imdb[0] ? &titulo : NULL; }
 void ilhasinais_debrid_baixando(const char *s, const char *t) { (void)s; (void)t; }
 const char *i18n(const char *s) { return s; }
+
+int addonguia_aberto(void) { return 0; }
+void addonguia_abrir(int a, int b, const char *c) { (void)a; (void)b; (void)c; }
+void addonguia_fechar(void) {}
+void addonguia_progresso(const char *a, int b) { (void)a; (void)b; }
+AddonModo addonmodo_get(uint64_t id) { (void)id; return AM_P2P; }
+int cat_indice_reabrir(int i, const CatItem *c) { (void)i; (void)c; return 0; }
+int detail_indice(void) { return 0; }
+int detail_ep_foco(int *t, int *e) { *t = *e = 0; return 0; }
+void diagnostico_cancelar_vazao(void) {}
+const char *extras_ficha_classificacao(void) { return ""; }
+int fontepref_guardar(const char *id, const Stream *s) { (void)id; (void)s; return 1; }
+void fontepref_id_base(const char *id, char *dst, unsigned n) { snprintf(dst, n, "%s", id); }
+void glem_aviso_curto(const char *s) { (void)s; }
+void juntos_escolher_titulo(const char *a, int b, int c, const char *d, const char *e) { (void)a;(void)b;(void)c;(void)d;(void)e; }
+void juntos_fonte_escolhida(void) {}
+const JsMotor *juntos_motor(void) { return NULL; }
+int juntos_no_player(void) { return 0; }
+int juntos_precarregando(void) { return 0; }
+void juntos_retomar_player(int i) { (void)i; }
+int juntosui_escolhendo_filme(void) { return 0; }
+void juntosui_sala_abriu(void) {}
+int p2p_ativo(void) { return 1; }
+int p2p_usa_motor(void) { return 1; }
+void p2pmotor_cancelar(void) {}
+void p2pmotor_parar_fundo(void) {}
+void partes_arquivo_limpar(void) {}
+void partes_link_cancelar(void) {}
+void partes_ponto_esquecer(const char *a, const char *b, int c) { (void)a;(void)b;(void)c; }
+const PartesLista *partes_sessao_lista(void) { return NULL; }
+void partes_sessao_parar(const char *s) { (void)s; }
+int perfil_infantil_ativo(void) { return 0; }
+int perfil_regra_classif(const char *s) { (void)s; return 1; }
+int perfil_regra_tempo(float s) { (void)s; return 0; }
+void player_abrir(int i, const char *u) { (void)i; (void)u; }
+void player_definir_episodio(int t, int e) { (void)t;(void)e; }
+void player_definir_retomada_fonte(double s) { (void)s; }
+void player_do_inicio(void) {}
+void player_encerrar(void) {}
+void player_encerrar_fonte(void) {}
+void player_toast_ex(const char *s, unsigned m, const char *i, int a) { (void)s;(void)m;(void)i;(void)a; }
+int stream_e_mp4(const Stream *s) { (void)s; return 0; }
+int stream_ordem_addon(int i) { return i; }
+void stream_preferir(int i) { if (cenario) assert(i == 1); }
+int travaui_abrir_espera(int i, int t, int e) { (void)i;(void)t;(void)e; return 0; }
+void video_definir_cabecalhos(const char *s) { (void)s; }
+void video_definir_dv(int i) { (void)i; }
+void video_definir_mp4(int i) { (void)i; }
 
 static void *concluido(void *u) { return u; }
 static void concluir(int resultado) {
@@ -121,7 +176,30 @@ static void retomar(void) {
   }
   puts("fontesmortas: PASS (Retomar, sonda isolada, token renovado, erro e prazo)");
 }
+static void escolhida_real(int prazo) {
+  cenario = 1;
+  alarm(10); /* Bound a broken worker without timing the expected completion. */
+  strcpy(fontes[0].provedor, "Torrentio"); strcpy(fontes[1].provedor, "Torrentio");
+  strcpy(fontes[0].infoHash, "aabbccdd"); fontes[0].fileIdx = 2;
+  strcpy(fontes[1].infoHash, "11223344"); fontes[1].fileIdx = 7;
+  tocarFonteEscolhida(1, 1);
+  assert(fioTorrentVivo);
+  while (atomic_load_explicit(&torrentJob.estado, memory_order_acquire) != 2) sched_yield();
+  processarTorrentJob();
+  assert(resolvidos == 1 && selecoes == 1 && atual == 1 && abriu == 1);
+  assert(fonteManualDesde && !fonteVODAutomatica);
+  if (prazo) ticks += FONTE_MANUAL_PRAZO_MS + 1;
+  else falhou = 1;
+  vigiarAberturaManual();
+  assert(!fonteManualDesde && fontesmortas_idade(&fontes[1]) >= 0);
+  assert(fontesmortas_idade(&fontes[0]) < 0);
+  assert(resolvidos == 1 && selecoes == 1 && atual == 1 && abriu == 1);
+  assert(erros == prazo);
+  alarm(0);
+  puts(prazo ? "manual P2P: PASS (watchdog)" : "manual P2P: PASS (failure)");
+}
 int main(int argc, char **argv) {
+  if (argc > 1 && !strcmp(argv[1], "escolhida")) { escolhida_real(argc > 2); free(disco); return 0; }
   if (argc > 1 && !strcmp(argv[1], "retomar")) { retomar(); free(disco); return 0; }
   strcpy(fonte.provedor, "Torrentio"); strcpy(fonte.infoHash, "aabbccdd"); fonte.fileIdx = 2;
   concluir(DEBRID_BAIXANDO);
