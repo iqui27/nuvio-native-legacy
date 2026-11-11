@@ -82,6 +82,26 @@ static void *servidorTesteNovo(void *arg) {
   pthread_mutex_unlock(&servidorTesteTrava);
   return NULL;
 }
+typedef struct { pthread_mutex_t trava; pthread_cond_t cond; int pronto, sair; TmdbEtapa etapa; } EtapaBloqueada;
+static void *etapaBloqueada(void *arg) {
+  EtapaBloqueada *t = arg;
+  pthread_mutex_lock(&tmdbDadosTrava);
+  t->etapa.textos = malloc(TMDB_TEXTOS_MAX);
+  t->etapa.patches = malloc(5000u * sizeof(TmdbPatch));
+  t->etapa.chaves = malloc(5000u * sizeof(CatEpChave));
+  t->etapa.temporadas = malloc(5000u * sizeof(int));
+  assert(t->etapa.textos && t->etapa.patches && t->etapa.chaves && t->etapa.temporadas);
+  tmdbAtiva = &t->etapa; tmdbAtivaGeracao = epGeracao;
+  pthread_mutex_unlock(&tmdbDadosTrava);
+  pthread_mutex_lock(&t->trava); t->pronto = 1; pthread_cond_broadcast(&t->cond);
+  while (!t->sair) pthread_cond_wait(&t->cond, &t->trava);
+  pthread_mutex_unlock(&t->trava);
+  pthread_mutex_lock(&tmdbDadosTrava);
+  assert(t->etapa.descartada && !t->etapa.textos && !t->etapa.patches && !t->etapa.chaves && !t->etapa.temporadas);
+  tmdbAtiva = NULL; tmdbEtapaLimpar(&t->etapa);
+  pthread_mutex_unlock(&tmdbDadosTrava);
+  return NULL;
+}
 // Manifest loading is outside this metadata harness.
 void addons_lista_travar(void) {}
 void addons_lista_destravar(void) {}
@@ -398,6 +418,26 @@ static void abrir(void) {
 }
 
 int main(void) {
+  if (getenv("NV_TEST_787_STAGE")) {
+    EtapaBloqueada t = { .trava = PTHREAD_MUTEX_INITIALIZER, .cond = PTHREAD_COND_INITIALIZER };
+    pthread_t fio; int preso = 0; CatEp *eps;
+    assert(!pthread_create(&fio, NULL, etapaBloqueada, &t));
+    pthread_mutex_lock(&t.trava);
+    while (!t.pronto) pthread_cond_wait(&t.cond, &t.trava);
+    pthread_mutex_unlock(&t.trava);
+    assert(!epServidorPreparar(&preso, 5000) && !preso);
+    assert(t.etapa.textos && t.etapa.patches && !t.etapa.descartada);
+    pthread_mutex_lock(&epPedidoTrava); epGeracao++; pthread_mutex_unlock(&epPedidoTrava);
+    eps = epServidorPreparar(&preso, 5000);
+    assert(eps && preso);
+    pthread_mutex_lock(&tmdbDadosTrava);
+    assert(t.etapa.descartada && !t.etapa.textos && !t.etapa.patches && !t.etapa.chaves && !t.etapa.temporadas);
+    pthread_mutex_unlock(&tmdbDadosTrava);
+    free(eps); pthread_mutex_unlock(&epMemoriaTrava);
+    pthread_mutex_lock(&t.trava); t.sair = 1; pthread_cond_broadcast(&t.cond); pthread_mutex_unlock(&t.trava);
+    pthread_join(fio, NULL);
+    return 0;
+  }
   if (getenv("NV_TEST_787_SERVER")) {
     pthread_t antigo, novo;
     EpPedido *pedido = calloc(1, sizeof *pedido);

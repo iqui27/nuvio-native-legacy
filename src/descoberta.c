@@ -7929,11 +7929,13 @@ static int epPublicacaoIniciar(int alvoItem) {
 
 // A provider calls this only after its network response has arrived. The
 // workspace stays locked until discovery has published or discarded the list.
+static int tmdbDescartarObsoleto(void);
 static int epServidorCancelado(void *ctx) { (void)ctx; return epPedidoSaiu(); }
 static CatEp *epServidorPreparar(void *ctx, int capacidade) {
   int *preso = ctx;
   CatEp *eps;
   if (capacidade < 1 || capacidade > VIDEOS_MAX) return NULL;
+  if (!tmdbDescartarObsoleto()) return NULL;
   pthread_mutex_lock(&epMemoriaTrava);
   if (epPedidoSaiu()) { pthread_mutex_unlock(&epMemoriaTrava); return NULL; }
   eps = malloc((size_t)capacidade * sizeof *eps);
@@ -7952,7 +7954,28 @@ typedef struct {
 typedef struct {
   CatEpChave *chaves; TmdbPatch *patches; int n; size_t passo;
   char *textos; size_t nTextos, capTextos, textosVivos; int falhou;
+  int *temporadas; int descartada;
 } TmdbEtapa;
+/* Protects the active stage while its worker is away in network I/O. */
+static pthread_mutex_t tmdbDadosTrava = PTHREAD_MUTEX_INITIALIZER;
+static TmdbEtapa *tmdbAtiva;
+static unsigned tmdbAtivaGeracao;
+static void tmdbEtapaLimpar(TmdbEtapa *e) {
+  free(e->textos); e->textos = NULL;
+  free(e->patches); e->patches = NULL;
+  free(e->chaves); e->chaves = NULL;
+  free(e->temporadas); e->temporadas = NULL;
+}
+static int tmdbDescartarObsoleto(void) {
+  int pode = 1;
+  pthread_mutex_lock(&tmdbDadosTrava);
+  pthread_mutex_lock(&epPedidoTrava);
+  if (tmdbAtiva && tmdbAtivaGeracao == epGeracao) pode = 0;
+  else if (tmdbAtiva) { tmdbAtiva->descartada = 1; tmdbEtapaLimpar(tmdbAtiva); }
+  pthread_mutex_unlock(&epPedidoTrava);
+  pthread_mutex_unlock(&tmdbDadosTrava);
+  return pode;
+}
 #define TMDB_TEXTOS_MAX (512u * 1024u)
 static const char *tmdbTexto(const TmdbEtapa *etapa, unsigned offset) {
   return offset ? etapa->textos + offset - 1 : "";
@@ -9331,13 +9354,19 @@ static void *buscarEps(void *u) {
         int neps = 0, nt, ns = 0, cap;
         CatEpToken token = 0;
         pthread_mutex_lock(&tmdbEtapaTrava);
-        cap = epPedidoSaiu() ? 0 : cat_n_episodios(alvoItem);
-        int *temporadas = cap > 0 ? malloc((size_t)cap * sizeof *temporadas) : NULL;
         TmdbEtapa etapa = {0};
         int textosEp = ajustes_tmdb_basico() ? DESC_EPT_SINOPSE | (idiomaNaoIngles() ? DESC_EPT_NOME : 0) |
                        (epsDoAddon ? DESC_EPT_SO_VAZIO : 0) : 0;
-        if (temporadas &&
-            (nt = cat_temporadas_snapshot_token(alvoItem, temporadas, cap, &neps, &token)) > 0) {
+        pthread_mutex_lock(&tmdbDadosTrava);
+        cap = epPedidoSaiu() ? 0 : cat_n_episodios(alvoItem);
+        EpPedido *pedidoEtapa = epPedidoAtual();
+        pthread_mutex_lock(&epPedidoTrava);
+        tmdbAtivaGeracao = pedidoEtapa ? pedidoEtapa->geracao : epGeracao;
+        pthread_mutex_unlock(&epPedidoTrava);
+        tmdbAtiva = &etapa;
+        etapa.temporadas = cap > 0 ? malloc((size_t)cap * sizeof *etapa.temporadas) : NULL;
+        if (etapa.temporadas &&
+            (nt = cat_temporadas_snapshot_token(alvoItem, etapa.temporadas, cap, &neps, &token)) > 0) {
           int completa = token != 0;
           etapa.n = neps;
           etapa.chaves = malloc((size_t)neps * sizeof *etapa.chaves);
@@ -9350,26 +9379,27 @@ static void *buscarEps(void *u) {
           for (int i2 = 0; completa && i2 < nt; i2++) {
             char u3[400];
             char *c4;
-            if (epPedidoSaiu()) { completa = 0; break; }
+            if (etapa.descartada || epPedidoSaiu()) { completa = 0; break; }
+            int temporada = etapa.temporadas[i2];
             snprintf(u3, sizeof u3, "%s/tv/%ld/season/%d?api_key=%s&language=%s",
-                     TMDB, tmdbId, temporadas[i2], chave2, desc_tmdb_idioma());
+                     TMDB, tmdbId, temporada, chave2, desc_tmdb_idioma());
+            pthread_mutex_unlock(&tmdbDadosTrava);
             c4 = rede_baixar(u3, 15);
-            if (epPedidoSaiu()) { free(c4); completa = 0; break; }
+            pthread_mutex_lock(&tmdbDadosTrava);
+            if (etapa.descartada || epPedidoSaiu()) { free(c4); completa = 0; break; }
             if (c4) {
-              tmdbEtapaProcessar(&etapa, c4, temporadas[i2], textosEp);
+              tmdbEtapaProcessar(&etapa, c4, temporada, textosEp);
               free(c4); ns++;
-
             }
           }
           free(etapa.chaves); etapa.chaves = NULL;
-          free(temporadas); temporadas = NULL;
+          free(etapa.temporadas); etapa.temporadas = NULL;
           if (completa && ns)
             (void)tmdbEtapaPublicar(alvoItem, neps, token, tmdbId, textosEp, &etapa);
         }
-        free(etapa.textos);
-        free(etapa.patches);
-        free(etapa.chaves);
-        free(temporadas);
+        tmdbAtiva = NULL;
+        tmdbEtapaLimpar(&etapa);
+        pthread_mutex_unlock(&tmdbDadosTrava);
         pthread_mutex_unlock(&tmdbEtapaTrava);
       }
     }
