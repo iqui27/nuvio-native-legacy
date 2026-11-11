@@ -622,6 +622,15 @@ int main(void) {
     assert(!cat_definir_episodios_versao(0, &a.ep, 1, a.versao));
     assert(cat_versao_episodios() == versao && cat_geracao_episodios() == geracao);
     assert(cat_episodio(0, 0)->episodio == (a.ok ? 10 : 20));
+    int temporadas[2], neps = 0;
+    unsigned snap = 0;
+    CatEp copia;
+    assert(cat_temporadas_snapshot(0, temporadas, 2, &neps, &snap) == 1);
+    assert(neps == 1 && temporadas[0] == 1 && snap == versao);
+    assert(cat_episodios_copiar_versao(0, &copia, 1, snap));
+    assert(copia.episodio == (a.ok ? 10 : 20));
+    cat_definir_episodios(0, &a.ep, 1);
+    assert(!cat_episodios_copiar_versao(0, &copia, 1, snap));
   }
 
   // #391: uma lista longa nao perde os episodios depois do antigo teto de 1200.

@@ -1905,6 +1905,35 @@ const CatEp *cat_episodio(int indiceItem, int i) {
   return e;
 }
 
+int cat_temporadas_snapshot(int item, int *temps, int cap, int *neps, unsigned *versao) {
+  int n = 0;
+  if (item < 0 || !temps || cap < 1 || !neps || !versao) return -1;
+  pthread_mutex_lock(&epTrava);
+  if (!epIni || !epQtd || item >= nFaixas || epQtd[item] <= 0 ||
+      epIni[item] > CAT_EP_MAX - epQtd[item]) n = -1;
+  else {
+    *neps = epQtd[item]; *versao = cat_versao_episodios();
+    for (int i = 0; i < *neps; i++) {
+      int t = eps[epIni[item] + i].temporada, j;
+      for (j = 0; j < n && temps[j] != t; j++) {}
+      if (j == n) { if (n == cap) { n = -1; break; } temps[n++] = t; }
+    }
+  }
+  pthread_mutex_unlock(&epTrava);
+  return n;
+}
+int cat_episodios_copiar_versao(int item, CatEp *out, int n, unsigned versao) {
+  int ok = 0;
+  if (item < 0 || !out || n < 1) return 0;
+  pthread_mutex_lock(&epTrava);
+  if (epIni && epQtd && item < nFaixas && epQtd[item] == n &&
+      epIni[item] <= CAT_EP_MAX - n && cat_versao_episodios() == versao) {
+    memcpy(out, eps + epIni[item], (size_t)n * sizeof *out); ok = 1;
+  }
+  pthread_mutex_unlock(&epTrava);
+  return ok;
+}
+
 int cat_id_stream(int indiceItem, int t, int e, char *dst, unsigned tam) {
   const CatItem *c = cat_item(indiceItem);
   char base[96];
