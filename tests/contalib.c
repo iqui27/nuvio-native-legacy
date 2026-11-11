@@ -42,8 +42,11 @@ int contapend_lista_pendente(const char *id) {
 }
 // O app chama salvos_remover_remoto ao tirar um titulo do snapshot; aqui a
 // chamada e contada para provar quando o espelho local e poupado.
-static int removidosSalvos;
-void salvos_remover_remoto(const char *id) { (void)id; removidosSalvos++; }
+static int removidosSalvos, removeuTituloAntigo;
+void salvos_remover_remoto(const char *id) {
+  removidosSalvos++;
+  if (!strcmp(id, "tt1000000")) removeuTituloAntigo++;
+}
 static int falhas;
 
 static void confere(const char *o_que, int obtido, int esperado) {
@@ -336,13 +339,11 @@ int main(void) {
   confere("o pendente continua marcado", naListaDe("tt0903747"), 1);
   confere("e o espelho local NAO foi removido", removidosSalvos, 0);
   pendLista = 0;
-  // Sem pendencia a remocao acontece — para um titulo QUE CONTINUA na lista
-  // antiga (tt0903747 ja saiu de `itens` na substituicao anterior: o '+'
-  // pendente preservou a marca do catalogo, nao a linha do snapshot).
+  // A previously guarded item remains tracked until a later snapshot.
   confere("de novo, agora sem pendencia", contalib_ler_biblioteca(BIB_SOLO), 1);
   confere("a marca do nao-pendente sai", naListaDe("tt0111161"), 0);
-  confere("a do pendente continua", naListaDe("tt0903747"), 1);
-  confere("e so um espelho foi removido", removidosSalvos, 1);
+  confere("a marca antes protegida sai", naListaDe("tt0903747"), 0);
+  confere("os dois espelhos foram removidos", removidosSalvos, 2);
   contalib_esquecer();
 
   printf("\nconta com mais que o teto guarda os MAIS RECENTES (Owlphibia29):\n");
@@ -382,6 +383,9 @@ int main(void) {
                  item(0)->titulo, "T539");
     confereTexto("o mais velho que ficou fecha a lista",
                  item(CONTALIB_MAX - 1)->titulo, "T40");
+    confere("snapshot posterior omite titulo antigo", contalib_ler_biblioteca(BIB_SOLO), 1);
+    confere("excluido depois do corte perde marca", naListaDe("tt1000000"), 0);
+    confere("excluido depois do corte perde espelho", removeuTituloAntigo, 1);
     free(json);
   }
   contalib_esquecer();
