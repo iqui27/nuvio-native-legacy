@@ -9028,11 +9028,11 @@ static void *buscarEps(void *u) {
   // PERSONAL SERVER ITEM: the server is the only source of its page. No
   // Cinemeta, TMDB or addon /meta gets an opaque server id.
   if (jfid_e(orig->imdb)) {
-    int preso = 0;
+    int preso = 0, vaga = 0;
     CatEp *eps = NULL;
     CatItem ed = base;
     (void)plex_tomar_reduzido();
-    int ne = servidores_ficha_preparar(&ed, &eps, VIDEOS_MAX, epServidorPreparar, &preso, epServidorCancelado, NULL);
+    int ne = servidores_ficha_preparar(&ed, &eps, VIDEOS_MAX, epServidorPreparar, &preso, epServidorCancelado, NULL, &vaga);
     int reduzido = plex_tomar_reduzido();
     alvoItem = epPublicacaoIniciar(alvoItem);
     if (ne >= 0 && alvoItem >= 0) {
@@ -9047,6 +9047,7 @@ static void *buscarEps(void *u) {
     pthread_mutex_unlock(&epPedidoTrava);
     free(eps);
     if (preso) pthread_mutex_unlock(&epMemoriaTrava);
+    if (vaga) plex_vaga_liberar();
     epConcluir();
     return NULL;
   }

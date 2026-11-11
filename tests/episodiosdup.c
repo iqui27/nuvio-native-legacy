@@ -50,14 +50,15 @@ Uint32 SDL_GetTicks(void) { return 0; }
 #define NV_TEST_PLEX_AVISO
 #include "jellyfin_stub.inc"
 static _Thread_local int plexTesteReduzido;
-static int plexTesteAvisos;
+static int plexTesteAvisos, plexTesteVagasLiberadas;
+void plex_vaga_liberar(void) { __atomic_add_fetch(&plexTesteVagasLiberadas, 1, __ATOMIC_RELAXED); }
 int plex_tomar_reduzido(void) { int r = plexTesteReduzido; plexTesteReduzido = 0; return r; }
 void plex_publicar_aviso_metadata(void) { __atomic_add_fetch(&plexTesteAvisos, 1, __ATOMIC_RELAXED); }
 static pthread_mutex_t servidorTesteTrava = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t servidorTesteCond = PTHREAD_COND_INITIALIZER;
 static int servidorBloqueia, servidorEntrou, servidorSoltar, servidorNovoTerminou;
-int servidores_ficha_preparar(CatItem *item, CatEp **eps, int maxEps, CatEpPreparar preparar, void *ctx, int (*cancelado)(void *), void *cancelCtx) {
-  (void)item; (void)maxEps; (void)cancelado; (void)cancelCtx;
+int servidores_ficha_preparar(CatItem *item, CatEp **eps, int maxEps, CatEpPreparar preparar, void *ctx, int (*cancelado)(void *), void *cancelCtx, int *vaga) {
+  (void)item; (void)maxEps; (void)cancelado; (void)cancelCtx; if (vaga) *vaga = 0;
   pthread_mutex_lock(&servidorTesteTrava);
   if (servidorBloqueia) {
     servidorEntrou = 1; pthread_cond_broadcast(&servidorTesteCond);
@@ -65,6 +66,7 @@ int servidores_ficha_preparar(CatItem *item, CatEp **eps, int maxEps, CatEpPrepa
   }
   pthread_mutex_unlock(&servidorTesteTrava);
   if (!servidorBloqueia) return -1;
+  if (vaga) *vaga = 1;
   plexTesteReduzido = 1;
   *eps = preparar(ctx, 1);
   if (!*eps) return -1;
@@ -424,13 +426,13 @@ int main(void) {
     pthread_mutex_unlock(&servidorTesteTrava);
     pthread_join(antigo, NULL); pthread_join(novo, NULL);
     assert(terminou && cat_n_episodios(0) == 1);
-    assert(plexTesteAvisos == 0);
+    assert(plexTesteAvisos == 0 && plexTesteVagasLiberadas == 1);
     assert(cat_episodio(0, 0) && cat_episodio(0, 0)->episodio == 1);
     catalogoCom("jf:new", "series", "server");
     epItem = 0;
     buscarEps(NULL);
     assert(cat_n_episodios(0) == 1 && cat_episodio(0, 0)->episodio == 99);
-    assert(plexTesteAvisos == 1);
+    assert(plexTesteAvisos == 1 && plexTesteVagasLiberadas == 2);
     return 0;
   }
   if (getenv("NV_TEST_787_MEMORY") || getenv("NV_TEST_787_STABLE")) {

@@ -7,6 +7,7 @@
 #include "addons.h"
 #include <stdint.h>
 #ifndef NV_TEST_PLEX_AVISO
+void plex_vaga_liberar(void) { }
 int plex_tomar_reduzido(void) { return 0; }
 void plex_publicar_aviso_metadata(void) { }
 #endif
@@ -20,8 +21,8 @@ int servidores_pagina(const char *c, int ini, int lim, CatItem *out, int max, in
   (void)c; (void)ini; (void)lim; (void)out; (void)max; if (total) *total = 0; if (raw) *raw = 0; return -1; }
 int servidores_ficha(CatItem *item, CatEp *eps, int maxEps) { (void)item; (void)eps; (void)maxEps; return -1; }
 #ifndef NV_TEST_SERVIDORES_FICHA
-int servidores_ficha_preparar(CatItem *item, CatEp **eps, int maxEps, CatEpPreparar f, void *ctx, int (*cancelado)(void *), void *cancelCtx) {
-  (void)item; (void)eps; (void)maxEps; (void)f; (void)ctx; (void)cancelado; (void)cancelCtx; return -1;
+int servidores_ficha_preparar(CatItem *item, CatEp **eps, int maxEps, CatEpPreparar f, void *ctx, int (*cancelado)(void *), void *cancelCtx, int *vaga) {
+  (void)item; (void)eps; (void)maxEps; (void)f; (void)ctx; (void)cancelado; (void)cancelCtx; if (vaga) *vaga = 0; return -1;
 }
 #endif
 unsigned servidores_fileiras_versao(void) { return 0; }

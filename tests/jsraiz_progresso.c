@@ -151,6 +151,12 @@ int teste_px_episodios_preparar(const PxConta *, RedeJob *, const char *, CatEp 
 int teste_px_episodios_cancelavel(const PxConta *, RedeJob *, const char *, CatEp **, int, CatEpPreparar, void *, int (*)(void *), void *);
 int teste_plex_esperando(void);
 int perfis_ativo(void) { return 1; }
+void cat_historico_definir_tempo(const char *id, const char *tipo, int visto, long long ms) { (void)id; (void)tipo; (void)visto; (void)ms; }
+char *dados_caminho(char *dst, unsigned n, const char *nome) { (void)dst; (void)n; (void)nome; return NULL; }
+void dados_fs_liberar(void) { }
+void dados_fs_travar(void) { }
+int dados_gravar_leve(const char *nome, const char *conteudo) { (void)nome; (void)conteudo; return 0; }
+char *dados_ler(const char *nome) { (void)nome; return NULL; }
 const char *i18n(const char *s) { return s; }
 Uint32 SDL_GetTicks(void) { return 0; }
 FILE *teste_tmpfile(void) { return NULL; }
@@ -162,6 +168,8 @@ static pthread_mutex_t concorrenciaTrava = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t concorrenciaCond = PTHREAD_COND_INITIALIZER;
 static int concorrente, chegaram, liberarConcorrentes;
 static int testarGeracao, geracaoAtual, chamadasGeracao[4];
+static size_t workspaceMedido, picoMedido;
+static int testarOrcamento;
 static RedeJob *jobsGeracao[4];
 static const char *respostaHttp;
 int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
@@ -169,6 +177,7 @@ int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
   resposta->status = 200;
   if (concorrente) {
     pthread_mutex_lock(&concorrenciaTrava);
+    assert(workspaceMedido == 0);
     if (testarGeracao) for (int i = 0; i < 4; i++)
       if (pedido->job == jobsGeracao[i]) chamadasGeracao[i]++;
     chegaram++; pthread_cond_broadcast(&concorrenciaCond);
@@ -218,9 +227,22 @@ int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
     }
     assert(pos + 4 < cap);
     snprintf(resposta->corpo + pos, cap - pos, "]}}");
+  } else if (testarOrcamento) {
+    size_t cap = 6u * 1024u * 1024u, n = strlen(respostaHttp);
+    resposta->corpo = malloc(cap); assert(resposta->corpo && n < cap);
+    memcpy(resposta->corpo, respostaHttp, n);
+    memset(resposta->corpo + n, ' ', cap - n - 1);
+    resposta->corpo[cap - 1] = 0;
   } else resposta->corpo = strdup(respostaHttp);
   assert(resposta->corpo);
   resposta->n_corpo = strlen(resposta->corpo);
+  if (concorrente) {
+    size_t usados;
+    pthread_mutex_lock(&concorrenciaTrava);
+    usados = workspaceMedido + resposta->n_corpo + 1;
+    if (usados > picoMedido) picoMedido = usados;
+    pthread_mutex_unlock(&concorrenciaTrava);
+  }
   if (modoHttp && (!totalSimulado || pedidosSimulados == modoHttp)) rede_job_cancelar(pedido->job);
   return 0;
 }
@@ -237,12 +259,17 @@ static CatEp *prepararTeste(void *ctx, int n) {
   if (modoCallback == 2) rede_job_cancelar(job);
   return out;
 }
-typedef struct { PxConta *conta; RedeJob *job; CatEp *out; int resultado; int geracao; } PedidoConcorrente;
+typedef struct { PxConta *conta; RedeJob *job; CatEp *out; int resultado; int geracao, vaga; } PedidoConcorrente;
 static int pedidoObsoleto(void *ctx) {
   PedidoConcorrente *p = ctx;
   return p->geracao != __atomic_load_n(&geracaoAtual, __ATOMIC_ACQUIRE);
 }
 static CatEp *prepararGeracao(void *ctx, int n) { (void)ctx; return calloc((size_t)n, sizeof(CatEp)); }
+static void *buscarFichaCancelada(void *arg) {
+  PedidoConcorrente *p = arg;
+  p->resultado = plex_ficha_preparar(NULL, &p->out, 4, prepararGeracao, NULL, pedidoObsoleto, p, &p->vaga);
+  return NULL;
+}
 static void *buscarGeracao(void *arg) {
   PedidoConcorrente *p = arg;
   p->resultado = teste_px_episodios_cancelavel(p->conta, p->job, "1", &p->out, 4, prepararGeracao, NULL, pedidoObsoleto, p);
@@ -350,52 +377,35 @@ static void testarPreparo(void) {
   }
   {
     RedeGrupo *grupo = rede_grupo_criar();
-    PedidoConcorrente a = { .conta = &pc, .job = rede_job_criar(grupo) };
-    PedidoConcorrente b = { .conta = &pc, .job = rede_job_criar(grupo) };
-    PedidoConcorrente c = { .conta = &pc, .job = rede_job_criar(grupo) };
-    pthread_t fa, fb, fc;
-    respostaHttp = px; concorrente = 1; chegaram = liberarConcorrentes = chamouCallback = 0;
-    assert(!pthread_create(&fa, NULL, buscarConcorrente, &a));
-    assert(!pthread_create(&fb, NULL, buscarConcorrente, &b));
-    pthread_mutex_lock(&concorrenciaTrava);
-    while (chegaram < 2) pthread_cond_wait(&concorrenciaCond, &concorrenciaTrava);
-    pthread_mutex_unlock(&concorrenciaTrava);
-    assert(!pthread_create(&fc, NULL, buscarConcorrente, &c));
+    PedidoConcorrente atual = { .conta = &pc, .job = rede_job_criar(grupo) };
+    PedidoConcorrente obsoleto = { .geracao = 1 };
+    CatEp *saida = NULL, *workspace;
+    int vaga = 0; pthread_t fio, fioAntigo;
+    /* Failed detail still transfers its permit until caller has freed workspace. */
+    assert(plex_ficha_preparar(NULL, &saida, 5000, prepararTeste, NULL, NULL, NULL, &vaga) < 0 && vaga);
+    workspace = malloc(5000u * sizeof *workspace); assert(workspace);
+    workspaceMedido = 5000u * sizeof *workspace;
+    picoMedido = workspaceMedido;
+    respostaHttp = px; concorrente = testarOrcamento = 1; chegaram = 0; liberarConcorrentes = 1;
+    __atomic_store_n(&geracaoAtual, 1, __ATOMIC_RELEASE);
+    assert(!pthread_create(&fioAntigo, NULL, buscarFichaCancelada, &obsoleto));
     while (!teste_plex_esperando()) sched_yield();
-    rede_job_cancelar(c.job);
-    pthread_join(fc, NULL);
-    assert(c.resultado < 0 && !c.out && chegaram == 2);
-    rede_job_cancelar(a.job);
-    pthread_mutex_lock(&concorrenciaTrava);
-    liberarConcorrentes = 1; pthread_cond_broadcast(&concorrenciaCond);
-    pthread_mutex_unlock(&concorrenciaTrava);
-    pthread_join(fa, NULL); pthread_join(fb, NULL);
-    assert(a.resultado < 0 && !a.out && b.resultado == 2 && b.out);
-    concorrente = 0;
-    rede_job_soltar(c.job); c.job = rede_job_criar(grupo);
-    buscarConcorrente(&c);
-    assert(c.resultado == 2 && c.out);
-    free(b.out); free(c.out); rede_job_soltar(a.job); rede_job_soltar(b.job); rede_job_soltar(c.job);
-    a = (PedidoConcorrente){ .conta = &pc, .job = rede_job_criar(grupo) };
-    b = (PedidoConcorrente){ .conta = &pc, .job = rede_job_criar(grupo) };
-    c = (PedidoConcorrente){ .conta = &pc, .job = rede_job_criar(grupo) };
-    concorrente = 1; chegaram = liberarConcorrentes = 0;
-    assert(!pthread_create(&fa, NULL, buscarConcorrente, &a));
-    assert(!pthread_create(&fb, NULL, buscarConcorrente, &b));
-    pthread_mutex_lock(&concorrenciaTrava);
-    while (chegaram < 2) pthread_cond_wait(&concorrenciaCond, &concorrenciaTrava);
-    pthread_mutex_unlock(&concorrenciaTrava);
-    assert(!pthread_create(&fc, NULL, buscarConcorrente, &c));
+    __atomic_store_n(&geracaoAtual, 2, __ATOMIC_RELEASE);
+    pthread_join(fioAntigo, NULL);
+    assert(obsoleto.resultado < 0 && !obsoleto.vaga);
+    assert(!pthread_create(&fio, NULL, buscarConcorrente, &atual));
     while (!teste_plex_esperando()) sched_yield();
-    rede_job_cancelar(a.job);
     pthread_mutex_lock(&concorrenciaTrava);
-    liberarConcorrentes = 1; pthread_cond_broadcast(&concorrenciaCond);
+    assert(chegaram == 0); /* 5000 records live: no second response allocation. */
     pthread_mutex_unlock(&concorrenciaTrava);
-    pthread_join(fa, NULL); pthread_join(fb, NULL); pthread_join(fc, NULL);
-    assert(a.resultado < 0 && b.resultado == 2 && c.resultado == 2);
-    free(b.out); free(c.out);
-    rede_job_soltar(a.job); rede_job_soltar(b.job); rede_job_soltar(c.job);
-    concorrente = 0; rede_grupo_soltar(grupo);
+    assert(picoMedido == 5000u * sizeof *workspace);
+    free(workspace); workspaceMedido = 0; plex_vaga_liberar();
+    pthread_join(fio, NULL);
+    assert(atual.resultado == 2 && atual.out && chegaram == 1);
+    assert(picoMedido == (5000u * sizeof *workspace > 6u * 1024u * 1024u
+                          ? 5000u * sizeof *workspace : 6u * 1024u * 1024u));
+    free(atual.out); rede_job_soltar(atual.job); rede_grupo_soltar(grupo);
+    concorrente = testarOrcamento = 0;
   }
   {
     static const char pagina[] = "{\"MediaContainer\":{\"totalSize\":4,\"Metadata\":[{\"ratingKey\":\"1\",\"parentIndex\":1,\"index\":1},{\"ratingKey\":\"2\",\"parentIndex\":1,\"index\":2}]}}";
@@ -408,12 +418,12 @@ static void testarPreparo(void) {
     respostaHttp = pagina; concorrente = testarGeracao = 1;
     chegaram = liberarConcorrentes = 0; __atomic_store_n(&geracaoAtual, 1, __ATOMIC_RELEASE);
     assert(!pthread_create(&t[0], NULL, buscarGeracao, &p[0]));
-    assert(!pthread_create(&t[1], NULL, buscarGeracao, &p[1]));
     pthread_mutex_lock(&concorrenciaTrava);
-    while (chegaram < 2) pthread_cond_wait(&concorrenciaCond, &concorrenciaTrava);
+    while (chegaram < 1) pthread_cond_wait(&concorrenciaCond, &concorrenciaTrava);
     pthread_mutex_unlock(&concorrenciaTrava);
+    assert(!pthread_create(&t[1], NULL, buscarGeracao, &p[1]));
     assert(!pthread_create(&t[2], NULL, buscarGeracao, &p[2]));
-    while (teste_plex_esperando() < 1) sched_yield();
+    while (teste_plex_esperando() < 2) sched_yield();
     __atomic_store_n(&geracaoAtual, 2, __ATOMIC_RELEASE);
     assert(!pthread_create(&t[3], NULL, buscarGeracao, &p[3]));
     pthread_join(t[2], NULL);
@@ -421,7 +431,7 @@ static void testarPreparo(void) {
     /* Old transports remain stalled unless their cancellation callback fires. */
     pthread_join(t[0], NULL); pthread_join(t[1], NULL); pthread_join(t[3], NULL);
     assert(p[0].resultado < 0 && p[1].resultado < 0 && p[3].resultado == 4);
-    assert(chamadasGeracao[0] == 1 && chamadasGeracao[1] == 1 && chamadasGeracao[3] == 2);
+    assert(chamadasGeracao[0] == 1 && chamadasGeracao[1] == 0 && chamadasGeracao[2] == 0 && chamadasGeracao[3] == 2);
     free(p[3].out);
     for (int i = 0; i < 4; i++) rede_job_soltar(p[i].job);
     concorrente = testarGeracao = 0; rede_grupo_soltar(grupo);
