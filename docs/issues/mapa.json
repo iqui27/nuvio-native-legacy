@@ -15501,6 +15501,15 @@
   {
    "data": "2026-11-11",
    "quem": "Revisão independente histórica; Central Issues e TV (conferência)",
+   "o_que": "Ajuste de frequência de exibição em Android TV.",
+   "issues": [641, 712],
+   "ref": "722515c76b12d9a7f2133a93740288681274c9cd; 6ec478ed4b79e969bf4f2da3d66997aabef480cc",
+   "resultado": "Revisão histórica OK; afr_android.sh e build-local.sh rc0 relatados. Testes C e JVM com seleção de cadência; integração ancestral conferida.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue641b.log SHA256 28be005538613cf9bdab4bbd7a973f55d5ea7aefff28fbc26fce876e8943260d. Sem validação HDMI física. Ao retornar de PiP mantendo reprodução, AFR não é reaplicado até pausa e retomada."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Revisão independente histórica; Central Issues e TV (conferência)",
    "o_que": "Leitura de vistos e progresso Jellyfin por usuário.",
    "issues": [617],
    "ref": "aeec47d32dd10320185ed9d799896907d474d715; ba935402da65d6d7c013a1b429e15372dc0e5a12",
