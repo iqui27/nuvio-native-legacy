@@ -20,9 +20,10 @@ static void *callocDoTeste(size_t n, size_t tam) {
   if (callocFalha && n > 1024) { callocNegados++; return NULL; }
   return calloc(n, tam);
 }
-static int limitarArrays;
+static int limitarArrays, respostaFalsaViva;
 static void *arrayGrande;
 static void *mallocDoTeste(size_t n) {
+  if (n >= 5u * 1024u * 1024u && __atomic_load_n(&respostaFalsaViva, __ATOMIC_ACQUIRE)) abort();
   if (limitarArrays && n >= 1024 * 1024 && arrayGrande) return NULL;
   void *p = malloc(n);
   if (limitarArrays && n >= 1024 * 1024) arrayGrande = p;
@@ -32,6 +33,8 @@ static void freeDoTeste(void *p) {
   if (p == arrayGrande) arrayGrande = NULL;
   free(p);
 }
+static int esperaRespostaTeste;
+#define NV_TMDB_AGUARDANDO() __atomic_store_n(&esperaRespostaTeste, 1, __ATOMIC_RELEASE)
 #define malloc(n) mallocDoTeste(n)
 #define free(p) freeDoTeste(p)
 #define calloc(n, tam) callocDoTeste(n, tam)
@@ -46,6 +49,7 @@ Uint32 SDL_GetTicks(void) { return 0; }
 #include <stdio.h>
 #include <unistd.h>
 #include <time.h>
+#include <sched.h>
 #define NV_TEST_SERVIDORES_FICHA
 #define NV_TEST_PLEX_AVISO
 #include "jellyfin_stub.inc"
@@ -82,15 +86,19 @@ static void *servidorTesteNovo(void *arg) {
   pthread_mutex_unlock(&servidorTesteTrava);
   return NULL;
 }
-typedef struct { pthread_mutex_t trava; pthread_cond_t cond; int pronto, sair; TmdbEtapa etapa; } EtapaBloqueada;
+typedef struct { pthread_mutex_t trava; pthread_cond_t cond; int pronto, sair, resposta, prontoNovo, fimNovo, addon; TmdbEtapa etapa; } EtapaBloqueada;
 static void *etapaBloqueada(void *arg) {
   EtapaBloqueada *t = arg;
+  char *resposta = t->resposta ? malloc(1024u * 1024u) : NULL;
+  assert(!t->resposta || resposta);
+  if (resposta) __atomic_store_n(&respostaFalsaViva, 1, __ATOMIC_RELEASE);
   pthread_mutex_lock(&tmdbDadosTrava);
   t->etapa.textos = malloc(TMDB_TEXTOS_MAX);
   t->etapa.patches = malloc(5000u * sizeof(TmdbPatch));
   t->etapa.chaves = malloc(5000u * sizeof(CatEpChave));
   t->etapa.temporadas = malloc(5000u * sizeof(int));
   assert(t->etapa.textos && t->etapa.patches && t->etapa.chaves && t->etapa.temporadas);
+  t->etapa.respostaPendente = t->resposta;
   tmdbAtiva = &t->etapa; tmdbAtivaGeracao = epGeracao;
   pthread_mutex_unlock(&tmdbDadosTrava);
   pthread_mutex_lock(&t->trava); t->pronto = 1; pthread_cond_broadcast(&t->cond);
@@ -98,8 +106,29 @@ static void *etapaBloqueada(void *arg) {
   pthread_mutex_unlock(&t->trava);
   pthread_mutex_lock(&tmdbDadosTrava);
   assert(t->etapa.descartada && !t->etapa.textos && !t->etapa.patches && !t->etapa.chaves && !t->etapa.temporadas);
+  free(resposta);
+  __atomic_store_n(&respostaFalsaViva, 0, __ATOMIC_RELEASE);
+  t->etapa.respostaPendente = 0; pthread_cond_broadcast(&tmdbDadosCond);
   tmdbAtiva = NULL; tmdbEtapaLimpar(&t->etapa);
   pthread_mutex_unlock(&tmdbDadosTrava);
+  return NULL;
+}
+static void *esperarWorkspace(void *arg) {
+  EtapaBloqueada *t = arg; int preso = 0; CatEp *eps = NULL;
+  pthread_mutex_lock(&t->trava); t->prontoNovo = 1; pthread_cond_broadcast(&t->cond); pthread_mutex_unlock(&t->trava);
+  if (t->addon) {
+    size_t cap = 250000, pos = 0; char *json = malloc(cap); assert(json);
+    pos += (size_t)snprintf(json + pos, cap - pos, "{\"videos\":[");
+    for (int i = 0; i < 5000; i++)
+      pos += (size_t)snprintf(json + pos, cap - pos, "%s{\"season\":1,\"episode\":%d}", i ? "," : "", i + 1);
+    assert(pos + 4 < cap); snprintf(json + pos, cap - pos, "]}");
+    assert(publicarEpisodiosEscolhidos(json, 0, "test", NULL, 0, NULL, 0, 1, 0) == 5000);
+    free(json);
+  } else {
+    eps = epServidorPreparar(&preso, 5000);
+    assert(eps && preso); free(eps); pthread_mutex_unlock(&epMemoriaTrava);
+  }
+  pthread_mutex_lock(&t->trava); t->fimNovo = 1; pthread_cond_broadcast(&t->cond); pthread_mutex_unlock(&t->trava);
   return NULL;
 }
 // Manifest loading is outside this metadata harness.
@@ -418,6 +447,31 @@ static void abrir(void) {
 }
 
 int main(void) {
+  if (getenv("NV_TEST_787_RESPONSE")) {
+    EtapaBloqueada t = { .trava = PTHREAD_MUTEX_INITIALIZER, .cond = PTHREAD_COND_INITIALIZER, .resposta = 1 };
+    pthread_t antigo, novo; int descartada = 0;
+    t.addon = !strcmp(getenv("NV_TEST_787_RESPONSE"), "addon");
+    if (t.addon) catalogoCom("ttnew", "series", "new");
+    alarm(20);
+    assert(!pthread_create(&antigo, NULL, etapaBloqueada, &t));
+    pthread_mutex_lock(&t.trava);
+    while (!t.pronto) pthread_cond_wait(&t.cond, &t.trava);
+    pthread_mutex_unlock(&t.trava);
+    pthread_mutex_lock(&epPedidoTrava); epGeracao++; pthread_mutex_unlock(&epPedidoTrava);
+    assert(!pthread_create(&novo, NULL, esperarWorkspace, &t));
+    while (!descartada) {
+      pthread_mutex_lock(&tmdbDadosTrava); descartada = t.etapa.descartada; pthread_mutex_unlock(&tmdbDadosTrava);
+      if (!descartada) sched_yield();
+    }
+    while (!__atomic_load_n(&esperaRespostaTeste, __ATOMIC_ACQUIRE)) sched_yield();
+    pthread_mutex_lock(&t.trava);
+    assert(t.prontoNovo && !t.fimNovo);
+    t.sair = 1; pthread_cond_broadcast(&t.cond);
+    pthread_mutex_unlock(&t.trava);
+    pthread_join(antigo, NULL); pthread_join(novo, NULL);
+    assert(t.fimNovo);
+    alarm(0); return 0;
+  }
   if (getenv("NV_TEST_787_STAGE")) {
     EtapaBloqueada t = { .trava = PTHREAD_MUTEX_INITIALIZER, .cond = PTHREAD_COND_INITIALIZER };
     pthread_t fio; int preso = 0; CatEp *eps;
@@ -425,7 +479,6 @@ int main(void) {
     pthread_mutex_lock(&t.trava);
     while (!t.pronto) pthread_cond_wait(&t.cond, &t.trava);
     pthread_mutex_unlock(&t.trava);
-    assert(!epServidorPreparar(&preso, 5000) && !preso);
     assert(t.etapa.textos && t.etapa.patches && !t.etapa.descartada);
     pthread_mutex_lock(&epPedidoTrava); epGeracao++; pthread_mutex_unlock(&epPedidoTrava);
     eps = epServidorPreparar(&preso, 5000);

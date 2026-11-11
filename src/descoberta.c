@@ -7929,13 +7929,13 @@ static int epPublicacaoIniciar(int alvoItem) {
 
 // A provider calls this only after its network response has arrived. The
 // workspace stays locked until discovery has published or discarded the list.
-static int tmdbDescartarObsoleto(void);
+static void tmdbDescartarObsoleto(void);
 static int epServidorCancelado(void *ctx) { (void)ctx; return epPedidoSaiu(); }
 static CatEp *epServidorPreparar(void *ctx, int capacidade) {
   int *preso = ctx;
   CatEp *eps;
   if (capacidade < 1 || capacidade > VIDEOS_MAX) return NULL;
-  if (!tmdbDescartarObsoleto()) return NULL;
+  tmdbDescartarObsoleto();
   pthread_mutex_lock(&epMemoriaTrava);
   if (epPedidoSaiu()) { pthread_mutex_unlock(&epMemoriaTrava); return NULL; }
   eps = malloc((size_t)capacidade * sizeof *eps);
@@ -7954,10 +7954,11 @@ typedef struct {
 typedef struct {
   CatEpChave *chaves; TmdbPatch *patches; int n; size_t passo;
   char *textos; size_t nTextos, capTextos, textosVivos; int falhou;
-  int *temporadas; int descartada;
+  int *temporadas; int descartada, respostaPendente;
 } TmdbEtapa;
 /* Protects the active stage while its worker is away in network I/O. */
 static pthread_mutex_t tmdbDadosTrava = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t tmdbDadosCond = PTHREAD_COND_INITIALIZER;
 static TmdbEtapa *tmdbAtiva;
 static unsigned tmdbAtivaGeracao;
 static void tmdbEtapaLimpar(TmdbEtapa *e) {
@@ -7966,15 +7967,27 @@ static void tmdbEtapaLimpar(TmdbEtapa *e) {
   free(e->chaves); e->chaves = NULL;
   free(e->temporadas); e->temporadas = NULL;
 }
-static int tmdbDescartarObsoleto(void) {
-  int pode = 1;
+#ifndef NV_TMDB_AGUARDANDO
+#define NV_TMDB_AGUARDANDO() ((void)0)
+#endif
+/* A stale network body can grow after its stage is freed. Wait for the body
+ * to be freed too; the condition wait releases the mutex while I/O runs. */
+static void tmdbDescartarObsoleto(void) {
   pthread_mutex_lock(&tmdbDadosTrava);
-  pthread_mutex_lock(&epPedidoTrava);
-  if (tmdbAtiva && tmdbAtivaGeracao == epGeracao) pode = 0;
-  else if (tmdbAtiva) { tmdbAtiva->descartada = 1; tmdbEtapaLimpar(tmdbAtiva); }
-  pthread_mutex_unlock(&epPedidoTrava);
+  while (tmdbAtiva) {
+    int atual;
+    pthread_mutex_lock(&epPedidoTrava);
+    atual = tmdbAtivaGeracao == epGeracao;
+    pthread_mutex_unlock(&epPedidoTrava);
+    if (!atual) {
+      tmdbAtiva->descartada = 1;
+      tmdbEtapaLimpar(tmdbAtiva);
+      if (!tmdbAtiva->respostaPendente) break;
+    }
+    NV_TMDB_AGUARDANDO();
+    pthread_cond_wait(&tmdbDadosCond, &tmdbDadosTrava);
+  }
   pthread_mutex_unlock(&tmdbDadosTrava);
-  return pode;
 }
 #define TMDB_TEXTOS_MAX (512u * 1024u)
 static const char *tmdbTexto(const TmdbEtapa *etapa, unsigned offset) {
@@ -8034,32 +8047,39 @@ static void tmdbGuardarTexto(TmdbEtapa *etapa, unsigned *offset, const char *tex
   *offset = (unsigned)etapa->nTextos + 1;
   etapa->nTextos = precisa; etapa->textosVivos += n - antigo;
 }
-static void tmdbEtapaProcessar(TmdbEtapa *etapa, const char *json, int temporada, int textos) {
+static void tmdbEtapaProcessarUm(TmdbEtapa *etapa, const char *p, const char *f, int temporada, int textos) {
+  int num = (int)js_num(p, f, "episode_number", -1), i;
+  for (i = 0; i < etapa->n; i++)
+    if (num >= 0 && etapa->chaves[i].temporada == temporada && etapa->chaves[i].episodio == num) break;
+  if (i < etapa->n) {
+    TmdbPatch *patch = tmdbPatch(etapa, i);
+    int vazio = (textos & DESC_EPT_SO_VAZIO) != 0;
+    int runtime = (int)js_num(p, f, "runtime", 0);
+    double nota = js_num(p, f, "vote_average", 0.0);
+    char nome[sizeof(((CatEp *)0)->nome)], sinopse[sizeof(((CatEp *)0)->sinopse)];
+    patch->presente = 1;
+    if (!patch->runtime && runtime > 0 && runtime < 1440) patch->runtime = runtime;
+    if (nota > 0) { patch->temNota = 1; patch->nota = (int)(nota * 10.0 + 0.5); }
+    if ((textos & DESC_EPT_SINOPSE) && (!vazio || (!etapa->chaves[i].temSinopse && !patch->sinopse)) &&
+        js_texto(p, f, "overview", sinopse, sizeof sinopse) && sinopse[0])
+      tmdbGuardarTexto(etapa, &patch->sinopse, sinopse);
+    if ((textos & DESC_EPT_NOME) && (!vazio || (!etapa->chaves[i].temNome && !patch->nome)) &&
+        js_texto(p, f, "name", nome, sizeof nome) && nome[0] &&
+        !desc_nome_episodio_generico(nome, num))
+      tmdbGuardarTexto(etapa, &patch->nome, nome);
+  }
+}
+static int tmdbEtapaProcessar(TmdbEtapa *etapa, const char *json, int temporada, int textos) {
   const char *p = js_array(json, NULL, "episodes");
   while (p) {
     const char *f = js_fim(p);
-    int num = (int)js_num(p, f, "episode_number", -1), i;
-    for (i = 0; i < etapa->n; i++)
-      if (num >= 0 && etapa->chaves[i].temporada == temporada && etapa->chaves[i].episodio == num) break;
-    if (i < etapa->n) {
-      TmdbPatch *patch = tmdbPatch(etapa, i);
-      int vazio = (textos & DESC_EPT_SO_VAZIO) != 0;
-      int runtime = (int)js_num(p, f, "runtime", 0);
-      double nota = js_num(p, f, "vote_average", 0.0);
-      char nome[sizeof(((CatEp *)0)->nome)], sinopse[sizeof(((CatEp *)0)->sinopse)];
-      patch->presente = 1;
-      if (!patch->runtime && runtime > 0 && runtime < 1440) patch->runtime = runtime;
-      if (nota > 0) { patch->temNota = 1; patch->nota = (int)(nota * 10.0 + 0.5); }
-      if ((textos & DESC_EPT_SINOPSE) && (!vazio || (!etapa->chaves[i].temSinopse && !patch->sinopse)) &&
-          js_texto(p, f, "overview", sinopse, sizeof sinopse) && sinopse[0])
-        tmdbGuardarTexto(etapa, &patch->sinopse, sinopse);
-      if ((textos & DESC_EPT_NOME) && (!vazio || (!etapa->chaves[i].temNome && !patch->nome)) &&
-          js_texto(p, f, "name", nome, sizeof nome) && nome[0] &&
-          !desc_nome_episodio_generico(nome, num))
-        tmdbGuardarTexto(etapa, &patch->nome, nome);
-    }
+    pthread_mutex_lock(&tmdbDadosTrava);
+    if (etapa->descartada || epPedidoSaiu()) { pthread_mutex_unlock(&tmdbDadosTrava); return 0; }
+    tmdbEtapaProcessarUm(etapa, p, f, temporada, textos);
+    pthread_mutex_unlock(&tmdbDadosTrava);
     p = js_prox(f);
   }
+  return 1;
 }
 #ifndef NV_TMDB_APOS_COPIA
 #define NV_TMDB_APOS_COPIA() ((void)0)
@@ -8201,6 +8221,7 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
                                        int substituir, int pendente) {
   CatEp *eps;
   int n = 0, cap;
+  tmdbDescartarObsoleto();
   pthread_mutex_lock(&epMemoriaTrava);
   if (epPedidoSaiu()) { pthread_mutex_unlock(&epMemoriaTrava); return 0; }
   cap = metaContarEpisodios(corpo, NULL);
@@ -9383,14 +9404,21 @@ static void *buscarEps(void *u) {
             int temporada = etapa.temporadas[i2];
             snprintf(u3, sizeof u3, "%s/tv/%ld/season/%d?api_key=%s&language=%s",
                      TMDB, tmdbId, temporada, chave2, desc_tmdb_idioma());
+            etapa.respostaPendente = 1;
             pthread_mutex_unlock(&tmdbDadosTrava);
             c4 = rede_baixar(u3, 15);
             pthread_mutex_lock(&tmdbDadosTrava);
-            if (etapa.descartada || epPedidoSaiu()) { free(c4); completa = 0; break; }
-            if (c4) {
-              tmdbEtapaProcessar(&etapa, c4, temporada, textosEp);
-              free(c4); ns++;
+            if (etapa.descartada || epPedidoSaiu()) { free(c4); completa = 0; }
+            else if (c4) {
+              pthread_mutex_unlock(&tmdbDadosTrava);
+              completa = tmdbEtapaProcessar(&etapa, c4, temporada, textosEp);
+              free(c4);
+              pthread_mutex_lock(&tmdbDadosTrava);
+              if (completa) ns++;
             }
+            etapa.respostaPendente = 0;
+            pthread_cond_broadcast(&tmdbDadosCond);
+            if (!completa) break;
           }
           free(etapa.chaves); etapa.chaves = NULL;
           free(etapa.temporadas); etapa.temporadas = NULL;
@@ -9399,6 +9427,7 @@ static void *buscarEps(void *u) {
         }
         tmdbAtiva = NULL;
         tmdbEtapaLimpar(&etapa);
+        pthread_cond_broadcast(&tmdbDadosCond);
         pthread_mutex_unlock(&tmdbDadosTrava);
         pthread_mutex_unlock(&tmdbEtapaTrava);
       }
