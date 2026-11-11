@@ -14360,6 +14360,7 @@
     "ultimo_comentario_por": "",
     "ultima_nossa": ""
    },
+   "validacao_host_2026_11_11": "Correção existente cf40fa40f; teste de integração voltou a compilar após retirada de stubs duplicados em 88518bd, integrado por 1a2b00cd. Revisão independente OK, gate 2/2; addons_legendas.sh passou pós-merge. Fixture sintética, sem provedor real ou TV.",
    "proximo_passo": "Triage open issue; no matching job or prompt in supplied snapshot.\nSugestão do catálogo (04/11/2026): Central TV: obter cenário, IDs sanitizados e evidência do modelo/pacote original; comparar os commits relacionados antes de decidir correção. Causa e aceitação permanecem desconhecidas.",
    "notas": "Imported from local issues snapshot.\nReconciliação 2026-11-04 @0e525f284: insufficient-evidence. Ausência do add-on de sync é diferente de falha de renderização; sobreposição provável com #744. Catálogo: /Volumes/ExternalSSD/tmp/rev/rastreio/mutirao-20261104/issues.json (item 692).",
    "url": "https://github.com/iqui27/nuvio-native-legacy/issues/692",
@@ -15467,6 +15468,17 @@
   }
  ],
  "validacoes": [
+  {
+   "data": "2026-11-11",
+   "quem": "Revisor independente; Central TV (gate e integração)",
+   "o_que": "Provedores de legendas para filmes, séries e lista do player.",
+   "issues": [
+    692
+   ],
+   "ref": "1a2b00cd676f6005198774f00b093708adf1b45a",
+   "resultado": "Gate 2/2; addons_legendas.sh rc0 pós-merge após remoção dos stubs duplicados.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue692-test-20261111.log; /Volumes/ExternalSSD/tmp/rev/issue692-postmerge-20261111.log. Fixtures sintéticas; sem prova de provedor real ou TV."
+  },
   {
    "data": "2026-11-11",
    "quem": "Revisão independente; Central Issues (verificação)",
