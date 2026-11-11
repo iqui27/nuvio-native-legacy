@@ -37,6 +37,21 @@
  "nota": "Local snapshot sync 2026-10-25T21:56:42-03:00, HEAD 6330e8be0. Added 0 issues. Device validation remains pending; see external estado.md. Previous history retained in item notes.",
  "itens": [
   {
+   "numero": 786,
+   "titulo": "Arabic subtitles Embedded for Anime",
+   "estado_github": "aberta",
+   "plataforma": "Samsung S90F / Tizen WGT",
+   "tipo": "bug",
+   "status": "evidência insuficiente",
+   "release": null,
+   "conserto": [],
+   "ultima_resposta": null,
+   "proximo_passo": "Investigar faixa embutida e renderização de árabe com evidência sanitizada; confirmar versões do app e firmware. Não assumir causa nem equiparar a outras issues sem prova.",
+   "notas": "Relato de símbolos em legendas árabes embutidas de anime; imagem e log ainda não inspecionados, sem reprodução independente.",
+   "url": "https://github.com/iqui27/nuvio-native-legacy/issues/786",
+   "criada_em": "2026-11-11T07:52:02Z"
+  },
+  {
    "numero": 759,
    "titulo": "Nuvio Legacy shows fewer 4K HDR sources and Real-Debrid playback times out",
    "estado_github": "aberta",
