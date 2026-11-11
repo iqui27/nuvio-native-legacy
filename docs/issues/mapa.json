@@ -13338,7 +13338,7 @@
   {
    "numero": 675,
    "titulo": "Playback end behaviour",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "?",
    "status": "integrada",
@@ -13499,7 +13499,7 @@
   {
    "numero": 667,
    "titulo": "Turning on 'pick the source yourself' still auto selects the source on play",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "bug",
    "status": "integrada",
