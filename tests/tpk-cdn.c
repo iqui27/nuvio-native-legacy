@@ -246,6 +246,33 @@ int main(void) {
   bombear(5);
   ok(nAbriu == 2 && video_falhou(), "relay prepare failure never retries");
   video_parar();
+  nAbriu = 0; video_definir_reconexao(1); slowProbe = 1;
+  video_tocar("https://nexus.tb-cdn.st/direct");
+  nv_tpk_video_erro_geracao(hostGen, -1, 1);
+  Uint32 slowStart = SDL_GetTicks();
+  while (SDL_GetTicks() - slowStart < 4200) bombear(1);
+  ok(nAbriu == 1 && !video_falhou(), "slow relay probe never reopens failed direct URL");
+  esperarAbrir(2);
+  ok(nAbriu == 2 && strstr(ultUrl, "127.0.0.1"), "slow relay probe eventually opens relay");
+  video_parar();
+  for (int k = 0; k < 3; k++) {
+    nAbriu = fileRequests = 0; expiredProbe = k == 0 ? 403 : k == 1 ? 404 : 410;
+    video_definir_reconexao(1);
+    video_tocar("https://nexus.tb-cdn.st/direct");
+    video_tpk_cdn_arquivo("https://nexus.tb-cdn.st/direct", 1, 42, 7);
+    nv_tpk_video_erro_geracao(hostGen, -1, 1);
+    esperarAbrir(2);
+    ok(fileRequests == 1 && nAbriu == 2 && strstr(ultUrl, "127.0.0.1"), "relay probe refreshes refused selected file once");
+    video_parar();
+  }
+  nAbriu = fileRequests = 0; refuseEveryProbe = 1; video_definir_reconexao(1);
+  video_tocar("https://nexus.tb-cdn.st/direct");
+  video_tpk_cdn_arquivo("https://nexus.tb-cdn.st/direct", 1, 42, 7);
+  nv_tpk_video_erro_geracao(hostGen, -1, 1);
+  Uint32 retryStart = SDL_GetTicks();
+  while (!video_falhou() && SDL_GetTicks() - retryStart < 3000) bombear(1);
+  ok(fileRequests == 1 && nAbriu == 1 && video_falhou(), "failed refreshed probe stops without reopening or retry loop");
+  video_parar(); refuseEveryProbe = 0;
   nAbriu = 0; video_definir_reconexao(1);
   video_tocar("https://nexus.tb-cdn.st/another");
   nv_tpk_video_erro_geracao(oldGen, -1, 1);

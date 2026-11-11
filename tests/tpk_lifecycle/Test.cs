@@ -43,11 +43,20 @@ class Test {
         Setup(); Player.Defer = true; Open();
         Wait(() => Player.All.Count > 0 && Player.All[0].State == PlayerState.Preparing);
         Player.All[0].Erro();
-        Check(Erros == 0, "prepare callback waits for prepare result");
-        Player.All[0].Prepared.SetException(new Exception("prepare failed"));
         Wait(() => prepareErrors == 1);
-        Check(Erros == 1, "prepare failure carries generation and phase once");
+        Check(Erros == 1 && !Player.All[0].Prepared.Task.IsCompleted, "prepare callback reports immediately while task is pending");
+        Player.All[0].Prepared.SetException(new Exception("prepare failed"));
+        Thread.Sleep(100); Pump();
+        Check(Erros == 1 && prepareErrors == 1, "prepare exception does not duplicate callback");
         Entry("fParar"); Wait(() => Player.All[0].Disposed);
+        Setup(); Player.Defer = true; Open();
+        Wait(() => Player.All.Count > 0 && Player.All[0].State == PlayerState.Preparing);
+        var racing = Player.All[0];
+        Task.WaitAll(Task.Run(() => racing.Erro()), Task.Run(() => racing.Prepared.SetException(new Exception("prepare failed"))));
+        Wait(() => Erros == 1);
+        Thread.Sleep(100); Pump();
+        Check(Erros == 1, "concurrent callback and exception emit one error");
+        Entry("fParar"); Wait(() => racing.Disposed);
 
         // #302: a segment notification is not EOS while the native pipeline plays.
         Setup(); OpenTocado(); var live = Player.All[0]; int ends = completed;

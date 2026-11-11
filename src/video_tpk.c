@@ -451,7 +451,7 @@ static struct {
   int avisou;            // "nao da para buscar" ja foi dito nesta fonte
   // Legendas de texto escondidas da TV (mkvfix.h): a abertura espera a sonda
   // quando o cabecalho ja mostrou ASS/SSA; senao, uma reabertura cedo.
-  int esperando; Uint32 esperaDesde;
+  int esperando, esperaFallback; Uint32 esperaDesde;
   int reabriuLeg;
   int relayTentou;
 } mf;
@@ -778,6 +778,7 @@ static void mfSondar(void) {
 // centenas de ms) e o player ja nasce no servidor local; sem resposta em
 // MF_ESPERA_MS, abre o link como sempre e a reabertura cedo cobre depois.
 #define MF_ESPERA_MS 4000u
+#define MF_RELAY_ESPERA_MS 30000u
 static int mkvTemAss(void) {
   for (int i = 0; i < mkvN; i++)
     if (mkvFx[i].tipo == 17 && (!strcmp(mkvFx[i].codec, "S_TEXT/ASS") || !strcmp(mkvFx[i].codec, "S_TEXT/SSA") ||
@@ -815,9 +816,11 @@ static void mfBombear(void) {
   int e;
   if (mf.esperando) {
     char u[256];
+    int fallback = mf.esperaFallback;
     e = mkvfix_estado();
-    if (e == MKVFIX_SONDANDO && SDL_GetTicks() - mf.esperaDesde < MF_ESPERA_MS) return;
-    mf.esperando = 0;
+    if (e == MKVFIX_SONDANDO && SDL_GetTicks() - mf.esperaDesde <
+        (fallback ? MF_RELAY_ESPERA_MS : MF_ESPERA_MS)) return;
+    mf.esperando = mf.esperaFallback = 0;
     if (!ativo || parado || !hAbrir) return;
     if ((mkvfix_ocultas() > 0 || mkvfix_relay()) && mkvfix_url(u, sizeof u)) {
       mf.ativo = 1;
@@ -826,6 +829,11 @@ static void mfBombear(void) {
              (unsigned)(SDL_GetTicks() - mf.esperaDesde));
       fflush(stdout);
       abrirHost(u, "");
+    } else if (fallback) {
+      printf("[mkvfix] fallback relay unavailable or timed out\n");
+      fflush(stdout);
+      mkvfix_parar();
+      nv_tpk_video_evento(EV_ERRO, -1, 0);
     } else {
       printf("[mkvfix] %s: opening the file directly\n",
              e == MKVFIX_SONDANDO ? "no answer from the check in time" : "nothing hidden");
@@ -1783,7 +1791,7 @@ void video_bombear(void) {
     if (erroPreparo && ativo && !parado && reconPermitida && !cv.ativo && !emTrailer && !mf.ativo &&
         !mf.relayTentou && !strncmp(hostUrl, "https://", 8) &&
         !strstr(hostUrl, "://127.0.0.1") && !strstr(hostUrl, "://localhost")) {
-      mf.relayTentou = 1; mf.sondou = 1; mf.esperando = 1; mf.esperaDesde = SDL_GetTicks();
+      mf.relayTentou = 1; mf.sondou = 1; mf.esperando = mf.esperaFallback = 1; mf.esperaDesde = SDL_GetTicks();
       snprintf(mfEspUrl, sizeof mfEspUrl, "%s", hostUrl);
       snprintf(mfEspCab, sizeof mfEspCab, "%s", hostCab);
       mkvfix_sondar_relay_tls(hostUrl, hostCab, strcmp(urlAtual, hostUrl) ? urlAtual : NULL,

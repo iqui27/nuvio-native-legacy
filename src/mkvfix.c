@@ -435,6 +435,8 @@ static void sondaLegendas(Sess *s, const unsigned char *b, long n, const MkvfixC
   free(q);
 }
 
+static int renovar(Sess *s);
+
 static void *fioSonda(void *u) {
   Sess *s = u;
   MkvfixCab c;
@@ -446,6 +448,15 @@ static void *fioSonda(void *u) {
   char a[24], b2[24], d[24], msg[420] = "";
   uint64_t t0 = agoraMs();
   unsigned char *b = ler(s, 0, MF_JANELA - 1, &n, &total, &st), *q = NULL;
+  if (s->cancelar) goto fim;
+  if (!b && (st == 403 || st == 404 || st == 410)) {
+    int item;
+    pthread_mutex_lock(&s->m); item = s->item; pthread_mutex_unlock(&s->m);
+    if (item > 0 && renovar(s) && !s->cancelar) {
+      n = 0; total = -1; st = 0;
+      b = ler(s, 0, MF_JANELA - 1, &n, &total, &st);
+    }
+  }
   if (s->cancelar) goto fim;
   if (!b || n < 64) {
     char x[96]; snprintf(x, sizeof x, "header not readable (HTTP %d, %ld bytes)", st, n);

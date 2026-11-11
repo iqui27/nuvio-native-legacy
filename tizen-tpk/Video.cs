@@ -429,7 +429,7 @@ namespace NuvioTpk
 
         async void Abrir(string url, string cabecalhos, int minha, uint geracao)
         {
-            int preparando = 0;
+            int preparando = 0, erroPreparoEnviado = 0;
             posMs = 0; acabou = false; Interlocked.Increment(ref posGer);
             buscando = false; buscaPend = pausaPend = -1; preparoPausado = false;
             aspectoRecusado = false;
@@ -460,7 +460,13 @@ namespace NuvioTpk
                         }
                     } catch (Exception ex) { Log("completion state: " + ex.Message); }
                 });
-                p.ErrorOccurred += (s, e) => { if (minha == Volatile.Read(ref sessao)) { Log("erro " + e.Error); if (Volatile.Read(ref preparando) == 0) NvVid.ErroGeracao(geracao, (int)e.Error, 0); } };
+                p.ErrorOccurred += (s, e) => {
+                    if (minha != Volatile.Read(ref sessao)) return;
+                    Log("erro " + e.Error);
+                    int fase = Volatile.Read(ref preparando);
+                    if (fase == 0 || Interlocked.Exchange(ref erroPreparoEnviado, 1) == 0)
+                        NvVid.ErroGeracao(geracao, (int)e.Error, fase);
+                };
                 p.BufferingProgressChanged += (s, e) => { if (minha == Volatile.Read(ref sessao)) NvVid.Evento(EV_BUFFER, e.Percent, 0); };
                 p.PlaybackInterrupted += (s, e) => { if (minha == Volatile.Read(ref sessao)) { Log("interrompido: " + e.Reason); NvVid.Evento(EV_PAUSADO, 0, 0); } };
                 p.SubtitleUpdated += (s, e) => { if (minha == Volatile.Read(ref sessao)) NvVid.Legenda(e.Text ?? "", (int)e.Duration); };
@@ -490,7 +496,8 @@ namespace NuvioTpk
                 Volatile.Write(ref preparando, 1);
                 try { await p.PrepareAsync(); }
                 catch {
-                    if (minha == Volatile.Read(ref sessao)) NvVid.ErroGeracao(geracao, -1, 1);
+                    if (minha == Volatile.Read(ref sessao) && Interlocked.Exchange(ref erroPreparoEnviado, 1) == 0)
+                        NvVid.ErroGeracao(geracao, -1, 1);
                     return;
                 }
                 Volatile.Write(ref preparando, 0);

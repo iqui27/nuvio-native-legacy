@@ -3,7 +3,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <unistd.h>
-static int hiddenMkv, expiredStatus;
+static int hiddenMkv, expiredStatus, slowProbe, expiredProbe, refuseEveryProbe;
 static unsigned char media[512];
 static void hiddenHeader(void) {
   const unsigned char header[] = {
@@ -25,7 +25,7 @@ static void hiddenHeader(void) {
 char *rede_baixar_trecho64_final(const char *u, const char *h, int64_t a, int64_t z,
     long *n, int64_t *total, int *st, volatile int *cancel, char *fin, int *cross) {
   (void)h; (void)cancel;
-  *n = 0; *st = 404; if (fin) fin[0] = 0; if (cross) *cross = 0;
+  *n = 0; *st = 0; if (fin) fin[0] = 0; if (cross) *cross = 0;
   if (!hiddenMkv || a < 0 || a >= sizeof media) return NULL;
   if (z >= sizeof media) z = sizeof media - 1;
   *n = (long)(z - a + 1); *st = 206;
@@ -36,6 +36,9 @@ char *rede_baixar_trecho64_final(const char *u, const char *h, int64_t a, int64_
 char *rede_baixar_trecho64_tls(const char *u, const char *h, int64_t a, int64_t z,
     long *n, int64_t *total, int *st, volatile int *cancel, char *fin, int *cross) {
   if (strncmp(u, "https://", 8)) return NULL;
+  if (__atomic_exchange_n(&slowProbe, 0, __ATOMIC_SEQ_CST)) SDL_Delay(4500);
+  int refused = strstr(u, "/direct") ? __atomic_exchange_n(&expiredProbe, 0, __ATOMIC_SEQ_CST) : 0;
+  if (refused || __atomic_load_n(&refuseEveryProbe, __ATOMIC_SEQ_CST)) { *n = 0; *st = refused ? refused : 403; return NULL; }
   return rede_baixar_trecho64_final(u, h, a, z, n, total, st, cancel, fin, cross);
 }
 int rede_fluxo64(const char *u, const char *h, int64_t a,
