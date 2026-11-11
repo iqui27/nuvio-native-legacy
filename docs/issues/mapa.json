@@ -730,7 +730,7 @@
   {
    "numero": 712,
    "titulo": "Match framerate",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "Android TV / Google TV",
    "tipo": "a confirmar",
    "status": "aberta",
@@ -13165,7 +13165,7 @@
   {
    "numero": 641,
    "titulo": "Missing Refresh Rate AFR Option in Android",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "bug",
    "status": "integrada",
@@ -14999,7 +14999,7 @@
   {
    "numero": 771,
    "titulo": "[Samsung Tizen .tpk] Embedded ASS subtitle tracks missing from the subtitle menu (TV player doesn't report S_TEXT/ASS; MKV header has them)",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "Samsung UN43CU7000FXZX / Tizen 9 / NuvioTpk 2.0.8 (relato)",
    "tipo": "bug",
    "status": "integrada",
