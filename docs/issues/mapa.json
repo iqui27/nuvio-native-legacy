@@ -13402,7 +13402,7 @@
   {
    "numero": 672,
    "titulo": "Library row - show all",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "?",
    "status": "integrada",
@@ -15468,6 +15468,15 @@
   }
  ],
  "validacoes": [
+  {
+   "data": "2026-11-11",
+   "quem": "Revisão independente; Central TV (gate e integração)",
+   "o_que": "Ordenação e filtro de não vistos na fileira Biblioteca da Home.",
+   "issues": [672],
+   "ref": "447d16626064697edb7b7edd7393cfdb95c99194",
+   "resultado": "Revisão OK; gate 7/7; bibhome.sh e varredura i18n rc0 pós-merge.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue672-20261111.log; /Volumes/ExternalSSD/tmp/rev/issue672-postmerge-20261111.log SHA256 66b6916b53bef663c60d71e9b4a42310c49bea90635493b1474a17f03972d79d. Testes em host; sem validação visual ou de controle em TV. Testes não relacionados apresentam falhas também na base anterior."
+  },
   {
    "data": "2026-11-11",
    "quem": "Revisão independente; Central TV (gate e integração)",
