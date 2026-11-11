@@ -365,7 +365,13 @@ int main(void) {
     k += (size_t)snprintf(json + k, cap - k,
                           ",{\"content_id\":\"tt%07d\",\"content_type\":\"movie\","
                           "\"name\":\"T0\",\"added_at\":1}]", 1000000);
+    semear((const char *[]) {"tt1000000"}, 1);
+    confere("snapshot inicial inclui titulo antigo", contalib_ler_biblioteca("[{\"content_id\":\"tt1000000\"}]"), 1);
+    contalib_aplicar_catalogo();
+    removidosSalvos = 0;
     confere("guarda exatamente o teto", contalib_ler_biblioteca(json), CONTALIB_MAX);
+    confere("titulo presente fora do teto nao e removido", naListaDe("tt1000000"), 1);
+    confere("espelho presente fora do teto nao e removido", removidosSalvos, 0);
     for (i = 0; i < contalib_n(); i++) {
       if (!strcmp(item(i)->id, "tt1000539")) achouNovo = 1;   // o ultimo salvo
       if (!strcmp(item(i)->id, "tt1000000")) achouVelho = 1;

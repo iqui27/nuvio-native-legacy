@@ -268,6 +268,15 @@ int contalib_ler_biblioteca(const char *json) {
   // account snapshot. Local-only saves and unrelated provider bits survive.
   for (i = 0; i < nItens; i++) {
     for (j = 0; j < k; j++) if (!strcmp(itens[i].id, novo[j].id)) break;
+    if (j == k && fora > 0) {
+      // The selected vector is capped; compare against the complete response.
+      for (p = js_raiz_array(json); p; p = js_prox(js_fim(p))) {
+        char id[sizeof itens[i].id];
+        if (js_texto(p, js_fim(p), "content_id", id, sizeof id) &&
+            !strcmp(id, itens[i].id)) break;
+      }
+      if (p) continue;
+    }
     if (j == k) {
       // Pending local additions win until uploaded.
       if (contapend_lista_pendente && contapend_lista_pendente(itens[i].id)) continue;

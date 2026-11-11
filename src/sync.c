@@ -1824,6 +1824,9 @@ void sync_passo(unsigned agoraMs) {
   // inteira, aplicar so o gesto e subir com sync_push_library — nunca a lista
   // LOCAL (secao 1.6, regra 2). O que a pessoa tirou e ainda nao saiu da conta
   // fica fora daqui pelo filtro de contalib_aplicar_catalogo.
+  // Prune only confirmations predating this pull before testing additions;
+  // newer confirmations must protect the local mirror from this snapshot.
+  contapend_podar(cicloInicioMs);
   if (temBibBlob && bibBlob) {
     int before = contalib_n(), kept = 0;
     for (int i = 0; i < before; i++) {
@@ -1870,7 +1873,6 @@ void sync_passo(unsigned agoraMs) {
   // aqui e ainda nao esta (ou acabou de entrar) na conta continua valendo na
   // tela, inclusive depois de reabrir o app sem rede. E o que ja foi
   // confirmado antes deste ciclo sai do jornal: o pull acima ja o reflete.
-  contapend_podar(cicloInicioMs);
   contapend_aplicar_local();
   // A LISTA ANTIGA DESTA TV (salvos.txt de antes da lista por perfil) sobe UMA
   // vez para o perfil que a recebeu, item a item pelo jornal — que le a lista
