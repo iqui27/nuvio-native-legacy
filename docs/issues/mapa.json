@@ -12733,7 +12733,7 @@
   {
    "numero": 617,
    "titulo": "Read watched state and resume positions from Jellyfin servers",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "?",
    "status": "integrada",
@@ -14408,7 +14408,7 @@
   {
    "numero": 694,
    "titulo": "Tizen 5.0 (.tpk / NuvioTpk40): every TorBox source fails with ConnectionFailed 0xfe6c0026, the TV's root store has no ISRG Root X2 (patch included)",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "Samsung Tizen 5 / TPK40",
    "tipo": "bug",
    "status": "integrada, aguardando validação específica",
