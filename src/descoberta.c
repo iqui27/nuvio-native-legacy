@@ -7926,6 +7926,20 @@ static int epPublicacaoIniciar(int alvoItem) {
   return epAlvoDe(alvoItem, p ? p->id : epAlvoId);
 }
 
+// A provider calls this only after its network response has arrived. The
+// workspace stays locked until discovery has published or discarded the list.
+static CatEp *epServidorPreparar(void *ctx, int capacidade) {
+  int *preso = ctx;
+  CatEp *eps;
+  if (capacidade < 1 || capacidade > VIDEOS_MAX) return NULL;
+  pthread_mutex_lock(&epMemoriaTrava);
+  if (epPedidoSaiu()) { pthread_mutex_unlock(&epMemoriaTrava); return NULL; }
+  eps = malloc((size_t)capacidade * sizeof *eps);
+  if (!eps) { pthread_mutex_unlock(&epMemoriaTrava); return NULL; }
+  *preso = 1;
+  return eps;
+}
+
 // Bounded retained responses; an oversize set leaves the published list intact.
 #define TMDB_ETAPA_BYTES (256u * 1024u)
 typedef struct { char *json; int temporada; } TmdbResposta;
@@ -8906,11 +8920,10 @@ static void *buscarEps(void *u) {
   // PERSONAL SERVER ITEM: the server is the only source of its page. No
   // Cinemeta, TMDB or addon /meta gets an opaque server id.
   if (jfid_e(orig->imdb)) {
-    pthread_mutex_lock(&epMemoriaTrava);
-    if (epPedidoSaiu()) { pthread_mutex_unlock(&epMemoriaTrava); epConcluir(); return NULL; }
-    CatEp *eps = malloc(sizeof(CatEp) * VIDEOS_MAX);
+    int preso = 0;
+    CatEp *eps = NULL;
     CatItem ed = base;
-    int ne = eps ? servidores_ficha(&ed, eps, VIDEOS_MAX) : -1;
+    int ne = servidores_ficha_preparar(&ed, &eps, VIDEOS_MAX, epServidorPreparar, &preso);
     alvoItem = epPublicacaoIniciar(alvoItem);
     if (ne >= 0 && alvoItem >= 0) {
       descCatAtualizar(cat_atualizar_item, alvoItem, &ed);
@@ -8918,7 +8931,7 @@ static void *buscarEps(void *u) {
     }
     pthread_mutex_unlock(&epPedidoTrava);
     free(eps);
-    pthread_mutex_unlock(&epMemoriaTrava);
+    if (preso) pthread_mutex_unlock(&epMemoriaTrava);
     epConcluir();
     return NULL;
   }

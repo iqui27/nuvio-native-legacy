@@ -1158,7 +1158,8 @@ int px_detalhe(const PxConta *c, RedeJob *job, const char *rk, CatItem *out) {
   return e;
 }
 
-int px_episodios(const PxConta *c, RedeJob *job, const char *serieRk, CatEp *out, int max) {
+static int px_episodios_preparar(const PxConta *c, RedeJob *job, const char *serieRk,
+                                 CatEp **saida, int max, CatEpPreparar preparar, void *ctx) {
   RedeResposta r;
   char caminho[160];
   int e, n;
@@ -1167,9 +1168,29 @@ int px_episodios(const PxConta *c, RedeJob *job, const char *serieRk, CatEp *out
            serieRk);
   e = pedirServidor(c, caminho, "GET", "episodes", PX_PRAZO_LISTA_MS, job, &r);
   if (e) return e;
-  n = px_ler_episodios(c, r.corpo, r.n_corpo, out, max);
+  if (preparar) {
+    const char *ai, *af, *p;
+    int qtd = 0;
+    if (arrayDe(r.corpo, r.n_corpo, "Metadata", &ai, &af)) {
+      p = ai + 1;
+      while (qtd < max && (p = elemento(p, af)) != NULL) {
+        const char *f = depoisElemento(p);
+        if (!f) break;
+        qtd++; p = f;
+      }
+    }
+    if (qtd && rede_job_estado(job) == REDE_OK) *saida = preparar(ctx, qtd);
+    if (qtd && (!*saida || rede_job_estado(job) != REDE_OK)) {
+      rede_resposta_limpar(&r); return PX_ERR_CANCELADO;
+    }
+    max = qtd;
+  }
+  n = max ? px_ler_episodios(c, r.corpo, r.n_corpo, *saida, max) : 0;
   rede_resposta_limpar(&r);
   return n;
+}
+int px_episodios(const PxConta *c, RedeJob *job, const char *serieRk, CatEp *out, int max) {
+  return px_episodios_preparar(c, job, serieRk, &out, max, NULL, NULL);
 }
 
 int px_achar_episodio(const PxConta *c, RedeJob *job, const char *serieRk, int temp, int ep, char *rk, size_t tam) {
@@ -2841,7 +2862,8 @@ int plex_consultar(const char *id, const char *tipo, const char *titulo, int ano
 }
 
 // ---------------------------------------------------------- title page
-int plex_ficha(CatItem *item, CatEp *eps, int maxEps) {
+static int plexFicha(CatItem *item, CatEp **saida, int maxEps, CatEpPreparar preparar, void *ctx) {
+  CatEp *eps = *saida;
   char tag[JFID_TAG + 1], id[JFID_ITEM + 1];
   PxConta c;
   RedeJob *j = NULL;
@@ -2862,8 +2884,9 @@ int plex_ficha(CatItem *item, CatEp *eps, int maxEps) {
   novo = malloc(sizeof *novo);
   if (!novo) { rede_job_soltar(j); apagarSegredo(&c, sizeof c); return -1; }
   e = px_detalhe(&c, j, id, novo);
-  if (e == PX_OK && !strcmp(item->tipo, "series") && eps && maxEps > 0) {
-    ne = px_episodios(&c, j, id, eps, maxEps);
+  if (e == PX_OK && !strcmp(item->tipo, "series") && (eps || preparar) && maxEps > 0) {
+    ne = px_episodios_preparar(&c, j, id, saida, maxEps, preparar, ctx);
+    eps = *saida;
     if (ne < 0) { e = ne; ne = 0; }
   }
   pthread_mutex_lock(&trava);
@@ -2893,4 +2916,10 @@ int plex_ficha(CatItem *item, CatEp *eps, int maxEps) {
   *item = *novo;
   free(novo);
   return ne;
+}
+int plex_ficha(CatItem *item, CatEp *eps, int maxEps) {
+  return plexFicha(item, &eps, maxEps, NULL, NULL);
+}
+int plex_ficha_preparar(CatItem *item, CatEp **eps, int maxEps, CatEpPreparar preparar, void *ctx) {
+  return plexFicha(item, eps, maxEps, preparar, ctx);
 }

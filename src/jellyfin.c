@@ -718,7 +718,8 @@ int jf_ler_episodios(const JfConta *c, const char *corpo, size_t nCorpo, CatEp *
   return n;
 }
 
-int jf_episodios(const JfConta *c, RedeJob *job, const char *serieId, CatEp *out, int max) {
+static int jf_episodios_preparar(const JfConta *c, RedeJob *job, const char *serieId,
+                                 CatEp **saida, int max, CatEpPreparar preparar, void *ctx) {
   RedeResposta r;
   char caminho[256], limpo[40];
   int n, e;
@@ -728,9 +729,29 @@ int jf_episodios(const JfConta *c, RedeJob *job, const char *serieId, CatEp *out
            "&ImageTypeLimit=1&EnableUserData=true", limpo, c->usuarioId);
   e = pedir(c, c->base, job, "GET", caminho, NULL, "episodes", JF_PRAZO_LISTA_MS, &r);
   if (e) return e;
-  n = jf_ler_episodios(c, r.corpo, r.n_corpo, out, max);
+  if (preparar) {
+    const char *ai, *af, *p;
+    int qtd = 0;
+    if (blocoRaiz(r.corpo, r.corpo + r.n_corpo, "Items", &ai, &af)) {
+      p = ai + 1;
+      while (qtd < max && (p = elemento(p, af)) != NULL) {
+        const char *f = depoisElemento(p);
+        if (!f) break;
+        qtd++; p = f;
+      }
+    }
+    if (qtd && rede_job_estado(job) == REDE_OK) *saida = preparar(ctx, qtd);
+    if (qtd && (!*saida || rede_job_estado(job) != REDE_OK)) {
+      rede_resposta_limpar(&r); return JF_ERR_CANCELADO;
+    }
+    max = qtd;
+  }
+  n = max ? jf_ler_episodios(c, r.corpo, r.n_corpo, *saida, max) : 0;
   rede_resposta_limpar(&r);
   return n;
+}
+int jf_episodios(const JfConta *c, RedeJob *job, const char *serieId, CatEp *out, int max) {
+  return jf_episodios_preparar(c, job, serieId, &out, max, NULL, NULL);
 }
 
 // ------------------------------------------------------- matching index
@@ -1331,7 +1352,7 @@ static void jfi_reproducao_tick(JfInst *I, const char *url, double pos, double d
 static void jfi_reproducao_fim(JfInst *I, const char *url, double pos, double dur);
 static int jfi_fontes_pedir(JfInst *I, const char *alvo);
 static int jfi_fontes_colher(JfInst *I, const char *alvo, Stream **lista, int *n);
-static int jfi_ficha(JfInst *I, CatItem *item, CatEp *eps, int maxEps);
+static int jfi_ficha(JfInst *I, CatItem *item, CatEp **eps, int maxEps, CatEpPreparar preparar, void *ctx);
 
 
 int jellyfin_disponivel(void) {
@@ -2801,7 +2822,8 @@ int jellyfin_qc_url(char *dst, size_t tam) {
 }
 
 // ---------------------------------------------------------- title page
-static int jfi_ficha(JfInst *I, CatItem *item, CatEp *eps, int maxEps) {
+static int jfi_ficha(JfInst *I, CatItem *item, CatEp **saida, int maxEps, CatEpPreparar preparar, void *ctx) {
+  CatEp *eps = *saida;
   char tag[JFID_TAG + 1], id[JFID_ITEM + 1];
   JfConta c;
   RedeJob *j = NULL;
@@ -2820,8 +2842,9 @@ static int jfi_ficha(JfInst *I, CatItem *item, CatEp *eps, int maxEps) {
   pthread_mutex_unlock(&I->trava);
   if (!j) return -1;
   e = jf_detalhe(&c, j, id, &novo);
-  if (e == JF_OK && !strcmp(item->tipo, "series") && eps && maxEps > 0) {
-    ne = jf_episodios(&c, j, id, eps, maxEps);
+  if (e == JF_OK && !strcmp(item->tipo, "series") && (eps || preparar) && maxEps > 0) {
+    ne = jf_episodios_preparar(&c, j, id, saida, maxEps, preparar, ctx);
+    eps = *saida;
     if (ne < 0) { e = ne; ne = 0; }
   }
   pthread_mutex_lock(&I->trava);
@@ -2911,7 +2934,8 @@ int jf_setup_aceitar(int emby, const JfConta *c, int perfil, unsigned generation
     return jfi_pagina(I, k, ini, lim, out, max, total, raw); }                                    \
   int P##_fileiras_copiar(CatItem *it, int mi, CatFileira *f, int mf, int *n) {               \
     return jfi_fileiras_copiar(I, it, mi, f, mf, n); }                                        \
-  int P##_ficha(CatItem *it, CatEp *e, int m) { return jfi_ficha(I, it, e, m); }              \
+  int P##_ficha(CatItem *it, CatEp *e, int m) { return jfi_ficha(I, it, &e, m, NULL, NULL); } \
+  int P##_ficha_preparar(CatItem *it, CatEp **e, int m, CatEpPreparar f, void *c) { return jfi_ficha(I, it, e, m, f, c); } \
   int P##_fontes_pedir(const char *a) { return jfi_fontes_pedir(I, a); }                      \
   int P##_fontes_colher(const char *a, Stream **l, int *n) { return jfi_fontes_colher(I, a, l, n); } \
   void P##_reproducao_tick(const char *u, double p, double d, int t) { jfi_reproducao_tick(I, u, p, d, t); } \

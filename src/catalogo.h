@@ -212,6 +212,8 @@ typedef struct {
   char dataIso[32];
   int  tvdbEp; // exact episode identity published by metadata; 0 = unproven
 } CatEp;
+// Called after a server response arrives; the caller owns the returned array.
+typedef CatEp *(*CatEpPreparar)(void *ctx, int capacidade);
 
 // Le <dir>/catalogo.txt. Devolve quantos itens carregou (0 = nenhum, e quem
 // chama deve seguir com o que tiver).

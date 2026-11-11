@@ -51,15 +51,20 @@ Uint32 SDL_GetTicks(void) { return 0; }
 static pthread_mutex_t servidorTesteTrava = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t servidorTesteCond = PTHREAD_COND_INITIALIZER;
 static int servidorBloqueia, servidorEntrou, servidorSoltar, servidorNovoTerminou;
-int servidores_ficha(CatItem *item, CatEp *eps, int maxEps) {
-  (void)item; (void)eps; (void)maxEps;
+int servidores_ficha_preparar(CatItem *item, CatEp **eps, int maxEps, CatEpPreparar preparar, void *ctx) {
+  (void)item; (void)maxEps;
   pthread_mutex_lock(&servidorTesteTrava);
   if (servidorBloqueia) {
     servidorEntrou = 1; pthread_cond_broadcast(&servidorTesteCond);
     while (!servidorSoltar) pthread_cond_wait(&servidorTesteCond, &servidorTesteTrava);
   }
   pthread_mutex_unlock(&servidorTesteTrava);
-  return -1;
+  if (!servidorBloqueia) return -1;
+  *eps = preparar(ctx, 1);
+  if (!*eps) return -1;
+  memset(*eps, 0, sizeof **eps);
+  (*eps)->temporada = 1; (*eps)->episodio = 99;
+  return 1;
 }
 static void *servidorTesteNovo(void *arg) {
   (void)arg;
@@ -413,6 +418,11 @@ int main(void) {
     pthread_mutex_unlock(&servidorTesteTrava);
     pthread_join(antigo, NULL); pthread_join(novo, NULL);
     assert(terminou && cat_n_episodios(0) == 1);
+    assert(cat_episodio(0, 0) && cat_episodio(0, 0)->episodio == 1);
+    catalogoCom("jf:new", "series", "server");
+    epItem = 0;
+    buscarEps(NULL);
+    assert(cat_n_episodios(0) == 1 && cat_episodio(0, 0)->episodio == 99);
     return 0;
   }
   if (getenv("NV_TEST_787_MEMORY") || getenv("NV_TEST_787_STABLE")) {

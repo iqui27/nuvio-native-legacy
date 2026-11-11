@@ -260,6 +260,7 @@ int  plex_atividade(const char *modo, CatItem *out, int max);
 
 // Title page of a Plex-native item ("px:..."). BLOCKS. -1 failed.
 int  plex_ficha(CatItem *item, CatEp *eps, int maxEps);
+int  plex_ficha_preparar(CatItem *, CatEp **, int, CatEpPreparar, void *);
 
 // Sources for a Plex-native target. Same contract as jellyfin_fontes_*.
 enum { PX_FONTES_NADA = 0, PX_FONTES_PENDENTE, PX_FONTES_PRONTO, PX_FONTES_FALHOU };
