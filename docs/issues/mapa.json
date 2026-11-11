@@ -14199,10 +14199,10 @@
   {
    "numero": 681,
    "titulo": "Cant select the last subtitle based on the list",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "bug",
-   "status": "aberta",
+   "status": "corrigida na integração",
    "release": "-",
    "conserto": ["a6271d24b6850cf8e7ef268822d075c4ca525e8c"],
    "ultima_resposta": {
