@@ -7926,6 +7926,48 @@ static int epPublicacaoIniciar(int alvoItem) {
   return epAlvoDe(alvoItem, p ? p->id : epAlvoId);
 }
 
+// Bounded retained responses; an oversize set leaves the published list intact.
+#define TMDB_ETAPA_BYTES (256u * 1024u)
+typedef struct { char *json; int temporada; } TmdbResposta;
+static int tmdbEtapaGuardar(TmdbResposta *v, int *n, int cap, size_t *bytes,
+                            char *json, int temporada) {
+  size_t tam = strlen(json) + 1;
+  if (*n >= cap || tam > TMDB_ETAPA_BYTES - *bytes) return 0;
+  v[*n] = (TmdbResposta){json, temporada}; (*n)++; *bytes += tam;
+  return 1;
+}
+static int tmdbEtapaPublicar(int item, int neps, unsigned versao, long tmdb,
+                             int textos, const TmdbResposta *v, int n) {
+  CatEp *tmp;
+  int *anteriores;
+  int feitos = 0, marcados = 0, publicou = 0;
+  pthread_mutex_lock(&epMemoriaTrava);
+  item = epPublicacaoIniciar(item);
+  if (item < 0) goto fim;
+  tmp = malloc((size_t)neps * sizeof *tmp);
+  if (!tmp) goto fim;
+  anteriores = malloc((size_t)neps * sizeof *anteriores);
+  if (!anteriores) { free(tmp); goto fim; }
+  if (cat_episodios_copiar_versao(item, tmp, neps, versao)) {
+    for (int i = 0; i < neps; i++) anteriores[i] = tmp[i].tmdbE;
+    for (int i = 0; i < n; i++)
+      feitos += desc_tmdb_notas_temporada_ex(v[i].json, tmp, neps, v[i].temporada, textos);
+    for (int i = 0; i < neps; i++) if (tmp[i].tmdbE > 0) {
+      if (tmp[i].tmdbSerie != tmdb || tmp[i].tmdbE != anteriores[i]) marcados++;
+      tmp[i].tmdbSerie = tmdb;
+    }
+    if (feitos || marcados) {
+      DESC_PUBLICAR(publicou = cat_definir_episodios_versao(item, tmp, neps, versao));
+    }
+  }
+  free(anteriores);
+  free(tmp);
+fim:
+  pthread_mutex_unlock(&epPedidoTrava);
+  pthread_mutex_unlock(&epMemoriaTrava);
+  return publicou;
+}
+
 // AS ABAS DE TEMPORADA SAO AS DA LISTA QUE FOI PUBLICADA (#372). Eram lidas do
 // corpo da ficha (o do Nuvio) mesmo quando a lista que entrou era a de um
 // addon: Apothecary Diaries publicava 72 episodios do AIOMetadata nas
@@ -9157,56 +9199,34 @@ static void *buscarEps(void *u) {
         }
       }
       if (chave2[0] && tmdbId > 0 && alvoItem >= 0 && (alvoItem = epAlvo(alvoItem)) >= 0) {
-        int neps = cat_n_episodios(alvoItem);
-        if (neps > 0) {
-          CatEp *tmp = malloc(sizeof(CatEp) * (size_t)neps);
-          if (tmp) {
-            int preenchidas = 0, i2;
-            // Sinopse sempre (#150). O NOME so num idioma que nao e o ingles
-            // (#176): em ingles o do Cinemeta ja e o do TMDB. Com o texto do
-            // addon na lista, o TMDB so preenche o que ficou vazio.
-            int textosEp = ajustes_tmdb_basico() ? DESC_EPT_SINOPSE | (idiomaNaoIngles() ? DESC_EPT_NOME : 0) |
-                           (epsDoAddon ? DESC_EPT_SO_VAZIO : 0) : 0;
-            for (i2 = 0; i2 < neps; i2++) {
-              const CatEp *e0 = cat_episodio(alvoItem, i2);
-              if (e0) tmp[i2] = *e0; else memset(&tmp[i2], 0, sizeof tmp[i2]);
+        int neps = 0, nt, ns = 0, cap = cat_n_episodios(alvoItem);
+        unsigned versao = 0;
+        size_t bytes = 0;
+        int *temporadas = cap > 0 ? malloc((size_t)cap * sizeof *temporadas) : NULL;
+        TmdbResposta *respostas = cap > 0 ? calloc((size_t)cap, sizeof *respostas) : NULL;
+        int textosEp = ajustes_tmdb_basico() ? DESC_EPT_SINOPSE | (idiomaNaoIngles() ? DESC_EPT_NOME : 0) |
+                       (epsDoAddon ? DESC_EPT_SO_VAZIO : 0) : 0;
+        if (temporadas && respostas &&
+            (nt = cat_temporadas_snapshot(alvoItem, temporadas, cap, &neps, &versao)) > 0) {
+          int completa = 1;
+          for (int i2 = 0; i2 < nt; i2++) {
+            char u3[400];
+            char *c4;
+            if (epPedidoSaiu()) { completa = 0; break; }
+            snprintf(u3, sizeof u3, "%s/tv/%ld/season/%d?api_key=%s&language=%s",
+                     TMDB, tmdbId, temporadas[i2], chave2, desc_tmdb_idioma());
+            c4 = rede_baixar(u3, 15);
+            if (epPedidoSaiu()) { free(c4); completa = 0; break; }
+            if (c4 && !tmdbEtapaGuardar(respostas, &ns, cap, &bytes, c4, temporadas[i2])) {
+              free(c4); completa = 0; break;
             }
-            for (i2 = 0; i2 < neps; i2++) {
-              int s = tmp[i2].temporada, j2, jaFoi = 0;
-              for (j2 = 0; j2 < i2; j2++)
-                if (tmp[j2].temporada == s) { jaFoi = 1; break; }
-              if (jaFoi) continue;
-              { char u3[400];
-                char *c4;
-                snprintf(u3, sizeof u3,
-                         "%s/tv/%ld/season/%d?api_key=%s&language=%s",
-                         TMDB, tmdbId, s, chave2, desc_tmdb_idioma());
-                c4 = rede_baixar(u3, 15);
-                if (c4) {
-                  preenchidas += desc_tmdb_notas_temporada_ex(c4, tmp, neps, s, textosEp);
-                  free(c4);
-                } }
-            }
-            { int marcados = 0;
-              for (i2 = 0; i2 < neps; i2++)
-                if (tmp[i2].tmdbE > 0) {
-                  const CatEp *e0 = cat_episodio(alvoItem, i2);
-                  tmp[i2].tmdbSerie = tmdbId;
-                  if (e0 && (e0->tmdbSerie != tmdbId || e0->tmdbE != tmp[i2].tmdbE)) marcados++;
-                }
-              if (marcados > 0 && preenchidas == 0) preenchidas = -marcados; }
-            alvoItem = epPublicacaoIniciar(alvoItem);
-            if (preenchidas != 0 && alvoItem >= 0 &&
-                cat_n_episodios(alvoItem) == neps) {
-              descCatEpisodios(alvoItem, tmp, neps);
-              printf("[desc] %s: nota/sinopse TMDB em %d episodios\n",
-                     edit.titulo, preenchidas);
-              fflush(stdout);
-            }
-            pthread_mutex_unlock(&epPedidoTrava);
-            free(tmp);
           }
+          if (completa && ns)
+            (void)tmdbEtapaPublicar(alvoItem, neps, versao, tmdbId, textosEp, respostas, ns);
         }
+        for (int i2 = 0; i2 < ns; i2++) free(respostas[i2].json);
+        free(respostas);
+        free(temporadas);
       }
     }
   }

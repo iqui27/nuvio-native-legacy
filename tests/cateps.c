@@ -633,6 +633,42 @@ int main(void) {
     assert(!cat_episodios_copiar_versao(0, &copia, 1, snap));
   }
 
+  {
+    TmdbResposta resposta[1];
+    size_t bytes = 0;
+    int nr = 0;
+    char *json = strdup("{\"episodes\":[{\"episode_number\":1,\"vote_average\":8.2}]}");
+    char *grande = malloc(TMDB_ETAPA_BYTES + 1);
+    EpPedido pedido = {0};
+    assert(json && grande);
+    memset(grande, 'x', TMDB_ETAPA_BYTES); grande[TMDB_ETAPA_BYTES] = 0;
+    assert(!tmdbEtapaGuardar(resposta, &nr, 1, &bytes, grande, 1));
+    assert(nr == 0 && bytes == 0);
+    free(grande);
+    assert(tmdbEtapaGuardar(resposta, &nr, 1, &bytes, json, 1));
+    montarCatalogo();
+    CatEp ep = {0}; ep.temporada = 1; ep.episodio = 1;
+    cat_definir_episodios(0, &ep, 1);
+    unsigned versao = cat_versao_episodios();
+    snprintf(pedido.id, sizeof pedido.id, "%s", "tt0");
+    pedido.geracao = epGeracao - 1;
+    pthread_once(&epPedidoOnce, epPedidoKeyCriar);
+    assert(!pthread_setspecific(epPedidoKey, &pedido));
+    assert(!tmdbEtapaPublicar(0, 1, versao, 123, 0, resposta, nr));
+    assert(cat_versao_episodios() == versao && cat_episodio(0, 0)->nota == 0);
+    pedido.geracao = epGeracao;
+    assert(tmdbEtapaPublicar(0, 1, versao, 123, 0, resposta, nr));
+    assert(cat_episodio(0, 0)->nota == 82);
+    versao = cat_versao_episodios();
+    snprintf(itens[0].imdb, sizeof itens[0].imdb, "%s", "ttnew");
+    cat_definir_tudo(itens, 3, NULL, 0);
+    cat_definir_episodios(0, &ep, 1);
+    assert(!tmdbEtapaPublicar(0, 1, versao, 123, 0, resposta, nr));
+    assert(cat_episodio(0, 0)->nota == 0);
+    assert(!pthread_setspecific(epPedidoKey, NULL));
+    free(json);
+  }
+
   // #391: uma lista longa nao perde os episodios depois do antigo teto de 1200.
   montarCatalogo();
   {
