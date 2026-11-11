@@ -15500,6 +15500,33 @@
  "validacoes": [
   {
    "data": "2026-11-11",
+   "quem": "Revisão independente histórica; Central TV (conferência)",
+   "o_que": "Nomes de arquivo de legendas de addons.",
+   "issues": [606],
+   "ref": "c9ae2eb5073b0c74bb3971c917e6ff44b0c9d77e; 1a2b00cd676f6005198774f00b093708adf1b45a",
+   "resultado": "Revisão histórica OK; addons_legendas.sh rc0 após reparo do teste 692. Asserções de precedência de nomes e basename executadas no mesmo teste.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-rec-i606.log SHA256 28fc4537ac0b8d4e9267f4e78a9b9731d1f98db4fc24531729cbf7eaef618b6e; /Volumes/ExternalSSD/tmp/rev/issue692-postmerge-20261111.log SHA256 b089f02b92c228888f4b4a3a8c9308fea0570412cf5f8c39947b588dbff7d91c. Fixtures sintéticas; sem provedor real ou TV."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Revisão independente histórica; Central TV (conferência)",
+   "o_que": "Ruído grosso no fundo Light da seleção de perfil.",
+   "issues": [657],
+   "ref": "696409f3adb5c2378a71c20b1be3a8029ad3d9c6",
+   "resultado": "Revisão histórica OK; psestilos_luz_barra.sh rc0 e compilação sintática relatados. Teste verifica ausência da operação de granulação grossa, preservando luz e degradê.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-revg-ruidoperfil.log SHA256 be1cec0345ad946b28b6328aec0bd27597fcdd1b54409a286b3dd2e94673e6c1. Sem prova GL real de reabertura ou validação visual em TV."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Revisão independente histórica; Central TV (conferência)",
+   "o_que": "Estabilidade de pôsteres Cover Flow durante carregamento.",
+   "issues": [662],
+   "ref": "a0ae67373c46596c0d3a075ccc3f2ee63bcf697f",
+   "resultado": "Revisão histórica OK; vertudo_coverflow_pages.sh rc0 e compilação sintática relatados. Teste exercita ordenação e identidade de foco; estado de revelação verificado estaticamente.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-revg-coverflowpisca.log SHA256 e9b4ff1ade15f75a8a6d75ad8492e640ed60cdd1697e294ef49abcac13252f3d. Sem reprodução visual GL ou TV de catálogo grande."
+  },
+  {
+   "data": "2026-11-11",
    "quem": "Revisão independente; Central TV (gate e integração)",
    "o_que": "Comparação local de CA e hostname no fetch comum e nos caminhos estritos do relay.",
    "issues": [694],
