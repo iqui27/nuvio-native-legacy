@@ -145,15 +145,9 @@ static void resultados(void) {
 int teste_jf_episodios_preparar(const JfConta *, RedeJob *, const char *, CatEp **, int, CatEpPreparar, void *);
 int teste_px_episodios_preparar(const PxConta *, RedeJob *, const char *, CatEp **, int, CatEpPreparar, void *);
 int perfis_ativo(void) { return 1; }
-size_t teste_spool_escrever(const void *ptr, size_t tam, size_t n, FILE *arquivo) {
-  const char *p = ptr;
-  const char segredo[] = "ynthetic-token";
-  for (size_t i = 0; i + sizeof segredo - 1 <= tam * n; i++)
-    assert(memcmp(p + i, segredo, sizeof segredo - 1));
-  return fwrite(ptr, tam, n, arquivo);
-}
+FILE *teste_tmpfile(void) { return NULL; }
 static int modoHttp, modoCallback, chamouCallback, totalSimulado, pedidosSimulados, extraSimulado;
-static int invalidoSimulado, paddingSimulado;
+static int invalidoSimulado, paddingSimulado, aleatorioSimulado;
 static const char *respostaHttp;
 int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
   memset(resposta, 0, sizeof *resposta);
@@ -166,13 +160,24 @@ int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
     pedidosSimulados++;
     int n = totalSimulado - inicio; if (n > tamanho) n = tamanho;
     n += extraSimulado;
-    size_t cap = (size_t)n * (100 + (size_t)paddingSimulado) + 200, pos;
+    size_t cap = (size_t)n * (100 + (size_t)paddingSimulado + (aleatorioSimulado ? 560u : 0u)) + 200, pos;
     resposta->corpo = malloc(cap); assert(resposta->corpo);
     pos = (size_t)snprintf(resposta->corpo, cap, "{\"MediaContainer\":{\"totalSize\":%d,\"Metadata\":[", totalSimulado);
     for (int i = 0; i < n; i++) {
       if (invalidoSimulado && inicio + i == 0)
         pos += (size_t)snprintf(resposta->corpo + pos, cap - pos, "{\"invalid\":1}");
-      else
+      else if (aleatorioSimulado) {
+        char texto[420]; unsigned x = (unsigned)(inicio + i + 1) * 2654435761u;
+        const char letras[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        for (size_t j = 0; j + 1 < sizeof texto; j++) {
+          x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+          texto[j] = letras[x % (sizeof letras - 1)];
+        }
+        texto[sizeof texto - 1] = 0;
+        pos += (size_t)snprintf(resposta->corpo + pos, cap - pos,
+          "%s{\"ratingKey\":\"%d\",\"parentIndex\":1,\"index\":%d,\"summary\":\"%s\"}",
+          i ? "," : "", inicio + i + 1, inicio + i + 1, texto);
+      } else
         pos += (size_t)snprintf(resposta->corpo + pos, cap - pos,
           "%s{\"ratingKey\":\"%d\",\"parentIndex\":1,\"index\":%d,\"padding\":\"%0*d\"}",
           i ? "," : "", inicio + i + 1, inicio + i + 1, paddingSimulado, 0);
@@ -260,7 +265,13 @@ static void testarPreparo(void) {
     assert(n == 4649 && pedidosSimulados == 3);
     for (int i = 0; i < n; i++) assert(out[i].episodio == i + 2);
     free(out); rede_job_soltar(job); rede_grupo_soltar(grupo);
-    totalSimulado = modoHttp = extraSimulado = invalidoSimulado = paddingSimulado = 0;
+    grupo = rede_grupo_criar(); job = rede_job_criar(grupo); out = NULL;
+    pedidosSimulados = chamouCallback = 0;
+    extraSimulado = invalidoSimulado = paddingSimulado = 0; aleatorioSimulado = 1;
+    n = teste_px_episodios_preparar(&pc, job, "1", &out, 5000, prepararTeste, job);
+    assert(n < 0 && !chamouCallback && !out);
+    rede_job_soltar(job); rede_grupo_soltar(grupo);
+    totalSimulado = modoHttp = aleatorioSimulado = 0;
   }
 }
 

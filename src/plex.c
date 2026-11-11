@@ -37,6 +37,7 @@ extern void cat_historico_definir_tempo(const char *imdb, const char *tipo,
 #include <strings.h>
 #include <time.h>
 #include <unistd.h>
+#include <zlib.h>
 
 #ifndef NV_PX_VERSAO
 #define NV_PX_VERSAO "1.8.0"
@@ -1155,16 +1156,38 @@ int px_detalhe(const PxConta *c, RedeJob *job, const char *rk, CatItem *out) {
   return e;
 }
 
+/* Bounded compressed staging avoids a second full CatEp array, including on
+ * memory-backed filesystems. Incompressible lists fail without publication. */
+#define PX_EP_COMP_MAX (512u * 1024u)
+typedef struct { z_stream z; unsigned char *dados; size_t usados, capacidade; } PxEpCompacto;
+static int pxEpComprimir(PxEpCompacto *c, const void *dados, size_t tamanho, int fim) {
+  c->z.next_in = (Bytef *)dados; c->z.avail_in = (uInt)tamanho;
+  do {
+    if (c->usados == c->capacidade) {
+      size_t cap = c->capacidade ? c->capacidade * 2 : 4096;
+      if (cap > PX_EP_COMP_MAX) cap = PX_EP_COMP_MAX;
+      if (cap == c->capacidade) return 0;
+      unsigned char *p = realloc(c->dados, cap);
+      if (!p) return 0;
+      c->dados = p; c->capacidade = cap;
+    }
+    c->z.next_out = c->dados + c->usados;
+    c->z.avail_out = (uInt)(c->capacidade - c->usados);
+    int ret = deflate(&c->z, fim ? Z_FINISH : Z_NO_FLUSH);
+    c->usados = c->capacidade - c->z.avail_out;
+    if (ret == Z_STREAM_END) return fim;
+    if (ret != Z_OK) return 0;
+  } while (c->z.avail_in || fim);
+  return 1;
+}
 static int px_episodios_preparar(const PxConta *c, RedeJob *job, const char *serieRk,
                                  CatEp **saida, int max, CatEpPreparar preparar, void *ctx) {
   int vistos = 0, validos = 0, resultado = 0;
-  FILE *spool;
+  PxEpCompacto compacto = {0};
   if (!soDigitos(serieRk, 20) || !saida) return PX_ERR_ENTRADA;
   if (max < 1) return 0;
   if (max > CAT_EP_MAX) max = CAT_EP_MAX;
-  /* No full CatEp workspace or previous response is held while fetching a page. */
-  spool = tmpfile();
-  if (!spool) return PX_ERR_REDE;
+  if (deflateInit(&compacto.z, Z_DEFAULT_COMPRESSION) != Z_OK) return PX_ERR_REDE;
   while (vistos < max) {
     RedeResposta r;
     char caminho[160];
@@ -1189,13 +1212,13 @@ static int px_episodios_preparar(const PxConta *c, RedeJob *job, const char *ser
         if (!f) break;
         contagem++;
         if (*p == '{' && px_ler_episodio_obj(c, p, f, &ep)) {
-          /* The spool must not contain the account token embedded in image URLs. */
+          /* Do not retain the account token in the compressed episode data. */
           char *tok = strstr(ep.thumb, "&X-Plex-Token=");
           if (tok) {
             char *valor = tok + sizeof("&X-Plex-Token=") - 1;
             memset(valor, 0, sizeof ep.thumb - (size_t)(valor - ep.thumb));
           }
-          if (fwrite(&ep, sizeof ep, 1, spool) != 1) { resultado = PX_ERR_REDE; break; }
+          if (!pxEpComprimir(&compacto, &ep, sizeof ep, 0)) { resultado = PX_ERR_REDE; break; }
           validos++;
         }
         p = f;
@@ -1208,13 +1231,16 @@ static int px_episodios_preparar(const PxConta *c, RedeJob *job, const char *ser
     if ((total >= 0 && vistos >= total) || (total < 0 && contagem < limite)) break;
   }
   if (!resultado && rede_job_estado(job) != REDE_OK) resultado = PX_ERR_CANCELADO;
-  if (!resultado && validos && fseek(spool, 0, SEEK_SET)) resultado = PX_ERR_REDE;
+  if (!resultado && validos && !pxEpComprimir(&compacto, NULL, 0, 1)) resultado = PX_ERR_REDE;
+  deflateEnd(&compacto.z);
   if (!resultado && validos && preparar) {
     *saida = preparar(ctx, validos);
     if (!*saida || rede_job_estado(job) != REDE_OK) resultado = PX_ERR_CANCELADO;
   }
   if (!resultado && validos) {
-    if (fread(*saida, sizeof **saida, (size_t)validos, spool) != (size_t)validos) resultado = PX_ERR_REDE;
+    uLongf saidaBytes = (uLongf)((size_t)validos * sizeof **saida);
+    if (uncompress((Bytef *)*saida, &saidaBytes, compacto.dados, (uLong)compacto.usados) != Z_OK ||
+        saidaBytes != (uLongf)((size_t)validos * sizeof **saida)) resultado = PX_ERR_REDE;
     else {
       for (int i = 0; i < validos; i++) if (strstr((*saida)[i].thumb, "&X-Plex-Token=")) {
         size_t n = strlen((*saida)[i].thumb);
@@ -1223,7 +1249,7 @@ static int px_episodios_preparar(const PxConta *c, RedeJob *job, const char *ser
       resultado = validos;
     }
   }
-  fclose(spool);
+  free(compacto.dados);
   return resultado;
 }
 #ifdef NV_TEST_SERVIDOR_PREPARAR

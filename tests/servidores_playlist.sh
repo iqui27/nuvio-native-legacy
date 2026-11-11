@@ -6,7 +6,7 @@ trap 'rm -rf "$work"' EXIT
 cc tests/servidores_playlist.c src/jellyfin.c src/plex.c src/js.c src/jsw.c src/redeurl.c src/srvidx.c \
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -O1 -g -ffunction-sections -fdata-sections -Wl,-dead_strip -pthread \
-  -Wno-deprecated-declarations -Wno-macro-redefined -o "$work/test"
+  -Wno-deprecated-declarations -Wno-macro-redefined -lz -o "$work/test"
 rc=0
 for phase in 0 1 2 3; do
   if "$work/test" "$phase"; then
