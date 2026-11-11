@@ -3420,6 +3420,7 @@
   T("Não foi enviado", "لم يُرسل"),
   T("Não foi possível abrir a fonte", "تعذّر فتح المصدر"),
   T("Não foi possível abrir este arquivo", "تعذّر فتح هذا الملف"),
+  T("Não foi possível abrir o endereço local (%s). OK para tentar novamente.", "تعذّر فتح العنوان المحلي (%s). اضغط OK للمحاولة مرة أخرى."),
   T("Não foi possível abrir os ajustes desse perfil.", "تعذر فتح إعدادات هذا الملف."),
   T("Não foi possível adicionar. Tente novamente.", "تعذّرت إضافتها. حاول مجددًا."),
   T("Não foi possível agora. Tente novamente.", "تعذّر فعل ذلك الآن. حاول مجددًا."),

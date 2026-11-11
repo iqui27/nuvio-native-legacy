@@ -3420,6 +3420,7 @@
   T("Não foi enviado", "Inte skickad"),
   T("Não foi possível abrir a fonte", "Det gick inte att öppna källan"),
   T("Não foi possível abrir este arquivo", "Det gick inte att öppna filen"),
+  T("Não foi possível abrir o endereço local (%s). OK para tentar novamente.", "Det gick inte att öppna den lokala adressen (%s). OK för att försöka igen."),
   T("Não foi possível abrir os ajustes desse perfil.", "Den profilens inställningar kunde inte öppnas."),
   T("Não foi possível adicionar. Tente novamente.", "Det gick inte att lägga till. Försök igen."),
   T("Não foi possível agora. Tente novamente.", "Det gick inte just nu. Försök igen."),

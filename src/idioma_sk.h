@@ -3420,6 +3420,7 @@
   T("Não foi enviado", "Neodoslané"),
   T("Não foi possível abrir a fonte", "Zdroj sa nepodarilo otvoriť"),
   T("Não foi possível abrir este arquivo", "Tento súbor sa nepodarilo otvoriť"),
+  T("Não foi possível abrir o endereço local (%s). OK para tentar novamente.", "Miestnu adresu sa nepodarilo otvoriť (%s). OK pre nový pokus."),
   T("Não foi possível abrir os ajustes desse perfil.", "Nastavenia tohto profilu sa nepodarilo otvoriť."),
   T("Não foi possível adicionar. Tente novamente.", "Nepodarilo sa ich pridať. Skúste to znova."),
   T("Não foi possível agora. Tente novamente.", "Teraz to nešlo. Skúste to znova."),

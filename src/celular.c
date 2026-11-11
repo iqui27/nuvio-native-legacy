@@ -7,6 +7,7 @@
 int  celular_disponivel(void) { return 0; }
 int  celular_abrir(const char *t) { (void)t; return 0; }
 int celular_abrir_relatorio(const char *p) { (void)p; return 0; }
+const char *celular_motivo(void) { return ""; }
 void celular_fechar(void) {}
 int  celular_estado(void) { return CEL_PARADO; }
 const char *celular_url(void) { return ""; }
@@ -58,6 +59,10 @@ static FILE *relatorio; /* Sanitized, immutable snapshot; never the original log
 static char tokenFixo[CEL_TOKEN_N + 1];
 static int portaFixa;
 static long envioPrazo;
+// WHY THE LAST OPENING FAILED (owner 11/11: "Could not load" on a tester's TV
+// said nothing): short, technical, shown in the Download log card and logged.
+static char motivoFalha[160];
+const char *celular_motivo(void) { return motivoFalha; }
 // Montadas na abertura (thread do app, por causa do i18n); o fio so le.
 static char pagina[12288], pagEnviado[8192], pagUsado[8192];
 
@@ -83,6 +88,15 @@ int celular_pegar(char *dst, size_t n) {
 static int privado(in_addr_t a) {
   unsigned long h = ntohl(a);
   return (h >> 24) == 10 || (h >> 20) == 0xAC1 || (h >> 16) == 0xC0A8;
+}
+// 100.64.0.0/10, the carrier-grade NAT range (tester's C3, 11/11/2026: the
+// TV's only address was 100.80.x.x, from a provider handing that range to
+// home networks; VPNs such as Tailscale use it too). Not reachable from the
+// internet; only taken when the TV has no private address, and the page
+// still needs the secret in the QR code.
+static int cgnat(in_addr_t a) {
+  unsigned long h = ntohl(a);
+  return (h >> 22) == (0x64400000UL >> 22);
 }
 
 // A ROTA PADRAO DIZ QUAL INTERFACE A TV USA: connect() num socket UDP so
@@ -110,19 +124,42 @@ static int ipLan(char *dst, size_t n) {
     close(s);
   }
   if (!achou && !getifaddrs(&lista)) {
+    in_addr_t reserva = 0;   /* first CGNAT address: used only with no private one */
     for (i = lista; i; i = i->ifa_next) {
+      in_addr_t a;
       if (!i->ifa_addr || i->ifa_addr->sa_family != AF_INET) continue;
       if (!(i->ifa_flags & IFF_UP) || (i->ifa_flags & IFF_LOOPBACK)) continue;
-      if (privado(((struct sockaddr_in *)i->ifa_addr)->sin_addr.s_addr)) {
-        achou = ((struct sockaddr_in *)i->ifa_addr)->sin_addr.s_addr;
-        break;
-      }
+      a = ((struct sockaddr_in *)i->ifa_addr)->sin_addr.s_addr;
+      if (privado(a)) { achou = a; break; }
+      if (!reserva && cgnat(a)) reserva = a;
     }
     freeifaddrs(lista);
+    if (!achou && reserva) {
+      achou = reserva;
+      puts("[celular] no private address: using the carrier-grade NAT one (100.64.0.0/10)");
+    }
   }
   if (achou) {
     struct in_addr a; a.s_addr = achou;
     ok = inet_ntop(AF_INET, &a, dst, (socklen_t)n) != NULL;
+  } else {
+    /* Say which IPv4 addresses the TV has (none, or only ones outside the
+     * private ranges, e.g. 100.64.x.x from a carrier or a VPN). */
+    size_t k = (size_t)snprintf(motivoFalha, sizeof motivoFalha, "no local network address");
+    int vistos = 0;
+    if (!getifaddrs(&lista)) {
+      for (i = lista; i && k + 24 < sizeof motivoFalha; i = i->ifa_next) {
+        char t[INET_ADDRSTRLEN];
+        if (!i->ifa_addr || i->ifa_addr->sa_family != AF_INET || (i->ifa_flags & IFF_LOOPBACK)) continue;
+        if (!inet_ntop(AF_INET, &((struct sockaddr_in *)i->ifa_addr)->sin_addr, t, sizeof t)) continue;
+        k += (size_t)snprintf(motivoFalha + k, sizeof motivoFalha - k, "%s%s%s", vistos ? ", " : " (TV has ",
+                              t, (i->ifa_flags & IFF_UP) ? "" : " down");
+        vistos++;
+      }
+      freeifaddrs(lista);
+    }
+    if (vistos && k + 2 < sizeof motivoFalha) snprintf(motivoFalha + k, sizeof motivoFalha - k, ")");
+    else if (!vistos) snprintf(motivoFalha + k, sizeof motivoFalha - k, " (no IPv4 address)");
   }
   return ok;
 }
@@ -581,12 +618,13 @@ static int abrir(const char *titulo, const char *snapshot) {
   char ip[48];
   int um = 1;
   celular_fechar();
-  if (!ipLan(ip, sizeof ip)) { puts("[celular] sem IP de rede local"); return 0; }
+  motivoFalha[0] = 0;
+  if (!ipLan(ip, sizeof ip)) { printf("[celular] sem IP de rede local: %s\n", motivoFalha); return 0; }
   if (snapshot && tokenValido(tokenFixo)) snprintf(token, sizeof token, "%s", tokenFixo);
-  else if (!gerarToken()) return 0;
-  if (pipe(acorda)) { acorda[0] = acorda[1] = -1; return 0; }
+  else if (!gerarToken()) { snprintf(motivoFalha, sizeof motivoFalha, "no random source"); return 0; }
+  if (pipe(acorda)) { acorda[0] = acorda[1] = -1; snprintf(motivoFalha, sizeof motivoFalha, "pipe errno %d", errno); return 0; }
   ouvir = socket(AF_INET, SOCK_STREAM, 0);
-  if (ouvir < 0) { celular_fechar(); return 0; }
+  if (ouvir < 0) { snprintf(motivoFalha, sizeof motivoFalha, "socket errno %d", errno); celular_fechar(); return 0; }
   setsockopt(ouvir, SOL_SOCKET, SO_REUSEADDR, &um, sizeof um);
   memset(&a, 0, sizeof a);
   a.sin_family = AF_INET;
@@ -610,6 +648,7 @@ ligado:
   if (listen(ouvir, 4) ||
       getsockname(ouvir, (struct sockaddr *)&a, &tam)) {
 falhou:
+    snprintf(motivoFalha, sizeof motivoFalha, "no free port (errno %d)", errno);
     printf("[celular] servidor nao subiu (errno %d)\n", errno);
     celular_fechar();
     return 0;
@@ -621,11 +660,11 @@ falhou:
   snprintf(url, sizeof url, "http://%s/%s", hostLan, token);
   if (snapshot) {
     relatorio = fopen(snapshot, "rb");
-    if (!relatorio) { celular_fechar(); return 0; }
+    if (!relatorio) { snprintf(motivoFalha, sizeof motivoFalha, "log copy unreadable (errno %d)", errno); celular_fechar(); return 0; }
   } else montarPaginas(titulo);
   expira = time(NULL) + (snapshot ? CEL_VALIDADE_RELATORIO_S : CEL_VALIDADE_S);
   estado = CEL_ESPERANDO;
-  if (pthread_create(&fio, NULL, servir, NULL)) { celular_fechar(); return 0; }
+  if (pthread_create(&fio, NULL, servir, NULL)) { snprintf(motivoFalha, sizeof motivoFalha, "no thread"); celular_fechar(); return 0; }
   fioVivo = 1;
   // Sem IP nem token no log: so que subiu.
   printf("[celular] servidor no ar (porta %d)\n", porta);

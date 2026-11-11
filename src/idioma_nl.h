@@ -3420,6 +3420,7 @@
   T("Não foi enviado", "Niet verzonden"),
   T("Não foi possível abrir a fonte", "Kon de bron niet openen"),
   T("Não foi possível abrir este arquivo", "Dit bestand kon niet worden geopend"),
+  T("Não foi possível abrir o endereço local (%s). OK para tentar novamente.", "Het lokale adres kon niet worden geopend (%s). OK om het opnieuw te proberen."),
   T("Não foi possível abrir os ajustes desse perfil.", "De instellingen van dat profiel konden niet worden geopend."),
   T("Não foi possível adicionar. Tente novamente.", "Kon ze niet toevoegen. Probeer het opnieuw."),
   T("Não foi possível agora. Tente novamente.", "Lukt nu niet. Probeer het opnieuw."),

@@ -3419,6 +3419,7 @@
   T("Não foi enviado", "Nicht gesendet"),
   T("Não foi possível abrir a fonte", "Die Quelle konnte nicht geöffnet werden"),
   T("Não foi possível abrir este arquivo", "Diese Datei konnte nicht geöffnet werden"),
+  T("Não foi possível abrir o endereço local (%s). OK para tentar novamente.", "Die lokale Adresse konnte nicht geöffnet werden (%s). OK zum erneuten Versuchen."),
   T("Não foi possível abrir os ajustes desse perfil.", "Die Einstellungen dieses Profils konnten nicht geöffnet werden."),
   T("Não foi possível adicionar. Tente novamente.", "Hinzufügen nicht möglich. Versuche es erneut."),
   T("Não foi possível agora. Tente novamente.", "Gerade nicht möglich. Versuche es erneut."),

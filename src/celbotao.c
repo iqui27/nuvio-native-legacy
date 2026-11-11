@@ -36,6 +36,8 @@ static int     focoBotao[CELB_N];     // o que o ultimo desenho pediu
 static char    titulo[96];
 static GfxRect cartao;
 static char logSnapshot[128];
+// Why the local log page could not open (celular_motivo), shown in the card.
+static char motivoLog[160];
 static GLuint texQr;
 static char texQrDe[96];
 // ENDERECO FIXO DO DIAGNOSTICO (dono, 06/11/2026): o registro e aberto no
@@ -56,9 +58,10 @@ static void abrirServidor(void) {
   if (logSnapshot[0]) { unlink(logSnapshot); logSnapshot[0] = 0; }
   if (dono == CELB_LOG) {
     tokenDiagnostico();
-    if (logexport_create(registro_arquivo(), logSnapshot, sizeof logSnapshot))
-      celular_abrir_relatorio(logSnapshot);
-    else puts("[log-export] snapshot failed");
+    motivoLog[0] = 0;
+    if (logexport_create(registro_arquivo(), logSnapshot, sizeof logSnapshot)) {
+      if (!celular_abrir_relatorio(logSnapshot)) snprintf(motivoLog, sizeof motivoLog, "%s", celular_motivo());
+    } else { puts("[log-export] snapshot failed"); snprintf(motivoLog, sizeof motivoLog, "log snapshot failed"); }
   } else celular_abrir(titulo);
 }
 
@@ -260,6 +263,7 @@ static const char *msgSemQr(int est) {
 #define CB_URL_LOG_H 44.0f
 static const char *FRASE_LOG = "Abra este endereço no navegador do computador, na mesma rede. Ele não muda: salve nos favoritos. OK atualiza o registro.";
 static float alturaCartao(int temQr) {
+  if (dono == CELB_LOG && !temQr) return CB_PAD + CB_TITULO_H + 16.0f + 4 * CB_LINHA_H + CB_PAD;
   if (dono == CELB_LOG && temQr)
     return CB_PAD + CB_TITULO_H + 20.0f + CB_URL_LOG_H + 14.0f + 3 * CB_LINHA_H + CB_PAD;
   if (!temQr) return CB_PAD + CB_TITULO_H + 16.0f + 3 * CB_LINHA_H + CB_PAD;
@@ -325,7 +329,16 @@ static void celb_desenharCorpo_(void) {
   y += CB_PAD + CB_TITULO_H;
 
   if (!temQr) {
-    txt_bloco(TXT_BODY, i18n(dono == CELB_LOG ? "Não foi possível carregar. OK para tentar novamente." : msgSemQr(est)), 200, 204, 212, x + CB_PAD, y + 16.0f, w - 2 * CB_PAD, CB_LINHA_H + 6.0f, a, 3);
+    if (dono == CELB_LOG) {
+      /* Say why (owner 11/11/2026: "Could not load" on a tester's TV said
+       * nothing; it had only a 100.x address). */
+      char t[512];
+      snprintf(t, sizeof t, i18n("Não foi possível abrir o endereço local (%s). OK para tentar novamente."),
+               motivoLog[0] ? motivoLog : "?");
+      txt_bloco(TXT_BODY, t, 200, 204, 212, x + CB_PAD, y + 16.0f, w - 2 * CB_PAD, CB_LINHA_H + 6.0f, a, 4);
+      return;
+    }
+    txt_bloco(TXT_BODY, i18n(msgSemQr(est)), 200, 204, 212, x + CB_PAD, y + 16.0f, w - 2 * CB_PAD, CB_LINHA_H + 6.0f, a, 3);
     return;
   }
   if (dono == CELB_LOG) {

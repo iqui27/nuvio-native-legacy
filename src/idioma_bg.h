@@ -3420,6 +3420,7 @@
   T("Não foi enviado", "Не е изпратено"),
   T("Não foi possível abrir a fonte", "Източникът не можа да се отвори"),
   T("Não foi possível abrir este arquivo", "Този файл не можа да се отвори"),
+  T("Não foi possível abrir o endereço local (%s). OK para tentar novamente.", "Локалният адрес не може да се отвори (%s). OK за нов опит."),
   T("Não foi possível abrir os ajustes desse perfil.", "Настройките на този профил не можаха да се отворят."),
   T("Não foi possível adicionar. Tente novamente.", "Не можаха да се добавят. Опитайте отново."),
   T("Não foi possível agora. Tente novamente.", "В момента не е възможно. Опитайте отново."),

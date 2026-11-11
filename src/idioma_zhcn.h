@@ -3420,6 +3420,7 @@
   T("Não foi enviado", "未发送"),
   T("Não foi possível abrir a fonte", "无法打开片源"),
   T("Não foi possível abrir este arquivo", "无法打开此文件"),
+  T("Não foi possível abrir o endereço local (%s). OK para tentar novamente.", "无法打开本地地址（%s）。按 OK 重试。"),
   T("Não foi possível abrir os ajustes desse perfil.", "无法打开该个人资料的设置。"),
   T("Não foi possível adicionar. Tente novamente.", "无法添加。请重试。"),
   T("Não foi possível agora. Tente novamente.", "现在无法完成，请重试。"),

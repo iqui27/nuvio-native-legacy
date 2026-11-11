@@ -3419,6 +3419,7 @@
   T("Não foi enviado", "Nu a fost trimis"),
   T("Não foi possível abrir a fonte", "Nu s-a putut deschide sursa"),
   T("Não foi possível abrir este arquivo", "Fișierul nu a putut fi deschis"),
+  T("Não foi possível abrir o endereço local (%s). OK para tentar novamente.", "Adresa locală nu a putut fi deschisă (%s). OK pentru a încerca din nou."),
   T("Não foi possível abrir os ajustes desse perfil.", "Nu s-au putut deschide setările acelui profil."),
   T("Não foi possível adicionar. Tente novamente.", "Nu s-a putut adăuga. Încearcă din nou."),
   T("Não foi possível agora. Tente novamente.", "Nu s-a putut acum. Încearcă din nou."),

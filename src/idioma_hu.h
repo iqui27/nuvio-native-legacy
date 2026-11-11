@@ -3420,6 +3420,7 @@
   T("Não foi enviado", "Nincs elküldve"),
   T("Não foi possível abrir a fonte", "Nem sikerült megnyitni a forrást"),
   T("Não foi possível abrir este arquivo", "Ezt a fájlt nem sikerült megnyitni"),
+  T("Não foi possível abrir o endereço local (%s). OK para tentar novamente.", "A helyi cím nem nyitható meg (%s). Újrapróbálkozás: OK."),
   T("Não foi possível abrir os ajustes desse perfil.", "A profil beállításait nem sikerült megnyitni."),
   T("Não foi possível adicionar. Tente novamente.", "Nem sikerült hozzáadni őket. Próbáld újra."),
   T("Não foi possível agora. Tente novamente.", "Most nem sikerült. Próbáld újra."),

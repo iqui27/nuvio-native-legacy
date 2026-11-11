@@ -3420,6 +3420,7 @@
   T("Não foi enviado", "Tidak terkirim"),
   T("Não foi possível abrir a fonte", "Tidak dapat membuka sumber"),
   T("Não foi possível abrir este arquivo", "File ini tidak dapat dibuka"),
+  T("Não foi possível abrir o endereço local (%s). OK para tentar novamente.", "Alamat lokal tidak dapat dibuka (%s). OK untuk mencoba lagi."),
   T("Não foi possível abrir os ajustes desse perfil.", "Pengaturan profil itu tidak dapat dibuka."),
   T("Não foi possível adicionar. Tente novamente.", "Tidak dapat menambahkannya. Coba lagi."),
   T("Não foi possível agora. Tente novamente.", "Belum bisa sekarang. Coba lagi."),

@@ -3420,6 +3420,7 @@
   T("Não foi enviado", "Não foi enviado"),
   T("Não foi possível abrir a fonte", "Não foi possível abrir a fonte"),
   T("Não foi possível abrir este arquivo", "Não foi possível abrir este ficheiro"),
+  T("Não foi possível abrir o endereço local (%s). OK para tentar novamente.", "Não foi possível abrir o endereço local (%s). OK para tentar novamente."),
   T("Não foi possível abrir os ajustes desse perfil.", "Não foi possível abrir as definições desse perfil."),
   T("Não foi possível adicionar. Tente novamente.", "Não foi possível adicionar. Tenta novamente."),
   T("Não foi possível agora. Tente novamente.", "Não foi possível agora. Tente novamente."),

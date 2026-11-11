@@ -3420,6 +3420,7 @@
   T("Não foi enviado", "Neišsiųsta"),
   T("Não foi possível abrir a fonte", "Nepavyko atidaryti šaltinio"),
   T("Não foi possível abrir este arquivo", "Nepavyko atidaryti šio failo"),
+  T("Não foi possível abrir o endereço local (%s). OK para tentar novamente.", "Nepavyko atidaryti vietinio adreso (%s). OK – bandyti dar kartą."),
   T("Não foi possível abrir os ajustes desse perfil.", "Nepavyko atidaryti to profilio nustatymų."),
   T("Não foi possível adicionar. Tente novamente.", "Nepavyko jų pridėti. Bandykite dar kartą."),
   T("Não foi possível agora. Tente novamente.", "Dabar nepavyko. Bandykite dar kartą."),

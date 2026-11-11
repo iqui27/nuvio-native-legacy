@@ -3420,6 +3420,7 @@
   T("Não foi enviado", "Non inviato"),
   T("Não foi possível abrir a fonte", "Impossibile aprire la fonte"),
   T("Não foi possível abrir este arquivo", "Impossibile aprire questo file"),
+  T("Não foi possível abrir o endereço local (%s). OK para tentar novamente.", "Impossibile aprire l’indirizzo locale (%s). OK per riprovare."),
   T("Não foi possível abrir os ajustes desse perfil.", "Impossibile aprire le impostazioni di quel profilo."),
   T("Não foi possível adicionar. Tente novamente.", "Impossibile aggiungerli. Riprova."),
   T("Não foi possível agora. Tente novamente.", "Al momento non è possibile. Riprova."),

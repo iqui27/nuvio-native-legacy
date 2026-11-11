@@ -3420,6 +3420,7 @@
   T("Não foi enviado", "Chưa gửi được"),
   T("Não foi possível abrir a fonte", "Không mở được nguồn"),
   T("Não foi possível abrir este arquivo", "Không thể mở tệp này"),
+  T("Não foi possível abrir o endereço local (%s). OK para tentar novamente.", "Không thể mở địa chỉ cục bộ (%s). Nhấn OK để thử lại."),
   T("Não foi possível abrir os ajustes desse perfil.", "Không thể mở cài đặt của hồ sơ đó."),
   T("Não foi possível adicionar. Tente novamente.", "Không thêm được. Hãy thử lại."),
   T("Não foi possível agora. Tente novamente.", "Hiện chưa thực hiện được. Hãy thử lại."),

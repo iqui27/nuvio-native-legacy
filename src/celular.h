@@ -67,6 +67,8 @@ void celular_fechar(void);
 int  celular_estado(void);
 // http://<ip>:<porta>/<token>, ou "" fora do ar.
 const char *celular_url(void);
+/* Why the last opening failed ("" after a success): short, technical, English. */
+const char *celular_motivo(void);
 // 1 UMA VEZ, quando o texto chegou (ja sem espacos nas pontas). `dst` recebe
 // ate n-1 bytes.
 int  celular_pegar(char *dst, size_t n);

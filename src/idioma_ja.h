@@ -3420,6 +3420,7 @@
   T("Não foi enviado", "送信されませんでした"),
   T("Não foi possível abrir a fonte", "ソースを開けませんでした"),
   T("Não foi possível abrir este arquivo", "このファイルを開けませんでした"),
+  T("Não foi possível abrir o endereço local (%s). OK para tentar novamente.", "ローカルアドレスを開けませんでした（%s）。OK で再試行します。"),
   T("Não foi possível abrir os ajustes desse perfil.", "そのプロフィールの設定を開けませんでした。"),
   T("Não foi possível adicionar. Tente novamente.", "追加できませんでした。もう一度お試しください。"),
   T("Não foi possível agora. Tente novamente.", "今は実行できません。もう一度お試しください。"),

@@ -3419,6 +3419,7 @@
   T("Não foi enviado", "Не отправлено"),
   T("Não foi possível abrir a fonte", "Не удалось открыть источник"),
   T("Não foi possível abrir este arquivo", "Не удалось открыть этот файл"),
+  T("Não foi possível abrir o endereço local (%s). OK para tentar novamente.", "Не удалось открыть локальный адрес (%s). OK — попробовать снова."),
   T("Não foi possível abrir os ajustes desse perfil.", "Не удалось открыть настройки этого профиля."),
   T("Não foi possível adicionar. Tente novamente.", "Не удалось добавить. Попробуйте ещё раз."),
   T("Não foi possível agora. Tente novamente.", "Сейчас не удалось. Попробуйте ещё раз."),

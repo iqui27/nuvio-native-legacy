@@ -3420,6 +3420,7 @@
   T("Não foi enviado", "Nije poslano"),
   T("Não foi possível abrir a fonte", "Nije moguće otvoriti izvor"),
   T("Não foi possível abrir este arquivo", "Ova datoteka se nije mogla otvoriti"),
+  T("Não foi possível abrir o endereço local (%s). OK para tentar novamente.", "Lokalnu adresu nije moguće otvoriti (%s). OK za ponovni pokušaj."),
   T("Não foi possível abrir os ajustes desse perfil.", "Nije bilo moguće otvoriti postavke tog profila."),
   T("Não foi possível adicionar. Tente novamente.", "Nije moguće dodati ih. Pokušajte ponovo."),
   T("Não foi possível agora. Tente novamente.", "Trenutno nije moguće. Pokušajte ponovo."),
