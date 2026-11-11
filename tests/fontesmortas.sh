@@ -1,6 +1,7 @@
 #!/bin/bash
 set -eu
 cd "$(dirname "$0")/.."
+if [ "${1:-}" = p2p ]; then exec bash tests/fontesmortas_p2p_integracao.sh; fi
 dir=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-fontesmortas.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
 flags=(-O1 -g -Isrc -pthread -I/opt/homebrew/include -I/opt/homebrew/include/SDL2
@@ -22,5 +23,6 @@ if [ "$#" -gt 0 ] && [ "$1" != retomar ] && [ "$1" != escolhida ]; then "$dir/te
     "$dir/torrent" retomar
     "$dir/torrent" escolhida
     "$dir/torrent" escolhida prazo
+    bash tests/fontesmortas_p2p_integracao.sh
   fi
 fi
