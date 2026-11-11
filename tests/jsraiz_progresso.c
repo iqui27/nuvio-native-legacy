@@ -145,7 +145,15 @@ static void resultados(void) {
 int teste_jf_episodios_preparar(const JfConta *, RedeJob *, const char *, CatEp **, int, CatEpPreparar, void *);
 int teste_px_episodios_preparar(const PxConta *, RedeJob *, const char *, CatEp **, int, CatEpPreparar, void *);
 int perfis_ativo(void) { return 1; }
+size_t teste_spool_escrever(const void *ptr, size_t tam, size_t n, FILE *arquivo) {
+  const char *p = ptr;
+  const char segredo[] = "ynthetic-token";
+  for (size_t i = 0; i + sizeof segredo - 1 <= tam * n; i++)
+    assert(memcmp(p + i, segredo, sizeof segredo - 1));
+  return fwrite(ptr, tam, n, arquivo);
+}
 static int modoHttp, modoCallback, chamouCallback, totalSimulado, pedidosSimulados, extraSimulado;
+static int invalidoSimulado, paddingSimulado;
 static const char *respostaHttp;
 int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
   memset(resposta, 0, sizeof *resposta);
@@ -158,12 +166,17 @@ int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
     pedidosSimulados++;
     int n = totalSimulado - inicio; if (n > tamanho) n = tamanho;
     n += extraSimulado;
-    size_t cap = (size_t)n * 90 + 200, pos;
+    size_t cap = (size_t)n * (100 + (size_t)paddingSimulado) + 200, pos;
     resposta->corpo = malloc(cap); assert(resposta->corpo);
     pos = (size_t)snprintf(resposta->corpo, cap, "{\"MediaContainer\":{\"totalSize\":%d,\"Metadata\":[", totalSimulado);
-    for (int i = 0; i < n; i++)
-      pos += (size_t)snprintf(resposta->corpo + pos, cap - pos,
-        "%s{\"ratingKey\":\"%d\",\"parentIndex\":1,\"index\":%d}", i ? "," : "", inicio + i + 1, inicio + i + 1);
+    for (int i = 0; i < n; i++) {
+      if (invalidoSimulado && inicio + i == 0)
+        pos += (size_t)snprintf(resposta->corpo + pos, cap - pos, "{\"invalid\":1}");
+      else
+        pos += (size_t)snprintf(resposta->corpo + pos, cap - pos,
+          "%s{\"ratingKey\":\"%d\",\"parentIndex\":1,\"index\":%d,\"padding\":\"%0*d\"}",
+          i ? "," : "", inicio + i + 1, inicio + i + 1, paddingSimulado, 0);
+    }
     assert(pos + 4 < cap);
     snprintf(resposta->corpo + pos, cap - pos, "]}}");
   } else resposta->corpo = strdup(respostaHttp);
@@ -175,7 +188,9 @@ int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
 static CatEp *prepararTeste(void *ctx, int n) {
   RedeJob *job = ctx;
   chamouCallback++;
-  assert(n == (totalSimulado ? totalSimulado : 2));
+  if (n != (totalSimulado ? totalSimulado - invalidoSimulado : 2))
+    fprintf(stderr, "unexpected provider episode count %d total %d invalid %d\n", n, totalSimulado, invalidoSimulado);
+  assert(n == (totalSimulado ? totalSimulado - invalidoSimulado : 2));
   if (totalSimulado) assert(pedidosSimulados == (totalSimulado == 4650 ? 3 : 1));
   if (modoCallback == 1) return NULL;
   CatEp *out = calloc((size_t)n, sizeof *out);
@@ -185,12 +200,13 @@ static CatEp *prepararTeste(void *ctx, int n) {
 }
 static void testarPreparo(void) {
   static const char jf[] = "{\"Items\":[{\"Id\":\"a\",\"ParentIndexNumber\":1,\"IndexNumber\":1},{\"Id\":\"b\",\"ParentIndexNumber\":1,\"IndexNumber\":2}]}";
-  static const char px[] = "{\"MediaContainer\":{\"Metadata\":[{\"ratingKey\":\"1\",\"parentIndex\":1,\"index\":1},{\"ratingKey\":\"2\",\"parentIndex\":1,\"index\":2}]}}";
+  static const char px[] = "{\"MediaContainer\":{\"Metadata\":[{\"ratingKey\":\"1\",\"parentIndex\":1,\"index\":1,\"thumb\":\"/thumb\"},{\"ratingKey\":\"2\",\"parentIndex\":1,\"index\":2}]}}";
   JfConta jc = {0}; PxConta pc = {0};
   snprintf(jc.base, sizeof jc.base, "http://local.invalid");
   snprintf(jc.servidorId, sizeof jc.servidorId, "0123456789abcdef0123456789abcdef");
   snprintf(pc.base, sizeof pc.base, "http://local.invalid");
   snprintf(pc.servidorId, sizeof pc.servidorId, "0123456789abcdef0123456789abcdef01234567");
+  snprintf(pc.token, sizeof pc.token, "synthetic-token");
   for (int provedor = 0; provedor < 3; provedor++) for (int caso = 0; caso < 4; caso++) {
     RedeGrupo *grupo = rede_grupo_criar();
     RedeJob *job = rede_job_criar(grupo);
@@ -204,8 +220,10 @@ static void testarPreparo(void) {
     int n = provedor == 2 ? teste_px_episodios_preparar(&pc, job, "1", &out, 2, prepararTeste, job)
                            : teste_jf_episodios_preparar(&jc, job, "a", &out, 2, prepararTeste, job);
     assert(chamouCallback == (caso != 1));
-    if (!caso) assert(n == 2 && out && out[0].episodio == 1 && out[1].episodio == 2);
-    else assert(n < 0);
+    if (!caso) {
+      assert(n == 2 && out && out[0].episodio == 1 && out[1].episodio == 2);
+      if (provedor == 2) assert(strstr(out[0].thumb, "&X-Plex-Token=synthetic-token"));
+    } else assert(n < 0);
     free(out);
     rede_job_soltar(job);
     rede_grupo_soltar(grupo);
@@ -229,7 +247,20 @@ static void testarPreparo(void) {
     n = teste_px_episodios_preparar(&pc, job, "1", &out, 5000, prepararTeste, job);
     assert(n == 2000 && pedidosSimulados == 1 && out[1999].episodio == 2000);
     free(out); rede_job_soltar(job); rede_grupo_soltar(grupo);
-    totalSimulado = modoHttp = extraSimulado = 0;
+    grupo = rede_grupo_criar(); job = rede_job_criar(grupo); out = NULL;
+    totalSimulado = 4650; pedidosSimulados = chamouCallback = modoHttp = 0;
+    extraSimulado = invalidoSimulado = 1;
+    n = teste_px_episodios_preparar(&pc, job, "1", &out, 5000, prepararTeste, job);
+    assert(n == 4649 && pedidosSimulados == 3);
+    for (int i = 0; i < n; i++) assert(out[i].episodio == i + 2);
+    free(out); rede_job_soltar(job); rede_grupo_soltar(grupo);
+    grupo = rede_grupo_criar(); job = rede_job_criar(grupo); out = NULL;
+    pedidosSimulados = chamouCallback = 0; paddingSimulado = 1600;
+    n = teste_px_episodios_preparar(&pc, job, "1", &out, 5000, prepararTeste, job);
+    assert(n == 4649 && pedidosSimulados == 3);
+    for (int i = 0; i < n; i++) assert(out[i].episodio == i + 2);
+    free(out); rede_job_soltar(job); rede_grupo_soltar(grupo);
+    totalSimulado = modoHttp = extraSimulado = invalidoSimulado = paddingSimulado = 0;
   }
 }
 
@@ -259,7 +290,7 @@ int main(void) {
     if (!pid) { alarm(3); todosParsers(MALFORMADOS[i].corpo, MALFORMADOS[i].n); _exit(0); }
     relatar("malformed", i, pid);
   }
-  emFilho("deferred-provider", testarPreparo, 3);
+  emFilho("deferred-provider", testarPreparo, 30);
   emFilho("results", resultados, 3);
   emFilho("sweep-plex", varrerPlex, 30);
   emFilho("sweep-jellyfin", varrerJellyfin, 30);

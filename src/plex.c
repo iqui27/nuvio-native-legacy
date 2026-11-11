@@ -580,6 +580,24 @@ int px_ler_detalhe(const PxConta *c, const char *corpo, size_t n, CatItem *out) 
   return PX_OK;
 }
 
+static int px_ler_episodio_obj(const PxConta *c, const char *p, const char *f, CatEp *ep) {
+  char rk[24] = "", data[32] = "", thumb[320] = "";
+  double t = numRaiz(p, f, "parentIndex", -1), ix = numRaiz(p, f, "index", 0), dur;
+  memset(ep, 0, sizeof *ep);
+  if (!chaveTxt(p, f, "ratingKey", rk, sizeof rk) || t < 0 || ix <= 0 || t >= 1000 || ix >= 100000 ||
+      !jfid_montar_p(JFID_PREFIXO_PLEX, ep->vid, sizeof ep->vid, c->servidorId, rk)) return 0;
+  ep->temporada = (int)t; ep->episodio = (int)ix;
+  txtRaiz(p, f, "title", ep->nome, sizeof ep->nome);
+  txtRaiz(p, f, "summary", ep->sinopse, sizeof ep->sinopse);
+  dur = numRaiz(p, f, "duration", 0);
+  if (dur > 0) snprintf(ep->duracao, sizeof ep->duracao, "%d min", (int)(dur / 60000.0 + 0.5));
+  if (txtRaiz(p, f, "originallyAvailableAt", data, sizeof data) && strlen(data) >= 10) {
+    snprintf(ep->dataIso, sizeof ep->dataIso, "%s", data);
+    snprintf(ep->data, sizeof ep->data, "%.2s/%.2s/%.4s", data + 8, data + 5, data);
+  }
+  if (txtRaiz(p, f, "thumb", thumb, sizeof thumb)) imagem(c, thumb, 640, 360, ep->thumb, sizeof ep->thumb);
+  return 1;
+}
 int px_ler_episodios(const PxConta *c, const char *corpo, size_t n, CatEp *out, int max) {
   const char *ai, *af, *p;
   int k = 0;
@@ -587,29 +605,8 @@ int px_ler_episodios(const PxConta *c, const char *corpo, size_t n, CatEp *out, 
   p = ai + 1;
   while (k < max && (p = elemento(p, af)) != NULL) {
     const char *f = depoisElemento(p);
-    char rk[24] = "", data[32] = "", thumb[320] = "";
-    CatEp *ep = &out[k];
-    double t, ix, dur;
     if (!f) break;
-    if (*p == '{') {
-      t = numRaiz(p, f, "parentIndex", -1);
-      ix = numRaiz(p, f, "index", 0);
-      memset(ep, 0, sizeof *ep);
-      if (chaveTxt(p, f, "ratingKey", rk, sizeof rk) && t >= 0 && ix > 0 && t < 1000 && ix < 100000 &&
-          jfid_montar_p(JFID_PREFIXO_PLEX, ep->vid, sizeof ep->vid, c->servidorId, rk)) {
-        ep->temporada = (int)t; ep->episodio = (int)ix;
-        txtRaiz(p, f, "title", ep->nome, sizeof ep->nome);
-        txtRaiz(p, f, "summary", ep->sinopse, sizeof ep->sinopse);
-        dur = numRaiz(p, f, "duration", 0);
-        if (dur > 0) snprintf(ep->duracao, sizeof ep->duracao, "%d min", (int)(dur / 60000.0 + 0.5));
-        if (txtRaiz(p, f, "originallyAvailableAt", data, sizeof data) && strlen(data) >= 10) {
-          snprintf(ep->dataIso, sizeof ep->dataIso, "%s", data);
-          snprintf(ep->data, sizeof ep->data, "%.2s/%.2s/%.4s", data + 8, data + 5, data);
-        }
-        if (txtRaiz(p, f, "thumb", thumb, sizeof thumb)) imagem(c, thumb, 640, 360, ep->thumb, sizeof ep->thumb);
-        k++;
-      }
-    }
+    if (*p == '{') k += px_ler_episodio_obj(c, p, f, &out[k]);
     p = f;
   }
   return k;
@@ -1160,67 +1157,73 @@ int px_detalhe(const PxConta *c, RedeJob *job, const char *rk, CatItem *out) {
 
 static int px_episodios_preparar(const PxConta *c, RedeJob *job, const char *serieRk,
                                  CatEp **saida, int max, CatEpPreparar preparar, void *ctx) {
-  struct Pagina { char *corpo; size_t tamanho; int contagem; } *paginas;
-  int qtd = 0, np = 0, resultado = 0;
-  size_t bytes = 0;
+  int vistos = 0, validos = 0, resultado = 0;
+  FILE *spool;
   if (!soDigitos(serieRk, 20) || !saida) return PX_ERR_ENTRADA;
   if (max < 1) return 0;
   if (max > CAT_EP_MAX) max = CAT_EP_MAX;
-  paginas = calloc((size_t)max, sizeof *paginas);
-  if (!paginas) return PX_ERR_REDE;
-  while (qtd < max) {
+  /* No full CatEp workspace or previous response is held while fetching a page. */
+  spool = tmpfile();
+  if (!spool) return PX_ERR_REDE;
+  while (vistos < max) {
     RedeResposta r;
     char caminho[160];
     const char *ai, *af, *p, *mi, *mf;
-    int contagem = 0, total = -1, limite = max - qtd, e;
+    int contagem = 0, total = -1, limite = max - vistos, e;
     if (limite > 2000) limite = 2000;
     if (rede_job_estado(job) != REDE_OK) { resultado = PX_ERR_CANCELADO; break; }
     snprintf(caminho, sizeof caminho,
              "/library/metadata/%s/allLeaves?X-Plex-Container-Start=%d&X-Plex-Container-Size=%d",
-             serieRk, qtd, limite);
+             serieRk, vistos, limite);
     e = pedirServidor(c, caminho, "GET", "episodes", PX_PRAZO_LISTA_MS, job, &r);
     if (e) { resultado = e; break; }
     if (!r.corpo) { rede_resposta_limpar(&r); resultado = PX_ERR_FORMATO; break; }
     if (blocoRaiz(r.corpo, r.corpo + r.n_corpo, "MediaContainer", &mi, &mf))
       total = (int)numRaiz(mi, mf, "totalSize", -1);
+    if (total >= 0 && total - vistos < limite) limite = total > vistos ? total - vistos : 0;
     if (arrayDe(r.corpo, r.n_corpo, "Metadata", &ai, &af)) {
       p = ai + 1;
       while (contagem < limite && (p = elemento(p, af)) != NULL) {
         const char *f = depoisElemento(p);
+        CatEp ep;
         if (!f) break;
-        contagem++; p = f;
+        contagem++;
+        if (*p == '{' && px_ler_episodio_obj(c, p, f, &ep)) {
+          /* The spool must not contain the account token embedded in image URLs. */
+          char *tok = strstr(ep.thumb, "&X-Plex-Token=");
+          if (tok) {
+            char *valor = tok + sizeof("&X-Plex-Token=") - 1;
+            memset(valor, 0, sizeof ep.thumb - (size_t)(valor - ep.thumb));
+          }
+          if (fwrite(&ep, sizeof ep, 1, spool) != 1) { resultado = PX_ERR_REDE; break; }
+          validos++;
+        }
+        p = f;
       }
     }
-    if (!contagem) {
-      rede_resposta_limpar(&r);
-      if (total > qtd) resultado = PX_ERR_FORMATO;
-      break;
-    }
-    if (r.n_corpo > PX_CORPO_MAX - bytes) {
-      rede_resposta_limpar(&r); resultado = PX_ERR_REDE; break;
-    }
-    bytes += r.n_corpo;
-    paginas[np].corpo = r.corpo; paginas[np].tamanho = r.n_corpo;
-    paginas[np].contagem = contagem; np++;
-    r.corpo = NULL; rede_resposta_limpar(&r);
-    qtd += contagem;
-    if ((total >= 0 && qtd >= total) || (total < 0 && contagem < limite)) break;
+    rede_resposta_limpar(&r);
+    if (resultado) break;
+    if (!contagem) { if (total > vistos) resultado = PX_ERR_FORMATO; break; }
+    vistos += contagem;
+    if ((total >= 0 && vistos >= total) || (total < 0 && contagem < limite)) break;
   }
-  if (!resultado && qtd && rede_job_estado(job) != REDE_OK) resultado = PX_ERR_CANCELADO;
-  if (!resultado && qtd && preparar) {
-    *saida = preparar(ctx, qtd);
+  if (!resultado && rede_job_estado(job) != REDE_OK) resultado = PX_ERR_CANCELADO;
+  if (!resultado && validos && fseek(spool, 0, SEEK_SET)) resultado = PX_ERR_REDE;
+  if (!resultado && validos && preparar) {
+    *saida = preparar(ctx, validos);
     if (!*saida || rede_job_estado(job) != REDE_OK) resultado = PX_ERR_CANCELADO;
   }
-  if (!resultado && qtd) {
-    for (int i = 0; i < np; i++) {
-      int n = px_ler_episodios(c, paginas[i].corpo, paginas[i].tamanho,
-                               *saida + resultado, paginas[i].contagem);
-      if (n < 0) { resultado = n; break; }
-      resultado += n;
+  if (!resultado && validos) {
+    if (fread(*saida, sizeof **saida, (size_t)validos, spool) != (size_t)validos) resultado = PX_ERR_REDE;
+    else {
+      for (int i = 0; i < validos; i++) if (strstr((*saida)[i].thumb, "&X-Plex-Token=")) {
+        size_t n = strlen((*saida)[i].thumb);
+        snprintf((*saida)[i].thumb + n, sizeof (*saida)[i].thumb - n, "%s", c->token);
+      }
+      resultado = validos;
     }
   }
-  for (int i = 0; i < np; i++) free(paginas[i].corpo);
-  free(paginas);
+  fclose(spool);
   return resultado;
 }
 #ifdef NV_TEST_SERVIDOR_PREPARAR
