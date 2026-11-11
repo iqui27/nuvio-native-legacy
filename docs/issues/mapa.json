@@ -13241,7 +13241,7 @@
   {
    "numero": 643,
    "titulo": "Friends: show Simkl watched history, newest first",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "?",
    "status": "integrada",
@@ -13531,7 +13531,7 @@
   {
    "numero": 666,
    "titulo": "Collections are not sorted",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "?",
    "status": "integrada",
@@ -15468,6 +15468,24 @@
   }
  ],
  "validacoes": [
+  {
+   "data": "2026-11-11",
+   "quem": "Revisões independentes históricas; Central Issues (conferência)",
+   "o_que": "Histórico Simkl compartilhado entre perfis locais no mesmo aparelho.",
+   "issues": [643],
+   "ref": "cd53977bf1b0e48cc02fd514e490aa6c993d0e16; 0c3d7b348a86be1f7de80d4b4e746cd074557761; c21b18d32ab861da7b97a7993c95196df0470500",
+   "resultado": "Revisões históricas OK; simkl_amigos.sh, simkl_vistos.sh e simkl_history.sh rc0 relatados em host; commits ancestrais da integração.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue643b.log SHA256 354b8ce87c054cba40ef097642fd7143a4431a9bc05317d9d186fe1c1e6f9116; /Volumes/ExternalSSD/tmp/rev/j-rev-21-simkl.log SHA256 ad1720ebef9adcb36f8eb16b9be1bc9804f63b47a434d21f781371dd5a562fa5; /Volumes/ExternalSSD/tmp/rev/simkl-review-checks.log SHA256 0ac1fcca023f37f958a0bf04d96f04066d7717e3eba7b413ddb3ab996cb1c6c3. Fixtures históricas; sem conta real ou TV. Remoções podem permanecer em cache; timestamp antigo ou nulo pode repetir download integral."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Revisão independente histórica; Central Issues (conferência)",
+   "o_que": "Limite Top 10 e filtros de tipo em coleções.",
+   "issues": [666],
+   "ref": "54ce9fcf98aa702003b4917c676deadae4b7b628; 4fd572bced5941df4cb6569a9d101f6b6911aaa4",
+   "resultado": "Revisão histórica OK; collections.sh e compilação sintática rc0 relatados; commits ancestrais da integração.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-revg-colecaotop10.log SHA256 5cd5947f40ee53363e1886bc70425cfd090a4df6e692d964a92fd28d4aa97aa6. Rede simulada; sem build completo histórico ou validação em TV."
+  },
   {
    "data": "2026-11-11",
    "quem": "Central Issues (teste em host); revisão independente histórica",
