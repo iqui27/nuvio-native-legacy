@@ -15500,6 +15500,15 @@
  "validacoes": [
   {
    "data": "2026-11-11",
+   "quem": "Revisão independente; Central TV (gate e integração)",
+   "o_que": "Seleção manual P2P, encaminhamento ao player e ausência de troca automática após falha.",
+   "issues": [784],
+   "ref": "c5d88031c8dab8e7c3c9541e3bb7ba46250acafb",
+   "resultado": "Revisão OK; gate 3/3; fontesmortas.sh p2p e varredura i18n rc0 pós-merge. Seleção, resolver e atualização do app reais; fronteiras P2P e vídeo simuladas.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue784-p2p-20261111.log; /Volumes/ExternalSSD/tmp/rev/issue784-p2p-postmerge-20261111.log SHA256 05415959450c577a45c9c4e3988e0a6c9db35f9a757d3ff1dd68fb4416d3c916. Testes posteriores isolados de rede; sem evento real da tela, servidor P2P, vídeo ou TV. Não comprova causa do relato."
+  },
+  {
+   "data": "2026-11-11",
    "quem": "Revisão independente histórica; Central Issues e TV (conferência)",
    "o_que": "Ajuste de frequência de exibição em Android TV.",
    "issues": [641, 712],
