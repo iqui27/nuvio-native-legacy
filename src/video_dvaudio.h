@@ -16,7 +16,8 @@ static int nv_dvaudio_sem_dts;
 static inline int nv_dvaudio_nota_codec(const char *c) {
   if (!strcmp(c, "A_EAC3")) return 3;
   if (!strcmp(c, "A_AC3")) return 2;
-  if (!strncmp(c, "A_DTS", 5)) return nv_dvaudio_sem_dts ? 0 : 1;
+  /* 2: DTS off, the TV decodes DTS: it passes through (dts_audio_codec.h). */
+  if (!strncmp(c, "A_DTS", 5)) return nv_dvaudio_sem_dts == 1 ? 0 : 1;
   return 0;
 }
 

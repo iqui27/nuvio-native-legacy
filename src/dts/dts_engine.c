@@ -39,7 +39,9 @@ void dts_engine_set_conversion_stream(int on) { g_conversion_stream = on ? 1 : 0
 /* Settings > DTS "Off": engines opened after this never select or switch to a
  * DTS track (the controller then hands the source back to the TV player). */
 static volatile int g_dts_off;
-void dts_engine_set_dts_off(int on) { g_dts_off = on ? 1 : 0; }
+/* 1 = DTS off; 2 = off and the TV decodes DTS (tv.model.edidType): on the
+ * Dolby Vision path the DTS stream then passes through untouched. */
+void dts_engine_set_dts_off(int on) { g_dts_off = on == 2 ? 2 : on ? 1 : 0; }
 int dts_engine_dts_off(void) { return g_dts_off; }
 /* Rings alive (read_fluxo allocates, fx_close frees): the .tpk memory line. */
 static pthread_mutex_t g_rings_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -1247,13 +1249,25 @@ static int configure_audio(DtsEngine *e,int core,double start) {
    * native decoder must see the same codec, channel layout and rate from its
    * initial Load onward. Reuse v12 Seek; never call changeAudioCodec. */
   int fixed=e->dv && e->dv_audio;
-  e->passthrough=ap->codec_id!=AV_CODEC_ID_DTS &&
+  /* DTS off and the TV decodes DTS (dts_off 2, tv.model.edidType): on the
+   * Dolby Vision path the DTS stream goes to the TV untouched (experimental). */
+  int dts_native=ap->codec_id==AV_CODEC_ID_DTS && e->dv && e->dts_off==2 && !fixed;
+  e->passthrough=(ap->codec_id!=AV_CODEC_ID_DTS || dts_native) &&
     !(e->dv && nv_dts_truehd_codec(avcodec_get_name(ap->codec_id))) && !fixed;
   if(e->passthrough) {
     e->in=av_packet_alloc(); e->out=av_packet_alloc();
     if(!e->in || !e->out) return fail(e,"Audio queue allocation",0);
     e->info.channels=ap->ch_layout.nb_channels>0?ap->ch_layout.nb_channels:6;
     e->info.sample_rate=ap->sample_rate>0?ap->sample_rate:48000;
+    if(dts_native) {
+      /* The whole DTS stream as in the file (DTS-HD MA, DTS:X included), the
+       * way the TV player sends it: C3 tester's soundbar showed plain DTS
+       * with the core alone and DTS:X from the TV player (11/11). */
+      if(e->info.channels>8) e->info.channels=8;
+      printf("[dts] dv-dts-native: the TV decodes DTS, full stream passed through ch=%d rate=%d profile=%d\n",
+        e->info.channels,e->info.sample_rate,ap->profile);
+      fflush(stdout);
+    }
     snprintf(e->info.audio_codec,sizeof(e->info.audio_codec),"%s",avcodec_get_name(ap->codec_id));
     e->info.duration_ns=e->fmt->duration==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->duration,AV_TIME_BASE_Q,NS);
     e->info.start_ns=e->fmt->start_time==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->start_time,AV_TIME_BASE_Q,NS);

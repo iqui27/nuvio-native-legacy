@@ -228,7 +228,11 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
    * and E-AC-3 (passed through). Names and the ac3PlusInfo block are the ones
    * libpf-1.0.so parses on webOS 4.10; on the LG C9 E-AC-3 5.1 was heard and
    * a passed-through AC-3 5.1 track played with codec "AC3" + ac3PlusInfo. */
-  const char *pass = !strcmp(m->audio_codec,"eac3") ? "AC3 PLUS" : ac3 ? "AC3" : nullptr;
+  /* DTS (untouched) only from the Dolby Vision path with DTS off on a TV that
+   * declares DTS (tv.model.edidType). Experimental: nobody had sent "DTS"
+   * here before; a refusal ends the session and the TV player takes over. */
+  const bool dts = !strcmp(m->audio_codec,"dts");
+  const char *pass = !strcmp(m->audio_codec,"eac3") ? "AC3 PLUS" : ac3 ? "AC3" : dts ? "DTS" : nullptr;
   const bool audio_ok = pass ? (m->channels > 0 && m->channels <= 8 && m->sample_rate > 0)
     : (!strcmp(m->audio_codec,"aac") && m->channels == 2 && m->sample_rate == 48000);
   if (p->loaded || !v || !valid_target(target) || m->width <= 0 || m->height <= 0 || !audio_ok ||
@@ -251,7 +255,9 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
     << target_ns(target) << ",\"videoWidth\":" << m->width << ",\"videoHeight\":" << m->height;
   if (m->fps_num > 0 && m->fps_den > 0) j << ",\"videoFpsValue\":" << m->fps_num << ",\"videoFpsScale\":" << m->fps_den;
   j << "}";
-  if (pass) j << ",\"ac3PlusInfo\":{\"channels\":" << m->channels << ",\"frequency\":"
+  if (dts) j << ",\"dtsInfo\":{\"channels\":" << m->channels << ",\"frequency\":"
+    << m->sample_rate / 1000.0 << "}";
+  else if (pass) j << ",\"ac3PlusInfo\":{\"channels\":" << m->channels << ",\"frequency\":"
     << m->sample_rate / 1000.0 << "}";
   else j << ",\"aacInfo\":{\"channels\":" << m->channels << ",\"frequency\":"
     << m->sample_rate / 1000.0 << ",\"profile\":2,\"format\":\"raw\"}";

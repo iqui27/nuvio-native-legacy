@@ -711,7 +711,15 @@ static char      erroTexto[96];
 // errorCode 200 "Audio Codec Not Supported": o VIDEO segue tocando e so o
 // audio morre. Ver o tratamento em lerEvento.
 static int       audioNaoSup;
-static int dtsDesligado;   /* Settings > DTS "Off" for this source */
+static int dtsDesligado;   /* Settings > DTS "Off" for this source (2: Off, the TV decodes DTS) */
+/* WHAT THE TV DECLARES ABOUT DTS (tv.model.edidType, dts_tv.h; the value
+ * Kodi reads too). Asked once per app run: -1 unknown, 0 no
+ * DTS, 1 the set decodes DTS. Written on the LS2 thread, read on the main. */
+static int edidDts = -1;
+static int edidEtapa;                 /* 0 not asked, 1 LS2 asked, 2 libhelpers asked, 3 done */
+static int edidTentarHelpers;         /* LS2 gave no answer: try libhelpers on the main thread */
+static int edidAplicado = -1;         /* main thread: last value applied to dtsDesligado */
+static int dtsTvDts(void) { return __atomic_load_n(&edidDts, __ATOMIC_ACQUIRE) == 1; }
 static int dtsHabilitado, dtsTentou, dtsRevisao, dtsLoadRevisao, dtsFalhaLogada;
 #ifdef NV_MP4_BD_TEST
 static int mp4TestEnabled,mp4TestPending,mp4TestStarted;
@@ -1685,6 +1693,70 @@ int video_luna(const char *uri, const char *carga, void (*cb)(const char *, void
   if (er.e.message && lsErroLiberar) lsErroLiberar(&er);
   return ok;
 }
+// tv.model.edidType: first over our own LS2 handle; the com.webos.media.client.*
+// name may be refused by com.webos.service.config, so a reply without the key
+// falls back to libhelpers' HLunaServiceCall on the app-ID handle (reported to
+// work on a C5). Every reply is logged: the value is what a tester's log needs
+// to show.
+typedef struct { Filtro cb; void *ud, *x; int multiplo, pub; unsigned long tok; } NvHContext;
+static const char EDID_URI[] = "luna://com.webos.service.config/getConfigs";
+static const char EDID_CARGA[] = "{\"configNames\":[\"tv.model.edidType\"]}";
+static void edidGuardar(const char *r, const char *via) {
+  int v = nv_dts_edid(r);
+  char valor[48];
+  /* Value only: a raw JSON line is hidden whole by the log export. */
+  if (nv_dts_edid_valor(r, valor, sizeof valor))
+    printf("[dts-edid] via %s: edidType=%s -> %s\n", via, valor[0] ? valor : "(empty)", v == 1 ? "TV decodes DTS" : "no DTS");
+  else
+    printf("[dts-edid] via %s: no edidType in the reply (%s, errorCode %d) -> no answer\n", via,
+           !r ? "nothing" : strstr(r, "\"returnValue\":false") || strstr(r, "\"returnValue\": false") ? "refused" : "other reply",
+           nv_dts_edid_erro(r));
+  fflush(stdout);
+  if (v >= 0) { __atomic_store_n(&edidDts, v, __ATOMIC_RELEASE); __atomic_store_n(&edidEtapa, 3, __ATOMIC_RELEASE); }
+  else if (__atomic_load_n(&edidEtapa, __ATOMIC_ACQUIRE) == 1) __atomic_store_n(&edidTentarHelpers, 1, __ATOMIC_RELEASE);
+  else __atomic_store_n(&edidEtapa, 3, __ATOMIC_RELEASE);
+}
+static void edidLs2(const char *r, void *u) { (void)u; edidGuardar(r, "LS2"); }
+static int edidHelpers(LSHandle *h, LSMessage *m, void *u) {
+  (void)h; (void)u;
+  edidGuardar(lsPayload ? lsPayload(m) : NULL, "libhelpers");
+  return 1;
+}
+static void edidPedirHelpers(void) {
+  static NvHContext ctx = { edidHelpers, 0, 0, 0, 1, 0 };
+  static int (*chamarH)(const char *, const char *, NvHContext *);
+  void *h;
+  __atomic_store_n(&edidEtapa, 2, __ATOMIC_RELEASE);
+  if (!chamarH && (h = dlopen("libhelpers.so.2", RTLD_NOW))) *(void **)(&chamarH) = dlsym(h, "HLunaServiceCall");
+  if (!chamarH || !lsPayload) {
+    printf("[dts-edid] libhelpers route unavailable (%s)\n", !chamarH ? "no HLunaServiceCall" : "no payload reader");
+    fflush(stdout);
+    __atomic_store_n(&edidEtapa, 3, __ATOMIC_RELEASE);
+    return;
+  }
+  /* Its return value says nothing about the reply (C3: false, and the
+   * answer still came), so only the reply itself counts. */
+  chamarH(EDID_URI, EDID_CARGA, &ctx);
+  printf("[dts-edid] asked via libhelpers\n");
+  fflush(stdout);
+}
+static void edidPedir(void) {
+  if (__atomic_load_n(&edidEtapa, __ATOMIC_ACQUIRE)) return;
+  __atomic_store_n(&edidEtapa, 1, __ATOMIC_RELEASE);
+  if (!video_luna(EDID_URI, EDID_CARGA, edidLs2, NULL)) edidPedirHelpers();
+}
+// Main thread, every frame: the libhelpers fallback, and a "TV decodes DTS"
+// that arrived after this source started without a session yet.
+static void edidBombear(void) {
+  if (__atomic_exchange_n(&edidTentarHelpers, 0, __ATOMIC_ACQ_REL)) edidPedirHelpers();
+  int v = __atomic_load_n(&edidDts, __ATOMIC_ACQUIRE);
+  if (v == edidAplicado) return;
+  edidAplicado = v;
+  if (v == 1 && dtsDesligado == 1 && !dtsSessao) {
+    dtsDesligado = 2; nv_dvaudio_sem_dts = 2;
+    printf("[dts-edid] DTS off and the TV decodes DTS: DTS goes to the TV as it is\n"); fflush(stdout);
+  }
+}
 
 static void chamar(const char *metodo, const char *carga, Filtro cb) {
   char uri[128];
@@ -2589,7 +2661,9 @@ int video_tocar(const char *url) {
   { /* Settings > DTS "Off": no DTS conversion. The converter itself stays
      * available to Dolby Vision (P7/P8 MKV, MP4) with non-DTS audio. */
     int conversao = dts_playback_enabled() && dtsLiberadoNestaTv();
-    dtsDesligado = ajustes_dts_desligado();
+    /* 2: Off and the TV declares DTS (edidType): DTS goes to it as it is,
+     * also on the Dolby Vision path (passed through untouched, experimental). */
+    dtsDesligado = ajustes_dts_desligado() ? (dtsTvDts() ? 2 : 1) : 0;
     nv_dvaudio_sem_dts = dtsDesligado;
     dtsHabilitado = conversao && !dtsDesligado;
 #ifdef NV_MP4_BD_TEST
@@ -2599,7 +2673,8 @@ int video_tocar(const char *url) {
 #ifdef NV_MP4_BD_TEST
   mp4TestPending=mp4TestStarted=0;
 #endif
-  printf("[dts] fallback %s%s\n", dtsHabilitado ? "available" : "unavailable", dtsDesligado ? " (DTS off in settings)" : "");
+  printf("[dts] fallback %s%s tvDts=%d\n", dtsHabilitado ? "available" : "unavailable", dtsDesligado ? " (DTS off in settings)" : "",
+         __atomic_load_n(&edidDts, __ATOMIC_ACQUIRE));
   dvSondado = dvMkvPerfil = dvAudios = 0; dtsModoDv = 0; dvAudioMkvOrd = dvAudioMkvAtual = -1; dvSegurar = 0;
   mkvNaoMkv = 0;
   dvNao = 0; dvSessaoN++; dvFonteAberta = 0; dvAudioDe[0] = 0;
@@ -2621,7 +2696,9 @@ int video_tocar(const char *url) {
   // hora sem relacao nenhuma com o que esta tocando.
   creditosNomeado = creditosUltimo = 0.0;
   snprintf(urlAtual, sizeof urlAtual, "%s", url ? url : "");
-  return tocarInterno(url, 1);
+  int r = tocarInterno(url, 1);   // brings LS2 up before the edidType question
+  edidPedir();
+  return r;
 }
 
 // Chamado uma vez por quadro. So existe para o prazo acima: sem ele o recuo
@@ -2651,6 +2728,7 @@ static void dtsImagemAtualizar(void) {
 #endif
 void video_bombear(void) {
   ack_publicar();
+  edidBombear();
   bufferLoadBombear();
   velBombear();
   mkvRetryBombear();
@@ -2683,18 +2761,26 @@ void video_bombear(void) {
     // de tocar, inclusive os modelos 2023/24 que tem DTS: nao da para detectar
     // o suporte com seguranca (o webOS 26 toca MUDO sem errorCode 200, #285).
     // So a C9 e anteriores (webOS < 5) usam o caminho nativo + errorCode 200.
+    // Exception: the TV declares DTS in tv.model.edidType (edidDts) - it plays
+    // the track itself; errorCode 200 still converts.
     if ((audioNaoSup && knownDts) || forcar ||
-        nv_dts_converter_ja(webosMaior(), knownDts, 1, dtsTentou)) {
+        (!dtsTvDts() && nv_dts_converter_ja(webosMaior(), knownDts, 1, dtsTentou))) {
       dtsEstado = VIDEO_DTS_PREPARANDO;
       iniciarDts(-1);
-    }
+    } else if (pronto && (!dtsEstado || dtsEstado == VIDEO_DTS_NATIVO))
+      dtsEstado = knownDts && dtsTvDts() ? VIDEO_DTS_NATIVO : 0;
   }
   // Sem conversao nesta TV (adapter ausente, app morreu com ela aberta, webOS
   // 3/4): se a TV nao tem DTS, o silencio e certo — avisa na ilha em vez de
   // deixar parecer que toca.
-  else if (!dtsHabilitado && pronto && (!dtsEstado || dtsEstado == VIDEO_DTS_SEM_SOM))
-    dtsEstado = nv_dts_sem_som(webosMaior(), video_faixa_dts(video_audio(audioAtual)) > 0, 0)
-                ? VIDEO_DTS_SEM_SOM : 0;
+  // The TV declares DTS (edidType): it plays the track itself, say so instead
+  // of the "can't play DTS" guess (C3 owner's report, 11/11).
+  else if (!dtsHabilitado && pronto &&
+           (!dtsEstado || dtsEstado == VIDEO_DTS_SEM_SOM || dtsEstado == VIDEO_DTS_NATIVO)) {
+    int dts = video_faixa_dts(video_audio(audioAtual)) > 0;
+    dtsEstado = dts && dtsTvDts() ? VIDEO_DTS_NATIVO
+              : nv_dts_sem_som(webosMaior(), dts, 0) ? VIDEO_DTS_SEM_SOM : 0;
+  }
   // O ACB demora cerca de 1,5 s para ligar uma sessao. Se o usuario sair e
   // reabrir nesse intervalo, o loadCompleted novo encontra bindVivo=1. Antes
   // ele simplesmente desistia para sempre; agora o pedido fica pendente.
@@ -3707,7 +3793,11 @@ static void bombearDts(void) {
     }
     /* Converted only when the source track is DTS; on the Dolby Vision path
      * AC-3/E-AC-3 pass through untouched and there is nothing to label. */
-    if (!dtsModoDv || (audioAtual >= 0 && audioAtual < nAudio && !strcmp(faixaAudio[audioAtual].codec, "dts"))) {
+    if (dtsModoDv && !strcmp(st.info.audio_codec, "dts")) {
+      /* DTS off, the TV decodes DTS: the stream went through untouched. */
+      snprintf(dtsSaida, sizeof dtsSaida, "DTS · Dolby Vision");
+      dtsEstado = VIDEO_DTS_NATIVO;
+    } else if (!dtsModoDv || (audioAtual >= 0 && audioAtual < nAudio && !strcmp(faixaAudio[audioAtual].codec, "dts"))) {
       snprintf(dtsSaida, sizeof dtsSaida, "%s", !strcmp(st.info.audio_codec, "ac3") ? "DTS → AC3 5.1" : "DTS → AAC Stereo");
       dtsEstado = VIDEO_DTS_CONVERTIDO;
     } else {
