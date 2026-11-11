@@ -58,16 +58,27 @@ int main(int argc, char **argv) {
   unsigned long begun;
   assert(argc == 5);
   http_port = atoi(argv[1]); tls_port = atoi(argv[3]);
-  // The new DTS transport must verify TLS even though legacy generic fetches
-  // historically disable it. A self-signed origin is rejected before trusted.
-  snprintf(url, sizeof url, "https://127.0.0.1:%d/range", tls_port);
-  body = rede_baixar_trecho64_cab(url, HEADERS, 0, 31, &size, &total, &status, NULL);
-  assert(!body && size == 0 && total == -1 && status == 0);
+  // Compare independent policies against the same local TLS endpoint.
+  snprintf(url, sizeof url, "https://127.0.0.1:%d/tls-policy", tls_port);
+  body = rede_baixar(url, 3);
+  assert(body && !strcmp(body, "local tls fixture")); free(body);
   body = rede_baixar_trecho64_tls(url, HEADERS, 0, 31, &size, &total, &status, NULL, NULL, NULL);
   assert(!body && status == 0);
   int64_t bytes = 0;
   assert(rede_fluxo64_tls(url, HEADERS, 0, sink, NULL, &total, &status, NULL, NULL, NULL, 1000, &bytes) < 0 && status == 0);
   rede_discord_ca(argv[4]);
+  body = rede_baixar(url, 3);
+  assert(body && !strcmp(body, "local tls fixture")); free(body);
+  body = rede_baixar_trecho64_tls(url, HEADERS, 0, 31, &size, &total, &status, NULL, NULL, NULL);
+  assert(body && size == 32 && status == 206); free(body);
+  assert(rede_fluxo64_tls(url, HEADERS, 0, sink, NULL, &total, &status, NULL, NULL, NULL, 1000, &bytes) == 0 && status == 206 && bytes == 32);
+  snprintf(url, sizeof url, "https://localhost:%d/tls-policy", tls_port);
+  body = rede_baixar(url, 3);
+  assert(body && !strcmp(body, "local tls fixture")); free(body);
+  body = rede_baixar_trecho64_tls(url, HEADERS, 0, 31, &size, &total, &status, NULL, NULL, NULL);
+  assert(!body && status == 0);
+  assert(rede_fluxo64_tls(url, HEADERS, 0, sink, NULL, &total, &status, NULL, NULL, NULL, 1000, &bytes) < 0 && status == 0);
+  snprintf(url, sizeof url, "https://127.0.0.1:%d/range", tls_port);
   body = rede_baixar_trecho64_cab(url, HEADERS, 0, 31, &size, &total, &status, NULL);
   assert(body && size == 32 && status == 206);
   free(body);
