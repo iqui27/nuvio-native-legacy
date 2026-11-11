@@ -346,6 +346,31 @@ static void abrir(void) {
 }
 
 int main(void) {
+  // Opt-in regression until #787 is fixed: tests the real publication path.
+  if (getenv("NV_TEST_787")) {
+    char *body = malloc(400000);
+    assert(body);
+    for (int c = 0; c < 2; c++) {
+      int seasons = c ? 31 : 52, per = c ? 150 : 20;
+      size_t k = (size_t)sprintf(body, "{\"videos\":[");
+      TempsPub tp = {0};
+      for (int t = 1; t <= seasons; t++)
+        for (int e = 1; e <= per; e++)
+          k += (size_t)sprintf(body + k, "%s{\"season\":%d,\"episode\":%d}",
+                               t == 1 && e == 1 ? "" : ",", t, e);
+      sprintf(body + k, "]}");
+      catalogoCom("tt787", "series", "Long series");
+      snprintf(epAlvoId, sizeof epAlvoId, "%s", "tt787");
+      int n = publicarEpisodiosEx(body, 0, "Long series", NULL, 0, &tp, 0);
+      fprintf(stderr, "#787: %d x %d -> %d episodes, %d seasons\n", seasons, per, n, tp.n);
+      assert(n == seasons * per && tp.n == seasons);
+      assert(cat_n_episodios(0) == n);
+      const CatEp *last = cat_episodio(0, n - 1);
+      assert(last && last->temporada == seasons && last->episodio == per);
+    }
+    free(body);
+    return 0;
+  }
   const char *js =
     "{\"videos\":["
     "{\"id\":\"a:1\",\"season\":1,\"episode\":1,\"name\":\"Izuku Midoriya: Origin\"},"
