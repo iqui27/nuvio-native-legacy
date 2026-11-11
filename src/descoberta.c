@@ -7929,6 +7929,7 @@ static int epPublicacaoIniciar(int alvoItem) {
 
 // A provider calls this only after its network response has arrived. The
 // workspace stays locked until discovery has published or discarded the list.
+static int epServidorCancelado(void *ctx) { (void)ctx; return epPedidoSaiu(); }
 static CatEp *epServidorPreparar(void *ctx, int capacidade) {
   int *preso = ctx;
   CatEp *eps;
@@ -9031,7 +9032,7 @@ static void *buscarEps(void *u) {
     CatEp *eps = NULL;
     CatItem ed = base;
     (void)plex_tomar_reduzido();
-    int ne = servidores_ficha_preparar(&ed, &eps, VIDEOS_MAX, epServidorPreparar, &preso);
+    int ne = servidores_ficha_preparar(&ed, &eps, VIDEOS_MAX, epServidorPreparar, &preso, epServidorCancelado, NULL);
     int reduzido = plex_tomar_reduzido();
     alvoItem = epPublicacaoIniciar(alvoItem);
     if (ne >= 0 && alvoItem >= 0) {

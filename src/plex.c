@@ -1186,10 +1186,13 @@ int teste_plex_esperando(void) {
   return n;
 }
 #endif
-static int pxEpEntrar(RedeJob *job) {
+static int pxEpCancelado(RedeJob *job, int (*cancelado)(void *), void *ctx) {
+  return rede_job_estado(job) != REDE_OK || (cancelado && cancelado(ctx));
+}
+static int pxEpEntrar(RedeJob *job, int (*cancelado)(void *), void *ctx) {
   int ok;
   pthread_mutex_lock(&pxEpVagasTrava);
-  while (pxEpVagas >= 2 && rede_job_estado(job) == REDE_OK) {
+  while (pxEpVagas >= 2 && !pxEpCancelado(job, cancelado, ctx)) {
     struct timespec ate;
     clock_gettime(CLOCK_REALTIME, &ate);
     ate.tv_nsec += 100000000;
@@ -1202,7 +1205,7 @@ static int pxEpEntrar(RedeJob *job) {
     pxEpEsperando--;
 #endif
   }
-  ok = rede_job_estado(job) == REDE_OK;
+  ok = !pxEpCancelado(job, cancelado, ctx);
   if (ok) pxEpVagas++;
   pthread_mutex_unlock(&pxEpVagasTrava);
   return ok;
@@ -1245,7 +1248,8 @@ static int pxEpComprimir(PxEpCompacto *c, const void *dados, size_t tamanho, int
   return 1;
 }
 static int px_episodios_preparar(const PxConta *c, RedeJob *job, const char *serieRk,
-                                 CatEp **saida, int max, CatEpPreparar preparar, void *ctx) {
+                                 CatEp **saida, int max, CatEpPreparar preparar, void *ctx,
+                                 int (*cancelado)(void *), void *cancelCtx) {
   int vistos = 0, validos = 0, resultado = 0, completo = 1, apoio = 1, capacidadeMin = 0;
   PxEpMin *minimos = NULL;
   char *nomes = NULL;
@@ -1254,7 +1258,7 @@ static int px_episodios_preparar(const PxConta *c, RedeJob *job, const char *ser
   if (!soDigitos(serieRk, 20) || !saida) return PX_ERR_ENTRADA;
   if (max < 1) return 0;
   if (max > CAT_EP_MAX) max = CAT_EP_MAX;
-  if (!pxEpEntrar(job)) return PX_ERR_CANCELADO;
+  if (!pxEpEntrar(job, cancelado, cancelCtx)) return PX_ERR_CANCELADO;
   if (deflateInit(&compacto.z, Z_DEFAULT_COMPRESSION) != Z_OK) completo = 0;
   while (vistos < max) {
     RedeResposta r;
@@ -1262,12 +1266,13 @@ static int px_episodios_preparar(const PxConta *c, RedeJob *job, const char *ser
     const char *ai, *af, *p, *mi, *mf;
     int contagem = 0, total = -1, limite = max - vistos, e;
     if (limite > 2000) limite = 2000;
-    if (rede_job_estado(job) != REDE_OK) { resultado = PX_ERR_CANCELADO; break; }
+    if (pxEpCancelado(job, cancelado, cancelCtx)) { resultado = PX_ERR_CANCELADO; break; }
     snprintf(caminho, sizeof caminho,
              "/library/metadata/%s/allLeaves?X-Plex-Container-Start=%d&X-Plex-Container-Size=%d",
              serieRk, vistos, limite);
     e = pedirServidor(c, caminho, "GET", "episodes", PX_PRAZO_LISTA_MS, job, &r);
     if (e) { resultado = e; break; }
+    if (pxEpCancelado(job, cancelado, cancelCtx)) { rede_resposta_limpar(&r); resultado = PX_ERR_CANCELADO; break; }
     if (!r.corpo) { rede_resposta_limpar(&r); resultado = PX_ERR_FORMATO; break; }
     if (blocoRaiz(r.corpo, r.corpo + r.n_corpo, "MediaContainer", &mi, &mf))
       total = (int)numRaiz(mi, mf, "totalSize", -1);
@@ -1334,7 +1339,7 @@ static int px_episodios_preparar(const PxConta *c, RedeJob *job, const char *ser
     vistos += contagem;
     if ((total >= 0 && vistos >= total) || (total < 0 && contagem < limite)) break;
   }
-  if (!resultado && rede_job_estado(job) != REDE_OK) resultado = PX_ERR_CANCELADO;
+  if (!resultado && pxEpCancelado(job, cancelado, cancelCtx)) resultado = PX_ERR_CANCELADO;
   if (completo) {
     if (!resultado && validos && !pxEpComprimir(&compacto, NULL, 0, 1)) completo = 0;
     deflateEnd(&compacto.z);
@@ -1381,11 +1386,14 @@ static int px_episodios_preparar(const PxConta *c, RedeJob *job, const char *ser
 #ifdef NV_TEST_SERVIDOR_PREPARAR
 int teste_px_episodios_preparar(const PxConta *c, RedeJob *job, const char *id,
                                 CatEp **out, int max, CatEpPreparar preparar, void *ctx) {
-  return px_episodios_preparar(c, job, id, out, max, preparar, ctx);
+  return px_episodios_preparar(c, job, id, out, max, preparar, ctx, NULL, NULL);
+}
+int teste_px_episodios_cancelavel(const PxConta *c, RedeJob *job, const char *id, CatEp **out, int max, CatEpPreparar preparar, void *ctx, int (*cancelado)(void *), void *cancelCtx) {
+  return px_episodios_preparar(c, job, id, out, max, preparar, ctx, cancelado, cancelCtx);
 }
 #endif
 int px_episodios(const PxConta *c, RedeJob *job, const char *serieRk, CatEp *out, int max) {
-  return px_episodios_preparar(c, job, serieRk, &out, max, NULL, NULL);
+  return px_episodios_preparar(c, job, serieRk, &out, max, NULL, NULL, NULL, NULL);
 }
 
 int px_achar_episodio(const PxConta *c, RedeJob *job, const char *serieRk, int temp, int ep, char *rk, size_t tam) {
@@ -3057,7 +3065,7 @@ int plex_consultar(const char *id, const char *tipo, const char *titulo, int ano
 }
 
 // ---------------------------------------------------------- title page
-static int plexFicha(CatItem *item, CatEp **saida, int maxEps, CatEpPreparar preparar, void *ctx) {
+static int plexFicha(CatItem *item, CatEp **saida, int maxEps, CatEpPreparar preparar, void *ctx, int (*cancelado)(void *), void *cancelCtx) {
   CatEp *eps = *saida;
   char tag[JFID_TAG + 1], id[JFID_ITEM + 1];
   PxConta c;
@@ -3080,7 +3088,7 @@ static int plexFicha(CatItem *item, CatEp **saida, int maxEps, CatEpPreparar pre
   if (!novo) { rede_job_soltar(j); apagarSegredo(&c, sizeof c); return -1; }
   e = px_detalhe(&c, j, id, novo);
   if (e == PX_OK && !strcmp(item->tipo, "series") && (eps || preparar) && maxEps > 0) {
-    ne = px_episodios_preparar(&c, j, id, saida, maxEps, preparar, ctx);
+    ne = px_episodios_preparar(&c, j, id, saida, maxEps, preparar, ctx, cancelado, cancelCtx);
     eps = *saida;
     if (ne < 0) { e = ne; ne = 0; }
   }
@@ -3113,8 +3121,8 @@ static int plexFicha(CatItem *item, CatEp **saida, int maxEps, CatEpPreparar pre
   return ne;
 }
 int plex_ficha(CatItem *item, CatEp *eps, int maxEps) {
-  return plexFicha(item, &eps, maxEps, NULL, NULL);
+  return plexFicha(item, &eps, maxEps, NULL, NULL, NULL, NULL);
 }
-int plex_ficha_preparar(CatItem *item, CatEp **eps, int maxEps, CatEpPreparar preparar, void *ctx) {
-  return plexFicha(item, eps, maxEps, preparar, ctx);
+int plex_ficha_preparar(CatItem *item, CatEp **eps, int maxEps, CatEpPreparar preparar, void *ctx, int (*cancelado)(void *), void *cancelCtx) {
+  return plexFicha(item, eps, maxEps, preparar, ctx, cancelado, cancelCtx);
 }

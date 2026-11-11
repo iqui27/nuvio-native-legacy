@@ -297,9 +297,9 @@ int servidores_ficha(CatItem *item, CatEp *eps, int maxEps) {
   return jellyfin_ficha(item, eps, maxEps);
 }
 
-int servidores_ficha_preparar(CatItem *item, CatEp **eps, int max, CatEpPreparar preparar, void *ctx) {
+int servidores_ficha_preparar(CatItem *item, CatEp **eps, int max, CatEpPreparar preparar, void *ctx, int (*cancelado)(void *), void *cancelCtx) {
   if (!item || !eps || !preparar) return -1;
-  if (!strncmp(item->imdb, JFID_PREFIXO_PLEX, 3)) return plex_ficha_preparar(item, eps, max, preparar, ctx);
+  if (!strncmp(item->imdb, JFID_PREFIXO_PLEX, 3)) return plex_ficha_preparar(item, eps, max, preparar, ctx, cancelado, cancelCtx);
   if (!strncmp(item->imdb, JFID_PREFIXO_EMBY, 3)) return emby_ficha_preparar(item, eps, max, preparar, ctx);
   return jellyfin_ficha_preparar(item, eps, max, preparar, ctx);
 }

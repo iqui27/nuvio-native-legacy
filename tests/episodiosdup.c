@@ -56,8 +56,8 @@ void plex_publicar_aviso_metadata(void) { __atomic_add_fetch(&plexTesteAvisos, 1
 static pthread_mutex_t servidorTesteTrava = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t servidorTesteCond = PTHREAD_COND_INITIALIZER;
 static int servidorBloqueia, servidorEntrou, servidorSoltar, servidorNovoTerminou;
-int servidores_ficha_preparar(CatItem *item, CatEp **eps, int maxEps, CatEpPreparar preparar, void *ctx) {
-  (void)item; (void)maxEps;
+int servidores_ficha_preparar(CatItem *item, CatEp **eps, int maxEps, CatEpPreparar preparar, void *ctx, int (*cancelado)(void *), void *cancelCtx) {
+  (void)item; (void)maxEps; (void)cancelado; (void)cancelCtx;
   pthread_mutex_lock(&servidorTesteTrava);
   if (servidorBloqueia) {
     servidorEntrou = 1; pthread_cond_broadcast(&servidorTesteCond);

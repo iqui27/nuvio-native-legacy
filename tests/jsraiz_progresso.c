@@ -148,6 +148,7 @@ static void resultados(void) {
 
 int teste_jf_episodios_preparar(const JfConta *, RedeJob *, const char *, CatEp **, int, CatEpPreparar, void *);
 int teste_px_episodios_preparar(const PxConta *, RedeJob *, const char *, CatEp **, int, CatEpPreparar, void *);
+int teste_px_episodios_cancelavel(const PxConta *, RedeJob *, const char *, CatEp **, int, CatEpPreparar, void *, int (*)(void *), void *);
 int teste_plex_esperando(void);
 int perfis_ativo(void) { return 1; }
 const char *i18n(const char *s) { return s; }
@@ -160,12 +161,16 @@ static int invalidoSimulado, paddingSimulado, aleatorioSimulado;
 static pthread_mutex_t concorrenciaTrava = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t concorrenciaCond = PTHREAD_COND_INITIALIZER;
 static int concorrente, chegaram, liberarConcorrentes;
+static int testarGeracao, geracaoAtual, chamadasGeracao[4];
+static RedeJob *jobsGeracao[4];
 static const char *respostaHttp;
 int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
   memset(resposta, 0, sizeof *resposta);
   resposta->status = 200;
   if (concorrente) {
     pthread_mutex_lock(&concorrenciaTrava);
+    if (testarGeracao) for (int i = 0; i < 4; i++)
+      if (pedido->job == jobsGeracao[i]) chamadasGeracao[i]++;
     chegaram++; pthread_cond_broadcast(&concorrenciaCond);
     while (!liberarConcorrentes) pthread_cond_wait(&concorrenciaCond, &concorrenciaTrava);
     pthread_mutex_unlock(&concorrenciaTrava);
@@ -221,7 +226,17 @@ static CatEp *prepararTeste(void *ctx, int n) {
   if (modoCallback == 2) rede_job_cancelar(job);
   return out;
 }
-typedef struct { PxConta *conta; RedeJob *job; CatEp *out; int resultado; } PedidoConcorrente;
+typedef struct { PxConta *conta; RedeJob *job; CatEp *out; int resultado; int geracao; } PedidoConcorrente;
+static int pedidoObsoleto(void *ctx) {
+  PedidoConcorrente *p = ctx;
+  return p->geracao != __atomic_load_n(&geracaoAtual, __ATOMIC_ACQUIRE);
+}
+static CatEp *prepararGeracao(void *ctx, int n) { (void)ctx; return calloc((size_t)n, sizeof(CatEp)); }
+static void *buscarGeracao(void *arg) {
+  PedidoConcorrente *p = arg;
+  p->resultado = teste_px_episodios_cancelavel(p->conta, p->job, "1", &p->out, 4, prepararGeracao, NULL, pedidoObsoleto, p);
+  return NULL;
+}
 static void *buscarConcorrente(void *arg) {
   PedidoConcorrente *p = arg;
   p->resultado = teste_px_episodios_preparar(p->conta, p->job, "1", &p->out, 2, prepararTeste, p->job);
@@ -370,6 +385,37 @@ static void testarPreparo(void) {
     free(b.out); free(c.out);
     rede_job_soltar(a.job); rede_job_soltar(b.job); rede_job_soltar(c.job);
     concorrente = 0; rede_grupo_soltar(grupo);
+  }
+  {
+    static const char pagina[] = "{\"MediaContainer\":{\"totalSize\":4,\"Metadata\":[{\"ratingKey\":\"1\",\"parentIndex\":1,\"index\":1},{\"ratingKey\":\"2\",\"parentIndex\":1,\"index\":2}]}}";
+    RedeGrupo *grupo = rede_grupo_criar();
+    PedidoConcorrente p[4] = {0}; pthread_t t[4];
+    for (int i = 0; i < 4; i++) {
+      p[i].conta = &pc; p[i].job = rede_job_criar(grupo);
+      p[i].geracao = i == 3 ? 2 : 1; jobsGeracao[i] = p[i].job;
+    }
+    respostaHttp = pagina; concorrente = testarGeracao = 1;
+    chegaram = liberarConcorrentes = 0; __atomic_store_n(&geracaoAtual, 1, __ATOMIC_RELEASE);
+    assert(!pthread_create(&t[0], NULL, buscarGeracao, &p[0]));
+    assert(!pthread_create(&t[1], NULL, buscarGeracao, &p[1]));
+    pthread_mutex_lock(&concorrenciaTrava);
+    while (chegaram < 2) pthread_cond_wait(&concorrenciaCond, &concorrenciaTrava);
+    pthread_mutex_unlock(&concorrenciaTrava);
+    assert(!pthread_create(&t[2], NULL, buscarGeracao, &p[2]));
+    while (teste_plex_esperando() < 1) sched_yield();
+    __atomic_store_n(&geracaoAtual, 2, __ATOMIC_RELEASE);
+    assert(!pthread_create(&t[3], NULL, buscarGeracao, &p[3]));
+    pthread_join(t[2], NULL);
+    assert(p[2].resultado < 0 && chamadasGeracao[2] == 0);
+    pthread_mutex_lock(&concorrenciaTrava);
+    liberarConcorrentes = 1; pthread_cond_broadcast(&concorrenciaCond);
+    pthread_mutex_unlock(&concorrenciaTrava);
+    pthread_join(t[0], NULL); pthread_join(t[1], NULL); pthread_join(t[3], NULL);
+    assert(p[0].resultado < 0 && p[1].resultado < 0 && p[3].resultado == 4);
+    assert(chamadasGeracao[0] == 1 && chamadasGeracao[1] == 1 && chamadasGeracao[3] == 2);
+    free(p[3].out);
+    for (int i = 0; i < 4; i++) rede_job_soltar(p[i].job);
+    concorrente = testarGeracao = 0; rede_grupo_soltar(grupo);
   }
 }
 

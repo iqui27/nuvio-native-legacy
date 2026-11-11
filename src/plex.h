@@ -260,7 +260,7 @@ int  plex_atividade(const char *modo, CatItem *out, int max);
 
 // Title page of a Plex-native item ("px:..."). BLOCKS. -1 failed.
 int  plex_ficha(CatItem *item, CatEp *eps, int maxEps);
-int  plex_ficha_preparar(CatItem *, CatEp **, int, CatEpPreparar, void *);
+int  plex_ficha_preparar(CatItem *, CatEp **, int, CatEpPreparar, void *, int (*cancelado)(void *), void *);
 /* Main thread consumes the notice after a reduced episode list was loaded. */
 int  plex_tomar_aviso_metadata(int cartaoAberto);
 int  plex_tomar_reduzido(void);
