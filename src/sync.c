@@ -238,7 +238,7 @@ static int   temColBlob;
 // fio principal. Guardar o corpo em vez de contar e o conserto deste issue: as
 // duas respostas eram liberadas depois de contadas.
 static char *bibBlob;
-static int   temBibBlob;
+static int   temBibBlob, bibPullFresco;
 static char *vistosBlob;
 static int   temVistosBlob;
 
@@ -1273,6 +1273,7 @@ static void puxarSoLeitura(void) {
   // novos (issue do Owlphibia29, "o contador nunca passou de 205"). As paginas
   // sao COLADAS num array so e o contalib guarda as CONTALIB_MAX mais recentes.
   cBiblio = puxarBiblioteca(perfil, &bibBlob);
+  bibPullFresco = cBiblio > 0 && ultimoSt >= 200 && ultimoSt < 300;
   cBiblio = guardarOuCopia(CC_BIBLIOTECA, perfil, cBiblio, &bibBlob);
   if (cBiblio >= 0) temBibBlob = 1;
 
@@ -1342,6 +1343,7 @@ static void *rodar(void *u) {
   ProgressoSync *progresso = NULL;
   (void)u;
   cicloInicioMs = contapend_agora_ms();
+  bibPullFresco = 0;
   foraCiclo = 0;
   copiaCiclo = 0;
   addonsCiclo = 0;
@@ -1824,9 +1826,8 @@ void sync_passo(unsigned agoraMs) {
   // inteira, aplicar so o gesto e subir com sync_push_library — nunca a lista
   // LOCAL (secao 1.6, regra 2). O que a pessoa tirou e ainda nao saiu da conta
   // fica fora daqui pelo filtro de contalib_aplicar_catalogo.
-  // Prune only confirmations predating this pull before testing additions;
-  // newer confirmations must protect the local mirror from this snapshot.
-  contapend_podar(cicloInicioMs);
+  // Prune only after accepting a fresh pull; cached or failed pulls provide
+  // no evidence that the server has incorporated confirmed additions.
   if (temBibBlob && bibBlob) {
     int before = contalib_n(), kept = 0;
     for (int i = 0; i < before; i++) {
@@ -1839,12 +1840,14 @@ void sync_passo(unsigned agoraMs) {
       }
     }
     int accepted = contalib_ler_biblioteca(bibBlob);
+    if (accepted > 0 && bibPullFresco) contapend_podar(cicloInicioMs);
     if (accepted > 0) contalib_aplicar_catalogo();
     printf("[library-sync] source=account profile=%d effective=%d added=%d removed=%d kept=%d accepted=%d\n",
            perfilDoCiclo, ajustes_fonte_biblioteca(), accepted > 0 ? accepted - kept : 0,
            accepted > 0 ? before - kept : 0, accepted > 0 ? kept : before, accepted >= 0);
     free(bibBlob); bibBlob = NULL; temBibBlob = 0;
   }
+  bibPullFresco = 0;
   spMarcar(SP_BIBLIOTECA);
   // OS VISTOS DA CONTA, e so quando o Trakt NAO esta no ar.
   //

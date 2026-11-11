@@ -27,12 +27,14 @@ void trava_esquecer(void) {}
 static int perfilTeste = 1, trocaResposta, paginaStatus, paginaN;
 static int vistosTeste, repeatPage;
 static char *paginaTeste;
-static int leiturasBibTeste, bibAtivaTeste = 900;
+static int leiturasBibTeste, bibAtivaTeste = 900, podasTeste;
+void contapend_podar(long long desdeMs) { (void)desdeMs; podasTeste++; }
 
 int contalib_ler_biblioteca(const char *j) {
   leiturasBibTeste++;
   bibAtivaTeste = 500;
-  return roteiro_contalib_ler_biblioteca(j);
+  roteiro_contalib_ler_biblioteca(j);
+  return j && strstr(j, "tt1234567") ? 1 : 0;
 }
 
 int perfis_ativo(void) { return perfilTeste; }
@@ -153,7 +155,8 @@ static void paginaIncompleta(int vistos, int st, int temCopia) {
     confere("usa a copia inteira; sem copia descarta o parcial recebido",
             temCopia ? n == 1 && b && strstr(b, "ultima_boa")
                      : n == -1 && b == NULL);
-    if (!temCopia && !vistos) {
+    if (!vistos) {
+      podasTeste = 0;
       bibBlob = b;
       b = NULL;
       temBibBlob = n >= 0;
@@ -161,8 +164,10 @@ static void paginaIncompleta(int vistos, int st, int temCopia) {
       leiturasBibTeste = 0;
       fioVivo = fioPronto = 1;
       sync_passo(1000);
-      confere("500 linhas seguidas de HTTP 503 preservam a biblioteca ativa sem cache",
-              !leiturasBibTeste && bibAtivaTeste == 900 && !bibBlob);
+      confere("falha ou copia nao poda confirmacoes", podasTeste == 0);
+      if (!temCopia)
+        confere("500 linhas seguidas de HTTP 503 preservam a biblioteca ativa sem cache",
+                !leiturasBibTeste && bibAtivaTeste == 900 && !bibBlob);
     }
   } else {
     confere("recusa 400 nao se passa por indisponibilidade do servidor", foraCiclo == 0);
@@ -195,6 +200,13 @@ int main(void) {
   c = contacache_ler(CC_ADDONS, 2, "conta-a", NULL);
   confere("perfis distintos conservam suas proprias listas", c && strstr(c, "\"perfil\":2"));
   free(c);
+  cicloTeste();
+  bibBlob = strdup("[{\"content_id\":\"tt1234567\"}]");
+  temBibBlob = bibPullFresco = 1;
+  podasTeste = 0;
+  fioVivo = fioPronto = 1;
+  sync_passo(1000);
+  confere("pull fresco poda confirmacoes antigas", podasTeste == 1);
   paginaIncompleta(0, 503, 1);
   paginaIncompleta(1, 429, 1);
   paginaIncompleta(0, 503, 0);
