@@ -325,6 +325,11 @@ int main(int argc, char **argv) {
   falhaOffset = -1;
   assert(contapend_enviar() == 1);
   assert(nPushLib == 1 && libDe(1) == 601 && temLib(1, "tt9000001") && temLib(1, "tt0000600"));
+  assert(contapend_lista_pendente("tt9000001"));
+  contapend_podar(agora);
+  assert(contapend_lista_pendente("tt9000001"));
+  contapend_podar(agora + 1);
+  assert(!contapend_lista_pendente("tt9000001"));
   // A linha remota volta com o que tinha (genres, nome) e added_at numerico.
   assert(strstr(ultimoPushLib, "\"content_id\":\"tt0000001\",\"content_type\":\"movie\",\"name\":\"T tt0000001\""));
   assert(strstr(ultimoPushLib, "\"genres\":[\"Drama\"]"));

@@ -355,6 +355,7 @@ int cat_mesclar_listas(const CatItem *v, int qtd);
 // Update effective-source membership on every copy of the indexed title.
 // Keep unrelated remote sources; items without an ID update only this index.
 void cat_definir_na_lista(int i, int naLista);
+void cat_remover_conta(const char *imdb);
 // naLista=1 e acende o bit `fonte` (CAT_FONTE_*) do item i.
 void cat_marcar_fonte(int i, int fonte);
 // Idem em todas as copias do titulo; devolve quantas mudaram.

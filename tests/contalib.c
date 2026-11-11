@@ -42,8 +42,11 @@ int contapend_lista_pendente(const char *id) {
 }
 // O app chama salvos_remover_remoto ao tirar um titulo do snapshot; aqui a
 // chamada e contada para provar quando o espelho local e poupado.
-static int removidosSalvos;
-void salvos_remover_remoto(const char *id) { (void)id; removidosSalvos++; }
+static int removidosSalvos, removeuTituloAntigo;
+void salvos_remover_remoto(const char *id) {
+  removidosSalvos++;
+  if (!strcmp(id, "tt1000000")) removeuTituloAntigo++;
+}
 static int falhas;
 
 static void confere(const char *o_que, int obtido, int esperado) {
@@ -101,6 +104,10 @@ int cat_indice_por_imdb(const char *imdb) {
 
 void cat_definir_na_lista(int i, int naLista) {
   if (i >= 0 && i < catN) cat[i].naLista = naLista ? 1 : 0;
+}
+void cat_remover_conta(const char *id) {
+  int i = cat_indice_por_imdb(id);
+  if (i >= 0) cat_definir_na_lista(i, 0);
 }
 void cat_marcar_fonte(int i, int fonte) {
   if (i >= 0 && i < catN) { cat[i].naLista = 1; cat[i].fontes |= fonte; }
@@ -332,13 +339,11 @@ int main(void) {
   confere("o pendente continua marcado", naListaDe("tt0903747"), 1);
   confere("e o espelho local NAO foi removido", removidosSalvos, 0);
   pendLista = 0;
-  // Sem pendencia a remocao acontece — para um titulo QUE CONTINUA na lista
-  // antiga (tt0903747 ja saiu de `itens` na substituicao anterior: o '+'
-  // pendente preservou a marca do catalogo, nao a linha do snapshot).
+  // A previously guarded item remains tracked until a later snapshot.
   confere("de novo, agora sem pendencia", contalib_ler_biblioteca(BIB_SOLO), 1);
   confere("a marca do nao-pendente sai", naListaDe("tt0111161"), 0);
-  confere("a do pendente continua", naListaDe("tt0903747"), 1);
-  confere("e so um espelho foi removido", removidosSalvos, 1);
+  confere("a marca antes protegida sai", naListaDe("tt0903747"), 0);
+  confere("os dois espelhos foram removidos", removidosSalvos, 2);
   contalib_esquecer();
 
   printf("\nconta com mais que o teto guarda os MAIS RECENTES (Owlphibia29):\n");
@@ -361,7 +366,13 @@ int main(void) {
     k += (size_t)snprintf(json + k, cap - k,
                           ",{\"content_id\":\"tt%07d\",\"content_type\":\"movie\","
                           "\"name\":\"T0\",\"added_at\":1}]", 1000000);
+    semear((const char *[]) {"tt1000000"}, 1);
+    confere("snapshot inicial inclui titulo antigo", contalib_ler_biblioteca("[{\"content_id\":\"tt1000000\"}]"), 1);
+    contalib_aplicar_catalogo();
+    removidosSalvos = 0;
     confere("guarda exatamente o teto", contalib_ler_biblioteca(json), CONTALIB_MAX);
+    confere("titulo presente fora do teto nao e removido", naListaDe("tt1000000"), 1);
+    confere("espelho presente fora do teto nao e removido", removidosSalvos, 0);
     for (i = 0; i < contalib_n(); i++) {
       if (!strcmp(item(i)->id, "tt1000539")) achouNovo = 1;   // o ultimo salvo
       if (!strcmp(item(i)->id, "tt1000000")) achouVelho = 1;
@@ -372,6 +383,9 @@ int main(void) {
                  item(0)->titulo, "T539");
     confereTexto("o mais velho que ficou fecha a lista",
                  item(CONTALIB_MAX - 1)->titulo, "T40");
+    confere("snapshot posterior omite titulo antigo", contalib_ler_biblioteca(BIB_SOLO), 1);
+    confere("excluido depois do corte perde marca", naListaDe("tt1000000"), 0);
+    confere("excluido depois do corte perde espelho", removeuTituloAntigo, 1);
     free(json);
   }
   contalib_esquecer();

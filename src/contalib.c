@@ -36,6 +36,9 @@ void contalib_filtros(int (*lista)(const char *id, long long ms),
 
 static ContaLibItem *itens;
 static int nItens;
+// Previously marked IDs outside the selected vector remain tracked for removal.
+static char (*retidos)[24];
+static int nRetidos;
 static ContaVisto *vistos;
 static int nVistos;
 // So a TROCA do vetor de vistos e a copia das sementes (fio da descoberta)
@@ -175,6 +178,8 @@ int contalib_ler_biblioteca(const char *json) {
   const char *p;
   int *seq;
   int total, cap, k = 0, lidas = 0, fora = 0, i, j;
+  char (*proximosRetidos)[24] = NULL;
+  int nProximosRetidos = 0;
 
   total = contarLinhas(json);
   // A REGRA 1 DA SECAO 1.6, e ela e a razao de esta funcao devolver -1 em vez
@@ -264,20 +269,34 @@ int contalib_ler_biblioteca(const char *json) {
   }
   free(seq);
 
-  // A complete replacement removes only titles previously supplied by this
-  // account snapshot. Local-only saves and unrelated provider bits survive.
-  if (ajustes_fonte_traz_conta(ajustes_fonte_biblioteca()))
-    for (i = 0; i < nItens; i++) {
-      for (j = 0; j < k; j++) if (!strcmp(itens[i].id, novo[j].id)) break;
-      if (j == k) {
-        // Um '+' de lista PENDENTE nesta TV vence a remocao do espelho local
-        // ate subir: sem isto o snapshot apagava um salvo feito aqui.
-        if (contapend_lista_pendente && contapend_lista_pendente(itens[i].id)) continue;
-        int idx = cat_indice_por_imdb(itens[i].id);
-        if (idx >= 0) cat_definir_na_lista(idx, 0);
-        if (salvos_remover_remoto) salvos_remover_remoto(itens[i].id);
+  // Keep tracking previously marked IDs excluded by the display cap or guarded
+  // by the journal, so a later complete snapshot can remove them.
+  if (nItens + nRetidos) {
+    proximosRetidos = calloc((size_t)(nItens + nRetidos), sizeof *proximosRetidos);
+    if (!proximosRetidos) { free(novo); return -1; }
+  }
+  for (i = 0; i < nItens + nRetidos; i++) {
+    const char *antigo = i < nItens ? itens[i].id : retidos[i - nItens];
+    for (j = 0; j < k; j++) if (!strcmp(antigo, novo[j].id)) break;
+    if (j < k) continue;
+    p = NULL;
+    if (fora > 0) {
+      for (p = js_raiz_array(json); p; p = js_prox(js_fim(p))) {
+        char id[24];
+        if (js_texto(p, js_fim(p), "content_id", id, sizeof id) &&
+            !strcmp(id, antigo)) break;
       }
     }
+    if (p || (contapend_lista_pendente && contapend_lista_pendente(antigo))) {
+      snprintf(proximosRetidos[nProximosRetidos++], 24, "%s", antigo);
+      continue;
+    }
+    cat_remover_conta(antigo);
+    if (salvos_remover_remoto) salvos_remover_remoto(antigo);
+  }
+  free(retidos);
+  retidos = proximosRetidos;
+  nRetidos = nProximosRetidos;
   free(itens);
   itens = novo;
   nItens = k;
@@ -553,6 +572,9 @@ void contalib_esquecer(void) {
   free(itens);
   itens = NULL;
   nItens = 0;
+  free(retidos);
+  retidos = NULL;
+  nRetidos = 0;
   pthread_mutex_lock(&vistosTrava);
   free(vistos);
   vistos = NULL;

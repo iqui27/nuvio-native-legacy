@@ -7,7 +7,7 @@ void visto_iniciar(void) {}
 int  contapend_reenviar(void) { return 0; }
 void contapend_esquecer(void) {}
 int  contapend_pendentes(void) { return 0; }
-void contapend_podar(long long desdeMs) { (void)desdeMs; }
+__attribute__((weak)) void contapend_podar(long long desdeMs) { (void)desdeMs; }
 int  contapend_lista(const char *i, const char *t, const char *n, const char *p, int s) {
   (void)i; (void)t; (void)n; (void)p; (void)s; return 0;
 }

@@ -3,8 +3,6 @@
 #define main biblimites_main
 #include "biblimites_trakt.c"
 #undef main
-#define LIBRARY639_TRAKT
-#include "library639_http.inc"
 
 int main(void) {
   CatItem *v = calloc(400, sizeof *v);

@@ -98,8 +98,8 @@ void contapend_chutar(void);
 int  contapend_visto_oculto(const char *imdb, int temporada, int episodio,
                             long long remotoMs);
 int  contapend_lista_oculta(const char *imdb, long long remotoMs);
-// 1 quando ha um '+' de lista PENDENTE (nao confirmado) para o titulo neste
-// perfil: o snapshot da conta nao pode apagar o espelho local dele.
+// 1 quando ha um '+' de lista ainda no jornal deste perfil. Confirmacoes
+// posteriores ao inicio do pull tambem protegem contra o snapshot antigo.
 int  contapend_lista_pendente(const char *imdb);
 // Reaplica no estado local (vistoep + historico de titulo) o que esta no
 // jornal para o perfil ativo. Barato; chamado a cada ciclo aplicado.
