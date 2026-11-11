@@ -7949,24 +7949,9 @@ typedef struct {
 } TmdbPatch;
 typedef struct {
   CatEpChave *chaves; TmdbPatch *patches; int n; size_t passo;
-  char *textos; size_t nTextos, capTextos; int falhou;
+  char *textos; size_t nTextos, capTextos, textosVivos; int falhou;
 } TmdbEtapa;
 #define TMDB_TEXTOS_MAX (512u * 1024u)
-static void tmdbGuardarTexto(TmdbEtapa *etapa, unsigned *offset, const char *texto) {
-  size_t n = strlen(texto) + 1, precisa = etapa->nTextos + n;
-  if (precisa > TMDB_TEXTOS_MAX) { etapa->falhou = 1; return; }
-  if (precisa > etapa->capTextos) {
-    size_t cap = etapa->capTextos ? etapa->capTextos : 1024;
-    while (cap < precisa) cap *= 2;
-    if (cap > TMDB_TEXTOS_MAX) cap = TMDB_TEXTOS_MAX;
-    char *nova = realloc(etapa->textos, cap);
-    if (!nova) { etapa->falhou = 1; return; }
-    etapa->textos = nova; etapa->capTextos = cap;
-  }
-  memcpy(etapa->textos + etapa->nTextos, texto, n);
-  *offset = (unsigned)etapa->nTextos + 1;
-  etapa->nTextos = precisa;
-}
 static const char *tmdbTexto(const TmdbEtapa *etapa, unsigned offset) {
   return offset ? etapa->textos + offset - 1 : "";
 }
@@ -7974,9 +7959,59 @@ static TmdbPatch *tmdbPatch(const TmdbEtapa *etapa, int i) {
   return (TmdbPatch *)((char *)etapa->patches + (size_t)i *
                        (etapa->passo ? etapa->passo : sizeof(TmdbPatch)));
 }
+/* Compact only when obsolete duplicate strings would otherwise fill the arena. */
+static int tmdbCompactar(TmdbEtapa *etapa, unsigned *substituir) {
+  char *nova = malloc(TMDB_TEXTOS_MAX);
+  size_t usados = 0;
+  if (!nova) return 0;
+  for (int i = 0; i < etapa->n; i++) {
+    TmdbPatch *p = tmdbPatch(etapa, i);
+    unsigned *campos[] = { &p->nome, &p->sinopse };
+    for (int j = 0; j < 2; j++) if (*campos[j]) {
+      if (campos[j] == substituir) { *campos[j] = 0; continue; }
+      const char *texto = tmdbTexto(etapa, *campos[j]);
+      size_t n = strlen(texto) + 1;
+      memcpy(nova + usados, texto, n);
+      *campos[j] = (unsigned)usados + 1; usados += n;
+    }
+  }
+  free(etapa->textos);
+  etapa->textos = nova; etapa->capTextos = TMDB_TEXTOS_MAX;
+  etapa->nTextos = etapa->textosVivos = usados;
+  return 1;
+}
+static void tmdbGuardarTexto(TmdbEtapa *etapa, unsigned *offset, const char *texto) {
+  size_t n = strlen(texto) + 1;
+  size_t antigo = *offset ? strlen(tmdbTexto(etapa, *offset)) + 1 : 0;
+  if (antigo && !strcmp(tmdbTexto(etapa, *offset), texto)) return;
+  if (antigo && n <= antigo) {
+    memcpy(etapa->textos + *offset - 1, texto, n);
+    etapa->textosVivos -= antigo - n;
+    return;
+  }
+  if (etapa->nTextos + n > TMDB_TEXTOS_MAX) {
+    if (etapa->textosVivos - antigo + n > TMDB_TEXTOS_MAX ||
+        !tmdbCompactar(etapa, offset)) {
+      etapa->textosVivos -= antigo; *offset = 0; etapa->falhou = 1; return;
+    }
+    antigo = 0;
+  }
+  size_t precisa = etapa->nTextos + n;
+  if (precisa > etapa->capTextos) {
+    size_t cap = etapa->capTextos ? etapa->capTextos : 1024;
+    while (cap < precisa) cap *= 2;
+    if (cap > TMDB_TEXTOS_MAX) cap = TMDB_TEXTOS_MAX;
+    char *nova = realloc(etapa->textos, cap);
+    if (!nova) { etapa->textosVivos -= antigo; *offset = 0; etapa->falhou = 1; return; }
+    etapa->textos = nova; etapa->capTextos = cap;
+  }
+  memcpy(etapa->textos + etapa->nTextos, texto, n);
+  *offset = (unsigned)etapa->nTextos + 1;
+  etapa->nTextos = precisa; etapa->textosVivos += n - antigo;
+}
 static void tmdbEtapaProcessar(TmdbEtapa *etapa, const char *json, int temporada, int textos) {
   const char *p = js_array(json, NULL, "episodes");
-  while (p && !etapa->falhou) {
+  while (p) {
     const char *f = js_fim(p);
     int num = (int)js_num(p, f, "episode_number", -1), i;
     for (i = 0; i < etapa->n; i++)
@@ -7990,10 +8025,10 @@ static void tmdbEtapaProcessar(TmdbEtapa *etapa, const char *json, int temporada
       patch->presente = 1;
       if (!patch->runtime && runtime > 0 && runtime < 1440) patch->runtime = runtime;
       if (nota > 0) { patch->temNota = 1; patch->nota = (int)(nota * 10.0 + 0.5); }
-      if ((textos & DESC_EPT_SINOPSE) && (!vazio || !patch->sinopse) &&
+      if ((textos & DESC_EPT_SINOPSE) && (!vazio || (!etapa->chaves[i].temSinopse && !patch->sinopse)) &&
           js_texto(p, f, "overview", sinopse, sizeof sinopse) && sinopse[0])
         tmdbGuardarTexto(etapa, &patch->sinopse, sinopse);
-      if ((textos & DESC_EPT_NOME) && (!vazio || !patch->nome) &&
+      if ((textos & DESC_EPT_NOME) && (!vazio || (!etapa->chaves[i].temNome && !patch->nome)) &&
           js_texto(p, f, "name", nome, sizeof nome) && nome[0] &&
           !desc_nome_episodio_generico(nome, num))
         tmdbGuardarTexto(etapa, &patch->nome, nome);
@@ -8011,7 +8046,6 @@ static int tmdbEtapaPublicar(int item, int neps, CatEpToken token, long tmdb,
                              int textos, const TmdbEtapa *etapa) {
   CatEp *tmp;
   int feitos = 0, marcados = 0, publicou = 0;
-  if (etapa->falhou) return 0;
   pthread_mutex_lock(&epMemoriaTrava);
   item = epPublicacaoIniciar(item);
   pthread_mutex_unlock(&epPedidoTrava);
@@ -9314,7 +9348,7 @@ static void *buscarEps(void *u) {
             if (c4) {
               tmdbEtapaProcessar(&etapa, c4, temporadas[i2], textosEp);
               free(c4); ns++;
-              if (etapa.falhou) completa = 0;
+
             }
           }
           free(etapa.chaves); etapa.chaves = NULL;

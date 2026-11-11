@@ -548,7 +548,7 @@ void cat_definir_episodios(int indiceItem, const CatEp *lista, int n);
 int cat_definir_episodios_versao(int indiceItem, const CatEp *lista, int n, unsigned versao);
 int cat_temporadas_snapshot(int item, int *temps, int cap, int *neps, unsigned *versao);
 int cat_episodios_copiar_versao(int item, CatEp *out, int n, unsigned versao);
-typedef struct { int temporada, episodio; } CatEpChave;
+typedef struct { int temporada, episodio; unsigned char temNome, temSinopse; } CatEpChave;
 /* Identifica uma faixa ate que seja substituida ou o anel reinicie. */
 typedef unsigned long long CatEpToken;
 int cat_temporadas_snapshot_token(int item, int *temps, int cap, int *neps, CatEpToken *token);

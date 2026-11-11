@@ -561,8 +561,10 @@ static void *publicarCondicional(void *arg) {
 }
 
 int main(void) {
-  if (getenv("NV_TEST_TMDB_LONG") || getenv("NV_TEST_TMDB_LONG_TEXT")) {
-    int textos = getenv("NV_TEST_TMDB_LONG_TEXT") ? DESC_EPT_NOME | DESC_EPT_SINOPSE : 0;
+  if (getenv("NV_TEST_TMDB_LONG") || getenv("NV_TEST_TMDB_LONG_TEXT") || getenv("NV_TEST_TMDB_OVERFLOW")) {
+    int excesso = getenv("NV_TEST_TMDB_OVERFLOW") != NULL;
+    int textos = (getenv("NV_TEST_TMDB_LONG_TEXT") || excesso) ? DESC_EPT_NOME | DESC_EPT_SINOPSE : 0;
+    const char *sinopse = excesso ? "This synopsis contains enough descriptive text to exceed the total bounded staging arena across a very long series while episode ratings and identifiers continue to be available." : "Translated synopsis";
     TmdbEtapa etapa = {0};
     CatEp *episodios = calloc(4650, sizeof *episodios);
     etapa.n = 4650;
@@ -586,22 +588,22 @@ int main(void) {
       size_t pos = (size_t)snprintf(json, cap, "{\"episodes\":[");
       if (t == 1)
         pos += (size_t)snprintf(json + pos, cap - pos,
-          "{\"episode_number\":1,\"vote_average\":8.2,\"name\":\"Translated title\",\"overview\":\"Translated synopsis\",\"padding\":\"%0300000d\"}", 1);
+          "{\"episode_number\":1,\"vote_average\":8.2,\"name\":\"Translated title\",\"overview\":\"%s\",\"padding\":\"%0300000d\"}", sinopse, 1);
       for (int i = t == 1 ? 2 : 1; i <= 150; i++)
         pos += (size_t)snprintf(json + pos, cap - pos,
-          "%s{\"episode_number\":%d,\"vote_average\":8.2,\"name\":\"Translated title\",\"overview\":\"Translated synopsis\",\"padding\":\"%080d\"}",
-          i == 1 ? "" : ",", i, i);
+          "%s{\"episode_number\":%d,\"vote_average\":8.2,\"name\":\"Translated title\",\"overview\":\"%s\",\"padding\":\"%080d\"}",
+          i == 1 ? "" : ",", i, sinopse, i);
       assert(pos + 3 < cap);
       snprintf(json + pos, cap - pos, "]}");
       tmdbEtapaProcessar(&etapa, json, t, textos);
-      assert(!etapa.falhou);
+      if (!excesso) assert(!etapa.falhou);
       free(json);
     }
     assert((size_t)4650 * (1236 + 24) + etapa.capTextos <= (size_t)(6.7 * 1024 * 1024));
     assert(tmdbEtapaPublicar(0, 4650, versao, 123, textos, &etapa));
     assert(cat_episodio(0, 0)->nota == 82 && cat_episodio(0, 4649)->nota == 82);
     assert(cat_episodio(0, 4649)->tmdbSerie == 123 && cat_episodio(0, 4649)->tmdbE == 150);
-    if (textos) assert(!strcmp(cat_episodio(0, 4649)->nome, "Translated title") &&
+    if (textos && !excesso) assert(!strcmp(cat_episodio(0, 4649)->nome, "Translated title") &&
                        !strcmp(cat_episodio(0, 4649)->sinopse, "Translated synopsis"));
     free(etapa.textos); free(etapa.patches); free(etapa.chaves); free(episodios);
     return 0;
@@ -730,14 +732,21 @@ int main(void) {
     assert(cat_versao_episodios() == antes && cat_geracao_episodios() == geracaoAntes);
     assert(cat_episodio(0, 0)->nota == 0 && cat_episodio(0, 0)->episodio == 1);
     {
-      TmdbPatch outro = {0};
-      TmdbEtapa cheia = { .chaves = &chave, .patches = &outro, .n = 1 };
+      TmdbPatch *outros = calloc(1300, sizeof *outros); assert(outros);
+      TmdbEtapa cheia = { .patches = outros, .n = 1300 };
       char texto[420]; memset(texto, 'x', sizeof texto - 1); texto[sizeof texto - 1] = 0;
-      while (!cheia.falhou) tmdbGuardarTexto(&cheia, &outro.sinopse, texto);
-      assert(!tmdbEtapaPublicar(0, 1, versao, 123, DESC_EPT_SINOPSE, &cheia));
+      for (int i = 0; i < 1300; i++) tmdbGuardarTexto(&cheia, &outros[i].sinopse, texto);
+      assert(cheia.falhou && cheia.capTextos <= TMDB_TEXTOS_MAX);
       assert(cat_versao_episodios() == antes && cat_geracao_episodios() == geracaoAntes);
-      assert(cat_episodio(0, 0)->nota == 0);
-      free(cheia.textos);
+      free(cheia.textos); free(outros);
+      TmdbPatch repetido = {0};
+      TmdbEtapa dup = { .patches = &repetido, .n = 1 };
+      for (int i = 0; i < 2000; i++) {
+        tmdbGuardarTexto(&dup, &repetido.sinopse, texto);
+        tmdbGuardarTexto(&dup, &repetido.sinopse, "short");
+      }
+      assert(!dup.falhou && !strcmp(tmdbTexto(&dup, repetido.sinopse), "short"));
+      free(dup.textos);
     }
     cat_definir_episodios(1, &ep, 1); /* outra obra nao invalida a etapa */
     assert(tmdbEtapaPublicar(0, 1, versao, 123, 0, &etapa));
@@ -806,6 +815,7 @@ int main(void) {
       assert(cat_episodios_chaves_token(0, chaves, 3, versao));
       snprintf(epAlvoId, sizeof epAlvoId, "%s", "tt0");
       tmdbEtapaProcessar(&etapa, json, 1, textos);
+      if (modo == 2) assert(chaves[0].temNome && !patches[0].nome);
       assert(tmdbEtapaPublicar(0, 3, versao, 123, textos, &etapa));
       for (int i = 0; i < 3; i++) {
         const CatEp *obtido = cat_episodio(0, i);
