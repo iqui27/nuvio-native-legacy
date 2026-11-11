@@ -36,6 +36,7 @@ static void item(CatItem *it, const char *imdb, int salvo) {
 }
 
 int main(void) {
+  dados_iniciar(getenv("NUVIO_DADOS"));
   static CatItem it[5];
   static CatFileira fs[2];
   fil_definir_limite(FIL_LIMITE_MAX);
@@ -81,6 +82,80 @@ int main(void) {
   cat_definir_na_lista(0, 1);   // the Detail "+" on tt100
   quadro();
   conferir("saved later", "tt100 tt200 tt400");
+
+  // #672: Home applies the chosen order and unwatched filter itself.
+  {
+    Fileira b;
+    static CatItem dados[15];
+    for (int i = 0; i < 15; i++) {
+      char id[16]; snprintf(id, sizeof id, "tt%d", 500 + i);
+      item(&dados[i], id, 1);
+      snprintf(dados[i].titulo, sizeof dados[i].titulo, "%c", 'Z' - i);
+    }
+    snprintf(dados[14].tipo, sizeof dados[14].tipo, "series");
+    cat_definir_tudo(dados, 15, fs, 2);
+    cat_historico_definir_id("tt514", "series", 1);
+    cat_historico_definir_id("tt513", "movie", 1);
+    assert(fil_definir_ordem("library", FIL_ORD_AZ));
+    fil_recarregar();
+    assert(fil_ordem("library") == FIL_ORD_AZ);
+    montarBiblioteca(&b);
+    assert(b.n == ajustes_itens_fileira());
+    assert(!strcmp(cat_item(b.itens[0])->imdb, "tt514"));
+    ov_alternar("library");
+    ov_definir_perfil(2); ov_definir_perfil(1);
+    assert(ov_ativa("library"));
+    montarBiblioteca(&b);
+    assert(b.n == ajustes_itens_fileira() && b.verTudo);
+    assert(!strcmp(cat_item(b.itens[0])->imdb, "tt512"));
+    for (int i = 0; i < b.n; i++) assert(!cat_visto(cat_item(b.itens[i])));
+    for (int i = 0; i < 13; i++) cat_historico_definir_id(dados[i].imdb, dados[i].tipo, 1);
+    cat_definir_tudo(dados, 15, fs, 2);
+    quadro();
+    { const Fileira *v = naHome("library");
+      assert(v && v->n == 0 && v->verTudo);
+      focoHero = 0; foco.fileira = (int)(v - fileiras); foco.coluna = 0;
+      assert(foco_pode_pressao_longa());
+      abrirMenuCartaz(); assert(ctx_aberto());
+      SDL_Event e = {0};
+      e.type = SDL_KEYUP; e.key.keysym.sym = SDLK_RETURN; ctx_evento(&e);
+      e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_DOWN; ctx_evento(&e); ctx_evento(&e);
+      e.key.keysym.sym = SDLK_RETURN; ctx_evento(&e);
+      assert(!ov_ativa("library"));
+      e.key.keysym.sym = SDLK_DOWN; ctx_evento(&e);
+      e.key.keysym.sym = SDLK_RETURN; ctx_evento(&e);
+      assert(fil_ordem("library") == FIL_ORD_LISTA);
+      ctx_abrir_sessao(); }
+  }
+
+  // Ordering must handle duration-only metadata, case and Latin accents even
+  // when the best matches occur after the row limit.
+  {
+    static CatItem dados[15]; Fileira b;
+    for (int i = 0; i < 15; i++) {
+      char id[16]; snprintf(id, sizeof id, "tt%d", 700 + i);
+      item(&dados[i], id, 1);
+      snprintf(dados[i].titulo, sizeof dados[i].titulo, "Zulu %d", i);
+      if (i < 11) snprintf(dados[i].meta, sizeof dados[i].meta, "%d", 2000 + i);
+      else snprintf(dados[i].meta, sizeof dados[i].meta, "90 min");
+    }
+    snprintf(dados[12].titulo, sizeof dados[12].titulo, "banana");
+    snprintf(dados[13].titulo, sizeof dados[13].titulo, "Água");
+    snprintf(dados[14].titulo, sizeof dados[14].titulo, "abacate");
+    snprintf(dados[13].meta, sizeof dados[13].meta, "2022 · 90 min");
+    snprintf(dados[14].meta, sizeof dados[14].meta, "2024 · 90 min");
+    cat_definir_tudo(dados, 15, fs, 2);
+    assert(fil_definir_ordem("library", FIL_ORD_ANO));
+    montarBiblioteca(&b);
+    assert(!strcmp(cat_item(b.itens[0])->imdb, "tt714"));
+    assert(!strcmp(cat_item(b.itens[1])->imdb, "tt713"));
+    for (int i = 0; i < b.n; i++) assert(nv_ano_meta(cat_item(b.itens[i])->meta));
+    assert(fil_definir_ordem("library", FIL_ORD_AZ));
+    montarBiblioteca(&b);
+    assert(!strcmp(cat_item(b.itens[0])->imdb, "tt714"));
+    assert(!strcmp(cat_item(b.itens[1])->imdb, "tt713"));
+    assert(!strcmp(cat_item(b.itens[2])->imdb, "tt712"));
+  }
 
   assert(ajustes_shot_valor("libraryRowLocal", 1) && !ajustes_bib_home());
   quadro();

@@ -273,7 +273,7 @@ static float focoAnim[CTX_MAX];
 static int holdObservador;
 enum { OP_LISTA = 1, OP_ASSISTIDO, OP_TIRAR_CONTINUAR, OP_RECOMENDAR, OP_DISPENSAR,
        OP_ESTILO, OP_CATEGORIA, OP_DETALHES, OP_L_ABRIR, OP_L_FIXAR, OP_L_HOME,
-       OP_F_MENU, OP_F_FIXAR, OP_F_SUBIR, OP_F_DESCER, OP_F_OCULTAR, OP_F_VISTOS,
+       OP_F_MENU, OP_F_FIXAR, OP_F_SUBIR, OP_F_DESCER, OP_F_OCULTAR, OP_F_VISTOS, OP_F_ORDEM,
        OP_ADD_LISTA, OP_REWATCH, OP_TRAVA, OP_DESKTOP_PLAY, OP_DESKTOP_TRAILER, OP_DESKTOP_COPY, OP_PICK_LISTA = 50,   // OP_PICK_LISTA + k = a k-esima lista da pessoa
        OP_EXTRA = 100 };   // OP_EXTRA + k = extras[k] (modo social)
 // "Mover para categoria" pedido no modo painel: o IMDb do titulo, consumido
@@ -460,6 +460,13 @@ static void montar(void) {
     juntar("Mover para cima", OP_F_SUBIR);
     juntar("Mover para baixo", OP_F_DESCER);
     if (filVistos) juntar(ov_ativa(filChave) ? "Mostrar vistos" : "Ocultar vistos", OP_F_VISTOS);
+    if (!strcmp(filChave, "library")) {
+      static char rotOrdem[160];
+      int ordem = fil_ordem(filChave);
+      snprintf(rotOrdem, sizeof rotOrdem, i18n("Ordem: %s"),
+               i18n(ordem == FIL_ORD_LISTA ? "Padrão" : fil_ordem_rotulo(ordem)));
+      juntar(rotOrdem, OP_F_ORDEM);
+    }
     if (fil_estilos(filChave, NULL, NULL, FIL_TIPO_N) >= 1) juntar("Estilo da fileira", OP_ESTILO);
     juntar("Ocultar fileira", OP_F_OCULTAR);
     if (foco >= nOps) foco = nOps - 1;
@@ -1041,6 +1048,9 @@ static void aplicar(void) {
       if (homefil_mover(filChave, acao == OP_F_SUBIR ? -1 : 1)) filAlterou = 1;
     } else if (acao == OP_F_VISTOS) {
       ov_alternar(filChave); filAlterou = 1; montar();
+    } else if (acao == OP_F_ORDEM) {
+      if (fil_definir_ordem(filChave, (fil_ordem(filChave) + 1) % FIL_ORD_ALEATORIA)) filAlterou = 1;
+      montar();
     } else if (acao == OP_F_OCULTAR) {
       if (homefil_ocultar(filChave)) filAlterou = 1;
       aberto = 0;

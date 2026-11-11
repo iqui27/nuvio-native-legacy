@@ -1784,7 +1784,8 @@ int fil_ordem(const char *chave) {
 int fil_definir_ordem(const char *chave, int o) {
   int i, ok = 0;
   if (!chave || !chave[0] || o < 0 || o >= FIL_ORD_N ||
-      fil_origem_de(chave) != FIL_ORIGEM_COLECAO) return 0;
+      (fil_origem_de(chave) != FIL_ORIGEM_COLECAO &&
+       (strcmp(chave, "library") || o == FIL_ORD_ALEATORIA))) return 0;
   pthread_mutex_lock(&trava);
   garantir();
   i = achar(chave);
