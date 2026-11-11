@@ -3,6 +3,7 @@
 // hero no topo, rail fixa à esquerda e fileiras horizontais de posters. A
 // infraestrutura nativa cuida de cache assíncrono, foco e transições.
 #include "home.h"
+#include "buscanorm.h"
 #include "menu.h"
 #include "memlog.h"
 #include "perfis.h"
@@ -233,10 +234,16 @@ static void montarBiblioteca(Fileira *f) {
     if (c < f->n) continue;
     pos = f->n;
     if (ordem == FIL_ORD_AZ || ordem == FIL_ORD_ANO) {
+      char titulo[sizeof it->titulo];
+      int ano = nv_ano_meta(it->meta);
+      if (ordem == FIL_ORD_AZ) busca_normalizar(it->titulo, titulo, sizeof titulo);
       for (pos = 0; pos < f->n; pos++) {
         const CatItem *outro = cat_item(f->itens[pos]);
-        if (ordem == FIL_ORD_AZ ? strcmp(outro->titulo, it->titulo) > 0
-                                : strcmp(outro->meta, it->meta) < 0) break;
+        if (ordem == FIL_ORD_AZ) {
+          char outroTitulo[sizeof outro->titulo];
+          busca_normalizar(outro->titulo, outroTitulo, sizeof outroTitulo);
+          if (strcmp(outroTitulo, titulo) > 0) break;
+        } else if (nv_ano_meta(outro->meta) < ano) break;
       }
     }
     if (pos >= teto) continue;
