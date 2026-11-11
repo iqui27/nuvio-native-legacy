@@ -429,6 +429,22 @@ int main(void) {
     free(body);
     return 0;
   }
+  {
+    const char *base = "{\"videos\":[{\"season\":2,\"episode\":1},{\"season\":1},{\"season\":1},{\"season\":1,\"episode\":2,\"name\":\"original\"}]}";
+    const char *overlay = "{\"videos\":[{\"season\":1,\"episode\":2,\"name\":\"first\",\"runtime\":25,\"rating\":8.3},{\"season\":1,\"episode\":2,\"name\":\"duplicate\"},{\"season\":1,\"name\":\"zero A\"},{\"season\":2,\"episode\":1,\"description\":\"synopsis\"},{\"season\":1,\"name\":\"zero B\"}]}";
+    CatEp expected[8], actual[8], other[8];
+    int count = parsearEpisodios(base, expected, 8);
+    int countOther = parsearEpisodios(overlay, other, 8);
+    assert(count == 4 && countOther == 4);
+    for (int mode = DESC_MESCLA_TEXTO; mode <= DESC_MESCLA_VAZIOS; mode++) {
+      memcpy(actual, expected, (size_t)count * sizeof *actual);
+      CatEp reference[8];
+      memcpy(reference, expected, (size_t)count * sizeof *reference);
+      desc_mesclar_episodios(reference, count, other, countOther, mode);
+      mesclarEpisodiosJson(actual, count, overlay, mode);
+      assert(!memcmp(reference, actual, (size_t)count * sizeof *actual));
+    }
+  }
   const char *js =
     "{\"videos\":["
     "{\"id\":\"a:1\",\"season\":1,\"episode\":1,\"name\":\"Izuku Midoriya: Origin\"},"

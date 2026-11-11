@@ -7806,6 +7806,65 @@ void desc_mesclar_episodios(CatEp *base, int nb, const CatEp *outro, int no, int
   }
 }
 
+// Compact index keeps the same first-duplicate and stable ordering as the
+// full parser without allocating a second array of large CatEp records.
+struct EpSobre { const char *p, *f; int t, e, ordem; };
+static int epSobreComparar(const void *a, const void *b) {
+  const struct EpSobre *x = a, *y = b;
+  if (x->t != y->t) return x->t < y->t ? -1 : 1;
+  if (x->e != y->e) return x->e < y->e ? -1 : 1;
+  return x->ordem < y->ordem ? -1 : x->ordem > y->ordem;
+}
+static void mesclarEpisodiosJson(CatEp *base, int nb, const char *corpo, int modo) {
+  int cap = metaContarEpisodios(corpo, NULL), n = 0, i = 0;
+  EpSet set = {0};
+  struct EpSobre *v;
+  const char *p;
+  if (cap > VIDEOS_MAX) cap = VIDEOS_MAX;
+  if (cap <= 0 || !(v = malloc((size_t)cap * sizeof *v))) return;
+  for (p = js_array(corpo, NULL, "videos"); p; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    int t = videoTemporada(p, f);
+    int e = t >= 0 ? (int)js_num(p, f, "episode", 0) : 0;
+    if (t >= 0 && (e <= 0 || epSetNovo(&set, t, e)) && n < cap) {
+      v[n] = (struct EpSobre){p, f, t, e, n}; n++;
+    }
+  }
+  free(set.v);
+  qsort(v, (size_t)n, sizeof *v, epSobreComparar);
+  for (int j = 0; j < n && i < nb; j++) {
+    const struct EpSobre *s = &v[j];
+    if (j && s->e > 0 && s->t == v[j-1].t && s->e == v[j-1].e) continue;
+    while (i < nb && (base[i].temporada < s->t ||
+           (base[i].temporada == s->t && base[i].episodio < s->e))) i++;
+    if (i < nb && base[i].temporada == s->t && base[i].episodio == s->e) {
+      CatEp e = {0};
+      char d[24] = "";
+      double rating = js_num(s->p, s->f, "imdbRating", 0.0);
+      e.temporada = s->t; e.episodio = s->e;
+      if (rating <= 0) rating = js_num(s->p, s->f, "rating", 0.0);
+      if (rating > 0 && rating <= 10) e.notaImdb = (int)(rating * 10.0 + 0.5);
+      js_texto(s->p, s->f, "name", e.nome, sizeof e.nome);
+      if (!e.nome[0]) js_texto(s->p, s->f, "title", e.nome, sizeof e.nome);
+      js_texto(s->p, s->f, "overview", e.sinopse, sizeof e.sinopse);
+      if (!e.sinopse[0]) js_texto(s->p, s->f, "description", e.sinopse, sizeof e.sinopse);
+      js_texto(s->p, s->f, "thumbnail", e.thumb, sizeof e.thumb);
+      js_texto(s->p, s->f, "runtime", e.duracao, sizeof e.duracao);
+      metaprov_duracao(e.duracao, sizeof e.duracao);
+      if (!e.duracao[0]) {
+        int runtime = (int)js_num(s->p, s->f, "runtime", 0);
+        if (runtime > 0 && runtime < 1440) snprintf(e.duracao, sizeof e.duracao, "%d min", runtime);
+      }
+      js_texto(s->p, s->f, "released", e.dataIso, sizeof e.dataIso);
+      js_texto(s->p, s->f, "released", d, sizeof d);
+      desc_data_extenso(d, e.data, sizeof e.data);
+      desc_mesclar_episodios(&base[i], 1, &e, 1, modo);
+      i++;
+    }
+  }
+  free(v);
+}
+
 // `sobre` (opcional) e o /meta da OUTRA fonte, mesclado por `modo`
 // (desc_mesclar_episodios) antes de publicar.
 // O TITULO DO FIO DE EPISODIOS (#190). buscarEps guarda o INDICE e depois
@@ -7906,16 +7965,7 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
   if (!eps) { pthread_mutex_unlock(&epMemoriaTrava); return 0; }
   n = parsearEpisodios(corpo, eps, cap);
   if (tp && n) temporadasDosEps(eps, n, tp);
-  if (sobre && n) {
-    int capOutro = metaContarEpisodios(sobre, NULL);
-    if (capOutro > VIDEOS_MAX) capOutro = VIDEOS_MAX;
-    CatEp *o = capOutro > 0 ? malloc(sizeof(CatEp) * (size_t)capOutro) : NULL;
-    if (o) {
-      int no = parsearEpisodios(sobre, o, capOutro);
-      desc_mesclar_episodios(eps, n, o, no, modo);
-      free(o);
-    }
-  }
+  if (sobre && n) mesclarEpisodiosJson(eps, n, sobre, modo);
   alvoItem = epPublicacaoIniciar(alvoItem);
   if (n && alvoItem >= 0 && (!cedo || !cat_n_episodios(alvoItem))) {
     int antigos = cat_n_episodios(alvoItem);
