@@ -35,6 +35,8 @@
 #define CAT_FONTE_SIMKL 2
 #define CAT_FONTE_NUVIO 4
 #define CAT_TEMP_MAX 64
+// One contiguous, stable-address store shared by all titles; #787 needs 4650.
+#define CAT_EP_MAX 5000
 // Elenco guardado por titulo. O Cinemeta traz 3-5 nomes no `cast` do meta e era
 // isso que a tela mostrava (issue #94); quem completa a fileira e o TMDB, que
 // fotosDoElenco acrescenta depois de enriquecer os que ja vieram. A pagina de

@@ -7632,7 +7632,10 @@ static int metaListaDeArquivos(int distintos, int brutos) {
 
 // Em par com CAT_EP_MAX (catalogo.c): um titulo que caiba no store nao pode
 // truncar no parse, e um que nao caiba trunca aqui em vez de zerar os outros.
-#define VIDEOS_MAX 2400
+#define VIDEOS_MAX CAT_EP_MAX
+// ponytail: one large episode workspace at a time, including personal servers;
+// concurrent requests wait until the current server request or parse finishes.
+static pthread_mutex_t epMemoriaTrava = PTHREAD_MUTEX_INITIALIZER;
 
 // Lista de arquivos so pode ampliar a numeracao do catalogo, nunca refaze-la
 // (One Piece anime vs live-action). Compara o corpo inteiro, antes do corte.
@@ -7892,9 +7895,12 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
                                        const char *titulo, const char *sobre,
                                        int modo, TempsPub *tp, int cedo,
                                        int substituir, int pendente) {
-  CatEp *eps = malloc(sizeof(CatEp) * VIDEOS_MAX);
+  CatEp *eps;
   int n = 0;
-  if (!eps) return 0;
+  pthread_mutex_lock(&epMemoriaTrava);
+  if (epPedidoSaiu()) { pthread_mutex_unlock(&epMemoriaTrava); return 0; }
+  eps = malloc(sizeof(CatEp) * VIDEOS_MAX);
+  if (!eps) { pthread_mutex_unlock(&epMemoriaTrava); return 0; }
   n = parsearEpisodios(corpo, eps, VIDEOS_MAX);
   if (tp && n) temporadasDosEps(eps, n, tp);
   if (sobre && n) {
@@ -7938,7 +7944,7 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
     } else if (estavel) {
       int k = 0;
       // Mantem os pares e a ordem ja vistos; novos pares entram no fim.
-      // ponytail: busca O(n²), limitada a 2400 pares; indexar se o teto crescer.
+      // ponytail: busca O(n²), limitada a 5000 pares; indexar se ficar lenta.
       for (int i = 0; i < antigos && k < VIDEOS_MAX; i++) {
         const CatEp *e = cat_episodio(alvoItem, i);
         if (!e) continue;
@@ -7980,6 +7986,7 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
   }
   pthread_mutex_unlock(&epPedidoTrava);
   free(eps);
+  pthread_mutex_unlock(&epMemoriaTrava);
   marco("episodios na tela");
   printf("[desc] %s: %d episodios publicados antes dos extras\n", titulo, n);
   fflush(stdout);
@@ -8762,6 +8769,8 @@ static void *buscarEps(void *u) {
   // PERSONAL SERVER ITEM: the server is the only source of its page. No
   // Cinemeta, TMDB or addon /meta gets an opaque server id.
   if (jfid_e(orig->imdb)) {
+    pthread_mutex_lock(&epMemoriaTrava);
+    if (epPedidoSaiu()) { pthread_mutex_unlock(&epMemoriaTrava); epConcluir(); return NULL; }
     CatEp *eps = malloc(sizeof(CatEp) * VIDEOS_MAX);
     CatItem ed = base;
     int ne = eps ? servidores_ficha(&ed, eps, VIDEOS_MAX) : -1;
@@ -8772,6 +8781,7 @@ static void *buscarEps(void *u) {
     }
     pthread_mutex_unlock(&epPedidoTrava);
     free(eps);
+    pthread_mutex_unlock(&epMemoriaTrava);
     epConcluir();
     return NULL;
   }

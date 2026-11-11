@@ -190,9 +190,7 @@ static char dirGravacao[512];
 // Episodios de todos os titulos num vetor unico, com faixa por titulo. Uma
 // matriz [titulo][episodio] gastaria memoria pelo pior caso em 40 titulos dos
 // quais a maioria e filme e nao tem episodio nenhum.
-// 2400: preserva listas longas como S1E1..S1E2001 (#391). Em par com
-// VIDEOS_MAX (descoberta.c), sem mudar a invalidacao das faixas na volta.
-#define CAT_EP_MAX 2400
+// CAT_EP_MAX is shared with discovery; wrap invalidation remains unchanged.
 static CatEp eps[CAT_EP_MAX];
 // Faixas de episodio por titulo, do mesmo tamanho do vetor de itens — que
 // agora cresce, entao estes tambem.

@@ -364,12 +364,13 @@ int main(void) {
     free(eps); free(body);
     return 0;
   }
-  // Opt-in regression until #787 is fixed: tests the real publication path.
+  // The shell test runs this separately to exercise the real publication path.
   if (getenv("NV_TEST_787")) {
     char *body = malloc(400000);
     assert(body);
-    for (int c = 0; c < 2; c++) {
-      int seasons = c ? 31 : 52, per = c ? 150 : 20;
+    for (int c = 0; c < 3; c++) {
+      int seasons = c == 0 ? 52 : c == 1 ? 31 : 50;
+      int per = c == 0 ? 20 : c == 1 ? 150 : 100;
       size_t k = (size_t)sprintf(body, "{\"videos\":[");
       TempsPub tp = {0};
       for (int t = 1; t <= seasons; t++)
