@@ -12481,7 +12481,7 @@
   {
    "numero": 606,
    "titulo": "Subtitle filenames from addons",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "?",
    "status": "integrada",
@@ -13690,7 +13690,7 @@
   {
    "numero": 662,
    "titulo": "Cover Flow Mode Causes Screen Flickering While Loading Large Catalogs",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "bug",
    "status": "integrada",
@@ -13853,7 +13853,7 @@
   {
    "numero": 657,
    "titulo": "Image noise bug",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "bug",
    "status": "integrada",
