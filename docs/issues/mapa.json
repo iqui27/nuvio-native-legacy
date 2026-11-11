@@ -15501,6 +15501,15 @@
   {
    "data": "2026-11-11",
    "quem": "Revisão independente; Central TV (gate e integração)",
+   "o_que": "Comparação local de CA e hostname no fetch comum e nos caminhos estritos do relay.",
+   "issues": [694],
+   "ref": "ac2a2132421d992745f9bce45e3762f55cb144c9",
+   "resultado": "Revisão OK; gate 1/1 e dts_range.sh rc0 pós-merge. No host, fetch comum aceitou certificado não confiável ou hostname divergente; range e stream estritos rejeitaram ambos e aceitaram certificado confiável com SAN correspondente.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue694-tls-causal-20261111.log; /Volumes/ExternalSSD/tmp/rev/issue694-tls-causal-postmerge-20261111.log SHA256 3d5524eb331defbf0c48a24a73dcad04576b7fd29aec2c36d1b24c3f8a68773b. Fixture local, libcurl SecureTransport no macOS; não prova a causa nem o resultado na TV."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Revisão independente; Central TV (gate e integração)",
    "o_que": "Fallback de reprodução TPK40 para relay após falha de preparação HTTPS.",
    "issues": [694],
    "ref": "17cf0d2bbd87b0160c52b1a21021ffd9cdeaf4a0",
