@@ -526,6 +526,13 @@ static void testarMetaTMDBOffline(void) {
   puts("ok  cauda e cache de metadados respeitam o dono do perfil (#528)");
 }
 
+typedef struct { unsigned versao; CatEp ep; int ok; } Condicional;
+static void *publicarCondicional(void *arg) {
+  Condicional *c = arg;
+  c->ok = cat_definir_episodios_versao(0, &c->ep, 1, c->versao);
+  return NULL;
+}
+
 int main(void) {
   testarMetaElenco();
   testarMetaTMDBOffline();
@@ -597,6 +604,25 @@ int main(void) {
   assert(cat_indice_titulo("tt1", 1) == 1);              // filme/sem lista: o proprio
   assert(cat_indice_titulo("tt9", 1) == -1);
   puts("ok  mesma serie em duas fileiras: a copia com episodios vence a do CW");
+
+  {
+    Condicional a = {0}, b = {0};
+    pthread_t x, y;
+    montarCatalogo();
+    publicar(0, "before", 1);
+    a.versao = b.versao = cat_versao_episodios();
+    a.ep.temporada = b.ep.temporada = 1;
+    a.ep.episodio = 10; b.ep.episodio = 20;
+    assert(!pthread_create(&x, NULL, publicarCondicional, &a));
+    assert(!pthread_create(&y, NULL, publicarCondicional, &b));
+    pthread_join(x, NULL); pthread_join(y, NULL);
+    assert(a.ok + b.ok == 1);
+    assert(cat_episodio(0, 0)->episodio == (a.ok ? 10 : 20));
+    unsigned versao = cat_versao_episodios(), geracao = cat_geracao_episodios();
+    assert(!cat_definir_episodios_versao(0, &a.ep, 1, a.versao));
+    assert(cat_versao_episodios() == versao && cat_geracao_episodios() == geracao);
+    assert(cat_episodio(0, 0)->episodio == (a.ok ? 10 : 20));
+  }
 
   // #391: uma lista longa nao perde os episodios depois do antigo teto de 1200.
   montarCatalogo();

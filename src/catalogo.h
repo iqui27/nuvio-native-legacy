@@ -542,6 +542,8 @@ void cat_definir_tudo(const CatItem *lista, int qtd,
 
 // Substitui os episodios de UM titulo. Chamado quando o detalhe abre.
 void cat_definir_episodios(int indiceItem, const CatEp *lista, int n);
+// Publish only if no episode list has changed since the snapshot.
+int cat_definir_episodios_versao(int indiceItem, const CatEp *lista, int n, unsigned versao);
 // So o bit da cena pos-creditos (TMDB 179430/179431), pelo id do titulo.
 void cat_marcar_pos_creditos(const char *imdb, int pos);
 // Cache a resolved cast ID only if title and person still match; no other edits.

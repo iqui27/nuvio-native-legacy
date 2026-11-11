@@ -2800,17 +2800,19 @@ void cat_marcar_pos_creditos(const char *imdb, int pos) {
   pthread_mutex_unlock(&pubTrava);
 }
 
-void cat_definir_episodios(int indiceItem, const CatEp *lista, int qtd) {
+static int definirEpisodios(int indiceItem, const CatEp *lista, int qtd,
+                            int condicional, unsigned versao) {
   int m = cat_n();
-  if (!lista || qtd < 1 || m < 1) return;
+  if (!lista || qtd < 1 || m < 1) return 0;
   indiceItem = ((indiceItem % m) + m) % m;
   if (qtd > CAT_EP_MAX) qtd = CAT_EP_MAX;
   pthread_mutex_lock(&epTrava);
   // Faixa ainda nao criada para este indice (o `n` subiu antes): nao ha onde
   // escrever. Quem pediu repede quando a revisao andar.
-  if (!epIni || !epQtd || indiceItem >= nFaixas) {
+  if (!epIni || !epQtd || indiceItem >= nFaixas ||
+      (condicional && cat_versao_episodios() != versao)) {
     pthread_mutex_unlock(&epTrava);
-    return;
+    return 0;
   }
   // Anexa no fim do vetor comum. Trocar de temporada varias vezes acumula, mas
   // o teto de CAT_EP_MAX segura e o custo de compactar nao se paga.
@@ -2828,6 +2830,13 @@ void cat_definir_episodios(int indiceItem, const CatEp *lista, int qtd) {
   nEps += qtd;
   epVersaoSobe();   // conteudo novo (mesma contagem conta): caches derivados
   pthread_mutex_unlock(&epTrava);
+  return 1;
+}
+void cat_definir_episodios(int indiceItem, const CatEp *lista, int qtd) {
+  (void)definirEpisodios(indiceItem, lista, qtd, 0, 0);
+}
+int cat_definir_episodios_versao(int indiceItem, const CatEp *lista, int qtd, unsigned versao) {
+  return definirEpisodios(indiceItem, lista, qtd, 1, versao);
 }
 
 // Generos de um item, como uma lista de trechos separados por " · ". O primeiro
