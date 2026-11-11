@@ -13,7 +13,7 @@ using NuvioTpk;
 using Tizen.Multimedia;
 class Test {
     static readonly Queue<Action> queue = new Queue<Action>();
-    static int failures, presos, alvoPreso, completed;
+    static int failures, presos, alvoPreso, completed, prepareErrors;
     static Video video;
     static readonly List<int> erros = new List<int>();
     static int Erros { get { lock (erros) return erros.Count; } }
@@ -30,14 +30,33 @@ class Test {
     }
     static void Open() {
         var p = Marshal.StringToHGlobalAnsi("https://test/movie");
-        try { Entry("fAbrir", p, IntPtr.Zero); } finally { Marshal.FreeHGlobal(p); }
+        try { Entry("fAbrir", p, IntPtr.Zero, (uint)1); } finally { Marshal.FreeHGlobal(p); }
     }
     static void OpenTocado() { Open(); Wait(() => Player.All.Count > 0 && Player.All[Player.All.Count - 1].Starts == 1); }
     static int Main() {
         NvVid.Registrar = (a,b,c,d,e,f,g) => {}; NvVid.RegistrarFaixas = a => {}; NvVid.RegistrarAspecto = a => {};
+        NvVid.RegistrarGeracao = a => {}; NvVid.ErroGeracao = (g,c,p) => { if (p == 1 && g == 1) Interlocked.Increment(ref prepareErrors); lock (erros) erros.Add(c); };
         NvVid.Evento = (t,a,b) => { if (t == 4) Interlocked.Increment(ref completed); if (t == 5) lock (erros) erros.Add(a); if (t == 9) { alvoPreso = a; Interlocked.Increment(ref presos); } };
         NvVid.LogNativo = Console.WriteLine;
         NvVid.Faixa = (a,b,c) => {}; NvVid.FaixasFim = (a,b) => {};
+
+        Setup(); Player.Defer = true; Open();
+        Wait(() => Player.All.Count > 0 && Player.All[0].State == PlayerState.Preparing);
+        Player.All[0].Erro();
+        Wait(() => prepareErrors == 1);
+        Check(Erros == 1 && !Player.All[0].Prepared.Task.IsCompleted, "prepare callback reports immediately while task is pending");
+        Player.All[0].Prepared.SetException(new Exception("prepare failed"));
+        Thread.Sleep(100); Pump();
+        Check(Erros == 1 && prepareErrors == 1, "prepare exception does not duplicate callback");
+        Entry("fParar"); Wait(() => Player.All[0].Disposed);
+        Setup(); Player.Defer = true; Open();
+        Wait(() => Player.All.Count > 0 && Player.All[0].State == PlayerState.Preparing);
+        var racing = Player.All[0];
+        Task.WaitAll(Task.Run(() => racing.Erro()), Task.Run(() => racing.Prepared.SetException(new Exception("prepare failed"))));
+        Wait(() => Erros == 1);
+        Thread.Sleep(100); Pump();
+        Check(Erros == 1, "concurrent callback and exception emit one error");
+        Entry("fParar"); Wait(() => racing.Disposed);
 
         // #302: a segment notification is not EOS while the native pipeline plays.
         Setup(); OpenTocado(); var live = Player.All[0]; int ends = completed;
@@ -225,6 +244,7 @@ namespace Tizen.Multimedia {
         public ManualResetEventSlim PositionEntered = new ManualResetEventSlim();
         public int GetPlayPosition() { Interlocked.Increment(ref PositionCalls); PositionEntered.Set(); Thread.Sleep(PositionDelayMs); return 1234; }
         public void Complete(bool ended) { if (ended) State = PlayerState.Ready; PlaybackCompleted?.Invoke(this, new Event()); }
+        public void Erro() { ErrorOccurred?.Invoke(this, new Event { Error = -123 }); }
         public void Interromper() { State=PlayerState.Paused; PlaybackInterrupted?.Invoke(this, new Event()); }
         public Task SetPlayPositionAsync(int ms,bool precise) { SeekCalls++; if(FailSeek) throw new InvalidOperationException("seek InvalidOperation"); return SeekPending?.Task ?? Task.CompletedTask; }
     }

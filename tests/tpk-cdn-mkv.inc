@@ -3,7 +3,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <unistd.h>
-static int hiddenMkv, expiredStatus;
+static int hiddenMkv, expiredStatus, slowProbe, expiredProbe, refuseEveryProbe;
 static unsigned char media[512];
 static void hiddenHeader(void) {
   const unsigned char header[] = {
@@ -25,13 +25,21 @@ static void hiddenHeader(void) {
 char *rede_baixar_trecho64_final(const char *u, const char *h, int64_t a, int64_t z,
     long *n, int64_t *total, int *st, volatile int *cancel, char *fin, int *cross) {
   (void)h; (void)cancel;
-  *n = 0; *st = 404; if (fin) fin[0] = 0; if (cross) *cross = 0;
+  *n = 0; *st = 0; if (fin) fin[0] = 0; if (cross) *cross = 0;
   if (!hiddenMkv || a < 0 || a >= sizeof media) return NULL;
   if (z >= sizeof media) z = sizeof media - 1;
   *n = (long)(z - a + 1); *st = 206;
   if (total) *total = sizeof media;
   if (fin) snprintf(fin, 8192, "%s", u);
   char *p = malloc((size_t)*n); memcpy(p, media + a, (size_t)*n); return p;
+}
+char *rede_baixar_trecho64_tls(const char *u, const char *h, int64_t a, int64_t z,
+    long *n, int64_t *total, int *st, volatile int *cancel, char *fin, int *cross) {
+  if (strncmp(u, "https://", 8)) return NULL;
+  if (__atomic_exchange_n(&slowProbe, 0, __ATOMIC_SEQ_CST)) SDL_Delay(4500);
+  int refused = strstr(u, "/direct") ? __atomic_exchange_n(&expiredProbe, 0, __ATOMIC_SEQ_CST) : 0;
+  if (refused || __atomic_load_n(&refuseEveryProbe, __ATOMIC_SEQ_CST)) { *n = 0; *st = refused ? refused : 403; return NULL; }
+  return rede_baixar_trecho64_final(u, h, a, z, n, total, st, cancel, fin, cross);
 }
 int rede_fluxo64(const char *u, const char *h, int64_t a,
     int (*sink)(void *, const char *, size_t), void *opaque, int64_t *total,
@@ -43,6 +51,12 @@ int rede_fluxo64(const char *u, const char *h, int64_t a,
   ok(!h || !*h, "refreshed direct URL receives no source headers");
   *st = 206; *bytes = sizeof media - a;
   return sink(opaque, (const char *)media + a, (size_t)*bytes) ? 0 : 1;
+}
+int rede_fluxo64_tls(const char *u, const char *h, int64_t a,
+    int (*sink)(void *, const char *, size_t), void *opaque, int64_t *total,
+    int *st, volatile int *cancel, char *fin, int *cross, long stall, int64_t *bytes) {
+  if (strncmp(u, "https://", 8)) return -1;
+  return rede_fluxo64(u, h, a, sink, opaque, total, st, cancel, fin, cross, stall, bytes);
 }
 static void proxyRead(const char *url) {
   int port = 0; char path[256], req[512], reply[2048]; size_t n = 0;

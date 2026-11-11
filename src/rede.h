@@ -140,6 +140,11 @@ char *rede_baixar_trecho64_final(const char *url, const char *headers,
                               int64_t start, int64_t end, long *size,
                               int64_t *total, int *status,
                               volatile int *cancelled, char *final, int *cross);
+/* HTTPS only, including redirects; cross-origin requests omit caller headers. */
+char *rede_baixar_trecho64_tls(const char *url, const char *headers,
+                              int64_t start, int64_t end, long *size,
+                              int64_t *total, int *status,
+                              volatile int *cancelled, char *final, int *cross);
 /* Optional guard for an actively awaited range. Atomic urgent flag is owned
  * by the caller for this synchronous call. Last retry can omit this guard. */
 char *rede_baixar_trecho64_vigiado(const char *url,const char *headers,
@@ -158,6 +163,10 @@ char *rede_baixar_trecho64_vigiado_retry(const char *url,const char *headers,
  * does not count). Returns 0 when the body ended, 1 when the sink stopped it,
  * -1 on error (*status = HTTP code or 0, *bytes = body bytes delivered). */
 int rede_fluxo64(const char *url, const char *headers, int64_t start,
+                 int (*sink)(void *opaque, const char *data, size_t n), void *opaque,
+                 int64_t *total, int *status, volatile int *cancelled,
+                 char *final, int *cross, long stall_ms, int64_t *bytes);
+int rede_fluxo64_tls(const char *url, const char *headers, int64_t start,
                  int (*sink)(void *opaque, const char *data, size_t n), void *opaque,
                  int64_t *total, int *status, volatile int *cancelled,
                  char *final, int *cross, long stall_ms, int64_t *bytes);

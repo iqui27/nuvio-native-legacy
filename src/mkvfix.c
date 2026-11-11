@@ -260,6 +260,15 @@ int  mkvfix_relay(void) { return 0; }
 void mkvfix_sondar_arquivo(const char *u, const char *c, int usenet, int item, int file) {
   (void)usenet; (void)item; (void)file; mkvfix_sondar(u, c, NULL);
 }
+void mkvfix_sondar_arquivo_relay(const char *u, const char *c, int usenet, int item, int file) {
+  mkvfix_sondar_arquivo(u, c, usenet, item, file);
+}
+void mkvfix_sondar_relay_tls(const char *u, const char *c, const char *o, int usenet, int item, int file) {
+  (void)usenet; (void)item; (void)file; mkvfix_sondar(u, c, o);
+}
+void mkvfix_arquivo_atualizar(const char *u, int usenet, int item, int file) {
+  (void)u; (void)usenet; (void)item; (void)file;
+}
 int  mkvfix_estado(void) { return MKVFIX_NADA; }
 int  mkvfix_ocultas(void) { return 0; }
 int  mkvfix_url(char *out, size_t n) { (void)out; (void)n; return 0; }
@@ -298,6 +307,7 @@ typedef struct {
   char *origem;                  // de onde pedir link novo (pode ser NULL)
   int usenet, item, file;        // selected TorBox file, owned by this session
   int relay;                     // #648: repasse puro de bytes (cabecalhos que a TV nao manda)
+  int tlsEstrito;                // HTTPS relay never follows an HTTP downgrade
   pthread_mutex_t m;
   char up[8192];                 // o link de verdade (final, depois de redirect), sob m
   int upSemCab;                  // o final e de outra origem: sem cabecalhos
@@ -376,8 +386,8 @@ static unsigned char *ler(Sess *s, int64_t ini, int64_t fim, long *n, int64_t *t
   snprintf(up, sizeof up, "%s", s->up);
   semCab = s->upSemCab;
   pthread_mutex_unlock(&s->m);
-  b = (unsigned char *)rede_baixar_trecho64_final(up, semCab ? "" : s->cab, ini, fim, n, total, st,
-                                                  &s->cancelar, fin, &cross);
+  b = (unsigned char *)(s->tlsEstrito ? rede_baixar_trecho64_tls : rede_baixar_trecho64_final)
+      (up, semCab ? "" : s->cab, ini, fim, n, total, st, &s->cancelar, fin, &cross);
   if (b && fin[0] && strcmp(fin, up)) {
     pthread_mutex_lock(&s->m);
     snprintf(s->up, sizeof s->up, "%s", fin);
@@ -425,6 +435,8 @@ static void sondaLegendas(Sess *s, const unsigned char *b, long n, const MkvfixC
   free(q);
 }
 
+static int renovar(Sess *s);
+
 static void *fioSonda(void *u) {
   Sess *s = u;
   MkvfixCab c;
@@ -436,6 +448,15 @@ static void *fioSonda(void *u) {
   char a[24], b2[24], d[24], msg[420] = "";
   uint64_t t0 = agoraMs();
   unsigned char *b = ler(s, 0, MF_JANELA - 1, &n, &total, &st), *q = NULL;
+  if (s->cancelar) goto fim;
+  if (!b && (st == 403 || st == 404 || st == 410)) {
+    int item;
+    pthread_mutex_lock(&s->m); item = s->item; pthread_mutex_unlock(&s->m);
+    if (item > 0 && renovar(s) && !s->cancelar) {
+      n = 0; total = -1; st = 0;
+      b = ler(s, 0, MF_JANELA - 1, &n, &total, &st);
+    }
+  }
   if (s->cancelar) goto fim;
   if (!b || n < 64) {
     char x[96]; snprintf(x, sizeof x, "header not readable (HTTP %d, %ld bytes)", st, n);
@@ -514,7 +535,7 @@ fim:
 }
 
 static void sondar(const char *url, const char *cabecalhos, const char *origem,
-                   int usenet, int item, int file, int relay) {
+                   int usenet, int item, int file, int relay, int tlsEstrito) {
   Sess *s, *velho;
   pthread_t t;
   if (!url || (strncmp(url, "http://", 7) && strncmp(url, "https://", 8))) return;
@@ -525,6 +546,7 @@ static void sondar(const char *url, const char *cabecalhos, const char *origem,
   s->origem = origem && *origem && strcmp(origem, url) ? strdup(origem) : NULL;
   snprintf(s->up, sizeof s->up, "%s", url);
   s->usenet = usenet; s->item = item; s->file = file; s->relay = relay;
+  s->tlsEstrito = tlsEstrito;
   s->total = -1; s->regiao = -1;
   atomic_store(&s->estado, MKVFIX_SONDANDO);
   atomic_store(&s->refs, 2);   // a sessao atual + o fio da sonda
@@ -544,13 +566,30 @@ static void sondar(const char *url, const char *cabecalhos, const char *origem,
 }
 
 void mkvfix_sondar(const char *url, const char *cabecalhos, const char *origem) {
-  sondar(url, cabecalhos, origem, 0, 0, 0, 0);
+  sondar(url, cabecalhos, origem, 0, 0, 0, 0, 0);
 }
 void mkvfix_sondar_relay(const char *url, const char *cabecalhos, const char *origem) {
-  sondar(url, cabecalhos, origem, 0, 0, 0, 1);
+  sondar(url, cabecalhos, origem, 0, 0, 0, 1, 0);
 }
 void mkvfix_sondar_arquivo(const char *url, const char *cabecalhos, int usenet, int item, int file) {
-  sondar(url, cabecalhos, NULL, usenet, item, file, 0);
+  sondar(url, cabecalhos, NULL, usenet, item, file, 0, 0);
+}
+void mkvfix_sondar_arquivo_relay(const char *url, const char *cabecalhos, int usenet, int item, int file) {
+  sondar(url, cabecalhos, NULL, usenet, item, file, 1, 0);
+}
+void mkvfix_sondar_relay_tls(const char *url, const char *cabecalhos, const char *origem,
+                              int usenet, int item, int file) {
+  sondar(url, cabecalhos, origem, usenet, item, file, 1, 1);
+}
+
+void mkvfix_arquivo_atualizar(const char *url, int usenet, int item, int file) {
+  pthread_mutex_lock(&G);
+  if (atual && atual->orig && url && !strcmp(atual->orig, url)) {
+    pthread_mutex_lock(&atual->m);
+    atual->usenet = usenet; atual->item = item; atual->file = file;
+    pthread_mutex_unlock(&atual->m);
+  }
+  pthread_mutex_unlock(&G);
 }
 
 int mkvfix_estado(void) {
@@ -667,13 +706,17 @@ static int renovar(Sess *s) {
   char fin[8192] = "";
   long n = 0; int st = 0, cross = 0;
   unsigned char *b;
-  if (s->item > 0) {
-    if (!debrid_tb_link(s->usenet, s->item, s->file, fin, sizeof fin) || !fin[0]) return 0;
+  int usenet, item, file;
+  pthread_mutex_lock(&s->m);
+  usenet = s->usenet; item = s->item; file = s->file;
+  pthread_mutex_unlock(&s->m);
+  if (item > 0) {
+    if (!debrid_tb_link(usenet, item, file, fin, sizeof fin) || !fin[0]) return 0;
     cross = 1;
   } else {
     if (!s->origem) return 0;
-    b = (unsigned char *)rede_baixar_trecho64_final(s->origem, s->cab, 0, 0, &n, NULL, &st,
-                                                    &s->cancelar, fin, &cross);
+    b = (unsigned char *)(s->tlsEstrito ? rede_baixar_trecho64_tls : rede_baixar_trecho64_final)
+        (s->origem, s->cab, 0, 0, &n, NULL, &st, &s->cancelar, fin, &cross);
     free(b);
     if (!fin[0] || st != 206) return 0;
   }
@@ -765,8 +808,9 @@ static void *atender(void *u) {
     pthread_mutex_lock(&s->m);
     snprintf(up, sizeof up, "%s", s->up); semCab = s->upSemCab;
     pthread_mutex_unlock(&s->m);
-    r = rede_fluxo64(up, semCab ? "" : s->cab, e.prox, ralo, &e, &total, &st,
-                     &s->cancelar, NULL, &cross, MF_PARADO_MS, &veio);
+    r = (s->tlsEstrito ? rede_fluxo64_tls : rede_fluxo64)
+        (up, semCab ? "" : s->cab, e.prox, ralo, &e, &total, &st,
+         &s->cancelar, NULL, &cross, MF_PARADO_MS, &veio);
     if (e.prox > e.fim || e.falhouEnvio || s->cancelar) break;
     if (r < 0 && !e.cabFeito && (st == 403 || st == 404 || st == 410) && tentativa == 0 && renovar(s)) continue;
     if (r < 0 || e.prox <= e.fim) {

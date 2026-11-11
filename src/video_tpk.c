@@ -56,6 +56,32 @@ typedef void (*FnRet)(int x, int y, int w, int h);
 typedef int  (*FnPos)(void);
 
 static FnAbrir  hAbrir;
+typedef void (*FnAbrirGer)(const char *, const char *, unsigned);
+static FnAbrirGer hAbrirGer;
+static pthread_mutex_t hostTrava = PTHREAD_MUTEX_INITIALIZER;
+static unsigned hostGer, hostProx, hostErroGer;
+static int hostErroCod, hostErroPreparo;
+static void hostInvalidar(void) {
+  pthread_mutex_lock(&hostTrava); hostGer = hostErroGer = 0; pthread_mutex_unlock(&hostTrava);
+}
+static void hostAbrir(const char *url, const char *cab) {
+  unsigned ger = ++hostProx;
+  if (!ger) ger = ++hostProx;
+  pthread_mutex_lock(&hostTrava); hostGer = ger; hostErroGer = 0; pthread_mutex_unlock(&hostTrava);
+  if (hAbrirGer) hAbrirGer(url, cab, ger); else hAbrir(url, cab);
+}
+
+__attribute__((visibility("default")))
+void nv_tpk_video_registrar_geracao(FnAbrirGer abrir) { hAbrirGer = abrir; }
+
+__attribute__((visibility("default")))
+void nv_tpk_video_erro_geracao(unsigned ger, int codigo, int preparo) {
+  pthread_mutex_lock(&hostTrava);
+  if (ger && ger == hostGer && (!hostErroGer || preparo)) {
+    hostErroGer = ger; hostErroCod = codigo; hostErroPreparo = preparo;
+  }
+  pthread_mutex_unlock(&hostTrava);
+}
 static FnSemArg hParar;
 static FnInt    hPausar, hBuscar, hVolume;
 static FnRet    hJanela;
@@ -425,8 +451,9 @@ static struct {
   int avisou;            // "nao da para buscar" ja foi dito nesta fonte
   // Legendas de texto escondidas da TV (mkvfix.h): a abertura espera a sonda
   // quando o cabecalho ja mostrou ASS/SSA; senao, uma reabertura cedo.
-  int esperando; Uint32 esperaDesde;
+  int esperando, esperaFallback; Uint32 esperaDesde;
   int reabriuLeg;
+  int relayTentou;
 } mf;
 static char mfEspUrl[sizeof urlAtual], mfEspCab[sizeof cabecalhos];
 static int mfEsperarAntes(const char *url, const char *cab);
@@ -460,7 +487,7 @@ static void abrirHost(const char *url, const char *cab) {
     snprintf(hostCab, sizeof hostCab, "%s", cab ? cab : "");
   }
   if (mfEsperarAntes(url, cab)) return;   // mfBombear abre quando a sonda responder
-  hAbrir(nv_media_url(url), cab);
+  hostAbrir(nv_media_url(url), cab);
 }
 
 __attribute__((visibility("default")))
@@ -593,6 +620,7 @@ typedef struct { char orig[NV_MEDIA_URL_MAX]; char cab[2048]; unsigned ger; int 
 void video_tpk_cdn_arquivo(const char *url, int usenet, int item, int file) {
   if (!ativo || !url || strcmp(url, urlAtual) || item <= 0 || file < 0) return;
   cdn.arquivo = 1; cdn.usenet = usenet; cdn.item = item; cdn.file = file;
+  mkvfix_arquivo_atualizar(hostUrl, usenet, item, file);
   cdn.usado = 1; cdn.em = SDL_GetTicks();
 }
 
@@ -750,6 +778,7 @@ static void mfSondar(void) {
 // centenas de ms) e o player ja nasce no servidor local; sem resposta em
 // MF_ESPERA_MS, abre o link como sempre e a reabertura cedo cobre depois.
 #define MF_ESPERA_MS 4000u
+#define MF_RELAY_ESPERA_MS 30000u
 static int mkvTemAss(void) {
   for (int i = 0; i < mkvN; i++)
     if (mkvFx[i].tipo == 17 && (!strcmp(mkvFx[i].codec, "S_TEXT/ASS") || !strcmp(mkvFx[i].codec, "S_TEXT/SSA") ||
@@ -768,13 +797,15 @@ static int mfEsperarAntes(const char *url, const char *cab) {
   mf.sondou = 1; mf.esperando = 1; mf.esperaDesde = SDL_GetTicks();
   snprintf(mfEspUrl, sizeof mfEspUrl, "%s", url ? url : "");
   snprintf(mfEspCab, sizeof mfEspCab, "%s", cab ? cab : "");
-  if (cdn.arquivo) mkvfix_sondar_arquivo(hostUrl, hostCab, cdn.usenet, cdn.item, cdn.file);
+  if (cdn.arquivo && relay) mkvfix_sondar_arquivo_relay(hostUrl, hostCab, cdn.usenet, cdn.item, cdn.file);
+  else if (cdn.arquivo) mkvfix_sondar_arquivo(hostUrl, hostCab, cdn.usenet, cdn.item, cdn.file);
   else if (relay) mkvfix_sondar_relay(hostUrl, hostCab, strcmp(urlAtual, hostUrl) ? urlAtual : NULL);
   else mkvfix_sondar(hostUrl, hostCab, strcmp(urlAtual, hostUrl) ? urlAtual : NULL);
   printf(relay ? "[mkvfix] a fonte exige cabecalho que o player da TV nao envia: abrindo pelo servidor local\n"
               : "[mkvfix] the file has ASS/SSA subtitles: checking it before the TV opens it\n");
   fflush(stdout);
   // O player anterior nao segue tocando durante a sonda (como no cdnAbrir).
+  hostInvalidar();
   if (hParar) hParar();
   return 1;
 }
@@ -785,9 +816,11 @@ static void mfBombear(void) {
   int e;
   if (mf.esperando) {
     char u[256];
+    int fallback = mf.esperaFallback;
     e = mkvfix_estado();
-    if (e == MKVFIX_SONDANDO && SDL_GetTicks() - mf.esperaDesde < MF_ESPERA_MS) return;
-    mf.esperando = 0;
+    if (e == MKVFIX_SONDANDO && SDL_GetTicks() - mf.esperaDesde <
+        (fallback ? MF_RELAY_ESPERA_MS : MF_ESPERA_MS)) return;
+    mf.esperando = mf.esperaFallback = 0;
     if (!ativo || parado || !hAbrir) return;
     if ((mkvfix_ocultas() > 0 || mkvfix_relay()) && mkvfix_url(u, sizeof u)) {
       mf.ativo = 1;
@@ -796,6 +829,11 @@ static void mfBombear(void) {
              (unsigned)(SDL_GetTicks() - mf.esperaDesde));
       fflush(stdout);
       abrirHost(u, "");
+    } else if (fallback) {
+      printf("[mkvfix] fallback relay unavailable or timed out\n");
+      fflush(stdout);
+      mkvfix_parar();
+      nv_tpk_video_evento(EV_ERRO, -1, 0);
     } else {
       printf("[mkvfix] %s: opening the file directly\n",
              e == MKVFIX_SONDANDO ? "no answer from the check in time" : "nothing hidden");
@@ -834,6 +872,7 @@ int video_tpk_aviso_busca(void) { return atomic_exchange(&mfAviso, 0); }
 
 // Abre urlAtual no host. Serve a fonte nova e ao recarregar da reconexao.
 static void abrirSessao(void) {
+  hostInvalidar();
   // video_iniciar() NAO e chamada no .tpk (so video.c, o ramo da LG, a chama;
   // aqui o trailer usa video_iniciar_auto, que nao a chama), entao a flag do
   // texto simples ficava em 0 e toda faixa S_TEXT/UTF8 saia do mkvass como
@@ -879,7 +918,7 @@ static void abrirSessao(void) {
     // player_set_streaming_buffering_time (never sent).
     { char pre[48] = ""; int ms = dts_tpk_prebuffer_ms();
       if (ms > 0) snprintf(pre, sizeof pre, "X-Nuvio-Prebuffer: %d", ms);
-      hAbrir(cv.url, pre); }
+      hostAbrir(cv.url, pre); }
   } else {
     char u[256];
     if (mf.ativo && mkvfix_url(u, sizeof u)) abrirHost(u, "");
@@ -1553,6 +1592,7 @@ static void recuperarPlayer(int alvoMs) {
   reconPausa = pausaPedida;
   reconErroCod = -2; reconErroPend = 1; reconLinhaRede = 1; reconIniciou = 1;
   tocando = 0; vigiaAtiva = 0;
+  hostInvalidar();
   if (hParar) hParar(); // host confirma/libera antes de aceitar outra abertura
 }
 
@@ -1740,6 +1780,28 @@ void video_bombear(void) {
     return;
   }
   cdnBombear();
+  pthread_mutex_lock(&hostTrava);
+  unsigned erroGer = hostErroGer;
+  int erroCod = hostErroCod, erroPreparo = hostErroPreparo;
+  if (erroGer && erroGer == hostGer) hostGer = 0; else erroGer = 0;
+  hostErroGer = 0;
+  pthread_mutex_unlock(&hostTrava);
+  if (erroGer) {
+#ifdef NV_TPK40
+    if (erroPreparo && ativo && !parado && reconPermitida && !cv.ativo && !emTrailer && !mf.ativo &&
+        !mf.relayTentou && !strncmp(hostUrl, "https://", 8) &&
+        !strstr(hostUrl, "://127.0.0.1") && !strstr(hostUrl, "://localhost")) {
+      mf.relayTentou = 1; mf.sondou = 1; mf.esperando = mf.esperaFallback = 1; mf.esperaDesde = SDL_GetTicks();
+      snprintf(mfEspUrl, sizeof mfEspUrl, "%s", hostUrl);
+      snprintf(mfEspCab, sizeof mfEspCab, "%s", hostCab);
+      mkvfix_sondar_relay_tls(hostUrl, hostCab, strcmp(urlAtual, hostUrl) ? urlAtual : NULL,
+                               cdn.arquivo ? cdn.usenet : 0, cdn.arquivo ? cdn.item : 0,
+                               cdn.arquivo ? cdn.file : 0);
+      if (hParar) hParar();
+    } else
+#endif
+      nv_tpk_video_evento(EV_ERRO, erroCod, 0);
+  }
   mfBombear();
   convBombear();
   reabrindoVigiar();
@@ -1873,6 +1935,7 @@ void video_bombear(void) {
   }
 }
 void video_parar(void) {
+  hostInvalidar();
   largura = altura = 0; // Stopped stream metadata must not shape the next live open.
   parado = 1; resgateAte = 0;
   cdn.pend = 0; cdn.usado = 0; cdn.arquivo = 0;

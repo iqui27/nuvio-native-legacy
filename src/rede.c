@@ -3449,9 +3449,10 @@ char *rede_range_headers(const char *raw, int public_only) {
     key = (size_t)(colon - line);
     if ((key == 5 && !strncasecmp(line, "range", key)) ||
         (key == 15 && !strncasecmp(line, "accept-encoding", key))) continue;
-    if (public_only && !((key == 7 && !strncasecmp(line, "referer", key)) ||
-                        (key == 10 && !strncasecmp(line, "user-agent", key)) ||
-                        (key == 6 && !strncasecmp(line, "origin", key)))) continue;
+    if (public_only == 2) continue;
+    if (public_only && !((key == 10 && !strncasecmp(line, "user-agent", key)) ||
+                         (key == 7 && !strncasecmp(line, "referer", key)) ||
+                         (key == 6 && !strncasecmp(line, "origin", key)))) continue;
     memcpy(out + used, line, n); used += n; out[used++] = '\n';
   }
   out[used] = 0;
@@ -3470,12 +3471,12 @@ static void *dtsRangeHeaders(const char *raw, int public_only) {
 /* `final` (8192 bytes, optional) receives the address that answered 206 when
  * at least one redirect was followed, "" otherwise; `cross` says whether that
  * address is on another origin (credential headers were NOT sent to it). */
-char *rede_baixar_trecho64_vigiado_retry(const char *url, const char *headers,
+static char *range64(const char *url, const char *headers,
                               int64_t start, int64_t end, long *size,
                               int64_t *total, int *status,
                               volatile int *cancelled, char *final, int *cross,
                               volatile int *urgent,unsigned idle_ms,int *stalled,
-                              void (*retry)(void *,int),void *retry_arg) {
+                              void (*retry)(void *,int),void *retry_arg, int strict_tls) {
   char current[8192], range[64], origin[128];
   int hop, public_only = 0, downgraded = 0;
   if(stalled) *stalled=0;
@@ -3486,7 +3487,8 @@ char *rede_baixar_trecho64_vigiado_retry(const char *url, const char *headers,
   if (cross) *cross = 0;
   if (!url || strlen(url) >= sizeof current || start < 0 || end < start ||
       end - start >= 4 * 1024 * 1024 || !abrir()) return NULL;
-  if (strncmp(url, "http://", 7) && strncmp(url, "https://", 8)) return NULL;
+  if (strict_tls ? strncmp(url, "https://", 8) :
+      (strncmp(url, "http://", 7) && strncmp(url, "https://", 8))) return NULL;
   snprintf(current, sizeof current, "%s", url);
   if (!dtsRangeOrigin(url, origin, sizeof origin)) return NULL;
   snprintf(range, sizeof range, "%lld-%lld", (long long)start, (long long)end);
@@ -3535,9 +3537,10 @@ char *rede_baixar_trecho64_vigiado_retry(const char *url, const char *headers,
     if (!result && http >= 300 && http < 400 && redirected[0]) {
       char host[128];
       free(r.body.p);
-      if (strncmp(redirected, "http://", 7) && strncmp(redirected, "https://", 8)) return NULL;
+      if (strict_tls ? strncmp(redirected, "https://", 8) :
+          (strncmp(redirected, "http://", 7) && strncmp(redirected, "https://", 8))) return NULL;
       if (!dtsRangeOrigin(redirected, host, sizeof host)) return NULL;
-      if (strcmp(host, origin)) public_only = 1;
+      if (strcmp(host, origin)) public_only = strict_tls ? 2 : 1;
       /* HTTPS -> HTTP: followed (debrid CDNs answer on plain HTTP: Real-Debrid
        * via Debridio, where the TV's own player plays), but NO caller header
        * goes to the downgraded hop or anything after it: not credentials, not
@@ -3576,6 +3579,19 @@ char *rede_baixar_trecho64_vigiado_retry(const char *url, const char *headers,
     return NULL;
   }
   return NULL;
+}
+char *rede_baixar_trecho64_vigiado_retry(const char *url,const char *headers,
+    int64_t start,int64_t end,long *size,int64_t *total,int *status,
+    volatile int *cancelled,char *final,int *cross,volatile int *urgent,
+    unsigned idle_ms,int *stalled,void (*retry)(void *,int),void *retry_arg) {
+  return range64(url,headers,start,end,size,total,status,cancelled,final,cross,
+                 urgent,idle_ms,stalled,retry,retry_arg,0);
+}
+char *rede_baixar_trecho64_tls(const char *url,const char *headers,
+    int64_t start,int64_t end,long *size,int64_t *total,int *status,
+    volatile int *cancelled,char *final,int *cross) {
+  return range64(url,headers,start,end,size,total,status,cancelled,final,cross,
+                 NULL,0,NULL,NULL,NULL,1);
 }
 char *rede_baixar_trecho64_vigiado(const char *url,const char *headers,
     int64_t start,int64_t end,long *size,int64_t *total,int *status,
@@ -3646,10 +3662,10 @@ static int dtsFluxoProgress(void *user, long long dt, long long dn, long long ut
   if (f->r.cancel && __atomic_load_n(f->r.cancel, __ATOMIC_RELAXED)) return 1;
   return f->stallMs > 0 && fluxoAgoraMs() - f->lastByteMs > (uint64_t)f->stallMs;
 }
-int rede_fluxo64(const char *url, const char *headers, int64_t start,
+static int fluxo64(const char *url, const char *headers, int64_t start,
                  int (*sink)(void *opaque, const char *data, size_t n), void *opaque,
                  int64_t *total, int *status, volatile int *cancelled,
-                 char *final, int *cross, long stall_ms, int64_t *bytes) {
+                 char *final, int *cross, long stall_ms, int64_t *bytes, int strict_tls) {
   char current[8192], range[48], origin[128];
   int hop, public_only = 0, downgraded = 0;
   if (total) *total = -1;
@@ -3658,7 +3674,8 @@ int rede_fluxo64(const char *url, const char *headers, int64_t start,
   if (cross) *cross = 0;
   if (bytes) *bytes = 0;
   if (!url || !sink || strlen(url) >= sizeof current || start < 0 || !abrir()) return -1;
-  if (strncmp(url, "http://", 7) && strncmp(url, "https://", 8)) return -1;
+  if (strict_tls ? strncmp(url, "https://", 8) :
+      (strncmp(url, "http://", 7) && strncmp(url, "https://", 8))) return -1;
   snprintf(current, sizeof current, "%s", url);
   if (!dtsRangeOrigin(url, origin, sizeof origin)) return -1;
   snprintf(range, sizeof range, "%lld-", (long long)start);
@@ -3705,9 +3722,10 @@ int rede_fluxo64(const char *url, const char *headers, int64_t start,
     if (f.r.total >= 0 && total) *total = f.r.total;
     if (!result && http >= 300 && http < 400 && redirected[0]) {
       char host[128];
-      if (strncmp(redirected, "http://", 7) && strncmp(redirected, "https://", 8)) return -1;
+      if (strict_tls ? strncmp(redirected, "https://", 8) :
+          (strncmp(redirected, "http://", 7) && strncmp(redirected, "https://", 8))) return -1;
       if (!dtsRangeOrigin(redirected, host, sizeof host)) return -1;
-      if (strcmp(host, origin)) public_only = 1;
+      if (strcmp(host, origin)) public_only = strict_tls ? 2 : 1;
       if (!strncmp(current, "https://", 8) && !strncmp(redirected, "http://", 7)) downgraded = public_only = 1;
       snprintf(current, sizeof current, "%s", redirected);
       continue;
@@ -3721,6 +3739,18 @@ int rede_fluxo64(const char *url, const char *headers, int64_t start,
     return -1;                               /* error: status/curl, bytes so far in *bytes */
   }
   return -1;
+}
+int rede_fluxo64(const char *url, const char *headers, int64_t start,
+                 int (*sink)(void *, const char *, size_t), void *opaque,
+                 int64_t *total, int *status, volatile int *cancelled,
+                 char *final, int *cross, long stall_ms, int64_t *bytes) {
+  return fluxo64(url, headers, start, sink, opaque, total, status, cancelled, final, cross, stall_ms, bytes, 0);
+}
+int rede_fluxo64_tls(const char *url, const char *headers, int64_t start,
+                 int (*sink)(void *, const char *, size_t), void *opaque,
+                 int64_t *total, int *status, volatile int *cancelled,
+                 char *final, int *cross, long stall_ms, int64_t *bytes) {
+  return fluxo64(url, headers, start, sink, opaque, total, status, cancelled, final, cross, stall_ms, bytes, 1);
 }
 
 #endif  /* __EMSCRIPTEN__ */
@@ -3749,6 +3779,10 @@ char *rede_postar_repetindo(const char *url, int segundos, const char *const *ca
 }
 
 #ifdef __EMSCRIPTEN__
+char *rede_baixar_trecho64_tls(const char *u, const char *h, int64_t s, int64_t e, long *n, int64_t *t, int *st,
+                               volatile int *c, char *f, int *x) {
+  return rede_baixar_trecho64_final(u, h, s, e, n, t, st, c, f, x);
+}
 int rede_fluxo64(const char *u, const char *h, int64_t s, int (*sk)(void *, const char *, size_t), void *o,
                  int64_t *t, int *st, volatile int *c, char *f, int *x, long ms, int64_t *b) {
   (void)u; (void)h; (void)s; (void)sk; (void)o; (void)c; (void)ms;
@@ -3758,6 +3792,10 @@ int rede_fluxo64(const char *u, const char *h, int64_t s, int (*sk)(void *, cons
   if (x) *x = 0;
   if (b) *b = 0;
   return -1;
+}
+int rede_fluxo64_tls(const char *u, const char *h, int64_t s, int (*sk)(void *, const char *, size_t), void *o,
+                     int64_t *t, int *st, volatile int *c, char *f, int *x, long ms, int64_t *b) {
+  return rede_fluxo64(u,h,s,sk,o,t,st,c,f,x,ms,b);
 }
 char *rede_baixar_trecho64_vigiado(const char *u,const char *h,int64_t s,int64_t e,
  long *n,int64_t *t,int *st,volatile int *c,char *f,int *x,volatile int *urgent,unsigned idle,int *stalled) {
