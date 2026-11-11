@@ -219,21 +219,37 @@ static int filmeVistoOculto(const CatItem *item) {
 // order, one card per title; drawn like any other poster row.
 static void montarBiblioteca(Fileira *f) {
   int teto = ajustes_itens_fileira(), fonte = ajustes_fonte_biblioteca();
+  int ordem = fil_ordem("library"), ocultar = ov_ativa("library"), disponivel = 0;
   if (teto > DESC_ITENS_POR_FILEIRA) teto = DESC_ITENS_POR_FILEIRA;
+  if (teto > MAX_CARDS) teto = MAX_CARDS;
   memset(f, 0, sizeof *f);
-  for (int i = 0; i < cat_n() && f->n < teto; i++) {
+  for (int i = 0; i < cat_n(); i++) {
     const CatItem *it = cat_item(i);
-    int c = 0;
+    int c = 0, pos;
     if (!it || !it->naLista || !(it->listaFontes & (1u << fonte))) continue;
+    disponivel = 1;
+    if (ocultar && cat_visto(it)) continue;
     while (c < f->n && strcmp(cat_item(f->itens[c])->imdb, it->imdb)) c++;
-    if (c == f->n) f->itens[f->n++] = i;
+    if (c < f->n) continue;
+    pos = f->n;
+    if (ordem == FIL_ORD_AZ || ordem == FIL_ORD_ANO) {
+      for (pos = 0; pos < f->n; pos++) {
+        const CatItem *outro = cat_item(f->itens[pos]);
+        if (ordem == FIL_ORD_AZ ? strcmp(outro->titulo, it->titulo) > 0
+                                : strcmp(outro->meta, it->meta) < 0) break;
+      }
+    }
+    if (pos >= teto) continue;
+    if (f->n < teto) f->n++;
+    memmove(&f->itens[pos + 1], &f->itens[pos], (size_t)(f->n - pos - 1) * sizeof f->itens[0]);
+    f->itens[pos] = i;
   }
   f->usaItens = 1;
   f->tipo = FILEIRA_NORMAL;
   // "Ver tudo" no fim (#672): itens alem do teto da fileira nao apareceriam.
   // O card nao chama vertudo_abrir (que pede um catalogo de addon); abre a
   // Biblioteca inteira — veja o ramo noVerTudo no KEYUP.
-  f->verTudo = f->n > 0;
+  f->verTudo = disponivel;
   f->catTipo[0] = 'x';   // catTipo vazio casaria com um tipo de canal
   snprintf(f->titulo, sizeof f->titulo, "%s", i18n("Biblioteca"));
   snprintf(f->chave, sizeof f->chave, "library");
@@ -1525,6 +1541,10 @@ static void abrirMenuCartaz(void) {
     return;
   }
   s = &fileiras[foco.fileira];
+  if (!strcmp(s->chave, "library") && s->verTudo && foco.coluna == s->n) {
+    ctx_abrir_filmenu(s->chave, s->titulo, "", 1);
+    return;
+  }
   if (s->tipo == FILEIRA_CATALOGOS || !strncmp(s->chave, CF_PREFIXO, strlen(CF_PREFIXO))) {
     // A pasta fixada conserva o menu de desafixar tambem com titulos locais.
     int fixada = !strncmp(s->chave, CF_PREFIXO, strlen(CF_PREFIXO));
@@ -1560,7 +1580,7 @@ static int foco_pode_pressao_longa(void) {
   // Pilha fechada: so o estilo da fileira, entao so quando ela aceita forma.
   if (s->tipo == FILEIRA_TOP10 && s->stackN)
     return fil_estilos(s->chave, NULL, NULL, FIL_TIPO_N) > 0;
-  if (s->verTudo && foco.coluna == s->n) return 0;
+  if (s->verTudo && foco.coluna == s->n) return !strcmp(s->chave, "library");
   return foco.coluna >= 0 && foco.coluna < s->n;
 }
 
