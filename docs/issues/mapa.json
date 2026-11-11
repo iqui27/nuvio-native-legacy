@@ -37,6 +37,21 @@
  "nota": "Local snapshot sync 2026-10-25T21:56:42-03:00, HEAD 6330e8be0. Added 0 issues. Device validation remains pending; see external estado.md. Previous history retained in item notes.",
  "itens": [
   {
+   "numero": 787,
+   "titulo": "Season list truncated for some shows",
+   "estado_github": "aberta",
+   "plataforma": "Samsung QE50Q80TATXXC / Tizen WGT",
+   "tipo": "bug",
+   "status": "evidência insuficiente",
+   "release": "2.0.8",
+   "conserto": [],
+   "ultima_resposta": null,
+   "proximo_passo": "Investigar lista de temporadas com dados sanitizados do catálogo e comparar os títulos relatados; não presumir causa antes de reproduzir.",
+   "notas": "Relato: The Daily Show exibe 18 de 31 temporadas, enquanto Saturday Night Live exibe 52. Firmware T-NKMDEUC-2743.0; sem reprodução independente.",
+   "url": "https://github.com/iqui27/nuvio-native-legacy/issues/787",
+   "criada_em": "2026-11-11T10:59:37Z"
+  },
+  {
    "numero": 786,
    "titulo": "Arabic subtitles Embedded for Anime",
    "estado_github": "aberta",
@@ -864,7 +879,7 @@
     "ultima_nossa": null
    },
    "proximo_passo": "Investigar separadamente coleções por perfil, limite e navegação de fileiras, arte e Simkl; preservar dados privados. Confirmar cenário antes de propor correção.",
-   "notas": "Reconciliação 2026-11-04 @0e525f284: evidência insuficiente, sem causa única comprovada. Job offline relata fixture de dois perfis sem reproduzir, mas fixture descartado e relatório contraditório sobre execução; resultado não é validação reproduzível. Nenhuma correção demonstrada. Evidência: /Volumes/ExternalSSD/tmp/rev/j-746-perfilcatalogo-r2-0411.log; rastreio/mutirao-20261104/issues.json.",
+   "notas": "Reconciliação 2026-11-04 @0e525f284: evidência insuficiente, sem causa única comprovada. Job offline relata fixture de dois perfis sem reproduzir, mas fixture descartado e relatório contraditório sobre execução; resultado não é validação reproduzível. Nenhuma correção demonstrada. Evidência: /Volumes/ExternalSSD/tmp/rev/j-746-perfilcatalogo-r2-0411.log; rastreio/mutirao-20261104/issues.json. Comentário de 2026-11-11 relata dois subperfis que herdam coleção, sem pôsteres e com pastas virando listas; Nuvio regular funciona segundo participante. Sem aparelho, build ou reprodução independente informados.",
    "triagem_mutirao_2026_11_04": {
     "snapshot": "0e525f2840c83ce896cf9aff6a2b47a2d6ccccce",
     "classificacao_catalogo": "insufficient-evidence",
