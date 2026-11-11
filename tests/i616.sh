@@ -9,7 +9,7 @@ flags=(-O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2
 cc "${flags[@]}" src/catalogo.c src/progresso.c src/focus.c src/ajustes.c \
   src/posterprov.c src/redeurl.c src/colecoes.c src/js.c src/catordem.c \
   src/fileiras.c src/artehero.c src/corviva.c src/cwordem.c src/cwretido.c \
-  src/curadoria.c tests/i616.c tests/amigosfil_stub.c \
+  src/curadoria.c src/buscanorm.c tests/i616.c tests/amigosfil_stub.c \
   -DCURADORIA_TESTE -Wl,-dead_strip -o "$work/home"
 cc "${flags[@]}" -DI616_PICKER tests/i616.c -Wl,-dead_strip -o "$work/picker"
 rc=0
