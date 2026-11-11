@@ -1934,6 +1934,22 @@ int cat_episodios_copiar_versao(int item, CatEp *out, int n, unsigned versao) {
   return ok;
 }
 
+int cat_episodios_chaves_versao(int item, CatEpChave *out, int n, unsigned versao) {
+  int ok = 0;
+  if (item < 0 || !out || n < 1) return 0;
+  pthread_mutex_lock(&epTrava);
+  if (epIni && epQtd && item < nFaixas && epQtd[item] == n &&
+      epIni[item] <= CAT_EP_MAX - n && cat_versao_episodios() == versao) {
+    for (int i = 0; i < n; i++) {
+      out[i].temporada = eps[epIni[item] + i].temporada;
+      out[i].episodio = eps[epIni[item] + i].episodio;
+    }
+    ok = 1;
+  }
+  pthread_mutex_unlock(&epTrava);
+  return ok;
+}
+
 int cat_id_stream(int indiceItem, int t, int e, char *dst, unsigned tam) {
   const CatItem *c = cat_item(indiceItem);
   char base[96];

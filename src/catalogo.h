@@ -548,6 +548,8 @@ void cat_definir_episodios(int indiceItem, const CatEp *lista, int n);
 int cat_definir_episodios_versao(int indiceItem, const CatEp *lista, int n, unsigned versao);
 int cat_temporadas_snapshot(int item, int *temps, int cap, int *neps, unsigned *versao);
 int cat_episodios_copiar_versao(int item, CatEp *out, int n, unsigned versao);
+typedef struct { int temporada, episodio; } CatEpChave;
+int cat_episodios_chaves_versao(int item, CatEpChave *out, int n, unsigned versao);
 // So o bit da cena pos-creditos (TMDB 179430/179431), pelo id do titulo.
 void cat_marcar_pos_creditos(const char *imdb, int pos);
 // Cache a resolved cast ID only if title and person still match; no other edits.

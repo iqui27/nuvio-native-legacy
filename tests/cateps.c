@@ -539,12 +539,12 @@ static void testeTmdbAposCopia(void) {
   }
   pthread_mutex_unlock(&tmdbTesteTrava);
 }
-typedef struct { EpPedido pedido; unsigned versao; TmdbResposta resposta; int publicou; } TmdbTeste;
+typedef struct { EpPedido pedido; unsigned versao; TmdbEtapa etapa; int publicou; } TmdbTeste;
 static void *testarTmdbParado(void *arg) {
   TmdbTeste *t = arg;
   pthread_once(&epPedidoOnce, epPedidoKeyCriar);
   pthread_setspecific(epPedidoKey, &t->pedido);
-  t->publicou = tmdbEtapaPublicar(0, 1, t->versao, 123, 0, &t->resposta, 1);
+  t->publicou = tmdbEtapaPublicar(0, 1, t->versao, 123, 0, &t->etapa);
   pthread_setspecific(epPedidoKey, NULL);
   return NULL;
 }
@@ -558,11 +558,12 @@ static void *publicarCondicional(void *arg) {
 
 int main(void) {
   if (getenv("NV_TEST_TMDB_LONG")) {
-    TmdbResposta respostas[31];
-    int n = 0;
-    size_t bytes = 0;
+    TmdbEtapa etapa = {0};
     CatEp *episodios = calloc(4650, sizeof *episodios);
-    assert(episodios);
+    etapa.n = 4650;
+    etapa.chaves = calloc(4650, sizeof *etapa.chaves);
+    etapa.patches = calloc(4650, sizeof *etapa.patches);
+    assert(episodios && etapa.chaves && etapa.patches);
     montarCatalogo();
     for (int i = 0; i < 4650; i++) {
       episodios[i].temporada = i / 150 + 1;
@@ -570,23 +571,28 @@ int main(void) {
     }
     cat_definir_episodios(0, episodios, 4650);
     unsigned versao = cat_versao_episodios();
+    assert(cat_episodios_chaves_versao(0, etapa.chaves, 4650, versao));
     snprintf(epAlvoId, sizeof epAlvoId, "%s", "tt0");
     for (int t = 1; t <= 31; t++) {
-      char *json = malloc(40000);
+      const size_t cap = 400000;
+      char *json = malloc(cap);
       assert(json);
-      size_t pos = (size_t)snprintf(json, 40000, "{\"episodes\":[");
-      for (int i = 1; i <= 150; i++)
-        pos += (size_t)snprintf(json + pos, 40000 - pos,
+      size_t pos = (size_t)snprintf(json, cap, "{\"episodes\":[");
+      if (t == 1)
+        pos += (size_t)snprintf(json + pos, cap - pos,
+          "{\"episode_number\":1,\"vote_average\":8.2,\"padding\":\"%0300000d\"}", 1);
+      for (int i = t == 1 ? 2 : 1; i <= 150; i++)
+        pos += (size_t)snprintf(json + pos, cap - pos,
           "%s{\"episode_number\":%d,\"vote_average\":8.2,\"padding\":\"%080d\"}",
           i == 1 ? "" : ",", i, i);
-      assert(pos + 3 < 40000);
-      snprintf(json + pos, 40000 - pos, "]}");
-      assert(tmdbEtapaGuardar(respostas, &n, 31, &bytes, json, t));
+      assert(pos + 3 < cap);
+      snprintf(json + pos, cap - pos, "]}");
+      tmdbEtapaProcessar(&etapa, json, t, 0);
+      free(json);
     }
-    assert(tmdbEtapaPublicar(0, 4650, versao, 123, 0, respostas, n));
+    assert(tmdbEtapaPublicar(0, 4650, versao, 123, 0, &etapa));
     assert(cat_episodio(0, 0)->nota == 82 && cat_episodio(0, 4649)->nota == 82);
-    for (int i = 0; i < n; i++) free(respostas[i].json);
-    free(episodios);
+    free(etapa.patches); free(etapa.chaves); free(episodios);
     return 0;
   }
   testarMetaElenco();
@@ -689,18 +695,12 @@ int main(void) {
   }
 
   {
-    TmdbResposta resposta[1];
-    size_t bytes = 0;
-    int nr = 0;
-    char *json = strdup("{\"episodes\":[{\"episode_number\":1,\"vote_average\":8.2}]}");
-    char *grande = malloc(TMDB_ETAPA_BYTES + 1);
+    CatEpChave chave = {1, 1};
+    TmdbPatch patch = {0};
+    TmdbEtapa etapa = {&chave, &patch, 1};
+    const char *json = "{\"episodes\":[{\"episode_number\":1,\"vote_average\":8.2}]}";
     EpPedido pedido = {0};
-    assert(json && grande);
-    memset(grande, 'x', TMDB_ETAPA_BYTES); grande[TMDB_ETAPA_BYTES] = 0;
-    assert(!tmdbEtapaGuardar(resposta, &nr, 1, &bytes, grande, 1));
-    assert(nr == 0 && bytes == 0);
-    free(grande);
-    assert(tmdbEtapaGuardar(resposta, &nr, 1, &bytes, json, 1));
+    tmdbEtapaProcessar(&etapa, json, 1, 0);
     montarCatalogo();
     CatEp ep = {0}; ep.temporada = 1; ep.episodio = 1;
     cat_definir_episodios(0, &ep, 1);
@@ -709,19 +709,18 @@ int main(void) {
     pedido.geracao = epGeracao - 1;
     pthread_once(&epPedidoOnce, epPedidoKeyCriar);
     assert(!pthread_setspecific(epPedidoKey, &pedido));
-    assert(!tmdbEtapaPublicar(0, 1, versao, 123, 0, resposta, nr));
+    assert(!tmdbEtapaPublicar(0, 1, versao, 123, 0, &etapa));
     assert(cat_versao_episodios() == versao && cat_episodio(0, 0)->nota == 0);
     pedido.geracao = epGeracao;
-    assert(tmdbEtapaPublicar(0, 1, versao, 123, 0, resposta, nr));
+    assert(tmdbEtapaPublicar(0, 1, versao, 123, 0, &etapa));
     assert(cat_episodio(0, 0)->nota == 82);
     versao = cat_versao_episodios();
     snprintf(itens[0].imdb, sizeof itens[0].imdb, "%s", "ttnew");
     cat_definir_tudo(itens, 3, NULL, 0);
     cat_definir_episodios(0, &ep, 1);
-    assert(!tmdbEtapaPublicar(0, 1, versao, 123, 0, resposta, nr));
+    assert(!tmdbEtapaPublicar(0, 1, versao, 123, 0, &etapa));
     assert(cat_episodio(0, 0)->nota == 0);
     assert(!pthread_setspecific(epPedidoKey, NULL));
-    free(json);
   }
 
   {
@@ -735,8 +734,10 @@ int main(void) {
     t.versao = cat_versao_episodios();
     snprintf(t.pedido.id, sizeof t.pedido.id, "%s", "tt0");
     t.pedido.geracao = epGeracao;
-    t.resposta.json = "{\"episodes\":[{\"episode_number\":1,\"vote_average\":8.2}]}";
-    t.resposta.temporada = 1;
+    CatEpChave chave = {1, 1};
+    TmdbPatch patch = {0};
+    t.etapa = (TmdbEtapa){&chave, &patch, 1};
+    tmdbEtapaProcessar(&t.etapa, "{\"episodes\":[{\"episode_number\":1,\"vote_average\":8.2}]}", 1, 0);
     tmdbBloquear = 1; tmdbCopiou = tmdbLiberar = 0;
     assert(!pthread_create(&fio, NULL, testarTmdbParado, &t));
     pthread_mutex_lock(&tmdbTesteTrava);
@@ -750,6 +751,39 @@ int main(void) {
     pthread_join(fio, NULL);
     tmdbBloquear = 0;
     assert(livre && !t.publicou && cat_episodio(0, 0)->nota == 0);
+  }
+
+  {
+    const char *json = "{\"episodes\":[{\"episode_number\":1,\"vote_average\":8.1,\"runtime\":25,\"name\":\"First\",\"overview\":\"First synopsis\"},{\"episode_number\":1,\"vote_average\":7.3,\"runtime\":30,\"name\":\"Last\",\"overview\":\"Last synopsis\"},{\"episode_number\":0,\"name\":\"Special\",\"overview\":\"Zero\"}]}";
+    for (int modo = 0; modo < 3; modo++) {
+      int textos = modo == 0 ? 0 : DESC_EPT_NOME | DESC_EPT_SINOPSE |
+                   (modo == 2 ? DESC_EPT_SO_VAZIO : 0);
+      CatEp original[3] = {{0}}, esperado[3];
+      CatEpChave chaves[3];
+      TmdbPatch patches[3] = {{0}};
+      TmdbEtapa etapa = {chaves, patches, 3};
+      montarCatalogo();
+      original[0].temporada = original[1].temporada = original[2].temporada = 1;
+      original[0].episodio = original[1].episodio = 1;
+      snprintf(original[0].nome, sizeof original[0].nome, "%s", "existing");
+      memcpy(esperado, original, sizeof original);
+      desc_tmdb_notas_temporada_ex(json, esperado, 3, 1, textos);
+      for (int i = 0; i < 3; i++) if (esperado[i].tmdbE > 0) esperado[i].tmdbSerie = 123;
+      cat_definir_episodios(0, original, 3);
+      unsigned versao = cat_versao_episodios();
+      assert(cat_episodios_chaves_versao(0, chaves, 3, versao));
+      snprintf(epAlvoId, sizeof epAlvoId, "%s", "tt0");
+      tmdbEtapaProcessar(&etapa, json, 1, textos);
+      assert(tmdbEtapaPublicar(0, 3, versao, 123, textos, &etapa));
+      for (int i = 0; i < 3; i++) {
+        const CatEp *obtido = cat_episodio(0, i);
+        assert(obtido && !strcmp(obtido->nome, esperado[i].nome));
+        assert(!strcmp(obtido->sinopse, esperado[i].sinopse));
+        assert(!strcmp(obtido->duracao, esperado[i].duracao));
+        assert(obtido->nota == esperado[i].nota && obtido->tmdbSerie == esperado[i].tmdbSerie);
+        assert(obtido->tmdbT == esperado[i].tmdbT && obtido->tmdbE == esperado[i].tmdbE);
+      }
+    }
   }
 
   // #391: uma lista longa nao perde os episodios depois do antigo teto de 1200.
