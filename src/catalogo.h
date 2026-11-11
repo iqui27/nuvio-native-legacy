@@ -549,7 +549,13 @@ int cat_definir_episodios_versao(int indiceItem, const CatEp *lista, int n, unsi
 int cat_temporadas_snapshot(int item, int *temps, int cap, int *neps, unsigned *versao);
 int cat_episodios_copiar_versao(int item, CatEp *out, int n, unsigned versao);
 typedef struct { int temporada, episodio; } CatEpChave;
-int cat_episodios_chaves_versao(int item, CatEpChave *out, int n, unsigned versao);
+/* Identifica uma faixa ate que seja substituida ou o anel reinicie. */
+typedef unsigned long long CatEpToken;
+int cat_temporadas_snapshot_token(int item, int *temps, int cap, int *neps, CatEpToken *token);
+CatEpToken cat_episodios_token(int item, unsigned versao);
+int cat_episodios_chaves_token(int item, CatEpChave *out, int n, CatEpToken token);
+int cat_episodios_copiar_token(int item, CatEp *out, int n, CatEpToken token);
+int cat_definir_episodios_token(int item, const CatEp *lista, int n, CatEpToken token);
 // So o bit da cena pos-creditos (TMDB 179430/179431), pelo id do titulo.
 void cat_marcar_pos_creditos(const char *imdb, int pos);
 // Cache a resolved cast ID only if title and person still match; no other edits.

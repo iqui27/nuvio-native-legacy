@@ -1905,14 +1905,17 @@ const CatEp *cat_episodio(int indiceItem, int i) {
   return e;
 }
 
-int cat_temporadas_snapshot(int item, int *temps, int cap, int *neps, unsigned *versao) {
+static int temporadasSnapshot(int item, int *temps, int cap, int *neps,
+                              unsigned *versao, CatEpToken *token) {
   int n = 0;
-  if (item < 0 || !temps || cap < 1 || !neps || !versao) return -1;
+  if (item < 0 || !temps || cap < 1 || !neps || (!versao && !token)) return -1;
   pthread_mutex_lock(&epTrava);
   if (!epIni || !epQtd || item >= nFaixas || epQtd[item] <= 0 ||
       epIni[item] > CAT_EP_MAX - epQtd[item]) n = -1;
   else {
-    *neps = epQtd[item]; *versao = cat_versao_episodios();
+    *neps = epQtd[item];
+    if (versao) *versao = cat_versao_episodios();
+    if (token) *token = ((CatEpToken)cat_geracao_episodios() << 32) | (unsigned)(epIni[item] + 1);
     for (int i = 0; i < *neps; i++) {
       int t = eps[epIni[item] + i].temporada, j;
       for (j = 0; j < n && temps[j] != t; j++) {}
@@ -1921,6 +1924,12 @@ int cat_temporadas_snapshot(int item, int *temps, int cap, int *neps, unsigned *
   }
   pthread_mutex_unlock(&epTrava);
   return n;
+}
+int cat_temporadas_snapshot(int item, int *temps, int cap, int *neps, unsigned *versao) {
+  return temporadasSnapshot(item, temps, cap, neps, versao, NULL);
+}
+int cat_temporadas_snapshot_token(int item, int *temps, int cap, int *neps, CatEpToken *token) {
+  return temporadasSnapshot(item, temps, cap, neps, NULL, token);
 }
 int cat_episodios_copiar_versao(int item, CatEp *out, int n, unsigned versao) {
   int ok = 0;
@@ -1934,17 +1943,39 @@ int cat_episodios_copiar_versao(int item, CatEp *out, int n, unsigned versao) {
   return ok;
 }
 
-int cat_episodios_chaves_versao(int item, CatEpChave *out, int n, unsigned versao) {
-  int ok = 0;
-  if (item < 0 || !out || n < 1) return 0;
+/* epTrava protects the append-only offset and ring generation. */
+static CatEpToken epToken(int item) {
+  if (!epIni || !epQtd || item < 0 || item >= nFaixas || epQtd[item] < 1 ||
+      epIni[item] < 0 || epIni[item] > CAT_EP_MAX - epQtd[item]) return 0;
+  return ((CatEpToken)cat_geracao_episodios() << 32) | (unsigned)(epIni[item] + 1);
+}
+CatEpToken cat_episodios_token(int item, unsigned versao) {
+  CatEpToken token = 0;
   pthread_mutex_lock(&epTrava);
-  if (epIni && epQtd && item < nFaixas && epQtd[item] == n &&
-      epIni[item] <= CAT_EP_MAX - n && cat_versao_episodios() == versao) {
+  if (cat_versao_episodios() == versao) token = epToken(item);
+  pthread_mutex_unlock(&epTrava);
+  return token;
+}
+int cat_episodios_chaves_token(int item, CatEpChave *out, int n, CatEpToken token) {
+  int ok = 0;
+  if (!out || n < 1 || !token) return 0;
+  pthread_mutex_lock(&epTrava);
+  if (epToken(item) == token && epQtd[item] == n) {
     for (int i = 0; i < n; i++) {
       out[i].temporada = eps[epIni[item] + i].temporada;
       out[i].episodio = eps[epIni[item] + i].episodio;
     }
     ok = 1;
+  }
+  pthread_mutex_unlock(&epTrava);
+  return ok;
+}
+int cat_episodios_copiar_token(int item, CatEp *out, int n, CatEpToken token) {
+  int ok = 0;
+  if (!out || n < 1 || !token) return 0;
+  pthread_mutex_lock(&epTrava);
+  if (epToken(item) == token && epQtd[item] == n) {
+    memcpy(out, eps + epIni[item], (size_t)n * sizeof *out); ok = 1;
   }
   pthread_mutex_unlock(&epTrava);
   return ok;
@@ -2846,7 +2877,7 @@ void cat_marcar_pos_creditos(const char *imdb, int pos) {
 }
 
 static int definirEpisodios(int indiceItem, const CatEp *lista, int qtd,
-                            int condicional, unsigned versao) {
+                            int condicional, unsigned versao, CatEpToken token) {
   int m = cat_n();
   if (!lista || qtd < 1 || m < 1) return 0;
   indiceItem = ((indiceItem % m) + m) % m;
@@ -2855,7 +2886,8 @@ static int definirEpisodios(int indiceItem, const CatEp *lista, int qtd,
   // Faixa ainda nao criada para este indice (o `n` subiu antes): nao ha onde
   // escrever. Quem pediu repede quando a revisao andar.
   if (!epIni || !epQtd || indiceItem >= nFaixas ||
-      (condicional && cat_versao_episodios() != versao)) {
+      ((condicional == 1 && cat_versao_episodios() != versao) ||
+       (condicional == 2 && (!token || epToken(indiceItem) != token)))) {
     pthread_mutex_unlock(&epTrava);
     return 0;
   }
@@ -2878,10 +2910,14 @@ static int definirEpisodios(int indiceItem, const CatEp *lista, int qtd,
   return 1;
 }
 void cat_definir_episodios(int indiceItem, const CatEp *lista, int qtd) {
-  (void)definirEpisodios(indiceItem, lista, qtd, 0, 0);
+  (void)definirEpisodios(indiceItem, lista, qtd, 0, 0, 0);
 }
 int cat_definir_episodios_versao(int indiceItem, const CatEp *lista, int qtd, unsigned versao) {
-  return definirEpisodios(indiceItem, lista, qtd, 1, versao);
+  return definirEpisodios(indiceItem, lista, qtd, 1, versao, 0);
+}
+
+int cat_definir_episodios_token(int item, const CatEp *lista, int n, CatEpToken token) {
+  return definirEpisodios(item, lista, n, 2, 0, token);
 }
 
 // Generos de um item, como uma lista de trechos separados por " · ". O primeiro

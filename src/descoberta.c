@@ -7978,7 +7978,7 @@ static void tmdbEtapaProcessar(TmdbEtapa *etapa, const char *json, int temporada
 #ifndef NV_TMDB_APOS_COPIA
 #define NV_TMDB_APOS_COPIA() ((void)0)
 #endif
-static int tmdbEtapaPublicar(int item, int neps, unsigned versao, long tmdb,
+static int tmdbEtapaPublicar(int item, int neps, CatEpToken token, long tmdb,
                              int textos, const TmdbEtapa *etapa) {
   CatEp *tmp;
   int feitos = 0, marcados = 0, publicou = 0;
@@ -7988,7 +7988,7 @@ static int tmdbEtapaPublicar(int item, int neps, unsigned versao, long tmdb,
   if (item < 0) goto fim;
   tmp = malloc((size_t)neps * sizeof *tmp);
   if (!tmp) goto fim;
-  if (cat_episodios_copiar_versao(item, tmp, neps, versao)) {
+  if (cat_episodios_copiar_token(item, tmp, neps, token)) {
     NV_TMDB_APOS_COPIA();
     for (int i = 0; i < neps; i++) {
       const TmdbPatch *p = &etapa->patches[i];
@@ -8014,7 +8014,7 @@ static int tmdbEtapaPublicar(int item, int neps, unsigned versao, long tmdb,
     if (feitos || marcados) {
       int atual = epPublicacaoIniciar(item);
       if (atual == item)
-        DESC_PUBLICAR(publicou = cat_definir_episodios_versao(item, tmp, neps, versao));
+        DESC_PUBLICAR(publicou = cat_definir_episodios_token(item, tmp, neps, token));
       pthread_mutex_unlock(&epPedidoTrava);
     }
   }
@@ -9255,7 +9255,7 @@ static void *buscarEps(void *u) {
       }
       if (chave2[0] && tmdbId > 0 && alvoItem >= 0 && (alvoItem = epAlvo(alvoItem)) >= 0) {
         int neps = 0, nt, ns = 0, cap;
-        unsigned versao = 0;
+        CatEpToken token = 0;
         pthread_mutex_lock(&tmdbEtapaTrava);
         cap = epPedidoSaiu() ? 0 : cat_n_episodios(alvoItem);
         int *temporadas = cap > 0 ? malloc((size_t)cap * sizeof *temporadas) : NULL;
@@ -9263,13 +9263,13 @@ static void *buscarEps(void *u) {
         int textosEp = ajustes_tmdb_basico() ? DESC_EPT_SINOPSE | (idiomaNaoIngles() ? DESC_EPT_NOME : 0) |
                        (epsDoAddon ? DESC_EPT_SO_VAZIO : 0) : 0;
         if (temporadas &&
-            (nt = cat_temporadas_snapshot(alvoItem, temporadas, cap, &neps, &versao)) > 0) {
-          int completa = 1;
+            (nt = cat_temporadas_snapshot_token(alvoItem, temporadas, cap, &neps, &token)) > 0) {
+          int completa = token != 0;
           etapa.n = neps;
           etapa.chaves = malloc((size_t)neps * sizeof *etapa.chaves);
           etapa.patches = calloc((size_t)neps, sizeof *etapa.patches);
           if (!etapa.chaves || !etapa.patches ||
-              !cat_episodios_chaves_versao(alvoItem, etapa.chaves, neps, versao)) completa = 0;
+              !cat_episodios_chaves_token(alvoItem, etapa.chaves, neps, token)) completa = 0;
           for (int i2 = 0; completa && i2 < nt; i2++) {
             char u3[400];
             char *c4;
@@ -9284,7 +9284,7 @@ static void *buscarEps(void *u) {
             }
           }
           if (completa && ns)
-            (void)tmdbEtapaPublicar(alvoItem, neps, versao, tmdbId, textosEp, &etapa);
+            (void)tmdbEtapaPublicar(alvoItem, neps, token, tmdbId, textosEp, &etapa);
         }
         free(etapa.patches);
         free(etapa.chaves);

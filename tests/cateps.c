@@ -539,7 +539,7 @@ static void testeTmdbAposCopia(void) {
   }
   pthread_mutex_unlock(&tmdbTesteTrava);
 }
-typedef struct { EpPedido pedido; unsigned versao; TmdbEtapa etapa; int publicou; } TmdbTeste;
+typedef struct { EpPedido pedido; CatEpToken versao; TmdbEtapa etapa; int publicou; } TmdbTeste;
 static void *testarTmdbParado(void *arg) {
   TmdbTeste *t = arg;
   pthread_once(&epPedidoOnce, epPedidoKeyCriar);
@@ -570,8 +570,8 @@ int main(void) {
       episodios[i].episodio = i % 150 + 1;
     }
     cat_definir_episodios(0, episodios, 4650);
-    unsigned versao = cat_versao_episodios();
-    assert(cat_episodios_chaves_versao(0, etapa.chaves, 4650, versao));
+    CatEpToken versao = cat_episodios_token(0, cat_versao_episodios());
+    assert(cat_episodios_chaves_token(0, etapa.chaves, 4650, versao));
     snprintf(epAlvoId, sizeof epAlvoId, "%s", "tt0");
     for (int t = 1; t <= 31; t++) {
       const size_t cap = 400000;
@@ -704,17 +704,22 @@ int main(void) {
     montarCatalogo();
     CatEp ep = {0}; ep.temporada = 1; ep.episodio = 1;
     cat_definir_episodios(0, &ep, 1);
-    unsigned versao = cat_versao_episodios();
+    CatEpToken versao = cat_episodios_token(0, cat_versao_episodios());
     snprintf(pedido.id, sizeof pedido.id, "%s", "tt0");
     pedido.geracao = epGeracao - 1;
     pthread_once(&epPedidoOnce, epPedidoKeyCriar);
     assert(!pthread_setspecific(epPedidoKey, &pedido));
     assert(!tmdbEtapaPublicar(0, 1, versao, 123, 0, &etapa));
-    assert(cat_versao_episodios() == versao && cat_episodio(0, 0)->nota == 0);
+    assert(cat_episodio(0, 0)->nota == 0);
     pedido.geracao = epGeracao;
+    cat_definir_episodios(1, &ep, 1); /* outra obra nao invalida a etapa */
     assert(tmdbEtapaPublicar(0, 1, versao, 123, 0, &etapa));
     assert(cat_episodio(0, 0)->nota == 82);
-    versao = cat_versao_episodios();
+    versao = cat_episodios_token(0, cat_versao_episodios());
+    cat_definir_episodios(0, &ep, 1);
+    assert(!tmdbEtapaPublicar(0, 1, versao, 123, 0, &etapa));
+    assert(cat_episodio(0, 0)->nota == 0);
+    versao = cat_episodios_token(0, cat_versao_episodios());
     snprintf(itens[0].imdb, sizeof itens[0].imdb, "%s", "ttnew");
     cat_definir_tudo(itens, 3, NULL, 0);
     cat_definir_episodios(0, &ep, 1);
@@ -731,7 +736,7 @@ int main(void) {
     montarCatalogo();
     ep.temporada = 1; ep.episodio = 1;
     cat_definir_episodios(0, &ep, 1);
-    t.versao = cat_versao_episodios();
+    t.versao = cat_episodios_token(0, cat_versao_episodios());
     snprintf(t.pedido.id, sizeof t.pedido.id, "%s", "tt0");
     t.pedido.geracao = epGeracao;
     CatEpChave chave = {1, 1};
@@ -770,8 +775,8 @@ int main(void) {
       desc_tmdb_notas_temporada_ex(json, esperado, 3, 1, textos);
       for (int i = 0; i < 3; i++) if (esperado[i].tmdbE > 0) esperado[i].tmdbSerie = 123;
       cat_definir_episodios(0, original, 3);
-      unsigned versao = cat_versao_episodios();
-      assert(cat_episodios_chaves_versao(0, chaves, 3, versao));
+      CatEpToken versao = cat_episodios_token(0, cat_versao_episodios());
+      assert(cat_episodios_chaves_token(0, chaves, 3, versao));
       snprintf(epAlvoId, sizeof epAlvoId, "%s", "tt0");
       tmdbEtapaProcessar(&etapa, json, 1, textos);
       assert(tmdbEtapaPublicar(0, 3, versao, 123, textos, &etapa));
