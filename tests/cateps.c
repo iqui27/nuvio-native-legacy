@@ -557,6 +557,38 @@ static void *publicarCondicional(void *arg) {
 }
 
 int main(void) {
+  if (getenv("NV_TEST_TMDB_LONG")) {
+    TmdbResposta respostas[31];
+    int n = 0;
+    size_t bytes = 0;
+    CatEp *episodios = calloc(4650, sizeof *episodios);
+    assert(episodios);
+    montarCatalogo();
+    for (int i = 0; i < 4650; i++) {
+      episodios[i].temporada = i / 150 + 1;
+      episodios[i].episodio = i % 150 + 1;
+    }
+    cat_definir_episodios(0, episodios, 4650);
+    unsigned versao = cat_versao_episodios();
+    snprintf(epAlvoId, sizeof epAlvoId, "%s", "tt0");
+    for (int t = 1; t <= 31; t++) {
+      char *json = malloc(40000);
+      assert(json);
+      size_t pos = (size_t)snprintf(json, 40000, "{\"episodes\":[");
+      for (int i = 1; i <= 150; i++)
+        pos += (size_t)snprintf(json + pos, 40000 - pos,
+          "%s{\"episode_number\":%d,\"vote_average\":8.2,\"padding\":\"%080d\"}",
+          i == 1 ? "" : ",", i, i);
+      assert(pos + 3 < 40000);
+      snprintf(json + pos, 40000 - pos, "]}");
+      assert(tmdbEtapaGuardar(respostas, &n, 31, &bytes, json, t));
+    }
+    assert(tmdbEtapaPublicar(0, 4650, versao, 123, 0, respostas, n));
+    assert(cat_episodio(0, 0)->nota == 82 && cat_episodio(0, 4649)->nota == 82);
+    for (int i = 0; i < n; i++) free(respostas[i].json);
+    free(episodios);
+    return 0;
+  }
   testarMetaElenco();
   testarMetaTMDBOffline();
   CatItem novo;
