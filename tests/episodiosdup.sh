@@ -16,7 +16,7 @@ cc ${flags[@]+"${flags[@]}"} src/catalogo.c src/cwordem.c tests/episodiosdup.c t
   -o ${TMPDIR:-/tmp}/nuvio-episodiosdup-tests -O1 -g \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined
 ${TMPDIR:-/tmp}/nuvio-episodiosdup-tests
-if [ -z "${NV_TEST_787:-}" ] && [ -z "${NV_TEST_787_PARSE:-}" ] && [ -z "${NV_TEST_787_MEMORY:-}" ]; then
+if [ -z "${NV_TEST_787:-}" ] && [ -z "${NV_TEST_787_PARSE:-}" ] && [ -z "${NV_TEST_787_MEMORY:-}" ] && [ -z "${NV_TEST_787_STABLE:-}" ]; then
   NV_TEST_787=1 ${TMPDIR:-/tmp}/nuvio-episodiosdup-tests
   NV_TEST_787_PARSE=1 ${TMPDIR:-/tmp}/nuvio-episodiosdup-tests
   NV_TEST_787_MEMORY=1 ${TMPDIR:-/tmp}/nuvio-episodiosdup-tests

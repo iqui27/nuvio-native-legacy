@@ -362,7 +362,7 @@ static void abrir(void) {
 }
 
 int main(void) {
-  if (getenv("NV_TEST_787_MEMORY")) {
+  if (getenv("NV_TEST_787_MEMORY") || getenv("NV_TEST_787_STABLE")) {
     size_t cap = 400000, a = 0, b = 0;
     char *base = malloc(cap), *overlay = malloc(cap);
     assert(base && overlay);
@@ -382,6 +382,20 @@ int main(void) {
     assert(cat_n_episodios(0) == 4650);
     const CatEp *last = cat_episodio(0, 4649);
     assert(last && !strcmp(last->nome, "translated"));
+    if (getenv("NV_TEST_787_STABLE")) {
+    assert(publicarEpisodios(base, 0, "Long series", NULL, 0, NULL) == 4650);
+    EpPedido pedido = {0};
+    snprintf(pedido.id, sizeof pedido.id, "%s", "tt787");
+    pedido.geracao = epGeracao;
+    pthread_once(&epPedidoOnce, epPedidoKeyCriar);
+    assert(!pthread_setspecific(epPedidoKey, &pedido));
+    limitarArrays = 1;
+    assert(publicarEpisodios(base, 0, "Long series", overlay, DESC_MESCLA_TEXTO, NULL) == 4650);
+    limitarArrays = 0;
+    assert(!pthread_setspecific(epPedidoKey, NULL));
+    last = cat_episodio(0, 4649);
+    assert(last && !strcmp(last->nome, "translated"));
+    }
     free(base); free(overlay);
     return 0;
   }
