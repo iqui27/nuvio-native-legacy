@@ -175,6 +175,7 @@ uint64_t fontefiltro_valores(int c, const char *s) {
       for (int i = 0; i < 14; i++) {
         int tem = i == 3 ? tokenEspanhol(s) || algum(s,nomes[i][1],nomes[i][2],nomes[i][3],NULL) :
                           algum(s,nomes[i][0],nomes[i][1],nomes[i][2],nomes[i][3]);
+        if (i == 3 && token(s,"castilian")) tem = 1;
         if (tem) v |= bit(i);
       }
       if (token(s,"fre")) v |= bit(4);

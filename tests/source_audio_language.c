@@ -75,6 +75,7 @@ int main(void) {
     {"tr","\"title\":\"Tron.Legacy.2010.1080p.BluRay.x264.mkv\"",0},
     {"es","\"title\":\"Movie.2010.1080p.BluRay.DTS-ES.x264.mkv\"",0},
     {"es","\"title\":\"Movie.2010.1080p.BluRay.es.x264.mkv\"",1},
+    {"es","\"title\":\"Movie.2010.1080p.BluRay.Castilian.x264.mkv\"",1},
     {"es","\"description\":\"Subtitles:\\n\xF0\x9F\x87\xAA\xF0\x9F\x87\xB8\"",0},
     {"tr","\"language\":\"en\",\"title\":\"Frozen.2013.1080p.WEB-DL.Turkish.mkv\"",0},
     {"*","\"title\":\"Frozen.2013.1080p.WEB-DL.mkv\"",1},
