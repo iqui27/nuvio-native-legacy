@@ -6519,6 +6519,7 @@
   { "Posição e repouso do relógio", "Clock position and idle state" },
   { "Posição na TV", "TV position" },
   { "Possível emissora; evento não confirmado", "Possible broadcaster; event unconfirmed" },
+  { "Possível áudio", "Possible audio" },
   { "Pouca memória", "Low memory" },
   { "Pouca memória: programa atual e próximas 24 horas. Grade completa: programação disponível. Automático adapta ao aparelho. Não altera canais nem cache no disco.", "Low memory: current programme and next 24 hours. Full guide: available schedule. Automatic adapts to the device. Channels and disk cache stay unchanged." },
   { "Pouco espaço", "Low space" },

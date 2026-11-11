@@ -4247,17 +4247,15 @@ static int faixaNomeRepetido(const char *listaNomes, const char *nome) {
   }
   return 0;
 }
-int stream_faixas_texto(const Stream *s, int legendas, char *saida, unsigned tam) {
-  const char *p, *fim;
+static int faixasTexto(const char *p, size_t limite, char *saida, unsigned tam) {
+  const char *fim;
   size_t usado = 0;
   if (!saida || !tam) return 0;
   saida[0] = 0;
-  if (!s) return 0;
-  p = legendas ? s->legendaIdiomas : s->audioIdiomas;
-  fim = p + strnlen(p, sizeof s->audioIdiomas);
+  fim = p + strnlen(p, limite);
   while (p < fim) {
     const char *f = memchr(p, ',', (size_t)(fim - p)), *ate = f ? f : fim;
-    char raw[sizeof s->audioIdiomas], nome[sizeof s->audioIdiomas + 64];
+    char raw[512], nome[576];
     while (p < ate && isspace((unsigned char)*p)) p++;
     while (ate > p && isspace((unsigned char)ate[-1])) ate--;
     snprintf(raw, sizeof raw, "%.*s", (int)(ate - p), p);
@@ -4271,6 +4269,25 @@ int stream_faixas_texto(const Stream *s, int legendas, char *saida, unsigned tam
     p = f ? f + 1 : fim;
   }
   return (int)usado;
+}
+int stream_faixas_texto(const Stream *s, int legendas, char *saida, unsigned tam) {
+  if (!s) { if (saida && tam) saida[0] = 0; return 0; }
+  return faixasTexto(legendas ? s->legendaIdiomas : s->audioIdiomas,
+                     sizeof s->audioIdiomas, saida, tam);
+}
+static int audioInferido(const Stream *s, char *saida, unsigned tam) {
+  if (!s || s->audioIdiomas[0] || !s->filtroLido || !saida || !tam) return 0;
+  faixasTexto(s->audioTexto, sizeof s->audioTexto, saida, tam);
+  for (int i = 0; i < 13; i++) {
+    if (!(s->filtro.valores[FONTEFILTRO_LINGUAS] & fontefiltro_bit(FONTEFILTRO_LINGUAS, i))) continue;
+    const char *nome = i18n(fontefiltro_opcao(FONTEFILTRO_LINGUAS, i));
+    if (faixaNomeRepetido(saida, nome)) continue;
+    size_t u = strlen(saida), n = strlen(nome), sep = u ? 2 : 0;
+    if (u + sep + n >= tam) break;
+    if (sep) { memcpy(saida + u, ", ", 2); u += 2; }
+    memcpy(saida + u, nome, n + 1);
+  }
+  return (int)strlen(saida);
 }
 static int linhasFaixas(const Stream *s) {
   int n = 0;
@@ -4288,6 +4305,8 @@ static int linhasFaixas(const Stream *s) {
       p = f ? f + 1 : fim;
     }
   }
+  if (!s->audioIdiomas[0] && s->filtroLido &&
+      (s->audioTexto[0] || (s->filtro.valores[FONTEFILTRO_LINGUAS] & ((UINT64_C(1) << 13) - 1)))) n++;
   return n;
 }
 static float desenharFaixas(const Stream *s, float x, float y, float w, int sel, float a) {
@@ -4295,8 +4314,11 @@ static float desenharFaixas(const Stream *s, float x, float y, float w, int sel,
   for (int legendas = 0; legendas < 2; legendas++) {
     char idiomas[4096], linha[4224];
     int c = sel ? 180 : 140;
-    if (!stream_faixas_texto(s, legendas, idiomas, sizeof idiomas)) continue;
-    snprintf(linha, sizeof linha, "%s: %s", i18n(legendas ? "Legendas" : "Áudio"), idiomas);
+    int inferido = 0;
+    if (!stream_faixas_texto(s, legendas, idiomas, sizeof idiomas)) {
+      if (legendas || !(inferido = audioInferido(s, idiomas, sizeof idiomas))) continue;
+    }
+    snprintf(linha, sizeof linha, "%s: %s", i18n(legendas ? "Legendas" : inferido ? "Possível áudio" : "Áudio"), idiomas);
     txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM, linha, c, c, c - 2, 255, w), x, y + altura, a);
     altura += FOLHA_FAIXA_H;
   }

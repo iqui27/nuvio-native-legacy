@@ -47,6 +47,24 @@ int main(void) {
     assert(passaChips(0) == (i < 3));
     free(v);
   }
+  {
+    Stream *v = NULL; char out[4096];
+    assert(stream_extrair("{\"streams\":[{\"url\":\"https://example.test/v\",\"title\":\"Movie.1080p.Turkish.mkv\"}]}", "fixture", &v) == 1);
+    assert(linhasFaixas(v) == 1);
+    assert(audioInferido(v, out, sizeof out) && out[0]);
+    assert(!stream_faixas_texto(v, 0, out, sizeof out));
+    snprintf(v->audioIdiomas, sizeof v->audioIdiomas, "English");
+    assert(!audioInferido(v, out, sizeof out));
+    assert(linhasFaixas(v) == 1);
+    free(v); v = NULL;
+    assert(stream_extrair("{\"streams\":[{\"url\":\"https://example.test/v\",\"title\":\"Movie.1080p.Castilian.mkv\"}]}", "fixture", &v) == 1);
+    assert(audioInferido(v, out, sizeof out));
+    assert(strstr(out, i18n("Espanhol")));
+    free(v); v = NULL;
+    assert(stream_extrair("{\"streams\":[{\"url\":\"https://example.test/v\",\"title\":\"Subtitles: Spanish\"}]}", "fixture", &v) == 1);
+    assert(!audioInferido(v, out, sizeof out) && linhasFaixas(v) == 1); /* subtitles only */
+    free(v);
+  }
   // Release labels without declared tracks: languages outside the fixed
   // filter options, subtitle scopes, generic dubs, transport text, codecs.
   static const struct { const char *pref, *campos; int esperado; const char *prov; } c[] = {
