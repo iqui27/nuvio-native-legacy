@@ -12037,7 +12037,7 @@
   {
    "numero": 570,
    "titulo": "[Samsung Tizen 9] Changing episode source shows previous movie and resets resume position",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "Samsung Tizen 9",
    "tipo": "bug",
    "status": "integrada",
@@ -13241,7 +13241,7 @@
   {
    "numero": 643,
    "titulo": "Friends: show Simkl watched history, newest first",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "?",
    "status": "integrada",
@@ -13338,7 +13338,7 @@
   {
    "numero": 675,
    "titulo": "Playback end behaviour",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "?",
    "status": "integrada",
@@ -13370,7 +13370,7 @@
   {
    "numero": 674,
    "titulo": "Title page - focus and what plays next",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "?",
    "status": "integrada",
@@ -13466,7 +13466,7 @@
   {
    "numero": 668,
    "titulo": "Holding 'down' and 'up' in the TV guide brings up the Categories sidebar",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "bug",
    "status": "integrada",
@@ -13499,7 +13499,7 @@
   {
    "numero": 667,
    "titulo": "Turning on 'pick the source yourself' still auto selects the source on play",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "bug",
    "status": "integrada",
@@ -13531,7 +13531,7 @@
   {
    "numero": 666,
    "titulo": "Collections are not sorted",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "?",
    "status": "integrada",
@@ -13724,7 +13724,7 @@
   {
    "numero": 660,
    "titulo": "Animated GIFs in Profile Picker Sometimes Fail to Animate or Start Slowly",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "bug",
    "status": "integrada",
@@ -13855,7 +13855,7 @@
   {
    "numero": 656,
    "titulo": "Select Genre Filter in Catalogs",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "?",
    "status": "integrada",
@@ -14199,10 +14199,10 @@
   {
    "numero": 681,
    "titulo": "Cant select the last subtitle based on the list",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "bug",
-   "status": "aberta",
+   "status": "corrigida na integração",
    "release": "-",
    "conserto": ["a6271d24b6850cf8e7ef268822d075c4ca525e8c"],
    "ultima_resposta": {
@@ -15468,6 +15468,87 @@
   }
  ],
  "validacoes": [
+  {
+   "data": "2026-11-11",
+   "quem": "Revisão independente; Central TV (gate e integração)",
+   "o_que": "Saída ao fim da reprodução e encaminhamento para próximo episódio.",
+   "issues": [675],
+   "ref": "613ce1289e9317b37a9a65ae890679ec6795b623",
+   "resultado": "Revisão OK; gate 3/3; posplay.sh e varredura i18n rc0 pós-merge.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue675-20261111.log; /Volumes/ExternalSSD/tmp/rev/issue675-postmerge-20261111.log SHA256 a3bf4cc82925f8417107d21311189f8a694fde4b3cf9cdce777e26e32fecd50a. Testes em host com preparo simulado; sem reprodução completa ou TV. Intenção pendente ainda espera conclusão do preparo."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Central Issues (teste em host); revisão independente histórica",
+   "o_que": "Seleção manual de fonte ao retomar episódio.",
+   "issues": [667],
+   "ref": "3b06994668e06b2be1857358198e44ecb15b4e27",
+   "resultado": "fonte_manual_resume.sh rc0 no HEAD 93bf2631a7fd8d59f37b42982ac48968a92b2935; revisão histórica OK; correção ancestral da integração. Teste histórico anterior expirou na compilação (rc124).",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/issues-open-tv-20261111/fonte_manual_resume-current.txt SHA256 86f83a6b072b4604f8129a9074e556f53f956efd8ff9f3628751cdb70f284cfa; /Volumes/ExternalSSD/tmp/rev/j-revg-fontemanual.log SHA256 9268c33d89df9649ba4100548eea0f4fe0da94c12720633c22efe91fb42c9ded. Fixtures locais; sem mídia real ou TV."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Revisões independentes históricas; Central Issues (conferência)",
+   "o_que": "Histórico Simkl compartilhado entre perfis locais no mesmo aparelho.",
+   "issues": [643],
+   "ref": "cd53977bf1b0e48cc02fd514e490aa6c993d0e16; 0c3d7b348a86be1f7de80d4b4e746cd074557761; c21b18d32ab861da7b97a7993c95196df0470500",
+   "resultado": "Revisões históricas OK; simkl_amigos.sh, simkl_vistos.sh e simkl_history.sh rc0 relatados em host; commits ancestrais da integração.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue643b.log SHA256 354b8ce87c054cba40ef097642fd7143a4431a9bc05317d9d186fe1c1e6f9116; /Volumes/ExternalSSD/tmp/rev/j-rev-21-simkl.log SHA256 ad1720ebef9adcb36f8eb16b9be1bc9804f63b47a434d21f781371dd5a562fa5; /Volumes/ExternalSSD/tmp/rev/simkl-review-checks.log SHA256 0ac1fcca023f37f958a0bf04d96f04066d7717e3eba7b413ddb3ab996cb1c6c3. Fixtures históricas; sem conta real ou TV. Remoções podem permanecer em cache; timestamp antigo ou nulo pode repetir download integral."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Revisão independente histórica; Central Issues (conferência)",
+   "o_que": "Limite Top 10 e filtros de tipo em coleções.",
+   "issues": [666],
+   "ref": "54ce9fcf98aa702003b4917c676deadae4b7b628; 4fd572bced5941df4cb6569a9d101f6b6911aaa4",
+   "resultado": "Revisão histórica OK; collections.sh e compilação sintática rc0 relatados; commits ancestrais da integração.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-revg-colecaotop10.log SHA256 5cd5947f40ee53363e1886bc70425cfd090a4df6e692d964a92fd28d4aa97aa6. Rede simulada; sem build completo histórico ou validação em TV."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Central Issues (teste em host); revisão independente histórica",
+   "o_que": "Animação de GIFs ao trocar e reabrir perfis.",
+   "issues": [660],
+   "ref": "58a94f01dba0462189aa45f95b20afb3b802b2b6",
+   "resultado": "gifperfis.sh rc0 no HEAD 93bf2631a7fd8d59f37b42982ac48968a92b2935; revisão histórica OK; correção ancestral da integração.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/issues-open-tv-20261111/gifperfis-current-bugs.txt SHA256 3c6c2948ab8b86e0510679c84ef26610cf14fa120272c3986d95391bd322acbf; /Volumes/ExternalSSD/tmp/rev/j-revg-gifperfis.log SHA256 d88e4a6deab8cdb0517710e746c7efd786f55a89391f6a388a113b69f42fd42a. GL oculto com GIFs em cache; sem prova física Samsung ou desempenho sem cache."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Central Issues (teste em host); revisão independente histórica",
+   "o_que": "Navegação contínua na lista de canais do guia.",
+   "issues": [668],
+   "ref": "133cccd0b4483e7abe332f98de1747e7b6f54cfc",
+   "resultado": "guia_hold.sh rc0 no HEAD 93bf2631a7fd8d59f37b42982ac48968a92b2935; revisão histórica OK; correção ancestral da integração.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/issues-open-tv-20261111/guia_hold-current-bugs.txt SHA256 eccb9c12fce144bbfbafe3a9c62d8a80cff5d9d4322cab28d8d575d1c967ef4a; /Volumes/ExternalSSD/tmp/rev/j-revg-guiasegurar.log SHA256 3984a4170d2ab11beb56b886556a599cbd069041f52142634889b2923b003226. Eventos em host; sem medição de controle físico LG."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Central Issues (verificação em host)",
+   "o_que": "Troca de fonte preserva episódio e progresso durante reconstrução de Continue Watching.",
+   "issues": [570],
+   "ref": "ee42d28cc22261bd5b31549b2248a50422f07c98; 4e93411db96b83e0b607399ae25a94ce69fc9489",
+   "resultado": "fonte_troca.sh rc0 no HEAD 5fbfdb32411cbd53dd059180c03b8ad623821eee; ambos os commits são ancestrais da integração.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/issues-open-tv-20261111/fonte_troca-batch2.txt SHA256 36bd850945e849d638b0d0114110782c3cd1788900be132adc1005f2680cf37f. Fonte sintética; sem teste do decodificador Samsung."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Revisão independente histórica; Central Issues (verificação posterior)",
+   "o_que": "Filtro manual de gênero em coleções e catálogos.",
+   "issues": [656],
+   "ref": "ec125c60acd79fcbaf93996232fa2200fe750cb9",
+   "resultado": "Revisão histórica OK; colecao_genero.sh rc0 no HEAD 5fbfdb32411cbd53dd059180c03b8ad623821eee; correção ancestral da integração.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue656.log SHA256 8f18a065a6c6cdab5de02278a4513aee199da4373a8caba9047ecbc63c92c65e; /Volumes/ExternalSSD/tmp/rev/issues-open-tv-20261111/colecao_genero-verification.txt SHA256 da1a4c42aaddb7c8aa3c41c54ae7aabaff2a8010499080584e6466bc90224479. Sem validação física Tizen 9."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Revisão independente histórica",
+   "o_que": "Alinhamento do foco e botão de reprodução ao próximo episódio.",
+   "issues": [674],
+   "ref": "9e3cf67d891fca8b13e7e1d25d960ca0ce7942bf",
+   "resultado": "Revisão histórica OK; issue674_play_button.sh rc0 relatado no log; correção ancestral da integração.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue674-675.log SHA256 9f08408b623f5f102962d8d3823a9767af4482654c193534086b2f508cf12aad. Teste histórico em host; sem aceite físico."
+  },
   {
    "data": "2026-11-11",
    "quem": "Revisor independente; Central TV (gate e integração)",

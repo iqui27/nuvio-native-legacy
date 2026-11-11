@@ -33,6 +33,7 @@ void app_evento(const SDL_Event *e);
 void app_atualizar(float dt, Uint32 agora);
 void app_desenhar(Uint32 agora);
 int  app_quer_sair(void);
+int  app_proximo_pendente(void); // router is preparing an episode choice
 // Nome curto da tela em cena ("home", "player", "episodios"...), para o log.
 const char *app_tela_nome(void);
 // 1 quando CH+/CH- trocam de canal: guia aberto, ou um canal tocando (tela

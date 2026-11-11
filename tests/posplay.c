@@ -93,6 +93,21 @@ int main(void) {
   cat_definir_episodios(0, eps, 10);
   assert(cat_n_episodios(0) == 10);
 
+  // #675: EOF offers a bounded choice even if the card never appears.
+  posplay_fechar();
+  assert(posplay_aguarda_escolha(0));
+  assert(!posplay_aguarda_escolha(10));
+  abrirPainel();
+  assert(posplay_aguarda_escolha(9));
+  assert(!posplay_aguarda_escolha(10));
+  assert(tecla(SDLK_RETURN));
+  assert(posplay_aguarda_escolha(100)); // an explicit Next is already queued
+  posplay_fechar();
+  abrirPainel();
+  assert(tecla(SDLK_AC_BACK));
+  assert(!posplay_aguarda_escolha(0)); // dismissal exits immediately
+  posplay_fechar();
+
   // 1. OK ARMA O PEDIDO. E o issue #14: posplay_evento gravava pedT/pedE e
   //    chamava posplay_fechar em seguida, que zerava os dois.
   abrirPainel();
@@ -176,7 +191,9 @@ int main(void) {
   assert(posplay_visivel());
   posplay_atualizar(0.016f, 1000 + 3100, 3600.0, 3600.0, 1, 0, 1);
   assert(!posplay_visivel());
+  assert(posplay_aguarda_escolha(100)); // queued autoplay survives EOF timeout
   assert(posplay_pediu_episodio(&t, &e) && t == 5 && e == 4);
+  assert(!posplay_aguarda_escolha(100)); // router owns delivered intent
   puts("ok  a contagem final toca o proximo sozinha");
 
   // Recuar durante a contagem cancela sem tirar o cartao manual. Mesmo um
