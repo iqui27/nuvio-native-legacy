@@ -7950,6 +7950,9 @@ static int tmdbEtapaGuardar(TmdbResposta *v, int *n, int cap, size_t *bytes,
   v[*n] = (TmdbResposta){json, temporada}; (*n)++; *bytes += tam;
   return 1;
 }
+#ifndef NV_TMDB_APOS_COPIA
+#define NV_TMDB_APOS_COPIA() ((void)0)
+#endif
 static int tmdbEtapaPublicar(int item, int neps, unsigned versao, long tmdb,
                              int textos, const TmdbResposta *v, int n) {
   CatEp *tmp;
@@ -7957,12 +7960,14 @@ static int tmdbEtapaPublicar(int item, int neps, unsigned versao, long tmdb,
   int feitos = 0, marcados = 0, publicou = 0;
   pthread_mutex_lock(&epMemoriaTrava);
   item = epPublicacaoIniciar(item);
+  pthread_mutex_unlock(&epPedidoTrava);
   if (item < 0) goto fim;
   tmp = malloc((size_t)neps * sizeof *tmp);
   if (!tmp) goto fim;
   anteriores = malloc((size_t)neps * sizeof *anteriores);
   if (!anteriores) { free(tmp); goto fim; }
   if (cat_episodios_copiar_versao(item, tmp, neps, versao)) {
+    NV_TMDB_APOS_COPIA();
     for (int i = 0; i < neps; i++) anteriores[i] = tmp[i].tmdbE;
     for (int i = 0; i < n; i++)
       feitos += desc_tmdb_notas_temporada_ex(v[i].json, tmp, neps, v[i].temporada, textos);
@@ -7971,13 +7976,15 @@ static int tmdbEtapaPublicar(int item, int neps, unsigned versao, long tmdb,
       tmp[i].tmdbSerie = tmdb;
     }
     if (feitos || marcados) {
-      DESC_PUBLICAR(publicou = cat_definir_episodios_versao(item, tmp, neps, versao));
+      int atual = epPublicacaoIniciar(item);
+      if (atual == item)
+        DESC_PUBLICAR(publicou = cat_definir_episodios_versao(item, tmp, neps, versao));
+      pthread_mutex_unlock(&epPedidoTrava);
     }
   }
   free(anteriores);
   free(tmp);
 fim:
-  pthread_mutex_unlock(&epPedidoTrava);
   pthread_mutex_unlock(&epMemoriaTrava);
   return publicou;
 }

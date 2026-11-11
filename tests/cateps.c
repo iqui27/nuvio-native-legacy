@@ -31,6 +31,8 @@ int ajustes_hist_conta(void) { return 1; }
 int ajustes_busca_cinemeta(void) { return 1; }
 int ajustes_busca_nuvio(void) { return 0; }   // #311: Primeiro (padrao)
 int ajustes_ocultar_filmes_vistos(void) { return 0; }    // #366: descoberta.c le o ajuste
+static void testeTmdbAposCopia(void);
+#define NV_TMDB_APOS_COPIA() testeTmdbAposCopia()
 #include "../src/descoberta.c"
 #include "../src/progresso.h"
 #include <assert.h>
@@ -526,6 +528,27 @@ static void testarMetaTMDBOffline(void) {
   puts("ok  cauda e cache de metadados respeitam o dono do perfil (#528)");
 }
 
+static pthread_mutex_t tmdbTesteTrava = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t tmdbTesteCond = PTHREAD_COND_INITIALIZER;
+static int tmdbBloquear, tmdbCopiou, tmdbLiberar;
+static void testeTmdbAposCopia(void) {
+  pthread_mutex_lock(&tmdbTesteTrava);
+  if (tmdbBloquear) {
+    tmdbCopiou = 1; pthread_cond_broadcast(&tmdbTesteCond);
+    while (!tmdbLiberar) pthread_cond_wait(&tmdbTesteCond, &tmdbTesteTrava);
+  }
+  pthread_mutex_unlock(&tmdbTesteTrava);
+}
+typedef struct { EpPedido pedido; unsigned versao; TmdbResposta resposta; int publicou; } TmdbTeste;
+static void *testarTmdbParado(void *arg) {
+  TmdbTeste *t = arg;
+  pthread_once(&epPedidoOnce, epPedidoKeyCriar);
+  pthread_setspecific(epPedidoKey, &t->pedido);
+  t->publicou = tmdbEtapaPublicar(0, 1, t->versao, 123, 0, &t->resposta, 1);
+  pthread_setspecific(epPedidoKey, NULL);
+  return NULL;
+}
+
 typedef struct { unsigned versao; CatEp ep; int ok; } Condicional;
 static void *publicarCondicional(void *arg) {
   Condicional *c = arg;
@@ -667,6 +690,34 @@ int main(void) {
     assert(cat_episodio(0, 0)->nota == 0);
     assert(!pthread_setspecific(epPedidoKey, NULL));
     free(json);
+  }
+
+  {
+    TmdbTeste t = {0};
+    pthread_t fio;
+    CatEp ep = {0};
+    int livre;
+    montarCatalogo();
+    ep.temporada = 1; ep.episodio = 1;
+    cat_definir_episodios(0, &ep, 1);
+    t.versao = cat_versao_episodios();
+    snprintf(t.pedido.id, sizeof t.pedido.id, "%s", "tt0");
+    t.pedido.geracao = epGeracao;
+    t.resposta.json = "{\"episodes\":[{\"episode_number\":1,\"vote_average\":8.2}]}";
+    t.resposta.temporada = 1;
+    tmdbBloquear = 1; tmdbCopiou = tmdbLiberar = 0;
+    assert(!pthread_create(&fio, NULL, testarTmdbParado, &t));
+    pthread_mutex_lock(&tmdbTesteTrava);
+    while (!tmdbCopiou) pthread_cond_wait(&tmdbTesteCond, &tmdbTesteTrava);
+    pthread_mutex_unlock(&tmdbTesteTrava);
+    livre = pthread_mutex_trylock(&epPedidoTrava) == 0;
+    if (livre) { epGeracao++; pthread_mutex_unlock(&epPedidoTrava); }
+    pthread_mutex_lock(&tmdbTesteTrava);
+    tmdbLiberar = 1; pthread_cond_broadcast(&tmdbTesteCond);
+    pthread_mutex_unlock(&tmdbTesteTrava);
+    pthread_join(fio, NULL);
+    tmdbBloquear = 0;
+    assert(livre && !t.publicou && cat_episodio(0, 0)->nota == 0);
   }
 
   // #391: uma lista longa nao perde os episodios depois do antigo teto de 1200.
