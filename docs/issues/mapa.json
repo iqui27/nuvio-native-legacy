@@ -15471,6 +15471,15 @@
   {
    "data": "2026-11-11",
    "quem": "Revisão independente; Central TV (gate e integração)",
+   "o_que": "Fallback de reprodução TPK40 para relay após falha de preparação HTTPS.",
+   "issues": [694],
+   "ref": "17cf0d2bbd87b0160c52b1a21021ffd9cdeaf4a0",
+   "resultado": "Revisão OK; gate 5/5; tpk-cdn.sh e varredura i18n rc0 pós-merge.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue694-20261111.log; /Volumes/ExternalSSD/tmp/rev/issue694-postmerge-20261111.log SHA256 9d81637c9d79530fb6107c988fd42175c956b15f69b352924492b00a384a56e8. Fixtures locais; sem validação Samsung física. Se identidade do arquivo chegar após recusa inicial da sonda, ela não é retomada."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Revisão independente; Central TV (gate e integração)",
    "o_que": "Ordenação e filtro de não vistos na fileira Biblioteca da Home.",
    "issues": [672],
    "ref": "447d16626064697edb7b7edd7393cfdb95c99194",
