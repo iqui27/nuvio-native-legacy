@@ -13466,7 +13466,7 @@
   {
    "numero": 668,
    "titulo": "Holding 'down' and 'up' in the TV guide brings up the Categories sidebar",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "bug",
    "status": "integrada",
@@ -13724,7 +13724,7 @@
   {
    "numero": 660,
    "titulo": "Animated GIFs in Profile Picker Sometimes Fail to Animate or Start Slowly",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "bug",
    "status": "integrada",
