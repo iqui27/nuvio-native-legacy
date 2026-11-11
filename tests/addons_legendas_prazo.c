@@ -15,8 +15,6 @@ const VideoFaixa *video_legenda(int i) { (void)i; return NULL; }
 int video_legenda_atual(void) { return -1; }
 void video_escolher_legenda(int i) { (void)i; }
 void video_escolher_audio(int i) { (void)i; }
-void assrender_geracao(unsigned g) { (void)g; }
-void assrender_limpar_fontes(void) {}
 int video_mkv_sondado(void) { return 2; }
 int video_legenda_ordinal_mkv(int i) { (void)i; return -1; }
 const char *video_url_atual(void) { return "https://cdn.fixture.invalid/opaque"; }
