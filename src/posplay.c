@@ -126,9 +126,14 @@ static int    cenaIntro;
 // marcada vem depois ("ED - Part C - Next time"); o cartao sobe ali.
 static double cenaFim;
 int posplay_visivel(void) { return visivel; }
-// Preserve a pending card/Next; a dismissed card leaves no choice at EOF.
-int posplay_aguarda_escolha(void) {
-  return !dispensado || visivel || temPedidoEpisodio() || automaticoEntregue;
+// Give the card time at EOF, including a full configured autoplay countdown.
+int posplay_aguarda_escolha(double eofSeg) {
+  if (temPedidoEpisodio() || automaticoEntregue) return 1;
+  if (dispensado && !visivel) return 0;
+  double limite = 10.0;
+  if (visivel && fecharEm && ajustes_proximo_contagem() + 1.0 > limite)
+    limite = ajustes_proximo_contagem() + 1.0;
+  return eofSeg < limite;
 }
 // Cartao do proximo episodio: SOBRE o video em tela cheia (o video nao recua).
 // Os relacionados do filme, bem mais altos, continuam recuando o video.

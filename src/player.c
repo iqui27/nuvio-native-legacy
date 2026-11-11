@@ -5441,7 +5441,7 @@ void player_atualizar(float dt, Uint32 agora) {
     else {
       if (eofDesde < 0.0) eofDesde = agoraEof;
       if ((!eSerie || !desc_episodios_carregando(idxAtual()) || agoraEof - eofDesde >= 8.0) &&
-          (!player_proximo_episodio() || !posplay_aguarda_escolha())) { saindo = 1; pediuSair = 1; }
+          (!player_proximo_episodio() || !posplay_aguarda_escolha(agoraEof - eofDesde))) { saindo = 1; pediuSair = 1; }
     }
   }
   // Com o painel no ar os controles nao somem: eles sao a saida do dono.
