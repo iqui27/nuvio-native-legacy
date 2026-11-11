@@ -19,8 +19,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/idle':
             time.sleep(20)
             return
-        if path in ('/same', '/cross', '/downgrade', '/long-redirect'):
+        if path in ('/same', '/cross', '/downgrade', '/long-redirect', '/tls-cross'):
             location = '/headers' if path == '/same' else f'http://127.0.0.1:{self.server.peer_port}/headers'
+            if path == '/tls-cross':
+                location = f'https://127.0.0.1:{self.server.tls_peer_port}/headers'
             if path == '/long-redirect':
                 location = f'http://{"u" * 160}@127.0.0.1:{self.server.peer_port}/headers'
             self.send_response(302)
@@ -28,11 +30,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', '0')
             self.end_headers()
             return
-        match = re.fullmatch(r'bytes=(\d+)-(\d+)', self.headers.get('Range', ''))
+        match = re.fullmatch(r'bytes=(\d+)-(\d*)', self.headers.get('Range', ''))
         if not match:
             self.send_error(400)
             return
-        lo, hi = map(int, match.groups())
+        lo = int(match.group(1))
+        hi = int(match.group(2)) if match.group(2) else lo + 31
         total = 5 * 1024**3
         body = bytes((lo + i) % 251 for i in range(hi - lo + 1))
         content_range = f'bytes {lo}-{hi}/{total}'
@@ -78,13 +81,16 @@ class Server(ThreadingHTTPServer):
 http = Server(('127.0.0.1', 0), Handler)
 peer = Server(('127.0.0.1', 0), Handler)
 tls = Server(('127.0.0.1', 0), Handler)
+tls_peer = Server(('127.0.0.1', 0), Handler)
 context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 context.load_cert_chain(sys.argv[2], sys.argv[3])
 tls.socket = context.wrap_socket(tls.socket, server_side=True)
+tls_peer.socket = context.wrap_socket(tls_peer.socket, server_side=True)
+tls.tls_peer_port = tls_peer.server_address[1]
 http.peer_port = peer.server_address[1]
 peer.peer_port = http.server_address[1]
 tls.peer_port = peer.server_address[1]
-for server in (http, peer, tls):
+for server in (http, peer, tls, tls_peer):
     threading.Thread(target=server.serve_forever, daemon=True).start()
 Path(sys.argv[1]).write_text(f'{http.server_address[1]} {peer.server_address[1]} {tls.server_address[1]}\n')
 threading.Event().wait()

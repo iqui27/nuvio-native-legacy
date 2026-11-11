@@ -9,6 +9,9 @@
 #include <time.h>
 #include <unistd.h>
 
+#ifdef NV_TPK40
+void nv_tpk40_etapa(const char *linha) { (void)linha; }
+#endif
 static int http_port, tls_port;
 static char url[256];
 static const char *HEADERS =
@@ -29,6 +32,10 @@ static char *get(const char *path, int64_t lo, int64_t hi, const char *headers,
   snprintf(url, sizeof url, "http://127.0.0.1:%d%s", http_port, path);
   size = -2; total = -2; status = -2;
   return rede_baixar_trecho64_cab(url, headers, lo, hi, &size, &total, &status, cancel);
+}
+static int sink(void *opaque, const char *data, size_t n) {
+  if (opaque && n < 1024) { memcpy(opaque, data, n); ((char *)opaque)[n] = 0; }
+  return 1;
 }
 static unsigned long now_ms(void) {
   struct timespec ts;
@@ -56,10 +63,23 @@ int main(int argc, char **argv) {
   snprintf(url, sizeof url, "https://127.0.0.1:%d/range", tls_port);
   body = rede_baixar_trecho64_cab(url, HEADERS, 0, 31, &size, &total, &status, NULL);
   assert(!body && size == 0 && total == -1 && status == 0);
+  body = rede_baixar_trecho64_tls(url, HEADERS, 0, 31, &size, &total, &status, NULL, NULL, NULL);
+  assert(!body && status == 0);
+  int64_t bytes = 0;
+  assert(rede_fluxo64_tls(url, HEADERS, 0, sink, NULL, &total, &status, NULL, NULL, NULL, 1000, &bytes) < 0 && status == 0);
   rede_discord_ca(argv[4]);
   body = rede_baixar_trecho64_cab(url, HEADERS, 0, 31, &size, &total, &status, NULL);
   assert(body && size == 32 && status == 206);
   free(body);
+  snprintf(url, sizeof url, "https://127.0.0.1:%d/tls-cross", tls_port);
+  body = rede_baixar_trecho64_tls(url, HEADERS, 0, 1023, &size, &total, &status, NULL, NULL, NULL);
+  assert(body && !strstr(body, "user-agent: DTS-range-test") && !strstr(body, "authorization:") &&
+         !strstr(body, "cookie:") && !strstr(body, "referer:") && !strstr(body, "origin:"));
+  free(body);
+  char stream_headers[1024] = "";
+  assert(rede_fluxo64_tls(url, HEADERS, 0, sink, stream_headers, &total, &status, NULL, NULL, NULL, 1000, &bytes) == 0);
+  assert(!strstr(stream_headers, "user-agent: DTS-range-test") && !strstr(stream_headers, "authorization:") &&
+         !strstr(stream_headers, "cookie:") && !strstr(stream_headers, "referer:") && !strstr(stream_headers, "origin:"));
   body = get("/range", start, start + 31, NULL, NULL);
   assert(body && size == 32 && status == 206 && total == INT64_C(5) * 1024 * 1024 * 1024);
   for (i = 0; i < 32; i++) assert((unsigned char)body[i] == (start + (int64_t)i) % 251);
@@ -110,6 +130,12 @@ int main(int argc, char **argv) {
   // followed, but NO caller header reaches the plain-HTTP hop (only libcurl's
   // own Host/Accept/Range).
   snprintf(url, sizeof url, "https://127.0.0.1:%d/downgrade", tls_port);
+  body = rede_baixar_trecho64_tls(url, HEADERS, 0, 1023, &size, &total, &status, NULL, NULL, NULL);
+  assert(!body && status == 302);
+  assert(rede_fluxo64_tls(url, HEADERS, 0, sink, NULL, &total, &status, NULL, NULL, NULL, 1000, &bytes) < 0 && status == 302);
+  body = rede_range_headers(HEADERS, 2);
+  assert(body && !*body);
+  free(body);
   body = rede_baixar_trecho64_cab(url, HEADERS, 0, 1023, &size, &total, &status, NULL);
   assert(body && size > 0 && status == 206);
   assert(!strstr(body, "authorization") && !strstr(body, "cookie") && !strstr(body, "x-provider-token"));

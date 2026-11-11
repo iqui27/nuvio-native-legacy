@@ -33,6 +33,8 @@ namespace NuvioTpk
         [DllImport("libnuvio.so")] static extern void nv_tpk_video_registrar(IntPtr abrir, IntPtr parar, IntPtr pausar,
                                                                               IntPtr buscar, IntPtr volume, IntPtr janela, IntPtr pos);
         [DllImport("libnuvio.so")] static extern void nv_tpk_video_evento(int tipo, int a, int b);
+        [DllImport("libnuvio.so")] static extern void nv_tpk_video_registrar_geracao(IntPtr abrir);
+        [DllImport("libnuvio.so")] static extern void nv_tpk_video_erro_geracao(uint ger, int codigo, int preparo);
         [DllImport("libnuvio.so")] static extern void nv_tpk_video_registrar_aspecto(IntPtr janela);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void RegistrarAspectoDel(IntPtr janela);
         public static RegistrarAspectoDel RegistrarAspecto = nv_tpk_video_registrar_aspecto;
@@ -45,6 +47,8 @@ namespace NuvioTpk
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void RegistrarDel(IntPtr abrir, IntPtr parar, IntPtr pausar, IntPtr buscar, IntPtr volume, IntPtr janela, IntPtr pos);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void EventoDel(int tipo, int a, int b);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void RegistrarGeracaoDel(IntPtr abrir);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void ErroGeracaoDel(uint ger, int codigo, int preparo);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void RegistrarFaixasDel(IntPtr escolher);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void FaixaDel(int tipo, int idx, string lingua);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void FaixasFimDel(int selAudio, int selLeg);
@@ -55,6 +59,8 @@ namespace NuvioTpk
         // rota ELF.
         public static RegistrarDel Registrar = nv_tpk_video_registrar;
         public static EventoDel Evento = nv_tpk_video_evento;
+        public static RegistrarGeracaoDel RegistrarGeracao = nv_tpk_video_registrar_geracao;
+        public static ErroGeracaoDel ErroGeracao = nv_tpk_video_erro_geracao;
         public static RegistrarFaixasDel RegistrarFaixas = nv_tpk_video_registrar_faixas;
         public static FaixaDel Faixa = nv_tpk_video_faixa;
         public static FaixasFimDel FaixasFim = nv_tpk_video_faixas_fim;
@@ -70,6 +76,8 @@ namespace NuvioTpk
             RegistrarAspecto = p != IntPtr.Zero ? Marshal.GetDelegateForFunctionPointer<RegistrarAspectoDel>(p) : new RegistrarAspectoDel(_ => { });
             if ((p = resolve("nv_tpk_video_registrar")) != IntPtr.Zero) Registrar = Marshal.GetDelegateForFunctionPointer<RegistrarDel>(p);
             if ((p = resolve("nv_tpk_video_evento")) != IntPtr.Zero) Evento = Marshal.GetDelegateForFunctionPointer<EventoDel>(p);
+            if ((p = resolve("nv_tpk_video_registrar_geracao")) != IntPtr.Zero) RegistrarGeracao = Marshal.GetDelegateForFunctionPointer<RegistrarGeracaoDel>(p);
+            if ((p = resolve("nv_tpk_video_erro_geracao")) != IntPtr.Zero) ErroGeracao = Marshal.GetDelegateForFunctionPointer<ErroGeracaoDel>(p);
             if ((p = resolve("nv_tpk_video_registrar_faixas")) != IntPtr.Zero) RegistrarFaixas = Marshal.GetDelegateForFunctionPointer<RegistrarFaixasDel>(p);
             if ((p = resolve("nv_tpk_video_faixa")) != IntPtr.Zero) Faixa = Marshal.GetDelegateForFunctionPointer<FaixaDel>(p);
             if ((p = resolve("nv_tpk_video_faixas_fim")) != IntPtr.Zero) FaixasFim = Marshal.GetDelegateForFunctionPointer<FaixasFimDel>(p);
@@ -80,7 +88,7 @@ namespace NuvioTpk
 
     class Video
     {
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnAbrir(IntPtr url, IntPtr cabecalhos);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnAbrir(IntPtr url, IntPtr cabecalhos, uint geracao);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnSemArg();
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnInt(int v);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnRet(int x, int y, int w, int h);
@@ -150,7 +158,7 @@ namespace NuvioTpk
             this.telaW = telaW;
             this.telaH = telaH;
             logArq = Path.Combine(dados, "tpk-host.log");
-            fAbrir = (u, c) => { string url = Marshal.PtrToStringAnsi(u), cab = Marshal.PtrToStringAnsi(c); Trocar(minha => Abrir(url, cab, minha)); };
+            fAbrir = (u, c, ger) => { string url = Marshal.PtrToStringAnsi(u), cab = Marshal.PtrToStringAnsi(c); Trocar(minha => Abrir(url, cab, minha, ger), ger); };
             fParar = Parar;
             fPausar = p => ComSessao(() => Pausar(p != 0));
             fBuscar = ms => ComSessao(() => Buscar(ms));
@@ -165,6 +173,7 @@ namespace NuvioTpk
                                    Marshal.GetFunctionPointerForDelegate(fPausar), Marshal.GetFunctionPointerForDelegate(fBuscar),
                                    Marshal.GetFunctionPointerForDelegate(fVolume), Marshal.GetFunctionPointerForDelegate(fJanela),
                                    Marshal.GetFunctionPointerForDelegate(fPos));
+            NvVid.RegistrarGeracao(Marshal.GetFunctionPointerForDelegate(fAbrir));
             fEscolher = (tipo, idx) => ComSessao(() => Escolher(tipo, idx));
             NvVid.RegistrarFaixas(Marshal.GetFunctionPointerForDelegate(fEscolher));
         }
@@ -369,7 +378,7 @@ namespace NuvioTpk
         // Descarte independente da fila: ate GetPlayPosition/Prepare presos
         // deixam passar Muted e Display=null. Nao cria outro dono do decoder
         // sem confirmar Dispose; falha/timeout vira erro recuperavel na UI.
-        void Trocar(Action<int> abrir)
+        void Trocar(Action<int> abrir, uint geracao = 0)
         {
             int minha;
             FioVideo novo;
@@ -409,7 +418,7 @@ namespace NuvioTpk
                 volAlvo = 1f; volPedido = false;
                 if (await Task.WhenAny(soltar, Task.Delay(PrazoPararMs)) != soltar || !await soltar) {
                     Log("[video] tpk parar nao confirmou; player indisponivel, processo preservado");
-                    lock (trocaTrava) { if (minha == sessao) NvVid.Evento(EV_ERRO, -3, 0); }
+                    lock (trocaTrava) { if (minha == sessao && geracao != 0) NvVid.ErroGeracao(geracao, -3, 0); }
                     return;
                 }
                 if (minha != Volatile.Read(ref sessao)) return;
@@ -418,8 +427,9 @@ namespace NuvioTpk
             }, null);
         }
 
-        async void Abrir(string url, string cabecalhos, int minha)
+        async void Abrir(string url, string cabecalhos, int minha, uint geracao)
         {
+            int preparando = 0;
             posMs = 0; acabou = false; Interlocked.Increment(ref posGer);
             buscando = false; buscaPend = pausaPend = -1; preparoPausado = false;
             aspectoRecusado = false;
@@ -450,7 +460,7 @@ namespace NuvioTpk
                         }
                     } catch (Exception ex) { Log("completion state: " + ex.Message); }
                 });
-                p.ErrorOccurred += (s, e) => { if (minha == Volatile.Read(ref sessao)) { Log("erro " + e.Error); NvVid.Evento(EV_ERRO, (int)e.Error, 0); } };
+                p.ErrorOccurred += (s, e) => { if (minha == Volatile.Read(ref sessao)) { Log("erro " + e.Error); if (Volatile.Read(ref preparando) == 0) NvVid.ErroGeracao(geracao, (int)e.Error, 0); } };
                 p.BufferingProgressChanged += (s, e) => { if (minha == Volatile.Read(ref sessao)) NvVid.Evento(EV_BUFFER, e.Percent, 0); };
                 p.PlaybackInterrupted += (s, e) => { if (minha == Volatile.Read(ref sessao)) { Log("interrompido: " + e.Reason); NvVid.Evento(EV_PAUSADO, 0, 0); } };
                 p.SubtitleUpdated += (s, e) => { if (minha == Volatile.Read(ref sessao)) NvVid.Legenda(e.Text ?? "", (int)e.Duration); };
@@ -477,7 +487,13 @@ namespace NuvioTpk
                 p.SetSource(new MediaUriSource(url));
                 p.Display = fazDisplay();
                 p.DisplaySettings.Mode = PlayerDisplayMode.LetterBox;
-                await p.PrepareAsync();
+                Volatile.Write(ref preparando, 1);
+                try { await p.PrepareAsync(); }
+                catch {
+                    if (minha == Volatile.Read(ref sessao)) NvVid.ErroGeracao(geracao, -1, 1);
+                    return;
+                }
+                Volatile.Write(ref preparando, 0);
                 // A parada e dona unica do descarte, inclusive se o Prepare
                 // terminar depois do pedido de saida ou de outra abertura.
                 if (minha != Volatile.Read(ref sessao)) return;
@@ -515,7 +531,7 @@ namespace NuvioTpk
             {
                 if (minha != Volatile.Read(ref sessao)) { Log("abrir: sessao antiga encerrada (" + e.GetType().Name + ")"); return; }
                 Log("abrir: " + e);
-                NvVid.Evento(EV_ERRO, -1, 0);
+                NvVid.ErroGeracao(geracao, -1, 0);
             }
         }
 

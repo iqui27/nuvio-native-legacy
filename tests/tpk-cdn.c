@@ -148,6 +148,8 @@ int video_faixa_dts(const VideoFaixa *f) { return f && !strncmp(f->codec, "A_DTS
 // --- the host ------------------------------------------------------------------
 void nv_tpk_video_registrar(void (*)(const char *, const char *), void (*)(void), void (*)(int),
                             void (*)(int), void (*)(int), void (*)(int, int, int, int), int (*)(void));
+void nv_tpk_video_registrar_geracao(void (*)(const char *, const char *, unsigned));
+void nv_tpk_video_erro_geracao(unsigned, int, int);
 void nv_tpk_video_registrar_faixas(void (*)(int, int));
 void nv_tpk_video_faixa(int tipo, int idx, const char *lingua);
 void nv_tpk_video_faixas_fim(int selAudio, int selLeg);
@@ -160,6 +162,8 @@ static char ultUrl[256];
 static int nAbriu, nBuscas, posMs;
 static char ultCab[512];
 static void hAbrir(const char *u, const char *c) { nAbriu++; snprintf(ultUrl, sizeof ultUrl, "%s", u); snprintf(ultCab, sizeof ultCab, "%s", c ? c : ""); }
+static unsigned hostGen;
+static void hAbrirGer(const char *u, const char *c, unsigned gen) { hostGen = gen; hAbrir(u, c); }
 static void hSem(void) {}
 static void hInt(int v) { (void)v; }
 static void hBuscar(int ms) { (void)ms; nBuscas++; }
@@ -222,6 +226,43 @@ int main(void) {
   SDL_Init(0);
   nv_tpk_video_registrar(hAbrir, hSem, hPausar, hBuscar, hInt, hJanela, hPos);
   nv_tpk_video_registrar_faixas(hEscolher);
+#ifdef NV_TPK40
+  nv_tpk_video_registrar_geracao(hAbrirGer);
+  hiddenHeader(); hiddenMkv = 1; nAbriu = 0;
+  video_definir_reconexao(1);
+  video_tocar("https://nexus.tb-cdn.st/direct");
+  unsigned oldGen = hostGen;
+  nv_tpk_video_erro_geracao(oldGen, -1, 1);
+  nv_tpk_video_erro_geracao(oldGen, -1, 1);
+  esperarAbrir(2);
+  ok(nAbriu == 2 && strstr(ultUrl, "127.0.0.1"), "prepare failure opens relay once");
+  nv_tpk_video_erro_geracao(oldGen, -1, 1);
+  bombear(5);
+  ok(nAbriu == 2 && !video_falhou(), "stale and duplicate prepare errors ignored");
+  video_tpk_cdn_arquivo("https://nexus.tb-cdn.st/direct", 1, 42, 7);
+  fileRequests = 0; expiredStatus = 403; proxyRead(ultUrl);
+  ok(fileRequests == 1, "fallback relay refreshes selected file");
+  nv_tpk_video_erro_geracao(hostGen, -1, 1);
+  bombear(5);
+  ok(nAbriu == 2 && video_falhou(), "relay prepare failure never retries");
+  video_parar();
+  nAbriu = 0; video_definir_reconexao(1);
+  video_tocar("https://nexus.tb-cdn.st/another");
+  nv_tpk_video_erro_geracao(oldGen, -1, 1);
+  bombear(5);
+  ok(nAbriu == 1 && !video_falhou(), "old source error cannot affect replacement");
+  video_parar();
+  for (int k = 0; k < 3; k++) {
+    nAbriu = 0; video_definir_reconexao(k != 0);
+    video_tocar(k == 1 ? "http://nexus.tb-cdn.st/direct" : "https://nexus.tb-cdn.st/direct");
+    nv_tpk_video_erro_geracao(hostGen, -1, k != 2);
+    bombear(5);
+    ok(nAbriu == 1 && video_falhou(), k == 0 ? "live error never uses relay" :
+       k == 1 ? "HTTP prepare error never uses relay" : "non-prepare error never uses relay");
+    video_parar();
+  }
+  hiddenMkv = 0; nAbriu = 0;
+#endif
 
   // NO HOOKS: the add-on link, at once (the other tpk tests rely on this).
   video_definir_reconexao(1);

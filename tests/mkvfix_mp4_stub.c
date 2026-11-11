@@ -16,6 +16,12 @@ void mkvfix_sondar_arquivo(const char *u, const char *c, int usenet, int item, i
 void mkvfix_sondar_arquivo_relay(const char *u, const char *c, int usenet, int item, int file) {
   mkvfix_sondar_arquivo(u, c, usenet, item, file);
 }
+void mkvfix_sondar_relay_tls(const char *u, const char *c, const char *o, int usenet, int item, int file) {
+  (void)usenet; (void)item; (void)file; mkvfix_sondar(u, c, o);
+}
+void mkvfix_arquivo_atualizar(const char *u, int usenet, int item, int file) {
+  (void)u; (void)usenet; (void)item; (void)file;
+}
 int mkvfix_relay(void) { return 0; }
 int mkvfix_estado(void) { return estado; }
 int mkvfix_ocultas(void) { return ocultas; }

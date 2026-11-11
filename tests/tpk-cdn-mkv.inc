@@ -33,6 +33,11 @@ char *rede_baixar_trecho64_final(const char *u, const char *h, int64_t a, int64_
   if (fin) snprintf(fin, 8192, "%s", u);
   char *p = malloc((size_t)*n); memcpy(p, media + a, (size_t)*n); return p;
 }
+char *rede_baixar_trecho64_tls(const char *u, const char *h, int64_t a, int64_t z,
+    long *n, int64_t *total, int *st, volatile int *cancel, char *fin, int *cross) {
+  if (strncmp(u, "https://", 8)) return NULL;
+  return rede_baixar_trecho64_final(u, h, a, z, n, total, st, cancel, fin, cross);
+}
 int rede_fluxo64(const char *u, const char *h, int64_t a,
     int (*sink)(void *, const char *, size_t), void *opaque, int64_t *total,
     int *st, volatile int *cancel, char *fin, int *cross, long stall, int64_t *bytes) {
@@ -43,6 +48,12 @@ int rede_fluxo64(const char *u, const char *h, int64_t a,
   ok(!h || !*h, "refreshed direct URL receives no source headers");
   *st = 206; *bytes = sizeof media - a;
   return sink(opaque, (const char *)media + a, (size_t)*bytes) ? 0 : 1;
+}
+int rede_fluxo64_tls(const char *u, const char *h, int64_t a,
+    int (*sink)(void *, const char *, size_t), void *opaque, int64_t *total,
+    int *st, volatile int *cancel, char *fin, int *cross, long stall, int64_t *bytes) {
+  if (strncmp(u, "https://", 8)) return -1;
+  return rede_fluxo64(u, h, a, sink, opaque, total, st, cancel, fin, cross, stall, bytes);
 }
 static void proxyRead(const char *url) {
   int port = 0; char path[256], req[512], reply[2048]; size_t n = 0;
