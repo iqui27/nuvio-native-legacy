@@ -61,6 +61,10 @@ int main(void) {
     assert(audioInferido(v, out, sizeof out));
     assert(strstr(out, i18n("Espanhol")));
     free(v); v = NULL;
+    assert(stream_extrair("{\"streams\":[{\"url\":\"https://example.test/v\",\"title\":\"Movie.1080p.MULTI.mkv\"}]}", "fixture", &v) == 1);
+    assert(linhasFaixas(v) == 1);
+    assert(audioInferido(v, out, sizeof out) && strstr(out, i18n("Multi")));
+    free(v); v = NULL;
     assert(stream_extrair("{\"streams\":[{\"url\":\"https://example.test/v\",\"title\":\"Subtitles: Spanish\"}]}", "fixture", &v) == 1);
     assert(!audioInferido(v, out, sizeof out) && linhasFaixas(v) == 1); /* subtitles only */
     free(v);

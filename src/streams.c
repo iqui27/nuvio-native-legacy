@@ -4278,7 +4278,7 @@ int stream_faixas_texto(const Stream *s, int legendas, char *saida, unsigned tam
 static int audioInferido(const Stream *s, char *saida, unsigned tam) {
   if (!s || s->audioIdiomas[0] || !s->filtroLido || !saida || !tam) return 0;
   faixasTexto(s->audioTexto, sizeof s->audioTexto, saida, tam);
-  for (int i = 0; i < 13; i++) {
+  for (int i = 0; i < fontefiltro_opcoes_n(FONTEFILTRO_LINGUAS) - 1; i++) {
     if (!(s->filtro.valores[FONTEFILTRO_LINGUAS] & fontefiltro_bit(FONTEFILTRO_LINGUAS, i))) continue;
     const char *nome = i18n(fontefiltro_opcao(FONTEFILTRO_LINGUAS, i));
     if (faixaNomeRepetido(saida, nome)) continue;
@@ -4306,7 +4306,7 @@ static int linhasFaixas(const Stream *s) {
     }
   }
   if (!s->audioIdiomas[0] && s->filtroLido &&
-      (s->audioTexto[0] || (s->filtro.valores[FONTEFILTRO_LINGUAS] & ((UINT64_C(1) << 13) - 1)))) n++;
+      (s->audioTexto[0] || (s->filtro.valores[FONTEFILTRO_LINGUAS] & (fontefiltro_desconhecido(FONTEFILTRO_LINGUAS) - 1)))) n++;
   return n;
 }
 static float desenharFaixas(const Stream *s, float x, float y, float w, int sel, float a) {
