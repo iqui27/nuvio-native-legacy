@@ -15470,6 +15470,15 @@
  "validacoes": [
   {
    "data": "2026-11-11",
+   "quem": "Central Issues (teste em host); revisão independente histórica",
+   "o_que": "Seleção manual de fonte ao retomar episódio.",
+   "issues": [667],
+   "ref": "3b06994668e06b2be1857358198e44ecb15b4e27",
+   "resultado": "fonte_manual_resume.sh rc0 no HEAD 93bf2631a7fd8d59f37b42982ac48968a92b2935; revisão histórica OK; correção ancestral da integração. Teste histórico anterior expirou na compilação (rc124).",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/issues-open-tv-20261111/fonte_manual_resume-current.txt SHA256 86f83a6b072b4604f8129a9074e556f53f956efd8ff9f3628751cdb70f284cfa; /Volumes/ExternalSSD/tmp/rev/j-revg-fontemanual.log SHA256 9268c33d89df9649ba4100548eea0f4fe0da94c12720633c22efe91fb42c9ded. Fixtures locais; sem mídia real ou TV."
+  },
+  {
+   "data": "2026-11-11",
    "quem": "Revisões independentes históricas; Central Issues (conferência)",
    "o_que": "Histórico Simkl compartilhado entre perfis locais no mesmo aparelho.",
    "issues": [643],
