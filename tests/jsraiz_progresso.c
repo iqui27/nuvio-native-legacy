@@ -145,21 +145,38 @@ static void resultados(void) {
 int teste_jf_episodios_preparar(const JfConta *, RedeJob *, const char *, CatEp **, int, CatEpPreparar, void *);
 int teste_px_episodios_preparar(const PxConta *, RedeJob *, const char *, CatEp **, int, CatEpPreparar, void *);
 int perfis_ativo(void) { return 1; }
-static int modoHttp, modoCallback, chamouCallback;
+static int modoHttp, modoCallback, chamouCallback, totalSimulado, pedidosSimulados, extraSimulado;
 static const char *respostaHttp;
 int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
   memset(resposta, 0, sizeof *resposta);
   resposta->status = 200;
-  resposta->corpo = strdup(respostaHttp);
+  if (totalSimulado) {
+    int inicio = -1, tamanho = 0;
+    const char *q = strstr(pedido->url, "X-Plex-Container-Start=");
+    assert(q && sscanf(q, "X-Plex-Container-Start=%d&X-Plex-Container-Size=%d", &inicio, &tamanho) == 2);
+    assert(inicio == pedidosSimulados * 2000 && tamanho > 0 && tamanho <= 2000);
+    pedidosSimulados++;
+    int n = totalSimulado - inicio; if (n > tamanho) n = tamanho;
+    n += extraSimulado;
+    size_t cap = (size_t)n * 90 + 200, pos;
+    resposta->corpo = malloc(cap); assert(resposta->corpo);
+    pos = (size_t)snprintf(resposta->corpo, cap, "{\"MediaContainer\":{\"totalSize\":%d,\"Metadata\":[", totalSimulado);
+    for (int i = 0; i < n; i++)
+      pos += (size_t)snprintf(resposta->corpo + pos, cap - pos,
+        "%s{\"ratingKey\":\"%d\",\"parentIndex\":1,\"index\":%d}", i ? "," : "", inicio + i + 1, inicio + i + 1);
+    assert(pos + 4 < cap);
+    snprintf(resposta->corpo + pos, cap - pos, "]}}");
+  } else resposta->corpo = strdup(respostaHttp);
   assert(resposta->corpo);
-  resposta->n_corpo = strlen(respostaHttp);
-  if (modoHttp) rede_job_cancelar(pedido->job);
+  resposta->n_corpo = strlen(resposta->corpo);
+  if (modoHttp && (!totalSimulado || pedidosSimulados == modoHttp)) rede_job_cancelar(pedido->job);
   return 0;
 }
 static CatEp *prepararTeste(void *ctx, int n) {
   RedeJob *job = ctx;
   chamouCallback++;
-  assert(n == 2);
+  assert(n == (totalSimulado ? totalSimulado : 2));
+  if (totalSimulado) assert(pedidosSimulados == (totalSimulado == 4650 ? 3 : 1));
   if (modoCallback == 1) return NULL;
   CatEp *out = calloc((size_t)n, sizeof *out);
   assert(out);
@@ -192,6 +209,27 @@ static void testarPreparo(void) {
     free(out);
     rede_job_soltar(job);
     rede_grupo_soltar(grupo);
+  }
+  {
+    RedeGrupo *grupo = rede_grupo_criar();
+    RedeJob *job = rede_job_criar(grupo);
+    CatEp *out = NULL;
+    totalSimulado = 4650; pedidosSimulados = modoHttp = modoCallback = chamouCallback = 0;
+    int n = teste_px_episodios_preparar(&pc, job, "1", &out, 5000, prepararTeste, job);
+    assert(n == 4650 && pedidosSimulados == 3 && chamouCallback == 1);
+    assert(out[0].episodio == 1 && out[4649].episodio == 4650);
+    free(out); rede_job_soltar(job); rede_grupo_soltar(grupo);
+    grupo = rede_grupo_criar(); job = rede_job_criar(grupo); out = NULL;
+    pedidosSimulados = chamouCallback = 0; modoHttp = 2;
+    n = teste_px_episodios_preparar(&pc, job, "1", &out, 5000, prepararTeste, job);
+    assert(n < 0 && pedidosSimulados == 2 && !chamouCallback && !out);
+    rede_job_soltar(job); rede_grupo_soltar(grupo);
+    grupo = rede_grupo_criar(); job = rede_job_criar(grupo); out = NULL;
+    totalSimulado = 2000; pedidosSimulados = chamouCallback = modoHttp = 0; extraSimulado = 1;
+    n = teste_px_episodios_preparar(&pc, job, "1", &out, 5000, prepararTeste, job);
+    assert(n == 2000 && pedidosSimulados == 1 && out[1999].episodio == 2000);
+    free(out); rede_job_soltar(job); rede_grupo_soltar(grupo);
+    totalSimulado = modoHttp = extraSimulado = 0;
   }
 }
 

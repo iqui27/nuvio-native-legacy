@@ -1160,34 +1160,68 @@ int px_detalhe(const PxConta *c, RedeJob *job, const char *rk, CatItem *out) {
 
 static int px_episodios_preparar(const PxConta *c, RedeJob *job, const char *serieRk,
                                  CatEp **saida, int max, CatEpPreparar preparar, void *ctx) {
-  RedeResposta r;
-  char caminho[160];
-  int e, n;
-  if (!soDigitos(serieRk, 20)) return PX_ERR_ENTRADA;
-  snprintf(caminho, sizeof caminho, "/library/metadata/%s/allLeaves?X-Plex-Container-Start=0&X-Plex-Container-Size=2000",
-           serieRk);
-  e = pedirServidor(c, caminho, "GET", "episodes", PX_PRAZO_LISTA_MS, job, &r);
-  if (e) return e;
-  if (preparar) {
-    const char *ai, *af, *p;
-    int qtd = 0;
+  struct Pagina { char *corpo; size_t tamanho; int contagem; } *paginas;
+  int qtd = 0, np = 0, resultado = 0;
+  size_t bytes = 0;
+  if (!soDigitos(serieRk, 20) || !saida) return PX_ERR_ENTRADA;
+  if (max < 1) return 0;
+  if (max > CAT_EP_MAX) max = CAT_EP_MAX;
+  paginas = calloc((size_t)max, sizeof *paginas);
+  if (!paginas) return PX_ERR_REDE;
+  while (qtd < max) {
+    RedeResposta r;
+    char caminho[160];
+    const char *ai, *af, *p, *mi, *mf;
+    int contagem = 0, total = -1, limite = max - qtd, e;
+    if (limite > 2000) limite = 2000;
+    if (rede_job_estado(job) != REDE_OK) { resultado = PX_ERR_CANCELADO; break; }
+    snprintf(caminho, sizeof caminho,
+             "/library/metadata/%s/allLeaves?X-Plex-Container-Start=%d&X-Plex-Container-Size=%d",
+             serieRk, qtd, limite);
+    e = pedirServidor(c, caminho, "GET", "episodes", PX_PRAZO_LISTA_MS, job, &r);
+    if (e) { resultado = e; break; }
+    if (!r.corpo) { rede_resposta_limpar(&r); resultado = PX_ERR_FORMATO; break; }
+    if (blocoRaiz(r.corpo, r.corpo + r.n_corpo, "MediaContainer", &mi, &mf))
+      total = (int)numRaiz(mi, mf, "totalSize", -1);
     if (arrayDe(r.corpo, r.n_corpo, "Metadata", &ai, &af)) {
       p = ai + 1;
-      while (qtd < max && (p = elemento(p, af)) != NULL) {
+      while (contagem < limite && (p = elemento(p, af)) != NULL) {
         const char *f = depoisElemento(p);
         if (!f) break;
-        qtd++; p = f;
+        contagem++; p = f;
       }
     }
-    if (qtd && rede_job_estado(job) == REDE_OK) *saida = preparar(ctx, qtd);
-    if (qtd && (!*saida || rede_job_estado(job) != REDE_OK)) {
-      rede_resposta_limpar(&r); return PX_ERR_CANCELADO;
+    if (!contagem) {
+      rede_resposta_limpar(&r);
+      if (total > qtd) resultado = PX_ERR_FORMATO;
+      break;
     }
-    max = qtd;
+    if (r.n_corpo > PX_CORPO_MAX - bytes) {
+      rede_resposta_limpar(&r); resultado = PX_ERR_REDE; break;
+    }
+    bytes += r.n_corpo;
+    paginas[np].corpo = r.corpo; paginas[np].tamanho = r.n_corpo;
+    paginas[np].contagem = contagem; np++;
+    r.corpo = NULL; rede_resposta_limpar(&r);
+    qtd += contagem;
+    if ((total >= 0 && qtd >= total) || (total < 0 && contagem < limite)) break;
   }
-  n = max ? px_ler_episodios(c, r.corpo, r.n_corpo, *saida, max) : 0;
-  rede_resposta_limpar(&r);
-  return n;
+  if (!resultado && qtd && rede_job_estado(job) != REDE_OK) resultado = PX_ERR_CANCELADO;
+  if (!resultado && qtd && preparar) {
+    *saida = preparar(ctx, qtd);
+    if (!*saida || rede_job_estado(job) != REDE_OK) resultado = PX_ERR_CANCELADO;
+  }
+  if (!resultado && qtd) {
+    for (int i = 0; i < np; i++) {
+      int n = px_ler_episodios(c, paginas[i].corpo, paginas[i].tamanho,
+                               *saida + resultado, paginas[i].contagem);
+      if (n < 0) { resultado = n; break; }
+      resultado += n;
+    }
+  }
+  for (int i = 0; i < np; i++) free(paginas[i].corpo);
+  free(paginas);
+  return resultado;
 }
 #ifdef NV_TEST_SERVIDOR_PREPARAR
 int teste_px_episodios_preparar(const PxConta *c, RedeJob *job, const char *id,
