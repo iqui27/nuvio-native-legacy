@@ -102,6 +102,10 @@ int cat_indice_por_imdb(const char *imdb) {
 void cat_definir_na_lista(int i, int naLista) {
   if (i >= 0 && i < catN) cat[i].naLista = naLista ? 1 : 0;
 }
+void cat_remover_conta(const char *id) {
+  int i = cat_indice_por_imdb(id);
+  if (i >= 0) cat_definir_na_lista(i, 0);
+}
 void cat_marcar_fonte(int i, int fonte) {
   if (i >= 0 && i < catN) { cat[i].naLista = 1; cat[i].fontes |= fonte; }
 }

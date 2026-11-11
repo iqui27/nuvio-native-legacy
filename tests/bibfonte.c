@@ -278,6 +278,19 @@ int main(int argc, char **argv) {
   CHECK("remote account removal clears every duplicate", !cat_imdb_na_lista_na_fonte(ci.imdb, AJ_SALVOS_LOCAL));
   CHECK("remote account removal preserves Trakt membership", cat_imdb_na_lista_na_fonte(ci.imdb, AJ_SALVOS_TRAKT));
   CHECK("remote account replacement stays removed after reconciliation", (contalib_reconciliar(), !cat_imdb_na_lista_na_fonte(ci.imdb, AJ_SALVOS_LOCAL)));
+  for (int source = AJ_SALVOS_TRAKT; source <= AJ_SALVOS_SIMKL; source++) {
+    ajustes_definir_salvos_destino(AJ_SALVOS_LOCAL);
+    accountCopies[0].listaFontes = accountCopies[1].listaFontes = 7u;
+    cat_definir_tudo(accountCopies, 2, NULL, 0);
+    assert(contalib_ler_biblioteca("[{\"content_id\":\"tt1234567\"}]") == 1);
+    contalib_aplicar_catalogo();
+    salvos_definir(&ci, 1);
+    ajustes_definir_salvos_destino(source);
+    assert(contalib_ler_biblioteca("[{\"content_id\":\"tt7654321\"}]") == 1);
+    CHECK("account replacement clears account mark while another provider selected", !cat_imdb_na_lista_na_fonte(ci.imdb, AJ_SALVOS_LOCAL));
+    CHECK("account replacement preserves both other providers", cat_imdb_na_lista_na_fonte(ci.imdb, AJ_SALVOS_TRAKT) && cat_imdb_na_lista_na_fonte(ci.imdb, AJ_SALVOS_SIMKL));
+    CHECK("account replacement clears local mirror regardless of selection", !salvos_tem(ci.imdb));
+  }
   // Source transitions must update the open grid without an explicit rebuild.
   valor[AJ_IDIOMA] = IDIOMA_EN + 1;
   CatItem sources[3] = {ci, ci, ci};

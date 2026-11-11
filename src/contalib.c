@@ -266,18 +266,15 @@ int contalib_ler_biblioteca(const char *json) {
 
   // A complete replacement removes only titles previously supplied by this
   // account snapshot. Local-only saves and unrelated provider bits survive.
-  if (ajustes_fonte_traz_conta(ajustes_fonte_biblioteca()))
-    for (i = 0; i < nItens; i++) {
-      for (j = 0; j < k; j++) if (!strcmp(itens[i].id, novo[j].id)) break;
-      if (j == k) {
-        // Um '+' de lista PENDENTE nesta TV vence a remocao do espelho local
-        // ate subir: sem isto o snapshot apagava um salvo feito aqui.
-        if (contapend_lista_pendente && contapend_lista_pendente(itens[i].id)) continue;
-        int idx = cat_indice_por_imdb(itens[i].id);
-        if (idx >= 0) cat_definir_na_lista(idx, 0);
-        if (salvos_remover_remoto) salvos_remover_remoto(itens[i].id);
-      }
+  for (i = 0; i < nItens; i++) {
+    for (j = 0; j < k; j++) if (!strcmp(itens[i].id, novo[j].id)) break;
+    if (j == k) {
+      // Pending local additions win until uploaded.
+      if (contapend_lista_pendente && contapend_lista_pendente(itens[i].id)) continue;
+      cat_remover_conta(itens[i].id);
+      if (salvos_remover_remoto) salvos_remover_remoto(itens[i].id);
     }
+  }
   free(itens);
   itens = novo;
   nItens = k;

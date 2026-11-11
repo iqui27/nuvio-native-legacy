@@ -51,6 +51,11 @@ int ajustes_cw_minimo(void) { return 1; }
 int ajustes_cw_concluido(void) { return 90; }
 static const char *tokenAtual = "";
 const char *simklauth_token(void) { return tokenAtual; }
+int simklauth_token_perfil(int perfil, char *dst, size_t tam) {
+  (void)perfil;
+  if (dst && tam) snprintf(dst, tam, "%s", tokenAtual);
+  return tokenAtual[0] != 0;
+}
 int simklauth_invalidar_se(unsigned long long cred) { (void)cred; tokenAtual = ""; return 1; }
 static unsigned long long credGeracao = 1;
 unsigned long long simklauth_credencial_copiar(char *dst, size_t tam) {

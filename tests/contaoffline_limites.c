@@ -8,6 +8,16 @@
 #define contalib_ler_biblioteca roteiro_contalib_ler_biblioteca
 #include "contaoffline.c"
 #undef main
+void ajustes_edicao_encerrar(void) {}
+int ajustes_migrar_escopo(void) { return 0; }
+void diario_dono(const char *s) { (void)s; }
+void diario_esquecer(void) {}
+void g5ui_forget(void) {}
+void perfil_infantil_esquecer(void) {}
+void rewatch_esquecer(void) {}
+void segfontes_animeskip_id_conta(const char *s) { (void)s; }
+void trava_definir_conta(const char *s) { (void)s; }
+void trava_esquecer(void) {}
 #undef perfis_ativo
 #undef perfis_ativo_addons
 #undef sessao_tabela

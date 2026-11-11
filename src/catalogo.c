@@ -2175,6 +2175,21 @@ int cat_marcar_fonte_imdb(const char *imdb, int fonte) {
   return k;
 }
 
+void cat_remover_conta(const char *imdb) {
+  if (!imdb || !imdb[0]) return;
+  CAT_TESTE_ANTES_TRAVA();
+  catTravar();
+  for (int i = 0; itens && i < n; i++) {
+    if (strcmp(itens[i].imdb, imdb)) continue;
+    if (!(itens[i].listaFontes & 1u) && !(itens[i].fontes & CAT_FONTE_NUVIO)) continue;
+    itens[i].listaFontes &= ~1u;
+    itens[i].fontes &= ~CAT_FONTE_NUVIO;
+    itens[i].naLista = itens[i].listaFontes != 0;
+    mudou();
+  }
+  pthread_mutex_unlock(&pubTrava);
+}
+
 void cat_definir_na_lista(int i, int naLista) {
   CAT_TESTE_ANTES_TRAVA();
   catTravar();
