@@ -5,7 +5,13 @@
 #define NV_JELLYFIN_STUB_INC
 #include "catalogo.h"
 #include "addons.h"
+#include "rede.h"
 #include <stdint.h>
+#ifndef NV_TEST_REDE_PARAR
+__attribute__((weak)) RedePararEstado rede_parar_trocar(int (*parar)(void *), void *usuario) {
+  (void)parar; (void)usuario; return (RedePararEstado){ .instalado = 1 };
+}
+#endif
 #ifndef NV_TEST_PLEX_AVISO
 void plex_vaga_liberar(void) { }
 int plex_tomar_reduzido(void) { return 0; }

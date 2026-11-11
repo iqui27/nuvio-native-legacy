@@ -277,6 +277,9 @@ int rede_resto_recusado(void);
 void rede_lateral(int sim);
 /* Worker-local cancellation for legacy GET/POST, including idle transfers. */
 void rede_parar_quando(int (*parar)(void *), void *usuario);
+typedef struct { int (*parar)(void *); void *usuario; int instalado; } RedePararEstado;
+/* Replace the worker/fiber hook and return the previous hook for restoration. */
+RedePararEstado rede_parar_trocar(int (*parar)(void *), void *usuario);
 
 // Teto de bytes da transferencia corrente (0 = sem teto). E interno ao modulo;
 // esta exposto so porque rede_baixar_trecho o usa. Nao mexer de fora.

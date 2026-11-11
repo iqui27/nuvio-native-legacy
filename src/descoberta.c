@@ -7893,6 +7893,18 @@ static int epPedidoSaiu(void) {
   pthread_mutex_unlock(&epPedidoTrava);
   return saiu;
 }
+static int tmdbRedeCancelada(void *ctx) {
+  RedePararEstado *anterior = ctx;
+  return epPedidoSaiu() || (anterior->parar && anterior->parar(anterior->usuario));
+}
+static char *tmdbBaixarCancelavel(const char *url, int segundos) {
+  RedePararEstado anterior;
+  anterior = rede_parar_trocar(tmdbRedeCancelada, &anterior);
+  if (!anterior.instalado) return NULL;
+  char *corpo = rede_baixar(url, segundos);
+  rede_parar_trocar(anterior.parar, anterior.usuario);
+  return corpo;
+}
 static void epConcluir(void) {
   pthread_mutex_lock(&epPedidoTrava);
   EpPedido *p = epPedidoAtual();
@@ -9364,7 +9376,7 @@ static void *buscarEps(void *u) {
         snprintf(u2, sizeof u2,
                  "%s/find/%s?api_key=%s&external_source=imdb_id",
                  TMDB, serie, chave2);
-        c3 = rede_baixar(u2, 20);
+        c3 = tmdbBaixarCancelavel(u2, 20);
         if (c3) {
           const char *p3 = js_array(c3, NULL, "tv_results");
           if (p3) tmdbId = (long)js_num(p3, js_fim(p3), "id", 0.0);
@@ -9406,7 +9418,7 @@ static void *buscarEps(void *u) {
                      TMDB, tmdbId, temporada, chave2, desc_tmdb_idioma());
             etapa.respostaPendente = 1;
             pthread_mutex_unlock(&tmdbDadosTrava);
-            c4 = rede_baixar(u3, 15);
+            c4 = tmdbBaixarCancelavel(u3, 15);
             pthread_mutex_lock(&tmdbDadosTrava);
             if (etapa.descartada || epPedidoSaiu()) { free(c4); completa = 0; }
             else if (c4) {

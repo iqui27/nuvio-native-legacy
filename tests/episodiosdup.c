@@ -52,7 +52,15 @@ Uint32 SDL_GetTicks(void) { return 0; }
 #include <sched.h>
 #define NV_TEST_SERVIDORES_FICHA
 #define NV_TEST_PLEX_AVISO
+#define NV_TEST_REDE_PARAR
 #include "jellyfin_stub.inc"
+static _Thread_local RedePararEstado redeTesteEstado;
+RedePararEstado rede_parar_trocar(int (*parar)(void *), void *usuario) {
+  RedePararEstado anterior = redeTesteEstado;
+  redeTesteEstado = (RedePararEstado){ parar, usuario, 1 };
+  anterior.instalado = 1;
+  return anterior;
+}
 static _Thread_local int plexTesteReduzido;
 static int plexTesteAvisos, plexTesteVagasLiberadas;
 void plex_vaga_liberar(void) { __atomic_add_fetch(&plexTesteVagasLiberadas, 1, __ATOMIC_RELAXED); }
@@ -87,8 +95,14 @@ static void *servidorTesteNovo(void *arg) {
   return NULL;
 }
 typedef struct { pthread_mutex_t trava; pthread_cond_t cond; int pronto, sair, resposta, prontoNovo, fimNovo, addon; TmdbEtapa etapa; } EtapaBloqueada;
+static int testeRedeAnterior(void *u) { (void)u; return 0; }
+static int testeRedeAbortou;
 static void *etapaBloqueada(void *arg) {
   EtapaBloqueada *t = arg;
+  EpPedido pedido = {0};
+  pedido.geracao = epGeracao;
+  pthread_once(&epPedidoOnce, epPedidoKeyCriar);
+  pthread_setspecific(epPedidoKey, &pedido);
   char *resposta = t->resposta ? malloc(1024u * 1024u) : NULL;
   assert(!t->resposta || resposta);
   if (resposta) __atomic_store_n(&respostaFalsaViva, 1, __ATOMIC_RELEASE);
@@ -102,8 +116,14 @@ static void *etapaBloqueada(void *arg) {
   tmdbAtiva = &t->etapa; tmdbAtivaGeracao = epGeracao;
   pthread_mutex_unlock(&tmdbDadosTrava);
   pthread_mutex_lock(&t->trava); t->pronto = 1; pthread_cond_broadcast(&t->cond);
-  while (!t->sair) pthread_cond_wait(&t->cond, &t->trava);
+  if (!t->resposta) while (!t->sair) pthread_cond_wait(&t->cond, &t->trava);
   pthread_mutex_unlock(&t->trava);
+  if (t->resposta) {
+    rede_parar_trocar(testeRedeAnterior, t);
+    assert(!tmdbBaixarCancelavel("mock-tmdb-season", 15));
+    assert(redeTesteEstado.parar == testeRedeAnterior && redeTesteEstado.usuario == t);
+    rede_parar_trocar(NULL, NULL);
+  }
   pthread_mutex_lock(&tmdbDadosTrava);
   assert(t->etapa.descartada && !t->etapa.textos && !t->etapa.patches && !t->etapa.chaves && !t->etapa.temporadas);
   free(resposta);
@@ -111,6 +131,7 @@ static void *etapaBloqueada(void *arg) {
   t->etapa.respostaPendente = 0; pthread_cond_broadcast(&tmdbDadosCond);
   tmdbAtiva = NULL; tmdbEtapaLimpar(&t->etapa);
   pthread_mutex_unlock(&tmdbDadosTrava);
+  pthread_setspecific(epPedidoKey, NULL);
   return NULL;
 }
 static void *esperarWorkspace(void *arg) {
@@ -371,6 +392,12 @@ static void rota(const char *trecho, const char *resp) {
 char *rede_baixar(const char *u, int t) {
   int r;
   (void)t;
+  if (!strcmp(u, "mock-tmdb-season")) {
+    while (!__atomic_load_n(&esperaRespostaTeste, __ATOMIC_ACQUIRE) ||
+           !redeTesteEstado.parar || !redeTesteEstado.parar(redeTesteEstado.usuario)) sched_yield();
+    __atomic_store_n(&testeRedeAbortou, 1, __ATOMIC_RELEASE);
+    return NULL;
+  }
   if (nPedidos < 64) snprintf(pedidos[nPedidos], sizeof pedidos[0], "%s", u);
   nPedidos++;
   for (r = 0; r < nRotas; r++)
@@ -463,13 +490,8 @@ int main(void) {
       pthread_mutex_lock(&tmdbDadosTrava); descartada = t.etapa.descartada; pthread_mutex_unlock(&tmdbDadosTrava);
       if (!descartada) sched_yield();
     }
-    while (!__atomic_load_n(&esperaRespostaTeste, __ATOMIC_ACQUIRE)) sched_yield();
-    pthread_mutex_lock(&t.trava);
-    assert(t.prontoNovo && !t.fimNovo);
-    t.sair = 1; pthread_cond_broadcast(&t.cond);
-    pthread_mutex_unlock(&t.trava);
     pthread_join(antigo, NULL); pthread_join(novo, NULL);
-    assert(t.fimNovo);
+    assert(t.fimNovo && __atomic_load_n(&testeRedeAbortou, __ATOMIC_ACQUIRE));
     alarm(0); return 0;
   }
   if (getenv("NV_TEST_787_STAGE")) {

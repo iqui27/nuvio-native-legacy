@@ -154,19 +154,21 @@ typedef struct {
 } RedeFio;
 static pthread_key_t fioChave;
 static pthread_once_t fioUma = PTHREAD_ONCE_INIT;
+static int fioChaveValida;
 // Se o calloc falhar (sem memoria), o fio usa esta reserva PARTILHADA em vez
 // de desreferenciar NULL: degrada a medicao daquele pedido, nao derruba o app.
 static RedeFio fioReserva;
 static void fioSoltar(void *p) { if (p != &fioReserva) free(p); }
-static void fioCriarChave(void) { pthread_key_create(&fioChave, fioSoltar); }
+static void fioCriarChave(void) { fioChaveValida = pthread_key_create(&fioChave, fioSoltar) == 0; }
 static RedeFio *redeFio(void) {
   RedeFio *f;
   pthread_once(&fioUma, fioCriarChave);
+  if (!fioChaveValida) return &fioReserva;
   f = (RedeFio *)pthread_getspecific(fioChave);
   if (!f) {
     f = (RedeFio *)calloc(1, sizeof *f);
     if (!f) return &fioReserva;
-    pthread_setspecific(fioChave, f);
+    if (pthread_setspecific(fioChave, f) != 0) { free(f); return &fioReserva; }
   }
   return f;
 }
@@ -198,6 +200,18 @@ static _Thread_local long redeBytesLocal;
 // 1 = este fio e leitura lateral ao video (rede_lateral, #385).
 static _Thread_local int redeLateral;
 #endif
+RedePararEstado rede_parar_trocar(int (*parar)(void *), void *usuario) {
+#if defined(NV_TPK40) || defined(NV_UM_FIO)
+  RedeFio *f = redeFio();
+  if (f == &fioReserva) return (RedePararEstado){0};
+  RedePararEstado anterior = { f->parar, f->pararUsuario, 1 };
+  f->parar = parar; f->pararUsuario = usuario;
+#else
+  RedePararEstado anterior = { redeParar, redePararUsuario, 1 };
+  redeParar = parar; redePararUsuario = usuario;
+#endif
+  return anterior;
+}
 void rede_parar_quando(int (*parar)(void *),void *usuario){
   redeParar=parar;redePararUsuario=usuario;
 }
