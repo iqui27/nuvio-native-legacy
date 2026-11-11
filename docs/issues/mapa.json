@@ -15500,6 +15500,15 @@
  "validacoes": [
   {
    "data": "2026-11-11",
+   "quem": "Revisão independente histórica; Central TV (conferência)",
+   "o_que": "Formato configurado de 12 horas nos horários exibidos.",
+   "issues": [718],
+   "ref": "bedce69876a51934bf9a2e232f6fce451481941c",
+   "resultado": "Revisão histórica OK; relogiofim.sh e compilação sintática rc0 relatados. Formato padrão continua 24h; opção 12h é manual, sem inferência do sistema Android.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-revg-fim12h.log SHA256 6b2eb51d5b1119a2d56629c6b80876afb875b95bf425033e05be8eecb03ef766. Sem build completo ou validação física na revisão histórica; caminhos de horário Seekr e social sem execução em runtime."
+  },
+  {
+   "data": "2026-11-11",
    "quem": "Revisão independente; Central TV (gate e integração)",
    "o_que": "Seleção manual P2P, encaminhamento ao player e ausência de troca automática após falha.",
    "issues": [784],
