@@ -15470,6 +15470,15 @@
  "validacoes": [
   {
    "data": "2026-11-11",
+   "quem": "Revisão independente; Central TV (gate e integração)",
+   "o_que": "Saída ao fim da reprodução e encaminhamento para próximo episódio.",
+   "issues": [675],
+   "ref": "613ce1289e9317b37a9a65ae890679ec6795b623",
+   "resultado": "Revisão OK; gate 3/3; posplay.sh e varredura i18n rc0 pós-merge.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue675-20261111.log; /Volumes/ExternalSSD/tmp/rev/issue675-postmerge-20261111.log SHA256 a3bf4cc82925f8417107d21311189f8a694fde4b3cf9cdce777e26e32fecd50a. Testes em host com preparo simulado; sem reprodução completa ou TV. Intenção pendente ainda espera conclusão do preparo."
+  },
+  {
+   "data": "2026-11-11",
    "quem": "Central Issues (teste em host); revisão independente histórica",
    "o_que": "Seleção manual de fonte ao retomar episódio.",
    "issues": [667],
