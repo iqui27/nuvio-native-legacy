@@ -30,6 +30,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', '0')
             self.end_headers()
             return
+        if path == '/tls-policy' and not self.headers.get('Range'):
+            body = b'local tls fixture'
+            self.send_response(200)
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         match = re.fullmatch(r'bytes=(\d+)-(\d*)', self.headers.get('Range', ''))
         if not match:
             self.send_error(400)
