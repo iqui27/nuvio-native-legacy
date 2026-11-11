@@ -172,7 +172,18 @@ int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
     if (testarGeracao) for (int i = 0; i < 4; i++)
       if (pedido->job == jobsGeracao[i]) chamadasGeracao[i]++;
     chegaram++; pthread_cond_broadcast(&concorrenciaCond);
-    while (!liberarConcorrentes) pthread_cond_wait(&concorrenciaCond, &concorrenciaTrava);
+    while (!liberarConcorrentes && (!testarGeracao || pedido->job != jobsGeracao[3])) {
+      struct timespec limite;
+      clock_gettime(CLOCK_REALTIME, &limite);
+      limite.tv_nsec += 10000000;
+      if (limite.tv_nsec >= 1000000000) { limite.tv_sec++; limite.tv_nsec -= 1000000000; }
+      if (pedido->parar && pedido->parar(pedido->parar_usuario)) {
+        pthread_mutex_unlock(&concorrenciaTrava);
+        resposta->erro = REDE_CANCELADO;
+        return 0;
+      }
+      pthread_cond_timedwait(&concorrenciaCond, &concorrenciaTrava, &limite);
+    }
     pthread_mutex_unlock(&concorrenciaTrava);
   }
   if (totalSimulado) {
@@ -407,9 +418,7 @@ static void testarPreparo(void) {
     assert(!pthread_create(&t[3], NULL, buscarGeracao, &p[3]));
     pthread_join(t[2], NULL);
     assert(p[2].resultado < 0 && chamadasGeracao[2] == 0);
-    pthread_mutex_lock(&concorrenciaTrava);
-    liberarConcorrentes = 1; pthread_cond_broadcast(&concorrenciaCond);
-    pthread_mutex_unlock(&concorrenciaTrava);
+    /* Old transports remain stalled unless their cancellation callback fires. */
     pthread_join(t[0], NULL); pthread_join(t[1], NULL); pthread_join(t[3], NULL);
     assert(p[0].resultado < 0 && p[1].resultado < 0 && p[3].resultado == 4);
     assert(chamadasGeracao[0] == 1 && chamadasGeracao[1] == 1 && chamadasGeracao[3] == 2);
