@@ -14204,13 +14204,14 @@
    "tipo": "bug",
    "status": "aberta",
    "release": "-",
-   "conserto": [],
+   "conserto": ["a6271d24b6850cf8e7ef268822d075c4ca525e8c"],
    "ultima_resposta": {
     "nos": false,
     "data": "",
     "ultimo_comentario_por": "",
     "ultima_nossa": ""
    },
+   "validacao_integrada_2026_11_11": "Fix integrado à 2.1; revisão independente j-21-rev-legultima OK. Teste issue681_ultima.sh rc0 no HEAD 5fbfdb32411cbd53dd059180c03b8ad623821eee: última legenda alcançável e selecionável. Log SHA256 39df368610882b9b4ff5e9022eda6d75fb1d69c712bda1fc576e12d2714f5fdf. Sem teste na C1 e sem publicação da correção na 2.0.8.",
    "proximo_passo": "Triage open issue; no matching job or prompt in supplied snapshot.\nSugestão do catálogo (04/11/2026): Central TV: obter cenário, IDs sanitizados e evidência do modelo/pacote original; comparar os commits relacionados antes de decidir correção. Causa e aceitação permanecem desconhecidas.",
    "notas": "Imported from local issues snapshot.\nReconciliação 2026-11-04 @0e525f284: insufficient-evidence. Última legenda inacessível: nenhuma correção exata localizada. Catálogo: /Volumes/ExternalSSD/tmp/rev/rastreio/mutirao-20261104/issues.json (item 681).",
    "url": "https://github.com/iqui27/nuvio-native-legacy/issues/681",
@@ -15466,6 +15467,17 @@
   }
  ],
  "validacoes": [
+  {
+   "data": "2026-11-11",
+   "quem": "Revisão independente; Central Issues (verificação)",
+   "o_que": "Última legenda acessível e selecionável.",
+   "issues": [
+    681
+   ],
+   "ref": "a6271d24b6850cf8e7ef268822d075c4ca525e8c",
+   "resultado": "issue681_ultima.sh rc0 no HEAD 5fbfdb32411cbd53dd059180c03b8ad623821eee; correção ancestral da integração 2.1.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/issues-open-tv-20261111/issue681_ultima-verification.txt; SHA256 39df368610882b9b4ff5e9022eda6d75fb1d69c712bda1fc576e12d2714f5fdf; sem teste C1 ou publicação 2.0.8."
+  },
   {
    "data": "2026-11-11",
    "quem": "Revisor independente; Central TV",
