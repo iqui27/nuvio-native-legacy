@@ -7947,7 +7947,11 @@ typedef struct {
   int presente, nota, temNota, runtime;
   char nome[120], sinopse[420];
 } TmdbPatch;
-typedef struct { CatEpChave *chaves; TmdbPatch *patches; int n; } TmdbEtapa;
+typedef struct { CatEpChave *chaves; TmdbPatch *patches; int n; size_t passo; } TmdbEtapa;
+static TmdbPatch *tmdbPatch(const TmdbEtapa *etapa, int i) {
+  return (TmdbPatch *)((char *)etapa->patches + (size_t)i *
+                       (etapa->passo ? etapa->passo : sizeof(TmdbPatch)));
+}
 static void tmdbEtapaProcessar(TmdbEtapa *etapa, const char *json, int temporada, int textos) {
   const char *p = js_array(json, NULL, "episodes");
   while (p) {
@@ -7956,7 +7960,7 @@ static void tmdbEtapaProcessar(TmdbEtapa *etapa, const char *json, int temporada
     for (i = 0; i < etapa->n; i++)
       if (num >= 0 && etapa->chaves[i].temporada == temporada && etapa->chaves[i].episodio == num) break;
     if (i < etapa->n) {
-      TmdbPatch *patch = &etapa->patches[i];
+      TmdbPatch *patch = tmdbPatch(etapa, i);
       int vazio = (textos & DESC_EPT_SO_VAZIO) != 0;
       int runtime = (int)js_num(p, f, "runtime", 0);
       double nota = js_num(p, f, "vote_average", 0.0);
@@ -7978,6 +7982,9 @@ static void tmdbEtapaProcessar(TmdbEtapa *etapa, const char *json, int temporada
 #ifndef NV_TMDB_APOS_COPIA
 #define NV_TMDB_APOS_COPIA() ((void)0)
 #endif
+#ifndef NV_TMDB_ALOCAR
+#define NV_TMDB_ALOCAR(tam) malloc(tam)
+#endif
 static int tmdbEtapaPublicar(int item, int neps, CatEpToken token, long tmdb,
                              int textos, const TmdbEtapa *etapa) {
   CatEp *tmp;
@@ -7986,12 +7993,12 @@ static int tmdbEtapaPublicar(int item, int neps, CatEpToken token, long tmdb,
   item = epPublicacaoIniciar(item);
   pthread_mutex_unlock(&epPedidoTrava);
   if (item < 0) goto fim;
-  tmp = malloc((size_t)neps * sizeof *tmp);
+  tmp = NV_TMDB_ALOCAR((size_t)neps * sizeof *tmp);
   if (!tmp) goto fim;
   if (cat_episodios_copiar_token(item, tmp, neps, token)) {
     NV_TMDB_APOS_COPIA();
     for (int i = 0; i < neps; i++) {
-      const TmdbPatch *p = &etapa->patches[i];
+      const TmdbPatch *p = tmdbPatch(etapa, i);
       CatEp *e = &tmp[i];
       if (p->presente) {
         int anterior = e->tmdbE;
@@ -7999,10 +8006,10 @@ static int tmdbEtapaPublicar(int item, int neps, CatEpToken token, long tmdb,
         if (e->tmdbE > 0 && (e->tmdbSerie != tmdb || anterior != e->tmdbE)) marcados++;
         if (!e->duracao[0] && p->runtime) { snprintf(e->duracao, sizeof e->duracao, "%d min", p->runtime); feitos++; }
         if (p->temNota) { e->nota = p->nota; feitos++; }
-        if (p->nome[0] && (!(textos & DESC_EPT_SO_VAZIO) || !e->nome[0]) && strcmp(e->nome, p->nome)) {
+        if ((textos & DESC_EPT_NOME) && p->nome[0] && (!(textos & DESC_EPT_SO_VAZIO) || !e->nome[0]) && strcmp(e->nome, p->nome)) {
           snprintf(e->nome, sizeof e->nome, "%s", p->nome); feitos++;
         }
-        if (p->sinopse[0] && (!(textos & DESC_EPT_SO_VAZIO) || !e->sinopse[0]) && strcmp(e->sinopse, p->sinopse)) {
+        if ((textos & DESC_EPT_SINOPSE) && p->sinopse[0] && (!(textos & DESC_EPT_SO_VAZIO) || !e->sinopse[0]) && strcmp(e->sinopse, p->sinopse)) {
           snprintf(e->sinopse, sizeof e->sinopse, "%s", p->sinopse); feitos++;
         }
       }
@@ -9267,7 +9274,10 @@ static void *buscarEps(void *u) {
           int completa = token != 0;
           etapa.n = neps;
           etapa.chaves = malloc((size_t)neps * sizeof *etapa.chaves);
-          etapa.patches = calloc((size_t)neps, sizeof *etapa.patches);
+          /* Sem textos, so os quatro inteiros de cada patch sao acessados. */
+          etapa.passo = (textosEp & (DESC_EPT_NOME | DESC_EPT_SINOPSE))
+                      ? sizeof(TmdbPatch) : offsetof(TmdbPatch, nome);
+          etapa.patches = calloc((size_t)neps, etapa.passo);
           if (!etapa.chaves || !etapa.patches ||
               !cat_episodios_chaves_token(alvoItem, etapa.chaves, neps, token)) completa = 0;
           for (int i2 = 0; completa && i2 < nt; i2++) {
@@ -9283,6 +9293,8 @@ static void *buscarEps(void *u) {
               free(c4); ns++;
             }
           }
+          free(etapa.chaves); etapa.chaves = NULL;
+          free(temporadas); temporadas = NULL;
           if (completa && ns)
             (void)tmdbEtapaPublicar(alvoItem, neps, token, tmdbId, textosEp, &etapa);
         }

@@ -31,7 +31,11 @@ int ajustes_hist_conta(void) { return 1; }
 int ajustes_busca_cinemeta(void) { return 1; }
 int ajustes_busca_nuvio(void) { return 0; }   // #311: Primeiro (padrao)
 int ajustes_ocultar_filmes_vistos(void) { return 0; }    // #366: descoberta.c le o ajuste
+#include <stdlib.h>
+static int falharAlocacaoTmdb;
+static void *testeAlocarTmdb(size_t n) { return falharAlocacaoTmdb ? NULL : malloc(n); }
 static void testeTmdbAposCopia(void);
+#define NV_TMDB_ALOCAR(n) testeAlocarTmdb(n)
 #define NV_TMDB_APOS_COPIA() testeTmdbAposCopia()
 #include "../src/descoberta.c"
 #include "../src/progresso.h"
@@ -562,7 +566,8 @@ int main(void) {
     CatEp *episodios = calloc(4650, sizeof *episodios);
     etapa.n = 4650;
     etapa.chaves = calloc(4650, sizeof *etapa.chaves);
-    etapa.patches = calloc(4650, sizeof *etapa.patches);
+    etapa.passo = offsetof(TmdbPatch, nome);
+    etapa.patches = calloc(4650, etapa.passo);
     assert(episodios && etapa.chaves && etapa.patches);
     montarCatalogo();
     for (int i = 0; i < 4650; i++) {
@@ -712,6 +717,12 @@ int main(void) {
     assert(!tmdbEtapaPublicar(0, 1, versao, 123, 0, &etapa));
     assert(cat_episodio(0, 0)->nota == 0);
     pedido.geracao = epGeracao;
+    unsigned antes = cat_versao_episodios(), geracaoAntes = cat_geracao_episodios();
+    falharAlocacaoTmdb = 1;
+    assert(!tmdbEtapaPublicar(0, 1, versao, 123, 0, &etapa));
+    falharAlocacaoTmdb = 0;
+    assert(cat_versao_episodios() == antes && cat_geracao_episodios() == geracaoAntes);
+    assert(cat_episodio(0, 0)->nota == 0 && cat_episodio(0, 0)->episodio == 1);
     cat_definir_episodios(1, &ep, 1); /* outra obra nao invalida a etapa */
     assert(tmdbEtapaPublicar(0, 1, versao, 123, 0, &etapa));
     assert(cat_episodio(0, 0)->nota == 82);
