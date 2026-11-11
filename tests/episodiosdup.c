@@ -20,8 +20,24 @@ static void *callocDoTeste(size_t n, size_t tam) {
   if (callocFalha && n > 1024) { callocNegados++; return NULL; }
   return calloc(n, tam);
 }
+static int limitarArrays;
+static void *arrayGrande;
+static void *mallocDoTeste(size_t n) {
+  if (limitarArrays && n >= 1024 * 1024 && arrayGrande) return NULL;
+  void *p = malloc(n);
+  if (limitarArrays && n >= 1024 * 1024) arrayGrande = p;
+  return p;
+}
+static void freeDoTeste(void *p) {
+  if (p == arrayGrande) arrayGrande = NULL;
+  free(p);
+}
+#define malloc(n) mallocDoTeste(n)
+#define free(p) freeDoTeste(p)
 #define calloc(n, tam) callocDoTeste(n, tam)
 #include "../src/descoberta.c"
+#undef malloc
+#undef free
 #undef calloc
 Uint32 SDL_GetTicks(void) { return 0; }
 #include "../src/progresso.h"
@@ -346,6 +362,29 @@ static void abrir(void) {
 }
 
 int main(void) {
+  if (getenv("NV_TEST_787_MEMORY")) {
+    size_t cap = 400000, a = 0, b = 0;
+    char *base = malloc(cap), *overlay = malloc(cap);
+    assert(base && overlay);
+    a += (size_t)snprintf(base + a, cap - a, "{\"videos\":[");
+    b += (size_t)snprintf(overlay + b, cap - b, "{\"videos\":[");
+    for (int i = 1; i <= 4650; i++) {
+      a += (size_t)snprintf(base + a, cap - a, "%s{\"season\":%d,\"episode\":%d}", i == 1 ? "" : ",", (i - 1) / 150 + 1, (i - 1) % 150 + 1);
+      b += (size_t)snprintf(overlay + b, cap - b, "%s{\"season\":%d,\"episode\":%d,\"name\":\"translated\"}", i == 1 ? "" : ",", (i - 1) / 150 + 1, (i - 1) % 150 + 1);
+    }
+    assert(a + 3 < cap && b + 3 < cap);
+    snprintf(base + a, cap - a, "]}"); snprintf(overlay + b, cap - b, "]}");
+    catalogoCom("tt787", "series", "Long series");
+    snprintf(epAlvoId, sizeof epAlvoId, "%s", "tt787");
+    limitarArrays = 1;
+    assert(publicarEpisodios(base, 0, "Long series", overlay, DESC_MESCLA_TEXTO, NULL) == 4650);
+    limitarArrays = 0;
+    assert(cat_n_episodios(0) == 4650);
+    const CatEp *last = cat_episodio(0, 4649);
+    assert(last && !strcmp(last->nome, "translated"));
+    free(base); free(overlay);
+    return 0;
+  }
   if (getenv("NV_TEST_787_PARSE")) {
     size_t cap = 400000, k = 0;
     char *body = malloc(cap);
