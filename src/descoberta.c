@@ -7950,6 +7950,64 @@ static void temporadasDosEps(const CatEp *eps, int n, TempsPub *tp) {
   }
 }
 
+// Preserve the visible order using compact references into the old catalog and
+// the new array. Materialize the references in place; one saved episode breaks
+// cycles when two or more source slots must exchange places.
+static int mesclarEstavel(CatEp *eps, int n, int cap, int item, int antigos) {
+  struct EpRef { int origem, refs, t, e; unsigned char pronto; } *v;
+  int k = 0, restantes, salvo = -1, refsSalvas = 0;
+  CatEp reserva;
+  if (cap < (antigos + n < VIDEOS_MAX ? antigos + n : VIDEOS_MAX)) return 0;
+  v = calloc((size_t)cap, sizeof *v);
+  if (!v) return 0;
+  for (int i = 0; i < antigos && k < VIDEOS_MAX; i++) {
+    const CatEp *e = cat_episodio(item, i);
+    int j;
+    if (!e) continue;
+    for (j = 0; j < n; j++)
+      if (e->temporada == eps[j].temporada && e->episodio == eps[j].episodio) break;
+    v[k].origem = j < n ? j : -i - 1;
+    v[k].t = e->temporada; v[k].e = e->episodio; k++;
+  }
+  // ponytail: pair lookup is O(n²), bounded to 5000; index if it becomes slow.
+  for (int j = 0; j < n && k < VIDEOS_MAX; j++) {
+    int i;
+    for (i = 0; i < k; i++)
+      if (v[i].t == eps[j].temporada && v[i].e == eps[j].episodio) break;
+    if (i == k) {
+      v[k].origem = j; v[k].t = eps[j].temporada; v[k].e = eps[j].episodio; k++;
+    }
+  }
+  for (int i = 0; i < k; i++) if (v[i].origem >= 0) v[v[i].origem].refs++;
+  restantes = k;
+  while (restantes) {
+    int progresso = 0;
+    for (int i = 0; i < k; i++) if (!v[i].pronto && (v[i].refs == 0 || v[i].origem == i)) {
+      int origem = v[i].origem;
+      int eraSalvo = origem >= 0 && origem == salvo;
+      if (origem < 0) {
+        const CatEp *e = cat_episodio(item, -origem - 1);
+        if (!e) { free(v); return 0; }
+        eps[i] = *e;
+      } else if (origem == salvo) {
+        eps[i] = reserva;
+        if (!--refsSalvas) salvo = -1;
+      } else if (origem != i) eps[i] = eps[origem];
+      if (origem >= 0 && !eraSalvo) v[origem].refs--;
+      v[i].pronto = 1; restantes--; progresso = 1;
+    }
+    if (!progresso) {
+      int i;
+      if (salvo >= 0) { free(v); return 0; }
+      for (i = 0; i < k && (v[i].pronto || !v[i].refs); i++) {}
+      if (i == k || i >= n) { free(v); return 0; }
+      reserva = eps[i]; salvo = i; refsSalvas = v[i].refs; v[i].refs = 0;
+    }
+  }
+  free(v);
+  return k;
+}
+
 static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
                                        const char *titulo, const char *sobre,
                                        int modo, TempsPub *tp, int cedo,
@@ -7961,6 +8019,10 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
   cap = metaContarEpisodios(corpo, NULL);
   if (cap > VIDEOS_MAX) cap = VIDEOS_MAX;
   if (cap <= 0) { pthread_mutex_unlock(&epMemoriaTrava); return 0; }
+  if (epPedidoAtual() && !substituir) {
+    int antigos = cat_n_episodios(alvoItem);
+    cap = antigos < VIDEOS_MAX - cap ? cap + antigos : VIDEOS_MAX;
+  }
   eps = malloc(sizeof(CatEp) * (size_t)cap);
   if (!eps) { pthread_mutex_unlock(&epMemoriaTrava); return 0; }
   n = parsearEpisodios(corpo, eps, cap);
@@ -7973,9 +8035,7 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
     int parcial = !cedo && cat_copiar_item(alvoItem, &atual) && atual.epsParciais;
     int trocarTopologia = !cedo && (parcial || substituir);
     int provisorio = cedo || pendente;
-    int capEstavel = antigos + n < VIDEOS_MAX ? antigos + n : VIDEOS_MAX;
-    CatEp *estavel = antigos > 0 && epPedidoAtual() && !trocarTopologia
-                   ? malloc(sizeof(CatEp) * (size_t)capEstavel) : NULL;
+    int estavel = antigos > 0 && epPedidoAtual() && !trocarTopologia;
     // The flag goes up before the list: CW and the player must never see
     // provisional video IDs as final, not even between two writes.
     if (provisorio && cat_copiar_item(alvoItem, &atual) && !atual.epsParciais) {
@@ -7997,30 +8057,9 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
         }
         descCatAtualizar(cat_atualizar_item, alvoItem, &atual);
       }
-    } else if (estavel) {
-      int k = 0;
-      // Mantem os pares e a ordem ja vistos; novos pares entram no fim.
-      // ponytail: busca O(n²), limitada a 5000 pares; indexar se ficar lenta.
-      for (int i = 0; i < antigos && k < VIDEOS_MAX; i++) {
-        const CatEp *e = cat_episodio(alvoItem, i);
-        if (!e) continue;
-        estavel[k] = *e;
-        for (int j = 0; j < n; j++)
-          if (e->temporada == eps[j].temporada && e->episodio == eps[j].episodio) {
-            estavel[k] = eps[j]; break;
-          }
-        k++;
-      }
-      for (int j = 0; j < n && k < VIDEOS_MAX; j++) {
-        int i;
-        for (i = 0; i < k; i++)
-          if (estavel[i].temporada == eps[j].temporada &&
-              estavel[i].episodio == eps[j].episodio) break;
-        if (i == k) estavel[k++] = eps[j];
-      }
-      descCatEpisodios(alvoItem, estavel, k);
-      if (tp) temporadasDosEps(estavel, k, tp);
-      free(estavel);
+    } else if (estavel && (estavel = mesclarEstavel(eps, n, cap, alvoItem, antigos)) > 0) {
+      descCatEpisodios(alvoItem, eps, estavel);
+      if (tp) temporadasDosEps(eps, estavel, tp);
     } else if (!antigos || !epPedidoAtual()) descCatEpisodios(alvoItem, eps, n);
     else if (tp) {
       // Sem memoria para mesclar, conserva a lista visivel e suas abas.

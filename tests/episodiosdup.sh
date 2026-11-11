@@ -20,4 +20,5 @@ if [ -z "${NV_TEST_787:-}" ] && [ -z "${NV_TEST_787_PARSE:-}" ] && [ -z "${NV_TE
   NV_TEST_787=1 ${TMPDIR:-/tmp}/nuvio-episodiosdup-tests
   NV_TEST_787_PARSE=1 ${TMPDIR:-/tmp}/nuvio-episodiosdup-tests
   NV_TEST_787_MEMORY=1 ${TMPDIR:-/tmp}/nuvio-episodiosdup-tests
+  NV_TEST_787_STABLE=1 ${TMPDIR:-/tmp}/nuvio-episodiosdup-tests
 fi

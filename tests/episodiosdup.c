@@ -387,6 +387,9 @@ int main(void) {
     EpPedido pedido = {0};
     snprintf(pedido.id, sizeof pedido.id, "%s", "tt787");
     pedido.geracao = epGeracao;
+    unsigned geracaoAntes = cat_geracao_episodios();
+    const CatEp *ponteiroAnterior = cat_episodio(0, 0);
+    assert(ponteiroAnterior);
     pthread_once(&epPedidoOnce, epPedidoKeyCriar);
     assert(!pthread_setspecific(epPedidoKey, &pedido));
     limitarArrays = 1;
@@ -395,6 +398,8 @@ int main(void) {
     assert(!pthread_setspecific(epPedidoKey, NULL));
     last = cat_episodio(0, 4649);
     assert(last && !strcmp(last->nome, "translated"));
+    assert(cat_geracao_episodios() != geracaoAntes);
+    assert(ponteiroAnterior->temporada == 1);
     }
     free(base); free(overlay);
     return 0;
@@ -442,6 +447,31 @@ int main(void) {
     }
     free(body);
     return 0;
+  }
+  {
+    CatEp old[5] = {{0}}, source[10] = {{0}}, expected[10] = {{0}};
+    const int order[] = {3, 0, 0, 8, 1};
+    int k = 0;
+    catalogoCom("ttstable", "series", "Stable");
+    for (int i = 0; i < 5; i++) {
+      old[i].temporada = source[i].temporada = 1;
+      old[i].episodio = order[i]; source[i].episodio = i;
+      snprintf(old[i].nome, sizeof old[i].nome, "old%d", i);
+      snprintf(source[i].nome, sizeof source[i].nome, "new%d", i);
+    }
+    cat_definir_episodios(0, old, 5);
+    for (int i = 0; i < 5; i++) {
+      int j;
+      for (j = 0; j < 5; j++) if (old[i].episodio == source[j].episodio) break;
+      expected[k++] = j < 5 ? source[j] : old[i];
+    }
+    for (int j = 0; j < 5; j++) {
+      int i;
+      for (i = 0; i < k; i++) if (expected[i].episodio == source[j].episodio) break;
+      if (i == k) expected[k++] = source[j];
+    }
+    assert(mesclarEstavel(source, 5, 10, 0, 5) == k);
+    assert(!memcmp(source, expected, (size_t)k * sizeof *source));
   }
   {
     const char *base = "{\"videos\":[{\"season\":2,\"episode\":1},{\"season\":1},{\"season\":1},{\"season\":1,\"episode\":2,\"name\":\"original\"}]}";
