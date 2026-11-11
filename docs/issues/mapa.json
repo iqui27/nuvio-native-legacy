@@ -15470,6 +15470,24 @@
  "validacoes": [
   {
    "data": "2026-11-11",
+   "quem": "Revisão independente histórica; Central Issues (verificação posterior)",
+   "o_que": "Filtro manual de gênero em coleções e catálogos.",
+   "issues": [656],
+   "ref": "ec125c60acd79fcbaf93996232fa2200fe750cb9",
+   "resultado": "Revisão histórica OK; colecao_genero.sh rc0 no HEAD 5fbfdb32411cbd53dd059180c03b8ad623821eee; correção ancestral da integração.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue656.log SHA256 8f18a065a6c6cdab5de02278a4513aee199da4373a8caba9047ecbc63c92c65e; /Volumes/ExternalSSD/tmp/rev/issues-open-tv-20261111/colecao_genero-verification.txt SHA256 da1a4c42aaddb7c8aa3c41c54ae7aabaff2a8010499080584e6466bc90224479. Sem validação física Tizen 9."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Revisão independente histórica",
+   "o_que": "Alinhamento do foco e botão de reprodução ao próximo episódio.",
+   "issues": [674],
+   "ref": "9e3cf67d891fca8b13e7e1d25d960ca0ce7942bf",
+   "resultado": "Revisão histórica OK; issue674_play_button.sh rc0 relatado no log; correção ancestral da integração.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue674-675.log SHA256 9f08408b623f5f102962d8d3823a9767af4482654c193534086b2f508cf12aad. Teste histórico em host; sem aceite físico."
+  },
+  {
+   "data": "2026-11-11",
    "quem": "Revisor independente; Central TV (gate e integração)",
    "o_que": "Provedores de legendas para filmes, séries e lista do player.",
    "issues": [
