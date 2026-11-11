@@ -18,4 +18,5 @@ cc ${flags[@]+"${flags[@]}"} src/catalogo.c src/cwordem.c tests/episodiosdup.c t
 ${TMPDIR:-/tmp}/nuvio-episodiosdup-tests
 if [ -z "${NV_TEST_787:-}" ] && [ -z "${NV_TEST_787_PARSE:-}" ]; then
   NV_TEST_787=1 ${TMPDIR:-/tmp}/nuvio-episodiosdup-tests
+  NV_TEST_787_PARSE=1 ${TMPDIR:-/tmp}/nuvio-episodiosdup-tests
 fi

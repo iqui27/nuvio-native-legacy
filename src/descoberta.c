@@ -7896,17 +7896,22 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
                                        int modo, TempsPub *tp, int cedo,
                                        int substituir, int pendente) {
   CatEp *eps;
-  int n = 0;
+  int n = 0, cap;
   pthread_mutex_lock(&epMemoriaTrava);
   if (epPedidoSaiu()) { pthread_mutex_unlock(&epMemoriaTrava); return 0; }
-  eps = malloc(sizeof(CatEp) * VIDEOS_MAX);
+  cap = metaContarEpisodios(corpo, NULL);
+  if (cap > VIDEOS_MAX) cap = VIDEOS_MAX;
+  if (cap <= 0) { pthread_mutex_unlock(&epMemoriaTrava); return 0; }
+  eps = malloc(sizeof(CatEp) * (size_t)cap);
   if (!eps) { pthread_mutex_unlock(&epMemoriaTrava); return 0; }
-  n = parsearEpisodios(corpo, eps, VIDEOS_MAX);
+  n = parsearEpisodios(corpo, eps, cap);
   if (tp && n) temporadasDosEps(eps, n, tp);
   if (sobre && n) {
-    CatEp *o = malloc(sizeof(CatEp) * VIDEOS_MAX);
+    int capOutro = metaContarEpisodios(sobre, NULL);
+    if (capOutro > VIDEOS_MAX) capOutro = VIDEOS_MAX;
+    CatEp *o = capOutro > 0 ? malloc(sizeof(CatEp) * (size_t)capOutro) : NULL;
     if (o) {
-      int no = parsearEpisodios(sobre, o, VIDEOS_MAX);
+      int no = parsearEpisodios(sobre, o, capOutro);
       desc_mesclar_episodios(eps, n, o, no, modo);
       free(o);
     }
@@ -7918,8 +7923,9 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
     int parcial = !cedo && cat_copiar_item(alvoItem, &atual) && atual.epsParciais;
     int trocarTopologia = !cedo && (parcial || substituir);
     int provisorio = cedo || pendente;
+    int capEstavel = antigos + n < VIDEOS_MAX ? antigos + n : VIDEOS_MAX;
     CatEp *estavel = antigos > 0 && epPedidoAtual() && !trocarTopologia
-                   ? malloc(sizeof(CatEp) * VIDEOS_MAX) : NULL;
+                   ? malloc(sizeof(CatEp) * (size_t)capEstavel) : NULL;
     // The flag goes up before the list: CW and the player must never see
     // provisional video IDs as final, not even between two writes.
     if (provisorio && cat_copiar_item(alvoItem, &atual) && !atual.epsParciais) {
