@@ -561,12 +561,13 @@ static void *publicarCondicional(void *arg) {
 }
 
 int main(void) {
-  if (getenv("NV_TEST_TMDB_LONG")) {
+  if (getenv("NV_TEST_TMDB_LONG") || getenv("NV_TEST_TMDB_LONG_TEXT")) {
+    int textos = getenv("NV_TEST_TMDB_LONG_TEXT") ? DESC_EPT_NOME | DESC_EPT_SINOPSE : 0;
     TmdbEtapa etapa = {0};
     CatEp *episodios = calloc(4650, sizeof *episodios);
     etapa.n = 4650;
     etapa.chaves = calloc(4650, sizeof *etapa.chaves);
-    etapa.passo = offsetof(TmdbPatch, nome);
+    etapa.passo = textos ? sizeof(TmdbPatch) : offsetof(TmdbPatch, nome);
     etapa.patches = calloc(4650, etapa.passo);
     assert(episodios && etapa.chaves && etapa.patches);
     montarCatalogo();
@@ -585,19 +586,24 @@ int main(void) {
       size_t pos = (size_t)snprintf(json, cap, "{\"episodes\":[");
       if (t == 1)
         pos += (size_t)snprintf(json + pos, cap - pos,
-          "{\"episode_number\":1,\"vote_average\":8.2,\"padding\":\"%0300000d\"}", 1);
+          "{\"episode_number\":1,\"vote_average\":8.2,\"name\":\"Translated title\",\"overview\":\"Translated synopsis\",\"padding\":\"%0300000d\"}", 1);
       for (int i = t == 1 ? 2 : 1; i <= 150; i++)
         pos += (size_t)snprintf(json + pos, cap - pos,
-          "%s{\"episode_number\":%d,\"vote_average\":8.2,\"padding\":\"%080d\"}",
+          "%s{\"episode_number\":%d,\"vote_average\":8.2,\"name\":\"Translated title\",\"overview\":\"Translated synopsis\",\"padding\":\"%080d\"}",
           i == 1 ? "" : ",", i, i);
       assert(pos + 3 < cap);
       snprintf(json + pos, cap - pos, "]}");
-      tmdbEtapaProcessar(&etapa, json, t, 0);
+      tmdbEtapaProcessar(&etapa, json, t, textos);
+      assert(!etapa.falhou);
       free(json);
     }
-    assert(tmdbEtapaPublicar(0, 4650, versao, 123, 0, &etapa));
+    assert((size_t)4650 * (1236 + 24) + etapa.capTextos <= (size_t)(6.7 * 1024 * 1024));
+    assert(tmdbEtapaPublicar(0, 4650, versao, 123, textos, &etapa));
     assert(cat_episodio(0, 0)->nota == 82 && cat_episodio(0, 4649)->nota == 82);
-    free(etapa.patches); free(etapa.chaves); free(episodios);
+    assert(cat_episodio(0, 4649)->tmdbSerie == 123 && cat_episodio(0, 4649)->tmdbE == 150);
+    if (textos) assert(!strcmp(cat_episodio(0, 4649)->nome, "Translated title") &&
+                       !strcmp(cat_episodio(0, 4649)->sinopse, "Translated synopsis"));
+    free(etapa.textos); free(etapa.patches); free(etapa.chaves); free(episodios);
     return 0;
   }
   testarMetaElenco();
@@ -723,6 +729,16 @@ int main(void) {
     falharAlocacaoTmdb = 0;
     assert(cat_versao_episodios() == antes && cat_geracao_episodios() == geracaoAntes);
     assert(cat_episodio(0, 0)->nota == 0 && cat_episodio(0, 0)->episodio == 1);
+    {
+      TmdbPatch outro = {0};
+      TmdbEtapa cheia = { .chaves = &chave, .patches = &outro, .n = 1 };
+      char texto[420]; memset(texto, 'x', sizeof texto - 1); texto[sizeof texto - 1] = 0;
+      while (!cheia.falhou) tmdbGuardarTexto(&cheia, &outro.sinopse, texto);
+      assert(!tmdbEtapaPublicar(0, 1, versao, 123, DESC_EPT_SINOPSE, &cheia));
+      assert(cat_versao_episodios() == antes && cat_geracao_episodios() == geracaoAntes);
+      assert(cat_episodio(0, 0)->nota == 0);
+      free(cheia.textos);
+    }
     cat_definir_episodios(1, &ep, 1); /* outra obra nao invalida a etapa */
     assert(tmdbEtapaPublicar(0, 1, versao, 123, 0, &etapa));
     assert(cat_episodio(0, 0)->nota == 82);
@@ -799,6 +815,7 @@ int main(void) {
         assert(obtido->nota == esperado[i].nota && obtido->tmdbSerie == esperado[i].tmdbSerie);
         assert(obtido->tmdbT == esperado[i].tmdbT && obtido->tmdbE == esperado[i].tmdbE);
       }
+      free(etapa.textos);
     }
   }
 
