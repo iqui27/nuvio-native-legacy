@@ -45,7 +45,30 @@ Uint32 SDL_GetTicks(void) { return 0; }
 #include <assert.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <time.h>
+#define NV_TEST_SERVIDORES_FICHA
 #include "jellyfin_stub.inc"
+static pthread_mutex_t servidorTesteTrava = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t servidorTesteCond = PTHREAD_COND_INITIALIZER;
+static int servidorBloqueia, servidorEntrou, servidorSoltar, servidorNovoTerminou;
+int servidores_ficha(CatItem *item, CatEp *eps, int maxEps) {
+  (void)item; (void)eps; (void)maxEps;
+  pthread_mutex_lock(&servidorTesteTrava);
+  if (servidorBloqueia) {
+    servidorEntrou = 1; pthread_cond_broadcast(&servidorTesteCond);
+    while (!servidorSoltar) pthread_cond_wait(&servidorTesteCond, &servidorTesteTrava);
+  }
+  pthread_mutex_unlock(&servidorTesteTrava);
+  return -1;
+}
+static void *servidorTesteNovo(void *arg) {
+  (void)arg;
+  publicarEpisodios("{\"videos\":[{\"season\":1,\"episode\":1}]}", 0, "new", NULL, 0, NULL);
+  pthread_mutex_lock(&servidorTesteTrava);
+  servidorNovoTerminou = 1; pthread_cond_broadcast(&servidorTesteCond);
+  pthread_mutex_unlock(&servidorTesteTrava);
+  return NULL;
+}
 // Manifest loading is outside this metadata harness.
 void addons_lista_travar(void) {}
 void addons_lista_destravar(void) {}
@@ -362,6 +385,36 @@ static void abrir(void) {
 }
 
 int main(void) {
+  if (getenv("NV_TEST_787_SERVER")) {
+    pthread_t antigo, novo;
+    EpPedido *pedido = calloc(1, sizeof *pedido);
+    struct timespec prazo;
+    int terminou;
+    assert(pedido);
+    catalogoCom("jf:old", "series", "old");
+    assert(cat_copiar_item(0, &pedido->base));
+    snprintf(pedido->id, sizeof pedido->id, "%s", "jf:old");
+    pedido->item = 0; pedido->geracao = ++epGeracao;
+    pedido->sessao = nv_perfil_sessao_ler();
+    servidorBloqueia = 1;
+    assert(!pthread_create(&antigo, NULL, buscarEpsPedido, pedido));
+    pthread_mutex_lock(&servidorTesteTrava);
+    while (!servidorEntrou) pthread_cond_wait(&servidorTesteCond, &servidorTesteTrava);
+    pthread_mutex_unlock(&servidorTesteTrava);
+    catalogoCom("ttnew", "series", "new");
+    pthread_mutex_lock(&epPedidoTrava); epGeracao++; pthread_mutex_unlock(&epPedidoTrava);
+    snprintf(epAlvoId, sizeof epAlvoId, "%s", "ttnew");
+    assert(!pthread_create(&novo, NULL, servidorTesteNovo, NULL));
+    clock_gettime(CLOCK_REALTIME, &prazo); prazo.tv_sec += 2;
+    pthread_mutex_lock(&servidorTesteTrava);
+    while (!servidorNovoTerminou && !pthread_cond_timedwait(&servidorTesteCond, &servidorTesteTrava, &prazo)) {}
+    terminou = servidorNovoTerminou;
+    servidorSoltar = 1; pthread_cond_broadcast(&servidorTesteCond);
+    pthread_mutex_unlock(&servidorTesteTrava);
+    pthread_join(antigo, NULL); pthread_join(novo, NULL);
+    assert(terminou && cat_n_episodios(0) == 1);
+    return 0;
+  }
   if (getenv("NV_TEST_787_MEMORY") || getenv("NV_TEST_787_STABLE")) {
     size_t cap = 400000, a = 0, b = 0;
     char *base = malloc(cap), *overlay = malloc(cap);
