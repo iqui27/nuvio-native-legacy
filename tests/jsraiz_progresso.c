@@ -142,6 +142,59 @@ static void resultados(void) {
   srvidx_limpar(&x);
 }
 
+int teste_jf_episodios_preparar(const JfConta *, RedeJob *, const char *, CatEp **, int, CatEpPreparar, void *);
+int teste_px_episodios_preparar(const PxConta *, RedeJob *, const char *, CatEp **, int, CatEpPreparar, void *);
+int perfis_ativo(void) { return 1; }
+static int modoHttp, modoCallback, chamouCallback;
+static const char *respostaHttp;
+int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
+  memset(resposta, 0, sizeof *resposta);
+  resposta->status = 200;
+  resposta->corpo = strdup(respostaHttp);
+  assert(resposta->corpo);
+  resposta->n_corpo = strlen(respostaHttp);
+  if (modoHttp) rede_job_cancelar(pedido->job);
+  return 0;
+}
+static CatEp *prepararTeste(void *ctx, int n) {
+  RedeJob *job = ctx;
+  chamouCallback++;
+  assert(n == 2);
+  if (modoCallback == 1) return NULL;
+  CatEp *out = calloc((size_t)n, sizeof *out);
+  assert(out);
+  if (modoCallback == 2) rede_job_cancelar(job);
+  return out;
+}
+static void testarPreparo(void) {
+  static const char jf[] = "{\"Items\":[{\"Id\":\"a\",\"ParentIndexNumber\":1,\"IndexNumber\":1},{\"Id\":\"b\",\"ParentIndexNumber\":1,\"IndexNumber\":2}]}";
+  static const char px[] = "{\"MediaContainer\":{\"Metadata\":[{\"ratingKey\":\"1\",\"parentIndex\":1,\"index\":1},{\"ratingKey\":\"2\",\"parentIndex\":1,\"index\":2}]}}";
+  JfConta jc = {0}; PxConta pc = {0};
+  snprintf(jc.base, sizeof jc.base, "http://local.invalid");
+  snprintf(jc.servidorId, sizeof jc.servidorId, "0123456789abcdef0123456789abcdef");
+  snprintf(pc.base, sizeof pc.base, "http://local.invalid");
+  snprintf(pc.servidorId, sizeof pc.servidorId, "0123456789abcdef0123456789abcdef01234567");
+  for (int provedor = 0; provedor < 3; provedor++) for (int caso = 0; caso < 4; caso++) {
+    RedeGrupo *grupo = rede_grupo_criar();
+    RedeJob *job = rede_job_criar(grupo);
+    CatEp *out = NULL;
+    assert(grupo && job);
+    jc.tipo = provedor == 1 ? JF_TIPO_EMBY : JF_TIPO_JELLYFIN;
+    respostaHttp = provedor == 2 ? px : jf;
+    modoHttp = caso == 1;
+    modoCallback = caso == 2 ? 1 : caso == 3 ? 2 : 0;
+    chamouCallback = 0;
+    int n = provedor == 2 ? teste_px_episodios_preparar(&pc, job, "1", &out, 2, prepararTeste, job)
+                           : teste_jf_episodios_preparar(&jc, job, "a", &out, 2, prepararTeste, job);
+    assert(chamouCallback == (caso != 1));
+    if (!caso) assert(n == 2 && out && out[0].episodio == 1 && out[1].episodio == 2);
+    else assert(n < 0);
+    free(out);
+    rede_job_soltar(job);
+    rede_grupo_soltar(grupo);
+  }
+}
+
 static int falhas;
 
 static void relatar(const char *nome, size_t i, pid_t pid) {
@@ -168,6 +221,7 @@ int main(void) {
     if (!pid) { alarm(3); todosParsers(MALFORMADOS[i].corpo, MALFORMADOS[i].n); _exit(0); }
     relatar("malformed", i, pid);
   }
+  emFilho("deferred-provider", testarPreparo, 3);
   emFilho("results", resultados, 3);
   emFilho("sweep-plex", varrerPlex, 30);
   emFilho("sweep-jellyfin", varrerJellyfin, 30);

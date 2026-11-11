@@ -1189,6 +1189,12 @@ static int px_episodios_preparar(const PxConta *c, RedeJob *job, const char *ser
   rede_resposta_limpar(&r);
   return n;
 }
+#ifdef NV_TEST_SERVIDOR_PREPARAR
+int teste_px_episodios_preparar(const PxConta *c, RedeJob *job, const char *id,
+                                CatEp **out, int max, CatEpPreparar preparar, void *ctx) {
+  return px_episodios_preparar(c, job, id, out, max, preparar, ctx);
+}
+#endif
 int px_episodios(const PxConta *c, RedeJob *job, const char *serieRk, CatEp *out, int max) {
   return px_episodios_preparar(c, job, serieRk, &out, max, NULL, NULL);
 }

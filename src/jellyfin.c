@@ -750,6 +750,12 @@ static int jf_episodios_preparar(const JfConta *c, RedeJob *job, const char *ser
   rede_resposta_limpar(&r);
   return n;
 }
+#ifdef NV_TEST_SERVIDOR_PREPARAR
+int teste_jf_episodios_preparar(const JfConta *c, RedeJob *job, const char *id,
+                                CatEp **out, int max, CatEpPreparar preparar, void *ctx) {
+  return jf_episodios_preparar(c, job, id, out, max, preparar, ctx);
+}
+#endif
 int jf_episodios(const JfConta *c, RedeJob *job, const char *serieId, CatEp *out, int max) {
   return jf_episodios_preparar(c, job, serieId, &out, max, NULL, NULL);
 }
