@@ -47,7 +47,12 @@ Uint32 SDL_GetTicks(void) { return 0; }
 #include <unistd.h>
 #include <time.h>
 #define NV_TEST_SERVIDORES_FICHA
+#define NV_TEST_PLEX_AVISO
 #include "jellyfin_stub.inc"
+static _Thread_local int plexTesteReduzido;
+static int plexTesteAvisos;
+int plex_tomar_reduzido(void) { int r = plexTesteReduzido; plexTesteReduzido = 0; return r; }
+void plex_publicar_aviso_metadata(void) { __atomic_add_fetch(&plexTesteAvisos, 1, __ATOMIC_RELAXED); }
 static pthread_mutex_t servidorTesteTrava = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t servidorTesteCond = PTHREAD_COND_INITIALIZER;
 static int servidorBloqueia, servidorEntrou, servidorSoltar, servidorNovoTerminou;
@@ -60,6 +65,7 @@ int servidores_ficha_preparar(CatItem *item, CatEp **eps, int maxEps, CatEpPrepa
   }
   pthread_mutex_unlock(&servidorTesteTrava);
   if (!servidorBloqueia) return -1;
+  plexTesteReduzido = 1;
   *eps = preparar(ctx, 1);
   if (!*eps) return -1;
   memset(*eps, 0, sizeof **eps);
@@ -418,11 +424,13 @@ int main(void) {
     pthread_mutex_unlock(&servidorTesteTrava);
     pthread_join(antigo, NULL); pthread_join(novo, NULL);
     assert(terminou && cat_n_episodios(0) == 1);
+    assert(plexTesteAvisos == 0);
     assert(cat_episodio(0, 0) && cat_episodio(0, 0)->episodio == 1);
     catalogoCom("jf:new", "series", "server");
     epItem = 0;
     buscarEps(NULL);
     assert(cat_n_episodios(0) == 1 && cat_episodio(0, 0)->episodio == 99);
+    assert(plexTesteAvisos == 1);
     return 0;
   }
   if (getenv("NV_TEST_787_MEMORY") || getenv("NV_TEST_787_STABLE")) {

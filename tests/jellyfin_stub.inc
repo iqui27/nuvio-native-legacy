@@ -6,6 +6,10 @@
 #include "catalogo.h"
 #include "addons.h"
 #include <stdint.h>
+#ifndef NV_TEST_PLEX_AVISO
+int plex_tomar_reduzido(void) { return 0; }
+void plex_publicar_aviso_metadata(void) { }
+#endif
 int ajustes_jellyfin_ligado(void) { return 0; }
 int servidores_conectado(void) { return 0; }
 int servidores_continuar(CatItem *out, int max) { (void)out; (void)max; return 0; }

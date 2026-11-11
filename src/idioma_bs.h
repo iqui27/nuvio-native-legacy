@@ -1048,6 +1048,7 @@
   T("Alfabética · OK: agrupar por addon", "Abecedno · OK: grupiraj po dodatku"),
   T("Algoritmo de ampliação", "Algoritam povećanja"),
   T("Alguns ajustes não puderam ser copiados.", "Neke postavke nije bilo moguće kopirati."),
+  T("Alguns detalhes dos episódios do Plex não puderam ser carregados.", ""),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Rolar a página ou sair dela volta para a arte.", "Nekoliko sekundi nakon otvaranja naslova, trejler se pušta umjesto pozadinske slike; zvuk prati Zvuk trejlera. Pomicanje stranice ili izlazak s nje vraća sliku."),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Se o trailer do cartaz já estava tocando, ele continua na página. Rolar a página ou sair dela volta para a arte.", "Nekoliko sekundi nakon otvaranja naslova, trejler se pušta umjesto pozadinske slike; zvuk prati Zvuk trejlera. Ako je trejler s kartice već svirao, nastavlja se na stranici. Pomicanje stranice ili izlazak s nje vraća sliku."),
   T("Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.", "Nekoliko sekundi nakon otvaranja naslova, njegov trailer se bez zvuka reprodukuje umjesto pozadine. Listanjem stranice ili izlaskom vraća se slika."),

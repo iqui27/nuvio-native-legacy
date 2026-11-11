@@ -1048,6 +1048,7 @@
   T("Alfabética · OK: agrupar por addon", "Theo bảng chữ cái · OK: nhóm theo tiện ích"),
   T("Algoritmo de ampliação", "Thuật toán phóng to"),
   T("Alguns ajustes não puderam ser copiados.", "Không thể sao chép một số cài đặt."),
+  T("Alguns detalhes dos episódios do Plex não puderam ser carregados.", ""),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Rolar a página ou sair dela volta para a arte.", "Vài giây sau khi mở một tựa phim, trailer phát thay cho ảnh nền; âm thanh theo Âm thanh trailer. Cuộn trang hoặc rời trang sẽ đưa ảnh trở lại."),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Se o trailer do cartaz já estava tocando, ele continua na página. Rolar a página ou sair dela volta para a arte.", "Vài giây sau khi mở một tựa phim, trailer phát thay cho ảnh nền; âm thanh theo Âm thanh trailer. Nếu trailer của thẻ đang phát, nó tiếp tục trên trang. Cuộn trang hoặc rời trang sẽ đưa ảnh trở lại."),
   T("Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.", "Vài giây sau khi bạn mở một tựa phim, trailer sẽ phát không tiếng thay cho ảnh nền. Cuộn trang hoặc rời đi thì hình ảnh sẽ quay lại."),

@@ -1048,6 +1048,7 @@
   T("Alfabética · OK: agrupar por addon", "أبجدي · OK: تجميع حسب الإضافة"),
   T("Algoritmo de ampliação", "خوارزمية التكبير"),
   T("Alguns ajustes não puderam ser copiados.", "تعذر نسخ بعض الإعدادات."),
+  T("Alguns detalhes dos episódios do Plex não puderam ser carregados.", "تعذر تحميل بعض تفاصيل حلقات Plex."),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Rolar a página ou sair dela volta para a arte.", "بعد ثوانٍ من فتح عنوان، يُشغَّل الإعلان مكان الصورة الخلفية؛ ويتبع الصوت إعداد صوت الإعلان. تمرير الصفحة أو مغادرتها يعيد الصورة."),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Se o trailer do cartaz já estava tocando, ele continua na página. Rolar a página ou sair dela volta para a arte.", "بعد ثوانٍ من فتح عنوان، يُشغَّل الإعلان مكان الصورة الخلفية؛ ويتبع الصوت إعداد صوت الإعلان. إذا كان إعلان البطاقة قيد التشغيل، فإنه يستمر في الصفحة. تمرير الصفحة أو مغادرتها يعيد الصورة."),
   T("Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.", "بعد ثوانٍ من فتح عنوان، يُشغَّل إعلانه بلا صوت مكان الخلفية. تمرير الصفحة أو مغادرتها يعيد الصورة."),

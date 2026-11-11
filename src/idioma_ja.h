@@ -1048,6 +1048,7 @@
   T("Alfabética · OK: agrupar por addon", "五十音順 · OK: アドオン別にグループ化"),
   T("Algoritmo de ampliação", "アップスケーリング方式"),
   T("Alguns ajustes não puderam ser copiados.", "一部の設定をコピーできませんでした。"),
+  T("Alguns detalhes dos episódios do Plex não puderam ser carregados.", ""),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Rolar a página ou sair dela volta para a arte.", "作品を開いて数秒後、背景アートの代わりに予告編が再生されます。音声は「予告編の音声」に従います。ページをスクロールするか離れると、アートに戻ります。"),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Se o trailer do cartaz já estava tocando, ele continua na página. Rolar a página ou sair dela volta para a arte.", "作品を開いて数秒後、背景アートの代わりに予告編が再生されます。音声は「予告編の音声」に従います。カードの予告編がすでに再生中なら、ページでも続きます。ページをスクロールするか離れると、アートに戻ります。"),
   T("Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.", "作品を開いて数秒後、背景アートの代わりに予告編が音なしで再生されます。ページをスクロールするか離れると、アートに戻ります。"),

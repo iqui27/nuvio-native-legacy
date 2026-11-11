@@ -37,6 +37,7 @@
 #include "idbase.h"
 #include "cwfrente.h"
 #include "servidores.h"
+#include "plex.h"
 #include "descdebounce.h"
 #include "nlanc.h"
 #include <stdint.h>   /* uintptr_t: a geracao viaja no argumento do fio */
@@ -9029,11 +9030,18 @@ static void *buscarEps(void *u) {
     int preso = 0;
     CatEp *eps = NULL;
     CatItem ed = base;
+    (void)plex_tomar_reduzido();
     int ne = servidores_ficha_preparar(&ed, &eps, VIDEOS_MAX, epServidorPreparar, &preso);
+    int reduzido = plex_tomar_reduzido();
     alvoItem = epPublicacaoIniciar(alvoItem);
     if (ne >= 0 && alvoItem >= 0) {
       descCatAtualizar(cat_atualizar_item, alvoItem, &ed);
-      if (ne > 0) descCatEpisodios(alvoItem, eps, ne);
+      if (ne > 0) {
+        DESC_PUBLICAR({
+          if (cat_definir_episodios_publicar(alvoItem, eps, ne) && reduzido)
+            plex_publicar_aviso_metadata();
+        });
+      }
     }
     pthread_mutex_unlock(&epPedidoTrava);
     free(eps);

@@ -1048,6 +1048,7 @@
   T("Alfabética · OK: agrupar por addon", "Alfabetisk · OK: gruppera efter add-on"),
   T("Algoritmo de ampliação", "Uppskalningsalgoritm"),
   T("Alguns ajustes não puderam ser copiados.", "Vissa inställningar kunde inte kopieras."),
+  T("Alguns detalhes dos episódios do Plex não puderam ser carregados.", ""),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Rolar a página ou sair dela volta para a arte.", "Några sekunder efter att du öppnat en titel spelas trailern i stället för bakgrundsbilden; ljudet följer Trailerljud. Att rulla sidan eller lämna den tar tillbaka bilden."),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Se o trailer do cartaz já estava tocando, ele continua na página. Rolar a página ou sair dela volta para a arte.", "Några sekunder efter att du öppnat en titel spelas trailern i stället för bakgrundsbilden; ljudet följer Trailerljud. Om kortets trailer redan spelades fortsätter den på sidan. Att rulla sidan eller lämna den tar tillbaka bilden."),
   T("Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.", "Några sekunder efter att du öppnat en titel spelas trailern upp utan ljud i stället för bakgrundsbilden. Om du rullar sidan eller lämnar den kommer omslaget tillbaka."),

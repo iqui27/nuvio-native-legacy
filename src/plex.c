@@ -1156,9 +1156,73 @@ int px_detalhe(const PxConta *c, RedeJob *job, const char *rk, CatItem *out) {
   return e;
 }
 
-/* Bounded compressed staging avoids a second full CatEp array, including on
- * memory-backed filesystems. Incompressible lists fail without publication. */
+/* At most two staged Plex lists: one obsolete request and the current one. */
+static pthread_mutex_t pxEpVagasTrava = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t pxEpVagasCond = PTHREAD_COND_INITIALIZER;
+static int pxEpVagas;
+static int pxEpAvisoMetadata;
+/* Preparation and discovery publication run on the same worker; the flag is
+ * consumed before publication so a cancelled or stale request cannot warn. */
+static pthread_key_t pxEpReduzidoChave;
+static pthread_once_t pxEpReduzidoUma = PTHREAD_ONCE_INIT;
+static int pxEpReduzidoCriada;
+static void pxEpReduzidoCriar(void) { pxEpReduzidoCriada = !pthread_key_create(&pxEpReduzidoChave, NULL); }
+int plex_tomar_reduzido(void) {
+  pthread_once(&pxEpReduzidoUma, pxEpReduzidoCriar);
+  if (!pxEpReduzidoCriada) return 0;
+  int r = pthread_getspecific(pxEpReduzidoChave) != NULL;
+  pthread_setspecific(pxEpReduzidoChave, NULL);
+  return r;
+}
+void plex_publicar_aviso_metadata(void) { __atomic_store_n(&pxEpAvisoMetadata, 1, __ATOMIC_RELEASE); }
+int plex_tomar_aviso_metadata(int cartaoAberto) {
+  return cartaoAberto ? 0 : __atomic_exchange_n(&pxEpAvisoMetadata, 0, __ATOMIC_ACQ_REL);
+}
+#ifdef NV_TEST_SERVIDOR_PREPARAR
+static int pxEpEsperando;
+int teste_plex_esperando(void) {
+  int n;
+  pthread_mutex_lock(&pxEpVagasTrava); n = pxEpEsperando; pthread_mutex_unlock(&pxEpVagasTrava);
+  return n;
+}
+#endif
+static int pxEpEntrar(RedeJob *job) {
+  int ok;
+  pthread_mutex_lock(&pxEpVagasTrava);
+  while (pxEpVagas >= 2 && rede_job_estado(job) == REDE_OK) {
+    struct timespec ate;
+    clock_gettime(CLOCK_REALTIME, &ate);
+    ate.tv_nsec += 100000000;
+    if (ate.tv_nsec >= 1000000000) { ate.tv_nsec -= 1000000000; ate.tv_sec++; }
+#ifdef NV_TEST_SERVIDOR_PREPARAR
+    pxEpEsperando++;
+#endif
+    pthread_cond_timedwait(&pxEpVagasCond, &pxEpVagasTrava, &ate);
+#ifdef NV_TEST_SERVIDOR_PREPARAR
+    pxEpEsperando--;
+#endif
+  }
+  ok = rede_job_estado(job) == REDE_OK;
+  if (ok) pxEpVagas++;
+  pthread_mutex_unlock(&pxEpVagasTrava);
+  return ok;
+}
+static void pxEpSair(void) {
+  pthread_mutex_lock(&pxEpVagasTrava);
+  pxEpVagas--;
+  pthread_cond_broadcast(&pxEpVagasCond);
+  pthread_mutex_unlock(&pxEpVagasTrava);
+}
+/* Full metadata when it fits; a bounded identity list keeps episodes playable. */
+typedef struct { int temporada, episodio; unsigned nome; char vid[sizeof(((CatEp *)0)->vid)]; } PxEpMin;
+#ifdef NV_TEST_SERVIDOR_PREPARAR
+extern void *teste_plex_min_realloc(void *, size_t);
+#define PX_EP_MIN_REALLOC(p, n) teste_plex_min_realloc((p), (n))
+#else
+#define PX_EP_MIN_REALLOC(p, n) realloc((p), (n))
+#endif
 #define PX_EP_COMP_MAX (512u * 1024u)
+#define PX_EP_NOMES_MAX (128u * 1024u)
 typedef struct { z_stream z; unsigned char *dados; size_t usados, capacidade; } PxEpCompacto;
 static int pxEpComprimir(PxEpCompacto *c, const void *dados, size_t tamanho, int fim) {
   c->z.next_in = (Bytef *)dados; c->z.avail_in = (uInt)tamanho;
@@ -1182,12 +1246,16 @@ static int pxEpComprimir(PxEpCompacto *c, const void *dados, size_t tamanho, int
 }
 static int px_episodios_preparar(const PxConta *c, RedeJob *job, const char *serieRk,
                                  CatEp **saida, int max, CatEpPreparar preparar, void *ctx) {
-  int vistos = 0, validos = 0, resultado = 0;
+  int vistos = 0, validos = 0, resultado = 0, completo = 1, apoio = 1, capacidadeMin = 0;
+  PxEpMin *minimos = NULL;
+  char *nomes = NULL;
+  size_t nomesUsados = 0, nomesCap = 0;
   PxEpCompacto compacto = {0};
   if (!soDigitos(serieRk, 20) || !saida) return PX_ERR_ENTRADA;
   if (max < 1) return 0;
   if (max > CAT_EP_MAX) max = CAT_EP_MAX;
-  if (deflateInit(&compacto.z, Z_DEFAULT_COMPRESSION) != Z_OK) return PX_ERR_REDE;
+  if (!pxEpEntrar(job)) return PX_ERR_CANCELADO;
+  if (deflateInit(&compacto.z, Z_DEFAULT_COMPRESSION) != Z_OK) completo = 0;
   while (vistos < max) {
     RedeResposta r;
     char caminho[160];
@@ -1218,7 +1286,43 @@ static int px_episodios_preparar(const PxConta *c, RedeJob *job, const char *ser
             char *valor = tok + sizeof("&X-Plex-Token=") - 1;
             memset(valor, 0, sizeof ep.thumb - (size_t)(valor - ep.thumb));
           }
-          if (!pxEpComprimir(&compacto, &ep, sizeof ep, 0)) { resultado = PX_ERR_REDE; break; }
+          if (apoio && validos == capacidadeMin) {
+            int cap = capacidadeMin ? capacidadeMin * 2 : 64;
+            if (cap > max) cap = max;
+            PxEpMin *nova = PX_EP_MIN_REALLOC(minimos, (size_t)cap * sizeof *nova);
+            if (!nova) {
+              apoio = 0; free(minimos); minimos = NULL; free(nomes); nomes = NULL;
+              if (!completo) { resultado = PX_ERR_REDE; break; }
+            } else { minimos = nova; capacidadeMin = cap; }
+          }
+          if (apoio) {
+            minimos[validos].temporada = ep.temporada;
+            minimos[validos].episodio = ep.episodio;
+            minimos[validos].nome = 0;
+            memcpy(minimos[validos].vid, ep.vid, sizeof ep.vid);
+            if (ep.nome[0]) {
+              size_t tamanho = strlen(ep.nome) + 1, precisa = nomesUsados + tamanho;
+              if (precisa <= PX_EP_NOMES_MAX) {
+                if (precisa > nomesCap) {
+                  size_t cap = nomesCap ? nomesCap * 2 : 1024;
+                  while (cap < precisa) cap *= 2;
+                  if (cap > PX_EP_NOMES_MAX) cap = PX_EP_NOMES_MAX;
+                  char *nova = realloc(nomes, cap);
+                  if (nova) { nomes = nova; nomesCap = cap; }
+                }
+                if (precisa <= nomesCap) {
+                  memcpy(nomes + nomesUsados, ep.nome, tamanho);
+                  minimos[validos].nome = (unsigned)nomesUsados + 1;
+                  nomesUsados = precisa;
+                }
+              }
+            }
+          }
+          if (completo && !pxEpComprimir(&compacto, &ep, sizeof ep, 0)) {
+            completo = 0; deflateEnd(&compacto.z);
+            free(compacto.dados); compacto.dados = NULL;
+            if (!apoio) { resultado = PX_ERR_REDE; break; }
+          }
           validos++;
         }
         p = f;
@@ -1231,25 +1335,47 @@ static int px_episodios_preparar(const PxConta *c, RedeJob *job, const char *ser
     if ((total >= 0 && vistos >= total) || (total < 0 && contagem < limite)) break;
   }
   if (!resultado && rede_job_estado(job) != REDE_OK) resultado = PX_ERR_CANCELADO;
-  if (!resultado && validos && !pxEpComprimir(&compacto, NULL, 0, 1)) resultado = PX_ERR_REDE;
-  deflateEnd(&compacto.z);
+  if (completo) {
+    if (!resultado && validos && !pxEpComprimir(&compacto, NULL, 0, 1)) completo = 0;
+    deflateEnd(&compacto.z);
+    if (!completo) { free(compacto.dados); compacto.dados = NULL; if (!apoio) resultado = PX_ERR_REDE; }
+  }
+  if (completo) { free(minimos); minimos = NULL; free(nomes); nomes = NULL; }
+  else if (!resultado && validos)
+    printf("[plex] episodes: metadata limited; playable episode IDs retained\n");
   if (!resultado && validos && preparar) {
     *saida = preparar(ctx, validos);
     if (!*saida || rede_job_estado(job) != REDE_OK) resultado = PX_ERR_CANCELADO;
   }
   if (!resultado && validos) {
     uLongf saidaBytes = (uLongf)((size_t)validos * sizeof **saida);
-    if (uncompress((Bytef *)*saida, &saidaBytes, compacto.dados, (uLong)compacto.usados) != Z_OK ||
-        saidaBytes != (uLongf)((size_t)validos * sizeof **saida)) resultado = PX_ERR_REDE;
+    if (completo && (uncompress((Bytef *)*saida, &saidaBytes, compacto.dados, (uLong)compacto.usados) != Z_OK ||
+        saidaBytes != (uLongf)((size_t)validos * sizeof **saida))) resultado = PX_ERR_REDE;
     else {
+      if (!completo) for (int i = 0; i < validos; i++) {
+        memset(&(*saida)[i], 0, sizeof **saida);
+        (*saida)[i].temporada = minimos[i].temporada;
+        (*saida)[i].episodio = minimos[i].episodio;
+        memcpy((*saida)[i].vid, minimos[i].vid, sizeof minimos[i].vid);
+        if (minimos[i].nome)
+          snprintf((*saida)[i].nome, sizeof (*saida)[i].nome, "%s", nomes + minimos[i].nome - 1);
+      }
       for (int i = 0; i < validos; i++) if (strstr((*saida)[i].thumb, "&X-Plex-Token=")) {
         size_t n = strlen((*saida)[i].thumb);
         snprintf((*saida)[i].thumb + n, sizeof (*saida)[i].thumb - n, "%s", c->token);
       }
       resultado = validos;
+      if (!completo && rede_job_estado(job) == REDE_OK) {
+        pthread_once(&pxEpReduzidoUma, pxEpReduzidoCriar);
+        if (!pxEpReduzidoCriada || pthread_setspecific(pxEpReduzidoChave, (void *)1))
+          resultado = PX_ERR_REDE;
+      }
     }
   }
   free(compacto.dados);
+  free(minimos);
+  free(nomes);
+  pxEpSair();
   return resultado;
 }
 #ifdef NV_TEST_SERVIDOR_PREPARAR

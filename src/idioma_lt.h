@@ -1048,6 +1048,7 @@
   T("Alfabética · OK: agrupar por addon", "Abėcėlės tvarka · OK: grupuoti pagal papildinį"),
   T("Algoritmo de ampliação", "Didinimo algoritmas"),
   T("Alguns ajustes não puderam ser copiados.", "Kai kurių nustatymų nepavyko nukopijuoti."),
+  T("Alguns detalhes dos episódios do Plex não puderam ser carregados.", ""),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Rolar a página ou sair dela volta para a arte.", "Praėjus kelioms sekundėms po pavadinimo atidarymo, vietoj fono paveikslo paleidžiamas anonsas; garsą nustato Anonso garsas. Slinkus puslapį ar iš jo išėjus, grįžta paveikslas."),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Se o trailer do cartaz já estava tocando, ele continua na página. Rolar a página ou sair dela volta para a arte.", "Praėjus kelioms sekundėms po pavadinimo atidarymo, vietoj fono paveikslo paleidžiamas anonsas; garsą nustato Anonso garsas. Jei kortelės anonsas jau grojo, jis tęsiasi puslapyje. Slinkus puslapį ar iš jo išėjus, grįžta paveikslas."),
   T("Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.", "Po kelių sekundžių, kai atidarote pavadinimą, vietoj fono be garso pradeda groti jo anonsas. Slinkus puslapį ar jį palikus vaizdas sugrįžta."),

@@ -3,10 +3,14 @@
 // so a hang is reported as a FAIL instead of blocking the suite.
 #include "plex.h"
 #include "jellyfin.h"
+#include "guialembrete.h"
+#include <SDL2/SDL.h>
 #include "servidores.h"
 #include "srvidx.h"
 #include "stub_perfisessao.h"
 #include <assert.h>
+#include <pthread.h>
+#include <sched.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -144,14 +148,28 @@ static void resultados(void) {
 
 int teste_jf_episodios_preparar(const JfConta *, RedeJob *, const char *, CatEp **, int, CatEpPreparar, void *);
 int teste_px_episodios_preparar(const PxConta *, RedeJob *, const char *, CatEp **, int, CatEpPreparar, void *);
+int teste_plex_esperando(void);
 int perfis_ativo(void) { return 1; }
+const char *i18n(const char *s) { return s; }
+Uint32 SDL_GetTicks(void) { return 0; }
 FILE *teste_tmpfile(void) { return NULL; }
+static int falharMinimos;
+void *teste_plex_min_realloc(void *p, size_t n) { return falharMinimos ? NULL : realloc(p, n); }
 static int modoHttp, modoCallback, chamouCallback, totalSimulado, pedidosSimulados, extraSimulado;
 static int invalidoSimulado, paddingSimulado, aleatorioSimulado;
+static pthread_mutex_t concorrenciaTrava = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t concorrenciaCond = PTHREAD_COND_INITIALIZER;
+static int concorrente, chegaram, liberarConcorrentes;
 static const char *respostaHttp;
 int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
   memset(resposta, 0, sizeof *resposta);
   resposta->status = 200;
+  if (concorrente) {
+    pthread_mutex_lock(&concorrenciaTrava);
+    chegaram++; pthread_cond_broadcast(&concorrenciaCond);
+    while (!liberarConcorrentes) pthread_cond_wait(&concorrenciaCond, &concorrenciaTrava);
+    pthread_mutex_unlock(&concorrenciaTrava);
+  }
   if (totalSimulado) {
     int inicio = -1, tamanho = 0;
     const char *q = strstr(pedido->url, "X-Plex-Container-Start=");
@@ -175,8 +193,8 @@ int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
         }
         texto[sizeof texto - 1] = 0;
         pos += (size_t)snprintf(resposta->corpo + pos, cap - pos,
-          "%s{\"ratingKey\":\"%d\",\"parentIndex\":1,\"index\":%d,\"summary\":\"%s\"}",
-          i ? "," : "", inicio + i + 1, inicio + i + 1, texto);
+          "%s{\"ratingKey\":\"%d\",\"parentIndex\":1,\"index\":%d,\"title\":\"Title %d\",\"summary\":\"%s\"}",
+          i ? "," : "", inicio + i + 1, inicio + i + 1, inicio + i + 1, texto);
       } else
         pos += (size_t)snprintf(resposta->corpo + pos, cap - pos,
           "%s{\"ratingKey\":\"%d\",\"parentIndex\":1,\"index\":%d,\"padding\":\"%0*d\"}",
@@ -192,7 +210,7 @@ int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
 }
 static CatEp *prepararTeste(void *ctx, int n) {
   RedeJob *job = ctx;
-  chamouCallback++;
+  __atomic_add_fetch(&chamouCallback, 1, __ATOMIC_RELAXED);
   if (n != (totalSimulado ? totalSimulado - invalidoSimulado : 2))
     fprintf(stderr, "unexpected provider episode count %d total %d invalid %d\n", n, totalSimulado, invalidoSimulado);
   assert(n == (totalSimulado ? totalSimulado - invalidoSimulado : 2));
@@ -202,6 +220,12 @@ static CatEp *prepararTeste(void *ctx, int n) {
   assert(out);
   if (modoCallback == 2) rede_job_cancelar(job);
   return out;
+}
+typedef struct { PxConta *conta; RedeJob *job; CatEp *out; int resultado; } PedidoConcorrente;
+static void *buscarConcorrente(void *arg) {
+  PedidoConcorrente *p = arg;
+  p->resultado = teste_px_episodios_preparar(p->conta, p->job, "1", &p->out, 2, prepararTeste, p->job);
+  return NULL;
 }
 static void testarPreparo(void) {
   static const char jf[] = "{\"Items\":[{\"Id\":\"a\",\"ParentIndexNumber\":1,\"IndexNumber\":1},{\"Id\":\"b\",\"ParentIndexNumber\":1,\"IndexNumber\":2}]}";
@@ -232,6 +256,15 @@ static void testarPreparo(void) {
     free(out);
     rede_job_soltar(job);
     rede_grupo_soltar(grupo);
+  }
+  {
+    RedeGrupo *grupo = rede_grupo_criar();
+    RedeJob *job = rede_job_criar(grupo);
+    CatEp *out = NULL;
+    respostaHttp = px; modoHttp = modoCallback = 0; falharMinimos = 1;
+    int n = teste_px_episodios_preparar(&pc, job, "1", &out, 2, prepararTeste, job);
+    assert(n == 2 && out && out[0].episodio == 1 && strstr(out[0].thumb, "&X-Plex-Token=synthetic-token"));
+    falharMinimos = 0; free(out); rede_job_soltar(job); rede_grupo_soltar(grupo);
   }
   {
     RedeGrupo *grupo = rede_grupo_criar();
@@ -268,10 +301,75 @@ static void testarPreparo(void) {
     grupo = rede_grupo_criar(); job = rede_job_criar(grupo); out = NULL;
     pedidosSimulados = chamouCallback = 0;
     extraSimulado = invalidoSimulado = paddingSimulado = 0; aleatorioSimulado = 1;
+    assert(!plex_tomar_aviso_metadata(0));
     n = teste_px_episodios_preparar(&pc, job, "1", &out, 5000, prepararTeste, job);
-    assert(n < 0 && !chamouCallback && !out);
-    rede_job_soltar(job); rede_grupo_soltar(grupo);
+    assert(n == 4650 && chamouCallback == 1 && out);
+    for (int i = 0; i < n; i++) assert(out[i].episodio == i + 1 && out[i].vid[0]);
+    assert(!strcmp(out[0].nome, "Title 1") && !strcmp(out[4649].nome, "Title 4650"));
+    assert(!out[0].sinopse[0]);
+    assert(!plex_tomar_aviso_metadata(0));
+    assert(plex_tomar_reduzido() && !plex_tomar_reduzido());
+    plex_publicar_aviso_metadata();
+    glem_teste_cartao("Program", "Channel", 0);
+    assert(glem_cartao_aberto());
+    if (plex_tomar_aviso_metadata(glem_cartao_aberto())) glem_aviso_curto("Plex");
+    assert(glem_cartao_aberto());
+    glem_teste_cartao("Program", "Channel", 1);
+    assert(!glem_cartao_aberto());
+    assert(plex_tomar_aviso_metadata(glem_cartao_aberto()));
+    glem_aviso_curto("Plex");
+    assert(!plex_tomar_aviso_metadata(glem_cartao_aberto()));
+    free(out); rede_job_soltar(job); rede_grupo_soltar(grupo);
     totalSimulado = modoHttp = aleatorioSimulado = 0;
+  }
+  {
+    RedeGrupo *grupo = rede_grupo_criar();
+    PedidoConcorrente a = { .conta = &pc, .job = rede_job_criar(grupo) };
+    PedidoConcorrente b = { .conta = &pc, .job = rede_job_criar(grupo) };
+    PedidoConcorrente c = { .conta = &pc, .job = rede_job_criar(grupo) };
+    pthread_t fa, fb, fc;
+    respostaHttp = px; concorrente = 1; chegaram = liberarConcorrentes = chamouCallback = 0;
+    assert(!pthread_create(&fa, NULL, buscarConcorrente, &a));
+    assert(!pthread_create(&fb, NULL, buscarConcorrente, &b));
+    pthread_mutex_lock(&concorrenciaTrava);
+    while (chegaram < 2) pthread_cond_wait(&concorrenciaCond, &concorrenciaTrava);
+    pthread_mutex_unlock(&concorrenciaTrava);
+    assert(!pthread_create(&fc, NULL, buscarConcorrente, &c));
+    while (!teste_plex_esperando()) sched_yield();
+    rede_job_cancelar(c.job);
+    pthread_join(fc, NULL);
+    assert(c.resultado < 0 && !c.out && chegaram == 2);
+    rede_job_cancelar(a.job);
+    pthread_mutex_lock(&concorrenciaTrava);
+    liberarConcorrentes = 1; pthread_cond_broadcast(&concorrenciaCond);
+    pthread_mutex_unlock(&concorrenciaTrava);
+    pthread_join(fa, NULL); pthread_join(fb, NULL);
+    assert(a.resultado < 0 && !a.out && b.resultado == 2 && b.out);
+    concorrente = 0;
+    rede_job_soltar(c.job); c.job = rede_job_criar(grupo);
+    buscarConcorrente(&c);
+    assert(c.resultado == 2 && c.out);
+    free(b.out); free(c.out); rede_job_soltar(a.job); rede_job_soltar(b.job); rede_job_soltar(c.job);
+    a = (PedidoConcorrente){ .conta = &pc, .job = rede_job_criar(grupo) };
+    b = (PedidoConcorrente){ .conta = &pc, .job = rede_job_criar(grupo) };
+    c = (PedidoConcorrente){ .conta = &pc, .job = rede_job_criar(grupo) };
+    concorrente = 1; chegaram = liberarConcorrentes = 0;
+    assert(!pthread_create(&fa, NULL, buscarConcorrente, &a));
+    assert(!pthread_create(&fb, NULL, buscarConcorrente, &b));
+    pthread_mutex_lock(&concorrenciaTrava);
+    while (chegaram < 2) pthread_cond_wait(&concorrenciaCond, &concorrenciaTrava);
+    pthread_mutex_unlock(&concorrenciaTrava);
+    assert(!pthread_create(&fc, NULL, buscarConcorrente, &c));
+    while (!teste_plex_esperando()) sched_yield();
+    rede_job_cancelar(a.job);
+    pthread_mutex_lock(&concorrenciaTrava);
+    liberarConcorrentes = 1; pthread_cond_broadcast(&concorrenciaCond);
+    pthread_mutex_unlock(&concorrenciaTrava);
+    pthread_join(fa, NULL); pthread_join(fb, NULL); pthread_join(fc, NULL);
+    assert(a.resultado < 0 && b.resultado == 2 && c.resultado == 2);
+    free(b.out); free(c.out);
+    rede_job_soltar(a.job); rede_job_soltar(b.job); rede_job_soltar(c.job);
+    concorrente = 0; rede_grupo_soltar(grupo);
   }
 }
 

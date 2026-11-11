@@ -2911,8 +2911,11 @@ static int definirEpisodios(int indiceItem, const CatEp *lista, int qtd,
   pthread_mutex_unlock(&epTrava);
   return 1;
 }
+int cat_definir_episodios_publicar(int indiceItem, const CatEp *lista, int qtd) {
+  return definirEpisodios(indiceItem, lista, qtd, 0, 0, 0);
+}
 void cat_definir_episodios(int indiceItem, const CatEp *lista, int qtd) {
-  (void)definirEpisodios(indiceItem, lista, qtd, 0, 0, 0);
+  (void)cat_definir_episodios_publicar(indiceItem, lista, qtd);
 }
 int cat_definir_episodios_versao(int indiceItem, const CatEp *lista, int qtd, unsigned versao) {
   return definirEpisodios(indiceItem, lista, qtd, 1, versao, 0);

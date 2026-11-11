@@ -544,6 +544,7 @@ void cat_definir_tudo(const CatItem *lista, int qtd,
 
 // Substitui os episodios de UM titulo. Chamado quando o detalhe abre.
 void cat_definir_episodios(int indiceItem, const CatEp *lista, int n);
+int cat_definir_episodios_publicar(int indiceItem, const CatEp *lista, int n);
 // Publish only if no episode list has changed since the snapshot.
 int cat_definir_episodios_versao(int indiceItem, const CatEp *lista, int n, unsigned versao);
 int cat_temporadas_snapshot(int item, int *temps, int cap, int *neps, unsigned *versao);

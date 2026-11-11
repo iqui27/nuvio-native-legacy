@@ -1047,6 +1047,7 @@
   T("Alfabética · OK: agrupar por addon", "Alphabétique · OK: grouper par addon"),
   T("Algoritmo de ampliação", "Algorithme de mise à l'échelle"),
   T("Alguns ajustes não puderam ser copiados.", "Certains réglages n'ont pas pu être copiés."),
+  T("Alguns detalhes dos episódios do Plex não puderam ser carregados.", ""),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Rolar a página ou sair dela volta para a arte.", "Quelques secondes après l'ouverture d'un titre, la bande-annonce se lance à la place de l'arrière-plan ; le son suit Son de la bande-annonce. Faire défiler la page ou la quitter ramène le visuel."),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Se o trailer do cartaz já estava tocando, ele continua na página. Rolar a página ou sair dela volta para a arte.", "Quelques secondes après l'ouverture d'un titre, la bande-annonce se lance à la place de l'arrière-plan ; le son suit Son de la bande-annonce. Si la bande-annonce de la vignette était déjà lancée, elle continue sur la page. Faire défiler la page ou la quitter ramène le visuel."),
   T("Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.", "Quelques secondes après l'ouverture d'un titre, la bande-annonce se lance sans le son à la place de l'arrière-plan. Faire défiler la page ou la quitter ramène le visuel."),

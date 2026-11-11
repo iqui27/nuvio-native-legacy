@@ -1048,6 +1048,7 @@
   T("Alfabética · OK: agrupar por addon", "Abecedne · OK: zoskupiť podľa doplnku"),
   T("Algoritmo de ampliação", "Algoritmus zväčšenia"),
   T("Alguns ajustes não puderam ser copiados.", "Niektoré nastavenia sa nepodarilo skopírovať."),
+  T("Alguns detalhes dos episódios do Plex não puderam ser carregados.", ""),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Rolar a página ou sair dela volta para a arte.", "Pár sekúnd po otvorení titulu sa namiesto obrázka na pozadí prehrá upútavka; zvuk riadi Zvuk traileru. Posunutie stránky alebo jej opustenie vráti obrázok."),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Se o trailer do cartaz já estava tocando, ele continua na página. Rolar a página ou sair dela volta para a arte.", "Pár sekúnd po otvorení titulu sa namiesto obrázka na pozadí prehrá upútavka; zvuk riadi Zvuk traileru. Ak upútavka z karty už hrala, pokračuje na stránke. Posunutie stránky alebo jej opustenie vráti obrázok."),
   T("Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.", "Niekoľko sekúnd po otvorení titulu sa namiesto pozadia prehrá jeho upútavka bez zvuku. Posunutie stránky alebo jej opustenie vráti obrázok."),
