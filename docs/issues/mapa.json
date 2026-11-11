@@ -15500,6 +15500,15 @@
  "validacoes": [
   {
    "data": "2026-11-11",
+   "quem": "Revisão independente histórica; Central Issues e TV (conferência)",
+   "o_que": "Leitura de vistos e progresso Jellyfin por usuário.",
+   "issues": [617],
+   "ref": "aeec47d32dd10320185ed9d799896907d474d715; ba935402da65d6d7c013a1b429e15372dc0e5a12",
+   "resultado": "Revisão histórica OK; jellyfin.sh, emby.sh, plex.sh, srvidx.sh e build-local.sh rc0 relatados; commits ancestrais da integração.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue617b.log SHA256 6ca1acfb0d0c43482a44e7fc49ad04f3a33f7324ba7b4e8ca47771978a4878fe. Fixtures em host; sem conta ou dispositivo real; progresso em percentual não prova seek exato por ticks."
+  },
+  {
+   "data": "2026-11-11",
    "quem": "Revisão independente histórica; Central TV (conferência)",
    "o_que": "Nomes de arquivo de legendas de addons.",
    "issues": [606],
