@@ -15470,6 +15470,15 @@
  "validacoes": [
   {
    "data": "2026-11-11",
+   "quem": "Central Issues (verificação em host)",
+   "o_que": "Troca de fonte preserva episódio e progresso durante reconstrução de Continue Watching.",
+   "issues": [570],
+   "ref": "ee42d28cc22261bd5b31549b2248a50422f07c98; 4e93411db96b83e0b607399ae25a94ce69fc9489",
+   "resultado": "fonte_troca.sh rc0 no HEAD 5fbfdb32411cbd53dd059180c03b8ad623821eee; ambos os commits são ancestrais da integração.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/issues-open-tv-20261111/fonte_troca-batch2.txt SHA256 36bd850945e849d638b0d0114110782c3cd1788900be132adc1005f2680cf37f. Fonte sintética; sem teste do decodificador Samsung."
+  },
+  {
+   "data": "2026-11-11",
    "quem": "Revisão independente histórica; Central Issues (verificação posterior)",
    "o_que": "Filtro manual de gênero em coleções e catálogos.",
    "issues": [656],
