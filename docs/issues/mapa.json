@@ -12481,7 +12481,7 @@
   {
    "numero": 606,
    "titulo": "Subtitle filenames from addons",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "?",
    "status": "integrada",
@@ -12733,7 +12733,7 @@
   {
    "numero": 617,
    "titulo": "Read watched state and resume positions from Jellyfin servers",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "?",
    "status": "integrada",
@@ -13690,7 +13690,7 @@
   {
    "numero": 662,
    "titulo": "Cover Flow Mode Causes Screen Flickering While Loading Large Catalogs",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "bug",
    "status": "integrada",
@@ -13853,7 +13853,7 @@
   {
    "numero": 657,
    "titulo": "Image noise bug",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "bug",
    "status": "integrada",
@@ -14378,7 +14378,7 @@
   {
    "numero": 692,
    "titulo": "Bug Report: Subtitle Sync Add-on Does Not Appear in Subtitle Options",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "bug",
    "status": "aberta",
@@ -14408,7 +14408,7 @@
   {
    "numero": 694,
    "titulo": "Tizen 5.0 (.tpk / NuvioTpk40): every TorBox source fails with ConnectionFailed 0xfe6c0026, the TV's root store has no ISRG Root X2 (patch included)",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "Samsung Tizen 5 / TPK40",
    "tipo": "bug",
    "status": "integrada, aguardando validação específica",
@@ -15498,6 +15498,60 @@
   }
  ],
  "validacoes": [
+  {
+   "data": "2026-11-11",
+   "quem": "Revisão independente histórica; Central Issues e TV (conferência)",
+   "o_que": "Ajuste de frequência de exibição em Android TV.",
+   "issues": [641, 712],
+   "ref": "722515c76b12d9a7f2133a93740288681274c9cd; 6ec478ed4b79e969bf4f2da3d66997aabef480cc",
+   "resultado": "Revisão histórica OK; afr_android.sh e build-local.sh rc0 relatados. Testes C e JVM com seleção de cadência; integração ancestral conferida.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue641b.log SHA256 28be005538613cf9bdab4bbd7a973f55d5ea7aefff28fbc26fce876e8943260d. Sem validação HDMI física. Ao retornar de PiP mantendo reprodução, AFR não é reaplicado até pausa e retomada."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Revisão independente histórica; Central Issues e TV (conferência)",
+   "o_que": "Leitura de vistos e progresso Jellyfin por usuário.",
+   "issues": [617],
+   "ref": "aeec47d32dd10320185ed9d799896907d474d715; ba935402da65d6d7c013a1b429e15372dc0e5a12",
+   "resultado": "Revisão histórica OK; jellyfin.sh, emby.sh, plex.sh, srvidx.sh e build-local.sh rc0 relatados; commits ancestrais da integração.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue617b.log SHA256 6ca1acfb0d0c43482a44e7fc49ad04f3a33f7324ba7b4e8ca47771978a4878fe. Fixtures em host; sem conta ou dispositivo real; progresso em percentual não prova seek exato por ticks."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Revisão independente histórica; Central TV (conferência)",
+   "o_que": "Nomes de arquivo de legendas de addons.",
+   "issues": [606],
+   "ref": "c9ae2eb5073b0c74bb3971c917e6ff44b0c9d77e; 1a2b00cd676f6005198774f00b093708adf1b45a",
+   "resultado": "Revisão histórica OK; addons_legendas.sh rc0 após reparo do teste 692. Asserções de precedência de nomes e basename executadas no mesmo teste.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-rec-i606.log SHA256 28fc4537ac0b8d4e9267f4e78a9b9731d1f98db4fc24531729cbf7eaef618b6e; /Volumes/ExternalSSD/tmp/rev/issue692-postmerge-20261111.log SHA256 b089f02b92c228888f4b4a3a8c9308fea0570412cf5f8c39947b588dbff7d91c. Fixtures sintéticas; sem provedor real ou TV."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Revisão independente histórica; Central TV (conferência)",
+   "o_que": "Ruído grosso no fundo Light da seleção de perfil.",
+   "issues": [657],
+   "ref": "696409f3adb5c2378a71c20b1be3a8029ad3d9c6",
+   "resultado": "Revisão histórica OK; psestilos_luz_barra.sh rc0 e compilação sintática relatados. Teste verifica ausência da operação de granulação grossa, preservando luz e degradê.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-revg-ruidoperfil.log SHA256 be1cec0345ad946b28b6328aec0bd27597fcdd1b54409a286b3dd2e94673e6c1. Sem prova GL real de reabertura ou validação visual em TV."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Revisão independente histórica; Central TV (conferência)",
+   "o_que": "Estabilidade de pôsteres Cover Flow durante carregamento.",
+   "issues": [662],
+   "ref": "a0ae67373c46596c0d3a075ccc3f2ee63bcf697f",
+   "resultado": "Revisão histórica OK; vertudo_coverflow_pages.sh rc0 e compilação sintática relatados. Teste exercita ordenação e identidade de foco; estado de revelação verificado estaticamente.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-revg-coverflowpisca.log SHA256 e9b4ff1ade15f75a8a6d75ad8492e640ed60cdd1697e294ef49abcac13252f3d. Sem reprodução visual GL ou TV de catálogo grande."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Revisão independente; Central TV (gate e integração)",
+   "o_que": "Comparação local de CA e hostname no fetch comum e nos caminhos estritos do relay.",
+   "issues": [694],
+   "ref": "ac2a2132421d992745f9bce45e3762f55cb144c9",
+   "resultado": "Revisão OK; gate 1/1 e dts_range.sh rc0 pós-merge. No host, fetch comum aceitou certificado não confiável ou hostname divergente; range e stream estritos rejeitaram ambos e aceitaram certificado confiável com SAN correspondente.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue694-tls-causal-20261111.log; /Volumes/ExternalSSD/tmp/rev/issue694-tls-causal-postmerge-20261111.log SHA256 3d5524eb331defbf0c48a24a73dcad04576b7fd29aec2c36d1b24c3f8a68773b. Fixture local, libcurl SecureTransport no macOS; não prova a causa nem o resultado na TV."
+  },
   {
    "data": "2026-11-11",
    "quem": "Revisão independente; Central TV (gate e integração)",
