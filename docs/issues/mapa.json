@@ -15470,6 +15470,24 @@
  "validacoes": [
   {
    "data": "2026-11-11",
+   "quem": "Central Issues (teste em host); revisão independente histórica",
+   "o_que": "Animação de GIFs ao trocar e reabrir perfis.",
+   "issues": [660],
+   "ref": "58a94f01dba0462189aa45f95b20afb3b802b2b6",
+   "resultado": "gifperfis.sh rc0 no HEAD 93bf2631a7fd8d59f37b42982ac48968a92b2935; revisão histórica OK; correção ancestral da integração.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/issues-open-tv-20261111/gifperfis-current-bugs.txt SHA256 3c6c2948ab8b86e0510679c84ef26610cf14fa120272c3986d95391bd322acbf; /Volumes/ExternalSSD/tmp/rev/j-revg-gifperfis.log SHA256 d88e4a6deab8cdb0517710e746c7efd786f55a89391f6a388a113b69f42fd42a. GL oculto com GIFs em cache; sem prova física Samsung ou desempenho sem cache."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Central Issues (teste em host); revisão independente histórica",
+   "o_que": "Navegação contínua na lista de canais do guia.",
+   "issues": [668],
+   "ref": "133cccd0b4483e7abe332f98de1747e7b6f54cfc",
+   "resultado": "guia_hold.sh rc0 no HEAD 93bf2631a7fd8d59f37b42982ac48968a92b2935; revisão histórica OK; correção ancestral da integração.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/issues-open-tv-20261111/guia_hold-current-bugs.txt SHA256 eccb9c12fce144bbfbafe3a9c62d8a80cff5d9d4322cab28d8d575d1c967ef4a; /Volumes/ExternalSSD/tmp/rev/j-revg-guiasegurar.log SHA256 3984a4170d2ab11beb56b886556a599cbd069041f52142634889b2923b003226. Eventos em host; sem medição de controle físico LG."
+  },
+  {
+   "data": "2026-11-11",
    "quem": "Central Issues (verificação em host)",
    "o_que": "Troca de fonte preserva episódio e progresso durante reconstrução de Continue Watching.",
    "issues": [570],
