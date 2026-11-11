@@ -6520,6 +6520,7 @@
   T("Posição e repouso do relógio", "Θέση και αδράνεια ρολογιού"),
   T("Posição na TV", "Θέση τηλεόρασης"),
   T("Possível emissora; evento não confirmado", "Possible broadcaster; event unconfirmed"),
+  T("Possível áudio", "Πιθανός ήχος"),
   T("Pouca memória", "Χαμηλή μνήμη"),
   T("Pouca memória: programa atual e próximas 24 horas. Grade completa: programação disponível. Automático adapta ao aparelho. Não altera canais nem cache no disco.", "Χαμηλή μνήμη: τρέχον πρόγραμμα και επόμενες 24 ώρες. Πλήρης οδηγός: διαθέσιμο πρόγραμμα. Το αυτόματο προσαρμόζεται στη συσκευή. Τα κανάλια και η κρυφή μνήμη δίσκου δεν αλλάζουν."),
   T("Pouco espaço", "Λίγος χώρος"),

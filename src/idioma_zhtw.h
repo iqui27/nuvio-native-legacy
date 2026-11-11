@@ -6520,6 +6520,7 @@
   T("Posição e repouso do relógio", "時鐘位置和待機"),
   T("Posição na TV", "電視位置"),
   T("Possível emissora; evento não confirmado", "Possible broadcaster; event unconfirmed"),
+  T("Possível áudio", "可能的音訊"),
   T("Pouca memória", "低記憶體"),
   T("Pouca memória: programa atual e próximas 24 horas. Grade completa: programação disponível. Automático adapta ao aparelho. Não altera canais nem cache no disco.", "低記憶體：目前節目及未來24小時。完整節目表：可用的節目安排。自動模式配合裝置。頻道和磁碟快取保持不變。"),
   T("Pouco espaço", "空間不足"),

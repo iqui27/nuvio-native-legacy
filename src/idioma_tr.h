@@ -6520,6 +6520,7 @@
   T("Posição e repouso do relógio", "Saatin konumu ve beklemesi"),
   T("Posição na TV", "TV konumu"),
   T("Possível emissora; evento não confirmado", "Possible broadcaster; event unconfirmed"),
+  T("Possível áudio", "Olası ses"),
   T("Pouca memória", "Düşük bellek"),
   T("Pouca memória: programa atual e próximas 24 horas. Grade completa: programação disponível. Automático adapta ao aparelho. Não altera canais nem cache no disco.", "Düşük bellek: mevcut program ve sonraki 24 saat. Tam rehber: mevcut yayın akışı. Otomatik, cihaza uyum sağlar. Kanallar ve disk önbelleği değişmez."),
   T("Pouco espaço", "Az alan"),

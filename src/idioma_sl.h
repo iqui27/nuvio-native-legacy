@@ -6520,6 +6520,7 @@
   T("Posição e repouso do relógio", "Položaj in mirovanje ure"),
   T("Posição na TV", "TV položaj"),
   T("Possível emissora; evento não confirmado", "Possible broadcaster; event unconfirmed"),
+  T("Possível áudio", "Možni zvok"),
   T("Pouca memória", "Malo pomnilnika"),
   T("Pouca memória: programa atual e próximas 24 horas. Grade completa: programação disponível. Automático adapta ao aparelho. Não altera canais nem cache no disco.", "Malo pomnilnika: trenutna oddaja in naslednjih 24 ur. Celoten spored: razpoložljivi spored. Samodejno se prilagodi napravi. Kanali in predpomnilnik na disku ostanejo nespremenjeni."),
   T("Pouco espaço", "Malo prostora"),

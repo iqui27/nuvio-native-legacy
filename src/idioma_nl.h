@@ -6520,6 +6520,7 @@
   T("Posição e repouso do relógio", "Positie en rust van de klok"),
   T("Posição na TV", "TV-positie"),
   T("Possível emissora; evento não confirmado", "Possible broadcaster; event unconfirmed"),
+  T("Possível áudio", "Mogelijke audio"),
   T("Pouca memória", "Weinig geheugen"),
   T("Pouca memória: programa atual e próximas 24 horas. Grade completa: programação disponível. Automático adapta ao aparelho. Não altera canais nem cache no disco.", "Weinig geheugen: huidig programma en volgende 24 uur. Volledige gids: beschikbaar programmaoverzicht. Automatisch past zich aan het apparaat aan. Zenders en schijfcache blijven ongewijzigd."),
   T("Pouco espaço", "Weinig ruimte"),

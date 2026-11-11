@@ -6520,6 +6520,7 @@
   T("Posição e repouso do relógio", "Posisi dan mode diam jam"),
   T("Posição na TV", "posisi TV"),
   T("Possível emissora; evento não confirmado", "Possible broadcaster; event unconfirmed"),
+  T("Possível áudio", "Audio yang mungkin"),
   T("Pouca memória", "Memori rendah"),
   T("Pouca memória: programa atual e próximas 24 horas. Grade completa: programação disponível. Automático adapta ao aparelho. Não altera canais nem cache no disco.", "Memori rendah: acara saat ini dan 24 jam berikutnya. Panduan lengkap: jadwal yang tersedia. Otomatis menyesuaikan perangkat. Saluran dan cache disk tidak berubah."),
   T("Pouco espaço", "Ruang sedikit"),

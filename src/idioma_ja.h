@@ -6520,6 +6520,7 @@
   T("Posição e repouso do relógio", "時計の位置と待機"),
   T("Posição na TV", "テレビの位置"),
   T("Possível emissora; evento não confirmado", "Possible broadcaster; event unconfirmed"),
+  T("Possível áudio", "音声の可能性"),
   T("Pouca memória", "省メモリ"),
   T("Pouca memória: programa atual e próximas 24 horas. Grade completa: programação disponível. Automático adapta ao aparelho. Não altera canais nem cache no disco.", "省メモリ：現在の番組と今後24時間。番組表全体：取得可能な番組表。自動では端末に合わせます。チャンネルとディスクキャッシュは変更しません。"),
   T("Pouco espaço", "空き容量不足"),

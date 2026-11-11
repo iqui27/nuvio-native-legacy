@@ -6520,6 +6520,7 @@
   T("Posição e repouso do relógio", "Pozycja i spoczynek zegara"),
   T("Posição na TV", "Stanowisko telewizyjne"),
   T("Possível emissora; evento não confirmado", "Possible broadcaster; event unconfirmed"),
+  T("Possível áudio", "Możliwa ścieżka dźwiękowa"),
   T("Pouca memória", "Mało pamięci"),
   T("Pouca memória: programa atual e próximas 24 horas. Grade completa: programação disponível. Automático adapta ao aparelho. Não altera canais nem cache no disco.", "Mało pamięci: bieżący program i następne 24 godziny. Pełny przewodnik: dostępny program. Automatycznie dostosowuje się do urządzenia. Kanały i pamięć podręczna na dysku nie zmieniają się."),
   T("Pouco espaço", "Mało miejsca"),

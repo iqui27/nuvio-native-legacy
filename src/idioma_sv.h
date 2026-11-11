@@ -6520,6 +6520,7 @@
   T("Posição e repouso do relógio", "Klockans placering och vila"),
   T("Posição na TV", "TV-position"),
   T("Possível emissora; evento não confirmado", "Possible broadcaster; event unconfirmed"),
+  T("Possível áudio", "Möjligt ljud"),
   T("Pouca memória", "Lite minne"),
   T("Pouca memória: programa atual e próximas 24 horas. Grade completa: programação disponível. Automático adapta ao aparelho. Não altera canais nem cache no disco.", "Lite minne: aktuellt program och kommande 24 timmar. Fullständig tablå: tillgängligt schema. Automatiskt anpassar sig till enheten. Kanaler och diskcache ändras inte."),
   T("Pouco espaço", "Lite utrymme"),

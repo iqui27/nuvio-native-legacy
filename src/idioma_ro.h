@@ -6519,6 +6519,7 @@
   T("Posição e repouso do relógio", "Poziția și repausul ceasului"),
   T("Posição na TV", "Poziția TV"),
   T("Possível emissora; evento não confirmado", "Possible broadcaster; event unconfirmed"),
+  T("Possível áudio", "Audio posibil"),
   T("Pouca memória", "Memorie redusă"),
   T("Pouca memória: programa atual e próximas 24 horas. Grade completa: programação disponível. Automático adapta ao aparelho. Não altera canais nem cache no disco.", "Memorie redusă: programul curent și următoarele 24 de ore. Grilă completă: programul disponibil. Automat se adaptează dispozitivului. Canalele și memoria cache de pe disc nu se schimbă."),
   T("Pouco espaço", "Spațiu redus"),

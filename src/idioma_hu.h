@@ -6520,6 +6520,7 @@
   T("Posição e repouso do relógio", "Az óra helyzete és nyugalmi állapota"),
   T("Posição na TV", "TV pozíció"),
   T("Possível emissora; evento não confirmado", "Possible broadcaster; event unconfirmed"),
+  T("Possível áudio", "Lehetséges hangsáv"),
   T("Pouca memória", "Kevés memória"),
   T("Pouca memória: programa atual e próximas 24 horas. Grade completa: programação disponível. Automático adapta ao aparelho. Não altera canais nem cache no disco.", "Kevés memória: jelenlegi műsor és a következő 24 óra. Teljes műsorújság: elérhető műsorrend. Az automatikus mód az eszközhöz igazodik. A csatornák és a lemezes gyorsítótár nem változnak."),
   T("Pouco espaço", "Kevés hely"),

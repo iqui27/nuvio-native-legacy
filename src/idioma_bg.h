@@ -6520,6 +6520,7 @@
   T("Posição e repouso do relógio", "Позиция и покой на часовника"),
   T("Posição na TV", "ТВ позиция"),
   T("Possível emissora; evento não confirmado", "Possible broadcaster; event unconfirmed"),
+  T("Possível áudio", "Възможно аудио"),
   T("Pouca memória", "Малко памет"),
   T("Pouca memória: programa atual e próximas 24 horas. Grade completa: programação disponível. Automático adapta ao aparelho. Não altera canais nem cache no disco.", "Малко памет: текущото предаване и следващите 24 часа. Пълен справочник: наличната програма. Автоматично се съобразява с устройството. Каналите и кешът на диска не се променят."),
   T("Pouco espaço", "Малко място"),

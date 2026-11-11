@@ -6520,6 +6520,7 @@
   T("Posição e repouso do relógio", "موضع الساعة وحالة الخمول"),
   T("Posição na TV", "الموضع على التلفاز"),
   T("Possível emissora; evento não confirmado", "قناة محتملة؛ الحدث غير مؤكد"),
+  T("Possível áudio", "الصوت المحتمل"),
   T("Pouca memória", "ذاكرة منخفضة"),
   T("Pouca memória: programa atual e próximas 24 horas. Grade completa: programação disponível. Automático adapta ao aparelho. Não altera canais nem cache no disco.", "ذاكرة منخفضة: البرنامج الحالي و24 ساعة القادمة. الشبكة الكاملة: كل البرامج المتاحة. التلقائي يتكيّف مع الجهاز. لا يغيّر القنوات ولا الذاكرة المؤقتة على القرص."),
   T("Pouco espaço", "مساحة قليلة"),

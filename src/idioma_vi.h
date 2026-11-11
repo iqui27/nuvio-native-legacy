@@ -6520,6 +6520,7 @@
   T("Posição e repouso do relógio", "Vị trí và chế độ nghỉ của đồng hồ"),
   T("Posição na TV", "vị trí tivi"),
   T("Possível emissora; evento não confirmado", "Possible broadcaster; event unconfirmed"),
+  T("Possível áudio", "Âm thanh có thể có"),
   T("Pouca memória", "Ít bộ nhớ"),
   T("Pouca memória: programa atual e próximas 24 horas. Grade completa: programação disponível. Automático adapta ao aparelho. Não altera canais nem cache no disco.", "Ít bộ nhớ: chương trình hiện tại và 24 giờ tiếp theo. Lịch đầy đủ: lịch phát sóng có sẵn. Tự động điều chỉnh theo thiết bị. Kênh và bộ nhớ đệm trên đĩa không thay đổi."),
   T("Pouco espaço", "Ít dung lượng"),

@@ -6520,6 +6520,7 @@
   T("Posição e repouso do relógio", "Laikrodžio padėtis ir ramybės būsena"),
   T("Posição na TV", "TV padėtis"),
   T("Possível emissora; evento não confirmado", "Possible broadcaster; event unconfirmed"),
+  T("Possível áudio", "Galimas garso takelis"),
   T("Pouca memória", "Mažai atminties"),
   T("Pouca memória: programa atual e próximas 24 horas. Grade completa: programação disponível. Automático adapta ao aparelho. Não altera canais nem cache no disco.", "Mažai atminties: dabartinė laida ir kitos 24 valandos. Visa programa: pasiekiamas tvarkaraštis. Automatinis režimas prisitaiko prie įrenginio. Kanalai ir disko podėlis nesikeičia."),
   T("Pouco espaço", "Mažai vietos"),
