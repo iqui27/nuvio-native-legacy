@@ -12037,7 +12037,7 @@
   {
    "numero": 570,
    "titulo": "[Samsung Tizen 9] Changing episode source shows previous movie and resets resume position",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "Samsung Tizen 9",
    "tipo": "bug",
    "status": "integrada",
@@ -13370,7 +13370,7 @@
   {
    "numero": 674,
    "titulo": "Title page - focus and what plays next",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "?",
    "status": "integrada",
@@ -13855,7 +13855,7 @@
   {
    "numero": 656,
    "titulo": "Select Genre Filter in Catalogs",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "?",
    "tipo": "?",
    "status": "integrada",
