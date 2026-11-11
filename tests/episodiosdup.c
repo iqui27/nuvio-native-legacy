@@ -346,6 +346,24 @@ static void abrir(void) {
 }
 
 int main(void) {
+  if (getenv("NV_TEST_787_PARSE")) {
+    size_t cap = 400000, k = 0;
+    char *body = malloc(cap);
+    CatEp *eps = malloc(4650 * sizeof *eps);
+    assert(body && eps);
+    k += (size_t)snprintf(body + k, cap - k, "{\"videos\":[");
+    for (int i = 1; i <= 4650; i++)
+      k += (size_t)snprintf(body + k, cap - k,
+        "%s{\"season\":%d,\"episode\":%d,\"ids\":{\"tvdb\":%d}}",
+        i == 1 ? "" : ",", (i - 1) / 150 + 1, (i - 1) % 150 + 1, i);
+    k += (size_t)snprintf(body + k, cap - k,
+      ",{\"season\":31,\"episode\":150,\"ids\":{\"tvdb\":99999}}]}");
+    assert(k < cap);
+    assert(parsearEpisodios(body, eps, 4650) == 4650);
+    assert(eps[4649].temporada == 31 && eps[4649].episodio == 150 && !eps[4649].tvdbEp);
+    free(eps); free(body);
+    return 0;
+  }
   // Opt-in regression until #787 is fixed: tests the real publication path.
   if (getenv("NV_TEST_787")) {
     char *body = malloc(400000);

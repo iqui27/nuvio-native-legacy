@@ -7673,9 +7673,13 @@ static int metaArquivosCompativeis(const char *arquivos, const char *catalogo) {
 // Inclui especiais (temporada 0) sem renumerar o par nem o id do video.
 static int parsearEpisodios(const char *corpo, CatEp *eps, int max) {
   int n = 0;
-  unsigned char parAmbiguo[VIDEOS_MAX] = {0};
+  unsigned char *parAmbiguo;
   const char *p = metaContarEpisodios(corpo, NULL) ? js_array(corpo, NULL, "videos") : NULL;
   EpSet set = { 0 };
+  if (!eps || max <= 0) return 0;
+  parAmbiguo = malloc((size_t)max * 2);
+  if (!parAmbiguo) return 0;
+  memset(parAmbiguo, 0, (size_t)max * 2);
   while (p) {
     const char *f = js_fim(p);
     int t = videoTemporada(p, f);
@@ -7734,7 +7738,7 @@ static int parsearEpisodios(const char *corpo, CatEp *eps, int max) {
   free(set.v);
   // The same exact ID assigned to different source pairs is ambiguous. Keep
   // both playable cards, but never translate or scrobble either by that ID.
-  { unsigned char ambiguo[VIDEOS_MAX] = {0};
+  { unsigned char *ambiguo = parAmbiguo + max;
     for (int i = 0; i < n; i++) if (eps[i].tvdbEp > 0)
       for (int j = i + 1; j < n; j++)
         if (eps[j].tvdbEp == eps[i].tvdbEp &&
@@ -7768,6 +7772,7 @@ static int parsearEpisodios(const char *corpo, CatEp *eps, int max) {
     }
     n = w;
   }
+  free(parAmbiguo);
   return n;
 }
 
