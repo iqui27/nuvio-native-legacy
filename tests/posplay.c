@@ -193,7 +193,7 @@ int main(void) {
   assert(!posplay_visivel());
   assert(posplay_aguarda_escolha(100)); // queued autoplay survives EOF timeout
   assert(posplay_pediu_episodio(&t, &e) && t == 5 && e == 4);
-  assert(posplay_aguarda_escolha(100)); // router is handling autoplay
+  assert(!posplay_aguarda_escolha(100)); // router owns delivered intent
   puts("ok  a contagem final toca o proximo sozinha");
 
   // Recuar durante a contagem cancela sem tirar o cartao manual. Mesmo um

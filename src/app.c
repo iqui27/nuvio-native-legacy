@@ -2644,6 +2644,7 @@ static void prepararAoAbrir(void) {
 // o worker independente termina, o episodio atual continua sendo o dono do
 // video/progresso; nunca resolve a mesma escolha outra vez no caminho frio.
 static struct { int tem, titulo, t, e, apontar; unsigned geracao; uint64_t sessaoPerfil; char atual[64], alvo[64]; } proximoIntento;
+int app_proximo_pendente(void) { return proximoIntento.tem; }
 // 1 quando a escolha em curso e a do Next com uma fonte tocando para seguir
 // (bingeGroup); *prov recebe o add-on dela.
 static int escolhaDoNext(const char *base, char *prov, unsigned tam) {
@@ -2672,6 +2673,7 @@ static void abrirProximoEpisodio(int t, int e, int apontar) {
   reabrirGuardar(titulo);
   alvoPlayer(atual, sizeof atual);
   if (!cat_id_stream(titulo, t, e, alvo, sizeof alvo) || !alvo[0]) {
+    memset(&proximoIntento, 0, sizeof proximoIntento);
     player_episodio_pedido_liberar(); return;
   }
   uint64_t sessaoPerfil = proximoIntento.tem && !strcmp(proximoIntento.alvo, alvo)

@@ -128,7 +128,7 @@ static double cenaFim;
 int posplay_visivel(void) { return visivel; }
 // Give the card time at EOF, including a full configured autoplay countdown.
 int posplay_aguarda_escolha(double eofSeg) {
-  if (temPedidoEpisodio() || automaticoEntregue) return 1;
+  if (temPedidoEpisodio()) return 1;
   if (dispensado && !visivel) return 0;
   double limite = 10.0;
   if (visivel && fecharEm && ajustes_proximo_contagem() + 1.0 > limite)
