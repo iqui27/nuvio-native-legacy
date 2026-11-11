@@ -102,14 +102,14 @@
   {
    "numero": 752,
    "titulo": "Which one to use for Tizen 10",
-   "estado_github": "aberta",
+   "estado_github": "fechada",
    "plataforma": "Samsung QN900F / Tizen 10 (relato)",
    "tipo": "a confirmar",
-   "status": "aberta",
+   "status": "suporte resolvido",
    "release": null,
    "conserto": [],
    "ultima_resposta": null,
-   "proximo_passo": "Suporte respondido e aceito pelo relator; acompanhar eventual retorno.",
+   "proximo_passo": "Suporte confirmado pelo relator; issue fechada em 2026-11-11T03:28:16Z. Sem defeito demonstrado.",
    "notas": "Reconciliação 2026-11-04 @0e525f284: insufficient-evidence. Dúvida de escolha de pacote para Tizen 10, sem defeito demonstrado. Catálogo: /Volumes/ExternalSSD/tmp/rev/rastreio/mutirao-20261104/issues.json (item 752).\nCheckpoint 140: orientação indicou Nuvio-2.0.8-NuvioTpk.tpk; relator aceitou no comentário 6760374701. Nenhum defeito demonstrado.",
    "triagem_mutirao_2026_11_04": {
     "snapshot": "0e525f2840c83ce896cf9aff6a2b47a2d6ccccce",
