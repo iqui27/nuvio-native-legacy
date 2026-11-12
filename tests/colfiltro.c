@@ -109,9 +109,13 @@ char *rede_baixar(const char *url,int timeout) {
       if (skip == 1000 && limiteVariante == 2) i--;
       char id[32] = "";
       if (i != 1020) snprintf(id, sizeof id, "tt%d", i + 1);
-      used += snprintf(body + used, 16000 - used,
-        "%s{\"id\":\"%s\",\"name\":\"Item %d%s\",\"poster\":\"p.jpg\"}",
-        pos ? "," : "", id, i + 1, limiteVariante == 4 && i == 1020 ? " changed" : "");
+      if (limiteVariante == 5)
+        used += snprintf(body + used, 16000 - used,
+          "%s{\"poster\":\"p.jpg\",\"name\":\"Item %d\",\"id\":\"%s\"}", pos ? "," : "", i + 1, id);
+      else
+        used += snprintf(body + used, 16000 - used,
+          "%s{\"id\":\"%s\",\"name\":\"Item %d%s\",\"poster\":\"p.jpg\"}",
+          pos ? "," : "", id, i + 1, limiteVariante == 4 && i == 1020 ? " changed" : "");
     }
     snprintf(body + used, 16000 - used, "]}");
     return body;
@@ -213,7 +217,7 @@ int main(void) {
     limiteVariante = v; desc_vertudo_mais(); waitDone();
     assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 1050 && desc_vertudo_pagina() == 1000);
   }
-  limiteVariante = 0; desc_vertudo_mais(); waitDone();
+  limiteVariante = 5; desc_vertudo_mais(); waitDone(); limiteVariante = 0;
   assert(limitePedidos == 17 && !desc_vertudo_erro() && desc_vertudo_n() == 1100 && tem("tt1001"));
   { CatItem item; assert(desc_vertudo_item(1099, &item) && !strcmp(item.imdb, "tt1100"));
     assert(desc_vertudo_item(1020, &item) && !item.imdb[0] && !strcmp(item.titulo, "Item 1021"));
@@ -223,6 +227,18 @@ int main(void) {
     assert(desc_vertudo_n() == 1099 && desc_vertudo_item(1, &item) && !strcmp(item.imdb, "tt3"));
     assert(desc_vertudo_item(1098, &item) && !strcmp(item.imdb, "tt1100"));
     ocultarVistos = 0; assert(desc_vertudo_n() == 1100); }
+  desc_vertudo_abrir("https://limite.invalid", "movie", "refresh"); waitDone();
+  for (int i = 1; i < 10; i++) { desc_vertudo_mais(); waitDone(); }
+  vt_alloc_remaining = 50; desc_vertudo_mais(); waitDone(); vt_alloc_remaining = -1;
+  limiteVariante = 1; desc_vertudo_mais(); waitDone();
+  assert(desc_vertudo_erro() && desc_vertudo_n() == 1050);
+  vt_alloc_fail = 1; desc_vertudo_abrir("https://limite.invalid", "movie", "refresh"); waitDone(); vt_alloc_fail = 0;
+  assert(desc_vertudo_erro() && desc_vertudo_n() == 1050);
+  desc_vertudo_abrir("https://limite.invalid", "movie", "refresh"); waitDone();
+  assert(!desc_vertudo_erro() && desc_vertudo_n() == 100 && desc_vertudo_pagina() == 100);
+  for (int i = 1; i < 11; i++) { desc_vertudo_mais(); waitDone(); }
+  assert(!desc_vertudo_erro() && desc_vertudo_n() == 1100 && tem("tt1101"));
+  limiteVariante = 0;
   desc_vertudo_abrir("https://limite.invalid", "movie", "top10"); waitDone();
   assert(desc_vertudo_n() == 10 && desc_vertudo_fim());
   desc_vertudo_abrir("https://budget.invalid", "movie", "rank"); waitDone();
