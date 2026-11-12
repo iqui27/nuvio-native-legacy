@@ -745,7 +745,8 @@ static int jf_episodios_preparar(const JfConta *c, RedeJob *job, const char *ser
   unsigned char *compacto = NULL;
   CatEp *pagina = NULL;
   z_stream z = {0};
-  int inicio = 0, n = 0, erro = JF_ERR_REDE, zAtivo = 0, direto = 0, paginaLimite = PAGINA;
+  int inicio = 0, n = 0, erro = JF_ERR_REDE, zAtivo = 0, direto = 0, contar = 0;
+  int paginaLimite = PAGINA, capacidade = 0, rawEsperado = 0;
   if (!saida || !jfid_hex_limpo(serieId, limpo, 32)) return JF_ERR_ENTRADA;
   if (max <= 0) return 0;
   if (max > CAT_EP_MAX) max = CAT_EP_MAX;
@@ -755,10 +756,10 @@ static int jf_episodios_preparar(const JfConta *c, RedeJob *job, const char *ser
   zAtivo = 1;
   z.next_out = compacto; z.avail_out = COMPACTO_MAX;
  buscar_paginas:
-  while (n < max) {
+  while (direto ? inicio < rawEsperado : n < max) {
     RedeResposta r;
     const char *ai, *af, *p;
-    int limite = max - n, raw = 0, total, qtd, e;
+    int limite = direto ? rawEsperado - inicio : max - n, raw = 0, total, qtd, e;
     if (limite > paginaLimite) limite = paginaLimite;
     if (rede_job_estado(job) != REDE_OK || (cancelado && cancelado(cancelCtx))) { erro = JF_ERR_CANCELADO; goto fim; }
     snprintf(caminho, sizeof caminho,
@@ -782,21 +783,32 @@ static int jf_episodios_preparar(const JfConta *c, RedeJob *job, const char *ser
       if (!f || ++raw > limite) { rede_resposta_limpar(&r); erro = JF_ERR_FORMATO; goto fim; }
       p = f;
     }
-    qtd = jf_ler_episodios(c, r.corpo, r.n_corpo, direto ? *saida + n : pagina, limite);
+    qtd = jf_ler_episodios(c, r.corpo, r.n_corpo, pagina, limite);
     rede_resposta_limpar(&r);
     if (rede_job_estado(job) != REDE_OK || (cancelado && cancelado(cancelCtx))) { erro = JF_ERR_CANCELADO; goto fim; }
-    if (!direto && qtd) {
+    if (direto) {
+      if (qtd > capacidade - n) { erro = JF_ERR_FORMATO; goto fim; }
+      memcpy(*saida + n, pagina, (size_t)qtd * sizeof *pagina);
+    }
+    if (!direto && !contar && qtd) {
       int zr;
       z.next_in = (Bytef *)pagina; z.avail_in = (uInt)((size_t)qtd * sizeof *pagina);
       zr = deflate(&z, Z_NO_FLUSH);
-      if (!z.avail_out) goto reserva;
-      if (zr != Z_OK || z.avail_in) goto fim;
+      if (!z.avail_out) {
+        deflateEnd(&z); zAtivo = 0;
+        free(compacto); compacto = NULL;
+        contar = 1;
+      } else if (zr != Z_OK || z.avail_in) goto fim;
     }
     n += qtd; inicio += raw;
     if (!raw && total > inicio) { erro = JF_ERR_FORMATO; goto fim; }
     if (!raw || (total >= 0 && inicio >= total) || (total < 0 && raw < limite)) break;
   }
-  if (direto) { erro = n; goto fim; }
+  if (direto) {
+    erro = n == capacidade && inicio == rawEsperado ? n : JF_ERR_FORMATO;
+    goto fim;
+  }
+  if (contar) goto reserva;
   if (deflate(&z, Z_FINISH) != Z_STREAM_END) {
     if (!z.avail_out) goto reserva;
     goto fim;
@@ -821,8 +833,11 @@ static int jf_episodios_preparar(const JfConta *c, RedeJob *job, const char *ser
   free(pagina); pagina = NULL;
   free(compacto); compacto = NULL;
   if (rede_job_estado(job) != REDE_OK || (cancelado && cancelado(cancelCtx))) { erro = JF_ERR_CANCELADO; goto fim; }
-  if (preparar) *saida = preparar(ctx, max);
+  capacidade = n; rawEsperado = inicio;
+  if (preparar) *saida = preparar(ctx, capacidade);
   if (!*saida || rede_job_estado(job) != REDE_OK || (cancelado && cancelado(cancelCtx))) { erro = JF_ERR_CANCELADO; goto fim; }
+  pagina = malloc(PAGINA * sizeof *pagina);
+  if (!pagina) goto fim;
   direto = 1; inicio = n = 0;
   goto buscar_paginas;
  fim:
