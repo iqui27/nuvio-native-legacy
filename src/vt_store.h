@@ -4,13 +4,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include "catalogo.h"
+#include "descoberta.h"
 #ifndef NV_VT_STORE_ALLOC
 #define NV_VT_STORE_ALLOC malloc
 #endif
 
 /* Lossless sparse byte storage; limit covers allocations, excluding allocator
  * overhead and the fixed index itself. This store is not yet used by the view. */
-#define VT_STORE_MAX 2000
+#define VT_STORE_MAX VT_ADDON_MAX
 typedef struct {
   size_t bytes;
   int raw;

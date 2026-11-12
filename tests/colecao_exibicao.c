@@ -107,7 +107,7 @@ TxtLinha shot_text(TxtEstilo style, const char *s, int r, int g, int b, int a, f
   return txt_linha_corta(style, s, r, g, b, a, width);
 }
 
-static CatItem semente[301];
+static CatItem semente[1100];
 static int nSemente;
 int shot_vt_n(void) { return nSemente; }
 int shot_vt_item(int i, CatItem *dst) {
@@ -413,6 +413,27 @@ int main(int argc, char **argv) {
   collection = &pasta;
   aberta = 1;
 
+  if (argc > 1 && !strcmp(argv[1], "limite")) {
+    nSemente = 1100;
+    for (i = 0; i < nSemente; i++) {
+      snprintf(semente[i].imdb, sizeof semente[i].imdb, "tt%d", i + 1);
+      snprintf(semente[i].tipo, sizeof semente[i].tipo, "movie");
+      snprintf(semente[i].meta, sizeof semente[i].meta, "%d", 1900 + i % 120);
+    }
+    lay = VT_LAY_GRADE; tabFocus = 0; foco = 999; celLay = -1; orderN = -1;
+    tecla(SDLK_RIGHT); assert(foco == 1000);
+    tecla(SDLK_UP); assert(foco < 1000);
+    tecla(SDLK_DOWN); assert(foco == 1000);
+    assert(celN == 1100);
+    lay = VT_LAY_LINHA; celLay = -1; orderN = -1; montar(nSemente);
+    assert(orderN == 1100 && celN == 1100);
+    { CatItem a, b; assert(viewItem(0, &a) && viewItem(1099, &b));
+      assert(nv_ano_meta(a.meta) <= nv_ano_meta(b.meta)); }
+    for (i = 1; i < nSemente; i += 2) snprintf(semente[i].tipo, sizeof semente[i].tipo, "series");
+    vitTudo = 1; vitTudoFiltro = 1; vitTudoGrupo = 1; vitTudoBruto = -1;
+    assert(nItens() == 550 && vitTudoIdx[549] == 1099);
+    puts("colecao_exibicao limite: PASS"); return 0;
+  }
   if (argc > 1 && !strcmp(argv[1], "catalogs")) { vitrineAllCatalogs(); return 0; }
   if (argc > 1 && !strcmp(argv[1], "tvptr")) { vitrineTvPonteiro(); return 0; }
 
