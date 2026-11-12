@@ -3099,7 +3099,9 @@ static void *fioCatalogo(void *u) {
 // isso duas vezes em BSS. Os dois so rodam sob contTrava, um de cada vez.
 static ProgRegistro contRegs[PROG_MAX];
 
-static int continuarLocal(CatItem *saida, int max) {
+// `enriquecer` = 1 paga o enfeite remoto (descEnfeitar); 0 entrega a fileira
+// crua, para a publicacao provisoria antes da rede (fioContinuar).
+static int continuarLocalLer(CatItem *saida, int max, int enriquecer) {
   ProgRegistro *regs = contRegs;
   int k, i, n = 0;
   k = prog_ler(regs, PROG_MAX);
@@ -3148,7 +3150,7 @@ static int continuarLocal(CatItem *saida, int max) {
   // isso era perda de registro (#158), sobretudo kitsu/tmdb e providers
   // offline. Enriquece uma copia e reaplica por identidade; uma falha deixa
   // os metadados conhecidos (ou a reserva da UI), sem inventar arte.
-  if (n > 0) {
+  if (n > 0 && enriquecer) {
     CatItem *enfeitadas = malloc(sizeof *enfeitadas * (size_t)n);
     if (enfeitadas) {
       int ni, j;
@@ -3176,6 +3178,10 @@ static int continuarLocal(CatItem *saida, int max) {
   }
   if (n) printf("[desc] continuar assistindo local: %d\n", n);
   return n;
+}
+
+static int continuarLocal(CatItem *saida, int max) {
+  return continuarLocalLer(saida, max, 1);
 }
 
 // --- "CONTINUAR ASSISTINDO": AS DUAS FONTES, UNIDAS ---------------------------
@@ -3936,6 +3942,45 @@ static void *fioContinuar(void *u) {
   if (!descSessaoVincular(sessao)) goto fim;
   pthread_mutex_lock(&contTrava);
   if (!descSessaoAtual()) { pthread_mutex_unlock(&contTrava); goto fim; }
+  // No tracker requests or metadata enrichment before this provisional row.
+  { int fonte = ajustes_cw_fonte();
+    if (fonte == AJ_CWF_AMBAS || fonte == AJ_CWF_CONTA ||
+        (fonte == AJ_CWF_TRAKT && !trakt_ativo())) {
+      int locais = continuarLocalLer(lote, CONT_MAX, 0), w = 0;
+      for (int i = 0; i < locais; i++) {
+        CatItem *c = &lote[i];
+        if (prog_removido_vence(c->imdb, c->retomadoMs) ||
+            prog_oculto_vence(c->imdb, c->retomadoMs)) continue;
+        if (!c->titulo[0]) snprintf(c->titulo, sizeof c->titulo, "%s",
+            i18n(!strcmp(c->tipo, "series") ? "Programa de TV" : "Filme"));
+        lote[w++] = *c;
+      }
+      if (w && nv_perfil_sessao_travar(sessao)) {
+        pthread_mutex_lock(&cwPubTrava);
+        // Local progress leads even with a stale snapshot. Keep unrelated
+        // cached entries until reconciliation; absence locally is no removal.
+        CatItem *existentes = malloc(sizeof *existentes * CONT_MAX);
+        if (existentes) {
+          int nExistentes = cat_copiar_fileira("continue_watching", existentes, CONT_MAX, NULL);
+          int nLocais = w;
+          for (int i = 0; i < nExistentes && w < CONT_MAX; i++) {
+            int j;
+            for (j = 0; j < nLocais; j++)
+              if (mesmaObra(&existentes[i], &lote[j])) break;
+            if (j == nLocais &&
+                !prog_removido_vence(existentes[i].imdb, existentes[i].retomadoMs) &&
+                !prog_oculto_vence(existentes[i].imdb, existentes[i].retomadoMs))
+              lote[w++] = existentes[i];
+          }
+          free(existentes);
+          cat_trocar_continuar(lote, w);
+          cwGerNaTela = __atomic_add_fetch(&cwGer, 1u, __ATOMIC_RELAXED);
+          printf("[desc] local Continue Watching published before network: %d\n", nLocais);
+        }
+        pthread_mutex_unlock(&cwPubTrava);
+        nv_perfil_sessao_destravar();
+      }
+    } }
   n = montarContinuar(lote, CONT_MAX);
   minhaGer = __atomic_load_n(&cwGer, __ATOMIC_RELAXED);
   pthread_mutex_unlock(&contTrava);
