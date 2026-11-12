@@ -54,6 +54,13 @@ const ColFolder *col_folder(int i) { return i == 0 ? &pasta : NULL; }
 const char *addons_base_por_id(const char *id) { (void)id; return ""; }
 #define LST_SO_ITENS
 #include "../src/listas.c"
+int caca_n_filmes(int i) { (void)i; return 0; }
+int caca_filme(int i, int j, CacaFilme *out) { (void)i; (void)j; (void)out; return 0; }
+int caca_itens(int i, int falta, void *out, int max) { (void)i; (void)falta; (void)out; (void)max; return 0; }
+int caca_por_chave(const char *key) { (void)key; return -1; }
+void caca_previa_lista(int tipo, long alvo, const char *lista, const char *nome, const char *foto) { (void)tipo; (void)alvo; (void)lista; (void)nome; (void)foto; }
+int mus_listar(MusSalva *out, int max) { (void)out; (void)max; return 0; }
+int servidores_pagina(const char *key, int start, int limit, CatItem *out, int max, int *total, int *raw) { (void)key; (void)start; (void)limit; (void)out; (void)max; (void)total; (void)raw; return -1; }
 
 char *rede_baixar_st(const char *url, int timeout, const char *const *headers, int *status) {
   (void)headers;
@@ -61,8 +68,22 @@ char *rede_baixar_st(const char *url, int timeout, const char *const *headers, i
   *status = body ? 200 : 0;
   return body;
 }
+static int limitePedidos;
 char *rede_baixar(const char *url,int timeout) {
   (void)timeout;
+  if (strstr(url, "limite.invalid")) {
+    limitePedidos++;
+    const char *p = strstr(url, "skip=");
+    int skip = p ? atoi(p + 5) : 0;
+    char *body = malloc  (16000);
+    int used = snprintf(body, 16000, "{\"metas\":[");
+    for (int i = skip; i < skip + 100 && i < 1100; i++)
+      used += snprintf(body + used, 16000 - used,
+        "%s{\"id\":\"tt%d\",\"name\":\"Item %d\",\"poster\":\"p.jpg\"}",
+        i == skip ? "" : ",", i + 1, i + 1);
+    snprintf(body + used, 16000 - used, "]}");
+    return body;
+  }
   if(strstr(url,"skip=3"))return strdup("{\"metas\":[{\"id\":\"tt4\",\"name\":\"Quarto\",\"poster\":\"p.jpg\",\"releaseInfo\":\"2019\"}]}");
   if(strstr(url,"skip=2"))return strdup("{\"metas\":[{\"id\":\"tt3\",\"name\":\"Terceiro\",\"poster\":\"p.jpg\",\"releaseInfo\":\"2098\"}]}");
   return strdup("{\"metas\":[{\"id\":\"tt1\",\"name\":\"Futuro\",\"poster\":\"p.jpg\",\"releaseInfo\":\"2099\"},{\"id\":\"tt2\",\"name\":\"Lancado\",\"poster\":\"p.jpg\",\"releaseInfo\":\"2020\"}]}");
@@ -102,6 +123,20 @@ int main(void) {
       for (i = 0; i < lst_itens_n(); i++)
         if (lst_item(i, &it) && !strcmp(it.imdb, "tt2")) achou = 1;
       assert(achou && !tem("tt2")); } }
+  /* Paginated add-on: ten full pages followed by another 100 titles. */
+  ocultar = ocultarVistos = 0;
+  desc_vertudo_abrir("https://limite.invalid", "movie", "rank"); waitDone();
+  for (int i = 1; i < 10; i++) { desc_vertudo_mais(); waitDone(); }
+  assert(desc_vertudo_n() == 1000 && desc_vertudo_pagina() == 1000);
+  { CatItem item; assert(desc_vertudo_item(0, &item) && !strcmp(item.imdb, "tt1"));
+    assert(desc_vertudo_item(999, &item) && !strcmp(item.imdb, "tt1000")); }
+  assert(limitePedidos == 10);
+  desc_vertudo_mais(); waitDone();
+  if (getenv("NV_TEST_AFTER_1000")) {
+    assert(desc_vertudo_n() == 1100 && tem("tt1001"));
+  } else {
+    assert(limitePedidos == 10 && desc_vertudo_n() == 1000 && desc_vertudo_fim() && !tem("tt1001"));
+  }
   puts("colfiltro: PASS (home e ver tudo escondem o de 2099; pagina so de futuros nao encerra)");
   return 0;
 }
