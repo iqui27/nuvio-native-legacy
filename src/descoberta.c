@@ -22,6 +22,7 @@
 #include "nuvem.h"
 #include "cwordem.h"
 #include "js.h"
+#include "aionotice.h"
 #include "metaep.h"
 #include "recomenda.h"
 #include "trakt.h"
@@ -10176,7 +10177,7 @@ static void *fioVerTudo(void *u) {
   cap=colecaoTeto(id);
   if (cap == VT_MAX) cap = VT_STORE_MAX;
   if (reload) {
-    VtStore nova = {0}; int ok = corpo && js_array_presente(corpo, NULL, "metas");
+    VtStore nova = {0}; int ok = corpo && aio_json_valid(corpo) && js_array_presente(corpo, NULL, "metas");
     int avancou = 0, parcial = 0;
     uint64_t hash = VT_HASH_INICIO, hashAntes = hash;
     pthread_mutex_lock(&vtTrava);
@@ -10228,7 +10229,7 @@ static void *fioVerTudo(void *u) {
   uint64_t replayHash = vtReplayHash, hash = VT_HASH_INICIO, hashAntes = hash;
   pthread_mutex_unlock(&vtTrava);
   const char *first=corpo?js_array(corpo,NULL,"metas"):NULL;
-  int valid=corpo && js_array_presente(corpo, NULL, "metas");
+  int valid=corpo && aio_json_valid(corpo) && js_array_presente(corpo, NULL, "metas");
   int added=0;
   snprintf(fonte.type, sizeof fonte.type, "%s", type);
   fonte.prov[0] = 0;

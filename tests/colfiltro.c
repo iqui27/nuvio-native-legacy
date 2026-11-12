@@ -104,6 +104,8 @@ char *rede_baixar(const char *url,int timeout) {
     if (!skip && limiteVariante == 7) return strdup("{\"metas\":{}}");
     if (!skip && limiteVariante == 8) return strdup("{}");
     if (!skip && limiteVariante == 9) return strdup("{\"metas\":[]}");
+    if (!skip && limiteVariante == 11) return strdup("{\"metas\":[{} garbage]}");
+    if (!skip && limiteVariante == 12) return strdup("{\"metas\":[]} trailing");
     char *body = malloc(262144); assert(body);
     int used = snprintf(body, 262144, "{\"metas\":[");
     int total = limiteVariante == 10 ? 2100 : 1100;
@@ -238,6 +240,10 @@ int main(void) {
   limiteVariante = 1; desc_vertudo_mais(); waitDone();
   assert(desc_vertudo_erro() && desc_vertudo_n() == 1050);
   for (int v = 6; v <= 8; v++) {
+    limiteVariante = v; desc_vertudo_abrir("https://limite.invalid", "movie", "refresh"); waitDone();
+    assert(desc_vertudo_erro() && desc_vertudo_n() == 1050 && !desc_vertudo_fim());
+  }
+  for (int v = 11; v <= 12; v++) {
     limiteVariante = v; desc_vertudo_abrir("https://limite.invalid", "movie", "refresh"); waitDone();
     assert(desc_vertudo_erro() && desc_vertudo_n() == 1050 && !desc_vertudo_fim());
   }
