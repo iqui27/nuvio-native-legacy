@@ -9485,7 +9485,7 @@ static struct { char id[64], tipo[8]; } vtAddonId[VT_STORE_MAX];
 static DescItemLista vtExtra[VT_MAX];   // paralela a vtItens; ver descoberta.h
 static int      vtN;
 static char     vtBase[NV_ADDON_URL_MAX], vtTipo[8], vtCat[96], vtGenre[96];
-static int      vtPagina, vtFim, vtFioVivo, vtErro, vtReplay, vtReload, vtPaginaMudou;
+static int      vtPagina, vtPaginaInicial, vtFim, vtFioVivo, vtErro, vtReplay, vtReload, vtPaginaMudou;
 static uint64_t vtReplayHash;
 #define VT_HASH_INICIO UINT64_C(14695981039346656037)
 static uint64_t vtHashItem(uint64_t h, const char *p, const char *fim, const char *tipo) {
@@ -10023,7 +10023,7 @@ static void *fioVerTudo(void *u) {
   pthread_mutex_lock(&vtTrava);
   skip=vtPagina; generation=vtGeracao; prov=vtProvedor;
   reload=vtReload && !prov && strcmp(vtBase, "servidores");
-  if (reload) { skip = 0; vtReload = 0; }
+  if (reload) { skip = vtPaginaInicial; vtReload = 0; }
   if (geracaoPaginas != generation) { geracaoPaginas = generation; paginas = 0; }
   paginas++;
   antes = vtProjetar();
@@ -10189,7 +10189,7 @@ static void *fioVerTudo(void *u) {
       const char *f = js_fim(p); CatItem it; raw++;
       if (!deMeta(p, f, type, &it) || !colecaoTipo(&fonte, &it)) continue;
       if (descOcultaNaoLancado(&it)) { avancou++; continue; }
-      origemDaBase(base, it.origem, sizeof it.origem); it.ranking = raw;
+      origemDaBase(base, it.origem, sizeof it.origem); it.ranking = skip + raw;
       int dup = 0;
       for (int i = 0; it.imdb[0] && i < nova.n; i++) {
         CatItem old;
@@ -10207,7 +10207,7 @@ static void *fioVerTudo(void *u) {
     }
     if (ok) {
       vt_store_free(&vtAddon); vtAddon = nova; memset(&nova, 0, sizeof nova);
-      vtN = vtAddon.n; vtPagina = raw; vtReplay = 0; vtPaginaMudou = 0;
+      vtN = vtAddon.n; vtPagina = skip + raw; vtReplay = 0; vtPaginaMudou = 0;
       vtFim = !raw || !avancou || (cap < VT_STORE_MAX && vtN >= cap);
       for (int i = 0; i < vtN; i++) {
         CatItem it; vt_store_get(&vtAddon, i, &it);
@@ -10329,7 +10329,7 @@ void desc_vertudo_filtro_desde(const char *base, const char *tipo, const char *c
   snprintf(vtCat,  sizeof vtCat,  "%s", catId);
   snprintf(vtGenre,sizeof vtGenre,"%s",genre?genre:"");
   vtProvedor=0;
-  vtN = 0; vtPagina = pagina; vtReplay = vtReload = vtPaginaMudou = 0; vtFim = 0;vtErro=0;vtGeracao++;
+  vtN = 0; vtPagina = vtPaginaInicial = pagina; vtReplay = vtReload = vtPaginaMudou = 0; vtFim = 0;vtErro=0;vtGeracao++;
   pthread_mutex_unlock(&vtTrava);
   vtDisparar();
 }

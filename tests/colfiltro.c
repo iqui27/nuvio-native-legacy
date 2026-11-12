@@ -239,6 +239,14 @@ int main(void) {
   for (int i = 1; i < 11; i++) { desc_vertudo_mais(); waitDone(); }
   assert(!desc_vertudo_erro() && desc_vertudo_n() == 1100 && tem("tt1101"));
   limiteVariante = 0;
+  desc_vertudo_filtro_desde("https://limite.invalid", "movie", "refresh2", "", 900); waitDone();
+  vt_alloc_remaining = 50; desc_vertudo_mais(); waitDone(); vt_alloc_remaining = -1;
+  limiteVariante = 1; desc_vertudo_mais(); waitDone();
+  assert(desc_vertudo_erro() && desc_vertudo_n() == 150);
+  desc_vertudo_filtro_desde("https://limite.invalid", "movie", "refresh2", "", 900); waitDone();
+  { CatItem item; assert(!desc_vertudo_erro() && desc_vertudo_n() == 100 && desc_vertudo_pagina() == 1000);
+    assert(desc_vertudo_item(0, &item) && item.ranking == 901); }
+  limiteVariante = 0;
   desc_vertudo_abrir("https://limite.invalid", "movie", "top10"); waitDone();
   assert(desc_vertudo_n() == 10 && desc_vertudo_fim());
   desc_vertudo_abrir("https://budget.invalid", "movie", "rank"); waitDone();
