@@ -1,5 +1,6 @@
 #include "../app_id.h"
 #include "dts_playback.h"
+#include "../mediaurl.h"
 #include "dts_engine.h"
 #include "dts_pipeline.h"
 #include "../js.h"
@@ -40,7 +41,7 @@ struct DtsPlayback {
   size_t subtitle_bytes;
   unsigned subtitle_revision;
   double subtitle_cursor;
-  char url[4096], headers[2048], window[64];
+  char url[NV_MEDIA_URL_MAX], headers[2048], window[64];
   char events[DTS_EVENTS][DTS_EVENT_SIZE];
   int event_read, event_write, event_count;
   int stop, pause, pause_dirty, seek_dirty, audio_dirty, volume, volume_dirty;
@@ -815,7 +816,7 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
                                int paused, const char *window, int major,
                                const DtsTrack *selected, int ordinal, int count) {
   DtsPlayback *p;
-  if (!url || !*url || strlen(url) >= 4096 || (headers && strlen(headers) >= 2048) ||
+  if (!url || !*url || strlen(url) >= NV_MEDIA_URL_MAX || (headers && strlen(headers) >= 2048) ||
       (window && strlen(window) >= 64) || !isfinite(position) || position >= 9e9 || !dts_engine_available()) return NULL;
   p = calloc(1, sizeof *p);
   if (!p) return NULL;

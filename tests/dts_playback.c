@@ -2,6 +2,7 @@
 #include "dts/dts_playback.h"
 #include "dts/dts_engine.h"
 #include "dts/dts_pipeline.h"
+#include "mediaurl.h"
 #include <assert.h>
 #include <stdatomic.h>
 #include <pthread.h>
@@ -22,6 +23,7 @@ static atomic_int timestamp_fault, timestamp_fail_open, timestamp_block_open, ti
 static atomic_int refill_info_barrier, refill_info_entered, refill_timestamp;
 static atomic_int recovery_barrier, recovery_entered, refill_decode;
 static int last_dv;
+static const char *expected_url="fixture://movie";
 static int last_p7;
 static atomic_llong buffer_ready = 21*1048576LL, buffer_contiguous = 20*1048576LL;
 void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *out) {
@@ -63,7 +65,7 @@ void dts_engine_allow_p7(DtsEngine *e,int on) { (void)e; (void)on;
 void dts_engine_dv(DtsEngine *e,int on) { (void)e; last_dv=on; }
 DtsEngine *dts_engine_create(void) { return calloc(1,sizeof(DtsEngine)); }
 int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,int core,double target) {
- (void)headers;assert(!strcmp(url,"fixture://movie"));
+ (void)headers;assert(!strcmp(url,expected_url));
  pthread_mutex_lock(&fixture);opens++;last_stream=stream;last_open_target=target;if(core)core_opens++;pthread_mutex_unlock(&fixture);
  if(scenario==OPEN_FAIL || atomic_load(&timestamp_fail_open) || atomic_load(&e->interrupted)) return -1;
  if(atomic_load(&timestamp_block_open)) {
@@ -73,13 +75,14 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,
  }
  memset(&e->info,0,sizeof e->info);strcpy(e->info.video_codec,"hevc");strcpy(e->info.audio_codec,"aac");
  e->info.width=1920;e->info.height=1080;e->info.audio_stream=stream<0?4:stream;e->info.channels=2;e->info.sample_rate=48000;
+ if(last_dv) { e->info.dovi_profile=8;e->info.dovi_bl_present=e->info.dovi_rpu_present=1;strcpy(e->info.hdr,"DolbyVision"); }
  e->info.n_tracks=4;
  e->info.tracks[0]=(DtsTrack){.stream_index=0,.kind=DTS_VIDEO};
  e->info.tracks[1]=(DtsTrack){.stream_index=1,.kind=DTS_AUDIO,.channels=2};strcpy(e->info.tracks[1].codec,"aac");strcpy(e->info.tracks[1].language,"en");
  e->info.tracks[2]=(DtsTrack){.stream_index=4,.kind=DTS_AUDIO,.channels=6};strcpy(e->info.tracks[2].codec,"dts");strcpy(e->info.tracks[2].language,"pt");
  e->info.tracks[3]=(DtsTrack){.stream_index=9,.kind=DTS_AUDIO,.channels=2};strcpy(e->info.tracks[3].codec,"dts");strcpy(e->info.tracks[3].language,"ja");
  if(scenario==MAPPING_BAD) { e->info.tracks[4]=e->info.tracks[3];e->info.tracks[4].stream_index=10;e->info.n_tracks=5; }
- if(scenario==SUBTITLES || scenario==SEEK_SEGMENT || timestampScenario()) {
+ if(scenario==SUBTITLES || scenario==SUB_FLOOD || scenario==SEEK_SEGMENT || timestampScenario()) {
   e->info.tracks[4]=(DtsTrack){.stream_index=20,.kind=DTS_SUBTITLE};strcpy(e->info.tracks[4].codec,"srt");e->info.n_tracks=5;
  }
  e->core=core;e->base=target;e->serial=0;return 0;
@@ -283,6 +286,25 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
+ if(!strcmp(argv[1],"url-limit") || !strcmp(argv[1],"url-limit-dv")) {
+  char url[NV_MEDIA_URL_MAX+2];
+  const size_t lengths[]={1024,4095,4096,NV_MEDIA_URL_MAX-1};
+  int dv=!strcmp(argv[1],"url-limit-dv");
+  for(size_t i=0;i<sizeof lengths/sizeof *lengths;i++) {
+   size_t n=lengths[i];memset(url,'a',n);memcpy(url,"https://fixture.invalid/",24);url[n-1]='z';url[n]=0;
+   expected_url=url;int before=count(&opens);
+   dts_playback_next_dv(dv);
+   p=dts_playback_start(url,"",4,0,1,"window",0,NULL,0,0);assert(p);
+   s=wait_status(p,0,0);assert(!s.failed && count(&opens)==before+1);
+   assert((s.info.dovi_profile!=0)==dv);dts_playback_close(p);
+  }
+  int before=count(&creates);memset(url,'b',sizeof url);url[NV_MEDIA_URL_MAX]=0;
+  assert(!dts_playback_start(url,"",4,0,0,"window",0,NULL,0,0));
+  url[NV_MEDIA_URL_MAX]='b';url[NV_MEDIA_URL_MAX+1]=0;
+  assert(!dts_playback_start(url,"",4,0,0,"window",0,NULL,0,0));
+  assert(count(&creates)==before);
+  puts("PASS: full converter URL reaches engine at 1024/4095/4096/8191 bytes; oversize rejected before native creation");return 0;
+ }
  if(!strcmp(argv[1],"refillrace") || !strcmp(argv[1],"refillracepause") || !strcmp(argv[1],"refillraceaudio")) {
   scenario=SUSTAINED;p=start(0,4,NULL,0,0);wait_count(&accepted,10);
   atomic_store(&refill_info_barrier,1);atomic_store(&buffer_contiguous,0);

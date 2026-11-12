@@ -118,7 +118,7 @@ static char dvAudioDe[16];
 // The audio track a Dolby Vision session of this URL last played (file
 // ordinal + language). Leaving the film and resuming the same source reopens
 // it natively with the TV's default track; the path starts on this one.
-static char dvMemUrl[1024], dvMemIdioma[8];
+static char dvMemUrl[NV_MEDIA_URL_MAX], dvMemIdioma[8];
 static int dvMemOrd = -1;
 // Island notice for app.c: 1 = the source could not keep up, 2 = the path did
 // not start. Consumed once.
