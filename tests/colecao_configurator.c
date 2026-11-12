@@ -6,6 +6,22 @@
 static int falhar;
 char *config414_baixar(const char *url, int timeout) {
   (void)timeout;
+  if (strstr(url, "/catalog/movie/cap") || strstr(url, "/catalog/movie/overflow") ||
+      strstr(url, "/catalog/movie/single") || strstr(url, "/catalog/movie/straddle")) {
+    const char *p = strstr(url, "skip=");
+    int skip = p ? atoi(p + 5) : 0;
+    int total = strstr(url, "/cap") ? 2000 : 2100;
+    int page = strstr(url, "/single") ? 2100 : strstr(url, "/straddle") ? 300 : 100;
+    if (falhar) return NULL;
+    char *body = malloc(262144); assert(body);
+    int used = snprintf(body, 262144, "{\"metas\":[");
+    for (int i = skip; i < skip + page && i < total; i++)
+      used += snprintf(body + used, 262144 - used,
+        "%s{\"id\":\"tt%d\",\"name\":\"Item %d\",\"poster\":\"p.jpg\",\"releaseInfo\":\"%d\"}",
+        i == skip ? "" : ",", i + 1, i + 1, 1900 + i % 120);
+    snprintf(body + used, 262144 - used, "]}");
+    return body;
+  }
   // No network: accept only the hand-written fixture's catalog endpoints.
   assert(!strcmp(url, "https://example.invalid/catalog/movie/popular.json") ||
          !strcmp(url, "https://example.invalid/catalog/movie/recent.json") ||
@@ -103,6 +119,49 @@ int main(int argc, char **argv) {
       esperar();
       assert(source == 1 && !desc_vertudo_erro() && desc_vertudo_n() == 1);
     }
+  }
+  /* Real view + worker: failed later page leaves loaded cards actionable. */
+  falhar = 0; vertudo_abrir("https://example.invalid", "movie", "cap", "Cap"); esperar();
+  assert(desc_vertudo_n() == 100);
+  falhar = 1; desc_vertudo_mais(); esperar();
+  assert(desc_vertudo_erro() && desc_vertudo_n() == 100 && celulaAceitaMenu());
+  foco = 0; tecla(SDLK_RETURN);
+  { SDL_Event e = {0}; e.type = SDL_KEYUP; e.key.keysym.sym = SDLK_RETURN; vertudo_evento(&e); }
+  /* This harness has no global CatItem catalog, so opening cannot yield an index. */
+  assert(desc_vertudo_erro() && desc_vertudo_n() == 100 && !desc_vertudo_carregando());
+  falhar = 0; foco = 99; tecla(SDLK_RIGHT); esperar();
+  assert(!desc_vertudo_erro() && desc_vertudo_n() == 200);
+  for (int i = 2; i < 20; i++) { desc_vertudo_mais(); esperar(); }
+  assert(desc_vertudo_n() == 2000 && !desc_vertudo_fim());
+  lay = VT_LAY_FLUXO; celLay = -1; orderN = -1; fluxoPendente = 0;
+  vertudo_atualizar(0.016f, SDL_GetTicks()); esperar();
+  assert(desc_vertudo_fim() && !desc_vertudo_erro());
+  vertudo_atualizar(0.016f, SDL_GetTicks());
+  assert(!fluxoPendente && orderN == 2000);
+  vertudo_abrir("https://example.invalid", "movie", "overflow", "Overflow"); esperar();
+  for (int i = 1; i < 20; i++) { desc_vertudo_mais(); esperar(); }
+  assert(desc_vertudo_n() == 2000 && !desc_vertudo_fim());
+  desc_vertudo_mais(); esperar();
+  assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 2000);
+  assert(celulaAceitaMenu());
+  vertudo_abrir("https://example.invalid", "movie", "single", "Single"); esperar();
+  assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 0);
+  { CatItem item; assert(desc_vertudo_item(1999, &item) && !strcmp(item.imdb, "tt2000")); }
+  desc_vertudo_mais(); esperar();
+  assert(desc_vertudo_erro() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 0);
+  vertudo_abrir("https://example.invalid", "movie", "straddle", "Straddle"); esperar();
+  for (int i = 1; i < 7; i++) { desc_vertudo_mais(); esperar(); }
+  assert(desc_vertudo_erro() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 1800);
+  const char *ids[] = {"capfilter", "overflowfilter"};
+  for (int j = 0; j < 2; j++) {
+    vertudo_abrir("https://example.invalid", "movie", ids[j], "Filtered"); esperar();
+    for (int i = 1; i < 20; i++) { desc_vertudo_mais(); esperar(); }
+    assert(desc_vertudo_n() == 2000 && !desc_vertudo_fim() && !desc_vertudo_erro());
+    vitTudo = 1; vitTudoFiltro = 1; vitTudoGrupo = 1; vitTudoBruto = -1; vitTudoMaisBruto = -1;
+    assert(nItens() == 0);
+    vitTudoAvancar(0); esperar();
+    assert(j ? (desc_vertudo_erro() && !desc_vertudo_fim()) : (desc_vertudo_fim() && !desc_vertudo_erro()));
+    vitTudo = 0; vitTudoFiltro = 0;
   }
   puts("colecao_configurator: PASS (offline import, current-tab retry, all tab styles)");
   return 0;

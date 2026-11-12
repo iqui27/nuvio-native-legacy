@@ -1,5 +1,6 @@
 #include "arteurl.h"
 #include "descoberta.h"
+#include "vt_store.h"
 #include "caca.h"
 #include "dados.h"
 #include "idioma.h"
@@ -21,6 +22,7 @@
 #include "nuvem.h"
 #include "cwordem.h"
 #include "js.h"
+#include "aionotice.h"
 #include "metaep.h"
 #include "recomenda.h"
 #include "trakt.h"
@@ -9477,10 +9479,24 @@ static int pendItem = -1, pendTemp;
 #define VT_PASSO 100        // `skipStep` padrao do web quando o addon nao diz
 
 static CatItem  vtItens[VT_MAX];
+static VtStore vtAddon;
+static struct { char id[64], tipo[8]; } vtAddonId[VT_STORE_MAX];
+/* Dynamic payload budget excludes the fixed index and allocator overhead. */
+#define VT_ADDON_BYTES_MAX (8u * 1024u * 1024u)
 static DescItemLista vtExtra[VT_MAX];   // paralela a vtItens; ver descoberta.h
 static int      vtN;
 static char     vtBase[NV_ADDON_URL_MAX], vtTipo[8], vtCat[96], vtGenre[96];
-static int      vtPagina, vtFim, vtFioVivo, vtErro;
+static int      vtPagina, vtPaginaInicial, vtFim, vtFioVivo, vtErro, vtReplay, vtReload, vtPaginaMudou;
+static uint64_t vtReplayHash;
+#define VT_HASH_INICIO UINT64_C(14695981039346656037)
+static uint64_t vtHashItem(uint64_t h, const char *p, const char *fim, const char *tipo) {
+  CatItem item;
+  if (deMeta(p, fim, tipo, &item)) {
+    p = (const char *)&item; fim = p + sizeof item;
+  }
+  for (; p < fim; p++) { h ^= (unsigned char)*p; h *= UINT64_C(1099511628211); }
+  h ^= 255; return h * UINT64_C(1099511628211);
+}
 static unsigned vtGeracao;
 static NvPerfilSessao vtSessao;
 // Fonte nao-addon aberta por desc_vertudo_fonte (issue #44): vtProvedor 1 e
@@ -9494,7 +9510,13 @@ static pthread_mutex_t vtTrava = PTHREAD_MUTEX_INITIALIZER;
 // Desligar o ajuste ou desmarcar um filme devolve o mesmo titulo, na ordem do
 // addon, sem outra viagem de rede. vtN/skip/limites continuam contando a lista
 // crua; uma pagina cheia de vistos nao pode ser confundida com fim de catalogo.
-static int vtVisiveis[VT_MAX], vtNVisiveis;
+static int vtVisiveis[VT_STORE_MAX], vtNVisiveis;
+static int vtEhAddon(void) { return !vtProvedor && strcmp(vtBase, "servidores"); }
+static int vtLer(int i, CatItem *out) {
+  if (i < 0 || i >= vtN) return 0;
+  if (vtEhAddon()) return vt_store_get(&vtAddon, i, out);
+  *out = vtItens[i]; return 1;
+}
 static int vtProjN = -1, vtProjOcultar;
 static unsigned vtProjGeracao, vtProjItens, vtProjRevisao;
 
@@ -9506,9 +9528,11 @@ static int vtProjetar(void) {
   if (vtProjN == vtN && vtProjGeracao == vtGeracao &&
       vtProjOcultar == ocultar && (!ocultar || vtProjItens == itens)) return vtNVisiveis;
   vtNVisiveis = 0;
-  for (int i = 0; i < vtN; i++)
-    if (!ocultar || !desc_filme_visto(&vtItens[i]))
+  for (int i = 0; i < vtN; i++) {
+    CatItem item;
+    if (!ocultar || (vtLer(i, &item) && !desc_filme_visto(&item)))
       vtVisiveis[vtNVisiveis++] = i;
+  }
   vtProjN = vtN; vtProjGeracao = vtGeracao; vtProjOcultar = ocultar;
   vtProjItens = itens;
   vtProjRevisao++;
@@ -9995,10 +10019,12 @@ static void *fioVerTudo(void *u) {
   int paginas = 0;
   for (;;) {
   char url[NV_ADDON_PEDIDO_MAX], base[NV_ADDON_URL_MAX], type[8], id[96], genre[96], encoded[290], *corpo;
-  int raw=0, ocultos=0, skip, cap, prov, antes, status=0;unsigned generation;
+  int raw=0, ocultos=0, skip, cap, prov, antes, status=0, reload; unsigned generation;
   ColSource fonte;
   pthread_mutex_lock(&vtTrava);
-  skip=vtPagina;generation=vtGeracao;prov=vtProvedor;
+  skip=vtPagina; generation=vtGeracao; prov=vtProvedor;
+  reload=vtReload && !prov && strcmp(vtBase, "servidores");
+  if (reload) { skip = vtPaginaInicial; vtReload = 0; }
   if (geracaoPaginas != generation) { geracaoPaginas = generation; paginas = 0; }
   paginas++;
   antes = vtProjetar();
@@ -10149,16 +10175,71 @@ static void *fioVerTudo(void *u) {
   w=catalogoUrl(url,sizeof url,base,type,id,extra);
   corpo=(!addons_base_desligada(base)&&descPedidoCoube(base,w,sizeof url))?colecaoBaixar(url,&status):NULL; }
   cap=colecaoTeto(id);
+  if (cap == VT_MAX) cap = VT_STORE_MAX;
+  if (reload) {
+    VtStore nova = {0}; int ok = corpo && aio_json_valid(corpo) && js_array_presente(corpo, NULL, "metas");
+    int avancou = 0, parcial = 0;
+    uint64_t hash = VT_HASH_INICIO, hashAntes = hash;
+    pthread_mutex_lock(&vtTrava);
+    if (generation != vtGeracao || !descSessaoAtual()) {
+      pthread_mutex_unlock(&vtTrava); free(corpo); continue;
+    }
+    size_t livre = vtAddon.used < VT_ADDON_BYTES_MAX ? VT_ADDON_BYTES_MAX - vtAddon.used : 0;
+    pthread_mutex_unlock(&vtTrava);
+    snprintf(fonte.type, sizeof fonte.type, "%s", type); fonte.prov[0] = 0;
+    for (const char *p = ok ? js_array(corpo, NULL, "metas") : NULL; p; p = js_prox(js_fim(p))) {
+      const char *f = js_fim(p); CatItem it; raw++;
+      hashAntes = hash; hash = vtHashItem(hash, p, f, type);
+      if (!deMeta(p, f, type, &it) || !colecaoTipo(&fonte, &it)) continue;
+      if (descOcultaNaoLancado(&it)) { avancou++; continue; }
+      origemDaBase(base, it.origem, sizeof it.origem); it.ranking = skip + raw;
+      int dup = 0;
+      for (int i = 0; it.imdb[0] && i < nova.n; i++) {
+        CatItem old;
+        if (vt_store_get(&nova, i, &old) && !strcmp(old.imdb, it.imdb) && !strcmp(old.tipo, it.tipo)) { dup = 1; break; }
+      }
+      if (dup) continue;
+      if (nova.n >= cap) { if (cap == VT_STORE_MAX) parcial = 1; break; }
+      if (!vt_store_append(&nova, &it, livre)) { ok = 0; break; }
+      avancou++;
+    }
+    free(corpo);
+    pthread_mutex_lock(&vtTrava);
+    if (generation != vtGeracao || !descSessaoAtual()) {
+      pthread_mutex_unlock(&vtTrava); vt_store_free(&nova); continue;
+    }
+    if (ok) {
+      vt_store_free(&vtAddon); vtAddon = nova; memset(&nova, 0, sizeof nova);
+      vtN = vtAddon.n; vtPagina = parcial ? skip : skip + raw;
+      vtReplay = parcial ? raw - 1 : 0; vtReplayHash = parcial ? hashAntes : 0;
+      vtPaginaMudou = 0; vtGeracao++;
+      vtFim = !parcial && (!raw || !avancou || (cap < VT_STORE_MAX && vtN >= cap));
+      for (int i = 0; i < vtN; i++) {
+        CatItem it; vt_store_get(&vtAddon, i, &it);
+        memcpy(vtAddonId[i].id, it.imdb, sizeof it.imdb);
+        memcpy(vtAddonId[i].tipo, it.tipo, sizeof it.tipo);
+      }
+    }
+    vtErro = !ok || parcial; vtFioVivo = 0;
+    pthread_mutex_unlock(&vtTrava); vt_store_free(&nova); return NULL;
+  }
   pthread_mutex_lock(&vtTrava);
   if(generation!=vtGeracao || !descSessaoAtual()){pthread_mutex_unlock(&vtTrava);free(corpo);continue;}
+  int semEspaco = 0, mudouPagina = 0, replay = vtReplay;
+  uint64_t replayHash = vtReplayHash, hash = VT_HASH_INICIO, hashAntes = hash;
   pthread_mutex_unlock(&vtTrava);
-  const char *first=corpo?js_array(corpo,NULL,"metas"):NULL;
-  int valid=corpo&&strstr(corpo,"\"metas\"");
+  int valid=corpo && aio_json_valid(corpo) && js_array_presente(corpo, NULL, "metas");
+  const char *first=valid ? js_array(corpo,NULL,"metas") : NULL;
   int added=0;
   snprintf(fonte.type, sizeof fonte.type, "%s", type);
   fonte.prov[0] = 0;
   for(const char *p=first;p;p=js_prox(js_fim(p))) {
     const char *f=js_fim(p);raw++;
+    hashAntes = hash; hash = vtHashItem(hash, p, f, type);
+    if (raw <= replay) {
+      if (raw == replay && hash != replayHash) { mudouPagina = 1; break; }
+      continue;
+    }
     CatItem it;
     if (deMeta(p, f, type, &it) && colecaoTipo(&fonte, &it)) {
       // Escondido ainda conta como "pagina com novidade": senao uma pagina so de
@@ -10168,12 +10249,20 @@ static void *fioVerTudo(void *u) {
       it.ranking = skip + raw;
       pthread_mutex_lock(&vtTrava);
       int duplicate=0;
-      for(int i=0;i<vtN;i++)if(it.imdb[0]&&!strcmp(vtItens[i].imdb,it.imdb)&&!strcmp(vtItens[i].tipo,it.tipo)){duplicate=1;break;}
-      if(generation==vtGeracao&&descSessaoAtual()&&vtN<cap&&!duplicate){
-        memset(&vtExtra[vtN],0,sizeof vtExtra[vtN]);
-        vtItens[vtN++]=it;added++;
+      if (generation==vtGeracao && descSessaoAtual()) {
+        for(int i=0;i<vtN && it.imdb[0];i++)
+          if(!strcmp(vtAddonId[i].id,it.imdb) && !strcmp(vtAddonId[i].tipo,it.tipo)){duplicate=1;break;}
+        if (!duplicate && vtN < cap) {
+          if (vt_store_append(&vtAddon, &it, VT_ADDON_BYTES_MAX)) {
+            memcpy(vtAddonId[vtN].id, it.imdb, sizeof it.imdb);
+            memcpy(vtAddonId[vtN].tipo, it.tipo, sizeof it.tipo);
+            vtN++; added++;
+          }
+          else semEspaco = 1;
+        } else if (!duplicate && cap == VT_STORE_MAX) semEspaco = 1;
       }
       pthread_mutex_unlock(&vtTrava);
+      if (semEspaco) break;
     }
   }
   colecaoLog("", base, type, id, genre, skip, status, added,
@@ -10182,10 +10271,16 @@ static void *fioVerTudo(void *u) {
   free(corpo);
   pthread_mutex_lock(&vtTrava);
   if(generation!=vtGeracao || !descSessaoAtual()){pthread_mutex_unlock(&vtTrava);continue;}
-  vtErro=!valid;
+  // Keep the page cursor on failure: addons can require a fixed skipStep.
+  // Verify the consumed raw prefix, including items without IDs, before replay.
+  if (valid && raw < replay) mudouPagina = 1;
+  if (semEspaco) { vtReplay = raw - 1; vtReplayHash = hashAntes; }
+  else if (valid && !mudouPagina) vtReplay = 0;
+  vtPaginaMudou = mudouPagina;
+  vtErro=!valid || semEspaco || mudouPagina;
   // Skip usa quantidade recebida, não 100 presumidos. Muitos addons entregam
   // 20/50 por página. Repetição sem novos ids também termina a paginação.
-  if(valid){vtPagina+=raw;if(!raw||!added||vtN>=cap)vtFim=1;}
+  if(valid && !semEspaco && !mudouPagina){vtPagina+=raw;if(!raw||!added||(cap < VT_STORE_MAX && vtN>=cap))vtFim=1;}
   int seguir = vtPaginaSoDeVistos(antes, added, paginas);
   if (!seguir) vtFioVivo=0;
   pthread_mutex_unlock(&vtTrava);
@@ -10225,19 +10320,21 @@ void desc_vertudo_filtro_desde(const char *base, const char *tipo, const char *c
   // recomecar do zero (o dono pode ter voltado e entrado de novo).
   if (strcmp(base, "servidores") && !vtProvedor && !strcmp(vtBase, base) && !strcmp(vtTipo, tipo) && !strcmp(vtCat, catId)
       && !strcmp(vtGenre,genre?genre:"") && vtN > 0) {
-    // Reabrir e um pedido explicito: se o lote limitado anterior so tinha
-    // vistos, deixa procurar mais paginas sem um ciclo automatico sem fim.
+    // A changed replay needs a fresh snapshot, staged while the old one stays visible.
+    int recarregar = vtPaginaMudou && !vtFioVivo;
+    if (recarregar) { vtReload = 1; vtGeracao++; }
     int preencher = ajustes_ocultar_filmes_vistos() && !vtProjetar() && !vtFim && !vtErro;
     pthread_mutex_unlock(&vtTrava);
-    if (preencher) vtDisparar();
+    if (recarregar || preencher) vtDisparar();
     return;
   }
+  vt_store_free(&vtAddon);
   snprintf(vtBase, sizeof vtBase, "%s", base);
   snprintf(vtTipo, sizeof vtTipo, "%s", tipo);
   snprintf(vtCat,  sizeof vtCat,  "%s", catId);
   snprintf(vtGenre,sizeof vtGenre,"%s",genre?genre:"");
   vtProvedor=0;
-  vtN = 0; vtPagina = pagina; vtFim = 0;vtErro=0;vtGeracao++;
+  vtN = 0; vtPagina = vtPaginaInicial = pagina; vtReplay = vtReload = vtPaginaMudou = 0; vtFim = 0;vtErro=0;vtGeracao++;
   pthread_mutex_unlock(&vtTrava);
   vtDisparar();
 }
@@ -10258,7 +10355,9 @@ void desc_vertudo_fonte_desde(const ColSource *s, int pagina) {
   if (!strcmp(s->prov, "caca")) {
     int k = caca_por_chave(s->catId + (s->catId[0] ? 1 : 0)), n;
     pthread_mutex_lock(&vtTrava);
+    vt_store_free(&vtAddon);
     vtFonte = copia;
+    vtReload = vtPaginaMudou = vtReplay = 0;
     vtProvedor = 3;
     vtBase[0] = 0;
     n = k >= 0 ? caca_itens(k, s->catId[0] == '-', vtItens, VT_MAX) : 0;
@@ -10273,7 +10372,9 @@ void desc_vertudo_fonte_desde(const ColSource *s, int pagina) {
     if (preencher) vtDisparar();
     return;
   }
+  vt_store_free(&vtAddon);
   vtFonte = copia;
+  vtReload = vtPaginaMudou = vtReplay = 0;
   vtProvedor = !strcmp(s->prov, "trakt") ? 2 : 1;
   vtBase[0] = 0;
   vtN = 0; vtPagina = pagina; vtFim = 0; vtErro = 0; vtGeracao++;
@@ -10305,7 +10406,10 @@ void desc_vertudo_fechar(void) { /* guarda o que leu; ver desc_vertudo_abrir */ 
 int desc_vertudo_extra(int i, DescItemLista *dst) {
   int ok = 0;
   pthread_mutex_lock(&vtTrava);
-  if (dst && i >= 0 && i < vtN) { *dst = vtExtra[i]; ok = 1; }
+  if (dst && i >= 0 && i < vtN) {
+    if (vtEhAddon()) memset(dst, 0, sizeof *dst); else *dst = vtExtra[i];
+    ok = 1;
+  }
   pthread_mutex_unlock(&vtTrava);
   return ok;
 }
@@ -10314,7 +10418,7 @@ int desc_vertudo_item(int i, CatItem *dst) {
   int ok = 0;
   pthread_mutex_lock(&vtTrava);
   int n = vtProjetar();
-  if (dst && i >= 0 && i < n) { memcpy(dst, &vtItens[vtVisiveis[i]], sizeof *dst); ok = 1; }
+  if (dst && i >= 0 && i < n) ok = vtLer(vtVisiveis[i], dst);
   pthread_mutex_unlock(&vtTrava);
   return ok;
 }
@@ -10322,7 +10426,7 @@ int desc_vertudo_item(int i, CatItem *dst) {
 int desc_vertudo_item_bruto(int i, CatItem *dst) {
   int ok = 0;
   pthread_mutex_lock(&vtTrava);
-  if (dst && i >= 0 && i < vtN) { memcpy(dst, &vtItens[i], sizeof *dst); ok = 1; }
+  if (dst && i >= 0 && i < vtN) ok = vtLer(i, dst);
   pthread_mutex_unlock(&vtTrava);
   return ok;
 }
