@@ -243,6 +243,8 @@ static int por(const char *id, int tipo, const char *titulo, const char *texto, 
   int i;
   // DISPENSADO NAO VOLTA (avisodisp.h): nem na lista, nem na ilha, nem depois
   // de reiniciar. A chave e o evento; um evento novo tem outra chave.
+  // Update notices follow the device setting (Matis94): off = no queue.
+  if (tipo == AV_UPDATE && !ajustes_update_notifications()) return 0;
   if (avisodisp_tem(id)) return 0;
   for (i = 0; i < n; i++) if (!strcmp(itens[i].id, id)) {
     snprintf(itens[i].titulo, sizeof itens[i].titulo, "%s", titulo);
@@ -1281,6 +1283,7 @@ static const char *icone(int tipo) {
 static RecItem recDaIlha;              // a recomendacao que o modal mostra
 static void anunciarItem(const Aviso *it) {
   char chave[96], txt[240], f1[200], f2[200];
+  if (it->tipo == AV_UPDATE && !ajustes_update_notifications()) return;
   IlhaAvisoEx e;
   static IlhaModal m;
   memset(&e, 0, sizeof e);

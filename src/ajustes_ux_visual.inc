@@ -192,7 +192,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_CW_MINIMO: return "aj_circle-play";
     case AJ_ANIMESKIP_ID: return "aj_key-round";
     case AJ_CAPITULOS:
-    case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PULAR_CREDITOS: case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: return "aj_circle-play";
+    case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PULAR_CREDITOS: case AJ_SHOW_SKIP_INTRO: case AJ_SHOW_SKIP_RECAP: case AJ_SHOW_SKIP_CREDITS: case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: return "aj_circle-play";
     case AJ_SAIDA_PLAYER: case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: return "aj_circle-play";
     case AJ_SEEKR_LIGADO: return "aj_film";
     case AJ_SEEKR_CHAVE: return "aj_film";
@@ -237,6 +237,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_DISCORD: return "aj_message-square";
     case AJ_DIARIO_NUVEM: return "aj_cloud";
     case AJ_ANIM: return "aj_activity";
+    case AJ_UPDATE_NOTIFICATIONS:
     case AJ_ENQUETES: return "aj_bell";
     case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS: return "aj_badge-check";
     case AJ_BUSCA_CINEMETA: return "aj_list-x";
@@ -277,7 +278,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_LIVETV_MODO: return "aj_stethoscope";
     case AJ_LIVETV_PROXY: return "aj_stethoscope";
     case AJ_LIVETV_SUGERIR: return "aj_layers";
-    case AJ_PERFIL_ATIVO: return "aj_user-round";
+    case AJ_REMEMBER_PROFILE: case AJ_PERFIL_ATIVO: return "aj_user-round";
     case AJ_SYNC: return "aj_cloud";
     case AJ_ADDONS: return "aj_user-round";
     case AJ_PLUGINS: return "aj_puzzle";

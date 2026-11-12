@@ -594,7 +594,6 @@ static const char *const EST_ROT[FX_N_ESTILO] = {
 static const char *const EST_FUNDO[5] = { "Nenhum", "Escuro 25%", "Escuro 50%",
                                           "Escuro 75%", "Escuro 100%" };
 static const char *const EST_BORDA[3] = { "Nenhuma", "Contorno", "Sombra" };
-static const char *const EST_OPAC[4]  = { "100%", "75%", "50%", "25%" };
 
 /* Com o ASS desenhado pelo libass, fonte, cor, fundo, posicao, borda, negrito
  * e cor da borda sao do arquivo ate a pessoa mexer no campo (aqui ou nos
@@ -633,7 +632,7 @@ static void valorEstilo(int linha, char *dst, size_t tam) {
       break;
     case 1: snprintf(dst, tam, "%s", legfontes_selecionada(0) >= 0 ? legfontes_nome(legfontes_selecionada(0)) : TXT_FAMILIAS_PT[e->familia >= 0 && e->familia < TXT_FAMILIA_N ? e->familia : 0]); break;
     case 2: snprintf(dst, tam, "%s", VIDEO_LEG_CORES_PT[e->cor % VIDEO_LEG_NCORES]); break;
-    case 3: snprintf(dst, tam, "%s", EST_OPAC[e->opacidade > 3 ? 3 : e->opacidade]); break;
+    case 3: snprintf(dst, tam, "%d%%", leg_opacidade_pct(e->opacidade)); break;
     case 4: snprintf(dst, tam, "%s", EST_FUNDO[e->fundo > 4 ? 4 : e->fundo]); break;
     // O uMS aceita -3..4; a folha mostra 1..8 porque "posicao -3" nao diz nada
     // a quem esta olhando a tela.
@@ -683,7 +682,7 @@ typedef struct { int min, max, toque, segura, teto; } EstSlider;   // max == min
 // teto = quantas vezes o passo pode crescer segurando (aceleracao).
 static const EstSlider EST_SL[FX_N_ESTILO] = {
   [0] = { 50, 300, 10, 20, 1 },                                   // Tamanho %
-  [3] = { 0, 3, 1, 1, 1 },                                        // Opacidade: 25..100%
+  [3] = { 5, 100, 5, 5, 1 },                                      // Opacidade: 5..100%, step 5%
   [5] = { 0, 7, 1, 1, 1 },                                        // Posicao: 8 niveis
   [7] = { -LEGUI_ATRASO_MAX, LEGUI_ATRASO_MAX, 100, 500, 4 },     // Atraso: 0,1 s / 0,5 s
 };
@@ -702,7 +701,7 @@ static int estLer(int i) {
   const VideoLegendaEstilo *e = player_leg_estilo();
   switch (i) {
     case 0: return e->tamanho;
-    case 3: return 3 - (e->opacidade < 0 ? 0 : e->opacidade > 3 ? 3 : e->opacidade);
+    case 3: return leg_opacidade_pct(e->opacidade);
     case 5: return e->posicao;
     default: return e->atrasoMs;
   }
@@ -713,7 +712,7 @@ static void estGravar(int i, int v) {
   v = v < s->min ? s->min : v > s->max ? s->max : v;
   switch (i) {
     case 0: e->tamanho = v; break;
-    case 3: e->opacidade = 3 - v; break;
+    case 3: e->opacidade = leg_opacidade_modo(v); break;
     case 5: if (e->posicao != v) player_leg_estilo_tocou(PLR_LEG_POSICAO); e->posicao = v; break;
     default: e->atrasoMs = v; break;
   }
