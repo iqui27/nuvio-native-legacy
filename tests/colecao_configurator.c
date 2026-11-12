@@ -6,6 +6,20 @@
 static int falhar;
 char *config414_baixar(const char *url, int timeout) {
   (void)timeout;
+  if (strstr(url, "/catalog/movie/cap") || strstr(url, "/catalog/movie/overflow")) {
+    const char *p = strstr(url, "skip=");
+    int skip = p ? atoi(p + 5) : 0;
+    int total = strstr(url, "/overflow") ? 2100 : 2000;
+    if (falhar) return NULL;
+    char *body = malloc(16000); assert(body);
+    int used = snprintf(body, 16000, "{\"metas\":[");
+    for (int i = skip; i < skip + 100 && i < total; i++)
+      used += snprintf(body + used, 16000 - used,
+        "%s{\"id\":\"tt%d\",\"name\":\"Item %d\",\"poster\":\"p.jpg\",\"releaseInfo\":\"%d\"}",
+        i == skip ? "" : ",", i + 1, i + 1, 1900 + i % 120);
+    snprintf(body + used, 16000 - used, "]}");
+    return body;
+  }
   // No network: accept only the hand-written fixture's catalog endpoints.
   assert(!strcmp(url, "https://example.invalid/catalog/movie/popular.json") ||
          !strcmp(url, "https://example.invalid/catalog/movie/recent.json") ||
@@ -104,6 +118,30 @@ int main(int argc, char **argv) {
       assert(source == 1 && !desc_vertudo_erro() && desc_vertudo_n() == 1);
     }
   }
+  /* Real view + worker: failed later page leaves loaded cards actionable. */
+  falhar = 0; vertudo_abrir("https://example.invalid", "movie", "cap", "Cap"); esperar();
+  assert(desc_vertudo_n() == 100);
+  falhar = 1; desc_vertudo_mais(); esperar();
+  assert(desc_vertudo_erro() && desc_vertudo_n() == 100 && celulaAceitaMenu());
+  foco = 0; tecla(SDLK_RETURN);
+  { SDL_Event e = {0}; e.type = SDL_KEYUP; e.key.keysym.sym = SDLK_RETURN; vertudo_evento(&e); }
+  /* This harness has no global CatItem catalog, so opening cannot yield an index. */
+  assert(desc_vertudo_erro() && desc_vertudo_n() == 100 && !desc_vertudo_carregando());
+  falhar = 0; foco = 99; tecla(SDLK_RIGHT); esperar();
+  assert(!desc_vertudo_erro() && desc_vertudo_n() == 200);
+  for (int i = 2; i < 20; i++) { desc_vertudo_mais(); esperar(); }
+  assert(desc_vertudo_n() == 2000 && !desc_vertudo_fim());
+  lay = VT_LAY_FLUXO; celLay = -1; orderN = -1; fluxoPendente = 0;
+  vertudo_atualizar(0.016f, SDL_GetTicks()); esperar();
+  assert(desc_vertudo_fim() && !desc_vertudo_erro());
+  vertudo_atualizar(0.016f, SDL_GetTicks());
+  assert(!fluxoPendente && orderN == 2000);
+  vertudo_abrir("https://example.invalid", "movie", "overflow", "Overflow"); esperar();
+  for (int i = 1; i < 20; i++) { desc_vertudo_mais(); esperar(); }
+  assert(desc_vertudo_n() == 2000 && !desc_vertudo_fim());
+  desc_vertudo_mais(); esperar();
+  assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 2000);
+  assert(celulaAceitaMenu());
   puts("colecao_configurator: PASS (offline import, current-tab retry, all tab styles)");
   return 0;
 }

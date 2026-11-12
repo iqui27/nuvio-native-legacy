@@ -935,7 +935,7 @@ static int celulaAceitaMenu(void) {
   CatItem it;
   if (collection && tabFocus) return 0;
   if (lay == VT_LAY_VITRINE) return 0;   // a Vitrine trata o OK sozinha (vitEvento)
-  if (nItens() < 1 || desc_vertudo_erro()) return 0;
+  if (nItens() < 1) return 0;
   return viewItem(foco, &it);
 }
 static int vistoItem(const CatItem *it) { return cat_visto(it) || desc_filme_visto(it); }
@@ -2509,7 +2509,7 @@ void vertudo_evento(const SDL_Event *e) {
   // #414: OK on the current catalog retries even while the header has focus.
   // Other tabs, the layout button and the Menu selector (menuOk) keep theirs.
   if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && desc_vertudo_erro() &&
-      (!collection || !tabFocus || (estiloAbas() != VT_AB_MENU && tabCursor < cabN() && tabCursor == cursorInicial()))) {
+      ((!n && (!collection || !tabFocus)) || (collection && tabFocus && estiloAbas() != VT_AB_MENU && tabCursor < cabN() && tabCursor == cursorInicial()))) {
     desc_vertudo_mais(); return;
   }
   if(collection&&tabFocus==1) {
@@ -2540,7 +2540,10 @@ void vertudo_evento(const SDL_Event *e) {
   if (precisaMontar(n)) montar(n);
   if(k==SDLK_UP&&collection&&(n<1||celLin[foco]==0)){
     tabFocus=servidorAtivo?2:genTem()?3:1;tabCursor=cursorInicial();return;}
-  if((k==SDLK_RETURN||k==SDLK_KP_ENTER)&&desc_vertudo_erro()){desc_vertudo_mais();return;}
+  if (!n && (k==SDLK_RETURN||k==SDLK_KP_ENTER) && desc_vertudo_erro()) { desc_vertudo_mais(); return; }
+  if (n && foco == n - 1 && desc_vertudo_erro() && (k == SDLK_RIGHT || k == SDLK_DOWN)) {
+    desc_vertudo_mais(); return;
+  }
   if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && !e->key.repeat && temMaisVistos()) {
     carregarMaisVistos(0, 0); return;
   }
@@ -2591,7 +2594,7 @@ void vertudo_atualizar(float dt, Uint32 agora) {
   if (n > VT_UI_MAX) n = VT_UI_MAX;
   vitTudoAvancar(n);
   // Tela cronologica pede todas as paginas sem esperar o foco descer.
-  if (!(vitTudo && vitTudoFiltro) && ordenaPorAno() && vertudo_quer_mais(1, n, foco, VT_UI_MAX, desc_vertudo_carregando(),
+  if (!(vitTudo && vitTudoFiltro) && ordenaPorAno() && vertudo_quer_mais(1, n, foco, VT_UI_MAX + 1, desc_vertudo_carregando(),
                                           desc_vertudo_fim(), desc_vertudo_erro()))
     desc_vertudo_mais();
   // A SONDA PODE CHEGAR DEPOIS DA TELA. Enquanto a fonte nao tem endereco,
@@ -3183,7 +3186,7 @@ static void themeHeader(float a,float x0) {
     snprintf(caption,sizeof caption,"%s",
       mensagemSemFonte(collection&&source<collection->nSources?&collection->sources[source]:NULL));
   }
-  else if(desc_vertudo_erro())snprintf(caption,sizeof caption,"Não foi possível carregar. OK para tentar novamente.");
+  else if(desc_vertudo_erro())snprintf(caption,sizeof caption,"%s", n ? i18n("Indisponível") : i18n("Não foi possível carregar. OK para tentar novamente."));
   else if(!n)snprintf(caption,sizeof caption,"%s",desc_vertudo_carregando()?"Carregando títulos…":"Nenhum título nesta lista.");
   else snprintf(caption,sizeof caption,i18n("%d títulos%s  ·  %s"),n,desc_vertudo_fim()?"":i18n(" carregados"),i18n(servidorAtivo ? "Servidores pessoais" : legendaGrupo()));
   // SAGA: quanto da franquia ja foi visto, na mesma linha.

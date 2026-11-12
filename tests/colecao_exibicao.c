@@ -81,7 +81,8 @@ int shot_watched(const CatItem *it) {
 }
 int shot_loading(void) { return loading; }
 int shot_end(void) { return exhausted; }
-int shot_error(void) { return 0; }
+static int shotError;
+int shot_error(void) { return shotError; }
 void shot_more(void) { moreCalls++; pedidosPagina++; loading = 1; }
 static int openedSources, resumedPage, openedProviderSources;
 static char openedBase[NV_ADDON_URL_MAX], openedType[8], openedId[96], openedGenre[96];
@@ -424,6 +425,7 @@ int main(int argc, char **argv) {
     tecla(SDLK_RIGHT); assert(foco == 1000);
     tecla(SDLK_UP); assert(foco < 1000);
     tecla(SDLK_DOWN); assert(foco == 1000);
+    shotError = 1; assert(celulaAceitaMenu()); shotError = 0;
     assert(celN == 1100);
     lay = VT_LAY_LINHA; celLay = -1; orderN = -1; montar(nSemente);
     assert(orderN == 1100 && celN == 1100);
