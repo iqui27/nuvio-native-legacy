@@ -51,6 +51,10 @@ SKR=""
 # builds com isto desligado, entao "esqueci de configurar" tem de ser invisivel
 # e nao um botao que da erro.
 REC=$(valor NUVIO_REC_URL)
+# Token da rota de DIAGNOSTICO do mesmo worker (upload do registro para a
+# nuvem no cartao do QR; servidor/recomendacoes/src/loglink.js). Vazio = o
+# cartao mostra "envio indisponivel nesta build", igual ao resto da feature.
+DGN=$(valor NUVIO_DIAG_TOKEN)
 # Discord Rich Presence (discord.c, #222). Vazio = a linha nos Ajustes diz
 # "indisponivel" e nada fala com o Discord. E so o client id: o app do Discord
 # e Public Client, sem segredo no binario.
@@ -116,6 +120,7 @@ if [ "$1" = "--env-file" ]; then
     printf 'NV_TMDB_API_KEY=%s\n' "$TMD"
     printf 'NV_SEEKR_API_KEY=%s\n' "$SKR"
     printf 'NV_REC_URL=%s\n' "$REC"
+    printf 'NV_DIAG_TOKEN=%s\n' "$DGN"
     printf 'NV_DISCORD_CLIENT_ID=%s\n' "$DSC"
     printf 'NV_VERSAO=%s\n' "$VER"
   } > "$2"
@@ -123,5 +128,5 @@ if [ "$1" = "--env-file" ]; then
   exit 0
 fi
 
-printf -- '-DNV_SUPABASE_URL=\\"%s\\" -DNV_SUPABASE_ANON_KEY=\\"%s\\" -DNV_TV_LOGIN_BASE=\\"%s\\" -DNV_TRAKT_CLIENT_ID=\\"%s\\" -DNV_TRAKT_CLIENT_SECRET=\\"%s\\" -DNV_SIMKL_CLIENT_ID=\\"%s\\" -DNV_SIMKL_APP=\\"%s\\" -DNV_TMDB_API_KEY=\\"%s\\" -DNV_SEEKR_API_KEY=\\"%s\\" -DNV_REC_URL=\\"%s\\" -DNV_DISCORD_CLIENT_ID=\\"%s\\" -DNV_VERSAO=\\"%s\\"' \
-  "$URL" "$KEY" "$TVB" "$TRK" "$TRS" "$SMK" "$SMA" "$TMD" "$SKR" "$REC" "$DSC" "$VER"
+printf -- '-DNV_SUPABASE_URL=\\"%s\\" -DNV_SUPABASE_ANON_KEY=\\"%s\\" -DNV_TV_LOGIN_BASE=\\"%s\\" -DNV_TRAKT_CLIENT_ID=\\"%s\\" -DNV_TRAKT_CLIENT_SECRET=\\"%s\\" -DNV_SIMKL_CLIENT_ID=\\"%s\\" -DNV_SIMKL_APP=\\"%s\\" -DNV_TMDB_API_KEY=\\"%s\\" -DNV_SEEKR_API_KEY=\\"%s\\" -DNV_REC_URL=\\"%s\\" -DNV_DIAG_TOKEN=\\"%s\\" -DNV_DISCORD_CLIENT_ID=\\"%s\\" -DNV_VERSAO=\\"%s\\"' \
+  "$URL" "$KEY" "$TVB" "$TRK" "$TRS" "$SMK" "$SMA" "$TMD" "$SKR" "$REC" "$DGN" "$DSC" "$VER"

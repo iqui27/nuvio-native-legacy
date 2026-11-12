@@ -26,6 +26,13 @@ binding = "CATS"
 [[kv_namespaces]]
 binding = "MUS"
 
+# LOGLINK (src/loglink.js): corpos gzip de registro mascarado com TTL de 72 h.
+# DESCOMENTADO SO NUM DEPLOY REAL — o namespace KV precisa ser criado na conta
+# e o id preenchido aqui; sem o binding a rota responde 503 de proposito.
+# [[kv_namespaces]]
+# binding = "LOGS"
+# id = "<criar com: wrangler kv namespace create nuvio-loglink>"
+
 # TV VIDAA: o site e o proxy dela vivem no worker nuvio-tv (servidor/tv). Este
 # binding so repassa /tv/* e /v1/proxy para la (ver index.js). NUNCA ponha
 # [assets] aqui de novo: todo deploy sem o site montado apagava a pagina da TV.
