@@ -13,6 +13,10 @@ int ajustes_ocultar_filmes_vistos(void) { return ocultarVistos; }
 unsigned cat_revisao_itens(void) { return 0; }               // #366: a projecao le a revisao
 #define NV_DUBLE_SESSAO
 #include "../src/descoberta.c"
+static int vt_alloc_fail;
+static void *vt_test_alloc(size_t n) { return vt_alloc_fail ? NULL : malloc(n); }
+#define NV_VT_STORE_ALLOC vt_test_alloc
+#include "../src/vt_store.h"
 // descoberta.c passou a traduzir os rotulos que monta ("Filme", "Serie", a
 // data por extenso) e este teste nao linka idioma.c: linkar puxaria
 // ajustes_idioma_ingles e, atras dele, ajustes.c e o resto do app — o oposto
@@ -92,6 +96,39 @@ static void waitDone(void) {for(int i=0;i<2000&&desc_vertudo_carregando();i++)us
 static int tem(const char *id){CatItem it;for(int i=0;i<desc_vertudo_n();i++)if(desc_vertudo_item(i,&it)&&!strcmp(it.imdb,id))return 1;return 0;}
 int main(void) {
   CatItem lin[8];int resp=0;
+  { VtStore s = {0}; CatItem in, out;
+    for (int i = 0; i < 1100; i++) {
+      memset(&in, 0, sizeof in);
+      snprintf(in.imdb, sizeof in.imdb, "tt%d", i + 1);
+      memset(in.poster, 'p', sizeof in.poster - 1);
+      memset(in.sinopse, 's', sizeof in.sinopse - 1);
+      in.ranking = i + 1;
+      assert(vt_store_append(&s, &in, 8u * 1024u * 1024u));
+    }
+    for (int i = 1099; i >= 0; i--) {
+      assert(vt_store_get(&s, i, &out));
+      memset(&in, 0, sizeof in);
+      snprintf(in.imdb, sizeof in.imdb, "tt%d", i + 1);
+      memset(in.poster, 'p', sizeof in.poster - 1);
+      memset(in.sinopse, 's', sizeof in.sinopse - 1);
+      in.ranking = i + 1;
+      assert(!memcmp(&in, &out, sizeof in));
+    }
+    size_t used = s.used; int count = s.n;
+    printf("vt_store: %zu requested bytes for %d items (allocator overhead excluded)\n", used, count);
+    memset(&in, 0xff, sizeof in);
+    assert(!vt_store_append(&s, &in, used));
+    assert(s.n == count && s.used == used && vt_store_get(&s, 0, &out) && out.ranking == 1);
+    vt_alloc_fail = 1;
+    assert(!vt_store_append(&s, &in, SIZE_MAX));
+    vt_alloc_fail = 0;
+    assert(s.n == count && s.used == used && vt_store_get(&s, 1099, &out) && out.ranking == 1100);
+    vt_store_free(&s);
+    memset(&in, 0xff, sizeof in);
+    assert(vt_store_append(&s, &in, sizeof in + 1024));
+    assert(vt_store_get(&s, 0, &out) && !memcmp(&in, &out, sizeof in));
+    vt_store_free(&s);
+  }
   /* Home: lerCatalogo */
   ocultar=0;{int r=lerCatalogo("https://a.invalid","movie","rank",lin,8,8,&resp);assert(r==2);}
   ocultar=1;assert(lerCatalogo("https://a.invalid","movie","rank",lin,8,8,&resp)==1&&!strcmp(lin[0].imdb,"tt2"));
