@@ -57,6 +57,7 @@ static void emit(const char *json) {
  assert(cb);cb(u,json);
 }
 int dts_engine_available(void) { return 1; }
+void dts_engine_p7_mapping(DtsEngine *e,int on) { (void)e; (void)on; }
 void dts_engine_allow_p7(DtsEngine *e,int on) { (void)e; (void)on;
  last_p7=on;
 }

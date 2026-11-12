@@ -44,6 +44,7 @@ DtsEngine *dts_engine_create(void) { return calloc(1, sizeof(DtsEngine)); }
 int dts_engine_available(void) { return 0; }
 void dts_engine_dv(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
 void dts_engine_allow_p7(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
+void dts_engine_p7_mapping(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
 void dts_engine_metrics(DtsEngine *e,DtsEngineMetrics *out) { (void)e; if(out) memset(out,0,sizeof(*out)); }
 int dts_engine_open(DtsEngine *e,const char *u,const char *h,int a,int c,double s) {
   (void)e;(void)u;(void)h;(void)a;(void)c;(void)s; return -1;
@@ -150,6 +151,7 @@ struct DtsEngine {
   AVAudioFifo *fifo;
   AVPacket *in, *out;
   int allow_p7, dv7;
+  int preserve_p7_mapping, mapping_reported;
   uint8_t *dv7_buffer;
   unsigned dv7_capacity;
   int hdr10p_strip;            /* #605: HEVC HDR10+ SEI removal snapshot at open */
@@ -788,7 +790,7 @@ static void close_media(DtsEngine *e) {
   av_frame_free(&e->decoded); av_frame_free(&e->encoded);
   avcodec_free_context(&e->dec); avcodec_free_context(&e->enc);
   av_bsf_free(&e->bsf); swr_free(&e->swr); av_audio_fifo_free(e->fifo); e->fifo=NULL;
-  av_freep(&e->dv7_buffer); e->dv7_capacity=0; e->dv7=0;
+  av_freep(&e->dv7_buffer); e->dv7_capacity=0; e->dv7=0; e->mapping_reported=0;
   av_freep(&e->hdr10p_buffer); e->hdr10p_capacity=0; e->hdr10p_strip=0;
   av_channel_layout_uninit(&e->input_layout);
   avformat_close_input(&e->fmt);
@@ -875,6 +877,7 @@ int64_t dts_engine_source_total(DtsEngine *e) {
 }
 void dts_engine_dv(DtsEngine *e, int enabled) { if (e) e->dv = !!enabled; }
 void dts_engine_allow_p7(DtsEngine *e, int enabled) { if (e) e->allow_p7 = !!enabled; }
+void dts_engine_p7_mapping(DtsEngine *e, int enabled) { if (e) e->preserve_p7_mapping = !!enabled; }
 int dts_engine_available(void) {
   return avcodec_find_decoder(AV_CODEC_ID_DTS) && avcodec_find_encoder(AV_CODEC_ID_AAC) && av_bsf_get_by_name("h264_mp4toannexb")
       && av_bsf_get_by_name("hevc_mp4toannexb");
@@ -995,6 +998,8 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
       e->info.dovi_profile=8; e->info.dovi_el_present=0;
       e->info.dovi_bl_compatibility_id=1;
       printf("[dv7] experimental P7 -> P8.1: RPU converted, enhancement layer discarded\n");
+      printf("[dv7] RPU mapping=%s; FEL picture discarded; session snapshot\n",
+             e->preserve_p7_mapping ? "preserved" : "standard");fflush(stdout);
     }
     /* mp4toannexb preserves HEVC RPU NAL units; no video re-encode occurs. */
   }
@@ -1363,8 +1368,16 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
     if(f->size>INT_MAX-8192) return fail(e,"DV7 packet too large",0);
     av_fast_malloc(&e->dv7_buffer,&e->dv7_capacity,(size_t)f->size+8192);
     if(!e->dv7_buffer) return fail(e,"DV7 conversion buffer",AVERROR(ENOMEM));
-    if(nv_dv7_packet(f->data,(size_t)f->size,e->dv7_buffer,e->dv7_capacity,&size)<0)
+    uint32_t mapping_report=0;
+    if(nv_dv7_packet_report(f->data,(size_t)f->size,e->dv7_buffer,e->dv7_capacity,&size,
+                          e->preserve_p7_mapping,e->mapping_reported?NULL:&mapping_report)<0)
       return fail(e,"DV7 RPU conversion failed",0);
+    if(mapping_report) {
+      e->mapping_reported=1;
+      printf("[dv7] first RPU verified: mode=%s P7-to-P8=%d mapping-retained=%d residual-disabled=%d differs-from-standard=%d; base picture unchanged\n",
+        e->preserve_p7_mapping?"preserved":"standard",!!(mapping_report&1),!!(mapping_report&2),
+        !!(mapping_report&4),!!(mapping_report&8));fflush(stdout);
+    }
     /* An EL-only packet is discarded, not mistaken for end of stream. */
     if(!size) continue;
     f->data=e->dv7_buffer; f->size=(int)size;

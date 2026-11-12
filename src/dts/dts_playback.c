@@ -782,8 +782,9 @@ done:
   return NULL;
 }
 
-static int dvNext, p7Next;
+static int dvNext, p7Next, p7MappingNext;
 void dts_playback_next_p7(int enabled) { p7Next = !!enabled; }
+void dts_playback_next_p7_mapping(int enabled) { p7MappingNext = !!enabled; }
 void dts_playback_next_dv(int enabled) { dvNext = !!enabled; }
 DtsPlayback *dts_playback_start(const char *url, const char *headers,
                                int audio_stream, double position,
@@ -802,6 +803,7 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
   dts_engine_dv(p->engine, p->dv);
   p->allow_p7 = p7Next; p7Next = 0;
   dts_engine_allow_p7(p->engine, p->allow_p7);
+  dts_engine_p7_mapping(p->engine, p->dv && p->allow_p7 && p7MappingNext); p7MappingNext = 0;
   snprintf(p->url, sizeof p->url, "%s", url);
   snprintf(p->headers, sizeof p->headers, "%s", headers ? headers : "");
   snprintf(p->window, sizeof p->window, "%s", window ? window : "");

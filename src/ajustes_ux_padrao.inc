@@ -376,3 +376,4 @@
   0, 0, 0, 0, 0, 0, 0, 0, 0, /* OpenSeek shared library: info + offset/undo/reject actions */
 
   0, // miniaturaResolutionLocal: Auto
+  1, // dv7PreserveMappingLocal: Desligado (V_LIGA 1), experimental

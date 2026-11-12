@@ -23,6 +23,8 @@ int dts_playback_enabled(void);
 void dts_playback_next_dv(int enabled);
 /* Main thread: snapshot the P7/recovery opt-in for the next session. */
 void dts_playback_next_p7(int enabled);
+/* Main thread: snapshot the experimental P7 mapping opt-in (next session). */
+void dts_playback_next_p7_mapping(int enabled);
 DtsPlayback *dts_playback_start(const char *url, const char *headers,
                                int audio_stream, double position,
                                int paused, const char *window, int webos_major,

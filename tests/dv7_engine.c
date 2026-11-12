@@ -25,6 +25,11 @@ char *rede_baixar_trecho64_vigiado(const char *u,const char *h,int64_t s,int64_t
  (void)urgent;(void)idle;if(stalled)*stalled=0;
  return rede_baixar_trecho64_final(u,h,s,e,n,t,status,c,f,x);
 }
+char *rede_baixar_trecho64_vigiado_retry(const char *u,const char *h,int64_t s,int64_t e,long *n,
+ int64_t *t,int *status,volatile int *c,char *f,int *x,volatile int *urgent,unsigned idle,int *stalled,
+ void (*retry)(void *,int),void *arg) {
+ (void)retry;(void)arg;return rede_baixar_trecho64_vigiado(u,h,s,e,n,t,status,c,f,x,urgent,idle,stalled);
+}
 char *rede_baixar_trecho64_final(const char *u,const char *h,int64_t s,int64_t e,long *n,
                                int64_t *t,int *status,volatile int *c,char *final,int *cross) {
   *final=0; *cross=0; return rede_baixar_trecho64_cab(u,h,s,e,n,t,status,c);
@@ -47,6 +52,17 @@ int rede_fluxo64(const char *url,const char *headers,int64_t start,
 static void check(DtsEngine *e,int r) {
   if (r<0) { fprintf(stderr,"%s\n",dts_engine_error(e)); abort(); }
 }
+static uint8_t mapping_expected[8192];
+static size_t mapping_expected_size;
+static void mapping_expected_load(void) {
+  mapping_expected_size=0;const char *path=getenv("NV_DV7_EXPECT_RPU");
+  if(path) {FILE *f=fopen(path,"rb");assert(f);mapping_expected_size=fread(mapping_expected,1,sizeof mapping_expected,f);fclose(f);assert(mapping_expected_size>2);}
+}
+static DtsEngine *mapping_engine_create(void) {
+  DtsEngine *e=dts_engine_create();assert(e);
+  dts_engine_p7_mapping(e,getenv("NV_TEST_P7_MAPPING")!=NULL);
+  return e;
+}
 static int drain(DtsEngine *e) {
   DtsFrame f; int r,video=0,audio=0,rpu=0;
   int64_t last=INT64_MIN;
@@ -60,7 +76,10 @@ static int drain(DtsEngine *e) {
       assert(end-begin>=2);
       int type=(f.data[begin]>>1)&63;
       assert(type!=63 && !(f.data[begin]&1) && !(f.data[begin+1]>>3));
-      if (type==62) rpu++;
+      if (type==62) {
+        rpu++;
+        if(mapping_expected_size)assert(end-begin==mapping_expected_size && !memcmp(f.data+begin,mapping_expected,mapping_expected_size));
+      }
       at=end; pre=nextpre;
     }
   }
@@ -70,7 +89,8 @@ static int drain(DtsEngine *e) {
 }
 int main(int argc,char **argv) {
   assert(argc==3);
-  DtsEngine *e=dts_engine_create(); assert(e);
+  mapping_expected_load();
+  DtsEngine *e=mapping_engine_create();
   dts_engine_allow_p7(e,1); dts_engine_dv(e,1); check(e,dts_engine_open(e,argv[1],"",-1,0,0));
   const DtsMediaInfo *m=dts_engine_info(e);
   assert(m->dovi_profile==8 && !m->dovi_el_present && m->dovi_rpu_present &&
@@ -80,7 +100,7 @@ int main(int argc,char **argv) {
   check(e,dts_engine_seek(e,.4)); assert(drain(e)>0);
   check(e,dts_engine_seek(e,0)); assert(drain(e)==20);
   dts_engine_destroy(e);
-  e=dts_engine_create(); dts_engine_allow_p7(e,1); dts_engine_dv(e,1);
+  e=mapping_engine_create(); dts_engine_allow_p7(e,1); dts_engine_dv(e,1);
   check(e,dts_engine_open(e,argv[2],"",-1,0,0));
   DtsFrame f; int r;
   while ((r=dts_engine_next(e,&f))>0) {}

@@ -3256,6 +3256,7 @@ static int iniciarDts(int stream) {
   dts_engine_set_hdr10p_strip(ajustes_hdr10p_strip());        // #605
   dts_playback_next_dv(dtsModoDv);
   dts_playback_next_p7(ajustes_dv7());
+  dts_playback_next_p7_mapping(ajustes_dv7_mapping());
   dtsSessao = dts_playback_start(urlAtual, cabsHttp, stream, alvo,
                                paused, expWin, 0, (a || trocada) ? &selected : NULL, ordinal, count);
   if (!dtsSessao) {
