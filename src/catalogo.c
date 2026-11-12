@@ -1964,7 +1964,11 @@ int cat_episodios_chaves_token(int item, CatEpChave *out, int n, CatEpToken toke
     for (int i = 0; i < n; i++) {
       out[i].temporada = eps[epIni[item] + i].temporada;
       out[i].episodio = eps[epIni[item] + i].episodio;
-      out[i].temNome = eps[epIni[item] + i].nome[0] != 0;
+      // A release filename or a localized placeholder is NOT a resolved name:
+      // the TMDB pass must still be allowed to replace it.
+      out[i].temNome = eps[epIni[item] + i].nome[0] != 0 &&
+                       !desc_nome_episodio_reserva(eps[epIni[item] + i].nome,
+                                                  eps[epIni[item] + i].episodio);
       out[i].temSinopse = eps[epIni[item] + i].sinopse[0] != 0;
     }
     ok = 1;
