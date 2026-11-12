@@ -8,21 +8,20 @@
 #define NV_VT_STORE_ALLOC malloc
 #endif
 
-/* Lossless sparse byte storage; limit includes each allocation's node header.
- * ponytail: linear lookup is bounded by the caller's byte budget; add an index
- * if a real view proves it too slow. This store is not yet used by the view. */
-typedef struct VtStoreNode {
-  struct VtStoreNode *next;
+/* Lossless sparse byte storage; limit covers allocations, excluding allocator
+ * overhead and the fixed index itself. This store is not yet used by the view. */
+#define VT_STORE_MAX 2000
+typedef struct {
   size_t bytes;
   int raw;
   unsigned char data[];
 } VtStoreNode;
-typedef struct { VtStoreNode *first, *last; size_t used; int n; } VtStore;
+typedef struct { VtStoreNode *index[VT_STORE_MAX]; size_t used; int n; } VtStore;
 
 static int vt_store_append(VtStore *s, const CatItem *item, size_t limit) {
   const unsigned char *p = (const unsigned char *)item;
   size_t len = sizeof *item, encoded = 0, i = 0;
-  if (!s || !item || len > UINT16_MAX) return 0;
+  if (!s || !item || len > UINT16_MAX || s->n >= VT_STORE_MAX) return 0;
   while (i < len) {
     while (i < len && !p[i]) i++;
     size_t start = i;
@@ -35,7 +34,7 @@ static int vt_store_append(VtStore *s, const CatItem *item, size_t limit) {
       sizeof(VtStoreNode) + bytes > limit - s->used) return 0;
   VtStoreNode *node = NV_VT_STORE_ALLOC(sizeof *node + bytes);
   if (!node) return 0;
-  node->next = NULL; node->bytes = bytes; node->raw = raw;
+  node->bytes = bytes; node->raw = raw;
   if (raw) memcpy(node->data, p, len);
   else {
     size_t pos = 0; i = 0;
@@ -50,14 +49,12 @@ static int vt_store_append(VtStore *s, const CatItem *item, size_t limit) {
       }
     }
   }
-  if (s->last) s->last->next = node; else s->first = node;
-  s->last = node; s->used += sizeof *node + bytes; s->n++;
+  s->index[s->n++] = node; s->used += sizeof *node + bytes;
   return 1;
 }
 static int vt_store_get(const VtStore *s, int index, CatItem *out) {
   if (!s || !out || index < 0 || index >= s->n) return 0;
-  VtStoreNode *node = s->first;
-  while (index--) node = node->next;
+  VtStoreNode *node = s->index[index];
   if (node->raw) { memcpy(out, node->data, sizeof *out); return 1; }
   memset(out, 0, sizeof *out);
   for (size_t pos = 0; pos < node->bytes;) {
@@ -69,8 +66,7 @@ static int vt_store_get(const VtStore *s, int index, CatItem *out) {
   return 1;
 }
 static void vt_store_free(VtStore *s) {
-  VtStoreNode *p = s->first;
-  while (p) { VtStoreNode *next = p->next; free(p); p = next; }
+  for (int i = 0; i < s->n; i++) free(s->index[i]);
   memset(s, 0, sizeof *s);
 }
 #endif

@@ -128,6 +128,13 @@ int main(void) {
     assert(vt_store_append(&s, &in, sizeof in + 1024));
     assert(vt_store_get(&s, 0, &out) && !memcmp(&in, &out, sizeof in));
     vt_store_free(&s);
+    memset(&in, 0, sizeof in);
+    for (int i = 0; i < VT_STORE_MAX; i++) { in.ranking = i; assert(vt_store_append(&s, &in, 1024u * 1024u)); }
+    used = s.used;
+    assert(!vt_store_append(&s, &in, SIZE_MAX) && s.used == used && s.n == VT_STORE_MAX);
+    assert(vt_store_get(&s, 1000, &out) && out.ranking == 1000);
+    assert(vt_store_get(&s, 1, &out) && out.ranking == 1);
+    vt_store_free(&s);
   }
   /* Home: lerCatalogo */
   ocultar=0;{int r=lerCatalogo("https://a.invalid","movie","rank",lin,8,8,&resp);assert(r==2);}
