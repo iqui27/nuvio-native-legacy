@@ -29,6 +29,9 @@ binding = "MUS"
 # LOGLINK (src/loglink.js): corpos gzip de registro mascarado com TTL de 72 h.
 # DESCOMENTADO SO NUM DEPLOY REAL — o namespace KV precisa ser criado na conta
 # e o id preenchido aqui; sem o binding a rota responde 503 de proposito.
+# Segredo proprio, so de envio (nome apenas; valor nunca no repositorio):
+#   wrangler secret put LOGLINK_TOKEN   (DIFERENTE de DIAG_TOKEN, senao 503)
+# Na build da TV: NUVIO_LOGLINK_TOKEN em local.properties.
 # [[kv_namespaces]]
 # binding = "LOGS"
 # id = "<criar com: wrangler kv namespace create nuvio-loglink>"

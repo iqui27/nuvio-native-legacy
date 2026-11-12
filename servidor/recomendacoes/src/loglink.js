@@ -10,26 +10,46 @@
 // ja apaga sozinho no TTL — sem cron e sem limpeza propria), e lido uma vez
 // por quem recebe o link. O D1 guardaria um lixo expirado ate a varredura.
 //
-// Seguranca, no mesmo padrao do /v1/registro de diagnostico (#77):
-//  - POST so com x-nuvio-auth: diagnostico + Bearer DIAG_TOKEN (segredo do
-//    worker); o token de link e sorteado aqui (128 bits hex) — quem nao tem o
-//    link nao advinha; quem tem o link so le bytes ja mascarados;
+// Seguranca (escopo proprio, 12/11/2026): o envio NAO usa o DIAG_TOKEN do
+// /v1/registro (#77). Um token embutido na build pode ser extraido; por isso o
+// envio tem credencial PROPRIA e so de envio:
+//  - POST so com x-nuvio-auth: loglink + Bearer LOGLINK_TOKEN (segredo do
+//    worker, configurado por nome no deploy). Esse token so cria link: nao
+//    le, nao lista, nao apaga, nao grava recibo. O DIAG_TOKEN aqui e 401, e o
+//    LOGLINK_TOKEN no /v1/registro tambem e 401 (la so vale DIAG_TOKEN);
+//  - se os dois segredos forem iguais o envio recusa (503): configuracao
+//    errada nunca alarga o privilegio do token de envio;
+//  - teto por IP (LIM_IP por hora) e teto global (LIM_DIA por dia) no
+//    contador atomico `limite` do D1: corpo max * LIM_DIA * 3 dias limita o
+//    armazenamento vivo no KV (~600 MiB no pior caso);
+//  - o token de link e sorteado aqui (128 bits hex): quem nao tem o link nao
+//    advinha; quem tem o link so le bytes ja mascarados na TV (logexport.c);
 //  - GET/HEAD sem auth de proposito: e o link que a pessoa manda por fora;
-//    sem CORS extra porque e link, nao API; cache-control: no-store para a
-//    expiracao ser real e um intermediario nao ressuscitar registro morto;
-//  - corpo limitado (413) e token validado por alfabeto antes de bater no KV.
-//
-// NADA AQUI foi publicado: o binding LOGS precisa existir no wrangler.toml do
-// deploy (comentado abaixo) e o segredo DIAG_TOKEN ja existe para o #77.
+//    expiracao conferida no GET (nao confia so no TTL do KV), no-store;
+//  - nada aqui registra URL ou token de link em console.
 const CORPO_MAX = 2 * 1024 * 1024;
 const TTL_S = 72 * 3600;
 const TOKEN_RX = /^[0-9a-f]{32}$/;
+const LIM_IP = 6;
+const LIM_DIA = 100;
 
-export async function rotaLoglinkPost(req, env, erro, json) {
-  if (!env.LOGS) return erro("servico indisponivel", 503);
+export function loglinkAutorizado(req, env) {
   const aut = req.headers.get("authorization") || "";
   const tok = aut.startsWith("Bearer ") ? aut.slice(7).trim() : "";
-  if (!env.DIAG_TOKEN || !tok || tok !== env.DIAG_TOKEN) return erro("nao autenticado", 401);
+  if (!env.LOGLINK_TOKEN || !tok || tok !== env.LOGLINK_TOKEN) return false;
+  return true;
+}
+
+export async function rotaLoglinkPost(req, env, erro, json, limitar) {
+  if (!env.LOGS || !env.DB || !env.LOGLINK_TOKEN) return erro("servico indisponivel", 503);
+  if (env.DIAG_TOKEN && env.LOGLINK_TOKEN === env.DIAG_TOKEN) return erro("servico indisponivel", 503);
+  if (!loglinkAutorizado(req, env)) return erro("nao autenticado", 401);
+  const declarado = Number(req.headers.get("content-length") || 0);
+  if (declarado > CORPO_MAX) return erro("corpo grande", 413);
+  const t = Math.floor(Date.now() / 1000);
+  const ip = req.headers.get("cf-connecting-ip") || "0.0.0.0";
+  if (!(await limitar(env, "loglink:ip:" + ip, LIM_IP, 3600, t))) return erro("limite", 429);
+  if (!(await limitar(env, "loglink:dia", LIM_DIA, 86400, t))) return erro("limite diario", 429);
   const reader = req.body?.getReader();
   if (!reader) return erro("corpo vazio", 400);
   const chunks = []; let size = 0;
@@ -43,11 +63,11 @@ export async function rotaLoglinkPost(req, env, erro, json) {
   if (!size) return erro("corpo vazio", 400);
   const buf = new Uint8Array(size); let offset = 0;
   for (const chunk of chunks) { buf.set(chunk, offset); offset += chunk.byteLength; }
-  const t = [...crypto.getRandomValues(new Uint8Array(16))]
+  const id = [...crypto.getRandomValues(new Uint8Array(16))]
     .map((x) => x.toString(16).padStart(2, "0")).join("");
-  await env.LOGS.put("log:" + t, buf, { expirationTtl: TTL_S, metadata: { expires: Date.now() + TTL_S * 1000 } });
+  await env.LOGS.put("log:" + id, buf, { expirationTtl: TTL_S, metadata: { expires: Date.now() + TTL_S * 1000 } });
   const base = new URL(req.url).origin;
-  return json({ ok: 1, url: base + "/v1/loglink/" + t, expira_s: TTL_S });
+  return json({ ok: 1, url: base + "/v1/loglink/" + id, expira_s: TTL_S });
 }
 
 export async function rotaLoglinkGet(req, env, erro, token) {

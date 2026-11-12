@@ -1,9 +1,11 @@
 // See logcloud.h. Adapted from Matis94 (src/logcloud.c on
 // dv-dts-native-test-2.0.8.7): the multipart/catbox upload is replaced by
-// POST /v1/loglink on OUR diagnostics worker (NV_REC_URL). Same security
-// pattern as /v1/registro: x-nuvio-auth: diagnostico + a build-time
-// Bearer token. No token or no worker URL = the card says the upload is
-// unavailable; nothing is sent anywhere else.
+// POST /v1/loglink on OUR diagnostics worker (NV_REC_URL) with an
+// upload-only credential (x-nuvio-auth: loglink + Bearer NV_LOGLINK_TOKEN,
+// the worker's LOGLINK_TOKEN). It never carries DIAG_TOKEN: the worker only
+// lets this token create a link, and refuses it on every other route.
+// No token or no worker URL = the card says the upload is unavailable;
+// nothing is sent anywhere else. The link itself is never printed.
 #include "logcloud.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,8 +14,8 @@
 #ifndef NV_REC_URL
 #define NV_REC_URL ""
 #endif
-#ifndef NV_DIAG_TOKEN
-#define NV_DIAG_TOKEN ""
+#ifndef NV_LOGLINK_TOKEN
+#define NV_LOGLINK_TOKEN ""
 #endif
 
 /* The request body is the gzipped snapshot itself (binary, identity of the
@@ -121,7 +123,7 @@ static void *fio(void *u) {
   (void)u;
   memset(&q, 0, sizeof q); memset(&r, 0, sizeof r);
   if (!NV_REC_URL[0]) { terminar(LOGCLOUD_FALHOU, NULL, "no diagnostics server in this build"); return NULL; }
-  if (!NV_DIAG_TOKEN[0]) { terminar(LOGCLOUD_FALHOU, NULL, "log upload unavailable in this build"); return NULL; }
+  if (!NV_LOGLINK_TOKEN[0]) { terminar(LOGCLOUD_FALHOU, NULL, "log upload unavailable in this build"); return NULL; }
   if (!logexport_create(registro_arquivo(), snap, sizeof snap)) { terminar(LOGCLOUD_FALHOU, NULL, "log snapshot failed"); return NULL; }
   gz = gzipArquivo(snap, &ngz);
   unlink(snap);
@@ -129,10 +131,10 @@ static void *fio(void *u) {
   corpo = logcloud_corpo(gz, ngz, NULL, &ncorpo);
   free(gz);
   if (!corpo) { terminar(LOGCLOUD_FALHOU, NULL, "out of memory"); return NULL; }
-  snprintf(auth, sizeof auth, "Authorization: Bearer %s", NV_DIAG_TOKEN);
+  snprintf(auth, sizeof auth, "Authorization: Bearer %s", NV_LOGLINK_TOKEN);
   {
     snprintf(u2, sizeof u2, "%s/v1/loglink", NV_REC_URL);
-    cab[0] = "x-nuvio-auth: diagnostico";
+    cab[0] = "x-nuvio-auth: loglink";
     cab[1] = auth;
     cab[2] = "Content-Type: application/gzip";
     cab[3] = NULL;
@@ -148,6 +150,9 @@ static void *fio(void *u) {
       terminar(LOGCLOUD_PRONTO, achou, NULL);
     } else {
       if (!ok || !r.status) snprintf(m, sizeof m, "no connection (curl %d)", r.curl_erro);
+      /* A 200 body carries the capability URL: never echo it. Error bodies
+       * are the worker's short fixed messages. */
+      else if (r.status == 200) snprintf(m, sizeof m, "HTTP 200: invalid answer");
       else snprintf(m, sizeof m, "HTTP %d: %.60s", r.status, r.corpo ? r.corpo : "");
       for (char *c = m; *c; c++) if (*c == '\r' || *c == '\n') *c = ' ';
       printf("[log-cloud] failed: %s\n", m); fflush(stdout);

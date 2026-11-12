@@ -972,14 +972,13 @@ export default {
       return rotaRegistro(env, { id: "diag:" + tv }, corpo);
     }
 
-    // LOGLINK (Matis94 adaptado): a mesma autorizacao de diagnostico do
-    // /v1/registro acima, mas o corpo e binario (gzip do registro ja
-    // mascarado) e vira um link de 72 h no KV LOGS. So o OK/seta da pessoa na
-    // TV dispara o envio; ver src/loglink.js. Sem o binding: 503, a rota
-    // existe no codigo mas o servico nao esta no ar.
+    // LOGLINK (Matis94 adaptado): envio do gzip do registro ja mascarado,
+    // vira link de 72 h no KV LOGS. Credencial PROPRIA (LOGLINK_TOKEN, so de
+    // envio), nunca o DIAG_TOKEN acima; tetos e regras em src/loglink.js. So
+    // o OK/seta da pessoa na TV dispara. Sem binding/segredo: 503.
     if (rota === "/v1/loglink" && req.method === "POST" &&
-        (req.headers.get("x-nuvio-auth") || "").toLowerCase() === "diagnostico")
-      return rotaLoglinkPost(req, env, erro, json);
+        (req.headers.get("x-nuvio-auth") || "").toLowerCase() === "loglink")
+      return rotaLoglinkPost(req, env, erro, json, limitar);
     if (rota.startsWith("/v1/loglink/") && (req.method === "GET" || req.method === "HEAD"))
       return rotaLoglinkGet(req, env, erro, rota.slice("/v1/loglink/".length));
 
