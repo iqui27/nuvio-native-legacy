@@ -1329,28 +1329,39 @@ static int legendaRepetida(const Legenda *v, int n, const Legenda *l) {
   return 0;
 }
 
+#define LEG_TETO_PREF  12   // por idioma da preferencia (principal, secundario, ingles)
+#define LEG_TETO_OUTRO  6   // por idioma fora dela
+static int contaIdioma(const Legenda *v, int n, const char *cod) {
+  int i, k = 0;
+  for (i = 0; i < n; i++) if (!strcmp(v[i].idioma, cod)) k++;
+  return k;
+}
+
 static int distribuirLegendas(const LegLote *lotes, int nLotes, int nGrupos,
                               Legenda *saida) {
   int gi, n = 0;
-  for (gi = 0; gi < nGrupos; gi++) {
+  // Grupos da preferencia na ordem, depois "os outros" (gi == nGrupos): se o
+  // teto de seguranca LEG_MAX chegar, quem fica de fora sao os outros idiomas.
+  for (gi = 0; gi <= nGrupos && n < LEG_MAX; gi++) {
     static int prox[ADD_MAX]; // publicacao serializada por B->m
-    int noGrupo = 0, avancou = 1;
+    int avancou = 1, teto = gi < nGrupos ? LEG_TETO_PREF : LEG_TETO_OUTRO;
     memset(prox, 0, sizeof prox);
-    int teto = LEG_MAX / nGrupos;
-    // Um resultado por provider por volta, dentro de cada idioma. Mantem a
-    // ordem principal -> secundario -> ingles e preenche lugares vagos com
-    // quem ainda tem candidatos quando algum addon respondeu vazio/falhou.
-    while (noGrupo < teto && avancou) {
+    // Um resultado por provider por volta. Mantem a ordem principal ->
+    // secundario -> ingles -> outros e, dentro de cada idioma, o teto por
+    // idioma, preenchendo com quem ainda tem candidatos quando um addon
+    // respondeu vazio/falhou.
+    while (avancou && n < LEG_MAX) {
       int i;
       avancou = 0;
-      for (i = 0; i < nLotes && noGrupo < teto; i++) {
-        while (prox[i] < lotes[i].n && lotes[i].grupo[prox[i]] != gi) prox[i]++;
+      for (i = 0; i < nLotes && n < LEG_MAX; i++) {
+        const Legenda *l;
+        while (prox[i] < lotes[i].n && (lotes[i].grupo[prox[i]] != gi ||
+               contaIdioma(saida, n, lotes[i].itens[prox[i]].idioma) >= teto)) prox[i]++;
         if (prox[i] >= lotes[i].n) continue;
-        const Legenda *l = &lotes[i].itens[prox[i]++];
+        l = &lotes[i].itens[prox[i]++];
         avancou = 1;
         if (legendaRepetida(saida, n, l)) continue;
         saida[n++] = *l;
-        noGrupo++;
       }
     }
   }
@@ -1396,6 +1407,24 @@ typedef struct {
 
 typedef struct { LegBusca *B; int i; } LegFio;
 
+// Grupo da legenda: 0..nGrupos-1 = idiomas da preferencia (na ordem), nGrupos
+// = qualquer outro. Sem preferencia (grupo unico vazio) tudo cai no grupo 0.
+static int legGrupo(const LegBusca *B, const char *cod) {
+  int g;
+  for (g = 0; g < B->nGrupos; g++) {
+    if (!B->grupos[g][0]) return g;
+    if (ling_casa(cod, B->grupos[g])) return g;
+  }
+  return B->nGrupos;
+}
+static int legIdiomaTeto(const LegBusca *B, int grupo) { return grupo < B->nGrupos ? LEG_TETO_PREF : LEG_TETO_OUTRO; }
+static int legNoLote(const LegLote *l, const char *cod) { return contaIdioma(l->itens, l->n, cod); }
+static int legIdiomasNoLote(const LegLote *l) {
+  int i, k = 0;
+  for (i = 0; i < l->n; i++) if (contaIdioma(l->itens, i, l->itens[i].idioma) == 0) k++;
+  return k;
+}
+
 static void publicarLegendas(LegBusca *B, int final) {
   Legenda *achadas;
   int n;
@@ -1430,7 +1459,7 @@ static void *buscarUmAddon(void *u) {
   const AddonPedido *origem;
   if (B->origens) origem = &B->origens[F->i];
   else { pthread_mutex_lock(&addonTrava); copiarPedido(F->i, &copia); pthread_mutex_unlock(&addonTrava); origem = &copia; }
-  int i = F->i, array = 0, recebidas = 0, gi, comExtras = 0, recuou = 0, cortadas = 0;
+  int i = F->i, array = 0, recebidas = 0, gi = 0, comExtras = 0, recuou = 0, cortadas = 0, porIdioma = 0;
   char url[NV_ADDON_PEDIDO_MAX], *corpo = NULL;
   const char *p, *q;
   RedeMedida medida = {0};
@@ -1470,9 +1499,11 @@ static void *buscarUmAddon(void *u) {
     }
     q = js_prox(f);
   }
-  for (gi = 0; gi < B->nGrupos; gi++) {
-    int noGrupo = 0, teto = LEG_MAX / B->nGrupos;
-    for (q = p; q && noGrupo < teto;) {
+  // TODOS OS IDIOMAS (06/11): a lista vai agrupada por idioma na tela, entao
+  // nada e descartado por idioma. Teto POR IDIOMA: 12 nos da preferencia
+  // (principal, secundario, ingles), 6 em cada um dos outros; legIdiomaTeto.
+  { (void)gi;
+    for (q = p; q && lote->n < LEG_MAX;) {
       const char *f = js_fim(q);
       char l[64] = "", cod[16], nome[120] = "", link[2048], id[256] = "";
       Legenda *d = &lote->itens[lote->n];
@@ -1486,11 +1517,14 @@ static void *buscarUmAddon(void *u) {
         // "PORTUGUESE" / "Portuguese (Brazil)" / "por" / "pt-BR" viram um
         // codigo so; antes o nome entrava cortado em 8 bytes ("PORTUGU") e
         // nao casava com a preferencia.
+        int grupo;
         ling_normalizar(l, cod, sizeof cod);
+        grupo = legGrupo(B, cod);
         // Link lido num buffer MAIOR que o campo: o que nao cabe em d->url e
         // descartado e contado, em vez de virar um link cortado que so falha
         // na hora de baixar.
-        if (ling_casa(cod, B->grupos[gi]) && js_texto(q, f, "url", link, sizeof link) &&
+        if (legNoLote(lote, cod) >= legIdiomaTeto(B, grupo)) { q = js_prox(f); porIdioma++; continue; }
+        if (js_texto(q, f, "url", link, sizeof link) &&
             !(strlen(link) >= sizeof d->url && ++cortadas)) {
           snprintf(d->url, sizeof d->url, "%s", link);
           snprintf(d->id, sizeof d->id, "%s", id);
@@ -1523,8 +1557,7 @@ static void *buscarUmAddon(void *u) {
           // that omit subtitleFileName. Keep them separate from release matching.
           js_texto(q, f, "label", nome, sizeof nome);
           if (nome[0]) snprintf(d->rotulo, sizeof d->rotulo, "%s", nome);
-          lote->grupo[lote->n++] = (unsigned char)gi;
-          noGrupo++;
+          lote->grupo[lote->n++] = (unsigned char)grupo;
         }
       }
       q = js_prox(f);
@@ -1532,10 +1565,10 @@ static void *buscarUmAddon(void *u) {
   }
   // Somente medidas e enumeracoes publicas. Nao registrar URL, id do
   // titulo, corpo, nome de arquivo, nome configurado ou cabecalhos.
-  printf("[addon-recurso] addon=%d resource=subtitles tipo=%s http=%d bytes=%ld ms=%lu array=%d recebidas=%d candidatas=%d extras=%d%s cortadas=%d\n",
+  printf("[addon-recurso] addon=%d resource=subtitles tipo=%s http=%d bytes=%ld ms=%lu array=%d recebidas=%d candidatas=%d extras=%d%s cortadas=%d acima_do_teto_por_idioma=%d idiomas=%d\n",
          i + 1, !strcmp(B->tipo, "movie") ? "movie" : !strcmp(B->tipo, "series") ? "series" : "outro",
          medida.status, medida.bytes, medida.ms, array, recebidas, lote->n,
-         comExtras && !recuou, recuou ? " (recusou extras: pedido antigo)" : "", cortadas);
+         comExtras && !recuou, recuou ? " (recusou extras: pedido antigo)" : "", cortadas, porIdioma, legIdiomasNoLote(lote));
   // A MESMA LINHA DAS FONTES, com o nome (#202). "addon=3" nao dizia qual era o
   // Subtitle Sync num log de usuario, e "[legendas] concluida: 3" nao separava
   // "respondeu vazio" de "estourou o prazo". O nome do addon ja vai no log das
@@ -1543,7 +1576,7 @@ static void *buscarUmAddon(void *u) {
   // erro pode repetir a configuracao, ver tests/addons_legendas.sh). O texto da
   // libcurl so diz o tipo da falha e o host.
   { const char *erro = medida.status ? "" : rede_ultimo_erro();
-    printf("[legendas] %s: %d legendas, %d no idioma (HTTP %d, %ld bytes, %lu ms)%s%s%s\n",
+    printf("[legendas] %s: %d legendas, %d mantidas (HTTP %d, %ld bytes, %lu ms)%s%s%s\n",
            origem->nome, recebidas, lote->n, medida.status, medida.bytes, medida.ms,
            comExtras && !recuou ? ", com extras" : "",
            erro && erro[0] ? ": " : "", erro ? erro : ""); }

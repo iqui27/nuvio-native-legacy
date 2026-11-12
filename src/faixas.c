@@ -423,8 +423,30 @@ static int autoTroca(const char *idioma, const uint64_t *tent, int n, int voltar
   return 0;
 }
 
+// A troca pedida pela RESERVA POR AUDIO (Android, 06/11): o audio encaixa a
+// legenda de add-on com esta URL. Liga pelo mesmo caminho; a pilula segue.
+static int autoTrocaUrl(const char *url, char *nome, unsigned tamNome) {
+  Legenda *v = malloc(sizeof *v * LEG_MAX);
+  int nv, j, ok = 0;
+  if (!v || !url || !url[0]) { free(v); return 0; }
+  nv = addons_legendas_copiar(v, LEG_MAX, NULL, NULL);
+  for (j = 0; j < nv && !ok; j++) {
+    if (strcmp(v[j].url, url)) continue;
+    snprintf(nome, tamNome, "%s", v[j].provedor[0] ? v[j].provedor : v[j].rotulo);
+    pil.troca = 1;
+    emTroca = 1; faixas_escolher_externa(&v[j]); emTroca = 0;
+    pilProvedorCurto(nome, pilProvedor, sizeof pilProvedor); pilHash = legsync_hash_url(v[j].url);
+    if (pil.espera) pilEsperaHash = pilHash;
+    if (pil.estado == PIL_APLICADA && !pil.espera) pilIr(PIL_SINCRONIZANDO, pilAgora());
+    ok = 1;
+  }
+  free(v);
+  return ok;
+}
+
 static void reiniciarFaixas(int preservarPrebusca) {
   legsync_definir_trocador(autoTroca);
+  legsync_definir_trocador_url(autoTrocaUrl);
   legExterna = -1; legExternaId[0] = 0; legOverlay = legOverlayNoGo = legOverlayEsperando = -1; aberta = 0;
   legOverlayFalhas = legOverlayRecusas = legOverlayNoGoEstado = 0; legOverlayRetomar = 0;
   legOverlayTV = legOverlayColhidos = 0;
@@ -1067,8 +1089,6 @@ static void lembrarManual(int i) {
 
 static void aplicar(void) {
   if (coluna == 0) {
-    // F06: outra faixa de audio = outras falas; a escuta em curso nao vale mais.
-    if (video_audio_atual() != foco[0]) legsync_audio_trocou();
     // A ordem automatica (audioescolha.h) volta a esta faixa neste titulo, e
     // nos outros episodios: gravada no perfil (audiomemoria.h), com o numero
     // dela para a mesma release (bingeGroup).
@@ -1131,7 +1151,7 @@ static void legendaAutomatica(Uint32 agora) {
   const CatItem *ci;
   const LegMem *mt;
   char tit[64], addIdiomas[LEG_MAX][sizeof ((Legenda *)0)->idioma];
-  int tipos[NV_FAIXA_MAX];
+  int tipos[NV_FAIXA_MAX], formatos[NV_FAIXA_MAX];
   int nEmb, nAdd = 0, embFechado, addFechado = 1, i, r, soForcada, origem, forcadaAuto;
   Uint32 passou;
   if (!legAuto || aberta || !player_aberto() || !player_com_video()) return;
@@ -1162,6 +1182,7 @@ static void legendaAutomatica(Uint32 agora) {
     const VideoFaixa *f = video_legenda(i);
     emb[i] = f ? f->idioma : "";
     tipos[i] = !f ? LING_LEG_COMUM : f->tipoLeg ? f->tipoLeg : f->letreiro ? LING_LEG_LETREIROS : LING_LEG_COMUM;
+    formatos[i] = ling_formato_legenda(f ? f->codec : "");
   }
   fa = video_audio(video_audio_atual());
   audio = fa ? fa->idioma : "";
@@ -1208,8 +1229,8 @@ static void legendaAutomatica(Uint32 agora) {
       return;
     }
   }
-  r = ling_legenda_auto_tipo(pref, audio, forcadaAuto,
-                             emb, tipos, nEmb, embFechado, add, nAdd, addFechado);
+  r = ling_legenda_auto_fmt(pref, audio, forcadaAuto,
+                            emb, tipos, formatos, nEmb, embFechado, add, nAdd, addFechado);
   if (r == LING_AUTO_ESPERA) {
     // Passou do primeiro instante e ainda procura: a ilha diz o que esta fazendo.
     if (!soForcada && passou >= 1200u && pref[0] && strcasecmp(pref, "none")) pilBuscando(pref, agora);
@@ -1276,6 +1297,10 @@ static void legendaAutomatica(Uint32 agora) {
            r < nEmb && tipos[r] == LING_LEG_FORCADA ? ", forcada: audio no mesmo idioma" :
            r < nEmb && tipos[r] == LING_LEG_LETREIROS ? ", letreiros: audio no mesmo idioma" : "",
            (unsigned)passou);
+  if (r >= 0 && r < nEmb)
+    printf("[legenda] automatica: formato=%s tipo=%d (%d embutida(s) no idioma)\n",
+           formatos[r] == LING_FMT_ASS ? "ass" : formatos[r] == LING_FMT_IMAGEM ? "imagem" : "texto",
+           tipos[r], ({ int c = 0; for (int x = 0; x < nEmb; x++) if (emb[x][0] && ling_casa(emb[x], emb[r])) c++; c; }));
   fflush(stdout);
   escolherLegenda(r);
 }

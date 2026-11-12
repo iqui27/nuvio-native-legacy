@@ -16,7 +16,7 @@ static int ajustePortavel(int op) {
     case AJ_PROPORCAO_PADRAO: case AJ_LOGO_TRAILER:
     case AJ_DV: case AJ_ATMOS:
     case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_TRAILER_ZOOM_TPK:
-    case AJ_CACHE_SEEK: case AJ_BUFFER: case AJ_LEG_SYNC_AUDIO:
+    case AJ_CACHE_SEEK: case AJ_BUFFER: case AJ_LEG_SYNC_AUDIO: case AJ_LEG_SYNC_AUDIO_MOVEL:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_MANTER_VIDEO:
     case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME:
     case AJ_P2P_LIGADO: case AJ_P2P_LIMITE: case AJ_P2P_DESTINO:

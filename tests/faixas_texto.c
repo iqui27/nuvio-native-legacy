@@ -52,6 +52,13 @@ int ling_legenda_auto_tipo(const char *pref, const char *audio, int forcadaAuto,
   (void)pref; (void)audio; (void)forcadaAuto; (void)emb; (void)tipoEmb; (void)nEmb;
   (void)embFechado; (void)add; (void)nAdd; (void)addFechado; return LING_AUTO_NADA;
 }
+int ling_legenda_auto_fmt(const char *pref, const char *audio, int forcadaAuto,
+                          const char *const *emb, const int *tipoEmb, const int *fmtEmb,
+                          int nEmb, int embFechado, const char *const *add, int nAdd, int addFechado) {
+  (void)fmtEmb;
+  return ling_legenda_auto_tipo(pref, audio, forcadaAuto, emb, tipoEmb, nEmb, embFechado, add, nAdd, addFechado);
+}
+int ling_formato_legenda(const char *c) { (void)c; return 1; }
 int legauto_escolher(const Legenda *v, int n, const char *pref, const char *midia,
                      const uint64_t *excl, int nExcl, uint64_t lembrada) {
   (void)v; (void)n; (void)pref; (void)midia; (void)excl; (void)nExcl; (void)lembrada; return -1;

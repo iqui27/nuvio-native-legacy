@@ -54,6 +54,10 @@ typedef struct {
   // the primary's bottom stack, 1080 coordinates) minus a gap and grows upward.
   int   junto;
   float baseY;
+  // 06/11 (dono): a Signs & Songs main (libass signs) leaves the dialogue spot
+  // to the second: 1 = draw the second there, its block ending at `baseY`
+  // (the main's bottom base). Overrides "junto" and the explicit position.
+  int   lugarPrincipal;
 } LegendasGeo;
 // Draws the second document in the TOP band (primary stays at the bottom).
 // Must run before any primary early return so both show in every branch.
@@ -81,6 +85,9 @@ typedef struct {
 void legendasui_definir_sync(const LegendasSyncProvider *p);
 // Opaque identity of what each slot shows ("" = none / not yet active).
 const char *legendasui_slot_identidade(int slot);
+// 1 when the main subtitle is an embedded ASS Signs & Songs track (06/11): the
+// second may share its language and draws in the main's dialogue spot.
+int legendasui_principal_letreiros(void);
 
 // --- model (pure; tests use it without SDL windows) ---------------------------
 #define LEGUI_MAX_CAND (NV_FAIXA_MAX + LEG_MAX)

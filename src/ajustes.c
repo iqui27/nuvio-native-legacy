@@ -10,7 +10,7 @@
 #include "player.h"
 #include "legenda.h"
 #include "legenda2.h"
-#include "audsync.h"
+#include "audiooffset.h"
 #include "legsync.h"
 #include "vertudo.h"
 #include "ajlog.h"
@@ -422,11 +422,11 @@ typedef enum {
   // principal ("Da conta" segue subtitle_secondary_language do perfil). No fim
   // pelo mesmo motivo dos outros: valor[] e CHAVE[] sao posicionais.
   AJ_LEG_LINGUA2,
-  // SINCRONIA POR AUDIO (F06, 1.8): oferece "Por audio" na linha de
-  // sincronizacao automatica do seletor de legendas, onde o backend entrega o
-  // PCM decodificado (hoje so Android). LOCAL (o PCM e o passthrough sao desta
-  // TV), padrao DESLIGADO. No fim pelo mesmo motivo: valor[] e CHAVE[] sao
-  // posicionais.
+  // SINCRONIA POR AUDIO: a reserva automatica do Android (06/11, a do
+  // NuvioTV-Reshaped; legsync.h): quando a legenda incorporada nao serve, a
+  // externa e acertada pelas falas do audio. LOCAL, padrao LIGADO desde 06/11
+  // (migrado: legSyncAudioVersao). No fim pelo mesmo motivo: valor[] e CHAVE[]
+  // sao posicionais.
   AJ_LEG_SYNC_AUDIO,
   // F07 (1.8): seek cache on disk for the Android player (cacheboost.h). LOCAL
   // (disk and backend are this TV's), append-only like every option above.
@@ -725,6 +725,9 @@ typedef enum {
   // Hero logo and information size (0 Normal, 1 Grande, 2 Muito grande). LOCAL, append-only.
   AJ_HERO_TAMANHO,
   AJ_HERO_PASTA_DETALHES, // Device-local folder hero details, append-only; on by default.
+  // Sincronia por audio (Android): ler os trechos do filme a frente tambem em
+  // rede movel (Reshaped: "sampling on mobile data"). LOCAL, append-only, Desligado.
+  AJ_LEG_SYNC_AUDIO_MOVEL,
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1819,7 +1822,7 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO("Remover a escolhida"),
   ESC("Nota nos episódios", V_NT_EP, 5),   // local: notaEpisodio
   ESC("Sugerir categorias dos canais", V_LIGA, 2),   // local: liveTvSugerirLocal
-  NUM("Ajuste do áudio (ms)", -AUDSYNC_OFFSET_MAX_MS, AUDSYNC_OFFSET_MAX_MS, AUDSYNC_OFFSET_STEP_MS, " ms"),
+  NUM("Ajuste do áudio (ms)", -AUDIO_OFFSET_MAX_MS, AUDIO_OFFSET_MAX_MS, AUDIO_OFFSET_STEP_MS, " ms"),
   ESC("Conta com limite de conexões", V_CONEXOES, 3),
   ESC("Ampliar interface", V_AMPLIAR_UI, 3),
   ESC("Fontes do Guia de TV", V_GUIA_FONTE, 5),
@@ -1863,6 +1866,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Suavizar degradês", V_DEGRADES, 3),
   ESC("Tamanho do destaque", V_HERO_TAMANHO, 3),       // local: heroSizeLocal
   ESC("Mostrar detalhes da pasta no destaque", V_LIGA, 2),
+  ESC("Sincronia por áudio em rede móvel", V_LIGA, 2),   // local: legendaSyncAudioMovelLocal (Android)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2196,6 +2200,7 @@ static const char *CHAVE[] = {
   "suavizarDegradesLocal",
   "heroSizeLocal",
   "heroFolderDetailsLocal",
+  "legendaSyncAudioMovelLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2370,12 +2375,19 @@ static int valor[] = {
 static const int valorPadrao[] = {
 #include "ajustes_ux_padrao.inc"
 };
-static int performanceAutoVersao, vidroOpacVersao;
+static int performanceAutoVersao, vidroOpacVersao, legSyncAudioVersao;
 static const int performanceAuto[] = {
   AJ_AMPLIACAO_ALGO, AJ_AMPLIAR_UI, AJ_RESOLUCAO, AJ_GPU_EFEITOS,
   AJ_ANIM, AJ_VIDRO, AJ_VIDRO_FOSCO, AJ_VIDRO_QUALIDADE
 };
 static void performanceAutoMigrar(void) {
+  // 06/11 (dono): a sincronia por audio (agora a reserva do Reshaped, Android)
+  // passa a vir LIGADA; quem tinha o padrao antigo (desligado) migra uma vez.
+  if (legSyncAudioVersao < 1) {
+    valor[AJ_LEG_SYNC_AUDIO] = 0;
+    legSyncAudioVersao = 1;
+    gravar();
+  }
   if (vidroOpacVersao < 1) {
     valor[AJ_VIDRO_OPAC] = 0;
     vidroOpacVersao = 1;
@@ -3184,14 +3196,18 @@ static int ajOpcaoDisponivel(int op) {
 }
 int ajustes_layout_lista(void) { return !ajLayoutSelecionavel() || valor[AJ_LAYOUT_AJUSTES] == 1; }
 int ajustes_esconder_logo_trailer(void) { return lig(AJ_LOGO_TRAILER); }
-int ajustes_audio_offset_ms(void) { return audsync_offset_ms(valor[AJ_AUDIO_OFFSET]); }
+int ajustes_audio_offset_ms(void) { return audio_offset_ms(valor[AJ_AUDIO_OFFSET]); }
 int ajustes_legenda_sync_auto(void) { return lig(AJ_LEG_SYNC_AUTO); }
 int ajustes_teclado_android(void) { int v = valor[AJ_TECLADO_ANDROID]; return v < 0 || v > 2 ? 0 : v; }   // 0 auto, 1 do app, 2 do Android
 int ajustes_mic_busca(void) { return valor[AJ_MIC_BUSCA]; }   // 0 auto, 1 ligado, 2 desligado
 int ajustes_trailer_zoom_tpk(void) { return lig(AJ_TRAILER_ZOOM_TPK); }   // 1 = Ligado
 #ifdef NV_ANDROID
 int ajustes_legenda_sync_audio(void) { return lig(AJ_LEG_SYNC_AUDIO); }
+int ajustes_legenda_sync_audio_movel(void) { return lig(AJ_LEG_SYNC_AUDIO_MOVEL); }
 #else
+int ajustes_legenda_sync_audio_movel(void) { return 0; }
+// 06/11 (dono): sincronia por audio so no Android. No .tpk ela saiu inteira
+// (o tap do conversor DTS/TrueHD foi apagado); na LG nunca houve audio.
 int ajustes_legenda_sync_audio(void) { return 0; }   // escondida fora do Android
 #endif
 int ajustes_legenda_forcada_auto(void) { return lig(AJ_LEG_FORCADA); }   // #287, padrao Ligado
@@ -4766,7 +4782,7 @@ void ajustes_dir(const char *dir) {
   char caminho[600], linha[96];
   int viuLingua[3] = { 0, 0, 0 };
   int escalaVersao = 0;
-  performanceAutoVersao = vidroOpacVersao = 0;
+  performanceAutoVersao = vidroOpacVersao = legSyncAudioVersao = 0;
   for (unsigned i = 0; i < sizeof performanceAuto / sizeof *performanceAuto; i++)
     valor[performanceAuto[i]] = valorPadrao[performanceAuto[i]];
   /* viuLingua: [AJ_LEG_LINGUA, AJ_LEG_LINGUA2, AJ_AUD_LINGUA] vistos no
@@ -4869,6 +4885,7 @@ void ajustes_dir(const char *dir) {
     if (!strcmp(chave, "texturasEscolhaLocal")) { memoriaEscolhida = v == 1; continue; }
     if (!strcmp(chave, "escalaTextoVersaoLocal")) { escalaVersao = v; continue; }
     if (!strcmp(chave, "vidroOpacVersaoLocal")) { vidroOpacVersao = v; continue; }
+    if (!strcmp(chave, "legSyncAudioVersaoLocal")) { legSyncAudioVersao = v; continue; }
     if (!strcmp(chave, "performanceAutoVersaoLocal")) { performanceAutoVersao = v; continue; }
     // "resolucao_ui" (ate a 2.0.1) virou "resolucaoUi" com Automatica na
     // frente: ver res_migrar. A chave nova, quando existe, vence.
@@ -5227,6 +5244,7 @@ static int gravar(void) {
   fprintf(f, "\n");
   fprintf(f, "escalaTextoVersaoLocal 1\n");
   fprintf(f, "vidroOpacVersaoLocal %d\n", vidroOpacVersao);
+  fprintf(f, "legSyncAudioVersaoLocal %d\n", legSyncAudioVersao);
   fprintf(f, "performanceAutoVersaoLocal %d\n", performanceAutoVersao);
   if (memoriaEscolhida) fprintf(f, "texturasEscolhaLocal 1\n");
   if (bibliotecaFonteEscolhida) fprintf(f, "bibliotecaFonteEscolhidaLocal 1\n");
@@ -6111,7 +6129,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_MURAL_TITULOS: /* #521: idem */
     case AJ_MIC_BUSCA:     /* o microfone e o controle sao desta TV */
     case AJ_TECLADO_ANDROID: /* o web nao tem; o teclado e deste aparelho */
-    case AJ_LEG_SYNC_AUDIO: /* PCM e passthrough sao desta TV; o web nao tem */
+    case AJ_LEG_SYNC_AUDIO: case AJ_LEG_SYNC_AUDIO_MOVEL: /* a reserva por audio e desta TV; o web nao tem */
     case AJ_LEG_FORCADA:    /* #287: o web nao tem esta escolha */
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA: /* estilo da legenda e desta TV */
     case AJ_LEG_CONTORNO_COR: /* #475: idem */
@@ -6161,7 +6179,7 @@ static int soNaTv(int op) {
     case AJ_FIL_LIMITE: case AJ_FIL_ORDEM:
     case AJ_ESMAECER: case AJ_BRILHO_PLAYER: case AJ_PROPORCAO_PADRAO: case AJ_MANTER_VIDEO:
     case AJ_DESCANSO_ESTILO: case AJ_DESCANSO_FONTE:
-    case AJ_CACHE_SEEK: case AJ_TRAILER_ZOOM_TPK: case AJ_LEG_SYNC_AUDIO:
+    case AJ_CACHE_SEEK: case AJ_TRAILER_ZOOM_TPK: case AJ_LEG_SYNC_AUDIO: case AJ_LEG_SYNC_AUDIO_MOVEL:
     case AJ_LIVETV_RES: case AJ_LIVETV_FORMATO: case AJ_LIVETV_ESPERA:
     case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY:
     case AJ_P2P_LIGADO: case AJ_JF_LIGADO: case AJ_POSTER_PROV: case AJ_EPG_PAIS:
@@ -6751,7 +6769,7 @@ static int foraDestaPlataforma(int op) {
   if (op == AJ_DV7) return 1;
 #endif
 #ifndef NV_ANDROID
-  if (op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO || op == AJ_TUNNELING) return 1;
+  if (op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO || op == AJ_LEG_SYNC_AUDIO_MOVEL || op == AJ_TUNNELING) return 1;
 #endif
 #if defined(NV_ANDROID) && !defined(NV_P2P_MOTOR)
   if (op == AJ_P2P_LIMITE || op == AJ_P2P_DESTINO) return 1;
@@ -7708,7 +7726,8 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_QUALIDADE: return "Define a preferência de resolução. A disponibilidade depende das fontes do addon.";
     case AJ_DV: case AJ_ATMOS: return "Preferência para fontes compatíveis. O formato disponível também depende do arquivo e da TV.";
     case AJ_LEG_SYNC_AUTO: return "Ajusta a legenda automaticamente. Desligue para manter a escolhida. Vale só nesta TV.";
-    case AJ_LEG_SYNC_AUDIO: return "Compara as falas do áudio com a legenda externa para acertar o atraso. Só onde o player entrega o áudio decodificado e sem passthrough; vale só nesta TV.";
+    case AJ_LEG_SYNC_AUDIO: return "Quando a legenda incorporada não serve para sincronizar, acerta a legenda externa pelas falas do áudio. Vale só nesta TV.";
+    case AJ_LEG_SYNC_AUDIO_MOVEL: return "Para a sincronia por áudio: lê alguns trechos do filme à frente também em rede móvel (até 150 MB). Desligado, só no Wi-Fi ou cabo. Vale só nesta TV.";
     case AJ_LEG_FORCADA: return "Quando o áudio já está no idioma da legenda, liga só a legenda forçada desse idioma (falas em outra língua e placas), ou nenhuma se o arquivo não tiver. Desligado, liga a legenda completa como antes.";
     case AJ_LEG_MOSTRAR: return valor[op] ? "Todas as legendas, com detalhes" : "Recomendadas";
     case AJ_LEG_LINGUA2: return "Segunda legenda, mostrada no alto da tela junto com a principal. Só arquivos SRT/VTT dos addons. \"Da conta\" segue o que está no seu perfil.";
@@ -7716,7 +7735,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_LEG_CONTORNO_COR: return "Cor do contorno e da sombra da legenda desenhada pelo app. Preto é o padrão; vale só nesta TV.";
     case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA:
       return "Aparência só da segunda legenda. \"Igual à principal\" segue o estilo da principal, definido no player.";
-    case AJ_LEG_LINGUA: return "Idioma ligado sozinho quando o vídeo começa. Legendas dos addons aparecem em inglês e no idioma escolhido aqui. \"Da conta\" segue o que está no seu perfil.";
+    case AJ_LEG_LINGUA: return "Idioma ligado sozinho quando o vídeo começa. As legendas neste idioma aparecem primeiro na lista. \"Da conta\" segue o que está no seu perfil.";
     case AJ_AUD_LINGUA: return "Faixa de áudio escolhida quando o arquivo tem mais de uma. Sem esse idioma no arquivo, vale o segundo idioma, depois o idioma original do título.";
     case AJ_AUD_LINGUA2: return "Usado quando o arquivo não tem o idioma de áudio principal. \"Da conta\" segue o que está no seu perfil.";
     case AJ_PAUSA_OVERLAY: return "Ao pausar, sobe uma ficha com a sinopse e os dados do que você está vendo.";

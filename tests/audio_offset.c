@@ -43,7 +43,7 @@ static int64_t inject(int offset) {
 int main(void) {
   DtsRemux *defaults = dts_remux_new(NULL);
   assert(defaults && defaults->audio_offset_ms == 0);
-  assert(AUDSYNC_OFFSET_STEP_MS == 20);
+  assert(AUDIO_OFFSET_STEP_MS == 20);
   dts_remux_close(defaults);
   int64_t zero = inject(0), zero_decode = decode_clock;
   assert(zero == 900000 && zero_decode == 897120);

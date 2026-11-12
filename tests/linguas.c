@@ -195,6 +195,32 @@ int main(void) {
     ok("auto287: leg en, audio pt -> completa en antes da SDH",
        ling_legenda_auto_tipo("en", "por", 1, emb, tp, 4, 1, add, 2, 1) == 3);
     ok("auto287: none -> nada", ling_legenda_auto_tipo("none", "por", 1, emb, tp, 4, 1, add, 2, 1) == LING_AUTO_NADA); }
+  { // 06/11: formato. en: PGS, SRT, ASS (nessa ordem no arquivo) -> a ASS.
+    const char *emb[] = { "eng", "eng", "eng" };
+    const int tp[] = { LING_LEG_COMUM, LING_LEG_COMUM, LING_LEG_COMUM };
+    const int fm[] = { LING_FMT_IMAGEM, LING_FMT_TEXTO, LING_FMT_ASS };
+    ok("fmt: ASS antes de SRT e PGS", ling_legenda_auto_fmt("en", "", 0, emb, tp, fm, 3, 1, NULL, 0, 1) == 2);
+    const int fm2[] = { LING_FMT_IMAGEM, LING_FMT_TEXTO, LING_FMT_IMAGEM };
+    ok("fmt: SRT antes de PGS", ling_legenda_auto_fmt("en", "", 0, emb, tp, fm2, 3, 1, NULL, 0, 1) == 1);
+    ok("fmt: sem formato, a ordem do arquivo", ling_legenda_auto_fmt("en", "", 0, emb, tp, NULL, 3, 1, NULL, 0, 1) == 0);
+    ok("fmt: codec", ling_formato_legenda("S_TEXT/ASS") == LING_FMT_ASS && ling_formato_legenda("S_TEXT/SSA") == LING_FMT_ASS &&
+       ling_formato_legenda("S_TEXT/UTF8") == LING_FMT_TEXTO && ling_formato_legenda("S_HDMV/PGS") == LING_FMT_IMAGEM &&
+       ling_formato_legenda("") == LING_FMT_TEXTO); }
+  { // SDH em ASS nao passa a frente da comum em SRT (o tipo vem antes do formato).
+    const char *emb[] = { "eng", "eng" };
+    const int tp[] = { LING_LEG_SDH, LING_LEG_COMUM }, fm[] = { LING_FMT_ASS, LING_FMT_TEXTO };
+    ok("fmt: comum SRT antes de SDH ASS", ling_legenda_auto_fmt("en", "", 0, emb, tp, fm, 2, 1, NULL, 0, 1) == 1); }
+  { // Audio no idioma, opcao ligada: letreiros ASS > forcada ASS > forcada outra > letreiros outra.
+    const char *emb[] = { "eng", "eng", "eng", "eng", "eng" };
+    const int tp[] = { LING_LEG_COMUM, LING_LEG_LETREIROS, LING_LEG_FORCADA, LING_LEG_FORCADA, LING_LEG_LETREIROS };
+    const int fm[] = { LING_FMT_ASS, LING_FMT_TEXTO, LING_FMT_IMAGEM, LING_FMT_ASS, LING_FMT_ASS };
+    ok("fmt287: letreiros ASS primeiro", ling_legenda_auto_fmt("en", "eng", 1, emb, tp, fm, 5, 1, NULL, 0, 1) == 4);
+    const int fm2[] = { LING_FMT_ASS, LING_FMT_TEXTO, LING_FMT_IMAGEM, LING_FMT_ASS, LING_FMT_TEXTO };
+    ok("fmt287: depois forcada ASS", ling_legenda_auto_fmt("en", "eng", 1, emb, tp, fm2, 5, 1, NULL, 0, 1) == 3);
+    const int fm3[] = { LING_FMT_ASS, LING_FMT_TEXTO, LING_FMT_IMAGEM, LING_FMT_TEXTO, LING_FMT_TEXTO };
+    ok("fmt287: depois forcada em outro formato (texto antes de imagem)", ling_legenda_auto_fmt("en", "eng", 1, emb, tp, fm3, 5, 1, NULL, 0, 1) == 3);
+    const int tp4[] = { LING_LEG_COMUM, LING_LEG_LETREIROS, LING_LEG_COMUM, LING_LEG_COMUM, LING_LEG_COMUM };
+    ok("fmt287: por fim letreiros em outro formato", ling_legenda_auto_fmt("en", "eng", 1, emb, tp4, fm3, 5, 1, NULL, 0, 1) == 1); }
   { // so SDH e forcada em ingles; addon pt
     const char *emb[] = { "eng", "eng" }, *add[] = { "pob" };
     const int tp[] = { LING_LEG_FORCADA, LING_LEG_SDH };

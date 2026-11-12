@@ -10,5 +10,5 @@ flags=(-O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2
   -I"$jdk/include" -I"$jdk/include/darwin" -Wno-deprecated-declarations -Wno-macro-redefined)
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 cc "${flags[@]}" -ffunction-sections -fdata-sections tests/video_android_cacheboost.c \
-  -Wl,-dead_strip -lpthread -o "$dir/test"
+  -Wl,-dead_strip -lpthread -lm -o "$dir/test"
 "$dir/test"

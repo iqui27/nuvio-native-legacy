@@ -50,6 +50,9 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.mediacodec.MediaCodecDecoderException
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.extractor.DefaultExtractorsFactory
+import space.nuvio.nativelegacy.audiosync.SyncLog
+import space.nuvio.nativelegacy.audiosync.selectedAudioFormat
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.WrappingMediaSource
 import androidx.media3.exoplayer.source.preload.PreloadException
@@ -180,8 +183,15 @@ object NvPlayer {
     @JvmStatic external fun nativeAudioLog(texto: String)
     @JvmStatic external fun nativeRetomada(geracao: Int, aceita: Int)
     @JvmStatic external fun nativeFitPassiva(rede: Long, geracao: Int, origem: String, kbps: IntArray, fimMs: Long)
-    @JvmStatic external fun nativeAudioPcm(pcm: ShortArray, n: Int, ptsUs: Long)
     @JvmStatic external fun nativeAudioEstado(fmt: Int)
+    // Reserva por audio da sincronia de legenda (ReservaAudio.kt, src/legsync.h).
+    @JvmStatic external fun nativeAudioSyncModelo(chave: String, de: LongArray, escala: DoubleArray,
+                                                  desloc: DoubleArray, estimado: Boolean)
+    @JvmStatic external fun nativeAudioSyncFalhou(chave: String, motivo: String)
+    @JvmStatic external fun nativeAudioSyncTrocar(chave: String, url: String)
+    @JvmStatic external fun nativeAudioSyncCandidatas(): String?
+    @JvmStatic external fun nativeAudioSyncFalas(url: String): String?
+    @JvmStatic external fun nativeAudioSyncLog(texto: String)
     // Estatisticas ao vivo (src/estatvivo.h), 1x/s pelo tique: bytes do socket
     // (-1 = esta abertura nao passou pelo ParaleloDataSource, ex. HLS), buffer
     // a frente e o alvo do DefaultLoadControl em ms, conexoes abertas, 1o byte,
@@ -190,12 +200,6 @@ object NvPlayer {
                                         primeiroByteMs: Int, perdidos: Long, quadros: Long, host: String,
                                         minMs: Int, alvoMb: Int, carregando: Int)
 
-    // F06 sincronia por audio (AudioSyncTap.kt / AudioSyncSink.kt). Fio de
-    // reproducao; o C so copia para um anel limitado (src/audsync.c).
-    private var tap = AudioSyncTap(
-        { pcm, n, pts -> try { nativeAudioPcm(pcm, n, pts) } catch (t: UnsatisfiedLinkError) { } },
-        { fmt -> try { nativeAudioEstado(fmt) } catch (t: UnsatisfiedLinkError) { } }
-    )
     private var recursosAtuais: RecursosPlayer? = null
 
     // F07 (src/video_android.c -> cacheboost.h): seek cache state of this open.
@@ -637,16 +641,16 @@ object NvPlayer {
         var bandaPreparo: DefaultBandwidthMeter? = null
         var liberado = false
         @Volatile var adotado = carga.adotada
-        @Volatile var audioFormato = AudioSyncTap.FMT_NENHUM
+        @Volatile var audioFormato = SaidaAudioSink.FMT_NENHUM
         @Volatile var velocidadePcm = false
         val proc = GanhoAudioProcessor()
-        val tap = AudioSyncTap(
-            { pcm, n, pts -> if (adotado) try { nativeAudioPcm(pcm, n, pts) } catch (_: UnsatisfiedLinkError) {} },
-            { fmt ->
-                audioFormato = fmt
-                if (adotado) try { nativeAudioEstado(fmt) } catch (_: UnsatisfiedLinkError) {}
-            }
-        )
+        val estadoAudio: (Int) -> Unit = { fmt ->
+            audioFormato = fmt
+            if (adotado) try { nativeAudioEstado(fmt) } catch (_: UnsatisfiedLinkError) {}
+        }
+        // Reserva por audio da sincronia de legenda (Reshaped): uma por player,
+        // como o controlador dele; so ouve depois que o legsync arma.
+        var reserva: ReservaAudio? = null
         var cache: CacheMidia? = null
         var cacheEstado = CacheSessao.DESLIGADO
         fun construido() = ::p.isInitialized
@@ -710,6 +714,8 @@ object NvPlayer {
         if (r.construido()) liberarEmFundo(r.p, null) { liberarFontePreparo(r) }
         else liberarFontePreparo(r)
         r.cache?.liberar()
+        r.reserva?.let { principal.post { it.liberar() } }
+        r.reserva = null
     }
 
     @JvmOverloads @JvmStatic fun preparar(url: String, cabecalhos: String, inicioMs: Int, fracao: Int,
@@ -986,6 +992,7 @@ object NvPlayer {
         camada.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or2, ob ->
             if (r - l != or2 - ol || b - t != ob - ot) reaplicarJanela()
         }
+        SyncLog.sink = { linha -> try { nativeAudioSyncLog(linha) } catch (_: UnsatisfiedLinkError) {} }
         try { nativeIniciar() } catch (e: UnsatisfiedLinkError) {
             Log.w(TAG, "nativeIniciar sem a lib ainda; o C acha a classe pelo ClassLoader da Activity: $e")
         }
@@ -1218,6 +1225,25 @@ object NvPlayer {
     }
     @JvmStatic fun escolher(tipo: Int, idx: Int) { principal.post { escolherMain(tipo, idx) } }
 
+    // --- reserva por audio da sincronia de legenda (src/legsync.c decide) ----
+    // Chamadas do fio do player C; tudo vai ao fio principal, no player atual.
+    @JvmStatic fun audioSyncArmar(dadosMoveis: Int) {
+        principal.post { recursosAtuais?.reserva?.armar(dadosMoveis != 0) }
+    }
+    @JvmStatic fun audioSyncAssumir(chave: String, idioma: String, inicios: LongArray, fins: LongArray,
+                                    textos: Array<String?>) {
+        val n = minOf(inicios.size, fins.size, textos.size)
+        val falas = List(n) { Triple(inicios[it], fins[it], textos[it].orEmpty()) }
+        principal.post { recursosAtuais?.reserva?.assumir(chave, idioma, falas) }
+    }
+    @JvmStatic fun audioSyncParar() {
+        principal.post { recursosAtuais?.reserva?.parar() }
+    }
+    private fun urlLocal(url: String): Boolean {
+        val host = runCatching { Uri.parse(url).host }.getOrNull()?.lowercase() ?: return false
+        return host == "localhost" || host == "::1" || host == "[::1]" || host.startsWith("127.")
+    }
+
     // --- abrir / liberar ------------------------------------------------------
 
     private fun itemMidia(url: String): MediaItem {
@@ -1317,17 +1343,20 @@ object NvPlayer {
             val token = if (preparando) 0L else medidor.sessao(geracao).also { medidorToken = it }
             r.origem = OrigemPlayer(if (preparando) origemPreparo else r.rede(token), r.carga)
             // ON: platform decoder/passthrough first, FFmpeg only as fallback.
-            // F06 tap is at the sink input; F07 gain stays in its processors.
+            // The sync-by-audio listener (Reshaped's PlaybackAudioTap) and the
+            // PCM/bitstream report sit at the sink input; F07 gain stays in its processors.
+            val reserva = ReservaAudio(act).also { r.reserva = it }
             r.renderizadores = object : androidx.media3.exoplayer.DefaultRenderersFactory(act) {
                 override fun buildAudioSink(context: Context, enableFloatOutput: Boolean,
                                             enableAudioTrackPlaybackParams: Boolean): AudioSink =
                     // Sonic needs integer PCM; float output bypasses audio processors.
-                    AudioSyncSink(DefaultAudioSink.Builder(context).setEnableFloatOutput(false)
+                    SaidaAudioSink(reserva.controlador.wrapAudioSink(DefaultAudioSink.Builder(context).setEnableFloatOutput(false)
                         .setEnableAudioTrackPlaybackParams(false)
-                        .setAudioProcessors(arrayOf(r.proc)).build(), r.tap, { r.velocidadePcm })
+                        .setAudioProcessors(arrayOf(r.proc)).build()), r.estadoAudio, { r.velocidadePcm })
             }.setExtensionRendererMode(androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
                 .setEnableDecoderFallback(true)
-            r.fabricaMidia = DefaultMediaSourceFactory(act)
+            // Reshaped's audio tap: compressed audio is copied as it is demuxed (ahead of playback).
+            r.fabricaMidia = DefaultMediaSourceFactory(act, reserva.controlador.wrap(DefaultExtractorsFactory()))
                 // ParaleloDataSource faz as tres tentativas de transporte;
                 // nao empilhar outra rodada invisivel do Loader antes da
                 // maquina de reconexao 3/10/25 s do nucleo.
@@ -1342,6 +1371,11 @@ object NvPlayer {
                     report = { Log.i(TAG, it) },
                     liveTsUri = Uri.parse(url).takeIf { LivePlaylistDataSource.isLiveTs(it) },
                 ))
+            // Spots across the film (Reshaped's AudioSpotSampler) read over their
+            // own plain connections; never with the limited (one-connection) mode.
+            reserva.controlador.onSourceChanged(url)
+            reserva.controlador.setSpotSource(url, url, http, DefaultExtractorsFactory(),
+                localEngine = limited || adaptativo || urlLocal(url))
             if (construir) construirPlayer(act, r)
             Log.i(TAG, "[player] buffer preset=$preset min=${minMs / 1000}s max=${maxMs / 1000}s teto=${bytes shr 20}MB preparo=$preparando")
             return r
@@ -1439,8 +1473,6 @@ object NvPlayer {
             recursosAtuais = r
             player = p
             processador = r.proc
-            r.tap.ligado = tap.ligado
-            tap = r.tap
             cacheMidia = r.cache; cacheEstado = r.cacheEstado
             if (preparada == null && r.cache != null) { tituloAberto = titulo; chaveAberta = url.substringBefore('#') }
             bufferAlvoMs = r.alvoMs; bufferMinMs = r.carga.minMs; bufferBytes = r.carga.bytes
@@ -1551,7 +1583,10 @@ object NvPlayer {
             try { sv?.layoutParams = FrameLayout.LayoutParams(1, 1) } catch (e: Exception) { }
             // A superficie velha fica com o player velho; a proxima abertura cria outra.
             superficie = null
-            liberarEmFundo(p, sv) { recursos?.let { liberarFontePreparo(it) } }
+            liberarEmFundo(p, sv) {
+                recursos?.let { liberarFontePreparo(it) }
+                recursos?.reserva?.liberar(); recursos?.reserva = null
+            }
         }
         // F07: the session cache goes with its player (released and deleted
         // off the main thread, after the canceled loaders unwind).
@@ -1563,8 +1598,7 @@ object NvPlayer {
         cacheTiques = 0
         processador = null
         // Depois do release (o fio de reproducao ja parou): sem audio decodificado.
-        tap.encerrar()
-        try { nativeAudioEstado(AudioSyncTap.FMT_NENHUM) } catch (_: UnsatisfiedLinkError) {}
+        try { nativeAudioEstado(SaidaAudioSink.FMT_NENHUM) } catch (_: UnsatisfiedLinkError) {}
         superficie?.visibility = View.GONE
     }
 
@@ -1641,6 +1675,7 @@ object NvPlayer {
             try { nativePos(p.currentPosition, p.bufferedPosition, p.isCurrentMediaItemLive,
                 recursosAtuais?.carga?.allocator?.totalBytesAllocated ?: -1, geracaoNative)
             } catch (e: UnsatisfiedLinkError) { }
+            recursosAtuais?.reserva?.tique(p.currentPosition, p.duration.takeIf { it != C.TIME_UNSET } ?: 0L)
             if (++statsTiques >= 4) { statsTiques = 0; relatarStats(p) }
             if (cacheMidia != null && cacheEstado == CacheSessao.ATIVO && ++cacheTiques >= CACHE_RELATO_TIQUES) {
                 cacheTiques = 0
@@ -1940,7 +1975,6 @@ object NvPlayer {
 
     private fun escolherMain(tipo: Int, idx: Int) {
         if (tipo == 2) { atrasoMs = idx; return }
-        if (tipo == 3) { tap.ligado = idx != 0; return }   // F06: escuta de PCM liga/desliga
         val p = player ?: return
         try {
             val par = p.trackSelectionParameters.buildUpon()
@@ -2079,6 +2113,7 @@ object NvPlayer {
         override fun onTracksChanged(tracks: Tracks) {
             if (!atual(minha)) return
             publicarFaixas(tracks)
+            recursosAtuais?.reserva?.controlador?.onAudioTrackSelected(tracks.selectedAudioFormat())
             for (g in tracks.groups) if (g.type == C.TRACK_TYPE_AUDIO) {
                 for (i in 0 until g.length) if (g.isTrackSelected(i)) {
                     val f = g.getTrackFormat(i)

@@ -234,7 +234,7 @@ static int ajCenaSecao(int op) {
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_CHAVE: case AJ_SEEKR_TESTAR: case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE:
       return AJC_REP_SEEKR;
     case AJ_IDIOMA: case AJ_TMDB_IDIOMA: return AJC_IDI_INTERFACE;
-    case AJ_LEG_MOSTRAR: case AJ_AUD_LINGUA: case AJ_AUD_LINGUA2: case AJ_LEG_LINGUA: case AJ_LEG_SYNC_AUTO: case AJ_LEG_SYNC_AUDIO: case AJ_LEG_FORCADA: return AJC_IDI_FAIXAS;
+    case AJ_LEG_MOSTRAR: case AJ_AUD_LINGUA: case AJ_AUD_LINGUA2: case AJ_LEG_LINGUA: case AJ_LEG_SYNC_AUTO: case AJ_LEG_SYNC_AUDIO: case AJ_LEG_SYNC_AUDIO_MOVEL: case AJ_LEG_FORCADA: return AJC_IDI_FAIXAS;
     case AJ_LEG_LINGUA2: case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA:
     case AJ_LEG_CONTORNO_COR:
       return AJC_IDI_LEGENDA2;
@@ -954,7 +954,8 @@ static void ajcIdiFaixas(int A) {
 #ifdef NV_ANDROID
   n = 5;
 #endif
-  if (ajc.op == AJ_LEG_SYNC_AUDIO) n = 5;
+  if (ajc.op == AJ_LEG_SYNC_AUDIO_MOVEL) OP[4] = AJ_LEG_SYNC_AUDIO_MOVEL;   // a linha em foco no lugar da sincronia por audio
+  if (ajc.op == AJ_LEG_SYNC_AUDIO || ajc.op == AJ_LEG_SYNC_AUDIO_MOVEL) n = 5;
   if (ajc.op == AJ_AUD_LINGUA2) OP[0] = AJ_AUD_LINGUA2;   // a linha em foco no lugar da principal
   CIMG(ajArte(AJA_FUNDO, A), 0, 0, 640, 360, 22, 1);
   gfx_veu_css(CR(0, 220, 640, 140), 0, 0, 1.0f, 0.6f);

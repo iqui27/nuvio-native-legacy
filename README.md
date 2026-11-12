@@ -423,6 +423,14 @@ source URL and checksum; `tools/arm.sh` includes its license and provenance in
 describe the corresponding source and static relinking materials needed with
 binary releases.
 
+The audio subtitle sync on Android (`android/app/src/main/java/space/nuvio/nativelegacy/audiosync/`)
+is ported from [NuvioTV-Reshaped](https://github.com/DavidVamaiotu/NuvioTV-Reshaped)
+(branch `audio-sync-fallback-stable`, GPL-3.0), without its speech recognition. It runs the
+[Silero VAD](https://github.com/snakers4/silero-vad) model, **MIT license**,
+Copyright (c) 2020-present Silero Team; the weights are in
+`android/app/src/main/res/raw/silero_vad_v5_16k.bin` and the license text ships in
+`deploy/app/licencas/silero-vad-LICENSE.txt`.
+
 "Nuvio", the logo and the wordmark belong to the original authors. The GPL covers
 the code, **not** the name or the branding. They appear here only to say which
 project this one comes from.
