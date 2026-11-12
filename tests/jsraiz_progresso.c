@@ -257,7 +257,7 @@ int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
         continue;
       }
       char texto[420];
-      if (jfRico >= 2) {
+      if (jfRico >= 2 && jfRico != 9) {
         unsigned x = (unsigned)(inicio + i + 1) * 2654435761u;
         const char letras[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
         for (size_t j = 0; j + 1 < sizeof texto; j++) {
@@ -267,7 +267,7 @@ int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
         texto[sizeof texto - 1] = 0;
       } else snprintf(texto, sizeof texto, "Rich synopsis %d", inicio + i + 1);
       char nome[120];
-      if (jfRico >= 5) {
+      if (jfRico >= 5 && jfRico != 9) {
         unsigned x = (unsigned)(inicio + i + 1) * 2246822519u;
         const char letras[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
         for (size_t j = 0; j + 1 < sizeof nome; j++) {
@@ -278,7 +278,8 @@ int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
       } else snprintf(nome, sizeof nome, "Episode %d", inicio + i + 1);
       pos += (size_t)snprintf(resposta->corpo + pos, cap - pos,
         "%s{\"Id\":\"%x\",\"ParentIndexNumber\":1,\"IndexNumber\":%d,\"Name\":\"%s\",\"Overview\":\"%s\",\"RunTimeTicks\":36000000000,\"PremiereDate\":\"2025-01-23\",\"ImageTags\":{\"Primary\":\"image\"},\"Padding\":\"%0*d\"}",
-        i ? "," : "", inicio + i + 1, inicio + i + 1, nome, texto, jfRico == 3 ? 3000 : 0, 0);
+        i ? "," : "", inicio + i + 1 - (((jfRico == 8 && chamouCallback) || jfRico == 9) && inicio == 100 && i == 0),
+        inicio + i + 1, nome, texto, jfRico == 3 ? 3000 : 0, 0);
     }
     assert(pos + 3 < cap); memcpy(resposta->corpo + pos, "]}", 3);
     jfCorpoAnterior = resposta->corpo;
@@ -337,7 +338,7 @@ static CatEp *prepararTeste(void *ctx, int n) {
   RedeJob *job = ctx;
   __atomic_add_fetch(&chamouCallback, 1, __ATOMIC_RELAXED);
   if (jfRico) {
-    assert(n == (jfRico >= 6 ? 1499 : jfRico == 5 ? 1500 : 5000) && (jfRico >= 2 ? jfPedidos > 1 : jfPedidos == 50));
+    assert(n == ((jfRico == 6 || jfRico == 7) ? 1499 : jfRico >= 5 ? 1500 : 5000) && (jfRico >= 2 ? jfPedidos > 1 : jfPedidos == 50));
     assert(__asan_address_is_poisoned(jfCorpoAnterior));
     jfSomar((size_t)n * sizeof(CatEp));
     return calloc((size_t)n, sizeof(CatEp));
@@ -518,6 +519,16 @@ static void testarPreparo(void) {
     jfRico = 7; jfPedidos = chamouCallback = 0;
     n = teste_jf_episodios_cancelavel(&jc, job, "a", &out, 5000, prepararTeste, job, jfCancelado, NULL);
     assert(n < 0 && out && chamouCallback);
+    free(out); jfMemoria = jfPico = 0; rede_job_soltar(job); rede_grupo_soltar(grupo);
+    grupo = rede_grupo_criar(); job = rede_job_criar(grupo); out = NULL;
+    jfRico = 8; jfPedidos = chamouCallback = 0;
+    n = teste_jf_episodios_cancelavel(&jc, job, "a", &out, 5000, prepararTeste, job, jfCancelado, NULL);
+    assert(n < 0 && out && chamouCallback);
+    free(out); jfMemoria = jfPico = 0; rede_job_soltar(job); rede_grupo_soltar(grupo);
+    grupo = rede_grupo_criar(); job = rede_job_criar(grupo); out = NULL;
+    jfRico = 9; jfPedidos = chamouCallback = 0;
+    n = teste_jf_episodios_cancelavel(&jc, job, "a", &out, 5000, prepararTeste, job, jfCancelado, NULL);
+    assert(n < 0 && out && chamouCallback && jfPedidos == 15);
     jfObsoleto = jfRico = 0; free(out); jfMemoria = jfPico = 0;
     rede_job_soltar(job); rede_grupo_soltar(grupo);
   }

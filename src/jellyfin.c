@@ -735,6 +735,26 @@ int jf_ler_episodios(const JfConta *c, const char *corpo, size_t nCorpo, CatEp *
   return n;
 }
 
+/* A shifting server page can otherwise replace one episode with a duplicate. */
+static int jf_episodios_unicos(const CatEp *eps, int n, RedeJob *job,
+                              int (*cancelado)(void *), void *ctx) {
+  uint16_t indices[8192] = {0};
+  if (n >= 8192) return JF_ERR_FORMATO;
+  for (int i = 0; i < n; i++) {
+    uint32_t h = 2166136261u;
+    if (!(i % 64) && (rede_job_estado(job) != REDE_OK || (cancelado && cancelado(ctx))))
+      return JF_ERR_CANCELADO;
+    for (const unsigned char *p = (const unsigned char *)eps[i].vid; *p; p++) h = (h ^ *p) * 16777619u;
+    h &= 8191u;
+    while (indices[h]) {
+      if (!strcmp(eps[indices[h] - 1].vid, eps[i].vid)) return JF_ERR_FORMATO;
+      h = (h + 1) & 8191u;
+    }
+    indices[h] = (uint16_t)(i + 1);
+  }
+  return n;
+}
+
 static int jf_episodios_preparar(const JfConta *c, RedeJob *job, const char *serieId,
                                  CatEp **saida, int max, CatEpPreparar preparar, void *ctx,
                                  int (*cancelado)(void *), void *cancelCtx) {
@@ -805,7 +825,7 @@ static int jf_episodios_preparar(const JfConta *c, RedeJob *job, const char *ser
     if (!raw || (total >= 0 && inicio >= total) || (total < 0 && raw < limite)) break;
   }
   if (direto) {
-    erro = n == capacidade && inicio == rawEsperado ? n : JF_ERR_FORMATO;
+    erro = n == capacidade && inicio == rawEsperado ? jf_episodios_unicos(*saida, n, job, cancelado, cancelCtx) : JF_ERR_FORMATO;
     goto fim;
   }
   if (contar) goto reserva;
@@ -824,7 +844,7 @@ static int jf_episodios_preparar(const JfConta *c, RedeJob *job, const char *ser
     if (uncompress((Bytef *)*saida, &bytes, compacto, (uLong)compactos) != Z_OK ||
         bytes != (uLongf)((size_t)n * sizeof **saida)) goto fim;
   }
-  erro = n;
+  erro = jf_episodios_unicos(*saida, n, job, cancelado, cancelCtx);
   goto fim;
  reserva:
   /* The caller's workspace lock may span network only with generation cancellation. */
