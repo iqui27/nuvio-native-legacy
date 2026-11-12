@@ -11,8 +11,8 @@ function cenario() {
   const env = {
     DIAG_TOKEN: "tok-teste",
     LOGS: {
-      put: async (k, v) => kv.set(k, v),
-      get: async (k, t) => kv.get(k) ?? null,
+      put: async (k, v, opts) => kv.set(k, { value: v, metadata: opts.metadata, ttl: opts.expirationTtl }),
+      getWithMetadata: async (k) => kv.get(k) ?? { value: null, metadata: null },
     },
   };
   const post = (corpo, hdrs = {}) =>
@@ -33,7 +33,8 @@ test("post autenticado grava gzip no KV e devolve link que baixa", async () => {
   assert.equal(body.ok, 1);
   assert.match(body.url, /^https:\/\/w\.test\/v1\/loglink\/[0-9a-f]{32}$/);
   const id = body.url.split("/").pop();
-  assert.deepEqual([...new Uint8Array(kv.get("log:" + id))], [...gz]);
+  assert.deepEqual([...new Uint8Array(kv.get("log:" + id).value)], [...gz]);
+  assert.equal(kv.get("log:" + id).ttl, 259200);
 
   const g = await worker.fetch(new Request(body.url), env);
   assert.equal(g.status, 200);
@@ -44,6 +45,8 @@ test("post autenticado grava gzip no KV e devolve link que baixa", async () => {
   const h = await worker.fetch(new Request(body.url, { method: "HEAD" }), env);
   assert.equal(h.status, 200);
   assert.equal(h.headers.get("content-length"), String(gz.length));
+  kv.get("log:" + id).metadata.expires = Date.now() - 1;
+  assert.equal((await worker.fetch(new Request(body.url), env)).status, 404);
 });
 
 test("sem auth, sem binding, corpo vazio e token ruim", async () => {

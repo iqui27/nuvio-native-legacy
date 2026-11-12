@@ -111,7 +111,7 @@ erro:
   return NULL;
 }
 static void *fio(void *u) {
-  char snap[128], m[128], achou[256], auth[160];
+  char snap[128], m[128], achou[256], auth[160], u2[256];
   unsigned long ngz = 0, ncorpo = 0;
   unsigned char *gz = NULL;
   char *corpo = NULL;
@@ -131,7 +131,6 @@ static void *fio(void *u) {
   if (!corpo) { terminar(LOGCLOUD_FALHOU, NULL, "out of memory"); return NULL; }
   snprintf(auth, sizeof auth, "Authorization: Bearer %s", NV_DIAG_TOKEN);
   {
-    char u2[256];
     snprintf(u2, sizeof u2, "%s/v1/loglink", NV_REC_URL);
     cab[0] = "x-nuvio-auth: diagnostico";
     cab[1] = auth;

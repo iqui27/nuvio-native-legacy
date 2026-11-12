@@ -526,18 +526,7 @@ static int atender(int c, int *erros) {
     }
   }
   { char *q = strchr(caminho, '?'); if (q) { download = !strcmp(q, "?download=1"); text = !strcmp(q, "?text=1"); *q = 0; } }
-  if (caminho[0] != '/' || strcmp(caminho + 1, token)) {
-    // O favicon que todo navegador pede nao e tentativa de adivinhar o token.
-    if (strcmp(caminho, "/favicon.ico")) (*erros)++;
-    responder(c, 404, NULL);
-    return 0;
-  }
-  if (relatorio) {
-    if (strcmp(metodo, "GET") && strcmp(metodo, "HEAD")) { responder(c, 405, NULL); return 0; }
-    responderRelatorio(c, text, download, !strcmp(metodo, "HEAD"));
-    return 0;
-  }
-  if (sessao) {
+  if (sessao && !relatorio) {
     char cam[CEL_TOKEN_N + 4];
     snprintf(cam, sizeof cam, "/%s/s", token);
     if (!strcmp(caminho, cam)) {
@@ -550,6 +539,16 @@ static int atender(int c, int *erros) {
       responder(c, 200, metodo[0] == 'G' ? s : NULL);
       return 0;
     }
+  }
+  if (caminho[0] != '/' || strcmp(caminho + 1, token)) {
+    if (strcmp(caminho, "/favicon.ico")) (*erros)++;
+    responder(c, 404, NULL);
+    return 0;
+  }
+  if (relatorio) {
+    if (strcmp(metodo, "GET") && strcmp(metodo, "HEAD")) { responder(c, 405, NULL); return 0; }
+    responderRelatorio(c, text, download, !strcmp(metodo, "HEAD"));
+    return 0;
   }
   if (!strcmp(metodo, "GET") || !strcmp(metodo, "HEAD")) {
     // Sem IP de quem pediu: so que a pagina chegou ao celular. E esta linha

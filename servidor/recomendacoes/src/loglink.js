@@ -30,12 +30,22 @@ export async function rotaLoglinkPost(req, env, erro, json) {
   const aut = req.headers.get("authorization") || "";
   const tok = aut.startsWith("Bearer ") ? aut.slice(7).trim() : "";
   if (!env.DIAG_TOKEN || !tok || tok !== env.DIAG_TOKEN) return erro("nao autenticado", 401);
-  const buf = await req.arrayBuffer();
-  if (!buf || !buf.byteLength) return erro("corpo vazio", 400);
-  if (buf.byteLength > CORPO_MAX) return erro("corpo grande", 413);
+  const reader = req.body?.getReader();
+  if (!reader) return erro("corpo vazio", 400);
+  const chunks = []; let size = 0;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > CORPO_MAX) { await reader.cancel(); return erro("corpo grande", 413); }
+    chunks.push(value);
+  }
+  if (!size) return erro("corpo vazio", 400);
+  const buf = new Uint8Array(size); let offset = 0;
+  for (const chunk of chunks) { buf.set(chunk, offset); offset += chunk.byteLength; }
   const t = [...crypto.getRandomValues(new Uint8Array(16))]
     .map((x) => x.toString(16).padStart(2, "0")).join("");
-  await env.LOGS.put("log:" + t, buf, { expirationTtl: TTL_S });
+  await env.LOGS.put("log:" + t, buf, { expirationTtl: TTL_S, metadata: { expires: Date.now() + TTL_S * 1000 } });
   const base = new URL(req.url).origin;
   return json({ ok: 1, url: base + "/v1/loglink/" + t, expira_s: TTL_S });
 }
@@ -43,8 +53,8 @@ export async function rotaLoglinkPost(req, env, erro, json) {
 export async function rotaLoglinkGet(req, env, erro, token) {
   if (!env.LOGS) return erro("servico indisponivel", 503);
   if (!TOKEN_RX.test(token)) return erro("nao encontrado", 404);
-  const buf = await env.LOGS.get("log:" + token, "arrayBuffer");
-  if (!buf) return erro("nao encontrado", 404);
+  const { value: buf, metadata } = await env.LOGS.getWithMetadata("log:" + token, "arrayBuffer");
+  if (!buf || !Number.isFinite(metadata?.expires) || Date.now() >= metadata.expires) return erro("nao encontrado", 404);
   if (req.method === "HEAD")
     return new Response(null, {
       status: 200,
