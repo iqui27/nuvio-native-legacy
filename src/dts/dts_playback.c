@@ -709,23 +709,22 @@ static void *run(void *user) {
         if (r < 0) { fail(p, "DTS subtitle packet decode failed"); break; }
         if (r) {
           size_t bytes = cue.rgba ? (size_t)cue.w * (size_t)cue.h * 4u : 0;
-          unsigned char *pixels = bytes ? malloc(bytes) : NULL;
-          if (bytes && !pixels) { fail(p, "DTS subtitle allocation failed"); break; }
-          if (bytes) memcpy(pixels, cue.rgba, bytes);
-          pthread_mutex_lock(&p->lock);
-          /* A full queue never ends the session (C3 tester's log 11/11: 4K
-           * PGS bitmaps filled it a few minutes in and Dolby Vision fell back
-           * to the TV player): the oldest cues go, and a cue larger than the
-           * whole budget is skipped. */
-          if (bytes > DTS_SUB_BYTES) {
-            pthread_mutex_unlock(&p->lock); free(pixels);
+          /* The real decoder skips valid oversized output before allocating
+           * RGBA. Keep the queue guard before copying any borrowed pixels too. */
+          if (r == DTS_SUBTITLE_SKIPPED || bytes > DTS_SUB_BYTES) {
             if (!p->subtitle_skip_logged) {
               p->subtitle_skip_logged = 1;
-              printf("[dts] subtitle cue %dx%d over the memory budget: skipped\n", cue.w, cue.h);
+              printf("[dts] subtitle cue over the memory budget: skipped\n");
               fflush(stdout);
             }
             have_frame = 0; continue;
           }
+          unsigned char *pixels = bytes ? malloc(bytes) : NULL;
+          if (bytes && !pixels) { fail(p, "DTS subtitle allocation failed"); break; }
+          if (bytes) memcpy(pixels, cue.rgba, bytes);
+          pthread_mutex_lock(&p->lock);
+          /* A full queue never ends the session (C3 tester's log 11/11):
+           * discard the oldest cues until this cue fits. */
           { int dropped = 0;
             while (p->subtitle_count &&
                    (p->subtitle_count == DTS_SUB_CUES || bytes > DTS_SUB_BYTES - p->subtitle_bytes)) {
