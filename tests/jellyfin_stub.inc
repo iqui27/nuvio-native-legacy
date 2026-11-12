@@ -5,7 +5,18 @@
 #define NV_JELLYFIN_STUB_INC
 #include "catalogo.h"
 #include "addons.h"
+#include "rede.h"
 #include <stdint.h>
+#ifndef NV_TEST_REDE_PARAR
+__attribute__((weak)) RedePararEstado rede_parar_trocar(int (*parar)(void *), void *usuario) {
+  (void)parar; (void)usuario; return (RedePararEstado){ .instalado = 1 };
+}
+#endif
+#ifndef NV_TEST_PLEX_AVISO
+void plex_vaga_liberar(void) { }
+int plex_tomar_reduzido(void) { return 0; }
+void plex_publicar_aviso_metadata(void) { }
+#endif
 int ajustes_jellyfin_ligado(void) { return 0; }
 int servidores_conectado(void) { return 0; }
 int servidores_continuar(CatItem *out, int max) { (void)out; (void)max; return 0; }
@@ -15,6 +26,11 @@ int servidores_fileiras_copiar(CatItem *i, int mi, CatFileira *f, int mf, int *n
 int servidores_pagina(const char *c, int ini, int lim, CatItem *out, int max, int *total, int *raw) {
   (void)c; (void)ini; (void)lim; (void)out; (void)max; if (total) *total = 0; if (raw) *raw = 0; return -1; }
 int servidores_ficha(CatItem *item, CatEp *eps, int maxEps) { (void)item; (void)eps; (void)maxEps; return -1; }
+#ifndef NV_TEST_SERVIDORES_FICHA
+int servidores_ficha_preparar(CatItem *item, CatEp **eps, int maxEps, CatEpPreparar f, void *ctx, int (*cancelado)(void *), void *cancelCtx, int *vaga) {
+  (void)item; (void)eps; (void)maxEps; (void)f; (void)ctx; (void)cancelado; (void)cancelCtx; if (vaga) *vaga = 0; return -1;
+}
+#endif
 unsigned servidores_fileiras_versao(void) { return 0; }
 int servidores_passo(void) { return 0; }
 

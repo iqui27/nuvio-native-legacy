@@ -1048,6 +1048,7 @@
   T("Alfabética · OK: agrupar por addon", "Alfabetis · OK: kelompokkan per addon"),
   T("Algoritmo de ampliação", "Algoritme penskalaan"),
   T("Alguns ajustes não puderam ser copiados.", "Beberapa pengaturan tidak dapat disalin."),
+  T("Alguns detalhes dos episódios do Plex não puderam ser carregados.", ""),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Rolar a página ou sair dela volta para a arte.", "Beberapa detik setelah membuka judul, trailer diputar menggantikan gambar latar; suaranya mengikuti Suara trailer. Menggulir halaman atau keluar darinya mengembalikan gambar."),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Se o trailer do cartaz já estava tocando, ele continua na página. Rolar a página ou sair dela volta para a arte.", "Beberapa detik setelah membuka judul, trailer diputar menggantikan gambar latar; suaranya mengikuti Suara trailer. Jika trailer kartu sudah diputar, trailer berlanjut di halaman. Menggulir halaman atau keluar darinya mengembalikan gambar."),
   T("Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.", "Beberapa detik setelah kamu membuka judul, trailernya diputar tanpa suara menggantikan backdrop. Jika halaman digulir atau ditinggalkan, gambar kembali muncul."),

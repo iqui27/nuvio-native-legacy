@@ -37,6 +37,7 @@
 #include "idbase.h"
 #include "cwfrente.h"
 #include "servidores.h"
+#include "plex.h"
 #include "descdebounce.h"
 #include "nlanc.h"
 #include <stdint.h>   /* uintptr_t: a geracao viaja no argumento do fio */
@@ -7632,7 +7633,10 @@ static int metaListaDeArquivos(int distintos, int brutos) {
 
 // Em par com CAT_EP_MAX (catalogo.c): um titulo que caiba no store nao pode
 // truncar no parse, e um que nao caiba trunca aqui em vez de zerar os outros.
-#define VIDEOS_MAX 2400
+#define VIDEOS_MAX CAT_EP_MAX
+// ponytail: one large episode workspace at a time, including personal servers;
+// concurrent requests wait until the current server request or parse finishes.
+static pthread_mutex_t epMemoriaTrava = PTHREAD_MUTEX_INITIALIZER;
 
 // Lista de arquivos so pode ampliar a numeracao do catalogo, nunca refaze-la
 // (One Piece anime vs live-action). Compara o corpo inteiro, antes do corte.
@@ -7673,9 +7677,13 @@ static int metaArquivosCompativeis(const char *arquivos, const char *catalogo) {
 // Inclui especiais (temporada 0) sem renumerar o par nem o id do video.
 static int parsearEpisodios(const char *corpo, CatEp *eps, int max) {
   int n = 0;
-  unsigned char parAmbiguo[VIDEOS_MAX] = {0};
+  unsigned char *parAmbiguo;
   const char *p = metaContarEpisodios(corpo, NULL) ? js_array(corpo, NULL, "videos") : NULL;
   EpSet set = { 0 };
+  if (!eps || max <= 0) return 0;
+  parAmbiguo = malloc((size_t)max * 2);
+  if (!parAmbiguo) return 0;
+  memset(parAmbiguo, 0, (size_t)max * 2);
   while (p) {
     const char *f = js_fim(p);
     int t = videoTemporada(p, f);
@@ -7734,7 +7742,7 @@ static int parsearEpisodios(const char *corpo, CatEp *eps, int max) {
   free(set.v);
   // The same exact ID assigned to different source pairs is ambiguous. Keep
   // both playable cards, but never translate or scrobble either by that ID.
-  { unsigned char ambiguo[VIDEOS_MAX] = {0};
+  { unsigned char *ambiguo = parAmbiguo + max;
     for (int i = 0; i < n; i++) if (eps[i].tvdbEp > 0)
       for (int j = i + 1; j < n; j++)
         if (eps[j].tvdbEp == eps[i].tvdbEp &&
@@ -7768,6 +7776,7 @@ static int parsearEpisodios(const char *corpo, CatEp *eps, int max) {
     }
     n = w;
   }
+  free(parAmbiguo);
   return n;
 }
 
@@ -7798,6 +7807,65 @@ void desc_mesclar_episodios(CatEp *base, int nb, const CatEp *outro, int no, int
   }
 }
 
+// Compact index keeps the same first-duplicate and stable ordering as the
+// full parser without allocating a second array of large CatEp records.
+struct EpSobre { const char *p, *f; int t, e, ordem; };
+static int epSobreComparar(const void *a, const void *b) {
+  const struct EpSobre *x = a, *y = b;
+  if (x->t != y->t) return x->t < y->t ? -1 : 1;
+  if (x->e != y->e) return x->e < y->e ? -1 : 1;
+  return x->ordem < y->ordem ? -1 : x->ordem > y->ordem;
+}
+static void mesclarEpisodiosJson(CatEp *base, int nb, const char *corpo, int modo) {
+  int cap = metaContarEpisodios(corpo, NULL), n = 0, i = 0;
+  EpSet set = {0};
+  struct EpSobre *v;
+  const char *p;
+  if (cap > VIDEOS_MAX) cap = VIDEOS_MAX;
+  if (cap <= 0 || !(v = malloc((size_t)cap * sizeof *v))) return;
+  for (p = js_array(corpo, NULL, "videos"); p; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    int t = videoTemporada(p, f);
+    int e = t >= 0 ? (int)js_num(p, f, "episode", 0) : 0;
+    if (t >= 0 && (e <= 0 || epSetNovo(&set, t, e)) && n < cap) {
+      v[n] = (struct EpSobre){p, f, t, e, n}; n++;
+    }
+  }
+  free(set.v);
+  qsort(v, (size_t)n, sizeof *v, epSobreComparar);
+  for (int j = 0; j < n && i < nb; j++) {
+    const struct EpSobre *s = &v[j];
+    if (j && s->e > 0 && s->t == v[j-1].t && s->e == v[j-1].e) continue;
+    while (i < nb && (base[i].temporada < s->t ||
+           (base[i].temporada == s->t && base[i].episodio < s->e))) i++;
+    if (i < nb && base[i].temporada == s->t && base[i].episodio == s->e) {
+      CatEp e = {0};
+      char d[24] = "";
+      double rating = js_num(s->p, s->f, "imdbRating", 0.0);
+      e.temporada = s->t; e.episodio = s->e;
+      if (rating <= 0) rating = js_num(s->p, s->f, "rating", 0.0);
+      if (rating > 0 && rating <= 10) e.notaImdb = (int)(rating * 10.0 + 0.5);
+      js_texto(s->p, s->f, "name", e.nome, sizeof e.nome);
+      if (!e.nome[0]) js_texto(s->p, s->f, "title", e.nome, sizeof e.nome);
+      js_texto(s->p, s->f, "overview", e.sinopse, sizeof e.sinopse);
+      if (!e.sinopse[0]) js_texto(s->p, s->f, "description", e.sinopse, sizeof e.sinopse);
+      js_texto(s->p, s->f, "thumbnail", e.thumb, sizeof e.thumb);
+      js_texto(s->p, s->f, "runtime", e.duracao, sizeof e.duracao);
+      metaprov_duracao(e.duracao, sizeof e.duracao);
+      if (!e.duracao[0]) {
+        int runtime = (int)js_num(s->p, s->f, "runtime", 0);
+        if (runtime > 0 && runtime < 1440) snprintf(e.duracao, sizeof e.duracao, "%d min", runtime);
+      }
+      js_texto(s->p, s->f, "released", e.dataIso, sizeof e.dataIso);
+      js_texto(s->p, s->f, "released", d, sizeof d);
+      desc_data_extenso(d, e.data, sizeof e.data);
+      desc_mesclar_episodios(&base[i], 1, &e, 1, modo);
+      i++;
+    }
+  }
+  free(v);
+}
+
 // `sobre` (opcional) e o /meta da OUTRA fonte, mesclado por `modo`
 // (desc_mesclar_episodios) antes de publicar.
 // O TITULO DO FIO DE EPISODIOS (#190). buscarEps guarda o INDICE e depois
@@ -7824,6 +7892,18 @@ static int epPedidoSaiu(void) {
   saiu = p && p->geracao != epGeracao;
   pthread_mutex_unlock(&epPedidoTrava);
   return saiu;
+}
+static int tmdbRedeCancelada(void *ctx) {
+  RedePararEstado *anterior = ctx;
+  return epPedidoSaiu() || (anterior->parar && anterior->parar(anterior->usuario));
+}
+static char *tmdbBaixarCancelavel(const char *url, int segundos) {
+  RedePararEstado anterior;
+  anterior = rede_parar_trocar(tmdbRedeCancelada, &anterior);
+  if (!anterior.instalado) return NULL;
+  char *corpo = rede_baixar(url, segundos);
+  rede_parar_trocar(anterior.parar, anterior.usuario);
+  return corpo;
 }
 static void epConcluir(void) {
   pthread_mutex_lock(&epPedidoTrava);
@@ -7859,6 +7939,212 @@ static int epPublicacaoIniciar(int alvoItem) {
   return epAlvoDe(alvoItem, p ? p->id : epAlvoId);
 }
 
+// A provider calls this only after its network response has arrived. The
+// workspace stays locked until discovery has published or discarded the list.
+static void tmdbDescartarObsoleto(void);
+static int epServidorCancelado(void *ctx) { (void)ctx; return epPedidoSaiu(); }
+static CatEp *epServidorPreparar(void *ctx, int capacidade) {
+  int *preso = ctx;
+  CatEp *eps;
+  if (capacidade < 1 || capacidade > VIDEOS_MAX) return NULL;
+  tmdbDescartarObsoleto();
+  pthread_mutex_lock(&epMemoriaTrava);
+  if (epPedidoSaiu()) { pthread_mutex_unlock(&epMemoriaTrava); return NULL; }
+  eps = malloc((size_t)capacidade * sizeof *eps);
+  if (!eps) { pthread_mutex_unlock(&epMemoriaTrava); return NULL; }
+  *preso = 1;
+  return eps;
+}
+
+// ponytail: one TMDB staging job; later jobs wait, and canceled jobs exit on entry.
+static pthread_mutex_t tmdbEtapaTrava = PTHREAD_MUTEX_INITIALIZER;
+// One patch per published episode, independent of response size and season count.
+typedef struct {
+  int presente, nota, temNota, runtime;
+  unsigned nome, sinopse; /* offsets + 1 in textos; zero means absent */
+} TmdbPatch;
+typedef struct {
+  CatEpChave *chaves; TmdbPatch *patches; int n; size_t passo;
+  char *textos; size_t nTextos, capTextos, textosVivos; int falhou;
+  int *temporadas; int descartada, respostaPendente;
+} TmdbEtapa;
+/* Protects the active stage while its worker is away in network I/O. */
+static pthread_mutex_t tmdbDadosTrava = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t tmdbDadosCond = PTHREAD_COND_INITIALIZER;
+static TmdbEtapa *tmdbAtiva;
+static unsigned tmdbAtivaGeracao;
+static void tmdbEtapaLimpar(TmdbEtapa *e) {
+  free(e->textos); e->textos = NULL;
+  free(e->patches); e->patches = NULL;
+  free(e->chaves); e->chaves = NULL;
+  free(e->temporadas); e->temporadas = NULL;
+}
+#ifndef NV_TMDB_AGUARDANDO
+#define NV_TMDB_AGUARDANDO() ((void)0)
+#endif
+/* A stale network body can grow after its stage is freed. Wait for the body
+ * to be freed too; the condition wait releases the mutex while I/O runs. */
+static void tmdbDescartarObsoleto(void) {
+  pthread_mutex_lock(&tmdbDadosTrava);
+  while (tmdbAtiva) {
+    int atual;
+    pthread_mutex_lock(&epPedidoTrava);
+    atual = tmdbAtivaGeracao == epGeracao;
+    pthread_mutex_unlock(&epPedidoTrava);
+    if (!atual) {
+      tmdbAtiva->descartada = 1;
+      tmdbEtapaLimpar(tmdbAtiva);
+      if (!tmdbAtiva->respostaPendente) break;
+    }
+    NV_TMDB_AGUARDANDO();
+    pthread_cond_wait(&tmdbDadosCond, &tmdbDadosTrava);
+  }
+  pthread_mutex_unlock(&tmdbDadosTrava);
+}
+#define TMDB_TEXTOS_MAX (512u * 1024u)
+static const char *tmdbTexto(const TmdbEtapa *etapa, unsigned offset) {
+  return offset ? etapa->textos + offset - 1 : "";
+}
+static TmdbPatch *tmdbPatch(const TmdbEtapa *etapa, int i) {
+  return (TmdbPatch *)((char *)etapa->patches + (size_t)i *
+                       (etapa->passo ? etapa->passo : sizeof(TmdbPatch)));
+}
+/* Compact only when obsolete duplicate strings would otherwise fill the arena. */
+static int tmdbCompactar(TmdbEtapa *etapa, unsigned *substituir) {
+  char *nova = malloc(TMDB_TEXTOS_MAX);
+  size_t usados = 0;
+  if (!nova) return 0;
+  for (int i = 0; i < etapa->n; i++) {
+    TmdbPatch *p = tmdbPatch(etapa, i);
+    unsigned *campos[] = { &p->nome, &p->sinopse };
+    for (int j = 0; j < 2; j++) if (*campos[j]) {
+      if (campos[j] == substituir) { *campos[j] = 0; continue; }
+      const char *texto = tmdbTexto(etapa, *campos[j]);
+      size_t n = strlen(texto) + 1;
+      memcpy(nova + usados, texto, n);
+      *campos[j] = (unsigned)usados + 1; usados += n;
+    }
+  }
+  free(etapa->textos);
+  etapa->textos = nova; etapa->capTextos = TMDB_TEXTOS_MAX;
+  etapa->nTextos = etapa->textosVivos = usados;
+  return 1;
+}
+static void tmdbGuardarTexto(TmdbEtapa *etapa, unsigned *offset, const char *texto) {
+  size_t n = strlen(texto) + 1;
+  size_t antigo = *offset ? strlen(tmdbTexto(etapa, *offset)) + 1 : 0;
+  if (antigo && !strcmp(tmdbTexto(etapa, *offset), texto)) return;
+  if (antigo && n <= antigo) {
+    memcpy(etapa->textos + *offset - 1, texto, n);
+    etapa->textosVivos -= antigo - n;
+    return;
+  }
+  if (etapa->nTextos + n > TMDB_TEXTOS_MAX) {
+    if (etapa->textosVivos - antigo + n > TMDB_TEXTOS_MAX ||
+        !tmdbCompactar(etapa, offset)) {
+      etapa->textosVivos -= antigo; *offset = 0; etapa->falhou = 1; return;
+    }
+    antigo = 0;
+  }
+  size_t precisa = etapa->nTextos + n;
+  if (precisa > etapa->capTextos) {
+    size_t cap = etapa->capTextos ? etapa->capTextos : 1024;
+    while (cap < precisa) cap *= 2;
+    if (cap > TMDB_TEXTOS_MAX) cap = TMDB_TEXTOS_MAX;
+    char *nova = realloc(etapa->textos, cap);
+    if (!nova) { etapa->textosVivos -= antigo; *offset = 0; etapa->falhou = 1; return; }
+    etapa->textos = nova; etapa->capTextos = cap;
+  }
+  memcpy(etapa->textos + etapa->nTextos, texto, n);
+  *offset = (unsigned)etapa->nTextos + 1;
+  etapa->nTextos = precisa; etapa->textosVivos += n - antigo;
+}
+static void tmdbEtapaProcessarUm(TmdbEtapa *etapa, const char *p, const char *f, int temporada, int textos) {
+  int num = (int)js_num(p, f, "episode_number", -1), i;
+  for (i = 0; i < etapa->n; i++)
+    if (num >= 0 && etapa->chaves[i].temporada == temporada && etapa->chaves[i].episodio == num) break;
+  if (i < etapa->n) {
+    TmdbPatch *patch = tmdbPatch(etapa, i);
+    int vazio = (textos & DESC_EPT_SO_VAZIO) != 0;
+    int runtime = (int)js_num(p, f, "runtime", 0);
+    double nota = js_num(p, f, "vote_average", 0.0);
+    char nome[sizeof(((CatEp *)0)->nome)], sinopse[sizeof(((CatEp *)0)->sinopse)];
+    patch->presente = 1;
+    if (!patch->runtime && runtime > 0 && runtime < 1440) patch->runtime = runtime;
+    if (nota > 0) { patch->temNota = 1; patch->nota = (int)(nota * 10.0 + 0.5); }
+    if ((textos & DESC_EPT_SINOPSE) && (!vazio || (!etapa->chaves[i].temSinopse && !patch->sinopse)) &&
+        js_texto(p, f, "overview", sinopse, sizeof sinopse) && sinopse[0])
+      tmdbGuardarTexto(etapa, &patch->sinopse, sinopse);
+    if ((textos & DESC_EPT_NOME) && (!vazio || (!etapa->chaves[i].temNome && !patch->nome)) &&
+        js_texto(p, f, "name", nome, sizeof nome) && nome[0] &&
+        !desc_nome_episodio_generico(nome, num))
+      tmdbGuardarTexto(etapa, &patch->nome, nome);
+  }
+}
+static int tmdbEtapaProcessar(TmdbEtapa *etapa, const char *json, int temporada, int textos) {
+  const char *p = js_array(json, NULL, "episodes");
+  while (p) {
+    const char *f = js_fim(p);
+    pthread_mutex_lock(&tmdbDadosTrava);
+    if (etapa->descartada || epPedidoSaiu()) { pthread_mutex_unlock(&tmdbDadosTrava); return 0; }
+    tmdbEtapaProcessarUm(etapa, p, f, temporada, textos);
+    pthread_mutex_unlock(&tmdbDadosTrava);
+    p = js_prox(f);
+  }
+  return 1;
+}
+#ifndef NV_TMDB_APOS_COPIA
+#define NV_TMDB_APOS_COPIA() ((void)0)
+#endif
+#ifndef NV_TMDB_ALOCAR
+#define NV_TMDB_ALOCAR(tam) malloc(tam)
+#endif
+static int tmdbEtapaPublicar(int item, int neps, CatEpToken token, long tmdb,
+                             int textos, const TmdbEtapa *etapa) {
+  CatEp *tmp;
+  int feitos = 0, marcados = 0, publicou = 0;
+  pthread_mutex_lock(&epMemoriaTrava);
+  item = epPublicacaoIniciar(item);
+  pthread_mutex_unlock(&epPedidoTrava);
+  if (item < 0) goto fim;
+  tmp = NV_TMDB_ALOCAR((size_t)neps * sizeof *tmp);
+  if (!tmp) goto fim;
+  if (cat_episodios_copiar_token(item, tmp, neps, token)) {
+    NV_TMDB_APOS_COPIA();
+    for (int i = 0; i < neps; i++) {
+      const TmdbPatch *p = tmdbPatch(etapa, i);
+      CatEp *e = &tmp[i];
+      if (p->presente) {
+        int anterior = e->tmdbE;
+        e->tmdbT = e->temporada; e->tmdbE = e->episodio;
+        if (e->tmdbE > 0 && (e->tmdbSerie != tmdb || anterior != e->tmdbE)) marcados++;
+        if (!e->duracao[0] && p->runtime) { snprintf(e->duracao, sizeof e->duracao, "%d min", p->runtime); feitos++; }
+        if (p->temNota) { e->nota = p->nota; feitos++; }
+        if ((textos & DESC_EPT_NOME) && p->nome && (!(textos & DESC_EPT_SO_VAZIO) || !e->nome[0]) && strcmp(e->nome, tmdbTexto(etapa, p->nome))) {
+          snprintf(e->nome, sizeof e->nome, "%s", tmdbTexto(etapa, p->nome)); feitos++;
+        }
+        if ((textos & DESC_EPT_SINOPSE) && p->sinopse && (!(textos & DESC_EPT_SO_VAZIO) || !e->sinopse[0]) && strcmp(e->sinopse, tmdbTexto(etapa, p->sinopse))) {
+          snprintf(e->sinopse, sizeof e->sinopse, "%s", tmdbTexto(etapa, p->sinopse)); feitos++;
+        }
+      }
+      if (e->tmdbE > 0) {
+        if (e->tmdbSerie != tmdb) marcados++;
+        e->tmdbSerie = tmdb;
+      }
+    }
+    if (feitos || marcados) {
+      int atual = epPublicacaoIniciar(item);
+      if (atual == item)
+        DESC_PUBLICAR(publicou = cat_definir_episodios_token(item, tmp, neps, token));
+      pthread_mutex_unlock(&epPedidoTrava);
+    }
+  }
+  free(tmp);
+fim:
+  pthread_mutex_unlock(&epMemoriaTrava);
+  return publicou;
+}
+
 // AS ABAS DE TEMPORADA SAO AS DA LISTA QUE FOI PUBLICADA (#372). Eram lidas do
 // corpo da ficha (o do Nuvio) mesmo quando a lista que entrou era a de um
 // addon: Apothecary Diaries publicava 72 episodios do AIOMetadata nas
@@ -7883,23 +8169,85 @@ static void temporadasDosEps(const CatEp *eps, int n, TempsPub *tp) {
   }
 }
 
+// Preserve the visible order using compact references into the old catalog and
+// the new array. Materialize the references in place; one saved episode breaks
+// cycles when two or more source slots must exchange places.
+static int mesclarEstavel(CatEp *eps, int n, int cap, int item, int antigos) {
+  struct EpRef { int origem, refs, t, e; unsigned char pronto; } *v;
+  int k = 0, restantes, salvo = -1, refsSalvas = 0;
+  CatEp reserva;
+  if (cap < (antigos + n < VIDEOS_MAX ? antigos + n : VIDEOS_MAX)) return 0;
+  v = calloc((size_t)cap, sizeof *v);
+  if (!v) return 0;
+  for (int i = 0; i < antigos && k < VIDEOS_MAX; i++) {
+    const CatEp *e = cat_episodio(item, i);
+    int j;
+    if (!e) continue;
+    for (j = 0; j < n; j++)
+      if (e->temporada == eps[j].temporada && e->episodio == eps[j].episodio) break;
+    v[k].origem = j < n ? j : -i - 1;
+    v[k].t = e->temporada; v[k].e = e->episodio; k++;
+  }
+  // ponytail: pair lookup is O(n²), bounded to 5000; index if it becomes slow.
+  for (int j = 0; j < n && k < VIDEOS_MAX; j++) {
+    int i;
+    for (i = 0; i < k; i++)
+      if (v[i].t == eps[j].temporada && v[i].e == eps[j].episodio) break;
+    if (i == k) {
+      v[k].origem = j; v[k].t = eps[j].temporada; v[k].e = eps[j].episodio; k++;
+    }
+  }
+  for (int i = 0; i < k; i++) if (v[i].origem >= 0) v[v[i].origem].refs++;
+  restantes = k;
+  while (restantes) {
+    int progresso = 0;
+    for (int i = 0; i < k; i++) if (!v[i].pronto && (v[i].refs == 0 || v[i].origem == i)) {
+      int origem = v[i].origem;
+      int eraSalvo = origem >= 0 && origem == salvo;
+      if (origem < 0) {
+        const CatEp *e = cat_episodio(item, -origem - 1);
+        if (!e) { free(v); return 0; }
+        eps[i] = *e;
+      } else if (origem == salvo) {
+        eps[i] = reserva;
+        if (!--refsSalvas) salvo = -1;
+      } else if (origem != i) eps[i] = eps[origem];
+      if (origem >= 0 && !eraSalvo) v[origem].refs--;
+      v[i].pronto = 1; restantes--; progresso = 1;
+    }
+    if (!progresso) {
+      int i;
+      if (salvo >= 0) { free(v); return 0; }
+      for (i = 0; i < k && (v[i].pronto || !v[i].refs); i++) {}
+      if (i == k || i >= n) { free(v); return 0; }
+      reserva = eps[i]; salvo = i; refsSalvas = v[i].refs; v[i].refs = 0;
+    }
+  }
+  free(v);
+  return k;
+}
+
 static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
                                        const char *titulo, const char *sobre,
                                        int modo, TempsPub *tp, int cedo,
                                        int substituir, int pendente) {
-  CatEp *eps = malloc(sizeof(CatEp) * VIDEOS_MAX);
-  int n = 0;
-  if (!eps) return 0;
-  n = parsearEpisodios(corpo, eps, VIDEOS_MAX);
-  if (tp && n) temporadasDosEps(eps, n, tp);
-  if (sobre && n) {
-    CatEp *o = malloc(sizeof(CatEp) * VIDEOS_MAX);
-    if (o) {
-      int no = parsearEpisodios(sobre, o, VIDEOS_MAX);
-      desc_mesclar_episodios(eps, n, o, no, modo);
-      free(o);
-    }
+  CatEp *eps;
+  int n = 0, cap;
+  tmdbDescartarObsoleto();
+  pthread_mutex_lock(&epMemoriaTrava);
+  if (epPedidoSaiu()) { pthread_mutex_unlock(&epMemoriaTrava); return 0; }
+  cap = metaContarEpisodios(corpo, NULL);
+  if (cap > VIDEOS_MAX) cap = VIDEOS_MAX;
+  if (cap <= 0) { pthread_mutex_unlock(&epMemoriaTrava); return 0; }
+  if (epPedidoAtual() && !substituir) {
+    int antigos = cat_n_episodios(alvoItem);
+    cap = antigos < VIDEOS_MAX - cap ? cap + antigos : VIDEOS_MAX;
   }
+  eps = malloc(sizeof(CatEp) * (size_t)cap);
+  if (!eps) { pthread_mutex_unlock(&epMemoriaTrava); return 0; }
+  n = parsearEpisodios(corpo, eps, cap);
+  if (tp && n) temporadasDosEps(eps, n, tp);
+  if (sobre && n) mesclarEpisodiosJson(eps, n, sobre, modo);
   alvoItem = epPublicacaoIniciar(alvoItem);
   if (n && alvoItem >= 0 && (!cedo || !cat_n_episodios(alvoItem))) {
     int antigos = cat_n_episodios(alvoItem);
@@ -7907,8 +8255,7 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
     int parcial = !cedo && cat_copiar_item(alvoItem, &atual) && atual.epsParciais;
     int trocarTopologia = !cedo && (parcial || substituir);
     int provisorio = cedo || pendente;
-    CatEp *estavel = antigos > 0 && epPedidoAtual() && !trocarTopologia
-                   ? malloc(sizeof(CatEp) * VIDEOS_MAX) : NULL;
+    int estavel = antigos > 0 && epPedidoAtual() && !trocarTopologia;
     // The flag goes up before the list: CW and the player must never see
     // provisional video IDs as final, not even between two writes.
     if (provisorio && cat_copiar_item(alvoItem, &atual) && !atual.epsParciais) {
@@ -7930,30 +8277,9 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
         }
         descCatAtualizar(cat_atualizar_item, alvoItem, &atual);
       }
-    } else if (estavel) {
-      int k = 0;
-      // Mantem os pares e a ordem ja vistos; novos pares entram no fim.
-      // ponytail: busca O(n²), limitada a 2400 pares; indexar se o teto crescer.
-      for (int i = 0; i < antigos && k < VIDEOS_MAX; i++) {
-        const CatEp *e = cat_episodio(alvoItem, i);
-        if (!e) continue;
-        estavel[k] = *e;
-        for (int j = 0; j < n; j++)
-          if (e->temporada == eps[j].temporada && e->episodio == eps[j].episodio) {
-            estavel[k] = eps[j]; break;
-          }
-        k++;
-      }
-      for (int j = 0; j < n && k < VIDEOS_MAX; j++) {
-        int i;
-        for (i = 0; i < k; i++)
-          if (estavel[i].temporada == eps[j].temporada &&
-              estavel[i].episodio == eps[j].episodio) break;
-        if (i == k) estavel[k++] = eps[j];
-      }
-      descCatEpisodios(alvoItem, estavel, k);
-      if (tp) temporadasDosEps(estavel, k, tp);
-      free(estavel);
+    } else if (estavel && (estavel = mesclarEstavel(eps, n, cap, alvoItem, antigos)) > 0) {
+      descCatEpisodios(alvoItem, eps, estavel);
+      if (tp) temporadasDosEps(eps, estavel, tp);
     } else if (!antigos || !epPedidoAtual()) descCatEpisodios(alvoItem, eps, n);
     else if (tp) {
       // Sem memoria para mesclar, conserva a lista visivel e suas abas.
@@ -7975,6 +8301,7 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
   }
   pthread_mutex_unlock(&epPedidoTrava);
   free(eps);
+  pthread_mutex_unlock(&epMemoriaTrava);
   marco("episodios na tela");
   printf("[desc] %s: %d episodios publicados antes dos extras\n", titulo, n);
   fflush(stdout);
@@ -8757,16 +9084,26 @@ static void *buscarEps(void *u) {
   // PERSONAL SERVER ITEM: the server is the only source of its page. No
   // Cinemeta, TMDB or addon /meta gets an opaque server id.
   if (jfid_e(orig->imdb)) {
-    CatEp *eps = malloc(sizeof(CatEp) * VIDEOS_MAX);
+    int preso = 0, vaga = 0;
+    CatEp *eps = NULL;
     CatItem ed = base;
-    int ne = eps ? servidores_ficha(&ed, eps, VIDEOS_MAX) : -1;
+    (void)plex_tomar_reduzido();
+    int ne = servidores_ficha_preparar(&ed, &eps, VIDEOS_MAX, epServidorPreparar, &preso, epServidorCancelado, NULL, &vaga);
+    int reduzido = plex_tomar_reduzido();
     alvoItem = epPublicacaoIniciar(alvoItem);
     if (ne >= 0 && alvoItem >= 0) {
       descCatAtualizar(cat_atualizar_item, alvoItem, &ed);
-      if (ne > 0) descCatEpisodios(alvoItem, eps, ne);
+      if (ne > 0) {
+        DESC_PUBLICAR({
+          if (cat_definir_episodios_publicar(alvoItem, eps, ne) && reduzido)
+            plex_publicar_aviso_metadata();
+        });
+      }
     }
     pthread_mutex_unlock(&epPedidoTrava);
     free(eps);
+    if (preso) pthread_mutex_unlock(&epMemoriaTrava);
+    if (vaga) plex_vaga_liberar();
     epConcluir();
     return NULL;
   }
@@ -9039,7 +9376,7 @@ static void *buscarEps(void *u) {
         snprintf(u2, sizeof u2,
                  "%s/find/%s?api_key=%s&external_source=imdb_id",
                  TMDB, serie, chave2);
-        c3 = rede_baixar(u2, 20);
+        c3 = tmdbBaixarCancelavel(u2, 20);
         if (c3) {
           const char *p3 = js_array(c3, NULL, "tv_results");
           if (p3) tmdbId = (long)js_num(p3, js_fim(p3), "id", 0.0);
@@ -9047,56 +9384,64 @@ static void *buscarEps(void *u) {
         }
       }
       if (chave2[0] && tmdbId > 0 && alvoItem >= 0 && (alvoItem = epAlvo(alvoItem)) >= 0) {
-        int neps = cat_n_episodios(alvoItem);
-        if (neps > 0) {
-          CatEp *tmp = malloc(sizeof(CatEp) * (size_t)neps);
-          if (tmp) {
-            int preenchidas = 0, i2;
-            // Sinopse sempre (#150). O NOME so num idioma que nao e o ingles
-            // (#176): em ingles o do Cinemeta ja e o do TMDB. Com o texto do
-            // addon na lista, o TMDB so preenche o que ficou vazio.
-            int textosEp = ajustes_tmdb_basico() ? DESC_EPT_SINOPSE | (idiomaNaoIngles() ? DESC_EPT_NOME : 0) |
-                           (epsDoAddon ? DESC_EPT_SO_VAZIO : 0) : 0;
-            for (i2 = 0; i2 < neps; i2++) {
-              const CatEp *e0 = cat_episodio(alvoItem, i2);
-              if (e0) tmp[i2] = *e0; else memset(&tmp[i2], 0, sizeof tmp[i2]);
+        int neps = 0, nt, ns = 0, cap;
+        CatEpToken token = 0;
+        pthread_mutex_lock(&tmdbEtapaTrava);
+        TmdbEtapa etapa = {0};
+        int textosEp = ajustes_tmdb_basico() ? DESC_EPT_SINOPSE | (idiomaNaoIngles() ? DESC_EPT_NOME : 0) |
+                       (epsDoAddon ? DESC_EPT_SO_VAZIO : 0) : 0;
+        pthread_mutex_lock(&tmdbDadosTrava);
+        cap = epPedidoSaiu() ? 0 : cat_n_episodios(alvoItem);
+        EpPedido *pedidoEtapa = epPedidoAtual();
+        pthread_mutex_lock(&epPedidoTrava);
+        tmdbAtivaGeracao = pedidoEtapa ? pedidoEtapa->geracao : epGeracao;
+        pthread_mutex_unlock(&epPedidoTrava);
+        tmdbAtiva = &etapa;
+        etapa.temporadas = cap > 0 ? malloc((size_t)cap * sizeof *etapa.temporadas) : NULL;
+        if (etapa.temporadas &&
+            (nt = cat_temporadas_snapshot_token(alvoItem, etapa.temporadas, cap, &neps, &token)) > 0) {
+          int completa = token != 0;
+          etapa.n = neps;
+          etapa.chaves = malloc((size_t)neps * sizeof *etapa.chaves);
+          /* Sem textos, so os quatro inteiros de cada patch sao acessados. */
+          etapa.passo = (textosEp & (DESC_EPT_NOME | DESC_EPT_SINOPSE))
+                      ? sizeof(TmdbPatch) : offsetof(TmdbPatch, nome);
+          etapa.patches = calloc((size_t)neps, etapa.passo);
+          if (!etapa.chaves || !etapa.patches ||
+              !cat_episodios_chaves_token(alvoItem, etapa.chaves, neps, token)) completa = 0;
+          for (int i2 = 0; completa && i2 < nt; i2++) {
+            char u3[400];
+            char *c4;
+            if (etapa.descartada || epPedidoSaiu()) { completa = 0; break; }
+            int temporada = etapa.temporadas[i2];
+            snprintf(u3, sizeof u3, "%s/tv/%ld/season/%d?api_key=%s&language=%s",
+                     TMDB, tmdbId, temporada, chave2, desc_tmdb_idioma());
+            etapa.respostaPendente = 1;
+            pthread_mutex_unlock(&tmdbDadosTrava);
+            c4 = tmdbBaixarCancelavel(u3, 15);
+            pthread_mutex_lock(&tmdbDadosTrava);
+            if (etapa.descartada || epPedidoSaiu()) { free(c4); completa = 0; }
+            else if (c4) {
+              pthread_mutex_unlock(&tmdbDadosTrava);
+              completa = tmdbEtapaProcessar(&etapa, c4, temporada, textosEp);
+              free(c4);
+              pthread_mutex_lock(&tmdbDadosTrava);
+              if (completa) ns++;
             }
-            for (i2 = 0; i2 < neps; i2++) {
-              int s = tmp[i2].temporada, j2, jaFoi = 0;
-              for (j2 = 0; j2 < i2; j2++)
-                if (tmp[j2].temporada == s) { jaFoi = 1; break; }
-              if (jaFoi) continue;
-              { char u3[400];
-                char *c4;
-                snprintf(u3, sizeof u3,
-                         "%s/tv/%ld/season/%d?api_key=%s&language=%s",
-                         TMDB, tmdbId, s, chave2, desc_tmdb_idioma());
-                c4 = rede_baixar(u3, 15);
-                if (c4) {
-                  preenchidas += desc_tmdb_notas_temporada_ex(c4, tmp, neps, s, textosEp);
-                  free(c4);
-                } }
-            }
-            { int marcados = 0;
-              for (i2 = 0; i2 < neps; i2++)
-                if (tmp[i2].tmdbE > 0) {
-                  const CatEp *e0 = cat_episodio(alvoItem, i2);
-                  tmp[i2].tmdbSerie = tmdbId;
-                  if (e0 && (e0->tmdbSerie != tmdbId || e0->tmdbE != tmp[i2].tmdbE)) marcados++;
-                }
-              if (marcados > 0 && preenchidas == 0) preenchidas = -marcados; }
-            alvoItem = epPublicacaoIniciar(alvoItem);
-            if (preenchidas != 0 && alvoItem >= 0 &&
-                cat_n_episodios(alvoItem) == neps) {
-              descCatEpisodios(alvoItem, tmp, neps);
-              printf("[desc] %s: nota/sinopse TMDB em %d episodios\n",
-                     edit.titulo, preenchidas);
-              fflush(stdout);
-            }
-            pthread_mutex_unlock(&epPedidoTrava);
-            free(tmp);
+            etapa.respostaPendente = 0;
+            pthread_cond_broadcast(&tmdbDadosCond);
+            if (!completa) break;
           }
+          free(etapa.chaves); etapa.chaves = NULL;
+          free(etapa.temporadas); etapa.temporadas = NULL;
+          if (completa && ns)
+            (void)tmdbEtapaPublicar(alvoItem, neps, token, tmdbId, textosEp, &etapa);
         }
+        tmdbAtiva = NULL;
+        tmdbEtapaLimpar(&etapa);
+        pthread_cond_broadcast(&tmdbDadosCond);
+        pthread_mutex_unlock(&tmdbDadosTrava);
+        pthread_mutex_unlock(&tmdbEtapaTrava);
       }
     }
   }

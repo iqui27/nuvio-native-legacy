@@ -1047,6 +1047,7 @@
   { "Alfabética · OK: agrupar por addon", "Alphabetical · OK: group by add-on" },
   { "Algoritmo de ampliação", "Upscaling algorithm" },
   { "Alguns ajustes não puderam ser copiados.", "Some settings could not be copied." },
+  { "Alguns detalhes dos episódios do Plex não puderam ser carregados.", "Some Plex episode details could not be loaded." },
   { "Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Rolar a página ou sair dela volta para a arte.", "A few seconds after opening a title, the trailer plays in place of the background art; the sound follows Trailer sound. Scrolling the page or leaving it goes back to the art." },
   { "Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Se o trailer do cartaz já estava tocando, ele continua na página. Rolar a página ou sair dela volta para a arte.", "A few seconds after opening a title, the trailer plays in place of the background art; the sound follows Trailer sound. If the card's trailer was already playing, it continues on the page. Scrolling the page or leaving it goes back to the art." },
   { "Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.", "A few seconds after you open a title, its trailer plays muted in place of the backdrop. Scrolling the page or leaving it brings the art back." },

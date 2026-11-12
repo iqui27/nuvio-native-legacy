@@ -35,6 +35,8 @@
 #define CAT_FONTE_SIMKL 2
 #define CAT_FONTE_NUVIO 4
 #define CAT_TEMP_MAX 64
+// One contiguous, stable-address store shared by all titles; #787 needs 4650.
+#define CAT_EP_MAX 5000
 // Elenco guardado por titulo. O Cinemeta traz 3-5 nomes no `cast` do meta e era
 // isso que a tela mostrava (issue #94); quem completa a fileira e o TMDB, que
 // fotosDoElenco acrescenta depois de enriquecer os que ja vieram. A pagina de
@@ -210,6 +212,8 @@ typedef struct {
   char dataIso[32];
   int  tvdbEp; // exact episode identity published by metadata; 0 = unproven
 } CatEp;
+// Called after a server response arrives; the caller owns the returned array.
+typedef CatEp *(*CatEpPreparar)(void *ctx, int capacidade);
 
 // Le <dir>/catalogo.txt. Devolve quantos itens carregou (0 = nenhum, e quem
 // chama deve seguir com o que tiver).
@@ -541,6 +545,19 @@ void cat_definir_tudo(const CatItem *lista, int qtd,
 
 // Substitui os episodios de UM titulo. Chamado quando o detalhe abre.
 void cat_definir_episodios(int indiceItem, const CatEp *lista, int n);
+int cat_definir_episodios_publicar(int indiceItem, const CatEp *lista, int n);
+// Publish only if no episode list has changed since the snapshot.
+int cat_definir_episodios_versao(int indiceItem, const CatEp *lista, int n, unsigned versao);
+int cat_temporadas_snapshot(int item, int *temps, int cap, int *neps, unsigned *versao);
+int cat_episodios_copiar_versao(int item, CatEp *out, int n, unsigned versao);
+typedef struct { int temporada, episodio; unsigned char temNome, temSinopse; } CatEpChave;
+/* Identifica uma faixa ate que seja substituida ou o anel reinicie. */
+typedef unsigned long long CatEpToken;
+int cat_temporadas_snapshot_token(int item, int *temps, int cap, int *neps, CatEpToken *token);
+CatEpToken cat_episodios_token(int item, unsigned versao);
+int cat_episodios_chaves_token(int item, CatEpChave *out, int n, CatEpToken token);
+int cat_episodios_copiar_token(int item, CatEp *out, int n, CatEpToken token);
+int cat_definir_episodios_token(int item, const CatEp *lista, int n, CatEpToken token);
 // So o bit da cena pos-creditos (TMDB 179430/179431), pelo id do titulo.
 void cat_marcar_pos_creditos(const char *imdb, int pos);
 // Cache a resolved cast ID only if title and person still match; no other edits.

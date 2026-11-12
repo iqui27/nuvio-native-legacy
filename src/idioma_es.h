@@ -1047,6 +1047,7 @@
   T("Alfabética · OK: agrupar por addon", "Alfabética · OK: agrupar por addon"),
   T("Algoritmo de ampliação", "Algoritmo de escalado"),
   T("Alguns ajustes não puderam ser copiados.", "No se pudieron copiar algunos ajustes."),
+  T("Alguns detalhes dos episódios do Plex não puderam ser carregados.", ""),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Rolar a página ou sair dela volta para a arte.", "Unos segundos después de abrir un título, el tráiler se reproduce en lugar de la imagen de fondo; el sonido sigue a Sonido del tráiler. Desplazar la página o salir de ella vuelve a la imagen."),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Se o trailer do cartaz já estava tocando, ele continua na página. Rolar a página ou sair dela volta para a arte.", "Unos segundos después de abrir un título, el tráiler se reproduce en lugar de la imagen de fondo; el sonido sigue a Sonido del tráiler. Si el tráiler de la tarjeta ya se estaba reproduciendo, sigue en la página. Desplazar la página o salir de ella vuelve a la imagen."),
   T("Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.", "Unos segundos después de abrir un título, el tráiler se reproduce sin sonido en lugar del fondo. Al desplazar la página o salir de ella vuelve la imagen."),

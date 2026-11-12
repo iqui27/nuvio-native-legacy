@@ -1048,6 +1048,7 @@
   T("Alfabética · OK: agrupar por addon", "字母顺序 · 确定键：按附加组件分组"),
   T("Algoritmo de ampliação", "放大算法"),
   T("Alguns ajustes não puderam ser copiados.", "部分设置无法复制。"),
+  T("Alguns detalhes dos episódios do Plex não puderam ser carregados.", ""),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Rolar a página ou sair dela volta para a arte.", "打开作品几秒后，预告片会取代背景图播放；声音遵循“预告片声音”。滚动页面或离开页面会恢复背景图。"),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Se o trailer do cartaz já estava tocando, ele continua na página. Rolar a página ou sair dela volta para a arte.", "打开作品几秒后，预告片会取代背景图播放；声音遵循“预告片声音”。如果卡片上的预告片已在播放，它会在页面上继续。滚动页面或离开页面会恢复背景图。"),
   T("Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.", "打开作品几秒后，预告片会静音播放并取代背景图。滚动页面或离开页面后会恢复为图片。"),

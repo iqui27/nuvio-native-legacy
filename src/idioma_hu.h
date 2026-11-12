@@ -1048,6 +1048,7 @@
   T("Alfabética · OK: agrupar por addon", "Ábécésorrend · OK: csoportosítás bővítmény szerint"),
   T("Algoritmo de ampliação", "Felskálázási algoritmus"),
   T("Alguns ajustes não puderam ser copiados.", "Néhány beállítást nem sikerült átmásolni."),
+  T("Alguns detalhes dos episódios do Plex não puderam ser carregados.", ""),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Rolar a página ou sair dela volta para a arte.", "Néhány másodperccel egy cím megnyitása után az előzetes a háttérkép helyén indul el; a hang az Előzetes hangja beállítást követi. Az oldal görgetése vagy elhagyása visszahozza a képet."),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Se o trailer do cartaz já estava tocando, ele continua na página. Rolar a página ou sair dela volta para a arte.", "Néhány másodperccel egy cím megnyitása után az előzetes a háttérkép helyén indul el; a hang az Előzetes hangja beállítást követi. Ha a kártya előzetese már ment, folytatódik az oldalon. Az oldal görgetése vagy elhagyása visszahozza a képet."),
   T("Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.", "Néhány másodperccel a cím megnyitása után az előzetese hang nélkül játszik a háttér helyett. Az oldal görgetése vagy elhagyása visszahozza a képet."),

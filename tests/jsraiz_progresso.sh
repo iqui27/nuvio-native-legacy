@@ -13,7 +13,11 @@ if command -v sdl2-config >/dev/null; then
   flags+=($(sdl2-config --cflags) -I"$(sdl2-config --prefix)/include")
 fi
 flags+=(-ffunction-sections -fdata-sections)
-if [ "$(uname -s)" = Darwin ]; then flags+=(-Wl,-dead_strip); else flags+=(-ldl -Wl,--gc-sections); fi
-cc "${flags[@]}" tests/jsraiz_progresso.c src/plex.c src/jellyfin.c src/servidores.c src/srvcache.c src/srvsetup_net.c src/srvidx.c src/rede.c src/redeurl.c src/js.c src/jsw.c \
-  -o "$tmp/teste"
+if [ "$(uname -s)" = Darwin ]; then linkflags=(-Wl,-dead_strip); else linkflags=(-ldl -Wl,--gc-sections); fi
+cc "${flags[@]}" -DNV_TEST_SERVIDOR_PREPARAR -Drede_pedir=teste_rede_pedir -Dtmpfile=teste_tmpfile -c src/plex.c -o "$tmp/plex.o"
+cc "${flags[@]}" -DNV_TEST_SERVIDOR_PREPARAR -Drede_pedir=teste_rede_pedir \
+  -Dmalloc=teste_jf_malloc -Dfree=teste_jf_free -Drede_resposta_limpar=teste_jf_resposta_limpar \
+  -c src/jellyfin.c -o "$tmp/jellyfin.o"
+cc "${flags[@]}" tests/jsraiz_progresso.c "$tmp/plex.o" "$tmp/jellyfin.o" src/guialembrete.c src/servidores.c src/srvcache.c src/srvsetup_net.c src/srvidx.c src/rede.c src/redeurl.c src/js.c src/jsw.c \
+  "${linkflags[@]}" -lz -o "$tmp/teste"
 "$tmp/teste"

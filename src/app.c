@@ -930,6 +930,7 @@ static int iniciarPoliticaFonte(int preferida, int manual) {
 #include "layout.h"
 #include "segurar.h"
 #include "servidores.h"
+#include "plex.h"
 #include "srvidx.h"
 #include "partes.h"
 #include "logrede.h"
@@ -5490,6 +5491,8 @@ void app_atualizar(float dt, Uint32 agora) {
   android_tv_home(tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL);
 #endif
   aioui_atualizar(dt, agora);
+  if (plex_tomar_aviso_metadata(glem_cartao_aberto()))
+    glem_aviso_curto(i18n("Alguns detalhes dos episódios do Plex não puderam ser carregados."));
 #ifdef NV_IOS
   // The host morphs its vertical bar from this (ios/ios.m): tabs on the root
   // screens, Back + Detail actions on the title, nothing on login/player.

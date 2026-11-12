@@ -71,6 +71,7 @@ int  servidores_pagina(const char *chave, int inicio, int limite, CatItem *out, 
 // Blocking on discovery workers only; never writes account/Trakt progress.
 int  servidores_continuar(CatItem *out, int max);
 int  servidores_ficha(CatItem *item, CatEp *eps, int maxEps);
+int  servidores_ficha_preparar(CatItem *, CatEp **, int, CatEpPreparar, void *, int (*cancelado)(void *), void *, int *vaga);
 int  servidores_fontes_pedir(const char *alvo);
 int  servidores_fontes_colher(const char *alvo, Stream **lista, int *n);
 // Player check-ins: each module ignores URLs it did not hand out.

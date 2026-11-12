@@ -190,9 +190,7 @@ static char dirGravacao[512];
 // Episodios de todos os titulos num vetor unico, com faixa por titulo. Uma
 // matriz [titulo][episodio] gastaria memoria pelo pior caso em 40 titulos dos
 // quais a maioria e filme e nao tem episodio nenhum.
-// 2400: preserva listas longas como S1E1..S1E2001 (#391). Em par com
-// VIDEOS_MAX (descoberta.c), sem mudar a invalidacao das faixas na volta.
-#define CAT_EP_MAX 2400
+// CAT_EP_MAX is shared with discovery; wrap invalidation remains unchanged.
 static CatEp eps[CAT_EP_MAX];
 // Faixas de episodio por titulo, do mesmo tamanho do vetor de itens — que
 // agora cresce, entao estes tambem.
@@ -1907,6 +1905,84 @@ const CatEp *cat_episodio(int indiceItem, int i) {
   return e;
 }
 
+static int temporadasSnapshot(int item, int *temps, int cap, int *neps,
+                              unsigned *versao, CatEpToken *token) {
+  int n = 0;
+  if (item < 0 || !temps || cap < 1 || !neps || (!versao && !token)) return -1;
+  pthread_mutex_lock(&epTrava);
+  if (!epIni || !epQtd || item >= nFaixas || epQtd[item] <= 0 ||
+      epIni[item] > CAT_EP_MAX - epQtd[item]) n = -1;
+  else {
+    *neps = epQtd[item];
+    if (versao) *versao = cat_versao_episodios();
+    if (token) *token = ((CatEpToken)cat_geracao_episodios() << 32) | (unsigned)(epIni[item] + 1);
+    for (int i = 0; i < *neps; i++) {
+      int t = eps[epIni[item] + i].temporada, j;
+      for (j = 0; j < n && temps[j] != t; j++) {}
+      if (j == n) { if (n == cap) { n = -1; break; } temps[n++] = t; }
+    }
+  }
+  pthread_mutex_unlock(&epTrava);
+  return n;
+}
+int cat_temporadas_snapshot(int item, int *temps, int cap, int *neps, unsigned *versao) {
+  return temporadasSnapshot(item, temps, cap, neps, versao, NULL);
+}
+int cat_temporadas_snapshot_token(int item, int *temps, int cap, int *neps, CatEpToken *token) {
+  return temporadasSnapshot(item, temps, cap, neps, NULL, token);
+}
+int cat_episodios_copiar_versao(int item, CatEp *out, int n, unsigned versao) {
+  int ok = 0;
+  if (item < 0 || !out || n < 1) return 0;
+  pthread_mutex_lock(&epTrava);
+  if (epIni && epQtd && item < nFaixas && epQtd[item] == n &&
+      epIni[item] <= CAT_EP_MAX - n && cat_versao_episodios() == versao) {
+    memcpy(out, eps + epIni[item], (size_t)n * sizeof *out); ok = 1;
+  }
+  pthread_mutex_unlock(&epTrava);
+  return ok;
+}
+
+/* epTrava protects the append-only offset and ring generation. */
+static CatEpToken epToken(int item) {
+  if (!epIni || !epQtd || item < 0 || item >= nFaixas || epQtd[item] < 1 ||
+      epIni[item] < 0 || epIni[item] > CAT_EP_MAX - epQtd[item]) return 0;
+  return ((CatEpToken)cat_geracao_episodios() << 32) | (unsigned)(epIni[item] + 1);
+}
+CatEpToken cat_episodios_token(int item, unsigned versao) {
+  CatEpToken token = 0;
+  pthread_mutex_lock(&epTrava);
+  if (cat_versao_episodios() == versao) token = epToken(item);
+  pthread_mutex_unlock(&epTrava);
+  return token;
+}
+int cat_episodios_chaves_token(int item, CatEpChave *out, int n, CatEpToken token) {
+  int ok = 0;
+  if (!out || n < 1 || !token) return 0;
+  pthread_mutex_lock(&epTrava);
+  if (epToken(item) == token && epQtd[item] == n) {
+    for (int i = 0; i < n; i++) {
+      out[i].temporada = eps[epIni[item] + i].temporada;
+      out[i].episodio = eps[epIni[item] + i].episodio;
+      out[i].temNome = eps[epIni[item] + i].nome[0] != 0;
+      out[i].temSinopse = eps[epIni[item] + i].sinopse[0] != 0;
+    }
+    ok = 1;
+  }
+  pthread_mutex_unlock(&epTrava);
+  return ok;
+}
+int cat_episodios_copiar_token(int item, CatEp *out, int n, CatEpToken token) {
+  int ok = 0;
+  if (!out || n < 1 || !token) return 0;
+  pthread_mutex_lock(&epTrava);
+  if (epToken(item) == token && epQtd[item] == n) {
+    memcpy(out, eps + epIni[item], (size_t)n * sizeof *out); ok = 1;
+  }
+  pthread_mutex_unlock(&epTrava);
+  return ok;
+}
+
 int cat_id_stream(int indiceItem, int t, int e, char *dst, unsigned tam) {
   const CatItem *c = cat_item(indiceItem);
   char base[96];
@@ -2817,17 +2893,20 @@ void cat_marcar_pos_creditos(const char *imdb, int pos) {
   pthread_mutex_unlock(&pubTrava);
 }
 
-void cat_definir_episodios(int indiceItem, const CatEp *lista, int qtd) {
+static int definirEpisodios(int indiceItem, const CatEp *lista, int qtd,
+                            int condicional, unsigned versao, CatEpToken token) {
   int m = cat_n();
-  if (!lista || qtd < 1 || m < 1) return;
+  if (!lista || qtd < 1 || m < 1) return 0;
   indiceItem = ((indiceItem % m) + m) % m;
   if (qtd > CAT_EP_MAX) qtd = CAT_EP_MAX;
   pthread_mutex_lock(&epTrava);
   // Faixa ainda nao criada para este indice (o `n` subiu antes): nao ha onde
   // escrever. Quem pediu repede quando a revisao andar.
-  if (!epIni || !epQtd || indiceItem >= nFaixas) {
+  if (!epIni || !epQtd || indiceItem >= nFaixas ||
+      ((condicional == 1 && cat_versao_episodios() != versao) ||
+       (condicional == 2 && (!token || epToken(indiceItem) != token)))) {
     pthread_mutex_unlock(&epTrava);
-    return;
+    return 0;
   }
   // Anexa no fim do vetor comum. Trocar de temporada varias vezes acumula, mas
   // o teto de CAT_EP_MAX segura e o custo de compactar nao se paga.
@@ -2845,6 +2924,20 @@ void cat_definir_episodios(int indiceItem, const CatEp *lista, int qtd) {
   nEps += qtd;
   epVersaoSobe();   // conteudo novo (mesma contagem conta): caches derivados
   pthread_mutex_unlock(&epTrava);
+  return 1;
+}
+int cat_definir_episodios_publicar(int indiceItem, const CatEp *lista, int qtd) {
+  return definirEpisodios(indiceItem, lista, qtd, 0, 0, 0);
+}
+void cat_definir_episodios(int indiceItem, const CatEp *lista, int qtd) {
+  (void)cat_definir_episodios_publicar(indiceItem, lista, qtd);
+}
+int cat_definir_episodios_versao(int indiceItem, const CatEp *lista, int qtd, unsigned versao) {
+  return definirEpisodios(indiceItem, lista, qtd, 1, versao, 0);
+}
+
+int cat_definir_episodios_token(int item, const CatEp *lista, int n, CatEpToken token) {
+  return definirEpisodios(item, lista, n, 2, 0, token);
 }
 
 // Generos de um item, como uma lista de trechos separados por " · ". O primeiro

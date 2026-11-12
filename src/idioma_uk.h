@@ -1047,6 +1047,7 @@
   T("Alfabética · OK: agrupar por addon", "За алфавітом · OK: групувати за аддонами"),
   T("Algoritmo de ampliação", "Алгоритм масштабування"),
   T("Alguns ajustes não puderam ser copiados.", "Деякі налаштування не вдалося скопіювати."),
+  T("Alguns detalhes dos episódios do Plex não puderam ser carregados.", ""),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Rolar a página ou sair dela volta para a arte.", "Через кілька секунд після відкриття назви трейлер запускається замість фонового зображення; звук керується «Звуком трейлера». Прокручування сторінки або вихід з неї повертає зображення."),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Se o trailer do cartaz já estava tocando, ele continua na página. Rolar a página ou sair dela volta para a arte.", "Через кілька секунд після відкриття назви трейлер запускається замість фонового зображення; звук керується «Звуком трейлера». Якщо трейлер картки вже грав, він продовжується на сторінці. Прокручування сторінки або вихід з неї повертає зображення."),
   T("Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.", "Через кілька секунд після відкриття назви трейлер відтворюється без звуку замість фону. Прокручування сторінки або вихід із неї повертає зображення."),

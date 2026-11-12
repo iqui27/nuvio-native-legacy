@@ -261,6 +261,7 @@ int  jellyfin_atividade(const char *modo, CatItem *out, int max);
 // Title page (BLOCKS; descoberta's episode thread). Fills cast/overview/
 // seasons and the episode list. -1 cancelled/other server/failed.
 int  jellyfin_ficha(CatItem *item, CatEp *eps, int maxEps);
+int  jellyfin_ficha_preparar(CatItem *, CatEp **, int, CatEpPreparar, void *, int (*)(void *), void *);
 
 // Sources for one target id (movie or episode jf id). pedir returns at once;
 // colher is polled on the UI thread: JF_FONTES_* and, when ready, a malloc'd
@@ -326,6 +327,7 @@ int  jellyfin_consultar(const char *id, const char *tipo, const char *titulo, in
   int P##_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, int maxFils,   \
                           int *nItens);                                                  \
   int P##_ficha(CatItem *item, CatEp *eps, int maxEps);                                  \
+  int P##_ficha_preparar(CatItem *, CatEp **, int, CatEpPreparar, void *, int (*)(void *), void *); \
   int P##_fontes_pedir(const char *alvo);                                                \
   int P##_fontes_colher(const char *alvo, Stream **lista, int *n);                       \
   void P##_reproducao_tick(const char *url, double posSeg, double durSeg, int tocando);  \

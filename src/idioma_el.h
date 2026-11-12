@@ -1048,6 +1048,7 @@
   T("Alfabética · OK: agrupar por addon", "Αλφαβητικά · OK: ομαδοποίηση ανά πρόσθετο"),
   T("Algoritmo de ampliação", "Αλγόριθμος κλιμάκωσης"),
   T("Alguns ajustes não puderam ser copiados.", "Ορισμένες ρυθμίσεις δεν μπόρεσαν να αντιγραφούν."),
+  T("Alguns detalhes dos episódios do Plex não puderam ser carregados.", ""),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Rolar a página ou sair dela volta para a arte.", "Λίγα δευτερόλεπτα αφού ανοίξετε έναν τίτλο, το τρέιλερ παίζει στη θέση της εικόνας φόντου· ο ήχος ακολουθεί τον Ήχο τρέιλερ. Η κύλιση της σελίδας ή η έξοδος από αυτήν επαναφέρει την εικόνα."),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Se o trailer do cartaz já estava tocando, ele continua na página. Rolar a página ou sair dela volta para a arte.", "Λίγα δευτερόλεπτα αφού ανοίξετε έναν τίτλο, το τρέιλερ παίζει στη θέση της εικόνας φόντου· ο ήχος ακολουθεί τον Ήχο τρέιλερ. Αν το τρέιλερ της κάρτας έπαιζε ήδη, συνεχίζει στη σελίδα. Η κύλιση της σελίδας ή η έξοδος από αυτήν επαναφέρει την εικόνα."),
   T("Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.", "Λίγα δευτερόλεπτα αφού ανοίξεις έναν τίτλο, το τρέιλερ του παίζει χωρίς ήχο στη θέση του φόντου. Αν κυλήσεις τη σελίδα ή φύγεις, το εικαστικό επιστρέφει."),

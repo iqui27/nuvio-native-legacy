@@ -1048,6 +1048,7 @@
   T("Alfabética · OK: agrupar por addon", "Alfabetycznie · OK: grupuj według dodatku"),
   T("Algoritmo de ampliação", "Algorytm skalowania"),
   T("Alguns ajustes não puderam ser copiados.", "Nie udało się skopiować niektórych ustawień."),
+  T("Alguns detalhes dos episódios do Plex não puderam ser carregados.", ""),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Rolar a página ou sair dela volta para a arte.", "Kilka sekund po otwarciu tytułu zwiastun odtwarza się w miejscu obrazu tła; dźwięk podąża za Dźwięk zwiastuna. Przewinięcie strony lub wyjście z niej przywraca obraz."),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Se o trailer do cartaz já estava tocando, ele continua na página. Rolar a página ou sair dela volta para a arte.", "Kilka sekund po otwarciu tytułu zwiastun odtwarza się w miejscu obrazu tła; dźwięk podąża za Dźwięk zwiastuna. Jeśli zwiastun z karty już grał, gra dalej na stronie. Przewinięcie strony lub wyjście z niej przywraca obraz."),
   T("Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.", "Kilka sekund po otwarciu tytułu jego zwiastun odtwarza się bez dźwięku zamiast tła. Przewinięcie strony lub wyjście przywraca grafikę."),

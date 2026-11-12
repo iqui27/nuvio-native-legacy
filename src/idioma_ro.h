@@ -1047,6 +1047,7 @@
   T("Alfabética · OK: agrupar por addon", "Alfabetic · OK: grupează pe addon"),
   T("Algoritmo de ampliação", "Algoritm de scalare"),
   T("Alguns ajustes não puderam ser copiados.", "Unele setări nu au putut fi copiate."),
+  T("Alguns detalhes dos episódios do Plex não puderam ser carregados.", ""),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Rolar a página ou sair dela volta para a arte.", "La câteva secunde după ce deschizi un titlu, trailerul pornește în locul imaginii de fundal; sunetul urmează Sunet trailer. Derularea paginii sau ieșirea din ea readuce imaginea."),
   T("Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Se o trailer do cartaz já estava tocando, ele continua na página. Rolar a página ou sair dela volta para a arte.", "La câteva secunde după ce deschizi un titlu, trailerul pornește în locul imaginii de fundal; sunetul urmează Sunet trailer. Dacă trailerul de pe card rula deja, continuă pe pagină. Derularea paginii sau ieșirea din ea readuce imaginea."),
   T("Alguns segundos depois de abrir um título, o trailer toca sem som no lugar da arte de fundo. Rolar a página ou sair dela volta para a arte.", "La câteva secunde după ce deschizi un titlu, trailerul rulează fără sunet în locul fundalului. Derularea paginii sau ieșirea din ea readuce imaginea."),

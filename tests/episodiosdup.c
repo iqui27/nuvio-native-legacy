@@ -20,8 +20,27 @@ static void *callocDoTeste(size_t n, size_t tam) {
   if (callocFalha && n > 1024) { callocNegados++; return NULL; }
   return calloc(n, tam);
 }
+static int limitarArrays, respostaFalsaViva;
+static void *arrayGrande;
+static void *mallocDoTeste(size_t n) {
+  if (n >= 5u * 1024u * 1024u && __atomic_load_n(&respostaFalsaViva, __ATOMIC_ACQUIRE)) abort();
+  if (limitarArrays && n >= 1024 * 1024 && arrayGrande) return NULL;
+  void *p = malloc(n);
+  if (limitarArrays && n >= 1024 * 1024) arrayGrande = p;
+  return p;
+}
+static void freeDoTeste(void *p) {
+  if (p == arrayGrande) arrayGrande = NULL;
+  free(p);
+}
+static int esperaRespostaTeste;
+#define NV_TMDB_AGUARDANDO() __atomic_store_n(&esperaRespostaTeste, 1, __ATOMIC_RELEASE)
+#define malloc(n) mallocDoTeste(n)
+#define free(p) freeDoTeste(p)
 #define calloc(n, tam) callocDoTeste(n, tam)
 #include "../src/descoberta.c"
+#undef malloc
+#undef free
 #undef calloc
 Uint32 SDL_GetTicks(void) { return 0; }
 #include "../src/progresso.h"
@@ -29,7 +48,110 @@ Uint32 SDL_GetTicks(void) { return 0; }
 #include <assert.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <time.h>
+#include <sched.h>
+#define NV_TEST_SERVIDORES_FICHA
+#define NV_TEST_PLEX_AVISO
+#define NV_TEST_REDE_PARAR
 #include "jellyfin_stub.inc"
+static _Thread_local RedePararEstado redeTesteEstado;
+RedePararEstado rede_parar_trocar(int (*parar)(void *), void *usuario) {
+  RedePararEstado anterior = redeTesteEstado;
+  redeTesteEstado = (RedePararEstado){ parar, usuario, 1 };
+  anterior.instalado = 1;
+  return anterior;
+}
+static _Thread_local int plexTesteReduzido;
+static int plexTesteAvisos, plexTesteVagasLiberadas;
+void plex_vaga_liberar(void) { __atomic_add_fetch(&plexTesteVagasLiberadas, 1, __ATOMIC_RELAXED); }
+int plex_tomar_reduzido(void) { int r = plexTesteReduzido; plexTesteReduzido = 0; return r; }
+void plex_publicar_aviso_metadata(void) { __atomic_add_fetch(&plexTesteAvisos, 1, __ATOMIC_RELAXED); }
+static pthread_mutex_t servidorTesteTrava = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t servidorTesteCond = PTHREAD_COND_INITIALIZER;
+static int servidorBloqueia, servidorEntrou, servidorSoltar, servidorNovoTerminou;
+int servidores_ficha_preparar(CatItem *item, CatEp **eps, int maxEps, CatEpPreparar preparar, void *ctx, int (*cancelado)(void *), void *cancelCtx, int *vaga) {
+  (void)item; (void)maxEps; (void)cancelado; (void)cancelCtx; if (vaga) *vaga = 0;
+  pthread_mutex_lock(&servidorTesteTrava);
+  if (servidorBloqueia) {
+    servidorEntrou = 1; pthread_cond_broadcast(&servidorTesteCond);
+    while (!servidorSoltar) pthread_cond_wait(&servidorTesteCond, &servidorTesteTrava);
+  }
+  pthread_mutex_unlock(&servidorTesteTrava);
+  if (!servidorBloqueia) return -1;
+  if (vaga) *vaga = 1;
+  plexTesteReduzido = 1;
+  *eps = preparar(ctx, 1);
+  if (!*eps) return -1;
+  memset(*eps, 0, sizeof **eps);
+  (*eps)->temporada = 1; (*eps)->episodio = 99;
+  return 1;
+}
+static void *servidorTesteNovo(void *arg) {
+  (void)arg;
+  publicarEpisodios("{\"videos\":[{\"season\":1,\"episode\":1}]}", 0, "new", NULL, 0, NULL);
+  pthread_mutex_lock(&servidorTesteTrava);
+  servidorNovoTerminou = 1; pthread_cond_broadcast(&servidorTesteCond);
+  pthread_mutex_unlock(&servidorTesteTrava);
+  return NULL;
+}
+typedef struct { pthread_mutex_t trava; pthread_cond_t cond; int pronto, sair, resposta, prontoNovo, fimNovo, addon; TmdbEtapa etapa; } EtapaBloqueada;
+static int testeRedeAnterior(void *u) { (void)u; return 0; }
+static int testeRedeAbortou;
+static void *etapaBloqueada(void *arg) {
+  EtapaBloqueada *t = arg;
+  EpPedido pedido = {0};
+  pedido.geracao = epGeracao;
+  pthread_once(&epPedidoOnce, epPedidoKeyCriar);
+  pthread_setspecific(epPedidoKey, &pedido);
+  char *resposta = t->resposta ? malloc(1024u * 1024u) : NULL;
+  assert(!t->resposta || resposta);
+  if (resposta) __atomic_store_n(&respostaFalsaViva, 1, __ATOMIC_RELEASE);
+  pthread_mutex_lock(&tmdbDadosTrava);
+  t->etapa.textos = malloc(TMDB_TEXTOS_MAX);
+  t->etapa.patches = malloc(5000u * sizeof(TmdbPatch));
+  t->etapa.chaves = malloc(5000u * sizeof(CatEpChave));
+  t->etapa.temporadas = malloc(5000u * sizeof(int));
+  assert(t->etapa.textos && t->etapa.patches && t->etapa.chaves && t->etapa.temporadas);
+  t->etapa.respostaPendente = t->resposta;
+  tmdbAtiva = &t->etapa; tmdbAtivaGeracao = epGeracao;
+  pthread_mutex_unlock(&tmdbDadosTrava);
+  pthread_mutex_lock(&t->trava); t->pronto = 1; pthread_cond_broadcast(&t->cond);
+  if (!t->resposta) while (!t->sair) pthread_cond_wait(&t->cond, &t->trava);
+  pthread_mutex_unlock(&t->trava);
+  if (t->resposta) {
+    rede_parar_trocar(testeRedeAnterior, t);
+    assert(!tmdbBaixarCancelavel("mock-tmdb-season", 15));
+    assert(redeTesteEstado.parar == testeRedeAnterior && redeTesteEstado.usuario == t);
+    rede_parar_trocar(NULL, NULL);
+  }
+  pthread_mutex_lock(&tmdbDadosTrava);
+  assert(t->etapa.descartada && !t->etapa.textos && !t->etapa.patches && !t->etapa.chaves && !t->etapa.temporadas);
+  free(resposta);
+  __atomic_store_n(&respostaFalsaViva, 0, __ATOMIC_RELEASE);
+  t->etapa.respostaPendente = 0; pthread_cond_broadcast(&tmdbDadosCond);
+  tmdbAtiva = NULL; tmdbEtapaLimpar(&t->etapa);
+  pthread_mutex_unlock(&tmdbDadosTrava);
+  pthread_setspecific(epPedidoKey, NULL);
+  return NULL;
+}
+static void *esperarWorkspace(void *arg) {
+  EtapaBloqueada *t = arg; int preso = 0; CatEp *eps = NULL;
+  pthread_mutex_lock(&t->trava); t->prontoNovo = 1; pthread_cond_broadcast(&t->cond); pthread_mutex_unlock(&t->trava);
+  if (t->addon) {
+    size_t cap = 250000, pos = 0; char *json = malloc(cap); assert(json);
+    pos += (size_t)snprintf(json + pos, cap - pos, "{\"videos\":[");
+    for (int i = 0; i < 5000; i++)
+      pos += (size_t)snprintf(json + pos, cap - pos, "%s{\"season\":1,\"episode\":%d}", i ? "," : "", i + 1);
+    assert(pos + 4 < cap); snprintf(json + pos, cap - pos, "]}");
+    assert(publicarEpisodiosEscolhidos(json, 0, "test", NULL, 0, NULL, 0, 1, 0) == 5000);
+    free(json);
+  } else {
+    eps = epServidorPreparar(&preso, 5000);
+    assert(eps && preso); free(eps); pthread_mutex_unlock(&epMemoriaTrava);
+  }
+  pthread_mutex_lock(&t->trava); t->fimNovo = 1; pthread_cond_broadcast(&t->cond); pthread_mutex_unlock(&t->trava);
+  return NULL;
+}
 // Manifest loading is outside this metadata harness.
 void addons_lista_travar(void) {}
 void addons_lista_destravar(void) {}
@@ -270,6 +392,12 @@ static void rota(const char *trecho, const char *resp) {
 char *rede_baixar(const char *u, int t) {
   int r;
   (void)t;
+  if (!strcmp(u, "mock-tmdb-season")) {
+    while (!__atomic_load_n(&esperaRespostaTeste, __ATOMIC_ACQUIRE) ||
+           !redeTesteEstado.parar || !redeTesteEstado.parar(redeTesteEstado.usuario)) sched_yield();
+    __atomic_store_n(&testeRedeAbortou, 1, __ATOMIC_RELEASE);
+    return NULL;
+  }
   if (nPedidos < 64) snprintf(pedidos[nPedidos], sizeof pedidos[0], "%s", u);
   nPedidos++;
   for (r = 0; r < nRotas; r++)
@@ -346,6 +474,209 @@ static void abrir(void) {
 }
 
 int main(void) {
+  if (getenv("NV_TEST_787_RESPONSE")) {
+    EtapaBloqueada t = { .trava = PTHREAD_MUTEX_INITIALIZER, .cond = PTHREAD_COND_INITIALIZER, .resposta = 1 };
+    pthread_t antigo, novo; int descartada = 0;
+    t.addon = !strcmp(getenv("NV_TEST_787_RESPONSE"), "addon");
+    if (t.addon) catalogoCom("ttnew", "series", "new");
+    alarm(20);
+    assert(!pthread_create(&antigo, NULL, etapaBloqueada, &t));
+    pthread_mutex_lock(&t.trava);
+    while (!t.pronto) pthread_cond_wait(&t.cond, &t.trava);
+    pthread_mutex_unlock(&t.trava);
+    pthread_mutex_lock(&epPedidoTrava); epGeracao++; pthread_mutex_unlock(&epPedidoTrava);
+    assert(!pthread_create(&novo, NULL, esperarWorkspace, &t));
+    while (!descartada) {
+      pthread_mutex_lock(&tmdbDadosTrava); descartada = t.etapa.descartada; pthread_mutex_unlock(&tmdbDadosTrava);
+      if (!descartada) sched_yield();
+    }
+    pthread_join(antigo, NULL); pthread_join(novo, NULL);
+    assert(t.fimNovo && __atomic_load_n(&testeRedeAbortou, __ATOMIC_ACQUIRE));
+    alarm(0); return 0;
+  }
+  if (getenv("NV_TEST_787_STAGE")) {
+    EtapaBloqueada t = { .trava = PTHREAD_MUTEX_INITIALIZER, .cond = PTHREAD_COND_INITIALIZER };
+    pthread_t fio; int preso = 0; CatEp *eps;
+    assert(!pthread_create(&fio, NULL, etapaBloqueada, &t));
+    pthread_mutex_lock(&t.trava);
+    while (!t.pronto) pthread_cond_wait(&t.cond, &t.trava);
+    pthread_mutex_unlock(&t.trava);
+    assert(t.etapa.textos && t.etapa.patches && !t.etapa.descartada);
+    pthread_mutex_lock(&epPedidoTrava); epGeracao++; pthread_mutex_unlock(&epPedidoTrava);
+    eps = epServidorPreparar(&preso, 5000);
+    assert(eps && preso);
+    pthread_mutex_lock(&tmdbDadosTrava);
+    assert(t.etapa.descartada && !t.etapa.textos && !t.etapa.patches && !t.etapa.chaves && !t.etapa.temporadas);
+    pthread_mutex_unlock(&tmdbDadosTrava);
+    free(eps); pthread_mutex_unlock(&epMemoriaTrava);
+    pthread_mutex_lock(&t.trava); t.sair = 1; pthread_cond_broadcast(&t.cond); pthread_mutex_unlock(&t.trava);
+    pthread_join(fio, NULL);
+    return 0;
+  }
+  if (getenv("NV_TEST_787_SERVER")) {
+    pthread_t antigo, novo;
+    EpPedido *pedido = calloc(1, sizeof *pedido);
+    struct timespec prazo;
+    int terminou;
+    assert(pedido);
+    catalogoCom("jf:old", "series", "old");
+    assert(cat_copiar_item(0, &pedido->base));
+    snprintf(pedido->id, sizeof pedido->id, "%s", "jf:old");
+    pedido->item = 0; pedido->geracao = ++epGeracao;
+    pedido->sessao = nv_perfil_sessao_ler();
+    servidorBloqueia = 1;
+    assert(!pthread_create(&antigo, NULL, buscarEpsPedido, pedido));
+    pthread_mutex_lock(&servidorTesteTrava);
+    while (!servidorEntrou) pthread_cond_wait(&servidorTesteCond, &servidorTesteTrava);
+    pthread_mutex_unlock(&servidorTesteTrava);
+    catalogoCom("ttnew", "series", "new");
+    pthread_mutex_lock(&epPedidoTrava); epGeracao++; pthread_mutex_unlock(&epPedidoTrava);
+    snprintf(epAlvoId, sizeof epAlvoId, "%s", "ttnew");
+    assert(!pthread_create(&novo, NULL, servidorTesteNovo, NULL));
+    clock_gettime(CLOCK_REALTIME, &prazo); prazo.tv_sec += 2;
+    pthread_mutex_lock(&servidorTesteTrava);
+    while (!servidorNovoTerminou && !pthread_cond_timedwait(&servidorTesteCond, &servidorTesteTrava, &prazo)) {}
+    terminou = servidorNovoTerminou;
+    servidorSoltar = 1; pthread_cond_broadcast(&servidorTesteCond);
+    pthread_mutex_unlock(&servidorTesteTrava);
+    pthread_join(antigo, NULL); pthread_join(novo, NULL);
+    assert(terminou && cat_n_episodios(0) == 1);
+    assert(plexTesteAvisos == 0 && plexTesteVagasLiberadas == 1);
+    assert(cat_episodio(0, 0) && cat_episodio(0, 0)->episodio == 1);
+    catalogoCom("jf:new", "series", "server");
+    epItem = 0;
+    buscarEps(NULL);
+    assert(cat_n_episodios(0) == 1 && cat_episodio(0, 0)->episodio == 99);
+    assert(plexTesteAvisos == 1 && plexTesteVagasLiberadas == 2);
+    return 0;
+  }
+  if (getenv("NV_TEST_787_MEMORY") || getenv("NV_TEST_787_STABLE")) {
+    size_t cap = 400000, a = 0, b = 0;
+    char *base = malloc(cap), *overlay = malloc(cap);
+    assert(base && overlay);
+    a += (size_t)snprintf(base + a, cap - a, "{\"videos\":[");
+    b += (size_t)snprintf(overlay + b, cap - b, "{\"videos\":[");
+    for (int i = 1; i <= 4650; i++) {
+      a += (size_t)snprintf(base + a, cap - a, "%s{\"season\":%d,\"episode\":%d}", i == 1 ? "" : ",", (i - 1) / 150 + 1, (i - 1) % 150 + 1);
+      b += (size_t)snprintf(overlay + b, cap - b, "%s{\"season\":%d,\"episode\":%d,\"name\":\"translated\"}", i == 1 ? "" : ",", (i - 1) / 150 + 1, (i - 1) % 150 + 1);
+    }
+    assert(a + 3 < cap && b + 3 < cap);
+    snprintf(base + a, cap - a, "]}"); snprintf(overlay + b, cap - b, "]}");
+    catalogoCom("tt787", "series", "Long series");
+    snprintf(epAlvoId, sizeof epAlvoId, "%s", "tt787");
+    limitarArrays = 1;
+    assert(publicarEpisodios(base, 0, "Long series", overlay, DESC_MESCLA_TEXTO, NULL) == 4650);
+    limitarArrays = 0;
+    assert(cat_n_episodios(0) == 4650);
+    const CatEp *last = cat_episodio(0, 4649);
+    assert(last && !strcmp(last->nome, "translated"));
+    if (getenv("NV_TEST_787_STABLE")) {
+    assert(publicarEpisodios(base, 0, "Long series", NULL, 0, NULL) == 4650);
+    EpPedido pedido = {0};
+    snprintf(pedido.id, sizeof pedido.id, "%s", "tt787");
+    pedido.geracao = epGeracao;
+    unsigned geracaoAntes = cat_geracao_episodios();
+    const CatEp *ponteiroAnterior = cat_episodio(0, 0);
+    assert(ponteiroAnterior);
+    pthread_once(&epPedidoOnce, epPedidoKeyCriar);
+    assert(!pthread_setspecific(epPedidoKey, &pedido));
+    limitarArrays = 1;
+    assert(publicarEpisodios(base, 0, "Long series", overlay, DESC_MESCLA_TEXTO, NULL) == 4650);
+    limitarArrays = 0;
+    assert(!pthread_setspecific(epPedidoKey, NULL));
+    last = cat_episodio(0, 4649);
+    assert(last && !strcmp(last->nome, "translated"));
+    assert(cat_geracao_episodios() != geracaoAntes);
+    assert(ponteiroAnterior->temporada == 1);
+    }
+    free(base); free(overlay);
+    return 0;
+  }
+  if (getenv("NV_TEST_787_PARSE")) {
+    size_t cap = 400000, k = 0;
+    char *body = malloc(cap);
+    CatEp *eps = malloc(4650 * sizeof *eps);
+    assert(body && eps);
+    k += (size_t)snprintf(body + k, cap - k, "{\"videos\":[");
+    for (int i = 1; i <= 4650; i++)
+      k += (size_t)snprintf(body + k, cap - k,
+        "%s{\"season\":%d,\"episode\":%d,\"ids\":{\"tvdb\":%d}}",
+        i == 1 ? "" : ",", (i - 1) / 150 + 1, (i - 1) % 150 + 1, i);
+    k += (size_t)snprintf(body + k, cap - k,
+      ",{\"season\":31,\"episode\":150,\"ids\":{\"tvdb\":99999}}]}");
+    assert(k < cap);
+    assert(parsearEpisodios(body, eps, 4650) == 4650);
+    assert(eps[4649].temporada == 31 && eps[4649].episodio == 150 && !eps[4649].tvdbEp);
+    free(eps); free(body);
+    return 0;
+  }
+  // The shell test runs this separately to exercise the real publication path.
+  if (getenv("NV_TEST_787")) {
+    char *body = malloc(400000);
+    assert(body);
+    for (int c = 0; c < 3; c++) {
+      int seasons = c == 0 ? 52 : c == 1 ? 31 : 50;
+      int per = c == 0 ? 20 : c == 1 ? 150 : 100;
+      size_t k = (size_t)sprintf(body, "{\"videos\":[");
+      TempsPub tp = {0};
+      for (int t = 1; t <= seasons; t++)
+        for (int e = 1; e <= per; e++)
+          k += (size_t)sprintf(body + k, "%s{\"season\":%d,\"episode\":%d}",
+                               t == 1 && e == 1 ? "" : ",", t, e);
+      sprintf(body + k, "]}");
+      catalogoCom("tt787", "series", "Long series");
+      snprintf(epAlvoId, sizeof epAlvoId, "%s", "tt787");
+      int n = publicarEpisodiosEx(body, 0, "Long series", NULL, 0, &tp, 0);
+      fprintf(stderr, "#787: %d x %d -> %d episodes, %d seasons\n", seasons, per, n, tp.n);
+      assert(n == seasons * per && tp.n == seasons);
+      assert(cat_n_episodios(0) == n);
+      const CatEp *last = cat_episodio(0, n - 1);
+      assert(last && last->temporada == seasons && last->episodio == per);
+    }
+    free(body);
+    return 0;
+  }
+  {
+    CatEp old[5] = {{0}}, source[10] = {{0}}, expected[10] = {{0}};
+    const int order[] = {3, 0, 0, 8, 1};
+    int k = 0;
+    catalogoCom("ttstable", "series", "Stable");
+    for (int i = 0; i < 5; i++) {
+      old[i].temporada = source[i].temporada = 1;
+      old[i].episodio = order[i]; source[i].episodio = i;
+      snprintf(old[i].nome, sizeof old[i].nome, "old%d", i);
+      snprintf(source[i].nome, sizeof source[i].nome, "new%d", i);
+    }
+    cat_definir_episodios(0, old, 5);
+    for (int i = 0; i < 5; i++) {
+      int j;
+      for (j = 0; j < 5; j++) if (old[i].episodio == source[j].episodio) break;
+      expected[k++] = j < 5 ? source[j] : old[i];
+    }
+    for (int j = 0; j < 5; j++) {
+      int i;
+      for (i = 0; i < k; i++) if (expected[i].episodio == source[j].episodio) break;
+      if (i == k) expected[k++] = source[j];
+    }
+    assert(mesclarEstavel(source, 5, 10, 0, 5) == k);
+    assert(!memcmp(source, expected, (size_t)k * sizeof *source));
+  }
+  {
+    const char *base = "{\"videos\":[{\"season\":2,\"episode\":1},{\"season\":1},{\"season\":1},{\"season\":1,\"episode\":2,\"name\":\"original\"}]}";
+    const char *overlay = "{\"videos\":[{\"season\":1,\"episode\":2,\"name\":\"first\",\"runtime\":25,\"rating\":8.3},{\"season\":1,\"episode\":2,\"name\":\"duplicate\"},{\"season\":1,\"name\":\"zero A\"},{\"season\":2,\"episode\":1,\"description\":\"synopsis\"},{\"season\":1,\"name\":\"zero B\"}]}";
+    CatEp expected[8], actual[8], other[8];
+    int count = parsearEpisodios(base, expected, 8);
+    int countOther = parsearEpisodios(overlay, other, 8);
+    assert(count == 4 && countOther == 4);
+    for (int mode = DESC_MESCLA_TEXTO; mode <= DESC_MESCLA_VAZIOS; mode++) {
+      memcpy(actual, expected, (size_t)count * sizeof *actual);
+      CatEp reference[8];
+      memcpy(reference, expected, (size_t)count * sizeof *reference);
+      desc_mesclar_episodios(reference, count, other, countOther, mode);
+      mesclarEpisodiosJson(actual, count, overlay, mode);
+      assert(!memcmp(reference, actual, (size_t)count * sizeof *actual));
+    }
+  }
   const char *js =
     "{\"videos\":["
     "{\"id\":\"a:1\",\"season\":1,\"episode\":1,\"name\":\"Izuku Midoriya: Origin\"},"
