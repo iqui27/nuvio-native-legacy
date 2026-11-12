@@ -165,7 +165,7 @@ static int falharMinimos;
 void *teste_plex_min_realloc(void *p, size_t n) { return falharMinimos ? NULL : realloc(p, n); }
 static int modoHttp, modoCallback, chamouCallback, totalSimulado, pedidosSimulados, extraSimulado;
 static int invalidoSimulado, paddingSimulado, aleatorioSimulado;
-static int jfRico, jfPedidos, jfObsoleto;
+static int jfRico, jfPedidos, jfObsoleto, jfUltimoLimite;
 static size_t jfMemoria, jfPico, jfResposta;
 static struct { void *p; size_t n; } jfAlocacoes[4];
 static void jfSomar(size_t n) {
@@ -229,21 +229,31 @@ int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
     int inicio = -1, limite = 0;
     const char *q = strstr(pedido->url, "&StartIndex=");
     assert(q && sscanf(q, "&StartIndex=%d&Limit=%d", &inicio, &limite) == 2);
-    assert(inicio == jfPedidos * 100 && limite == 100);
+    if (jfRico >= 2 && chamouCallback) {
+      assert(pedido->parar && pedido->max_bytes == 256u * 1024u);
+      assert(inicio >= 0 && inicio < 5000 && limite > 0 && limite <= 100);
+    } else assert(inicio == jfPedidos * 100 && limite == 100);
     jfPedidos++;
-    if (jfObsoleto == -1 && jfPedidos == 2) {
+    if ((jfObsoleto == -1 && jfPedidos == 2) ||
+        (jfObsoleto == -2 && chamouCallback && inicio == 100)) {
       jfObsoleto = 1;
       assert(pedido->parar && pedido->parar(pedido->parar_usuario));
       resposta->erro = REDE_CANCELADO;
       return 0;
     }
-    size_t cap = 100000, pos = 0;
+    size_t cap = jfRico == 3 ? (size_t)limite * 3700u + 200 : 100000, pos = 0;
+    jfUltimoLimite = limite;
+    if ((jfRico == 3 && chamouCallback && cap > pedido->max_bytes) ||
+        (jfRico == 4 && chamouCallback)) {
+      resposta->erro = REDE_LIMITE_CORPO;
+      return 0;
+    }
     resposta->corpo = malloc(cap); assert(resposta->corpo);
     assert(!jfResposta); jfResposta = cap; jfSomar(cap);
     pos += (size_t)snprintf(resposta->corpo, cap, "{\"TotalRecordCount\":5000,\"Items\":[");
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < limite; i++) {
       char texto[420];
-      if (jfRico == 2) {
+      if (jfRico >= 2) {
         unsigned x = (unsigned)(inicio + i + 1) * 2654435761u;
         const char letras[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
         for (size_t j = 0; j + 1 < sizeof texto; j++) {
@@ -253,8 +263,8 @@ int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
         texto[sizeof texto - 1] = 0;
       } else snprintf(texto, sizeof texto, "Rich synopsis %d", inicio + i + 1);
       pos += (size_t)snprintf(resposta->corpo + pos, cap - pos,
-        "%s{\"Id\":\"%x\",\"ParentIndexNumber\":1,\"IndexNumber\":%d,\"Name\":\"Episode %d\",\"Overview\":\"%s\",\"RunTimeTicks\":36000000000,\"PremiereDate\":\"2025-01-23\",\"ImageTags\":{\"Primary\":\"image\"}}",
-        i ? "," : "", inicio + i + 1, inicio + i + 1, inicio + i + 1, texto);
+        "%s{\"Id\":\"%x\",\"ParentIndexNumber\":1,\"IndexNumber\":%d,\"Name\":\"Episode %d\",\"Overview\":\"%s\",\"RunTimeTicks\":36000000000,\"PremiereDate\":\"2025-01-23\",\"ImageTags\":{\"Primary\":\"image\"},\"Padding\":\"%0*d\"}",
+        i ? "," : "", inicio + i + 1, inicio + i + 1, inicio + i + 1, texto, jfRico == 3 ? 3000 : 0, 0);
     }
     assert(pos + 3 < cap); memcpy(resposta->corpo + pos, "]}", 3);
     jfCorpoAnterior = resposta->corpo;
@@ -313,7 +323,7 @@ static CatEp *prepararTeste(void *ctx, int n) {
   RedeJob *job = ctx;
   __atomic_add_fetch(&chamouCallback, 1, __ATOMIC_RELAXED);
   if (jfRico) {
-    assert(n == 5000 && jfPedidos == 50);
+    assert(n == 5000 && (jfRico >= 2 ? jfPedidos > 1 : jfPedidos == 50));
     assert(__asan_address_is_poisoned(jfCorpoAnterior));
     jfSomar((size_t)n * sizeof(CatEp));
     return calloc((size_t)n, sizeof(CatEp));
@@ -410,9 +420,56 @@ static void testarPreparo(void) {
     rede_job_soltar(job); rede_grupo_soltar(grupo);
     grupo = rede_grupo_criar(); job = rede_job_criar(grupo); out = NULL;
     jfRico = 2; jfObsoleto = jfPedidos = chamouCallback = 0;
-    n = teste_jf_episodios_preparar(&jc, job, "a", &out, 5000, prepararTeste, job);
-    assert(n < 0 && jfPedidos > 1 && !chamouCallback && !out);
-    jfObsoleto = jfRico = 0; free(out); rede_job_soltar(job); rede_grupo_soltar(grupo);
+    n = teste_jf_episodios_cancelavel(&jc, job, "a", &out, 5000, prepararTeste, job, jfCancelado, NULL);
+    assert(n == 5000 && jfPedidos > 50 && chamouCallback && out);
+    assert(jfPico <= (size_t)5000 * sizeof(CatEp) + 512u * 1024u);
+    printf("jellyfin fallback peak: %zu bytes (excluding zlib internals)\n", jfPico);
+    for (int i = 0; i < n; i++) {
+      char nome[80], texto[420];
+      unsigned x = (unsigned)(i + 1) * 2654435761u;
+      const char letras[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+      for (size_t j = 0; j + 1 < sizeof texto; j++) {
+        x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+        texto[j] = letras[x % (sizeof letras - 1)];
+      }
+      texto[sizeof texto - 1] = 0;
+      snprintf(nome, sizeof nome, "Episode %d", i + 1);
+      assert(out[i].episodio == i + 1 && !strcmp(out[i].nome, nome));
+      assert(!strcmp(out[i].sinopse, texto) && !strcmp(out[i].duracao, "60 min"));
+      assert(!strcmp(out[i].dataIso, "2025-01-23") && out[i].thumb[0]);
+    }
+    free(out); jfMemoria = jfPico = 0; rede_job_soltar(job); rede_grupo_soltar(grupo);
+    grupo = rede_grupo_criar(); job = rede_job_criar(grupo); out = NULL;
+    jfObsoleto = -2; jfPedidos = chamouCallback = 0;
+    n = teste_jf_episodios_cancelavel(&jc, job, "a", &out, 5000, prepararTeste, job, jfCancelado, NULL);
+    assert(n < 0 && jfObsoleto == 1 && chamouCallback && out);
+    free(out); jfMemoria = jfPico = 0; rede_job_soltar(job); rede_grupo_soltar(grupo);
+    grupo = rede_grupo_criar(); job = rede_job_criar(grupo); out = NULL;
+    jfRico = 3; jfObsoleto = jfPedidos = chamouCallback = 0;
+    n = teste_jf_episodios_cancelavel(&jc, job, "a", &out, 5000, prepararTeste, job, jfCancelado, NULL);
+    assert(n == 5000 && jfPedidos > 100 && chamouCallback && out);
+    assert(jfPico <= (size_t)5000 * sizeof(CatEp) + 512u * 1024u);
+    for (int i = 0; i < n; i++) {
+      char nome[80], texto[420];
+      unsigned x = (unsigned)(i + 1) * 2654435761u;
+      const char letras[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+      for (size_t j = 0; j + 1 < sizeof texto; j++) {
+        x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+        texto[j] = letras[x % (sizeof letras - 1)];
+      }
+      texto[sizeof texto - 1] = 0;
+      snprintf(nome, sizeof nome, "Episode %d", i + 1);
+      assert(out[i].episodio == i + 1 && !strcmp(out[i].nome, nome));
+      assert(!strcmp(out[i].sinopse, texto) && !strcmp(out[i].duracao, "60 min"));
+      assert(!strcmp(out[i].dataIso, "2025-01-23") && out[i].thumb[0]);
+    }
+    free(out); jfMemoria = jfPico = 0; rede_job_soltar(job); rede_grupo_soltar(grupo);
+    grupo = rede_grupo_criar(); job = rede_job_criar(grupo); out = NULL;
+    jfRico = 4; jfPedidos = chamouCallback = jfUltimoLimite = 0;
+    n = teste_jf_episodios_cancelavel(&jc, job, "a", &out, 5000, prepararTeste, job, jfCancelado, NULL);
+    assert(n < 0 && chamouCallback && out && jfUltimoLimite == 1);
+    jfObsoleto = jfRico = 0; free(out); jfMemoria = jfPico = 0;
+    rede_job_soltar(job); rede_grupo_soltar(grupo);
   }
   {
     RedeGrupo *grupo = rede_grupo_criar();

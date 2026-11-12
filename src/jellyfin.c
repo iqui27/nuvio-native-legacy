@@ -38,6 +38,7 @@ extern void cat_historico_definir_tempo(const char *imdb, const char *tipo,
 #define JF_PRAZO_MS 15000u
 #define JF_PRAZO_LISTA_MS 20000u
 #define JF_CORPO_MAX (4u * 1024u * 1024u)
+#define JF_ERR_CORPO_TETO (-1000) /* internal: retry a smaller episode page */
 #define JF_QC_INTERVALO_MS 2000u
 #define JF_QC_TETO_MS (5u * 60u * 1000u)
 #define JF_SESSOES 16
@@ -159,7 +160,8 @@ void jf_cabecalho_auth(const JfConta *c, char *dst, size_t tam) {
 // One request. Logs operation/status/latency only.
 static int pedirCancel(const JfConta *c, const char *base, RedeJob *job, const char *metodo,
                        const char *caminho, const char *corpo, const char *operacao,
-                       unsigned prazo, RedeResposta *r, int (*cancelado)(void *), void *cancelCtx) {
+                       unsigned prazo, RedeResposta *r, int (*cancelado)(void *), void *cancelCtx,
+                       size_t maxBytes) {
   char url[2048], auth[512 + JF_TOKEN_MAX], tokh[32 + JF_TOKEN_MAX];
   const char *cabs[5];
   int k = 0, emby = c && c->tipo == JF_TIPO_EMBY;
@@ -187,7 +189,7 @@ static int pedirCancel(const JfConta *c, const char *base, RedeJob *job, const c
   p.corpo = corpo;
   p.n_corpo = corpo ? strlen(corpo) : 0;
   p.prazo_ms = prazo ? prazo : JF_PRAZO_MS;
-  p.max_bytes = JF_CORPO_MAX;
+  p.max_bytes = maxBytes ? maxBytes : JF_CORPO_MAX;
   p.seguir = 1;
   p.mesmo_host = 1;   // a redirect never takes this request to another machine
   p.job = job;
@@ -218,6 +220,7 @@ static int pedirCancel(const JfConta *c, const char *base, RedeJob *job, const c
   fflush(stdout);
   if (r->erro == REDE_CANCELADO || r->erro == REDE_GERACAO) { rede_resposta_limpar(r); return JF_ERR_CANCELADO; }
   if (r->erro == REDE_INDISPONIVEL) { rede_resposta_limpar(r); return JF_ERR_INDISPONIVEL; }
+  if (r->erro == REDE_LIMITE_CORPO && maxBytes) { rede_resposta_limpar(r); return JF_ERR_CORPO_TETO; }
   if (r->erro != REDE_OK) { rede_resposta_limpar(r); return JF_ERR_REDE; }
   if (r->status == 401 || r->status == 403) { rede_resposta_limpar(r); return JF_ERR_AUTH; }
   if (r->status < 200 || r->status >= 300) {
@@ -231,7 +234,7 @@ static int pedirCancel(const JfConta *c, const char *base, RedeJob *job, const c
 static int pedir(const JfConta *c, const char *base, RedeJob *job, const char *metodo,
                  const char *caminho, const char *corpo, const char *operacao,
                  unsigned prazo, RedeResposta *r) {
-  return pedirCancel(c, base, job, metodo, caminho, corpo, operacao, prazo, r, NULL, NULL);
+  return pedirCancel(c, base, job, metodo, caminho, corpo, operacao, prazo, r, NULL, NULL, 0);
 }
 
 // ----------------------------------------------------------- server/login
@@ -683,7 +686,7 @@ static int jf_detalhe_cancelavel(const JfConta *c, RedeJob *job, const char *ite
   // Emby has no /Items/{id}?userId=; the per-user item route exists on both.
   if (c->tipo == JF_TIPO_EMBY) snprintf(caminho, sizeof caminho, "/Users/%s/Items/%s", c->usuarioId, limpo);
   else snprintf(caminho, sizeof caminho, "/Items/%s?userId=%s", limpo, c->usuarioId);
-  e = pedirCancel(c, c->base, job, "GET", caminho, NULL, "item", 0, &r, cancelado, cancelCtx);
+  e = pedirCancel(c, c->base, job, "GET", caminho, NULL, "item", 0, &r, cancelado, cancelCtx, 0);
   if (e) return e;
   e = cancelado && cancelado(cancelCtx) ? JF_ERR_CANCELADO : jf_ler_detalhe(c, r.corpo, r.n_corpo, out);
   rede_resposta_limpar(&r);
@@ -735,14 +738,14 @@ int jf_ler_episodios(const JfConta *c, const char *corpo, size_t nCorpo, CatEp *
 static int jf_episodios_preparar(const JfConta *c, RedeJob *job, const char *serieId,
                                  CatEp **saida, int max, CatEpPreparar preparar, void *ctx,
                                  int (*cancelado)(void *), void *cancelCtx) {
-  /* ponytail: 512 KiB staging ceiling; return an error without publishing if
-     metadata does not fit. Upgrade to bounded streaming for arbitrary text. */
-  enum { PAGINA = 100, COMPACTO_MAX = 512 * 1024 };
+  /* ponytail: oversized compressed lists retry with a cancellable workspace;
+     each response is capped at 256 KiB while that workspace is held. */
+  enum { PAGINA = 100, COMPACTO_MAX = 512 * 1024, DIRETO_MAX = 256 * 1024 };
   char caminho[256], limpo[40];
   unsigned char *compacto = NULL;
   CatEp *pagina = NULL;
   z_stream z = {0};
-  int inicio = 0, n = 0, erro = JF_ERR_REDE, zAtivo = 0;
+  int inicio = 0, n = 0, erro = JF_ERR_REDE, zAtivo = 0, direto = 0, paginaLimite = PAGINA;
   if (!saida || !jfid_hex_limpo(serieId, limpo, 32)) return JF_ERR_ENTRADA;
   if (max <= 0) return 0;
   if (max > CAT_EP_MAX) max = CAT_EP_MAX;
@@ -751,18 +754,24 @@ static int jf_episodios_preparar(const JfConta *c, RedeJob *job, const char *ser
   if (!compacto || !pagina || deflateInit(&z, Z_DEFAULT_COMPRESSION) != Z_OK) goto fim;
   zAtivo = 1;
   z.next_out = compacto; z.avail_out = COMPACTO_MAX;
+ buscar_paginas:
   while (n < max) {
     RedeResposta r;
     const char *ai, *af, *p;
     int limite = max - n, raw = 0, total, qtd, e;
-    if (limite > PAGINA) limite = PAGINA;
+    if (limite > paginaLimite) limite = paginaLimite;
     if (rede_job_estado(job) != REDE_OK || (cancelado && cancelado(cancelCtx))) { erro = JF_ERR_CANCELADO; goto fim; }
     snprintf(caminho, sizeof caminho,
              "/Shows/%s/Episodes?userId=%s&Fields=Overview&EnableImageTypes=Primary"
              "&ImageTypeLimit=1&EnableUserData=true&StartIndex=%d&Limit=%d",
              limpo, c->usuarioId, inicio, limite);
-    e = pedirCancel(c, c->base, job, "GET", caminho, NULL, "episodes", JF_PRAZO_LISTA_MS, &r, cancelado, cancelCtx);
-    if (e) { erro = e; goto fim; }
+    e = pedirCancel(c, c->base, job, "GET", caminho, NULL, "episodes", JF_PRAZO_LISTA_MS, &r,
+                    cancelado, cancelCtx, direto ? DIRETO_MAX : 0);
+    if (e == JF_ERR_CORPO_TETO && direto && limite > 1) {
+      paginaLimite = limite / 2;
+      continue;
+    }
+    if (e) { erro = e == JF_ERR_CORPO_TETO ? JF_ERR_REDE : e; goto fim; }
     total = (int)numRaiz(r.corpo, r.corpo + r.n_corpo, "TotalRecordCount", -1);
     if (!blocoRaiz(r.corpo, r.corpo + r.n_corpo, "Items", &ai, &af)) {
       rede_resposta_limpar(&r); erro = JF_ERR_FORMATO; goto fim;
@@ -773,16 +782,25 @@ static int jf_episodios_preparar(const JfConta *c, RedeJob *job, const char *ser
       if (!f || ++raw > limite) { rede_resposta_limpar(&r); erro = JF_ERR_FORMATO; goto fim; }
       p = f;
     }
-    qtd = jf_ler_episodios(c, r.corpo, r.n_corpo, pagina, limite);
+    qtd = jf_ler_episodios(c, r.corpo, r.n_corpo, direto ? *saida + n : pagina, limite);
     rede_resposta_limpar(&r);
     if (rede_job_estado(job) != REDE_OK || (cancelado && cancelado(cancelCtx))) { erro = JF_ERR_CANCELADO; goto fim; }
-    z.next_in = (Bytef *)pagina; z.avail_in = (uInt)((size_t)qtd * sizeof *pagina);
-    if (qtd && (deflate(&z, Z_NO_FLUSH) != Z_OK || z.avail_in || !z.avail_out)) goto fim;
+    if (!direto && qtd) {
+      int zr;
+      z.next_in = (Bytef *)pagina; z.avail_in = (uInt)((size_t)qtd * sizeof *pagina);
+      zr = deflate(&z, Z_NO_FLUSH);
+      if (!z.avail_out) goto reserva;
+      if (zr != Z_OK || z.avail_in) goto fim;
+    }
     n += qtd; inicio += raw;
     if (!raw && total > inicio) { erro = JF_ERR_FORMATO; goto fim; }
     if (!raw || (total >= 0 && inicio >= total) || (total < 0 && raw < limite)) break;
   }
-  if (deflate(&z, Z_FINISH) != Z_STREAM_END) goto fim;
+  if (direto) { erro = n; goto fim; }
+  if (deflate(&z, Z_FINISH) != Z_STREAM_END) {
+    if (!z.avail_out) goto reserva;
+    goto fim;
+  }
   size_t compactos = z.total_out;
   deflateEnd(&z); zAtivo = 0;
   free(pagina); pagina = NULL;
@@ -795,6 +813,18 @@ static int jf_episodios_preparar(const JfConta *c, RedeJob *job, const char *ser
         bytes != (uLongf)((size_t)n * sizeof **saida)) goto fim;
   }
   erro = n;
+  goto fim;
+ reserva:
+  /* The caller's workspace lock may span network only with generation cancellation. */
+  if (preparar && !cancelado) goto fim;
+  if (zAtivo) { deflateEnd(&z); zAtivo = 0; }
+  free(pagina); pagina = NULL;
+  free(compacto); compacto = NULL;
+  if (rede_job_estado(job) != REDE_OK || (cancelado && cancelado(cancelCtx))) { erro = JF_ERR_CANCELADO; goto fim; }
+  if (preparar) *saida = preparar(ctx, max);
+  if (!*saida || rede_job_estado(job) != REDE_OK || (cancelado && cancelado(cancelCtx))) { erro = JF_ERR_CANCELADO; goto fim; }
+  direto = 1; inicio = n = 0;
+  goto buscar_paginas;
  fim:
   if (zAtivo) deflateEnd(&z);
   free(pagina); free(compacto);
