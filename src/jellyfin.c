@@ -30,6 +30,7 @@ extern void cat_historico_definir_tempo(const char *imdb, const char *tipo,
 #include <strings.h>
 #include <time.h>
 #include <unistd.h>
+#include <zlib.h>
 
 #ifndef NV_JF_VERSAO
 #define NV_JF_VERSAO "1.8.0"
@@ -156,9 +157,9 @@ void jf_cabecalho_auth(const JfConta *c, char *dst, size_t tam) {
 }
 
 // One request. Logs operation/status/latency only.
-static int pedir(const JfConta *c, const char *base, RedeJob *job, const char *metodo,
-                 const char *caminho, const char *corpo, const char *operacao,
-                 unsigned prazo, RedeResposta *r) {
+static int pedirCancel(const JfConta *c, const char *base, RedeJob *job, const char *metodo,
+                       const char *caminho, const char *corpo, const char *operacao,
+                       unsigned prazo, RedeResposta *r, int (*cancelado)(void *), void *cancelCtx) {
   char url[2048], auth[512 + JF_TOKEN_MAX], tokh[32 + JF_TOKEN_MAX];
   const char *cabs[5];
   int k = 0, emby = c && c->tipo == JF_TIPO_EMBY;
@@ -190,6 +191,8 @@ static int pedir(const JfConta *c, const char *base, RedeJob *job, const char *m
   p.seguir = 1;
   p.mesmo_host = 1;   // a redirect never takes this request to another machine
   p.job = job;
+  p.parar = cancelado;
+  p.parar_usuario = cancelCtx;
   // #290: the configured personal server may use a self-signed or LAN
   // certificate. Only this server's own origin skips verification (rede.h).
   p.tls_pessoal = 1;
@@ -223,6 +226,12 @@ static int pedir(const JfConta *c, const char *base, RedeJob *job, const char *m
     return s == 404 ? JF_ERR_EXPIRADO : JF_ERR_HTTP;
   }
   return JF_OK;
+}
+
+static int pedir(const JfConta *c, const char *base, RedeJob *job, const char *metodo,
+                 const char *caminho, const char *corpo, const char *operacao,
+                 unsigned prazo, RedeResposta *r) {
+  return pedirCancel(c, base, job, metodo, caminho, corpo, operacao, prazo, r, NULL, NULL);
 }
 
 // ----------------------------------------------------------- server/login
@@ -665,7 +674,8 @@ int jf_ler_detalhe(const JfConta *c, const char *corpo, size_t nCorpo, CatItem *
   return JF_OK;
 }
 
-int jf_detalhe(const JfConta *c, RedeJob *job, const char *itemId, CatItem *out) {
+static int jf_detalhe_cancelavel(const JfConta *c, RedeJob *job, const char *itemId, CatItem *out,
+                                 int (*cancelado)(void *), void *cancelCtx) {
   RedeResposta r;
   char caminho[200], limpo[40];
   int e;
@@ -673,11 +683,15 @@ int jf_detalhe(const JfConta *c, RedeJob *job, const char *itemId, CatItem *out)
   // Emby has no /Items/{id}?userId=; the per-user item route exists on both.
   if (c->tipo == JF_TIPO_EMBY) snprintf(caminho, sizeof caminho, "/Users/%s/Items/%s", c->usuarioId, limpo);
   else snprintf(caminho, sizeof caminho, "/Items/%s?userId=%s", limpo, c->usuarioId);
-  e = pedir(c, c->base, job, "GET", caminho, NULL, "item", 0, &r);
+  e = pedirCancel(c, c->base, job, "GET", caminho, NULL, "item", 0, &r, cancelado, cancelCtx);
   if (e) return e;
-  e = jf_ler_detalhe(c, r.corpo, r.n_corpo, out);
+  e = cancelado && cancelado(cancelCtx) ? JF_ERR_CANCELADO : jf_ler_detalhe(c, r.corpo, r.n_corpo, out);
   rede_resposta_limpar(&r);
   return e;
+}
+
+int jf_detalhe(const JfConta *c, RedeJob *job, const char *itemId, CatItem *out) {
+  return jf_detalhe_cancelavel(c, job, itemId, out, NULL, NULL);
 }
 
 int jf_ler_episodios(const JfConta *c, const char *corpo, size_t nCorpo, CatEp *out, int max) {
@@ -719,45 +733,86 @@ int jf_ler_episodios(const JfConta *c, const char *corpo, size_t nCorpo, CatEp *
 }
 
 static int jf_episodios_preparar(const JfConta *c, RedeJob *job, const char *serieId,
-                                 CatEp **saida, int max, CatEpPreparar preparar, void *ctx) {
-  RedeResposta r;
+                                 CatEp **saida, int max, CatEpPreparar preparar, void *ctx,
+                                 int (*cancelado)(void *), void *cancelCtx) {
+  /* ponytail: 512 KiB staging ceiling; return an error without publishing if
+     metadata does not fit. Upgrade to bounded streaming for arbitrary text. */
+  enum { PAGINA = 100, COMPACTO_MAX = 512 * 1024 };
   char caminho[256], limpo[40];
-  int n, e;
-  if (!jfid_hex_limpo(serieId, limpo, 32)) return JF_ERR_ENTRADA;
-  snprintf(caminho, sizeof caminho,
-           "/Shows/%s/Episodes?userId=%s&Fields=Overview&EnableImageTypes=Primary"
-           "&ImageTypeLimit=1&EnableUserData=true", limpo, c->usuarioId);
-  e = pedir(c, c->base, job, "GET", caminho, NULL, "episodes", JF_PRAZO_LISTA_MS, &r);
-  if (e) return e;
-  if (preparar) {
+  unsigned char *compacto = NULL;
+  CatEp *pagina = NULL;
+  z_stream z = {0};
+  int inicio = 0, n = 0, erro = JF_ERR_REDE, zAtivo = 0;
+  if (!saida || !jfid_hex_limpo(serieId, limpo, 32)) return JF_ERR_ENTRADA;
+  if (max <= 0) return 0;
+  if (max > CAT_EP_MAX) max = CAT_EP_MAX;
+  compacto = malloc(COMPACTO_MAX);
+  pagina = malloc(PAGINA * sizeof *pagina);
+  if (!compacto || !pagina || deflateInit(&z, Z_DEFAULT_COMPRESSION) != Z_OK) goto fim;
+  zAtivo = 1;
+  z.next_out = compacto; z.avail_out = COMPACTO_MAX;
+  while (n < max) {
+    RedeResposta r;
     const char *ai, *af, *p;
-    int qtd = 0;
-    if (blocoRaiz(r.corpo, r.corpo + r.n_corpo, "Items", &ai, &af)) {
-      p = ai + 1;
-      while (qtd < max && (p = elemento(p, af)) != NULL) {
-        const char *f = depoisElemento(p);
-        if (!f) break;
-        qtd++; p = f;
-      }
+    int limite = max - n, raw = 0, total, qtd, e;
+    if (limite > PAGINA) limite = PAGINA;
+    if (rede_job_estado(job) != REDE_OK || (cancelado && cancelado(cancelCtx))) { erro = JF_ERR_CANCELADO; goto fim; }
+    snprintf(caminho, sizeof caminho,
+             "/Shows/%s/Episodes?userId=%s&Fields=Overview&EnableImageTypes=Primary"
+             "&ImageTypeLimit=1&EnableUserData=true&StartIndex=%d&Limit=%d",
+             limpo, c->usuarioId, inicio, limite);
+    e = pedirCancel(c, c->base, job, "GET", caminho, NULL, "episodes", JF_PRAZO_LISTA_MS, &r, cancelado, cancelCtx);
+    if (e) { erro = e; goto fim; }
+    total = (int)numRaiz(r.corpo, r.corpo + r.n_corpo, "TotalRecordCount", -1);
+    if (!blocoRaiz(r.corpo, r.corpo + r.n_corpo, "Items", &ai, &af)) {
+      rede_resposta_limpar(&r); erro = JF_ERR_FORMATO; goto fim;
     }
-    if (qtd && rede_job_estado(job) == REDE_OK) *saida = preparar(ctx, qtd);
-    if (qtd && (!*saida || rede_job_estado(job) != REDE_OK)) {
-      rede_resposta_limpar(&r); return JF_ERR_CANCELADO;
+    p = ai + 1;
+    while ((p = elemento(p, af)) != NULL) {
+      const char *f = depoisElemento(p);
+      if (!f || ++raw > limite) { rede_resposta_limpar(&r); erro = JF_ERR_FORMATO; goto fim; }
+      p = f;
     }
-    max = qtd;
+    qtd = jf_ler_episodios(c, r.corpo, r.n_corpo, pagina, limite);
+    rede_resposta_limpar(&r);
+    if (rede_job_estado(job) != REDE_OK || (cancelado && cancelado(cancelCtx))) { erro = JF_ERR_CANCELADO; goto fim; }
+    z.next_in = (Bytef *)pagina; z.avail_in = (uInt)((size_t)qtd * sizeof *pagina);
+    if (qtd && (deflate(&z, Z_NO_FLUSH) != Z_OK || z.avail_in || !z.avail_out)) goto fim;
+    n += qtd; inicio += raw;
+    if (!raw && total > inicio) { erro = JF_ERR_FORMATO; goto fim; }
+    if (!raw || (total >= 0 && inicio >= total) || (total < 0 && raw < limite)) break;
   }
-  n = max ? jf_ler_episodios(c, r.corpo, r.n_corpo, *saida, max) : 0;
-  rede_resposta_limpar(&r);
-  return n;
+  if (deflate(&z, Z_FINISH) != Z_STREAM_END) goto fim;
+  size_t compactos = z.total_out;
+  deflateEnd(&z); zAtivo = 0;
+  free(pagina); pagina = NULL;
+  if (rede_job_estado(job) != REDE_OK || (cancelado && cancelado(cancelCtx))) { erro = JF_ERR_CANCELADO; goto fim; }
+  if (n && preparar) *saida = preparar(ctx, n);
+  if (n && (!*saida || rede_job_estado(job) != REDE_OK || (cancelado && cancelado(cancelCtx)))) { erro = JF_ERR_CANCELADO; goto fim; }
+  if (n) {
+    uLongf bytes = (uLongf)((size_t)n * sizeof **saida);
+    if (uncompress((Bytef *)*saida, &bytes, compacto, (uLong)compactos) != Z_OK ||
+        bytes != (uLongf)((size_t)n * sizeof **saida)) goto fim;
+  }
+  erro = n;
+ fim:
+  if (zAtivo) deflateEnd(&z);
+  free(pagina); free(compacto);
+  return erro;
 }
 #ifdef NV_TEST_SERVIDOR_PREPARAR
 int teste_jf_episodios_preparar(const JfConta *c, RedeJob *job, const char *id,
                                 CatEp **out, int max, CatEpPreparar preparar, void *ctx) {
-  return jf_episodios_preparar(c, job, id, out, max, preparar, ctx);
+  return jf_episodios_preparar(c, job, id, out, max, preparar, ctx, NULL, NULL);
+}
+int teste_jf_episodios_cancelavel(const JfConta *c, RedeJob *job, const char *id,
+                                  CatEp **out, int max, CatEpPreparar preparar, void *ctx,
+                                  int (*cancelado)(void *), void *cancelCtx) {
+  return jf_episodios_preparar(c, job, id, out, max, preparar, ctx, cancelado, cancelCtx);
 }
 #endif
 int jf_episodios(const JfConta *c, RedeJob *job, const char *serieId, CatEp *out, int max) {
-  return jf_episodios_preparar(c, job, serieId, &out, max, NULL, NULL);
+  return jf_episodios_preparar(c, job, serieId, &out, max, NULL, NULL, NULL, NULL);
 }
 
 // ------------------------------------------------------- matching index
@@ -1358,7 +1413,8 @@ static void jfi_reproducao_tick(JfInst *I, const char *url, double pos, double d
 static void jfi_reproducao_fim(JfInst *I, const char *url, double pos, double dur);
 static int jfi_fontes_pedir(JfInst *I, const char *alvo);
 static int jfi_fontes_colher(JfInst *I, const char *alvo, Stream **lista, int *n);
-static int jfi_ficha(JfInst *I, CatItem *item, CatEp **eps, int maxEps, CatEpPreparar preparar, void *ctx);
+static int jfi_ficha(JfInst *I, CatItem *item, CatEp **eps, int maxEps, CatEpPreparar preparar, void *ctx,
+                     int (*cancelado)(void *), void *cancelCtx);
 
 
 int jellyfin_disponivel(void) {
@@ -2828,7 +2884,8 @@ int jellyfin_qc_url(char *dst, size_t tam) {
 }
 
 // ---------------------------------------------------------- title page
-static int jfi_ficha(JfInst *I, CatItem *item, CatEp **saida, int maxEps, CatEpPreparar preparar, void *ctx) {
+static int jfi_ficha(JfInst *I, CatItem *item, CatEp **saida, int maxEps, CatEpPreparar preparar, void *ctx,
+                     int (*cancelado)(void *), void *cancelCtx) {
   CatEp *eps = *saida;
   char tag[JFID_TAG + 1], id[JFID_ITEM + 1];
   JfConta c;
@@ -2847,12 +2904,14 @@ static int jfi_ficha(JfInst *I, CatItem *item, CatEp **saida, int maxEps, CatEpP
   }
   pthread_mutex_unlock(&I->trava);
   if (!j) return -1;
-  e = jf_detalhe(&c, j, id, &novo);
+  e = cancelado && cancelado(cancelCtx) ? JF_ERR_CANCELADO :
+      jf_detalhe_cancelavel(&c, j, id, &novo, cancelado, cancelCtx);
   if (e == JF_OK && !strcmp(item->tipo, "series") && (eps || preparar) && maxEps > 0) {
-    ne = jf_episodios_preparar(&c, j, id, saida, maxEps, preparar, ctx);
+    ne = jf_episodios_preparar(&c, j, id, saida, maxEps, preparar, ctx, cancelado, cancelCtx);
     eps = *saida;
     if (ne < 0) { e = ne; ne = 0; }
   }
+  if (cancelado && cancelado(cancelCtx)) e = JF_ERR_CANCELADO;
   pthread_mutex_lock(&I->trava);
   if (g != I->geracao || rede_job_estado(j) != REDE_OK) e = JF_ERR_CANCELADO;
   else if (e == JF_ERR_AUTH) expirouLocked(I);
@@ -2940,8 +2999,8 @@ int jf_setup_aceitar(int emby, const JfConta *c, int perfil, unsigned generation
     return jfi_pagina(I, k, ini, lim, out, max, total, raw); }                                    \
   int P##_fileiras_copiar(CatItem *it, int mi, CatFileira *f, int mf, int *n) {               \
     return jfi_fileiras_copiar(I, it, mi, f, mf, n); }                                        \
-  int P##_ficha(CatItem *it, CatEp *e, int m) { return jfi_ficha(I, it, &e, m, NULL, NULL); } \
-  int P##_ficha_preparar(CatItem *it, CatEp **e, int m, CatEpPreparar f, void *c) { return jfi_ficha(I, it, e, m, f, c); } \
+  int P##_ficha(CatItem *it, CatEp *e, int m) { return jfi_ficha(I, it, &e, m, NULL, NULL, NULL, NULL); } \
+  int P##_ficha_preparar(CatItem *it, CatEp **e, int m, CatEpPreparar f, void *c, int (*stop)(void *), void *sc) { return jfi_ficha(I, it, e, m, f, c, stop, sc); } \
   int P##_fontes_pedir(const char *a) { return jfi_fontes_pedir(I, a); }                      \
   int P##_fontes_colher(const char *a, Stream **l, int *n) { return jfi_fontes_colher(I, a, l, n); } \
   void P##_reproducao_tick(const char *u, double p, double d, int t) { jfi_reproducao_tick(I, u, p, d, t); } \

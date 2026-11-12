@@ -147,6 +147,7 @@ static void resultados(void) {
 }
 
 int teste_jf_episodios_preparar(const JfConta *, RedeJob *, const char *, CatEp **, int, CatEpPreparar, void *);
+int teste_jf_episodios_cancelavel(const JfConta *, RedeJob *, const char *, CatEp **, int, CatEpPreparar, void *, int (*)(void *), void *);
 int teste_px_episodios_preparar(const PxConta *, RedeJob *, const char *, CatEp **, int, CatEpPreparar, void *);
 int teste_px_episodios_cancelavel(const PxConta *, RedeJob *, const char *, CatEp **, int, CatEpPreparar, void *, int (*)(void *), void *);
 int teste_plex_esperando(void);
@@ -164,6 +165,35 @@ static int falharMinimos;
 void *teste_plex_min_realloc(void *p, size_t n) { return falharMinimos ? NULL : realloc(p, n); }
 static int modoHttp, modoCallback, chamouCallback, totalSimulado, pedidosSimulados, extraSimulado;
 static int invalidoSimulado, paddingSimulado, aleatorioSimulado;
+static int jfRico, jfPedidos, jfObsoleto;
+static size_t jfMemoria, jfPico, jfResposta;
+static struct { void *p; size_t n; } jfAlocacoes[4];
+static void jfSomar(size_t n) {
+  jfMemoria += n;
+  if (jfMemoria > jfPico) jfPico = jfMemoria;
+}
+void *teste_jf_malloc(size_t n) {
+  void *p = malloc(n);
+  if (jfRico && p) {
+    int i;
+    for (i = 0; i < 4 && jfAlocacoes[i].p; i++);
+    assert(i < 4); jfAlocacoes[i].p = p; jfAlocacoes[i].n = n; jfSomar(n);
+  }
+  return p;
+}
+void teste_jf_free(void *p) {
+  for (int i = 0; i < 4; i++) if (jfAlocacoes[i].p == p && p) {
+    jfMemoria -= jfAlocacoes[i].n; jfAlocacoes[i].p = NULL; break;
+  }
+  free(p);
+}
+void teste_jf_resposta_limpar(RedeResposta *r) {
+  if (jfRico && r->corpo && jfResposta) { jfMemoria -= jfResposta; jfResposta = 0; }
+  rede_resposta_limpar(r);
+}
+static int jfCancelado(void *ctx) { (void)ctx; return jfObsoleto > 0; }
+static const void *jfCorpoAnterior;
+extern int __asan_address_is_poisoned(const void *);
 static pthread_mutex_t concorrenciaTrava = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t concorrenciaCond = PTHREAD_COND_INITIALIZER;
 static int concorrente, chegaram, liberarConcorrentes;
@@ -195,7 +225,40 @@ int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
     }
     pthread_mutex_unlock(&concorrenciaTrava);
   }
-  if (totalSimulado) {
+  if (jfRico) {
+    int inicio = -1, limite = 0;
+    const char *q = strstr(pedido->url, "&StartIndex=");
+    assert(q && sscanf(q, "&StartIndex=%d&Limit=%d", &inicio, &limite) == 2);
+    assert(inicio == jfPedidos * 100 && limite == 100);
+    jfPedidos++;
+    if (jfObsoleto == -1 && jfPedidos == 2) {
+      jfObsoleto = 1;
+      assert(pedido->parar && pedido->parar(pedido->parar_usuario));
+      resposta->erro = REDE_CANCELADO;
+      return 0;
+    }
+    size_t cap = 100000, pos = 0;
+    resposta->corpo = malloc(cap); assert(resposta->corpo);
+    assert(!jfResposta); jfResposta = cap; jfSomar(cap);
+    pos += (size_t)snprintf(resposta->corpo, cap, "{\"TotalRecordCount\":5000,\"Items\":[");
+    for (int i = 0; i < 100; i++) {
+      char texto[420];
+      if (jfRico == 2) {
+        unsigned x = (unsigned)(inicio + i + 1) * 2654435761u;
+        const char letras[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        for (size_t j = 0; j + 1 < sizeof texto; j++) {
+          x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+          texto[j] = letras[x % (sizeof letras - 1)];
+        }
+        texto[sizeof texto - 1] = 0;
+      } else snprintf(texto, sizeof texto, "Rich synopsis %d", inicio + i + 1);
+      pos += (size_t)snprintf(resposta->corpo + pos, cap - pos,
+        "%s{\"Id\":\"%x\",\"ParentIndexNumber\":1,\"IndexNumber\":%d,\"Name\":\"Episode %d\",\"Overview\":\"%s\",\"RunTimeTicks\":36000000000,\"PremiereDate\":\"2025-01-23\",\"ImageTags\":{\"Primary\":\"image\"}}",
+        i ? "," : "", inicio + i + 1, inicio + i + 1, inicio + i + 1, texto);
+    }
+    assert(pos + 3 < cap); memcpy(resposta->corpo + pos, "]}", 3);
+    jfCorpoAnterior = resposta->corpo;
+  } else if (totalSimulado) {
     int inicio = -1, tamanho = 0;
     const char *q = strstr(pedido->url, "X-Plex-Container-Start=");
     assert(q && sscanf(q, "X-Plex-Container-Start=%d&X-Plex-Container-Size=%d", &inicio, &tamanho) == 2);
@@ -243,12 +306,18 @@ int teste_rede_pedir(const RedePedido *pedido, RedeResposta *resposta) {
     if (usados > picoMedido) picoMedido = usados;
     pthread_mutex_unlock(&concorrenciaTrava);
   }
-  if (modoHttp && (!totalSimulado || pedidosSimulados == modoHttp)) rede_job_cancelar(pedido->job);
+  if (modoHttp && (jfRico ? jfPedidos == modoHttp : !totalSimulado || pedidosSimulados == modoHttp)) rede_job_cancelar(pedido->job);
   return 0;
 }
 static CatEp *prepararTeste(void *ctx, int n) {
   RedeJob *job = ctx;
   __atomic_add_fetch(&chamouCallback, 1, __ATOMIC_RELAXED);
+  if (jfRico) {
+    assert(n == 5000 && jfPedidos == 50);
+    assert(__asan_address_is_poisoned(jfCorpoAnterior));
+    jfSomar((size_t)n * sizeof(CatEp));
+    return calloc((size_t)n, sizeof(CatEp));
+  }
   if (n != (totalSimulado ? totalSimulado - invalidoSimulado : 2))
     fprintf(stderr, "unexpected provider episode count %d total %d invalid %d\n", n, totalSimulado, invalidoSimulado);
   assert(n == (totalSimulado ? totalSimulado - invalidoSimulado : 2));
@@ -309,6 +378,41 @@ static void testarPreparo(void) {
     free(out);
     rede_job_soltar(job);
     rede_grupo_soltar(grupo);
+  }
+  for (int tipo = 0; tipo < 2; tipo++) {
+    RedeGrupo *grupo = rede_grupo_criar();
+    RedeJob *job = rede_job_criar(grupo);
+    CatEp *out = NULL;
+    jc.tipo = tipo ? JF_TIPO_EMBY : JF_TIPO_JELLYFIN;
+    jfRico = 1; jfPedidos = modoHttp = modoCallback = 0;
+    int n = teste_jf_episodios_preparar(&jc, job, "a", &out, 5000, prepararTeste, job);
+    assert(n == 5000 && jfPedidos == 50);
+    assert(jfPico <= (size_t)5000 * sizeof(CatEp) + 512u * 1024u);
+    printf("jellyfin staged peak: %zu bytes (excluding zlib internals)\n", jfPico);
+    for (int i = 0; i < n; i++) {
+      char nome[80], sinopse[80];
+      snprintf(nome, sizeof nome, "Episode %d", i + 1);
+      snprintf(sinopse, sizeof sinopse, "Rich synopsis %d", i + 1);
+      assert(out[i].episodio == i + 1 && !strcmp(out[i].nome, nome));
+      assert(!strcmp(out[i].sinopse, sinopse) && !strcmp(out[i].duracao, "60 min"));
+      assert(!strcmp(out[i].dataIso, "2025-01-23") && out[i].thumb[0]);
+    }
+    free(out); jfMemoria = jfPico = 0; rede_job_soltar(job); rede_grupo_soltar(grupo);
+    grupo = rede_grupo_criar(); job = rede_job_criar(grupo); out = NULL;
+    jfPedidos = chamouCallback = 0; modoHttp = 2;
+    n = teste_jf_episodios_preparar(&jc, job, "a", &out, 5000, prepararTeste, job);
+    assert(n < 0 && jfPedidos == 2 && !chamouCallback && !out);
+    rede_job_soltar(job); rede_grupo_soltar(grupo);
+    grupo = rede_grupo_criar(); job = rede_job_criar(grupo); out = NULL;
+    jfPedidos = chamouCallback = modoHttp = 0; jfObsoleto = -1;
+    n = teste_jf_episodios_cancelavel(&jc, job, "a", &out, 5000, prepararTeste, job, jfCancelado, NULL);
+    assert(n < 0 && jfPedidos == 2 && !chamouCallback && !out);
+    rede_job_soltar(job); rede_grupo_soltar(grupo);
+    grupo = rede_grupo_criar(); job = rede_job_criar(grupo); out = NULL;
+    jfRico = 2; jfObsoleto = jfPedidos = chamouCallback = 0;
+    n = teste_jf_episodios_preparar(&jc, job, "a", &out, 5000, prepararTeste, job);
+    assert(n < 0 && jfPedidos > 1 && !chamouCallback && !out);
+    jfObsoleto = jfRico = 0; free(out); rede_job_soltar(job); rede_grupo_soltar(grupo);
   }
   {
     RedeGrupo *grupo = rede_grupo_criar();

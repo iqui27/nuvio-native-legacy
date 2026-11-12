@@ -301,8 +301,8 @@ int servidores_ficha_preparar(CatItem *item, CatEp **eps, int max, CatEpPreparar
   if (vaga) *vaga = 0;
   if (!item || !eps || !preparar) return -1;
   if (!strncmp(item->imdb, JFID_PREFIXO_PLEX, 3)) return plex_ficha_preparar(item, eps, max, preparar, ctx, cancelado, cancelCtx, vaga);
-  if (!strncmp(item->imdb, JFID_PREFIXO_EMBY, 3)) return emby_ficha_preparar(item, eps, max, preparar, ctx);
-  return jellyfin_ficha_preparar(item, eps, max, preparar, ctx);
+  if (!strncmp(item->imdb, JFID_PREFIXO_EMBY, 3)) return emby_ficha_preparar(item, eps, max, preparar, ctx, cancelado, cancelCtx);
+  return jellyfin_ficha_preparar(item, eps, max, preparar, ctx, cancelado, cancelCtx);
 }
 
 int servidores_fontes_pedir(const char *alvo) {
