@@ -9486,6 +9486,12 @@ static DescItemLista vtExtra[VT_MAX];   // paralela a vtItens; ver descoberta.h
 static int      vtN;
 static char     vtBase[NV_ADDON_URL_MAX], vtTipo[8], vtCat[96], vtGenre[96];
 static int      vtPagina, vtFim, vtFioVivo, vtErro, vtReplay;
+static uint64_t vtReplayHash;
+#define VT_HASH_INICIO UINT64_C(14695981039346656037)
+static uint64_t vtHashItem(uint64_t h, const char *p, const char *fim) {
+  for (; p < fim; p++) { h ^= (unsigned char)*p; h *= UINT64_C(1099511628211); }
+  h ^= 255; return h * UINT64_C(1099511628211);
+}
 static unsigned vtGeracao;
 static NvPerfilSessao vtSessao;
 // Fonte nao-addon aberta por desc_vertudo_fonte (issue #44): vtProvedor 1 e
@@ -10165,7 +10171,8 @@ static void *fioVerTudo(void *u) {
   if (cap == VT_MAX) cap = VT_STORE_MAX;
   pthread_mutex_lock(&vtTrava);
   if(generation!=vtGeracao || !descSessaoAtual()){pthread_mutex_unlock(&vtTrava);free(corpo);continue;}
-  int semEspaco = 0, replay = vtReplay;
+  int semEspaco = 0, mudouPagina = 0, replay = vtReplay;
+  uint64_t replayHash = vtReplayHash, hash = VT_HASH_INICIO, hashAntes = hash;
   pthread_mutex_unlock(&vtTrava);
   const char *first=corpo?js_array(corpo,NULL,"metas"):NULL;
   int valid=corpo&&strstr(corpo,"\"metas\"");
@@ -10174,7 +10181,11 @@ static void *fioVerTudo(void *u) {
   fonte.prov[0] = 0;
   for(const char *p=first;p;p=js_prox(js_fim(p))) {
     const char *f=js_fim(p);raw++;
-    if (raw <= replay) continue;
+    hashAntes = hash; hash = vtHashItem(hash, p, f);
+    if (raw <= replay) {
+      if (raw == replay && hash != replayHash) { mudouPagina = 1; break; }
+      continue;
+    }
     CatItem it;
     if (deMeta(p, f, type, &it) && colecaoTipo(&fonte, &it)) {
       // Escondido ainda conta como "pagina com novidade": senao uma pagina so de
@@ -10207,13 +10218,14 @@ static void *fioVerTudo(void *u) {
   pthread_mutex_lock(&vtTrava);
   if(generation!=vtGeracao || !descSessaoAtual()){pthread_mutex_unlock(&vtTrava);continue;}
   // Keep the page cursor on failure: addons can require a fixed skipStep.
-  // Skip the already consumed raw prefix, including items without IDs.
-  if (semEspaco) vtReplay = raw - 1;
-  else if (valid) vtReplay = 0;
-  vtErro=!valid || semEspaco;
+  // Verify the consumed raw prefix, including items without IDs, before replay.
+  if (valid && raw < replay) mudouPagina = 1;
+  if (semEspaco) { vtReplay = raw - 1; vtReplayHash = hashAntes; }
+  else if (valid && !mudouPagina) vtReplay = 0;
+  vtErro=!valid || semEspaco || mudouPagina;
   // Skip usa quantidade recebida, não 100 presumidos. Muitos addons entregam
   // 20/50 por página. Repetição sem novos ids também termina a paginação.
-  if(valid && !semEspaco){vtPagina+=raw;if(!raw||!added||(cap < VT_STORE_MAX && vtN>=cap))vtFim=1;}
+  if(valid && !semEspaco && !mudouPagina){vtPagina+=raw;if(!raw||!added||(cap < VT_STORE_MAX && vtN>=cap))vtFim=1;}
   int seguir = vtPaginaSoDeVistos(antes, added, paginas);
   if (!seguir) vtFioVivo=0;
   pthread_mutex_unlock(&vtTrava);
