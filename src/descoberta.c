@@ -10165,7 +10165,7 @@ static void *fioVerTudo(void *u) {
   if (cap == VT_MAX) cap = VT_STORE_MAX;
   pthread_mutex_lock(&vtTrava);
   if(generation!=vtGeracao || !descSessaoAtual()){pthread_mutex_unlock(&vtTrava);free(corpo);continue;}
-  int inicioPagina = vtN, semEspaco = 0;
+  int semEspaco = 0;
   pthread_mutex_unlock(&vtTrava);
   const char *first=corpo?js_array(corpo,NULL,"metas"):NULL;
   int valid=corpo&&strstr(corpo,"\"metas\"");
@@ -10196,6 +10196,7 @@ static void *fioVerTudo(void *u) {
         } else if (!duplicate && cap == VT_STORE_MAX) semEspaco = 1;
       }
       pthread_mutex_unlock(&vtTrava);
+      if (semEspaco) break;
     }
   }
   colecaoLog("", base, type, id, genre, skip, status, added,
@@ -10204,7 +10205,8 @@ static void *fioVerTudo(void *u) {
   free(corpo);
   pthread_mutex_lock(&vtTrava);
   if(generation!=vtGeracao || !descSessaoAtual()){pthread_mutex_unlock(&vtTrava);continue;}
-  if (semEspaco) { vt_store_truncate(&vtAddon, inicioPagina); vtN = inicioPagina; }
+  // Keep the accepted prefix and retry starting at the first unretained raw item.
+  if (semEspaco) vtPagina += raw - 1;
   vtErro=!valid || semEspaco;
   // Skip usa quantidade recebida, não 100 presumidos. Muitos addons entregam
   // 20/50 por página. Repetição sem novos ids também termina a paginação.

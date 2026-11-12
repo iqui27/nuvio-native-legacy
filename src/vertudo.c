@@ -852,7 +852,7 @@ static int nItens(void) {
 // normal, mas nao repete automaticamente se o leitor deixar de crescer.
 static void vitTudoAvancar(int n) {
   int bruto = desc_vertudo_n_bruto();
-  if (vitTudo && vitTudoFiltro && bruto < VT_UI_MAX && bruto != vitTudoMaisBruto &&
+  if (vitTudo && vitTudoFiltro && bruto <= VT_UI_MAX && bruto != vitTudoMaisBruto &&
       vertudo_quer_mais(0, n, foco, VT_UI_MAX, desc_vertudo_carregando(),
                         desc_vertudo_fim(), desc_vertudo_erro())) {
     vitTudoMaisBruto = bruto;

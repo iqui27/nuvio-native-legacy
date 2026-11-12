@@ -12,8 +12,12 @@ static int ocultarVistos;
 int ajustes_ocultar_filmes_vistos(void) { return ocultarVistos; }
 unsigned cat_revisao_itens(void) { return 0; }               // #366: a projecao le a revisao
 #include <stdlib.h>
-static int vt_alloc_fail;
-static void *vt_test_alloc(size_t n) { return vt_alloc_fail ? NULL : malloc(n); }
+static int vt_alloc_fail, vt_alloc_remaining = -1;
+static void *vt_test_alloc(size_t n) {
+  if (vt_alloc_fail || vt_alloc_remaining == 0) return NULL;
+  if (vt_alloc_remaining > 0) vt_alloc_remaining--;
+  return malloc(n);
+}
 #define NV_VT_STORE_ALLOC vt_test_alloc
 #define NV_DUBLE_SESSAO
 #include "../src/descoberta.c"
@@ -76,6 +80,21 @@ char *rede_baixar_st(const char *url, int timeout, const char *const *headers, i
 static int limitePedidos;
 char *rede_baixar(const char *url,int timeout) {
   (void)timeout;
+  if (strstr(url, "budget.invalid")) {
+    const char *p = strstr(url, "skip="); int skip = p ? atoi(p + 5) : 0;
+    char poster[2048], background[512], logo[512], description[900];
+    memset(poster, 'p', sizeof poster - 1); poster[sizeof poster - 1] = 0;
+    memset(background, 'b', sizeof background - 1); background[sizeof background - 1] = 0;
+    memset(logo, 'l', sizeof logo - 1); logo[sizeof logo - 1] = 0;
+    memset(description, 's', sizeof description - 1); description[sizeof description - 1] = 0;
+    size_t cap = 600000; char *body = malloc(cap); assert(body);
+    size_t used = (size_t)snprintf(body, cap, "{\"metas\":[");
+    for (int i = skip; i < skip + 100; i++)
+      used += (size_t)snprintf(body + used, cap - used,
+        "%s{\"id\":\"tt%d\",\"name\":\"Item\",\"poster\":\"%s\",\"background\":\"%s\",\"logo\":\"%s\",\"description\":\"%s\"}",
+        i == skip ? "" : ",", i + 1, poster, background, logo, description);
+    snprintf(body + used, cap - used, "]}"); return body;
+  }
   if (strstr(url, "limite.invalid")) {
     limitePedidos++;
     const char *p = strstr(url, "skip=");
@@ -180,8 +199,10 @@ int main(void) {
   desc_vertudo_mais(); waitDone();
   vt_alloc_fail = 0;
   assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 1000 && desc_vertudo_pagina() == 1000);
+  vt_alloc_remaining = 50; desc_vertudo_mais(); waitDone(); vt_alloc_remaining = -1;
+  assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 1050 && desc_vertudo_pagina() == 1050);
   desc_vertudo_mais(); waitDone();
-  assert(limitePedidos == 12 && !desc_vertudo_erro() && desc_vertudo_n() == 1100 && tem("tt1001"));
+  assert(limitePedidos == 13 && !desc_vertudo_erro() && desc_vertudo_n() == 1100 && tem("tt1001"));
   { CatItem item; assert(desc_vertudo_item(1099, &item) && !strcmp(item.imdb, "tt1100"));
     assert(desc_vertudo_item(0, &item) && !strcmp(item.imdb, "tt1"));
     ocultarVistos = 1; vistoId = 1;
@@ -190,6 +211,14 @@ int main(void) {
     ocultarVistos = 0; assert(desc_vertudo_n() == 1100); }
   desc_vertudo_abrir("https://limite.invalid", "movie", "top10"); waitDone();
   assert(desc_vertudo_n() == 10 && desc_vertudo_fim());
+  desc_vertudo_abrir("https://budget.invalid", "movie", "rank"); waitDone();
+  for (int i = 0; i < 20 && !desc_vertudo_erro(); i++) { desc_vertudo_mais(); waitDone(); }
+  { int n = desc_vertudo_n(); CatItem item;
+    assert(desc_vertudo_erro() && !desc_vertudo_fim() && n > 0 && n < 2000 && n % 100 != 0);
+    assert(desc_vertudo_pagina() == n && desc_vertudo_item(n - 1, &item) && item.ranking == n);
+    desc_vertudo_mais(); waitDone();
+    assert(desc_vertudo_erro() && desc_vertudo_n() == n && desc_vertudo_pagina() == n);
+  }
   puts("colfiltro: PASS (home e ver tudo escondem o de 2099; pagina so de futuros nao encerra)");
   return 0;
 }
