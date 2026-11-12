@@ -1,5 +1,6 @@
 #include "arteurl.h"
 #include "descoberta.h"
+#include "vt_store.h"
 #include "caca.h"
 #include "dados.h"
 #include "idioma.h"
@@ -9477,6 +9478,10 @@ static int pendItem = -1, pendTemp;
 #define VT_PASSO 100        // `skipStep` padrao do web quando o addon nao diz
 
 static CatItem  vtItens[VT_MAX];
+static VtStore vtAddon;
+static struct { char id[64], tipo[8]; } vtAddonId[VT_STORE_MAX];
+/* Dynamic payload budget excludes the fixed index and allocator overhead. */
+#define VT_ADDON_BYTES_MAX (8u * 1024u * 1024u)
 static DescItemLista vtExtra[VT_MAX];   // paralela a vtItens; ver descoberta.h
 static int      vtN;
 static char     vtBase[NV_ADDON_URL_MAX], vtTipo[8], vtCat[96], vtGenre[96];
@@ -9494,7 +9499,13 @@ static pthread_mutex_t vtTrava = PTHREAD_MUTEX_INITIALIZER;
 // Desligar o ajuste ou desmarcar um filme devolve o mesmo titulo, na ordem do
 // addon, sem outra viagem de rede. vtN/skip/limites continuam contando a lista
 // crua; uma pagina cheia de vistos nao pode ser confundida com fim de catalogo.
-static int vtVisiveis[VT_MAX], vtNVisiveis;
+static int vtVisiveis[VT_STORE_MAX], vtNVisiveis;
+static int vtEhAddon(void) { return !vtProvedor && strcmp(vtBase, "servidores"); }
+static int vtLer(int i, CatItem *out) {
+  if (i < 0 || i >= vtN) return 0;
+  if (vtEhAddon()) return vt_store_get(&vtAddon, i, out);
+  *out = vtItens[i]; return 1;
+}
 static int vtProjN = -1, vtProjOcultar;
 static unsigned vtProjGeracao, vtProjItens, vtProjRevisao;
 
@@ -9506,9 +9517,11 @@ static int vtProjetar(void) {
   if (vtProjN == vtN && vtProjGeracao == vtGeracao &&
       vtProjOcultar == ocultar && (!ocultar || vtProjItens == itens)) return vtNVisiveis;
   vtNVisiveis = 0;
-  for (int i = 0; i < vtN; i++)
-    if (!ocultar || !desc_filme_visto(&vtItens[i]))
+  for (int i = 0; i < vtN; i++) {
+    CatItem item;
+    if (!ocultar || (vtLer(i, &item) && !desc_filme_visto(&item)))
       vtVisiveis[vtNVisiveis++] = i;
+  }
   vtProjN = vtN; vtProjGeracao = vtGeracao; vtProjOcultar = ocultar;
   vtProjItens = itens;
   vtProjRevisao++;
@@ -10149,8 +10162,10 @@ static void *fioVerTudo(void *u) {
   w=catalogoUrl(url,sizeof url,base,type,id,extra);
   corpo=(!addons_base_desligada(base)&&descPedidoCoube(base,w,sizeof url))?colecaoBaixar(url,&status):NULL; }
   cap=colecaoTeto(id);
+  if (cap == VT_MAX) cap = VT_STORE_MAX;
   pthread_mutex_lock(&vtTrava);
   if(generation!=vtGeracao || !descSessaoAtual()){pthread_mutex_unlock(&vtTrava);free(corpo);continue;}
+  int inicioPagina = vtN, semEspaco = 0;
   pthread_mutex_unlock(&vtTrava);
   const char *first=corpo?js_array(corpo,NULL,"metas"):NULL;
   int valid=corpo&&strstr(corpo,"\"metas\"");
@@ -10168,10 +10183,17 @@ static void *fioVerTudo(void *u) {
       it.ranking = skip + raw;
       pthread_mutex_lock(&vtTrava);
       int duplicate=0;
-      for(int i=0;i<vtN;i++)if(it.imdb[0]&&!strcmp(vtItens[i].imdb,it.imdb)&&!strcmp(vtItens[i].tipo,it.tipo)){duplicate=1;break;}
-      if(generation==vtGeracao&&descSessaoAtual()&&vtN<cap&&!duplicate){
-        memset(&vtExtra[vtN],0,sizeof vtExtra[vtN]);
-        vtItens[vtN++]=it;added++;
+      if (generation==vtGeracao && descSessaoAtual()) {
+        for(int i=0;i<vtN && it.imdb[0];i++)
+          if(!strcmp(vtAddonId[i].id,it.imdb) && !strcmp(vtAddonId[i].tipo,it.tipo)){duplicate=1;break;}
+        if (!duplicate && vtN < cap) {
+          if (vt_store_append(&vtAddon, &it, VT_ADDON_BYTES_MAX)) {
+            memcpy(vtAddonId[vtN].id, it.imdb, sizeof it.imdb);
+            memcpy(vtAddonId[vtN].tipo, it.tipo, sizeof it.tipo);
+            vtN++; added++;
+          }
+          else semEspaco = 1;
+        } else if (!duplicate && cap == VT_STORE_MAX) semEspaco = 1;
       }
       pthread_mutex_unlock(&vtTrava);
     }
@@ -10182,10 +10204,11 @@ static void *fioVerTudo(void *u) {
   free(corpo);
   pthread_mutex_lock(&vtTrava);
   if(generation!=vtGeracao || !descSessaoAtual()){pthread_mutex_unlock(&vtTrava);continue;}
-  vtErro=!valid;
+  if (semEspaco) { vt_store_truncate(&vtAddon, inicioPagina); vtN = inicioPagina; }
+  vtErro=!valid || semEspaco;
   // Skip usa quantidade recebida, não 100 presumidos. Muitos addons entregam
   // 20/50 por página. Repetição sem novos ids também termina a paginação.
-  if(valid){vtPagina+=raw;if(!raw||!added||vtN>=cap)vtFim=1;}
+  if(valid && !semEspaco){vtPagina+=raw;if(!raw||!added||(cap < VT_STORE_MAX && vtN>=cap))vtFim=1;}
   int seguir = vtPaginaSoDeVistos(antes, added, paginas);
   if (!seguir) vtFioVivo=0;
   pthread_mutex_unlock(&vtTrava);
@@ -10232,6 +10255,7 @@ void desc_vertudo_filtro_desde(const char *base, const char *tipo, const char *c
     if (preencher) vtDisparar();
     return;
   }
+  vt_store_free(&vtAddon);
   snprintf(vtBase, sizeof vtBase, "%s", base);
   snprintf(vtTipo, sizeof vtTipo, "%s", tipo);
   snprintf(vtCat,  sizeof vtCat,  "%s", catId);
@@ -10258,6 +10282,7 @@ void desc_vertudo_fonte_desde(const ColSource *s, int pagina) {
   if (!strcmp(s->prov, "caca")) {
     int k = caca_por_chave(s->catId + (s->catId[0] ? 1 : 0)), n;
     pthread_mutex_lock(&vtTrava);
+    vt_store_free(&vtAddon);
     vtFonte = copia;
     vtProvedor = 3;
     vtBase[0] = 0;
@@ -10273,6 +10298,7 @@ void desc_vertudo_fonte_desde(const ColSource *s, int pagina) {
     if (preencher) vtDisparar();
     return;
   }
+  vt_store_free(&vtAddon);
   vtFonte = copia;
   vtProvedor = !strcmp(s->prov, "trakt") ? 2 : 1;
   vtBase[0] = 0;
@@ -10305,7 +10331,10 @@ void desc_vertudo_fechar(void) { /* guarda o que leu; ver desc_vertudo_abrir */ 
 int desc_vertudo_extra(int i, DescItemLista *dst) {
   int ok = 0;
   pthread_mutex_lock(&vtTrava);
-  if (dst && i >= 0 && i < vtN) { *dst = vtExtra[i]; ok = 1; }
+  if (dst && i >= 0 && i < vtN) {
+    if (vtEhAddon()) memset(dst, 0, sizeof *dst); else *dst = vtExtra[i];
+    ok = 1;
+  }
   pthread_mutex_unlock(&vtTrava);
   return ok;
 }
@@ -10314,7 +10343,7 @@ int desc_vertudo_item(int i, CatItem *dst) {
   int ok = 0;
   pthread_mutex_lock(&vtTrava);
   int n = vtProjetar();
-  if (dst && i >= 0 && i < n) { memcpy(dst, &vtItens[vtVisiveis[i]], sizeof *dst); ok = 1; }
+  if (dst && i >= 0 && i < n) ok = vtLer(vtVisiveis[i], dst);
   pthread_mutex_unlock(&vtTrava);
   return ok;
 }
@@ -10322,7 +10351,7 @@ int desc_vertudo_item(int i, CatItem *dst) {
 int desc_vertudo_item_bruto(int i, CatItem *dst) {
   int ok = 0;
   pthread_mutex_lock(&vtTrava);
-  if (dst && i >= 0 && i < vtN) { memcpy(dst, &vtItens[i], sizeof *dst); ok = 1; }
+  if (dst && i >= 0 && i < vtN) ok = vtLer(i, dst);
   pthread_mutex_unlock(&vtTrava);
   return ok;
 }

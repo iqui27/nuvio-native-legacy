@@ -65,6 +65,13 @@ static int vt_store_get(const VtStore *s, int index, CatItem *out) {
   }
   return 1;
 }
+static void vt_store_truncate(VtStore *s, int n) {
+  while (s->n > n) {
+    VtStoreNode *node = s->index[--s->n];
+    s->used -= sizeof *node + node->bytes;
+    free(node); s->index[s->n] = NULL;
+  }
+}
 static void vt_store_free(VtStore *s) {
   for (int i = 0; i < s->n; i++) free(s->index[i]);
   memset(s, 0, sizeof *s);

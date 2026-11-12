@@ -11,11 +11,12 @@ int ajustes_ocultar_nao_lancados(void) { return ocultar; }
 static int ocultarVistos;
 int ajustes_ocultar_filmes_vistos(void) { return ocultarVistos; }
 unsigned cat_revisao_itens(void) { return 0; }               // #366: a projecao le a revisao
-#define NV_DUBLE_SESSAO
-#include "../src/descoberta.c"
+#include <stdlib.h>
 static int vt_alloc_fail;
 static void *vt_test_alloc(size_t n) { return vt_alloc_fail ? NULL : malloc(n); }
 #define NV_VT_STORE_ALLOC vt_test_alloc
+#define NV_DUBLE_SESSAO
+#include "../src/descoberta.c"
 #include "../src/vt_store.h"
 // descoberta.c passou a traduzir os rotulos que monta ("Filme", "Serie", a
 // data por extenso) e este teste nao linka idioma.c: linkar puxaria
@@ -175,12 +176,20 @@ int main(void) {
   { CatItem item; assert(desc_vertudo_item(0, &item) && !strcmp(item.imdb, "tt1"));
     assert(desc_vertudo_item(999, &item) && !strcmp(item.imdb, "tt1000")); }
   assert(limitePedidos == 10);
+  vt_alloc_fail = 1;
   desc_vertudo_mais(); waitDone();
-  if (getenv("NV_TEST_AFTER_1000")) {
-    assert(desc_vertudo_n() == 1100 && tem("tt1001"));
-  } else {
-    assert(limitePedidos == 10 && desc_vertudo_n() == 1000 && desc_vertudo_fim() && !tem("tt1001"));
-  }
+  vt_alloc_fail = 0;
+  assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 1000 && desc_vertudo_pagina() == 1000);
+  desc_vertudo_mais(); waitDone();
+  assert(limitePedidos == 12 && !desc_vertudo_erro() && desc_vertudo_n() == 1100 && tem("tt1001"));
+  { CatItem item; assert(desc_vertudo_item(1099, &item) && !strcmp(item.imdb, "tt1100"));
+    assert(desc_vertudo_item(0, &item) && !strcmp(item.imdb, "tt1"));
+    ocultarVistos = 1; vistoId = 1;
+    assert(desc_vertudo_n() == 1099 && desc_vertudo_item(1, &item) && !strcmp(item.imdb, "tt3"));
+    assert(desc_vertudo_item(1098, &item) && !strcmp(item.imdb, "tt1100"));
+    ocultarVistos = 0; assert(desc_vertudo_n() == 1100); }
+  desc_vertudo_abrir("https://limite.invalid", "movie", "top10"); waitDone();
+  assert(desc_vertudo_n() == 10 && desc_vertudo_fim());
   puts("colfiltro: PASS (home e ver tudo escondem o de 2099; pagina so de futuros nao encerra)");
   return 0;
 }
