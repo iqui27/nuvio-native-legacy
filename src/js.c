@@ -209,6 +209,24 @@ double js_num(const char *ini, const char *fim, const char *chave, double padrao
   return padrao;
 }
 
+int js_array_presente(const char *ini, const char *fim, const char *chave) {
+  if (!ini || !chave) return 0;
+  if (!fim) fim = ini + strlen(ini);
+  const char *p = achaChave(ini, fim, chave);
+  if (!p) return 0;
+  p = pulaEm(p, fim);
+  if (p >= fim || *p != '[') return 0;
+  const char *end = p; int depth = 0;
+  for (; end < fim && *end; end++) {
+    if (*end == '"') { end = fimTextoEm(end, fim); if (!end) return 0; }
+    else if (*end == '[') depth++;
+    else if (*end == ']' && --depth == 0) { end++; break; }
+  }
+  if (depth || end <= p + 1 || end[-1] != ']') return 0;
+  const char *first = pulaEm(p + 1, end - 1);
+  return first == end - 1 || *first == '{' || *first == '"';
+}
+
 const char *js_array(const char *ini, const char *fim, const char *chave) {
   const char *p;
   if (!ini) return NULL;

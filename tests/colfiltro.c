@@ -77,7 +77,7 @@ char *rede_baixar_st(const char *url, int timeout, const char *const *headers, i
   *status = body ? 200 : 0;
   return body;
 }
-static int limitePedidos, limiteVariante;
+static int limitePedidos, limiteVariante, budgetMudou;
 char *rede_baixar(const char *url,int timeout) {
   (void)timeout;
   if (strstr(url, "budget.invalid")) {
@@ -91,8 +91,8 @@ char *rede_baixar(const char *url,int timeout) {
     size_t used = (size_t)snprintf(body, cap, "{\"metas\":[");
     for (int i = skip; i < skip + 100; i++)
       used += (size_t)snprintf(body + used, cap - used,
-        "%s{\"id\":\"tt%d\",\"name\":\"Item\",\"poster\":\"%s\",\"background\":\"%s\",\"logo\":\"%s\",\"description\":\"%s\"}",
-        i == skip ? "" : ",", i + 1, poster, background, logo, description);
+        "%s{\"id\":\"tt%d\",\"name\":\"Item%s\",\"poster\":\"%s\",\"background\":\"%s\",\"logo\":\"%s\",\"description\":\"%s\"}",
+        i == skip ? "" : ",", i + 1, budgetMudou && i == skip ? " changed" : "", poster, background, logo, description);
     snprintf(body + used, cap - used, "]}"); return body;
   }
   if (strstr(url, "limite.invalid")) {
@@ -100,24 +100,29 @@ char *rede_baixar(const char *url,int timeout) {
     const char *p = strstr(url, "skip=");
     int skip = p ? atoi(p + 5) : 0;
     if (skip % 100) return NULL; /* Provider accepts only its advertised skipStep. */
-    char *body = malloc  (16000);
-    int used = snprintf(body, 16000, "{\"metas\":[");
-    int count = skip == 1000 && limiteVariante == 3 ? 20 : 100;
-    for (int pos = 0; pos < count && skip + pos < 1100; pos++) {
+    if (!skip && limiteVariante == 6) return strdup("{\"metas\":null}");
+    if (!skip && limiteVariante == 7) return strdup("{\"metas\":{}}");
+    if (!skip && limiteVariante == 8) return strdup("{}");
+    if (!skip && limiteVariante == 9) return strdup("{\"metas\":[]}");
+    char *body = malloc(262144); assert(body);
+    int used = snprintf(body, 262144, "{\"metas\":[");
+    int total = limiteVariante == 10 ? 2100 : 1100;
+    int count = limiteVariante == 10 ? 2100 : skip == 1000 && limiteVariante == 3 ? 20 : 100;
+    for (int pos = 0; pos < count && skip + pos < total; pos++) {
       int i = skip + pos;
       if (skip == 1000 && limiteVariante == 1) i++;
       if (skip == 1000 && limiteVariante == 2) i--;
       char id[32] = "";
       if (i != 1020) snprintf(id, sizeof id, "tt%d", i + 1);
       if (limiteVariante == 5)
-        used += snprintf(body + used, 16000 - used,
+        used += snprintf(body + used, 262144 - used,
           "%s{\"poster\":\"p.jpg\",\"name\":\"Item %d\",\"id\":\"%s\"}", pos ? "," : "", i + 1, id);
       else
-        used += snprintf(body + used, 16000 - used,
+        used += snprintf(body + used, 262144 - used,
           "%s{\"id\":\"%s\",\"name\":\"Item %d%s\",\"poster\":\"p.jpg\"}",
           pos ? "," : "", id, i + 1, limiteVariante == 4 && i == 1020 ? " changed" : "");
     }
-    snprintf(body + used, 16000 - used, "]}");
+    snprintf(body + used, 262144 - used, "]}");
     return body;
   }
   if(strstr(url,"skip=3"))return strdup("{\"metas\":[{\"id\":\"tt4\",\"name\":\"Quarto\",\"poster\":\"p.jpg\",\"releaseInfo\":\"2019\"}]}");
@@ -232,6 +237,11 @@ int main(void) {
   vt_alloc_remaining = 50; desc_vertudo_mais(); waitDone(); vt_alloc_remaining = -1;
   limiteVariante = 1; desc_vertudo_mais(); waitDone();
   assert(desc_vertudo_erro() && desc_vertudo_n() == 1050);
+  for (int v = 6; v <= 8; v++) {
+    limiteVariante = v; desc_vertudo_abrir("https://limite.invalid", "movie", "refresh"); waitDone();
+    assert(desc_vertudo_erro() && desc_vertudo_n() == 1050 && !desc_vertudo_fim());
+  }
+  limiteVariante = 1;
   vt_alloc_fail = 1; desc_vertudo_abrir("https://limite.invalid", "movie", "refresh"); waitDone(); vt_alloc_fail = 0;
   assert(desc_vertudo_erro() && desc_vertudo_n() == 1050);
   desc_vertudo_abrir("https://limite.invalid", "movie", "refresh"); waitDone();
@@ -247,6 +257,24 @@ int main(void) {
   { CatItem item; assert(!desc_vertudo_erro() && desc_vertudo_n() == 100 && desc_vertudo_pagina() == 1000);
     assert(desc_vertudo_item(0, &item) && item.ranking == 901); }
   limiteVariante = 0;
+  desc_vertudo_abrir("https://limite.invalid", "movie", "emptyreload"); waitDone();
+  for (int i = 1; i < 10; i++) { desc_vertudo_mais(); waitDone(); }
+  vt_alloc_remaining = 50; desc_vertudo_mais(); waitDone(); vt_alloc_remaining = -1;
+  limiteVariante = 1; desc_vertudo_mais(); waitDone();
+  assert(desc_vertudo_erro() && desc_vertudo_n() == 1050);
+  limiteVariante = 9; desc_vertudo_abrir("https://limite.invalid", "movie", "emptyreload"); waitDone();
+  assert(!desc_vertudo_erro() && desc_vertudo_n() == 0 && desc_vertudo_fim());
+  limiteVariante = 0;
+  desc_vertudo_abrir("https://limite.invalid", "movie", "largereload"); waitDone();
+  for (int i = 1; i < 10; i++) { desc_vertudo_mais(); waitDone(); }
+  vt_alloc_remaining = 50; desc_vertudo_mais(); waitDone(); vt_alloc_remaining = -1;
+  limiteVariante = 1; desc_vertudo_mais(); waitDone();
+  assert(desc_vertudo_erro() && desc_vertudo_n() == 1050);
+  limiteVariante = 10; desc_vertudo_abrir("https://limite.invalid", "movie", "largereload"); waitDone();
+  assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 0);
+  desc_vertudo_mais(); waitDone();
+  assert(desc_vertudo_erro() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 0);
+  limiteVariante = 0;
   desc_vertudo_abrir("https://limite.invalid", "movie", "top10"); waitDone();
   assert(desc_vertudo_n() == 10 && desc_vertudo_fim());
   desc_vertudo_abrir("https://budget.invalid", "movie", "rank"); waitDone();
@@ -257,6 +285,10 @@ int main(void) {
     assert(desc_vertudo_pagina() == pagina && desc_vertudo_item(n - 1, &item) && item.ranking == n);
     desc_vertudo_mais(); waitDone();
     assert(desc_vertudo_erro() && desc_vertudo_n() == n && desc_vertudo_pagina() == pagina);
+    budgetMudou = 1; desc_vertudo_mais(); waitDone();
+    assert(desc_vertudo_erro() && desc_vertudo_n() == n && !desc_vertudo_fim());
+    desc_vertudo_abrir("https://budget.invalid", "movie", "rank"); waitDone();
+    assert(desc_vertudo_erro() && desc_vertudo_n() == n && !desc_vertudo_fim());
   }
   puts("colfiltro: PASS (home e ver tudo escondem o de 2099; pagina so de futuros nao encerra)");
   return 0;

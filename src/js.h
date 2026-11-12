@@ -40,6 +40,8 @@ double js_num(const char *ini, const char *fim, const char *chave, double padrao
 // Primeiro elemento do array de nome `chave`; NULL se nao houver. Avance com
 // js_prox.
 const char *js_array(const char *ini, const char *fim, const char *chave);
+// Recognize an actual, closed array, including an empty one.
+int js_array_presente(const char *ini, const char *fim, const char *chave);
 
 // Proximo elemento do array a partir do fim do anterior; NULL no fim.
 const char *js_prox(const char *fimAnterior);

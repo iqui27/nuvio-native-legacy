@@ -10176,8 +10176,9 @@ static void *fioVerTudo(void *u) {
   cap=colecaoTeto(id);
   if (cap == VT_MAX) cap = VT_STORE_MAX;
   if (reload) {
-    VtStore nova = {0}; int ok = corpo && strstr(corpo, "\"metas\"") != NULL;
-    int avancou = 0;
+    VtStore nova = {0}; int ok = corpo && js_array_presente(corpo, NULL, "metas");
+    int avancou = 0, parcial = 0;
+    uint64_t hash = VT_HASH_INICIO, hashAntes = hash;
     pthread_mutex_lock(&vtTrava);
     if (generation != vtGeracao || !descSessaoAtual()) {
       pthread_mutex_unlock(&vtTrava); free(corpo); continue;
@@ -10187,6 +10188,7 @@ static void *fioVerTudo(void *u) {
     snprintf(fonte.type, sizeof fonte.type, "%s", type); fonte.prov[0] = 0;
     for (const char *p = ok ? js_array(corpo, NULL, "metas") : NULL; p; p = js_prox(js_fim(p))) {
       const char *f = js_fim(p); CatItem it; raw++;
+      hashAntes = hash; hash = vtHashItem(hash, p, f, type);
       if (!deMeta(p, f, type, &it) || !colecaoTipo(&fonte, &it)) continue;
       if (descOcultaNaoLancado(&it)) { avancou++; continue; }
       origemDaBase(base, it.origem, sizeof it.origem); it.ranking = skip + raw;
@@ -10196,7 +10198,7 @@ static void *fioVerTudo(void *u) {
         if (vt_store_get(&nova, i, &old) && !strcmp(old.imdb, it.imdb) && !strcmp(old.tipo, it.tipo)) { dup = 1; break; }
       }
       if (dup) continue;
-      if (nova.n >= cap) { if (cap == VT_STORE_MAX) ok = 0; break; }
+      if (nova.n >= cap) { if (cap == VT_STORE_MAX) parcial = 1; break; }
       if (!vt_store_append(&nova, &it, livre)) { ok = 0; break; }
       avancou++;
     }
@@ -10207,15 +10209,17 @@ static void *fioVerTudo(void *u) {
     }
     if (ok) {
       vt_store_free(&vtAddon); vtAddon = nova; memset(&nova, 0, sizeof nova);
-      vtN = vtAddon.n; vtPagina = skip + raw; vtReplay = 0; vtPaginaMudou = 0; vtGeracao++;
-      vtFim = !raw || !avancou || (cap < VT_STORE_MAX && vtN >= cap);
+      vtN = vtAddon.n; vtPagina = parcial ? skip : skip + raw;
+      vtReplay = parcial ? raw - 1 : 0; vtReplayHash = parcial ? hashAntes : 0;
+      vtPaginaMudou = 0; vtGeracao++;
+      vtFim = !parcial && (!raw || !avancou || (cap < VT_STORE_MAX && vtN >= cap));
       for (int i = 0; i < vtN; i++) {
         CatItem it; vt_store_get(&vtAddon, i, &it);
         memcpy(vtAddonId[i].id, it.imdb, sizeof it.imdb);
         memcpy(vtAddonId[i].tipo, it.tipo, sizeof it.tipo);
       }
     }
-    vtErro = !ok; vtFioVivo = 0;
+    vtErro = !ok || parcial; vtFioVivo = 0;
     pthread_mutex_unlock(&vtTrava); vt_store_free(&nova); return NULL;
   }
   pthread_mutex_lock(&vtTrava);
@@ -10224,7 +10228,7 @@ static void *fioVerTudo(void *u) {
   uint64_t replayHash = vtReplayHash, hash = VT_HASH_INICIO, hashAntes = hash;
   pthread_mutex_unlock(&vtTrava);
   const char *first=corpo?js_array(corpo,NULL,"metas"):NULL;
-  int valid=corpo&&strstr(corpo,"\"metas\"");
+  int valid=corpo && js_array_presente(corpo, NULL, "metas");
   int added=0;
   snprintf(fonte.type, sizeof fonte.type, "%s", type);
   fonte.prov[0] = 0;
