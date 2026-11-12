@@ -124,7 +124,7 @@ char *rede_baixar(const char *url,int timeout) {
           "%s{\"id\":\"%s\",\"name\":\"Item %d%s\",\"poster\":\"p.jpg\"}",
           pos ? "," : "", id, i + 1, limiteVariante == 4 && i == 1020 ? " changed" : "");
     }
-    snprintf(body + used, 262144 - used, "]}");
+    snprintf(body + used, 262144 - used, limiteVariante == 13 && skip == 1000 ? "]} trailing" : "]}");
     return body;
   }
   if(strstr(url,"skip=3"))return strdup("{\"metas\":[{\"id\":\"tt4\",\"name\":\"Quarto\",\"poster\":\"p.jpg\",\"releaseInfo\":\"2019\"}]}");
@@ -214,6 +214,8 @@ int main(void) {
   { CatItem item; assert(desc_vertudo_item(0, &item) && !strcmp(item.imdb, "tt1"));
     assert(desc_vertudo_item(999, &item) && !strcmp(item.imdb, "tt1000")); }
   assert(limitePedidos == 10);
+  limiteVariante = 13; desc_vertudo_mais(); waitDone(); limiteVariante = 0;
+  assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 1000 && desc_vertudo_pagina() == 1000 && !tem("tt1001"));
   vt_alloc_fail = 1;
   desc_vertudo_mais(); waitDone();
   vt_alloc_fail = 0;
@@ -225,7 +227,7 @@ int main(void) {
     assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 1050 && desc_vertudo_pagina() == 1000);
   }
   limiteVariante = 5; desc_vertudo_mais(); waitDone(); limiteVariante = 0;
-  assert(limitePedidos == 17 && !desc_vertudo_erro() && desc_vertudo_n() == 1100 && tem("tt1001"));
+  assert(limitePedidos == 18 && !desc_vertudo_erro() && desc_vertudo_n() == 1100 && tem("tt1001"));
   { CatItem item; assert(desc_vertudo_item(1099, &item) && !strcmp(item.imdb, "tt1100"));
     assert(desc_vertudo_item(1020, &item) && !item.imdb[0] && !strcmp(item.titulo, "Item 1021"));
     assert(desc_vertudo_item(1021, &item) && !strcmp(item.imdb, "tt1022"));

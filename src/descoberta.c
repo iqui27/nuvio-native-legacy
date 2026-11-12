@@ -10228,8 +10228,8 @@ static void *fioVerTudo(void *u) {
   int semEspaco = 0, mudouPagina = 0, replay = vtReplay;
   uint64_t replayHash = vtReplayHash, hash = VT_HASH_INICIO, hashAntes = hash;
   pthread_mutex_unlock(&vtTrava);
-  const char *first=corpo?js_array(corpo,NULL,"metas"):NULL;
   int valid=corpo && aio_json_valid(corpo) && js_array_presente(corpo, NULL, "metas");
+  const char *first=valid ? js_array(corpo,NULL,"metas") : NULL;
   int added=0;
   snprintf(fonte.type, sizeof fonte.type, "%s", type);
   fonte.prov[0] = 0;
