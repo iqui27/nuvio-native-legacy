@@ -99,12 +99,16 @@ char *rede_baixar(const char *url,int timeout) {
     limitePedidos++;
     const char *p = strstr(url, "skip=");
     int skip = p ? atoi(p + 5) : 0;
+    if (skip % 100) return NULL; /* Provider accepts only its advertised skipStep. */
     char *body = malloc  (16000);
     int used = snprintf(body, 16000, "{\"metas\":[");
-    for (int i = skip; i < skip + 100 && i < 1100; i++)
+    for (int i = skip; i < skip + 100 && i < 1100; i++) {
+      char id[32] = "";
+      if (i != 1020) snprintf(id, sizeof id, "tt%d", i + 1);
       used += snprintf(body + used, 16000 - used,
-        "%s{\"id\":\"tt%d\",\"name\":\"Item %d\",\"poster\":\"p.jpg\"}",
-        i == skip ? "" : ",", i + 1, i + 1);
+        "%s{\"id\":\"%s\",\"name\":\"Item %d\",\"poster\":\"p.jpg\"}",
+        i == skip ? "" : ",", id, i + 1);
+    }
     snprintf(body + used, 16000 - used, "]}");
     return body;
   }
@@ -200,10 +204,12 @@ int main(void) {
   vt_alloc_fail = 0;
   assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 1000 && desc_vertudo_pagina() == 1000);
   vt_alloc_remaining = 50; desc_vertudo_mais(); waitDone(); vt_alloc_remaining = -1;
-  assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 1050 && desc_vertudo_pagina() == 1050);
+  assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 1050 && desc_vertudo_pagina() == 1000);
   desc_vertudo_mais(); waitDone();
   assert(limitePedidos == 13 && !desc_vertudo_erro() && desc_vertudo_n() == 1100 && tem("tt1001"));
   { CatItem item; assert(desc_vertudo_item(1099, &item) && !strcmp(item.imdb, "tt1100"));
+    assert(desc_vertudo_item(1020, &item) && !item.imdb[0] && !strcmp(item.titulo, "Item 1021"));
+    assert(desc_vertudo_item(1021, &item) && !strcmp(item.imdb, "tt1022"));
     assert(desc_vertudo_item(0, &item) && !strcmp(item.imdb, "tt1"));
     ocultarVistos = 1; vistoId = 1;
     assert(desc_vertudo_n() == 1099 && desc_vertudo_item(1, &item) && !strcmp(item.imdb, "tt3"));
@@ -215,9 +221,10 @@ int main(void) {
   for (int i = 0; i < 20 && !desc_vertudo_erro(); i++) { desc_vertudo_mais(); waitDone(); }
   { int n = desc_vertudo_n(); CatItem item;
     assert(desc_vertudo_erro() && !desc_vertudo_fim() && n > 0 && n < 2000 && n % 100 != 0);
-    assert(desc_vertudo_pagina() == n && desc_vertudo_item(n - 1, &item) && item.ranking == n);
+    int pagina = n / 100 * 100;
+    assert(desc_vertudo_pagina() == pagina && desc_vertudo_item(n - 1, &item) && item.ranking == n);
     desc_vertudo_mais(); waitDone();
-    assert(desc_vertudo_erro() && desc_vertudo_n() == n && desc_vertudo_pagina() == n);
+    assert(desc_vertudo_erro() && desc_vertudo_n() == n && desc_vertudo_pagina() == pagina);
   }
   puts("colfiltro: PASS (home e ver tudo escondem o de 2099; pagina so de futuros nao encerra)");
   return 0;

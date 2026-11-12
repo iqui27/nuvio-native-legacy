@@ -145,13 +145,13 @@ int main(int argc, char **argv) {
   assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 2000);
   assert(celulaAceitaMenu());
   vertudo_abrir("https://example.invalid", "movie", "single", "Single"); esperar();
-  assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 2000);
+  assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 0);
   { CatItem item; assert(desc_vertudo_item(1999, &item) && !strcmp(item.imdb, "tt2000")); }
   desc_vertudo_mais(); esperar();
-  assert(desc_vertudo_erro() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 2000);
+  assert(desc_vertudo_erro() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 0);
   vertudo_abrir("https://example.invalid", "movie", "straddle", "Straddle"); esperar();
   for (int i = 1; i < 7; i++) { desc_vertudo_mais(); esperar(); }
-  assert(desc_vertudo_erro() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 2000);
+  assert(desc_vertudo_erro() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 1800);
   const char *ids[] = {"capfilter", "overflowfilter"};
   for (int j = 0; j < 2; j++) {
     vertudo_abrir("https://example.invalid", "movie", ids[j], "Filtered"); esperar();

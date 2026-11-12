@@ -9485,7 +9485,7 @@ static struct { char id[64], tipo[8]; } vtAddonId[VT_STORE_MAX];
 static DescItemLista vtExtra[VT_MAX];   // paralela a vtItens; ver descoberta.h
 static int      vtN;
 static char     vtBase[NV_ADDON_URL_MAX], vtTipo[8], vtCat[96], vtGenre[96];
-static int      vtPagina, vtFim, vtFioVivo, vtErro;
+static int      vtPagina, vtFim, vtFioVivo, vtErro, vtReplay;
 static unsigned vtGeracao;
 static NvPerfilSessao vtSessao;
 // Fonte nao-addon aberta por desc_vertudo_fonte (issue #44): vtProvedor 1 e
@@ -10165,7 +10165,7 @@ static void *fioVerTudo(void *u) {
   if (cap == VT_MAX) cap = VT_STORE_MAX;
   pthread_mutex_lock(&vtTrava);
   if(generation!=vtGeracao || !descSessaoAtual()){pthread_mutex_unlock(&vtTrava);free(corpo);continue;}
-  int semEspaco = 0;
+  int semEspaco = 0, replay = vtReplay;
   pthread_mutex_unlock(&vtTrava);
   const char *first=corpo?js_array(corpo,NULL,"metas"):NULL;
   int valid=corpo&&strstr(corpo,"\"metas\"");
@@ -10174,6 +10174,7 @@ static void *fioVerTudo(void *u) {
   fonte.prov[0] = 0;
   for(const char *p=first;p;p=js_prox(js_fim(p))) {
     const char *f=js_fim(p);raw++;
+    if (raw <= replay) continue;
     CatItem it;
     if (deMeta(p, f, type, &it) && colecaoTipo(&fonte, &it)) {
       // Escondido ainda conta como "pagina com novidade": senao uma pagina so de
@@ -10205,8 +10206,10 @@ static void *fioVerTudo(void *u) {
   free(corpo);
   pthread_mutex_lock(&vtTrava);
   if(generation!=vtGeracao || !descSessaoAtual()){pthread_mutex_unlock(&vtTrava);continue;}
-  // Keep the accepted prefix and retry starting at the first unretained raw item.
-  if (semEspaco) vtPagina += raw - 1;
+  // Keep the page cursor on failure: addons can require a fixed skipStep.
+  // Skip the already consumed raw prefix, including items without IDs.
+  if (semEspaco) vtReplay = raw - 1;
+  else if (valid) vtReplay = 0;
   vtErro=!valid || semEspaco;
   // Skip usa quantidade recebida, não 100 presumidos. Muitos addons entregam
   // 20/50 por página. Repetição sem novos ids também termina a paginação.
@@ -10263,7 +10266,7 @@ void desc_vertudo_filtro_desde(const char *base, const char *tipo, const char *c
   snprintf(vtCat,  sizeof vtCat,  "%s", catId);
   snprintf(vtGenre,sizeof vtGenre,"%s",genre?genre:"");
   vtProvedor=0;
-  vtN = 0; vtPagina = pagina; vtFim = 0;vtErro=0;vtGeracao++;
+  vtN = 0; vtPagina = pagina; vtReplay = 0; vtFim = 0;vtErro=0;vtGeracao++;
   pthread_mutex_unlock(&vtTrava);
   vtDisparar();
 }
