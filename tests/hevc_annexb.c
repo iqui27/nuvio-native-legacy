@@ -97,6 +97,31 @@ int main(void) {
     sets(&w);ab(&w,34,6,12);ab(&w,19,8,300);
     expect(&h,&in,&w,NV_HEVC_ANNEXB_MIXED); }
 
+  /* Complete in-band sets replace hvcC parameters, but keep container-only
+   * prefix/suffix SEI. Exact NAL duplicates anywhere in the packet stay once. */
+  for(int ls=1;ls<=4;ls++) {
+    Buf y=hvcc(ls);y.b[22]=6;
+    const unsigned types[]={39,40,39};
+    const uint8_t tags[]={0x41,0x42,0x43};
+    for(int a=0;a<3;a++) {
+      uint8_t hd[]={ (uint8_t)(0x80|types[a]),0,1,0,8 },n[8];
+      put(&y,hd,sizeof hd);put(&y,n,nal(n,types[a],tags[a],sizeof n));
+    }
+    assert(nv_hevc_annexb_open(&h,y.b,y.n)==1);
+    for(int duplicate=0;duplicate<3;duplicate++) {
+      Buf in={{0},0},w={{0},0};
+      lp(&in,ls,35,5,3);ab(&w,35,5,3);
+      for(unsigned t=32;t<=34;t++) { lp(&in,ls,t,6,10);ab(&w,t,6,10); }
+      if(duplicate) { lp(&in,ls,39,0x41,8);ab(&w,39,0x41,8); }
+      if(!duplicate) ab(&w,39,0x41,8);
+      if(duplicate!=2) ab(&w,40,0x42,8);
+      ab(&w,39,0x43,8); /* Same type, different payload must survive. */
+      lp(&in,ls,19,8,50);ab(&w,19,8,50);
+      if(duplicate==2) { lp(&in,ls,40,0x42,8);ab(&w,40,0x42,8); }
+      expect(&h,&in,&w,NV_HEVC_ANNEXB_INBAND);
+    }
+  }
+
   /* hvcC forms left to FFmpeg's filter. */
   { Buf y=hvcc(4);y.b[0]=0;assert(nv_hevc_annexb_open(&h,y.b,y.n)==0 && !h.sets); }
   { Buf y=hvcc(4);y.b[23]=0x80|1;assert(nv_hevc_annexb_open(&h,y.b,y.n)==0); }      /* slice type in hvcC */

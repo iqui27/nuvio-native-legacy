@@ -15,7 +15,9 @@
  *
  * Output is byte-identical to FFmpeg's filter except for IRAP packets that
  * carry parameter sets themselves:
- *  - VPS, SPS and PPS all present: nothing from hvcC is added;
+ *  - VPS, SPS and PPS all present: hvcC parameter sets are dropped, but its
+ *    prefix/suffix SEI (HDR mastering/content light) not already in the
+ *    packet still goes right before the first IRAP slice;
  *  - only some of them present: the hvcC sets go to the START of the access
  *    unit (after a leading AUD), so the stream's own sets come later and win.
  * Same 4-byte start codes and same rejection of malformed packets as FFmpeg.
@@ -28,7 +30,7 @@
 enum {
   NV_HEVC_ANNEXB_NO_IRAP = 0,   /* no IRAP slice: start codes only */
   NV_HEVC_ANNEXB_CONTAINER = 1, /* IRAP without own sets: hvcC before IRAP (as FFmpeg) */
-  NV_HEVC_ANNEXB_INBAND = 2,    /* IRAP with own VPS+SPS+PPS: hvcC not added */
+  NV_HEVC_ANNEXB_INBAND = 2,    /* IRAP with own VPS+SPS+PPS: only hvcC SEI added */
   NV_HEVC_ANNEXB_MIXED = 3      /* IRAP with some own sets: hvcC first, own sets after */
 };
 
@@ -82,12 +84,38 @@ static inline int nv_hevc_annexb_open(NvHevcAnnexB *h,const uint8_t *x,size_t n)
   return 1;
 }
 
+/* Container SEI from hvcC that the (already validated) packet does not carry
+ * byte-identically. out==NULL only measures; returns the bytes. hvcC NALs are
+ * split on start codes: emulation prevention keeps them out of NAL payloads. */
+static inline size_t nv_hevc_annexb_sei(const NvHevcAnnexB *h,const uint8_t *d,size_t n,uint8_t *out) {
+  size_t i=0,k=0,ls=(size_t)h->length_size;
+  while(i<h->sets_size) {
+    size_t e=i+4,l;
+    unsigned t=(h->sets[i+4]>>1)&0x3f;
+    int dup=0;
+    while(e+4<=h->sets_size && memcmp(h->sets+e,"\0\0\0\1",4))e++;
+    if(e+4>h->sets_size)e=h->sets_size;
+    l=e-i-4;
+    if(t==39 || t==40) {
+      for(size_t j=0;j<n && !dup;) {
+        size_t m=0;
+        for(size_t b=0;b<ls;b++)m=(m<<8)|d[j+b];
+        dup=m==l && !memcmp(d+j+ls,h->sets+i+4,l);
+        j+=ls+m;
+      }
+      if(!dup) { if(out)memcpy(out+k,h->sets+i,e-i); k+=e-i; }
+    }
+    i=e;
+  }
+  return k;
+}
+
 /* Converts one packet. out==NULL only measures. Returns 0 and sets *size
  * (and *mode when not NULL), or -1 for a packet FFmpeg's filter rejects too
  * (truncated length, NAL shorter than 2 bytes or past the end). */
 static inline int nv_hevc_annexb_packet(const NvHevcAnnexB *h,const uint8_t *d,size_t n,
                                         uint8_t *out,size_t cap,size_t *size,int *mode) {
-  size_t i,first_irap=(size_t)-1,start=0,insert=(size_t)-1,total=0,k=0;
+  size_t i,first_irap=(size_t)-1,start=0,insert=(size_t)-1,total=0,k=0,extra=h->sets_size;
   int have=0,ls=h->length_size,m;
   for(i=0;i<n;) {   /* pass 1: validate, find the first IRAP and the sets before it */
     size_t l=0;
@@ -106,12 +134,12 @@ static inline int nv_hevc_annexb_packet(const NvHevcAnnexB *h,const uint8_t *d,s
     i+=(size_t)ls+l;
   }
   if(first_irap==(size_t)-1)m=NV_HEVC_ANNEXB_NO_IRAP;
-  else if(have==7)m=NV_HEVC_ANNEXB_INBAND;
+  else if(have==7)m=NV_HEVC_ANNEXB_INBAND,insert=first_irap,extra=nv_hevc_annexb_sei(h,d,n,NULL);
   else if(have)m=NV_HEVC_ANNEXB_MIXED,insert=start;
   else m=NV_HEVC_ANNEXB_CONTAINER,insert=first_irap;
   if(insert!=(size_t)-1) {
-    if(h->sets_size>SIZE_MAX-total)return -1;
-    total+=h->sets_size;
+    if(extra>SIZE_MAX-total)return -1;
+    total+=extra;
   }
   if(mode)*mode=m;
   *size=total;
@@ -119,7 +147,11 @@ static inline int nv_hevc_annexb_packet(const NvHevcAnnexB *h,const uint8_t *d,s
   if(cap<total)return -1;
   for(i=0;i<n;) {   /* pass 2: write */
     size_t l=0;
-    if(i==insert && h->sets_size) { memcpy(out+k,h->sets,h->sets_size);k+=h->sets_size; }
+    if(i==insert && extra) {
+      if(m==NV_HEVC_ANNEXB_INBAND)nv_hevc_annexb_sei(h,d,n,out+k);
+      else memcpy(out+k,h->sets,h->sets_size);
+      k+=extra;
+    }
     for(int b=0;b<ls;b++)l=(l<<8)|d[i+b];
     out[k]=0;out[k+1]=0;out[k+2]=0;out[k+3]=1;
     memcpy(out+k+4,d+i+(size_t)ls,l);

@@ -95,7 +95,9 @@ int main(void) {
     size_t aud=((a[4]>>1)&0x3f)==35?0:(size_t)-1,audn=0;
     if(aud==0) { size_t next=4;while(!(a[next]==0&&a[next+1]==0&&a[next+2]==0&&a[next+3]==1))next++;audn=next; }
     if(mode==NV_HEVC_ANNEXB_INBAND) {
-      memcpy(w,a,at);wn=at;memcpy(w+wn,a+at+h.sets_size,an-at-h.sets_size);wn+=an-at-h.sets_size;inband++;
+      /* hvcC parameter sets go; its SEI the packet lacks stays in place. */
+      memcpy(w,a,at);wn=at;wn+=nv_hevc_annexb_sei(&h,d,n,w+wn);
+      memcpy(w+wn,a+at+h.sets_size,an-at-h.sets_size);wn+=an-at-h.sets_size;inband++;
     } else {
       memcpy(w,a,audn);wn=audn;memcpy(w+wn,h.sets,h.sets_size);wn+=h.sets_size;
       memcpy(w+wn,a+audn,at-audn);wn+=at-audn;memcpy(w+wn,a+at+h.sets_size,an-at-h.sets_size);wn+=an-at-h.sets_size;mixed++;
