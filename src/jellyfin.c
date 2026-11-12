@@ -766,7 +766,7 @@ static int jf_episodios_preparar(const JfConta *c, RedeJob *job, const char *ser
   CatEp *pagina = NULL;
   z_stream z = {0};
   int inicio = 0, n = 0, erro = JF_ERR_REDE, zAtivo = 0, direto = 0, contar = 0;
-  int paginaLimite = PAGINA, capacidade = 0, rawEsperado = 0;
+  int paginaLimite = PAGINA, capacidade = 0, rawEsperado = 0, repetiu = 0;
   if (!saida || !jfid_hex_limpo(serieId, limpo, 32)) return JF_ERR_ENTRADA;
   if (max <= 0) return 0;
   if (max > CAT_EP_MAX) max = CAT_EP_MAX;
@@ -825,7 +825,9 @@ static int jf_episodios_preparar(const JfConta *c, RedeJob *job, const char *ser
     if (!raw || (total >= 0 && inicio >= total) || (total < 0 && raw < limite)) break;
   }
   if (direto) {
-    erro = n == capacidade && inicio == rawEsperado ? jf_episodios_unicos(*saida, n, job, cancelado, cancelCtx) : JF_ERR_FORMATO;
+    if (n != capacidade || inicio != rawEsperado) { erro = JF_ERR_FORMATO; goto fim; }
+    erro = jf_episodios_unicos(*saida, n, job, cancelado, cancelCtx);
+    if (erro == JF_ERR_FORMATO) goto repetir;
     goto fim;
   }
   if (contar) goto reserva;
@@ -845,7 +847,21 @@ static int jf_episodios_preparar(const JfConta *c, RedeJob *job, const char *ser
         bytes != (uLongf)((size_t)n * sizeof **saida)) goto fim;
   }
   erro = jf_episodios_unicos(*saida, n, job, cancelado, cancelCtx);
+  if (erro == JF_ERR_FORMATO) {
+    capacidade = n; rawEsperado = inicio;
+    goto repetir;
+  }
   goto fim;
+ repetir:
+  /* One retry, using the existing workspace and the cancellable page path. */
+  if (repetiu || (preparar && !cancelado)) goto fim;
+  if (rede_job_estado(job) != REDE_OK || (cancelado && cancelado(cancelCtx))) { erro = JF_ERR_CANCELADO; goto fim; }
+  repetiu = 1;
+  free(compacto); compacto = NULL;
+  if (!pagina) pagina = malloc(PAGINA * sizeof *pagina);
+  if (!pagina) { erro = JF_ERR_REDE; goto fim; }
+  direto = 1; inicio = n = 0; paginaLimite = PAGINA;
+  goto buscar_paginas;
  reserva:
   /* The caller's workspace lock may span network only with generation cancellation. */
   if (preparar && !cancelado) goto fim;
