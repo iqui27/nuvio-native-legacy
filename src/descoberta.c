@@ -10207,7 +10207,7 @@ static void *fioVerTudo(void *u) {
     }
     if (ok) {
       vt_store_free(&vtAddon); vtAddon = nova; memset(&nova, 0, sizeof nova);
-      vtN = vtAddon.n; vtPagina = skip + raw; vtReplay = 0; vtPaginaMudou = 0;
+      vtN = vtAddon.n; vtPagina = skip + raw; vtReplay = 0; vtPaginaMudou = 0; vtGeracao++;
       vtFim = !raw || !avancou || (cap < VT_STORE_MAX && vtN >= cap);
       for (int i = 0; i < vtN; i++) {
         CatItem it; vt_store_get(&vtAddon, i, &it);
