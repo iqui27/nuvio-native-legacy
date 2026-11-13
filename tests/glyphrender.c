@@ -68,17 +68,17 @@ int glyphrender_check(const Stream *streams) {
   const char *clusters = "👩🏽‍💻👨‍👩‍👧‍👦👍🏽🇧🇷1️⃣";
   int lines = 0;
   collect = 1; wrapped[0] = 0;
-  txt_addon_bloco(TXT_PG_FIM, clusters, 0, 0, 30, 255, 0, &lines);
+  txt_addon_bloco(TXT_PG_FIM, clusters, 0, 0, 30, 255, 0, &lines, -1.0e9f, 1.0e9f);
   collect = 0;
   assert(lines == 5 && !strcmp(wrapped, clusters));
   wrapped[0] = 0; collect = 1;
-  txt_addon_bloco(TXT_PG_FIM, "☀︎☀︎", 0, 0, 1, 255, 0, &lines);
+  txt_addon_bloco(TXT_PG_FIM, "☀︎☀︎", 0, 0, 1, 255, 0, &lines, -1.0e9f, 1.0e9f);
   collect = 0;
   assert(lines == 2 && !strcmp(wrapped, "☀︎☀︎"));
   // Layout-only frames must reuse the measured block, with no new font runs.
   runs = 0;
   for (int i = 0; i < 30; i++)
-    txt_addon_bloco(TXT_PG_FIM, clusters, 0, 0, 30, 255, 0, NULL);
+    txt_addon_bloco(TXT_PG_FIM, clusters, 0, 0, 30, 255, 0, NULL, -1.0e9f, 1.0e9f);
   assert(runs == 0);
   printf("PASS: decoded Unicode unchanged; complete emoji clusters; color/text selectors; embedded fallback without tofu; atomic wrapping\n");
   return 0;

@@ -298,10 +298,11 @@ TxtLinha txt_linha(TxtEstilo estilo, const char *s, int r, int g, int b, int a);
 // Height of the first maxLines measured lines; zero means the full block.
 float txt_addon_altura(TxtEstilo style, const char *s, float width, int maxLines);
 float txt_addon_bloco(TxtEstilo style, const char *s, float x, float y, float width,
-                       int gray, float alpha, int *lines);
+                       int gray, float alpha, int *lines,
+                       float clipTop, float clipBottom);
 // Three-line preview with bounded UTF-8 input before layout and rasterization.
 float txt_addon_previa(TxtEstilo style, const char *s, float x, float y, float width,
-                        int gray, float alpha);
+                        int gray, float alpha, float clipTop, float clipBottom);
 int txt_addon_emoji(const char *s, int *bytes);
 #ifdef NV_ADDON_LAYOUT_TEST
 int txt_addon_test_surface(TxtEstilo style, const char *s, int *width, int *height);

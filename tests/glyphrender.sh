@@ -8,7 +8,10 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 baseline=fab11c7bf
 # Keep original source/header/atlas together; never modify the checkout for red proof.
-git show "$baseline:src/text.c" > "$work/text.c"
+# Baseline predates the clip arguments (partial culling); accept and ignore them.
+git show "$baseline:src/text.c" |
+  sed -e 's/int gray, float alpha, int \*lines) {/int gray, float alpha, int *lines, float clipTop, float clipBottom) { (void)clipTop; (void)clipBottom;/' \
+      -e 's/^\( *int gray, float alpha\)) {$/\1, float clipTop, float clipBottom) { (void)clipTop; (void)clipBottom;/' > "$work/text.c"
 git show "$baseline:src/emoji_atlas.h" > "$work/emoji_atlas.h"
 mkdir -p "$work/resources/fonts"
 for font in "$PWD"/deploy/app/fonts/*; do
