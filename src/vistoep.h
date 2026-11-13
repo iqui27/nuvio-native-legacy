@@ -45,6 +45,12 @@ int  vistoep_contar(const char *imdb);
 // O titulo TEM mapa? Distingue "serie sem episodio visto" de "nunca soubemos
 // nada desta serie", que e a diferenca entre desenhar zero e nao desenhar nada.
 int  vistoep_conhecido(const char *imdb);
+// While a source rebuilds a title's marks (Simkl mapping an anime's history
+// onto the episode list, mark by mark), the title answers "not known yet" in
+// vistoep_conhecido: the page shows no count instead of a climbing or wrong
+// one. Nests; segurar 0 releases. Both bump vistoep_revisao so the page
+// redraws.
+void vistoep_segurar(const char *imdb, int segurar);
 
 // Le o corpo de /shows/<id>/progress/watched do Trakt, que enumera a serie
 // INTEIRA com `completed` por episodio — entao este leitor escreve 0 tambem, e

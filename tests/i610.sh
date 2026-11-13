@@ -16,7 +16,10 @@ if [ "${1:-}" = --prove-before ]; then
   echo "#610 baseline: expected FAIL"
 fi
 for provider in TRAKT SIMKL; do
-  cc -DI610_${provider} tests/i610.c src/js.c src/traktscrobble.c src/metaep.c -Isrc \
+  extra=()
+  # simkl.c saves the Simkl library through simklbib.c.
+  if [ "$provider" = SIMKL ]; then extra=(src/simklbib.c); fi
+  cc -DI610_${provider} tests/i610.c src/js.c src/traktscrobble.c src/metaep.c ${extra[@]+"${extra[@]}"} -Isrc \
     -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
     -O1 -g -Wno-deprecated-declarations -Wno-macro-redefined \
     -ffunction-sections -fdata-sections -Wl,-dead_strip -lpthread -o "$dir/$provider"

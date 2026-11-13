@@ -74,8 +74,15 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
 void rede_resposta_limpar(RedeResposta *r) { (void)r; }
 
 static const char *episodeMeta;
+// The trimmed One Piece episode list (anime-videos/): kept only while a test
+// turns it on, so the cases above still see a cold disk.
+static int trimmedOn, trimmedWrites;
+static char *trimmedBody;
 char *fichameta_ler(const char *key, long ttl) {
   (void)ttl;
+  if (!strncmp(key, "anime-videos/", 13))
+    return trimmedOn && trimmedBody && !strcmp(key, "anime-videos/tt0388629/en")
+               ? strdup(trimmedBody) : NULL;
   assert(!strcmp(key, "series/tt2560140/en") ||
          !strcmp(key, "series/tt0388629/en") ||
          !strcmp(key, "series/tt11034066/en") ||
@@ -89,6 +96,14 @@ char *fichameta_ler(const char *key, long ttl) {
 }
 void fichameta_gravar(const char *key, const char *body) {
   assert(body && *body);
+  if (!strncmp(key, "anime-videos/", 13)) {
+    if (trimmedOn && !strcmp(key, "anime-videos/tt0388629/en")) {
+      free(trimmedBody);
+      trimmedBody = strdup(body);
+      trimmedWrites++;
+    }
+    return;
+  }
   if (!strcmp(key, "series/tt2560140/en")) metadataWrites++;
   else if (!strcmp(key, "series/tt0388629/en")) onePieceMetadataWrites++;
   else if (!strncmp(key, "simkl-anime/", 12)) {
@@ -130,6 +145,13 @@ int main(void) {
   assert(!strcmp(mapped[0].imdb, "tt2560140:2:1"));
   assert(mapped[0].temporada == 2 && mapped[0].episodio == 1);
   episodeMeta = NULL;
+  // No list anywhere now (download failed): the number keeps the episode it
+  // mapped to minutes ago instead of falling back to the title.
+  assert(simkl_ler_assistindo(titan, mapped, 1) == 1);
+  assert(!strcmp(mapped[0].imdb, "tt2560140:2:1"));
+  assert(mapped[0].temporada == 2 && mapped[0].episodio == 1);
+  // Nothing mapped before (new session): the title alone.
+  simkl_esquecer();
   assert(simkl_ler_assistindo(titan, mapped, 1) == 1);
   assert(!strcmp(mapped[0].imdb, "tt2560140"));
   assert(mapped[0].temporada == 0 && mapped[0].episodio == 0);
@@ -137,7 +159,7 @@ int main(void) {
   assert(simkl_ler_assistindo(titan, mapped, 1) == 1);
   assert(!strcmp(mapped[0].imdb, "tt2560140:2:1"));
   assert(mapped[0].temporada == 2 && mapped[0].episodio == 1);
-  assert(providerFetches == 2 && metadataWrites == 1);
+  assert(providerFetches == 3 && metadataWrites == 1);
   providerMeta = NULL;
   episodeMeta = "{\"meta\":{\"videos\":[{\"season\":1,\"episode\":25},{\"season\":2,\"episode\":1}]}}";
   assert(simkl_ler_assistindo(titan, mapped, 1) == 1);
@@ -213,6 +235,18 @@ int main(void) {
   assert(simkl_continuar(resolved, 1) == 1);
   assert(!strcmp(resolved[0].imdb, "tt11034066:4:3"));
   assert(!resolved[0].nomeEpisodio[0] && !resolved[0].thumbEpisodio[0]);
+  // The same entry as full_anime_seasons sends it (the library): the show's
+  // IMDb ID and its one TVDB season. E7 is still that season's seventh, not
+  // the show's seventh episode (Kaiju No. 8 S2 came out as S1E9 and its still).
+  simkl_esquecer();
+  WATCHING_ANIME = "{\"anime\":[{\"next_to_watch\":\"E7\",\"mapped_tvdb_seasons\":[4],"
+    "\"show\":{\"title\":\"Mairimashita! Iruma-kun\","
+    "\"ids\":{\"simkl\":2638832,\"imdb\":\"tt11034066\"}}}]}";
+  assert(simkl_continuar(resolved, 1) == 1);
+  assert(!strcmp(resolved[0].imdb, "tt11034066:4:7"));
+  assert(resolved[0].temporada == 4 && resolved[0].episodio == 7);
+  assert(!strcmp(resolved[0].nomeEpisodio, "Seventh"));
+  assert(!strcmp(resolved[0].thumbEpisodio, "https://simkl.in/episodes/19/19613958579eba8189_w.jpg"));
   puts("PASS: per-season anime takes name and still from its Simkl episode list");
 
   FILE *onePieceFile = fopen("tests/fixtures/onepiece/cinemeta_tt0388629.json", "rb");
@@ -269,6 +303,49 @@ int main(void) {
   assert(!strcmp(mapped[0].thumbEpisodio,
     "https://image.tmdb.org/t/p/w500/5VFdmFzQdmpre1o9qtAqoLXOzsl.jpg"));
   assert(onePieceProviderFetches == 1);
+
+  // The download fails on the next rebuild (seen right after the player
+  // closed): the same Simkl number keeps the episode it mapped to, not the
+  // title alone. One Piece's full list is never on disk (over the cache limit).
+  onePieceCachedMeta = NULL;
+  onePieceProviderMeta = NULL;
+  onePieceProviderFetches = 0;
+  memset(mapped, 0, sizeof mapped[0]);
+  assert(simkl_ler_assistindo(WATCHING_ANIME, mapped, 1) == 1);
+  assert(onePieceProviderFetches == 1);
+  assert(!strcmp(mapped[0].imdb, "tt0388629:22:1123"));
+  assert(mapped[0].temporada == 22 && mapped[0].episodio == 1123);
+  assert(!strcmp(mapped[0].thumbEpisodio,
+    "https://image.tmdb.org/t/p/w500/5VFdmFzQdmpre1o9qtAqoLXOzsl.jpg"));
+  // Another number has nothing kept: title only, as before.
+  { CatItem other[1];
+    const char *otherWatching = "{\"anime\":[{\"next_to_watch\":\"E1124\","
+      "\"anime\":{\"title\":\"One Piece\",\"ids\":{\"imdb\":\"tt0388629\"}}}]}";
+    assert(simkl_ler_assistindo(otherWatching, other, 1) == 1);
+    assert(!strcmp(other[0].imdb, "tt0388629") && other[0].episodio == 0); }
+  puts("PASS: a failed episode-list download keeps the last mapped episode");
+
+  // The full list is over the disk cache's limit: a trimmed copy (season,
+  // episode, still) is kept instead and maps on its own after a restart.
+  trimmedOn = 1;
+  onePieceCachedMeta = NULL;
+  onePieceProviderMeta = nuvioMeta;
+  onePieceProviderFetches = 0;
+  assert(simkl_ler_assistindo(WATCHING_ANIME, mapped, 1) == 1);
+  assert(onePieceProviderFetches == 1 && trimmedWrites == 1 && trimmedBody);
+  assert(strlen(trimmedBody) < strlen(nuvioMeta) + 64);
+  simkl_esquecer();
+  onePieceProviderMeta = NULL;
+  memset(mapped, 0, sizeof mapped[0]);
+  assert(simkl_ler_assistindo(WATCHING_ANIME, mapped, 1) == 1);
+  assert(onePieceProviderFetches == 1);
+  assert(!strcmp(mapped[0].imdb, "tt0388629:22:1123"));
+  assert(!strcmp(mapped[0].thumbEpisodio,
+    "https://image.tmdb.org/t/p/w500/5VFdmFzQdmpre1o9qtAqoLXOzsl.jpg"));
+  trimmedOn = 0;
+  onePieceCachedMeta = "{\"meta\":{\"videos\":[{\"season\":1,\"episode\":1}]}}";
+  onePieceProviderMeta = nuvioMeta;
+  puts("PASS: a trimmed One Piece episode list maps without the network");
 
   simkl_esquecer();
   tokenAtual = TOKEN;
@@ -524,7 +601,15 @@ int main(void) {
     historicoSoGrade = 1;
     memset(historicoGrade, 0, sizeof historicoGrade);
     nHistorico = 0;
-    assert(simkl_historico_ler(trocaHistorico, "tt0388629", 1) == 3);
+    // As the app does it: the library in memory, the show page maps its anime.
+    // Mapping again onto a new list reads that same library.
+    bibEsperar();
+    simkl_esquecer();
+    free(bibTexto); bibTexto = NULL;
+    historicoCorpo = trocaHistorico;
+    assert(simkl_historico_aplicar("tt0388629"));
+    bibEsperar();
+    assert(nHistorico == 3);
     assert(historicoGrade[1][1] && historicoGrade[1][2] && historicoGrade[2][3]);
 
     snprintf(historicoCatalogId, sizeof historicoCatalogId, "%s", "tt0388629");
@@ -563,6 +648,7 @@ int main(void) {
     { int nt, ne; assert(!simkl_anime_proximo("tt0388629", &nt, &ne)); }
 
     historicoSoGrade = 0;
+    historicoCorpo = NULL;
     historicoCatalogId[0] = 0;
     historicoCatalogEpsQtd = historicoCatalogEpsFinal = 0;
     memset(historicoCatalogEps, 0, sizeof historicoCatalogEps);
@@ -605,17 +691,16 @@ int main(void) {
   for (int i = 0; i < n; i++) assert(v[i].temporada == 0 && v[i].episodio == 0);
   assert(v[0].tmdb == 37854);
   assert(v[1].tmdb == 123 && v[2].tmdb == 456);
-  // Simkl anime uses bare absolute numbers too. Prime bodies, then reuse them
-  // with unchanged activities; changed stub bodies must never be requested.
+  // Simkl anime uses bare absolute numbers too. Prime the library, then read
+  // it again with unchanged activities: only the activities request.
   simkl_esquecer();
   WATCHING_ANIME = "{\"anime\":[{\"last_watched\":1122,\"next_to_watch\":1123,"
     "\"status\":\"watching\",\"anime\":{\"title\":\"One Piece\","
     "\"ids\":{\"imdb\":\"tt0388629\",\"tmdb\":37854}}}]}";
   (void)simkl_continuar(v, 16);
   int requests = totalBatidas();
-  WATCHING_ANIME = "{\"anime\":[]}";
   n = simkl_continuar(v, 16);
-  assert(totalBatidas() == requests + 1); // activities only, cached anime body
+  assert(totalBatidas() == requests + 1); // activities only, library unchanged
   assert(n == 1 && !strcmp(v[0].imdb, "tt0388629"));
   assert(v[0].tmdb == 37854 && simkl_e_a_seguir(v[0].imdb));
   assert(v[0].temporada == 0 && v[0].episodio == 0); // unknown provider mapping

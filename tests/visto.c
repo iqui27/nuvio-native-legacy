@@ -37,6 +37,9 @@ void marco(const char *m) { (void)m; }
 static const char *tokenSimkl = "";
 static int logada = 1, perfil = 2;
 const char *simklauth_token(void) { return tokenSimkl; }
+// The saved Simkl library (simklbib.c) is not under test here.
+int simklauth_perfil(void) { return 1; }
+int dados_gravar_leve(const char *nome, const char *buf) { (void)nome; (void)buf; return 1; }
 unsigned long long simklauth_credencial_copiar(char *dst, size_t tam) {
   if (dst && tam) snprintf(dst, tam, "%s", tokenSimkl);
   return 1;

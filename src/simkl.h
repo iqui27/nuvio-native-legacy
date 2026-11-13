@@ -171,8 +171,23 @@ int simkl_titulo_marcar(const char *imdb, const char *tipo, const int *temporada
                         int nt, int visto);
 
 // Importa os episodios vistos do Simkl para o mapa compartilhado do app.
-// `simkl_historico_aplicar` busca a biblioteca em um fio de trabalho e
-// reutiliza o estado importado por dez minutos; `_ler` aplica um JSON recebido.
+// A biblioteca vive na memoria da sessao: simkl_biblioteca_iniciar (ao abrir
+// o perfil) a traz em segundo plano — copia guardada (simklbib.h), e a rede so
+// quando /sync/activities mudou — e importa as series comuns. Nao bloqueia.
+void simkl_biblioteca_iniciar(void);
+// Uma lista de estado da biblioteca, na forma de /sync/all-items/<tipo>/<estado>
+// ({"<tipo>":[...]}, sem o historico de episodios): tipo "shows", "anime" ou
+// "movies"; estado "watching", "plantowatch", "hold", "completed", "dropped".
+// Bloqueia (fio de trabalho): a biblioteca conferida com o Simkl ha pouco.
+// NULL sem vinculo ou sem biblioteca. free pelo chamador.
+char *simkl_lista_corpo(const char *tipo, const char *estado);
+// 1 enquanto algum fio de carga roda (tambem o de uma sessao ja encerrada,
+// que so termina o pedido em voo e nao publica nada).
+int simkl_biblioteca_carregando(void);
+// A tela da serie, em fio de trabalho: as marcas DESTA serie (anime e o
+// recurso pelo TMDB precisam da serie aberta), sem pedido proprio; espera a
+// carga que estiver a caminho. Com a biblioteca de mais de dez minutos, pede
+// a conferencia das atividades em segundo plano. `_ler` aplica um JSON recebido.
 int simkl_historico_aplicar(const char *imdb);
 // A series' final episode list was published: if its numbering differs from
 // the one the Simkl anime history was mapped onto, map it again (own thread).

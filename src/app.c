@@ -3712,6 +3712,9 @@ static void perfilAbrirSessao(int antes) {
   saiuPorEsquerda = 0;
   ilhasinais_perfil_trocado();
   enquete_perfil_trocado();
+  // Last: the watched map was just cleared (sync_abrir_sessao), and the Simkl
+  // library refills it in the background for this profile's link.
+  simkl_biblioteca_iniciar();
   perfilSessaoAplicada = sessao;
 }
 
