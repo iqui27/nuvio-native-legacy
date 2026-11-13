@@ -377,3 +377,4 @@
 
   0, // miniaturaResolutionLocal: Auto
   1, // dv7PreserveMappingLocal: Desligado (V_LIGA 1), experimental
+  0, // dvAudioFixoLocal: Original

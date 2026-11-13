@@ -60,6 +60,7 @@ static const Item TELA[] = {
 #endif
 #if !defined(NV_TPK) && !defined(NV_ANDROID)
       OPC(AJ_DV_MKV),
+      OPC(AJ_DV_AUDIO),
 #ifdef NV_DV7_CONVERSION
       OPC(AJ_DV7),
       OPC(AJ_DV7_MAPPING),

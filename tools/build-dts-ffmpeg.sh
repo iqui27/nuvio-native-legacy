@@ -44,6 +44,10 @@ if [ "$TARGET" = tpk ]; then
       --cross-prefix=arm-linux-gnueabi-
   fi
 else
+  # DV path: TrueHD conversion and fixed DV audio (AAC/AC-3) decode TrueHD,
+  # AC-3 and E-AC-3 (Matis94 115f3a0c0/89433220e; release pin 35202b82c).
+  DECODERS=$DECODERS,truehd,ac3,eac3
+  PARSERS=$PARSERS,mlp,ac3
   CC=${CC:-arm-webos-linux-gnueabi-gcc}
   archive="$BUILD/ffmpeg-$VERSION.tar.xz"
   [ -f "$archive" ] || curl -fsSL "https://ffmpeg.org/releases/ffmpeg-$VERSION.tar.xz" -o "$archive"

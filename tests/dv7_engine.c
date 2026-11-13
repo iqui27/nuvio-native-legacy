@@ -106,5 +106,24 @@ int main(int argc,char **argv) {
   while ((r=dts_engine_next(e,&f))>0) {}
   assert(r<0 && strstr(dts_engine_error(e),"DV7 RPU conversion failed"));
   dts_engine_destroy(e);
-  puts("DV7 engine: actual MKV + FFmpeg + P8.1 output, audio passthrough, repeated seek and corrupt-RPU fallback passed.");
+  /* Real TrueHD 5.1 packets, fixed output across EAC3/TrueHD/AC3, and seek.
+   * Reopen is this branch's existing audio-switch API. */
+  for (int fixed=0; fixed<=2; fixed++) {
+    e=mapping_engine_create(); dts_engine_allow_p7(e,1); dts_engine_dv(e,1);
+    dts_engine_audio_route(e,1,fixed,0);
+    for (int track=1; track<=3; track++) {
+      check(e,dts_engine_open(e,argv[1],"",track,1,0));
+      m=dts_engine_info(e);
+      const char *expected=fixed==2?"ac3":fixed || track==2?"aac":track==1?"eac3":"ac3";
+      assert(!strcmp(m->audio_codec,expected));
+      assert(m->channels==(fixed==2?6:2));
+      assert(drain(e)==20 && !dts_engine_has_core(e));
+      check(e,dts_engine_seek(e,.4)); assert(drain(e)>0);
+    }
+    /* Off forbids TrueHD even after a previous successful conversion. */
+    dts_engine_audio_route(e,1,fixed,1);
+    assert(dts_engine_open(e,argv[1],"",2,0,0)<0);
+    dts_engine_destroy(e);
+  }
+  puts("DV7 engine: real TrueHD/fixed audio, Off, P8.1 RPU, seek and corrupt-RPU fallback passed.");
 }

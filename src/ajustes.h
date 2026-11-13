@@ -722,6 +722,8 @@ int   ajustes_social_perfil(int perfil); // mesmo ajuste lido de OUTRO perfil (#
 int   ajustes_dv_mkv(void);              // 1 = Dolby Vision MKV through our demux (webOS, local, default off)
 int   ajustes_dv7(void);
 int   ajustes_dv7_mapping(void);
+int   ajustes_dv_audio(void);        // DV path audio: 0 Original, 1 AAC stereo, 2 Dolby Digital 5.1
+int   ajustes_dts_desligado(void);   // LG: DTS row Off (no DTS/TrueHD conversion)
 int   ajustes_hdr10p_strip(void);
 int   ajustes_cw_retido_tambem(void);   // 1 = o titulo da ilha/Retomar tambem fica em Continuar assistindo
 // Percentual (70-98, padrao 90) a partir do qual o episodio conta como

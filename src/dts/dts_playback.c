@@ -1,6 +1,7 @@
 #include "../app_id.h"
 #include "dts_playback.h"
 #include "dts_engine.h"
+#include "dts_audio_codec.h"
 #include "dts_pipeline.h"
 #include "../js.h"
 #include "../linguas.h"
@@ -27,6 +28,7 @@
 typedef struct { DtsSubtitle cue; unsigned revision; } DtsQueuedSubtitle;
 #define DTS_DV_STARVED_WINDOWS 4
 struct DtsPlayback {
+  int truehd, dts_off;       /* audio route snapshot (dts_audio_codec.h) */
   int allow_p7, dv, starved; /* Dolby Vision path: passthrough audio, starvation fallback. */
   pthread_t thread;
   pthread_mutex_t lock;
@@ -162,7 +164,7 @@ static void rest(DtsPlayback *p) {
 /* Codecs this session can feed: DTS is converted; on the Dolby Vision path
  * AC-3 and E-AC-3 pass through. Anything else belongs to the native player. */
 static int codecFeeds(const DtsPlayback *p, const char *codec) {
-  return !strcmp(codec, "dts") || (p->dv && (!strcmp(codec, "ac3") || !strcmp(codec, "eac3")));
+  return nv_dts_audio_feeds(codec, p->dv, p->truehd, p->dts_off);
 }
 static int trackMatches(DtsPlayback *p, const DtsTrack *t) {
   return t->kind == DTS_AUDIO && codecFeeds(p, t->codec) &&
@@ -791,7 +793,10 @@ done:
   return NULL;
 }
 
-static int dvNext, p7Next, p7MappingNext;
+static int dvNext, p7Next, p7MappingNext, truehdNext, fixedNext, dtsOffNext;
+void dts_playback_next_audio_route(int truehd, int fixed, int dts_off) {
+  truehdNext = !!truehd; fixedNext = fixed; dtsOffNext = !!dts_off;
+}
 void dts_playback_next_p7(int enabled) { p7Next = !!enabled; }
 void dts_playback_next_p7_mapping(int enabled) { p7MappingNext = !!enabled; }
 void dts_playback_next_dv(int enabled) { dvNext = !!enabled; }
@@ -813,6 +818,9 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
   p->allow_p7 = p7Next; p7Next = 0;
   dts_engine_allow_p7(p->engine, p->allow_p7);
   dts_engine_p7_mapping(p->engine, p->dv && p->allow_p7 && p7MappingNext); p7MappingNext = 0;
+  p->truehd = p->dv && truehdNext; p->dts_off = dtsOffNext;
+  dts_engine_audio_route(p->engine, p->truehd, p->dv ? fixedNext : 0, p->dts_off);
+  truehdNext = fixedNext = dtsOffNext = 0;
   snprintf(p->url, sizeof p->url, "%s", url);
   snprintf(p->headers, sizeof p->headers, "%s", headers ? headers : "");
   snprintf(p->window, sizeof p->window, "%s", window ? window : "");

@@ -20,7 +20,7 @@ int main(void) {
   assert(n==0);
 #endif
   assert(!ajustes_dv7_mapping());
-  assert(AJ_DV7_MAPPING==AJ_N-1 && valorPadrao[AJ_DV7_MAPPING]==1 &&
+  assert(AJ_DV7_MAPPING==AJ_DV_AUDIO-1 && valorPadrao[AJ_DV7_MAPPING]==1 &&
          !strcmp(CHAVE[AJ_DV7_MAPPING],"dv7PreserveMappingLocal"));
   assert(OPCOES[AJ_DV7_MAPPING].tipo==OP_ESCOLHA);
   assert(somenteDesteAparelho(AJ_DV7_MAPPING) && !dePerfil(AJ_DV7_MAPPING));
@@ -35,5 +35,16 @@ int main(void) {
 #else
   assert(m==0);
 #endif
-  puts("PASS: DV7 defaults off, stays local, independent and build-gated; upstream settings retain their indexes");
+  assert(AJ_DV_AUDIO==AJ_N-1 && !ajustes_dv_audio() && valorPadrao[AJ_DV_AUDIO]==0);
+  assert(!strcmp(CHAVE[AJ_DV_AUDIO],"dvAudioFixoLocal"));
+  assert(somenteDesteAparelho(AJ_DV_AUDIO) && !dePerfil(AJ_DV_AUDIO));
+  assert(!ajustePortavel(AJ_DV_AUDIO) && !ajusteAparelho(AJ_DV_AUDIO));
+  for(int i=0;i<3;i++) { valor[AJ_DV_AUDIO]=i; assert(ajustes_dv_audio()==i); }
+#ifndef NV_TPK
+  for(int i=0;i<4;i++) {
+    valor[AJ_DTS_AC3]=i; assert(ajustes_dts_desligado()==(i==3));
+    assert(ajustes_dts_original()==(i==0) && ajustes_dts_ac3()==(i==2));
+  }
+#endif
+  puts("PASS: DV preferences local, opt-in and append-only; DTS Off preserves stored modes");
 }

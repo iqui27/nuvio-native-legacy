@@ -70,7 +70,7 @@ typedef struct { const char *idioma, *codec; int canais; } Tv;
 
 static void montar(const Mkv *m, int nm, const Tv *t, int nt, int atual) {
   int i;
-  dtsSessao = NULL; dtsModoDv = 0; dtsTentou = 0; dvAudioMkvOrd = -1; dvAudioDe[0] = 0;
+  dtsSessao = NULL; dtsModoDv = 0; dtsTentou = 0; dvAudioMkvOrd = -1; dvTruehd = 0; dvAudioDe[0] = 0;
   ligado = pronto = tocando = 1;
   snprintf(midia, sizeof midia, "fixture-hdr10");
   snprintf(urlAtual, sizeof urlAtual, "http://h/remux.dv.mkv");
@@ -128,9 +128,9 @@ int main(void) {
     Tv t[] = {{"pt", "truehd", 8}};
     montar(m, 4, t, 1, 0);
     const char *l = abrir();
-    assert(dvAudioMkvOrd == 3 && !strcmp(dvAudioDe, "A_TRUEHD"));
-    assert(ling_casa(l, "pt") && partidaOrdinal == 3 && partidaContagem == 4);
-    puts("dvaudio_lg: TV [TrueHD por] -> E-AC-3 por (ordinal 3 do MKV)"); }
+    assert(dvAudioMkvOrd == 2 && dvTruehd && !strcmp(partidaFaixa.codec, "truehd"));
+    assert(ling_casa(l, "pt") && partidaOrdinal == 2 && partidaContagem == 4);
+    puts("dvaudio_lg: selected Portuguese TrueHD retained for conversion"); }
 
   // 3. Sem correspondencia: a faixa da TV (espanhol) nao existe no MKV lido.
   //    Nao troca (a escolha segura e do motor, que confere idioma e codec).
@@ -154,8 +154,9 @@ int main(void) {
     Tv t[] = {{"en", "truehd", 8}};
     montar(m, 2, t, 1, 0);
     const char *l = abrir();
-    assert(dvAudioMkvOrd == 1 && ling_casa(l, "en") && partidaOrdinal == 1 && partidaContagem == 2);
-    puts("dvaudio_lg: C9 TV [TrueHD eng] -> E-AC-3 eng"); }
+    assert(dvAudioMkvOrd == 0 && dvTruehd && ling_casa(l, "en") && partidaOrdinal == 0 && partidaContagem == 2);
+    assert(!strcmp(partidaFaixa.codec, "truehd"));
+    puts("dvaudio_lg: English TrueHD retained despite compatible substitute"); }
 
   // 6. Listas do mesmo tamanho: a ordem vale (o motor faz o mesmo), mesmo sem
   //    codec na lista da TV.
@@ -163,8 +164,8 @@ int main(void) {
     Tv t[] = {{"en", "", 0}, {"en", "", 0}};
     montar(m, 2, t, 2, 0);
     (void)abrir();
-    assert(dvAudioMkvOrd == 1);
-    puts("dvaudio_lg: listas iguais, indice 0 = TrueHD -> E-AC-3 eng"); }
+    assert(dvAudioMkvOrd == 0 && dvTruehd);
+    puts("dvaudio_lg: equal lists retain TrueHD ordinal for conversion"); }
 
   // 7. Late DV8 (Matis94 614176d73): the prepared output record wins over an
   //    inconclusive probe; HDR10, P7/EL and non-HEVC stay untouched.

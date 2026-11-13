@@ -1,6 +1,7 @@
 #include "dts_engine.h"
 #include "../audionorm.h"
 #include "dv7.h"
+#include "dts_audio_codec.h"
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -45,6 +46,7 @@ int dts_engine_available(void) { return 0; }
 void dts_engine_dv(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
 void dts_engine_allow_p7(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
 void dts_engine_p7_mapping(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
+void dts_engine_audio_route(DtsEngine *e,int t,int f,int o) { (void)e;(void)t;(void)f;(void)o; }
 void dts_engine_metrics(DtsEngine *e,DtsEngineMetrics *out) { (void)e; if(out) memset(out,0,sizeof(*out)); }
 int dts_engine_open(DtsEngine *e,const char *u,const char *h,int a,int c,double s) {
   (void)e;(void)u;(void)h;(void)a;(void)c;(void)s; return -1;
@@ -152,6 +154,7 @@ struct DtsEngine {
   AVPacket *in, *out;
   int allow_p7, dv7;
   int preserve_p7_mapping, mapping_reported;
+  int truehd, fixed_audio, dts_off;   /* audio route snapshot, before open */
   uint8_t *dv7_buffer;
   unsigned dv7_capacity;
   int hdr10p_strip;            /* #605: HEVC HDR10+ SEI removal snapshot at open */
@@ -878,6 +881,12 @@ int64_t dts_engine_source_total(DtsEngine *e) {
 void dts_engine_dv(DtsEngine *e, int enabled) { if (e) e->dv = !!enabled; }
 void dts_engine_allow_p7(DtsEngine *e, int enabled) { if (e) e->allow_p7 = !!enabled; }
 void dts_engine_p7_mapping(DtsEngine *e, int enabled) { if (e) e->preserve_p7_mapping = !!enabled; }
+void dts_engine_audio_route(DtsEngine *e, int truehd, int fixed, int dts_off) {
+  if (!e) return;
+  /* TrueHD feeds only when this FFmpeg build can decode it. */
+  e->truehd = truehd && avcodec_find_decoder(AV_CODEC_ID_TRUEHD);
+  e->fixed_audio = fixed == 1 || fixed == 2 ? fixed : 0; e->dts_off = !!dts_off;
+}
 int dts_engine_available(void) {
   return avcodec_find_decoder(AV_CODEC_ID_DTS) && avcodec_find_encoder(AV_CODEC_ID_AAC) && av_bsf_get_by_name("h264_mp4toannexb")
       && av_bsf_get_by_name("hevc_mp4toannexb");
@@ -965,7 +974,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
     if(p->codec_type==AVMEDIA_TYPE_VIDEO && e->info.video_stream<0 && !(s->disposition&AV_DISPOSITION_ATTACHED_PIC))
       e->info.video_stream=i;
     /* Dolby Vision path: AC-3/E-AC-3 go to the TV untouched (passthrough). */
-    if((p->codec_id==AV_CODEC_ID_DTS || (e->dv && (p->codec_id==AV_CODEC_ID_AC3 || p->codec_id==AV_CODEC_ID_EAC3)))
+    if(nv_dts_audio_feeds(avcodec_get_name(p->codec_id),e->dv,e->truehd,e->dts_off)
        && e->info.audio_stream<0 && (audio<0 || audio==(int)i)) e->info.audio_stream=i;
     int kind=p->codec_type==AVMEDIA_TYPE_VIDEO?DTS_VIDEO:p->codec_type==AVMEDIA_TYPE_AUDIO?DTS_AUDIO:p->codec_type==AVMEDIA_TYPE_SUBTITLE?DTS_SUBTITLE:0;
     if(kind && e->info.n_tracks<DTS_TRACK_MAX) {
@@ -1017,7 +1026,10 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
     if((r=av_bsf_init(e->bsf))<0) return fail(e,"Video filter open",r);
   }
   AVCodecParameters *ap=e->fmt->streams[e->info.audio_stream]->codecpar;
-  e->passthrough=ap->codec_id!=AV_CODEC_ID_DTS;
+  /* Convert DTS, TrueHD and, with fixed DV audio, AC-3/E-AC-3 when this
+   * build decodes them; otherwise AC-3/E-AC-3 pass through untouched. */
+  int fixed=e->dv?e->fixed_audio:0;
+  e->passthrough=ap->codec_id!=AV_CODEC_ID_DTS && ap->codec_id!=AV_CODEC_ID_TRUEHD && !fixed;
   if(e->passthrough) {
     e->in=av_packet_alloc(); e->out=av_packet_alloc();
     if(!e->in || !e->out) return fail(e,"Audio queue allocation",0);
@@ -1029,7 +1041,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
     e->target_ns=(int64_t)(start*1000000000.0);
     return start>0?dts_engine_seek(e,start):0;
   }
-  const AVCodec *decoder=avcodec_find_decoder(AV_CODEC_ID_DTS);
+  const AVCodec *decoder=avcodec_find_decoder(ap->codec_id);
   if(!decoder) return fail(e,"DTS decoder absent",0);
   e->dec=avcodec_alloc_context3(decoder);
   if(!e->dec) return fail(e,"DTS decoder allocation",0);
@@ -1038,14 +1050,14 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
   /* Corrupt HD extensions must reach the worker error path; an explicit
    * core-only reopen decides whether to discard the failed extension. */
   e->dec->err_recognition=AV_EF_EXPLODE;
-  if(core && av_opt_set_int(e->dec->priv_data,"core_only",1,0)<0) return fail(e,"DTS core-only unavailable",0);
+  if(core && ap->codec_id==AV_CODEC_ID_DTS && av_opt_set_int(e->dec->priv_data,"core_only",1,0)<0) return fail(e,"DTS core-only unavailable",0);
   if((r=avcodec_open2(e->dec,decoder,NULL))<0) return fail(e,"DTS decoder open",r);
   /* AC3 5.1 only when asked and the build has the encoder; else stereo AAC. */
-  const AVCodec *encoder=g_surround_ac3?avcodec_find_encoder(AV_CODEC_ID_AC3):NULL;
+  const AVCodec *encoder=(fixed?fixed==2:g_surround_ac3)?avcodec_find_encoder(AV_CODEC_ID_AC3):NULL;
   int out_channels=2;
   if(encoder) {
     int in_channels=ap->ch_layout.nb_channels;
-    out_channels=(in_channels==0 || in_channels>2)?6:2;
+    out_channels=fixed==2 || in_channels==0 || in_channels>2 ? 6 : 2;
   } else encoder=avcodec_find_encoder(AV_CODEC_ID_AAC);
   if(!encoder) return fail(e,"Audio encoder absent",0);
   e->enc=avcodec_alloc_context3(encoder);
@@ -1058,6 +1070,10 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
   if(!e->fifo || !e->in || !e->out || !e->decoded || !e->encoded) return fail(e,"Audio queue allocation",0);
   e->info.channels=e->enc->ch_layout.nb_channels; e->info.sample_rate=48000;
   snprintf(e->info.audio_codec,sizeof(e->info.audio_codec),"%s",avcodec_get_name(e->enc->codec_id));
+  if(ap->codec_id!=AV_CODEC_ID_DTS) {
+    printf("[dts] audio-convert input=%s output=%s channels=%d fixed=%d\n",avcodec_get_name(ap->codec_id),
+           e->info.audio_codec,e->info.channels,fixed);fflush(stdout);
+  }
   e->info.duration_ns=e->fmt->duration==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->duration,AV_TIME_BASE_Q,NS);
   e->info.start_ns=e->fmt->start_time==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->start_time,AV_TIME_BASE_Q,NS);
   e->target_ns=(int64_t)(start*1000000000.0);
@@ -1322,7 +1338,7 @@ static int next_frame(DtsEngine *e,DtsFrame *f) {
       return frame_out(e,f,DTS_SUBTITLE,tb);
     }
     if(e->in->stream_index==e->info.audio_stream) {
-      if(e->in->size>=4) {
+      if(e->dec && e->dec->codec_id==AV_CODEC_ID_DTS && e->in->size>=4) {
         const uint8_t *b=e->in->data;
         uint32_t sync=((uint32_t)b[0]<<24)|((uint32_t)b[1]<<16)|((uint32_t)b[2]<<8)|b[3];
         if(sync==UINT32_C(0x7ffe8001) || sync==UINT32_C(0xfe7f0180)
