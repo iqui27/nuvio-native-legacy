@@ -4,6 +4,7 @@
 #undef static
 #include <assert.h>
 #include <unistd.h>
+#include "nvtmp.h"
 
 static char pref[16] = "de-DE", pasta[512];
 static int pedidos, falhas, negarDe, qualidade = 720;
@@ -59,7 +60,7 @@ static int audioNoArquivo(const char *url,const char *lg) {
 #endif
 }
 int main(void) {
-  char temp[]="/tmp/nuvio-trailer-language-XXXXXX"; assert(mkdtemp(temp));
+  char temp[NVT_MAX]; nvt_set(temp,sizeof temp,"/nuvio-trailer-language-XXXXXX"); assert(mkdtemp(temp));
   snprintf(pasta,sizeof pasta,"%s",temp);
   char dir[600];snprintf(dir,sizeof dir,"%s/trailer",pasta);assert(!mkdir(dir,0755));
   char query[240],a[16];
