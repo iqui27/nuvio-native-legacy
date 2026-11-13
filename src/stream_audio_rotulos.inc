@@ -93,6 +93,9 @@ static void audioRotulosTexto(const char *texto,char *dst,unsigned tam) {
         p=q;continue;
       }
       char token[128];const char *idioma=audioRotuloIdioma(p,q,token);
+      // Plain names/ISO codes (Turkish, It, DTS-ES) stay with the guarded
+      // release classifier; only flags and release aliases become labels.
+      if(idioma==token)idioma=NULL;
       // Avoid treating ordinary lowercase words (it/is/as/hi) as ISO codes.
       int curto=q-p==2 && !(isupper((unsigned char)p[0]) && isupper((unsigned char)p[1]));
       int isolado=(p==linha && q==fim) || (p>linha && strchr("._[(/+-|",p[-1])) || (q<fim && strchr("._])",*q));

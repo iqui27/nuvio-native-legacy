@@ -229,7 +229,8 @@ static void metadadosFiltro(const char *obj, const char *fim, const char *nome,
       !(raw && textoRaiz(raw, js_fim(raw), "filename", nomeCompleto, sizeof nomeCompleto)) && raw)
     textoRaiz(raw, js_fim(raw), "torrentName", nomeCompleto, sizeof nomeCompleto);
   snprintf(s->arquivo, sizeof s->arquivo, "%.*s", (int)sizeof s->arquivo - 1, nomeCompleto);
-  if(!s->audioIdiomas[0]) {
+  // A generic language(s) field, even unknown values, also wins over labels.
+  if(!s->audioIdiomas[0] && !campos[FONTEFILTRO_LINGUAS][0]) {
     // Parse whole bounded fields once, before display truncation or provider
     // fallback. Never inspect URL paths, headers or another stream's object.
     if(strlen(nome)<1023)audioRotulosTexto(nome,s->audioRotulos,sizeof s->audioRotulos);

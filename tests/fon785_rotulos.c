@@ -29,6 +29,16 @@ int main(void) {
   assert(linhasFaixas(&m) == 1);
   assert(audioInferido(&m, out, sizeof out) &&
          strstr(out, i18n("Espanhol")) && strstr(out, i18n("Inglês")));
+  // A generic language field (even unknown values) beats a release alias.
+  const char *genericos[] = {"\"language\":\"en\"", "\"languages\":[\"und\"]"};
+  for (int i = 0; i < 2; i++) {
+    char json[256]; Stream *v = NULL;
+    snprintf(json, sizeof json, "{\"streams\":[{\"url\":\"https://example.test/v\",%s,"
+             "\"title\":\"Frozen.2013.1080p.WEB-DL.VFF.x264.mkv\"}]}", genericos[i]);
+    assert(stream_extrair(json, "fixture", &v) == 1);
+    assert(!v->audioRotulos[0] && evidenciaAudio(v, "fr") != 1);
+    free(v);
+  }
   puts("fon785 rotulos: ok");
   return 0;
 }
