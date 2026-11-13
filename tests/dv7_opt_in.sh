@@ -7,7 +7,7 @@ trap 'if [[ -n $server ]]; then kill "$server" 2>/dev/null || true; fi; rm -rf "
 python3 - "$task_tmp/test.c" <<'PY'
 import pathlib, sys
 source = pathlib.Path('src/dts/dts_engine.c').read_text()
-start = source.index('    if (', source.index('e->info.dovi_bl_compatibility_id=conf->dv_bl_signal_compatibility_id;'))
+start = source.index('    int unsupported=', source.index('e->info.dovi_bl_compatibility_id=conf->dv_bl_signal_compatibility_id;'))
 end = source.index('    /* mp4toannexb', start)
 # Only the setter and P7 metadata decision may reference the engine opt-in.
 assert source.count('e->allow_p7') == 2
@@ -20,24 +20,29 @@ pathlib.Path(sys.argv[1]).write_text(r'''
 #include <assert.h>
 #include <stdio.h>
 #define AV_CODEC_ID_HEVC 1
-typedef struct { int dv_profile, el_present_flag, bl_present_flag, rpu_present_flag; } Conf;
+typedef struct { int dv_profile, el_present_flag, bl_present_flag, rpu_present_flag, dv_bl_signal_compatibility_id; } Conf;
 typedef struct { int codec_id; } Params;
-typedef struct { int dovi_profile, dovi_el_present, dovi_bl_compatibility_id; } Info;
-typedef struct { int allow_p7, dv7; Info info; } Engine;
+typedef struct { int dovi_profile, dovi_level, dovi_rpu_present, dovi_el_present, dovi_bl_present, dovi_bl_compatibility_id; } Info;
+typedef struct { int allow_p7, dv7, dv_strip; Info info; } Engine;
 static int nv_dv7_profile(int p,int el,int bl,int rpu) { (void)el; return p==7 && bl && rpu; }
 static int fail(Engine *e,const char *message,int code) { (void)e;(void)message;(void)code;return -1; }
-static int metadata(Engine *e,Conf *conf,Params *vp) {
+static int metadata(Engine *e,Conf *conf,Params *vp,int external) {
+ const void *dv=conf;
+ e->info.dovi_bl_present=conf->bl_present_flag;
 ''' + source[start:end] + r'''
  return 0;
 }
 int main(void) {
- Conf conf={7,1,1,1}; Params vp={AV_CODEC_ID_HEVC};
+ Conf conf={7,1,1,1,0}; Params vp={AV_CODEC_ID_HEVC};
  Engine off={0};
- assert(metadata(&off,&conf,&vp)<0);
+ assert(metadata(&off,&conf,&vp,0)<0);
  assert(!off.dv7);
  Engine on={.allow_p7=1};
- assert(metadata(&on,&conf,&vp)==0 && on.dv7);
+ assert(metadata(&on,&conf,&vp,0)==0 && on.dv7);
  assert(on.info.dovi_profile==8 && !on.info.dovi_el_present && on.info.dovi_bl_compatibility_id==1);
+ // Audio from another version, P7 conversion off: base layer only, not a failure.
+ Conf hdr10={7,1,1,1,1}; Engine ext={0};
+ assert(metadata(&ext,&hdr10,&vp,1)==0 && ext.dv_strip && !ext.dv7 && !ext.info.dovi_profile);
  puts("DV7 Off + DTS fallback: rejected P7, dv7 remains zero; opt-in converts.");
 }
 ''')

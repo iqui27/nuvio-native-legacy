@@ -202,6 +202,24 @@ int dts_engine_seek(DtsEngine *e,double target) {
 void dts_engine_cancel(DtsEngine *e) { atomic_store(&e->cancelled,1); }
 void dts_engine_interrupt(DtsEngine *e,int on) { atomic_store(&e->interrupted,on); }
 void dts_engine_destroy(DtsEngine *e) { free(e); }
+/* Audio from another version: never configured by these scenarios. */
+void dts_engine_external_audio(DtsEngine *e,const char *u,const char *h,const char *l,int o) { (void)e;(void)u;(void)h;(void)l;(void)o; }
+void dts_engine_external_audio_only(DtsEngine *e,int on) { (void)e;(void)on; }
+void dts_engine_external_automatch(DtsEngine *e,int on) { (void)e;(void)on; }
+void dts_engine_external_follow(DtsEngine *e,int on) { (void)e;(void)on; }
+int dts_engine_external_follow_poll(DtsEngine *e,int *s,int *ms) { (void)e;(void)s;(void)ms; return 0; }
+int dts_engine_external_match_arm(DtsEngine *e) { (void)e; return 0; }
+int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) { (void)e;(void)o; return 0; }
+void dts_engine_external_mismatch(DtsEngine *e,int *c,int *s) { (void)e; if(c)*c=0; if(s)*s=0; }
+void dts_engine_external_offset(DtsEngine *e,int o) { (void)e;(void)o; }
+int dts_engine_external_replace(DtsEngine *e,const char *u,const char *h,const char *l,int o,int t,int a,double p) { (void)e;(void)u;(void)h;(void)l;(void)o;(void)t;(void)a;(void)p; return -1; }
+int dts_engine_external_shift(DtsEngine *e,int o) { (void)e;(void)o; return 0; }
+void dts_engine_external_speed(DtsEngine *e,int p) { (void)e;(void)p; }
+void dts_engine_external_track(DtsEngine *e,int s) { (void)e;(void)s; }
+void dts_engine_external_track_hint(DtsEngine *e,int s,const char *l,const char *c,int ch,const char *t) { (void)e;(void)s;(void)l;(void)c;(void)ch;(void)t; }
+int dts_engine_prefetch(DtsEngine *e,double s) { (void)e;(void)s; return 0; }
+void dts_engine_prefetch_tidy(DtsEngine *e) { (void)e; }
+void dts_engine_reconnect(DtsEngine *e) { (void)e; }
 const char *dts_engine_error(DtsEngine *e) {
  (void)e;if(atomic_load(&refill_timestamp)) return DTS_ENGINE_TIMESTAMP_DISCONTINUITY;
  if(timestampScenario()) return (opens>1 && atomic_load(&timestamp_fail_open)) ? "fixture reopen failure" : DTS_ENGINE_TIMESTAMP_DISCONTINUITY;
