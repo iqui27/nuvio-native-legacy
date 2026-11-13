@@ -2590,11 +2590,16 @@ static void extReabrir(void) {
     extReabrirPend = 0;
     if (!quer && extSoAudio) {
       // Only the external audio needed the converter: the TV player again.
+      // One ordinary conversion of this file may follow, at this point and
+      // pause. A failure of that attempt is not retried.
       char lu[sizeof legUrlAtual];
-      printf("[ext-audio] back to the TV player at %.1fs\n", posSeg); fflush(stdout);
+      double alvo = posSeg;
+      int pausado = pausaPedida;
+      printf("[ext-audio] back to the TV player at %.1fs\n", alvo); fflush(stdout);
       snprintf(lu, sizeof lu, "%s", legUrlAtual);
       extSoAudio = 0;
-      if (!recarregarMesmaFonte(posSeg, -1, -1, lu)) falhou = 1;
+      if (!recarregarMesmaFonte(alvo, -1, -1, lu)) falhou = 1;
+      else { posSeg = alvo; pausaPedida = pausado; dtsTentou = 0; }
       ack_publicar();
       return;
     }
@@ -3361,7 +3366,8 @@ static int iniciarDts(int stream) {
   // Com a tela do DV de pe, o HDR10 andou sem ninguem ver (novas tentativas da
   // sonda): o caminho parte do ponto de partida, nao de onde a TV chegou.
   double alvo = dtsModoDv && dvSilencio ? dvEntradaSeg
-              : (seekEm || seekEnvEm || seekRetryEm) ? seekAlvo : posSeg;
+              : (seekEm || seekEnvEm || seekRetryEm) ? seekAlvo
+              : posAoCarregar > 1.0 ? posAoCarregar : posSeg;
   int paused = pausaPedida, ordinal = audioAtual, count = nAudio, trocada = 0;
   memset(&selected, 0, sizeof selected);
   if (a) {
@@ -3505,6 +3511,9 @@ static void bombearDts(void) {
     if (extAtivo) {
       // The other source's audio could not play: back to this source alone,
       // without a DTS or Dolby Vision failure note (those paths were not tried).
+      // One ordinary conversion may follow; its failure is not retried.
+      double alvo = posSeg;
+      int pausado = pausaPedida;
       printf("[ext-audio] failed: %.159s\n", st.error); fflush(stdout);
       audioext_falhou(!strcmp(st.error, DTS_PLAYBACK_STARVED)
                       ? "the source stayed too slow, even after reconnecting" : st.error);
@@ -3512,6 +3521,7 @@ static void bombearDts(void) {
       dtsModoDv = 0; dvHabilitado = 0;
       dtsVoltarNativo("external audio");
       dtsEstado = 0;
+      if (!falhou) { posSeg = alvo; pausaPedida = pausado; dtsTentou = 0; }
       return;
     }
     if (dtsModoDv) {

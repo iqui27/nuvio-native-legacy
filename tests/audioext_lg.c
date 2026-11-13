@@ -40,14 +40,19 @@
 static int partidas, fechadas;
 static char externoUrl[256];
 static int externoOffset;
+static double partidaPos;
+static int partidaPausa, partidaStream, partidaOrdinal;
+static char partidaCodec[32];
 static DtsPlaybackStatus status;
 static DtsPlayback *dublePartida(const char *url, const char *headers, int audio_stream,
                                  double position, int paused, const char *window,
                                  int webos_major, const DtsTrack *selected, int ordinal,
                                  int count) {
-  (void)url; (void)headers; (void)audio_stream; (void)position; (void)paused; (void)window;
-  (void)webos_major; (void)selected; (void)ordinal; (void)count;
+  (void)url; (void)headers; (void)window; (void)webos_major;
   partidas++;
+  partidaPos = position; partidaPausa = paused;
+  partidaStream = audio_stream; partidaOrdinal = ordinal;
+  snprintf(partidaCodec, sizeof partidaCodec, "%s", selected ? selected->codec : "");
   return (DtsPlayback *)(uintptr_t)0x1;
 }
 static void dubleFechar(DtsPlayback *p) { (void)p; fechadas++; }
@@ -94,6 +99,39 @@ static int sondaLenta(const char *url, const char *cab, AudioExtFaixa *out, int 
   return -1;
 }
 
+static void faixaDts(void) {
+  nAudio = 2; audioAtual = 1;
+  memset(faixaAudio, 0, sizeof faixaAudio);
+  snprintf(faixaAudio[0].codec, sizeof faixaAudio[0].codec, "aac");
+  snprintf(faixaAudio[1].codec, sizeof faixaAudio[1].codec, "dts");
+  faixaAudio[1].canais = 6;
+  snprintf(faixaAudio[1].idioma, sizeof faixaAudio[1].idioma, "en");
+}
+
+// Donor-only converter on an LG that does not decode DTS. Position stays paused.
+static void lgDoador(void) {
+  montar();
+  snprintf(expWin, sizeof expWin, "webos6");
+  dtsHabilitado = 1;
+  __atomic_store_n(&edidDts, 0, __ATOMIC_RELEASE);
+  dvHabilitado = 0; dtsModoDv = 0; dtsNativePending = 0;
+  posSeg = 88.0; pausaPedida = 1;
+  faixaDts();
+  extSoAudio = 1;
+  memset(&status, 0, sizeof status);
+  assert(iniciarDts(-1) && extAtivo && dtsTentou == 1 && partidas == 1);
+}
+
+// sourceInfo came back with the file's own DTS track. One pump may convert.
+static void retomarProprio(void) {
+  faixaDts();
+  pronto = 1; modoLoad = 0; falhou = 0; terminou = 0;
+  dtsSessao = NULL;
+  partidas = 0;
+  snprintf(externoUrl, sizeof externoUrl, "stale");
+  video_bombear();
+}
+
 int main(void) {
   lsCall = fakeCall; lsPayload = fakePayload;
   bus = (LSHandle *)(uintptr_t)1; sessao = 40;
@@ -133,6 +171,7 @@ int main(void) {
   extReabrirPend = 1; partidas = 0; snprintf(externoUrl, sizeof externoUrl, "stale");
   extReabrir();
   assert(partidas == 1 && !extAtivo && !externoUrl[0] && fechadas >= 1);
+  assert(dtsTentou == 1 && dtsModoDv == 1);
   puts("audioext_lg: disable reopens the converter on the file's own audio");
 
   // 5. Another profile while the donor plays: the mark and the session's
@@ -163,5 +202,69 @@ int main(void) {
     assert(!audioext_sonda_ocupada());
     assert(audioext_sonda_resultado(ger, f, AUDIOEXT_FAIXAS_MAX) < 0); }
   puts("audioext_lg: stop cancels the track read");
+
+  // LG, no native DTS, own audio is DTS, donor was the only reason the
+  // converter was up. Retiring the donor must allow one ordinary conversion
+  // at the paused position, on the selected track, without a second donor.
+  assert(!ajustes_dts_original() && !ajustes_dts_ac3() && !ajustes_dts_desligado());
+
+  lgDoador();
+  { unsigned g0 = audioext_pedido_geracao();
+    audioext_original();
+    unsigned g = audioext_pedido_geracao();
+    assert(g > g0 && !audioext_tem_marca());
+    extReabrirPend = 1;
+    extReabrir();
+    assert(!falhou && dtsTentou == 0 && pausaPedida == 1 && posSeg == 88.0);
+    retomarProprio();
+    assert(partidas == 1 && !externoUrl[0] && dtsTentou == 1);
+    assert(partidaPos == 88.0 && partidaPausa == 1);
+    assert(partidaStream == -1 && partidaOrdinal == 1 && !strcmp(partidaCodec, "dts"));
+    assert(audioext_pedido_geracao() == g && !audioext_tem_marca());
+    video_bombear();
+    assert(partidas == 1);
+  }
+  puts("audioext_lg: explicit original resumes own DTS once");
+
+  lgDoador();
+  audioext_limpar();
+  extReabrirPend = 1;
+  extReabrir();
+  assert(!falhou && dtsTentou == 0 && pausaPedida == 1 && posSeg == 88.0);
+  retomarProprio();
+  assert(partidas == 1 && !externoUrl[0] && partidaPos == 88.0 && partidaPausa == 1);
+  puts("audioext_lg: disable resumes own DTS once");
+
+  lgDoador();
+  status.failed = 1;
+  snprintf(status.error, sizeof status.error, "%s", DTS_PLAYBACK_STARVED);
+  bombearDts();
+  assert(!falhou && dtsTentou == 0 && !audioext_tem_marca());
+  assert(pausaPedida == 1 && posSeg == 88.0);
+  memset(&status, 0, sizeof status);
+  retomarProprio();
+  assert(partidas == 1 && !externoUrl[0] && partidaPos == 88.0 && partidaPausa == 1);
+  puts("audioext_lg: donor failure resumes own DTS once");
+
+  lgDoador();
+  status.failed = 1;
+  snprintf(status.error, sizeof status.error, "%s",
+           "External audio: selected track unavailable or conversion disabled");
+  bombearDts();
+  assert(!falhou && dtsTentou == 0 && !audioext_tem_marca());
+  memset(&status, 0, sizeof status);
+  retomarProprio();
+  assert(partidas == 1 && !externoUrl[0]);
+  // The ordinary attempt that then fails is not retried, and the donor stays off.
+  status.failed = 1;
+  snprintf(status.error, sizeof status.error, "decoder");
+  bombearDts();
+  assert(dtsTentou == 1 && !audioext_tem_marca());
+  memset(&status, 0, sizeof status);
+  faixaDts();
+  partidas = 0; dtsSessao = NULL; snprintf(externoUrl, sizeof externoUrl, "stale");
+  video_bombear();
+  assert(partidas == 0 && externoUrl[0] && dtsTentou == 1);
+  puts("audioext_lg: refused swap resumes own DTS once, no retry");
   return 0;
 }
