@@ -20,6 +20,8 @@ static volatile int g_normalize;
 void dts_engine_set_normalize(int on) { g_normalize=on!=0; }
 static volatile int g_surround_ac3;
 void dts_engine_set_ac3(int on) { g_surround_ac3 = on ? 1 : 0; }
+static int g_external_dts_off;
+void dts_engine_set_external_dts_off(int on) { __atomic_store_n(&g_external_dts_off, !!on, __ATOMIC_RELEASE); }
 /* Samsung remux ring (read_fluxo) for engines created after this call, in MiB:
  * 32 by default; the .tpk asks for 16 on Tizen 6/6.5/7 (less RAM). */
 static volatile int g_fx_cap_mib = 32;
@@ -215,6 +217,7 @@ struct DtsEngine {
   int fx_mib;                /* ring of this reader in MiB (0: g_fx_cap_mib) */
   int ext_stream, ext_have, ext_eof;
   int ext_force;   /* donor stream + 1 chosen in the menu; 0 = by language */
+  int ext_dts_off; /* donor-only policy; ordinary/native/DV audio is unchanged */
   /* Series memory (owner 09/11): the track chosen in the last episode's
    * version, looked for in this one when nothing is forced (ext_hint_pick). */
   int ext_hint_on, ext_hint_idx, ext_hint_ch;
@@ -1178,7 +1181,7 @@ static void close_media(DtsEngine *e) {
 }
 DtsEngine *dts_engine_create(void) {
   DtsEngine *e=calloc(1,sizeof(*e));
-  if(e) { e->total=-1; e->range_bytes=RANGE_BYTES; e->range_slots=RANGE_SLOTS; e->ext_stream=-1; e->mt_t1=-1; pthread_mutex_init(&e->range_lock,NULL); pthread_cond_init(&e->range_wake,NULL); }
+  if(e) { e->ext_dts_off=__atomic_load_n(&g_external_dts_off,__ATOMIC_ACQUIRE); e->total=-1; e->range_bytes=RANGE_BYTES; e->range_slots=RANGE_SLOTS; e->ext_stream=-1; e->mt_t1=-1; pthread_mutex_init(&e->range_lock,NULL); pthread_cond_init(&e->range_wake,NULL); }
   return e;
 }
 void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *b) {
@@ -1386,7 +1389,7 @@ static int ext_lang_is(const char *code,const char *pref) {
  * main file (AC-3 5.1 or AAC stereo, Settings > DTS); DTS itself only while
  * DTS conversion is not off. */
 static int ext_convertible(const DtsEngine *e,const AVCodecParameters *p) {
-  (void)e;
+  if(p->codec_id==AV_CODEC_ID_DTS && e->ext_dts_off) return 0;
   if(p->codec_type!=AVMEDIA_TYPE_AUDIO || !avcodec_find_decoder(p->codec_id)) return 0;
   return 1;
 }
@@ -1562,8 +1565,11 @@ static int configure_external(DtsEngine *e,double start) {
            e->ext_hint_lang,e->ext_hint_codec,e->ext_hint_ch,e->ext_hint_title,e->ext_hint_idx,h);
     if(h>=0) k=h;
   }
-  if(e->ext_force>0 && (unsigned)(e->ext_force-1)<x->fmt->nb_streams &&
-     ext_rank(e,x->fmt->streams[e->ext_force-1]->codecpar)>0) k=e->ext_force-1;
+  if(e->ext_force>0) {
+    k=e->ext_force-1;
+    if((unsigned)k>=x->fmt->nb_streams || ext_rank(e,x->fmt->streams[k]->codecpar)<=0)
+      return fail(e,"External audio: selected track unavailable or conversion disabled",0);
+  }
   for(unsigned i=0;i<x->fmt->nb_streams;i++) {
     AVStream *st=x->fmt->streams[i]; AVCodecParameters *p=st->codecpar;
     AVDictionaryEntry *l=av_dict_get(st->metadata,"language",NULL,0);

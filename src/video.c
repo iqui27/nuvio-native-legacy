@@ -1943,6 +1943,7 @@ static int iniciar(int automatico);
 // The hold-OK menu's track list: the converter reads the version's header.
 static int extSondaFaixas(const char *url, const char *cab, AudioExtFaixa *out, int max, const int *cancel) {
   DtsTrack t[AUDIOEXT_FAIXAS_MAX];
+  dts_engine_set_external_dts_off(ajustes_dts_desligado());
   int n = dts_engine_probe_audio_cancelled(url, cab, t, max < AUDIOEXT_FAIXAS_MAX ? max : AUDIOEXT_FAIXAS_MAX, cancel);
   for (int i = 0; i < n; i++) {
     memset(&out[i], 0, sizeof out[i]);
@@ -3396,6 +3397,7 @@ static int iniciarDts(int stream) {
   }
   dtsMarcarAbertas(dtsAbertasSemFechar() + 1);
   dts_engine_set_ac3(ajustes_dts_ac3());
+  dts_engine_set_external_dts_off(ajustes_dts_desligado());
   dts_engine_set_normalize(ajustes_audio_normalizar());
   dts_engine_set_ahead_mib(cacheboost_backend_buffer_mb());   // #338: Settings > Buffer size
   dts_engine_set_hdr10p_strip(ajustes_hdr10p_strip());        // #605

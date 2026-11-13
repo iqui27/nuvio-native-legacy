@@ -4118,6 +4118,12 @@ int ajustes_dts_original(void)        { return 0; }
 int ajustes_dts_ac3(void)             { return valor[AJ_DTS_AC3] == 2; }
 int ajustes_dts_original(void)        { return valor[AJ_DTS_AC3] == 0; }
 #endif
+// Compatible with Batch B's Off row without assigning a new stored value in D.
+// Original/native is a separate choice; only an explicit Off refuses DTS donors.
+int ajustes_dts_desligado(void) {
+  int v = valor[AJ_DTS_AC3];
+  return v >= 0 && v < N_DTS_SAIDA && !strcmp(V_DTS_SAIDA[v], "Desligado");
+}
 // .tpk: HLS (o TS continuo e so a troca automatica de video_tpk.c) ou desligado.
 int ajustes_dts_tpk_modo(void) {
 #ifdef NV_TPK

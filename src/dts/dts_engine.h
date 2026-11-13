@@ -21,6 +21,9 @@ typedef struct { int alive, peak; long long bytes, peak_bytes; } DtsEngineRings;
 void dts_engine_rings(DtsEngineRings *out, int reset_peak);
 /* Output for the next open: 1 = AC3 5.1 640 kbps, 0 = stereo AAC (default). */
 void dts_engine_set_ac3(int on);
+/* Donor-only policy, snapshotted at engine creation (including header probes).
+ * Independent of Batch B dts_engine_audio_route: native/DV routing stays there. */
+void dts_engine_set_external_dts_off(int on);
 void dts_engine_set_normalize(int on);
 /* Samsung remux only: ring of the single-connection reader, in MiB (8..32,
  * default 32), for rings allocated after the call. webOS never calls it. */

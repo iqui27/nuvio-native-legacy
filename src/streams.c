@@ -797,7 +797,7 @@ static void audioextSerie(void) {
     AudioExtEntrada e;
     int lingua = 0, k;
     stream_audioext_entrada(&lista[i], &e);
-    if (!e.temUrl || e.hls || e.naoVideo) continue;
+    if (!e.temUrl || e.hls || e.naoVideo || (e.codec == AEXT_DTS && ajustes_dts_desligado())) continue;
     for (int j = 0; j < e.nIdiomas; j++) if (ling_casa(e.idiomas[j], id.idioma)) lingua = 1;
     if (!lingua) continue;
     if (id.grupo[0] && !strcmp(lista[i].bingeGroup, id.grupo)) k = 3;
@@ -5612,7 +5612,7 @@ static int fonteAceitaAudio(int i) {
   if (!ajustes_audio_externo() || canalFolha || i < 0 || i >= n) return 0;
   stream_audioext_entrada(&lista[i], &e);
   if (e.cache < 0 && ajustes_audio_externo_ocultar_fora_cache()) return 0;   // Settings: versions out of cache hidden
-  return e.temUrl && !e.hls && !e.naoVideo;
+  return e.temUrl && !e.hls && !e.naoVideo && !(e.codec == AEXT_DTS && ajustes_dts_desligado());
 #else
   (void)i;
   return 0;

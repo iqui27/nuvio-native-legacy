@@ -173,7 +173,8 @@ static Run play(DtsEngine *e, int64_t offset_ns, int limit) {
 }
 
 int main(int argc, char **argv) {
-  assert(argc == 34);
+  assert(argc == 35);
+  const char *mixed = argv[34];
   const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4], *mp4 = argv[5];
   const char *aac44 = argv[6], *main60 = argv[7], *long_idx = argv[8], *long_noidx = argv[9];
   const char *match_main = argv[10], *match_dub = argv[11];
@@ -273,6 +274,36 @@ int main(int argc, char **argv) {
     dts_engine_destroy(e);
   }
   dts_engine_set_ac3(0);
+  // Off refuses DTS in the real probe, language pick and forced-track paths.
+  // Non-DTS donors still pass on ordinary and DV sessions; Off never changes
+  // the main source's ordinary/native route (owned by Batch B).
+  dts_engine_set_external_dts_off(1);
+  { DtsTrack t[8];
+    assert(dts_engine_probe_audio(dts_only, HEADERS, t, 8) == 0);
+    assert(dts_engine_probe_audio(other, HEADERS, t, 8) == 2); }
+  for (int forced = 0; forced < 2; forced++) {
+    e = dts_engine_create();
+    dts_engine_external_audio(e, dts_only, HEADERS, "", 0);
+    if (forced) dts_engine_external_track(e, 1);
+    assert(dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0);
+    assert(strstr(dts_engine_error(e), forced ? "selected track" : "no audio track"));
+    dts_engine_destroy(e);
+  }
+  e = dts_engine_create();
+  dts_engine_external_audio(e, mixed, HEADERS, "pl", 0);
+  dts_engine_external_track(e, 2); // DTS, while stream 1 is playable AC-3
+  assert(dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0);
+  assert(strstr(dts_engine_error(e), "selected track"));
+  dts_engine_destroy(e);
+  for (int dv = 0; dv < 2; dv++) {
+    e = dts_engine_create();
+    dts_engine_dv(e, dv);
+    dts_engine_external_audio(e, other, HEADERS, "pl", 0);
+    assert(dts_engine_open(e, main_file, HEADERS, -1, 0, 0) == 0);
+    assert(!strcmp(dts_engine_info(e)->audio_codec, "ac3"));
+    dts_engine_destroy(e);
+  }
+  dts_engine_set_external_dts_off(0);
   checkBytes = 1;
 
   /* 7. A much shorter other file (a debrid "not cached" clip) is refused. */
@@ -563,18 +594,40 @@ int main(int argc, char **argv) {
   e = dts_engine_create();
   dts_engine_external_follow(e, 1);
   dts_engine_external_audio(e, dub_pl, HEADERS, "pl", 0);
+  // Probe indices and languages must identify the same track as playback.
+  { DtsTrack t[4];
+    assert(dts_engine_probe_audio(dub_ru, HEADERS, t, 4) == 1);
+    assert(t[0].stream_index == 1 && !strcmp(t[0].codec, "ac3") && !strcmp(t[0].language, "rus"));
+    assert(dts_engine_probe_audio(dub_pl, HEADERS, t, 4) == 1);
+    assert(t[0].stream_index == 1 && !strcmp(t[0].codec, "vorbis") && !strcmp(t[0].language, "pol"));
+    dts_engine_external_track(e, t[0].stream_index); }
   assert(dts_engine_open(e, dub_ru, HEADERS, -1, 0, 0) == 0);
-  { DtsFrame f; int got, switches = 0, state, ms, found = 0; DtsMatchInfo mi;
+  { const DtsMediaInfo *in = dts_engine_info(e); int donor = 0;
+    assert(in->audio_stream == DTS_ENGINE_EXTERNAL_STREAM && !strcmp(in->audio_codec, "aac"));
+    for (int i = 0; i < in->n_tracks; i++) {
+      const DtsTrack *t = &in->tracks[i];
+      if (t->kind == DTS_AUDIO && t->stream_index == DTS_ENGINE_EXTERNAL_STREAM) {
+        assert(!strcmp(t->language, "pol") && !strcmp(t->codec, "vorbis")); donor++;
+      }
+    }
+    assert(donor == 1); }
+  { DtsFrame f; int got, switches = 0, state, ms, found = 0, shifts = 0; DtsMatchInfo mi;
+    int64_t last = 0;
     while ((got = dts_engine_next(e, &f)) == 1) {
       int k = dts_engine_external_follow_poll(e, &state, &ms);
       if (k == 1 || k == 2) switches++;
-      if (dts_engine_external_match_poll(e, &mi) == 1) found = 1;
+      if (k == 4) shifts++;
+      if (dts_engine_external_match_poll(e, &mi) == 1) {
+        found = 1; assert(abs(mi.offset_ms) < 60);
+      }
+      if (found) assert(state == 1); // remains on the donor through dialogue
+      if (f.kind == DTS_AUDIO) {
+        assert(f.stream_index == DTS_ENGINE_EXTERNAL_STREAM && f.pts_ns >= last);
+        last = f.pts_ns;
+      }
     }
-    fprintf(stderr, "follow, two dubs: found %d, switches %d\n", found, switches);
-    /* Known divergence: pristine upstream 6ef2d55 also switches here on host
-     * FFmpeg 9 fixtures; the switch count is reported, not asserted. */
-    if (switches) fprintf(stderr, "follow, two dubs: KNOWN host-FFmpeg divergence (upstream same)\n");
-    assert(got == 0 && found); }
+    fprintf(stderr, "follow, two dubs: found %d, switches %d, shifts %d\n", found, switches, shifts);
+    assert(got == 0 && found && switches == 0 && shifts == 0 && last > 118e9); }
   dts_engine_destroy(e);
   /* The match at start cut short by a jump (owner's log 11/11, S9E16: the
    * automatic intro skip): no failure; it starts again from there and finds. */
