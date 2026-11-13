@@ -19,10 +19,7 @@ old_requests = collections.Counter()
 lock = threading.Lock()
 drained = threading.Condition(lock)
 size = pathlib.Path(fixture).stat().st_size
-
-
-def workers_of(case):
-    return int(case.rsplit('-', 1)[1])
+capacity = {}  # case -> slots the engine may really have in flight
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -82,8 +79,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         with lock:
             # A request the client already closed may still look active for a
             # few ms here; give it 300 ms to drain. A live extra connection
-            # stays and still counts toward the peak.
-            drained.wait_for(lambda: active[case] < workers_of(case), timeout=.3)
+            # stays and still counts toward the peak. Cap is the case's real
+            # slot count: the 12 MiB 4-lane case has 3, not 4.
+            drained.wait_for(lambda: active[case] < capacity[case], timeout=.3)
             active[case] += 1
             peak[case] = max(peak[case], active[case])
         try:
@@ -131,6 +129,7 @@ def run(mode, workers, endpoint='resolve', ahead=None, bound=None):
     # Standard ring at 16 MiB). `bound` runs a smaller budget on purpose.
     ahead = ahead or max(12, 4 * workers)
     case = f'{mode}-{workers}' if bound is None else f'{mode}-{ahead}mib-{workers}'
+    capacity[case] = bound or workers
     url = f'http://127.0.0.1:{server.server_port}/{case}/{endpoint}'
     result = subprocess.run([binary, mode, url, fixture, str(workers), str(ahead)],
                             capture_output=True, text=True, timeout=50)
@@ -142,8 +141,7 @@ def run(mode, workers, endpoint='resolve', ahead=None, bound=None):
     time.sleep(.1)  # Let disconnected server writers release their slots.
     selected = [r for r in rows if r[0] == case]
     if mode in ('native', 'conversion'):
-        want = bound or workers
-        assert peak[case] == want, (case, 'actual concurrent connections', peak[case])
+        assert peak[case] == capacity[case], (case, 'actual concurrent connections', peak[case])
         if workers == 1:
             assert any(not r[4] and r[1] == 'data' for r in selected), (case, 'no continuous GET')
             assert all(not r[4] or r[3] <= 255 for r in selected), (case, 'repeated finite ranges')
