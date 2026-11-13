@@ -1558,9 +1558,13 @@ static void aplicarUmEm(CatItem *v, int i, double posSeg, double durSeg, int tem
 // roda antes da publicacao (e da poda), entao a mesma regra entra aqui.
 // A Next Up seed shares the watched episode's timestamp, but points ahead.
 // Replaying that episode's progress must not turn the seed back into it.
+// Compared in whole seconds: Simkl's last_watched_at has no milliseconds
+// (…481000 against the local …481131), and the seed lost to its own episode,
+// so Dexter: Original Sin showed the finished S1E8 at launch, before the
+// episode list arrived to move the card to S1E9.
 static int aSeguirAdiante(const CatItem *item, int t, int e, long long ms) {
   return !strcmp(item->tipo, "series") && item->progresso == 0 &&
-         item->retomadoMs > 0 && item->retomadoMs >= ms && e > 0 &&
+         item->retomadoMs > 0 && item->retomadoMs / 1000 >= ms / 1000 && e > 0 &&
          (item->temporada > t || (item->temporada == t && item->episodio > e));
 }
 static void espalharEm(CatItem *v, int m) {
