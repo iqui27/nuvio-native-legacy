@@ -2,8 +2,9 @@
 # Fixture local, SINTETICO e descartavel do servidor de conta (Supabase-like),
 # so para testes. Semeia usuario, perfis e addons de mentira para que o ciclo
 # nuvem/sessao/sync real do app rode INTEIRO no loopback. Qualquer metodo ou
-# caminho fora da lista abaixo fica registrado como violacao: o relatorio de
-# uso sai em <log>.json e quem chama deve falhar se houver violacao. Nenhum
+# caminho fora da lista abaixo fica registrado como violacao em DIR/log.jsonl
+# e quem chama deve falhar se houver violacao. O log so ve pedidos que CHEGAM
+# aqui: nao prova ausencia de pedido para outro host. Nenhum
 # dado real e lido ou devolvido; os tokens sao JWTs de mentira com sub/exp.
 #
 #   python3 tests/nuvem_fixture.py --port 0 --state DIR
@@ -69,7 +70,7 @@ ROTAS = [
 ]
 
 RPCS = {
-    "get_sync_owner": lambda b: '"%s"' % USUARIO,
+    "get_sync_owner": lambda b: USUARIO,   # _mandar json-encodes once -> "uuid"
     "sync_pull_profiles": lambda b: PERFIS,
     "sync_pull_profile_locks": lambda b: [],
     "sync_pull_profile_settings_blob": lambda b: [{"settings_json": {"version": 1, "features": {}}}],

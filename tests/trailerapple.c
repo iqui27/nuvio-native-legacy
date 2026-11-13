@@ -60,8 +60,10 @@ static char pedidos[8][1200];
 static const char *fixture(const char *u) {
   if (strstr(u, "tv.apple.com/api/uts/v3/search")) {
     if (strstr(u, "Weapons"))    return BUSCA_WEAPONS;
-    if (strstr(u, "Tom%20%26%20Jerry") || strstr(u, "Tom%20and%20Jerry") ||
-        strstr(u, "Jerry"))      return BUSCA_TOMJERRY;
+    // Exact encoded term (src urlEncode: space -> %20, '&' -> %26), at the
+    // end of the URL, so a broken '&' encoding misses and the test fails.
+    { const char *t = "&searchTerm=Tom%20%26%20Jerry"; size_t lu = strlen(u), lt = strlen(t);
+      if (lu >= lt && !strcmp(u + lu - lt, t)) return BUSCA_TOMJERRY; }
     return BUSCA_VAZIA;
   }
   if (strstr(u, "tv.apple.com/api/uts/v3/movies/umc.cmc.fixture1")) return FILME_WEAPONS;
@@ -114,7 +116,8 @@ int main(void) {
   trailerapple_pedir("tt1361336", "Tom & Jerry", "2021", 0);
   esperar("tt1361336");
   u = trailerapple_url("tt1361336");
-  printf("%s  Tom & Jerry 2021 -> %.60s\n", u ? "ok " : "sem", u ? u : "(nada; aceitavel se a Apple nao tem)");
+  if (!u || strncmp(u, "file://", 7) || !strstr(u, "-play.m3u8")) { printf("FALHOU: Tom & Jerry 2021 -> %s\n", u ? u : "nada"); return 1; }
+  printf("ok  Tom & Jerry 2021 -> %.60s\n", u);
   // Sem ano: nao busca.
   trailerapple_pedir("tt0000001", "Weapons", "", 0);
   esperar("tt0000001");

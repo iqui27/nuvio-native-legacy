@@ -14,14 +14,26 @@ TMPDIR="${TMPDIR%/}"
 # usuario anonimo tem conta real no servidor (o proprio app web faz isso antes
 # de pedir o codigo de login), com addons semeados — o fixture reproduz essa
 # forma com dados de mentira. Depois do binario, o log do fixture e conferido:
-# pedido para host que nao seja 127.0.0.1, ou caminho desconhecido, falha aqui.
+# pedido que CHEGOU ao fixture com caminho desconhecido (ou Host estranho)
+# falha aqui. Limite: o log so ve o que chega ao fixture; nao prova ausencia
+# de pedido para outro host. O fechamento vem da fonte: a unica URL de
+# servidor compilada e a do fixture, demais -D sao sinteticos ou vazios.
+#
+# Isolamento: os binarios rodam com HOME, XDG_* e NUVIO_DADOS dentro de $TMP
+# (o fallback de src/dados.c para $HOME/.nuvio nunca alcanca a pasta do dono)
+# e sem proxy herdado (pedidos ao loopback nao passam por proxy do chamador).
 set -e
 cd "$(dirname "$0")/.."
 FONTES=$(ls src/*.c src/dts/*.c | grep -v 'src/main.c' | tr '\n' ' ')
-TMP=$(mktemp -d)
+TMP=$(mktemp -d "$TMPDIR/nuvio-conta.XXXXXX")
 FIX_PID=""
 cleanup() { [ -n "$FIX_PID" ] && kill "$FIX_PID" 2>/dev/null; rm -rf "$TMP"; }
 trap cleanup EXIT
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY
+mkdir -p "$TMP/home" "$TMP/xdg/config" "$TMP/xdg/cache" "$TMP/xdg/data" "$TMP/xdg/state" "$TMP/xdg/run"
+chmod 700 "$TMP/xdg/run"
+ISO=(HOME="$TMP/home" XDG_CONFIG_HOME="$TMP/xdg/config" XDG_CACHE_HOME="$TMP/xdg/cache"
+     XDG_DATA_HOME="$TMP/xdg/data" XDG_STATE_HOME="$TMP/xdg/state" XDG_RUNTIME_DIR="$TMP/xdg/run")
 
 echo "==> subindo fixture de conta em 127.0.0.1"
 python3 tests/nuvem_fixture.py --port 0 --state "$TMP/fix" &
@@ -54,10 +66,10 @@ cc tests/conta_logout.c $FONTES -o "$TMP/logout" "${ENV_D[@]}" -Isrc \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz \
   -framework OpenGL -Wno-deprecated-declarations -Wno-macro-redefined
-NUVIO_DADOS="$TMP/dados" "$TMP/logout"
+env "${ISO[@]}" NUVIO_DADOS="$TMP/dados" "$TMP/logout"
 
 echo
-echo "==> todo pedido saiu para o fixture (host 127.0.0.1, caminho conhecido)"
+echo "==> pedidos que chegaram ao fixture: rota conhecida, Host loopback (nao prova ausencia de egress)"
 python3 - "$TMP/fix/log.jsonl" <<'PY'
 import json, sys
 viol, fora, total = [], [], 0
@@ -68,10 +80,10 @@ for linha in open(sys.argv[1]):
     if not (host.startswith("127.0.0.1") or host.startswith("localhost")):
         fora.append(rec)
 if viol or fora:
-    for r in viol + fora: print("  FORA: %s %s host=%s" % (r["metodo"], r["caminho"], r["host"]))
-    print("FALHOU: %d violacao(oes), %d pedido(s) fora do loopback" % (len(viol), len(fora)))
+    for r in viol + fora: print("  VIOLACAO: %s %s host=%s" % (r["metodo"], r["caminho"], r["host"]))
+    print("FALHOU: %d rota(s) desconhecida(s), %d Host nao-loopback no log do fixture" % (len(viol), len(fora)))
     sys.exit(1)
-print("  %d pedido(s), todos em 127.0.0.1 e em rotas conhecidas" % total)
+print("  %d pedido(s) chegaram ao fixture: rotas conhecidas, Host loopback" % total)
 PY
 
 echo
@@ -80,12 +92,12 @@ cc tests/conta_ajustes.c $FONTES -o "$TMP/ajustes" "${ENV_D[@]}" -Isrc \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz \
   -framework OpenGL -Wno-deprecated-declarations -Wno-macro-redefined
-NUVIO_DADOS="$TMP/dados-ajustes" "$TMP/ajustes" || RC_AJUSTES=$?
+env "${ISO[@]}" "$TMP/ajustes" || RC_AJUSTES=$?
 
 # Segunda conferencia: o binario de ajustes nao devia ter tocado na rede — se
 # tocou, aparece aqui. O rc do teste e repassado no final do script.
 echo
-echo "==> depois do teste de ajustes, o fixture continua limpo"
+echo "==> depois do teste de ajustes, nenhum pedido novo a rota desconhecida do fixture"
 python3 - "$TMP/fix/log.jsonl" <<'PY'
 import json, sys
 viol, fora, total = [], [], 0
@@ -96,10 +108,10 @@ for linha in open(sys.argv[1]):
     if not (host.startswith("127.0.0.1") or host.startswith("localhost")):
         fora.append(rec)
 if viol or fora:
-    for r in viol + fora: print("  FORA: %s %s host=%s" % (r["metodo"], r["caminho"], r["host"]))
-    print("FALHOU: %d violacao(oes), %d pedido(s) fora do loopback" % (len(viol), len(fora)))
+    for r in viol + fora: print("  VIOLACAO: %s %s host=%s" % (r["metodo"], r["caminho"], r["host"]))
+    print("FALHOU: %d rota(s) desconhecida(s), %d Host nao-loopback no log do fixture" % (len(viol), len(fora)))
     sys.exit(1)
-print("  %d pedido(s), todos em 127.0.0.1 e em rotas conhecidas" % total)
+print("  %d pedido(s) chegaram ao fixture: rotas conhecidas, Host loopback" % total)
 PY
 
 echo

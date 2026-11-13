@@ -7,10 +7,11 @@
 //
 // OFFLINE: o "servidor" e o fixture loopback de tests/nuvem_fixture.py
 // (Supabase sintetico e descartavel; veja tests/conta.sh). O transporte real
-// (rede.c/curl) e exercitado do mesmo jeito, so que todo pedido sai para
-// 127.0.0.1. A conferencia de que NENHUM pedido foi para outro host fica no
-// shell, sobre o log do fixture — e o que garante que este teste nunca toca
-// na conta real.
+// (rede.c/curl) e exercitado do mesmo jeito, apontado para 127.0.0.1 (a
+// unica URL de servidor compilada e a do fixture). O shell confere no log do
+// fixture que todo pedido que CHEGOU la usou rota conhecida; esse log nao
+// prova ausencia de pedido para outro host. Dados, HOME e XDG ficam numa raiz
+// temporaria; a raiz de dados e conferida antes de qualquer escrita.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,7 +42,14 @@ int main(void) {
   char *r, acesso[3000] = {0}, renov[3000] = {0}, arq[6400];
   int st = 0, i;
 
-  dados_iniciar(getenv("NUVIO_DADOS"));
+  const char *raiz = getenv("NUVIO_DADOS");
+  if (!raiz || !*raiz) { printf("FALHOU: NUVIO_DADOS vazio\n"); return 2; }
+  dados_iniciar(raiz);
+  // Fail closed: logout apaga sessao/perfil/progresso; nunca fora da raiz.
+  if (strncmp(dados_dir(), raiz, strlen(raiz)) != 0) {
+    printf("FALHOU: dados fora da raiz temporaria (%s)\n", dados_dir());
+    return 2;
+  }
   if (!nuvem_configurar(NULL)) return 2;
   r = nuvem_post("/auth/v1/signup", "{\"data\":{\"tv_client\":\"webos\"}}", NULL, &st);
   if (!r || st >= 300) { printf("sessao anonima falhou\n"); return 3; }
@@ -72,6 +80,9 @@ int main(void) {
     printf("  AVISO: a fixture nao semeou addon; o item de addons nao prova nada\n");
   confere("fixture semeou addons da conta", addons_n() > 0, "");
   confere("catalogo-rede.bin semeado",     existe("catalogo-rede.bin"), "");
+  confere("dono = usuario sintetico",
+          !strcmp(perfis_dono(), "fixture-user-00000000-0000-4000-8000-000000000001"),
+          perfis_dono());
 
   sessao_sair();
   sync_esquecer_usuario();
