@@ -8,6 +8,7 @@
 static int ajusteAparelho(int op) {
   switch (op) {
     case AJ_DV7: case AJ_SOURCE_BADGE_POSITION: case AJ_DV7_MAPPING: case AJ_DV_AUDIO: case AJ_MP4_BD_TEST: return 0;
+    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: return 0;
     case AJ_UPDATE_NOTIFICATIONS: case AJ_REMEMBER_PROFILE: return 0;
     case AJ_SHOW_SKIP_INTRO: case AJ_SHOW_SKIP_RECAP: case AJ_SHOW_SKIP_CREDITS: return 0;
     case AJ_VIDRO: case AJ_VIDRO_CONTORNO: case AJ_FUNDO:

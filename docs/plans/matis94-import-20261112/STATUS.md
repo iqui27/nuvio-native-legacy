@@ -11,15 +11,15 @@ Fonte e critérios: [mapa de paridade](../../reviews/matis94-20261112/README.md)
 | Lote | Escopo | Estado |
 |---|---|---|
 | A | Segurança de filas PGS, HEVC in-band, URLs longas | Integrado em `c0abc4a28`; revisão + verificador independentes, gate 5/5 e pós-merge 5/5. [Evidência](lote-a-integracao.md). TV pendente. |
-| B | Modos DV/DTS/TrueHD, faixas e memória de áudio | Integrado em `a521dd91f`; revisão e verificador distintos, gate 6/6, pós-merge 3/3. [Evidência e 14 P2](lote-b-integracao.md). TV/ARM/FFmpeg fixado pendentes; combinação C/D ainda pendente. |
-| C | Buffer contínuo, controles, recovery/seek e telemetria | C1–C3 e combinação E em `0ff5e8254` passaram 13 testes e build. Revisão encontrou quatro P1 em avisos, controles release, proteção RAM e dados de buffer; C5 em correção. Incorporar B e repetir revisão/verificação/gate. |
-| D | Áudio de outra versão e cortes/intro skip | Retorno ao DTS próprio corrigido e confirmado pela revisão. D10 `48c63cb7a` corrigiu ADTS/raw AAC de doador TS com FAIL→PASS e suíte completa; nova revisão em andamento. Incorporar B/C e validar DTS Off antes do gate final. |
+| B | Modos DV/DTS/TrueHD, faixas e memória de áudio | Integrado em `a521dd91f`; revisão e verificador distintos, gate 6/6, pós-merge 3/3. [Evidência e 14 P2](lote-b-integracao.md). TV/ARM/FFmpeg fixado pendentes; combinado com D, combinação final C pendente. |
+| C | Buffer contínuo, controles, recovery/seek e telemetria | C5 `051425460` corrigiu quatro P1 com FAIL→PASS, nove suítes e build. C6 `b8fc2cf5e` combinado com B passou 18 checks, suíte B e build; controle negativo HEVC no host continua rc 1. Incorporar D antes de revisão/verificação/gate finais. |
+| D | Áudio de outra versão e cortes/intro skip | Integrado em `fe82fe5e4`; revisão e verificador distintos, gate 12/12 e pós-merge 3/3. [Evidência e sete P2](lote-d-integracao.md). TV/ARM/SDK e combinação final C pendentes. |
 | E | Formatter, badges, regex e lista de fontes | Integrado em `1ac01b8b5`; revisão e verificador distintos, 12 checks host e gate final 6/6, pós-merge 3/3. [Evidência e quatro P2](lote-e-integracao.md). TV/ARM/FPS pendentes. |
 | F | Perfil, skip, atualização e opacidade | Integrado em `26eec9dbb`; revisão + verificador independentes, gate 8/8 e pós-merge 3/3. [Evidência](lote-f-integracao.md). TV pendente. |
 | G | Diagnósticos local/QR, motivos e exportação de nuvem | Integrado em `6aa346ec3`; revisão + verificador independentes, gate 8/8 e pós-merge 3/3. [Evidência e P2](lote-g-integracao.md). Serviço de nuvem sem deploy; TV pendente. |
 | H | CW local, temporadas e títulos de episódios | Integrado em `8a16234bc`; revisão + verificador independentes, gate 15/15 e pós-merge 3/3. [Evidência](lote-h-integracao.md). TV pendente. |
 
-Execução: implementações iniciais `nv-impl medium`; correções e revisões `nv-revisao medium`. Modelo servido desconhecido sem prova do gateway. A/B/E/F/H/G integrados; C/D ainda fora. Worktrees `/Volumes/ExternalSSD/nv-21-matis-*`; briefs e evidência em `/Volumes/ExternalSSD/tmp/rev/matis94-20261112/`. Estado acima registra o corte documental, não atividade instantânea de processos. Uma escrita por worktree; sem contornar limites do executor.
+Execução: implementações iniciais `nv-impl medium`; correções e revisões `nv-revisao medium`. Modelo servido desconhecido sem prova do gateway. A/B/D/E/F/H/G integrados; C ainda fora. Worktrees `/Volumes/ExternalSSD/nv-21-matis-*`; briefs e evidência em `/Volumes/ExternalSSD/tmp/rev/matis94-20261112/`. Estado acima registra o corte documental, não atividade instantânea de processos. Uma escrita por worktree; sem contornar limites do executor.
 
 ## Cobertura item a item
 
@@ -49,8 +49,8 @@ Execução: implementações iniciais `nv-impl medium`; correções e revisões 
 | R22 | PGS e fila de legenda cheia sem encerrar sessão DV/DTS | Parcial — correção ausente | Código integrado em `c0abc4a28`; decoder PGS real e playback até EOF passaram. N1 P2: cue anterior pode permanecer durante cue descartada. TV pendente. |
 | R23 | Sem callback/overlay/loading antigo; aviso DTS uma vez por fonte | Parcial | Pendente de adaptação/prova |
 | R24 | Menu áudio por idioma/codec/canais, exceção FLAC, labels longos e badge DV | Parcial | Labels/menu integrados em `a521dd91f`; P2 de label longo no retorno TPK documentado. TV pendente. |
-| R25 | Áudio de outra versão: MKV/MP4/AVI/TS, sync ±60min, passos manuais e correção de frame rate | Ausente | Pendente de adaptação/prova |
-| R26 | Seguir filme inteiro entre cortes, fallback próprio e correção de freeze após intro skip | Ausente | Pendente de adaptação/prova |
+| R25 | Áudio de outra versão: MKV/MP4/AVI/TS, sync ±60min, passos manuais e correção de frame rate | Ausente | Código integrado em `fe82fe5e4`; gate 12/12, pós-merge 3/3. Sete P2 de follow/Off/formatos/UI documentados; TV/ARM/SDK pendentes. |
+| R26 | Seguir filme inteiro entre cortes, fallback próprio e correção de freeze após intro skip | Ausente | Código integrado em `fe82fe5e4`; gate 12/12, pós-merge 3/3. Sete P2 de follow/Off/formatos/UI documentados; TV/ARM/SDK pendentes. |
 | F01 | Cache de layout, contagens e recomendações da lista | Presente | Manter; prova de TV separada |
 | F02 | Formatter lazy/bounded e redução de trabalho fora da tela | Parcial | Código integrado em `1ac01b8b5`; gate 6/6 e pós-merge 3/3. Limites e P2 em lote-e-integracao.md; TV pendente. |
 | F03 | Copiar dados dos badges no worker, reduzindo bloqueio/memória | Parcial | Código integrado em `1ac01b8b5`; gate 6/6 e pós-merge 3/3. Limites e P2 em lote-e-integracao.md; TV pendente. |

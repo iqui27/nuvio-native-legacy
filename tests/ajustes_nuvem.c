@@ -18,14 +18,22 @@ static void checkFile(const char *name, const char *expected) {
 // Local-only policy: F keeps update notifications, remember profile and the
 // skip buttons out of shared/device backup; E does the same for the badge
 // position; DV7 conversion is experimental; B keeps the DV7 mapping, DV audio
-// and MP4 BD test choices on this TV. Named here, never derived from
+// and MP4 BD test choices on this TV; D keeps every audio-from-another-
+// version choice on this TV. Named here, never derived from
 // ajustePortavel/ajusteAparelho, so a policy regression there fails this test.
 static const int localOnly[] = {
   AJ_DV7, AJ_UPDATE_NOTIFICATIONS, AJ_REMEMBER_PROFILE, AJ_SHOW_SKIP_INTRO,
   AJ_SHOW_SKIP_RECAP, AJ_SHOW_SKIP_CREDITS, AJ_SOURCE_BADGE_POSITION,
-  AJ_DV7_MAPPING, AJ_DV_AUDIO, AJ_MP4_BD_TEST
+  AJ_DV7_MAPPING, AJ_DV_AUDIO, AJ_MP4_BD_TEST,
+  AJ_EXT_AUDIO, AJ_EXT_AUDIO_CACHE, AJ_EXT_AUDIO_PASSO, AJ_EXT_AUDIO_GRANDE, AJ_EXT_AUDIO_MODO,
+  AJ_EXT_AUDIO_SERIE, AJ_EXT_AUDIO_SEGUIR, AJ_EXT_AUDIO_AVISO, AJ_EXT_AUDIO_AUTO
 };
 #define N_LOCAL_ONLY ((int)(sizeof localOnly / sizeof *localOnly))
+// Integrated prefix stays put: B's group right after E's badge position, D's
+// external-audio group appended after it, contiguous and in its own order.
+_Static_assert(AJ_DV7_MAPPING == AJ_SOURCE_BADGE_POSITION + 1 && AJ_DV_AUDIO == AJ_DV7_MAPPING + 1 &&
+               AJ_MP4_BD_TEST == AJ_DV_AUDIO + 1 && AJ_EXT_AUDIO == AJ_MP4_BD_TEST + 1 &&
+               AJ_EXT_AUDIO_AUTO == AJ_EXT_AUDIO + 8, "B prefix, then D group");
 static void checkLocalOnly(int op, int expected, const char *what) {
   char name[160]; snprintf(name, sizeof name, "%s: %s", what, CHAVE[op]);
   check(valor[op] == expected, name);

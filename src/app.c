@@ -44,6 +44,7 @@
 #include "login.h"
 #include "sessao.h"
 #include "perfis.h"
+#include "audioext.h"
 #include "fontevolta.h"
 #include "cacheboost.h"
 #include "retomamorna.h"
@@ -3932,6 +3933,7 @@ static void salvoParaConta(const CatItem *ci, int salvo) {
 // Finish under the outgoing identity. Selection advances the session epoch
 // immediately afterwards; old jobs may finish but cannot update the new UI.
 static void perfilEncerrarSessao(void) {
+  audioext_perfil("");
   // End input capture before resetting the Home it belongs to. Hit targets
   // from the outgoing frame cannot activate under the destination profile.
   ponteiro_abrir_sessao();
@@ -3981,6 +3983,9 @@ static void perfilEncerrarSessao(void) {
 
 static void perfilAbrirSessao(int antes) {
   uint64_t sessao = perfis_sessao_geracao();
+  char audioPerfil[64];
+  snprintf(audioPerfil, sizeof audioPerfil, "%llu:%d", (unsigned long long)sessao, perfis_ativo());
+  audioext_perfil(audioPerfil);
   // All hooks reset live state or reload profile-owned files. They neither
   // reload artwork nor wait for the old profile's network requests.
   addons_abrir_sessao();

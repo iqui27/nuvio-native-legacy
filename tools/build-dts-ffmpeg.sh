@@ -20,7 +20,16 @@ TARGET=${NUVIO_DTS_TARGET:-webos}
 DECODERS=dca,dvdsub,pgssub,ass,ssa,subrip,movtext,webvtt
 MUXERS=
 PARSERS=dca,h264,hevc,aac
+DEMUXERS=matroska,mov
+if [ "$TARGET" = webos ]; then
+  # Donor audio: native formats pass through; the others convert to AAC/AC3.
+  DECODERS=$DECODERS,aac,ac3,eac3,truehd,mlp,opus,flac,vorbis,mp3
+  PARSERS=$PARSERS,ac3,mlp,opus,flac,vorbis,mpegaudio
+  DEMUXERS=$DEMUXERS,avi,mpegts
+fi
 BSFS=h264_mp4toannexb,hevc_mp4toannexb,dca_core
+# Donor AAC from MPEG-TS arrives ADTS-framed; the TV is told raw AAC.
+if [ "$TARGET" = webos ]; then BSFS=$BSFS,aac_adtstoasc; fi
 ZLIB=
 mkdir -p "$BUILD" "$PREFIX"
 if [ "$TARGET" = tpk ]; then
@@ -72,7 +81,7 @@ fi
   --disable-avdevice --disable-avfilter --disable-swscale --disable-postproc \
   --enable-avcodec --enable-avformat --enable-avutil --enable-swresample \
   --enable-decoder="$DECODERS" --enable-encoder=aac,ac3 \
-  --enable-demuxer=matroska,mov --enable-parser="$PARSERS" \
+  --enable-demuxer="$DEMUXERS" --enable-parser="$PARSERS" \
   --enable-bsf="$BSFS" \
   --extra-cflags="${CFLAGS:--O2}"
 make -j"${NUVIO_DTS_JOBS:-2}"

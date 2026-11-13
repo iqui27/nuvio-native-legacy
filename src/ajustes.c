@@ -812,6 +812,7 @@ typedef enum {
   // Digital. Matis94 89433220e + 115f3a0c0. LOCAL, append-only.
   AJ_DV_AUDIO,
   AJ_MP4_BD_TEST, // webOS experimental recovery, local, Off by default
+  AJ_EXT_AUDIO, AJ_EXT_AUDIO_CACHE, AJ_EXT_AUDIO_PASSO, AJ_EXT_AUDIO_GRANDE, AJ_EXT_AUDIO_MODO, AJ_EXT_AUDIO_SERIE, AJ_EXT_AUDIO_SEGUIR, AJ_EXT_AUDIO_AVISO, AJ_EXT_AUDIO_AUTO,
   // HTTP connections of this TV (Matis94 a2e37e8f5), append-only, local.
   AJ_BUFFER_NATIVE_CONNECTIONS, AJ_BUFFER_CONVERSION_CONNECTIONS,
   // Player buffer telemetry + remote toggles (Matis94 C3), append-only, local.
@@ -868,6 +869,9 @@ static const unsigned char FUNDO_DIN_TEMA[] = { 1, 19, 6, 5, 7, 16, 9, 4, 17, 8,
 _Static_assert(sizeof V_FUNDO_DIN_COR / sizeof *V_FUNDO_DIN_COR == sizeof FUNDO_DIN_TEMA,
                "V_FUNDO_DIN_COR: um nome por linha de FUNDO_DIN_TEMA");
 static const char *V_QUALIDADE[] = { "Automática", "4K", "1080p", "720p" };
+static const char *V_EXT_CACHE[] = { "Mostrar apagadas", "Ocultar" };
+static const char *V_EXT_PASSO[] = { "10 ms", "50 ms", "100 ms" };
+static const char *V_EXT_MODO[] = { "Arquivo inteiro", "Só áudio" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
 static const char *V_SOURCE_BADGE_POSITION[] = { "No topo", "Embaixo" };
 static const char *V_GUIA_INICIO[] = { "Ao destacar", "Ao selecionar" };
@@ -2022,6 +2026,15 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Dolby Vision P7: manter mapeamento (experimental)", V_LIGA, 2),   // local: dv7PreserveMappingLocal
   ESC("Áudio com Dolby Vision", V_DV_AUDIO, 3),   // local: dvAudioFixoLocal
   ESC("Dolby Vision MP4 (experimental)", V_LIGA, 2),
+  ESC("Áudio de outra versão", V_LIGA, 2),
+  ESC("Versões fora do cache", V_EXT_CACHE, 2),
+  ESC("Passo da sincronização", V_EXT_PASSO, 3),
+  ESC("Avisar sobre arquivos grandes", V_LIGA, 2),
+  ESC("Download do arquivo de áudio", V_EXT_MODO, 2),
+  ESC("Lembrar para os próximos episódios", V_LIGA, 2),
+  ESC("Seguir durante todo o filme", V_LIGA, 2),
+  ESC("Aviso de sincronização ajustada", V_LIGA, 2),
+  ESC("Sincronizar automaticamente ao iniciar", V_LIGA, 2),
   ESC("Conexões do player da TV", V_HTTP_CONEXOES, 4),
   ESC("Conexões da conversão de DTS e Dolby Vision", V_HTTP_CONEXOES, 4),
   ESC("Dados do buffer", V_LIGA, 2),                        // local: bufferDataLocal
@@ -2395,6 +2408,15 @@ static const char *CHAVE[] = {
   "dv7PreserveMappingLocal",
   "dvAudioFixoLocal",
   "dvMp4BdTestLocal",
+  "externalAudioLocal",
+  "externalAudioUncachedLocal",
+  "externalAudioSyncStepLocal",
+  "externalAudioLargeWarningLocal",
+  "externalAudioDownloadLocal",
+  "externalAudioSeriesLocal",
+  "externalAudioFollowLocal",
+  "externalAudioShiftNoticeLocal",
+  "externalAudioAutoMatchLocal",
   "nativeBufferConnectionsLocal", "conversionBufferConnectionsLocal", // fork keys
   "bufferDataLocal", "ramOverlayLocal", "ramGreenLocal", "bufferRamReduzLocal",
 };
@@ -4196,6 +4218,15 @@ int ajustes_mp4_bd_test(void) {
 #endif
 }
 int ajustes_dv_audio(void) { int v = valor[AJ_DV_AUDIO]; return v >= 0 && v <= 2 ? v : 0; }
+int ajustes_audio_externo(void) { return lig(AJ_EXT_AUDIO); }
+int ajustes_audio_externo_ocultar_fora_cache(void) { return valor[AJ_EXT_AUDIO_CACHE] == 1; }
+int ajustes_audio_externo_passo(void) { return valor[AJ_EXT_AUDIO_PASSO] == 0 ? 10 : valor[AJ_EXT_AUDIO_PASSO] == 2 ? 100 : 50; }
+int ajustes_audio_externo_avisar_grande(void) { return lig(AJ_EXT_AUDIO_GRANDE); }
+int ajustes_audio_externo_so_audio(void) { return valor[AJ_EXT_AUDIO_MODO] == 1; }
+int ajustes_audio_externo_serie(void) { return lig(AJ_EXT_AUDIO_SERIE); }
+int ajustes_audio_externo_seguir(void) { return lig(AJ_EXT_AUDIO_SEGUIR); }
+int ajustes_audio_externo_aviso(void) { return lig(AJ_EXT_AUDIO_AVISO); }
+int ajustes_audio_externo_auto(void) { return lig(AJ_EXT_AUDIO_AUTO); }
 int ajustes_hdr10p_strip(void) { return lig(AJ_HDR10P_STRIP); }
 int ajustes_hist_conta(void)          { return lig(AJ_HIST_CONTA); }
 int ajustes_social(void)              { return lig(AJ_SOCIAL); }
@@ -6575,6 +6606,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
     case AJ_DV7:
     case AJ_DV7_MAPPING: case AJ_DV_AUDIO: case AJ_MP4_BD_TEST:
+    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO:
     case AJ_HDR10P_STRIP:   /* o caminho de conversao e desta TV */
     case AJ_HIST_CONTA: case AJ_SOCIAL: /* por perfil desta TV (perfilLocal); o web nao tem */
     case AJ_TAM_MAX: case AJ_TAM_MIN: /* o web nao tem a faixa de tamanho */
@@ -6682,6 +6714,7 @@ static int soNaTv(int op) {
     case AJ_P2P_LIGADO: case AJ_JF_LIGADO: case AJ_POSTER_PROV: case AJ_EPG_PAIS:
     case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: case AJ_RELOGIO_12H:
     case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV7_MAPPING: case AJ_DV_AUDIO: case AJ_MP4_BD_TEST: case AJ_HDR10P_STRIP:
+    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
     case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_BUFFER_RAM_REDUZ:
@@ -7290,6 +7323,9 @@ static int foraDestaPlataforma(int op) {
 #endif
 #if !defined(NV_WEBOS) || !defined(NV_DV7_CONVERSION) || !defined(NV_MP4_BD_TEST) || defined(NV_TPK) || defined(NV_ANDROID)
   if (op == AJ_MP4_BD_TEST) return 1;
+#endif
+#if defined(NV_TPK) || defined(NV_ANDROID) || defined(__EMSCRIPTEN__)
+  if (op >= AJ_EXT_AUDIO && op <= AJ_EXT_AUDIO_AUTO) return 1;
 #endif
   // Legacy depth keys remain positional, but only switch/intensity are shown.
   if (op == AJ_PROF_BORDA || (op >= AJ_PROF_COBERTURA && op <= AJ_PROF_TRAILERS)) return 1;
@@ -7995,6 +8031,7 @@ static const char *textoLeitura(int op) {
 // ela continua no lugar, apagada e sem setas: a dependencia fica visivel em vez
 // de a linha sumir.
 static int inativa(int op) {
+  if (op > AJ_EXT_AUDIO && op <= AJ_EXT_AUDIO_AUTO) return !ajustes_audio_externo();
   if (ajustes_fonte_prioridade() == 3 &&
       (op == AJ_FONTE_AUTO || op == AJ_FONTE_GRUPO || op == AJ_FONTE_GRUPO_SESSOES || op == AJ_LINK_REUSAR || op == AJ_LINK_PRAZO)) return 1;
   switch (op) {

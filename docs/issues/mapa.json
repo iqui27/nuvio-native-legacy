@@ -17993,6 +17993,15 @@
    "ref": "docs/plans/matis94-import-20261112/lote-b-integracao.md",
    "resultado": "Mergea521dd91f1c5f08d046fd7ce8d58bdfa25be90d4; gate6/6 e pós-merge3/3, i18n integrador0. Sem P0/P1 atual confirmado;14P2 mantidos.",
    "evidencia": "Diff6a2d4abfb9ad84b539288ec92b694780daa512662af610701f451c0ae325ab45; digestef1d4b33d5d3bc8e603747ab3dcf68c1a121f30cdce0a0e1fc5b7891745e226b. Primeirogatefalhou porTMPDIRinexistente, causa reproduzida; retry apóscriardiretório passou semcódigomudado. SemprovaFFmpeg7.1.5/ARM/ABI/TV, combinaçãoC/Dpendente. Semissuefechada/push/release/install/accounts/serviçonovo."
+  },
+  {
+   "data": "2026-11-13",
+   "quem": "Central Matis94; revisor j-rev-d5-zima; verificador j-verify-d5-zima",
+   "o_que": "Lote D integrado: doador manual de áudio, sincronização/cortes/follow e recuperação de áudio próprio, combinação B/Off e AAC TS raw.",
+   "issues": [],
+   "ref": "docs/plans/matis94-import-20261112/lote-d-integracao.md",
+   "resultado": "Mergefe82fe5e49967383126fe0ab59a7a8d33e00fa53; gate12/12 e pós-merge3/3, i18n integrador0; nenhum P0/P1 atual confirmado, sete P2 mantidos.",
+   "evidencia": "Diffa398cef1a5109efc2897ee61f7a7a20ce1e3c0ae7203ce8b297a31fbf96779a3; digestd5a5b342a2395b3a1ae74ac56a605ec398a1b1935f9bf43ff172a5998587f96d. Regressões FAIL->PASS retorno DTS próprio/ADTS AAC/doador AAC sob Off, suíte estrita engine real. SemprovaTV/ARM/SDK/FFmpeg7.1.5/ABI, combinação C ainda pendente. Nenhumaissuefechada/push/release/install/accounts/serviçonovo."
   }
  ],
  "decisoes": [
