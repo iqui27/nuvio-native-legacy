@@ -653,8 +653,8 @@ int   ajustes_p2p_usb(void);                    // #205: 1 = cache P2P em pendri
 int   ajustes_player_externo(int anime);     // #501/#205: 0 Interno, 1 Externo, 2 Perguntar, 3 app (pacote em ajustes_player_pacote); anime: -1 = Igual ao Player
 const char *ajustes_player_pacote(int anime); // #205: pacote do app escolhido ("" = nenhum)
 /* HTTP connections 1..4 for the next video (TV-local): native cache
- * (default 1, sequential) and DTS/DV conversion (default 4; 1 = one
- * continuous request). */
+ * (default 1, sequential) and DTS/DV conversion (default 1, Standard:
+ * one continuous request). Saved choices 1..4 are kept. */
 int ajustes_buffer_native_connections(void);
 int ajustes_buffer_conversion_connections(void);
 int   ajustes_buffer_preset(void);           // #338: 0 Automatico, 1 = 64, 2 = 128, 3 = 256 MiB

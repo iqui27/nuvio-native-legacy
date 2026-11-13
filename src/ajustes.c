@@ -3563,7 +3563,7 @@ int ajustes_buffer_preset(void) {
 }
 static int bufferConexoes(int op, int padrao) { return valor[op] >= 0 && valor[op] < 4 ? valor[op] + 1 : padrao; }
 int ajustes_buffer_native_connections(void) { return bufferConexoes(AJ_BUFFER_NATIVE_CONNECTIONS, 1); }
-int ajustes_buffer_conversion_connections(void) { return bufferConexoes(AJ_BUFFER_CONVERSION_CONNECTIONS, 4); }
+int ajustes_buffer_conversion_connections(void) { return bufferConexoes(AJ_BUFFER_CONVERSION_CONNECTIONS, 1); }
 int ajustes_fonte_idioma_audio(void) { return valor[AJ_FONTE_IDIOMA_AUDIO] == 0; }
 int ajustes_cache_seek_mb(void) {
   static const int MB[] = { 0, 256, 512, 1024 };

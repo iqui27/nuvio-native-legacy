@@ -534,6 +534,62 @@ static void autoplay202(const char *dir) {
     valor[AJ_FONTE_PRAZO] = p0; remove(cam); }
 }
 
+/* R14 (owner, fork integration; adapted from Matis94 a2e37e8f5): conversion
+ * defaults to Standard (1, one continuous request). Saved 1..4 reload as-is;
+ * native stays 1 and the buffer size stays Automatic. Real disk round trip. */
+static void conexoesBufferDisco(const char *dir) {
+  static const char *SEM_CHAVE[] = { NULL, "dvMkvLocal 0\n" };
+  const int conv = AJ_BUFFER_CONVERSION_CONNECTIONS, nat = AJ_BUFFER_NATIVE_CONNECTIONS;
+  char cam[600], linha[64], *t;
+  FILE *f;
+  static int antes[AJ_N];
+  memcpy(antes, valor, sizeof antes);
+  snprintf(cam, sizeof cam, "%s/ajustes.txt", dir);
+  assert(!strcmp(CHAVE[conv], "conversionBufferConnectionsLocal"));
+  assert(!strcmp(CHAVE[nat], "nativeBufferConnectionsLocal"));
+  assert(uxTemPadrao(conv) && uxValorPadrao(conv) == 0);  // reset target = "1"
+  /* No file, then a file without the key: both start at 1, native 1, Automatic. */
+  for (int k = 0; k < 2; k++) {
+    remove(cam);
+    if (SEM_CHAVE[k]) { f = fopen(cam, "w"); assert(f); fputs(SEM_CHAVE[k], f); assert(!fclose(f)); }
+    memcpy(valor, valorPadrao, sizeof valor);
+    ajustes_dir(dir);
+    assert(ajustes_buffer_conversion_connections() == 1);
+    assert(ajustes_buffer_native_connections() == 1);
+    assert(ajustes_buffer_preset() == 0);
+  }
+  /* An explicitly saved 1..4 (stored as index 0..3) reloads unchanged. */
+  for (int i = 0; i < 4; i++) {
+    f = fopen(cam, "w"); assert(f);
+    fprintf(f, "conversionBufferConnectionsLocal %d\n", i); assert(!fclose(f));
+    memcpy(valor, valorPadrao, sizeof valor);
+    ajustes_dir(dir);
+    assert(ajustes_buffer_conversion_connections() == i + 1);
+    assert(ajustes_buffer_native_connections() == 1 && ajustes_buffer_preset() == 0);
+  }
+  /* Save then reload keeps each choice; native choices are independent. */
+  for (int i = 0; i < 4; i++) {
+    valor[conv] = i; valor[nat] = 3 - i;
+    assert(gravar());
+    memcpy(valor, valorPadrao, sizeof valor);
+    ajustes_dir(dir);
+    assert(ajustes_buffer_conversion_connections() == i + 1);
+    assert(ajustes_buffer_native_connections() == 4 - i);
+  }
+  /* Restore default persists Standard (1) and survives a reload. */
+  valor[conv] = uxValorPadrao(conv); valor[nat] = uxValorPadrao(nat);
+  assert(gravar());
+  t = dados_ler("ajustes.txt");
+  snprintf(linha, sizeof linha, "\n%s 0\n", CHAVE[conv]);
+  assert(t && strstr(t, linha));
+  free(t);
+  memcpy(valor, valorPadrao, sizeof valor);
+  ajustes_dir(dir);
+  assert(ajustes_buffer_conversion_connections() == 1 && ajustes_buffer_native_connections() == 1);
+  remove(cam);
+  memcpy(valor, antes, sizeof valor);
+}
+
 int main(void) {
   char dir[NVT_MAX]; nvt_set(dir, sizeof dir, "/nuvio-aj-ux-dados-XXXXXX");
   assert(AJ_DISCORD == AJ_ICONE_APP + 1 && AJ_TAMANHO_AJUSTES == AJ_DISCORD + 1 && AJ_LOGO_TRAILER == AJ_TAMANHO_AJUSTES + 1 && AJ_LEG_LINGUA2 == AJ_LOGO_TRAILER + 1 && AJ_LEG_SYNC_AUDIO == AJ_LEG_LINGUA2 + 1 && AJ_CACHE_SEEK == AJ_LEG_SYNC_AUDIO + 1 && AJ_TRAILER_ZOOM_TPK == AJ_CACHE_SEEK + 1 && AJ_PLUGINS == AJ_TRAILER_ZOOM_TPK + 1 && AJ_JF_LIGADO == AJ_PLUGINS + 1 && AJ_JF_SAIR == AJ_PLUGINS + 4 && AJ_AVANCADAS == AJ_JF_SAIR + 1 && AJ_LEG2_POS == AJ_AVANCADAS + 1 && AJ_EM_SERVIDOR == AJ_LEG2_BORDA + 1 && AJ_PX_SAIR == AJ_EM_SERVIDOR + 5 && AJ_FONTE_PRIORIDADE == AJ_PX_SAIR + 1 && AJ_FONTE_HDR == AJ_ABERTURA - 2 && AJ_LOGO_APP == AJ_FONTE_HDR + 1 && AJ_ENQUETES == AJ_ABERTURA + 1 && AJ_ENQUETES == AJ_FONTE_ESCOPO - 14);
@@ -848,6 +904,7 @@ int main(void) {
   assert(setenv("NUVIO_DADOS", dir, 1) == 0);
   dados_iniciar(dir);
   autoplay202(dir);
+  conexoesBufferDisco(dir);
   buscaECaminhos();
   bloqueadosESegredos();
   puts("ajustes_ux_dados: busca, padroes, escopo, dependencias e segredos ok");

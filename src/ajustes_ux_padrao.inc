@@ -377,4 +377,4 @@
 
   0, // miniaturaResolutionLocal: Auto
   0, // nativeBufferConnectionsLocal: 1, one sequential request
-  3, // conversionBufferConnectionsLocal: 4 range lanes (existing behavior)
+  0, // conversionBufferConnectionsLocal: 1, Standard continuous request (R14)
