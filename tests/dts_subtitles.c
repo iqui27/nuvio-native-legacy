@@ -92,8 +92,9 @@ static void bitmap_palette(void) {
   frame.pts_ns=INT64_C(2000000000);
   // Huge or widely separated rectangles cannot allocate more than 16 MiB.
   sub.num_rects=2; d->codec->width=0; d->codec->height=0;
+  // A valid but over-budget union is skipped without allocating RGBA.
   second.x=5000000;
-  assert(convert_subtitle(d, &sub, &frame, &out)==-1);
+  assert(convert_subtitle(d, &sub, &frame, &out)==DTS_SUBTITLE_SKIPPED && !d->rgba);
   second.x=1; first.w=first.h=60000; first.linesize[0]=60000;
   assert(convert_subtitle(d, &sub, &frame, &out)==-1);
   dts_subtitles_destroy(d);

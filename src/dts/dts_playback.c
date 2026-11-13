@@ -1,5 +1,6 @@
 #include "../app_id.h"
 #include "dts_playback.h"
+#include "../mediaurl.h"
 #include "dts_engine.h"
 #include "dts_pipeline.h"
 #include "../js.h"
@@ -38,10 +39,11 @@ struct DtsPlayback {
   DtsSubtitles *subtitle_decoder;
   DtsQueuedSubtitle subtitles[DTS_SUB_CUES];
   int subtitle_count, subtitle_stream, subtitle_dirty;
+  int subtitle_drop_logged, subtitle_skip_logged;   /* logged once per session */
   size_t subtitle_bytes;
   unsigned subtitle_revision;
   double subtitle_cursor;
-  char url[4096], headers[2048], window[64];
+  char url[NV_MEDIA_URL_MAX], headers[2048], window[64];
   char events[DTS_EVENTS][DTS_EVENT_SIZE];
   int event_read, event_write, event_count;
   int stop, pause, pause_dirty, seek_dirty, audio_dirty, volume, volume_dirty;
@@ -798,13 +800,36 @@ static void *run(void *user) {
         if (r < 0) { fail(p, "DTS subtitle packet decode failed"); break; }
         if (r) {
           size_t bytes = cue.rgba ? (size_t)cue.w * (size_t)cue.h * 4u : 0;
+          /* The real decoder skips valid oversized output before allocating
+           * RGBA. Keep the queue guard before copying any borrowed pixels too. */
+          if (r == DTS_SUBTITLE_SKIPPED || bytes > DTS_SUB_BYTES) {
+            if (!p->subtitle_skip_logged) {
+              p->subtitle_skip_logged = 1;
+              printf("[dts] subtitle cue over the memory budget: skipped\n");
+              fflush(stdout);
+            }
+            have_frame = 0; continue;
+          }
           unsigned char *pixels = bytes ? malloc(bytes) : NULL;
           if (bytes && !pixels) { fail(p, "DTS subtitle allocation failed"); break; }
           if (bytes) memcpy(pixels, cue.rgba, bytes);
           pthread_mutex_lock(&p->lock);
-          if (p->subtitle_count == DTS_SUB_CUES || bytes > DTS_SUB_BYTES - p->subtitle_bytes) {
-            pthread_mutex_unlock(&p->lock); free(pixels);
-            fail(p, "DTS subtitle queue exceeds memory budget"); break;
+          /* A full queue never ends the session (C3 tester's log 11/11):
+           * discard the oldest cues until this cue fits. */
+          { int dropped = 0;
+            while (p->subtitle_count &&
+                   (p->subtitle_count == DTS_SUB_CUES || bytes > DTS_SUB_BYTES - p->subtitle_bytes)) {
+              DtsSubtitle *old = &p->subtitles[0].cue;
+              if (old->rgba) p->subtitle_bytes -= (size_t)old->w * (size_t)old->h * 4u;
+              free(old->rgba);
+              memmove(p->subtitles, p->subtitles + 1, (size_t)(p->subtitle_count - 1) * sizeof p->subtitles[0]);
+              p->subtitle_count--; dropped++;
+            }
+            if (dropped && !p->subtitle_drop_logged) {
+              p->subtitle_drop_logged = 1;
+              printf("[dts] subtitle queue full: oldest cue(s) dropped, playback continues\n");
+              fflush(stdout);
+            }
           }
           if (p->subtitle_count) {
             DtsSubtitle *previous = &p->subtitles[p->subtitle_count - 1].cue;
@@ -963,7 +988,7 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
                                int paused, const char *window, int major,
                                const DtsTrack *selected, int ordinal, int count) {
   DtsPlayback *p;
-  if (!url || !*url || strlen(url) >= 4096 || (headers && strlen(headers) >= 2048) ||
+  if (!url || !*url || strlen(url) >= NV_MEDIA_URL_MAX || (headers && strlen(headers) >= 2048) ||
       (window && strlen(window) >= 64) || !isfinite(position) || position >= 9e9 || !dts_engine_available()) return NULL;
   p = calloc(1, sizeof *p);
   if (!p) return NULL;

@@ -103,7 +103,7 @@ static void blend(uint8_t *dst, uint32_t argb) {
 static int convert_subtitle(DtsSubtitles *decoder, const AVSubtitle *sub,
                              const DtsFrame *frame, DtsSubtitle *out) {
   int64_t base = frame->pts_ns, x0 = INT64_MAX, y0 = INT64_MAX, x1 = 0, y1 = 0;
-  int has_bitmap = 0;
+  int has_bitmap = 0, oversized;
   size_t bytes;
   if (sub->num_rects > DTS_SUBTITLE_RECTS || (sub->num_rects && !sub->rects)) return -1;
   if (base == INT64_MIN) base = frame->dts_ns;
@@ -139,12 +139,14 @@ static int convert_subtitle(DtsSubtitles *decoder, const AVSubtitle *sub,
     if (d > y1) y1 = d;
   }
   if (!has_bitmap) return 1; /* Also carries explicit bitmap clearing events. */
-  if (x1 - x0 > DTS_SUBTITLE_BYTES / 4 || y1 - y0 > DTS_SUBTITLE_BYTES / 4 ||
-      (uint64_t)(x1 - x0) * (uint64_t)(y1 - y0) > DTS_SUBTITLE_BYTES / 4) return -1;
+  oversized = x1 - x0 > DTS_SUBTITLE_BYTES / 4 || y1 - y0 > DTS_SUBTITLE_BYTES / 4 ||
+      (uint64_t)(x1 - x0) * (uint64_t)(y1 - y0) > DTS_SUBTITLE_BYTES / 4;
   out->x = (int)x0; out->y = (int)y0; out->w = (int)(x1 - x0); out->h = (int)(y1 - y0);
-  bytes = (size_t)out->w * out->h * 4;
-  decoder->rgba = calloc(1, bytes);
-  if (!decoder->rgba) return -1;
+  if (!oversized) {
+    bytes = (size_t)out->w * out->h * 4;
+    decoder->rgba = calloc(1, bytes);
+    if (!decoder->rgba) return -1;
+  }
   for (unsigned i = 0; i < sub->num_rects; ++i) {
     const AVSubtitleRect *r = sub->rects[i];
     int64_t a,b,c,d;
@@ -155,11 +157,15 @@ static int convert_subtitle(DtsSubtitles *decoder, const AVSubtitle *sub,
         unsigned index = row[x - r->x];
         uint32_t argb;
         if (index >= (unsigned)r->nb_colors) return -1;
-        memcpy(&argb, r->data[1] + index * 4, sizeof argb);
-        blend(decoder->rgba + ((size_t)(y - y0) * out->w + (size_t)(x - x0)) * 4, argb);
+        /* Oversized output still validates indices, but never allocates RGBA. */
+        if (!oversized) {
+          memcpy(&argb, r->data[1] + index * 4, sizeof argb);
+          blend(decoder->rgba + ((size_t)(y - y0) * out->w + (size_t)(x - x0)) * 4, argb);
+        }
       }
     }
   }
+  if (oversized) return DTS_SUBTITLE_SKIPPED;
   out->rgba = decoder->rgba;
   return 1;
 }
@@ -200,7 +206,10 @@ int dts_subtitles_decode(DtsSubtitles *s, const DtsFrame *frame, DtsSubtitle *ou
   av_packet_free(&packet);
   if (result >= 0) result = got ? convert_subtitle(s, &sub, frame, out) : 0;
   avsubtitle_free(&sub);
-  if (result < 0) { free(s->rgba); s->rgba = NULL; memset(out, 0, sizeof *out); return -1; }
+  if (result != 1) {
+    free(s->rgba); s->rgba = NULL; memset(out, 0, sizeof *out);
+    if (result < 0) return -1;
+  }
   return result;
 }
 void dts_subtitles_flush(DtsSubtitles *s) {

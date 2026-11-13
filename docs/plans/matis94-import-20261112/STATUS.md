@@ -10,14 +10,16 @@ Fonte e critérios: [mapa de paridade](../../reviews/matis94-20261112/README.md)
 
 | Lote | Escopo | Estado |
 |---|---|---|
-| A | Segurança de filas PGS, HEVC in-band, URLs longas | Preparação |
-| B | Modos DV/DTS/TrueHD, faixas e memória de áudio | Fila após A |
-| C | Buffer contínuo, controles, recovery/seek e telemetria | Fila após A/B |
-| D | Áudio de outra versão e cortes/intro skip | Fila após B/C |
-| E | Formatter, badges, regex e lista de fontes | Preparação |
-| F | Perfil, skip, atualização e opacidade | Preparação |
-| G | Diagnósticos local/QR, motivos e exportação de nuvem | Preparação |
-| H | CW local, temporadas e títulos de episódios | Fila |
+| A | Segurança de filas PGS, HEVC in-band, URLs longas | Integrado em `c0abc4a28`; revisão + verificador independentes, gate 5/5 e pós-merge 5/5. [Evidência](lote-a-integracao.md). TV pendente. |
+| B | Modos DV/DTS/TrueHD, faixas e memória de áudio | Em implementação — `agente/21-matis-b-dv`; integrar após A |
+| C | Buffer contínuo, controles, recovery/seek e telemetria | C1 transporte em implementação; C2 seek e C3 telemetria seguem na fila. Integração após A/B. |
+| D | Áudio de outra versão e cortes/intro skip | Em implementação — `agente/21-matis-d-audioexterno`; integrar após B/C |
+| E | Formatter, badges, regex e lista de fontes | Em implementação — `agente/21-matis-e-fontes` |
+| F | Perfil, skip, atualização e opacidade | Em implementação — `agente/21-matis-f-opcoes` |
+| G | Diagnósticos local/QR, motivos e exportação de nuvem | Autorização de upload revisada; complemento QR local/portabilidade em andamento em `agente/21-matis-g-logs`. Retomada aguarda capacidade do cota-gate; sem deploy. |
+| H | CW local, temporadas e títulos de episódios | Revisão OK em `597d0cf1f`; falta atualizar base após A e executar verificação independente/gate. Fora da integração. |
+
+Execução: `job-pi`, implementações iniciais `nv-impl medium`; correções e revisões `nv-revisao medium`. Modelo efetivamente servido permanece desconhecido sem evidência do gateway. Worktrees `/Volumes/ExternalSSD/nv-21-matis-*`; briefs/logs/progresso em `/Volumes/ExternalSSD/tmp/rev/matis94-20261112/`. A já integrado; B/C/D/E/F/G/H ainda não. A troca para Desktop encerrou os seis executores restantes, preservando commits/edições; B/D/E/F/C1 retomados em logs `*-r2.log`. G aguarda redução do swap após recusa explícita do `cota-gate`; H aguarda base atual e verificador. Não contornar o limite nem lançar dois escritores no mesmo worktree.
 
 ## Cobertura item a item
 
@@ -37,14 +39,14 @@ Fonte e critérios: [mapa de paridade](../../reviews/matis94-20261112/README.md)
 | R12 | Buffer HTTP nativo em RAM, ranges/auth, seeks e fallback | Presente | Manter; prova de TV separada |
 | R13 | Presets 64/128/256 MiB e opção de desligar redução por RAM baixa | Parcial | Pendente de adaptação/prova |
 | R14 | Limites HTTP separados 1–4 e conversão Standard(1) contínua como novo padrão | Ausente | Pendente de adaptação/prova |
-| R15 | URLs do conversor e fonte DV lembrada até 8.191 bytes | Parcial | Pendente de adaptação/prova |
+| R15 | URLs do conversor e fonte DV lembrada até 8.191 bytes | Parcial | Código integrado em `c0abc4a28`; regressão de limites e memória DV passou. TV pendente. |
 | R16 | Reusar fonte/latest seek e troca DTS sem recarregar imagem | Parcial | Pendente de adaptação/prova |
 | R17 | Recuperar fila cheia do decoder nativo sem travar para sempre | Presente | Manter; prova de TV separada |
-| R18 | Preservar VPS/SPS/PPS in-band atuais em HDR10/DV8 com DTS | Ausente | Pendente de adaptação/prova |
+| R18 | Preservar VPS/SPS/PPS in-band atuais em HDR10/DV8 com DTS | Ausente | Código integrado em `c0abc4a28`; SEI preservado e regressões/sanitizadores passaram. Paridade FFmpeg 7.1.5 e TV pendentes. |
 | R19 | Recuperar faixas DTS omitidas pela LG, inclusive várias do mesmo idioma | Parcial | Pendente de adaptação/prova |
 | R20 | DV8 descoberto tardiamente mantém routing de áudio/imagem alinhado | Parcial | Pendente de adaptação/prova |
 | R21 | Tratamento experimental de HDR10+ SEI | Presente | Manter; prova de TV separada |
-| R22 | PGS e fila de legenda cheia sem encerrar sessão DV/DTS | Parcial — correção ausente | Pendente de adaptação/prova |
+| R22 | PGS e fila de legenda cheia sem encerrar sessão DV/DTS | Parcial — correção ausente | Código integrado em `c0abc4a28`; decoder PGS real e playback até EOF passaram. N1 P2: cue anterior pode permanecer durante cue descartada. TV pendente. |
 | R23 | Sem callback/overlay/loading antigo; aviso DTS uma vez por fonte | Parcial | Pendente de adaptação/prova |
 | R24 | Menu áudio por idioma/codec/canais, exceção FLAC, labels longos e badge DV | Parcial | Pendente de adaptação/prova |
 | R25 | Áudio de outra versão: MKV/MP4/AVI/TS, sync ±60min, passos manuais e correção de frame rate | Ausente | Pendente de adaptação/prova |
