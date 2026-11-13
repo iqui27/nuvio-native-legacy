@@ -13,4 +13,10 @@ static inline int player_ui_frame(int open, int rects, int others) {
 static inline unsigned player_frame_wait(int ui, unsigned elapsed) {
   return ui && elapsed < 16u ? 16u - elapsed : 0u;
 }
+
+/* While the source sheet is loading and no video is out yet, keep the UI on
+ * the paced path so a busy source wait cannot starve vsync. */
+static inline int player_source_ui_unpaced(int ui, int sources, int loading, int video) {
+  return ui && !(sources && loading && !video);
+}
 #endif

@@ -104,7 +104,7 @@ void fonte_addon_box(int x, int y, int w, int h, int emoji) {
 void fonte_addon_check(const Stream *s) {
   checking=1;
   int lines = 0; lastBottom=0; lineCount=0;
-  float height = txt_addon_bloco(TXT_PG_FIM,s->descricao,0,0,10000,255,0,&lines);
+  float height = txt_addon_bloco(TXT_PG_FIM,s->descricao,0,0,10000,255,0,&lines,-1.0e9f,1.0e9f);
   assert(lines == 7 && lineCount == 7 && height >= lastBottom && height >= 7*28);
   const char *emoji[] = {"🇺🇸","🇸🇦","🇯🇵","⚡","🎞️","🔊","📦","⏱️","🏷️","💾"};
   for (unsigned i=0;i<sizeof emoji/sizeof *emoji;i++) {
@@ -125,10 +125,10 @@ void fonte_addon_check(const Stream *s) {
     p=end+1;
   }
   lastBottom=0;
-  float full=txt_addon_bloco(TXT_PG_FIM,"A\n\nB",0,0,500,255,0,&lines);
+  float full=txt_addon_bloco(TXT_PG_FIM,"A\n\nB",0,0,500,255,0,&lines,-1.0e9f,1.0e9f);
   assert(lines==3 && full>=84);
   lastBottom=0;
-  txt_addon_bloco(TXT_PG_FIM,"📦Averylongfilenamewithoutspaces.mkv🇯🇵",0,0,80,255,0,&lines);
+  txt_addon_bloco(TXT_PG_FIM,"📦Averylongfilenamewithoutspaces.mkv🇯🇵",0,0,80,255,0,&lines,-1.0e9f,1.0e9f);
   assert(lines>1);
   checking=0;
   printf("PASS: seven lines; color emoji/flags; non-overlapping run boxes; wrap and blank lines\n");
@@ -189,19 +189,19 @@ int main(int argc, char **argv) {
   int failed = 0;
   // A fresh block is measured once, then reused across layout-only frames.
   measurements=0;
-  txt_addon_bloco(TXT_PG_FIM,"Cache probe 🇯🇵\nSecond line",0,0,600,255,0,NULL);
+  txt_addon_bloco(TXT_PG_FIM,"Cache probe 🇯🇵\nSecond line",0,0,600,255,0,NULL,-1.0e9f,1.0e9f);
   assert(measurements>0);
   measurements=0;
   for (int j=0;j<30;j++) {
     txt_novo_quadro();
-    txt_addon_bloco(TXT_PG_FIM,"Cache probe 🇯🇵\nSecond line",0,0,600,255,0,NULL);
+    txt_addon_bloco(TXT_PG_FIM,"Cache probe 🇯🇵\nSecond line",0,0,600,255,0,NULL,-1.0e9f,1.0e9f);
   }
   assert(measurements==0);
-  txt_addon_bloco(TXT_PG_FIM,"Cache probe 🇯🇵\nSecond line",0,0,300,255,0,NULL);
+  txt_addon_bloco(TXT_PG_FIM,"Cache probe 🇯🇵\nSecond line",0,0,300,255,0,NULL,-1.0e9f,1.0e9f);
   assert(measurements>0); measurements=0;
-  txt_addon_bloco(TXT_CALLOUT,"Cache probe 🇯🇵\nSecond line",0,0,300,255,0,NULL);
+  txt_addon_bloco(TXT_CALLOUT,"Cache probe 🇯🇵\nSecond line",0,0,300,255,0,NULL,-1.0e9f,1.0e9f);
   assert(measurements>0); measurements=0;
-  txt_addon_bloco(TXT_PG_FIM,"Changed probe 🇯🇵",0,0,300,255,0,NULL);
+  txt_addon_bloco(TXT_PG_FIM,"Changed probe 🇯🇵",0,0,300,255,0,NULL,-1.0e9f,1.0e9f);
   assert(measurements>0);
   measurements = 0;
   quadros(30);

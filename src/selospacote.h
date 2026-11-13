@@ -12,6 +12,7 @@
 
 #define SELOS_MAX_PACOTES 3
 #define SELOS_MAX_CASADOS 16
+#define SELOS_MAX_FILTROS 2000
 
 // PACOTES EMBUTIDOS (dono, 05/10/2026: "use o primeiro como o padrao e o
 // segundo como a versao colorida"): os dois pacotes do Xperience em
@@ -45,6 +46,7 @@ typedef struct {
   const char *imagem;      // URL (ou caminho) da imagem; "" = sem
   int   temTag, temTexto, temBorda;   // 0 = o pacote nao define
   float tag[4], texto[4], borda[4];   // RGBA 0..1
+  int   preenchido;        // tagStyle=filled: fundo; bordered/vazio: so contorno
   int   arte;              // SeloArte
   int   resolucao;         // 1 = do grupo de resolucao (a folha de fontes a tira da fileira)
 } SeloFiltro;

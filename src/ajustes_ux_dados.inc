@@ -325,6 +325,8 @@ static const char *uxSinonimos(int op) {
     case AJ_MINIATURA_RES: case AJ_PREVIA_PROVEDOR: case AJ_OPENSEEK_SERVIDOR: case AJ_OPENSEEK_PAREAR: case AJ_OPENSEEK_ESTADO:
     case AJ_OPENSEEK_COMPART: case AJ_OPENSEEK_AJ_M30: case AJ_OPENSEEK_AJ_M5: case AJ_OPENSEEK_AJ_M1: case AJ_OPENSEEK_AJ_P1: case AJ_OPENSEEK_AJ_P5: case AJ_OPENSEEK_AJ_P30: case AJ_OPENSEEK_DESFAZER: case AJ_OPENSEEK_REJEITAR:
       return "openseek convite biblioteca compartilhada convidado ajuste seekr servidor proprio miniatura barra tempo previa parear pareamento nas";
+    case AJ_SOURCE_BADGE_POSITION:
+      return "selos badges posicao topo embaixo formatter addon icons cima baixo gora dol polozenie ikon";
     default: return "";
   }
 }
@@ -357,7 +359,7 @@ static const char *uxCaminhoAntigo(int op) {
     case AJ_FONTE_ESCOPO: case AJ_FONTE_ADDONS_PERM: case AJ_FONTE_PLUGINS_PERM: case AJ_FONTE_OUTROS:
     case AJ_FONTE_REGEX: case AJ_FONTE_REGEX_PADRAO: case AJ_FONTE_REGEX_MODELO:
     case AJ_FONTE_ORDEM: case AJ_FONTE_ORDEM_USO: case AJ_FONTE_IDIOMA_AUDIO:
-    case AJ_SELOS_CORES: case AJ_SELOS_PACOTE: case AJ_SELOS_PACOTE_ADD: case AJ_SELOS_PACOTE_REM:
+    case AJ_SOURCE_BADGE_POSITION: case AJ_SELOS_CORES: case AJ_SELOS_PACOTE: case AJ_SELOS_PACOTE_ADD: case AJ_SELOS_PACOTE_REM:
       return "Fontes e addons";   // 2.0.2; desde a 2.0.3 a escolha da fonte mora em Reproducao
     case AJ_BUSCA_CINEMETA: case AJ_BUSCA_NUVIO: case AJ_BUSCA_ORIGEM: return "Busca";
     case AJ_AVANCADAS: return "Aparência";

@@ -157,12 +157,12 @@ int main(int argc,char **argv) {
   // read the current stream text through the shared block layout.
   stream_lista_acrescentar(&fixtures[0],1,0);
   int lines=0;
-  txt_addon_bloco(TXT_PG_FIM,lista[CARDS].descricao,0,0,10000,255,0,&lines);
+  txt_addon_bloco(TXT_PG_FIM,lista[CARDS].descricao,0,0,10000,255,0,&lines,-1.0e9f,1.0e9f);
   assert(lines==5);
   snprintf(fixtures[0].rotulo,sizeof fixtures[0].rotulo,"Replacement");
   snprintf(fixtures[0].descricao,sizeof fixtures[0].descricao,"New description");
   stream_definir_lista(fixtures,CARDS);
-  txt_addon_bloco(TXT_PG_FIM,lista[0].descricao,0,0,10000,255,0,&lines);
+  txt_addon_bloco(TXT_PG_FIM,lista[0].descricao,0,0,10000,255,0,&lines,-1.0e9f,1.0e9f);
   assert(lines==1 && !strcmp(lista[0].rotulo,"Replacement"));
   setting(dir,0); montar(automaticaDaFolha());
   setting(dir,1); montar(automaticaDaFolha());

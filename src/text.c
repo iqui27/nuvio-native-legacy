@@ -2324,7 +2324,8 @@ float txt_addon_altura(TxtEstilo style, const char *s, float width, int maxLines
 
 // Drawing reuses the measured line boundaries and tallest fallback glyph.
 static float addonBloco(TxtEstilo style, const char *s, float x, float y, float width,
-                         int gray, float alpha, int *lines, int maxLines) {
+                         int gray, float alpha, int *lines, int maxLines,
+                         float clipTop, float clipBottom) {
   if (lines) *lines=0;
   if (!s || !*s || width<=0) return 0;
   AddonLayout *layout=addonLayout(style,s,width,maxLines);
@@ -2332,6 +2333,9 @@ static float addonBloco(TxtEstilo style, const char *s, float x, float y, float 
   addonVerbatim++;
   for (int i=0;i<layout->count;i++) {
     AddonLine *l=&layout->line[i];
+    float ly=y+l->y;
+    if (ly>clipBottom+4.0f) break;            // l->y is monotonic
+    if (ly+l->h<clipTop-4.0f) continue;       // fully above the clip
     char line[2048]; memcpy(line,layout->text+l->start,l->len); line[l->len]=0;
 #ifdef NV_ADDON_LAYOUT_TEST
     extern void fonte_addon_line(const char *text, float y, float w, float h, float limit);
@@ -2351,12 +2355,13 @@ static float addonBloco(TxtEstilo style, const char *s, float x, float y, float 
 }
 
 float txt_addon_bloco(TxtEstilo style, const char *s, float x, float y, float width,
-                       int gray, float alpha, int *lines) {
-  return addonBloco(style,s,x,y,width,gray,alpha,lines,0);
+                       int gray, float alpha, int *lines,
+                       float clipTop, float clipBottom) {
+  return addonBloco(style,s,x,y,width,gray,alpha,lines,0,clipTop,clipBottom);
 }
 
 float txt_addon_previa(TxtEstilo style, const char *s, float x, float y, float width,
-                        int gray, float alpha) {
+                        int gray, float alpha, float clipTop, float clipBottom) {
   if (!s) return 0;
   /* Bound cache copies and scans before layout; never split a UTF-8 code point. */
   char preview[1024];
@@ -2367,7 +2372,7 @@ float txt_addon_previa(TxtEstilo style, const char *s, float x, float y, float w
     n += bytes;
   }
   memcpy(preview,s,n); preview[n]=0;
-  return addonBloco(style,preview,x,y,width,gray,alpha,NULL,3);
+  return addonBloco(style,preview,x,y,width,gray,alpha,NULL,3,clipTop,clipBottom);
 }
 
 #ifdef NV_ADDON_LAYOUT_TEST

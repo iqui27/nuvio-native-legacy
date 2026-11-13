@@ -63,12 +63,15 @@ typedef struct Stream {
   // filename), never by provider, headers or URL. Matching only: playback
   // tracks keep audioIdiomas. Empty when any audio field was declared.
   char audioTexto[64];
+  // Label hints for the audio chip only, used when declared audio is absent.
+  // Not verified tracks: never feed playback selection or the metadata rows.
+  char audioRotulos[512];
   // Metadados canonicos para as exclusoes compartilhadas. Independentes dos
   // badges importados e do tamanho exato exigido pelo StreamFit.
   FonteFiltroDados filtro;
   int filtroLido;       // 1 = classificado pelo parser; 0 = origem sintetica
   char descricao[2048];
-  char arquivo[512];
+  char arquivo[1024];
   char container[24]; // declared original container, never reused for transformed output
   // O QUE O ADDON DECLARA COMO "a mesma fonte" entre episodios:
   // behaviorHints.bingeGroup, a convencao do Stremio. Quem manda o campo
