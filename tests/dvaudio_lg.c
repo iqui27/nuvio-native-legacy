@@ -115,8 +115,8 @@ int main(void) {
   { // DV MKV is opt-in (default Off since its setting landed); the fixture opts in.
     const char *d = getenv("NUVIO_DADOS"); char c[512]; FILE *f;
     assert(d); snprintf(c, sizeof c, "%s/ajustes.txt", d);
-    f = fopen(c, "w"); assert(f); fputs("dvMkvLocal 0\n", f); fclose(f);
-    ajustes_dir(d); assert(ajustes_dv_mkv()); }
+    f = fopen(c, "w"); assert(f); fputs("dvMkvLocal 0\ndtsLgLocal 0\n", f); fclose(f);
+    ajustes_dir(d); assert(ajustes_dv_mkv() && ajustes_dts_original()); }
   lsCall = fakeCall; lsPayload = fakePayload;
   bus = (LSHandle *)(uintptr_t)1; sessao = 40;
 
