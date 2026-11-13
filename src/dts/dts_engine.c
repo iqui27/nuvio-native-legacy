@@ -62,6 +62,7 @@ const DtsMediaInfo *dts_engine_info(DtsEngine *e) { return e ? &e->info : NULL; 
 int dts_engine_has_core(DtsEngine *e) { (void)e; return 0; }
 const void *dts_engine_subtitle_parameters(DtsEngine *e,int i) { (void)e;(void)i; return NULL; }
 int dts_engine_next(DtsEngine *e,DtsFrame *f) { (void)e;(void)f; return -1; }
+int dts_engine_audio(DtsEngine *e,int a,int c,double t) { (void)e;(void)a;(void)c;(void)t; return -1; }
 int dts_engine_seek(DtsEngine *e,double s) { (void)e;(void)s; return -1; }
 void dts_engine_cancel(DtsEngine *e) { (void)e; }
 void dts_engine_destroy(DtsEngine *e) { free(e); }
@@ -966,6 +967,56 @@ static int reset_encoder(DtsEngine *e) {
   int r=avcodec_open2(e->enc,codec,NULL);
   return r<0?fail(e,"Audio encoder open",r):0;
 }
+/* Audio chain for the currently selected e->info.audio_stream: passthrough
+ * queue or decoder/resampler/encoder. Caller seeks afterwards; shared by
+ * dts_engine_open and dts_engine_audio (track reuse). */
+static int configure_audio(DtsEngine *e,int core) {
+  AVCodecParameters *ap=e->fmt->streams[e->info.audio_stream]->codecpar;
+  e->passthrough=ap->codec_id!=AV_CODEC_ID_DTS;
+  if(e->passthrough) {
+    e->in=av_packet_alloc(); e->out=av_packet_alloc();
+    if(!e->in || !e->out) return fail(e,"Audio queue allocation",0);
+    e->info.channels=ap->ch_layout.nb_channels>0?ap->ch_layout.nb_channels:6;
+    e->info.sample_rate=ap->sample_rate>0?ap->sample_rate:48000;
+    snprintf(e->info.audio_codec,sizeof(e->info.audio_codec),"%s",avcodec_get_name(ap->codec_id));
+    e->info.duration_ns=e->fmt->duration==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->duration,AV_TIME_BASE_Q,NS);
+    e->info.start_ns=e->fmt->start_time==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->start_time,AV_TIME_BASE_Q,NS);
+    return 0;
+  }
+  const AVCodec *decoder=avcodec_find_decoder(AV_CODEC_ID_DTS);
+  if(!decoder) return fail(e,"DTS decoder absent",0);
+  e->dec=avcodec_alloc_context3(decoder);
+  if(!e->dec) return fail(e,"DTS decoder allocation",0);
+  avcodec_parameters_to_context(e->dec,ap);
+  e->dec->pkt_timebase=e->fmt->streams[e->info.audio_stream]->time_base;
+  /* Corrupt HD extensions must reach the worker error path; an explicit
+   * core-only reopen decides whether to discard the failed extension. */
+  e->dec->err_recognition=AV_EF_EXPLODE;
+  if(core && av_opt_set_int(e->dec->priv_data,"core_only",1,0)<0) return fail(e,"DTS core-only unavailable",0);
+  int r=avcodec_open2(e->dec,decoder,NULL);
+  if(r<0) return fail(e,"DTS decoder open",r);
+  /* AC3 5.1 only when asked and the build has the encoder; else stereo AAC. */
+  const AVCodec *encoder=g_surround_ac3?avcodec_find_encoder(AV_CODEC_ID_AC3):NULL;
+  int out_channels=2;
+  if(encoder) {
+    int in_channels=ap->ch_layout.nb_channels;
+    out_channels=(in_channels==0 || in_channels>2)?6:2;
+  } else encoder=avcodec_find_encoder(AV_CODEC_ID_AAC);
+  if(!encoder) return fail(e,"Audio encoder absent",0);
+  e->enc=avcodec_alloc_context3(encoder);
+  if(!e->enc) return fail(e,"Audio encoder absent",0);
+  e->enc->codec_id=encoder->id;
+  av_channel_layout_default(&e->enc->ch_layout,out_channels);
+  if(reset_encoder(e)<0) return -1;
+  e->fifo=av_audio_fifo_alloc(e->enc->sample_fmt,e->enc->ch_layout.nb_channels,4096);
+  e->in=av_packet_alloc(); e->out=av_packet_alloc(); e->decoded=av_frame_alloc(); e->encoded=av_frame_alloc();
+  if(!e->fifo || !e->in || !e->out || !e->decoded || !e->encoded) return fail(e,"Audio queue allocation",0);
+  e->info.channels=e->enc->ch_layout.nb_channels; e->info.sample_rate=48000;
+  snprintf(e->info.audio_codec,sizeof(e->info.audio_codec),"%s",avcodec_get_name(e->enc->codec_id));
+  e->info.duration_ns=e->fmt->duration==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->duration,AV_TIME_BASE_Q,NS);
+  e->info.start_ns=e->fmt->start_time==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->start_time,AV_TIME_BASE_Q,NS);
+  return 0;
+}
 int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,int core,double start) {
   if (!e || !url || !*url) return -1;
   __atomic_store_n(&e->range_live,0,__ATOMIC_RELAXED);
@@ -1102,52 +1153,35 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
     avcodec_parameters_copy(e->bsf->par_in,vp); e->bsf->time_base_in=v->time_base;
     if((r=av_bsf_init(e->bsf))<0) return fail(e,"Video filter open",r);
   }
-  AVCodecParameters *ap=e->fmt->streams[e->info.audio_stream]->codecpar;
-  e->passthrough=ap->codec_id!=AV_CODEC_ID_DTS;
-  if(e->passthrough) {
-    e->in=av_packet_alloc(); e->out=av_packet_alloc();
-    if(!e->in || !e->out) return fail(e,"Audio queue allocation",0);
-    e->info.channels=ap->ch_layout.nb_channels>0?ap->ch_layout.nb_channels:6;
-    e->info.sample_rate=ap->sample_rate>0?ap->sample_rate:48000;
-    snprintf(e->info.audio_codec,sizeof(e->info.audio_codec),"%s",avcodec_get_name(ap->codec_id));
-    e->info.duration_ns=e->fmt->duration==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->duration,AV_TIME_BASE_Q,NS);
-    e->info.start_ns=e->fmt->start_time==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->start_time,AV_TIME_BASE_Q,NS);
-    e->target_ns=(int64_t)(start*1000000000.0);
-    return start>0?dts_engine_seek(e,start):0;
-  }
-  const AVCodec *decoder=avcodec_find_decoder(AV_CODEC_ID_DTS);
-  if(!decoder) return fail(e,"DTS decoder absent",0);
-  e->dec=avcodec_alloc_context3(decoder);
-  if(!e->dec) return fail(e,"DTS decoder allocation",0);
-  avcodec_parameters_to_context(e->dec,ap);
-  e->dec->pkt_timebase=e->fmt->streams[e->info.audio_stream]->time_base;
-  /* Corrupt HD extensions must reach the worker error path; an explicit
-   * core-only reopen decides whether to discard the failed extension. */
-  e->dec->err_recognition=AV_EF_EXPLODE;
-  if(core && av_opt_set_int(e->dec->priv_data,"core_only",1,0)<0) return fail(e,"DTS core-only unavailable",0);
-  if((r=avcodec_open2(e->dec,decoder,NULL))<0) return fail(e,"DTS decoder open",r);
-  /* AC3 5.1 only when asked and the build has the encoder; else stereo AAC. */
-  const AVCodec *encoder=g_surround_ac3?avcodec_find_encoder(AV_CODEC_ID_AC3):NULL;
-  int out_channels=2;
-  if(encoder) {
-    int in_channels=ap->ch_layout.nb_channels;
-    out_channels=(in_channels==0 || in_channels>2)?6:2;
-  } else encoder=avcodec_find_encoder(AV_CODEC_ID_AAC);
-  if(!encoder) return fail(e,"Audio encoder absent",0);
-  e->enc=avcodec_alloc_context3(encoder);
-  if(!e->enc) return fail(e,"Audio encoder absent",0);
-  e->enc->codec_id=encoder->id;
-  av_channel_layout_default(&e->enc->ch_layout,out_channels);
-  if(reset_encoder(e)<0) return -1;
-  e->fifo=av_audio_fifo_alloc(e->enc->sample_fmt,e->enc->ch_layout.nb_channels,4096);
-  e->in=av_packet_alloc(); e->out=av_packet_alloc(); e->decoded=av_frame_alloc(); e->encoded=av_frame_alloc();
-  if(!e->fifo || !e->in || !e->out || !e->decoded || !e->encoded) return fail(e,"Audio queue allocation",0);
-  e->info.channels=e->enc->ch_layout.nb_channels; e->info.sample_rate=48000;
-  snprintf(e->info.audio_codec,sizeof(e->info.audio_codec),"%s",avcodec_get_name(e->enc->codec_id));
-  e->info.duration_ns=e->fmt->duration==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->duration,AV_TIME_BASE_Q,NS);
-  e->info.start_ns=e->fmt->start_time==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->start_time,AV_TIME_BASE_Q,NS);
   e->target_ns=(int64_t)(start*1000000000.0);
+  if(configure_audio(e,core)<0) return -1;
   return start>0?dts_engine_seek(e,start):0;
+}
+/* Track change on the already-open container (adapted from Matis94
+ * 97e5029): the demuxer, index, video filter and bounded HTTP cache survive;
+ * only the audio chain is rebuilt. 0 on success. */
+int dts_engine_audio(DtsEngine *e,int stream,int core,double target) {
+  if(!e || !e->fmt || e->remux || cancelled(e) || stream<0 ||
+     stream>=(int)e->fmt->nb_streams || !isfinite(target) || target<0 ||
+     target>INT64_MAX/1000000000.0) return -1;
+  AVCodecParameters *ap=e->fmt->streams[stream]->codecpar;
+  if(ap->codec_type!=AVMEDIA_TYPE_AUDIO ||
+     !(ap->codec_id==AV_CODEC_ID_DTS ||
+       (e->dv && (ap->codec_id==AV_CODEC_ID_AC3 || ap->codec_id==AV_CODEC_ID_EAC3)))) return -1;
+  /* Free the previous audio chain before allocating its replacement. */
+  av_packet_free(&e->in); av_packet_free(&e->out);
+  av_frame_free(&e->decoded); av_frame_free(&e->encoded);
+  avcodec_free_context(&e->dec); avcodec_free_context(&e->enc);
+  swr_free(&e->swr); av_audio_fifo_free(e->fifo); e->fifo=NULL;
+  av_channel_layout_uninit(&e->input_layout);
+  e->info.audio_stream=stream; e->has_core=0; e->error[0]=0;
+  e->demux_eof=e->decoder_eof=e->resampler_eof=e->encoder_sent_eof=e->timeline=0;
+  e->passthrough=0;
+  /* Always seek, including position zero, to reset libavformat's packet
+   * queue and the engine's cached position. */
+  int r=configure_audio(e,core);
+  if(r<0) return -1;
+  return dts_engine_seek(e,target);
 }
 /* Samsung remux (src/dts/dts_remux.c): only the container over the ranged
  * reader. No stream info probe (MKV and MP4 headers carry what the remux needs,

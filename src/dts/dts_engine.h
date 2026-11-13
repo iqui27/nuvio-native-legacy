@@ -69,6 +69,10 @@ int dts_engine_has_core(DtsEngine *);
 const void *dts_engine_subtitle_parameters(DtsEngine *, int stream_index);
 /* 1 frame, 0 EOF, -1 error. Frame data lives until the next call or seek. */
 int dts_engine_next(DtsEngine *, DtsFrame *);
+/* Reconfigure only the audio track of the open container: demux, index,
+ * video filter and the bounded HTTP cache survive; the decoder/resampler/
+ * encoder chain is rebuilt. Same contract as open. */
+int dts_engine_audio(DtsEngine *, int audio_stream, int core_only, double seconds);
 int dts_engine_seek(DtsEngine *, double seconds);
 /* Only cancel is safe concurrently with open/next/seek. Join before destroy. */
 void dts_engine_cancel(DtsEngine *);
