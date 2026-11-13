@@ -5773,6 +5773,21 @@ void app_atualizar(float dt, Uint32 agora) {
       cwEspera = 0; cwTocarT = cwTocarE = 0;
     } else {
       int k = cat_indice_titulo(cwEsperaItem.imdb, detail_indice());
+      int simT, simE;
+      // A Simkl anime next-up names the episode in the numbering it came with
+      // (Nuvio's S22E1123); an addon's list can number it S22E38. Its
+      // position after the last watched episode is the same in both.
+      if (cwEspera == 2 && cwEsperaItem.progresso == 0 &&
+          cat_episodios_finais(k, cwEsperaItem.imdb) &&
+          !cat_episodio_existe_final(k, cwEsperaItem.imdb,
+                                     cwEsperaItem.temporada, cwEsperaItem.episodio) &&
+          simkl_anime_proximo(cwEsperaItem.imdb, &simT, &simE) &&
+          cat_episodio_existe_final(k, cwEsperaItem.imdb, simT, simE)) {
+        printf("[cw] %s: S%dE%d is not in the episode list; Simkl next-up there is S%dE%d\n",
+               cwEsperaItem.imdb, cwEsperaItem.temporada, cwEsperaItem.episodio, simT, simE);
+        cwEsperaItem.temporada = simT;
+        cwEsperaItem.episodio = simE;
+      }
       if (cat_episodios_finais(k, cwEsperaItem.imdb) &&
           (cwEspera != 2 || cat_episodio_existe_final(k, cwEsperaItem.imdb,
                              cwEsperaItem.temporada, cwEsperaItem.episodio))) {

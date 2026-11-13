@@ -71,6 +71,9 @@ static void loteSoContaMudancasEfetivas(void) {
   // disparar um envio ao servidor como se o estado local tivesse mudado.
   for (i = 2; i <= 8000; i++) vistoep_definir("tt1", 1, i, 1);
   assert(vistoep_n() == 8000);
+  assert(vistoep_estado("tt1", 1, 1) == 1);
+  assert(vistoep_estado("tt1", 1, 4000) == 1);
+  assert(vistoep_estado("tt1", 1, 8000) == 1);
   pares[0].episodio = 8001;
   assert(vistoep_marcar_lote("tt1", pares, 1, 1) == 0);
   assert(vistoep_estado("tt1", 1, 8001) == -1);

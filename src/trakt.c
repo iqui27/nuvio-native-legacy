@@ -636,7 +636,8 @@ static int enfeitar(CatItem *d, const char *tipo, uint64_t sessao) {
   char url[300], *corpo;
   char serie[24];
   const char *dp;
-  int precisaCinemeta, proximo, confirmado, daConta, virou = 0, provFicha = -1;
+  int precisaCinemeta, proximo, confirmado, daConta, confirmadoSimkl;
+  int virou = 0, provFicha = -1;
   const char *epc;   // de onde saem o nome e a data do episodio "a seguir"
   char *corpoCine = NULL;
   // Arte PRIMEIRO, sem rede: mesma URL que trakt_lista ja monta. Antes cada
@@ -653,12 +654,13 @@ static int enfeitar(CatItem *d, const char *tipo, uint64_t sessao) {
   if (dp) *(char *)dp = 0;
   // Cinemeta so para o que o metahub nao tem: validar "a seguir", sinopse,
   // runtime/meta e nota. Arte ja esta; falha la NAO apaga o item.
-  // Metadata validates guesses; Trakt next_episode already confirms its target.
+  // Metadata validates guesses; Trakt and Simkl next-up both confirm targets.
   if (!nv_perfil_sessao_travar(sessao)) return 0;
   daConta = cwo_conta_a_seguir(d->imdb);
   proximo = ehProximo(d->imdb);
-  confirmado = proximo == 2;
-  proximo = proximo || daConta;
+  confirmadoSimkl = simkl_e_a_seguir && simkl_e_a_seguir(d->imdb);
+  confirmado = proximo == 2 || confirmadoSimkl;
+  proximo = proximo || daConta || confirmadoSimkl;
   nv_perfil_sessao_destravar();
   precisaCinemeta = proximo || d->tvdbEp > 0 || !d->sinopse[0] ||
                     !d->meta[0] || d->nota <= 0;

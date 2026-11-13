@@ -10,7 +10,7 @@
 // antes de qualquer lista existir. Guardar no episodio faria o dado nascer e
 // morrer junto com a tela que o mostra.
 //
-// DUAS FONTES, e as duas escrevem aqui:
+// TRES FONTES, mais os gestos locais, escrevem aqui:
 //   - a conta Nuvio, por sync_pull_watched_items, que ja devolve `season` e
 //     `episode` em cada linha (PLANO-CONTA-SYNC.md secao 1.5) e cujo episodio
 //     era lido e jogado fora;
@@ -18,6 +18,8 @@
 //     temporadas e episodios. Nao serve /sync/history: ela e paginada nas
 //     ultimas reproducoes e responde "o que foi visto recentemente", nao "o que
 //     esta visto".
+//   - o Simkl, por /sync/all-items/all/all com `include_all_episodes` e
+//     `episode_watched_at`, que devolve `watched_at` por episodio.
 //
 // A CHAVE E O ID DO TITULO, sempre truncado no ':' — quem chama pode passar
 // "tt123" ou "tt123:2:8", e o segundo e o formato que CatItem.imdb carrega num

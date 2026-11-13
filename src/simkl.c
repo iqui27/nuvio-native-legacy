@@ -17,6 +17,7 @@
 #include "fichameta.h"
 #include "metaprov.h"
 #include "metaep.h"
+#include "vistoep.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,6 +38,18 @@ extern int trakt_enfeitar_lote_sessao(CatItem *, int, uint64_t) NV_PERFIL_OPCION
 // Plan to Watch conhecido, para a guarda do "-". 400 ids x 24 B = ~10 KB; a
 // lista de "quero ver" de uma pessoa real cabe com sobra.
 #define SMK_PTW_MAX 400
+
+typedef struct {
+  long simkl;
+  char imdb[24];
+} SimklAnimeId;
+
+static SimklAnimeId simklAnimeIds[SMK_PLAY_MAX];
+static int simklAnimeIdProximo;
+static time_t historicoCarregadoEm;
+static uint64_t historicoSessao, historicoGeracao, historicoPedidoSessao,
+               historicoPedidoGeracao;
+static int historicoFioVivo;
 
 int simkl_ativo(void) { return simklauth_token()[0] != 0; }
 int simkl_aguardando(void) { return provedorEspera(); }
@@ -175,29 +188,192 @@ int simkl_ler_playback(const char *json, CatItem *dst, long long *ids, int max) 
   return n;
 }
 
+static int animeAbsoluto_global(const char *corpo, int absoluto, MetaEpInfo *ep) {
+  const char *p;
+  int temporada = 0, correspondencias = 0;
+  int primeira = INT_MAX, anteriorMax = 0;
+  if (!corpo || absoluto <= 0 || js_videos_temporadas_falsas(corpo)) return 0;
+  for (p = js_array(corpo, NULL, "videos"); p; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    int t = metaep_temporada(p, f);
+    int e = (int)js_num(p, f, "episode", 0);
+    if (t > 0 && e == absoluto) {
+      if (temporada && temporada != t) return 0;
+      temporada = t;
+      correspondencias++;
+    }
+  }
+  if (correspondencias != 1 || temporada <= 1) return 0;
+  for (p = js_array(corpo, NULL, "videos"); p; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    int t = metaep_temporada(p, f);
+    int e = (int)js_num(p, f, "episode", 0);
+    if (t == temporada && e > 0) {
+      if (e < primeira) primeira = e;
+    } else if (t == temporada - 1 && e > anteriorMax) {
+      anteriorMax = e;
+    }
+  }
+  if (primeira <= 1 || anteriorMax != primeira - 1) return 0;
+  // The catalog already identifies this episode by its absolute number.
+  ep->temporada = temporada;
+  ep->episodio = absoluto;
+  return 1;
+}
+
+static int animeThumb_global(const char *corpo, int absoluto, char *thumb, size_t n) {
+  const char *p;
+  int encontrados = 0;
+  if (thumb && n) thumb[0] = 0;
+  if (!corpo || absoluto <= 0 || !thumb || n == 0) return 0;
+  for (p = js_array(corpo, NULL, "videos"); p; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    if ((int)js_num(p, f, "episode", 0) != absoluto) continue;
+    if (++encontrados != 1) return 0;
+    if (!js_texto(p, f, "thumbnail", thumb, n) ||
+        strncmp(thumb, "https://", 8) != 0) {
+      thumb[0] = 0;
+      return 0;
+    }
+  }
+  return encontrados == 1 && thumb[0] != 0;
+}
+
+// The provider's episode for a Simkl absolute number; a catalog that already
+// numbers it globally also gives its still.
+static int animeAbsoluto_corpo(const char *corpo, int absoluto, MetaEpInfo *ep,
+                               char *thumb, size_t thumbTam) {
+  if (animeAbsoluto_global(corpo, absoluto, ep)) {
+    animeThumb_global(corpo, absoluto, thumb, thumbTam);
+    return 1;
+  }
+  int ok = metaep_buscar(corpo, 1, 1, ep);
+  // ponytail: repeated scans reuse provider ordering; index if long shows cost time.
+  for (int i = 1; ok && i < absoluto; i++) {
+    MetaEpInfo prox;
+    ok = metaep_proximo(corpo, ep->temporada, ep->episodio, &prox) &&
+         ((prox.temporada == ep->temporada && prox.episodio == ep->episodio + 1) ||
+          (prox.temporada == ep->temporada + 1 && prox.episodio == 1));
+    if (ok) *ep = prox;
+  }
+  return ok;
+}
+
 // Reuse the provider metadata cache; an unknown mapping opens the title only.
-static int animeAbsoluto(const char *id, int absoluto, int *t, int *e) {
+static int animeAbsoluto(const char *id, int absoluto, int *t, int *e,
+                         char *thumb, size_t thumbTam) {
   char chave[64];
   MetaEpInfo ep;
   int ok;
   snprintf(chave, sizeof chave, "series/%s/%s", id, metaprov_idioma());
   char *corpo = fichameta_ler(chave, 6 * 3600);
-  ok = metaep_buscar(corpo, 1, 1, &ep);
-  // ponytail: repeated scans reuse provider ordering; index if long shows cost time.
-  for (int i = 1; ok && i < absoluto; i++) {
-    MetaEpInfo prox;
-    ok = metaep_proximo(corpo, ep.temporada, ep.episodio, &prox) &&
-         ((prox.temporada == ep.temporada && prox.episodio == ep.episodio + 1) ||
-          (prox.temporada == ep.temporada + 1 && prox.episodio == 1));
-    if (ok) ep = prox;
+  if (thumb && thumbTam) thumb[0] = 0;
+  ok = animeAbsoluto_corpo(corpo, absoluto, &ep, thumb, thumbTam);
+  if (!ok && (!strncmp(id, "tt", 2) || !strncmp(id, "tmdb:", 5))) {
+    free(corpo);
+    corpo = metaprov_meta("series", id, 6, NULL);
+    if (corpo) fichameta_gravar(chave, corpo);
+    ok = animeAbsoluto_corpo(corpo, absoluto, &ep, thumb, thumbTam);
   }
   free(corpo);
   *t = ok ? ep.temporada : 0;
   *e = ok ? ep.episodio : 0;
+  if (!ok && thumb && thumbTam) thumb[0] = 0;
   return ok;
 }
 
-int simkl_ler_assistindo(const char *json, CatItem *dst, int max) {
+static int animeTvdbGlobal(const char *corpo, int temporada, int episodio,
+                           MetaEpInfo *mapeado) {
+  const char *p;
+  unsigned char encontrados[SHRT_MAX + 1] = {0};
+  int primeiro = INT_MAX, ultimo = 0, anteriorMax = 0;
+  if (!corpo || temporada <= 1 || episodio <= 0 ||
+      episodio > SHRT_MAX || js_videos_temporadas_falsas(corpo)) return 0;
+  for (p = js_array(corpo, NULL, "videos"); p; p = js_prox(js_fim(p))) {
+    const char *fim = js_fim(p);
+    int t = metaep_temporada(p, fim);
+    int e = (int)js_num(p, fim, "episode", 0);
+    if (t == temporada - 1 && e > anteriorMax) anteriorMax = e;
+    if (t != temporada || e <= 0) continue;
+    if (e < primeiro) primeiro = e;
+    if (e > ultimo) ultimo = e;
+  }
+  if (primeiro <= 1 || anteriorMax != primeiro - 1 ||
+      episodio > ultimo - primeiro + 1) return 0;
+  int alvo = primeiro + episodio - 1;
+  int quantidade = 0;
+  for (p = js_array(corpo, NULL, "videos"); p; p = js_prox(js_fim(p))) {
+    const char *fim = js_fim(p);
+    int e = (int)js_num(p, fim, "episode", 0);
+    if (metaep_temporada(p, fim) != temporada || e < primeiro || e > alvo) continue;
+    if (encontrados[e - primeiro]) return 0;
+    encontrados[e - primeiro] = 1;
+    quantidade++;
+  }
+  if (quantidade != episodio) return 0;
+  if (mapeado) {
+    memset(mapeado, 0, sizeof *mapeado);
+    mapeado->temporada = temporada;
+    mapeado->episodio = alvo;
+  }
+  return 1;
+}
+
+typedef struct {
+  int temporada, episodio, tvdb;  // tvdb: episode TVDB ID, 0 = unknown
+} AnimeEpPar;
+
+static int animeEpParComparar(const void *a, const void *b) {
+  const AnimeEpPar *x = a, *y = b;
+  if (x->temporada != y->temporada) return x->temporada < y->temporada ? -1 : 1;
+  return (x->episodio > y->episodio) - (x->episodio < y->episodio);
+}
+
+// Watch order (season, then episode) without repeats.
+static int animeEpParOrdenar(AnimeEpPar *pares, int n) {
+  int unicos = 0;
+  qsort(pares, (size_t)n, sizeof *pares, animeEpParComparar);
+  for (int i = 0; i < n; i++)
+    if (!unicos || animeEpParComparar(&pares[unicos - 1], &pares[i]))
+      pares[unicos++] = pares[i];
+  return unicos;
+}
+
+static int animeCatalogoMapa(int indice, const char *id, AnimeEpPar **mapa,
+                             int *quantidade, int *maxTemp1) {
+  AnimeEpPar *pares;
+  int total, n = 0;
+  if (mapa) *mapa = NULL;
+  if (quantidade) *quantidade = 0;
+  if (maxTemp1) *maxTemp1 = 0;
+  if (indice < 0 || !cat_episodios_finais(indice, id)) return 0;
+  total = cat_n_episodios(indice);
+  if (total <= 0) return 0;
+  pares = calloc((size_t)total, sizeof *pares);
+  if (!pares) return 0;
+  for (int i = 0; i < total; i++) {
+    const CatEp *ep = cat_episodio(indice, i);
+    if (!ep || ep->temporada <= 0 || ep->episodio <= 0) continue;
+    pares[n].temporada = ep->temporada;
+    pares[n].episodio = ep->episodio;
+    pares[n].tvdb = ep->tvdbEp > 0 ? ep->tvdbEp : 0;
+    if (maxTemp1 && ep->temporada == 1 && ep->episodio > *maxTemp1)
+      *maxTemp1 = ep->episodio;
+    n++;
+  }
+  if (!n) {
+    free(pares);
+    return 0;
+  }
+  // The catalog keeps earlier pairs in place and appends new ones, so its
+  // order is not watch order.
+  *mapa = pares;
+  *quantidade = animeEpParOrdenar(pares, n);
+  return 1;
+}
+
+static int simkl_ler_assistindo_com(const char *json, CatItem *dst, int max,
+                                    int *absolutos, long *simklIds) {
   // O Simkl guarda anime num terceiro tipo: /sync/all-items/anime/<estado>
   // devolve a raiz "anime" e o objeto interno tambem se chama "anime".
   static const char *vetores[] = { "shows", "anime" };
@@ -213,6 +389,7 @@ int simkl_ler_assistindo(const char *json, CatItem *dst, int max) {
     const char *f = js_fim(p), *oi, *of;
     CatItem *d;
     char imdb[24] = "", prox[16] = "", quando[40] = "";
+    char thumb[512] = "";
     const char *reason = "missing next_to_watch";
     int t = 0, e = 0, absoluto = 0;
     if (k == 1) animeEntries++;
@@ -240,7 +417,8 @@ int simkl_ler_assistindo(const char *json, CatItem *dst, int max) {
     }
     if (t < 0 || e <= 0) goto watchingDropped;
     reason = "missing title object";
-    if (!objetoRaiz(p, f, chaves[k], &oi, &of)) goto watchingDropped;
+    if (!objetoRaiz(p, f, chaves[k], &oi, &of) &&
+        (k != 1 || !objetoRaiz(p, f, "show", &oi, &of))) goto watchingDropped;
     if (!lerObra(oi, of, d, imdb, sizeof imdb)) {
       const char *ii, *ifim;
       long id;
@@ -255,12 +433,18 @@ int simkl_ler_assistindo(const char *json, CatItem *dst, int max) {
       }
     }
     { const char *ii, *ifim;
-      if (objetoRaiz(oi, of, "ids", &ii, &ifim))
+      if (objetoRaiz(oi, of, "ids", &ii, &ifim)) {
         d->tmdb = (long)js_num(ii, ifim, "tmdb", 0);
+        if (simklIds) simklIds[n] = (long)js_num(ii, ifim, "simkl", 0);
+      }
     }
-    if (absoluto) animeAbsoluto(imdb, absoluto, &t, &e);
+    if (absoluto) {
+      if (!strncmp(imdb, "simkl:", 6)) t = e = 0;
+      else animeAbsoluto(imdb, absoluto, &t, &e, thumb, sizeof thumb);
+    }
     d->temporada = t;
     d->episodio = e;
+    snprintf(d->thumbEpisodio, sizeof d->thumbEpisodio, "%s", thumb);
     d->progresso = 0;
     if (e > 0) snprintf(d->imdb, sizeof d->imdb, "%s:%d:%d", imdb, t, e);
     else snprintf(d->imdb, sizeof d->imdb, "%s", imdb);
@@ -269,11 +453,14 @@ int simkl_ler_assistindo(const char *json, CatItem *dst, int max) {
     // (ult[].quandoMs): e ele que diz quando a pessoa mexeu nesta serie.
     if (js_texto_raiz_em(p, f, "last_watched_at", quando, sizeof quando))
       d->retomadoMs = js_ms_iso(quando);
+    if (absolutos) absolutos[n] = absoluto;
     n++;
     if (k == 1) {
       animeKept++;
       printf("[simkl] anime watching #%d id=%s next=%s: candidate (%s)\n",
-             animeEntries, imdb, prox, e > 0 ? "episode mapped" : "title fallback");
+             animeEntries, imdb, prox, e > 0 ? "episode mapped" :
+             (absoluto && !strncmp(imdb, "simkl:", 6))
+               ? "episode mapping pending" : "title fallback");
     }
     continue;
 watchingDropped:
@@ -283,6 +470,10 @@ watchingDropped:
   printf("[simkl] anime watching: %d entries, %d candidates, %d dropped\n",
          animeEntries, animeKept, animeEntries - animeKept);
   return n;
+}
+
+int simkl_ler_assistindo(const char *json, CatItem *dst, int max) {
+  return simkl_ler_assistindo_com(json, dst, max, NULL, NULL);
 }
 
 int simkl_ler_plantowatch(const char *json, int serie, CatItem *dst, int max) {
@@ -298,7 +489,9 @@ int simkl_ler_plantowatch(const char *json, int serie, CatItem *dst, int max) {
     CatItem *d = &dst[n];
     char imdb[24];
     memset(d, 0, sizeof *d);
-    if (!objetoRaiz(p, f, chaves[k], &oi, &of)) continue;
+    // Simkl's anime lists put each item under "show"; "anime" is kept too.
+    if (!objetoRaiz(p, f, chaves[k], &oi, &of) &&
+        (k != 2 || !objetoRaiz(p, f, "show", &oi, &of))) continue;
     if (!lerObra(oi, of, d, imdb, sizeof imdb)) continue;
     snprintf(d->imdb, sizeof d->imdb, "%s", imdb);
     snprintf(d->tipo, sizeof d->tipo, "%s", serie ? "series" : "movie");
@@ -495,6 +688,38 @@ static int pedidoAtual(SmkPedido p) {
   pedidoDestravar(); return 1;
 }
 
+static void simklAnimeIdGuardar(SmkPedido pedido, long simkl, const char *imdb) {
+  char base[24];
+  int i, livre = -1;
+  if (simkl <= 0 || !baseImdb(imdb, base, sizeof base) || !pedidoTravar(pedido))
+    return;
+  for (i = 0; i < SMK_PLAY_MAX; i++) {
+    if (simklAnimeIds[i].simkl == simkl) { livre = i; break; }
+    if (!simklAnimeIds[i].simkl && livre < 0) livre = i;
+  }
+  if (livre < 0) {
+    livre = simklAnimeIdProximo++ % SMK_PLAY_MAX;
+  }
+  simklAnimeIds[livre].simkl = simkl;
+  strcpy(simklAnimeIds[livre].imdb, base);
+  pedidoDestravar();
+}
+
+static int simklAnimeIdLer(long simkl, char *imdb, size_t tam) {
+  int i, ok = 0;
+  if (simkl <= 0 || !imdb || tam == 0) return 0;
+  pthread_mutex_lock(&trava);
+  for (i = 0; i < SMK_PLAY_MAX; i++) {
+    if (simklAnimeIds[i].simkl == simkl && imdbValido(simklAnimeIds[i].imdb)) {
+      snprintf(imdb, tam, "%s", simklAnimeIds[i].imdb);
+      ok = 1;
+      break;
+    }
+  }
+  pthread_mutex_unlock(&trava);
+  return ok;
+}
+
 static char *pedir(SmkPedido pedido, char metodo, const char *caminho, const char *consulta,
                    const char *corpo, int *st) {
   char url[640];
@@ -543,6 +768,102 @@ static char *pedir(SmkPedido pedido, char metodo, const char *caminho, const cha
     }
   }
   return r;
+}
+
+static int slugPosterSimkl(const char *s) {
+  int segmento = 0;
+  if (!s || !*s) return 0;
+  for (; *s; s++) {
+    if (*s == '/') {
+      if (!segmento) return 0;
+      segmento = 0;
+    } else if ((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z') ||
+               (*s >= '0' && *s <= '9') || *s == '_' || *s == '-') {
+      segmento++;
+    } else return 0;
+  }
+  return segmento > 0;
+}
+
+// One Simkl anime's details (/anime/{id}?extended=full), cached for 30 days.
+// *obra..*fim is the anime object, wrapped in "anime" or not.
+static char *animeDetalheCorpo(SmkPedido pedido, long id, const char **obra,
+                               const char **fim) {
+  char chave[64], caminho[80];
+  char *corpo;
+  int st = 0;
+  snprintf(chave, sizeof chave, "simkl-anime/%ld", id);
+  corpo = fichameta_ler(chave, 30 * 24 * 3600);
+  if (!corpo) {
+    if (!pedidoAtual(pedido)) return NULL;
+    snprintf(caminho, sizeof caminho, "/anime/%ld", id);
+    corpo = pedir(pedido, 'G', caminho, "extended=full", NULL, &st);
+    if (!corpo || st < 200 || st >= 300 || !pedidoAtual(pedido)) {
+      printf("[simkl] anime details id=%ld unavailable (HTTP %d)\n", id, st);
+      if (st == 404) fichameta_gravar(chave, "{}");
+      free(corpo);
+      return NULL;
+    }
+    fichameta_gravar(chave, corpo);
+  }
+  if (!objetoRaiz(corpo, NULL, "anime", obra, fim)) {
+    *obra = corpo;
+    *fim = js_fim(corpo);
+    if (!*fim || **obra != '{') { free(corpo); return NULL; }
+  }
+  return corpo;
+}
+
+static int simkl_anime_detalhe(SmkPedido pedido, CatItem *d, int *temporadaSimkl,
+                               long simklId) {
+  char poster[128] = "", imdb[24] = "", titulo[160] = "";
+  char base[32], imdbAtual[24] = "", imdbBase[24] = "";
+  const char *obra, *fim, *ii, *ifim;
+  char *corpo;
+  char *end;
+  long id = simklId, tmdb = 0;
+  int ok = 0, temporada = 0;
+  if (temporadaSimkl) *temporadaSimkl = 0;
+  if (!d) return 0;
+  snprintf(imdbAtual, sizeof imdbAtual, "%s", d->imdb);
+  if (id <= 0) {
+    if (strncmp(imdbAtual, "simkl:", 6)) return 0;
+    id = strtol(imdbAtual + 6, &end, 10);
+    if (end == imdbAtual + 6 || (*end && (*end != ':' || d->episodio <= 0)) || id <= 0)
+      return 0;
+  }
+  if (!imdbValido(imdbAtual) && strncmp(imdbAtual, "tmdb:", 5))
+    snprintf(imdbAtual, sizeof imdbAtual, "simkl:%ld", id);
+  corpo = animeDetalheCorpo(pedido, id, &obra, &fim);
+  if (!corpo) return 0;
+  js_texto_raiz_em(obra, fim, "title", titulo, sizeof titulo);
+  js_texto_raiz_em(obra, fim, "poster", poster, sizeof poster);
+  temporada = (int)js_num(obra, fim, "season", 0);
+  if (temporadaSimkl && temporada > 0) *temporadaSimkl = temporada;
+  if (objetoRaiz(obra, fim, "ids", &ii, &ifim)) {
+    js_texto(ii, ifim, "imdb", imdb, sizeof imdb);
+    tmdb = (long)js_num(ii, ifim, "tmdb", 0);
+  }
+  if (titulo[0]) snprintf(d->titulo, sizeof d->titulo, "%s", titulo);
+  if (imdbValido(imdbAtual) && baseImdb(imdbAtual, imdbBase, sizeof imdbBase))
+    snprintf(base, sizeof base, "%s", imdbBase);
+  else if (imdbValido(imdb)) snprintf(base, sizeof base, "%s", imdb);
+  else if (tmdb > 0) snprintf(base, sizeof base, "tmdb:%ld", tmdb);
+  else snprintf(base, sizeof base, "%s", imdbAtual);
+  simklAnimeIdGuardar(pedido, id, base);
+  if (tmdb > 0) d->tmdb = tmdb;
+  if (slugPosterSimkl(poster))
+    snprintf(d->poster, sizeof d->poster, "https://simkl.in/posters/%s_m.jpg", poster);
+  if (d->episodio > 0) {
+    if (temporada > 0) d->temporada = temporada;
+    snprintf(d->imdb, sizeof d->imdb, "%s:%d:%d", base,
+             d->temporada, d->episodio);
+  } else {
+    snprintf(d->imdb, sizeof d->imdb, "%s", base);
+  }
+  ok = imdbValido(imdb) || tmdb > 0 || slugPosterSimkl(poster);
+  free(corpo);
+  return ok;
 }
 
 static char *pegar(SmkPedido pedido, const char *caminho, const char *consulta, int *st) {
@@ -607,7 +928,10 @@ static void perfilLerTipo(const char *json, const char *lista, int filme,
     char titulo[128] = "", imdb[24] = "", quando[48] = "";
     int runtime;
     PerfilDestaque r = {0};
-    if (!objetoRaiz(p, f, filme ? "movie" : !strcmp(lista, "anime") ? "anime" : "show", &obra, &obraFim)) continue;
+    // Simkl's anime lists put each item under "show"; "anime" is kept too.
+    if (!objetoRaiz(p, f, filme ? "movie" : "show", &obra, &obraFim) &&
+        (filme || strcmp(lista, "anime") || !objetoRaiz(p, f, "anime", &obra, &obraFim)))
+      continue;
     js_texto_raiz_em(obra, obraFim, "title", titulo, sizeof titulo);
     runtime = (int)js_num(obra, obraFim, "runtime", 0);
     if (objetoRaiz(obra, obraFim, "ids", &ids, &idsFim))
@@ -660,6 +984,591 @@ static int perfilHistoricoValido(const char *json) {
     listas++;
   }
   return listas != 0;
+}
+
+// Provider episodes in watch order (season, then episode; specials left out).
+static int animeMetaMapa(const char *corpo, AnimeEpPar **mapa, int *quantidade) {
+  const char *p;
+  AnimeEpPar *pares = NULL;
+  int n = 0, cap = 0;
+  *mapa = NULL;
+  *quantidade = 0;
+  if (!corpo || js_videos_temporadas_falsas(corpo)) return 0;
+  for (p = js_array(corpo, NULL, "videos"); p; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    int t = metaep_temporada(p, f);
+    int e = (int)js_num(p, f, "episode", 0);
+    if (t <= 0 || t > SHRT_MAX || e <= 0 || e > SHRT_MAX) continue;
+    if (n == cap) {
+      int novo = cap ? cap * 2 : 256;
+      AnimeEpPar *mais = realloc(pares, (size_t)novo * sizeof *pares);
+      if (!mais) { free(pares); return 0; }
+      pares = mais;
+      cap = novo;
+    }
+    double tvdb = js_num(p, f, "tvdb_id", 0);
+    pares[n].temporada = t;
+    pares[n].episodio = e;
+    pares[n].tvdb = tvdb > 0 && tvdb <= INT_MAX && tvdb == (int)tvdb ? (int)tvdb : 0;
+    n++;
+  }
+  if (!n) { free(pares); return 0; }
+  *mapa = pares;
+  *quantidade = animeEpParOrdenar(pares, n);
+  return 1;
+}
+
+// An addon list can follow TVDB's numbering without carrying TVDB IDs
+// (Xperience with "TheTVDB" as the anime source). Cinemeta follows the same
+// numbering and publishes the IDs: when the two lists hold the same episodes,
+// borrow them, so Simkl's TVDB IDs still decide instead of positions (One
+// Piece has no 628 there, which shifts every later position by one).
+static int animeCatalogoTvdbCinemeta(const char *id, AnimeEpPar *v, int n) {
+  AnimeEpPar *cine = NULL;
+  int qtd = 0, comuns = 0, copiados = 0, i, j;
+  char *corpo;
+  if (!v || n <= 0 || strncmp(id, "tt", 2)) return 0;
+  for (i = 0; i < n; i++) if (v[i].tvdb > 0) return 0;
+  corpo = metaprov_meta_cinemeta_com("series", id, 8, NULL, NULL, NULL);
+  animeMetaMapa(corpo, &cine, &qtd);
+  free(corpo);
+  for (i = j = 0; i < n && j < qtd;) {
+    int c = animeEpParComparar(&v[i], &cine[j]);
+    if (c < 0) i++;
+    else if (c > 0) j++;
+    else { comuns++; i++; j++; }
+  }
+  // Same numbering only when nearly every episode lines up both ways.
+  if (qtd > 0 && (long)comuns * 20 >= (long)n * 19 && (long)comuns * 20 >= (long)qtd * 19) {
+    for (i = j = 0; i < n && j < qtd;) {
+      int c = animeEpParComparar(&v[i], &cine[j]);
+      if (c < 0) i++;
+      else if (c > 0) j++;
+      else { if (cine[j].tvdb > 0) { v[i].tvdb = cine[j].tvdb; copiados++; } i++; j++; }
+    }
+  }
+  printf("[simkl] %s: episode list without TVDB IDs; Cinemeta %d episodes, %d in common, %d IDs borrowed\n",
+         id, qtd, comuns, copiados);
+  fflush(stdout);
+  free(cine);
+  return copiados;
+}
+
+typedef struct {
+  char *corpo;
+  AnimeEpPar *mapa;
+  int quantidade, lido, buscado;
+} AnimeMetaCache;
+
+static void animeMetaCarregar(AnimeMetaCache *c, const char *id, int forcarRede) {
+  char chave[64];
+  snprintf(chave, sizeof chave, "series/%s/%s", id, metaprov_idioma());
+  if (!c->lido) {
+    c->lido = 1;
+    c->corpo = fichameta_ler(chave, 6 * 3600);
+  }
+  if ((!c->corpo || forcarRede) && !c->buscado &&
+      (!strncmp(id, "tt", 2) || !strncmp(id, "tmdb:", 5))) {
+    char *novo;
+    c->buscado = 1;
+    novo = metaprov_meta("series", id, 6, NULL);
+    if (novo) {
+      fichameta_gravar(chave, novo);
+      free(c->corpo);
+      c->corpo = novo;
+      free(c->mapa);
+      c->mapa = NULL;
+      c->quantidade = 0;
+    }
+  }
+  if (!c->mapa) animeMetaMapa(c->corpo, &c->mapa, &c->quantidade);
+}
+
+// Absolute numbering: episode numbers keep counting across seasons (Nuvio's
+// catalog has S22E1122), so Simkl's number names the episode directly.
+static int animeParesAbsolutos(const AnimeEpPar *v, int n) {
+  if (!v || n < 2 || v[0].temporada == v[n - 1].temporada) return 0;
+  for (int i = 1; i < n; i++)
+    if (v[i].episodio <= v[i - 1].episodio) return 0;
+  return 1;
+}
+
+// Simkl anime history counts episodes 1..N across the whole show. Providers
+// do not count the same way: Cinemeta's One Piece has no 628 and adds an
+// extra before 1123, so counting positions lands one episode off. The
+// episode's TVDB ID decides first; a provider that restarts numbering each
+// season falls back to position, and a candidate whose own TVDB ID names a
+// different episode is rejected. `rigido`: Simkl identifies this show by TVDB
+// ID, so an episode it sends without one (One Piece 628) cannot take a
+// position that already has its own TVDB ID.
+static int animeParesAchar(const AnimeEpPar *v, int n, int absoluto, int tvdbId,
+                           int rigido, int *t, int *e) {
+  const AnimeEpPar *c = NULL;
+  if (!v || n <= 0 || absoluto <= 0) return 0;
+  if (tvdbId > 0) {
+    for (int i = 0; i < n; i++)
+      if (v[i].tvdb == tvdbId) { *t = v[i].temporada; *e = v[i].episodio; return 1; }
+  }
+  if (animeParesAbsolutos(v, n)) {
+    int lo = 0, hi = n - 1;
+    while (lo <= hi && !c) {
+      int m = lo + (hi - lo) / 2;
+      if (v[m].episodio == absoluto) c = &v[m];
+      else if (v[m].episodio < absoluto) lo = m + 1;
+      else hi = m - 1;
+    }
+  } else if (absoluto <= n) {
+    c = &v[absoluto - 1];
+  }
+  if (!c || (c->tvdb > 0 && (tvdbId > 0 ? c->tvdb != tvdbId : rigido))) return 0;
+  *t = c->temporada;
+  *e = c->episodio;
+  return 1;
+}
+
+// Whether Simkl's number falls inside this list at all. Past its end, another
+// source may know the episode; inside it, the list's own answer stands.
+static int animeParesCobre(const AnimeEpPar *v, int n, int absoluto) {
+  if (!v || n <= 0) return 0;
+  return animeParesAbsolutos(v, n) ? absoluto <= v[n - 1].episodio : absoluto <= n;
+}
+
+static int animeMetaAbsoluto(AnimeMetaCache *c, const char *id, int absoluto,
+                             int tvdbId, int rigido, int *t, int *e) {
+  if (absoluto <= 0) return 0;
+  animeMetaCarregar(c, id, 0);
+  if (animeParesAchar(c->mapa, c->quantidade, absoluto, tvdbId, rigido, t, e))
+    return 1;
+  // Cached metadata can predate new episodes: refresh it once per show.
+  animeMetaCarregar(c, id, 1);
+  return animeParesAchar(c->mapa, c->quantidade, absoluto, tvdbId, rigido, t, e);
+}
+
+// The episode list on screen can switch numbering after the import: One
+// Piece opens with Nuvio's absolute list (S2E62) and then an addon such as
+// Xperience replaces it with per-season numbers (S2E1). Each anime's Simkl
+// entry is kept so it can be mapped again onto the list being shown.
+#define SMK_ANIME_HIST_MAX 64
+typedef struct {
+  char id[24];
+  char *json;           // {"anime":[<Simkl entry>]}
+  unsigned assinatura;  // episode list it was mapped onto; 0 = none loaded
+  uint64_t sessao;
+  int proxT, proxE;     // in that list, the episode after the last one watched
+} AnimeHistorico;
+static AnimeHistorico animeHist[SMK_ANIME_HIST_MAX];
+static int animeHistProximo;
+static pthread_mutex_t animeHistTrava = PTHREAD_MUTEX_INITIALIZER;
+
+static unsigned animeParesAssinatura(const AnimeEpPar *v, int n) {
+  unsigned h = 2166136261u;
+  if (!v || n <= 0) return 0;
+  for (int i = 0; i < n; i++) {
+    h = (h ^ (unsigned)v[i].temporada) * 16777619u;
+    h = (h ^ (unsigned)v[i].episodio) * 16777619u;
+    h = (h ^ (unsigned)v[i].tvdb) * 16777619u;
+  }
+  return h ? h : 1;
+}
+
+static void animeHistGuardar(const char *id, const char *ini, const char *fim,
+                             unsigned assinatura, uint64_t sessao,
+                             int proxT, int proxE) {
+  size_t tam;
+  char *json;
+  int i, vaga = -1;
+  if (!id || !id[0] || !ini || !fim || fim <= ini) return;
+  tam = (size_t)(fim - ini);
+  json = malloc(tam + 16);
+  if (!json) return;
+  memcpy(json, "{\"anime\":[", 10);
+  memcpy(json + 10, ini, tam);
+  memcpy(json + 10 + tam, "]}", 3);
+  pthread_mutex_lock(&animeHistTrava);
+  for (i = 0; i < SMK_ANIME_HIST_MAX; i++) {
+    if (!strcmp(animeHist[i].id, id)) { vaga = i; break; }
+    if (vaga < 0 && !animeHist[i].id[0]) vaga = i;
+  }
+  if (vaga < 0) vaga = animeHistProximo++ % SMK_ANIME_HIST_MAX;
+  free(animeHist[vaga].json);
+  snprintf(animeHist[vaga].id, sizeof animeHist[vaga].id, "%s", id);
+  animeHist[vaga].json = json;
+  animeHist[vaga].assinatura = assinatura;
+  animeHist[vaga].sessao = sessao;
+  animeHist[vaga].proxT = proxT;
+  animeHist[vaga].proxE = proxE;
+  pthread_mutex_unlock(&animeHistTrava);
+}
+
+static void animeHistEsquecer(void) {
+  pthread_mutex_lock(&animeHistTrava);
+  for (int i = 0; i < SMK_ANIME_HIST_MAX; i++) free(animeHist[i].json);
+  memset(animeHist, 0, sizeof animeHist);
+  animeHistProximo = 0;
+  pthread_mutex_unlock(&animeHistTrava);
+}
+
+static int simklHistoricoTipo(const char *json, const char *lista,
+                              const char *chaveObra, const char *filtro,
+                              const char *fallbackImdb, long fallbackTmdb,
+                              uint64_t sessao) {
+  const char *p;
+  int importados = 0;
+  for (p = js_array(json, NULL, lista); p && *p == '{'; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p), *obra, *fimObra, *ids, *fimIds, *s;
+    const char *chave = chaveObra;
+    char id[24] = "";
+    if (!objetoRaiz(p, f, chave, &obra, &fimObra)) {
+      if (strcmp(lista, "anime") || !objetoRaiz(p, f, "show", &obra, &fimObra))
+        continue;
+    }
+    if (!objetoRaiz(obra, fimObra, "ids", &ids, &fimIds)) continue;
+    js_texto(ids, fimIds, "imdb", id, sizeof id);
+    if (!imdbValido(id)) {
+      long simkl = (long)js_num(ids, fimIds, "simkl", 0.0);
+      if (simklAnimeIdLer(simkl, id, sizeof id)) {
+        // The anime details already tied this exact Simkl ID to a catalog ID.
+      } else {
+        double tmdb = js_num(ids, fimIds, "tmdb", 0.0);
+        if (!fallbackImdb || fallbackTmdb <= 0 ||
+            tmdb != (double)fallbackTmdb) continue;
+        snprintf(id, sizeof id, "%s", fallbackImdb);
+      }
+    }
+    if (filtro && strcmp(id, filtro)) continue;
+    VistoFonte fonte;
+    AnimeMetaCache animeMeta = {0};
+    int catalogoIndice = cat_indice_por_imdb_tipo(id, "series");
+    AnimeEpPar *animeCatalogo = NULL;
+    int animeCatalogoQtd = 0, animeCatalogoTemp1Max = 0;
+    if (!strcmp(lista, "anime"))
+      animeCatalogoMapa(catalogoIndice, id, &animeCatalogo,
+                        &animeCatalogoQtd, &animeCatalogoTemp1Max);
+    // Taken before any borrowed IDs, as simkl_anime_lista_mudou computes it.
+    unsigned animeCatalogoAssin = animeParesAssinatura(animeCatalogo, animeCatalogoQtd);
+    memset(&fonte, 0, sizeof fonte);
+    int simklRigido = 0;
+    int ultimoN = 0, ultimoT = 0, ultimoE = 0;
+    if (!strcmp(lista, "anime")) {
+      int total = 0, comTvdb = 0;
+      for (s = js_array(p, f, "seasons"); s && *s == '{'; s = js_prox(js_fim(s))) {
+        const char *fs = js_fim(s), *e, *ie, *fie;
+        for (e = js_array(s, fs, "episodes"); e && *e == '{'; e = js_prox(js_fim(e))) {
+          const char *fe = js_fim(e);
+          total++;
+          if (objetoRaiz(e, fe, "ids", &ie, &fie) && js_num(ie, fie, "tvdb_id", 0) > 0)
+            comTvdb++;
+        }
+      }
+      simklRigido = comTvdb * 2 > total;
+      if (simklRigido)
+        animeCatalogoTvdbCinemeta(id, animeCatalogo, animeCatalogoQtd);
+    }
+    for (s = js_array(p, f, "seasons"); s && *s == '{'; s = js_prox(js_fim(s))) {
+      const char *fs = js_fim(s), *e;
+      int temporada = (int)js_num(s, fs, "number", -1.0);
+      if (temporada < 0 || temporada > SHRT_MAX) continue;
+      for (e = js_array(s, fs, "episodes"); e && *e == '{'; e = js_prox(js_fim(e))) {
+        const char *fe = js_fim(e);
+        char assistido[40] = "";
+        int t = temporada, episodio = (int)js_num(e, fe, "number", 0.0);
+        int tvdbT = (int)js_num(e, fe, "tvdb_season", -1.0);
+        int tvdbE = (int)js_num(e, fe, "tvdb_number", 0.0);
+        int tvdbMapeado = 0;
+        const char *tvdb, *fimTvdb, *idsEp, *fimIdsEp;
+        if (objetoRaiz(e, fe, "tvdb", &tvdb, &fimTvdb)) {
+          int nestedT = (int)js_num(tvdb, fimTvdb, "season", -1.0);
+          int nestedE = (int)js_num(tvdb, fimTvdb, "episode", 0.0);
+          if (nestedT >= 0 && nestedT <= SHRT_MAX &&
+              nestedE > 0 && nestedE <= SHRT_MAX) {
+            tvdbT = nestedT;
+            tvdbE = nestedE;
+          }
+        }
+        int tvdbId = 0;
+        if (objetoRaiz(e, fe, "ids", &idsEp, &fimIdsEp)) {
+          double v = js_num(idsEp, fimIdsEp, "tvdb_id", 0.0);
+          if (isfinite(v) && v > 0 && v <= INT_MAX && v == (int)v) tvdbId = (int)v;
+        }
+        if (catalogoIndice >= 0 && tvdbId > 0)
+          tvdbMapeado = cat_episodio_por_tvdb(catalogoIndice, id,
+                                              tvdbId, &t, &episodio);
+        if (!js_texto_raiz_em(e, fe, "watched_at", assistido, sizeof assistido) ||
+            !assistido[0])
+          js_texto_raiz_em(e, fe, "last_watched_at", assistido, sizeof assistido);
+        if (!assistido[0]) continue;
+        if (!tvdbMapeado && !strcmp(lista, "anime")) {
+          MetaEpInfo mapeado;
+          int mappedT = 0, mappedE = 0, achou = 0;
+          int temTvdb = tvdbT >= 0 && tvdbE > 0;
+          if (temTvdb && tvdbT > 1) {
+            animeMetaCarregar(&animeMeta, id, 0);
+            if (animeTvdbGlobal(animeMeta.corpo, tvdbT, tvdbE, &mapeado)) {
+              mappedT = mapeado.temporada;
+              mappedE = mapeado.episodio;
+              achou = 1;
+            }
+          }
+          if (episodio <= 0 && temTvdb) episodio = tvdbE;
+          if (!achou && temporada <= 1 && episodio >= 1) {
+            // The loaded episode list is what the screen shows; the provider
+            // metadata covers what it lacks.
+            achou = animeParesAchar(animeCatalogo, animeCatalogoQtd, episodio,
+                                    tvdbId, simklRigido, &mappedT, &mappedE) ||
+                    (!animeParesCobre(animeCatalogo, animeCatalogoQtd, episodio) &&
+                     animeMetaAbsoluto(&animeMeta, id, episodio, tvdbId,
+                                       simklRigido, &mappedT, &mappedE));
+          }
+          if (achou) {
+            t = mappedT;
+            episodio = mappedE;
+          } else if (temTvdb) {
+            t = tvdbT;
+            episodio = tvdbE;
+          } else if (temporada <= 1 &&
+                     (animeCatalogoQtd > 0 || animeMeta.quantidade > 0 ||
+                      episodio > 100)) {
+            // Not in the provider's list: marking S1E<n> would hit the wrong
+            // episode.
+            continue;
+          }
+        }
+        if (episodio <= 0 || episodio > SHRT_MAX) continue;
+        if (!strcmp(lista, "anime") && temporada <= 1 &&
+            (int)js_num(e, fe, "number", 0.0) > ultimoN) {
+          ultimoN = (int)js_num(e, fe, "number", 0.0);
+          ultimoT = t;
+          ultimoE = episodio;
+        }
+        if (vistoep_fonte_se_sessao(id, t, episodio, 1,
+                                    js_ms_iso(assistido), &fonte, sessao))
+          importados++;
+      }
+    }
+    vistoep_fonte_log(id, "simkl", &fonte);
+    if (!strcmp(lista, "anime")) {
+      int proxT = 0, proxE = 0;
+      for (int i = 0; ultimoN > 0 && i + 1 < animeCatalogoQtd; i++)
+        if (animeCatalogo[i].temporada == ultimoT && animeCatalogo[i].episodio == ultimoE) {
+          proxT = animeCatalogo[i + 1].temporada;
+          proxE = animeCatalogo[i + 1].episodio;
+          break;
+        }
+      animeHistGuardar(id, p, f, animeCatalogoAssin, sessao, proxT, proxE);
+      // The final list may have been published while this import ran (the
+      // page scrolled to episodes early): its hook found nothing kept yet.
+      // Same list as used here: no-op.
+      simkl_anime_lista_mudou(id);
+      int tvC = 0, tvM = 0;
+      for (int i = 0; i < animeCatalogoQtd; i++) tvC += animeCatalogo[i].tvdb > 0;
+      for (int i = 0; i < animeMeta.quantidade; i++) tvM += animeMeta.mapa[i].tvdb > 0;
+      printf("[simkl] %s: anime map catalog=%d(abs=%d tvdb=%d) meta=%d(abs=%d tvdb=%d "
+             "fetched=%d) simkl_tvdb=%d\n", id,
+             animeCatalogoQtd, animeParesAbsolutos(animeCatalogo, animeCatalogoQtd), tvC,
+             animeMeta.quantidade, animeParesAbsolutos(animeMeta.mapa, animeMeta.quantidade),
+             tvM, animeMeta.buscado, simklRigido);
+      fflush(stdout);
+    }
+    free(animeMeta.corpo);
+    free(animeMeta.mapa);
+    free(animeCatalogo);
+  }
+  return importados;
+}
+
+static int simklHistoricoLerCom(const char *json, const char *imdb,
+                                const char *fallbackImdb, long fallbackTmdb,
+                                uint64_t sessao) {
+  char id[24], *filtro = NULL;
+  int importados;
+  if ((imdb && (!baseImdb(imdb, id, sizeof id) || !id[0])) ||
+      !perfilHistoricoValido(json)) return -1;
+  if (imdb) filtro = id;
+  importados = simklHistoricoTipo(json, "shows", "show", filtro,
+                                  fallbackImdb, fallbackTmdb, sessao);
+  importados += simklHistoricoTipo(json, "anime", "anime", filtro,
+                                   fallbackImdb, fallbackTmdb, sessao);
+  printf("[vistoep] Simkl: importou %d episódios%s%s\n", importados,
+         filtro ? " de " : "", filtro ? filtro : "");
+  fflush(stdout);
+  return importados;
+}
+
+int simkl_historico_ler(const char *json, const char *imdb, uint64_t sessao) {
+  return simklHistoricoLerCom(json, imdb, NULL, 0, sessao);
+}
+
+typedef struct {
+  char id[24];
+  char *json;
+  uint64_t sessao;
+} AnimeReaplicar;
+
+static void *animeReaplicarFio(void *arg) {
+  AnimeReaplicar *r = arg;
+  int n = simklHistoricoTipo(r->json, "anime", "anime", r->id, NULL, 0, r->sessao);
+  printf("[vistoep] %s: Simkl anime history mapped again onto the new episode list (%d)\n",
+         r->id, n);
+  fflush(stdout);
+  free(r->json);
+  free(r);
+  return NULL;
+}
+
+int simkl_anime_proximo(const char *imdb, int *t, int *e) {
+  char id[24];
+  AnimeEpPar *mapa = NULL;
+  int qtd = 0, ok = 0;
+  unsigned assinatura;
+  if (!imdb || !t || !e || !baseImdb(imdb, id, sizeof id) || !id[0]) return 0;
+  if (!animeCatalogoMapa(cat_indice_por_imdb_tipo(id, "series"), id, &mapa, &qtd, NULL))
+    return 0;
+  assinatura = animeParesAssinatura(mapa, qtd);
+  free(mapa);
+  pthread_mutex_lock(&animeHistTrava);
+  for (int i = 0; i < SMK_ANIME_HIST_MAX; i++) {
+    const AnimeHistorico *h = &animeHist[i];
+    if (strcmp(h->id, id)) continue;
+    // Only when the mapping was done onto this very list.
+    if (h->json && h->assinatura == assinatura && h->proxE > 0 &&
+        h->sessao == nv_perfil_sessao_ler()) {
+      *t = h->proxT;
+      *e = h->proxE;
+      ok = 1;
+    }
+    break;
+  }
+  pthread_mutex_unlock(&animeHistTrava);
+  return ok;
+}
+
+void simkl_anime_lista_mudou(const char *imdb) {
+  char id[24];
+  AnimeEpPar *mapa = NULL;
+  AnimeReaplicar *r = NULL;
+  int qtd = 0, indice;
+  unsigned assinatura;
+  pthread_t fio;
+  if (!imdb || !baseImdb(imdb, id, sizeof id) || !id[0]) return;
+  indice = cat_indice_por_imdb_tipo(id, "series");
+  if (!animeCatalogoMapa(indice, id, &mapa, &qtd, NULL)) return;
+  assinatura = animeParesAssinatura(mapa, qtd);
+  free(mapa);
+  pthread_mutex_lock(&animeHistTrava);
+  for (int i = 0; i < SMK_ANIME_HIST_MAX; i++) {
+    AnimeHistorico *h = &animeHist[i];
+    if (strcmp(h->id, id) || !h->json) continue;
+    if (h->assinatura != assinatura && h->sessao == nv_perfil_sessao_ler() &&
+        (r = calloc(1, sizeof *r)) && (r->json = strdup(h->json))) {
+      snprintf(r->id, sizeof r->id, "%s", id);
+      r->sessao = h->sessao;
+      // Claimed now, so a second publish of the same list does not repeat it.
+      // The next-up pair belongs to the old list until the thread rewrites it.
+      h->assinatura = assinatura;
+      h->proxT = h->proxE = 0;
+    } else if (r) {
+      free(r);
+      r = NULL;
+    }
+    break;
+  }
+  pthread_mutex_unlock(&animeHistTrava);
+  if (!r) return;
+  if (pthread_create(&fio, NULL, animeReaplicarFio, r) == 0) pthread_detach(fio);
+  else { free(r->json); free(r); }
+}
+
+static char *simklHistoricoPagina(SmkPedido pedido, int pagina, int *st, int *proxima) {
+  char url[720], consulta[160];
+  const char *cab[3];
+  snprintf(consulta, sizeof consulta,
+           "extended=full&include_all_episodes=yes&episode_watched_at=yes"
+           "&episode_tvdb_id=yes&page=%d&limit=500",
+           pagina);
+  snprintf(url, sizeof url, "%s/sync/all-items/all/all?client_id=%s&app-name=%s"
+           "&app-version=1.0.1&%s", SMK_API, pedido.cid, pedido.nome, consulta);
+  cab[0] = pedido.aut;
+  cab[1] = "Accept: application/json";
+  cab[2] = NULL;
+  return provedorGet(url, 25, cab, st, proxima, pagina);
+}
+
+int simkl_historico_aplicar(const char *imdb) {
+  SmkPedido pedido = pedidoCapturar();
+  CatItem item;
+  char id[24];
+  long fallbackTmdb = 0;
+  int st = 0, valido = 0, importados = 0, pagina = 1, proxima = -1;
+  time_t agora = time(NULL);
+  if (!pedido.aut[0] || !imdb || !baseImdb(imdb, id, sizeof id) || !id[0]) {
+    printf("[vistoep] %s: Simkl history sync skipped (no authenticated session or invalid series ID)\n",
+           imdb ? imdb : "");
+    fflush(stdout);
+    return 0;
+  }
+  if (cat_copiar_por_id(id, "series", &item)) fallbackTmdb = item.tmdb;
+  if (!pedidoTravar(pedido)) {
+    printf("[vistoep] %s: Simkl history sync skipped (session changed)\n", id);
+    fflush(stdout);
+    return 0;
+  }
+  if (historicoCarregadoEm && historicoSessao == pedido.sessao &&
+      historicoGeracao == pedido.geracao &&
+      agora >= historicoCarregadoEm && agora - historicoCarregadoEm < 600) {
+    printf("[vistoep] %s: Simkl history sync already cached for this session\n", id);
+    fflush(stdout);
+    pedidoDestravar();
+    return 1;
+  }
+  if (historicoFioVivo &&
+      (historicoPedidoSessao != pedido.sessao ||
+       historicoPedidoGeracao != pedido.geracao))
+    historicoFioVivo = 0;
+  if (historicoFioVivo) {
+    printf("[vistoep] %s: Simkl history sync already in progress\n", id);
+    fflush(stdout);
+    pedidoDestravar();
+    return 0;
+  }
+  historicoFioVivo = 1;
+  historicoPedidoSessao = pedido.sessao;
+  historicoPedidoGeracao = pedido.geracao;
+  pedidoDestravar();
+
+  while (pagina <= 64 && pedidoAtual(pedido)) {
+    char *json = simklHistoricoPagina(pedido, pagina, &st, &proxima);
+    if (!json || st < 200 || st >= 300 || !pedidoAtual(pedido) ||
+        !perfilHistoricoValido(json)) {
+      free(json);
+      break;
+    }
+    int lidos = simklHistoricoLerCom(json, NULL, id, fallbackTmdb, pedido.sessao);
+    free(json);
+    if (lidos < 0) break;
+    importados += lidos;
+    if (proxima <= pagina) { valido = 1; break; }
+    pagina = proxima;
+  }
+  if (pagina > 64) valido = 0;
+  if (pedidoTravar(pedido)) {
+    if (historicoPedidoSessao == pedido.sessao &&
+        historicoPedidoGeracao == pedido.geracao) {
+      historicoFioVivo = 0;
+      if (valido) {
+        historicoSessao = pedido.sessao;
+        historicoGeracao = pedido.geracao;
+        historicoCarregadoEm = time(NULL);
+      }
+    }
+    pedidoDestravar();
+  }
+  if (!valido)
+    printf("[vistoep] %s: Simkl watched history unavailable (HTTP %d)\n", id, st);
+  else
+    printf("[vistoep] %s: Simkl history sync complete (%d episode records)\n",
+           id, importados);
+  fflush(stdout);
+  return valido;
 }
 
 int simkl_perfil_ler(const char *settings, const char *itens,
@@ -762,6 +1671,8 @@ static int nPtw;
 static unsigned long assCw, assPtw;
 static char *corpoPlay, *corpoAssist, *corpoAssistAnime,
             *corpoPtwFilmes, *corpoPtwSeries, *corpoPtwAnime;
+// Optional for Continue watching: the next season of an anime already seen.
+static char *corpoCwAnimePtw, *corpoCwAnimeFeito, *corpoCwShowsPtw;
 
 static void trocar(char **dst, char *novo) { free(*dst); *dst = novo; }
 
@@ -769,6 +1680,7 @@ static void scrobbleZerar(void);
 
 void simkl_esquecer(void) {
   scrobbleZerar();
+  animeHistEsquecer();
   pthread_mutex_lock(&trava);
   if (!++cacheGeracao) ++cacheGeracao;
   listaFioVivo = 0;
@@ -779,6 +1691,13 @@ void simkl_esquecer(void) {
   trocar(&corpoAssistAnime, NULL);
   trocar(&corpoPtwFilmes, NULL); trocar(&corpoPtwSeries, NULL);
   trocar(&corpoPtwAnime, NULL);
+  trocar(&corpoCwAnimePtw, NULL); trocar(&corpoCwAnimeFeito, NULL);
+  trocar(&corpoCwShowsPtw, NULL);
+  historicoCarregadoEm = 0;
+  historicoSessao = historicoGeracao = 0;
+  historicoFioVivo = 0;
+  memset(simklAnimeIds, 0, sizeof simklAnimeIds);
+  simklAnimeIdProximo = 0;
   pthread_mutex_unlock(&trava);
 }
 
@@ -806,11 +1725,216 @@ static int mesmaSerie(const char *a, const char *b) {
   return la == lb && !strncmp(a, b, la);
 }
 
+// NEXT SEASON OF AN ANIME ALREADY SEEN. Simkl keeps each anime season as its
+// own entry: "Cyberpunk: Edgerunners" is completed and "Cyberpunk: Edgerunners
+// II" sits in plan to watch with nothing watched and no IMDb ID in the list.
+// Its details tie it back: the same IMDb ID and mapped_tvdb_seasons [2]. Once
+// that season has aired, its first episode is a next-up like any other.
+#define SMK_SEASON_IDS_MAX 400
+
+static int animeTemTitulo(const char *json, const char *imdb) {
+  const char *p;
+  if (!json || !imdb[0]) return 0;
+  for (p = js_array(json, NULL, "anime"); p && *p == '{'; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p), *oi, *of, *ii, *ifim;
+    char id[24] = "";
+    if (js_num(p, f, "watched_episodes_count", 0) <= 0) continue;
+    if (!objetoRaiz(p, f, "show", &oi, &of) && !objetoRaiz(p, f, "anime", &oi, &of))
+      continue;
+    if (objetoRaiz(oi, of, "ids", &ii, &ifim)) js_texto(ii, ifim, "imdb", id, sizeof id);
+    if (!strcmp(id, imdb)) return 1;
+  }
+  return 0;
+}
+
+// The first season number in "mapped_tvdb_seasons": [2]. js_array only walks
+// objects and strings, so the number is read by hand inside the object.
+static int primeiraTemporadaMapeada(const char *ini, const char *fim) {
+  static const char chave[] = "\"mapped_tvdb_seasons\"";
+  const char *p = ini;
+  size_t n = sizeof chave - 1;
+  while (p && p + n < fim && (p = strstr(p, chave)) && p < fim) {
+    char *e;
+    long t;
+    p += n;
+    while (p < fim && (*p == ' ' || *p == ':' || *p == '\n' || *p == '\t')) p++;
+    if (p >= fim || *p != '[') return 0;
+    t = strtol(p + 1, &e, 10);
+    return e != p + 1 && t > 0 && t <= SHRT_MAX ? (int)t : 0;
+  }
+  return 0;
+}
+
+static int animeTemporadaNova(SmkPedido pedido, long simkl, CatItem *d, int *temporada,
+                              long long *estreiaMs) {
+  char imdb[24] = "", poster[128] = "", quando[40] = "";
+  const char *obra, *fim, *ii, *ifim;
+  char *corpo;
+  *temporada = 0;
+  *estreiaMs = 0;
+  corpo = animeDetalheCorpo(pedido, simkl, &obra, &fim);
+  if (!corpo) return 0;
+  if (objetoRaiz(obra, fim, "ids", &ii, &ifim)) {
+    js_texto(ii, ifim, "imdb", imdb, sizeof imdb);
+    d->tmdb = (long)js_num(ii, ifim, "tmdb", 0);
+  }
+  *temporada = primeiraTemporadaMapeada(obra, fim);
+  if (js_texto_raiz_em(obra, fim, "first_aired", quando, sizeof quando) && quando[0])
+    *estreiaMs = js_ms_iso(quando);
+  js_texto_raiz_em(obra, fim, "title", d->titulo, sizeof d->titulo);
+  js_texto_raiz_em(obra, fim, "poster", poster, sizeof poster);
+  if (slugPosterSimkl(poster))
+    snprintf(d->poster, sizeof d->poster, "https://simkl.in/posters/%s_m.jpg", poster);
+  free(corpo);
+  if (!imdbValido(imdb)) return 0;
+  snprintf(d->imdb, sizeof d->imdb, "%s", imdb);
+  return 1;
+}
+
+// Slug of a Simkl episode image ("17/17570079032e93ce31"): same rule as posters.
+// The card's episode name and still come from Simkl's own episode list, for
+// episode `numero` of that Simkl entry. The card numbers the season as TVDB
+// does (Bleach's Thousand-Year Blood War is S17, Kaiju No. 8 Season 2 is S2),
+// which Cinemeta, where the card decoration looks, may not have at all: it
+// lists Kaiju No. 8 as one 23-episode season. `*temporadaTvdb` and
+// `*episodioTvdb` get the episode's own TVDB placement, 0 when absent.
+static void animeEpisodio(SmkPedido pedido, long simkl, int numero, CatItem *d,
+                          int *temporadaTvdb, int *episodioTvdb) {
+  char chave[64], caminho[80], img[128] = "";
+  const char *p;
+  char *corpo;
+  int st = 0;
+  *temporadaTvdb = *episodioTvdb = 0;
+  snprintf(chave, sizeof chave, "simkl-anime-eps/%ld", simkl);
+  corpo = fichameta_ler(chave, 7 * 24 * 3600);
+  if (!corpo) {
+    if (!pedidoAtual(pedido)) return;
+    snprintf(caminho, sizeof caminho, "/anime/episodes/%ld", simkl);
+    corpo = pedir(pedido, 'G', caminho, NULL, NULL, &st);
+    if (!corpo || st < 200 || st >= 300 || !pedidoAtual(pedido)) {
+      if (st == 404) fichameta_gravar(chave, "[]");
+      free(corpo);
+      return;
+    }
+    fichameta_gravar(chave, corpo);
+  }
+  for (p = js_raiz_array(corpo); p && *p == '{'; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p), *tv, *tvf;
+    char tipo[16] = "";
+    js_texto_raiz_em(p, f, "type", tipo, sizeof tipo);
+    if ((tipo[0] && strcmp(tipo, "episode")) || (int)js_num(p, f, "episode", 0) != numero)
+      continue;
+    js_texto_raiz_em(p, f, "title", d->nomeEpisodio, sizeof d->nomeEpisodio);
+    js_texto_raiz_em(p, f, "img", img, sizeof img);
+    if (slugPosterSimkl(img))
+      snprintf(d->thumbEpisodio, sizeof d->thumbEpisodio,
+               "https://simkl.in/episodes/%s_w.jpg", img);
+    if (objetoRaiz(p, f, "tvdb", &tv, &tvf)) {
+      int t = (int)js_num(tv, tvf, "season", 0), e = (int)js_num(tv, tvf, "episode", 0);
+      if (t > 0 && t <= SHRT_MAX && e > 0 && e <= SHRT_MAX) {
+        *temporadaTvdb = t;
+        *episodioTvdb = e;
+      }
+    }
+    break;
+  }
+  free(corpo);
+}
+
+static int animeTemporadasNovas(SmkPedido pedido, const char *ptw, const char *feito,
+                                const char *assistindo, CatItem *dst, int max) {
+  const char *p;
+  int n = 0, vistos = 0;
+  long long agora = (long long)time(NULL) * 1000LL;
+  if (!ptw || !dst || max <= 0) return 0;
+  for (p = js_array(ptw, NULL, "anime"); p && *p == '{' && n < max;
+       p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p), *oi, *of, *ii, *ifim;
+    CatItem *d = &dst[n];
+    char imdbLista[24] = "";
+    long simkl = 0;
+    int temporada = 0;
+    long long estreia = 0;
+    if (js_num(p, f, "watched_episodes_count", 0) > 0) continue;
+    if (!objetoRaiz(p, f, "show", &oi, &of) && !objetoRaiz(p, f, "anime", &oi, &of))
+      continue;
+    if (objetoRaiz(oi, of, "ids", &ii, &ifim)) {
+      js_texto(ii, ifim, "imdb", imdbLista, sizeof imdbLista);
+      simkl = (long)js_num(ii, ifim, "simkl", 0);
+    }
+    // With an IMDb ID already in the list, a show never watched is not a
+    // next season: no details request for it.
+    if (imdbLista[0] && !animeTemTitulo(feito, imdbLista) &&
+        !animeTemTitulo(assistindo, imdbLista)) continue;
+    if (simkl <= 0 || ++vistos > SMK_SEASON_IDS_MAX) continue;
+    memset(d, 0, sizeof *d);
+    if (!animeTemporadaNova(pedido, simkl, d, &temporada, &estreia)) continue;
+    if (temporada <= 1 || estreia <= 0 || estreia > agora) continue;
+    if (!animeTemTitulo(feito, d->imdb) && !animeTemTitulo(assistindo, d->imdb)) continue;
+    { int temporadaEp = 0;
+      int episodioEp = 0;
+      animeEpisodio(pedido, simkl, 1, d, &temporadaEp, &episodioEp);
+      if (episodioEp != 1) temporadaEp = 0;
+      // The episode's own TVDB placement is more precise than the show's.
+      if (temporadaEp > 1) temporada = temporadaEp; }
+    snprintf(d->tipo, sizeof d->tipo, "%s", "series");
+    arte_metahub_preencher(d);
+    d->temporada = temporada;
+    d->episodio = 1;
+    d->progresso = 0;
+    d->retomadoMs = estreia;
+    { char base[24];
+      snprintf(base, sizeof base, "%s", d->imdb);
+      snprintf(d->imdb, sizeof d->imdb, "%s:%d:1", base, temporada); }
+    printf("[simkl] anime next season id=%s simkl=%ld: candidate\n", d->imdb, simkl);
+    n++;
+  }
+  return n;
+}
+
+// STARTED BUT FILED AS PLAN TO WATCH. A show keeps all its seasons in one
+// Simkl entry, and that entry can sit in plan to watch after seasons were
+// watched (Monster: S01-S02 seen, status plantowatch, next_to_watch S03E01).
+// Such entries join the watching list; untouched plan-to-watch titles do not.
+// Returns {"<raiz>":[watching items, started plan-to-watch items]}.
+static char *juntarComecados(const char *assistindo, const char *ptw, const char *raiz) {
+  const char *p;
+  size_t cap = 64 + (assistindo ? strlen(assistindo) : 0) + (ptw ? strlen(ptw) : 0), n;
+  char *r = malloc(cap);
+  int itens = 0, extras = 0;
+  if (!r) return assistindo ? strdup(assistindo) : NULL;
+  n = (size_t)snprintf(r, cap, "{\"%s\":[", raiz);
+  for (int lado = 0; lado < 2; lado++) {
+    const char *json = lado ? ptw : assistindo;
+    for (p = json ? js_array(json, NULL, raiz) : NULL; p && *p == '{'; p = js_prox(js_fim(p))) {
+      const char *f = js_fim(p);
+      char prox[16] = "";
+      if (!f) break;
+      if (lado && (js_num(p, f, "watched_episodes_count", 0) <= 0 ||
+                   !js_texto_raiz_em(p, f, "next_to_watch", prox, sizeof prox) || !prox[0]))
+        continue;
+      if (itens) r[n++] = ',';
+      memcpy(r + n, p, (size_t)(f - p));
+      n += (size_t)(f - p);
+      itens++;
+      extras += lado;
+    }
+  }
+  memcpy(r + n, "]}", 3);
+  if (extras)
+    printf("[simkl] %s: %d started title(s) from plan to watch join Continue watching\n",
+           raiz, extras);
+  return r;
+}
+
 int simkl_continuar(CatItem *saida, int max) {
   CatItem *prox;
   long long ids[SMK_PLAY_MAX];
+  long simklIds[SMK_PLAY_MAX] = {0};
+  int animeAbsolutos[SMK_PLAY_MAX] = {0};
   unsigned long h;
   char *cPlay = NULL, *cAssist = NULL, *cAnime = NULL;
+  char *cAnimePtw = NULL, *cAnimeFeito = NULL, *cShowsPtw = NULL;
   char proxLocal[SMK_PLAY_MAX][28]; int nProxLocal = 0;
   int n, nP, nA, i, k;
   SmkPedido pedido = pedidoCapturar();
@@ -821,6 +1945,9 @@ int simkl_continuar(CatItem *saida, int max) {
   if (h && h == assCw && corpoPlay && corpoAssist && corpoAssistAnime) {
     cPlay = strdup(corpoPlay); cAssist = strdup(corpoAssist);
     cAnime = strdup(corpoAssistAnime);
+    if (corpoCwAnimePtw) cAnimePtw = strdup(corpoCwAnimePtw);
+    if (corpoCwAnimeFeito) cAnimeFeito = strdup(corpoCwAnimeFeito);
+    if (corpoCwShowsPtw) cShowsPtw = strdup(corpoCwShowsPtw);
     printf("[simkl] resume: activities unchanged, cached playback/shows/anime bodies\n");
   }
   pedidoDestravar();
@@ -832,15 +1959,35 @@ int simkl_continuar(CatItem *saida, int max) {
     // Sem este pedido, nenhum anime aparece no Continuar assistindo.
     cAnime = pegar(pedido, "/sync/all-items/anime/watching", NULL, &st);
     printf("[simkl] anime watching fetch: status=%d body=%s\n", st, cAnime ? "received" : "missing");
+    if (ajustes_cw_proximo()) {
+      cAnimePtw = pegar(pedido, "/sync/all-items/anime/plantowatch", NULL, &st);
+      cAnimeFeito = pegar(pedido, "/sync/all-items/anime/completed", NULL, &st);
+      cShowsPtw = pegar(pedido, "/sync/all-items/shows/plantowatch", NULL, &st);
+    }
     if (pedidoTravar(pedido)) {
       if (h && cPlay && cAssist && cAnime) {
         trocar(&corpoPlay, strdup(cPlay)); trocar(&corpoAssist, strdup(cAssist));
         trocar(&corpoAssistAnime, strdup(cAnime)); assCw = h;
+        trocar(&corpoCwAnimePtw, cAnimePtw ? strdup(cAnimePtw) : NULL);
+        trocar(&corpoCwAnimeFeito, cAnimeFeito ? strdup(cAnimeFeito) : NULL);
+        trocar(&corpoCwShowsPtw, cShowsPtw ? strdup(cShowsPtw) : NULL);
       } else assCw = 0;
       pedidoDestravar();
     }
   }
-  if (!pedidoAtual(pedido)) { free(cPlay); free(cAssist); free(cAnime); return 0; }
+  if (!pedidoAtual(pedido)) {
+    free(cPlay); free(cAssist); free(cAnime); free(cAnimePtw); free(cAnimeFeito);
+    free(cShowsPtw);
+    return 0;
+  }
+  if (cShowsPtw && cAssist) {
+    char *junto = juntarComecados(cAssist, cShowsPtw, "shows");
+    if (junto) { free(cAssist); cAssist = junto; }
+  }
+  if (cAnimePtw && cAnime) {
+    char *junto = juntarComecados(cAnime, cAnimePtw, "anime");
+    if (junto) { free(cAnime); cAnime = junto; }
+  }
   n = simkl_ler_playback(cPlay, saida, ids, max);
   int nPausados = n;
   prox = malloc(sizeof(CatItem) * SMK_PLAY_MAX);
@@ -850,17 +1997,85 @@ int simkl_continuar(CatItem *saida, int max) {
   if (!prox || !ajustes_cw_proximo())
     printf("[simkl] anime watching: skipped (%s)\n", prox ? "next-up disabled" : "allocation failed");
   if (prox && ajustes_cw_proximo()) {
-    nA = simkl_ler_assistindo(cAnime, prox + nP, SMK_PLAY_MAX - nP);
+    nA = simkl_ler_assistindo_com(cAnime, prox + nP, SMK_PLAY_MAX - nP,
+                                  animeAbsolutos, simklIds);
     for (k = nP; k < nP + nA; k++) {
+      CatItem *anime = &prox[k];
+      int absoluto = animeAbsolutos[k - nP], temporada, episodio, temporadaSimkl = 0;
+      long simklId = simklIds[k - nP];
+      int somenteSimkl = !strncmp(anime->imdb, "simkl:", 6);
+      if (simklId > 0) simklAnimeIdGuardar(pedido, simklId, anime->imdb);
+      if (somenteSimkl || simklId > 0) {
+        simkl_anime_detalhe(pedido, anime, &temporadaSimkl, simklId);
+      }
+      if (absoluto > 0) {
+        int animeMapeado = 0;
+        if (!strncmp(anime->imdb, "tt", 2) || !strncmp(anime->imdb, "tmdb:", 5)) {
+          char idBase[24];
+          if (baseImdb(anime->imdb, idBase, sizeof idBase))
+            animeMapeado = animeAbsoluto(idBase, absoluto, &temporada, &episodio,
+                                         anime->thumbEpisodio,
+                                         sizeof anime->thumbEpisodio);
+        }
+        if (somenteSimkl && temporadaSimkl > 0) {
+          // One Simkl entry per season (Kaiju No. 8 Season 2): name, still and
+          // the episode's TVDB placement from that entry's episode list.
+          int tEp = 0, eEp = 0;
+          temporada = temporadaSimkl;
+          episodio = absoluto;
+          if (simklId > 0) {
+            animeEpisodio(pedido, simklId, absoluto, anime, &tEp, &eEp);
+            if (tEp > 0 && eEp > 0) { temporada = tEp; episodio = eEp; }
+          }
+        } else if (animeMapeado) {
+          // Map a series-wide absolute number through the provider metadata.
+        } else {
+          temporada = anime->temporada;
+          episodio = anime->episodio;
+        }
+      } else {
+        temporada = anime->temporada;
+        episodio = anime->episodio;
+        if (temporadaSimkl > 0 && temporada <= 1 && episodio > 0)
+          temporada = temporadaSimkl;
+      }
+      if (episodio > 0) {
+        char base[32];
+        if (!baseImdb(anime->imdb, base, sizeof base))
+          snprintf(base, sizeof base, "%.*s", (int)sizeof base - 1, anime->imdb);
+        anime->temporada = temporada;
+        anime->episodio = episodio;
+        snprintf(anime->imdb, sizeof anime->imdb, "%s:%d:%d",
+                 base, temporada, episodio);
+      }
+      if (somenteSimkl || simklId > 0)
+        printf("[simkl] anime details id=%ld title=%s poster=%s\n",
+               simklId, anime->titulo[0] ? "resolved" : "unchanged",
+               anime->poster[0] ? "yes" : "no");
       int j, ja = 0;
-      for (j = 0; j < nP && !ja; j++) ja = mesmaSerie(prox[j].imdb, prox[k].imdb);
+      for (j = 0; j < nP && !ja; j++) ja = mesmaSerie(prox[j].imdb, anime->imdb);
       if (ja) {
-        printf("[simkl] anime watching id=%s: dropped (duplicate show)\n", prox[k].imdb);
+        printf("[simkl] anime watching id=%s: dropped (duplicate show)\n", anime->imdb);
         memmove(prox + k, prox + k + 1, sizeof prox[0] * (size_t)(nP + nA - k - 1));
         nA--; k--;
       }
     }
     nP += nA;
+    // Appended after the watching entries: a show already there wins.
+    if (cAnimePtw && nP < SMK_PLAY_MAX) {
+      int nT = animeTemporadasNovas(pedido, cAnimePtw, cAnimeFeito, cAnime,
+                                    prox + nP, SMK_PLAY_MAX - nP);
+      for (k = nP; k < nP + nT; k++) {
+        int j, ja = 0;
+        for (j = 0; j < k && !ja; j++) ja = mesmaSerie(prox[j].imdb, prox[k].imdb);
+        if (ja) {
+          printf("[simkl] anime next season id=%s: dropped (duplicate show)\n", prox[k].imdb);
+          memmove(prox + k, prox + k + 1, sizeof prox[0] * (size_t)(nP + nT - k - 1));
+          nT--; k--;
+        }
+      }
+      nP += nT;
+    }
   }
   for (k = 0; k < nP; k++) {
     int ja = 0, alvo;
@@ -886,6 +2101,7 @@ int simkl_continuar(CatItem *saida, int max) {
       snprintf(proxLocal[nProxLocal++], sizeof proxLocal[0], "%s", prox[k].imdb);
   }
   free(prox); free(cPlay); free(cAssist); free(cAnime);
+  free(cAnimePtw); free(cAnimeFeito); free(cShowsPtw);
   if (!pedidoTravar(pedido)) return 0;
   nPlay = 0;
   for (i = 0; i < nPausados; i++)

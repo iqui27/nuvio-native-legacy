@@ -27,6 +27,8 @@
 //                                         episodes[{number}]}]}]; filme em
 //                                         movies[{ids}]; serie so com ids marca
 //                                         todos os episodios
+//   GET  /sync/all-items/all/all         historico com include_all_episodes e
+//                                         episode_watched_at por episodio
 //   POST /sync/history/remove             desmarcar, MESMA forma (remove-from-
 //                                         history). Sem seasons tira o titulo
 //                                         da biblioteca do Simkl;
@@ -41,8 +43,10 @@
 // mais e mais um nome que o CORS do servidor precisa aceitar. User-Agent sai
 // de rede.c.
 //
-// Anime next_to_watch 12, "12" or "E12" uses absolute numbering. Cached provider videos
-// map it to season/episode; missing mapping keeps a title-only CW entry.
+// Anime next_to_watch 12, "12" or "E12" uses absolute numbering. Simkl-only IDs
+// are expanded through /anime/{id}; available poster/external IDs are cached,
+// then provider videos map the absolute number to season/episode. Missing mappings
+// keep the title in CW without an episode.
 // Paused anime uses tvdb_season/tvdb_number from /sync/playback.
 // Scrobble (start/pause/stop) and history are declared below.
 //
@@ -165,6 +169,18 @@ int simkl_titulo_marcar_destino(const SimklDestino *, const char *, const char *
 int simkl_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd, int visto);
 int simkl_titulo_marcar(const char *imdb, const char *tipo, const int *temporadas,
                         int nt, int visto);
+
+// Importa os episodios vistos do Simkl para o mapa compartilhado do app.
+// `simkl_historico_aplicar` busca a biblioteca em um fio de trabalho e
+// reutiliza o estado importado por dez minutos; `_ler` aplica um JSON recebido.
+int simkl_historico_aplicar(const char *imdb);
+// A series' final episode list was published: if its numbering differs from
+// the one the Simkl anime history was mapped onto, map it again (own thread).
+void simkl_anime_lista_mudou(const char *imdb);
+// The episode after the last one watched on Simkl, in the numbering of the
+// final episode list now loaded for this series. 0 = unknown for this list.
+int simkl_anime_proximo(const char *imdb, int *t, int *e);
+int simkl_historico_ler(const char *json, const char *imdb, uint64_t sessao);
 
 // --- scrobble do player (#459) ------------------------------------------------
 

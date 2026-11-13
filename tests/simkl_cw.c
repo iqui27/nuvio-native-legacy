@@ -14,6 +14,7 @@
 #include "nvtmp.h"
 #include "../src/ajustes.h"
 #include "../src/js.h"
+#include "../src/metaprov.h"
 #include "../src/rede.h"
 #include <stdint.h>
 #include <assert.h>
@@ -45,6 +46,19 @@ char *fichameta_ler(const char *key, long ttl) { (void)key; (void)ttl; return NU
 char *dados_ler(const char *nome) { (void)nome; return NULL; }
 int dados_gravar(const char *nome, const char *buf) { (void)nome; (void)buf; return 1; }
 int dados_apagar(const char *nome) { (void)nome; return 1; }
+#ifndef SIMKL_ANIME_FIXTURE
+char *metaprov_meta(const char *tipo, const char *id, int seg, int *prov) {
+  (void)tipo; (void)id; (void)seg; (void)prov; return NULL;
+}
+char *metaprov_meta_cinemeta_com(const char *tipo, const char *id, int seg,
+                                 MetaprovGet get, void *ctx,
+                                 MetaprovCineResult *result) {
+  (void)tipo; (void)id; (void)seg; (void)get; (void)ctx;
+  if (result) *result = METAPROV_CINE_RETRY;
+  return NULL;
+}
+void fichameta_gravar(const char *key, const char *body) { (void)key; (void)body; }
+#endif
 static int proximoTeste = 1;
 int ajustes_cw_proximo(void) { return proximoTeste; }
 int ajustes_cw_minimo(void) { return 1; }
@@ -133,12 +147,91 @@ static const char *PTW_ANIME =
   "{\"anime\":[{\"status\":\"plantowatch\","
   "\"anime\":{\"title\":\"Frieren\",\"year\":2023,"
   "\"ids\":{\"mal\":52991,\"imdb\":\"tt22248376\"}}}]}";
+static const char *FEITO_ANIME = "{\"anime\":[]}";
+static int detalhesAnime;
+static const char *WATCHED_HISTORY =
+  "{\"movies\":[],"
+  "\"shows\":[{\"show\":{\"ids\":{\"imdb\":\"tt0903747\"}},\"seasons\":["
+    "{\"number\":1,\"episodes\":[{\"number\":1,\"watched_at\":\"2026-10-10T12:00:00Z\"},"
+    "{\"number\":2}]}]}],"
+  "\"anime\":[{\"anime\":{\"ids\":{\"imdb\":\"tt0388629\"}},\"seasons\":["
+    "{\"number\":22,\"episodes\":[{\"number\":1122,\"watched_at\":\"2026-10-11T12:00:00Z\"},"
+    "{\"number\":1123,\"watched_at\":\"2026-10-12T12:00:00Z\"},"
+    "{\"number\":1124}]}]},"
+    "{\"anime\":{\"ids\":{\"simkl\":38636,\"tmdb\":37854}},\"seasons\":["
+    "{\"number\":22,\"episodes\":[{\"number\":36,\"tvdb_season\":22,"
+    "\"tvdb_number\":36,\"watched_at\":\"2026-10-13T12:00:00Z\"}]}]}]}";
 
 static char atividades[200] = "{\"all\":\"2024-01-20T21:00:00Z\"}";
-static int batidas[9];   // activities, playback, watching, ptw filmes, ptw series,
-                         // post, delete, outro, anime
+static int batidas[10];  // activities, playback, watching, ptw filmes, ptw series,
+                         // post, delete, outro, anime, watched history
 static char ultimaRota[64], ultimoCorpo[300], ultimaUrl[700];
 static int  semBearer, comApiKey;
+static VistoPar historicoPares[32];
+static char historicoIds[32][24];
+static long long historicoMs[32];
+static int nHistorico;
+static long historicoTmdb;
+static char historicoCatalogId[24];
+static int historicoCatalogTvdb, historicoCatalogTemporada, historicoCatalogEpisodio;
+static CatEp historicoCatalogEps[1300];
+static int historicoCatalogEpsQtd, historicoCatalogEpsFinal;
+
+// Whole-show runs (1122 episodes) only record which pairs were marked.
+static unsigned char historicoGrade[32][1300];
+static int historicoSoGrade;
+int vistoep_fonte_se_sessao(const char *imdb, int temporada, int episodio, int visto,
+                            long long remotoMs, VistoFonte *c, uint64_t sessao) {
+  if (historicoSoGrade) {
+    assert(sessao == 1 && visto && temporada >= 0 && temporada < 32 &&
+           episodio > 0 && episodio < 1300);
+    assert(!historicoGrade[temporada][episodio]);
+    historicoGrade[temporada][episodio] = 1;
+    nHistorico++;
+    if (c) c->vistos++;
+    return 1;
+  }
+  assert(sessao == 1 && visto && nHistorico < 32);
+  snprintf(historicoIds[nHistorico], sizeof historicoIds[0], "%s", imdb);
+  historicoPares[nHistorico].temporada = (short)temporada;
+  historicoPares[nHistorico].episodio = (short)episodio;
+  historicoMs[nHistorico] = remotoMs;
+  nHistorico++;
+  if (c) c->vistos++;
+  return 1;
+}
+void vistoep_fonte_log(const char *imdb, const char *fonte, const VistoFonte *c) {
+  (void)imdb; (void)fonte; (void)c;
+}
+int cat_copiar_por_id(const char *id, const char *tipo, CatItem *saida) {
+  if (!id || !tipo || !saida || strcmp(id, "tt0388629") ||
+      strcmp(tipo, "series") || historicoTmdb <= 0) return 0;
+  memset(saida, 0, sizeof *saida);
+  saida->tmdb = historicoTmdb;
+  return 1;
+}
+int cat_indice_por_imdb_tipo(const char *id, const char *tipo) {
+  return id && tipo && historicoCatalogId[0] &&
+         !strcmp(id, historicoCatalogId) && !strcmp(tipo, "series") ? 0 : -1;
+}
+int cat_episodios_finais(int indice, const char *id) {
+  return indice == 0 && id && historicoCatalogId[0] &&
+         !strcmp(id, historicoCatalogId) && historicoCatalogEpsFinal;
+}
+int cat_n_episodios(int indice) {
+  return indice == 0 ? historicoCatalogEpsQtd : 0;
+}
+const CatEp *cat_episodio(int indice, int i) {
+  return indice == 0 && i >= 0 && i < historicoCatalogEpsQtd
+           ? &historicoCatalogEps[i] : NULL;
+}
+int cat_episodio_por_tvdb(int indice, const char *id, int tvdb, int *t, int *e) {
+  if (indice != 0 || !id || strcmp(id, historicoCatalogId) ||
+      tvdb != historicoCatalogTvdb || tvdb <= 0) return 0;
+  if (t) *t = historicoCatalogTemporada;
+  if (e) *e = historicoCatalogEpisodio;
+  return 1;
+}
 
 static void conferirCabecalhos(const char *url, const char *const *cab) {
   int k, bearer = 0;
@@ -182,14 +275,71 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
     return strdup("{\"user\":{\"name\":\"Identidade Simkl\"}}");
   }
   if (perfilRede && !strcmp(r, "/sync/all-items/all/all")) {
-    assert(strstr(url, "include_all_episodes=original") && strstr(url, "episode_watched_at=yes"));
+    assert(strstr(url, "include_all_episodes=original") &&
+           strstr(url, "episode_watched_at=yes"));
     if (trocarNaResposta == 2) { tokenAtual = "OUTRO-TOKEN-FALSO"; credGeracao++; }
     *st = perfilHistorySt;
     return perfilHistoryBody ? strdup(perfilHistoryBody) : NULL;
   }
+  if (!strcmp(r, "/anime/263883")) {
+    batidas[7]++;
+    return strdup("{\"title\":\"Anime sem IDs externos\",\"poster\":\"poster-key\","
+                  "\"ids\":{\"simkl\":263883,\"imdb\":\"tt2560140\",\"tmdb\":98765}}");
+  }
+  if (!strcmp(r, "/anime/2638832")) {
+    batidas[7]++;
+    return strdup("{\"title\":\"Welcome to Demon School! Iruma-kun season 4\","
+                  "\"season\":4,\"mapped_tvdb_seasons\":[4],"
+                  "\"poster\":\"19/19613958579eba8187\","
+                  "\"ids\":{\"simkl\":2638832,\"imdb\":\"tt11034066\","
+                  "\"tmdb\":91801,\"tvdb\":369144}}");
+  }
+  // A per-season entry's own episode list (Kaiju No. 8 Season 2 shape): the
+  // episode name, still and TVDB placement of each episode.
+  if (!strcmp(r, "/anime/episodes/2638832")) {
+    batidas[7]++;
+    return strdup("[{\"title\":\"Iruma's Fourth Year\",\"episode\":1,\"type\":\"episode\","
+                  "\"img\":\"19/19613958579eba8188\",\"tvdb\":{\"season\":4,\"episode\":1}},"
+                  "{\"title\":\"Seventh\",\"episode\":7,\"type\":\"episode\","
+                  "\"img\":\"19/19613958579eba8189\",\"tvdb\":{\"season\":4,\"episode\":7}}]");
+  }
+  // Real shapes (Simkl, 01/11/2026): season 2 has its own entry and only the
+  // details carry the IMDb ID and the TVDB season.
+  if (!strcmp(r, "/anime/2830474")) {
+    detalhesAnime++;
+    return strdup("{\"title\":\"Cyberpunk: Edgerunners II\",\"season\":null,"
+                  "\"mapped_tvdb_seasons\":[2],\"first_aired\":\"2026-10-20T00:00:00Z\","
+                  "\"ids\":{\"simkl\":2830474,\"imdb\":\"tt12590266\",\"tmdb\":\"326788\","
+                  "\"tvdb\":\"384541\"}}");
+  }
+  if (!strcmp(r, "/anime/episodes/2830474")) {
+    detalhesAnime++;
+    return strdup("[{\"title\":\"Night City Again\",\"episode\":1,\"type\":\"episode\","
+                  "\"aired\":true,\"img\":\"17/17570079032e93ce31\","
+                  "\"tvdb\":{\"season\":2,\"episode\":1}},"
+                  "{\"title\":\"Second\",\"episode\":2,\"type\":\"episode\"}]");
+  }
+  if (!strcmp(r, "/anime/2830475")) {
+    detalhesAnime++;
+    return strdup("{\"title\":\"Not aired yet\",\"mapped_tvdb_seasons\":[3],"
+                  "\"first_aired\":\"2099-01-01T00:00:00Z\","
+                  "\"ids\":{\"simkl\":2830475,\"imdb\":\"tt12590266\"}}");
+  }
+  if (!strcmp(r, "/anime/38636")) {
+    batidas[7]++;
+    return strdup("{\"title\":\"One Piece\",\"ids\":{\"simkl\":38636,"
+                  "\"imdb\":\"tt0388629\",\"tmdb\":37854}}");
+  }
   if (!strcmp(r, "/sync/activities"))                   { batidas[0]++; return strdup(atividades); }
   if (!strcmp(r, "/sync/playback"))                     { batidas[1]++; return strdup(PLAYBACK); }
   if (!strcmp(r, "/sync/all-items/shows/watching"))     { batidas[2]++; return strdup(WATCHING); }
+  if (!strcmp(r, "/sync/all-items/all/all")) {
+    assert(strstr(url, "include_all_episodes=yes") &&
+           strstr(url, "episode_watched_at=yes") &&
+           strstr(url, "episode_tvdb_id=yes") && strstr(url, "limit=500"));
+    batidas[9]++;
+    return strdup(WATCHED_HISTORY);
+  }
   if (!strcmp(r, "/sync/all-items/movies/plantowatch")) { batidas[3]++; return strdup(PTW_FILMES); }
   if (!strcmp(r, "/sync/all-items/shows/plantowatch"))  { batidas[4]++; return strdup(PTW_SERIES); }
   // Anime e um terceiro tipo: /anime/<estado>, raiz "anime".
@@ -197,6 +347,7 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
     batidas[8]++;
     if (!strcmp(r, "/sync/all-items/anime/watching"))    return strdup(WATCHING_ANIME);
     if (!strcmp(r, "/sync/all-items/anime/plantowatch")) return strdup(PTW_ANIME);
+    if (!strcmp(r, "/sync/all-items/anime/completed"))   return strdup(FEITO_ANIME);
   }
   batidas[7]++;
   *st = 404;
@@ -231,7 +382,7 @@ char *rede_apagar(const char *url, int s, const char *const *cab, int *st) {
 
 static int totalBatidas(void) {
   int i, t = 0;
-  for (i = 0; i < 9; i++) t += batidas[i];
+  for (i = 0; i < 10; i++) t += batidas[i];
   return t;
 }
 
@@ -342,17 +493,18 @@ static void retomada(void) {
   assert(simkl_e_a_seguir("tt22248376:3:4"));
   assert(simkl_e_a_seguir("tt11280740:2:3"));
   assert(!simkl_e_a_seguir("tt1375666"));
-  assert(batidas[0] == 1 && batidas[1] == 1 && batidas[2] == 1 && batidas[8] == 1);
+  // Anime: watching, plus plan to watch and completed for next seasons.
+  assert(batidas[0] == 1 && batidas[1] == 1 && batidas[2] == 1 && batidas[8] == 3);
   assert(!semBearer && !comApiKey);
   OK("retomada: pausados + a seguir de shows E anime, sem repetir serie");
 
   // Atividades iguais: nada de playback nem all-items de novo.
   n = simkl_continuar(v, 12);
-  assert(n == 6 && batidas[0] == 2 && batidas[1] == 1 && batidas[2] == 1 && batidas[8] == 1);
+  assert(n == 6 && batidas[0] == 2 && batidas[1] == 1 && batidas[2] == 1 && batidas[8] == 3);
   // Atividade nova: rebaixa.
   snprintf(atividades, sizeof atividades, "{\"all\":\"2024-01-21T00:00:00Z\"}");
   n = simkl_continuar(v, 12);
-  assert(n == 6 && batidas[0] == 3 && batidas[1] == 2 && batidas[2] == 2 && batidas[8] == 2);
+  assert(n == 6 && batidas[0] == 3 && batidas[1] == 2 && batidas[2] == 2 && batidas[8] == 6);
   OK("retomada: /sync/activities igual nao baixa all-items de novo");
 
   // Lista cheia: a sugestao nao expulsa nenhum pausado.
@@ -451,6 +603,26 @@ static void perfilRedeCasos(void) {
   OK("perfil: HTTP/HTML falham e relink no meio da consulta nao mistura contas");
 }
 
+static void historicoEpisodios(void) {
+  simkl_esquecer();
+  tokenAtual = TOKEN;
+  historicoTmdb = 37854;
+  nHistorico = 0;
+  assert(simkl_historico_aplicar("tt0388629"));
+  assert(batidas[9] == 1 && nHistorico == 4);
+  assert(!strcmp(historicoIds[0], "tt0903747"));
+  assert(historicoPares[0].temporada == 1 && historicoPares[0].episodio == 1);
+  assert(!strcmp(historicoIds[1], "tt0388629"));
+  assert(historicoPares[1].temporada == 22 && historicoPares[1].episodio == 1122);
+  assert(historicoPares[2].temporada == 22 && historicoPares[2].episodio == 1123);
+  assert(!strcmp(historicoIds[3], "tt0388629"));
+  assert(historicoPares[3].temporada == 22 && historicoPares[3].episodio == 36);
+  assert(historicoMs[0] == js_ms_iso("2026-10-10T12:00:00Z"));
+  assert(simkl_historico_aplicar("tt0903747"));
+  assert(batidas[9] == 1);
+  OK("history: all-item watched_at imported across shows and anime, cached");
+}
+
 static void perfilFalhas(void) {
   PerfilDados d;
   time_t agora = (time_t)(js_ms_iso("2026-10-12T12:00:00Z") / 1000);
@@ -484,6 +656,23 @@ static void perfilAnimeRanking(void) {
   assert(d.streakAtual == 3 && d.diasAtivosMes == 3 && d.atividade[11] == 1);
   assert(d.nGeneros == 0 && d.parcial && !d.anoCompleto && !d.streakCompleto);
   OK("perfil: anime conta e o quinto titulo mais visto entra nos quatro destaques");
+
+  // Simkl's real anime shape: each item under "show", not "anime".
+  { const char *comShow =
+      "{\"movies\":[],\"shows\":[],"
+      "\"anime\":[{\"show\":{\"title\":\"Frieren\",\"runtime\":24,\"ids\":{\"imdb\":\"tt22248376\"}},"
+      "\"seasons\":[{\"number\":1,\"episodes\":[{\"number\":1,\"watched_at\":\"2026-10-11T12:00:00Z\"},"
+      "{\"number\":2,\"watched_at\":\"2026-10-12T12:00:00Z\"}]}]}]}";
+    assert(simkl_perfil_ler(NULL, comShow, &d, agora));
+    assert(d.plays == 2 && d.episodios == 2 && d.minutos == 48 && d.diasAtivosMes == 2);
+    assert(d.nDestaques == 1 && !strcmp(d.destaques[0].id, "tt22248376"));
+    CatItem v[4];
+    const char *ptw =
+      "{\"anime\":[{\"status\":\"plantowatch\",\"show\":{\"title\":\"Frieren\","
+      "\"ids\":{\"simkl\":77,\"imdb\":\"tt22248376\"}}}]}";
+    assert(simkl_ler_plantowatch(ptw, 1, v, 4) == 1 && !strcmp(v[0].imdb, "tt22248376"));
+    assert(simkl_ler_plantowatch(ptw, 0, v, 4) == 0); }
+  OK("perfil e plan to watch: anime sob \"show\" (forma real do Simkl) conta");
 }
 
 static void perfilStats(void) {
@@ -537,6 +726,7 @@ int main(int argc, char **argv) {
   perfilFalhas();
   perfilAnimeRanking();
   perfilRedeCasos();
+  historicoEpisodios();
   simkl_esquecer();
   assert(!simkl_na_plantowatch("tt2788316"));
 
