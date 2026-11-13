@@ -11,51 +11,43 @@ TMPDIR="${TMPDIR%/}"
 # Sem wrangler instalado o teste FALHA (nao pula): a suite global depende dele.
 #
 # MODO SERVIDOR EXTERNO (com argumento): `bash tests/recomenda_e2e.sh URL`
-# preserva o contrato antigo — se a URL nao responde, PULA (sai 0), como antes.
+# e o contrato antigo, sem mudanca: se a URL nao responde, PULA (sai 0); as
+# sessoes sao semeadas no .wrangler/state padrao de servidor/recomendacoes com
+# `npx wrangler@4`, como antes (nada de preparar-local nem apagar tabelas).
 set -eu
 cd "$(dirname "$0")/.."
 . tests/servidor_local.sh
 
-work=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-rec-e2e.XXXXXX)
-DEV=""
+work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-rec-e2e.XXXXXX")
+NUVIO_DADOS=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-rec-e2e.XXXXXX")
+export NUVIO_DADOS
+NV_DEV_PID=""
+trap 'nv_dev_stop "$NV_DEV_PID"; rm -rf "$NUVIO_DADOS" "$work"' EXIT
+CC_TMP="$TMPDIR"
 if [ $# -ge 1 ]; then
   BASE="$1"
+  if ! curl -s -m 3 "$BASE/v1/saude" | grep -q '"ok"'; then
+    echo "recomenda_e2e: servidor local fora do ar; PULADO"
+    exit 0
+  fi
+  d1_seed() {
+    ( cd servidor/recomendacoes && npx wrangler@4 d1 execute nuvio-recomendacoes \
+        --local --command "$1" >/dev/null 2>&1 )
+  }
 else
-  BASE=""
-  NV_W="$(nv_wrangler_bin)" || { echo "FALHOU: wrangler 4.x nao instalado (NUVIO_WRANGLER)"; exit 1; }
+  NV_W="$(nv_wrangler_bin)" || { echo "FALHOU: wrangler 4.149.0 nao instalado (NUVIO_WRANGLER)"; exit 1; }
   nv_isolate_env "$work"
   nv_rec_test_config "$work/wrangler.toml"
-  DEVINFO="$(nv_dev_start "$work/wrangler.toml" "$work")" || exit 1
-  PORT=${DEVINFO%% *}; DEV=${DEVINFO##* }
-  BASE="http://127.0.0.1:$PORT"
+  nv_dev_start "$work/wrangler.toml" "$work" /v1/saude \
+    || { echo "FALHOU: servidor local nao subiu"; exit 1; }
+  BASE="http://127.0.0.1:$NV_DEV_PORT"
+  curl -s -m 3 "$BASE/v1/saude" | grep -q '"ok"' || { echo "FALHOU: saude"; exit 1; }
+  # Esquema + migracoes + sessoes base no MESMO --persist-to do dev server.
+  NUVIO_WRANGLER="$NV_W" NUVIO_D1_LOG="$work/d1.log" NUVIO_D1_PERSIST="$work/persist" \
+    NUVIO_D1_CFG="$work/wrangler.toml" bash servidor/recomendacoes/preparar-local.sh \
+    > "$work/prep.log" 2>&1 || { tail -20 "$work/prep.log" >&2; exit 1; }
+  d1_seed() { nv_d1_exec "$work/wrangler.toml" "$work/persist" --command "$1" >/dev/null 2>&1; }
 fi
-
-NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-rec-e2e.XXXXXX)
-export NUVIO_DADOS
-trap 'nv_dev_stop "$DEV"; rm -rf "$NUVIO_DADOS" "$work"' EXIT
-
-if ! curl -s -m 3 "$BASE/v1/saude" | grep -q '"ok"'; then
-  if [ -n "$DEV" ]; then echo "FALHOU: servidor local nao subiu"; exit 1; fi
-  echo "recomenda_e2e: servidor local fora do ar; PULADO"
-  exit 0
-fi
-
-# Esquema + migracoes + sessoes base. No modo proprio: mesmo --persist-to do
-# dev server; no modo externo: o .wrangler/state padrao do projeto, como antes.
-D1ENV="env NUVIO_WRANGLER=${NV_W:-} NUVIO_D1_LOG=$work/d1.log"
-if [ -n "$DEV" ]; then
-  D1ENV="env NUVIO_WRANGLER=${NV_W:-} NUVIO_D1_LOG=$work/d1.log NUVIO_D1_PERSIST=$work/persist NUVIO_D1_CFG=$work/wrangler.toml"
-fi
-$D1ENV bash servidor/recomendacoes/preparar-local.sh > "$work/prep.log" 2>&1 \
-  || { tail -20 "$work/prep.log"; exit 1; }
-d1_seed() {
-  if [ -n "$DEV" ]; then
-    nv_d1_exec "$work/wrangler.toml" "$work/persist" --command "$1" >/dev/null 2>&1
-  else
-    "$NV_W" d1 execute nuvio-recomendacoes --local \
-      --config servidor/recomendacoes/wrangler.toml --command "$1" >/dev/null 2>&1
-  fi
-}
 
 # A MESMA CURTO-CIRCUITACAO de servidor/recomendacoes/teste.sh: a verificacao de
 # identidade e o unico ponto do servico que fala com a internet (Trakt ou
@@ -82,10 +74,10 @@ B=(-H "authorization: Bearer $TOK_B" -H "x-nuvio-auth: nuvio" -H "content-type: 
 COD=$(curl -s -X POST "${A[@]}" "$BASE/v1/eu" | sed -E 's/.*"codigo":"([a-z0-9]{6})".*/\1/')
 curl -s -X POST "${B[@]}" "$BASE/v1/eu" > /dev/null
 curl -s -X POST "${B[@]}" -d "{\"codigo\":\"$COD\"}" "$BASE/v1/contatos" > /dev/null
-# O D1 E NOVO A CADA RODADA, mas o servidor so aceita 5 envios por par por dia.
-# No modo externo o estado era o .wrangler do projeto e a SEXTA execucao no
-# mesmo dia recebia 429 aqui — falha medida em 16/09/2026 sem nada de errado
-# no cliente. A limpeza continua de proposito.
+# O D1 LOCAL DO MODO EXTERNO E PERSISTENTE, E O SERVIDOR SO ACEITA 5 ENVIOS POR
+# PAR POR DIA. Sem esta limpeza, a SEXTA execucao do teste no mesmo dia recebe
+# 429 na linha abaixo e o teste falha em "ela conta para o selo: 0" — MEDIDO em
+# 16/09/2026. (No modo padrao o D1 e novo a cada rodada; a limpeza e inofensiva.)
 d1_seed "DELETE FROM rec WHERE para = 'nuvio:e2e' OR para = 'nuvio:e2e-b'"
 
 # `nota` VAI NO CORPO porque e assim que o cliente a manda: quem recomenda tem
@@ -104,9 +96,9 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/recomenda.c) continue;; esac
   sources+=("$source")
 done
-cc "${sources[@]}" tests/recomenda_e2e.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-recomenda-e2e \
+cc "${sources[@]}" tests/recomenda_e2e.c -Isrc -o "$CC_TMP/nuvio-recomenda-e2e" \
   -DNV_REC_URL="\"$BASE\"" \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-${TMPDIR:-/tmp}/nuvio-recomenda-e2e
+"$CC_TMP/nuvio-recomenda-e2e"

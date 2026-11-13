@@ -17,29 +17,24 @@
 #   npx wrangler@4 dev --local --port 8799 --config servidor/recomendacoes/wrangler.toml
 #   bash servidor/recomendacoes/teste.sh
 #
-# TEST INJECTION (all optional, manual usage unchanged): the three tests under
-# tests/ that spin their own `wrangler dev` pass:
-#   NUVIO_WRANGLER     exact installed wrangler 4.x binary (never npx resolution)
+# TEST INJECTION (all optional; without them manual usage is the original
+# `npx wrangler@4` against the default project .wrangler/state). The offline
+# tests under tests/ ALWAYS pass NUVIO_WRANGLER (a cached, version-checked
+# binary), so they never reach the npx fallback:
+#   NUVIO_WRANGLER     installed wrangler binary to run instead of npx
 #   NUVIO_D1_CFG       wrangler.toml to bind against (the generated test config)
-#   NUVIO_D1_PERSIST   --persist-to dir; MUST equal the dev server's, so seeds
-#                      land in the same scratch SQLite. Without it the default
-#                      project .wrangler/state is used (manual prep, unchanged).
+#   NUVIO_D1_PERSIST   --persist-to dir; MUST equal the dev server's
 #   NUVIO_D1_LOG       where the d1 execute output goes (default /tmp/nv-d1.log)
 set -u
 cd "$(dirname "$0")/../.."
-. tests/servidor_local.sh
 CFG="${NUVIO_D1_CFG:-servidor/recomendacoes/wrangler.toml}"
 D1LOG="${NUVIO_D1_LOG:-/tmp/nv-d1.log}"
-if [ -n "${NUVIO_WRANGLER:-}" ]; then
-  W="$NUVIO_WRANGLER"
-else
-  W="$(nv_wrangler_bin)" || { echo "wrangler 4.x not installed (NUVIO_WRANGLER)"; exit 1; }
-fi
-W="$W d1 execute nuvio-recomendacoes --local --config $CFG"
-[ -n "${NUVIO_D1_PERSIST:-}" ] && W="$W --persist-to $NUVIO_D1_PERSIST"
+if [ -n "${NUVIO_WRANGLER:-}" ]; then W=("$NUVIO_WRANGLER"); else W=(npx wrangler@4); fi
+W+=(d1 execute nuvio-recomendacoes --local --config "$CFG")
+[ -n "${NUVIO_D1_PERSIST:-}" ] && W+=(--persist-to "$NUVIO_D1_PERSIST")
 
-exec_arquivo() { $W --file "$1" > "$D1LOG" 2>&1; }
-exec_sql()     { $W --command "$1" > "$D1LOG" 2>&1; }
+exec_arquivo() { "${W[@]}" --file "$1" > "$D1LOG" 2>&1; }
+exec_sql()     { "${W[@]}" --command "$1" > "$D1LOG" 2>&1; }
 
 echo "== esquema"
 exec_arquivo servidor/recomendacoes/schema.sql || { tail -20 "$D1LOG"; exit 1; }

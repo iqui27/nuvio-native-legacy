@@ -85,15 +85,23 @@ int main(int argc, char **argv) {
   S[1].pos += 12;
   jsm_cmd(&M[0], "comecar", -1, NULL, agoraMs());
   if (!esperar(ambosTocando, 5000)) { printf("FALHA: comecar\n"); return 1; }
+  {
+    // comecar agenda t0 = agora + max(3000, lead()) e lead() <= 3000
+    // (logica.js), entao o play fica 3 s no futuro do relogio do servidor.
+    double lead = M[0].sala.rel.t0 - jsr_servidor(&M[0].rel, agoraMs());
+    printf("  comecar: pos0 %.3f s, t0 a %.0f ms\n", M[0].sala.rel.pos0, lead);
+    if (fabs(lead - 3000) > 150) { printf("FALHA: lead de comecar\n"); falhas++; }
+  }
   rodar(6000);
   {
+    // O alvo vem do relogio da sala (pos0 + (agoraServidor - t0)), nao de uma
+    // janela fixa: o antigo `pos < 3` caia exatamente no valor esperado
+    // (~3,0 s apos 6 s com 3 s de lead) e o passo de 5 ms dava 2,999.
+    // Folga fisica de 150 ms: latencia de play simulada + cadencia de passo().
+    double alvo = jsr_pos_alvo(&M[0].sala.rel, jsr_servidor(&M[0].rel, agoraMs()));
     double d = fabs(S[0].pos - S[1].pos) * 1000;
-    printf("  depois de comecar: anfitriao %.3f s, convidado %.3f s, diferenca %.0f ms\n", S[0].pos, S[1].pos, d);
-    // O player simulado acumula posicionamento apenas dentro de passo(),
-    // numa cadencia de ~5 ms: a leitura sempre fica alguns ms ATRAS do alvo.
-    // A faixa 2.5..6.0 prova o que interessa — play agendado na posicao
-    // certa, sem saltar 12 s do convidado nem travar em 0.
-    if (d > 150 || S[0].pos < 2.5 || S[0].pos > 6.0) { printf("FALHA: desalinhados\n"); falhas++; }
+    printf("  depois de comecar: anfitriao %.3f s, convidado %.3f s, alvo %.3f s, diferenca %.0f ms\n", S[0].pos, S[1].pos, alvo, d);
+    if (d > 150 || fabs(S[0].pos - alvo) > 0.15 || M[0].sala.rel.pos0 > 1) { printf("FALHA: desalinhados\n"); falhas++; }
   }
   jsm_cmd(&M[0], "pausa", -1, NULL, agoraMs());
   if (!esperar(ambosPausados, 4000)) { printf("FALHA: pausa\n"); return 1; }

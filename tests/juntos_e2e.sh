@@ -10,19 +10,18 @@ set -eu
 cd "$(dirname "$0")/.."
 . tests/servidor_local.sh
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-juntose2e.XXXXXX")
-NV_W="$(nv_wrangler_bin)" || { echo "FALHOU: sem wrangler instalado (NUVIO_WRANGLER)"; rm -rf "$work"; exit 1; }
+NV_DEV_PID=""
+trap 'nv_dev_stop "$NV_DEV_PID"; rm -rf "$work"' EXIT
+NV_W="$(nv_wrangler_bin)" || { echo "FALHOU: sem wrangler 4.149.0 instalado (NUVIO_WRANGLER)"; exit 1; }
 nv_isolate_env "$work"
-PORTA=$((8600 + RANDOM % 90))
+nv_juntos_test_config "$work/wrangler.toml"
 SEG=segredo-e2e
-(cd servidor/juntos && WRANGLER_SEND_METRICS=false exec "$NV_W" dev --local \
-  --env-file "$NUVIO_DEV_ENV_FILE" --port $PORTA --ip 127.0.0.1 \
-  --var SALA_SEGREDO:$SEG --persist-to "$work/estado" >"$work/dev.log" 2>&1) &
-DEV=$!
-trap 'nv_dev_stop "$DEV"; rm -rf "$work"' EXIT
 cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   src/juntosmotor.c src/juntossync.c src/juntosproto.c src/js.c src/discordws.c src/rede.c src/redeurl.c \
   tests/juntos_e2e.c -L/opt/homebrew/lib -lSDL2 -lz -lm -o "$work/t" 2>"$work/cc.log" || { cat "$work/cc.log"; exit 1; }
-for i in $(seq 1 120); do curl -sf "http://127.0.0.1:$PORTA/saude" >/dev/null && break; sleep 0.25; done
+nv_dev_start "$work/wrangler.toml" "$work" /saude --var "SALA_SEGREDO:$SEG" \
+  || { echo "FALHOU: servidor juntos nao subiu"; exit 1; }
+PORTA=$NV_DEV_PORT
 read -r BA BC < <(node --input-type=module -e "
 import { assinar } from './servidor/juntos/src/bilhete.js';
 const sala = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
