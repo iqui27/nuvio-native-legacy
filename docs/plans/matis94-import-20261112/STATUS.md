@@ -10,14 +10,16 @@ Fonte e critérios: [mapa de paridade](../../reviews/matis94-20261112/README.md)
 
 | Lote | Escopo | Estado |
 |---|---|---|
-| A | Segurança de filas PGS, HEVC in-band, URLs longas | Preparação |
-| B | Modos DV/DTS/TrueHD, faixas e memória de áudio | Fila após A |
+| A | Segurança de filas PGS, HEVC in-band, URLs longas | Em implementação — `agente/21-matis-a-safety` |
+| B | Modos DV/DTS/TrueHD, faixas e memória de áudio | Em implementação — `agente/21-matis-b-dv`; integrar após A |
 | C | Buffer contínuo, controles, recovery/seek e telemetria | Fila após A/B |
-| D | Áudio de outra versão e cortes/intro skip | Fila após B/C |
-| E | Formatter, badges, regex e lista de fontes | Preparação |
-| F | Perfil, skip, atualização e opacidade | Preparação |
-| G | Diagnósticos local/QR, motivos e exportação de nuvem | Preparação |
-| H | CW local, temporadas e títulos de episódios | Fila |
+| D | Áudio de outra versão e cortes/intro skip | Em implementação — `agente/21-matis-d-audioexterno`; integrar após B/C |
+| E | Formatter, badges, regex e lista de fontes | Em implementação — `agente/21-matis-e-fontes` |
+| F | Perfil, skip, atualização e opacidade | Em implementação — `agente/21-matis-f-opcoes` |
+| G | Diagnósticos local/QR, motivos e exportação de nuvem | Em implementação — `agente/21-matis-g-logs`; sem deploy |
+| H | CW local, temporadas e títulos de episódios | Em implementação — `agente/21-matis-h-metadata` |
+
+Execução: `job-pi`, grupo solicitado `nv-impl`, esforço `medium`; modelo efetivamente servido ainda não confirmado. Worktrees `/Volumes/ExternalSSD/nv-21-matis-*`. Briefs/logs/progresso em `/Volumes/ExternalSSD/tmp/rev/matis94-20261112/`. Nenhuma dessas branches tem aprovação de revisão ou merge de implementação neste checkpoint. Sete implementações, uma vaga reservada para revisão; C aguarda dependências e capacidade.
 
 ## Cobertura item a item
 

@@ -71,6 +71,7 @@ static inline int nv_dv7_packet_report(const uint8_t *p, size_t n, uint8_t *out,
         if (converted <= 0 || (size_t)converted > cap - used) return -1;
         size = (size_t)converted;
 #else
+        (void)preserve;
         return -1;
 #endif
       } else {
