@@ -6,15 +6,11 @@
 #ifdef __EMSCRIPTEN__
 int  celular_disponivel(void) { return 0; }
 int  celular_abrir(const char *t) { (void)t; return 0; }
-int celular_abrir_relatorio(const char *p) { (void)p; return 0; }
-const char *celular_motivo(void) { return ""; }
 void celular_fechar(void) {}
 int  celular_estado(void) { return CEL_PARADO; }
 const char *celular_url(void) { return ""; }
 int  celular_pegar(char *d, size_t n) { (void)d; (void)n; return 0; }
 int  celular_porta(void) { return 0; }
-int  celular_gerar_token(char *d, size_t n) { if (d && n) d[0] = 0; return 0; }
-void celular_relatorio_fixo(const char *t, int p) { (void)t; (void)p; }
 #else
 
 #include "idioma.h"
@@ -53,16 +49,6 @@ static char token[CEL_TOKEN_N + 1], url[96], hostLan[64], hostLocal[64], origem[
 static char recebido[CEL_CORPO_MAX + 1];
 static int  temRecebido;
 static time_t expira;
-static FILE *relatorio; /* Sanitized, immutable snapshot; never the original log. */
-/* Diagnostics only: the same address every time (owner, 06/11/2026), so the
- * computer keeps it as a bookmark. Set by celbotao.c from the saved token. */
-static char tokenFixo[CEL_TOKEN_N + 1];
-static int portaFixa;
-static long envioPrazo;
-// WHY THE LAST OPENING FAILED (owner 11/11: "Could not load" on a tester's TV
-// said nothing): short, technical, shown in the Download log card and logged.
-static char motivoFalha[160];
-const char *celular_motivo(void) { return motivoFalha; }
 // Montadas na abertura (thread do app, por causa do i18n); o fio so le.
 static char pagina[12288], pagEnviado[8192], pagUsado[8192];
 
@@ -89,25 +75,12 @@ static int privado(in_addr_t a) {
   unsigned long h = ntohl(a);
   return (h >> 24) == 10 || (h >> 20) == 0xAC1 || (h >> 16) == 0xC0A8;
 }
-// 100.64.0.0/10, the carrier-grade NAT range (tester's C3, 11/11/2026: the
-// TV's only address was 100.80.x.x, from a provider handing that range to
-// home networks; VPNs such as Tailscale use it too). Not reachable from the
-// internet; only taken when the TV has no private address, and the page
-// still needs the secret in the QR code.
-static int cgnat(in_addr_t a) {
-  unsigned long h = ntohl(a);
-  return (h >> 22) == (0x64400000UL >> 22);
-}
 
 // A ROTA PADRAO DIZ QUAL INTERFACE A TV USA: connect() num socket UDP so
 // escolhe a rota, nao manda pacote nenhum (192.0.2.1 e TEST-NET, ninguem
 // responde nem recebe). Sem rota padrao (rede so local), a primeira interface
 // IPv4 privada que estiver de pe.
 static int ipLan(char *dst, size_t n) {
-#ifdef NV_CEL_TEST_LOOPBACK
-  /* Explicit test builds only: CI has no LAN interface. Never a runtime option. */
-  snprintf(dst, n, "127.0.0.1"); return 1;
-#endif
   struct sockaddr_in alvo, eu;
   socklen_t tam = sizeof eu;
   struct ifaddrs *lista = NULL, *i;
@@ -124,42 +97,19 @@ static int ipLan(char *dst, size_t n) {
     close(s);
   }
   if (!achou && !getifaddrs(&lista)) {
-    in_addr_t reserva = 0;   /* first CGNAT address: used only with no private one */
     for (i = lista; i; i = i->ifa_next) {
-      in_addr_t a;
       if (!i->ifa_addr || i->ifa_addr->sa_family != AF_INET) continue;
       if (!(i->ifa_flags & IFF_UP) || (i->ifa_flags & IFF_LOOPBACK)) continue;
-      a = ((struct sockaddr_in *)i->ifa_addr)->sin_addr.s_addr;
-      if (privado(a)) { achou = a; break; }
-      if (!reserva && cgnat(a)) reserva = a;
+      if (privado(((struct sockaddr_in *)i->ifa_addr)->sin_addr.s_addr)) {
+        achou = ((struct sockaddr_in *)i->ifa_addr)->sin_addr.s_addr;
+        break;
+      }
     }
     freeifaddrs(lista);
-    if (!achou && reserva) {
-      achou = reserva;
-      puts("[celular] no private address: using the carrier-grade NAT one (100.64.0.0/10)");
-    }
   }
   if (achou) {
     struct in_addr a; a.s_addr = achou;
     ok = inet_ntop(AF_INET, &a, dst, (socklen_t)n) != NULL;
-  } else {
-    /* Say which IPv4 addresses the TV has (none, or only ones outside the
-     * private ranges, e.g. 100.64.x.x from a carrier or a VPN). */
-    size_t k = (size_t)snprintf(motivoFalha, sizeof motivoFalha, "no local network address");
-    int vistos = 0;
-    if (!getifaddrs(&lista)) {
-      for (i = lista; i && k + 24 < sizeof motivoFalha; i = i->ifa_next) {
-        char t[INET_ADDRSTRLEN];
-        if (!i->ifa_addr || i->ifa_addr->sa_family != AF_INET || (i->ifa_flags & IFF_LOOPBACK)) continue;
-        if (!inet_ntop(AF_INET, &((struct sockaddr_in *)i->ifa_addr)->sin_addr, t, sizeof t)) continue;
-        k += (size_t)snprintf(motivoFalha + k, sizeof motivoFalha - k, "%s%s%s", vistos ? ", " : " (TV has ",
-                              t, (i->ifa_flags & IFF_UP) ? "" : " down");
-        vistos++;
-      }
-      freeifaddrs(lista);
-    }
-    if (vistos && k + 2 < sizeof motivoFalha) snprintf(motivoFalha + k, sizeof motivoFalha - k, ")");
-    else if (!vistos) snprintf(motivoFalha + k, sizeof motivoFalha - k, " (no IPv4 address)");
   }
   return ok;
 }
@@ -167,9 +117,8 @@ static int ipLan(char *dst, size_t n) {
 // --- token ----------------------------------------------------------------------
 // 31 simbolos sem os que se confundem (0/o, 1/l/i): quem nao tem camera digita
 // o endereco. 8 deles = 39 bits.
-static const char TOKEN_A[] = "abcdefghjkmnpqrstuvwxyz23456789";
-static int gerarTokenEm(char *dst) {
-  const char *A = TOKEN_A;
+static int gerarToken(void) {
+  static const char A[] = "abcdefghjkmnpqrstuvwxyz23456789";
   unsigned char b[CEL_TOKEN_N * 2];
   int f = open("/dev/urandom", O_RDONLY), i, k = 0;
   size_t lidos = 0;
@@ -182,28 +131,10 @@ static int gerarTokenEm(char *dst) {
   close(f);
   // Rejeicao (248 = 8 x 31) para nao enviesar os primeiros simbolos.
   for (i = 0; i < (int)sizeof b && k < CEL_TOKEN_N; i++)
-    if (b[i] < 248) dst[k++] = A[b[i] % 31];
-  dst[k] = 0;
+    if (b[i] < 248) token[k++] = A[b[i] % 31];
+  token[k] = 0;
   memset(b, 0, sizeof b);
   return k == CEL_TOKEN_N;
-}
-static int gerarToken(void) { return gerarTokenEm(token); }
-static int tokenValido(const char *t) {
-  size_t i;
-  if (!t || strlen(t) != CEL_TOKEN_N) return 0;
-  for (i = 0; i < CEL_TOKEN_N; i++) if (!strchr(TOKEN_A, t[i]) || !t[i]) return 0;
-  return 1;
-}
-int celular_gerar_token(char *dst, size_t n) {
-  char t[CEL_TOKEN_N + 1];
-  if (!dst || n <= CEL_TOKEN_N || !gerarTokenEm(t)) { if (dst && n) dst[0] = 0; return 0; }
-  snprintf(dst, n, "%s", t);
-  memset(t, 0, sizeof t);
-  return 1;
-}
-void celular_relatorio_fixo(const char *t, int p) {
-  snprintf(tokenFixo, sizeof tokenFixo, "%s", tokenValido(t) ? t : "");
-  portaFixa = p > 1024 && p < 65536 ? p : 0;
 }
 
 // --- paginas --------------------------------------------------------------------
@@ -333,21 +264,12 @@ static int esperar(int fd, long prazo) {
   }
 }
 
-static int enviarTudo(int c, const char *b, size_t n) {
+static void enviarTudo(int c, const char *b, size_t n) {
   while (n) {
     ssize_t w = send(c, b, n, MSG_NOSIGNAL);
-    if (w < 0 && errno == EINTR) continue;
-    if (w < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-      struct pollfd p[2] = {{c, POLLOUT, 0}, {acorda[0], POLLIN, 0}};
-      long left = envioPrazo - agoraMs();
-      if (left <= 0 || poll(p, 2, left > 250 ? 250 : (int)left) < 0 ||
-          p[1].revents || (p[0].revents & (POLLERR | POLLHUP | POLLNVAL))) return 0;
-      continue;
-    }
-    if (w <= 0) return 0;
+    if (w <= 0) return;
     b += w; n -= (size_t)w;
   }
-  return 1;
 }
 
 static void responder(int c, int cod, const char *corpo) {
@@ -361,53 +283,10 @@ static void responder(int c, int cod, const char *corpo) {
     "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: same-origin\r\n"
     "X-Frame-Options: DENY\r\n"
     "Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; "
-    "script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'\r\n"
-    "%sConnection: close\r\n\r\n", cod, txt, n, cod == 405 ? (relatorio ? "Allow: GET, HEAD\r\n" : "Allow: GET, HEAD, POST\r\n") : "");
+    "script-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'\r\n"
+    "%sConnection: close\r\n\r\n", cod, txt, n, cod == 405 ? "Allow: GET, POST\r\n" : "");
   enviarTudo(c, cab, (size_t)k);
   if (n) enviarTudo(c, corpo, n);
-}
-
-/* No log data is interpolated into HTML or script. textContent prevents XSS.
- * The browser owns filtering memory, not the TV. No external services/assets. */
-static const char paginaRelatorio[] =
-  "<!doctype html><html lang=en><meta charset=utf-8>"
-  "<meta name=viewport content='width=device-width,initial-scale=1'>"
-  "<title>Nuvio diagnostics</title><style>body{background:#11151c;color:#e8edf4;"
-  "font:16px system-ui;margin:24px}header{position:sticky;top:0;background:#11151c;padding:12px 0}"
-  "input,a,button{font:inherit;padding:10px;border-radius:8px;margin:4px;color:inherit;background:#263449}"
-  "pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px ui-monospace,monospace;line-height:1.6}"
-  "input{width:min(420px,80vw)}p{color:#aebaca}</style><header><h1>Nuvio diagnostics</h1>"
-  "<p>All categories. Frozen snapshot, not live. Recognized secrets are masked. Review before sharing.</p>"
-  "<a href='?download=1'>Download .txt</a><button id=copy>Copy filtered log</button><br>"
-  "<input id=q placeholder='Filter, e.g. dts, error, failover, playback-diag'><span id=count></span>"
-  "</header><pre id=log>Loading snapshot...</pre><script>"
-  "let lines=[],shown='';const log=document.getElementById('log'),q=document.getElementById('q');"
-  "function show(){let term=q.value.toLowerCase(),a=lines.filter(x=>x.toLowerCase().includes(term));"
-  "shown=a.join('\n');log.textContent=shown;document.getElementById('count').textContent=a.length+' lines';}"
-  "q.oninput=show;fetch('?text=1',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error();return r.text()})"
-  ".then(t=>{lines=t.split('\n');show()}).catch(()=>{log.textContent='Snapshot unavailable. Reopen export on TV.'});"
-  "document.getElementById('copy').onclick=()=>{if(navigator.clipboard){navigator.clipboard.writeText(shown)"
-  ".catch(()=>alert('Use Download .txt or select the text.'));}else alert('Use Download .txt or select the text.');};"
-  "</script></html>";
-
-static void responderRelatorio(int c, int text, int download, int head) {
-  char cab[1024], b[8192];
-  size_t n;
-  long length;
-  if (text || download) {
-    if (fseek(relatorio, 0, SEEK_END) || (length = ftell(relatorio)) < 0 ||
-        fseek(relatorio, 0, SEEK_SET)) { responder(c, 400, NULL); return; }
-  } else length = (long)strlen(paginaRelatorio);
-  n = (size_t)snprintf(cab, sizeof cab,
-    "HTTP/1.1 200 OK\r\nContent-Type: %s; charset=utf-8\r\nContent-Length: %ld\r\n"
-    "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\n"
-    "X-Frame-Options: DENY\r\nContent-Security-Policy: default-src 'none'; "
-    "style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'\r\n"
-    "%sConnection: close\r\n\r\n", text || download ? "text/plain" : "text/html", length,
-    download ? "Content-Disposition: attachment; filename=\"nuvio-diagnostics.txt\"\r\n" : "");
-  if (!enviarTudo(c, cab, n) || head) return;
-  if (!text && !download) { enviarTudo(c, paginaRelatorio, (size_t)length); return; }
-  while ((n = fread(b, 1, sizeof b, relatorio))) if (!enviarTudo(c, b, n)) break;
 }
 
 // Valor do cabecalho `nome` (sem diferenciar caixa) em `cab`, copiado para dst.
@@ -471,8 +350,7 @@ static int atender(int c, int *erros) {
   long prazo = agoraMs() + CEL_PRAZO_MS, cl;
   size_t n = 0, fimCab, temCorpo;
   char *sep;
-  int r, download = 0, text = 0;
-  envioPrazo = agoraMs() + 30000;
+  int r;
   memset(cab, 0, sizeof cab);
   for (;;) {
     ssize_t k;
@@ -510,16 +388,11 @@ static int atender(int c, int *erros) {
       return 0;
     }
   }
-  { char *q = strchr(caminho, '?'); if (q) { download = !strcmp(q, "?download=1"); text = !strcmp(q, "?text=1"); *q = 0; } }
+  { char *q = strchr(caminho, '?'); if (q) *q = 0; }
   if (caminho[0] != '/' || strcmp(caminho + 1, token)) {
     // O favicon que todo navegador pede nao e tentativa de adivinhar o token.
     if (strcmp(caminho, "/favicon.ico")) (*erros)++;
     responder(c, 404, NULL);
-    return 0;
-  }
-  if (relatorio) {
-    if (strcmp(metodo, "GET") && strcmp(metodo, "HEAD")) { responder(c, 405, NULL); return 0; }
-    responderRelatorio(c, text, download, !strcmp(metodo, "HEAD"));
     return 0;
   }
   if (!strcmp(metodo, "GET") || !strcmp(metodo, "HEAD")) {
@@ -577,7 +450,6 @@ static void *servir(void *arg) {
     if (p[0].revents & POLLIN) {
       int c = accept(ouvir, NULL, NULL);
       if (c < 0) continue;
-      fcntl(c, F_SETFL, fcntl(c, F_GETFL, 0) | O_NONBLOCK);
 #ifdef SO_NOSIGPIPE
       { int um = 1; setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &um, sizeof um); }
 #endif
@@ -599,7 +471,6 @@ void celular_fechar(void) {
     pthread_join(fio, NULL);
     fioVivo = 0;
   }
-  if (relatorio) { fclose(relatorio); relatorio = NULL; }
   if (ouvir >= 0) { close(ouvir); ouvir = -1; }
   if (acorda[0] >= 0) { close(acorda[0]); close(acorda[1]); acorda[0] = acorda[1] = -1; }
   pthread_mutex_lock(&trava);
@@ -612,43 +483,23 @@ void celular_fechar(void) {
   estado = CEL_PARADO;
 }
 
-static int abrir(const char *titulo, const char *snapshot) {
+int celular_abrir(const char *titulo) {
   struct sockaddr_in a;
   socklen_t tam = sizeof a;
   char ip[48];
   int um = 1;
   celular_fechar();
-  motivoFalha[0] = 0;
-  if (!ipLan(ip, sizeof ip)) { printf("[celular] sem IP de rede local: %s\n", motivoFalha); return 0; }
-  if (snapshot && tokenValido(tokenFixo)) snprintf(token, sizeof token, "%s", tokenFixo);
-  else if (!gerarToken()) { snprintf(motivoFalha, sizeof motivoFalha, "no random source"); return 0; }
-  if (pipe(acorda)) { acorda[0] = acorda[1] = -1; snprintf(motivoFalha, sizeof motivoFalha, "pipe errno %d", errno); return 0; }
+  if (!ipLan(ip, sizeof ip)) { puts("[celular] sem IP de rede local"); return 0; }
+  if (!gerarToken() || pipe(acorda)) { acorda[0] = acorda[1] = -1; return 0; }
   ouvir = socket(AF_INET, SOCK_STREAM, 0);
-  if (ouvir < 0) { snprintf(motivoFalha, sizeof motivoFalha, "socket errno %d", errno); celular_fechar(); return 0; }
+  if (ouvir < 0) { celular_fechar(); return 0; }
   setsockopt(ouvir, SOL_SOCKET, SO_REUSEADDR, &um, sizeof um);
   memset(&a, 0, sizeof a);
   a.sin_family = AF_INET;
   a.sin_addr.s_addr = htonl(INADDR_ANY);   // a LAN e o 127.0.0.1 dos testes
   a.sin_port = 0;                          // porta livre, do sistema
-  // DIAGNOSTICO: a porta fixa primeiro (endereco de favorito); ocupada, a do
-  // sistema, e o cartao mostra o endereco novo.
-  if (snapshot && portaFixa) {
-    a.sin_port = htons((unsigned short)portaFixa);
-    if (bind(ouvir, (struct sockaddr *)&a, sizeof a)) {
-      printf("[celular] porta fixa %d ocupada (errno %d): porta do sistema\n", portaFixa, errno);
-      close(ouvir);
-      ouvir = socket(AF_INET, SOCK_STREAM, 0);
-      if (ouvir < 0) { celular_fechar(); return 0; }
-      setsockopt(ouvir, SOL_SOCKET, SO_REUSEADDR, &um, sizeof um);
-      a.sin_port = 0;
-    } else goto ligado;
-  }
-  if (bind(ouvir, (struct sockaddr *)&a, sizeof a)) goto falhou;
-ligado:
-  if (listen(ouvir, 4) ||
+  if (bind(ouvir, (struct sockaddr *)&a, sizeof a) || listen(ouvir, 4) ||
       getsockname(ouvir, (struct sockaddr *)&a, &tam)) {
-falhou:
-    snprintf(motivoFalha, sizeof motivoFalha, "no free port (errno %d)", errno);
     printf("[celular] servidor nao subiu (errno %d)\n", errno);
     celular_fechar();
     return 0;
@@ -658,20 +509,13 @@ falhou:
   snprintf(hostLocal, sizeof hostLocal, "127.0.0.1:%d", porta);
   snprintf(origem, sizeof origem, "http://%s", hostLan);
   snprintf(url, sizeof url, "http://%s/%s", hostLan, token);
-  if (snapshot) {
-    relatorio = fopen(snapshot, "rb");
-    if (!relatorio) { snprintf(motivoFalha, sizeof motivoFalha, "log copy unreadable (errno %d)", errno); celular_fechar(); return 0; }
-  } else montarPaginas(titulo);
-  expira = time(NULL) + (snapshot ? CEL_VALIDADE_RELATORIO_S : CEL_VALIDADE_S);
+  montarPaginas(titulo);
+  expira = time(NULL) + CEL_VALIDADE_S;
   estado = CEL_ESPERANDO;
-  if (pthread_create(&fio, NULL, servir, NULL)) { snprintf(motivoFalha, sizeof motivoFalha, "no thread"); celular_fechar(); return 0; }
+  if (pthread_create(&fio, NULL, servir, NULL)) { celular_fechar(); return 0; }
   fioVivo = 1;
   // Sem IP nem token no log: so que subiu.
   printf("[celular] servidor no ar (porta %d)\n", porta);
   return 1;
-}
-int celular_abrir(const char *titulo) { return abrir(titulo, NULL); }
-int celular_abrir_relatorio(const char *snapshot) {
-  return snapshot && *snapshot ? abrir("Export diagnostics", snapshot) : 0;
 }
 #endif

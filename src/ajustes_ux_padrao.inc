@@ -361,4 +361,3 @@
   1, /* preserve P7 mapping experiment: Off (V_LIGA), device-local opt-in */
   0, /* ordinary native buffering: Standard / one sequential connection */
   0, /* DTS/TrueHD/DV7: Standard (1), Tizen method (owner, 06/11/2026) */
-  1, /* Diagnostics QR: Off (V_LIGA); normal logs stay active */

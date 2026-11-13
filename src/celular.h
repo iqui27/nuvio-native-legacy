@@ -39,12 +39,6 @@
 #ifndef CEL_VALIDADE_S
 #define CEL_VALIDADE_S 300
 #endif
-// Diagnostico: o endereco fica de pe enquanto o cartao esta aberto, ate isto.
-#ifndef CEL_VALIDADE_RELATORIO_S
-#define CEL_VALIDADE_RELATORIO_S 1800
-#endif
-// Porta fixa do diagnostico (endereco de favorito no computador).
-#define CEL_RELATORIO_PORTA 47801
 #define CEL_CORPO_MAX  4096
 #define CEL_ERROS_MAX  30
 
@@ -55,20 +49,10 @@ int  celular_disponivel(void);
 // i18n aqui) vai para o cabecalho da pagina. 1 = no ar; 0 = sem rede/sem IP.
 // Thread do app (usa i18n).
 int  celular_abrir(const char *titulo);
-/* Read-only sanitized snapshot. GET/HEAD only; same expiring LAN token. */
-int celular_abrir_relatorio(const char *snapshot);
-/* Diagnostics only: reuse this token (8 symbols of the token alphabet) and try
- * this port first, so the address stays the same between openings. Invalid
- * token = a random one per opening; port 0 = system port. */
-void celular_relatorio_fixo(const char *token, int porta);
-/* A fresh random token (for the caller to save). 1 = ok. */
-int  celular_gerar_token(char *dst, size_t n);
 void celular_fechar(void);
 int  celular_estado(void);
 // http://<ip>:<porta>/<token>, ou "" fora do ar.
 const char *celular_url(void);
-/* Why the last opening failed ("" after a success): short, technical, English. */
-const char *celular_motivo(void);
 // 1 UMA VEZ, quando o texto chegou (ja sem espacos nas pontas). `dst` recebe
 // ate n-1 bytes.
 int  celular_pegar(char *dst, size_t n);

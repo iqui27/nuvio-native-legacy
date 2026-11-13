@@ -272,7 +272,6 @@ static const char *uxSinonimos(int op) {
     case AJ_ESTAT_LADO: return "estatisticas ao vivo stats nerds lado direita esquerda direito esquerdo posicao painel live statistics side left right position";
     case AJ_PLAYER_ANIME: return "player anime externo igual vlc mx outro app video kitsu mal";
     case AJ_PLAYER_EXTERNO: return "player externo interno perguntar vlc mx outro app video external ask";
-    case AJ_DIAGNOSTICS_QR: return "diagnostics diagnostic qr logs export download registro baixar azul blue F10";
     case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS: case AJ_BUFFER: return "buffer tamanho memoria 64 128 256 mb travando carregando rede instavel stats nerds http connections parallel native dts truehd dv7";
     case AJ_CACHE_SEEK: return "cache seek buffer disco armazenamento voltar avancar travando carregando";
     case AJ_TMDB_IDIOMA: return "idioma metadados titulo sinopse traducao tmdb";

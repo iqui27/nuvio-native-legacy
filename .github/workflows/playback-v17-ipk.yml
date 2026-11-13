@@ -20,7 +20,7 @@ jobs:
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
-      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=25 -DNV_DV7_MAPPING_TEST -DNV_HEVC_SEI_TEST
+      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=26 -DNV_DV7_MAPPING_TEST -DNV_HEVC_SEI_TEST
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -42,14 +42,12 @@ jobs:
           bash tests/dv7_mapping_settings.sh
           bash tests/dv7.sh
           NV_TEST_P7_MAPPING=1 SANITIZE=1 bash tests/dts_playback.sh
-      - name: Diagnostics QR opt-in, sanitized export and normal phone input
+      - name: Diagnostic QR absence and normal phone input
         timeout-minutes: 3
         run: |
-          bash tests/diagnostics_qr_settings.sh
-          bash tests/celular_cgnat.sh
+          bash tests/no_qr_export.sh
           bash tests/dts_tv.sh
-          SANITIZE=1 bash tests/logexport.sh
-          CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular_export.sh
+          CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular.sh
       - name: Conversion refill and progressing HTTP gaps
         timeout-minutes: 3
         run: |

@@ -1419,10 +1419,6 @@ static void desenhaPainel(void) {
     else rgFiltroTags(t, sizeof t);
     rgRodape(d, 4, t);
   }
-  if (ajustes_diagnostics_qr()) { char hint[192];
-    snprintf(hint,sizeof hint,"%s / F10 · %s (QR)",i18n("Azul"),i18n("Baixar registro"));
-    TxtLinha exportHint = rgT(TXT_AJ_CHIP, hint);
-    txt_desenhar_alpha(exportHint, 48, NV_TELA_H - 28, 0.85f); }
   // O inspetor pelo estado.
   if (RG_SEM_INSP) { /* tela virtual estreita: sem inspetor */ }
   else if (pausado && foco >= 0 && detalhe) inspLinha();

@@ -11,7 +11,8 @@ added to the export.
 Use the same source and DTS track throughout. Start in the reproducibly broken
 10–12 minute region, seek to the working 17 minute region, then return to the
 same broken timestamp. Record whether the image is broken at each point and
-export Diagnostics QR immediately after the sequence. Repeat separately for
+download the log (Settings > About and help > Log on local network) right after
+the sequence. Repeat separately for
 HDR10 and DV8. A log alone cannot identify visible corruption.
 
 ## New records
