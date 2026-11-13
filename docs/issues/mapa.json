@@ -1,6 +1,6 @@
 {
  "atualizado_em": "2026-11-13",
- "base": "6330e8be0",
+ "base": "0618e13c6",
  "validacao_pr_761_arte_2026_11_04": {
   "merge_pr761": "6b886e1e1262f36aacdd126892d79624cc6de47c",
   "merge_arte": "86998755a9db7886a419d674397da0fc54af31f8",
@@ -14008,8 +14008,7 @@
     "proximo_passo_catalogo": "Central TV: comparar o subcaso do relato com a implementação já integrada; validar apenas o restante identificado, sem declarar conclusão integral.",
     "aceitacao_especifica": "aceitacao_especifica_nao_demonstrada",
     "fonte": "/Volumes/ExternalSSD/tmp/rev/rastreio/mutirao-20261104/issues.json"
-   },
-   "branch": "agente/21-fv-av650-687"
+   }
   },
   {
    "numero": 649,
@@ -14364,8 +14363,7 @@
     "proximo_passo_catalogo": "Central TV: comparar o subcaso do relato com a implementação já integrada; validar apenas o restante identificado, sem declarar conclusão integral.",
     "aceitacao_especifica": "aceitacao_especifica_nao_demonstrada",
     "fonte": "/Volumes/ExternalSSD/tmp/rev/rastreio/mutirao-20261104/issues.json"
-   },
-   "branch": "agente/21-fv-av650-687"
+   }
   },
   {
    "numero": 691,
@@ -18231,6 +18229,15 @@
    "ref": "docs/plans/issues-exec-fable-20261113/offline-fixtures-integracao.md",
    "resultado": "Merge b9e9dfa7a1922ae15990c56e5c618ebae5ce46bd (parents exactly BASE 82af242653ec035a71857b442bea9be7abb473fc and candidate 3e509a3bc09ddf8c77d627542f42b286fb918a37). Canonical 5/5 passed, 0 skipped/failed/timeouts/divergences/errors. Post-merge conta.sh rc 0 and trailerapple.sh rc 0 under sandbox guard. Device acceptance UNKNOWN; no TV or field proof.",
    "evidencia": "Full diff sha256 4aa1dc7362f67d8009c9f790c9027d3d92817d1a8c2a345b1870d0c0e2602330. Canonical verification digest 3d2c951660b1d478fd82eafc0e35330ef75372f0d9ec1e00499a177ce8e04696. i18n stdout sha e2dc1d85ba32029673aefafb6a1c449a89170cefb60cd397499b0dff77cc29e1. Runtime verifier logs in /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/offline-fixtures-verify-logs/. Open P2 F5 (sub fallback vacuity) and P3 quoting retained."
+  },
+  {
+   "data": "2026-11-13",
+   "quem": "fable-gate (post-merge executor); reviewer j-rev-fv-local-services2-static; verifier fv-local-services-runtime-verifier; served models UNKNOWN",
+   "o_que": "Local Workers / test-harness isolation merge (agente/21-fv-local-services: 8 tests/ files + servidor/recomendacoes/preparar-local.sh, zero src/ changes) into integracao/2.1. Offline cached Wrangler 4.149.0 harness, zero production bugfix, zero deploy, full global gate NOT RUN.",
+   "issues": [],
+   "ref": "docs/plans/issues-exec-fable-20261113/local-services-integracao.md",
+   "resultado": "Merge 0618e13c6fd0330f117927430fb8507d75b92904 (parents BASE 62a4b49693b584be2b83d445beb64f2e9c252a8f and candidate 3da5ad3cfcae0380dd694f9b7478375d76de6831). Canonical gate 7/7 passed under global-gate-local-only.sb (0 skipped/failed/timeouts/divergences/errors). Post-merge recomenda_e2e.sh, diarionuvem_servidor.sh, juntos_e2e.sh, varredura-i18n.py rc 0; zero workerd leftovers.",
+   "evidencia": "Candidate diff sha256 323641fa35c1e1c84c0e7fedad127ba6f5a4e03855c70bacb2d3342a4d4a9784. Canonical verification digest 4cca8c51788c31a5c929aba3d6260953e000b8a5b42fc62a6a7a21b61f41a814; log_digest bef34433905e9ea76a05b875b15660bac724610ebd39d5e933a8ba127b4447f9; i18n stdout sha e2dc1d85ba32029673aefafb6a1c449a89170cefb60cd397499b0dff77cc29e1. Reports: local-services-code-review2.md, local-services-verification.md, j-verify-fv-local-services.log."
   }
  ],
  "decisoes": [
@@ -30644,16 +30651,6 @@
   "[sync 2026-10-17 12:15] tests/vidro_qualidade.sh FALHA em 0940ae7bf (\"Alta ignores the governor\"): regressao de vidro na janela dos merges, j-vidroqual investigando."
  ],
  "jobs": [
-  {
-   "branch": "agente/21-fv-av650-687",
-   "status": "em andamento",
-   "commits_a_frente": 0,
-   "ultimo_commit": "2026-11-13T14:35",
-   "review": null,
-   "veredito": null,
-   "motivo": "bounded extraction of prcheck/693 candidate for trailer audio language; TV scope",
-   "assunto": "trailers: port candidate Apple per-language lookup/HLS audio/cache + fonte gate (#650, #687)"
-  },
   {
    "branch": "agente/21-21-ios-m2",
    "status": "em andamento",

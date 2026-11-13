@@ -1,58 +1,84 @@
 #!/bin/bash
 export TMPDIR="${TMPDIR:-/tmp}"
 TMPDIR="${TMPDIR%/}"
-# O cliente C contra o Worker de verdade, em LOCAL. Ver o cabecalho de
-# tests/recomenda_e2e.c.
+# O cliente C contra o Worker de verdade, em LOCAL.
 #
-#   cd servidor/recomendacoes && npx wrangler@4 dev --local --port 8799 &
-#   bash tests/recomenda_e2e.sh
+# MODO PADRAO (sem argumento): o teste SOBE o proprio `wrangler dev` numa porta
+# loopback aleatoria com D1/KV temporarios (--persist-to em mktemp), HOME/XDG
+# isolados e um .env sintetico vazio — nada de ~/.wrangler, .dev.vars ou do
+# .wrangler/state do projeto. Wrangler vem de NUVIO_WRANGLER, node_modules ou
+# do cache ja instalado (tests/servidor_local.sh), nunca de `npx wrangler@4`.
+# Sem wrangler instalado o teste FALHA (nao pula): a suite global depende dele.
 #
-# Sem servidor no ar ele PULA (sai 0): a suite nao pode depender de um servico
-# que so existe na maquina de quem o subiu.
+# MODO SERVIDOR EXTERNO (com argumento): `bash tests/recomenda_e2e.sh URL`
+# e o contrato antigo, sem mudanca: se a URL nao responde, PULA (sai 0); as
+# sessoes sao semeadas no .wrangler/state padrao de servidor/recomendacoes com
+# `npx wrangler@4`, como antes (nada de preparar-local nem apagar tabelas).
 set -eu
 cd "$(dirname "$0")/.."
-BASE="${1:-http://127.0.0.1:8799}"
+. tests/servidor_local.sh
 
-NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-rec-e2e.XXXXXX)
+work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-rec-e2e.XXXXXX")
+NUVIO_DADOS=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-rec-e2e.XXXXXX")
 export NUVIO_DADOS
-trap 'rm -rf "$NUVIO_DADOS"' EXIT
-
-if ! curl -s -m 3 "$BASE/v1/saude" | grep -q '"ok"'; then
-  echo "recomenda_e2e: servidor local fora do ar; PULADO"
-  exit 0
+NV_DEV_PID=""
+trap 'nv_dev_stop "$NV_DEV_PID"; rm -rf "$NUVIO_DADOS" "$work"' EXIT
+CC_TMP="$TMPDIR"
+if [ $# -ge 1 ]; then
+  BASE="$1"
+  if ! curl -s -m 3 "$BASE/v1/saude" | grep -q '"ok"'; then
+    echo "recomenda_e2e: servidor local fora do ar; PULADO"
+    exit 0
+  fi
+  d1_seed() {
+    ( cd servidor/recomendacoes && npx wrangler@4 d1 execute nuvio-recomendacoes \
+        --local --command "$1" >/dev/null 2>&1 )
+  }
+else
+  NV_W="$(nv_wrangler_bin)" || { echo "FALHOU: wrangler 4.149.0 nao instalado (NUVIO_WRANGLER)"; exit 1; }
+  nv_isolate_env "$work"
+  nv_rec_test_config "$work/wrangler.toml"
+  nv_dev_start "$work/wrangler.toml" "$work" /v1/saude \
+    || { echo "FALHOU: servidor local nao subiu"; exit 1; }
+  BASE="http://127.0.0.1:$NV_DEV_PORT"
+  curl -s -m 3 "$BASE/v1/saude" | grep -q '"ok"' || { echo "FALHOU: saude"; exit 1; }
+  # Esquema + migracoes + sessoes base no MESMO --persist-to do dev server.
+  NUVIO_WRANGLER="$NV_W" NUVIO_D1_LOG="$work/d1.log" NUVIO_D1_PERSIST="$work/persist" \
+    NUVIO_D1_CFG="$work/wrangler.toml" bash servidor/recomendacoes/preparar-local.sh \
+    > "$work/prep.log" 2>&1 || { tail -20 "$work/prep.log" >&2; exit 1; }
+  d1_seed() { nv_d1_exec "$work/wrangler.toml" "$work/persist" --command "$1" >/dev/null 2>&1; }
 fi
 
 # A MESMA CURTO-CIRCUITACAO de servidor/recomendacoes/teste.sh: a verificacao de
 # identidade e o unico ponto do servico que fala com a internet (Trakt ou
 # Supabase). Uma linha em `sessao` com o SHA-256 de "<via>:<token>" e o que o
-# cache do servidor gravaria depois da primeira verificacao.
-HASH=$(printf 'nuvio:tok-e2e' | shasum -a 256 | cut -d' ' -f1)
-( cd servidor/recomendacoes && npx wrangler@4 d1 execute nuvio-recomendacoes \
-    --local --command "INSERT OR REPLACE INTO sessao (hash,id,nome,expira) \
-      VALUES ('$HASH','nuvio:e2e','Teste E2E',$(( $(date +%s) + 86400 )))" \
-    >/dev/null 2>&1 )
+# cache do servidor gravaria depois da primeira verificacao. O TOKEN PRECISA
+# TER FORMA DE JWT (a.b.c com sub): sessao_iniciar() do cliente descarta
+# arquivo com sessao pela metade (#223) e um token de uma palavra so morre
+# antes da rede — o header .e2e nem e JSON de proposito, entao o Worker fica
+# so com a linha do cache e nunca tenta JWKS/Supabase.
+TOK_A="e2e.eyJzdWIiOiJlMmUiLCJleHAiOjk5OTk5OTk5OTl9.e2e"
+TOK_B="e2e.eyJzdWIiOiJlMmUtYiIsImV4cCI6OTk5OTk5OTk5OX0.e2e"
+HASH=$(printf "nuvio:$TOK_A" | shasum -a 256 | cut -d' ' -f1)
+d1_seed "INSERT OR REPLACE INTO sessao (hash,id,nome,expira) \
+    VALUES ('$HASH','nuvio:e2e','Teste E2E',$(( $(date +%s) + 86400 )))"
 
 # UMA RECOMENDACAO DE VERDADE ESPERANDO NO SERVIDOR. Sem ela o teste provaria
 # so que o 200 vazio e o 304 funcionam — e o parse, que e o que mais quebra,
 # nunca teria sido exercitado contra o JSON que o Worker emite de fato.
-HASH_B=$(printf 'nuvio:tok-e2e-b' | shasum -a 256 | cut -d' ' -f1)
-( cd servidor/recomendacoes && npx wrangler@4 d1 execute nuvio-recomendacoes \
-    --local --command "INSERT OR REPLACE INTO sessao (hash,id,nome,expira) \
-      VALUES ('$HASH_B','nuvio:e2e-b','Amigo E2E',$(( $(date +%s) + 86400 )))" \
-    >/dev/null 2>&1 )
-A=(-H "authorization: Bearer tok-e2e"   -H "x-nuvio-auth: nuvio" -H "content-type: application/json")
-B=(-H "authorization: Bearer tok-e2e-b" -H "x-nuvio-auth: nuvio" -H "content-type: application/json")
+HASH_B=$(printf "nuvio:$TOK_B" | shasum -a 256 | cut -d' ' -f1)
+d1_seed "INSERT OR REPLACE INTO sessao (hash,id,nome,expira) \
+    VALUES ('$HASH_B','nuvio:e2e-b','Amigo E2E',$(( $(date +%s) + 86400 )))"
+A=(-H "authorization: Bearer $TOK_A" -H "x-nuvio-auth: nuvio" -H "content-type: application/json")
+B=(-H "authorization: Bearer $TOK_B" -H "x-nuvio-auth: nuvio" -H "content-type: application/json")
 COD=$(curl -s -X POST "${A[@]}" "$BASE/v1/eu" | sed -E 's/.*"codigo":"([a-z0-9]{6})".*/\1/')
 curl -s -X POST "${B[@]}" "$BASE/v1/eu" > /dev/null
 curl -s -X POST "${B[@]}" -d "{\"codigo\":\"$COD\"}" "$BASE/v1/contatos" > /dev/null
-# O D1 LOCAL E PERSISTENTE, E O SERVIDOR SO ACEITA 5 ENVIOS POR PAR POR DIA.
-# Sem esta limpeza, a SEXTA execucao do teste no mesmo dia recebe 429 na linha
-# abaixo, nenhuma recomendacao nova e plantada, e o teste falha em "ela conta
-# para o selo: 0" — uma falha que nao tem nada a ver com o cliente e que so
-# aparece para quem ja rodou a suite cinco vezes. MEDIDO em 16/09/2026.
-( cd servidor/recomendacoes && npx wrangler@4 d1 execute nuvio-recomendacoes \
-    --local --command "DELETE FROM rec WHERE para = 'nuvio:e2e' OR para = 'nuvio:e2e-b'" \
-    >/dev/null 2>&1 )
+# O D1 LOCAL DO MODO EXTERNO E PERSISTENTE, E O SERVIDOR SO ACEITA 5 ENVIOS POR
+# PAR POR DIA. Sem esta limpeza, a SEXTA execucao do teste no mesmo dia recebe
+# 429 na linha abaixo e o teste falha em "ela conta para o selo: 0" — MEDIDO em
+# 16/09/2026. (No modo padrao o D1 e novo a cada rodada; a limpeza e inofensiva.)
+d1_seed "DELETE FROM rec WHERE para = 'nuvio:e2e' OR para = 'nuvio:e2e-b'"
 
 # `nota` VAI NO CORPO porque e assim que o cliente a manda: quem recomenda tem
 # o CatItem na mao e e o unico que tem. O valor e em centesimos (88 = 8,8).
@@ -70,8 +96,9 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/recomenda.c) continue;; esac
   sources+=("$source")
 done
-cc "${sources[@]}" tests/recomenda_e2e.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-recomenda-e2e \
+cc "${sources[@]}" tests/recomenda_e2e.c -Isrc -o "$CC_TMP/nuvio-recomenda-e2e" \
+  -DNV_REC_URL="\"$BASE\"" \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-${TMPDIR:-/tmp}/nuvio-recomenda-e2e
+"$CC_TMP/nuvio-recomenda-e2e"
