@@ -658,6 +658,15 @@ const char *ajustes_player_pacote(int anime); // #205: pacote do app escolhido (
  * one continuous request). Saved choices 1..4 are kept. */
 int ajustes_buffer_native_connections(void);
 int ajustes_buffer_conversion_connections(void);
+/* Buffer telemetry on the player OSD + remote toggles (Matis94 C3), TV-local,
+ * OFF by default; ajustes_ram_overlay_alternar persists the GREEN press and
+ * reports the new state (0 = save failed). bufferRamReduzLocal keeps the
+ * automatic low-RAM budget reduction enabled by default. */
+int ajustes_buffer_dados(void);
+int ajustes_ram_overlay(void);
+int ajustes_ram_verde(void);
+int ajustes_buffer_ram_reduz(void);
+int ajustes_ram_overlay_alternar(void);
 int   ajustes_buffer_preset(void);           // #338: 0 Automatico, 1 = 64, 2 = 128, 3 = 256 MiB
 int   ajustes_cache_seek_mb(void);           // F07: seek cache limit in MB for the next video (0 = off / not on this TV)
 #ifdef AJUSTES_TESTE

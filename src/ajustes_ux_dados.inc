@@ -284,6 +284,10 @@ static const char *uxSinonimos(int op) {
     case AJ_PLAYER_ANIME: return "player anime externo igual vlc mx outro app video kitsu mal";
     case AJ_PLAYER_EXTERNO: return "player externo interno perguntar vlc mx outro app video external ask";
     case AJ_BUFFER: return "buffer tamanho memoria 64 128 256 mb travando carregando rede instavel stats nerds";
+    case AJ_BUFFER_DADOS: return "buffer dados memoria player osd informacao conexoes http stats";
+    case AJ_RAM_OVERLAY: return "ram overlay memoria tv uso pico livre system";
+    case AJ_RAM_VERDE: return "botao verde green controle remoto buffer dados memoria";
+    case AJ_BUFFER_RAM_REDUZ: return "reduzir buffer pouca memoria automatico seguranca tamanho";
     case AJ_CACHE_SEEK: return "cache seek buffer disco armazenamento voltar avancar travando carregando";
     case AJ_TMDB_IDIOMA: return "idioma metadados titulo sinopse traducao tmdb";
     case AJ_HERO_GENERO: return "genero destaque hero logo titulo categoria esconder mostrar card genre";

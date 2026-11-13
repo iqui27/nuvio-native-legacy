@@ -382,3 +382,5 @@
   1, // diagnosticsQrLocal: Desligado
   0, // nativeBufferConnectionsLocal: 1, one sequential request
   0, // conversionBufferConnectionsLocal: 1, Standard continuous request (R14)
+  1, 1, 1, // bufferDataLocal/ramOverlayLocal/ramGreenLocal: Desligado
+  0, // bufferRamReduzLocal: Ligado (reducao automatica mantem a protecao)
