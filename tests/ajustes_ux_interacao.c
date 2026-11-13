@@ -66,6 +66,37 @@ int main(void) {
     ajustes_leg2_estilo(&primary,&secondary);assert(leg_opacidade_pct(secondary.opacidade)==35);
     assert(remove(path)==0);ajustes_iniciar();assert(gravar());
 
+    // F1-profile: ajustes-p<N>.txt from older builds carries the legacy key.
+    // Switch, edit and the 2.1 migration must keep the profile's own value
+    // (0 = follows primary), never the active profile's, and the new key wins.
+    int keep[AJ_N];memcpy(keep,valor,sizeof keep);
+    for(int old=0;old<=4;old++) {
+      char line[64],*p2;snprintf(line,sizeof line,"legenda2OpacidadeLocal %d\n",old);
+      int want=leg_opacidade_secundaria_migrar(old);
+      snprintf(bad,sizeof bad,"legenda2OpacidadeFinaLocal %d\n",want);
+      assert(dados_gravar("ajustes-p2.txt",line));
+      valor[AJ_LEG2_OPACIDADE]=8;ajustes_perfil_restaurar(2);
+      assert(valor[AJ_LEG2_OPACIDADE]==want);
+      assert(dados_gravar("ajustes-p2.txt",line));
+      valor[AJ_LEG2_OPACIDADE]=8;assert(ajustes_edicao_iniciar(2));
+      assert(valor[AJ_LEG2_OPACIDADE]==want);
+      ajustes_edicao_encerrar();assert(valor[AJ_LEG2_OPACIDADE]==8);
+      p2=dados_ler("ajustes-p2.txt");assert(p2 && strstr(p2,bad));free(p2);
+      assert(dados_gravar("ajustes-p2.txt",line));
+      dados_apagar("ajustes-escopo.txt");
+      { const int ps[]={2};assert(ajustes_migrar_escopo_para(ps,1,1)); }
+      p2=dados_ler("ajustes-p2.txt");assert(p2 && strstr(p2,bad));free(p2);
+    }
+    for(int order=0;order<2;order++) {
+      const char *fine="legenda2OpacidadeFinaLocal 8\n",*old="legenda2OpacidadeLocal 4\n";
+      snprintf(bad,sizeof bad,"%s%s",order?fine:old,order?old:fine);
+      assert(dados_gravar("ajustes-p2.txt",bad));
+      valor[AJ_LEG2_OPACIDADE]=0;ajustes_perfil_restaurar(2);
+      assert(valor[AJ_LEG2_OPACIDADE]==8);
+    }
+    dados_apagar("ajustes-p2.txt");dados_apagar("ajustes-escopo.txt");dados_apagar("ajustes.txt.pre21");
+    memcpy(valor,keep,sizeof keep);valor[AJ_LEG2_OPACIDADE]=0;assert(gravar());
+
     // Device-backup restore uses stable player IDs (old leg_opacidade 2 =
     // 50%), and migrates the secondary key even without a local legacy file.
     const char *device=dados_aparelho_id();assert(*device);

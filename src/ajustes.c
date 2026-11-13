@@ -6701,7 +6701,7 @@ static int perfilLerVetor(int perfil, int *v, char *tem) {
   nomePerfil(nome, sizeof nome, perfil);
   t = dados_ler(nome);
   if (!t) return 0;
-  int focoAntigo = -1;
+  int focoAntigo = -1, leg2OpacidadeAntiga = -1;
   // Missing V2 means this profile still carries the old mute default.
   v[AJ_GUIA_PREVIA_SOM] = valorPadrao[AJ_GUIA_PREVIA_SOM];
   tem[AJ_GUIA_PREVIA_SOM] = 1;
@@ -6711,7 +6711,9 @@ static int perfilLerVetor(int perfil, int *v, char *tem) {
     if (fim) *fim = 0;
     if (sscanf(l, "%63s %d", chave, &x) == 2 && !strcmp(chave, "focusedPosterBackdropTrailerEnabled"))
       focoAntigo = x;
-    else if (sscanf(l, "%63s %d", chave, &x) == 2)
+    else if (sscanf(l, "%63s %d", chave, &x) == 2 && !strcmp(chave, "legenda2OpacidadeLocal")) {
+      if (x >= 0 && x <= 4) leg2OpacidadeAntiga = x;
+    } else if (sscanf(l, "%63s %d", chave, &x) == 2)
       for (i = 0; i < AJ_N; i++) {
         if (!dePerfil(i) || strcmp(CHAVE[i], chave)) continue;
         if (i == AJ_COLECAO_EXIBICAO && (x < VT_LAY_AUTO || x >= VT_LAY_N)) x = VT_LAY_AUTO;
@@ -6724,6 +6726,10 @@ static int perfilLerVetor(int perfil, int *v, char *tem) {
   if (!tem[AJ_FOCO_TRAILER] && focoAntigo >= 0) {
     v[AJ_FOCO_TRAILER] = focoTrailerMigrar(focoAntigo);
     tem[AJ_FOCO_TRAILER] = 1;
+  }
+  if (!tem[AJ_LEG2_OPACIDADE] && leg2OpacidadeAntiga >= 0) {
+    v[AJ_LEG2_OPACIDADE] = leg_opacidade_secundaria_migrar(leg2OpacidadeAntiga);
+    tem[AJ_LEG2_OPACIDADE] = 1;
   }
   free(t);
   return 1;
