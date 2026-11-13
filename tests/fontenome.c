@@ -36,7 +36,10 @@ static void probe(TxtLinha l, float x, float y, float a) {
   txt_desenhar_alpha(l,x,y,a);
 }
 static float nameYOf(int row) {
-  return FOLHA_TOPO+linhaTopo(row)-rolagem+20+(temMarca(filtrado(row),automaticaDaFolha())?FOLHA_MARCA_H:0)+40+FOLHA_SELO_H+12;
+  // Match the reserved audio/subtitle rows, independently of filename draws.
+  int i=filtrado(row);
+  return FOLHA_TOPO+linhaTopo(row)-rolagem+20+(temMarca(i,automaticaDaFolha())?FOLHA_MARCA_H:0)+40+FOLHA_SELO_H+12
+         +linhasFaixas(&lista[i])*FOLHA_FAIXA_H;
 }
 // Lines drawn from y0 down, one FOLHA_ARQ_H apart; checks they rebuild text.
 static int rowPieces(float y0, const char *text) {
@@ -113,8 +116,8 @@ static int fixture(int server,int description) {
   assert(!strcmp(arquivoVisivel(s,nameW),release) && "MP4 row never shows the description: name must draw");
   int lines=arquivoLayout(release,nameW)->n;
   frame(); assert(rowPieces(nameYOf(foco),release)==lines && nrec==lines);
-  // The focused row grows by the wrapped lines (height and draw agree).
-  assert(linhaAltura(foco)>=FOLHA_LINHA_H+lines*FOLHA_ARQ_H);
+  // The focused row reserves chips as well as every wrapped filename line.
+  assert(linhaAltura(foco)>=FOLHA_LINHA_H+linhasFaixas(s)*FOLHA_FAIXA_H+lines*FOLHA_ARQ_H);
   return lines;
 }
 int main(int argc,char **argv) {
