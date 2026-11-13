@@ -3099,7 +3099,9 @@ static void *fioCatalogo(void *u) {
 // isso duas vezes em BSS. Os dois so rodam sob contTrava, um de cada vez.
 static ProgRegistro contRegs[PROG_MAX];
 
-static int continuarLocal(CatItem *saida, int max) {
+// `enriquecer` = 1 paga o enfeite remoto (descEnfeitar); 0 entrega a fileira
+// crua, para a publicacao provisoria antes da rede (fioContinuar).
+static int continuarLocalLer(CatItem *saida, int max, int enriquecer) {
   ProgRegistro *regs = contRegs;
   int k, i, n = 0;
   k = prog_ler(regs, PROG_MAX);
@@ -3148,7 +3150,7 @@ static int continuarLocal(CatItem *saida, int max) {
   // isso era perda de registro (#158), sobretudo kitsu/tmdb e providers
   // offline. Enriquece uma copia e reaplica por identidade; uma falha deixa
   // os metadados conhecidos (ou a reserva da UI), sem inventar arte.
-  if (n > 0) {
+  if (n > 0 && enriquecer) {
     CatItem *enfeitadas = malloc(sizeof *enfeitadas * (size_t)n);
     if (enfeitadas) {
       int ni, j;
@@ -3176,6 +3178,10 @@ static int continuarLocal(CatItem *saida, int max) {
   }
   if (n) printf("[desc] continuar assistindo local: %d\n", n);
   return n;
+}
+
+static int continuarLocal(CatItem *saida, int max) {
+  return continuarLocalLer(saida, max, 1);
 }
 
 // --- "CONTINUAR ASSISTINDO": AS DUAS FONTES, UNIDAS ---------------------------
@@ -3936,6 +3942,45 @@ static void *fioContinuar(void *u) {
   if (!descSessaoVincular(sessao)) goto fim;
   pthread_mutex_lock(&contTrava);
   if (!descSessaoAtual()) { pthread_mutex_unlock(&contTrava); goto fim; }
+  // No tracker requests or metadata enrichment before this provisional row.
+  { int fonte = ajustes_cw_fonte();
+    if (fonte == AJ_CWF_AMBAS || fonte == AJ_CWF_CONTA ||
+        (fonte == AJ_CWF_TRAKT && !trakt_ativo())) {
+      int locais = continuarLocalLer(lote, CONT_MAX, 0), w = 0;
+      for (int i = 0; i < locais; i++) {
+        CatItem *c = &lote[i];
+        if (prog_removido_vence(c->imdb, c->retomadoMs) ||
+            prog_oculto_vence(c->imdb, c->retomadoMs)) continue;
+        if (!c->titulo[0]) snprintf(c->titulo, sizeof c->titulo, "%s",
+            i18n(!strcmp(c->tipo, "series") ? "Programa de TV" : "Filme"));
+        lote[w++] = *c;
+      }
+      if (w && nv_perfil_sessao_travar(sessao)) {
+        pthread_mutex_lock(&cwPubTrava);
+        // Local progress leads even with a stale snapshot. Keep unrelated
+        // cached entries until reconciliation; absence locally is no removal.
+        CatItem *existentes = malloc(sizeof *existentes * CONT_MAX);
+        if (existentes) {
+          int nExistentes = cat_copiar_fileira("continue_watching", existentes, CONT_MAX, NULL);
+          int nLocais = w;
+          for (int i = 0; i < nExistentes && w < CONT_MAX; i++) {
+            int j;
+            for (j = 0; j < nLocais; j++)
+              if (mesmaObra(&existentes[i], &lote[j])) break;
+            if (j == nLocais &&
+                !prog_removido_vence(existentes[i].imdb, existentes[i].retomadoMs) &&
+                !prog_oculto_vence(existentes[i].imdb, existentes[i].retomadoMs))
+              lote[w++] = existentes[i];
+          }
+          free(existentes);
+          cat_trocar_continuar(lote, w);
+          cwGerNaTela = __atomic_add_fetch(&cwGer, 1u, __ATOMIC_RELAXED);
+          printf("[desc] local Continue Watching published before network: %d\n", nLocais);
+        }
+        pthread_mutex_unlock(&cwPubTrava);
+        nv_perfil_sessao_destravar();
+      }
+    } }
   n = montarContinuar(lote, CONT_MAX);
   minhaGer = __atomic_load_n(&cwGer, __ATOMIC_RELAXED);
   pthread_mutex_unlock(&contTrava);
@@ -7411,38 +7456,6 @@ int desc_tmdb_elenco(const char *json, CatItem *d) {
   return tmdbElenco(json, d, 0);
 }
 
-// O nome que o TMDB devolve quando NAO tem traducao e "Episodio 3" (ou o
-// equivalente no idioma pedido): pior que o titulo original. Generico = o
-// numero do episodio como palavra inteira e, tirado ele, sobra no maximo UMA
-// palavra ("Episode 3", "Серія 3", "Episodul 3", "#3 Episodio"). Titulo de
-// verdade com mais de uma palavra sobrando ("Season Finale 3") nao cai aqui.
-int desc_nome_episodio_generico(const char *nome, int episodio) {
-  char num[16];
-  const char *p = nome;
-  size_t nn;
-  int palavras = 0, achou = 0, emPalavra = 0;
-  if (!nome || !nome[0]) return 1;
-  snprintf(num, sizeof num, "%d", episodio);
-  nn = strlen(num);
-  for (; *p; p++) {
-    unsigned char c = (unsigned char)*p;
-    if (c >= '0' && c <= '9') {
-      const char *q = p;
-      while (*q >= '0' && *q <= '9') q++;
-      if ((size_t)(q - p) == nn && !strncmp(p, num, nn)) achou = 1;
-      else if (!emPalavra) { palavras++; emPalavra = 1; }
-      p = q - 1;
-      continue;
-    }
-    if (c == ' ' || c == '#' || c == '.' || c == ':' || c == '-' || c == ',') {
-      emPalavra = 0;
-      continue;
-    }
-    if (!emPalavra) { palavras++; emPalavra = 1; }
-  }
-  return achou && palavras <= 1;
-}
-
 int desc_tmdb_notas_temporada(const char *json, CatEp *eps, int n,
                               int temporada) {
   return desc_tmdb_notas_temporada_ex(json, eps, n, temporada, DESC_EPT_SINOPSE);
@@ -7486,10 +7499,11 @@ int desc_tmdb_notas_temporada_ex(const char *json, CatEp *eps, int n,
           // traducao o TMDB devolve "Episodio 3", pior que o titulo original —
           // por isso o generico nao entra (desc_nome_episodio_generico), e o
           // nome que ja estava fica.
-          if ((textos & DESC_EPT_NOME) &&
+          if (((textos & DESC_EPT_NOME) || cat_nome_episodio_reserva(eps[i].nome,num)) &&
               js_texto(p, f, "name", nome, sizeof nome) && nome[0] &&
-              !desc_nome_episodio_generico(nome, num) &&
-              strcmp(nome, eps[i].nome) && (!soVazio || !eps[i].nome[0])) {
+              !cat_nome_episodio_arquivo(nome) &&
+              !cat_nome_episodio_generico(nome, num) &&
+              strcmp(nome, eps[i].nome) && (!soVazio || !eps[i].nome[0] || cat_nome_episodio_reserva(eps[i].nome,num))) {
             snprintf(eps[i].nome, sizeof eps[i].nome, "%s", nome);
             mudou = 1;
           }
@@ -7718,12 +7732,21 @@ static int parsearEpisodios(const char *corpo, CatEp *eps, int max) {
         if (rating<=0) rating=js_num(p,f,"rating",0.0);
         if (rating > 0.0 && rating <= 10.0)
           e->notaImdb = (int)(rating * 10.0 + 0.5); }
-      js_texto(p, f, "name", e->nome, sizeof e->nome);
+      char nome[1024] = "";
+      js_texto_raiz_em(p, f, "name", nome, sizeof nome);
       // O id do video (cat_id_stream): e ele que se manda aos addons de fonte
       // quando o titulo nao e do IMDb. Addon que usa "title" no lugar de "name"
       // (o Kitsu) tambem tem o nome lido.
       js_texto_raiz_em(p, f, "id", e->vid, sizeof e->vid);
-      if (!e->nome[0]) js_texto(p, f, "title", e->nome, sizeof e->nome);
+      if (!nome[0]) js_texto_raiz_em(p, f, "title", nome, sizeof nome);
+      if(cat_nome_episodio_arquivo(nome)) {
+        char alternativo[1024] = "";
+        js_texto_raiz_em(p,f,"title",alternativo,sizeof alternativo);
+        if(alternativo[0] && !cat_nome_episodio_arquivo(alternativo))
+          snprintf(nome,sizeof nome,"%s",alternativo);
+        else snprintf(nome,sizeof nome,i18n("Episódio %d"),ne);
+      }
+      snprintf(e->nome,sizeof e->nome,"%s",nome);
       js_texto(p, f, "overview", e->sinopse, sizeof e->sinopse);
       if (!e->sinopse[0]) js_texto(p, f, "description", e->sinopse, sizeof e->sinopse);
       js_texto(p, f, "thumbnail", e->thumb, sizeof e->thumb);
@@ -7791,11 +7814,15 @@ void desc_mesclar_episodios(CatEp *base, int nb, const CatEp *outro, int no, int
              : base[i].episodio > outro[j].episodio ? 1 : 0);
     if (c < 0) { i++; continue; }
     if (c > 0) { j++; continue; }
+    // A filename/our temporary label is missing display metadata, even when
+    // the addon is preferred. A temporary donor must not overwrite a title.
+    int semNome=!base[i].nome[0] || cat_nome_episodio_reserva(base[i].nome,base[i].episodio);
+    if(outro[j].nome[0] && (semNome || !cat_nome_episodio_reserva(outro[j].nome,outro[j].episodio)) &&
+       (modo==DESC_MESCLA_TEXTO || semNome))
+      snprintf(base[i].nome,sizeof base[i].nome,"%s",outro[j].nome);
     if (modo == DESC_MESCLA_TEXTO) {
-      if (outro[j].nome[0])    snprintf(base[i].nome, sizeof base[i].nome, "%s", outro[j].nome);
       if (outro[j].sinopse[0]) snprintf(base[i].sinopse, sizeof base[i].sinopse, "%s", outro[j].sinopse);
     } else {
-      if (!base[i].nome[0])    snprintf(base[i].nome, sizeof base[i].nome, "%s", outro[j].nome);
       if (!base[i].sinopse[0]) snprintf(base[i].sinopse, sizeof base[i].sinopse, "%s", outro[j].sinopse);
     }
     // O que o addon nao traz (still, duracao, data) vem da outra lista nos
@@ -8079,7 +8106,7 @@ static void tmdbEtapaProcessarUm(TmdbEtapa *etapa, const char *p, const char *f,
       tmdbGuardarTexto(etapa, &patch->sinopse, sinopse);
     if ((textos & DESC_EPT_NOME) && (!vazio || (!etapa->chaves[i].temNome && !patch->nome)) &&
         js_texto(p, f, "name", nome, sizeof nome) && nome[0] &&
-        !desc_nome_episodio_generico(nome, num))
+        !cat_nome_episodio_generico(nome, num))
       tmdbGuardarTexto(etapa, &patch->nome, nome);
   }
 }
@@ -8122,7 +8149,7 @@ static int tmdbEtapaPublicar(int item, int neps, CatEpToken token, long tmdb,
         if (e->tmdbE > 0 && (e->tmdbSerie != tmdb || anterior != e->tmdbE)) marcados++;
         if (!e->duracao[0] && p->runtime) { snprintf(e->duracao, sizeof e->duracao, "%d min", p->runtime); feitos++; }
         if (p->temNota) { e->nota = p->nota; feitos++; }
-        if ((textos & DESC_EPT_NOME) && p->nome && (!(textos & DESC_EPT_SO_VAZIO) || !e->nome[0]) && strcmp(e->nome, tmdbTexto(etapa, p->nome))) {
+        if ((textos & DESC_EPT_NOME) && p->nome && (!(textos & DESC_EPT_SO_VAZIO) || !e->nome[0] || cat_nome_episodio_reserva(e->nome, e->episodio)) && strcmp(e->nome, tmdbTexto(etapa, p->nome))) {
           snprintf(e->nome, sizeof e->nome, "%s", tmdbTexto(etapa, p->nome)); feitos++;
         }
         if ((textos & DESC_EPT_SINOPSE) && p->sinopse && (!(textos & DESC_EPT_SO_VAZIO) || !e->sinopse[0]) && strcmp(e->sinopse, tmdbTexto(etapa, p->sinopse))) {
@@ -8291,10 +8318,13 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
         memcpy(tp->t, atual.temporadas, sizeof tp->t);
       }
     }
-    if (cedo && tp) {
+    // Publish season tabs with every selected list, before optional metadata.
+    if (tp) {
       CatItem edit;
       if (cat_copiar_item(alvoItem, &edit)) {
-        edit.epsParciais = 1;
+        // Season tabs are ready before addon selection necessarily is.
+        // Keep pending identities provisional until the selected list is final.
+        edit.epsParciais = provisorio;
         edit.nTemporadas = tp->n;
         memcpy(edit.temporadas, tp->t, sizeof(int) * (size_t)tp->n);
         descCatAtualizar(cat_atualizar_item, alvoItem, &edit);
@@ -8407,7 +8437,7 @@ static int episodiosDoAddon(int alvoItem, const char *serie, const char *titulo,
            titulo, melhorNome, melhor, nCine);
     fflush(stdout);
     publicarEpisodiosSubstituir(melhorCorpo, alvoItem, titulo,
-                                aplicar ? corpoCine : NULL,
+                                corpoCine,
                                 DESC_MESCLA_VAZIOS, tp);
     arte_reserva_episodios(serie, melhorCorpo);
     usouTexto = aplicar;

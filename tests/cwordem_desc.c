@@ -163,6 +163,23 @@ void  addons_manifesto_lido(int i, const char *corpo) { (void)i; (void)corpo; }
 char *rede_baixar(const char *u, int t)    { (void)u; (void)t; return NULL; }
 char *rede_baixar_com(const char *u, int t, const char *const *c) {
   (void)c; return rede_baixar(u, t); }
+char *rede_baixar_st(const char *u, int t, const char *const *c, int *status) {
+  (void)c; if (status) *status = 200; return rede_baixar(u, t); }
+// Fixture sem maratonas: os dubles cobrem os pontos de rewatch.c.
+int rewatch_n_ativas(void) { return 0; }
+int rewatch_ativa_n(int i, char *imdb, size_t tam) { (void)i; (void)imdb; (void)tam; return 0; }
+int rewatch_parcial_de(const char *imdb, int *t, int *e, int *pct) {
+  (void)imdb; (void)t; (void)e; (void)pct; return 0; }
+int rewatch_alvo(const char *imdb, const CatEp *eps, int n, int *t, int *e, int *pct) {
+  (void)imdb; (void)eps; (void)n; (void)t; (void)e; (void)pct; return 0; }
+// Mais fronteiras novas de descoberta.c: fixture nao tem caca, disco nem TVDB.
+int ajustes_fonte_biblioteca(void) { return 0; }
+int ajustes_nota_episodio(int fonte) { (void)fonte; return 0; }
+int caca_itens(int i, int soFaltam, void *dst, int max) { (void)i; (void)soFaltam; (void)dst; (void)max; return 0; }
+int caca_por_chave(const char *chave) { (void)chave; return 0; }
+char *dados_caminho(char *dst, unsigned tam, const char *nome) {
+  if (dst && tam) dst[0] = 0; (void)nome; return dst; }
+int metaep_tvdb_video(const char *video, const char *fim) { (void)video; (void)fim; return 0; }
 int   arte_reserva_registrar(const char *url, const char *imdb, int poster) {
   (void)url; (void)imdb; (void)poster; return 1; }
 
@@ -223,6 +240,9 @@ int trakt_e_a_seguir(const char *id) {
 int simkl_e_a_seguir(const char *id) { (void)id; return 0; }
 static int traktFalhouTeste;    // #151: o Trakt respondeu HTTP 500
 int trakt_continuar(CatItem *s, int m) {
+#ifdef CWPROV_WAIT
+  cwprov_wait();
+#endif
   int i;
   if (traktFalhouTeste) return 0;
   for (i = 0; i < NFALSO && i < m; i++) {
