@@ -54,7 +54,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_MIC_BUSCA: return "aj_mic";
     case AJ_DESCOBRIR: return "aj_panel-left";
     case AJ_PS_FUNDO: return "aj_users";
-    case AJ_PS_CONTINUAR: return "aj_users";
+    case AJ_PS_CONTINUAR: case AJ_PS_TAMANHO: return "aj_users";
     case AJ_EXPANDIR: return "aj_maximize-2";
     case AJ_EXPANDIR_ATRASO: return "aj_clock";
     case AJ_BORDA_FOCO: return "aj_maximize-2";
@@ -197,7 +197,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_SEEKR_LIGADO: return "aj_film";
     case AJ_SEEKR_CHAVE: return "aj_film";
     case AJ_SEEKR_TESTAR: return "aj_film";
-    case AJ_SEEKR_FITA: return "aj_film";
+    case AJ_SEEKR_FITA: case AJ_MINIATURA_RES: return "aj_film";
     case AJ_SEEKR_AJUSTE: return "aj_film";
     case AJ_PREVIA_PROVEDOR: return "aj_film";
     case AJ_OPENSEEK_SERVIDOR: case AJ_OPENSEEK_PAREAR: case AJ_OPENSEEK_ESTADO: return "aj_link";
@@ -277,7 +277,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_LIVETV_FORMATO: return "aj_stethoscope";
     case AJ_LIVETV_MODO: return "aj_stethoscope";
     case AJ_LIVETV_PROXY: return "aj_stethoscope";
-    case AJ_LIVETV_SUGERIR: return "aj_layers";
+    case AJ_LIVETV_SUGERIR: case AJ_LIVETV_AGRUPAR: return "aj_layers";
     case AJ_REMEMBER_PROFILE: case AJ_PERFIL_ATIVO: return "aj_user-round";
     case AJ_SYNC: return "aj_cloud";
     case AJ_ADDONS: return "aj_user-round";

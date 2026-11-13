@@ -259,10 +259,16 @@ static int ajustesDeviceAplicar(const char *json) {
   if (ajJsonGet(dev, end, "values", &values, &ve)) {
     for (int i = 0; i < AJ_N; i++) if (ajusteAparelho(i)) {
       char key[96]; snprintf(key, sizeof key, "c_%s", CHAVE[i]);
-      if (!ajJsonGet(values, ve, key, &v, &f)) continue;
+      int legacyOpacity = 0;
+      if (!ajJsonGet(values, ve, key, &v, &f)) {
+        if (i != AJ_LEG2_OPACIDADE ||
+            !ajJsonGet(values, ve, "c_legenda2OpacidadeLocal", &v, &f)) continue;
+        legacyOpacity = 1;
+      }
       char *tail; long num = strtol(v, &tail, 10);
       if (tail != f || num < INT_MIN || num > INT_MAX) continue;
-      int next = limita(i, (int)num);
+      if (legacyOpacity && (num < 0 || num > 4)) continue;
+      int next = legacyOpacity ? leg_opacidade_secundaria_migrar((int)num) : limita(i, (int)num);
       if (next != valor[i]) { valor[i] = next; changed++; }
     }
     struct { const char *key; int *value; int min, max; } extra[] = {
