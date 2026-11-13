@@ -126,10 +126,13 @@ server.handle_error = handle_error
 threading.Thread(target=server.serve_forever, daemon=True).start()
 
 
-def run(mode, workers, endpoint='resolve'):
-    case = f'{mode}-{workers}'
+def run(mode, workers, endpoint='resolve', ahead=None, bound=None):
+    # Buffer size gives each lane one 4 MiB slot (12 MiB floor keeps the
+    # Standard ring at 16 MiB). `bound` runs a smaller budget on purpose.
+    ahead = ahead or max(12, 4 * workers)
+    case = f'{mode}-{workers}' if bound is None else f'{mode}-{ahead}mib-{workers}'
     url = f'http://127.0.0.1:{server.server_port}/{case}/{endpoint}'
-    result = subprocess.run([binary, mode, url, fixture, str(workers)],
+    result = subprocess.run([binary, mode, url, fixture, str(workers), str(ahead)],
                             capture_output=True, text=True, timeout=50)
     output = result.stdout + result.stderr
     assert 'c1-private-sentinel' not in output and 'c1-config-sentinel' not in output
@@ -139,7 +142,8 @@ def run(mode, workers, endpoint='resolve'):
     time.sleep(.1)  # Let disconnected server writers release their slots.
     selected = [r for r in rows if r[0] == case]
     if mode in ('native', 'conversion'):
-        assert peak[case] == workers, (case, 'actual concurrent connections', peak[case])
+        want = bound or workers
+        assert peak[case] == want, (case, 'actual concurrent connections', peak[case])
         if workers == 1:
             assert any(not r[4] and r[1] == 'data' for r in selected), (case, 'no continuous GET')
             assert all(not r[4] or r[3] <= 255 for r in selected), (case, 'repeated finite ranges')
@@ -172,6 +176,8 @@ try:
         for mode in ('conversion', 'native'):
             for workers in (1, 2, 3, 4):
                 run(mode, workers)
+        # 4 lanes on 12 MiB: RAM budget wins, only 3 slots ever in flight.
+        run('conversion', 4, ahead=12, bound=3)
         for mode in ('recover-range', 'recover-stream'):
             run(mode, 1)
         for mode in ('cancel-range', 'cancel-stream'):

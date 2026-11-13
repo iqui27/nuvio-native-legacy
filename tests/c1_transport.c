@@ -24,19 +24,21 @@ static void compare(DtsEngine *e, const char *path, int native) {
  fclose(f);
 }
 int main(int argc,char **argv) {
- assert(argc==5); const char *mode=argv[1],*url=argv[2]; int workers=atoi(argv[4]);
+ assert(argc==6); const char *mode=argv[1],*url=argv[2]; int workers=atoi(argv[4]),ahead=atoi(argv[5]);
  dts_engine_set_source_workers(workers); dts_engine_set_http_workers(workers);
  DtsEngine *e=NULL; uint64_t begun=clock_ns(CLOCK_MONOTONIC);
  if(!strcmp(mode,"native")) {
   e=dts_engine_source_create(url,"Authorization: Bearer c1-private-sentinel\nX-Fixture: c1-config-sentinel",64); assert(e);
   compare(e,argv[3],1);
  } else if(!strcmp(mode,"conversion")) {
-  e=dts_engine_create(); assert(e); dts_engine_set_ahead_mib(12);
+  e=dts_engine_create(); assert(e); dts_engine_set_ahead_mib(ahead);
   assert(!dts_engine_open(e,url,"Authorization: Bearer c1-private-sentinel\nX-Fixture: c1-config-sentinel",-1,0,0));
 #ifndef C1_BASELINE
   assert(e->http_workers==workers);
   assert(e->io->read_packet==(workers==1?read_fluxo:read_range));
   if(workers==1) assert(e->fx_cap==16*1024*1024);
+  /* Range queue RAM stays inside Settings > Buffer size, whatever the lanes. */
+  else assert((int64_t)e->range_slots*e->range_bytes<=(int64_t)ahead*1024*1024);
 #endif
   assert(e->io->seek(e,0,SEEK_SET)==0); compare(e,argv[3],0);
  } else {
