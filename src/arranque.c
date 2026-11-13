@@ -30,12 +30,15 @@ void arranque_etapa(const char *nome) {
 
 // Antes de qualquer outro construtor (o padrao e 65535; libtorrent e FFmpeg
 // estao no binario, e o C++ estatico deles roda nessa faixa).
+// NV_ARRANQUE_SEM_CONSTRUTOR: so o teste, que arma os tratadores ele mesmo.
+#if !defined(NV_ARRANQUE_SEM_CONSTRUTOR)
 __attribute__((constructor(101)))
 static void arranqueConstrutor(void) {
   rename(ARQ_ETAPA, ARQ_ANTES);
   arranque_etapa("construtores");
   queda_armar(ARQ_QUEDA);
 }
+#endif
 
 // Chamado por avisos_iniciar depois de rearmar o tratador para <dados>/queda.txt:
 // o relato continua indo tambem para o arquivo fixo de /tmp.
@@ -43,6 +46,20 @@ void arranque_espelhar_queda(void) { queda_espelho(ARQ_QUEDA); }
 
 static char *relatoPendente;
 static char relatoTv[64];
+
+// Diretorio onde o binario mora (webOS: $APPDIR, que e onde o kernel larga os
+// cores do issue #766). FRACO: o teste o redefine e aponta a poda ao fixture.
+__attribute__((weak))
+const char *arranque_dir_app(char *buf, size_t cap) {
+  ssize_t n = readlink("/proc/self/exe", buf, cap - 1);
+  char *b;
+  if (n <= 0) return NULL;
+  buf[n] = 0;
+  b = strrchr(buf, '/');
+  if (!b || b == buf) return NULL;
+  *b = 0;
+  return buf;
+}
 
 void arranque_relatar(void) {
   char b[160] = "", linhaTv[256] = "";
@@ -115,6 +132,13 @@ void arranque_relatar(void) {
     fflush(stdout);
   }
   free(rq);
+  // #766: poda os core/core.* que o sistema larga no diretorio do app. Depois
+  // do freopen do log (main.c), entao as linhas "[queda] core ..." saem no
+  // registro da sessao. Uma vez por abertura; fora do construtor, sem I/O la.
+  { char dirApp[512];
+    const char *da = arranque_dir_app(dirApp, sizeof dirApp);
+    if (da) queda_podar_cores(da, stdout);
+    else printf("[queda] poda: diretorio do app nao resolvido\n"); }
 }
 
 // DEPOIS de rede_preparar, ANTES de app_iniciar (main.c). So manda quando a
