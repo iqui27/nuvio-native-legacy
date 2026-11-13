@@ -436,9 +436,13 @@ int main(int argc, char **argv) {
     // Revisao P2: troca de perfil solta o blob (sync_reaplicar_ajustes) e o
     // do perfil novo, do MESMO tamanho, tende a cair no mesmo endereco. A
     // deteccao de "blob novo" pelo ponteiro pulava os idiomas dele.
-    { sync_reaplicar_ajustes();
+    // Real lifecycle (948c6db82: protect is a no-op while a restore is open):
+    // an admin copy left profile 2 pending (ajustes.c), then the switch frees
+    // the blob and re-protects 2 with no cycle in between (sync_trocar_perfil).
+    { sync_marcar_ajustes_pendentes_perfil(2);
+      escolher(2);
+      sync_trocar_perfil(1);
       confere("troca de perfil limpa os idiomas da conta", idiomasChamadas >= 2 && !idiomasConta[0]);
-      sync_proteger_ajustes_locais();
       legContaValor = "pt";
       ciclo();
       confere("blob do perfil novo entrega os idiomas dele",
