@@ -798,6 +798,10 @@ typedef enum {
   AJ_REMEMBER_PROFILE,
   // Matis94: botoes de pular por trecho, por perfil desta TV.
   AJ_SHOW_SKIP_INTRO, AJ_SHOW_SKIP_RECAP, AJ_SHOW_SKIP_CREDITS,
+  // DIAGNOSTICO: cartao de download do registro (botao azul no painel do
+  // registro), opt-in e so desta TV. Desligado, so o cartao some: o registro
+  // comum e a pagina local continuam exatamente iguais.
+  AJ_DIAGNOSTICS_QR,
   // Experimental P7 mapping preservation (dolby_vision To81MappingPreserved).
   // LOCAL, append-only, DESLIGADO de fabrica.
   AJ_DV7_MAPPING,
@@ -2003,6 +2007,8 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Botão de pular a abertura",        V_LIGA, 2),
   ESC("Botão de pular o resumo",          V_LIGA, 2),
   ESC("Botão de pular os créditos",       V_LIGA, 2),
+  // DIAGNOSTICO (Matis94): cartao de download do registro, so desta TV.
+  ESC("QR de diagnóstico", V_LIGA, 2),                         // local: diagnosticsQrLocal
   ESC("Dolby Vision P7: manter mapeamento (experimental)", V_LIGA, 2),   // local: dv7PreserveMappingLocal
   ESC("Áudio com Dolby Vision", V_DV_AUDIO, 3),   // local: dvAudioFixoLocal
   ESC("Dolby Vision MP4 (experimental)", V_LIGA, 2),
@@ -2368,6 +2374,7 @@ static const char *CHAVE[] = {
   "updateNotificationsLocal",
   "rememberLastProfileLocal",
   "showSkipIntroButtonLocal", "showSkipRecapButtonLocal", "showSkipCreditsButtonLocal",
+  "diagnosticsQrLocal",
   "dv7PreserveMappingLocal",
   "dvAudioFixoLocal",
   "dvMp4BdTestLocal",
@@ -3240,6 +3247,7 @@ int ajustes_fonte_grupo(void) { return ajustes_fonte_prioridade() != 3 && lig(AJ
 int ajustes_fonte_grupo_sessoes(void) { return lig(AJ_FONTE_GRUPO_SESSOES); }
 int ajustes_link_reusar(void) { return lig(AJ_LINK_REUSAR); }
 int ajustes_log_rede(void) { return lig(AJ_LOG_REDE); }
+int ajustes_diagnostics_qr(void) { return lig(AJ_DIAGNOSTICS_QR); }
 unsigned ajustes_link_prazo_s(void) {
   int v = valor[AJ_LINK_PRAZO], n = (int)(sizeof LINK_PRAZO_H / sizeof *LINK_PRAZO_H);
   if (v < 0 || v >= n) v = 5;
@@ -6445,6 +6453,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_QUALIDADE_IMG:  /* resolucao da arte decodificada: idem */
     case AJ_ENVIO_AUTO:     /* consentimento de envio de registro deste aparelho */
     case AJ_LOG_REDE:       /* pagina de registro na rede desta casa */
+    case AJ_DIAGNOSTICS_QR: /* cartao de download do registro, so desta TV */
     case AJ_ANIM:           /* animacoes reduzidas: acessibilidade nesta TV */
     case AJ_IDIOMA:         /* idioma da interface deste aparelho */
     case AJ_FIL_LIMITE:     /* fileiras da home: por aparelho (fileirasui-p<N>.txt) */
@@ -6648,6 +6657,7 @@ static int soNaTv(int op) {
     case AJ_ADDONS_PRINCIPAL:
     case AJ_SELOS_PACOTE: case AJ_SELOS_PACOTE_ADD: case AJ_SELOS_PACOTE_REM:
     case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL:
+    case AJ_LOG_REDE: case AJ_DIAGNOSTICS_QR:
       return 1;
     default:
       return 0;
@@ -8720,6 +8730,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_NOVIDADES20: return "O tour do que mudou na 2.0, capítulo por capítulo, com o que vale neste aparelho. Abre do começo.";
     case AJ_APOIAR: return "Se o Nuvio te ajuda e você quiser apoiar quem faz o app, aponte a câmera do celular para um dos códigos. É opcional: nada muda no app.";
     case AJ_LOG_REDE: return "Mostra o registro desta TV numa página da sua rede: abra o endereço abaixo no celular ou no computador, na mesma rede. Sem senhas nem chaves; endereços vão cortados no host. Desligue quando terminar.";
+    case AJ_DIAGNOSTICS_QR: return "Ativa o cartão de baixar o registro no painel do registro (Azul/F10). Desligado por padrão. O registro normal continua ativo. A cópia temporária só é criada ao abrir.";
     case AJ_ENVIAR_LOG: return "Manda os últimos 200 KB do registro desta sessão (sem senhas nem chaves) para quem faz o app. Use quando algo estiver errado agora.";
     case AJ_ENVIO_AUTO: return "Ligado, o app manda o registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Sem senhas nem chaves; serve para achar o que trava a Samsung. Desligue quando quiser.";
     case AJ_DIAGNOSTICO: return "Testa manifestos, fontes e artes dos addons, mede os tempos e aplica um perfil seguro de Qualidade ou Desempenho. O teste não marca títulos como assistidos.";
@@ -11658,7 +11669,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_SALVOS_DEST: case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_HIST_CONTA: case AJ_SOCIAL: case AJ_DIARIO_NUVEM:
       return AJPV_RASTREIO;
     case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_UPDATE_NOTIFICATIONS: case AJ_ENVIAR_LOG: case AJ_GUIA: case AJ_NOVIDADES20: case AJ_DICASCONTROLE: case AJ_APOIAR:
-    case AJ_ENVIO_AUTO: case AJ_VER_REGISTRO: case AJ_LOG_REDE:
+    case AJ_ENVIO_AUTO: case AJ_VER_REGISTRO: case AJ_LOG_REDE: case AJ_DIAGNOSTICS_QR:
 #ifdef NV_ANDROID
     case AJ_BAIXAR_REGISTRO:
 #endif

@@ -11,15 +11,15 @@ Fonte e critérios: [mapa de paridade](../../reviews/matis94-20261112/README.md)
 | Lote | Escopo | Estado |
 |---|---|---|
 | A | Segurança de filas PGS, HEVC in-band, URLs longas | Integrado em `c0abc4a28`; revisão + verificador independentes, gate 5/5 e pós-merge 5/5. [Evidência](lote-a-integracao.md). TV pendente. |
-| B | Modos DV/DTS/TrueHD, faixas e memória de áudio | Em implementação — `agente/21-matis-b-dv`; integrar após A |
-| C | Buffer contínuo, controles, recovery/seek e telemetria | C1 transporte implementado/testado em `0e66f9beb`; correção do novo padrão Standard(1) em execução isolada no Zima. C2 seek e C3 telemetria na fila. Sem revisão final/merge. |
-| D | Áudio de outra versão e cortes/intro skip | Em implementação — `agente/21-matis-d-audioexterno`; integrar após B/C |
-| E | Formatter, badges, regex e lista de fontes | Em implementação — `agente/21-matis-e-fontes` |
+| B | Modos DV/DTS/TrueHD, faixas e memória de áudio | Correções de rótulo por faixa e capacidade do SDK importadas; suite B, idiomas e build host passaram em `c9a8c3a3a`. Nova revisão e atualização da base pendentes. |
+| C | Buffer contínuo, controles, recovery/seek e telemetria | C1 transporte e padrão Standard(1) testados em `7a1c53d22`, escolhas salvas preservadas. C2 reutilização de fonte/pipeline implementada e testada no Mac mini; patch recebido, ainda não importado/revisado. C3 telemetria na fila. |
+| D | Áudio de outra versão e cortes/intro skip | Engine com mídia codificada, menu, controlador e build host passaram; atualização A/H/F reconciliada em `0e2b690a8`. Revisão final e combinação B/C pendentes. |
+| E | Formatter, badges, regex e lista de fontes | Renderização completa UTF-8, formatter, regex e build host passaram; base A/H/F atualizada. Regressões explícitas de backup/localidade passaram após correção do teste. Atualização G e nova revisão pendentes. |
 | F | Perfil, skip, atualização e opacidade | Integrado em `26eec9dbb`; revisão + verificador independentes, gate 8/8 e pós-merge 3/3. [Evidência](lote-f-integracao.md). TV pendente. |
-| G | Diagnósticos local/QR, motivos e exportação de nuvem | Autorização de upload revisada; complemento QR local/portabilidade em andamento em `agente/21-matis-g-logs`. Retomada aguarda capacidade do cota-gate; sem deploy. |
+| G | Diagnósticos local/QR, motivos e exportação de nuvem | Integrado em `6aa346ec3`; revisão + verificador independentes, gate 8/8 e pós-merge 3/3. [Evidência e P2](lote-g-integracao.md). Serviço de nuvem sem deploy; TV pendente. |
 | H | CW local, temporadas e títulos de episódios | Integrado em `8a16234bc`; revisão + verificador independentes, gate 15/15 e pós-merge 3/3. [Evidência](lote-h-integracao.md). TV pendente. |
 
-Execução: `job-pi`, implementações iniciais `nv-impl medium`; correções e revisões `nv-revisao medium`. Modelo efetivamente servido permanece desconhecido sem evidência do gateway. Worktrees `/Volumes/ExternalSSD/nv-21-matis-*`; briefs/logs/progresso em `/Volumes/ExternalSSD/tmp/rev/matis94-20261112/`. A/F/H já integrados; B/C/D/E/G ainda não. A troca para Desktop encerrou os seis executores restantes, preservando commits/edições; B/D/E/F/C1 foram retomados em logs `*-r2.log`. C1 terminou implementação e recebe correções delimitadas no Zima, com importação inspecionada e execução host obrigatórias. F concluiu esse ciclo e foi integrado após nova revisão/verificação e gate. G aguarda capacidade após recusa explícita do `cota-gate`. Não contornar o limite nem lançar dois escritores no mesmo worktree.
+Execução: implementações iniciais `nv-impl medium`; correções e revisões `nv-revisao medium`. Modelo servido desconhecido sem prova do gateway. A/F/H/G integrados; B/C/D/E ainda fora. Worktrees `/Volumes/ExternalSSD/nv-21-matis-*`; briefs e evidência em `/Volumes/ExternalSSD/tmp/rev/matis94-20261112/`. Estado acima registra o corte documental, não atividade instantânea de processos. Uma escrita por worktree; sem contornar limites do executor.
 
 ## Cobertura item a item
 
@@ -72,11 +72,11 @@ Execução: `job-pi`, implementações iniciais `nv-impl medium`; correções e 
 | F19 | Desligar avisos automáticos de atualização mantendo busca manual | Ausente | Código integrado em `26eec9dbb`; avisos enfileirados suprimidos e busca manual validada offline. TV pendente. |
 | F20 | Continuar assistindo local antes do sync remoto | Parcial | Código integrado em `8a16234bc`; progresso do perfil publicado antes da reconciliação, inclusive com fileira anterior não vazia. TV pendente. |
 | D01 | Página local estável e download de log redigido | Presente | Manter; prova de TV separada |
-| D02 | QR local RED → BLUE com snapshot enquanto tela fica aberta | Ausente | Pendente de adaptação/prova |
-| D03 | Explicar por que página local não abriu | Ausente | Pendente de adaptação/prova |
+| D02 | QR local RED → BLUE com snapshot enquanto tela fica aberta | Ausente | Código integrado em `6aa346ec3`; QR local real e refresh comprovados no render host. TV pendente. |
+| D03 | Explicar por que página local não abriu | Ausente | Código integrado em `6aa346ec3`; P2 F2: expiração/bloqueio ainda podem mostrar motivo `?`. TV pendente. |
 | D04 | Rede 100.x | Presente, com escopo | Manter; prova de TV separada |
-| D05 | Link público/QR de log na nuvem válido por 72h; OK/RIGHT como fallback | Ausente | Pendente de adaptação/prova |
-| D06 | Chave Diagnostics QR OFF e liberação de recursos ao fechar | Parcial | Pendente de adaptação/prova |
+| D05 | Link público/QR de log na nuvem válido por 72h; OK/RIGHT como fallback | Ausente | Código integrado em `6aa346ec3`; auth restrita, TTL e limites testados offline. Serviço sem deploy/provisionamento; nenhum upload real. |
+| D06 | Chave Diagnostics QR OFF e liberação de recursos ao fechar | Parcial | Código integrado em `6aa346ec3`; OFF padrão e fechamento normal testados. P2 F9: snapshot pode persistir ao encerrar processo. TV pendente. |
 | D07 | Overlay RAM e GREEN, depois três chaves independentes de RAM/dados/atalho | Parcial | Pendente de adaptação/prova |
 | D08 | Dados do buffer: MiB pronto/capacidade, tempo estimado, modo sistema e limite HTTP da sessão | Parcial | Pendente de adaptação/prova |
 | D09 | Diagnóstico de rede redigido: redirects, timings, rate limit e reuso | Parcial | Pendente de adaptação/prova |

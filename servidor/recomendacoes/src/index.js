@@ -16,6 +16,7 @@ import { codigoRegistro } from "./codigo.js";
 import { rotaTrailerImdb, rotaTrailerYoutube } from "./trailer.js";
 import { rotaNoticia, rotaNoticiaImg } from "./noticia.js";
 import { rotaLiveTvCategorias } from "./livetvcat.js";
+import { rotaLoglinkPost, rotaLoglinkGet } from "./loglink.js";
 import { rotaMusica, rotaPaginaMusica } from "./musica.js";
 import { rotaAmigos, limpezaAmigos, despublicar, garantirPerfil, avatarPublico, limitar, seloDe, mesmaConta } from "./amigos.js";
 import { rotaEuNome, rotaAlcance, rotaEvento, rotaFeed, rotaAmigo, limpezaSocial,
@@ -970,6 +971,16 @@ export default {
       const tv = String(corpo?.tv || "?").replace(/[^\w.:-]/g, "").slice(0, 64);
       return rotaRegistro(env, { id: "diag:" + tv }, corpo);
     }
+
+    // LOGLINK (Matis94 adaptado): envio do gzip do registro ja mascarado,
+    // vira link de 72 h no KV LOGS. Credencial PROPRIA (LOGLINK_TOKEN, so de
+    // envio), nunca o DIAG_TOKEN acima; tetos e regras em src/loglink.js. So
+    // o OK/seta da pessoa na TV dispara. Sem binding/segredo: 503.
+    if (rota === "/v1/loglink" && req.method === "POST" &&
+        (req.headers.get("x-nuvio-auth") || "").toLowerCase() === "loglink")
+      return rotaLoglinkPost(req, env, erro, json, limitar);
+    if (rota.startsWith("/v1/loglink/") && (req.method === "GET" || req.method === "HEAD"))
+      return rotaLoglinkGet(req, env, erro, rota.slice("/v1/loglink/".length));
 
     // PROXY DO XTREAM PARA A SAMSUNG (#112): sem sessao, como /v1/noticias,
     // porque quem autentica e o painel do Xtream com a credencial que passa
