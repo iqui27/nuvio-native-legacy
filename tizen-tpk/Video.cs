@@ -118,6 +118,12 @@ namespace NuvioTpk
         volatile int posMs;
         int posGer;
         bool acabou;
+        // #783: a Home para o player de proposito (#412); a volta na OnResume
+        // da plataforma pede a reconexao nativa da MESMA sessao em vez de
+        // esperar o watchdog de 15 s com a tela preta. sessaoAtiva marca uma
+        // sessao que o sistema pode ter parado: zera quando o app para a
+        // sessao (Voltar/troca de fonte nao reabrem a velha) e no fim dela.
+        int sessaoAtiva, sistemaParou, sistemaPosMs;
 
         // Um contexto por sessao mantem comandos e continuacoes async no mesmo
         // fio. Fechar descarta a fila antiga; nunca espera uma API presa.
@@ -158,7 +164,9 @@ namespace NuvioTpk
             this.telaW = telaW;
             this.telaH = telaH;
             logArq = Path.Combine(dados, "tpk-host.log");
-            fAbrir = (u, c, ger) => { string url = Marshal.PtrToStringAnsi(u), cab = Marshal.PtrToStringAnsi(c); Trocar(minha => Abrir(url, cab, minha, ger), ger); };
+            fAbrir = (u, c, ger) => { string url = Marshal.PtrToStringAnsi(u), cab = Marshal.PtrToStringAnsi(c);
+                lock (trocaTrava) { sessaoAtiva = 1; sistemaParou = 0; }
+                Trocar(minha => Abrir(url, cab, minha, ger), ger); };
             fParar = Parar;
             fPausar = p => ComSessao(() => Pausar(p != 0));
             fBuscar = ms => ComSessao(() => Buscar(ms));
@@ -283,7 +291,30 @@ namespace NuvioTpk
         // player preso o Pause nunca chega e o som seguia na Home (#412). O
         // descarte em background solta Muted e o plano sem o fio da sessao; a
         // volta e a reconexao de sempre no relogio parado (watchdog do C).
-        public void PausarPeloSistema() { Parar(); }
+        // #783: a parada do sistema grava que havia sessao e o relogio: so a
+        // OnResume da plataforma (foreground real) pede a retomada, uma vez.
+        public void PausarPeloSistema()
+        {
+            lock (trocaTrava)
+                if (sessaoAtiva != 0) { sistemaParou = 1; sistemaPosMs = posMs; }
+            Parar();
+        }
+
+        // Retomada real do segundo plano: UMA EV_PRESO com o ultimo relogio.
+        // O C decide (ativo, reconPermitida, terminou, falhou): sessao velha,
+        // terminada ou de canal nao reabre. Chamada sintetica sem sessao e
+        // no-op; dupla retomada nao duplica o aviso.
+        public void RetomarDoSistema()
+        {
+            int alvo;
+            lock (trocaTrava)
+            {
+                if (sistemaParou == 0) return;
+                sistemaParou = 0;
+                alvo = sistemaPosMs;
+            }
+            NvVid.Evento(EV_PRESO, alvo, 0);
+        }
 
         // VOLUME DO TRAILER (#281: S90C, Tizen 9, trailer sem som com o ajuste
         // de som ligado). So o trailer pede volume (trailer.c); o filme nunca
@@ -451,6 +482,7 @@ namespace NuvioTpk
                         lock (trocaTrava) {
                             if (minha == sessao && player == p && !acabou) {
                                 acabou = true;
+                                sessaoAtiva = 0; // #783: sessao encerrada nao retoma
                                 Interlocked.Increment(ref posGer);
                                 // Ready no longer exposes a playing position. Publish EOS
                                 // at duration so the existing next-episode flow can run.
@@ -614,7 +646,8 @@ namespace NuvioTpk
             windowMetrics.Reset();
         }
 
-        public void Parar() { Trocar(null); }
+        // #783: quem para nao e a sessao do sistema; a volta nao a ressuscita.
+        public void Parar() { lock (trocaTrava) sessaoAtiva = 0; Trocar(null); }
         public void Encerrar() { Parar(); }
 
         // Dispose confirma a liberacao, independentemente do estado anterior.
