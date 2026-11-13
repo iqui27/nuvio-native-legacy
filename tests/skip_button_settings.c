@@ -32,7 +32,7 @@ int main(int argc,char **argv){
   assert(argc==4);fixtureDirectory=argv[2];int mask=atoi(argv[3]);
   const int options[]={AJ_SHOW_SKIP_INTRO,AJ_SHOW_SKIP_RECAP,AJ_SHOW_SKIP_CREDITS};
   const char *keys[]={"showSkipIntroButtonLocal","showSkipRecapButtonLocal","showSkipCreditsButtonLocal"};
-  assert(AJ_SHOW_SKIP_INTRO==AJ_REMEMBER_PROFILE+1&&AJ_N==AJ_SHOW_SKIP_CREDITS+1);
+  assert(AJ_SHOW_SKIP_INTRO==AJ_REMEMBER_PROFILE+1&&AJ_SHOW_SKIP_CREDITS==AJ_SHOW_SKIP_INTRO+2);
   for(int k=0;k<3;k++){
     int op=options[k],seen=0;
     assert(valorPadrao[op]==0&&valor[op]==0&&!strcmp(CHAVE[op],keys[k]));

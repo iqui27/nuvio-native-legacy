@@ -7,11 +7,17 @@
 #include "ajustes.h"
 #include "idioma.h"
 #include "qr.h"
+#include "logexport.h"
+#include "logcloud.h"
+#include "registro.h"
+#include "dados.h"
 #define NV_ESCALA_TELA   // o arquivo inteiro mede pela tela virtual (escala.h)
 #include "escala.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
+#include <unistd.h>
 
 // O CARTAO: 380 de largura cabe o QR de 248 com folga para o endereco numa
 // linha em TXT_CAPTION ("192.168.100.200:65535/abcdefgh" mede ~330).
@@ -31,6 +37,39 @@ static float   animBotao[CELB_N];
 static int     focoBotao[CELB_N];     // o que o ultimo desenho pediu
 static char    titulo[96];
 static GfxRect cartao;
+static char logSnapshot[128];
+// SEND TO THE CLOUD (logcloud.h): the Download log card switches to it when
+// the local address cannot be opened (OK) or on RIGHT; it shows the link.
+static int  nuvem;
+static char motivoLog[160];
+static GLuint texQr;
+// Cache key: any URL the QR can carry (local address or cloud link) fits whole,
+// so a long link is generated and uploaded once, not every frame.
+static char texQrDe[QR_MAX_BYTES + 1];
+// ENDERECO FIXO DO DIAGNOSTICO (dono, 06/11/2026): o registro e aberto no
+// navegador do COMPUTADOR, entao o endereco tem de ser o mesmo a cada abertura
+// (favorito), em vez de um QR novo a cada vez. O token fica salvo na pasta de
+// dados; a porta e CEL_RELATORIO_PORTA. O servidor so existe com o cartao
+// aberto, como antes.
+#define CB_TOKEN_DIAG "diag_lan_token.txt"
+static void tokenDiagnostico(void) {
+  char t[16] = "", *salvo = dados_ler(CB_TOKEN_DIAG);
+  if (salvo) { snprintf(t, sizeof t, "%.8s", salvo); free(salvo); }
+  if (strlen(t) != 8 && celular_gerar_token(t, sizeof t)) dados_gravar(CB_TOKEN_DIAG, t);
+  celular_relatorio_fixo(t, CEL_RELATORIO_PORTA);
+  memset(t, 0, sizeof t);
+}
+static void abrirServidor(void) {
+  celular_fechar();
+  if (logSnapshot[0]) { unlink(logSnapshot); logSnapshot[0] = 0; }
+  if (dono == CELB_LOG) {
+    tokenDiagnostico();
+    motivoLog[0] = 0;
+    if (logexport_create(registro_arquivo(), logSnapshot, sizeof logSnapshot)) {
+      if (!celular_abrir_relatorio(logSnapshot)) snprintf(motivoLog, sizeof motivoLog, "%s", celular_motivo());
+    } else { puts("[log-export] snapshot failed"); snprintf(motivoLog, sizeof motivoLog, "log snapshot failed"); }
+  } else celular_abrir(titulo);
+}
 
 int celb_disponivel(void) { return celular_disponivel(); }
 int celb_digitar_disponivel(void) {
@@ -51,6 +90,7 @@ void celb_atualizar(float dt) {
     animBotao[d] = ajustes_animacoes_reduzidas() ? alvo : anim_mola(animBotao[d], alvo, dt, NV_MOLA_FOCO);
     focoBotao[d] = 0;   // o proximo desenho repoe; botao que sumiu apaga
   }
+  if (aberto && dono == CELB_LOG && !ajustes_diagnostics_qr()) celb_fechar();
   if (!aberto) { animCartao = 0.0f; return; }
   animCartao = ajustes_animacoes_reduzidas() ? 1.0f : anim_mola(animCartao, 1.0f, dt, NV_MOLA_TELA);
 }
@@ -84,15 +124,17 @@ void celb_botao(int d, GfxRect r, int focado, PonteiroFn focar, int a, int b, fl
 }
 
 int celb_abrir(int d, const char *t) {
+  if (d == CELB_LOG && !ajustes_diagnostics_qr()) return 0;
   if (d <= CELB_NENHUM || d >= CELB_N || !celular_disponivel()) return 0;
   snprintf(titulo, sizeof titulo, "%s", t ? t : "");
   dono = d;
   aberto = 1;
   embutido = 0;
+  nuvem = 0; logcloud_esquecer();
   animCartao = 0.0f;
   // Sem rede o cartao abre assim mesmo e diz por que nao ha codigo: um OK que
   // nao faz nada pareceria botao quebrado.
-  celular_abrir(titulo);
+  abrirServidor();
   printf("[celular] cartao aberto (dono %d)\n", d);
   return 1;
 }
@@ -108,7 +150,11 @@ void celb_fechar(void) {
   if (!aberto) return;
   aberto = 0;
   embutido = 0;
+  nuvem = 0; logcloud_esquecer();
   celular_fechar();
+  if (texQr) glDeleteTextures(1, &texQr);
+  texQr = 0; texQrDe[0] = 0;
+  if (logSnapshot[0]) { unlink(logSnapshot); logSnapshot[0] = 0; }
 }
 void celb_fechar_dono(int d) { if (aberto && dono == d) celb_fechar(); }
 
@@ -120,7 +166,7 @@ int celb_pegar(int d, char *dst, size_t n) {
 }
 
 static void regerar(void) {
-  if (aberto) celular_abrir(titulo);
+  if (aberto) abrirServidor();
 }
 static void fecharPonteiro(int a, int b) { (void)a; (void)b; celb_fechar(); }
 static void regerarPonteiro(int a, int b) { (void)a; (void)b; regerar(); }
@@ -150,10 +196,23 @@ int celb_evento(const SDL_Event *e) {
     celb_fechar();
     return 1;
   }
+  if (dono == CELB_LOG && k == SDLK_RIGHT && !nuvem && !e->key.repeat) {
+    nuvem = 1; logcloud_enviar();
+    return 1;
+  }
   if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && !e->key.repeat) {
     // OK com o codigo na tela nao faz nada: quem aperta OK ali esta
     // "confirmando", e fechar levaria o codigo embora antes do envio.
-    if (celular_estado() != CEL_ESPERANDO) regerar();
+    // DIAGNOSTICO: OK tira um registro novo no MESMO endereco (o navegador do
+    // computador so recarrega a pagina).
+    // Cloud: OK where the local address failed sends the log; OK after a
+    // failed upload tries again; with the link on screen it does nothing.
+    if (dono == CELB_LOG && nuvem) {
+      if (logcloud_estado() == LOGCLOUD_FALHOU) logcloud_enviar();
+      return 1;
+    }
+    if (dono == CELB_LOG && celular_estado() != CEL_ESPERANDO) { nuvem = 1; logcloud_enviar(); return 1; }
+    if (dono == CELB_LOG || celular_estado() != CEL_ESPERANDO) regerar();
     return 1;
   }
   return 1;
@@ -163,8 +222,6 @@ int celb_evento(const SDL_Event *e) {
 // QR como TEXTURA (como login.c): a versao 3-4 tem ~1000 modulos, e um
 // retangulo por modulo por quadro custaria mais que o cartao inteiro. NEAREST:
 // modulo borrado e o jeito mais rapido de a camera nao ler.
-static GLuint texQr;
-static char   texQrDe[QR_MAX_BYTES+1];
 static int qrTextura(const char *u) {
   Qr q;
   int lado, x, y;
@@ -236,7 +293,47 @@ static const char *msgSemQr(int est) {
 // Altura do miolo, pela mesma conta que o desenho usa.
 #define CB_TITULO_H   40.0f
 #define CB_LINHA_H    26.0f
+// DIAGNOSTICO (Baixar registro): the SAME QR card as "Digitar pelo celular"
+// (and the fork's log card). The readable address under the QR stays the
+// computer path: it does not change, so it can be a browser favorite.
+static const char *FRASE_LOG = "Abra este endereço no navegador do computador, na mesma rede. Ele não muda: salve nos favoritos. OK atualiza o registro.";
+static const char *FRASE_LOG_NUVEM = "Direita: enviar o registro para a nuvem.";
+// The URL the log card shows as QR (local page, or the cloud link once ready);
+// NULL when it shows a message instead.
+static const char *urlLog(int temQr, char *nurl, int n) {
+  if (!nuvem) return temQr ? celular_url() : NULL;
+  if (logcloud_estado() != LOGCLOUD_PRONTO) return NULL;
+  logcloud_url(nurl, n);
+  return nurl[0] ? nurl : NULL;
+}
+static void textoLog(char *t, size_t n) {
+  char m[128] = "";
+  if (nuvem && logcloud_estado() == LOGCLOUD_FALHOU) {
+    logcloud_motivo(m, sizeof m);
+    snprintf(t, n, i18n("Não deu para enviar o registro (%s). OK tenta de novo."), m[0] ? m : "?");
+  } else if (nuvem) snprintf(t, n, "%s", i18n("Enviando o registro para a nuvem…"));
+  else snprintf(t, n, i18n("Não foi possível abrir o endereço local (%s). OK envia o registro para a nuvem."),
+                motivoLog[0] ? motivoLog : "?");
+}
+// Lines under the QR; a = 0 only measures (the card height uses the same call).
+static float frasesLog(float x, float y, float w, float a) {
+  float h;
+  if (nuvem)
+    return txt_bloco(TXT_CAPTION2, i18n("Mande este link para quem pediu o registro. Ele expira em 72 horas."),
+                     170, 174, 184, x, y, w, CB_LINHA_H, a * 0.9f, 3);
+  h = txt_bloco(TXT_CAPTION2, i18n(FRASE_LOG), 170, 174, 184, x, y, w, CB_LINHA_H, a * 0.9f, 5);
+  return h + txt_bloco(TXT_CAPTION2, i18n(FRASE_LOG_NUVEM), 170, 174, 184, x, y + h, w, CB_LINHA_H, a * 0.9f, 2);
+}
 static float alturaCartao(int temQr) {
+  if (dono == CELB_LOG) {
+    char nurl[256], t[512];
+    if (urlLog(temQr, nurl, sizeof nurl))
+      return CB_PAD + CB_TITULO_H + 18.0f + CB_QR + 2 * CB_MOLDURA + 18.0f + 30.0f + 10.0f +
+             frasesLog(0, 0, CB_W - 2 * CB_PAD, 0.0f) + CB_PAD - 6.0f;
+    textoLog(t, sizeof t);
+    return CB_PAD + CB_TITULO_H + 16.0f +
+           txt_bloco(TXT_BODY, t, 0, 0, 0, 0, 0, CB_W - 2 * CB_PAD, CB_LINHA_H + 6.0f, 0.0f, 6) + CB_PAD;
+  }
   if (!temQr) return CB_PAD + CB_TITULO_H + 16.0f + 3 * CB_LINHA_H + CB_PAD;
   return CB_PAD + CB_TITULO_H + 18.0f + CB_QR + 2 * CB_MOLDURA + 18.0f + 30.0f + 10.0f +
          3 * CB_LINHA_H + CB_PAD - 6.0f;
@@ -270,6 +367,7 @@ static void celb_desenharCorpo_(void) {
   if (y < 24.0f) y = 24.0f;
   if (x < 32.0f) x = 32.0f;
   if (x + w > NV_TELA_W - 32.0f) x = NV_TELA_W - 32.0f - w;
+  if (dono == CELB_LOG) { x = (NV_TELA_W - w) * 0.5f; y = fmaxf(24.0f, (NV_TELA_H - h) * 0.5f); }
   y += (1.0f - a) * -10.0f;
   cartao = (GfxRect){ x, y, w, h };
 
@@ -290,7 +388,7 @@ static void celb_desenharCorpo_(void) {
     else gfx_cor(cartao, raio, .098f, .102f, .118f, .99f * a);
     if (!vid) gfx_luz_canto(cartao, raio, w * .25f, -h * .25f, w * .9f, ar, ag, ab, .08f * a); }
 
-  { TxtLinha t = txt_linha_corta(TXT_CALLOUT, i18n("Digitar pelo celular"), 245, 248, 255, 255,
+  { TxtLinha t = txt_linha_corta(TXT_CALLOUT, i18n(dono == CELB_LOG ? "Baixar registro" : "Digitar pelo celular"), 245, 248, 255, 255,
                                  w - 2 * CB_PAD - 40.0f);
     float ty = y + CB_PAD + (CB_TITULO_H - t.h) * 0.5f;
     gfx_icone((GfxRect){ x + CB_PAD, y + CB_PAD + (CB_TITULO_H - 28.0f) * 0.5f, 28.0f, 28.0f }, "aj_smartphone",
@@ -298,7 +396,16 @@ static void celb_desenharCorpo_(void) {
     txt_desenhar_alpha(t, x + CB_PAD + 40.0f, ty, a); }
   y += CB_PAD + CB_TITULO_H;
 
-  if (!temQr) {
+  if (dono == CELB_LOG) {
+    char nurl[256], t[512];
+    const char *q = urlLog(temQr, nurl, sizeof nurl);
+    if (!q) {
+      textoLog(t, sizeof t);
+      txt_bloco(TXT_BODY, t, 200, 204, 212, x + CB_PAD, y + 16.0f, w - 2 * CB_PAD, CB_LINHA_H + 6.0f, a, 6);
+      return;
+    }
+    u = q;
+  } else if (!temQr) {
     txt_bloco(TXT_BODY, i18n(msgSemQr(est)), 200, 204, 212, x + CB_PAD, y + 16.0f, w - 2 * CB_PAD, CB_LINHA_H + 6.0f, a, 3);
     return;
   }
@@ -307,10 +414,11 @@ static void celb_desenharCorpo_(void) {
   y += CB_QR + 2 * CB_MOLDURA + 18.0f;
   // ENDERECO CURTO, para quem nao tem camera: sem "http://" (o navegador do
   // celular completa sozinho), centrado.
-  curta = !strncmp(u, "http://", 7) ? u + 7 : u;
+  curta = !strncmp(u, "http://", 7) ? u + 7 : !strncmp(u, "https://", 8) ? u + 8 : u;
   { TxtLinha t = txt_linha_corta(TXT_CAPTION, curta, 232, 236, 244, 255, w - 2 * CB_PAD);
     txt_desenhar_alpha(t, x + (w - t.w) * 0.5f, y, a); }
   y += 30.0f + 10.0f;
+  if (dono == CELB_LOG) { frasesLog(x + CB_PAD, y, w - 2 * CB_PAD, a); return; }
   txt_bloco(TXT_CAPTION2, i18n(FRASE_QR), 170, 174, 184, x + CB_PAD, y, w - 2 * CB_PAD, CB_LINHA_H, a * 0.9f, 3);
 }
 
