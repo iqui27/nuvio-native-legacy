@@ -213,13 +213,13 @@ static int prepareMode(DtsPlayback *p, int stream, int core, double target,int r
     nativeEvent(p,"{\"dtsStage\":{\"name\":\"source-seek-requested\"}}");
     if(p->ext_swap_now) {
       /* Another version: only it is reopened, this source stays (owner,
-       * 07/11). A failed swap reopens everything with the new version. */
+       * 07/11). Refusal goes once to video.c's own-audio fallback. */
       p->ext_swap_now=0;
       dts_engine_external_speed(p->engine,p->ext_now_speed);
       reused=dts_engine_external_replace(p->engine,p->ext_now_url,p->ext_now_headers,p->ext_now_langs,
                                          p->ext_now_offset,p->ext_now_track,p->ext_now_only,target)>=0;
-      nativeEvent(p,reused?"{\"dtsStage\":{\"name\":\"external-swap\"}}":
-                           "{\"dtsStage\":{\"name\":\"external-swap-reopen\"}}");
+      if(!reused) { fail(p,dts_engine_error(p->engine)); return 0; }
+      nativeEvent(p,"{\"dtsStage\":{\"name\":\"external-swap\"}}");
     } else
     reused=dts_engine_seek(p->engine,target)>=0;
     if(!reused && stopped(p)) return 0;

@@ -235,7 +235,8 @@ int main(void) {
     audioext_formatar_offset(690, v, sizeof v, "%c%u.%03u s", "%c%u min %u.%03u s"); assert(!strcmp(v, "+690 ms"));
     audioext_formatar_offset(-40250, v, sizeof v, "%c%u.%03u s", "%c%u min %u.%03u s"); assert(!strcmp(v, "-40.250 s"));
     audioext_formatar_offset(100005, v, sizeof v, "%c%u,%03u s", "%c%u min %u,%03u s"); assert(!strcmp(v, "+1 min 40,005 s"));
-    // A new mark starts at the same speed again.
+    // A pre-play mark starts neutral; live swaps are covered below.
+    audioext_tocando_definir(0); audioext_carregando_definir(0);
     audioext_escolher("https://a/other.mkv", "", "Other", "pl");
     assert(audioext_velocidade() == 0 && audioext_offset_ms() == 0);
     { int km[3], kp[3]; assert(audioext_kandydatos(km, kp, 3) == 0); }
@@ -283,6 +284,29 @@ int main(void) {
     esperarOcioso();
     audioext_definir_sonda_cancelar(NULL);
   }
+  // Switching candidates in the player keeps the live timing/mode. A forced
+  // track belongs to one donor only; the next donor starts with its language.
+  audioext_limpar();
+  audioext_alvo("tt50:1:1");
+  audioext_preferencias(1, 1);
+  audioext_escolher("fixture:donor-a", "", "A", "en");
+  audioext_definir_faixa(7);
+  audioext_tocando_definir(1);
+  { AudioExtDopasuj r = { .ms = -2300, .ppm = 41708, .como = 5 };
+    audioext_dopasuj_resultado(1, &r); }
+  g = audioext_pedido_geracao();
+  audioext_escolher("fixture:donor-b", "", "B", "pl");
+  assert(audioext_pedido_geracao() == g + 1);
+  assert(!strcmp(audioext_url(), "fixture:donor-b") && !strcmp(audioext_idioma(), "pl"));
+  assert(audioext_faixa() == -1 && audioext_offset_ms() == -2300);
+  assert(audioext_velocidade() == 41708 && audioext_so_audio());
+  audioext_escolher_faixa(3);
+  assert(audioext_faixa() == 3 && audioext_offset_ms() == -2300 && audioext_velocidade() == 41708);
+  audioext_falhou("candidate refused");
+  { char m[160];
+    assert(audioext_falha_consumir(m, sizeof m) && !audioext_falha_consumir(m, sizeof m)); }
+  audioext_inicio_reproducao("fixture:video");
+  assert(!audioext_tem_marca() && !audioext_pedido("fixture:video"));
   puts("audioext: marks, menu requests, offsets, series memory and matching passed");
   return 0;
 }

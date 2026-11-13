@@ -98,10 +98,15 @@ void audioext_escolher(const char *url, const char *cabecalhos, const char *nome
     snprintf(cabMarca, sizeof cabMarca, "%s", cabecalhos ? cabecalhos : "");
     snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
     snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
-    offsetMs = 0; offsetGeracao++; velocidadePpm = 0; kandN = 0; kandN = 0; velocidadePpm = 0;
+    // The player swaps the donor at the current position with the live sync
+    // and speed. A pre-play choice still starts with neutral timing.
+    if (!tocando && !carregando) { offsetMs = 0; velocidadePpm = 0; }
+    offsetGeracao++; kandN = 0;
     faixaMarca = -1; dicaAtiva = 0; offsetLembrado = 0;
   }
   snprintf(idiomaMarca, sizeof idiomaMarca, "%s", idioma ? idioma : "");
+  // A capture/result belongs to the previous donor, even when timing is kept.
+  dopasujPedido = dopasujAtivo = dopasujAviso = 0;
   pedidoGeracao++;
   pendente = 1;   // the player reopens with it now
   printf("[ext-audio] chosen in the audio menu: %.80s lang=%s (target %s)\n", nomeMarca, idiomaMarca, alvoMarca);
