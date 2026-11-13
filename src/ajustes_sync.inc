@@ -8,6 +8,7 @@ static int ajustePortavel(int op) {
   switch (op) {
     // Experimental DV7 conversion stays on this TV, outside account sync.
     case AJ_MINIATURA_RES: case AJ_DV7: case AJ_DV7_MAPPING: case AJ_DV_AUDIO: case AJ_MP4_BD_TEST: return 0;
+    case AJ_UPDATE_NOTIFICATIONS: case AJ_REMEMBER_PROFILE: return 0;
     case AJ_AMPLIAR_UI: case AJ_RESOLUCAO: case AJ_TEX_MB: case AJ_QUALIDADE_IMG:
     case AJ_GPU_EFEITOS: case AJ_ITENS_FILEIRA:
     case AJ_TAMANHO_UI: case AJ_TAMANHO_AJUSTES: case AJ_ESCALA_TEXTO:

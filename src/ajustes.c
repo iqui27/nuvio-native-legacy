@@ -792,6 +792,12 @@ typedef enum {
   // Aparelho CONVIDADO de uma biblioteca compartilhada: a fonte em uso e os ajustes so deste aparelho.
   AJ_OPENSEEK_COMPART, AJ_OPENSEEK_AJ_M30, AJ_OPENSEEK_AJ_M5, AJ_OPENSEEK_AJ_M1, AJ_OPENSEEK_AJ_P1, AJ_OPENSEEK_AJ_P5, AJ_OPENSEEK_AJ_P30, AJ_OPENSEEK_DESFAZER, AJ_OPENSEEK_REJEITAR,
   AJ_MINIATURA_RES,
+  // Matis94 (Nuvio_webOS_2.0.8.6): avisos de atualizacao desta TV. Append-only.
+  AJ_UPDATE_NOTIFICATIONS,
+  // Matis94: abrir no ultimo perfil disponivel. Append-only.
+  AJ_REMEMBER_PROFILE,
+  // Matis94: botoes de pular por trecho, por perfil desta TV.
+  AJ_SHOW_SKIP_INTRO, AJ_SHOW_SKIP_RECAP, AJ_SHOW_SKIP_CREDITS,
   // Experimental P7 mapping preservation (dolby_vision To81MappingPreserved).
   // LOCAL, append-only, DESLIGADO de fabrica.
   AJ_DV7_MAPPING,
@@ -1102,10 +1108,14 @@ static const char *V_LEG_COR[] = { "Branco", "Amarelo", "Verde", "Azul", "Vermel
 static const char *V_LEG_COR_BORDA[] = { "Preto", "Branco", "Amarelo", "Verde", "Azul", "Vermelho" };
 static const char *V_LEG_FUNDO[] = { "Nenhum", "Escuro 25%", "Escuro 50%", "Escuro 75%", "Escuro 100%" };
 static const char *V_LEG_BORDA[] = { "Nenhuma", "Contorno", "Sombra" };
-static const char *V_LEG_OPAC[] = { "100%", "75%", "50%", "25%" };
+static const char *V_LEG_OPAC[] = { LEG_OPAC_ROTULOS };
 static const char *V_LEG_POS[] = { "1", "2", "3", "4", "5", "6", "7", "8" };
 static const char *V_LEG2_FONTE[] = { "Igual à principal", "Inter", "LG Display", "Droid Sans", "Montserrat", "Roboto", "Atkinson Hyperlegible Next", "JetBrains Sans" };
-static const char *V_LEG2_OPAC[] = { "Igual à principal", "100%", "75%", "50%", "25%" };
+static const char *V_LEG2_OPAC[] = { "Igual à principal", LEG_OPAC_ROTULOS };
+_Static_assert(sizeof V_LEG_OPAC / sizeof *V_LEG_OPAC == LEG_OPAC_N,
+               "Primary opacity labels match the fine-grained scale");
+_Static_assert(sizeof V_LEG2_OPAC / sizeof *V_LEG2_OPAC == LEG_OPAC_N + 1,
+               "Secondary opacity retains the inheritance choice");
 static const char *V_LEG2_COR_BORDA[] = { "Igual à principal", "Preto", "Branco", "Amarelo", "Verde", "Azul", "Vermelho" };
 static const char *V_LEG2_NEGRITO[] = { "Igual à principal", "Ligado", "Desligado" };
 static const char *V_LEG2_POSICAO[] = { "Automático", "1", "2", "3", "4", "5", "6", "7", "8" };
@@ -1871,7 +1881,7 @@ static const Opcao OPCOES[AJ_N] = {
   NUM("Tamanho", TXT_LEG_PCT_MIN, TXT_LEG_PCT_MAX, 10, "%"),
   ESC("Fonte da legenda", V_FONTE_UI, TXT_FAMILIA_N),
   ESC("Cor", V_LEG_COR, VIDEO_LEG_NCORES),
-  ESC("Opacidade", V_LEG_OPAC, 4),
+  ESC("Opacidade", V_LEG_OPAC, LEG_OPAC_N),
   ESC("Fundo", V_LEG_FUNDO, 5),
   ESC("Posição", V_LEG_POS, 8),
   ESC("Borda", V_LEG_BORDA, 3),
@@ -1880,7 +1890,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Cor da borda", V_LEG_COR_BORDA, VIDEO_LEG_NCORES),
   ACAO("Restaurar padrão"),
   ESC("Fonte da legenda", V_LEG2_FONTE, TXT_FAMILIA_N + 1),
-  ESC("Opacidade", V_LEG2_OPAC, 5),
+  ESC("Opacidade", V_LEG2_OPAC, LEG_OPAC_N + 1),
   ESC("Posição", V_LEG2_POSICAO, 9),
   NUM("Atraso", -LEG_ATRASO_MANUAL_MAX, LEG_ATRASO_MANUAL_MAX, 100, " ms"),
   ESC("Negrito", V_LEG2_NEGRITO, 3),
@@ -1988,6 +1998,11 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO("Miniaturas 1 s mais tarde"), ACAO("Miniaturas 5 s mais tarde"), ACAO("Miniaturas 30 s mais tarde"),
   ACAO("Desfazer o ajuste"), ACAO("Vídeo errado: rejeitar"),
   NUM("Resolução das miniaturas", 0, 3, 1, NULL),
+  ESC("Avisos de atualização",            V_LIGA, 2),
+  ESC("Lembrar o último perfil",          V_LIGA, 2),
+  ESC("Botão de pular a abertura",        V_LIGA, 2),
+  ESC("Botão de pular o resumo",          V_LIGA, 2),
+  ESC("Botão de pular os créditos",       V_LIGA, 2),
   ESC("Dolby Vision P7: manter mapeamento (experimental)", V_LIGA, 2),   // local: dv7PreserveMappingLocal
   ESC("Áudio com Dolby Vision", V_DV_AUDIO, 3),   // local: dvAudioFixoLocal
   ESC("Dolby Vision MP4 (experimental)", V_LIGA, 2),
@@ -2275,7 +2290,7 @@ static const char *CHAVE[] = {
   "-legenda1Tamanho", "-legenda1Fonte", "-legenda1Cor", "-legenda1Opacidade",
   "-legenda1Fundo", "-legenda1Posicao", "-legenda1Borda", "-legenda1Atraso",
   "-legenda1Negrito", "-legenda1CorBorda", "-legenda1Restaurar",
-  "legenda2FonteLocal", "legenda2OpacidadeLocal", "legenda2PosicaoLocal", "legenda2AtrasoLocal",
+  "legenda2FonteLocal", "legenda2OpacidadeFinaLocal", "legenda2PosicaoLocal", "legenda2AtrasoLocal",
   "legenda2NegritoLocal", "legenda2CorBordaLocal", "-legenda2Restaurar",
   "colecaoExibicaoPadraoLocal",
   "playerExternoLocal",
@@ -2350,6 +2365,9 @@ static const char *CHAVE[] = {
   "-openseekCompart", "-openseekAjM30", "-openseekAjM5", "-openseekAjM1", "-openseekAjP1", "-openseekAjP5", "-openseekAjP30",
   "-openseekDesfazer", "-openseekRejeitar",
   "miniaturaResolutionLocal",
+  "updateNotificationsLocal",
+  "rememberLastProfileLocal",
+  "showSkipIntroButtonLocal", "showSkipRecapButtonLocal", "showSkipCreditsButtonLocal",
   "dv7PreserveMappingLocal",
   "dvAudioFixoLocal",
   "dvMp4BdTestLocal",
@@ -2722,7 +2740,7 @@ static int ajLegendaValor(int op) {
     case AJ_LEG1_TAMANHO: return e->tamanho;
     case AJ_LEG1_FONTE: return ajFonteAtual(op);
     case AJ_LEG1_COR: return e->cor;
-    case AJ_LEG1_OPACIDADE: return e->opacidade;
+    case AJ_LEG1_OPACIDADE: return leg_opacidade_indice(e->opacidade);
     case AJ_LEG1_FUNDO: return e->fundo;
     case AJ_LEG1_POSICAO: return e->posicao;
     case AJ_LEG1_BORDA: return e->borda;
@@ -2742,7 +2760,7 @@ static int ajLegendaDefinir(int op, int v) {
     case AJ_LEG1_TAMANHO: e.tamanho = v; break;
     case AJ_LEG1_FONTE: e.familia = v; break;
     case AJ_LEG1_COR: if (e.cor != v) tocou = PLR_LEG_COR; e.cor = v; break;
-    case AJ_LEG1_OPACIDADE: e.opacidade = v; break;
+    case AJ_LEG1_OPACIDADE: e.opacidade = leg_opacidade_do_indice(v); break;
     case AJ_LEG1_FUNDO: e.fundo = v; break;
     case AJ_LEG1_POSICAO: e.posicao = v; break;
     case AJ_LEG1_BORDA: e.borda = v; break;
@@ -3142,6 +3160,11 @@ int ajustes_pular_resumo(void)        { return lig(AJ_PULAR_RESUMO); }
 int ajustes_proximo_auto(void)        { return lig(AJ_PROXIMO_AUTO); }
 int ajustes_proximo_contagem(void)    { int n = valor[AJ_PROXIMO_CONTAGEM]; return n < 1 ? 1 : n > 60 ? 60 : n; }
 int ajustes_pular_creditos(void)      { return lig(AJ_PULAR_CREDITOS); }
+int ajustes_show_skip_intro(void)     { return lig(AJ_SHOW_SKIP_INTRO); }
+int ajustes_show_skip_recap(void)     { return lig(AJ_SHOW_SKIP_RECAP); }
+int ajustes_show_skip_credits(void)   { return lig(AJ_SHOW_SKIP_CREDITS); }
+int ajustes_update_notifications(void) { return lig(AJ_UPDATE_NOTIFICATIONS); }
+int ajustes_lembrar_perfil(void)      { return lig(AJ_REMEMBER_PROFILE); }
 int ajustes_capitulos(void)           { return lig(AJ_CAPITULOS); }
 int ajustes_medidor_desempenho(void)  { return valor[AJ_MEDIDOR]; }
 int ajustes_fonte_manual(void)        { return lig(AJ_FONTE_MANUAL); }
@@ -3647,7 +3670,8 @@ void ajustes_leg2_estilo(const VideoLegendaEstilo *principal, VideoLegendaEstilo
   if (f >= 0) out->fundo = f;
   if (b >= 0) out->borda = b;
   if (valor[AJ_LEG2_FONTE] > 0) out->familia = valor[AJ_LEG2_FONTE] - 1;
-  if (valor[AJ_LEG2_OPACIDADE] > 0) out->opacidade = valor[AJ_LEG2_OPACIDADE] - 1;
+  if (valor[AJ_LEG2_OPACIDADE] > 0)
+    out->opacidade = leg_opacidade_do_indice(valor[AJ_LEG2_OPACIDADE] - 1);
   if (valor[AJ_LEG2_NEGRITO] > 0) out->negrito = valor[AJ_LEG2_NEGRITO] == 1;
   if (valor[AJ_LEG2_COR_BORDA] > 0) out->corBorda = valor[AJ_LEG2_COR_BORDA] - 1;
   if (ajustes_leg2_posicao() >= 0) out->posicao = ajustes_leg2_posicao();
@@ -5243,6 +5267,7 @@ void ajustes_dir(const char *dir) {
     int dtsModoAntigo = -1;
 #endif
     int leg2TamanhoAntigo = -1, viuLeg2Escala = 0;
+    int leg2OpacidadeAntiga = -1, viuLeg2Opacidade = 0;
   while (fgets(linha, sizeof linha, f)) {
     char chave[64]; int v, i, inicio = 0;
     if (sscanf(linha, "%63s%n", chave, &inicio) != 1) continue;
@@ -5330,6 +5355,10 @@ void ajustes_dir(const char *dir) {
     }
     // Outline is aesthetic: migrate its removed Automatic value to On.
     if (!strcmp(chave, "vidroContornoLocal") && v == 2) v = 0;
+    if (!strcmp(chave, "legenda2OpacidadeLocal")) {
+      if (v >= 0 && v <= 4) leg2OpacidadeAntiga = v;
+      continue;
+    }
     for (i = 0; i < AJ_N; i++) {
       if (!CHAVE[i] || strcmp(CHAVE[i], chave)) continue;
       if (OPCOES[i].tipo == OP_LEITURA || OPCOES[i].tipo == OP_ACAO) continue;
@@ -5346,6 +5375,7 @@ void ajustes_dir(const char *dir) {
       if (i == AJ_HERO_SINOPSE_TAM) viuSinopse = 1;
       if (i == AJ_DTS_AC3) viuDtsTpk = 1;
       if (i == AJ_LEG2_TAMANHO && v >= 0 && v < 27) viuLeg2Escala = 1;
+      if (i == AJ_LEG2_OPACIDADE && v >= 0 && v <= LEG_OPAC_N) viuLeg2Opacidade = 1;
       break;
     }
   }
@@ -5358,6 +5388,8 @@ void ajustes_dir(const char *dir) {
     if (sinopseQuatro >= 0) valor[AJ_HERO_SINOPSE_TAM] = sinopseQuatro > 0;
     else if (sinopseAntiga >= 0) valor[AJ_HERO_SINOPSE_TAM] = sinopseAntiga > 0;
   }
+  if (!viuLeg2Opacidade && leg2OpacidadeAntiga >= 0)
+    valor[AJ_LEG2_OPACIDADE] = leg_opacidade_secundaria_migrar(leg2OpacidadeAntiga);
   if (!viuLeg2Escala && leg2TamanhoAntigo >= 0) {
     static const int pct[] = {0,60,80,100,120,140,160,170,180,190,200,210,220,230,240,250,260,270,280,290,300};
     int p = pct[leg2TamanhoAntigo];
@@ -6592,6 +6624,7 @@ static int somenteDesteAparelho(int op) {
 static int soNaTv(int op) {
   switch (op) {
     case AJ_TV_HOME:
+    case AJ_UPDATE_NOTIFICATIONS: case AJ_REMEMBER_PROFILE:
     case AJ_FONTE_OCULTAR_DV: case AJ_FONTE_OCULTAR_AUDIO: case AJ_FONTE_OCULTAR_VIDEO:
     case AJ_ICONE_APP: case AJ_LOGO_APP: case AJ_ABERTURA:
     case AJ_IDIOMA: case AJ_FONTE_UI: case AJ_ANIM:
@@ -6695,7 +6728,7 @@ static int perfilLerVetor(int perfil, int *v, char *tem) {
   nomePerfil(nome, sizeof nome, perfil);
   t = dados_ler(nome);
   if (!t) return 0;
-  int focoAntigo = -1;
+  int focoAntigo = -1, leg2OpacidadeAntiga = -1;
   // Missing V2 means this profile still carries the old mute default.
   v[AJ_GUIA_PREVIA_SOM] = valorPadrao[AJ_GUIA_PREVIA_SOM];
   tem[AJ_GUIA_PREVIA_SOM] = 1;
@@ -6705,7 +6738,9 @@ static int perfilLerVetor(int perfil, int *v, char *tem) {
     if (fim) *fim = 0;
     if (sscanf(l, "%63s %d", chave, &x) == 2 && !strcmp(chave, "focusedPosterBackdropTrailerEnabled"))
       focoAntigo = x;
-    else if (sscanf(l, "%63s %d", chave, &x) == 2)
+    else if (sscanf(l, "%63s %d", chave, &x) == 2 && !strcmp(chave, "legenda2OpacidadeLocal")) {
+      if (x >= 0 && x <= 4) leg2OpacidadeAntiga = x;
+    } else if (sscanf(l, "%63s %d", chave, &x) == 2)
       for (i = 0; i < AJ_N; i++) {
         if (!dePerfil(i) || strcmp(CHAVE[i], chave)) continue;
         if (i == AJ_COLECAO_EXIBICAO && (x < VT_LAY_AUTO || x >= VT_LAY_N)) x = VT_LAY_AUTO;
@@ -6718,6 +6753,10 @@ static int perfilLerVetor(int perfil, int *v, char *tem) {
   if (!tem[AJ_FOCO_TRAILER] && focoAntigo >= 0) {
     v[AJ_FOCO_TRAILER] = focoTrailerMigrar(focoAntigo);
     tem[AJ_FOCO_TRAILER] = 1;
+  }
+  if (!tem[AJ_LEG2_OPACIDADE] && leg2OpacidadeAntiga >= 0) {
+    v[AJ_LEG2_OPACIDADE] = leg_opacidade_secundaria_migrar(leg2OpacidadeAntiga);
+    tem[AJ_LEG2_OPACIDADE] = 1;
   }
   free(t);
   return 1;
@@ -8665,6 +8704,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_ESPACO: return "Uso atual de memória pelo cache de imagens, não espaço ocupado no armazenamento da TV.";
     case AJ_TEX_MB: return "Quanta memória o cache de imagens pode usar. Automático escolhe pela RAM da TV. Um valor acima do que esta TV suporta é reduzido ao máximo dela — o painel ao lado mostra o teto em vigor.";
     case AJ_VERSAO_I: return "Versão do aplicativo. Esta informação não pode ser alterada.";
+    case AJ_UPDATE_NOTIFICATIONS: return "Mostra os avisos e o painel de atualização quando uma versão nova existe. Desligado esconde os dois; você ainda pode procurar atualizações à mão aqui.";
     case AJ_ATUALIZAR:
       return atualizacao_nova()[0]
         ? "Abre o cartão da versão nova, com o que mudou e o botão de instalar."
@@ -8889,6 +8929,10 @@ static const char *beneficioProprio(int op) {
     case AJ_FONTE_GRUPO: return "No próximo episódio, tenta primeiro a mesma fonte do anterior.";
     case AJ_LINK_REUSAR: return "Ao abrir de novo o mesmo título, toca direto o link que funcionou.";
     case AJ_PULAR_RESUMO: return "Pula o resumo do episódio anterior quando ele está marcado.";
+    case AJ_SHOW_SKIP_INTRO: return "Mostra o botão Pular abertura quando há um trecho marcado. Desligado esconde só o botão, inclusive com os controles abertos; o pulo automático é outra opção.";
+    case AJ_SHOW_SKIP_RECAP: return "Mostra o botão Pular resumo quando há um trecho marcado. Desligado esconde só este botão; o pulo automático do resumo é outra opção.";
+    case AJ_SHOW_SKIP_CREDITS: return "Mostra o botão Pular créditos quando há um trecho marcado. Desligado esconde só o botão; o pulo automático e o episódio seguinte são outras opções.";
+    case AJ_REMEMBER_PROFILE: return "Abre direto no último perfil usado ao ligar o app, se ele ainda existir e não tiver PIN. Desligado, a escolha de perfil aparece a cada sessão. Vale só nesta TV; perfis protegidos continuam pedindo PIN.";
     case AJ_PULAR_CREDITOS: return "Pula os créditos quando o marcador diz onde começam e acabam.";
     case AJ_REACAO_CREDITOS: return "Nos créditos, um cartão pequeno pergunta o que você achou.";
     case AJ_PLUGINS: return "Plugins do Nuvio entram como mais uma fonte, ao lado dos add-ons.";
@@ -11555,7 +11599,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_LINK_REUSAR: case AJ_LINK_PRAZO:
     case AJ_FONTE_PRIORIDADE: case AJ_FONTE_HDR: case AJ_FONTE_IDIOMA_AUDIO:
     case AJ_SELOS_PACOTE:
-    case AJ_REACAO_CREDITOS: case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PROXIMO_AUTO: case AJ_PULAR_CREDITOS: case AJ_PROXIMO_CONTAGEM:
+    case AJ_REACAO_CREDITOS: case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PROXIMO_AUTO: case AJ_PULAR_CREDITOS: case AJ_SHOW_SKIP_INTRO: case AJ_SHOW_SKIP_RECAP: case AJ_SHOW_SKIP_CREDITS: case AJ_PROXIMO_CONTAGEM:
     case AJ_CAPITULOS: case AJ_ANIMESKIP_ID:
     case AJ_FONTE_PRAZO: case AJ_TAM_MAX: case AJ_TAM_MIN: case AJ_PROPORCAO_PADRAO: case AJ_DTS_AC3:
     case AJ_FONTE_ESCOPO: case AJ_FONTE_ADDONS_PERM: case AJ_FONTE_PLUGINS_PERM: case AJ_FONTE_OUTROS:
@@ -11607,13 +11651,13 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_ESMAECER: case AJ_BRILHO_PLAYER: case AJ_HDR_UI: case AJ_MANTER_VIDEO:
     case AJ_DESCANSO_ESTILO: case AJ_DESCANSO_FONTE:
       return AJPV_INTERFACE;
-    case AJ_PERFIL_ATIVO: case AJ_SYNC: case AJ_SAIR:
+    case AJ_PERFIL_ATIVO: case AJ_REMEMBER_PROFILE: case AJ_SYNC: case AJ_SAIR:
     case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_ADDONS_PRINCIPAL: case AJ_PROVEDORES_ESCOPO: case AJ_ENQUETES:
     case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS:
       return AJPV_CONTA;
     case AJ_SALVOS_DEST: case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_HIST_CONTA: case AJ_SOCIAL: case AJ_DIARIO_NUVEM:
       return AJPV_RASTREIO;
-    case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_ENVIAR_LOG: case AJ_GUIA: case AJ_NOVIDADES20: case AJ_DICASCONTROLE: case AJ_APOIAR:
+    case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_UPDATE_NOTIFICATIONS: case AJ_ENVIAR_LOG: case AJ_GUIA: case AJ_NOVIDADES20: case AJ_DICASCONTROLE: case AJ_APOIAR:
     case AJ_ENVIO_AUTO: case AJ_VER_REGISTRO: case AJ_LOG_REDE:
 #ifdef NV_ANDROID
     case AJ_BAIXAR_REGISTRO:

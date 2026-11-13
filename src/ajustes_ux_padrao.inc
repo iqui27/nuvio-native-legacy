@@ -376,6 +376,9 @@
   0, 0, 0, 0, 0, 0, 0, 0, 0, /* OpenSeek shared library: info + offset/undo/reject actions */
 
   0, // miniaturaResolutionLocal: Auto
+  0, // updateNotificationsLocal: On
+  1, // rememberLastProfileLocal: Off
+  0, 0, 0, // showSkip{Intro,Recap,Credits}ButtonLocal: On
   1, // dv7PreserveMappingLocal: Desligado (V_LIGA 1), experimental
   0, // dvAudioFixoLocal: Original
   1, // dvMp4BdTestLocal: Off (V_LIGA 1)

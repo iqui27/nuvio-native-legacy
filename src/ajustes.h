@@ -926,4 +926,12 @@ int ajustes_shot_valor(const char *chave, int v);   // capturas: opcao pela chav
 #endif
 
 int ajustes_miniatura_largura(void);
+// Matis94 (Nuvio_webOS_2.0.8.6): automatic update card/notices; on by default.
+int ajustes_update_notifications(void);
+// Matis94: remember last unlocked profile on this TV; default OFF.
+int ajustes_lembrar_perfil(void);
+// Matis94: manual skip-button visibility, independent of automatic skipping; default ON.
+int ajustes_show_skip_intro(void);
+int ajustes_show_skip_recap(void);
+int ajustes_show_skip_credits(void);
 #endif

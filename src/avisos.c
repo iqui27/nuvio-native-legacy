@@ -243,6 +243,8 @@ static int por(const char *id, int tipo, const char *titulo, const char *texto, 
   int i;
   // DISPENSADO NAO VOLTA (avisodisp.h): nem na lista, nem na ilha, nem depois
   // de reiniciar. A chave e o evento; um evento novo tem outra chave.
+  // Update notices follow the device setting (Matis94): off = no queue.
+  if (tipo == AV_UPDATE && !ajustes_update_notifications()) return 0;
   if (avisodisp_tem(id)) return 0;
   for (i = 0; i < n; i++) if (!strcmp(itens[i].id, id)) {
     snprintf(itens[i].titulo, sizeof itens[i].titulo, "%s", titulo);
@@ -1089,7 +1091,9 @@ static void colherLocais(void) {
       char id[72], txt[200];
       snprintf(id, sizeof id, "update:%s", v);
       snprintf(txt, sizeof txt, i18n("Versão %s disponível. Você está na %s."), v, NV_VERSAO);
-      novos += por(id, AV_UPDATE, i18n("Atualização disponível"), txt, v);
+      // Off also drops a notice queued while it was on (not a dismissal).
+      if (!ajustes_update_notifications()) tirar(id);
+      else novos += por(id, AV_UPDATE, i18n("Atualização disponível"), txt, v);
     } }
   // Agenda: lembretes vencidos (agendaviso.c continua abrindo o cartao dele;
   // aqui fica o rastro na lista para quem fechou o cartao sem ler).
@@ -1281,6 +1285,7 @@ static const char *icone(int tipo) {
 static RecItem recDaIlha;              // a recomendacao que o modal mostra
 static void anunciarItem(const Aviso *it) {
   char chave[96], txt[240], f1[200], f2[200];
+  if (it->tipo == AV_UPDATE && !ajustes_update_notifications()) return;
   IlhaAvisoEx e;
   static IlhaModal m;
   memset(&e, 0, sizeof e);
