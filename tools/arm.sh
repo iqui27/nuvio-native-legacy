@@ -209,6 +209,7 @@ ctr_run --rm --platform "$BUILD_PLATFORM" --env-file "$ENVF" \
     -DNV_TMDB_API_KEY="\"$NV_TMDB_API_KEY\"" \
     -DNV_SEEKR_API_KEY="\"$NV_SEEKR_API_KEY\"" \
     -DNV_REC_URL="\"$NV_REC_URL\"" \
+    -DNV_LOGLINK_TOKEN="\"${NV_LOGLINK_TOKEN:-}\"" \
     -DNV_DISCORD_CLIENT_ID="\"${NV_DISCORD_CLIENT_ID:-}\"" \
     -DNV_VERSAO="\"$NV_VERSAO\"" \
     -I$SR/usr/include -I$SR/usr/include/SDL2 \

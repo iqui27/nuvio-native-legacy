@@ -9,7 +9,8 @@
 #include <time.h>
 static double now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec / 1e9; }
 int main(void) {
-  char source[] = "/tmp/nuvio-export-test-XXXXXX", path[128], args[1024], local[192], tok[16];
+  char source[1024], path[1024], args[4096], local[192], tok[16];
+  snprintf(source, sizeof source, "%s/nuvio-export-test-XXXXXX", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp");
   int fd = mkstemp(source); assert(fd >= 0); FILE *f = fdopen(fd, "w"); assert(f);
   fputs("[app] startup=1\n[dts] stage=worker-rate wallMs=5000\n[net] password=DO_NOT_EXPORT\n"
         "[video] pos=32.125\n<script>alert(1)</script>\n", f); fclose(f);

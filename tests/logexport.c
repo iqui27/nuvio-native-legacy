@@ -13,7 +13,8 @@ static void hides(const char *line, const char *secret) {
   assert(!strstr(out, secret));
 }
 int main(void) {
-  char out[4096], source[] = "/tmp/nuvio-logtest-XXXXXX", path[128];
+  char out[4096], source[1024], path[1024];
+  snprintf(source, sizeof source, "%s/nuvio-logtest-XXXXXX", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp");
   char host[NV_RANGE_DIAG_HOST_MAX];
   nv_range_diag_host("https://person:shortpw@LONG-CDN-DELIVERY.example.net:443/private/shortpw?token=shortpw", host);
   assert(!strcmp(host, "long-cdn-delivery.example.net"));

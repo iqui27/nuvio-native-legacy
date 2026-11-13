@@ -20,8 +20,8 @@
 //  - se os dois segredos forem iguais o envio recusa (503): configuracao
 //    errada nunca alarga o privilegio do token de envio;
 //  - teto por IP (LIM_IP por hora) e teto global (LIM_DIA por dia) no
-//    contador atomico `limite` do D1: corpo max * LIM_DIA * 3 dias limita o
-//    armazenamento vivo no KV (~600 MiB no pior caso);
+//    contador atomico `limite` do D1: uma janela movel de 72 h pode cruzar
+//    quatro dias fixos (~800 MiB de dados vivos no pior caso);
 //  - o token de link e sorteado aqui (128 bits hex): quem nao tem o link nao
 //    advinha; quem tem o link so le bytes ja mascarados na TV (logexport.c);
 //  - GET/HEAD sem auth de proposito: e o link que a pessoa manda por fora;

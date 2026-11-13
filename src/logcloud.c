@@ -150,10 +150,9 @@ static void *fio(void *u) {
       terminar(LOGCLOUD_PRONTO, achou, NULL);
     } else {
       if (!ok || !r.status) snprintf(m, sizeof m, "no connection (curl %d)", r.curl_erro);
-      /* A 200 body carries the capability URL: never echo it. Error bodies
-       * are the worker's short fixed messages. */
+      /* Response bodies may contain capabilities, even on an error. */
       else if (r.status == 200) snprintf(m, sizeof m, "HTTP 200: invalid answer");
-      else snprintf(m, sizeof m, "HTTP %d: %.60s", r.status, r.corpo ? r.corpo : "");
+      else snprintf(m, sizeof m, "HTTP %d", r.status);
       for (char *c = m; *c; c++) if (*c == '\r' || *c == '\n') *c = ' ';
       printf("[log-cloud] failed: %s\n", m); fflush(stdout);
       terminar(LOGCLOUD_FALHOU, NULL, m);

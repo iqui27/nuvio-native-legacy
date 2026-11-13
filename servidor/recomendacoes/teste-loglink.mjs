@@ -4,25 +4,22 @@
 //   node --test servidor/recomendacoes/teste-loglink.mjs
 import assert from "node:assert/strict";
 import test from "node:test";
+import { DatabaseSync } from "node:sqlite";
+import { readFileSync } from "node:fs";
 import worker from "./src/index.js";
 
 const UP = "sintetico-envio", DIAG = "sintetico-diag";
 
 function cenario(extra = {}) {
-  const kv = new Map(), lim = new Map();
-  const DB = {
-    prepare: (sql) => ({
-      bind: (chave, j, expira) => ({
-        first: async () => {
-          if (!sql.startsWith("INSERT INTO limite")) throw new Error("sql inesperado: " + sql);
-          const v = lim.get(chave);
-          const n = v && v.j === j ? v.n + 1 : 1;
-          lim.set(chave, { j, n, expira });
-          return { n };
-        },
-      }),
-    }),
-  };
+  const kv = new Map(), sqlite = new DatabaseSync(":memory:");
+  test.after(() => sqlite.close());
+  for (const file of ["schema.sql", "migracao-003-registro.sql", "migracao-005-amigos.sql"])
+    sqlite.exec(readFileSync(new URL(file, import.meta.url), "utf8"));
+  const DB = { prepare: (sql) => ({ bind: (...args) => ({
+    first: async () => sqlite.prepare(sql).get(...args) ?? null,
+    run: async () => { const r = sqlite.prepare(sql).run(...args);
+      return { meta: { changes: Number(r.changes), last_row_id: Number(r.lastInsertRowid) } }; },
+  }) }) };
   const env = {
     LOGLINK_TOKEN: UP, DIAG_TOKEN: DIAG, DB,
     LOGS: {
@@ -37,7 +34,7 @@ function cenario(extra = {}) {
       headers: { "x-nuvio-auth": via, "cf-connecting-ip": "203.0.113.9", ...hdrs },
       body: corpo,
     }), env);
-  return { kv, lim, env, post };
+  return { kv, sqlite, env, post };
 }
 
 test("post com o token de envio grava gzip no KV e devolve link que baixa", async () => {
@@ -104,16 +101,15 @@ test("configuracao errada nunca alarga: segredos iguais ou ausentes dao 503", as
 });
 
 test("corpo vazio, grande, teto por IP e teto diario", async () => {
-  const { post, lim } = cenario();
+  const { post, sqlite } = cenario();
   const a = { authorization: "Bearer " + UP };
   assert.equal((await post(new Uint8Array(0), a)).status, 400);
   assert.equal((await post(new Uint8Array(2 * 1024 * 1024 + 1), a)).status, 413);
-  lim.clear();
+  sqlite.exec("DELETE FROM limite");
   for (let i = 0; i < 6; i++) assert.equal((await post(new Uint8Array([i + 1]), a)).status, 200);
   assert.equal((await post(new Uint8Array([9]), a)).status, 429);
   assert.equal((await post(new Uint8Array([9]), { ...a, "cf-connecting-ip": "198.51.100.1" })).status, 200);
-  const dia = [...lim.entries()].find(([k]) => k === "loglink:dia")[1];
-  dia.n = 100;
+  sqlite.exec("UPDATE limite SET n = 100 WHERE chave = 'loglink:dia'");
   assert.equal((await post(new Uint8Array([9]), { ...a, "cf-connecting-ip": "198.51.100.2" })).status, 429);
 });
 
@@ -123,4 +119,15 @@ test("token adivinhado e rotas vizinhas dao 404", async () => {
     assert.equal((await worker.fetch(new Request("https://w.test/v1/loglink/" + t), env)).status, 404);
   const d = await worker.fetch(new Request("https://w.test/v1/loglink/" + "0".repeat(32), { method: "DELETE" }), env);
   assert.notEqual(d.status, 200);
+});
+
+test("existing diagnostic receipt still accepts only its original credential", async () => {
+  const { env, sqlite } = cenario();
+  const r = await worker.fetch(new Request("https://w.test/v1/registro", {
+    method: "POST", headers: { "x-nuvio-auth": "diagnostico", authorization: "Bearer " + DIAG },
+    body: JSON.stringify({ tv: "fixture", texto: "synthetic receipt" }),
+  }), env);
+  assert.equal(r.status, 200);
+  assert.ok((await r.json()).codigo);
+  assert.equal(sqlite.prepare("SELECT count(*) AS n FROM registro").get().n, 1);
 });
