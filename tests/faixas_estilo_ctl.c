@@ -67,11 +67,11 @@ int main(void) {
   assert(estilo.atrasoMs == -LEGUI_ATRASO_MAX);
   assert(tecla(SDLK_RETURN, 0) && ctl == -1);                         // OK closes too
 
-  // Opacidade: four stops; right = more opaque.
+  // Opacidade: 5% steps (mode 0=100% ... 19=5%); right = more opaque.
   irPara(3); estilo.opacidade = 3;
   tecla(SDLK_RETURN, 0); assert(ctl == 3);
-  tecla(SDLK_RIGHT, 0); assert(estilo.opacidade == 2);
-  tecla(SDLK_LEFT, 0); tecla(SDLK_LEFT, 0); tecla(SDLK_LEFT, 0); assert(estilo.opacidade == 3);
+  tecla(SDLK_RIGHT, 0); assert(estilo.opacidade == 15);   // 25% -> 30%
+  tecla(SDLK_LEFT, 0); tecla(SDLK_LEFT, 0); tecla(SDLK_LEFT, 0); assert(estilo.opacidade == 17); // 30% -> 15%
   ctl = -1;
 
   // Posicao: eight levels, slider + miniature.

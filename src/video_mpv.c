@@ -443,7 +443,7 @@ void video_legenda_estilo(const VideoLegendaEstilo *e) {
   char color[24];
   unsigned rgb=video_legenda_borda_rgb(e->corBorda);
   snprintf(color,sizeof color,"#%06X",rgb); set("sub-border-color",color);
-  int opacity=e->opacidade>=0 && e->opacidade<=3 ? 255*(4-e->opacidade)/4 : 255;
+  int opacity=leg_opacidade_byte(e->opacidade);
   static const unsigned colors[]={0xffffff,0xffff00,0x00ff00,0x0000ff,0xff0000,0};
   rgb=colors[e->cor>=0 && e->cor<6 ? e->cor : 0];
   snprintf(color,sizeof color,"#%06X%02X",rgb,opacity); set("sub-color",color);

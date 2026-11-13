@@ -118,7 +118,7 @@ static char dvAudioDe[16];
 // The audio track a Dolby Vision session of this URL last played (file
 // ordinal + language). Leaving the film and resuming the same source reopens
 // it natively with the TV's default track; the path starts on this one.
-static char dvMemUrl[1024], dvMemIdioma[8];
+static char dvMemUrl[NV_MEDIA_URL_MAX], dvMemIdioma[8];
 static int dvMemOrd = -1;
 // Island notice for app.c: 1 = the source could not keep up, 2 = the path did
 // not start. Consumed once.
@@ -4015,10 +4015,9 @@ static void aplicarEstilo(void) {
              midia, VIDEO_LEG_CORES[c]);
     chamar("setSubtitleCharacterColor", b, soLog); }
   // Opacidade DA LETRA, separada da do fundo. O handler existe no firmware da
-  // C9 (`setSubtitleCharacterOpacity`) e recebe 0..255. Tres niveis evitam uma
-  // folha interminavel no controle remoto e mantem o texto legivel sobre video.
-  { int op = estilo.opacidade == 3 ? 64 : estilo.opacidade == 2 ? 128
-           : estilo.opacidade == 1 ? 191 : 255;
+  // C9 (`setSubtitleCharacterOpacity`) e recebe 0..255. Match the app overlay's
+  // 5% steps, preserving the old 100/75/50/25% byte values exactly.
+  { int op = leg_opacidade_byte(estilo.opacidade);
     snprintf(b, sizeof b, "{\"mediaId\":\"%s\",\"charOpacity\":%d}", midia, op);
     chamar("setSubtitleCharacterOpacity", b, soLog); }
   // O fundo e a dupla cor+opacidade: sem declarar a cor, mudar so a opacidade

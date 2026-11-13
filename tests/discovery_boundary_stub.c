@@ -16,6 +16,9 @@ __attribute__((weak)) const CatEp *cat_episodio(int i, int e) { (void)i;(void)e;
 __attribute__((weak)) int ajustes_fonte_biblioteca(void) { return 0; }
 __attribute__((weak)) int ajustes_nota_episodio(int f) { (void)f;return 1; }
 __attribute__((weak)) int ajustes_ocultar_nao_lancados(void) { return 0; }
-
+// homeestado.c tem fil_n/fil_chave; aqui o fixture nao monta a home inteira.
+__attribute__((weak)) int fil_n(void) { return 0; }
+__attribute__((weak)) const char *fil_chave(int i) { (void)i; return ""; }
 __attribute__((weak)) char *dados_caminho(char *dst, unsigned n, const char *nome) { snprintf(dst,n,"/tmp/nuvio-fixture-%s",nome); return dst; }
+__attribute__((weak)) int metaep_tvdb_video(const char *video, const char *fim) { (void)video;(void)fim;return 0; }
 __attribute__((weak)) char *rede_baixar_st(const char *u,int t,const char *const *c,int *st) { (void)u;(void)t;(void)c;if(st)*st=0;return NULL; }

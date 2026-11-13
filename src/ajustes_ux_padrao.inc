@@ -376,4 +376,7 @@
   0, 0, 0, 0, 0, 0, 0, 0, 0, /* OpenSeek shared library: info + offset/undo/reject actions */
 
   0, // miniaturaResolutionLocal: Auto
+  0, // updateNotificationsLocal: On
+  1, // rememberLastProfileLocal: Off
+  0, 0, 0, // showSkip{Intro,Recap,Credits}ButtonLocal: On
   1, // diagnosticsQrLocal: Desligado
