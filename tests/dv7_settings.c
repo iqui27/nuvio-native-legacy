@@ -21,7 +21,9 @@ int main(void) {
 #endif
   assert(!ajustes_dv7_mapping());
   assert(AJ_DIAGNOSTICS_QR==AJ_SHOW_SKIP_CREDITS+1);
-  assert(AJ_DV7_MAPPING==AJ_DIAGNOSTICS_QR+1 && AJ_DV7_MAPPING==AJ_DV_AUDIO-1 && valorPadrao[AJ_DV7_MAPPING]==1 &&
+  /* Integrated E prefix stays exact; B group follows it, adjacent and in bounds. */
+  assert(AJ_SOURCE_BADGE_POSITION==AJ_DIAGNOSTICS_QR+1);
+  assert(AJ_DV7_MAPPING>AJ_SOURCE_BADGE_POSITION && AJ_DV7_MAPPING==AJ_DV_AUDIO-1 && valorPadrao[AJ_DV7_MAPPING]==1 &&
          !strcmp(CHAVE[AJ_DV7_MAPPING],"dv7PreserveMappingLocal"));
   assert(OPCOES[AJ_DV7_MAPPING].tipo==OP_ESCOLHA);
   assert(somenteDesteAparelho(AJ_DV7_MAPPING) && !dePerfil(AJ_DV7_MAPPING));

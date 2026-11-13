@@ -17,11 +17,13 @@ static void checkFile(const char *name, const char *expected) {
 }
 // Local-only policy: F keeps update notifications, remember profile and the
 // skip buttons out of shared/device backup; E does the same for the badge
-// position; DV7 conversion is experimental. Named here, never derived from
+// position; DV7 conversion is experimental; B keeps the DV7 mapping, DV audio
+// and MP4 BD test choices on this TV. Named here, never derived from
 // ajustePortavel/ajusteAparelho, so a policy regression there fails this test.
 static const int localOnly[] = {
   AJ_DV7, AJ_UPDATE_NOTIFICATIONS, AJ_REMEMBER_PROFILE, AJ_SHOW_SKIP_INTRO,
-  AJ_SHOW_SKIP_RECAP, AJ_SHOW_SKIP_CREDITS, AJ_SOURCE_BADGE_POSITION
+  AJ_SHOW_SKIP_RECAP, AJ_SHOW_SKIP_CREDITS, AJ_SOURCE_BADGE_POSITION,
+  AJ_DV7_MAPPING, AJ_DV_AUDIO, AJ_MP4_BD_TEST
 };
 #define N_LOCAL_ONLY ((int)(sizeof localOnly / sizeof *localOnly))
 static void checkLocalOnly(int op, int expected, const char *what) {
@@ -31,7 +33,8 @@ static void checkLocalOnly(int op, int expected, const char *what) {
 // A legacy/foreign account blob carrying every local-only key in each import
 // path: web features (snake or camel name), shared C values and this TV's
 // existing device values (a new section would itself change restore behavior).
-// Two-valued choices: `defaults` picks the default, else the other value.
+// Choices: `defaults` picks the default, else !default (a valid non-default
+// value for any choice with at least two values, e.g. 3-way DV audio).
 static void injectLegacyLocalOnly(int camel, int defaults) {
   const char *devices, *de, *own, *oe;
   int sections = ajJsonGet(cloud, cloud + strlen(cloud), "c_devices_v1", &devices, &de) &&
@@ -41,7 +44,7 @@ static void injectLegacyLocalOnly(int camel, int defaults) {
   jsw_chave(&w, "legacy_local"); jsw_obj_ini(&w);
   for (int k = 0; k < N_LOCAL_ONLY; k++) {
     int op = localOnly[k]; char key[96];
-    assert(OPCOES[op].tipo == OP_ESCOLHA && OPCOES[op].n == 2);
+    assert(OPCOES[op].tipo == OP_ESCOLHA && OPCOES[op].n >= 2 && valorPadrao[op] < 2);
     if (camel) snprintf(key, sizeof key, "%s", CHAVE[op]);
     else camelParaSnake(CHAVE[op], key, sizeof key);
     jsw_ci(&w, key, defaults ? valorPadrao[op] : !valorPadrao[op]);
