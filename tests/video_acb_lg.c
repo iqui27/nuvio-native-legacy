@@ -174,7 +174,60 @@ static int fake_startup_call(LSHandle *h,const char *uri,const char *payload,
   }
   return 1;
 }
+static char leg_payloads[8][192];
+static int leg_calls;
+static int fake_leg_call(LSHandle *h,const char *uri,const char *payload,
+                         Filtro cb,void *ctx,unsigned long *token,void *error) {
+  (void)h;(void)cb;(void)ctx;(void)token;(void)error;
+  if (leg_calls < 8) {
+    const char *s=strchr(uri,'/');
+    snprintf(leg_payloads[leg_calls],sizeof leg_payloads[0],"%s|%s",
+             s ? strrchr(s,'/')+1 : uri, payload);
+  }
+  leg_calls++;return 1;
+}
 int main(void) {
+  /* #773: old webOS omits trackNum. Every entry must still be selectable:
+   * numero -1 maps to setSubtitleEnable(false) in video_escolher_legenda,
+   * which is the "Subtitles 0, all disabled" report. And the key search must
+   * stay inside the entry object, never borrowing a sibling's trackNum. */
+  lsCall=fake_leg_call;
+  eventoPayload("{\"sourceInfo\":{\"programInfo\":[{\"subtitleTrackInfo\":[{\"language\":\"(null)\"},{\"language\":\"(null)\"}]}]}}",sessao);
+  assert(nLeg==2 && faixaLeg[0].numero==0 && faixaLeg[1].numero==1);
+  assert(!strcmp(faixaLeg[0].rotulo,"Legenda 1") && !strcmp(faixaLeg[1].rotulo,"Legenda 2"));
+  /* Explicit ordinals are preserved exactly (and need no renumbering). */
+  eventoPayload("{\"sourceInfo\":{\"programInfo\":[{\"subtitleTrackInfo\":[{\"trackNum\":3},{\"trackNum\":5}]}]}}",sessao);
+  assert(nLeg==2 && faixaLeg[0].numero==3 && faixaLeg[1].numero==5);
+  /* Mixed: an entry without the key must NOT inherit the sibling's 5. */
+  eventoPayload("{\"sourceInfo\":{\"programInfo\":[{\"subtitleTrackInfo\":[{\"language\":\"x\"},{\"trackNum\":5}]}]}}",sessao);
+  assert(nLeg==2 && faixaLeg[0].numero==-1 && faixaLeg[1].numero==5);
+  /* Every invalid shape is refused; with none valid, positions apply. */
+  eventoPayload("{\"sourceInfo\":{\"programInfo\":[{\"subtitleTrackInfo\":[{\"trackNum\":null},{\"trackNum\":\"x\"},{\"trackNum\":1.5},{\"trackNum\":-2},{\"trackNum\":99999999999}]}]}}",sessao);
+  assert(nLeg==5 && faixaLeg[0].numero==0 && faixaLeg[1].numero==1 &&
+         faixaLeg[2].numero==2 && faixaLeg[3].numero==3 && faixaLeg[4].numero==4);
+  /* Mixed valid+invalid keeps the invalid at -1 (no guessed collision). */
+  eventoPayload("{\"sourceInfo\":{\"programInfo\":[{\"subtitleTrackInfo\":[{\"trackNum\":2},{\"trackNum\":1.5},{\"trackNum\":7}]}]}}",sessao);
+  assert(nLeg==3 && faixaLeg[0].numero==2 && faixaLeg[1].numero==-1 && faixaLeg[2].numero==7);
+  /* Single entry and valid audio alongside subtitle numbering unchanged. */
+  eventoPayload("{\"sourceInfo\":{\"programInfo\":[{\"audioTrackInfo\":[{\"codec\":\"aac\",\"channels\":2}],\"subtitleTrackInfo\":[{\"trackNum\":4}]}]}}",sessao);
+  assert(nAudio==1 && !strcmp(faixaAudio[0].codec,"aac") && faixaAudio[0].numero==0);
+  assert(nLeg==1 && faixaLeg[0].numero==4);
+  /* Fallback ordinals are selectable: selectTrack index 1, no enable:false. */
+  nLeg=0;
+  eventoPayload("{\"sourceInfo\":{\"programInfo\":[{\"subtitleTrackInfo\":[{\"language\":\"(null)\"},{\"language\":\"(null)\"}]}]}}",sessao);
+  bus=(LSHandle *)(uintptr_t)1;
+  ligado=1;snprintf(midia,sizeof midia,"leg773-media");leg_calls=0;
+  video_escolher_legenda(1);
+  assert(legAtual==1 && leg_calls==2);
+  assert(strstr(leg_payloads[0],"setSubtitleEnable|") && strstr(leg_payloads[0],"\"enable\":true"));
+  assert(strstr(leg_payloads[1],"selectTrack|") && strstr(leg_payloads[1],"\"index\":1"));
+  /* A still-invalid entry selects nothing; it disables instead. */
+  eventoPayload("{\"sourceInfo\":{\"programInfo\":[{\"subtitleTrackInfo\":[{\"trackNum\":2},{\"language\":\"x\"}]}]}}",sessao);
+  leg_calls=0;video_escolher_legenda(1);
+  assert(legAtual==-1 && leg_calls==1);
+  assert(strstr(leg_payloads[0],"setSubtitleEnable|") && strstr(leg_payloads[0],"\"enable\":false"));
+  ligado=0;midia[0]=0;nLeg=0;lsCall=NULL;
+
   /* #625: successful load must start playback before track discovery.
    * TS and HLS both use this callback; native default tracks need no selection. */
   lsPayload=fake_load_payload;lsCall=fake_startup_call;
