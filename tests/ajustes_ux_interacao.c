@@ -28,7 +28,134 @@ int main(void) {
   assert(mkdtemp(dir)); assert(SDL_Init(SDL_INIT_TIMER) == 0);
   assert(setenv("NUVIO_DADOS", dir, 1) == 0);
   dados_iniciar(dir); assert(!strcmp(dados_dir(), dir)); snprintf(dirAjustes, sizeof dirAjustes, "%s", dir);
+  player_dir(dir); // Keep subtitle preferences in this fixture's data folder too.
   ajustes_iniciar(); assert(gravar());
+
+  // Update notifications: local preference preserves the default and
+  // survives real disk reloads. Off suppresses automatic notices only.
+  assert(ajustes_update_notifications());
+  assert(ajustes_escopo(AJ_UPDATE_NOTIFICATIONS)==ESC_TV);
+  assert(!ajustePortavel(AJ_UPDATE_NOTIFICATIONS) && !ajusteAparelho(AJ_UPDATE_NOTIFICATIONS));
+  for(int enabled=0;enabled<2;enabled++) {
+    assert(definirValorDireto(AJ_UPDATE_NOTIFICATIONS,enabled?0:1));
+    ajustes_dir(dir);ajustes_iniciar();
+    assert(ajustes_update_notifications()==enabled);
+  }
+
+  // Legacy secondary opacity keeps 100/75/50/25%; fine values and inheritance
+  // survive reload, and the new key wins in either file order.
+  {
+    char path[700];snprintf(path,sizeof path,"%s/ajustes.txt",dir);
+    const int legacyPct[]={0,100,75,50,25};
+    VideoLegendaEstilo primary={120,0,0,3,1,0,0,0,0,-1},secondary;
+    for(int old=0;old<=4;old++) {
+      FILE *f=fopen(path,"w");assert(f);fprintf(f,"legenda2OpacidadeLocal %d\n",old);fclose(f);
+      ajustes_dir(dir);ajustes_iniciar();ajustes_leg2_estilo(&primary,&secondary);
+      assert(leg_opacidade_pct(secondary.opacidade)==(old?legacyPct[old]:100));
+    }
+    for(int order=0;order<2;order++) {
+      FILE *f=fopen(path,"w");assert(f);
+      const char *fine="legenda2OpacidadeFinaLocal 8\n",*old="legenda2OpacidadeLocal 4\n";
+      fprintf(f,"%s%s",order?fine:old,order?old:fine);fclose(f);
+      ajustes_dir(dir);ajustes_iniciar();ajustes_leg2_estilo(&primary,&secondary);
+      assert(leg_opacidade_pct(secondary.opacidade)==65);
+      assert(gravar());ajustes_dir(dir);ajustes_iniciar();ajustes_leg2_estilo(&primary,&secondary);
+      assert(leg_opacidade_pct(secondary.opacidade)==65);
+    }
+    valor[AJ_LEG2_OPACIDADE]=0;primary.opacidade=leg_opacidade_modo(35);
+    ajustes_leg2_estilo(&primary,&secondary);assert(leg_opacidade_pct(secondary.opacidade)==35);
+    assert(remove(path)==0);ajustes_iniciar();assert(gravar());
+
+    // F1-profile: ajustes-p<N>.txt from older builds carries the legacy key.
+    // Switch, edit and the 2.1 migration must keep the profile's own value
+    // (0 = follows primary), never the active profile's, and the new key wins.
+    int keep[AJ_N];memcpy(keep,valor,sizeof keep);
+    for(int old=0;old<=4;old++) {
+      char line[64],*p2;snprintf(line,sizeof line,"legenda2OpacidadeLocal %d\n",old);
+      int want=leg_opacidade_secundaria_migrar(old);
+      snprintf(bad,sizeof bad,"legenda2OpacidadeFinaLocal %d\n",want);
+      assert(dados_gravar("ajustes-p2.txt",line));
+      valor[AJ_LEG2_OPACIDADE]=8;ajustes_perfil_restaurar(2);
+      assert(valor[AJ_LEG2_OPACIDADE]==want);
+      assert(dados_gravar("ajustes-p2.txt",line));
+      valor[AJ_LEG2_OPACIDADE]=8;assert(ajustes_edicao_iniciar(2));
+      assert(valor[AJ_LEG2_OPACIDADE]==want);
+      ajustes_edicao_encerrar();assert(valor[AJ_LEG2_OPACIDADE]==8);
+      p2=dados_ler("ajustes-p2.txt");assert(p2 && strstr(p2,bad));free(p2);
+      assert(dados_gravar("ajustes-p2.txt",line));
+      dados_apagar("ajustes-escopo.txt");
+      { const int ps[]={2};assert(ajustes_migrar_escopo_para(ps,1,1)); }
+      p2=dados_ler("ajustes-p2.txt");assert(p2 && strstr(p2,bad));free(p2);
+    }
+    for(int order=0;order<2;order++) {
+      const char *fine="legenda2OpacidadeFinaLocal 8\n",*old="legenda2OpacidadeLocal 4\n";
+      snprintf(bad,sizeof bad,"%s%s",order?fine:old,order?old:fine);
+      assert(dados_gravar("ajustes-p2.txt",bad));
+      valor[AJ_LEG2_OPACIDADE]=0;ajustes_perfil_restaurar(2);
+      assert(valor[AJ_LEG2_OPACIDADE]==8);
+    }
+    dados_apagar("ajustes-p2.txt");dados_apagar("ajustes-escopo.txt");dados_apagar("ajustes.txt.pre21");
+    memcpy(valor,keep,sizeof keep);valor[AJ_LEG2_OPACIDADE]=0;assert(gravar());
+
+    // Device-backup restore uses stable player IDs (old leg_opacidade 2 =
+    // 50%), and migrates the secondary key even without a local legacy file.
+    const char *device=dados_aparelho_id();assert(*device);
+    for(int old=0;old<=4;old++) {
+      Jsw w;jsw_iniciar(&w);jsw_obj_ini(&w);
+      jsw_chave(&w,"c_devices_v1");jsw_obj_ini(&w);
+      jsw_chave(&w,device);jsw_obj_ini(&w);
+      jsw_chave(&w,"values");jsw_obj_ini(&w);
+      jsw_ci(&w,"c_legenda2OpacidadeLocal",old);jsw_obj_fim(&w);
+      jsw_chave(&w,"files");jsw_obj_ini(&w);
+      ajusteHex(&w,"file0","leg_opacidade 2\n");jsw_obj_fim(&w);
+      jsw_obj_fim(&w);jsw_obj_fim(&w);jsw_obj_fim(&w);
+      ajustesDeviceAplicar(jsw_texto_final(&w));jsw_livre(&w);
+      assert(leg_opacidade_pct(player_leg_estilo()->opacidade)==50);
+      ajustes_leg2_estilo(player_leg_estilo(),&secondary);
+      assert(leg_opacidade_pct(secondary.opacidade)==(old?legacyPct[old]:50));
+    }
+    for(int order=0;order<2;order++) {
+      char blob[700];snprintf(blob,sizeof blob,
+        "{\"c_devices_v1\":{\"%s\":{\"values\":{%s}}}}",device,
+        order?"\"c_legenda2OpacidadeFinaLocal\":8,\"c_legenda2OpacidadeLocal\":4":
+              "\"c_legenda2OpacidadeLocal\":4,\"c_legenda2OpacidadeFinaLocal\":8");
+      ajustesDeviceAplicar(blob);ajustes_leg2_estilo(player_leg_estilo(),&secondary);
+      assert(leg_opacidade_pct(secondary.opacidade)==65);
+    }
+    // Every primary level survives disk reload. Review/undo receives the UI
+    // position, not the stored ID; 75% (position 5) must not become ID 5 (90%).
+    for(int pct=5;pct<=100;pct+=5) {
+      int op=AJ_LEG1_OPACIDADE,index=(100-pct)/5;
+      assert(rvEstiloLegenda(&op,&index,1));
+      player_leg_estilo_carregar();
+      assert(leg_opacidade_pct(player_leg_estilo()->opacidade)==pct);
+    }
+    // Old presets and fresh presets retain the same opacity after reloading.
+    char presetFile[80];snprintf(presetFile,sizeof presetFile,"settings-presets-%d.txt",perfis_ativo());
+    assert(dados_gravar(presetFile,"name=Legacy\n-legenda1Opacidade=1\nlegenda2OpacidadeLocal=3\n"));
+    ajPenSavedForget();ajPenSavedProfile=-1;ajPenSavedLoad();
+    assert(ajPenSavedValues[0][AJ_LEG1_OPACIDADE]==5);
+    assert(ajPenSavedValues[0][AJ_LEG2_OPACIDADE]==11);
+    ajPenSavedValues[0][AJ_LEG1_OPACIDADE]=13; // 35%
+    assert(ajPenSavedWrite());ajPenSavedForget();ajPenSavedProfile=-1;ajPenSavedLoad();
+    assert(ajPenSavedValues[0][AJ_LEG1_OPACIDADE]==13);
+    assert(ajPenSavedValues[0][AJ_LEG2_OPACIDADE]==11);
+    dados_apagar(presetFile);ajPenSavedForget();
+    // Primary style is device-only: the account blob never carries the
+    // percent-ordered Settings position (F2), only the stable player file.
+    { char *up=ajustesExtras();assert(up && !strstr(up,"legenda1Opacidade"));free(up); }
+    valor[AJ_LEG2_OPACIDADE]=0;assert(gravar());
+  }
+
+  // Remember last profile: device-local, OFF by default, survives reload.
+  assert(!ajustes_lembrar_perfil());
+  assert(ajustes_escopo(AJ_REMEMBER_PROFILE)==ESC_TV);
+  assert(!ajustePortavel(AJ_REMEMBER_PROFILE) && !ajusteAparelho(AJ_REMEMBER_PROFILE));
+  for(int enabled=0;enabled<2;enabled++) {
+    assert(definirValorDireto(AJ_REMEMBER_PROFILE,enabled?0:1));
+    ajustes_dir(dir);ajustes_iniciar();
+    assert(ajustes_lembrar_perfil()==enabled);
+  }
 
   // Seekr: sem chave avisa sem gravar; chave propria permite ligar e recarregar.
   {
@@ -45,6 +172,24 @@ int main(void) {
     assert(!ajustes_seekr_ligado() && !seekr_tem_chave());
     assert(uxValorAtual(AJ_SEEKR_LIGADO) == 1);
     assert(definirValorDireto(AJ_SEEKR_LIGADO, 1));
+  }
+
+  // Palco regression: OK on a three-value row normally cycles in place. For
+  // the library source the next value can be a disabled service, so cycling
+  // left Trakt stuck forever; OK must open the filtered editor instead.
+  {
+    int ant = valor[AJ_SALVOS_DEST];
+    trakt_definir("token-de-teste", "cliente-de-teste");
+    simklauth_esquecer();
+    assert(definirValorDireto(AJ_SALVOS_DEST, AJ_SALVOS_TRAKT));
+    focarOpcao(AJ_SALVOS_DEST);
+    assert(triBladeLayout() && ajSegmentada(AJ_SALVOS_DEST) && nValores(AJ_SALVOS_DEST) == 3);
+    key(SDLK_RETURN);
+    assert(uxEditor && uxPendente == AJ_SALVOS_TRAKT);
+    key(SDLK_UP); key(SDLK_RETURN);
+    assert(!uxEditor && valor[AJ_SALVOS_DEST] == AJ_SALVOS_LOCAL);
+    trakt_definir("", "");
+    valor[AJ_SALVOS_DEST] = ant;
   }
 
   // Fonte da biblioteca: o editor so navega entre servicos ligados; Nuvio
@@ -198,6 +343,11 @@ int main(void) {
         assert(!ajustes_profundidade());
   }
 
+  // Palco (239b6fe6c) edits a short choice inline: OK cycles it and no key
+  // opens the draft editor. The draft/cancel/persist contract below belongs to
+  // the list layout, where OK opens the editor; pin it instead of depending on
+  // the screen-width default.
+  valor[AJ_LAYOUT_AJUSTES] = 1; assert(!triBladeLayout());
   // Foco e rascunho (escolha, nao interruptor) não alteram nem o valor nem o arquivo; Back cancela.
   valor[AJ_HOME_LAYOUT] = 0; assert(gravar());
   original = valor[AJ_HOME_LAYOUT]; antes = arquivo(); abrir(AJ_HOME_LAYOUT);
@@ -343,12 +493,13 @@ int main(void) {
   // Keep coverage for every explicit icon, including the new Live TV rows.
   // Unchanged upstream cc87bec3 already uses the generic icon for these two
   // unrelated settings; a Live TV fixture must not require changing their UI.
+  int missingIcons=0; // List every gap before failing.
   for (i=0;i<AJ_N_TELA;i++) if (TELA[i].tipo == IT_OPC) {
     int op=TELA[i].op;
     if(op==AJ_MENU_CARTAZ || op==AJ_TRAILER_AUDIO)continue;
-    if(!strcmp(ajVisualIcone(op),"aj_settings-2"))fprintf(stderr,"Missing icon: %s\n",OPCOES[op].rotulo);
-    assert(strcmp(ajVisualIcone(op), "aj_settings-2"));
+    if(!strcmp(ajVisualIcone(op),"aj_settings-2")){fprintf(stderr,"Missing icon: %s\n",OPCOES[op].rotulo);missingIcons++;}
   }
+  assert(!missingIcons);
 
   // Apoiar o projeto: OK abre o painel dos QRs, o foco fica na linha, Voltar e OK fecham.
   assert(apoio_n() > 0);
