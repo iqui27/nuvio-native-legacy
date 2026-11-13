@@ -270,12 +270,16 @@ int main(void) {
       snprintf(c, sizeof c, "%s/ajustes.txt", d);
       f = fopen(c, "w"); assert(f); fputs("dvMkvLocal 0\ndtsLgLocal 3\n", f); fclose(f);
       ajustes_dir(d); assert(ajustes_dts_desligado());
+      /* The switch fixtures leave a prepared "DTS 5.1" label on row 0, and
+       * video_faixa_dts() reads codec and label: give each case a whole row. */
       nAudio = 1; audioAtual = 0;
+      memset(&faixaAudio[0], 0, sizeof faixaAudio[0]);
       strcpy(faixaAudio[0].codec, "eac3");
       __atomic_store_n(&bindVivo, 1, __ATOMIC_RELEASE);
       assert(!iniciarDts(-1) && mp4TestPending && !dtsTentou && !reconErroPend);
       __atomic_store_n(&bindVivo, 0, __ATOMIC_RELEASE);
       for (int k = 0; k < 2; k++) {
+        memset(&faixaAudio[0], 0, sizeof faixaAudio[0]);
         strcpy(faixaAudio[0].codec, k ? "truehd" : "dts");
         mp4TestPending = 1; dtsTentou = 0; dtsModoDv = 1; reconErroPend = 0;
         int before = partidas;
