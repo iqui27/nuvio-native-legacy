@@ -479,6 +479,11 @@ int main(int argc, char **argv) {
     // biblioteca, Trakt e 103 linhas de progresso do 1 dentro do 2).
     printf("-- sessao: no perfil 1, troca para o 2 com o ciclo do 1 no ar\n");
     escolher(1);
+    // First restore of profile 1 completes (empty account blob = new account):
+    // edits made during a pending first restore defer to the account (#205).
+    // Its profile-1 collections are legitimate here; count only what follows.
+    ciclo();
+    colDoOutro = 0;
     segurarCol = 1;
     sync_iniciar();
     pthread_mutex_lock(&trava);
