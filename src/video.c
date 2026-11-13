@@ -107,7 +107,6 @@ static int dvAudioMkvOrd = -1;
 // TrueHD on the DV path is converted (no compatible substitute, or fixed DV
 // audio). Session snapshot of the converter route, for later track changes.
 static int dvTruehd, dtsRotaTruehd, dtsRotaOff;
-static char dtsFonteCodec[16];
 static int dvHabilitado, dtsModoDv, dvRecuoAviso;
 // O player ainda nao pediu o ponto salvo ao player da TV (video_dv_segurar):
 // a troca para o caminho espera, para nascer na posicao certa.
@@ -3291,7 +3290,18 @@ static void dvCaminhoNaoAbriu(void) {
 static int iniciarDts(int stream) {
   const VideoFaixa *chosen = video_audio(audioAtual);
   if (ajustes_dts_desligado() && chosen &&
-      (video_faixa_dts(chosen) || nv_dts_truehd_codec(chosen->codec))) return 0;
+      (video_faixa_dts(chosen) || nv_dts_truehd_codec(chosen->codec))) {
+    dtsTentou = 1;
+    dvCaminhoNaoAbriu();
+#ifdef NV_MP4_BD_TEST
+    /* The intercepted native 204 still needs its normal failure handling.
+     * A policy refusal is terminal; a busy bind below is only a delay. */
+    if (mp4TestPending) {
+      mp4TestPending = 0; reconErroRede = 0; reconErroPend = 1;
+    }
+#endif
+    return 0;
+  }
   /* Retry from the next pump before unloading or spawning a native worker.
    * The old bind must finish before its ACB handle can become MSE. */
   if (bindAtivo()) return 0;
@@ -3362,7 +3372,6 @@ static int iniciarDts(int stream) {
              : dtsModoDv && ajustes_dts_original() && __atomic_load_n(&edidDts, __ATOMIC_ACQUIRE) > 0
              ? NV_DTS_ROUTE_NATIVE : 0;
   dts_playback_next_audio_route(dtsRotaTruehd, dtsModoDv ? ajustes_dv_audio() : 0, dtsRotaOff);
-  snprintf(dtsFonteCodec, sizeof dtsFonteCodec, "%s", selected.codec);
   dtsSessao = dts_playback_start(urlAtual, cabsHttp, stream, alvo,
                                paused, expWin, 0, (a || trocada) ? &selected : NULL, ordinal, count);
   if (!dtsSessao) {
@@ -3479,12 +3488,13 @@ static void bombearDts(void) {
     if (initial) { snprintf(vidHdr, sizeof vidHdr, "%s", "none"); vidAtmos = 0; }
     viuVideo = 0;
     nAudio = nLeg = 0;
+    const DtsTrack *sourceAudio = NULL;
     for (i = 0; i < st.info.n_tracks; i++) {
       const DtsTrack *t = &st.info.tracks[i];
       VideoFaixa *f;
       if (t->kind == DTS_AUDIO && nAudio < NV_FAIXA_MAX) {
         f = &faixaAudio[nAudio];
-        if (t->stream_index == st.info.audio_stream) audioAtual = nAudio;
+        if (t->stream_index == st.info.audio_stream) { audioAtual = nAudio; sourceAudio = t; }
         memset(f, 0, sizeof *f); f->numero = nAudio++;
       } else if (t->kind == DTS_SUBTITLE && nLeg < NV_FAIXA_MAX) {
         f = &faixaLeg[nLeg];
@@ -3534,14 +3544,13 @@ static void bombearDts(void) {
       snprintf(dvMemIdioma, sizeof dvMemIdioma, "%s", faixaAudio[audioAtual].idioma);
       dvMemOrd = audioAtual;
     }
-    /* Converted only when the source track is DTS; on the Dolby Vision path
-     * AC-3/E-AC-3 pass through untouched and there is nothing to label. */
-    /* Label what was really converted: DTS, TrueHD, or fixed DV audio. */
-    const char *src = nv_dts_truehd_codec(dtsFonteCodec) ? "TrueHD" : !strcmp(dtsFonteCodec, "eac3") ? "E-AC-3"
-                    : !strcmp(dtsFonteCodec, "ac3") ? "AC3" : "DTS";
-    int convertido = !dtsModoDv || (strcmp(src, "E-AC-3") && strcmp(src, "AC3")) ||
-                     strcmp(st.info.audio_codec, dtsFonteCodec);
-    if (dtsModoDv && !strcmp(dtsFonteCodec, "dts") && !strcmp(st.info.audio_codec, "dts")) {
+    /* Each worker revision names both the selected source and actual output.
+     * Session-start metadata is stale after an audio switch or safe remap. */
+    const char *codec = sourceAudio ? sourceAudio->codec : "";
+    const char *src = nv_dts_truehd_codec(codec) ? "TrueHD" : !strcmp(codec, "eac3") ? "E-AC-3"
+                    : !strcmp(codec, "ac3") ? "AC3" : "DTS";
+    int convertido = sourceAudio && (!dtsModoDv || strcmp(st.info.audio_codec, codec));
+    if (dtsModoDv && !strcmp(codec, "dts") && !strcmp(st.info.audio_codec, "dts")) {
       snprintf(dtsSaida, sizeof dtsSaida, "DTS · Dolby Vision");
       dtsEstado = VIDEO_DTS_NATIVO;
     } else if (convertido) {

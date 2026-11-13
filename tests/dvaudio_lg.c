@@ -36,6 +36,16 @@
 // O motor do DV de verdade abriria rede e fios: aqui so registra a partida.
 #define dts_playback_start dublePartida
 #define dts_playback_close dubleFechar
+#define dts_playback_status dubleStatus
+#define dts_playback_event dubleEvent
+#define dts_playback_seek dubleSeek
+#define dts_playback_audio dubleAudio
+static DtsPlaybackStatus preparedStatus;
+static int requestedAudio;
+static void dubleStatus(DtsPlayback *p, DtsPlaybackStatus *out) { (void)p; *out = preparedStatus; }
+static int dubleEvent(DtsPlayback *p, char *out, size_t n) { (void)p; (void)out; (void)n; return 0; }
+static void dubleSeek(DtsPlayback *p, double seconds) { (void)p; (void)seconds; }
+static void dubleAudio(DtsPlayback *p, int stream) { (void)p; requestedAudio = stream; }
 static DtsTrack partidaFaixa;
 static int partidas, partidaOrdinal, partidaContagem, partidaComFaixa;
 static DtsPlayback *dublePartida(const char *url, const char *headers, int audio_stream,
@@ -206,6 +216,43 @@ int main(void) {
     assert(!strcmp(partidaFaixa.codec,"dts") && !strcmp(partidaFaixa.language,"eng"));
     dtsSessao=NULL;
     puts("dvaudio_lg: recovered same-language DTS selection passes full-file identity"); }
+  for (int native = 0; native < 2; native++)
+  for (int start = 0; start < 2; start++) { // Both start codecs, native and converted DTS.
+    const Mkv m[] = {{"A_DTS", "eng", ""}, {"A_EAC3", "eng", ""}};
+    const Tv t[] = {{"en", "dts", 6}, {"en", "eac3", 6}};
+    montar(m, 2, t, 2, start);
+    assert(ajustes_dts_original());
+    __atomic_store_n(&edidDts, native, __ATOMIC_RELEASE);
+    dtsModoDv = 1; assert(iniciarDts(-1));
+    assert(dtsRotaOff == (native ? NV_DTS_ROUTE_NATIVE : 0));
+    memset(&preparedStatus, 0, sizeof preparedStatus);
+    preparedStatus.prepared = 1; preparedStatus.info.n_tracks = 2;
+    for (int k = 0; k < 2; k++) {
+      DtsTrack *track = &preparedStatus.info.tracks[k];
+      track->kind = DTS_AUDIO; track->stream_index = 10 + k;
+      track->channels = 6; strcpy(track->codec, t[k].codec);
+    }
+    const int streams[][3] = {{10, 11, 10}, {11, 10, 11}};
+    const char *outputs[][3] = {{"aac", "eac3", "aac"}, {"eac3", "aac", "eac3"}};
+    const char *labels[][3] = {{"DTS → AAC Stereo", "", "DTS → AAC Stereo"}, {"", "DTS → AAC Stereo", ""}};
+    const int states[][3] = {{VIDEO_DTS_CONVERTIDO, 0, VIDEO_DTS_CONVERTIDO}, {0, VIDEO_DTS_CONVERTIDO, 0}};
+    for (int k = 0; k < 3; k++) {
+      if (k) {
+        video_escolher_audio(streams[start][k] - 10);
+        assert(requestedAudio == streams[start][k]);
+      }
+      preparedStatus.revision++;
+      preparedStatus.info.audio_stream = streams[start][k];
+      int nativeDts = native && streams[start][k] == 10;
+      strcpy(preparedStatus.info.audio_codec, nativeDts ? "dts" : outputs[start][k]);
+      bombearDts();
+      assert(audioAtual == streams[start][k] - 10);
+      assert(!strcmp(video_dts_saida(), nativeDts ? "DTS · Dolby Vision" : labels[start][k]));
+      assert(dtsEstado == (nativeDts ? VIDEO_DTS_NATIVO : states[start][k]));
+    }
+    dtsSessao = NULL;
+    puts("dvaudio_lg: DTS/E-AC-3 switches and native DTS departure report actual output");
+  }
 #ifdef NV_MP4_BD_TEST
   { // Real LS2 event path: only an opted-in native startup 204 gets one retry.
     dtsSessao=NULL; dtsTentou=recuperando=modoLoad=fonteTocou=0; fonteMp4=1;
@@ -218,6 +265,25 @@ int main(void) {
     fonteTocou=0; reconErroPend=0;
     evento("{\"errorCode\":204,\"errorText\":\"demux failure\"}");
     assert(mp4TestPending && !reconErroPend && !pronto && !falhou);
+    { // DTS Off is a terminal refusal, while an active bind remains retryable.
+      const char *d = getenv("NUVIO_DADOS"); char c[512]; FILE *f;
+      snprintf(c, sizeof c, "%s/ajustes.txt", d);
+      f = fopen(c, "w"); assert(f); fputs("dvMkvLocal 0\ndtsLgLocal 3\n", f); fclose(f);
+      ajustes_dir(d); assert(ajustes_dts_desligado());
+      nAudio = 1; audioAtual = 0;
+      strcpy(faixaAudio[0].codec, "eac3");
+      __atomic_store_n(&bindVivo, 1, __ATOMIC_RELEASE);
+      assert(!iniciarDts(-1) && mp4TestPending && !dtsTentou && !reconErroPend);
+      __atomic_store_n(&bindVivo, 0, __ATOMIC_RELEASE);
+      for (int k = 0; k < 2; k++) {
+        strcpy(faixaAudio[0].codec, k ? "truehd" : "dts");
+        mp4TestPending = 1; dtsTentou = 0; dtsModoDv = 1; reconErroPend = 0;
+        int before = partidas;
+        assert(!iniciarDts(-1));
+        assert(dtsTentou && !mp4TestPending && !dtsModoDv && reconErroPend);
+        assert(partidas == before);
+      }
+    }
     mp4TestPending=0; dtsTentou=1;
     evento("{\"errorCode\":204,\"errorText\":\"demux failure\"}");
     assert(!mp4TestPending);
