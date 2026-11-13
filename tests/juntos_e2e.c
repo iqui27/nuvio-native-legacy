@@ -78,15 +78,22 @@ int main(int argc, char **argv) {
   // Lobby: os players ficam parados no quadro comum.
   rodar(1500);
   if (S[0].quer || S[1].quer) { printf("FALHA: lobby deveria pausar os players\n"); falhas++; }
-  // O convidado (que comecou 12 s a frente) e levado ao pos0 da sala.
+  // O convidado (que comecou 12 s a frente) e levado ao pos0 da sala. Quem
+  // comeca e o ANFITRIAO: desde o lobby-preloaded so ele pode "comecar"
+  // (logica.js: `!ehAnf` recusa), e o cliente do convidado bloqueia o comando
+  // localmente antes de mandar.
   S[1].pos += 12;
-  jsm_cmd(&M[1], "comecar", -1, NULL, agoraMs());
+  jsm_cmd(&M[0], "comecar", -1, NULL, agoraMs());
   if (!esperar(ambosTocando, 5000)) { printf("FALHA: comecar\n"); return 1; }
   rodar(6000);
   {
     double d = fabs(S[0].pos - S[1].pos) * 1000;
     printf("  depois de comecar: anfitriao %.3f s, convidado %.3f s, diferenca %.0f ms\n", S[0].pos, S[1].pos, d);
-    if (d > 150 || S[0].pos < 3) { printf("FALHA: desalinhados\n"); falhas++; }
+    // O player simulado acumula posicionamento apenas dentro de passo(),
+    // numa cadencia de ~5 ms: a leitura sempre fica alguns ms ATRAS do alvo.
+    // A faixa 2.5..6.0 prova o que interessa — play agendado na posicao
+    // certa, sem saltar 12 s do convidado nem travar em 0.
+    if (d > 150 || S[0].pos < 2.5 || S[0].pos > 6.0) { printf("FALHA: desalinhados\n"); falhas++; }
   }
   jsm_cmd(&M[0], "pausa", -1, NULL, agoraMs());
   if (!esperar(ambosPausados, 4000)) { printf("FALHA: pausa\n"); return 1; }

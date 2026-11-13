@@ -16,16 +16,33 @@
 #   bash servidor/recomendacoes/preparar-local.sh
 #   npx wrangler@4 dev --local --port 8799 --config servidor/recomendacoes/wrangler.toml
 #   bash servidor/recomendacoes/teste.sh
+#
+# TEST INJECTION (all optional, manual usage unchanged): the three tests under
+# tests/ that spin their own `wrangler dev` pass:
+#   NUVIO_WRANGLER     exact installed wrangler 4.x binary (never npx resolution)
+#   NUVIO_D1_CFG       wrangler.toml to bind against (the generated test config)
+#   NUVIO_D1_PERSIST   --persist-to dir; MUST equal the dev server's, so seeds
+#                      land in the same scratch SQLite. Without it the default
+#                      project .wrangler/state is used (manual prep, unchanged).
+#   NUVIO_D1_LOG       where the d1 execute output goes (default /tmp/nv-d1.log)
 set -u
 cd "$(dirname "$0")/../.."
-CFG=servidor/recomendacoes/wrangler.toml
-W="npx wrangler@4 d1 execute nuvio-recomendacoes --local --config $CFG"
+. tests/servidor_local.sh
+CFG="${NUVIO_D1_CFG:-servidor/recomendacoes/wrangler.toml}"
+D1LOG="${NUVIO_D1_LOG:-/tmp/nv-d1.log}"
+if [ -n "${NUVIO_WRANGLER:-}" ]; then
+  W="$NUVIO_WRANGLER"
+else
+  W="$(nv_wrangler_bin)" || { echo "wrangler 4.x not installed (NUVIO_WRANGLER)"; exit 1; }
+fi
+W="$W d1 execute nuvio-recomendacoes --local --config $CFG"
+[ -n "${NUVIO_D1_PERSIST:-}" ] && W="$W --persist-to $NUVIO_D1_PERSIST"
 
-exec_arquivo() { $W --file "$1" > /tmp/nv-d1.log 2>&1; }
-exec_sql()     { $W --command "$1" > /tmp/nv-d1.log 2>&1; }
+exec_arquivo() { $W --file "$1" > "$D1LOG" 2>&1; }
+exec_sql()     { $W --command "$1" > "$D1LOG" 2>&1; }
 
 echo "== esquema"
-exec_arquivo servidor/recomendacoes/schema.sql || { tail -20 /tmp/nv-d1.log; exit 1; }
+exec_arquivo servidor/recomendacoes/schema.sql || { tail -20 "$D1LOG"; exit 1; }
 
 # AS MIGRACOES PODEM FALHAR AQUI, E ISSO E O ESPERADO. `schema.sql` acima ja
 # cria a tabela COM as colunas novas num banco vazio, entao o ALTER TABLE
@@ -67,7 +84,7 @@ INSERT INTO sessao (hash, id, nome, expira) VALUES
  ('4b14dd47bfefcfc135ac4a76b5c1248c961334a8f8475fcd83346ec6909704dd','nuvio:fff','Fabiana Souza Real',9999999999),
  ('fa7e46d1dac26998ba498e3f3302d3cba2a80b4f0f6bcc40926f091169a92f8a','nuvio:ggg','Guilherme Nome Real',9999999999),
  ('e610ecd6709ee64a815912c1f19c1134bdd6a4bd61eeb0284028ea0f07f21ad9','nuvio:hhh','Helena Nome Real',9999999999);
-" || { tail -20 /tmp/nv-d1.log; exit 1; }
+" || { tail -20 "$D1LOG"; exit 1; }
 
 # ESTADO LIMPO A CADA RODADA. teste.sh conta recomendacoes ("B recebe 1") e
 # esbarra no limite por par (5 por dia): rodar duas vezes seguidas sem apagar
@@ -75,6 +92,6 @@ INSERT INTO sessao (hash, id, nome, expira) VALUES
 # na primeira execucao e um teste que ninguem roda.
 echo "== zerando dados de teste"
 exec_sql "DELETE FROM rec; DELETE FROM contato; DELETE FROM pessoa; DELETE FROM perfil; DELETE FROM pedido; DELETE FROM bloqueio; DELETE FROM atividade; DELETE FROM limite; DELETE FROM evento; DELETE FROM agora; DELETE FROM agregado; DELETE FROM agregado_titulo; DELETE FROM identidade; DELETE FROM fusao; DELETE FROM diario; DELETE FROM diario_cofre; DELETE FROM diario_lb_pendente; DELETE FROM sqlite_sequence WHERE name IN ('rec','evento');" \
-  || { tail -20 /tmp/nv-d1.log; exit 1; }
+  || { tail -20 "$D1LOG"; exit 1; }
 
 echo "pronto."
