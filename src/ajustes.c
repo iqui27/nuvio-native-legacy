@@ -2014,7 +2014,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Conexões da conversão de DTS e Dolby Vision", V_HTTP_CONEXOES, 4),
   ESC("Dados do buffer", V_LIGA, 2),                        // local: bufferDataLocal
   ESC("Memória RAM na tela", V_LIGA, 2),                    // local: ramOverlayLocal
-  ESC("Botão verde abre os dados do buffer", V_LIGA, 2),     // local: ramGreenLocal
+  ESC("Botão verde mostra a RAM na tela", V_LIGA, 2),        // local: ramGreenLocal
   ESC("Reduzir o buffer com pouca memória", V_LIGA, 2),      // local: bufferRamReduzLocal
 };
 
@@ -8702,7 +8702,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_BUFFER: return "Quanto vídeo o app guarda à frente. Automático é o de sempre; 64, 128 ou 256 MB ajudam arquivos 4K pesados e caem sozinhos se faltar memória na TV. No webOS vale para a conversão de DTS e Dolby Vision. Vale a partir do próximo vídeo.";
     case AJ_BUFFER_NATIVE_CONNECTIONS: return "Downloads HTTP do player da TV quando o app guarda o buffer. 1 (padrão) usa uma conexão contínua; 2, 3 ou 4 baixam trechos em paralelo, com pelo menos 64 MB de buffer e o mesmo limite de memória. Vale a partir do próximo vídeo.";
     case AJ_BUFFER_CONVERSION_CONNECTIONS: return "Downloads HTTP da conversão de DTS e Dolby Vision. 1 (padrão) usa uma conexão contínua, sem um novo pedido a cada trecho; 2, 3 ou 4 baixam trechos em paralelo. O limite de memória do buffer não muda. Vale a partir do próximo vídeo.";
-    case AJ_BUFFER_DADOS: return "Mostra no player quanto do buffer está cheio, o total reservado e quantas conexões HTTP o vídeo abriu. Só aparece com o painel aberto.";
+    case AJ_BUFFER_DADOS: return "Mostra no player quanto do buffer está cheio, o total reservado, o trecho do arquivo já baixado, quantos segundos há à frente e o limite de conexões HTTP da sessão. Só aparece com o painel aberto.";
     case AJ_RAM_OVERLAY: return "Mostra no player a memória do app (uso e pico) e a memória livre da TV, atualizada uma vez por segundo.";
     case AJ_RAM_VERDE: return "O botão verde do controle liga e desliga a memória na tela do player. Desligado, o botão não faz nada no player.";
     case AJ_BUFFER_RAM_REDUZ: return "Quando a TV fica com pouca memória, o tamanho do buffer escolhido é reduzido automaticamente (256 vira 128, depois 64) para o app não ser fechado. Desligado, o app tenta o tamanho escolhido e a proteção mínima da TV continua valendo.";

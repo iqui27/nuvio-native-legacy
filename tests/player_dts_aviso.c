@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 #include "plrilha.h"
+#include "mediaurl.h"
+static unsigned dtsAvisoSessao = 1;
 enum { VIDEO_DTS_NENHUM, VIDEO_DTS_NATIVO, VIDEO_DTS_PREPARANDO,
        VIDEO_DTS_CONVERTIDO, VIDEO_DTS_FALHOU, VIDEO_DTS_SEM_SOM };
 #define PG_SEG_TOTAL 6.0f
@@ -52,5 +54,17 @@ int main(void) {
   // New source brings the conversion notice back.
   url = "fixture://c";
   estado = VIDEO_DTS_CONVERTIDO; assert(rodar(8000) > 250);
-  puts("PASS DTS notice: full window per frame, later failure shown, no repeat after seek/retry/track change");
+  // A different source already in the same state still gets its full window.
+  url = "fixture://d";
+  assert(rodar(8000) > 250);
+  // A real new playback session can reopen the same source. Seek/retry above
+  // never increment this generation, whereas player_abrir does.
+  dtsAvisoSessao++;
+  assert(rodar(8000) > 250);
+  // Source identity must use the backend's URL capacity, without truncation.
+  static char longUrl[NV_MEDIA_URL_MAX];
+  memset(longUrl, 'x', sizeof longUrl - 1);url = longUrl;
+  assert(rodar(8000) > 250);
+  assert(rodar(8000) == 0);
+  puts("PASS DTS notice: full window per frame, later failure, source/session reset, no repeat after seek/retry/track change");
 }

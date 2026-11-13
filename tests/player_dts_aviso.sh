@@ -11,6 +11,8 @@ python3 - "$work/dts-aviso.c" <<'PY'
 from pathlib import Path
 import sys
 s=Path('src/player.c').read_text()
+assert 'void player_abrir(int indiceCatalogo, const char *url) {\n  dtsAvisoSessao++;' in s
+assert s.count('dtsAvisoSessao++;') == 1, 'seek/retry must not reset notice history'
 a=s.index('  { static int dtsVisto;');b=s.index('  // MINIATURAS FEITAS NO APARELHO',a)
 Path(sys.argv[1]).write_text('static void dtsAvisoQuadro(Uint32 agora) {\n'+s[a:b]+'}\n')
 PY

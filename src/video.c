@@ -364,12 +364,9 @@ double video_duracao(void) { return SIM.duracao; }
 // capitulos. Melhor um stub honesto que um numero inventado.
 double video_creditos(void) { return 0.0; }
 double video_buffer_fim(void) { return SIM.bufferFim; }
-#ifdef NV_HTTP_BUFFER_DIAG
 void video_buffer_test_text(char *out, size_t n) {
-  cacheboost_buffer_texto(out, n, 0, 0, ajustes_buffer_preset());
+  if (out && n) snprintf(out, n, "%s", i18n("Buffer: sistema"));
 }
-
-#endif
 static VideoStats simStats;
 static int simStatsDef;
 void video_simular_estatisticas(const VideoStats *s) {
@@ -3788,26 +3785,51 @@ double video_buffer_fim(void) {
   }
   return end;
 }
-#ifdef NV_HTTP_BUFFER_DIAG
+// Buffer data row (Matis94 C3). Only measured numbers: the RAM ring or the
+// conversion queue (fill/capacity), the contiguous byte range ready from the
+// read position, the time already buffered ahead (uMS bufferRange, or the
+// timestamps fed to the native pipeline on the DTS/DV path) and the pinned
+// session HTTP limit. What the path does not measure says "indisponível".
 void video_buffer_test_text(char *out, size_t n) {
+  if (!out || !n) return;
   DtsBufferInfo b = {0};
+  double fim = bufferSeg;
   if (dtsSessao) {
     DtsPlaybackStatus st = {0}; dts_playback_status(dtsSessao, &st);
-    if (st.prepared && !st.failed) b = st.buffer;
+    if (st.prepared && !st.failed) { b = st.buffer; fim = st.buffered_until; }
+    else fim = 0;
   } else if (moviebuffer_info(&b) <= 0) b = (DtsBufferInfo){0};
   // Use the measured converter queue or native RAM ring. A selected setting
   // alone is not evidence of the buffer used by the current playback path.
+  int opcao = ajustes_buffer_preset();
+  int pedido = opcao >= 1 && opcao <= 3 ? 32 << opcao : 0;
+  const double MiB = 1048576.0;
+  size_t k = 0;
+#define NV_BT_ADD(...) do { if (k < n) { int w_ = snprintf(out + k, n - k, __VA_ARGS__); \
+    if (w_ > 0) k += (size_t)w_ < n - k ? (size_t)w_ : n - k - 1; } } while (0)
   if (b.capacity_bytes > 0) {
+    if (b.ready_bytes < 0) b.ready_bytes = 0;
     if (b.ready_bytes > b.capacity_bytes) b.ready_bytes = b.capacity_bytes;
-    cacheboost_buffer_texto(out, n, b.ready_bytes, b.capacity_bytes, ajustes_buffer_preset());
-  } else cacheboost_buffer_texto(out, n, 0, 0, ajustes_buffer_preset());
-  if (out && n && b.http_workers >= 1 && b.http_workers <= 4) {
-    size_t used = strlen(out);
-    snprintf(out + used, n - used, " · HTTP: %d (%s)", b.http_workers,
-             dtsSessao ? "DTS/DV" : "Native");
+    double total = b.capacity_bytes / MiB;
+    if (pedido && fabs(total - pedido) >= 0.5)
+      NV_BT_ADD(i18n("Buffer: %.1f / %.0f MiB no total (%d MiB escolhidos)"), b.ready_bytes / MiB, total, pedido);
+    else NV_BT_ADD(i18n("Buffer: %.1f / %.0f MiB no total"), b.ready_bytes / MiB, total);
+  } else NV_BT_ADD("%s", i18n("Buffer: sistema"));
+  if (b.capacity_bytes > 0 && b.position >= 0 && b.contiguous_bytes > 0 &&
+      (b.total <= 0 || b.position < b.total)) {
+    int64_t ate = b.contiguous_bytes > INT64_MAX - b.position ? INT64_MAX : b.position + b.contiguous_bytes;
+    if (b.total > 0 && ate > b.total) ate = b.total;
+    if (b.total > 0) NV_BT_ADD(i18n(" · Trecho: %.0f–%.0f de %.0f MiB"), b.position / MiB, ate / MiB, b.total / MiB);
+    else NV_BT_ADD(i18n(" · Trecho: %.0f–%.0f MiB"), b.position / MiB, ate / MiB);
+  } else NV_BT_ADD("%s", i18n(" · Trecho: indisponível"));
+  if (fim > 0 && posSeg >= 0) NV_BT_ADD(i18n(" · À frente: %.0f s"), fim > posSeg ? fim - posSeg : 0.0);
+  else NV_BT_ADD("%s", i18n(" · À frente: indisponível"));
+  if (b.capacity_bytes > 0 && b.http_workers >= 1 && b.http_workers <= 4) {
+    if (dtsSessao) NV_BT_ADD(" · HTTP: %d (DTS/DV)", b.http_workers);
+    else NV_BT_ADD(i18n(" · HTTP: %d (Nativo)"), b.http_workers);
   }
+#undef NV_BT_ADD
 }
-#endif
 // webOS: so o buffer em SEGUNDOS e real (bufferRange do uMS); bytes, conexoes
 // e quadros o uMS nao conta. O host e o do link pedido (o uMS nao diz o final).
 void video_estatisticas(VideoStats *s) {
