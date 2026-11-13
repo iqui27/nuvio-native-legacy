@@ -32,8 +32,12 @@ static int calls, response = 200;
 static const char *expected;
 static int nv_http_fluxo(const char *u, unsigned p, unsigned t, int cb,
                          void *v, int *s, unsigned *n) { abort(); }
-static char *pedir(const char *method, const char *url, int seconds, const char *const *headers,
-                  const char *extra, const char *body, long *size, int *status) {
+static char *pedir2(const char *method, const char *url, int seconds, const char *const *headers,
+                   const char *extra, const char *body, long *size, int *status,
+                   char *etag, unsigned etagSize, int *retryAfter) {
+  // rede_patch_st now adds Content-Type as the extra line; the JS bridge
+  // collapses it with headers[2] (same name and value).
+  assert(!extra || !strcmp(extra, "Content-Type: application/json"));
   assert(!strcmp(method, "PATCH"));
   assert(!strcmp(url, "https://account.example/rest/v1/addons?user_id=eq.owner&profile_id=eq.1&url=eq.addon"));
   assert(!strcmp(headers[0], "apikey: fixture-anon"));

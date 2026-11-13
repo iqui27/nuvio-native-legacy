@@ -339,6 +339,22 @@ TraEstado traktauth_estado(void) { return TRA_LIGADO; }
 void vistoep_esquecer(void) {}
 void xtream_esquecer(void) {}
 void servidores_esquecer_todos(void) {}
+// sync.c 2.1 neighbours: no local edit, rewatch or lock state in this fixture.
+int  ajustes_edicao_perfil(void) { return 0; }
+void ajustes_edicao_encerrar(void) {}
+int  ajustes_migrar_escopo(void) { return 0; }
+void diario_dono(const char *c) { (void)c; }
+void diario_esquecer(void) {}
+void perfil_infantil_esquecer(void) {}
+void g5ui_forget(void) {}
+void trava_definir_conta(const char *c) { (void)c; }
+void trava_esquecer(void) {}
+int  rewatch_sujo(void) { return 0; }
+void rewatch_sujar(void) {}
+int  rewatch_blob_ler(const char *b) { (void)b; return 0; }
+char *rewatch_blob_costurar(const char *b) { return b ? strdup(b) : NULL; }
+void rewatch_esquecer(void) {}
+void segfontes_animeskip_id_conta(const char *id) { (void)id; }
 
 // ------------------------------------------------------------ roteiro
 
@@ -420,9 +436,13 @@ int main(int argc, char **argv) {
     // Revisao P2: troca de perfil solta o blob (sync_reaplicar_ajustes) e o
     // do perfil novo, do MESMO tamanho, tende a cair no mesmo endereco. A
     // deteccao de "blob novo" pelo ponteiro pulava os idiomas dele.
-    { sync_reaplicar_ajustes();
+    // Real lifecycle (948c6db82: protect is a no-op while a restore is open):
+    // an admin copy left profile 2 pending (ajustes.c), then the switch frees
+    // the blob and re-protects 2 with no cycle in between (sync_trocar_perfil).
+    { sync_marcar_ajustes_pendentes_perfil(2);
+      escolher(2);
+      sync_trocar_perfil(1);
       confere("troca de perfil limpa os idiomas da conta", idiomasChamadas >= 2 && !idiomasConta[0]);
-      sync_proteger_ajustes_locais();
       legContaValor = "pt";
       ciclo();
       confere("blob do perfil novo entrega os idiomas dele",
@@ -463,6 +483,11 @@ int main(int argc, char **argv) {
     // biblioteca, Trakt e 103 linhas de progresso do 1 dentro do 2).
     printf("-- sessao: no perfil 1, troca para o 2 com o ciclo do 1 no ar\n");
     escolher(1);
+    // First restore of profile 1 completes (empty account blob = new account):
+    // edits made during a pending first restore defer to the account (#205).
+    // Its profile-1 collections are legitimate here; count only what follows.
+    ciclo();
+    colDoOutro = 0;
     segurarCol = 1;
     sync_iniciar();
     pthread_mutex_lock(&trava);

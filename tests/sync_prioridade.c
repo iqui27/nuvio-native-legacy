@@ -7,6 +7,27 @@
 #define colfileiras_sincronizar fixture_colfileiras_sincronizar
 #define nuvem_freio_ativo fixture_nuvem_freio_ativo
 #define addons_definir_lista fixture_addons_definir_lista
+/* syncordem.c later gained its own session doubles; this file owns them. */
+#define perfis_sessao_geracao fixture_perfis_sessao_geracao
+#define perfis_sessao_atual fixture_perfis_sessao_atual
+#define perfis_sessao_travar fixture_perfis_sessao_travar
+#define perfis_sessao_destravar fixture_perfis_sessao_destravar
+#define sessao_identidade_local_copiar fixture_sessao_identidade_local_copiar
+#define sessao_token_copiar fixture_sessao_token_copiar
+#define sessao_token_recusado fixture_sessao_token_recusado
+#define nuvem_rpc_com fixture_nuvem_rpc_com
+#define nuvem_tabela fixture_nuvem_tabela
+#define perfis_puxar_sessao fixture_perfis_puxar_sessao
+#define syncprog_puxar_sessao fixture_syncprog_puxar_sessao
+#define syncprog_empurrar_sessao fixture_syncprog_empurrar_sessao
+#define debrid_conta_iniciar fixture_debrid_conta_iniciar
+#define debrid_conta_definir fixture_debrid_conta_definir
+#define debrid_aplicar_chaves_conta fixture_debrid_aplicar_chaves_conta
+#define desc_sessao_preparada fixture_desc_sessao_preparada
+#define desc_sessao_passo fixture_desc_sessao_passo
+#define ajustes_perfil_padrao fixture_ajustes_perfil_padrao
+#define extras_abrir_sessao fixture_extras_abrir_sessao
+#define desc_abrir_sessao fixture_desc_abrir_sessao
 #include "syncordem.c"
 #undef main
 #undef sessao_rpc
@@ -15,6 +36,26 @@
 #undef colfileiras_sincronizar
 #undef nuvem_freio_ativo
 #undef addons_definir_lista
+#undef perfis_sessao_geracao
+#undef perfis_sessao_atual
+#undef perfis_sessao_travar
+#undef perfis_sessao_destravar
+#undef sessao_identidade_local_copiar
+#undef sessao_token_copiar
+#undef sessao_token_recusado
+#undef nuvem_rpc_com
+#undef nuvem_tabela
+#undef perfis_puxar_sessao
+#undef syncprog_puxar_sessao
+#undef syncprog_empurrar_sessao
+#undef debrid_conta_iniciar
+#undef debrid_conta_definir
+#undef debrid_aplicar_chaves_conta
+#undef desc_sessao_preparada
+#undef desc_sessao_passo
+#undef ajustes_perfil_padrao
+#undef extras_abrir_sessao
+#undef desc_abrir_sessao
 #include "syncprog.h"
 #include "perfisessao.h"
 #include "debrid.h"

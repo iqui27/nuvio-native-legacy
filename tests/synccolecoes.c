@@ -5,6 +5,8 @@
 #define main syncordem_main
 #define sessao_rpc syncordem_rpc
 #define sessao_tabela syncordem_tabela
+#define nuvem_rpc_com syncordem_nuvem_rpc_com
+#define nuvem_tabela syncordem_nuvem_tabela
 #define col_definir_json syncordem_col_stub
 #define col_revisao syncordem_col_rev_stub
 #define col_resposta_valida syncordem_col_valida_stub
@@ -15,6 +17,8 @@
 #undef main
 #undef sessao_rpc
 #undef sessao_tabela
+#undef nuvem_rpc_com
+#undef nuvem_tabela
 #undef col_definir_json
 #undef col_revisao
 #undef col_resposta_valida
@@ -34,6 +38,15 @@ int addons_n(void) { return 0; }
 int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 const char *addons_base(int i) { (void)i; return ""; }
 const char *addons_id_manifesto(int i) { (void)i; return ""; }
+// Empty installed list: production addons_catalogo_chave falls to this key.
+void addons_catalogo_chave(const char *id, const char *base, const char *tipo,
+                           const char *cat, char *dst, unsigned tam) {
+  (void)base; snprintf(dst, tam, "%s_%s_%s", id, tipo, cat);
+}
+// No account addon list is bound here; reaching these is a fixture bug.
+unsigned addons_versao(void) { abort(); }
+int addons_travar_lista(unsigned v, int p) { (void)v; (void)p; abort(); }
+void addons_destravar_lista(void) { abort(); }
 char *dados_caminho(char *dst, unsigned n, const char *nome) {
   snprintf(dst, n, "%s/%s", dados_dir(), nome); return dst;
 }
@@ -49,6 +62,13 @@ char *sessao_tabela(const char *table, const char *query, int *status) {
     *status = 503; return strdup("{\"error\":\"unavailable\"}");
   }
   return syncordem_tabela(table, query, status);
+}
+// sync.c now pulls through nuvem_*; route them to this file's doubles.
+char *nuvem_rpc_com(const char *f, const char *c, const char *t, int *s) {
+  (void)t; return sessao_rpc(f, c, s);
+}
+char *nuvem_tabela(const char *f, const char *c, const char *t, int *s) {
+  (void)t; return sessao_tabela(f, c, s);
 }
 static void folder(const char *id) {
   assert(col_n() == 1 && col_folder(0));
