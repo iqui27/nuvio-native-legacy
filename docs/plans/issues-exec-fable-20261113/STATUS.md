@@ -6,6 +6,7 @@ Authorized by owner 2026-11-13. Base: `9115d8bbadd09f98fef5b939732d5334d7b726c7`
 ## Merged
 - #773 — first code cut merged into `integracao/2.1` at `261ab41c90838b86c0cdf40811a5ffc2ece08fe1` (source `1daef874bf1dce36dc74dc2dc2200f1ac03c5dfd`). Gate digest `a1202ed80b0b73cbe93481e5ffea52fbf0ee6607d9cc1a0c2dbc3da8e7a34ceb`, 2/2 passed. Issue OPEN. Details: `leg773-integracao.md`.
 - ready-tv lot (source only, NOT TV acceptance): merge `c5548b46578a02d69c541e8043e874ae8a3e8d18` from candidate `5f1898a2c8196fb62cca835199b0ce7c4434e4de` (base `21e1565df9b6cd4112c4cabc9f7ab2f26eef295d`, diffSHA `b046cffc816b5f2881c17413f83c17a8c62b244d2232c81122dcd44810a05726`, digest `896288673a9acae814aae0e2060d7bb79f20ccc57ab62c18f382d2ca95bf97e1`). Items: DMP766 (storage hygiene, not crash root), SAM/P2P783 (VOD Home-return mechanism), ASS719 (active and same-centisecond sibling retention). Host gate 7/7 rc 0 (zero failures). Post-merge `queda.sh`, `tpk-preso.sh`, `mkvass_despejo719.sh` rc 0 on c5548b4. Details: `ready-tv-integracao.md`.
+- language-scr source (#785 FON785 source fix; #706 test fixture only; no production screensaver fix) merged at `440b19fcafc9d3590c2252b989e6ad1e4cfc5154` (HEAD^1 `4211dd8`, HEAD^2 candidate `0e5606a`, diffSHA `2c41c9c3...`). Post-merge rc 0: source_audio_language, fon785_rotulos, video_pausa_lg. Issues OPEN. Details: `language-scr-integracao.md`.
 - No other campaign candidate merged. BIB639 / PAG789 full global gate still pending (not waived, not integrated).
 
 ## Evidence for #773
@@ -20,4 +21,5 @@ Authorized by owner 2026-11-13. Base: `9115d8bbadd09f98fef5b939732d5334d7b726c7`
 - DMP766, SAM/P2P783, ASS719: source integrated; physical TV acceptance UNKNOWN; issues stay open.
 - P2 notes retained for ready-tv (SAM F1-F5, ASS F4-F6, DMP F7): not blockers. See `ready-tv-integracao.md`.
 - BIB639 / PAG789: full global gate pending.
+- #785 / #706: physical TV acceptance UNKNOWN; LG screensaver root and FON row on TV unknown; GUI runners fontes_lote_e/fontes_formatter not run; P2 notes kept.
 - All other issues: NOT integrated, pending candidate flow.
