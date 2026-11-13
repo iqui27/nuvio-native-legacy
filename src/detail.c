@@ -8453,7 +8453,7 @@ static void desenhaComentarios(float x, float y, float a) {
       txt_desenhar_alpha(txt_linha(TXT_CAPTION2,"Contém spoiler · OK para ler",200,203,210,255),px,y+176,a);
     } else {
       const char *text=daSerie ? extras_comentario_texto(i) : extras_comentario_ep_texto(i);
-      txt_addon_previa(TXT_G22M,text,px,y+84,larg,195,a*.95f);
+      txt_addon_previa(TXT_G22M,text,px,y+84,larg,195,a*.95f,0.0f,NV_TELA_H);
     }
 
     { int nota = daSerie ? extras_comentario_nota(i)

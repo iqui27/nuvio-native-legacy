@@ -17975,6 +17975,15 @@
    "ref": "docs/plans/matis94-import-20261112/lote-g-integracao.md",
    "resultado": "Merge6aa346ec3c544184e7386069b0f2bf04c2076fef; gate atual8/8 e pós-merge3/3 passaram; i18n integrador0. Sem P0/P1 atual confirmado.",
    "evidencia": "Diff6d051715539310741c88557e73f4b57c9910efbcc3ee4cb133d43ef1aa5e57b9. Evidência host/fixture, não TV/ABI. P2 F2/F3/F6/F7/F8/F9 preservados; viewer JS quebrado, download direto funciona; limpeza ao encerrar processo incompleta. Serviço NÃO implantado; sem uploads reais, conta, release, instalação ou fechamento de issue."
+  },
+  {
+   "data": "2026-11-13",
+   "quem": "Central Matis94; revisor j-rev-e3-zima; verificador j-verify-e3-zima",
+   "o_que": "Lote E integrado: formatter, worker/cache/estilos de selos, regex local, nomes UTF-8 completos e identidade Cloud, opção Topo/Embaixo e regressões de backup local.",
+   "issues": [],
+   "ref": "docs/plans/matis94-import-20261112/lote-e-integracao.md",
+   "resultado": "Merge1ac01b8b5b10afa8c36696378cb06c8eae045690; 12checks host passaram no candidatof571a7415; gate final6/6 e pós-merge3/3, i18n integrador0. Nenhum P0/P1 atual confirmado.",
+   "evidencia": "Diffc1af2821a75ff35d1e875bced997d1160467ac0c19e7c5f38b050154b9312eb0; digeste8c7e13d866589dc892331d32bf317e8f9322863a300d79dfad747da06a919e8. Primeirogate6/6testespassaram masmetadadosincompletos; normalização dos3campos preservou relatório/vereditos/pins. QuatroP2nomei18n/faixavazia/linhaalta/controlecache mantidos. SemprovaARMvsync/ABI/FPS/TV/aprovaçãovisual. Nenhumaissuefechada; sempush/release/instalação/escritaemconta/serviçonovo."
   }
  ],
  "decisoes": [
