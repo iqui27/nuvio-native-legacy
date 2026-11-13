@@ -11,8 +11,14 @@ static int fake_sleep(const struct timespec *, struct timespec *);
 #undef nanosleep
 
 /* The official native HTTP payload reads device buffering preferences. */
-int ajustes_buffer_preset(void) { return 0; }
+static int test_buffer_preset;
+int ajustes_buffer_preset(void) { return test_buffer_preset; }
+int ajustes_buffer_native_connections(void) { return 1; }
+int ajustes_buffer_conversion_connections(void) { return 1; }
 long memlog_livre_mb(void) { return 4096; }
+void dts_engine_set_source_workers(int n) { (void)n; }
+void dts_engine_set_conversion_workers(int n) { (void)n; }
+void dts_engine_set_ahead_mib(int mib) { (void)mib; }
 /* No HTTP or decoder is started by native dispatcher fixtures. */
 static DtsBufferInfo movie_snapshot;
 static int movie_active, movie_stops;
@@ -31,8 +37,11 @@ int dts_playback_event(DtsPlayback *p,char *out,size_t n) { (void)p;if (pump_rea
 void dts_playback_close(DtsPlayback *p) { (void)p;assert(0); }
 void dts_playback_pause(DtsPlayback *p,int paused) { (void)p;(void)paused;assert(0); }
 void mkvass_aceitar_imagem(int sim) { (void)sim; }
-void dts_playback_seek(DtsPlayback *p,double t) { (void)p;(void)t;assert(0); }
+void capmkv_zerar(void) { }
+static int dts_seek_calls;
+void dts_playback_seek(DtsPlayback *p,double t) { (void)p;(void)t;dts_seek_calls++; }
 void dts_playback_audio(DtsPlayback *p,int stream) { (void)p;(void)stream;assert(0); }
+void dts_playback_audio_at(DtsPlayback *p,int stream,double seconds) { (void)p;(void)stream;(void)seconds;assert(0); }
 void dts_playback_subtitle(DtsPlayback *p,int stream) { (void)p;(void)stream;assert(0); }
 /* video.c calls into trailer.c, which is not linked in this fixture. */
 int trailer_preview_home(void) { return 0; }

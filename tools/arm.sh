@@ -70,6 +70,14 @@ if [ "$VARIANTE" = "highcache" ]; then
   echo "==> variante ALTO CACHE (300 MB de texturas)"
 fi
 
+# Diagnostic build only: NUVIO_BUFFER_DIAG=1 adds -DNV_HTTP_BUFFER_DIAG
+# (buffer/RAM overlay rows, sampled [range-diag] network lines). Off by
+# default — release IPKs stay byte-clean of the diagnostic code.
+if [ "${NUVIO_BUFFER_DIAG:-0}" = 1 ]; then
+  export NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-} -DNV_HTTP_BUFFER_DIAG"
+  echo "==> variante DIAG DE BUFFER (NV_HTTP_BUFFER_DIAG)"
+fi
+
 echo "==> compilando para ARM"
 # A configuracao do servidor entra por VARIAVEL DE AMBIENTE e os -D sao montados
 # dentro do container. Passa-los na linha de `sh -c` exigiria aspas dentro de
