@@ -339,6 +339,22 @@ TraEstado traktauth_estado(void) { return TRA_LIGADO; }
 void vistoep_esquecer(void) {}
 void xtream_esquecer(void) {}
 void servidores_esquecer_todos(void) {}
+// sync.c 2.1 neighbours: no local edit, rewatch or lock state in this fixture.
+int  ajustes_edicao_perfil(void) { return 0; }
+void ajustes_edicao_encerrar(void) {}
+int  ajustes_migrar_escopo(void) { return 0; }
+void diario_dono(const char *c) { (void)c; }
+void diario_esquecer(void) {}
+void perfil_infantil_esquecer(void) {}
+void g5ui_forget(void) {}
+void trava_definir_conta(const char *c) { (void)c; }
+void trava_esquecer(void) {}
+int  rewatch_sujo(void) { return 0; }
+void rewatch_sujar(void) {}
+int  rewatch_blob_ler(const char *b) { (void)b; return 0; }
+char *rewatch_blob_costurar(const char *b) { return b ? strdup(b) : NULL; }
+void rewatch_esquecer(void) {}
+void segfontes_animeskip_id_conta(const char *id) { (void)id; }
 
 // ------------------------------------------------------------ roteiro
 
