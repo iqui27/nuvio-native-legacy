@@ -247,6 +247,8 @@ static int range_backoff(DtsEngine *e,DtsRangeJob *job,int ms) {
 #ifdef NV_DTS_WEBOS_RECOVERY
 /* ponytail: one cooldown per playback source; cap waits at 30s so broken
  * providers cannot stall playback indefinitely. */
+#define INT64_MAX_SECONDS 9223372036854775807.0  // INT64_MAX/1e9; avoids int->float warning
+
 static void range_throttled(void *opaque,int seconds) {
   DtsEngine *e=opaque;
   // <0 = hop had no Retry-After, 0 = malformed: only real values schedule.
@@ -1044,7 +1046,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
     if(e->fx_cap<16*1024*1024) e->fx_cap=16*1024*1024;
   }
   if (cancelled(e)) return fail(e,"Cancelled",0);
-  if (audio < -1 || !isfinite(start) || start<0 || start>INT64_MAX/1000000000.0)
+  if (audio < -1 || !isfinite(start) || start<0 || start>INT64_MAX_SECONDS)
     return fail(e,"Invalid DTS conversion options",0);
   e->url=strdup(url); e->headers=strdup(headers?headers:"");
   if(e->conv_stream && e->url && e->headers) {
@@ -1167,7 +1169,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
 int dts_engine_audio(DtsEngine *e,int stream,int core,double target) {
   if(!e || !e->fmt || e->remux || cancelled(e) || stream<0 ||
      stream>=(int)e->fmt->nb_streams || !isfinite(target) || target<0 ||
-     target>INT64_MAX/1000000000.0) return -1;
+     target>INT64_MAX_SECONDS) return -1;
   AVCodecParameters *ap=e->fmt->streams[stream]->codecpar;
   if(ap->codec_type!=AVMEDIA_TYPE_AUDIO ||
      !(ap->codec_id==AV_CODEC_ID_DTS ||
@@ -1563,7 +1565,7 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
   return result;
 }
 int dts_engine_seek(DtsEngine *e,double seconds) {
-  if(!e || !e->fmt || !isfinite(seconds) || seconds<0 || seconds>INT64_MAX/1000000000.0) return -1;
+  if(!e || !e->fmt || !isfinite(seconds) || seconds<0 || seconds>INT64_MAX_SECONDS) return -1;
   if(cancelled(e)) return fail(e,"Cancelled",0);
   __atomic_store_n(&e->range_live,0,__ATOMIC_RELAXED);
   int64_t timestamp=(int64_t)(seconds*1000000.0);
