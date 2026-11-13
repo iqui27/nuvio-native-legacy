@@ -88,6 +88,8 @@ void cacheboost_backend_buffer(int mb);
 // -> MiB for the next open. Steps down the 256/128/64 ladder until free RAM
 // (`livreMb`, MemAvailable; < 0 = unknown) keeps CB_BUFFER_PISO_MB after the
 // buffer plus the DTS active range (4 MiB); nothing fits or unknown -> 0 (Auto). Logs any cut.
+// With ajustes_buffer_ram_reduz() OFF there is no step down: the chosen size if
+// it fits the same floor, else 0 (Auto). The floor holds in both modes.
 #define CB_BUFFER_PISO_MB 100
 int cacheboost_buffer_mb(int opcao, long livreMb);
 // One-line player OSD text ("Buffer: 84.5 / 128 MiB total (256 MiB selected)",
