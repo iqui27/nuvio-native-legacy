@@ -61,6 +61,18 @@ int main(void) {
     assert(audioInferido(v, out, sizeof out));
     assert(strstr(out, i18n("Espanhol")));
     free(v); v = NULL;
+    // #785: a language carried only by recognized release labels (audioRotulos)
+    // must reach the same inferred row the filter already counted.
+    assert(stream_extrair("{\"streams\":[{\"url\":\"https://example.test/v\",\"title\":\"Frozen.2013.1080p.WEB-DL.VFF.x264.mkv\"}]}", "fixture", &v) == 1);
+    assert(v->audioRotulos[0] && "fixture must put VFF only in audioRotulos");
+    assert(!v->audioTexto[0]);
+    ling_local_audio("fr"); lista = v; n = 1; soDub = 1;
+    assert(passaChips(0) && "the filter already counts label-only evidence");
+    assert(linhasFaixas(v) == 1 && "the row must reserve the inferred line");
+    assert(audioInferido(v, out, sizeof out) && strstr(out, i18n("Francês")));
+    ling_local_audio("pt");
+    assert(!passaChips(0) && "label-only French must not match pt");
+    free(v); v = NULL;
     assert(stream_extrair("{\"streams\":[{\"url\":\"https://example.test/v\",\"title\":\"Movie.1080p.MULTI.mkv\"}]}", "fixture", &v) == 1);
     assert(linhasFaixas(v) == 1);
     assert(audioInferido(v, out, sizeof out) && strstr(out, i18n("Multi")));
