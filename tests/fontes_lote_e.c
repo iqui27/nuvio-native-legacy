@@ -140,16 +140,36 @@ int main(int argc, char **argv) {
     assert(a->n > 1 && strlen(a->texto) < sizeof a->texto);
     assert(utf8Valid(a->texto) && "bounded copy split a UTF-8 code point"); }
 
-  // 3. [Cloud] prefix dedupe only hides the filename line, never the metadata.
+  // 3. [Cloud] prefix dedupe hides the filename only where the logo row
+  //    really draws the whole description; the name never goes unseen.
   fprintf(stderr, "step 3\n");
-  { static Stream c; memset(&c, 0, sizeof c);
+  { static Stream c; char k[COPIA_CHAVE]; memset(&c, 0, sizeof c);
     snprintf(c.arquivo, sizeof c.arquivo, "[Cloud] Movie.2160p.mkv");
     snprintf(c.descricao, sizeof c.descricao, "☁️ Movie.2160p.mkv\n4K HDR");
-    assert(!arquivoDa(&c)[0]);
-    snprintf(c.descricao, sizeof c.descricao, "Other.release.mkv");
+    // Logos take the description's slot: the release name must still draw.
+    c.dolbyVision = 1; assert(logosDa(&c, 0));
+    assert(!strcmp(arquivoVisivel(&c, aw), "[Cloud] Movie.2160p.mkv") && "logo row hides description; name must stay");
     assert(!strcmp(arquivoDa(&c), "[Cloud] Movie.2160p.mkv"));
+    copiaChave(&c, k, sizeof k); assert(!strcmp(k, "cloudmovie2160pmkv") && "copy key needs the real name");
+    c.dolbyVision = 0;
+    // MP4 also takes the slot (logo row draws the MP4 tag, not the text).
+    snprintf(c.arquivo, sizeof c.arquivo, "[Cloud] Movie.mp4");
+    snprintf(c.descricao, sizeof c.descricao, "☁️ Movie.mp4");
+    c.mp4 = 1; assert(!strcmp(arquivoVisivel(&c, aw), "[Cloud] Movie.mp4")); c.mp4 = 0;
+    // Plain description drawn whole on the logo row: no duplicate line.
+    snprintf(c.arquivo, sizeof c.arquivo, "[Cloud] Movie.mkv");
+    snprintf(c.descricao, sizeof c.descricao, "☁️ Movie.mkv");
+    assert(!logosDa(&c, 0) && !arquivoVisivel(&c, aw)[0] && "visible description already shows the name");
+    assert(!strcmp(arquivoDa(&c), "[Cloud] Movie.mkv"));
+    // Same description clipped by the one-line ellipsis: the name returns.
+    { size_t o = 0;
+      while (o < 900) o += (size_t)snprintf(c.descricao + o, sizeof c.descricao - o, "Template field %zu ", o);
+      snprintf(c.descricao + o, sizeof c.descricao - o, "Movie.mkv"); }
+    assert(!strcmp(arquivoVisivel(&c, aw), "[Cloud] Movie.mkv") && "ellipsized description must not hide the name");
+    snprintf(c.descricao, sizeof c.descricao, "Other.release.mkv");
+    assert(!strcmp(arquivoVisivel(&c, aw), "[Cloud] Movie.mkv"));
     snprintf(c.arquivo, sizeof c.arquivo, "[Cloud]");
-    assert(!strcmp(arquivoDa(&c), "[Cloud]")); }
+    assert(!strcmp(arquivoVisivel(&c, aw), "[Cloud]")); }
 
   // 4. Partial culling: a 96-line block clipped to a short window visits
   fprintf(stderr, "step 4\n");

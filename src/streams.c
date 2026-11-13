@@ -4707,13 +4707,7 @@ static const char *addonArquivoComparar(const char *nome) {
 static const char *arquivoDa(const Stream *s) {
   static char ult[2048];
   const char *p, *f;
-  if (s->arquivo[0]) {
-    // Se a descricao ja cita o nome (sem o prefixo [Cloud]), a linha do
-    // arquivo nao repete a mesma informacao.
-    const char *cmp = addonArquivoComparar(s->arquivo);
-    if (cmp[0] && strstr(s->descricao, cmp)) return "";
-    return s->arquivo;
-  }
+  if (s->arquivo[0]) return s->arquivo;
   if (!logosDa(s, 0) && !selosPacoteVisiveis((Stream *)s) && strcmp(containerDa(s), "MP4") && !idiomaDa(s)) return "";
   ult[0] = 0;
   for (p = s->descricao; *p; p = f + 1) {
@@ -4724,6 +4718,29 @@ static const char *arquivoDa(const Stream *s) {
     if (!f) break;
   }
   return ult;
+}
+// O nome que a linha em foco desenha. So some quando a fileira de logos ja
+// mostra a descricao INTEIRA com ele (sem logo, selo, MP4, idioma nem aviso
+// por cima; cabe sem reticencias). A largura e o txtW0 do desenho: coluna
+// da direita (legenda ate 318 + 22, ou o GB) e o rotulo de qualidade. Altura
+// e desenho perguntam aqui com a mesma largura aw.
+static const char *arquivoVisivel(const Stream *s, float aw) {
+  const char *arq = arquivoDa(s), *cmp = addonArquivoComparar(s->arquivo);
+  if (!s->arquivo[0] || !cmp[0] || !strstr(s->descricao, cmp) || logosDa(s, 0) ||
+      selosPacoteVisiveis((Stream *)s) || !strcmp(containerDa(s), "MP4") || idiomaDa(s) || s->naoVideo) return arq;
+  char d[sizeof s->descricao], rs[16], fx[16], gb[24], pv[160]; int hd;
+  legendaProvedor(s, pv, sizeof pv);
+  float col = fminf(txt_largura(TXT_PG_FIM, pv), 318) + 22;
+  unsigned long long mb = tamanhoMBFonte(s);
+  if (mb) { snprintf(gb, sizeof gb, "%.1f", mb / 1024.0); plrui_decimal(gb);
+    col = fmaxf(col, txt_largura(TXT_CW_TITULO, gb) + 6 + txt_largura(TXT_PG_FIM, "GB")); }
+  rotuloQualidade(s, rs, sizeof rs, fx, sizeof fx, &hd);
+  float w = aw - col - 28 - txt_largura(TXT_HERO_META, rs) - txt_largura(TXT_HERO_META, "·") -
+            txt_largura(TXT_HERO_META, fx) - 44;
+  snprintf(d, sizeof d, "%s", s->descricao);
+  for (char *p = d; *p; p++) if ((unsigned char)*p < 32) *p = ' ';
+  int dw = txt_largura(TXT_PG_FIM, d);
+  return dw > 0 && dw <= w ? "" : arq;
 }
 
 // A linha de marca e so para o que esta tocando e para a escolha anterior.
@@ -4757,7 +4774,7 @@ static float alturaLinha(int i, int automatica, float abertura) {
     // agora quebra em varias linhas (UTF-8), entao a altura pergunta ao
     // layout — que reusa o cache do desenho, mesma largura tr-tx.
     float aw = FOLHA_W-FOLHA_PAD_E-FOLHA_PAD_D-2*FOLHA_TXT;
-    float extra = (abertura>0 ? arquivoAltura(arquivoDa(&lista[i]),aw) : 0) + FOLHA_FIT_H * fitLinhas(i);
+    float extra = (abertura>0 ? arquivoAltura(arquivoVisivel(&lista[i],aw),aw) : 0) + FOLHA_FIT_H * fitLinhas(i);
     h += extra * abertura;
   }
   return h + linhasFaixas(&lista[i]) * FOLHA_FAIXA_H;
@@ -7171,8 +7188,8 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     // (grupo de release, versao), e em toda linha era ruido. Quebra em
     // UTF-8 em vez de sumir num reticencias (o nome inteiro le).
     { float a=(sel?abreFoco:row==linhaAnt?abreAnt:0);
-      const char *arq=arquivoDa(s);
       float aw=tr-tx;
+      const char *arq=arquivoVisivel(s,aw);
       if(a>.02f && arq[0]){ char d[2048];
         snprintf(d,sizeof d,"%s",arq);
         for(char *p=d;*p;p++)if((unsigned char)*p<32)*p=' ';
