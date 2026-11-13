@@ -185,5 +185,14 @@ int main(void) {
     }
     dtsModoDv=dvHabilitado=0;
     puts("dvaudio_lg: late DV8 output promotes controller DV; invalid/layered profiles stay"); }
+  { VideoFaixa f; DtsTrack t = { .kind = DTS_AUDIO, .channels = 6 };
+    strcpy(t.codec, "dts"); strcpy(t.language, "fr"); strcpy(t.title, "Original DTS-ES Surround Mix");
+    dtsRotuloAudio(&f, &t);
+    assert(strstr(f.rotulo, " \xc2\xb7 DTS 5.1") && !strstr(f.rotulo, "Surround Mix"));
+    assert(!strcmp(f.nome, "Original DTS-ES Surround Mix"));
+    strcpy(t.codec, "flac"); t.channels = 2; strcpy(t.title, "Commentary by director David Fincher and actors Brad Pitt");
+    dtsRotuloAudio(&f, &t);
+    assert(!strncmp(f.rotulo, "Commentary by director David Fincher and actors Brad Pitt \xc2\xb7 FLAC", 65));
+    puts("dvaudio_lg: converter rows are language-first; FLAC keeps the full file title"); }
   return 0;
 }

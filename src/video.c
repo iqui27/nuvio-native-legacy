@@ -12,6 +12,7 @@
 #include "video_seekretry.h"
 #include "video_dvretry.h"
 #include "video_dvaudio.h"
+#include "video_faixa_rotulo.h"
 #include "idioma.h"
 #include "linguas.h"
 #include "audioescolha.h"
@@ -163,8 +164,21 @@ static int dtsEstado;
 #ifdef NV_TPK
 int video_tpk_dts_estado(void);   // video_tpk.c: enquanto o .tpk converte o DTS
 #endif
+/* Converter-session audio row. Matis94 47dec158d/b68f3de15: language on top,
+ * readable codec below ("DTS 5.1"); only FLAC keeps the file's track name
+ * (commentaries), unless that name is the release name. */
+static void dtsRotuloAudio(VideoFaixa *f, const DtsTrack *t) {
+  const char *lang = t->language[0] ? i18n(ling_nome(t->language)) : i18n("Faixa");
+  char sub[40];
+  if (!audioinfo_texto(t->codec, t->channels, 0, sub, sizeof sub)) snprintf(sub, sizeof sub, "%.12s", t->codec);
+  snprintf(f->nome, sizeof f->nome, "%s", t->title);
+  nv_rotulo_faixa(f->rotulo, sizeof f->rotulo,
+                  strcmp(audioinfo_codec(t->codec), "FLAC") ? lang : t->title, lang, sub);
+}
 int video_dts_estado(void) {
   if (dtsEstado) return dtsEstado;
+  /* Matis94 34e14f9db: no false "native DTS" while a converter session spins up. */
+  if (dtsSessao) return VIDEO_DTS_NENHUM;
 #ifdef NV_TPK
   { int e = video_tpk_dts_estado(); if (e) return e; }
 #endif
@@ -3414,8 +3428,10 @@ static void bombearDts(void) {
       if (!strcmp(t->codec, "ass") || !strcmp(t->codec, "ssa"))
         snprintf(f->codec, sizeof f->codec, "S_TEXT/ASS");
       snprintf(f->idioma, sizeof f->idioma, "%.7s", t->language);
-      snprintf(f->rotulo, sizeof f->rotulo, "%.26s · %.12s", t->language[0] ?
-               i18n(ling_nome(t->language)) : i18n("Faixa"), t->codec);
+      if (t->kind == DTS_AUDIO) dtsRotuloAudio(f, t);
+      else
+        snprintf(f->rotulo, sizeof f->rotulo, "%.26s · %.12s", t->language[0] ?
+                 i18n(ling_nome(t->language)) : i18n("Faixa"), t->codec);
     }
     legAtual = -1;
     if (initial) {

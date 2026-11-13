@@ -103,8 +103,13 @@ static int mesmoCodec(const char *a, const char *b) {
 }
 
 // Quanto a candidata parece a lembrada: 0 nao e ela.
+// Memory keeps 47 label bytes; converter rows carry the full file title.
+static int mesmoRotulo(const char *c, const char *m) {
+  size_t n = strlen(m);
+  return c && m[0] && (n + 1 < sizeof ((AudioLembrada *)0)->rotulo ? !strcmp(c, m) : !strncmp(c, m, n));
+}
 static int parecenca(const AudioCand *c, const AudioLembrada *m) {
-  int p = 0, rot = c->rotulo && m->rotulo[0] && !strcmp(c->rotulo, m->rotulo);
+  int p = 0, rot = mesmoRotulo(c->rotulo, m->rotulo);
   int cod = mesmoCodec(c->codec, m->codec), ch = c->canais > 0 && c->canais == m->canais;
   if (m->idioma[0]) {
     if (!c->idioma || !c->idioma[0]) return rot ? 4 : 0;

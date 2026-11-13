@@ -140,5 +140,15 @@ int main(void) {
   ling_local_audio("");
   ok(!strcmp(ling_audio2(), ""), "account sentinel ORIGINAL: no second language");
   printf(falhas ? "audioescolha: %d FAIL(S)\n" : "audioescolha: ok\n", falhas);
+  // Converter rows carry the full file title (112 bytes); memory keeps 48.
+  { AudioCand g[] = {
+      A("en", "flac", "Main \xc2\xb7 FLAC 2.0", 2, 0, 1),
+      A("en", "flac", "Commentary by director David Fincher and actors Brad Pitt \xc2\xb7 FLAC 2.0", 2, 0, 1),
+    };
+    memset(&m, 0, sizeof m); m.numero = -1;
+    snprintf(m.idioma, sizeof m.idioma, "en"); snprintf(m.codec, sizeof m.codec, "flac"); m.canais = 2;
+    snprintf(m.rotulo, sizeof m.rotulo, "%s", g[1].rotulo);
+    ok(audioesc_escolher_com(g, 2, &m, "en", "", "", &o) == 1 && o == AUDIOESC_LEMBRADA,
+       "long remembered title (cut to 48 bytes) still finds its own track"); }
   return falhas != 0;
 }
