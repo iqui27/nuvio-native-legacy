@@ -2,8 +2,18 @@
 // SDL/GL declarations are mocked; this test makes no rendering or SDK claim.
 #define NV_GL_COMPAT_H
 typedef unsigned int GLuint;
-#include "../src/faixas.c"
+#include "faixas.h"
+#include "ajustes.h"
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <strings.h>
+#include <math.h>
+#include <time.h>
 #include <assert.h>
+// Load host platform/system headers before selecting the mocked webOS branch.
+#undef __APPLE__
+#include "../src/faixas.c"
 static Stream sources[5];
 static int enabled = 1, off, current, valid = 1, total = 5;
 static unsigned generation = 1;
