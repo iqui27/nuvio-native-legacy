@@ -34,6 +34,8 @@ void mkvass_aceitar_imagem(int sim) { (void)sim; }
 void dts_playback_seek(DtsPlayback *p,double t) { (void)p;(void)t;assert(0); }
 void dts_playback_audio(DtsPlayback *p,int stream) { (void)p;(void)stream;assert(0); }
 void dts_playback_subtitle(DtsPlayback *p,int stream) { (void)p;(void)stream;assert(0); }
+/* video.c calls into trailer.c, which is not linked in this fixture. */
+int trailer_preview_home(void) { return 0; }
 int dts_overlay_draw(DtsPlayback *p,double t,float x,float y,float w,float h,int vw,int vh,float a) {
   (void)p;(void)t;(void)x;(void)y;(void)w;(void)h;(void)vw;(void)vh;(void)a;assert(0);return 0;
 }
@@ -265,6 +267,22 @@ int main(void) {
   assert(video_pronto() && video_tocando() && video_decoder_anunciou());
   assert(!strcmp(vidHdr,"HDR10") && exported_windows>old_windows);
   old_windows=exported_windows;bombearDts();assert(exported_windows==old_windows);
+  /* DV audio memory keeps the whole source URL, tail included (upstream
+   * c83c81d4 regression, adapted to this fixture's pump). */
+  pump_count=pump_read=0;dtsModoDv=1;
+  memset(urlAtual,'a',NV_MEDIA_URL_MAX-1);memcpy(urlAtual,"https://fixture.invalid/",24);
+  urlAtual[NV_MEDIA_URL_MAX-2]='z';urlAtual[NV_MEDIA_URL_MAX-1]=0;
+  snprintf(vidHdr,sizeof vidHdr,"DolbyVision");
+  pump_status.revision=3;
+  pump_status.info.n_tracks=1;pump_status.info.audio_stream=9;
+  pump_status.info.tracks[0]=(DtsTrack){.kind=DTS_AUDIO,.stream_index=9,.channels=6};
+  strcpy(pump_status.info.tracks[0].codec,"ac3");
+  bombearDts();
+  assert(nAudio==1 && audioAtual==0 && faixaAudio[0].stream_index==9);
+  assert(strlen(dvMemUrl)==NV_MEDIA_URL_MAX-1 && !strcmp(dvMemUrl,urlAtual));
+  assert(dvMemOrd==0);
+  urlAtual[NV_MEDIA_URL_MAX-2]='y';assert(strcmp(dvMemUrl,urlAtual));
+  urlAtual[NV_MEDIA_URL_MAX-2]='z';dtsModoDv=0;
   puts("webOS ACB dispatch snapshot, stale generations, deferred VIDEO/MSE transitions, overrides and failed-init retry, early webOS 6 exported-window events and replacement pipeline tests passed");
   return 0;
 }
