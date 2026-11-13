@@ -394,6 +394,9 @@ static inline int video_audio_numero_memoria(const VideoFaixa *f) {
   // MKV TrackNumber occupies a separate namespace from native player indices.
   if (f->numero < 0 && f->stream_id > 0) return 0x40000000 | f->stream_id;
 #endif
+  // webOS recovered rows use the ordinal in the file's audio list.
+  if (f->numero < 0 && f->stream_index < 0 && f->ordinalMkv >= 0)
+    return 0x20000000 | f->ordinalMkv;
   return f->numero;
 }
 

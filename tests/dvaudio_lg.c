@@ -194,5 +194,17 @@ int main(void) {
     dtsRotuloAudio(&f, &t);
     assert(!strncmp(f.rotulo, "Commentary by director David Fincher and actors Brad Pitt \xc2\xb7 FLAC", 65));
     puts("dvaudio_lg: converter rows are language-first; FLAC keeps the full file title"); }
+  { const Mkv m[] = {{"A_AC3","eng",""},{"A_DTS","eng","Main"},{"A_DTS","eng","Commentary"}};
+    const Tv t[] = {{"en","ac3",6}};
+    montar(m,3,t,1,0); dtsHabilitado=1;
+    __atomic_store_n(&audioMkvPronto,1,__ATOMIC_RELEASE);
+    audioMkvOmitidas(); assert(nAudio==3 && faixaAudio[2].ordinalMkv==2);
+    assert(video_audio_numero_memoria(&faixaAudio[1]) != video_audio_numero_memoria(&faixaAudio[2]));
+    audioMkvOmitidas(); assert(nAudio==3 && faixaAudio[2].rotulo[0]);
+    partidas=0; video_escolher_audio(2);
+    assert(partidas==1 && partidaOrdinal==2 && partidaContagem==3);
+    assert(!strcmp(partidaFaixa.codec,"dts") && !strcmp(partidaFaixa.language,"eng"));
+    dtsSessao=NULL;
+    puts("dvaudio_lg: recovered same-language DTS selection passes full-file identity"); }
   return 0;
 }

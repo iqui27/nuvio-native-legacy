@@ -13,6 +13,7 @@
 #include "video_dvretry.h"
 #include "video_dvaudio.h"
 #include "video_faixa_rotulo.h"
+#include "video_audio_mkv.h"
 #include "idioma.h"
 #include "linguas.h"
 #include "audioescolha.h"
@@ -97,6 +98,7 @@ static char dvAudioCodec[16][16];   // Matroska CodecID of each audio track, fil
 static char dvAudioIdioma[16][8];   // idioma/nome de cada faixa DO MKV (a lista da TV pode trazer so uma)
 static char dvAudioNome[16][48];
 static int  dvAudioCanais[16];       // Audio > Channels de cada faixa DO MKV (0 = nao informado)
+static int  audioMkvPronto;          // dvAudio* published by lerMkv (release/acquire)
 static volatile int dvAudios;
 // Faixa do MKV (ordinal entre as de audio) escolhida pelo dvPronto no lugar de uma
 // que o caminho nao alimenta; -1 = nenhuma. O iniciarDts a entrega ao motor.
@@ -1263,7 +1265,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
         c[i].idioma = faixaAudio[i].idioma; c[i].codec = faixaAudio[i].codec;
         c[i].rotulo = faixaAudio[i].rotulo; c[i].canais = faixaAudio[i].canais;
         c[i].dts = audioesc_dts_truehd(faixaAudio[i].codec, faixaAudio[i].rotulo); c[i].pode = 1;
-        c[i].numero = faixaAudio[i].numero;
+        c[i].numero = video_audio_numero_memoria(&faixaAudio[i]);
       }
       k = audioesc_escolher(c, nAudio, &o);
       if (k >= 0 && k != audioAtual) {
@@ -2287,7 +2289,7 @@ static void *lerMkv(void *arg) {
         snprintf(dvAudioCodec[na++], sizeof dvAudioCodec[0], "%s", fx[j].codec);
       }
     }
-    dvAudios = na; }
+    dvAudios = na; __atomic_store_n(&audioMkvPronto, 1, __ATOMIC_RELEASE); }
 
   // DIAGNOSTICO DO DV (203-dvrpu). "Sem [dv] file:" tinha tres causas possiveis
   // e o log nao separava: o arquivo nao tem dvcC; o Tracks nao coube; ou o DV
@@ -2510,7 +2512,7 @@ int video_tocar(const char *url) {
   dtsTentou = 0; dtsRevisao = 0; dtsSaida[0] = 0; dtsNativePending = 0; dtsEstado = 0;
   dtsHabilitado = dts_playback_enabled() && dtsLiberadoNestaTv();
   printf("[dts] fallback %s\n", dtsHabilitado ? "available" : "unavailable");
-  dvSondado = dvMkvPerfil = dvAudios = 0; dtsModoDv = 0; dvAudioMkvOrd = -1; dvTruehd = 0; dvSegurar = 0;
+  dvSondado = dvMkvPerfil = dvAudios = 0; __atomic_store_n(&audioMkvPronto, 0, __ATOMIC_RELEASE); dtsModoDv = 0; dvAudioMkvOrd = -1; dvTruehd = 0; dvSegurar = 0;
   mkvNaoMkv = 0;
   dvNao = 0; dvSessaoN++; dvFonteAberta = 0; dvAudioDe[0] = 0;
   nv_dvsonda_zerar(&mkvRetry); mkvRetryEm = 0; dvEntradaSeg = 0.0;
@@ -2556,12 +2558,43 @@ static void mkvRetryBombear(void) {
   mkvPendente = 1;
   video_sondar_mkv_agora();
 }
+/* Matis94 20f341328/f92a2371d: DTS tracks the TV player left out of its list
+ * come back from the MKV header as selectable rows; picking one starts the
+ * converter on that file ordinal. Only with conversion available and DTS on. */
+static int nativasAudio(void) {
+  int n = 0;
+  for (int i = 0; i < nAudio; i++) if (!nv_audio_mkv_recuperado(&faixaAudio[i])) n++;
+  return n;
+}
+static void audioMkvOmitidas(void) {
+  static int antes = -1;
+  if (!dtsHabilitado || ajustes_dts_desligado() ||
+      !__atomic_load_n(&audioMkvPronto, __ATOMIC_ACQUIRE)) return;
+  int n = nv_audio_mkv_omitidas(faixaAudio, nAudio, NV_FAIXA_MAX, dvAudios,
+                                (const char (*)[16])dvAudioCodec, (const char (*)[8])dvAudioIdioma,
+                                dvAudioCanais, (const char (*)[48])dvAudioNome, ling_casa, audioinfo_codec);
+  for (int i = 0; i < n; i++) {
+    VideoFaixa *f = &faixaAudio[i];
+    if (!nv_audio_mkv_recuperado(f)) continue;
+    const char *lang = f->idioma[0] ? i18n(ling_nome(f->idioma)) : i18n("Faixa");
+    char sub[40];
+    if (!audioinfo_texto(dvAudioCodec[f->ordinalMkv], f->canais, 0, sub, sizeof sub)) snprintf(sub, sizeof sub, "DTS");
+    nv_rotulo_faixa(f->rotulo, sizeof f->rotulo, lang, lang, sub);
+  }
+  if (n != antes) {
+    printf("[dts] MKV omitted DTS tracks recovered: %d of %d rows\n", n - nativasAudio(), n);
+    fflush(stdout);
+    antes = n;
+  }
+  nAudio = n;
+}
 void video_bombear(void) {
   ack_publicar();
   velBombear();
   mkvRetryBombear();
   acbBindRecolher();
   if (ligado) acbConfigurarTipo(dtsSessao != NULL);
+  if (!dtsSessao) audioMkvOmitidas();
   if (dtsSessao) bombearDts();
   else if (dvHabilitado && !dtsNativePending && !dtsTentou && !modoLoad && urlAtual[0] && !dvSegurar && dvPronto()) {
     dtsModoDv = 1;
@@ -3247,12 +3280,14 @@ static int iniciarDts(int stream) {
   // sonda): o caminho parte do ponto de partida, nao de onde a TV chegou.
   double alvo = dtsModoDv && dvSilencio ? dvEntradaSeg
               : (seekEm || seekEnvEm || seekRetryEm) ? seekAlvo : posSeg;
-  int paused = pausaPedida, ordinal = audioAtual, count = nAudio, trocada = 0;
+  int paused = pausaPedida, ordinal = audioAtual, count = nativasAudio(), trocada = 0;
   memset(&selected, 0, sizeof selected);
   if (a) {
     snprintf(selected.language, sizeof selected.language, "%s", a->idioma);
     snprintf(selected.codec, sizeof selected.codec, "%s", a->codec);
     selected.channels = a->canais;
+    /* Recovered row: its ordinal among the file's audio tracks. */
+    if (nv_audio_mkv_recuperado(a)) { ordinal = a->ordinalMkv; count = dvAudios; trocada = 1; }
   }
   // DV com a faixa trocada pelo dvPronto: ordinal, contagem e idioma sao os do
   // MKV (dts_playback.c prepare(): o k-esimo audio do arquivo, conferido por
@@ -4016,6 +4051,13 @@ void video_escolher_audio(int i) {
   }
 
   if (!ligado || !midia[0] || !f) return;
+  if (nv_audio_mkv_recuperado(f)) {
+    /* Not in the TV player's list: only the converter can play it. */
+    if (!dtsHabilitado || ajustes_dts_desligado()) return;
+    audioAtual = i; dtsTentou = 0; dtsEstado = VIDEO_DTS_PREPARANDO;
+    if (!iniciarDts(-1)) dtsTentou = 0;
+    return;
+  }
   /* Unsupported audio belongs to the previous selection. Give the new native
    * track a chance before allowing its own codec error to trigger conversion. */
   if (i != audioAtual) audioNaoSup = 0;
