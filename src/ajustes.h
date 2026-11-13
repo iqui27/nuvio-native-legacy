@@ -531,6 +531,7 @@ int   ajustes_logo_addon(void);
 int   ajustes_col_arte_conta(void);
 // Selos da folha de fontes em peca colorida por tipo (#198). Padrao ligado.
 int   ajustes_selos_coloridos(void);
+int   ajustes_selos_embaixo(void);   // cartao "Do add-on": selos embaixo da descricao (padrao: em cima)
 int   ajustes_trailer_som(void);         // UM ajuste de som para todo trailer que toca sozinho (Samsung .wgt sempre mudo)
 Uint32 ajustes_trailer_hero_espera_ms(void); // repouso no titulo antes do trailer do destaque
 int   ajustes_trailer_qualidade(void); // teto em linhas (1080/720/480); 0 = a maior

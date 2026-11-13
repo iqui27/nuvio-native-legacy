@@ -161,7 +161,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_FONTE_ORDEM: return "aj_arrow-up-down";
     case AJ_FONTE_ORDEM_USO: return "aj_list-video";
     case AJ_FONTE_REGEX: case AJ_FONTE_REGEX_PADRAO: case AJ_FONTE_REGEX_MODELO: return "aj_search";
-    case AJ_SELOS_CORES: return "aj_list-video";
+    case AJ_SOURCE_BADGE_POSITION: case AJ_SELOS_CORES: return "aj_list-video";
     case AJ_SELOS_PACOTE: return "aj_list-video";
     case AJ_SELOS_PACOTE_ADD: return "aj_list-video";
     case AJ_SELOS_PACOTE_REM: return "aj_list-video";

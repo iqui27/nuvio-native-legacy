@@ -376,3 +376,4 @@
   0, 0, 0, 0, 0, 0, 0, 0, 0, /* OpenSeek shared library: info + offset/undo/reject actions */
 
   0, // miniaturaResolutionLocal: Auto
+  0, // sourceBadgePositionLocal: selos no topo do cartao "Do add-on"
