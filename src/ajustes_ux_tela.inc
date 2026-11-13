@@ -51,6 +51,9 @@ static const Item TELA[] = {
     MAIS(),
     ROT("Som e vídeo desta TV"),
       OPC(AJ_DTS_AC3),
+#if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
+      OPC(AJ_EXT_AUDIO), OPC(AJ_EXT_AUDIO_CACHE), OPC(AJ_EXT_AUDIO_PASSO), OPC(AJ_EXT_AUDIO_GRANDE), OPC(AJ_EXT_AUDIO_MODO), OPC(AJ_EXT_AUDIO_SERIE), OPC(AJ_EXT_AUDIO_SEGUIR), OPC(AJ_EXT_AUDIO_AVISO), OPC(AJ_EXT_AUDIO_AUTO),
+#endif
 #if defined(NV_TPK) || defined(NV_WEBOS)
       OPC(AJ_HDR10P_STRIP),
 #endif

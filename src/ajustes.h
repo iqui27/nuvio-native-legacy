@@ -923,3 +923,14 @@ int ajustes_shot_valor(const char *chave, int v);   // capturas: opcao pela chav
 
 int ajustes_miniatura_largura(void);
 #endif
+
+// External audio uses the webOS converter; disabled by default.
+int ajustes_audio_externo(void);
+int ajustes_audio_externo_ocultar_fora_cache(void);
+int ajustes_audio_externo_passo(void);
+int ajustes_audio_externo_avisar_grande(void);
+int ajustes_audio_externo_so_audio(void);
+int ajustes_audio_externo_serie(void);
+int ajustes_audio_externo_seguir(void);
+int ajustes_audio_externo_aviso(void);
+int ajustes_audio_externo_auto(void);

@@ -479,6 +479,20 @@ int  stream_canal_proxima(int atual);
 // lista em que outras responderam, prazo curto.
 int  stream_canal_prazo_longo(int idx);
 
+// AUDIO FROM ANOTHER VERSION (audioextlista.h): this source as a candidate
+// (declared languages, audio codec, channels, cache, size; `atual` stays 0),
+// and its release label ("WEB-DL 1080p", "" unknown).
+struct AudioExtEntradaS;
+void stream_audioext_entrada(const Stream *s, struct AudioExtEntradaS *e);
+void stream_audioext_versao(const Stream *s, char *out, unsigned tam);
+// The cut named in a version ("Extended", "Director's Cut", "IMAX"...), or NULL.
+const char *stream_edicao(const Stream *s);
+// 1 when two versions are likely different cuts (no name = theatrical).
+int stream_outro_corte(const Stream *a, const Stream *b);
+// 1 when the add-on declares this audio language for the version.
+int stream_audio_tem(const Stream *s, const char *idioma);
+// 1 when the list on hand belongs to the title/episode last asked for.
+int stream_lista_do_alvo_atual(void);
 // --- folha de fontes (a lista que sobe por cima do player/detalhe) ---
 void stream_folha_abrir(void);
 void stream_folha_servidor(int provider); // -1 all, 0 Plex, 1 Jellyfin, 2 Emby

@@ -54,6 +54,7 @@
 #include "posplay.h"
 #include "extras.h"
 #include "video.h"
+#include "audioext.h"
 #include "seekprobe.h"
 #include "faixas.h"
 #include "gfx.h"
@@ -4566,6 +4567,18 @@ void player_evento(const SDL_Event *e) {
     }
   }
 
+  if (!ehCanal() && audioext_tocando()) {
+    int sc = (int)e->key.keysym.scancode;
+    int d = 0;
+    if (sc == NV_SCANCODE_CH_UP || k == SDLK_PAGEUP) d = audioext_passo(ajustes_audio_externo_passo(), e->key.repeat);
+    else if (sc == NV_SCANCODE_CH_DOWN || k == SDLK_PAGEDOWN) d = -audioext_passo(ajustes_audio_externo_passo(), e->key.repeat);
+    if (d) {
+      char rot[96];
+      audioext_formatar_offset(audioext_offset_somar(d), rot, sizeof rot, "%c%u.%03u s", "%c%u min %u.%03u s");
+      player_toast(rot, 2200);
+      return;
+    }
+  }
   // PAINEL DE PAUSA: com ele de pe, a tecla e DELE. Vem antes de tudo o que
   // sobra (inclusive da tecla de proporcao) porque e o que o web faz — la o
   // ramo `if (this.pauseOverlayVisible)` engole o evento inteiro
@@ -4893,6 +4906,44 @@ static void openseekAltPasso(const char *imdb, int temporada, int episodio, long
 }
 
 void player_atualizar(float dt, Uint32 agora) {
+  if (!ajustes_audio_externo() && audioext_tem_marca()) audioext_limpar();
+  audioext_preferencias(ajustes_audio_externo_so_audio(), ajustes_audio_externo_serie());
+  { // What the other version's audio did, once each (after Matis94's player notices).
+    static int extVisto;
+    char t[224], v[48];
+    AudioExtDopasuj dm = { 0 };
+    int a, ms;
+    if (audioext_falha_consumir(NULL, 0) | audioext_voltou_padrao_consumir())
+      player_toast_ex(i18n("Áudio de outra versão indisponível. Tocando o áudio original."), 5000, "aj_triangle-alert", 1);
+    a = audioext_dopasuj_aviso_consumir(&dm);
+    audioext_formatar_offset(dm.ms, v, sizeof v, "%c%u.%03u s", "%c%u min %u.%03u s");
+    if (a > 0 && (!dm.automatico || dm.ppm)) { snprintf(t, sizeof t, i18n("Sincronizado automaticamente: %s"), v); player_toast(t, 4000); }
+    else if (a < 0 && !(dm.automatico && audioext_offset_lembrado()))
+      player_toast_ex(i18n("Não foi possível sincronizar automaticamente. Use CH+/CH-."), 5000, "aj_triangle-alert", 1);
+    a = audioext_seguir_aviso_consumir(&ms);
+    audioext_formatar_offset(ms, v, sizeof v, "%c%u.%03u s", "%c%u min %u.%03u s");
+    if (a == 1) player_toast(i18n("Cena ausente na outra versão: áudio original."), 4000);
+    else if (a == 2 || (a == 4 && ajustes_audio_externo_aviso())) { snprintf(t, sizeof t, i18n("Sincronização ajustada: %s"), v); player_toast(t, 3500); }
+    else if (a == 3) player_toast_ex(i18n("Não foi possível sincronizar automaticamente. Use CH+/CH-."), 6000, "aj_triangle-alert", 1);
+    if (audioext_reconexao_consumir()) player_toast(i18n("Conexão caiu, reconectando…"), 3500);
+    if (audioext_tocando() && !extVisto) { snprintf(t, sizeof t, i18n("Áudio de: %s · CH+/CH- sincroniza"), audioext_nome()); player_toast(t, 4000); }
+    { int corte, vel;
+      if (audioext_diferenca_consumir(&corte, &vel)) player_toast_ex(i18n("Outro corte: a sincronização pode variar."), 6000, "aj_triangle-alert", 1); }
+    extVisto = audioext_tocando(); }
+  if (comVideo && audioext_tocando()) {
+    static unsigned prefGer;
+    static double prefFim = -1;
+    unsigned ger = audioext_pedido_geracao();
+    if (ger != prefGer) { prefGer = ger; prefFim = -1; }
+    IntroTrecho tr[8];
+    int nt = intro_trechos(tr, 8);
+    for (int i = 0; i < nt; i++)
+      if (tr[i].inicio > posSeg && tr[i].inicio - posSeg < 25 && tr[i].fim > tr[i].inicio && tr[i].fim != prefFim) {
+        prefFim = tr[i].fim;
+        audioext_salto_previsto(puloDestino(tr[i].fim));
+        break;
+      }
+  }
 #ifdef NV_TOUCH_UI
   playerTelaAtualizar();
 #endif
