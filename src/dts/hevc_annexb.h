@@ -89,7 +89,7 @@ static inline int nv_hevc_annexb_open(NvHevcAnnexB *h,const uint8_t *x,size_t n)
  * split on start codes: emulation prevention keeps them out of NAL payloads. */
 static inline size_t nv_hevc_annexb_sei(const NvHevcAnnexB *h,const uint8_t *d,size_t n,uint8_t *out) {
   size_t i=0,k=0,ls=(size_t)h->length_size;
-  while(i<h->sets_size) {
+  while(i+4<h->sets_size) {  /* a malformed hvcC NAL may end in a start code */
     size_t e=i+4,l;
     unsigned t=(h->sets[i+4]>>1)&0x3f;
     int dup=0;
