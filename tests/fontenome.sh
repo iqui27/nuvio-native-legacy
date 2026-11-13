@@ -17,7 +17,9 @@ printf '%s\n' "${sources[@]}" |
   xargs -P 8 -I{} sh -c 'cc "$@" -c "$0" -o "$NV_FONTENOME_OBJECTS/$(basename "$0").o"' '{}' "${flags[@]}"
 cc tests/fontenome.c "${flags[@]}" -DNV_FLUIDEZ_PERF "$work/obj/"*.o -o "$work/test" -L/opt/homebrew/lib \
   -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
-NUVIO_DADOS="$work/data" NUVIO_TESTE_DIR="$work/data" "$work/test" "$out"
+# Bounded like fontes_lote_e.sh: an SDL startup hang dies by SIGALRM.
+bounded() { perl -e 'alarm shift; exec @ARGV' 300 "$@"; }
+NUVIO_DADOS="$work/data" NUVIO_TESTE_DIR="$work/data" bounded "$work/test" "$out"
 # Existing source-sheet checks share the same objects; no repeated full builds.
 for test in fontes_quadro fontes_lista fontes_formatter; do
   objects=("$work/obj/"*.o)
@@ -30,5 +32,5 @@ for test in fontes_quadro fontes_lista fontes_formatter; do
   cc "tests/$test.c" "${flags[@]}" ${extra[@]+"${extra[@]}"} "${objects[@]}" -o "$work/$test" \
     -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
   mkdir -p "$work/$test-data"
-  NUVIO_DADOS="$work/$test-data" NUVIO_TESTE_DIR="$work/$test-data" "$work/$test"
+  NUVIO_DADOS="$work/$test-data" NUVIO_TESTE_DIR="$work/$test-data" bounded "$work/$test"
 done

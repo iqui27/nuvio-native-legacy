@@ -71,6 +71,17 @@ static void frame(void) {
 static void advance(unsigned ms) {
   for (unsigned i=0;i<ms;i+=16) { clockMs+=16; frame(); }
 }
+// The entry slide is a first-order spring (anim_mola): after 960 ms it is
+// still 1.5e-4 short, 0.13 px of sheet x. Run frames until the drawn name
+// stops moving exactly (float fixed point), bounded to 4 s of frames.
+static void settle(void) {
+  for (int i=0;i<250;i++) {
+    int had=nrec>0; float x=had?rec[0].x:0, y=had?rec[0].y:0;
+    clockMs+=16; frame();
+    if (had && nrec && rec[0].x==x && rec[0].y==y) return;
+  }
+  assert(!"sheet springs did not settle within 250 frames");
+}
 static void capture(const char *label) {
   unsigned char *pixels=malloc(1920*1080*4); assert(pixels);
   SDL_Surface *s=SDL_CreateRGBSurfaceWithFormat(0,1920,1080,32,SDL_PIXELFORMAT_RGBA32); assert(s);
@@ -95,7 +106,7 @@ static int fixture(int server,int description) {
   stream_definir_alvo("tt735:2:5"); stream_definir_lista(sources,3);
   stream_folha_nome("A Quiet Journey"); stream_folha_contexto("Season 2 · Episode 5");
   stream_folha_canal(0); stream_folha_item(-1); stream_folha_abrir();
-  advance(960);
+  advance(960); settle();
   const Stream *s=&lista[filtrado(foco)];
   nameW=FOLHA_W-FOLHA_PAD_E-FOLHA_PAD_D-2*FOLHA_TXT;
   assert(!strcmp(arquivoDa(s),release) && "release text must not truncate before rasterization");
