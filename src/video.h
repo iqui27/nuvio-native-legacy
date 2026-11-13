@@ -367,7 +367,7 @@ void video_simular_estatisticas(const VideoStats *s);   // capturas; NULL zera
 #define NV_FAIXA_MAX 64
 
 typedef struct {
-  char rotulo[48];   // "Ingles · Atmos 5.1" ou "Legenda 3"
+  char rotulo[112];  // "Ingles · Atmos 5.1" ou "Legenda 3"; 112: full file track title (menu cuts by width)
   char idioma[8];    // "en"; vazio quando o arquivo nao etiqueta
   int  numero;       // indice que o selectTrack espera
   int  ordinalMkv;   // ordinal da legenda (AVPlay; no .tpk, o do arquivo, faixasmkv.c); -1 se nao informado
@@ -395,6 +395,9 @@ static inline int video_audio_numero_memoria(const VideoFaixa *f) {
   // MKV TrackNumber occupies a separate namespace from native player indices.
   if (f->numero < 0 && f->stream_id > 0) return 0x40000000 | f->stream_id;
 #endif
+  // webOS recovered rows use the ordinal in the file's audio list.
+  if (f->numero < 0 && f->stream_index < 0 && f->ordinalMkv >= 0)
+    return 0x20000000 | f->ordinalMkv;
   return f->numero;
 }
 

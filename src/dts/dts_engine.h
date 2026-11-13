@@ -48,6 +48,13 @@ int dts_engine_available(void);
 void dts_engine_dv(DtsEngine *, int enabled);
 /* Explicit opt-in before open: P7 conversion and webOS recovery. Default off. */
 void dts_engine_allow_p7(DtsEngine *, int enabled);
+/* Device-local opt-in; only the webOS experimental build implements this. */
+void dts_engine_mp4_test(DtsEngine *, int enabled);
+/* Snapshot before open; P7 RPU only, no extra video or HTTP buffers. */
+void dts_engine_p7_mapping(DtsEngine *, int enabled);
+/* Snapshot before open (dts_audio_codec.h): TrueHD conversion allowed, fixed
+ * DV audio (0 pass through, 1 AAC stereo, 2 AC-3 5.1), DTS row Off. */
+void dts_engine_audio_route(DtsEngine *, int truehd, int fixed, int dts_off);
 /* Opt-in (#605): strip SMPTE ST 2094-40 (HDR10+) SEI from HEVC packets of
  * the next open (raw BUFFERSTREAM feed), so TVs without HDR10+ decode it as
  * plain HDR10. Static mastering display / content light SEI is kept. */

@@ -103,8 +103,13 @@ static int mesmoCodec(const char *a, const char *b) {
 }
 
 // Quanto a candidata parece a lembrada: 0 nao e ela.
+// Memory keeps 47 label bytes; converter rows carry the full file title.
+static int mesmoRotulo(const char *c, const char *m) {
+  size_t n = strlen(m);
+  return c && m[0] && (n + 1 < sizeof ((AudioLembrada *)0)->rotulo ? !strcmp(c, m) : !strncmp(c, m, n));
+}
 static int parecenca(const AudioCand *c, const AudioLembrada *m) {
-  int p = 0, rot = c->rotulo && m->rotulo[0] && !strcmp(c->rotulo, m->rotulo);
+  int p = 0, rot = mesmoRotulo(c->rotulo, m->rotulo);
   int cod = mesmoCodec(c->codec, m->codec), ch = c->canais > 0 && c->canais == m->canais;
   if (m->idioma[0]) {
     if (!c->idioma || !c->idioma[0]) return rot ? 4 : 0;
@@ -138,6 +143,10 @@ static int faixaExata(const AudioCand *c, int n, const AudioLembrada *m, const c
     if (!c[i].pode || c[i].numero != m->numero) continue;
     if (m->idioma[0] && c[i].idioma && c[i].idioma[0] &&
         (!ling_casa(c[i].idioma, m->idioma) || !ling_casa(m->idioma, c[i].idioma))) return -1;
+    if (m->codec[0] && c[i].codec && c[i].codec[0] &&
+        audioinfo_codec(m->codec)[0] && audioinfo_codec(c[i].codec)[0] &&
+        !mesmoCodec(c[i].codec, m->codec)) return -1;
+    if (m->canais > 0 && c[i].canais > 0 && c[i].canais != m->canais) return -1;
     return i;
   }
   return -1;

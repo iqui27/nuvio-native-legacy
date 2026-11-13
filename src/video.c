@@ -12,6 +12,8 @@
 #include "video_seekretry.h"
 #include "video_dvretry.h"
 #include "video_dvaudio.h"
+#include "video_faixa_rotulo.h"
+#include "video_audio_mkv.h"
 #include "idioma.h"
 #include "linguas.h"
 #include "audioescolha.h"
@@ -29,9 +31,11 @@
 #include "moviebuffer.h"
 #include "memlog.h"
 #include "dts/dts_playback.h"
+#include "dts/dts_audio_codec.h"
 #include "dts_tv.h"
 #include "dts/dts_engine.h"
 #include "dts/dv7.h"
+#include "video_mp4_test.h"
 #include "ajustes.h"
 #include "dts/dts_overlay.h"
 #include "legenda.h"
@@ -95,10 +99,14 @@ static char dvAudioCodec[16][16];   // Matroska CodecID of each audio track, fil
 static char dvAudioIdioma[16][8];   // idioma/nome de cada faixa DO MKV (a lista da TV pode trazer so uma)
 static char dvAudioNome[16][48];
 static int  dvAudioCanais[16];       // Audio > Channels de cada faixa DO MKV (0 = nao informado)
+static int  audioMkvPronto;          // dvAudio* published by lerMkv (release/acquire)
 static volatile int dvAudios;
 // Faixa do MKV (ordinal entre as de audio) escolhida pelo dvPronto no lugar de uma
 // que o caminho nao alimenta; -1 = nenhuma. O iniciarDts a entrega ao motor.
 static int dvAudioMkvOrd = -1;
+// TrueHD on the DV path is converted (no compatible substitute, or fixed DV
+// audio). Session snapshot of the converter route, for later track changes.
+static int dvTruehd, dtsRotaTruehd, dtsRotaOff;
 static int dvHabilitado, dtsModoDv, dvRecuoAviso;
 // O player ainda nao pediu o ponto salvo ao player da TV (video_dv_segurar):
 // a troca para o caminho espera, para nascer na posicao certa.
@@ -158,8 +166,21 @@ static int dtsEstado;
 #ifdef NV_TPK
 int video_tpk_dts_estado(void);   // video_tpk.c: enquanto o .tpk converte o DTS
 #endif
+/* Converter-session audio row. Matis94 47dec158d/b68f3de15: language on top,
+ * readable codec below ("DTS 5.1"); only FLAC keeps the file's track name
+ * (commentaries), unless that name is the release name. */
+static void dtsRotuloAudio(VideoFaixa *f, const DtsTrack *t) {
+  const char *lang = t->language[0] ? i18n(ling_nome(t->language)) : i18n("Faixa");
+  char sub[40];
+  if (!audioinfo_texto(t->codec, t->channels, 0, sub, sizeof sub)) snprintf(sub, sizeof sub, "%.12s", t->codec);
+  snprintf(f->nome, sizeof f->nome, "%s", t->title);
+  nv_rotulo_faixa(f->rotulo, sizeof f->rotulo,
+                  strcmp(audioinfo_codec(t->codec), "FLAC") ? lang : t->title, lang, sub);
+}
 int video_dts_estado(void) {
   if (dtsEstado) return dtsEstado;
+  /* Matis94 34e14f9db: no false "native DTS" while a converter session spins up. */
+  if (dtsSessao) return VIDEO_DTS_NENHUM;
 #ifdef NV_TPK
   { int e = video_tpk_dts_estado(); if (e) return e; }
 #endif
@@ -675,6 +696,10 @@ static char      erroTexto[96];
 // audio morre. Ver o tratamento em lerEvento.
 static int       audioNaoSup;
 static int dtsHabilitado, dtsTentou, dtsRevisao, dtsFalhaLogada;
+#ifdef NV_MP4_BD_TEST
+static int mp4TestEnabled, mp4TestPending;
+#endif
+static int modoLoad;   // video_modo_live_consumir do load em curso
 static int dtsLegAntes = -1, dtsLegCount;
 static VideoFaixa dtsLegFaixa;
 static int dtsNativePending;
@@ -1244,7 +1269,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
         c[i].idioma = faixaAudio[i].idioma; c[i].codec = faixaAudio[i].codec;
         c[i].rotulo = faixaAudio[i].rotulo; c[i].canais = faixaAudio[i].canais;
         c[i].dts = audioesc_dts_truehd(faixaAudio[i].codec, faixaAudio[i].rotulo); c[i].pode = 1;
-        c[i].numero = faixaAudio[i].numero;
+        c[i].numero = video_audio_numero_memoria(&faixaAudio[i]);
       }
       k = audioesc_escolher(c, nAudio, &o);
       if (k >= 0 && k != audioAtual) {
@@ -1536,7 +1561,16 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
         seekRetryEm = 0; seekEnvEm = 0;
         marco("seek recusado: desistiu, segue tocando de onde esta");
       }
-    } else if (!recuperando) {
+    }
+#ifdef NV_MP4_BD_TEST
+    else if(nv_mp4_bd_retry(mp4TestEnabled,js_num(p,NULL,"errorCode",-1),
+              fonteMp4 || nv_url_e_mp4(urlAtual),fonteTocou,modoLoad,
+              dtsSessao!=NULL,dtsTentou,recuperando)) {
+      if(!mp4TestPending)marco("MP4 test: native demux error 204; checking DV compatibility");
+      mp4TestPending=1;reconErroPend=0;tocando=pronto=falhou=0;
+    }
+#endif
+    else if (!recuperando) {
       // Qualquer outro erro: pode ser a rede caindo com o episodio andando.
       // Quem decide entre reconectar e `falhou` e o video_bombear.
       tocando = 0;
@@ -1676,7 +1710,6 @@ static void chamarEm(const char *servico, const char *metodo,
 }
 
 static void protegerScreensaver(void);
-static int modoLoad;   // video_modo_live_consumir do load em curso
 static char cargaBufferPadrao[NV_MEDIA_URL_MAX + 4096];
 static int bufferCustom;
 static int aoCarregar(LSHandle *h, LSMessage *m, void *u);
@@ -2268,7 +2301,7 @@ static void *lerMkv(void *arg) {
         snprintf(dvAudioCodec[na++], sizeof dvAudioCodec[0], "%s", fx[j].codec);
       }
     }
-    dvAudios = na; }
+    dvAudios = na; __atomic_store_n(&audioMkvPronto, 1, __ATOMIC_RELEASE); }
 
   // DIAGNOSTICO DO DV (203-dvrpu). "Sem [dv] file:" tinha tres causas possiveis
   // e o log nao separava: o arquivo nao tem dvcC; o Tracks nao coube; ou o DV
@@ -2490,8 +2523,12 @@ int video_tocar(const char *url) {
   dvRecuado = 0;
   dtsTentou = 0; dtsRevisao = 0; dtsSaida[0] = 0; dtsNativePending = 0; dtsEstado = 0;
   dtsHabilitado = dts_playback_enabled() && dtsLiberadoNestaTv();
+#ifdef NV_MP4_BD_TEST
+  mp4TestEnabled=ajustes_mp4_bd_test() && dtsHabilitado;
+  mp4TestPending=0;
+#endif
   printf("[dts] fallback %s\n", dtsHabilitado ? "available" : "unavailable");
-  dvSondado = dvMkvPerfil = dvAudios = 0; dtsModoDv = 0; dvAudioMkvOrd = -1; dvSegurar = 0;
+  dvSondado = dvMkvPerfil = dvAudios = 0; __atomic_store_n(&audioMkvPronto, 0, __ATOMIC_RELEASE); dtsModoDv = 0; dvAudioMkvOrd = -1; dvTruehd = 0; dvSegurar = 0;
   mkvNaoMkv = 0;
   dvNao = 0; dvSessaoN++; dvFonteAberta = 0; dvAudioDe[0] = 0;
   nv_dvsonda_zerar(&mkvRetry); mkvRetryEm = 0; dvEntradaSeg = 0.0;
@@ -2537,18 +2574,55 @@ static void mkvRetryBombear(void) {
   mkvPendente = 1;
   video_sondar_mkv_agora();
 }
+/* Matis94 20f341328/f92a2371d: DTS tracks the TV player left out of its list
+ * come back from the MKV header as selectable rows; picking one starts the
+ * converter on that file ordinal. Only with conversion available and DTS on. */
+static int nativasAudio(void) {
+  int n = 0;
+  for (int i = 0; i < nAudio; i++) if (!nv_audio_mkv_recuperado(&faixaAudio[i])) n++;
+  return n;
+}
+static void audioMkvOmitidas(void) {
+  static int antes = -1;
+  if (!dtsHabilitado || ajustes_dts_desligado() ||
+      !__atomic_load_n(&audioMkvPronto, __ATOMIC_ACQUIRE)) return;
+  int n = nv_audio_mkv_omitidas(faixaAudio, nAudio, NV_FAIXA_MAX, dvAudios,
+                                (const char (*)[16])dvAudioCodec, (const char (*)[8])dvAudioIdioma,
+                                dvAudioCanais, (const char (*)[48])dvAudioNome, ling_casa, audioinfo_codec);
+  for (int i = 0; i < n; i++) {
+    VideoFaixa *f = &faixaAudio[i];
+    if (!nv_audio_mkv_recuperado(f)) continue;
+    const char *lang = f->idioma[0] ? i18n(ling_nome(f->idioma)) : i18n("Faixa");
+    char sub[40];
+    if (!audioinfo_texto(dvAudioCodec[f->ordinalMkv], f->canais, 0, sub, sizeof sub)) snprintf(sub, sizeof sub, "DTS");
+    nv_rotulo_faixa(f->rotulo, sizeof f->rotulo, lang, lang, sub);
+  }
+  if (n != antes) {
+    printf("[dts] MKV omitted DTS tracks recovered: %d of %d rows\n", n - nativasAudio(), n);
+    fflush(stdout);
+    antes = n;
+  }
+  nAudio = n;
+}
 void video_bombear(void) {
   ack_publicar();
   velBombear();
   mkvRetryBombear();
   acbBindRecolher();
   if (ligado) acbConfigurarTipo(dtsSessao != NULL);
+  if (!dtsSessao) audioMkvOmitidas();
   if (dtsSessao) bombearDts();
+#ifdef NV_MP4_BD_TEST
+  else if(mp4TestPending && ligado && !modoLoad && urlAtual[0] && !dtsTentou) {
+    dtsModoDv=1;
+    if(iniciarDts(-1) || dtsTentou)mp4TestPending=0;
+  }
+#endif
   else if (dvHabilitado && !dtsNativePending && !dtsTentou && !modoLoad && urlAtual[0] && !dvSegurar && dvPronto()) {
     dtsModoDv = 1;
     iniciarDts(-1);
   }
-  else if (dtsHabilitado && !dtsNativePending && !dtsTentou && !modoLoad && urlAtual[0]) {
+  else if (dtsHabilitado && !ajustes_dts_desligado() && !dtsNativePending && !dtsTentou && !modoLoad && urlAtual[0]) {
     // SO COM FAIXA DTS CONHECIDA (teste na C9, 06/10): o erro 200 tambem vem
     // de TrueHD e de faixa ainda sem codec; o fallback derrubava a reproducao
     // nativa, que na 2.0.0 seguia. Sem a lista de faixas, espera ela chegar.
@@ -2987,6 +3061,9 @@ static int tocarInterno(const char *url, int comDV) {
 // Sair do video (ou trocar de fonte) cancela a queda em curso: sem isto o
 // video_bombear recarregaria a fonte velha depois de a tela ja ter fechado.
 void video_parar(void) {
+#ifdef NV_MP4_BD_TEST
+  mp4TestPending=0;
+#endif
   nv_recon_zerar(&recon);
   reconErroPend = 0;
   capmkv_zerar();   // fio de capitulos em voo nao alimenta o proximo titulo (como no .tpk)
@@ -3139,6 +3216,7 @@ static int dvPronto(void) {
     printf("[dv] audio track %d restored for this source\n", dvMemOrd + 1); fflush(stdout);
     video_escolher_audio(dvMemOrd);
   }
+  nv_dvaudio_sem_dts = ajustes_dts_desligado();
   if (dvAudioMkvOrd >= 0) return 1;   // ja decidido; iniciarDts pode ter adiado (bind ativo)
   // audioAtual e o indice da lista da TV; dvAudio* sao as faixas do MKV. A TV
   // pode filtrar a lista: localiza a faixa dela no MKV antes de olhar o codec.
@@ -3155,6 +3233,14 @@ static int dvPronto(void) {
   }
   if (m >= 0) {
     const char *c = dvAudioCodec[m];
+    if (ajustes_dts_desligado() && (nv_dts_truehd_codec(c) || !strncmp(c, "A_DTS", 5))) {
+      dvNao = VIDEO_DV_NAO_AUDIO; dvHabilitado = 0; dvVoltarEntrada(); return 0;
+    }
+    // Keep the selected TrueHD track; the opt-in DV path converts its audio.
+    if (nv_dts_truehd_codec(c) && !ajustes_dts_desligado()) {
+      printf("[dv] audio %s converted to keep Dolby Vision\n", c); fflush(stdout);
+      dvAudioMkvOrd = m; dvTruehd = 1; return 1;
+    }
     if (!nv_dvaudio_alimentavel(c)) {
       // TrueHD (e afins) nao entra no caminho, mas o remux costuma trazer um
       // E-AC-3 do mesmo idioma. A escolha sai da lista do PROPRIO MKV (a da TV
@@ -3202,6 +3288,20 @@ static void dvCaminhoNaoAbriu(void) {
   dtsModoDv = 0; dvHabilitado = 0;
 }
 static int iniciarDts(int stream) {
+  const VideoFaixa *chosen = video_audio(audioAtual);
+  if (ajustes_dts_desligado() && chosen &&
+      (video_faixa_dts(chosen) || nv_dts_truehd_codec(chosen->codec))) {
+    dtsTentou = 1;
+    dvCaminhoNaoAbriu();
+#ifdef NV_MP4_BD_TEST
+    /* The intercepted native 204 still needs its normal failure handling.
+     * A policy refusal is terminal; a busy bind below is only a delay. */
+    if (mp4TestPending) {
+      mp4TestPending = 0; reconErroRede = 0; reconErroPend = 1;
+    }
+#endif
+    return 0;
+  }
   /* Retry from the next pump before unloading or spawning a native worker.
    * The old bind must finish before its ACB handle can become MSE. */
   if (bindAtivo()) return 0;
@@ -3216,12 +3316,14 @@ static int iniciarDts(int stream) {
   // sonda): o caminho parte do ponto de partida, nao de onde a TV chegou.
   double alvo = dtsModoDv && dvSilencio ? dvEntradaSeg
               : (seekEm || seekEnvEm || seekRetryEm) ? seekAlvo : posSeg;
-  int paused = pausaPedida, ordinal = audioAtual, count = nAudio, trocada = 0;
+  int paused = pausaPedida, ordinal = audioAtual, count = nativasAudio(), trocada = 0;
   memset(&selected, 0, sizeof selected);
   if (a) {
     snprintf(selected.language, sizeof selected.language, "%s", a->idioma);
     snprintf(selected.codec, sizeof selected.codec, "%s", a->codec);
     selected.channels = a->canais;
+    /* Recovered row: its ordinal among the file's audio tracks. */
+    if (nv_audio_mkv_recuperado(a)) { ordinal = a->ordinalMkv; count = dvAudios; trocada = 1; }
   }
   // DV com a faixa trocada pelo dvPronto: ordinal, contagem e idioma sao os do
   // MKV (dts_playback.c prepare(): o k-esimo audio do arquivo, conferido por
@@ -3229,8 +3331,9 @@ static int iniciarDts(int stream) {
   if (dtsModoDv && dvAudioMkvOrd >= 0 && dvAudioMkvOrd < dvAudios) {
     memset(&selected, 0, sizeof selected);
     snprintf(selected.language, sizeof selected.language, "%s", dvAudioIdioma[dvAudioMkvOrd]);
-    snprintf(selected.codec, sizeof selected.codec, "%s",
-             !strcmp(dvAudioCodec[dvAudioMkvOrd], "A_EAC3") ? "eac3" : "ac3");
+    const char *mc = dvAudioCodec[dvAudioMkvOrd];
+    snprintf(selected.codec, sizeof selected.codec, "%s", !strcmp(mc, "A_EAC3") ? "eac3"
+             : nv_dts_truehd_codec(mc) ? "truehd" : !strncmp(mc, "A_DTS", 5) ? "dts" : "ac3");
     ordinal = dvAudioMkvOrd; count = dvAudios; trocada = 1;
   }
   dtsLegAntes = legAtual; dtsLegCount = nLeg;
@@ -3255,7 +3358,20 @@ static int iniciarDts(int stream) {
   dts_engine_set_ahead_mib(cacheboost_backend_buffer_mb());   // #338: Settings > Buffer size
   dts_engine_set_hdr10p_strip(ajustes_hdr10p_strip());        // #605
   dts_playback_next_dv(dtsModoDv);
+#ifdef NV_MP4_BD_TEST
+  dts_playback_next_p7(ajustes_dv7() || mp4TestPending);
+  dts_playback_next_mp4_test(mp4TestPending);
+#else
   dts_playback_next_p7(ajustes_dv7());
+#endif
+  dts_playback_next_p7_mapping(ajustes_dv7_mapping());
+  dtsRotaTruehd = dtsModoDv && (dvTruehd || ajustes_dv_audio()) && !ajustes_dts_desligado();
+  /* Matis94 05725b747: "Original" on a TV that declares DTS (edidType) lets the
+   * DV path pass DTS-HD MA/DTS:X untouched. EDID pending/absent: convert. */
+  dtsRotaOff = ajustes_dts_desligado() ? 1
+             : dtsModoDv && ajustes_dts_original() && __atomic_load_n(&edidDts, __ATOMIC_ACQUIRE) > 0
+             ? NV_DTS_ROUTE_NATIVE : 0;
+  dts_playback_next_audio_route(dtsRotaTruehd, dtsModoDv ? ajustes_dv_audio() : 0, dtsRotaOff);
   dtsSessao = dts_playback_start(urlAtual, cabsHttp, stream, alvo,
                                paused, expWin, 0, (a || trocada) ? &selected : NULL, ordinal, count);
   if (!dtsSessao) {
@@ -3307,6 +3423,18 @@ static void sincronizarPlanoDts(const DtsPlaybackStatus *st) {
     printf("[dts] native video plane bind pending\n"); fflush(stdout);
   }
 }
+static void sincronizarRotaDts(const DtsMediaInfo *info) {
+  /* A small native probe can miss RPU. The opened worker's output record is
+   * authoritative. Do this before draining callbacks so overlay, seek and
+   * audio policy agree with the Dolby Vision configuration actually loaded. */
+  if (info && !dtsModoDv && (info->dovi_profile==5 || info->dovi_profile==8) &&
+      !strcmp(info->video_codec,"hevc") && info->dovi_bl_present &&
+      info->dovi_rpu_present && !info->dovi_el_present) {
+    dtsModoDv=1;dvHabilitado=1;dvNao=0;
+    printf("[audio-route] event=prepared-dv profile=%d compat=%d controllerDv=1\n",
+      info->dovi_profile,info->dovi_bl_compatibility_id);fflush(stdout);
+  }
+}
 static void bombearDts(void) {
   DtsPlaybackStatus st;
   char event[2048];
@@ -3336,6 +3464,7 @@ static void bombearDts(void) {
    * its source metadata. Process metadata first so it cannot erase those
    * native observations on the following pump. Startup failures drain above. */
   if (!st.prepared) return;
+  sincronizarRotaDts(&st.info);
   if (st.prepared && st.revision != dtsRevisao) {
     int initial = !dtsRevisao;
     int selectedSub = initial ? -1 : (video_legenda(legAtual) ? video_legenda(legAtual)->stream_index : -1);
@@ -3359,12 +3488,13 @@ static void bombearDts(void) {
     if (initial) { snprintf(vidHdr, sizeof vidHdr, "%s", "none"); vidAtmos = 0; }
     viuVideo = 0;
     nAudio = nLeg = 0;
+    const DtsTrack *sourceAudio = NULL;
     for (i = 0; i < st.info.n_tracks; i++) {
       const DtsTrack *t = &st.info.tracks[i];
       VideoFaixa *f;
       if (t->kind == DTS_AUDIO && nAudio < NV_FAIXA_MAX) {
         f = &faixaAudio[nAudio];
-        if (t->stream_index == st.info.audio_stream) audioAtual = nAudio;
+        if (t->stream_index == st.info.audio_stream) { audioAtual = nAudio; sourceAudio = t; }
         memset(f, 0, sizeof *f); f->numero = nAudio++;
       } else if (t->kind == DTS_SUBTITLE && nLeg < NV_FAIXA_MAX) {
         f = &faixaLeg[nLeg];
@@ -3378,8 +3508,10 @@ static void bombearDts(void) {
       if (!strcmp(t->codec, "ass") || !strcmp(t->codec, "ssa"))
         snprintf(f->codec, sizeof f->codec, "S_TEXT/ASS");
       snprintf(f->idioma, sizeof f->idioma, "%.7s", t->language);
-      snprintf(f->rotulo, sizeof f->rotulo, "%.26s · %.12s", t->language[0] ?
-               i18n(ling_nome(t->language)) : i18n("Faixa"), t->codec);
+      if (t->kind == DTS_AUDIO) dtsRotuloAudio(f, t);
+      else
+        snprintf(f->rotulo, sizeof f->rotulo, "%.26s · %.12s", t->language[0] ?
+                 i18n(ling_nome(t->language)) : i18n("Faixa"), t->codec);
     }
     legAtual = -1;
     if (initial) {
@@ -3412,11 +3544,19 @@ static void bombearDts(void) {
       snprintf(dvMemIdioma, sizeof dvMemIdioma, "%s", faixaAudio[audioAtual].idioma);
       dvMemOrd = audioAtual;
     }
-    /* Converted only when the source track is DTS; on the Dolby Vision path
-     * AC-3/E-AC-3 pass through untouched and there is nothing to label. */
-    if (!dtsModoDv || (audioAtual >= 0 && audioAtual < nAudio && !strcmp(faixaAudio[audioAtual].codec, "dts"))) {
-      snprintf(dtsSaida, sizeof dtsSaida, "%s", !strcmp(st.info.audio_codec, "ac3") ? "DTS → AC3 5.1" : "DTS → AAC Stereo");
-      dtsEstado = VIDEO_DTS_CONVERTIDO;
+    /* Each worker revision names both the selected source and actual output.
+     * Session-start metadata is stale after an audio switch or safe remap. */
+    const char *codec = sourceAudio ? sourceAudio->codec : "";
+    const char *src = nv_dts_truehd_codec(codec) ? "TrueHD" : !strcmp(codec, "eac3") ? "E-AC-3"
+                    : !strcmp(codec, "ac3") ? "AC3" : "DTS";
+    int convertido = sourceAudio && (!dtsModoDv || strcmp(st.info.audio_codec, codec));
+    if (dtsModoDv && !strcmp(codec, "dts") && !strcmp(st.info.audio_codec, "dts")) {
+      snprintf(dtsSaida, sizeof dtsSaida, "DTS · Dolby Vision");
+      dtsEstado = VIDEO_DTS_NATIVO;
+    } else if (convertido) {
+      snprintf(dtsSaida, sizeof dtsSaida, "%s → %s", src, !strcmp(st.info.audio_codec, "ac3") ? "AC3 5.1" : "AAC Stereo");
+      /* The island notice speaks of DTS only; TrueHD/fixed keep the label. */
+      dtsEstado = !strcmp(src, "DTS") ? VIDEO_DTS_CONVERTIDO : 0;
     } else { dtsSaida[0] = 0; dtsEstado = 0; }
     if (expWin[0]) expJanelaAplicar();
     protegerScreensaver();
@@ -3930,8 +4070,7 @@ void video_escolher_audio(int i) {
   const VideoFaixa *f = video_audio(i);
   if (dtsSessao && f) {
     if (f->stream_index < 0) return;
-    if (!strcmp(f->codec, "dts") ||
-        (dtsModoDv && (!strcmp(f->codec, "eac3") || !strcmp(f->codec, "ac3")))) {
+    if (nv_dts_audio_feeds(f->codec, dtsModoDv, dtsRotaTruehd, dtsRotaOff)) {
       dts_playback_seek(dtsSessao, posSeg);
       dts_playback_audio(dtsSessao, f->stream_index);
       audioAtual = i;
@@ -3952,6 +4091,13 @@ void video_escolher_audio(int i) {
   }
 
   if (!ligado || !midia[0] || !f) return;
+  if (nv_audio_mkv_recuperado(f)) {
+    /* Not in the TV player's list: only the converter can play it. */
+    if (!dtsHabilitado || ajustes_dts_desligado()) return;
+    audioAtual = i; dtsTentou = 0; dtsEstado = VIDEO_DTS_PREPARANDO;
+    if (!iniciarDts(-1)) dtsTentou = 0;
+    return;
+  }
   /* Unsupported audio belongs to the previous selection. Give the new native
    * track a chance before allowing its own codec error to trigger conversion. */
   if (i != audioAtual) audioNaoSup = 0;
