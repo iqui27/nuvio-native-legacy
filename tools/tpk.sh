@@ -164,7 +164,7 @@ ctr_run --rm --platform "$TPK_PLATFORM" --env-file "$ENVF" $P2P_VOL $DTS_VOL \
   # nova ao env.sh, acrescente-a aqui TAMBEM.
   for k in NV_SUPABASE_URL NV_SUPABASE_ANON_KEY NV_TV_LOGIN_BASE NV_TRAKT_CLIENT_ID \
            NV_TRAKT_CLIENT_SECRET NV_SIMKL_CLIENT_ID NV_SIMKL_APP NV_TMDB_API_KEY NV_SEEKR_API_KEY \
-           NV_REC_URL NV_DISCORD_CLIENT_ID NV_VERSAO; do
+           NV_REC_URL NV_LOGLINK_TOKEN NV_DISCORD_CLIENT_ID NV_VERSAO; do
     eval "v=\${$k:-}"
     # No arquivo de resposta o gcc tira aspas e barras como o shell: a aspa
     # da string C tem de ir escapada (-DX=\"valor\").

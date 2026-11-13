@@ -223,6 +223,7 @@ int ajustes_fonte_grupo_sessoes(void);
 // Reusar o ultimo link (fontevolta.h): 1 = ligado; e a validade em segundos.
 int ajustes_link_reusar(void);
 int ajustes_log_rede(void);   // pagina de registro na rede local (logrede.h)
+int ajustes_diagnostics_qr(void); // cartao de download do registro (celbotao.h)
 unsigned ajustes_link_prazo_s(void);
 int ajustes_fonte_escopo(void);
 int ajustes_fonte_regex_modo(void);
@@ -927,4 +928,12 @@ int ajustes_shot_valor(const char *chave, int v);   // capturas: opcao pela chav
 #endif
 
 int ajustes_miniatura_largura(void);
+// Matis94 (Nuvio_webOS_2.0.8.6): automatic update card/notices; on by default.
+int ajustes_update_notifications(void);
+// Matis94: remember last unlocked profile on this TV; default OFF.
+int ajustes_lembrar_perfil(void);
+// Matis94: manual skip-button visibility, independent of automatic skipping; default ON.
+int ajustes_show_skip_intro(void);
+int ajustes_show_skip_recap(void);
+int ajustes_show_skip_credits(void);
 #endif

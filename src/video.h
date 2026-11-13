@@ -16,6 +16,7 @@
 // TV tocando o mesmo arquivo: e o que comprovadamente funciona.
 #ifndef NV_VIDEO_H
 #define NV_VIDEO_H
+#include "legopacidade.h"
 #include <SDL2/SDL_stdinc.h>
 
 // Registra no barramento e sobe o laco de eventos. 1 se deu certo.
@@ -464,7 +465,7 @@ typedef struct {
   int posicao;    // 0..7  -> position -3..4 no uMS
   int borda;      // 0 nenhuma, 1 contorno, 2 sombra
   int atrasoMs;   // negativo adianta
-  int opacidade;  // 0..3 = texto 100/75/50/25%
+  int opacidade;  // stable ID: legopacidade.h; 20 levels from 5% to 100%
   int familia;    // TxtFamilia; aplicada ao overlay externo (OpenSubtitles)
   int negrito;    // 1 = peso negrito no overlay (so o que o app desenha)
   int corBorda;   // -1 unset (legacy outline); 0 Black, 1 White, 2 Yellow, 3 Green, 4 Blue, 5 Red

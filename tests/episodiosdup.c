@@ -1088,6 +1088,50 @@ int main(void) {
     assert(cat_episodio(0, 19)->episodio == 20);
     assert(!strcmp(cat_episodio(0, 0)->nome, "C1") && !strcmp(cat_episodio(0, 11)->nome, "C12"));
     puts("ok  lista de arquivos com mais episodios distintos nao e descartada");
+    // Upstream 70d8d67ab: a longer (not file-list) addon list without text
+    // preference still takes Cinemeta titles where it only has filenames.
+    // Addon video IDs and season 0 stay intact.
+  { char *longa = malloc(cap); assert(longa);
+    k = (size_t)snprintf(longa, cap, "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\","
+                         "\"name\":\"Serie\",\"videos\":["
+                         "{\"id\":\"sp1\",\"season\":0,\"episode\":1,\"name\":\"Special\"}");
+    for (ep = 1; ep <= 14; ep++)
+      k += (size_t)snprintf(longa + k, cap - k,
+                            ",{\"id\":\"a%d\",\"season\":1,\"episode\":%d,"
+                            "\"name\":\"Serie.S01E%02d.1080p.x264.mkv\"}", ep, ep, ep);
+    snprintf(longa + k, cap - k, "]}}");
+    nFake = 0; nRotas = 0; addonMeta = 1; addonTipo = "/series/";
+    cineSerie = cine; addonResp = longa;
+    limparCacheMeta();
+    catalogoCom("tt13293588", "series", "Serie");
+    abrir();
+    assert(cat_n_episodios(0) == 15);
+    assert(cat_episodio(0, 0)->temporada == 0 && !strcmp(cat_episodio(0, 0)->vid, "sp1"));
+    assert(!strcmp(cat_episodio(0, 1)->nome, "C1") && !strcmp(cat_episodio(0, 1)->vid, "a1"));
+    assert(!strcmp(cat_episodio(0, 12)->nome, "C12") && !strcmp(cat_episodio(0, 12)->vid, "a12"));
+    assert(!strcmp(cat_episodio(0, 14)->nome, "Episódio 14") && !strcmp(cat_episodio(0, 14)->vid, "a14"));
+    assert(cat_item(0)->nTemporadas == 2 && cat_item(0)->temporadas[0] == 1 &&
+           cat_item(0)->temporadas[1] == 0 && !cat_item(0)->epsParciais);
+    puts("ok  addon list: filename names take Cinemeta titles, ids and season 0 kept");
+    // Cache refresh: a fresh entry is reused; an expired one is fetched again
+    // and the refreshed names land without changing ids or season tabs.
+    { char *p = strstr(longa, "Serie.S01E14.1080p.x264.mkv"); assert(p);
+      memcpy(p, "Fresh14\"}", 9); p[9] = ']'; p[10] = '}'; p[11] = '}'; p[12] = 0; }
+    catalogoCom("tt13293588", "series", "Serie");
+    abrir();
+    assert(!pediu("/meta/series/tt13293588.json"));
+    assert(!strcmp(cat_episodio(0, 14)->nome, "Episódio 14"));
+    for (i = 0; i < META_CACHE_N; i++)
+      if (metaCache[i].corpo) metaCache[i].quando -= META_TTL_S + 1;
+    catalogoCom("tt13293588", "series", "Serie");
+    abrir();
+    assert(pediu("/meta/series/tt13293588.json"));
+    assert(cat_n_episodios(0) == 15);
+    assert(!strcmp(cat_episodio(0, 14)->nome, "Fresh14") && !strcmp(cat_episodio(0, 14)->vid, "a14"));
+    assert(!strcmp(cat_episodio(0, 1)->nome, "C1") && !strcmp(cat_episodio(0, 0)->vid, "sp1"));
+    assert(cat_item(0)->nTemporadas == 2 && cat_item(0)->temporadas[1] == 0);
+    puts("ok  meta cache: fresh entry reused, expired entry refreshed, ids/tabs kept");
+    addonResp = NULL; free(longa); }
     // O mesmo pelo caminho do catalogo primeiro.
     addonMeta = 0; addonResp = NULL;
     nFake = 1;
@@ -1097,7 +1141,7 @@ int main(void) {
     catalogoDe("tt13293588", "series", "Serie", "org.fx");
     abrir();
     assert(cat_n_episodios(0) == 20);
-    assert(!strcmp(cat_episodio(0, 0)->nome, "C1") && strstr(cat_episodio(0, 19)->nome, ".mkv"));
+    assert(!strcmp(cat_episodio(0, 0)->nome, "C1") && !strcmp(cat_episodio(0, 19)->nome, "Episódio 20"));
     puts("ok  catalogo primeiro: lista de arquivos com mais episodios fica");
     // EMPATE NAO E DA LISTA DE ARQUIVOS, nem com a preferencia pela ficha do
     // addon ligada: 12 distintos x 5 variantes contra os mesmos 12.
