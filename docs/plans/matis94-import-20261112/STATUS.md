@@ -11,15 +11,15 @@ Fonte e critérios: [mapa de paridade](../../reviews/matis94-20261112/README.md)
 | Lote | Escopo | Estado |
 |---|---|---|
 | A | Segurança de filas PGS, HEVC in-band, URLs longas | Integrado em `c0abc4a28`; revisão + verificador independentes, gate 5/5 e pós-merge 5/5. [Evidência](lote-a-integracao.md). TV pendente. |
-| B | Modos DV/DTS/TrueHD, faixas e memória de áudio | Integrado em `a521dd91f`; revisão e verificador distintos, gate 6/6, pós-merge 3/3. [Evidência e 14 P2](lote-b-integracao.md). TV/ARM/FFmpeg fixado pendentes; combinado com D, combinação final C pendente. |
-| C | Buffer contínuo, controles, recovery/seek e telemetria | C5 `051425460` corrigiu quatro P1 com FAIL→PASS, nove suítes e build. C6 `b8fc2cf5e` combinado com B passou 18 checks, suíte B e build; controle negativo HEVC no host continua rc 1. Incorporar D antes de revisão/verificação/gate finais. |
-| D | Áudio de outra versão e cortes/intro skip | Integrado em `fe82fe5e4`; revisão e verificador distintos, gate 12/12 e pós-merge 3/3. [Evidência e sete P2](lote-d-integracao.md). TV/ARM/SDK e combinação final C pendentes. |
+| B | Modos DV/DTS/TrueHD, faixas e memória de áudio | Integrado em `a521dd91f`; revisão e verificador distintos, gate 6/6, pós-merge 3/3. [Evidência e 14 P2](lote-b-integracao.md). TV/ARM/FFmpeg fixado pendentes; combinado com D e C; prova física permanece pendente. |
+| C | Buffer contínuo, controles, recovery/seek e telemetria | Integrado em `0cefb7bc4`; revisão e verificador distintos OK, gate 13/13, complemento C9 12/12 e pós-merge 5/5. [Evidência e oito P2](lote-c-integracao.md). TV/ARM/FFmpeg fixado pendentes. |
+| D | Áudio de outra versão e cortes/intro skip | Integrado em `fe82fe5e4`; revisão e verificador distintos, gate 12/12 e pós-merge 3/3. [Evidência e sete P2](lote-d-integracao.md). Combinado com C; TV/ARM/SDK pendentes. |
 | E | Formatter, badges, regex e lista de fontes | Integrado em `1ac01b8b5`; revisão e verificador distintos, 12 checks host e gate final 6/6, pós-merge 3/3. [Evidência e quatro P2](lote-e-integracao.md). TV/ARM/FPS pendentes. |
 | F | Perfil, skip, atualização e opacidade | Integrado em `26eec9dbb`; revisão + verificador independentes, gate 8/8 e pós-merge 3/3. [Evidência](lote-f-integracao.md). TV pendente. |
 | G | Diagnósticos local/QR, motivos e exportação de nuvem | Integrado em `6aa346ec3`; revisão + verificador independentes, gate 8/8 e pós-merge 3/3. [Evidência e P2](lote-g-integracao.md). Serviço de nuvem sem deploy; TV pendente. |
 | H | CW local, temporadas e títulos de episódios | Integrado em `8a16234bc`; revisão + verificador independentes, gate 15/15 e pós-merge 3/3. [Evidência](lote-h-integracao.md). TV pendente. |
 
-Execução: implementações iniciais `nv-impl medium`; correções e revisões `nv-revisao medium`. Modelo servido desconhecido sem prova do gateway. A/B/D/E/F/H/G integrados; C ainda fora. Worktrees `/Volumes/ExternalSSD/nv-21-matis-*`; briefs e evidência em `/Volumes/ExternalSSD/tmp/rev/matis94-20261112/`. Estado acima registra o corte documental, não atividade instantânea de processos. Uma escrita por worktree; sem contornar limites do executor.
+Execução: implementações iniciais `nv-impl medium`; correções e revisões `nv-revisao medium`. Modelo servido desconhecido sem prova do gateway. A/B/C/D/E/F/G/H integrados; nenhum lote de código fora da integração. Validação física e resultados não comprovados continuam explícitos. Worktrees `/Volumes/ExternalSSD/nv-21-matis-*`; briefs e evidência em `/Volumes/ExternalSSD/tmp/rev/matis94-20261112/`. Estado acima registra o corte documental, não atividade instantânea de processos. Uma escrita por worktree; sem contornar limites do executor.
 
 ## Cobertura item a item
 
@@ -35,19 +35,19 @@ Execução: implementações iniciais `nv-impl medium`; correções e revisões 
 | R08 | DV + DTS-HD MA/DTS:X integral nativo com conversão Off | Ausente | Rota DTS nativa integral integrada em `a521dd91f`, exige declaração positiva da TV. Recusa da ABI pode voltar a HDR10; firmware/TV pendentes. |
 | R09 | Startup/resume DTS e recuperação limitada de gaps/descontinuidades | Presente | Manter; prova de TV separada |
 | R10 | Retry de ranges, recuperação antecipada e retenção de download útil | Presente | Manter; prova de TV separada |
-| R11 | Reusar CDN resolvida e recuperar link expirado em SDR/DTS | Parcial | Pendente de adaptação/prova |
+| R11 | Reusar CDN resolvida e recuperar link expirado em SDR/DTS | Parcial | Reuso/CDN e recuperação de autorização integrados no lote C; fixtures offline passaram. TV pendente. |
 | R12 | Buffer HTTP nativo em RAM, ranges/auth, seeks e fallback | Presente | Manter; prova de TV separada |
-| R13 | Presets 64/128/256 MiB e opção de desligar redução por RAM baixa | Parcial | Pendente de adaptação/prova |
-| R14 | Limites HTTP separados 1–4 e conversão Standard(1) contínua como novo padrão | Ausente | Pendente de adaptação/prova |
+| R13 | Presets 64/128/256 MiB e opção de desligar redução por RAM baixa | Parcial | Presets/piso obrigatório e chave de redução opcional integrados no lote C; OFF não desliga proteção de RAM. Gate 13/13 + C9 12/12; TV pendente. |
+| R14 | Limites HTTP separados 1–4 e conversão Standard(1) contínua como novo padrão | Ausente | Limites HTTP nativo/conversão 1–4 integrados; conversão Standard(1) contínua é novo padrão apenas para ausente/reset, salvos preservados. C-R14 P2 de Retry-After documentado; TV pendente. |
 | R15 | URLs do conversor e fonte DV lembrada até 8.191 bytes | Parcial | Código integrado em `c0abc4a28`; regressão de limites e memória DV passou. TV pendente. |
-| R16 | Reusar fonte/latest seek e troca DTS sem recarregar imagem | Parcial | Pendente de adaptação/prova |
+| R16 | Reusar fonte/latest seek e troca DTS sem recarregar imagem | Parcial | Reuso de engine/seek/faixa integrado no lote C; motor real Standard(1) e readiness têm regressões. Continuidade física e Standard(1)+doador não comprovados. |
 | R17 | Recuperar fila cheia do decoder nativo sem travar para sempre | Presente | Manter; prova de TV separada |
 | R18 | Preservar VPS/SPS/PPS in-band atuais em HDR10/DV8 com DTS | Ausente | Código integrado em `c0abc4a28`; SEI preservado e regressões/sanitizadores passaram. Paridade FFmpeg 7.1.5 e TV pendentes. |
 | R19 | Recuperar faixas DTS omitidas pela LG, inclusive várias do mesmo idioma | Parcial | Recuperação de várias faixas integrada em `a521dd91f`; identidades distintas. P2 de restauração lembrada/busy bind documentados; TV pendente. |
 | R20 | DV8 descoberto tardiamente mantém routing de áudio/imagem alinhado | Parcial | Código B integrado em `a521dd91f`, porém alinhamento tardio permanece parcial: snapshots de rota não são reaplicados (B-P2-3). |
 | R21 | Tratamento experimental de HDR10+ SEI | Presente | Manter; prova de TV separada |
 | R22 | PGS e fila de legenda cheia sem encerrar sessão DV/DTS | Parcial — correção ausente | Código integrado em `c0abc4a28`; decoder PGS real e playback até EOF passaram. N1 P2: cue anterior pode permanecer durante cue descartada. TV pendente. |
-| R23 | Sem callback/overlay/loading antigo; aviso DTS uma vez por fonte | Parcial | Pendente de adaptação/prova |
+| R23 | Sem callback/overlay/loading antigo; aviso DTS uma vez por fonte | Parcial | Aviso por fonte/estado e reset por geração integrados no lote C, FAIL→PASS e gate. Revisão de comandos não limpa readiness; Load real limpa. TV pendente. |
 | R24 | Menu áudio por idioma/codec/canais, exceção FLAC, labels longos e badge DV | Parcial | Labels/menu integrados em `a521dd91f`; P2 de label longo no retorno TPK documentado. TV pendente. |
 | R25 | Áudio de outra versão: MKV/MP4/AVI/TS, sync ±60min, passos manuais e correção de frame rate | Ausente | Código integrado em `fe82fe5e4`; gate 12/12, pós-merge 3/3. Sete P2 de follow/Off/formatos/UI documentados; TV/ARM/SDK pendentes. |
 | R26 | Seguir filme inteiro entre cortes, fallback próprio e correção de freeze após intro skip | Ausente | Código integrado em `fe82fe5e4`; gate 12/12, pós-merge 3/3. Sete P2 de follow/Off/formatos/UI documentados; TV/ARM/SDK pendentes. |
@@ -55,7 +55,7 @@ Execução: implementações iniciais `nv-impl medium`; correções e revisões 
 | F02 | Formatter lazy/bounded e redução de trabalho fora da tela | Parcial | Código integrado em `1ac01b8b5`; gate 6/6 e pós-merge 3/3. Limites e P2 em lote-e-integracao.md; TV pendente. |
 | F03 | Copiar dados dos badges no worker, reduzindo bloqueio/memória | Parcial | Código integrado em `1ac01b8b5`; gate 6/6 e pós-merge 3/3. Limites e P2 em lote-e-integracao.md; TV pendente. |
 | F04 | VSync enquanto espera fonte, fallback se VSync falha e pacing do player | Parcial | Código integrado em `1ac01b8b5`; ramo webOS inspecionado, sem prova de compilação ARM ou FPS/TV. |
-| F05 | Menos redraws, fluidez com 2.000+ fontes e remoção de diagnóstico temporário | Não comprovado | Pendente de adaptação/prova |
+| F05 | Menos redraws, fluidez com 2.000+ fontes e remoção de diagnóstico temporário | Não comprovado | Adaptações de formatter/worker/pacing integradas no lote E; resultado de fluidez com 2.000+ fontes/FPS em TV continua não comprovado. Não encerrado por build host. |
 | F06 | Texto do add-on, emoji offline, flags, DUAL/MULTI e alinhamento | Parcial | Código integrado em `1ac01b8b5`; gate 6/6 e pós-merge 3/3. Limites e P2 em lote-e-integracao.md; TV pendente. |
 | F07 | Inferir idioma quando declaração falta, sem misturar legendas | Presente | Manter; prova de TV separada |
 | F08 | Pacotes de badges: cores, fundo, contorno, transparência e estabilidade | Parcial | Código integrado em `1ac01b8b5`; gate 6/6 e pós-merge 3/3. Limites e P2 em lote-e-integracao.md; TV pendente. |
@@ -77,10 +77,14 @@ Execução: implementações iniciais `nv-impl medium`; correções e revisões 
 | D04 | Rede 100.x | Presente, com escopo | Manter; prova de TV separada |
 | D05 | Link público/QR de log na nuvem válido por 72h; OK/RIGHT como fallback | Ausente | Código integrado em `6aa346ec3`; auth restrita, TTL e limites testados offline. Serviço sem deploy/provisionamento; nenhum upload real. |
 | D06 | Chave Diagnostics QR OFF e liberação de recursos ao fechar | Parcial | Código integrado em `6aa346ec3`; OFF padrão e fechamento normal testados. P2 F9: snapshot pode persistir ao encerrar processo. TV pendente. |
-| D07 | Overlay RAM e GREEN, depois três chaves independentes de RAM/dados/atalho | Parcial | Pendente de adaptação/prova |
-| D08 | Dados do buffer: MiB pronto/capacidade, tempo estimado, modo sistema e limite HTTP da sessão | Parcial | Pendente de adaptação/prova |
-| D09 | Diagnóstico de rede redigido: redirects, timings, rate limit e reuso | Parcial | Pendente de adaptação/prova |
+| D07 | Overlay RAM e GREEN, depois três chaves independentes de RAM/dados/atalho | Parcial | Três controles independentes e rota GREEN integrados no lote C, OFF padrão. Comportamento webOS release testado; entrega física do botão pendente. |
+| D08 | Dados do buffer: MiB pronto/capacidade, tempo estimado, modo sistema e limite HTTP da sessão | Parcial | Range contíguo e MiB medidos, tempo à frente real/indisponível e limite HTTP integrados no lote C. Sem estimativa inventada; TV pendente. |
+| D09 | Diagnóstico de rede redigido: redirects, timings, rate limit e reuso | Parcial | Diagnóstico limitado/redigido integrado no lote C. P2 C-R11: hostname DNS completo retido em build diagnóstico; Standard(1) não respeita Retry-After (C-R14). |
 | D10 | Cooldown 429 compartilhado com Retry-After | Presente, com escopo | Manter; prova de TV separada |
-| D11 | Traduções 29 idiomas: mapping P7, DV MP4, saída DV e tela Buffer | Parcial | Traduções de B integradas em `a521dd91f`; presença nas 30 tabelas conferida. Parte Buffer depende de C; qualidade linguística completa não revisada. |
+| D11 | Traduções 29 idiomas: mapping P7, DV MP4, saída DV e tela Buffer | Parcial | Traduções B e Buffer C integradas, formato/presença nas 30 tabelas conferidos. P2 C-R10: labels vazios/ajuda em inglês e tradução RAM chinesa; revisão linguística completa pendente. |
 | D12 | Opacidade de legenda em passos de 5%, com migração | Ausente | Código integrado em `26eec9dbb`; migração por perfil comprovada FAIL 134 → PASS 0, IDs antigos e precedência preservados. TV pendente. |
-| D13 | ARM completo, ABI, IPK com P2P e limpeza de atalhos de build | Não comprovado como resultado | Pendente de adaptação/prova |
+| D13 | ARM completo, ABI, IPK com P2P e limpeza de atalhos de build | Não comprovado como resultado | Não comprovado: SDK Apple Container atual sem nuvio-audio-config exigido pelo guard; nenhum ARM/IPK/ABI/P2P final validado. FFmpeg 7.1.5 e controle negativo HEVC permanecem sem prova; sem instalação nesta importação. |
+
+## Fechamento da importação de código
+
+Oito lotes integrados; [balanço das 59 linhas e limites](fechamento.md). Isto não declara paridade física total com test2, publicação ou aceite de issues. Nenhuma issue foi fechada.

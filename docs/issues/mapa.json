@@ -18002,6 +18002,15 @@
    "ref": "docs/plans/matis94-import-20261112/lote-d-integracao.md",
    "resultado": "Mergefe82fe5e49967383126fe0ab59a7a8d33e00fa53; gate12/12 e pós-merge3/3, i18n integrador0; nenhum P0/P1 atual confirmado, sete P2 mantidos.",
    "evidencia": "Diffa398cef1a5109efc2897ee61f7a7a20ce1e3c0ae7203ce8b297a31fbf96779a3; digestd5a5b342a2395b3a1ae74ac56a605ec398a1b1935f9bf43ff172a5998587f96d. Regressões FAIL->PASS retorno DTS próprio/ADTS AAC/doador AAC sob Off, suíte estrita engine real. SemprovaTV/ARM/SDK/FFmpeg7.1.5/ABI, combinação C ainda pendente. Nenhumaissuefechada/push/release/install/accounts/serviçonovo."
+  },
+  {
+   "data": "2026-11-13",
+   "quem": "Central Matis94; revisor j-rev-c3-zima; verificador j-verify-c3-zima",
+   "o_que": "Lote C integrado e importação de código A-H encerrada: Standard1/HTTP separado, reuso seek/faixa, controles RAM/telemetria, combinação B/D e P2P startup-tail.",
+   "issues": [],
+   "ref": "docs/plans/matis94-import-20261112/fechamento.md",
+   "resultado": "Merge 0cefb7bc4c28e787c20a0b3353b37f2dac85d6f1; gate13/13+C9complemento12/12+pós5/5; nenhum P0/P1 confirmado, oito P2 C mantidos. 59 IDs e classificações iniciais preservados; itens de issues intocados.",
+   "evidencia": "Diff94f7d940c5d18284ea6c3f8a5e35a318af283f52a51534703d30a00eb89b1a6b; digest 7f50a9b71dfd5897ea4819faeb937adad29fde68525abe146d8848d0ba49f432. C8FAIL134/open6.218s->PASS0/1.122s callbackStandardreal. F05FPS/D13ARM-ABI-IPK-P2P/FFmpeg7.1.5/TV ainda não comprovados; SDK sem nuvio-audio-config; hevc_annexb_engine rc1 não dispensado. Sem fecharissues/push/release/install/accounts/serviçonovo."
   }
  ],
  "decisoes": [

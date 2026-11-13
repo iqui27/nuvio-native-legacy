@@ -1,5 +1,7 @@
 # Matis94 × Nuvio Legacy — mapa de features
 
+> Inventário histórico do snapshot de 12/11. A importação posterior dos oito lotes foi concluída na integração TV: [estado atual e evidências](../../plans/matis94-import-20261112/fechamento.md). Classificações abaixo preservam a comparação original; não descrevem o estado posterior aos merges.
+
 **Não temos tudo anunciado nessas releases.** A base de DV7/DTS, buffer HTTP, recuperação e caches de fontes já existe. As novidades mais recentes de reprodução e vários controles ainda estão ausentes ou parciais.
 
 Comparação em **12/11/2026**, com as **11 releases** públicas de [Matis94/nuvio-native-legacy](https://github.com/Matis94/nuvio-native-legacy/releases), da 2.0.5 até 2.0.8.7.test2. Nosso código foi fixado no commit [`8221bb897110271313db2864d2f0d15d1857b61b`](https://github.com/iqui27/nuvio-native-legacy/commit/8221bb897110271313db2864d2f0d15d1857b61b), branch de integração `integracao/2.1` em `/Volumes/ExternalSSD/nv-21-int`.
