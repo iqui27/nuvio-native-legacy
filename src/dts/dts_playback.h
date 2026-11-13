@@ -26,6 +26,12 @@ int dts_playback_enabled(void);
 void dts_playback_next_dv(int enabled);
 /* Main thread: snapshot the P7/recovery opt-in for the next session. */
 void dts_playback_next_p7(int enabled);
+void dts_playback_next_mp4_test(int enabled);
+/* Main thread: snapshot the experimental P7 mapping opt-in (next session). */
+void dts_playback_next_p7_mapping(int enabled);
+/* Main thread: snapshot the audio route for the next session (TrueHD
+ * conversion, fixed DV audio 0/1 AAC/2 AC-3, DTS row Off). */
+void dts_playback_next_audio_route(int truehd, int fixed, int dts_off);
 /* Main thread: the next session may use native seek/track reconfiguration
  * (pipeline flush plus engine seek/audio reuse) instead of a fresh Load for
  * each command. The bounded no-progress reload stays authoritative. */

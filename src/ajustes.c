@@ -805,6 +805,13 @@ typedef enum {
   // Posicao da fileira de selos no cartao "Do add-on": 0 Topo / 1 Embaixo.
   // LOCAL, append-only (port do upstream 684461355).
   AJ_SOURCE_BADGE_POSITION,
+  // Experimental P7 mapping preservation (dolby_vision To81MappingPreserved).
+  // LOCAL, append-only, DESLIGADO de fabrica.
+  AJ_DV7_MAPPING,
+  // Audio on the webOS Dolby Vision path: Original (default) / AAC / Dolby
+  // Digital. Matis94 89433220e + 115f3a0c0. LOCAL, append-only.
+  AJ_DV_AUDIO,
+  AJ_MP4_BD_TEST, // webOS experimental recovery, local, Off by default
   // HTTP connections of this TV (Matis94 a2e37e8f5), append-only, local.
   AJ_BUFFER_NATIVE_CONNECTIONS, AJ_BUFFER_CONVERSION_CONNECTIONS,
   // Player buffer telemetry + remote toggles (Matis94 C3), append-only, local.
@@ -906,12 +913,14 @@ static const char *V_BRILHO_PLAYER[] = { "100%", "80%", "65%", "50%" };
 // DTS/TrueHD e escolhe a saida (gravada em dtsTpkLocal; 1 = 5.1 nos dois, que
 // e o que ajustes_dts_ac3 le). O dtsSaidaLocal e o dtsTpkModoLocal de antes
 // migram na leitura (ver dtsTpkMigrar).
+static const char *V_DV_AUDIO[] = { "Original", "Estéreo (AAC)", "5.1 (Dolby Digital)" };
 #ifdef NV_TPK
 static const char *V_DTS_SAIDA[] = { "Desligado", "5.1 (Dolby Digital)", "Estéreo (AAC)" };
 #define N_DTS_SAIDA 3
 #else
-static const char *V_DTS_SAIDA[] = { "Original", "Estéreo (AAC)", "5.1 (Dolby Digital)" };
-#define N_DTS_SAIDA 3
+// 3 = Desligado (Matis94 cba4365a0), appended so stored 0..2 keep meaning.
+static const char *V_DTS_SAIDA[] = { "Original", "Estéreo (AAC)", "5.1 (Dolby Digital)", "Desligado" };
+#define N_DTS_SAIDA 4
 #endif
 static const char *V_PROPORCAO[] = { "Último usado", "Original", "Recortar", "Esticar", "Zoom leve", "Zoom cinema", "Zoom ultra", "Ajustar altura", "Ajustar largura" };
 static const char *V_LOGO_APP[] = { "Novo", "Clássico" };
@@ -2010,6 +2019,9 @@ static const Opcao OPCOES[AJ_N] = {
   // DIAGNOSTICO (Matis94): cartao de download do registro, so desta TV.
   ESC("QR de diagnóstico", V_LIGA, 2),                         // local: diagnosticsQrLocal
   ESC("Posição dos selos (Do add-on)", V_SOURCE_BADGE_POSITION, 2),   // local: sourceBadgePositionLocal
+  ESC("Dolby Vision P7: manter mapeamento (experimental)", V_LIGA, 2),   // local: dv7PreserveMappingLocal
+  ESC("Áudio com Dolby Vision", V_DV_AUDIO, 3),   // local: dvAudioFixoLocal
+  ESC("Dolby Vision MP4 (experimental)", V_LIGA, 2),
   ESC("Conexões do player da TV", V_HTTP_CONEXOES, 4),
   ESC("Conexões da conversão de DTS e Dolby Vision", V_HTTP_CONEXOES, 4),
   ESC("Dados do buffer", V_LIGA, 2),                        // local: bufferDataLocal
@@ -2380,6 +2392,9 @@ static const char *CHAVE[] = {
   "showSkipIntroButtonLocal", "showSkipRecapButtonLocal", "showSkipCreditsButtonLocal",
   "diagnosticsQrLocal",
   "sourceBadgePositionLocal",
+  "dv7PreserveMappingLocal",
+  "dvAudioFixoLocal",
+  "dvMp4BdTestLocal",
   "nativeBufferConnectionsLocal", "conversionBufferConnectionsLocal", // fork keys
   "bufferDataLocal", "ramOverlayLocal", "ramGreenLocal", "bufferRamReduzLocal",
 };
@@ -4156,9 +4171,11 @@ int ajustes_ps_tamanho(void)          { int v = valor[AJ_PS_TAMANHO]; return v >
 #ifdef NV_TPK
 int ajustes_dts_ac3(void)             { return valor[AJ_DTS_AC3] == 1; }
 int ajustes_dts_original(void)        { return 0; }
+int ajustes_dts_desligado(void)       { return valor[AJ_DTS_AC3] == 0; }
 #else
 int ajustes_dts_ac3(void)             { return valor[AJ_DTS_AC3] == 2; }
 int ajustes_dts_original(void)        { return valor[AJ_DTS_AC3] == 0; }
+int ajustes_dts_desligado(void)       { return valor[AJ_DTS_AC3] == 3; }
 #endif
 // .tpk: HLS (o TS continuo e so a troca automatica de video_tpk.c) ou desligado.
 int ajustes_dts_tpk_modo(void) {
@@ -4170,6 +4187,15 @@ int ajustes_dts_tpk_modo(void) {
 }
 int ajustes_dv_mkv(void)              { return lig(AJ_DV_MKV); }
 int ajustes_dv7(void) { return lig(AJ_DV7); }
+int ajustes_dv7_mapping(void) { return lig(AJ_DV7_MAPPING); }
+int ajustes_mp4_bd_test(void) {
+#if defined(NV_WEBOS) && defined(NV_DV7_CONVERSION) && defined(NV_MP4_BD_TEST) && !defined(NV_TPK) && !defined(NV_ANDROID)
+  return lig(AJ_MP4_BD_TEST);
+#else
+  return 0;
+#endif
+}
+int ajustes_dv_audio(void) { int v = valor[AJ_DV_AUDIO]; return v >= 0 && v <= 2 ? v : 0; }
 int ajustes_hdr10p_strip(void) { return lig(AJ_HDR10P_STRIP); }
 int ajustes_hist_conta(void)          { return lig(AJ_HIST_CONTA); }
 int ajustes_social(void)              { return lig(AJ_SOCIAL); }
@@ -6548,6 +6574,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
     case AJ_DV7:
+    case AJ_DV7_MAPPING: case AJ_DV_AUDIO: case AJ_MP4_BD_TEST:
     case AJ_HDR10P_STRIP:   /* o caminho de conversao e desta TV */
     case AJ_HIST_CONTA: case AJ_SOCIAL: /* por perfil desta TV (perfilLocal); o web nao tem */
     case AJ_TAM_MAX: case AJ_TAM_MIN: /* o web nao tem a faixa de tamanho */
@@ -6654,7 +6681,7 @@ static int soNaTv(int op) {
     case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY:
     case AJ_P2P_LIGADO: case AJ_JF_LIGADO: case AJ_POSTER_PROV: case AJ_EPG_PAIS:
     case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: case AJ_RELOGIO_12H:
-    case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_HDR10P_STRIP:
+    case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV7_MAPPING: case AJ_DV_AUDIO: case AJ_MP4_BD_TEST: case AJ_HDR10P_STRIP:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
     case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_BUFFER_RAM_REDUZ:
@@ -7255,9 +7282,14 @@ static int foraDestaPlataforma(int op) {
 #endif
 #if defined(NV_TPK) || defined(NV_ANDROID)
   if (op == AJ_DV_MKV) return 1;
+  if (op == AJ_DV_AUDIO) return 1;
 #endif
 #if defined(NV_TPK) || defined(NV_ANDROID) || !defined(NV_DV7_CONVERSION)
   if (op == AJ_DV7) return 1;
+  if (op == AJ_DV7_MAPPING) return 1;
+#endif
+#if !defined(NV_WEBOS) || !defined(NV_DV7_CONVERSION) || !defined(NV_MP4_BD_TEST) || defined(NV_TPK) || defined(NV_ANDROID)
+  if (op == AJ_MP4_BD_TEST) return 1;
 #endif
   // Legacy depth keys remain positional, but only switch/intensity are shown.
   if (op == AJ_PROF_BORDA || (op >= AJ_PROF_COBERTURA && op <= AJ_PROF_TRAILERS)) return 1;
@@ -8676,7 +8708,10 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_HIST_CONTA: return "Ligado (padrão): o que você assiste neste perfil sobe para a conta Nuvio, com o progresso e os vistos. Desligado: nada disso é enviado à conta; o Trakt e o Simkl vinculados a este perfil continuam recebendo. Vale só para este perfil.";
     case AJ_SOCIAL: return "Ligado (padrão): amigos, atividade deles e recomendações. Desligado: tudo isso some, com a fileira de amigos da Home, e o app para de falar com o serviço social. Salvos e Avisos continuam. Vale só para este perfil.";
     case AJ_DV_MKV: return "Arquivos MKV em Dolby Vision perfil 5 ou 8 tocam com o Dolby Vision ligado, em vez de HDR10. O áudio Dolby Digital e Dolby Digital Plus vai direto para a TV. Se a conexão não acompanhar, o vídeo continua em HDR10. Só em TVs LG com webOS 4 ou mais novo.";
+    case AJ_MP4_BD_TEST: return "Experimental: recupera a reprodução de arquivos MP4 Dolby Vision compatíveis. Desligado por padrão. Reabra o vídeo após alterar este ajuste.";
     case AJ_DV7: return "Converte MKV Dolby Vision perfil 7 para 8.1. Mantém o vídeo base e os metadados dinâmicos; descarta a camada de melhoria, incluindo FEL. Vale para o próximo vídeo.";
+    case AJ_DV_AUDIO: return "Experimental: converte o áudio do Dolby Vision. Pode perder surround e Atmos. Vale no próximo vídeo.";
+    case AJ_DV7_MAPPING: return "Experimental: na conversão de Dolby Vision perfil 7, preserva as curvas de mapeamento originais do RPU em vez de reescrevê-las para 8.1 padrão. A camada de melhoria continua descartada. Vale a partir do próximo vídeo.";
     case AJ_HDR10P_STRIP: return "Remove os metadados dinâmicos de HDR10+ dos vídeos HEVC convertidos pelo app (LG com conversão de DTS ou Dolby Vision em MKV, Samsung com conversão de DTS): o vídeo toca como HDR10 comum. Para TVs que travam ou apagam com HDR10+. O HDR10 estático (cores e brilho) continua. Não afeta o Android TV. Vale a partir do próximo vídeo.";
     case AJ_CW_RETIDO_TAMBEM: return "Quando o título está na ilha ou em Retomar agora, mostra também na fileira Continuar assistindo.";
     case AJ_EP_TAMANHO: return "Pequeno, Médio (padrão) ou Grande. Só vale no layout Moderno, na página de séries. Vale só nesta TV.";
@@ -10418,7 +10453,7 @@ static int definirValorDireto(int op, int novo) {
   if (novo == 0) notaLigarPar(op);
   { int ok; ajOrigem = ajOrigemDireto; ok = gravar(); ajOrigem = 0;
     if (!ok) { valor[op] = antes; valor[AJ_LEG2_POSICAO] = posicaoAntes; memoriaEscolhida = memoriaAntes; bibliotecaFonteEscolhida = bibliotecaAntes; return 0; } }
-  if ((op == AJ_DV_MKV || op == AJ_DV7) && antes != 0 && novo == 0) video_dv_guard_reiniciar();
+  if ((op == AJ_DV_MKV || op == AJ_DV7 || op == AJ_DV7_MAPPING) && antes != 0 && novo == 0) video_dv_guard_reiniciar();
   if (op == AJ_LIVETV_SUGERIR) guia_sugestoes_mudaram();
   if (op == AJ_LIVETV_AGRUPAR) guia_reordenar();
   if (op == AJ_FIL_LIMITE) {

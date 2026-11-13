@@ -29,7 +29,7 @@ static atomic_int timestamp_fault, timestamp_fail_open, timestamp_block_open, ti
 static atomic_int refill_info_barrier, refill_info_entered, refill_timestamp;
 static atomic_int recovery_barrier, recovery_entered, refill_decode, freeze_fast_clock;
 static atomic_int change_format, reposition_barrier, reposition_entered;
-static int last_dv;
+static int last_dv, late_dv_fixture;
 static const char *expected_url="fixture://movie";
 static int last_p7;
 static atomic_llong buffer_ready = 21*1048576LL, buffer_contiguous = 20*1048576LL;
@@ -67,6 +67,9 @@ static void emit(const char *json) {
  assert(cb);cb(u,json);
 }
 int dts_engine_available(void) { return 1; }
+void dts_engine_p7_mapping(DtsEngine *e,int on) { (void)e; (void)on; }
+void dts_engine_mp4_test(DtsEngine *e,int on) { (void)e;(void)on; }
+void dts_engine_audio_route(DtsEngine *e,int t,int f,int o) { (void)e;(void)t;(void)f;(void)o; }
 void dts_engine_allow_p7(DtsEngine *e,int on) { (void)e; (void)on;
  last_p7=on;
 }
@@ -83,7 +86,8 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,
  }
  memset(&e->info,0,sizeof e->info);strcpy(e->info.video_codec,"hevc");strcpy(e->info.audio_codec,"aac");
  e->info.width=1920;e->info.height=1080;e->info.audio_stream=stream<0?4:stream;e->info.channels=2;e->info.sample_rate=48000;
- if(last_dv) { e->info.dovi_profile=8;e->info.dovi_bl_present=e->info.dovi_rpu_present=1;strcpy(e->info.hdr,"DolbyVision"); }
+ if(late_dv_fixture) { e->info.dovi_profile=8;e->info.dovi_bl_present=e->info.dovi_rpu_present=1; }
+ else if(last_dv) { e->info.dovi_profile=8;e->info.dovi_bl_present=e->info.dovi_rpu_present=1;strcpy(e->info.hdr,"DolbyVision"); }
  e->info.n_tracks=4;
  e->info.tracks[0]=(DtsTrack){.stream_index=0,.kind=DTS_VIDEO};
  e->info.tracks[1]=(DtsTrack){.stream_index=1,.kind=DTS_AUDIO,.channels=2};strcpy(e->info.tracks[1].codec,"aac");strcpy(e->info.tracks[1].language,"en");
@@ -456,6 +460,14 @@ int main(int argc,char **argv) {
   wait_count(&plays,before+1);
   dts_playback_status(p,&s);assert(!s.failed);dts_playback_close(p);
   puts("DTS refill pauses and resumes after contiguous bytes recover.");return 0;
+ }
+ if(!strcmp(argv[1],"latedv")) {
+  // Probe missed RPU; the opened source is single-layer P8 (Matis94 614176d73).
+  late_dv_fixture=1;scenario=NORMAL;dts_playback_next_dv(0);p=start(0,4,NULL,0,0);
+  wait_status(p,0,0);assert(last_dv);dts_playback_close(p);
+  late_dv_fixture=0;dts_playback_next_dv(0);p=start(0,4,NULL,0,0);
+  wait_status(p,0,0);assert(!last_dv);dts_playback_close(p);
+  puts("DTS late DV8: prepared P8 output promotes the worker to DV; plain HEVC stays non-DV.");return 0;
  }
  if(!strcmp(argv[1],"buffer")) {
   assert(getenv("DV7_OFF"));scenario=NORMAL;p=start(1,4,NULL,0,0);

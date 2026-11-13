@@ -66,5 +66,16 @@ int main(void) {
   memset(longUrl, 'x', sizeof longUrl - 1);url = longUrl;
   assert(rodar(8000) > 250);
   assert(rodar(8000) == 0);
+  // Combined B+C: converter-session track switches (seamless audio_at reuse)
+  // report per revision: DTS converted, E-AC-3 row (no DTS state), DTS again,
+  // then the DV path's native DTS. Each state shows once for this source.
+  url = "fixture://e";
+  estado = VIDEO_DTS_CONVERTIDO; assert(rodar(8000) > 250);
+  estado = VIDEO_DTS_NENHUM; assert(rodar(3000) == 0);
+  estado = VIDEO_DTS_CONVERTIDO; assert(rodar(8000) == 0);
+  estado = VIDEO_DTS_NATIVO; n = rodar(8000);
+  assert(n > 250 && n <= 5000 / 16 + 1 && !strcmp(ultimo, "Áudio DTS nativo"));
+  estado = VIDEO_DTS_NENHUM; assert(rodar(500) == 0); // seamless seek gap
+  estado = VIDEO_DTS_NATIVO; assert(rodar(8000) == 0);
   puts("PASS DTS notice: full window per frame, later failure, source/session reset, no repeat after seek/retry/track change");
 }

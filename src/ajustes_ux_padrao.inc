@@ -381,6 +381,9 @@
   0, 0, 0, // showSkip{Intro,Recap,Credits}ButtonLocal: On
   1, // diagnosticsQrLocal: Desligado
   0, // sourceBadgePositionLocal: selos no topo do cartao "Do add-on"
+  1, // dv7PreserveMappingLocal: Desligado (V_LIGA 1), experimental
+  0, // dvAudioFixoLocal: Original
+  1, // dvMp4BdTestLocal: Off (V_LIGA 1)
   0, // nativeBufferConnectionsLocal: 1, one sequential request
   0, // conversionBufferConnectionsLocal: 1, Standard continuous request (R14)
   1, 1, 1, // bufferDataLocal/ramOverlayLocal/ramGreenLocal: Desligado

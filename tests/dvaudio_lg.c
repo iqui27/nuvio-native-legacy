@@ -36,6 +36,22 @@
 // O motor do DV de verdade abriria rede e fios: aqui so registra a partida.
 #define dts_playback_start dublePartida
 #define dts_playback_close dubleFechar
+#define dts_playback_status dubleStatus
+#define dts_playback_event dubleEvent
+#define dts_playback_seek dubleSeek
+#define dts_playback_audio dubleAudio
+#define dts_playback_audio_at dubleAudioAt
+static DtsPlaybackStatus preparedStatus;
+static int requestedAudio, seekCalls;
+static double requestedAt = -1;
+static void dubleStatus(DtsPlayback *p, DtsPlaybackStatus *out) { (void)p; *out = preparedStatus; }
+static int dubleEvent(DtsPlayback *p, char *out, size_t n) { (void)p; (void)out; (void)n; return 0; }
+static void dubleSeek(DtsPlayback *p, double seconds) { (void)p; requestedAt = seconds; seekCalls++; }
+static void dubleAudio(DtsPlayback *p, int stream) { (void)p; requestedAudio = stream; }
+/* C's seamless controller: track switch and target position in one call. */
+static void dubleAudioAt(DtsPlayback *p, int stream, double seconds) {
+  (void)p; requestedAudio = stream; requestedAt = seconds;
+}
 static DtsTrack partidaFaixa;
 static int partidas, partidaOrdinal, partidaContagem, partidaComFaixa;
 static DtsPlayback *dublePartida(const char *url, const char *headers, int audio_stream,
@@ -70,7 +86,7 @@ typedef struct { const char *idioma, *codec; int canais; } Tv;
 
 static void montar(const Mkv *m, int nm, const Tv *t, int nt, int atual) {
   int i;
-  dtsSessao = NULL; dtsModoDv = 0; dtsTentou = 0; dvAudioMkvOrd = -1; dvAudioDe[0] = 0;
+  dtsSessao = NULL; dtsModoDv = 0; dtsTentou = 0; dvAudioMkvOrd = -1; dvTruehd = 0; dvAudioDe[0] = 0;
   ligado = pronto = tocando = 1;
   snprintf(midia, sizeof midia, "fixture-hdr10");
   snprintf(urlAtual, sizeof urlAtual, "http://h/remux.dv.mkv");
@@ -102,14 +118,12 @@ static const char *abrir(void) {
 }
 
 int main(void) {
-  // These scenarios exercise conversion; the product's native default stays off.
-  // Opt in through this test's own saved settings (NUVIO_DADOS), as a user would.
   assert(!ajustes_dv_mkv());
-  { char path[1024]; FILE *f;
-    snprintf(path, sizeof path, "%s/ajustes.txt", getenv("NUVIO_DADOS"));
-    f = fopen(path, "w"); assert(f); fputs("dvMkvLocal 0\n", f); fclose(f);
-    ajustes_dir(getenv("NUVIO_DADOS")); }
-  assert(ajustes_dv_mkv());
+  { // DV MKV is opt-in (default Off since its setting landed); the fixture opts in.
+    const char *d = getenv("NUVIO_DADOS"); char c[512]; FILE *f;
+    assert(d); snprintf(c, sizeof c, "%s/ajustes.txt", d);
+    f = fopen(c, "w"); assert(f); fputs("dvMkvLocal 0\ndtsLgLocal 0\n", f); fclose(f);
+    ajustes_dir(d); assert(ajustes_dv_mkv() && ajustes_dts_original()); }
   lsCall = fakeCall; lsPayload = fakePayload;
   bus = (LSHandle *)(uintptr_t)1; sessao = 40;
 
@@ -145,9 +159,9 @@ int main(void) {
     Tv t[] = {{"pt", "truehd", 8}};
     montar(m, 4, t, 1, 0);
     const char *l = abrir();
-    assert(dvAudioMkvOrd == 3 && !strcmp(dvAudioDe, "A_TRUEHD"));
-    assert(ling_casa(l, "pt") && partidaOrdinal == 3 && partidaContagem == 4);
-    puts("dvaudio_lg: TV [TrueHD por] -> E-AC-3 por (ordinal 3 do MKV)"); }
+    assert(dvAudioMkvOrd == 2 && dvTruehd && !strcmp(partidaFaixa.codec, "truehd"));
+    assert(ling_casa(l, "pt") && partidaOrdinal == 2 && partidaContagem == 4);
+    puts("dvaudio_lg: selected Portuguese TrueHD retained for conversion"); }
 
   // 3. Sem correspondencia: a faixa da TV (espanhol) nao existe no MKV lido.
   //    Nao troca (a escolha segura e do motor, que confere idioma e codec).
@@ -171,8 +185,9 @@ int main(void) {
     Tv t[] = {{"en", "truehd", 8}};
     montar(m, 2, t, 1, 0);
     const char *l = abrir();
-    assert(dvAudioMkvOrd == 1 && ling_casa(l, "en") && partidaOrdinal == 1 && partidaContagem == 2);
-    puts("dvaudio_lg: C9 TV [TrueHD eng] -> E-AC-3 eng"); }
+    assert(dvAudioMkvOrd == 0 && dvTruehd && ling_casa(l, "en") && partidaOrdinal == 0 && partidaContagem == 2);
+    assert(!strcmp(partidaFaixa.codec, "truehd"));
+    puts("dvaudio_lg: English TrueHD retained despite compatible substitute"); }
 
   // 6. Listas do mesmo tamanho: a ordem vale (o motor faz o mesmo), mesmo sem
   //    codec na lista da TV.
@@ -180,7 +195,161 @@ int main(void) {
     Tv t[] = {{"en", "", 0}, {"en", "", 0}};
     montar(m, 2, t, 2, 0);
     (void)abrir();
-    assert(dvAudioMkvOrd == 1);
-    puts("dvaudio_lg: listas iguais, indice 0 = TrueHD -> E-AC-3 eng"); }
+    assert(dvAudioMkvOrd == 0 && dvTruehd);
+    puts("dvaudio_lg: equal lists retain TrueHD ordinal for conversion"); }
+
+  // 7. Late DV8 (Matis94 614176d73): the prepared output record wins over an
+  //    inconclusive probe; HDR10, P7/EL and non-HEVC stay untouched.
+  { DtsMediaInfo prepared={0};strcpy(prepared.video_codec,"hevc");
+    prepared.dovi_profile=8;prepared.dovi_bl_present=prepared.dovi_rpu_present=1;
+    prepared.dovi_bl_compatibility_id=1;
+    dtsModoDv=dvHabilitado=0;dvNao=VIDEO_DV_NAO_FALHOU;sincronizarRotaDts(&prepared);
+    assert(dtsModoDv && dvHabilitado && !dvNao);
+    for(int invalid=0;invalid<5;invalid++) {
+      DtsMediaInfo bad=prepared;
+      if(invalid==0)bad.dovi_profile=0;
+      if(invalid==1)bad.dovi_rpu_present=0;
+      if(invalid==2)bad.dovi_el_present=1;
+      if(invalid==3)bad.dovi_profile=7;
+      if(invalid==4)strcpy(bad.video_codec,"h264");
+      dtsModoDv=dvHabilitado=0;sincronizarRotaDts(&bad);assert(!dtsModoDv && !dvHabilitado);
+    }
+    dtsModoDv=dvHabilitado=0;
+    puts("dvaudio_lg: late DV8 output promotes controller DV; invalid/layered profiles stay"); }
+  { VideoFaixa f; DtsTrack t = { .kind = DTS_AUDIO, .channels = 6 };
+    strcpy(t.codec, "dts"); strcpy(t.language, "fr"); strcpy(t.title, "Original DTS-ES Surround Mix");
+    dtsRotuloAudio(&f, &t);
+    assert(strstr(f.rotulo, " \xc2\xb7 DTS 5.1") && !strstr(f.rotulo, "Surround Mix"));
+    assert(!strcmp(f.nome, "Original DTS-ES Surround Mix"));
+    strcpy(t.codec, "flac"); t.channels = 2; strcpy(t.title, "Commentary by director David Fincher and actors Brad Pitt");
+    dtsRotuloAudio(&f, &t);
+    assert(!strncmp(f.rotulo, "Commentary by director David Fincher and actors Brad Pitt \xc2\xb7 FLAC", 65));
+    puts("dvaudio_lg: converter rows are language-first; FLAC keeps the full file title"); }
+  { const Mkv m[] = {{"A_AC3","eng",""},{"A_DTS","eng","Main"},{"A_DTS","eng","Commentary"}};
+    const Tv t[] = {{"en","ac3",6}};
+    montar(m,3,t,1,0); dtsHabilitado=1;
+    __atomic_store_n(&audioMkvPronto,1,__ATOMIC_RELEASE);
+    audioMkvOmitidas(); assert(nAudio==3 && faixaAudio[2].ordinalMkv==2);
+    assert(video_audio_numero_memoria(&faixaAudio[1]) != video_audio_numero_memoria(&faixaAudio[2]));
+    audioMkvOmitidas(); assert(nAudio==3 && faixaAudio[2].rotulo[0]);
+    partidas=0; video_escolher_audio(2);
+    assert(partidas==1 && partidaOrdinal==2 && partidaContagem==3);
+    assert(!strcmp(partidaFaixa.codec,"dts") && !strcmp(partidaFaixa.language,"eng"));
+    dtsSessao=NULL;
+    puts("dvaudio_lg: recovered same-language DTS selection passes full-file identity"); }
+  for (int native = 0; native < 2; native++)
+  for (int start = 0; start < 2; start++) { // Both start codecs, native and converted DTS.
+    const Mkv m[] = {{"A_DTS", "eng", ""}, {"A_EAC3", "eng", ""}};
+    const Tv t[] = {{"en", "dts", 6}, {"en", "eac3", 6}};
+    montar(m, 2, t, 2, start);
+    assert(ajustes_dts_original());
+    __atomic_store_n(&edidDts, native, __ATOMIC_RELEASE);
+    dtsModoDv = 1; assert(iniciarDts(-1));
+    assert(dtsRotaOff == (native ? NV_DTS_ROUTE_NATIVE : 0));
+    memset(&preparedStatus, 0, sizeof preparedStatus);
+    preparedStatus.prepared = 1; preparedStatus.info.n_tracks = 2;
+    for (int k = 0; k < 2; k++) {
+      DtsTrack *track = &preparedStatus.info.tracks[k];
+      track->kind = DTS_AUDIO; track->stream_index = 10 + k;
+      track->channels = 6; strcpy(track->codec, t[k].codec);
+    }
+    /* One real Load; later switches are revision-only (seamless reuse). */
+    preparedStatus.load_revision = 1; preparedStatus.native_loaded = 1;
+    const int streams[][3] = {{10, 11, 10}, {11, 10, 11}};
+    const char *outputs[][3] = {{"aac", "eac3", "aac"}, {"eac3", "aac", "eac3"}};
+    const char *labels[][3] = {{"DTS → AAC Stereo", "", "DTS → AAC Stereo"}, {"", "DTS → AAC Stereo", ""}};
+    const int states[][3] = {{VIDEO_DTS_CONVERTIDO, 0, VIDEO_DTS_CONVERTIDO}, {0, VIDEO_DTS_CONVERTIDO, 0}};
+    for (int k = 0; k < 3; k++) {
+      if (k) {
+        posSeg = 30.0 + k; requestedAt = -1;
+        video_escolher_audio(streams[start][k] - 10);
+        assert(requestedAudio == streams[start][k] && requestedAt == posSeg);
+      }
+      preparedStatus.revision++;
+      preparedStatus.info.audio_stream = streams[start][k];
+      int nativeDts = native && streams[start][k] == 10;
+      strcpy(preparedStatus.info.audio_codec, nativeDts ? "dts" : outputs[start][k]);
+      bombearDts();
+      assert(audioAtual == streams[start][k] - 10);
+      assert(!strcmp(video_dts_saida(), nativeDts ? "DTS · Dolby Vision" : labels[start][k]));
+      assert(dtsEstado == (nativeDts ? VIDEO_DTS_NATIVO : states[start][k]));
+      /* Combined B+C: the first Load resets readiness; a revision-only track
+       * change (load_revision unchanged) keeps the TV's ready picture. */
+      if (!k) { assert(pronto && !viuVideo); viuVideo = 1; } // native videoInfo seen
+      else assert(pronto && viuVideo);
+    }
+    { // Seek inside the session: same selected row, same output, still ready.
+      int row = audioAtual; seekCalls = 0;
+      seekAgora(77.0); assert(seekCalls == 1 && requestedAt == 77.0);
+      preparedStatus.revision++; bombearDts();
+      assert(audioAtual == row && pronto && viuVideo);
+      assert(dtsEstado == (native && streams[start][2] == 10 ? VIDEO_DTS_NATIVO : states[start][2]));
+    }
+    { // DTS Off route snapshot: a DTS row never reuses the session; E-AC-3 does.
+      int keep = dtsRotaOff; dtsRotaOff = 1;
+      assert(!nv_dts_audio_feeds(faixaAudio[0].codec, dtsModoDv, dtsRotaTruehd, dtsRotaOff));
+      int eac3 = !strcmp(faixaAudio[0].codec, "eac3") ? 0 : 1;
+      if (audioAtual != eac3) {
+        requestedAudio = -1; video_escolher_audio(eac3);
+        assert(requestedAudio == 10 + eac3);
+      }
+      dtsRotaOff = keep;
+    }
+    /* A real new Load (load_revision moves) resets readiness. */
+    preparedStatus.revision++; preparedStatus.load_revision++;
+    preparedStatus.native_loaded = 0; bombearDts();
+    assert(!pronto && !viuVideo);
+    preparedStatus.native_loaded = 1; bombearDts();
+    assert(pronto && !viuVideo); // ready again only after the new Load
+    if (start) { // Off snapshot + current E-AC-3: the DTS row must leave the session.
+      dtsRotaOff = 1; requestedAudio = -1; assert(audioAtual == 1);
+      video_escolher_audio(0);
+      assert(requestedAudio == -1 && dtsNativePending && !dtsModoDv);
+      dtsNativePending = 0;
+    }
+    dtsSessao = NULL;
+    puts("dvaudio_lg: DTS/E-AC-3 switches and native DTS departure report actual output");
+  }
+#ifdef NV_MP4_BD_TEST
+  { // Real LS2 event path: only an opted-in native startup 204 gets one retry.
+    dtsSessao=NULL; dtsTentou=recuperando=modoLoad=fonteTocou=0; fonteMp4=1;
+    mp4TestEnabled=0; mp4TestPending=0; reconErroPend=0;
+    evento("{\"errorCode\":204,\"errorText\":\"demux failure\"}");
+    assert(!mp4TestPending && reconErroPend);
+    mp4TestEnabled=1; reconErroPend=0; fonteTocou=1;
+    evento("{\"errorCode\":204,\"errorText\":\"demux failure\"}");
+    assert(!mp4TestPending);
+    fonteTocou=0; reconErroPend=0;
+    evento("{\"errorCode\":204,\"errorText\":\"demux failure\"}");
+    assert(mp4TestPending && !reconErroPend && !pronto && !falhou);
+    { // DTS Off is a terminal refusal, while an active bind remains retryable.
+      const char *d = getenv("NUVIO_DADOS"); char c[512]; FILE *f;
+      snprintf(c, sizeof c, "%s/ajustes.txt", d);
+      f = fopen(c, "w"); assert(f); fputs("dvMkvLocal 0\ndtsLgLocal 3\n", f); fclose(f);
+      ajustes_dir(d); assert(ajustes_dts_desligado());
+      /* The switch fixtures leave a prepared "DTS 5.1" label on row 0, and
+       * video_faixa_dts() reads codec and label: give each case a whole row. */
+      nAudio = 1; audioAtual = 0;
+      memset(&faixaAudio[0], 0, sizeof faixaAudio[0]);
+      strcpy(faixaAudio[0].codec, "eac3");
+      __atomic_store_n(&bindVivo, 1, __ATOMIC_RELEASE);
+      assert(!iniciarDts(-1) && mp4TestPending && !dtsTentou && !reconErroPend);
+      __atomic_store_n(&bindVivo, 0, __ATOMIC_RELEASE);
+      for (int k = 0; k < 2; k++) {
+        memset(&faixaAudio[0], 0, sizeof faixaAudio[0]);
+        strcpy(faixaAudio[0].codec, k ? "truehd" : "dts");
+        mp4TestPending = 1; dtsTentou = 0; dtsModoDv = 1; reconErroPend = 0;
+        int before = partidas;
+        assert(!iniciarDts(-1));
+        assert(dtsTentou && !mp4TestPending && !dtsModoDv && reconErroPend);
+        assert(partidas == before);
+      }
+    }
+    mp4TestPending=0; dtsTentou=1;
+    evento("{\"errorCode\":204,\"errorText\":\"demux failure\"}");
+    assert(!mp4TestPending);
+    puts("dvaudio_lg: MP4 recovery only for opted-in native startup error 204, once");
+  }
+#endif
   return 0;
 }

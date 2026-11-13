@@ -17,8 +17,32 @@ int ajustes_buffer_native_connections(void) { return 1; }
 int ajustes_buffer_conversion_connections(void) { return 1; }
 long memlog_livre_mb(void) { return 4096; }
 void dts_engine_set_source_workers(int n) { (void)n; }
-void dts_engine_set_conversion_workers(int n) { (void)n; }
+void dts_engine_set_http_workers(int n) { (void)n; }
 void dts_engine_set_ahead_mib(int mib) { (void)mib; }
+/* B's recovered-row track choice links converter startup (iniciarDts);
+ * these fixtures never start a converter session. */
+int ajustes_audio_normalizar(void) { return 0; }
+int ajustes_dts_ac3(void) { return 0; }
+int ajustes_dts_desligado(void) { return 0; }
+int ajustes_dts_original(void) { return 0; }
+int ajustes_dv7(void) { return 0; }
+int ajustes_dv7_mapping(void) { return 0; }
+int ajustes_dv_audio(void) { return 0; }
+int ajustes_hdr10p_strip(void) { return 0; }
+void dts_engine_set_ac3(int on) { (void)on; }
+void dts_engine_set_normalize(int on) { (void)on; }
+void dts_engine_set_hdr10p_strip(int on) { (void)on; }
+void dts_playback_next_dv(int on) { (void)on; }
+void dts_playback_next_p7(int on) { (void)on; }
+void dts_playback_next_p7_mapping(int on) { (void)on; }
+void dts_playback_next_seamless(int on) { (void)on; }
+void dts_playback_next_audio_route(int t,int f,int o) { (void)t;(void)f;(void)o; }
+DtsPlayback *dts_playback_start(const char *url,const char *headers,int audio_stream,double position,
+                               int paused,const char *window,int major,const DtsTrack *selected,
+                               int ordinal,int count) {
+  (void)url;(void)headers;(void)audio_stream;(void)position;(void)paused;(void)window;
+  (void)major;(void)selected;(void)ordinal;(void)count;assert(0);return NULL;
+}
 /* No HTTP or decoder is started by native dispatcher fixtures. */
 static DtsBufferInfo movie_snapshot;
 static int movie_active, movie_stops;

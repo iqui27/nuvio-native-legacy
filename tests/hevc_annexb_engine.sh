@@ -6,17 +6,15 @@
 # exactly like the original stream. Needs NUVIO_DTS_ROOT (pinned FFmpeg
 # libraries) and an ffmpeg CLI with libx265, dca encoder and HEVC decoder.
 set -euo pipefail
-# FFmpeg group link: GNU ld needs --start-group for circular static refs;
-# Apple ld only lists archives once (all dead-strippable symbols resolved).
-if [[ $(uname -s) == Darwin ]]; then
-  AV_LIBS="-lavformat -lavcodec -lswresample -lavutil"
-else
-  AV_LIBS="-Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group"
-fi
 cd "$(dirname "$0")/.."
 prefix=${NUVIO_DTS_ROOT:-/tmp/nuvio-dts-host}
+libs=(-Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group)
+if [[ $(uname -s) == Darwin ]];then
+  prefix=${NUVIO_DTS_ROOT:-/opt/homebrew}
+  libs=(-lavformat -lavcodec -lswresample -lavutil)
+fi
 tmp=$(mktemp -d);trap 'rm -rf "$tmp"' EXIT
-flags=(-std=gnu11 -O1 -g -Wall -Wextra -Werror -DNV_DTS_FFMPEG -DNV_DTS_WEBOS_RECOVERY -DNV_HTTP_BUFFER_DIAG -Isrc -I"$prefix/include")
+flags=(-Wno-implicit-const-int-float-conversion -std=gnu11 -O1 -g -Wall -Wextra -Werror -DNV_DTS_FFMPEG -DNV_DTS_WEBOS_RECOVERY -DNV_HTTP_BUFFER_DIAG -Isrc -I"$prefix/include")
 if [[ ${SANITIZE:-0} == 1 ]];then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer);fi
 x265='pools=1:frame-threads=1:log-level=error:keyint=24:min-keyint=24:scenecut=0:repeat-headers=1:hdr10=1:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc'
 part() { # $1 name, $2 source, $3 extra x265 params (PPS-only differences)
@@ -35,7 +33,7 @@ ffmpeg -hide_banner -loglevel error -f concat -safe 0 -i "$tmp/parts.txt" \
   -f lavfi -i 'sine=frequency=500:duration=9:sample_rate=48000' \
   -map 0:v -map 1 -c:v copy -c:a dca -strict -2 -b:a 768k "$tmp/film.mkv"
 cc "${flags[@]}" src/dts/dts_engine.c tests/hevc_annexb_engine.c \
-  -L"$prefix/lib" $AV_LIBS \
+  -L"$prefix/lib" "${libs[@]}" \
   -lm -pthread -o "$tmp/engine"
 "$tmp/engine" "$tmp/film.mkv" "$tmp/engine.hevc" > "$tmp/engine.log" 2>&1 || { cat "$tmp/engine.log";exit 1; }
 ffmpeg -hide_banner -loglevel error -i "$tmp/film.mkv" -map 0:v -c copy -bsf:v hevc_mp4toannexb -f hevc "$tmp/stock.hevc"
@@ -44,7 +42,7 @@ md5 "$tmp/film.hevc" > "$tmp/ref.md5"
 md5 "$tmp/engine.hevc" > "$tmp/engine.md5"
 md5 "$tmp/stock.hevc" > "$tmp/stock.md5"
 frames=$(wc -l < "$tmp/ref.md5")
-[[ $frames == 216 ]] || { echo "unexpected frame count $frames";exit 1; }
+[[ $frames -eq 216 ]] || { echo "unexpected frame count $frames";exit 1; }
 cmp "$tmp/ref.md5" "$tmp/engine.md5" || { echo 'FAIL engine output decodes differently from the original stream';exit 1; }
 bad=$(paste -d' ' "$tmp/ref.md5" "$tmp/stock.md5" | awk '$1!=$2' | wc -l)
 # The fault must reproduce with FFmpeg's filter, or this fixture proves nothing.

@@ -44,6 +44,10 @@ if [ "$TARGET" = tpk ]; then
       --cross-prefix=arm-linux-gnueabi-
   fi
 else
+  # DV path: TrueHD conversion and fixed DV audio (AAC/AC-3) decode TrueHD,
+  # AC-3 and E-AC-3 (Matis94 115f3a0c0/89433220e; release pin 35202b82c).
+  DECODERS=$DECODERS,truehd,ac3,eac3
+  PARSERS=$PARSERS,mlp,ac3
   CC=${CC:-arm-webos-linux-gnueabi-gcc}
   archive="$BUILD/ffmpeg-$VERSION.tar.xz"
   [ -f "$archive" ] || curl -fsSL "https://ffmpeg.org/releases/ffmpeg-$VERSION.tar.xz" -o "$archive"
@@ -73,6 +77,12 @@ fi
   --extra-cflags="${CFLAGS:--O2}"
 make -j"${NUVIO_DTS_JOBS:-2}"
 make install
+if [ "$TARGET" = webos ]; then
+  # Record configure's resolved components, not merely the requested flags.
+  # arm.sh refuses stale SDK images that cannot retain selected DV audio.
+  grep -E '^CONFIG_(DCA_DECODER|TRUEHD_DECODER|AC3_DECODER|EAC3_DECODER|AAC_ENCODER|AC3_ENCODER)=' \
+    ffbuild/config.mak > "$PREFIX/nuvio-audio-config"
+fi
 # Include license text and pin provenance for redistribution of static LGPL libs.
 cp "$SRC/COPYING.LGPLv2.1" "$PREFIX/"
 printf 'FFmpeg %s\nhttps://ffmpeg.org/releases/ffmpeg-%s.tar.xz\nSHA256 %s\n' "$VERSION" "$VERSION" "$SHA256" > "$PREFIX/SOURCE.txt"

@@ -47,6 +47,29 @@ int main(int argc,char **argv) {
   check(e,dts_engine_open(e,argv[1],HEADERS,1,0,0));
   assert(dts_engine_audio(e,3,0,0)<0); /* Passthrough stays DV-only. */
   dts_engine_destroy(e);
+  /* Combined B+C: track reuse keeps B's session audio route snapshot. */
+  e=dts_engine_create();dts_engine_dv(e,1);dts_engine_audio_route(e,0,0,NV_DTS_ROUTE_NATIVE);
+  check(e,dts_engine_open(e,argv[1],HEADERS,1,0,0));
+  assert(e->passthrough && !strcmp(e->info.audio_codec,"dts")); /* native DTS */
+  fmt=e->fmt;
+  check(e,dts_engine_audio(e,2,0,0.5));
+  assert(e->fmt==fmt && e->passthrough && !strcmp(e->info.audio_codec,"dts"));
+  drain(e,argv[2],20,0.5,2);
+  check(e,dts_engine_audio(e,3,0,0));
+  assert(e->passthrough && !strcmp(e->info.audio_codec,"ac3"));
+  dts_engine_destroy(e);
+  e=dts_engine_create();dts_engine_dv(e,1);dts_engine_audio_route(e,0,0,1); /* DTS Off */
+  check(e,dts_engine_open(e,argv[1],HEADERS,3,0,0));
+  assert(dts_engine_audio(e,1,0,0)<0 && e->info.audio_stream==3); /* DTS refused */
+  check(e,dts_engine_audio(e,4,0,0));
+  assert(e->passthrough && !strcmp(e->info.audio_codec,"eac3"));
+  dts_engine_destroy(e);
+  e=dts_engine_create();dts_engine_dv(e,1);dts_engine_audio_route(e,0,2,0); /* fixed AC-3 */
+  check(e,dts_engine_open(e,argv[1],HEADERS,1,0,0));
+  assert(!e->passthrough && !strcmp(e->info.audio_codec,"ac3") && e->info.channels==6);
+  check(e,dts_engine_audio(e,4,0,0));
+  assert(!e->passthrough && !strcmp(e->info.audio_codec,"ac3") && e->info.channels==6);
+  dts_engine_destroy(e);
   puts("Real FFmpeg: seek/track/EOF reuse, cached bytes, DTS/AAC and AC3/EAC3 transitions, cancel and validation passed.");
   return 0;
 }

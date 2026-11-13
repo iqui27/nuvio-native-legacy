@@ -1,7 +1,9 @@
 #include "dts_engine.h"
 #include "../audionorm.h"
 #include "dv7.h"
+#include "dts_audio_codec.h"
 #include "hevc_annexb.h"
+#include "dv7_mp4.h"
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -54,6 +56,9 @@ DtsEngine *dts_engine_create(void) { return calloc(1, sizeof(DtsEngine)); }
 int dts_engine_available(void) { return 0; }
 void dts_engine_dv(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
 void dts_engine_allow_p7(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
+void dts_engine_mp4_test(DtsEngine *e,int enabled) { (void)e;(void)enabled; }
+void dts_engine_p7_mapping(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
+void dts_engine_audio_route(DtsEngine *e,int t,int f,int o) { (void)e;(void)t;(void)f;(void)o; }
 void dts_engine_metrics(DtsEngine *e,DtsEngineMetrics *out) { (void)e; if(out) memset(out,0,sizeof(*out)); }
 int dts_engine_open(DtsEngine *e,const char *u,const char *h,int a,int c,double s) {
   (void)e;(void)u;(void)h;(void)a;(void)c;(void)s; return -1;
@@ -114,6 +119,19 @@ typedef struct {
   uint64_t elapsed;
 } DtsRangeJob;
 static const AVRational NS = {1,1000000000};
+#ifdef NV_MP4_BD_TEST
+#define MP4_BASE_QUEUE 8
+#define MP4_RPU_QUEUE 64
+typedef struct {
+  AVPacket *base[MP4_BASE_QUEUE];
+  int base_count, rpu_count, aligned, align_drops, el_stream, base_length, el_length;
+  size_t base_bytes;
+  int anchor_valid, first_base_seen, preroll_skipped;
+  int64_t anchor_dts, anchor_pts;
+  size_t preroll_bytes;
+  struct { uint8_t data[NV_MP4_RPU_MAX]; size_t size; int64_t pts,dts; } rpu[MP4_RPU_QUEUE];
+} NvMp4Pair;
+#endif
 struct DtsEngine {
   DtsMediaInfo info;
   float normalize_gain;
@@ -174,8 +192,14 @@ struct DtsEngine {
   AVAudioFifo *fifo;
   AVPacket *in, *out;
   int allow_p7, dv7;
+  int preserve_p7_mapping, mapping_reported;
+  int truehd, fixed_audio, dts_off;   /* audio route snapshot, before open */
   uint8_t *dv7_buffer;
   unsigned dv7_capacity;
+#ifdef NV_MP4_BD_TEST
+  int allow_mp4, mp4_p8_compat_verified;
+  NvMp4Pair *mp4;
+#endif
   int hdr10p_strip;            /* #605: HEVC HDR10+ SEI removal snapshot at open */
   uint8_t *hdr10p_buffer;
   unsigned hdr10p_capacity;
@@ -803,6 +827,21 @@ static void copy_metadata(char *out,size_t size,AVDictionary *m,const char *key)
   AVDictionaryEntry *v=av_dict_get(m,key,NULL,0);
   snprintf(out,size,"%s",v?v->value:"");
 }
+#ifdef NV_MP4_BD_TEST
+#include "dts_mp4_dual.inc"
+#endif
+static int read_packet(DtsEngine *e) {
+#ifdef NV_MP4_BD_TEST
+  if(e->mp4)return mp4_read_packet(e);
+#endif
+  return av_read_frame(e->fmt,e->in);
+}
+static int packet_read_error(DtsEngine *e,int code) {
+#ifdef NV_MP4_BD_TEST
+  if(e->mp4 && e->error[0])return -1;
+#endif
+  return fail(e,"Container read",code);
+}
 static void close_media(DtsEngine *e) {
   fx_close(e);
   pthread_mutex_lock(&e->range_lock);
@@ -823,7 +862,14 @@ static void close_media(DtsEngine *e) {
   avcodec_free_context(&e->dec); avcodec_free_context(&e->enc);
   av_bsf_free(&e->bsf); swr_free(&e->swr); av_audio_fifo_free(e->fifo); e->fifo=NULL;
   nv_hevc_annexb_close(&e->hevc_annexb);
-  av_freep(&e->dv7_buffer); e->dv7_capacity=0; e->dv7=0;
+  av_freep(&e->dv7_buffer); e->dv7_capacity=0; e->dv7=0; e->mapping_reported=0;
+#ifdef NV_MP4_BD_TEST
+  e->mp4_p8_compat_verified=0;
+  if(e->mp4) {
+    for(int i=0;i<MP4_BASE_QUEUE;i++)av_packet_free(&e->mp4->base[i]);
+    av_freep(&e->mp4);
+  }
+#endif
   av_freep(&e->hdr10p_buffer); e->hdr10p_capacity=0; e->hdr10p_strip=0;
   av_channel_layout_uninit(&e->input_layout);
   avformat_close_input(&e->fmt);
@@ -937,6 +983,20 @@ int64_t dts_engine_source_total(DtsEngine *e) {
 }
 void dts_engine_dv(DtsEngine *e, int enabled) { if (e) e->dv = !!enabled; }
 void dts_engine_allow_p7(DtsEngine *e, int enabled) { if (e) e->allow_p7 = !!enabled; }
+void dts_engine_mp4_test(DtsEngine *e,int enabled) {
+#ifdef NV_MP4_BD_TEST
+  if(e)e->allow_mp4=!!enabled;
+#else
+  (void)e;(void)enabled;
+#endif
+}
+void dts_engine_p7_mapping(DtsEngine *e, int enabled) { if (e) e->preserve_p7_mapping = !!enabled; }
+void dts_engine_audio_route(DtsEngine *e, int truehd, int fixed, int dts_off) {
+  if (!e) return;
+  /* TrueHD feeds only when this FFmpeg build can decode it. */
+  e->truehd = truehd && avcodec_find_decoder(AV_CODEC_ID_TRUEHD);
+  e->fixed_audio = fixed == 1 || fixed == 2 ? fixed : 0; e->dts_off = dts_off == NV_DTS_ROUTE_NATIVE ? dts_off : !!dts_off;
+}
 int dts_engine_available(void) {
   return avcodec_find_decoder(AV_CODEC_ID_DTS) && avcodec_find_encoder(AV_CODEC_ID_AAC) && av_bsf_get_by_name("h264_mp4toannexb")
       && av_bsf_get_by_name("hevc_mp4toannexb");
@@ -981,18 +1041,29 @@ static int reset_encoder(DtsEngine *e) {
  * dts_engine_open and dts_engine_audio (track reuse). */
 static int configure_audio(DtsEngine *e,int core) {
   AVCodecParameters *ap=e->fmt->streams[e->info.audio_stream]->codecpar;
-  e->passthrough=ap->codec_id!=AV_CODEC_ID_DTS;
+  /* Convert DTS, TrueHD and, with fixed DV audio, AC-3/E-AC-3 when this
+   * build decodes them; otherwise AC-3/E-AC-3 pass through untouched. */
+  int fixed=e->dv?e->fixed_audio:0;
+  /* Matis94 0550df28f: the TV decodes DTS, so the DV path hands it the whole
+   * DTS stream as in the file (DTS-HD MA/DTS:X), never a core cut. */
+  int dts_native=ap->codec_id==AV_CODEC_ID_DTS && e->dv && e->dts_off==NV_DTS_ROUTE_NATIVE && !fixed;
+  e->passthrough=(ap->codec_id!=AV_CODEC_ID_DTS || dts_native) && ap->codec_id!=AV_CODEC_ID_TRUEHD && !fixed;
   if(e->passthrough) {
     e->in=av_packet_alloc(); e->out=av_packet_alloc();
     if(!e->in || !e->out) return fail(e,"Audio queue allocation",0);
     e->info.channels=ap->ch_layout.nb_channels>0?ap->ch_layout.nb_channels:6;
+    if(dts_native) {
+      if(e->info.channels>8) e->info.channels=8;
+      printf("[dts] dv-dts-native: full stream passed through ch=%d profile=%d\n",e->info.channels,ap->profile);
+      fflush(stdout);
+    }
     e->info.sample_rate=ap->sample_rate>0?ap->sample_rate:48000;
     snprintf(e->info.audio_codec,sizeof(e->info.audio_codec),"%s",avcodec_get_name(ap->codec_id));
     e->info.duration_ns=e->fmt->duration==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->duration,AV_TIME_BASE_Q,NS);
     e->info.start_ns=e->fmt->start_time==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->start_time,AV_TIME_BASE_Q,NS);
     return 0;
   }
-  const AVCodec *decoder=avcodec_find_decoder(AV_CODEC_ID_DTS);
+  const AVCodec *decoder=avcodec_find_decoder(ap->codec_id);
   if(!decoder) return fail(e,"DTS decoder absent",0);
   e->dec=avcodec_alloc_context3(decoder);
   if(!e->dec) return fail(e,"DTS decoder allocation",0);
@@ -1001,15 +1072,15 @@ static int configure_audio(DtsEngine *e,int core) {
   /* Corrupt HD extensions must reach the worker error path; an explicit
    * core-only reopen decides whether to discard the failed extension. */
   e->dec->err_recognition=AV_EF_EXPLODE;
-  if(core && av_opt_set_int(e->dec->priv_data,"core_only",1,0)<0) return fail(e,"DTS core-only unavailable",0);
+  if(core && ap->codec_id==AV_CODEC_ID_DTS && av_opt_set_int(e->dec->priv_data,"core_only",1,0)<0) return fail(e,"DTS core-only unavailable",0);
   int r=avcodec_open2(e->dec,decoder,NULL);
   if(r<0) return fail(e,"DTS decoder open",r);
   /* AC3 5.1 only when asked and the build has the encoder; else stereo AAC. */
-  const AVCodec *encoder=g_surround_ac3?avcodec_find_encoder(AV_CODEC_ID_AC3):NULL;
+  const AVCodec *encoder=(fixed?fixed==2:g_surround_ac3)?avcodec_find_encoder(AV_CODEC_ID_AC3):NULL;
   int out_channels=2;
   if(encoder) {
     int in_channels=ap->ch_layout.nb_channels;
-    out_channels=(in_channels==0 || in_channels>2)?6:2;
+    out_channels=fixed==2 || in_channels==0 || in_channels>2 ? 6 : 2;
   } else encoder=avcodec_find_encoder(AV_CODEC_ID_AAC);
   if(!encoder) return fail(e,"Audio encoder absent",0);
   e->enc=avcodec_alloc_context3(encoder);
@@ -1022,6 +1093,10 @@ static int configure_audio(DtsEngine *e,int core) {
   if(!e->fifo || !e->in || !e->out || !e->decoded || !e->encoded) return fail(e,"Audio queue allocation",0);
   e->info.channels=e->enc->ch_layout.nb_channels; e->info.sample_rate=48000;
   snprintf(e->info.audio_codec,sizeof(e->info.audio_codec),"%s",avcodec_get_name(e->enc->codec_id));
+  if(ap->codec_id!=AV_CODEC_ID_DTS) {
+    printf("[dts] audio-convert input=%s output=%s channels=%d fixed=%d\n",avcodec_get_name(ap->codec_id),
+           e->info.audio_codec,e->info.channels,fixed);fflush(stdout);
+  }
   e->info.duration_ns=e->fmt->duration==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->duration,AV_TIME_BASE_Q,NS);
   e->info.start_ns=e->fmt->start_time==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->start_time,AV_TIME_BASE_Q,NS);
   return 0;
@@ -1038,6 +1113,14 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
   e->pos=0; e->total=-1; e->cache_size=0; e->has_core=0;
   e->range_bytes=e->dv?RANGE_BYTES_DV:RANGE_BYTES; e->range_slots=e->dv?RANGE_SLOTS_DV:RANGE_SLOTS;
   if(g_ahead_mib>0) { e->range_bytes=RANGE_BYTES_DV; e->range_slots=(g_ahead_mib+3)/4; }
+#ifdef NV_MP4_BD_TEST
+  /* Reserve pairing scratch from this engine's existing payload budget. No
+   * extra HTTP lane, second demuxer or video decoder is created. */
+  if(e->allow_mp4) {
+    if(!e->dv || e->range_slots<=4)return fail(e,"MP4 pairing buffer unavailable",0);
+    e->range_slots-=4;
+  }
+#endif
   e->final_url[0]=0; e->final_cross=0; e->passthrough=0; e->remux=0; e->opening=1;
   e->demux_eof=e->decoder_eof=e->resampler_eof=e->encoder_sent_eof=e->timeline=0;
   e->http_workers=__atomic_load_n(&g_conversion_workers,__ATOMIC_RELAXED);
@@ -1100,7 +1183,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
     if(p->codec_type==AVMEDIA_TYPE_VIDEO && e->info.video_stream<0 && !(s->disposition&AV_DISPOSITION_ATTACHED_PIC))
       e->info.video_stream=i;
     /* Dolby Vision path: AC-3/E-AC-3 go to the TV untouched (passthrough). */
-    if((p->codec_id==AV_CODEC_ID_DTS || (e->dv && (p->codec_id==AV_CODEC_ID_AC3 || p->codec_id==AV_CODEC_ID_EAC3)))
+    if(nv_dts_audio_feeds(avcodec_get_name(p->codec_id),e->dv,e->truehd,e->dts_off)
        && e->info.audio_stream<0 && (audio<0 || audio==(int)i)) e->info.audio_stream=i;
     int kind=p->codec_type==AVMEDIA_TYPE_VIDEO?DTS_VIDEO:p->codec_type==AVMEDIA_TYPE_AUDIO?DTS_AUDIO:p->codec_type==AVMEDIA_TYPE_SUBTITLE?DTS_SUBTITLE:0;
     if(kind && e->info.n_tracks<DTS_TRACK_MAX) {
@@ -1112,27 +1195,47 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
     }
   }
   if(e->info.audio_stream<0 || e->info.video_stream<0) return fail(e,"Selected DTS track or video absent",0);
+#ifdef NV_MP4_BD_TEST
+  if(mp4_configure(e)<0)return -1;
+#endif
   AVStream *v=e->fmt->streams[e->info.video_stream]; AVCodecParameters *vp=v->codecpar;
   const char *filter=vp->codec_id==AV_CODEC_ID_H264?"h264_mp4toannexb":vp->codec_id==AV_CODEC_ID_HEVC?"hevc_mp4toannexb":NULL;
   if(!filter && vp->codec_id!=AV_CODEC_ID_VP9 && vp->codec_id!=AV_CODEC_ID_AV1)
     return fail(e,"Compressed video codec unsupported",0);
   const AVPacketSideData *dv=av_packet_side_data_get(vp->coded_side_data,vp->nb_coded_side_data,AV_PKT_DATA_DOVI_CONF);
+#ifdef NV_MP4_BD_TEST
+  if(e->mp4) {
+    AVCodecParameters *ep=e->fmt->streams[e->mp4->el_stream]->codecpar;
+    dv=av_packet_side_data_get(ep->coded_side_data,ep->nb_coded_side_data,AV_PKT_DATA_DOVI_CONF);
+  }
+#endif
   if(dv && dv->size>=sizeof(AVDOVIDecoderConfigurationRecord)) {
     const AVDOVIDecoderConfigurationRecord *conf=(const AVDOVIDecoderConfigurationRecord *)dv->data;
     e->info.dovi_profile=conf->dv_profile; e->info.dovi_level=conf->dv_level;
     e->info.dovi_rpu_present=conf->rpu_present_flag;
     e->info.dovi_el_present=conf->el_present_flag;
     e->info.dovi_bl_present=conf->bl_present_flag;
+#ifdef NV_MP4_BD_TEST
+    if(e->mp4)e->info.dovi_bl_present=1; /* verified separate base track */
+#endif
     e->info.dovi_bl_compatibility_id=conf->dv_bl_signal_compatibility_id;
+#ifdef NV_MP4_BD_TEST
+    /* The opt-in single-track recovery proved PQ/BT.2020 from the actual SPS
+     * and validated P8 RPU before this output-only compatibility correction.
+     * Preserve the input record and every compressed picture/RPU byte. */
+    if(e->mp4_p8_compat_verified)e->info.dovi_bl_compatibility_id=1;
+#endif
     if ((conf->dv_profile == 7 && !e->allow_p7) ||
         !nv_dv7_profile(conf->dv_profile,conf->el_present_flag,
-                       conf->bl_present_flag,conf->rpu_present_flag) || vp->codec_id!=AV_CODEC_ID_HEVC)
+                       e->info.dovi_bl_present,conf->rpu_present_flag) || vp->codec_id!=AV_CODEC_ID_HEVC)
       return fail(e,"Dolby Vision layer/profile unsupported",0);
     if (conf->dv_profile == 7) {
       e->dv7=1;
       e->info.dovi_profile=8; e->info.dovi_el_present=0;
       e->info.dovi_bl_compatibility_id=1;
       printf("[dv7] experimental P7 -> P8.1: RPU converted, enhancement layer discarded\n");
+      printf("[dv7] RPU mapping=%s; FEL picture discarded; session snapshot\n",
+             e->preserve_p7_mapping ? "preserved" : "standard");fflush(stdout);
     }
     /* mp4toannexb preserves HEVC RPU NAL units; no video re-encode occurs. */
   }
@@ -1174,9 +1277,9 @@ int dts_engine_audio(DtsEngine *e,int stream,int core,double target) {
      stream>=(int)e->fmt->nb_streams || !isfinite(target) || target<0 ||
      target>INT64_MAX_SECONDS) return -1;
   AVCodecParameters *ap=e->fmt->streams[stream]->codecpar;
+  /* Same feed rule as the open-time selector (route snapshot unchanged). */
   if(ap->codec_type!=AVMEDIA_TYPE_AUDIO ||
-     !(ap->codec_id==AV_CODEC_ID_DTS ||
-       (e->dv && (ap->codec_id==AV_CODEC_ID_AC3 || ap->codec_id==AV_CODEC_ID_EAC3)))) return -1;
+     !nv_dts_audio_feeds(avcodec_get_name(ap->codec_id),e->dv,e->truehd,e->dts_off)) return -1;
   /* Free the previous audio chain before allocating its replacement. */
   av_packet_free(&e->in); av_packet_free(&e->out);
   av_frame_free(&e->decoded); av_frame_free(&e->encoded);
@@ -1400,13 +1503,13 @@ static int next_frame_passthrough(DtsEngine *e,DtsFrame *f) {
       if(r!=AVERROR(EAGAIN)) return fail(e,"Compressed video output",r);
     }
     if(e->demux_eof) return 0;
-    r=av_read_frame(e->fmt,e->in);
+    r=read_packet(e);
     if(r==AVERROR_EOF) {
       e->demux_eof=1;
       if(e->bsf && (r=av_bsf_send_packet(e->bsf,NULL))<0) return fail(e,"Video filter drain",r);
       continue;
     }
-    if(r<0) return fail(e,"Container read",r);
+    if(r<0) return packet_read_error(e,r);
     if(av_packet_get_side_data(e->in,AV_PKT_DATA_ENCRYPTION_INFO,NULL)) { av_packet_unref(e->in); return fail(e,"Encrypted packet unsupported",0); }
     AVRational tb=e->fmt->streams[e->in->stream_index]->time_base;
     if(e->fmt->streams[e->in->stream_index]->codecpar->codec_type==AVMEDIA_TYPE_SUBTITLE) {
@@ -1468,14 +1571,14 @@ static int next_frame(DtsEngine *e,DtsFrame *f) {
       e->encoder_sent_eof=1; continue;
     }
     if(e->demux_eof) return fail(e,"Unexpected DTS drain state",0);
-    r=av_read_frame(e->fmt,e->in);
+    r=read_packet(e);
     if(r==AVERROR_EOF) {
       e->demux_eof=1;
       if((r=avcodec_send_packet(e->dec,NULL))<0) return fail(e,"DTS decoder drain",r);
       if(e->bsf && (r=av_bsf_send_packet(e->bsf,NULL))<0) return fail(e,"Video filter drain",r);
       continue;
     }
-    if(r<0) return fail(e,"Container read",r);
+    if(r<0) return packet_read_error(e,r);
     if(av_packet_get_side_data(e->in,AV_PKT_DATA_ENCRYPTION_INFO,NULL)) { av_packet_unref(e->in); return fail(e,"Encrypted packet unsupported",0); }
     if(e->fmt->streams[e->in->stream_index]->codecpar->codec_type==AVMEDIA_TYPE_SUBTITLE) {
       AVRational tb=e->fmt->streams[e->in->stream_index]->time_base;
@@ -1483,7 +1586,7 @@ static int next_frame(DtsEngine *e,DtsFrame *f) {
       return frame_out(e,f,DTS_SUBTITLE,tb);
     }
     if(e->in->stream_index==e->info.audio_stream) {
-      if(e->in->size>=4) {
+      if(e->dec && e->dec->codec_id==AV_CODEC_ID_DTS && e->in->size>=4) {
         const uint8_t *b=e->in->data;
         uint32_t sync=((uint32_t)b[0]<<24)|((uint32_t)b[1]<<16)|((uint32_t)b[2]<<8)|b[3];
         if(sync==UINT32_C(0x7ffe8001) || sync==UINT32_C(0xfe7f0180)
@@ -1530,8 +1633,16 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
     if(f->size>INT_MAX-8192) return fail(e,"DV7 packet too large",0);
     av_fast_malloc(&e->dv7_buffer,&e->dv7_capacity,(size_t)f->size+8192);
     if(!e->dv7_buffer) return fail(e,"DV7 conversion buffer",AVERROR(ENOMEM));
-    if(nv_dv7_packet(f->data,(size_t)f->size,e->dv7_buffer,e->dv7_capacity,&size)<0)
+    uint32_t mapping_report=0;
+    if(nv_dv7_packet_report(f->data,(size_t)f->size,e->dv7_buffer,e->dv7_capacity,&size,
+                          e->preserve_p7_mapping,e->mapping_reported?NULL:&mapping_report)<0)
       return fail(e,"DV7 RPU conversion failed",0);
+    if(mapping_report) {
+      e->mapping_reported=1;
+      printf("[dv7] first RPU verified: mode=%s P7-to-P8=%d mapping-retained=%d residual-disabled=%d differs-from-standard=%d; base picture unchanged\n",
+        e->preserve_p7_mapping?"preserved":"standard",!!(mapping_report&1),!!(mapping_report&2),
+        !!(mapping_report&4),!!(mapping_report&8));fflush(stdout);
+    }
     /* An EL-only packet is discarded, not mistaken for end of stream. */
     if(!size) continue;
     f->data=e->dv7_buffer; f->size=(int)size;
@@ -1572,7 +1683,12 @@ int dts_engine_seek(DtsEngine *e,double seconds) {
   if(cancelled(e)) return fail(e,"Cancelled",0);
   __atomic_store_n(&e->range_live,0,__ATOMIC_RELAXED);
   int64_t timestamp=(int64_t)(seconds*1000000.0);
-  int r=avformat_seek_file(e->fmt,-1,INT64_MIN,timestamp,timestamp,AVSEEK_FLAG_BACKWARD);
+  int r;
+#ifdef NV_MP4_BD_TEST
+  if(e->mp4) { mp4_pair_reset(e); r=mp4_seek_anchor(e,timestamp); }
+  else
+#endif
+  r=avformat_seek_file(e->fmt,-1,INT64_MIN,timestamp,timestamp,AVSEEK_FLAG_BACKWARD);
   if(r<0) return fail(e,"Container seek",r);
   if(e->passthrough) {
     if(e->bsf) av_bsf_flush(e->bsf);
