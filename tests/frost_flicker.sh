@@ -2,11 +2,11 @@
 # Hidden desktop GL; real TV layout/renderer, isolated offline data, SDL input.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export TMPDIR=/Volumes/ExternalSSD/tmp/jobtmp
-export OBJ="$TMPDIR/nuvio-frostpisca-obj"
+export TMPDIR="${NUVIO_FROST_TMPDIR:-/Volumes/ExternalSSD/tmp/jobtmp}"
+export OBJ="${NUVIO_FROST_OBJ:-$TMPDIR/nuvio-frostpisca-obj}"
 export NUVIO_C9_CACHE=1 NUVIO_FROST_FLICKER=1
 export NUVIO_SHOT_VIDRO=1 NUVIO_SHOT_VIDRO_FOSCO=1 NUVIO_SHOT_VIDRO_QUAL=2
-out="/Volumes/ExternalSSD/tmp/rev/frostpisca/${1:-verified}"
+out="${NUVIO_FROST_OUT:-/Volumes/ExternalSSD/tmp/rev/frostpisca}/${1:-verified}"
 mkdir -p "$out" "$OBJ"
 # Reuse the existing object's cache. No application launch or desktop activation.
 NUVIO_FF_COMPILE_ONLY=1 bash tests/detalhe_glass_shot.sh "$out" > "$out/build.log" 2>&1
