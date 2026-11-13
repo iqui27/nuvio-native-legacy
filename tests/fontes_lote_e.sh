@@ -29,5 +29,9 @@ printf '%s\n' "${sources[@]}" "$test_src" |
   xargs -P 8 -I{} sh -c 'cc "$@" -c "$0" -o "$NV_OBJ/$(basename "$0").o"' '{}' "${flags[@]}"
 cc "${san[@]}" "$work/obj/"*.o -o "$work/test" -L/opt/homebrew/lib \
   -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
-DYLD_INSERT_LIBRARIES=/usr/lib/libgmalloc.dylib MALLOC_PROTECT_BEFORE=1 MALLOC_STRICT_SIZE=1 \
+# Bounded run (fio1-pilha.sh convention; macOS has no coreutils timeout): a
+# startup hang dies by SIGALRM instead of stalling the job. env sets DYLD_*
+# after SIP strips them from the protected perl/env binaries.
+perl -e 'alarm shift; exec @ARGV' 300 env DYLD_INSERT_LIBRARIES=/usr/lib/libgmalloc.dylib \
+  MALLOC_PROTECT_BEFORE=1 MALLOC_STRICT_SIZE=1 \
   NUVIO_DADOS="$work/data" NUVIO_TESTE_DIR="$work/data" "$work/test"

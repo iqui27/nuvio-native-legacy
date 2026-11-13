@@ -1954,7 +1954,9 @@ int main(int argc, char **argv) {
   int    txtNQuadro = 0, piorTxtN = 0;
   int quadros = 0, janks = 0; double pior = 0;
   int playerUiPrevious = 0;
-  int sourceLoadingVsyncFailed = 0;
+#ifndef NV_SEM_WEBOS
+  int sourceLoadingVsyncFailed = 0;   // only the webOS source-wait pacing reads it
+#endif
   SwapInt swapInt = {0};   // intervalo real entre swaps (swapint.h)
 
   // TELEMETRIA POR FASE. O quadro pior custava 22ms num alvo de 20ms e nao
