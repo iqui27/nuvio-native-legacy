@@ -24,3 +24,8 @@ Authorized by owner 2026-11-13. Base: `9115d8bbadd09f98fef5b939732d5334d7b726c7`
 - BIB639 / PAG789: full global gate pending.
 - #785 / #706: physical TV acceptance UNKNOWN; LG screensaver root and FON row on TV unknown; GUI runners fontes_lote_e/fontes_formatter not run; P2 notes kept.
 - All other issues: NOT integrated, pending candidate flow.
+
+## Fixtures merged (test-only, #639 / #789 infrastructure)
+- Sync-gate fixture merge into `integracao/2.1` at `98aaea16cb67c55d072ec483131fa7079fcc68d7` (parents BASE `85624bba84243244187efa6ad6f0d50b650632be`, candidate `7d429206d3e4739c4ef51e858a0adea3d684bbf3`, diff sha256 `eef67a8136e18ade2305af06e787bbe19072856e839df09618f8cbfedfaed14b`). Tests only (4 files under `tests/`); no `src/` or `tools/` change. Canonical gate 8/8 passed. Postmerge `tests/syncordem.sh` and `tests/synccolecoes.sh` rc 0. Details: `sync-fixtures-integracao.md`.
+- Issues #639 and #789: fixture infrastructure evidence ONLY. Not fixed, not closed. BIB639 / PAG789 production candidates NOT integrated. Full global gate NOT RUN, not waived. Device acceptance UNKNOWN.
+- Open P3 notes: N4 (`extra==NULL` accepted), N5 (nuvem forwarders ignore bearer). N1/N2 recorded, N3 closed.
