@@ -850,7 +850,11 @@ int dts_tpk_disponivel(void) {
   static int c = -1;   // os Ajustes perguntam a cada quadro: decide uma vez
   if (c < 0) {
     int t = tizenMaior();
+#if defined(NV_TPK40) && defined(NV_TPK40_DTS_EXPERIMENTAL)
+    c = (t < 0 || t >= 4) && dts_remux_available();
+#else
     c = (t < 0 || t >= 6) && dts_remux_available();
+#endif
     printf("[dts-tpk] conversao DTS/TrueHD %s (tizen %d, FFmpeg %s, anel %d MiB)\n", c ? "disponivel" : "indisponivel", t,
            dts_remux_available() ? "ligado" : "ausente", anelMib());
     fflush(stdout);
