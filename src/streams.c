@@ -4328,11 +4328,12 @@ static int faixaNomeRepetido(const char *listaNomes, const char *nome) {
   }
   return 0;
 }
-static int faixasTexto(const char *p, size_t limite, char *saida, unsigned tam) {
+static int faixasTexto(const char *p, size_t limite, char *saida, unsigned tam, int acrescentar) {
   const char *fim;
-  size_t usado = 0;
+  size_t usado;
   if (!saida || !tam) return 0;
-  saida[0] = 0;
+  if (acrescentar) usado = strnlen(saida, tam);
+  else { saida[0] = 0; usado = 0; }
   fim = p + strnlen(p, limite);
   while (p < fim) {
     const char *f = memchr(p, ',', (size_t)(fim - p)), *ate = f ? f : fim;
@@ -4354,11 +4355,14 @@ static int faixasTexto(const char *p, size_t limite, char *saida, unsigned tam) 
 int stream_faixas_texto(const Stream *s, int legendas, char *saida, unsigned tam) {
   if (!s) { if (saida && tam) saida[0] = 0; return 0; }
   return faixasTexto(legendas ? s->legendaIdiomas : s->audioIdiomas,
-                     sizeof s->audioIdiomas, saida, tam);
+                     sizeof s->audioIdiomas, saida, tam, 0);
 }
 static int audioInferido(const Stream *s, char *saida, unsigned tam) {
   if (!s || s->audioIdiomas[0] || !s->filtroLido || !saida || !tam) return 0;
-  faixasTexto(s->audioTexto, sizeof s->audioTexto, saida, tam);
+  // The same evidence the filter already counts (evidenciaAudio): recognized
+  // release labels, then the classifier text and its language bits.
+  faixasTexto(s->audioRotulos, sizeof s->audioRotulos, saida, tam, 0);
+  faixasTexto(s->audioTexto, sizeof s->audioTexto, saida, tam, 1);
   for (int i = 0; i < fontefiltro_opcoes_n(FONTEFILTRO_LINGUAS) - 1; i++) {
     if (!(s->filtro.valores[FONTEFILTRO_LINGUAS] & fontefiltro_bit(FONTEFILTRO_LINGUAS, i))) continue;
     const char *nome = i18n(fontefiltro_opcao(FONTEFILTRO_LINGUAS, i));
@@ -4387,7 +4391,7 @@ static int linhasFaixas(const Stream *s) {
     }
   }
   if (!s->audioIdiomas[0] && s->filtroLido &&
-      (s->audioTexto[0] || (s->filtro.valores[FONTEFILTRO_LINGUAS] & (fontefiltro_desconhecido(FONTEFILTRO_LINGUAS) - 1)))) n++;
+      (s->audioRotulos[0] || s->audioTexto[0] || (s->filtro.valores[FONTEFILTRO_LINGUAS] & (fontefiltro_desconhecido(FONTEFILTRO_LINGUAS) - 1)))) n++;
   return n;
 }
 static float desenharFaixas(const Stream *s, float x, float y, float w, int sel, float a) {
