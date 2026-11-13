@@ -17,7 +17,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+// O wrapper tests/recomenda_e2e.sh sobe o proprio servidor isolado numa porta
+// aleatoria e a passa por -DNV_REC_URL; sem ele cai no 8799 historico.
+#ifndef NV_REC_URL
 #define NV_REC_URL "http://127.0.0.1:8799"
+#endif
 #include "../src/recomenda.c"
 
 static int falhas;
@@ -49,14 +53,19 @@ int main(void) {
   free(saude);
 
   // A sessao do usuario e lida do disco por sessao_iniciar: linha 1 token,
-  // linha 2 refresh, linha 3 "anonima".
-  dados_gravar("sessao.txt", "tok-e2e\n\n0\n");
+  // linha 2 refresh, linha 3 "anonima". O token tem FORMA de JWT porque a
+  // guarda de sessao pela metade (#223) descarta qualquer coisa sem a.b.c+sub;
+  // o payload e sintetico (sub=e2e) e a assinatura nao importa — o .sh semeia
+  // o SHA-256 de "nuvio:<token>" na sessao do Worker e a verificacao real
+  // nunca roda.
+  dados_gravar("sessao.txt",
+               "e2e.eyJzdWIiOiJlMmUiLCJleHAiOjk5OTk5OTk5OTl9.e2e\n\n0\n");
   sessao_iniciar();
   CONFERE(sessao_logada(), "sessao sem token de usuario");
   if (!mtx) mtx = SDL_CreateMutex();
 
   CONFERE(identidade(cab), "identidade montou os cabecalhos");
-  CONFERE(strstr(cab[0], "Bearer tok-e2e") != NULL, "Authorization: [%s]", cab[0]);
+  CONFERE(strstr(cab[0], "Bearer e2e.") != NULL, "Authorization: [%s]", cab[0]);
   CONFERE(!strcmp(cab[1], "X-Nuvio-Auth: nuvio"), "via: [%s]", cab[1]);
 
   CONFERE(registrar(cab), "POST /v1/eu registrou");

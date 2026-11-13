@@ -20,7 +20,8 @@ for f in "${ISCAS[@]}"; do
   PLANTADAS+=("$f")
 done
 
-bash tools/ios.sh --build >/tmp/nuvio-ios-seguro.log 2>&1 || { tail -30 /tmp/nuvio-ios-seguro.log; echo "FAIL: build"; exit 1; }
+SEG_LOG="${NUVIO_IOS_SEGURO_LOG:-/tmp/nuvio-ios-seguro.log}"
+bash tools/ios.sh --build >"$SEG_LOG" 2>&1 || { tail -30 "$SEG_LOG"; echo "FAIL: build"; exit 1; }
 APP="$NUVIO_IOS_BUILD/Nuvio.app"
 [ -f "$APP/art/00.jpg" ] || { echo "FAIL: art missing from the bundle"; exit 1; }
 
