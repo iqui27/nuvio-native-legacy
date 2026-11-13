@@ -29,6 +29,7 @@ _Static_assert(VE_MAX < USHRT_MAX, "watched index entries must fit in unsigned s
 static int n, cap, avisouTeto;
 // Sobe a cada mudanca de estado no mapa (vistoep_revisao).
 static unsigned revisao;
+static unsigned esvaziado;   // vistoep_esvaziado
 // TRAVA DO MAPA. Escrevem nele o fio de extras (extras.c, parte 0, ao abrir a
 // pagina de uma serie) e o fio principal (sync_passo, player, episodios,
 // agenda, logout); le o desenho do detalhe. Sem ela o realloc de definir()
@@ -489,7 +490,14 @@ void vistoep_esquecer(void) {
   free(mapa); mapa = NULL; n = 0; cap = 0; avisouTeto = 0;
   memset(indice, 0, sizeof indice);
   revisao++;
+  esvaziado++;
   pthread_mutex_unlock(&trava);
+}
+
+unsigned vistoep_esvaziado(void) {
+  unsigned r;
+  pthread_mutex_lock(&trava); r = esvaziado; pthread_mutex_unlock(&trava);
+  return r;
 }
 
 // ------------------------------------------------------------------- Trakt

@@ -22,10 +22,9 @@ int trakt_enfeitar_lote_sessao(CatItem *saida, int n, uint64_t sessao) {
 #include "metaprov.h"
 const char *metaprov_idioma(void) { return "en"; }
 static const char *providerMeta;
-static int providerFetches, metadataWrites, detailWrites, season4DetailWrites;
+static int providerFetches, metadataWrites;
 static const char *onePieceProviderMeta, *onePieceCachedMeta;
 static int onePieceProviderFetches, onePieceMetadataWrites;
-static int onePieceDetailWrites;
 char *metaprov_meta(const char *tipo, const char *id, int seg, int *prov) {
   assert(!strcmp(tipo, "series"));
   (void)prov;
@@ -78,16 +77,27 @@ static const char *episodeMeta;
 // turns it on, so the cases above still see a cold disk.
 static int trimmedOn, trimmedWrites;
 static char *trimmedBody;
+// The Simkl anime cache (simklanime.c) is the real one, on the fake data
+// folder of simkl_cw.c. `idade` seconds ago, as if saved then.
+#include "simklanime.h"
+#include <time.h>
+static void discoPor(const char *chave, const char *corpo, long idade) {
+  simklanime_gravar_em(chave, corpo, (long long)time(NULL) - idade);
+}
+static int salvo(const char *chave) {
+  char *c = simklanime_ler(chave, 30L * 24 * 3600);
+  free(c);
+  return c != NULL;
+}
+
 char *fichameta_ler(const char *key, long ttl) {
-  (void)ttl;
   if (!strncmp(key, "anime-videos/", 13))
     return trimmedOn && trimmedBody && !strcmp(key, "anime-videos/tt0388629/en")
                ? strdup(trimmedBody) : NULL;
   assert(!strcmp(key, "series/tt2560140/en") ||
          !strcmp(key, "series/tt0388629/en") ||
          !strcmp(key, "series/tt11034066/en") ||
-         !strncmp(key, "series/tmdb:", 12) || !strncmp(key, "series/simkl:", 13) ||
-         !strncmp(key, "simkl-anime/", 12) || !strncmp(key, "simkl-anime-eps/", 16));
+         !strncmp(key, "series/tmdb:", 12) || !strncmp(key, "series/simkl:", 13));
   if (!strcmp(key, "series/tt2560140/en"))
     return episodeMeta ? strdup(episodeMeta) : NULL;
   if (!strcmp(key, "series/tt0388629/en"))
@@ -106,11 +116,8 @@ void fichameta_gravar(const char *key, const char *body) {
   }
   if (!strcmp(key, "series/tt2560140/en")) metadataWrites++;
   else if (!strcmp(key, "series/tt0388629/en")) onePieceMetadataWrites++;
-  else if (!strncmp(key, "simkl-anime/", 12)) {
-    if (!strcmp(key, "simkl-anime/263883")) detailWrites++;
-    else if (!strcmp(key, "simkl-anime/2638832")) season4DetailWrites++;
-    else if (!strcmp(key, "simkl-anime/38636")) onePieceDetailWrites++;
-  } else if (strncmp(key, "simkl-anime-eps/", 16)) assert(0);
+  // Simkl anime answers have their own cache now (simklanime.c).
+  else assert(0);
 }
 
 static char *lerFixture(const char *caminho) {
@@ -184,7 +191,7 @@ int main(void) {
   assert(resolved[0].tmdb == 98765);
   assert(!strcmp(resolved[0].poster, "https://simkl.in/posters/poster-key_m.jpg"));
   assert(resolved[0].temporada == 2 && resolved[0].episodio == 1);
-  assert(detailWrites == 1 && metadataWrites == 2);
+  assert(salvo("simkl-anime/263883") && metadataWrites == 2);
   providerMeta = NULL;
 
   simkl_esquecer();
@@ -215,7 +222,7 @@ int main(void) {
   assert(!strcmp(resolved[0].imdb, "tt11034066:4:1"));
   assert(!strcmp(resolved[0].titulo, "Welcome to Demon School! Iruma-kun season 4"));
   assert(resolved[0].temporada == 4 && resolved[0].episodio == 1);
-  assert(season4DetailWrites == 3);
+  assert(salvo("simkl-anime/2638832"));
 
   // One Simkl entry per season, only a Simkl ID (Kaiju No. 8 Season 2): the
   // episode name, still and TVDB placement come from that entry's episode list,
@@ -363,7 +370,7 @@ int main(void) {
     "{\"number\":1123,\"tvdb_season\":22,\"tvdb_number\":35,"
     "\"watched_at\":\"2026-10-12T12:00:00Z\"}]}]}]}";
   onePieceCachedMeta = nuvioMeta;
-  nHistorico = 0;
+  nHistorico = 0; mapaEsvaziado++;
   assert(simkl_historico_ler(onePieceHistory, "tt0388629", 1) == 1);
   assert(nHistorico == 1 && !strcmp(historicoIds[0], "tt0388629"));
   assert(historicoPares[0].temporada == 22 && historicoPares[0].episodio == 1123);
@@ -373,7 +380,7 @@ int main(void) {
     "\"seasons\":[{\"number\":1,\"episodes\":[{\"number\":35,"
     "\"tvdb\":{\"season\":22,\"episode\":35},"
     "\"watched_at\":\"2026-10-12T12:00:00Z\"}]}]}]}";
-  nHistorico = 0;
+  nHistorico = 0; mapaEsvaziado++;
   assert(simkl_historico_ler(onePieceNestedTvdbHistory, "tt0388629", 1) == 1);
   assert(nHistorico == 1 && historicoPares[0].temporada == 22 &&
          historicoPares[0].episodio == 1123);
@@ -386,11 +393,12 @@ int main(void) {
     "\"seasons\":[{\"number\":1,\"episodes\":["
     "{\"number\":1500,\"watched_at\":\"2026-10-12T12:00:00Z\"},"
     "{\"number\":1501,\"watched_at\":\"2026-10-12T12:01:00Z\"}]}]}]}";
-  nHistorico = 0;
+  nHistorico = 0; mapaEsvaziado++;
   assert(simkl_historico_ler(onePieceUnmappedHistory, "tt0388629", 1) == 0);
   assert(nHistorico == 0 && onePieceProviderFetches == 1);
   onePieceCachedMeta = onePieceProviderMeta = NULL;
   onePieceProviderFetches = 0;
+  mapaEsvaziado++;   // the same entry again: only an emptied map maps it again
   assert(simkl_historico_ler(onePieceUnmappedHistory, "tt0388629", 1) == 0);
   assert(nHistorico == 0 && onePieceProviderFetches == 1);
   onePieceCachedMeta = onePieceProviderMeta = nuvioMeta;
@@ -404,11 +412,11 @@ int main(void) {
     "{\"movies\":[],\"shows\":[],\"anime\":[{\"anime\":{\"ids\":{\"simkl\":38636}},"
     "\"seasons\":[{\"number\":1,\"episodes\":["
     "{\"number\":1,\"watched_at\":\"2026-10-12T12:00:00Z\"}]}]}]}";
-  nHistorico = 0;
+  nHistorico = 0; mapaEsvaziado++;
   assert(simkl_historico_ler(onePieceSimklIdHistory, "tt0388629", 1) == 1);
   assert(nHistorico == 1 && !strcmp(historicoIds[0], "tt0388629"));
   assert(historicoPares[0].temporada == 1 && historicoPares[0].episodio == 1);
-  assert(onePieceDetailWrites == 1);
+  assert(salvo("simkl-anime/38636"));
 
   static const char onePieceTvdbHistory[] =
     "{\"movies\":[],\"shows\":[],\"anime\":[{\"anime\":{\"ids\":{\"imdb\":\"tt0388629\"}},"
@@ -419,7 +427,7 @@ int main(void) {
     "\"watched_at\":\"2026-10-12T12:00:00Z\"}]},"
     "{\"number\":22,\"episodes\":[{\"number\":35,\"tvdb_season\":22,\"tvdb_number\":35,"
     "\"watched_at\":\"2026-10-12T12:00:00Z\"}]}]}]}";
-  nHistorico = 0;
+  nHistorico = 0; mapaEsvaziado++;
   assert(simkl_historico_ler(onePieceTvdbHistory, "tt0388629", 1) == 3);
   assert(nHistorico == 3);
   assert(!strcmp(historicoIds[0], "tt0388629"));
@@ -446,7 +454,7 @@ int main(void) {
     "{\"number\":62,\"watched_at\":\"2026-10-12T12:02:00Z\"},"
     "{\"number\":63,\"watched_at\":\"2026-10-12T12:03:00Z\"},"
     "{\"number\":65,\"watched_at\":\"2026-10-12T12:04:00Z\"}]}]}]}";
-  nHistorico = 0;
+  nHistorico = 0; mapaEsvaziado++;
   assert(simkl_historico_ler(onePieceAbsoluteHistory, "tt0388629", 1) == 5);
   assert(nHistorico == 5);
   assert(historicoPares[0].temporada == 1 && historicoPares[0].episodio == 1);
@@ -464,7 +472,7 @@ int main(void) {
             sizeof historicoCatalogEps[0] * (size_t)(historicoCatalogEpsQtd - 1));
     historicoCatalogEps[historicoCatalogEpsQtd - 1] = primeiro;
   }
-  nHistorico = 0;
+  nHistorico = 0; mapaEsvaziado++;
   assert(simkl_historico_ler(onePieceAbsoluteHistory, "tt0388629", 1) == 5);
   assert(historicoPares[0].temporada == 1 && historicoPares[0].episodio == 1);
   assert(historicoPares[1].temporada == 1 && historicoPares[1].episodio == 61);
@@ -481,7 +489,7 @@ int main(void) {
     "\"seasons\":[{\"number\":1,\"episodes\":[{\"number\":36,"
     "\"tvdb\":{\"season\":7,\"episode\":36},\"ids\":{\"tvdb_id\":123456},"
     "\"watched_at\":\"2026-10-12T12:00:00Z\"}]}]}]}";
-  nHistorico = 0;
+  nHistorico = 0; mapaEsvaziado++;
   assert(simkl_historico_ler(onePieceExactTvdbHistory, "tt0388629", 1) == 1);
   assert(nHistorico == 1 && historicoPares[0].temporada == 22 &&
          historicoPares[0].episodio == 1123);
@@ -492,7 +500,7 @@ int main(void) {
     "{\"movies\":[],\"shows\":[],\"anime\":[{\"show\":{\"ids\":{\"imdb\":\"tt0388629\"}},"
     "\"seasons\":[{\"number\":1,\"episodes\":["
     "{\"number\":1123,\"watched_at\":\"2026-10-12T12:00:00Z\"}]}]}]}";
-  nHistorico = 0;
+  nHistorico = 0; mapaEsvaziado++;
   assert(simkl_historico_ler(onePieceShowHistory, "tt0388629", 1) == 1);
   assert(nHistorico == 1 && !strcmp(historicoIds[0], "tt0388629"));
   assert(historicoPares[0].temporada == 22 && historicoPares[0].episodio == 1123);
@@ -511,7 +519,7 @@ int main(void) {
     "{\"number\":100,\"tvdb_season\":2,\"tvdb_number\":39,"
     "\"watched_at\":\"2026-10-12T12:00:00Z\"},"
     "{\"number\":1122,\"watched_at\":\"2026-10-12T12:00:00Z\"}]}]}]}";
-  nHistorico = 0;
+  nHistorico = 0; mapaEsvaziado++;
   assert(simkl_historico_ler(onePieceCinemetaHistory, "tt0388629", 1) == 6);
   assert(historicoPares[0].temporada == 1 && historicoPares[0].episodio == 1);
   assert(historicoPares[1].temporada == 1 && historicoPares[1].episodio == 8);
@@ -532,7 +540,7 @@ int main(void) {
     // extra S22E38 before 1123: only TVDB IDs line the two up.
     onePieceCachedMeta = onePieceProviderMeta = cine;
     memset(historicoGrade, 0, sizeof historicoGrade);
-    nHistorico = 0;
+    nHistorico = 0; mapaEsvaziado++;
     assert(simkl_historico_ler(hist, "tt0388629", 1) == 1121);
     assert(historicoGrade[1][8] && !historicoGrade[1][9]);
     assert(historicoGrade[22][37]);   // 1122 "The Last Lesson! Impact Inherited"
@@ -541,7 +549,7 @@ int main(void) {
     // Nuvio keeps absolute numbers: S22E1122 is Simkl's 1122.
     onePieceCachedMeta = onePieceProviderMeta = nuvio;
     memset(historicoGrade, 0, sizeof historicoGrade);
-    nHistorico = 0;
+    nHistorico = 0; mapaEsvaziado++;
     assert(simkl_historico_ler(hist, "tt0388629", 1) == 1122);
     assert(historicoGrade[1][61] && historicoGrade[22][1122]);
     assert(!historicoGrade[22][1123]);
@@ -567,7 +575,7 @@ int main(void) {
       onePieceCinemeta = cine;
       onePieceCinemetaFetches = 0;
       memset(historicoGrade, 0, sizeof historicoGrade);
-      nHistorico = 0;
+      nHistorico = 0; mapaEsvaziado++;
       assert(simkl_historico_ler(hist, "tt0388629", 1) == 1121);
       assert(onePieceCinemetaFetches == 1);
       assert(historicoGrade[1][8] && historicoGrade[2][1]);
@@ -579,7 +587,7 @@ int main(void) {
     }
 
     historicoSoGrade = 0;
-    nHistorico = 0;
+    nHistorico = 0; mapaEsvaziado++;
     free(hist);
     free(cine);
     free(nuvio);
@@ -600,7 +608,7 @@ int main(void) {
       "{\"season\":2,\"episode\":3}]}}";
     historicoSoGrade = 1;
     memset(historicoGrade, 0, sizeof historicoGrade);
-    nHistorico = 0;
+    nHistorico = 0; mapaEsvaziado++;
     // As the app does it: the library in memory, the show page maps its anime.
     // Mapping again onto a new list reads that same library.
     bibEsperar();
@@ -625,7 +633,7 @@ int main(void) {
     historicoCatalogEps[3].temporada = 2; historicoCatalogEps[3].episodio = 2;
     historicoCatalogEps[3].tvdbEp = 104;
     memset(historicoGrade, 0, sizeof historicoGrade);
-    nHistorico = 0;
+    nHistorico = 0; mapaEsvaziado++;
     simkl_anime_lista_mudou("tt0388629:1:1");
     for (int espera = 0; espera < 200 && nHistorico < 3; espera++) usleep(10000);
     assert(nHistorico == 3);
@@ -638,7 +646,7 @@ int main(void) {
       assert(nt == 2 && ne == 2);
     }
     // The same list published again does not map it a third time.
-    nHistorico = 0;
+    nHistorico = 0; mapaEsvaziado++;
     simkl_anime_lista_mudou("tt0388629");
     usleep(100000);
     assert(nHistorico == 0);
@@ -716,12 +724,14 @@ int main(void) {
   WATCHING_ANIME = "{\"anime\":[]}";
   FEITO_ANIME = "{\"anime\":[{\"status\":\"completed\",\"watched_episodes_count\":10,"
     "\"last_watched_at\":\"2022-09-13T07:00:00Z\",\"show\":{\"title\":\"Cyberpunk: Edgerunners\","
-    "\"ids\":{\"simkl\":1377443,\"imdb\":\"tt12590266\",\"tvdb\":\"384541\"}}}]}";
+    "\"ids\":{\"simkl\":1377443,\"slug\":\"cyberpunk-edgerunners\",\"imdb\":\"tt12590266\",\"tvdb\":\"384541\"}}}]}";
   PTW_ANIME = "{\"anime\":["
     "{\"status\":\"plantowatch\",\"watched_episodes_count\":0,\"next_to_watch\":\"E1\","
-    "\"show\":{\"title\":\"Cyberpunk: Edgerunners II\",\"ids\":{\"simkl\":2830474}}},"
+    "\"show\":{\"title\":\"Cyberpunk: Edgerunners II\",\"ids\":{\"simkl\":2830474,"
+    "\"slug\":\"cyberpunk-edgerunners-ii\"}}},"
     "{\"status\":\"plantowatch\",\"watched_episodes_count\":0,\"next_to_watch\":\"E1\","
-    "\"show\":{\"title\":\"Not aired yet\",\"ids\":{\"simkl\":2830475}}},"
+    "\"show\":{\"title\":\"Not aired yet\",\"ids\":{\"simkl\":2830475,"
+    "\"slug\":\"cyberpunk-edgerunners-iii\"}}},"
     "{\"status\":\"plantowatch\",\"watched_episodes_count\":0,\"next_to_watch\":\"E1\","
     "\"show\":{\"title\":\"Never watched\",\"ids\":{\"simkl\":5,\"imdb\":\"tt7654321\"}}}]}";
   snprintf(atividades, sizeof atividades, "{\"all\":\"2026-11-01T10:00:00Z\"}");
@@ -735,6 +745,114 @@ int main(void) {
   assert(!strcmp(v[0].nomeEpisodio, "Night City Again"));
   assert(!strcmp(v[0].thumbEpisodio,
                  "https://simkl.in/episodes/17/17570079032e93ce31_w.jpg"));
+  // Saved answers: an aired season's details last 30 days; a placeholder or a
+  // "not found" only a day, since Simkl fills them in without moving the
+  // library; an episode list missing the episode wanted is asked again once
+  // it is a day old.
+  {
+    const long dia = 24 * 3600;
+    const char *aired = "{\"title\":\"Cyberpunk: Edgerunners II\",\"mapped_tvdb_seasons\":[2],"
+      "\"first_aired\":\"2026-10-20T00:00:00Z\",\"ids\":{\"simkl\":2830474,"
+      "\"imdb\":\"tt12590266\"}}";
+    const char *comEp1 = "[{\"title\":\"Night City Again\",\"episode\":1,\"type\":\"episode\","
+      "\"tvdb\":{\"season\":2,\"episode\":1}}]";
+    const char *semEp1 = "[{\"title\":\"Second\",\"episode\":2,\"type\":\"episode\"}]";
+    discoPor("simkl-anime/2830474", aired, 10 * dia);
+    discoPor("simkl-anime-eps/2830474", comEp1, 3 * dia);
+    discoPor("simkl-anime/2830475", "{\"title\":\"Not aired yet\",\"mapped_tvdb_seasons\":[3],"
+      "\"first_aired\":\"2099-01-01T00:00:00Z\",\"ids\":{\"simkl\":2830475}}", 2 * dia);
+    detalhesAnime = 0;
+    n = simkl_continuar(v, 16);
+    assert(n == 1 && !strcmp(v[0].imdb, "tt12590266:2:1"));
+    assert(detalhesAnime == 1);   // only the placeholder, two days old
+    detalhesAnime = 0;
+    n = simkl_continuar(v, 16);
+    assert(n == 1 && detalhesAnime == 0);   // all saved now
+    discoPor("simkl-anime/2830475", "{}", dia / 2);   // a 404 from this morning
+    n = simkl_continuar(v, 16);
+    assert(n == 1 && detalhesAnime == 0);
+    discoPor("simkl-anime/2830475", "{}", 2 * dia);   // a 404 from two days ago
+    n = simkl_continuar(v, 16);
+    assert(n == 1 && detalhesAnime == 1);
+    detalhesAnime = 0;
+    discoPor("simkl-anime-eps/2830474", semEp1, dia / 2);
+    n = simkl_continuar(v, 16);
+    assert(n == 1 && detalhesAnime == 0 && !v[0].nomeEpisodio[0]);
+    discoPor("simkl-anime-eps/2830474", semEp1, 2 * dia);
+    n = simkl_continuar(v, 16);
+    assert(n == 1 && detalhesAnime == 1);
+    assert(!strcmp(v[0].nomeEpisodio, "Night City Again"));
+  }
+  // Placeholders (Simkl, 10/11/2026). A movie gets no request; a season
+  // whose slug extends a watched show's is asked daily, any other weekly;
+  // aired details are kept 30 days only with an IMDb ID and a season above 1
+  // (or once aired over 30 days ago); Simkl's "season" stands in for a TVDB
+  // mapping still at 1.
+  {
+    const long dia = 24 * 3600;
+    char quando[32], corpo[256];
+    time_t t;
+    const char *feitoAntes = FEITO_ANIME, *ptwAntes = PTW_ANIME;
+    // A fresh library here and after: deltas merge, so the saved copy would
+    // carry each fixture's titles into the next.
+    bibEsperar();
+    simkl_esquecer();
+    free(bibTexto); bibTexto = NULL;
+    FEITO_ANIME = "{\"anime\":[{\"status\":\"completed\",\"watched_episodes_count\":12,"
+      "\"last_watched_at\":\"2023-03-25T08:30:00Z\",\"show\":{\"title\":\"Spy x Family\","
+      "\"ids\":{\"simkl\":1766469,\"slug\":\"spy-x-family\",\"imdb\":\"tt13706018\"}}}]}";
+    PTW_ANIME = "{\"anime\":["
+      "{\"status\":\"plantowatch\",\"watched_episodes_count\":0,\"anime_type\":\"movie\","
+      "\"show\":{\"title\":\"Spy x Family movie\",\"ids\":{\"simkl\":3300001,"
+      "\"slug\":\"spy-x-family-movie\"}}},"
+      "{\"status\":\"plantowatch\",\"watched_episodes_count\":0,\"anime_type\":\"tv\","
+      "\"show\":{\"title\":\"Code Geass: Star Chaser Aspal\",\"ids\":{\"simkl\":3300002,"
+      "\"slug\":\"code-geass-hoshi-oi-no-aspal\"}}},"
+      "{\"status\":\"plantowatch\",\"watched_episodes_count\":0,\"anime_type\":\"tv\","
+      "\"show\":{\"title\":\"Spy x Family\",\"ids\":{\"simkl\":3320816,"
+      "\"slug\":\"spy-x-family\"}}},"
+      "{\"status\":\"plantowatch\",\"watched_episodes_count\":0,\"anime_type\":\"tv\","
+      "\"show\":{\"title\":\"Spy x Family arc\",\"ids\":{\"simkl\":3300003,"
+      "\"slug\":\"spy-x-family-arc\"}}}]}";
+    snprintf(atividades, sizeof atividades, "{\"all\":\"2026-11-01T10:30:00Z\"}");
+    detalhesAnime = 0;
+    n = simkl_continuar(v, 16);
+    assert(detalhesAnime == 3);   // no movie request
+    assert(n == 1 && !strcmp(v[0].imdb, "tt13706018:4:1") && v[0].temporada == 4);
+    // Two days later: the unrelated placeholder waits a week; the arc aired
+    // five days ago but has no IMDb ID yet, so it is asked again.
+    discoPor("simkl-anime/3300002", "{\"title\":\"Placeholder\",\"first_aired\":null}", 2 * dia);
+    t = time(NULL) - 5 * dia;
+    strftime(quando, sizeof quando, "%Y-%m-%dT%H:%M:%SZ", gmtime(&t));
+    snprintf(corpo, sizeof corpo, "{\"title\":\"Arc\",\"mapped_tvdb_seasons\":[1],"
+             "\"first_aired\":\"%s\",\"ids\":{\"simkl\":3300003}}", quando);
+    discoPor("simkl-anime/3300003", corpo, 2 * dia);
+    discoPor("simkl-anime/3320816", "{\"title\":\"Spy x Family\",\"season\":4,"
+             "\"mapped_tvdb_seasons\":[1],\"first_aired\":\"2026-10-04T00:00:00Z\","
+             "\"ids\":{\"simkl\":3320816,\"imdb\":\"tt13706018\"}}", 2 * dia);
+    detalhesAnime = 0;
+    n = simkl_continuar(v, 16);
+    assert(n == 1 && detalhesAnime == 1);
+    // Eight days old: the unrelated one is asked again.
+    discoPor("simkl-anime/3300002", "{\"title\":\"Placeholder\",\"first_aired\":null}", 8 * dia);
+    detalhesAnime = 0;
+    n = simkl_continuar(v, 16);
+    assert(n == 1 && detalhesAnime == 1);
+    // Aired 40 days ago and still incomplete: kept, not asked daily forever.
+    t = time(NULL) - 40 * dia;
+    strftime(quando, sizeof quando, "%Y-%m-%dT%H:%M:%SZ", gmtime(&t));
+    snprintf(corpo, sizeof corpo, "{\"title\":\"Arc\",\"mapped_tvdb_seasons\":[1],"
+             "\"first_aired\":\"%s\",\"ids\":{\"simkl\":3300003}}", quando);
+    discoPor("simkl-anime/3300003", corpo, 2 * dia);
+    detalhesAnime = 0;
+    n = simkl_continuar(v, 16);
+    assert(n == 1 && detalhesAnime == 0);
+    FEITO_ANIME = feitoAntes;
+    PTW_ANIME = ptwAntes;
+    bibEsperar();
+    simkl_esquecer();
+    free(bibTexto); bibTexto = NULL;
+  }
   // Watching season 2 already: the watching entry wins, no duplicate.
   simkl_esquecer();
   WATCHING_ANIME = "{\"anime\":[{\"next_to_watch\":\"S02E04\","
@@ -751,7 +869,12 @@ int main(void) {
   // shows stay out.
   {
     const char *ptwAntes = PTW_SERIES;
+    // A fresh library: the fixtures above emptied the watching lists by hand,
+    // which Simkl never does (a title leaves by a status change or a removal),
+    // so the saved copy still had Cyberpunk.
+    bibEsperar();
     simkl_esquecer();
+    free(bibTexto); bibTexto = NULL;
     PTW_SERIES = "{\"shows\":["
       "{\"status\":\"plantowatch\",\"last_watched\":\"S02E09\",\"next_to_watch\":\"S03E01\","
       "\"watched_episodes_count\":19,\"last_watched_at\":\"2026-09-24T13:59:07Z\","
@@ -763,6 +886,30 @@ int main(void) {
     assert(n == 1 && !strcmp(v[0].imdb, "tt13207736:3:1"));
     assert(v[0].temporada == 3 && v[0].episodio == 1 && simkl_e_a_seguir(v[0].imdb));
     PTW_SERIES = ptwAntes;
+  }
+
+  // Simkl's number is not in the catalog's list yet (an episode aired today):
+  // the list on disk is fresh and the download answers the same list. Two
+  // Continue watching rebuilds must not download it twice.
+  {
+    static const char shortList[] = "{\"meta\":{\"videos\":["
+      "{\"season\":1,\"episode\":1},{\"season\":1,\"episode\":2}]}}";
+    static const char titanE3[] = "{\"anime\":[{\"next_to_watch\":\"E3\","
+      "\"show\":{\"title\":\"Attack on Titan\",\"ids\":{\"imdb\":\"tt2560140\"}}}]}";
+    CatItem item[1];
+    simkl_esquecer();
+    episodeMeta = shortList;
+    providerMeta = shortList;
+    providerFetches = 0;
+    assert(simkl_ler_assistindo(titanE3, item, 1) == 1);
+    assert(!strcmp(item[0].imdb, "tt2560140") && item[0].episodio == 0);
+    assert(simkl_ler_assistindo(titanE3, item, 1) == 1);
+    assert(!strcmp(item[0].imdb, "tt2560140") && item[0].episodio == 0);
+    printf("number missing from the list: %d download(s) in two rebuilds\n", providerFetches);
+    fflush(stdout);
+    assert(providerFetches <= 1);
+    episodeMeta = providerMeta = NULL;
+    puts("PASS: a number missing from the episode list is not downloaded again");
   }
 
   proximoTeste = 0;

@@ -158,5 +158,8 @@ int  vistoep_lote(const char *imdb, int modo, int temporada, int episodio,
 unsigned vistoep_revisao(void);
 int  vistoep_n(void);          // total de episodios no mapa, para log e teste
 void vistoep_esquecer(void);   // logout
+// How many times the map was emptied (vistoep_esquecer): marks imported before
+// a later count are gone.
+unsigned vistoep_esvaziado(void);
 
 #endif

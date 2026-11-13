@@ -48,12 +48,17 @@ char *fichameta_ler(const char *key, long ttl) { (void)key; (void)ttl; return NU
 // disk stays write-only, as before.
 static char bibNome[48], *bibTexto;
 static int bibGravacoes;
+// And the Simkl anime cache (simklanime.c), for the same reason.
+static char *animeTexto;
 static int ehBib(const char *nome) { return !strncmp(nome, "simkl-biblioteca-", 17); }
+static int ehAnime(const char *nome) { return !strcmp(nome, "simkl-anime.txt"); }
 char *dados_ler(const char *nome) {
+  if (ehAnime(nome)) return animeTexto ? strdup(animeTexto) : NULL;
   return ehBib(nome) && bibTexto && !strcmp(nome, bibNome) ? strdup(bibTexto) : NULL;
 }
 int dados_gravar(const char *nome, const char *buf) { (void)nome; (void)buf; return 1; }
 int dados_gravar_leve(const char *nome, const char *buf) {
+  if (ehAnime(nome)) { free(animeTexto); animeTexto = strdup(buf); return 1; }
   if (!ehBib(nome)) return 1;
   free(bibTexto);
   bibTexto = strdup(buf);
@@ -307,6 +312,7 @@ static int historicoQtd(void) {
   return n;
 }
 static int segurosOnePiece, segurosOutros, marcasSeguradas;   // vistoep_segurar
+static int segurosPedidos;   // how many times a count was held at all
 static int vistoepFonteTravado(const char *imdb, int temporada, int episodio, int visto,
                                long long remotoMs, VistoFonte *c, uint64_t sessao);
 int vistoep_fonte_se_sessao(const char *imdb, int temporada, int episodio, int visto,
@@ -341,16 +347,25 @@ static int vistoepFonteTravado(const char *imdb, int temporada, int episodio, in
 void vistoep_fonte_log(const char *imdb, const char *fonte, const VistoFonte *c) {
   (void)imdb; (void)fonte; (void)c;
 }
+// vistoep_esvaziado: a case that starts over with an empty map bumps it, as
+// vistoep_esquecer does in the app.
+static unsigned mapaEsvaziado;
+unsigned vistoep_esvaziado(void) { return mapaEsvaziado; }
 // vistoep_segurar: open holds per title, and marks written while One Piece
 // was held (the page shows no count while its anime history is mapped).
 void vistoep_segurar(const char *imdb, int segurar) {
   int *c = imdb && !strcmp(imdb, "tt0388629") ? &segurosOnePiece : &segurosOutros;
   pthread_mutex_lock(&historicoTrava);
   *c += segurar ? 1 : -1;
+  if (segurar) segurosPedidos++;
   assert(*c >= 0);
   pthread_mutex_unlock(&historicoTrava);
 }
+// Runs once inside the next cat_copiar_por_id: the anime remap thread calls it
+// before it looks at the episode list, so a test can change the list there.
+static void (*aoCopiarPorId)(void);
 int cat_copiar_por_id(const char *id, const char *tipo, CatItem *saida) {
+  if (aoCopiarPorId) { void (*f)(void) = aoCopiarPorId; aoCopiarPorId = NULL; f(); }
   if (!id || !tipo || !saida || strcmp(id, "tt0388629") ||
       strcmp(tipo, "series") || historicoTmdb <= 0) return 0;
   memset(saida, 0, sizeof *saida);
@@ -368,6 +383,24 @@ int cat_episodios_finais(int indice, const char *id) {
 int cat_n_episodios(int indice) {
   return indice == 0 ? historicoCatalogEpsQtd : 0;
 }
+// The real counters move whenever a list or its final flag changes; here the
+// tests change the stand-in list by hand, so its fingerprint stands in.
+unsigned cat_versao_episodios(void) {
+  unsigned h = 2166136261u;
+  const unsigned char *p = (const unsigned char *)historicoCatalogId;
+  for (; *p; p++) h = (h ^ *p) * 16777619u;
+  h = (h ^ (unsigned)historicoCatalogEpsQtd) * 16777619u;
+  h = (h ^ (unsigned)historicoCatalogEpsFinal) * 16777619u;
+  for (int i = 0; i < historicoCatalogEpsQtd && i < (int)(sizeof historicoCatalogEps /
+                                                         sizeof *historicoCatalogEps); i++) {
+    h = (h ^ (unsigned)historicoCatalogEps[i].temporada) * 16777619u;
+    h = (h ^ (unsigned)historicoCatalogEps[i].episodio) * 16777619u;
+    h = (h ^ (unsigned)historicoCatalogEps[i].tvdbEp) * 16777619u;
+  }
+  return h;
+}
+unsigned cat_revisao(void) { return 0; }
+unsigned cat_revisao_itens(void) { return 0; }
 const CatEp *cat_episodio(int indice, int i) {
   return indice == 0 && i >= 0 && i < historicoCatalogEpsQtd
            ? &historicoCatalogEps[i] : NULL;
@@ -479,6 +512,23 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
     return strdup("{\"title\":\"Not aired yet\",\"mapped_tvdb_seasons\":[3],"
                   "\"first_aired\":\"2099-01-01T00:00:00Z\","
                   "\"ids\":{\"simkl\":2830475,\"imdb\":\"tt12590266\"}}");
+  }
+  // Placeholders as Simkl had them on 10/11/2026: no IMDb ID, season 1 in the
+  // TVDB mapping. Spy x Family S4 has aired here, still mapped [1].
+  if (!strcmp(r, "/anime/3300001")) {   // a movie: never asked
+    detalhesAnime += 100;
+    return strdup("{}");
+  }
+  if (!strcmp(r, "/anime/3300002") || !strcmp(r, "/anime/3300003")) {
+    detalhesAnime++;
+    return strdup("{\"title\":\"Placeholder\",\"mapped_tvdb_seasons\":[1],"
+                  "\"first_aired\":null,\"ids\":{\"simkl\":3300002}}");
+  }
+  if (!strcmp(r, "/anime/3320816")) {
+    detalhesAnime++;
+    return strdup("{\"title\":\"Spy x Family\",\"season\":4,\"mapped_tvdb_seasons\":[1],"
+                  "\"first_aired\":\"2026-10-04T00:00:00Z\","
+                  "\"ids\":{\"simkl\":3320816,\"imdb\":\"tt13706018\"}}");
   }
   if (!strcmp(r, "/anime/38636")) {
     batidas[7]++;
@@ -968,7 +1018,7 @@ static void historicoEpisodios(void) {
   free(bibTexto); bibTexto = NULL;   // no saved copy: the whole pull
   tokenAtual = TOKEN;
   historicoTmdb = 37854;
-  nHistorico = 0;
+  nHistorico = 0; mapaEsvaziado++;
   batidas[9] = 0;
   assert(simkl_historico_aplicar("tt0388629"));
   assert(batidas[9] == 1 && nHistorico == 4);
@@ -1006,7 +1056,7 @@ static void historicoBiblioteca(void) {
   simkl_esquecer();
   tokenAtual = TOKEN;
   free(bibTexto); bibTexto = NULL; bibGravacoes = 0;
-  antes = batidas[0]; nHistorico = 0;
+  antes = batidas[0]; nHistorico = 0; mapaEsvaziado++;
   assert(simkl_historico_aplicar("tt0388629"));
   assert(atividadesAntes == antes + 1);
   assert(bibGravacoes == 1 && !strcmp(bibNome, "simkl-biblioteca-p2.txt"));
@@ -1017,7 +1067,7 @@ static void historicoBiblioteca(void) {
 
   bibEsperar();
   simkl_esquecer();
-  nHistorico = 0;
+  nHistorico = 0; mapaEsvaziado++;
   assert(simkl_historico_aplicar("tt0388629") && bibGravacoes == 2);
   assert(simklbib_ler(2, simklbib_conta(TOKEN), &b));
   // Through the file text: tests/i610.c renames `atividades` (the fixture).
@@ -1026,7 +1076,7 @@ static void historicoBiblioteca(void) {
   { static const char ini[] = "{\"shows\":[{";
     assert(!strncmp(b.biblioteca, ini, sizeof ini - 1)); }
   assert(strstr(b.biblioteca, "\"anime\":[{") && strstr(b.biblioteca, "\"movies\":[{"));
-  nHistorico = 0;
+  nHistorico = 0; mapaEsvaziado++;
   // 3, not 4: the TMDB-only One Piece entry imports only for the show being
   // opened (simkl_historico_aplicar's fallback), not in a plain read.
   { int n = simkl_historico_ler(b.biblioteca, NULL, 1);
@@ -1037,7 +1087,7 @@ static void historicoBiblioteca(void) {
 
   bibEsperar();
   simkl_esquecer();
-  atividadesFalham = 1; nHistorico = 0;
+  atividadesFalham = 1; nHistorico = 0; mapaEsvaziado++;
   assert(simkl_historico_aplicar("tt0388629"));
   assert(nHistorico == 4 && bibGravacoes == 2);
   atividadesFalham = 0;
@@ -1045,7 +1095,7 @@ static void historicoBiblioteca(void) {
 
   bibEsperar();
   simkl_esquecer();
-  esquecerNoHistorico = 1; nHistorico = 0;
+  esquecerNoHistorico = 1; nHistorico = 0; mapaEsvaziado++;
   simkl_historico_aplicar("tt0388629");
   assert(bibGravacoes == 2);
   esquecerNoHistorico = 0;
@@ -1064,7 +1114,7 @@ static void bibliotecaNaAbertura(void) {
 
   // No saved copy: activities, the whole library, saved; shows imported, no
   // anime (mapping one needs its show's episode list).
-  nHistorico = 0; ativ = batidas[0]; puxadas = batidas[9];
+  nHistorico = 0; mapaEsvaziado++; ativ = batidas[0]; puxadas = batidas[9];
   simkl_biblioteca_iniciar();
   bibEsperar();
   assert(batidas[0] == ativ + 1 && batidas[9] == puxadas + 1 && bibGravacoes == 1);
@@ -1084,7 +1134,7 @@ static void bibliotecaNaAbertura(void) {
   // request, no download, no save.
   bibEsperar();
   simkl_esquecer();
-  nHistorico = 0; ativ = batidas[0]; puxadas = batidas[9]; gravadas = bibGravacoes;
+  nHistorico = 0; mapaEsvaziado++; ativ = batidas[0]; puxadas = batidas[9]; gravadas = bibGravacoes;
   simkl_biblioteca_iniciar();
   bibEsperar();
   assert(batidas[0] == ativ + 1 && batidas[9] == puxadas && bibGravacoes == gravadas);
@@ -1109,7 +1159,7 @@ static void bibliotecaNaAbertura(void) {
   // The show page waits for a load already on its way instead of starting one.
   bibEsperar();
   simkl_esquecer();
-  nHistorico = 0; puxadas = batidas[9];
+  nHistorico = 0; mapaEsvaziado++; puxadas = batidas[9];
   simkl_biblioteca_iniciar();
   assert(simkl_historico_aplicar("tt0388629"));
   bibEsperar();
@@ -1212,7 +1262,7 @@ static void bibliotecaDelta(void) {
   historicoDelta = DELTA_D1;
   atividadesInteiras = ativDelta("2026-11-02T00:00:00Z", "2026-11-01T01:00:00Z",
                                  "2026-11-02T00:00:00Z", NULL);
-  nHistorico = 0;
+  nHistorico = 0; mapaEsvaziado++;
   r = listaDelta("shows", "watching");
   assert(batidas[9] == 1 && batidas[10] == 1 && batidas[11] == 0);
   // From the activities last confirmed: the playback-only check moved them on.
@@ -1344,6 +1394,8 @@ static int marcou(const char *id, int t, int e) {
   return r;
 }
 
+static void kaijuListaDeVolta(void) { kaijuLista(1); }
+
 // The log nuvio-rewrite1 (2026-11-08): Bleach 366 -> 0 and Kaiju No. 8 20 -> 8
 // when the add-on replaced the episode list. Every Simkl entry of the show is
 // mapped again, from the library in memory.
@@ -1356,8 +1408,11 @@ static void animeVariasEntradas(void) {
   historicoCorpo = KAIJU_HISTORY;
   snprintf(historicoCatalogId, sizeof historicoCatalogId, "tt21975436");
   kaijuLista(0);
-  nHistorico = 0;
-  assert(simkl_historico_aplicar("tt21975436"));
+  nHistorico = 0; mapaEsvaziado++;
+  { int antes = segurosPedidos;
+    assert(simkl_historico_aplicar("tt21975436"));
+    assert(segurosPedidos == antes + 1);   // first open: held once, for both entries
+  }
   assert(nHistorico == 4);
   assert(marcou("tt21975436", 1, 1) && marcou("tt21975436", 1, 2));
   assert(marcou("tt21975436", 2, 1) && marcou("tt21975436", 2, 2));
@@ -1365,6 +1420,48 @@ static void animeVariasEntradas(void) {
 
   assert(simkl_anime_proximo("tt21975436", &t, &e) && t == 2 && e == 3);
   OK("anime: next-up is the furthest of the show's entries (S2E3, not S1E3)");
+
+  // Opened again in the same session with nothing changed: the marks are in
+  // the map, so nothing is mapped and the page's count is not held.
+  nHistorico = 0;
+  { int antes = segurosPedidos;
+    assert(simkl_historico_aplicar("tt21975436"));
+    // Never held, not even while the entries were checked: "Your progress"
+    // blinked on every reopen of Bleach when the hold came first.
+    assert(segurosPedidos == antes);
+  }
+  assert(nHistorico == 0 && segurosOutros == 0);
+  // Its Simkl entry changed (an episode watched elsewhere): mapped again.
+  { char *mudado = strdup(KAIJU_HISTORY), *w = strstr(mudado, "watched_at\":\"2");
+    assert(w);
+    w[strlen("watched_at\":\"2")] = '1';   // another year
+    { int antes = segurosPedidos;
+      assert(simkl_historico_ler(mudado, "tt21975436", 1) > 0 && nHistorico > 0);
+      assert(segurosPedidos == antes + 1 && segurosOutros == 0);   // mapped: held, then shown
+    }
+    nHistorico = 0;
+    assert(simkl_historico_ler(mudado, "tt21975436", 1) == 0 && nHistorico == 0);
+    free(mudado); }
+  // An emptied map (the profile opened again): mapped again.
+  mapaEsvaziado++;
+  assert(simkl_historico_ler(KAIJU_HISTORY, "tt21975436", 1) > 0 && nHistorico == 4);
+  OK("anime: opened again unchanged maps nothing and never hides the count; a changed entry or emptied map maps");
+
+  // Opened again before the page's episode list is back in memory (Bleach in
+  // nuvio-rewrite4): nothing mapped, nothing held. The same list arriving
+  // maps nothing; a different one maps every entry (just below).
+  mapaEsvaziado++;
+  nHistorico = 0;
+  assert(simkl_historico_aplicar("tt21975436") && nHistorico == 4);   // onto this list
+  historicoCatalogEpsQtd = historicoCatalogEpsFinal = 0;
+  nHistorico = 0;
+  assert(simkl_historico_aplicar("tt21975436"));
+  assert(nHistorico == 0 && segurosOutros == 0);
+  kaijuLista(0);
+  simkl_anime_lista_mudou("tt21975436");
+  usleep(50000);
+  assert(historicoQtd() == 0 && segurosOutros == 0);
+  OK("anime: opened again with no list loaded maps nothing; the same list back maps nothing");
 
   // The add-on's list: same numbering, one more season. Both entries again.
   kaijuLista(1);
@@ -1384,6 +1481,21 @@ static void animeVariasEntradas(void) {
   usleep(50000);
   assert(historicoQtd() == 0);
   OK("anime: a new episode list maps every entry of the show again, once");
+
+  // Another list is published and claimed, but by the time the remap thread
+  // looks, the list it had mapped onto is back. The claim is not a finished
+  // mapping: skipped as "unchanged", the show kept no next-up, and the claimed
+  // list published again was taken as already mapped.
+  kaijuLista(0);
+  pthread_mutex_lock(&historicoTrava); nHistorico = 0; pthread_mutex_unlock(&historicoTrava);
+  aoCopiarPorId = kaijuListaDeVolta;
+  simkl_anime_lista_mudou("tt21975436");
+  for (int i = 0; i < 2000 && historicoQtd() < 4; i++) usleep(1000);
+  assert(historicoQtd() == 4);
+  t = e = 0;
+  for (int i = 0; i < 2000 && !simkl_anime_proximo("tt21975436", &t, &e); i++) usleep(1000);
+  assert(t == 2 && e == 3);
+  OK("anime: a list claimed but not mapped is mapped, even with the old list back");
 
   bibEsperar();
   historicoCorpo = NULL;

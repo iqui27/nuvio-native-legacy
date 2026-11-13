@@ -76,6 +76,9 @@ int main(int argc, char **argv) {
   for(unsigned i=0;i<sizeof keep/sizeof *keep;i++) { snprintf(p,sizeof p,"%s/%s",data,keep[i]); struct stat st; assert(!stat(p,&st)&&st.st_size==123); }
   assert(nv_android_cache_name("plugins-c-123.txt"));
   assert(nv_android_cache_name("tendencia/123.txt"));
+  // Simkl's public anime answers can be asked again; the user's library stays.
+  assert(nv_android_cache_name("simkl-anime.txt"));
+  assert(!nv_android_cache_name("simkl-biblioteca-p1.txt"));
   assert(nv_android_cache_name("atualizacao"));
   assert(nv_android_cache_name("atualizacao/Nuvio-2.0.7.apk"));
   assert(!nv_android_cache_name("atualizacao/../accounts.txt"));

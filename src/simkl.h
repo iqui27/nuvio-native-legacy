@@ -195,6 +195,10 @@ void simkl_anime_lista_mudou(const char *imdb);
 // The episode after the last one watched on Simkl, in the numbering of the
 // final episode list now loaded for this series. 0 = unknown for this list.
 int simkl_anime_proximo(const char *imdb, int *t, int *e);
+// 1 when this series' watched marks were mapped from a Simkl anime entry in
+// this session: they follow the numbering of one episode list, and move when
+// another list replaces it.
+int simkl_anime_mapeado(const char *imdb);
 int simkl_historico_ler(const char *json, const char *imdb, uint64_t sessao);
 
 // --- scrobble do player (#459) ------------------------------------------------
