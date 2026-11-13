@@ -248,6 +248,12 @@ static const char *ajVisualIcone(int op) {
     case AJ_DESCANSO_FONTE: return "aj_film";
     case AJ_PROPORCAO_PADRAO: return "aj_maximize-2";
     case AJ_DTS_AC3: return "aj_audio-lines";
+    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR:
+    case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_AUTO: return "aj_audio-lines";
+    case AJ_EXT_AUDIO_CACHE: return "aj_database";
+    case AJ_EXT_AUDIO_GRANDE: return "aj_info";
+    case AJ_EXT_AUDIO_MODO: return "aj_download";
+    case AJ_EXT_AUDIO_AVISO: return "aj_bell";
     case AJ_BRILHO_PLAYER: case AJ_HDR_UI: return "aj_sun-dim";
     case AJ_MANTER_VIDEO: return "aj_memory-stick";
     case AJ_RELOGIO: case AJ_RELOGIO_12H: return "aj_clock";
