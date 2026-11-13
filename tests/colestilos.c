@@ -16,9 +16,7 @@ int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desliga
 const char *addons_base(int i) { (void)i; return ""; }
 const char *addons_id_manifesto(int i) { (void)i; return ""; }
 const char *sessao_usuario(void) { return "account-colestilos"; }
-// Stub do mesmo porteiro de tests/home_layout.c: a regra mora em descoberta.c,
-// que nao entra nesta montagem sem rede.
-void desc_ocultar_vistos_atualizar(void) {}
+// desc_ocultar_vistos_atualizar: stub ja vem de cwordem_home.c.
 
 #define GRUPO(id,pasta) "{\"id\":\"" id "\",\"title\":\"Same title\",\"folders\":[{\"id\":\"" pasta "\",\"title\":\"Folder\",\"sources\":[{\"addonBaseUrl\":\"https://collection.invalid\",\"type\":\"movie\",\"catalogId\":\"" pasta "\"}]}]}"
 static const char *duas = "{\"collections\":[" GRUPO("c1","f1") "," GRUPO("c2","f2") "]}";
