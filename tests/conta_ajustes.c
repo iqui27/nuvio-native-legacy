@@ -14,6 +14,7 @@
 #include <string.h>
 #include <unistd.h>   // mkdtemp
 #include "ajustes.h"
+#include "dados.h"
 
 static int falhas;
 static void confere(const char *o_que, int obtido, int esperado) {
@@ -52,6 +53,23 @@ int main(void) {
     "\"poster_card_corner_radius_dp\":{\"type\":\"int\",\"value\":12},"
     "\"chave_que_este_app_nao_conhece\":{\"type\":\"string\",\"value\":\"x\"}"
     "}}}";
+
+  // Real data init on a disposable root, like app startup. Without it
+  // dados_ler/dados_gravar have no folder, one-time migration markers never
+  // persist and every ajustes_dir() re-runs them. HOME and NUVIO_DADOS both
+  // point at the mkdtemp root so no candidate can reach the owner's folders.
+  char dadosTmp[NVT_MAX], rmDados[NVT_MAX + 16];
+  nvt_set(dadosTmp, sizeof dadosTmp, "/nuvio-conta-dados.XXXXXX");
+  if (!mkdtemp(dadosTmp)) { printf("FALHOU: mkdtemp dados\n"); return 1; }
+  snprintf(rmDados, sizeof rmDados, "rm -rf '%s'", dadosTmp);
+  setenv("NUVIO_DADOS", dadosTmp, 1);
+  setenv("HOME", dadosTmp, 1);
+  dados_iniciar(NULL);
+  if (strncmp(dados_dir(), dadosTmp, strlen(dadosTmp)) != 0) {
+    printf("FALHOU: dados fora da raiz temporaria (%s)\n", dados_dir());
+    if (system(rmDados)) {}
+    return 1;
+  }
 
   printf("aplicando blob da conta...\n");
   ajustes_aplicar_blob(BLOB);
@@ -244,6 +262,8 @@ int main(void) {
     fputs("selected_theme 12\n", f); fclose(f);        // Da arte (13, Dinâmica estilizada, saiu em b6e14d69)
     ajustes_dir(dir);
     confere("local = Da arte", ajustes_cor_viva(), 1);   // CORVIVA_SIMPLES
+    { char *m = dados_ler("aparencia-20.txt");   // one-time migration marker persisted
+      confere("appearance migration marker persisted", m != NULL, 1); free(m); }
     ajustes_aplicar_blob(CONTA_JADE);
     confere("JADE da conta nao desfaz o dinamico", ajustes_cor_viva(), 1);
     n = ajustes_mesclar_blob(CONTA_JADE, &saida);
@@ -269,6 +289,7 @@ int main(void) {
     if (system(cam)) {}
   }
 fim:
+  if (system(rmDados)) {}
 
   printf("\n%s\n", falhas ? "TEM FALHA" : "TODOS OS AJUSTES CHEGARAM CERTOS");
   return falhas ? 1 : 0;
