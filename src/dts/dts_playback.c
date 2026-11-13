@@ -818,7 +818,8 @@ done:
   return NULL;
 }
 
-static int dvNext, p7Next, p7MappingNext, truehdNext, fixedNext, dtsOffNext;
+static int dvNext, p7Next, p7MappingNext, truehdNext, fixedNext, dtsOffNext, mp4Next;
+void dts_playback_next_mp4_test(int enabled) { mp4Next=!!enabled; }
 void dts_playback_next_audio_route(int truehd, int fixed, int dts_off) {
   truehdNext = !!truehd; fixedNext = fixed; dtsOffNext = dts_off == NV_DTS_ROUTE_NATIVE ? dts_off : !!dts_off;
 }
@@ -842,6 +843,7 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
   dts_engine_dv(p->engine, p->dv);
   p->allow_p7 = p7Next; p7Next = 0;
   dts_engine_allow_p7(p->engine, p->allow_p7);
+  dts_engine_mp4_test(p->engine,mp4Next); mp4Next=0;
   dts_engine_p7_mapping(p->engine, p->dv && p->allow_p7 && p7MappingNext); p7MappingNext = 0;
   p->truehd = p->dv && truehdNext; p->dts_off = dtsOffNext;
   dts_engine_audio_route(p->engine, p->truehd, p->dv ? fixedNext : 0, p->dts_off);

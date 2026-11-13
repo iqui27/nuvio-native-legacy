@@ -23,6 +23,7 @@ int dts_playback_enabled(void);
 void dts_playback_next_dv(int enabled);
 /* Main thread: snapshot the P7/recovery opt-in for the next session. */
 void dts_playback_next_p7(int enabled);
+void dts_playback_next_mp4_test(int enabled);
 /* Main thread: snapshot the experimental P7 mapping opt-in (next session). */
 void dts_playback_next_p7_mapping(int enabled);
 /* Main thread: snapshot the audio route for the next session (TrueHD

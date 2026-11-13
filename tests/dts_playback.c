@@ -66,6 +66,7 @@ static void emit(const char *json) {
 }
 int dts_engine_available(void) { return 1; }
 void dts_engine_p7_mapping(DtsEngine *e,int on) { (void)e; (void)on; }
+void dts_engine_mp4_test(DtsEngine *e,int on) { (void)e;(void)on; }
 void dts_engine_audio_route(DtsEngine *e,int t,int f,int o) { (void)e;(void)t;(void)f;(void)o; }
 void dts_engine_allow_p7(DtsEngine *e,int on) { (void)e; (void)on;
  last_p7=on;

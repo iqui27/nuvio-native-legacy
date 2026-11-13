@@ -155,7 +155,7 @@ ctr_run --rm --platform "$BUILD_PLATFORM" --env-file "$ENVF" \
   if [ "${NUVIO_DV7:-1}" = 1 ] && [ "${NUVIO_DTS_FFMPEG:-1}" = 1 ]; then
     export NUVIO_DV7_TARGET=armv7-unknown-linux-gnueabi
     [ -f build/dv7/libnuvio_dv7.a ] || bash tools/build-dv7.sh
-    DTS_CFLAGS="$DTS_CFLAGS -DNV_DV7_CONVERSION"
+    DTS_CFLAGS="$DTS_CFLAGS -DNV_DV7_CONVERSION -DNV_MP4_BD_TEST"
     DV7_LIBS="build/dv7/libnuvio_dv7.a -ldl -lpthread -lm -lrt -Wl,-Bstatic -latomic -Wl,-Bdynamic -static-libgcc"
   fi
   # -DNV_WEBOS: a identidade do alvo tem que vir daqui, porque o compilador

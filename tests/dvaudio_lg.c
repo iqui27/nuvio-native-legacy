@@ -206,5 +206,23 @@ int main(void) {
     assert(!strcmp(partidaFaixa.codec,"dts") && !strcmp(partidaFaixa.language,"eng"));
     dtsSessao=NULL;
     puts("dvaudio_lg: recovered same-language DTS selection passes full-file identity"); }
+#ifdef NV_MP4_BD_TEST
+  { // Real LS2 event path: only an opted-in native startup 204 gets one retry.
+    dtsSessao=NULL; dtsTentou=recuperando=modoLoad=fonteTocou=0; fonteMp4=1;
+    mp4TestEnabled=0; mp4TestPending=0; reconErroPend=0;
+    evento("{\"errorCode\":204,\"errorText\":\"demux failure\"}");
+    assert(!mp4TestPending && reconErroPend);
+    mp4TestEnabled=1; reconErroPend=0; fonteTocou=1;
+    evento("{\"errorCode\":204,\"errorText\":\"demux failure\"}");
+    assert(!mp4TestPending);
+    fonteTocou=0; reconErroPend=0;
+    evento("{\"errorCode\":204,\"errorText\":\"demux failure\"}");
+    assert(mp4TestPending && !reconErroPend && !pronto && !falhou);
+    mp4TestPending=0; dtsTentou=1;
+    evento("{\"errorCode\":204,\"errorText\":\"demux failure\"}");
+    assert(!mp4TestPending);
+    puts("dvaudio_lg: MP4 recovery only for opted-in native startup error 204, once");
+  }
+#endif
   return 0;
 }

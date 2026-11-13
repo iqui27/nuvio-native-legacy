@@ -35,7 +35,7 @@ int main(void) {
 #else
   assert(m==0);
 #endif
-  assert(AJ_DV_AUDIO==AJ_N-1 && !ajustes_dv_audio() && valorPadrao[AJ_DV_AUDIO]==0);
+  assert(AJ_DV_AUDIO==AJ_MP4_BD_TEST-1 && !ajustes_dv_audio() && valorPadrao[AJ_DV_AUDIO]==0);
   assert(!strcmp(CHAVE[AJ_DV_AUDIO],"dvAudioFixoLocal"));
   assert(somenteDesteAparelho(AJ_DV_AUDIO) && !dePerfil(AJ_DV_AUDIO));
   assert(!ajustePortavel(AJ_DV_AUDIO) && !ajusteAparelho(AJ_DV_AUDIO));
@@ -46,5 +46,17 @@ int main(void) {
     assert(ajustes_dts_original()==(i==0) && ajustes_dts_ac3()==(i==2));
   }
 #endif
+  assert(AJ_MP4_BD_TEST==AJ_N-1 && valorPadrao[AJ_MP4_BD_TEST]==1);
+  assert(!ajustes_mp4_bd_test() && !strcmp(CHAVE[AJ_MP4_BD_TEST],"dvMp4BdTestLocal"));
+  assert(somenteDesteAparelho(AJ_MP4_BD_TEST) && !dePerfil(AJ_MP4_BD_TEST));
+  assert(!ajustePortavel(AJ_MP4_BD_TEST) && !ajusteAparelho(AJ_MP4_BD_TEST));
+  valor[AJ_MP4_BD_TEST]=0;
+#if defined(NV_MP4_BD_TEST) && defined(NV_WEBOS) && defined(NV_DV7_CONVERSION)
+  assert(ajustes_mp4_bd_test() && !foraDestaPlataforma(AJ_MP4_BD_TEST));
+#else
+  assert(!ajustes_mp4_bd_test() && foraDestaPlataforma(AJ_MP4_BD_TEST));
+#endif
+  assert(!ajustes_aplicar_blob("{\"c_settings_v1\":{\"values\":{\"c_dvMp4BdTestLocal\":1}}}"));
+  assert(valor[AJ_MP4_BD_TEST]==0);
   puts("PASS: DV preferences local, opt-in and append-only; DTS Off preserves stored modes");
 }

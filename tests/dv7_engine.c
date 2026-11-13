@@ -148,4 +148,5 @@ int main(int argc,char **argv) {
   assert(dts_engine_open(e,argv[1],"",4,0,0)<0);
   dts_engine_destroy(e);
   puts("DV7 engine: real TrueHD/fixed audio, Off, native/converted DTS, P8.1 RPU, seek and corrupt-RPU fallback passed.");
+  return 0;
 }

@@ -18,7 +18,7 @@ else
   libs+=(-ldl); plat=(-DNV_LINUX_DESKTOP); gc=(-Wl,--gc-sections)
 fi
 for dv7 in off on; do
-  extra=(); if [[ $dv7 == on ]]; then extra+=(-DNV_DV7_CONVERSION); fi
+  extra=(); if [[ $dv7 == on ]]; then extra+=(-DNV_WEBOS -DNV_DV7_CONVERSION -DNV_MP4_BD_TEST); fi
   cc -std=gnu11 "${plat[@]}" "${extra[@]}" -Isrc -O1 -g -ffunction-sections -fdata-sections \
     "${sources[@]}" tests/dv7_settings.c "${cflags[@]}" \
     "${gc[@]}" -o "$task_tmp/settings" "${libs[@]}" -pthread -lm

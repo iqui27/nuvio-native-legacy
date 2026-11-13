@@ -35,6 +35,7 @@
 #include "dts_tv.h"
 #include "dts/dts_engine.h"
 #include "dts/dv7.h"
+#include "video_mp4_test.h"
 #include "ajustes.h"
 #include "dts/dts_overlay.h"
 #include "legenda.h"
@@ -696,6 +697,10 @@ static char      erroTexto[96];
 // audio morre. Ver o tratamento em lerEvento.
 static int       audioNaoSup;
 static int dtsHabilitado, dtsTentou, dtsRevisao, dtsFalhaLogada;
+#ifdef NV_MP4_BD_TEST
+static int mp4TestEnabled, mp4TestPending;
+#endif
+static int modoLoad;   // video_modo_live_consumir do load em curso
 static int dtsLegAntes = -1, dtsLegCount;
 static VideoFaixa dtsLegFaixa;
 static int dtsNativePending;
@@ -1557,7 +1562,16 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
         seekRetryEm = 0; seekEnvEm = 0;
         marco("seek recusado: desistiu, segue tocando de onde esta");
       }
-    } else if (!recuperando) {
+    }
+#ifdef NV_MP4_BD_TEST
+    else if(nv_mp4_bd_retry(mp4TestEnabled,js_num(p,NULL,"errorCode",-1),
+              fonteMp4 || nv_url_e_mp4(urlAtual),fonteTocou,modoLoad,
+              dtsSessao!=NULL,dtsTentou,recuperando)) {
+      if(!mp4TestPending)marco("MP4 test: native demux error 204; checking DV compatibility");
+      mp4TestPending=1;reconErroPend=0;tocando=pronto=falhou=0;
+    }
+#endif
+    else if (!recuperando) {
       // Qualquer outro erro: pode ser a rede caindo com o episodio andando.
       // Quem decide entre reconectar e `falhou` e o video_bombear.
       tocando = 0;
@@ -1697,7 +1711,6 @@ static void chamarEm(const char *servico, const char *metodo,
 }
 
 static void protegerScreensaver(void);
-static int modoLoad;   // video_modo_live_consumir do load em curso
 static char cargaBufferPadrao[NV_MEDIA_URL_MAX + 4096];
 static int bufferCustom;
 static int aoCarregar(LSHandle *h, LSMessage *m, void *u);
@@ -2511,6 +2524,10 @@ int video_tocar(const char *url) {
   dvRecuado = 0;
   dtsTentou = 0; dtsRevisao = 0; dtsSaida[0] = 0; dtsNativePending = 0; dtsEstado = 0;
   dtsHabilitado = dts_playback_enabled() && dtsLiberadoNestaTv();
+#ifdef NV_MP4_BD_TEST
+  mp4TestEnabled=ajustes_mp4_bd_test() && dtsHabilitado;
+  mp4TestPending=0;
+#endif
   printf("[dts] fallback %s\n", dtsHabilitado ? "available" : "unavailable");
   dvSondado = dvMkvPerfil = dvAudios = 0; __atomic_store_n(&audioMkvPronto, 0, __ATOMIC_RELEASE); dtsModoDv = 0; dvAudioMkvOrd = -1; dvTruehd = 0; dvSegurar = 0;
   mkvNaoMkv = 0;
@@ -2596,6 +2613,12 @@ void video_bombear(void) {
   if (ligado) acbConfigurarTipo(dtsSessao != NULL);
   if (!dtsSessao) audioMkvOmitidas();
   if (dtsSessao) bombearDts();
+#ifdef NV_MP4_BD_TEST
+  else if(mp4TestPending && ligado && !modoLoad && urlAtual[0] && !dtsTentou) {
+    dtsModoDv=1;
+    if(iniciarDts(-1) || dtsTentou)mp4TestPending=0;
+  }
+#endif
   else if (dvHabilitado && !dtsNativePending && !dtsTentou && !modoLoad && urlAtual[0] && !dvSegurar && dvPronto()) {
     dtsModoDv = 1;
     iniciarDts(-1);
@@ -3039,6 +3062,9 @@ static int tocarInterno(const char *url, int comDV) {
 // Sair do video (ou trocar de fonte) cancela a queda em curso: sem isto o
 // video_bombear recarregaria a fonte velha depois de a tela ja ter fechado.
 void video_parar(void) {
+#ifdef NV_MP4_BD_TEST
+  mp4TestPending=0;
+#endif
   nv_recon_zerar(&recon);
   reconErroPend = 0;
   capmkv_zerar();   // fio de capitulos em voo nao alimenta o proximo titulo (como no .tpk)
@@ -3322,7 +3348,12 @@ static int iniciarDts(int stream) {
   dts_engine_set_ahead_mib(cacheboost_backend_buffer_mb());   // #338: Settings > Buffer size
   dts_engine_set_hdr10p_strip(ajustes_hdr10p_strip());        // #605
   dts_playback_next_dv(dtsModoDv);
+#ifdef NV_MP4_BD_TEST
+  dts_playback_next_p7(ajustes_dv7() || mp4TestPending);
+  dts_playback_next_mp4_test(mp4TestPending);
+#else
   dts_playback_next_p7(ajustes_dv7());
+#endif
   dts_playback_next_p7_mapping(ajustes_dv7_mapping());
   dtsRotaTruehd = dtsModoDv && (dvTruehd || ajustes_dv_audio()) && !ajustes_dts_desligado();
   /* Matis94 05725b747: "Original" on a TV that declares DTS (edidType) lets the

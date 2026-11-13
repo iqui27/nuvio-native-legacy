@@ -798,6 +798,7 @@ typedef enum {
   // Audio on the webOS Dolby Vision path: Original (default) / AAC / Dolby
   // Digital. Matis94 89433220e + 115f3a0c0. LOCAL, append-only.
   AJ_DV_AUDIO,
+  AJ_MP4_BD_TEST, // webOS experimental recovery, local, Off by default
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -1989,6 +1990,7 @@ static const Opcao OPCOES[AJ_N] = {
   NUM("Resolução das miniaturas", 0, 3, 1, NULL),
   ESC("Dolby Vision P7: manter mapeamento (experimental)", V_LIGA, 2),   // local: dv7PreserveMappingLocal
   ESC("Áudio com Dolby Vision", V_DV_AUDIO, 3),   // local: dvAudioFixoLocal
+  ESC("Dolby Vision MP4 (experimental)", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2350,6 +2352,7 @@ static const char *CHAVE[] = {
   "miniaturaResolutionLocal",
   "dv7PreserveMappingLocal",
   "dvAudioFixoLocal",
+  "dvMp4BdTestLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -4121,6 +4124,13 @@ int ajustes_dts_tpk_modo(void) {
 int ajustes_dv_mkv(void)              { return lig(AJ_DV_MKV); }
 int ajustes_dv7(void) { return lig(AJ_DV7); }
 int ajustes_dv7_mapping(void) { return lig(AJ_DV7_MAPPING); }
+int ajustes_mp4_bd_test(void) {
+#if defined(NV_WEBOS) && defined(NV_DV7_CONVERSION) && defined(NV_MP4_BD_TEST) && !defined(NV_TPK) && !defined(NV_ANDROID)
+  return lig(AJ_MP4_BD_TEST);
+#else
+  return 0;
+#endif
+}
 int ajustes_dv_audio(void) { int v = valor[AJ_DV_AUDIO]; return v >= 0 && v <= 2 ? v : 0; }
 int ajustes_hdr10p_strip(void) { return lig(AJ_HDR10P_STRIP); }
 int ajustes_hist_conta(void)          { return lig(AJ_HIST_CONTA); }
@@ -6491,7 +6501,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
     case AJ_DV7:
-    case AJ_DV7_MAPPING: case AJ_DV_AUDIO:
+    case AJ_DV7_MAPPING: case AJ_DV_AUDIO: case AJ_MP4_BD_TEST:
     case AJ_HDR10P_STRIP:   /* o caminho de conversao e desta TV */
     case AJ_HIST_CONTA: case AJ_SOCIAL: /* por perfil desta TV (perfilLocal); o web nao tem */
     case AJ_TAM_MAX: case AJ_TAM_MIN: /* o web nao tem a faixa de tamanho */
@@ -6595,7 +6605,7 @@ static int soNaTv(int op) {
     case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY:
     case AJ_P2P_LIGADO: case AJ_JF_LIGADO: case AJ_POSTER_PROV: case AJ_EPG_PAIS:
     case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: case AJ_RELOGIO_12H:
-    case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV7_MAPPING: case AJ_DV_AUDIO: case AJ_HDR10P_STRIP:
+    case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV7_MAPPING: case AJ_DV_AUDIO: case AJ_MP4_BD_TEST: case AJ_HDR10P_STRIP:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
     case AJ_TUNNELING: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO: case AJ_AFR:
@@ -7192,6 +7202,9 @@ static int foraDestaPlataforma(int op) {
 #if defined(NV_TPK) || defined(NV_ANDROID) || !defined(NV_DV7_CONVERSION)
   if (op == AJ_DV7) return 1;
   if (op == AJ_DV7_MAPPING) return 1;
+#endif
+#if !defined(NV_WEBOS) || !defined(NV_DV7_CONVERSION) || !defined(NV_MP4_BD_TEST) || defined(NV_TPK) || defined(NV_ANDROID)
+  if (op == AJ_MP4_BD_TEST) return 1;
 #endif
   // Legacy depth keys remain positional, but only switch/intensity are shown.
   if (op == AJ_PROF_BORDA || (op >= AJ_PROF_COBERTURA && op <= AJ_PROF_TRAILERS)) return 1;
@@ -8608,6 +8621,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_HIST_CONTA: return "Ligado (padrão): o que você assiste neste perfil sobe para a conta Nuvio, com o progresso e os vistos. Desligado: nada disso é enviado à conta; o Trakt e o Simkl vinculados a este perfil continuam recebendo. Vale só para este perfil.";
     case AJ_SOCIAL: return "Ligado (padrão): amigos, atividade deles e recomendações. Desligado: tudo isso some, com a fileira de amigos da Home, e o app para de falar com o serviço social. Salvos e Avisos continuam. Vale só para este perfil.";
     case AJ_DV_MKV: return "Arquivos MKV em Dolby Vision perfil 5 ou 8 tocam com o Dolby Vision ligado, em vez de HDR10. O áudio Dolby Digital e Dolby Digital Plus vai direto para a TV. Se a conexão não acompanhar, o vídeo continua em HDR10. Só em TVs LG com webOS 4 ou mais novo.";
+    case AJ_MP4_BD_TEST: return "Experimental: recupera a reprodução de arquivos MP4 Dolby Vision compatíveis. Desligado por padrão. Reabra o vídeo após alterar este ajuste.";
     case AJ_DV7: return "Converte MKV Dolby Vision perfil 7 para 8.1. Mantém o vídeo base e os metadados dinâmicos; descarta a camada de melhoria, incluindo FEL. Vale para o próximo vídeo.";
     case AJ_DV_AUDIO: return "Experimental: converte o áudio do Dolby Vision. Pode perder surround e Atmos. Vale no próximo vídeo.";
     case AJ_DV7_MAPPING: return "Experimental: na conversão de Dolby Vision perfil 7, preserva as curvas de mapeamento originais do RPU em vez de reescrevê-las para 8.1 padrão. A camada de melhoria continua descartada. Vale a partir do próximo vídeo.";

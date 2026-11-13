@@ -722,6 +722,7 @@ int   ajustes_social_perfil(int perfil); // mesmo ajuste lido de OUTRO perfil (#
 int   ajustes_dv_mkv(void);              // 1 = Dolby Vision MKV through our demux (webOS, local, default off)
 int   ajustes_dv7(void);
 int   ajustes_dv7_mapping(void);
+int   ajustes_mp4_bd_test(void);
 int   ajustes_dv_audio(void);        // DV path audio: 0 Original, 1 AAC stereo, 2 Dolby Digital 5.1
 int   ajustes_dts_desligado(void);   // LG: DTS row Off (no DTS/TrueHD conversion)
 int   ajustes_hdr10p_strip(void);
