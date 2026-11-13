@@ -3240,6 +3240,8 @@ static int iniciarDts(int stream) {
   dtsTentou = 1;
   dvFonteAberta = 0;
   pararSessao();
+  // The retired native player cannot end its buffering after unload.
+  if (!dtsModoDv) bufferandoDesde = 0;
   posSeg = alvo; pausaPedida = paused;
   ack_publicar();
   dtsRevisao = 0; dtsFalhaLogada = 0;

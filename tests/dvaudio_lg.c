@@ -105,6 +105,20 @@ int main(void) {
   lsCall = fakeCall; lsPayload = fakePayload;
   bus = (LSHandle *)(uintptr_t)1; sessao = 40;
 
+  if (getenv("NUVIO_TEST_BUFFER_HANDOFF")) {
+    Tv t[] = {{"en", "dts", 6}};
+    montar(NULL, 0, t, 1, 0);
+    dtsModoDv = 0; partidas = 0; bufferandoDesde = 12345;
+    assert(iniciarDts(-1) && partidas == 1);
+    assert(bufferandoDesde == 0);
+    dtsSessao = NULL;
+    assert(video_bufferando_ms() == 0);
+    (void)SDL_GetTicks(); SDL_Delay(2);
+    evento("{\"bufferingStart\":{}}"); assert(video_bufferando_ms() > 0);
+    evento("{\"bufferingEnd\":{}}"); assert(video_bufferando_ms() == 0);
+    return 0;
+  }
+
   // 1. O cenario da revisao (#7): MKV [TrueHD eng, E-AC-3 eng, E-AC-3 por], a
   //    TV expoe so a portuguesa, no indice 0. O portugues tem de chegar ao motor.
   { Mkv m[] = {{"A_TRUEHD", "eng", "TrueHD Atmos 7.1"}, {"A_EAC3", "eng", "DD+ 7.1"},
