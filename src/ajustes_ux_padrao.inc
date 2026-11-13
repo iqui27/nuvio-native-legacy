@@ -379,4 +379,5 @@
   0, // updateNotificationsLocal: On
   1, // rememberLastProfileLocal: Off
   0, 0, 0, // showSkip{Intro,Recap,Credits}ButtonLocal: On
+  1, // diagnosticsQrLocal: Desligado
   0, // sourceBadgePositionLocal: selos no topo do cartao "Do add-on"

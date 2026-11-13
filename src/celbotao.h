@@ -33,7 +33,7 @@
 #include "gfx.h"
 #include "ponteiro.h"
 
-enum { CELB_NENHUM = 0, CELB_SPOT, CELB_BUSCA, CELB_TECLADO, CELB_AMIGO, CELB_ADDON, CELB_IMPORTAR, CELB_N };
+enum { CELB_NENHUM = 0, CELB_SPOT, CELB_BUSCA, CELB_TECLADO, CELB_AMIGO, CELB_ADDON, CELB_IMPORTAR, CELB_LOG, CELB_N };
 
 int  celb_disponivel(void);
 // "Type on your phone" for text fields. Desktop types on the physical keyboard;
