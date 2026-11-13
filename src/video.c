@@ -1265,7 +1265,13 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
         if (!fo) break;
         VideoFaixa *f = &faixaLeg[nLeg];
         memset(f, 0, sizeof *f);
-        f->numero = (int)numeroDe(o, "\"trackNum\":");
+        // trackNum dentro do objeto da faixa [o,fo): numeroDe varria o payload
+        // ate o fim e uma entrada sem a chave herdava o numero do irmao.
+        // #773: o webOS 4.4.3 omite trackNum; so um ordinal inteiro >=0 vale,
+        // o resto fica -1 e recebe a posicao no passo abaixo.
+        { double tn = js_num(o, fo, "trackNum", -1);
+          f->numero = (tn >= 0 && tn <= 2147483647.0 && tn == (int)tn)
+                      ? (int)tn : -1; }
         // Resolvido so quando o cabecalho do MKV chega (lerMkv). O memset
         // acima deixaria 0, que e um ordinal VALIDO — a primeira legenda.
         f->ordinalMkv = -1;
@@ -1285,6 +1291,19 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
         nLeg++;
         o = js_prox(fo);
       }
+      // NENHUMA entrada com ordinal valido: a posicao na lista e o ordinal
+      // que o selectTrack espera. Com algum valor explicito valido as
+      // entradas sem ele ficam -1 (desabilitadas) — adivinhar um numero
+      // aqui colidiria com um trackNum de verdade.
+      { int i, nenhum = nLeg > 0;
+        for (i = 0; i < nLeg; i++) if (faixaLeg[i].numero >= 0) nenhum = 0;
+        if (nenhum)
+          for (i = 0; i < nLeg; i++) {
+            faixaLeg[i].numero = i;
+            if (!faixaLeg[i].idioma[0])
+              snprintf(faixaLeg[i].rotulo, sizeof faixaLeg[i].rotulo,
+                       i18n("Legenda %d"), i + 1);
+          } }
     }
     printf("[video] faixas: audio=%d legenda=%d atmos=%d\n", nAudio, nLeg, vidAtmos);
     fflush(stdout);
