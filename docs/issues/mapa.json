@@ -1,6 +1,6 @@
 {
  "atualizado_em": "2026-11-13",
- "base": "6330e8be0",
+ "base": "0618e13c6",
  "validacao_pr_761_arte_2026_11_04": {
   "merge_pr761": "6b886e1e1262f36aacdd126892d79624cc6de47c",
   "merge_arte": "86998755a9db7886a419d674397da0fc54af31f8",
@@ -36,7 +36,23 @@
  },
  "nota": "Local snapshot sync 2026-10-25T21:56:42-03:00, HEAD 6330e8be0. Added 0 issues. Device validation remains pending; see external estado.md. Previous history retained in item notes.",
  "itens": [
-  {"numero": 789, "titulo": "[Bug] MDBList catalogs stop at 1,000 items despite working skip pagination (LG webOS, v2.0.8)", "estado_github": "aberta", "plataforma": "Relator: LG OLED55C11LB/C1 (2021), webOS6.5.3-47(kisscurl-koli), app2.0.8, add-on pessoal MDBList em pasta de coleção. Nenhum acesso à TV.", "tipo": "bug relatado; teto ampliado no candidato2.1", "status": "integrado-aguardando-validacao-especifica", "release": null, "conserto": ["202af790a456d209d185ece8ec04b89564ba6070", "39c413125035c933a440821c44cd9bd572a547dd", "2d3bbddcb5354d46c0e4d3ca1574d68f7371cb85"], "notas": "Paginação de add-ons acima de1000 integrada por2d3bbddc; validação registrada em2b44bfed. Fixtures host PASS recuperadas antes/depois do merge. Limites explícitos2000 itens/8MiB,sem prova da causa do payload original ou aceite na C1.", "proximo_passo": "Validar C1/webOS6.5.3-47 com pacote identificado,catálogo sanitizado>1000 itens,navegação/arte/ocultar vistos,cursor/retry/reload e memória no aparelho. Limites2000/8MiB permanecem; orçamento não inclui overhead/index e recarga pode falhar preservando lista;sem garantia de snapshot remoto estável. Recuperar baseline FAIL,build e relatório independente final.", "url": "https://github.com/iqui27/nuvio-native-legacy/issues/789"},
+  {
+   "numero": 789,
+   "titulo": "[Bug] MDBList catalogs stop at 1,000 items despite working skip pagination (LG webOS, v2.0.8)",
+   "estado_github": "aberta",
+   "plataforma": "Relator: LG OLED55C11LB/C1 (2021), webOS6.5.3-47(kisscurl-koli), app2.0.8, add-on pessoal MDBList em pasta de coleção. Nenhum acesso à TV.",
+   "tipo": "bug relatado; teto ampliado no candidato2.1",
+   "status": "integrado-aguardando-validacao-especifica",
+   "release": null,
+   "conserto": [
+    "202af790a456d209d185ece8ec04b89564ba6070",
+    "39c413125035c933a440821c44cd9bd572a547dd",
+    "2d3bbddcb5354d46c0e4d3ca1574d68f7371cb85"
+   ],
+   "notas": "Paginação de add-ons acima de1000 integrada por2d3bbddc; validação registrada em2b44bfed. Fixtures host PASS recuperadas antes/depois do merge. Limites explícitos2000 itens/8MiB,sem prova da causa do payload original ou aceite na C1.",
+   "proximo_passo": "Validar C1/webOS6.5.3-47 com pacote identificado,catálogo sanitizado>1000 itens,navegação/arte/ocultar vistos,cursor/retry/reload e memória no aparelho. Limites2000/8MiB permanecem; orçamento não inclui overhead/index e recarga pode falhar preservando lista;sem garantia de snapshot remoto estável. Recuperar baseline FAIL,build e relatório independente final.",
+   "url": "https://github.com/iqui27/nuvio-native-legacy/issues/789"
+  },
   {
    "numero": 787,
    "titulo": "Season list truncated for some shows",
@@ -14235,7 +14251,9 @@
    "tipo": "bug",
    "status": "corrigida na integração",
    "release": "-",
-   "conserto": ["a6271d24b6850cf8e7ef268822d075c4ca525e8c"],
+   "conserto": [
+    "a6271d24b6850cf8e7ef268822d075c4ca525e8c"
+   ],
    "ultima_resposta": {
     "nos": false,
     "data": "",
@@ -14414,7 +14432,9 @@
    "tipo": "bug",
    "status": "integrada, aguardando validação específica",
    "release": "-",
-   "conserto": ["17cf0d2bbd87b0160c52b1a21021ffd9cdeaf4a0"],
+   "conserto": [
+    "17cf0d2bbd87b0160c52b1a21021ffd9cdeaf4a0"
+   ],
    "ultima_resposta": {
     "nos": false,
     "data": "2026-10-24",
@@ -15005,7 +15025,11 @@
    "tipo": "bug",
    "status": "integrada",
    "release": null,
-   "conserto": ["ca8c9fc772b434ae09fc750b35ba2bce183759aa", "f7f12aeb6f2bea21d2ff259f71b9fdbc83e29370", "93ca17f6dcca9ac97f8b9bf0e2c25b332836e4ca"],
+   "conserto": [
+    "ca8c9fc772b434ae09fc750b35ba2bce183759aa",
+    "f7f12aeb6f2bea21d2ff259f71b9fdbc83e29370",
+    "93ca17f6dcca9ac97f8b9bf0e2c25b332836e4ca"
+   ],
    "ultima_resposta": {
     "nos": true,
     "data": "2026-11-07",
@@ -15499,18 +15523,85 @@
   }
  ],
  "validacoes": [
-  {"data": "2026-11-12", "quem": "Revisor j-rev-f3-zima; verificador distinto j-verify-f3-zima; Central (gate e pos-merge)", "o_que": "Importar Matis94 lote F: lembrar perfil opt-in, botoes skip independentes, avisos de atualizacao com busca manual e opacidade em passos de 5% (F17/F18/F19/D12)", "issues": [], "ref": "26eec9dbbc52ef087e2faa2758a9187e23a29824", "resultado": "Sem P0/P1 pendente; gate atual 8/8, nenhuma divergencia/teste ignorado. Pos-merge ajustes_ux_interacao, update_manual e i18n rc0 com HEAD inalterado; i18n automatico rc0. Regressao de migracao de opacidade por perfil falhou antes134/passou depois0. F4/F5 P2 confirmados e documentados.", "evidencia": "docs/plans/matis94-import-20261112/lote-f-integracao.md; /Volumes/ExternalSSD/tmp/rev/matis94-20261112/f-postmerge-evidence.json e f3-host-evidence.json. Diff af6a75ddb497e046c463de398043cbc8edb0c46d8230e323ec6b5ca90c559aaf; candidato 1338812bec9891c9d62d25cc5bb8423515ee5b59. Zima fez leitura sem testes; gate executou os8comandos no candidato atual. Sem prova TV/ABI, push, release, deploy de servicos, instalacao ou contas. Hook documental existente atualiza painel/roadmap publico."},
-  {"data": "2026-11-12", "quem": "Revisor Claude Code review job j-rev-h2; verificador independente j-verify-h2-zima; Central (gate e pos-merge)", "o_que": "Importar Matis94 lote H: titulos/temporadas de episodios e Continuar assistindo local antes da reconciliacao remota (F14/F15/F20)", "issues": [], "ref": "8a16234bc2ac98de5c3a258c7592342151c56507", "resultado": "Sem P0/P1; gate atual 15/15, nenhuma divergencia ou teste ignorado. Pos-merge cwprov, episodiosdup e i18n rc0, HEAD inalterado; varredura i18n automatica rc0. Dependencia catalogo-descoberta corrigida sem stubs. P2 de titulos genericos, numeracao Cinemeta e arte local inicial registrados; caso chines inconclusivo.", "evidencia": "docs/plans/matis94-import-20261112/lote-h-integracao.md; /Volumes/ExternalSSD/tmp/rev/matis94-20261112/h-postmerge-evidence.json com hashes individuais. Diff 020af46e86d0dd8e6cade103687babf96ad0b229fa7899859b9091cdc5c5b0d1; candidato 8b739fd87ee4796c6d79edb83f2f155d7bb42255. Verificador Zima fez leitura, sem toolchain; execucao no candidato atual feita pela Central. Sem TV/ARM/ABI, push, release, deploy de servicos, instalacao ou contas. Hook documental existente atualiza painel/roadmap publico."},
-  {"data": "2026-11-12", "quem": "Revisor j-rev-a3; verificador independente j-verify-a3; Central (gate e pos-merge)", "o_que": "Importar Matis94 lote A: URLs ate 8191 bytes, HEVC in-band com SEI e recuperacao PGS/fila cheia (R15/R18/R22)", "issues": [], "ref": "c0abc4a28f5ead0f69d39f2550e07900b5577133", "resultado": "Revisao e verificacao sem P0/P1; central.py gate passed com 5/5 e nenhuma divergencia. Pos-merge hevc_annexb, dts_pgs, dts_playback, video_acb_lg e i18n rc0; varredura i18n automatica rc0. N1 P2 de legenda anterior durante cue descartada permanece registrado.", "evidencia": "docs/plans/matis94-import-20261112/lote-a-integracao.md; /Volumes/ExternalSSD/tmp/rev/matis94-20261112/a-postmerge-evidence.json (logs e SHA256 individuais). Diff revisado cddf04086663b590a1b088146af24a2512ee4933e5282341b46eb8c5e4028977; candidato 7d40f7debbba7ce3a41373bc30cb61360b289bf3. Decoder real host FFmpeg9/libavcodec63; sem paridade FFmpeg7.1.5, build ARM/ABI ou prova TV. Sem push, release, deploy do Worker de recomendacoes, instalacao ou contas. O hook documental existente atualiza painel/roadmap publico."},
-  {"data": "2026-11-12", "quem": "Central TV; revisao independente", "o_que": "Ampliar paginacao de catalogos de addons alem de mil itens", "issues": [789], "ref": "2d3bbddcb5354d46c0e4d3ca1574d68f7371cb85", "resultado": "Revisoes independentes sem P0/P1; colfiltro e colecao_configurator offline antes do merge, colfiltro e varredura i18n apos merge rc0.", "evidencia": "/Volumes/ExternalSSD/tmp/rev/issue789-postmerge-20261112.log SHA256 a73101a9e65a59a3a6978ec73102eabb59b1a049594393a162deae5056086553. Teste sintetico nao comprova causa do relato LG; sem prova de memoria ou navegacao em TV. Limite explicito 2000 itens ou 8 MiB; recarga perto do limite pode falhar preservando a lista; sem garantia de snapshot remoto estavel."},
-  {"data": "2026-11-12", "quem": "Central TV; revisao independente", "o_que": "Ampliar capacidade de episodios e tratar respostas paginadas de servidores", "issues": [787], "ref": "b1c886b46ee640fcb517874bd8f7d33f8d2a803b", "resultado": "Revisao independente sem P0/P1; episodiosdup, jsraiz_progresso e cateps offline antes do merge rc0; episodiosdup e i18n apos merge rc0.", "evidencia": "/Volumes/ExternalSSD/tmp/rev/issue787-postmerge-20261112.log SHA256 c6dac361cf1f3347e2ed8f93296051957e52c74be5a5de3ab0ca5f474b55b640. Fixture sintetica nao prova payload original; sem validacao TV ou WGT. Limites: 5000 episodios/64 temporadas; WGT abort e pico de memoria nao validados em aparelho; TMDB pode truncar texto, Plex pode reduzir metadados; DNS bloqueante e alteracoes concorrentes na paginacao permanecem."},
-  {"data": "2026-11-11", "quem": "Central TV; revisao independente", "o_que": "Integrar convergencia parcial da biblioteca da conta preservando Trakt e Simkl", "issues": [639], "ref": "626c168f36534b9adefcb3c6c3709102111fdb43", "resultado": "Revisao independente sem P0/P1/P2; library639.sh offline e varredura i18n apos merge rc0.", "evidencia": "/Volumes/ExternalSSD/tmp/rev/issue639-postmerge-20261111.log SHA256 0dd3d566dbcd1db26343596f421f16a6965a7451698326a11b3a8e61ca96c4b5. Snapshot remoto vazio segue protegido e nao converge; sem prova end-to-end de pull/push/apply ou aceite real."},
-  {"data": "2026-11-11", "quem": "Central TV; revisao independente", "o_que": "Integrar inferencia Castilian e exibir possivel audio, inclusive Multi, separado de faixas declaradas", "issues": [722, 785], "ref": "9d0583db9", "resultado": "Revisao independente sem P0/P1/P2 apos ajuste Multi; source_audio_language.sh e varredura i18n na integracao rc0.", "evidencia": "Casos originais nao reproduzidos; sem captura visual em TV; listas longas ainda podem ser cortadas. Issues seguem abertas."},
+  {
+   "data": "2026-11-12",
+   "quem": "Revisor j-rev-f3-zima; verificador distinto j-verify-f3-zima; Central (gate e pos-merge)",
+   "o_que": "Importar Matis94 lote F: lembrar perfil opt-in, botoes skip independentes, avisos de atualizacao com busca manual e opacidade em passos de 5% (F17/F18/F19/D12)",
+   "issues": [],
+   "ref": "26eec9dbbc52ef087e2faa2758a9187e23a29824",
+   "resultado": "Sem P0/P1 pendente; gate atual 8/8, nenhuma divergencia/teste ignorado. Pos-merge ajustes_ux_interacao, update_manual e i18n rc0 com HEAD inalterado; i18n automatico rc0. Regressao de migracao de opacidade por perfil falhou antes134/passou depois0. F4/F5 P2 confirmados e documentados.",
+   "evidencia": "docs/plans/matis94-import-20261112/lote-f-integracao.md; /Volumes/ExternalSSD/tmp/rev/matis94-20261112/f-postmerge-evidence.json e f3-host-evidence.json. Diff af6a75ddb497e046c463de398043cbc8edb0c46d8230e323ec6b5ca90c559aaf; candidato 1338812bec9891c9d62d25cc5bb8423515ee5b59. Zima fez leitura sem testes; gate executou os8comandos no candidato atual. Sem prova TV/ABI, push, release, deploy de servicos, instalacao ou contas. Hook documental existente atualiza painel/roadmap publico."
+  },
+  {
+   "data": "2026-11-12",
+   "quem": "Revisor Claude Code review job j-rev-h2; verificador independente j-verify-h2-zima; Central (gate e pos-merge)",
+   "o_que": "Importar Matis94 lote H: titulos/temporadas de episodios e Continuar assistindo local antes da reconciliacao remota (F14/F15/F20)",
+   "issues": [],
+   "ref": "8a16234bc2ac98de5c3a258c7592342151c56507",
+   "resultado": "Sem P0/P1; gate atual 15/15, nenhuma divergencia ou teste ignorado. Pos-merge cwprov, episodiosdup e i18n rc0, HEAD inalterado; varredura i18n automatica rc0. Dependencia catalogo-descoberta corrigida sem stubs. P2 de titulos genericos, numeracao Cinemeta e arte local inicial registrados; caso chines inconclusivo.",
+   "evidencia": "docs/plans/matis94-import-20261112/lote-h-integracao.md; /Volumes/ExternalSSD/tmp/rev/matis94-20261112/h-postmerge-evidence.json com hashes individuais. Diff 020af46e86d0dd8e6cade103687babf96ad0b229fa7899859b9091cdc5c5b0d1; candidato 8b739fd87ee4796c6d79edb83f2f155d7bb42255. Verificador Zima fez leitura, sem toolchain; execucao no candidato atual feita pela Central. Sem TV/ARM/ABI, push, release, deploy de servicos, instalacao ou contas. Hook documental existente atualiza painel/roadmap publico."
+  },
+  {
+   "data": "2026-11-12",
+   "quem": "Revisor j-rev-a3; verificador independente j-verify-a3; Central (gate e pos-merge)",
+   "o_que": "Importar Matis94 lote A: URLs ate 8191 bytes, HEVC in-band com SEI e recuperacao PGS/fila cheia (R15/R18/R22)",
+   "issues": [],
+   "ref": "c0abc4a28f5ead0f69d39f2550e07900b5577133",
+   "resultado": "Revisao e verificacao sem P0/P1; central.py gate passed com 5/5 e nenhuma divergencia. Pos-merge hevc_annexb, dts_pgs, dts_playback, video_acb_lg e i18n rc0; varredura i18n automatica rc0. N1 P2 de legenda anterior durante cue descartada permanece registrado.",
+   "evidencia": "docs/plans/matis94-import-20261112/lote-a-integracao.md; /Volumes/ExternalSSD/tmp/rev/matis94-20261112/a-postmerge-evidence.json (logs e SHA256 individuais). Diff revisado cddf04086663b590a1b088146af24a2512ee4933e5282341b46eb8c5e4028977; candidato 7d40f7debbba7ce3a41373bc30cb61360b289bf3. Decoder real host FFmpeg9/libavcodec63; sem paridade FFmpeg7.1.5, build ARM/ABI ou prova TV. Sem push, release, deploy do Worker de recomendacoes, instalacao ou contas. O hook documental existente atualiza painel/roadmap publico."
+  },
+  {
+   "data": "2026-11-12",
+   "quem": "Central TV; revisao independente",
+   "o_que": "Ampliar paginacao de catalogos de addons alem de mil itens",
+   "issues": [
+    789
+   ],
+   "ref": "2d3bbddcb5354d46c0e4d3ca1574d68f7371cb85",
+   "resultado": "Revisoes independentes sem P0/P1; colfiltro e colecao_configurator offline antes do merge, colfiltro e varredura i18n apos merge rc0.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/issue789-postmerge-20261112.log SHA256 a73101a9e65a59a3a6978ec73102eabb59b1a049594393a162deae5056086553. Teste sintetico nao comprova causa do relato LG; sem prova de memoria ou navegacao em TV. Limite explicito 2000 itens ou 8 MiB; recarga perto do limite pode falhar preservando a lista; sem garantia de snapshot remoto estavel."
+  },
+  {
+   "data": "2026-11-12",
+   "quem": "Central TV; revisao independente",
+   "o_que": "Ampliar capacidade de episodios e tratar respostas paginadas de servidores",
+   "issues": [
+    787
+   ],
+   "ref": "b1c886b46ee640fcb517874bd8f7d33f8d2a803b",
+   "resultado": "Revisao independente sem P0/P1; episodiosdup, jsraiz_progresso e cateps offline antes do merge rc0; episodiosdup e i18n apos merge rc0.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/issue787-postmerge-20261112.log SHA256 c6dac361cf1f3347e2ed8f93296051957e52c74be5a5de3ab0ca5f474b55b640. Fixture sintetica nao prova payload original; sem validacao TV ou WGT. Limites: 5000 episodios/64 temporadas; WGT abort e pico de memoria nao validados em aparelho; TMDB pode truncar texto, Plex pode reduzir metadados; DNS bloqueante e alteracoes concorrentes na paginacao permanecem."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Central TV; revisao independente",
+   "o_que": "Integrar convergencia parcial da biblioteca da conta preservando Trakt e Simkl",
+   "issues": [
+    639
+   ],
+   "ref": "626c168f36534b9adefcb3c6c3709102111fdb43",
+   "resultado": "Revisao independente sem P0/P1/P2; library639.sh offline e varredura i18n apos merge rc0.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/issue639-postmerge-20261111.log SHA256 0dd3d566dbcd1db26343596f421f16a6965a7451698326a11b3a8e61ca96c4b5. Snapshot remoto vazio segue protegido e nao converge; sem prova end-to-end de pull/push/apply ou aceite real."
+  },
+  {
+   "data": "2026-11-11",
+   "quem": "Central TV; revisao independente",
+   "o_que": "Integrar inferencia Castilian e exibir possivel audio, inclusive Multi, separado de faixas declaradas",
+   "issues": [
+    722,
+    785
+   ],
+   "ref": "9d0583db9",
+   "resultado": "Revisao independente sem P0/P1/P2 apos ajuste Multi; source_audio_language.sh e varredura i18n na integracao rc0.",
+   "evidencia": "Casos originais nao reproduzidos; sem captura visual em TV; listas longas ainda podem ser cortadas. Issues seguem abertas."
+  },
   {
    "data": "2026-11-11",
    "quem": "Revisão independente histórica; Central TV (conferência)",
    "o_que": "Formato configurado de 12 horas nos horários exibidos.",
-   "issues": [718],
+   "issues": [
+    718
+   ],
    "ref": "bedce69876a51934bf9a2e232f6fce451481941c",
    "resultado": "Revisão histórica OK; relogiofim.sh e compilação sintática rc0 relatados. Formato padrão continua 24h; opção 12h é manual, sem inferência do sistema Android.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-revg-fim12h.log SHA256 6b2eb51d5b1119a2d56629c6b80876afb875b95bf425033e05be8eecb03ef766. Sem build completo ou validação física na revisão histórica; caminhos de horário Seekr e social sem execução em runtime."
@@ -15519,7 +15610,9 @@
    "data": "2026-11-11",
    "quem": "Revisão independente; Central TV (gate e integração)",
    "o_que": "Seleção manual P2P, encaminhamento ao player e ausência de troca automática após falha.",
-   "issues": [784],
+   "issues": [
+    784
+   ],
    "ref": "c5d88031c8dab8e7c3c9541e3bb7ba46250acafb",
    "resultado": "Revisão OK; gate 3/3; fontesmortas.sh p2p e varredura i18n rc0 pós-merge. Seleção, resolver e atualização do app reais; fronteiras P2P e vídeo simuladas.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue784-p2p-20261111.log; /Volumes/ExternalSSD/tmp/rev/issue784-p2p-postmerge-20261111.log SHA256 05415959450c577a45c9c4e3988e0a6c9db35f9a757d3ff1dd68fb4416d3c916. Testes posteriores isolados de rede; sem evento real da tela, servidor P2P, vídeo ou TV. Não comprova causa do relato."
@@ -15528,7 +15621,10 @@
    "data": "2026-11-11",
    "quem": "Revisão independente histórica; Central Issues e TV (conferência)",
    "o_que": "Ajuste de frequência de exibição em Android TV.",
-   "issues": [641, 712],
+   "issues": [
+    641,
+    712
+   ],
    "ref": "722515c76b12d9a7f2133a93740288681274c9cd; 6ec478ed4b79e969bf4f2da3d66997aabef480cc",
    "resultado": "Revisão histórica OK; afr_android.sh e build-local.sh rc0 relatados. Testes C e JVM com seleção de cadência; integração ancestral conferida.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue641b.log SHA256 28be005538613cf9bdab4bbd7a973f55d5ea7aefff28fbc26fce876e8943260d. Sem validação HDMI física. Ao retornar de PiP mantendo reprodução, AFR não é reaplicado até pausa e retomada."
@@ -15537,7 +15633,9 @@
    "data": "2026-11-11",
    "quem": "Revisão independente histórica; Central Issues e TV (conferência)",
    "o_que": "Leitura de vistos e progresso Jellyfin por usuário.",
-   "issues": [617],
+   "issues": [
+    617
+   ],
    "ref": "aeec47d32dd10320185ed9d799896907d474d715; ba935402da65d6d7c013a1b429e15372dc0e5a12",
    "resultado": "Revisão histórica OK; jellyfin.sh, emby.sh, plex.sh, srvidx.sh e build-local.sh rc0 relatados; commits ancestrais da integração.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue617b.log SHA256 6ca1acfb0d0c43482a44e7fc49ad04f3a33f7324ba7b4e8ca47771978a4878fe. Fixtures em host; sem conta ou dispositivo real; progresso em percentual não prova seek exato por ticks."
@@ -15546,7 +15644,9 @@
    "data": "2026-11-11",
    "quem": "Revisão independente histórica; Central TV (conferência)",
    "o_que": "Nomes de arquivo de legendas de addons.",
-   "issues": [606],
+   "issues": [
+    606
+   ],
    "ref": "c9ae2eb5073b0c74bb3971c917e6ff44b0c9d77e; 1a2b00cd676f6005198774f00b093708adf1b45a",
    "resultado": "Revisão histórica OK; addons_legendas.sh rc0 após reparo do teste 692. Asserções de precedência de nomes e basename executadas no mesmo teste.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-rec-i606.log SHA256 28fc4537ac0b8d4e9267f4e78a9b9731d1f98db4fc24531729cbf7eaef618b6e; /Volumes/ExternalSSD/tmp/rev/issue692-postmerge-20261111.log SHA256 b089f02b92c228888f4b4a3a8c9308fea0570412cf5f8c39947b588dbff7d91c. Fixtures sintéticas; sem provedor real ou TV."
@@ -15555,7 +15655,9 @@
    "data": "2026-11-11",
    "quem": "Revisão independente histórica; Central TV (conferência)",
    "o_que": "Ruído grosso no fundo Light da seleção de perfil.",
-   "issues": [657],
+   "issues": [
+    657
+   ],
    "ref": "696409f3adb5c2378a71c20b1be3a8029ad3d9c6",
    "resultado": "Revisão histórica OK; psestilos_luz_barra.sh rc0 e compilação sintática relatados. Teste verifica ausência da operação de granulação grossa, preservando luz e degradê.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-revg-ruidoperfil.log SHA256 be1cec0345ad946b28b6328aec0bd27597fcdd1b54409a286b3dd2e94673e6c1. Sem prova GL real de reabertura ou validação visual em TV."
@@ -15564,7 +15666,9 @@
    "data": "2026-11-11",
    "quem": "Revisão independente histórica; Central TV (conferência)",
    "o_que": "Estabilidade de pôsteres Cover Flow durante carregamento.",
-   "issues": [662],
+   "issues": [
+    662
+   ],
    "ref": "a0ae67373c46596c0d3a075ccc3f2ee63bcf697f",
    "resultado": "Revisão histórica OK; vertudo_coverflow_pages.sh rc0 e compilação sintática relatados. Teste exercita ordenação e identidade de foco; estado de revelação verificado estaticamente.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-revg-coverflowpisca.log SHA256 e9b4ff1ade15f75a8a6d75ad8492e640ed60cdd1697e294ef49abcac13252f3d. Sem reprodução visual GL ou TV de catálogo grande."
@@ -15573,7 +15677,9 @@
    "data": "2026-11-11",
    "quem": "Revisão independente; Central TV (gate e integração)",
    "o_que": "Comparação local de CA e hostname no fetch comum e nos caminhos estritos do relay.",
-   "issues": [694],
+   "issues": [
+    694
+   ],
    "ref": "ac2a2132421d992745f9bce45e3762f55cb144c9",
    "resultado": "Revisão OK; gate 1/1 e dts_range.sh rc0 pós-merge. No host, fetch comum aceitou certificado não confiável ou hostname divergente; range e stream estritos rejeitaram ambos e aceitaram certificado confiável com SAN correspondente.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue694-tls-causal-20261111.log; /Volumes/ExternalSSD/tmp/rev/issue694-tls-causal-postmerge-20261111.log SHA256 3d5524eb331defbf0c48a24a73dcad04576b7fd29aec2c36d1b24c3f8a68773b. Fixture local, libcurl SecureTransport no macOS; não prova a causa nem o resultado na TV."
@@ -15582,7 +15688,9 @@
    "data": "2026-11-11",
    "quem": "Revisão independente; Central TV (gate e integração)",
    "o_que": "Fallback de reprodução TPK40 para relay após falha de preparação HTTPS.",
-   "issues": [694],
+   "issues": [
+    694
+   ],
    "ref": "17cf0d2bbd87b0160c52b1a21021ffd9cdeaf4a0",
    "resultado": "Revisão OK; gate 5/5; tpk-cdn.sh e varredura i18n rc0 pós-merge.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue694-20261111.log; /Volumes/ExternalSSD/tmp/rev/issue694-postmerge-20261111.log SHA256 9d81637c9d79530fb6107c988fd42175c956b15f69b352924492b00a384a56e8. Fixtures locais; sem validação Samsung física. Se identidade do arquivo chegar após recusa inicial da sonda, ela não é retomada."
@@ -15591,7 +15699,9 @@
    "data": "2026-11-11",
    "quem": "Revisão independente; Central TV (gate e integração)",
    "o_que": "Ordenação e filtro de não vistos na fileira Biblioteca da Home.",
-   "issues": [672],
+   "issues": [
+    672
+   ],
    "ref": "447d16626064697edb7b7edd7393cfdb95c99194",
    "resultado": "Revisão OK; gate 7/7; bibhome.sh e varredura i18n rc0 pós-merge.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue672-20261111.log; /Volumes/ExternalSSD/tmp/rev/issue672-postmerge-20261111.log SHA256 66b6916b53bef663c60d71e9b4a42310c49bea90635493b1474a17f03972d79d. Testes em host; sem validação visual ou de controle em TV. Testes não relacionados apresentam falhas também na base anterior."
@@ -15600,7 +15710,9 @@
    "data": "2026-11-11",
    "quem": "Revisão independente; Central TV (gate e integração)",
    "o_que": "Saída ao fim da reprodução e encaminhamento para próximo episódio.",
-   "issues": [675],
+   "issues": [
+    675
+   ],
    "ref": "613ce1289e9317b37a9a65ae890679ec6795b623",
    "resultado": "Revisão OK; gate 3/3; posplay.sh e varredura i18n rc0 pós-merge.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue675-20261111.log; /Volumes/ExternalSSD/tmp/rev/issue675-postmerge-20261111.log SHA256 a3bf4cc82925f8417107d21311189f8a694fde4b3cf9cdce777e26e32fecd50a. Testes em host com preparo simulado; sem reprodução completa ou TV. Intenção pendente ainda espera conclusão do preparo."
@@ -15609,7 +15721,9 @@
    "data": "2026-11-11",
    "quem": "Central Issues (teste em host); revisão independente histórica",
    "o_que": "Seleção manual de fonte ao retomar episódio.",
-   "issues": [667],
+   "issues": [
+    667
+   ],
    "ref": "3b06994668e06b2be1857358198e44ecb15b4e27",
    "resultado": "fonte_manual_resume.sh rc0 no HEAD 93bf2631a7fd8d59f37b42982ac48968a92b2935; revisão histórica OK; correção ancestral da integração. Teste histórico anterior expirou na compilação (rc124).",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/issues-open-tv-20261111/fonte_manual_resume-current.txt SHA256 86f83a6b072b4604f8129a9074e556f53f956efd8ff9f3628751cdb70f284cfa; /Volumes/ExternalSSD/tmp/rev/j-revg-fontemanual.log SHA256 9268c33d89df9649ba4100548eea0f4fe0da94c12720633c22efe91fb42c9ded. Fixtures locais; sem mídia real ou TV."
@@ -15618,7 +15732,9 @@
    "data": "2026-11-11",
    "quem": "Revisões independentes históricas; Central Issues (conferência)",
    "o_que": "Histórico Simkl compartilhado entre perfis locais no mesmo aparelho.",
-   "issues": [643],
+   "issues": [
+    643
+   ],
    "ref": "cd53977bf1b0e48cc02fd514e490aa6c993d0e16; 0c3d7b348a86be1f7de80d4b4e746cd074557761; c21b18d32ab861da7b97a7993c95196df0470500",
    "resultado": "Revisões históricas OK; simkl_amigos.sh, simkl_vistos.sh e simkl_history.sh rc0 relatados em host; commits ancestrais da integração.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue643b.log SHA256 354b8ce87c054cba40ef097642fd7143a4431a9bc05317d9d186fe1c1e6f9116; /Volumes/ExternalSSD/tmp/rev/j-rev-21-simkl.log SHA256 ad1720ebef9adcb36f8eb16b9be1bc9804f63b47a434d21f781371dd5a562fa5; /Volumes/ExternalSSD/tmp/rev/simkl-review-checks.log SHA256 0ac1fcca023f37f958a0bf04d96f04066d7717e3eba7b413ddb3ab996cb1c6c3. Fixtures históricas; sem conta real ou TV. Remoções podem permanecer em cache; timestamp antigo ou nulo pode repetir download integral."
@@ -15627,7 +15743,9 @@
    "data": "2026-11-11",
    "quem": "Revisão independente histórica; Central Issues (conferência)",
    "o_que": "Limite Top 10 e filtros de tipo em coleções.",
-   "issues": [666],
+   "issues": [
+    666
+   ],
    "ref": "54ce9fcf98aa702003b4917c676deadae4b7b628; 4fd572bced5941df4cb6569a9d101f6b6911aaa4",
    "resultado": "Revisão histórica OK; collections.sh e compilação sintática rc0 relatados; commits ancestrais da integração.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-revg-colecaotop10.log SHA256 5cd5947f40ee53363e1886bc70425cfd090a4df6e692d964a92fd28d4aa97aa6. Rede simulada; sem build completo histórico ou validação em TV."
@@ -15636,7 +15754,9 @@
    "data": "2026-11-11",
    "quem": "Central Issues (teste em host); revisão independente histórica",
    "o_que": "Animação de GIFs ao trocar e reabrir perfis.",
-   "issues": [660],
+   "issues": [
+    660
+   ],
    "ref": "58a94f01dba0462189aa45f95b20afb3b802b2b6",
    "resultado": "gifperfis.sh rc0 no HEAD 93bf2631a7fd8d59f37b42982ac48968a92b2935; revisão histórica OK; correção ancestral da integração.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/issues-open-tv-20261111/gifperfis-current-bugs.txt SHA256 3c6c2948ab8b86e0510679c84ef26610cf14fa120272c3986d95391bd322acbf; /Volumes/ExternalSSD/tmp/rev/j-revg-gifperfis.log SHA256 d88e4a6deab8cdb0517710e746c7efd786f55a89391f6a388a113b69f42fd42a. GL oculto com GIFs em cache; sem prova física Samsung ou desempenho sem cache."
@@ -15645,7 +15765,9 @@
    "data": "2026-11-11",
    "quem": "Central Issues (teste em host); revisão independente histórica",
    "o_que": "Navegação contínua na lista de canais do guia.",
-   "issues": [668],
+   "issues": [
+    668
+   ],
    "ref": "133cccd0b4483e7abe332f98de1747e7b6f54cfc",
    "resultado": "guia_hold.sh rc0 no HEAD 93bf2631a7fd8d59f37b42982ac48968a92b2935; revisão histórica OK; correção ancestral da integração.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/issues-open-tv-20261111/guia_hold-current-bugs.txt SHA256 eccb9c12fce144bbfbafe3a9c62d8a80cff5d9d4322cab28d8d575d1c967ef4a; /Volumes/ExternalSSD/tmp/rev/j-revg-guiasegurar.log SHA256 3984a4170d2ab11beb56b886556a599cbd069041f52142634889b2923b003226. Eventos em host; sem medição de controle físico LG."
@@ -15654,7 +15776,9 @@
    "data": "2026-11-11",
    "quem": "Central Issues (verificação em host)",
    "o_que": "Troca de fonte preserva episódio e progresso durante reconstrução de Continue Watching.",
-   "issues": [570],
+   "issues": [
+    570
+   ],
    "ref": "ee42d28cc22261bd5b31549b2248a50422f07c98; 4e93411db96b83e0b607399ae25a94ce69fc9489",
    "resultado": "fonte_troca.sh rc0 no HEAD 5fbfdb32411cbd53dd059180c03b8ad623821eee; ambos os commits são ancestrais da integração.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/issues-open-tv-20261111/fonte_troca-batch2.txt SHA256 36bd850945e849d638b0d0114110782c3cd1788900be132adc1005f2680cf37f. Fonte sintética; sem teste do decodificador Samsung."
@@ -15663,7 +15787,9 @@
    "data": "2026-11-11",
    "quem": "Revisão independente histórica; Central Issues (verificação posterior)",
    "o_que": "Filtro manual de gênero em coleções e catálogos.",
-   "issues": [656],
+   "issues": [
+    656
+   ],
    "ref": "ec125c60acd79fcbaf93996232fa2200fe750cb9",
    "resultado": "Revisão histórica OK; colecao_genero.sh rc0 no HEAD 5fbfdb32411cbd53dd059180c03b8ad623821eee; correção ancestral da integração.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue656.log SHA256 8f18a065a6c6cdab5de02278a4513aee199da4373a8caba9047ecbc63c92c65e; /Volumes/ExternalSSD/tmp/rev/issues-open-tv-20261111/colecao_genero-verification.txt SHA256 da1a4c42aaddb7c8aa3c41c54ae7aabaff2a8010499080584e6466bc90224479. Sem validação física Tizen 9."
@@ -15672,7 +15798,9 @@
    "data": "2026-11-11",
    "quem": "Revisão independente histórica",
    "o_que": "Alinhamento do foco e botão de reprodução ao próximo episódio.",
-   "issues": [674],
+   "issues": [
+    674
+   ],
    "ref": "9e3cf67d891fca8b13e7e1d25d960ca0ce7942bf",
    "resultado": "Revisão histórica OK; issue674_play_button.sh rc0 relatado no log; correção ancestral da integração.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-rev-issue674-675.log SHA256 9f08408b623f5f102962d8d3823a9767af4482654c193534086b2f508cf12aad. Teste histórico em host; sem aceite físico."
@@ -15765,22 +15893,22 @@
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-verif-issues771-final-20261110.log; Samsung, isolamento de cache e geração tardia sem prova."
   },
   {
-    "data": "2026-11-04",
-    "quem": "Claude Code (smoke TCL)",
-    "o_que": "Navegação limitada Android 2.1.0 na TCL após atualização preservando dados.",
-    "issues": [],
-    "ref": "integracao/2.1@6e64cdfb4",
-    "resultado": "Perfil existente selecionado pela UI (preferência local regravada; perfil anterior não confirmado). Home: fileira Friends watching abriu detalhe e Back retornou à mesma posição; Biblioteca/To watch abriu, foco moveu na grade e Back retornou; Settings > This TV abriu, Visual effects mostrou Automatic, e dois Back retornaram à Home. Nenhuma alteração de ajustes/lista ou reprodução intencional. Seletor de fontes não testado: título mostrado oferecia Watch direto; não acionar risco de reprodução. Processo 17103 permaneceu ativo; amostra recente de 4000 linhas logcat sem sinais fatais ou ANR do app detectados, cobertura limitada. Retifica bloqueio registrado anteriormente: perfil foi aberto posteriormente.",
-    "evidencia": "Capturas locais /Volumes/ExternalSSD/tmp/rev/tcl-smoke-0411/{row2,detail,back,library,library-nav,performance,settings-back}/screen.png. Não valida desempenho medido, conclusão de episódio, PGS, limites de token ou capacidade de 32 bibliotecas em aparelho."
+   "data": "2026-11-04",
+   "quem": "Claude Code (smoke TCL)",
+   "o_que": "Navegação limitada Android 2.1.0 na TCL após atualização preservando dados.",
+   "issues": [],
+   "ref": "integracao/2.1@6e64cdfb4",
+   "resultado": "Perfil existente selecionado pela UI (preferência local regravada; perfil anterior não confirmado). Home: fileira Friends watching abriu detalhe e Back retornou à mesma posição; Biblioteca/To watch abriu, foco moveu na grade e Back retornou; Settings > This TV abriu, Visual effects mostrou Automatic, e dois Back retornaram à Home. Nenhuma alteração de ajustes/lista ou reprodução intencional. Seletor de fontes não testado: título mostrado oferecia Watch direto; não acionar risco de reprodução. Processo 17103 permaneceu ativo; amostra recente de 4000 linhas logcat sem sinais fatais ou ANR do app detectados, cobertura limitada. Retifica bloqueio registrado anteriormente: perfil foi aberto posteriormente.",
+   "evidencia": "Capturas locais /Volumes/ExternalSSD/tmp/rev/tcl-smoke-0411/{row2,detail,back,library,library-nav,performance,settings-back}/screen.png. Não valida desempenho medido, conclusão de episódio, PGS, limites de token ou capacidade de 32 bibliotecas em aparelho."
   },
   {
-    "data": "2026-11-04",
-    "quem": "Claude Code (TCL, observação limitada)",
-    "o_que": "Captura de arranque após atualização Android 2.1.0 na TCL; navegação bloqueada no seletor de perfil.",
-    "issues": [],
-    "ref": "integracao/2.1@6e64cdfb4",
-    "resultado": "TV em repouso; após despertar, seletor de perfis renderizado. Home, detalhes, fontes, Salvos e desempenho não testados: selecionar perfil grava ARQ_ATIVO; preferência preservada. Últimas 1500 linhas do logcat: nenhum sinal fatal ou ANR correspondente detectado; janela limitada, sem prova de ausência de falhas.",
-    "evidencia": "/Volumes/ExternalSSD/tmp/rev/tcl-smoke-0411/wake/screen.png; src/perfis.c:520-546. Sem reprodução, alteração de lista ou histórico."
+   "data": "2026-11-04",
+   "quem": "Claude Code (TCL, observação limitada)",
+   "o_que": "Captura de arranque após atualização Android 2.1.0 na TCL; navegação bloqueada no seletor de perfil.",
+   "issues": [],
+   "ref": "integracao/2.1@6e64cdfb4",
+   "resultado": "TV em repouso; após despertar, seletor de perfis renderizado. Home, detalhes, fontes, Salvos e desempenho não testados: selecionar perfil grava ARQ_ATIVO; preferência preservada. Últimas 1500 linhas do logcat: nenhum sinal fatal ou ANR correspondente detectado; janela limitada, sem prova de ausência de falhas.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/tcl-smoke-0411/wake/screen.png; src/perfis.c:520-546. Sem reprodução, alteração de lista ou histórico."
   },
   {
    "data": "2026-11-04",
@@ -15912,7 +16040,9 @@
    "data": "2026-11-04",
    "quem": "job mini; revisão independente Zima; Claude Code (integração)",
    "o_que": "Teste de regressão da troca de fonte #570 recuperado usando caminho real do aplicativo.",
-   "issues": [570],
+   "issues": [
+    570
+   ],
    "ref": "integracao/2.1@c9ef9759b443ef626642ec85a853dd2ed33370e3",
    "resultado": "Teste e i18n passaram pós-merge; teste compilou com dois avisos. Job relata controle de mutação detectado; revisão OK com notas P2. Sem novo defeito de produção comprovado, sem teste em TV.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/j-test570-0411.log; /Volumes/ExternalSSD/tmp/rev/j-rev-test570-0411.log; /Volumes/ExternalSSD/tmp/rev/test570-pos-merge.log"
@@ -15932,7 +16062,10 @@
    "data": "2026-11-04",
    "quem": "Claude Code (build e verificação)",
    "o_que": "Builds webOS IPK e Samsung WGT após correção de compatibilidade das legendas PGS salvas.",
-   "issues": [665, 698],
+   "issues": [
+    665,
+    698
+   ],
    "ref": "integracao/2.1@86cb9c791f12fcf2f9b1d240d0ef26e8e48e4883",
    "resultado": "Ambas builds rc=0 com avisos; estrutura Debian do IPK e integridade ZIP do WGT verificadas. Sem instalação ou validação em TV; WGT sem assinatura conforme distribuição normal.",
    "evidencia": "IPK SHA256 1146a632efb9e9a71f76c1ed97757f1b6ed35f079aa86f8efa5b22e170bb7d9e (75943178 bytes); WGT SHA256 4c536890850c15668d9c8ec2bed3d5a05b422f86a6be65081f2fc706eecaceed (46340206 bytes); /Volumes/ExternalSSD/tmp/rev/build-lg-86cb9c7.log; /Volumes/ExternalSSD/tmp/rev/build-wgt-86cb9c7.log"
@@ -15984,7 +16117,9 @@
    "data": "2026-11-04",
    "quem": "Coordenação TV",
    "o_que": "Builds webOS e Samsung WGT com correções de imagens e reabertura de episódio",
-   "issues": [697],
+   "issues": [
+    697
+   ],
    "ref": "141a87daa8e88036ff7387f9141f2c78082e023e; PR 757 e merge 672ff9a27",
    "resultado": "builds e pacotes gerados; validação em TVs pendente",
    "evidencia": "Checkouts isolados no HEAD indicado e fontes rastreadas limpas antes e depois. WebOS --ipk --build rc=0 com libass habilitado: IPK 75944008 bytes, SHA-256 541a106fc17cdc918769b6a41f156e6423c4c00aa43ce9efb788bbc3f5c6e256, formato Debian com membros ar esperados. WGT: libwebp WASM 1.4.0 compilada, build normal rc=0 com libass e libwebp; tentativa inicial de empacotar rc=3 por ausência de configuração no comando de pacote, repetida com NUVIO_PROPERTIES rc=0. WGT sem assinatura 46341706 bytes, SHA-256 eb8aeb3f6660955fb0ff93aaa5104733871a67989ac9e52e78b9923434555dbb, unzip -tq rc=0. Compiladores emitiram warnings. Não houve teste físico, verificação funcional em TV, nem demonstração de relação com relato #697. Logs build-tv-141a87d-webos.log, build-tv-141a87d-wgt-completo.log, build-tv-141a87d-wgt-pacote-retry.log."
@@ -15993,7 +16128,9 @@
    "data": "2026-11-04",
    "quem": "Job mini, revisão independente Zima e coordenação TV (modelos servidos não comprovados)",
    "o_que": "Reabertura de episódio preserva identidade do título durante publicação do catálogo",
-   "issues": [697],
+   "issues": [
+    697
+   ],
    "ref": "ca4c99014; merge 672ff9a27aff0b704ac4274214a7277fb76e84ac",
    "resultado": "teste direcionado e revisão passaram; relação com relato e aceitação em TV pendentes",
    "evidencia": "Job relata teste com publicação determinística FAIL rc=134 antes e PASS após correção, build Mac rc=0; teste não executa fluxo completo nem reproduziu corrida em TV. Coordenação: proxepisodioid.sh pós-merge e varredura-i18n.py rc=0. Revisão j-rev-697-0411.log VEREDITO OK, sem P0/P1; P2: título sem ID pode conservar índice inválido ou deslocado, comportamento anterior não corrigido; item removido pode ser reinserido sem fileira. Job não teve acesso ao relato sanitizado; relação com #697 não demonstrada, #747 não investigada. fonte_troca.sh e pr567-review.py falharam também na base segundo job; juntos_rejoin.sh retornou 0 mas parou antes de compilar. Nenhuma validação física ou build de plataforma de TV."
@@ -18012,33 +18149,75 @@
    "resultado": "Merge 0cefb7bc4c28e787c20a0b3353b37f2dac85d6f1; gate13/13+C9complemento12/12+pós5/5; nenhum P0/P1 confirmado, oito P2 C mantidos. 59 IDs e classificações iniciais preservados; itens de issues intocados.",
    "evidencia": "Diff94f7d940c5d18284ea6c3f8a5e35a318af283f52a51534703d30a00eb89b1a6b; digest 7f50a9b71dfd5897ea4819faeb937adad29fde68525abe146d8848d0ba49f432. C8FAIL134/open6.218s->PASS0/1.122s callbackStandardreal. F05FPS/D13ARM-ABI-IPK-P2P/FFmpeg7.1.5/TV ainda não comprovados; SDK sem nuvio-audio-config; hevc_annexb_engine rc1 não dispensado. Sem fecharissues/push/release/install/accounts/serviçonovo."
   },
-  {"data": "2026-11-13", "quem": "Central (Fable execution); reviewer j-rev-fv-leg773-code (model UNKNOWN); runtime verifier j-verify-fv-leg773 (model UNKNOWN)", "o_que": "Post-merge documentation for #773 (webOS subtitle trackNum parse, positional fallback). Code merged into integracao/2.1 at 261ab41 from 1daef874. Issue remains open; B8 device proof pending.", "issues": [], "ref": "docs/plans/issues-exec-fable-20261113/leg773-integracao.md", "resultado": "Gate 2/2 passed; red 134 on base, green 0 and build 0 on source head (distinct verifier). Post-merge tests/video_acb_lg.sh rc 0 on 261ab41, log sha256 68be098982c7a41263a09e44a1555a135404556fbdf003905df24527d9db6a55, HEAD unchanged. i18n post-check rc 0. P2 notes F1-F5 kept; no P0/P1. Not proven: B8 webOS 4.4.3 device payload and selection; not a fix for all subtitles.", "evidencia": "Diff 9115d8bba..1daef874b SHA-256 4d856f16b388b84f26d7d682ea693e1705a75ccd28fef83ba02712d6b2cd4539; gate digest a1202ed80b0b73cbe93481e5ffea52fbf0ee6607d9cc1a0c2dbc3da8e7a34ceb; docs/plans/issues-exec-fable-20261113/STATUS.md."},
-  {"data": "2026-11-13", "quem": "Central (Fable execution, job j-fv-ready-tv-postmerge, attempt_id postmerge-20261113); static reviewer fv-ready-tv-static-review (served model UNKNOWN); runtime verifier fv-ready-tv-runtime-verifier (served model UNKNOWN)", "o_que": "Post-merge documentation for ready-tv lot: DMP766 storage hygiene (not crash root), SAM/P2P783 VOD Home-return mechanism, ASS719 active and same-centisecond sibling retention. Source merged into integracao/2.1 at c5548b4 from candidate 5f1898a2. SOURCE INTEGRATION ONLY; physical TV acceptance unknown. Item status fields unchanged.", "issues": [766, 783, 719], "ref": "docs/plans/issues-exec-fable-20261113/ready-tv-integracao.md", "resultado": "Review OK (source only; no confirmed P0/P1; P2 notes retained). Verifier: no confirmed P0/P1. Host gate 7/7 required commands rc 0 at exact HEAD, zero failures. Post-merge on c5548b4 (this job): tests/queda.sh rc 0, tests/tpk-preso.sh rc 0, tests/mkvass_despejo719.sh rc 0. i18n postcheck rc 0. BIB639/PAG789 full global gate still pending, not waived, not integrated. Not proven: physical TV acceptance (webOS core prune on TV, Tizen Home->return resume, ASS seek-back after despejo on anime track).", "evidencia": "merge c5548b4; candidate 5f1898a2c8196fb62cca835199b0ce7c4434e4de; base 21e1565df9b6cd4112c4cabc9f7ab2f26eef295d; diffSHA b046cffc816b5f2881c17413f83c17a8c62b244d2232c81122dcd44810a05726; verification digest 896288673a9acae814aae0e2060d7bb79f20ccc57ab62c18f382d2ca95bf97e1; test log sha256: queda 1b8fdbaab657f5473aca1fc238c1e36086bb25a48c3b8cee827bfc689c1742bb, tpk-preso 901d16386671740c614436fc7b5faa034d85887a3c63d15628cf8a71b31d7475, mkvass_despejo719 a5a39abba3d6f425bb5b72e97cf884fe9b51ec536c78df7987294efec8259afd"},
   {
-    "data": "2026-11-13",
-    "quem": "Central (Fable execution, job j-fv-language-scr-postmerge, attempt_id postmerge-20261113-language-scr); static reviewer fv-language-scr-static-review2 and runtime verifier fv-language-scr-runtime-verifier2 (served models UNKNOWN)",
-    "o_que": "Post-merge documentation for language-scr lot at integracao/2.1 HEAD 440b19fcafc9d3590c2252b989e6ad1e4cfc5154 (HEAD^1 4211dd8 base, HEAD^2 0e5606a candidate). #785 (FON785): source fix for recognized release-label languages in the existing inferred Possivel audio row; pre-existing audio-filter false positives fixed via shared recognition and explicit generic precedence, expectations unchanged. #706 (SCR706): TEST FIXTURE repair only; no production screensaver fix and no root-cause claim for the reporter's symptom. Source artifact e9c34d01d is regression provenance, not an external issue closure. Targeted runs on HEAD rc 0: source_audio_language, fon785_rotulos, video_pausa_lg. Physical TV acceptance UNKNOWN. Item status fields unchanged; no closure.",
-    "issues": [
-      785,
-      706
-    ],
-    "ref": "docs/plans/issues-exec-fable-20261113/language-scr-integracao.md",
-    "resultado": "SOURCE INTEGRATED; ISSUES REMAIN OPEN. #785 source-fix only; #706 test-fixture-only. Prior diagnostic omission corrected: source_audio_language was rc 134 at candidate stage; rc 0 on merged HEAD. Underlying production regression fixed at source for #785. No failure waiver. BIB639/PAG789 global gate still pending, unwaived, not integrated.",
-    "evidencia": "Targeted tests on 440b19f: tests/source_audio_language.sh rc 0 (log sha256 4accc6fbbdb38cf3a052bf556c0b5f086b36caece2b316caacb8066ef5646a16); tests/fon785_rotulos.sh rc 0 (sha256 24ff2a61ab9548fab97aa4de32d3853c3d48031754d0f8b94a84d5a48d4a8d18); tests/video_pausa_lg.sh rc 0 (sha256 94c34a3ee7bd675e4f4f4a369ad9be3c5c9c478989dc436760d2d98f4db35748). Reviewer/verifier served model, exact base/head/merge digest per canonical gate record and real device tests: UNKNOWN / not located in this job. TV acceptance, LG screensaver root C1/C2/C3/C5, FON row on TV, P2 and GUI rendering (fontes_lote_e/fontes_formatter): NOT RUN."
+   "data": "2026-11-13",
+   "quem": "Central (Fable execution); reviewer j-rev-fv-leg773-code (model UNKNOWN); runtime verifier j-verify-fv-leg773 (model UNKNOWN)",
+   "o_que": "Post-merge documentation for #773 (webOS subtitle trackNum parse, positional fallback). Code merged into integracao/2.1 at 261ab41 from 1daef874. Issue remains open; B8 device proof pending.",
+   "issues": [],
+   "ref": "docs/plans/issues-exec-fable-20261113/leg773-integracao.md",
+   "resultado": "Gate 2/2 passed; red 134 on base, green 0 and build 0 on source head (distinct verifier). Post-merge tests/video_acb_lg.sh rc 0 on 261ab41, log sha256 68be098982c7a41263a09e44a1555a135404556fbdf003905df24527d9db6a55, HEAD unchanged. i18n post-check rc 0. P2 notes F1-F5 kept; no P0/P1. Not proven: B8 webOS 4.4.3 device payload and selection; not a fix for all subtitles.",
+   "evidencia": "Diff 9115d8bba..1daef874b SHA-256 4d856f16b388b84f26d7d682ea693e1705a75ccd28fef83ba02712d6b2cd4539; gate digest a1202ed80b0b73cbe93481e5ffea52fbf0ee6607d9cc1a0c2dbc3da8e7a34ceb; docs/plans/issues-exec-fable-20261113/STATUS.md."
   },
-  {"data": "2026-11-13", "quem": "Central (canonical gate evidence supplement); static reviewer fv-language-scr-static-review2; runtime verifier fv-language-scr-runtime-verifier2; served models UNKNOWN", "o_que": "Supplement the preceding #785 source-fix / #706 test-fixture-only validation with the canonical gate record located by the central. No item status or prior validation changed.", "issues": [785, 706], "ref": "docs/plans/issues-exec-fable-20261113/language-scr-integracao.md", "resultado": "Canonical gate passed: declared7/executed7/required7/passed7, skipped0/failed0/timeouts0/divergences0, agreement true, errors empty. Guarded merge and i18n postcheck passed. TV acceptance UNKNOWN; BIB639/PAG789 full global gate remains pending and unwaived.", "evidencia": "Base4211dd864006ddfbf8383d7b7dac453ded86b582; candidate0e5606a6119e3089f9585ce3a7bcb1876ca38b4e; diffSHA2c41c9c318e0e344ffe4411b707a8d8e6dad1706e69616707f07615e22e669c1; verification digest bf4ec68c5b2319475d3c9588d7f0269d7158bc40b87dd1903e255ef1ca05d902; merge440b19fcafc9d3590c2252b989e6ad1e4cfc5154; all7 rc0: source_audio_language, fon785_rotulos, stream_parser, video_pausa_lg, lsregistro, build-local, varredura-i18n. Postmerge i18n rc0 SHAe2dc1d85ba32029673aefafb6a1c449a89170cefb60cd397499b0dff77cc29e1. Real device proof remains pending."},
   {
-    "data": "2026-11-13",
-    "quem": "Claude Haiku 5.5 (post-merge executor, central sole writer); reviewer fv-av736-static-review; verifier fv-av736-runtime-verifier; served models UNKNOWN",
-    "o_que": "#736 source integrated into integracao/2.1 as experimental TPK40 DTS, default OFF only. TV unknown. No release graduation. Post-merge evidence and docs only.",
-    "issues": [
-      736
-    ],
-    "ref": "docs/plans/issues-exec-fable-20261113/av736-integracao.md",
-    "resultado": "Merge 6c035dd5e028fcbdd9949a3945bf0e64fdc1c12f (BASE 4719643de2750b75a110523f3624c37a15683ce7, candidate 48e105cecf8db3f88581f9a9ec96606f8a9faa0e). Canonical gate passed 5/5, no skipped/failed/timeouts/divergences. Post-merge rerun: tests/dts_tpk_legacy_gate.sh rc 0, tests/tpk40_experimental_output.sh rc 0. Issue stays aberta; TV acceptance UNKNOWN; physical Tizen 4/5.5 pending.",
-    "evidencia": "Diff sha256 1d0a89c62719f0f56049f89fd373706d837e205ae03b18a09c600b315725d6b9 (brief labelled it SHA1; value is SHA256). Canonical evidence digest 9f4f3aed35f944ec4068666f81f17b315589bbaa90a1bde79ba48fb1bf5fbdf3. Reportroot /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/ (av736-canonical-evidence.json, av736-verification.results.json, av736-postmerge-report.md). Post-merge log sha256: dts gate 0a4e4661ecdbd44282471881a3cad5a4cfe7a7223f1c33433b33f99af44ae2c8; output test a430f0efec84c0e2afbcd277e0fce09eb404722cf7dbefe4d5ac984a6dd9501b. Findings: F1 withdrawn, R-a withdrawn, R-b P2 confirmed, R-f P2 and F2 P2 inconclusive, no P0/P1. Limits: host compile is not TV load/playback; BIB639/PAG789 global gate not waived."
+   "data": "2026-11-13",
+   "quem": "Central (Fable execution, job j-fv-ready-tv-postmerge, attempt_id postmerge-20261113); static reviewer fv-ready-tv-static-review (served model UNKNOWN); runtime verifier fv-ready-tv-runtime-verifier (served model UNKNOWN)",
+   "o_que": "Post-merge documentation for ready-tv lot: DMP766 storage hygiene (not crash root), SAM/P2P783 VOD Home-return mechanism, ASS719 active and same-centisecond sibling retention. Source merged into integracao/2.1 at c5548b4 from candidate 5f1898a2. SOURCE INTEGRATION ONLY; physical TV acceptance unknown. Item status fields unchanged.",
+   "issues": [
+    766,
+    783,
+    719
+   ],
+   "ref": "docs/plans/issues-exec-fable-20261113/ready-tv-integracao.md",
+   "resultado": "Review OK (source only; no confirmed P0/P1; P2 notes retained). Verifier: no confirmed P0/P1. Host gate 7/7 required commands rc 0 at exact HEAD, zero failures. Post-merge on c5548b4 (this job): tests/queda.sh rc 0, tests/tpk-preso.sh rc 0, tests/mkvass_despejo719.sh rc 0. i18n postcheck rc 0. BIB639/PAG789 full global gate still pending, not waived, not integrated. Not proven: physical TV acceptance (webOS core prune on TV, Tizen Home->return resume, ASS seek-back after despejo on anime track).",
+   "evidencia": "merge c5548b4; candidate 5f1898a2c8196fb62cca835199b0ce7c4434e4de; base 21e1565df9b6cd4112c4cabc9f7ab2f26eef295d; diffSHA b046cffc816b5f2881c17413f83c17a8c62b244d2232c81122dcd44810a05726; verification digest 896288673a9acae814aae0e2060d7bb79f20ccc57ab62c18f382d2ca95bf97e1; test log sha256: queda 1b8fdbaab657f5473aca1fc238c1e36086bb25a48c3b8cee827bfc689c1742bb, tpk-preso 901d16386671740c614436fc7b5faa034d85887a3c63d15628cf8a71b31d7475, mkvass_despejo719 a5a39abba3d6f425bb5b72e97cf884fe9b51ec536c78df7987294efec8259afd"
   },
-  {"data": "2026-11-13", "quem": "Claude Haiku 5.5 (post-merge executor, central sole writer); reviewer fv-sync-gate-static-review; verifier fv-sync-gate-runtime-verifier; served models UNKNOWN", "o_que": "Fixture-only sync-gate merge (tests/ 4 files) into integracao/2.1 for #639 and #789 test infrastructure. No production fix, no production candidate (BIB639/PAG789) integrated. Full global gate NOT RUN / unwaived. Issues not fixed or closed.", "issues": [639, 789], "ref": "docs/plans/issues-exec-fable-20261113/sync-fixtures-integracao.md", "resultado": "Merge 98aaea16cb67c55d072ec483131fa7079fcc68d7 (parents exactly BASE 85624bba84243244187efa6ad6f0d50b650632be and candidate 7d429206d3e4739c4ef51e858a0adea3d684bbf3). Canonical gate 8/8 passed, 0 skipped/failed/timeouts/divergences. Postmerge rc 0: tests/syncordem.sh, tests/synccolecoes.sh. Device acceptance UNKNOWN; no field/TV proof.", "evidencia": "Candidate diff sha256 eef67a8136e18ade2305af06e787bbe19072856e839df09618f8cbfedfaed14b. Canonical digest 6bf57f9572457e07107bf25c2b20f3406ebec983e83378bed9f110653f904a39; i18n stdout sha e2dc1d85ba32029673aefafb6a1c449a89170cefb60cd397499b0dff77cc29e1. Report: /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/sync-gate-postmerge-report.md. Logs: sync-gate-postmerge-syncordem.log (sha cac01a267761...), sync-gate-postmerge-synccolecoes.log (sha 2ae210b0...). Static review reused via doc-only rebind proof; verifier mutation evidence m1/m2/m3/m4/m6 expected reds vs green control. Open P3: N4, N5."},
+  {
+   "data": "2026-11-13",
+   "quem": "Central (Fable execution, job j-fv-language-scr-postmerge, attempt_id postmerge-20261113-language-scr); static reviewer fv-language-scr-static-review2 and runtime verifier fv-language-scr-runtime-verifier2 (served models UNKNOWN)",
+   "o_que": "Post-merge documentation for language-scr lot at integracao/2.1 HEAD 440b19fcafc9d3590c2252b989e6ad1e4cfc5154 (HEAD^1 4211dd8 base, HEAD^2 0e5606a candidate). #785 (FON785): source fix for recognized release-label languages in the existing inferred Possivel audio row; pre-existing audio-filter false positives fixed via shared recognition and explicit generic precedence, expectations unchanged. #706 (SCR706): TEST FIXTURE repair only; no production screensaver fix and no root-cause claim for the reporter's symptom. Source artifact e9c34d01d is regression provenance, not an external issue closure. Targeted runs on HEAD rc 0: source_audio_language, fon785_rotulos, video_pausa_lg. Physical TV acceptance UNKNOWN. Item status fields unchanged; no closure.",
+   "issues": [
+    785,
+    706
+   ],
+   "ref": "docs/plans/issues-exec-fable-20261113/language-scr-integracao.md",
+   "resultado": "SOURCE INTEGRATED; ISSUES REMAIN OPEN. #785 source-fix only; #706 test-fixture-only. Prior diagnostic omission corrected: source_audio_language was rc 134 at candidate stage; rc 0 on merged HEAD. Underlying production regression fixed at source for #785. No failure waiver. BIB639/PAG789 global gate still pending, unwaived, not integrated.",
+   "evidencia": "Targeted tests on 440b19f: tests/source_audio_language.sh rc 0 (log sha256 4accc6fbbdb38cf3a052bf556c0b5f086b36caece2b316caacb8066ef5646a16); tests/fon785_rotulos.sh rc 0 (sha256 24ff2a61ab9548fab97aa4de32d3853c3d48031754d0f8b94a84d5a48d4a8d18); tests/video_pausa_lg.sh rc 0 (sha256 94c34a3ee7bd675e4f4f4a369ad9be3c5c9c478989dc436760d2d98f4db35748). Reviewer/verifier served model, exact base/head/merge digest per canonical gate record and real device tests: UNKNOWN / not located in this job. TV acceptance, LG screensaver root C1/C2/C3/C5, FON row on TV, P2 and GUI rendering (fontes_lote_e/fontes_formatter): NOT RUN."
+  },
+  {
+   "data": "2026-11-13",
+   "quem": "Central (canonical gate evidence supplement); static reviewer fv-language-scr-static-review2; runtime verifier fv-language-scr-runtime-verifier2; served models UNKNOWN",
+   "o_que": "Supplement the preceding #785 source-fix / #706 test-fixture-only validation with the canonical gate record located by the central. No item status or prior validation changed.",
+   "issues": [
+    785,
+    706
+   ],
+   "ref": "docs/plans/issues-exec-fable-20261113/language-scr-integracao.md",
+   "resultado": "Canonical gate passed: declared7/executed7/required7/passed7, skipped0/failed0/timeouts0/divergences0, agreement true, errors empty. Guarded merge and i18n postcheck passed. TV acceptance UNKNOWN; BIB639/PAG789 full global gate remains pending and unwaived.",
+   "evidencia": "Base4211dd864006ddfbf8383d7b7dac453ded86b582; candidate0e5606a6119e3089f9585ce3a7bcb1876ca38b4e; diffSHA2c41c9c318e0e344ffe4411b707a8d8e6dad1706e69616707f07615e22e669c1; verification digest bf4ec68c5b2319475d3c9588d7f0269d7158bc40b87dd1903e255ef1ca05d902; merge440b19fcafc9d3590c2252b989e6ad1e4cfc5154; all7 rc0: source_audio_language, fon785_rotulos, stream_parser, video_pausa_lg, lsregistro, build-local, varredura-i18n. Postmerge i18n rc0 SHAe2dc1d85ba32029673aefafb6a1c449a89170cefb60cd397499b0dff77cc29e1. Real device proof remains pending."
+  },
+  {
+   "data": "2026-11-13",
+   "quem": "Claude Haiku 5.5 (post-merge executor, central sole writer); reviewer fv-av736-static-review; verifier fv-av736-runtime-verifier; served models UNKNOWN",
+   "o_que": "#736 source integrated into integracao/2.1 as experimental TPK40 DTS, default OFF only. TV unknown. No release graduation. Post-merge evidence and docs only.",
+   "issues": [
+    736
+   ],
+   "ref": "docs/plans/issues-exec-fable-20261113/av736-integracao.md",
+   "resultado": "Merge 6c035dd5e028fcbdd9949a3945bf0e64fdc1c12f (BASE 4719643de2750b75a110523f3624c37a15683ce7, candidate 48e105cecf8db3f88581f9a9ec96606f8a9faa0e). Canonical gate passed 5/5, no skipped/failed/timeouts/divergences. Post-merge rerun: tests/dts_tpk_legacy_gate.sh rc 0, tests/tpk40_experimental_output.sh rc 0. Issue stays aberta; TV acceptance UNKNOWN; physical Tizen 4/5.5 pending.",
+   "evidencia": "Diff sha256 1d0a89c62719f0f56049f89fd373706d837e205ae03b18a09c600b315725d6b9 (brief labelled it SHA1; value is SHA256). Canonical evidence digest 9f4f3aed35f944ec4068666f81f17b315589bbaa90a1bde79ba48fb1bf5fbdf3. Reportroot /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/ (av736-canonical-evidence.json, av736-verification.results.json, av736-postmerge-report.md). Post-merge log sha256: dts gate 0a4e4661ecdbd44282471881a3cad5a4cfe7a7223f1c33433b33f99af44ae2c8; output test a430f0efec84c0e2afbcd277e0fce09eb404722cf7dbefe4d5ac984a6dd9501b. Findings: F1 withdrawn, R-a withdrawn, R-b P2 confirmed, R-f P2 and F2 P2 inconclusive, no P0/P1. Limits: host compile is not TV load/playback; BIB639/PAG789 global gate not waived."
+  },
+  {
+   "data": "2026-11-13",
+   "quem": "Claude Haiku 5.5 (post-merge executor, central sole writer); reviewer fv-sync-gate-static-review; verifier fv-sync-gate-runtime-verifier; served models UNKNOWN",
+   "o_que": "Fixture-only sync-gate merge (tests/ 4 files) into integracao/2.1 for #639 and #789 test infrastructure. No production fix, no production candidate (BIB639/PAG789) integrated. Full global gate NOT RUN / unwaived. Issues not fixed or closed.",
+   "issues": [
+    639,
+    789
+   ],
+   "ref": "docs/plans/issues-exec-fable-20261113/sync-fixtures-integracao.md",
+   "resultado": "Merge 98aaea16cb67c55d072ec483131fa7079fcc68d7 (parents exactly BASE 85624bba84243244187efa6ad6f0d50b650632be and candidate 7d429206d3e4739c4ef51e858a0adea3d684bbf3). Canonical gate 8/8 passed, 0 skipped/failed/timeouts/divergences. Postmerge rc 0: tests/syncordem.sh, tests/synccolecoes.sh. Device acceptance UNKNOWN; no field/TV proof.",
+   "evidencia": "Candidate diff sha256 eef67a8136e18ade2305af06e787bbe19072856e839df09618f8cbfedfaed14b. Canonical digest 6bf57f9572457e07107bf25c2b20f3406ebec983e83378bed9f110653f904a39; i18n stdout sha e2dc1d85ba32029673aefafb6a1c449a89170cefb60cd397499b0dff77cc29e1. Report: /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/sync-gate-postmerge-report.md. Logs: sync-gate-postmerge-syncordem.log (sha cac01a267761...), sync-gate-postmerge-synccolecoes.log (sha 2ae210b0...). Static review reused via doc-only rebind proof; verifier mutation evidence m1/m2/m3/m4/m6 expected reds vs green control. Open P3: N4, N5."
+  },
   {
    "data": "2026-11-13",
    "quem": "Claude Haiku 5.5 (post-merge executor, central sole writer); reviewer j-rev-fv-offline-fixtures2-static; verifier fv-offline-fixtures-runtime-verifier; served models UNKNOWN",
@@ -18050,6 +18229,15 @@
    "ref": "docs/plans/issues-exec-fable-20261113/offline-fixtures-integracao.md",
    "resultado": "Merge b9e9dfa7a1922ae15990c56e5c618ebae5ce46bd (parents exactly BASE 82af242653ec035a71857b442bea9be7abb473fc and candidate 3e509a3bc09ddf8c77d627542f42b286fb918a37). Canonical 5/5 passed, 0 skipped/failed/timeouts/divergences/errors. Post-merge conta.sh rc 0 and trailerapple.sh rc 0 under sandbox guard. Device acceptance UNKNOWN; no TV or field proof.",
    "evidencia": "Full diff sha256 4aa1dc7362f67d8009c9f790c9027d3d92817d1a8c2a345b1870d0c0e2602330. Canonical verification digest 3d2c951660b1d478fd82eafc0e35330ef75372f0d9ec1e00499a177ce8e04696. i18n stdout sha e2dc1d85ba32029673aefafb6a1c449a89170cefb60cd397499b0dff77cc29e1. Runtime verifier logs in /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/offline-fixtures-verify-logs/. Open P2 F5 (sub fallback vacuity) and P3 quoting retained."
+  },
+  {
+   "data": "2026-11-13",
+   "quem": "fable-gate (post-merge executor); reviewer j-rev-fv-local-services2-static; verifier fv-local-services-runtime-verifier; served models UNKNOWN",
+   "o_que": "Local Workers / test-harness isolation merge (agente/21-fv-local-services: 8 tests/ files + servidor/recomendacoes/preparar-local.sh, zero src/ changes) into integracao/2.1. Offline cached Wrangler 4.149.0 harness, zero production bugfix, zero deploy, full global gate NOT RUN.",
+   "issues": [],
+   "ref": "docs/plans/issues-exec-fable-20261113/local-services-integracao.md",
+   "resultado": "Merge 0618e13c6fd0330f117927430fb8507d75b92904 (parents BASE 62a4b49693b584be2b83d445beb64f2e9c252a8f and candidate 3da5ad3cfcae0380dd694f9b7478375d76de6831). Canonical gate 7/7 passed under global-gate-local-only.sb (0 skipped/failed/timeouts/divergences/errors). Post-merge recomenda_e2e.sh, diarionuvem_servidor.sh, juntos_e2e.sh, varredura-i18n.py rc 0; zero workerd leftovers.",
+   "evidencia": "Candidate diff sha256 323641fa35c1e1c84c0e7fedad127ba6f5a4e03855c70bacb2d3342a4d4a9784. Canonical verification digest 4cca8c51788c31a5c929aba3d6260953e000b8a5b42fc62a6a7a21b61f41a814; log_digest bef34433905e9ea76a05b875b15660bac724610ebd39d5e933a8ba127b4447f9; i18n stdout sha e2dc1d85ba32029673aefafb6a1c449a89170cefb60cd397499b0dff77cc29e1. Reports: local-services-code-review2.md, local-services-verification.md, j-verify-fv-local-services.log."
   }
  ],
  "decisoes": [
