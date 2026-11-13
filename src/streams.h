@@ -63,8 +63,9 @@ typedef struct Stream {
   // filename), never by provider, headers or URL. Matching only: playback
   // tracks keep audioIdiomas. Empty when any audio field was declared.
   char audioTexto[64];
-  // Label hints for the audio chip only, used when declared audio is absent.
-  // Not verified tracks: never feed playback selection or the metadata rows.
+  // Label hints, used when declared audio is absent: audio evidence for the
+  // chip/filter and the same inferred row. Not verified tracks: never feed
+  // playback selection or the declared metadata rows.
   char audioRotulos[512];
   // Metadados canonicos para as exclusoes compartilhadas. Independentes dos
   // badges importados e do tamanho exato exigido pelo StreamFit.

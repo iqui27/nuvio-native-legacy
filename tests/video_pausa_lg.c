@@ -35,6 +35,7 @@ static int seekRequests;
 static double seekPosition;
 
 static Filtro screensaverCallback;
+static void *screensaverCtx;
 static int fakeCall(LSHandle *h, const char *uri, const char *carga, Filtro cb,
                     void *ctx, unsigned long *tok, void *erro) {
   (void)h; (void)uri; (void)carga; (void)cb; (void)ctx; (void)tok; (void)erro;
@@ -46,7 +47,7 @@ static int fakeCall(LSHandle *h, const char *uri, const char *carga, Filtro cb,
     seekPosition = js_num(carga, NULL, "position", -1);
   }
   if (strstr(uri, "registerScreenSaverRequest")) {
-    assinaturas++; screensaverCallback = cb;
+    assinaturas++; screensaverCallback = cb; screensaverCtx = ctx;
   } else if (strstr(uri, "responseScreenSaverRequest")) {
     respostas++; snprintf(resposta, sizeof resposta, "%s", carga);
   }
@@ -158,7 +159,11 @@ int main(void) {
   midia[0] = 0; tocando = pausaPedida = terminou = falhou = 0;
   aoCarregar(NULL, (LSMessage *)"{\"mediaId\":\"fixture-load\"}",
              (void *)(uintptr_t)sessao);
-  assert(assinaturas == 1 && protetorLigado && screensaverCallback);
+  assert(assinaturas == 1 && protetorPendente && screensaverCallback);
+  // O hub confirma no ctx da geracao vigente, como o loop LS2 faria.
+  screensaverCallback(NULL,
+      (LSMessage *)"{\"returnValue\":true,\"subscribed\":true}", screensaverCtx);
+  assert(protetorLigado && !protetorPendente);
   protegerScreensaver(); assert(assinaturas == 1); // sem duplicar assinatura
   const char *active = "{\"state\":\"Active\",\"timestamp\":1700000000123456}";
   evento("{\"playing\":true}", sessao);
@@ -214,7 +219,23 @@ int main(void) {
   assert(strstr(resposta, "\"timestamp\":\"exact,stamp\"}"));
   protetorLigado = 0; aceita = 0;
   protegerScreensaver(); assert(!protetorLigado && assinaturas == 2);
-  aceita = 1; protegerScreensaver(); assert(protetorLigado && assinaturas == 3);
+  // Falha sincrona entra no recuo de lsregistro: nova tentativa so depois.
+  aceita = 1; protegerScreensaver(); assert(assinaturas == 2 && protetorReg.falhas == 1);
+  // Resposta negativa assincrona: gera uma recusa e mantem o recuo.
+  protetorReg.proximaMs = SDL_GetTicks() - 1;
+  protegerScreensaver(); assert(assinaturas == 3 && protetorPendente);
+  Filtro cb3 = screensaverCallback; void *ctx3 = screensaverCtx;
+  cb3(NULL, (LSMessage *)"{\"returnValue\":false,\"errorCode\":1}", ctx3);
+  assert(!protetorPendente && !protetorLigado && protetorReg.falhas == 2);
+  protegerScreensaver(); assert(assinaturas == 3); // backoff bloqueia
+  // Aceite da geracao velha e ignorado; aceite da vigente confirma.
+  protetorReg.proximaMs = SDL_GetTicks() - 1;
+  protegerScreensaver(); assert(assinaturas == 4 && protetorPendente);
+  cb3(NULL, (LSMessage *)"{\"returnValue\":true,\"subscribed\":true}", ctx3);
+  assert(protetorPendente && !protetorLigado);
+  screensaverCallback(NULL,
+      (LSMessage *)"{\"returnValue\":true,\"subscribed\":true}", screensaverCtx);
+  assert(protetorLigado && !protetorPendente);
   // Fechar LS2 permite uma nova assinatura no proximo ciclo do backend.
   assert(pthread_create(&fio, NULL, fakeLoop, NULL) == 0);
   video_encerrar(); assert(!protetorLigado);
