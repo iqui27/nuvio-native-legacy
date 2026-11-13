@@ -6,10 +6,13 @@
 typedef struct DtsPlayback DtsPlayback;
 typedef struct {
   int prepared, failed, eof, revision, native_loaded;
+  /* revision bumps on every source/track reconfiguration; load_revision only
+   * when a fresh native Load actually replaced the pipeline instance. */
+  int load_revision;
   DtsMediaInfo info;
   char media_id[64], error[160];
   DtsBufferInfo buffer;
-  double buffered_until;
+  double buffered_until, start_position;
   unsigned buffering_ms;
 } DtsPlaybackStatus;
 /* All expensive work and native Feed calls are serialized on one worker.
@@ -23,6 +26,10 @@ int dts_playback_enabled(void);
 void dts_playback_next_dv(int enabled);
 /* Main thread: snapshot the P7/recovery opt-in for the next session. */
 void dts_playback_next_p7(int enabled);
+/* Main thread: the next session may use native seek/track reconfiguration
+ * (pipeline flush plus engine seek/audio reuse) instead of a fresh Load for
+ * each command. The bounded no-progress reload stays authoritative. */
+void dts_playback_next_seamless(int enabled);
 DtsPlayback *dts_playback_start(const char *url, const char *headers,
                                int audio_stream, double position,
                                int paused, const char *window, int webos_major,
@@ -33,6 +40,8 @@ void dts_playback_pause(DtsPlayback *p, int paused);
 void dts_playback_volume(DtsPlayback *p, int percent);
 void dts_playback_seek(DtsPlayback *p, double seconds);
 void dts_playback_audio(DtsPlayback *p, int stream);
+/* Track change at an explicit target in one command (no separate seek). */
+void dts_playback_audio_at(DtsPlayback *p, int stream, double seconds);
 /* -1 off; -2-ordinal restores a native subtitle; >=0 exact source stream. */
 void dts_playback_subtitle(DtsPlayback *p, int stream);
 int dts_playback_subtitle_text(DtsPlayback *p, double seconds, char *out, size_t n);

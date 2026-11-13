@@ -674,7 +674,7 @@ static char      erroTexto[96];
 // errorCode 200 "Audio Codec Not Supported": o VIDEO segue tocando e so o
 // audio morre. Ver o tratamento em lerEvento.
 static int       audioNaoSup;
-static int dtsHabilitado, dtsTentou, dtsRevisao, dtsFalhaLogada;
+static int dtsHabilitado, dtsTentou, dtsRevisao, dtsCargaRevisao, dtsFalhaLogada;
 static int dtsLegAntes = -1, dtsLegCount;
 static VideoFaixa dtsLegFaixa;
 static int dtsNativePending;
@@ -2488,7 +2488,7 @@ int  video_reconectando(void) {
 
 int video_tocar(const char *url) {
   dvRecuado = 0;
-  dtsTentou = 0; dtsRevisao = 0; dtsSaida[0] = 0; dtsNativePending = 0; dtsEstado = 0;
+  dtsTentou = 0; dtsRevisao = dtsCargaRevisao = 0; dtsSaida[0] = 0; dtsNativePending = 0; dtsEstado = 0;
   dtsHabilitado = dts_playback_enabled() && dtsLiberadoNestaTv();
   printf("[dts] fallback %s\n", dtsHabilitado ? "available" : "unavailable");
   dvSondado = dvMkvPerfil = dvAudios = 0; dtsModoDv = 0; dvAudioMkvOrd = -1; dvSegurar = 0;
@@ -3249,7 +3249,7 @@ static int iniciarDts(int stream) {
   if (!dtsModoDv) bufferandoDesde = 0;
   posSeg = alvo; pausaPedida = paused;
   ack_publicar();
-  dtsRevisao = 0; dtsFalhaLogada = 0;
+  dtsRevisao = dtsCargaRevisao = 0; dtsFalhaLogada = 0;
   if (acbCriar && !acbConfigurarTipo(1)) {
     marco("DTS startup failed: MSE video plane initialization");
     dvCaminhoNaoAbriu();
@@ -3264,6 +3264,7 @@ static int iniciarDts(int stream) {
   dts_engine_set_hdr10p_strip(ajustes_hdr10p_strip());        // #605
   dts_playback_next_dv(dtsModoDv);
   dts_playback_next_p7(ajustes_dv7());
+  dts_playback_next_seamless(1);
   dtsSessao = dts_playback_start(urlAtual, cabsHttp, stream, alvo,
                                paused, expWin, 0, (a || trocada) ? &selected : NULL, ordinal, count);
   if (!dtsSessao) {
@@ -3344,13 +3345,16 @@ static void bombearDts(void) {
    * its source metadata. Process metadata first so it cannot erase those
    * native observations on the following pump. Startup failures drain above. */
   if (!st.prepared) return;
-  if (st.prepared && st.revision != dtsRevisao) {
+  if (st.prepared && (st.revision != dtsRevisao || st.load_revision != dtsCargaRevisao)) {
     int initial = !dtsRevisao;
+    int loaded = st.load_revision != dtsCargaRevisao;
     int selectedSub = initial ? -1 : (video_legenda(legAtual) ? video_legenda(legAtual)->stream_index : -1);
-    dtsRevisao = st.revision;
-    pronto = 0; tocando = 0; bindPendente = 0;
-    if (!st.media_id[0]) { midia[0] = 0; ackMidia = 0; }
-    ack_publicar();
+    dtsRevisao = st.revision; dtsCargaRevisao = st.load_revision;
+    if (loaded) {
+      pronto = 0; tocando = 0; bindPendente = 0;
+      if (!st.media_id[0]) { midia[0] = 0; ackMidia = 0; }
+      ack_publicar();
+    }
     printf("[dts] prepared revision=%d video=%s %dx%d audio=%s channels=%d stream=%d\n",
            st.revision, st.info.video_codec, st.info.width, st.info.height,
            st.info.audio_codec, st.info.channels, st.info.audio_stream);
@@ -3365,7 +3369,7 @@ static void bombearDts(void) {
      * already reported: paused after a seek, videoInfo only comes back on
      * play, and the Dolby Vision badge used to vanish until then. */
     if (initial) { snprintf(vidHdr, sizeof vidHdr, "%s", "none"); vidAtmos = 0; }
-    viuVideo = 0;
+    if (loaded) viuVideo = 0;
     nAudio = nLeg = 0;
     for (i = 0; i < st.info.n_tracks; i++) {
       const DtsTrack *t = &st.info.tracks[i];
@@ -3940,8 +3944,8 @@ void video_escolher_audio(int i) {
     if (f->stream_index < 0) return;
     if (!strcmp(f->codec, "dts") ||
         (dtsModoDv && (!strcmp(f->codec, "eac3") || !strcmp(f->codec, "ac3")))) {
-      dts_playback_seek(dtsSessao, posSeg);
-      dts_playback_audio(dtsSessao, f->stream_index);
+      if (i == audioAtual) return;
+      dts_playback_audio_at(dtsSessao, f->stream_index, posSeg);
       audioAtual = i;
     } else {
       VideoFaixa target = *f;
