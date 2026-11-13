@@ -31,12 +31,18 @@
 #include "dts/dts_engine.h"
 #include "dts/dts_overlay.h"
 #include "audioext.h"
+#include "audioextlista.h"
 
 #define dts_playback_start dublePartida
 #define dts_playback_close dubleFechar
 #define dts_playback_status dubleStatus
 #define dts_playback_event dubleEvento
 #define dts_playback_next_external_audio dubleExterno
+#define dts_engine_set_external_dts_off dubleExtDtsOff
+#define dts_playback_next_external_track dubleExtFaixa
+static int extDtsOff = -1, extFaixa = -9;
+static void dubleExtDtsOff(int on) { extDtsOff = on; }
+static void dubleExtFaixa(int stream) { extFaixa = stream; }
 static int partidas, fechadas;
 static char externoUrl[256];
 static int externoOffset;
@@ -266,5 +272,51 @@ int main(void) {
   video_bombear();
   assert(partidas == 0 && externoUrl[0] && dtsTentou == 1);
   puts("audioext_lg: refused swap resumes own DTS once, no retry");
+
+  // B+D union: the real LG "DTS Off" row (B's dtsLgLocal 3, single getter).
+  { const char *d = getenv("NUVIO_DADOS"); char c[512]; FILE *f;
+    snprintf(c, sizeof c, "%s/ajustes.txt", d);
+    f = fopen(c, "w"); assert(f); fputs("dtsLgLocal 3\n", f); fclose(f);
+    ajustes_dir(d);
+    assert(ajustes_dts_desligado() && !ajustes_dts_original() && !ajustes_dts_ac3());
+    // Donor list: the DTS release is hidden, the AAC one stays selectable.
+    AudioExtEntrada ent[2]; AudioExtCand cand[4];
+    memset(ent, 0, sizeof ent);
+    for (int i = 0; i < 2; i++) {
+      ent[i].temUrl = 1; ent[i].nIdiomas = 1; ent[i].canais = 6;
+      snprintf(ent[i].idiomas[0], sizeof ent[i].idiomas[0], "pl");
+    }
+    ent[0].codec = AEXT_DTS; ent[1].codec = AEXT_AAC;
+    int nc = audioext_candidatos(ent, 2, "pl", "", 0, ajustes_dts_desligado(), ling_casa, cand, 4);
+    assert(nc == 1 && cand[0].indice == 1);
+    // Own selected track is DTS, an AAC donor with a chosen track: the donor
+    // converter opens; Off reaches the engine as donor-DTS refusal only.
+    montar();
+    audioext_escolher_faixa(2);
+    assert(audioext_faixa() == 2);
+    extDtsOff = -1; extFaixa = -9;
+    snprintf(expWin, sizeof expWin, "webos6");
+    dtsHabilitado = 1; dvHabilitado = 0; dtsNativePending = 0;
+    posSeg = 88.0; pausaPedida = 1; faixaDts(); extSoAudio = 1;
+    assert(iniciarDts(-1) && extAtivo && dtsTentou == 1 && partidas == 1);
+    assert(!strcmp(externoUrl, DOADOR) && extDtsOff == 1 && extFaixa == 2);
+    assert(dtsRotaOff == 1 && !dtsRotaTruehd);
+    // Same file, donor retired: Off refuses the own DTS track, no worker.
+    audioext_limpar();
+    dtsSessao = NULL; dtsTentou = 0; partidas = 0; faixaDts();
+    assert(!iniciarDts(-1) && dtsTentou == 1 && partidas == 0);
+    // Ordinary allowed path: own E-AC-3 on the Dolby Vision route still feeds;
+    // DTS and TrueHD never do while Off.
+    snprintf(faixaAudio[1].codec, sizeof faixaAudio[1].codec, "eac3");
+    dtsSessao = NULL; dtsTentou = 0; partidas = 0; dtsModoDv = 1; dvAudioMkvOrd = -1;
+    assert(iniciarDts(-1) && partidas == 1 && !strcmp(partidaCodec, "eac3"));
+    assert(dtsRotaOff == 1 && !dtsRotaTruehd && extDtsOff == 1 && !extAtivo);
+    assert(nv_dts_audio_feeds("eac3", 1, dtsRotaTruehd, dtsRotaOff) &&
+           nv_dts_audio_feeds("ac3", 1, dtsRotaTruehd, dtsRotaOff) &&
+           !nv_dts_audio_feeds("dts", 1, dtsRotaTruehd, dtsRotaOff) &&
+           !nv_dts_audio_feeds("truehd", 1, 1, dtsRotaOff));
+    dtsModoDv = 0;
+  }
+  puts("audioext_lg: DTS Off keeps donor AAC, refuses own and donor DTS");
   return 0;
 }

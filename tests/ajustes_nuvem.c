@@ -17,16 +17,23 @@ static void checkFile(const char *name, const char *expected) {
 }
 // Local-only policy: F keeps update notifications, remember profile and the
 // skip buttons out of shared/device backup; E does the same for the badge
-// position; DV7 conversion is experimental; D keeps every audio-from-another-
+// position; DV7 conversion is experimental; B keeps the DV7 mapping, DV audio
+// and MP4 BD test choices on this TV; D keeps every audio-from-another-
 // version choice on this TV. Named here, never derived from
 // ajustePortavel/ajusteAparelho, so a policy regression there fails this test.
 static const int localOnly[] = {
   AJ_DV7, AJ_UPDATE_NOTIFICATIONS, AJ_REMEMBER_PROFILE, AJ_SHOW_SKIP_INTRO,
   AJ_SHOW_SKIP_RECAP, AJ_SHOW_SKIP_CREDITS, AJ_SOURCE_BADGE_POSITION,
+  AJ_DV7_MAPPING, AJ_DV_AUDIO, AJ_MP4_BD_TEST,
   AJ_EXT_AUDIO, AJ_EXT_AUDIO_CACHE, AJ_EXT_AUDIO_PASSO, AJ_EXT_AUDIO_GRANDE, AJ_EXT_AUDIO_MODO,
   AJ_EXT_AUDIO_SERIE, AJ_EXT_AUDIO_SEGUIR, AJ_EXT_AUDIO_AVISO, AJ_EXT_AUDIO_AUTO
 };
 #define N_LOCAL_ONLY ((int)(sizeof localOnly / sizeof *localOnly))
+// Integrated prefix stays put: B's group right after E's badge position, D's
+// external-audio group appended after it, contiguous and in its own order.
+_Static_assert(AJ_DV7_MAPPING == AJ_SOURCE_BADGE_POSITION + 1 && AJ_DV_AUDIO == AJ_DV7_MAPPING + 1 &&
+               AJ_MP4_BD_TEST == AJ_DV_AUDIO + 1 && AJ_EXT_AUDIO == AJ_MP4_BD_TEST + 1 &&
+               AJ_EXT_AUDIO_AUTO == AJ_EXT_AUDIO + 8, "B prefix, then D group");
 static void checkLocalOnly(int op, int expected, const char *what) {
   char name[160]; snprintf(name, sizeof name, "%s: %s", what, CHAVE[op]);
   check(valor[op] == expected, name);
@@ -34,7 +41,8 @@ static void checkLocalOnly(int op, int expected, const char *what) {
 // A legacy/foreign account blob carrying every local-only key in each import
 // path: web features (snake or camel name), shared C values and this TV's
 // existing device values (a new section would itself change restore behavior).
-// Choices whose default is 0 or 1: `defaults` picks the default, else the other of 0/1.
+// Choices: `defaults` picks the default, else !default (a valid non-default
+// value for any choice with at least two values, e.g. 3-way DV audio).
 static void injectLegacyLocalOnly(int camel, int defaults) {
   const char *devices, *de, *own, *oe;
   int sections = ajJsonGet(cloud, cloud + strlen(cloud), "c_devices_v1", &devices, &de) &&
@@ -44,7 +52,7 @@ static void injectLegacyLocalOnly(int camel, int defaults) {
   jsw_chave(&w, "legacy_local"); jsw_obj_ini(&w);
   for (int k = 0; k < N_LOCAL_ONLY; k++) {
     int op = localOnly[k]; char key[96];
-    assert(OPCOES[op].tipo == OP_ESCOLHA && OPCOES[op].n >= 2 && valorPadrao[op] <= 1);
+    assert(OPCOES[op].tipo == OP_ESCOLHA && OPCOES[op].n >= 2 && valorPadrao[op] < 2);
     if (camel) snprintf(key, sizeof key, "%s", CHAVE[op]);
     else camelParaSnake(CHAVE[op], key, sizeof key);
     jsw_ci(&w, key, defaults ? valorPadrao[op] : !valorPadrao[op]);

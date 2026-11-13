@@ -714,7 +714,6 @@ int   ajustes_cw_mostrar_nao_exibidos(void);  // showUnairedNextUp
 int   ajustes_cw_ordem(void);
 int   ajustes_dts_ac3(void);             // 1 = DTS convertido em AC3 5.1 (LG, e padrao no .tpk); 0 = AAC estereo (.tpk: ou desligado)
 int   ajustes_dts_original(void);        // LG: 1 = DTS goes to the TV untouched (passthrough), never converted
-int   ajustes_dts_desligado(void);       // Batch B accessor: explicit Off, never Original/native
 int   ajustes_dts_tpk_modo(void);        // .tpk: DTSTPK_HLS, ou DTSTPK_DESLIGADO com a conversao desligada
 int   ajustes_ps_continuar(void);        // #303: 0 = sem o cartao "continuar" na escolha de perfil
 int   ajustes_ps_tamanho(void);         // 2.1: 0 pequeno, 1 medio (padrao), 2 grande — os avatares da escolha de perfil
@@ -724,6 +723,10 @@ int   ajustes_social(void);              // 1 = friends/social features on (per 
 int   ajustes_social_perfil(int perfil); // mesmo ajuste lido de OUTRO perfil (#643)
 int   ajustes_dv_mkv(void);              // 1 = Dolby Vision MKV through our demux (webOS, local, default off)
 int   ajustes_dv7(void);
+int   ajustes_dv7_mapping(void);
+int   ajustes_mp4_bd_test(void);
+int   ajustes_dv_audio(void);        // DV path audio: 0 Original, 1 AAC stereo, 2 Dolby Digital 5.1
+int   ajustes_dts_desligado(void);   // LG: DTS row Off (no DTS/TrueHD conversion)
 int   ajustes_hdr10p_strip(void);
 int   ajustes_cw_retido_tambem(void);   // 1 = o titulo da ilha/Retomar tambem fica em Continuar assistindo
 // Percentual (70-98, padrao 90) a partir do qual o episodio conta como

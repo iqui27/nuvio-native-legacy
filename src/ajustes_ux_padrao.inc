@@ -381,5 +381,8 @@
   0, 0, 0, // showSkip{Intro,Recap,Credits}ButtonLocal: On
   1, // diagnosticsQrLocal: Desligado
   0, // sourceBadgePositionLocal: selos no topo do cartao "Do add-on"
+  1, // dv7PreserveMappingLocal: Desligado (V_LIGA 1), experimental
+  0, // dvAudioFixoLocal: Original
+  1, // dvMp4BdTestLocal: Off (V_LIGA 1)
 
   1, 0, 1, 0, 0, 0, 1, 0, 0, /* External audio: opt-in; 50 ms; follow off. */

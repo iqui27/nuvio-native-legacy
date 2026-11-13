@@ -247,7 +247,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_DESCANSO_ESTILO: return "aj_image";
     case AJ_DESCANSO_FONTE: return "aj_film";
     case AJ_PROPORCAO_PADRAO: return "aj_maximize-2";
-    case AJ_DTS_AC3: return "aj_audio-lines";
+    case AJ_DTS_AC3: case AJ_DV_AUDIO: return "aj_audio-lines";
     case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR:
     case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_AUTO: return "aj_audio-lines";
     case AJ_EXT_AUDIO_CACHE: return "aj_database";

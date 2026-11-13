@@ -7,7 +7,8 @@ static int ajustePortavel(int op) {
   if (!CHAVE[op] || CHAVE[op][0] == '-') return 0;
   switch (op) {
     // Experimental DV7 conversion stays on this TV, outside account sync.
-    case AJ_MINIATURA_RES: case AJ_DV7: case AJ_SOURCE_BADGE_POSITION: case AJ_UPDATE_NOTIFICATIONS: case AJ_REMEMBER_PROFILE: return 0;
+    case AJ_MINIATURA_RES: case AJ_DV7: case AJ_SOURCE_BADGE_POSITION: case AJ_DV7_MAPPING: case AJ_DV_AUDIO: case AJ_MP4_BD_TEST: return 0;
+    case AJ_UPDATE_NOTIFICATIONS: case AJ_REMEMBER_PROFILE: return 0;
     case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: return 0;
     case AJ_AMPLIAR_UI: case AJ_RESOLUCAO: case AJ_TEX_MB: case AJ_QUALIDADE_IMG:
     case AJ_GPU_EFEITOS: case AJ_ITENS_FILEIRA:
