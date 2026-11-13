@@ -2751,7 +2751,7 @@
   T("Domingo · Grande Prêmio", "Sunday · Grand Prix"),
   T("Dourado", "金色"),
   T("Download cortado", "下载被截断"),
-  T("Downloads HTTP da conversão de DTS e Dolby Vision. 4 (padrão) baixa trechos em paralelo; 1 usa uma conexão contínua, sem um novo pedido a cada trecho. O limite de memória do buffer não muda. Vale a partir do próximo vídeo.", "DTS 和杜比视界转换的 HTTP 下载。4（默认）并行下载分段；1 使用一条连续连接，不必为每个分段发出新请求。缓冲区内存上限不变。从下一个视频开始生效。"),
+  T("Downloads HTTP da conversão de DTS e Dolby Vision. 1 (padrão) usa uma conexão contínua, sem um novo pedido a cada trecho; 2, 3 ou 4 baixam trechos em paralelo. O limite de memória do buffer não muda. Vale a partir do próximo vídeo.", "DTS 和杜比视界转换的 HTTP 下载。1（默认）使用一条连续连接，不必为每个分段发出新请求；2、3 或 4 并行下载分段。缓冲区内存上限不变。从下一个视频开始生效。"),
   T("Downloads HTTP do player da TV quando o app guarda o buffer. 1 (padrão) usa uma conexão contínua; 2, 3 ou 4 baixam trechos em paralelo, com pelo menos 64 MB de buffer e o mesmo limite de memória. Vale a partir do próximo vídeo.", "应用保存缓冲区时电视播放器的 HTTP 下载。1（默认）使用一条连续连接；2、3 或 4 并行下载分段，缓冲区至少 64 MB，内存上限相同。从下一个视频开始生效。"),
   T("Downloads ao abrir um título", "打开作品时的下载"),
   T("Doze cores da conta e quatro dinâmicas, que tiram a cor do título em cena. A cor marca o botão em foco e os estados.", "十二种账号颜色和四种动态颜色，动态颜色取自屏幕上的标题。颜色用于标记选中的按钮和状态。"),

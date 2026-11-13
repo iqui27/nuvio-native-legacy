@@ -2751,7 +2751,7 @@
   T("Domingo · Grande Prêmio", "Sunday · Grand Prix"),
   T("Dourado", "ゴールド"),
   T("Download cortado", "ダウンロードが途中で中断"),
-  T("Downloads HTTP da conversão de DTS e Dolby Vision. 4 (padrão) baixa trechos em paralelo; 1 usa uma conexão contínua, sem um novo pedido a cada trecho. O limite de memória do buffer não muda. Vale a partir do próximo vídeo.", "DTS と Dolby Vision 変換の HTTP ダウンロード。4（既定）は分割して並列にダウンロードします。1 は分割ごとに新しい要求をせず、1 本の連続した接続を使います。バッファのメモリ上限は変わりません。次の動画から適用されます。"),
+  T("Downloads HTTP da conversão de DTS e Dolby Vision. 1 (padrão) usa uma conexão contínua, sem um novo pedido a cada trecho; 2, 3 ou 4 baixam trechos em paralelo. O limite de memória do buffer não muda. Vale a partir do próximo vídeo.", "DTS と Dolby Vision 変換の HTTP ダウンロード。1（既定）は分割ごとに新しい要求をせず、1 本の連続した接続を使います。2、3、4 は分割して並列にダウンロードします。バッファのメモリ上限は変わりません。次の動画から適用されます。"),
   T("Downloads HTTP do player da TV quando o app guarda o buffer. 1 (padrão) usa uma conexão contínua; 2, 3 ou 4 baixam trechos em paralelo, com pelo menos 64 MB de buffer e o mesmo limite de memória. Vale a partir do próximo vídeo.", "アプリがバッファを持つときのテレビのプレーヤーの HTTP ダウンロード。1（既定）は 1 本の連続した接続を使います。2、3、4 は少なくとも 64 MB のバッファと同じメモリ上限で、分割して並列にダウンロードします。次の動画から適用されます。"),
   T("Downloads ao abrir um título", "作品を開いたときのダウンロード"),
   T("Doze cores da conta e quatro dinâmicas, que tiram a cor do título em cena. A cor marca o botão em foco e os estados.", "アカウントの 12 色と、画面のタイトルから色を取る 4 つのダイナミックカラー。色は選択中のボタンと状態を示します。"),
