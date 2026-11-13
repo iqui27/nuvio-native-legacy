@@ -11,28 +11,28 @@ Fonte e critérios: [mapa de paridade](../../reviews/matis94-20261112/README.md)
 | Lote | Escopo | Estado |
 |---|---|---|
 | A | Segurança de filas PGS, HEVC in-band, URLs longas | Integrado em `c0abc4a28`; revisão + verificador independentes, gate 5/5 e pós-merge 5/5. [Evidência](lote-a-integracao.md). TV pendente. |
-| B | Modos DV/DTS/TrueHD, faixas e memória de áudio | Suíte B e i18n passaram em `e5aa03335`; ícone e teste append-only corrigidos. Revisão completa em andamento; atualização com E e verificação final pendentes. |
-| C | Buffer contínuo, controles, recovery/seek e telemetria | C2 importado em `cbd414fc8`, cinco testes host passaram. Base G atualizada em `0f4e31cf9`; C3 telemetria/controles em implementação. Combinação B/D e revisão final pendentes. |
-| D | Áudio de outra versão e cortes/intro skip | Revisão em `7ae2d20d5` encontrou P1 no retorno do donor ao áudio próprio DTS: conversão pode ficar bloqueada. Correção e regressão em andamento; combinar B/C antes do gate. |
+| B | Modos DV/DTS/TrueHD, faixas e memória de áudio | Integrado em `a521dd91f`; revisão e verificador distintos, gate 6/6, pós-merge 3/3. [Evidência e 14 P2](lote-b-integracao.md). TV/ARM/FFmpeg fixado pendentes; combinação C/D ainda pendente. |
+| C | Buffer contínuo, controles, recovery/seek e telemetria | C1–C3 e combinação E em `0ff5e8254` passaram 13 testes e build. Revisão encontrou quatro P1 em avisos, controles release, proteção RAM e dados de buffer; C5 em correção. Incorporar B e repetir revisão/verificação/gate. |
+| D | Áudio de outra versão e cortes/intro skip | Retorno ao DTS próprio corrigido e confirmado pela revisão. D10 `48c63cb7a` corrigiu ADTS/raw AAC de doador TS com FAIL→PASS e suíte completa; nova revisão em andamento. Incorporar B/C e validar DTS Off antes do gate final. |
 | E | Formatter, badges, regex e lista de fontes | Integrado em `1ac01b8b5`; revisão e verificador distintos, 12 checks host e gate final 6/6, pós-merge 3/3. [Evidência e quatro P2](lote-e-integracao.md). TV/ARM/FPS pendentes. |
 | F | Perfil, skip, atualização e opacidade | Integrado em `26eec9dbb`; revisão + verificador independentes, gate 8/8 e pós-merge 3/3. [Evidência](lote-f-integracao.md). TV pendente. |
 | G | Diagnósticos local/QR, motivos e exportação de nuvem | Integrado em `6aa346ec3`; revisão + verificador independentes, gate 8/8 e pós-merge 3/3. [Evidência e P2](lote-g-integracao.md). Serviço de nuvem sem deploy; TV pendente. |
 | H | CW local, temporadas e títulos de episódios | Integrado em `8a16234bc`; revisão + verificador independentes, gate 15/15 e pós-merge 3/3. [Evidência](lote-h-integracao.md). TV pendente. |
 
-Execução: implementações iniciais `nv-impl medium`; correções e revisões `nv-revisao medium`. Modelo servido desconhecido sem prova do gateway. A/E/F/H/G integrados; B/C/D ainda fora. Worktrees `/Volumes/ExternalSSD/nv-21-matis-*`; briefs e evidência em `/Volumes/ExternalSSD/tmp/rev/matis94-20261112/`. Estado acima registra o corte documental, não atividade instantânea de processos. Uma escrita por worktree; sem contornar limites do executor.
+Execução: implementações iniciais `nv-impl medium`; correções e revisões `nv-revisao medium`. Modelo servido desconhecido sem prova do gateway. A/B/E/F/H/G integrados; C/D ainda fora. Worktrees `/Volumes/ExternalSSD/nv-21-matis-*`; briefs e evidência em `/Volumes/ExternalSSD/tmp/rev/matis94-20261112/`. Estado acima registra o corte documental, não atividade instantânea de processos. Uma escrita por worktree; sem contornar limites do executor.
 
 ## Cobertura item a item
 
 | ID | Item auditado | Estado inicial | Estado da importação |
 |---|---|---|---|
 | R01 | P7 → P8.1, base HEVC preservada, RPU convertido, EL/FEL descartada | Presente | Manter; prova de TV separada |
-| R02 | Seletor experimental de mapping P7 | Ausente | Pendente de adaptação/prova |
-| R03 | Dolby Vision MP4 experimental | Ausente | Pendente de adaptação/prova |
-| R04 | Saída de áudio DV fixa: Original / AAC / Dolby Digital | Ausente | Pendente de adaptação/prova |
-| R05 | TrueHD → AAC/AC-3 preservando DV e aviso próprio | Ausente no webOS | Pendente de adaptação/prova |
+| R02 | Seletor experimental de mapping P7 | Ausente | Mapping opt-in integrado em `a521dd91f`; gate 6/6 e pós-merge 3/3. TV pendente. |
+| R03 | Dolby Vision MP4 experimental | Ausente | Experimento MP4 integrado em `a521dd91f`, OFF padrão e retry limitado. P2 de AAC/interleave/EL descartada documentados; prova real de TV pendente. |
+| R04 | Saída de áudio DV fixa: Original / AAC / Dolby Digital | Ausente | Saída DV integrada em `a521dd91f`; Original/AAC/DD com preferências preservadas. P2 de descoberta DV tardia documentado; TV pendente. |
+| R05 | TrueHD → AAC/AC-3 preservando DV e aviso próprio | Ausente no webOS | Conversão TrueHD integrada em `a521dd91f`; SDK exige codecs necessários. P2 de troca durante sessão e qualidade da saída documentados; TV/CPU pendentes. |
 | R06 | Consultar DTS na TV, aguardar resposta e indicar DTS nativo | Presente | Manter; prova de TV separada |
-| R07 | Conversão DTS Off, preservando preferências antigas e DV com AC-3/E-AC-3 | Parcial | Pendente de adaptação/prova |
-| R08 | DV + DTS-HD MA/DTS:X integral nativo com conversão Off | Ausente | Pendente de adaptação/prova |
+| R07 | Conversão DTS Off, preservando preferências antigas e DV com AC-3/E-AC-3 | Parcial | Opção Off integrada em `a521dd91f`, valores antigos preservados. P2 de aviso sem som e substituição E-AC-3 documentados; TV pendente. |
+| R08 | DV + DTS-HD MA/DTS:X integral nativo com conversão Off | Ausente | Rota DTS nativa integral integrada em `a521dd91f`, exige declaração positiva da TV. Recusa da ABI pode voltar a HDR10; firmware/TV pendentes. |
 | R09 | Startup/resume DTS e recuperação limitada de gaps/descontinuidades | Presente | Manter; prova de TV separada |
 | R10 | Retry de ranges, recuperação antecipada e retenção de download útil | Presente | Manter; prova de TV separada |
 | R11 | Reusar CDN resolvida e recuperar link expirado em SDR/DTS | Parcial | Pendente de adaptação/prova |
@@ -43,12 +43,12 @@ Execução: implementações iniciais `nv-impl medium`; correções e revisões 
 | R16 | Reusar fonte/latest seek e troca DTS sem recarregar imagem | Parcial | Pendente de adaptação/prova |
 | R17 | Recuperar fila cheia do decoder nativo sem travar para sempre | Presente | Manter; prova de TV separada |
 | R18 | Preservar VPS/SPS/PPS in-band atuais em HDR10/DV8 com DTS | Ausente | Código integrado em `c0abc4a28`; SEI preservado e regressões/sanitizadores passaram. Paridade FFmpeg 7.1.5 e TV pendentes. |
-| R19 | Recuperar faixas DTS omitidas pela LG, inclusive várias do mesmo idioma | Parcial | Pendente de adaptação/prova |
-| R20 | DV8 descoberto tardiamente mantém routing de áudio/imagem alinhado | Parcial | Pendente de adaptação/prova |
+| R19 | Recuperar faixas DTS omitidas pela LG, inclusive várias do mesmo idioma | Parcial | Recuperação de várias faixas integrada em `a521dd91f`; identidades distintas. P2 de restauração lembrada/busy bind documentados; TV pendente. |
+| R20 | DV8 descoberto tardiamente mantém routing de áudio/imagem alinhado | Parcial | Código B integrado em `a521dd91f`, porém alinhamento tardio permanece parcial: snapshots de rota não são reaplicados (B-P2-3). |
 | R21 | Tratamento experimental de HDR10+ SEI | Presente | Manter; prova de TV separada |
 | R22 | PGS e fila de legenda cheia sem encerrar sessão DV/DTS | Parcial — correção ausente | Código integrado em `c0abc4a28`; decoder PGS real e playback até EOF passaram. N1 P2: cue anterior pode permanecer durante cue descartada. TV pendente. |
 | R23 | Sem callback/overlay/loading antigo; aviso DTS uma vez por fonte | Parcial | Pendente de adaptação/prova |
-| R24 | Menu áudio por idioma/codec/canais, exceção FLAC, labels longos e badge DV | Parcial | Pendente de adaptação/prova |
+| R24 | Menu áudio por idioma/codec/canais, exceção FLAC, labels longos e badge DV | Parcial | Labels/menu integrados em `a521dd91f`; P2 de label longo no retorno TPK documentado. TV pendente. |
 | R25 | Áudio de outra versão: MKV/MP4/AVI/TS, sync ±60min, passos manuais e correção de frame rate | Ausente | Pendente de adaptação/prova |
 | R26 | Seguir filme inteiro entre cortes, fallback próprio e correção de freeze após intro skip | Ausente | Pendente de adaptação/prova |
 | F01 | Cache de layout, contagens e recomendações da lista | Presente | Manter; prova de TV separada |
@@ -66,7 +66,7 @@ Execução: implementações iniciais `nv-impl medium`; correções e revisões 
 | F13 | Próximo episódio segue release inclusive em modo manual, sem abrir folha | Parcial — política diferente | Preservar consentimento manual; diferença intencional |
 | F14 | Título de episódio substitui nome de release e mantém IDs/numeração | Parcial | Código integrado em `8a16234bc`; gate 15/15 e pós-merge 3/3. P2 de títulos genéricos/numeração documentados. TV pendente. |
 | F15 | Disponibilidade de temporadas e atualização de cache de episódios | Parcial | Código integrado em `8a16234bc`; temporadas zero por último e limite preservado. TV pendente. |
-| F16 | Memória de áudio por série/perfil, próximo episódio e fallback por idioma sem confundir índice | Parcial | Pendente de adaptação/prova |
+| F16 | Memória de áudio por série/perfil, próximo episódio e fallback por idioma sem confundir índice | Parcial | Memória por identidade integrada em `a521dd91f`; P2 de faixa DTS recuperada ainda não restaurada antes do append. TV pendente. |
 | F17 | Lembrar último perfil: opt-in OFF, não entrar em bloqueado/indisponível | Ausente | Código integrado em `26eec9dbb`; gate 8/8, pós-merge 3/3. F4 P2 documentado; TV pendente. |
 | F18 | Mostrar botões intro/recap/créditos independentemente, ON e por perfil | Ausente | Código integrado em `26eec9dbb`; F5 P2 de herança inicial em perfil antigo documentado. TV pendente. |
 | F19 | Desligar avisos automáticos de atualização mantendo busca manual | Ausente | Código integrado em `26eec9dbb`; avisos enfileirados suprimidos e busca manual validada offline. TV pendente. |
@@ -81,6 +81,6 @@ Execução: implementações iniciais `nv-impl medium`; correções e revisões 
 | D08 | Dados do buffer: MiB pronto/capacidade, tempo estimado, modo sistema e limite HTTP da sessão | Parcial | Pendente de adaptação/prova |
 | D09 | Diagnóstico de rede redigido: redirects, timings, rate limit e reuso | Parcial | Pendente de adaptação/prova |
 | D10 | Cooldown 429 compartilhado com Retry-After | Presente, com escopo | Manter; prova de TV separada |
-| D11 | Traduções 29 idiomas: mapping P7, DV MP4, saída DV e tela Buffer | Parcial | Pendente de adaptação/prova |
+| D11 | Traduções 29 idiomas: mapping P7, DV MP4, saída DV e tela Buffer | Parcial | Traduções de B integradas em `a521dd91f`; presença nas 30 tabelas conferida. Parte Buffer depende de C; qualidade linguística completa não revisada. |
 | D12 | Opacidade de legenda em passos de 5%, com migração | Ausente | Código integrado em `26eec9dbb`; migração por perfil comprovada FAIL 134 → PASS 0, IDs antigos e precedência preservados. TV pendente. |
 | D13 | ARM completo, ABI, IPK com P2P e limpeza de atalhos de build | Não comprovado como resultado | Pendente de adaptação/prova |
