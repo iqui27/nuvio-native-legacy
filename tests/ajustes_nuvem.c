@@ -15,6 +15,54 @@ static char *fileRead(const char *path) {
 static void checkFile(const char *name, const char *expected) {
   char *s = dados_ler(name); check(s && !strcmp(s, expected), name); free(s);
 }
+// Local-only policy: F keeps update notifications, remember profile and the
+// skip buttons out of shared/device backup; E does the same for the badge
+// position; DV7 conversion is experimental. Named here, never derived from
+// ajustePortavel/ajusteAparelho, so a policy regression there fails this test.
+static const int localOnly[] = {
+  AJ_DV7, AJ_UPDATE_NOTIFICATIONS, AJ_REMEMBER_PROFILE, AJ_SHOW_SKIP_INTRO,
+  AJ_SHOW_SKIP_RECAP, AJ_SHOW_SKIP_CREDITS, AJ_SOURCE_BADGE_POSITION
+};
+#define N_LOCAL_ONLY ((int)(sizeof localOnly / sizeof *localOnly))
+static void checkLocalOnly(int op, int expected, const char *what) {
+  char name[160]; snprintf(name, sizeof name, "%s: %s", what, CHAVE[op]);
+  check(valor[op] == expected, name);
+}
+// A legacy/foreign account blob carrying every local-only key in each import
+// path: web features (snake or camel name), shared C values and this TV's
+// existing device values (a new section would itself change restore behavior).
+// Two-valued choices: `defaults` picks the default, else the other value.
+static void injectLegacyLocalOnly(int camel, int defaults) {
+  const char *devices, *de, *own, *oe;
+  int sections = ajJsonGet(cloud, cloud + strlen(cloud), "c_devices_v1", &devices, &de) &&
+                 ajJsonGet(devices, de, dados_aparelho_id(), &own, &oe) ? 2 : 1;
+  Jsw w; jsw_iniciar(&w); jsw_obj_ini(&w);
+  jsw_chave(&w, "features"); jsw_obj_ini(&w);
+  jsw_chave(&w, "legacy_local"); jsw_obj_ini(&w);
+  for (int k = 0; k < N_LOCAL_ONLY; k++) {
+    int op = localOnly[k]; char key[96];
+    assert(OPCOES[op].tipo == OP_ESCOLHA && OPCOES[op].n == 2);
+    if (camel) snprintf(key, sizeof key, "%s", CHAVE[op]);
+    else camelParaSnake(CHAVE[op], key, sizeof key);
+    jsw_ci(&w, key, defaults ? valorPadrao[op] : !valorPadrao[op]);
+  }
+  jsw_obj_fim(&w); jsw_obj_fim(&w);
+  for (int section = 0; section < sections; section++) {
+    jsw_chave(&w, section ? "c_devices_v1" : "c_settings_v1"); jsw_obj_ini(&w);
+    if (section) { jsw_chave(&w, dados_aparelho_id()); jsw_obj_ini(&w); }
+    jsw_chave(&w, "values"); jsw_obj_ini(&w);
+    for (int k = 0; k < N_LOCAL_ONLY; k++) {
+      int op = localOnly[k]; char key[96];
+      snprintf(key, sizeof key, "c_%s", CHAVE[op]);
+      jsw_ci(&w, key, defaults ? valorPadrao[op] : !valorPadrao[op]);
+    }
+    jsw_obj_fim(&w); if (section) jsw_obj_fim(&w); jsw_obj_fim(&w);
+  }
+  jsw_obj_fim(&w);
+  const char *patch = jsw_texto_final(&w); assert(patch);
+  char *updated = ajJsonMerge(cloud, cloud + strlen(cloud), patch, patch + strlen(patch));
+  assert(updated); jsw_livre(&w); free(cloud); cloud = updated;
+}
 static int recoveryStage(const char *dir, const char *stage) {
   char path[1024]; int expected[AJ_N];
   setenv("NUVIO_DEVICE_ID", !strcmp(stage, "device-other") ? "tv-B" : "tv-A", 1);
@@ -31,6 +79,20 @@ static int recoveryStage(const char *dir, const char *stage) {
     puts("PASS: device-reopen"); return 0;
   }
   login();
+  if (!strcmp(stage, "device-local-reopen")) {
+    // The original TV reopens: its own local-only choices survive the restart,
+    // the account sync and a legacy blob that carries the defaults.
+    int saved[N_LOCAL_ONLY];
+    snprintf(path, sizeof path, "%s/../local.bin", dir); char *raw = fileRead(path);
+    memcpy(saved, raw, sizeof saved); free(raw);
+    for (int k = 0; k < N_LOCAL_ONLY; k++)
+      checkLocalOnly(localOnly[k], saved[k], "local choice survives reopening");
+    snprintf(path, sizeof path, "%s/../cloud.json", dir); cloud = fileRead(path);
+    injectLegacyLocalOnly(1, 1); cycle(); ajustes_aplicar_blob(cloud);
+    for (int k = 0; k < N_LOCAL_ONLY; k++)
+      checkLocalOnly(localOnly[k], saved[k], "legacy blob cannot reset local choice");
+    printf("PASS: %s\n", stage); free(cloud); return 0;
+  }
   if (!strcmp(stage, "device-save")) {
     cloud = strdup("{\"future_web\":{\"keep\":42},\"c_settings_v1\":{\"future_ext\":42,\"values\":{\"c_future\":42}}}");
     cycle();
@@ -50,7 +112,12 @@ static int recoveryStage(const char *dir, const char *stage) {
     for (int i = 0; i < EX_NFONTES; i++) notaFontes[i] = EX_NFONTES - 1 - i;
     bibliotecaFonteEscolhida = memoriaEscolhida = 1;
     gravar(); memcpy(expected, valor, sizeof expected);
-    expected[AJ_DV7] = valorPadrao[AJ_DV7]; // Experimental conversion is excluded from device backup.
+    // Local-only options never reach another TV or a reinstall: defaults there.
+    for (int k = 0; k < N_LOCAL_ONLY; k++) {
+      int op = localOnly[k];
+      check(valor[op] != valorPadrao[op], "fixture changes every local-only option");
+      expected[op] = valorPadrao[op];
+    }
     snprintf(path, sizeof path, "%s/../expected.bin", dir); fileWrite(path, expected, sizeof expected);
     dados_gravar("fanart.txt", "0123456789abcdef");
     dados_gravar("seekr.txt", "own-seekr-key");
@@ -75,6 +142,16 @@ static int recoveryStage(const char *dir, const char *stage) {
     check(pushes > 0, "external/device edits uploaded without dirty notification");
     check(strstr(cloud, "future_web") && strstr(cloud, "future_ext") && strstr(cloud, "c_future"), "unknown web and C fields preserved");
     check(!strstr(cloud, "DO-NOT-UPLOAD") && !strstr(cloud, "444f2d4e4f542d55504c4f4144"), "session files excluded");
+    for (int k = 0; k < N_LOCAL_ONLY; k++) {
+      int op = localOnly[k]; char quoted[112], snake[96];
+      snprintf(quoted, sizeof quoted, "\"%s\"", CHAVE[op]);
+      check(!strstr(cloud, quoted), "local-only option absent from web keys");
+      snprintf(quoted, sizeof quoted, "\"c_%s\"", CHAVE[op]);
+      check(!strstr(cloud, quoted), "local-only option absent from shared and device backup");
+      camelParaSnake(CHAVE[op], snake, sizeof snake);
+      snprintf(quoted, sizeof quoted, "\"%s\"", snake);
+      check(!strstr(cloud, quoted), "local-only option absent from snake-case web keys");
+    }
     const char *devices, *de, *device, *end, *files, *fe, *v, *f;
     assert(ajJsonGet(cloud, cloud + strlen(cloud), "c_devices_v1", &devices, &de));
     assert(ajJsonGet(devices, de, dados_aparelho_id(), &device, &end));
@@ -101,10 +178,17 @@ static int recoveryStage(const char *dir, const char *stage) {
     char *updated = ajJsonMerge(cloud, cloud + strlen(cloud), patch, patch + strlen(patch)); assert(updated);
     free(patch); jsw_livre(&legacy); free(cloud); cloud = updated;
     snprintf(path, sizeof path, "%s/../cloud.json", dir); fileWrite(path, cloud, strlen(cloud));
+    int saved[N_LOCAL_ONLY];
+    for (int k = 0; k < N_LOCAL_ONLY; k++) {
+      int op = localOnly[k]; saved[k] = valor[op];
+      checkLocalOnly(op, !valorPadrao[op], "sync keeps local choice on this TV");
+    }
+    snprintf(path, sizeof path, "%s/../local.bin", dir); fileWrite(path, saved, sizeof saved);
   } else {
     snprintf(path, sizeof path, "%s/../cloud.json", dir); cloud = fileRead(path);
     snprintf(path, sizeof path, "%s/../expected.bin", dir); char *raw = fileRead(path);
     memcpy(expected, raw, sizeof expected); free(raw);
+    injectLegacyLocalOnly(0, 0); // Legacy non-default local-only values must not import.
     cycle();
     int other = !strcmp(stage, "device-other");
     for (int i = 0; i < AJ_N; i++) {
@@ -113,6 +197,8 @@ static int recoveryStage(const char *dir, const char *stage) {
       if (other && ajusteAparelho(i)) continue;
       check(valor[i] == expected[i], CHAVE[i]);
     }
+    for (int k = 0; k < N_LOCAL_ONLY; k++)
+      checkLocalOnly(localOnly[k], valorPadrao[localOnly[k]], "local-only option stays default after import");
     if (other) {
       check(valor[AJ_RESOLUCAO] == valorPadrao[AJ_RESOLUCAO], "second TV keeps own resolution");
       check(valor[AJ_GPU_EFEITOS] == valorPadrao[AJ_GPU_EFEITOS], "second TV keeps own GPU setting");
@@ -172,10 +258,11 @@ static int recoveryStage(const char *dir, const char *stage) {
   printf("PASS: %s\n", stage); free(cloud); return 0;
 }
 static int recovery(const char *exe, const char *root) {
-  const char *stages[] = {"device-save", "device-other", "device-restore", "device-reinstall", "device-reopen"};
-  for (int i = 0; i < 5; i++) {
-    char dir[1024]; snprintf(dir, sizeof dir, "%s/%s", root, i == 4 ? "device-reinstall" : stages[i]);
-    if (i != 4) assert(!mkdir(dir, 0700));
+  const char *stages[] = {"device-save", "device-other", "device-restore", "device-reinstall", "device-reopen", "device-local-reopen"};
+  const char *dirs[] = {"device-save", "device-other", "device-restore", "device-reinstall", "device-reinstall", "device-save"};
+  for (int i = 0; i < 6; i++) {
+    char dir[1024]; snprintf(dir, sizeof dir, "%s/%s", root, dirs[i]);
+    if (i < 4) assert(!mkdir(dir, 0700));
     pid_t pid = fork(); assert(pid >= 0);
     if (!pid) { execl(exe, exe, dir, stages[i], (char *)NULL); _exit(127); }
     int status; assert(waitpid(pid, &status, 0) == pid);

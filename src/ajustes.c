@@ -802,6 +802,9 @@ typedef enum {
   // registro), opt-in e so desta TV. Desligado, so o cartao some: o registro
   // comum e a pagina local continuam exatamente iguais.
   AJ_DIAGNOSTICS_QR,
+  // Posicao da fileira de selos no cartao "Do add-on": 0 Topo / 1 Embaixo.
+  // LOCAL, append-only (port do upstream 684461355).
+  AJ_SOURCE_BADGE_POSITION,
   // HTTP connections of this TV (Matis94 a2e37e8f5), append-only, local.
   AJ_BUFFER_NATIVE_CONNECTIONS, AJ_BUFFER_CONVERSION_CONNECTIONS,
   // Player buffer telemetry + remote toggles (Matis94 C3), append-only, local.
@@ -859,6 +862,7 @@ _Static_assert(sizeof V_FUNDO_DIN_COR / sizeof *V_FUNDO_DIN_COR == sizeof FUNDO_
                "V_FUNDO_DIN_COR: um nome por linha de FUNDO_DIN_TEMA");
 static const char *V_QUALIDADE[] = { "Automática", "4K", "1080p", "720p" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
+static const char *V_SOURCE_BADGE_POSITION[] = { "No topo", "Embaixo" };
 static const char *V_GUIA_INICIO[] = { "Ao destacar", "Ao selecionar" };
 static const char *V_GUIA_DIAS[] = { "Um dia", "Três dias" };
 static const char *V_LIGA_AUTO[] = { "Ligado", "Desligado", "Automático" };
@@ -2005,6 +2009,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Botão de pular os créditos",       V_LIGA, 2),
   // DIAGNOSTICO (Matis94): cartao de download do registro, so desta TV.
   ESC("QR de diagnóstico", V_LIGA, 2),                         // local: diagnosticsQrLocal
+  ESC("Posição dos selos (Do add-on)", V_SOURCE_BADGE_POSITION, 2),   // local: sourceBadgePositionLocal
   ESC("Conexões do player da TV", V_HTTP_CONEXOES, 4),
   ESC("Conexões da conversão de DTS e Dolby Vision", V_HTTP_CONEXOES, 4),
   ESC("Dados do buffer", V_LIGA, 2),                        // local: bufferDataLocal
@@ -2374,6 +2379,7 @@ static const char *CHAVE[] = {
   "rememberLastProfileLocal",
   "showSkipIntroButtonLocal", "showSkipRecapButtonLocal", "showSkipCreditsButtonLocal",
   "diagnosticsQrLocal",
+  "sourceBadgePositionLocal",
   "nativeBufferConnectionsLocal", "conversionBufferConnectionsLocal", // fork keys
   "bufferDataLocal", "ramOverlayLocal", "ramGreenLocal", "bufferRamReduzLocal",
 };
@@ -4025,6 +4031,7 @@ int   ajustes_fundo_addon(void)       { return lig(AJ_ADDON_FUNDO); }
 int   ajustes_logo_addon(void)        { return lig(AJ_ADDON_LOGO); }
 int   ajustes_col_arte_conta(void)    { return lig(AJ_COL_ARTE_CONTA); }
 int   ajustes_selos_coloridos(void)   { return lig(AJ_SELOS_CORES); }
+int   ajustes_selos_embaixo(void)     { return valor[AJ_SOURCE_BADGE_POSITION] == 1; }
 int   ajustes_livetv_resolucao(void)  { return valor[AJ_LIVETV_RES]; }
 int   ajustes_livetv_formato(void)    { return valor[AJ_LIVETV_FORMATO]; }
 int   ajustes_livetv_modo(void)       { return valor[AJ_LIVETV_MODO]; }
@@ -8000,6 +8007,7 @@ static int inativa(int op) {
       return !previaOpenSeek() || !openseek_compart_info(&ci);
     }
     // Remover so vale para o pacote escolhido que foi posto nesta TV.
+    case AJ_SOURCE_BADGE_POSITION: return !ajustes_fonte_texto_addon();
     case AJ_SELOS_PACOTE_REM: return selospacote_ativo() < 0 || !selospacote_da_tv(selospacote_ativo());
     case AJ_URL_REM: return valor[AJ_URL_LISTA] < 1;
     // Sem o relogio nao ha ilha para onde minimizar: sai para a pagina, como antes.
@@ -8424,6 +8432,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_LIVETV_MODO: return "Teste para TVs em que o canal chega mas não aparece. A é o modo de sempre; B não escolhe a faixa de vídeo antes de o canal abrir; C também manda o pedido no formato de transmissão ao vivo. O diagnóstico da Live TV testa os três.";
     case AJ_LIVETV_DIAG: return "Mede a rede até o provedor, lê a conta Xtream e testa vários canais: se tocam, em que formato, com que resolução e em quanto tempo. No fim sugere ajustes da Live TV e pode aplicá-los.";
     case AJ_SELOS_CORES: return "Na lista de fontes, cada selo (4K, HDR, Dolby, codec, serviço) ganha a cor do seu tipo, como no pacote de selos do Nuvio. Desligado, os selos ficam brancos.";
+    case AJ_SOURCE_BADGE_POSITION: return "Na lista de fontes \"Do add-on\", os selos ficam acima do nome da fonte ou abaixo da descrição formatada. No topo é o padrão.";
     case AJ_SELOS_PACOTE: return "Qual pacote de selos desenha a lista de fontes. Do Nuvio é o pacote que vem no app; os outros são os pacotes da sua conta (importados no Nuvio web) e os que você adiciona aqui. Vale para este perfil. Se nenhum selo do pacote combinar com a fonte, ela usa os selos do app.";
     case AJ_SELOS_PACOTE_ADD: return "Adiciona um pacote de selos pelo link do JSON dele (no máximo 3 no total, contando os da conta). O pacote entra já escolhido.";
     case AJ_URL_LISTA: return "Listas M3U e guias XMLTV deste perfil. Cada lista M3U vira uma fonte do Guia; cada guia XMLTV serve a programação de todas. Aqui aparece só o servidor; a URL inteira fica só nesta TV.";
@@ -11605,7 +11614,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_PAUSA_COMENTARIOS: case AJ_PAUSA_NOTAS: case AJ_PAUSA_ELENCO:
     case AJ_AUD_LINGUA: case AJ_AUD_LINGUA2: case AJ_PAUSA_OVERLAY: case AJ_PLR_CLASSIF: case AJ_TELA_ABERTURA: case AJ_ABERTURA_ADDON: case AJ_ABERTURA_FUNDO: case AJ_ABERTURA_ESTILO: case AJ_FONTE_MANUAL:
     case AJ_PLR_FORMATO: case AJ_PLR_FORMATO_POS: case AJ_PLR_CODEC:
-    case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_TEXTO: case AJ_FONTE_ORDEM_ADDON: case AJ_SELOS_CORES: case AJ_FONTE_TOCAR_CONFERINDO: case AJ_FONTE_AQUECER: case AJ_FONTE_CONFERIR_VARIAS: case AJ_FONTE_PREPARAR: case AJ_FONTE_PRECARREGAR:
+    case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_TEXTO: case AJ_FONTE_ORDEM_ADDON: case AJ_SELOS_CORES: case AJ_SOURCE_BADGE_POSITION: case AJ_FONTE_TOCAR_CONFERINDO: case AJ_FONTE_AQUECER: case AJ_FONTE_CONFERIR_VARIAS: case AJ_FONTE_PREPARAR: case AJ_FONTE_PRECARREGAR:
     case AJ_FONTE_GRUPO: case AJ_FONTE_GRUPO_SESSOES:
     case AJ_LINK_REUSAR: case AJ_LINK_PRAZO:
     case AJ_FONTE_PRIORIDADE: case AJ_FONTE_HDR: case AJ_FONTE_IDIOMA_AUDIO:

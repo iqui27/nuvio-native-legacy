@@ -380,6 +380,7 @@
   1, // rememberLastProfileLocal: Off
   0, 0, 0, // showSkip{Intro,Recap,Credits}ButtonLocal: On
   1, // diagnosticsQrLocal: Desligado
+  0, // sourceBadgePositionLocal: selos no topo do cartao "Do add-on"
   0, // nativeBufferConnectionsLocal: 1, one sequential request
   0, // conversionBufferConnectionsLocal: 1, Standard continuous request (R14)
   1, 1, 1, // bufferDataLocal/ramOverlayLocal/ramGreenLocal: Desligado

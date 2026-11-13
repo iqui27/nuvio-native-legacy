@@ -11,15 +11,15 @@ Fonte e critérios: [mapa de paridade](../../reviews/matis94-20261112/README.md)
 | Lote | Escopo | Estado |
 |---|---|---|
 | A | Segurança de filas PGS, HEVC in-band, URLs longas | Integrado em `c0abc4a28`; revisão + verificador independentes, gate 5/5 e pós-merge 5/5. [Evidência](lote-a-integracao.md). TV pendente. |
-| B | Modos DV/DTS/TrueHD, faixas e memória de áudio | Correções de rótulo por faixa e capacidade do SDK importadas; suite B, idiomas e build host passaram em `c9a8c3a3a`. Nova revisão e atualização da base pendentes. |
-| C | Buffer contínuo, controles, recovery/seek e telemetria | C1 transporte e padrão Standard(1) testados em `7a1c53d22`, escolhas salvas preservadas. C2 reutilização de fonte/pipeline implementada e testada no Mac mini; patch recebido, ainda não importado/revisado. C3 telemetria na fila. |
-| D | Áudio de outra versão e cortes/intro skip | Engine com mídia codificada, menu, controlador e build host passaram; atualização A/H/F reconciliada em `0e2b690a8`. Revisão final e combinação B/C pendentes. |
-| E | Formatter, badges, regex e lista de fontes | Renderização completa UTF-8, formatter, regex e build host passaram; base A/H/F atualizada. Regressões explícitas de backup/localidade passaram após correção do teste. Atualização G e nova revisão pendentes. |
+| B | Modos DV/DTS/TrueHD, faixas e memória de áudio | Suíte B e i18n passaram em `e5aa03335`; ícone e teste append-only corrigidos. Revisão completa em andamento; atualização com E e verificação final pendentes. |
+| C | Buffer contínuo, controles, recovery/seek e telemetria | C2 importado em `cbd414fc8`, cinco testes host passaram. Base G atualizada em `0f4e31cf9`; C3 telemetria/controles em implementação. Combinação B/D e revisão final pendentes. |
+| D | Áudio de outra versão e cortes/intro skip | Revisão em `7ae2d20d5` encontrou P1 no retorno do donor ao áudio próprio DTS: conversão pode ficar bloqueada. Correção e regressão em andamento; combinar B/C antes do gate. |
+| E | Formatter, badges, regex e lista de fontes | Integrado em `1ac01b8b5`; revisão e verificador distintos, 12 checks host e gate final 6/6, pós-merge 3/3. [Evidência e quatro P2](lote-e-integracao.md). TV/ARM/FPS pendentes. |
 | F | Perfil, skip, atualização e opacidade | Integrado em `26eec9dbb`; revisão + verificador independentes, gate 8/8 e pós-merge 3/3. [Evidência](lote-f-integracao.md). TV pendente. |
 | G | Diagnósticos local/QR, motivos e exportação de nuvem | Integrado em `6aa346ec3`; revisão + verificador independentes, gate 8/8 e pós-merge 3/3. [Evidência e P2](lote-g-integracao.md). Serviço de nuvem sem deploy; TV pendente. |
 | H | CW local, temporadas e títulos de episódios | Integrado em `8a16234bc`; revisão + verificador independentes, gate 15/15 e pós-merge 3/3. [Evidência](lote-h-integracao.md). TV pendente. |
 
-Execução: implementações iniciais `nv-impl medium`; correções e revisões `nv-revisao medium`. Modelo servido desconhecido sem prova do gateway. A/F/H/G integrados; B/C/D/E ainda fora. Worktrees `/Volumes/ExternalSSD/nv-21-matis-*`; briefs e evidência em `/Volumes/ExternalSSD/tmp/rev/matis94-20261112/`. Estado acima registra o corte documental, não atividade instantânea de processos. Uma escrita por worktree; sem contornar limites do executor.
+Execução: implementações iniciais `nv-impl medium`; correções e revisões `nv-revisao medium`. Modelo servido desconhecido sem prova do gateway. A/E/F/H/G integrados; B/C/D ainda fora. Worktrees `/Volumes/ExternalSSD/nv-21-matis-*`; briefs e evidência em `/Volumes/ExternalSSD/tmp/rev/matis94-20261112/`. Estado acima registra o corte documental, não atividade instantânea de processos. Uma escrita por worktree; sem contornar limites do executor.
 
 ## Cobertura item a item
 
@@ -52,16 +52,16 @@ Execução: implementações iniciais `nv-impl medium`; correções e revisões 
 | R25 | Áudio de outra versão: MKV/MP4/AVI/TS, sync ±60min, passos manuais e correção de frame rate | Ausente | Pendente de adaptação/prova |
 | R26 | Seguir filme inteiro entre cortes, fallback próprio e correção de freeze após intro skip | Ausente | Pendente de adaptação/prova |
 | F01 | Cache de layout, contagens e recomendações da lista | Presente | Manter; prova de TV separada |
-| F02 | Formatter lazy/bounded e redução de trabalho fora da tela | Parcial | Pendente de adaptação/prova |
-| F03 | Copiar dados dos badges no worker, reduzindo bloqueio/memória | Parcial | Pendente de adaptação/prova |
-| F04 | VSync enquanto espera fonte, fallback se VSync falha e pacing do player | Parcial | Pendente de adaptação/prova |
+| F02 | Formatter lazy/bounded e redução de trabalho fora da tela | Parcial | Código integrado em `1ac01b8b5`; gate 6/6 e pós-merge 3/3. Limites e P2 em lote-e-integracao.md; TV pendente. |
+| F03 | Copiar dados dos badges no worker, reduzindo bloqueio/memória | Parcial | Código integrado em `1ac01b8b5`; gate 6/6 e pós-merge 3/3. Limites e P2 em lote-e-integracao.md; TV pendente. |
+| F04 | VSync enquanto espera fonte, fallback se VSync falha e pacing do player | Parcial | Código integrado em `1ac01b8b5`; ramo webOS inspecionado, sem prova de compilação ARM ou FPS/TV. |
 | F05 | Menos redraws, fluidez com 2.000+ fontes e remoção de diagnóstico temporário | Não comprovado | Pendente de adaptação/prova |
-| F06 | Texto do add-on, emoji offline, flags, DUAL/MULTI e alinhamento | Parcial | Pendente de adaptação/prova |
+| F06 | Texto do add-on, emoji offline, flags, DUAL/MULTI e alinhamento | Parcial | Código integrado em `1ac01b8b5`; gate 6/6 e pós-merge 3/3. Limites e P2 em lote-e-integracao.md; TV pendente. |
 | F07 | Inferir idioma quando declaração falta, sem misturar legendas | Presente | Manter; prova de TV separada |
-| F08 | Pacotes de badges: cores, fundo, contorno, transparência e estabilidade | Parcial | Pendente de adaptação/prova |
-| F09 | Expressões longas e modificadores regex com escopo | Parcial | Pendente de adaptação/prova |
-| F10 | Badges no modo Do add-on: Topo/Embaixo, Topo padrão | Ausente | Pendente de adaptação/prova |
-| F11 | Nome completo com wrapping em ambos modos, sem ellipsis na animação e sem duplicar prefixo Cloud | Parcial | Pendente de adaptação/prova |
+| F08 | Pacotes de badges: cores, fundo, contorno, transparência e estabilidade | Parcial | Código integrado em `1ac01b8b5`; gate 6/6 e pós-merge 3/3. Limites e P2 em lote-e-integracao.md; TV pendente. |
+| F09 | Expressões longas e modificadores regex com escopo | Parcial | Código integrado em `1ac01b8b5`; gate 6/6 e pós-merge 3/3. Limites e P2 em lote-e-integracao.md; TV pendente. |
+| F10 | Badges no modo Do add-on: Topo/Embaixo, Topo padrão | Ausente | Código integrado em `1ac01b8b5`; gate 6/6 e pós-merge 3/3. Limites e P2 em lote-e-integracao.md; TV pendente. |
+| F11 | Nome completo com wrapping em ambos modos, sem ellipsis na animação e sem duplicar prefixo Cloud | Parcial | Código integrado em `1ac01b8b5`; gate 6/6 e pós-merge 3/3. Limites e P2 em lote-e-integracao.md; TV pendente. |
 | F12 | Unificar pedidos duplicados de fontes, preservar async/refresh/episódios diferentes | Presente | Manter; prova de TV separada |
 | F13 | Próximo episódio segue release inclusive em modo manual, sem abrir folha | Parcial — política diferente | Preservar consentimento manual; diferença intencional |
 | F14 | Título de episódio substitui nome de release e mantém IDs/numeração | Parcial | Código integrado em `8a16234bc`; gate 15/15 e pós-merge 3/3. P2 de títulos genéricos/numeração documentados. TV pendente. |
