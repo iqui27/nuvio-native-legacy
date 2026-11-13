@@ -41,7 +41,7 @@ video = elem('ae', uint('d7', 1) + uint('73c5', 1) + uint('83', 1)
              + elem('e0', uint('b0', 64) + uint('ba', 64)) + mapping)
 audio = b''
 for index, stream in enumerate(source['streams'][1:], 2):
-    codec = {'truehd': b'A_TRUEHD', 'eac3': b'A_EAC3', 'ac3': b'A_AC3'}[stream['codec_name']]
+    codec = {'truehd': b'A_TRUEHD', 'eac3': b'A_EAC3', 'ac3': b'A_AC3', 'dts': b'A_DTS'}[stream['codec_name']]
     audio += elem('ae', uint('d7', index) + uint('73c5', index) + uint('83', 2) + elem('86', codec)
                   + elem('e1', elem('b5', struct.pack('>d', 48000.0)) + uint('9f', stream['channels'])))
 tracks = elem('1654ae6b', video + audio)

@@ -893,7 +893,7 @@ void dts_engine_audio_route(DtsEngine *e, int truehd, int fixed, int dts_off) {
   if (!e) return;
   /* TrueHD feeds only when this FFmpeg build can decode it. */
   e->truehd = truehd && avcodec_find_decoder(AV_CODEC_ID_TRUEHD);
-  e->fixed_audio = fixed == 1 || fixed == 2 ? fixed : 0; e->dts_off = !!dts_off;
+  e->fixed_audio = fixed == 1 || fixed == 2 ? fixed : 0; e->dts_off = dts_off == NV_DTS_ROUTE_NATIVE ? dts_off : !!dts_off;
 }
 int dts_engine_available(void) {
   return avcodec_find_decoder(AV_CODEC_ID_DTS) && avcodec_find_encoder(AV_CODEC_ID_AAC) && av_bsf_get_by_name("h264_mp4toannexb")
@@ -1050,11 +1050,19 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
   /* Convert DTS, TrueHD and, with fixed DV audio, AC-3/E-AC-3 when this
    * build decodes them; otherwise AC-3/E-AC-3 pass through untouched. */
   int fixed=e->dv?e->fixed_audio:0;
-  e->passthrough=ap->codec_id!=AV_CODEC_ID_DTS && ap->codec_id!=AV_CODEC_ID_TRUEHD && !fixed;
+  /* Matis94 0550df28f: the TV decodes DTS, so the DV path hands it the whole
+   * DTS stream as in the file (DTS-HD MA/DTS:X), never a core cut. */
+  int dts_native=ap->codec_id==AV_CODEC_ID_DTS && e->dv && e->dts_off==NV_DTS_ROUTE_NATIVE && !fixed;
+  e->passthrough=(ap->codec_id!=AV_CODEC_ID_DTS || dts_native) && ap->codec_id!=AV_CODEC_ID_TRUEHD && !fixed;
   if(e->passthrough) {
     e->in=av_packet_alloc(); e->out=av_packet_alloc();
     if(!e->in || !e->out) return fail(e,"Audio queue allocation",0);
     e->info.channels=ap->ch_layout.nb_channels>0?ap->ch_layout.nb_channels:6;
+    if(dts_native) {
+      if(e->info.channels>8) e->info.channels=8;
+      printf("[dts] dv-dts-native: full stream passed through ch=%d profile=%d\n",e->info.channels,ap->profile);
+      fflush(stdout);
+    }
     e->info.sample_rate=ap->sample_rate>0?ap->sample_rate:48000;
     snprintf(e->info.audio_codec,sizeof(e->info.audio_codec),"%s",avcodec_get_name(ap->codec_id));
     e->info.duration_ns=e->fmt->duration==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->duration,AV_TIME_BASE_Q,NS);

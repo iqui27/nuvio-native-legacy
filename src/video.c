@@ -3290,7 +3290,11 @@ static int iniciarDts(int stream) {
   dts_playback_next_p7(ajustes_dv7());
   dts_playback_next_p7_mapping(ajustes_dv7_mapping());
   dtsRotaTruehd = dtsModoDv && (dvTruehd || ajustes_dv_audio()) && !ajustes_dts_desligado();
-  dtsRotaOff = ajustes_dts_desligado();
+  /* Matis94 05725b747: "Original" on a TV that declares DTS (edidType) lets the
+   * DV path pass DTS-HD MA/DTS:X untouched. EDID pending/absent: convert. */
+  dtsRotaOff = ajustes_dts_desligado() ? 1
+             : dtsModoDv && ajustes_dts_original() && __atomic_load_n(&edidDts, __ATOMIC_ACQUIRE) > 0
+             ? NV_DTS_ROUTE_NATIVE : 0;
   dts_playback_next_audio_route(dtsRotaTruehd, dtsModoDv ? ajustes_dv_audio() : 0, dtsRotaOff);
   snprintf(dtsFonteCodec, sizeof dtsFonteCodec, "%s", selected.codec);
   dtsSessao = dts_playback_start(urlAtual, cabsHttp, stream, alvo,
@@ -3471,7 +3475,10 @@ static void bombearDts(void) {
                     : !strcmp(dtsFonteCodec, "ac3") ? "AC3" : "DTS";
     int convertido = !dtsModoDv || (strcmp(src, "E-AC-3") && strcmp(src, "AC3")) ||
                      strcmp(st.info.audio_codec, dtsFonteCodec);
-    if (convertido) {
+    if (dtsModoDv && !strcmp(dtsFonteCodec, "dts") && !strcmp(st.info.audio_codec, "dts")) {
+      snprintf(dtsSaida, sizeof dtsSaida, "DTS · Dolby Vision");
+      dtsEstado = VIDEO_DTS_NATIVO;
+    } else if (convertido) {
       snprintf(dtsSaida, sizeof dtsSaida, "%s → %s", src, !strcmp(st.info.audio_codec, "ac3") ? "AC3 5.1" : "AAC Stereo");
       /* The island notice speaks of DTS only; TrueHD/fixed keep the label. */
       dtsEstado = !strcmp(src, "DTS") ? VIDEO_DTS_CONVERTIDO : 0;

@@ -820,7 +820,7 @@ done:
 
 static int dvNext, p7Next, p7MappingNext, truehdNext, fixedNext, dtsOffNext;
 void dts_playback_next_audio_route(int truehd, int fixed, int dts_off) {
-  truehdNext = !!truehd; fixedNext = fixed; dtsOffNext = !!dts_off;
+  truehdNext = !!truehd; fixedNext = fixed; dtsOffNext = dts_off == NV_DTS_ROUTE_NATIVE ? dts_off : !!dts_off;
 }
 void dts_playback_next_p7(int enabled) { p7Next = !!enabled; }
 void dts_playback_next_p7_mapping(int enabled) { p7MappingNext = !!enabled; }

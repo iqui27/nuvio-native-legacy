@@ -1,6 +1,7 @@
 /* Actual FFmpeg demux/Annex-B/seek path, with a local Range transport. */
 #include "../src/dts/dts_engine.h"
 #include "../src/dts/dv7.h"
+#include "../src/dts/dts_audio_codec.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,7 +33,7 @@ char *rede_baixar_trecho64_vigiado_retry(const char *u,const char *h,int64_t s,i
 }
 char *rede_baixar_trecho64_final(const char *u,const char *h,int64_t s,int64_t e,long *n,
                                int64_t *t,int *status,volatile int *c,char *final,int *cross) {
-  *final=0; *cross=0; return rede_baixar_trecho64_cab(u,h,s,e,n,t,status,c);
+  if(final)*final=0; if(cross)*cross=0; return rede_baixar_trecho64_cab(u,h,s,e,n,t,status,c);
 }
 /* 2.0.6 also links the Samsung streaming reader; the webOS DV fixture
  * must continue to use authenticated ranges, never the Samsung ring path. */
@@ -125,5 +126,26 @@ int main(int argc,char **argv) {
     assert(dts_engine_open(e,argv[1],"",2,0,0)<0);
     dts_engine_destroy(e);
   }
-  puts("DV7 engine: real TrueHD/fixed audio, Off, P8.1 RPU, seek and corrupt-RPU fallback passed.");
+  /* DTS: converted by default; with the TV declaring DTS ("Original"), the DV
+   * path passes the stream untouched (native, not converted); Off rejects. */
+  e=mapping_engine_create(); dts_engine_allow_p7(e,1); dts_engine_dv(e,1);
+  dts_engine_audio_route(e,1,0,0);
+  check(e,dts_engine_open(e,argv[1],"",4,1,0));
+  assert(!strcmp(dts_engine_info(e)->audio_codec,"aac") && drain(e)==20);
+  dts_engine_audio_route(e,1,0,NV_DTS_ROUTE_NATIVE);
+  check(e,dts_engine_open(e,argv[1],"",4,1,0));
+  m=dts_engine_info(e);
+  assert(!strcmp(m->audio_codec,"dts") && m->channels==6);
+  { DtsFrame f; int audio=0,sync=1;
+    while ((r=dts_engine_next(e,&f))>0) if (f.kind==DTS_AUDIO) {
+      audio++; sync=sync && f.size>=4 && f.data[0]==0x7f && f.data[1]==0xfe && f.data[2]==0x80 && f.data[3]==0x01; }
+    assert(audio>5 && sync); }
+  check(e,dts_engine_seek(e,.4)); assert(drain(e)>0);
+  /* Fixed DV audio wins over native DTS. */
+  dts_engine_audio_route(e,1,2,NV_DTS_ROUTE_NATIVE);
+  check(e,dts_engine_open(e,argv[1],"",4,1,0)); assert(!strcmp(dts_engine_info(e)->audio_codec,"ac3"));
+  dts_engine_audio_route(e,1,0,1);
+  assert(dts_engine_open(e,argv[1],"",4,0,0)<0);
+  dts_engine_destroy(e);
+  puts("DV7 engine: real TrueHD/fixed audio, Off, native/converted DTS, P8.1 RPU, seek and corrupt-RPU fallback passed.");
 }
