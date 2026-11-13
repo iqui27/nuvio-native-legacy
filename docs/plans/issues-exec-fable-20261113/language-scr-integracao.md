@@ -22,13 +22,15 @@ Scope: #785 (FON785) and #706 (SCR706) source integration into `integracao/2.1`.
 - `bash tests/fon785_rotulos.sh` rc 0
 - `bash tests/video_pausa_lg.sh` rc 0
 - Prior diagnostic omission corrected: `source_audio_language` was rc 134 at candidate stage (recorded in language-scr-verification-correction.md). It is rc 0 on merged HEAD. No failure waiver.
-- Canonical gate record: not located in this job; no digest or result is claimed here.
+- Central canonical gate: 7 declared, 7 executed, 7 required and 7 passed; 0 skipped, failed, timed out or divergent; agreement true, errors empty. Checks: source_audio_language, fon785_rotulos, stream_parser, video_pausa_lg, lsregistro, build-local and varredura-i18n. All rc 0 on the exact candidate above.
+- Verification digest: `bf4ec68c5b2319475d3c9588d7f0269d7158bc40b87dd1903e255ef1ca05d902`. Guarded merge status passed; i18n postcheck rc 0, stdout SHA-256 `e2dc1d85ba32029673aefafb6a1c449a89170cefb60cd397499b0dff77cc29e1`.
+- The central supplied this gate evidence after the documentation worker could not locate its record. The map retains that worker's original entry and appends this supplement; earlier validation records and item statuses remain unchanged.
 
 ## Not run / limits (unknown, not claimed)
 - Physical TV acceptance: UNKNOWN for both issues. Issues stay OPEN.
 - LG webOS screensaver physical root (C1/C2/C3/C5): UNKNOWN.
 - FON row on TV: UNKNOWN.
-- P2 notes (FON785-R1..R4, SCR-R1/R2): kept, not blockers.
+- Retained P2 notes: FON785-R1/R2, SCR-R1/R2 and LANG2-R1/R2/R3; no confirmed P0/P1. Evidence gaps FON785-R3/R4 were closed by the verifier's hashed red and green logs.
 - GUI runners `fontes_lote_e` / `fontes_formatter`: not run. Their flag/alias coverage was verified only by manual scratch probe.
 - No Home, sync or cache crossing.
 - BIB639 / PAG789 full global gate: pending, unwaived, not integrated.
