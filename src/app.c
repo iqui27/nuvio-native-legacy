@@ -4127,6 +4127,7 @@ int app_iniciar(const char *dirArte) {
   // O envio da atividade segue o nivel de privacidade (alcance) do Social: a
   // funcao e chamada agora e a cada mudanca; "nao perguntado" chega como 0.
   recomenda_ao_mudar_alcance(atividade_definir_permitido);
+  perfis_lembrar_ultimo_configurar(ajustes_lembrar_perfil());
   // Sem conta, o app abre no login. Com sessao gravada ele nem passa por ela —
   // pedir o codigo de novo a cada arranque seria o mesmo que nao ter gravado.
 #if defined(NV_LINUX_DESKTOP) || defined(NV_DESKTOP_RELEASE)
@@ -5527,6 +5528,7 @@ void app_atualizar(float dt, Uint32 agora) {
   // "Preferir o mesmo grupo de fonte" governa as duas memorias: a escolha a
   // mao (o titulo inteiro, 180 dias) e a do automatico.
   fontepref_configurar(ajustes_fonte_grupo(), 0, ajustes_fonte_grupo(), ajustes_fonte_grupo_sessoes());
+  perfis_lembrar_ultimo_configurar(ajustes_lembrar_perfil());
   // Pagina de registro na rede local (logrede.h): Ajustes > Sobre e ajuda > Registro.
   logrede_configurar(ajustes_log_rede(), registro_arquivo());
   fontevolta_configurar(ajustes_link_reusar(), ajustes_link_prazo_s());

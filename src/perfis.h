@@ -116,6 +116,10 @@ int  perfis_precisa_escolher(void);
 // seguinte. Duas funcoes e nao duas copias da regra: esta e a regra, e
 // perfis_precisa_escolher() e ela mais a bandeira.
 int  perfis_sem_escolha(void);
+// Device-local opt-in (Matis94, Nuvio_webOS_2.0.8.6): reuse an existing
+// unlocked saved profile at startup. Never confirms a PIN or suppresses an
+// explicit Switch profile request.
+void perfis_lembrar_ultimo_configurar(int ligado);
 
 // 1 quando o Voltar pode dispensar a tela sem escolha explicita: ha um perfil
 // gravado da sessao anterior E ele nao esta atras de um PIN. Sem esta segunda
