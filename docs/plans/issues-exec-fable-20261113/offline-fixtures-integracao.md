@@ -28,7 +28,7 @@ Scope: test fixtures only (tests/ 11 files in BASE..HEAD). No production fix. Is
 - Temporary account / session / logout isolation: HOME and XDG under a per-run temp dir; proxy vars unset; `conta_logout.c` fails closed (rc 2) if the data dir is outside the temp root.
 - Exact synthetic owner JSON for `get_sync_owner`; owner assert now exact-match against the seeded uuid.
 - Hard Apple-encoded query for Tom & Jerry (`&searchTerm=Tom%20%26%20Jerry`); loose matches removed.
-- Real Apple / IMDb parsers and selection tests kept; three Android wrappers unchanged; caller `properties` override defaults unchanged.
+- Real Apple / IMDb parsers and selection tests kept; three Android test wrappers now honor caller `NUVIO_PROPERTIES`, retaining the previous fallback when no override is supplied.
 - Prior false JADE failures: 1 -> 0. All assertions retained.
 - Missing `dados_iniciar` in the fixture was the appearance-migration root cause. No production theme defect.
 
