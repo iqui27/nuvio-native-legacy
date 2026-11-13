@@ -2,7 +2,7 @@
 
 Pedido do dono: trazer as funcionalidades ausentes do fork Matis94 para a integração de TV.
 
-O merge `c0abc4a28f5ead0f69d39f2550e07900b5577133` incorpora o candidato `7d40f7debbba7ce3a41373bc30cb61360b289bf3` sobre a base `f2126002ff7240f4c4477e49586764cacd962b64`. Cobre R15, R18 e R22 do [plano](STATUS.md). Não houve push, publicação, deploy, instalação nem acesso a contas.
+O merge `c0abc4a28f5ead0f69d39f2550e07900b5577133` incorpora o candidato `7d40f7debbba7ce3a41373bc30cb61360b289bf3` sobre a base `f2126002ff7240f4c4477e49586764cacd962b64`. Cobre R15, R18 e R22 do [plano](STATUS.md). Não houve push, publicação de release, deploy do Worker de recomendações, instalação nem acesso a contas. O commit documental acionou o hook pré-existente de atualização do painel/roadmap público; isso não publica as novas rotas de logs nem habilita a funcionalidade em produção.
 
 ## Comportamento incorporado
 
