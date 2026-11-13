@@ -23,6 +23,7 @@ static const char *uxResumo(int op) {
   return ajudaOpcao(op);
 }
 static int uxOpcaoNaTela(int op) {
+  if (uxBufferConexao(op)) return AJ_BUFFER;
   if (op == AJ_FILTRO_TAM_MAX || op == AJ_FILTRO_GRUPOS) return AJ_FILTROS_FONTES;
   return op >= AJ_FALHA_RD_LIMITE && op <= AJ_FALHA_AD_LIMITE
     ? AJ_FALHA_PROVEDOR_ORDEM : op;
@@ -445,6 +446,10 @@ static int ajTipo(int op) {
 static const char *ajRotSeg(int op, int i) {
   static char b[3][96];
   char *p;
+  if (op == AJ_DV_AUDIO_FIXO) {
+    static const char *const nomes[] = { "Original", "AAC 2.0", "DD 5.1" };
+    return nomes[i];
+  }
   snprintf(b[i % 3], sizeof b[0], "%s", i18n(OPCOES[op].valores[i]));
   p = strstr(b[i % 3], " (");
   if (p && p != b[i % 3] && op != AJ_AMPLIAR_UI) *p = 0;
@@ -461,8 +466,15 @@ static int ajSegmentada(int op) {
   if (n < 2 || n > 3 || !OPCOES[op].valores) return 0;
   // O segmentado so fica na linha se o nome da opcao cabe ao lado dele;
   // senao a escolha abre no editor.
-  { float w = aj2SegLargura(op, n);
-    if (w + (float)txt_largura(TXT_V2_ROT, rotuloOpcao(op)) + 60.0f + 20.0f > aj2ListaWRef() - 44.0f) return 0;
+  { float w = aj2SegLargura(op, n), regua = w;
+    /* DTS output (LG) keeps the in-row choice it had with two values after Off
+     * was appended: with the artwork column the segmented control is drawn
+     * over the artwork, not beside the row label, so the label check uses the
+     * original two values. */
+#ifndef NV_TPK
+    if (op == AJ_DTS_AC3 && n == 3 && aj2TemInsp() && !ajRetrato()) regua = aj2SegLargura(op, 2);
+#endif
+    if (regua + (float)txt_largura(TXT_V2_ROT, rotuloOpcao(op)) + 60.0f + 20.0f > aj2ListaWRef() - 44.0f) return 0;
     return w < 560.0f; }
 }
 // O editor desta opcao acontece NA LINHA (segmentado, interruptor, cor, fundo),

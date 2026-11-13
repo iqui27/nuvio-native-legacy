@@ -13,7 +13,7 @@ typedef struct {
   int (*feed)(void *, const DtsFrame *);
   int (*play)(void *);
   int (*pause)(void *);
-  int (*flush)(void *, double);
+  int (*flush)(void *, double); /* Reposition native segment; optional firmware Seek, else return 0. */
   int (*eos)(void *);
   const char *(*media_id)(void *);
   const char *(*error)(void *);

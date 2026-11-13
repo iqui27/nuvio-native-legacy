@@ -27,7 +27,14 @@ static GfxRect morphLogo, morphPlay;
 static Uint32 morphEm;
 float gfx_tex_aspect_atual;
 int ajustes_animacoes_reduzidas(void) { return reduz; }
-int player_carregando(void) { return 1; }
+static int comVideo,testReady,testStarting,testPresented,retido,erroFonte;
+int video_pronto(void) { return testReady; }
+int video_iniciando(void) { return testStarting; }
+int video_dts_imagem_exibida(void) { return testPresented; }
+int cacheboost_backend_quadro(int mode) { (void)mode;return 0; }
+#include "video-state.c"
+#include "loading-state.c"
+#include "plane-state.c"
 int ajustes_abertura_addon(void) { return addonLigado; }
 int ajustes_abertura_fundo(void) { return fundoOp; }
 static int estiloOp;   // 0 Centro (A3), 1 Canto (B3)
@@ -77,6 +84,14 @@ TxtLinha txt_linha_corta(TxtEstilo es, const char *s, int r, int g, int b, int a
   return txt_linha(es, s, r, g, b, a);
 }
 void txt_desenhar_alpha(TxtLinha l, float x, float y, float a) {}
+// This fixture checks the opening artwork; DV-specific status is covered by
+// the DV screen tests and remains absent for the SDR/DTS startup here.
+void dvtela_abertura_marca(int canto,float x,float y,float a) {
+  (void)canto;(void)x;(void)y;(void)a;
+}
+float dvtela_abertura_linha(int canto,float x,float y,float a) {
+  (void)canto;(void)x;(void)a;return y;
+}
 #include "render.c"
 static int tem(const char *s) {
   for (int i = 0; i < n; i++) if (strstr(linhas[i], s)) return 1;
@@ -93,6 +108,31 @@ static void quadro(CatItem *c) {
   assert(!tem("RAW") && !tem("secret") && !tem("http"));
 }
 int main(void) {
+  comVideo=1;testReady=1;testStarting=1;
+  assert(player_carregando()); // Native Load accepted, converter still prerolling.
+  testStarting=0;assert(!player_carregando()); // Playback starts: loading can leave.
+  testReady=0;assert(player_carregando());
+  testReady=testStarting=1;
+  assert(!renderFura()); // Initial preroll/bind keeps the loading artwork.
+  testPresented=1;
+  assert(!player_carregando() && renderFura()); // A later seek is not startup.
+  testReady=0;
+  assert(!player_carregando() && player_com_video() && renderFura());
+  // The same-source recovery seen in the TV log must not re-open the
+  // cinema artwork or the loading island while the decoder is replaced.
+  cine=(AbreCine){0};
+  abrecine_passo(&cine,player_carregando(),0,0,3000,1.0f/60,0);
+  assert(!cine.viva && cine.veu==0);
+  retido=1;assert(!player_com_video());retido=0;
+  esperandoFonte=1;assert(player_carregando());esperandoFonte=0;
+  testPresented=0;
+  assert(player_carregando() && !player_com_video() && !renderFura());
+  testReady=1;assert(player_carregando() && !renderFura()); // New source/DV unchanged.
+  testReady=0;testStarting=0;
+  comVideo=0;assert(!player_carregando());
+  esperandoFonte=1;assert(player_carregando());
+  puts("Converted startup: real loading state waits for native playback, then releases");
+  cine=(AbreCine){ .viva=1, .veu=1, .foco=1, .desde=1000 };
   CatItem c = {0};
   snprintf(c.backdrop, sizeof c.backdrop, "local-backdrop");
   snprintf(c.logo, sizeof c.logo, "local-logo");

@@ -353,3 +353,11 @@
   0, /* gradient smoothing: Automatic */
   0, /* hero logo and information size: Normal */
   0, /* folder hero details: On (V_LIGA 0) */
+  0, /* fixed DV audio experiment: Off (v12) */
+  1, /* buffer data in player: Off (V_LIGA) */
+  1, /* RAM overlay: Off */
+  1, /* green-button RAM shortcut: Off */
+  1, /* BD REMUX MP4 test: Off (V_LIGA), device-local opt-in */
+  1, /* preserve P7 mapping experiment: Off (V_LIGA), device-local opt-in */
+  0, /* ordinary native buffering: Standard / one sequential connection */
+  0, /* DTS/TrueHD/DV7: Standard (1), Tizen method (owner, 06/11/2026) */

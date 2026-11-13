@@ -42,6 +42,12 @@ char *rede_baixar_trecho64_final(const char *url,const char *headers,int64_t sta
   if(cross) *cross=0;
   return rede_baixar_trecho64_cab(url,headers,start,end,size,total,status,cancelled);
 }
+char *rede_baixar_trecho64_relato(const char *u,const char *h,int64_t s,int64_t e,long *n,
+ int64_t *t,int *status,volatile int *c,char *f,int *x,volatile int *urgent,unsigned idle,int *stalled,int *retry_after) {
+ (void)urgent;(void)idle;if(stalled)*stalled=0;if(retry_after)*retry_after=-1;
+ return rede_baixar_trecho64_final(u,h,s,e,n,t,status,c,f,x);
+}
+
 char *rede_baixar_trecho64_cab(const char *url,const char *headers,int64_t start,int64_t end,long *size,int64_t *total,int *status,volatile int *cancelled) {
   assert(!strcmp(headers,HEADERS));
   assert(start>=0 && end>=start && end-start<4*1024*1024); __atomic_add_fetch(&requests,1,__ATOMIC_RELAXED);
@@ -63,6 +69,8 @@ static void aac_adts(FILE *out,const DtsFrame *f) {
   assert(fwrite(h,1,7,out)==7);
 }
 int main(int argc,char **argv) {
+  const char *workers=getenv("NV_TEST_HTTP_WORKERS");
+  if(workers)dts_engine_set_http_workers(atoi(workers));
   assert(argc==3);
   DtsEngine *e=dts_engine_create(); assert(e && dts_engine_available());
   dts_engine_allow_p7(e,1);

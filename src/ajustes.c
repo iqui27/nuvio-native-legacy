@@ -725,6 +725,14 @@ typedef enum {
   // Hero logo and information size (0 Normal, 1 Grande, 2 Muito grande). LOCAL, append-only.
   AJ_HERO_TAMANHO,
   AJ_HERO_PASTA_DETALHES, // Device-local folder hero details, append-only; on by default.
+  AJ_DV_AUDIO_FIXO, // experimental, append-only, device-local; off by default
+  AJ_BUFFER_DADOS, // nested in the buffer chooser, device-local; off by default
+  AJ_RAM_OVERLAY, // nested playback RAM overlay, device-local, off by default
+  AJ_RAM_VERDE, // optional green-key RAM shortcut, device-local, off by default
+  AJ_MP4_BD_TEST, // experimental separate-track P7 MP4, append-only, default OFF
+  AJ_DV7_MAPPING, // isolated P7 RPU mapping experiment; append-only, default OFF
+  AJ_BUFFER_NATIVE_CONNECTIONS, // append-only; ordinary player defaults to 1
+  AJ_BUFFER_CONVERSION_CONNECTIONS, // append-only; conversion defaults to Standard (1)
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -758,6 +766,9 @@ static const char *V_NT_EP[]    = { "Como na linha do título", "IMDb", "TMDB", 
 static const char *V_PALCO_FUNDO[] = { "Cortina", "Como está", "Só arte", "Preto", "Aura", "Tríptico", "Monumento" };
 static const char *V_TITULO_FIL[] = { "Clássico", "Ilha", "Editorial", "Acento" };
 static const char *V_DEGRADES[] = { "Automático", "Forte", "Desligado" };
+static const char *V_BUFFER_CONNECTIONS[] = { "Standard (1)", "Parallel - 2", "Parallel - 3", "Parallel - 4" };
+static const char *V_BUFFER_CONVERSION_CONNECTIONS[] = { "Standard (1)", "Parallel - 2", "Parallel - 3", "Parallel - 4" };
+static const char *V_DV_AUDIO_FIXO[] = { "Original audio", "AAC stereo", "Dolby Digital 5.1" };
 static const char *V_VIDRO_QUALIDADE[] = { "Automática", "Desempenho", "Alta" };
 static const char *V_FUNDO_DIN[] = { "Cinza", "Cor", "Imersivo", "Cinza escuro" };
 // A cor do fundo "Cor" sai da paleta do acento (TEMA_ACENTO), em ordem de
@@ -820,8 +831,10 @@ static const char *V_BRILHO_PLAYER[] = { "100%", "80%", "65%", "50%" };
 static const char *V_DTS_SAIDA[] = { "Desligado", "5.1 (Dolby Digital)", "Estéreo (AAC)" };
 #define N_DTS_SAIDA 3
 #else
-static const char *V_DTS_SAIDA[] = { "Estéreo (AAC)", "5.1 (Dolby Digital)" };
-#define N_DTS_SAIDA 2
+/* Append-only: saved LG modes 0 = AAC and 1 = AC3 keep their meaning; 2 = Off
+ * (no DTS conversion: the TV player gets the source, usually without sound). */
+static const char *V_DTS_SAIDA[] = { "Estéreo (AAC)", "5.1 (Dolby Digital)", "Desligado" };
+#define N_DTS_SAIDA 3
 #endif
 static const char *V_PROPORCAO[] = { "Último usado", "Original", "Recortar", "Esticar", "Zoom leve", "Zoom cinema", "Zoom ultra", "Ajustar altura", "Ajustar largura" };
 static const char *V_LOGO_APP[] = { "Novo", "Clássico" };
@@ -1863,6 +1876,14 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Suavizar degradês", V_DEGRADES, 3),
   ESC("Tamanho do destaque", V_HERO_TAMANHO, 3),       // local: heroSizeLocal
   ESC("Mostrar detalhes da pasta no destaque", V_LIGA, 2),
+  ESC("Dolby Vision audio output", V_DV_AUDIO_FIXO, 3),
+  ESC("Show buffer data in player", V_LIGA, 2),
+  ESC("RAM overlay", V_LIGA, 2),
+  ESC("Green button shortcut", V_LIGA, 2),
+  ESC("Dolby Vision MP4 (experimental)", V_LIGA, 2),
+  ESC("Dolby Vision P7 mapping (experimental)", V_LIGA, 2),
+  ESC("Standard native-player buffering", V_BUFFER_CONNECTIONS, 4),
+  ESC("DTS/TrueHD and DV7 buffering", V_BUFFER_CONVERSION_CONNECTIONS, 4),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2196,6 +2217,14 @@ static const char *CHAVE[] = {
   "suavizarDegradesLocal",
   "heroSizeLocal",
   "heroFolderDetailsLocal",
+  "dvFixedAudioTestLocal",
+  "bufferPlayerDataLocal",
+  "ramOverlayLocal",
+  "ramGreenShortcutLocal",
+  "mp4BdRemuxTestLocal",
+  "dv7PreserveMappingTestLocal",
+  "nativeBufferConnectionsLocal",
+  "conversionBufferConnectionsLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2780,6 +2809,28 @@ static int uxVoltarOp = -1;
 void ajustes_voltar_de_lista(int plugins) { uxVoltarOp = plugins ? AJ_PLUGINS : AJ_ADDONS; }
 static int uxDifs[AJ_N], uxNDifs, uxDifFoco;
 static int uxEditor, uxOp, uxPendente, uxOriginal, uxRodape;
+static int uxBufferDados, uxBufferDadosFoco;
+static struct { int ativo, pendente, original, foco; } uxBufferPai;
+static int uxBufferConexoesDisponivel(void) {
+#ifdef NV_WEBOS
+  return 1;
+#else
+  return 0;
+#endif
+}
+static int uxBufferConexao(int op) {
+  return op==AJ_BUFFER_NATIVE_CONNECTIONS || op==AJ_BUFFER_CONVERSION_CONNECTIONS;
+}
+static const char *uxBufferNome(int op) {
+  return op==AJ_BUFFER_NATIVE_CONNECTIONS?"Native player":"DTS/TrueHD and DV7";
+}
+static int uxBufferDadosDisponivel(void) {
+#ifdef NV_HTTP_BUFFER_DIAG
+  return 1;
+#else
+  return 0;
+#endif
+}
 static GuiaCategoria *uxCategorias;
 static unsigned char *uxCategoriasAbertura;
 static int uxNCategorias;
@@ -3288,6 +3339,35 @@ int ajustes_buffer_preset(void) {
   int v = valor[AJ_BUFFER];
   return v >= 0 && v < 4 ? v : 0;
 }
+int ajustes_buffer_dados(void) { return lig(AJ_BUFFER_DADOS); }
+int ajustes_ram_overlay(void) { return lig(AJ_RAM_OVERLAY); }
+int ajustes_ram_verde(void) { return lig(AJ_RAM_VERDE); }
+static int bufferConnections(int op,int fallback) { return valor[op]>=0 && valor[op]<4?valor[op]+1:fallback; }
+int ajustes_buffer_native_connections(void) { return bufferConnections(AJ_BUFFER_NATIVE_CONNECTIONS,1); }
+int ajustes_buffer_conversion_connections(void) { return bufferConnections(AJ_BUFFER_CONVERSION_CONNECTIONS,1); }
+/* "Standard (1)" (default) uses the Tizen method: one connection is one continuous
+ * request into the ring (the Samsung converter's reader), not 4 MiB ranges. */
+int ajustes_buffer_conversion_stream(void) { return ajustes_buffer_conversion_connections()==1; }
+int ajustes_dv7_mapping(void) {
+#if defined(NV_DV7_MAPPING_TEST) && defined(NV_WEBOS) && defined(NV_DV7_CONVERSION)
+  return valor[AJ_DV7_MAPPING]==0;
+#else
+  return 0;
+#endif
+}
+int ajustes_mp4_bd_test(void) {
+#if defined(NV_MP4_BD_TEST) && defined(NV_WEBOS) && defined(NV_DV7_CONVERSION)
+  return valor[AJ_MP4_BD_TEST]==0;
+#else
+  return 0;
+#endif
+}
+static int overlayAlternar(int op) {
+  int antes=valor[op];valor[op]=!antes;
+  if(gravar())return 1;
+  valor[op]=antes;return 0;
+}
+int ajustes_ram_overlay_alternar(void) { return overlayAlternar(AJ_RAM_OVERLAY); }
 int ajustes_fonte_idioma_audio(void) { return valor[AJ_FONTE_IDIOMA_AUDIO] == 0; }
 int ajustes_cache_seek_mb(void) {
   static const int MB[] = { 0, 256, 512, 1024 };
@@ -3805,6 +3885,14 @@ int ajustes_cw_ordem(void)            { return valor[AJ_CW_ORDEM]; }
 int ajustes_cw_retido_tambem(void)    { return lig(AJ_CW_RETIDO_TAMBEM); }
 int ajustes_ps_continuar(void)        { return lig(AJ_PS_CONTINUAR); }
 int ajustes_dts_ac3(void)             { return valor[AJ_DTS_AC3] == 1; }
+/* DTS conversion off: .tpk 0 (existing), LG 2 (appended). */
+int ajustes_dts_desligado(void) {
+#ifdef NV_TPK
+  return valor[AJ_DTS_AC3] == 0;
+#else
+  return valor[AJ_DTS_AC3] == 2;
+#endif
+}
 // .tpk: HLS (o TS continuo e so a troca automatica de video_tpk.c) ou desligado.
 int ajustes_dts_tpk_modo(void) {
 #ifdef NV_TPK
@@ -3815,6 +3903,13 @@ int ajustes_dts_tpk_modo(void) {
 }
 int ajustes_dv_mkv(void)              { return lig(AJ_DV_MKV); }
 int ajustes_dv7(void) { return lig(AJ_DV7); }
+int ajustes_dv_audio_fixo(void) {
+#if defined(NV_DV_FIXED_AUDIO_TEST) && defined(NV_WEBOS)
+  int v=valor[AJ_DV_AUDIO_FIXO];return v==1 || v==2 ? v : 0;
+#else
+  return 0;
+#endif
+}
 int ajustes_hist_conta(void)          { return lig(AJ_HIST_CONTA); }
 int ajustes_social(void)              { return lig(AJ_SOCIAL); }
 int ajustes_amigos_estilo(void)       { return valor[AJ_AMIGOS_ESTILO]; }
@@ -6071,7 +6166,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_AUDIO_OFFSET:   /* audio presentation calibration belongs to this TV */
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
-    case AJ_DV7:
+    case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
     case AJ_HIST_CONTA: case AJ_SOCIAL: /* por perfil desta TV (perfilLocal); o web nao tem */
     case AJ_TAM_MAX: case AJ_TAM_MIN: /* o web nao tem a faixa de tamanho */
     case AJ_ESPACO_FILEIRAS: case AJ_ESPACO_TITULOS: /* o web nao tem espacamento */
@@ -6166,7 +6261,7 @@ static int soNaTv(int op) {
     case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY:
     case AJ_P2P_LIGADO: case AJ_JF_LIGADO: case AJ_POSTER_PROV: case AJ_EPG_PAIS:
     case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: case AJ_RELOGIO_12H:
-    case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7:
+    case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
     case AJ_TUNNELING: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO:
@@ -6714,6 +6809,8 @@ static void focarOpcao(int op);
 // D1: "Posicao do relogio" 238 pessoas, "Sincronia por audio" 157, "Zoom do
 // trailer" 86, P2P no .wgt 6), escondendo o aviso que importa.
 static int foraDestaPlataforma(int op) {
+  // Child of AJ_BUFFER's editor, intentionally not a standalone Settings row.
+  if(op==AJ_BUFFER_DADOS || op==AJ_RAM_OVERLAY || op==AJ_RAM_VERDE || uxBufferConexao(op))return 1;
   // Os limites dos provedores sao editados dentro da folha de ordem.
   if (op >= AJ_FALHA_RD_LIMITE && op <= AJ_FALHA_AD_LIMITE) return 1;
   // Only the shared parent appears in the category; these editors are its children.
@@ -6749,6 +6846,15 @@ static int foraDestaPlataforma(int op) {
 #if defined(NV_TPK) || defined(NV_ANDROID)
   if (op == AJ_DV_MKV) return 1;
   if (op == AJ_DV7) return 1;
+#endif
+#if !defined(NV_DV_FIXED_AUDIO_TEST) || !defined(NV_WEBOS)
+  if(op==AJ_DV_AUDIO_FIXO) return 1;
+#endif
+#if !defined(NV_DV7_MAPPING_TEST) || !defined(NV_WEBOS) || !defined(NV_DV7_CONVERSION)
+  if(op==AJ_DV7_MAPPING)return 1;
+#endif
+#if !defined(NV_MP4_BD_TEST) || !defined(NV_WEBOS) || !defined(NV_DV7_CONVERSION)
+  if(op==AJ_MP4_BD_TEST)return 1;
 #endif
 #ifndef NV_ANDROID
   if (op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO || op == AJ_TUNNELING) return 1;
@@ -8051,13 +8157,16 @@ static const char *ajudaOpcaoBase(int op) {
 #ifdef NV_TPK
     case AJ_DTS_AC3: return "Esta TV não toca DTS nem TrueHD: o app converte o som na hora. 5.1 (Dolby Digital) mantém o surround para barra de som e receiver; 7.1, Atmos e DTS:X viram 5.1, sem os objetos. Estéreo (AAC) serve qualquer TV. Desligado: esses vídeos tocam sem som, como antes. Vale a partir do próximo vídeo.";
 #else
-    case AJ_DTS_AC3: return "Como o áudio DTS é entregue à TV quando o app o converte (só na LG). Estéreo (AAC) é o modo provado e serve qualquer TV. 5.1 (Dolby Digital) mantém o som surround para barra de som e receiver por ARC/eARC; vale a partir do próximo vídeo.";
+    case AJ_DTS_AC3: return "Como o app converte o DTS para a TV (LG). Estéreo (AAC) serve qualquer TV; 5.1 (Dolby Digital) mantém o surround para a barra de som. Desligado: sem conversão de DTS nem TrueHD.";
 #endif
     case AJ_PS_CONTINUAR: return "Ligado, cada perfil mostra na escolha de perfil o cartão com o que ele estava assistindo. Desligado, a tela mostra só os perfis.";
     case AJ_HIST_CONTA: return "Ligado (padrão): o que você assiste neste perfil sobe para a conta Nuvio, com o progresso e os vistos. Desligado: nada disso é enviado à conta; o Trakt e o Simkl vinculados a este perfil continuam recebendo. Vale só para este perfil.";
     case AJ_SOCIAL: return "Ligado (padrão): amigos, atividade deles e recomendações. Desligado: tudo isso some, com a fileira de amigos da Home, e o app para de falar com o serviço social. Salvos e Avisos continuam. Vale só para este perfil.";
     case AJ_DV_MKV: return "Arquivos MKV em Dolby Vision perfil 5 ou 8 tocam com o Dolby Vision ligado, em vez de HDR10. O áudio Dolby Digital e Dolby Digital Plus vai direto para a TV. Se a conexão não acompanhar, o vídeo continua em HDR10. Só em TVs LG com webOS 4 ou mais novo.";
     case AJ_DV7: return "Converte MKV Dolby Vision perfil 7 para 8.1. Mantém o vídeo base e os metadados dinâmicos; descarta a camada de melhoria, incluindo FEL. Vale para o próximo vídeo.";
+    case AJ_DV_AUDIO_FIXO: return "Original audio may reload video when switching formats. AAC stereo / Dolby Digital 5.1 converts supported tracks for smoother switching. Conversion does not preserve lossless audio or Atmos/DTS:X metadata. Reopen the video to apply.";
+    case AJ_MP4_BD_TEST: return "Helps play compatible Dolby Vision MP4 files that fail to open normally. Off by default. Reopen the video to apply.";
+    case AJ_DV7_MAPPING: return "Test P7 to P8.1 conversion with luma/chroma mapping preserved. May alter colors or brightness; does not restore FEL. Off uses standard conversion. Reopen the video to apply.";
     case AJ_CW_RETIDO_TAMBEM: return "Quando o título está na ilha ou em Retomar agora, mostra também na fileira Continuar assistindo.";
     case AJ_EP_TAMANHO: return "Pequeno, Médio (padrão) ou Grande. Só vale no layout Moderno, na página de séries. Vale só nesta TV.";
     case AJ_ABERTURA_ADDON: return "Desligado (padrão): a tela Cinema mostra só a arte, o logo e a barra. Ligado: o nome do add-on aparece sob a barra. Vale só nesta TV.";
@@ -8079,6 +8188,8 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_ESTAT_LADO: return "O lado do player onde as Estatísticas ao vivo ficam, com a mesma margem das listas de Áudio e Legendas. Direita é o padrão. Com o painel aberto, Esquerda/Direita trocam o lado. Vale só nesta TV.";
     case AJ_PLAYER_EXTERNO: return "Escolha onde o vídeo toca: neste app, em um player instalado (VLC, MX Player...) ou perguntando a cada vez. O player externo não sincroniza o progresso.";
     case AJ_PLAYER_ANIME: return "Player só para anime (kitsu, MAL, AniList, ou animação japonesa). Igual ao Player usa a escolha acima. O player externo não sincroniza o progresso.";
+    case AJ_BUFFER_NATIVE_CONNECTIONS: return "Standard (default) downloads ordinary video through one sequential connection. Parallel 2, 3 or 4 uses that many HTTP range workers inside the same RAM buffer limit. Automatic uses a 64 MB buffer for parallel mode, subject to the RAM safety floor. Applies to the next video. Live/HLS/DASH keep their existing player path.";
+    case AJ_BUFFER_CONVERSION_CONNECTIONS: return "HTTP downloads for DTS/TrueHD conversion and DV7 processing. Standard (1), the default, reads the file over one continuous connection, the method of the Samsung (Tizen) converter, without a new request every 4 MB. Parallel 2, 3 or 4 uses that many HTTP range downloads instead. RAM buffer limits stay the same. Applies to the next video.";
     case AJ_BUFFER: return "Quanto vídeo o app guarda à frente. Automático é o de sempre; 64, 128 ou 256 MB ajudam arquivos 4K pesados e caem sozinhos se faltar memória na TV. No webOS vale para a conversão de DTS e Dolby Vision. Vale a partir do próximo vídeo.";
     case AJ_FONTE_IDIOMA_AUDIO: return "Na escolha automática, fontes com o seu Idioma do áudio ou áudio duplo passam na frente na mesma resolução. Não é filtro: sem elas, a melhor das outras toca.";
     case AJ_CACHE_SEEK: return "Com retomada rápida, guarda só o último título por até 3 horas. Trocar de perfil ou pouco espaço apagam o trecho.";
@@ -9634,6 +9745,13 @@ static int definirValorDireto(int op, int novo) {
   if (novo == 0) notaLigarPar(op);
   { int ok; ajOrigem = ajOrigemDireto; ok = gravar(); ajOrigem = 0;
     if (!ok) { valor[op] = antes; valor[AJ_LEG2_POSICAO] = posicaoAntes; memoriaEscolhida = memoriaAntes; bibliotecaFonteEscolhida = bibliotecaAntes; return 0; } }
+#ifdef NV_HTTP_BUFFER_DIAG
+  if (op == AJ_BUFFER_NATIVE_CONNECTIONS || op == AJ_BUFFER_CONVERSION_CONNECTIONS) {
+    printf("[http-setting] path=%s old=%d selected=%d applies=next-video saved=1\n",
+      op == AJ_BUFFER_NATIVE_CONNECTIONS ? "native" : "conversion", antes + 1, novo + 1);
+    fflush(stdout);
+  }
+#endif
   if ((op == AJ_DV_MKV || op == AJ_DV7) && antes != 0 && novo == 0) video_dv_guard_reiniciar();
   if (op == AJ_LIVETV_SUGERIR) guia_sugestoes_mudaram();
   if (op == AJ_FIL_LIMITE) {

@@ -1,0 +1,124 @@
+# Buffer / DTS / Dolby Vision connection experiment
+
+Base: upstream `iqui27/nuvio-native-legacy` master
+`7cac4f25d11931b56c41cfefb952e4e183c45c1a`.
+Playback port: `Matis94/nuvio-native-legacy` `build/playback-v17-no-qr`
+`eff64fa3b1db4580b7e5af9ff92c44abfa0cccd5`.
+
+Only playback modules, buffer/playback settings, their build dependencies and
+regressions are ported. Other upstream application changes are preserved.
+The initial port omitted diagnostics QR and source formatter changes. Diagnostics
+QR was subsequently added as a separate device-local, default-OFF switch.
+The upstream folder
+hero setting keeps its enum position and persisted key; playback settings append
+after it. The native asynchronous load and conversion URL copies accept the
+upstream `NV_MEDIA_URL_MAX` limit.
+The remembered DV audio-source identity uses that limit as well; a 1024-byte
+copy would prevent restoring a track for long URLs accepted by upstream.
+
+## Settings
+
+### Recovery after seeking or underflow
+
+The webOS conversion worker pauses the existing native pipeline when the current
+continuous byte window runs low, or when a seek needs a new continuous window.
+It resumes after both audio/video have two seconds queued and the reader has a
+continuous payload reserve (one quarter of its capacity, capped at 16 MiB).
+Unrelated later ranges do not count toward that reserve. EOF and user pause,
+seek, audio changes and cancellation remain separate from automatic refill.
+Refill has a 20-second active wait budget; a persistent failure retains the
+existing terminal recovery policy. No second player, frame queue, HTTP lane or
+larger buffer allocation is introduced. The usual RAM safety floor stays active.
+
+An awaited DV gap has priority over speculative queued ranges. Its three/five
+second retry window is extended while at least 64 KiB arrives during that window
+and the transfer is not idle. Stalled or negligible transfers still retry; the
+existing whole-request timeout remains in force. Partial bodies that progress
+are retained instead of repeatedly restarting the same four-MiB interval.
+
+`tests/dts_rebuffer.sh` exercises SDR/DV refill, user pause, seek, audio changes,
+EOF, cancellation and bounded failure. `tests/range_progress.sh` uses real HTTP
+to distinguish useful progress, idle and negligible trickles. The HTTP connection
+matrix also verifies 1/4/1/4 sessions and prioritization without exceeding limits.
+
+### Buffer controls
+
+Playback > Image and sound > Buffer size. Its editor contains the four size
+presets, then an HTTP connections section with two nested selectors:
+
+| Selector | Default | Choices |
+| --- | --- | --- |
+| Native player | Standard (1) | Standard (1), Parallel 2, 3, 4 |
+| DTS/TrueHD and DV7 | Parallel 4 | Standard (1), Parallel 2, 3, 4 |
+
+The buffer-data, RAM-overlay and green-button switches share one row below
+connections. Up/Down navigates the sizes and connection rows; Left/Right moves
+between the three switches, and OK toggles them immediately. A connection
+selector saves only on Confirm. Confirm or Back returns to Buffer size with
+its previous focus and unconfirmed size draft intact. Restoring the whole
+Buffer size page restores size, both connection defaults and the switches;
+restoring a child affects only that child's connection preference.
+
+Both preferences are device-local, independent, and apply to the next playback
+session. They do not propagate through account sync or device backup. Invalid
+values recover the defaults. Each engine pins its connection limit, so changing
+a setting cannot alter an in-progress playback or another reader.
+When Buffer data is enabled, its existing OSD line adds a short session label,
+for example `HTTP: 1 (Native)` or `HTTP: 4 (DTS/DV)`. It reports the pinned
+download limit from the active engine's telemetry, not a live socket count or
+a setting changed for a future video. Unsupported/inactive fallbacks do not
+invent a connection count.
+The OSD uses soft off-white and wraps in its right-hand column if a larger
+interface/font cannot fit the complete size, selected-size and HTTP label on
+one line. It does not truncate those details or cross the title's left column.
+
+The ordinary default keeps the existing single sequential HTTP ring reader.
+Parallel native modes use the existing bounded range queue and one local player
+client; changing HTTP concurrency does not multiply RAM capacity. Buffer size
+remains 64/128/256 MiB with the official available-RAM floor and automatic
+reductions. If native Parallel is explicitly selected with Automatic buffer size,
+the app requests the smallest 64 MiB preset through the same safety checks.
+When memory is insufficient or a source is not cacheable, the normal native
+fallback remains active. Live/HLS/DASH keep their existing playback path.
+
+Conversion Standard (1) uses one HTTP range worker, rather than introducing a
+new long-lived streaming transport. Other conversion modes use 2/3/4 range
+workers. The defaults keep the existing four-worker conversion behavior.
+DTS/TrueHD output, P7 conversion/mapping and audio routing are separate choices.
+
+## Validation
+
+- Real HTTP counter: native, DTS-range and DV-range readers at 1, 2, 3 and 4;
+  byte continuity, forward/backward seeks, fixed session snapshots, cancellation,
+  buffer capacity and cross-origin native header stripping.
+- Real DTS conversion with one worker: MKV/MP4, AAC/AC3, track changes, seeks,
+  HTTP authentication and sparse offsets beyond 2 GiB.
+- Real DV7/TrueHD conversion at one and four workers: FFmpeg + pinned libdovi,
+  P7 to P8.1, mapping, passthrough, output audio changes, repeated seeks and
+  corrupt-RPU recovery. This verifies output behavior, not television frame rate.
+- Existing native sequential buffer, resolver/429 recovery, cache reuse, adapter,
+  asynchronous load/fallback and settings regressions remain in CI.
+- Settings exercise all 16 independent combinations through disk reload.
+- Nested selectors exercise remote/pointer entry, child save/cancel/restore,
+  parent draft preservation, failed writes, focus return and whole-page reset.
+- End-to-end native parallel proxy: 2/3/4 workers with every 64/128/256 MiB
+  budget, replacement of an open player request, byte equality, forward/backward
+  seeks, HEAD, memory bounds, shutdown, MIME sniffing and unsupported playlists.
+- An 8191-byte URL survives a real DV metadata revision and the asynchronous
+  native load/fallback. The DV identity regression fails with the old 1024-byte
+  copy and passes with the upstream-sized buffer.
+
+## Upstream compatibility audit
+
+The full Linux application compiles and links. The real webOS video translation
+unit compiles with the complete playback feature flags and FFmpeg headers.
+Compiled settings exports from clean upstream `7cac4f25` and this branch match
+for every existing numeric ID, key, default, initial value, label, choice, type
+and numeric bound. New settings append after the upstream folder-details item.
+The ARM package is checked by the branch workflow; host compilation does not
+substitute for that check or playback on a television.
+
+One worker can be correct while still too slow for a high-bitrate remux on a
+particular CDN/TV. The experimental choices need playback testing on the LG;
+four workers remain the conversion default. Numeric `[http-buffer]` logs identify
+native mode and worker count without logging a URL or credentials.

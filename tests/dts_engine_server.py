@@ -29,9 +29,13 @@ class Handler(BaseHTTPRequestHandler):
         parallel = self.path.startswith('/parallel/')
         prefetch = self.path.startswith('/prefetch/')
         telemetry = self.path.startswith('/telemetry/')
+        audio_prefetch = self.path.startswith('/audio-prefetch/')
+        audio_gap = self.path.startswith('/audio-gap/')
         path = self.path.removeprefix('/slow') if slow else self.path.removeprefix('/parallel')
         if prefetch: path = self.path.removeprefix('/prefetch')
         if telemetry: path = self.path.removeprefix('/telemetry')
+        if audio_prefetch: path = self.path.removeprefix('/audio-prefetch')
+        if audio_gap: path = self.path.removeprefix('/audio-gap')
         if retry: path = self.path[retry.end()-1:]
         if slow: time.sleep(.05)
         target = root / path.removeprefix('/')
@@ -60,6 +64,8 @@ class Handler(BaseHTTPRequestHandler):
         if parallel: time.sleep(.12)
         if prefetch: time.sleep(.8 if lo == 8*1024*1024 else .02)
         if telemetry and lo == 4*1024*1024-1: time.sleep(2)
+        if audio_prefetch and lo >= 4*(4*1024*1024-1): time.sleep(8)
+        if audio_gap and lo % (4*1024*1024-1): time.sleep(.8)
         if lo >= total:
             with lock: active -= 1
             self.send_response(416); self.send_header('Content-Range', f'bytes */{total}'); self.send_header('Content-Length', '0'); self.end_headers(); return
@@ -72,7 +78,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Range', f'bytes {lo+wrong}-{hi+wrong}/{total}')
         self.send_header('Content-Length', str(len(body))); self.end_headers()
         try:
-            if live and lo==fault_at and mode=='bodyhang' and attempt==1:
+            if live and lo==fault_at and mode=='dvtrickle':
+                for off in range(0,len(body),4096):
+                    self.wfile.write(body[off:off+4096]); self.wfile.flush(); time.sleep(.3)
+            elif live and lo==fault_at and mode in ('drip','dripspec','dripall','bootdv') and (attempt==1 or mode=='dripall'):
+                for off in range(0,len(body),65536):
+                    self.wfile.write(body[off:off+65536]); self.wfile.flush(); time.sleep(.1 if mode in ('dripall','bootdv') else .2)
+            elif live and lo==fault_at and mode in ('dvsteady','dvnear'):
+                for off in range(0,len(body),65536):
+                    self.wfile.write(body[off:off+65536]); self.wfile.flush(); time.sleep(.06 if mode=='dvnear' else .04)
+            elif live and lo==fault_at and mode=='bodyhang' and attempt==1:
                 self.wfile.write(body[:65536]); self.wfile.flush(); time.sleep(8); self.wfile.write(body[65536:])
             elif live and lo==fault_at and mode=='steady':
                 for off in range(0,len(body),65536):

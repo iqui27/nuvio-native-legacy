@@ -29,6 +29,9 @@
 #include "player.h"
 #include "legfontes.h"
 #include "memlog.h"
+#ifdef NV_HTTP_BUFFER_DIAG
+#include "ramoverlay.h"
+#endif
 #include "dvtela.h"
 #include "abrecine.h"
 #include "ilhacart.h"
@@ -42,6 +45,7 @@
 #include "posplay.h"
 #include "extras.h"
 #include "video.h"
+#include "player_dts_notice.h"
 #include "seekprobe.h"
 #include "faixas.h"
 #include "gfx.h"
@@ -376,6 +380,13 @@ static void corFocoPlayer(float *r, float *g, float *b) { ajustes_acento(r, g, b
 // A guia parental se apoia nisto para aparecer UMA vez, no comeco, e sumir.
 static Uint32 inicioImagem = 0;
 static int memQuadroPendente; // Um primeiro quadro por load, nao por volta da ilha.
+static NvDtsNotice dtsConvertedNotice;
+static int dtsNoticeTrack = -1;   // the track the DTS notice belongs to (nv_dts_notice_track)
+#ifdef NV_DV_TRUEHD_TEST
+static NvDtsNotice truehdConvertedNotice;
+static Uint32 truehdDesde;
+static int truehdVisto, truehdTrack=-1;
+#endif
 // MEDIDA DO RETOMAR (05/10): desde player_abrir ate o pronto e ate o primeiro
 // "tocando" depois de aplicada a retomada. E o numero para comparar, na TV, o
 // Retomar sem reter (fonte guardada + posicao) com o retido ("retomada pronta").
@@ -877,7 +888,7 @@ static long tmdbDoTocando(int *tt, int *te) {
   }
   return 0;
 }
-#ifdef NV_ANDROID
+#if defined(NV_ANDROID) || defined(NV_NATIVE_SEEK_TEST)
 static double retomarSeg;
 static int retomadaNaPreparacao;
 #endif
@@ -1943,7 +1954,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
   avLat0 = -1.0; avAtraso = 0.0; avPausaDesde = 0;
   retomadaAplicada=0; semRetomada=0; retomarFonteSeg = -1.0; baseT = baseE = -1;
   abertoEm = SDL_GetTicks(); medirAbertura = 1; tocouMedido = 0; loadEm = 0;
-#ifdef NV_ANDROID
+#if defined(NV_ANDROID) || defined(NV_NATIVE_SEEK_TEST)
   retomarSeg = 0.0; retomadaNaPreparacao = 0;
 #endif
   botao = PLR_PLAY;
@@ -2161,6 +2172,10 @@ static int preTituloLegendaUsar(const char *url) {
 
 static void tocarFonteInterno(const char *url);
 static void tocarFonteInterno(const char *url) {
+  dtsConvertedNotice=(NvDtsNotice){0}; dtsNoticeTrack=-1;
+#ifdef NV_DV_TRUEHD_TEST
+  truehdConvertedNotice=(NvDtsNotice){0};truehdDesde=0;truehdVisto=0;truehdTrack=-1;
+#endif
   marco("abrir: url ao pipeline");
   skipLiberado = 0;
   loadEm = SDL_GetTicks();   // #202: do pipeline ao primeiro quadro ("[player] load->1o quadro")
@@ -2171,13 +2186,11 @@ static void tocarFonteInterno(const char *url) {
   memlog_evento("load"); memQuadroPendente = 1;
   cacheboost_backend_buffer(cacheboost_buffer_mb(ajustes_buffer_preset(), memlog_livre_mb()));
   { char px[96];
-#ifdef NV_ANDROID
-    // app.c define episodio e "do inicio" antes de entregar a fonte. O
-    // instante viaja junto da URL, nunca numa variavel pendente do Kotlin.
-    // So o percentual (retomada da conta, sem registro local com segundos):
-    // vai junto e o Media3 aplica com a duracao do container antes do
-    // primeiro quadro. Antes abria em 0, tocava e buscava depois do "pronto"
-    // (TCL, 2.0.3: +6,4 s e um primeiro quadro jogado fora).
+#if defined(NV_ANDROID) || defined(NV_NATIVE_SEEK_TEST)
+    // Resolve the saved source position before opening. Android applies it
+    // in Media3; the webOS test passes it into initial DTS preparation. An
+    // account percentage uses the actual container duration. Native URI
+    // playback keeps the existing late-seek fallback.
     double ponto = retomarFonteSeg >= 0.0 ? retomarFonteSeg : retomarSeg;
     retomadaNaPreparacao = !ehCanal() && (retomarFonteSeg >= 0.0 ||
                             (!semRetomada && (retomarSeg > 0.0 || retomarPct > 0)));
@@ -2343,7 +2356,11 @@ void player_voltar_a_esperar(void) {
 // Consome o pedido de abrir a folha de faixas: quem le, zera.
 int  player_pediu_faixas(void) { int v = pedFaixas; pedFaixas = 0; return v; }
 
-int  player_com_video(void) { return comVideo && !retido && video_pronto(); }
+int  player_com_video(void) { return comVideo && !retido && (video_pronto()
+#ifdef NV_NATIVE_SEEK_TEST
+  || video_dts_imagem_exibida()
+#endif
+); }
 // Para o Discord (discord.c), que so le: pausado, duracao e se e canal ao vivo.
 int   player_pausado(void) { return !tocando; }
 // Pausa DA PESSOA (tecla/botao), nunca o `tocando` espelhado do backend: no
@@ -2366,7 +2383,17 @@ int player_duracao_midia(double *seg) {
 }
 
 // Esta abrindo o fluxo: ha video pedido, mas ainda nao ha imagem.
-int  player_carregando(void) { return esperandoFonte || (comVideo && !video_pronto()); }
+int  player_carregando(void) {
+  return esperandoFonte || (comVideo &&
+#ifdef NV_NATIVE_SEEK_TEST
+    !video_dts_imagem_exibida() &&
+#endif
+    (!video_pronto()
+#ifdef NV_NATIVE_SEEK_TEST
+    || video_iniciando()
+#endif
+  ));
+}
 int  player_controles_visiveis(void) { return visivel; }
 int   player_foco_na_barra(void) { return barraFoco; }
 // UP belongs to the player while controls are up (button row -> seek bar, bar ->
@@ -4236,7 +4263,19 @@ static int ativarBotao(int i, int repetiu) {
   return 1;
 }
 
+#ifdef NV_HTTP_BUFFER_DIAG
+static int bufferRamTecla(const SDL_Event *e) {
+  if(ajustes_ram_verde() && e->type==SDL_KEYDOWN && !e->key.repeat &&
+     (e->key.keysym.sym==SDLK_F2 || e->key.keysym.scancode==NV_SCANCODE_GREEN)) {
+    (void)ajustes_ram_overlay_alternar();return 1;
+  }
+  return 0;
+}
+#endif
 void player_evento(const SDL_Event *e) {
+#ifdef NV_HTTP_BUFFER_DIAG
+  if(bufferRamTecla(e))return;
+#endif
   // QUALQUER ENTRADA E ATIVIDADE, antes de qualquer return: tecla, clique ou roda
   // do Magic Remote/mouse, toque e botoes do controle. O painel de pausa so sobe
   // depois de 4 s SEM nenhum comando; mexer em legenda, audio ou na barra
@@ -4798,9 +4837,9 @@ void player_atualizar(float dt, Uint32 agora) {
         (video_tocando() || (!video_iniciando() && (int)(agora - prontoDesde) >= 2500))
 #endif
         ) {
-#ifdef NV_ANDROID
-      // O ack chega antes do prepare. Se a ponte/Media3 recusou a posicao,
-      // recua ao seek de sempre; pendente nunca vira um segundo seek.
+#if defined(NV_ANDROID) || defined(NV_NATIVE_SEEK_TEST)
+      // Apply resume once. A prepared converter/Media3 already started at
+      // this target; native URI or rejected preparation uses the old seek.
       int estado = retomadaNaPreparacao ? video_retomada_inicial_estado() : -1;
       if (estado != 0) {
         retomadaAplicada = 1;
@@ -6378,6 +6417,34 @@ static void capaReabertura(GfxRect furo, const CatItem *c, Uint32 agora) {
 }
 #endif
 
+#ifdef NV_DV_TRUEHD_TEST
+static void avisarTruehd(Uint32 agora) {
+  const VideoFaixa *track=video_audio(video_audio_atual());
+  // Unknown metadata during a seek/reload does not represent a new selection.
+  // Demux indices identify the selected source track, not the output codec.
+  if(track && track->stream_index>=0 && track->stream_index!=truehdTrack) {
+    truehdTrack=track->stream_index;
+    truehdConvertedNotice=(NvDtsNotice){0};truehdVisto=0;truehdDesde=0;
+  }
+  int eligible=!player_carregando() && !ehCanal() && video_truehd_convertido() &&
+               video_tocando() && !video_iniciando();
+  if(!eligible) {
+    truehdVisto=0;nv_dts_notice_show(&truehdConvertedNotice,0,agora);return;
+  }
+  if(!truehdVisto) { truehdVisto=1;truehdDesde=agora; }
+  if(pgDesde && (float)(agora-pgDesde)/1000.0f<PG_SEG_TOTAL) truehdDesde=agora;
+  if(!nv_dts_notice_show(&truehdConvertedNotice,agora-truehdDesde>=1500u,agora))return;
+  // Reuse the existing localized conversion sentence, changing only its
+  // internationally named codec token. All current translations contain DTS.
+  static char text[256];
+  const char *localized=i18n("Áudio DTS convertido nesta TV"),*codec=strstr(localized,"DTS");
+  if(codec)snprintf(text,sizeof text,"%.*sTrueHD%s",(int)(codec-localized),localized,codec+3);
+  else snprintf(text,sizeof text,"TrueHD audio converted on this TV");
+  PlrIlhaPedido pd={0};pd.icone="aj_audio-lines";pd.texto=text;
+  pd.semFim=1;pd.aberta=1;plrilha_pedir(&pd);
+}
+#endif
+
 void player_desenhar(Uint32 agora) {
   if (!aberto) return;
   const CatItem *c = item();
@@ -6406,6 +6473,11 @@ void player_desenhar(Uint32 agora) {
   GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
   int quadroMorno = player_carregando() && !erroFonte && cacheboost_backend_quadro(3);
   int furar = (player_com_video() && !esperandoFonte) || quadroMorno;   // abrindo a fonte: sem furo, so preto
+#ifdef NV_NATIVE_SEEK_TEST
+  // Keep the initial cover through preroll/bind, but never restore it over
+  // a packet source that has already played, including DV seek/audio reloads.
+  if(video_iniciando() && !video_dts_imagem_exibida()) furar=0;
+#endif
 #ifdef NV_SHOT_HOOKS
   if (shotSemFuro && encolhe > 0.999f) furar = 0;   // capturas: a arte faz de video
 #endif
@@ -6577,13 +6649,17 @@ void player_desenhar(Uint32 agora) {
   { static int dtsVisto;
     static Uint32 dtsDesde;
     int e = player_carregando() || ehCanal() ? VIDEO_DTS_NENHUM : video_dts_estado();
+    { const VideoFaixa *ft = video_audio(video_audio_atual());
+      if (nv_dts_notice_track(&dtsConvertedNotice, &dtsNoticeTrack, ft ? ft->stream_index : -1)) dtsDesde = agora; }
     if (e != dtsVisto) { dtsVisto = e; dtsDesde = agora; }
     // A guia parental (tambem na ilha, de prioridade baixa) vem primeiro: o
     // aviso do DTS espera ela fechar, em vez de derruba-la.
     if (pgDesde && (float)(agora - pgDesde) / 1000.0f < PG_SEG_TOTAL) dtsDesde = agora;
+    int convertedNotice=nv_dts_notice_show(&dtsConvertedNotice,
+      e==VIDEO_DTS_CONVERTIDO && agora-dtsDesde>=1500u,agora);
     if (e != VIDEO_DTS_NENHUM && e != VIDEO_DTS_PREPARANDO && agora - dtsDesde >= 1500u) {
       Uint32 dur = e == VIDEO_DTS_FALHOU || e == VIDEO_DTS_SEM_SOM ? 10000u : 5000u;
-      if (agora - dtsDesde < 1500u + dur) {
+      if (e==VIDEO_DTS_CONVERTIDO ? convertedNotice : agora-dtsDesde<1500u+dur) {
         PlrIlhaPedido pd;
         memset(&pd, 0, sizeof pd);
         pd.icone = "dts";
@@ -6596,6 +6672,9 @@ void player_desenhar(Uint32 agora) {
         plrilha_pedir(&pd);
       }
     } }
+#ifdef NV_DV_TRUEHD_TEST
+  avisarTruehd(agora);
+#endif
   if (player_carregando() && ehCanal()) {
     // CANAL SINTONIZANDO: a versao COMPACTA, uma linha na propria ilha do
     // relogio (dono, 03/10: "no player do live tv vamos usar a versao compacta
@@ -6921,7 +7000,11 @@ void player_desenhar(Uint32 agora) {
     // e conteudo do filme. Desenha-la antes do retorno preserva ASS/SRT/VTT
     // durante a maior parte da reproducao, quando a barra nao esta na tela.
     desenharLegendaExterna();
-    desenharAcoesEpisodio(); return;
+    desenharAcoesEpisodio();
+#ifdef NV_HTTP_BUFFER_DIAG
+    ramoverlay_desenhar(agora,ajustes_ram_overlay());
+#endif
+    return;
   }   // tocando limpo
 
   // OS VEUS DO GLASS UI (mockup aprovado em 03/10): so dois degrades, o de
@@ -6948,6 +7031,9 @@ void player_desenhar(Uint32 agora) {
    */
   desenharLegendaExterna();
   desenharOsd(agora, a, ac, c);
+#ifdef NV_HTTP_BUFFER_DIAG
+  ramoverlay_desenhar(agora,ajustes_ram_overlay());
+#endif
 }
 
 // O CORPO DO OSD (barra, titulo, Seekr, botoes, tempo, selos e o botao de
@@ -7022,8 +7108,12 @@ static float fileiraFormato(Uint32 agora, float x, float y, float ac, int medir,
   }
 #endif
   if (video_tem_atmos())        selos[nSelos++] = FMT_ATMOS;
-  if (marcaDtsAtual() >= 0)     selos[nSelos++] = (FormatoMarca)marcaDtsAtual();
   const char *rotAudio = ehCanal() ? "" : rotuloAudioOsd();
+  // PILULA: o DTS ja aparece na pilula do audio ("Inglês · DTS 5.1"); repetir
+  // ao lado do Dolby Vision ("Dolby Vision | DTS") somava ruido (dono, 06/11).
+  // Os outros estilos (marcas, selos, texto) continuam mostrando a marca.
+  if (marcaDtsAtual() >= 0 && !(pil && rotAudio[0] && ajustes_plr_codec() && textoAudioAtual()[0]))
+    selos[nSelos++] = (FormatoMarca)marcaDtsAtual();
   if (!nSelos && !rotAudio[0]) return 0.0f;
   // SELOS: os do pacote que o dono configurou (Ajustes > Selos), a mesma arte
   // da folha de Fontes, casados com o que foi MEDIDO (o codec da faixa entra
@@ -7130,6 +7220,24 @@ static float fileiraFormato(Uint32 agora, float x, float y, float ac, int medir,
 #undef ENTRADA
   return H;
 }
+#ifdef NV_HTTP_BUFFER_DIAG
+static void bufferDadosDesenhar(float direita,float y,float alpha) {
+  if(!ajustes_buffer_dados())return;
+  char b[96];video_buffer_test_text(b,sizeof b);
+  TxtLinha l=txt_linha(TXT_G19M,b,210,210,210,210);
+  // Episode/title details use the left 60%; leave a gap before this column.
+  float width=fmaxf(1.0f,(direita-PLR_MARGEM)*0.38f);
+  if(l.w<=width)txt_desenhar_alpha(l,direita-l.w,y-l.h-14.0f,alpha);
+  else {
+    // Keep selected size and HTTP details visible with larger UI/fonts too.
+    float leading=l.h+4.0f;
+    float h=txt_bloco_dir(TXT_G19M,b,210,210,210,direita,0,width,leading,0,0);
+    txt_bloco_dir(TXT_G19M,b,210,210,210,direita,y-h-14.0f,width,leading,alpha*(210.0f/255.0f),0);
+  }
+}
+#endif
+
+
 static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) {
   // O bloco inteiro desliza junto: titulo, barra e botoes sao UM objeto que
   // sobe, acompanhando o OSD (`anim`) e a abertura da tela (`entrada`, numa
@@ -7177,6 +7285,9 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
       for (i = 0; i < nCaps; i++) if (caps[i] <= 0.0f || caps[i] >= 1.0f) caps[i--] = caps[--nCaps];
     }
     plrui_barra(bx, yBarra, bw, frac, bufFrac, barraFoco, caps, nCaps, a); }
+#ifdef NV_HTTP_BUFFER_DIAG
+  bufferDadosDesenhar(bx+bw,yBarra,a);
+#endif
 
   // --- O TITULO: o LOGO, e o texto so na falta dele -------------------------
   // (O dono tinha pedido texto em 2026-09; o mockup aprovado em 03/10 volta ao

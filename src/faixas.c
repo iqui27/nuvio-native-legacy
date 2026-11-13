@@ -1522,7 +1522,7 @@ static void rostoIdioma(GfxRect r, const char *idioma, const char *icone, int se
 static void linhaLista(int col, int i, float x, float y, float w, float a) {
   int sel = col == coluna && i == foco[col] && !(col == 0 && (volFoco || velFoco));
   const char *marca = NULL, *icone = NULL, *idioma = NULL;
-  char nome[64], sub[96];
+  char nome[112], sub[96];
   int ativo;
   GfxRect lr = { x, y, w, IL_LN_H };
   nome[0] = sub[0] = 0;
