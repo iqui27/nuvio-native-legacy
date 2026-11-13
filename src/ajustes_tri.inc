@@ -199,7 +199,7 @@ static int rvEstiloLegenda(int *ops, int *values, int n) {
       case AJ_LEG1_TAMANHO: style.tamanho = v; break;
       case AJ_LEG1_FONTE: style.familia = v; break;
       case AJ_LEG1_COR: style.cor = v; break;
-      case AJ_LEG1_OPACIDADE: style.opacidade = v; break;
+      case AJ_LEG1_OPACIDADE: style.opacidade = leg_opacidade_do_indice(v); break;
       case AJ_LEG1_FUNDO: style.fundo = v; break;
       case AJ_LEG1_POSICAO: style.posicao = v; break;
       case AJ_LEG1_BORDA: style.borda = v; break;
@@ -330,8 +330,12 @@ static int triListaEvento(SDL_Keycode k) {
   }
   // Escolha CURTA (ate 3 valores, o segmentado da linha): o OK RODA o valor
   // (mockup claude-c, "rolling value + pips, OK cycles") e grava na hora.
+  // Fonte da biblioteca fica de fora: o valor seguinte pode ser um servico
+  // desligado, que a gravacao recusa, e o OK prendia a linha nele (Trakt nunca
+  // voltava para Nuvio). O editor so oferece os servicos ligados.
   if (uxOk(k) && triBladeLayout() && focoOp >= 0 && !inativa(focoOp) && !soLeitura(focoOp) &&
-      ajSegmentada(focoOp) && nValores(focoOp) <= 3 && focoOp != AJ_LAYOUT_AJUSTES && focoOp != AJ_GUIA) {
+      ajSegmentada(focoOp) && nValores(focoOp) <= 3 && focoOp != AJ_LAYOUT_AJUSTES && focoOp != AJ_GUIA &&
+      focoOp != AJ_SALVOS_DEST) {
     int n = nValores(focoOp), next = uxValorAtual(focoOp) + 1;
     if (next >= n) next = 0;
     uxOp = focoOp; uxOriginal = uxValorAtual(focoOp); uxPendente = next;

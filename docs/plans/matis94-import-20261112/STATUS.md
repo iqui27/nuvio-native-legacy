@@ -15,11 +15,11 @@ Fonte e critérios: [mapa de paridade](../../reviews/matis94-20261112/README.md)
 | C | Buffer contínuo, controles, recovery/seek e telemetria | C1 transporte implementado/testado em `0e66f9beb`; correção do novo padrão Standard(1) em execução isolada no Zima. C2 seek e C3 telemetria na fila. Sem revisão final/merge. |
 | D | Áudio de outra versão e cortes/intro skip | Em implementação — `agente/21-matis-d-audioexterno`; integrar após B/C |
 | E | Formatter, badges, regex e lista de fontes | Em implementação — `agente/21-matis-e-fontes` |
-| F | Perfil, skip, atualização e opacidade | Implementação/testes em `22b560f4`; revisão independente bloqueou migração da opacidade secundária em arquivo de perfil (F1-profile P1). Correção isolada no Zima; fora da integração. |
+| F | Perfil, skip, atualização e opacidade | Integrado em `26eec9dbb`; revisão + verificador independentes, gate 8/8 e pós-merge 3/3. [Evidência](lote-f-integracao.md). TV pendente. |
 | G | Diagnósticos local/QR, motivos e exportação de nuvem | Autorização de upload revisada; complemento QR local/portabilidade em andamento em `agente/21-matis-g-logs`. Retomada aguarda capacidade do cota-gate; sem deploy. |
 | H | CW local, temporadas e títulos de episódios | Integrado em `8a16234bc`; revisão + verificador independentes, gate 15/15 e pós-merge 3/3. [Evidência](lote-h-integracao.md). TV pendente. |
 
-Execução: `job-pi`, implementações iniciais `nv-impl medium`; correções e revisões `nv-revisao medium`. Modelo efetivamente servido permanece desconhecido sem evidência do gateway. Worktrees `/Volumes/ExternalSSD/nv-21-matis-*`; briefs/logs/progresso em `/Volumes/ExternalSSD/tmp/rev/matis94-20261112/`. A/H já integrados; B/C/D/E/F/G ainda não. A troca para Desktop encerrou os seis executores restantes, preservando commits/edições; B/D/E/F/C1 foram retomados em logs `*-r2.log`. C1/F terminaram implementação; correções delimitadas seguem em snapshots isolados no Zima, com importação inspecionada e execução host ainda obrigatórias. G aguarda capacidade após recusa explícita do `cota-gate`. Não contornar o limite nem lançar dois escritores no mesmo worktree.
+Execução: `job-pi`, implementações iniciais `nv-impl medium`; correções e revisões `nv-revisao medium`. Modelo efetivamente servido permanece desconhecido sem evidência do gateway. Worktrees `/Volumes/ExternalSSD/nv-21-matis-*`; briefs/logs/progresso em `/Volumes/ExternalSSD/tmp/rev/matis94-20261112/`. A/F/H já integrados; B/C/D/E/G ainda não. A troca para Desktop encerrou os seis executores restantes, preservando commits/edições; B/D/E/F/C1 foram retomados em logs `*-r2.log`. C1 terminou implementação e recebe correções delimitadas no Zima, com importação inspecionada e execução host obrigatórias. F concluiu esse ciclo e foi integrado após nova revisão/verificação e gate. G aguarda capacidade após recusa explícita do `cota-gate`. Não contornar o limite nem lançar dois escritores no mesmo worktree.
 
 ## Cobertura item a item
 
@@ -67,9 +67,9 @@ Execução: `job-pi`, implementações iniciais `nv-impl medium`; correções e 
 | F14 | Título de episódio substitui nome de release e mantém IDs/numeração | Parcial | Código integrado em `8a16234bc`; gate 15/15 e pós-merge 3/3. P2 de títulos genéricos/numeração documentados. TV pendente. |
 | F15 | Disponibilidade de temporadas e atualização de cache de episódios | Parcial | Código integrado em `8a16234bc`; temporadas zero por último e limite preservado. TV pendente. |
 | F16 | Memória de áudio por série/perfil, próximo episódio e fallback por idioma sem confundir índice | Parcial | Pendente de adaptação/prova |
-| F17 | Lembrar último perfil: opt-in OFF, não entrar em bloqueado/indisponível | Ausente | Pendente de adaptação/prova |
-| F18 | Mostrar botões intro/recap/créditos independentemente, ON e por perfil | Ausente | Pendente de adaptação/prova |
-| F19 | Desligar avisos automáticos de atualização mantendo busca manual | Ausente | Pendente de adaptação/prova |
+| F17 | Lembrar último perfil: opt-in OFF, não entrar em bloqueado/indisponível | Ausente | Código integrado em `26eec9dbb`; gate 8/8, pós-merge 3/3. F4 P2 documentado; TV pendente. |
+| F18 | Mostrar botões intro/recap/créditos independentemente, ON e por perfil | Ausente | Código integrado em `26eec9dbb`; F5 P2 de herança inicial em perfil antigo documentado. TV pendente. |
+| F19 | Desligar avisos automáticos de atualização mantendo busca manual | Ausente | Código integrado em `26eec9dbb`; avisos enfileirados suprimidos e busca manual validada offline. TV pendente. |
 | F20 | Continuar assistindo local antes do sync remoto | Parcial | Código integrado em `8a16234bc`; progresso do perfil publicado antes da reconciliação, inclusive com fileira anterior não vazia. TV pendente. |
 | D01 | Página local estável e download de log redigido | Presente | Manter; prova de TV separada |
 | D02 | QR local RED → BLUE com snapshot enquanto tela fica aberta | Ausente | Pendente de adaptação/prova |
@@ -82,5 +82,5 @@ Execução: `job-pi`, implementações iniciais `nv-impl medium`; correções e 
 | D09 | Diagnóstico de rede redigido: redirects, timings, rate limit e reuso | Parcial | Pendente de adaptação/prova |
 | D10 | Cooldown 429 compartilhado com Retry-After | Presente, com escopo | Manter; prova de TV separada |
 | D11 | Traduções 29 idiomas: mapping P7, DV MP4, saída DV e tela Buffer | Parcial | Pendente de adaptação/prova |
-| D12 | Opacidade de legenda em passos de 5%, com migração | Ausente | Pendente de adaptação/prova |
+| D12 | Opacidade de legenda em passos de 5%, com migração | Ausente | Código integrado em `26eec9dbb`; migração por perfil comprovada FAIL 134 → PASS 0, IDs antigos e precedência preservados. TV pendente. |
 | D13 | ARM completo, ABI, IPK com P2P e limpeza de atalhos de build | Não comprovado como resultado | Pendente de adaptação/prova |

@@ -486,7 +486,15 @@ static double posLegenda(void) {
 }
 // Creditos tambem sao pulaveis — e o "Skip Outro" do web.
 static int skipDisponivel(void), skipLiberado;
-static int trechoPulavel(double *fim) { int tipo; return skipDisponivel() && intro_botao_visivel(fim, &tipo); }
+static int skipBotaoPermitido(int tipo) {
+  return tipo == INTRO_ABERTURA ? ajustes_show_skip_intro() :
+         tipo == INTRO_RESUMO ? ajustes_show_skip_recap() :
+         tipo == INTRO_CREDITOS ? ajustes_show_skip_credits() : 0;
+}
+static int trechoPulavel(double *fim) {
+  int tipo;
+  return skipDisponivel() && intro_botao_visivel(fim, &tipo) && skipBotaoPermitido(tipo);
+}
 static float duracaoSeg = PLR_DUR_PADRAO;
 // O fim ZERO do TheIntroDB quer dizer "ate o fim da midia" (intro.c): mirar
 // fim+0.25 ai seria um salto para o COMECO do arquivo — o alvo resolve o nulo.
@@ -1443,7 +1451,7 @@ static void prefsLer(void) {
     else if (!strcmp(chave, "leg_atraso_sinal") && v == 1) sinalNovo = 1;
     else if (!strcmp(chave, "leg_cor_borda") && v >= -1 && v < VIDEO_LEG_NCORES) legEstilo.corBorda = v;
     else if (!strcmp(chave, "leg_cor_borda_explicita") && v == 1) bordaExplicita = 1;
-    else if (!strcmp(chave, "leg_opacidade") && v >= 0 && v <= 3) legEstilo.opacidade = v;
+    else if (!strcmp(chave, "leg_opacidade") && v >= 0 && v < LEG_OPAC_N) legEstilo.opacidade = v;
     else if (!strcmp(chave, "leg_familia") && v >= 0 && v < TXT_FAMILIA_N) legEstilo.familia = v;
     else if (!strcmp(chave, "leg_negrito") && (v == 0 || v == 1)) legEstilo.negrito = v;
     else if (!strcmp(chave, "leg_tocado")  && v >= 0) legTocado = v;
@@ -1508,7 +1516,7 @@ static int estiloPreparar(const VideoLegendaEstilo *estilo, int tocou) {
       estilo->corBorda < -1 || estilo->corBorda >= VIDEO_LEG_NCORES ||
       estilo->familia < 0 || estilo->familia >= TXT_FAMILIA_N ||
       estilo->fundo < 0 || estilo->fundo > 4 || estilo->posicao < 0 || estilo->posicao > 7 ||
-      estilo->borda < 0 || estilo->borda > 2 || estilo->opacidade < 0 || estilo->opacidade > 3 ||
+      estilo->borda < 0 || estilo->borda > 2 || estilo->opacidade < 0 || estilo->opacidade >= LEG_OPAC_N ||
       estilo->negrito < 0 || estilo->negrito > 1 ||
       estilo->atrasoMs < -LEG_ATRASO_MANUAL_MAX || estilo->atrasoMs > LEG_ATRASO_MANUAL_MAX) return 0;
   player_leg_estilo_carregar();
@@ -5980,8 +5988,7 @@ static void desenharLegendaPrincipal(float *topoPilha){
   // Gate collector output, preserving native callback rendering below.
   int overlay = faixas_legenda_overlay();
   PlrRect bitmapArea = areaVideoLegenda();
-  float bitmapAlpha = (legEstilo.opacidade==3?.25f:legEstilo.opacidade==2?.5f:
-                      legEstilo.opacidade==1?.75f:1.f) * entrada;
+  float bitmapAlpha = leg_opacidade_alpha(legEstilo.opacidade) * entrada;
   if (overlay && video_dts_legenda_desenhar(posLegenda(), legEstilo.atrasoMs,
         bitmapArea.x, bitmapArea.y, bitmapArea.w, bitmapArea.h, bitmapAlpha)) {
     imgsub_gl_limpar();
@@ -6034,8 +6041,7 @@ static void desenharLegendaPrincipal(float *topoPilha){
        * still follows the video rectangle and the author's styling. */
       if (assrender_texto_simples()) area = (PlrRect){0, 0, NV_TELA_W, NV_TELA_H};
     }
-    float alpha = (legEstilo.opacidade==3?.25f:legEstilo.opacidade==2?.5f:
-                   legEstilo.opacidade==1?.75f:1.f) * entrada;
+    float alpha = leg_opacidade_alpha(legEstilo.opacidade) * entrada;
     assrender_pixels_por_unidade(gfx_px_por_unidade());
     assrender_definir_layout(area.x, area.y, area.w, area.h,
                              assrender_texto_simples() ? 1920 : video_largura(),
@@ -6070,7 +6076,7 @@ static void desenharLegendaPrincipal(float *topoPilha){
   if (n <= 0) return;
   int pct=legEstilo.tamanho;if(pct<TXT_LEG_PCT_MIN)pct=TXT_LEG_PCT_MIN;if(pct>TXT_LEG_PCT_MAX)pct=TXT_LEG_PCT_MAX;pct=(pct/10)*10;
   TxtEstilo est=(TxtEstilo)(TXT_LEG_50+(pct-50)/10);corLegenda(legEstilo.cor,&r,&g,&b);
-  float alpha=(legEstilo.opacidade==3?.25f:legEstilo.opacidade==2?.5f:legEstilo.opacidade==1?.75f:1.f)*entrada;
+  float alpha=leg_opacidade_alpha(legEstilo.opacidade)*entrada;
   // A pilha "normal" (sem \pos e sem \an, ou \an 2): empilha de baixo para
   // cima a partir da base da folha, como o SRT sempre fez.
   // Com a barra de estilo no topo a base e a da reproducao sem controles: a
@@ -6189,7 +6195,7 @@ static int skipDisponivel(void) {
                    !video_bufferando_ms();
   return skipLiberado && fontePrincipal();
 }
-static void ponteiroSkip(int a, int b) { (void)a; (void)b; if (!skipDisponivel()) return; skipFoco = 1; barraFoco = 1; acordar(); }
+static void ponteiroSkip(int a, int b) { (void)a; (void)b; if (!trechoPulavel(NULL)) return; skipFoco = 1; barraFoco = 1; acordar(); }
 
 static void desenharAcoesEpisodioCorpo(void);
 // O botao de pular e OSD: camada ampliada (escala.h), na tela virtual.
@@ -6202,7 +6208,8 @@ static void desenharAcoesEpisodioCorpo(void){
   const CatEp *prox=player_proximo_episodio();double fim;int tipo=0;
   if (!skipDisponivel() || capFoco) { skipFoco = 0; return; }
   intro_definir_duracao(duracaoReal ? (double)duracaoSeg : 0.0, epE <= 0);
-  int trecho=intro_botao(posSeg,monoSeg(),visivel,skipFoco&&visivel,&fim,&tipo);
+  int trecho=intro_botao_config(posSeg,monoSeg(),visivel,skipFoco&&visivel,&fim,&tipo,
+    ajustes_show_skip_intro(),ajustes_show_skip_recap(),ajustes_show_skip_credits());
   // A CAIXA DE "Próximo episódio" QUE FICAVA AQUI FOI APAGADA. Era um retangulo
   // de posicao fixa em {420,720} que caia por cima da barra de tempo, sem foco
   // e sem parecer clicavel — o dono fotografou. O proximo episodio agora e um

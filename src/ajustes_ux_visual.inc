@@ -54,7 +54,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_MIC_BUSCA: return "aj_mic";
     case AJ_DESCOBRIR: return "aj_panel-left";
     case AJ_PS_FUNDO: return "aj_users";
-    case AJ_PS_CONTINUAR: return "aj_users";
+    case AJ_PS_CONTINUAR: case AJ_PS_TAMANHO: return "aj_users";
     case AJ_EXPANDIR: return "aj_maximize-2";
     case AJ_EXPANDIR_ATRASO: return "aj_clock";
     case AJ_BORDA_FOCO: return "aj_maximize-2";
@@ -192,12 +192,12 @@ static const char *ajVisualIcone(int op) {
     case AJ_CW_MINIMO: return "aj_circle-play";
     case AJ_ANIMESKIP_ID: return "aj_key-round";
     case AJ_CAPITULOS:
-    case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PULAR_CREDITOS: case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: return "aj_circle-play";
+    case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PULAR_CREDITOS: case AJ_SHOW_SKIP_INTRO: case AJ_SHOW_SKIP_RECAP: case AJ_SHOW_SKIP_CREDITS: case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: return "aj_circle-play";
     case AJ_SAIDA_PLAYER: case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: return "aj_circle-play";
     case AJ_SEEKR_LIGADO: return "aj_film";
     case AJ_SEEKR_CHAVE: return "aj_film";
     case AJ_SEEKR_TESTAR: return "aj_film";
-    case AJ_SEEKR_FITA: return "aj_film";
+    case AJ_SEEKR_FITA: case AJ_MINIATURA_RES: return "aj_film";
     case AJ_SEEKR_AJUSTE: return "aj_film";
     case AJ_PREVIA_PROVEDOR: return "aj_film";
     case AJ_OPENSEEK_SERVIDOR: case AJ_OPENSEEK_PAREAR: case AJ_OPENSEEK_ESTADO: return "aj_link";
@@ -237,6 +237,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_DISCORD: return "aj_message-square";
     case AJ_DIARIO_NUVEM: return "aj_cloud";
     case AJ_ANIM: return "aj_activity";
+    case AJ_UPDATE_NOTIFICATIONS:
     case AJ_ENQUETES: return "aj_bell";
     case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS: return "aj_badge-check";
     case AJ_BUSCA_CINEMETA: return "aj_list-x";
@@ -276,8 +277,8 @@ static const char *ajVisualIcone(int op) {
     case AJ_LIVETV_FORMATO: return "aj_stethoscope";
     case AJ_LIVETV_MODO: return "aj_stethoscope";
     case AJ_LIVETV_PROXY: return "aj_stethoscope";
-    case AJ_LIVETV_SUGERIR: return "aj_layers";
-    case AJ_PERFIL_ATIVO: return "aj_user-round";
+    case AJ_LIVETV_SUGERIR: case AJ_LIVETV_AGRUPAR: return "aj_layers";
+    case AJ_REMEMBER_PROFILE: case AJ_PERFIL_ATIVO: return "aj_user-round";
     case AJ_SYNC: return "aj_cloud";
     case AJ_ADDONS: return "aj_user-round";
     case AJ_PLUGINS: return "aj_puzzle";

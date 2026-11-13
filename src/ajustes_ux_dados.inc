@@ -248,6 +248,11 @@ static const char *uxSinonimos(int op) {
     case AJ_CAPITULOS: return "capitulos capitulo marcas barra pular chapters chapter skip mkv";
     case AJ_ANIMESKIP_ID: return "anime skip animeskip id client chave anime abertura encerramento";
     case AJ_PULAR_CREDITOS: return "pular creditos automatico sozinho final encerramento skip credits auto ending";
+    case AJ_SHOW_SKIP_INTRO: return "mostrar esconder botao pular abertura intro show hide skip button opening";
+    case AJ_SHOW_SKIP_RECAP: return "mostrar esconder botao pular resumo recap anteriormente show hide skip button summary";
+    case AJ_SHOW_SKIP_CREDITS: return "mostrar esconder botao pular creditos encerramento fim show hide skip outro credits button ending";
+    case AJ_REMEMBER_PROFILE: return "lembrar ultimo perfil abrir direto inicio entrar automatico remember last profile startup auto enter";
+    case AJ_UPDATE_NOTIFICATIONS: return "atualizacao aviso avisos notificacao versao nova procurar update notice notification version";
     case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: return "proximo episodio automatico autoplay creditos contagem netflix sozinho next episode auto play countdown";
     case AJ_CW_MINIMO: return "minimo continuar assistindo porcentagem percentual entrar fileira retomada progresso quanto assistir comecou piso minimum percent continue watching threshold row";
     case AJ_FONTE_PREPARAR: return "preparar fonte ao abrir titulo antecipar resolver antecipado play instantaneo inicio rapido debrid painel arquivo prepare source ahead instant start";
@@ -340,7 +345,7 @@ static const char *uxCaminhoAntigo(int op) {
     case AJ_JF_LIGADO: case AJ_JF_SERVIDOR: case AJ_JF_ENTRAR: case AJ_JF_SAIR:
     case AJ_EM_SERVIDOR: case AJ_EM_ENTRAR: case AJ_EM_SAIR:
     case AJ_PX_ENTRAR: case AJ_PX_SERVIDOR: case AJ_PX_SAIR:
-    case AJ_PERFIL_ATIVO: case AJ_SYNC: case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_SAIR:
+    case AJ_PERFIL_ATIVO: case AJ_REMEMBER_PROFILE: case AJ_SYNC: case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_SAIR:
     case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_SALVOS_DEST: case AJ_CW_FONTE: case AJ_CW_PROXIMO: case AJ_ENQUETES:
     case AJ_HIST_CONTA: case AJ_SOCIAL:
     case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS:

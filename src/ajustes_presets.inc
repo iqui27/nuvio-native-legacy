@@ -25,8 +25,17 @@ static void ajPenSavedLoad(void) {
       slot=ajPenSavedCount++;snprintf(ajPenSavedNames[slot],64,"%s",line+5);
     } else if(slot>=0) {
       char key[96];int value;
-      if(sscanf(line,"%95[^=]=%d",key,&value)==2)
+      if(sscanf(line,"%95[^=]=%d",key,&value)==2) {
+        // Keep the primary opacity's persisted IDs stable, just like player.txt.
+        if(!strcmp(key,CHAVE[AJ_LEG1_OPACIDADE]) && value>=0 && value<LEG_OPAC_N)
+          value=leg_opacidade_indice(value);
+        if(!strcmp(key,"legenda2OpacidadeLocal") && value>=0 && value<=4) {
+          if(ajPenSavedValues[slot][AJ_LEG2_OPACIDADE]<0)
+            ajPenSavedValues[slot][AJ_LEG2_OPACIDADE]=leg_opacidade_secundaria_migrar(value);
+          continue;
+        }
         for(int op=0;op<AJ_N;op++)if(ajPenPresetStored(op) && !strcmp(key,CHAVE[op]) && (OPCOES[op].tipo==OP_NUMERO?limita(op,value)==value:value>=0 && value<nValores(op))) { ajPenSavedValues[slot][op]=value;break; }
+      }
     }
   }
   free(data);
@@ -36,7 +45,11 @@ static int ajPenSavedWrite(void) {
   size_t pos=0,cap=AJ_PEN_SAVED*AJ_N*128;data[0]=0;
   for(int slot=0;slot<ajPenSavedCount;slot++) {
     pos+=snprintf(data+pos,cap-pos,"name=%s\n",ajPenSavedNames[slot]);
-    for(int op=0;op<AJ_N;op++)if(ajPenSavedValues[slot][op]>=0)pos+=snprintf(data+pos,cap-pos,"%s=%d\n",CHAVE[op],ajPenSavedValues[slot][op]);
+    for(int op=0;op<AJ_N;op++)if(ajPenSavedValues[slot][op]>=0) {
+      int value=ajPenSavedValues[slot][op];
+      if(op==AJ_LEG1_OPACIDADE)value=leg_opacidade_do_indice(value);
+      pos+=snprintf(data+pos,cap-pos,"%s=%d\n",CHAVE[op],value);
+    }
   }
   snprintf(file,sizeof file,"settings-presets-%d.txt",ajPenSavedProfile);
   int ok=dados_gravar(file,data);free(data);return ok;
