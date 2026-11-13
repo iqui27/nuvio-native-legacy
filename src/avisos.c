@@ -1091,7 +1091,9 @@ static void colherLocais(void) {
       char id[72], txt[200];
       snprintf(id, sizeof id, "update:%s", v);
       snprintf(txt, sizeof txt, i18n("Versão %s disponível. Você está na %s."), v, NV_VERSAO);
-      novos += por(id, AV_UPDATE, i18n("Atualização disponível"), txt, v);
+      // Off also drops a notice queued while it was on (not a dismissal).
+      if (!ajustes_update_notifications()) tirar(id);
+      else novos += por(id, AV_UPDATE, i18n("Atualização disponível"), txt, v);
     } }
   // Agenda: lembretes vencidos (agendaviso.c continua abrindo o cartao dele;
   // aqui fica o rastro na lista para quem fechou o cartao sem ler).
