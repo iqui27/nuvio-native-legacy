@@ -12,6 +12,7 @@ static const int AJ_DESKTOP_OCULTAS[] = {
   AJ_DV_MKV, AJ_DV7,      // LG Dolby Vision conversion
   AJ_CACHE_SEEK,          // TV player disk cache
   AJ_BUFFER,              // webOS read-ahead; mpv keeps its own cache
+  AJ_BUFFER_NATIVE_CONNECTIONS, AJ_BUFFER_CONVERSION_CONNECTIONS, // webOS HTTP lanes
   AJ_MENU_TOPO, AJ_RAIL, AJ_RAIL_MODERNA, AJ_RAIL_BLUR,  // TV rails: the desktop has the native sidebar
   AJ_ICONE_APP,           // launcher icon swap exists on Android/webOS only
 };

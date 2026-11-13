@@ -74,6 +74,10 @@ static const Item TELA[] = {
 #if defined(NV_ANDROID) || (!defined(NV_TPK) && !defined(__EMSCRIPTEN__))
       OPC(AJ_BUFFER),   // webOS: DTS/Dolby Vision conversion read-ahead
 #endif
+#ifdef NV_WEBOS
+      OPC(AJ_BUFFER_NATIVE_CONNECTIONS), OPC(AJ_BUFFER_CONVERSION_CONNECTIONS),
+      OPC(AJ_BUFFER_DADOS), OPC(AJ_RAM_OVERLAY), OPC(AJ_RAM_VERDE), OPC(AJ_BUFFER_RAM_REDUZ),
+#endif
 #ifdef NV_ANDROID
       OPC(AJ_PLAYER_EXTERNO),
       OPC(AJ_PLAYER_ANIME),

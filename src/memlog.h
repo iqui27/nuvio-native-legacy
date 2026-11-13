@@ -2,6 +2,10 @@
 #define NV_MEMLOG_H
 #include <stddef.h>
 
+/* Process and TV memory snapshot for the RAM overlay (Linux /proc only;
+ * -1 fields when unavailable). Read at most once a second by the caller. */
+typedef struct { long rss_kib, peak_kib, available_kib, total_kib; } MemlogInfo;
+void memlog_ler(MemlogInfo *);
 // So nos pontos de log, nunca por quadro. Sem /proc valido, sufixo vazio.
 void memlog_amostra(char *sufixo, size_t tamanho);
 void memlog_evento(const char *evento);

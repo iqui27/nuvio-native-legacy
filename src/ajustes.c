@@ -813,6 +813,10 @@ typedef enum {
   AJ_DV_AUDIO,
   AJ_MP4_BD_TEST, // webOS experimental recovery, local, Off by default
   AJ_EXT_AUDIO, AJ_EXT_AUDIO_CACHE, AJ_EXT_AUDIO_PASSO, AJ_EXT_AUDIO_GRANDE, AJ_EXT_AUDIO_MODO, AJ_EXT_AUDIO_SERIE, AJ_EXT_AUDIO_SEGUIR, AJ_EXT_AUDIO_AVISO, AJ_EXT_AUDIO_AUTO,
+  // HTTP connections of this TV (Matis94 a2e37e8f5), append-only, local.
+  AJ_BUFFER_NATIVE_CONNECTIONS, AJ_BUFFER_CONVERSION_CONNECTIONS,
+  // Player buffer telemetry + remote toggles (Matis94 C3), append-only, local.
+  AJ_BUFFER_DADOS, AJ_RAM_OVERLAY, AJ_RAM_VERDE, AJ_BUFFER_RAM_REDUZ,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -963,6 +967,7 @@ static const char *V_ABAS_ESTILO[] = { "Chips", "Menu suspenso", "Barra central"
 // Os apps instalados vem depois destes tres (ppNome).
 static const char *V_PLAYER_EXTERNO[] = { "Interno", "Externo", "Perguntar sempre" };
 static const char *V_BUFFER[] = { "Automático", "64 MB", "128 MB", "256 MB" };
+static const char *V_HTTP_CONEXOES[] = { "1", "2", "3", "4" };
 // #338: o indice menos 1 e o tamanho de estatvivoui.h (0 = lembrar o ultimo).
 static const char *V_ESTAT_TAMANHO[] = { "Lembrar o último", "Completo", "Compacto", "Mínimo" };
 // 0 = Direita (como as outras laterais do player), 1 = Esquerda.
@@ -2030,6 +2035,12 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Seguir durante todo o filme", V_LIGA, 2),
   ESC("Aviso de sincronização ajustada", V_LIGA, 2),
   ESC("Sincronizar automaticamente ao iniciar", V_LIGA, 2),
+  ESC("Conexões do player da TV", V_HTTP_CONEXOES, 4),
+  ESC("Conexões da conversão de DTS e Dolby Vision", V_HTTP_CONEXOES, 4),
+  ESC("Dados do buffer", V_LIGA, 2),                        // local: bufferDataLocal
+  ESC("Memória RAM na tela", V_LIGA, 2),                    // local: ramOverlayLocal
+  ESC("Botão verde mostra a RAM na tela", V_LIGA, 2),        // local: ramGreenLocal
+  ESC("Reduzir o buffer com pouca memória", V_LIGA, 2),      // local: bufferRamReduzLocal
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2406,6 +2417,8 @@ static const char *CHAVE[] = {
   "externalAudioFollowLocal",
   "externalAudioShiftNoticeLocal",
   "externalAudioAutoMatchLocal",
+  "nativeBufferConnectionsLocal", "conversionBufferConnectionsLocal", // fork keys
+  "bufferDataLocal", "ramOverlayLocal", "ramGreenLocal", "bufferRamReduzLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3628,6 +3641,18 @@ const char *ajustes_player_pacote(int anime) { return ppPkg[anime ? 1 : 0]; }
 int ajustes_buffer_preset(void) {
   int v = valor[AJ_BUFFER];
   return v >= 0 && v < 4 ? v : 0;
+}
+static int bufferConexoes(int op, int padrao) { return valor[op] >= 0 && valor[op] < 4 ? valor[op] + 1 : padrao; }
+int ajustes_buffer_native_connections(void) { return bufferConexoes(AJ_BUFFER_NATIVE_CONNECTIONS, 1); }
+int ajustes_buffer_conversion_connections(void) { return bufferConexoes(AJ_BUFFER_CONVERSION_CONNECTIONS, 1); }
+int ajustes_buffer_dados(void) { return lig(AJ_BUFFER_DADOS); }
+int ajustes_ram_overlay(void)  { return lig(AJ_RAM_OVERLAY); }
+int ajustes_ram_verde(void)    { return lig(AJ_RAM_VERDE); }
+int ajustes_buffer_ram_reduz(void) { return lig(AJ_BUFFER_RAM_REDUZ); }
+int ajustes_ram_overlay_alternar(void) {
+  int antes = valor[AJ_RAM_OVERLAY]; valor[AJ_RAM_OVERLAY] = !antes;
+  if (gravar()) return 1;
+  valor[AJ_RAM_OVERLAY] = antes; return 0;
 }
 int ajustes_fonte_idioma_audio(void) { return valor[AJ_FONTE_IDIOMA_AUDIO] == 0; }
 int ajustes_cache_seek_mb(void) {
@@ -6629,6 +6654,8 @@ static int somenteDesteAparelho(int op) {
     case AJ_LEG_CONTORNO_COR: /* #475: idem */
     case AJ_CACHE_SEEK:     /* F07: o disco e o player sao desta TV */
     case AJ_BUFFER:         /* #338: o buffer e do player desta TV */
+    case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS: /* idem: rede desta TV */
+    case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_BUFFER_RAM_REDUZ: /* telemetria e controle sao desta TV */
     case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: /* #501: o app externo e deste aparelho */
     case AJ_ESTAT_TAMANHO:  /* #338: o painel de estatisticas e desta TV */
     case AJ_ESTAT_LADO:     /* idem: o lado do painel */
@@ -6689,6 +6716,8 @@ static int soNaTv(int op) {
     case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV7_MAPPING: case AJ_DV_AUDIO: case AJ_MP4_BD_TEST: case AJ_HDR10P_STRIP:
     case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
+    case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
+    case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_BUFFER_RAM_REDUZ:
     case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
     case AJ_TUNNELING: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO: case AJ_AFR:
     case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: case AJ_VIDRO_QUALIDADE:
@@ -8743,6 +8772,12 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_PLAYER_EXTERNO: return "Escolha onde o vídeo toca: neste app, em um player instalado (VLC, MX Player...) ou perguntando a cada vez. O player externo não sincroniza o progresso.";
     case AJ_PLAYER_ANIME: return "Player só para anime (kitsu, MAL, AniList, ou animação japonesa). Igual ao Player usa a escolha acima. O player externo não sincroniza o progresso.";
     case AJ_BUFFER: return "Quanto vídeo o app guarda à frente. Automático é o de sempre; 64, 128 ou 256 MB ajudam arquivos 4K pesados e caem sozinhos se faltar memória na TV. No webOS vale para a conversão de DTS e Dolby Vision. Vale a partir do próximo vídeo.";
+    case AJ_BUFFER_NATIVE_CONNECTIONS: return "Downloads HTTP do player da TV quando o app guarda o buffer. 1 (padrão) usa uma conexão contínua; 2, 3 ou 4 baixam trechos em paralelo, com pelo menos 64 MB de buffer e o mesmo limite de memória. Vale a partir do próximo vídeo.";
+    case AJ_BUFFER_CONVERSION_CONNECTIONS: return "Downloads HTTP da conversão de DTS e Dolby Vision. 1 (padrão) usa uma conexão contínua, sem um novo pedido a cada trecho; 2, 3 ou 4 baixam trechos em paralelo. O limite de memória do buffer não muda. Vale a partir do próximo vídeo.";
+    case AJ_BUFFER_DADOS: return "Mostra no player quanto do buffer está cheio, o total reservado, o trecho do arquivo já baixado, quantos segundos há à frente e o limite de conexões HTTP da sessão. Só aparece com o painel aberto.";
+    case AJ_RAM_OVERLAY: return "Mostra no player a memória do app (uso e pico) e a memória livre da TV, atualizada uma vez por segundo.";
+    case AJ_RAM_VERDE: return "O botão verde do controle liga e desliga a memória na tela do player. Desligado, o botão não faz nada no player.";
+    case AJ_BUFFER_RAM_REDUZ: return "Quando a TV fica com pouca memória, o tamanho do buffer escolhido é reduzido automaticamente (256 vira 128, depois 64) para o app não ser fechado. Desligado, o app tenta o tamanho escolhido e a proteção mínima da TV continua valendo.";
     case AJ_FONTE_IDIOMA_AUDIO: return "Na escolha automática, fontes com o seu Idioma do áudio ou áudio duplo passam na frente na mesma resolução. Não é filtro: sem elas, a melhor das outras toca.";
     case AJ_CACHE_SEEK: return "Com retomada rápida, guarda só o último título por até 3 horas. Trocar de perfil ou pouco espaço apagam o trecho.";
     case AJ_ANIM: return "Use Reduzidas para movimentos mais discretos ao navegar pela interface.";

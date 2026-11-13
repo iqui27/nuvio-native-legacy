@@ -143,10 +143,23 @@ double cacheboost_volume_db(int pct) {
   return 20.0 * log10((double)pct / 100.0);
 }
 
+// Auto RAM-budget reduction (Matis94 C3, optional setting). Weak fallback
+// keeps the historical always-reduce behavior in host tests that do not link
+// ajustes.c; the real symbol wins in the app.
+__attribute__((weak)) int ajustes_buffer_ram_reduz(void) { return 1; }
+static int bufferReduzAtivo(void) { return ajustes_buffer_ram_reduz(); }
+
 int cacheboost_buffer_mb(int opcao, long livreMb) {
   int pedido = opcao >= 1 && opcao <= 3 ? 32 << opcao : 0, mb = pedido;
-  // DTS keeps one active 4 MiB range in addition to the queued buffer.
-  while (mb && (livreMb < 0 || livreMb - mb - 4 < CB_BUFFER_PISO_MB)) mb = mb > 64 ? mb / 2 : 0;
+  int reduz = bufferReduzAtivo();
+  // Invariant, setting ON or OFF: the result is 0 (Auto) or a ladder step
+  // (64/128/256) no larger than the request, and nonzero only when free RAM is
+  // known and still keeps CB_BUFFER_PISO_MB after the buffer plus DTS's active
+  // 4 MiB range. The setting only picks what happens when the choice does not
+  // fit: ON steps down the ladder, OFF keeps the chosen size or falls to Auto.
+  // `livreMb` is a long and mb <= 256, so the subtraction cannot overflow.
+  while (mb && (livreMb < 0 || livreMb - mb - 4 < CB_BUFFER_PISO_MB))
+    mb = reduz && mb > 64 ? mb / 2 : 0;
   if (mb != pedido)
     printf("[buffer] %d MiB pedido, %d MiB usado (livre %ld MiB, piso %d)\n", pedido, mb, livreMb, CB_BUFFER_PISO_MB);
   return mb;

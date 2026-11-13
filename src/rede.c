@@ -14,6 +14,7 @@
 #include "addonurl.h"
 #include "mediaurl.h"
 #include "negcache.inc"
+#include "rangediag.h"
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -3346,6 +3347,10 @@ typedef struct {
   int *stalled;
   void (*retry)(void *,int);
   void *retry_arg;
+  int retry_seen, retry_seconds;
+#ifdef NV_HTTP_BUFFER_DIAG
+  const char *server;
+#endif
 } DtsRange;
 /* Reject values outside int64_t instead of relying on overflowing scanf. */
 static int dtsRangeNumber(const char **text, int64_t *value) {
@@ -3382,9 +3387,28 @@ static size_t dtsRangeHeader(void *data, size_t size, size_t count, void *user) 
     const char *space = memchr(p, ' ', n);
     r->status = space ? atoi(space + 1) : 0;
     r->valid = 0; r->total = -1; r->range_headers = 0;
-  } else if (r->status == 429 && r->retry && n > 12 && !strncasecmp(p, "Retry-After:", 12)) {
-    int seconds = retrySegundos(p + 12, n - 12);
-    if (seconds > 0) r->retry(r->retry_arg, seconds);
+    r->retry_seen = r->retry_seconds = 0;
+#ifdef NV_HTTP_BUFFER_DIAG
+    r->server = "none";
+#endif
+  } else if (n > 12 && !strncasecmp(p, "Retry-After:", 12)) {
+    r->retry_seen = 1; r->retry_seconds = retrySegundos(p + 12, n - 12);
+#ifdef NV_HTTP_BUFFER_DIAG
+  } else if (n > 7 && !strncasecmp(p, "Server:", 7)) {
+    const char *v = p + 7;
+    size_t left = n - 7;
+    while (left && (*v == ' ' || *v == '\t')) { v++; left--; }
+    /* Classify known products; arbitrary response text never reaches the log. */
+    static const char *names[] = {"cloudflare", "nginx", "envoy", "openresty", "cloudfront", "apache"};
+    r->server = "other";
+    for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
+      size_t k = strlen(names[i]);
+      if (left >= k && !strncasecmp(v, names[i], k) &&
+          (left == k || v[k] == '/' || isspace((unsigned char)v[k]))) {
+        r->server = names[i]; break;
+      }
+    }
+#endif
   } else if (n > 14 && !strncasecmp(p, "Content-Range:", 14)) {
     int64_t lo, hi, total = -1;
     const char *value;
@@ -3482,6 +3506,50 @@ static void *dtsRangeHeaders(const char *raw, int public_only) {
   free(copy);
   return list;
 }
+#ifdef NV_HTTP_BUFFER_DIAG
+typedef struct { unsigned id; uint64_t begun; int sample; } RangeDiag;
+static unsigned rangeDiagSequence, rangeDiagActive;
+static RangeDiag rangeDiagBegin(void) {
+  static _Thread_local uint64_t next_sample;
+  RangeDiag d = {0};
+  d.id = __atomic_add_fetch(&rangeDiagSequence, 1, __ATOMIC_RELAXED);
+  d.begun = pedidoAgoraMs();
+  d.sample = d.id <= 8 || d.begun >= next_sample;
+  if (d.sample) next_sample = d.begun + 10000;
+  return d;
+}
+static void rangeDiagLog(const RangeDiag *d, const char *kind, void *c,
+                         const char *url, const char *current, const char *next,
+                         int hop, int public_only, int result, long http,
+                         const DtsRange *r, int64_t end, int64_t bytes,
+                         uint64_t hop_ms, unsigned active) {
+  uint64_t now = pedidoAgoraMs();
+  /* Errors stay visible; healthy redirects/payloads are sampled per worker.
+   * No body copies, per-request heap allocations or extra HTTP requests. */
+  if (!d->sample && !result && http < 400 && now - hop_ms < 3000) return;
+  if (r->cancel && __atomic_load_n(r->cancel, __ATOMIC_RELAXED)) return;
+  char original[NV_RANGE_DIAG_HOST_MAX], host[NV_RANGE_DIAG_HOST_MAX], target[NV_RANGE_DIAG_HOST_MAX];
+  double dns = 0, tcp = 0, tls = 0, first = 0;
+  long connections = -1;
+  nv_range_diag_host(url, original); nv_range_diag_host(current, host); nv_range_diag_host(next, target);
+  if (curl_getinfo) {
+    curl_getinfo(c, INFO_TEMPO_DNS, &dns); curl_getinfo(c, INFO_TEMPO_TCP, &tcp);
+    curl_getinfo(c, INFO_TEMPO_TLS, &tls);
+    curl_getinfo(c, 3145745 /* CURLINFO_STARTTRANSFER_TIME */, &first);
+    curl_getinfo(c, INFO_NUM_CONNECTS, &connections);
+  }
+  printf("[range-diag] v=1 id=%u kind=%s monoMs=%llu start=%lld end=%lld hop=%d "
+         "origHost=%s host=%s nextHost=%s stripped=%d http=%ld curl=%d "
+         "hopMs=%llu elapsedMs=%llu dnsMs=%.0f tcpMs=%.0f tlsMs=%.0f firstMs=%.0f "
+         "newConn=%ld activeAtStart=%u retrySeen=%d retrySec=%d server=%s bytes=%lld\n",
+         d->id, kind, (unsigned long long)now, (long long)r->requested, (long long)end,
+         hop, original, host, target, public_only, http, result,
+         (unsigned long long)(now - hop_ms), (unsigned long long)(now - d->begun),
+         dns * 1000, tcp * 1000, tls * 1000, first * 1000, connections, active,
+         r->retry_seen, r->retry_seen ? r->retry_seconds : -1,
+         r->server ? r->server : "none", (long long)bytes);
+}
+#endif
 /* `final` (8192 bytes, optional) receives the address that answered 206 when
  * at least one redirect was followed, "" otherwise; `cross` says whether that
  * address is on another origin (credential headers were NOT sent to it). */
@@ -3506,6 +3574,9 @@ static char *range64(const char *url, const char *headers,
   snprintf(current, sizeof current, "%s", url);
   if (!dtsRangeOrigin(url, origin, sizeof origin)) return NULL;
   snprintf(range, sizeof range, "%lld-%lld", (long long)start, (long long)end);
+#ifdef NV_HTTP_BUFFER_DIAG
+  RangeDiag diag = rangeDiagBegin();
+#endif
   for (hop = 0; hop < 6; hop++) {
     DtsRange r;
     void *c, *list;
@@ -3537,7 +3608,14 @@ static char *range64(const char *url, const char *headers,
     curl_setopt(c, OPT_NOPROGRESS, (long)0);
     list = downgraded ? NULL : dtsRangeHeaders(headers, public_only);
     if (list) curl_setopt(c, OPT_HTTPHEADER, list);
+#ifdef NV_HTTP_BUFFER_DIAG
+    uint64_t hop_ms = pedidoAgoraMs();
+    unsigned active = __atomic_add_fetch(&rangeDiagActive, 1, __ATOMIC_RELAXED);
+#endif
     result = performTmdb(c, url);
+#ifdef NV_HTTP_BUFFER_DIAG
+    __atomic_sub_fetch(&rangeDiagActive, 1, __ATOMIC_RELAXED);
+#endif
     if (curl_getinfo) {
       curl_getinfo(c, INFO_RESPONSE_CODE, &http);
       /* CURLINFO_REDIRECT_URL resolves relative Location without following it. */
@@ -3546,6 +3624,13 @@ static char *range64(const char *url, const char *headers,
         snprintf(redirected, sizeof redirected, "%s", next);
     }
     if (status) *status = (int)http;
+    /* Every 429 hop reports its Retry-After: >=0 when seen (0 malformed),
+     * -1 when absent — the same contract as the old int* out-param. */
+    if (http == 429 && r.retry) r.retry(r.retry_arg, r.retry_seen ? r.retry_seconds : -1);
+#ifdef NV_HTTP_BUFFER_DIAG
+    rangeDiagLog(&diag, "chunk", c, url, current, redirected, hop, public_only,
+                 result, http, &r, end, (int64_t)r.body.n, hop_ms, active);
+#endif
     if (list && slist_free) slist_free(list);
     soltarHandleR(c, result, current);
     if (!result && http >= 300 && http < 400 && redirected[0]) {
@@ -3693,6 +3778,9 @@ static int fluxo64(const char *url, const char *headers, int64_t start,
   snprintf(current, sizeof current, "%s", url);
   if (!dtsRangeOrigin(url, origin, sizeof origin)) return -1;
   snprintf(range, sizeof range, "%lld-", (long long)start);
+#ifdef NV_HTTP_BUFFER_DIAG
+  RangeDiag diag = rangeDiagBegin();
+#endif
   for (hop = 0; hop < 6; hop++) {
     DtsFluxo f;
     void *c, *list;
@@ -3722,7 +3810,14 @@ static int fluxo64(const char *url, const char *headers, int64_t start,
     curl_setopt(c, OPT_NOPROGRESS, (long)0);
     list = downgraded ? NULL : dtsRangeHeaders(headers, public_only);
     if (list) curl_setopt(c, OPT_HTTPHEADER, list);
+#ifdef NV_HTTP_BUFFER_DIAG
+    uint64_t hop_ms = pedidoAgoraMs();
+    unsigned active = __atomic_add_fetch(&rangeDiagActive, 1, __ATOMIC_RELAXED);
+#endif
     result = performTmdb(c, url);
+#ifdef NV_HTTP_BUFFER_DIAG
+    __atomic_sub_fetch(&rangeDiagActive, 1, __ATOMIC_RELAXED);
+#endif
     if (curl_getinfo) {
       curl_getinfo(c, INFO_RESPONSE_CODE, &http);
       curl_getinfo(c, 1048607, &next);
@@ -3730,6 +3825,10 @@ static int fluxo64(const char *url, const char *headers, int64_t start,
         snprintf(redirected, sizeof redirected, "%s", next);
     }
     if (status) *status = (int)http;
+#ifdef NV_HTTP_BUFFER_DIAG
+    rangeDiagLog(&diag, "stream", c, url, current, redirected, hop, public_only,
+                 result, http, &f.r, -1, f.got, hop_ms, active);
+#endif
     if (list && slist_free) slist_free(list);
     soltarHandleR(c, result, current);
     if (bytes) *bytes = f.got;

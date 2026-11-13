@@ -15,6 +15,7 @@
 // A sequencia abaixo, ao contrario, saiu de captura ls-monitor do navegador da
 // TV tocando o mesmo arquivo: e o que comprovadamente funciona.
 #ifndef NV_VIDEO_H
+#include <stddef.h>
 #define NV_VIDEO_H
 #include "legopacidade.h"
 #include <SDL2/SDL_stdinc.h>
@@ -129,6 +130,9 @@ double video_duracao(void);  // 0 enquanto desconhecida
 // capitulos; quem chama precisa de um plano B.
 double video_creditos(void);
 double video_buffer_fim(void); // ate onde o buffer cobre (s); 0 se desconhecido
+// "Dados do buffer" row (Ajustes): measured fill/capacity, byte range, time
+// ahead and session HTTP limit, already translated; unknown parts say so.
+void video_buffer_test_text(char *out, size_t n);
 // Ha quanto tempo (ms) o pipeline esta parado esperando dados, do par de
 // eventos bufferingStart/bufferingEnd do uMS; 0 quando NAO esta bufferizando.
 //

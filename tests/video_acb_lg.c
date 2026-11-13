@@ -11,8 +11,77 @@ static int fake_sleep(const struct timespec *, struct timespec *);
 #undef nanosleep
 
 /* The official native HTTP payload reads device buffering preferences. */
-int ajustes_buffer_preset(void) { return 0; }
+static int test_buffer_preset;
+int ajustes_buffer_preset(void) { return test_buffer_preset; }
+int ajustes_buffer_native_connections(void) { return 1; }
+int ajustes_buffer_conversion_connections(void) { return 1; }
 long memlog_livre_mb(void) { return 4096; }
+void dts_engine_set_source_workers(int n) { (void)n; }
+void dts_engine_set_http_workers(int n) { (void)n; }
+void dts_engine_set_ahead_mib(int mib) { (void)mib; }
+/* B's recovered-row track choice links converter startup (iniciarDts);
+ * these fixtures never start a converter session. */
+int ajustes_audio_normalizar(void) { return 0; }
+int ajustes_dts_ac3(void) { return 0; }
+int ajustes_dts_desligado(void) { return 0; }
+int ajustes_dts_original(void) { return 0; }
+int ajustes_dv7(void) { return 0; }
+int ajustes_dv7_mapping(void) { return 0; }
+int ajustes_dv_audio(void) { return 0; }
+int ajustes_hdr10p_strip(void) { return 0; }
+void dts_engine_set_ac3(int on) { (void)on; }
+void dts_engine_set_normalize(int on) { (void)on; }
+void dts_engine_set_hdr10p_strip(int on) { (void)on; }
+void dts_playback_next_dv(int on) { (void)on; }
+void dts_playback_next_p7(int on) { (void)on; }
+void dts_playback_next_p7_mapping(int on) { (void)on; }
+void dts_playback_next_seamless(int on) { (void)on; }
+void dts_playback_next_audio_route(int t,int f,int o) { (void)t;(void)f;(void)o; }
+/* D's external-audio controller is linked by converter startup and failure
+ * paths; these fixtures never request another version (extAtivo stays 0). */
+int dts_playback_enabled(void) { return 0; }
+int ajustes_audio_externo_auto(void) { return 0; }
+int ajustes_audio_externo_seguir(void) { return 0; }
+int audioext_pedido(const char *u) { (void)u; return 0; }
+const char *audioext_url(void) { return ""; }
+const char *audioext_cabecalhos(void) { return ""; }
+const char *audioext_nome(void) { return ""; }
+const char *audioext_idioma(void) { return ""; }
+int audioext_offset_ms(void) { return 0; }
+unsigned audioext_offset_geracao(void) { return 0; }
+int audioext_so_audio(void) { return 0; }
+int audioext_faixa(void) { return -1; }
+int audioext_faixa_dica(AudioExtFaixa *o) { (void)o; return 0; }
+int audioext_velocidade(void) { return 0; }
+int audioext_tocando(void) { return 0; }
+void audioext_tocando_definir(int s) { (void)s; }
+void audioext_carregando_definir(int s) { (void)s; }
+void audioext_definir_sonda_segura(int (*fn)(const char *,const char *,AudioExtFaixa *,int,const int *)) { (void)fn; }
+void audioext_diferenca(int c,int v) { (void)c;(void)v; }
+void audioext_escolher_faixa(int s) { (void)s; }
+void audioext_falhou(const char *m) { (void)m; }
+void audioext_lembrar_faixa_serie(const AudioExtFaixa *f) { (void)f; }
+void audioext_reconexao_marcar(void) { }
+void audioext_seguir_evento(int t,int ms) { (void)t;(void)ms; }
+void audioext_sonda_cancelar(void) { }
+int dts_engine_probe_audio_cancelled(const char *u,const char *h,DtsTrack *o,int m,const int *c) {
+  (void)u;(void)h;(void)o;(void)m;(void)c; assert(0); return -1;
+}
+void dts_engine_set_external_dts_off(int on) { (void)on; }
+void dts_engine_set_lang_match(int (*m)(const char *,const char *)) { (void)m; }
+void dts_playback_next_external_audio(const char *u,const char *h,const char *l,int o) { (void)u;(void)h;(void)l;(void)o; }
+void dts_playback_next_external_audio_only(int on) { (void)on; }
+void dts_playback_next_external_automatch(int on) { (void)on; }
+void dts_playback_next_external_follow(int on) { (void)on; }
+void dts_playback_next_external_hint(int s,const char *l,const char *c,int ch,const char *t) { (void)s;(void)l;(void)c;(void)ch;(void)t; }
+void dts_playback_next_external_speed(int r) { (void)r; }
+void dts_playback_next_external_track(int s) { (void)s; }
+DtsPlayback *dts_playback_start(const char *url,const char *headers,int audio_stream,double position,
+                               int paused,const char *window,int major,const DtsTrack *selected,
+                               int ordinal,int count) {
+  (void)url;(void)headers;(void)audio_stream;(void)position;(void)paused;(void)window;
+  (void)major;(void)selected;(void)ordinal;(void)count;assert(0);return NULL;
+}
 /* No HTTP or decoder is started by native dispatcher fixtures. */
 static DtsBufferInfo movie_snapshot;
 static int movie_active, movie_stops;
@@ -31,8 +100,11 @@ int dts_playback_event(DtsPlayback *p,char *out,size_t n) { (void)p;if (pump_rea
 void dts_playback_close(DtsPlayback *p) { (void)p;assert(0); }
 void dts_playback_pause(DtsPlayback *p,int paused) { (void)p;(void)paused;assert(0); }
 void mkvass_aceitar_imagem(int sim) { (void)sim; }
-void dts_playback_seek(DtsPlayback *p,double t) { (void)p;(void)t;assert(0); }
+void capmkv_zerar(void) { }
+static int dts_seek_calls;
+void dts_playback_seek(DtsPlayback *p,double t) { (void)p;(void)t;dts_seek_calls++; }
 void dts_playback_audio(DtsPlayback *p,int stream) { (void)p;(void)stream;assert(0); }
+void dts_playback_audio_at(DtsPlayback *p,int stream,double seconds) { (void)p;(void)stream;(void)seconds;assert(0); }
 void dts_playback_subtitle(DtsPlayback *p,int stream) { (void)p;(void)stream;assert(0); }
 /* video.c calls into trailer.c, which is not linked in this fixture. */
 int trailer_preview_home(void) { return 0; }

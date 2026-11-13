@@ -6,14 +6,16 @@
 typedef struct DtsPlayback DtsPlayback;
 typedef struct {
   int prepared, failed, eof, revision, native_loaded;
+  /* revision bumps on every source/track reconfiguration; load_revision only
+   * when a fresh native Load actually replaced the pipeline instance. */
+  int load_revision;
   DtsMediaInfo info;
   char media_id[64], error[160];
   DtsBufferInfo buffer;
-  double buffered_until;
+  /* start_position: the position the player asked for at start/reposition
+   * (audioext uses it to seek the donor the same way). */
+  double buffered_until, start_position;
   unsigned buffering_ms;
-  /* The position the player asked for at start (audioext uses it to seek the
-   * donor the same way). */
-  double start_position;
   /* Other version minus this one, seconds, and a another-speed flag. */
   int ext_cut_s, ext_speed;
   int net_retries;
@@ -38,6 +40,10 @@ void dts_playback_next_p7_mapping(int enabled);
 /* Main thread: snapshot the audio route for the next session (TrueHD
  * conversion, fixed DV audio 0/1 AAC/2 AC-3, DTS row Off). */
 void dts_playback_next_audio_route(int truehd, int fixed, int dts_off);
+/* Main thread: the next session may use native seek/track reconfiguration
+ * (pipeline flush plus engine seek/audio reuse) instead of a fresh Load for
+ * each command. The bounded no-progress reload stays authoritative. */
+void dts_playback_next_seamless(int enabled);
 DtsPlayback *dts_playback_start(const char *url, const char *headers,
                                int audio_stream, double position,
                                int paused, const char *window, int webos_major,
@@ -48,6 +54,8 @@ void dts_playback_pause(DtsPlayback *p, int paused);
 void dts_playback_volume(DtsPlayback *p, int percent);
 void dts_playback_seek(DtsPlayback *p, double seconds);
 void dts_playback_audio(DtsPlayback *p, int stream);
+/* Track change at an explicit target in one command (no separate seek). */
+void dts_playback_audio_at(DtsPlayback *p, int stream, double seconds);
 /* EXTERNAL AUDIO. The next session keeps its own picture and takes the audio
  * of `url` (usually another version of the same title). `langs` picks the
  * donor track by language; `offset_ms` shifts it (positive = later). Consumed

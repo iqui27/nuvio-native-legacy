@@ -40,12 +40,18 @@
 #define dts_playback_event dubleEvent
 #define dts_playback_seek dubleSeek
 #define dts_playback_audio dubleAudio
+#define dts_playback_audio_at dubleAudioAt
 static DtsPlaybackStatus preparedStatus;
-static int requestedAudio;
+static int requestedAudio, seekCalls;
+static double requestedAt = -1;
 static void dubleStatus(DtsPlayback *p, DtsPlaybackStatus *out) { (void)p; *out = preparedStatus; }
 static int dubleEvent(DtsPlayback *p, char *out, size_t n) { (void)p; (void)out; (void)n; return 0; }
-static void dubleSeek(DtsPlayback *p, double seconds) { (void)p; (void)seconds; }
+static void dubleSeek(DtsPlayback *p, double seconds) { (void)p; requestedAt = seconds; seekCalls++; }
 static void dubleAudio(DtsPlayback *p, int stream) { (void)p; requestedAudio = stream; }
+/* C's seamless controller: track switch and target position in one call. */
+static void dubleAudioAt(DtsPlayback *p, int stream, double seconds) {
+  (void)p; requestedAudio = stream; requestedAt = seconds;
+}
 static DtsTrack partidaFaixa;
 static int partidas, partidaOrdinal, partidaContagem, partidaComFaixa;
 static DtsPlayback *dublePartida(const char *url, const char *headers, int audio_stream,
@@ -112,6 +118,7 @@ static const char *abrir(void) {
 }
 
 int main(void) {
+  assert(!ajustes_dv_mkv());
   { // DV MKV is opt-in (default Off since its setting landed); the fixture opts in.
     const char *d = getenv("NUVIO_DADOS"); char c[512]; FILE *f;
     assert(d); snprintf(c, sizeof c, "%s/ajustes.txt", d);
@@ -119,6 +126,20 @@ int main(void) {
     ajustes_dir(d); assert(ajustes_dv_mkv() && ajustes_dts_original()); }
   lsCall = fakeCall; lsPayload = fakePayload;
   bus = (LSHandle *)(uintptr_t)1; sessao = 40;
+
+  if (getenv("NUVIO_TEST_BUFFER_HANDOFF")) {
+    Tv t[] = {{"en", "dts", 6}};
+    montar(NULL, 0, t, 1, 0);
+    dtsModoDv = 0; partidas = 0; bufferandoDesde = 12345;
+    assert(iniciarDts(-1) && partidas == 1);
+    assert(bufferandoDesde == 0);
+    dtsSessao = NULL;
+    assert(video_bufferando_ms() == 0);
+    (void)SDL_GetTicks(); SDL_Delay(2);
+    evento("{\"bufferingStart\":{}}"); assert(video_bufferando_ms() > 0);
+    evento("{\"bufferingEnd\":{}}"); assert(video_bufferando_ms() == 0);
+    return 0;
+  }
 
   // 1. O cenario da revisao (#7): MKV [TrueHD eng, E-AC-3 eng, E-AC-3 por], a
   //    TV expoe so a portuguesa, no indice 0. O portugues tem de chegar ao motor.
@@ -232,14 +253,17 @@ int main(void) {
       track->kind = DTS_AUDIO; track->stream_index = 10 + k;
       track->channels = 6; strcpy(track->codec, t[k].codec);
     }
+    /* One real Load; later switches are revision-only (seamless reuse). */
+    preparedStatus.load_revision = 1; preparedStatus.native_loaded = 1;
     const int streams[][3] = {{10, 11, 10}, {11, 10, 11}};
     const char *outputs[][3] = {{"aac", "eac3", "aac"}, {"eac3", "aac", "eac3"}};
     const char *labels[][3] = {{"DTS → AAC Stereo", "", "DTS → AAC Stereo"}, {"", "DTS → AAC Stereo", ""}};
     const int states[][3] = {{VIDEO_DTS_CONVERTIDO, 0, VIDEO_DTS_CONVERTIDO}, {0, VIDEO_DTS_CONVERTIDO, 0}};
     for (int k = 0; k < 3; k++) {
       if (k) {
+        posSeg = 30.0 + k; requestedAt = -1;
         video_escolher_audio(streams[start][k] - 10);
-        assert(requestedAudio == streams[start][k]);
+        assert(requestedAudio == streams[start][k] && requestedAt == posSeg);
       }
       preparedStatus.revision++;
       preparedStatus.info.audio_stream = streams[start][k];
@@ -249,6 +273,39 @@ int main(void) {
       assert(audioAtual == streams[start][k] - 10);
       assert(!strcmp(video_dts_saida(), nativeDts ? "DTS · Dolby Vision" : labels[start][k]));
       assert(dtsEstado == (nativeDts ? VIDEO_DTS_NATIVO : states[start][k]));
+      /* Combined B+C: the first Load resets readiness; a revision-only track
+       * change (load_revision unchanged) keeps the TV's ready picture. */
+      if (!k) { assert(pronto && !viuVideo); viuVideo = 1; } // native videoInfo seen
+      else assert(pronto && viuVideo);
+    }
+    { // Seek inside the session: same selected row, same output, still ready.
+      int row = audioAtual; seekCalls = 0;
+      seekAgora(77.0); assert(seekCalls == 1 && requestedAt == 77.0);
+      preparedStatus.revision++; bombearDts();
+      assert(audioAtual == row && pronto && viuVideo);
+      assert(dtsEstado == (native && streams[start][2] == 10 ? VIDEO_DTS_NATIVO : states[start][2]));
+    }
+    { // DTS Off route snapshot: a DTS row never reuses the session; E-AC-3 does.
+      int keep = dtsRotaOff; dtsRotaOff = 1;
+      assert(!nv_dts_audio_feeds(faixaAudio[0].codec, dtsModoDv, dtsRotaTruehd, dtsRotaOff));
+      int eac3 = !strcmp(faixaAudio[0].codec, "eac3") ? 0 : 1;
+      if (audioAtual != eac3) {
+        requestedAudio = -1; video_escolher_audio(eac3);
+        assert(requestedAudio == 10 + eac3);
+      }
+      dtsRotaOff = keep;
+    }
+    /* A real new Load (load_revision moves) resets readiness. */
+    preparedStatus.revision++; preparedStatus.load_revision++;
+    preparedStatus.native_loaded = 0; bombearDts();
+    assert(!pronto && !viuVideo);
+    preparedStatus.native_loaded = 1; bombearDts();
+    assert(pronto && !viuVideo); // ready again only after the new Load
+    if (start) { // Off snapshot + current E-AC-3: the DTS row must leave the session.
+      dtsRotaOff = 1; requestedAudio = -1; assert(audioAtual == 1);
+      video_escolher_audio(0);
+      assert(requestedAudio == -1 && dtsNativePending && !dtsModoDv);
+      dtsNativePending = 0;
     }
     dtsSessao = NULL;
     puts("dvaudio_lg: DTS/E-AC-3 switches and native DTS departure report actual output");

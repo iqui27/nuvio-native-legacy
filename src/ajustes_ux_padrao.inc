@@ -384,5 +384,8 @@
   1, // dv7PreserveMappingLocal: Desligado (V_LIGA 1), experimental
   0, // dvAudioFixoLocal: Original
   1, // dvMp4BdTestLocal: Off (V_LIGA 1)
-
   1, 0, 1, 0, 0, 0, 1, 0, 0, /* External audio: opt-in; 50 ms; follow off. */
+  0, // nativeBufferConnectionsLocal: 1, one sequential request
+  0, // conversionBufferConnectionsLocal: 1, Standard continuous request (R14)
+  1, 1, 1, // bufferDataLocal/ramOverlayLocal/ramGreenLocal: Desligado
+  0, // bufferRamReduzLocal: Ligado (reducao automatica mantem a protecao)

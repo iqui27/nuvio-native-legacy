@@ -31,6 +31,11 @@ void dts_engine_set_ring_mib(int mib);
 /* Range read-ahead of dts_engine_open for engines opened after the call, in
  * MiB (Settings > Buffer size): 0 = default (32 MiB), else 4 MiB ranges. */
 void dts_engine_set_ahead_mib(int mib);
+/* HTTP connections (1..4) for sources opened after the call. Conversion:
+ * 1 = one continuous request (Standard), 2..4 = range lanes (default 4).
+ * Native cache (dts_engine_source_create): 1 = sequential (default). */
+void dts_engine_set_http_workers(int n);
+void dts_engine_set_source_workers(int n);
 /* Measured payload for native HTTP and conversion read-ahead. Native capacity
  * is the allocated ring; conversion capacity includes its active range plus
  * the queued range budget. Conversion snapshots must be taken on the engine's
@@ -38,6 +43,7 @@ void dts_engine_set_ahead_mib(int mib);
 typedef struct {
   int64_t ready_bytes, capacity_bytes, position, total;
   int64_t contiguous_bytes; /* Ready bytes up to the first missing range. */
+  int http_workers; /* Pinned session download limit, not live TCP connections. */
 } DtsBufferInfo;
 void dts_engine_buffer_info(DtsEngine *, DtsBufferInfo *);
 DtsEngine *dts_engine_source_create(const char *url, const char *headers, int mib);
@@ -74,6 +80,10 @@ int dts_engine_has_core(DtsEngine *);
 const void *dts_engine_subtitle_parameters(DtsEngine *, int stream_index);
 /* 1 frame, 0 EOF, -1 error. Frame data lives until the next call or seek. */
 int dts_engine_next(DtsEngine *, DtsFrame *);
+/* Reconfigure only the audio track of the open container: demux, index,
+ * video filter and the bounded HTTP cache survive; the decoder/resampler/
+ * encoder chain is rebuilt. Same contract as open. */
+int dts_engine_audio(DtsEngine *, int audio_stream, int core_only, double seconds);
 int dts_engine_seek(DtsEngine *, double seconds);
 /* Only cancel is safe concurrently with open/next/seek. Join before destroy. */
 void dts_engine_cancel(DtsEngine *);

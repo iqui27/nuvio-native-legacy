@@ -1,5 +1,10 @@
 #!/bin/bash
 set -euo pipefail
+if [[ $(uname -s) == Darwin ]]; then
+  AV_LIBS="-lavformat -lavcodec -lswresample -lavutil"
+else
+  AV_LIBS="-Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group"
+fi
 cd "$(dirname "$0")/.."
 prefix=${NUVIO_DTS_ROOT:-/tmp/nuvio-dts-host}
 dir=$(mktemp -d)
@@ -22,8 +27,7 @@ if [ "$(uname)" = Darwin ] && [ ! -d "$prefix" ]; then
 else
   cc -std=gnu11 -Wall -Wextra -Werror -DNV_DTS_FFMPEG ${NV_TEST_DTS_RECOVERY_CFLAGS--DNV_DTS_WEBOS_RECOVERY} -DNV_DV7_CONVERSION \
     -I"$prefix/include" src/dts/dts_engine.c tests/dv7_engine.c -o "$dir/engine" \
-    -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil \
-    -Wl,--end-group build/dv7-host/libnuvio_dv7.a -lm -lpthread -ldl
+    -L"$prefix/lib" $AV_LIBS build/dv7-host/libnuvio_dv7.a -lm -lpthread -ldl
 fi
 for kind in fel mel; do
   "$dir/engine" "$dir/$kind.mkv" "$dir/$kind-bad.mkv"

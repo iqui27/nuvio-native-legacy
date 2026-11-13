@@ -3,6 +3,13 @@
 # Always: pure unit checks. With NUVIO_DTS_ROOT (pinned FFmpeg 7.1.5 build):
 # byte parity with FFmpeg's hevc_mp4toannexb for packets without own sets.
 set -euo pipefail
+# FFmpeg group link: GNU ld needs --start-group for circular static refs;
+# Apple ld only lists archives once (all dead-strippable symbols resolved).
+if [[ $(uname -s) == Darwin ]]; then
+  AV_LIBS="-lavformat -lavcodec -lswresample -lavutil"
+else
+  AV_LIBS="-Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group"
+fi
 cd "$(dirname "$0")/.."
 tmp=$(mktemp -d);trap 'rm -rf "$tmp"' EXIT
 flags=(-std=c11 -O1 -g -Wall -Wextra -Werror -Isrc)
@@ -12,7 +19,7 @@ cc "${flags[@]}" tests/hevc_annexb.c -o "$tmp/unit"
 if [[ -n ${NUVIO_DTS_ROOT:-} ]];then
   prefix=$NUVIO_DTS_ROOT
   cc "${flags[@]}" -I"$prefix/include" tests/hevc_annexb_ffmpeg.c \
-    -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group \
+    -L"$prefix/lib" $AV_LIBS \
     -lm -pthread -o "$tmp/parity"
   "$tmp/parity"
 fi

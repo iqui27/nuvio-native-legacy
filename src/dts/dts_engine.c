@@ -32,6 +32,15 @@ static int (*g_lang_match)(const char *code, const char *pref);
 void dts_engine_set_lang_match(int (*match)(const char *code, const char *pref)) { g_lang_match = match; }
 static volatile int g_ahead_mib;
 void dts_engine_set_ahead_mib(int mib) { g_ahead_mib = mib > 0 && mib <= 256 ? mib : 0; }
+/* Independent HTTP connection limits for the next source (Settings > Buffer;
+ * adapted from Matis94 a2e37e8f5/cd3172cff/cba4365a0). Native keeps one
+ * sequential request by default; conversion keeps four range lanes. Conversion
+ * Standard (1) reads over ONE continuous request into a ring, the Samsung
+ * remux reader, instead of a new request every range. */
+static int g_conversion_workers=4, g_source_workers=1;
+static int valid_workers(int n,int fallback) { return n>=1 && n<=4?n:fallback; }
+void dts_engine_set_http_workers(int n) { __atomic_store_n(&g_conversion_workers,valid_workers(n,4),__ATOMIC_RELAXED); }
+void dts_engine_set_source_workers(int n) { __atomic_store_n(&g_source_workers,valid_workers(n,1),__ATOMIC_RELAXED); }
 /* Rings alive (read_fluxo allocates, fx_close frees): the .tpk memory line. */
 static pthread_mutex_t g_rings_lock = PTHREAD_MUTEX_INITIALIZER;
 static DtsEngineRings g_rings;
@@ -62,6 +71,7 @@ const DtsMediaInfo *dts_engine_info(DtsEngine *e) { return e ? &e->info : NULL; 
 int dts_engine_has_core(DtsEngine *e) { (void)e; return 0; }
 const void *dts_engine_subtitle_parameters(DtsEngine *e,int i) { (void)e;(void)i; return NULL; }
 int dts_engine_next(DtsEngine *e,DtsFrame *f) { (void)e;(void)f; return -1; }
+int dts_engine_audio(DtsEngine *e,int a,int c,double t) { (void)e;(void)a;(void)c;(void)t; return -1; }
 int dts_engine_seek(DtsEngine *e,double s) { (void)e;(void)s; return -1; }
 void dts_engine_cancel(DtsEngine *e) { (void)e; }
 void dts_engine_destroy(DtsEngine *e) { free(e); }
@@ -91,7 +101,6 @@ int dts_engine_external_follow_poll(DtsEngine *e,int *s,int *o) { (void)e; *s=0;
 int64_t dts_engine_external_bytes(DtsEngine *e,int64_t *t) { (void)e; if(t) *t=-1; return 0; }
 int dts_engine_external_active(DtsEngine *e) { (void)e; return 0; }
 int dts_engine_external_replace(DtsEngine *e,const char *u,const char *h,const char *l,int o,int t,int a,double s) { (void)e;(void)u;(void)h;(void)l;(void)o;(void)t;(void)a;(void)s; return -1; }
-int dts_engine_audio(DtsEngine *e,int s,int c,double t) { (void)e;(void)s;(void)c;(void)t; return -1; }
 #else
 #include "../rede.h"
 #include <limits.h>
@@ -102,6 +111,10 @@ int dts_engine_audio(DtsEngine *e,int s,int c,double t) { (void)e;(void)s;(void)
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <libavformat/avformat.h>
+
+/* INT64_MAX/1e9 as a float constant — writing the division inline trips
+ * -Wimplicit-const-int-float-conversion on clang. */
+#define INT64_MAX_SECONDS 9223372036.854775807
 #include <libavcodec/avcodec.h>
 #include <libavcodec/bsf.h>
 #include <libavutil/audio_fifo.h>
@@ -164,12 +177,15 @@ struct DtsEngine {
   uint64_t range_retry_until; /* monotonic, guarded by range_lock */
 #endif
   DtsRangeWorker workers[RANGE_WORKERS];
-  int range_threads, range_stop;
+  int range_threads, range_stop, http_workers;
   volatile int range_live;
   int64_t range_next;
   long range_bytes;
   int dv, passthrough, range_slots, final_cross, opening;
-  int source_stream; /* Native HTTP cache; conversion readers retain their behavior. */
+  int source_stream; /* Native HTTP cache, one sequential request. */
+  int source_range;  /* Native HTTP cache over 2-4 range lanes. */
+  int conv_stream;   /* Conversion Standard (1): one continuous request. */
+  int64_t source_position, source_available; /* source_range UI snapshot, range_lock */
   volatile int source_cancel;
   /* Samsung remux (dts_engine_open_demux): container only, large ranges and
    * the final address reused, like the Dolby Vision path, because the whole
@@ -351,8 +367,11 @@ static int range_backoff(DtsEngine *e,DtsRangeJob *job,int ms) {
 #ifdef NV_DTS_WEBOS_RECOVERY
 /* ponytail: one cooldown per playback source; cap waits at 30s so broken
  * providers cannot stall playback indefinitely. */
+
 static void range_throttled(void *opaque,int seconds) {
   DtsEngine *e=opaque;
+  // <0 = hop had no Retry-After, 0 = malformed: only real values schedule.
+  if(seconds<0) return;
   if(seconds>30) seconds=30;
   uint64_t until=clock_ns(CLOCK_MONOTONIC)+(uint64_t)seconds*UINT64_C(1000000000);
   pthread_mutex_lock(&e->range_lock);
@@ -378,31 +397,25 @@ static int range_wait_throttle(DtsEngine *e,DtsRangeJob *job) {
 #endif
 static void range_fetch(DtsEngine *e,DtsRangeJob *job,int fast,int *stalled) {
   uint64_t begun=clock_ns(CLOCK_MONOTONIC);
-  if(!e->dv && !e->remux) {
-#ifdef NV_DTS_WEBOS_RECOVERY
-    job->data=rede_baixar_trecho64_vigiado_retry(e->url,e->headers,job->start,job->end,
-      &job->count,&job->total,&job->status,&job->cancel,NULL,NULL,
-      fast?&job->urgent:NULL,2500,stalled,range_throttled,e);
-#else
-    job->data=rede_baixar_trecho64_cab(e->url,e->headers,job->start,job->end,
-      &job->count,&job->total,&job->status,&job->cancel);
-#endif
-  } else {
+  {
     /* After the first answer, go straight to the address behind the add-on
      * redirects. Credential headers follow only on the same origin. A final
      * link that stops answering (expired: 403/410, or any failure) is
-     * dropped and the request repeats through the original URL. */
+     * dropped and the request repeats through the original URL. SDR/DTS uses
+     * this path too: no add-on/API redirect chain per range (Matis94 2ad79edbc). */
     char target[8192], fin[8192]; int direct, cross=0;
+    fin[0]=0;
     pthread_mutex_lock(&e->range_lock);
     direct=e->final_url[0]!=0; cross=e->final_cross;
     snprintf(target,sizeof target,"%s",direct?e->final_url:e->url);
     pthread_mutex_unlock(&e->range_lock);
+    const char *direct_headers=e->source_range && cross!=2?e->source_public_headers:"";
 #ifdef NV_DTS_WEBOS_RECOVERY
-    job->data=rede_baixar_trecho64_vigiado_retry(target,direct&&cross?"":e->headers,job->start,job->end,
+    job->data=rede_baixar_trecho64_vigiado_retry(target,direct&&cross?direct_headers:e->headers,job->start,job->end,
       &job->count,&job->total,&job->status,&job->cancel,fin,&cross,
       fast?&job->urgent:NULL,2500,stalled,range_throttled,e);
 #else
-    job->data=rede_baixar_trecho64_final(target,direct&&cross?"":e->headers,job->start,job->end,
+    job->data=rede_baixar_trecho64_final(target,direct&&cross?direct_headers:e->headers,job->start,job->end,
       &job->count,&job->total,&job->status,&job->cancel,fin,&cross);
 #endif
     uint64_t first=clock_ns(CLOCK_MONOTONIC);
@@ -527,7 +540,7 @@ static void clear_ranges(DtsEngine *e,const char *reason) {
 static int start_ranges(DtsEngine *e) {
   pthread_mutex_lock(&e->range_lock);
   if(e->range_threads) { pthread_mutex_unlock(&e->range_lock); return 1; }
-  for(int i=0;i<RANGE_WORKERS;i++) {
+  for(int i=0;i<e->http_workers && i<RANGE_WORKERS;i++) {
     DtsRangeWorker *worker=&e->workers[i]; worker->engine=e;
     if(pthread_create(&worker->thread,NULL,range_worker,worker)) break;
     e->range_threads++;
@@ -564,13 +577,14 @@ static void rings_add(long long bytes) {
 #define FX_STALL_MS 20000              /* no byte for this long (not paused by us): drop */
 #define FX_TRIES 6                     /* 1+2+4+8+15 s of backoff, then the run fails */
 static uint64_t fx_now_ms(void) { return clock_ns(CLOCK_MONOTONIC)/1000000u; }
+/* Long-lived ring (native cache or conversion Standard): the ring is the
+ * read-ahead, and a jump outside it restarts the one request. The Samsung
+ * remux and the external donor (open_demux, its own fx_mib ring) keep the
+ * short adaptive read-ahead. */
+static int fx_long(const DtsEngine *e) { return e->source_stream || e->conv_stream; }
 /* Read-ahead allowed past the reader: twice what was read since the request
  * started, at least 2 MiB. A probe that only needs the header and the Cues
  * then costs a few MiB, not a full ring, at each jump. */
-/* Long-lived ring (native cache; the external donor reads through its own
- * engine, also a long ring): the ring is the read-ahead buffer, and a jump
- * outside it restarts the one request. */
-static int fx_long(const DtsEngine *e) { return e->source_stream; }
 static int64_t fx_ahead(DtsEngine *e) {
   if(fx_long(e)) return FX_CAP-FX_HIST;
   int64_t used=e->pos>e->fx_from?e->pos-e->fx_from:0, a=2*used;
@@ -910,9 +924,11 @@ int dts_engine_prefetch(DtsEngine *e,double seconds) {
   printf("[prefetch] %.1fs: fetching %lld KiB at %lld\n",seconds,(long long)(cap/1024),(long long)e->pf_lo); fflush(stdout);
   return 0;
 }
+static int optional_p2p_tail(DtsEngine *e);
 static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
   DtsEngine *e=opaque;
   uint64_t wait_started=0;
+  int optional=0;
   if(e->sp_n) {
     int r=read_sparse(e,dst,n);
     if(r!=AVERROR(EIO)) return r;
@@ -958,9 +974,15 @@ static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
       if(fx_long(e))__atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
       pthread_cond_broadcast(&e->range_wake);
     }
-    if(!wait_started) wait_started=clock_ns(CLOCK_MONOTONIC);
+    if(!wait_started) { wait_started=clock_ns(CLOCK_MONOTONIC); optional=optional_p2p_tail(e); }
+    else if(optional && clock_ns(CLOCK_MONOTONIC)-wait_started>=UINT64_C(1000000000)) {
+      /* Same startup budget as read_range_pending: the next seek moves the
+       * stream off the abandoned tail. */
+      pthread_mutex_unlock(&e->range_lock);
+      return cancelled(e)?AVERROR_EXIT:AVERROR(EIO);
+    }
     struct timespec ts; clock_gettime(CLOCK_REALTIME,&ts);
-    if(pending_fd<0) ts.tv_sec+=1;
+    if(pending_fd<0 && !optional) ts.tv_sec+=1;
     else {
       ts.tv_nsec+=100000000;
       if(ts.tv_nsec>=1000000000) { ts.tv_sec++;ts.tv_nsec-=1000000000; }
@@ -1015,7 +1037,7 @@ static int optional_p2p_tail(DtsEngine *e) {
   while(*port>='0' && *port<='9') port++;
   return !strncmp(port,"/stream/",8) && port[8];
 }
-static int read_range(void *opaque,uint8_t *dst,int n) {
+static int read_range_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
   DtsEngine *e=opaque;
   if (cancelled(e) || __atomic_load_n(&e->interrupt,__ATOMIC_RELAXED)) return AVERROR_EXIT;
   if (e->total>=0 && e->pos>=e->total) return AVERROR_EOF;
@@ -1055,6 +1077,10 @@ retry_range:
     if(optional) { clock_gettime(CLOCK_REALTIME,&deadline); deadline.tv_sec++; }
     while(job->state!=3 && job->state!=0 && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED) &&
           !cancelled(e) && !__atomic_load_n(&e->interrupt,__ATOMIC_RELAXED)) {
+      if(pending_fd>=0) {
+        struct pollfd pending={pending_fd,POLLIN,0};
+        if(poll(&pending,1,0)>0) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
+      }
       if(optional) {
         if(pthread_cond_timedwait(&e->range_wake,&e->range_lock,&deadline)==ETIMEDOUT && job->state!=3) {
           pthread_mutex_unlock(&e->range_lock);
@@ -1063,6 +1089,10 @@ retry_range:
           clear_ranges(e,"p2p-tail");
           return cancelled(e)?AVERROR_EXIT:AVERROR(EIO);
         }
+      } else if(pending_fd>=0) {
+        struct timespec tick; clock_gettime(CLOCK_REALTIME,&tick); tick.tv_nsec+=100000000;
+        if(tick.tv_nsec>=1000000000) { tick.tv_sec++; tick.tv_nsec-=1000000000; }
+        pthread_cond_timedwait(&e->range_wake,&e->range_lock,&tick);
       } else pthread_cond_wait(&e->range_wake,&e->range_lock);
     }
     if(cancelled(e) || __atomic_load_n(&e->interrupt,__ATOMIC_RELAXED)) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
@@ -1125,6 +1155,7 @@ retry_range:
   memcpy(dst,e->cache+(size_t)(e->pos-e->cache_start),n); e->pos+=n;
   return n;
 }
+static int read_range(void *opaque,uint8_t *dst,int n) { return read_range_pending(opaque,dst,n,-1); }
 static int64_t seek_range(void *opaque,int64_t offset,int whence) {
   DtsEngine *e=opaque;
   if (cancelled(e)) return AVERROR_EXIT;
@@ -1228,7 +1259,10 @@ static void close_media(DtsEngine *e) {
 }
 DtsEngine *dts_engine_create(void) {
   DtsEngine *e=calloc(1,sizeof(*e));
-  if(e) { e->ext_dts_off=__atomic_load_n(&g_external_dts_off,__ATOMIC_ACQUIRE); e->total=-1; e->range_bytes=RANGE_BYTES; e->range_slots=RANGE_SLOTS; e->ext_stream=-1; e->mt_t1=-1; pthread_mutex_init(&e->range_lock,NULL); pthread_cond_init(&e->range_wake,NULL); }
+  if(e) { e->http_workers=__atomic_load_n(&g_conversion_workers,__ATOMIC_RELAXED);
+    e->ext_dts_off=__atomic_load_n(&g_external_dts_off,__ATOMIC_ACQUIRE);
+    e->total=-1; e->range_bytes=RANGE_BYTES; e->range_slots=RANGE_SLOTS; e->ext_stream=-1; e->mt_t1=-1;
+    pthread_mutex_init(&e->range_lock,NULL); pthread_cond_init(&e->range_wake,NULL); }
   return e;
 }
 void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *b) {
@@ -1236,7 +1270,8 @@ void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *b) {
   memset(b,0,sizeof *b);
   if(!e)return;
   pthread_mutex_lock(&e->range_lock);
-  if(e->source_stream) {
+  if(fx_long(e)) {
+    b->http_workers=e->http_workers;
     b->position=e->pos;b->total=e->total;b->capacity_bytes=e->fx_buf?e->fx_cap:0;
     if(e->fx_req<0 && e->pos>=e->fx_lo && e->pos<=e->fx_hi)b->ready_bytes=e->fx_hi-e->pos;
     else if(e->pf_buf && e->pos>=e->pf_lo && e->pos<e->pf_hi) {
@@ -1249,24 +1284,30 @@ void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *b) {
     }
     b->contiguous_bytes=b->ready_bytes;
   } else if(!e->remux && e->range_threads && !cancelled(e)) {
+    b->http_workers=e->http_workers;
     // Called only by the conversion worker: it owns pos/cache. Completed
     // speculative ranges belong to the network workers and need range_lock.
-    b->position=e->pos; b->total=e->total;
+    // Native parallel cache: the loopback reader owns pos/cache, so use its
+    // locked snapshot instead.
+    b->position=e->source_range?e->source_position:e->pos; b->total=e->total;
     b->capacity_bytes=(int64_t)(e->range_slots+1)*e->range_bytes;
-    if(e->cache && e->pos>=e->cache_start && e->pos-e->cache_start<e->cache_size)
+    if(e->source_range) b->ready_bytes=e->source_available;
+    else if(e->cache && e->pos>=e->cache_start && e->pos-e->cache_start<e->cache_size)
       b->ready_bytes=e->cache_size-(e->pos-e->cache_start);
     b->contiguous_bytes=b->ready_bytes;
     for(int i=0;i<e->range_slots;i++) {
       DtsRangeJob *j=&e->ranges[i];
-      if(j->state==3 && j->data && j->count>0 && j->start>=e->pos)
+      if(j->state==3 && j->data && j->count>0 && j->start>=b->position)
         b->ready_bytes+=j->count;
     }
-    if(e->pf_buf && e->pos>=e->pf_lo && e->pos<e->pf_hi &&
+    /* Prefetched jump bytes (D) sit at the conversion reader's e->pos; the
+     * native loopback source (C) has no prefetch window. */
+    if(!e->source_range && e->pf_buf && e->pos>=e->pf_lo && e->pos<e->pf_hi &&
        e->pf_hi-e->pos>b->contiguous_bytes) {
       b->contiguous_bytes=e->pf_hi-e->pos;
       if(b->ready_bytes<b->contiguous_bytes) b->ready_bytes=b->contiguous_bytes;
     }
-    int64_t next=e->pos+b->contiguous_bytes;
+    int64_t next=b->position+b->contiguous_bytes;
     for(int k=0;k<e->range_slots;k++) {
       DtsRangeJob *found=NULL;
       for(int i=0;i<e->range_slots;i++) {
@@ -1286,7 +1327,15 @@ DtsEngine *dts_engine_source_create(const char *url,const char *headers,int mib)
   if (!e) return NULL;
   e->url=strdup(url); e->headers=strdup(headers?headers:"");
   e->source_public_headers=rede_range_headers(headers,1);
-  e->source_stream=1;
+  e->http_workers=__atomic_load_n(&g_source_workers,__ATOMIC_RELAXED);
+  e->source_stream=e->http_workers==1; e->source_range=!e->source_stream;
+  if(e->source_range) {   /* same RAM budget, split into 4 MiB lanes */
+    e->range_bytes=RANGE_BYTES_DV;
+    e->range_slots=(int)((int64_t)buffer_mib(mib)*1024*1024/e->range_bytes)-1;
+    if(e->range_slots>=RANGE_SLOTS_MAX) e->range_slots=RANGE_SLOTS_MAX-1;
+  }
+  printf("[http-buffer] path=native connections=%d mode=%s bufferMiB=%d\n",
+    e->http_workers,e->source_stream?"sequential":"ranges",buffer_mib(mib)); fflush(stdout);
   e->fx_cap=(int64_t)buffer_mib(mib)*1024*1024; e->fx_req=-1;
   if(!e->url || !e->headers || !e->source_public_headers) { dts_engine_destroy(e); return NULL; }
   return e;
@@ -1301,11 +1350,24 @@ int dts_engine_source_read(DtsEngine *e,int64_t offset,unsigned char *data,int n
     char *probe=rede_baixar_trecho64_final(e->url,e->headers,0,255,
       &got,&total,&status,&e->cancelled,fin,&cross);
     if(!probe || total<=0) { free(probe); return -1; }
+    int probe_n=e->source_range && offset==0 ? (n<got?n:(int)got) : 0;
+    if(probe_n) memcpy(data,probe,(size_t)probe_n);
     free(probe);
     pthread_mutex_lock(&e->range_lock);
     e->total=total;
     if(fin[0]) { snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross; }
     pthread_mutex_unlock(&e->range_lock);
+    if(probe_n) return probe_n;
+  }
+  if(e->source_range) {
+    if(seek_range(e,offset,SEEK_SET)<0) return -1;
+    pthread_mutex_lock(&e->range_lock); e->source_position=offset; e->source_available=0; pthread_mutex_unlock(&e->range_lock);
+    int got=read_range_pending(e,data,n,pending_fd);
+    pthread_mutex_lock(&e->range_lock);
+    e->source_position=e->pos;
+    e->source_available=e->cache && e->pos>=e->cache_start && e->pos-e->cache_start<e->cache_size?e->cache_size-(e->pos-e->cache_start):0;
+    pthread_mutex_unlock(&e->range_lock);
+    return got;
   }
   if(seek_fluxo(e,offset,SEEK_SET)<0) return -1;
   return read_fluxo_pending(e,data,n,pending_fd);
@@ -1393,7 +1455,7 @@ void dts_engine_external_mismatch(DtsEngine *e,int *cut_s,int *speed) {
   *cut_s=e&&e->ext?e->ext_cut_s:0; *speed=e&&e->ext?e->ext_speed:0;
 }
 static int configure_external(DtsEngine *e,double start);
-static int configure_audio(DtsEngine *e,int core,double start);
+static int configure_audio(DtsEngine *e,int core);
 static int reset_encoder(DtsEngine *e);
 int dts_engine_external_replace(DtsEngine *e,const char *url,const char *headers,const char *langs,
                                 int offset_ms,int track,int audio_only,double target) {
@@ -1761,6 +1823,71 @@ static int reset_encoder(DtsEngine *e) {
   int r=avcodec_open2(e->enc,codec,NULL);
   return r<0?fail(e,"Audio encoder open",r):0;
 }
+/* Audio chain for the currently selected e->info.audio_stream: passthrough
+ * queue or decoder/resampler/encoder. Caller seeks afterwards; shared by
+ * dts_engine_open and dts_engine_audio (track reuse). */
+static int configure_audio(DtsEngine *e,int core) {
+  AVCodecParameters *ap=e->fmt->streams[e->info.audio_stream]->codecpar;
+  /* Convert DTS, TrueHD and, with fixed DV audio, AC-3/E-AC-3 when this
+   * build decodes them; otherwise AC-3/E-AC-3 pass through untouched. */
+  int fixed=e->dv?e->fixed_audio:0;
+  /* Matis94 0550df28f: the TV decodes DTS, so the DV path hands it the whole
+   * DTS stream as in the file (DTS-HD MA/DTS:X), never a core cut. */
+  int dts_native=ap->codec_id==AV_CODEC_ID_DTS && e->dv && e->dts_off==NV_DTS_ROUTE_NATIVE && !fixed;
+  e->passthrough=(ap->codec_id!=AV_CODEC_ID_DTS || dts_native) && ap->codec_id!=AV_CODEC_ID_TRUEHD && !fixed;
+  if(e->passthrough) {
+    e->in=av_packet_alloc(); e->out=av_packet_alloc();
+    if(!e->in || !e->out) return fail(e,"Audio queue allocation",0);
+    e->info.channels=ap->ch_layout.nb_channels>0?ap->ch_layout.nb_channels:6;
+    if(dts_native) {
+      if(e->info.channels>8) e->info.channels=8;
+      printf("[dts] dv-dts-native: full stream passed through ch=%d profile=%d\n",e->info.channels,ap->profile);
+      fflush(stdout);
+    }
+    e->info.sample_rate=ap->sample_rate>0?ap->sample_rate:48000;
+    snprintf(e->info.audio_codec,sizeof(e->info.audio_codec),"%s",avcodec_get_name(ap->codec_id));
+    e->info.duration_ns=e->fmt->duration==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->duration,AV_TIME_BASE_Q,NS);
+    e->info.start_ns=e->fmt->start_time==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->start_time,AV_TIME_BASE_Q,NS);
+    return 0;
+  }
+  const AVCodec *decoder=avcodec_find_decoder(ap->codec_id);
+  if(!decoder) return fail(e,"DTS decoder absent",0);
+  e->dec=avcodec_alloc_context3(decoder);
+  if(!e->dec) return fail(e,"DTS decoder allocation",0);
+  avcodec_parameters_to_context(e->dec,ap);
+  e->dec->pkt_timebase=e->fmt->streams[e->info.audio_stream]->time_base;
+  /* Corrupt HD extensions must reach the worker error path; an explicit
+   * core-only reopen decides whether to discard the failed extension. */
+  e->dec->err_recognition=AV_EF_EXPLODE;
+  if(core && ap->codec_id==AV_CODEC_ID_DTS && av_opt_set_int(e->dec->priv_data,"core_only",1,0)<0) return fail(e,"DTS core-only unavailable",0);
+  int r=avcodec_open2(e->dec,decoder,NULL);
+  if(r<0) return fail(e,"DTS decoder open",r);
+  /* AC3 5.1 only when asked and the build has the encoder; else stereo AAC. */
+  const AVCodec *encoder=(fixed?fixed==2:g_surround_ac3)?avcodec_find_encoder(AV_CODEC_ID_AC3):NULL;
+  int out_channels=2;
+  if(encoder) {
+    int in_channels=ap->ch_layout.nb_channels;
+    out_channels=fixed==2 || in_channels==0 || in_channels>2 ? 6 : 2;
+  } else encoder=avcodec_find_encoder(AV_CODEC_ID_AAC);
+  if(!encoder) return fail(e,"Audio encoder absent",0);
+  e->enc=avcodec_alloc_context3(encoder);
+  if(!e->enc) return fail(e,"Audio encoder absent",0);
+  e->enc->codec_id=encoder->id;
+  av_channel_layout_default(&e->enc->ch_layout,out_channels);
+  if(reset_encoder(e)<0) return -1;
+  e->fifo=av_audio_fifo_alloc(e->enc->sample_fmt,e->enc->ch_layout.nb_channels,4096);
+  e->in=av_packet_alloc(); e->out=av_packet_alloc(); e->decoded=av_frame_alloc(); e->encoded=av_frame_alloc();
+  if(!e->fifo || !e->in || !e->out || !e->decoded || !e->encoded) return fail(e,"Audio queue allocation",0);
+  e->info.channels=e->enc->ch_layout.nb_channels; e->info.sample_rate=48000;
+  snprintf(e->info.audio_codec,sizeof(e->info.audio_codec),"%s",avcodec_get_name(e->enc->codec_id));
+  if(ap->codec_id!=AV_CODEC_ID_DTS) {
+    printf("[dts] audio-convert input=%s output=%s channels=%d fixed=%d\n",avcodec_get_name(ap->codec_id),
+           e->info.audio_codec,e->info.channels,fixed);fflush(stdout);
+  }
+  e->info.duration_ns=e->fmt->duration==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->duration,AV_TIME_BASE_Q,NS);
+  e->info.start_ns=e->fmt->start_time==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->start_time,AV_TIME_BASE_Q,NS);
+  return 0;
+}
 int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,int core,double start) {
   if (!e || !url || !*url) return -1;
   __atomic_store_n(&e->range_live,0,__ATOMIC_RELAXED);
@@ -1783,14 +1910,40 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
 #endif
   e->final_url[0]=0; e->final_cross=0; e->passthrough=0; e->remux=0; e->opening=1;
   e->demux_eof=e->decoder_eof=e->resampler_eof=e->encoder_sent_eof=e->timeline=0;
+  e->http_workers=__atomic_load_n(&g_conversion_workers,__ATOMIC_RELAXED);
+  /* Standard (1): one continuous request; the ring takes the RAM the range
+   * queue would (Settings > Buffer size), never more. */
+  e->conv_stream=e->http_workers==1; e->fx_req=-1;
+  if(e->conv_stream) {
+    e->fx_cap=(int64_t)(e->range_slots+1)*e->range_bytes;
+    if(e->fx_cap<16*1024*1024) e->fx_cap=16*1024*1024;
+  }
   if (cancelled(e)) return fail(e,"Cancelled",0);
-  if (audio < -1 || !isfinite(start) || start<0 || start>(double)INT64_MAX/1000000000.0)
+  if (audio < -1 || !isfinite(start) || start<0 || start>INT64_MAX_SECONDS)
     return fail(e,"Invalid DTS conversion options",0);
   e->url=strdup(url); e->headers=strdup(headers?headers:"");
+  if(e->conv_stream && e->url && e->headers) {
+    /* One small cancellable probe learns the size and the resolved address,
+     * so a dead source fails now and the stream starts on the CDN. */
+    long got=0; int status=0,cross=0; int64_t total=-1; char fin[8192]; fin[0]=0;
+    char *probe=rede_baixar_trecho64_final(e->url,e->headers,0,255,&got,&total,&status,&e->cancelled,fin,&cross);
+    int probed=probe!=NULL && total>0;
+    free(probe);
+    if(!probed) {
+      printf("[http-buffer] path=conversion mode=stream probe-failed http=%d\n",status); fflush(stdout);
+      return fail(e,cancelled(e)?"Cancelled":"Source probe",AVERROR(EIO));
+    }
+    pthread_mutex_lock(&e->range_lock);
+    e->total=total;
+    if(fin[0]) { snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross; }
+    pthread_mutex_unlock(&e->range_lock);
+    printf("[http-buffer] path=conversion connections=1 mode=stream bufferMiB=%lld\n",(long long)(e->fx_cap>>20)); fflush(stdout);
+  }
   e->fmt=avformat_alloc_context();
   unsigned char *buffer=av_malloc(32768);
   if (!e->url || !e->headers || !e->fmt || !buffer) { av_free(buffer); return fail(e,"Demux allocation",0); }
-  e->io=avio_alloc_context(buffer,32768,0,e,read_range,NULL,seek_range);
+  e->io=e->conv_stream?avio_alloc_context(buffer,32768,0,e,read_fluxo,NULL,seek_fluxo)
+                      :avio_alloc_context(buffer,32768,0,e,read_range,NULL,seek_range);
   if (!e->io) { av_free(buffer); return fail(e,"IO allocation",0); }
   e->fmt->pb=e->io; e->fmt->flags|=AVFMT_FLAG_CUSTOM_IO;
   e->fmt->interrupt_callback=(AVIOInterruptCB){read_interrupted,e};
@@ -1930,91 +2083,37 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
     avcodec_parameters_copy(e->bsf->par_in,vp); e->bsf->time_base_in=v->time_base;
     if((r=av_bsf_init(e->bsf))<0) return fail(e,"Video filter open",r);
   }
-  return external?configure_external(e,start):configure_audio(e,core,start);
-}
-static int configure_audio(DtsEngine *e,int core,double start) {
-  AVCodecParameters *ap=e->fmt->streams[e->info.audio_stream]->codecpar;
-  int r;
-  /* Convert DTS, TrueHD and, with fixed DV audio, AC-3/E-AC-3 when this
-   * build decodes them; otherwise AC-3/E-AC-3 pass through untouched. */
-  int fixed=e->dv?e->fixed_audio:0;
-  /* Matis94 0550df28f: the TV decodes DTS, so the DV path hands it the whole
-   * DTS stream as in the file (DTS-HD MA/DTS:X), never a core cut. */
-  int dts_native=ap->codec_id==AV_CODEC_ID_DTS && e->dv && e->dts_off==NV_DTS_ROUTE_NATIVE && !fixed;
-  e->passthrough=(ap->codec_id!=AV_CODEC_ID_DTS || dts_native) && ap->codec_id!=AV_CODEC_ID_TRUEHD && !fixed;
-  if(e->passthrough) {
-    e->in=av_packet_alloc(); e->out=av_packet_alloc();
-    if(!e->in || !e->out) return fail(e,"Audio queue allocation",0);
-    e->info.channels=ap->ch_layout.nb_channels>0?ap->ch_layout.nb_channels:6;
-    if(dts_native) {
-      if(e->info.channels>8) e->info.channels=8;
-      printf("[dts] dv-dts-native: full stream passed through ch=%d profile=%d\n",e->info.channels,ap->profile);
-      fflush(stdout);
-    }
-    e->info.sample_rate=ap->sample_rate>0?ap->sample_rate:48000;
-    snprintf(e->info.audio_codec,sizeof(e->info.audio_codec),"%s",avcodec_get_name(ap->codec_id));
-    e->info.duration_ns=e->fmt->duration==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->duration,AV_TIME_BASE_Q,NS);
-    e->info.start_ns=e->fmt->start_time==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->start_time,AV_TIME_BASE_Q,NS);
-    e->target_ns=(int64_t)(start*1000000000.0);
-    return start>0?dts_engine_seek(e,start):0;
-  }
-  const AVCodec *decoder=avcodec_find_decoder(ap->codec_id);
-  if(!decoder) return fail(e,"DTS decoder absent",0);
-  e->dec=avcodec_alloc_context3(decoder);
-  if(!e->dec) return fail(e,"DTS decoder allocation",0);
-  avcodec_parameters_to_context(e->dec,ap);
-  e->dec->pkt_timebase=e->fmt->streams[e->info.audio_stream]->time_base;
-  /* Corrupt HD extensions must reach the worker error path; an explicit
-   * core-only reopen decides whether to discard the failed extension. */
-  e->dec->err_recognition=AV_EF_EXPLODE;
-  if(core && ap->codec_id==AV_CODEC_ID_DTS && av_opt_set_int(e->dec->priv_data,"core_only",1,0)<0) return fail(e,"DTS core-only unavailable",0);
-  if((r=avcodec_open2(e->dec,decoder,NULL))<0) return fail(e,"DTS decoder open",r);
-  /* AC3 5.1 only when asked and the build has the encoder; else stereo AAC. */
-  const AVCodec *encoder=(fixed?fixed==2:g_surround_ac3)?avcodec_find_encoder(AV_CODEC_ID_AC3):NULL;
-  int out_channels=2;
-  if(encoder) {
-    int in_channels=ap->ch_layout.nb_channels;
-    out_channels=fixed==2 || in_channels==0 || in_channels>2 ? 6 : 2;
-  } else encoder=avcodec_find_encoder(AV_CODEC_ID_AAC);
-  if(!encoder) return fail(e,"Audio encoder absent",0);
-  e->enc=avcodec_alloc_context3(encoder);
-  if(!e->enc) return fail(e,"Audio encoder absent",0);
-  e->enc->codec_id=encoder->id;
-  av_channel_layout_default(&e->enc->ch_layout,out_channels);
-  if(reset_encoder(e)<0) return -1;
-  e->fifo=av_audio_fifo_alloc(e->enc->sample_fmt,e->enc->ch_layout.nb_channels,4096);
-  e->in=av_packet_alloc(); e->out=av_packet_alloc(); e->decoded=av_frame_alloc(); e->encoded=av_frame_alloc();
-  if(!e->fifo || !e->in || !e->out || !e->decoded || !e->encoded) return fail(e,"Audio queue allocation",0);
-  e->info.channels=e->enc->ch_layout.nb_channels; e->info.sample_rate=48000;
-  snprintf(e->info.audio_codec,sizeof(e->info.audio_codec),"%s",avcodec_get_name(e->enc->codec_id));
-  if(ap->codec_id!=AV_CODEC_ID_DTS) {
-    printf("[dts] audio-convert input=%s output=%s channels=%d fixed=%d\n",avcodec_get_name(ap->codec_id),
-           e->info.audio_codec,e->info.channels,fixed);fflush(stdout);
-  }
-  e->info.duration_ns=e->fmt->duration==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->duration,AV_TIME_BASE_Q,NS);
-  e->info.start_ns=e->fmt->start_time==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->start_time,AV_TIME_BASE_Q,NS);
+  /* External audio (D) builds its own donor chain; the main file's audio
+   * is never configured or fed. */
+  if(external) return configure_external(e,start);
   e->target_ns=(int64_t)(start*1000000000.0);
+  if(configure_audio(e,core)<0) return -1;
   return start>0?dts_engine_seek(e,start):0;
 }
+/* Track change on the already-open container (adapted from Matis94
+ * 97e5029): the demuxer, index, video filter and bounded HTTP cache survive;
+ * only the audio chain is rebuilt. 0 on success. */
 int dts_engine_audio(DtsEngine *e,int stream,int core,double target) {
   if(!e || !e->fmt || e->remux || e->ext || cancelled(e) || stream<0 ||
      stream>=(int)e->fmt->nb_streams || !isfinite(target) || target<0 ||
-     target>(double)INT64_MAX/1000000000.0) return -1;
+     target>INT64_MAX_SECONDS) return -1;
   AVCodecParameters *ap=e->fmt->streams[stream]->codecpar;
+  /* Same feed rule as the open-time selector (route snapshot unchanged). */
   if(ap->codec_type!=AVMEDIA_TYPE_AUDIO ||
-     !(ap->codec_id==AV_CODEC_ID_DTS || (e->dv && (ap->codec_id==AV_CODEC_ID_AC3 || ap->codec_id==AV_CODEC_ID_EAC3)))) return -1;
-  // Free the previous audio chain before allocating its replacement. The
-  // demuxer, video filter, DV conversion state and bounded HTTP queue survive.
+     !nv_dts_audio_feeds(avcodec_get_name(ap->codec_id),e->dv,e->truehd,e->dts_off)) return -1;
+  /* Free the previous audio chain before allocating its replacement. */
   av_packet_free(&e->in); av_packet_free(&e->out);
   av_frame_free(&e->decoded); av_frame_free(&e->encoded);
   avcodec_free_context(&e->dec); avcodec_free_context(&e->enc);
   swr_free(&e->swr); av_audio_fifo_free(e->fifo); e->fifo=NULL;
   av_channel_layout_uninit(&e->input_layout);
-  e->info.audio_stream=stream;e->has_core=0;e->error[0]=0;
+  e->info.audio_stream=stream; e->has_core=0; e->error[0]=0;
   e->demux_eof=e->decoder_eof=e->resampler_eof=e->encoder_sent_eof=e->timeline=0;
-  e->ext_have=e->ext_eof=0;
-  if(configure_audio(e,core,0)<0) return -1;
-  /* Always seek, including position zero, to reset libavformat's packet queue. */
+  e->passthrough=0; e->ext_have=e->ext_eof=0;
+  /* Always seek, including position zero, to reset libavformat's packet
+   * queue and the engine's cached position. */
+  int r=configure_audio(e,core);
+  if(r<0) return -1;
   return dts_engine_seek(e,target);
 }
 /* Samsung remux (src/dts/dts_remux.c): only the container over the ranged
@@ -2027,7 +2126,7 @@ int dts_engine_open_demux(DtsEngine *e,const char *url,const char *headers) {
   close_media(e); memset(&e->info,0,sizeof(e->info)); e->error[0]=0;
   memset(&e->metrics,0,sizeof(e->metrics));
   e->pos=0; e->total=-1; e->cache_size=0; e->has_core=0;
-  e->remux=1; e->range_bytes=RANGE_BYTES_DV; e->range_slots=RANGE_SLOTS_DV;
+  e->remux=1; e->conv_stream=0; e->range_bytes=RANGE_BYTES_DV; e->range_slots=RANGE_SLOTS_DV;
   e->final_url[0]=0; e->final_cross=0; e->passthrough=0;
   e->demux_eof=e->decoder_eof=e->resampler_eof=e->encoder_sent_eof=e->timeline=0;
   if (cancelled(e)) return fail(e,"Cancelled",0);
@@ -3659,7 +3758,7 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
   return result;
 }
 int dts_engine_seek(DtsEngine *e,double seconds) {
-  if(!e || !e->fmt || !isfinite(seconds) || seconds<0 || seconds>(double)INT64_MAX/1000000000.0) return -1;
+  if(!e || !e->fmt || !isfinite(seconds) || seconds<0 || seconds>INT64_MAX_SECONDS) return -1;
   if(cancelled(e)) return fail(e,"Cancelled",0);
   __atomic_store_n(&e->range_live,0,__ATOMIC_RELAXED);
   int64_t timestamp=(int64_t)(seconds*1000000.0);

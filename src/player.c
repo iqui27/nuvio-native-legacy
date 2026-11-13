@@ -35,6 +35,7 @@
 #include "conquistasdados.h"
 #include "legfontes.h"
 #include "memlog.h"
+#include "ramoverlay.h"
 #include "dvtela.h"
 #include "abrecine.h"
 #include "travaui.h"
@@ -298,6 +299,7 @@ static int    posVisSolto;   // 1 = ainda deslizando ate o alvo
 #define PLR_BUSCA_MOLA 18.0f // rad/s: assenta em ~300 ms depois da ultima tecla
 
 static int   aberto = 0, saindo = 0, pediuSair = 0;
+static unsigned dtsAvisoSessao; // New player session, not seek/retry/track change.
 static int   idx = 0;
 // UI-thread ownership of this exact player source/session.
 static unsigned fonteAcaoGeracao;
@@ -1920,6 +1922,7 @@ static void armarTituloGuardado(void) {
 }
 
 void player_abrir(int indiceCatalogo, const char *url) {
+  dtsAvisoSessao++;
   saiuVisto = 0;
 #ifdef NV_TOUCH_UI
   avToqueCanal[0] = 0;
@@ -4450,7 +4453,22 @@ void player_juntos_buscar(double seg) {
   video_buscar(seg);
 }
 
+#if defined(NV_WEBOS) || defined(NV_HTTP_BUFFER_DIAG)
+// webOS SDL delivers GREEN as scancode 487 (SDK SDL_webOS.h); main.c passes
+// both key edges to app_evento, which routes playback events here. F2 is the
+// host fixture equivalent. Firmware delivery still needs an on-TV check.
+static int bufferRamTecla(const SDL_Event *e) {
+  if (ajustes_ram_verde() && e->type == SDL_KEYDOWN && !e->key.repeat &&
+      (e->key.keysym.sym == SDLK_F2 || e->key.keysym.scancode == NV_SCANCODE_GREEN)) {
+    (void)ajustes_ram_overlay_alternar(); return 1;
+  }
+  return 0;
+}
+#endif
 void player_evento(const SDL_Event *e) {
+#if defined(NV_WEBOS) || defined(NV_HTTP_BUFFER_DIAG)
+  if (bufferRamTecla(e)) return;
+#endif
   // QUALQUER ENTRADA E ATIVIDADE, antes de qualquer return: tecla, clique ou roda
   // do Magic Remote/mouse, toque e botoes do controle. O painel de pausa so sobe
   // depois de 4 s SEM nenhum comando; mexer em legenda, audio ou na barra
@@ -7051,13 +7069,29 @@ void player_desenhar(Uint32 agora) {
   // cartao de abertura ja esta na tela.
   { static int dtsVisto;
     static Uint32 dtsDesde;
+    // UMA VEZ POR ESTADO POR FONTE (Matis94 C3): seek, retry e troca de faixa
+    // nao repetem um aviso ja mostrado nesta fonte; um estado novo (ex.: falhou
+    // depois de convertido) ainda aparece, e uma fonte nova zera tudo. O pedido
+    // a ilha vale um quadro (plrilha.h), entao o aviso escolhido (dtsAvisoVivo)
+    // e pedido em TODO quadro da sua janela.
+    static char dtsAvisoFonte[NV_MEDIA_URL_MAX];
+    static unsigned dtsAvisados, dtsSessaoVista;
+    static int dtsAvisoVivo = -1;
     int e = player_carregando() || ehCanal() ? VIDEO_DTS_NENHUM : video_dts_estado();
-    if (e != dtsVisto) { dtsVisto = e; dtsDesde = agora; }
+    if (dtsSessaoVista != dtsAvisoSessao || strcmp(dtsAvisoFonte, video_url_atual())) {
+      dtsSessaoVista = dtsAvisoSessao;
+      snprintf(dtsAvisoFonte, sizeof dtsAvisoFonte, "%s", video_url_atual());
+      dtsAvisados = 0; dtsAvisoVivo = -1; dtsVisto = -1;
+    }
+    if (e != dtsVisto) { dtsVisto = e; dtsDesde = agora; dtsAvisoVivo = -1; }
     // The opening guide comes first: DTS notices wait for its reading window.
     if (pgDesde && (float)(agora - pgDesde) / 1000.0f < PG_SEG_TOTAL) dtsDesde = agora;
     if (e != VIDEO_DTS_NENHUM && e != VIDEO_DTS_PREPARANDO && agora - dtsDesde >= 1500u) {
       Uint32 dur = e == VIDEO_DTS_FALHOU || e == VIDEO_DTS_SEM_SOM ? 10000u : 5000u;
-      if (agora - dtsDesde < 1500u + dur) {
+      if (dtsAvisoVivo != e && !(dtsAvisados & (1u << e)) && agora - dtsDesde < 1500u + dur) {
+        dtsAvisados |= 1u << e; dtsAvisoVivo = e;
+      }
+      if (dtsAvisoVivo == e && agora - dtsDesde < 1500u + dur) {
         PlrIlhaPedido pd;
         memset(&pd, 0, sizeof pd);
         pd.icone = "dts";
@@ -7407,7 +7441,11 @@ void player_desenhar(Uint32 agora) {
     // e conteudo do filme. Desenha-la antes do retorno preserva ASS/SRT/VTT
     // durante a maior parte da reproducao, quando a barra nao esta na tela.
     desenharLegendaExterna();
-    desenharAcoesEpisodio(); return;
+    desenharAcoesEpisodio();
+#if defined(NV_WEBOS) || defined(NV_HTTP_BUFFER_DIAG)
+    ramoverlay_desenhar(agora, ajustes_ram_overlay());
+#endif
+    return;
   }   // tocando limpo
 
   // OS VEUS DO GLASS UI (mockup aprovado em 03/10): so dois degrades, o de
@@ -7434,10 +7472,30 @@ void player_desenhar(Uint32 agora) {
    */
   desenharLegendaExterna();
   desenharOsd(agora, a, ac, c);
+#if defined(NV_WEBOS) || defined(NV_HTTP_BUFFER_DIAG)
+  ramoverlay_desenhar(agora, ajustes_ram_overlay());
+#endif
 }
 
 // O CORPO DO OSD (barra, titulo, Seekr, botoes, tempo, selos e o botao de
 // pular), na camada ampliada: tudo aqui mede pela tela virtual.
+#if defined(NV_WEBOS) || defined(NV_HTTP_BUFFER_DIAG)
+// Buffer data on the seek bar (Matis94): measured fill/capacity, range, time
+// ahead and the session HTTP limit, right-aligned next to the bar like the upstream
+// board. Text only, no fabricated counters; the number comes from the engine.
+static void bufferDadosDesenhar(float direita, float y, float alpha) {
+  if (!ajustes_buffer_dados()) return;
+  char b[192];
+  video_buffer_test_text(b, sizeof b);
+  if (!b[0]) return;
+  TxtLinha l = txt_linha(TXT_G19M, b, 210, 216, 225, 235);
+  float width = fmaxf(1.0f, (direita - PLR_MARGEM) * 0.38f);
+  if (l.w <= width) txt_desenhar_alpha(l, direita - l.w, y - l.h - 14.0f, alpha);
+  else txt_bloco_dir(TXT_G19M, b, 210, 216, 225,
+                     direita, y - (float)l.h * 2.0f - 14.0f, width,
+                     1.0f, alpha, 2);
+}
+#endif
 static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c);
 static void desenharOsd(Uint32 agora, float a, float ac, const CatItem *c) {
   ESCALA_INI();
@@ -7790,6 +7848,9 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
       for (i = 0; i < nCaps; i++) if (caps[i] <= 0.0f || caps[i] >= 1.0f) caps[i--] = caps[--nCaps];
     }
     plrui_barra(bx, yBarra, bw, frac, bufFrac, barraFoco && !capFoco, caps, nCaps, a); }
+#if defined(NV_WEBOS) || defined(NV_HTTP_BUFFER_DIAG)
+  bufferDadosDesenhar(bx + bw, yBarra, a);
+#endif
   desenharCapitulos(agora, bx, bw, yBarra, a, ac);
 
   // --- O TITULO: o LOGO, e o texto so na falta dele -------------------------

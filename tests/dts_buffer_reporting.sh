@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ $(uname -s) == Darwin ]]; then
+  AV_LIBS="-lavformat -lavcodec -lswresample -lavutil"
+else
+  AV_LIBS="-Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group"
+fi
 cd "$(dirname "$0")/.."
 prefix=${NUVIO_DTS_ROOT:-/tmp/nuvio-dts-host}
 tmp=$(mktemp -d)
@@ -19,6 +24,5 @@ for i in $(seq 50); do [ -s "$tmp/port" ] && break; sleep .1; done
 cc -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation \
   -DNV_DTS_FFMPEG -DNV_DTS_WEBOS_RECOVERY -Isrc -I"$prefix/include" \
   src/dts/dts_engine.c tests/dts_buffer_reporting.c src/rede.c src/redeurl.c \
-  -o "$tmp/test" -L"$prefix/lib" -Wl,--start-group \
-  -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
+  -o "$tmp/test" -L"$prefix/lib" $AV_LIBS -lm -lpthread -ldl
 "$tmp/test" "http://127.0.0.1:$(cat "$tmp/port")/telemetry/sdr-dts.mkv"
