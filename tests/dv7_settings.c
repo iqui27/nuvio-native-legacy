@@ -20,7 +20,8 @@ int main(void) {
   assert(n==0);
 #endif
   assert(!ajustes_dv7_mapping());
-  assert(AJ_DV7_MAPPING==AJ_SHOW_SKIP_CREDITS+1 && AJ_DV7_MAPPING==AJ_DV_AUDIO-1 && valorPadrao[AJ_DV7_MAPPING]==1 &&
+  assert(AJ_DIAGNOSTICS_QR==AJ_SHOW_SKIP_CREDITS+1);
+  assert(AJ_DV7_MAPPING==AJ_DIAGNOSTICS_QR+1 && AJ_DV7_MAPPING==AJ_DV_AUDIO-1 && valorPadrao[AJ_DV7_MAPPING]==1 &&
          !strcmp(CHAVE[AJ_DV7_MAPPING],"dv7PreserveMappingLocal"));
   assert(OPCOES[AJ_DV7_MAPPING].tipo==OP_ESCOLHA);
   assert(somenteDesteAparelho(AJ_DV7_MAPPING) && !dePerfil(AJ_DV7_MAPPING));
@@ -46,7 +47,7 @@ int main(void) {
     assert(ajustes_dts_original()==(i==0) && ajustes_dts_ac3()==(i==2));
   }
 #endif
-  assert(AJ_MP4_BD_TEST==AJ_N-1 && valorPadrao[AJ_MP4_BD_TEST]==1);
+  assert(AJ_DV7_MAPPING+2==AJ_MP4_BD_TEST && AJ_MP4_BD_TEST<AJ_N && valorPadrao[AJ_MP4_BD_TEST]==1);
   assert(!ajustes_mp4_bd_test() && !strcmp(CHAVE[AJ_MP4_BD_TEST],"dvMp4BdTestLocal"));
   assert(somenteDesteAparelho(AJ_MP4_BD_TEST) && !dePerfil(AJ_MP4_BD_TEST));
   assert(!ajustePortavel(AJ_MP4_BD_TEST) && !ajusteAparelho(AJ_MP4_BD_TEST));
