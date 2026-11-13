@@ -924,9 +924,11 @@ int dts_engine_prefetch(DtsEngine *e,double seconds) {
   printf("[prefetch] %.1fs: fetching %lld KiB at %lld\n",seconds,(long long)(cap/1024),(long long)e->pf_lo); fflush(stdout);
   return 0;
 }
+static int optional_p2p_tail(DtsEngine *e);
 static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
   DtsEngine *e=opaque;
   uint64_t wait_started=0;
+  int optional=0;
   if(e->sp_n) {
     int r=read_sparse(e,dst,n);
     if(r!=AVERROR(EIO)) return r;
@@ -972,9 +974,15 @@ static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
       if(fx_long(e))__atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
       pthread_cond_broadcast(&e->range_wake);
     }
-    if(!wait_started) wait_started=clock_ns(CLOCK_MONOTONIC);
+    if(!wait_started) { wait_started=clock_ns(CLOCK_MONOTONIC); optional=optional_p2p_tail(e); }
+    else if(optional && clock_ns(CLOCK_MONOTONIC)-wait_started>=UINT64_C(1000000000)) {
+      /* Same startup budget as read_range_pending: the next seek moves the
+       * stream off the abandoned tail. */
+      pthread_mutex_unlock(&e->range_lock);
+      return cancelled(e)?AVERROR_EXIT:AVERROR(EIO);
+    }
     struct timespec ts; clock_gettime(CLOCK_REALTIME,&ts);
-    if(pending_fd<0) ts.tv_sec+=1;
+    if(pending_fd<0 && !optional) ts.tv_sec+=1;
     else {
       ts.tv_nsec+=100000000;
       if(ts.tv_nsec>=1000000000) { ts.tv_sec++;ts.tv_nsec-=1000000000; }
