@@ -7014,18 +7014,28 @@ void player_desenhar(Uint32 agora) {
   // cartao de abertura ja esta na tela.
   { static int dtsVisto;
     static Uint32 dtsDesde;
-    // UMA VEZ POR FONTE (Matis94 C3): seek, retry e troca de faixa nao repetem
-    // o aviso de conversao; so uma fonte nova o traz de volta.
+    // UMA VEZ POR ESTADO POR FONTE (Matis94 C3): seek, retry e troca de faixa
+    // nao repetem um aviso ja mostrado nesta fonte; um estado novo (ex.: falhou
+    // depois de convertido) ainda aparece, e uma fonte nova zera tudo. O pedido
+    // a ilha vale um quadro (plrilha.h), entao o aviso escolhido (dtsAvisoVivo)
+    // e pedido em TODO quadro da sua janela.
     static char dtsAvisoFonte[2048];
+    static unsigned dtsAvisados;
+    static int dtsAvisoVivo = -1;
     int e = player_carregando() || ehCanal() ? VIDEO_DTS_NENHUM : video_dts_estado();
-    if (e != dtsVisto) { dtsVisto = e; dtsDesde = agora; }
+    if (strcmp(dtsAvisoFonte, video_url_atual())) {
+      snprintf(dtsAvisoFonte, sizeof dtsAvisoFonte, "%s", video_url_atual());
+      dtsAvisados = 0; dtsAvisoVivo = -1;
+    }
+    if (e != dtsVisto) { dtsVisto = e; dtsDesde = agora; dtsAvisoVivo = -1; }
     // The opening guide comes first: DTS notices wait for its reading window.
     if (pgDesde && (float)(agora - pgDesde) / 1000.0f < PG_SEG_TOTAL) dtsDesde = agora;
     if (e != VIDEO_DTS_NENHUM && e != VIDEO_DTS_PREPARANDO && agora - dtsDesde >= 1500u) {
       Uint32 dur = e == VIDEO_DTS_FALHOU || e == VIDEO_DTS_SEM_SOM ? 10000u : 5000u;
-      if (agora - dtsDesde < 1500u + dur &&
-          strcmp(dtsAvisoFonte, video_url_atual())) {
-        snprintf(dtsAvisoFonte, sizeof dtsAvisoFonte, "%s", video_url_atual());
+      if (dtsAvisoVivo != e && !(dtsAvisados & (1u << e)) && agora - dtsDesde < 1500u + dur) {
+        dtsAvisados |= 1u << e; dtsAvisoVivo = e;
+      }
+      if (dtsAvisoVivo == e && agora - dtsDesde < 1500u + dur) {
         PlrIlhaPedido pd;
         memset(&pd, 0, sizeof pd);
         pd.icone = "dts";
