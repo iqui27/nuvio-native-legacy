@@ -1,5 +1,10 @@
 #!/bin/bash
 set -euo pipefail
+if [[ $(uname -s) == Darwin ]]; then
+  AV_LIBS="-lavformat -lavcodec -lswresample -lavutil"
+else
+  AV_LIBS="-Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group"
+fi
 cd "$(dirname "$0")/.."
 prefix=${NUVIO_DTS_ROOT:-/tmp/nuvio-dts-host}
 tmp=$(mktemp -d)
@@ -20,8 +25,7 @@ for i in $(seq 50); do [ -s "$tmp/port" ] && break; sleep .1; done
 port=$(cat "$tmp/port")
 cc -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation \
   -I"$prefix/include" tests/dts_engine_avio.c src/rede.c src/redeurl.c \
-  -o "$tmp/ranges" -L"$prefix/lib" -Wl,--start-group \
-  -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
+  -o "$tmp/ranges" -L"$prefix/lib" $AV_LIBS -lm -lpthread -ldl
 "$tmp/ranges" "http://127.0.0.1:$port/parallel/range.bin"
 "$tmp/ranges" "http://127.0.0.1:$port/slow/range.bin"
 "$tmp/ranges" "http://127.0.0.1:$port/prefetch/prefetch.bin"

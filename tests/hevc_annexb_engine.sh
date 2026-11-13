@@ -6,6 +6,13 @@
 # exactly like the original stream. Needs NUVIO_DTS_ROOT (pinned FFmpeg
 # libraries) and an ffmpeg CLI with libx265, dca encoder and HEVC decoder.
 set -euo pipefail
+# FFmpeg group link: GNU ld needs --start-group for circular static refs;
+# Apple ld only lists archives once (all dead-strippable symbols resolved).
+if [[ $(uname -s) == Darwin ]]; then
+  AV_LIBS="-lavformat -lavcodec -lswresample -lavutil"
+else
+  AV_LIBS="-Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group"
+fi
 cd "$(dirname "$0")/.."
 prefix=${NUVIO_DTS_ROOT:-/tmp/nuvio-dts-host}
 tmp=$(mktemp -d);trap 'rm -rf "$tmp"' EXIT
@@ -28,7 +35,7 @@ ffmpeg -hide_banner -loglevel error -f concat -safe 0 -i "$tmp/parts.txt" \
   -f lavfi -i 'sine=frequency=500:duration=9:sample_rate=48000' \
   -map 0:v -map 1 -c:v copy -c:a dca -strict -2 -b:a 768k "$tmp/film.mkv"
 cc "${flags[@]}" src/dts/dts_engine.c tests/hevc_annexb_engine.c \
-  -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group \
+  -L"$prefix/lib" $AV_LIBS \
   -lm -pthread -o "$tmp/engine"
 "$tmp/engine" "$tmp/film.mkv" "$tmp/engine.hevc" > "$tmp/engine.log" 2>&1 || { cat "$tmp/engine.log";exit 1; }
 ffmpeg -hide_banner -loglevel error -i "$tmp/film.mkv" -map 0:v -c copy -bsf:v hevc_mp4toannexb -f hevc "$tmp/stock.hevc"

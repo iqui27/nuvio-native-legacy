@@ -78,6 +78,10 @@ void dts_engine_interrupt(DtsEngine *e,int on) { (void)e; (void)on; }
 #include <poll.h>
 #include <pthread.h>
 #include <libavformat/avformat.h>
+
+/* INT64_MAX/1e9 as a float constant — writing the division inline trips
+ * -Wimplicit-const-int-float-conversion on clang. */
+#define INT64_MAX_SECONDS 9223372036854775807.0
 #include <libavcodec/avcodec.h>
 #include <libavcodec/bsf.h>
 #include <libavutil/audio_fifo.h>
@@ -247,7 +251,6 @@ static int range_backoff(DtsEngine *e,DtsRangeJob *job,int ms) {
 #ifdef NV_DTS_WEBOS_RECOVERY
 /* ponytail: one cooldown per playback source; cap waits at 30s so broken
  * providers cannot stall playback indefinitely. */
-#define INT64_MAX_SECONDS 9223372036854775807.0  // INT64_MAX/1e9; avoids int->float warning
 
 static void range_throttled(void *opaque,int seconds) {
   DtsEngine *e=opaque;

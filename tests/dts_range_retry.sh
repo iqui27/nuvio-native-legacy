@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# FFmpeg group link: GNU ld needs --start-group for circular static refs;
+# Apple ld only lists archives once (all dead-strippable symbols resolved).
+if [[ $(uname -s) == Darwin ]]; then
+  AV_LIBS="-lavformat -lavcodec -lswresample -lavutil"
+else
+  AV_LIBS="-Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group"
+fi
 cd "$(dirname "$0")/.."
 prefix=${NUVIO_DTS_ROOT:-/tmp/nuvio-dts-host}
 task_tmp=$(mktemp -d);server=''
@@ -17,7 +24,7 @@ port=$(cat "$task_tmp/port")
 flags=(-std=gnu11 -O1 -g -Wall -Wextra -Werror -Wno-misleading-indentation)
 if [[ ${SANITIZE:-0} == 1 ]];then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer);fi
 cc "${flags[@]}" -I"$prefix/include" tests/dts_range_retry.c src/rede.c src/redeurl.c -o "$task_tmp/test" \
- -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
+ -L"$prefix/lib" $AV_LIBS -lm -lpthread -ldl
 for mode in once twice short wrong hard exhaust cancel seek live-hang live-bodyhang live-hangall live-steady live-speculative live-boot live-cancel live-interrupt;do
  "$task_tmp/test" "http://127.0.0.1:$port/retry-$mode/range.bin"
 done
@@ -28,7 +35,7 @@ done
 "$task_tmp/test" seek-queued
 "$task_tmp/test" "http://127.0.0.1:$port/race-seek/range.bin"
 cc "${flags[@]}" -DRANGE_WORKERS=1 -DNV_TEST_LEGACY_RECOVERY -I"$prefix/include" tests/dts_range_retry.c src/rede.c src/redeurl.c -o "$task_tmp/serial" \
- -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
+ -L"$prefix/lib" $AV_LIBS -lm -lpthread -ldl
 "$task_tmp/serial" "http://127.0.0.1:$port/retry-rate/range.bin"
 "$task_tmp/serial" "http://127.0.0.1:$port/queue-seek/range.bin"
 # The real demux/DTS/AAC path must produce the same audio/video bytes after
@@ -40,9 +47,9 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=64x64:rate=25:durati
  -c:v libx264 -bf 0 -g 25 -c:a dca -strict -2 -b:a 1411200 \
  -metadata:s:a:0 language=eng -metadata:s:a:1 language=por "$task_tmp/input.mkv"
 cc "${flags[@]}" -DNV_DTS_FFMPEG ${NV_TEST_DTS_RECOVERY_CFLAGS--DNV_DTS_WEBOS_RECOVERY} -I"$prefix/include" src/dts/dts_engine.c tests/dts_engine.c \
- -o "$task_tmp/local" -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread
+ -o "$task_tmp/local" -L"$prefix/lib" $AV_LIBS -lm -lpthread
 cc "${flags[@]}" -DNV_DTS_FFMPEG ${NV_TEST_DTS_RECOVERY_CFLAGS--DNV_DTS_WEBOS_RECOVERY} -DDTS_ENGINE_HTTP -I"$prefix/include" src/dts/dts_engine.c tests/dts_engine.c src/rede.c src/redeurl.c \
- -o "$task_tmp/http" -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
+ -o "$task_tmp/http" -L"$prefix/lib" $AV_LIBS -lm -lpthread -ldl
 "$task_tmp/local" "$task_tmp/input.mkv" "$task_tmp/local.aac"
 for mode in once short wrong;do
  "$task_tmp/http" "http://127.0.0.1:$port/retry-$mode/input.mkv" "$task_tmp/$mode.aac"

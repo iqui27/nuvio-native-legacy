@@ -1,5 +1,10 @@
 #!/bin/bash
 set -euo pipefail
+if [[ $(uname -s) == Darwin ]]; then
+  AV_LIBS="-lavformat -lavcodec -lswresample -lavutil"
+else
+  AV_LIBS="-Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group"
+fi
 cd "$(dirname "$0")/.."
 prefix=${NUVIO_DTS_ROOT:-/tmp/nuvio-dts-host}
 dir=$(mktemp -d)
@@ -14,7 +19,6 @@ ffprobe -v error -show_streams -show_packets -show_data -of json "$dir/plain.mkv
 python3 tests/dv7_fixture.py "$dir"
 cc -std=gnu11 -Wall -Wextra -Werror -DNV_DTS_FFMPEG ${NV_TEST_DTS_RECOVERY_CFLAGS--DNV_DTS_WEBOS_RECOVERY} -DNV_DV7_CONVERSION \
   -I"$prefix/include" src/dts/dts_engine.c tests/dv7_engine.c -o "$dir/engine" \
-  -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil \
-  -Wl,--end-group build/dv7-host/libnuvio_dv7.a -lm -lpthread -ldl
+  -L"$prefix/lib" $AV_LIBS build/dv7-host/libnuvio_dv7.a -lm -lpthread -ldl
 "$dir/engine" "$dir/fel.mkv" "$dir/fel-bad.mkv"
 "$dir/engine" "$dir/mel.mkv" "$dir/mel-bad.mkv"

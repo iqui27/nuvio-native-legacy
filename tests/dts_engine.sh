@@ -4,6 +4,13 @@ TMPDIR="${TMPDIR%/}"
 # Requires ffmpeg CLI for transient fixtures and minimal FFmpeg libraries built
 # by tools/build-dts-ffmpeg.sh (NUVIO_DTS_HOST=1 CC=gcc for a host prefix).
 set -eu
+# FFmpeg group link: GNU ld needs --start-group for circular static refs;
+# Apple ld only lists archives once (all dead-strippable symbols resolved).
+if [[ $(uname -s) == Darwin ]]; then
+  AV_LIBS="-lavformat -lavcodec -lswresample -lavutil"
+else
+  AV_LIBS="-Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group"
+fi
 cd "$(dirname "$0")/.."
 PREFIX=${NUVIO_DTS_ROOT:-${TMPDIR:-/tmp}/nuvio-dts-host}
 TMP=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-dts-test.XXXXXXXX)
@@ -11,7 +18,7 @@ SERVER_PID=""
 trap 'if [ -n "$SERVER_PID" ]; then kill "$SERVER_PID" 2>/dev/null || true; fi; rm -rf "$TMP"' EXIT
 ${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -DNV_DTS_FFMPEG ${NV_TEST_DTS_RECOVERY_CFLAGS--DNV_DTS_WEBOS_RECOVERY} -I"$PREFIX/include" \
   src/dts/dts_engine.c tests/dts_engine.c -o "$TMP/engine" \
-  -L"$PREFIX/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread
+  -L"$PREFIX/lib" $AV_LIBS -lm -lpthread
 printf '1\n00:00:00,500 --> 00:00:01,500\nDTS subtitle fixture\n' > "$TMP/input.srt"
 ffmpeg -hide_banner -loglevel error \
   -f lavfi -i 'color=size=64x64:rate=25:duration=4' \
@@ -24,7 +31,10 @@ ffmpeg -hide_banner -loglevel error -i "$TMP/input.mkv" -map 0 -c copy -c:s mov_
 # Native-compatible VP9/AV1 packets need no Annex B filter; verify exact bytes.
 for codec in vp9 av1; do
   encoder=libvpx-vp9
-  if [ "$codec" = av1 ]; then encoder=libaom-av1; fi
+  if [ "$codec" = av1 ]; then
+    encoder=libaom-av1
+    ffmpeg -hide_banner -encoders 2>/dev/null | grep -q 'libaom-av1' || encoder=libsvtav1
+  fi
   ffmpeg -hide_banner -loglevel error -i "$TMP/input.mkv" -map 0 -c copy -c:v "$encoder" -cpu-used 8 -g 25 "$TMP/$codec.mkv"
   "$TMP/engine" "$TMP/$codec.mkv" "$TMP/$codec.aac"
   ffmpeg -hide_banner -loglevel error -i "$TMP/$codec.mkv" -map 0:v -c copy -f data "$TMP/$codec.expected"
@@ -76,7 +86,7 @@ with open(sys.argv[2],'wb') as out:
 PY
 ${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -DNV_DTS_FFMPEG ${NV_TEST_DTS_RECOVERY_CFLAGS--DNV_DTS_WEBOS_RECOVERY} -DDTS_ENGINE_HTTP -I"$PREFIX/include" \
   src/dts/dts_engine.c tests/dts_engine.c src/rede.c src/redeurl.c -o "$TMP/http-engine" \
-  -L"$PREFIX/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
+  -L"$PREFIX/lib" $AV_LIBS -lm -lpthread -ldl
 python3 tests/dts_engine_server.py "$TMP" "$TMP/port" "$TMP/requests" &
 SERVER_PID=$!
 for step in $(seq 50); do [ -s "$TMP/port" ] && break; sleep .1; done
@@ -93,7 +103,7 @@ with open(sys.argv[1].replace("range.bin", "prefetch.bin"),"wb") as out:
 PY
 ${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -I"$PREFIX/include" \
   tests/dts_engine_avio.c src/rede.c src/redeurl.c -o "$TMP/range" \
-  -L"$PREFIX/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
+  -L"$PREFIX/lib" $AV_LIBS -lm -lpthread -ldl
 "$TMP/range" "http://127.0.0.1:$PORT/parallel/range.bin"
 "$TMP/range" "http://127.0.0.1:$PORT/slow/range.bin"
 "$TMP/range" "http://127.0.0.1:$PORT/prefetch/prefetch.bin"
@@ -101,7 +111,7 @@ cp "$TMP/prefetch.bin" "$TMP/dv-prefetch.bin"
 "$TMP/range" "http://127.0.0.1:$PORT/prefetch/dv-prefetch.bin"
 ${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -DRANGE_WORKERS=1 -I"$PREFIX/include" \
   tests/dts_engine_avio.c src/rede.c src/redeurl.c -o "$TMP/serial-range" \
-  -L"$PREFIX/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
+  -L"$PREFIX/lib" $AV_LIBS -lm -lpthread -ldl
 "$TMP/serial-range" "http://127.0.0.1:$PORT/parallel/range.bin"
 "$TMP/serial-range" "http://127.0.0.1:$PORT/prefetch/prefetch.bin"
 "$TMP/http-engine" "http://127.0.0.1:$PORT/input.mkv" "$TMP/http-mkv.aac"
