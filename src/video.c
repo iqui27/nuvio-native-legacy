@@ -3308,6 +3308,18 @@ static void sincronizarPlanoDts(const DtsPlaybackStatus *st) {
     printf("[dts] native video plane bind pending\n"); fflush(stdout);
   }
 }
+static void sincronizarRotaDts(const DtsMediaInfo *info) {
+  /* A small native probe can miss RPU. The opened worker's output record is
+   * authoritative. Do this before draining callbacks so overlay, seek and
+   * audio policy agree with the Dolby Vision configuration actually loaded. */
+  if (info && !dtsModoDv && (info->dovi_profile==5 || info->dovi_profile==8) &&
+      !strcmp(info->video_codec,"hevc") && info->dovi_bl_present &&
+      info->dovi_rpu_present && !info->dovi_el_present) {
+    dtsModoDv=1;dvHabilitado=1;dvNao=0;
+    printf("[audio-route] event=prepared-dv profile=%d compat=%d controllerDv=1\n",
+      info->dovi_profile,info->dovi_bl_compatibility_id);fflush(stdout);
+  }
+}
 static void bombearDts(void) {
   DtsPlaybackStatus st;
   char event[2048];
@@ -3337,6 +3349,7 @@ static void bombearDts(void) {
    * its source metadata. Process metadata first so it cannot erase those
    * native observations on the following pump. Startup failures drain above. */
   if (!st.prepared) return;
+  sincronizarRotaDts(&st.info);
   if (st.prepared && st.revision != dtsRevisao) {
     int initial = !dtsRevisao;
     int selectedSub = initial ? -1 : (video_legenda(legAtual) ? video_legenda(legAtual)->stream_index : -1);

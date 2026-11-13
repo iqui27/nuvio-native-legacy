@@ -102,6 +102,11 @@ static const char *abrir(void) {
 }
 
 int main(void) {
+  { // DV MKV is opt-in (default Off since its setting landed); the fixture opts in.
+    const char *d = getenv("NUVIO_DADOS"); char c[512]; FILE *f;
+    assert(d); snprintf(c, sizeof c, "%s/ajustes.txt", d);
+    f = fopen(c, "w"); assert(f); fputs("dvMkvLocal 0\n", f); fclose(f);
+    ajustes_dir(d); assert(ajustes_dv_mkv()); }
   lsCall = fakeCall; lsPayload = fakePayload;
   bus = (LSHandle *)(uintptr_t)1; sessao = 40;
 
@@ -160,5 +165,24 @@ int main(void) {
     (void)abrir();
     assert(dvAudioMkvOrd == 1);
     puts("dvaudio_lg: listas iguais, indice 0 = TrueHD -> E-AC-3 eng"); }
+
+  // 7. Late DV8 (Matis94 614176d73): the prepared output record wins over an
+  //    inconclusive probe; HDR10, P7/EL and non-HEVC stay untouched.
+  { DtsMediaInfo prepared={0};strcpy(prepared.video_codec,"hevc");
+    prepared.dovi_profile=8;prepared.dovi_bl_present=prepared.dovi_rpu_present=1;
+    prepared.dovi_bl_compatibility_id=1;
+    dtsModoDv=dvHabilitado=0;dvNao=VIDEO_DV_NAO_FALHOU;sincronizarRotaDts(&prepared);
+    assert(dtsModoDv && dvHabilitado && !dvNao);
+    for(int invalid=0;invalid<5;invalid++) {
+      DtsMediaInfo bad=prepared;
+      if(invalid==0)bad.dovi_profile=0;
+      if(invalid==1)bad.dovi_rpu_present=0;
+      if(invalid==2)bad.dovi_el_present=1;
+      if(invalid==3)bad.dovi_profile=7;
+      if(invalid==4)strcpy(bad.video_codec,"h264");
+      dtsModoDv=dvHabilitado=0;sincronizarRotaDts(&bad);assert(!dtsModoDv && !dvHabilitado);
+    }
+    dtsModoDv=dvHabilitado=0;
+    puts("dvaudio_lg: late DV8 output promotes controller DV; invalid/layered profiles stay"); }
   return 0;
 }
