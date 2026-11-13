@@ -2,6 +2,7 @@
 #include "dts/dts_playback.h"
 #include "dts/dts_engine.h"
 #include "dts/dts_pipeline.h"
+#include "mediaurl.h"
 #include <assert.h>
 #include <stdatomic.h>
 #include <pthread.h>
@@ -9,7 +10,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-/* Real controller, fake engine/native boundary. No HTTP, TV, UV/uMS or FFmpeg. */
+/* Real controller, fake engine/native boundary. No HTTP, TV or UV/uMS.
+ * NV_DTS_REAL_SUBTITLES links the production FFmpeg subtitle decoder. */
+#ifdef NV_DTS_REAL_SUBTITLES
+#include <libavcodec/avcodec.h>
+#include "dts_pgs_packet.h"
+static atomic_int pgs_ready;
+#endif
 static pthread_mutex_t fixture = PTHREAD_MUTEX_INITIALIZER;
 static int scenario, opens, loads, creates, destroys, nexts, accepted, feeds, plays, pauses, seeks, flushes, eoses;
 static int last_stream, backpressure_left, pending_serial, bad_retry;
@@ -22,6 +29,7 @@ static atomic_int timestamp_fault, timestamp_fail_open, timestamp_block_open, ti
 static atomic_int refill_info_barrier, refill_info_entered, refill_timestamp;
 static atomic_int recovery_barrier, recovery_entered, refill_decode;
 static int last_dv;
+static const char *expected_url="fixture://movie";
 static int last_p7;
 static atomic_llong buffer_ready = 21*1048576LL, buffer_contiguous = 20*1048576LL;
 void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *out) {
@@ -36,7 +44,7 @@ static int64_t fed_audio_pts, fed_video_pts;
 static long fake_wall=100, fake_thread_cpu;
 static void (*native_event)(void *,const char *);
 static void *native_user;
-enum { NORMAL, OPEN_FAIL, BACKPRESSURE, BLOCK_READ, EOF_MODE, MAPPING, MAPPING_BAD, SUBTITLES, CORE_RECOVERY, NO_CORE_FAIL, CPU_BUDGET, DELAYED_ID, PACING, SUSTAINED, SEEK_PREROLL, SEEK_SEGMENT, TIMESTAMP_ONCE, TIMESTAMP_REPEAT, TIMESTAMP_PAUSED, TIMESTAMP_CANCEL, NATIVE_STALL, NATIVE_REPEAT, NATIVE_NO_CLOCK, NATIVE_TRANSIENT, NATIVE_RECOVERY_NO_CLOCK, NATIVE_RECOVERY_UNLOADED };
+enum { NORMAL, OPEN_FAIL, BACKPRESSURE, BLOCK_READ, EOF_MODE, MAPPING, MAPPING_BAD, SUBTITLES, CORE_RECOVERY, NO_CORE_FAIL, CPU_BUDGET, DELAYED_ID, PACING, SUSTAINED, SEEK_PREROLL, SEEK_SEGMENT, TIMESTAMP_ONCE, TIMESTAMP_REPEAT, TIMESTAMP_PAUSED, TIMESTAMP_CANCEL, NATIVE_STALL, NATIVE_REPEAT, NATIVE_NO_CLOCK, NATIVE_TRANSIENT, NATIVE_RECOVERY_NO_CLOCK, NATIVE_RECOVERY_UNLOADED, SUB_FLOOD, PGS_REAL };
 static int timestampScenario(void) { return scenario>=TIMESTAMP_ONCE && scenario<=TIMESTAMP_CANCEL; }
 struct DtsEngine { DtsMediaInfo info; atomic_int cancelled, interrupted; unsigned char packet[98304]; int serial, core; double base; };
 struct DtsPipeline { void (*event)(void *,const char *); void *user; int loaded, completed, running, flushed, audio_ready, video_ready, generation, packets, broken_segment; double target; };
@@ -63,7 +71,7 @@ void dts_engine_allow_p7(DtsEngine *e,int on) { (void)e; (void)on;
 void dts_engine_dv(DtsEngine *e,int on) { (void)e; last_dv=on; }
 DtsEngine *dts_engine_create(void) { return calloc(1,sizeof(DtsEngine)); }
 int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,int core,double target) {
- (void)headers;assert(!strcmp(url,"fixture://movie"));
+ (void)headers;assert(!strcmp(url,expected_url));
  pthread_mutex_lock(&fixture);opens++;last_stream=stream;last_open_target=target;if(core)core_opens++;pthread_mutex_unlock(&fixture);
  if(scenario==OPEN_FAIL || atomic_load(&timestamp_fail_open) || atomic_load(&e->interrupted)) return -1;
  if(atomic_load(&timestamp_block_open)) {
@@ -73,27 +81,48 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,
  }
  memset(&e->info,0,sizeof e->info);strcpy(e->info.video_codec,"hevc");strcpy(e->info.audio_codec,"aac");
  e->info.width=1920;e->info.height=1080;e->info.audio_stream=stream<0?4:stream;e->info.channels=2;e->info.sample_rate=48000;
+ if(last_dv) { e->info.dovi_profile=8;e->info.dovi_bl_present=e->info.dovi_rpu_present=1;strcpy(e->info.hdr,"DolbyVision"); }
  e->info.n_tracks=4;
  e->info.tracks[0]=(DtsTrack){.stream_index=0,.kind=DTS_VIDEO};
  e->info.tracks[1]=(DtsTrack){.stream_index=1,.kind=DTS_AUDIO,.channels=2};strcpy(e->info.tracks[1].codec,"aac");strcpy(e->info.tracks[1].language,"en");
  e->info.tracks[2]=(DtsTrack){.stream_index=4,.kind=DTS_AUDIO,.channels=6};strcpy(e->info.tracks[2].codec,"dts");strcpy(e->info.tracks[2].language,"pt");
  e->info.tracks[3]=(DtsTrack){.stream_index=9,.kind=DTS_AUDIO,.channels=2};strcpy(e->info.tracks[3].codec,"dts");strcpy(e->info.tracks[3].language,"ja");
  if(scenario==MAPPING_BAD) { e->info.tracks[4]=e->info.tracks[3];e->info.tracks[4].stream_index=10;e->info.n_tracks=5; }
- if(scenario==SUBTITLES || scenario==SEEK_SEGMENT || timestampScenario()) {
+ if(scenario==SUBTITLES || scenario==SUB_FLOOD || scenario==PGS_REAL || scenario==SEEK_SEGMENT || timestampScenario()) {
   e->info.tracks[4]=(DtsTrack){.stream_index=20,.kind=DTS_SUBTITLE};strcpy(e->info.tracks[4].codec,"srt");e->info.n_tracks=5;
  }
  e->core=core;e->base=target;e->serial=0;return 0;
 }
 const DtsMediaInfo *dts_engine_info(DtsEngine *e) { return &e->info; }
-const void *dts_engine_subtitle_parameters(DtsEngine *e,int stream) { (void)e;static int params;return stream==20?&params:NULL; }
+const void *dts_engine_subtitle_parameters(DtsEngine *e,int stream) {
+ (void)e;
+#ifdef NV_DTS_REAL_SUBTITLES
+ static AVCodecParameters params;
+ params.codec_type=AVMEDIA_TYPE_SUBTITLE;params.codec_id=AV_CODEC_ID_HDMV_PGS_SUBTITLE;
+ e->serial=0;atomic_store(&pgs_ready,1);
+#else
+ static int params;
+#endif
+ return stream==20?&params:NULL;
+}
 int dts_engine_has_core(DtsEngine *e) { (void)e;return scenario==CORE_RECOVERY || scenario==CPU_BUDGET || atomic_load(&refill_decode); }
+#ifndef NV_DTS_REAL_SUBTITLES
 struct DtsSubtitles { int unused; };
 DtsSubtitles *dts_subtitles_create(const void *params) {
  assert(params);pthread_mutex_lock(&fixture);sub_created++;pthread_mutex_unlock(&fixture);return calloc(1,sizeof(DtsSubtitles));
 }
 int dts_subtitles_decode(DtsSubtitles *s,const DtsFrame *f,DtsSubtitle *out) {
  static uint8_t pixels[16]={3,4,5,255};assert(s);
- *out=(DtsSubtitle){.rgba=pixels,.w=2,.h=2,.canvas_w=1920,.canvas_h=1080,.start_ns=f->pts_ns,.end_ns=f->pts_ns+1000000000};
+ out->rgba=pixels;out->w=2;out->h=2;
+ out->canvas_w=1920;out->canvas_h=1080;out->start_ns=f->pts_ns;out->end_ns=f->pts_ns+1000000000;
+ if(scenario==SUB_FLOOD) {
+  /* 4K PGS-sized bitmaps nobody reads back: ~8 MB each, every 7th larger than
+   * the whole 16 MB budget. */
+  static uint8_t *big;static int n;
+  if(!big) { big=calloc(1,2100u*2100u*4u);assert(big);big[0]=9; }
+  out->rgba=big;out->canvas_w=3840;out->canvas_h=2160;
+  if(++n%7) { out->w=1920;out->h=1100; } else { out->w=2100;out->h=2100; }
+ }
  strcpy(out->text,"fixture cue");pthread_mutex_lock(&fixture);sub_decoded++;last_sub_pts=f->pts_ns;pthread_mutex_unlock(&fixture);return 1;
 }
 void dts_subtitles_flush(DtsSubtitles *s) { (void)s; }
@@ -101,7 +130,11 @@ void dts_subtitles_destroy(DtsSubtitles *s) {
  if(!s) return;
  pthread_mutex_lock(&fixture);sub_destroyed++;pthread_mutex_unlock(&fixture);free(s);
 }
+#endif
 int dts_engine_next(DtsEngine *e,DtsFrame *f) {
+#ifdef NV_DTS_REAL_SUBTITLES
+ if(scenario==PGS_REAL && atomic_load(&pgs_ready) && e->serial==12) return 0;
+#endif
  if(scenario==CPU_BUDGET) { fake_wall++;fake_thread_cpu++; }
  pthread_mutex_lock(&fixture);nexts++;pthread_mutex_unlock(&fixture);
  if(timestampScenario()) {
@@ -151,7 +184,14 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
    f->pts_ns=(f->kind==DTS_AUDIO?INT64_C(7000000000):INT64_C(6100000000))+(e->serial-131)*INT64_C(100000000);
   }
  }
- if(scenario==SUBTITLES && !(e->serial%2)) { f->kind=DTS_SUBTITLE;f->stream_index=20; }
+ if((scenario==SUBTITLES || scenario==SUB_FLOOD) && !(e->serial%2)) { f->kind=DTS_SUBTITLE;f->stream_index=20; }
+#ifdef NV_DTS_REAL_SUBTITLES
+ if(scenario==PGS_REAL && atomic_load(&pgs_ready) && !(e->serial%2)) {
+  f->kind=DTS_SUBTITLE;f->stream_index=20;
+  unsigned w=e->serial%4?3840:2,h=e->serial%4?2160:2;
+  f->size=pgs_packet(e->packet,sizeof e->packet,w,h);
+ }
+#endif
  return 1;
 }
 int dts_engine_seek(DtsEngine *e,double target) {
@@ -274,6 +314,37 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
+#ifdef NV_DTS_REAL_SUBTITLES
+ if(!strcmp(argv[1],"realpgs")) {
+  scenario=PGS_REAL;p=start(0,4,NULL,0,0);wait_status(p,0,0);
+  dts_playback_subtitle(p,20);s=wait_status(p,0,1);
+  assert(!s.failed && count(&accepted)>=6 && count(&eoses)==1);
+  DtsSubtitle cue;unsigned revision=0;
+  assert(dts_playback_subtitle_bitmap(p,1.2,0,&cue,&revision));
+  assert(cue.rgba && cue.w==2 && cue.h==2 && cue.rgba[3]==255);free(cue.rgba);
+  dts_playback_close(p);
+  puts("PASS real PGS playback: three oversized cues skipped, later cues and A/V reach EOF");return 0;
+ }
+#endif
+ if(!strcmp(argv[1],"url-limit") || !strcmp(argv[1],"url-limit-dv")) {
+  char url[NV_MEDIA_URL_MAX+2];
+  const size_t lengths[]={1024,4095,4096,NV_MEDIA_URL_MAX-1};
+  int dv=!strcmp(argv[1],"url-limit-dv");
+  for(size_t i=0;i<sizeof lengths/sizeof *lengths;i++) {
+   size_t n=lengths[i];memset(url,'a',n);memcpy(url,"https://fixture.invalid/",24);url[n-1]='z';url[n]=0;
+   expected_url=url;int before=count(&opens);
+   dts_playback_next_dv(dv);
+   p=dts_playback_start(url,"",4,0,1,"window",0,NULL,0,0);assert(p);
+   s=wait_status(p,0,0);assert(!s.failed && count(&opens)==before+1);
+   assert((s.info.dovi_profile!=0)==dv);dts_playback_close(p);
+  }
+  int before=count(&creates);memset(url,'b',sizeof url);url[NV_MEDIA_URL_MAX]=0;
+  assert(!dts_playback_start(url,"",4,0,0,"window",0,NULL,0,0));
+  url[NV_MEDIA_URL_MAX]='b';url[NV_MEDIA_URL_MAX+1]=0;
+  assert(!dts_playback_start(url,"",4,0,0,"window",0,NULL,0,0));
+  assert(count(&creates)==before);
+  puts("PASS: full converter URL reaches engine at 1024/4095/4096/8191 bytes; oversize rejected before native creation");return 0;
+ }
  if(!strcmp(argv[1],"refillrace") || !strcmp(argv[1],"refillracepause") || !strcmp(argv[1],"refillraceaudio")) {
   scenario=SUSTAINED;p=start(0,4,NULL,0,0);wait_count(&accepted,10);
   atomic_store(&refill_info_barrier,1);atomic_store(&buffer_contiguous,0);
@@ -527,6 +598,19 @@ int main(int argc,char **argv) {
   assert(dts_playback_subtitle_bitmap(p,at,999,&cue,&revision));assert(cue.rgba[0]==3);free(cue.rgba);
   dts_playback_subtitle(p,-1);wait_count(&sub_destroyed,1);assert(!dts_playback_subtitle_text(p,at,text,sizeof text));
   assert(dts_playback_subtitle_bitmap(p,at,revision,&cue,&revision));assert(!revision && !cue.rgba);dts_playback_close(p);
+  assert(count(&sub_created)==count(&sub_destroyed));
+ } else if(!strcmp(argv[1],"subflood")) {
+  /* C3 tester's log 11/11: a full subtitle queue ended the session. Now the
+   * oldest cues go and an oversized cue is skipped; playback goes on. */
+  scenario=SUB_FLOOD;p=start(0,4,NULL,0,0);wait_status(p,0,0);dts_playback_subtitle(p,20);
+  wait_count(&sub_decoded,30);
+  DtsPlaybackStatus st;dts_playback_status(p,&st);assert(!st.failed);
+  dts_playback_pause(p,1);wait_count(&pauses,1);
+  char text[64];double at=last_sub_pts/1e9;
+  DtsSubtitle cue;unsigned revision=0;
+  if(dts_playback_subtitle_bitmap(p,at,0,&cue,&revision)) { assert(cue.rgba && cue.rgba[0]==9 && cue.w==1920);free(cue.rgba); }
+  else assert(!dts_playback_subtitle_text(p,at,text,sizeof text));                /* last one was the skipped giant */
+  dts_playback_status(p,&st);assert(!st.failed);dts_playback_close(p);
   assert(count(&sub_created)==count(&sub_destroyed));
  } else if(!strcmp(argv[1],"reordered")) {
   DtsTrack selected={.kind=DTS_AUDIO,.channels=2};strcpy(selected.language,"jpn");strcpy(selected.codec,"dts");
