@@ -143,16 +143,37 @@ double cacheboost_volume_db(int pct) {
   return 20.0 * log10((double)pct / 100.0);
 }
 
+// Auto RAM-budget reduction (Matis94 C3, optional setting). Weak fallback
+// keeps the historical always-reduce behavior in host tests that do not link
+// ajustes.c; the real symbol wins in the app.
+__attribute__((weak)) int ajustes_buffer_ram_reduz(void) { return 1; }
+static int bufferReduzAtivo(void) { return ajustes_buffer_ram_reduz(); }
+
 int cacheboost_buffer_mb(int opcao, long livreMb) {
   int pedido = opcao >= 1 && opcao <= 3 ? 32 << opcao : 0, mb = pedido;
-  // DTS keeps one active 4 MiB range in addition to the queued buffer.
-  while (mb && (livreMb < 0 || livreMb - mb - 4 < CB_BUFFER_PISO_MB)) mb = mb > 64 ? mb / 2 : 0;
+  // DTS keeps one active 4 MiB range in addition to the queued buffer. The
+  // reduction only runs while the setting is on; CB_BUFFER_PISO_MB stays a
+  // hard limit in either case — with the setting off the loop still stops a
+  // request that would not leave the floor.
+  while (mb && (livreMb < 0 || livreMb - mb - 4 < CB_BUFFER_PISO_MB) &&
+         (bufferReduzAtivo() || livreMb < CB_BUFFER_PISO_MB)) mb = mb > 64 ? mb / 2 : 0;
   if (mb != pedido)
     printf("[buffer] %d MiB pedido, %d MiB usado (livre %ld MiB, piso %d)\n", pedido, mb, livreMb, CB_BUFFER_PISO_MB);
   return mb;
 }
 
 #ifndef NV_ANDROID
+void cacheboost_buffer_texto(char *dst, size_t n, long long used, long long capacity, int opcao) {
+  if (!dst || !n) return;
+  if (capacity <= 0) { snprintf(dst, n, "Buffer: system"); return; }
+  int pedido = opcao >= 1 && opcao <= 3 ? 32 << opcao : 0;
+  double total = capacity / 1048576.0;
+  if (used < 0) used = 0;
+  if (pedido && fabs(total - pedido) >= 0.5)
+    snprintf(dst, n, "Buffer: %.1f / %.0f MiB total (%d MiB selected)", used / 1048576.0, total, pedido);
+  else
+    snprintf(dst, n, "Buffer: %.1f / %.0f MiB total", used / 1048576.0, total);
+}
 void cacheboost_backend_ganho(int pct) { (void)pct; }
 void cacheboost_backend_cache(int mb) { (void)mb; }
 void cacheboost_backend_titulo(const char *id) { (void)id; }

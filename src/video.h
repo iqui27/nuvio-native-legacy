@@ -15,6 +15,7 @@
 // A sequencia abaixo, ao contrario, saiu de captura ls-monitor do navegador da
 // TV tocando o mesmo arquivo: e o que comprovadamente funciona.
 #ifndef NV_VIDEO_H
+#include <stddef.h>
 #define NV_VIDEO_H
 #include "legopacidade.h"
 #include <SDL2/SDL_stdinc.h>
@@ -128,7 +129,11 @@ double video_duracao(void);  // 0 enquanto desconhecida
 // baixado para descobrir o idioma das faixas — ver mkv.h. Vale so para MKV com
 // capitulos; quem chama precisa de um plano B.
 double video_creditos(void);
-double video_buffer_fim(void); // ate onde o buffer cobre (s); 0 se desconhecido
+double video_buffer_fim(void);
+// Host-only playback diagnostics text (buffer used/capacity/HTTP workers).
+#ifdef NV_HTTP_BUFFER_DIAG
+void video_buffer_test_text(char *out, size_t n);
+#endif // ate onde o buffer cobre (s); 0 se desconhecido
 // Ha quanto tempo (ms) o pipeline esta parado esperando dados, do par de
 // eventos bufferingStart/bufferingEnd do uMS; 0 quando NAO esta bufferizando.
 //

@@ -364,11 +364,18 @@ double video_duracao(void) { return SIM.duracao; }
 // capitulos. Melhor um stub honesto que um numero inventado.
 double video_creditos(void) { return 0.0; }
 double video_buffer_fim(void) { return SIM.bufferFim; }
+#ifdef NV_HTTP_BUFFER_DIAG
+void video_buffer_test_text(char *out, size_t n) {
+  cacheboost_buffer_texto(out, n, 0, 0, ajustes_buffer_preset());
+}
+
+#endif
 static VideoStats simStats;
 static int simStatsDef;
 void video_simular_estatisticas(const VideoStats *s) {
   if (s) { simStats = *s; simStatsDef = 1; } else simStatsDef = 0;
 }
+
 void video_informacoes(VideoInfo *s) { *s = SIM.info; }
 void video_estatisticas(VideoStats *s) {
   if (simStatsDef) { *s = simStats; return; }
@@ -833,6 +840,39 @@ static double bufferSeg;
 // bufferSeg ja tem aqui — a leitura errada custa um quadro de decisao, nunca
 // um estado invalido.
 static Uint32 bufferandoDesde;
+// O relogio do buffering de fora do evento: o currentTime avanca (media
+// avancando) ou um seek fica pendente, e a barra de "Carregando" precisa
+// dizer a verdade (Matis94 d6ceeaecb).
+static double bufferandoPos;
+static unsigned bufferandoAvancos;
+static unsigned dtsRefillMs;
+static Uint32 dtsRefillEm;
+// Seek pendente neste instante (o seekView do fork virou seekEm/seekRetry aqui).
+static void bufferandoFim(void);
+static int bufferandoSeekPendente(void) {
+  return seekEm || seekEnvEm || seekRetryEm;
+}
+/* Do not depend on bufferingEnd arriving, or arriving after bufferingStart.
+ * Require consecutive natural clock steps with data ahead; a seek jump, a
+ * pause or a dry buffer keeps the stall honest. */
+static void bufferandoClock(double actual) {
+  if (!bufferandoDesde) return;
+  double step = actual - bufferandoPos;
+  bufferandoPos = actual;
+  if (!pronto || !tocando || pausaPedida || falhou || terminou ||
+      bufferandoSeekPendente() || !isfinite(step) || step < 0.01 ||
+      step > 1.5 || bufferSeg < actual + 0.5) {
+    bufferandoAvancos = 0;
+    return;
+  }
+  if (++bufferandoAvancos >= 2) {
+    bufferandoFim();
+    marco("buffering FIM (clock progressing with data ahead)");
+  }
+}
+static void bufferandoFim(void) {
+  bufferandoDesde = 0; bufferandoAvancos = 0; bufferandoPos = -1;
+}
 
 static void esperar(int ms) { struct timespec t; t.tv_sec = ms / 1000;
   t.tv_nsec = (long)(ms % 1000) * 1000000L; nanosleep(&t, NULL); }
@@ -1420,14 +1460,14 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
     // So o PRIMEIRO de uma sequencia carimba. O uMS repete o bufferingStart
     // enquanto nao enche; reiniciar o relogio a cada repeticao daria um "faz
     // 0 ms que travou" eterno, que e exatamente o caso que se quer detectar.
-    if (!bufferandoDesde) bufferandoDesde = SDL_GetTicks();
+    if (!bufferandoDesde) { bufferandoDesde = SDL_GetTicks(); bufferandoPos = posNativa; bufferandoAvancos = 0; }
     snprintf(m, sizeof m, "buffering INICIO (buffer %+.1fs a frente)",
              bufferSeg - posSeg);
     marco(m);
   }
   if (strstr(p, "bufferingEnd")) {
     char m[64];
-    bufferandoDesde = 0;
+    bufferandoFim();
     snprintf(m, sizeof m, "buffering FIM (buffer %+.1fs a frente)",
              bufferSeg - posSeg);
     marco(m);
@@ -1435,6 +1475,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
   if (strstr(p, "playing")) {
     pausaConfirmada = 0;
     tocando = 1;
+    if (!pausaPedida && !bufferandoSeekPendente()) bufferandoFim();
     dvSilenciarTv();
     if (acb && midia[0]) {
       long tarefa = 0;
@@ -1546,6 +1587,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
   }
   { double v = numeroDe(p, "\"currentTime\":");
     if (v >= 0) {
+      bufferandoClock(v / 1000.0);
       posSeg = posNativa = v / 1000.0;
       pthread_mutex_lock(&travaAmostra);
       posAmostra = posSeg;
@@ -3003,6 +3045,9 @@ static void pararSessao(void) {
   /* Invalidate native callbacks before closing the DTS worker. A closing
    * pipeline must not queue an error for the replacement source. */
   __atomic_add_fetch(&sessao, 1, __ATOMIC_ACQ_REL);
+  bufferandoFim();
+  dtsRefillMs = 0;
+  dtsRefillEm = 0;
   moviebuffer_stop();
   int tinhaDts = dtsSessao != NULL;
   DtsPlayback *antigoDts = dtsSessao;
@@ -3322,6 +3367,12 @@ static void bombearDts(void) {
   int i;
   memset(&st, 0, sizeof st);
   dts_playback_status(dtsSessao, &st);
+  /* A seek/track reconfiguration can clear refill before metadata is ready.
+   * Update even during preroll, before draining any fresh native starvation
+   * events, so ending an old refill cannot erase a new bufferingStart. */
+  if (dtsRefillMs && !st.buffering_ms) bufferandoFim();
+  if (st.buffering_ms && (st.buffering_ms != dtsRefillMs || pausaPedida)) dtsRefillEm = SDL_GetTicks();
+  dtsRefillMs = st.buffering_ms;
   if (st.failed) {
     /* A fast startup failure can happen before the main thread sees its stages. */
     while (dts_playback_event(dtsSessao, event, sizeof event)) logDtsStage(event);
@@ -3737,6 +3788,26 @@ double video_buffer_fim(void) {
   }
   return end;
 }
+#ifdef NV_HTTP_BUFFER_DIAG
+void video_buffer_test_text(char *out, size_t n) {
+  DtsBufferInfo b = {0};
+  if (dtsSessao) {
+    DtsPlaybackStatus st = {0}; dts_playback_status(dtsSessao, &st);
+    if (st.prepared && !st.failed) b = st.buffer;
+  } else if (moviebuffer_info(&b) <= 0) b = (DtsBufferInfo){0};
+  // Use the measured converter queue or native RAM ring. A selected setting
+  // alone is not evidence of the buffer used by the current playback path.
+  if (b.capacity_bytes > 0) {
+    if (b.ready_bytes > b.capacity_bytes) b.ready_bytes = b.capacity_bytes;
+    cacheboost_buffer_texto(out, n, b.ready_bytes, b.capacity_bytes, ajustes_buffer_preset());
+  } else cacheboost_buffer_texto(out, n, 0, 0, ajustes_buffer_preset());
+  if (out && n && b.http_workers >= 1 && b.http_workers <= 4) {
+    size_t used = strlen(out);
+    snprintf(out + used, n - used, " · HTTP: %d (%s)", b.http_workers,
+             dtsSessao ? "DTS/DV" : "Native");
+  }
+}
+#endif
 // webOS: so o buffer em SEGUNDOS e real (bufferRange do uMS); bytes, conexoes
 // e quadros o uMS nao conta. O host e o do link pedido (o uMS nao diz o final).
 void video_estatisticas(VideoStats *s) {
@@ -3842,7 +3913,9 @@ int    video_seek_desistiu(void) { return seekRetry.desistiu; }
 int    video_terminou(void) { return terminou; }
 int    video_conflito_recurso(void) { return 0; }
 unsigned video_bufferando_ms(void) {
-  if (dtsSessao) { DtsPlaybackStatus st = {0}; dts_playback_status(dtsSessao, &st); if (st.buffering_ms) return st.buffering_ms; }
+  // O relogio do refill fica no pump: buffering_ms some do snapshot antes de
+  // o evento de fim chegar, e video_bufferando_ms so era chamado depois.
+  if (dtsSessao && dtsRefillMs) return pausaPedida ? 0 : dtsRefillMs + (unsigned)(SDL_GetTicks() - dtsRefillEm);
   Uint32 d = bufferandoDesde;
   // Esperando para reconectar nao e "fonte que morreu sem dizer": o watchdog
   // (app.c) nao pode trocar de fonte enquanto a maquina de reconexao decide.

@@ -90,6 +90,9 @@ void cacheboost_backend_buffer(int mb);
 // buffer plus the DTS active range (4 MiB); nothing fits or unknown -> 0 (Auto). Logs any cut.
 #define CB_BUFFER_PISO_MB 100
 int cacheboost_buffer_mb(int opcao, long livreMb);
+// One-line player OSD text ("Buffer: 84.5 / 128 MiB total (256 MiB selected)",
+// "Buffer: system"); capacity <= 0 means the backend default, used = ready bytes.
+void cacheboost_buffer_texto(char *dst, size_t n, long long used, long long capacity, int opcao);
 // Off Android: the last cacheboost_backend_buffer value (webOS DTS/DV read-ahead).
 int cacheboost_backend_buffer_mb(void);
 
