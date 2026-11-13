@@ -7456,73 +7456,6 @@ int desc_tmdb_elenco(const char *json, CatItem *d) {
   return tmdbElenco(json, d, 0);
 }
 
-// O nome que o TMDB devolve quando NAO tem traducao e "Episodio 3" (ou o
-// equivalente no idioma pedido): pior que o titulo original. Generico = o
-// numero do episodio como palavra inteira e, tirado ele, sobra no maximo UMA
-// palavra ("Episode 3", "Серія 3", "Episodul 3", "#3 Episodio"). Titulo de
-// verdade com mais de uma palavra sobrando ("Season Finale 3") nao cai aqui.
-int desc_nome_episodio_generico(const char *nome, int episodio) {
-  char num[16];
-  const char *p = nome;
-  size_t nn;
-  int palavras = 0, achou = 0, emPalavra = 0;
-  if (!nome || !nome[0]) return 1;
-  snprintf(num, sizeof num, "%d", episodio);
-  nn = strlen(num);
-  for (; *p; p++) {
-    unsigned char c = (unsigned char)*p;
-    if (c >= '0' && c <= '9') {
-      const char *q = p;
-      while (*q >= '0' && *q <= '9') q++;
-      if ((size_t)(q - p) == nn && !strncmp(p, num, nn)) achou = 1;
-      else if (!emPalavra) { palavras++; emPalavra = 1; }
-      p = q - 1;
-      continue;
-    }
-    if (c == ' ' || c == '#' || c == '.' || c == ':' || c == '-' || c == ',') {
-      emPalavra = 0;
-      continue;
-    }
-    if (!emPalavra) { palavras++; emPalavra = 1; }
-  }
-  return achou && palavras <= 1;
-}
-
-// Presentation only: cloud metadata can use a release filename as the episode
-// name. Neither the video ID nor the provider's season/episode pair is changed.
-static int nomeEpisodioArquivo(const char *nome) {
-  static const char *ext[] = {".mkv", ".mp4", ".m4v", ".avi", ".webm", ".mov", ".wmv", ".ts", ".m2ts"};
-  char baixo[1024];
-  size_t n = strlen(nome);
-  while(n && (unsigned char)nome[n-1] <= ' ') n--;
-  for(unsigned i=0;i<sizeof ext/sizeof *ext;i++) {
-    size_t k=strlen(ext[i]);
-    if(n>k && !strncasecmp(nome+n-k,ext[i],k))return 1;
-  }
-  // Also catch truncated/extensionless release names. Require both an episode
-  // token and technical tags separated like a filename, not just "1080p".
-  if(n>=sizeof baixo)n=sizeof baixo-1;
-  for(size_t i=0;i<n;i++)baixo[i]=nome[i]>='A'&&nome[i]<='Z'?nome[i]+('a'-'A'):nome[i];
-  baixo[n]=0;
-  if(!strchr(baixo,'.') && !strchr(baixo,'_'))return 0;
-  for(const char *p=baixo;*p;p++)if(*p=='s' && p[1]>='0' && p[1]<='9') {
-    const char *q=p+1;
-    while(*q>='0' && *q<='9')q++;
-    if(*q=='e' && q[1]>='0' && q[1]<='9' &&
-       (strstr(baixo,"1080p") || strstr(baixo,"2160p") || strstr(baixo,"720p") ||
-        strstr(baixo,"h265") || strstr(baixo,"h264") || strstr(baixo,"x265") || strstr(baixo,"x264")))return 1;
-  }
-  return 0;
-}
-static int nomeEpisodioReserva(const char *nome,int episodio) {
-  char reserva[64];
-  snprintf(reserva,sizeof reserva,i18n("Episódio %d"),episodio);
-  return nomeEpisodioArquivo(nome) || !strcmp(nome,reserva);
-}
-int desc_nome_episodio_reserva(const char *nome, int episodio) {
-  return nome && nome[0] && nomeEpisodioReserva(nome, episodio);
-}
-
 int desc_tmdb_notas_temporada(const char *json, CatEp *eps, int n,
                               int temporada) {
   return desc_tmdb_notas_temporada_ex(json, eps, n, temporada, DESC_EPT_SINOPSE);
@@ -7566,11 +7499,11 @@ int desc_tmdb_notas_temporada_ex(const char *json, CatEp *eps, int n,
           // traducao o TMDB devolve "Episodio 3", pior que o titulo original —
           // por isso o generico nao entra (desc_nome_episodio_generico), e o
           // nome que ja estava fica.
-          if (((textos & DESC_EPT_NOME) || nomeEpisodioReserva(eps[i].nome,num)) &&
+          if (((textos & DESC_EPT_NOME) || cat_nome_episodio_reserva(eps[i].nome,num)) &&
               js_texto(p, f, "name", nome, sizeof nome) && nome[0] &&
-              !nomeEpisodioArquivo(nome) &&
-              !desc_nome_episodio_generico(nome, num) &&
-              strcmp(nome, eps[i].nome) && (!soVazio || !eps[i].nome[0] || nomeEpisodioReserva(eps[i].nome,num))) {
+              !cat_nome_episodio_arquivo(nome) &&
+              !cat_nome_episodio_generico(nome, num) &&
+              strcmp(nome, eps[i].nome) && (!soVazio || !eps[i].nome[0] || cat_nome_episodio_reserva(eps[i].nome,num))) {
             snprintf(eps[i].nome, sizeof eps[i].nome, "%s", nome);
             mudou = 1;
           }
@@ -7806,10 +7739,10 @@ static int parsearEpisodios(const char *corpo, CatEp *eps, int max) {
       // (o Kitsu) tambem tem o nome lido.
       js_texto_raiz_em(p, f, "id", e->vid, sizeof e->vid);
       if (!nome[0]) js_texto_raiz_em(p, f, "title", nome, sizeof nome);
-      if(nomeEpisodioArquivo(nome)) {
+      if(cat_nome_episodio_arquivo(nome)) {
         char alternativo[1024] = "";
         js_texto_raiz_em(p,f,"title",alternativo,sizeof alternativo);
-        if(alternativo[0] && !nomeEpisodioArquivo(alternativo))
+        if(alternativo[0] && !cat_nome_episodio_arquivo(alternativo))
           snprintf(nome,sizeof nome,"%s",alternativo);
         else snprintf(nome,sizeof nome,i18n("Episódio %d"),ne);
       }
@@ -7883,8 +7816,8 @@ void desc_mesclar_episodios(CatEp *base, int nb, const CatEp *outro, int no, int
     if (c > 0) { j++; continue; }
     // A filename/our temporary label is missing display metadata, even when
     // the addon is preferred. A temporary donor must not overwrite a title.
-    int semNome=!base[i].nome[0] || nomeEpisodioReserva(base[i].nome,base[i].episodio);
-    if(outro[j].nome[0] && (semNome || !nomeEpisodioReserva(outro[j].nome,outro[j].episodio)) &&
+    int semNome=!base[i].nome[0] || cat_nome_episodio_reserva(base[i].nome,base[i].episodio);
+    if(outro[j].nome[0] && (semNome || !cat_nome_episodio_reserva(outro[j].nome,outro[j].episodio)) &&
        (modo==DESC_MESCLA_TEXTO || semNome))
       snprintf(base[i].nome,sizeof base[i].nome,"%s",outro[j].nome);
     if (modo == DESC_MESCLA_TEXTO) {
@@ -8173,7 +8106,7 @@ static void tmdbEtapaProcessarUm(TmdbEtapa *etapa, const char *p, const char *f,
       tmdbGuardarTexto(etapa, &patch->sinopse, sinopse);
     if ((textos & DESC_EPT_NOME) && (!vazio || (!etapa->chaves[i].temNome && !patch->nome)) &&
         js_texto(p, f, "name", nome, sizeof nome) && nome[0] &&
-        !desc_nome_episodio_generico(nome, num))
+        !cat_nome_episodio_generico(nome, num))
       tmdbGuardarTexto(etapa, &patch->nome, nome);
   }
 }
@@ -8216,7 +8149,7 @@ static int tmdbEtapaPublicar(int item, int neps, CatEpToken token, long tmdb,
         if (e->tmdbE > 0 && (e->tmdbSerie != tmdb || anterior != e->tmdbE)) marcados++;
         if (!e->duracao[0] && p->runtime) { snprintf(e->duracao, sizeof e->duracao, "%d min", p->runtime); feitos++; }
         if (p->temNota) { e->nota = p->nota; feitos++; }
-        if ((textos & DESC_EPT_NOME) && p->nome && (!(textos & DESC_EPT_SO_VAZIO) || !e->nome[0] || nomeEpisodioReserva(e->nome, e->episodio)) && strcmp(e->nome, tmdbTexto(etapa, p->nome))) {
+        if ((textos & DESC_EPT_NOME) && p->nome && (!(textos & DESC_EPT_SO_VAZIO) || !e->nome[0] || cat_nome_episodio_reserva(e->nome, e->episodio)) && strcmp(e->nome, tmdbTexto(etapa, p->nome))) {
           snprintf(e->nome, sizeof e->nome, "%s", tmdbTexto(etapa, p->nome)); feitos++;
         }
         if ((textos & DESC_EPT_SINOPSE) && p->sinopse && (!(textos & DESC_EPT_SO_VAZIO) || !e->sinopse[0]) && strcmp(e->sinopse, tmdbTexto(etapa, p->sinopse))) {

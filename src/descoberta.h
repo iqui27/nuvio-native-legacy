@@ -341,11 +341,6 @@ int  desc_tmdb_notas_temporada(const char *json, CatEp *eps, int n,
 #define DESC_EPT_SO_VAZIO 4
 int  desc_tmdb_notas_temporada_ex(const char *json, CatEp *eps, int n,
                                   int temporada, int textos);
-// 1 quando `nome` e o rotulo sem traducao do TMDB ("Episode 3"). Pura.
-int  desc_nome_episodio_generico(const char *nome, int episodio);
-// 1 when the name is a release filename or the localized "Episódio N"
-// placeholder — display metadata still missing.
-int  desc_nome_episodio_reserva(const char *nome, int episodio);
 // Junta duas listas de episodios ORDENADAS por (temporada, episodio): para cada
 // episodio de `base` que `outro` tambem tem, `modo` DESC_MESCLA_TEXTO troca
 // nome e sinopse pelos do outro quando ele os tem; DESC_MESCLA_VAZIOS so

@@ -70,6 +70,7 @@ static void catTravar(void) {
   }
 }
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #ifdef NV_CAT_TEST_ANTES_TRAVA
 // Teste (tests/catcorrida.c): outra troca de bloco entre a entrada e a trava.
@@ -1956,6 +1957,74 @@ CatEpToken cat_episodios_token(int item, unsigned versao) {
   pthread_mutex_unlock(&epTrava);
   return token;
 }
+// O nome que o TMDB devolve quando NAO tem traducao e "Episodio 3" (ou o
+// equivalente no idioma pedido): pior que o titulo original. Generico = o
+// numero do episodio como palavra inteira e, tirado ele, sobra no maximo UMA
+// palavra ("Episode 3", "Серія 3", "Episodul 3", "#3 Episodio"). Titulo de
+// verdade com mais de uma palavra sobrando ("Season Finale 3") nao cai aqui.
+int cat_nome_episodio_generico(const char *nome, int episodio) {
+  char num[16];
+  const char *p = nome;
+  size_t nn;
+  int palavras = 0, achou = 0, emPalavra = 0;
+  if (!nome || !nome[0]) return 1;
+  snprintf(num, sizeof num, "%d", episodio);
+  nn = strlen(num);
+  for (; *p; p++) {
+    unsigned char c = (unsigned char)*p;
+    if (c >= '0' && c <= '9') {
+      const char *q = p;
+      while (*q >= '0' && *q <= '9') q++;
+      if ((size_t)(q - p) == nn && !strncmp(p, num, nn)) achou = 1;
+      else if (!emPalavra) { palavras++; emPalavra = 1; }
+      p = q - 1;
+      continue;
+    }
+    if (c == ' ' || c == '#' || c == '.' || c == ':' || c == '-' || c == ',') {
+      emPalavra = 0;
+      continue;
+    }
+    if (!emPalavra) { palavras++; emPalavra = 1; }
+  }
+  return achou && palavras <= 1;
+}
+
+// Presentation only: cloud metadata can use a release filename as the episode
+// name. Neither the video ID nor the provider's season/episode pair is changed.
+int cat_nome_episodio_arquivo(const char *nome) {
+  static const char *ext[] = {".mkv", ".mp4", ".m4v", ".avi", ".webm", ".mov", ".wmv", ".ts", ".m2ts"};
+  char baixo[1024];
+  size_t n = strlen(nome);
+  while(n && (unsigned char)nome[n-1] <= ' ') n--;
+  for(unsigned i=0;i<sizeof ext/sizeof *ext;i++) {
+    size_t k=strlen(ext[i]);
+    if(n>k && !strncasecmp(nome+n-k,ext[i],k))return 1;
+  }
+  // Also catch truncated/extensionless release names. Require both an episode
+  // token and technical tags separated like a filename, not just "1080p".
+  if(n>=sizeof baixo)n=sizeof baixo-1;
+  for(size_t i=0;i<n;i++)baixo[i]=nome[i]>='A'&&nome[i]<='Z'?nome[i]+('a'-'A'):nome[i];
+  baixo[n]=0;
+  if(!strchr(baixo,'.') && !strchr(baixo,'_'))return 0;
+  for(const char *p=baixo;*p;p++)if(*p=='s' && p[1]>='0' && p[1]<='9') {
+    const char *q=p+1;
+    while(*q>='0' && *q<='9')q++;
+    if(*q=='e' && q[1]>='0' && q[1]<='9' &&
+       (strstr(baixo,"1080p") || strstr(baixo,"2160p") || strstr(baixo,"720p") ||
+        strstr(baixo,"h265") || strstr(baixo,"h264") || strstr(baixo,"x265") || strstr(baixo,"x264")))return 1;
+  }
+  return 0;
+}
+// Placeholder check across languages: exact current-language label, or any
+// "word + episode number" label (catches labels stored before a language
+// switch). Real titles never become "missing" unless they are that generic.
+int cat_nome_episodio_reserva(const char *nome, int episodio) {
+  char reserva[64];
+  if (!nome || !nome[0]) return 0;
+  snprintf(reserva, sizeof reserva, i18n("Episódio %d"), episodio);
+  return cat_nome_episodio_arquivo(nome) || !strcmp(nome, reserva) ||
+         cat_nome_episodio_generico(nome, episodio);
+}
 int cat_episodios_chaves_token(int item, CatEpChave *out, int n, CatEpToken token) {
   int ok = 0;
   if (!out || n < 1 || !token) return 0;
@@ -1967,7 +2036,7 @@ int cat_episodios_chaves_token(int item, CatEpChave *out, int n, CatEpToken toke
       // A release filename or a localized placeholder is NOT a resolved name:
       // the TMDB pass must still be allowed to replace it.
       out[i].temNome = eps[epIni[item] + i].nome[0] != 0 &&
-                       !desc_nome_episodio_reserva(eps[epIni[item] + i].nome,
+                       !cat_nome_episodio_reserva(eps[epIni[item] + i].nome,
                                                   eps[epIni[item] + i].episodio);
       out[i].temSinopse = eps[epIni[item] + i].sinopse[0] != 0;
     }

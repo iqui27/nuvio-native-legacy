@@ -149,12 +149,16 @@ int main(void) {
   // 6-10 need the new APIs; -DNV_CWPROV_OLD builds only the row part.
 #ifndef NV_CWPROV_OLD
   // 6. nomeEpisodioArquivo/nomeEpisodioReserva (via API publica do modulo).
-  assert(desc_nome_episodio_reserva("Show.S01E02.1080p.WEB-DL.x264.mkv", 2));
-  assert(desc_nome_episodio_reserva("Show_S03E07_H265_2160p", 7));
-  assert(desc_nome_episodio_reserva("Episódio 4", 4));
-  assert(!desc_nome_episodio_reserva("Episódio 4", 5));
-  assert(!desc_nome_episodio_reserva("The One With the Pilot", 1));
-  assert(!desc_nome_episodio_reserva("", 1));
+  assert(cat_nome_episodio_reserva("Show.S01E02.1080p.WEB-DL.x264.mkv", 2));
+  assert(cat_nome_episodio_reserva("Show_S03E07_H265_2160p", 7));
+  assert(cat_nome_episodio_reserva("Episódio 4", 4));
+  assert(!cat_nome_episodio_reserva("Episódio 4", 5));
+  // Placeholder saved before a language switch is still "missing".
+  assert(cat_nome_episodio_reserva("Folge 4", 4));
+  assert(cat_nome_episodio_reserva("Episode 4", 4));
+  assert(!cat_nome_episodio_reserva("Season Finale 4", 4));
+  assert(!cat_nome_episodio_reserva("The One With the Pilot", 1));
+  assert(!cat_nome_episodio_reserva("", 1));
   puts("ok  placeholder names: extension, release pattern, localized label");
 
   // 7. TMDB substitui nome de arquivo mesmo com SO_VAZIO; nome de arquivo do

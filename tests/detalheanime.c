@@ -713,15 +713,15 @@ int main(void) {
     puts("ok  #176: filme com a preferencia: titulo/sinopse/generos do addon, resto do Cinemeta");
 
     // 15) O NOME GENERICO (funcao pura).
-    assert(desc_nome_episodio_generico("Episode 3", 3));
-    assert(desc_nome_episodio_generico("Episódio 12", 12));
-    assert(desc_nome_episodio_generico("Серія 3", 3));
-    assert(desc_nome_episodio_generico("#3", 3));
-    assert(desc_nome_episodio_generico("", 3));
-    assert(!desc_nome_episodio_generico("Episode 3", 4));
-    assert(!desc_nome_episodio_generico("The Brokenhearted Mage", 1));
-    assert(!desc_nome_episodio_generico("Season Finale 3", 3));
-    assert(!desc_nome_episodio_generico("Apollo 13 Pt 2", 2));
+    assert(cat_nome_episodio_generico("Episode 3", 3));
+    assert(cat_nome_episodio_generico("Episódio 12", 12));
+    assert(cat_nome_episodio_generico("Серія 3", 3));
+    assert(cat_nome_episodio_generico("#3", 3));
+    assert(cat_nome_episodio_generico("", 3));
+    assert(!cat_nome_episodio_generico("Episode 3", 4));
+    assert(!cat_nome_episodio_generico("The Brokenhearted Mage", 1));
+    assert(!cat_nome_episodio_generico("Season Finale 3", 3));
+    assert(!cat_nome_episodio_generico("Apollo 13 Pt 2", 2));
     puts("ok  #176: nome generico do TMDB reconhecido, titulo de verdade nao");
 
     // 16) Mescla pura: modo TEXTO troca; modo VAZIOS so preenche.

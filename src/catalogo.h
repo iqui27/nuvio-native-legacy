@@ -340,6 +340,14 @@ int cat_indice_reabrir(int indice, const CatItem *copia);
 // Acrescenta um titulo ao FIM e devolve o indice, ou -1. Para o titulo que veio
 // de fora do catalogo (filmografia de ator, "Mais como este"). Ver a nota sobre
 // a troca de bloco em catalogo.c.
+// Pure episode-name checks (presentation only, IDs untouched).
+// 1 when `nome` is TMDB's untranslated label ("Episode 3").
+int cat_nome_episodio_generico(const char *nome, int episodio);
+// 1 when `nome` looks like a release filename.
+int cat_nome_episodio_arquivo(const char *nome);
+// 1 when `nome` is a filename or an "Episódio N" placeholder (any language):
+// display metadata still missing.
+int cat_nome_episodio_reserva(const char *nome, int episodio);
 int cat_acrescentar(const CatItem *item);
 
 // Acrescenta `qtd` itens numa UNICA troca de bloco e escreve os indices em
