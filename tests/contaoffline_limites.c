@@ -28,6 +28,9 @@ static int perfilTeste = 1, trocaResposta, paginaStatus, paginaN;
 static int vistosTeste, repeatPage;
 static char *paginaTeste;
 static int leiturasBibTeste, bibAtivaTeste = 900, podasTeste;
+// Espelho vivo da biblioteca em memoria (#639): itens da conta que uma copia
+// velha do cache nao pode apagar. Os itens ficam apos contalib.h.
+static int mirrorTeste;
 void contapend_podar(long long desdeMs) { (void)desdeMs; podasTeste++; }
 
 int contalib_ler_biblioteca(const char *j) {
@@ -101,8 +104,11 @@ int sessao_token_copiar(char *dst, size_t n) { if (dst && n) dst[0] = 0; return 
 #include "../src/contalib.h"
 void ajustes_perfil_padrao(void) {}
 int ajustes_fonte_biblioteca(void) { return 0; }
-int contalib_n(void) { return 0; }
-const ContaLibItem *contalib_item(int i) { (void)i; return NULL; }
+static ContaLibItem mirrorItens[2];
+int contalib_n(void) { return mirrorTeste; }
+const ContaLibItem *contalib_item(int i) {
+  return i >= 0 && i < mirrorTeste && i < 2 ? &mirrorItens[i] : NULL;
+}
 void iptv_contas_esquecer_todas(void) {}
 void m3u_fontes_invalidar(void) {}
 void stalker_fontes_invalidar(void) {}
@@ -129,13 +135,16 @@ static int semCopia(const char *sup, int perfil, const char *dono) {
   free(c);
   return vazio;
 }
-static void paginaIncompleta(int vistos, int st, int temCopia) {
+static void paginaIncompletaEspelho(int vistos, int st, int temCopia, int espelho) {
   const char *sup = vistos ? CC_VISTOS : CC_BIBLIOTECA;
   int i, n;
   char *b = NULL, *c;
   cicloTeste();
   paginaN = 0;
   vistosTeste = vistos;
+  mirrorTeste = espelho;
+  strcpy(mirrorItens[0].id, "tt9000001");
+  strcpy(mirrorItens[1].id, "tt9000002");
   paginaStatus = st;
   if (temCopia) contacache_gravar(sup, 1, usuario, "[{\"ultima_boa\":true}]");
   else contacache_esquecer();
@@ -168,12 +177,22 @@ static void paginaIncompleta(int vistos, int st, int temCopia) {
       if (!temCopia)
         confere("500 linhas seguidas de HTTP 503 preservam a biblioteca ativa sem cache",
                 !leiturasBibTeste && bibAtivaTeste == 900 && !bibBlob);
+      else if (espelho > 0)
+        confere("copia velha do cache nao substitui a biblioteca viva da conta",
+                !leiturasBibTeste && bibAtivaTeste == 900 && !bibBlob);
+      else
+        confere("copia restaura a biblioteca quando a memoria esta vazia",
+                leiturasBibTeste == 1 && bibAtivaTeste == 500);
     }
   } else {
     confere("recusa 400 nao se passa por indisponibilidade do servidor", foraCiclo == 0);
     confere("hard page failure never publishes a partial library", n == -1 && b == NULL);
   }
+  mirrorTeste = 0;
   free(c); free(b); free(paginaTeste); paginaTeste = NULL;
+}
+static void paginaIncompleta(int vistos, int st, int temCopia) {
+  paginaIncompletaEspelho(vistos, st, temCopia, 0);
 }
 
 int main(void) {
@@ -208,6 +227,7 @@ int main(void) {
   sync_passo(1000);
   confere("pull fresco poda confirmacoes antigas", podasTeste == 1);
   paginaIncompleta(0, 503, 1);
+  paginaIncompletaEspelho(0, 503, 1, 2);
   paginaIncompleta(1, 429, 1);
   paginaIncompleta(0, 503, 0);
   paginaIncompleta(0, 400, 1);

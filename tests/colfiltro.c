@@ -279,16 +279,17 @@ int main(void) {
   limiteVariante = 1; desc_vertudo_mais(); waitDone();
   assert(desc_vertudo_erro() && desc_vertudo_n() == 1050);
   limiteVariante = 10; desc_vertudo_abrir("https://limite.invalid", "movie", "largereload"); waitDone();
-  assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 0);
+  // #789: a recarga cabe inteira (2100 <= VT_STORE_MAX agora e 16384).
+  assert(!desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 2100 && desc_vertudo_pagina() == 2100);
   desc_vertudo_mais(); waitDone();
-  assert(desc_vertudo_erro() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 0);
+  assert(!desc_vertudo_erro() && desc_vertudo_fim() && desc_vertudo_n() == 2100);
   limiteVariante = 0;
   desc_vertudo_abrir("https://limite.invalid", "movie", "top10"); waitDone();
   assert(desc_vertudo_n() == 10 && desc_vertudo_fim());
   desc_vertudo_abrir("https://budget.invalid", "movie", "rank"); waitDone();
-  for (int i = 0; i < 20 && !desc_vertudo_erro(); i++) { desc_vertudo_mais(); waitDone(); }
+  for (int i = 0; i < 90 && !desc_vertudo_erro(); i++) { desc_vertudo_mais(); waitDone(); }
   { int n = desc_vertudo_n(); CatItem item;
-    assert(desc_vertudo_erro() && !desc_vertudo_fim() && n > 0 && n < 2000 && n % 100 != 0);
+    assert(desc_vertudo_erro() && !desc_vertudo_fim() && n > 0 && n < VT_STORE_MAX && n % 100 != 0);
     int pagina = n / 100 * 100;
     assert(desc_vertudo_pagina() == pagina && desc_vertudo_item(n - 1, &item) && item.ranking == n);
     desc_vertudo_mais(); waitDone();

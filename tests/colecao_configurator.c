@@ -3,6 +3,13 @@
 #include <assert.h>
 #include <unistd.h>
 
+// #789: addon catalogs cap at VT_ADDON_MAX (16384); fixtures follow the cap
+// with 1024-item pages so the bound stays tested without 164 round trips.
+#define CAP VT_ADDON_MAX
+#define PAG 1024
+_Static_assert(CAP >= 14000 && CAP % PAG == 0, "cap covers 14k catalogs in whole pages");
+_Static_assert(VT_MAX == 1000, "non-addon contract unchanged");
+
 static int falhar;
 char *config414_baixar(const char *url, int timeout) {
   (void)timeout;
@@ -10,16 +17,17 @@ char *config414_baixar(const char *url, int timeout) {
       strstr(url, "/catalog/movie/single") || strstr(url, "/catalog/movie/straddle")) {
     const char *p = strstr(url, "skip=");
     int skip = p ? atoi(p + 5) : 0;
-    int total = strstr(url, "/cap") ? 2000 : 2100;
-    int page = strstr(url, "/single") ? 2100 : strstr(url, "/straddle") ? 300 : 100;
+    int total = strstr(url, "/cap") ? CAP : CAP + 100;
+    int page = strstr(url, "/single") ? CAP + 100 : strstr(url, "/straddle") ? 3000 : PAG;
     if (falhar) return NULL;
-    char *body = malloc(262144); assert(body);
-    int used = snprintf(body, 262144, "{\"metas\":[");
+    size_t size = (size_t)page * 96 + 64;
+    char *body = malloc(size); assert(body);
+    int used = snprintf(body, size, "{\"metas\":[");
     for (int i = skip; i < skip + page && i < total; i++)
-      used += snprintf(body + used, 262144 - used,
+      used += snprintf(body + used, size - used,
         "%s{\"id\":\"tt%d\",\"name\":\"Item %d\",\"poster\":\"p.jpg\",\"releaseInfo\":\"%d\"}",
         i == skip ? "" : ",", i + 1, i + 1, 1900 + i % 120);
-    snprintf(body + used, 262144 - used, "]}");
+    snprintf(body + used, size - used, "]}");
     return body;
   }
   // No network: accept only the hand-written fixture's catalog endpoints.
@@ -122,41 +130,45 @@ int main(int argc, char **argv) {
   }
   /* Real view + worker: failed later page leaves loaded cards actionable. */
   falhar = 0; vertudo_abrir("https://example.invalid", "movie", "cap", "Cap"); esperar();
-  assert(desc_vertudo_n() == 100);
+  assert(desc_vertudo_n() == PAG);
   falhar = 1; desc_vertudo_mais(); esperar();
-  assert(desc_vertudo_erro() && desc_vertudo_n() == 100 && celulaAceitaMenu());
+  assert(desc_vertudo_erro() && desc_vertudo_n() == PAG && celulaAceitaMenu());
   foco = 0; tecla(SDLK_RETURN);
   { SDL_Event e = {0}; e.type = SDL_KEYUP; e.key.keysym.sym = SDLK_RETURN; vertudo_evento(&e); }
   /* This harness has no global CatItem catalog, so opening cannot yield an index. */
-  assert(desc_vertudo_erro() && desc_vertudo_n() == 100 && !desc_vertudo_carregando());
-  falhar = 0; foco = 99; tecla(SDLK_RIGHT); esperar();
-  assert(!desc_vertudo_erro() && desc_vertudo_n() == 200);
-  for (int i = 2; i < 20; i++) { desc_vertudo_mais(); esperar(); }
-  assert(desc_vertudo_n() == 2000 && !desc_vertudo_fim());
+  assert(desc_vertudo_erro() && desc_vertudo_n() == PAG && !desc_vertudo_carregando());
+  falhar = 0; foco = PAG - 1; tecla(SDLK_RIGHT); esperar();
+  assert(!desc_vertudo_erro() && desc_vertudo_n() == 2 * PAG);
+  for (int i = 2; i < CAP / PAG; i++) { desc_vertudo_mais(); esperar(); }
+  assert(desc_vertudo_n() == CAP && !desc_vertudo_fim());
   lay = VT_LAY_FLUXO; celLay = -1; orderN = -1; fluxoPendente = 0;
   vertudo_atualizar(0.016f, SDL_GetTicks()); esperar();
   assert(desc_vertudo_fim() && !desc_vertudo_erro());
   vertudo_atualizar(0.016f, SDL_GetTicks());
-  assert(!fluxoPendente && orderN == 2000);
+  assert(!fluxoPendente && orderN == CAP);
   vertudo_abrir("https://example.invalid", "movie", "overflow", "Overflow"); esperar();
-  for (int i = 1; i < 20; i++) { desc_vertudo_mais(); esperar(); }
-  assert(desc_vertudo_n() == 2000 && !desc_vertudo_fim());
+  for (int i = 1; i < CAP / PAG; i++) { desc_vertudo_mais(); esperar(); }
+  assert(desc_vertudo_n() == CAP && !desc_vertudo_fim());
   desc_vertudo_mais(); esperar();
-  assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 2000);
+  assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == CAP && desc_vertudo_pagina() == CAP);
   assert(celulaAceitaMenu());
+  { CatItem item; char want[16]; snprintf(want, sizeof want, "tt%d", CAP);
+    assert(desc_vertudo_item(0, &item) && !strcmp(item.imdb, "tt1"));
+    assert(desc_vertudo_item(CAP - 1, &item) && !strcmp(item.imdb, want)); }
   vertudo_abrir("https://example.invalid", "movie", "single", "Single"); esperar();
-  assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 0);
-  { CatItem item; assert(desc_vertudo_item(1999, &item) && !strcmp(item.imdb, "tt2000")); }
+  assert(desc_vertudo_erro() && !desc_vertudo_fim() && desc_vertudo_n() == CAP && desc_vertudo_pagina() == 0);
+  { CatItem item; char want[16]; snprintf(want, sizeof want, "tt%d", CAP);
+    assert(desc_vertudo_item(CAP - 1, &item) && !strcmp(item.imdb, want)); }
   desc_vertudo_mais(); esperar();
-  assert(desc_vertudo_erro() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 0);
+  assert(desc_vertudo_erro() && desc_vertudo_n() == CAP && desc_vertudo_pagina() == 0);
   vertudo_abrir("https://example.invalid", "movie", "straddle", "Straddle"); esperar();
-  for (int i = 1; i < 7; i++) { desc_vertudo_mais(); esperar(); }
-  assert(desc_vertudo_erro() && desc_vertudo_n() == 2000 && desc_vertudo_pagina() == 1800);
+  for (int i = 1; i < 6; i++) { desc_vertudo_mais(); esperar(); }
+  assert(desc_vertudo_erro() && desc_vertudo_n() == CAP && desc_vertudo_pagina() == 15000);
   const char *ids[] = {"capfilter", "overflowfilter"};
   for (int j = 0; j < 2; j++) {
     vertudo_abrir("https://example.invalid", "movie", ids[j], "Filtered"); esperar();
-    for (int i = 1; i < 20; i++) { desc_vertudo_mais(); esperar(); }
-    assert(desc_vertudo_n() == 2000 && !desc_vertudo_fim() && !desc_vertudo_erro());
+    for (int i = 1; i < CAP / PAG; i++) { desc_vertudo_mais(); esperar(); }
+    assert(desc_vertudo_n() == CAP && !desc_vertudo_fim() && !desc_vertudo_erro());
     vitTudo = 1; vitTudoFiltro = 1; vitTudoGrupo = 1; vitTudoBruto = -1; vitTudoMaisBruto = -1;
     assert(nItens() == 0);
     vitTudoAvancar(0); esperar();
