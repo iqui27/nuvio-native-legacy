@@ -12,14 +12,14 @@ Fonte e critérios: [mapa de paridade](../../reviews/matis94-20261112/README.md)
 |---|---|---|
 | A | Segurança de filas PGS, HEVC in-band, URLs longas | Integrado em `c0abc4a28`; revisão + verificador independentes, gate 5/5 e pós-merge 5/5. [Evidência](lote-a-integracao.md). TV pendente. |
 | B | Modos DV/DTS/TrueHD, faixas e memória de áudio | Em implementação — `agente/21-matis-b-dv`; integrar após A |
-| C | Buffer contínuo, controles, recovery/seek e telemetria | C1 transporte em implementação; C2 seek e C3 telemetria seguem na fila. Integração após A/B. |
+| C | Buffer contínuo, controles, recovery/seek e telemetria | C1 transporte implementado/testado em `0e66f9beb`; correção do novo padrão Standard(1) em execução isolada no Zima. C2 seek e C3 telemetria na fila. Sem revisão final/merge. |
 | D | Áudio de outra versão e cortes/intro skip | Em implementação — `agente/21-matis-d-audioexterno`; integrar após B/C |
 | E | Formatter, badges, regex e lista de fontes | Em implementação — `agente/21-matis-e-fontes` |
-| F | Perfil, skip, atualização e opacidade | Em implementação — `agente/21-matis-f-opcoes` |
+| F | Perfil, skip, atualização e opacidade | Implementação/testes em `22b560f4`; revisão independente bloqueou migração da opacidade secundária em arquivo de perfil (F1-profile P1). Correção isolada no Zima; fora da integração. |
 | G | Diagnósticos local/QR, motivos e exportação de nuvem | Autorização de upload revisada; complemento QR local/portabilidade em andamento em `agente/21-matis-g-logs`. Retomada aguarda capacidade do cota-gate; sem deploy. |
-| H | CW local, temporadas e títulos de episódios | Revisão OK em `597d0cf1f`; falta atualizar base após A e executar verificação independente/gate. Fora da integração. |
+| H | CW local, temporadas e títulos de episódios | Integrado em `8a16234bc`; revisão + verificador independentes, gate 15/15 e pós-merge 3/3. [Evidência](lote-h-integracao.md). TV pendente. |
 
-Execução: `job-pi`, implementações iniciais `nv-impl medium`; correções e revisões `nv-revisao medium`. Modelo efetivamente servido permanece desconhecido sem evidência do gateway. Worktrees `/Volumes/ExternalSSD/nv-21-matis-*`; briefs/logs/progresso em `/Volumes/ExternalSSD/tmp/rev/matis94-20261112/`. A já integrado; B/C/D/E/F/G/H ainda não. A troca para Desktop encerrou os seis executores restantes, preservando commits/edições; B/D/E/F/C1 retomados em logs `*-r2.log`. G aguarda redução do swap após recusa explícita do `cota-gate`; H aguarda base atual e verificador. Não contornar o limite nem lançar dois escritores no mesmo worktree.
+Execução: `job-pi`, implementações iniciais `nv-impl medium`; correções e revisões `nv-revisao medium`. Modelo efetivamente servido permanece desconhecido sem evidência do gateway. Worktrees `/Volumes/ExternalSSD/nv-21-matis-*`; briefs/logs/progresso em `/Volumes/ExternalSSD/tmp/rev/matis94-20261112/`. A/H já integrados; B/C/D/E/F/G ainda não. A troca para Desktop encerrou os seis executores restantes, preservando commits/edições; B/D/E/F/C1 foram retomados em logs `*-r2.log`. C1/F terminaram implementação; correções delimitadas seguem em snapshots isolados no Zima, com importação inspecionada e execução host ainda obrigatórias. G aguarda capacidade após recusa explícita do `cota-gate`. Não contornar o limite nem lançar dois escritores no mesmo worktree.
 
 ## Cobertura item a item
 
@@ -64,13 +64,13 @@ Execução: `job-pi`, implementações iniciais `nv-impl medium`; correções e 
 | F11 | Nome completo com wrapping em ambos modos, sem ellipsis na animação e sem duplicar prefixo Cloud | Parcial | Pendente de adaptação/prova |
 | F12 | Unificar pedidos duplicados de fontes, preservar async/refresh/episódios diferentes | Presente | Manter; prova de TV separada |
 | F13 | Próximo episódio segue release inclusive em modo manual, sem abrir folha | Parcial — política diferente | Preservar consentimento manual; diferença intencional |
-| F14 | Título de episódio substitui nome de release e mantém IDs/numeração | Parcial | Pendente de adaptação/prova |
-| F15 | Disponibilidade de temporadas e atualização de cache de episódios | Parcial | Pendente de adaptação/prova |
+| F14 | Título de episódio substitui nome de release e mantém IDs/numeração | Parcial | Código integrado em `8a16234bc`; gate 15/15 e pós-merge 3/3. P2 de títulos genéricos/numeração documentados. TV pendente. |
+| F15 | Disponibilidade de temporadas e atualização de cache de episódios | Parcial | Código integrado em `8a16234bc`; temporadas zero por último e limite preservado. TV pendente. |
 | F16 | Memória de áudio por série/perfil, próximo episódio e fallback por idioma sem confundir índice | Parcial | Pendente de adaptação/prova |
 | F17 | Lembrar último perfil: opt-in OFF, não entrar em bloqueado/indisponível | Ausente | Pendente de adaptação/prova |
 | F18 | Mostrar botões intro/recap/créditos independentemente, ON e por perfil | Ausente | Pendente de adaptação/prova |
 | F19 | Desligar avisos automáticos de atualização mantendo busca manual | Ausente | Pendente de adaptação/prova |
-| F20 | Continuar assistindo local antes do sync remoto | Parcial | Pendente de adaptação/prova |
+| F20 | Continuar assistindo local antes do sync remoto | Parcial | Código integrado em `8a16234bc`; progresso do perfil publicado antes da reconciliação, inclusive com fileira anterior não vazia. TV pendente. |
 | D01 | Página local estável e download de log redigido | Presente | Manter; prova de TV separada |
 | D02 | QR local RED → BLUE com snapshot enquanto tela fica aberta | Ausente | Pendente de adaptação/prova |
 | D03 | Explicar por que página local não abriu | Ausente | Pendente de adaptação/prova |
