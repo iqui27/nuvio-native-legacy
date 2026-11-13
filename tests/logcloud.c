@@ -2,6 +2,7 @@
  * gzipped snapshot itself (POST /v1/loglink on OUR worker, never an external
  * file host) and the answer is {"ok":1,"url":"https://..."}. */
 #include "logcloud.h"
+#include "qr.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,6 +30,14 @@ int main(void) {
   assert(!logcloud_resposta_url("{\"url\":\"https://\"}", u, sizeof u));
   assert(!logcloud_resposta_url("{\"url\":\"https://w.example/0123456789abcdef0123456789\"}", u, 16));
   assert(!logcloud_resposta_url(NULL, u, sizeof u));
+  /* The card shows the link as QR: one that fits QR_MAX_BYTES is accepted,
+   * one byte longer is rejected instead of "ready" without a QR. */
+  { char body[512], q[QR_MAX_BYTES + 1]; int k = snprintf(body, sizeof body, "{\"url\":\"https://w.example/v1/loglink/");
+    while (k < 8 + QR_MAX_BYTES) body[k++] = 'a';
+    snprintf(body + k, sizeof body - (size_t)k, "\"}");
+    assert(logcloud_resposta_url(body, q, sizeof q) && strlen(q) == QR_MAX_BYTES);
+    memmove(body + k + 1, body + k, strlen(body + k) + 1); body[k] = 'a';
+    assert(!logcloud_resposta_url(body, q, sizeof q) && !q[0]); }
   puts("PASS: log to the cloud (request body, worker answer)");
   return 0;
 }

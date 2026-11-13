@@ -43,7 +43,9 @@ static char logSnapshot[128];
 static int  nuvem;
 static char motivoLog[160];
 static GLuint texQr;
-static char texQrDe[96];
+// Cache key: any URL the QR can carry (local address or cloud link) fits whole,
+// so a long link is generated and uploaded once, not every frame.
+static char texQrDe[QR_MAX_BYTES + 1];
 // ENDERECO FIXO DO DIAGNOSTICO (dono, 06/11/2026): o registro e aberto no
 // navegador do COMPUTADOR, entao o endereco tem de ser o mesmo a cada abertura
 // (favorito), em vez de um QR novo a cada vez. O token fica salvo na pasta de
@@ -291,22 +293,47 @@ static const char *msgSemQr(int est) {
 // Altura do miolo, pela mesma conta que o desenho usa.
 #define CB_TITULO_H   40.0f
 #define CB_LINHA_H    26.0f
-// DIAGNOSTICO: sem QR (o endereco e aberto no computador), mais largo para o
-// endereco caber grande numa linha.
-#define CB_W_LOG  700.0f
-#define CB_URL_LOG_H 44.0f
+// DIAGNOSTICO (Baixar registro): the SAME QR card as "Digitar pelo celular"
+// (and the fork's log card). The readable address under the QR stays the
+// computer path: it does not change, so it can be a browser favorite.
 static const char *FRASE_LOG = "Abra este endereço no navegador do computador, na mesma rede. Ele não muda: salve nos favoritos. OK atualiza o registro.";
 static const char *FRASE_LOG_NUVEM = "Direita: enviar o registro para a nuvem.";
+// The URL the log card shows as QR (local page, or the cloud link once ready);
+// NULL when it shows a message instead.
+static const char *urlLog(int temQr, char *nurl, int n) {
+  if (!nuvem) return temQr ? celular_url() : NULL;
+  if (logcloud_estado() != LOGCLOUD_PRONTO) return NULL;
+  logcloud_url(nurl, n);
+  return nurl[0] ? nurl : NULL;
+}
+static void textoLog(char *t, size_t n) {
+  char m[128] = "";
+  if (nuvem && logcloud_estado() == LOGCLOUD_FALHOU) {
+    logcloud_motivo(m, sizeof m);
+    snprintf(t, n, i18n("Não deu para enviar o registro (%s). OK tenta de novo."), m[0] ? m : "?");
+  } else if (nuvem) snprintf(t, n, "%s", i18n("Enviando o registro para a nuvem…"));
+  else snprintf(t, n, i18n("Não foi possível abrir o endereço local (%s). OK envia o registro para a nuvem."),
+                motivoLog[0] ? motivoLog : "?");
+}
+// Lines under the QR; a = 0 only measures (the card height uses the same call).
+static float frasesLog(float x, float y, float w, float a) {
+  float h;
+  if (nuvem)
+    return txt_bloco(TXT_CAPTION2, i18n("Mande este link para quem pediu o registro. Ele expira em 72 horas."),
+                     170, 174, 184, x, y, w, CB_LINHA_H, a * 0.9f, 3);
+  h = txt_bloco(TXT_CAPTION2, i18n(FRASE_LOG), 170, 174, 184, x, y, w, CB_LINHA_H, a * 0.9f, 5);
+  return h + txt_bloco(TXT_CAPTION2, i18n(FRASE_LOG_NUVEM), 170, 174, 184, x, y + h, w, CB_LINHA_H, a * 0.9f, 2);
+}
 static float alturaCartao(int temQr) {
-  if (dono == CELB_LOG && nuvem) {
-    if (logcloud_estado() == LOGCLOUD_PRONTO)
+  if (dono == CELB_LOG) {
+    char nurl[256], t[512];
+    if (urlLog(temQr, nurl, sizeof nurl))
       return CB_PAD + CB_TITULO_H + 18.0f + CB_QR + 2 * CB_MOLDURA + 18.0f + 30.0f + 10.0f +
-             2 * CB_LINHA_H + CB_PAD - 6.0f;
-    return CB_PAD + CB_TITULO_H + 16.0f + 4 * CB_LINHA_H + CB_PAD;
+             frasesLog(0, 0, CB_W - 2 * CB_PAD, 0.0f) + CB_PAD - 6.0f;
+    textoLog(t, sizeof t);
+    return CB_PAD + CB_TITULO_H + 16.0f +
+           txt_bloco(TXT_BODY, t, 0, 0, 0, 0, 0, CB_W - 2 * CB_PAD, CB_LINHA_H + 6.0f, 0.0f, 6) + CB_PAD;
   }
-  if (dono == CELB_LOG && !temQr) return CB_PAD + CB_TITULO_H + 16.0f + 4 * CB_LINHA_H + CB_PAD;
-  if (dono == CELB_LOG && temQr)
-    return CB_PAD + CB_TITULO_H + 20.0f + CB_URL_LOG_H + 14.0f + 4 * CB_LINHA_H + CB_PAD;
   if (!temQr) return CB_PAD + CB_TITULO_H + 16.0f + 3 * CB_LINHA_H + CB_PAD;
   return CB_PAD + CB_TITULO_H + 18.0f + CB_QR + 2 * CB_MOLDURA + 18.0f + 30.0f + 10.0f +
          3 * CB_LINHA_H + CB_PAD - 6.0f;
@@ -331,7 +358,7 @@ static void celb_desenharCorpo_(void) {
   temQr = est == CEL_ESPERANDO && u[0];
   r = ancora[dono];
   { float e = gfx_escala_ui(); r.x /= e; r.y /= e; r.w /= e; r.h /= e; }
-  w = dono == CELB_LOG ? CB_W_LOG : CB_W; h = alturaCartao(temQr);
+  w = CB_W; h = alturaCartao(temQr);
   // ANCORADO NO BOTAO: abaixo dele, com a borda direita alinhada a dele; sem
   // espaco embaixo, em cima; nunca fora da tela.
   x = r.x + r.w - w;
@@ -369,51 +396,17 @@ static void celb_desenharCorpo_(void) {
     txt_desenhar_alpha(t, x + CB_PAD + 40.0f, ty, a); }
   y += CB_PAD + CB_TITULO_H;
 
-  if (dono == CELB_LOG && nuvem) {
-    char t[512], nurl[256] = "", nmot[128] = "";
-    int nest = logcloud_estado();
-    if (nest == LOGCLOUD_PRONTO) {
-      logcloud_url(nurl, sizeof nurl);
-      y += 18.0f;
-      qrDesenhar(nurl, x + (w - CB_QR) * 0.5f - CB_MOLDURA, y, a);
-      y += CB_QR + 2 * CB_MOLDURA + 18.0f;
-      curta = !strncmp(nurl, "https://", 8) ? nurl + 8 : nurl;
-      { TxtLinha l = txt_linha_corta(TXT_CALLOUT, curta, 245, 248, 255, 255, w - 2 * CB_PAD);
-        txt_desenhar_alpha(l, x + (w - l.w) * 0.5f, y, a); }
-      y += 30.0f + 10.0f;
-      txt_bloco(TXT_CAPTION2, i18n("Mande este link para quem pediu o registro. Ele expira em 72 horas."),
-                170, 174, 184, x + CB_PAD, y, w - 2 * CB_PAD, CB_LINHA_H, a * 0.9f, 2);
-      return;
-    }
-    if (nest == LOGCLOUD_FALHOU) {
-      logcloud_motivo(nmot, sizeof nmot);
-      snprintf(t, sizeof t, i18n("Não deu para enviar o registro (%s). OK tenta de novo."), nmot[0] ? nmot : "?");
-    } else snprintf(t, sizeof t, "%s", i18n("Enviando o registro para a nuvem…"));
-    txt_bloco(TXT_BODY, t, 200, 204, 212, x + CB_PAD, y + 16.0f, w - 2 * CB_PAD, CB_LINHA_H + 6.0f, a, 4);
-    return;
-  }
-
-  if (!temQr) {
-    if (dono == CELB_LOG) {
-      char t[512];
-      snprintf(t, sizeof t, i18n("Não foi possível abrir o endereço local (%s). OK envia o registro para a nuvem."),
-               motivoLog[0] ? motivoLog : "?");
-      txt_bloco(TXT_BODY, t, 200, 204, 212, x + CB_PAD, y + 16.0f, w - 2 * CB_PAD, CB_LINHA_H + 6.0f, a, 4);
-      return;
-    }
-    txt_bloco(TXT_BODY, i18n(msgSemQr(est)), 200, 204, 212, x + CB_PAD, y + 16.0f, w - 2 * CB_PAD, CB_LINHA_H + 6.0f, a, 3);
-    return;
-  }
   if (dono == CELB_LOG) {
-    // O endereco inteiro, grande, sem QR; embaixo, como usar.
-    TxtLinha t = txt_linha_corta(TXT_CALLOUT, u, 245, 248, 255, 255, w - 2 * CB_PAD);
-    y += 20.0f;
-    gfx_cor((GfxRect){ x + CB_PAD - 12.0f, y, w - 2 * CB_PAD + 24.0f, CB_URL_LOG_H }, 0.3f, 1, 1, 1, 0.07f * a);
-    txt_desenhar_alpha(t, x + (w - t.w) * 0.5f, y + (CB_URL_LOG_H - t.h) * 0.5f, a);
-    y += CB_URL_LOG_H + 14.0f;
-    txt_bloco(TXT_CAPTION2, i18n(FRASE_LOG), 170, 174, 184, x + CB_PAD, y, w - 2 * CB_PAD, CB_LINHA_H, a * 0.9f, 3);
-    txt_bloco(TXT_CAPTION2, i18n(FRASE_LOG_NUVEM), 170, 174, 184, x + CB_PAD, y + 3 * CB_LINHA_H, w - 2 * CB_PAD,
-              CB_LINHA_H, a * 0.9f, 1);
+    char nurl[256], t[512];
+    const char *q = urlLog(temQr, nurl, sizeof nurl);
+    if (!q) {
+      textoLog(t, sizeof t);
+      txt_bloco(TXT_BODY, t, 200, 204, 212, x + CB_PAD, y + 16.0f, w - 2 * CB_PAD, CB_LINHA_H + 6.0f, a, 6);
+      return;
+    }
+    u = q;
+  } else if (!temQr) {
+    txt_bloco(TXT_BODY, i18n(msgSemQr(est)), 200, 204, 212, x + CB_PAD, y + 16.0f, w - 2 * CB_PAD, CB_LINHA_H + 6.0f, a, 3);
     return;
   }
   y += 18.0f;
@@ -421,10 +414,11 @@ static void celb_desenharCorpo_(void) {
   y += CB_QR + 2 * CB_MOLDURA + 18.0f;
   // ENDERECO CURTO, para quem nao tem camera: sem "http://" (o navegador do
   // celular completa sozinho), centrado.
-  curta = !strncmp(u, "http://", 7) ? u + 7 : u;
+  curta = !strncmp(u, "http://", 7) ? u + 7 : !strncmp(u, "https://", 8) ? u + 8 : u;
   { TxtLinha t = txt_linha_corta(TXT_CAPTION, curta, 232, 236, 244, 255, w - 2 * CB_PAD);
     txt_desenhar_alpha(t, x + (w - t.w) * 0.5f, y, a); }
   y += 30.0f + 10.0f;
+  if (dono == CELB_LOG) { frasesLog(x + CB_PAD, y, w - 2 * CB_PAD, a); return; }
   txt_bloco(TXT_CAPTION2, i18n(FRASE_QR), 170, 174, 184, x + CB_PAD, y, w - 2 * CB_PAD, CB_LINHA_H, a * 0.9f, 3);
 }
 

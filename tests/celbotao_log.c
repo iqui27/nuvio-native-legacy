@@ -25,6 +25,10 @@ int main(void) {
   const char *fixture = "[app] start=1\n[net] password=DO_NOT_EXPORT\n";
   assert(write(fd, fixture, strlen(fixture)) == (ssize_t)strlen(fixture)); close(fd);
   log_source = src;
+  /* The snapshot follows TMPDIR (Android without TMPDIR: tests/logexport.sh). */
+  char cache[1024];
+  snprintf(cache, sizeof cache, "%s/nuvio-appcache-XXXXXX", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp");
+  assert(mkdtemp(cache)); setenv("TMPDIR", cache, 1);
 
   /* Off (default): the card never opens, no snapshot, no server. */
   qr_switch = 0;
@@ -35,11 +39,18 @@ int main(void) {
   qr_switch = 1;
   assert(celb_abrir(CELB_LOG, "Registro") && celb_dono() == CELB_LOG);
   assert(existe(logSnapshot) && celular_estado() == CEL_ESPERANDO && !motivoLog[0]);
+  assert(!strncmp(logSnapshot, cache, strlen(cache)) && logSnapshot[strlen(cache)] == '/');
   assert(logcloud_estado() == LOGCLOUD_PARADO && !nuvem);
   assert(qrTextura(celular_url()) && qr_uploads == 1 && qr_allocations == 1);
   assert(qrTextura(celular_url()) && qr_uploads == 1); /* Same URL reuses pixels. */
   assert(qrTextura("https://fixture.invalid/v1/loglink/0123456789abcdef0123456789abcdef"));
   assert(qr_uploads == 2 && qr_allocations == 1); /* New URL replaces pixels. */
+  /* A link as long as the QR can carry: generated and uploaded once, then the
+   * cache key matches (never printed). */
+  { char lng[QR_MAX_BYTES + 1] = "https://fixture.invalid/v1/loglink/"; int up;
+    for (size_t i = strlen(lng); i < QR_MAX_BYTES; i++) lng[i] = "0123456789abcdef"[i % 16];
+    lng[QR_MAX_BYTES] = 0; up = qr_uploads;
+    assert(qrTextura(lng) && qrTextura(lng) && qr_uploads == up + 1); }
   snprintf(snap, sizeof snap, "%s", logSnapshot);
   /* OK refreshes the snapshot at the same address; still no upload. */
   tecla(SDLK_RETURN);
@@ -71,6 +82,7 @@ int main(void) {
   assert(logcloud_estado() == LOGCLOUD_PARADO);
   tecla(SDLK_RETURN); assert(nuvem && espera_falha());
   celb_fechar();
+  assert(!rmdir(cache)); /* every snapshot was deleted on close/refresh */
   unlink(src);
   puts("PASS: diagnostics QR switch gating, snapshot lifecycle, local failure reason, explicit cloud action");
   return 0;

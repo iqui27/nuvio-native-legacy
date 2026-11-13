@@ -57,6 +57,7 @@ void logcloud_motivo(char *d, int n) { if (d && n > 0) d[0] = 0; }
 void logcloud_esquecer(void) {}
 #else
 #include "logexport.h"
+#include "qr.h"
 #include "registro.h"
 #include "rede.h"
 #include <pthread.h>
@@ -113,7 +114,7 @@ erro:
   return NULL;
 }
 static void *fio(void *u) {
-  char snap[128], m[128], achou[256], auth[160], u2[256];
+  char snap[128], m[128], achou[QR_MAX_BYTES + 1], auth[160], u2[256]; /* the link must fit the QR */
   unsigned long ngz = 0, ncorpo = 0;
   unsigned char *gz = NULL;
   char *corpo = NULL;

@@ -149,7 +149,13 @@ int logexport_create(const char *source, char *path, size_t size) {
   if (!in || fseek(in, 0, SEEK_END) || (total = ftell(in)) < 0) goto done;
   start = total > SNAPSHOT_MAX ? total - SNAPSHOT_MAX : 0;
   if (fseek(in, start, SEEK_SET)) goto done;
-  snprintf(path, size, "/tmp/nuvio-export-XXXXXX");
+  /* TMPDIR when set. Android/Fire TV have no /tmp: fall back to the app
+   * folder the log itself lives in (registro.c, NUVIO_DADOS). */
+  { const char *d = getenv("TMPDIR");
+#ifdef NV_ANDROID
+    if (!d || !d[0]) d = getenv("NUVIO_DADOS");
+#endif
+    if (snprintf(path, size, "%s/nuvio-export-XXXXXX", d && d[0] ? d : "/tmp") >= (int)size) { path[0] = 0; goto done; } }
   fd = mkstemp(path);
   if (fd < 0) { path[0] = 0; goto done; }
   fchmod(fd, 0600);
@@ -157,7 +163,7 @@ int logexport_create(const char *source, char *path, size_t size) {
   if (!out) { close(fd); goto done; }
   line = malloc(LINE_MAXIMUM + 1); clean = malloc(LINE_MAXIMUM + 128);
   if (!line || !clean) goto done;
-  fprintf(out, "Nuvio Legacy " NV_VERSAO " LG custom port\nSnapshot UTC epoch: %lld\n"
+  fprintf(out, "Nuvio Legacy " NV_VERSAO "\nSnapshot UTC epoch: %lld\n"
     "All app log categories; frozen snapshot, not live.\n"
     "Recognized credentials, URLs, personal identifiers and payloads are masked.\n"
     "Automatic redaction is best effort: review before sharing publicly.\n"

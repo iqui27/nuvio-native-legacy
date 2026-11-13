@@ -137,6 +137,27 @@ int main(void) {
   assert(!strstr(out,"Experimental playback build:"));
   assert(!strstr(out, "shortpw") && !strstr(out, "secondpw") && !strstr(out, "ENDSECRET"));
   assert(strstr(out, "oversized log line")); unlink(path);
+  /* Android/Fire TV have no /tmp: the Activity exports TMPDIR (its cache dir).
+   * The snapshot must land there, private, readable, with a neutral header. */
+  { char saved[512], cache[1024]; size_t k;
+    snprintf(saved, sizeof saved, "%s", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp");
+    snprintf(cache, sizeof cache, "%s/nuvio-appcache-%ld", saved, (long)getpid()); assert(!mkdir(cache, 0700));
+#ifdef NV_ANDROID
+    /* Android build without TMPDIR: the app folder (NUVIO_DADOS), like the log. */
+    unsetenv("TMPDIR"); setenv("NUVIO_DADOS", cache, 1);
+#else
+    setenv("TMPDIR", cache, 1);
+#endif
+    assert(logexport_create(source, path, sizeof path));
+    k = strlen(cache); assert(!strncmp(path, cache, k) && path[k] == '/');
+    assert(!stat(path, &st) && (st.st_mode & 0777) == 0600);
+    f = fopen(path, "rb"); assert(f); n = fread(out, 1, sizeof out - 1, f); out[n] = 0; fclose(f);
+    assert(!strncmp(out, "Nuvio Legacy ", 13) && !strstr(out, "LG custom port") && strstr(out, "[video] error=300"));
+    assert(!unlink(path) && !rmdir(cache));
+    /* A missing temp dir fails cleanly: no path, no silent fallback. */
+    setenv("TMPDIR", cache, 1);
+    assert(!logexport_create(source, path, sizeof path) && !path[0]);
+    setenv("TMPDIR", saved, 1); }
   /* Taking a tail cannot leak the partial first line. */
   f = fopen(source, "wb"); assert(f);
   for (int i = 0; i < 17 * 1024 * 1024; i++) fputc('x', f);
