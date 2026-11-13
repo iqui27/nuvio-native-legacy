@@ -2916,8 +2916,13 @@ static int tocarInterno(const char *url, int comDV) {
   const char *loadUrl=url;
   // Recheck available RAM immediately before creating the read-ahead ring.
   // Keep the official floor active; the proxy replaces custom native buffering.
+  // Settings > native connections (Matis94 a2e37e8f5): parallel lanes need
+  // the app-managed buffer, so Automatic means 64 MB there (RAM floor kept).
+  dts_engine_set_source_workers(ajustes_buffer_native_connections());
+  int nativePreset = ajustes_buffer_preset();
+  if (!nativePreset && ajustes_buffer_native_connections() > 1) nativePreset = 1;
   int ownBuffer = !modoLoad && moviebuffer_url(url,cabsHttp,
-      cacheboost_buffer_mb(ajustes_buffer_preset(),memlog_livre_mb()),
+      cacheboost_buffer_mb(nativePreset,memlog_livre_mb()),
       bufferedUrl,sizeof bufferedUrl);
   if(ownBuffer)loadUrl=bufferedUrl;
   { char hh[768];
@@ -3255,6 +3260,7 @@ static int iniciarDts(int stream) {
   dts_engine_set_ac3(ajustes_dts_ac3());
   dts_engine_set_normalize(ajustes_audio_normalizar());
   dts_engine_set_ahead_mib(cacheboost_backend_buffer_mb());   // #338: Settings > Buffer size
+  dts_engine_set_http_workers(ajustes_buffer_conversion_connections()); // 1 = one continuous request
   dts_engine_set_hdr10p_strip(ajustes_hdr10p_strip());        // #605
   dts_playback_next_dv(dtsModoDv);
   dts_playback_next_p7(ajustes_dv7());
