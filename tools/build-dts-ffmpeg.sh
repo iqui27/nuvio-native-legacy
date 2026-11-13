@@ -28,6 +28,8 @@ if [ "$TARGET" = webos ]; then
   DEMUXERS=$DEMUXERS,avi,mpegts
 fi
 BSFS=h264_mp4toannexb,hevc_mp4toannexb,dca_core
+# Donor AAC from MPEG-TS arrives ADTS-framed; the TV is told raw AAC.
+if [ "$TARGET" = webos ]; then BSFS=$BSFS,aac_adtstoasc; fi
 ZLIB=
 mkdir -p "$BUILD" "$PREFIX"
 if [ "$TARGET" = tpk ]; then

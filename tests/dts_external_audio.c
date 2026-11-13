@@ -173,8 +173,9 @@ static Run play(DtsEngine *e, int64_t offset_ns, int limit) {
 }
 
 int main(int argc, char **argv) {
-  assert(argc == 35);
+  assert(argc == 37);
   const char *mixed = argv[34];
+  const char *aac_ts = argv[35], *aac_ts_raw = argv[36];
   const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4], *mp4 = argv[5];
   const char *aac44 = argv[6], *main60 = argv[7], *long_idx = argv[8], *long_noidx = argv[9];
   const char *match_main = argv[10], *match_dub = argv[11];
@@ -361,6 +362,33 @@ int main(int argc, char **argv) {
     dts_engine_destroy(e);
     checkBytes = 1;
   } else printf("AAC decoder not in this FFmpeg build: 44.1 kHz case skipped\n");
+
+  /* 9b. Stereo 48 kHz AAC-LC in MPEG-TS passes through, but the demuxer
+   * hands out ADTS frames and the TV is told raw AAC (adapter aacInfo
+   * format "raw"): every packet fed must be the raw frame, byte for byte
+   * what FFmpeg's MP4 muxer stores, also after a seek and up to the end. */
+  load_refs(aac_ts_raw, "pol");
+  e = dts_engine_create();
+  dts_engine_external_audio(e, aac_ts, HEADERS, "pl", 0);
+  if (dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0) { fprintf(stderr, "open: %s\n", dts_engine_error(e)); return 1; }
+  assert(!strcmp(dts_engine_info(e)->audio_codec, "aac") && dts_engine_info(e)->channels == 2 &&
+         dts_engine_info(e)->sample_rate == 48000);
+  r = play(e, 0, 60);
+  assert(r.audio > 10);
+  assert(dts_engine_seek(e, 2.0) == 0);
+  r = play(e, 0, 0);
+  assert(r.audio > 50 && r.last_audio > 3800000000LL);
+  printf("AAC TS donor passed through raw: %d packets after seek\n", r.audio);
+  dts_engine_destroy(e);
+  /* The raw frames themselves (MP4, with their config) pass unchanged. */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, aac_ts_raw, HEADERS, "pl", 0);
+  if (dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0) { fprintf(stderr, "open: %s\n", dts_engine_error(e)); return 1; }
+  assert(!strcmp(dts_engine_info(e)->audio_codec, "aac") && dts_engine_info(e)->channels == 2);
+  r = play(e, 0, 0);
+  assert(r.audio > 150 && r.last_audio > 3800000000LL);
+  dts_engine_destroy(e);
+  load_refs(other, "pol");
 
   /* 10. Turning it off restores the main file's own track selection. */
   e = dts_engine_create();

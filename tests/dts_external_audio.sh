@@ -116,6 +116,14 @@ ffmpeg -hide_banner -loglevel error \
   -f lavfi -i 'color=c=red:size=64x64:rate=25:duration=4' \
   -f lavfi -i 'sine=frequency=500:sample_rate=48000:duration=4' \
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a ac3 -metadata:s:a:0 language=pol "$TMP/other.ts"
+# MPEG-TS with stereo 48 kHz AAC-LC: the demuxer hands out ADTS frames. The
+# reference is FFmpeg's own copy into MP4, whose muxer stores them raw.
+ffmpeg -hide_banner -loglevel error \
+  -f lavfi -i 'color=c=red:size=64x64:rate=25:duration=4' \
+  -f lavfi -i 'sine=frequency=500:sample_rate=48000:duration=4' \
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a aac -profile:a aac_low -ac 2 -ar 48000 \
+  -metadata:s:a:0 language=pol "$TMP/aac_ts.ts"
+ffmpeg -hide_banner -loglevel error -i "$TMP/aac_ts.ts" -map 0:a -c copy "$TMP/aac_ts_raw.mp4"
 ffmpeg -hide_banner -loglevel error \
   -f lavfi -i 'color=size=64x64:rate=25:duration=4' \
   -f lavfi -i 'sine=frequency=300:sample_rate=48000:duration=4' \
@@ -173,4 +181,5 @@ ffmpeg -hide_banner -loglevel error -i "$TMP/follow_th.mkv" -map 0 -c copy -meta
   "$TMP/main60.mkv" "$TMP/long.mkv" "$TMP/long_nocues.mkv" "$TMP/match_main.mkv" "$TMP/match_dub.mkv" \
   "$TMP/main.avi" "$TMP/other.avi" "$TMP/other.ts" "$TMP/xvid.avi" "$TMP/film.mkv" \
   "$TMP/cut_main.mkv" "$TMP/cut_dub.mkv" "$TMP/pal_dub.mkv" "$TMP/pair_dub.mkv" \
-  "$TMP/follow_ext.mkv" "$TMP/follow_th.mkv" "$TMP/lang_main.mkv" "$TMP/lang_pl.mkv" "$TMP/dub_ru.mkv" "$TMP/dub_pl.mkv" "$TMP/follow_ext_ru.mkv" "$TMP/follow_th_pl.mkv" "$TMP/shift_main.mkv" "$TMP/shift_dub.mkv" "$TMP/gap_main.mkv" "$TMP/gap_dub.mkv" "$TMP/two_en.mkv" "$TMP/mixed.mkv"
+  "$TMP/follow_ext.mkv" "$TMP/follow_th.mkv" "$TMP/lang_main.mkv" "$TMP/lang_pl.mkv" "$TMP/dub_ru.mkv" "$TMP/dub_pl.mkv" "$TMP/follow_ext_ru.mkv" "$TMP/follow_th_pl.mkv" "$TMP/shift_main.mkv" "$TMP/shift_dub.mkv" "$TMP/gap_main.mkv" "$TMP/gap_dub.mkv" "$TMP/two_en.mkv" "$TMP/mixed.mkv" \
+  "$TMP/aac_ts.ts" "$TMP/aac_ts_raw.mp4"

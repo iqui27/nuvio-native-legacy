@@ -258,6 +258,7 @@ struct DtsEngine {
   pthread_t sp_thread;
   int64_t sp_bytes;
   AVPacket *ext_pkt, *ext_in;
+  AVBSFContext *ext_bsf;   /* passed-through AAC: ADTS framing (MPEG-TS) to raw */
   int64_t ext_pts, ext_clock_ns; /* pending packet time; newest video handed out */
   DtsEngineMetrics metrics;
 #ifdef NV_DTS_DEBUG
@@ -1150,7 +1151,7 @@ static void close_media(DtsEngine *e) {
   DtsEngine *ext=e->ext; e->ext=NULL;
   pthread_mutex_unlock(&e->range_lock);
   if(ext) { __atomic_store_n(&ext->cancelled,1,__ATOMIC_RELAXED); dts_engine_destroy(ext); }
-  av_packet_free(&e->ext_pkt); av_packet_free(&e->ext_in); e->ext_have=e->ext_eof=0; e->ext_stream=-1;
+  av_packet_free(&e->ext_pkt); av_packet_free(&e->ext_in); av_bsf_free(&e->ext_bsf); e->ext_have=e->ext_eof=0; e->ext_stream=-1;
   e->ext_conv=e->dv_strip=0; e->ext_idx=0;
   pthread_mutex_lock(&e->range_lock);
   e->range_stop=1;
@@ -1349,7 +1350,7 @@ int dts_engine_external_replace(DtsEngine *e,const char *url,const char *headers
   DtsEngine *old=e->ext; e->ext=NULL;
   pthread_mutex_unlock(&e->range_lock);
   __atomic_store_n(&old->cancelled,1,__ATOMIC_RELAXED); dts_engine_destroy(old);
-  av_packet_free(&e->ext_pkt); av_packet_free(&e->ext_in);
+  av_packet_free(&e->ext_pkt); av_packet_free(&e->ext_in); av_bsf_free(&e->ext_bsf);
   av_frame_free(&e->decoded); av_frame_free(&e->encoded);
   avcodec_free_context(&e->dec); avcodec_free_context(&e->enc);
   swr_free(&e->swr); av_audio_fifo_free(e->fifo); e->fifo=NULL;
@@ -1637,7 +1638,12 @@ static int configure_external(DtsEngine *e,double start) {
   /* Following another cut switches the encoder to this file's audio in the
    * scenes the other lacks: the conversion path. */
   int follow=e->fw_on && abs(e->ext_cut_s)>10;
-  if(!ext_usable(ap) || ext_k(e)!=1.0 || follow) {
+  /* The TV is told raw AAC (the adapter's aacInfo format "raw"); MPEG-TS
+   * hands out ADTS frames. FFmpeg's own filter makes them raw, as its MP4 and
+   * Matroska muxers do; raw packets with a config pass unchanged. A build
+   * without it converts what has no config (ADTS) and passes the rest. */
+  const AVBitStreamFilter *adts=ap->codec_id==AV_CODEC_ID_AAC?av_bsf_get_by_name("aac_adtstoasc"):NULL;
+  if(!ext_usable(ap) || ext_k(e)!=1.0 || follow || (ap->codec_id==AV_CODEC_ID_AAC && !adts && ap->extradata_size<=0)) {
     if(ext_configure_conv(e,as)<0) return -1;
     if(ext_k(e)!=1.0) { printf("[ext-audio] other version's speed corrected: ratio %.6f\n",ext_k(e)); fflush(stdout); }
     e->info.channels=e->enc->ch_layout.nb_channels; e->info.sample_rate=48000;
@@ -1649,6 +1655,12 @@ static int configure_external(DtsEngine *e,double start) {
     e->info.channels=ap->ch_layout.nb_channels>0?ap->ch_layout.nb_channels:(ap->codec_id==AV_CODEC_ID_AAC?2:6);
     e->info.sample_rate=ap->sample_rate>0?ap->sample_rate:48000;
     snprintf(e->info.audio_codec,sizeof e->info.audio_codec,"%s",avcodec_get_name(ap->codec_id));
+    if(adts) {
+      int r=av_bsf_alloc(adts,&e->ext_bsf);
+      if(r>=0) { r=avcodec_parameters_copy(e->ext_bsf->par_in,ap); e->ext_bsf->time_base_in=as->time_base; }
+      if(r>=0) r=av_bsf_init(e->ext_bsf);
+      if(r<0) return fail(e,"External audio framing filter",r);
+    }
   }
   /* Every donor audio track this TV can play or convert, for the audio menu
    * (owner, 07/11: a WEB-DL with a dub and a voice-over picks either). */
@@ -3117,6 +3129,13 @@ static int ext_fill(DtsEngine *e) {
     AVRational tb=e->ext->fmt->streams[e->ext_stream]->time_base;
     int64_t pts=ns(k->pts,tb)+e->ext_offset_ns+e->ext_base_ns, dur=k->duration>0?ns(k->duration,tb):0;
     if(pts<0 || pts+dur<=e->target_ns || pts<e->ext_floor_ns) { av_packet_unref(k); continue; }
+    if(e->ext_bsf) {   /* one packet in, one out; a damaged frame is dropped */
+      if((r=av_bsf_send_packet(e->ext_bsf,k))<0 || (r=av_bsf_receive_packet(e->ext_bsf,k))<0) {
+        av_packet_unref(k);
+        if(r==AVERROR_INVALIDDATA) continue;
+        return fail(e,"External audio framing",r);
+      }
+    }
     e->ext_pts=pts; e->ext_have=1;
   }
   return 0;
