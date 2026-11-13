@@ -102,6 +102,14 @@ static const char *abrir(void) {
 }
 
 int main(void) {
+  // These scenarios exercise conversion; the product's native default stays off.
+  // Opt in through this test's own saved settings (NUVIO_DADOS), as a user would.
+  assert(!ajustes_dv_mkv());
+  { char path[1024]; FILE *f;
+    snprintf(path, sizeof path, "%s/ajustes.txt", getenv("NUVIO_DADOS"));
+    f = fopen(path, "w"); assert(f); fputs("dvMkvLocal 0\n", f); fclose(f);
+    ajustes_dir(getenv("NUVIO_DADOS")); }
+  assert(ajustes_dv_mkv());
   lsCall = fakeCall; lsPayload = fakePayload;
   bus = (LSHandle *)(uintptr_t)1; sessao = 40;
 
