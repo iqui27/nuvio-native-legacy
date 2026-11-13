@@ -227,6 +227,7 @@ static int ajCenaSecao(int op) {
       return AJC_REP_FONTE;
     // 2.0.3: HDR e Dolby Vision mora em Imagem e som.
     case AJ_FONTE_HDR:
+    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: return AJC_REP_IMAGEM;
     case AJ_AUDIO_OFFSET: case AJ_QUALIDADE: case AJ_DV: case AJ_DV_MKV: case AJ_DV7: case AJ_HDR10P_STRIP: case AJ_ATMOS: case AJ_DTS_AC3: case AJ_CACHE_SEEK: case AJ_BUFFER: case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: case AJ_AFR: return AJC_REP_IMAGEM;
     case AJ_PAUSA_COMENTARIOS: case AJ_PAUSA_NOTAS: case AJ_PAUSA_ELENCO:
     case AJ_CAPITULOS: case AJ_ANIMESKIP_ID:
