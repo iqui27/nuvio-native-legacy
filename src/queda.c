@@ -10,10 +10,15 @@ void queda_armar_encadeado(const char *arquivo, void (*antes)(void)) { (void)arq
 int  queda_relatar(const char *arquivo) { (void)arquivo; return 0; }
 void queda_espelho(const char *arquivo) { (void)arquivo; }
 int  queda_relatar_em(const char *arquivo, FILE *saida) { (void)arquivo; (void)saida; return 0; }
+int  queda_podar_cores(const char *dir, FILE *log) { (void)dir; (void)log; return -1; }
 #else
 #include <signal.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <time.h>
 #if defined(__linux__)
 #include <ucontext.h>
 #elif defined(__APPLE__)
@@ -417,4 +422,112 @@ int queda_relatar_em(const char *arquivo, FILE *out) {
   return 1;
 }
 int queda_relatar(const char *arquivo) { return queda_relatar_em(arquivo, stdout); }
+
+// --- poda de cores (#766, ver queda.h) ----------------------------------------
+#define QD_PODA_MAX      4096   // entradas lidas por varredura
+#define QD_PODA_LOG_MAX  16     // linhas de arquivo no log
+#define QD_PODA_IDADE    (7L * 86400)
+#define QD_PODA_BYTES    (256L * 1024 * 1024)
+
+typedef struct { char nome[24]; ino_t ino; dev_t dev; off_t tam; time_t mt; } QdCore;
+
+// "core" ou "core." + 1..10 digitos ASCII. Nada mais.
+static int qdNomeCore(const char *n) {
+  const char *p;
+  if (strncmp(n, "core", 4)) return 0;
+  p = n + 4;
+  if (!*p) return 1;
+  if (*p++ != '.') return 0;
+  { int d = 0; for (; *p; p++) { if (*p < '0' || *p > '9' || ++d > 10) return 0; } return d >= 1; }
+}
+
+// e_type de um cabecalho ELF (18 bytes): so ET_CORE=4 entra. Validacao
+// deliberadamente curta: magia, classe 1/2 e endian conhecido bastam para o
+// que esta campo quer provar (um dump, nao qualquer outro binario).
+static int qdEhCore(const unsigned char *h, ssize_t n) {
+  int tipo;
+  if (n < 18 || h[0] != 0x7f || h[1] != 'E' || h[2] != 'L' || h[3] != 'F') return 0;
+  if (h[4] != 1 && h[4] != 2) return 0;
+  if (h[5] == 1) tipo = h[16] | (h[17] << 8);
+  else if (h[5] == 2) tipo = h[17] | (h[16] << 8);
+  else return 0;
+  return tipo == 4;
+}
+
+int queda_podar_cores(const char *dir, FILE *log) {
+  DIR *d; struct dirent *e; int dfd, n = 0, cap = 64, lidos = 0, pulados = 0;
+  int linhas = 0, apagados = 0, cortada = 0;
+  QdCore *v; time_t agora; uid_t eu;
+  FILE *lg = log ? log : stdout;
+  struct stat sd;
+  if (!dir || !dir[0]) return -1;
+  if (fstatat(AT_FDCWD, dir, &sd, AT_SYMLINK_NOFOLLOW) || !S_ISDIR(sd.st_mode)) {
+    fprintf(lg, "[queda] poda: '%.80s' nao e diretorio (%s)\n", dir, strerror(errno));
+    return -1;
+  }
+  d = opendir(dir);
+  if (!d) { fprintf(lg, "[queda] poda: nao abri '%.80s' (%s)\n", dir, strerror(errno)); return -1; }
+  dfd = dirfd(d);
+  if (dfd < 0) { fprintf(lg, "[queda] poda: sem dirfd\n"); closedir(d); return -1; }
+  v = malloc((size_t)cap * sizeof *v);
+  if (!v) { closedir(d); return -1; }
+  agora = time(NULL); eu = geteuid();
+  while ((e = readdir(d))) {
+    struct stat st; int fd;
+    unsigned char h[18]; ssize_t r;
+    if (++lidos > QD_PODA_MAX) { cortada = 1; break; }
+    if (!qdNomeCore(e->d_name)) continue;
+    if (fstatat(dfd, e->d_name, &st, AT_SYMLINK_NOFOLLOW)) { pulados++; continue; }
+    if (!S_ISREG(st.st_mode) || st.st_uid != eu) { pulados++; continue; }
+    fd = openat(dfd, e->d_name, O_RDONLY | O_NOFOLLOW);
+    if (fd < 0) { pulados++; continue; }
+    r = read(fd, h, sizeof h);
+    close(fd);
+    if (!qdEhCore(h, r)) { pulados++; continue; }
+    if (strlen(e->d_name) >= sizeof v->nome) { pulados++; continue; }
+    if (n == cap) { cap *= 2; QdCore *w = realloc(v, (size_t)cap * sizeof *v); if (!w) break; v = w; }
+    snprintf(v[n].nome, sizeof v[n].nome, "%s", e->d_name);
+    v[n].ino = st.st_ino; v[n].dev = st.st_dev; v[n].tam = st.st_size; v[n].mt = st.st_mtime;
+    n++;
+  }
+  {
+    // O mais novo que cabe nos limites fica: e a evidencia da ultima queda.
+    // mtime futuro vale como recente (relogio de TV torto nao apaga prova).
+    int manter = -1;
+    for (int i = 0; i < n; i++) {
+      int fresco = v[i].mt > agora || agora - v[i].mt <= QD_PODA_IDADE;
+      if (!fresco || v[i].tam > QD_PODA_BYTES) continue;
+      if (manter < 0 || v[i].mt > v[manter].mt ||
+          (v[i].mt == v[manter].mt && strcmp(v[i].nome, v[manter].nome) > 0)) manter = i;
+    }
+    for (int i = 0; i < n; i++) {
+      struct stat ag;
+      if (i == manter) {
+        if (linhas < QD_PODA_LOG_MAX)
+          { fprintf(lg, "[queda] core %s %lld bytes mt=%ld mantido\n", v[i].nome, (long long)v[i].tam, (long)v[i].mt); linhas++; }
+        continue;
+      }
+      // O arquivo pode ter sido trocado depois da varredura: so apaga se
+      // dev/ino ainda batem com o ET_CORE que vimos.
+      if (fstatat(dfd, v[i].nome, &ag, AT_SYMLINK_NOFOLLOW) ||
+          !S_ISREG(ag.st_mode) || ag.st_uid != eu || ag.st_ino != v[i].ino || ag.st_dev != v[i].dev) {
+        if (linhas < QD_PODA_LOG_MAX)
+          { fprintf(lg, "[queda] core %s mudou durante a varredura, fica\n", v[i].nome); linhas++; }
+        continue;
+      }
+      if (!unlinkat(dfd, v[i].nome, 0)) {
+        apagados++;
+        if (linhas < QD_PODA_LOG_MAX)
+          { fprintf(lg, "[queda] core %s %lld bytes mt=%ld apagado\n", v[i].nome, (long long)v[i].tam, (long)v[i].mt); linhas++; }
+      } else if (linhas < QD_PODA_LOG_MAX)
+        { fprintf(lg, "[queda] core %s nao apagou (%s)\n", v[i].nome, strerror(errno)); linhas++; }
+    }
+  }
+  closedir(d);
+  if (n || apagados || pulados || cortada)
+    fprintf(lg, "[queda] poda: %d cores vistos, %d apagados, %d pulados%s\n",
+            n, apagados, pulados, cortada ? " (varredura cortada em 4096)" : "");
+  free(v);
+  return apagados;
+}
 #endif
