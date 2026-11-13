@@ -4,6 +4,13 @@
 // usuario logado de verdade (sessao, addons vindos da conta, perfil ativo
 // gravado, progresso no disco), sai, e confere item a item. Compilar nao prova
 // nada aqui — o defeito era justamente codigo ausente, que compila perfeito.
+//
+// OFFLINE: o "servidor" e o fixture loopback de tests/nuvem_fixture.py
+// (Supabase sintetico e descartavel; veja tests/conta.sh). O transporte real
+// (rede.c/curl) e exercitado do mesmo jeito, so que todo pedido sai para
+// 127.0.0.1. A conferencia de que NENHUM pedido foi para outro host fica no
+// shell, sobre o log do fixture — e o que garante que este teste nunca toca
+// na conta real.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -53,13 +60,18 @@ int main(void) {
   perfis_definir_ativo(3);
   trakt_definir("token-de-quem-estava-logado", "cliente-do-app");
   dados_gravar("progresso.txt", "tt0111161\t1200\t8520\n");
+  // O cache da home da conta tem de sair junto: semeia um binario qualquer
+  // para a remocao ser PROVADA, e nao presumida de um arquivo que nunca houve.
+  dados_gravar("catalogo-rede.bin", "cache-sintetico-do-teste\n");
 
   printf("\nANTES de sair:\n");
-  printf("  addons=%d  trakt=%d  perfil ativo=%d  perfil.txt=%d  progresso.txt=%d\n",
+  printf("  addons=%d  trakt=%d  perfil ativo=%d  perfil.txt=%d  progresso.txt=%d  catalogo=%d\n",
          addons_n(), trakt_ativo(), perfis_ativo(),
-         existe("perfil.txt"), existe("progresso.txt"));
+         existe("perfil.txt"), existe("progresso.txt"), existe("catalogo-rede.bin"));
   if (addons_n() == 0)
-    printf("  AVISO: a conta de teste veio sem addon; o item de addons nao prova nada\n");
+    printf("  AVISO: a fixture nao semeou addon; o item de addons nao prova nada\n");
+  confere("fixture semeou addons da conta", addons_n() > 0, "");
+  confere("catalogo-rede.bin semeado",     existe("catalogo-rede.bin"), "");
 
   sessao_sair();
   sync_esquecer_usuario();
