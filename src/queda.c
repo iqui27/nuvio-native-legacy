@@ -441,22 +441,25 @@ static int qdNomeCore(const char *n) {
   { int d = 0; for (; *p; p++) { if (*p < '0' || *p > '9' || ++d > 10) return 0; } return d >= 1; }
 }
 
-// e_type de um cabecalho ELF (18 bytes): so ET_CORE=4 entra. Validacao
-// deliberadamente curta: magia, classe 1/2 e endian conhecido bastam para o
-// que esta campo quer provar (um dump, nao qualquer outro binario).
+// Cabecalho ELF completo de core dump: magia, classe 1/2 (32/64), endian 1/2,
+// EI_VERSION=1, e_type=ET_CORE(4), e_version=1 e e_ehsize igual ao tamanho do
+// Ehdr da classe (52/64), com o cabecalho inteiro lido. Arquivo curto ou
+// cabecalho torto nao conta como core e nao e tocado.
+static unsigned qdU16(const unsigned char *p, int be) { return be ? (p[0] << 8) | p[1] : p[0] | (p[1] << 8); }
 static int qdEhCore(const unsigned char *h, ssize_t n) {
-  int tipo;
-  if (n < 18 || h[0] != 0x7f || h[1] != 'E' || h[2] != 'L' || h[3] != 'F') return 0;
-  if (h[4] != 1 && h[4] != 2) return 0;
-  if (h[5] == 1) tipo = h[16] | (h[17] << 8);
-  else if (h[5] == 2) tipo = h[17] | (h[16] << 8);
-  else return 0;
-  return tipo == 4;
+  int be, eh;
+  if (n < 52 || h[0] != 0x7f || h[1] != 'E' || h[2] != 'L' || h[3] != 'F') return 0;
+  if (h[4] == 1) eh = 52; else if (h[4] == 2) eh = 64; else return 0;
+  if (h[5] != 1 && h[5] != 2) return 0;
+  be = h[5] == 2;
+  if (n < eh || h[6] != 1 || qdU16(h + 16, be) != 4) return 0;
+  if (qdU16(h + (be ? 22 : 20), be) != 1 || qdU16(h + (be ? 20 : 22), be) != 0) return 0; // e_version
+  return qdU16(h + (eh == 52 ? 40 : 52), be) == (unsigned)eh;
 }
 
 int queda_podar_cores(const char *dir, FILE *log) {
   DIR *d; struct dirent *e; int dfd, n = 0, cap = 64, lidos = 0, pulados = 0;
-  int linhas = 0, apagados = 0, cortada = 0;
+  int linhas = 0, apagados = 0, cortada = 0, falhas = 0, mudaram = 0, semMem = 0;
   QdCore *v; time_t agora; uid_t eu;
   FILE *lg = log ? log : stdout;
   struct stat sd;
@@ -469,12 +472,17 @@ int queda_podar_cores(const char *dir, FILE *log) {
   if (!d) { fprintf(lg, "[queda] poda: nao abri '%.80s' (%s)\n", dir, strerror(errno)); return -1; }
   dfd = dirfd(d);
   if (dfd < 0) { fprintf(lg, "[queda] poda: sem dirfd\n"); closedir(d); return -1; }
+  // O que abriu tem de ser o mesmo diretorio que o fstatat viu (nada trocou o
+  // caminho no meio). Dono do diretorio nao e conferido: $APPDIR pode ser root.
+  { struct stat so;
+    if (fstat(dfd, &so) || so.st_dev != sd.st_dev || so.st_ino != sd.st_ino) {
+      fprintf(lg, "[queda] poda: '%.80s' mudou ao abrir, nada apagado\n", dir); closedir(d); return -1; } }
   v = malloc((size_t)cap * sizeof *v);
   if (!v) { closedir(d); return -1; }
   agora = time(NULL); eu = geteuid();
   while ((e = readdir(d))) {
     struct stat st; int fd;
-    unsigned char h[18]; ssize_t r;
+    unsigned char h[64]; ssize_t r;
     if (++lidos > QD_PODA_MAX) { cortada = 1; break; }
     if (!qdNomeCore(e->d_name)) continue;
     if (fstatat(dfd, e->d_name, &st, AT_SYMLINK_NOFOLLOW)) { pulados++; continue; }
@@ -485,21 +493,25 @@ int queda_podar_cores(const char *dir, FILE *log) {
     close(fd);
     if (!qdEhCore(h, r)) { pulados++; continue; }
     if (strlen(e->d_name) >= sizeof v->nome) { pulados++; continue; }
-    if (n == cap) { cap *= 2; QdCore *w = realloc(v, (size_t)cap * sizeof *v); if (!w) break; v = w; }
+    if (n == cap) { cap *= 2; QdCore *w = realloc(v, (size_t)cap * sizeof *v); if (!w) { semMem = 1; break; } v = w; }
     snprintf(v[n].nome, sizeof v[n].nome, "%s", e->d_name);
     v[n].ino = st.st_ino; v[n].dev = st.st_dev; v[n].tam = st.st_size; v[n].mt = st.st_mtime;
     n++;
   }
   {
-    // O mais novo que cabe nos limites fica: e a evidencia da ultima queda.
-    // mtime futuro vale como recente (relogio de TV torto nao apaga prova).
-    int manter = -1;
+    // Fica UM: o mais novo com mtime <= agora, idade <= 7 dias e <= 256 MiB
+    // (empate: maior nome). So se nenhum desses existir fica o mais novo de
+    // mtime futuro (<= 256 MiB) — senao um core gravado com relogio adiantado
+    // ganharia sempre e cada core novo seria apagado. Com relogio torto a
+    // escolha e so melhor esforco, nao cronologia confiavel.
+    int manter = -1, futuro = -1;
     for (int i = 0; i < n; i++) {
-      int fresco = v[i].mt > agora || agora - v[i].mt <= QD_PODA_IDADE;
-      if (!fresco || v[i].tam > QD_PODA_BYTES) continue;
-      if (manter < 0 || v[i].mt > v[manter].mt ||
-          (v[i].mt == v[manter].mt && strcmp(v[i].nome, v[manter].nome) > 0)) manter = i;
+      int *alvo = v[i].mt > agora ? &futuro : &manter;
+      if (v[i].tam > QD_PODA_BYTES || (v[i].mt <= agora && agora - v[i].mt > QD_PODA_IDADE)) continue;
+      if (*alvo < 0 || v[i].mt > v[*alvo].mt ||
+          (v[i].mt == v[*alvo].mt && strcmp(v[i].nome, v[*alvo].nome) > 0)) *alvo = i;
     }
+    if (manter < 0) manter = futuro;
     for (int i = 0; i < n; i++) {
       struct stat ag;
       if (i == manter) {
@@ -511,6 +523,7 @@ int queda_podar_cores(const char *dir, FILE *log) {
       // dev/ino ainda batem com o ET_CORE que vimos.
       if (fstatat(dfd, v[i].nome, &ag, AT_SYMLINK_NOFOLLOW) ||
           !S_ISREG(ag.st_mode) || ag.st_uid != eu || ag.st_ino != v[i].ino || ag.st_dev != v[i].dev) {
+        mudaram++;
         if (linhas < QD_PODA_LOG_MAX)
           { fprintf(lg, "[queda] core %s mudou durante a varredura, fica\n", v[i].nome); linhas++; }
         continue;
@@ -519,14 +532,17 @@ int queda_podar_cores(const char *dir, FILE *log) {
         apagados++;
         if (linhas < QD_PODA_LOG_MAX)
           { fprintf(lg, "[queda] core %s %lld bytes mt=%ld apagado\n", v[i].nome, (long long)v[i].tam, (long)v[i].mt); linhas++; }
-      } else if (linhas < QD_PODA_LOG_MAX)
+      } else if (falhas++, linhas < QD_PODA_LOG_MAX)
         { fprintf(lg, "[queda] core %s nao apagou (%s)\n", v[i].nome, strerror(errno)); linhas++; }
     }
   }
   closedir(d);
-  if (n || apagados || pulados || cortada)
-    fprintf(lg, "[queda] poda: %d cores vistos, %d apagados, %d pulados%s\n",
-            n, apagados, pulados, cortada ? " (varredura cortada em 4096)" : "");
+  // Resumo sempre completo, mesmo depois do teto de 16 linhas. Varredura ou
+  // lista cortada: o que nao foi visto nao e apagado nem contado.
+  if (n || apagados || pulados || cortada || semMem)
+    fprintf(lg, "[queda] poda: %d cores vistos, %d apagados, %d pulados, %d falhas, %d mudaram%s%s\n",
+            n, apagados, pulados, falhas, mudaram, cortada ? " (varredura cortada em 4096)" : "",
+            semMem ? " (lista cortada: sem memoria)" : "");
   free(v);
   return apagados;
 }
