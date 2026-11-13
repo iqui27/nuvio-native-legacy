@@ -18011,7 +18011,8 @@
    "ref": "docs/plans/matis94-import-20261112/fechamento.md",
    "resultado": "Merge 0cefb7bc4c28e787c20a0b3353b37f2dac85d6f1; gate13/13+C9complemento12/12+pós5/5; nenhum P0/P1 confirmado, oito P2 C mantidos. 59 IDs e classificações iniciais preservados; itens de issues intocados.",
    "evidencia": "Diff94f7d940c5d18284ea6c3f8a5e35a318af283f52a51534703d30a00eb89b1a6b; digest 7f50a9b71dfd5897ea4819faeb937adad29fde68525abe146d8848d0ba49f432. C8FAIL134/open6.218s->PASS0/1.122s callbackStandardreal. F05FPS/D13ARM-ABI-IPK-P2P/FFmpeg7.1.5/TV ainda não comprovados; SDK sem nuvio-audio-config; hevc_annexb_engine rc1 não dispensado. Sem fecharissues/push/release/install/accounts/serviçonovo."
-  }
+  },
+  {"data": "2026-11-13", "quem": "Central (Fable execution); reviewer j-rev-fv-leg773-code (model UNKNOWN); runtime verifier j-verify-fv-leg773 (model UNKNOWN)", "o_que": "Post-merge documentation for #773 (webOS subtitle trackNum parse, positional fallback). Code merged into integracao/2.1 at 261ab41 from 1daef874. Issue remains open; B8 device proof pending.", "issues": [], "ref": "docs/plans/issues-exec-fable-20261113/leg773-integracao.md", "resultado": "Gate 2/2 passed; red 134 on base, green 0 and build 0 on source head (distinct verifier). Post-merge tests/video_acb_lg.sh rc 0 on 261ab41, log sha256 68be098982c7a41263a09e44a1555a135404556fbdf003905df24527d9db6a55, HEAD unchanged. i18n post-check rc 0. P2 notes F1-F5 kept; no P0/P1. Not proven: B8 webOS 4.4.3 device payload and selection; not a fix for all subtitles.", "evidencia": "Diff 9115d8bba..1daef874b SHA-256 4d856f16b388b84f26d7d682ea693e1705a75ccd28fef83ba02712d6b2cd4539; gate digest a1202ed80b0b73cbe93481e5ffea52fbf0ee6607d9cc1a0c2dbc3da8e7a34ceb; docs/plans/issues-exec-fable-20261113/STATUS.md."}
  ],
  "decisoes": [
   {
