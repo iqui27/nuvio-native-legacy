@@ -148,6 +148,9 @@ ctr_run --rm --platform "$BUILD_PLATFORM" --env-file "$ENVF" \
   if [ "${NUVIO_DTS_FFMPEG:-1}" = "1" ]; then
     DTS=${NUVIO_DTS_ROOT:-/opt/nuvio-dts}
     [ -f "$DTS/include/libavcodec/avcodec.h" ] || { echo "FFmpeg DTS ausente; reconstrua tools/Dockerfile ou use NUVIO_DTS_FFMPEG=0" >&2; exit 2; }
+    # Headers alone also accept old SDKs missing the DV audio decoders.
+    # Fail even in auto mode once FFmpeg was found; never silently drop DV.
+    sh tools/check-dts-ffmpeg.sh "$DTS"
     DTS_CFLAGS="-DNV_DTS_FFMPEG -DNV_DTS_WEBOS_RECOVERY -I$DTS/include"
     DTS_LIBS="-L$DTS/lib -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lpthread -lm"
   fi

@@ -77,6 +77,12 @@ fi
   --extra-cflags="${CFLAGS:--O2}"
 make -j"${NUVIO_DTS_JOBS:-2}"
 make install
+if [ "$TARGET" = webos ]; then
+  # Record configure's resolved components, not merely the requested flags.
+  # arm.sh refuses stale SDK images that cannot retain selected DV audio.
+  grep -E '^CONFIG_(DCA_DECODER|TRUEHD_DECODER|AC3_DECODER|EAC3_DECODER|AAC_ENCODER|AC3_ENCODER)=' \
+    ffbuild/config.mak > "$PREFIX/nuvio-audio-config"
+fi
 # Include license text and pin provenance for redistribution of static LGPL libs.
 cp "$SRC/COPYING.LGPLv2.1" "$PREFIX/"
 printf 'FFmpeg %s\nhttps://ffmpeg.org/releases/ffmpeg-%s.tar.xz\nSHA256 %s\n' "$VERSION" "$VERSION" "$SHA256" > "$PREFIX/SOURCE.txt"
