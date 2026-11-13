@@ -3440,16 +3440,63 @@ static void limitesDaJanela(const Fio *f, double a, double b, int *i0, int *i1, 
       : (segundosDe(f, f->pontos[j - 1].tempo) + segundosDe(f, f->pontos[j].tempo)) / 2.0;
 }
 
-// Bytes de eventos que ficam com os cortes [ta, tb). Linha que nao e evento
-// (ou cujo tempo nao se le) fica sempre.
-static size_t bytesNaJanela(const char *ev, const char *fim, double ta, double tb, double pos) {
-  size_t fica = 0; const char *l = ev;
+// Linhas antes de ta que ainda estao na tela em pos seguram o ponto colhido
+// do mesmo centesimo de inicio (1 -> 3). Pontos no mesmo centesimo nao dizem
+// qual linha e de qual, entao a posse e do centesimo: ficaLinha mantem toda
+// linha dele, e nenhum ponto fica marcado sem a sua fala. Ponto de Cluster
+// inteiro (rel < 0) colhe falas de outros tempos e nao e segurado.
+static int primeiroNoCs(const Fio *f, int i0, long long cs) {
+  int lo = 0, hi = i0;
+  while (lo < hi) {
+    int meio = lo + (hi - lo) / 2;
+    if (llround(segundosDe(f, f->pontos[meio].tempo) * 100.0) < cs) lo = meio + 1;
+    else hi = meio;
+  }
+  return lo;
+}
+
+static void marcarAtivos(Fio *f, const char *ev, const char *fim, double ta, int i0, double pos) {
+  const char *l = ev;
   while (l < fim) {
     const char *nl = memchr(l, '\n', (size_t)(fim - l)), *prox = nl ? nl + 1 : fim;
     double t = inicioDaLinha(l, prox);
-    if (t < 0.0 || (t < tb && (t >= ta || fimDaLinha(l, prox) > pos))) fica += (size_t)(prox - l);
+    if (t >= 0.0 && t < ta && fimDaLinha(l, prox) > pos) {
+      long long cs = llround(t * 100.0);
+      int k;
+      for (k = primeiroNoCs(f, i0, cs); k < i0 && llround(segundosDe(f, f->pontos[k].tempo) * 100.0) == cs; k++)
+        if (f->pontos[k].colhido == 1 && f->pontos[k].rel >= 0) f->pontos[k].colhido = 3;
+    }
     l = prox;
   }
+}
+
+// A linha fica com os cortes [ta, tb), ou antes de ta se ainda esta na tela
+// ou se o seu centesimo foi segurado por marcarAtivos. Linha que nao e evento
+// (ou cujo tempo nao se le) fica sempre.
+static int ficaLinha(const Fio *f, const char *l, const char *prox, double ta, double tb, int i0, double pos) {
+  double t = inicioDaLinha(l, prox);
+  long long cs;
+  int k;
+  if (t < 0.0) return 1;
+  if (t >= tb) return 0;
+  if (t >= ta || fimDaLinha(l, prox) > pos) return 1;
+  cs = llround(t * 100.0);
+  for (k = primeiroNoCs(f, i0, cs); k < i0 && llround(segundosDe(f, f->pontos[k].tempo) * 100.0) == cs; k++)
+    if (f->pontos[k].colhido == 3) return 1;
+  return 0;
+}
+
+// Bytes que ficam com a mesma regra do despejo (marca, conta, desmarca).
+static size_t bytesNaJanela(Fio *f, const char *ev, const char *fim, double ta, double tb, int i0, double pos) {
+  size_t fica = 0; const char *l = ev;
+  int k;
+  marcarAtivos(f, ev, fim, ta, i0, pos);
+  while (l < fim) {
+    const char *nl = memchr(l, '\n', (size_t)(fim - l)), *prox = nl ? nl + 1 : fim;
+    if (ficaLinha(f, l, prox, ta, tb, i0, pos)) fica += (size_t)(prox - l);
+    l = prox;
+  }
+  for (k = 0; k < i0; k++) if (f->pontos[k].colhido == 3) f->pontos[k].colhido = 1;
   return fica;
 }
 
@@ -3468,29 +3515,15 @@ static void despejar(Fio *f, double pos) {
   fim = f->corpo + f->corpoTam;
   for (;;) {
     limitesDaJanela(f, pos - atras, pos + frente, &i0, &i1, &ta, &tb);
-    if (cab + bytesNaJanela(ev, fim, ta, tb, pos) <= (size_t)(MKVASS_CORPO_ALTO / 2) ||
+    if (cab + bytesNaJanela(f, ev, fim, ta, tb, i0, pos) <= (size_t)(MKVASS_CORPO_ALTO / 2) ||
         (atras <= MKVASS_ATRAS_SEG && frente <= MKVASS_URGENTE_SEG)) break;
     atras /= 2.0;  if (atras < MKVASS_ATRAS_SEG) atras = MKVASS_ATRAS_SEG;
     frente /= 2.0; if (frente < MKVASS_URGENTE_SEG) frente = MKVASS_URGENTE_SEG;
   }
+  marcarAtivos(f, ev, fim, ta, i0, pos);
   for (l = w = ev; l < fim; ) {
     char *nl = memchr(l, '\n', (size_t)(fim - l)), *prox = nl ? nl + 1 : fim;
-    double t = inicioDaLinha(l, prox);
-    int ativo = t >= 0.0 && t < ta && t < tb && fimDaLinha(l, prox) > pos;
-    if (ativo) {
-      int lo = 0, hi = i0;
-      long long cs = llround(t * 100.0);
-      while (lo < hi) {
-        int meio = lo + (hi - lo) / 2;
-        if (llround(segundosDe(f, f->pontos[meio].tempo) * 100.0) < cs) lo = meio + 1;
-        else hi = meio;
-      }
-      while (lo < i0 && llround(segundosDe(f, f->pontos[lo].tempo) * 100.0) == cs) {
-        if (f->pontos[lo].colhido == 1) f->pontos[lo].colhido = 3;
-        lo++;
-      }
-    }
-    if (t < 0.0 || (t < tb && (t >= ta || ativo))) { if (w != l) memmove(w, l, (size_t)(prox - l)); w += prox - l; }
+    if (ficaLinha(f, l, prox, ta, tb, i0, pos)) { if (w != l) memmove(w, l, (size_t)(prox - l)); w += prox - l; }
     l = prox;
   }
   f->corpoTam = (size_t)(w - f->corpo);

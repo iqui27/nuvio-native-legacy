@@ -22,5 +22,22 @@ int main(void) {
   despejar(&f, 90.0);
   assert(!strstr(f.corpo, ",B\n") && p[1].colhido == 0);
   free(f.corpo);
+
+  // Same-centisecond siblings: X ended, Y still on screen. Kept lines and
+  // harvested points must agree, or a seek-back never brings X back.
+  doc = "[Script Info]\nTitle: test\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+    "Dialogue: 0,0:00:10.00,0:00:20.00,X\n"
+    "Dialogue: 0,0:00:10.00,0:01:20.00,Y\n"
+    "Dialogue: 0,0:00:55.00,0:00:58.00,C\n";
+  p[0] = p[1] = (Ponto){.tempo=10000,.colhido=1}; p[2] = (Ponto){.tempo=55000,.colhido=1};
+  f.nColhidos = 3; f.corpo = strdup(doc); assert(f.corpo); f.corpoTam = strlen(doc);
+  despejar(&f, 60.0);
+  assert(strstr(f.corpo, ",Y\n") && strstr(f.corpo, ",C\n"));
+  assert(strstr(f.corpo, ",X\n") && strstr(f.corpo, ",X\n") < strstr(f.corpo, ",Y\n"));
+  assert(p[0].colhido == 1 && p[1].colhido == 1 && f.nColhidos == 3);
+  despejar(&f, 90.0);
+  assert(!strstr(f.corpo, ",X\n") && !strstr(f.corpo, ",Y\n"));
+  assert(p[0].colhido == 0 && p[1].colhido == 0);
+  free(f.corpo);
   return 0;
 }
