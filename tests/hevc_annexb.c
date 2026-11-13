@@ -122,6 +122,15 @@ int main(void) {
     }
   }
 
+  /* Malformed hvcC whose last NAL ends in a start code (no emulation
+   * prevention): the SEI scan must not read past the sets (SANITIZE=1). */
+  { Buf y=hvcc(4);memcpy(y.b+y.n-4,"\0\0\0\1",4);
+    assert(nv_hevc_annexb_open(&h,y.b,y.n)==1);
+    Buf in={{0},0},w={{0},0};
+    for(unsigned t=32;t<=34;t++) { lp(&in,4,t,6,10);ab(&w,t,6,10); }
+    lp(&in,4,19,8,50);ab(&w,19,8,50);
+    expect(&h,&in,&w,NV_HEVC_ANNEXB_INBAND); }
+
   /* hvcC forms left to FFmpeg's filter. */
   { Buf y=hvcc(4);y.b[0]=0;assert(nv_hevc_annexb_open(&h,y.b,y.n)==0 && !h.sets); }
   { Buf y=hvcc(4);y.b[23]=0x80|1;assert(nv_hevc_annexb_open(&h,y.b,y.n)==0); }      /* slice type in hvcC */
