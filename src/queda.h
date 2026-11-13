@@ -49,4 +49,21 @@ int  queda_relatar(const char *arquivo);
 void queda_espelho(const char *arquivo);
 // O mesmo que queda_relatar, escrevendo em `saida` (ex.: open_memstream).
 int  queda_relatar_em(const char *arquivo, FILE *saida);
+
+// PODA DE CORES (#766): o webOS larga core/core.<pid> (~118 MB cada) no
+// diretorio do app; ~16 quedas lotaram a particao de 2 GB de duas TVs. Uma
+// varredura por abertura: fica o arquivo MAIS NOVO que ainda vale como
+// evidencia (ate 7 dias e 256 MiB) e apaga o resto — mas so o que prova ser
+// core dump do proprio processo:
+//  * nome exato "core" ou "core." + 1..10 digitos;
+//  * fstatat(AT_SYMLINK_NOFOLLOW): regular e do nosso uid;
+//  * aberto com openat(O_NOFOLLOW) e cabecalho ELF e_type=ET_CORE conferido;
+//  * na hora de apagar, fstatat de novo conferindo dev/ino — se trocaram o
+//    arquivo no meio, nao apaga o impostor.
+// Sem recursao, sem seguir link, sem shell. Linhas "[queda] core ..." vao ao
+// `log` (no maximo 16 + resumo) e saem no relato de arranque: contagem,
+// datas e tamanhos sobrevivem como texto mesmo quando o binario e apagado.
+// Devolve o numero de arquivos apagados; -1 quando a API falha (sem /proc,
+// dir inexistente) — o diagnóstico fica no log, nada e removido.
+int  queda_podar_cores(const char *dir, FILE *log);
 #endif

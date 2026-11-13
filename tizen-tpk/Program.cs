@@ -1050,6 +1050,9 @@ namespace NuvioTpk
         {
             pausado = false;
             Etapa("note resume" + Contagem() + " mainVisible=" + principalVisivel + (JanelaUnica ? " (glview)" : " glVisible=" + glVisivel));
+            // #783: retomada real (foreground) pede a reconexao nativa da
+            // sessao que a Home parou; sem sessao parada pelo sistema e no-op.
+            try { video?.RetomarDoSistema(); } catch { }
             base.OnResume();
         }
 

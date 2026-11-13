@@ -25,6 +25,7 @@ int avisos_enviar_arranque(const char *relato, const char *tv, int segundos) {
   (void)relato; (void)tv; (void)segundos; return 0;
 }
 int ajustes_envio_auto(void) { return 0; }
+int queda_podar_cores(const char *d, FILE *l) { (void)d; (void)l; return 0; }
 
 #include "../src/arranque.c"
 

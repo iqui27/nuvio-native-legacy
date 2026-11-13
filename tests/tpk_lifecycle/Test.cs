@@ -18,6 +18,9 @@ class Test {
     static readonly List<int> erros = new List<int>();
     static int Erros { get { lock (erros) return erros.Count; } }
     static void Check(bool ok, string what) { Console.WriteLine((ok ? "ok: " : "FAIL: ") + what); if (!ok) failures++; }
+    // #783: o metodo nao existe na base; a chamada via reflexao entao nunca
+    // emite EV_PRESO e as afirmacoes de retomada falham (red comportamental).
+    static void Retomar() => typeof(Video).GetMethod("RetomarDoSistema", BindingFlags.Instance|BindingFlags.Public)?.Invoke(video, null);
     static void Entry(string field, params object[] args) => ((Delegate)typeof(Video).GetField(field, BindingFlags.Instance|BindingFlags.NonPublic).GetValue(video)).DynamicInvoke(args);
     static object EntryPos() => ((Delegate)typeof(Video).GetField("fPos", BindingFlags.Instance|BindingFlags.NonPublic).GetValue(video)).DynamicInvoke();
     static void Pump() { for (;;) { Action a; lock (queue) { if (queue.Count == 0) return; a = queue.Dequeue(); } a(); } }
@@ -205,6 +208,50 @@ class Test {
         Entry("fBuscar", 1200000); Wait(() => (int)EntryPos() == 1200000);
         Check((int)EntryPos() == 1200000 && old.State == PlayerState.Paused && old.PositionCalls == 0, "seek pausado atualiza relogio sem consultar o player");
         Entry("fParar"); Wait(() => old.Disposed);
+
+        // #783: Home para a sessao de proposito; a retomada da plataforma pede
+        // UMA EV_PRESO com o ultimo relogio, em vez dos 15 s do watchdog.
+        Setup(); OpenTocado(); old = Player.All[0];
+        video.Tique(); Wait(() => (int)EntryPos() == 1234);
+        antes = presos;
+        video.PausarPeloSistema(); Wait(() => old.Disposed);
+        Check(presos == antes && Player.All.Count == 1, "segundo plano nao reabre nem avisa o C");
+        Retomar();
+        Check(presos == antes + 1 && alvoPreso == 1234 && Player.All.Count == 1,
+              "Home->retomada avisa uma vez com o ultimo relogio sem reabrir no host");
+        Retomar();
+        Check(presos == antes + 1, "segunda retomada nao duplica o aviso");
+        // Pausa manual + Home + retomada: avisa; o C reabre pausado (reconPausa).
+        Setup(); OpenTocado(); old = Player.All[0];
+        Entry("fPausar", 1); Wait(() => old.State == PlayerState.Paused);
+        video.PausarPeloSistema(); Wait(() => old.Disposed);
+        antes = presos; Retomar();
+        Check(presos == antes + 1, "pausado pelo usuario + Home: retomada avisa (C reabre pausado)");
+        // Sem sessao aberta (partida fria / OnResume sintetica): nada.
+        Setup();
+        antes = presos; video.PausarPeloSistema(); Retomar();
+        Check(presos == antes && Player.All.Count == 0, "sem sessao a retomada e no-op");
+        // Encerrada antes da Home: a retomada nao ressuscita.
+        Setup(); OpenTocado(); old = Player.All[0]; int fim0 = completed;
+        old.Complete(true); Wait(() => completed == fim0 + 1);
+        video.PausarPeloSistema(); Wait(() => old.Disposed);
+        antes = presos; Retomar();
+        Check(presos == antes && Player.All.Count == 1, "sessao encerrada antes da Home nao retoma");
+        // Parada do app antes da Home: idem.
+        Setup(); OpenTocado(); old = Player.All[0];
+        Entry("fParar"); Wait(() => old.Disposed);
+        video.PausarPeloSistema();
+        antes = presos; Retomar();
+        Check(presos == antes && Player.All.Count == 1, "sessao parada pelo app nao retoma");
+        // Fonte nova entre Home e retomada: a sessao dela vale, a velha morreu.
+        Setup(); OpenTocado(); old = Player.All[0];
+        video.PausarPeloSistema(); Wait(() => old.Disposed);
+        antes = presos;
+        Open(); Wait(() => Player.All.Count == 2 && Player.All[1].Starts == 1);
+        Retomar();
+        Check(presos == antes && Player.All.Count == 2 && Player.All[1].State == PlayerState.Playing,
+              "fonte nova entre Home e retomada nao herda aviso da sessao velha");
+        Entry("fParar"); Wait(() => Player.All[1].Disposed);
         return failures == 0 ? 0 : 1;
     }
 }

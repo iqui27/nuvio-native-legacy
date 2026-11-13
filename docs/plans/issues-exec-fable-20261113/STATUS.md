@@ -5,7 +5,8 @@ Authorized by owner 2026-11-13. Base: `9115d8bbadd09f98fef5b939732d5334d7b726c7`
 
 ## Merged
 - #773 — first code cut merged into `integracao/2.1` at `261ab41c90838b86c0cdf40811a5ffc2ece08fe1` (source `1daef874bf1dce36dc74dc2dc2200f1ac03c5dfd`). Gate digest `a1202ed80b0b73cbe93481e5ffea52fbf0ee6607d9cc1a0c2dbc3da8e7a34ceb`, 2/2 passed. Issue OPEN. Details: `leg773-integracao.md`.
-- No other campaign candidate merged. Central holds further merges until post-merge docs are done.
+- ready-tv lot (source only, NOT TV acceptance): merge `c5548b46578a02d69c541e8043e874ae8a3e8d18` from candidate `5f1898a2c8196fb62cca835199b0ce7c4434e4de` (base `21e1565df9b6cd4112c4cabc9f7ab2f26eef295d`, diffSHA `b046cffc816b5f2881c17413f83c17a8c62b244d2232c81122dcd44810a05726`, digest `896288673a9acae814aae0e2060d7bb79f20ccc57ab62c18f382d2ca95bf97e1`). Items: DMP766 (storage hygiene, not crash root), SAM/P2P783 (VOD Home-return mechanism), ASS719 (active and same-centisecond sibling retention). Host gate 7/7 rc 0 (zero failures). Post-merge `queda.sh`, `tpk-preso.sh`, `mkvass_despejo719.sh` rc 0 on c5548b4. Details: `ready-tv-integracao.md`.
+- No other campaign candidate merged. BIB639 / PAG789 full global gate still pending (not waived, not integrated).
 
 ## Evidence for #773
 - Red on base: rc 134, assertion at `tests/video_acb_lg.c:196`. Green on source head: rc 0; build rc 0.
@@ -16,4 +17,7 @@ Authorized by owner 2026-11-13. Base: `9115d8bbadd09f98fef5b939732d5334d7b726c7`
 ## Open / unproven
 - #773: B8 (webOS 4.4.3) device proof and on-device selection still missing. Not claimed fixed on device.
 - P2 notes F1–F5 (see `leg773-integracao.md`): kept, not blockers.
+- DMP766, SAM/P2P783, ASS719: source integrated; physical TV acceptance UNKNOWN; issues stay open.
+- P2 notes retained for ready-tv (SAM F1-F5, ASS F4-F6, DMP F7): not blockers. See `ready-tv-integracao.md`.
+- BIB639 / PAG789: full global gate pending.
 - All other issues: NOT integrated, pending candidate flow.

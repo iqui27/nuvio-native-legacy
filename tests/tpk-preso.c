@@ -158,5 +158,30 @@ int main(void) {
   assert(aberturas==antes && paradas==stops);
   video_buscar(3500);assert(!video_terminou() && busca==3500000);
   video_parar();
-  puts("ok: pause/buffer/seek, bounded recovery, EOS cancels reconnect");
+  // #783: retomada da Home = EV_PRESO com o ultimo relogio do host: mesmo
+  // titulo, mesma URL, posicao e selecao de faixas; pausa manual preservada.
+  video_definir_reconexao(1);video_tocar("http://test/movie");prontoHost();
+  posicao=1337033;passo(1);video_pausar(1);nv_tpk_video_evento(3,0,0);
+  stops=paradas;antes=aberturas;
+  nv_tpk_video_evento(9,1337033,0);passo(1);
+  assert(paradas==stops+1 && recon.pendente && recon.alvo==1337.033 && aberturas==antes);
+  passo(3000);prontoHost();passo(1);
+  assert(busca==1337033 && pausa==1 && tocando && !falhou && video_ativo());
+  video_parar();
+  // #783: sessao encerrada antes da Home nao reabre na retomada.
+  video_definir_reconexao(1);video_tocar("http://test/movie");prontoHost();
+  posicao=3599750;passo(1);nv_tpk_video_evento(4,0,0);passo(1);
+  assert(video_terminou());
+  antes=aberturas;stops=paradas;
+  nv_tpk_video_evento(9,3599000,0);passo(1);passo(30000);
+  assert(aberturas==antes && paradas==stops && !video_reconectando());
+  video_parar();
+  // #783: encerrada, busca de volta nao ressuscita uma EV_PRESO velha.
+  video_definir_reconexao(1);video_tocar("http://test/movie");prontoHost();
+  posicao=3599750;passo(1);nv_tpk_video_evento(4,0,0);
+  nv_tpk_video_evento(9,3599000,0); // aviso que podia vazar do quadro do EOS
+  video_buscar(3500);passo(1);passo(30000);
+  assert(!video_terminou() && busca==3500000 && !video_reconectando());
+  video_parar();
+  puts("ok: pause/buffer/seek, bounded recovery, EOS cancels reconnect, home resume");
 }
