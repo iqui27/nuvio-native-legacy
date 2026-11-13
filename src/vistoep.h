@@ -10,7 +10,7 @@
 // antes de qualquer lista existir. Guardar no episodio faria o dado nascer e
 // morrer junto com a tela que o mostra.
 //
-// DUAS FONTES, e as duas escrevem aqui:
+// TRES FONTES, mais os gestos locais, escrevem aqui:
 //   - a conta Nuvio, por sync_pull_watched_items, que ja devolve `season` e
 //     `episode` em cada linha (PLANO-CONTA-SYNC.md secao 1.5) e cujo episodio
 //     era lido e jogado fora;
@@ -18,6 +18,8 @@
 //     temporadas e episodios. Nao serve /sync/history: ela e paginada nas
 //     ultimas reproducoes e responde "o que foi visto recentemente", nao "o que
 //     esta visto".
+//   - o Simkl, por /sync/all-items/all/all com `include_all_episodes` e
+//     `episode_watched_at`, que devolve `watched_at` por episodio.
 //
 // A CHAVE E O ID DO TITULO, sempre truncado no ':' — quem chama pode passar
 // "tt123" ou "tt123:2:8", e o segundo e o formato que CatItem.imdb carrega num
@@ -43,6 +45,12 @@ int  vistoep_contar(const char *imdb);
 // O titulo TEM mapa? Distingue "serie sem episodio visto" de "nunca soubemos
 // nada desta serie", que e a diferenca entre desenhar zero e nao desenhar nada.
 int  vistoep_conhecido(const char *imdb);
+// While a source rebuilds a title's marks (Simkl mapping an anime's history
+// onto the episode list, mark by mark), the title answers "not known yet" in
+// vistoep_conhecido: the page shows no count instead of a climbing or wrong
+// one. Nests; segurar 0 releases. Both bump vistoep_revisao so the page
+// redraws.
+void vistoep_segurar(const char *imdb, int segurar);
 
 // Le o corpo de /shows/<id>/progress/watched do Trakt, que enumera a serie
 // INTEIRA com `completed` por episodio — entao este leitor escreve 0 tambem, e
@@ -150,5 +158,8 @@ int  vistoep_lote(const char *imdb, int modo, int temporada, int episodio,
 unsigned vistoep_revisao(void);
 int  vistoep_n(void);          // total de episodios no mapa, para log e teste
 void vistoep_esquecer(void);   // logout
+// How many times the map was emptied (vistoep_esquecer): marks imported before
+// a later count are gone.
+unsigned vistoep_esvaziado(void);
 
 #endif

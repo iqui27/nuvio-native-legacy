@@ -71,6 +71,9 @@ static void loteSoContaMudancasEfetivas(void) {
   // disparar um envio ao servidor como se o estado local tivesse mudado.
   for (i = 2; i <= 8000; i++) vistoep_definir("tt1", 1, i, 1);
   assert(vistoep_n() == 8000);
+  assert(vistoep_estado("tt1", 1, 1) == 1);
+  assert(vistoep_estado("tt1", 1, 4000) == 1);
+  assert(vistoep_estado("tt1", 1, 8000) == 1);
   pares[0].episodio = 8001;
   assert(vistoep_marcar_lote("tt1", pares, 1, 1) == 0);
   assert(vistoep_estado("tt1", 1, 8001) == -1);
@@ -178,6 +181,22 @@ int main(void) {
   assert(vistoep_estado("tt14688458:2:1", 2, 1) == 1);
   assert(vistoep_conhecido("tt14688458:9:9"));
   puts("ok  id composto e id simples sao a mesma chave");
+
+  // A title held while a source rebuilds its marks reads "not known yet";
+  // holds nest, and each change moves the revision so the page redraws.
+  { unsigned r0 = vistoep_revisao();
+    vistoep_segurar("tt14688458:2:1", 1);
+    vistoep_segurar("tt14688458", 1);
+    assert(!vistoep_conhecido("tt14688458") && vistoep_revisao() != r0);
+    assert(vistoep_estado("tt14688458", 2, 1) == 1);   // the marks themselves stay
+    vistoep_segurar("tt14688458", 0);
+    assert(!vistoep_conhecido("tt14688458"));
+    r0 = vistoep_revisao();
+    vistoep_segurar("tt14688458", 0);
+    assert(vistoep_conhecido("tt14688458") && vistoep_revisao() != r0);
+    vistoep_segurar("tt14688458", 0);                  // one release too many: ignored
+    assert(vistoep_conhecido("tt14688458")); }
+  puts("ok  held title reads not known until every hold is released");
 
   assert(vistoep_contar("tt14688458") == 4);
   assert(vistoep_contar("tt99999999") == 0);

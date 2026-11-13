@@ -48,7 +48,7 @@ PY
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/nuvio-simkl-cw-XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
-cc ${flags[@]+"${flags[@]}"} -O1 -g -Wall -Wextra -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
+cc ${flags[@]+"${flags[@]}"} -DSMK_BIB_FRESCA=0 -O1 -g -Wall -Wextra -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -Wno-deprecated-declarations -Wno-macro-redefined \
-  src/simkl.c src/js.c src/traktscrobble.c src/metaep.c tests/simkl_cw.c -o "$tmp/simkl_cw" -lpthread
+  src/simkl.c src/simklbib.c src/simklanime.c src/js.c src/traktscrobble.c src/metaep.c tests/simkl_cw.c -o "$tmp/simkl_cw" -lpthread
 "$tmp/simkl_cw"

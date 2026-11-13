@@ -19,12 +19,17 @@
 // especial. Estourado, o mapa PARA DE CRESCER e diz no log — o que ja entrou
 // continua valendo, porque meio mapa e melhor que nenhum.
 #define VE_LOTE VE_LOTE_MAX
+#define VE_HASH_CAP 16384
 
 typedef struct { char id[16]; short temp, ep; unsigned char visto; } Marca;
 static Marca *mapa;
+static unsigned short indice[VE_HASH_CAP]; // mapa index + 1; zero means empty
+_Static_assert(VE_HASH_CAP > VE_MAX * 2, "watched index must stay below 50% load");
+_Static_assert(VE_MAX < USHRT_MAX, "watched index entries must fit in unsigned short");
 static int n, cap, avisouTeto;
 // Sobe a cada mudanca de estado no mapa (vistoep_revisao).
 static unsigned revisao;
+static unsigned esvaziado;   // vistoep_esvaziado
 // TRAVA DO MAPA. Escrevem nele o fio de extras (extras.c, parte 0, ao abrir a
 // pagina de uma serie) e o fio principal (sync_passo, player, episodios,
 // agenda, logout); le o desenho do detalhe. Sem ela o realloc de definir()
@@ -46,11 +51,31 @@ static void base(const char *origem, char *dst, size_t tam) {
   dst[k] = 0;
 }
 
+static unsigned hash(const char *id, int t, int e) {
+  unsigned h = 2166136261u;
+  for (; *id; id++) h = (h ^ (unsigned char)*id) * 16777619u;
+  h = (h ^ (unsigned)t) * 16777619u;
+  h = (h ^ (unsigned)e) * 16777619u;
+  return h & (VE_HASH_CAP - 1);
+}
+
 static int achar(const char *id, int t, int e) {
-  int i;
-  for (i = 0; i < n; i++)
-    if (mapa[i].temp == t && mapa[i].ep == e && !strcmp(mapa[i].id, id)) return i;
+  unsigned slot = hash(id, t, e);
+  for (unsigned tentativas = 0; tentativas < VE_HASH_CAP; tentativas++) {
+    unsigned valor = indice[slot];
+    if (!valor) return -1;
+    int i = (int)valor - 1;
+    if (mapa[i].temp == t && mapa[i].ep == e && !strcmp(mapa[i].id, id))
+      return i;
+    slot = (slot + 1) & (VE_HASH_CAP - 1);
+  }
   return -1;
+}
+
+static void indexar(int i) {
+  unsigned slot = hash(mapa[i].id, mapa[i].temp, mapa[i].ep);
+  while (indice[slot]) slot = (slot + 1) & (VE_HASH_CAP - 1);
+  indice[slot] = (unsigned short)(i + 1);
 }
 
 static int definir(const char *imdb, int temporada, int episodio, int visto) {
@@ -86,6 +111,7 @@ static int definir(const char *imdb, int temporada, int episodio, int visto) {
   mapa[n].temp = (short)temporada;
   mapa[n].ep = (short)episodio;
   mapa[n].visto = visto ? 1 : 0;
+  indexar(n);
   n++;
   revisao++;
   return 1;
@@ -216,13 +242,46 @@ int vistoep_total(const char *imdb) {
   return k;
 }
 
+// Titles a source is rebuilding (vistoep_segurar), each with how many holds.
+#define SEGURADOS_MAX 8
+static struct { char id[16]; int n; } segurados[SEGURADOS_MAX];
+
+static int seguradoTravado(const char *id) {   // caller holds `trava`
+  for (int i = 0; i < SEGURADOS_MAX; i++)
+    if (segurados[i].n > 0 && !strcmp(segurados[i].id, id)) return 1;
+  return 0;
+}
+
+void vistoep_segurar(const char *imdb, int segurar) {
+  char id[16];
+  int i, livre = -1;
+  base(imdb, id, sizeof id);
+  if (!id[0]) return;
+  pthread_mutex_lock(&trava);
+  for (i = 0; i < SEGURADOS_MAX; i++) {
+    if (segurados[i].n > 0 && !strcmp(segurados[i].id, id)) break;
+    if (segurados[i].n <= 0 && livre < 0) livre = i;
+  }
+  if (i < SEGURADOS_MAX) {
+    segurados[i].n += segurar ? 1 : -1;
+    revisao++;
+  } else if (segurar && livre >= 0) {
+    // Full table: the title just shows its marks as they come, as before.
+    snprintf(segurados[livre].id, sizeof segurados[livre].id, "%s", id);
+    segurados[livre].n = 1;
+    revisao++;
+  }
+  pthread_mutex_unlock(&trava);
+}
+
 int vistoep_conhecido(const char *imdb) {
   char id[16];
   int i;
   base(imdb, id, sizeof id);
   if (!id[0]) return 0;
   pthread_mutex_lock(&trava);
-  for (i = 0; i < n; i++) if (!strcmp(mapa[i].id, id)) break;
+  if (seguradoTravado(id)) i = n;
+  else for (i = 0; i < n; i++) if (!strcmp(mapa[i].id, id)) break;
   i = i < n;
   pthread_mutex_unlock(&trava);
   return i;
@@ -429,8 +488,16 @@ unsigned vistoep_revisao(void) {
 void vistoep_esquecer(void) {
   pthread_mutex_lock(&trava);
   free(mapa); mapa = NULL; n = 0; cap = 0; avisouTeto = 0;
+  memset(indice, 0, sizeof indice);
   revisao++;
+  esvaziado++;
   pthread_mutex_unlock(&trava);
+}
+
+unsigned vistoep_esvaziado(void) {
+  unsigned r;
+  pthread_mutex_lock(&trava); r = esvaziado; pthread_mutex_unlock(&trava);
+  return r;
 }
 
 // ------------------------------------------------------------------- Trakt

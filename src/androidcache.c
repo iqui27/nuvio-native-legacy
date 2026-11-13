@@ -26,7 +26,7 @@ int nv_android_cache_name(const char *n) {
     "ltv-[max][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-p[0-9]*.bin",
     "m3u-cache-p[0-9]*.txt","plugins-c-*.txt","mkvass-*.ass",
     "noticias-*.txt","noticias2-*.txt","extras-*.txt","meta-*.txt",
-    "ficha-*.json","serieaud-*.txt","catalogo-*.bin",
+    "ficha-*.json","serieaud-*.txt","catalogo-*.bin","simkl-anime.txt",
     "anime-fribb.idx","anime-fribb.retry","explorar-mapa.txt","explorar-viz.txt",
     "explorar-climas.txt","frases-*.txt","recomendacoes-feed.json","recomendacoes-amigo.json"};
   if (!n || strstr(n,"..") || n[0]=='/') return 0;

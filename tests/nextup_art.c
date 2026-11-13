@@ -53,6 +53,20 @@ int main(void) {
     cat_trocar_continuar(&next, 1);
     assert(cat_item(0)->episodio == 2 && cat_item(0)->progresso == 0);
     assert(!strcmp(arte_card_retomada(cat_item(0)), expected));
+    // Simkl's last_watched_at has whole seconds only: the same instant without
+    // its milliseconds is still that completion, and the seed stays ahead.
+    { ProgRegistro regs[PROG_MAX];
+      assert(prog_ler(regs, PROG_MAX) > 0);
+      next.retomadoMs = regs[0].lastWatchedMs / 1000 * 1000;
+    }
+    cat_trocar_continuar(&next, 1);
+    assert(cat_item(0)->episodio == 2 && cat_item(0)->progresso == 0);
+    // A seed from an earlier second is older than the finish: the record wins.
+    next.retomadoMs -= 1000;
+    cat_trocar_continuar(&next, 1);
+    assert(cat_item(0)->episodio == 1 && cat_item(0)->progresso == 100);
+    next.retomadoMs += 1000;
+    cat_trocar_continuar(&next, 1);
     // Genuine playback of the offered episode must still update normally.
     cat_aplicar_progresso(0, 600, 3000, 1, 2);
     assert(cat_item(0)->episodio == 2 && cat_item(0)->progresso == 20);

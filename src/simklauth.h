@@ -72,6 +72,9 @@ int simklauth_invalidar_se(unsigned long long cred);
 // quando o perfil mudou e devolve 1 quando o Simkl estava ou ficou ligado —
 // quem chama esquece as caches de simkl.c e remonta a home.
 int  simklauth_carregar_perfil(int perfil);
+// Perfil do vinculo carregado. So muda na troca de perfil, que abre sessao
+// nova: lido sob a trava de sessao, e o perfil de quem fez o pedido.
+int  simklauth_perfil(void);
 int  simklauth_trocar_perfil(int perfil);
 
 #endif

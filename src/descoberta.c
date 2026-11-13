@@ -46,6 +46,7 @@
 
 // Optional imports belong to consumers: public declarations keep producers strong.
 extern int contapend_reenviar(void) NV_PERFIL_OPCIONAL;
+extern void simkl_anime_lista_mudou(const char *imdb) NV_PERFIL_OPCIONAL;
 // Isolated legacy fixtures may omit this boundary: missing means DEFER,
 // never a fabricated empty/complete account list. Complete apps link addons.c.
 extern int addons_copiar_identidades(AddonIdentidade *, int, unsigned, int) NV_PERFIL_OPCIONAL;
@@ -7821,6 +7822,11 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
   }
   pthread_mutex_unlock(&epPedidoTrava);
   free(eps);
+  // Watched marks follow the numbering of the list on screen.
+  if (n && !cedo && !pendente && alvoItem >= 0 && simkl_anime_lista_mudou) {
+    CatItem publicado;
+    if (cat_copiar_item(alvoItem, &publicado)) simkl_anime_lista_mudou(publicado.imdb);
+  }
   marco("episodios na tela");
   printf("[desc] %s: %d episodios publicados antes dos extras\n", titulo, n);
   fflush(stdout);

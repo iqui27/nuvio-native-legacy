@@ -137,6 +137,7 @@ const char *artehero_url_card(const CatItem *item) {
 const char *artehero_url_episodio(const CatItem *item) {
   char buf[512];
   if (!item) return NULL;
+  if (item->thumbEpisodio[0]) return fixar(item->thumbEpisodio, item->thumbEpisodio);
   // NA BAIXA O STILL VEM EM w780: e a mesma imagem, no tamanho que o metahub
   // serve mais rapido. O destaque amplia, e nesse nivel e isso que se pediu.
   if (qualidadeImg == 0) {

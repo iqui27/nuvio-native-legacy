@@ -16,7 +16,7 @@ compilar() {
     -c src/simkl.c -o "$tmp/simkl.o"
   cc ${flags[@]+"${flags[@]}"} -O1 -g -Wall -Wextra -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
     -Wno-deprecated-declarations -Wno-macro-redefined \
-    "$tmp/simkl.o" src/js.c src/traktscrobble.c src/metaep.c tests/simkl_scrobble.c \
+    "$tmp/simkl.o" src/simklbib.c src/simklanime.c src/js.c src/traktscrobble.c src/metaep.c tests/simkl_scrobble.c \
     -o "$tmp/simkl_scrobble" -lpthread
 }
 if [ "${1:-}" = logout ]; then

@@ -162,7 +162,9 @@ static TgDados dados;
 static int     dIdx = -1;
 static unsigned dCat, dVisto, dAmg;
 static int     dAgT, dAgE, dNEps, dValido;
-static TgEp    epsBuf[1024];
+// Room for a whole published list (CAT_EP_MAX in catalogo.c). At 1024 the
+// tail was dropped: One Piece lost seasons 22 and 23 from "Your progress".
+static TgEp    epsBuf[2400];
 
 const TgDados *tgraf_dados(int idx) {
   const CatItem *ci = cat_item(idx);

@@ -123,6 +123,10 @@ const char *i18n(const char *s) { return s; }
 #endif
 #undef time
 static int requests, limited, empty_retry, bad_page;
+#ifndef I610_TRAKT
+// Continue watching below reads simkl_cw.c's fake account, not these pages.
+static int cw_mode;
+#endif
 static char *fixture(const char *name) {
   char path[160]; snprintf(path, sizeof path, "tests/fixtures/i610/%s", name);
   FILE *f = fopen(path, "rb"); assert(f);
@@ -143,10 +147,11 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
 #ifdef I610_TRAKT
   int list = strstr(p->url, "/movies/") != NULL;
 #else
-  if (strstr(p->url, "/sync/playback") || strstr(p->url, "/watching")) {
+  if (cw_mode || strstr(p->url, "/sync/playback")) {
     r->corpo = previous_get(p->url, 25, p->cabecalhos, &r->status); return 1;
   }
-  int list = strstr(p->url, "/movies/plantowatch") != NULL;
+  // Plan to watch comes from the library: its download is the paged one.
+  int list = strstr(p->url, "/sync/all-items/all/all") != NULL;
   if (strstr(p->url, "/sync/activities")) {
     r->corpo = strdup("{\"movies\":\"changed\"}"); return 1;
   }
@@ -219,6 +224,8 @@ int main(void) {
   now++; limited = 0; assert(load(v) == 17);
 #ifndef I610_TRAKT
   // A newly watched next episode must precede an older paused movie.
+  cw_mode = 1;
+  free(bibTexto); bibTexto = NULL;
   simkl_esquecer();
   CatItem ordered[12];
   int count = simkl_continuar(ordered, 12); assert(count == 6);

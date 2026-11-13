@@ -11,10 +11,10 @@ Paralelo do `trakt.c` para Simkl: alimenta a fileira "Continuar assistindo" com 
 | `int simkl_ativo(void)` | 1 se há token do Simkl (`simklauth_token()`). | Qualquer | — | nenhuma | — |
 | `const char *simkl_aviso_sem_vinculo(int querSimkl)` | Retorna `SIMKL_VINCULE` quando apropriado. | Principal | — | nenhuma | — |
 | `int simkl_ler_playback(const char*, CatItem*, long long*, int)` | Lê corpo de `/sync/playback`. | Pura | Testes/leitura. | nenhuma | Preenche `dst` e `ids`. |
-| `int simkl_ler_assistindo(const char*, CatItem*, int)` | Lê corpo de `/sync/all-items/shows/watching` (próximo episódio). | Pura | — | nenhuma | Preenche `dst`. |
+| `int simkl_ler_assistindo(const char*, CatItem*, int)` | Lê corpo de `/sync/all-items/shows/watching` e `/anime/watching` (próximo episódio). | Fio de descoberta | — | nenhuma | No fluxo de Continuar assistindo, anime com ID Simkl busca `/anime/{id}` mesmo quando já tem IMDb, para resolver título canônico, pôster, IDs externos e temporada; `E#` usa essa temporada quando disponível. Metadados com numeração global preservam o par temporada/episódio do catálogo Nuvio e a miniatura global quando disponível. |
 | `int simkl_ler_plantowatch(...)` | Lê corpo de `plantowatch`. | Pura | — | nenhuma | Preenche `dst` com `naLista=1`. |
 | `int simkl_corpo_lista(...)` / `simkl_rota_lista(...)` | Monta corpo/rota do +/- na lista. | Pura | — | nenhuma | Usado por `fioLista`. |
-| `int simkl_continuar(CatItem*, int)` | Preenche "Continuar assistindo" do Simkl. | Fio de descoberta (bloqueia) | Token ativo. | `trava` | Preenche `play[]`, `proxIds[]`; chama `trakt_enfeitar_lote`. |
+| `int simkl_continuar(CatItem*, int)` | Preenche "Continuar assistindo" do Simkl. | Fio de descoberta (bloqueia) | Token ativo. | `trava` | Preenche `play[]`, `proxIds[]`; chama `trakt_enfeitar_lote`, que preserva o episódio confirmado pelo Simkl mesmo se o catálogo do Nuvio usar numeração global. |
 | `int simkl_e_a_seguir(const char *id)` | 1 se id é "a seguir" da última leitura. | Principal | — | `trava` | — |
 | `int simkl_plantowatch(CatItem*, int)` | Preenche Plan to Watch. | Fio de descoberta (bloqueia) | Token ativo. | `trava` | Atualiza `ptw[]`. |
 | `int simkl_na_plantowatch(const char *imdb)` | 1 se obra está na watchlist conhecida. | Principal | — | `trava` | — |
@@ -24,6 +24,7 @@ Paralelo do `trakt.c` para Simkl: alimenta a fileira "Continuar assistindo" com 
 | `int simkl_corpo_historico_eps(...)` / `_titulo(...)` / `simkl_rota_historico(...)` | Montam corpo/rota de marcação de histórico. | Pura | — | nenhuma | — |
 | `int simkl_episodios_marcar(...)` | POST histórico em lote (síncrono). | Fio de trabalho | — | `travaCorpo` | Chama `postarHistorico`. |
 | `int simkl_titulo_marcar(...)` | POST histórico título inteiro (síncrono). | Fio de trabalho | — | nenhuma | Chama `postarHistorico`. |
+| `int simkl_historico_aplicar(const char*)` | Busca a biblioteca completa com episódios e importa os `watched_at` no mapa compartilhado. | Worker de extras | Simkl vinculado; série aberta. | `trava` | Pagina `/sync/all-items/all/all`; mantém apenas o estado de cache por dez minutos, sem guardar o JSON. |
 | `void simkl_esquecer(void)` | Limpa caches (logout/desvincular). | Principal | — | `trava` | Zera `nPlay`, `nProx`, `nPtw`, corpos guardados. |
 
 ## Estado global
@@ -85,12 +86,14 @@ sequenceDiagram
 ## IMPACTOS
 
 - **Se mexer em `simkl_continuar`**: cache por `/sync/activities`; igual à assinatura anterior usa corpos guardados (`simkl.c:460-484`). Meia resposta não é guardada.
+- **Anime em `simkl_ler_assistindo`**: a resposta pode usar `anime` ou `show` como objeto interno; no fluxo de Continuar assistindo, qualquer item com ID Simkl busca os detalhes para recuperar título canônico, pôster, IDs externos e a temporada do item, mesmo se o IMDb já veio na resposta. Se o catálogo Nuvio usa numeração global dentro de uma temporada, o item mantém essa numeração (por exemplo, One Piece E1123 = S22E1123 no catálogo), sem convertê-la para o padrão diferente do Cinemeta; a miniatura exata do episódio vem do catálogo Nuvio se disponível. Sem essa numeração no catálogo, a resolução continua usando a sequência de episódios do provedor.
+- **Histórico de episódios**: ao abrir uma série, o worker importa os episódios com `watched_at` de `/sync/all-items/all/all` para `vistoep`; aceita o objeto interno `anime` ou `show`, pois a resposta pode usar ambos. Se a entrada não tiver IMDb, primeiro tenta o ID Simkl quando o fluxo de Continuar assistindo já o associou aos detalhes oficiais do anime; sem essa associação, só usa a série aberta quando o TMDB ID coincidir exatamente. A resposta inteira é baixada em páginas (não há um pedido por episódio) e só uma vez a cada dez minutos por sessão Simkl. O pedido usa `include_all_episodes=yes`, `episode_watched_at=yes` e `episode_tvdb_id=yes`, como a implementação Desktop, para receber o histórico por episódio com coordenadas e IDs TVDB. Mantemos cada `watched_at` informado em vez de marcar automaticamente todos os episódios anteriores ao último: o Simkl pode conter lacunas ou episódios vistos fora de ordem. Episódios ausentes não são marcados como não vistos, para não apagar estado vindo de Trakt ou da conta Nuvio. As coordenadas TVDB podem vir aninhadas em `episode.tvdb.season` / `episode.tvdb.episode` ou nos campos achatados `tvdb_season` / `tvdb_number`. Quando há `episode.ids.tvdb_id`, tentamos primeiro a correspondência exata com o ID TVDB dos episódios já publicados no catálogo; só aceitamos um resultado único e confirmado, e então usamos o par de temporada/episódio do catálogo. Para anime cujo Simkl concentra os episódios globais na temporada 1, números acima do último episódio da temporada 1 são convertidos pela posição na lista final do catálogo ativo, ignorando especiais; isso mantém o estado alinhado ao addon que a tela realmente usa. Sem uma lista final, a ficha de metadados tenta mapear a numeração absoluta. Se um número absoluto alto não puder ser mapeado, ele é ignorado em vez de gravado como um episódio presumido da temporada 1.
 - **Se mexer em leitores puros**: `simkl_ler_playback` ignora item sem `ids.imdb` (`simkl.c:97`); para anime só usa numeração TVDB (`simkl.c:127-128`); progresso vem em porcentagem 0-100 (`simkl.c:146`).
 - **Se mexer em `simkl_corpo_historico_titulo`**: desmarcar série SEM lista de temporadas retorna 0 para não apagar o histórico inteiro do Simkl (`simkl.c:322-326`).
 - **Se mexer em `simkl_lista_tipo`**: "-" só manda se o título está no `ptw[]` conhecido; senão recusa para não apagar biblioteca (`simkl.c:647-652`).
 - **Se mexer em `postarHistorico`**: sucesso 2xx com `"not_found"` contendo `"ids"` é tratado como falha (`simkl.c:687-688`).
 - **Contratos com Kotlin/.NET/JS**: não há neste módulo.
-- **Testes**: `tests/vistoep_corrida.sh` indireto; `tests/trakt_ep_cinemeta.sh` não cobre Simkl. Não há teste específico de Simkl.
+- **Testes**: `tests/simkl_cw.sh` cobre a importação do histórico; `tests/simkl_anime_cw.sh` cobre a integração e o mapeamento de episódios de anime.
 
 ## Regressões já acontecidas
 
