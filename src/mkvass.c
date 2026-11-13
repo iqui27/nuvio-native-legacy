@@ -3400,6 +3400,24 @@ static double inicioDaLinha(const char *l, const char *fim) {
   return -1.0;
 }
 
+// Fim do evento, lido com os mesmos limites e regras do inicio.
+static double fimDaLinha(const char *l, const char *fim) {
+  const char *p; long v[4] = { 0, 0, 0, 0 }; int k = 0, dig = 0;
+  if (inicioDaLinha(l, fim) < 0.0) return -1.0;
+  p = memchr(l + 10, ',', (size_t)(fim - l - 10));
+  p = memchr(p + 1, ',', (size_t)(fim - p - 1));
+  if (!p) return -1.0;
+  for (p++; p < fim; p++) {
+    if (*p >= '0' && *p <= '9') {
+      if (v[k] > 1000000L) return -1.0;
+      v[k] = v[k] * 10 + (*p - '0'); dig++;
+    } else if (dig && ((*p == ':' && k < 2) || (*p == '.' && k == 2))) { k++; dig = 0; }
+    else if (dig && *p == ',' && k == 3) return (double)v[0] * 3600.0 + (double)v[1] * 60.0 + (double)v[2] + (double)v[3] / 100.0;
+    else return -1.0;
+  }
+  return -1.0;
+}
+
 // Os pontos a manter para a janela [a, b] s: o intervalo [*i0, *i1) do indice
 // (ordenado por tempo) e os cortes *ta / *tb em segundos. Cada corte cai no
 // MEIO de uma folga de pelo menos MKVASS_DESPEJO_FOLGA_SEG entre dois pontos,
@@ -3424,12 +3442,12 @@ static void limitesDaJanela(const Fio *f, double a, double b, int *i0, int *i1, 
 
 // Bytes de eventos que ficam com os cortes [ta, tb). Linha que nao e evento
 // (ou cujo tempo nao se le) fica sempre.
-static size_t bytesNaJanela(const char *ev, const char *fim, double ta, double tb) {
+static size_t bytesNaJanela(const char *ev, const char *fim, double ta, double tb, double pos) {
   size_t fica = 0; const char *l = ev;
   while (l < fim) {
     const char *nl = memchr(l, '\n', (size_t)(fim - l)), *prox = nl ? nl + 1 : fim;
     double t = inicioDaLinha(l, prox);
-    if (t < 0.0 || (t >= ta && t < tb)) fica += (size_t)(prox - l);
+    if (t < 0.0 || (t < tb && (t >= ta || fimDaLinha(l, prox) > pos))) fica += (size_t)(prox - l);
     l = prox;
   }
   return fica;
@@ -3450,7 +3468,7 @@ static void despejar(Fio *f, double pos) {
   fim = f->corpo + f->corpoTam;
   for (;;) {
     limitesDaJanela(f, pos - atras, pos + frente, &i0, &i1, &ta, &tb);
-    if (cab + bytesNaJanela(ev, fim, ta, tb) <= (size_t)(MKVASS_CORPO_ALTO / 2) ||
+    if (cab + bytesNaJanela(ev, fim, ta, tb, pos) <= (size_t)(MKVASS_CORPO_ALTO / 2) ||
         (atras <= MKVASS_ATRAS_SEG && frente <= MKVASS_URGENTE_SEG)) break;
     atras /= 2.0;  if (atras < MKVASS_ATRAS_SEG) atras = MKVASS_ATRAS_SEG;
     frente /= 2.0; if (frente < MKVASS_URGENTE_SEG) frente = MKVASS_URGENTE_SEG;
@@ -3458,13 +3476,29 @@ static void despejar(Fio *f, double pos) {
   for (l = w = ev; l < fim; ) {
     char *nl = memchr(l, '\n', (size_t)(fim - l)), *prox = nl ? nl + 1 : fim;
     double t = inicioDaLinha(l, prox);
-    if (t < 0.0 || (t >= ta && t < tb)) { if (w != l) memmove(w, l, (size_t)(prox - l)); w += prox - l; }
+    int ativo = t >= 0.0 && t < ta && t < tb && fimDaLinha(l, prox) > pos;
+    if (ativo) {
+      int lo = 0, hi = i0;
+      long long cs = llround(t * 100.0);
+      while (lo < hi) {
+        int meio = lo + (hi - lo) / 2;
+        if (llround(segundosDe(f, f->pontos[meio].tempo) * 100.0) < cs) lo = meio + 1;
+        else hi = meio;
+      }
+      while (lo < i0 && llround(segundosDe(f, f->pontos[lo].tempo) * 100.0) == cs) {
+        if (f->pontos[lo].colhido == 1) f->pontos[lo].colhido = 3;
+        lo++;
+      }
+    }
+    if (t < 0.0 || (t < tb && (t >= ta || ativo))) { if (w != l) memmove(w, l, (size_t)(prox - l)); w += prox - l; }
     l = prox;
   }
   f->corpoTam = (size_t)(w - f->corpo);
   f->corpo[f->corpoTam] = 0;
-  for (i = 0; i < f->nPontos; i++)
-    if ((i < i0 || i >= i1) && f->pontos[i].colhido == 1) { f->pontos[i].colhido = 0; saiu++; }
+  for (i = 0; i < f->nPontos; i++) {
+    if (f->pontos[i].colhido == 3) f->pontos[i].colhido = 1;
+    else if ((i < i0 || i >= i1) && f->pontos[i].colhido == 1) { f->pontos[i].colhido = 0; saiu++; }
+  }
   f->nColhidos -= saiu; f->despejados += saiu; f->despejos++;
   // TV desenhando por enquanto (segurar): a fala nova continua sendo "mais do
   // que ha agora", nao "mais do que havia antes do despejo".
