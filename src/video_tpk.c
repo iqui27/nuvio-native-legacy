@@ -1816,7 +1816,7 @@ void video_bombear(void) {
   double pos = video_pos();
   int preso = atomic_exchange(&playerPreso, -2);
   // Ao vivo (sem reconexao) a tecla recusada so e ignorada, como antes do #412.
-  if (preso >= -1 && ativo && reconPermitida && !recon.pendente && !falhou) recuperarPlayer(preso);
+  if (preso >= -1 && ativo && reconPermitida && !terminou && !recon.pendente && !falhou) recuperarPlayer(preso);
   vigiarPlayer(pos);
   sondaMkv(pos);
   if (pronto && pos > 0.5) reconIniciou = 1;
@@ -2015,6 +2015,9 @@ void video_buscar(double s) {
   }
   if (hBuscar) hBuscar((int)(s * 1000.0));
   terminou = 0;
+  // #783: um EV_PRESO da sessao encerrada pode vencer o quadro que zera
+  // terminou; a volta depois do seek nao pode reabrir o titulo terminado.
+  atomic_store(&playerPreso, -2);
 }
 void video_janela(int x, int y, int w, int h) {
   planoX=x; planoY=y; planoW=w; planoH=h;
