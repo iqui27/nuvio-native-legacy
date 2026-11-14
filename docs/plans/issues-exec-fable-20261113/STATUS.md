@@ -42,3 +42,8 @@ Authorized by owner 2026-11-13. Base: `9115d8bbadd09f98fef5b939732d5334d7b726c7`
 - Canonical gate 5/5 passed (0 errors, 0 fail, 0 skip, 0 divergences).
 - Post-merge (2026-11-13, sandbox): `addons_legendas_merge.sh` rc 0, `android_speed_room.sh` rc 0, `video_android_cacheboost.sh` rc 0, `varredura-i18n.py` rc 0.
 - No issue closed. Fixture evidence only. AV/BIB full global gate NOT RUN, REQUIRED and unwaived. Details: `global-link-small-integracao.md`.
+
+## Global split-round fixture cut (fixture-only)
+- Merged into `integracao/2.1` at `69a04b58edcfbe081344d43067116d1e6acff06b` (BASE `50cc563b2202aa220872bcab5e96e1191afdd610`, candidate `a7486c40daead0a0eabaa762739f4dd1c3016a27`, diff sha256 `36298c260537b03b94c4617b230ae9bd579914e56dcff0dd1c851b51ba3ff2bc`). 3 test files, 0 `src/`.
+- Post-merge (2026-11-13, sandbox-exec): `divididosplit.sh` rc 0, `fileiraredonda.sh` rc 0, `varredura-i18n.py` rc 0.
+- Open: overall AV/BIB global gate REQUIRED and unwaived (last run rc1 incomplete ENOSPC). No issue closed. Details: `global-split-round-integracao.md`.

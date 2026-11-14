@@ -18259,6 +18259,15 @@
     "ref": "docs/plans/issues-exec-fable-20261113/global-link-small-integracao.md",
     "resultado": "Merge 7b7b8f1d7135df5f22c8b7450e2a3020ab619db6 (parents: prior integration base 104aebf52c9b1d9b1c7d01f69dc10e564f45fcfa and candidate f2ef6023c436d78a0990a865fdb1fe039dd73197; candidate commits c579bb332, f2ef6023c). Static review OK, no P0-P2 findings; runtime verifier confirmed red/green and mutation/control. Canonical gate passed 5/5 (0 errors, 0 fail, 0 skip, 0 divergences). Post-merge bash tests/addons_legendas_merge.sh rc 0, bash tests/android_speed_room.sh rc 0, bash tests/video_android_cacheboost.sh rc 0, python3 tools/varredura-i18n.py rc 0. No issue closed or reclassified; no production change; no physical TV claim. Residual P3: doubles return NULL/0 (fonteKbpsSessao pin not exercised), fake clock +20 ms, no real-time/threading proof.",
     "evidencia": "Review diff sha256 d5b33c8ecf8fd0cfe3212e6a1d95c40e08f21edaa8736d2c969893b49d39a0e2 (git diff --binary BASE HEAD). Review: /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-link-small-code-review.md; verification: /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-link-small-verification.md; canonical: /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-link-small-canonical.log; post-merge logs: /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-link-small-verify-logs/postmerge-*.log; report: /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-link-small-postmerge-report.md."
+  },
+{
+    "data": "2026-11-13",
+    "quem": "fable-gate postmerge2 (nv-mec low, mechanical); reviewer fv-global-split-static1; verifier fv-global-split-runtime1; canonical 4/4",
+    "o_que": "Global split-round fixture cut (agente/21-fv-global-split-round: tests/divididosplit.sh, tests/fileiraredonda.sh, tests/fileiraredonda.c; zero src/ changes) merged into integracao/2.1. Fixture/infrastructure evidence only; overall AV/BIB global gate NOT RUN and unwaived.",
+    "issues": [],
+    "ref": "docs/plans/issues-exec-fable-20261113/global-split-round-integracao.md",
+    "resultado": "Merge 69a04b58edcfbe081344d43067116d1e6acff06b (BASE 50cc563b2202aa220872bcab5e96e1191afdd610, candidate a7486c40daead0a0eabaa762739f4dd1c3016a27, author commit a09ffb3a3, diff sha256 36298c260537b03b94c4617b230ae9bd579914e56dcff0dd1c851b51ba3ff2bc). Post-merge under sandbox-exec (global-gate-local-only.sb, sha256 223ba6e2...): divididosplit rc 0, fileiraredonda rc 0, varredura-i18n.py rc 0 (all counts 0). No issue closed. Device acceptance UNKNOWN. AV/BIB global gate REQUIRED, unwaived (last run rc1 incomplete ENOSPC).",
+    "evidencia": "/Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/postmerge2-logs/"
   }
  ],
  "decisoes": [
