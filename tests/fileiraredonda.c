@@ -14,8 +14,10 @@ int addons_n(void) { return 0; }
 int addons_base_desligada(const char *b) { (void)b; return 0; }
 const char *addons_base(int i) { (void)i; return ""; }
 const char *addons_id_manifesto(int i) { (void)i; return ""; }
+int addons_travar_lista(unsigned v, int p) { (void)v; (void)p; return 0; }
+void addons_destravar_lista(void) {}
 const char *sessao_usuario(void) { return "account-redonda"; }
-void desc_ocultar_vistos_atualizar(void) {}
+// desc_ocultar_vistos_atualizar: stub ja vem de cwordem_home.c.
 
 // O RENDERIZADOR, contado: so o que a previa pede. `discos` conta GFX_DISCO e
 // `nomes` as linhas de texto com o nome de uma pessoa.
@@ -64,11 +66,7 @@ void corviva_acento(float *r, float *g, float *b) { *r = *g = *b = 1; }
 int corviva_paleta(const char *c, CorvivaPaleta *p) { (void)c; (void)p; return 0; }
 void corviva_tokens(const float f[3], CorvivaTokens *t) { (void)f; memset(t, 0, sizeof *t); }
 void ctx_menu_ilha(GfxRect p, float r, float a) { (void)p; (void)r; (void)a; }
-int curadoria_ativa(void) { return 0; }
-int curadoria_escolher(const int *i, int n, int c, int k, unsigned *s) {
-  (void)i; (void)n; (void)c; (void)k; (void)s; return -1; }
-const char *curadoria_imdb(void) { return ""; }
-unsigned curadoria_revisao(void) { return 0; }
+// curadoria_*: stubs ja vem de cwordem_home.c.
 int imdbnota_obter(const char *i, int c, int s) { (void)i; (void)c; (void)s; return 0; }
 const char *logotitulo_url(const CatItem *ci, float w) { (void)ci; (void)w; return NULL; }
 int simkl_e_a_seguir(const char *id) { (void)id; return 0; }
@@ -89,7 +87,9 @@ int main(void) {
   static CatFileira rows[2];
   int k;
   fil_definir_limite(10);
-  ajustes_aplicar_blob("{\"continueWatchingEnabled\":true,\"homeLayout\":\"classic\"}");
+  // 0 = Ligado. homeLayoutLocal is device-only (ajustes.c somenteDesteAparelho):
+  // the old blob never changed it, so the layout stays at its default.
+  assert(ajustes_shot_valor("continueWatchingEnabled", 0));
   for (k = 0; k < 6; k++) {
     snprintf(items[k].imdb, sizeof items[k].imdb, "tt%d", k);
     snprintf(items[k].tipo, sizeof items[k].tipo, "movie");
