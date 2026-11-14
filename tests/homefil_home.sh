@@ -10,4 +10,4 @@ cc ${flags[@]+"${flags[@]}"} src/catalogo.c src/progresso.c src/focus.c src/ajus
   -Isrc -o "$work/test" -O1 -g -ffunction-sections -fdata-sections \
   -DCURADORIA_TESTE -Wl,-dead_strip -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -Wno-deprecated-declarations -Wno-macro-redefined
-for mode in quota watched local repin genres; do "$work/test" "$mode"; done
+for mode in quota watched local repin genres place; do "$work/test" "$mode"; done

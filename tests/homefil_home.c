@@ -177,6 +177,72 @@ int main(int argc, char **argv) {
       assert(row("colpin_ac") >= 0 && row("colpin_co") >= 0);
       assert(fileiras[row("colpin_co")].n == 4);
     }
+  } else if (!strcmp(argv[1], "place")) {
+    // #700 F6: a healthy genre pin keeps the pinned-row slot (after the
+    // catalogs, pin order), same as a plain pin and as its own fallback card.
+    // Discovery emits base-empty colpin rows FIRST; the Home must not keep that.
+    fil_definir_limite(FIL_LIMITE_MAX);
+    assert(col_definir_json("{\"collections\":[{\"id\":\"group\",\"title\":\"Group\",\"folders\":["
+      "{\"id\":\"ac\",\"title\":\"Action\",\"sources\":[{\"addonBaseUrl\":\"https://example.invalid/addon\",\"type\":\"movie\",\"catalogId\":\"id0\",\"genre\":\"Action\"}]},"
+      "{\"id\":\"pl\",\"title\":\"Plain\",\"sources\":[{\"addonBaseUrl\":\"https://example.invalid/addon\",\"type\":\"movie\",\"catalogId\":\"id2\"}]}]}]}"));
+    const ColFolder *fac = NULL, *fpl = NULL;
+    for (int i = 0; i < col_n(); i++) {
+      const ColFolder *g = col_folder(i);
+      if (g && !strcmp(g->id, "ac")) fac = g;
+      if (g && !strcmp(g->id, "pl")) fpl = g;
+    }
+    assert(fac && fpl && cf_alternar(fac) && cf_alternar(fpl));
+    static CatItem it2[11];
+    CatFileira healthy[4] = {0};
+    memcpy(it2, items, sizeof items);
+    snprintf(it2[9].imdb, sizeof it2[9].imdb, "tta0");
+    snprintf(it2[10].imdb, sizeof it2[10].imdb, "tta1");
+    snprintf(it2[9].tipo, sizeof it2[9].tipo, "movie");
+    snprintf(it2[10].tipo, sizeof it2[10].tipo, "movie");
+    // Discovery order: base-empty colpin row first, then the catalogs.
+    snprintf(healthy[0].chave, sizeof healthy[0].chave, "colpin_ac");
+    snprintf(healthy[0].titulo, sizeof healthy[0].titulo, "Action");
+    healthy[0].ini = 9; healthy[0].n = 2;
+    memcpy(&healthy[1], rows, sizeof rows);
+    const char *want[] = {"cat0", "cat1", "cat2", "colpin_ac", "colpin_pl"};
+#define ORDEM_PINS() do { for (int q = 1; q < 5; q++) { \
+      assert(row(want[q - 1]) >= 0 && row(want[q]) >= 0); \
+      assert(row(want[q - 1]) < row(want[q])); } } while (0)
+    // 1. Fallback (no genre window): card + plain pin, pinned slot.
+    sincronizarFileiras();
+    assert(fileiras[row("colpin_ac")].tipo == FILEIRA_CATALOGOS);
+    assert(fileiras[row("colpin_pl")].tipo != FILEIRA_CATALOGOS);
+    ORDEM_PINS();
+    int slotAc = row("colpin_ac"), slotPl = row("colpin_pl");
+    // 2. Healthy mount: genre content, SAME slots.
+    cat_definir_tudo(it2, 11, healthy, 4);
+    filsAplicadas = -1; sincronizarFileiras();
+    assert(fileiras[row("colpin_ac")].tipo != FILEIRA_CATALOGOS && fileiras[row("colpin_ac")].n == 2);
+    assert(!strcmp(cat_item_exato(fileiraItemIndice(&fileiras[row("colpin_ac")], 0))->imdb, "tta0"));
+    ORDEM_PINS();
+    assert(row("colpin_ac") == slotAc && row("colpin_pl") == slotPl);
+    // 3. Timeout: back to the card, still the same slots.
+    cat_definir_tudo(items, 9, rows, 3);
+    filsAplicadas = -1; sincronizarFileiras();
+    assert(fileiras[row("colpin_ac")].tipo == FILEIRA_CATALOGOS);
+    ORDEM_PINS();
+    assert(row("colpin_ac") == slotAc && row("colpin_pl") == slotPl);
+    // 4. Saved local order still wins: Action moved to the top stays there
+    //    healthy and in fallback; the rest keep their relative order.
+    int p = homefil_indice("colpin_ac");
+    assert(p >= 0);
+    while (p > 0) p = fil_mover(p, -1);
+    sincronizarFileiras();
+    assert(row("colpin_ac") == 0);
+    cat_definir_tudo(it2, 11, healthy, 4);
+    filsAplicadas = -1; sincronizarFileiras();
+    assert(row("colpin_ac") == 0 && fileiras[0].n == 2);
+    assert(row("cat0") < row("cat1") && row("cat1") < row("cat2") && row("cat2") < row("colpin_pl"));
+    cat_definir_tudo(items, 9, rows, 3);
+    filsAplicadas = -1; sincronizarFileiras();
+    assert(row("colpin_ac") == 0 && fileiras[0].tipo == FILEIRA_CATALOGOS);
+    assert(row("cat2") < row("colpin_pl"));
+#undef ORDEM_PINS
   } else assert(0);
   printf("homefil_home %s: PASS\n", argv[1]);
   return 0;
