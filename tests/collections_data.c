@@ -48,6 +48,15 @@ int cat_visto(const CatItem *item) { (void)item; return 0; }
 int cat_copiar_por_id(const char *id, const char *type, CatItem *item) {
   (void)id; (void)type; (void)item; return 0;
 }
+// fioVerTudo/desc_vertudo_fonte_desde puxam a fileira de servidores; este
+// fixture nao tem servidores.c, entao a chave desconhecida falha (-1), o
+// mesmo retorno que a producao daria para uma fonte ausente. caca_itens e
+// caca_por_chave vem de tests/discovery_boundary_stub.c (defs fracas). Mantem
+// o mesmo retorno -1 de tests/colfiltro.c.
+int servidores_pagina(const char *key, int start, int limit, CatItem *out, int max, int *total, int *raw) {
+  (void)key; (void)start; (void)limit; (void)out; (void)max;
+  if (total) *total = 0; if (raw) *raw = 0; return -1;
+}
 static int calls;
 static int fixtureStatus, fixtureReject;
 static char fixtureUrl[NV_ADDON_PEDIDO_MAX];
