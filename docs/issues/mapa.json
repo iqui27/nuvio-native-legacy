@@ -18313,6 +18313,15 @@
     "ref": "5caf6ed6884ce8f942642f6c41a9510d53dd72d3",
     "resultado": "Canonical 5/5 passed, errors empty, verification digest 4d4353d24b808575b4f062ace8293e1ab8bb7ecadf186cd5499ae86e19a42421. Post-merge rc: cw_prioridade 0, cwdesmarcado 0, cwdup244 0, varredura-i18n 0; build not repeated. Full global gate not run on integration (ENOSPC history), required and unwaived. No TV proof, no closure.",
     "evidencia": "docs/plans/issues-exec-fable-20261113/global-cw-rewatch-integracao.md; /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/fv-global-cw-rewatch-postmerge-logs/"
+  },
+  {
+    "data": "2026-11-14",
+    "quem": "Post-merge executor (nv-mec low, served model UNKNOWN); static reviewer fv-collections-aio-static1; distinct runtime verifier fv-collections-aio-runtime1; central canonical 4/4, zero errors",
+    "o_que": "Test-only fixture link-drift merge (collections, aiostream_instances) into integracao/2.1 at 069f4548e44347d161cd19658ed87786393e17b3 (BASE 3ab3b2854, candidate a2e77b148, diff sha256 d03351b7c...). 4 test files, 0 src/. Post-merge rc 0 on collections, aiostream_instances, varredura-i18n at HEAD 069f4548 (derived guard, clean tree). BASE red is link-only, no behavioral red. P3 notes kept. Full global AV15fb rc1 ENOSPC incomplete, required and unwaived. No TV proof, no closure.",
+    "issues": [],
+    "ref": "069f4548e44347d161cd19658ed87786393e17b3",
+    "resultado": "post-merge passed (collections rc0, aiostream_instances rc0, varredura-i18n rc0); full global gate NOT passed (incomplete ENOSPC, unwaived)",
+    "evidencia": "docs/plans/issues-exec-fable-20261113/global-collections-aio-integracao.md; /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-collections-aio-postmerge-logs/"
   }
  ],
  "decisoes": [

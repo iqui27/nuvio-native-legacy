@@ -80,3 +80,10 @@ Authorized by owner 2026-11-13. Base: `9115d8bbadd09f98fef5b939732d5334d7b726c7`
 - Post-merge (derived sandbox guard): `cw_prioridade.sh` rc 0, `cwdesmarcado.sh` rc 0, `cwdup244.sh` rc 0, `varredura-i18n.py` rc 0. Build not repeated.
 - P3 notes kept unfixed: N1 (report text), N2 (stub writes `/tmp/nuvio-fixture-*`, guarded), N3 (meta identity, repaired).
 - Open: full global AV15fb rc 1 ENOSPC incomplete, REQUIRED and unwaived. No issue closed. Details: `global-cw-rewatch-integracao.md`.
+
+## global-collections-aio post-merge (2026-11-14)
+- Merged into `integracao/2.1` at `069f4548e44347d161cd19658ed87786393e17b3` (BASE `3ab3b2854fd8a04e1da0ff44b04ec26d9399fb6e`, candidate `a2e77b14808ba124a9d69467c1c9b632e9ba68a7`, diff sha256 `d03351b7c54783f78e73f8dd6cb588116796968f401769120331d3b7a1dbb899`). Test fixtures only (4 files under `tests/`).
+- Static `fv-collections-aio-static1` and runtime `fv-collections-aio-runtime1` OK, no P0-P2. Central canonical 4/4, zero errors.
+- Post-merge (derived sandbox guard, HEAD `069f4548` clean): `collections.sh` rc 0, `aiostream_instances.sh` rc 0, `varredura-i18n.py` rc 0. Build not repeated.
+- P3 notes kept: `tests/aiostream_instances_ui.c:5-7` comment imprecise; author report understates diff.
+- Open: full global AV15fb rc 1 ENOSPC incomplete, REQUIRED and unwaived. No issue closed. Details: `global-collections-aio-integracao.md`.

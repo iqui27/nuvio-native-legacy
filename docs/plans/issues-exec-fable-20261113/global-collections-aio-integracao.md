@@ -1,0 +1,26 @@
+# global-collections-aio — post-merge integration record (2026-11-14)
+
+- Scope: test fixtures only. 4 files: `tests/aiostream_instances.sh`, `tests/aiostream_instances_ui.c`, `tests/collections.sh`, `tests/collections_data.c` (+23/-2). Zero `src/` changes.
+- Merged into `integracao/2.1` at `069f4548e44347d161cd19658ed87786393e17b3` (merge commit; guarded merge, status passed, merge_rc 0).
+- BASE `3ab3b2854fd8a04e1da0ff44b04ec26d9399fb6e`; candidate `a2e77b14808ba124a9d69467c1c9b632e9ba68a7` ("Link drift: collections and aiostream_instances fixtures"); diff sha256 `d03351b7c54783f78e73f8dd6cb588116796968f401769120331d3b7a1dbb899`; verification digest `84e191eaf7b110c9776f1a9f477e511091bbe2adbcafe2a956017f0bd6889c8b`.
+- Static review: `fv-collections-aio-static1` (source only), no P0-P2, P3 notes only.
+- Runtime verification: `fv-collections-aio-runtime1` (distinct verifier), required checks rc 0 at candidate HEAD. Details: `global-collections-aio-verification.md`.
+- Central canonical: 4/4 declared, executed, passed; 0 failed, 0 timeouts, 0 divergences; `errors: []`.
+- BASE red, link only (no behavioral red):
+  - `base-collections` rc 1: `Undefined symbols: _caca_itens, _caca_por_chave, _servidores_pagina`.
+  - `base-aiostream` rc 1 at the ui stage: `Undefined symbols: _addons_parcial_abas, _ajustes_audio_externo, ...`.
+  - Transport-stage probe rc 1: `Undefined symbols: _aio_resultados`.
+  - No BASE binary linked, so no assertion ran at BASE. Assertions unchanged; `src/` identical BASE↔HEAD.
+- Post-merge at HEAD `069f4548` (clean tree before and after each run; guard pinned `942c598d…`, original `223ba6e2…`; env-i contract; logs in `/Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-collections-aio-postmerge-logs/`):
+  - `bash tests/collections.sh` rc 0
+  - `bash tests/aiostream_instances.sh` rc 0
+  - `python3 tools/varredura-i18n.py` rc 0
+  - Build not repeated (source unchanged since the verified build).
+- P3 notes kept unfixed:
+  - P3-1: `tests/aiostream_instances_ui.c:5-7` comment says the asserted behavior "does not touch" the doubles, but `addons_parcial_abas` is on the asserted path (neutral 0).
+  - P3-2: author report says "2 runners"; actual diff is 4 files, including 2 fixture `.c` files.
+- Open / limits:
+  - Full global AV15fb (`tools/testa-tudo.sh`) rc 1 ENOSPC, incomplete. Not run on the current integration. Required and unwaived.
+  - BIB/PAG full gate not passed.
+  - No TV proof, no device, no GUI.
+  - No issue closed.
