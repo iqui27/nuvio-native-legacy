@@ -1629,6 +1629,12 @@ static int lerCatalogoHome(const char *base, const char *tipo, const char *id,
 }
 
 // --- fileira sintetica de colecao fixada (#700) ------------------------------
+// As fixadas moram em homefil.c. Quem liga a descoberta sem homefil.c (os
+// fixtures da montagem) fica com "nenhuma fixada", o comportamento de antes;
+// no app homefil.c entra e estes fracos nao valem (mesma regra de catalogo.c).
+__attribute__((weak)) int cf_n(void) { return 0; }
+__attribute__((weak)) const ColFolder *cf_pasta(int i) { (void)i; return NULL; }
+__attribute__((weak)) int cf_fixada(const char *pastaId) { (void)pastaId; return 0; }
 // A fonte de uma colecao carrega `genre` quando a pasta aponta para UM dos
 // generos do catalogo. cf_itens() devolve 0 para ela (nunca apresenta outro
 // genero como se fosse o da pasta) e a Home mostrava o card da pasta; a
@@ -1649,9 +1655,14 @@ static int lerCatalogoHome(const char *base, const char *tipo, const char *id,
 // static: montar() roda num fio so; o buffer soma ~1 MB e nao vai pra pilha.
 // `novas`/`nNovas`/`novosItens` sao as fileiras do lote que montar() acabou
 // de buscar (a janela sem genero sai da mesma remessa, nao da volta anterior).
+// `pasta` e uma COPIA (col_copiar_pasta): a rede leva segundos e o sync pode
+// refazer as pastas no meio. `mortas` sao as bases que ja calaram nesta volta:
+// uma base fora do ar custa UM timeout de 8 s por montagem, nao um por pasta.
+#define COLPIN_MORTAS 8
 static int colpinItens(const ColFolder *pasta, CatItem *uni, int teto,
                        const CatFileira *novas, int nNovas,
-                       const CatItem *novosItens) {
+                       const CatItem *novosItens,
+                       char mortas[][sizeof ((ColSource *)0)->base], int *nMortas) {
   int n = 0, temGenero = 0;
   static CatItem fonteItens[DESC_ITENS_POR_FILEIRA];
   for (int s = 0; s < pasta->nSources; s++) {
@@ -1661,10 +1672,14 @@ static int colpinItens(const ColFolder *pasta, CatItem *uni, int teto,
     if (fonte->prov[0] || fonte->filtros[0] || !base || !base[0]) return 0;
     if (fonte->genre[0]) {
       temGenero = 1;
+      for (int m = 0; m < *nMortas; m++) if (!strcmp(mortas[m], base)) return 0;
       got = lerCatalogo(base, fonte->type, fonte->catId, fonteItens,
                         DESC_ITENS_POR_FILEIRA, DESC_ITENS_POR_FILEIRA,
                         fonte->genre, &respondeu);
-      if (!respondeu) return 0;    // timeout: sem janela propria, volta o card
+      if (!respondeu) {            // timeout: sem janela propria, volta o card
+        if (*nMortas < COLPIN_MORTAS) snprintf(mortas[(*nMortas)++], sizeof *mortas, "%s", base);
+        return 0;
+      }
     } else {
       for (int r = 0; r < nNovas && !got; r++) {   // primeiro o lote novo...
         const CatFileira *c = &novas[r];
@@ -5515,12 +5530,27 @@ static void *montar(void *u) {
       // aqui, depois dos catalogos e do alimento do destaque, porque as fontes
       // sem genero da pasta leem as janelas que o laco acabou de publicar em
       // fil[]/lote — e nao as da tela, que ainda sao as da volta anterior.
-      { int ncf = cf_n();
+      // A pasta vai COPIADA sob a trava (col_copiar_pasta) antes da rede; troca
+      // de perfil no meio condena a volta (CONDENADA) e nada disto publica.
+      // Fileira escondida pela pessoa nao faz pedido nenhum.
+      { int ncf = cf_n(), nMortas = 0;
+        static ColSource fontesCopia[COL_SOURCE_MAX];
+        static CatItem uni[DESC_ITENS_POR_FILEIRA];
+        static char mortas[COLPIN_MORTAS][sizeof fontesCopia[0].base];
+        static ColFolder copia;
         for (int cf = 0; cf < ncf && nFil < CAT_FIL_MAX; cf++) {
-          const ColFolder *pasta = cf_pasta(cf);
-          static CatItem uni[DESC_ITENS_POR_FILEIRA];
-          int got = pasta ? colpinItens(pasta, uni, DESC_ITENS_POR_FILEIRA,
-                                        fil, nFil, lote) : 0;
+          const ColFolder *ref = cf_pasta(cf);
+          ColFolder *pasta = &copia;
+          char id[sizeof copia.id], chave[sizeof CF_PREFIXO + sizeof copia.id];
+          int got;
+          if (!ref) continue;
+          snprintf(id, sizeof id, "%s", ref->id);
+          if (!col_copiar_pasta(id, &copia, fontesCopia)) continue;
+          snprintf(chave, sizeof chave, "%s%s", CF_PREFIXO, copia.id);
+          if (fil_oculta(chave)) continue;
+          got = colpinItens(pasta, uni, DESC_ITENS_POR_FILEIRA, fil, nFil, lote,
+                            mortas, &nMortas);
+          if (CONDENADA("colecoes fixadas")) goto condenada;
           if (!got) continue;
           GARANTE(got);
           if (got > cap - n) got = cap - n;

@@ -105,7 +105,7 @@ int main(int argc, char **argv) {
     // synthesized CatFileira per pinned folder, keyed colpin_<id>; the Home
     // merges it with the pseudo-row cf_itens builds.
     assert(col_definir_json("{\"collections\":[{\"id\":\"group\",\"title\":\"Group\",\"folders\":["
-      "{\"id\":\"ac\",\"title\":\"Action\",\"sources\":[{\"addonBaseUrl\":\"https://example.invalid/addon\",\"type\":\"movie\",\"catalogId\":\"id0\",\"genre\":\"Action\"}]},"
+      "{\"id\":\"ac\",\"title\":\"Action\",\"tileShape\":\"POSTER\",\"sources\":[{\"addonBaseUrl\":\"https://example.invalid/addon\",\"type\":\"movie\",\"catalogId\":\"id0\",\"genre\":\"Action\"}]},"
       "{\"id\":\"co\",\"title\":\"Comedy\",\"sources\":[{\"addonBaseUrl\":\"https://example.invalid/addon\",\"type\":\"movie\",\"catalogId\":\"id0\",\"genre\":\"Comedy\"},"
       "{\"addonBaseUrl\":\"https://example.invalid/addon\",\"type\":\"movie\",\"catalogId\":\"id1\"}]}]}]}"));
     assert(col_n() == 2);
@@ -169,6 +169,8 @@ int main(int argc, char **argv) {
         if (!strcmp(fileiras[i].chave, "colpin_ac") || !strcmp(fileiras[i].chave, "colpin_co")) dup++;
       assert(dup == 2);
       assert(!fileiras[ra].verTudo && !fileiras[rc].verTudo);
+      // The kept genre row draws in its folder's layout, like any pinned row.
+      assert(fileiras[ra].forma == COL_FORMA_POSTER && fileiras[rc].forma == COL_FORMA_QUADRADO);
       // The genre rows survive a republish (synthetic resync): same block.
       cat_definir_tudo(it2, 15, rf, 5);
       filsAplicadas = -1; sincronizarFileiras();

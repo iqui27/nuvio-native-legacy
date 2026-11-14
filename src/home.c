@@ -3378,6 +3378,10 @@ static void sincronizarFileiras(void) {
     snprintf(v.titulo,sizeof v.titulo,"%s",pf->title);
     v.tipo=FILEIRA_CATALOGOS;
     v.forma=pf->forma>=0&&pf->forma<COL_FORMA_N?pf->forma:COL_FORMA_PAISAGEM;
+    // #700: a descoberta ja publicou esta chave com a janela do genero; ela
+    // fica (o dedup ficaria com ela) e leva a forma da pasta, como a fixada.
+    { int j; for(j=0;j<destino&&strcmp(fileiras[j].chave,v.chave);j++);
+      if(j<destino){fileiras[j].forma=v.forma;continue;} }
     v.n=cf_itens(pf,v.itens,MAX_CARDS-1);
     if(v.n) { v.tipo=FILEIRA_NORMAL;v.usaItens=1; }
     else { v.n=1;v.folders[0]=fi; }
