@@ -18238,6 +18238,18 @@
    "ref": "docs/plans/issues-exec-fable-20261113/local-services-integracao.md",
    "resultado": "Merge 0618e13c6fd0330f117927430fb8507d75b92904 (parents BASE 62a4b49693b584be2b83d445beb64f2e9c252a8f and candidate 3da5ad3cfcae0380dd694f9b7478375d76de6831). Canonical gate 7/7 passed under global-gate-local-only.sb (0 skipped/failed/timeouts/divergences/errors). Post-merge recomenda_e2e.sh, diarionuvem_servidor.sh, juntos_e2e.sh, varredura-i18n.py rc 0; zero workerd leftovers.",
    "evidencia": "Candidate diff sha256 323641fa35c1e1c84c0e7fedad127ba6f5a4e03855c70bacb2d3342a4d4a9784. Canonical verification digest 4cca8c51788c31a5c929aba3d6260953e000b8a5b42fc62a6a7a21b61f41a814; log_digest bef34433905e9ea76a05b875b15660bac724610ebd39d5e933a8ba127b4447f9; i18n stdout sha e2dc1d85ba32029673aefafb6a1c449a89170cefb60cd397499b0dff77cc29e1. Reports: local-services-code-review2.md, local-services-verification.md, j-verify-fv-local-services.log."
+  },
+  {
+    "data": "2026-11-13",
+    "quem": "fable-gate (post-merge executor); reviewer fv-global-col-static1; verifier fv-global-col-runtime1; served models UNKNOWN",
+    "o_que": "Global compile fixture cut (agente/21-fv-global-compile: 7 tests/ files, zero src/ changes) merged into integracao/2.1. Repairs 4 compile failures and aligns Poster G geometry expectation with Oct 17 contract. Fixture/infrastructure evidence only; overall AV/BIB global gate NOT RUN and unwaived.",
+    "issues": [
+      639,
+      789
+    ],
+    "ref": "docs/plans/issues-exec-fable-20261113/global-compile-integracao.md",
+    "resultado": "Merge 9ddae314efae99413f95f236ebcc7f5fa7f253a0 (parents prior 6ac09088b04123a4b29e45901e253a652477f968 and candidate fa32c8e68d7eeb92127d82179ea7958f01a9959d). Review OK, no P0/P1. Post-merge colestilos.sh rc 0, colordem.sh rc 0, varredura-i18n.py rc 0. F1 P2 Padrao parity unverified; F2 P2 colordem_menu Stage-row coverage gap. No closure, no global-pass claim.",
+    "evidencia": "Review diff sha256 120b888ffc8fa2e88c37a00566c621dbcc69b641e48f5e812870b05eeca1d03a; ledger verification digest 900744a7c1122ce1b4c695a9e3f213d25270c4ad75f2e7a9d43effdbda486124 (postcheck rc 0). Post-merge logs in /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/: global-compile-postmerge-colestilos.log (sha 2870603f0ef4fa26749a), global-compile-postmerge-colordem.log (sha cf645c643638ea503f2a), global-compile-postmerge-i18n.log (sha e2dc1d85ba32029673ae)."
   }
  ],
  "decisoes": [
