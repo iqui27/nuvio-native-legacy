@@ -17,14 +17,14 @@ import zipfile
 
 root = Path(__file__).resolve().parent.parent
 kt = root / "android/app/src/main/java/space/nuvio/nativelegacy"
-cache = Path.home() / ".gradle/caches/modules-2/files-2.1"
+cache = Path(os.environ.get("GRADLE_RO_DEP_CACHE") or Path.home() / ".gradle/caches") / "modules-2/files-2.1"
 compiler = list(cache.glob("org.jetbrains.kotlin/*/2.0.21/*/*.jar"))
 compiler += list(cache.glob("org.jetbrains.intellij.deps/trove4j/*/*/*.jar"))
 compiler += list(cache.glob("org.jetbrains/annotations/13.0/*/*.jar"))
 compiler += list(cache.glob("org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm/*/*/*.jar"))
 stdlib = next(cache.glob("org.jetbrains.kotlin/kotlin-stdlib/2.0.21/*/*.jar"))
 sdk = Path(os.environ.get("ANDROID_HOME", str(Path.home() / "Library/Android/sdk"))) / "platforms/android-35/android.jar"
-sdl = Path.home() / ".cache/nuvio-android/src/SDL2-2.30.9/android-project/app/src/main/java"
+sdl = Path(os.environ.get("NUVIO_ANDROID_CACHE", str(Path.home() / ".cache/nuvio-android"))) / "src/SDL2-2.30.9/android-project/app/src/main/java"
 assert sdk.is_file() and any("compiler-embeddable" in str(x) for x in compiler)
 cp = os.pathsep.join(map(str, compiler))
 java = os.environ.get("NUVIO_TEST_JAVA") or str(next((Path.home() / ".local/jdks").glob("jdk-17*/Contents/Home/bin/java")))

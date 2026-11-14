@@ -6,8 +6,8 @@ import tempfile
 import zipfile
 
 root = Path(__file__).resolve().parent.parent
-cache = Path.home() / '.gradle/caches/modules-2/files-2.1'
-jdk = next((Path.home() / '.local/jdks').glob('jdk-17*/Contents/Home'))
+cache = Path(os.environ.get('GRADLE_RO_DEP_CACHE') or Path.home() / '.gradle/caches') / 'modules-2/files-2.1'
+jdk = Path(os.environ['JAVA_HOME']) if os.environ.get('JAVA_HOME') else next((Path.home() / '.local/jdks').glob('jdk-17*/Contents/Home'))
 compiler = list(cache.glob('org.jetbrains.kotlin/*/2.0.21/*/*.jar'))
 compiler += list(cache.glob('org.jetbrains.intellij.deps/trove4j/*/*/*.jar'))
 compiler += list(cache.glob('org.jetbrains/annotations/13.0/*/*.jar'))
