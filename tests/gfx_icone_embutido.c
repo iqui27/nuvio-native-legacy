@@ -18,6 +18,15 @@ float nv_acento_viva[3], nv_grad_viva[3][3], nv_tempo_viva;
 float nv_ambiente_viva[4][3], nv_ambiente_forca;
 int ajustes_profundidade(void) { return 0; }
 float ajustes_profundidade_brilho(void) { return 0; }
+// Fronteira de ajustes/perftv que gfx.c toca: defaults do app (vidro ligado,
+// qualidade automatica) em stub de borda — nenhuma afirmacao do icone muda.
+int ajustes_vidro(void) { return 1; }
+int ajustes_vidro_fosco(void) { return 0; }
+int ajustes_vidro_qualidade(void) { return 0; }
+float ajustes_suavizar_degrades(void) { return 1.0f; }
+void ajustes_acento(float *r, float *g, float *b) { *r = .3f; *g = .6f; *b = .9f; }
+// tex_dims_gl mora em tex_cache.c; sonda so roda com NV_ART_DRAW_MEASURE=1.
+int tex_dims_gl(unsigned t, int *w, int *h) { (void)t; (void)w; (void)h; return 0; }
 
 void teste_glGenTextures(GLsizei n, GLuint *t) {
   tentativas += n;
@@ -25,7 +34,10 @@ void teste_glGenTextures(GLsizei n, GLuint *t) {
   while (n-- > 0) *t++ = (GLuint)++gerados;
 }
 void teste_glDeleteTextures(GLsizei n, const GLuint *t) {
-  assert(n == 1 && t && *t > 0); apagados += n;
+  // vidLiberar apaga os lotes do vidro em grupos com nomes zero; so contam
+  // os nomes de verdade (o lifecycle do icone e medido em apagados).
+  assert(n >= 1 && t);
+  while (n-- > 0) if (*t++ > 0) apagados++;
 }
 void teste_glBindTexture(GLenum target, GLuint t) { assert(target == GL_TEXTURE_2D); ligado = t; }
 void teste_glTexImage2D(GLenum target, GLint level, GLint internalformat,
