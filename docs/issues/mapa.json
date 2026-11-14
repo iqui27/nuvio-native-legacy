@@ -18295,6 +18295,15 @@
     "ref": "516e73ab8f5fde326568f01da2d79d7307a6ff85",
     "resultado": "Canonical 6/6 passed, errors empty, verification digest 45925e80d780ff5c397060737953d4a19392d96cf6af2678195090bc7d6bf4b5. Post-merge rc: ctxmenu_semfio 0, esportes619 0, fontescanais_folha 0, streamfit_sheet 0, varredura-i18n 0; build not repeated (source unchanged). Full global gate: campaign suite ran on AV candidate 15fbcbf2dcd5a7a8697a36cd9229b3963d4514ab, rc1 incomplete ENOSPC; no passing full gate, BIB/PAG-candidate or current-integration run established; required/unwaived. Device/TV acceptance UNKNOWN.",
     "evidencia": "docs/plans/issues-exec-fable-20261113/global-link-boundaries-integracao.md"
+  },
+  {
+    "data": "2026-11-14",
+    "quem": "Post-merge executor (nv-mec low, served model UNKNOWN); static reviewer fv-link-cw-static1; distinct runtime verifier fv-link-cw-runtime1; canonical 4/4 no errors",
+    "o_que": "Docs-only post-merge record for global-link-cw (agente/21-fv-global-link-cw: tests only) merged into integracao/2.1 at d92ce40d092a8c3b6f0c6345f37afcf0645f581d (BASE b5e134d3d024d29e9e45aaa223a3c286cc6d1649, candidate 527569d933390f350e892212de6d4756b1a9505a, diff sha256 2f7e3071e75c1c8301fb2ac68b76bd35e5f5ab4f14a04bf012399a768722ba5a). Test/fixture evidence only; no production fix. Two CONFIRMED P2 retained unfixed: F1 tests/trakt_rede_stub.c:12 (latent false-success return on unused paged path, no current false pass); F2 tests/cw205_diagnostico.sh:20 (historical CW205_REF=581e8fb9 replay: BASE behavioral FAIL, HEAD compile failure from missing metaep). Owner P2 non-blocking policy; no claim fixed or waived.",
+    "issues": [],
+    "ref": "d92ce40d092a8c3b6f0c6345f37afcf0645f581d",
+    "resultado": "Canonical 4/4 passed, errors empty, verification digest afefb8bc5163694bbe6294e471d3c59e10615f60bdafad644996c12b362f126e. Post-merge rc: cw205_diagnostico 0, cwleg 0, varredura-i18n 0; build not repeated. Full global gate: AV15fb rc1 incomplete ENOSPC, not passed; current-integration/BIB production full global still required and unwaived. No TV proof, no closure.",
+    "evidencia": "docs/plans/issues-exec-fable-20261113/global-link-cw-integracao.md"
   }
  ],
  "decisoes": [

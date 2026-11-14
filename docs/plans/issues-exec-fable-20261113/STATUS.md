@@ -68,3 +68,9 @@ Authorized by owner 2026-11-13. Base: `9115d8bbadd09f98fef5b939732d5334d7b726c7`
 - Merged into `integracao/2.1` at `516e73ab8f5fde326568f01da2d79d7307a6ff85` (BASE `5c66e894a1e289558ca1754303b727a7e64c8a86`, candidate `a526023292502189583e54da87f2a172887fb733`, diff sha256 `554faffa865e993cf6608b6aba4a00d655f0481b4c10cc19c59e67eca820d590`). Tests only (`tests/ctxmenu_semfio.sh`, `tests/esportes_v5_shot.c`, `tests/streamfit_sheet.c`).
 - Post-merge (sandbox-exec guard): `ctxmenu_semfio.sh` rc 0, `esportes619.sh` rc 0, `fontescanais_folha.sh` rc 0, `streamfit_sheet.sh` rc 0, `varredura-i18n.py` rc 0. Build not repeated (source unchanged).
 - Open: full AV/BIB global gate: campaign ran on AV candidate `15fbcbf2dcd5a7a8697a36cd9229b3963d4514ab`, rc1 incomplete (ENOSPC); no passing full gate, BIB/PAG-candidate or current-integration run established; required and unwaived. No issue closed. Device acceptance UNKNOWN. Details: `global-link-boundaries-integracao.md`.
+
+## global-link-cw post-merge (2026-11-14)
+- Merged into `integracao/2.1` at `d92ce40d092a8c3b6f0c6345f37afcf0645f581d` (BASE `b5e134d3d024d29e9e45aaa223a3c286cc6d1649`, candidate `527569d933390f350e892212de6d4756b1a9505a`, diff sha256 `2f7e3071e75c1c8301fb2ac68b76bd35e5f5ab4f14a04bf012399a768722ba5a`). Tests only.
+- Post-merge (sandbox-exec guard): `cw205_diagnostico.sh` rc 0, `cwleg.sh` rc 0, `varredura-i18n.py` rc 0.
+- Confirmed P2 retained unfixed: F1 `tests/trakt_rede_stub.c:12` (latent), F2 `tests/cw205_diagnostico.sh:20` (historical replay false-red at compile stage). Not waived.
+- Open: full AV/BIB global gate rc 1 incomplete (ENOSPC), REQUIRED and unwaived. No issue closed. Details: `global-link-cw-integracao.md`.
