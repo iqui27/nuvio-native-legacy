@@ -2,12 +2,30 @@
 #define main addonslista_legacy_main
 #define rede_baixar legacy_baixar
 #define rede_baixar_st legacy_baixar_st
+#define NV_TEST_REDE_PEDIR_OVERLAY 1
+#define NV_TEST_REDE_BAIXAR_ST_OVERLAY 1
+#define NV_TEST_REDE_BAIXAR_MEDIDO_OVERLAY 1
 #include "addonslista.c"
 #undef main
 #undef rede_baixar
 #undef rede_baixar_st
 char *rede_baixar(const char *url, int seconds);
 char *rede_baixar_st(const char *url, int seconds, const char *const *headers, int *status);
+#include "rede.h"
+int rede_pedir(const RedePedido *p, RedeResposta *r) {
+  memset(r, 0, sizeof *r);
+  r->corpo = rede_baixar(p->url, (int)(p->prazo_ms / 1000u));
+  r->n_corpo = r->corpo ? strlen(r->corpo) : 0;
+  r->status = r->corpo ? 200 : 0;
+  r->erro = r->corpo ? REDE_OK : REDE_TRANSPORTE;
+  return 0;
+}
+void rede_resposta_limpar(RedeResposta *r) { free(r->corpo); r->corpo = NULL; }
+char *rede_baixar_medido(const char *url, int seconds, const char *const *headers, RedeMedida *m) {
+  int st = 0; char *r = rede_baixar_st(url, seconds, headers, &st);
+  *m = (RedeMedida){ .status = st };
+  return r;
+}
 #include "../src/addons.c"
 #include "idcanal.h"
 #include <assert.h>
@@ -16,6 +34,7 @@ static char expected[4096];
 static int requests, status = 200;
 char *rede_baixar(const char *url, int seconds) {
   (void)seconds;
+  if (strstr(url, "/manifest.json")) return NULL;
   assert(!strcmp(url, expected));
   requests++;
   if (status == 201) return strdup("<html>invalid response</html>");

@@ -19,7 +19,7 @@ for i in range(1321):
 (root / 'id').write_text(metas[0]['id'])
 (root / 'catalog.json').write_text(json.dumps({'metas': metas}))
 PY
-cc "${flags[@]}" tests/cncverse_stream.c src/idcanal.c src/js.c src/jsw.c src/watchstate.c src/addonstats.c src/fontefalha.c -o "$work/stream"
+cc "${flags[@]}" tests/cncverse_stream.c src/idcanal.c src/js.c src/jsw.c src/watchstate.c src/addonstats.c src/fontefalha.c src/addonmodo.c -o "$work/stream"
 set +e
 "$work/stream" > "$work/log" 2>&1
 stream_rc=$?
