@@ -18277,6 +18277,15 @@
    "ref": "docs/plans/issues-exec-fable-20261113/global-link-next-integracao.md",
    "resultado": "Merge 322ff155fc6536d90b3713b94f73759e2851fe49 (BASE 49e721eefba6575ee39eef137c083f5c8c711251, candidate 1073617326f0a165acb79434701b09665239d9f6, diff sha256 20dcd8224cddcf1cd923118efdab8da6bff815c4a86804b3e0842a67d75518b7). Post-merge under sandbox-exec (global-gate-local-only.sb, sha256 223ba6e2...): jellyfin rc 0, embybib rc 0, colfileiras rc 0, varredura-i18n.py rc 0. Canonical 5/5 passed. No issue closed. Device acceptance UNKNOWN. AV/BIB global gate REQUIRED, unwaived.",
    "evidencia": "/Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-link-next-postmerge-logs/ (sha256 jellyfin 2fd18e831de45cf69d498afc5d97c071c2dde3b5b235e4a282c8c518c2166583; embybib 5d6bff3ff5d7f60dce960526ec48609e8d63ff200950f435ebd39003a4a646a5; colfileiras efd3d55d99feda05a366cedc88fc31671bc362e8a8c6f87792fc69b126b849b7; i18n 6505c2cb0ff20caa0f2c6f2cb7854f4107ce3120fb0f98d945a6b72fef7a4f3b)"
+  },
+  {
+    "data": "2026-11-13",
+    "quem": "fable-gate postmerge (nv-mec low, mechanical); reviewer fv-android-env-static1; verifier fv-android-env-runtime1; canonical 6/6",
+    "o_que": "global-android-env (agente/21-fv-global-android-env: tests only, zero src/ changes) merged into integracao/2.1. Test/fixture evidence only; full AV/BIB global gate DID RUN rc 1 incomplete (ENOSPC), REQUIRED and unwaived.",
+    "issues": [],
+    "ref": "docs/plans/issues-exec-fable-20261113/global-android-env-integracao.md",
+    "resultado": "Merge cc7cd8ce41bdb32861589bd8c595b91ac403586d (BASE e20cf1473e9d8ad430d096e4de10d54ce7200587, candidate 71a8014c90319431e1f48002b70958f44aa00979, diff sha256 9c67089984fbaebfe6b746b21f6a42bb35523e0822dd9d3f8e18f33158945275). Post-merge under sandbox-exec (global-gate-local-only.sb, sha256 223ba6e2...): afr_android rc 0, android_live_ts rc 0, streamfit_passiva_android rc 0, conexlim rc 0, varredura-i18n.py rc 0. Canonical 6/6 passed (canonical2); original canonical rc 2 schema-only retained. No issue closed. Device acceptance UNKNOWN. AV/BIB global gate REQUIRED, unwaived.",
+    "evidencia": "docs/plans/issues-exec-fable-20261113/global-android-env-integracao.md"
   }
  ],
  "decisoes": [
