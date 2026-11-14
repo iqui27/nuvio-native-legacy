@@ -52,3 +52,8 @@ Authorized by owner 2026-11-13. Base: `9115d8bbadd09f98fef5b939732d5334d7b726c7`
 - Merged into `integracao/2.1` at `322ff155fc6536d90b3713b94f73759e2851fe49` (BASE `49e721eefba6575ee39eef137c083f5c8c711251`, candidate `1073617326f0a165acb79434701b09665239d9f6`, diff sha256 `20dcd8224cddcf1cd923118efdab8da6bff815c4a86804b3e0842a67d75518b7`). 2 test files, 0 `src/`.
 - Post-merge (sandbox-exec guard): `jellyfin.sh` rc 0, `embybib.sh` rc 0, `colfileiras.sh` rc 0, `varredura-i18n.py` rc 0.
 - Open: AV/BIB full global gate REQUIRED and unwaived (rc1 incomplete ENOSPC). No issue closed. Device acceptance UNKNOWN. Details: `global-link-next-integracao.md`.
+
+## global-android-env post-merge (2026-11-13)
+- Merged into `integracao/2.1` at `cc7cd8ce41bdb32861589bd8c595b91ac403586d` (BASE `e20cf1473e9d8ad430d096e4de10d54ce7200587`, candidate `71a8014c90319431e1f48002b70958f44aa00979`, diff sha256 `9c67089984fbaebfe6b746b21f6a42bb35523e0822dd9d3f8e18f33158945275`). Tests only (`tests/afr_android.*`, `tests/conexlim*`, `tests/streamfit_passiva_android.py`, etc.); zero `src/` changes. Static review OK (P3 notes only), runtime verifier `fv-android-env-runtime1` rc 0 on the required checks. Canonical 6/6 passed (`canonical2.log`); original canonical rc 2 schema-only failure retained.
+- Post-merge (2026-11-13, sandbox-exec guard): `afr_android.sh` rc 0, `android_live_ts.sh` rc 0, `streamfit_passiva_android.py` rc 0, `conexlim.sh` rc 0, `varredura-i18n.py` rc 0.
+- Open: full AV/BIB global gate rc 1 incomplete (ENOSPC), REQUIRED and unwaived. No issue closed. Fixture evidence only; no TV fix claim. Details: `global-android-env-integracao.md`.
