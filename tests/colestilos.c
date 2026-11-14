@@ -15,10 +15,10 @@ int addons_n(void) { return 0; }
 int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 const char *addons_base(int i) { (void)i; return ""; }
 const char *addons_id_manifesto(int i) { (void)i; return ""; }
+int addons_travar_lista(unsigned v, int p) { (void)v; (void)p; return 0; }
+void addons_destravar_lista(void) {}
 const char *sessao_usuario(void) { return "account-colestilos"; }
-// Stub do mesmo porteiro de tests/home_layout.c: a regra mora em descoberta.c,
-// que nao entra nesta montagem sem rede.
-void desc_ocultar_vistos_atualizar(void) {}
+// desc_ocultar_vistos_atualizar: stub ja vem de cwordem_home.c.
 
 #define GRUPO(id,pasta) "{\"id\":\"" id "\",\"title\":\"Same title\",\"folders\":[{\"id\":\"" pasta "\",\"title\":\"Folder\",\"sources\":[{\"addonBaseUrl\":\"https://collection.invalid\",\"type\":\"movie\",\"catalogId\":\"" pasta "\"}]}]}"
 static const char *duas = "{\"collections\":[" GRUPO("c1","f1") "," GRUPO("c2","f2") "]}";
@@ -44,7 +44,9 @@ int main(void) {
   int k;
 
   fil_definir_limite(10);
-  ajustes_aplicar_blob("{\"continueWatchingEnabled\":true,\"homeLayout\":\"classic\"}");
+  // 0 = Ligado. homeLayoutLocal is device-only (ajustes.c somenteDesteAparelho):
+  // the old blob never changed it, so the layout stays at its default.
+  assert(ajustes_shot_valor("continueWatchingEnabled", 0));
   for (k = 0; k < 4; k++) {
     snprintf(items[k].imdb, sizeof items[k].imdb, "tt%d", k);
     snprintf(items[k].tipo, sizeof items[k].tipo, "movie");
@@ -106,7 +108,16 @@ int main(void) {
       assert(larguraFil(rCol) == larguraFil(rCat));
       assert(alturaFil(rCol) == alturaFil(rCat));
       assert(alturaFil(rCol) == alturaDe(tipoDaEscolha(t)) * escalaFil(rCol));
-      assert(larguraFil(rCol) == larguraDe(tipoDaEscolha(t)) * escalaFil(rCol));
+      if (t == FIL_TIPO_POSTER_GRANDE_G) {
+        // e50a38ef6: o teto de altura do Poster grande maior devolve na
+        // LARGURA o que tirou da altura, ate 30% (a pasta vestida tambem).
+        float e0 = col->escala > 0.05f ? col->escala : 1.0f;
+        float k = fminf(e0 / escalaFil(rCol), 1.3f);
+        assert(k > 1.0f);  // o teto pegou: o alargamento e exercitado
+        assert(fabsf(larguraFil(rCol) - larguraDe(tipoDaEscolha(t)) * escalaFil(rCol) * k) < 0.01f);
+      } else {
+        assert(larguraFil(rCol) == larguraDe(tipoDaEscolha(t)) * escalaFil(rCol));
+      }
     }
   }
 

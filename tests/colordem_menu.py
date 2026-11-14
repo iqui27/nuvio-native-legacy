@@ -6,6 +6,9 @@ import subprocess
 import tempfile
 
 source = Path('src/ctxmenu.c').read_text()
+# The Stage row (#659) uses PALCO_*; ajustes.h pulls SDL, so take only those lines.
+palco = '\n'.join(line for line in Path('src/ajustes.h').read_text().splitlines()
+                  if 'PALCO_N }' in line or line.startswith('#define PALCO_PADRAO'))
 
 
 def block(start):
@@ -47,13 +50,17 @@ enum { SDLK_UP, SDLK_DOWN, SDLK_LEFT, SDLK_RIGHT, SDLK_RETURN };
 static int nEstilos = 2, estFoco, estSel, estTam[FIL_TIPO_N];
 static FilEstiloLinha estLin[FIL_TIPO_N];
 static int estVivo;
+''' + palco + r'''
 static int ordemLinha = 1, ordemSel, aberto = 1, pagina = 1;
+static int palcoLinha, palcoSel;  /* src/ctxmenu.c: no Stage row in this fixture */
 static const char *filChave = "collection_test";
 static int savedStyle, savedOrder;
 void sync_proteger_ajustes_locais(void) {}
 int fil_definir_tipo(const char *key, int type) { (void)key; savedStyle = type; return 1; }
 int fil_ordem(const char *key) { (void)key; return savedOrder; }
 int fil_definir_ordem(const char *key, int order) { (void)key; savedOrder = order; return 1; }
+int fil_palco(const char *key) { (void)key; return PALCO_PADRAO; }
+int fil_definir_palco(const char *key, int mode) { (void)key; (void)mode; assert(!"Stage row absent"); return 0; }
 static int teclaOk(int k) { return k == SDLK_RETURN; }
 ''' + alias + handlers + '\nstatic void key(int k) {\n' + keyboard + '\n}\n' + r'''
 int main(void) {
