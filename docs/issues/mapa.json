@@ -18331,6 +18331,12 @@
       "ref": "83c7975c7099a85bbc58a90f67c6db584285d7c5",
       "resultado": "post-merge passed (erro409 rc0, gfx_icone_embutido rc0, varredura-i18n rc0); full global gate NOT passed (incomplete ENOSPC, unwaived); integration full suite NOT passed",
       "evidencia": "docs/plans/issues-exec-fable-20261113/global-player-icon-integracao.md; /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-player-icon-postmerge-report.md; /Volumes/ExternalSSD/tmp/jobtmp/fv-global-player-icon-postmerge/logs/"
+    },
+    {
+          "data": "2026-11-14",
+          "quem": "Post-merge executor (nv-mec, low, served model UNKNOWN); static reviewer fv-gemini-link-static1 (nv-revisao, medium); distinct runtime verifier fv-gemini-link-runtime1 (nv-revisao, medium); central canonical 4/4, errors []",
+          "o_que": "Test-only merge of agente/21-fv-gemini-link into integracao/2.1 at a6f7eecc5ab822d965bfe17e94cc7a388c5ae3a0 (BASE c489031a9, candidate d1e2566f1, diff sha256 0b96aac2b3cd249a67d74d3db6e15905408b6bf0fd227aab00991f489bb06fcd, verification digest 8d27f4098db53b81782dc20876f7b493f303138f2d593b5ba7604bccbf851fff). 5 test files, 0 src/. Post-merge rc 0 under guarded sandbox at HEAD a6f7eecc5 (clean): tests/custom_id_stream.sh, tests/cncverse_regression.sh (whole, parent+child+postconditions), tools/varredura-i18n.py. No build repeated. No P0-P2; P3 notes kept (cncverse_live.c:79 dangling alias latent; duplicated overlay hygiene). Author ASan trace UNPROVEN. BASE link reds only. Full global AV15fb rc1 ENOSPC incomplete, required and unwaived; integration full suite NOT passed. No TV proof, no issue closed.",
+          "evidencia": "docs/plans/issues-exec-fable-20261113/gemini-link-integracao.md; /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/gemini-link-postmerge-report.md; /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/gemini-link-postmerge-logs/"
     }
   ],
  "decisoes": [
