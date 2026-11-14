@@ -74,3 +74,9 @@ Authorized by owner 2026-11-13. Base: `9115d8bbadd09f98fef5b939732d5334d7b726c7`
 - Post-merge (sandbox-exec guard): `cw205_diagnostico.sh` rc 0, `cwleg.sh` rc 0, `varredura-i18n.py` rc 0.
 - Confirmed P2 retained unfixed: F1 `tests/trakt_rede_stub.c:12` (latent), F2 `tests/cw205_diagnostico.sh:20` (historical replay false-red at compile stage). Not waived.
 - Open: full AV/BIB global gate rc 1 incomplete (ENOSPC), REQUIRED and unwaived. No issue closed. Details: `global-link-cw-integracao.md`.
+
+## global-cw-rewatch post-merge (2026-11-14)
+- Merged into `integracao/2.1` at `5caf6ed6884ce8f942642f6c41a9510d53dd72d3` (BASE `b436054a791f498be9ef4fb41af37267a3e4a873`, candidate `9bd2334d7159a7cbdedd72c145cacd5091c45f95`, diff sha256 `80b847f6cf0aeb31523535da1e81eaf7d7bf583fcc444ade8f65a2f93720cf3c`). Tests only.
+- Post-merge (derived sandbox guard): `cw_prioridade.sh` rc 0, `cwdesmarcado.sh` rc 0, `cwdup244.sh` rc 0, `varredura-i18n.py` rc 0. Build not repeated.
+- P3 notes kept unfixed: N1 (report text), N2 (stub writes `/tmp/nuvio-fixture-*`, guarded), N3 (meta identity, repaired).
+- Open: full global AV15fb rc 1 ENOSPC incomplete, REQUIRED and unwaived. No issue closed. Details: `global-cw-rewatch-integracao.md`.

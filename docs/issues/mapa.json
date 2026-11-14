@@ -18304,6 +18304,15 @@
     "ref": "d92ce40d092a8c3b6f0c6345f37afcf0645f581d",
     "resultado": "Canonical 4/4 passed, errors empty, verification digest afefb8bc5163694bbe6294e471d3c59e10615f60bdafad644996c12b362f126e. Post-merge rc: cw205_diagnostico 0, cwleg 0, varredura-i18n 0; build not repeated. Full global gate: AV15fb rc1 incomplete ENOSPC, not passed; current-integration/BIB production full global still required and unwaived. No TV proof, no closure.",
     "evidencia": "docs/plans/issues-exec-fable-20261113/global-link-cw-integracao.md"
+  },
+  {
+    "data": "2026-11-14",
+    "quem": "Post-merge executor (nv-mec low, served model UNKNOWN); static reviewer fv-cw-rewatch-static1; distinct runtime verifier fv-cw-rewatch-runtime1; central canonical 5/5 zero errors",
+    "o_que": "Docs-only post-merge record for global-cw-rewatch (agente/21-fv-global-cw-rewatch: 3 test runners link tests/discovery_boundary_stub.c) merged into integracao/2.1 at 5caf6ed6884ce8f942642f6c41a9510d53dd72d3 (BASE b436054a791f498be9ef4fb41af37267a3e4a873, candidate 9bd2334d7159a7cbdedd72c145cacd5091c45f95, diff sha256 80b847f6cf0aeb31523535da1e81eaf7d7bf583fcc444ade8f65a2f93720cf3c). Test evidence only; no production fix. P3 notes kept: N1 author report wrongly says desc_lapides_primeira absent (present at src/descoberta.h:403, TEM_AJUSTE active); N2 stub dados_caminho writes fixed /tmp/nuvio-fixture-* ignoring private TMPDIR (derived sandbox guard denies it); N3 author meta lacked git identity (independently repaired). Full global AV15fb rc1 ENOSPC incomplete, required and unwaived.",
+    "issues": [],
+    "ref": "5caf6ed6884ce8f942642f6c41a9510d53dd72d3",
+    "resultado": "Canonical 5/5 passed, errors empty, verification digest 4d4353d24b808575b4f062ace8293e1ab8bb7ecadf186cd5499ae86e19a42421. Post-merge rc: cw_prioridade 0, cwdesmarcado 0, cwdup244 0, varredura-i18n 0; build not repeated. Full global gate not run on integration (ENOSPC history), required and unwaived. No TV proof, no closure.",
+    "evidencia": "docs/plans/issues-exec-fable-20261113/global-cw-rewatch-integracao.md; /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/fv-global-cw-rewatch-postmerge-logs/"
   }
  ],
  "decisoes": [
