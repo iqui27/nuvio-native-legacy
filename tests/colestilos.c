@@ -108,7 +108,16 @@ int main(void) {
       assert(larguraFil(rCol) == larguraFil(rCat));
       assert(alturaFil(rCol) == alturaFil(rCat));
       assert(alturaFil(rCol) == alturaDe(tipoDaEscolha(t)) * escalaFil(rCol));
-      assert(larguraFil(rCol) == larguraDe(tipoDaEscolha(t)) * escalaFil(rCol));
+      if (t == FIL_TIPO_POSTER_GRANDE_G) {
+        // e50a38ef6: o teto de altura do Poster grande maior devolve na
+        // LARGURA o que tirou da altura, ate 30% (a pasta vestida tambem).
+        float e0 = col->escala > 0.05f ? col->escala : 1.0f;
+        float k = fminf(e0 / escalaFil(rCol), 1.3f);
+        assert(k > 1.0f);  // o teto pegou: o alargamento e exercitado
+        assert(fabsf(larguraFil(rCol) - larguraDe(tipoDaEscolha(t)) * escalaFil(rCol) * k) < 0.01f);
+      } else {
+        assert(larguraFil(rCol) == larguraDe(tipoDaEscolha(t)) * escalaFil(rCol));
+      }
     }
   }
 
