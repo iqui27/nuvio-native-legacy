@@ -690,6 +690,17 @@ int video_iniciar(void) {
 }
 
 int video_iniciar_auto(void) { return video_iniciar(); }
+
+// Recarregar a MESMA fonte preservando posicao e pausa exige esperar o
+// loadedmetadata do novo <video> e reaplicar o seek; este alvo nao modela esse
+// estado (o elemento antigo e descartado em "abrir"). Nega, e quem chamou
+// (recarregarFonteVOD em app.c) mostra "Indisponivel agora" em vez de deixar a
+// tela presa. Mesmo contrato do stub de src/video_tpk.c.
+//
+// Faltava: src/video.c inteiro esta sob #ifndef __EMSCRIPTEN__, entao no wasm
+// a unica definicao possivel era esta, e o alvo VIDAA nao linkava
+// ("undefined symbol: video_recarregar" em app.o).
+int video_recarregar(void) { return 0; }
 // Sem hub LS2 neste alvo: nada aqui pode negar registro por permissao.
 int video_registro_negado(void) { return 0; }
 
