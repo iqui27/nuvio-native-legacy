@@ -23,5 +23,5 @@ Date: 2026-11-13. Branch: integracao/2.1. Scope: test fixtures only; no producti
 - Fixture evidence only. Not a production fix, not a physical TV claim.
 - Doubles return NULL/0: fonteKbpsSessao pin (src/video_android.c:872,1027) not exercised here.
 - Fake clock advances +20 ms; no real-time or threading behavior proven.
-- AV/BIB full global gate: NOT RUN, remains required and unwaived.
+- Full global suite ran on AV candidate `15fbcbf2dcd5a7a8697a36cd9229b3963d4514ab`: wrapper rc 1, incomplete due to ENOSPC. No passing full global gate or BIB/PAG-candidate global run is established; gate remains required and unwaived. See `STATUS.md` for counts and retained evidence.
 - No issue closed. Device acceptance unknown.
