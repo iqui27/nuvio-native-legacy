@@ -14,5 +14,5 @@
   - `python3 tools/varredura-i18n.py` rc 0 (sha256 `e2dc1d85ba32029673aefafb6a1c449a89170cefb60cd397499b0dff77cc29e1`)
   - Build not repeated (no new source); build-local rc 0 from the verify run.
 - Scope: test-only and docs-only. Zero `src/` changes in this merge. Fixture evidence only: NOT a TV fix claim, no device acceptance.
-- Still open: full AV/BIB global gate DID RUN rc 1 incomplete (ENOSPC). It remains REQUIRED and unwaived. Optional 55e intermediate Kotlin repro not run. `tests/cacheboost_android.py` stale-deps gap out of this cut. Central `central.py verifica` gate pending central.
+- Still open: full AV/BIB global gate DID RUN rc 1 incomplete (ENOSPC). It remains REQUIRED and unwaived. Optional 55e intermediate Kotlin repro not run. `tests/cacheboost_android.py` stale-deps gap out of this cut. Central `central.py verifica` completed before merge: canonical2 passed 6/6, errors [].
 - P3 notes (kept, no change): F1 SDL-missing branch in `tests/streamfit_passiva_android.py:68`; F2 docstring names 4 files at `:3`; F3 partial RO cache StopIteration in `tests/afr_android.py:66` (opt-in); F4 NUVIO_TEST_JAVA wording at `tests/afr_android.py:72`.
