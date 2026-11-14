@@ -12,6 +12,7 @@
 #include "homeestado.h"
 #include "sessao.h"
 #include "colecoes.h"
+#include "homefil.h"
 #include "marco.h"
 #include "metaprov.h"
 #include "armids.h"
@@ -1512,15 +1513,30 @@ static int deMeta(const char *ini, const char *fim, const char *tipo, CatItem *d
 // resposta e "o catalogo esta VAZIO hoje", 0 sem resposta e "o addon nao
 // respondeu em 8 s". Do lado de fora os dois viravam a mesma fileira ausente, e
 // era exatamente por isso que nao dava para dizer o que falhou num arranque.
+// `genero` (pode ser "" ou NULL) vai como extra `genre=<id>` no pedido: as
+// fileiras das colecoes fixadas pedem a janela do genero da fonte (#700).
 static int lerCatalogo(const char *base, const char *tipo, const char *id,
-                       CatItem *saida, int max, int quantos, int *respondeu) {
-  char url[NV_ADDON_PEDIDO_MAX];
+                       CatItem *saida, int max, int quantos, const char *genero,
+                       int *respondeu) {
+  char url[NV_ADDON_PEDIDO_MAX], extra[300] = "";
   char *corpo;
   const char *p;
   int n = 0;
   if (respondeu) *respondeu = 0;
   if (addons_base_desligada(base)) return 0;   // desligado na conta: nenhuma rede
-  if (!descPedidoCoube(base, catalogoUrl(url, sizeof url, base, tipo, id, ""),
+  if (genero && genero[0]) {
+    char encoded[300];
+    int z = 0;
+    // Mesma regra do vertudo/colecao (linha ~9950): alfanumerico, '-' e '_'.
+    for (const unsigned char *c = (const unsigned char *)genero; *c && z < (int)sizeof encoded - 3; c++) {
+      if ((*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') ||
+          (*c >= '0' && *c <= '9') || *c == '-' || *c == '_') encoded[z++] = (char)*c;
+      else { snprintf(encoded + z, 4, "%%%02X", *c); z += 3; }
+    }
+    encoded[z] = 0;
+    snprintf(extra, sizeof extra, "genre=%s", encoded);
+  }
+  if (!descPedidoCoube(base, catalogoUrl(url, sizeof url, base, tipo, id, extra),
                        sizeof url)) return 0;
   // 8 s e nao 25: um addon fora do ar segurava um dos tres fios por 25 s, e a
   // fileira dele atrasa TODAS as seguintes porque a montagem caminha em ordem.
@@ -1560,7 +1576,7 @@ static int lerCatalogoHomeParcial(const char *base, const char *tipo, const char
   int n = 0, visiveis = 0, skip = 0;
   char orig[96];
   if (!ajustes_ocultar_filmes_vistos() || strcmp(tipo, "movie"))
-    return lerCatalogo(base, tipo, id, saida, max, quantos, respondeu);
+    return lerCatalogo(base, tipo, id, saida, max, quantos, "", respondeu);
   if (max > HOME_VISTOS_MAX) max = HOME_VISTOS_MAX;
   if (respondeu) *respondeu = 0;
   if (addons_base_desligada(base)) return 0;
@@ -1610,6 +1626,76 @@ static int lerCatalogoHome(const char *base, const char *tipo, const char *id,
                            int paginavel, int *respondeu) {
   return lerCatalogoHomeParcial(base, tipo, id, saida, max, quantos,
                                paginavel, respondeu, NULL, NULL);
+}
+
+// --- fileira sintetica de colecao fixada (#700) ------------------------------
+// A fonte de uma colecao carrega `genre` quando a pasta aponta para UM dos
+// generos do catalogo. cf_itens() devolve 0 para ela (nunca apresenta outro
+// genero como se fosse o da pasta) e a Home mostrava o card da pasta; a
+// alternativa antiga era pior: a janela (base,tipo,catId) sem genero serve
+// qualquer pasta e duas fixadas do mesmo catalogo partilhavam a MESMA lista.
+//
+// Aqui, junto com as fileiras de catalogo, monta-se UMA fileira por pasta
+// fixada que tenha fonte com genero: a uniao (sem repetir imdb+tipo) das
+// janelas de genero pedidas agora e das janelas sem genero ja publicadas
+// das fontes restantes. A chave e "colpin_<id>", a mesma da pseudo-fileira
+// que a Home monta pela pasta: o dedup por chave fica com esta (que tem os
+// itens certos) e descarta a outra. `base`/`catId` vazios de proposito — ela
+// nao e um catalogo, nao gasta vaga de rede e nao tem "Ver tudo".
+//
+// So publica quando TODAS as fontes resolvem, como cf_itens(): pasta com
+// provedor, filtros proprios, base irrecuperavel ou catalogo sem resposta
+// continua card. O card e a verdade que a pasta tem quando falta janela.
+// static: montar() roda num fio so; o buffer soma ~1 MB e nao vai pra pilha.
+// `novas`/`nNovas`/`novosItens` sao as fileiras do lote que montar() acabou
+// de buscar (a janela sem genero sai da mesma remessa, nao da volta anterior).
+static int colpinItens(const ColFolder *pasta, CatItem *uni, int teto,
+                       const CatFileira *novas, int nNovas,
+                       const CatItem *novosItens) {
+  int n = 0, temGenero = 0;
+  static CatItem fonteItens[DESC_ITENS_POR_FILEIRA];
+  for (int s = 0; s < pasta->nSources; s++) {
+    const ColSource *fonte = &pasta->sources[s];
+    const char *base = fonte->base[0] ? fonte->base : addons_base_por_id(fonte->addonId);
+    int got = 0, respondeu = 0;
+    if (fonte->prov[0] || fonte->filtros[0] || !base || !base[0]) return 0;
+    if (fonte->genre[0]) {
+      temGenero = 1;
+      got = lerCatalogo(base, fonte->type, fonte->catId, fonteItens,
+                        DESC_ITENS_POR_FILEIRA, DESC_ITENS_POR_FILEIRA,
+                        fonte->genre, &respondeu);
+      if (!respondeu) return 0;    // timeout: sem janela propria, volta o card
+    } else {
+      for (int r = 0; r < nNovas && !got; r++) {   // primeiro o lote novo...
+        const CatFileira *c = &novas[r];
+        if (!strcmp(c->base, base) && !strcmp(c->tipo, fonte->type) &&
+            !strcmp(c->catId, fonte->catId) && c->base[0])
+          for (int j = 0; j < c->n && got < DESC_ITENS_POR_FILEIRA; j++)
+            fonteItens[got++] = novosItens[c->ini + j];
+      }
+      for (int r = 0; r < cat_n_fileiras() && !got; r++) {   // ...senao a publicada
+        const CatFileira *c = cat_fileira(r);
+        if (c && !strcmp(c->base, base) && !strcmp(c->tipo, fonte->type) &&
+            !strcmp(c->catId, fonte->catId)) {
+          for (int j = 0; j < c->n && got < DESC_ITENS_POR_FILEIRA; j++) {
+            const CatItem *it = cat_item(c->ini + j);
+            if (it) fonteItens[got++] = *it;
+          }
+          break;
+        }
+      }
+      if (!got) return 0;          // sem resposta ou nao publicada: cf_itens ja da 0
+    }
+    for (int j = 0; j < got && n < teto; j++) {
+      int repetido = 0;
+      for (int k = 0; k < n; k++)
+        if (!strcmp(uni[k].imdb, fonteItens[j].imdb) &&
+            !strcmp(uni[k].tipo, fonteItens[j].tipo)) { repetido = 1; break; }
+      if (!repetido) uni[n++] = fonteItens[j];
+    }
+  }
+  if (!temGenero) return 0;        // pasta sem genero segue o cf_itens de sempre
+  return n;
 }
 
 // --- fileiras da home: catalogos declarados pelos addons ---------------------
@@ -2930,7 +3016,12 @@ static int fileiraPodeSerPreservada(const CatFileira *f) {
   // Personal-server rows come only from the live Jellyfin snapshot: after a
   // sign-out, token expiry or profile switch they must vanish, not be
   // re-attached from the previous Home.
-  return f && f->chave[0] && !servidores_chave_fileira(f->chave) && homeestado_contexto_valido() &&
+  if (!f || !f->chave[0]) return 0;
+  // Excecao: a fileira sintetica "colpin_<id>" (#700) so vale enquanto a pasta
+  // segue fixada. Desafixar entre voltas nao pode reanexa-la aqui.
+  if (!strncmp(f->chave, CF_PREFIXO, sizeof CF_PREFIXO - 1))
+    return cf_fixada(f->chave + sizeof CF_PREFIXO - 1);
+  return !servidores_chave_fileira(f->chave) && homeestado_contexto_valido() &&
          homeestado_tem_fileira(f->chave);
 }
 
@@ -5420,6 +5511,28 @@ static void *montar(void *u) {
           }
         }
       }
+      // #700: UMA fileira por pasta FIXADA que tenha fonte com genero. Fica
+      // aqui, depois dos catalogos e do alimento do destaque, porque as fontes
+      // sem genero da pasta leem as janelas que o laco acabou de publicar em
+      // fil[]/lote — e nao as da tela, que ainda sao as da volta anterior.
+      { int ncf = cf_n();
+        for (int cf = 0; cf < ncf && nFil < CAT_FIL_MAX; cf++) {
+          const ColFolder *pasta = cf_pasta(cf);
+          static CatItem uni[DESC_ITENS_POR_FILEIRA];
+          int got = pasta ? colpinItens(pasta, uni, DESC_ITENS_POR_FILEIRA,
+                                        fil, nFil, lote) : 0;
+          if (!got) continue;
+          GARANTE(got);
+          if (got > cap - n) got = cap - n;
+          if (got <= 0) break;
+          CatFileira *f = &fil[nFil++];
+          memset(f, 0, sizeof *f);
+          snprintf(f->chave,  sizeof f->chave,  "%s%s", CF_PREFIXO, pasta->id);
+          snprintf(f->titulo, sizeof f->titulo, "%s", pasta->title);
+          memcpy(lote + n, uni, sizeof(CatItem) * (size_t)got);
+          f->ini = n; f->n = got;
+          n += got;
+        } }
       nFilsLote = nFil;
       memcpy(filsLote, fil, sizeof(CatFileira) * (size_t)nFil);
       // UMA LINHA QUE RESPONDE "o que falhou no arranque". As quatro contagens
@@ -5962,9 +6075,15 @@ void desc_remontar_fileiras(void) {
   int i, k, q, nCat = 0, nOut = 0, teto, engolidas = 0;
   if (nFileirasMontadas < 1) return;
 
-  // 1. as fixas primeiro, na ordem em que ja estavam.
-  for (i = 0; i < nFileirasMontadas && nOut < CAT_FIL_MAX; i++)
-    if (!filsMontadas[i].base[0]) saidaFil[nOut++] = filsMontadas[i];
+  // 1. as fixas primeiro, na ordem em que ja estavam. Excecao: a fileira
+  // sintetica "colpin_<id>" (#700) so vale enquanto a pasta segue fixada —
+  // desafixar nao pode deixar uma fileira orfa na home ate a proxima montagem.
+  for (i = 0; i < nFileirasMontadas && nOut < CAT_FIL_MAX; i++) {
+    const CatFileira *fixa = &filsMontadas[i];
+    if (!fixa->base[0] && !strncmp(fixa->chave, CF_PREFIXO, sizeof CF_PREFIXO - 1) &&
+        !cf_fixada(fixa->chave + sizeof CF_PREFIXO - 1)) continue;
+    if (!fixa->base[0]) saidaFil[nOut++] = filsMontadas[i];
+  }
 
   // 2. as de catalogo, filtradas pelas mesmas regras de desligada().
   for (i = 0; i < nFileirasMontadas; i++) {
