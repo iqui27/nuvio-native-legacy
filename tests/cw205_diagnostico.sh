@@ -17,12 +17,12 @@ case "${1:-trakt}" in
       git archive "$CW205_REF" src | tar -x -C "$dir"
       srcdir="$dir/src"
     fi
-    cc "$srcdir/trakt.c" tests/stub_fichameta.c "$srcdir/js.c" "$srcdir/metaprov.c" tests/cw205_diagnostico.c \
+    cc "$srcdir/trakt.c" tests/stub_fichameta.c "$srcdir/js.c" "$srcdir/metaprov.c" "$srcdir/metaep.c" tests/cw205_diagnostico.c tests/trakt_rede_stub.c \
       -I"$srcdir" -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
       -o "$dir/teste" -O1 -g -Wall -Wextra -Wl,-dead_strip -lpthread ;;
   montagem)
     cc -DCW205_MONTAGEM src/catalogo.c src/progresso.c src/cwordem.c src/cwretido.c \
-      tests/cw205_diagnostico.c src/cotacat.c src/js.c src/metaprov.c src/colecoes.c \
+      tests/cw205_diagnostico.c tests/discovery_boundary_stub.c src/cotacat.c src/js.c src/metaprov.c src/colecoes.c \
       src/redeurl.c src/catordem.c -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
       -o "$dir/teste" -O1 -g -Wall -Wno-deprecated-declarations \
       -Wno-macro-redefined -Wno-unused-function ;;
