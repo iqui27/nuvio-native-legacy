@@ -22,9 +22,11 @@ Scope: test-only merge into `integracao/2.1`. No production fix, no TV proof, no
 - `python3 tools/varredura-i18n.py` rc 0 (stdout sha256 `e2dc1d85…f126e`, matches verifier).
 - Raw logs: `global-link-cw-postmerge-logs/pm{1-cw205,2-cwleg,3-varredura}.{stdout,stderr,meta}`.
 - Build not repeated (source unchanged in this record).
+- Central comparison of the verifier and post-merge stdout found only reordered `[meta]` lines; PASS/REPRO outcomes match.
+- Shared hooks under the repository's `git-common-dir/hooks` remain active. The docs commit `65093f10927677dd37eca69c23299df9d6ddbf16` triggered the existing publication hook: its log confirms LAN panel files synchronized and the public-roadmap step started. Final public serving state was not independently verified; no manual publication was run. The worker's claim that no active hook existed was incorrect.
 
 ## Confirmed P2, retained, unfixed (owner P2 non-blocking policy; not waived)
-- F1 `tests/trakt_rede_stub.c:12`: `rede_pedir` returns success on the unused paged `provedorGet` path; fixture body discarded. Latent only; no current false pass.
+- F1 `tests/trakt_rede_stub.c:12`: `rede_pedir` returns 0 despite setting status 200 and REDE_OK on the unused paged `provedorGet` path; the caller treats this as failure and discards the fixture body. Latent only; no current false pass.
 - F2 `tests/cw205_diagnostico.sh:20`: historical replay `CW205_REF=581e8fb9`. BASE: behavioral FAIL (`trakt_continuar descartou filmes pausados a 62% por sugestoes`). HEAD: compile failure (`src/metaep.c` missing at that ref). Nonzero historical replay is expected and is not a required check.
 
 ## Red distinctions
