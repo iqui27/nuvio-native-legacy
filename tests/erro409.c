@@ -9,6 +9,13 @@
 int video_tocar_retomada(const char *u, double s, double p) { (void)u; (void)s; (void)p; return 0; }
 int video_retomada_inicial_estado(void) { return -1; }
 int video_superficie_estavel(void) { return 1; }
+// Cotos do player NV_ANDROID que so existem no video_android.c/extplayer.c:
+// player.c os chama, mas o teste nunca toca fonte externa nem quadro real.
+int video_quadro_visto(void) { return 0; }
+int extplayer_tentar(const char *u, const char *t, int a,
+                     void (*interno)(const char *), void (*sair)(void)) {
+  (void)u; (void)t; (void)a; (void)interno; (void)sair; return 0;
+}
 static int falhas;
 static void tecla(SDL_Keycode k) {
   SDL_Event e = {0}; e.type = SDL_KEYDOWN; e.key.keysym.sym = k; player_evento(&e);

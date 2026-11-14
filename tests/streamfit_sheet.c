@@ -82,6 +82,32 @@ int ajustes_fonte_usar_outros(void) { return 0; }
 int ajustes_fonte_primeira(void) { return prioridadeTeste == 3; }
 int ajustes_fonte_ordem_uso(void) { return 0; }
 int ajustes_fonte_idioma_audio(void) { return 0; }
+/* Channel sheet is out of scope for the TV-incompatible hide rules; no source
+   list filtering is exercised here. */
+int ajustes_fonte_ocultar(int regra) { (void)regra; return 0; }
+/* Audio-from-another-version (audioext.c) and its settings are out of scope:
+   no marked audio exists in an isolated sheet fixture. */
+int ajustes_audio_externo(void) { return 0; }
+int ajustes_audio_externo_ocultar_fora_cache(void) { return 0; }
+int ajustes_dts_desligado(void) { return 0; }
+void audioext_alvo(const char *alvo) { (void)alvo; }
+int audioext_alternar(const char *url, const char *cabecalhos, const char *nome) {
+  (void)url; (void)cabecalhos; (void)nome; return -1;
+}
+void audioext_lembrar_serie(const AudioExtIdent *id) { (void)id; }
+int audioext_serie_procura(const char *alvo, AudioExtIdent *id) { (void)alvo; (void)id; return 0; }
+void audioext_serie_achou(const char *url, const char *cabecalhos, const char *nome) {
+  (void)url; (void)cabecalhos; (void)nome;
+}
+int audioext_marcada(const char *url) { (void)url; return 0; }
+/* Text measurement is a font-module boundary; the sheet never draws. */
+TxtFamilia txt_fonte_interface(void) { return TXT_FAMILIA_INTER; }
+void txt_estilo_medidas(TxtEstilo estilo, int *corpo, int *peso) {
+  (void)estilo; if (corpo) *corpo = 20; if (peso) *peso = 400;
+}
+int txt_largura(TxtEstilo estilo, const char *s) {
+  (void)estilo; return s ? (int)(8 * strlen(s)) : 0;
+}
 int fonteregra_ordem_rank(const char *nome) { (void)nome; return 0; }
 int ajustes_idioma(void) { return 0; }
 int ajustes_tamanho_max_gb(void) { return 0; }

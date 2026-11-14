@@ -18209,7 +18209,7 @@
   {
    "data": "2026-11-13",
    "quem": "Claude Haiku 5.5 (post-merge executor, central sole writer); reviewer fv-sync-gate-static-review; verifier fv-sync-gate-runtime-verifier; served models UNKNOWN",
-   "o_que": "Fixture-only sync-gate merge (tests/ 4 files) into integracao/2.1 for #639 and #789 test infrastructure. No production fix, no production candidate (BIB639/PAG789) integrated. Full global gate NOT RUN / unwaived. Issues not fixed or closed.",
+   "o_que": "Fixture-only sync-gate merge (tests/ 4 files) into integracao/2.1 for #639 and #789 test infrastructure. No production fix, no production candidate (BIB639/PAG789) integrated. Campaign global suite ran on AV candidate 15fbcbf2dcd5a7a8697a36cd9229b3963d4514ab, rc1 incomplete ENOSPC; no passing full gate, BIB/PAG-candidate or current-integration run established; required/unwaived. Issues not fixed or closed.",
    "issues": [
     639,
     789
@@ -18221,7 +18221,7 @@
   {
    "data": "2026-11-13",
    "quem": "Claude Haiku 5.5 (post-merge executor, central sole writer); reviewer j-rev-fv-offline-fixtures2-static; verifier fv-offline-fixtures-runtime-verifier; served models UNKNOWN",
-   "o_que": "Fixture-only offline-fixtures merge (tests/ only) into integracao/2.1 for #639 and #789 test infrastructure. Not a production fix, BIB639/PAG789 production candidate NOT integrated, full global gate NOT RUN. Issues not fixed or closed. Global-gate support tooling reviewed and applied to central tool only.",
+   "o_que": "Fixture-only offline-fixtures merge (tests/ only) into integracao/2.1 for #639 and #789 test infrastructure. Not a production fix, BIB639/PAG789 production candidate NOT integrated, Campaign global suite ran on AV candidate 15fbcbf2dcd5a7a8697a36cd9229b3963d4514ab, rc1 incomplete ENOSPC; no passing full gate, BIB/PAG-candidate or current-integration run established; required/unwaived. Issues not fixed or closed. Global-gate support tooling reviewed and applied to central tool only.",
    "issues": [
     639,
     789
@@ -18233,13 +18233,106 @@
   {
    "data": "2026-11-13",
    "quem": "fable-gate (post-merge executor); reviewer j-rev-fv-local-services2-static; verifier fv-local-services-runtime-verifier; served models UNKNOWN",
-   "o_que": "Local Workers / test-harness isolation merge (agente/21-fv-local-services: 8 tests/ files + servidor/recomendacoes/preparar-local.sh, zero src/ changes) into integracao/2.1. Offline cached Wrangler 4.149.0 harness, zero production bugfix, zero deploy, full global gate NOT RUN.",
+   "o_que": "Local Workers / test-harness isolation merge (agente/21-fv-local-services: 8 tests/ files + servidor/recomendacoes/preparar-local.sh, zero src/ changes) into integracao/2.1. Offline cached Wrangler 4.149.0 harness, zero production bugfix, zero deploy, Campaign global suite ran on AV candidate 15fbcbf2dcd5a7a8697a36cd9229b3963d4514ab, rc1 incomplete ENOSPC; no passing full gate, BIB/PAG-candidate or current-integration run established; required/unwaived.",
    "issues": [],
    "ref": "docs/plans/issues-exec-fable-20261113/local-services-integracao.md",
    "resultado": "Merge 0618e13c6fd0330f117927430fb8507d75b92904 (parents BASE 62a4b49693b584be2b83d445beb64f2e9c252a8f and candidate 3da5ad3cfcae0380dd694f9b7478375d76de6831). Canonical gate 7/7 passed under global-gate-local-only.sb (0 skipped/failed/timeouts/divergences/errors). Post-merge recomenda_e2e.sh, diarionuvem_servidor.sh, juntos_e2e.sh, varredura-i18n.py rc 0; zero workerd leftovers.",
    "evidencia": "Candidate diff sha256 323641fa35c1e1c84c0e7fedad127ba6f5a4e03855c70bacb2d3342a4d4a9784. Canonical verification digest 4cca8c51788c31a5c929aba3d6260953e000b8a5b42fc62a6a7a21b61f41a814; log_digest bef34433905e9ea76a05b875b15660bac724610ebd39d5e933a8ba127b4447f9; i18n stdout sha e2dc1d85ba32029673aefafb6a1c449a89170cefb60cd397499b0dff77cc29e1. Reports: local-services-code-review2.md, local-services-verification.md, j-verify-fv-local-services.log."
-  }
- ],
+  },
+  {
+    "data": "2026-11-13",
+    "quem": "fable-gate (post-merge executor); reviewer fv-global-col-static1; verifier fv-global-col-runtime1; served models UNKNOWN",
+    "o_que": "Global compile fixture cut (agente/21-fv-global-compile: 7 tests/ files, zero src/ changes) merged into integracao/2.1. Repairs 4 compile failures and aligns Poster G geometry expectation with Oct 17 contract. Fixture/infrastructure evidence only; Campaign global suite ran on AV candidate 15fbcbf2dcd5a7a8697a36cd9229b3963d4514ab, rc1 incomplete ENOSPC; no passing full gate, BIB/PAG-candidate or current-integration run established; required/unwaived.",
+    "issues": [
+      639,
+      789
+    ],
+    "ref": "docs/plans/issues-exec-fable-20261113/global-compile-integracao.md",
+    "resultado": "Merge 9ddae314efae99413f95f236ebcc7f5fa7f253a0 (parents prior 6ac09088b04123a4b29e45901e253a652477f968 and candidate fa32c8e68d7eeb92127d82179ea7958f01a9959d). Review OK, no P0/P1. Post-merge colestilos.sh rc 0, colordem.sh rc 0, varredura-i18n.py rc 0. F1 P2 Padrao parity unverified; F2 P2 colordem_menu Stage-row coverage gap. No closure, no global-pass claim.",
+    "evidencia": "Review diff sha256 120b888ffc8fa2e88c37a00566c621dbcc69b641e48f5e812870b05eeca1d03a; ledger verification digest 900744a7c1122ce1b4c695a9e3f213d25270c4ad75f2e7a9d43effdbda486124 (postcheck rc 0). Post-merge logs in /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/: global-compile-postmerge-colestilos.log (sha 2870603f0ef4fa26749a), global-compile-postmerge-colordem.log (sha cf645c643638ea503f2a), global-compile-postmerge-i18n.log (sha e2dc1d85ba32029673ae)."
+  },
+  {
+    "data": "2026-11-13",
+    "quem": "fable-gate (post-merge executor); reviewer fv-global-link-static1 (nv-revisao medium, served model UNKNOWN); verifier fv-global-link-runtime1 (distinct runtime verifier); no gateway proof",
+    "o_que": "Global link-small fixture cut (agente/21-fv-global-link-small: tests/addons_legendas_merge.sh +1/-1, tests/video_android_cacheboost.c +4/-2, zero src/ changes) merged into integracao/2.1. Repairs link failures in addons_legendas_merge (real src/assrender.c) and a stalled fake clock in video_android_cacheboost (line 240 usleep -> fake clock advance). Fixture/infrastructure evidence only; Campaign global suite ran on AV candidate 15fbcbf2dcd5a7a8697a36cd9229b3963d4514ab, rc1 incomplete ENOSPC; no passing full gate, BIB/PAG-candidate or current-integration run established; required/unwaived.",
+    "issues": [],
+    "ref": "docs/plans/issues-exec-fable-20261113/global-link-small-integracao.md",
+    "resultado": "Merge 7b7b8f1d7135df5f22c8b7450e2a3020ab619db6 (parents: prior integration base 104aebf52c9b1d9b1c7d01f69dc10e564f45fcfa and candidate f2ef6023c436d78a0990a865fdb1fe039dd73197; candidate commits c579bb332, f2ef6023c). Static review OK, no P0-P2 findings; runtime verifier confirmed red/green and mutation/control. Canonical gate passed 5/5 (0 errors, 0 fail, 0 skip, 0 divergences). Post-merge bash tests/addons_legendas_merge.sh rc 0, bash tests/android_speed_room.sh rc 0, bash tests/video_android_cacheboost.sh rc 0, python3 tools/varredura-i18n.py rc 0. No issue closed or reclassified; no production change; no physical TV claim. Residual P3: doubles return NULL/0 (fonteKbpsSessao pin not exercised), fake clock +20 ms, no real-time/threading proof.",
+    "evidencia": "Review diff sha256 d5b33c8ecf8fd0cfe3212e6a1d95c40e08f21edaa8736d2c969893b49d39a0e2 (git diff --binary BASE HEAD). Review: /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-link-small-code-review.md; verification: /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-link-small-verification.md; canonical: /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-link-small-canonical.log; post-merge logs: /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-link-small-verify-logs/postmerge-*.log; report: /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-link-small-postmerge-report.md."
+  },
+{
+    "data": "2026-11-13",
+    "quem": "fable-gate postmerge2 (nv-mec low, mechanical); reviewer fv-global-split-static1; verifier fv-global-split-runtime1; canonical 4/4",
+    "o_que": "Global split-round fixture cut (agente/21-fv-global-split-round: tests/divididosplit.sh, tests/fileiraredonda.sh, tests/fileiraredonda.c; zero src/ changes) merged into integracao/2.1. Fixture/infrastructure evidence only; Campaign global suite ran on AV candidate 15fbcbf2dcd5a7a8697a36cd9229b3963d4514ab, rc1 incomplete ENOSPC; no passing full gate, BIB/PAG-candidate or current-integration run established; required/unwaived.",
+    "issues": [],
+    "ref": "docs/plans/issues-exec-fable-20261113/global-split-round-integracao.md",
+    "resultado": "Merge 69a04b58edcfbe081344d43067116d1e6acff06b (BASE 50cc563b2202aa220872bcab5e96e1191afdd610, candidate a7486c40daead0a0eabaa762739f4dd1c3016a27, author commit a09ffb3a3, diff sha256 36298c260537b03b94c4617b230ae9bd579914e56dcff0dd1c851b51ba3ff2bc). Post-merge under sandbox-exec (global-gate-local-only.sb, sha256 223ba6e2...): divididosplit rc 0, fileiraredonda rc 0, varredura-i18n.py rc 0 (all counts 0). No issue closed. Device acceptance UNKNOWN. AV/BIB global gate REQUIRED, unwaived (last run rc1 incomplete ENOSPC).",
+    "evidencia": "/Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/postmerge2-logs/"
+  },
+  {
+   "data": "2026-11-13",
+   "quem": "fable-gate postmerge (nv-mec low, mechanical); reviewer fv-global-link-next-static1; verifier fv-global-link-next-runtime1; canonical 5/5",
+   "o_que": "global-link-next fixture-fix (agente/21-fv-global-link-next: tests/colfileiras.sh, tests/jellyfin.sh; zero src/ changes) merged into integracao/2.1. Test-only infrastructure evidence; Campaign global suite ran on AV candidate 15fbcbf2dcd5a7a8697a36cd9229b3963d4514ab, rc1 incomplete ENOSPC; no passing full gate, BIB/PAG-candidate or current-integration run established; required/unwaived.",
+   "issues": [],
+   "ref": "docs/plans/issues-exec-fable-20261113/global-link-next-integracao.md",
+   "resultado": "Merge 322ff155fc6536d90b3713b94f73759e2851fe49 (BASE 49e721eefba6575ee39eef137c083f5c8c711251, candidate 1073617326f0a165acb79434701b09665239d9f6, diff sha256 20dcd8224cddcf1cd923118efdab8da6bff815c4a86804b3e0842a67d75518b7). Post-merge under sandbox-exec (global-gate-local-only.sb, sha256 223ba6e2...): jellyfin rc 0, embybib rc 0, colfileiras rc 0, varredura-i18n.py rc 0. Canonical 5/5 passed. No issue closed. Device acceptance UNKNOWN. AV/BIB global gate REQUIRED, unwaived.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-link-next-postmerge-logs/ (sha256 jellyfin 2fd18e831de45cf69d498afc5d97c071c2dde3b5b235e4a282c8c518c2166583; embybib 5d6bff3ff5d7f60dce960526ec48609e8d63ff200950f435ebd39003a4a646a5; colfileiras efd3d55d99feda05a366cedc88fc31671bc362e8a8c6f87792fc69b126b849b7; i18n 6505c2cb0ff20caa0f2c6f2cb7854f4107ce3120fb0f98d945a6b72fef7a4f3b)"
+  },
+  {
+    "data": "2026-11-13",
+    "quem": "fable-gate postmerge (nv-mec low, mechanical); reviewer fv-android-env-static1; verifier fv-android-env-runtime1; canonical 6/6",
+    "o_que": "global-android-env (agente/21-fv-global-android-env: tests only, zero src/ changes) merged into integracao/2.1. Test/fixture evidence only; full AV/BIB global gate DID RUN rc 1 incomplete (ENOSPC), REQUIRED and unwaived.",
+    "issues": [],
+    "ref": "docs/plans/issues-exec-fable-20261113/global-android-env-integracao.md",
+    "resultado": "Merge cc7cd8ce41bdb32861589bd8c595b91ac403586d (BASE e20cf1473e9d8ad430d096e4de10d54ce7200587, candidate 71a8014c90319431e1f48002b70958f44aa00979, diff sha256 9c67089984fbaebfe6b746b21f6a42bb35523e0822dd9d3f8e18f33158945275). Post-merge under sandbox-exec (global-gate-local-only.sb, sha256 223ba6e2...): afr_android rc 0, android_live_ts rc 0, streamfit_passiva_android rc 0, conexlim rc 0, varredura-i18n.py rc 0. Canonical 6/6 passed (canonical2); original canonical rc 2 schema-only retained. No issue closed. Device acceptance UNKNOWN. AV/BIB global gate REQUIRED, unwaived.",
+    "evidencia": "docs/plans/issues-exec-fable-20261113/global-android-env-integracao.md"
+  },
+  {
+    "data": "2026-11-14",
+    "quem": "Post-merge executor (nv-mec low, served model UNKNOWN); static reviewer fv-link-boundaries-static2; distinct runtime verifier fv-link-boundaries-runtime2; canonical replay 6/6",
+    "o_que": "Docs-only post-merge record for global-link-boundaries (agente/21-fv-global-link-boundaries: tests only) merged into integracao/2.1 at 516e73ab8f5fde326568f01da2d79d7307a6ff85 (BASE 5c66e894a1e289558ca1754303b727a7e64c8a86, candidate a526023292502189583e54da87f2a172887fb733, diff sha256 554faffa865e993cf6608b6aba4a00d655f0481b4c10cc19c59e67eca820d590). Files: tests/ctxmenu_semfio.sh, tests/esportes_v5_shot.c, tests/streamfit_sheet.c. No production fix, no TV proof, no issue closed.",
+    "issues": [],
+    "ref": "516e73ab8f5fde326568f01da2d79d7307a6ff85",
+    "resultado": "Canonical 6/6 passed, errors empty, verification digest 45925e80d780ff5c397060737953d4a19392d96cf6af2678195090bc7d6bf4b5. Post-merge rc: ctxmenu_semfio 0, esportes619 0, fontescanais_folha 0, streamfit_sheet 0, varredura-i18n 0; build not repeated (source unchanged). Full global gate: campaign suite ran on AV candidate 15fbcbf2dcd5a7a8697a36cd9229b3963d4514ab, rc1 incomplete ENOSPC; no passing full gate, BIB/PAG-candidate or current-integration run established; required/unwaived. Device/TV acceptance UNKNOWN.",
+    "evidencia": "docs/plans/issues-exec-fable-20261113/global-link-boundaries-integracao.md"
+  },
+  {
+    "data": "2026-11-14",
+    "quem": "Post-merge executor (nv-mec low, served model UNKNOWN); static reviewer fv-link-cw-static1; distinct runtime verifier fv-link-cw-runtime1; canonical 4/4 no errors",
+    "o_que": "Docs-only post-merge record for global-link-cw (agente/21-fv-global-link-cw: tests only) merged into integracao/2.1 at d92ce40d092a8c3b6f0c6345f37afcf0645f581d (BASE b5e134d3d024d29e9e45aaa223a3c286cc6d1649, candidate 527569d933390f350e892212de6d4756b1a9505a, diff sha256 2f7e3071e75c1c8301fb2ac68b76bd35e5f5ab4f14a04bf012399a768722ba5a). Test/fixture evidence only; no production fix. Two CONFIRMED P2 retained unfixed: F1 tests/trakt_rede_stub.c:12 (latent false-success return on unused paged path, no current false pass); F2 tests/cw205_diagnostico.sh:20 (historical CW205_REF=581e8fb9 replay: BASE behavioral FAIL, HEAD compile failure from missing metaep). Owner P2 non-blocking policy; no claim fixed or waived.",
+    "issues": [],
+    "ref": "d92ce40d092a8c3b6f0c6345f37afcf0645f581d",
+    "resultado": "Canonical 4/4 passed, errors empty, verification digest afefb8bc5163694bbe6294e471d3c59e10615f60bdafad644996c12b362f126e. Post-merge rc: cw205_diagnostico 0, cwleg 0, varredura-i18n 0; build not repeated. Full global gate: AV15fb rc1 incomplete ENOSPC, not passed; current-integration/BIB production full global still required and unwaived. No TV proof, no closure.",
+    "evidencia": "docs/plans/issues-exec-fable-20261113/global-link-cw-integracao.md"
+  },
+  {
+    "data": "2026-11-14",
+    "quem": "Post-merge executor (nv-mec low, served model UNKNOWN); static reviewer fv-cw-rewatch-static1; distinct runtime verifier fv-cw-rewatch-runtime1; central canonical 5/5 zero errors",
+    "o_que": "Docs-only post-merge record for global-cw-rewatch (agente/21-fv-global-cw-rewatch: 3 test runners link tests/discovery_boundary_stub.c) merged into integracao/2.1 at 5caf6ed6884ce8f942642f6c41a9510d53dd72d3 (BASE b436054a791f498be9ef4fb41af37267a3e4a873, candidate 9bd2334d7159a7cbdedd72c145cacd5091c45f95, diff sha256 80b847f6cf0aeb31523535da1e81eaf7d7bf583fcc444ade8f65a2f93720cf3c). Test evidence only; no production fix. P3 notes kept: N1 author report wrongly says desc_lapides_primeira absent (present at src/descoberta.h:403, TEM_AJUSTE active); N2 stub dados_caminho writes fixed /tmp/nuvio-fixture-* ignoring private TMPDIR (derived sandbox guard denies it); N3 author meta lacked git identity (independently repaired). Full global AV15fb rc1 ENOSPC incomplete, required and unwaived.",
+    "issues": [],
+    "ref": "5caf6ed6884ce8f942642f6c41a9510d53dd72d3",
+    "resultado": "Canonical 5/5 passed, errors empty, verification digest 4d4353d24b808575b4f062ace8293e1ab8bb7ecadf186cd5499ae86e19a42421. Post-merge rc: cw_prioridade 0, cwdesmarcado 0, cwdup244 0, varredura-i18n 0; build not repeated. Full global gate not run on integration (ENOSPC history), required and unwaived. No TV proof, no closure.",
+    "evidencia": "docs/plans/issues-exec-fable-20261113/global-cw-rewatch-integracao.md; /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/fv-global-cw-rewatch-postmerge-logs/"
+  },
+  {
+    "data": "2026-11-14",
+    "quem": "Post-merge executor (nv-mec low, served model UNKNOWN); static reviewer fv-collections-aio-static1; distinct runtime verifier fv-collections-aio-runtime1; central canonical 4/4, zero errors",
+    "o_que": "Test-only fixture link-drift merge (collections, aiostream_instances) into integracao/2.1 at 069f4548e44347d161cd19658ed87786393e17b3 (BASE 3ab3b2854, candidate a2e77b148, diff sha256 d03351b7c...). 4 test files, 0 src/. Post-merge rc 0 on collections, aiostream_instances, varredura-i18n at HEAD 069f4548 (derived guard, clean tree). BASE red is link-only, no behavioral red. P3 notes kept. Full global AV15fb rc1 ENOSPC incomplete, required and unwaived. No TV proof, no closure.",
+    "issues": [],
+    "ref": "069f4548e44347d161cd19658ed87786393e17b3",
+    "resultado": "post-merge passed (collections rc0, aiostream_instances rc0, varredura-i18n rc0); full global gate NOT passed (incomplete ENOSPC, unwaived)",
+    "evidencia": "docs/plans/issues-exec-fable-20261113/global-collections-aio-integracao.md; /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-collections-aio-postmerge-logs/"
+  },
+    {
+      "data": "2026-11-14",
+      "quem": "Post-merge executor (nv-mec low, served model UNKNOWN to launcher); static reviewer fv-player-icon-static1 (nv-revisao, medium); distinct runtime verifier fv-player-icon-runtime1 (nv-revisao, medium); central canonical 4/4, errors []",
+      "o_que": "Test-only merge global-player-icon into integracao/2.1 at 83c7975c7099a85bbc58a90f67c6db584285d7c5 (BASE f572d89f4, candidate 6a64ef3eb, diff sha256 b81950896461f51b437469f8a59a7d98efedd9039f5c695ae15fd471b24e7976, verification digest 0e1eeb39667608bde5d153b9005b54649f1b917be0bd0e8a1898135791c97509). 5 test files, 0 src/. Post-merge rc 0: tests/erro409.sh, tests/gfx_icone_embutido.sh, tools/varredura-i18n.py at HEAD 83c7975 under guarded sandbox, clean tree, no build repeat. No P0-P2; P3 notes kept. Full global AV15fb rc1 ENOSPC incomplete, required and unwaived. No TV proof, no closure.",
+      "issues": [],
+      "ref": "83c7975c7099a85bbc58a90f67c6db584285d7c5",
+      "resultado": "post-merge passed (erro409 rc0, gfx_icone_embutido rc0, varredura-i18n rc0); full global gate NOT passed (incomplete ENOSPC, unwaived); integration full suite NOT passed",
+      "evidencia": "docs/plans/issues-exec-fable-20261113/global-player-icon-integracao.md; /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-player-icon-postmerge-report.md; /Volumes/ExternalSSD/tmp/jobtmp/fv-global-player-icon-postmerge/logs/"
+    }
+  ],
  "decisoes": [
   {
    "id": "dec-256-proximo-episodio",

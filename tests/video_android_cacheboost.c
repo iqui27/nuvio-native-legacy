@@ -17,6 +17,8 @@ static uint64_t nv_ticks64(void);
 int juntos_precarregando(void) { return 0; }
 int player_eh_canal(void) { return 0; }
 int stream_kbps_atual(void) { return 0; }
+const Stream *stream_fonte_reproducao(const char *u, const char *c) { (void)u; (void)c; return NULL; }
+int stream_kbps(const Stream *s) { (void)s; return 0; }
 int xtream_url_limitada(const char *u) { (void)u; return 0; }
 int xtream_conexoes_limitadas(void) { return 0; }
 int xtream_conta_ler(XtreamConta *c) { memset(c, 0, sizeof *c); return 0; }
@@ -232,10 +234,10 @@ int main(void) {
   video_taxa_sync(1000); video_bombear();
   assert(!strcmp(registro, "V150"));
   /* Sample stamps use nv_ticks64() since a877c0f7c (old webOS SDL lacks
-     SDL_GetTicks64): bracket each with the real monotonic clock. */
+     SDL_GetTicks64): bracket each with the fake clock, advanced between samples. */
   Uint64 stamp, first, t0 = nv_ticks64();
   Java_space_nuvio_nativelegacy_NvPlayer_nativePos(&env, NULL, 12500, 15000, 0, 0, sessao);
-  Uint64 t1 = nv_ticks64(); usleep(20000);
+  Uint64 t1 = nv_ticks64(); relogio += 20;
   assert(video_pos_amostra(&first) == 12.5 && first >= t0 && first <= t1);
   t0 = nv_ticks64();
   Java_space_nuvio_nativelegacy_NvPlayer_nativePos(&env, NULL, 12500, 15000, 0, 0, sessao);

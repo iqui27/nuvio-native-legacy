@@ -8,7 +8,13 @@ Authorized by owner 2026-11-13. Base: `9115d8bbadd09f98fef5b939732d5334d7b726c7`
 - #773 — first code cut merged into `integracao/2.1` at `261ab41c90838b86c0cdf40811a5ffc2ece08fe1` (source `1daef874bf1dce36dc74dc2dc2200f1ac03c5dfd`). Gate digest `a1202ed80b0b73cbe93481e5ffea52fbf0ee6607d9cc1a0c2dbc3da8e7a34ceb`, 2/2 passed. Issue OPEN. Details: `leg773-integracao.md`.
 - ready-tv lot (source only, NOT TV acceptance): merge `c5548b46578a02d69c541e8043e874ae8a3e8d18` from candidate `5f1898a2c8196fb62cca835199b0ce7c4434e4de` (base `21e1565df9b6cd4112c4cabc9f7ab2f26eef295d`, diffSHA `b046cffc816b5f2881c17413f83c17a8c62b244d2232c81122dcd44810a05726`, digest `896288673a9acae814aae0e2060d7bb79f20ccc57ab62c18f382d2ca95bf97e1`). Items: DMP766 (storage hygiene, not crash root), SAM/P2P783 (VOD Home-return mechanism), ASS719 (active and same-centisecond sibling retention). Host gate 7/7 rc 0 (zero failures). Post-merge `queda.sh`, `tpk-preso.sh`, `mkvass_despejo719.sh` rc 0 on c5548b4. Details: `ready-tv-integracao.md`.
 - language-scr source (#785 FON785 source fix; #706 test fixture only; no production screensaver fix) merged at `440b19fcafc9d3590c2252b989e6ad1e4cfc5154` (HEAD^1 `4211dd8`, HEAD^2 candidate `0e5606a`, diffSHA `2c41c9c3...`). Post-merge rc 0: source_audio_language, fon785_rotulos, video_pausa_lg. Issues OPEN. Details: `language-scr-integracao.md`.
-- No other campaign candidate merged. BIB639 / PAG789 full global gate still pending (not waived, not integrated).
+- Source candidates listed above are integrated; later fixture-only merges are recorded below. BIB639 / PAG789 production candidates remain unintegrated; their full global gate is pending and unwaived.
+
+## Global suite outcome (current correction)
+- `bash tools/testa-tudo.sh` ran on AV candidate `15fbcbf2dcd5a7a8697a36cd9229b3963d4514ab` for 8984 seconds, wrapper rc 1, incomplete due to explicit ENOSPC. It did not hit the 14400-second timeout.
+- 1362 selected, 206 existing exclusions; 616 result files: 437 plain OK, 2 OK with skipped-case notes, 165 failures, 10 SKIP-classified, 2 empty. Another 746 selected tests have no result. Missing, empty and SKIP results are not passes.
+- No global BASE runtime comparison, passing full-suite result, current-integration global run or BIB/PAG-candidate global run is established. All required gates remain required and unwaived.
+- Retained evidence: `/Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-final-triage.md`, `av650-687-verification2.md`, and `/Volumes/ExternalSSD/tmp/jobtmp/fv-av650-687-runtime2/scratch/nuvio-testes.71T6JB`. Later fixture repairs do not retroactively change this result.
 
 ## Evidence for #773
 - Red on base: rc 134, assertion at `tests/video_acb_lg.c:196`. Green on source head: rc 0; build rc 0.
@@ -29,5 +35,62 @@ Authorized by owner 2026-11-13. Base: `9115d8bbadd09f98fef5b939732d5334d7b726c7`
 - Offline account/trailer fixtures merged at `b9e9dfa7a1922ae15990c56e5c618ebae5ce46bd` (BASE `82af242653ec035a71857b442bea9be7abb473fc`, candidate `3e509a3bc09ddf8c77d627542f42b286fb918a37`, diff SHA-256 `4aa1dc7362f67d8009c9f790c9027d3d92817d1a8c2a345b1870d0c0e2602330`). Independent static review OK, distinct runtime 5/5, canonical replay 5/5 under localhost-only OS guard, post-merge account/Apple tests 2/2. Validation 225 appended; all 642 items preserved. Fixture isolation, data initialization and deterministic trailer coverage only; optional QR, F5 P2 and P3 notes remain. Production BIB/PAG and full global gate still pending. Details: `offline-fixtures-integracao.md`.
 - Local-services test/Wrangler harness isolation (`agente/21-fv-local-services`) merged at `0618e13c6fd0330f117927430fb8507d75b92904` (BASE `62a4b49693b584be2b83d445beb64f2e9c252a8f`, candidate `3da5ad3cfcae0380dd694f9b7478375d76de6831`, diff SHA-256 `323641fa35c1e1c84c0e7fedad127ba6f5a4e03855c70bacb2d3342a4d4a9784`). Tests and `servidor/recomendacoes/preparar-local.sh` only (0 `src/` changes). Independent static review `j-rev-fv-local-services2-static` OK (P3 notes only), distinct runtime verifier `fv-local-services-runtime-verifier` probes R1–R9 + 7/7 OK, guarded `central.py verifica` 7/7 passed (`4cca8c51788c31a5c929aba3d6260953e000b8a5b42fc62a6a7a21b61f41a814`), post-merge `recomenda_e2e.sh`, `diarionuvem_servidor.sh`, `juntos_e2e.sh` and `varredura-i18n.py` rc 0 under localhost-only OS guard. Validation 226 appended; all 642 items preserved. Details: `local-services-integracao.md`.
 - Sync-gate fixture merge into `integracao/2.1` at `98aaea16cb67c55d072ec483131fa7079fcc68d7` (parents BASE `85624bba84243244187efa6ad6f0d50b650632be`, candidate `7d429206d3e4739c4ef51e858a0adea3d684bbf3`, diff sha256 `eef67a8136e18ade2305af06e787bbe19072856e839df09618f8cbfedfaed14b`). Tests only (4 files under `tests/`); no `src/` or `tools/` change. Canonical gate 8/8 passed. Postmerge `tests/syncordem.sh` and `tests/synccolecoes.sh` rc 0. Details: `sync-fixtures-integracao.md`.
-- Issues #639 and #789: fixture infrastructure evidence ONLY. Not fixed, not closed. BIB639 / PAG789 production candidates NOT integrated. Full global gate NOT RUN, not waived. Device acceptance UNKNOWN.
+- Issues #639 and #789: fixture infrastructure evidence ONLY. Not fixed, not closed. BIB639 / PAG789 production candidates NOT integrated. The global suite ran on AV candidate `15fbcbf2dcd5a7a8697a36cd9229b3963d4514ab`, rc 1 incomplete (ENOSPC); no BIB/PAG-candidate global run or passing global gate is established. Gate required and unwaived. Device acceptance UNKNOWN.
 - Open P3 notes: N4 (`extra==NULL` accepted), N5 (nuvem forwarders ignore bearer). N1/N2 recorded, N3 closed.
+
+## Global compile fixture cut (fixture-only, #639 / #789 infrastructure)
+- Merged into `integracao/2.1` at `9ddae314efae99413f95f236ebcc7f5fa7f253a0` (prior `6ac09088b04123a4b29e45901e253a652477f968`, candidate `fa32c8e68d7eeb92127d82179ea7958f01a9959d`, review diff sha256 `120b888ffc8fa2e88c37a00566c621dbcc69b641e48f5e812870b05eeca1d03a`, verification digest `900744a7c1122ce1b4c695a9e3f213d25270c4ad75f2e7a9d43effdbda486124`). 7 test files, 0 `src/`. 4 compile failures repaired; Poster G expectation matches Oct 17 contract. Review OK (no P0/P1).
+- Post-merge (2026-11-13, sandbox): `colestilos.sh` rc 0, `colordem.sh` rc 0 (rerun after env-only PATH fix; first attempt rc 1 kept as evidence), `varredura-i18n.py` rc 0.
+- Open: F1 P2 Padrão collection/catalog width parity unverified; F2 P2 colordem_menu Stage-row coverage gap; overall AV/BIB global gate REQUIRED and unwaived. Not a global-pass claim. No issue closed; no TV source fix claimed. Details: `global-compile-integracao.md`.
+
+## Global link-small fixture cut (fixture-only)
+- Merged into `integracao/2.1` at `7b7b8f1d7135df5f22c8b7450e2a3020ab619db6` (BASE `104aebf52c9b1d9b1c7d01f69dc10e564f45fcfa`, candidate `f2ef6023c436d78a0990a865fdb1fe039dd73197`, review diff sha256 `d5b33c8ecf8fd0cfe3212e6a1d95c40e08f21edaa8736d2c969893b49d39a0e2`). 2 test files, 0 `src/`. Static review OK; runtime verification confirmed red/green and mutation/control.
+- Canonical gate 5/5 passed (0 errors, 0 fail, 0 skip, 0 divergences).
+- Post-merge (2026-11-13, sandbox): `addons_legendas_merge.sh` rc 0, `android_speed_room.sh` rc 0, `video_android_cacheboost.sh` rc 0, `varredura-i18n.py` rc 0.
+- No issue closed. Fixture evidence only. Last global suite ran on AV candidate `15fbcbf2dcd5a7a8697a36cd9229b3963d4514ab`, rc 1 incomplete (ENOSPC); full global gate REQUIRED and unwaived. Details: `global-link-small-integracao.md`.
+
+## Global split-round fixture cut (fixture-only)
+- Merged into `integracao/2.1` at `69a04b58edcfbe081344d43067116d1e6acff06b` (BASE `50cc563b2202aa220872bcab5e96e1191afdd610`, candidate `a7486c40daead0a0eabaa762739f4dd1c3016a27`, diff sha256 `36298c260537b03b94c4617b230ae9bd579914e56dcff0dd1c851b51ba3ff2bc`). 3 test files, 0 `src/`.
+- Post-merge (2026-11-13, sandbox-exec): `divididosplit.sh` rc 0, `fileiraredonda.sh` rc 0, `varredura-i18n.py` rc 0.
+- Open: overall AV/BIB global gate REQUIRED and unwaived (last run rc1 incomplete ENOSPC). No issue closed. Details: `global-split-round-integracao.md`.
+
+## global-link-next fixture-fix (test-only, 2026-11-13)
+- Merged into `integracao/2.1` at `322ff155fc6536d90b3713b94f73759e2851fe49` (BASE `49e721eefba6575ee39eef137c083f5c8c711251`, candidate `1073617326f0a165acb79434701b09665239d9f6`, diff sha256 `20dcd8224cddcf1cd923118efdab8da6bff815c4a86804b3e0842a67d75518b7`). 2 test files, 0 `src/`.
+- Post-merge (sandbox-exec guard): `jellyfin.sh` rc 0, `embybib.sh` rc 0, `colfileiras.sh` rc 0, `varredura-i18n.py` rc 0.
+- Open: AV/BIB full global gate REQUIRED and unwaived (rc1 incomplete ENOSPC). No issue closed. Device acceptance UNKNOWN. Details: `global-link-next-integracao.md`.
+
+## global-android-env post-merge (2026-11-13)
+- Merged into `integracao/2.1` at `cc7cd8ce41bdb32861589bd8c595b91ac403586d` (BASE `e20cf1473e9d8ad430d096e4de10d54ce7200587`, candidate `71a8014c90319431e1f48002b70958f44aa00979`, diff sha256 `9c67089984fbaebfe6b746b21f6a42bb35523e0822dd9d3f8e18f33158945275`). Tests only (`tests/afr_android.*`, `tests/conexlim*`, `tests/streamfit_passiva_android.py`, etc.); zero `src/` changes. Static review OK (P3 notes only), runtime verifier `fv-android-env-runtime1` rc 0 on the required checks. Canonical 6/6 passed (`canonical2.log`); original canonical rc 2 schema-only failure retained.
+- Post-merge (2026-11-13, sandbox-exec guard): `afr_android.sh` rc 0, `android_live_ts.sh` rc 0, `streamfit_passiva_android.py` rc 0, `conexlim.sh` rc 0, `varredura-i18n.py` rc 0.
+- Open: full AV/BIB global gate rc 1 incomplete (ENOSPC), REQUIRED and unwaived. No issue closed. Fixture evidence only; no TV fix claim. Details: `global-android-env-integracao.md`.
+
+## global-link-boundaries post-merge (2026-11-14)
+- Merged into `integracao/2.1` at `516e73ab8f5fde326568f01da2d79d7307a6ff85` (BASE `5c66e894a1e289558ca1754303b727a7e64c8a86`, candidate `a526023292502189583e54da87f2a172887fb733`, diff sha256 `554faffa865e993cf6608b6aba4a00d655f0481b4c10cc19c59e67eca820d590`). Tests only (`tests/ctxmenu_semfio.sh`, `tests/esportes_v5_shot.c`, `tests/streamfit_sheet.c`).
+- Post-merge (sandbox-exec guard): `ctxmenu_semfio.sh` rc 0, `esportes619.sh` rc 0, `fontescanais_folha.sh` rc 0, `streamfit_sheet.sh` rc 0, `varredura-i18n.py` rc 0. Build not repeated (source unchanged).
+- Open: full AV/BIB global gate: campaign ran on AV candidate `15fbcbf2dcd5a7a8697a36cd9229b3963d4514ab`, rc1 incomplete (ENOSPC); no passing full gate, BIB/PAG-candidate or current-integration run established; required and unwaived. No issue closed. Device acceptance UNKNOWN. Details: `global-link-boundaries-integracao.md`.
+
+## global-link-cw post-merge (2026-11-14)
+- Merged into `integracao/2.1` at `d92ce40d092a8c3b6f0c6345f37afcf0645f581d` (BASE `b5e134d3d024d29e9e45aaa223a3c286cc6d1649`, candidate `527569d933390f350e892212de6d4756b1a9505a`, diff sha256 `2f7e3071e75c1c8301fb2ac68b76bd35e5f5ab4f14a04bf012399a768722ba5a`). Tests only.
+- Post-merge (sandbox-exec guard): `cw205_diagnostico.sh` rc 0, `cwleg.sh` rc 0, `varredura-i18n.py` rc 0.
+- Confirmed P2 retained unfixed: F1 `tests/trakt_rede_stub.c:12` (latent), F2 `tests/cw205_diagnostico.sh:20` (historical replay false-red at compile stage). Not waived.
+- Open: full AV/BIB global gate rc 1 incomplete (ENOSPC), REQUIRED and unwaived. No issue closed. Details: `global-link-cw-integracao.md`.
+
+## global-cw-rewatch post-merge (2026-11-14)
+- Merged into `integracao/2.1` at `5caf6ed6884ce8f942642f6c41a9510d53dd72d3` (BASE `b436054a791f498be9ef4fb41af37267a3e4a873`, candidate `9bd2334d7159a7cbdedd72c145cacd5091c45f95`, diff sha256 `80b847f6cf0aeb31523535da1e81eaf7d7bf583fcc444ade8f65a2f93720cf3c`). Tests only.
+- Post-merge (derived sandbox guard): `cw_prioridade.sh` rc 0, `cwdesmarcado.sh` rc 0, `cwdup244.sh` rc 0, `varredura-i18n.py` rc 0. Build not repeated.
+- P3 notes kept unfixed: N1 (report text), N2 (stub writes `/tmp/nuvio-fixture-*`, guarded), N3 (meta identity, repaired).
+- Open: full global AV15fb rc 1 ENOSPC incomplete, REQUIRED and unwaived. No issue closed. Details: `global-cw-rewatch-integracao.md`.
+
+## global-collections-aio post-merge (2026-11-14)
+- Merged into `integracao/2.1` at `069f4548e44347d161cd19658ed87786393e17b3` (BASE `3ab3b2854fd8a04e1da0ff44b04ec26d9399fb6e`, candidate `a2e77b14808ba124a9d69467c1c9b632e9ba68a7`, diff sha256 `d03351b7c54783f78e73f8dd6cb588116796968f401769120331d3b7a1dbb899`). Test fixtures only (4 files under `tests/`).
+- Static `fv-collections-aio-static1` and runtime `fv-collections-aio-runtime1` OK, no P0-P2. Central canonical 4/4, zero errors.
+- Post-merge (derived sandbox guard, HEAD `069f4548` clean): `collections.sh` rc 0, `aiostream_instances.sh` rc 0, `varredura-i18n.py` rc 0. Build not repeated.
+- P3 notes kept: `tests/aiostream_instances_ui.c:5-7` comment imprecise; author report understates diff.
+- Open: full global AV15fb rc 1 ENOSPC incomplete, REQUIRED and unwaived. No issue closed. Details: `global-collections-aio-integracao.md`.
+
+## global-player-icon post-merge (2026-11-14)
+- Merged into `integracao/2.1` at `83c7975c7099a85bbc58a90f67c6db584285d7c5` (BASE `f572d89f4`, candidate `6a64ef3eb`, diff sha256 `b81950896461f51b437469f8a59a7d98efedd9039f5c695ae15fd471b24e7976`). Tests only (5 files), 0 `src/`.
+- Static `fv-player-icon-static1` and runtime `fv-player-icon-runtime1` OK, no P0-P2. Central canonical 4/4, zero errors.
+- Post-merge (guarded sandbox, HEAD `83c7975` clean): `erro409.sh` rc 0, `gfx_icone_embutido.sh` rc 0, `varredura-i18n.py` rc 0. Build not repeated.
+- P3 notes kept: accent fixture defaults differ from app; GL batch `{tex,0}` n=2 not caught; lldb claim unproven.
+- Open: full global AV15fb rc 1 ENOSPC incomplete, REQUIRED and unwaived. No issue closed. Details: `global-player-icon-integracao.md`.

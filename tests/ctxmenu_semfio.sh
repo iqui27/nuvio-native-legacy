@@ -23,7 +23,7 @@ cc "${sources[@]}" tests/ctxmenu_semfio.c -Isrc -o "$tmp/teste" \
   -DNV_TRAKT_CLIENT_ID='"chave-de-teste"' \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
-  -w
+  -Wl,-undefined,dynamic_lookup -w
 NUVIO_DADOS="$tmp/dados" "$tmp/teste" || falhou=1
 if [ "$falhou" != 0 ]; then echo "ctxmenu_semfio: FALHOU"; exit 1; fi
 echo "ctxmenu_semfio.sh: ok"
