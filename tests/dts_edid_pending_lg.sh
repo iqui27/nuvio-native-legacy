@@ -11,6 +11,6 @@ cc -std=c11 -D_GNU_SOURCE -DNV_DTS_EDID_PENDING_TEST -O1 -g \
   -ffunction-sections -fdata-sections -Isrc -Wno-deprecated-declarations -Wno-macro-redefined \
   tests/dts_edid_pending_lg.c \
   src/js.c src/linguas.c src/lsregistro.c src/audioinfo.c src/audioescolha.c \
-  src/webosver.c src/cacheboost.c \
+  src/webosver.c src/cacheboost.c src/audioext.c \
   -Wl,-dead_strip -o "$tmp/test" "${sdl[@]}" -lz -framework OpenGL -ldl -pthread -lm
 "$tmp/test"

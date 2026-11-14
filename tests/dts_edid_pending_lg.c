@@ -130,6 +130,56 @@ int mkvass_cabecalho(const char *url, unsigned char **buf, long *n) {
   (void)url; (void)buf; (void)n; return 0;
 }
 int ajustes_buffer_preset(void) { return 0; }
+// Same player boundary: external audio and engine tuning stay off here.
+int ajustes_audio_externo_auto(void) { return 0; }
+int ajustes_audio_externo_seguir(void) { return 0; }
+int ajustes_buffer_conversion_connections(void) { return 1; }
+int ajustes_buffer_native_connections(void) { return 1; }
+int ajustes_dts_desligado(void) { return !ajustes_dts_ac3(); }
+int ajustes_dv7_mapping(void) { return 0; }
+int ajustes_dv_audio(void) { return 0; }
+int dts_engine_probe_audio_cancelled(const char *url, const char *headers, DtsTrack *out, int max,
+                                     const int *cancel) {
+  (void)url; (void)headers; (void)out; (void)max; (void)cancel; return 0;
+}
+void dts_engine_set_external_dts_off(int on) { (void)on; }
+void dts_engine_set_http_workers(int n) { (void)n; }
+void dts_engine_set_lang_match(int (*match)(const char *code, const char *pref)) { (void)match; }
+void dts_engine_set_source_workers(int n) { (void)n; }
+void dts_playback_audio_at(DtsPlayback *p, int stream, double seconds) {
+  (void)p; (void)stream; (void)seconds;
+}
+int dts_playback_external_match(DtsPlayback *p) { (void)p; return 0; }
+int dts_playback_external_match_result(DtsPlayback *p, DtsMatchInfo *out) {
+  (void)p; (void)out; return 0;
+}
+void dts_playback_external_offset_live(DtsPlayback *p, int offset_ms) { (void)p; (void)offset_ms; }
+void dts_playback_external_speed(DtsPlayback *p, int ratio_ppm) { (void)p; (void)ratio_ppm; }
+int dts_playback_external_swap(DtsPlayback *p, const char *url, const char *headers,
+                               const char *langs, int offset_ms, int track,
+                               int audio_only, double seconds) {
+  (void)p; (void)url; (void)headers; (void)langs; (void)offset_ms; (void)track;
+  (void)audio_only; (void)seconds; return 0;
+}
+void dts_playback_next_audio_route(int truehd, int fixed, int dts_off) {
+  (void)truehd; (void)fixed; (void)dts_off;
+}
+void dts_playback_next_external_audio(const char *url, const char *headers,
+                                      const char *langs, int offset_ms) {
+  (void)url; (void)headers; (void)langs; (void)offset_ms;
+}
+void dts_playback_next_external_audio_only(int on) { (void)on; }
+void dts_playback_next_external_automatch(int on) { (void)on; }
+void dts_playback_next_external_follow(int on) { (void)on; }
+void dts_playback_next_external_hint(int stream, const char *lang,
+                                     const char *codec, int channels, const char *title) {
+  (void)stream; (void)lang; (void)codec; (void)channels; (void)title;
+}
+void dts_playback_next_external_speed(int ratio_ppm) { (void)ratio_ppm; }
+void dts_playback_next_external_track(int stream) { (void)stream; }
+void dts_playback_next_p7_mapping(int enabled) { (void)enabled; }
+void dts_playback_next_seamless(int enabled) { (void)enabled; }
+int dts_playback_prefetch(DtsPlayback *p, double seconds) { (void)p; (void)seconds; return 0; }
 long memlog_livre_mb(void) { return -1; }
 int moviebuffer_url(const char *source, const char *headers, int mib, char *out, size_t n) {
   (void)source; (void)headers; (void)mib; (void)out; (void)n; return 0;
