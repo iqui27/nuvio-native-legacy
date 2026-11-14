@@ -16,6 +16,8 @@ int addons_n(void) { return 0; }
 int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 const char *addons_base(int i) { (void)i; return ""; }
 const char *addons_id_manifesto(int i) { (void)i; return ""; }
+int addons_travar_lista(unsigned v, int p) { (void)v; (void)p; return 0; }
+void addons_destravar_lista(void) {}
 const char *sessao_usuario(void) { return "account-255"; }
 
 #define ADDON "app.xperience.t"
@@ -119,7 +121,7 @@ int main(void) {
   memcpy(base, "https://xp.invalid/", 19);
   base[370] = 0;
   fil_definir_limite(40);
-  ajustes_aplicar_blob("{\"continueWatchingEnabled\":true}");
+  assert(ajustes_shot_valor("continueWatchingEnabled", 0));   // 0 = Ligado
 
   montarOrdem();
   catordem_ler(buf);

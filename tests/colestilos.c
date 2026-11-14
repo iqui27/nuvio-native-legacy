@@ -15,6 +15,8 @@ int addons_n(void) { return 0; }
 int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 const char *addons_base(int i) { (void)i; return ""; }
 const char *addons_id_manifesto(int i) { (void)i; return ""; }
+int addons_travar_lista(unsigned v, int p) { (void)v; (void)p; return 0; }
+void addons_destravar_lista(void) {}
 const char *sessao_usuario(void) { return "account-colestilos"; }
 // desc_ocultar_vistos_atualizar: stub ja vem de cwordem_home.c.
 
@@ -42,7 +44,9 @@ int main(void) {
   int k;
 
   fil_definir_limite(10);
-  ajustes_aplicar_blob("{\"continueWatchingEnabled\":true,\"homeLayout\":\"classic\"}");
+  // 0 = Ligado. homeLayoutLocal is device-only (ajustes.c somenteDesteAparelho):
+  // the old blob never changed it, so the layout stays at its default.
+  assert(ajustes_shot_valor("continueWatchingEnabled", 0));
   for (k = 0; k < 4; k++) {
     snprintf(items[k].imdb, sizeof items[k].imdb, "tt%d", k);
     snprintf(items[k].tipo, sizeof items[k].tipo, "movie");
