@@ -22,7 +22,8 @@ int xtepg_faixa_desde(const char *id,time_t de,time_t ate,int pular,EpgProg *out
 }
 
 void epg_shared_consumers(void) {
-  GCanal c = {.id=player_id_canal(),.nome="News HD",.epgId="news",.tvgNome="",.epg=-1};
+  // Sem grupos publicados: cat=-1 (gLiberado le cats[cat] quando cat>=0).
+  GCanal c = {.id=player_id_canal(),.nome="News HD",.epgId="news",.tvgNome="",.epg=-1,.cat=-1};
   EpgProg p;
   nLtvF=1;strcpy(ltvF[0].chave,"xta00000001");
   assert(gEstadoGrade(&c)==0);
