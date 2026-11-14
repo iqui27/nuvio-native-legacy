@@ -101,3 +101,10 @@ Authorized by owner 2026-11-13. Base: `9115d8bbadd09f98fef5b939732d5334d7b726c7`
 - Post-merge (guarded sandbox, HEAD `a6f7eecc5` clean): `custom_id_stream.sh` rc 0, `cncverse_regression.sh` rc 0 (whole, incl. child), `varredura-i18n.py` rc 0. Build not repeated.
 - P3 notes kept: `tests/cncverse_live.c:79` alias dangles after `stagingZerar()` (latent); author ASan trace UNPROVEN.
 - Open: full global AV15fb rc 1 ENOSPC incomplete, REQUIRED and unwaived. Integration full suite NOT passed. No TV proof, no issue closed. Details: `gemini-link-integracao.md`.
+
+## g3-scoped post-merge (2026-11-14)
+- Merged into `integracao/2.1` at `a7128d7882970ea475eeac629e2085355b2fab07` (BASE `46430046d0566edb106a169831f0b08004869070`, candidate `79e4cfddf86bf9db8a156e414d382914e6bc90e5`, diff sha256 `f2003f32dac18eadce9fb2ad7771b5c9e295be465155841fd659fae85f88865d`). Test-only (7 files), 0 `src/`.
+- Static `fv-g3-scoped-static1` and runtime `fv-g3-scoped-runtime1` OK, no P0-P2. Central canonical 6/6, zero errors.
+- Post-merge (guarded sandbox, HEAD `a7128d78` clean): `guiabusca_incremental.sh`, `guia_catalogo_tv.sh`, `epg_accounts.sh`, `dts_edid_pending_lg.sh` rc 0; `varredura-i18n.py` rc 0. Build not repeated.
+- Four BASE link reds repaired (build errors); six already-green BASE targets are not new fixes. P3 notes kept unfixed.
+- Open: `guia_grande` and `amigos_polish` UNRESOLVED. Full global AV15fb rc 1 ENOSPC incomplete, REQUIRED and unwaived. Integration full suite NOT passed. CAT700 unmerged. No TV proof, no issue closed. Details: `g3-scoped-integracao.md`.
