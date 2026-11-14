@@ -45,6 +45,12 @@ int xtream_e_id(const char *id) { return id && !strncmp(id, "xtream:", 7); }
 
 int ajustes_livetv_sugerir(void) { return 0; }
 const char *livecat_secao(const char *n, int *r) { (void)n; *r = 0; return NULL; }
+// Boundary stubs: guia.c (grouped variants, per-profile cache) references these;
+// same allowlist/idle stubs as channel_variants.c / guia_loading.c.
+int g5ui_channel_allowed(const char *id, const char *name, const char *group, const char *source) {
+  (void)id; (void)name; (void)group; (void)source; return 1;
+}
+int perfis_ativo(void) { return 1; }
 int main(void) {
   GFonte f = {0};
   int novos;
@@ -68,7 +74,10 @@ int main(void) {
   for (int k = 0; k < 3; k++) {
     CatItem it;
     char longo[IDCANAL_LONGO_MAX + 1];
-    cats = sCats; canalParaItem(&sCanais[k], &it);
+    // canalParaItem resolves variants via the published `canais` arena
+    // (guia_variantes.inc); point it at staging like livecat_guia.c does.
+    canais = sCanais; cats = sCats; nCanais = sNCanais;
+    canalParaItem(&sCanais[k], &it);
     assert(strlen(it.imdb) < sizeof it.imdb);                       // cabe no CatItem sem corte
     assert(!strcmp(it.imdb, sCanais[k].id));
     assert(!strcmp(idcanal_longo(it.imdb, longo, sizeof longo), idsOriginais[k]));  // o /stream/ leva o id inteiro
