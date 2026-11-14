@@ -36,3 +36,9 @@ Authorized by owner 2026-11-13. Base: `9115d8bbadd09f98fef5b939732d5334d7b726c7`
 - Merged into `integracao/2.1` at `9ddae314efae99413f95f236ebcc7f5fa7f253a0` (prior `6ac09088b04123a4b29e45901e253a652477f968`, candidate `fa32c8e68d7eeb92127d82179ea7958f01a9959d`, review diff sha256 `120b888ffc8fa2e88c37a00566c621dbcc69b641e48f5e812870b05eeca1d03a`, verification digest `900744a7c1122ce1b4c695a9e3f213d25270c4ad75f2e7a9d43effdbda486124`). 7 test files, 0 `src/`. 4 compile failures repaired; Poster G expectation matches Oct 17 contract. Review OK (no P0/P1).
 - Post-merge (2026-11-13, sandbox): `colestilos.sh` rc 0, `colordem.sh` rc 0 (rerun after env-only PATH fix; first attempt rc 1 kept as evidence), `varredura-i18n.py` rc 0.
 - Open: F1 P2 Padrão collection/catalog width parity unverified; F2 P2 colordem_menu Stage-row coverage gap; overall AV/BIB global gate REQUIRED and unwaived. Not a global-pass claim. No issue closed; no TV source fix claimed. Details: `global-compile-integracao.md`.
+
+## Global link-small fixture cut (fixture-only)
+- Merged into `integracao/2.1` at `7b7b8f1d7135df5f22c8b7450e2a3020ab619db6` (BASE `104aebf52c9b1d9b1c7d01f69dc10e564f45fcfa`, candidate `f2ef6023c436d78a0990a865fdb1fe039dd73197`, review diff sha256 `d5b33c8ecf8fd0cfe3212e6a1d95c40e08f21edaa8736d2c969893b49d39a0e2`). 2 test files, 0 `src/`. Static review OK; runtime verification confirmed red/green and mutation/control.
+- Canonical gate 5/5 passed (0 errors, 0 fail, 0 skip, 0 divergences).
+- Post-merge (2026-11-13, sandbox): `addons_legendas_merge.sh` rc 0, `android_speed_room.sh` rc 0, `video_android_cacheboost.sh` rc 0, `varredura-i18n.py` rc 0.
+- No issue closed. Fixture evidence only. AV/BIB full global gate NOT RUN, REQUIRED and unwaived. Details: `global-link-small-integracao.md`.
