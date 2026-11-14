@@ -8,8 +8,8 @@ Scope: test-only merge into `integracao/2.1`. No production fix, no TV proof, no
 - Diff `git diff BASE HEAD` sha256: `554faffa865e993cf6608b6aba4a00d655f0481b4c10cc19c59e67eca820d590`.
 - Files: `tests/ctxmenu_semfio.sh` (1 line), `tests/esportes_v5_shot.c` (1 line), `tests/streamfit_sheet.c` (+26). Zero `src/` changes.
 - Verification digest: `45925e80d780ff5c397060737953d4a19392d96cf6af2678195090bc7d6bf4b5`.
-- Static review: `global-link-boundaries-code-review2.md` (sha256 `8fbeac5b877c632fde304bc78d3221eb35e1348eddb45d7f7233d54942b8d904`), findings none.
-- Runtime verification: `global-link-boundaries-verification2.md` (sha256 `ba0310707cd120124246bb56b0660490b79bfc63819850f63c7c8df36034dcf8`), runtime2, findings none.
+- Static reviewer: `fv-link-boundaries-static2`, `global-link-boundaries-code-review2.md` (sha256 `8fbeac5b877c632fde304bc78d3221eb35e1348eddb45d7f7233d54942b8d904`), findings none.
+- Distinct runtime verifier: `fv-link-boundaries-runtime2`, `global-link-boundaries-verification2.md` (sha256 `ba0310707cd120124246bb56b0660490b79bfc63819850f63c7c8df36034dcf8`), findings none.
 - Canonical gate: 6/6 passed, errors empty (`global-link-boundaries-canonical.log`).
 
 ## Prior evidence retained (not rerun)

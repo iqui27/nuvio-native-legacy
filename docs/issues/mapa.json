@@ -18289,7 +18289,7 @@
   },
   {
     "data": "2026-11-14",
-    "quem": "Claude Haiku 5.5 (post-merge executor, central sole writer); reviewer and verifier: canonical gate (6/6); served model UNKNOWN",
+    "quem": "Post-merge executor (nv-mec low, served model UNKNOWN); static reviewer fv-link-boundaries-static2; distinct runtime verifier fv-link-boundaries-runtime2; canonical replay 6/6",
     "o_que": "Docs-only post-merge record for global-link-boundaries (agente/21-fv-global-link-boundaries: tests only) merged into integracao/2.1 at 516e73ab8f5fde326568f01da2d79d7307a6ff85 (BASE 5c66e894a1e289558ca1754303b727a7e64c8a86, candidate a526023292502189583e54da87f2a172887fb733, diff sha256 554faffa865e993cf6608b6aba4a00d655f0481b4c10cc19c59e67eca820d590). Files: tests/ctxmenu_semfio.sh, tests/esportes_v5_shot.c, tests/streamfit_sheet.c. No production fix, no TV proof, no issue closed.",
     "issues": [],
     "ref": "516e73ab8f5fde326568f01da2d79d7307a6ff85",
