@@ -94,3 +94,10 @@ Authorized by owner 2026-11-13. Base: `9115d8bbadd09f98fef5b939732d5334d7b726c7`
 - Post-merge (guarded sandbox, HEAD `83c7975` clean): `erro409.sh` rc 0, `gfx_icone_embutido.sh` rc 0, `varredura-i18n.py` rc 0. Build not repeated.
 - P3 notes kept: accent fixture defaults differ from app; GL batch `{tex,0}` n=2 not caught; lldb claim unproven.
 - Open: full global AV15fb rc 1 ENOSPC incomplete, REQUIRED and unwaived. No issue closed. Details: `global-player-icon-integracao.md`.
+
+## gemini-link post-merge (2026-11-14)
+- Merged into `integracao/2.1` at `a6f7eecc5ab822d965bfe17e94cc7a388c5ae3a0` (BASE `c489031a9`, candidate `d1e2566f1`, diff sha256 `0b96aac2b3cd249a67d74d3db6e15905408b6bf0fd227aab00991f489bb06fcd`). Tests only (5 files), 0 `src/`.
+- Static `fv-gemini-link-static1` and runtime `fv-gemini-link-runtime1` OK, no P0-P2. Central canonical 4/4, zero errors.
+- Post-merge (guarded sandbox, HEAD `a6f7eecc5` clean): `custom_id_stream.sh` rc 0, `cncverse_regression.sh` rc 0 (whole, incl. child), `varredura-i18n.py` rc 0. Build not repeated.
+- P3 notes kept: `tests/cncverse_live.c:79` alias dangles after `stagingZerar()` (latent); author ASan trace UNPROVEN.
+- Open: full global AV15fb rc 1 ENOSPC incomplete, REQUIRED and unwaived. Integration full suite NOT passed. No TV proof, no issue closed. Details: `gemini-link-integracao.md`.
