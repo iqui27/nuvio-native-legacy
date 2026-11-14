@@ -47,3 +47,8 @@ Authorized by owner 2026-11-13. Base: `9115d8bbadd09f98fef5b939732d5334d7b726c7`
 - Merged into `integracao/2.1` at `69a04b58edcfbe081344d43067116d1e6acff06b` (BASE `50cc563b2202aa220872bcab5e96e1191afdd610`, candidate `a7486c40daead0a0eabaa762739f4dd1c3016a27`, diff sha256 `36298c260537b03b94c4617b230ae9bd579914e56dcff0dd1c851b51ba3ff2bc`). 3 test files, 0 `src/`.
 - Post-merge (2026-11-13, sandbox-exec): `divididosplit.sh` rc 0, `fileiraredonda.sh` rc 0, `varredura-i18n.py` rc 0.
 - Open: overall AV/BIB global gate REQUIRED and unwaived (last run rc1 incomplete ENOSPC). No issue closed. Details: `global-split-round-integracao.md`.
+
+## global-link-next fixture-fix (test-only, 2026-11-13)
+- Merged into `integracao/2.1` at `322ff155fc6536d90b3713b94f73759e2851fe49` (BASE `49e721eefba6575ee39eef137c083f5c8c711251`, candidate `1073617326f0a165acb79434701b09665239d9f6`, diff sha256 `20dcd8224cddcf1cd923118efdab8da6bff815c4a86804b3e0842a67d75518b7`). 2 test files, 0 `src/`.
+- Post-merge (sandbox-exec guard): `jellyfin.sh` rc 0, `embybib.sh` rc 0, `colfileiras.sh` rc 0, `varredura-i18n.py` rc 0.
+- Open: AV/BIB full global gate REQUIRED and unwaived (rc1 incomplete ENOSPC). No issue closed. Device acceptance UNKNOWN. Details: `global-link-next-integracao.md`.

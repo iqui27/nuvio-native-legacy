@@ -18268,6 +18268,15 @@
     "ref": "docs/plans/issues-exec-fable-20261113/global-split-round-integracao.md",
     "resultado": "Merge 69a04b58edcfbe081344d43067116d1e6acff06b (BASE 50cc563b2202aa220872bcab5e96e1191afdd610, candidate a7486c40daead0a0eabaa762739f4dd1c3016a27, author commit a09ffb3a3, diff sha256 36298c260537b03b94c4617b230ae9bd579914e56dcff0dd1c851b51ba3ff2bc). Post-merge under sandbox-exec (global-gate-local-only.sb, sha256 223ba6e2...): divididosplit rc 0, fileiraredonda rc 0, varredura-i18n.py rc 0 (all counts 0). No issue closed. Device acceptance UNKNOWN. AV/BIB global gate REQUIRED, unwaived (last run rc1 incomplete ENOSPC).",
     "evidencia": "/Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/postmerge2-logs/"
+  },
+  {
+   "data": "2026-11-13",
+   "quem": "fable-gate postmerge (nv-mec low, mechanical); reviewer fv-global-link-next-static1; verifier fv-global-link-next-runtime1; canonical 5/5",
+   "o_que": "global-link-next fixture-fix (agente/21-fv-global-link-next: tests/colfileiras.sh, tests/jellyfin.sh; zero src/ changes) merged into integracao/2.1. Test-only infrastructure evidence; overall AV/BIB global gate NOT RUN and unwaived (last rc1 incomplete ENOSPC).",
+   "issues": [],
+   "ref": "docs/plans/issues-exec-fable-20261113/global-link-next-integracao.md",
+   "resultado": "Merge 322ff155fc6536d90b3713b94f73759e2851fe49 (BASE 49e721eefba6575ee39eef137c083f5c8c711251, candidate 1073617326f0a165acb79434701b09665239d9f6, diff sha256 20dcd8224cddcf1cd923118efdab8da6bff815c4a86804b3e0842a67d75518b7). Post-merge under sandbox-exec (global-gate-local-only.sb, sha256 223ba6e2...): jellyfin rc 0, embybib rc 0, colfileiras rc 0, varredura-i18n.py rc 0. Canonical 5/5 passed. No issue closed. Device acceptance UNKNOWN. AV/BIB global gate REQUIRED, unwaived.",
+   "evidencia": "/Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-link-next-postmerge-logs/ (sha256 jellyfin 2fd18e831de45cf69d498afc5d97c071c2dde3b5b235e4a282c8c518c2166583; embybib 5d6bff3ff5d7f60dce960526ec48609e8d63ff200950f435ebd39003a4a646a5; colfileiras efd3d55d99feda05a366cedc88fc31671bc362e8a8c6f87792fc69b126b849b7; i18n 6505c2cb0ff20caa0f2c6f2cb7854f4107ce3120fb0f98d945a6b72fef7a4f3b)"
   }
  ],
  "decisoes": [
