@@ -18322,8 +18322,17 @@
     "ref": "069f4548e44347d161cd19658ed87786393e17b3",
     "resultado": "post-merge passed (collections rc0, aiostream_instances rc0, varredura-i18n rc0); full global gate NOT passed (incomplete ENOSPC, unwaived)",
     "evidencia": "docs/plans/issues-exec-fable-20261113/global-collections-aio-integracao.md; /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-collections-aio-postmerge-logs/"
-  }
- ],
+  },
+    {
+      "data": "2026-11-14",
+      "quem": "Post-merge executor (nv-mec low, served model UNKNOWN to launcher); static reviewer fv-player-icon-static1 (nv-revisao, medium); distinct runtime verifier fv-player-icon-runtime1 (nv-revisao, medium); central canonical 4/4, errors []",
+      "o_que": "Test-only merge global-player-icon into integracao/2.1 at 83c7975c7099a85bbc58a90f67c6db584285d7c5 (BASE f572d89f4, candidate 6a64ef3eb, diff sha256 b81950896461f51b437469f8a59a7d98efedd9039f5c695ae15fd471b24e7976, verification digest 0e1eeb39667608bde5d153b9005b54649f1b917be0bd0e8a1898135791c97509). 5 test files, 0 src/. Post-merge rc 0: tests/erro409.sh, tests/gfx_icone_embutido.sh, tools/varredura-i18n.py at HEAD 83c7975 under guarded sandbox, clean tree, no build repeat. No P0-P2; P3 notes kept. Full global AV15fb rc1 ENOSPC incomplete, required and unwaived. No TV proof, no closure.",
+      "issues": [],
+      "ref": "83c7975c7099a85bbc58a90f67c6db584285d7c5",
+      "resultado": "post-merge passed (erro409 rc0, gfx_icone_embutido rc0, varredura-i18n rc0); full global gate NOT passed (incomplete ENOSPC, unwaived); integration full suite NOT passed",
+      "evidencia": "docs/plans/issues-exec-fable-20261113/global-player-icon-integracao.md; /Volumes/ExternalSSD/tmp/rev/issues-exec-fable-20261113/global-player-icon-postmerge-report.md; /Volumes/ExternalSSD/tmp/jobtmp/fv-global-player-icon-postmerge/logs/"
+    }
+  ],
  "decisoes": [
   {
    "id": "dec-256-proximo-episodio",

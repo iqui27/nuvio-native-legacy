@@ -87,3 +87,10 @@ Authorized by owner 2026-11-13. Base: `9115d8bbadd09f98fef5b939732d5334d7b726c7`
 - Post-merge (derived sandbox guard, HEAD `069f4548` clean): `collections.sh` rc 0, `aiostream_instances.sh` rc 0, `varredura-i18n.py` rc 0. Build not repeated.
 - P3 notes kept: `tests/aiostream_instances_ui.c:5-7` comment imprecise; author report understates diff.
 - Open: full global AV15fb rc 1 ENOSPC incomplete, REQUIRED and unwaived. No issue closed. Details: `global-collections-aio-integracao.md`.
+
+## global-player-icon post-merge (2026-11-14)
+- Merged into `integracao/2.1` at `83c7975c7099a85bbc58a90f67c6db584285d7c5` (BASE `f572d89f4`, candidate `6a64ef3eb`, diff sha256 `b81950896461f51b437469f8a59a7d98efedd9039f5c695ae15fd471b24e7976`). Tests only (5 files), 0 `src/`.
+- Static `fv-player-icon-static1` and runtime `fv-player-icon-runtime1` OK, no P0-P2. Central canonical 4/4, zero errors.
+- Post-merge (guarded sandbox, HEAD `83c7975` clean): `erro409.sh` rc 0, `gfx_icone_embutido.sh` rc 0, `varredura-i18n.py` rc 0. Build not repeated.
+- P3 notes kept: accent fixture defaults differ from app; GL batch `{tex,0}` n=2 not caught; lldb claim unproven.
+- Open: full global AV15fb rc 1 ENOSPC incomplete, REQUIRED and unwaived. No issue closed. Details: `global-player-icon-integracao.md`.
