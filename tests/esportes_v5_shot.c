@@ -192,7 +192,7 @@ int SPORTS_V5_MAIN(int argc,char **argv){
   const char *out=argc>1?argv[1]:"/Volumes/ExternalSSD/tmp/rev/esportes619";mkdir(out,0755);
   assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));IMG_Init(IMG_INIT_PNG|IMG_INIT_JPG);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2);SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
-  SDL_Window *w=SDL_CreateWindow("Sports v5 proof",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,1920,1080,SDL_WINDOW_OPENGL|SDL_WINDOW_SHOWN);assert(w&&SDL_GL_CreateContext(w));
+  SDL_Window *w=SDL_CreateWindow("Sports v5 proof",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,1920,1080,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);assert(w&&SDL_GL_CreateContext(w));
   glViewport(0,0,1920,1080);gfx_tamanho_alvo(1920,1080);assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));tex_iniciar(64);gfx_icones_dir("deploy/app/art");
   dados_iniciar(getenv("NUVIO_DADOS"));dados_gravar("ajustes.txt","idioma 0\nidiomaAutoLocal 0\nselected_theme 2\nescalaTextoLocal 2\nescalaTextoVersaoLocal 1\n");ajustes_dir(getenv("NUVIO_DADOS"));ajustes_definir_vidro(0);context();semear();fixture();
   if(getenv("ESPEVENTO_PROOF")){event_proof(w,out);return 0;}

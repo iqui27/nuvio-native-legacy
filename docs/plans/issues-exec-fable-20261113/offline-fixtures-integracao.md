@@ -1,6 +1,6 @@
 # Offline-fixtures — post-merge into integracao/2.1
 
-Scope: test fixtures only (tests/ 11 files in BASE..HEAD). No production fix. Issues #639 and #789 get fixture-infrastructure evidence only, not production closure. BIB639 / PAG789 PRODUCTION candidate is still NOT integrated; full global gate is mandatory and NOT RUN; physical acceptance UNKNOWN. No issue is marked fixed or closed.
+Scope: test fixtures only (tests/ 11 files in BASE..HEAD). No production fix. Issues #639 and #789 get fixture-infrastructure evidence only, not production closure. BIB639 / PAG789 PRODUCTION candidate is still NOT integrated; full global gate remains mandatory and unwaived. Current campaign correction: the suite ran on AV candidate `15fbcbf2dcd5a7a8697a36cd9229b3963d4514ab`, rc 1 incomplete due to ENOSPC; no BIB/PAG-candidate global run is established (see `STATUS.md`); physical acceptance UNKNOWN. No issue is marked fixed or closed.
 
 ## Refs
 - BASE: `82af242653ec035a71857b442bea9be7abb473fc` (integracao/2.1 before merge)
@@ -50,7 +50,7 @@ Scope: test fixtures only (tests/ 11 files in BASE..HEAD). No production fix. Is
 - Merge `b9e9dfa7a` into integracao/2.1: DONE (post-merge verified).
 - Fixture-only infrastructure for #639 / #789: IN integracao/2.1 as test code.
 - BIB639 / PAG789 production candidate: NOT integrated.
-- Full global gate (BIB/PAG): REQUIRED, NOT RUN.
+- Full global gate (BIB/PAG): REQUIRED, unwaived, no candidate run established. Campaign AV run rc 1 incomplete (ENOSPC), not a pass.
 - Physical acceptance: UNKNOWN.
 - Issues #639 / #789: NOT closed, NOT fixed.
 - Post-merge stage: `veredito: null`; no new source approval.

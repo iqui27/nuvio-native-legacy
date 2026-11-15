@@ -167,7 +167,10 @@ with tempfile.TemporaryDirectory(prefix="nuvio-conexlim-") as work:
     deps += [aar_jar("androidx.core", "core", "1.13.1", work),
              jar("androidx.annotation", "annotation-jvm", "1.6.0"),
              aar_jar("androidx.annotation", "annotation-experimental", "1.4.0", work),
-             jar("com.google.guava", "guava", "33.3.1-android")]
+             jar("com.google.guava", "guava", "33.3.1-android"),
+             jar("com.squareup.okhttp3", "okhttp", "4.12.0"),
+             jar("com.squareup.okio", "okio-jvm", "3.6.0"),
+             aar_jar("androidx.tvprovider", "tvprovider", "1.0.0", work)]
     activity = work / "NuvioActivity.kt"
     activity.write_text('package space.nuvio.nativelegacy\nclass NuvioActivity : android.app.Activity() { fun devolverFoco() {}; fun nativeQuadros(): Long = -1; fun nativeEtapa() = ""; fun estadoSdl() = ""; fun nativeRecUrl() = "" }')
     sources = [p for p in kt.glob("*.kt") if p.name not in ("NuvioActivity.kt", "RegistroDownload.kt", "Tombstone.kt")]

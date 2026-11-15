@@ -8,5 +8,5 @@ if [ "$(uname -s)" = Darwin ]; then flags+=(-Wl,-dead_strip); else flags+=(-Wl,-
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 backup_extra=()
 if [ -f src/backupcategories.c ]; then backup_extra+=(src/backupcategories.c); fi
-cc ${backup_extra[@]+"${backup_extra[@]}"} tests/guiabusca_incremental.c src/ltv.c -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -O1 -g "${flags[@]}" -lpthread -lm -o "$work/test"
+cc ${backup_extra[@]+"${backup_extra[@]}"} tests/guiabusca_incremental.c src/ltv.c src/guiav5ui.c src/guiav5.c src/buscanorm.c -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -O1 -g "${flags[@]}" -lpthread -lm -o "$work/test"
 "$work/test"

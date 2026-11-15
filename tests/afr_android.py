@@ -63,13 +63,13 @@ BODY
     }
 }
 '''.replace('BODY', body)
-cache = Path.home() / '.gradle/caches/modules-2/files-2.1'
+cache = Path(os.environ.get('GRADLE_RO_DEP_CACHE') or Path.home() / '.gradle/caches') / 'modules-2/files-2.1'
 compiler = list(cache.glob('org.jetbrains.kotlin/*/2.0.21/*/*.jar'))
 compiler += list(cache.glob('org.jetbrains.intellij.deps/trove4j/*/*/*.jar'))
 compiler += list(cache.glob('org.jetbrains/annotations/*/*/*.jar'))
 compiler += list(cache.glob('org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm/*/*/*.jar'))
 stdlib = next(cache.glob('org.jetbrains.kotlin/kotlin-stdlib/2.0.21/*/*.jar'))
-java = str(next((Path.home() / '.local/jdks').glob('jdk-17*/Contents/Home/bin/java')))
+java = os.environ.get('NUVIO_TEST_JAVA') or str(next((Path.home() / '.local/jdks').glob('jdk-17*/Contents/Home/bin/java')))
 with tempfile.TemporaryDirectory(prefix='nuvio-afr-jvm-', dir=os.environ.get('TMPDIR')) as tmp:
     tmp = Path(tmp)
     (tmp / 'Doubles.kt').write_text(doubles)

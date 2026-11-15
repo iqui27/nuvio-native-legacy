@@ -1,6 +1,6 @@
 # Sync-gate fixtures — post-merge into integracao/2.1
 
-Scope: test fixtures only. No production fix. Issues #639 and #789 get fixture-infrastructure evidence only; no production candidate (BIB639 / PAG789) is integrated and the full global gate remains NOT RUN / unwaived. No issue is marked fixed or closed. No field or TV root proof. Device acceptance UNKNOWN.
+Scope: test fixtures only. No production fix. Issues #639 and #789 get fixture-infrastructure evidence only; no production candidate (BIB639 / PAG789) is integrated and the full global gate remains required and unwaived. Current campaign correction: the suite ran on AV candidate `15fbcbf2dcd5a7a8697a36cd9229b3963d4514ab`, rc 1 incomplete due to ENOSPC; no BIB/PAG-candidate global run is established (see `STATUS.md`). No issue is marked fixed or closed. No field or TV root proof. Device acceptance UNKNOWN.
 
 ## Refs
 - BASE: `85624bba84243244187efa6ad6f0d50b650632be` (integracao/2.1 before merge)
@@ -64,7 +64,7 @@ Control = unmutated `src/sync.c`. Mutants differ from HEAD `src/sync.c` only by 
 - N5 `synccolecoes` nuvem forwarders ignore bearer: OPEN, P3.
 
 ## Limits
-- Full global gate NOT RUN, not waived. BIB639 / PAG789 production candidates NOT integrated.
+- Full global gate required, unwaived and not passed: AV candidate run rc 1 incomplete (ENOSPC), no BIB/PAG-candidate global run established. BIB639 / PAG789 production candidates NOT integrated.
 - Issues #639 and #789: fixture infrastructure evidence only. Not fixed, not closed.
 - No field, TV or root proof. Device acceptance UNKNOWN.
 - No source, Home, cache or sync-runtime changes in this job.

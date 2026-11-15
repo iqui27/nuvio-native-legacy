@@ -25,7 +25,7 @@ if [ "$(uname -s)" != Darwin ]; then flags+=(-ldl); fi
 if [ "${SANITIZE:-${NV_SANITIZERS:-0}}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 if [ "${SANITIZE:-0}" = thread -o "${NV_TSAN:-0}" = 1 ]; then flags+=(-fsanitize=thread -fno-omit-frame-pointer); fi
 cc "${flags[@]}" tests/jellyfin.c src/jellyfin.c src/srvidx.c src/rede.c src/redeurl.c src/js.c src/jsw.c src/srvcache.c src/srvsetup_net.c \
-  -o "$tmp/teste"
+  -lz -o "$tmp/teste"
 "$tmp/teste" "$base" "$tmp/dados" > "$tmp/log" 2>&1 || { cat "$tmp/log"; exit 1; }
 # Restart: Quick Connect saves the long token, a fresh process signs in with it.
 mkdir -p "$tmp/dados-qc"

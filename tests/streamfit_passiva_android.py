@@ -17,14 +17,14 @@ import zipfile
 
 root = Path(__file__).resolve().parent.parent
 kt = root / "android/app/src/main/java/space/nuvio/nativelegacy"
-cache = Path.home() / ".gradle/caches/modules-2/files-2.1"
+cache = Path(os.environ.get("GRADLE_RO_DEP_CACHE") or Path.home() / ".gradle/caches") / "modules-2/files-2.1"
 compiler = list(cache.glob("org.jetbrains.kotlin/*/2.0.21/*/*.jar"))
 compiler += list(cache.glob("org.jetbrains.intellij.deps/trove4j/*/*/*.jar"))
 compiler += list(cache.glob("org.jetbrains/annotations/13.0/*/*.jar"))
 compiler += list(cache.glob("org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm/*/*/*.jar"))
 stdlib = next(cache.glob("org.jetbrains.kotlin/kotlin-stdlib/2.0.21/*/*.jar"))
 sdk = Path(os.environ.get("ANDROID_HOME", str(Path.home() / "Library/Android/sdk"))) / "platforms/android-35/android.jar"
-sdl = Path.home() / ".cache/nuvio-android/src/SDL2-2.30.9/android-project/app/src/main/java"
+sdl = Path(os.environ.get("NUVIO_ANDROID_CACHE", str(Path.home() / ".cache/nuvio-android"))) / "src/SDL2-2.30.9/android-project/app/src/main/java"
 assert sdk.is_file() and any("compiler-embeddable" in str(x) for x in compiler)
 cp = os.pathsep.join(map(str, compiler))
 java = os.environ.get("NUVIO_TEST_JAVA") or str(next((Path.home() / ".local/jdks").glob("jdk-17*/Contents/Home/bin/java")))
@@ -52,17 +52,18 @@ with tempfile.TemporaryDirectory(prefix="nuvio-streamfit-passive-", dir=os.envir
     tmp = Path(tmp)
     deps = [sdk, stdlib]
     for name in ("media3-common", "media3-datasource", "media3-exoplayer", "media3-decoder",
-                 "media3-extractor", "media3-container"):
+                 "media3-extractor", "media3-container", "media3-exoplayer-hls"):
         deps.append(aar_jar("androidx.media3", name, "1.8.0", tmp))
     deps.append(aar_jar("androidx.core", "core", "1.13.1", tmp))
     deps.append(jar("androidx.annotation", "annotation-jvm", "1.6.0"))
     deps.append(aar_jar("androidx.annotation", "annotation-experimental", "1.4.0", tmp))
     deps.append(jar("com.google.guava", "guava", "33.3.1-android"))
-    sources = [kt / "NvPlayer.kt", kt / "ParaleloDataSource.kt", kt / "PassivoMedidor.kt", kt / "NuvioActivity.kt",
-               kt / "AudioSyncTap.kt", kt / "AudioSyncSink.kt", kt / "RecriaHdr.kt",
-               kt / "ArranqueVigia.kt", kt / "TouchViewport.kt", kt / "Tombstone.kt",
-               # F07: NvPlayer layers the seek cache and the gain processor
-               kt / "CacheSessao.kt", kt / "CacheMidia.kt", kt / "GanhoMath.kt", kt / "GanhoAudioProcessor.kt"]
+    deps.append(jar("com.squareup.okhttp3", "okhttp", "4.12.0"))
+    deps.append(jar("com.squareup.okio", "okio-jvm", "3.6.0"))
+    deps.append(aar_jar("androidx.tvprovider", "tvprovider", "1.0.0", tmp))
+    # NvPlayer (thumbnails, live, HLS) and NuvioActivity transitively need the whole
+    # package, same as cacheboost_android.py.
+    sources = sorted(kt.glob("*.kt"))
     java_roots = []
     if sdl.is_dir():
         java_roots = ["-Xjava-source-roots=" + str(sdl)]
