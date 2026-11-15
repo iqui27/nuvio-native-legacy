@@ -1,7 +1,7 @@
 #!/bin/bash
 set -eu
 cd "$(dirname "$0")/.."
-dir=$(mktemp -d /tmp/nuvio-exclusion-languages.XXXXXX)
+dir=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-exclusion-languages.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
 flags=(-ffunction-sections -fdata-sections)
 if [ "$(uname -s)" = Darwin ]; then flags+=(-Wl,-dead_strip); else flags+=(-Wl,--gc-sections); fi
