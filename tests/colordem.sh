@@ -12,7 +12,8 @@ if grep -nE 'ponteiroOrdemToque, ponteiroOrdemToque' src/ctxmenu.c; then
   echo "colordem: FALHOU — ctxmenu.c cicla a ordem no focar E no ativar" >&2
   exit 1
 fi
-flags=()
+# ajustes.h (via fileiras.c) inclui <SDL2/SDL.h>: so o cabecalho, sem link.
+read -r -a flags <<< "$(pkg-config --cflags sdl2)"
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 cc ${flags[@]+"${flags[@]}"} -DFIL_TESTE src/colecoes.c src/redeurl.c src/js.c src/fileiras.c \
   tests/colordem.c -Isrc -o "${TMPDIR}/nuvio-colordem-tests" -O1 -g -Wall -Wextra \

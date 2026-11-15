@@ -72,8 +72,9 @@ int main(void) {
     assert(!strcmp(sCanais[k].tipo, "tv"));   // tipo declarado, do item ou do catalogo
   }
   // Tipo que o item vai pedir ao /stream/: o declarado pelo catalogo.
+  // canalParaItem le a grade publicada; aqui a publicacao e o staging.
   { CatItem it;
-    cats = sCats; canalParaItem(&sCanais[0], &it);
+    canais = sCanais; nCanais = sNCanais; cats = sCats; canalParaItem(&sCanais[0], &it);
     assert(!strcmp(it.tipo, "tv")); }        // "tv" declarado vira o tipo do card
   // ---- manifesto MISTO estilo M3U Mux: catalogo "channel" entre movie/series
   memset(&f, 0, sizeof f);
@@ -88,7 +89,7 @@ int main(void) {
   assert(!strcmp(sCanais[3].id, "m3u-live-2") && !strcmp(sCanais[3].tipo, "channel")); // do catalogo
   assert(!strcmp(sCanais[4].id, "m3u-live-3") && !strcmp(sCanais[4].tipo, "tv"));      // do item
   { CatItem it;
-    cats = sCats; canalParaItem(&sCanais[2], &it);
+    canais = sCanais; nCanais = sNCanais; cats = sCats; canalParaItem(&sCanais[2], &it);
     assert(!strcmp(it.tipo, "channel")); }   // canal declarado continua canal no card
   puts("PASS: guia aceita catalogo tv sem genre, ids m3u:/ec:, poster landscape");
   puts("PASS: canal de manifesto misto guarda o tipo declarado do catalogo/item");

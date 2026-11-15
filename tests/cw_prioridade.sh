@@ -14,7 +14,7 @@ if [ "${SANITIZE:-0}" = 1 ]; then
 fi
 "${CC:-cc}" "${flags[@]}" tests/cw_prioridade.c src/perfis.c src/admin.c src/homeestado.c src/catalogo.c \
   src/progresso.c src/cwordem.c src/cotacat.c src/js.c src/metaprov.c src/colecoes.c \
-  src/redeurl.c src/catordem.c "${gc[@]}" -o "$work/test"
+  src/redeurl.c src/catordem.c tests/discovery_boundary_stub.c "${gc[@]}" -o "$work/test"
 for scenario in fresh cached clear stale; do
   mkdir "$work/data-$scenario"
   NV_T_DIR="$work/data-$scenario" \

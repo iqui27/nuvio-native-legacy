@@ -12,14 +12,15 @@ case "${1:-todos}" in
   *) echo 'uso: bash tests/cwleg.sh [corte|fallback|todos]' >&2; exit 2 ;;
 esac
 if [ "${1:-todos}" != fallback ]; then
-  cc src/trakt.c tests/stub_fichameta.c src/js.c src/metaprov.c tests/cwleg_corte.c \
+  cc src/trakt.c tests/stub_fichameta.c src/js.c src/metaprov.c src/metaep.c tests/cwleg_corte.c \
+    tests/trakt_rede_stub.c \
     "${flags[@]}" -Wl,-dead_strip -lpthread -o "$work/corte"
   "$work/corte"
   REPRO_ON=1 "$work/corte"
 fi
 if [ "${1:-todos}" != corte ]; then
   cc src/catalogo.c src/progresso.c src/cwordem.c src/cwretido.c tests/cwleg_fallback.c \
-    src/cotacat.c src/js.c src/metaprov.c src/colecoes.c src/redeurl.c src/catordem.c \
+    tests/discovery_boundary_stub.c src/cotacat.c src/js.c src/metaprov.c src/colecoes.c src/redeurl.c src/catordem.c \
     "${flags[@]}" -o "$work/fallback"
   "$work/fallback"
 fi

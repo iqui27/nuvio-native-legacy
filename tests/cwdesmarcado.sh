@@ -17,7 +17,7 @@ cc -O1 -g -Wall -Wno-deprecated-declarations -Wno-macro-redefined -Wno-unused-fu
   ${extra[@]+"${extra[@]}"} -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   src/catalogo.c src/progresso.c src/cwordem.c src/cwretido.c src/vistonao.c tests/cwdesmarcado.c \
   src/cotacat.c src/js.c src/metaprov.c src/colecoes.c src/redeurl.c src/catordem.c \
-  -o "$tmp/cwdesmarcado" -lpthread
+  tests/discovery_boundary_stub.c -o "$tmp/cwdesmarcado" -lpthread
 falhou=0
 "$tmp/cwdesmarcado" | tee "$tmp/saida.txt" || falhou=1
 
