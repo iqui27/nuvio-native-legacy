@@ -89,6 +89,7 @@ static char dtsSaida[64];
 // dvMkv*: what the header says, written by the probe thread and read here;
 // plain ints, the same tolerance faixaLeg already has.
 static volatile int dvSondado, dvMkvPerfil, dvMkvEl, dvMkvBl, dvMkvRpu;
+static int dvRpuIncerto;   // P8.1 kept off our path only because the probe saw no frame with RPU
 // A sonda leu o comeco do arquivo e ele nao e Matroska (mkv_contentor_definitivo).
 static volatile int mkvNaoMkv;
 static char dvAudioCodec[NV_FAIXA_MAX][16];   // Matroska CodecID of each audio track, file order
@@ -2425,7 +2426,7 @@ static void *lerMkv(void *arg) {
     // admitting unprobed files (see docs/reviews/c9-dv-crash-2.md).
     if (fx[j].dvPerfil == 8 && fx[j].dvCompat == 1 &&
         (d->rpu != 1 || d->quadros < 1)) {
-      dvMkvRpu = 0;
+      dvMkvRpu = 0; dvRpuIncerto = 1;
       printf("[dv] HDR10: profile 8.1 in-band RPU unconfirmed (rpu=%d frames=%d)\n",
              d->rpu, d->quadros);
     }
@@ -2675,7 +2676,7 @@ int video_tocar(const char *url) {
 #endif
   printf("[dts] fallback %s%s tvDts=%d\n", dtsHabilitado ? "available" : "unavailable", dtsDesligado ? " (DTS off in settings)" : "",
          __atomic_load_n(&edidDts, __ATOMIC_ACQUIRE));
-  dvSondado = dvMkvPerfil = dvAudios = 0; dtsModoDv = 0; dvAudioMkvOrd = dvAudioMkvAtual = -1; dvSegurar = 0;
+  dvSondado = dvMkvPerfil = dvAudios = 0; dvRpuIncerto = 0; dtsModoDv = 0; dvAudioMkvOrd = dvAudioMkvAtual = -1; dvSegurar = 0;
   mkvNaoMkv = 0;
   dvNao = 0; dvSessaoN++; dvFonteAberta = 0; dvAudioDe[0] = 0;
   nv_dvsonda_zerar(&mkvRetry); mkvRetryEm = 0; dvEntradaSeg = 0.0;
@@ -3376,7 +3377,7 @@ static int dvPronto(void) {
     }
     // Sem perfil: o arquivo nao tem dvcC, ou a sonda desistiu de ler o
     // cabecalho (tres falhas) — sao notas diferentes para a pessoa.
-    dvNao = dvMkvPerfil ? VIDEO_DV_NAO_PERFIL : mkvNaoMkv ? VIDEO_DV_NAO_CONTENTOR
+    dvNao = dvMkvPerfil ? (dvRpuIncerto ? VIDEO_DV_NAO_RPU : VIDEO_DV_NAO_PERFIL) : mkvNaoMkv ? VIDEO_DV_NAO_CONTENTOR
           : mkvRetry.desistiu ? VIDEO_DV_NAO_SONDA : VIDEO_DV_NAO_SEM_DV;
     dvHabilitado = 0; dvVoltarEntrada(); return 0;
   }

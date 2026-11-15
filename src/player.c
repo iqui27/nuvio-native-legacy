@@ -2263,6 +2263,9 @@ static void dvTelaNota(int recusa, int perfil) {
     snprintf(t, sizeof t, "%s", i18n("O áudio deste arquivo não passa pelo Dolby Vision. Tocando em HDR10."));
   else if (recusa == VIDEO_DV_NAO_SONDA)
     snprintf(t, sizeof t, "%s", i18n("Não deu para ler o arquivo. Tocando em HDR10."));
+  // VIDEO_DV_NAO_RPU (P8.1 whose DV frames the probe did not reach): no note
+  // either. The TV player plays it its own way, often in Dolby Vision (tester's
+  // log 15/11: "profile 8 doesn't play" while the picture was in DV).
   // VIDEO_DV_NAO_CONTENTOR (o arquivo nao e Matroska): sem nota. O player da TV
   // segue tocando o MP4/TS como tocaria sem a tela — no MP4 o DV e o da TV.
   if (!t[0]) return;

@@ -244,7 +244,8 @@ enum {
   VIDEO_DV_NAO_FALHOU,    // o caminho nao abriu
   VIDEO_DV_NAO_PESSOA,    // a pessoa escolheu HDR10
   VIDEO_DV_NAO_CONTENTOR, // o arquivo nao e Matroska (MP4/TS sem extensao na URL)
-  VIDEO_DV_NAO_NATIVE     // selected profile stays on the native player
+  VIDEO_DV_NAO_NATIVE,    // selected profile stays on the native player
+  VIDEO_DV_NAO_RPU        // P8.1 whose DV frames the probe did not reach: the TV player plays it its own way
 };
 typedef struct {
   int sessao;          // muda a cada video_tocar (fonte nova)
