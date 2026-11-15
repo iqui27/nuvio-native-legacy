@@ -83,8 +83,10 @@ static void caracterizar_identidade_cartaz(const CasoIdentidade *casos, int n) {
     const char *url;
     char hbase[32];
     int nant, ndep;
-    casos[i].imdb ? 0 : assert(0);
+    assert(caso->imdb);
     idbase_copiar(caso->imdb, hbase, sizeof hbase);
+    estadoFalso = 0;
+    nConsultas = 0;
     nant = nConsultas;
     url = posterprov_card_formato(NULL, caso->imdb, caso->tmdb, caso->tipo, orig, 0);
     ndep = nConsultas - nant;
@@ -101,24 +103,16 @@ static void caracterizar_identidade_cartaz(const CasoIdentidade *casos, int n) {
     nConsultas = 0;
     nant = nConsultas;
     url = posterprov_card_formato(NULL, caso->imdb, caso->tmdb, caso->tipo, orig, 0);
+    ndep = nConsultas - nant;
     if (caso->espera_prov) {
       IGUAL(url, caso->url_esperada);
-      assert(nConsultas == 1);
+      assert(posterprov_e_provedor(url));
+      assert(ndep == 1);
     } else {
       IGUAL(url, orig);
-      assert(nConsultas == 0);
+      assert(!posterprov_e_provedor(url));
+      assert(ndep == 0);
     }
-    estadoFalso = -1;
-    nConsultas = 0;
-    url = posterprov_card_formato(NULL, caso->imdb, caso->tmdb, caso->tipo, orig, 0);
-    IGUAL(url, orig);
-    if (caso->espera_prov) assert(nConsultas == 1);
-    else assert(nConsultas == 0);
-    estadoFalso = 1;
-    url = posterprov_card_formato(NULL, caso->imdb, caso->tmdb, caso->tipo, orig, 0);
-    IGUAL(url, orig);
-    if (caso->espera_prov) assert(nConsultas == 0);
-    else assert(nConsultas == 0);
     assert(idbase_len(caso->imdb) == strlen(hbase));
     cartaz_reativar_cenario(c, 0);
     (void)caso->nome;
@@ -226,41 +220,91 @@ int main(void) {
   // ---------------------------------------------------------- identidade id/sufixo (comportamento atual #708)
   // Provider ON, preferencia do addon OFF, formato retrato (landscape=0). URLs sinteticas locais.
   // idbase_* descreve a fronteira do titulo base, mas o posterprov usa o id cheio em hash_item().
-  { CasoIdentidade casos[] = {
-      { "imdb base", "tt0944947", 0, "series", 1,
-        "https://70708-char.local/api/poster/series/tt0944947?fmt=jpeg&config=TOK708" },
+  { const char *orig = "https://origem-local/708/portrait.jpg";
+    const char *u1399 = "https://70708-char.local/api/poster/series/1399?fmt=jpeg&config=TOK708";
+    const char *u_tt = "https://70708-char.local/api/poster/series/tt0944947?fmt=jpeg&config=TOK708";
+    PosterProvCfg c708 = spatial("https://70708-char.local", "TOK708");
+    CasoIdentidade casos[] = {
+      { "imdb base", "tt0944947", 0, "series", 1, u_tt },
       { "imdb sufixo S01E05", "tt0944947:1:5", 0, "series", 0, NULL },
       { "imdb sufixo S02E10", "tt0944947:2:10", 0, "series", 0, NULL },
-      { "tmdb:t base", "tmdb:t1399", 0, "series", 1,
-        "https://70708-char.local/api/poster/series/1399?fmt=jpeg&config=TOK708" },
-      { "tmdb:t sufixo zero explicito", "tmdb:t1399:0:5", 0, "series", 1,
-        "https://70708-char.local/api/poster/series/1399?fmt=jpeg&config=TOK708" },
-      { "tmdb:t sufixo S02E03", "tmdb:t1399:2:3", 0, "series", 1,
-        "https://70708-char.local/api/poster/series/1399?fmt=jpeg&config=TOK708" },
-      { "imdb base + tmdb positivo", "tt0944947", 1399, "series", 1,
-        "https://70708-char.local/api/poster/series/tt0944947?fmt=jpeg&config=TOK708" },
-      { "imdb sufixo + tmdb positivo", "tt0944947:1:5", 1399, "series", 1,
-        "https://70708-char.local/api/poster/series/tt0944947?fmt=jpeg&config=TOK708" }
+      { "tmdb:t base", "tmdb:t1399", 0, "series", 1, u1399 },
+      { "tmdb:t sufixo zero explicito", "tmdb:t1399:0:5", 0, "series", 0, NULL },
+      { "tmdb:t sufixo S02E03 numeric0", "tmdb:t1399:2:3", 0, "series", 0, NULL },
+      { "tmdb:t sufixo S02E03 + tmdb positivo", "tmdb:t1399:2:3", 1399, "series", 1, u1399 },
+      { "imdb base + tmdb positivo", "tt0944947", 1399, "series", 1, u_tt },
+      { "imdb sufixo + tmdb positivo", "tt0944947:1:5", 1399, "series", 1, u1399 }
     };
+    PosterProvStat st;
+    int nant, ndep;
+
     checar_idbase_limite("tt0944947:1:5", "tt0944947");
     checar_idbase_limite("tmdb:t1399:2:3", "tmdb:t1399");
     caracterizar_identidade_cartaz(casos, (int)(sizeof casos / sizeof casos[0]));
-    cartaz_reativar_cenario(spatial("https://70708-char.local", "TOK708"), 0);
-    estadoFalso = 1;
-    { const char *orig = "https://origem-local/708/portrait.jpg";
-      const char *u = "https://70708-char.local/api/poster/series/1399?fmt=jpeg&config=TOK708";
-      IGUAL(posterprov_card_formato(NULL, "tmdb:t1399", 0, "series", orig, 0), u);
-      IGUAL(posterprov_card_formato(NULL, "tmdb:t1399:2:3", 0, "series", orig, 0), u);
-      estadoFalso = -1;
-      nConsultas = 0;
-      IGUAL(posterprov_card_formato(NULL, "tmdb:t1399", 0, "series", orig, 0), orig);
-      assert(nConsultas == 1);
-      IGUAL(posterprov_card_formato(NULL, "tmdb:t1399:2:3", 0, "series", orig, 0), u);
-      assert(nConsultas == 0);
-      IGUAL(posterprov_card_formato(NULL, "tmdb:t1399:2:3", 0, "series", orig, 0), orig);
-      assert(nConsultas == 0);
+
+    cartaz_reativar_cenario(c708, 0);
+    posterprov_stat(&st);
+    IGUAL(posterprov_card_formato(NULL, "tt0944947:1:5", 0, "series", orig, 0), orig);
+    { PosterProvStat dep;
+      posterprov_stat(&dep);
+      assert(dep.falhas == st.falhas);
     }
-    cartaz_reativar_cenario(spatial("https://70708-char.local", "TOK708"), 0); }
+
+    cartaz_reativar_cenario(c708, 0);
+    estadoFalso = 0;
+    nConsultas = 0;
+    IGUAL(posterprov_card_formato(NULL, "tt0944947", 0, "series", orig, 0), u_tt);
+    estadoFalso = 1;
+    nConsultas = 0;
+    IGUAL(posterprov_card_formato(NULL, "tt0944947", 0, "series", orig, 0), u_tt);
+    estadoFalso = -1;
+    nConsultas = 0;
+    IGUAL(posterprov_card_formato(NULL, "tt0944947", 0, "series", orig, 0), u_tt);
+    assert(nConsultas == 0);
+    estadoFalso = 1;
+    nConsultas = 0;
+    IGUAL(posterprov_card_formato(NULL, "tt0944947", 0, "series", orig, 0), u_tt);
+    assert(nConsultas == 0);
+
+    cartaz_reativar_cenario(c708, 0);
+    posterprov_stat(&st);
+    estadoFalso = -1;
+    nConsultas = 0;
+    IGUAL(posterprov_card_formato(NULL, "tt0628856", 0, "series", orig, 0), orig);
+    assert(nConsultas == 1);
+    { PosterProvStat dep;
+      posterprov_stat(&dep);
+      assert(dep.falhas == st.falhas + 1);
+    }
+    estadoFalso = 1;
+    nConsultas = 0;
+    IGUAL(posterprov_card_formato(NULL, "tt0628856", 0, "series", orig, 0), orig);
+    assert(nConsultas == 0);
+
+    cartaz_reativar_cenario(c708, 0);
+    estadoFalso = -1;
+    nConsultas = 0;
+    nant = nConsultas;
+    IGUAL(posterprov_card_formato(NULL, "tmdb:t1399", 0, "series", orig, 0), orig);
+    ndep = nConsultas - nant;
+    assert(ndep == 1);
+    estadoFalso = 1;
+    nConsultas = 0;
+    nant = nConsultas;
+    IGUAL(posterprov_card_formato(NULL, "tmdb:t1399:2:3", 1399, "series", orig, 0), u1399);
+    ndep = nConsultas - nant;
+    assert(ndep == 1);
+    nConsultas = 0;
+    nant = nConsultas;
+    IGUAL(posterprov_card_formato(NULL, "tmdb:t1399", 0, "series", orig, 0), orig);
+    ndep = nConsultas - nant;
+    assert(ndep == 0);
+    nant = nConsultas;
+    IGUAL(posterprov_card_formato(NULL, "tmdb:t1399", 0, "series", orig, 0), orig);
+    ndep = nConsultas - nant;
+    assert(ndep == 0);
+
+    cartaz_reativar_cenario(c708, 0); }
   ok("identidade cartaz: base vs sufixo imdb/tmdb, falha lembrada por chave cheia");
 
   // ---------------------------------------------------------- RPDB
