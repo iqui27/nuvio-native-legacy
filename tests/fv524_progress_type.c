@@ -72,8 +72,12 @@ static void expect_opposite_apply_both(void) {
   cat_definir_tudo(v, 2, NULL, 0);
   /* Source: aplicarProgressoEm matches mesmoTitulo only; mesmaCopiaEm type check is NOT used here. */
   assert(cat_item(0)->progresso == 40);
+  assert(cat_item(0)->restanteMin == 3);
+  assert(cat_item(0)->retomadoMs == 0);
   assert(cat_item(0)->temporada == 1 && cat_item(0)->episodio == 2);
   assert(cat_item(1)->progresso == 40);
+  assert(cat_item(1)->restanteMin == 3);
+  assert(cat_item(1)->retomadoMs == 0);
   assert(cat_item(1)->temporada == 1 && cat_item(1)->episodio == 2);
   printf("ok  series ProgRegistro applies episode coordinates to both movie+series slots (source-derived)\n");
 }
@@ -86,7 +90,11 @@ static void expect_newer_movie_vetoes_disk(void) {
   cat_definir_tudo(v, 2, NULL, 0);
   /* Source: maisNova when any same-title slot has retomadoMs > reg.lastWatchedMs skips aplicarUmEm */
   assert(cat_item(0)->progresso == 0);
+  assert(cat_item(0)->temporada == 0 && cat_item(0)->episodio == 0);
+  assert(cat_item(0)->retomadoMs == 0);
   assert(cat_item(1)->progresso == 0);
+  assert(cat_item(1)->temporada == 0 && cat_item(1)->episodio == 0);
+  assert(cat_item(1)->retomadoMs == 5000);
   /* espalharEm uses mesmaCopiaEm (requires matching tipo); no cross-type spread from zero slots. */
   printf("ok  newer opposite-type retomadoMs veto leaves both slots without disk progress\n");
 }
@@ -122,6 +130,7 @@ static void expect_same_type_espalhar_only(void) {
   snprintf(v[0].tipo, sizeof v[0].tipo, "series");
   snprintf(v[0].titulo, sizeof v[0].titulo, "CW series");
   v[0].progresso = 55;
+  v[0].restanteMin = 3;
   v[0].retomadoMs = 8000;
   v[0].temporada = 1;
   v[0].episodio = 2;
@@ -133,8 +142,34 @@ static void expect_same_type_espalhar_only(void) {
   snprintf(v[2].titulo, sizeof v[2].titulo, "Movie slot");
   cat_definir_tudo(v, 3, NULL, 0);
   assert(cat_item(1)->progresso == 55);
+  assert(cat_item(1)->restanteMin == 3);
+  assert(cat_item(1)->retomadoMs == 8000);
+  assert(cat_item(1)->temporada == 1 && cat_item(1)->episodio == 2);
   assert(cat_item(2)->progresso == 0);
   printf("ok  espalharEm spreads across same tipo only (mesmaCopiaEm), not to movie slot\n");
+}
+
+static void expect_ahead_series_unchanged_by_spread(void) {
+  CatItem v[2] = {0};
+  nProg = 0;
+  snprintf(v[0].imdb, sizeof v[0].imdb, "%s", BASE);
+  snprintf(v[0].tipo, sizeof v[0].tipo, "series");
+  v[0].progresso = 55;
+  v[0].restanteMin = 3;
+  v[0].retomadoMs = 8000;
+  v[0].temporada = 1;
+  v[0].episodio = 2;
+  snprintf(v[1].imdb, sizeof v[1].imdb, "%s", BASE);
+  snprintf(v[1].tipo, sizeof v[1].tipo, "series");
+  v[1].retomadoMs = 8000;
+  v[1].temporada = 1;
+  v[1].episodio = 3;
+  cat_definir_tudo(v, 2, NULL, 0);
+  assert(cat_item(1)->progresso == 0);
+  assert(cat_item(1)->restanteMin == 0);
+  assert(cat_item(1)->retomadoMs == 8000);
+  assert(cat_item(1)->temporada == 1 && cat_item(1)->episodio == 3);
+  printf("ok  aSeguirAdiante target stays ahead when no disk records\n");
 }
 
 int main(void) {
@@ -143,6 +178,7 @@ int main(void) {
   expect_different_id_ignored();
   expect_short_duration_skipped();
   expect_same_type_espalhar_only();
+  expect_ahead_series_unchanged_by_spread();
   puts("fv524_progress_type: aplicarProgressoEm boundary characterization PASS");
   return 0;
 }
