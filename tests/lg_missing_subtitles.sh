@@ -47,7 +47,25 @@ int main(void) {
   // Keep the existing image-only API image-only.
   memset(leg, 0, sizeof leg);
   assert(faixasmkv_acrescentar_imagem(leg, 0, 8, fx, 7) == 1);
-  assert(!strcmp(leg[0].codec, "S_HDMV/PGS") && leg[0].numero == -1);
+  assert(!strcmp(leg[0].codec, "S_HDMV/PGS") && leg[0].numero == FAIXASMKV_IMAGEM_NUMERO(1));
+  // Several PGS tracks: each has its own identity, never one of the text tracks'.
+  {
+    MkvFaixa pgs[] = {
+      {.tipo=17, .codec="S_HDMV/PGS", .idioma="fra"},
+      {.tipo=17, .codec="S_HDMV/PGS", .idioma="fra"},
+      {.tipo=17, .codec="S_TEXT/UTF8", .idioma="bul"},
+      {.tipo=17, .codec="S_HDMV/PGS", .idioma="eng"}
+    };
+    memset(leg, 0, sizeof leg);
+    int ni = faixasmkv_acrescentar_imagem(leg, 0, 8, pgs, 4);
+    int nt = faixasmkv_acrescentar_texto(leg, ni, 8, pgs, 4);
+    assert(ni == 3 && nt == 4);
+    for (int i = 0; i < nt; i++) {
+      assert(leg[i].numero < 0);
+      for (int j = 0; j < i; j++) assert(leg[i].numero != leg[j].numero);
+    }
+    assert(faixasmkv_acrescentar_imagem(leg, nt, 8, pgs, 4) == nt);
+  }
   puts("LG omitted embedded text subtitles: PASS");
   return 0;
 }
