@@ -2214,6 +2214,7 @@ static void completarAudioMkv(const MkvFaixa *fx,int n,unsigned epoch) {
       snprintf(f->codec,sizeof f->codec,"%s",fx[i].codec);
       snprintf(f->idioma,sizeof f->idioma,"%s",fx[i].idioma);
       snprintf(f->nome,sizeof f->nome,"%s",fx[i].nome);
+      f->dts_kind=nv_audio_mkv_dts(fx[i].codec)?mkv_dts_kind(fx[i].numero):0;
     }
     audioMkvCount=count;__atomic_store_n(&audioMkvPending,1,__ATOMIC_RELEASE);
   }
@@ -2286,8 +2287,14 @@ static void audioMkvConvertido(void) {
     else if(nv_audio_mkv_dts(m->codec)) {
       char sub[40];
       f->numero=-1;
-      if(!audioinfo_texto(m->codec,m->canais,0,sub,sizeof sub))snprintf(sub,sizeof sub,"DTS");
+      if(!audioinfo_texto(nv_audio_mkv_rotulo_codec(m),m->canais,0,sub,sizeof sub))snprintf(sub,sizeof sub,"DTS");
       idiomaRotulo(f->rotulo,sizeof f->rotulo,m->idioma,sub);
+    }
+    /* A DTS track the TV plays itself: its line too says DTS-HD / Master Audio. */
+    if(audioMkvNative[i]>=0 && nv_audio_mkv_dts(m->codec) && m->dts_kind>=2) {
+      char sub[40];
+      if(audioinfo_texto(nv_audio_mkv_rotulo_codec(m),f->canais?f->canais:m->canais,0,sub,sizeof sub))
+        idiomaRotulo(f->rotulo,sizeof f->rotulo,f->idioma[0]?f->idioma:m->idioma,sub);
     }
   }
   pthread_mutex_unlock(&audioMkvLock);

@@ -1,4 +1,5 @@
 #include "mkv.h"
+#include "mkv_dts.h"
 #include "rede.h"
 #ifdef NV_RUST_MKVCORE
 #include "mkvcore.h"
@@ -806,6 +807,32 @@ static void diagTrecho(const unsigned char *p, long n, const MkvFaixa *fx, int n
 }
 #endif  // NV_RUST_MKVCORE
 
+/* DTS kind of each DTS audio track of the last probe (mkv_dts.h), kept apart
+ * from MkvFaixa: the Rust core fills that struct with its own layout. */
+static int dtsNum[MKV_MAX_FAIXAS], dtsKind[MKV_MAX_FAIXAS], dtsN;
+static void dtsTrecho(const unsigned char *p, long n, const MkvFaixa *fx, int nf) {
+  int j, hd = 0;
+  dtsN = 0;
+  for (j = 0; j < nf && dtsN < MKV_MAX_FAIXAS; j++)
+    if (fx[j].tipo == 2 && !strncmp(fx[j].codec, "A_DTS", 5)) {
+      dtsNum[dtsN] = fx[j].numero;
+      dtsKind[dtsN++] = !strcmp(fx[j].codec, "A_DTS/LOSSLESS") ? NV_DTS_KIND_MA : NV_DTS_KIND_UNKNOWN;
+    }
+  if (!dtsN) return;
+  nv_mkv_dts_scan(p, n, dtsNum, dtsKind, dtsN);
+  { int ma = 0, core = 0;
+    for (j = 0; j < dtsN; j++) {
+      hd += dtsKind[j] == NV_DTS_KIND_HD; ma += dtsKind[j] == NV_DTS_KIND_MA; core += dtsKind[j] == NV_DTS_KIND_CORE;
+    }
+    printf("[mkv] DTS tracks: %d (Master Audio %d, DTS-HD %d, DTS %d, not in the probe %d)\n",
+           dtsN, ma, hd, core, dtsN - ma - hd - core); }
+  fflush(stdout);
+}
+int mkv_dts_kind(int numero) {
+  for (int j = 0; j < dtsN; j++) if (dtsNum[j] == numero) return dtsKind[j];
+  return NV_DTS_KIND_UNKNOWN;
+}
+
 int mkv_rpu_alem(const char *url, int nalTam, long teto) {
   long n = 0, quer;
   char *b;
@@ -883,6 +910,7 @@ int mkv_faixas_e_caps(const char *url, MkvFaixa *saida, int max,
   achou = acharTracks((const unsigned char *)buf, n, saida, max,
                       caps, maxCaps, nCaps);
   diagTrecho((const unsigned char *)buf, n, saida, achou);
+  dtsTrecho((const unsigned char *)buf, n, saida, achou);
   // Tracks cortado pela janela: uma lista PELA METADE faria o casamento das
   // legendas dar "nenhum" e deixaria TODA faixa ASS com a TV (#483 so cobria o
   // caso de 0 faixas). O SeekHead diz onde o elemento inteiro mora. Sem ele (ou
@@ -916,6 +944,7 @@ int mkv_faixas_do_trecho(const unsigned char *buf, long n, MkvFaixa *saida, int 
       buf[2] != 0xDF || buf[3] != 0xA3) return 0;
   achou = acharTracks(buf, n, saida, max, caps, maxCaps, nCaps);
   diagTrecho(buf, n, saida, achou);
+  dtsTrecho(buf, n, saida, achou);
   if (tracksCortado) return 0;
   return achou;
 }

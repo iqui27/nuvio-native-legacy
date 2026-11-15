@@ -58,6 +58,9 @@ typedef struct {
   long long blocoIni, blocoFim; // quadro de video cortado pelo trecho: [ini, fim) absolutos, -1 sem
 } MkvDiag;
 const MkvDiag *mkv_diag(void);
+// DTS kind (mkv_dts.h NV_DTS_KIND_*) of an audio track of the last probe, by
+// TrackNumber, from its first frames in the probed bytes; 0 = not known.
+int mkv_dts_kind(int numero);
 // Varre so os dados de UM quadro HEVC (com prefixo de tamanho de `nalTam`
 // bytes): 1 = tem NAL 62, 0 = nao tem, -1 = quadro malformado. Puro.
 int mkv_quadro_tem_rpu(const unsigned char *p, long n, int nalTam, int *rpuTipo, int *rpuPerfil);

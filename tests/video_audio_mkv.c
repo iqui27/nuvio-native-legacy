@@ -9,12 +9,12 @@ static VideoFaixa native(const char *codec,const char *lang,int ch,int number) {
 }
 int main(void) {
   NvAudioMkvTrack file[]={
-    {2,6,"A_DTS","en","Original DTS-ES Surround Mix"},
-    {3,6,"A_DTS","en","2026 Surround Remix"},
-    {4,2,"A_FLAC","en","Commentary one"},
-    {5,2,"A_FLAC","en","Commentary two"},
-    {6,2,"A_FLAC","en","Commentary three"},
-    {7,2,"A_FLAC","en","Commentary four"}};
+    {2,6,"A_DTS","en","Original DTS-ES Surround Mix",0},
+    {3,6,"A_DTS","en","2026 Surround Remix",0},
+    {4,2,"A_FLAC","en","Commentary one",0},
+    {5,2,"A_FLAC","en","Commentary two",0},
+    {6,2,"A_FLAC","en","Commentary three",0},
+    {7,2,"A_FLAC","en","Commentary four",0}};
   VideoFaixa list[NV_FAIXA_MAX];int map[NV_FAIXA_MAX];
   for(int i=0;i<4;i++)list[i]=native("flac","en",2,i);
   int n=nv_audio_mkv_merge(list,4,NV_FAIXA_MAX,file,6,map);assert(n==6);
@@ -50,7 +50,7 @@ int main(void) {
   assert(nv_audio_mkv_merge(list,0,NV_FAIXA_MAX,file,2,map)==2);
   for(int i=0;i<4;i++)list[i]=native("flac","en",2,i);
   assert(nv_audio_mkv_merge(list,4,5,file,6,map)==5); // bounded capacity
-  NvAudioMkvTrack truehd={2,8,"A_TRUEHD","en","Original TrueHD"};
+  NvAudioMkvTrack truehd={2,8,"A_TRUEHD","en","Original TrueHD",0};
   assert(nv_audio_mkv_merge(list,0,NV_FAIXA_MAX,&truehd,1,map)==1);
   assert(list[0].numero==0 && !strcmp(list[0].codec,"A_TRUEHD") && list[0].canais==8);
   assert(!nv_audio_mkv_dts(list[0].codec)); // no DTS trigger without DTS
@@ -58,5 +58,17 @@ int main(void) {
   assert(nv_audio_mkv_merge(list,1,NV_FAIXA_MAX,&truehd,1,map)==1);
   assert(!strcmp(list[0].codec,"aac")); // native metadata stays authoritative
   assert(nv_audio_mkv_merge(list,0,0,&truehd,1,map)==0);
+  // DTS-HD told apart by the file's frames (tester 15/11: "DTS 5.1" for both).
+  { NvAudioMkvTrack two[]={{2,6,"A_DTS","ru","MA",3},{3,6,"A_DTS","ru","core",1}};
+    for(int i=0;i<2;i++){list[i]=native("dts","ru",6,i);snprintf(list[i].rotulo,sizeof list[i].rotulo,"Russian  \xc2\xb7  DTS 5.1");}
+    assert(nv_audio_mkv_merge(list,2,NV_FAIXA_MAX,two,2,map)==2);
+    assert(!strcmp(list[0].rotulo,"Russian  \xc2\xb7  DTS-HD MA 5.1"));
+    assert(!strcmp(list[1].rotulo,"Russian  \xc2\xb7  DTS 5.1"));
+    assert(!strcmp(list[0].codec,"dts")); }   // only the label changes
+  // A recovered row (the TV listed none): its name, then the codec told apart.
+  { NvAudioMkvTrack hd={2,6,"A_DTS","en","Original",2};
+    list[0]=native("aac","en",2,0);
+    assert(nv_audio_mkv_merge(list,1,NV_FAIXA_MAX,&hd,1,map)==2);
+    assert(strstr(list[1].rotulo,"DTS-HD") && !strstr(list[1].rotulo,"DTS-HD MA")); }
   puts("PASS missing MKV DTS: two repeated DTS + four FLAC, stable native indices, exact identities, refresh, ambiguity, single-track and capacity");
 }
