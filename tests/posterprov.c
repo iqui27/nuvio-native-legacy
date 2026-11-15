@@ -126,6 +126,7 @@ static void par_positivo_controlado(PosterProvCfg cfg, const char *orig,
                                     long nb, long ns, const char *exp_base,
                                     int suf_prov, const char *exp_suf) {
   int nant, ndep;
+  PosterProvStat st;
   const char *u;
   cartaz_reativar_cenario(cfg, 0);
   relogio = 1000;
@@ -137,6 +138,14 @@ static void par_positivo_controlado(PosterProvCfg cfg, const char *orig,
   assert(posterprov_e_provedor(u));
   ndep = nConsultas - nant;
   assert(ndep == 1);
+  posterprov_stat(&st);
+  assert(st.falhas == 0);
+  assert(st.seguidas == 0);
+  assert(!st.disjuntor_aberto);
+  cartaz_reativar_cenario(cfg, 0);
+  relogio = 1000;
+  estadoFalso = 1;
+  nConsultas = 0;
   nant = nConsultas;
   u = posterprov_card_formato(NULL, suf, ns, "series", orig, 0);
   if (suf_prov) {
@@ -150,6 +159,10 @@ static void par_positivo_controlado(PosterProvCfg cfg, const char *orig,
     ndep = nConsultas - nant;
     assert(ndep == 0);
   }
+  posterprov_stat(&st);
+  assert(st.falhas == 0);
+  assert(st.seguidas == 0);
+  assert(!st.disjuntor_aberto);
 }
 
 static void par_memoria_falha_1399(PosterProvCfg cfg, const char *orig,
