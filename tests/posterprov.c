@@ -8,6 +8,7 @@
 // /api/poster/movie/tt0111161?fmt=jpeg) e api.ratingposterdb.com (200
 // image/jpeg para /t0-free-rpdb/imdb/poster-default/tt0111161.jpg?fallback=true).
 #include "posterprov.h"
+#include "idbase.h"
 #include <assert.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -41,6 +42,88 @@ static int nConsultas;
 static int hookEstado(const char *u) { (void)u; nConsultas++; return estadoFalso; }
 static long relogio;
 static long hookRelogio(void) { return relogio; }
+
+static void cartaz_reativar_hook(void) {
+  posterprov_hook_estado(hookEstado);
+  posterprov_hook_relogio(hookRelogio);
+}
+
+static void cartaz_reativar_cenario(PosterProvCfg cfg, int addonVence) {
+  posterprov_preferir_addon(addonVence);
+  posterprov_configurar(&cfg);
+  estadoFalso = 0;
+  nConsultas = 0;
+  relogio = 0;
+  cartaz_reativar_hook();
+}
+
+typedef struct {
+  const char *nome;
+  const char *imdb;
+  long tmdb;
+  const char *tipo;
+  int espera_prov;
+  const char *url_esperada;
+} CasoIdentidade;
+
+static void checar_idbase_limite(const char *id, const char *base) {
+  char buf[32];
+  idbase_copiar(id, buf, sizeof buf);
+  IGUAL(buf, base);
+}
+
+static void caracterizar_identidade_cartaz(const CasoIdentidade *casos, int n) {
+  PosterProvCfg c = spatial("https://70708-char.local", "TOK708");
+  char orig[PP_URL_MAX];
+  int i;
+  snprintf(orig, sizeof orig, "https://origem-local/708/portrait.jpg");
+  cartaz_reativar_cenario(c, 0);
+  for (i = 0; i < n; i++) {
+    const CasoIdentidade *caso = &casos[i];
+    const char *url;
+    char hbase[32];
+    int nant, ndep;
+    casos[i].imdb ? 0 : assert(0);
+    idbase_copiar(caso->imdb, hbase, sizeof hbase);
+    nant = nConsultas;
+    url = posterprov_card_formato(NULL, caso->imdb, caso->tmdb, caso->tipo, orig, 0);
+    ndep = nConsultas - nant;
+    if (caso->espera_prov) {
+      IGUAL(url, caso->url_esperada);
+      assert(posterprov_e_provedor(url));
+      assert(ndep == 1);
+    } else {
+      IGUAL(url, orig);
+      assert(!posterprov_e_provedor(url));
+      assert(ndep == 0);
+    }
+    estadoFalso = 1;
+    nConsultas = 0;
+    nant = nConsultas;
+    url = posterprov_card_formato(NULL, caso->imdb, caso->tmdb, caso->tipo, orig, 0);
+    if (caso->espera_prov) {
+      IGUAL(url, caso->url_esperada);
+      assert(nConsultas == 1);
+    } else {
+      IGUAL(url, orig);
+      assert(nConsultas == 0);
+    }
+    estadoFalso = -1;
+    nConsultas = 0;
+    url = posterprov_card_formato(NULL, caso->imdb, caso->tmdb, caso->tipo, orig, 0);
+    IGUAL(url, orig);
+    if (caso->espera_prov) assert(nConsultas == 1);
+    else assert(nConsultas == 0);
+    estadoFalso = 1;
+    url = posterprov_card_formato(NULL, caso->imdb, caso->tmdb, caso->tipo, orig, 0);
+    IGUAL(url, orig);
+    if (caso->espera_prov) assert(nConsultas == 0);
+    else assert(nConsultas == 0);
+    assert(idbase_len(caso->imdb) == strlen(hbase));
+    cartaz_reativar_cenario(c, 0);
+    (void)caso->nome;
+  }
+}
 
 // ---- portao
 static volatile int simult, pico;
@@ -139,6 +222,46 @@ int main(void) {
     assert(!posterprov_montar_url(&c, "tt0111161", 0, "series", u, 200));
     assert(u[0] == 0); }
   ok("SpatialPosters: URL por tipo/id, token, estavel, recusa o que nao entende");
+
+  // ---------------------------------------------------------- identidade id/sufixo (comportamento atual #708)
+  // Provider ON, preferencia do addon OFF, formato retrato (landscape=0). URLs sinteticas locais.
+  // idbase_* descreve a fronteira do titulo base, mas o posterprov usa o id cheio em hash_item().
+  { CasoIdentidade casos[] = {
+      { "imdb base", "tt0944947", 0, "series", 1,
+        "https://70708-char.local/api/poster/series/tt0944947?fmt=jpeg&config=TOK708" },
+      { "imdb sufixo S01E05", "tt0944947:1:5", 0, "series", 0, NULL },
+      { "imdb sufixo S02E10", "tt0944947:2:10", 0, "series", 0, NULL },
+      { "tmdb:t base", "tmdb:t1399", 0, "series", 1,
+        "https://70708-char.local/api/poster/series/1399?fmt=jpeg&config=TOK708" },
+      { "tmdb:t sufixo zero explicito", "tmdb:t1399:0:5", 0, "series", 1,
+        "https://70708-char.local/api/poster/series/1399?fmt=jpeg&config=TOK708" },
+      { "tmdb:t sufixo S02E03", "tmdb:t1399:2:3", 0, "series", 1,
+        "https://70708-char.local/api/poster/series/1399?fmt=jpeg&config=TOK708" },
+      { "imdb base + tmdb positivo", "tt0944947", 1399, "series", 1,
+        "https://70708-char.local/api/poster/series/tt0944947?fmt=jpeg&config=TOK708" },
+      { "imdb sufixo + tmdb positivo", "tt0944947:1:5", 1399, "series", 1,
+        "https://70708-char.local/api/poster/series/tt0944947?fmt=jpeg&config=TOK708" }
+    };
+    checar_idbase_limite("tt0944947:1:5", "tt0944947");
+    checar_idbase_limite("tmdb:t1399:2:3", "tmdb:t1399");
+    caracterizar_identidade_cartaz(casos, (int)(sizeof casos / sizeof casos[0]));
+    cartaz_reativar_cenario(spatial("https://70708-char.local", "TOK708"), 0);
+    estadoFalso = 1;
+    { const char *orig = "https://origem-local/708/portrait.jpg";
+      const char *u = "https://70708-char.local/api/poster/series/1399?fmt=jpeg&config=TOK708";
+      IGUAL(posterprov_card_formato(NULL, "tmdb:t1399", 0, "series", orig, 0), u);
+      IGUAL(posterprov_card_formato(NULL, "tmdb:t1399:2:3", 0, "series", orig, 0), u);
+      estadoFalso = -1;
+      nConsultas = 0;
+      IGUAL(posterprov_card_formato(NULL, "tmdb:t1399", 0, "series", orig, 0), orig);
+      assert(nConsultas == 1);
+      IGUAL(posterprov_card_formato(NULL, "tmdb:t1399:2:3", 0, "series", orig, 0), u);
+      assert(nConsultas == 0);
+      IGUAL(posterprov_card_formato(NULL, "tmdb:t1399:2:3", 0, "series", orig, 0), orig);
+      assert(nConsultas == 0);
+    }
+    cartaz_reativar_cenario(spatial("https://70708-char.local", "TOK708"), 0); }
+  ok("identidade cartaz: base vs sufixo imdb/tmdb, falha lembrada por chave cheia");
 
   // ---------------------------------------------------------- RPDB
   memset(&c, 0, sizeof c);
@@ -278,8 +401,7 @@ int main(void) {
   ok("redacao: nem token nem chave chegam ao log");
 
   // ---------------------------------------------------------- card / falhas
-  posterprov_hook_estado(hookEstado);
-  posterprov_hook_relogio(hookRelogio);
+  cartaz_reativar_hook();
   c = spatial("https://p.exemplo.com", "TOK");
   posterprov_configurar(&c);
   assert(posterprov_ativo());
