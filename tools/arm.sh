@@ -149,7 +149,7 @@ ctr_run --rm --platform "$BUILD_PLATFORM" --env-file "$ENVF" \
     DTS=${NUVIO_DTS_ROOT:-/opt/nuvio-dts}
     [ -f "$DTS/include/libavcodec/avcodec.h" ] || { echo "FFmpeg DTS ausente; reconstrua tools/Dockerfile ou use NUVIO_DTS_FFMPEG=0" >&2; exit 2; }
     DTS_CFLAGS="-DNV_DTS_FFMPEG -DNV_DTS_WEBOS_RECOVERY -I$DTS/include"
-    DTS_LIBS="-L$DTS/lib -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lpthread -lm"
+    DTS_LIBS="-L$DTS/lib -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lz -lpthread -lm"
   fi
   DV7_LIBS=""
   if [ "${NUVIO_DV7:-1}" = 1 ] && [ "${NUVIO_DTS_FFMPEG:-1}" = 1 ]; then
