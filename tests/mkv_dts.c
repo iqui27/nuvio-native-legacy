@@ -53,6 +53,16 @@ int main(void) {
   { int nums[1] = {2}, kinds[1] = {0};
     nv_mkv_dts_scan(file.b, cluster_at, nums, kinds, 1);
     assert(kinds[0] == NV_DTS_KIND_UNKNOWN); }
+  /* Track names: what they state, only when they state it. */
+  assert(nv_mkv_dts_nome("DTS-HD MA 5.1") == NV_DTS_KIND_MA);
+  assert(nv_mkv_dts_nome("DTS-HD Master Audio 7.1") == NV_DTS_KIND_MA);
+  assert(nv_mkv_dts_nome("English DTS-HD.MA 5.1") == NV_DTS_KIND_MA);
+  assert(nv_mkv_dts_nome("DTS:X 7.1") == NV_DTS_KIND_MA);
+  assert(nv_mkv_dts_nome("DTS-HD HRA 7.1") == NV_DTS_KIND_HD);
+  assert(nv_mkv_dts_nome("dts hd high resolution") == NV_DTS_KIND_HD);
+  assert(nv_mkv_dts_nome("DTS 5.1") == NV_DTS_KIND_UNKNOWN);
+  assert(nv_mkv_dts_nome("Commentary") == NV_DTS_KIND_UNKNOWN);
+  assert(nv_mkv_dts_nome("") == NV_DTS_KIND_UNKNOWN && nv_mkv_dts_nome(NULL) == NV_DTS_KIND_UNKNOWN);
   puts("mkv_dts: ok");
   return 0;
 }

@@ -2563,6 +2563,9 @@ static void *lerMkv(void *arg) {
   dvSondado = 1;
   // Publish audio only after the complete DV admission decision. The release
   // store in completarAudioMkv makes this metadata visible to the main pump.
+  // DTS tracks the prefetched head could not tell apart (no frames in it):
+  // one longer read, after the DV decision, so only the audio labels wait.
+  mkv_dts_alem(url,fx,n);
   completarAudioMkv(fx,n,audioEpoch);
   fioMkvVivo = 0;
   return NULL;

@@ -7,6 +7,7 @@
  * substream (sync 0x64582025) after the core; a lossless one (Master Audio)
  * an XLL asset in it (sync 0x41A29547). DTS:X is Master Audio here. */
 #include <stddef.h>
+#include <string.h>
 
 enum { NV_DTS_KIND_UNKNOWN = 0, NV_DTS_KIND_CORE, NV_DTS_KIND_HD, NV_DTS_KIND_MA };
 
@@ -73,6 +74,24 @@ static inline int nv_mkv_dts_scan_level(const unsigned char *p, long n, const in
     o += (long)size;
   }
   return left;
+}
+/* The kind a track's name states ("DTS-HD MA 5.1", "DTS-HD Master Audio",
+ * "DTS:X", "DTS-HD HRA"), for a track whose frames were not in the probe.
+ * Separators and case are ignored; a name that only says "DTS" states
+ * nothing (it is how plain and HD tracks alike are often named). */
+static inline int nv_mkv_dts_nome(const char *nome) {
+  char c[64];
+  size_t n = 0;
+  if (!nome) return NV_DTS_KIND_UNKNOWN;
+  for (; *nome && n + 1 < sizeof c; nome++) {
+    char ch = *nome;
+    if (ch == ' ' || ch == '-' || ch == '_' || ch == '.' || ch == ':' || ch == '/') continue;
+    c[n++] = (char)(ch >= 'A' && ch <= 'Z' ? ch - 'A' + 'a' : ch);
+  }
+  c[n] = 0;
+  if (strstr(c, "hdma") || strstr(c, "masteraudio") || strstr(c, "dtsx")) return NV_DTS_KIND_MA;
+  if (strstr(c, "dtshd") || strstr(c, "highresolution")) return NV_DTS_KIND_HD;
+  return NV_DTS_KIND_UNKNOWN;
 }
 static inline void nv_mkv_dts_scan(const unsigned char *p, long n, const int *numbers,
                                    int *kinds, int count) {
