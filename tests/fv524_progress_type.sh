@@ -1,7 +1,8 @@
 #!/bin/bash
 # #524: opposite-type shared-base-id progress application at cat_definir_tudo boundary.
 # UNEXECUTED characterization — central has NOT authorized compile/link/run for this lease.
-# When authorized: SANITIZE=1 bash tests/fv524_progress_type.sh
+# Non-executable reference recipe: always exits 2. Activation needs a separately
+# authorized edit that removes the guard below and uncomments the build lines.
 set -eu
 cd "$(dirname "$0")/.."
 echo "fv524_progress_type: NOTRUN (compile/runtime blocked for this lease)" >&2

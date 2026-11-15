@@ -15,6 +15,7 @@ const char *dados_dir(void)             { return ""; }
 const char *sessao_usuario(void)        { return ""; }
 int         perfis_ativo(void)          { return 1; }
 const char *desc_genero_pt(const char *g) { return g; }
+int         ajustes_fonte_biblioteca(void) { return 0; }
 int prog_gravar_local(const char *imdb, int t, int e, double p, double d, int tocou) {
   (void)imdb; (void)t; (void)e; (void)p; (void)d; (void)tocou; return 1;
 }
@@ -91,7 +92,7 @@ static void expect_newer_movie_vetoes_disk(void) {
 }
 
 static void expect_different_id_ignored(void) {
-  CatItem v[2];
+  CatItem v[2] = {0};
   prog_series_default();
   snprintf(v[0].imdb, sizeof v[0].imdb, "%s", OTHER);
   snprintf(v[0].tipo, sizeof v[0].tipo, "series");
@@ -115,7 +116,7 @@ static void expect_short_duration_skipped(void) {
 }
 
 static void expect_same_type_espalhar_only(void) {
-  CatItem v[3];
+  CatItem v[3] = {0};
   nProg = 0;
   snprintf(v[0].imdb, sizeof v[0].imdb, "%s", BASE);
   snprintf(v[0].tipo, sizeof v[0].tipo, "series");
