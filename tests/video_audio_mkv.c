@@ -70,5 +70,23 @@ int main(void) {
     list[0]=native("aac","en",2,0);
     assert(nv_audio_mkv_merge(list,1,NV_FAIXA_MAX,&hd,1,map)==2);
     assert(strstr(list[1].rotulo,"DTS-HD") && !strstr(list[1].rotulo,"DTS-HD MA")); }
+  // DTS "Off": labels only, on the TV's own rows (Hateful Eight, 16/11: two
+  // English DTS rows, the file's tracks without language).
+  { NvAudioMkvTrack h8[]={{2,6,"A_DTS","","x",3},{3,6,"A_DTS","","x",1},{4,6,"A_AC3","spa","x",0}};
+    list[0]=native("dts","en",6,0);list[1]=native("dts","en",6,1);list[2]=native("ac3","es",6,2);
+    for(int i=0;i<2;i++)snprintf(list[i].rotulo,sizeof list[i].rotulo,"English  \xc2\xb7  DTS 5.1");
+    snprintf(list[2].rotulo,sizeof list[2].rotulo,"Spanish  \xc2\xb7  AC-3 5.1");
+    assert(nv_audio_mkv_rotular(list,3,h8,3)==1);
+    assert(!strcmp(list[0].rotulo,"English  \xc2\xb7  DTS-HD MA 5.1"));
+    assert(!strcmp(list[1].rotulo,"English  \xc2\xb7  DTS 5.1"));
+    assert(!strcmp(list[2].rotulo,"Spanish  \xc2\xb7  AC-3 5.1"));
+    assert(list[0].numero==0 && list[1].numero==1 && !strcmp(list[0].codec,"dts"));
+    assert(nv_audio_mkv_rotular(list,3,h8,3)==0);   // idempotent
+    // The TV left one DTS row out: which file track the other is can't be told.
+    { NvAudioMkvTrack amb[]={{2,6,"A_DTS","en","x",3},{3,6,"A_DTS","en","x",1}};
+      list[0]=native("dts","en",6,0);
+      snprintf(list[0].rotulo,sizeof list[0].rotulo,"English  \xc2\xb7  DTS 5.1");
+      assert(nv_audio_mkv_rotular(list,1,amb,2)==0);
+      assert(!strcmp(list[0].rotulo,"English  \xc2\xb7  DTS 5.1")); } }
   puts("PASS missing MKV DTS: two repeated DTS + four FLAC, stable native indices, exact identities, refresh, ambiguity, single-track and capacity");
 }

@@ -34,6 +34,27 @@ static inline void nv_audio_mkv_rotulo_hd(VideoFaixa *f, const NvAudioMkvTrack *
 static inline int nv_audio_mkv_dts(const char *codec) {
   return !strncmp(audioinfo_codec(codec),"DTS",3);
 }
+/* Labels only, list untouched: the TV rows paired with a DTS-HD track of the
+ * file say so. For DTS "Off" in Settings, where no row is recovered (the TV
+ * plays DTS itself), the pairing is the merge's (whole ordered list), so two
+ * identical rows are never guessed. Returns how many labels changed. */
+static inline int nv_audio_mkv_rotular(VideoFaixa *list,int n,const NvAudioMkvTrack *file,int count) {
+  NvDvAudioTrack tv[NV_FAIXA_MAX], mkv[NV_FAIXA_MAX];
+  int mudou=0;
+  if(n<1 || n>NV_FAIXA_MAX || count<1 || count>NV_FAIXA_MAX)return 0;
+  for(int i=0;i<count;i++)mkv[i]=(NvDvAudioTrack){file[i].codec,file[i].idioma,file[i].canais};
+  for(int i=0;i<n;i++)tv[i]=(NvDvAudioTrack){list[i].codec,list[i].idioma,list[i].canais};
+  for(int i=0;i<n;i++) {
+    if(list[i].numero<0)continue;
+    int m=nv_dvaudio_lista(n,count,i,tv,mkv,ling_casa,audioinfo_codec);
+    if(m<0 || !nv_audio_mkv_dts(file[m].codec) || file[m].dts_kind<2)continue;
+    char antes[sizeof list[i].rotulo];
+    snprintf(antes,sizeof antes,"%s",list[i].rotulo);
+    nv_audio_mkv_rotulo_hd(&list[i],&file[m]);
+    mudou+=strcmp(antes,list[i].rotulo)!=0;
+  }
+  return mudou;
+}
 /* Preserve every native selectTrack index. Only definitely missing DTS rows
  * get a negative native index and an explicit file identity. Never infer which
  * of two identical tracks a filtered/ambiguous firmware entry represents. */

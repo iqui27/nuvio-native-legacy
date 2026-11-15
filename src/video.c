@@ -2239,6 +2239,11 @@ static void audioMkvAplicar(void) {
       printf("[audio-mkv] native=%d file=%d visible=%d recoveredDts=%d\n",before,audioMkvCount,nAudio,nAudio-before);
       fflush(stdout);
     }
+  } else if(audioMkvCount) {
+    /* DTS "Off": the TV's list stays as it is, but its DTS-HD rows still say
+     * so (tester 16/11: Hateful Eight, both "DTS 5.1" with DTS off). */
+    int k=nv_audio_mkv_rotular(faixaAudio,nAudio,audioMkvTracks,audioMkvCount);
+    if(k){printf("[audio-mkv] DTS off: %d DTS-HD label(s) on the TV's rows\n",k);fflush(stdout);}
   }
   __atomic_store_n(&audioMkvPending,0,__ATOMIC_RELEASE);
   pthread_mutex_unlock(&audioMkvLock);
