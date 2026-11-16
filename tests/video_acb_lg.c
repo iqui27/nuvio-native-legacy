@@ -8,6 +8,8 @@
 static int fake_sleep(const struct timespec *, struct timespec *);
 #define nanosleep fake_sleep
 #include "../src/video.c"
+/* DTS-HD detection reads the MKV probe (mkv.c, not linked here): unknown. */
+int mkv_dts_kind(int numero) { (void)numero; return 0; }
 #undef nanosleep
 
 /* The official native HTTP payload reads device buffering preferences. */
