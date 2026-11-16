@@ -3222,10 +3222,13 @@ typedef struct {
   int status, valid, overflow, range_headers;
   int64_t start, end, total, requested, limit;
   volatile int *cancel, *urgent;
-  uint64_t progress_ms;
+  uint64_t progress_ms, urgent_ms;
+  uint64_t urgent_bytes;
+  int urgent_started;
   long long progress_bytes;
   unsigned idle_ms;
   int *stalled;
+  int retry_seen, retry_seconds;
 } DtsRange;
 /* Reject values outside int64_t instead of relying on overflowing scanf. */
 static int dtsRangeNumber(const char **text, int64_t *value) {
@@ -3262,6 +3265,9 @@ static size_t dtsRangeHeader(void *data, size_t size, size_t count, void *user) 
     const char *space = memchr(p, ' ', n);
     r->status = space ? atoi(space + 1) : 0;
     r->valid = 0; r->total = -1; r->range_headers = 0;
+    r->retry_seen = r->retry_seconds = 0;
+  } else if (n > 12 && !strncasecmp(p, "Retry-After:", 12)) {
+    r->retry_seen = 1; r->retry_seconds = retrySegundos(p + 12, n - 12);
   } else if (n > 14 && !strncasecmp(p, "Content-Range:", 14)) {
     int64_t lo, hi, total = -1;
     const char *value;
@@ -3315,8 +3321,37 @@ static int dtsRangeProgress(void *user, long long dt, long long dn,
   if(r->cancel && __atomic_load_n(r->cancel,__ATOMIC_RELAXED)) return 1;
   uint64_t now=pedidoAgoraMs();
   if(dn!=r->progress_bytes) { r->progress_bytes=dn; r->progress_ms=now; }
+  int urgent=r->urgent?__atomic_load_n(r->urgent,__ATOMIC_RELAXED):0;
+  if(urgent>=2) {
+    if(!r->urgent_started) {
+      r->urgent_started=1;r->urgent_ms=now;r->urgent_bytes=r->body.n;
+    }
+    int complete=r->valid && r->end>=r->start &&
+      r->body.n>=(uint64_t)(r->end-r->start+1);
+    // Retry a stalled hole quickly, but keep useful bytes that still arrive.
+    // Repeatedly restarting a progressing 4 MiB body can itself create a gap.
+    // The existing whole-request timeout still bounds a slow origin.
+    uint64_t budget=5000;
+    if(urgent>=3 && r->valid && r->end>=r->start &&
+       r->body.n<(uint64_t)(r->end-r->start+1)*3/4)budget=3000;
+    if(!complete && now>=r->urgent_ms && now-r->urgent_ms>=budget) {
+      uint64_t gained=r->body.n>=r->urgent_bytes?r->body.n-r->urgent_bytes:0;
+      if(gained>=65536 && now>=r->progress_ms &&
+         now-r->progress_ms<(r->idle_ms?r->idle_ms:2500)) {
+        printf("[range-progress] start=%lld waitMs=%llu got=%llu gained=%llu kept=1\n",
+          (long long)r->requested,(unsigned long long)(now-r->urgent_ms),
+          (unsigned long long)r->body.n,(unsigned long long)gained);
+        fflush(stdout);r->urgent_ms=now;r->urgent_bytes=r->body.n;
+      } else {
+        if(r->stalled) *r->stalled=1;
+        printf("[range-budget] start=%lld waitMs=%llu got=%llu budgetMs=%llu\n",(long long)r->requested,
+          (unsigned long long)(now-r->urgent_ms),(unsigned long long)r->body.n,(unsigned long long)budget);
+        fflush(stdout);return 1;
+      }
+    }
+  } else r->urgent_started=0;
   if(r->urgent && r->idle_ms && now>=r->progress_ms &&
-     now-r->progress_ms>=r->idle_ms && __atomic_load_n(r->urgent,__ATOMIC_RELAXED)) {
+     now-r->progress_ms>=r->idle_ms && urgent) {
     if(r->stalled) *r->stalled=1;
     printf("[range-stall] start=%lld idleMs=%llu got=%llu\n",(long long)r->requested,
            (unsigned long long)(now-r->progress_ms),(unsigned long long)r->body.n);
@@ -3361,13 +3396,14 @@ static void *dtsRangeHeaders(const char *raw, int public_only) {
 /* `final` (8192 bytes, optional) receives the address that answered 206 when
  * at least one redirect was followed, "" otherwise; `cross` says whether that
  * address is on another origin (credential headers were NOT sent to it). */
-char *rede_baixar_trecho64_vigiado(const char *url, const char *headers,
+char *rede_baixar_trecho64_relato(const char *url, const char *headers,
                               int64_t start, int64_t end, long *size,
                               int64_t *total, int *status,
                               volatile int *cancelled, char *final, int *cross,
-                              volatile int *urgent,unsigned idle_ms,int *stalled) {
+                              volatile int *urgent,unsigned idle_ms,int *stalled,int *retry_after) {
   char current[8192], range[64], origin[128];
   int hop, public_only = 0, downgraded = 0;
+  if(retry_after) *retry_after=-1;
   if(stalled) *stalled=0;
   if (size) *size = 0;
   if (total) *total = -1;
@@ -3419,6 +3455,7 @@ char *rede_baixar_trecho64_vigiado(const char *url, const char *headers,
         snprintf(redirected, sizeof redirected, "%s", next);
     }
     if (status) *status = (int)http;
+    if (retry_after) *retry_after = r.retry_seen ? r.retry_seconds : -1;
     if (list && slist_free) slist_free(list);
     soltarHandleR(c, result, current);
     if (!result && http >= 300 && http < 400 && redirected[0]) {
@@ -3465,6 +3502,13 @@ char *rede_baixar_trecho64_vigiado(const char *url, const char *headers,
     return NULL;
   }
   return NULL;
+}
+char *rede_baixar_trecho64_vigiado(const char *url,const char *headers,
+    int64_t start,int64_t end,long *size,int64_t *total,int *status,
+    volatile int *cancelled,char *final,int *cross,volatile int *urgent,
+    unsigned idle_ms,int *stalled) {
+  return rede_baixar_trecho64_relato(url,headers,start,end,size,total,status,cancelled,
+                                   final,cross,urgent,idle_ms,stalled,NULL);
 }
 char *rede_baixar_trecho64_final(const char *url,const char *headers,
                               int64_t start,int64_t end,long *size,
@@ -3631,6 +3675,11 @@ char *rede_postar_repetindo(const char *url, int segundos, const char *const *ca
 }
 
 #ifdef __EMSCRIPTEN__
+char *rede_baixar_trecho64_relato(const char *u,const char *h,int64_t s,int64_t e,
+ long *n,int64_t *t,int *st,volatile int *c,char *f,int *x,volatile int *urgent,unsigned idle,int *stalled,int *retry_after) {
+ if(retry_after)*retry_after=-1;
+ return rede_baixar_trecho64_vigiado(u,h,s,e,n,t,st,c,f,x,urgent,idle,stalled);
+}
 int rede_fluxo64(const char *u, const char *h, int64_t s, int (*sk)(void *, const char *, size_t), void *o,
                  int64_t *t, int *st, volatile int *c, char *f, int *x, long ms, int64_t *b) {
   (void)u; (void)h; (void)s; (void)sk; (void)o; (void)c; (void)ms;

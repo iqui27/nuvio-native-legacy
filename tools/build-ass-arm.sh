@@ -31,10 +31,26 @@ export PKG_CONFIG
 
 fetch() {
   url=$1; out=$2
-  [ -f "$BUILD/$out" ] || curl -fsSL "$url" -o "$BUILD/$out"
+  shift 2
+  [ ! -f "$BUILD/$out" ] || return 0
+  for candidate in "$url" "$@"; do
+    if curl -fsSL --connect-timeout 20 --max-time 180 --retry 2 \
+        "$candidate" -o "$BUILD/$out.part"; then
+      mv "$BUILD/$out.part" "$BUILD/$out"
+      return 0
+    fi
+    rm -f "$BUILD/$out.part"
+  done
+  echo "Could not download $out from any source" >&2
+  return 1
 }
 
-fetch "https://download-mirror.savannah.gnu.org/releases/freetype/freetype-${FREETYPE_VERSION}.tar.xz" freetype.tar.xz
+fetch "https://downloads.sourceforge.net/project/freetype/freetype2/${FREETYPE_VERSION}/freetype-${FREETYPE_VERSION}.tar.xz" freetype.tar.xz \
+  "https://download.savannah.gnu.org/releases/freetype/freetype-${FREETYPE_VERSION}.tar.xz" \
+  "https://ftp.osuosl.org/pub/blfs/conglomeration/freetype/freetype-${FREETYPE_VERSION}.tar.xz"
+if [ "$FREETYPE_VERSION" = 2.13.3 ]; then
+  printf '%s  %s\n' 0550350666d427c74daeb85d5ac7bb353acba5f76956395995311a9c6f063289 "$BUILD/freetype.tar.xz" | sha256sum -c -
+fi
 tar -xf "$BUILD/freetype.tar.xz" -C "$BUILD"
 cd "$BUILD/freetype-${FREETYPE_VERSION}"
 ./configure --host="${CC%-gcc}" --prefix="$PREFIX" --enable-static --disable-shared --without-zlib --without-bzip2 --without-png --without-brotli --without-harfbuzz

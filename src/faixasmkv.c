@@ -278,7 +278,10 @@ static int acrescentarOverlay(VideoFaixa *leg, int nLeg, int max, const MkvFaixa
     if (k < nLeg) continue;
     memset(&leg[nLeg], 0, sizeof leg[nLeg]);
     // Unique negative identities keep recovered text tracks distinct in the selector.
-    leg[nLeg].numero = texto ? -2 - (ord - 1) : -1;
+    // Image (PGS) tracks need them too: the selector keys every row by this
+    // number, and a shared -1 pinned the focus (and the pick) to the first PGS
+    // row. They take their own range so they never meet the text tracks'.
+    leg[nLeg].numero = texto ? -2 - (ord - 1) : FAIXASMKV_IMAGEM_NUMERO(ord - 1);
     leg[nLeg].stream_index = -1;
     snprintf(leg[nLeg].codec, sizeof leg[nLeg].codec, "%s", fx[j].codec);
     leg[nLeg].ordinalMkv = ord - 1;

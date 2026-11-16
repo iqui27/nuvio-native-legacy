@@ -19,6 +19,8 @@ static void uxCancelar(void) {
   free(uxCategorias);uxCategorias=NULL;uxNCategorias=0;
   free(uxCategoriasAbertura);uxCategoriasAbertura=NULL;
   uxEditor = uxRestaurar = uxConfirmar = uxRodape = uxAvisoRisco = 0;
+  uxBufferDadosFoco=0;
+  uxBufferPai.ativo=0;
   emEdicao = 0;
   if (faRetornarFolha) { frAberta = faRetornarFolha; faRetornarFolha = 0; faAddonEditar[0] = 0; }
 }
@@ -129,9 +131,30 @@ static void uxAbrirEditor(int op) {
     iptvListaSessao=nv_perfil_sessao_ler();
   }
   uxOp = op; uxOriginal = uxValorAtual(op); uxPendente = uxOriginal;
+  if(op==AJ_BUFFER && uxBufferDadosDisponivel()) {
+    uxBufferDados=valor[AJ_BUFFER_DADOS];
+    uxBufferDadosFoco=0;
+  }
   if(op==AJ_IPTV_CONTA || ajIptvGerenciador(op))iptvListaSessao=nv_perfil_sessao_ler();
   if(ajIptvGerenciador(op))iptvTipoPagina=ajIptvTipo(op);
   uxEditor = inativa(op) ? 2 : 1;
+}
+// The child keeps a separate draft. Returning must not save or discard the
+// parent's unconfirmed buffer size, nor lose the row selected by the remote.
+static void uxBufferConexaoAbrir(int foco) {
+  if(!uxBufferConexoesDisponivel() || uxOp!=AJ_BUFFER || uxEditor!=1)return;
+  int pendente=uxPendente,original=uxOriginal;
+  int op=foco==4?AJ_BUFFER_NATIVE_CONNECTIONS:AJ_BUFFER_CONVERSION_CONNECTIONS;
+  uxAbrirEditor(op);
+  if(uxEditor && uxOp==op) {
+    uxBufferPai.ativo=1;uxBufferPai.pendente=pendente;
+    uxBufferPai.original=original;uxBufferPai.foco=foco;
+  }
+}
+static void uxBufferVoltar(void) {
+  int pendente=uxBufferPai.pendente,original=uxBufferPai.original,foco=uxBufferPai.foco;
+  uxAbrirEditor(AJ_BUFFER);
+  uxPendente=pendente;uxOriginal=original;uxBufferDadosFoco=foco;
 }
 // The generic choice page supplies the provider list, account actions and
 // delete confirmation. A new account uses the normal Settings field controls.
@@ -214,7 +237,38 @@ static int uxRiscoFinal(int op, int novo) {
   if (op == AJ_ITENS_FILEIRA && novo > 0 && novo > uxValorAtual(op)) return SEG_AVISO_ITENS;
   return 0;
 }
+static void uxBufferOpcaoAlternar(int op) {
+  if(!overlayAlternar(op))uxNotificar("Não foi possível salvar. O valor anterior foi mantido.");
+  uxBufferDados=valor[AJ_BUFFER_DADOS];
+}
+static void uxBufferDadosAlternar(void) { uxBufferOpcaoAlternar(AJ_BUFFER_DADOS); }
+
 static void uxAplicar(void) {
+  if(uxOp==AJ_BUFFER && (uxBufferDadosDisponivel() || uxBufferConexoesDisponivel())) {
+    if(valor[AJ_BUFFER]!=uxOriginal) {
+      uxOriginal=uxPendente=valor[AJ_BUFFER];
+      uxBufferDados=valor[AJ_BUFFER_DADOS];
+      uxRestaurar=uxConfirmar=0;
+      uxNotificar("O valor mudou em outra tela. Confira antes de confirmar.");return;
+    }
+    const int ops[]={AJ_BUFFER,AJ_BUFFER_DADOS,AJ_RAM_OVERLAY,AJ_RAM_VERDE,AJ_BUFFER_NATIVE_CONNECTIONS,AJ_BUFFER_CONVERSION_CONNECTIONS};
+    int count=uxBufferConexoesDisponivel()?6:4;
+    int old[6];for(int i=0;i<count;i++)old[i]=valor[ops[i]];
+    valor[AJ_BUFFER]=uxRestaurar?valorPadrao[AJ_BUFFER]:uxPendente;
+    if(uxRestaurar)for(int i=1;i<count;i++)valor[ops[i]]=valorPadrao[ops[i]];
+    if(!gravar()) {
+      for(int i=0;i<count;i++)valor[ops[i]]=old[i];
+      uxNotificar("Não foi possível salvar. O valor anterior foi mantido.");return;
+    }
+#ifdef NV_HTTP_BUFFER_DIAG
+    if (count == 6 && (old[4] != valor[AJ_BUFFER_NATIVE_CONNECTIONS] || old[5] != valor[AJ_BUFFER_CONVERSION_CONNECTIONS])) {
+      printf("[http-setting] event=restore oldNative=%d native=%d oldConversion=%d conversion=%d applies=next-video saved=1\n",
+        old[4]+1, ajustes_buffer_native_connections(), old[5]+1, ajustes_buffer_conversion_connections());
+      fflush(stdout);
+    }
+#endif
+    uxCancelar();return;
+  }
   if(uxOp==AJ_GUIA_CATEGORIAS) {
     if(!nv_perfil_sessao_atual(iptvListaSessao)) { uxCancelar();return; }
     int n=0;
@@ -269,7 +323,8 @@ static void uxAplicar(void) {
     return;
   }
   riscoNotar(uxOp, antes);
-  uxCancelar();
+  if(uxBufferPai.ativo && uxBufferConexao(uxOp))uxBufferVoltar();
+  else uxCancelar();
   uxNotificar(uxOp == AJ_PERFIL_PESQ ? "Pedido enviado ao perfil." : "Ajuste salvo nesta TV.");
   // A lista de diferenças permanece estável até sair dela, mesmo após restaurar.
 }
@@ -315,6 +370,7 @@ static int uxEvento(SDL_Keycode k) {
   if (uxEditor) {
     if (uxVoltar(k)) {
       if (uxRestaurar || uxAvisoRisco) { uxRestaurar = uxAvisoRisco = uxConfirmar = 0; }
+      else if(uxBufferPai.ativo && uxBufferConexao(uxOp))uxBufferVoltar();
       else ajIptvVoltar();
       return 1;
     }
@@ -342,6 +398,42 @@ static int uxEvento(SDL_Keycode k) {
         else if(!uxRodape)uxRodape=1;
       }
       return 1;
+    }
+    if(uxEditor==1 && uxOp==AJ_BUFFER && (uxBufferDadosDisponivel() || uxBufferConexoesDisponivel())) {
+      if(uxBufferDadosFoco) {
+        if(uxBufferDadosFoco>=4) {
+          if(uxOk(k))uxBufferConexaoAbrir(uxBufferDadosFoco);
+          else if(k==SDLK_UP)uxBufferDadosFoco=uxBufferDadosFoco==5?4:0;
+          else if(k==SDLK_DOWN) {
+            if(uxBufferDadosFoco==4)uxBufferDadosFoco=5;
+            else if(uxBufferDadosDisponivel())uxBufferDadosFoco=1;
+            else {uxBufferDadosFoco=0;uxRodape=1;}
+          }
+          return 1;
+        }
+        if(uxBufferConexoesDisponivel()) {
+          if(uxOk(k))uxBufferOpcaoAlternar(uxBufferDadosFoco==1?AJ_BUFFER_DADOS:uxBufferDadosFoco==2?AJ_RAM_OVERLAY:AJ_RAM_VERDE);
+          else if(k==SDLK_LEFT && uxBufferDadosFoco>1)uxBufferDadosFoco--;
+          else if(k==SDLK_RIGHT && uxBufferDadosFoco<3)uxBufferDadosFoco++;
+          else if(k==SDLK_UP)uxBufferDadosFoco=5;
+          else if(k==SDLK_DOWN) {uxBufferDadosFoco=0;uxRodape=1;}
+          return 1;
+        }
+        if(uxOk(k))uxBufferOpcaoAlternar(uxBufferDadosFoco==1?AJ_BUFFER_DADOS:uxBufferDadosFoco==2?AJ_RAM_OVERLAY:AJ_RAM_VERDE);
+        else if(k==SDLK_LEFT || k==SDLK_RIGHT) {
+          if(uxBufferDadosFoco==1)uxBufferDadosAlternar();
+          else uxBufferDadosFoco=k==SDLK_LEFT?3:2;
+        } else if(k==SDLK_UP)uxBufferDadosFoco=uxBufferDadosFoco==1?(uxBufferConexoesDisponivel()?5:0):1;
+        else if(k==SDLK_DOWN) {
+          if(uxBufferDadosFoco==1)uxBufferDadosFoco=2;
+          else { uxBufferDadosFoco=0;uxRodape=1; }
+        }
+        return 1;
+      }
+      if(k==SDLK_DOWN && (uxRodape || uxPendente==nValores(uxOp)-1)) {
+        uxRodape=0;uxBufferDadosFoco=uxBufferConexoesDisponivel()?4:1;return 1;
+      }
+      if(k==SDLK_UP && uxRodape) { uxRodape=0;uxBufferDadosFoco=uxBufferDadosDisponivel()?(uxBufferConexoesDisponivel()?1:2):5;return 1; }
     }
     // NA LINHA (segmentado, interruptor, cor de destaque): as setas laterais
     // movem o valor pendente; nao ha rodape de "Restaurar padrao" ali.

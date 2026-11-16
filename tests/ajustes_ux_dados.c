@@ -764,7 +764,7 @@ int main(void) {
   assert(indiceResultado(AJ_PS_CONTINUAR, ajustes_buscar("continuar escolha", resultados, AJ_N)) >= 0);
   // DTS convertido em: local, last, default Estereo (AAC) = today, once on screen, findable.
   assert(AJ_DTS_AC3 == AJ_PS_CONTINUAR + 1 && AJ_DTS_AC3 == AJ_FONTE_ESCOPO + 12);
-  assert(!strcmp(CHAVE[AJ_DTS_AC3], "dtsSaidaLocal") && OPCOES[AJ_DTS_AC3].n == 2 && valorPadrao[AJ_DTS_AC3] == 0 && !ajustes_dts_ac3());
+  assert(!strcmp(CHAVE[AJ_DTS_AC3], "dtsSaidaLocal") && OPCOES[AJ_DTS_AC3].n == 3 && valorPadrao[AJ_DTS_AC3] == 0 && !ajustes_dts_ac3() && !ajustes_dts_desligado());
   assert(somenteDesteAparelho(AJ_DTS_AC3) && !dePerfil(AJ_DTS_AC3));
   { int vz = 0, k; for (k = 0; k < AJ_N_TELA; k++) if (TELA[k].tipo == IT_OPC && TELA[k].op == AJ_DTS_AC3) vz++; assert(vz == 1); }
   assert(indiceResultado(AJ_DTS_AC3, ajustes_buscar("dolby digital", resultados, AJ_N)) >= 0);

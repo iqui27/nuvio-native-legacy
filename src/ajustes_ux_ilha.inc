@@ -880,11 +880,13 @@ static float aj2CabecalhoEditor(GfxRect m) {
   char k[200], linha[320], padrao[160];
   const char *b = uxBloco(uxOp);
   float x = m.x + 52, y = m.y + 40;
-  if (b[0]) snprintf(k, sizeof k, "%s · %s", i18n(uxCaminho(uxOp)), i18n(b));
+  if (uxBufferPai.ativo && uxBufferConexao(uxOp))
+    snprintf(k, sizeof k, "%s › %s › HTTP connections", i18n(uxCaminho(AJ_BUFFER)), i18n(rotuloOpcao(AJ_BUFFER)));
+  else if (b[0]) snprintf(k, sizeof k, "%s · %s", i18n(uxCaminho(uxOp)), i18n(b));
   else snprintf(k, sizeof k, "%s", i18n(uxCaminho(uxOp)));
   ajCaps(TXT_V2_KICK, k, 2.52f, x, y + (21.8f - 19.0f * 1.21f) * 0.5f, 0.45f);
   y += 21.8f + 4.0f;
-  { TxtLinha t = ajTxtC(TXT_V2_TIT, rotuloOpcao(uxOp), m.w - 104);
+  { TxtLinha t = ajTxtC(TXT_V2_TIT, uxBufferPai.ativo && uxBufferConexao(uxOp)?uxBufferNome(uxOp):rotuloOpcao(uxOp), m.w - 104);
     txt_desenhar(t, x, y + (62.9f - t.h) * 0.5f); y += 62.9f + 8.0f; }
   if (ajPadraoVisual(uxOp) >= 0) uxValorTexto(uxOp, ajPadraoVisual(uxOp), padrao, sizeof padrao);
   if (ajPadraoVisual(uxOp) >= 0) snprintf(linha, sizeof linha, i18n("%s · Padrão: %s"), i18n(uxEscopoValor(uxOp, uxPendente)), padrao);
@@ -902,13 +904,46 @@ static float aj2CabecalhoEditor(GfxRect m) {
 // clique e o de sempre (aplicar / perguntar se restaura).
 static int ajPontEditor;
 static int ajPontEdVale(void) { return uxEditor == 1 && uxOp >= 0 && !uxRestaurar && !uxAvisoRisco; }
-static void ajPontEdRodape(int a, int b) { (void)a; (void)b; if (ajPontEdVale() && uxTemPadrao(uxOp)) uxRodape = 1; }
+static void ajPontEdRodape(int a, int b) { (void)a; (void)b; if (ajPontEdVale() && uxTemPadrao(uxOp)) { uxRodape = 1;uxBufferDadosFoco=0; } }
 static void ajPontEdValor(int i, int b) {
   (void)b;
   if (!ajPontEdVale() || i < 0 || i >= nValores(uxOp) || (!uxRodape && uxPendente == i)) return;
   if (uxOp == AJ_TEX_MB && texAcima(i)) return;
   if (uxOp == AJ_SALVOS_DEST && !ajustes_fonte_oferecida(i, trakt_ativo(), simkl_ativo())) return;
-  uxRodape = 0; uxPendente = i;
+  uxRodape = 0; uxPendente = i;uxBufferDadosFoco=0;
+}
+static void ajPontBufferDados(int a,int b) {
+  (void)a;(void)b;
+  if(ajPontEdVale() && uxOp==AJ_BUFFER && uxBufferDadosDisponivel()) {
+    uxRodape=0;uxBufferDadosFoco=1;
+    if(!uxBufferConexoesDisponivel())uxPendente=uxOriginal;
+  }
+}
+static void ajPontBufferAlternar(int a,int b) {
+  ajPontBufferDados(a,b);
+  if(ajPontEdVale() && uxOp==AJ_BUFFER && uxBufferDadosDisponivel())uxBufferDadosAlternar();
+}
+static void ajPontRamFoco(int a,int b) {
+  (void)b;
+  if(ajPontEdVale() && uxOp==AJ_BUFFER && uxBufferDadosDisponivel()) {
+    uxRodape=0;uxBufferDadosFoco=a;
+    if(!uxBufferConexoesDisponivel())uxPendente=uxOriginal;
+  }
+}
+static void ajPontRamAlternar(int a,int b) {
+  ajPontRamFoco(a,b);
+  if(ajPontEdVale() && uxOp==AJ_BUFFER && uxBufferDadosDisponivel())
+    uxBufferOpcaoAlternar(a==2?AJ_RAM_OVERLAY:AJ_RAM_VERDE);
+}
+static void ajPontBufferConexaoFoco(int foco,int b) {
+  (void)b;
+  if(ajPontEdVale() && uxOp==AJ_BUFFER && uxBufferConexoesDisponivel()) {
+    uxRodape=0;uxBufferDadosFoco=foco;
+  }
+}
+static void ajPontBufferConexaoAbrir(int foco,int b) {
+  ajPontBufferConexaoFoco(foco,b);
+  if(ajPontEdVale() && uxOp==AJ_BUFFER)uxBufferConexaoAbrir(foco);
 }
 static void ajIptvToqueEscolher(int i,int b) {
   if(!ajPontEdVale() || (uxOp!=AJ_GUIA_CATEGORIAS && uxOp!=AJ_IPTV_CONTA && !ajIptvMenu(uxOp)) || i<0 || i>=nValores(uxOp))return;
@@ -934,14 +969,15 @@ static void aj2RodapeEditor(GfxRect m, float colW, const AjDica *d, int n) {
   if(uxOp==AJ_GUIA_CATEGORIAS)return;
   if (ajRetrato()) y -= 76.0f;
   if (uxTemPadrao(uxOp)) {
-    TxtLinha t = uxRodape ? ajTxtT(TXT_V2_SEG, "Restaurar padrão") : ajTxt(TXT_V2_SEG, "Restaurar padrão");
+    int foco=uxRodape==1;
+    TxtLinha t = foco ? ajTxtT(TXT_V2_SEG, "Restaurar padrão") : ajTxt(TXT_V2_SEG, "Restaurar padrão");
     float w = 24 + 24 + 10 + t.w + 24;
     if (ajPontEditor) ponteiro_alvo(m.x + 52, y, w, 64, ajPontEdRodape, NULL, 0, 0);
-    if (uxRodape) ajPilulaAcento((GfxRect){ m.x + 52, y, w, 64 }, 32, 1);
+    if (foco) ajPilulaAcento((GfxRect){ m.x + 52, y, w, 64 }, 32, 1);
     else ajNeutro((GfxRect){ m.x + 52, y, w, 64 }, 32, 0.08f, AJ_CHIP_SOL, 1);
-    if (uxRodape) ajIconeT("aj_rotate-ccw-clock", m.x + 52 + 24, y + 20, 24, 1);
+    if (foco) ajIconeT("aj_rotate-ccw-clock", m.x + 52 + 24, y + 20, 24, 1);
     else ajIcone("aj_rotate-ccw-clock", m.x + 52 + 24, y + 20, 24, 0.85f);
-    txt_desenhar_alpha(t, m.x + 52 + 58, y + (64 - t.h) * 0.5f, uxRodape ? 1.0f : 0.85f);
+    txt_desenhar_alpha(t, m.x + 52 + 58, y + (64 - t.h) * 0.5f, foco ? 1.0f : 0.85f);
   }
 #ifdef NV_TOUCH_UI
   if (ajPontEditor && (ajTelaCheia() || uxOp == AJ_INTERFACE_MODO)) return;
@@ -996,7 +1032,12 @@ static float aj2PreviaEditor(int op, float x, float y, float w) {
   return ajPreviaEditor(op, x, y, w);
 }
 static float aj2EditorBase(GfxRect m) {
-  return m.y + m.h - 40.0f - 64.0f - 24.0f - (ajRetrato() ? 76.0f : 0.0f);
+  float extras=0;
+  if(uxOp==AJ_BUFFER) {
+    if(uxBufferConexoesDisponivel())extras=168.0f+(uxBufferDadosDisponivel()?80.0f:0.0f);
+    else if(uxBufferDadosDisponivel())extras=160.0f;
+  }
+  return m.y + m.h - 40.0f - 64.0f - 24.0f - (ajRetrato() ? 76.0f : 0.0f) - extras;
 }
 static void aj2EditorNumero(GfxRect m) {
   const Opcao *o = &OPCOES[uxOp];
@@ -1101,10 +1142,11 @@ static void aj2EditorEscolha(GfxRect m) {
   }
   y = aj2CabecalhoEditor(m);
   y0 = y;
+  if(uxOp==AJ_BUFFER && uxBufferConexoesDisponivel())passo=52.0f;
   if (m.w - 104 - pw - 56 < 560) pw = 0;
   lx = m.x + 52; lw = pw > 0 ? m.w - 104 - pw - 56 : m.w - 104;
   vis = (int)((aj2EditorBase(m) - y) / passo);
-  if (vis < (uxOp==AJ_GUIA_CATEGORIAS?1:3)) vis = uxOp==AJ_GUIA_CATEGORIAS?1:3;
+  if (vis < ((uxOp==AJ_GUIA_CATEGORIAS || uxOp==AJ_BUFFER)?1:3)) vis = (uxOp==AJ_GUIA_CATEGORIAS || uxOp==AJ_BUFFER)?1:3;
   primeiro = uxPendente - vis / 2;
   if (primeiro + vis > n) primeiro = n - vis;
   if (primeiro < 0) primeiro = 0;
@@ -1126,10 +1168,12 @@ static void aj2EditorEscolha(GfxRect m) {
     // aparece na lista do editor, clicar nele nao pode dar passo algum.
     if (uxOp == AJ_SALVOS_DEST && !ajustes_fonte_oferecida(i, trakt_ativo(), simkl_ativo())) { y += 100; continue; }
     char t[160];
-    int foco = !uxRodape && i == uxPendente;
+    int foco = !uxRodape && !uxBufferDadosFoco && i == uxPendente;
     GfxRect r = { lx, y, lw, passo-4.0f };
     int fv;
     uxValorTexto(uxOp, i, t, sizeof t);
+    if(uxOp==AJ_BUFFER && uxBufferConexoesDisponivel() && i>0)
+      snprintf(t,sizeof t,"%d MiB",32<<i);
     // Acima do que a RAM desta TV suporta: o rotulo fica puro e apagado, com o motivo a direita.
     if (uxOp == AJ_TEX_MB && texAcima(i)) snprintf(t, sizeof t, "%s", i18n(o->valores[i]));
     if (ajPontEditor) {
@@ -1142,7 +1186,8 @@ static void aj2EditorEscolha(GfxRect m) {
 #endif
         ponteiro_alvo(r.x, r.y, r.w, r.h, ac, ativar, i, 0);
     }
-    if (foco) ajFocoLinha(r, 28, 1, 1);
+    if (foco) ajFocoLinha(r, uxOp==AJ_BUFFER && uxBufferConexoesDisponivel()?20:28, 1, 1);
+    else if(uxOp==AJ_BUFFER && uxBufferConexoesDisponivel())gfx_anel(r,20.0f/r.h,1,1,1,1,0.12f);
     if(uxOp==AJ_GUIA_CATEGORIAS && i<uxNCategorias) {
       // A dedicated trailing checkbox cannot overlap the two text lines.
       float textoX=r.x+30,limite=fmaxf(1,r.w-104);
@@ -1174,7 +1219,7 @@ static void aj2EditorEscolha(GfxRect m) {
       }
       int indisp = uxOp == AJ_TEX_MB && texAcima(i);
       TxtLinha l = ajTxtC(TXT_V2_ROT, t, lw - 210 - (textoX - r.x));
-      txt_desenhar_alpha(l, textoX, r.y + (96 - l.h) * 0.5f, indisp ? 0.4f : foco ? 1.0f : 0.88f);
+      txt_desenhar_alpha(l, textoX, r.y + (r.h - l.h) * 0.5f, indisp ? 0.4f : foco ? 1.0f : 0.88f);
       if (indisp) {
         char mot[96];
         TxtLinha m;
@@ -1188,17 +1233,94 @@ static void aj2EditorEscolha(GfxRect m) {
     if (uxOp!=AJ_GUIA_CATEGORIAS && i == uxOriginal && uxOp!=AJ_IPTV_ACOES && uxOp!=AJ_IPTV_EXCLUIR && (!ajIptvGerenciador(uxOp) || ajIptvDoTipo(ajIptvTipo(uxOp),i)==iptv_conta_indice())) {
       TxtLinha s = ajTxt(TXT_V2_28, "Salvo");
       float sx = r.x + r.w - 30 - s.w;
-      txt_desenhar_alpha(s, sx, r.y + (96 - s.h) * 0.5f, 0.55f);
-      ajIcone("aj_check", sx - 12 - 26, r.y + 35, 26, 0.55f);
+      txt_desenhar_alpha(s, sx, r.y + (r.h - s.h) * 0.5f, 0.55f);
+      ajIcone("aj_check", sx - 12 - 26, r.y + (r.h-26)*0.5f, 26, 0.55f);
     }
     y += passo;
   }
 #ifdef NV_TOUCH_UI
   if (ajTelaCheia()) gfx_sem_recorte();
 #endif
+  if(uxOp==AJ_BUFFER && uxBufferConexoesDisponivel()) {
+    float top=aj2EditorBase(m)+8.0f;
+    ajCaps(TXT_V2_KICK,"HTTP connections",2.0f,lx,top,0.55f);
+    top+=32.0f;
+    for(int i=0;i<2;i++) {
+      int op=i?AJ_BUFFER_CONVERSION_CONNECTIONS:AJ_BUFFER_NATIVE_CONNECTIONS;
+      GfxRect row={lx,top+i*64.0f,lw,60.0f};
+      int focus=!uxRodape && uxBufferDadosFoco==i+4;
+      if(focus)ajFocoLinha(row,20,1,1);
+      else gfx_anel(row,20.0f/row.h,1,1,1,1,0.12f);
+      char value[64];uxValorTexto(op,valor[op],value,sizeof value);
+      TxtLinha v=ajTxt(TXT_V2_24,value);
+      TxtLinha t=ajTxtC(TXT_V2_24,uxBufferNome(op),fmaxf(1,row.w-v.w-100));
+      txt_desenhar_alpha(t,row.x+24,row.y+(row.h-t.h)*0.5f,focus?1:0.85f);
+      txt_desenhar_alpha(v,row.x+row.w-52-v.w,row.y+(row.h-v.h)*0.5f,0.8f);
+      aj2Chevron(row.x+row.w-24,row.y+row.h*0.5f,0.7f);
+      if(ajPontEditor)ponteiro_alvo(row.x,row.y,row.w,row.h,ajPontBufferConexaoFoco,ajPontBufferConexaoAbrir,i+4,0);
+    }
+    if(uxBufferDadosDisponivel()) {
+      float yy=top+136.0f,cw=lw/3.0f;
+      const int ops[]={AJ_BUFFER_DADOS,AJ_RAM_OVERLAY,AJ_RAM_VERDE};
+      const char *labels[]={"Buffer data","RAM overlay","Green (OSD)"};   /* kept in English (owner, 06/11/2026) */
+      gfx_cor((GfxRect){lx,yy-4,lw,1},0,1,1,1,0.14f);
+      gfx_anel((GfxRect){lx,yy+4,lw,60},16.0f/60.0f,1,1,1,1,0.12f);
+      for(int i=0;i<3;i++) {
+        GfxRect r={lx+i*cw,yy+4,cw-4,60};
+        if(uxBufferDadosFoco==i+1)ajFocoLinha(r,16,1,1);
+        i18n_pausar(1);
+        TxtLinha state=ajTxt(TXT_V3_PILL,lig(ops[i])?"On":"Off");
+        float switchEnd=r.x+r.w-12-state.w-10;
+        TxtLinha t=ajTxtC(TXT_V2_24,labels[i],fmaxf(1,switchEnd-64-r.x-24));
+        i18n_pausar(0);
+        txt_desenhar_alpha(t,r.x+12,r.y+(r.h-t.h)*0.5f,0.85f);
+        aj2ChipLiga(ops[i],switchEnd,r.y+r.h*0.5f,lig(ops[i]),1);
+        txt_desenhar_alpha(state,switchEnd+10,r.y+(r.h-state.h)*0.5f,0.65f);
+        if(i)gfx_cor((GfxRect){r.x-2,r.y+8,1,r.h-16},0,1,1,1,0.12f);
+        if(ajPontEditor)ponteiro_alvo(r.x,r.y,r.w,r.h,i?ajPontRamFoco:ajPontBufferDados,i?ajPontRamAlternar:ajPontBufferAlternar,i+1,0);
+      }
+    }
+  } else if(uxOp==AJ_BUFFER && uxBufferDadosDisponivel()) {
+    GfxRect row={lx,aj2EditorBase(m)+8.0f,lw,64.0f};
+    if(uxBufferDadosFoco==1)ajFocoLinha(row,28,1,1);
+    const char *label="Show buffer data in player";
+    TxtLinha t=ajTxtC(TXT_V2_24,label,row.w-220.0f);
+    txt_desenhar_alpha(t,row.x+24,row.y+(row.h-t.h)*0.5f,uxBufferDadosFoco==1?1.0f:0.85f);
+    aj2PilulaEstado(-1,row.x+row.w-24,row.y+row.h*0.5f,uxBufferDados==0,1);
+    if(ajPontEditor)ponteiro_alvo(row.x,row.y,row.w,row.h,ajPontBufferDados,ajPontBufferAlternar,0,0);
+    row.y+=72.0f;
+    GfxRect main=row;
+    float pillW=64.0f+fmaxf(ajTxt(TXT_V3_PILL,"Desligado").w,ajTxt(TXT_V3_PILL,"Ligado").w);
+    float greenW=fminf(300.0f,fmaxf(160.0f,row.w-pillW-172.0f));
+    GfxRect green={row.x+row.w-24.0f-pillW-24.0f-greenW,row.y,greenW,row.h};
+    if(uxBufferDadosFoco==2)ajFocoLinha(main,28,1,1);
+    if(uxBufferDadosFoco==3)ajFocoLinha(green,28,1,1);
+    float labelW=green.x-main.x-48.0f;
+    const char *ramLabel=labelW<160.0f?"RAM":"RAM overlay";
+    t=ajTxtC(TXT_V2_24,ramLabel,labelW);
+    txt_desenhar_alpha(t,main.x+24,main.y+(main.h-t.h)*0.5f,0.85f);
+    aj2PilulaEstado(-1,main.x+main.w-24,main.y+main.h*0.5f,ajustes_ram_overlay(),1);
+    t=ajTxtC(TXT_V2_24,"Green button",green.w-110.0f);
+    txt_desenhar_alpha(t,green.x+12,green.y+(green.h-t.h)*0.5f,0.85f);
+    aj2ChipLiga(AJ_RAM_VERDE,green.x+green.w-24,green.y+green.h*0.5f,ajustes_ram_verde(),1);
+    if(ajPontEditor) {
+      ponteiro_alvo(main.x,main.y,green.x-main.x,main.h,ajPontRamFoco,ajPontRamAlternar,2,0);
+      ponteiro_alvo(green.x,green.y,green.w,green.h,ajPontRamFoco,ajPontRamAlternar,3,0);
+      ponteiro_alvo(green.x+green.w,main.y,main.x+main.w-green.x-green.w,main.h,ajPontRamFoco,ajPontRamAlternar,2,0);
+    }
+  }
   if (pw > 0 && uxOp == AJ_P2P_DESTINO) ajUsbPainel(m.x + m.w - 52 - pw, y0, pw, 1);
-  else if (pw > 0) aj2PreviaPendente(m.x + m.w - 52 - pw, y0, pw);
+  else if (pw > 0) {
+    float px=m.x+m.w-52-pw,ph=aj2PreviaPendente(px,y0,pw);
+    if((uxOp==AJ_BUFFER && uxBufferConexoesDisponivel()) || uxBufferPai.ativo) {
+      const char *a=uxOp==AJ_BUFFER?"Choose buffer size and downloads separately.":"Maximum simultaneous HTTP range downloads.";
+      const char *b=uxOp==AJ_BUFFER?"Defaults: native 1 · conversion 1":"Applies to the next playback.";
+      float h=ajBloco(TXT_V2_24,a,px,y0+ph+24,pw,32,0.7f,2);
+      ajBloco(TXT_V2_24,b,px,y0+ph+24+h+12,pw,32,0.7f,2);
+    }
+  }
   { AjDica d[3] = { { "↑ ↓", "Escolher" }, { "OK", uxOp==AJ_GUIA_CATEGORIAS?"Selecionar":"Confirmar" }, { "Voltar", "Cancelar" } };
+    if(uxBufferPai.ativo)d[2].l=i18n(rotuloOpcao(AJ_BUFFER));
     aj2RodapeEditor(m, lw, d, 3); }
 }
 static int aj2EditorPainel(void) {

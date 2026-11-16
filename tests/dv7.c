@@ -33,10 +33,20 @@ int main(int argc,char **argv) {
     assert(!memcmp(output,base,sizeof base));
     assert(!memcmp(output+sizeof base,"\0\0\0\1",4));
     assert(!memcmp(output+sizeof base+4,expected,want));
+#ifdef NV_DV7_MAPPING_TEST
+    want=read_nal(argv[1],kind?"fel-mapping-output.nal":"mel-mapping-output.nal",expected);
+    assert(!nv_dv7_packet_mode(input,n,output,sizeof output,&out,1));
+    assert(out==sizeof base+4+want && !memcmp(output,base,sizeof base));
+    assert(!memcmp(output+sizeof base+4,expected,want));
+    assert(nv_dv7_packet_mode(input,n,output,8,&out,1)<0 && !out);
+#endif
     assert(nv_dv7_packet(input,n,output,8,&out)<0 && !out);
     /* Bad metadata fails closed, so the player can return to HDR10. */
     input[n-2]^=0x5a;
     assert(nv_dv7_packet(input,n,output,sizeof output,&out)<0 && !out);
+#ifdef NV_DV7_MAPPING_TEST
+    assert(nv_dv7_packet_mode(input,n,output,sizeof output,&out,1)<0 && !out);
+#endif
     assert(!nv_dv7_packet(el,sizeof el,output,sizeof output,&out) && !out);
   }
   uint8_t out[64],bad[]={0,0,0,1,0x7c,0,0x19}; size_t n;
