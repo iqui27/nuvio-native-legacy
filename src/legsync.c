@@ -350,12 +350,31 @@ int legsync_offset_ms(int manual) {
   // convention (legenda_cues, assrender, autosync) is the opposite: positive
   // shifts the cue search earlier. Translate once, here: lookup = autoCorr -
   // manual.
-  int total = -manual;
+  int total = -manual, motivo, autoMs = 0;
   unsigned g = legenda_geracao();      // fora de M: legenda.c tem lock proprio
+  unsigned long long docSessao = 0;
   pthread_mutex_lock(&M);
-  if (L.criado && L.primTipo == 1 && L.primFase == 1 && L.primDoc && g == L.primGer &&
-      legenda_documento_info(L.primDoc)->sessao == L.sessao)
-    total += autosync_offset_ms(L.sync, 0);
+  if (L.criado && L.sync) autoMs = autosync_offset_ms(L.sync, 0);
+  if (L.primDoc) docSessao = (unsigned long long)legenda_documento_info(L.primDoc)->sessao;
+  motivo = !L.criado ? 1 : L.primTipo != 1 ? 2 : L.primFase != 1 ? 3 : !L.primDoc ? 4 :
+           g != L.primGer ? 5 : docSessao != (unsigned long long)L.sessao ? 6 : 0;
+  if (!motivo) total += autoMs;
+  /* DIAGNOSTIC (owner 14/11/2026: "the sync is probably right but isn't
+   * applied, the subtitles don't change"): on every change, what the drawn
+   * subtitle gets and, when an accepted automatic offset is left out, which
+   * condition left it out. Called every frame: logs only changes. */
+  { static int vMotivo = -1, vAuto = 0x7fffffff, vTotal = 0x7fffffff;
+    if (motivo != vMotivo || autoMs != vAuto || total != vTotal) {
+      static const char *const POR[] = { "applied", "not created", "main subtitle is not an add-on one",
+        "add-on subtitle not downloaded yet", "no document", "subtitle generation changed",
+        "media session changed" };
+      vMotivo = motivo; vAuto = autoMs; vTotal = total;
+      printf("[legsync] offset to the drawn subtitle: %+d ms (automatic %+d ms: %s; manual delay %+d ms) "
+             "| generation now %u, document's %u | session now %llu, document's %llu\n",
+             total, autoMs, POR[motivo], manual, g, L.primGer,
+             (unsigned long long)L.sessao, docSessao);
+      fflush(stdout);
+    } }
   pthread_mutex_unlock(&M);
   return total;
 }

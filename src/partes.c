@@ -1724,3 +1724,46 @@ void partes_ponto_zerar(void) {
   nPontos = 0; pontosLidos = 0;
   pthread_mutex_unlock(&pontoTrava);
 }
+
+int partes_achar_exato(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
+                       int *item, int *arquivoId, char *como, unsigned n) {
+  char hashes[10][41];
+  int nh = 0, confiavel = 0, pg, achou = 0;
+  PartesLista l;
+  const char *nome = arquivo ? strrchr(arquivo, '/') : NULL;
+  nome = nome ? nome + 1 : arquivo ? arquivo : "";
+  if (item) *item = 0;
+  if (arquivoId) *arquivoId = -1;
+  if (como && n) como[0] = 0;
+  if (hash && strlen(hash) == 40) {
+    for (int i = 0; i < 40; i++) hashes[0][i] = (char)tolower((unsigned char)hash[i]);
+    hashes[0][40] = 0;
+    nh = 1; confiavel = 1;
+  }
+  if (url) nh += partes_hashes_texto(url, hashes + nh, 9 - nh);
+  if (!nh && !nome[0] && !bytes) return 0;
+  memset(&l, 0, sizeof l);
+  // Burn-in (owner 14/11): a miss on the cached account list fetched E07 of a
+  // pack that was there; a second pass asks TorBox for a fresh list.
+  for (int fresco = 0; fresco < 2 && !achou; fresco++) {
+    for (pg = 0; pg < 10 && !achou; pg++) {
+      int st = 0, m = 0, itens = 0;
+      char *r = listaConta(0, pg, fresco, &st, &m);
+      if (!r) break;
+      partes_lista_limpar(&l);
+      memset(&l, 0, sizeof l);
+      achou = partes_achar_n(r, 0, hashes, nh, confiavel, nome, bytes, &l, &itens) &&
+              l.atual >= 0 && l.atual < l.n && strcmp(l.como, "best match");
+      free(r);
+      if (!achou && itens < DEBRID_TB_PAGINA) break;
+    }
+    if (!achou && !fresco) { printf("[partes] exact match not in the cached TorBox list: asking for a fresh one\n"); fflush(stdout); }
+  }
+  if (achou) {
+    if (item) *item = l.item;
+    if (arquivoId) *arquivoId = l.arq[l.atual].id;
+    if (como && n) snprintf(como, n, "%s", l.como);
+  }
+  partes_lista_limpar(&l);
+  return achou;
+}

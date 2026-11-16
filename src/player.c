@@ -42,6 +42,7 @@
 #include "posplay.h"
 #include "extras.h"
 #include "video.h"
+#include "passo.h"
 #include "seekprobe.h"
 #include "faixas.h"
 #include "gfx.h"
@@ -97,6 +98,9 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "plrguia.h"
 #include "episodios.h"
 #include "streams.h"
+#include "tbburn.h"
+#include "tbrelogio.h"
+#include "legmemoria.h"
 #include "addons.h"
 #include "duracaook.h"
 #include "partes.h"
@@ -455,6 +459,9 @@ static double posLegenda(void) {
    * pouco atras da nossa camada enquanto TOCA; pausada, nao. So tocando, com
    * leituras carimbadas, e nunca logo depois de um seek ainda sem leitura. */
   if (relLeg.carimbo && relLeg.tocando && !video_pos_incerta()) v -= legimagem_ms() / 1000.0;
+  /* TORBOX BURN-IN (tbrelogio.h, owner 15/11): on TorBox's burned stream the
+   * player's clock runs behind the picture by the segment it landed in. */
+  v += tbr_correcao();
 #endif
   return v;
 }
@@ -462,6 +469,19 @@ static double posLegenda(void) {
 static int skipDisponivel(void), skipLiberado;
 static int trechoPulavel(double *fim) { int tipo; return skipDisponivel() && intro_botao_visivel(fim, &tipo); }
 static float duracaoSeg = PLR_DUR_PADRAO;
+/* The position saved for resume (Continue watching, the account, Trakt):
+ * where the PICTURE is. Differs from posSeg only on TorBox's burned stream. */
+static double posGravar(void) {
+  double p = posSeg;
+#ifdef NV_TPK
+  if (comVideo) {
+    p += tbr_correcao();
+    if (p > duracaoSeg) p = duracaoSeg;
+    if (p < 0) p = 0;
+  }
+#endif
+  return p;
+}
 // O fim ZERO do TheIntroDB quer dizer "ate o fim da midia" (intro.c): mirar
 // fim+0.25 ai seria um salto para o COMECO do arquivo — o alvo resolve o nulo.
 static double puloDestino(double fim) { return fim > 0.0 ? fim + .25 : duracaoSeg; }
@@ -1372,7 +1392,9 @@ static const char *prefsArquivo(void) {
 // ajustes.txt, que espelha as chaves de layout do app web. Padrao: tamanho 2
 // (o do aparelho), branco, sem fundo, posicao central, contorno.
 // -1 preserves the legacy outline preference until a border colour is chosen.
-static VideoLegendaEstilo legEstilo = { 120, 0, 0, 3, 1, 0, 0, TXT_FAMILIA_INTER, 0, -1 };
+// Owner 14/11/2026: Stremio's look is the default (Plus Jakarta Sans, Outline =
+// Stremio's soft shadow); opacity is a % in steps of 10.
+static VideoLegendaEstilo legEstilo = { 120, 0, 0, 3, 1, 0, 100, TXT_FAMILIA_JAKARTA, 0, -1 };
 // Ver player_leg_estilo_tocou, em player.h: o que a pessoa mexeu vence o que o
 // arquivo ASS pede. Persistido junto com o resto — a preferencia nao pode
 // valer so ate desligar a TV.
@@ -1383,7 +1405,7 @@ static void prefsLer(void) {
   prefsLidas = 1;
   legEstilo.corBorda = -1;
   FILE *f = fopen(prefsArquivo(), "r");
-  char chave[64]; int v, sinalNovo = 0, temAtraso = 0, bordaExplicita = 0;
+  char chave[64]; int v, sinalNovo = 0, temAtraso = 0, bordaExplicita = 0, opacAntiga = -1, opacPct = -1;
   if (!f) return;
   while (fscanf(f, "%63s %d", chave, &v) == 2) {
     // Valor de outra versao (ou arquivo editado a mao) cai no padrao em vez de
@@ -1403,12 +1425,21 @@ static void prefsLer(void) {
     else if (!strcmp(chave, "leg_atraso_sinal") && v == 1) sinalNovo = 1;
     else if (!strcmp(chave, "leg_cor_borda") && v >= -1 && v < VIDEO_LEG_NCORES) legEstilo.corBorda = v;
     else if (!strcmp(chave, "leg_cor_borda_explicita") && v == 1) bordaExplicita = 1;
-    else if (!strcmp(chave, "leg_opacidade") && v >= 0 && v <= 3) legEstilo.opacidade = v;
+    // Opacity: % since 14/11/2026 (leg_opac_pct); the old index only if the
+    // file has no % yet, rounded up (video_legenda_opac_antiga).
+    else if (!strcmp(chave, "leg_opac_pct") && v >= VIDEO_LEG_OPAC_MIN && v <= VIDEO_LEG_OPAC_MAX && v % 10 == 0) opacPct = v;
+    else if (!strcmp(chave, "leg_opacidade") && v >= 0 && v <= 3) opacAntiga = v;
     else if (!strcmp(chave, "leg_familia") && v >= 0 && v < TXT_FAMILIA_N) legEstilo.familia = v;
     else if (!strcmp(chave, "leg_negrito") && (v == 0 || v == 1)) legEstilo.negrito = v;
     else if (!strcmp(chave, "leg_tocado")  && v >= 0) legTocado = v;
   }
   fclose(f);
+  if (opacPct >= 0) legEstilo.opacidade = opacPct;
+  else if (opacAntiga >= 0) legEstilo.opacidade = video_legenda_opac_antiga(opacAntiga);
+  // New default font (owner 14/11/2026: keep saved choices): a font nobody
+  // picked was the old default, Inter; it becomes Plus Jakarta Sans. A font
+  // the person picked (PLR_LEG_FONTE) stays.
+  if (!(legTocado & PLR_LEG_FONTE)) legEstilo.familia = TXT_FAMILIA_JAKARTA;
   // Older players wrote default Black even when no border colour was chosen.
   if (!bordaExplicita && legEstilo.corBorda == 0 && !(legTocado & PLR_LEG_COR_BORDA))
     legEstilo.corBorda = -1;
@@ -1432,7 +1463,7 @@ static int prefsGravar(void) {
   fprintf(f, "leg_borda %d\n",   legEstilo.borda);
   fprintf(f, "leg_atraso %d\n",  legEstilo.atrasoMs);
   fprintf(f, "leg_atraso_sinal 1\n");
-  fprintf(f, "leg_opacidade %d\n", legEstilo.opacidade);
+  fprintf(f, "leg_opac_pct %d\n", legEstilo.opacidade);
   fprintf(f, "leg_familia %d\n", legEstilo.familia);
   fprintf(f, "leg_negrito %d\n", legEstilo.negrito);
   fprintf(f, "leg_tocado %d\n", legTocado);
@@ -1453,7 +1484,7 @@ void player_leg_estilo_mudou(void) {
   if (prefsGravar()) sync_proteger_ajustes_locais();
 }
 const VideoLegendaEstilo *player_leg_estilo_padrao(void) {
-  static const VideoLegendaEstilo padrao = {120, 0, 0, 3, 1, 0, 0, TXT_FAMILIA_INTER, 0, 0};
+  static const VideoLegendaEstilo padrao = {120, 0, 0, 3, 1, 0, 100, TXT_FAMILIA_JAKARTA, 0, 0};
   return &padrao;
 }
 static int estiloPreparar(const VideoLegendaEstilo *estilo, int tocou) {
@@ -1462,7 +1493,8 @@ static int estiloPreparar(const VideoLegendaEstilo *estilo, int tocou) {
       estilo->corBorda < -1 || estilo->corBorda >= VIDEO_LEG_NCORES ||
       estilo->familia < 0 || estilo->familia >= TXT_FAMILIA_N ||
       estilo->fundo < 0 || estilo->fundo > 4 || estilo->posicao < 0 || estilo->posicao > 7 ||
-      estilo->borda < 0 || estilo->borda > 2 || estilo->opacidade < 0 || estilo->opacidade > 3 ||
+      estilo->borda < 0 || estilo->borda > 2 || estilo->opacidade < VIDEO_LEG_OPAC_MIN ||
+      estilo->opacidade > VIDEO_LEG_OPAC_MAX || estilo->opacidade % 10 ||
       estilo->negrito < 0 || estilo->negrito > 1 ||
       estilo->atrasoMs < -LEG_ATRASO_MANUAL_MAX || estilo->atrasoMs > LEG_ATRASO_MANUAL_MAX) return 0;
   player_leg_estilo_carregar();
@@ -2181,6 +2213,12 @@ static void tocarFonteInterno(const char *url) {
   armarTituloGuardado();
   memlog_evento("load"); memQuadroPendente = 1;
   cacheboost_backend_buffer(cacheboost_buffer_mb(ajustes_buffer_preset(), memlog_livre_mb()));
+#ifdef NV_TPK
+  // TorBox burn-in starts Off on HDR (tbburn.h, owner 13/11): the source's own
+  // HDR badge, known before the open (the file's colour info is video_tpk.c's).
+  { const Stream *hs = !ehCanal() && stream_atual() >= 0 ? stream_item(stream_atual()) : NULL;
+    tbburn_hdr_fonte(hs && (badges_fonte_hdr_marca(hs->badges) >= 0 || hs->dolbyVision)); }
+#endif
   { char px[96];
 #ifdef NV_ANDROID
     // app.c define episodio e "do inicio" antes de entregar a fonte. O
@@ -2204,6 +2242,20 @@ static void tocarFonteInterno(const char *url) {
     comVideo = video_tocar(proxyts_resolver(url, px, sizeof px));
 #endif
   }
+#ifdef NV_TPK
+  // TorBox burn-in (tbburn.h): what the add-on said about this source, to find
+  // the file in the TorBox account if an embedded ASS track is chosen.
+  if (comVideo && !ehCanal()) {
+    const Stream *fs = stream_atual() >= 0 ? stream_item(stream_atual()) : NULL;
+    tbburn_fonte(video_url_atual(), fs ? (fs->hashTorrent[0] ? fs->hashTorrent : fs->infoHash) : "",
+                 fs ? fs->arquivo : "", fs ? fs->tamanhoBytes : 0);
+    // The show, for the burned choice remembered per show (same key as Main's).
+    { const CatItem *ci = cat_item(player_indice());
+      char tit[64] = "";
+      if (ci) legmem_id_titulo(ci->imdb[0] ? ci->imdb : ci->titulo, tit, sizeof tit);
+      tbburn_titulo(tit); }
+  }
+#endif
   zerarAssistido();
   mkvass_video_aberto(comVideo);
   aspArmar();
@@ -2597,6 +2649,9 @@ static void lembrarFonte(void) {
 
 static void fecharSessao(int manter, int trocaFonte) {
 #ifdef NV_TPK
+  if (!trocaFonte) tbburn_sessao_nova();   // the playback "Burn in" row ends with the session
+#endif
+#ifdef NV_TPK
   // The crash after Back (27-28/10) came with no report: before the teardown,
   // make sure our SIGSEGV handler is the one on top (the main loop also checks
   // every frame; queda.h).
@@ -2699,7 +2754,7 @@ static void fecharSessao(int manter, int trocaFonte) {
   // FILME EM PARTES: so a ULTIMA parte conclui, pela regra do proprio
   // arquivo (a minutagem do catalogo e a do filme inteiro). O ponto da parte
   // fica guardado para o Retomar; concluido, sai.
-  double durG = duracaoSeg, posG = posSeg;
+  double durG = duracaoSeg, posG = posGravar();
   { double vp, vd; int ult = 0;
     if (!jaRetido && partesVirt(&vp, &vd, &ult)) {
       const PartesLista *sl = partes_sessao_lista();
@@ -2973,7 +3028,7 @@ static void gravarProgressoParcial(int conta, const char *porque) {
   // Contradictory credits also invalidate the catalogue's watched proof.
   double cred = credEfetivo();
   if (cred > 1.0 && cred - duracaoSeg > intro_creditos_janela(duracaoSeg)) chegou = 0;
-  { double vp = posSeg, vd = duracaoSeg;
+  { double vp = posGravar(), vd = duracaoSeg;
     if (partesVirt(&vp, &vd, NULL)) chegou = 0;   // o visto e so da saida da ultima parte
     if (!cat_salvar_progresso_ep(ia, vp, vd, epT, epE, chegou)) return; }
   dados_sincronizar_logo();
@@ -2982,15 +3037,15 @@ static void gravarProgressoParcial(int conta, const char *porque) {
     char id[64];
     if (epT >= 0 && epE > 0) snprintf(id, sizeof id, "%.*s:%d:%d", (int)strcspn(ci->imdb, ":"), ci->imdb, epT, epE);
     else snprintf(id, sizeof id, "%s", ci->imdb);
-    double sp = posSeg, sd = duracaoSeg;
+    double sp = posGravar(), sd = duracaoSeg;
     partesVirt(&sp, &sd, NULL);
     scrobbleTrakt(SCR_EV_PONTO, ci, sp, sd, assistidoSeg, 0);
     simkl_scrobble(SCR_EV_PONTO, id, sp, sd, assistidoSeg, 0);
     parcialConta = 0;
   }
   parcialPos = posSeg;
-  printf("[visto] ponto gravado (%s) pos=%.1f dur=%.1f (%.0f%%)\n", porque, (double)posSeg,
-         (double)duracaoSeg, 100.0 * posSeg / duracaoSeg);
+  printf("[visto] ponto gravado (%s) pos=%.1f dur=%.1f (%.0f%%)%s\n", porque, posGravar(),
+         (double)duracaoSeg, 100.0 * posGravar() / duracaoSeg, posGravar() != posSeg ? " (burned picture's time)" : "");
   fflush(stdout);
 }
 
@@ -4584,6 +4639,7 @@ void player_atualizar(float dt, Uint32 agora) {
 #ifdef NV_TOUCH_UI
   playerTelaAtualizar();
 #endif
+  NV_PASSO("player: inicio");
   if (retido) { player_validar_retido(agora); return; }
   if (aberto || mini) atualizarIdentidade();
 #ifdef NV_TPK
@@ -4779,6 +4835,7 @@ void player_atualizar(float dt, Uint32 agora) {
     if (!scrubbing) posSeg = (float)video_pos();
     // Move a janela de colheita da legenda ASS embutida (#92). Barato: so
     // acorda o fio quando a posicao andou meio segundo.
+    NV_PASSO("player: mkvass/legsync");
     mkvass_passo(posSeg);
     // Folga do buffer de video para a VARREDURA pausar (webOS informa o fim
     // do buffer; no Tizen video_buffer_fim e 0 = desconhecido, sem pausa).
@@ -4792,6 +4849,7 @@ void player_atualizar(float dt, Uint32 agora) {
       legsync_audio_dados_moveis(ajustes_legenda_sync_audio_movel());
       legsync_passo(xtream_url_limitada(video_url_atual()) ? "" : video_url_atual(), posSeg, bf > 0.5 ? bf - (double)posSeg : -1.0,
                     scrubbing || video_bufferando_ms() > 0, agora); }
+    NV_PASSO("player: duracao/miniaturas/resto");
     if (d > 1.0) {
       duracaoSeg = (float)d; duracaoReal = 1;
       durFonteAtualizar(d, agora);
@@ -5410,7 +5468,7 @@ static void corLegenda(int i,int *r,int *g,int *b){
 // esquerda, 2/5/8 centro, 3/6/9 direita.
 #define PLR_LEG_LINHAS 6
 #define PLR_LEG_LARG   1660.0f
-typedef struct { TxtLinha cor[PLR_LEG_LINHAS], borda[PLR_LEG_LINHAS]; int n; float w, h; } LegBloco;
+typedef struct { TxtLinha cor[PLR_LEG_LINHAS], borda[PLR_LEG_LINHAS]; int n; float w, h; TxtEstilo est; } LegBloco;
 
 static void blocoLinha(LegBloco *bl, TxtEstilo est, const char *linha, int r, int g, int b,
                        TxtFamilia fam, int enf) {
@@ -5420,8 +5478,9 @@ static void blocoLinha(LegBloco *bl, TxtEstilo est, const char *linha, int r, in
   // Latin text comes back byte-identical.
   if (txt_bidi_legenda(fam, est, linha, visual, sizeof visual) > 0) linha = visual;
   bl->cor[bl->n]   = txt_linha_corta_enfase(est, linha, r, g, b, 255, PLR_LEG_LARG, fam, enf);
-  { unsigned cor = ajustes_leg_borda_rgb(legEstilo.corBorda);
-    bl->borda[bl->n] = legEstilo.borda ? txt_linha_corta_enfase(est, linha, (cor >> 16) & 255, (cor >> 8) & 255, cor & 255, 255, PLR_LEG_LARG, fam, enf) : (TxtLinha){0}; }
+  { unsigned cor = ajustes_leg_borda_cor(legEstilo.corBorda, legEstilo.borda);
+    bl->borda[bl->n] = legEstilo.borda ? txt_linha_corta_enfase(est, linha, (cor >> 16) & 255, (cor >> 8) & 255, cor & 255, 255, PLR_LEG_LARG, fam,
+                                                                 enf | (legEstilo.borda == 1 ? TXT_ENF_SUAVE : 0)) : (TxtLinha){0}; }
   if (bl->cor[bl->n].w > bl->w) bl->w = bl->cor[bl->n].w;
   bl->h += bl->cor[bl->n].h + (bl->n ? 5 : 0);
   bl->n++;
@@ -5438,7 +5497,7 @@ static void montarBloco(const LegendaCue *c, TxtEstilo est, int r, int g, int b,
   char texto[768], *linha, *salva;
   TxtFamilia fam = legfontes_caminho(0) ? TXT_FAMILIA_IMPORTADA1 : (TxtFamilia)legEstilo.familia;
   int enf = (c->negrito || legEstilo.negrito ? TXT_ENF_NEGRITO : 0) | (c->italico ? TXT_ENF_ITALICO : 0);
-  bl->n = 0; bl->w = 0; bl->h = 0;
+  bl->n = 0; bl->w = 0; bl->h = 0; bl->est = est;
   snprintf(texto, sizeof texto, "%s", c->texto);
   linha = strtok_r(texto, "\n", &salva);
   while (linha && bl->n < PLR_LEG_LINHAS) {
@@ -5459,17 +5518,57 @@ static void montarBloco(const LegendaCue *c, TxtEstilo est, int r, int g, int b,
   }
 }
 
+// APP-DRAWN SUBTITLES WANT THE PREMULTIPLIED LAYER (owner 14/11/2026, "colours
+// too faint at low opacity"). On the Tizen 8/9 GLView DALi composes our layer
+// as straight alpha and multiplies the colour by alpha a second time
+// (tpkborda.c): white at 30 % came out ~9 % bright, faint and grey. The
+// premultiplied switch was only on while libass drew; now also while the app
+// draws a text subtitle (main or second), from 250 ms before a cue to 1 s
+// after the last one, like libass (tpkborda_quadro).
+static Uint32 legAppTick;
+void player_legenda_app_marcar(void) { Uint32 t = SDL_GetTicks(); legAppTick = t ? t : 1u; }
+int player_legenda_app_quer(void) {
+  Uint32 t = legAppTick;
+  return t && (Uint32)(SDL_GetTicks() - t) < 1000u;
+}
+
+// alinha: 0 esquerda (x0 e a borda esquerda), 1 centro (x0 e o centro),
+// 2 direita (x0 e a borda direita).
+static float blocoX(const LegBloco *bl, int i, float x0, int alinha) {
+  float w = (float)bl->cor[i].w;
+  return alinha == 0 ? x0 : alinha == 1 ? x0 - w * .5f : x0 - w;
+}
+// Owner 14/11/2026: the subtitle fades as ONE picture (Stremio, CSS opacity
+// on the subtitle element): border and text composed at 1 in a group, the
+// group drawn once with the opacity. The background box stays as it was.
 static void desenharBloco(const LegBloco *bl, float x0, float y, float alpha, int alinha) {
+  static GfxGrupo grupo;
+  float m = legEstilo.borda == 1 ? txt_suave_margem(bl->est) : 0.0f, yy = y, a;
+  GfxRect caixa = { 0, y - m, 0, bl->h + 2.0f * m + 6.0f };
   int i;
+  if (bl->n <= 0) return;
+  player_legenda_app_marcar();
+  if (legEstilo.fundo) {
+    float fa = legEstilo.fundo * .16f * alpha;
+    for (i = 0; i < bl->n; i++) {
+      TxtLinha l = bl->cor[i];
+      float x = blocoX(bl, i, x0, alinha);
+      gfx_cor((GfxRect){x-18,yy-6,l.w+36,l.h+12},.16f,0,0,0,fa); yy += l.h + 5;
+    }
+  }
+  for (i = 0; i < bl->n; i++) {
+    float x = blocoX(bl, i, x0, alinha);
+    if (!i || x - m < caixa.x) { if (i) caixa.w += caixa.x - (x - m); caixa.x = x - m; }
+    if (x + bl->cor[i].w + m + 6.0f > caixa.x + caixa.w) caixa.w = x + bl->cor[i].w + m + 6.0f - caixa.x;
+  }
+  a = gfx_grupo_comecar(&grupo, caixa, alpha) ? 1.0f : alpha;
   for (i = 0; i < bl->n; i++) {
     TxtLinha l = bl->cor[i];
-    // alinha: 0 esquerda (x0 e a borda esquerda), 1 centro (x0 e o centro),
-    // 2 direita (x0 e a borda direita).
-    float x = alinha == 0 ? x0 : alinha == 1 ? x0 - l.w * .5f : x0 - l.w;
-    if (legEstilo.fundo) { float fa = legEstilo.fundo * .16f * alpha; gfx_cor((GfxRect){x-18,y-6,l.w+36,l.h+12},.16f,0,0,0,fa); }
-    txt_desenhar_borda(bl->borda[i], x, y, legEstilo.borda, alpha);
-    txt_desenhar_alpha(l, x, y, alpha); y += l.h + 5;
+    float x = blocoX(bl, i, x0, alinha);
+    txt_desenhar_borda(bl->borda[i], x, y, legEstilo.borda, m, a);
+    txt_desenhar_alpha(l, x, y, a); y += l.h + 5;
   }
+  gfx_grupo_terminar(&grupo, alpha);
 }
 
 // LIMPA o texto que o AVPlay entrega no onsubtitlechange (#122): SRT vem com
@@ -5650,8 +5749,7 @@ static void desenharLegendaPrincipal(float *topoPilha){
   // Gate collector output, preserving native callback rendering below.
   int overlay = faixas_legenda_overlay();
   PlrRect bitmapArea = areaVideoLegenda();
-  float bitmapAlpha = (legEstilo.opacidade==3?.25f:legEstilo.opacidade==2?.5f:
-                      legEstilo.opacidade==1?.75f:1.f) * entrada;
+  float bitmapAlpha = video_legenda_opacidade(&legEstilo) * entrada;
   if (overlay && video_dts_legenda_desenhar(posLegenda(), legEstilo.atrasoMs,
         bitmapArea.x, bitmapArea.y, bitmapArea.w, bitmapArea.h, bitmapAlpha)) {
     imgsub_gl_limpar();
@@ -5679,8 +5777,14 @@ static void desenharLegendaPrincipal(float *topoPilha){
       static const char *const families[] = {
         "Inter Display", "LG Display", "Droid Sans",
         "Montserrat", "Roboto", "Atkinson Hyperlegible Next",
-        "JetBrains Sans"
+        "JetBrains Sans", "Plus Jakarta Sans"
       };
+      /* unitsPerEm / (usWinAscent + usWinDescent) x 1000 of the bundled
+       * files (libass sizes a face by its win metrics); 0 = unknown. Only
+       * the soft shadow of Outline uses it (assrender.c). */
+      static const short emMil[] = { 826, 0, 0, 640, 833, 711, 855, 605 };
+      _Static_assert(sizeof families / sizeof *families == TXT_FAMILIA_N, "one ASS name per subtitle family");
+      _Static_assert(sizeof emMil / sizeof *emMil == TXT_FAMILIA_N, "one em ratio per subtitle family");
       PlainAssStyle style = {0};
       int pct = legEstilo.tamanho, fam = legEstilo.familia;
       float base = baseLegendaPrincipal();
@@ -5688,11 +5792,12 @@ static void desenharLegendaPrincipal(float *topoPilha){
       style.size = (pct / 10) * 4;
       if (fam < 0 || fam >= (int)(sizeof families / sizeof families[0])) fam = 0;
       snprintf(style.font, sizeof style.font, "%s", families[fam]);
+      style.emMil = emMil[fam];
       corLegenda(legEstilo.cor, &r, &g, &b);
       style.rgb = (r << 16) | (g << 8) | b;
       style.background = legEstilo.fundo >= 0 && legEstilo.fundo <= 4 ? legEstilo.fundo : 0;
       style.border = legEstilo.borda; style.bold = legEstilo.negrito;
-      style.outlineRgb = (int)ajustes_leg_borda_rgb(legEstilo.corBorda);
+      style.outlineRgb = (int)ajustes_leg_borda_cor(legEstilo.corBorda, legEstilo.borda);
       style.overrides = legTocado;
       if (assrender_fonte_local_ativa(legfontes_caminho(0))) {
         snprintf(style.font, sizeof style.font, "%s", legfontes_nome_ass(0));
@@ -5704,8 +5809,7 @@ static void desenharLegendaPrincipal(float *topoPilha){
        * still follows the video rectangle and the author's styling. */
       if (assrender_texto_simples()) area = (PlrRect){0, 0, NV_TELA_W, NV_TELA_H};
     }
-    float opacidade = legEstilo.opacidade==3?.25f:legEstilo.opacidade==2?.5f:
-                      legEstilo.opacidade==1?.75f:1.f;
+    float opacidade = video_legenda_opacidade(&legEstilo);
     float alpha = opacidade * entrada;
 #ifdef NV_TPK
     /* Styled ASS: the signs and typesetting (white masks) are part of the
@@ -5720,6 +5824,9 @@ static void desenharLegendaPrincipal(float *topoPilha){
                              assrender_texto_simples() ? 1.0 : escalaFonteAss());
 #ifdef NV_TPK
     assrender_definir_fps(legimagem_fps());   // frame grid (assrender.c)
+    { int mz, fx, hdr;   // YCbCr matrix of styled ASS (assrender.c)
+      if (!video_tpk_cor(&mz, &fx, &hdr)) mz = fx = hdr = 0;
+      assrender_definir_cor_video(mz, fx, hdr, video_altura()); }
 #endif
     assrender_desenhar(posLeg, atraso, alpha,
                         0, 0, NV_TELA_W, NV_TELA_H);
@@ -5747,10 +5854,42 @@ static void desenharLegendaPrincipal(float *topoPilha){
     cues[0].cor = -1; cues[0].posX = cues[0].posY = -1.f;
     n = 1;
   }
+  /* The next cue within 250 ms: the premultiplied layer is on before it shows. */
+  if (n <= 0 && overlay) { LegendaCue prox; if (legenda_cues(posLeg + 0.25, atraso, &prox, 1) > 0) player_legenda_app_marcar(); }
   if (n <= 0) return;
+  /* SYNC DIAGNOSTIC (owner 14/11/2026, "subtitles don't seem to sync"): when a
+   * new cue shows, how late it is on the subtitle clock and every term of that
+   * clock. The first 12 cues after each new subtitle document, then one every
+   * 30 s. lateness = (position on the subtitle's timeline) - cue start: about
+   * one frame means the app drew it on time for the player's clock. */
+  { static unsigned gerVista; static double inicioVisto = -1.0; static int nLog; static Uint32 ultLog;
+    unsigned ger = legenda_geracao();
+    double t = posLeg + atraso / 1000.0;
+    if (ger != gerVista) { gerVista = ger; nLog = 0; inicioVisto = -1.0; }
+    if (overlay && cues[0].fim > cues[0].inicio && cues[0].inicio != inicioVisto) {
+      Uint32 agora = SDL_GetTicks();
+      inicioVisto = cues[0].inicio;
+      if (nLog < 12 || agora - ultLog >= 30000u) {
+        char trecho[40]; size_t k;
+        snprintf(trecho, sizeof trecho, "%s", cues[0].texto);
+        for (k = 0; trecho[k]; k++) if (trecho[k] == '\n' || trecho[k] == '\r') trecho[k] = ' ';
+        nLog++; ultLog = agora;
+        printf("[legshow] cue %.3f-%.3f shown at %.3f (late %+d ms) | video %.3f, subtitle clock %.3f, "
+               "picture-sync -%d ms, burn-in clock %+d ms, offset %+d ms (manual %+d) | \"%s\"\n",
+               cues[0].inicio, cues[0].fim, t, (int)lround((t - cues[0].inicio) * 1000.0),
+               comVideo ? video_pos() : posSeg, posLegenda(),
+#ifdef NV_TPK
+               legimagem_ms(), (int)lround(tbr_correcao() * 1000.0),
+#else
+               0, 0,
+#endif
+               atraso, legEstilo.atrasoMs, trecho);
+        fflush(stdout);
+      }
+    } }
   int pct=legEstilo.tamanho;if(pct<TXT_LEG_PCT_MIN)pct=TXT_LEG_PCT_MIN;if(pct>TXT_LEG_PCT_MAX)pct=TXT_LEG_PCT_MAX;pct=(pct/10)*10;
   TxtEstilo est=(TxtEstilo)(TXT_LEG_50+(pct-50)/10);corLegenda(legEstilo.cor,&r,&g,&b);
-  float alpha=(legEstilo.opacidade==3?.25f:legEstilo.opacidade==2?.5f:legEstilo.opacidade==1?.75f:1.f)*entrada;
+  float alpha=video_legenda_opacidade(&legEstilo)*entrada;
   // A pilha "normal" (sem \pos e sem \an, ou \an 2): empilha de baixo para
   // cima a partir da base da folha, como o SRT sempre fez.
   // Com a barra de estilo no topo a base e a da reproducao sem controles: a

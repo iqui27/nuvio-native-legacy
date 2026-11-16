@@ -197,6 +197,9 @@ int      video_pos_amostra(double *pos, double *carimbo, double *incerteza, unsi
 int      video_pos_incerta(void);
 // Frame rate and HDR of the playing file (MKV header); 0 = unknown.
 int      video_tpk_quadro(double *fps, int *hdr);
+// Colour of the playing MKV's video (Colour element): MatrixCoefficients and
+// Range as in the file (0 = not stated), and HDR. 0 = no MKV video track.
+int      video_tpk_cor(int *matriz, int *faixa, int *hdr);
 #endif
 int    video_tocando(void);
 // Pausa comprovada pelo backend da sessao atual, nao a intencao local de
@@ -452,11 +455,27 @@ typedef struct {
   int posicao;    // 0..7  -> position -3..4 no uMS
   int borda;      // 0 nenhuma, 1 contorno, 2 sombra
   int atrasoMs;   // negativo adianta
-  int opacidade;  // 0..3 = texto 100/75/50/25%
+  int opacidade;  // text opacity %, 10..100 in steps of 10 (owner 14/11/2026; was 0..3 = 100/75/50/25)
   int familia;    // TxtFamilia; aplicada ao overlay externo (OpenSubtitles)
   int negrito;    // 1 = peso negrito no overlay (so o que o app desenha)
   int corBorda;   // -1 unset (legacy outline); 0 Black, 1 White, 2 Yellow, 3 Green, 4 Blue, 5 Red
 } VideoLegendaEstilo;
+
+// Subtitle opacity: VideoLegendaEstilo.opacidade as a fraction. Old saved
+// values were an index 0..3 (100/75/50/25 %): VIDEO_LEG_OPAC_ANTIGA maps them,
+// rounded up to the 10 % grid (owner 14/11/2026: 75 -> 80, 25 -> 30).
+#define VIDEO_LEG_OPAC_MIN 10
+#define VIDEO_LEG_OPAC_MAX 100
+static inline int video_legenda_opac_antiga(int indice) {
+  static const int pct[4] = { 100, 80, 50, 30 };
+  return indice >= 0 && indice < 4 ? pct[indice] : 100;
+}
+static inline float video_legenda_opacidade(const VideoLegendaEstilo *e) {
+  int p = e ? e->opacidade : 100;
+  if (p < VIDEO_LEG_OPAC_MIN) p = VIDEO_LEG_OPAC_MIN;
+  if (p > VIDEO_LEG_OPAC_MAX) p = VIDEO_LEG_OPAC_MAX;
+  return (float)p / 100.0f;
+}
 
 #define VIDEO_LEG_NCORES 6
 // A borda tem preto puro como padrao; as demais amostras usam a paleta do texto.

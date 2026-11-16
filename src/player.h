@@ -177,6 +177,10 @@ void player_definir_retomada_fonte(double segundos);
 // fechar e abrir.
 void player_voltar_a_esperar(void);
 
+// An app-drawn text subtitle (main or second) is on screen or about to be
+// (tpkborda.c: the premultiplied layer). Marked by whoever draws one.
+void player_legenda_app_marcar(void);
+int  player_legenda_app_quer(void);
 int  player_aberto(void);   // 1 enquanto a tela existe, inclusive durante o fade de saida
 // Pedidos que so existem com um CANAL no ar (tipo "channel"/"tv"):
 // Live OK without controls, DOWN or BLUE requested the mini guide.

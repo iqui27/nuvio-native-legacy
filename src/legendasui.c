@@ -26,6 +26,7 @@
 #include <strings.h>
 #include <ctype.h>
 #include "bidi.h"
+#include "tbburn.h"
 #include "layout.h"
 
 // --- identity -------------------------------------------------------------------
@@ -155,7 +156,13 @@ static Legenda capturaAdd[LEG_MAX];
 static void capturar(void) {
   const VideoFaixa *emb[NV_FAIXA_MAX];
   int nE = nEmbVivo(), nA = 0, i;
-  for (i = 0; i < nE; i++) emb[i] = video_legenda(i);
+  for (i = 0; i < nE; i++) {
+    emb[i] = video_legenda(i);
+#ifdef NV_TPK
+    // Burned in (tbburn.h): every burnable ASS track is out of Main/Second.
+    if (video_tpk_leg_oculta(i)) emb[i] = NULL;
+#endif
+  }
   // Live channels have no addon subtitles (faixas.c, tests/faixas_canal).
   if (!player_id_canal()[0]) nA = addons_legendas_copiar(capturaAdd, LEG_MAX, NULL, NULL);
   nCand = legendasui_montar(emb, nE, capturaAdd, nA, cand, LEGUI_MAX_CAND);
@@ -189,7 +196,11 @@ void legendasui_definir_sync(const LegendasSyncProvider *p) {
 // LR_IDIOMA slot 1 (06/11, dono): the SECOND subtitle's language in the
 // Recommended view; it replaced the "Combinacao atual" pair row. OK opens its
 // sources for the second, with Off on top.
-typedef enum { LR_CAND, LR_NENHUMA, LR_MAIS, LR_SYNC, LR_ALVO, LR_ATRASO, LR_IDIOMA } LuiTipo;
+// LR_QUEIMAR (owner 13/11): "Burn in", a row under Off (TorBox Pro only) that
+// opens its list like a language row: LR_QSEG (On | Off) on top, then one
+// LR_QFAIXA per burnable (embedded ASS) track of the file (`n` = its index).
+typedef enum { LR_CAND, LR_NENHUMA, LR_MAIS, LR_SYNC, LR_ALVO, LR_ATRASO, LR_IDIOMA,
+               LR_QUEIMAR, LR_QSEG, LR_QFAIXA } LuiTipo;
 typedef struct {
   LuiTipo tipo;
   int slot, cand;
@@ -214,7 +225,7 @@ static float menuT, menuFocoA[3];   // molas do dropdown (abertura e foco por li
 static void abrirMenu(void);
 static int menuTiraSecundaria(void);
 // Language drilldown returns to the row that opened it.
-static int ver;
+static int ver, verQ;   // verQ: the drilldown is the Burn in list
 static char verGrupo[96];
 static char focoChave[96];
 static int foco, rolagem, syncAcao;
@@ -445,6 +456,50 @@ static int bloqueadoNaSegunda(const char *idioma) {
   return !legendasui_principal_letreiros() && mesmoIdiomaConhecido(idiomaPrincipal(), idioma);
 }
 
+// TorBox burn-in (tbburn.h, owner 13/11): the "Burn in" row and its list.
+// Shown only with plan Pro, a key and a burnable track in a file that is on
+// TorBox (or not looked up yet).
+static int video_tpk_queimada_ou(void) {
+#ifdef NV_TPK
+  return video_tpk_queimada();
+#else
+  return -1;
+#endif
+}
+static int queimarVisivel(void) {
+#ifdef NV_TPK
+  return tbburn_linha_visivel() || video_tpk_queimada() >= 0;
+#else
+  return 0;
+#endif
+}
+static int queimarLigado(void) {
+#ifdef NV_TPK
+  return video_tpk_queimada() >= 0;
+#else
+  return 0;
+#endif
+}
+static void queimarLigar(int on) {
+#ifdef NV_TPK
+  if (on != queimarLigado()) video_tpk_queimar_ligar(on);
+#else
+  (void)on;
+#endif
+}
+static void queimarFaixa(int i) {
+#ifdef NV_TPK
+  if (video_tpk_queimada() != i) video_tpk_queimar_faixa(i);
+#else
+  (void)i;
+#endif
+}
+static void linhaQueimarFaixa(int i, const char *chave) {
+  if (nLinhasV >= LUI_MAX_LINHAS) return;
+  linhaFixa(LR_QFAIXA, 0, chave);
+  linhas[nLinhasV - 1].n = i;
+}
+
 static void montarLinhas(void) {
   char prim[24];
   const char *sec = legenda2_identidade();
@@ -453,7 +508,14 @@ static void montarLinhas(void) {
   agrupar();
   idPrimario(prim);
   nLinhasV = 0;
-  if (ver) {
+  if (ver && verQ) {
+    // The Burn in list: On | Off, then the file's burnable tracks.
+    linhaFixa(LR_QSEG, 0, "q|seg");
+#ifdef NV_TPK
+    for (i = 0; i < nEmbVivo(); i++)
+      if (video_tpk_leg_queimavel(i)) { char k[24]; snprintf(k, sizeof k, "q|%d", i); linhaQueimarFaixa(i, k); }
+#endif
+  } else if (ver) {
     // As FONTES de um idioma: Usar como, Atraso, e entao a de topo (a escolha
     // automatica, sem marca nenhuma), as embutidas e as dos addons na ordem
     // dos addons instalados. So a que toca leva a marca (dono, 06/11).
@@ -486,6 +548,7 @@ static void montarLinhas(void) {
     const char *si = sec[0] ? idiomaSegunda() : "";
     if (sec[0]) g2 = grupoDe(si);
     linhaFixa(LR_NENHUMA, 0, "p|-");
+    if (queimarVisivel()) linhaFixa(LR_QUEIMAR, 0, "queimar");
     if (gp && chaveIdioma(gp->cod)[0]) linhaIdioma(gp, "", 0);
     // The second's own row already stands for its language: no twin row.
     if (gs && gs != gp && chaveIdioma(gs->cod)[0] && !(sec[0] && mesmoGrupo(gs->cod, si))) linhaIdioma(gs, "", 0);
@@ -503,6 +566,7 @@ static void montarLinhas(void) {
     linhaFixa(LR_ALVO, alvo, "m|alvo");
     linhaFixa(LR_ATRASO, alvo, "m|atraso");
     linhaFixa(LR_NENHUMA, alvo, "m|-");
+    if (!alvo && queimarVisivel()) linhaFixa(LR_QUEIMAR, 0, "m|queimar");
     if (estadoSync(alvo)) linhaFixa(LR_SYNC, alvo, alvo ? "m|sync|s" : "m|sync|p");
     // Usar como: Segunda — the main's language is not offered (except with a
     // Signs & Songs main); the rows mark what the chosen slot plays.
@@ -534,7 +598,7 @@ static void avisar(const char *s) {
 void legendasui_abrir(void) {
   char prim[24];
   int i;
-  aberto = 1; mais = ajustes_legendas_todas() || !temPreferencia(); ver = 0; menu = okPendente = okLongo = 0; alvo = 0; rolagemZerar(); aviso[0] = 0;
+  aberto = 1; mais = ajustes_legendas_todas() || !temPreferencia(); ver = 0; verQ = 0; menu = okPendente = okLongo = 0; alvo = 0; rolagemZerar(); aviso[0] = 0;
   focoChave[0] = 0; foco = 0;
   montarLinhas();
   // Open on the language row of the active primary, else on "Desligada".
@@ -554,7 +618,7 @@ int legendasui_versoes(void) { return aberto && ver; }
 void legendasui_reiniciar(void) {
   legenda2_reiniciar();
   aberto = menu = okPendente = okLongo = 0;
-  mais = 0; ver = 0; alvo = 0; focoChave[0] = 0; foco = 0; rolagemZerar(); aviso[0] = 0;
+  mais = 0; ver = 0; verQ = 0; alvo = 0; focoChave[0] = 0; foco = 0; rolagemZerar(); aviso[0] = 0;
   secIdioma[0] = secIdiomaId[0] = 0;
 }
 
@@ -679,6 +743,14 @@ static void abrirMenu(void) {
 
 // As fontes do idioma da linha; Voltar devolve a esta mesma linha. Foco na
 // que toca, senao na de topo (logo depois de Usar como / Atraso).
+static void abrirQueimar(const LuiLinha *l) {
+  int k;
+  snprintf(verGrupo, sizeof verGrupo, "%s", l->chave);
+  ver = 1; verQ = 1; rolagemZerar(); focoChave[0] = 0; foco = 0;
+  montarLinhas();
+  for (k = 0; k < nLinhasV; k++) if (linhas[k].tipo == LR_QFAIXA && linhas[k].n == video_tpk_queimada_ou()) break;
+  focar(k < nLinhasV ? k : 0);
+}
 static void abrirIdioma(const LuiLinha *l) {
   LuiLinha g = *l;   // `l` aponta para linhas[], que montarLinhas reescreve
   int k;
@@ -686,7 +758,7 @@ static void abrirIdioma(const LuiLinha *l) {
   snprintf(verIdioma, sizeof verIdioma, "%s", g.idioma);
   // From Recommended the row's slot decides (no "Usar como" there); in Todas
   // as legendas the "Usar como" choice stays.
-  ver = 1; if (!mais) alvo = g.slot; rolagemZerar(); focoChave[0] = 0; foco = 0;
+  ver = 1; verQ = 0; if (!mais) alvo = g.slot; rolagemZerar(); focoChave[0] = 0; foco = 0;
   montarLinhas();
   for (k = 0; k < nLinhasV; k++) if (linhas[k].tipo == LR_CAND && ativoNoSlot(alvo, &cand[linhas[k].cand])) break;
   if (k == nLinhasV) for (k = 0; k < nLinhasV; k++) if (linhas[k].tipo == LR_CAND) break;
@@ -771,7 +843,7 @@ int legendasui_evento(const SDL_Event *e) {
     return LEGUI_TRATADO;
   }
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE) {
-    if (ver) { ver = 0; rolagemZerar(); snprintf(focoChave, sizeof focoChave, "%s", verGrupo); montarLinhas(); return LEGUI_TRATADO; }
+    if (ver) { ver = 0; verQ = 0; rolagemZerar(); snprintf(focoChave, sizeof focoChave, "%s", verGrupo); montarLinhas(); return LEGUI_TRATADO; }
     if (mais && temPreferencia() && !ajustes_legendas_todas()) { mais = 0; snprintf(focoChave, sizeof focoChave, "mais"); rolagemZerar(); montarLinhas(); return LEGUI_TRATADO; }
     aberto = 0;
     return LEGUI_FECHAR;
@@ -782,6 +854,7 @@ int legendasui_evento(const SDL_Event *e) {
     int d = k == SDLK_RIGHT ? 1 : -1;
     if (l && l->tipo == LR_ALVO) { alvo = d > 0; return LEGUI_TRATADO; }
     if (l && l->tipo == LR_ATRASO) { mudarAtraso((e->key.repeat ? 500 : 100) * d); return LEGUI_TRATADO; }
+    if (l && l->tipo == LR_QSEG) { queimarLigar(d < 0); return LEGUI_TRATADO; }
     if (l && l->tipo == LR_SYNC) {
       const char *rot[4];
       int n = nAcoes(l->slot, rot, 4);
@@ -798,6 +871,9 @@ int legendasui_evento(const SDL_Event *e) {
         montarLinhas(); focar(nLinhasV > 3 ? 3 : 0);
         break;
       case LR_NENHUMA: desligar(l); break;
+      case LR_QUEIMAR: abrirQueimar(l); break;
+      case LR_QSEG: queimarLigar(!queimarLigado()); break;
+      case LR_QFAIXA: queimarFaixa(l->n); break;
       case LR_IDIOMA: abrirIdioma(l); break;
       case LR_CAND: escolher(l->slot, l->cand >= 0 ? &cand[l->cand] : NULL); break;
       case LR_ALVO: alvo = !alvo; break;
@@ -841,6 +917,11 @@ static void ponteiroAlvoSeg(int i, int seg) {
   if (!ponteiroAqui(i) || linhas[i].tipo != LR_ALVO) return;
   ponteiroLinha(i, 0);
   alvo = seg ? 1 : 0;
+}
+static void ponteiroQSeg(int i, int seg) {
+  if (!ponteiroAqui(i) || linhas[i].tipo != LR_QSEG) return;
+  ponteiroLinha(i, 0);
+  queimarLigar(seg == 0);
 }
 static void ponteiroSyncPasso(int i, int d) {
   const char *rot[4];
@@ -981,6 +1062,25 @@ static void textoLinha(const LuiLinha *l, char *nome, size_t tn, char *sub, size
       *icone = "pl_eye-off";
       *ativo = l->slot ? !legenda2_identidade()[0] : !legendasui_slot_identidade(0)[0];
       break;
+    case LR_QUEIMAR: {
+      int q = video_tpk_queimada_ou();
+      const VideoFaixa *f = q >= 0 ? video_legenda(q) : NULL;
+      snprintf(nome, tn, "%s", i18n("Queimar na imagem"));
+      snprintf(sub, ts, "%s", f ? f->rotulo : i18n("Desligado"));
+      *icone = "pl_captions";
+      break; }
+    case LR_QSEG:
+      snprintf(nome, tn, "%s", i18n("Queimar na imagem"));
+      snprintf(sub, ts, "TorBox Pro");
+      *icone = "pl_captions";
+      break;
+    case LR_QFAIXA: {
+      const VideoFaixa *f = video_legenda(l->n);
+      snprintf(nome, tn, "%s", f ? f->rotulo : "?");
+      snprintf(sub, ts, "%s", f && f->nome[0] ? f->nome : "ASS");
+      *idioma = f ? f->idioma : NULL;
+      *ativo = video_tpk_queimada_ou() == l->n;
+      break; }
     case LR_IDIOMA: {
       // O idioma; embaixo, o titulo da que toca quando ela e deste idioma.
       int k;
@@ -1102,6 +1202,17 @@ static void desenharLinha(const LuiLinha *l, int idx, int sel, float x, float y,
       ponteiro_alvo(dir - sw + w0, y + (LU_LN_H - 54.0f) * 0.5f, sw - w0, 54.0f, ponteiroLinha, ponteiroAlvoSeg, idx, 1);
     }
     dir -= sw + 12.0f;
+  } else if (l->tipo == LR_QSEG) {
+    const char *rot[2] = { "Ligado", "Desligado" };
+    int cont[2] = { -1, -1 }, e = queimarLigado() ? 0 : 1;
+    float sw = plrui_seg(rot, cont, 2, (float)e, sel, -1.0f, 0, a);
+    plrui_seg(rot, cont, 2, (float)e, sel, dir - sw, y + (LU_LN_H - 54.0f) * 0.5f, a);
+    if (pont) {
+      float w0 = plrui_seg(rot, cont, 1, (float)e, sel, -1.0f, 0, a);
+      ponteiro_alvo(dir - sw, y + (LU_LN_H - 54.0f) * 0.5f, w0, 54.0f, ponteiroLinha, ponteiroQSeg, idx, 0);
+      ponteiro_alvo(dir - sw + w0, y + (LU_LN_H - 54.0f) * 0.5f, sw - w0, 54.0f, ponteiroLinha, ponteiroQSeg, idx, 1);
+    }
+    dir -= sw + 12.0f;
   } else if (!mais && !ver && (l->tipo == LR_CAND || l->tipo == LR_NENHUMA)) {
     // (No pill on the AutoSync row: only the primary syncs, and the title
     // needs the width next to the < action > discs.)
@@ -1123,7 +1234,7 @@ static void desenharLinha(const LuiLinha *l, int idx, int sel, float x, float y,
   }
   // O chevron diz "tem mais atras deste OK" (o das Ajustes): a linha com acoes
   // (segure OK) e "Todas as legendas". Mesmo icone do resto do app.
-  else if (!mais && !ver && (temMenu(l) || l->tipo == LR_MAIS)) {
+  else if ((!mais && !ver && (temMenu(l) || l->tipo == LR_MAIS)) || l->tipo == LR_QUEIMAR) {
     gfx_icone((GfxRect){ dir - 24.0f, y + (LU_LN_H - 24.0f) * 0.5f, 24.0f, 24.0f }, "pl_chevron-right", 1, 1, 1, (sel ? 0.9f : 0.5f) * aL);
     if (pont && l->tipo != LR_MAIS) ponteiro_alvo(dir - 40.0f, y, 40.0f, LU_LN_H, ponteiroLinha, ponteiroMenuAbrir, idx, 0);
     dir -= 24.0f + 10.0f;
@@ -1252,7 +1363,7 @@ void legendasui_corpo(GfxRect c, float a) {
   int vis = luVis(), fim, i;
   montarLinhas();
   pont = !menu && a > 0.99f && ponteiro_ativo();
-  { TxtLinha t = txt_linha(TXT_ILHA_PERGUNTA, ver ? nomeIdioma(verIdioma) : mais ? "Todas as legendas" : "Recomendadas", 243, 242, 239, 255);
+  { TxtLinha t = txt_linha(TXT_ILHA_PERGUNTA, ver && verQ ? "Queimar na imagem" : ver ? nomeIdioma(verIdioma) : mais ? "Todas as legendas" : "Recomendadas", 243, 242, 239, 255);
     float ty = y;
     const char *rot[2] = { "Faixas", "Estilo" };
     int cont[2] = { nCand, -1 };
@@ -1373,6 +1484,7 @@ static int quebrar(const LegendaCue *c, const VideoLegendaEstilo *e, TxtEstilo e
   TxtFamilia fam = legfontes_caminho(1) ? TXT_FAMILIA_IMPORTADA2 :
     ajustes_leg2_fonte_principal() && legfontes_caminho(0) ? TXT_FAMILIA_IMPORTADA1 : (TxtFamilia)e->familia;
   int enf = (c->negrito || e->negrito ? TXT_ENF_NEGRITO : 0) | (c->italico ? TXT_ENF_ITALICO : 0);
+  int enfBorda = enf | (borda == 1 ? TXT_ENF_SUAVE : 0);   // Outline: Stremio's soft shadow (text.h)
   int n = 0;
   snprintf(texto, sizeof texto, "%s", c->texto);
   for (linha = strtok_r(texto, "\n", &salva); linha && n < max; linha = strtok_r(NULL, "\n", &salva)) {
@@ -1383,7 +1495,7 @@ static int quebrar(const LegendaCue *c, const VideoLegendaEstilo *e, TxtEstilo e
         if (n >= max) break;
         visualLinha(fam, est, atual);
         out[n].cor = txt_linha_corta_enfase(est, atual, r, g, b, 255, maxW, fam, enf);
-        out[n].borda = borda ? txt_linha_corta_enfase(est, atual, (corBorda >> 16) & 255, (corBorda >> 8) & 255, corBorda & 255, 255, maxW, fam, enf) : (TxtLinha){0};
+        out[n].borda = borda ? txt_linha_corta_enfase(est, atual, (corBorda >> 16) & 255, (corBorda >> 8) & 255, corBorda & 255, 255, maxW, fam, enfBorda) : (TxtLinha){0};
         n++;
         snprintf(atual, sizeof atual, "%s", pal);
       } else snprintf(atual, sizeof atual, "%s", tent);
@@ -1391,7 +1503,7 @@ static int quebrar(const LegendaCue *c, const VideoLegendaEstilo *e, TxtEstilo e
     if (atual[0] && n < max) {
       visualLinha(fam, est, atual);
       out[n].cor = txt_linha_corta_enfase(est, atual, r, g, b, 255, maxW, fam, enf);
-      out[n].borda = borda ? txt_linha_corta_enfase(est, atual, (corBorda >> 16) & 255, (corBorda >> 8) & 255, corBorda & 255, 255, maxW, fam, enf) : (TxtLinha){0};
+      out[n].borda = borda ? txt_linha_corta_enfase(est, atual, (corBorda >> 16) & 255, (corBorda >> 8) & 255, corBorda & 255, 255, maxW, fam, enfBorda) : (TxtLinha){0};
       n++;
     }
   }
@@ -1444,7 +1556,7 @@ void legendasui_desenhar_secundaria(const LegendasGeo *g) {
   n = legenda2_cues(g->pos, cues, LEGENDA_SIMULTANEAS);
   if (n <= 0) return;
   secundario = estiloSecundario(principal, &est, &r, &gg, &b, &fundo, &borda);
-  alpha = (e->opacidade == 3 ? .25f : e->opacidade == 2 ? .5f : e->opacidade == 1 ? .75f : 1.f) * g->alpha;
+  alpha = video_legenda_opacidade(e) * g->alpha;
   topo = 48.0f + 72.0f * (g->osd < 0 ? 0 : g->osd > 1 ? 1 : g->osd);
   if (g->videoY > topo) topo = g->videoY + 24.0f;   // letterbox: start on the picture
   if (posicao < 0 && !g->junto && !g->lugarPrincipal && plrilha_rect(&il)) {
@@ -1458,7 +1570,7 @@ void legendasui_desenhar_secundaria(const LegendasGeo *g) {
     }
   }
   for (i = 0; i < n && nl < LEG2_LINHAS; i++)
-    nl += quebrar(&cues[i], e, est, r, gg, b, borda, ajustes_leg_borda_rgb(e->corBorda), x1 - x0, ln + nl, LEG2_LINHAS - nl);
+    nl += quebrar(&cues[i], e, est, r, gg, b, borda, ajustes_leg_borda_cor(e->corBorda, borda), x1 - x0, ln + nl, LEG2_LINHAS - nl);
   if (g->lugarPrincipal) {
     // Signs & Songs main: the second is the dialogue, where the main's would be.
     for (i = 0; i < nl; i++) altura += (float)ln[i].cor.h + (i ? 5.0f : 0.0f);
@@ -1474,14 +1586,30 @@ void legendasui_desenhar_secundaria(const LegendasGeo *g) {
     if (topo < 8.0f) topo = 8.0f;
   }
   y = topo;
-  for (i = 0; i < nl; i++) {
-    TxtLinha l = ln[i].cor;
-    float x = (x0 + x1) * 0.5f - (float)l.w * 0.5f;
-    if (fundo) gfx_cor((GfxRect){ x - 18, y - 6, (float)l.w + 36, (float)l.h + 12 }, .16f, 0, 0, 0, fundo * .16f * alpha);
-    txt_desenhar_borda(ln[i].borda, x, y, borda, alpha);
-    txt_desenhar_alpha(l, x, y, alpha);
-    y += (float)l.h + 5.0f;
-  }
+  /* Owner 14/11/2026: faded as ONE picture, like the main (player.c
+   * desenharBloco): background boxes first, then border + text composed at 1
+   * in a group drawn once with the opacity. */
+  player_legenda_app_marcar();   // tpkborda: the premultiplied layer (player.c)
+  { static GfxGrupo grupo;
+    float m = borda == 1 ? txt_suave_margem(est) : 0.0f, yy = y, a, w = 0.0f, h = 0.0f;
+    for (i = 0; i < nl; i++) {
+      TxtLinha l = ln[i].cor;
+      float x = (x0 + x1) * 0.5f - (float)l.w * 0.5f;
+      if (fundo) gfx_cor((GfxRect){ x - 18, yy - 6, (float)l.w + 36, (float)l.h + 12 }, .16f, 0, 0, 0, fundo * .16f * alpha);
+      if ((float)l.w > w) w = (float)l.w;
+      h += (float)l.h + (i ? 5.0f : 0.0f);
+      yy += (float)l.h + 5.0f;
+    }
+    a = gfx_grupo_comecar(&grupo, (GfxRect){ (x0 + x1) * 0.5f - w * 0.5f - m, y - m, w + 2.0f * m + 6.0f, h + 2.0f * m + 6.0f },
+                          alpha) ? 1.0f : alpha;
+    for (i = 0; i < nl; i++) {
+      TxtLinha l = ln[i].cor;
+      float x = (x0 + x1) * 0.5f - (float)l.w * 0.5f;
+      txt_desenhar_borda(ln[i].borda, x, y, borda, m, a);
+      txt_desenhar_alpha(l, x, y, a);
+      y += (float)l.h + 5.0f;
+    }
+    gfx_grupo_terminar(&grupo, alpha); }
   if (posicao < 0 && !g->junto && !g->lugarPrincipal) bandaFim = y;
 }
 
@@ -1502,7 +1630,7 @@ float legendasui_altura_secundaria(const LegendasGeo *g) {
   if (n <= 0) return 0.0f;
   secundario = estiloSecundario(principal, &est, &r, &gg, &b, &fundo, &borda);
   for (i = 0; i < n && nl < LEG2_LINHAS; i++)
-    nl += quebrar(&cues[i], e, est, r, gg, b, borda, ajustes_leg_borda_rgb(e->corBorda), larguraSecundaria(), ln + nl, LEG2_LINHAS - nl);
+    nl += quebrar(&cues[i], e, est, r, gg, b, borda, ajustes_leg_borda_cor(e->corBorda, borda), larguraSecundaria(), ln + nl, LEG2_LINHAS - nl);
   for (i = 0; i < nl; i++) altura += (float)ln[i].cor.h + (i ? 5.0f : 0.0f);
   return altura;
 }

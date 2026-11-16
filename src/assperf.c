@@ -16,7 +16,7 @@
 
 /* The person's options start here and live in assperf.txt. */
 static const struct { const char *chave; int min, max, padrao; } PESSOA[AP_N] __attribute__((unused)) = {
-  [AP_ESCALA] = { "escala", 0, 5, 5 }, [AP_GAMA] = { "gama", 0, 10, 0 }, [AP_CONTRASTE] = { "contraste", 0, 30, 0 },
+  [AP_ESCALA] = { "escala", 0, 5, 5 }, [AP_GAMA] = { "gamma", -20, 20, 0 }, [AP_CONTRASTE] = { "contrast", -30, 20, 0 },
   [AP_LIBASS] = { "libass", 0, 1, 1 }, [AP_ASSTAM] = { "asstam", 50, 200, 100 }, [AP_ASSOPAC] = { "assopac", 20, 100, 100 },
 };
 
@@ -51,7 +51,7 @@ void assperf_iniciar(void) {
 #ifdef NV_TPK
   {
     char *t = dados_ler(AP_ARQ);
-    int i;
+    int i, novo[AP_N] = {0}, velho[AP_N] = {0}, velhoV[AP_N] = {0};
     for (i = 0; i < AP_N; i++) val[i] = PESSOA[i].padrao;
     if (t) {
       char *l = t, *nl;
@@ -62,8 +62,15 @@ void assperf_iniciar(void) {
         if (!eq) continue;
         *eq = 0;
         for (i = 0; i < AP_N; i++)
-          if (!strcmp(l, PESSOA[i].chave) && valido(i, atoi(eq + 1))) val[i] = atoi(eq + 1);
+          if (!strcmp(l, PESSOA[i].chave) && valido(i, atoi(eq + 1))) { val[i] = atoi(eq + 1); novo[i] = 1; }
+        /* Files written before the wider ranges (16/11/2026): "gama" was 0 off,
+         * 1..5 = -1..-5, 6..10 = +5..+1; "contraste" was 30 minus the TV's
+         * number. A new key in the same file wins. */
+        { int v = atoi(eq + 1);
+          if (!strcmp(l, "gama") && v >= 0 && v <= 10) velho[AP_GAMA] = 1, velhoV[AP_GAMA] = v == 0 ? 0 : v <= 5 ? -v : 11 - v;
+          if (!strcmp(l, "contraste") && v >= 0 && v <= 30) velho[AP_CONTRASTE] = 1, velhoV[AP_CONTRASTE] = -v; }
       }
+      for (i = 0; i < AP_N; i++) if (velho[i] && !novo[i]) val[i] = velhoV[i];
       free(t);
     }
     { char *marca = dados_ler(AP_MARCA); if (marca) { free(marca); dados_apagar(AP_MARCA); } }
@@ -126,20 +133,23 @@ void assperf_restaurar(void) {
  * LUT of libave.so: out = in^(1 - 0.0426 x slider), measured on the 11 curves
  * (avoc_gamma_contrast_picture.md, 24/10). "-" = higher gamma (darker mids).
  * Only the video goes through it; the subtitles get the same sum. Black and
- * white do not move. */
+ * white do not move. The subtitle row goes on past the TV's ends with the same
+ * step (owner 16/11/2026: -20..+20; at +20 the exponent is 0.148). */
 double assperf_gama(void) {
-  int v = assperf_get(AP_GAMA);
-  int n = v <= 0 || v > 10 ? 0 : v <= 5 ? -v : 11 - v;
+  int n = assperf_get(AP_GAMA);
+  if (n < -20 || n > 20) n = 0;
   return 1.0 - 0.0426 * n;
 }
 /* The TV's Contrast is a GAIN per RGB channel before the gamma curve
  * (PontusMVideoEnhancer::m_CalculateContrast in libave.so: 944 x (c + 70) /
  * 120; avoc_contrast_application.md, 24/10). Relative to 30 (where subtitle
- * white matches video white on the S95C): (c + 70) / 100. */
+ * white matches video white on the S95C): (c + 70) / 100. The row takes the
+ * TV's whole 0..50 (owner 16/11/2026, TV at 38): above 30 the gain is over
+ * 1.0, so mid-tones brighten while full white stays clipped at 255. */
 double assperf_contraste(void) {
-  int v = assperf_get(AP_CONTRASTE);
-  int c = 30 - (v < 0 || v > 30 ? 0 : v);
-  return (c + 70) / 100.0;
+  int d = assperf_get(AP_CONTRASTE);   // the TV's number minus 30: 0 = neutral everywhere
+  if (d < -30 || d > 20) d = 0;
+  return (30 + d + 70) / 100.0;
 }
 
 static double agoraS(void) {

@@ -177,10 +177,10 @@ IGNORAR_FUNCAO = {
     # tambem ficam em portugues no vetor e so viram ingles no desenho. i18n()
     # aqui prenderia a lista no idioma de quando a tela abriu.
     "ajustes.c:167",
-    # legendasui.c:325 (chaveIdioma) usa ling_nome() so como CHAVE de grupo
+    # legendasui.c:336 (chaveIdioma) usa ling_nome() so como CHAVE de grupo
     # ("en", "eng" e "en-US" no mesmo grupo), comparada com strcmp e nunca
     # desenhada; o nome na tela sai de nomeIdioma(), com i18n.
-    "legendasui.c:325",
+    "legendasui.c:336",
 }
 
 def achar_rotulo_sem_i18n(txt, linha_de, ctx_fn, re_desenho, re_nao_e_tela, nome_arq):
@@ -272,6 +272,9 @@ def contexto(txt, i):
 # virar teste ela nao impede a proxima regressao.
 IGNORAR = {
     "catalogo-*.bin",                # androidcache.c: cache filename pattern, never UI text
+    # queda.c ondeFoi: the crash report's "where" line, written to the crash
+    # log from the fault handler (no i18n() there), never drawn.
+    "0x%lx (fora de qualquer modulo)",
     "ltv-fontes.txt", "ltv-fontes-p%d.txt",  # ltv.c: preference filenames, never UI labels
     "daqui em diante",  # episodios.c nomeModo: so no log [visto] menu, nunca rotulo
     "fechar",  # main.c: nome do evento de janela so no log "[ciclo] janela="
@@ -488,6 +491,7 @@ IGNORAR = {
     # a linha de estado do assrender, que so vai para o log. "fontes" casou
     # com a lista de palavras de portugues; nenhum dos dois chega na tela.
     "NVASS-FONTES-1\n",
+    "NVASS-FONTES-2\n",   # the libass engine's sidecar version (mkvass.c)
     "%s; eventos=%d fontes=%d fontselect=%d cobertura=%lld-%lldms render=%lluus quadro=%zuB",
     "mkv: %d faixas lidas, %d legendas com idioma",
     "seek para %ds",

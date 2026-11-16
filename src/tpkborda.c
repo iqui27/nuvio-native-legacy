@@ -7,7 +7,8 @@
 // cinza 25 %. Ligar BlendPreMultipliedAlpha no Renderer do GLView conserta
 // (provado na S95C), mas muda a interface inteira (fica um pouco mais clara).
 //
-// Por isso so vale enquanto o libass desenha: liga quando ha imagem do libass
+// Por isso so vale enquanto o libass (ou, desde 14/11/2026, o texto de uma
+// legenda desenhada pelo app) desenha: liga quando ha imagem do libass
 // na tela, um quadro com imagem na fila do render ahead, ou uma fala que
 // comeca em ate 200 ms (o DALi recebe a troca no quadro seguinte, entao a
 // primeira linha ja sai certa); desliga 1 s depois da ultima imagem, ou na
@@ -33,7 +34,9 @@ void nv_tpk_premult_registrar(TbFnInt premult) {
 // Fio do app, todo quadro (app.c).
 void tpkborda_quadro(void) {
   static int estado;
-  int quer = player_aberto() && assrender_borda_quer();
+  /* Also while the app draws a text subtitle (owner 14/11/2026: faint at low
+   * opacity; player_legenda_app_quer). */
+  int quer = player_aberto() && (assrender_borda_quer() || player_legenda_app_quer());
   if (quer == estado && !__atomic_exchange_n(&reenviar, 0, __ATOMIC_ACQ_REL)) return;
   estado = quer;
   if (hPremult) hPremult(quer);

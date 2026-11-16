@@ -1,3 +1,6 @@
+#if defined(NV_TPK) && defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE   // pthread_getattr_np (the worker's stack in the crash log)
+#endif
 #include "assrender.h"
 #include "legfontes.h"
 
@@ -122,6 +125,7 @@ char *assrender_marcar_tailandes(const char *txt) {
 #if !defined(__EMSCRIPTEN__)
 #include <sys/resource.h>
 #include <sys/syscall.h>
+#include <signal.h>
 #endif
 
 #define ASS_TEX_INICIAL 64
@@ -688,6 +692,33 @@ static void ass_trilha_tailandes(ASS_Track *t) {
   }
 }
 
+/* The user's Border on a libass Style (owner 14/11/2026, ring 16/11/2026).
+ * Outline (1) is Stremio's look: add-on subtitles drawn with 8 CSS shadows
+ * in a ring, `±0.15rem ±0.15rem 0.15rem rgb(34,34,34)` (text.c sombraSuave):
+ * 2.25 px out at 1080p, blurred by a Gaussian of sigma 1.125 px (a CSS blur
+ * radius r is sigma r/2), whatever the subtitle size. libass's nearest is an
+ * opaque 2.25 px border in the border colour; libass blurs only the BORDER
+ * when there is one, so the fill stays sharp. libass sigma =
+ * \blur x 2/sqrt(ln 256). The subtitle fades as one (ass_desenhar_grupo).
+ * Shadow (2) and None (0) are as they were. `rgb` = the border colour. */
+static void ass_borda_estilo(ASS_Style *s, const PlainAssStyle *p, int resY, double fontSize, uint32_t rgb) {
+  s->Blur = 0.0;
+  if (p->border == 1) {
+    /* Stremio's ring (text.c sombraSuave, owner 16/11/2026): 8 shadows
+     * 2.25 px out at 1080p, Gaussian sigma 1.125 px, whatever the size.
+     * libass's nearest is a 2.25 px border blurred by that sigma. */
+    double k = resY > 0 ? resY / 1080.0 : 1.0;
+    (void)fontSize;
+    s->Outline = 2.25 * k;
+    s->Shadow = 0.0;
+    s->Blur = 1.125 * k / (2.0 / sqrt(log(256.0)));
+    s->OutlineColour = rgb << 8;   // opaque border = the ring
+    return;
+  }
+  s->Outline = 0;
+  s->Shadow = p->border == 2 ? 4 : 0;
+}
+
 static void ass_plain_style_locked(const PlainAssStyle *p) {
   ASS_Style *s;
   if (!assTrack || !assTrack->n_styles) return;
@@ -711,11 +742,7 @@ static void ass_plain_style_locked(const PlainAssStyle *p) {
       free(s->FontName); *s = *original; s->FontName = font;
       if (p->overrides & PLAIN_ASS_COLOR) s->PrimaryColour = (uint32_t)p->rgb << 8;
       if (p->overrides & PLAIN_ASS_OUTLINE) s->OutlineColour = (uint32_t)p->outlineRgb << 8;
-      if (p->overrides & PLAIN_ASS_BORDER) {
-        s->BorderStyle = 1;
-        s->Outline = p->border == 1 ? 2 : 0;
-        s->Shadow = p->border == 2 ? 4 : 0;
-      }
+      if (p->overrides & PLAIN_ASS_BORDER) s->BorderStyle = 1;
       if (p->overrides & PLAIN_ASS_BG) {
         s->BorderStyle = p->background ? 4 : 1;
         s->BackColour = p->background ? (unsigned)(255 - p->background * 255 * 16 / 100) : 46u;
@@ -723,6 +750,10 @@ static void ass_plain_style_locked(const PlainAssStyle *p) {
       // BackColour carries shadow RGB unless it is a background box.
       if ((p->overrides & PLAIN_ASS_OUTLINE) && s->BorderStyle == 1)
         s->BackColour = ((uint32_t)p->outlineRgb << 8) | (s->BackColour & 255u);
+      /* Last: Outline's ring takes the border colour (the chosen one, or
+       * the author's OutlineColour). */
+      if (p->overrides & PLAIN_ASS_BORDER)
+        ass_borda_estilo(s, p, assTrack->PlayResY, s->FontSize, s->OutlineColour >> 8);
       if (p->overrides & PLAIN_ASS_POS) s->MarginV = p->marginV * assTrack->PlayResY / 1080;
       if (p->overrides & PLAIN_ASS_BOLD) s->Bold = p->bold;
     }
@@ -747,8 +778,7 @@ static void ass_plain_style_locked(const PlainAssStyle *p) {
                    : (p->border == 2 ? (uint32_t)p->outlineRgb << 8 : 0u) | 46u;
   s->Bold = p->bold ? 1 : 0;
   s->BorderStyle = p->background ? 4 : 1;
-  s->Outline = p->border == 1 ? 2 : 0;
-  s->Shadow = p->border == 2 ? 4 : 0;
+  ass_borda_estilo(s, p, assTrack->PlayResY, p->size, (uint32_t)p->outlineRgb & 0xFFFFFFu);
   s->MarginV = p->marginV;
   s->MarginL = s->MarginR = 130;
   /* Direct style edits leave libass's per-event collision position cached.
@@ -846,9 +876,40 @@ static void ass_pod_devolver_assTrava(void);
 static double ass_fps(void);
 static long long ass_grade_seguinte(long long t);
 static long long ass_grade_desde(long long ms);
+#if defined(NV_TPK) && defined(__linux__)
+// glibc declares this only under _GNU_SOURCE, and the define at the top of
+// this file comes too late in the .tpk build: its -include src/tpk.h has
+// already pulled in the system headers. Without a declaration the call was
+// an implicit one (a warning on the SDK's compiler, an error on gcc 14).
+extern int pthread_getattr_np(pthread_t fio, pthread_attr_t *attr);
+#endif
 static void *ass_worker_loop(void *unused) {
   (void)unused;
   assfios_nomear("nv-assrender");
+#if defined(NV_TPK) && defined(__linux__)
+  /* Crash capture (owner 14/11: a Persian subtitle kills this thread on its
+   * first frame and the reporter wrote nothing). glibc gives a thread no
+   * alternate signal stack, so a fault on a full stack could not run
+   * queda.c's handler (SA_ONSTACK). This one can. The stack's bounds go to
+   * the log: the crash line's sp says whether the stack ran out. */
+  { static char *alt;
+    pthread_attr_t at;
+    if (!alt) alt = malloc(64 * 1024);
+    if (alt) {
+      stack_t ss;
+      ss.ss_sp = alt; ss.ss_size = 64 * 1024; ss.ss_flags = 0;
+      if (sigaltstack(&ss, NULL) != 0) printf("[ass] worker: sigaltstack failed\n");
+    }
+    if (pthread_getattr_np(pthread_self(), &at) == 0) {
+      void *base = NULL; size_t tam = 0, guarda = 0;
+      pthread_attr_getstack(&at, &base, &tam);
+      pthread_attr_getguardsize(&at, &guarda);
+      printf("[ass] worker stack: %zu KB at %p-%p (guard %zu KB), signal stack 64 KB %s\n",
+             tam / 1024, base, (void *)((char *)base + tam), guarda / 1024, alt ? "on" : "off");
+      pthread_attr_destroy(&at);
+    }
+    fflush(stdout); }
+#endif
   for (;;) {
     AssCpuFrame frame;
     unsigned generation, serial, epoch;
@@ -932,6 +993,30 @@ static void *ass_worker_loop(void *unused) {
         ass_set_selective_style_override_enabled(assRenderer, ASS_OVERRIDE_BIT_SELECTIVE_FONT_SCALE);
       ass_plain_reflow_locked(t);
       ass_pod_devolver_assTrava();   // seek para tras alem da poda: as falas voltam antes do render
+#ifdef NV_TPK
+      /* Crash capture (owner 14/11): what libass is asked to draw, once per
+       * track and per style change, flushed BEFORE the render. A crash right
+       * after this line is inside libass on that frame. */
+      { static unsigned gerLog = ~0u; static PlainAssStyle psLog; static int psLogOk;
+        int novo = generation != gerLog || (plainValid && (!psLogOk || memcmp(&plain, &psLog, sizeof plain)));
+        if (novo && assTrack->n_styles > 0) {
+          const ASS_Style *st = &assTrack->styles[assTrack->default_style];
+          gerLog = generation;
+          if (plainValid) { psLog = plain; psLogOk = 1; }
+          printf("[ass] render first frame: t=%lld ms, %s, events %d, frame %dx%d storage %dx%d scale %.3f | "
+                 "style %s %.1f bold %d BorderStyle %d Outline %.2f Shadow %.2f Blur %.3f ScaleX %.0f | engine %d, %d blur thread(s)\n",
+                 t, __atomic_load_n(&assTextoSimples, __ATOMIC_ACQUIRE) ? "plain RTL text" : "authored ASS", assTrack->n_events,
+                 lw, lh, vw, vh, esc, st->FontName ? st->FontName : "-", st->FontSize, st->Bold, st->BorderStyle,
+                 st->Outline, st->Shadow, st->Blur, st->ScaleX * 100.0,
+#ifdef ASS_NV_API
+                 ass_nv_get_engine(assRenderer), ass_nv_get_threads()
+#else
+                 -1, -1
+#endif
+                 );
+          fflush(stdout);
+        } }
+#endif
       images = ass_render_frame(assRenderer, assTrack, t, &changed);
 #ifdef NV_TPK
       /* Borda das legendas (tpkborda.c): o proximo inicio de fala depois de t,
@@ -1126,6 +1211,92 @@ static GLuint ass_textura_locked(int slot, const AssCpuImage *im) {
   return assTex[slot].tex;
 }
 
+/* ===== MATRIZ YCbCr DAS CORES DO ASS (16/11/2026) =============================
+ * Uma cor do script foi escolhida olhando o video decodificado com a matriz do
+ * "YCbCr Matrix:" do script (o VSFilter decodificava tudo em BT.601). A TV
+ * decodifica o video com a matriz DELE (BT.709 num 1080p). Sem conversao, um
+ * letreiro que casava com a parede do video sai com outro tom em cima dela.
+ * Como o mpv (sd_ass.c, mangle_colors) e o JASSUB: a cor do script volta ao
+ * YCbCr com a matriz e a faixa do script e sai em RGB com as do video.
+ *   - script sem cabecalho (YCBCR_DEFAULT): BT.601 TV, a regra do VSFilter;
+ *   - "None" ou desconhecida: nada muda;
+ *   - video RGB, BT.2020 ou HDR: nada muda (a TV mapeia o HDR por conta dela);
+ *   - matriz do video nao declarada: BT.709 de 720 linhas para cima, senao
+ *     BT.601 (a regra do mpv). Faixa nao declarada: TV.
+ * A cor que a pessoa escolheu para o dialogo e o texto simples nao convertem. */
+static int assTrackMatriz = -1;   // ASS_YCbCrMatrix da faixa; -1 = sem faixa / texto simples
+static int assVidMatriz, assVidFaixa, assVidHdr, assVidAlt;
+
+void assrender_definir_cor_video(int matriz, int faixa, int hdr, int altura) {
+  __atomic_store_n(&assVidMatriz, matriz, __ATOMIC_RELAXED);
+  __atomic_store_n(&assVidFaixa, faixa, __ATOMIC_RELAXED);
+  __atomic_store_n(&assVidHdr, hdr, __ATOMIC_RELAXED);
+  __atomic_store_n(&assVidAlt, altura, __ATOMIC_RELAXED);
+}
+
+typedef struct { double kr, kb; int pc; } AssCsp;
+
+static int ass_csp_script(int m, AssCsp *c) {
+  c->pc = 0;
+  switch (m) {
+    case YCBCR_DEFAULT: case YCBCR_BT601_TV: c->kr = 0.299; c->kb = 0.114; return 1;
+    case YCBCR_BT601_PC: c->kr = 0.299; c->kb = 0.114; c->pc = 1; return 1;
+    case YCBCR_BT709_TV: c->kr = 0.2126; c->kb = 0.0722; return 1;
+    case YCBCR_BT709_PC: c->kr = 0.2126; c->kb = 0.0722; c->pc = 1; return 1;
+    case YCBCR_SMPTE240M_TV: c->kr = 0.212; c->kb = 0.087; return 1;
+    case YCBCR_SMPTE240M_PC: c->kr = 0.212; c->kb = 0.087; c->pc = 1; return 1;
+    case YCBCR_FCC_TV: c->kr = 0.30; c->kb = 0.11; return 1;
+    case YCBCR_FCC_PC: c->kr = 0.30; c->kb = 0.11; c->pc = 1; return 1;
+    default: return 0;   // UNKNOWN, NONE
+  }
+}
+
+/* Matriz do video (ISO/IEC 23001-8, a mesma numeracao do MKV). */
+static int ass_csp_video(int m, int faixa, int hdr, int altura, AssCsp *c) {
+  if (hdr) return 0;
+  if (m == 0 || m == 2 || m == 3) m = altura >= 720 || altura <= 0 ? 1 : 6;   // nao declarada
+  c->pc = faixa == 2;
+  switch (m) {
+    case 1: c->kr = 0.2126; c->kb = 0.0722; return 1;
+    case 4: c->kr = 0.30; c->kb = 0.11; return 1;
+    case 5: case 6: c->kr = 0.299; c->kb = 0.114; return 1;
+    case 7: c->kr = 0.212; c->kb = 0.087; return 1;
+    default: return 0;   // BT.2020 e o resto
+  }
+}
+
+/* RGB 0..1 do script -> RGB 0..1 como a TV mostraria o mesmo YCbCr. */
+static void ass_csp_converter(const AssCsp *s, const AssCsp *v, double rgb[3]) {
+  double y = s->kr * rgb[0] + (1.0 - s->kr - s->kb) * rgb[1] + s->kb * rgb[2];
+  double pb = (rgb[2] - y) / (2.0 * (1.0 - s->kb)), pr = (rgb[0] - y) / (2.0 * (1.0 - s->kr));
+  double yd, cb, cr, g;
+  int k;
+  /* Codigos de 8 bits divididos por 255, como no arquivo. */
+  if (s->pc) { yd = y; cb = 128.0 / 255.0 + pb; cr = 128.0 / 255.0 + pr; }
+  else { yd = (16.0 + 219.0 * y) / 255.0; cb = (128.0 + 224.0 * pb) / 255.0; cr = (128.0 + 224.0 * pr) / 255.0; }
+  if (v->pc) { y = yd; pb = cb - 128.0 / 255.0; pr = cr - 128.0 / 255.0; }
+  else { y = (yd * 255.0 - 16.0) / 219.0; pb = (cb * 255.0 - 128.0) / 224.0; pr = (cr * 255.0 - 128.0) / 224.0; }
+  rgb[0] = y + 2.0 * (1.0 - v->kr) * pr;
+  rgb[2] = y + 2.0 * (1.0 - v->kb) * pb;
+  g = (y - v->kr * rgb[0] - v->kb * rgb[2]) / (1.0 - v->kr - v->kb);
+  rgb[1] = g;
+  for (k = 0; k < 3; k++) rgb[k] = rgb[k] < 0.0 ? 0.0 : rgb[k] > 1.0 ? 1.0 : rgb[k];
+}
+
+/* Converte `v` (RGB 0..1 de uma imagem do libass) quando o script e o video
+ * diferem. Fio GL; le so atomicos. */
+static __attribute__((unused)) void ass_cor_matriz(double v[3]) {
+  AssCsp s, d;
+  int tm = __atomic_load_n(&assTrackMatriz, __ATOMIC_ACQUIRE);
+  if (tm < 0 || !ass_csp_script(tm, &s)) return;
+  if (!ass_csp_video(__atomic_load_n(&assVidMatriz, __ATOMIC_RELAXED),
+                     __atomic_load_n(&assVidFaixa, __ATOMIC_RELAXED),
+                     __atomic_load_n(&assVidHdr, __ATOMIC_RELAXED),
+                     __atomic_load_n(&assVidAlt, __ATOMIC_RELAXED), &d)) return;
+  if (s.kr == d.kr && s.kb == d.kb && s.pc == d.pc) return;
+  ass_csp_converter(&s, &d, v);
+}
+
 #if ASS_NOVO   /* only built where it runs (.tpk): off it, nothing of this is used */
 /* ===== O CAMINHO NOVO DO DESENHO (fio GL, ASS_NOVO) =========================
  *
@@ -1242,6 +1413,26 @@ static GLuint ass_tc_obter(const AssCpuImage *im, unsigned long long chave, int 
   return 0;   // tudo em uso agora (raro): a imagem fica de fora deste quadro
 }
 
+/* A cor de uma imagem como sai na tela: cor da legenda (ou a da pessoa no
+ * dialogo), ganho do contraste e curva de gama da TV (AP_CONTRASTE, AP_GAMA),
+ * na mesma ordem da TV. O ganho satura em 1 antes da curva, como o video. */
+static void ass_cor_final(const AssCpuImage *im, int corAtiva, int cr, int cg, int cb,
+                          double gama, double contraste, float *r, float *g, float *b, float *op) {
+  unsigned c = im->color;
+  double v[3];
+  int k;
+  v[0] = (double)((c >> 24) & 255u) / 255.0; v[1] = (double)((c >> 16) & 255u) / 255.0;
+  v[2] = (double)((c >> 8) & 255u) / 255.0; *op = (float)(255u - (c & 255u)) / 255.0f;
+  if (corAtiva && im->type == IMAGE_TYPE_CHARACTER) { v[0] = cr / 255.0; v[1] = cg / 255.0; v[2] = cb / 255.0; }
+  else ass_cor_matriz(v);   // a cor da pessoa nao veio do script: fica como ela escolheu
+  if (gama != 1.0 || contraste != 1.0)
+    for (k = 0; k < 3; k++) {
+      double t = v[k] * contraste;
+      v[k] = pow(t < 0.0 ? 0.0 : t > 1.0 ? 1.0 : t, gama);
+    }
+  *r = (float)v[0]; *g = (float)v[1]; *b = (float)v[2];
+}
+
 /* Sobe (se o quadro e novo) e desenha assMain. Fio GL. */
 static int ass_main_desenhar(float x, float y, float alpha, int corAtiva, int cr, int cg, int cb,
                              int quadroNovo) {
@@ -1284,10 +1475,26 @@ static int ass_main_desenhar(float x, float y, float alpha, int corAtiva, int cr
    * so processa o plano de video, nunca a nossa camada. Na mesma ordem da TV:
    * o ganho do contraste antes, a curva de gama depois. */
   const double gama = assperf_gama(), contraste = assperf_contraste();
+  /* Plain text fades as ONE picture (owner 14/11/2026, ass_borda_estilo). */
+  static GfxGrupo grupo;
+  const float alphaGrupo = alpha;
+  if (__atomic_load_n(&assTextoSimples, __ATOMIC_ACQUIRE) && alpha < 0.999f && assMain.count > 0) {
+    float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+    for (i = 0; i < assMain.count; i++) {
+      const AssCpuImage *im = &assMain.images[i];
+      float dx = (x + assMain.ox) + (float)im->x / esc, dy = (y + assMain.oy) + (float)im->y / esc;
+      if (!assMainTex[i]) continue;
+      if (dx < x0) x0 = dx;
+      if (dy < y0) y0 = dy;
+      if (dx + (float)im->w / esc > x1) x1 = dx + (float)im->w / esc;
+      if (dy + (float)im->h / esc > y1) y1 = dy + (float)im->h / esc;
+    }
+    if (x1 > x0 && y1 > y0 && gfx_grupo_comecar(&grupo, (GfxRect){ x0 - 2.0f, y0 - 2.0f, x1 - x0 + 4.0f, y1 - y0 + 4.0f }, alpha))
+      alpha = 1.0f;
+  }
   for (i = 0; i < assMain.count; i++) {
     const AssCpuImage *im = &assMain.images[i];
     GLuint tex = assMainTex[i];
-    unsigned c = im->color;
     float dx, dy, r, g, b, op;
     if (!tex) continue;
     gfx_tex_aspect_atual = 0.0f;
@@ -1295,15 +1502,11 @@ static int ass_main_desenhar(float x, float y, float alpha, int corAtiva, int cr
      * quadro do libass (esc = kk x resolucao), ampliada quando esc < kk. */
     dx = roundf((x + assMain.ox) * kk) / kk + (float)im->x / esc;
     dy = roundf((y + assMain.oy) * kk) / kk + (float)im->y / esc;
-    r = (float)((c >> 24) & 255u) / 255.0f; g = (float)((c >> 16) & 255u) / 255.0f;
-    b = (float)((c >> 8) & 255u) / 255.0f; op = (float)(255u - (c & 255u)) / 255.0f;
-    if (corAtiva && im->type == IMAGE_TYPE_CHARACTER) { r = cr / 255.0f; g = cg / 255.0f; b = cb / 255.0f; }
-    if (gama != 1.0 || contraste != 1.0) {
-      r = (float)pow(r * contraste, gama); g = (float)pow(g * contraste, gama); b = (float)pow(b * contraste, gama);
-    }
+    ass_cor_final(im, corAtiva, cr, cg, cb, gama, contraste, &r, &g, &b, &op);
     gfx_rect((GfxRect){ dx, dy, (float)im->w / esc, (float)im->h / esc }, tex, GFX_MARCA,
              0, 0, 0, 0, r, g, b, alpha * op);
   }
+  gfx_grupo_terminar(&grupo, alphaGrupo);
   gfx_tex_aspect_atual = 0.0f;
   return assMain.count;
 }
@@ -1676,6 +1879,7 @@ static int ass_carregar(const char *corpo, size_t tamanho, unsigned geracao, int
   /* Authored ASS retains its own margins after a converted plain track. */
   ass_set_selective_style_override_enabled(assRenderer, 0);
   __atomic_store_n(&assTextoSimples, simples, __ATOMIC_RELEASE);
+  __atomic_store_n(&assTrackMatriz, simples ? -1 : (int)track->YCbCrMatrix, __ATOMIC_RELEASE);
   plainAplValido = 0;
   assEventos = track->n_events;
   assResolucaoFonte = 0;
@@ -1869,6 +2073,7 @@ void assrender_limpar(void) {
   pthread_mutex_lock(&assTrava);
   ass_authored_styles_free();
   if (assTrack) { ass_free_track(assTrack); assTrack = NULL; }
+  __atomic_store_n(&assTrackMatriz, -1, __ATOMIC_RELEASE);
   assEventos = 0;
   assCoberturaIni = assCoberturaFim = 0;
   __atomic_store_n(&assTrackGeracao, 0, __ATOMIC_RELEASE);
@@ -1890,6 +2095,7 @@ void assrender_limpar_fontes(void) {
   ass_atuais_limpar_locked();
   ass_authored_styles_free();
   if (assTrack) { ass_free_track(assTrack); assTrack = NULL; }
+  __atomic_store_n(&assTrackMatriz, -1, __ATOMIC_RELEASE);
   assEventos = 0; assFontes = 0; assResolucaoFonte = 0;
   assCoberturaIni = assCoberturaFim = 0;
   __atomic_store_n(&assTrackGeracao, 0, __ATOMIC_RELEASE);
@@ -2235,6 +2441,23 @@ int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
     }
     corChave = assCorAtiva ? (int)(((unsigned)assCorR << 16) | ((unsigned)assCorG << 8) | (unsigned)assCorB) : -1;
     reenviar = assAtual.serial != assTexSerial || corChave != assTexCorChave;
+    /* Plain text fades as ONE picture (owner 14/11/2026, ass_borda_estilo). */
+    static GfxGrupo grupoVelho;
+    const float alphaGrupo = alpha;
+    if (__atomic_load_n(&assTextoSimples, __ATOMIC_ACQUIRE) && alpha < 0.999f && assAtual.count > 0) {
+      float kk = assAtual.k > 1 ? (float)assAtual.k : 1.0f, esc = assAtual.esc > 0.01f ? assAtual.esc : kk;
+      float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+      for (i = 0; i < assAtual.count; i++) {
+        const AssCpuImage *im = &assAtual.images[i];
+        float dx = (x + assAtual.ox) + (float)im->x / esc, dy = (y + assAtual.oy) + (float)im->y / esc;
+        if (dx < x0) x0 = dx;
+        if (dy < y0) y0 = dy;
+        if (dx + (float)im->w / esc > x1) x1 = dx + (float)im->w / esc;
+        if (dy + (float)im->h / esc > y1) y1 = dy + (float)im->h / esc;
+      }
+      if (x1 > x0 && y1 > y0 && gfx_grupo_comecar(&grupoVelho, (GfxRect){ x0 - 2.0f, y0 - 2.0f, x1 - x0 + 4.0f, y1 - y0 + 4.0f }, alpha))
+        alpha = 1.0f;
+    }
     for (i = 0; i < assAtual.count; i++) {
       const AssCpuImage *im = &assAtual.images[i];
       GLuint tex = reenviar ? ass_textura_locked(i, im)
@@ -2252,6 +2475,7 @@ int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
         gfx_rect((GfxRect){ dx, dy, (float)im->w / esc, (float)im->h / esc }, tex, GFX_TEXTO,
                  0, 0, 0, 0, 1, 1, 1, alpha); }
     }
+    gfx_grupo_terminar(&grupoVelho, alphaGrupo);
     if (reenviar) { assTexSerial = assAtual.serial; assTexCorChave = corChave; }
     gfx_tex_aspect_atual = 0.0f;
     n = assAtual.count;
@@ -2400,6 +2624,7 @@ int assrender_carregar(const char *corpo, size_t tamanho, unsigned geracao) { (v
 int assrender_atualizar(const char *corpo, size_t tamanho, unsigned geracao) { (void)corpo; (void)tamanho; (void)geracao; return 0; }
 void assrender_limpar(void) { assGeracao++; }
 void assrender_definir_fps(double fps) { (void)fps; }
+void assrender_definir_cor_video(int matriz, int faixa, int hdr, int altura) { (void)matriz; (void)faixa; (void)hdr; (void)altura; }
 void assrender_limpar_fontes(void) {}
 void assrender_aliviar(void) {}
 int assrender_adicionar_fonte(const char *nome, const void *dados, size_t tamanho) {

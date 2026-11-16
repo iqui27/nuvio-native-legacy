@@ -5194,6 +5194,31 @@ void gfx_mini_esvanecer(GfxRect r, float alfa) {
   gfx_veu_css(r, 0, 1.0f, 1.0f, alfa);
   glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 }
+int gfx_grupo_comecar(GfxGrupo *g, GfxRect r, float alpha) {
+  float esc = gfx_px_por_unidade();
+  int px0, py0, pw, ph;
+  g->ativo = 0;
+  if (alpha >= 0.999f || alpha <= 0.0f || miniAtiva || snapAtivo || esc <= 0.0f ||
+      r.w <= 0.0f || r.h <= 0.0f) return 0;
+  px0 = (int)floorf(r.x * esc); py0 = (int)floorf(r.y * esc);
+  pw = (int)ceilf((r.x + r.w) * esc) - px0; ph = (int)ceilf((r.y + r.h) * esc) - py0;
+  /* Sizes in steps, so a new caption rarely reallocates the target. */
+  pw = (pw + 255) & ~255; ph = (ph + 63) & ~63;
+  if (pw > 4096 || ph > 4096 || !gfx_mini_alvo(&g->m, pw, ph)) return 0;
+  g->x0 = (float)px0 / esc; g->y0 = (float)py0 / esc; g->esc = esc;
+  gfx_mini_comecar(&g->m, g->x0, g->y0, esc);
+  if (!miniAtiva) return 0;
+  g->grupoAnt = gfx_opacidade_grupo; gfx_opacidade_grupo = 1.0f;
+  g->ativo = 1;
+  return 1;
+}
+void gfx_grupo_terminar(GfxGrupo *g, float alpha) {
+  if (!g->ativo) return;
+  g->ativo = 0;
+  gfx_mini_terminar();
+  gfx_opacidade_grupo = g->grupoAnt;
+  gfx_mini_desenhar(&g->m, (GfxRect){ g->x0, g->y0, (float)g->m.w / g->esc, (float)g->m.h / g->esc }, 0.0f, alpha);
+}
 void gfx_mini_liberar(GfxMini *m) {
   if (m->fbo) glDeleteFramebuffers(1, &m->fbo);
   if (m->tex) { glDeleteTextures(1, &m->tex); gfx_tex_esquecer(m->tex); }

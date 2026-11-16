@@ -103,5 +103,10 @@ int assrender_borda_quer(void);
 // per frame, and an instant on the boundary flipped a sign one frame early or
 // late with a few ms of clock jitter (owner 25/10).
 void assrender_definir_fps(double fps);
+// The video's colour (MKV Colour element: MatrixCoefficients, Range; 0 = not
+// stated), whether it is HDR and its height. With them, ASS colours authored
+// for another YCbCr matrix (the script's "YCbCr Matrix") are converted to the
+// video's, as mpv and VSFilter do (.tpk only).
+void assrender_definir_cor_video(int matriz, int faixa, int hdr, int altura);
 
 #endif

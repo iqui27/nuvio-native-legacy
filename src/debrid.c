@@ -1516,6 +1516,30 @@ char *debrid_tb_mylist(int usenet, int id, int pagina, int fresco, int *st) {
   return rede_baixar_st(url, 20, cab, st);
 }
 
+char *debrid_tb_api_get(const char *rota, int prazo, int *st) {
+  char url[1400], auth[260], k[200];
+  const char *cab[2];
+  if (st) *st = 0;
+  if (!rota || !tbChave(k, sizeof k)) return NULL;
+  snprintf(url, sizeof url, TB "/%s", rota);
+  snprintf(auth, sizeof auth, "Authorization: Bearer %s", k);
+  cab[0] = auth; cab[1] = NULL;
+  return rede_baixar_st(url, prazo > 0 ? prazo : 20, cab, st);
+}
+
+void debrid_tb_redigir(char *texto) {
+  char k[200];
+  size_t n;
+  char *p;
+  if (!texto || !tbChave(k, sizeof k)) return;
+  n = strlen(k);
+  if (n < 8) return;
+  while ((p = strstr(texto, k)) != NULL) {
+    memcpy(p, "***", 3);
+    memmove(p + 3, p + n, strlen(p + n) + 1);
+  }
+}
+
 // O requestdl leva o token NA QUERY (ver resolverTB): esta URL nunca vai para
 // log. O que volta em `url` e o link do CDN (*.tb-cdn.st), que toca direto.
 int debrid_tb_link(int usenet, int id, int arquivo, char *url, unsigned n) {

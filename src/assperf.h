@@ -39,8 +39,8 @@
 // The person's options (Subtitles > Style on an ASS/SSA track, .tpk):
 enum {
   AP_ESCALA,       // render resolution: 0 100%, 2 75%, 5 Auto (100%, 75% while busy)
-  AP_GAMA,         // gamma like the TV's slider: 0 off, 1..5 = -1..-5, 6..10 = +5..+1
-  AP_CONTRASTE,    // contrast like the TV's: 0 = 30 (TV default) .. 30 = 0
+  AP_GAMA,         // gamma like the TV's slider, signed: -20..+20 (0 off; the TV stops at 5)
+  AP_CONTRASTE,    // contrast as the TV's number minus 30: -30..+20 (0 = TV default 30, gain 1.0)
   AP_LIBASS,       // 1 = libass draws ASS/SSA; 0 = dialogue only, as plain text
   AP_ASSTAM,       // dialogue size, %: 50..200 (100)
   AP_ASSOPAC,      // dialogue opacity, %: 20..100 (100)
@@ -68,7 +68,7 @@ double assperf_escala(void);                 // render resolution now (Auto: the
 // Subtitle colour like the video's (AP_GAMA, AP_CONTRASTE): the TV's picture
 // processing only touches the video plane.
 double assperf_gama(void);                   // exponent: 1.0 = off
-double assperf_contraste(void);              // gain: 1.0 (30) .. 0.70 (0)
+double assperf_contraste(void);              // gain: 0.70 (0) .. 1.0 (30) .. 1.20 (50)
 
 // Render resolution Auto and the busy-scene flag (picture sync in legimagem.c).
 double assperf_escala_quadro(void);          // worker: the scale for the next render

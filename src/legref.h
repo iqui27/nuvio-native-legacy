@@ -122,4 +122,6 @@ typedef struct { double inicio, fim; } LegRefFala;
 int legref_indice_linha(const LegRefPonto *v, int n, int tipo, int pares,
                         LegRefFala **saida, int *estimado, int *filtradas);
 
+// Reference jobs reading the network right now (any instance).
+int legref_em_rede(void);
 #endif

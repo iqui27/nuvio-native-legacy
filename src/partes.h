@@ -167,6 +167,14 @@ void partes_cancelar(void);
 // para o segurar responder da memoria (nada sem chave do TorBox).
 void partes_aquecer(void);
 
+// TorBox burn-in (tbburn.c). BLOCKS (call from a worker). Finds the source's
+// file in the TorBox account by an EXACT match only: hash (add-on or link),
+// file name, or exact size, over the cached account list (up to 10 pages).
+// Never "best match", never the title, never adds anything to the account.
+// 1 = found: *item, *arquivoId (TorBox file_id), *usenet and `como` set.
+int  partes_achar_exato(const char *url, const char *hash, const char *arquivo, uint64_t bytes,
+                        int *item, int *arquivoId, char *como, unsigned n);
+
 // ---- link de um arquivo (fio proprio) -------------------------------------
 // Pede o link do CDN de um arquivo. Com `comLista`, le tambem o item (para o
 // Retomar, que so tem os ids guardados) e confere que o arquivo ainda existe.

@@ -302,7 +302,7 @@
   0, /* Baixar registro: acao local, sem preferencia gravada */
 #endif
   0, 0, 0, /* shared exclusions parent, max-size view, release-group editor */
-  120, 0, 0, 0, 0, 3, 1, 0, 1, 0, 0, /* primary style views; player.txt is authoritative */
+  120, TXT_FAMILIA_JAKARTA, 0, 100, 0, 3, 1, 0, 1, 0, 0, /* primary style views; player.txt is authoritative */
   0, 0, 0, 0, 0, 0, 0, /* secondary appearance inherits primary, manual delay0 */
   0, /* collection default view (#362): Automatic, existing layout */
   0, /* external player (#501): Internal */
@@ -354,3 +354,6 @@
   0, /* hero logo and information size: Normal */
   0, /* folder hero details: On (V_LIGA 0) */
   1, /* audio sync samples the film on mobile data too: Off (V_LIGA 1) */
+  0, /* TorBox plan: Standard (V_TB_PLANO 0) */
+  0, /* burn embedded ASS in with TorBox: On (V_LIGA 0); only acts with plan Pro */
+  0, /* original audio with burn-in: Passthrough (V_TB_AUDIO 0) */

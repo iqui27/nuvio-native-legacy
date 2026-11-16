@@ -6,6 +6,7 @@
 #include "idioma.h"
 #include "player.h"
 #include "video.h"
+#include "passo.h"
 #include "xtream.h"
 #include "addons.h"
 #include "gfx.h"
@@ -14,8 +15,10 @@
 #include "layout.h"
 #include "legenda.h"
 #include "mkvass.h"
+#include "tbburn.h"
 #include "assrender.h"
 #include "ajustes.h"
+#include "legenda2.h"
 #include "catalogo.h"
 #include "linguas.h"
 #include "audioescolha.h"
@@ -518,6 +521,9 @@ void faixas_abrir(void) { faixas_abrir_em(0); }
 // com as duas colunas lado a lado (comparar o par escolhido e o motivo dele
 // existir); o que muda e onde o foco comeca.
 void faixas_abrir_em(int col) {
+#ifdef NV_TPK
+  video_tpk_tba_soltar();   // a value changed without OK last time is not kept
+#endif
   int n;
   aberta = 1;
   modo = (col == 1) ? 1 : 0;
@@ -600,10 +606,16 @@ static int linhaDaLeg(int i) {
   return i;
 }
 
+// Original audio with TorBox burn-in (tbburn.h): rows under the audio tracks.
+#ifdef NV_TPK
+static int nTba(void) { return video_tpk_tba_linhas(); }
+#else
+static int nTba(void) { return 0; }
+#endif
 static int nEst(void);
 static int nLinhas(int col) {
   if (col == FX_COL_ESTILO) return nEst();
-  if (col == 0) { int n = video_n_audio(); return n; }
+  if (col == 0) { int n = video_n_audio() + nTba(); return n; }
   return nLegendas() + 1;   // +1 pela linha "Desativada"
 }
 
@@ -621,6 +633,14 @@ enum { EST_FONTE = 1, EST_COR = 2, EST_RESTAURAR = 9, EST_COR_BORDA = 10,
         * column plus the libass row, Restore defaults last. */
        EST_LIBASS, EST_ASS_TAM, EST_ASS_OPAC, EST_CONTRASTE, EST_GAMA, EST_ESCALA, EST_SINC,
 #endif
+       /* MAIN / SECOND (owner 12/11): "Edit" switches the column between the
+        * main subtitle and the second one (shown only while a second subtitle
+        * is on). The second's cells are the same saved values as Settings >
+        * Second subtitle. EST_QUEIMADA: the main is burned in by TorBox
+        * (tbburn.h), nothing of it to style here. */
+       EST_ALVO,
+       EST2_TAM, EST2_FONTE, EST2_COR, EST2_OPAC, EST2_FUNDO, EST2_POSICAO, EST2_LUGAR,
+       EST2_BORDA, EST2_COR_BORDA, EST2_NEGRITO, EST2_ATRASO, EST2_RESTAURAR,
        EST_TOTAL };
 static const char *const EST_ROT[EST_TOTAL] = {
   "Tamanho", "Fonte OpenSubtitles", "Cor", "Opacidade", "Fundo", "Posição", "Borda", "Atraso",
@@ -628,7 +648,31 @@ static const char *const EST_ROT[EST_TOTAL] = {
 #ifdef NV_TPK
   , "libass", "Tamanho", "Opacidade", "Contraste", "Gama", "Resolução das legendas", "Sincronia com a imagem"
 #endif
+  , "Editar",
+  "Tamanho", "Fonte da legenda", "Cor", "Opacidade", "Fundo", "Posição", "Posição da segunda legenda",
+  "Borda", "Cor da borda", "Negrito", "Atraso", "Restaurar padrão"
 };
+/* The second subtitle's setting behind each EST2_ cell (ajustes.h AJ2_*); -1 for
+ * Delay (legenda2's manual offset, like the selector's Delay row) and Restore. */
+static int est2Op(int i) {
+  switch (i) {
+    case EST2_TAM: return ajustes_leg2_op(AJ2_TAMANHO);
+    case EST2_FONTE: return ajustes_leg2_op(AJ2_FONTE);
+    case EST2_COR: return ajustes_leg2_op(AJ2_COR);
+    case EST2_OPAC: return ajustes_leg2_op(AJ2_OPACIDADE);
+    case EST2_FUNDO: return ajustes_leg2_op(AJ2_FUNDO);
+    case EST2_POSICAO: return ajustes_leg2_op(AJ2_POSICAO);
+    case EST2_LUGAR: return ajustes_leg2_op(AJ2_LUGAR);
+    case EST2_BORDA: return ajustes_leg2_op(AJ2_BORDA);
+    case EST2_COR_BORDA: return ajustes_leg2_op(AJ2_COR_BORDA);
+    case EST2_NEGRITO: return ajustes_leg2_op(AJ2_NEGRITO);
+    default: return -1;
+  }
+}
+static int estAlvo;          // 0 = the main subtitle, 1 = the second
+static int estAlvoMexeu;     // the person picked; burn-in no longer opens on Second
+static int estSegunda(void) { return legenda2_estado() == LEG2_ATIVA; }
+
 
 /* The rows on screen (positions in the grid) -> row ids above. */
 static int estLinhas[EST_TOTAL], estNLinhas;
@@ -644,6 +688,15 @@ static int estFaixaAss(void) {
 static void estMapa(void) {
   int i;
   estNLinhas = 0;
+  if (!estSegunda()) { estAlvo = 0; estAlvoMexeu = 0; }
+  else {
+    estLinhas[estNLinhas++] = EST_ALVO;
+  }
+  if (estAlvo == 1) {
+    for (i = EST2_TAM; i <= EST2_RESTAURAR; i++) estLinhas[estNLinhas++] = i;
+    return;
+  }
+
 #ifdef NV_TPK
   if (estFaixaAss()) {
     if (assperf_get(AP_LIBASS)) {
@@ -672,7 +725,6 @@ static int estPos(int id) {
 static const char *const EST_FUNDO[5] = { "Nenhum", "Escuro 25%", "Escuro 50%",
                                           "Escuro 75%", "Escuro 100%" };
 static const char *const EST_BORDA[3] = { "Nenhuma", "Contorno", "Sombra" };
-static const char *const EST_OPAC[4]  = { "100%", "75%", "50%", "25%" };
 
 /* Com o ASS desenhado pelo libass, fonte, cor, fundo, posicao, borda, negrito
  * e cor da borda sao do arquivo ate a pessoa mexer no campo (aqui ou nos
@@ -716,7 +768,7 @@ static void valorEstilo(int linha, char *dst, size_t tam) {
       break;
     case 1: snprintf(dst, tam, "%s", legfontes_selecionada(0) >= 0 ? legfontes_nome(legfontes_selecionada(0)) : TXT_FAMILIAS_PT[e->familia >= 0 && e->familia < TXT_FAMILIA_N ? e->familia : 0]); break;
     case 2: snprintf(dst, tam, "%s", VIDEO_LEG_CORES_PT[e->cor % VIDEO_LEG_NCORES]); break;
-    case 3: snprintf(dst, tam, "%s", EST_OPAC[e->opacidade > 3 ? 3 : e->opacidade]); break;
+    case 3: snprintf(dst, tam, "%d%%", (int)lroundf(video_legenda_opacidade(e) * 100.0f)); break;
     case 4: snprintf(dst, tam, "%s", EST_FUNDO[e->fundo > 4 ? 4 : e->fundo]); break;
     // O uMS aceita -3..4; a folha mostra 1..8 porque "posicao -3" nao diz nada
     // a quem esta olhando a tela.
@@ -738,8 +790,8 @@ static void valorEstilo(int linha, char *dst, size_t tam) {
     case EST_LIBASS: snprintf(dst, tam, "%s", i18n(assperf_get(AP_LIBASS) ? "Ligado" : "Desligado")); break;
     case EST_ASS_TAM: snprintf(dst, tam, "%d%%", assperf_get(AP_ASSTAM)); break;
     case EST_ASS_OPAC: snprintf(dst, tam, "%d%%", assperf_get(AP_ASSOPAC)); break;
-    case EST_CONTRASTE: snprintf(dst, tam, "%d", 30 - assperf_get(AP_CONTRASTE)); break;
-    case EST_GAMA: { int g = assperf_get(AP_GAMA); g = g <= 5 ? -g : 11 - g;
+    case EST_CONTRASTE: snprintf(dst, tam, "%d", 30 + assperf_get(AP_CONTRASTE)); break;
+    case EST_GAMA: { int g = assperf_get(AP_GAMA);
       if (g) snprintf(dst, tam, "%+d", g); else snprintf(dst, tam, "%s", i18n("Desligado"));
       break; }
     case EST_ESCALA: { int v = assperf_get(AP_ESCALA);
@@ -751,6 +803,15 @@ static void valorEstilo(int linha, char *dst, size_t tam) {
       else snprintf(dst, tam, "%d / %d ms", lv, ps);
       break; }
 #endif
+    case EST_ALVO: snprintf(dst, tam, "%s", i18n(estAlvo ? "Segunda legenda" : "Legenda principal")); break;
+    case EST2_ATRASO: {
+      int a = legenda2_offset_manual();
+      if (!a) snprintf(dst, tam, "0 s");
+      else    { snprintf(dst, tam, "%+.2f s", a / 1000.0f); plrui_decimal(dst); }
+      break; }
+    case EST2_TAM: case EST2_FONTE: case EST2_COR: case EST2_OPAC: case EST2_FUNDO: case EST2_POSICAO:
+    case EST2_LUGAR: case EST2_BORDA: case EST2_COR_BORDA: case EST2_NEGRITO:
+      snprintf(dst, tam, "%s", i18n(ajustes_op_texto(est2Op(linha)))); break;
     default: dst[0] = 0; break;   // "Restaurar padrao" e acao, nao valor
   }
 }
@@ -760,6 +821,12 @@ static void valorEstilo(int linha, char *dst, size_t tam) {
 // Atraso) abrem um controle dentro do painel (ver estiloTecla).
 static void ciclarEstilo(int linha) {
   VideoLegendaEstilo *e = player_leg_estilo();
+  if (linha == EST_ALVO) { estAlvo = !estAlvo; estAlvoMexeu = 1; foco[FX_COL_ESTILO] = 0; return; }
+  if (linha == EST2_RESTAURAR) {
+    ajustes_leg2_restaurar();
+    legenda2_definir_offset_manual(0);
+    return;
+  }
   switch (linha) {
     case 4: e->fundo   = (e->fundo + 1) % 5; player_leg_estilo_tocou(PLR_LEG_FUNDO); break;
     case 6: e->borda   = (e->borda + 1) % 3; player_leg_estilo_tocou(PLR_LEG_BORDA); break;
@@ -804,15 +871,22 @@ typedef struct { int min, max, toque, segura, teto; } EstSlider;   // max == min
 // teto = quantas vezes o passo pode crescer segurando (aceleracao).
 static const EstSlider EST_SL[EST_TOTAL] = {
   [0] = { 50, 300, 10, 20, 1 },                                   // Tamanho %
-  [3] = { 0, 3, 1, 1, 1 },                                        // Opacidade: 25..100%
+  [3] = { VIDEO_LEG_OPAC_MIN, VIDEO_LEG_OPAC_MAX, 10, 10, 1 },   // Opacity %, steps of 10 (owner 14/11/2026)
   [5] = { 0, 7, 1, 1, 1 },                                        // Posicao: 8 niveis
   [7] = { -LEGUI_ATRASO_MAX, LEGUI_ATRASO_MAX, 100, 500, 4 },     // Atraso: 0,1 s / 0,5 s
 #ifdef NV_TPK
   [EST_ASS_TAM] = { 50, 200, 5, 10, 2 },                          // dialogue size %
   [EST_ASS_OPAC] = { 20, 100, 5, 10, 1 },                         // dialogue opacity %
-  [EST_CONTRASTE] = { 0, 30, 1, 1, 1 },                           // the TV's numbers
-  [EST_GAMA] = { -5, 5, 1, 1, 1 },
+  [EST_CONTRASTE] = { 0, 50, 1, 5, 2 },                           // the TV's numbers, its whole range
+  [EST_GAMA] = { -20, 20, 1, 5, 2 },                              // past the TV's -5..+5 (owner 16/11/2026)
 #endif
+  // The second subtitle: steps through the choices of its setting (the value
+  // shown is the setting's own text); Delay in ms like the main.
+  [EST2_TAM] = { 0, 26, 1, 1, 1 }, [EST2_FONTE] = { 0, TXT_FAMILIA_N, 1, 1, 1 },
+  [EST2_COR] = { 0, 6, 1, 1, 1 }, [EST2_OPAC] = { 0, 10, 1, 1, 1 }, [EST2_FUNDO] = { 0, 5, 1, 1, 1 },
+  [EST2_POSICAO] = { 0, 8, 1, 1, 1 }, [EST2_LUGAR] = { 0, 1, 1, 1, 1 }, [EST2_BORDA] = { 0, 3, 1, 1, 1 },
+  [EST2_COR_BORDA] = { 0, VIDEO_LEG_NCORES, 1, 1, 1 }, [EST2_NEGRITO] = { 0, 2, 1, 1, 1 },
+  [EST2_ATRASO] = { -LEGUI_ATRASO_MAX, LEGUI_ATRASO_MAX, 100, 500, 4 },
 };
 static int estSlider(int i) { return i >= 0 && i < EST_TOTAL && EST_SL[i].max > EST_SL[i].min; }
 // 0 = sem controle, 1 = slider, 2 = paleta, 3 = lista de fontes, 4 = picture sync.
@@ -832,15 +906,17 @@ static float ctlAmostra[VIDEO_LEG_NCORES];   // 0..1: a amostra em foco cresce
 
 static int estLer(int i) {
   const VideoLegendaEstilo *e = player_leg_estilo();
+  if (i == EST2_ATRASO) return legenda2_offset_manual();
+  if (est2Op(i) >= 0) return ajustes_op_indice(est2Op(i));
   switch (i) {
 #ifdef NV_TPK
     case EST_ASS_TAM: return assperf_get(AP_ASSTAM);
     case EST_ASS_OPAC: return assperf_get(AP_ASSOPAC);
-    case EST_CONTRASTE: return 30 - assperf_get(AP_CONTRASTE);
-    case EST_GAMA: { int g = assperf_get(AP_GAMA); return g <= 5 ? -g : 11 - g; }
+    case EST_CONTRASTE: return 30 + assperf_get(AP_CONTRASTE);
+    case EST_GAMA: return assperf_get(AP_GAMA);
 #endif
     case 0: return e->tamanho;
-    case 3: return 3 - (e->opacidade < 0 ? 0 : e->opacidade > 3 ? 3 : e->opacidade);
+    case 3: return (int)lroundf(video_legenda_opacidade(e) * 100.0f);
     case 5: return e->posicao;
     default: return e->atrasoMs;
   }
@@ -849,15 +925,22 @@ static void estGravar(int i, int v) {
   VideoLegendaEstilo *e = player_leg_estilo();
   const EstSlider *s = &EST_SL[i];
   v = v < s->min ? s->min : v > s->max ? s->max : v;
+  if (i == EST2_ATRASO) { legenda2_definir_offset_manual(v); return; }
+  if (est2Op(i) >= 0) {
+    int n = ajustes_op_n(est2Op(i));
+    if (n > 0 && v >= n) v = n - 1;
+    ajustes_op_definir(est2Op(i), v);
+    return;
+  }
   switch (i) {
 #ifdef NV_TPK
     case EST_ASS_TAM: assperf_definir(AP_ASSTAM, v); return;
     case EST_ASS_OPAC: assperf_definir(AP_ASSOPAC, v); return;
-    case EST_CONTRASTE: assperf_definir(AP_CONTRASTE, 30 - v); return;
-    case EST_GAMA: assperf_definir(AP_GAMA, v == 0 ? 0 : v < 0 ? -v : 11 - v); return;
+    case EST_CONTRASTE: assperf_definir(AP_CONTRASTE, v - 30); return;
+    case EST_GAMA: assperf_definir(AP_GAMA, v); return;
 #endif
     case 0: e->tamanho = v; break;
-    case 3: e->opacidade = 3 - v; break;
+    case 3: e->opacidade = v / 10 * 10; break;
     case 5: if (e->posicao != v) player_leg_estilo_tocou(PLR_LEG_POSICAO); e->posicao = v; break;
     default: e->atrasoMs = v; break;
   }
@@ -1088,6 +1171,9 @@ static void lembrarManual(int i) {
 }
 
 static void aplicar(void) {
+#ifdef NV_TPK
+  if (coluna == 0 && foco[0] >= video_n_audio()) { video_tpk_tba_ok(foco[0] - video_n_audio()); return; }
+#endif
   if (coluna == 0) {
     // A ordem automatica (audioescolha.h) volta a esta faixa neste titulo, e
     // nos outros episodios: gravada no perfil (audiomemoria.h), com o numero
@@ -1181,6 +1267,10 @@ static void legendaAutomatica(Uint32 agora) {
   for (i = 0; i < nEmb; i++) {
     const VideoFaixa *f = video_legenda(i);
     emb[i] = f ? f->idioma : "";
+#ifdef NV_TPK
+    // Burned in (tbburn.h): every burnable ASS track is out of Main's pick.
+    if (video_tpk_leg_oculta(i)) emb[i] = "zxx";
+#endif
     tipos[i] = !f ? LING_LEG_COMUM : f->tipoLeg ? f->tipoLeg : f->letreiro ? LING_LEG_LETREIROS : LING_LEG_COMUM;
     formatos[i] = ling_formato_legenda(f ? f->codec : "");
   }
@@ -1408,6 +1498,14 @@ void faixas_evento(const SDL_Event *e) {
   // Na de audio nao ha para onde ir — antes elas pulavam para a coluna de
   // legenda, que e justamente o que fazia os dois botoes do player parecerem o
   // mesmo botao.
+#ifdef NV_TPK
+  // Original audio row (tbburn.h): Left/Right change the value shown,
+  // OK applies it (aplicar).
+  if (!modo && coluna == 0 && foco[0] >= video_n_audio() && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
+    video_tpk_tba_passo(foco[0] - video_n_audio(), k == SDLK_RIGHT ? 1 : -1);
+    return;
+  }
+#endif
   if (k == SDLK_LEFT || k == SDLK_RIGHT) return;
   if (k == SDLK_UP)    { if (foco[coluna] > 0) foco[coluna]--; ajustarRolagem(); return; }
   if (k == SDLK_DOWN)  { if (foco[coluna] < nLinhas(coluna) - 1) foco[coluna]++;
@@ -1445,8 +1543,24 @@ static void avisarQueda(int e) {
   player_toast_ex(b, 6000, "aj_triangle-alert", 1);
 }
 
+void faixas_legenda_reaplicar(void) {
+  int a = legendaAtiva();
+  if (a >= 0) escolherLegenda(a);
+}
+
+
 void faixas_atualizar(float dt, Uint32 agora) {
+  NV_PASSO("faixas: legendasui_atualizar");
   if (aberta && modo && coluna == 1) legendasui_atualizar(dt);
+  NV_PASSO("faixas: queimada/velocidade");
+#ifdef NV_TPK
+  // Burned in stopped (TorBox failed: toast; or Burn in Off): the ASS tracks
+  // are back in Main's list, so with Main off the automatic pick runs again
+  // (e.g. Signs & Songs drawn by Nuvio).
+  { int v = video_tpk_queimar_voltou();
+    if (v == 1) player_toast_ex(i18n("Legenda queimada do TorBox indisponível: o Nuvio desenha a legenda"), 6000, "pl_captions", 1);
+    if (v && legendaAtiva() < 0) { legAuto = 1; legAutoDesde = 0; } }
+#endif
   // #202: the platform refused the speed (LG/.tpk answer after the request):
   // the row is gone and playback is back at 1x; say it once.
   if (velPedidaUi != VEL_NORMAL && !video_velocidade_suportada()) {
@@ -1470,10 +1584,14 @@ void faixas_atualizar(float dt, Uint32 agora) {
   // Fechando a partir da barra, ela sai como barra: sem isto a folha inteira
   // piscaria no caminho de volta.
   if (aberta || anim < .01f) animTopo = anim_mola(animTopo, faixas_estilo_topo() ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
+  NV_PASSO("faixas: legendaPreDownload");
   legendaPreDownload();
+  NV_PASSO("faixas: legendaAutomatica");
   legendaAutomatica(agora);
   if (!legAuto) legenda_pre_descartar("automatica encerrada");
+  NV_PASSO("faixas: pilAtualizar");
   pilAtualizar(agora);
+  NV_PASSO("faixas: resto");
   // Recuo vencido: a MESMA faixa de novo. O overlay nao foi desligado — o que
   // ja estava colhido continua na tela, e o fio novo retoma do sidecar parcial.
   if (legOverlay >= 0 && legOverlayRetomar && (Sint32)(agora - legOverlayRetomar) >= 0) {
@@ -1683,7 +1801,12 @@ static void linhaLista(int col, int i, float x, float y, float w, float a) {
   int ativo;
   GfxRect lr = { x, y, w, IL_LN_H };
   nome[0] = sub[0] = 0;
-  if (!col) {
+  if (!col && i >= video_n_audio()) {
+#ifdef NV_TPK
+    video_tpk_tba_rotulo(i - video_n_audio(), nome, sizeof nome, sub, sizeof sub);
+#endif
+    icone = "pl_audio-lines";
+  } else if (!col) {
     const VideoFaixa *f = video_audio(i);
     partirRotulo(f ? f->rotulo : "", nome, sizeof nome, sub, sizeof sub);
     idioma = f ? f->idioma : NULL;
@@ -1702,7 +1825,7 @@ static void linhaLista(int col, int i, float x, float y, float w, float a) {
   }
   if (sel) plrui_linha_foco(lr, 22.0f, a);
   rostoIdioma((GfxRect){ x + 22.0f, y + (IL_LN_H - 52.0f) * 0.5f, 52.0f, 52.0f }, idioma, icone, sel, a);
-  ativo = col == 0 ? i == video_audio_atual() : legDaLinha(i - 1) == legendaAtiva();
+  ativo = col == 0 ? i < video_n_audio() && i == video_audio_atual() : legDaLinha(i - 1) == legendaAtiva();
   { float tx = x + 22.0f + 52.0f + 18.0f, tw = w - (tx - x) - 22.0f - (ativo ? 46.0f : 0.0f);
     int c = sel ? 255 : 219, cs = 122;
     TxtLinha ln = txt_linha_corta(TXT_ILHA_FORTE, nome, c, c, c - 2, 255, tw);
@@ -2004,7 +2127,7 @@ static void celulaEstiloTelefone(int i, int pos, GfxRect r, float a, int ativa) 
   float x = r.x + 20, w = r.w - 40;
   if (sel) plrui_linha_foco(r, 22, a);
   if (ativa && pos >= 0) ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroEstilo, NULL, pos, 0);
-  if (i == EST_RESTAURAR) {
+  if (i == EST_RESTAURAR || i == EST2_RESTAURAR) {
     int compacto = r.w < 154;
     float tx = compacto ? r.x + 10 : r.x + 54, tw = compacto ? r.w - 20 : r.w - 74;
     float h = txt_bloco_corta(TXT_G20B, EST_ROT[i], 243, 242, 239, 0, 0, tw, 24, 0, compacto ? 2 : 3);
@@ -2044,7 +2167,7 @@ static void celulaEstilo(int i, int pos, GfxRect r, float a, int ativa) {
   int pres = estiloPreservadoAss(i);
   if (sel) plrui_linha_foco(r, 22.0f, a);
   if (ativa && pos >= 0) ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroEstilo, NULL, pos, 0);
-  if (i == EST_RESTAURAR) {
+  if (i == EST_RESTAURAR || i == EST2_RESTAURAR) {
     TxtLinha l = txt_linha(TXT_G20B, EST_ROT[i], 243, 242, 239, sel ? 255 : 191);
     gfx_icone((GfxRect){ r.x + 20.0f, r.y + (r.h - 22.0f) * 0.5f, 22.0f, 22.0f }, "pl_rotate-ccw", 1, 1, 1, (sel ? 1.0f : 0.75f) * a);
     txt_desenhar_alpha(l, r.x + 20.0f + 22.0f + 12.0f, r.y + (r.h - (float)l.h) * 0.5f, a);
@@ -2117,8 +2240,8 @@ static void sliderCtl(int i, GfxRect r, float a, int ativo) {
     char lo[24], hi[24];
     if (i == 7) { snprintf(lo, sizeof lo, "-%d s", LEGUI_ATRASO_MAX / 1000); snprintf(hi, sizeof hi, "+%d s", LEGUI_ATRASO_MAX / 1000); }
 #ifdef NV_TPK
-    else if (i == EST_CONTRASTE) { snprintf(lo, sizeof lo, "0"); snprintf(hi, sizeof hi, "30"); }
-    else if (i == EST_GAMA) { snprintf(lo, sizeof lo, "-5"); snprintf(hi, sizeof hi, "+5"); }
+    else if (i == EST_CONTRASTE) { snprintf(lo, sizeof lo, "0"); snprintf(hi, sizeof hi, "50"); }
+    else if (i == EST_GAMA) { snprintf(lo, sizeof lo, "-20"); snprintf(hi, sizeof hi, "+20"); }
 #endif
     else { snprintf(lo, sizeof lo, "%d%%", i == 3 ? 25 : EST_SL[i].min); snprintf(hi, sizeof hi, "%d%%", i == 3 ? 100 : EST_SL[i].max); }
     { TxtLinha tl = txt_linha(TXT_G16B, lo, 243, 242, 239, 150), th = txt_linha(TXT_G16B, hi, 243, 242, 239, 150);
@@ -2141,7 +2264,7 @@ static void sliderCtl(int i, GfxRect r, float a, int ativo) {
       || i == EST_GAMA
 #endif
       ) {   // niveis discretos: um ponto por parada
-    int n = i == 3 ? 4 : i == 5 ? 8 : 11, k;
+    int n = i == 3 ? 4 : i == 5 ? 8 : 9, k;   // gamma: a dot every 5
     for (k = 0; k < n; k++) {
       float tx = x1 + (x2 - x1) * (float)k / (float)(n - 1);
       if (fabsf(tx - px) > 18.0f) gfx_cor((GfxRect){ tx - 3.0f, cy - 3.0f, 6.0f, 6.0f }, 0.5f, 1, 1, 1, 0.45f * a);

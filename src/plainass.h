@@ -9,6 +9,8 @@ typedef struct {
   int size, rgb, background, border, bold, marginV;
   int outlineRgb;   // 0xRRGGBB; zero preserves the existing black edge
   int overrides;    // Authored ASS: only explicitly changed fields.
+  int emMil;        // the font's em in thousandths of the ASS FontSize (libass sizes by
+                    // the win ascent + descent); 0 = 800. Sets Outline's soft shadow.
 } PlainAssStyle;
 
 #define PLAIN_ASS_COLOR   1

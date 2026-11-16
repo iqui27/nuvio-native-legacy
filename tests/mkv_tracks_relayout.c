@@ -141,5 +141,21 @@ int main(void) {
   n = mkv_faixas_e_caps("https://example.test/cortado-sem-seek.mkv", fx, MKV_MAX_FAIXAS, NULL, 0, NULL);
   { int i, leg = 0; for (i = 0; i < n; i++) leg += fx[i].tipo == 17;
     ok(n >= 1 && leg == 0, "Tracks cortado sem SeekHead: sem legenda parcial, video preservado"); }
+
+  // Segment > Info > Duration (mkv_ultima_duracao): a child of Info with the
+  // "unknown size" mark used to pass the bounds check (the sum wrapped) and
+  // its value was read from the bytes after Info. Here that child is a
+  // TimestampScale: the scale stays the default and the length is the file's.
+  { static const unsigned char h[80] = {
+      0x1A, 0x45, 0xDF, 0xA3, 0x84, 0x42, 0x86, 0x81, 0x01,                            // EBML header
+      0x18, 0x53, 0x80, 0x67, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,          // Segment, unknown size
+      0x15, 0x49, 0xA9, 0x66, 0x8F,                                                    // Info, 15 bytes
+      0x44, 0x89, 0x88, 0x41, 0x36, 0x1E, 0x88, 0x00, 0x00, 0x00, 0x00,                // Duration 1449608.0
+      0x2A, 0xD7, 0xB1, 0xFF,                                                          // TimestampScale, unknown size
+      0x16, 0x54, 0xAE, 0x6B, 0x82, 0x00, 0x00 };                                      // Tracks (empty)
+    double d;
+    mkv_faixas_do_trecho(h, (long)sizeof h, fx, MKV_MAX_FAIXAS, NULL, 0, NULL);
+    d = mkv_ultima_duracao();
+    ok(d > 1449.607 && d < 1449.609, "Duration: unknown-size child of Info is not read past Info"); }
   return falhas ? 1 : 0;
 }

@@ -208,4 +208,8 @@ int  mkvass_relay_faixa(void);
 void mkvass_relay_bloco(long long clPos, int clHdr, unsigned long clTs, int temTs,
                         long long blkPos, const unsigned char *b, long n);
 
+// TorBox burn-in: the reader's connections in total (own read + prefetches)
+// while TorBox's stream plays; 0 = no cap. video_tpk.c sets it every frame.
+void mkvass_teto_conexoes(int n);
+
 #endif

@@ -1,7 +1,7 @@
 #!/bin/bash
 export TMPDIR="${TMPDIR:-/tmp}"
 TMPDIR="${TMPDIR%/}"
-# Subtitle outline shot at 1080p (GL window, not in
+# Subtitle Outline (Stremio ring + group fade) shot at 1080p (GL window, not in
 # the suite: *_shot.sh). See tests/legenda_contorno_shot.c.
 #   bash tests/legenda_contorno_shot.sh <dir> [antigo]
 set -eu

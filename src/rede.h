@@ -94,6 +94,9 @@ typedef struct {
 unsigned rede_pedido_capacidades(void);
 int rede_pedir(const RedePedido *pedido, RedeResposta *resposta);
 void rede_resposta_limpar(RedeResposta *resposta);
+/* Closes this thread's cached connections (its curl handle): a thread that
+ * reads a little and then idles (legref) holds no socket open afterwards. */
+void rede_fio_fechar(void);
 
 /* Grupo vive fora do request: avancar ao trocar conta/perfil/titulo invalida
  * todos os jobs anteriores. Jobs retidos impedem UAF; nenhuma geracao volta
@@ -246,6 +249,9 @@ int rede_resto_recusado(void);
 // conexao. O primeiro Range lateral que da certo solta a pausa. Vale para o
 // fio inteiro: chamar no comeco de um fio proprio.
 void rede_lateral(int sim);
+// Nuvio's own requests in flight to TorBox hosts now; *pico (may be NULL)
+// gets the most since the last call (tbburn logs). The TV player is not counted.
+int rede_torbox_em_voo(int *pico);
 
 // Teto de bytes da transferencia corrente (0 = sem teto). E interno ao modulo;
 // esta exposto so porque rede_baixar_trecho o usa. Nao mexer de fora.

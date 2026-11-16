@@ -74,6 +74,10 @@ static const Item TELA[] = {
     ROT("Idiomas"),
       OPC(AJ_IDIOMA), OPC(AJ_AUD_LINGUA), OPC(AJ_AUD_LINGUA2), OPC(AJ_LEG_LINGUA), OPC(AJ_LEG_FORCADA),
       OPC(AJ_LEG_MOSTRAR), OPC(AJ_LEG_SYNC_AUTO),
+#ifdef NV_TPK
+      OPC(AJ_LEG_QUEIMAR),   // TorBox burn-in (tbburn.h), greyed without plan Pro + key
+      OPC(AJ_TB_AUDIO),      // original audio with burn-in: Passthrough | TorBox audio (dts/tbaudio_tpk.h)
+#endif
 #ifdef NV_ANDROID
       // Sincronia pelo audio: a reserva do Reshaped so existe no Android (dono,
       // 06/11: saiu do .tpk; a LG nunca teve).
@@ -106,6 +110,9 @@ static const Item TELA[] = {
       OPC(AJ_PROVEDORES_ESCOPO), OPC(AJ_DEBRID_RD), OPC(AJ_DEBRID_TB), OPC(AJ_DEBRID_PM), OPC(AJ_DEBRID_AD),
       OPC(AJ_DEBRID_AD_TESTAR), OPC(AJ_DEBRID_RD_TESTAR),
       OPC(AJ_DEBRID_TB_TESTAR), OPC(AJ_DEBRID_PM_TESTAR),
+#ifdef NV_TPK
+      OPC(AJ_TB_PLANO),      // TorBox burn-in needs Pro (tbburn.h)
+#endif
     ROT("Servidores pessoais"),
       OPC(AJ_JF_LIGADO), OPC(AJ_JF_SERVIDOR), OPC(AJ_JF_ENTRAR), OPC(AJ_JF_SAIR),
       OPC(AJ_EM_SERVIDOR), OPC(AJ_EM_ENTRAR), OPC(AJ_EM_SAIR),

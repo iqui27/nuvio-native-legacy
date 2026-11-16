@@ -8,7 +8,9 @@
 #include "dados.h"
 #include "imgsub.h"
 #include "pgs.h"
+#include "fontefamilias.h"
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -134,6 +136,14 @@ static int conexaoRecusada(int e) { return e == 6 || e == 7 || e == 35; }
 // legenda — ffmpeg e mkvmerge escrevem BlockGroup — mas um valor e melhor que
 // um evento de zero segundos que nunca aparece.
 #define MKVASS_DUR_PADRAO  3.0
+// After a jump the window starts MKVASS_ATRAS_SEG behind the playhead, but
+// what is on screen NOW comes first: points from this far behind the playhead
+// onward are fetched before the older ones (owner 16/11, Love Is War: the
+// reader read 8 s of the past first and lines came up to 2.3 s late on
+// TorBox's CDN, 0.4-4 s per Range).
+#ifndef MKVASS_PERTO_SEG
+#define MKVASS_PERTO_SEG   3.0
+#endif
 // Fala que comeca ate isto a frente do playhead e URGENTE: o lote vai ao
 // overlay assim que chega, sem esperar a passada (que custa 1-2 s pelo teto
 // de Ranges). Com a entrega sem pisca (legenda_atualizar_corpo) isto e barato.
@@ -561,6 +571,8 @@ typedef struct {
   int      eventosEntregues, primeiraFala;
   double   posRef;         // playhead quando o grupo foi pedido (medida)
   int      atrasados, perdidos, palpites, palpitesFalhos;
+  int      tardeLinhas;        // "colhida TARDE" lines printed (one per start time)
+  double   tardeIni;           // start of the last one printed
   long     redeMs, redeMaxMs, redeN;   // latencia dos Ranges (medida)
   struct Job *pre[MKVASS_PREBUSCA];     // pre-busca: Ranges ja pedidos ao pool
   struct Job *jobFontes;               // Attachments, lidos em segundo plano
@@ -572,6 +584,10 @@ typedef struct {
   FonteMkv *fontes;
   int      nFontes;
   int      fontesCompletas;
+  // FONTES SOB DEMANDA (.tpk, fontefamilias.h): as familias que o documento
+  // pediu ate agora e quais das `fontes` ja foram ao libass (1 por fonte).
+  FonteFamilias familias;
+  unsigned char *fonteDada;
   // PRE-BUSCA: `prebusca` = ainda nao adotado (nao entrega); `escolher` decide
   // o ordinal pelo idioma; `fracIni` e onde o player vai comecar; `ordinal` e a
   // faixa escolhida (-1 = nenhuma).
@@ -1131,6 +1147,7 @@ static void liberarFontes(Fio *f) {
   int i;
   for (i = 0; i < f->nFontes; i++) { free(f->fontes[i].nome); free(f->fontes[i].dados); }
   free(f->fontes); f->fontes = NULL; f->nFontes = 0;
+  free(f->fonteDada); f->fonteDada = NULL;   // as proximas fontes comecam nao entregues
 }
 
 static int lerAttachments(Fio *f, const unsigned char *p, long n) {
@@ -2377,9 +2394,13 @@ static long lerBloco(Fio *f, const unsigned char *p, long n, const ClCache *cl,
           if (f->posRef > 0 && fim <= f->posRef) f->perdidos++;
           else if (f->posRef > 0 && ini < f->posRef) {
             f->atrasados++;
-            if (f->atrasados <= 20)
+            // A typeset sign is many events with the same start (owner 16/11:
+            // the same line 20 times): one line per start time.
+            if (f->tardeLinhas < 20 && (!f->tardeLinhas || ini != f->tardeIni)) {
+              f->tardeLinhas++; f->tardeIni = ini;
               printf("[mkvass] fala %.3f-%.3f colhida TARDE: playhead %.3f (%+.0f ms)\n",
                      ini, fim, f->posRef, (f->posRef - ini) * 1000.0);
+            }
           }
         }
         off += tams[fi];
@@ -3110,12 +3131,46 @@ static int colherGrupo(Fio *f, int i, int j) {
 // Serializa so os coletores: uma retomada pode herdar legG, entao o lote
 // velho deve terminar antes da primeira publicacao do coletor novo.
 static pthread_mutex_t entregaTrava = PTHREAD_MUTEX_INITIALIZER;
+
+/* FONTES SOB DEMANDA (16/11/2026, fontefamilias.h). No .tpk o libass so
+ * recebe as fontes anexadas que o documento pede (Fontname dos estilos, \fn
+ * dos eventos); cada uma entra uma vez. Cada entrega rele o corpo inteiro
+ * (o lote novo pode trazer um \fn que nenhum evento anterior usava) e manda
+ * as fontes recem-pedidas ANTES do corpo, para o evento que as usa ja
+ * nascer com elas. Fora do .tpk, todas, como sempre. Sem memoria para a
+ * marcacao: todas tambem. */
+static void entregarFontes(Fio *f, const char *corpo, int primeira) {
+  int i, dadas = 0, novas = 0;
+  double mb = 0, mbTotal = 0;
+#ifdef NV_TPK
+  if (f->nFontes > 0 && !f->fonteDada) f->fonteDada = (unsigned char *)calloc((size_t)f->nFontes, 1);
+  if (f->fonteDada) {
+    // Every attached font already in libass: nothing left to look for in the body.
+    for (i = 0; i < f->nFontes && f->fonteDada[i]; i++) {}
+    if (i < f->nFontes) fontefam_varrer(&f->familias, corpo, strlen(corpo));
+  }
+#else
+  (void)corpo;
+#endif
+  if (!primeira && !f->fonteDada) return;   // fora do .tpk: tudo foi na primeira
+  for (i = 0; i < f->nFontes; i++) {
+    mbTotal += f->fontes[i].tam / 1048576.0;
+    if (f->fonteDada && f->fonteDada[i]) { dadas++; mb += f->fontes[i].tam / 1048576.0; continue; }
+    if (f->fonteDada && !fontefam_quer(&f->familias, f->fontes[i].dados, (size_t)f->fontes[i].tam)) continue;
+    assrender_adicionar_fonte(f->fontes[i].nome, f->fontes[i].dados, (size_t)f->fontes[i].tam);
+    if (f->fonteDada) f->fonteDada[i] = 1;
+    dadas++; novas++; mb += f->fontes[i].tam / 1048576.0;
+  }
+  if (f->fonteDada && (primeira || novas) && f->nFontes)
+    printf("[mkvass] fontes sob demanda: %d de %d anexadas no libass (%.1f de %.1f MB; %d familias pedidas)%s\n",
+           dadas, f->nFontes, mb, mbTotal, f->familias.n, primeira ? "" : ", \\fn novo no lote");
+}
+
 static int entregarCorpoSeAtual(Fio *f, const char *corpo) {
   int ok = 0, travado = 1;
   pthread_mutex_lock(&entregaTrava);
   pthread_mutex_lock(&estadoDoFio(f)->trava);
   if (f->g == estadoDoFio(f)->geracao && !estadoDoFio(f)->parar) {
-    int i;
     if (!f->entregas && !(f->herdar && legenda_ligada_em(f->legG))) {
       // Primeira carga: so se a legenda ainda e da geracao que a escolha
       // deixou. Outro dono no meio (externa, outra faixa, desligada) = este
@@ -3123,9 +3178,8 @@ static int entregarCorpoSeAtual(Fio *f, const char *corpo) {
       if (legenda_geracao() == f->legG) {
         unsigned g;
         assrender_limpar_fontes();
-        for (i = 0; i < f->nFontes; i++)
-          assrender_adicionar_fonte(f->fontes[i].nome, f->fontes[i].dados,
-                                    (size_t)f->fontes[i].tam);
+        if (f->fonteDada) memset(f->fonteDada, 0, (size_t)f->nFontes);   // a lista do libass recomeca aqui
+        entregarFontes(f, corpo, 1);
         g = legenda_definir_corpo_se(corpo, f->legG);
         if (g) { f->legG = g; ok = 1; estadoDoFio(f)->fontesLegG = f->nFontes ? g : 0; }
       }
@@ -3136,6 +3190,7 @@ static int entregarCorpoSeAtual(Fio *f, const char *corpo) {
       // pelo assrender. `f` pertence apenas a este coletor.
       pthread_mutex_unlock(&estadoDoFio(f)->trava);
       travado = 0;
+      if (legenda_geracao() == f->legG) entregarFontes(f, corpo, 0);
       ok = legenda_atualizar_corpo_se(corpo, f->legG);
     }
     if (ok) f->entregas++;
@@ -3614,9 +3669,12 @@ static double alcanceFrente(const Fio *f) {
 // Proximo ponto pendente pela prioridade do laco (ver trabalhar). -1 quando
 // nao ha nenhum. *noJanela diz se ele esta em [ini, fim]. Com o corpo em
 // janela (#384) so vale o que esta em [ini, fim]: o resto seria despejado.
+// Na janela, primeiro o que comeca de MKVASS_PERTO_SEG antes do playhead em
+// diante (o que esta na tela agora e o que vem); o resto de [ini, perto) por
+// ultimo.
 static int proximoPendente(const Fio *f, double ini, double fim, int *noJanela) {
-  int i, frente = -1, atras = -1;
-  double pos = ini + MKVASS_ATRAS_SEG;
+  int i, frente = -1, atras = -1, antigo = -1;
+  double pos = ini + MKVASS_ATRAS_SEG, perto = pos - MKVASS_PERTO_SEG;
   int pausa = f->folgaJan >= 0.0 && f->folgaJan < MKVASS_VARRE_FOLGA_SEG;
   *noJanela = 0;
   for (i = 0; i < f->nPontos; i++) {
@@ -3628,11 +3686,17 @@ static int proximoPendente(const Fio *f, double ini, double fim, int *noJanela) 
     // com folga de buffer. O resto da faixa continua em segundo plano.
     if (f->pontos[i].rel < 0 &&
         (pausa || t > pos + MKVASS_VARRE_JANELA_SEG || t < pos - MKVASS_VARRE_ATRAS_SEG)) continue;
-    if (t >= ini && t <= fim) { *noJanela = 1; return i; }
+    if (t >= ini && t <= fim) {
+      if (t >= perto) { *noJanela = 1; return i; }
+      if (antigo < 0) antigo = i;  // [ini, perto): depois do que esta na tela
+      continue;
+    }
+    if (t > fim && antigo >= 0) break;   // ordenado por tempo: nada mais perto adiante
     if (f->janela || f->lateral) { if (t > fim) break; continue; }
     if (t > fim) { if (frente < 0) frente = i; }
     else atras = i;               // o ultimo antes de ini: o mais perto
   }
+  if (antigo >= 0) { *noJanela = 1; return antigo; }
   return frente >= 0 ? frente : atras;
 }
 
@@ -3647,6 +3711,18 @@ static int grupoFim(const Fio *f, int i) {
          f->pontos[j + 1].rel - f->pontos[i].rel < MKVASS_JUNTAR &&
          (!f->lateral || segundosDe(f, f->pontos[j + 1].tempo) <= f->posRef + MKVASS_LATERAL_SEG)) j++;
   return j;
+}
+
+// TorBox burn-in (tbburn.h, owner 12/11: a 5th connection to TorBox's CDN
+// crashed it): while TorBox's stream plays, the TV player holds one connection
+// and auto-sync may read once, so the reader keeps to `tetoConexoes` in total
+// (its own read + prefetches). 0 = no cap (the usual MKVASS_PARALELOS).
+static atomic_int tetoConexoes;
+void mkvass_teto_conexoes(int n) { atomic_store(&tetoConexoes, n < 0 ? 0 : n); }
+static int preBuscaMax(const Fio *f) {
+  int p = f->paralelos, t = atomic_load(&tetoConexoes);
+  if (t > 0 && p > t - 1) p = t - 1;
+  return p;
 }
 
 // Mantem ate MKVASS_PARALELOS Ranges no ar: os proximos grupos pela mesma
@@ -3678,7 +3754,7 @@ static void preBuscar(Fio *f, double pos) {
   // pre-busca nenhuma, o fio pede um Range por vez e o servidor ve UMA
   // conexao alem da do video. (Com a pre-busca de 1, o cabecalho de Cluster e
   // o palpite que o fio pede por conta propria ainda saiam em paralelo.)
-  for (k = 0; k < n && f->paralelos > 1 && foraDoTeto(f) && noAr < f->paralelos; k++) {
+  for (k = 0; k < n && f->paralelos > 1 && foraDoTeto(f) && noAr < preBuscaMax(f); k++) {
     Off ini; long len; int slot;
     rangeDoGrupo(f, ii[k], jj[k], &ini, &len);
     if (temPre(f, ini, len)) continue;
@@ -4038,7 +4114,7 @@ fim:
   pthread_cond_broadcast(&estadoDoFio(f)->sinal);
   pthread_mutex_unlock(&estadoDoFio(f)->trava);
   soltarPendentes(f); free(f->pend); pgs_liberar(f->pgs);
-  free(f->pontos); free(f->corpo); liberarFontes(f); soltarEstado(f->dono); free(f);
+  free(f->pontos); free(f->corpo); liberarFontes(f); fontefam_liberar(&f->familias); soltarEstado(f->dono); free(f);
   return NULL;
 }
 

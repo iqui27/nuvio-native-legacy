@@ -3,6 +3,7 @@
 #include "legref.h"
 #include "rede.h"
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1167,6 +1168,12 @@ fim:
   return doc;
 }
 
+// Jobs on the network right now (all LegRef instances): video_tpk.c caps the
+// subtitle reader to 1 connection meanwhile, so TorBox's CDN never sees more
+// than 4 (owner 13/11: sync shares the subtitle budget).
+static atomic_int emRede;
+int legref_em_rede(void) { return atomic_load(&emRede); }
+
 static void *trabalhar(void *u) {
   LegRef *r = u;
   for (;;) {
@@ -1181,6 +1188,7 @@ static void *trabalhar(void *u) {
     memset(&st, 0, sizeof st);
     // Modo so indice: o indice ja da a faixa INTEIRA em 2-4 Ranges; a janela
     // local do mkvass (so um trecho) fica para o modo de sempre.
+    atomic_fetch_add(&emRede, 1);
     doc = j.p.local && !modoIndice ? j.p.local(j.p.url, j.p.sessao, j.p.excl, j.p.nExcl) : NULL;
     if (doc) {
       const LegendaDocumentoInfo *info = legenda_documento_info(doc);
@@ -1189,6 +1197,12 @@ static void *trabalhar(void *u) {
       anunciar(&j, &st, faixa, info->idioma, "S_TEXT/ASS");
       progresso(&j, n, n);
     } else doc = coletar(&j, &st);
+    atomic_fetch_sub(&emRede, 1);
+#ifdef NV_TPK
+    // 2-4 Ranges and done: the connection does not stay open all film (its
+    // keepalive held a socket on TorBox's CDN, which falls over at 5).
+    rede_fio_fechar();
+#endif
     pthread_mutex_lock(&r->m);
     if (r->st.pedido == j.id && r->ped.id == j.id && !r->sair) {
       r->st.bytes = j.bytes; r->st.pedidos = j.pedidos;

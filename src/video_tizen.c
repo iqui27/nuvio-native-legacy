@@ -915,7 +915,7 @@ static double creditosNomeado, creditosUltimo;
 static pthread_t fioMkv;
 static int       fioMkvVivo, mkvPendente;
 
-static VideoLegendaEstilo estilo = { 120, 0, 0, 3, 1, 0, 0, 0 };
+static VideoLegendaEstilo estilo = { 120, 0, 0, 3, 1, 0, 100, 0 };
 static int temEstilo;
 
 // ============================================================================

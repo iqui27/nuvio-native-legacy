@@ -3811,7 +3811,7 @@ void video_escolher_legenda(int i) {
 // O estilo escolhido, guardado porque o PIPELINE NASCE A CADA LOAD e nao herda
 // nada do video anterior. Reaplicado em loadCompleted e sempre que a legenda e
 // (re)selecionada.
-static VideoLegendaEstilo estilo = { 120, 0, 0, 3, 1, 0, 0, 0 };
+static VideoLegendaEstilo estilo = { 120, 0, 0, 3, 1, 0, 100, 0 };
 static int temEstilo;
 
 static void aplicarEstilo(void) {
@@ -3828,10 +3828,9 @@ static void aplicarEstilo(void) {
              midia, VIDEO_LEG_CORES[c]);
     chamar("setSubtitleCharacterColor", b, soLog); }
   // Opacidade DA LETRA, separada da do fundo. O handler existe no firmware da
-  // C9 (`setSubtitleCharacterOpacity`) e recebe 0..255. Tres niveis evitam uma
-  // folha interminavel no controle remoto e mantem o texto legivel sobre video.
-  { int op = estilo.opacidade == 3 ? 64 : estilo.opacidade == 2 ? 128
-           : estilo.opacidade == 1 ? 191 : 255;
+  // C9 (`setSubtitleCharacterOpacity`) e recebe 0..255: the opacity % in
+  // 10 % steps (owner 14/11/2026), 10 % = 26 .. 100 % = 255.
+  { int op = (int)(video_legenda_opacidade(&estilo) * 255.0f + 0.5f);
     snprintf(b, sizeof b, "{\"mediaId\":\"%s\",\"charOpacity\":%d}", midia, op);
     chamar("setSubtitleCharacterOpacity", b, soLog); }
   // O fundo e a dupla cor+opacidade: sem declarar a cor, mudar so a opacidade

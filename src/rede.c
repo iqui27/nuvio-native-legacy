@@ -16,6 +16,30 @@
 #include <time.h>
 #include <limits.h>
 #include <ctype.h>
+#include <stdatomic.h>
+// TorBox burn-in (tbburn.c, owner 12/11: a 5th connection to TorBox's CDN
+// crashed it, 4 is fine): Nuvio's OWN requests in flight to a TorBox host
+// (*.tb-cdn.*, *torbox*: the CDN, the API and add-on links that resolve on
+// TorBox). The TV player's own connections are not seen here.
+static atomic_int tbEmVoo, tbPico;
+static int urlTorbox(const char *u) {
+  const char *h = u ? strstr(u, "://") : NULL;
+  size_t n;
+  if (!h) return 0;
+  h += 3; n = strcspn(h, "/?#");
+  for (size_t i = 0; i + 6 <= n; i++)
+    if (!strncasecmp(h + i, "tb-cdn", 6) || (i + 6 <= n && !strncasecmp(h + i, "torbox", 6))) return 1;
+  return strstr(u, "/torbox/") != NULL;
+}
+static void tbVooEntrar(const char *u) {
+  if (urlTorbox(u)) { int v = atomic_fetch_add(&tbEmVoo, 1) + 1, p = atomic_load(&tbPico); if (v > p) atomic_store(&tbPico, v); }
+}
+static void tbVooSair(const char *u) { if (urlTorbox(u)) atomic_fetch_sub(&tbEmVoo, 1); }
+int rede_torbox_em_voo(int *pico) {
+  if (pico) *pico = atomic_exchange(&tbPico, atomic_load(&tbEmVoo));
+  return atomic_load(&tbEmVoo);
+}
+
 
 /* Jobs nao dependem de TLS nem dos controles antigos por fio. O grupo e
  * retido pelos jobs, e a requisicao retem seu job ate terminar. */
@@ -1131,6 +1155,7 @@ int rede_tls_enviar(RedeTls *t, const void *buf, size_t n) { (void)t; (void)buf;
 int rede_tls_tentar_enviar(RedeTls *t, const void *buf, size_t n, size_t *foi) { (void)t; (void)buf; (void)n; if (foi) *foi = 0; return -1; }
 int rede_tls_receber(RedeTls *t, void *buf, size_t n, int esperaMs) { (void)t; (void)buf; (void)n; (void)esperaMs; return -1; }
 void rede_tls_fechar(RedeTls *t) { (void)t; }
+void rede_fio_fechar(void) {}
 
 #else
 
@@ -1571,6 +1596,16 @@ static void descartarHandle(void *c) {
     pthread_setspecific(handleChave, NULL);
     hostsEsquecer();
   }
+}
+// Fecha as conexoes guardadas DESTE fio (o handle e o cache dele). Quem le
+// pouco e fica parado o filme inteiro (legref: 2-4 Ranges na abertura) nao
+// segura um socket aberto no CDN — o TorBox derruba com 5 (tbburn.h).
+void rede_fio_fechar(void) {
+  void *c;
+  if (!curl_reset) return;
+  pthread_once(&handleUma, handleCriarChave);
+  c = pthread_getspecific(handleChave);
+  if (c) descartarHandle(c);
 }
 static void soltarHandleDesde(void *c, int r, const char *url, unsigned primeiraMs) {
   // #382: HTTP recebido prova conectividade mesmo se o corpo falhou/parou.
@@ -2401,13 +2436,13 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
         primeira = 0;
         snprintf(m, sizeof m, "begin https-1 %s", rede_url_publica(url, seg, sizeof seg));
         nv_tpk40_etapa(m);
-        r = curl_perform(c);
+        tbVooEntrar(url); r = curl_perform(c); tbVooSair(url);
         { long http = 0; if (curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &http);
           snprintf(m, sizeof m, "ok https-1 curl=%d http=%ld", r, http); }
         nv_tpk40_etapa(m);
-      } else r = curl_perform(c); }
+      } else { tbVooEntrar(url); r = curl_perform(c); tbVooSair(url); } }
 #else
-    r = curl_perform(c);
+    tbVooEntrar(url); r = curl_perform(c); tbVooSair(url);
 #endif
     { long novas = -1;
       if (curl_getinfo) curl_getinfo(c, INFO_NUM_CONNECTS, &novas);
@@ -2756,7 +2791,7 @@ int rede_baixar_fluxo(const char *url, int segundos, const char *const *cab,
     for (k = 0; cab[k]; k++) lista = slist_append(lista, cab[k]);
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
-  r = curl_perform(c);
+  tbVooEntrar(url); r = curl_perform(c); tbVooSair(url);
   if (r == 42 && vigia.parou) r = 28;
   if (curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &http);
   if (status) *status = (int)http;
@@ -3740,6 +3775,7 @@ static int calmaProx;
 static pthread_mutex_t calmaTrava = PTHREAD_MUTEX_INITIALIZER;
 
 void rede_lateral(int sim) { redeLateral = sim ? 1 : 0; }
+
 
 // curl 6 (o nome do no nao resolve), 7 (conexao recusada / sem rota) e 35 (o
 // aperto de mao TLS caiu): a conexao nem abriu. Prazo (28) e HTTP ficam com

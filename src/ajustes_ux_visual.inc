@@ -277,6 +277,9 @@ static const char *ajVisualIcone(int op) {
     case AJ_SOCIAL: return "aj_user-round";
     case AJ_DEBRID_RD: return "aj_key-round";
     case AJ_DEBRID_TB: return "aj_key-round";
+    case AJ_TB_PLANO: return "aj_package";
+    case AJ_LEG_QUEIMAR: return "aj_captions";
+    case AJ_TB_AUDIO: return "aj_audio-lines";
     case AJ_DEBRID_PM: return "aj_key-round";
     case AJ_DEBRID_AD: return "aj_key-round";
     case AJ_DEBRID_RD_TESTAR: case AJ_DEBRID_TB_TESTAR: case AJ_DEBRID_PM_TESTAR:

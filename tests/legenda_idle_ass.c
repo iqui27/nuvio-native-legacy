@@ -8,6 +8,9 @@
 #include <assert.h>
 
 static int submitted;
+// No offscreen group here: assrender draws straight at its alpha.
+int  gfx_grupo_comecar(GfxGrupo *g, GfxRect caixa, float alpha) { (void)g; (void)caixa; (void)alpha; return 0; }
+void gfx_grupo_terminar(GfxGrupo *g, float alpha) { (void)g; (void)alpha; }
 void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco, float px, float py,
               float raio, float cr, float cg, float cb, float alpha) {
   fixtureRect(r, tex, modo, foco, px, py, raio, cr, cg, cb, alpha);

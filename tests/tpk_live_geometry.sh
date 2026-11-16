@@ -76,7 +76,7 @@ int debrid_tb_link(int usenet,int id,int file,char *url,unsigned n) {
 C
 for flag in '' '-DNV_TPK40'; do
   cc -O1 -g -Wall -DNV_TPK $flag -Isrc -I/opt/homebrew/include $(sdl2-config --cflags) \
-    "$work/stubs.c" tests/tpk-aspecto-roi.c src/video_tpk.c src/mkvfix.c -DNV_MKVFIX_SEM_REDE \
+    "$work/stubs.c" tests/tpk-aspecto-roi.c src/video_tpk.c tests/tbburn_stub.c src/mkvfix.c -DNV_MKVFIX_SEM_REDE \
     src/vazao.c src/velocidade.c src/faixasmkv.c src/audioinfo.c src/audioescolha.c \
     src/capmkv.c src/mkv.c tests/capmkv_stub.c tests/dts_tpk_stub.c \
     -lpthread $(sdl2-config --libs) -o "$work/bridge"

@@ -728,6 +728,15 @@ typedef enum {
   // Sincronia por audio (Android): ler os trechos do filme a frente tambem em
   // rede movel (Reshaped: "sampling on mobile data"). LOCAL, append-only, Desligado.
   AJ_LEG_SYNC_AUDIO_MOVEL,
+  // TorBox burn-in (tbburn.h, owner 12/11): the TorBox plan (Standard / Pro)
+  // and "burn embedded ASS in with TorBox" (On by default, needs Pro + key).
+  // LOCAL, append-only; the .tpk only (foraDestaPlataforma).
+  AJ_TB_PLANO,
+  AJ_LEG_QUEIMAR,
+  // Original audio with TorBox burn-in (dts/tbaudio_tpk.h, owners 13-14/11):
+  // Passthrough (default: TorBox's video + the file's audio through Nuvio),
+  // TorBox audio (TorBox's stream as is) = TBA_*. LOCAL, append-only; .tpk.
+  AJ_TB_AUDIO,
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -778,6 +787,9 @@ _Static_assert(sizeof V_FUNDO_DIN_COR / sizeof *V_FUNDO_DIN_COR == sizeof FUNDO_
                "V_FUNDO_DIN_COR: um nome por linha de FUNDO_DIN_TEMA");
 static const char *V_QUALIDADE[] = { "Automática", "4K", "1080p", "720p" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
+// Plano do TorBox (tbburn.h): so o Pro converte video, o que a legenda queimada precisa.
+static const char *V_TB_PLANO[]  = { "Standard", "Pro" };
+static const char *V_TB_AUDIO[]  = { "Passthrough", "Áudio do TorBox" };
 static const char *V_LIGA_AUTO[] = { "Ligado", "Desligado", "Automático" };
 // Estilo da fileira de formato do player; o indice e o PLR_FMT_* de ajustes.h
 // e o gravado em "plrFormatoLocal".
@@ -1006,7 +1018,7 @@ static const char *V_ANIM[]      = { "Completas", "Reduzidas", "Automático" };
 static const char *V_FONTE_UI[]  = { "Inter", "LG Display", "Droid Sans",
                                      "Montserrat", "Roboto",
                                      "Atkinson Hyperlegible Next",
-                                     "JetBrains Sans" };
+                                     "JetBrains Sans", "Plus Jakarta Sans" };
 // A ORDEM IMPORTA: o indice 0 e o padrao (ver a lista de padroes, que e
 // posicional), e o padrao tem de ser 1080p. Numa TV que NAO concede a
 // superficie 4K a escolha nao faz nada, e numa que concede ela quadruplica o
@@ -1023,10 +1035,11 @@ static const char *V_LEG_COR[] = { "Branco", "Amarelo", "Verde", "Azul", "Vermel
 static const char *V_LEG_COR_BORDA[] = { "Preto", "Branco", "Amarelo", "Verde", "Azul", "Vermelho" };
 static const char *V_LEG_FUNDO[] = { "Nenhum", "Escuro 25%", "Escuro 50%", "Escuro 75%", "Escuro 100%" };
 static const char *V_LEG_BORDA[] = { "Nenhuma", "Contorno", "Sombra" };
-static const char *V_LEG_OPAC[] = { "100%", "75%", "50%", "25%" };
 static const char *V_LEG_POS[] = { "1", "2", "3", "4", "5", "6", "7", "8" };
-static const char *V_LEG2_FONTE[] = { "Igual à principal", "Inter", "LG Display", "Droid Sans", "Montserrat", "Roboto", "Atkinson Hyperlegible Next", "JetBrains Sans" };
-static const char *V_LEG2_OPAC[] = { "Igual à principal", "100%", "75%", "50%", "25%" };
+static const char *V_LEG2_FONTE[] = { "Igual à principal", "Inter", "LG Display", "Droid Sans", "Montserrat", "Roboto", "Atkinson Hyperlegible Next", "JetBrains Sans", "Plus Jakarta Sans" };
+// Opacity in steps of 10 (owner 14/11/2026); index k >= 1 = k x 10 %.
+static const char *V_LEG2_OPAC[] = { "Igual à principal", "10%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%" };
+_Static_assert(sizeof V_LEG2_FONTE / sizeof *V_LEG2_FONTE == TXT_FAMILIA_N + 1, "second subtitle: Same + each family");
 static const char *V_LEG2_COR_BORDA[] = { "Igual à principal", "Preto", "Branco", "Amarelo", "Verde", "Azul", "Vermelho" };
 static const char *V_LEG2_NEGRITO[] = { "Igual à principal", "Ligado", "Desligado" };
 static const char *V_LEG2_POSICAO[] = { "Automático", "1", "2", "3", "4", "5", "6", "7", "8" };
@@ -1559,7 +1572,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Perfil e Stats na barra lateral", V_LIGA, 2),   // local: menuPerfilLocal
   ESC("Trailer do cartaz em foco",       V_FOCO_TRAILER, 3),   // trailerCartazModo (conta: focusedPosterBackdropTrailerEnabled)
   ESC("Itens por fileira",               V_ITENS_FIL, 3), // local: itensFileiraLocal
-  ESC("Fonte da interface", V_FONTE_UI, 7),
+  ESC("Fonte da interface", V_FONTE_UI, TXT_FAMILIA_N),
   ESC("Efeitos visuais", V_GPU_EF, 4),   // local: gpuEfeitosLocal; append values for compatibility
   ESC("Interface de vidro",              V_LIGA_AUTO, 3),   // local: vidroLocal
   // EXPERIMENTAL (p2p.h). Tocar torrent sem debrid, por um servidor de
@@ -1781,7 +1794,7 @@ static const Opcao OPCOES[AJ_N] = {
   NUM("Tamanho", TXT_LEG_PCT_MIN, TXT_LEG_PCT_MAX, 10, "%"),
   ESC("Fonte da legenda", V_FONTE_UI, TXT_FAMILIA_N),
   ESC("Cor", V_LEG_COR, VIDEO_LEG_NCORES),
-  ESC("Opacidade", V_LEG_OPAC, 4),
+  NUM("Opacidade", VIDEO_LEG_OPAC_MIN, VIDEO_LEG_OPAC_MAX, 10, "%"),   // owner 14/11/2026: steps of 10
   ESC("Fundo", V_LEG_FUNDO, 5),
   ESC("Posição", V_LEG_POS, 8),
   ESC("Borda", V_LEG_BORDA, 3),
@@ -1790,7 +1803,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Cor da borda", V_LEG_COR_BORDA, VIDEO_LEG_NCORES),
   ACAO("Restaurar padrão"),
   ESC("Fonte da legenda", V_LEG2_FONTE, TXT_FAMILIA_N + 1),
-  ESC("Opacidade", V_LEG2_OPAC, 5),
+  ESC("Opacidade", V_LEG2_OPAC, 11),
   ESC("Posição", V_LEG2_POSICAO, 9),
   NUM("Atraso", -LEG_ATRASO_MANUAL_MAX, LEG_ATRASO_MANUAL_MAX, 100, " ms"),
   ESC("Negrito", V_LEG2_NEGRITO, 3),
@@ -1867,6 +1880,9 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Tamanho do destaque", V_HERO_TAMANHO, 3),       // local: heroSizeLocal
   ESC("Mostrar detalhes da pasta no destaque", V_LIGA, 2),
   ESC("Sincronia por áudio em rede móvel", V_LIGA, 2),   // local: legendaSyncAudioMovelLocal (Android)
+  ESC("Plano do TorBox", V_TB_PLANO, 2),                 // local: torboxPlanoLocal
+  ESC("Queimar ASS pelo TorBox", V_LIGA, 2),             // local: legendaQueimarLocal
+  ESC("Áudio original com a queima", V_TB_AUDIO, 2),     // local: torboxAudioModoLocal
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2150,7 +2166,7 @@ static const char *CHAVE[] = {
   "-legenda1Tamanho", "-legenda1Fonte", "-legenda1Cor", "-legenda1Opacidade",
   "-legenda1Fundo", "-legenda1Posicao", "-legenda1Borda", "-legenda1Atraso",
   "-legenda1Negrito", "-legenda1CorBorda", "-legenda1Restaurar",
-  "legenda2FonteLocal", "legenda2OpacidadeLocal", "legenda2PosicaoLocal", "legenda2AtrasoLocal",
+  "legenda2FonteLocal", "legenda2OpacidadePctLocal", "legenda2PosicaoLocal", "legenda2AtrasoLocal",
   "legenda2NegritoLocal", "legenda2CorBordaLocal", "-legenda2Restaurar",
   "colecaoExibicaoPadraoLocal",
   "playerExternoLocal",
@@ -2201,6 +2217,9 @@ static const char *CHAVE[] = {
   "heroSizeLocal",
   "heroFolderDetailsLocal",
   "legendaSyncAudioMovelLocal",
+  "torboxPlanoLocal",
+  "legendaQueimarLocal",
+  "torboxAudioModoLocal",   /* was torboxAudioLocal (4 values, 13-14/11): new key, everyone starts on Passthrough */
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3198,6 +3217,46 @@ int ajustes_layout_lista(void) { return !ajLayoutSelecionavel() || valor[AJ_LAYO
 int ajustes_esconder_logo_trailer(void) { return lig(AJ_LOGO_TRAILER); }
 int ajustes_audio_offset_ms(void) { return audio_offset_ms(valor[AJ_AUDIO_OFFSET]); }
 int ajustes_legenda_sync_auto(void) { return lig(AJ_LEG_SYNC_AUTO); }
+static const char *rotuloOpcao(int op);
+static int passoAdiante(int op, int dir);
+static int definirValorDireto(int op, int novo);
+int ajustes_tb_pro(void) { return valor[AJ_TB_PLANO] == 1; }
+static void riscoNotar(int op, int antes);
+int ajustes_tb_audio_modo(void) { return valor[AJ_TB_AUDIO] >= 0 && valor[AJ_TB_AUDIO] < 2 ? valor[AJ_TB_AUDIO] : 0; }
+void ajustes_definir_tb_audio_modo(int modo) {
+  int a = valor[AJ_TB_AUDIO];
+  valor[AJ_TB_AUDIO] = modo >= 0 && modo < 2 ? modo : 0;
+  AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar());
+  riscoNotar(AJ_TB_AUDIO, a);
+}
+int ajustes_leg_queimar(void) {
+#ifdef NV_TPK
+  return lig(AJ_LEG_QUEIMAR) && ajustes_tb_pro();
+#else
+  return 0;
+#endif
+}
+// Generic read/step of a setting by op (the Style column's Second rows):
+// the same effect as Left/Right in Settings, saved and applied live.
+const char *ajustes_op_rotulo(int op) { return op >= 0 && op < AJ_N ? rotuloOpcao(op) : ""; }
+const char *ajustes_op_texto(int op) { return op >= 0 && op < AJ_N ? textoValor(op) : ""; }
+int ajustes_op_indice(int op) { return op >= 0 && op < AJ_N ? valor[op] : 0; }
+int ajustes_op_definir(int op, int v) { return op >= 0 && op < AJ_N ? definirValorDireto(op, v) : 0; }
+int ajustes_op_n(int op) { return op >= 0 && op < AJ_N ? nValores(op) : 0; }
+int ajustes_op_passo(int op, int dir) { return op >= 0 && op < AJ_N ? definirValorDireto(op, passoAdiante(op, dir < 0 ? -1 : 1)) : 0; }
+int ajustes_leg2_op(int campo) {
+  static const int OP[AJ2_N] = {
+    [AJ2_TAMANHO] = AJ_LEG2_TAMANHO, [AJ2_FONTE] = AJ_LEG2_FONTE, [AJ2_COR] = AJ_LEG2_COR,
+    [AJ2_OPACIDADE] = AJ_LEG2_OPACIDADE, [AJ2_FUNDO] = AJ_LEG2_FUNDO, [AJ2_POSICAO] = AJ_LEG2_POSICAO,
+    [AJ2_LUGAR] = AJ_LEG2_POS, [AJ2_BORDA] = AJ_LEG2_BORDA, [AJ2_COR_BORDA] = AJ_LEG2_COR_BORDA,
+    [AJ2_NEGRITO] = AJ_LEG2_NEGRITO };
+  return campo >= 0 && campo < AJ2_N ? OP[campo] : -1;
+}
+void ajustes_leg2_restaurar(void) {
+  int i;
+  for (i = 0; i < AJ2_N; i++) { int op = ajustes_leg2_op(i); if (op >= 0) valor[op] = valorPadrao[op]; }
+  gravar();
+}
 int ajustes_teclado_android(void) { int v = valor[AJ_TECLADO_ANDROID]; return v < 0 || v > 2 ? 0 : v; }   // 0 auto, 1 do app, 2 do Android
 int ajustes_mic_busca(void) { return valor[AJ_MIC_BUSCA]; }   // 0 auto, 1 ligado, 2 desligado
 int ajustes_trailer_zoom_tpk(void) { return lig(AJ_TRAILER_ZOOM_TPK); }   // 1 = Ligado
@@ -3355,6 +3414,13 @@ unsigned ajustes_leg_borda_rgb(int corBorda) {
   ajustes_leg_contorno_rgb(&r, &g, &b);
   return (unsigned)(r << 16 | g << 8 | b);
 }
+// Outline is Stremio's soft shadow (owner 14/11/2026): with no border colour
+// chosen it is Stremio's rgb(34,34,34), not pure black; a chosen colour (or
+// the legacy outline colour when it isn't Black) stays as it is.
+unsigned ajustes_leg_borda_cor(int corBorda, int borda) {
+  unsigned rgb = ajustes_leg_borda_rgb(corBorda);
+  return borda == 1 && corBorda < 0 && rgb == 0 ? 0x222222u : rgb;
+}
 int ajustes_leg2_posicao(void) { int v = valor[AJ_LEG2_POSICAO]; return v >= 1 && v <= 8 ? v - 1 : -1; }
 int ajustes_leg2_atraso(void) { return valor[AJ_LEG2_ATRASO]; }
 int ajustes_leg2_definir_atraso(int ms) {
@@ -3378,7 +3444,7 @@ void ajustes_leg2_estilo(const VideoLegendaEstilo *principal, VideoLegendaEstilo
   if (f >= 0) out->fundo = f;
   if (b >= 0) out->borda = b;
   if (valor[AJ_LEG2_FONTE] > 0) out->familia = valor[AJ_LEG2_FONTE] - 1;
-  if (valor[AJ_LEG2_OPACIDADE] > 0) out->opacidade = valor[AJ_LEG2_OPACIDADE] - 1;
+  if (valor[AJ_LEG2_OPACIDADE] > 0 && valor[AJ_LEG2_OPACIDADE] <= 10) out->opacidade = valor[AJ_LEG2_OPACIDADE] * 10;
   if (valor[AJ_LEG2_NEGRITO] > 0) out->negrito = valor[AJ_LEG2_NEGRITO] == 1;
   if (valor[AJ_LEG2_COR_BORDA] > 0) out->corBorda = valor[AJ_LEG2_COR_BORDA] - 1;
   if (ajustes_leg2_posicao() >= 0) out->posicao = ajustes_leg2_posicao();
@@ -4835,7 +4901,7 @@ void ajustes_dir(const char *dir) {
     int focoAntigo = -1, viuFoco = 0;
     int sinopseAntiga = -1, sinopseQuatro = -1, viuSinopse = 0;
     int dtsSaidaAntiga = -1, dtsModoAntigo = -1, viuDtsTpk = 0;
-    int leg2TamanhoAntigo = -1, viuLeg2Escala = 0;
+    int leg2TamanhoAntigo = -1, viuLeg2Escala = 0, leg2OpacAntiga = -1, viuLeg2Opac = 0;
   while (fgets(linha, sizeof linha, f)) {
     char chave[64]; int v, i, inicio = 0;
     if (sscanf(linha, "%63s%n", chave, &inicio) != 1) continue;
@@ -4922,6 +4988,12 @@ void ajustes_dir(const char *dir) {
       if (v >= 0 && v <= 20) leg2TamanhoAntigo = v;
       continue;
     }
+    // Second subtitle opacity before the 10 % steps (owner 14/11/2026):
+    // 0 Same, 1..4 = 100/75/50/25 %.
+    if (!strcmp(chave, "legenda2OpacidadeLocal")) {
+      if (v >= 0 && v <= 4) leg2OpacAntiga = v;
+      continue;
+    }
     // Outline is aesthetic: migrate its removed Automatic value to On.
     if (!strcmp(chave, "vidroContornoLocal") && v == 2) v = 0;
     for (i = 0; i < AJ_N; i++) {
@@ -4940,6 +5012,7 @@ void ajustes_dir(const char *dir) {
       if (i == AJ_HERO_SINOPSE_TAM) viuSinopse = 1;
       if (i == AJ_DTS_AC3) viuDtsTpk = 1;
       if (i == AJ_LEG2_TAMANHO && v >= 0 && v < 27) viuLeg2Escala = 1;
+      if (i == AJ_LEG2_OPACIDADE) viuLeg2Opac = 1;
       break;
     }
   }
@@ -4952,6 +5025,9 @@ void ajustes_dir(const char *dir) {
     if (sinopseQuatro >= 0) valor[AJ_HERO_SINOPSE_TAM] = sinopseQuatro > 0;
     else if (sinopseAntiga >= 0) valor[AJ_HERO_SINOPSE_TAM] = sinopseAntiga > 0;
   }
+  /* Rounded up to the grid like the main (video_legenda_opac_antiga). */
+  if (!viuLeg2Opac && leg2OpacAntiga >= 0)
+    valor[AJ_LEG2_OPACIDADE] = leg2OpacAntiga ? video_legenda_opac_antiga(leg2OpacAntiga - 1) / 10 : 0;
   if (!viuLeg2Escala && leg2TamanhoAntigo >= 0) {
     static const int pct[] = {0,60,80,100,120,140,160,170,180,190,200,210,220,230,240,250,260,270,280,290,300};
     int p = pct[leg2TamanhoAntigo];
@@ -6130,6 +6206,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_MIC_BUSCA:     /* o microfone e o controle sao desta TV */
     case AJ_TECLADO_ANDROID: /* o web nao tem; o teclado e deste aparelho */
     case AJ_LEG_SYNC_AUDIO: case AJ_LEG_SYNC_AUDIO_MOVEL: /* a reserva por audio e desta TV; o web nao tem */
+    case AJ_TB_PLANO: case AJ_LEG_QUEIMAR: case AJ_TB_AUDIO: /* TorBox burn-in: o web nao tem */
     case AJ_LEG_FORCADA:    /* #287: o web nao tem esta escolha */
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA: /* estilo da legenda e desta TV */
     case AJ_LEG_CONTORNO_COR: /* #475: idem */
@@ -6180,6 +6257,7 @@ static int soNaTv(int op) {
     case AJ_ESMAECER: case AJ_BRILHO_PLAYER: case AJ_PROPORCAO_PADRAO: case AJ_MANTER_VIDEO:
     case AJ_DESCANSO_ESTILO: case AJ_DESCANSO_FONTE:
     case AJ_CACHE_SEEK: case AJ_TRAILER_ZOOM_TPK: case AJ_LEG_SYNC_AUDIO: case AJ_LEG_SYNC_AUDIO_MOVEL:
+    case AJ_TB_PLANO: case AJ_LEG_QUEIMAR: case AJ_TB_AUDIO:
     case AJ_LIVETV_RES: case AJ_LIVETV_FORMATO: case AJ_LIVETV_ESPERA:
     case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY:
     case AJ_P2P_LIGADO: case AJ_JF_LIGADO: case AJ_POSTER_PROV: case AJ_EPG_PAIS:
@@ -6770,6 +6848,10 @@ static int foraDestaPlataforma(int op) {
 #endif
 #ifndef NV_ANDROID
   if (op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO || op == AJ_LEG_SYNC_AUDIO_MOVEL || op == AJ_TUNNELING) return 1;
+#endif
+#ifndef NV_TPK
+  // TorBox burn-in plays TorBox's HLS on the Samsung .tpk player only (tbburn.h).
+  if (op == AJ_TB_PLANO || op == AJ_LEG_QUEIMAR || op == AJ_TB_AUDIO) return 1;
 #endif
 #if defined(NV_ANDROID) && !defined(NV_P2P_MOTOR)
   if (op == AJ_P2P_LIMITE || op == AJ_P2P_DESTINO) return 1;
@@ -7436,6 +7518,9 @@ static int inativa(int op) {
     case AJ_DESCOBRIR:    return 1;
     // Comentarios do Trakt no painel de pausa: a linha fica apagada sem o painel.
     case AJ_PAUSA_COMENTARIOS: return !lig(AJ_PAUSA_OVERLAY);
+    // TorBox burn-in: only with plan Pro and a TorBox key on this TV.
+    case AJ_LEG_QUEIMAR: return valor[AJ_TB_PLANO] != 1 || debrid_tb_disponivel() == 0;
+    case AJ_TB_AUDIO: return valor[AJ_TB_PLANO] != 1 || debrid_tb_disponivel() == 0 || !lig(AJ_LEG_QUEIMAR);
     case AJ_PAUSA_NOTAS: return !lig(AJ_PAUSA_OVERLAY);
     case AJ_PAUSA_ELENCO: return !lig(AJ_PAUSA_OVERLAY);
     // A posicao da fileira de formato so vale com a fileira ligada.
@@ -7728,6 +7813,9 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_LEG_SYNC_AUTO: return "Ajusta a legenda automaticamente. Desligue para manter a escolhida. Vale só nesta TV.";
     case AJ_LEG_SYNC_AUDIO: return "Quando a legenda incorporada não serve para sincronizar, acerta a legenda externa pelas falas do áudio. Vale só nesta TV.";
     case AJ_LEG_SYNC_AUDIO_MOVEL: return "Para a sincronia por áudio: lê alguns trechos do filme à frente também em rede móvel (até 150 MB). Desligado, só no Wi-Fi ou cabo. Vale só nesta TV.";
+    case AJ_TB_PLANO: return "O seu plano no TorBox. Só o Pro converte o vídeo, que é o que a legenda queimada precisa. Vale só nesta TV.";
+    case AJ_TB_AUDIO: return inativa(op) ? "Precisa de Queimar ASS pelo TorBox ligado, do TorBox Pro e da chave do TorBox." : "Com a legenda queimada, de onde vem o som. Passthrough: o áudio original do arquivo, pelo Nuvio, com a imagem do TorBox. Áudio do TorBox: o áudio convertido pelo TorBox. Vale só nesta TV.";
+    case AJ_LEG_QUEIMAR: return inativa(op) ? "Precisa do TorBox Pro e da chave do TorBox." : "Legendas ASS do arquivo, em fontes do TorBox, tocam como um vídeo do TorBox com a legenda dentro da imagem. Imagem com menos qualidade; tamanho, opacidade e atraso não valem nela. Vale só nesta TV.";
     case AJ_LEG_FORCADA: return "Quando o áudio já está no idioma da legenda, liga só a legenda forçada desse idioma (falas em outra língua e placas), ou nenhuma se o arquivo não tiver. Desligado, liga a legenda completa como antes.";
     case AJ_LEG_MOSTRAR: return valor[op] ? "Todas as legendas, com detalhes" : "Recomendadas";
     case AJ_LEG_LINGUA2: return "Segunda legenda, mostrada no alto da tela junto com a principal. Só arquivos SRT/VTT dos addons. \"Da conta\" segue o que está no seu perfil.";
@@ -11291,7 +11379,7 @@ int ajustes_teste_quadro(const char *id) {
 void ajustes_teste_arte(int n) { ajArteFundoN = n; }
 
 void ajustes_teste_fonte_interface(int familia) {
-  if (familia < TXT_FAMILIA_INTER || familia > TXT_FAMILIA_JETBRAINS) return;
+  if (familia < TXT_FAMILIA_INTER || familia >= TXT_FAMILIA_N) return;
   valor[AJ_FONTE_UI] = familia;
   txt_definir_fonte_interface((TxtFamilia)familia);
 }

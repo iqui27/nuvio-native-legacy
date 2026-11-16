@@ -479,6 +479,16 @@ void gfx_mini_desenhar(const GfxMini *m, GfxRect r, float raioPx, float a);
 void gfx_mini_liberar(GfxMini *m);
 // Dentro da miniatura: a base de `r` some ate `alfa` (o .gv.fade do mockup).
 void gfx_mini_esvanecer(GfxRect r, float alfa);   // drawable real, para restaurar viewport
+// GROUP OPACITY (subtitles, owner 14/11/2026): CSS `opacity` on a group.
+// What is drawn between comecar and terminar (layout units, inside `caixa`)
+// is composed at full opacity in an offscreen target, and terminar draws the
+// finished picture ONCE with `alpha`: a border or shadow under the letters
+// never shows through them. comecar returns 1 when it composes (draw at
+// alpha 1) and 0 when it doesn't (alpha ~1, already inside a miniature, or
+// no FBO: draw at `alpha` as before); always pair it with terminar.
+typedef struct { GfxMini m; float x0, y0, esc, grupoAnt; int ativo; } GfxGrupo;
+int  gfx_grupo_comecar(GfxGrupo *g, GfxRect caixa, float alpha);
+void gfx_grupo_terminar(GfxGrupo *g, float alpha);
 // TAMANHO DA INTERFACE (Ajustes > Aparencia). As camadas que nao sao a home
 // nem o detalhe (Ajustes, player, folhas, ilhas, menus, modais) desenham numa
 // TELA VIRTUAL de 1920/s x 1080/s, e o gfx amplia tudo por s na hora de
