@@ -2,9 +2,78 @@
 #include <assert.h>
 #include "../src/streams.c"
 #include "stub_player_source_actions.h"
+#include "addonmodo.h"
+#include "fontenota.h"
+#include "fontefalha.h"
+#include "vazao.h"
+#include "fontepref.h"
+#include "addons.h"
+
+AddonModo addonmodo_get(uint64_t id) { (void)id; return AM_AUTO; }
+int addonmodo_permite(uint64_t id, int direto, int debrid, int p2p) {
+  (void)id; (void)direto; (void)debrid; (void)p2p; return 1;
+}
+int vazao_resumir(const int *kbps, int n, VazaoResumo *r) { (void)kbps; (void)n; if (r) memset(r, 0, sizeof *r); return 0; }
+void plrui_decimal(char *s) { if (s) *s = 0; }
+unsigned addons_parcial_rev(void) { return 0; }
+int addons_parcial_abas(AddonAba *out, int max) { (void)out; (void)max; return 0; }
+unsigned fontepref_revisao(void) { return 0; }
 
 int ajustes_fonte_prioridade(void) { return 0; }
-int fontefalha_addon_ao_vivo(const char *key) { (void)key; return 0; }
+const char *ajustes_qualidade(void) { return "Automatica"; }
+int ajustes_dolby_atmos(void) { return 0; }
+int ajustes_dolby_vision(void) { return 0; }
+int ajustes_dv_mkv(void) { return 0; }
+int ajustes_fonte_escopo(void) { return 0; }
+int ajustes_fonte_hdr(void) { return 0; }
+int ajustes_fonte_manual(void) { return 0; }
+int ajustes_fonte_ordem_uso(void) { return 0; }
+int ajustes_fonte_primeira(void) { return 0; }
+int ajustes_fonte_regex_modo(void) { return 0; }
+int ajustes_fonte_usar_outros(void) { return 0; }
+int ajustes_fonte_idioma_audio(void) { return 0; }
+int ajustes_tamanho_max_gb(void) { return 0; }
+int ajustes_tamanho_min_gb(void) { return 0; }
+int fonteregra_no_escopo(const FonteRegraCfg *c, int plugin)
+  { (void)c; (void)plugin; return 1; }
+int fonteregra_ordem_rank(const char *nome) { (void)nome; return 0; }
+unsigned fonteregra_versao(void) { return 0; }
+int fonteregra_grupo(const FonteRegraCfg *c, const char *nome, int plugin, const char *texto)
+  { (void)c; (void)nome; (void)plugin; (void)texto; return 0; }
+int fontepref_escolher(const char *id) { (void)id; return -1; }
+int fontepref_escolher_manual(const char *id) { (void)id; return -1; }
+/* TV-incompatible hide and audioext: not asserted in #400 ordering. */
+int ajustes_fonte_ocultar(int regra) { (void)regra; return 0; }
+int ajustes_audio_externo(void) { return 0; }
+int ajustes_audio_externo_ocultar_fora_cache(void) { return 0; }
+int ajustes_dts_desligado(void) { return 0; }
+void audioext_alvo(const char *alvo) { (void)alvo; }
+int audioext_alternar(const char *url, const char *cabecalhos, const char *nome) {
+  (void)url; (void)cabecalhos; (void)nome; return -1;
+}
+void audioext_lembrar_serie(const AudioExtIdent *id) { (void)id; }
+int audioext_serie_procura(const char *alvo, AudioExtIdent *id) { (void)alvo; (void)id; return 0; }
+void audioext_serie_achou(const char *url, const char *cabecalhos, const char *nome) {
+  (void)url; (void)cabecalhos; (void)nome;
+}
+int audioext_marcada(const char *url) { (void)url; return 0; }
+TxtFamilia txt_fonte_interface(void) { return TXT_FAMILIA_INTER; }
+void txt_estilo_medidas(TxtEstilo estilo, int *corpo, int *peso) {
+  (void)estilo; if (corpo) *corpo = 20; if (peso) *peso = 400;
+}
+int txt_largura(TxtEstilo estilo, const char *s) {
+  (void)estilo; return s ? (int)(8 * strlen(s)) : 0;
+}
+TxtLinha txt_linha(TxtEstilo estilo, const char *s, int r, int g, int b, int a) {
+  (void)estilo; (void)r; (void)g; (void)b; (void)a;
+  TxtLinha l = {0}; l.w = s ? (int)(8 * strlen(s)) : 0; return l;
+}
+void vazao_fmt_mbps(char *dst, size_t n, int kbps, char sep) {
+  (void)sep; if (dst && n) snprintf(dst, n, "%.1f", kbps / 1000.0);
+}
+void vazao_fmt_gb(char *dst, size_t n, double gb, char sep) {
+  (void)sep; if (dst && n) snprintf(dst, n, "%.2f", gb);
+}
 int xtream_url_limitada(const char *url) { (void)url; return 0; }
 static int modo;
 static int negativa, consultas;
@@ -21,8 +90,6 @@ char *rede_baixar_st(const char *u, int s, const char *const *c, int *st) {
 }
 int ajustes_selos_coloridos(void) { return 0; }
 int ajustes_idioma(void) { return IDIOMA_EN; }
-int fontefalha_filtro_ativo(void) { return 0; }
-void fontefalha_filtro(FonteFiltroConfig *saida) { memset(saida, 0, sizeof *saida); }
 int perfis_sessao_atual(uint64_t geracao) { (void)geracao; return 1; }
 void selospacote_colorido(int ligado) { (void)ligado; }
 int selospacote_embutidos_ok(void) { return 0; }
@@ -52,7 +119,9 @@ char *dados_ler(const char *nome) { (void)nome; return NULL; }
 int dados_gravar(const char *nome, const char *s) { (void)nome; (void)s; return 1; }
 
 static void conferir(const int *esperada, int qtd) {
-  montar(-1);
+  // montar() passou a recalcular melhorFolha pelo cache (d28ff9e77); esta fixture injeta
+  // melhorFolha a mao, entao confere o montador sem cache.
+  montarBase(-1);
   assert(nOrdem == qtd);
   for (int i = 0; i < qtd; i++) {
     if (ordem[i] != esperada[i]) {

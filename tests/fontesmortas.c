@@ -13,6 +13,16 @@ int xtream_url_limitada(const char *url) { (void)url; return 0; }
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "addonmodo.h"
+#include "addons.h"
+
+#ifndef FONTESMORTAS_ORCAMENTO  // fontesmortas_orcamento.c define estes
+AddonModo addonmodo_get(uint64_t id) { (void)id; return AM_AUTO; }
+int addonmodo_permite(uint64_t id, int direto, int debrid, int p2p) {
+  (void)id; (void)direto; (void)debrid; (void)p2p; return 1;
+}
+#endif
+int addons_parcial_abas(AddonAba *out, int max) { (void)out; (void)max; return 0; }
 
 static time_t agora = 1000000;
 static char *disco;
@@ -37,19 +47,74 @@ void selospacote_colorido(int c) { (void)c; }
 int selospacote_embutidos_ok(void) { return 0; }
 const SeloFiltro *selospacote_filtro(unsigned short id) { (void)id; return NULL; }
 int ajustes_selos_coloridos(void) { return 0; }
+#ifndef FONTESMORTAS_ORCAMENTO  // fontesmortas_orcamento.c define estes
+const char *ajustes_qualidade(void) { return "Automatica"; }
+int ajustes_dolby_atmos(void) { return 0; }
+int ajustes_dolby_vision(void) { return 0; }
+int ajustes_dv_mkv(void) { return 0; }
 int ajustes_fonte_escopo(void) { return 0; }
+int ajustes_fonte_hdr(void) { return 0; }
+int ajustes_fonte_manual(void) { return 0; }
+int ajustes_fonte_ordem_uso(void) { return 0; }
+int ajustes_fonte_primeira(void) { return 0; }
+int ajustes_fonte_prioridade(void) { return 0; }
 int ajustes_fonte_regex_modo(void) { return 0; }
+#endif
+int ajustes_fonte_texto_addon(void) { return 0; }
+#ifndef FONTESMORTAS_ORCAMENTO  // fontesmortas_orcamento.c define estes
 int ajustes_fonte_usar_outros(void) { return 0; }
+int ajustes_fonte_idioma_audio(void) { return 0; }
+int ajustes_tamanho_max_gb(void) { return 0; }
+int ajustes_tamanho_min_gb(void) { return 0; }
+int fonteregra_no_escopo(const FonteRegraCfg *c, int plugin)
+  { (void)c; (void)plugin; return 1; }
+int fonteregra_ordem_rank(const char *nome) { (void)nome; return 0; }
+#endif
+int fontepref_escolher(const char *id) { (void)id; return -1; }
+int fontepref_escolher_manual(const char *id) { (void)id; return -1; }
+int ajustes_fonte_ocultar(int regra) { (void)regra; return 0; }
+int ajustes_audio_externo(void) { return 0; }
+int ajustes_audio_externo_ocultar_fora_cache(void) { return 0; }
+int ajustes_dts_desligado(void) { return 0; }
+void audioext_alvo(const char *alvo) { (void)alvo; }
+int audioext_alternar(const char *url, const char *cabecalhos, const char *nome) {
+  (void)url; (void)cabecalhos; (void)nome; return -1;
+}
+void audioext_lembrar_serie(const AudioExtIdent *id) { (void)id; }
+int audioext_serie_procura(const char *alvo, AudioExtIdent *id) { (void)alvo; (void)id; return 0; }
+void audioext_serie_achou(const char *url, const char *cabecalhos, const char *nome) {
+  (void)url; (void)cabecalhos; (void)nome;
+}
+int audioext_marcada(const char *url) { (void)url; return 0; }
+TxtFamilia txt_fonte_interface(void) { return TXT_FAMILIA_INTER; }
+void txt_estilo_medidas(TxtEstilo estilo, int *corpo, int *peso) {
+  (void)estilo; if (corpo) *corpo = 20; if (peso) *peso = 400;
+}
+int txt_largura(TxtEstilo estilo, const char *s) {
+  (void)estilo; return s ? (int)(8 * strlen(s)) : 0;
+}
+float txt_bloco(TxtEstilo e, const char *s, int r, int g, int b,
+                float x, float y, float w, float leading, float alpha, int max) {
+  (void)e; (void)s; (void)r; (void)g; (void)b; (void)x; (void)y; (void)w; (void)max;
+  return s && s[0] ? leading : 0;
+}
+void vazao_fmt_mbps(char *dst, size_t n, int kbps, char sep) {
+  (void)sep; if (dst && n) snprintf(dst, n, "%.1f", kbps / 1000.0);
+}
+void vazao_fmt_gb(char *dst, size_t n, double gb, char sep) {
+  (void)sep; if (dst && n) snprintf(dst, n, "%.2f", gb);
+}
+float gfx_escala_ui(void) { return 1; }
+#ifndef FONTESMORTAS_ORCAMENTO  // fontesmortas_orcamento.c define estes
+const char *i18n(const char *s) { return s; }
+#endif
+int ajustes_idioma(void) { return IDIOMA_EN; }
+#ifndef FONTESMORTAS_ORCAMENTO  // fontesmortas_orcamento.c define estes
 unsigned fonteregra_versao(void) { return 0; }
+#endif
 int fonteregra_grupo(const FonteRegraCfg *c, const char *nome, int plugin, const char *texto) {
   (void)c; (void)nome; (void)plugin; (void)texto; return 0;
 }
-uint64_t badges_bit(const char *s) { (void)s; return 0; }
-uint64_t badges_detectar(const char *s) { (void)s; return 0; }
-int naovideo_nome(const char *a, const char *b, int h, long t) {
-  (void)a; (void)b; (void)h; (void)t; return 0;
-}
-
 static int sondas, sondaTroca, sondaFalha, falhasAte;
 int debrid_resolver_cache(const char *h, int f, char *u, unsigned t, int *fora) {
   (void)h; (void)f; (void)u; (void)t; (void)fora; assert(!"sem torrent nesta sonda"); return 0;
@@ -69,7 +134,6 @@ int rede_url_final_tipo(const char *u, int s, const char *const *c, char *d,
 char *rede_baixar_st(const char *u, int s, const char *const *c, int *st) {
   (void)u; (void)s; (void)c; (void)st; assert(!"sem HLS nesta sonda"); return NULL;
 }
-int naovideo_mime(const char *m, const char *u, long b) { (void)m; (void)u; (void)b; return 0; }
 int fa_player_falhou_foi(unsigned r, int i) { (void)r; (void)i; return 0; }
 void fa_concluir(unsigned r, int i, int ok) { (void)r; (void)i; (void)ok; }
 
