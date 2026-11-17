@@ -901,6 +901,7 @@
   T("Atividade recente", "最近のアクティビティ"),
   T("Atraso", "遅延"),
   T("Atraso da expansão", "拡大までの遅延"),
+  T("Atraso da legenda: %s", "字幕の遅延: %s"),
   T("Atrás de você", "あなたより後ろ"),
   T("Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.", "プロフィールの後ろに、それぞれが見た作品のポスター、またはライト、プロジェクターなどの背景。フォーカス中のプロフィールは見ていた作品を表示し、オフにもできます。"),
   T("Atual", "現在"),

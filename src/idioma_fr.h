@@ -900,6 +900,7 @@
   T("Atividade recente", "Activité récente"),
   T("Atraso", "Délai"),
   T("Atraso da expansão", "Délai d'agrandissement"),
+  T("Atraso da legenda: %s", "Délai des sous-titres : %s"),
   T("Atrás de você", "Derrière vous"),
   T("Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.", "Derrière les profils, les affiches de ce que chacun a regardé, ou Lumière, Projecteur et d’autres fonds. Le profil sélectionné montre ce qu’il regardait, et cela peut être désactivé."),
   T("Atual", "Actuel"),

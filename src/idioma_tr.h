@@ -901,6 +901,7 @@
   T("Atividade recente", "Son etkinlik"),
   T("Atraso", "Gecikme"),
   T("Atraso da expansão", "Genişleme gecikmesi"),
+  T("Atraso da legenda: %s", "Altyazı gecikmesi: %s"),
   T("Atrás de você", "Senden geride"),
   T("Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.", "Profillerin arkasında her birinin izlediklerinin afişleri ya da Işık, Projektör ve diğer arka planlar. Odaktaki profil ne izlediğini gösterir; bu kapatılabilir."),
   T("Atual", "Geçerli"),

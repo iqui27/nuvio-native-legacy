@@ -901,6 +901,7 @@
   T("Atividade recente", "Πρόσφατη δραστηριότητα"),
   T("Atraso", "Καθυστέρηση"),
   T("Atraso da expansão", "Καθυστέρηση μεγέθυνσης"),
+  T("Atraso da legenda: %s", "Καθυστέρηση υποτίτλων: %s"),
   T("Atrás de você", "Πίσω σου"),
   T("Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.", "Πίσω από τα προφίλ, αφίσες όσων είδε το καθένα, ή Φως, Προβολέας και άλλα φόντα. Το προφίλ σε εστίαση δείχνει τι έβλεπε, και αυτό απενεργοποιείται."),
   T("Atual", "Τρέχον"),

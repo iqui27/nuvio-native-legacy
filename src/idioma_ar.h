@@ -901,6 +901,7 @@
   T("Atividade recente", "النشاط الأخير"),
   T("Atraso", "التأخير"),
   T("Atraso da expansão", "تأخير التكبير"),
+  T("Atraso da legenda: %s", "تأخير الترجمة: %s"),
   T("Atrás de você", "خلفك"),
   T("Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.", "خلف الملفات الشخصية، ملصقات ما شاهده كل منهم، أو الضوء والعارض وخلفيات أخرى. الملف المحدد يعرض ما كان يشاهده، ويمكن إيقاف ذلك."),
   T("Atual", "الحالي"),

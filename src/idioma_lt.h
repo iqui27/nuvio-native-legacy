@@ -901,6 +901,7 @@
   T("Atividade recente", "Naujausia veikla"),
   T("Atraso", "Delsa"),
   T("Atraso da expansão", "Išplėtimo delsa"),
+  T("Atraso da legenda: %s", "Subtitrų delsa: %s"),
   T("Atrás de você", "Atsilieka nuo tavęs"),
   T("Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.", "Už profilių – plakatai to, ką kiekvienas žiūrėjo, arba Šviesa, Projektorius ir kiti fonai. Fokuse esantis profilis rodo, ką žiūrėjo, ir tai galima išjungti."),
   T("Atual", "Dabartinė"),

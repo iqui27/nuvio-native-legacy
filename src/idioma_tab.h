@@ -900,6 +900,7 @@
   { "Atividade recente", "Recent activity" },
   { "Atraso", "Delay" },
   { "Atraso da expansão", "Expansion delay" },
+  { "Atraso da legenda: %s", "Subtitle delay: %s" },
   { "Atrás de você", "Behind you" },
   { "Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.", "Behind the profiles, posters of what each one watched, or Light, Projector and other backgrounds. The focused profile shows what it was watching, and that can be turned off." },
   { "Atual", "Current" },

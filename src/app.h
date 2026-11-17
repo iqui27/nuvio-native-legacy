@@ -37,6 +37,10 @@ const char *app_tela_nome(void);
 // cheia ou no canto). Fora disso, no Android, CH+ e CH- fazem o papel das
 // teclas AZUL e VERMELHA, que o controle nao tem (main.c).
 int  app_zap_ativo(void);
+// 1 com filme/episodio no player (sem canal e fora do PiP), qualquer que seja
+// a tela por baixo dele: ai CH+/CH-
+// sincronizam a legenda (player.c) e segurar CH+ nao abre a Central (main.c).
+int  app_player_vod_ativo(void);
 // A Central de controle (central.h) pode abrir agora? Nao no login, na escolha
 // de perfil, com o registro, o Spotlight ou um teclado na frente.
 int  app_central_pode(void);

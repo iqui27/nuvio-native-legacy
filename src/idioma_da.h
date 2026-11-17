@@ -901,6 +901,7 @@
   T("Atividade recente", "Seneste aktivitet"),
   T("Atraso", "Forsinkelse"),
   T("Atraso da expansão", "Forsinkelse for udvidelse"),
+  T("Atraso da legenda: %s", "Forsinkelse af undertekster: %s"),
   T("Atrás de você", "Bag dig"),
   T("Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.", "Bag profilerne plakater af det, hver har set, eller Lys, Projektor og andre baggrunde. Profilen i fokus viser, hvad den så, og det kan slås fra."),
   T("Atual", "Nuværende"),

@@ -901,6 +901,7 @@
   T("Atividade recente", "Recente activiteit"),
   T("Atraso", "Vertraging"),
   T("Atraso da expansão", "Uitbreidingsvertraging"),
+  T("Atraso da legenda: %s", "Vertraging ondertitels: %s"),
   T("Atrás de você", "Achter je"),
   T("Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.", "Achter de profielen de posters van wat ieder keek, of Licht, Projector en andere achtergronden. Het profiel in focus toont wat het aan het kijken was, en dat kan uit."),
   T("Atual", "Huidig"),

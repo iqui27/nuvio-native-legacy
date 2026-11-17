@@ -17,7 +17,8 @@ não são "o outro": seguem como estão (lista no fim).
 | Fora de zap (Home, telas, Ajustes…) | Salvos / cartão da ilha (= AZUL) | Spotlight, ou fecha o Spotlight (= AMARELO) | AZUL e AMARELO continuam iguais |
 | Guia de TV | categoria anterior (inalterado) | categoria seguinte (inalterado) | AZUL abre/fecha o overlay; AMARELO alterna grade/cartões; dicas de cor mantidas. **.wgt:** o CH+ é a única "AZUL", então continua categoria seguinte (como sempre foi); só o CH− salta de verdade |
 | Player e PiP com canal no ar | zap de canal (inalterado) | zap de canal (inalterado) | AZUL/AMARELO inalterados; dica de cor mantida. **.wgt:** a casca não traduz a ColorF3Blue (406), então o CH+ segue como AZUL ali (faixa do guia → "Guia completo", PiP → tela cheia) e não zapa; o CH− zapa |
-| Segurar CH+ | abre a Central de controle (`src/chsegura.h`, `src/central.h`) | — | toque curto continua fazendo a ação de AZUL |
+| Player com filme/episódio (fora do PiP, sobre qualquer tela) | **adianta a legenda** 0,1 s por toque; segurado acelera 0,1 → 0,5 s por repetição (`src/legsyncpasso.h`) | **atrasa a legenda**, mesmo passo | Mesmo valor de Legendas › Atraso, gravado igual; aviso "Atraso da legenda: ±x,xx s" na ilha, sem a hora, ou "Sem legenda". Vale em todas as plataformas, inclusive o CH+ do **.wgt** (lá não há AZUL a preservar no VOD). Segurar CH+ **não** abre a Central aqui, como no canal ao vivo (`app_player_vod_ativo`, `src/main.c`; `legSyncAtalho`, `src/player.c`) |
+| Segurar CH+ | abre a Central de controle (`src/chsegura.h`, `src/central.h`), menos com canal ou filme/episódio na tela | — | toque curto continua fazendo a ação de AZUL |
 | Detalhe de fonte (`streams.c`) | — | abre, como AMARELO | AMARELO inalterado |
 
 ### Ligações acrescentadas
@@ -30,7 +31,8 @@ não são "o outro": seguem como estão (lista no fim).
 - Testes: `bash tests/wgt_voz.sh` prova 428 → F8 (119) em keydown e keyup;
   `bash tests/teclas_ch.sh` compila o remapeador real para Android, .tpk,
   Emscripten/.wgt e Mac, verificando CH+/CH−, down/up, Salvos/busca e zap
-  (no .wgt o CH+ nunca zapa — a única AZUL);
+  (no .wgt o CH+ nunca zapa — a única AZUL) e, com filme/episódio na tela,
+  CH+/CH− de verdade em todas (sincronia da legenda);
   `bash tests/spot_ch.sh` prova o `spotAtalho` real de app.c: CH− (481)
   abre como AMARELO, menos no guia e no keyup.
   `bash tests/spotlight_regressao.sh` prova que o CH− fecha o Spotlight aberto.

@@ -901,6 +901,7 @@
   T("Atividade recente", "Hoạt động gần đây"),
   T("Atraso", "Độ trễ"),
   T("Atraso da expansão", "Độ trễ phóng to"),
+  T("Atraso da legenda: %s", "Độ trễ phụ đề: %s"),
   T("Atrás de você", "Đi sau bạn"),
   T("Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.", "Phía sau hồ sơ là áp phích những gì từng người đã xem, hoặc Ánh sáng, Máy chiếu và nền khác. Hồ sơ đang chọn hiện đang xem dở gì, và có thể tắt."),
   T("Atual", "Hiện tại"),

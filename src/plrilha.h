@@ -51,6 +51,7 @@ typedef struct {
   float insetEsq;           // recuo esquerdo do cabecalho do corpo (o titulo); 0 = 28
   int semSombra;            // 1 = material sem a sombra caida (Fontes)
   int tituloLeve;           // 1 = titulo delicado (PLR_TIT_*): Medium um degrau abaixo, cinza polido
+  int semHora;              // 1 = aviso SEM a hora (e sem "termina as"/velocidade): so icone + frase (o do CH+/CH- da legenda)
 } PlrIlhaPedido;
 
 // Titulo delicado (#205, "Central de controle"): #A8ADB5 no vidro escuro (~8:1).

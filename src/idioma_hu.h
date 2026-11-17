@@ -901,6 +901,7 @@
   T("Atividade recente", "Legutóbbi aktivitás"),
   T("Atraso", "Késleltetés"),
   T("Atraso da expansão", "Nagyítás késleltetése"),
+  T("Atraso da legenda: %s", "Felirat késleltetése: %s"),
   T("Atrás de você", "Mögötted"),
   T("Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.", "A profilok mögött annak plakátjai, amit ki-ki nézett, vagy Fény, Projektor és más hátterek. A kijelölt profil mutatja, mit nézett, és ez kikapcsolható."),
   T("Atual", "Jelenlegi"),

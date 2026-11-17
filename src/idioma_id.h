@@ -901,6 +901,7 @@
   T("Atividade recente", "Aktivitas terbaru"),
   T("Atraso", "Jeda"),
   T("Atraso da expansão", "Jeda perbesaran"),
+  T("Atraso da legenda: %s", "Jeda subtitel: %s"),
   T("Atrás de você", "Di belakangmu"),
   T("Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.", "Di belakang profil, poster dari yang ditonton tiap profil, atau Cahaya, Proyektor, dan latar lain. Profil yang difokuskan menampilkan tontonannya, dan itu bisa dimatikan."),
   T("Atual", "Saat ini"),

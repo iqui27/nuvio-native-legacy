@@ -147,6 +147,7 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "cacheboost.h"
 #include "audioinfo.h"
 #include "legendasui.h"   /* F04: second subtitle band */
+#include "legsyncpasso.h"
 #include <time.h>
 #include "servidores.h"
 #include <stdio.h>
@@ -1309,6 +1310,9 @@ static char   toastTexto[320];
 // O icone do aviso (art/icones) e a cor dele: 0 branco, 1 ambar (aviso).
 static char   toastIcone[32];
 static int    toastCor;
+// Igual a toastAte = o aviso no ar vai SEM a hora na pilula (o do CH+/CH- da
+// legenda). Qualquer outro aviso troca toastAte e a hora volta sozinha.
+static Uint32 toastSemHoraAte;
 static int    avisouAudio;
 static char   dirPrefs[512];
 static int    prefsLidas;
@@ -1837,6 +1841,39 @@ void player_aspecto_ciclar(void) {
   player_aspecto_definir(m);
   toastTexto[0] = 0;
   toastAte = SDL_GetTicks() + PLR_TOAST_MS;
+}
+
+// SINCRONIA DA LEGENDA NO CH+/CH- (pedido do dono, 16/11): no filme/episodio,
+// CH+ ADIANTA e CH- ATRASA a legenda principal, sem abrir painel nenhum. E o
+// MESMO valor da regua Legendas > Atraso (legendasui.c) e da aba Estilo
+// (faixas.c), com o limite deles, e grava como eles (player_leg_estilo_mudou).
+// O passo e o de legsyncpasso.h: um toque anda 0,1 s e segurar acelera ate
+// 0,5 s por repeticao, como a timeline (dono, 17/11). O atraso guardado e
+// positivo = legenda MAIS TARDE (legsync_offset_ms), entao adiantar subtrai.
+// O aviso na ilha mostra o total com o mesmo texto da regua, SEM a hora (dono,
+// 17/11: o relogio ao lado do valor confundia).
+// main.c entrega o CH cru como CH+/CH- de verdade enquanto app_player_vod_ativo.
+#define PLR_LEG_SYNC_AVISO_MS  2000u
+static LegSyncPasso legSyncPasso;
+static void legSyncAtalho(int adianta, unsigned agora, int repeticao) {
+  VideoLegendaEstilo *e = player_leg_estilo();
+  char v[24], t[96];
+  int a, passo;
+  if (faixas_legenda_ativa() < 0) {
+    player_toast_ex(i18n("Sem legenda"), PLR_TOAST_MS, "pl_captions", 0);
+    toastSemHoraAte = toastAte;
+    return;
+  }
+  passo = legsyncpasso_tecla(&legSyncPasso, adianta ? -1 : 1, agora, repeticao);
+  a = e->atrasoMs + (adianta ? -passo : passo);
+  if (a > LEGUI_ATRASO_MAX) a = LEGUI_ATRASO_MAX;
+  if (a < -LEGUI_ATRASO_MAX) a = -LEGUI_ATRASO_MAX;
+  if (a != e->atrasoMs) { e->atrasoMs = a; player_leg_estilo_mudou(); }
+  if (!a) snprintf(v, sizeof v, "0 s");
+  else { snprintf(v, sizeof v, "%+.2f s", a / 1000.0); plrui_decimal(v); }
+  snprintf(t, sizeof t, i18n("Atraso da legenda: %s"), v);
+  player_toast_ex(t, PLR_LEG_SYNC_AVISO_MS, "aj_clock", 0);
+  toastSemHoraAte = toastAte;
 }
 
 static void alvoStream(char *dst, unsigned tam);
@@ -4360,6 +4397,20 @@ void player_evento(const SDL_Event *e) {
     }
   }
 
+  // CH+/CH- NO FILME/EPISODIO: adiantar/atrasar a legenda (legSyncAtalho), com
+  // controles em pe ou escondidos e tambem com o painel de pausa (vem antes
+  // dele). Abrindo a fonte ainda nao ha legenda na tela: a tecla e engolida.
+  // No canal ao vivo os mesmos codigos zapeiam (mais abaixo).
+  if (!ehCanal()) {
+    int sc = e->key.keysym.scancode;
+    int sobe = sc == NV_SCANCODE_CH_UP || k == SDLK_PAGEUP;
+    if (sobe || sc == NV_SCANCODE_CH_DOWN || k == SDLK_PAGEDOWN) {
+      if (!player_carregando())
+        legSyncAtalho(sobe, e->key.timestamp ? e->key.timestamp : SDL_GetTicks(), e->key.repeat);
+      return;
+    }
+  }
+
   // PAINEL DE PAUSA: com ele de pe, a tecla e DELE. Vem antes de tudo o que
   // sobra (inclusive da tecla de proporcao) porque e o que o web faz — la o
   // ramo `if (this.pauseOverlayVisible)` engole o evento inteiro
@@ -6693,6 +6744,7 @@ void player_desenhar(Uint32 agora) {
       pd.texto = toastTexto;
       pd.icone = toastIcone[0] ? toastIcone : "aj_info";
       pd.corIcone = toastCor;
+      pd.semHora = toastSemHoraAte == toastAte;
       if (durFonteAcaoAte == toastAte) {
         pd.w = 1000; pd.h = 88; pd.corpo = corpoDurFonte; pd.video = 1;
       }

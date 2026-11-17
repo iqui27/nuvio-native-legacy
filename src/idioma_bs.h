@@ -901,6 +901,7 @@
   T("Atividade recente", "Nedavna aktivnost"),
   T("Atraso", "Kašnjenje"),
   T("Atraso da expansão", "Kašnjenje proširenja"),
+  T("Atraso da legenda: %s", "Kašnjenje titla: %s"),
   T("Atrás de você", "Iza tebe"),
   T("Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.", "Iza profila posteri onoga što je ko gledao, ili Svjetlo, Projektor i druge pozadine. Profil u fokusu pokazuje šta je gledao, a to se može isključiti."),
   T("Atual", "Trenutno"),

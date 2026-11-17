@@ -901,6 +901,7 @@
   T("Atividade recente", "Nedávna aktivita"),
   T("Atraso", "Oneskorenie"),
   T("Atraso da expansão", "Oneskorenie zväčšenia"),
+  T("Atraso da legenda: %s", "Oneskorenie titulkov: %s"),
   T("Atrás de você", "Za tebou"),
   T("Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.", "Za profilmi plagáty toho, čo kto sledoval, alebo Svetlo, Projektor a ďalšie pozadia. Profil vo fokuse ukazuje, čo sledoval, a dá sa to vypnúť."),
   T("Atual", "Aktuálny"),

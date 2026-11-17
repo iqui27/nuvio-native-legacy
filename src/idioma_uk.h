@@ -900,6 +900,7 @@
   T("Atividade recente", "Остання активність"),
   T("Atraso", "Затримка"),
   T("Atraso da expansão", "Затримка збільшення"),
+  T("Atraso da legenda: %s", "Затримка субтитрів: %s"),
   T("Atrás de você", "Позаду вас"),
   T("Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.", "За профілями — постери того, що кожен дивився, або Світло, Проєктор та інші фони. Профіль у фокусі показує, що він дивився, і це можна вимкнути."),
   T("Atual", "Поточна"),

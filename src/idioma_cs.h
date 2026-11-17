@@ -901,6 +901,7 @@
   T("Atividade recente", "Nedávná aktivita"),
   T("Atraso", "Prodleva"),
   T("Atraso da expansão", "Prodleva zvětšení"),
+  T("Atraso da legenda: %s", "Prodleva titulků: %s"),
   T("Atrás de você", "Za tebou"),
   T("Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.", "Za profily plakáty toho, co kdo sledoval, nebo Světlo, Projektor a další pozadí. Profil ve fokusu ukazuje, co sledoval, a lze to vypnout."),
   T("Atual", "Aktuální"),

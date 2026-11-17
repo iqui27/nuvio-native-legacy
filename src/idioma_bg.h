@@ -901,6 +901,7 @@
   T("Atividade recente", "Скорошна активност"),
   T("Atraso", "Забавяне"),
   T("Atraso da expansão", "Забавяне на разширяването"),
+  T("Atraso da legenda: %s", "Забавяне на субтитрите: %s"),
   T("Atrás de você", "Зад теб"),
   T("Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.", "Зад профилите – плакати на гледаното от всеки, или Светлина, Прожектор и други фонове. Профилът на фокус показва какво е гледал, и това може да се изключи."),
   T("Atual", "Текуща"),

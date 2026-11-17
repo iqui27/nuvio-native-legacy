@@ -901,6 +901,7 @@
   T("Atividade recente", "近期活動"),
   T("Atraso", "延遲"),
   T("Atraso da expansão", "放大延遲"),
+  T("Atraso da legenda: %s", "字幕延遲：%s"),
   T("Atrás de você", "落後於你"),
   T("Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.", "檔案背後是各自看過內容的海報，或燈光、放映機等背景。焦點檔案會顯示正在看的內容，也可以關閉。"),
   T("Atual", "目前"),

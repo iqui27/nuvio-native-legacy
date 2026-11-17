@@ -266,10 +266,12 @@ static void remapCanal(SDL_Event *e) {
   // tratam. Fora disso fazem o papel das teclas que o controle Android nao
   // tem: CH+ = AZUL (Salvos), CH- = Spotlight (F5, SPOT_TECLA_ABRIR). O
   // registro foi para a tecla Info (NuvioActivity: KEYCODE_INFO -> F9).
+  // Com filme/episodio na tela (app_player_vod_ativo) tambem sao CH+/CH- de
+  // verdade: o player os usa para adiantar/atrasar a legenda.
   if ((e->type == SDL_KEYDOWN || e->type == SDL_KEYUP) &&
       (e->key.keysym.sym == SDLK_F7 || e->key.keysym.sym == SDLK_F8)) {
     int sobe = e->key.keysym.sym == SDLK_F7;
-    if (app_zap_ativo()) {
+    if (app_zap_ativo() || app_player_vod_ativo()) {
       e->key.keysym.scancode = (SDL_Scancode)(sobe ? NV_SCANCODE_CH_UP : NV_SCANCODE_CH_DOWN);
       e->key.keysym.sym = sobe ? SDLK_PAGEUP : SDLK_PAGEDOWN;
     } else {
@@ -286,10 +288,15 @@ static void remapCanal(SDL_Event *e) {
   // entao o F7 e a unica "AZUL" do Tizen web (Guia completo na faixa do guia,
   // Tela cheia no PiP, categoria seguinte no guia cheio). O CH- e zap com
   // canal na tela e F5 (Spotlight) fora dela, como no .tpk.
+  // Filme/episodio na tela e a excecao do CH+: la nao ha AZUL a preservar, e
+  // CH+/CH- viram os de verdade para o player adiantar/atrasar a legenda.
   if ((e->type == SDL_KEYDOWN || e->type == SDL_KEYUP) &&
       (e->key.keysym.sym == SDLK_F7 || e->key.keysym.sym == SDLK_F8)) {
     int sobe = e->key.keysym.sym == SDLK_F7;
-    if (!sobe && app_zap_ativo()) {
+    if (app_player_vod_ativo()) {
+      e->key.keysym.scancode = (SDL_Scancode)(sobe ? NV_SCANCODE_CH_UP : NV_SCANCODE_CH_DOWN);
+      e->key.keysym.sym = sobe ? SDLK_PAGEUP : SDLK_PAGEDOWN;
+    } else if (!sobe && app_zap_ativo()) {
       e->key.keysym.scancode = (SDL_Scancode)NV_SCANCODE_CH_DOWN;
       e->key.keysym.sym = SDLK_PAGEDOWN;
     } else {
@@ -1997,8 +2004,11 @@ int main(int argc, char **argv) {
 #endif
 #endif
       // CH+ segurado x tocado (central.h). Com canal na tela (zap) ele segue
-      // direto, sem atraso.
-      if (teclaCh(&e) && central_tecla(&e, !app_zap_ativo() && app_central_pode())) continue;
+      // direto, sem atraso; com filme/episodio tambem (pedido do dono: CH+/CH-
+      // sincronizam a legenda, cada toque na hora e segurar repete) — no VOD
+      // a Central nao abre pelo CH+, como ja era no canal ao vivo.
+      if (teclaCh(&e) && central_tecla(&e, !app_zap_ativo() && !app_player_vod_ativo() &&
+                                           app_central_pode())) continue;
       remapCanal(&e);
       // TECLA DESCONHECIDA, UMA LINHA CADA, UMA VEZ SO.
       //

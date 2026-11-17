@@ -900,6 +900,7 @@
   T("Atividade recente", "Activitate recentă"),
   T("Atraso", "Întârziere"),
   T("Atraso da expansão", "Întârzierea măririi"),
+  T("Atraso da legenda: %s", "Întârziere subtitrare: %s"),
   T("Atrás de você", "În urma ta"),
   T("Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.", "În spatele profilurilor, postere cu ce a văzut fiecare, sau Lumină, Proiector și alte fundaluri. Profilul în focus arată ce urmărea, iar asta se poate opri."),
   T("Atual", "Actual"),

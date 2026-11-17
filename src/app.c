@@ -7536,6 +7536,12 @@ int app_zap_ativo(void) {
   if (tela == TELA_GUIA) return 1;
   return (tela == TELA_PLAYER || player_mini_ativo()) && player_id_canal()[0];
 }
+// Sem olhar `tela`: o filme/episodio abre POR CIMA da tela de onde veio (home,
+// pagina do titulo...), e `tela` so vira TELA_PLAYER no atalho de teste F3.
+// Exigir TELA_PLAYER deixava o CH+/CH- da legenda sempre desligado na TV.
+int app_player_vod_ativo(void) {
+  return player_aberto() && !player_mini_ativo() && !player_id_canal()[0];
+}
 int app_central_pode(void) {
   if (central_aberta()) return 1;   // o CH+ que fecha passa pelo mesmo caminho
   return tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL && login_concluido() &&

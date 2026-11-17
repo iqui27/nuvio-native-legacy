@@ -146,7 +146,7 @@ typedef struct {
   TxtLinha txt, hora, fim, dir, vel;
   float w;                 // largura do conteudo (sem o recuo)
   float ds;                // o trecho do medidor no fim da linha (0 = nada)
-  int temIcone, temTxt, temFim, temVel;
+  int temIcone, temTxt, temFim, temVel, temHora;
 } Linha;
 
 static void horaAgora(char *h, size_t n, char *fim, size_t nf) {
@@ -168,8 +168,10 @@ static float montar(const PlrIlhaPedido *p, Linha *L) {
   horaAgora(h, sizeof h, fim, sizeof fim);
   L->temIcone = p && p->icone;
   L->temTxt = p && p->texto;
-  L->temFim = (!p || !p->semFim) && fim[0];
-  L->hora = txt_linha(TXT_ILHA_NOME, h, 243, 242, 239, 255);
+  // Sem hora so com algo no lugar dela: um pedido vazio continua sendo o relogio.
+  L->temHora = !(p && p->semHora && (L->temTxt || L->temIcone));
+  L->temFim = L->temHora && (!p || !p->semFim) && fim[0];
+  if (L->temHora) L->hora = txt_linha(TXT_ILHA_NOME, h, 243, 242, 239, 255);
   if (L->temIcone) w += 24.0f + 12.0f;
   if (p && p->respira) w += 10.0f + 14.0f;
   if (L->temTxt) {
@@ -178,13 +180,19 @@ static float montar(const PlrIlhaPedido *p, Linha *L) {
     w += (float)L->txt.w + 12.0f;
   }
   if (p && p->pontos > 0) w += 4.0f + p->pontos * 8.0f + (p->pontos - 1) * 7.0f + 12.0f;
-  if (L->temTxt || (p && p->pontos > 0)) w += 1.0f + 12.0f;   // separador
-  w += (float)L->hora.w;
+  if (L->temHora) {
+    if (L->temTxt || (p && p->pontos > 0)) w += 1.0f + 12.0f;   // separador
+    w += (float)L->hora.w;
+  } else if (L->temTxt || (p && p->pontos > 0)) {
+    w -= 12.0f;   // sem hora, o vao de 12 antes do separador sobra na ponta
+  } else if (L->temIcone) {
+    w -= 12.0f;   // so o icone: idem, o vao depois dele
+  }
   if (L->temFim) {
     L->fim = txt_linha(TXT_G19M, fim, 243, 242, 239, 153);
     w += 12.0f + 1.0f + 12.0f + (float)L->fim.w;
   }
-  if (velCent != VEL_NORMAL) {
+  if (L->temHora && velCent != VEL_NORMAL) {
     char v[16];
     float ar, ag, ab;
     vel_rotulo(v, sizeof v, velCent);
@@ -237,9 +245,11 @@ static void desenharLinha(const PlrIlhaPedido *p, const Linha *L, float x, float
     }
     x += 12.0f - 7.0f;
   }
-  if (L->temTxt || (p && p->pontos > 0)) { plrui_sep(x, yc, a); x += 1.0f + 12.0f; }
-  txt_desenhar_alpha(L->hora, x, yc - (float)L->hora.h * 0.5f, a);
-  x += (float)L->hora.w;
+  if (L->temHora) {
+    if (L->temTxt || (p && p->pontos > 0)) { plrui_sep(x, yc, a); x += 1.0f + 12.0f; }
+    txt_desenhar_alpha(L->hora, x, yc - (float)L->hora.h * 0.5f, a);
+    x += (float)L->hora.w;
+  }
   if (L->temFim) {
     x += 12.0f;
     plrui_sep(x, yc, a);
