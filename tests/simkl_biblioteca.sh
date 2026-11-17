@@ -1,5 +1,5 @@
 #!/bin/bash
-# A biblioteca do Simkl por dentro (src/simkl.c): paginas juntadas, listas por
+# A biblioteca do Simkl por dentro (src/simkl.c): respostas juntadas (por tipo, ou por estado no max_items), listas por
 # estado, a janela de conferencia com o Simkl. Inclui o simkl.c, como o i610.
 # Sem SDL, sem rede. SANITIZE=1 liga ASan/UBSan.
 set -eu

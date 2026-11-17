@@ -1,7 +1,7 @@
-// The Simkl library from the inside (src/simkl.c): pages of /sync/all-items
-// joined into the one body it keeps, status lists built from it, and how
-// often list readers check it with Simkl (SMK_BIB_FRESCA, the real value
-// here). Built like tests/i610.c: simkl.c is included so its static helpers
+// The Simkl library from the inside (src/simkl.c): /sync/all-items answers
+// (one per type, or per status over max_items) joined into the one body it
+// keeps, status lists built from it, and how often list readers check it
+// with Simkl (SMK_BIB_FRESCA, the real value here). Built like tests/i610.c: simkl.c is included so its static helpers
 // are reachable, and simkl_cw.c brings the stubs and the fake account.
 #include "../src/simkl.c"
 #define main simkl_cw_main
@@ -10,14 +10,23 @@
 #undef atividades
 #undef main
 
-static char *juntar(const char *const *paginas, int n) {
+static char *juntar(const char *const *respostas, int n) {
   SmkTexto tipos[3] = {{0}};
   char *r = NULL;
   int ok = 1;
-  for (int i = 0; ok && i < n; i++) ok = bibliotecaJuntar(tipos, paginas[i]);
+  for (int i = 0; ok && i < n; i++) ok = bibliotecaJuntarEstado(tipos, respostas[i], NULL);
   if (ok) r = bibliotecaMontar(tipos);
   for (int i = 0; i < 3; i++) free(tipos[i].p);
   return r;
+}
+
+// Watched episodes in the library in memory (each one's "watched_at").
+static int episodiosVistos(void) {
+  int n = 0;
+  pthread_mutex_lock(&trava);
+  for (const char *p = bibCorpo; p && (p = strstr(p, "\"watched_at\"")); p++) n++;
+  pthread_mutex_unlock(&trava);
+  return n;
 }
 
 int main(void) {
@@ -31,7 +40,7 @@ int main(void) {
                            "\"anime\":[{\"x\":\"[,]\"}],\"movies\":[{\"m\":1}]}"));
     assert(perfilHistoricoValido(r));
     free(r); }
-  printf("ok  pages join list by list, commas only between items, any key order\n");
+  printf("ok  answers join list by list, commas only between items, any key order\n");
 
   { const char *p[] = { "{}", "{\"movies\":[]}" };
     r = juntar(p, 2);
@@ -44,7 +53,7 @@ int main(void) {
     assert(!juntar(p, 2)); }
   { const char *p[] = { "{\"error\":\"x\",\"shows\":[]}" };
     assert(!juntar(p, 1)); }
-  printf("ok  a page that is not all-items stops the join\n");
+  printf("ok  an answer that is not all-items stops the join\n");
 
   // Status lists: the items with that status, without their episode history,
   // in the shape of /sync/all-items/<type>/<status>.
@@ -210,6 +219,81 @@ int main(void) {
     assert(batidas[0] == ativ + 1);
     printf("ok  a write from this app makes the next reader check again, once\n");
     bibEsperar(); }
+
+  // A status list joined: an item without its own status gets the list's,
+  // one with it keeps it.
+  { SmkTexto tipos[3] = {{0}};
+    assert(bibliotecaJuntarEstado(tipos,
+             "{\"shows\":[{\"show\":{\"title\":\"A\"}}, {}, {\"status\":\"hold\",\"x\":1}]}",
+             "completed"));
+    r = bibliotecaMontar(tipos);
+    assert(r && !strcmp(r, "{\"shows\":[{\"status\":\"completed\",\"show\":{\"title\":\"A\"}},"
+                           "{\"status\":\"completed\"},{\"status\":\"hold\",\"x\":1}],"
+                           "\"anime\":[],\"movies\":[]}"));
+    free(r);
+    for (int i = 0; i < 3; i++) free(tipos[i].p); }
+  printf("ok  a status list's items carry its status\n");
+
+  // Over Simkl's max_items: shows asked status by status, and its completed
+  // list (over the episode cap) with only the recorded episodes. The library
+  // holds the same lists and the same watched episodes as a pull in one
+  // piece, and is saved. Every item has a status, as on Simkl (the default
+  // fake library's watched history has none, so a status list leaves it out).
+  { static const char *const estados[] = { "watching", "plantowatch", "hold", "completed",
+                                           "dropped" };
+    static const char *const BIB_DIVIDIR =
+      "{\"shows\":["
+      "{\"status\":\"watching\",\"show\":{\"title\":\"Watching\",\"ids\":{\"simkl\":901,"
+        "\"imdb\":\"tt0000901\"}},\"seasons\":[{\"number\":1,\"episodes\":["
+        "{\"number\":1,\"watched_at\":\"2026-10-01T12:00:00Z\"},"
+        "{\"number\":2,\"watched_at\":\"2026-10-02T12:00:00Z\"}]}]},"
+      "{\"status\":\"completed\",\"show\":{\"title\":\"Done\",\"ids\":{\"simkl\":902,"
+        "\"imdb\":\"tt0000902\"}},\"seasons\":[{\"number\":1,\"episodes\":["
+        "{\"number\":1,\"watched_at\":\"2026-09-01T12:00:00Z\"}]}]},"
+      "{\"status\":\"plantowatch\",\"show\":{\"title\":\"Later\",\"ids\":{\"simkl\":903,"
+        "\"imdb\":\"tt0000903\"}}}],"
+      "\"anime\":[],\"movies\":[]}";
+    char *inteira[5], *dividida;
+    int vistosInteira, vistosDividida;
+    tokenAtual = TOKEN;
+    historicoCorpo = BIB_DIVIDIR;
+    bibEsperar();
+    simkl_esquecer();
+    free(bibTexto); bibTexto = NULL;
+    for (int i = 0; i < 5; i++) assert((inteira[i] = simkl_lista_corpo("shows", estados[i])));
+    vistosInteira = episodiosVistos();
+    bibEsperar();
+    simkl_esquecer();
+    free(bibTexto); bibTexto = NULL;
+    grandeTipo = "shows"; grandeEstado = "completed";
+    pedidosEstado = pedidosOriginal = 0;
+    for (int i = 0; i < 5; i++) {
+      assert((dividida = simkl_lista_corpo("shows", estados[i])));
+      assert(!strcmp(dividida, inteira[i]));
+      free(dividida);
+      free(inteira[i]);
+    }
+    vistosDividida = episodiosVistos();
+    assert(vistosInteira == 3 && vistosDividida == vistosInteira);
+    assert(pedidosEstado == 6 && pedidosOriginal == 1 && bibTexto);
+    grandeTipo = grandeEstado = NULL;
+    historicoCorpo = NULL;
+    bibEsperar(); }
+  printf("ok  max_items: a type status by status, a status with its recorded episodes\n");
+
+  // A status still over the cap with original: no library, nothing saved,
+  // and no request after it (the other statuses, the other types).
+  { bibEsperar();
+    simkl_esquecer();
+    free(bibTexto); bibTexto = NULL;
+    grandeTipo = "shows"; grandeEstado = "plantowatch"; grandeSempre = 1;
+    pedidosEstado = pedidosOriginal = 0;
+    assert(!simkl_lista_corpo("shows", "watching"));
+    assert(pedidosEstado == 3 && pedidosOriginal == 1 && !bibTexto);
+    grandeTipo = grandeEstado = NULL; grandeSempre = 0;
+    bibEsperar();
+    simkl_esquecer(); }
+  printf("ok  max_items even with original: no library, nothing saved\n");
 
   printf("simkl_biblioteca: tudo ok\n");
   return 0;

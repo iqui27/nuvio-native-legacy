@@ -142,37 +142,40 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
     r->cabecalhos = fixture("429.headers"); r->corpo = strdup("{}"); return 1;
   }
   r->status = 200;
+#ifdef I610_TRAKT
   int page = 1; const char *q = strstr(p->url, "page="); if (q) page = atoi(q + 5);
   if (page != 1 && page != 3) { bad_page++; r->status = 404; r->corpo = strdup("{}"); return 1; }
-#ifdef I610_TRAKT
-  int list = strstr(p->url, "/movies/") != NULL;
+  if (!strstr(p->url, "/movies/")) { r->corpo = strdup("[]"); return 1; }
+  char name[64];
+  snprintf(name, sizeof name, "trakt-%d.json", page);
+  r->corpo = fixture(name);
+  r->cabecalhos = fixture(page == 1 ? "next.headers" : "last.headers");
+  return 1;
 #else
   if (cw_mode || strstr(p->url, "/sync/playback")) {
     r->corpo = previous_get(p->url, 25, p->cabecalhos, &r->status); return 1;
   }
-  // Plan to watch comes from the library: its download is the paged one.
-  int list = strstr(p->url, "/sync/all-items/all/all") != NULL;
   if (strstr(p->url, "/sync/activities")) {
     r->corpo = strdup("{\"movies\":\"changed\"}"); return 1;
   }
-#endif
-  if (!list) {
-#ifdef I610_TRAKT
-    r->corpo = strdup("[]");
-#else
-    r->corpo = strdup(strstr(p->url, "/anime/") ? "{\"anime\":[]}" : "{\"shows\":[]}");
-#endif
-    return 1;
+  // Plan to watch comes from the library: one /sync/all-items answer per
+  // type, with no pages (Simkl documents none; the old paged /all/all is
+  // answered 404 so a return to it fails here).
+  if (strstr(p->url, "page=") || strstr(p->url, "/sync/all-items/all")) {
+    bad_page++; r->status = 404; r->corpo = strdup("{}"); return 1;
   }
-  char name[64];
-#ifdef I610_TRAKT
-  snprintf(name, sizeof name, "trakt-%d.json", page);
-#else
-  snprintf(name, sizeof name, "simkl-%d.json", page);
-#endif
-  r->corpo = fixture(name);
-  r->cabecalhos = fixture(page == 1 ? "next.headers" : "last.headers");
+  if (strstr(p->url, "/sync/all-items/movies?")) {
+    r->corpo = fixture("simkl-movies.json");
+    r->cabecalhos = fixture("last.headers");
+  } else if (strstr(p->url, "/sync/all-items/shows?")) {
+    r->corpo = strdup("{\"shows\":[]}");
+  } else if (strstr(p->url, "/sync/all-items/anime?")) {
+    r->corpo = strdup("{\"anime\":[]}");
+  } else {
+    r->corpo = strdup(strstr(p->url, "/anime/") ? "{\"anime\":[]}" : "{\"shows\":[]}");
+  }
   return 1;
+#endif
 }
 void rede_resposta_limpar(RedeResposta *r) { free(r->corpo); free(r->cabecalhos); memset(r, 0, sizeof *r); }
 char *rede_baixar_st_retry(const char *u, int s, const char *const *c, int *st, int *ra) {

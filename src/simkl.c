@@ -1968,8 +1968,9 @@ void simkl_anime_lista_mudou(const char *imdb) {
   else { vistoep_segurar(id, 0); free(r); }
 }
 
-// THE SAVED LIBRARY (simklbib.h). The whole pull below also keeps the pages,
-// joined into one body of the same shape, and saves it with the activities
+// THE SAVED LIBRARY (simklbib.h). The whole pull below joins its answers (one
+// per type, or per status over max_items) into one body of all-items' shape,
+// and saves it with the activities
 // asked just before: a later delta from that "all" may repeat a change, never
 // miss one.
 typedef struct { char *p; size_t n, cap; } SmkTexto;
@@ -2040,16 +2041,90 @@ static char *animeEpisodiosEnxutos(const char *corpo) {
   return t.p;
 }
 
+// One /sync/all-items request (`caminho`: /sync/all-items/<type>[/<status>],
+// or bare /sync/all-items for a delta).
+// `episodios`: include_all_episodes, "yes" or "original" (only the episodes
+// the user recorded: smaller, for a list over Simkl's episode cap). `desde`:
+// a delta, only the items changed strictly after that activities timestamp
+// (sent exactly as /sync/activities wrote it). *grande = Simkl answered 400
+// max_items: asking the same again gets the same 400, the request has to be
+// split (api.simkl.org/guides/sync, "max_items").
+static char *bibliotecaPedido(SmkPedido pedido, const char *caminho, const char *episodios,
+                              const char *desde, int *st, int *grande) {
+  char url[720], consulta[300], *erro = NULL, *r;
+  const char *cab[3];
+  int proxima;   // same transport as Simkl's other GETs; all-items has no pages
+  // full_anime_seasons is full plus, for anime, each episode's TVDB season and
+  // episode and the entry's mapped_tvdb_seasons. It also gives a per-season
+  // entry the show's IDs: with full, 21 of 86 anime entries on a real account
+  // came with no IMDb or TMDB ID (My Hero Academia S2-7, Spy x Family...).
+  // language=en: an anime's title is otherwise its romaji name; language=pt
+  // was tried and gave romaji too. No page/limit: Simkl documents no paging
+  // for all-items, it answers the whole list or max_items.
+  snprintf(consulta, sizeof consulta,
+           "extended=full_anime_seasons&include_all_episodes=%s&episode_watched_at=yes"
+           "&episode_tvdb_id=yes&language=en%s%s",
+           episodios, desde ? "&date_from=" : "", desde ? desde : "");
+  snprintf(url, sizeof url, "%s%s?client_id=%s&app-name=%s&app-version=1.0.1&%s",
+           SMK_API, caminho, pedido.cid, pedido.nome, consulta);
+  cab[0] = pedido.aut;
+  cab[1] = "Accept: application/json";
+  cab[2] = NULL;
+  *grande = 0;
+  r = provedorGetErro(url, 25, cab, st, &proxima, 1, &erro);
+  if (!r && *st == 400 && erro && strstr(erro, "\"max_items\"")) *grande = 1;
+  free(erro);
+  return r;
+}
+
+// An answer with nothing in it: Simkl may send null or [] instead of lists.
+static int corpoVazio(const char *r) {
+  while (r && (unsigned char)*r <= ' ' && *r) r++;
+  if (!r) return 0;
+  if (!strncmp(r, "null", 4)) r += 4;
+  else if (r[0] == '[' || r[0] == '{') {
+    const char *q = r + 1;
+    while ((unsigned char)*q <= ' ' && *q) q++;
+    if ((r[0] == '[' && *q != ']') || (r[0] == '{' && *q != '}')) return 0;
+    r = q + 1;
+  } else return 0;
+  while ((unsigned char)*r <= ' ' && *r) r++;
+  return !*r;
+}
+
 static const char *const bibTipos[3] = { "shows", "anime", "movies" };
 
-// Appends one page's items, list by list. 0 when the page is not all-items.
-static int bibliotecaJuntar(SmkTexto tipos[3], const char *pagina) {
-  const char *ini = pagina, *fim, *v, *vf;
-  if (!perfilHistoricoValido(pagina)) return 0;
+// Appends one answer's items, list by list. `estado`: the answer is one
+// status list; an item without its own "status" gets it, since the library's
+// readers pick items by that field. 0 when the answer is not all-items.
+static int bibliotecaJuntarEstado(SmkTexto tipos[3], const char *resposta, const char *estado) {
+  const char *ini = resposta, *fim, *v, *vf;
+  if (!perfilHistoricoValido(resposta)) return 0;
   while ((unsigned char)*ini <= ' ') ini++;
   fim = js_fim(ini);
   for (int i = 0; i < 3; i++) {
     if (!valorRaiz(ini, fim, bibTipos[i], &v, &vf)) continue;
+    if (estado) {
+      for (const char *p = v + 1; p < vf; ) {
+        const char *f, *sv, *svf;
+        while (p < vf && ((unsigned char)*p <= ' ' || *p == ',')) p++;
+        if (p >= vf || *p == ']') break;
+        if (*p != '{' || !(f = js_fim(p)) || f > vf) return 0;
+        if (tipos[i].n && !textoPor(&tipos[i], ",", 1)) return 0;
+        if (valorRaiz(p, f, "status", &sv, &svf)) {
+          if (!textoPor(&tipos[i], p, (size_t)(f - p))) return 0;
+        } else {
+          const char *q = p + 1;
+          char cab[40];
+          while (q < f && (unsigned char)*q <= ' ') q++;
+          int n = snprintf(cab, sizeof cab, "{\"status\":\"%s\"%s", estado, *q == '}' ? "" : ",");
+          if (!textoPor(&tipos[i], cab, (size_t)n) ||
+              !textoPor(&tipos[i], p + 1, (size_t)(f - p - 1))) return 0;
+        }
+        p = f;
+      }
+      continue;
+    }
     const char *a = v + 1, *b = vf - 1;
     while (a < b && (unsigned char)*a <= ' ') a++;
     while (b > a && (unsigned char)b[-1] <= ' ') b--;
@@ -2096,66 +2171,63 @@ static unsigned long long pedidoConta(SmkPedido pedido) {
   return simklbib_conta(pedido.aut + sizeof pre - 1);
 }
 
-// `desde`: a delta, only the items changed strictly after that activities
-// timestamp (sent exactly as /sync/activities wrote it). NULL: the whole
-// library.
-static char *simklHistoricoPagina(SmkPedido pedido, int pagina, const char *desde,
-                                  int *st, int *proxima) {
-  char url[720], consulta[300];
-  const char *cab[3];
-  // full_anime_seasons is full plus, for anime, each episode's TVDB season and
-  // episode and the entry's mapped_tvdb_seasons. It also gives a per-season
-  // entry the show's IDs: with full, 21 of 86 anime entries on a real account
-  // came with no IMDb or TMDB ID (My Hero Academia S2-7, Spy x Family...).
-  // language=en: an anime's title is otherwise its romaji name; language=pt
-  // was tried and gave romaji too.
-  snprintf(consulta, sizeof consulta,
-           "extended=full_anime_seasons&include_all_episodes=yes&episode_watched_at=yes"
-           "&episode_tvdb_id=yes&language=en&page=%d&limit=500%s%s",
-           pagina, desde ? "&date_from=" : "", desde ? desde : "");
-  snprintf(url, sizeof url, "%s/sync/all-items/all/all?client_id=%s&app-name=%s"
-           "&app-version=1.0.1&%s", SMK_API, pedido.cid, pedido.nome, consulta);
-  cab[0] = pedido.aut;
-  cab[1] = "Accept: application/json";
-  cab[2] = NULL;
-  return provedorGet(url, 25, cab, st, proxima, pagina);
+// One request joined into `tipos`: 1 joined, 0 failed, -1 max_items.
+static int bibliotecaJuntarPedido(SmkPedido pedido, SmkTexto tipos[3], const char *caminho,
+                                  const char *episodios, const char *desde,
+                                  const char *estado, int *st) {
+  int grande = 0;
+  char *json;
+  if (!pedidoAtual(pedido)) return 0;
+  // A body only comes with a 2xx answer.
+  json = bibliotecaPedido(pedido, caminho, episodios, desde, st, &grande);
+  if (!json) return grande ? -1 : 0;
+  int ok = corpoVazio(json) || bibliotecaJuntarEstado(tipos, json, estado);
+  free(json);
+  return ok;
 }
 
-// An answer with nothing in it: Simkl may send null or [] instead of lists.
-static int corpoVazio(const char *r) {
-  while (r && (unsigned char)*r <= ' ' && *r) r++;
-  if (!r) return 0;
-  if (!strncmp(r, "null", 4)) r += 4;
-  else if (r[0] == '[' || r[0] == '{') {
-    const char *q = r + 1;
-    while ((unsigned char)*q <= ' ' && *q) q++;
-    if ((r[0] == '[' && *q != ']') || (r[0] == '{' && *q != '}')) return 0;
-    r = q + 1;
-  } else return 0;
-  while ((unsigned char)*r <= ' ' && *r) r++;
-  return !*r;
+// One type of the whole library. Over Simkl's item or episode cap (400
+// max_items), the guide's split: one request per status, and a status still
+// over it with include_all_episodes=original. 1 = joined.
+static int bibliotecaPuxarTipo(SmkPedido pedido, SmkTexto tipos[3], const char *tipo, int *st) {
+  // Movies have no watching or hold list.
+  static const char *const estados[] = { "watching", "plantowatch", "hold", "completed", "dropped" };
+  static const char *const estadosFilmes[] = { "plantowatch", "completed", "dropped" };
+  const char *const *lista = strcmp(tipo, "movies") ? estados : estadosFilmes;
+  int n = strcmp(tipo, "movies") ? 5 : 3, r;
+  char caminho[64];
+  snprintf(caminho, sizeof caminho, "/sync/all-items/%s", tipo);
+  r = bibliotecaJuntarPedido(pedido, tipos, caminho, "yes", NULL, NULL, st);
+  if (r >= 0) return r;
+  printf("[simkl] library: %s over Simkl's max_items, asking it status by status\n", tipo);
+  for (int i = 0; i < n; i++) {
+    snprintf(caminho, sizeof caminho, "/sync/all-items/%s/%s", tipo, lista[i]);
+    r = bibliotecaJuntarPedido(pedido, tipos, caminho, "yes", NULL, lista[i], st);
+    if (r < 0) {
+      printf("[simkl] library: %s %s still over it, only the recorded episodes\n",
+             tipo, lista[i]);
+      r = bibliotecaJuntarPedido(pedido, tipos, caminho, "original", NULL, lista[i], st);
+    }
+    if (r <= 0) return 0;
+  }
+  return 1;
 }
 
-// The library from the network, pages joined: whole, or (`desde`) the items
-// changed since. 1 = *corpo set.
+// The library from the network: whole (one type after the other, as the
+// sync guide asks), or (`desde`) the items changed since, in one request on
+// bare /sync/all-items (the guide's path for an app with several types).
+// 1 = *corpo set, 0 failed, -1 the delta was over max_items.
 static int bibliotecaPuxar(SmkPedido pedido, const char *desde, char **corpo, int *st) {
   SmkTexto tipos[3] = {{0}};
-  int pagina = 1, proxima = -1, ok = 0;
+  int ok = 1;
   *corpo = NULL;
-  while (pagina <= 64 && pedidoAtual(pedido)) {
-    char *json = simklHistoricoPagina(pedido, pagina, desde, st, &proxima);
-    if (!json || *st < 200 || *st >= 300 ||
-        (!corpoVazio(json) && !bibliotecaJuntar(tipos, json))) {
-      free(json);
-      break;
-    }
-    free(json);
-    if (proxima <= pagina) { ok = 1; break; }
-    pagina = proxima;
-  }
-  if (ok) *corpo = bibliotecaMontar(tipos);
+  if (desde) ok = bibliotecaJuntarPedido(pedido, tipos, "/sync/all-items", "yes",
+                                         desde, NULL, st);
+  else
+    for (int i = 0; ok > 0 && i < 3; i++) ok = bibliotecaPuxarTipo(pedido, tipos, bibTipos[i], st);
+  if (ok > 0 && !(*corpo = bibliotecaMontar(tipos))) ok = 0;
   for (int i = 0; i < 3; i++) free(tipos[i].p);
-  return *corpo != NULL;
+  return ok;
 }
 
 // THE LIBRARY IN MEMORY, for the session. Loaded in the background when the
@@ -2540,7 +2612,8 @@ static int bibliotecaIds(SmkPedido pedido, SmkIds *ids, int *st) {
 
 // Brings `velho` (the library at `ativVelho`) up to `ativ`. 0 failed (nothing
 // changed), 1 the library is unchanged (only playback and the like moved),
-// 2 *novo and *delta set, 3 a merge cannot be trusted: download it whole.
+// 2 *novo and *delta set, 3 a merge cannot be trusted or the changes are over
+// max_items: download it whole.
 static int bibliotecaAtualizar(SmkPedido pedido, const char *velho, const char *ativVelho,
                                const char *ativ, char **novo, char **delta, int *st) {
   char desde[48] = "";
@@ -2554,7 +2627,12 @@ static int bibliotecaAtualizar(SmkPedido pedido, const char *velho, const char *
     return 3;
   }
   if (mudou) {
-    if (!bibliotecaPuxar(pedido, desde, delta, st)) return 0;
+    int r = bibliotecaPuxar(pedido, desde, delta, st);
+    if (r < 0) {
+      printf("[simkl] library: changes over Simkl's max_items, downloading it whole\n");
+      return 3;
+    }
+    if (!r) return 0;
   } else if (!(*delta = strdup("{\"shows\":[],\"anime\":[],\"movies\":[]}"))) {
     return 0;
   }
@@ -2572,8 +2650,16 @@ static int bibliotecaAtualizar(SmkPedido pedido, const char *velho, const char *
     printf("[simkl] library: an item without a Simkl ID fits several, downloading it whole\n");
     return 3;
   }
-  printf("[simkl] library: delta since %s: %d changed, %d removed%s\n", desde, trocados,
-         removidos, removeu ? " (removals checked)" : "");
+  // The delta's own items: one that replaced nothing is new to the library,
+  // so "replaced" alone reads 0 for an item just added on Simkl.
+  {
+    SmkItem *ds = NULL;
+    int nd = itensLer(*delta, &ds);
+    free(ds);
+    printf("[simkl] library: delta since %s: %d item(s) in it, %d library item(s) replaced, "
+           "%d removed%s\n", desde, nd < 0 ? 0 : nd, trocados, removidos,
+           removeu ? " (removals checked)" : "");
+  }
   return 2;
 }
 
@@ -2618,8 +2704,8 @@ static void *bibCarregarFio(void *arg) {
     goto fim;
   }
   // 3. A library and the activities it reflects: only what changed (r 0-2).
-  // r 3: no library yet, one without its activities, or one a merge cannot
-  // be trusted with: the whole library below.
+  // r 3: no library yet, one without its activities, one a merge cannot be
+  // trusted with, or changes over max_items: the whole library below.
   if (tem && ativ && bibAtivCopiar(pedido, &corpo, &ativVelho))
     r = bibliotecaAtualizar(pedido, corpo, ativVelho, ativ, &novo, &delta, &st);
   free(corpo);
@@ -2641,7 +2727,7 @@ static void *bibCarregarFio(void *arg) {
     printf("[simkl] library: delta failed (HTTP %d), keeping the library\n", st);
     free(ativ);
     bibPublicar(pedido, NULL, NULL, 0);
-  } else if (bibliotecaPuxar(pedido, NULL, &corpo, &st)) {
+  } else if (bibliotecaPuxar(pedido, NULL, &corpo, &st) > 0) {
     bibImportarSeries(corpo, pedido.sessao, "downloaded");
     // Without activities the copy is used but not saved: a later delta would
     // have no date to start from.

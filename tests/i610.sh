@@ -17,8 +17,9 @@ if [ "${1:-}" = --prove-before ]; then
 fi
 for provider in TRAKT SIMKL; do
   extra=()
-  # simkl.c saves the Simkl library through simklbib.c.
-  if [ "$provider" = SIMKL ]; then extra=(src/simklbib.c); fi
+  # simkl.c saves the Simkl library through simklbib.c and its anime cache
+  # through simklanime.c (macOS -dead_strip hides a missing one; Linux does not).
+  if [ "$provider" = SIMKL ]; then extra=(src/simklbib.c src/simklanime.c); fi
   cc -DI610_${provider} tests/i610.c src/js.c src/traktscrobble.c src/metaep.c ${extra[@]+"${extra[@]}"} -Isrc \
     -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
     -O1 -g -Wno-deprecated-declarations -Wno-macro-redefined \

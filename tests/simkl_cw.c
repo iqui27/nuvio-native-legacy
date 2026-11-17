@@ -208,7 +208,8 @@ static const char *historicoCorpo;
 static void bibEsperar(void);
 static int marcou(const char *id, int t, int e);
 
-// The library /sync/all-items/all/all answers: the status fixtures above
+// The library Simkl answers (/sync/all-items/<type>, one slice of it per
+// type; a date_from delta on bare /sync/all-items): the status fixtures above
 // (watching, plan to watch, completed) and the watched history, one array per
 // type, built when asked so a test can swap a fixture.
 // Each item of the fixture's array, with the status of the list it stands for
@@ -443,6 +444,38 @@ static int pedidosSettings, pedidosMesPerfil;   // Profile & Stats requests
 // when the library was asked.
 static int atividadesFalham, esquecerNoHistorico, atividadesAntes = -1;
 static const char *perfilHistoryBody = "{\"movies\":[],\"shows\":[],\"anime\":[]}";
+// Simkl's max_items (api.simkl.org/guides/sync): `grandeTipo`'s whole list is
+// over the cap, and so is its `grandeEstado` list unless only the recorded
+// episodes are asked (even then with `grandeSempre`); `deltaGrande` a
+// date_from delta. The requests by status
+// and with include_all_episodes=original are counted.
+static const char *grandeTipo, *grandeEstado;
+static int deltaGrande, grandeSempre, pedidosEstado, pedidosOriginal;
+static const char *const MAX_ITEMS =
+    "{\"error\":\"max_items\",\"code\":400,\"message\":\"Too many items: ...\"}";
+
+// `tipo`'s list of the whole fake library, as /sync/all-items/<tipo> answers
+// it; `estado`: only the items with that status (<tipo>/<estado>).
+static char *bibliotecaFatia(const char *tudo, const char *tipo, const char *estado) {
+  const char *p, *f;
+  size_t n, cap = strlen(tudo) + 32;
+  char *r = malloc(cap), st[24];
+  int itens = 0;
+  assert(r);
+  n = (size_t)sprintf(r, "{\"%s\":[", tipo);
+  for (p = js_array(tudo, NULL, tipo); p && *p == '{'; p = js_prox(f)) {
+    f = js_fim(p);
+    assert(f);
+    st[0] = 0;
+    js_texto_raiz_em(p, f, "status", st, sizeof st);
+    if (estado && strcmp(st, estado)) continue;
+    if (itens++) r[n++] = ',';
+    memcpy(r + n, p, (size_t)(f - p));
+    n += (size_t)(f - p);
+  }
+  memcpy(r + n, "]}", 3);
+  return r;
+}
 
 char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
   char r[64];
@@ -546,27 +579,80 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
     batidas[11]++;
     if (historicoSoIds) return strdup(historicoSoIds);
   }
-  if (!strcmp(r, "/sync/all-items/shows/watching"))     { batidas[2]++; return strdup(WATCHING); }
-  if (!strcmp(r, "/sync/all-items/all/all")) {
-    assert(strstr(url, "include_all_episodes=yes") &&
-           strstr(url, "episode_watched_at=yes") &&
-           strstr(url, "episode_tvdb_id=yes") && strstr(url, "limit=500") &&
-           strstr(url, "extended=full_anime_seasons") && strstr(url, "language=en"));
-    { const char *d = strstr(url, "date_from=");
-      if (d) {
-        size_t k = strcspn(d + 10, "&");
-        batidas[10]++;
-        snprintf(ultimoDesde, sizeof ultimoDesde, "%.*s", (int)k, d + 10);
-        if (deltaFalha) { *st = 500; return NULL; }
-        if (historicoDelta) return strdup(historicoDelta);
-      } }
+  // The library's own requests: no paging (all-items has none), the episode
+  // history with its dates and TVDB placement, English titles.
+  // A delta: the whole library in one request on bare /sync/all-items (the
+  // sync guide's path for an app with several types; not all/all), date_from
+  // as activities wrote it.
+  assert(!(!strcmp(r, "/sync/all-items/all/all") && strstr(url, "include_all_episodes=yes")));
+  if (!strcmp(r, "/sync/all-items") && strstr(url, "date_from=")) {
+    const char *d = strstr(url, "date_from=");
+    size_t k;
+    assert(strstr(url, "extended=full_anime_seasons") && strstr(url, "episode_watched_at=yes") &&
+           strstr(url, "episode_tvdb_id=yes") && strstr(url, "language=en") &&
+           strstr(url, "include_all_episodes=yes") &&
+           !strstr(url, "page=") && !strstr(url, "limit="));
+    k = strcspn(d + 10, "&");
+    batidas[10]++;
+    snprintf(ultimoDesde, sizeof ultimoDesde, "%.*s", (int)k, d + 10);
+    if (deltaFalha) { *st = 500; return NULL; }
+    if (deltaGrande) { *st = 400; return strdup(MAX_ITEMS); }
+    if (historicoDelta) return strdup(historicoDelta);
+    // No delta fixture: the whole library, counted as a pull.
     batidas[9]++;
     atividadesAntes = batidas[0];
     if (esquecerNoHistorico) simkl_esquecer();
     if (libraryFailure) { *st = 400; return NULL; }
-    if (historicoCorpo) return strdup(historicoCorpo);
-    return bibliotecaFalsa();
+    return historicoCorpo ? strdup(historicoCorpo) : bibliotecaFalsa();
   }
+  if (!strncmp(r, "/sync/all-items/", 16)) {
+    const char *resto = r + 16, *barra = strchr(resto, '/');
+    char tipo[16] = "";
+    if (!barra) snprintf(tipo, sizeof tipo, "%s", resto);
+    else if ((size_t)(barra - resto) < sizeof tipo)
+      snprintf(tipo, sizeof tipo, "%.*s", (int)(barra - resto), resto);
+    if ((!barra && (!strcmp(tipo, "shows") || !strcmp(tipo, "anime") ||
+                    !strcmp(tipo, "movies"))) ||
+        (grandeTipo && !strcmp(tipo, grandeTipo))) {
+      assert(strstr(url, "extended=full_anime_seasons") && strstr(url, "episode_watched_at=yes") &&
+             strstr(url, "episode_tvdb_id=yes") && strstr(url, "language=en") &&
+             !strstr(url, "page=") && !strstr(url, "limit="));
+      assert(strstr(url, "include_all_episodes=yes") ||
+             strstr(url, "include_all_episodes=original"));
+    }
+    // The whole library: one type after the other, shows first (counted as
+    // the pull), status by status for a type over max_items.
+    if (grandeTipo && !strcmp(tipo, grandeTipo)) {
+      char *tudo = historicoCorpo ? strdup(historicoCorpo) : bibliotecaFalsa(), *fatia;
+      if (!barra) { free(tudo); *st = 400; return strdup(MAX_ITEMS); }
+      pedidosEstado++;
+      if (strstr(url, "include_all_episodes=original")) pedidosOriginal++;
+      if (grandeEstado && !strcmp(barra + 1, grandeEstado) &&
+          (grandeSempre || !strstr(url, "include_all_episodes=original"))) {
+        free(tudo); *st = 400;
+        return strdup("{\"error\":\"max_items\",\"code\":400,"
+                      "\"message\":\"Too many episodes: ...\"}");
+      }
+      fatia = bibliotecaFatia(tudo, tipo, barra + 1);
+      free(tudo);
+      return fatia;
+    }
+    if (!barra && (!strcmp(tipo, "shows") || !strcmp(tipo, "anime") || !strcmp(tipo, "movies"))) {
+      char *tudo, *fatia;
+      assert(strstr(url, "include_all_episodes=yes") && !strstr(url, "date_from="));
+      if (!strcmp(tipo, "shows")) {
+        batidas[9]++;
+        atividadesAntes = batidas[0];
+        if (esquecerNoHistorico) simkl_esquecer();
+      }
+      if (libraryFailure) { *st = 400; return strdup("{\"error\":\"bad_request\",\"code\":400}"); }
+      tudo = historicoCorpo ? strdup(historicoCorpo) : bibliotecaFalsa();
+      fatia = bibliotecaFatia(tudo, tipo, NULL);
+      free(tudo);
+      return fatia;
+    }
+  }
+  if (!strcmp(r, "/sync/all-items/shows/watching"))     { batidas[2]++; return strdup(WATCHING); }
   if (!strcmp(r, "/sync/all-items/movies/plantowatch")) { batidas[3]++; return strdup(PTW_FILMES); }
   if (!strcmp(r, "/sync/all-items/shows/plantowatch"))  { batidas[4]++; return strdup(PTW_SERIES); }
   // Anime e um terceiro tipo: /anime/<estado>, raiz "anime".
@@ -814,7 +900,7 @@ static void retomada(void) {
   assert(simkl_e_a_seguir("tt22248376:3:4"));
   assert(simkl_e_a_seguir("tt11280740:2:3"));
   assert(!simkl_e_a_seguir("tt1375666"));
-  // Lists from the library (one all-items/all/all), playback asked; no
+  // Lists from the library (all-items, one type after the other), playback asked; no
   // status list is downloaded (shows/watching, anime/...).
   assert(batidas[0] == 1 && batidas[1] == 1 && batidas[9] == 1 &&
          batidas[2] == 0 && batidas[8] == 0);
@@ -1305,6 +1391,18 @@ static void bibliotecaDelta(void) {
   assert(!strcmp(ultimoDesde, "2026-11-03T00:00:00Z"));
   OK("delta: a failed delta keeps the library and asks again on the next read");
 
+  // A delta over Simkl's max_items: asking it again would get the same 400,
+  // so the whole library comes instead (type by type) and is saved.
+  atividadesInteiras = ativDelta("2026-11-04T12:00:00Z", "2026-11-01T01:00:00Z",
+                                 "2026-11-04T12:00:00Z", "2026-11-03T00:00:00Z");
+  deltaGrande = 1;
+  deltas = batidas[10]; puxadas = batidas[9]; grav = bibGravacoes;
+  r = listaDelta("shows", "watching");
+  free(r);
+  assert(batidas[10] == deltas + 1 && batidas[9] == puxadas + 1 && bibGravacoes == grav + 1);
+  deltaGrande = 0;
+  OK("delta: one over max_items downloads the whole library instead");
+
   // Items without a Simkl ID (Simkl always sends one) still go by delta. A new
   // one is added; the two Kaiju seasons share an IMDb ID, not a MAL ID.
   historicoDelta = "{\"shows\":[{\"status\":\"watching\",\"show\":{\"title\":\"No ID\","
@@ -1593,7 +1691,7 @@ int main(int argc, char **argv) {
   int fd = mkstemp(caminho), salvo = dup(1);
   FILE *f;
   char linha[512];
-  int vazou = 0;
+  int vazou = 0, deltaContado = 0;
   assert(fd >= 0 && salvo >= 0);
   fflush(stdout);
   dup2(fd, 1);
@@ -1621,11 +1719,19 @@ int main(int argc, char **argv) {
   dup2(salvo, 1);
   f = fopen(caminho, "r");
   assert(f);
-  while (fgets(linha, sizeof linha, f)) if (strstr(linha, TOKEN)) vazou = 1;
+  while (fgets(linha, sizeof linha, f)) {
+    if (strstr(linha, TOKEN)) vazou = 1;
+    // bibliotecaDelta's DELTA_D1: Show B replaced, Show C new.
+    if (strstr(linha, "[simkl] library: delta since 2026-11-01T01:00:00Z: 2 item(s) in it, "
+                      "1 library item(s) replaced, 0 removed\n"))
+      deltaContado = 1;
+  }
   fclose(f);
   unlink(caminho);
   assert(!vazou);
   OK("o token nunca aparece no stdout do modulo");
+  assert(deltaContado);
+  OK("delta: the log counts the delta's items, a new one included");
   printf("simkl_cw: tudo ok\n");
   return 0;
 }

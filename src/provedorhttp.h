@@ -42,8 +42,10 @@ static int provedorProxima(const char *headers, int page) {
   return link ? 0 : -1;
 }
 
-static char *provedorGet(const char *url, int seconds, const char *const *headers,
-                         int *status, int *next, int page) {
+// `errorBody`: when not NULL, a non-2xx answer's body is handed back there
+// (NULL when there was none) instead of being dropped.
+static char *provedorGetErro(const char *url, int seconds, const char *const *headers,
+                             int *status, int *next, int page, char **errorBody) {
   int st = 0, retry = 0;
   char *body = NULL;
   if (next) *next = -1;
@@ -75,8 +77,17 @@ static char *provedorGet(const char *url, int seconds, const char *const *header
   pthread_mutex_unlock(&provedorTrava);
 done:
   if (status) *status = st;
-  if (st < 200 || st >= 300) { free(body); return NULL; }
+  if (errorBody) *errorBody = NULL;
+  if (st < 200 || st >= 300) {
+    if (errorBody) *errorBody = body;
+    else free(body);
+    return NULL;
+  }
   return body;
+}
+static char *provedorGet(const char *url, int seconds, const char *const *headers,
+                         int *status, int *next, int page) {
+  return provedorGetErro(url, seconds, headers, status, next, page, NULL);
 }
 static int provedorEspera(void) {
   return time(NULL) < __atomic_load_n(&provedorAte, __ATOMIC_ACQUIRE);
