@@ -225,6 +225,16 @@ int  player_retido(void);
 int  player_retido_so_voo(void);
 int  player_retomar_retido(const char *imdb, int temporada, int episodio);
 void player_validar_retido(Uint32 agora);
+#ifdef NV_TPK
+// Saida/volta do app no .tpk: a cada quadro, tela aberta e avisos da reabertura.
+void player_tpk_fundo_passo(void);
+#endif
+#ifdef NV_WEBOS
+// Saida/volta do app na LG: main.c avisa (saiu=1 escondido, 0 de volta) e
+// app.c chama o passo a cada quadro.
+void player_webos_janela(int saiu, const char *porque);
+void player_webos_fundo_passo(void);
+#endif
 void player_descartar_retido(void);
 void player_ciclo_evento(Uint32 tipo);
 

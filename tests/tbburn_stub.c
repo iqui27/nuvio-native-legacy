@@ -70,3 +70,6 @@ __attribute__((weak)) int  tba_ts_primeiro_pts(const unsigned char *b, size_t n,
 __attribute__((weak)) int  rede_pedir(const RedePedido *p, RedeResposta *r) { (void)p; if (r) memset(r, 0, sizeof *r); return 0; }
 __attribute__((weak)) void rede_resposta_limpar(RedeResposta *r) { (void)r; }
 __attribute__((weak)) void rede_fio_fechar(void) {}
+// The Tizen 4-6 slow-TV rules (assperf.h, merged from feat/libass-tizen4):
+// video_tpk.c sets them from the TV's version; no libass engine here.
+__attribute__((weak)) void assperf_tv_lenta_definir(int sim) { (void)sim; }

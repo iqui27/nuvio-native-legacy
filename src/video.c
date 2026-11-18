@@ -276,6 +276,37 @@ static char  legUrlAtual[1024];
 static _Atomic int pausaPedida;   // 1 enquanto a pausa foi pedida por nos
 static int    pausaConfirmada;
 static int    recarregarPausa = -1;
+// SAIDA E VOLTA DO APP NA LG (owner 18/11, a mesma regra do .tpk): Home tira o
+// app da tela e a regra e supor que o video morreu. Filme/episodio (com
+// reconexao, nao trailer nem canal): o ponto e as faixas ficam guardados, o
+// pipeline e solto JA (decodificador livre), e na volta a mesma fonte reabre
+// no ponto, PAUSADA, muda ate pousar. Um erro: mais uma tentativa; sem imagem
+// em FUNDO_PRAZO_MS: o player fecha com o aviso (player.c). Estado do fio
+// principal, menos fundoMudo*, que o aoCarregar (fio do luna) le.
+#ifndef FUNDO_PRAZO_MS
+#define FUNDO_PRAZO_MS 20000u
+#endif
+#ifndef FUNDO_PAUSA_MS
+#define FUNDO_PAUSA_MS 8000u
+#endif
+#ifndef FUNDO_PRAZO_DV_MS
+#define FUNDO_PRAZO_DV_MS 45000u   // o caminho do DV abre o arquivo de novo (22,8 s numa fonte lenta da C9)
+#endif
+#ifndef FUNDO_BUSCA_MS
+#define FUNDO_BUSCA_MS 12000u
+#endif
+static int    fundoSusp;        // fora da tela, pipeline solto
+static int    fundoRet;         // reabrindo depois da volta
+static int    fundoDesistiu;    // reabertura desistiu: o player.c fecha
+static int    fundoEvento;      // para o player.c: 1 = reabrindo, 2 = desistiu
+static int    fundoVoltouPend, fundoTent, fundoQuerTocar, fundoEraDts, fundoEraDv;
+static int    fundoAudio = -1, fundoLeg = -1;
+static int    fundoMudoPend, fundoMudo;   // __atomic: o aoCarregar roda no fio do luna
+static int    fundoDtsPend;     // DTS/DV: reabrir pelo caminho proprio quando o bind antigo soltar
+static double fundoAlvo, fundoDur;
+static char   fundoLegUrl[1024];
+static const char *fundoDe = "", *fundoVoltouDe = "";
+static Uint32 fundoEm, fundoRetEm, fundoPousouEm;
 // Sonda de MKV pedida, esperando o buffer. Ver a nota no sourceInfo.
 static int    mkvPendente;
 // 1 quando a fonte foi anunciada como MP4. Ver video_definir_mp4.
@@ -1644,6 +1675,14 @@ static int aoCarregar(LSHandle *h, LSMessage *m, void *u) {
 
   ackMidia = midia[0] != 0;
   ack_publicar();
+  // Volta do fundo: o pipeline novo toca do comeco ate o seek do
+  // loadCompleted; mudo ANTES do play, o som volta quando pousa (fundoVigiar).
+  if (__atomic_exchange_n(&fundoMudoPend, 0, __ATOMIC_ACQ_REL)) {
+    snprintf(b, sizeof b, "{\"mediaId\":\"%s\",\"volume\":0}", midia);
+    chamar("setVolume", b, soLog);
+    __atomic_store_n(&fundoMudo, 1, __ATOMIC_RELEASE);
+    printf("[fundo] reopened pipeline muted until it lands\n"); fflush(stdout);
+  }
   protegerScreensaver();
   snprintf(b, sizeof b, "{\"connectionId\":\"%s\"}", midia);
   chamar("notifyForeground", b, soLog);
@@ -2310,6 +2349,230 @@ static int recarregarMesmaFonte(double alvo, int aud, int leg, const char *legUr
   return 1;
 }
 
+// ---------------------------------------------------------------- SAIDA E VOLTA
+static void fundoZerar(void) {
+  fundoSusp = fundoRet = fundoDesistiu = fundoEvento = 0;
+  fundoVoltouPend = fundoTent = fundoQuerTocar = fundoEraDts = fundoEraDv = 0;
+  fundoAudio = fundoLeg = -1; fundoLegUrl[0] = 0; fundoDe = fundoVoltouDe = "";
+  fundoPousouEm = 0; fundoDtsPend = 0;
+  fundoDur = 0.0;   // titulo novo: a duracao do anterior nao vale na barra
+  __atomic_store_n(&fundoMudoPend, 0, __ATOMIC_RELEASE);
+}
+
+// player.c, com o app saindo da tela (janela escondida, app para o fundo).
+// alvoPlayer >= 0: o que so a tela sabe (seek em voo, comeco de um scrub).
+// 1 = a sessao ficou suspensa (o player.c para de tocar e solta o scrub).
+int video_webos_fundo(double alvoPlayer, const char *porque) {
+  double alvo;
+  if (fundoSusp) {
+    if (alvoPlayer >= 0.0) { fundoAlvo = alvoPlayer; posSeg = alvoPlayer; fundoDe = "player target (seek in flight or scrub start)"; }
+    return 1;
+  }
+  if (!ligado || !urlAtual[0] || !reconPermitida || modoLoad || terminou || falhou || fundoDesistiu) {
+    printf("[fundo] app left the screen (%s): nothing to resume (url=%d vod=%d live=%d ended=%d failed=%d)\n",
+           porque, urlAtual[0] != 0, reconPermitida, modoLoad != 0, (int)terminou, (int)falhou);
+    fflush(stdout);
+    return 0;
+  }
+  // Onde a sessao estava: o alvo da tela, a reabertura em curso, um seek ou
+  // recarga deste lado em voo, a reconexao, e so entao o relogio.
+  if (alvoPlayer >= 0.0) { alvo = alvoPlayer; fundoDe = "player target (seek in flight or scrub start)"; }
+  else if (fundoRet) { alvo = fundoAlvo; fundoDe = "resume target (left again while reopening)"; }
+  else if (seekEm || seekEnvEm || seekRetryEm) { alvo = seekAlvo; fundoDe = "seek in flight"; }
+  else if (recarregarPausa >= 0) { alvo = posAoCarregar; fundoDe = "reload target"; }
+  else if (nv_recon_ativa(&recon) && (recon.pendente || !pronto)) { alvo = recon.alvo; fundoDe = "reconnect target"; }
+  else if (dtsModoDv && dvSilencio) { alvo = dvEntradaSeg; fundoDe = "Dolby Vision start point"; }
+  else { alvo = posSeg; fundoDe = "clock"; }
+  if (!isfinite(alvo) || alvo < 0.0) alvo = 0.0;
+  if (!fundoRet) {
+    // Indice da faixa: no caminho do DTS/DV a lista e a do arquivo, na ordem
+    // do arquivo, como a do uMS (o loadCompleted escolhe pelo mesmo indice).
+    fundoAudio = nAudio > 0 ? audioAtual : -1;
+    fundoLeg = legUrlAtual[0] ? -1 : legAtual;
+    snprintf(fundoLegUrl, sizeof fundoLegUrl, "%s", legUrlAtual);
+    fundoEraDts = dtsSessao != NULL && !dtsModoDv;
+    fundoEraDv = dtsModoDv;
+  }
+  if (durSeg > 1.0) fundoDur = durSeg;
+  fundoAlvo = alvo;
+  printf("[fundo] app left the screen (%s): suspended at %.3f s (%s) state: ready=%d playing=%d pause=%d buffering=%d "
+         "dts=%d dv=%d audio=%d sub=%d%s%s\n",
+         porque, alvo, fundoDe, pronto, (int)tocando, (int)pausaPedida, bufferandoDesde != 0,
+         fundoEraDts, fundoEraDv, fundoAudio, fundoLeg, fundoLegUrl[0] ? " (external sub)" : "",
+         fundoRet ? " (was reopening)" : "");
+  fflush(stdout);
+  // Supor que a Home matou o video: solta o pipeline agora (decodificador e
+  // conversao livres), sem reconexao nem comando ate a volta.
+  nv_recon_zerar(&recon);
+  reconErroPend = 0;
+  __atomic_store_n(&fundoMudoPend, 0, __ATOMIC_RELEASE);
+  pararSessao();
+  posSeg = alvo;
+  fundoSusp = 1; fundoRet = 0; fundoDesistiu = 0; fundoVoltouPend = 0; fundoQuerTocar = 0;
+  fundoEm = SDL_GetTicks();
+  return 1;
+}
+
+// main.c / player.c: o app voltou a tela (janela visivel, foco, uma tecla).
+// So anota; o video_bombear reabre no fio principal.
+void video_webos_voltou(const char *porque) {
+  if (!fundoSusp || fundoVoltouPend) return;
+  fundoVoltouPend = 1;
+  fundoVoltouDe = porque ? porque : "?";
+}
+
+// player.c: 1 = a reabertura comecou (controles pausados no ponto), 2 = desistiu.
+int video_webos_retomada_evento(void) { int e = fundoEvento; fundoEvento = 0; return e; }
+
+static void fundoAbrir(void) {
+  nv_recon_zerar(&recon);
+  reconErroPend = reconErroRede = 0; reconIniciou = 0;
+  falhou = 0; terminou = 0; audioNaoSup = 0;
+  fundoPousouEm = 0;
+  if (fundoEraDts || fundoEraDv) {
+    // DTS/DV: de volta DIRETO pelo caminho proprio (iniciarDts, no ponto,
+    // pausado), com a lista de faixas dele. Abrir antes pelo player da TV e
+    // escolher pelo indice trocava faixa: a lista da TV nao tem de estar na
+    // mesma ordem (video_escolher_audio). Sem load nativo, sem mudo.
+    posSeg = fundoAlvo; pausaPedida = !fundoQuerTocar; recarregarPausa = -1;
+    seekEm = seekEnvEm = seekRetryEm = 0;
+    dtsModoDv = fundoEraDv; dtsTentou = 1;
+    fundoDtsPend = 1;   // fundoVigiar: assim que o bind antigo soltar
+    return;
+  }
+  // Decisoes novas de DTS/DV como numa abertura (video_tocar), mas a mesma
+  // fonte, o mesmo modo e a mesma regra de reconexao.
+  dvRecuado = 0;
+  dtsTentou = 0; dtsRevisao = 0; dtsSaida[0] = 0; dtsNativePending = 0; dtsEstado = 0;
+  dvSondado = dvMkvPerfil = dvAudios = 0; dtsModoDv = 0; dvAudioMkvOrd = -1; dvSegurar = 0;
+  dvSessaoN++; dvFonteAberta = 0; dvAudioDe[0] = 0;
+  nv_dvsonda_zerar(&mkvRetry); mkvRetryEm = 0; dvEntradaSeg = fundoAlvo;
+  __atomic_store_n(&fundoMudoPend, 1, __ATOMIC_RELEASE);   // antes do load: a resposta pode vir ja
+  if (!recarregarMesmaFonte(fundoAlvo, fundoAudio, fundoLeg, fundoLegUrl)) {
+    __atomic_store_n(&fundoMudoPend, 0, __ATOMIC_RELEASE);
+    printf("[fundo] reopen: the load did not go out\n"); fflush(stdout);
+    reconErroPend = 1;   // fundoVigiar: mais uma tentativa ou desiste
+    return;
+  }
+  // loadCompleted: faixas, seek exato ao ponto (zero tambem vale), pausa.
+  posAoCarregar = fundoAlvo;
+  recarregarPausa = !fundoQuerTocar;
+  pausaPedida = !fundoQuerTocar;
+  posSeg = fundoAlvo;
+}
+
+static void fundoComecar(void) {
+  Uint32 agora = SDL_GetTicks();
+  printf("[fundo] back on screen after %u s (%s): reopening at %.3f s (%s), paused, muted until there\n",
+         (unsigned)((agora - fundoEm) / 1000u), fundoVoltouDe, fundoAlvo, fundoDe);
+  fflush(stdout);
+  // fundoQuerTocar NAO zera aqui: a tecla que trouxe o app de volta (OK/Play)
+  // chega ao player antes deste video_bombear e ja disse o que quer.
+  fundoSusp = 0; fundoRet = 1; fundoRetEm = agora; fundoTent = 0;
+  fundoEvento = 1;
+  fundoAbrir();
+}
+
+static void fundoDevolverSom(void) {
+  char b[128];
+  if (!__atomic_exchange_n(&fundoMudo, 0, __ATOMIC_ACQ_REL)) return;
+  if (dtsSessao || !ligado || !midia[0] || dvSilenciado) return;
+  snprintf(b, sizeof b, "{\"mediaId\":\"%s\",\"volume\":100}", midia);
+  chamar("setVolume", b, soLog);
+}
+
+static void fundoDesistir(const char *porque) {
+  printf("[fundo] resume gave up after %u ms: %s (target %.3f s, attempt %d): closing the player\n",
+         (unsigned)(SDL_GetTicks() - fundoRetEm), porque, fundoAlvo, fundoTent + 1);
+  fflush(stdout);
+  fundoRet = 0; fundoDesistiu = 1; fundoDtsPend = 0;
+  nv_recon_zerar(&recon);
+  // Solta o que a reabertura carregou (mudo, parado): sem pipeline, o
+  // "Manter o video pronto ao sair" nao tem o que reter e nada fica mudo. A
+  // posicao fica no ponto, para o progresso gravado na saida do player.
+  __atomic_store_n(&fundoMudoPend, 0, __ATOMIC_RELEASE);
+  pararSessao();
+  posSeg = fundoAlvo;
+  falhou = 0; reconErroPend = 0;   // o player fecha; nao e o cartao de erro de fonte
+  fundoEvento = 2;
+}
+
+static void fundoPronto(Uint32 agora) {
+  printf("[fundo] resumed in %u ms: clock %.3f s, target %.3f s (off by %+.0f ms), %s, audio %d sub %d%s\n",
+         (unsigned)(agora - fundoRetEm), posSeg, fundoAlvo, (posSeg - fundoAlvo) * 1000.0,
+         fundoQuerTocar ? "playing (Play pressed)" : "paused", audioAtual, legAtual,
+         dtsSessao ? (dtsModoDv ? " (Dolby Vision path)" : " (DTS conversion)") : "");
+  fflush(stdout);
+  fundoDevolverSom();
+  fundoRet = 0;
+  if (fundoQuerTocar && !tocando) video_pausar(0);
+}
+
+// A maquina da reabertura, a cada quadro, ANTES da reconexao de sempre.
+// 1 = este quadro e dela.
+static int fundoVigiar(Uint32 agora) {
+  if (!fundoRet) return 0;
+  if (terminou) {
+    printf("[fundo] the title ended while reopening\n"); fflush(stdout);
+    fundoDevolverSom(); fundoRet = 0;
+    return 0;
+  }
+  if (reconErroPend || falhou) {
+    reconErroPend = 0;
+    if (fundoTent >= 1) { fundoDesistir(falhou ? "the source failed" : "player error again"); return 1; }
+    fundoTent++;
+    printf("[fundo] error while reopening (%.80s): one more try\n", erroTexto[0] ? erroTexto : "no load");
+    fflush(stdout);
+    fundoAbrir();
+    return 1;
+  }
+  if (fundoDtsPend) {
+    Uint32 prazo = fundoEraDv ? FUNDO_PRAZO_DV_MS : FUNDO_PRAZO_MS;
+    if (agora - fundoRetEm >= prazo) { fundoDesistir("the old video plane bind never ended"); return 1; }
+    if (bindAtivo()) return 1;
+    fundoDtsPend = 0;
+    // Se o caminho nao abrir, o iniciarDts volta ao player da TV no ponto
+    // (dtsVoltarNativo): esse load tambem nasce mudo e pausado.
+    __atomic_store_n(&fundoMudoPend, 1, __ATOMIC_RELEASE);
+    if (iniciarDts(-1)) {
+      __atomic_store_n(&fundoMudoPend, 0, __ATOMIC_RELEASE);
+      printf("[fundo] reopening through the %s path at %.3f s, paused\n", fundoEraDv ? "Dolby Vision" : "DTS conversion", fundoAlvo);
+    } else {
+      printf("[fundo] the %s path did not open: the TV player reopens at %.3f s (default tracks)\n",
+             fundoEraDv ? "Dolby Vision" : "DTS conversion", fundoAlvo);
+      posAoCarregar = fundoAlvo;
+      recarregarPausa = !fundoQuerTocar;
+      pausaPedida = !fundoQuerTocar;
+      posSeg = fundoAlvo;
+    }
+    fflush(stdout);
+    return 1;
+  }
+  // Sem pipeline pronto no prazo: desiste. O caminho do DTS/DV conta como
+  // pronto quando o worker preparou (sincronizarPlanoDts).
+  if (!pronto) {
+    Uint32 prazo = fundoEraDv || dtsModoDv ? FUNDO_PRAZO_DV_MS : FUNDO_PRAZO_MS;
+    if (agora - fundoRetEm >= prazo) fundoDesistir(prazo == FUNDO_PRAZO_MS ? "no picture in 20 s" : "no picture in 45 s (Dolby Vision path)");
+    return 1;
+  }
+  // Seek do loadCompleted ainda nao confirmado (seekDone): espera um teto.
+  if (recarregarPausa >= 0 || seekEm || (seekEnvEm && agora - seekEnvEm < FUNDO_BUSCA_MS)) return 1;
+  if (!fundoPousouEm) {
+    fundoPousouEm = agora;
+    if (seekEnvEm) { printf("[fundo] seek not confirmed in %u ms: going on from where it is\n", FUNDO_BUSCA_MS); fflush(stdout); }
+  }
+  if (!fundoQuerTocar && tocando) {
+    // A pausa do loadCompleted ainda nao chegou: repete uma vez, e depois
+    // segue assim mesmo (fechar o player seria pior que um filme tocando).
+    if (agora - fundoPousouEm < FUNDO_PAUSA_MS) return 1;
+    printf("[fundo] the TV did not confirm the pause in %u ms: pausing again and going on\n", FUNDO_PAUSA_MS);
+    fflush(stdout);
+    video_pausar(1);
+  }
+  fundoPronto(agora);
+  return 1;
+}
+
 void video_definir_reconexao(int sim) { reconProxima = sim ? 1 : 0; }
 int video_recarregar(void) {
   double alvo = posNativa;
@@ -2334,6 +2597,7 @@ int  video_reconectando(void) {
 }
 
 int video_tocar(const char *url) {
+  fundoZerar();
   dvRecuado = 0;
   dtsTentou = 0; dtsRevisao = 0; dtsSaida[0] = 0; dtsNativePending = 0; dtsEstado = 0;
   dtsHabilitado = dts_playback_enabled() && dtsLiberadoNestaTv();
@@ -2381,6 +2645,10 @@ static void mkvRetryBombear(void) {
 }
 void video_bombear(void) {
   ack_publicar();
+  // Saida e volta do app: a volta anotada reabre aqui; nada mais roda com a
+  // sessao suspensa ou desistida.
+  if (fundoVoltouPend) { fundoVoltouPend = 0; if (fundoSusp) fundoComecar(); }
+  if (fundoSusp || fundoDesistiu) return;
   velBombear();
   mkvRetryBombear();
   acbBindRecolher();
@@ -2471,6 +2739,9 @@ void video_bombear(void) {
     reconErroRede = 1; reconErroPend = 1;
     snprintf(erroTexto, sizeof erroTexto, "network recovery timeout");
   }
+  // Reabrindo depois da volta: a maquina dela decide erro, prazo e pausa; a
+  // reconexao de sempre fica de fora ate ela terminar.
+  if (fundoVigiar(SDL_GetTicks()) && (fundoRet || fundoDesistiu)) return;
   if (reconErroPend) {
     int antes = recon.tentativa;
     reconErroPend = 0;
@@ -2815,6 +3086,7 @@ static int tocarInterno(const char *url, int comDV) {
 // Sair do video (ou trocar de fonte) cancela a queda em curso: sem isto o
 // video_bombear recarregaria a fonte velha depois de a tela ja ter fechado.
 void video_parar(void) {
+  fundoZerar();
   nv_recon_zerar(&recon);
   reconErroPend = 0;
   pararSessao();
@@ -2846,6 +3118,7 @@ static void pararSessao(void) {
   dvSilenciado = 0;   // o mudo e por mediaId: o pipeline novo nasce com som
   mkvRetryEm = 0;   // sonda reagendada morre com a sessao (o contador zera em video_tocar)
   pausaConfirmada = 0;
+  __atomic_store_n(&fundoMudo, 0, __ATOMIC_RELEASE);   // o volume e por mediaId: o novo nasce com som
   if (ligado && midia[0] && !tinhaDts) {
     snprintf(b, sizeof b, "{\"mediaId\":\"%s\"}", midia);
     chamar("unload", b, soLog);
@@ -3041,8 +3314,11 @@ static int iniciarDts(int stream) {
   // zera o seekEm, e o caminho nascia no inicio do arquivo em vez do ponto salvo.
   // Com a tela do DV de pe, o HDR10 andou sem ninguem ver (novas tentativas da
   // sonda): o caminho parte do ponto de partida, nao de onde a TV chegou.
+  // A volta do fundo (fundoAbrir) recarrega com o ponto em posAoCarregar: o
+  // DTS/DV que decide antes do loadCompleted parte dele, nao do 0 do pipeline novo.
   double alvo = dtsModoDv && dvSilencio ? dvEntradaSeg
-              : (seekEm || seekEnvEm || seekRetryEm) ? seekAlvo : posSeg;
+              : (seekEm || seekEnvEm || seekRetryEm) ? seekAlvo
+              : fundoRet && recarregarPausa >= 0 ? posAoCarregar : posSeg;
   int paused = pausaPedida, ordinal = audioAtual, count = nAudio, trocada = 0;
   memset(&selected, 0, sizeof selected);
   if (a) {
@@ -3254,6 +3530,14 @@ static void bombearDts(void) {
 
 void video_pausar(int pausado) {
   char b[128];
+  if (fundoSusp) { fundoQuerTocar = !pausado; return; }   // sem pipeline: vale na volta
+  if (fundoRet) {
+    // Play/Pause durante a reabertura: vale para o fim dela (o loadCompleted
+    // le recarregarPausa; antes do mediaId nao ha a quem mandar).
+    fundoQuerTocar = !pausado;
+    if (recarregarPausa >= 0) recarregarPausa = !!pausado;
+    pausaPedida = !!pausado;
+  }
   if (dtsSessao) {
     pausaConfirmada = 0; pausaPedida = !!pausado;
     ack_publicar();
@@ -3270,9 +3554,12 @@ void video_pausar(int pausado) {
   ack_publicar();
 }
 
+// Fora da tela, reabrindo (mudo, seek pendente) ou depois de desistir nao ha
+// sessao para o "Manter o video pronto ao sair" segurar (como no .tpk).
 int video_pausa_confirmada(void) {
   return pausaPedida && pausaConfirmada && pronto && midia[0] &&
-         !falhou && !terminou && !video_reconectando();
+         !falhou && !terminou && !video_reconectando() &&
+         !fundoSusp && !fundoRet && !fundoDesistiu;
 }
 
 void video_volume(int pct) {
@@ -3297,6 +3584,16 @@ void video_volume(int pct) {
 #define SEEK_REPOUSO_MS 350
 
 void video_buscar(double segundos) {
+  if (fundoSusp || (fundoRet && !dtsSessao && !midia[0])) {
+    // Sem pipeline (fora da tela, ou o load da volta ainda sem mediaId): o
+    // seek vira o ponto da volta.
+    if (!isfinite(segundos) || segundos < 0) segundos = 0;
+    fundoAlvo = posSeg = segundos;
+    if (fundoRet) posAoCarregar = segundos;
+    else fundoDe = "seek while away";
+    return;
+  }
+  if (fundoRet && isfinite(segundos)) fundoAlvo = segundos < 0 ? 0 : segundos;
   if (dtsSessao) {
     if (segundos < 0) segundos = 0;
     if (dvSilencio) dvEntradaSeg = segundos;
@@ -3518,8 +3815,9 @@ void video_janela_fonte(int sx, int sy, int sw, int sh,
   (void)b; (void)aoJanela;
 }
 
-double video_pos(void)      { return posSeg; }
-double video_duracao(void)  { return durSeg; }
+// Reabrindo depois da volta, o pipeline novo nasce em 0: a barra fica no ponto.
+double video_pos(void)      { return fundoRet || fundoSusp ? fundoAlvo : posSeg; }
+double video_duracao(void)  { return durSeg <= 1.0 && (fundoRet || fundoSusp) ? fundoDur : durSeg; }
 double video_buffer_fim(void) {
   DtsBufferInfo b={0};double end=bufferSeg;
   if(dtsSessao) {
@@ -3639,7 +3937,9 @@ int    video_ativo(void)    { return midia[0] != 0; }
 // proximo video_tocar. O watchdog de canal usa isto para trocar de fonte —
 // sem a flag, um pipeline que carrega e morre em seguida nunca dispara a
 // proxima da lista.
-int    video_falhou(void)   { return falhou; }
+// Reabrindo depois da volta, o erro e da maquina da volta (fundoVigiar: mais
+// uma tentativa ou fecha): o app nao troca de fonte por ele.
+int    video_falhou(void)   { return falhou && !fundoRet && !fundoSusp; }
 const char *video_erro_texto(void) { return erroTexto; }
 int    video_decoder_anunciou(void) { return viuVideo; }
 int    video_audio_nao_suportado(void) { return audioNaoSup; }

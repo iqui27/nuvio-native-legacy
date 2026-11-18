@@ -1967,6 +1967,16 @@ int main(int argc, char **argv) {
           ponteiro_evento(&e, app_evento);
           quadroc_suspendeu(&quadroRel);   // suspendeu: o relogio para de valer
         }
+#ifdef NV_WEBOS
+        // SAIDA E VOLTA DO APP (player.c / video.c): so a janela escondida ou
+        // minimizada solta o video; foco perdido (barra da Home, menu da TV
+        // por cima) nao. Qualquer sinal de volta reabre.
+        if (e.window.event == SDL_WINDOWEVENT_HIDDEN) player_webos_janela(1, "window hidden");
+        else if (e.window.event == SDL_WINDOWEVENT_MINIMIZED) player_webos_janela(1, "window minimized");
+        else if (e.window.event == SDL_WINDOWEVENT_SHOWN) player_webos_janela(0, "window shown");
+        else if (e.window.event == SDL_WINDOWEVENT_RESTORED) player_webos_janela(0, "window restored");
+        else if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) player_webos_janela(0, "focus gained");
+#endif
 #ifdef NV_TOUCH_UI
         if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
             e.window.event == SDL_WINDOWEVENT_RESIZED) {
@@ -2019,6 +2029,14 @@ int main(int argc, char **argv) {
       }
       player_ciclo_evento(e.type);
       if (e.type == SDL_APP_DIDENTERFOREGROUND) { atualizacao_retomou(); quadroc_suspendeu(&quadroRel); }
+#ifdef NV_WEBOS
+      if (e.type == SDL_APP_WILLENTERBACKGROUND || e.type == SDL_APP_DIDENTERBACKGROUND)
+        player_webos_janela(1, "app to background");
+      else if (e.type == SDL_APP_DIDENTERFOREGROUND) player_webos_janela(0, "app to foreground");
+      // Reserva: o relaunch do webOS nem sempre vira evento de janela
+      // (atualizacao.c). Uma tecla com o video solto e o app de volta.
+      else if (e.type == SDL_KEYDOWN && !e.key.repeat) player_webos_janela(0, "key pressed");
+#endif
       // PONTEIRO (Magic Remote, issue #99): mouse, rodinha e os avisos 484/485
       // de cursor do webOS ficam la; o que ele traduz em tecla chega a
       // app_evento como se viesse do D-pad.

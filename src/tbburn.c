@@ -403,12 +403,15 @@ static void *trabalhar(void *arg) {
     fflush(stdout);
     free(log);
   }
+  // Ready first: the player opens now. The playlist read below is for the log
+  // only and used to hold the start for one more round trip to TorBox's
+  // stream host (up to 10 s), on every burn-in start.
+  publicar(p->geracao, TBB_PRONTO, m3u8, NULL);
   logPlaylist(m3u8);
   (void)rede_torbox_em_voo(&pico);
   printf("[tbburn] connections: Nuvio's own to TorBox now %d, most since the last line %d (the TV player is not counted)\n",
          rede_torbox_em_voo(NULL), pico);
   fflush(stdout);
-  publicar(p->geracao, TBB_PRONTO, m3u8, NULL);
   free(p);
   return NULL;
 }
