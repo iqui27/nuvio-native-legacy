@@ -361,3 +361,15 @@
   1, /* preserve P7 mapping experiment: Off (V_LIGA), device-local opt-in */
   0, /* ordinary native buffering: Standard / one sequential connection */
   0, /* DTS/TrueHD/DV7: Standard (1), Tizen method (owner, 06/11/2026) */
+  1, /* Audio from another version: Off by default (owner, 07/11); webOS converter */
+  0, /* Versions not in cache: Show dimmed */
+  1, /* Audio sync step: 50 ms */
+  0, /* Warn about large files: On */
+  0, /* Download of the audio file: Whole file */
+  0, /* Remember for the next episodes: On */
+  1, /* Follow through the whole movie (another cut): Off */
+  1, /* Sync adjusted message: Off (owner, 16/11) */
+  0, /* Match automatically at start: On */
+  0, /* Hide duplicates: On */
+  1, /* Sort like the addons: Off (V_LIGA) */
+  0, /* Other version buffer: 8 MB */

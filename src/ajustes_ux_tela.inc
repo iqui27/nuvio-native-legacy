@@ -61,6 +61,11 @@ static const Item TELA[] = {
 #if defined(NV_DV_FIXED_AUDIO_TEST) && defined(NV_WEBOS)
       OPC(AJ_DV_AUDIO_FIXO),
 #endif
+#ifndef __EMSCRIPTEN__
+      // Audio from another version (owner, 07/11): right under the Dolby
+      // Vision audio output; one row, its options in its sheet (eaAbrir).
+      OPC(AJ_EXT_AUDIO),
+#endif
 #endif
       OPC(AJ_CACHE_SEEK), OPC(AJ_MANTER_VIDEO), OPC(AJ_RETOMADA_MORNA), OPC(AJ_MANTER_PRAZO), OPC(AJ_SEEKR_AJUSTE),
 #if defined(NV_ANDROID) || (!defined(NV_TPK) && !defined(__EMSCRIPTEN__))

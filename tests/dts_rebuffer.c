@@ -16,8 +16,10 @@ int main(int argc,char **argv) {
   assert(argc==2);const char *mode=argv[1];
   int dv=strstr(mode,"sdr")==NULL;
   int limited=!strncmp(mode,"native-",7);
+  int tvfull=!strncmp(mode,"external-",9);   /* other version's audio, TV full with 2.6 s */
   scenario=SEEK_PREROLL;hold_fixture=1;
   dts_playback_next_dv(dv);dts_playback_next_seamless(1);
+  if(tvfull)dts_playback_next_external_audio("fixture://other","X-Token: fixture","pl",0);
   DtsPlayback *p=start(0,4,NULL,0,0);
   wait_count(&plays,1);wait_count(&accepted,10);wait_settled();
   pthread_mutex_lock(&fixture);
@@ -28,6 +30,7 @@ int main(int argc,char **argv) {
   atomic_store(&buffer_contiguous,4*1048576LL);
   char event[128];snprintf(event,sizeof event,"{\"currentTime\":{\"currentTime\":%lld}}",(long long)(end/1000000-100));
   if(limited)atomic_store(&refill_limit_pts,end+INT64_C(1700000000));
+  if(tvfull)atomic_store(&refill_limit_pts,end+INT64_C(2600000000));
   emit(event);refill_status(p,1);wait_count(&pauses,1);
   wait_settled();assert(count(&plays)==1 && count(&loads)==1 && count(&opens)==1);
   if(!strcmp(mode,"cancel") || !strcmp(mode,"native-cancel")) {
@@ -39,6 +42,19 @@ int main(int argc,char **argv) {
     assert(!strcmp(st.error,DTS_PLAYBACK_STARVED));
     assert(count(&loads)==1 && count(&plays)==1);
     dts_playback_close(p);return 0;
+  }
+  if(tvfull) {
+    /* Owner's log 11/11: the network byte goal never met, the TV full with
+     * enough of both. It plays on after a few seconds, no reconnect, no
+     * fallback; with only 1.7 s (native-*) it keeps waiting as before. */
+    for(int i=0;i<4000 && atomic_load(&native_full)<20;i++)nap();
+    assert(atomic_load(&native_full)>=20);
+    atomic_fetch_add(&hold_wall_offset,INT64_C(5000000000));
+    wait_count(&plays,2);DtsPlaybackStatus st=refill_status(p,0);
+    assert(!st.failed && !st.net_retries && count(&opens)==1 && count(&loads)==1);
+    assert(atomic_load(&buffer_contiguous)==4*1048576LL);
+    dts_playback_close(p);assert(count(&creates)==count(&destroys));
+    printf("PASS refill %s: TV full with enough of both plays on without the byte goal\n",mode);return 0;
   }
   if(!strcmp(mode,"eof")) {
     atomic_store(&refill_eof,1);atomic_store(&refill_tail,1);

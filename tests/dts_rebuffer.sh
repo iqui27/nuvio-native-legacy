@@ -7,4 +7,4 @@ if [[ ${NV_TEST_VIDEO_DIAG:-0} == 1 ]];then flags+=(-DNV_HTTP_BUFFER_DIAG -DNV_P
 if [[ ${SANITIZE:-0} == 1 ]];then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer);fi
 cc "${flags[@]}" tests/dts_rebuffer.c src/dts/dts_playback.c src/js.c src/linguas.c src/audioinfo.c \
  -pthread -lm -Wl,--wrap=clock_gettime -o "$task_dir/test"
-for mode in dv sdr paused seek audio eof cancel timeout native-dv native-sdr native-seek native-paused native-cancel;do "$task_dir/test" "$mode";done
+for mode in dv sdr paused seek audio eof cancel timeout native-dv native-sdr native-seek native-paused native-cancel external-dv external-sdr;do "$task_dir/test" "$mode";done

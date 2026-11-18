@@ -40,6 +40,7 @@
 #include "trailer.h"
 #include "linguas.h"
 #include "audioescolha.h"
+#include "audioext.h"
 #include "idioma.h"
 #include "fontesonda.h"
 #include "posplay.h"
@@ -4402,6 +4403,25 @@ void player_evento(const SDL_Event *e) {
     }
   }
 
+  // TEST BUILD, AUDIO FROM ANOTHER SOURCE (audioext.h): while it plays, CH+/CH-
+  // (PgUp/PgDn) move that audio later/earlier (faster while held). The
+  // converter applies the latest offset shortly after the last press (video.c), live.
+  if (!ehCanal() && audioext_tocando()) {
+    static int chRep;
+    int sc = e->key.keysym.scancode, d = 0;
+    chRep = e->key.repeat ? chRep + 1 : 0;   // held: the step grows (100 ms, 1 s, 10 s)
+    if (sc == NV_SCANCODE_CH_UP || k == SDLK_PAGEUP) d = audioext_passo(ajustes_audio_externo_passo(), chRep);
+    else if (sc == NV_SCANCODE_CH_DOWN || k == SDLK_PAGEDOWN) d = -audioext_passo(ajustes_audio_externo_passo(), chRep);
+    if (d) {
+      char t[64];
+      char v[24];
+      audioext_formatar_offset(audioext_offset_somar(d), v, sizeof v, i18n("%c%u.%03u s"), i18n("%c%u min %u.%03u s"));
+      snprintf(t, sizeof t, i18n("Audio sync: %s"), v);
+      player_toast(t, 1800);
+      return;
+    }
+  }
+
   // PAINEL DE PAUSA: com ele de pe, a tecla e DELE. Vem antes de tudo o que
   // sobra (inclusive da tecla de proporcao) porque e o que o web faz — la o
   // ramo `if (this.pauseOverlayVisible)` engole o evento inteiro
@@ -4606,6 +4626,78 @@ static void introTmdbTardio(Uint32 agora) {
 }
 
 void player_atualizar(float dt, Uint32 agora) {
+  { // Test build: say when the audio of another source starts, and why not.
+    static int extVisto;
+    char falha[160], t[224];
+    // Settings > Audio from another version turned off: no mark survives.
+    if (!ajustes_audio_externo() && audioext_tem_marca()) audioext_limpar();
+    audioext_preferencias(ajustes_audio_externo_so_audio(), ajustes_audio_externo_serie());
+    if (audioext_falha_consumir(falha, sizeof falha)) {
+      // The debrid's placeholder clip: not a failure of the app, the version
+      // is just not ready (not cached) on the debrid service.
+      if (audioext_motivo_placeholder(falha))
+        player_toast_ex(i18n("This version is not ready on the debrid service yet (not cached)."), 6000, "aj_triangle-alert", 1);
+      else {
+        snprintf(t, sizeof t, i18n("Audio from the other version failed: %s"), falha);
+        player_toast(t, 5000);
+      }
+    }
+    { int tt, tot;
+      if (audioext_preparando_consumir(&tt, &tot)) {
+        snprintf(t, sizeof t, i18n("The debrid service is preparing this version… (try %d of %d)"), tt, tot);
+        player_toast(t, 4500);
+      } }
+    { char u[NV_MEDIA_URL_MAX];
+      while (audioext_negada_consumir(u, sizeof u)) stream_marcar_fora_cache_url(u); }
+    { AudioExtDopasuj d;
+      int a = audioext_dopasuj_aviso_consumir(&d);
+      char v[48];
+      audioext_formatar_offset(a > 0 ? d.ms : d.dica_ms, v, sizeof v, i18n("%c%u.%03u s"), i18n("%c%u min %u.%03u s"));
+      if (a > 0 && d.ppm) {
+        unsigned p = d.ppm < 0 ? (unsigned)-d.ppm : (unsigned)d.ppm;
+        char pc[24];
+        snprintf(pc, sizeof pc, i18n("%c%u.%03u%%"), d.ppm < 0 ? '-' : '+', p / 10000, p / 10 % 1000);
+        snprintf(t, sizeof t, i18n("The other version plays at another speed (%s): corrected. Sync: %s"), pc, v);
+        player_toast(t, 6000);
+      } else if (a > 0 && !d.automatico) { snprintf(t, sizeof t, i18n("Matched automatically: %s"), v); player_toast(t, 4000); }
+      /* a > 0 && automatico: the match at start (Settings) set it quietly; only a failure is said (owner, 08/11). */
+      /* ...unless the offset is the series memory's (owner, 11/11): kept, nothing to say. */
+      else if (a < 0 && d.automatico && audioext_offset_lembrado()) {
+        printf("[ext-audio] automatic match not sure: the series memory's offset stays\n"); fflush(stdout); }
+      else if (a < 0 && (d.nkand || d.dica_ms))
+        player_toast_ex(i18n("Could not match for sure: try the candidates in Audio sync (audio menu, OK on Audio sync)."), 7000, "aj_triangle-alert", 1);
+      else if (a < 0 && d.pesado)
+        player_toast_ex(i18n("Could not match automatically: a wider search would download too much of the other version. Set the sync by hand in the audio menu."), 7000, "aj_triangle-alert", 1);
+      else if (a < 0) player_toast_ex(i18n("Could not match automatically: use the manual sync (CH+/CH-)."), 5000, "aj_triangle-alert", 1); }
+    { int ms, a = audioext_seguir_aviso_consumir(&ms);
+      char v[48];
+      audioext_formatar_offset(ms, v, sizeof v, i18n("%c%u.%03u s"), i18n("%c%u min %u.%03u s"));
+      if (a == 1) player_toast(i18n("A scene the other version does not have: this file's own audio plays."), 4000);
+      else if (a == 2) { snprintf(t, sizeof t, i18n("The other version's audio is back (%s)."), v); player_toast(t, 3500); }
+      else if (a == 3) player_toast_ex(i18n("Lost the other version: use Match automatically in the audio menu."), 6000, "aj_triangle-alert", 1);
+      else if (a == 4 && ajustes_audio_externo_aviso()) {   // Settings: the message can be hidden (the fix still happens)
+        snprintf(t, sizeof t, i18n("Audio sync adjusted by itself (%s)."), v); player_toast(t, 3000); } }
+    if (audioext_reconexao_consumir())
+      player_toast(i18n("The source slowed down: reconnecting…"), 3500);
+    { int l = audioext_lento_consumir();
+      if (l == 1) player_toast(i18n("The other version downloads slowly: opening it again…"), 3500);
+      else if (l == 2) player_toast_ex(i18n("This version downloads too slowly. Pick another one in the audio menu (From another source)."), 7000, "aj_triangle-alert", 1);
+      else if (l == 3) player_toast_ex(i18n("This version doesn't respond. Pick another one in the audio menu."), 7000, "aj_triangle-alert", 1); }
+    if (audioext_voltou_padrao_consumir())
+      player_toast(i18n("The other version's audio did not start last time. Playing this file's own audio."), 5000);
+    if (audioext_tocando() && !extVisto) {
+      snprintf(t, sizeof t, i18n("Audio from: %s · CH+/CH- to sync"), audioext_nome());
+      player_toast(t, 4000);
+    }
+    { int corte, vel;
+      if (audioext_diferenca_consumir(&corte, &vel)) {
+        if (vel) snprintf(t, sizeof t, "%s", i18n("This version plays at another speed: Match automatically (audio menu) corrects it."));
+        else snprintf(t, sizeof t, i18n(corte > 0 ? "This version is %d s longer (another cut): the sync may drift."
+                                                  : "This version is %d s shorter (another cut): the sync may drift."),
+                      corte > 0 ? corte : -corte);
+        player_toast_ex(t, 6000, "aj_triangle-alert", 1);
+      } }
+    extVisto = audioext_tocando(); }
 #ifdef NV_TOUCH_UI
   playerTelaAtualizar();
 #endif
@@ -5057,6 +5149,20 @@ void player_atualizar(float dt, Uint32 agora) {
     desc_episodios_pendente(); }
 
   if (comVideo) creditosauto_fonte(&creditosAuto, video_url_atual());
+  // A COMING INTRO/RECAP SKIP: its target is fetched ahead by the webOS
+  // converter (owner's log 07/11: after the jump a slow source starved it).
+  if (!ehCanal() && comVideo && duracaoReal) {
+    static double prefFim = -1.0, prefDur = -1.0;
+    IntroTrecho tr[16];
+    int nt = intro_trechos(tr, 16);
+    for (int i = 0; i < nt; i++)
+      if ((tr[i].tipo == INTRO_ABERTURA || tr[i].tipo == INTRO_RESUMO) && tr[i].fim > tr[i].inicio &&
+          posSeg >= tr[i].inicio - 25.0 && posSeg < tr[i].fim - 8.0 &&
+          (fabs(tr[i].fim - prefFim) > 1.0 || fabs(duracaoSeg - prefDur) > 1.0)) {
+        prefFim = tr[i].fim; prefDur = duracaoSeg;
+        audioext_salto_previsto(puloDestino(tr[i].fim));
+      }
+  }
   // PULAR SOZINHO (#329/#331): abertura/resumo/creditos com marcador e ajuste ligado. Uma vez por
   // trecho (voltar de proposito para dentro dele nao pula de novo), so tocando de verdade.
   if (!ehCanal() && comVideo && tocando && video_ativo() && video_pronto() && !partesAtiva() &&
@@ -6475,6 +6581,13 @@ void player_desenhar(Uint32 agora) {
   // a arte 16:9 de esticar quando a tela nao for exatamente 16:9.
   GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
   int quadroMorno = player_carregando() && !erroFonte && cacheboost_backend_quadro(3);
+  // AUDIO OF ANOTHER VERSION LOADING over a converter that already showed a
+  // picture (a DTS file): the same opening screen as a file the TV played
+  // itself (owner, 14/11: Chicago Fire showed the title's art, Stargate the
+  // opening card; "it should be like Stargate"). abrindoTela is what the
+  // opening black, the Cinema and the card go by.
+  int extAbrindo = audioext_carregando() && !player_carregando() && !erroFonte && !saindo && !ehCanal();
+  int abrindoTela = player_carregando() || extAbrindo;
   int furar = (player_com_video() && !esperandoFonte) || quadroMorno;   // abrindo a fonte: sem furo, so preto
 #ifdef NV_NATIVE_SEEK_TEST
   // Keep the initial cover through preroll/bind, but never restore it over
@@ -6517,7 +6630,7 @@ void player_desenhar(Uint32 agora) {
     if (!player_com_video()) imagem = 1;
     cineUlt = agora;
     // The DV screen keeps the opening alive: it only falls with the real frame, DV or not.
-    abrecine_passo(&cine, (player_carregando() || dvtela_ativa()) && !ehCanal(), imagem, ajustes_abertura_detalhada(),
+    abrecine_passo(&cine, (abrindoTela || dvtela_ativa()) && !ehCanal(), imagem, ajustes_abertura_detalhada(),
                    agora, dtc, ajustes_animacoes_reduzidas());
     if (erroFonte || saindo || ehCanal()) cine.veu = 0.0f; }
   // Live video below (hardware plane): the glass of the frame is translucent
@@ -6629,7 +6742,7 @@ void player_desenhar(Uint32 agora) {
     if (dtf > 0.1f) dtf = 0.1f;
     // A CINEMA tem o proprio crossfade (o veu dela), que espera o quadro real.
     if (quadroMorno || abrecine_cinema(&cine)) abrindoFundo = 0.0f;
-    else if (player_carregando() && !ehCanal()) abrindoFundo = 1.0f;
+    else if (abrindoTela && !ehCanal()) abrindoFundo = 1.0f;
     else if (abrindoFundo > 0.0f) {
       abrindoFundo = ajustes_animacoes_reduzidas() ? 0.0f : anim_mola(abrindoFundo, 0.0f, dtf, 12.0f);
       if (abrindoFundo < 0.01f) abrindoFundo = 0.0f;
@@ -6640,7 +6753,7 @@ void player_desenhar(Uint32 agora) {
   // Uma abertura NOVA (a anterior acabou, ou o player reabriu): volta ao compacto
   // e zera o relogio. Ao acabar, o estado fica como esta para o cartao sair com o
   // mesmo conteudo (a saida e a da ilha, plrilha.c).
-  if (player_carregando() && !ehCanal()) {
+  if (abrindoTela && !ehCanal()) {
     if (!abrindoViva) { abrindoDesde = agora; abrindoExp = 0; abrindoT = 0.0f; abrFitIdx = -2; }
     abrindoViva = 1;
   } else abrindoViva = 0;
@@ -6691,7 +6804,7 @@ void player_desenhar(Uint32 agora) {
     else snprintf(lin, sizeof lin, "%s", i18n("Sintonizando…"));
     pd.texto = lin; pd.respira = 1; pd.semFim = 1; pd.aberta = 1;
     plrilha_pedir(&pd);
-  } else if (player_carregando() && !stream_folha_aberta() && stream_folha_anim() < 0.05f &&
+  } else if (abrindoTela && !stream_folha_aberta() && stream_folha_anim() < 0.05f &&
              // A TELA DO DOLBY VISION substitui o cartao: sem ela, o caminho do
              // DV mostrava "Abrindo fonte" DUAS vezes (a TV e depois o demux).
              (!dvtela_visivel() || dvtela_variante() == DVT_VAR_DETALHADA) &&
@@ -6718,7 +6831,7 @@ void player_desenhar(Uint32 agora) {
   // Agora so os pontos, cada um com a sombra suave propria (plrui_anel_solto).
   // Com o veu da Cinema ainda na tela o trilho dela ja e o sinal (dono, 11/10:
   // o anel por cima do logo ficava feio).
-  else if (comVideo && !erroFonte && !saindo && video_bufferando_ms() >= 600 && cine.veu <= 0.01f) {
+  else if (comVideo && !erroFonte && !saindo && !extAbrindo && video_bufferando_ms() >= 600 && cine.veu <= 0.01f) {
     ESCALA_INI();
     plrui_anel_solto(NV_VTELA_W * 0.5f, NV_VTELA_H * 0.5f, 56.0f, agora, entrada);
     ESCALA_FIM();

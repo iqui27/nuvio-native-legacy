@@ -56,7 +56,7 @@ static void (*native_event)(void *,const char *);
 static void *native_user;
 enum { NORMAL, OPEN_FAIL, BACKPRESSURE, BLOCK_READ, EOF_MODE, MAPPING, MAPPING_BAD, SUBTITLES, CORE_RECOVERY, NO_CORE_FAIL, CPU_BUDGET, DELAYED_ID, PACING, SUSTAINED, SEEK_PREROLL, SEEK_SEGMENT, TIMESTAMP_ONCE, TIMESTAMP_REPEAT, TIMESTAMP_PAUSED, TIMESTAMP_CANCEL, NATIVE_STALL, NATIVE_REPEAT, NATIVE_NO_CLOCK, NATIVE_TRANSIENT, NATIVE_RECOVERY_NO_CLOCK, NATIVE_RECOVERY_UNLOADED, DV_MAPPING, SUB_FLOOD };
 static int timestampScenario(void) { return scenario>=TIMESTAMP_ONCE && scenario<=TIMESTAMP_CANCEL; }
-struct DtsEngine { DtsMediaInfo info; atomic_int cancelled; unsigned char packet[98304]; int serial, core, dv_audio; double base; };
+struct DtsEngine { DtsMediaInfo info; atomic_int cancelled; unsigned char packet[98304]; int serial, core, dv_audio; double base; int external; };
 struct DtsPipeline { void (*event)(void *,const char *); void *user; int loaded, completed, running, flushed, audio_ready, video_ready, generation, packets, broken_segment; double target; };
 static void nap(void) { struct timespec t={0,1000000};nanosleep(&t,NULL); }
 static void emit(const char *json) {
@@ -84,6 +84,50 @@ static void fixedInfo(DtsEngine *e) {
 static int test_dts_off;
 int dts_engine_dts_off(void) { return test_dts_off; }
 DtsEngine *dts_engine_create(void) { return calloc(1,sizeof(DtsEngine)); }
+/* External audio: what the session handed to the engine. */
+static char ext_url[256],ext_headers[64],ext_langs[32];
+static int ext_calls,ext_offset;
+void dts_engine_external_audio(DtsEngine *e,const char *url,const char *headers,const char *langs,int offset_ms) {
+ pthread_mutex_lock(&fixture);ext_calls++;e->external=url && *url;
+ snprintf(ext_url,sizeof ext_url,"%s",url?url:"");snprintf(ext_headers,sizeof ext_headers,"%s",headers?headers:"");
+ snprintf(ext_langs,sizeof ext_langs,"%s",langs?langs:"");ext_offset=offset_ms;pthread_mutex_unlock(&fixture);
+}
+void dts_engine_external_offset(DtsEngine *e,int offset_ms) { (void)e;pthread_mutex_lock(&fixture);ext_offset=offset_ms;pthread_mutex_unlock(&fixture); }
+int dts_engine_external_active(DtsEngine *e) { return e->external; }
+int64_t dts_engine_external_bytes(DtsEngine *e,int64_t *t) { (void)e; if(t) *t=-1; return 0; }
+int dts_engine_external_stream(DtsEngine *e) { (void)e; return -1; }
+void dts_engine_subtitle_only(DtsEngine *e,int s) { (void)e; (void)s; }
+static int ext_wakes, ext_failed_fixture, ext_replace_fail;
+int dts_engine_external_wake(DtsEngine *e) { (void)e; pthread_mutex_lock(&fixture); ext_wakes++; pthread_mutex_unlock(&fixture); return 1; }
+int dts_engine_external_woken(DtsEngine *e) { (void)e; return 0; }
+int dts_engine_external_failed(DtsEngine *e) { (void)e; pthread_mutex_lock(&fixture); int f=ext_failed_fixture; pthread_mutex_unlock(&fixture); return f; }
+static int ext_only;
+void dts_engine_external_audio_only(DtsEngine *e,int on) { (void)e;pthread_mutex_lock(&fixture);ext_only=on;pthread_mutex_unlock(&fixture); }
+static int ext_track=-2;
+void dts_engine_external_track(DtsEngine *e,int t) { (void)e;pthread_mutex_lock(&fixture);ext_track=t;pthread_mutex_unlock(&fixture); }
+void dts_engine_external_mismatch(DtsEngine *e,int *c,int *s,int *r) { (void)e; *c=26; *s=0; if(r) *r=0; }
+int dts_engine_external_match_arm(DtsEngine *e) { (void)e; return 0; }
+int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) { (void)e; memset(o,0,sizeof *o); return 0; }
+static int ext_speed_set, prefetches;
+int dts_engine_prefetch(DtsEngine *e,double s) { (void)e; (void)s; pthread_mutex_lock(&fixture); prefetches++; pthread_mutex_unlock(&fixture); return 0; }
+void dts_engine_prefetch_tidy(DtsEngine *e) { (void)e; }
+void dts_engine_reconnect(DtsEngine *e) { (void)e; }
+void dts_engine_external_follow(DtsEngine *e,int on) { (void)e; (void)on; }
+void dts_engine_external_automatch(DtsEngine *e,int on) { (void)e; (void)on; }
+void dts_engine_external_track_hint(DtsEngine *e,int s,const char *l,const char *c,int ch,const char *t) { (void)e; (void)s; (void)l; (void)c; (void)ch; (void)t; }
+int dts_engine_external_follow_poll(DtsEngine *e,int *s,int *o) { (void)e; *s=0; *o=0; return 0; }
+void dts_engine_external_speed(DtsEngine *e,int p) { (void)e; pthread_mutex_lock(&fixture); ext_speed_set=p; pthread_mutex_unlock(&fixture); }
+static int ext_shifts, ext_shift_fail;
+int dts_engine_external_shift(DtsEngine *e,int o) { (void)e; pthread_mutex_lock(&fixture); ext_shifts++; ext_offset=o; int f=ext_shift_fail; pthread_mutex_unlock(&fixture); return f?-1:0; }
+static int ext_quiet_shifts;
+int dts_engine_external_shift_quiet(DtsEngine *e,int o) { (void)e; pthread_mutex_lock(&fixture); ext_quiet_shifts++; ext_offset=o; int f=ext_shift_fail; pthread_mutex_unlock(&fixture); return f?-1:0; }
+static int ext_replaces, ext_replace_track;static double ext_replace_target;static char ext_replace_url[64];
+int dts_engine_external_replace(DtsEngine *e,const char *u,const char *h,const char *l,int o,int t,int a,double target) {
+ (void)h;(void)l;(void)o;(void)a;pthread_mutex_lock(&fixture);ext_replaces++;ext_replace_track=t;ext_replace_target=target;
+ snprintf(ext_replace_url,sizeof ext_replace_url,"%s",u);int f=ext_replace_fail;pthread_mutex_unlock(&fixture);
+ if(f) return -1;
+ e->base=target;e->serial=0;return 0;
+}
 int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,int core,double target) {
  (void)headers;assert(!strcmp(url,"fixture://movie"));
  pthread_mutex_lock(&fixture);opens++;last_stream=stream;last_open_target=target;if(core)core_opens++;pthread_mutex_unlock(&fixture);
@@ -114,6 +158,12 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,
  if(scenario==MAPPING_BAD) { e->info.tracks[4]=e->info.tracks[3];e->info.tracks[4].stream_index=10;e->info.n_tracks=5; }
  if(scenario==SUBTITLES || scenario==SUB_FLOOD || scenario==SEEK_SEGMENT || timestampScenario()) {
   e->info.tracks[4]=(DtsTrack){.stream_index=20,.kind=DTS_SUBTITLE};strcpy(e->info.tracks[4].codec,"srt");e->info.n_tracks=5;
+ }
+ if(e->external) {
+  /* The other file's track replaces every audio track of this one. */
+  e->info.audio_stream=DTS_ENGINE_EXTERNAL_STREAM;strcpy(e->info.audio_codec,"eac3");e->info.channels=6;
+  e->info.tracks[1]=(DtsTrack){.stream_index=DTS_ENGINE_EXTERNAL_STREAM,.kind=DTS_AUDIO,.channels=6};
+  strcpy(e->info.tracks[1].codec,"eac3");strcpy(e->info.tracks[1].language,"pol");e->info.n_tracks=2;
  }
  fixedInfo(e);
  e->core=core;e->base=target;e->serial=0;return 0;
@@ -387,6 +437,118 @@ int main(int argc,char **argv) {
   dts_playback_seek(p,5);wait_count(&seeks,1);
   dts_playback_close(p);assert(count(&creates)==count(&destroys));
   printf("PASS %s: identical-language DTS identified by full file ordinal, AAC output, audio switch and seek with one source\n",argv[1]);return 0;
+ }
+ if(!strcmp(argv[1],"external-audio")) {
+  scenario=NORMAL;
+  // A DTS track the plain path could not identify: external audio skips the
+  // main file's track matching entirely.
+  DtsTrack track={.kind=DTS_AUDIO,.channels=6};strcpy(track.codec,"dts");strcpy(track.language,"xx");
+  dts_playback_next_external_audio("fixture://other","X-Other: 1","pl,en",120);
+  dts_playback_next_external_audio_only(1);
+  dts_playback_next_external_track(3);
+  dts_playback_next_external_speed(42708);
+  p=start(0,-1,&track,7,9);s=wait_status(p,0,0);
+  pthread_mutex_lock(&fixture);assert(ext_only==1 && ext_track==3 && ext_speed_set==42708);pthread_mutex_unlock(&fixture);
+  assert(dts_playback_external(p));
+  assert(!s.failed && s.info.audio_stream==DTS_ENGINE_EXTERNAL_STREAM && !strcmp(s.info.audio_codec,"eac3"));
+  pthread_mutex_lock(&fixture);
+  assert(ext_calls==1 && !strcmp(ext_url,"fixture://other") && !strcmp(ext_headers,"X-Other: 1") &&
+         !strcmp(ext_langs,"pl,en") && ext_offset==120);
+  pthread_mutex_unlock(&fixture);
+  dts_playback_audio_at(p,4,2);dts_playback_audio(p,9);
+  for(int i=0;i<50;i++) nap();
+  assert(count(&audio_reconfigs)==0);
+  dts_playback_external_offset(p,-80);
+  for(int i=0;i<50;i++) nap();
+  pthread_mutex_lock(&fixture);assert(ext_offset==120);pthread_mutex_unlock(&fixture);   // waits for the seek
+  dts_playback_seek(p,3);wait_count(&seeks,1);
+  pthread_mutex_lock(&fixture);assert(ext_offset==-80 && last_seek==3);pthread_mutex_unlock(&fixture);
+  s=wait_status(p,0,0);assert(!s.failed && count(&opens)==1);
+  // Another version picked while this one plays: swapped in the engine, the
+  // main source is not opened again, the TV gets a new Load (revision).
+  { int rev=s.revision;
+    dts_playback_external_speed(p,-250);   // a match's speed goes with the swap
+    assert(dts_playback_external_swap(p,"fixture://third","","pl",0,2,0,7.5));
+    for(int i=0;i<400 && count(&ext_replaces)==0;i++) nap();
+    for(int i=0;i<400;i++){ s=wait_status(p,0,0); if(s.revision!=rev) break; nap(); }
+    pthread_mutex_lock(&fixture);
+    assert(ext_replaces==1 && ext_replace_track==2 && ext_replace_target==7.5 && !strcmp(ext_replace_url,"fixture://third"));
+    assert(ext_speed_set==-250);
+    pthread_mutex_unlock(&fixture);
+    assert(!s.failed && s.revision!=rev && count(&opens)==1); }
+  // Live offset: the other file moves, no seek of this source.
+  { int sk=count(&seeks);
+    dts_playback_external_offset_live(p,240);
+    for(int i=0;i<400 && count(&ext_shifts)==0;i++) nap();
+    for(int i=0;i<50;i++) nap();
+    pthread_mutex_lock(&fixture);assert(ext_shifts==1 && ext_offset==240);pthread_mutex_unlock(&fixture);
+    assert(count(&seeks)==sk);
+    // A live change that fails falls back to the seek of before.
+    pthread_mutex_lock(&fixture);ext_shift_fail=1;pthread_mutex_unlock(&fixture);
+    dts_playback_external_offset_live(p,-60);
+    for(int i=0;i<400 && count(&seeks)==sk;i++) nap();
+    assert(count(&seeks)==sk+1);
+    pthread_mutex_lock(&fixture);ext_shift_fail=0;pthread_mutex_unlock(&fixture);
+    // A change from a check while playing goes to the quiet shift; a press after it, to the plain one.
+    sk=count(&seeks); int sh=count(&ext_shifts);
+    dts_playback_external_offset_quiet(p,500);
+    for(int i=0;i<400 && count(&ext_quiet_shifts)==0;i++) nap();
+    pthread_mutex_lock(&fixture);assert(ext_quiet_shifts==1 && ext_offset==500 && ext_shifts==sh);pthread_mutex_unlock(&fixture);
+    dts_playback_external_offset_live(p,520);
+    for(int i=0;i<400 && count(&ext_shifts)==sh;i++) nap();
+    pthread_mutex_lock(&fixture);assert(ext_shifts==sh+1 && ext_quiet_shifts==1 && ext_offset==520);pthread_mutex_unlock(&fixture);
+    assert(count(&seeks)==sk); }
+  // The session's own URL is never a swap target.
+  assert(!dts_playback_external_swap(p,"fixture://movie","","",0,-1,0,1));
+  dts_playback_close(p);
+  // Starting mid-film (resume, or the audio picked while playing): the source
+  // and the other version start at the position, not at 0 (owner's log
+  // 07/11: both files were read from the start up to it).
+  dts_playback_next_external_audio("fixture://other","","pl",0);
+  pthread_mutex_lock(&fixture);seeks=0;last_seek=-1;pthread_mutex_unlock(&fixture);
+  p=dts_playback_start("fixture://movie","X-Token: fixture",-1,42.0,0,"window",0,&track,7,9);assert(p);
+  s=wait_status(p,0,0);assert(!s.failed && dts_playback_external(p));
+  pthread_mutex_lock(&fixture);
+  assert(ext_track==-1);   // the menu pick is consumed by one start
+  assert(last_open_target==42.0 || (seeks>=1 && last_seek==42.0));
+  pthread_mutex_unlock(&fixture);
+  dts_playback_close(p);
+  // The session's own URL is not another source: plain playback.
+  dts_playback_next_external_audio("fixture://movie","","",0);
+  p=start(0,4,NULL,0,0);s=wait_status(p,0,0);
+  assert(!dts_playback_external(p) && s.info.audio_stream==4 && ext_calls==2);
+  assert(!dts_playback_external_swap(p,"fixture://other","","",0,-1,0,1));   // not external
+  dts_playback_close(p);assert(count(&creates)==count(&destroys));
+  puts("PASS external audio: other source handed to the engine, track changes ignored, offset applied with the seek");return 0;
+ }
+ if(!strcmp(argv[1],"external-seamless")) {
+  // Seamless repositioning on: another version still takes the full Load
+  // path (the swap without reloading the picture was taken back, 14/11); the
+  // request stops a wait for the old version's data, and a version that stops
+  // answering is counted once for the app.
+  seamless_fixture=1;scenario=NORMAL;
+  DtsTrack track={.kind=DTS_AUDIO,.channels=6};strcpy(track.codec,"dts");strcpy(track.language,"xx");
+  dts_playback_next_dv(0);dts_playback_next_seamless(1);
+  dts_playback_next_external_audio("fixture://other","","pl",0);
+  p=start(0,-1,&track,7,9);s=wait_status(p,0,0);wait_count(&plays,1);
+  for(int i=0;i<100;i++) nap();
+  assert(!s.failed && dts_playback_external(p) && count(&loads)==1);
+  int fl=count(&flushes);
+  assert(dts_playback_external_swap(p,"fixture://third","","pl",0,2,0,5));
+  for(int i=0;i<400 && count(&loads)==1;i++) nap();
+  pthread_mutex_lock(&fixture);
+  assert(ext_wakes>=1 && ext_replaces==1 && ext_replace_target==5 && !strcmp(ext_replace_url,"fixture://third"));
+  pthread_mutex_unlock(&fixture);
+  s=wait_status(p,0,0);
+  assert(!s.failed && count(&loads)==2 && count(&flushes)==fl);
+  pthread_mutex_lock(&fixture);ext_failed_fixture=1;pthread_mutex_unlock(&fixture);
+  for(int i=0;i<400;i++){ s=wait_status(p,0,0); if(s.ext_failures) break; nap(); }
+  for(int i=0;i<50;i++) nap();
+  s=wait_status(p,0,0);assert(s.ext_failures==1);
+  pthread_mutex_lock(&fixture);ext_failed_fixture=0;pthread_mutex_unlock(&fixture);
+  dts_playback_close(p);assert(count(&creates)==count(&destroys));
+  (void)ext_replace_fail;
+  puts("PASS external seamless: another version reloads, wait stopped, failure counted once");return 0;
  }
  if(!strcmp(argv[1],"late-dv")) {
   // Small UI probe missed RPU, but the real demux output is single-layer P8.

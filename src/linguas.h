@@ -27,6 +27,9 @@
 // Nome para a tela ("pob" -> "Português (BR)"). Sem correspondencia, devolve o
 // codigo em MAIUSCULAS, que ao menos identifica.
 const char *ling_nome(const char *codigo);
+// 1 when the table names this code or its family (ling_nome would not fall
+// back to the bare code in capitals).
+int ling_tem_nome(const char *codigo);
 
 // FAIXA SO DE LETREIROS: "Signs", "Songs", "Signs & Songs", "Forced" no nome,
 // ou a FlagForced do Matroska. Ela traduz placas e musicas, nao o dialogo — e

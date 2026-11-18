@@ -41,6 +41,7 @@ typedef struct { DtsSubtitle cue; unsigned revision; } DtsQueuedSubtitle;
 #define DTS_REFILL_TIMEOUT_SECONDS 20.0
 #define DTS_REFILL_FULL_SECONDS 0.10
 #define DTS_REFILL_MIN_SECONDS 0.25
+#define DTS_REFILL_TV_FULL_SECONDS 4.0   /* external audio: TV full this long ends the wait */
 struct DtsPlayback {
 #ifdef NV_MP4_BD_TEST
   int mp4_recovery;
@@ -73,10 +74,27 @@ struct DtsPlayback {
   int audio_stream, major, native_audio_error, load_complete, suppress_events, clock_seen;
   DtsTrack selected;
   int source_ordinal, source_count, selected_known;
+  /* External audio (test): the session plays the audio of another file.
+   * Fixed at start; a new offset waits for the seek that applies it. */
+  int external, ext_offset_ms, ext_offset_dirty;
+  int64_t ext_bytes_prev;   /* the other version's bytes at the last rate window (worker only) */
+  /* Another version requested (main thread, under lock) and the one the
+   * worker is applying now (worker only). */
+  int ext_swap, ext_swap_now, ext_swap_track, ext_swap_only, ext_failed_said;
+  int ext_offset_live;   /* the pending offset applies without a seek */
+  int ext_offset_quiet;  /* ...at a quiet moment (an automatic check while playing) */
+  int match_req, match_result;   /* "Match automatically" */
+  double prefetch_req;           /* a coming jump target (dts_playback_prefetch) */
+  DtsMatchInfo match_info;
+  int ext_speed_ppm, ext_now_speed;   /* other version's speed (from a match) */
+  char ext_swap_url[NV_MEDIA_URL_MAX], ext_swap_headers[2048], ext_swap_langs[64];
+  char ext_now_url[NV_MEDIA_URL_MAX], ext_now_headers[2048], ext_now_langs[64];
+  int ext_now_track, ext_now_only, ext_now_offset;
   double target, presented, preroll_target, resume_pct;
   DtsPlaybackStatus status;
 };
 
+static void wakeExternal(DtsPlayback *p, const char *why);
 static void clearSubtitles(DtsPlayback *p) {
   pthread_mutex_lock(&p->lock);
   for (int i = 0; i < p->subtitle_count; i++) free(p->subtitles[i].cue.rgba);
@@ -105,6 +123,7 @@ static int selectSubtitle(DtsPlayback *p, int stream) {
   pthread_mutex_lock(&p->lock);
   p->subtitle_stream = stream;
   pthread_mutex_unlock(&p->lock);
+  dts_engine_subtitle_only(p->engine, stream);
   return 1;
 }
 
@@ -243,6 +262,16 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
   info=dts_engine_info(p->engine);
   if(!reused && reuse && info && stream>=0) {
     nativeEvent(p,"{\"dtsStage\":{\"name\":\"source-seek-requested\"}}");
+    if(p->ext_swap_now) {
+      /* Another version: only it is reopened, this source stays (owner,
+       * 07/11). A failed swap reopens everything with the new version. */
+      p->ext_swap_now=0;
+      dts_engine_external_speed(p->engine,p->ext_now_speed);
+      reused=dts_engine_external_replace(p->engine,p->ext_now_url,p->ext_now_headers,p->ext_now_langs,
+                                         p->ext_now_offset,p->ext_now_track,p->ext_now_only,target)>=0;
+      nativeEvent(p,reused?"{\"dtsStage\":{\"name\":\"external-swap\"}}":
+                           "{\"dtsStage\":{\"name\":\"external-swap-reopen\"}}");
+    } else
     reused=(info->audio_stream==stream ? dts_engine_seek(p->engine,target) :
             dts_engine_audio(p->engine,stream,core,target))>=0;
     if(!reused && stopped(p)) return 0;
@@ -276,7 +305,7 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
     pthread_mutex_unlock(&p->lock);
     nativeEvent(p,"{\"dtsStage\":{\"name\":\"startup-resume\"}}");
   }
-  if (stream < 0 && info && !reused) {
+  if (stream < 0 && info && !reused && !p->external) {
     int i, count = 0, desired = -1, matches = 0, first_audio = -1;
     for (i = 0; i < info->n_tracks; i++) {
       const DtsTrack *t = &info->tracks[i];
@@ -321,6 +350,14 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
     }
   }
   if(pct_resume && stream>=0 && dts_engine_seek(p->engine,target)<0) {
+    fail(p,dts_engine_error(p->engine));return 0;
+  }
+  /* External audio has no track to match, so the deferred start seek above
+   * never ran: both files were read from 0 and trimmed up to the position
+   * (owner's log 07/11: a minute of catch-up, the CPU budget tripped by
+   * converting the skipped audio). Seek the source and the other version. */
+  if(p->external && target>0 && (pct_resume || (defer_start && !reused)) &&
+     dts_engine_seek(p->engine,target)<0) {
     fail(p,dts_engine_error(p->engine));return 0;
   }
   /* #203: stage lines print only after prepare, so they carry no time of
@@ -377,8 +414,11 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
              (clockSeconds(CLOCK_MONOTONIC) - opened) * 1000);
     nativeEvent(p, event);
   }
+  int cut_s = 0, speed = 0, ratio_ppm = 0;
+  if (p->external) dts_engine_external_mismatch(p->engine, &cut_s, &speed, &ratio_ppm);
   pthread_mutex_lock(&p->lock);
   p->status.info = *info;
+  p->status.ext_cut_s = cut_s; p->status.ext_speed = speed; p->status.ext_ratio_ppm = ratio_ppm;
   p->status.prepared = 1;
   p->status.start_position = target;
   p->status.revision++;
@@ -503,6 +543,27 @@ static void reportRate(DtsPlayback *p, DtsRate *rate, double presented,
   if (p->dv && complete && clock_seen && !pause && !preroll &&
       video_pts - presented < 1.0 && rate->read_wall > 0.5 * (now - rate->start)) p->starved++;
   else if (!pause) p->starved = 0;
+  /* Audio of another version: the same signs, read nearly the whole window
+   * (owner's log 14/11: a slow first connection to the other file; reopened,
+   * it played smoothly). The app reopens it, then says so (video.c). */
+  if (p->external) {
+    int faminto = complete && clock_seen && !pause && !preroll &&
+                  video_pts - presented < 1.0 && rate->read_wall > 0.8 * (now - rate->start);
+    int64_t total = -1, lidos = dts_engine_external_bytes(p->engine, &total);
+    int seguidas, usado = dts_engine_external_stream(p->engine);
+    pthread_mutex_lock(&p->lock);
+    if (!p->ext_swap) p->status.ext_stream_used = usado + 1;
+    if (faminto) p->status.ext_starved++;
+    else if (!pause) p->status.ext_starved = 0;
+    seguidas = p->status.ext_starved;
+    pthread_mutex_unlock(&p->lock);
+    /* Which file is slow: the other version's own download rate and size. */
+    printf("[ext-audio] other version: %.0f KiB/s, %.1f of %.1f MiB read, starved windows %d\n",
+           lidos >= p->ext_bytes_prev ? (double)(lidos - p->ext_bytes_prev) / 1024.0 / (now - rate->start) : 0.0,
+           (double)lidos / 1048576.0, total > 0 ? (double)total / 1048576.0 : -1.0, seguidas);
+    fflush(stdout);
+    p->ext_bytes_prev = lidos;
+  }
   memset(rate, 0, sizeof *rate); rate->start = now;
 }
 static void reportBuffer(DtsPlayback *p, double audio_pts, double video_pts) {
@@ -557,7 +618,7 @@ static void *run(void *user) {
   int queued_seek=0,queued_audio=0;double queued_target=0;
   int dv_audio_hold=0;
 #ifdef NV_DTS_WEBOS_RECOVERY
-  int network_hold=0;
+  int network_hold=0, network_retried=0;
   double network_since=0,network_target=0,refill_full_since=-1;
 #else
   const int network_hold=0;
@@ -577,8 +638,21 @@ static void *run(void *user) {
     stop = p->stop || p->status.failed;
     pause = p->pause; pause_dirty = p->pause_dirty; p->pause_dirty = 0;
     seek = p->seek_dirty; p->seek_dirty = 0;
+    int ext_offset = 0, ext_dirty = seek && p->ext_offset_dirty;
+    int ext_live = !seek && p->ext_offset_dirty && p->ext_offset_live;
+    int ext_quiet = ext_live && p->ext_offset_quiet;
+    if (ext_dirty || ext_live) { ext_offset = p->ext_offset_ms; p->ext_offset_dirty = 0; p->ext_offset_live = 0; p->ext_offset_quiet = 0; }
     audio = p->audio_dirty; p->audio_dirty = 0;
     new_stream = p->audio_stream; target = p->target;
+    if (p->ext_swap) {
+      p->ext_swap = 0; p->ext_swap_now = 1;
+      memcpy(p->ext_now_url, p->ext_swap_url, sizeof p->ext_now_url);
+      memcpy(p->ext_now_headers, p->ext_swap_headers, sizeof p->ext_now_headers);
+      memcpy(p->ext_now_langs, p->ext_swap_langs, sizeof p->ext_now_langs);
+      p->ext_now_track = p->ext_swap_track; p->ext_now_only = p->ext_swap_only;
+      p->ext_now_offset = p->ext_offset_ms; p->ext_offset_dirty = 0;
+      p->ext_now_speed = p->ext_speed_ppm;
+    }
     audio_error = p->native_audio_error; p->native_audio_error = 0;
     complete = p->load_complete;
     clock_seen = p->clock_seen;clock_advances=p->clock_advances;
@@ -587,6 +661,32 @@ static void *run(void *user) {
     subtitle = p->subtitle_dirty; p->subtitle_dirty = 0; subtitle_stream = p->subtitle_stream;
     pthread_mutex_unlock(&p->lock);
     if (stop) break;
+    { double pf; pthread_mutex_lock(&p->lock); pf = p->prefetch_req; p->prefetch_req = 0; pthread_mutex_unlock(&p->lock);
+      if (pf > 0) dts_engine_prefetch(p->engine, pf);
+      dts_engine_prefetch_tidy(p->engine); }
+    { int req; pthread_mutex_lock(&p->lock); req = p->match_req; p->match_req = 0; pthread_mutex_unlock(&p->lock);
+      if (req && dts_engine_external_match_arm(p->engine) < 0) {
+        pthread_mutex_lock(&p->lock); p->match_result = -1; pthread_mutex_unlock(&p->lock);
+      } }
+    { int fs = 0, fo = 0, fk = dts_engine_external_follow_poll(p->engine, &fs, &fo);
+      pthread_mutex_lock(&p->lock);
+      p->status.follow_state = fs;
+      if (fk) { p->status.follow_events++; p->status.follow_kind = fk; p->status.follow_offset_ms = fo; }
+      pthread_mutex_unlock(&p->lock); }
+    { DtsMatchInfo mi; int mr = dts_engine_external_match_poll(p->engine, &mi);
+      if (mr) { pthread_mutex_lock(&p->lock); p->match_result = mr; p->match_info = mi; pthread_mutex_unlock(&p->lock); } }
+    if (ext_live && (ext_quiet ? dts_engine_external_shift_quiet(p->engine, ext_offset)
+                               : dts_engine_external_shift(p->engine, ext_offset)) < 0) {
+      /* The other file could not move by itself: the seek of before. */
+      printf("[ext-audio] live offset failed: seek at %.3f\n", presented); fflush(stdout);
+      dts_engine_external_offset(p->engine, ext_offset);
+      seek = 1; target = presented;
+    }
+    if (ext_dirty) {
+      dts_engine_external_offset(p->engine, ext_offset);
+      printf("[ext-audio] offset=%d ms applied with seek target=%.3f\n", ext_offset, target);
+      fflush(stdout);
+    }
     double wall = clockSeconds(CLOCK_MONOTONIC);
 #ifdef NV_DTS_WEBOS_RECOVERY
     if(!network_hold && !dv_audio_hold)refill_full_since=-1;
@@ -614,13 +714,32 @@ static void *run(void *user) {
       int bytes_ready=b.contiguous_bytes>=refillGoal(&b) || refillTail(&b);
       int full_ready=refillFullReady(refill_full_since,wall,have_frame,seek_preroll,complete,
                                     fed_audio,fed_video,network_target);
+      /* Audio of another version (owner's log 11/11): the TV full with
+       * enough of both for a while is not a missing network; waiting on
+       * the byte goal there only stood still until the fallback. */
+      int tv_ready=p->external && enough && refill_full_since>=0 &&
+                   wall-refill_full_since>=DTS_REFILL_TV_FULL_SECONDS;
+      if(tv_ready && !bytes_ready)bytes_ready=1;
       if(!pause && (enough || full_ready) && bytes_ready) {
         printf("[dts-rebuffer] event=end ms=%.0f aheadA=%.2f aheadV=%.2f contiguousKiB=%lld reason=%s\n",
           (wall-network_since)*1000,fed_audio-network_target,fed_video-network_target,
-          (long long)(b.contiguous_bytes/1024),enough?"ready":"native-full");fflush(stdout);
+          (long long)(b.contiguous_bytes/1024),tv_ready?"tv-full":enough?"ready":"native-full");fflush(stdout);
         network_hold=0;refill_full_since=-1;p->starved=0;pause_dirty=1;refillPublish(p,0,0);
+        network_retried=0;
         resetStall(&stall,presented);native_unhealthy=0;
         rate=(DtsRate){.start=wall};
+      } else if(!pause && wall-network_since>=DTS_REFILL_TIMEOUT_SECONDS && p->external && !network_retried) {
+        /* Audio of another version (owner's log 07/11: after an intro skip
+         * the source answered at 0.2-1 MB/s and the session fell back to
+         * the TV player, losing that audio): once, a fresh connection from
+         * the same place before giving up. */
+        printf("[dts-rebuffer] event=retry ms=%.0f contiguousKiB=%lld: reconnecting at %.3f\n",
+          (wall-network_since)*1000,(long long)(b.contiguous_bytes/1024),network_target);fflush(stdout);
+        network_retried=1;network_hold=0;refill_full_since=-1;refillPublish(p,0,0);
+        dts_engine_reconnect(p->engine);
+        pthread_mutex_lock(&p->lock);
+        p->target=network_target;p->seek_dirty=1;p->status.net_retries++;
+        pthread_mutex_unlock(&p->lock);
       } else if(!pause && wall-network_since>=DTS_REFILL_TIMEOUT_SECONDS) {
         printf("[dts-rebuffer] event=timeout ms=%.0f contiguousKiB=%lld readyKiB=%lld\n",
           (wall-network_since)*1000,(long long)(b.contiguous_bytes/1024),
@@ -637,6 +756,13 @@ static void *run(void *user) {
     if (!dv_audio_hold && !network_hold && (recovery_waiting || (complete && clock_seen)) && stalled(&stall, wall, DTS_STALL_SEEK_SECONDS)) native_unhealthy = 1;
     if (pause || dv_audio_hold || network_hold || (!recovery_waiting && (!complete || !clock_seen || seek_preroll)) || eof) stall.full_since = -1;
     reportRate(p, &rate, presented, fed_audio, fed_video, clock_seen, pause || network_hold, complete, seek_preroll);
+    /* The other version stopped answering after its reconnections: said once
+     * per version; the app goes back to this file's own audio (video.c). */
+    if (p->external && !p->ext_swap_now && !p->ext_failed_said && dts_engine_external_failed(p->engine)) {
+      p->ext_failed_said = 1;
+      pthread_mutex_lock(&p->lock); p->status.ext_failures++; pthread_mutex_unlock(&p->lock);
+      nativeEvent(p, "{\"dtsStage\":{\"name\":\"external-not-responding\"}}");
+    } else if (!dts_engine_external_failed(p->engine)) p->ext_failed_said = 0;
     /* Media IDs may appear only after native Load/preroll. Publish them even
      * when the source metadata revision has not changed; ACB needs the actual
      * firmware identity, never the app ID or an invented placeholder. */
@@ -704,7 +830,7 @@ static void *run(void *user) {
      * stay authoritative (a failed reposition reloads at the latest target). */
     {
       int can_queue=fast_pending && !fast_failed && !pause && p->seamless && !p->seamless_disabled &&
-                    !native_unhealthy && complete && !eof;
+                    !native_unhealthy && complete && !eof && !dts_engine_external_woken(p->engine);
       if(seek && !audio && can_queue) {
         queued_seek=1;queued_target=target;seek=0;
         printf("[dts-seek] deferred target=%.3f pending=%.3f\n",queued_target,fast_target);fflush(stdout);
@@ -727,7 +853,9 @@ static void *run(void *user) {
     /* The adapter now requests a native segment seek and gates controls on
      * SEEKDONE. Test both DV and DTS while retaining one bounded cache/player. */
     int audio_prepared=0;
-    if((seek || audio) && p->seamless && !p->seamless_disabled && !native_unhealthy &&
+    /* Another version (or a track of it) still takes the full Load path: the
+     * swap without reloading the picture (14/11) was taken back by the owner. */
+    if((seek || audio) && !p->ext_swap_now && p->seamless && !p->seamless_disabled && !native_unhealthy &&
        complete && (clock_seen || pause) && !eof) {
       int selected=audio?new_stream:stream;
       int moved=reposition(p,selected,audio?0:core,target,&frame);
@@ -1078,6 +1206,103 @@ done:
 }
 
 static int dvNext, p7Next, seamlessNext, dvAudioNext, mp4Next;
+static char extUrlNext[NV_MEDIA_URL_MAX], extHeadersNext[2048], extLangsNext[64];
+static int extOffsetNext, extOnlyNext, extTrackNext = -1, extSpeedNext, extFollowNext, extAutoNext;
+void dts_playback_next_external_follow(int on) { extFollowNext = !!on; }
+void dts_playback_next_external_automatch(int on) { extAutoNext = !!on; }
+typedef struct { int on, stream, ch; char lang[16], codec[24], title[64]; } ExtHint;
+static ExtHint extHintNext;
+void dts_playback_next_external_hint(int stream, const char *lang, const char *codec, int channels, const char *title) {
+  extHintNext.on = 1; extHintNext.stream = stream; extHintNext.ch = channels;
+  snprintf(extHintNext.lang, sizeof extHintNext.lang, "%s", lang ? lang : "");
+  snprintf(extHintNext.codec, sizeof extHintNext.codec, "%s", codec ? codec : "");
+  snprintf(extHintNext.title, sizeof extHintNext.title, "%s", title ? title : "");
+}
+void dts_playback_next_external_speed(int ratio_ppm) { extSpeedNext = ratio_ppm; }
+void dts_playback_next_external_audio_only(int on) { extOnlyNext = !!on; }
+void dts_playback_next_external_track(int stream) { extTrackNext = stream >= 0 ? stream : -1; }
+void dts_playback_next_external_audio(const char *url, const char *headers,
+                                      const char *langs, int offset_ms) {
+  snprintf(extUrlNext, sizeof extUrlNext, "%s", url ? url : "");
+  snprintf(extHeadersNext, sizeof extHeadersNext, "%s", headers ? headers : "");
+  snprintf(extLangsNext, sizeof extLangsNext, "%s", langs ? langs : "");
+  extOffsetNext = offset_ms;
+}
+void dts_playback_external_offset(DtsPlayback *p, int offset_ms) {
+  if (!p || !p->external) return;
+  pthread_mutex_lock(&p->lock);
+  p->ext_offset_ms = offset_ms; p->ext_offset_dirty = 1; p->ext_offset_live = 0; p->ext_offset_quiet = 0;
+  pthread_mutex_unlock(&p->lock);
+}
+void dts_playback_external_match(DtsPlayback *p) {
+  if (!p || !p->external) return;
+  pthread_mutex_lock(&p->lock);
+  p->match_req = 1; p->match_result = 0;
+  pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
+}
+int dts_playback_external_match_result(DtsPlayback *p, DtsMatchInfo *out) {
+  int r;
+  memset(out, 0, sizeof *out);
+  if (!p) return -1;
+  pthread_mutex_lock(&p->lock);
+  r = p->match_result; if (r) *out = p->match_info;
+  p->match_result = 0;
+  pthread_mutex_unlock(&p->lock);
+  return r;
+}
+void dts_playback_prefetch(DtsPlayback *p, double seconds) {
+  if (!p || !isfinite(seconds) || seconds <= 0) return;
+  pthread_mutex_lock(&p->lock); p->prefetch_req = seconds;
+  pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
+}
+void dts_playback_external_speed(DtsPlayback *p, int ratio_ppm) {
+  if (!p) return;
+  pthread_mutex_lock(&p->lock); p->ext_speed_ppm = ratio_ppm; pthread_mutex_unlock(&p->lock);
+}
+void dts_playback_external_offset_live(DtsPlayback *p, int offset_ms) {
+  if (!p || !p->external) return;
+  pthread_mutex_lock(&p->lock);
+  p->ext_offset_ms = offset_ms; p->ext_offset_dirty = 1; p->ext_offset_live = 1; p->ext_offset_quiet = 0;
+  pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
+  wakeExternal(p, "sync change");
+}
+void dts_playback_external_offset_quiet(DtsPlayback *p, int offset_ms) {
+  if (!p || !p->external) return;
+  pthread_mutex_lock(&p->lock);
+  p->ext_offset_ms = offset_ms; p->ext_offset_dirty = 1; p->ext_offset_live = 1; p->ext_offset_quiet = 1;
+  pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
+}
+int dts_playback_external(DtsPlayback *p) { return p && p->external; }
+/* A change asked while the worker waits for the other version's data: that
+ * wait stops so the change is made now, not after it (owner's log 14/11). */
+static void wakeExternal(DtsPlayback *p, const char *why) {
+  if (p->engine && dts_engine_external_wake(p->engine)) {
+    printf("[ext-audio] %s asked while waiting for the other version: wait stopped\n", why);
+    fflush(stdout);
+  }
+}
+int dts_playback_external_swap(DtsPlayback *p, const char *url, const char *headers, const char *langs,
+                               int offset_ms, int track, int audio_only, double seconds) {
+  if (!p || !p->external || !url || !*url || strlen(url) >= NV_MEDIA_URL_MAX ||
+      (headers && strlen(headers) >= 2048) || !strcmp(url, p->url) || !isfinite(seconds) || seconds >= 9e9) return 0;
+  pthread_mutex_lock(&p->lock);
+  snprintf(p->ext_swap_url, sizeof p->ext_swap_url, "%s", url);
+  snprintf(p->ext_swap_headers, sizeof p->ext_swap_headers, "%s", headers ? headers : "");
+  snprintf(p->ext_swap_langs, sizeof p->ext_swap_langs, "%s", langs ? langs : "");
+  p->ext_swap_track = track; p->ext_swap_only = !!audio_only;
+  p->ext_offset_ms = offset_ms;
+  p->ext_swap = 1;
+  p->status.ext_starved = 0; p->status.ext_stream_used = 0;
+  /* Applied like a track change: same stream id, fresh native Load. */
+  if (!p->seek_dirty) p->target = seconds < 0 ? 0 : seconds;
+  p->audio_stream = DTS_ENGINE_EXTERNAL_STREAM; p->audio_dirty = 1;
+  p->status.buffer = (DtsBufferInfo){0}; p->status.buffered_until = 0;
+  pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
+  printf("[ext-audio] swap requested at %.1fs track=%d audioOnly=%d\n", seconds, track, !!audio_only);
+  fflush(stdout);
+  wakeExternal(p, "other version");
+  return 1;
+}
 #ifdef NV_DV7_MAPPING_TEST
 static int p7MappingNext;
 void dts_playback_next_p7_mapping(int enabled) { p7MappingNext=!!enabled; }
@@ -1099,6 +1324,15 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
   double resume_pct=resumePctNext;resumePctNext=0;
   int dv_audio=dvAudioNext;dvAudioNext=0;
   int mp4_test=mp4Next;mp4Next=0;
+  char ext_url[NV_MEDIA_URL_MAX], ext_headers[2048], ext_langs[64];
+  int ext_offset=extOffsetNext, ext_only=extOnlyNext, ext_track=extTrackNext, ext_speed=extSpeedNext;
+  int ext_follow=extFollowNext, ext_auto=extAutoNext;
+  ExtHint ext_hint=extHintNext;
+  extOnlyNext=0;extTrackNext=-1;extSpeedNext=0;extFollowNext=0;extAutoNext=0;extHintNext.on=0;
+  snprintf(ext_url,sizeof ext_url,"%s",extUrlNext);
+  snprintf(ext_headers,sizeof ext_headers,"%s",extHeadersNext);
+  snprintf(ext_langs,sizeof ext_langs,"%s",extLangsNext);
+  extUrlNext[0]=extHeadersNext[0]=extLangsNext[0]=0;extOffsetNext=0;
 #ifdef NV_DV7_MAPPING_TEST
   int p7_mapping=p7MappingNext;p7MappingNext=0;
 #endif
@@ -1132,6 +1366,18 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
   dts_engine_p7_mapping(p->engine,p->dv && p->allow_p7 && p7_mapping);
 #endif
   dts_engine_mp4_test(p->engine,mp4_test);
+  if(ext_url[0] && strcmp(ext_url,url)) {
+    p->external=1;p->ext_offset_ms=ext_offset;
+    dts_engine_external_audio(p->engine,ext_url,ext_headers,ext_langs,ext_offset);
+    dts_engine_external_audio_only(p->engine,ext_only);
+    dts_engine_external_track(p->engine,ext_track);
+    dts_engine_external_speed(p->engine,ext_speed); p->ext_speed_ppm=ext_speed;
+    dts_engine_external_follow(p->engine,ext_follow);
+    dts_engine_external_automatch(p->engine,ext_auto);
+    if(ext_hint.on) dts_engine_external_track_hint(p->engine,ext_hint.stream,ext_hint.lang,ext_hint.codec,ext_hint.ch,ext_hint.title);
+    printf("[ext-audio] session uses the audio of another source offsetMs=%d speedPpm=%d dv=%d\n",ext_offset,ext_speed,p->dv);
+    fflush(stdout);
+  }
   snprintf(p->url, sizeof p->url, "%s", url);
   snprintf(p->headers, sizeof p->headers, "%s", headers ? headers : "");
   snprintf(p->window, sizeof p->window, "%s", window ? window : "");
@@ -1186,9 +1432,10 @@ void dts_playback_seek(DtsPlayback *p, double seconds) {
   pthread_mutex_lock(&p->lock); p->target = seconds < 0 ? 0 : seconds; p->seek_dirty = 1;
   p->status.buffer = (DtsBufferInfo){0};p->status.buffered_until = 0;
   pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
+  if (p->external) wakeExternal(p, "seek");
 }
 void dts_playback_audio(DtsPlayback *p, int stream) {
-  if (!p || stream < 0) return;
+  if (!p || stream < 0 || p->external) return;
   pthread_mutex_lock(&p->lock);
   if (!p->seek_dirty) p->target = p->presented;
   p->audio_stream = stream; p->audio_dirty = 1;
@@ -1196,7 +1443,7 @@ void dts_playback_audio(DtsPlayback *p, int stream) {
   pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
 }
 void dts_playback_audio_at(DtsPlayback *p, int stream, double seconds) {
-  if (!p || stream < 0 || !isfinite(seconds) || seconds >= 9e9) return;
+  if (!p || stream < 0 || p->external || !isfinite(seconds) || seconds >= 9e9) return;
   pthread_mutex_lock(&p->lock);
   if (!p->seek_dirty) p->target = seconds < 0 ? 0 : seconds;
   p->audio_stream = stream; p->audio_dirty = 1;

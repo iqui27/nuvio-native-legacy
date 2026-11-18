@@ -48,6 +48,63 @@ static inline int nv_titulo_e_arquivo(const char *t) {
   return 0;
 }
 
+/* A track title that only repeats what the menu already says ("FR AC3 5.1",
+ * "Hun AAC 2.0", "English DD+ 5.1 640kbps", "ENG E-AC3 Atmos"): languages,
+ * codecs, channels, bitrates. `e_idioma` says whether a short token is a
+ * language code (the app passes ling_tem_nome); NULL: only the names below.
+ * "Dubbing", "Lektor", "Commentary" and anything else make it a real title. */
+static inline int nv_titulo_tecnico(const char *t, int (*e_idioma)(const char *)) {
+  static const char *const palavras[] = {
+    "ac3", "eac3", "e", "ac", "dd", "ddp", "dd+", "dts", "hd", "ma", "es", "x", "aac", "lc", "he",
+    "truehd", "thd", "atmos", "flac", "opus", "mp3", "mp2", "pcm", "lpcm", "dolby", "digital", "plus",
+    "surround", "stereo", "mono", "audio", "track", "ch", "channels", "kbps", "kbit", "kbs", "khz",
+    "english", "french", "german", "spanish", "italian", "polish", "hungarian", "russian", "portuguese",
+    "czech", "dutch", "swedish", "danish", "norwegian", "finnish", "turkish", "greek", "romanian",
+    "bulgarian", "ukrainian", "croatian", "serbian", "slovak", "slovenian", "japanese", "korean",
+    "chinese", "mandarin", "cantonese", "arabic", "hindi", "thai", "vietnamese", "hebrew", "persian",
+    "latino", "castellano", "castilian", "magyar", "polski", "deutsch", "francais", "espanol", "italiano" };
+  static const char *const sufixos[] = { "", "kbps", "kbs", "kb", "k", "ch", "khz", "hz", "bit" };
+  const char *p = t;
+  int tokens = 0;
+  if (!t) return 0;
+  while (*p) {
+    char tok[32];
+    size_t k = 0;
+    int ok = 0;
+    while (*p && !(isalnum((unsigned char)*p) || *p == '+' || (unsigned char)*p >= 0x80)) p++;
+    if (!*p) break;
+    /* A dot joins digits only ("5.1"); "DTS-HD.MA" is three words. */
+    while (*p && (isalnum((unsigned char)*p) || *p == '+' || (unsigned char)*p >= 0x80 ||
+                  (*p == '.' && k && isdigit((unsigned char)tok[k - 1]) && isdigit((unsigned char)p[1])))) {
+      if (k + 1 < sizeof tok) tok[k++] = (char)tolower((unsigned char)*p);
+      p++;
+    }
+    while (k && tok[k - 1] == '.') k--;
+    tok[k] = 0;
+    if (!k) continue;
+    tokens++;
+    /* Numbers: 5.1, 2.0, 640kbps, 6ch, 48khz, 24bit. */
+    { size_t d = 0;
+      while (d < k && (isdigit((unsigned char)tok[d]) || tok[d] == '.')) d++;
+      if (d && isdigit((unsigned char)tok[0]))
+        for (size_t s = 0; s < sizeof sufixos / sizeof *sufixos && !ok; s++) if (!strcmp(tok + d, sufixos[s])) ok = 1; }
+    for (size_t w = 0; w < sizeof palavras / sizeof *palavras && !ok; w++) if (!strcmp(tok, palavras[w])) ok = 1;
+    if (!ok && k >= 2 && k <= 3 && e_idioma && e_idioma(tok)) ok = 1;
+    /* "DD+5.1", "AAC2.0", "AC3.5.1": a codec glued to its channels. */
+    if (!ok) {
+      size_t d = k;
+      while (d && (isdigit((unsigned char)tok[d - 1]) || tok[d - 1] == '.')) d--;
+      if (d && d < k) {
+        char base[32];
+        memcpy(base, tok, d); base[d] = 0;
+        for (size_t w = 0; w < sizeof palavras / sizeof *palavras && !ok; w++) if (!strcmp(base, palavras[w])) ok = 1;
+      }
+    }
+    if (!ok) return 0;
+  }
+  return tokens > 0;
+}
+
 static inline void nv_rotulo_faixa(char *out, size_t n, const char *titulo,
                                    const char *idioma_nome, const char *sub) {
   char nome[160];

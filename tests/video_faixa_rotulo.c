@@ -3,6 +3,13 @@
 #include <stdio.h>
 #include <string.h>
 #include "video_faixa_rotulo.h"
+/* Language codes, like ling_tem_nome. */
+static int codigoTeste(const char *t) {
+  static const char *const c[] = { "fr", "hun", "eng", "pl", "rus", "en" };
+  for (size_t i = 0; i < sizeof c / sizeof *c; i++) if (!strcmp(t, c[i])) return 1;
+  return 0;
+}
+
 int main(void) {
   char r[48];
   nv_rotulo_faixa(r, sizeof r, "Original DTS-ES Surround Mix", "Inglês", "DTS 5.1");
@@ -43,6 +50,20 @@ int main(void) {
     nv_rotulo_faixa(g, sizeof g, "Commentary by director David Fincher and actors Brad Pitt", "Inglês", "FLAC 2.0");
     assert(!strcmp(g, "Commentary by director David Fincher and actors Brad Pitt \xc2\xb7 FLAC 2.0"));
     assert(!nv_titulo_e_arquivo("") && !nv_titulo_e_arquivo(NULL) && !nv_titulo_e_arquivo("Original DTS-ES Surround Mix")); }
-  puts("PASS video_faixa_rotulo: file names, release names, language fallback, UTF-8 safe cut, menu separator");
+  /* Titles that only repeat language and codec (another source's tracks). */
+  { static const char *const tecnicos[] = { "FR AC3 5.1", "Hun AAC 2.0", "Eng AAC 2.0", "English DD+ 5.1 640kbps",
+      "ENG E-AC3 Atmos", "Polish DTS-HD.MA 7.1", "AC3.5.1", "DD+5.1", "rus 2ch", "Stereo", "TrueHD 7.1 Atmos 48kHz 24bit" };
+    static const char *const reais[] = { "Dubbing", "Polski lektor", "Commentary", "Polish Dubbing [Netflix]", "Lektor PL",
+      "Director's commentary", "Surround 5.1 remix", "" };
+    for (size_t i = 0; i < sizeof tecnicos / sizeof *tecnicos; i++) {
+      if (!nv_titulo_tecnico(tecnicos[i], codigoTeste)) fprintf(stderr, "should be technical: %s\n", tecnicos[i]);
+      assert(nv_titulo_tecnico(tecnicos[i], codigoTeste));
+    }
+    for (size_t i = 0; i < sizeof reais / sizeof *reais; i++) {
+      if (nv_titulo_tecnico(reais[i], codigoTeste)) fprintf(stderr, "should be a real title: %s\n", reais[i]);
+      assert(!nv_titulo_tecnico(reais[i], codigoTeste));
+    }
+    assert(!nv_titulo_tecnico("FR AC3 5.1", NULL) && !nv_titulo_tecnico(NULL, codigoTeste)); }
+  puts("PASS video_faixa_rotulo: file names, release names, language fallback, UTF-8 safe cut, menu separator, technical titles");
   return 0;
 }

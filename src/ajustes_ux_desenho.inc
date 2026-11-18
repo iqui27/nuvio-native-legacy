@@ -25,6 +25,8 @@ static const char *uxResumo(int op) {
 static int uxOpcaoNaTela(int op) {
   if (uxBufferConexao(op)) return AJ_BUFFER;
   if (op == AJ_FILTRO_TAM_MAX || op == AJ_FILTRO_GRUPOS) return AJ_FILTROS_FONTES;
+  if (op == AJ_EXT_AUDIO_CACHE || op == AJ_EXT_AUDIO_PASSO || op == AJ_EXT_AUDIO_GRANDE ||
+      op == AJ_EXT_AUDIO_MODO || op == AJ_EXT_AUDIO_SERIE || op == AJ_EXT_AUDIO_SEGUIR || op == AJ_EXT_AUDIO_AVISO || op == AJ_EXT_AUDIO_AUTO || op == AJ_EXT_AUDIO_COPIAS || op == AJ_EXT_AUDIO_ORDEM || op == AJ_EXT_AUDIO_BUFOR) return AJ_EXT_AUDIO;
   return op >= AJ_FALHA_RD_LIMITE && op <= AJ_FALHA_AD_LIMITE
     ? AJ_FALHA_PROVEDOR_ORDEM : op;
 }

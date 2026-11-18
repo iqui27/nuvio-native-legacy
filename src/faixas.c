@@ -18,6 +18,7 @@
 #include "ajustes.h"
 #include "catalogo.h"
 #include "linguas.h"
+#include "video_faixa_rotulo.h"
 #include "audioescolha.h"
 #include "plrui.h"
 #include "plrilha.h"
@@ -28,6 +29,13 @@
 #include "cacheboost.h"
 #include "velocidade.h"
 #include "faixasmkv.h"
+#include "audioext.h"
+#include "audioextlista.h"
+#include "audioextaddons.h"
+#include "ctxlista.h"
+#include "streams.h"
+#include "idiomacod.h"
+#include <stdlib.h>
 #define NV_ESCALA_TELA   // o arquivo inteiro mede pela tela virtual (escala.h)
 #include "escala.h"
 #include <stdio.h>
@@ -62,6 +70,13 @@ static int toqueAudioRolar(const PonteiroRolagem *e) {
 // escolhida ali) e lida pelo tratamento de tecla, que roda antes.
 static int visiveis = 8;
 static void ajustarRolagem(void);
+// "From another source" pages (faixas_fonte.inc).
+static void exReconstruir(void);
+static void exFechar(void);
+static void exAbrir(void);
+static int exPagAtiva(void);
+static void exEvento(const SDL_Event *e);
+static void exPasso(Uint32 agora);
 static float anim;
 // 0..1: a folha de legenda virando a BARRA DE ESTILO no topo (barra_desenhar).
 static float animTopo;
@@ -471,6 +486,14 @@ static int linhaDaLeg(int i);
 // where the backend has the gain (cacheboost_suportado: Android); elsewhere
 // it is drawn dimmed with "Não disponível nesta TV".
 static int volFoco;
+// THE SYNC EDITOR (owner, 07/11: set it exactly, easy with the remote): OK on
+// the Audio sync row of another version replaces the list with rows. UP/DOWN
+// pick a row, LEFT/RIGHT change it, OK confirms and closes, Back cancels and
+// puts the offset back. Every change is heard at once (live).
+enum { SED_OFFSET, SED_PASSO, SED_KAND, SED_DICA, SED_AQUI, SED_ZERAR };
+#define SED_MAXL 8
+static int sincEd, sincFoco, sincRep, sincPasso = 1, sincOrig;
+static const int SED_PASSOS[] = { 10, 100, 1000, 10000, 60000, 600000 };
 static int volFocavel(void) { return cacheboost_suportado(); }
 
 // #202: SPEED ROW right below the volume, same anatomy and gesture (LEFT/RIGHT
@@ -484,6 +507,7 @@ static int velVisivel(void) { return video_velocidade_suportada() && !player_id_
 // (Android: ExoPlayer cannot change the tempo of a bitstream it does not decode).
 static int velFocavel(void) { return velVisivel() && !video_velocidade_bloqueada(); }
 
+static void extMontar(int forcar);
 void faixas_abrir(void) { faixas_abrir_em(0); }
 
 // Abre JA NA COLUNA que o botao pediu. O player tem um icone de audio e um de
@@ -492,14 +516,24 @@ void faixas_abrir(void) { faixas_abrir_em(0); }
 // botao — foi exatamente o que o dono relatou. O painel continua sendo UM so,
 // com as duas colunas lado a lado (comparar o par escolhido e o motivo dele
 // existir); o que muda e onde o foco comeca.
+void faixas_idioma_principal_atualizar(void) {
+  int n = video_n_audio(), i = video_audio_atual();
+  if (audioext_tocando() || audioext_carregando() || n <= 0) return;
+  if (i < 0 || i >= n) i = 0;
+  const VideoFaixa *f = video_audio(i);
+  audioext_idioma_principal_definir(f ? f->idioma : "");
+}
 void faixas_abrir_em(int col) {
   int n;
+  faixas_idioma_principal_atualizar();
   aberta = 1;
   modo = (col == 1) ? 1 : 0;
   coluna = modo;                 // audio -> col 0; legenda -> col 1
   ctl = -1;
-  volFoco = 0; velFoco = 0;
+  volFoco = 0; velFoco = 0; sincEd = 0;
+  exFechar();
   foco[0] = video_audio_atual();
+  if (!modo) extMontar(1);
   // A legenda pode estar desligada (-1); a primeira linha da coluna e sempre
   // "Desativada", entao o indice da lista e deslocado em um.
   foco[1] = linhaDaLeg(legendaAtiva()) + 1;
@@ -575,9 +609,114 @@ static int linhaDaLeg(int i) {
   return i;
 }
 
+// FROM ANOTHER SOURCE (audioext.h): the audio sheet ends with one row that
+// opens the other sources of the same title able to lend their audio
+// (audioextlista.h), on a page inside the same island while the picture plays
+// on: a language bar (the preferred language first) and every version of the
+// language on it, the most likely to play well first. While such audio
+// plays, three rows come after the file's tracks: Audio sync (LEFT/RIGHT),
+// Match automatically and this file's own audio. Only the webOS converter
+// plays it; the list is the source list on hand.
+enum { FXA_FAIXA = 0, FXA_SINC, FXA_DOPASUJ, FXA_ORIGINAL, FXA_ENTRADA };
+static AudioExtCand extAll[AUDIOEXT_LISTA_MAX];
+static int extAllN;
+// Per source of the list (by its index): what the add-on declared, and the
+// release label ("WEB-DL 1080p").
+static AudioExtEntrada *extEnt;
+static char (*extVersao)[40];
+static int extEntN;
+static unsigned extGeracao, extRevisao, extAddonsVer;
+static int extListaN = -1;
+static int extMenu(void) {
+#if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
+  return ajustes_audio_externo() && !player_id_canal()[0];
+#else
+  return 0;
+#endif
+}
+static void extMontar(int forcar) {
+  int n = stream_n(), atual = stream_atual();
+  const char *urlVideo = video_url_atual();
+  AudioExtOpcoes o;
+  if (!extMenu() || !stream_lista_do_alvo_atual()) { extAllN = 0; extListaN = -1; return; }
+  // A source's state changed too (marked not cached after a debrid
+  // placeholder), or Settings > Addons.
+  if (!forcar && extGeracao == stream_lista_geracao() && extListaN == n && extRevisao == stream_revisao() &&
+      extAddonsVer == audioext_addons_versao()) return;
+  extGeracao = stream_lista_geracao(); extRevisao = stream_revisao(); extAddonsVer = audioext_addons_versao();
+  extListaN = n; extAllN = 0;
+  if (n <= 0) return;
+  if (n > extEntN) {
+    AudioExtEntrada *e2 = realloc(extEnt, (size_t)n * sizeof *e2);
+    if (!e2) return;
+    extEnt = e2;
+    { char (*v2)[40] = realloc(extVersao, (size_t)n * sizeof *v2);
+      if (!v2) return;
+      extVersao = v2; }
+    extEntN = n;
+  }
+  for (int i = 0; i < n; i++) {
+    const Stream *st = stream_item(i);
+    stream_audioext_entrada(st, &extEnt[i]);
+    extEnt[i].atual = i == atual || (st && urlVideo && urlVideo[0] && !strcmp(st->url, urlVideo));
+    stream_audioext_versao(st, extVersao[i], sizeof extVersao[i]);
+    extEnt[i].foraFiltro = st && !audioext_addon_ligado(st->addonChave);
+  }
+  memset(&o, 0, sizeof o);
+  // The audio language of the account/TV; without one ("All", free), the
+  // interface language puts its own versions on top.
+  o.pref1 = ling_audio();
+  if (!o.pref1[0]) o.pref1 = idioma_iso(ajustes_idioma());
+  o.pref2 = ling_audio2();
+  o.ocultarForaCache = ajustes_audio_externo_ocultar_fora_cache();
+  o.semDts = ajustes_dts_desligado();
+  o.ocultarCopias = ajustes_audio_externo_ocultar_copias();
+  o.ordemAddon = ajustes_audio_externo_ordem_addon();
+  o.casa = ling_casa;
+  extAllN = audioext_lista(extEnt, n, &o, extAll, AUDIOEXT_LISTA_MAX);
+  exReconstruir();
+}
+static int extEntradaVisivel(void) {
+  return extMenu() && (extAllN > 0 || audioext_tocando() || audioext_carregando());
+}
+static int nExtras(void) {
+  if (!extMenu()) return 0;
+  return (audioext_tocando() ? 3 : 0) + (extEntradaVisivel() ? 1 : 0);
+}
+// Row `i` of the audio list: the file's track `*k`, one of the three rows of
+// the audio being played from another source, or the "From another source" row.
+static int tipoLinha(int i, int *k) {
+  int nA = video_n_audio();
+  if (k) *k = i;
+  if (i < nA) return FXA_FAIXA;
+  i -= nA;
+  if (extMenu() && audioext_tocando()) {
+    if (i == 0) return FXA_SINC;
+    if (i == 1) return FXA_DOPASUJ;
+    if (i == 2) return FXA_ORIGINAL;
+    i -= 3;
+  }
+  if (k) *k = i;
+  return FXA_ENTRADA;
+}
+static const Stream *extFonteIdx(int indice) {
+  return indice >= 0 && indice < extEntN && indice < stream_n() ? stream_item(indice) : NULL;
+}
+static const AudioExtEntrada *extEntIdx(int indice) {
+  return indice >= 0 && indice < extEntN ? &extEnt[indice] : NULL;
+}
+static int extTentativasIdx(int indice) {
+  const AudioExtEntrada *e = extEntIdx(indice);
+  return !e ? 0 : e->cache > 0 ? AUDIOEXT_TENTATIVAS : e->cache == 0 ? 1 : 0;
+}
+static int extGrandeIdx(int indice) {
+  const AudioExtEntrada *e = extEntIdx(indice);
+  return e && e->bytes > UINT64_C(20000000000);
+}
+
 static int nLinhas(int col) {
   if (col == FX_COL_ESTILO) return FX_N_ESTILO;
-  if (col == 0) { int n = video_n_audio(); return n; }
+  if (col == 0) { int n = video_n_audio(); return n + nExtras(); }
   return nLegendas() + 1;   // +1 pela linha "Desativada"
 }
 
@@ -943,7 +1082,74 @@ static void lembrarManual(int i) {
   lembrarEscolha(&e);
 }
 
+static void aplicarExterno(int tipo, int k) {
+  (void)k;
+  if (tipo == FXA_DOPASUJ) {
+    if (!audioext_dopasuj_ativo()) audioext_dopasuj_pedir();
+  } else if (tipo == FXA_ORIGINAL) {
+    audioext_original();
+    player_toast(i18n("Back to this file's own audio…"), 2500);
+  }
+}
+// A version of the "From another source" pages: its audio now (and, from the
+// hold-OK track list, this very track of it). The other copies of the file go
+// with it as fallbacks; the version is remembered for the next episodes.
+static void extUsar(const AudioExtCand *c, const AudioExtFaixa *faixa) {
+  const Stream *st = c ? extFonteIdx(c->indice) : NULL;
+  const AudioExtEntrada *en = c ? extEntIdx(c->indice) : NULL;
+  char t[224];
+  if (!st || !en) return;
+  legsync_audio_trocou();
+  // The pick first: the series memory takes the series from the mark it sets
+  // (the first pick of an episode had none, and nothing was remembered).
+  audioext_escolher(st->url, st->cabecalhos, st->rotulo, c->idioma);
+  { AudioExtIdent id;
+    memset(&id, 0, sizeof id);
+    snprintf(id.grupo, sizeof id.grupo, "%s", st->bingeGroup);
+    snprintf(id.addon, sizeof id.addon, "%s", st->provedor);
+    audioext_nome_versao(st->rotulo, id.nome, sizeof id.nome);
+    snprintf(id.idioma, sizeof id.idioma, "%.7s", faixa && faixa->idioma[0] ? faixa->idioma : c->idioma);
+    id.altura = st->altura; id.codec = en->codec;
+    audioext_lembrar_serie(&id);
+    if (faixa) audioext_lembrar_faixa_serie(faixa); }
+  for (int r = 0; r < c->nReservas; r++) {
+    const Stream *rs = extFonteIdx(c->reservas[r]);
+    if (rs) audioext_reserva(rs->url, rs->cabecalhos);
+  }
+  if (faixa) audioext_definir_faixa(faixa->stream);
+  // The debrid may still answer with its placeholder clip on the first open
+  // (TorBox adds the file to the account): tried again. Said to be cached:
+  // 3 times; nothing said (a formatter without marks): once; not cached: no.
+  audioext_tentativas(extTentativasIdx(c->indice));
+  printf("[ext-audio] from another source: #%d group %d lang=%s copies=%d%s\n", c->indice, c->grupo,
+         c->idioma[0] ? c->idioma : "-", c->nReservas, faixa ? " (track picked)" : "");
+  fflush(stdout);
+  if (extGrandeIdx(c->indice) && ajustes_audio_externo_avisar_grande()) {
+    char tam[24];
+    audioext_tamanho_texto(en->bytes, tam, sizeof tam);
+    plrui_decimal(tam);
+    snprintf(t, sizeof t, i18n("Large file (%s): it is downloaded in full next to this video."), tam);
+    player_toast_ex(t, 6000, "aj_triangle-alert", 1);
+  } else player_toast(i18n("Loading the audio of the other version…"), 2500);
+}
+
 static void aplicar(void) {
+  if (coluna == 0 && tipoLinha(foco[0], NULL) != FXA_FAIXA) {
+    int k, tipo = tipoLinha(foco[0], &k);
+    aplicarExterno(tipo, k);
+    return;
+  }
+  // While another version's audio plays the rows are that file's tracks: one
+  // of them reopens with it (video_escolher_audio), nothing is remembered for
+  // this title's own tracks.
+  if (coluna == 0 && extMenu() && audioext_tocando()) {
+    if (foco[0] != video_audio_atual()) {
+      legsync_audio_trocou();
+      video_escolher_audio(foco[0]);
+      player_toast(i18n("Loading the audio of the other version…"), 2500);
+    }
+    return;
+  }
   if (coluna == 0) {
     // F06: outra faixa de audio = outras falas; a escuta em curso nao vale mais.
     if (video_audio_atual() != foco[0]) legsync_audio_trocou();
@@ -1201,6 +1407,88 @@ static int estiloTecla(SDL_Keycode k, int rep) {
   return 1;
 }
 
+// The editor's rows: offset, step, the last match's candidates, the lengths'
+// hint, Match here, Reset. tipo[i] = SED_*, arg[i] = candidate index.
+static int sincLinhas(int *tipo, int *arg) {
+  int n = 0, km[3], kp[3], nk = audioext_kandydatos(km, kp, 3);
+  tipo[n] = SED_OFFSET; arg[n++] = 0;
+  tipo[n] = SED_PASSO; arg[n++] = 0;
+  for (int i = 0; i < nk; i++) { tipo[n] = SED_KAND; arg[n++] = i; }
+  if (audioext_dica_ms()) { tipo[n] = SED_DICA; arg[n++] = 0; }
+  tipo[n] = SED_AQUI; arg[n++] = 0;
+  tipo[n] = SED_ZERAR; arg[n++] = 0;
+  return n;
+}
+static void sincFmt(int ms, char *v, unsigned tam) {
+  audioext_formatar_offset(ms, v, tam, i18n("%c%u.%03u s"), i18n("%c%u min %u.%03u s"));
+}
+static void sincAbrir(void) {
+  sincEd = 1; sincFoco = 0; sincRep = 0; sincOrig = audioext_offset_ms();
+  printf("[ext-audio] sync editor: open at %d ms\n", sincOrig); fflush(stdout);
+}
+static void sincTecla(SDL_Keycode k, int repeat) {
+  int tipo[SED_MAXL], arg[SED_MAXL], n = sincLinhas(tipo, arg);
+  char v[48];
+  if (sincFoco >= n) sincFoco = n - 1;
+  if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE) {
+    // Cancel: the offset of before comes back.
+    if (audioext_offset_ms() != sincOrig) {
+      audioext_offset_definir(sincOrig);
+      sincFmt(sincOrig, v, sizeof v);
+      char t[96]; snprintf(t, sizeof t, i18n("Sync change cancelled: %s"), v); player_toast(t, 2500);
+    }
+    printf("[ext-audio] sync editor: cancelled, back to %d ms\n", sincOrig); fflush(stdout);
+    sincEd = 0; return;
+  }
+  if (k == SDLK_UP) { if (sincFoco > 0) sincFoco--; sincRep = 0; return; }
+  if (k == SDLK_DOWN) { if (sincFoco < n - 1) sincFoco++; sincRep = 0; return; }
+  if (k == SDLK_LEFT || k == SDLK_RIGHT) {
+    int d = k == SDLK_RIGHT ? 1 : -1;
+    sincRep = repeat ? sincRep + 1 : 0;
+    if (tipo[sincFoco] == SED_OFFSET) {
+      int passo = SED_PASSOS[sincPasso] * (sincRep >= 10 ? 10 : 1);   // held: ten steps at a time
+      audioext_offset_somar(d * passo);
+      printf("[ext-audio] sync editor: %+d ms -> %d ms\n", d * passo, audioext_offset_ms()); fflush(stdout);
+    } else if (tipo[sincFoco] == SED_PASSO) {
+      int p = sincPasso + d, np = (int)(sizeof SED_PASSOS / sizeof *SED_PASSOS);
+      if (p >= 0 && p < np) sincPasso = p;
+    }
+    return;
+  }
+  if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+    int t = tipo[sincFoco];
+    if (t == SED_KAND || t == SED_DICA) {
+      int km[3], kp[3], ms;
+      audioext_kandydatos(km, kp, 3);
+      ms = t == SED_KAND ? km[arg[sincFoco]] : audioext_dica_ms();
+      audioext_offset_definir(ms);
+      printf("[ext-audio] sync editor: %s %d -> %d ms\n", t == SED_KAND ? "candidate" : "length hint",
+             t == SED_KAND ? arg[sincFoco] + 1 : 0, ms);
+      fflush(stdout);
+      sincFoco = 0;   // back on the offset: listen, adjust, OK
+      return;
+    }
+    if (t == SED_ZERAR) {
+      audioext_offset_definir(0);
+      printf("[ext-audio] sync editor: reset\n"); fflush(stdout);
+      sincFoco = 0; return;
+    }
+    if (t == SED_AQUI) {
+      printf("[ext-audio] sync editor: match here from %d ms\n", audioext_offset_ms()); fflush(stdout);
+      if (!audioext_dopasuj_ativo()) {
+        audioext_dopasuj_pedir();
+        player_toast(i18n("Matching the audio automatically… (about 40 s)"), 4000);
+      }
+      sincEd = 0; aberta = 0; return;
+    }
+    // OK on the offset or the step: confirmed, closed.
+    sincFmt(audioext_offset_ms(), v, sizeof v);
+    { char tt[96]; snprintf(tt, sizeof tt, i18n("Audio sync saved: %s"), v); player_toast(tt, 2500); }
+    printf("[ext-audio] sync editor: confirmed %d ms\n", audioext_offset_ms()); fflush(stdout);
+    sincEd = 0; return;
+  }
+}
+
 void faixas_evento(const SDL_Event *e) {
 #ifdef NV_TOUCH_UI
   if (telefoneui_ativo() && toquerol_navegacao(e)) {
@@ -1218,10 +1506,13 @@ void faixas_evento(const SDL_Event *e) {
     else if (r == LEGUI_ESTILO) coluna = FX_COL_ESTILO;
     return;
   }
+  // "From another source": its pages take every key (and the hold of OK).
+  if (!modo && exPagAtiva()) { exEvento(e); return; }
   if (e->type != SDL_KEYDOWN) return;
   k = e->key.keysym.sym;
   // ESTILO: Voltar fecha antes o controle aberto (slider, paleta, fontes).
   if (coluna == FX_COL_ESTILO && estiloTecla(k, e->key.repeat)) return;
+  if (sincEd) { sincTecla(k, e->key.repeat); return; }
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE) { aberta = 0; return; }
   // F07: the volume row of the audio sheet. The change is live (no OK needed);
   // OK just closes, like Back.
@@ -1251,11 +1542,32 @@ void faixas_evento(const SDL_Event *e) {
   // Na de audio nao ha para onde ir — antes elas pulavam para a coluna de
   // legenda, que e justamente o que fazia os dois botoes do player parecerem o
   // mesmo botao.
+  if ((k == SDLK_LEFT || k == SDLK_RIGHT) && !modo && coluna == 0 && tipoLinha(foco[0], NULL) == FXA_SINC) {
+    static int rep;
+    rep = e->key.repeat ? rep + 1 : 0;   // held: 100 ms, 1 s, then 10 s
+    int passo = audioext_passo(ajustes_audio_externo_passo(), rep);
+    audioext_offset_somar(k == SDLK_RIGHT ? passo : -passo);
+    return;
+  }
   if (k == SDLK_LEFT || k == SDLK_RIGHT) return;
   if (k == SDLK_UP)    { if (foco[coluna] > 0) foco[coluna]--; ajustarRolagem(); return; }
   if (k == SDLK_DOWN)  { if (foco[coluna] < nLinhas(coluna) - 1) foco[coluna]++;
                          ajustarRolagem(); return; }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+    // The sync row is live (LEFT/RIGHT); its OK opens the precise editor.
+    if (!modo && coluna == 0 && tipoLinha(foco[0], NULL) == FXA_SINC) {
+      sincAbrir(); return;
+    }
+    // "From another source": its page opens in the same island.
+    if (!modo && coluna == 0 && tipoLinha(foco[0], NULL) == FXA_ENTRADA) { exAbrir(); return; }
+    // "Match automatically": starts it and closes; the result comes as a toast.
+    if (!modo && coluna == 0 && tipoLinha(foco[0], NULL) == FXA_DOPASUJ) {
+      if (!audioext_dopasuj_ativo()) {
+        audioext_dopasuj_pedir();
+        player_toast(i18n("Matching the audio automatically… (about 40 s)"), 4000);
+      }
+      aberta = 0; return;
+    }
     aplicar(); aberta = 0; return;
   }
 }
@@ -1289,7 +1601,18 @@ static void avisarQueda(int e) {
 }
 
 void faixas_atualizar(float dt, Uint32 agora) {
+  // The series memory's pick of a later episode skips the add-ons switched off
+  // in Settings > Addons too (streams.c has no link to the settings).
+  { static int filtroPosto;
+    if (!filtroPosto) { stream_audioext_filtro_addon(audioext_addon_ligado); filtroPosto = 1; } }
   if (aberta && modo && coluna == 1) legendasui_atualizar(dt);
+  exPasso(agora);
+  // Other versions arrive with the add-ons (AIOStreams after 15-20 s): the
+  // list follows them while the sheet is open; the focus stays on its row.
+  if (aberta && !modo) {
+    extMontar(0);
+    if (foco[0] >= nLinhas(0)) foco[0] = nLinhas(0) > 0 ? nLinhas(0) - 1 : 0;
+  }
   // #202: the platform refused the speed (LG/.tpk answer after the request):
   // the row is gone and playback is back at 1x; say it once.
   if (velPedidaUi != VEL_NORMAL && !video_velocidade_suportada()) {
@@ -1511,10 +1834,161 @@ static void rostoIdioma(GfxRect r, const char *idioma, const char *icone, int se
   if (icone) {
     gfx_icone((GfxRect){ r.x + 15.0f, r.y + 15.0f, 22.0f, 22.0f }, icone, 1, 1, 1, (sel ? 1.0f : 0.7f) * a);
   } else if (idioma && idioma[0]) {
-    const char *c = ling_selo(idioma);
+    const char *c = strcmp(idioma, "?") ? ling_selo(idioma) : "?";   // "?": no language declared
     int k = sel ? 255 : 178;
     TxtLinha l = txt_linha(strlen(c) > 3 ? TXT_ILHA_APOIO : TXT_G16B, c, k, k, k, 255);
     txt_desenhar_alpha(l, r.x + (r.w - (float)l.w) * 0.5f, r.y + (r.h - (float)l.h) * 0.5f, a);
+  }
+}
+
+static void extJuntar(char *dst, size_t tam, const char *parte) {
+  if (!parte || !parte[0]) return;
+  if (dst[0]) strncat(dst, " \xc2\xb7 ", tam - strlen(dst) - 1);
+  strncat(dst, parte, tam - strlen(dst) - 1);
+}
+// What a version brings, for its row and for "Now: …": "DD+ 5.1 → AC-3 ·
+// WEB-DL 1080p · 4.2 GB · Cached". Another cut comes first (it is what may
+// be cut off otherwise). *dim = not cached (the row is dimmed).
+static void extDetalhes(int indice, const char *idioma, char *sub, size_t tam, int *dim) {
+  const Stream *st = extFonteIdx(indice);
+  const AudioExtEntrada *en = extEntIdx(indice);
+  char codec[48], t[24];
+  sub[0] = 0;
+  if (dim) *dim = 0;
+  if (!en) return;
+  if (st && stream_outro_corte(st, stream_item(stream_atual()))) extJuntar(sub, tam, i18n("Another cut"));
+  audioext_codec_texto(en->codec, en->canais, codec, sizeof codec);
+  // DTS, TrueHD and the others reach the TV as AC-3 5.1 or AAC stereo.
+  if (audioext_converte(en->codec)) {
+    size_t u = strlen(codec);
+    snprintf(codec + u, sizeof codec - u, "%s%s", u ? " " : "", ajustes_dts_ac3() ? "\xe2\x86\x92 AC-3" : "\xe2\x86\x92 AAC");
+  }
+  extJuntar(sub, tam, codec);
+  if (indice < extEntN) extJuntar(sub, tam, extVersao[indice]);
+  audioext_tamanho_texto(en->bytes, t, sizeof t);
+  plrui_decimal(t);
+  extJuntar(sub, tam, t);
+  if (extGrandeIdx(indice) && ajustes_audio_externo_avisar_grande()) extJuntar(sub, tam, i18n("Large file"));
+  if (en->cache > 0) extJuntar(sub, tam, i18n("Cached"));
+  if (en->cache < 0) { extJuntar(sub, tam, i18n("Not cached")); if (dim) *dim = 1; }
+  // It also has this file's language: that one is compared, a sure match.
+  { const char *ip = audioext_idioma_principal();
+    if (st && ip[0] && !(idioma && idioma[0] && ling_casa(idioma, ip)) && stream_audio_tem(st, ip)) {
+      char m[48];
+      snprintf(m, sizeof m, i18n("+ %s for sync"), ling_selo(ip));
+      extJuntar(sub, tam, m);
+    } }
+}
+// The version now playing, by its link (the list may have grown since).
+static int extIndiceTocando(void) {
+  const char *u = audioext_url();
+  int n = stream_n();
+  if (!u || !u[0]) return -1;
+  for (int i = 0; i < n && i < extEntN; i++) { const Stream *st = stream_item(i); if (st && !strcmp(st->url, u)) return i; }
+  return -1;
+}
+static const char *extNomeIdioma(const char *idioma) {
+  return idioma && idioma[0] ? i18n(ling_nome(idioma)) : i18n("Desconhecido");
+}
+
+// A row of the audio of another source: Audio sync, Match automatically,
+// this file's own audio, or "From another source" (the count and a chevron;
+// while one plays, "Now: Español · DD+ 5.1 · WEB-DL 1080p · 4.2 GB").
+static void linhaExterna(int i, float x, float y, float w, int sel, float a) {
+  int k, tipo = tipoLinha(i, &k), ativo = 0, c = sel ? 255 : 219, cs = 122, entrada = 0;
+  char nome[112] = "", sub[224] = "", val[24] = "";
+  const char *icone = NULL, *idioma = NULL;
+  float da = a, dir = x + w - 22.0f;
+  GfxRect lr = { x, y, w, IL_LN_H };
+  if (tipo == FXA_SINC) {
+    int o = audioext_offset_ms();
+    snprintf(nome, sizeof nome, "%s", i18n("Audio sync"));
+    snprintf(sub, sizeof sub, "%s", i18n(o > 0 ? "Audio later" : o < 0 ? "Audio earlier" : "In sync with the file"));
+    audioext_formatar_offset(o, val, sizeof val, i18n("%c%u.%03u s"), i18n("%c%u min %u.%03u s"));
+    icone = "pl_audio-lines";
+  } else if (tipo == FXA_DOPASUJ) {
+    int ativa = audioext_dopasuj_ativo();
+    snprintf(nome, sizeof nome, "%s", i18n(ativa ? "Matching automatically…" : "Match automatically"));
+    snprintf(sub, sizeof sub, "%s", i18n("Compares both audios, in the same language when it can (about 40 s)"));
+    icone = "aj_zap";
+    if (ativa) da = a * 0.6f;
+  } else if (tipo == FXA_ORIGINAL) {
+    snprintf(nome, sizeof nome, "%s", i18n("This file's own audio"));
+    snprintf(sub, sizeof sub, "%s", i18n("Back to the tracks of the playing source"));
+    icone = "pl_rotate-ccw";
+  } else {
+    entrada = 1;
+    icone = "aj_layers";
+    snprintf(nome, sizeof nome, "%s", i18n("From another source"));
+    if (audioext_tocando() || audioext_carregando()) {
+      int t = extIndiceTocando();
+      char d[192] = "", q[200];
+      snprintf(q, sizeof q, "%s", extNomeIdioma(audioext_idioma()));
+      if (t >= 0) { extDetalhes(t, audioext_idioma(), d, sizeof d, NULL); extJuntar(q, sizeof q, d); }
+      snprintf(sub, sizeof sub, i18n("Now: %s"), q);
+    } else {
+      snprintf(sub, sizeof sub, "%s", i18n("Pick audio from a different version of this title"));
+      // The count only beside the explanation: "Now: …" needs the room.
+      if (extAllN > 0) snprintf(val, sizeof val, "%d", extAllN);
+    }
+  }
+  if (entrada) {
+    float yc = y + IL_LN_H * 0.5f;
+    if (sel) plrui_linha_foco(lr, 22.0f, a);
+    rostoIdioma((GfxRect){ x + 22.0f, y + (IL_LN_H - 52.0f) * 0.5f, 52.0f, 52.0f }, NULL, icone, sel, a);
+    gfx_icone((GfxRect){ dir - 24.0f, yc - 12.0f, 24.0f, 24.0f }, "pl_chevron-right", 1, 1, 1, (sel ? 1.0f : 0.55f) * a);
+    dir -= 24.0f + 10.0f;
+    if (val[0]) {
+      TxtLinha lv = txt_linha(TXT_G18R, val, 243, 242, 239, 115);
+      txt_desenhar_alpha(lv, dir - (float)lv.w, yc - (float)lv.h * 0.5f, a);
+      dir -= (float)lv.w + 14.0f;
+    }
+    { float tx = x + 22.0f + 52.0f + 18.0f, tw = dir - tx;
+      TxtLinha ln = txt_linha_corta(TXT_ILHA_FORTE, nome, c, c, c - 2, 255, tw);
+      TxtLinha ls = txt_linha_corta(TXT_ILHA_GENERO, sub, cs, cs, cs - 2, 255, tw);
+      float th = (float)ln.h + 5.0f + (float)ls.h, ty = y + (IL_LN_H - th) * 0.5f;
+      txt_desenhar_alpha(ln, tx, ty, a);
+      txt_desenhar_alpha(ls, tx, ty + (float)ln.h + 5.0f, a); }
+    return;
+  }
+  if (sel) plrui_linha_foco(lr, 22.0f, a);
+  rostoIdioma((GfxRect){ x + 22.0f, y + (IL_LN_H - 52.0f) * 0.5f, 52.0f, 52.0f }, idioma, icone, sel, da);
+  if (val[0]) {
+    float yc = y + IL_LN_H * 0.5f, ar, ag, ab;
+    TxtLinha lv;
+    if (audioext_offset_ms()) {
+      ajustes_acento(&ar, &ag, &ab);
+      lv = txt_linha(TXT_ILHA_FORTE, val, (int)(ar * 255.0f), (int)(ag * 255.0f), (int)(ab * 255.0f), 255);
+    } else lv = txt_linha(TXT_ILHA_FORTE, val, c, c, c - 2, 255);
+    if (sel) {
+      GfxRect d = { dir - 34.0f, yc - 17.0f, 34.0f, 34.0f };
+      gfx_cor(d, 0.5f, 1, 1, 1, 0.10f * a);
+      gfx_icone((GfxRect){ d.x + 7.0f, d.y + 7.0f, 20.0f, 20.0f }, "pl_chevron-right", 1, 1, 1, a);
+      dir -= 34.0f + 10.0f;
+    }
+    { float slot = (float)txt_largura(TXT_ILHA_FORTE, "+0000 ms");
+      if (slot < (float)lv.w) slot = (float)lv.w;
+      txt_desenhar_alpha(lv, dir - slot + (slot - (float)lv.w) * 0.5f, yc - (float)lv.h * 0.5f, a);
+      dir -= slot + 10.0f; }
+    if (sel) {
+      GfxRect d = { dir - 34.0f, yc - 17.0f, 34.0f, 34.0f };
+      gfx_cor(d, 0.5f, 1, 1, 1, 0.10f * a);
+      gfx_icone((GfxRect){ d.x + 7.0f, d.y + 7.0f, 20.0f, 20.0f }, "pl_chevron-left", 1, 1, 1, a);
+      dir -= 34.0f;
+    }
+    dir -= 18.0f;
+  } else if (ativo) dir -= 46.0f;
+  { float tx = x + 22.0f + 52.0f + 18.0f, tw = dir - tx;
+    TxtLinha ln = txt_linha_corta(TXT_ILHA_FORTE, nome, c, c, c - 2, 255, tw);
+    TxtLinha ls = txt_linha_corta(TXT_ILHA_GENERO, sub, cs, cs, cs - 2, 255, tw);
+    float th = (float)ln.h + 5.0f + (float)ls.h, ty = y + (IL_LN_H - th) * 0.5f;
+    txt_desenhar_alpha(ln, tx, ty, da);
+    txt_desenhar_alpha(ls, tx, ty + (float)ln.h + 5.0f, da); }
+  if (ativo) {
+    float ar, ag, ab;
+    ajustes_acento(&ar, &ag, &ab);
+    gfx_icone((GfxRect){ x + w - 22.0f - 28.0f, y + (IL_LN_H - 28.0f) * 0.5f, 28.0f, 28.0f },
+              "pl_check", ar, ag, ab, a);
   }
 }
 
@@ -1526,6 +2000,7 @@ static void linhaLista(int col, int i, float x, float y, float w, float a) {
   int ativo;
   GfxRect lr = { x, y, w, IL_LN_H };
   nome[0] = sub[0] = 0;
+  if (!col && tipoLinha(i, NULL) != FXA_FAIXA) { linhaExterna(i, x, y, w, sel, a); return; }
   if (!col) {
     const VideoFaixa *f = video_audio(i);
     partirRotulo(f ? f->rotulo : "", nome, sizeof nome, sub, sizeof sub);
@@ -1742,8 +2217,19 @@ static void corpoLista(GfxRect c, float a) {
     float ty = y;
     txt_desenhar_alpha(t, x0 + 10.0f, ty, a);
     if (!modo) {
-      char q[32];
-      snprintf(q, sizeof q, i18n("%d faixas"), n);
+      char q[96];
+      { int na = video_n_audio();
+        /* 1 track / 2-4 (Polish "ścieżki") / the rest; the 2-4 key falls back to the plural where untranslated. */
+        const char *fq = na == 1 ? i18n("%d faixa") : i18n("%d faixas");
+        if (na % 10 >= 2 && na % 10 <= 4 && (na % 100 < 12 || na % 100 > 14)) {
+          const char *few = i18n("%d faixas (2-4)");
+          if (strcmp(few, "%d faixas (2-4)")) fq = few;
+        }
+        snprintf(q, sizeof q, fq, na); }
+      if (extMenu() && addons_busca_parcial()) {
+        strncat(q, " · ", sizeof q - strlen(q) - 1);
+        strncat(q, i18n("searching add-ons…"), sizeof q - strlen(q) - 1);
+      }
       { TxtLinha l = txt_linha(TXT_G18R, q, 243, 242, 239, 115);
         txt_desenhar_alpha(l, x0 + w - 10.0f - l.w, ty + (float)t.h - (float)l.h - 8.0f, a); }
     } else {
@@ -1810,6 +2296,12 @@ static void corpoLista(GfxRect c, float a) {
       txt_desenhar_alpha(l, x0 + 10.0f, yc - (float)l.h * 0.5f, a); }
     if (!modo && (volFoco || velFoco)) {
       const char *k[2] = { "\xe2\x86\x90 \xe2\x86\x92", "Voltar" }, *rt[2] = { "Ajustar", "Fechar" };
+      plrui_dicas(k, rt, 2, x0 + w - 10.0f, yc, 1, a);
+    } else if (!modo && tipoLinha(foco[0], NULL) == FXA_SINC) {
+      const char *k[3] = { "\xe2\x86\x90 \xe2\x86\x92", "OK", "Voltar" }, *rt[3] = { "Ajustar", "Set exactly", "Fechar" };
+      plrui_dicas(k, rt, 3, x0 + w - 10.0f, yc, 1, a);
+    } else if (!modo && tipoLinha(foco[0], NULL) == FXA_ENTRADA) {
+      const char *k[2] = { "OK", "Voltar" }, *rt[2] = { "Open", "Fechar" };
       plrui_dicas(k, rt, 2, x0 + w - 10.0f, yc, 1, a);
     } else if (!modo) {
       const char *k[2] = { "OK", "Voltar" }, *rt[2] = { "Usar esta faixa", "Fechar" };
@@ -2103,10 +2595,92 @@ static void corpoEstilo(GfxRect c, float a) {
   }
 }
 
+#define SED_LN_H 74.0f
+#define SED_LN_VAO 4.0f
+static float alturaSinc(void) {
+  int tipo[SED_MAXL], arg[SED_MAXL], n = sincLinhas(tipo, arg);
+  return IL_PAD_Y + IL_TIT_H + 14.0f + n * SED_LN_H + (n - 1) * SED_LN_VAO + 14.0f + IL_PE_H + IL_PAD_Y;
+}
+static void corpoSinc(GfxRect c, float a) {
+  float x0 = c.x + IL_PAD_X, w = c.w - IL_PAD_X * 2.0f, y = c.y + IL_PAD_Y;
+  int tipo[SED_MAXL], arg[SED_MAXL], n = sincLinhas(tipo, arg), o = audioext_offset_ms();
+  int km[3], kp[3];
+  float ar, ag, ab;
+  ajustes_acento(&ar, &ag, &ab);
+  audioext_kandydatos(km, kp, 3);
+  if (sincFoco >= n) sincFoco = n - 1;
+  { TxtLinha t = txt_linha(TXT_ILHA_PERGUNTA, i18n("Audio sync"), 243, 242, 239, 255);
+    txt_desenhar_alpha(t, x0 + 10.0f, y, a);
+    TxtLinha l = txt_linha(TXT_G18R, i18n(o > 0 ? "Audio later" : o < 0 ? "Audio earlier" : "In sync with the file"),
+                           243, 242, 239, 115);
+    txt_desenhar_alpha(l, x0 + w - 10.0f - l.w, y + (float)t.h - (float)l.h - 8.0f, a); }
+  y += IL_TIT_H + 14.0f;
+  for (int i = 0; i < n; i++, y += SED_LN_H + SED_LN_VAO) {
+    GfxRect r = { x0, y, w, SED_LN_H };
+    int sel = i == sincFoco, c = sel ? 255 : 219, setas = 0, marca = 0;
+    char nome[96] = "", val[64] = "";
+    const char *icone = NULL;
+    switch (tipo[i]) {
+      case SED_OFFSET: snprintf(nome, sizeof nome, "%s", i18n("Offset")); sincFmt(o, val, sizeof val);
+                       icone = "pl_audio-lines"; setas = 1; break;
+      case SED_PASSO: {
+        int p = SED_PASSOS[sincPasso];
+        snprintf(nome, sizeof nome, "%s", i18n("Step"));
+        if (p < 1000) snprintf(val, sizeof val, "%d ms", p);
+        else if (p < 60000) snprintf(val, sizeof val, "%d s", p / 1000);
+        else snprintf(val, sizeof val, "%d min", p / 60000);
+        icone = "aj_move-horizontal"; setas = 1; break; }
+      case SED_KAND: {
+        char v[48];
+        sincFmt(km[arg[i]], v, sizeof v);
+        snprintf(nome, sizeof nome, i18n("Candidate %d"), arg[i] + 1);
+        snprintf(val, sizeof val, i18n("%s · %d%% sure"), v, kp[arg[i]]);
+        icone = "aj_sparkles"; marca = km[arg[i]] == o; break; }
+      case SED_DICA: {
+        char v[48];
+        sincFmt(audioext_dica_ms(), v, sizeof v);
+        snprintf(nome, sizeof nome, "%s", i18n("From the lengths"));
+        snprintf(val, sizeof val, "%s", v);
+        icone = "aj_wand"; marca = audioext_dica_ms() == o; break; }
+      case SED_AQUI: snprintf(nome, sizeof nome, "%s", i18n("Match here")); icone = "aj_zap"; break;
+      default: snprintf(nome, sizeof nome, "%s", i18n("Reset")); icone = "pl_rotate-ccw"; marca = !o; break;
+    }
+    if (sel) plrui_linha_foco(r, 18.0f, a);
+    if (icone) gfx_icone((GfxRect){ r.x + 18.0f, r.y + (SED_LN_H - 24.0f) * 0.5f, 24.0f, 24.0f }, icone, 1, 1, 1, (sel ? 1.0f : 0.7f) * a);
+    { TxtLinha l = txt_linha(TXT_ILHA_FORTE, nome, c, c, c - 2, 255);
+      txt_desenhar_alpha(l, r.x + 58.0f, r.y + (SED_LN_H - (float)l.h) * 0.5f, a); }
+    float dir = r.x + r.w - 18.0f;
+    if (marca) {   // the offset now playing
+      gfx_icone((GfxRect){ dir - 22.0f, r.y + (SED_LN_H - 22.0f) * 0.5f, 22.0f, 22.0f }, "pl_check", ar, ag, ab, a);
+      dir -= 22.0f + 12.0f;
+    }
+    if (setas && sel) {
+      gfx_icone((GfxRect){ dir - 22.0f, r.y + (SED_LN_H - 22.0f) * 0.5f, 22.0f, 22.0f }, "pl_chevron-right", 1, 1, 1, a);
+      dir -= 22.0f + 8.0f;
+    }
+    if (val[0]) {
+      int destaque = tipo[i] == SED_OFFSET && o;
+      TxtLinha l = destaque ? txt_linha(TXT_ILHA_FORTE, val, (int)(ar * 255.0f), (int)(ag * 255.0f), (int)(ab * 255.0f), 255)
+                            : txt_linha(tipo[i] == SED_OFFSET ? TXT_ILHA_FORTE : TXT_G18R, val, c, c, c - 2, sel ? 255 : 200);
+      txt_desenhar_alpha(l, dir - (float)l.w, r.y + (SED_LN_H - (float)l.h) * 0.5f, a);
+      dir -= (float)l.w + 8.0f;
+    }
+    if (setas && sel)
+      gfx_icone((GfxRect){ dir - 22.0f, r.y + (SED_LN_H - 22.0f) * 0.5f, 22.0f, 22.0f }, "pl_chevron-left", 1, 1, 1, a);
+  }
+  { float yc = c.y + c.h - IL_PAD_Y - IL_PE_H * 0.5f;
+    const char *k[3] = { "\xe2\x86\x90 \xe2\x86\x92", "OK", "Voltar" };
+    const char *rt[3] = { "Ajustar", "Confirm", "Cancel" };
+    plrui_dicas(k, rt, 3, x0 + w - 10.0f, yc, 1, a); }
+}
+#include "faixas_fonte.inc"
+
 static void corpoIlha(GfxRect c, float a, void *u) {
   (void)u;
   if (faixas_estilo_topo() || (!aberta && animTopo > 0.5f)) corpoEstilo(c, a);
   else if (modo) legendasui_corpo(c, a);
+  else if (sincEd) corpoSinc(c, a);
+  else if (exPagAtiva()) corpoExt(c, a);
   else corpoLista(c, a);
 }
 
@@ -2130,7 +2704,7 @@ static void faixas_desenharCorpo_(Uint32 agora) {
     { PlrIlhaPedido p;
       memset(&p, 0, sizeof p);
       p.w = est ? NV_TELA_W - 192.0f : IL_W;
-      p.h = est ? alturaEstilo() : modo ? legendasui_altura() : alturaLista(0);
+      p.h = est ? alturaEstilo() : modo ? legendasui_altura() : sincEd ? alturaSinc() : exPagAtiva() ? alturaExt() : alturaLista(0);
       p.corpo = corpoIlha;
       plrilha_pedir(&p); } }
 }

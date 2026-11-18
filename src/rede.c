@@ -3541,6 +3541,7 @@ typedef struct {
   int64_t got;
   uint64_t lastByteMs;
   long stallMs;
+  int64_t *total;   /* the caller's, filled before the first byte (seek by size) */
 } DtsFluxo;
 static uint64_t fluxoAgoraMs(void) {
   struct timespec t;
@@ -3560,6 +3561,9 @@ static size_t dtsFluxoBody(void *data, size_t size, size_t count, void *user) {
     if (f->r.status == 206 && f->r.valid && f->r.start == f->r.requested) f->accepted = 1;
     else if (f->r.status == 200 && f->r.requested == 0) f->accepted = 1;
     else { f->r.overflow = 1; return 0; }
+    /* The size is known from the headers: the reader may need it while the
+     * body still flows (a seek by position in a file without an index). */
+    if (f->total && f->r.total >= 0) *f->total = f->r.total;
   }
   if (!f->sink(f->opaque, data, n)) { f->stopped = 1; return 0; }
   f->got += (int64_t)n;
@@ -3596,7 +3600,7 @@ int rede_fluxo64(const char *url, const char *headers, int64_t start,
     char redirected[8192] = "", *next = NULL;
     if (cancelled && __atomic_load_n(cancelled, __ATOMIC_RELAXED)) return -1;
     memset(&f, 0, sizeof f);
-    f.r.requested = start; f.r.total = -1; f.r.cancel = cancelled;
+    f.r.requested = start; f.r.total = -1; f.r.cancel = cancelled; f.total = total;
     f.sink = sink; f.opaque = opaque; f.stallMs = stall_ms; f.lastByteMs = fluxoAgoraMs();
     c = pegarHandle(current);
     if (!c) return -1;

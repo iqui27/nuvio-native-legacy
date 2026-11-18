@@ -45,11 +45,17 @@ if [ "$TARGET" = tpk ]; then
       --cross-prefix=arm-linux-gnueabi-
   fi
 else
-  if [ "${NUVIO_DV_TRUEHD:-0}" = 1 ]; then
-    # Experimental DV builds can opt into fixed output across native AC3,
-    # EAC3, DTS and TrueHD tracks. Normal SDKs retain their decoder list.
+  if [ "${NUVIO_DV_TRUEHD:-1}" = 1 ]; then
+    # Support high-definition Dolby audio and transcoding donor audio on webOS.
+    # A reduced SDK can opt out with NUVIO_DV_TRUEHD=0.
     DECODERS=$DECODERS,truehd,ac3,eac3
     PARSERS=$PARSERS,mlp,ac3
+    # Audio from another version (external audio test): the dub of a WEB-DL
+    # is often AAC at 44.1 kHz, Opus, FLAC, Vorbis or MP3, converted like DTS.
+    DECODERS=$DECODERS,aac,opus,flac,mlp,vorbis,mp3
+    PARSERS=$PARSERS,opus,flac,vorbis,mpegaudio
+    # Small AVI and TS releases also carry dubs and voice-overs (owner, 07/11).
+    DEMUXERS=matroska,mov,avi,mpegts
   fi
   CC=${CC:-arm-webos-linux-gnueabi-gcc}
   archive="$BUILD/ffmpeg-$VERSION.tar.xz"
@@ -75,7 +81,7 @@ fi
   --disable-avdevice --disable-avfilter --disable-swscale --disable-postproc \
   --enable-avcodec --enable-avformat --enable-avutil --enable-swresample \
   --enable-decoder="$DECODERS" --enable-encoder=aac,ac3 \
-  --enable-demuxer=matroska,mov --enable-parser="$PARSERS" \
+  --enable-demuxer="${DEMUXERS:-matroska,mov}" --enable-parser="$PARSERS" \
   --enable-bsf="$BSFS" \
   --extra-cflags="${CFLAGS:--O2}"
 make -j"${NUVIO_DTS_JOBS:-2}"
