@@ -47,13 +47,24 @@ static void chamar(const char *m, const char *b, void (*cb)(void)) {
   (void)cb;
   if (!strcmp(m, "setVolume")) volume = strstr(b, "\"volume\":0}") ? 0 : 100;
 }
-static void pararSessao(void) { paradas++; midia[0] = 0; pronto = tocando = 0; pausaPedida = 0; recarregarPausa = -1; seekEnvEm = 0; }
+static void pararSessao(void) { paradas++; midia[0] = 0; dtsSessao = NULL; pronto = tocando = 0; pausaPedida = 0; recarregarPausa = -1; seekEnvEm = 0; }
 static int recarregarMesmaFonte(double alvo, int aud, int leg, const char *legUrl) {
   pararSessao(); cargas++;
   if (cargaFalha) { cargaFalha--; return 0; }
   posSeg = durSeg = 0; cargaAud = aud; cargaLeg = leg;
   snprintf(cargaLegUrl, sizeof cargaLegUrl, "%s", legUrl);
   if (alvo > 1.0) posAoCarregar = alvo;
+  return 1;
+}
+/* O caminho do DTS/DV (iniciarDts): abre com a lista dele, no posSeg, com a
+ * pausa pedida; sem abrir, volta ao player da TV no ponto (dtsVoltarNativo). */
+static int bindVivoT, dtsAbre = 1, dtsInicios, dtsPausado;
+static double dtsPonto;
+static int bindAtivo(void) { return bindVivoT; }
+static int iniciarDts(int s) {
+  (void)s; dtsInicios++; dtsTentou = 1;
+  if (!dtsAbre) { recarregarMesmaFonte(posSeg, -1, -1, legUrlAtual); return 0; }
+  dtsPonto = posSeg; dtsPausado = pausaPedida; dtsSessao = (void *)1; pronto = 0;
   return 1;
 }
 static int fundoQuerTocarDe(void);
@@ -90,6 +101,7 @@ static void tocandoEm(double p) {
   snprintf(midia, sizeof midia, "m0"); dtsSessao = NULL; dtsModoDv = 0;
   seekEm = seekEnvEm = seekRetryEm = 0; recarregarPausa = -1; volume = 100;
   paradas = cargas = pausas = cargaFalha = 0;
+  bindVivoT = 0; dtsAbre = 1; dtsInicios = 0; dtsPausado = -1; dtsPonto = -1;
 }
 #define OK(c, msg) do { if (!(c)) { printf("FAIL: %s (line %d)\n", msg, __LINE__); return 1; } } while (0)
 int main(void) {
@@ -124,8 +136,8 @@ int main(void) {
   /* 5. Sem imagem em 20 s desiste; no caminho do DV, 45 s. */
   tocandoEm(50); video_webos_fundo(-1.0, "window hidden"); fundoComecar(); video_webos_retomada_evento();
   quadros(199); OK(fundoRet, "still waiting at 19.9 s"); quadros(2); OK(fundoDesistiu, "gives up at 20 s");
-  tocandoEm(50); dtsModoDv = 1; video_webos_fundo(-1.0, "window hidden"); fundoComecar(); video_webos_retomada_evento();
-  OK(fundoEraDv && cargas == 1, "DV session reopens through a fresh load");
+  tocandoEm(50); dtsModoDv = 1; dtsSessao = (void *)1; video_webos_fundo(-1.0, "window hidden"); fundoComecar(); video_webos_retomada_evento();
+  quadros(1); OK(fundoEraDv && cargas == 0 && dtsInicios == 1 && dtsModoDv, "DV session reopens through its own path");
   quadros(300); OK(fundoRet, "DV path still waiting at 30 s"); quadros(160); OK(fundoDesistiu, "DV path gives up at 45 s");
   /* 6. Load que nem sai: conta como erro (nova tentativa). */
   tocandoEm(70); video_webos_fundo(-1.0, "window hidden"); cargaFalha = 1; fundoComecar();
@@ -137,12 +149,28 @@ int main(void) {
   video_webos_fundo(-1.0, "window hidden"); OK(fundoAlvo == 333, "reconnect target wins");
   tocandoEm(100); video_webos_fundo(-1.0, "window hidden"); fundoComecar(); midiaChegou();
   OK(video_webos_fundo(-1.0, "window hidden") == 1 && fundoAlvo == 100 && fundoSusp && cargaAud == 2, "leaving again while reopening keeps the point and tracks");
-  /* 8. Intocados: trailer (sem reconexao), canal ao vivo, fonte que falhou, fim. */
+  /* 8. DTS: de volta direto pela conversao, com a lista dela (o indice da
+   * faixa nao vale na lista da TV), no ponto, pausado, sem load nativo nem mudo. */
+  tocandoEm(2500); dtsSessao = (void *)1; video_webos_fundo(-1.0, "window hidden");
+  OK(fundoEraDts && !dtsSessao, "DTS worker closed on leaving");
+  bindVivoT = 1; fundoComecar(); video_webos_retomada_evento(); quadros(3);
+  OK(dtsInicios == 0 && cargas == 0, "waits for the old video plane bind");
+  bindVivoT = 0; quadros(1);
+  OK(dtsInicios == 1 && cargas == 0 && dtsPonto == 2500 && dtsPausado == 1 && volume == 100 && audioAtual == 2,
+     "DTS reopens through the converter at the point, paused, same track list, no native load");
+  pronto = 1; quadros(1); OK(!fundoRet, "lands when the converter is prepared");
+  /* DTS path that does not open: the TV player at the point, muted and paused. */
+  tocandoEm(1800); dtsSessao = (void *)1; video_webos_fundo(-1.0, "window hidden");
+  dtsAbre = 0; fundoComecar(); quadros(1);
+  OK(dtsInicios == 1 && cargas == 1 && recarregarPausa == 1 && posAoCarregar == 1800, "converter fallback reopens paused at the point");
+  midiaChegou(); OK(volume == 0, "fallback load muted");
+  carregou(7200); seekDone(); quadros(1); OK(!fundoRet && volume == 100 && posSeg == 1800, "fallback lands with sound back");
+  /* 9. Intocados: trailer (sem reconexao), canal ao vivo, fonte que falhou, fim. */
   tocandoEm(10); reconPermitida = 0; OK(video_webos_fundo(-1.0, "window hidden") == 0 && paradas == 0, "trailer untouched");
   tocandoEm(10); modoLoad = 1; OK(video_webos_fundo(-1.0, "window hidden") == 0, "live untouched");
   tocandoEm(10); falhou = 1; OK(video_webos_fundo(-1.0, "window hidden") == 0, "failed source untouched");
   tocandoEm(10); terminou = 1; OK(video_webos_fundo(-1.0, "window hidden") == 0, "ended title untouched");
-  /* 9. Legenda externa volta pela URL. */
+  /* 10. Legenda externa volta pela URL. */
   tocandoEm(10); snprintf(legUrlAtual, sizeof legUrlAtual, "http://127.0.0.1/sub.srt");
   video_webos_fundo(-1.0, "window hidden"); fundoComecar();
   OK(cargaLeg == -1 && !strcmp(cargaLegUrl, "http://127.0.0.1/sub.srt"), "external subtitle comes back by URL");

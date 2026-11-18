@@ -302,6 +302,7 @@ static int    fundoEvento;      // para o player.c: 1 = reabrindo, 2 = desistiu
 static int    fundoVoltouPend, fundoTent, fundoQuerTocar, fundoEraDts, fundoEraDv;
 static int    fundoAudio = -1, fundoLeg = -1;
 static int    fundoMudoPend, fundoMudo;   // __atomic: o aoCarregar roda no fio do luna
+static int    fundoDtsPend;     // DTS/DV: reabrir pelo caminho proprio quando o bind antigo soltar
 static double fundoAlvo, fundoDur;
 static char   fundoLegUrl[1024];
 static const char *fundoDe = "", *fundoVoltouDe = "";
@@ -2353,7 +2354,7 @@ static void fundoZerar(void) {
   fundoSusp = fundoRet = fundoDesistiu = fundoEvento = 0;
   fundoVoltouPend = fundoTent = fundoQuerTocar = fundoEraDts = fundoEraDv = 0;
   fundoAudio = fundoLeg = -1; fundoLegUrl[0] = 0; fundoDe = fundoVoltouDe = "";
-  fundoPousouEm = 0;
+  fundoPousouEm = 0; fundoDtsPend = 0;
   __atomic_store_n(&fundoMudoPend, 0, __ATOMIC_RELEASE);
 }
 
@@ -2423,6 +2424,21 @@ void video_webos_voltou(const char *porque) {
 int video_webos_retomada_evento(void) { int e = fundoEvento; fundoEvento = 0; return e; }
 
 static void fundoAbrir(void) {
+  nv_recon_zerar(&recon);
+  reconErroPend = reconErroRede = 0; reconIniciou = 0;
+  falhou = 0; terminou = 0; audioNaoSup = 0;
+  fundoPousouEm = 0;
+  if (fundoEraDts || fundoEraDv) {
+    // DTS/DV: de volta DIRETO pelo caminho proprio (iniciarDts, no ponto,
+    // pausado), com a lista de faixas dele. Abrir antes pelo player da TV e
+    // escolher pelo indice trocava faixa: a lista da TV nao tem de estar na
+    // mesma ordem (video_escolher_audio). Sem load nativo, sem mudo.
+    posSeg = fundoAlvo; pausaPedida = !fundoQuerTocar; recarregarPausa = -1;
+    seekEm = seekEnvEm = seekRetryEm = 0;
+    dtsModoDv = fundoEraDv; dtsTentou = 1;
+    fundoDtsPend = 1;   // fundoVigiar: assim que o bind antigo soltar
+    return;
+  }
   // Decisoes novas de DTS/DV como numa abertura (video_tocar), mas a mesma
   // fonte, o mesmo modo e a mesma regra de reconexao.
   dvRecuado = 0;
@@ -2430,10 +2446,6 @@ static void fundoAbrir(void) {
   dvSondado = dvMkvPerfil = dvAudios = 0; dtsModoDv = 0; dvAudioMkvOrd = -1; dvSegurar = 0;
   dvSessaoN++; dvFonteAberta = 0; dvAudioDe[0] = 0;
   nv_dvsonda_zerar(&mkvRetry); mkvRetryEm = 0; dvEntradaSeg = fundoAlvo;
-  nv_recon_zerar(&recon);
-  reconErroPend = reconErroRede = 0; reconIniciou = 0;
-  falhou = 0; terminou = 0; audioNaoSup = 0;
-  fundoPousouEm = 0;
   __atomic_store_n(&fundoMudoPend, 1, __ATOMIC_RELEASE);   // antes do load: a resposta pode vir ja
   if (!recarregarMesmaFonte(fundoAlvo, fundoAudio, fundoLeg, fundoLegUrl)) {
     __atomic_store_n(&fundoMudoPend, 0, __ATOMIC_RELEASE);
@@ -2503,6 +2515,28 @@ static int fundoVigiar(Uint32 agora) {
     printf("[fundo] error while reopening (%.80s): one more try\n", erroTexto[0] ? erroTexto : "no load");
     fflush(stdout);
     fundoAbrir();
+    return 1;
+  }
+  if (fundoDtsPend) {
+    Uint32 prazo = fundoEraDv ? FUNDO_PRAZO_DV_MS : FUNDO_PRAZO_MS;
+    if (agora - fundoRetEm >= prazo) { fundoDesistir("the old video plane bind never ended"); return 1; }
+    if (bindAtivo()) return 1;
+    fundoDtsPend = 0;
+    // Se o caminho nao abrir, o iniciarDts volta ao player da TV no ponto
+    // (dtsVoltarNativo): esse load tambem nasce mudo e pausado.
+    __atomic_store_n(&fundoMudoPend, 1, __ATOMIC_RELEASE);
+    if (iniciarDts(-1)) {
+      __atomic_store_n(&fundoMudoPend, 0, __ATOMIC_RELEASE);
+      printf("[fundo] reopening through the %s path at %.3f s, paused\n", fundoEraDv ? "Dolby Vision" : "DTS conversion", fundoAlvo);
+    } else {
+      printf("[fundo] the %s path did not open: the TV player reopens at %.3f s (default tracks)\n",
+             fundoEraDv ? "Dolby Vision" : "DTS conversion", fundoAlvo);
+      posAoCarregar = fundoAlvo;
+      recarregarPausa = !fundoQuerTocar;
+      pausaPedida = !fundoQuerTocar;
+      posSeg = fundoAlvo;
+    }
+    fflush(stdout);
     return 1;
   }
   // Sem pipeline pronto no prazo: desiste. O caminho do DTS/DV conta como
