@@ -2465,7 +2465,9 @@ static void fundoComecar(void) {
   printf("[fundo] back on screen after %u s (%s): reopening at %.3f s (%s), paused, muted until there\n",
          (unsigned)((agora - fundoEm) / 1000u), fundoVoltouDe, fundoAlvo, fundoDe);
   fflush(stdout);
-  fundoSusp = 0; fundoRet = 1; fundoRetEm = agora; fundoTent = 0; fundoQuerTocar = 0;
+  // fundoQuerTocar NAO zera aqui: a tecla que trouxe o app de volta (OK/Play)
+  // chega ao player antes deste video_bombear e ja disse o que quer.
+  fundoSusp = 0; fundoRet = 1; fundoRetEm = agora; fundoTent = 0;
   fundoEvento = 1;
   fundoAbrir();
 }

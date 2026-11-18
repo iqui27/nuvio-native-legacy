@@ -129,6 +129,13 @@ int main(void) {
   OK(recarregarPausa == 0 && fundoQuerTocar, "Play during the reopen is kept");
   midiaChegou(); carregou(7200); seekDone(); quadros(1);
   OK(!fundoRet && tocando && volume == 100, "ends playing");
+  /* Play na tecla que trouxe o app de volta (main.c marca a volta, o player
+   * recebe a mesma tecla antes do video_bombear): termina tocando. */
+  tocandoEm(300); video_webos_fundo(-1.0, "window hidden");
+  video_webos_voltou("key pressed"); video_pausar(0);
+  fundoVoltouPend = 0; fundoComecar();
+  OK(fundoQuerTocar == 1 && recarregarPausa == 0, "Play pressed with the returning key is kept");
+  midiaChegou(); carregou(7200); seekDone(); quadros(1); OK(!fundoRet && tocando, "and it ends playing");
   /* 4. Erro: uma nova tentativa; o segundo erro desiste (evento 2). */
   tocandoEm(50); video_webos_fundo(-1.0, "window hidden"); fundoComecar(); video_webos_retomada_evento();
   reconErroPend = 1; quadros(1); OK(cargas == 2 && fundoRet, "one more try after an error");
