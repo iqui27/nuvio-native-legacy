@@ -104,6 +104,7 @@ static void tocandoEm(double p) {
   seekEm = seekEnvEm = seekRetryEm = 0; recarregarPausa = -1; volume = 100;
   paradas = cargas = pausas = cargaFalha = 0;
   bindVivoT = 0; dtsAbre = 1; dtsInicios = 0; dtsPausado = -1; dtsPonto = -1;
+  dtsTentou = 0; dtsEstado = 0; dvRecuado = 0;
 }
 #define OK(c, msg) do { if (!(c)) { printf("FAIL: %s (line %d)\n", msg, __LINE__); return 1; } } while (0)
 int main(void) {
@@ -187,6 +188,17 @@ int main(void) {
   OK(dtsInicios == 1 && cargas == 1 && recarregarPausa == 1 && posAoCarregar == 1800, "converter fallback reopens paused at the point");
   midiaChegou(); OK(volume == 0, "fallback load muted");
   carregou(7200); seekDone(); quadros(1); OK(!fundoRet && volume == 100 && posSeg == 1800, "fallback lands with sound back");
+  /* Titulo cuja conversao DTS ja caiu para o player da TV: volta pelo player
+   * da TV, sem tentar a conversao de novo (podia falhar outra vez e voltar
+   * tocando). Sem decisao ainda: decide de novo, como numa abertura. */
+  tocandoEm(900); dtsTentou = 1; dtsEstado = 3;   /* VIDEO_DTS_FALHOU no video.c */
+  video_webos_fundo(-1.0, "window hidden"); fundoComecar();
+  OK(!fundoEraDts && cargas == 1 && cargaAud == 2 && dtsTentou == 1 && dtsEstado == 3 && dtsInicios == 0,
+     "a title that already fell back from DTS stays on the TV player after Home");
+  midiaChegou(); carregou(7200); seekDone(); quadros(1);
+  OK(!fundoRet && !tocando && volume == 100 && posSeg == 900, "and lands paused at the point");
+  tocandoEm(900); video_webos_fundo(-1.0, "window hidden"); fundoComecar();
+  OK(dtsTentou == 0 && dtsEstado == 0 && cargas == 1, "a title with no DTS decision yet decides again like an open");
   /* 9. Intocados: trailer (sem reconexao), canal ao vivo, fonte que falhou, fim. */
   tocandoEm(10); reconPermitida = 0; OK(video_webos_fundo(-1.0, "window hidden") == 0 && paradas == 0, "trailer untouched");
   tocandoEm(10); modoLoad = 1; OK(video_webos_fundo(-1.0, "window hidden") == 0, "live untouched");

@@ -2440,13 +2440,22 @@ static void fundoAbrir(void) {
     fundoDtsPend = 1;   // fundoVigiar: assim que o bind antigo soltar
     return;
   }
-  // Decisoes novas de DTS/DV como numa abertura (video_tocar), mas a mesma
-  // fonte, o mesmo modo e a mesma regra de reconexao.
-  dvRecuado = 0;
-  dtsTentou = 0; dtsRevisao = 0; dtsSaida[0] = 0; dtsNativePending = 0; dtsEstado = 0;
-  dvSondado = dvMkvPerfil = dvAudios = 0; dtsModoDv = 0; dvAudioMkvOrd = -1; dvSegurar = 0;
-  dvSessaoN++; dvFonteAberta = 0; dvAudioDe[0] = 0;
-  nv_dvsonda_zerar(&mkvRetry); mkvRetryEm = 0; dvEntradaSeg = fundoAlvo;
+  if (dtsTentou) {
+    // O titulo ja decidiu o DTS/DV antes de sair (a conversao ou o DV caiu
+    // para o player da TV, ou a faixa deixou de ser DTS): fica como estava.
+    // Tentar de novo podia falhar outra vez, voltar tocando pelo
+    // dtsVoltarNativo e contar mais uma conversao aberta.
+    printf("[fundo] DTS/Dolby Vision already decided for this title (state %d): staying on the TV player\n", (int)dtsEstado);
+    fflush(stdout);
+  } else {
+    // Ainda sem decisao: decisoes novas como numa abertura (video_tocar), mas
+    // a mesma fonte, o mesmo modo e a mesma regra de reconexao.
+    dvRecuado = 0;
+    dtsTentou = 0; dtsRevisao = 0; dtsSaida[0] = 0; dtsNativePending = 0; dtsEstado = 0;
+    dvSondado = dvMkvPerfil = dvAudios = 0; dtsModoDv = 0; dvAudioMkvOrd = -1; dvSegurar = 0;
+    dvSessaoN++; dvFonteAberta = 0; dvAudioDe[0] = 0;
+    nv_dvsonda_zerar(&mkvRetry); mkvRetryEm = 0; dvEntradaSeg = fundoAlvo;
+  }
   __atomic_store_n(&fundoMudoPend, 1, __ATOMIC_RELEASE);   // antes do load: a resposta pode vir ja
   if (!recarregarMesmaFonte(fundoAlvo, fundoAudio, fundoLeg, fundoLegUrl)) {
     __atomic_store_n(&fundoMudoPend, 0, __ATOMIC_RELEASE);
