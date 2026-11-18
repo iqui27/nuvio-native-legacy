@@ -4938,6 +4938,9 @@ void app_atualizar(float dt, Uint32 agora) {
 #ifdef NV_TPK
   player_tpk_fundo_passo();
 #endif
+#ifdef NV_WEBOS
+  player_webos_fundo_passo();
+#endif
   if (tela == TELA_LOGIN) {
     login_atualizar(dt, agora);
     // A troca so acontece AQUI, quando a sessao existe de verdade — nao no

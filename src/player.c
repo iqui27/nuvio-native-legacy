@@ -1005,6 +1005,14 @@ void video_tpk_tela_publicar(int tela);
 void mkvfix_memoria_soltar(const char *porque);    // mkvfix.c
 void glem_aviso_curto(const char *texto);   // guialembrete.c
 #endif
+#ifdef NV_WEBOS
+// Saida e volta do app na LG (video.c): o pipeline e solto na saida e a mesma
+// fonte reabre no ponto, pausada, na volta; 1 = reabrindo, 2 = desistiu.
+int  video_webos_fundo(double alvoPlayer, const char *porque);
+void video_webos_voltou(const char *porque);
+int  video_webos_retomada_evento(void);
+void glem_aviso_curto(const char *texto);   // guialembrete.c
+#endif
 // DE QUEM E O PROBLEMA (#205). Sem motivo proprio, o cartao diz o que o erro do
 // player ja deixa saber: servidor da fonte recusou (add-on/debrid), a conexao
 // nao chegou, ou formato/decoder (esse sim pode ser app ou TV). Nunca a URL.
@@ -3053,25 +3061,57 @@ void player_ciclo_evento(Uint32 tipo) {
   }
 }
 
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
 static void acordar(void);
+// Aviso da reabertura depois da volta (video_tpk.c / video.c da LG):
+// 1 = reabrindo: controles pausados no ponto. 2 = a reabertura desistiu:
+// fecha como no Voltar (progresso gravado na saida).
+static void fundoRetomadaEvento(int ev) {
+  if (ev == 1 && aberto) {
+#ifdef NV_TPK
+    fundoAlvoTela = -1.0;
+#endif
+    tocando = 0; acordar();
+  } else if (ev == 2 && aberto && !saindo) {
+    printf("[player] resume after background gave up: closing the player at %.1f s\n", video_pos());
+    fflush(stdout);
+    saindo = 1; pediuSair = 1;
+    glem_aviso_curto(i18n("Não deu para retomar o vídeo. Play continua de onde você parou"));
+  }
+}
+#endif
+
+#ifdef NV_WEBOS
+// main.c: o app saiu da tela (janela escondida/minimizada, app no fundo) ou
+// voltou (janela visivel, foco, restaurada, uma tecla). Perder so o foco (a
+// barra da Home ou o menu da TV por cima do video) NAO chega aqui.
+void player_webos_janela(int saiu, const char *porque) {
+  if (!saiu) { video_webos_voltou(porque); return; }
+  if (!aberto || retido || !comVideo || ehCanal()) return;
+  // O seek em voo da LG mora no video.c (seekAlvo); daqui so o comeco de um
+  // scrub, que ainda nao virou seek.
+  if (video_webos_fundo(scrubbing ? scrubInicio : -1.0, porque)) {
+    // A sessao do video e dona do alvo agora: sem scrub.
+    if (scrubbing) { scrubbing = scrubToque = scrubTocava = 0; scrubPassos = 0; scrubInicio = 0.0; }
+    tocando = 0;
+  }
+}
+// A cada quadro (app.c): os avisos da reabertura.
+void player_webos_fundo_passo(void) { fundoRetomadaEvento(video_webos_retomada_evento()); }
+#endif
+
+#ifdef NV_TPK
 // A cada quadro (app.c), aberto ou nao: diz ao video_tpk.c se a tela do
 // player esta aberta e atende os avisos da saida/volta do app.
 void player_tpk_fundo_passo(void) {
   Uint32 agora = SDL_GetTicks();
   int ev;
   video_tpk_tela_publicar(aberto && !retido);
-  // 1 = reabrindo: controles pausados no ponto. 2 = a reabertura desistiu:
-  // fecha como no Voltar (progresso gravado na saida). 3 = o host parou a
-  // sessao retida no fundo: solta como no prazo.
+  // 1/2: fundoRetomadaEvento. 3 = o host parou a sessao retida no fundo:
+  // solta como no prazo.
   ev = video_tpk_retomada_evento();
-  if (ev == 1 && aberto) { fundoAlvoTela = -1.0; tocando = 0; acordar(); }
-  else if (ev == 2 && aberto && !saindo) {
-    printf("[player] resume after background gave up: closing the player at %.1f s\n", video_pos());
-    fflush(stdout);
-    saindo = 1; pediuSair = 1;
-    glem_aviso_curto(i18n("Não deu para retomar o vídeo. Play continua de onde você parou"));
-  } else if (ev == 3 && retido) {
+  if (ev == 1 || ev == 2) fundoRetomadaEvento(ev);
+  else if (ev == 3 && retido) {
     printf("[player] retained session dropped: stopped in the background (%u ms)\n", (unsigned)(agora - retidoDesde));
     fflush(stdout);
     player_descartar_retido();
