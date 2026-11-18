@@ -1642,6 +1642,15 @@ static int simklHistoricoTipo(const char *json, const char *lista,
     // only season 1 with TVDB, and a single-season Kaiju list has no S2E1:
     // both fail and keep the chain below.
     int porNumero = 0, numerosQtd = 0, numerosNaLista = 0;
+    // COUNTING ACROSS SEASONS. A whole-show entry (One Piece) numbers its
+    // episodes 1..N straight through, so TVDB's S7E10 is number 101; a
+    // per-season entry (Kaiju No. 8 S2) restarts at 1, with number = TVDB
+    // episode. Only the per-season kind needs TVDB SxE moved onto an absolute
+    // list (animeTvdbGlobal), and that move assumes the list's seasons are
+    // TVDB's. Nuvio's One Piece is absolute with TMDB's seasons (T1 = 61,
+    // TVDB S1 = 8): the move landed every later season wrong. Running
+    // numbers name the absolute episode directly.
+    int corridos = 0, foraDaT1 = 0;
     if (!strcmp(lista, "anime")) {
       int total = 0, comTvdb = 0;
       for (s = js_array(p, f, "seasons"); s && *s == '{'; s = js_prox(js_fim(s))) {
@@ -1656,6 +1665,10 @@ static int simklHistoricoTipo(const char *json, const char *lista,
           if (simklEpTvdb(e, fe, &nt, &ne) && nt > 0) {
             numerosQtd++;
             numerosNaLista += animeParesTem(animeCatalogo, animeCatalogoQtd, nt, ne);
+            if (nt > 1) {
+              foraDaT1++;
+              corridos += (int)js_num(e, fe, "number", 0.0) > ne;
+            }
           }
         }
       }
@@ -1700,7 +1713,9 @@ static int simklHistoricoTipo(const char *json, const char *lista,
           MetaEpInfo mapeado;
           int mappedT = 0, mappedE = 0, achou = 0;
           int temTvdb = tvdbT >= 0 && tvdbE > 0;
-          if (temTvdb && tvdbT > 1) {
+          // Running numbers are looked up only under season 1 (below): an
+          // entry kept under another season still takes the TVDB move.
+          if (temTvdb && tvdbT > 1 && (corridos * 2 <= foraDaT1 || temporada > 1)) {
             animeMetaCarregar(&animeMeta, id, 0);
             if (animeTvdbGlobal(&animeMeta, tvdbT, tvdbE, &mapeado)) {
               mappedT = mapeado.temporada;

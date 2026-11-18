@@ -385,6 +385,27 @@ int main(void) {
   assert(nHistorico == 1 && historicoPares[0].temporada == 22 &&
          historicoPares[0].episodio == 1123);
 
+  // The whole show in one entry, as Simkl keeps One Piece: numbers run
+  // 1..N and each episode names its place in TVDB's seasons (S1 = 8
+  // episodes there, 61 in Nuvio's list). TVDB S2E1 is number 9, not Nuvio's
+  // S2E62 (mapping-only-nuvio.log, 2026-11-18: 956 of 1122 shown).
+  static const char onePieceTvdbSeasonsHistory[] =
+    "{\"movies\":[],\"shows\":[],\"anime\":[{\"anime\":{\"ids\":{\"imdb\":\"tt0388629\"}},"
+    "\"seasons\":[{\"number\":1,\"episodes\":["
+    "{\"number\":9,\"tvdb\":{\"season\":2,\"episode\":1},"
+    "\"watched_at\":\"2026-10-12T12:00:00Z\"},"
+    "{\"number\":101,\"tvdb\":{\"season\":7,\"episode\":10},"
+    "\"watched_at\":\"2026-10-12T12:01:00Z\"},"
+    "{\"number\":1100,\"tvdb\":{\"season\":22,\"episode\":15},"
+    "\"watched_at\":\"2026-10-12T12:02:00Z\"}]}]}]}";
+  nHistorico = 0; mapaEsvaziado++;
+  assert(simkl_historico_ler(onePieceTvdbSeasonsHistory, "tt0388629", 1) == 3);
+  assert(nHistorico == 3);
+  assert(historicoPares[0].temporada == 1 && historicoPares[0].episodio == 9);
+  assert(historicoPares[1].temporada == 4 && historicoPares[1].episodio == 101);
+  assert(historicoPares[2].temporada == 22 && historicoPares[2].episodio == 1100);
+  puts("PASS: a whole-show anime entry maps by its running number, not TVDB's seasons");
+
   onePieceCachedMeta = "{\"meta\":{\"videos\":[{\"season\":1,\"episode\":1}]}}";
   onePieceProviderMeta = onePieceCachedMeta;
   onePieceProviderFetches = 0;
