@@ -13,6 +13,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#include <pthread.h>
 
 int debrid_tb_link(int usenet, int item, int file, char *dst, unsigned n) {
   (void)usenet; (void)item; (void)file; if (n) dst[0] = 0; return 0;
@@ -85,6 +86,14 @@ static int tvLer(const char *local, long long a, long long b, int *certo) {
   free(t.b);
   usleep(300000);   // the server logs/cleans after the TV closes
   return st;
+}
+// tvLer on its own thread (the early-return case watches the CDN meanwhile).
+typedef struct { const char *local; long long a, b; int certo; volatile int feito; } TvPedido;
+static void *tvLerFio(void *u) {
+  TvPedido *p = u;
+  tvLer(p->local, p->a, p->b, &p->certo);
+  p->feito = 1;
+  return NULL;
 }
 
 int main(int argc, char **argv) {
@@ -187,8 +196,29 @@ int main(int argc, char **argv) {
     mkvfix_adiantar(20.0, 60.0);
     for (int i = 0; i < 60 && !pedidosEm(x); i++) usleep(50000);
     mkvfix_adiantar_pressa();
-    st = tvLer(local, x, x + 10 * MIB - 1, &certo);
-    ok(certo && pedidosEm(x) == 1, "early return: the seek still gets the prefetch, nothing asked twice"); }
+    { TvPedido tp = { local, x, x + 10 * MIB - 1, 0, 0 };
+      pthread_t fio;
+      uint64_t t0 = msAgora(), segundoEm = 0;
+      int n;
+      // The seek waits for the prefetch at most 2 s (adiPegar), then asks the
+      // CDN: on a busy machine (CI) the fake CDN can take longer than that.
+      // A second CDN request for these bytes is right ONLY after the full wait;
+      // sooner (or with the prefetch done) is the bug. The TV reads on its own
+      // thread so the moment the CDN gets the request is measured, not the
+      // whole transfer.
+      pthread_create(&fio, NULL, tvLerFio, &tp);
+      while (!tp.feito) {
+        if (!segundoEm && pedidosEm(x) >= 2) segundoEm = msAgora() - t0;
+        usleep(10000);
+      }
+      pthread_join(fio, NULL);
+      n = pedidosEm(x);
+      if (n == 2 && !segundoEm) segundoEm = msAgora() - t0;
+      if (n == 2)
+        printf("note early return: the prefetch was not used; the CDN was asked %llu ms after the seek (right only after the 2 s wait: a busy machine)\n",
+               (unsigned long long)segundoEm);
+      ok(tp.certo && (n == 1 || (n == 2 && segundoEm >= 1900)),
+         "early return: the seek gets the prefetch, or asks the CDN only after the full 2 s wait"); } }
 
   // Dense stretch: the window starts at the estimate of the second, not at the
   // cue (60 s cue at 61 MiB, 62 s cue 14 MiB later; 61.0 s -> estimate 68 MiB,
@@ -232,7 +262,10 @@ int main(int argc, char **argv) {
     mkvfix_adiantar_pressa();
     t0 = msAgora(); st = tvLer(local, y, y + 2 * MIB - 1, &certo); dt = (long)(msAgora() - t0) - 300;
     printf("  (seek elsewhere: %ld ms)\n", dt);
-    ok(certo && dt < 1000, "silent CDN: the reopen's seek elsewhere does not wait for the prefetch"); }
+    // Waiting for the prefetch costs the full 2 s (adiPegar; 2255 ms before the
+    // fix). 1.8 s leaves room for a slow 2 MiB transfer on a busy machine (CI:
+    // 1070 ms seen with 8 busy cores) and still catches that wait.
+    ok(certo && dt < 1800, "silent CDN: the reopen's seek elsewhere does not wait for the prefetch"); }
   { long long x1 = segIni + clusterRel[15], x2 = segIni + clusterRel[11];
     int antes = pedidosEm(x1); uint64_t t0; long dt;
     mkvfix_adiantar(31.0, 60.0);
