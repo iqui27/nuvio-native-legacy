@@ -3386,6 +3386,7 @@
   T("Não deu para converter o áudio DTS", "Audio DTS tidak bisa dikonversi"),
   T("Não deu para enviar o voto. Tente de novo.", "Suara tidak dapat dikirim. Coba lagi."),
   T("Não deu para ler o arquivo. Tocando em HDR10.", "File tidak bisa dibaca. Memutar dalam HDR10."),
+  T("Não deu para retomar o vídeo. Play continua de onde você parou", "Video tidak bisa dilanjutkan. Putar melanjutkan dari posisi terakhir"),
   T("Não deu para sincronizar", "Tidak bisa disinkronkan"),
   T("Não deu para sincronizar a conta. Tento de novo sozinho.", "Gagal menyinkronkan akun. Saya coba lagi sendiri."),
   T("Não deu para sincronizar — usando %s", "Tidak bisa disinkronkan — memakai %s"),

@@ -3386,6 +3386,7 @@
   T("Não deu para converter o áudio DTS", "Det gick inte att konvertera DTS-ljudet"),
   T("Não deu para enviar o voto. Tente de novo.", "Rösten kunde inte skickas. Försök igen."),
   T("Não deu para ler o arquivo. Tocando em HDR10.", "Det gick inte att läsa filen. Spelar i HDR10."),
+  T("Não deu para retomar o vídeo. Play continua de onde você parou", "Videon kunde inte återupptas. Spela upp fortsätter där du slutade"),
   T("Não deu para sincronizar", "Det gick inte att synkronisera"),
   T("Não deu para sincronizar a conta. Tento de novo sozinho.", "Kunde inte synka kontot. Jag försöker igen själv."),
   T("Não deu para sincronizar — usando %s", "Det gick inte att synkronisera — använder %s"),

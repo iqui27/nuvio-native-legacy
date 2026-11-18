@@ -3386,6 +3386,7 @@
   T("Não deu para converter o áudio DTS", "A DTS hangot nem sikerült átalakítani"),
   T("Não deu para enviar o voto. Tente de novo.", "A szavazatot nem sikerült elküldeni. Próbáld újra."),
   T("Não deu para ler o arquivo. Tocando em HDR10.", "Nem sikerült beolvasni a fájlt. Lejátszás HDR10-ben."),
+  T("Não deu para retomar o vídeo. Play continua de onde você parou", "A videót nem sikerült folytatni. A lejátszás onnan folytatódik, ahol abbahagytad"),
   T("Não deu para sincronizar", "Nem sikerült szinkronizálni"),
   T("Não deu para sincronizar a conta. Tento de novo sozinho.", "Nem sikerült szinkronizálni a fiókot. Újra próbálom."),
   T("Não deu para sincronizar — usando %s", "Nem sikerült szinkronizálni — ezt használja: %s"),

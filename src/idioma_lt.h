@@ -3386,6 +3386,7 @@
   T("Não deu para converter o áudio DTS", "Nepavyko konvertuoti DTS garso"),
   T("Não deu para enviar o voto. Tente de novo.", "Nepavyko išsiųsti balso. Bandyk dar kartą."),
   T("Não deu para ler o arquivo. Tocando em HDR10.", "Nepavyko perskaityti failo. Rodoma HDR10."),
+  T("Não deu para retomar o vídeo. Play continua de onde você parou", "Vaizdo įrašo nepavyko pratęsti. Paleidus tęsis nuo ten, kur sustojote"),
   T("Não deu para sincronizar", "Nepavyko sinchronizuoti"),
   T("Não deu para sincronizar a conta. Tento de novo sozinho.", "Nepavyko sinchronizuoti paskyros. Bandysiu dar kartą."),
   T("Não deu para sincronizar — usando %s", "Nepavyko sinchronizuoti — naudojama %s"),

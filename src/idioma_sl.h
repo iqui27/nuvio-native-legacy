@@ -3386,6 +3386,7 @@
   T("Não deu para converter o áudio DTS", "Zvoka DTS ni bilo mogoče pretvoriti"),
   T("Não deu para enviar o voto. Tente de novo.", "Glasu ni bilo mogoče poslati. Poskusite znova."),
   T("Não deu para ler o arquivo. Tocando em HDR10.", "Datoteke ni bilo mogoče prebrati. Predvajamo v HDR10."),
+  T("Não deu para retomar o vídeo. Play continua de onde você parou", "Videa ni bilo mogoče nadaljevati. Predvajaj nadaljuje, kjer ste končali"),
   T("Não deu para sincronizar", "Sinhronizacija ni uspela"),
   T("Não deu para sincronizar a conta. Tento de novo sozinho.", "Računa ni bilo mogoče sinhronizirati. Poskusim znova."),
   T("Não deu para sincronizar — usando %s", "Sinhronizacija ni uspela — uporabljen je %s"),

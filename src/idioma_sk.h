@@ -3386,6 +3386,7 @@
   T("Não deu para converter o áudio DTS", "Zvuk DTS sa nepodarilo previesť"),
   T("Não deu para enviar o voto. Tente de novo.", "Hlas sa nepodarilo odoslať. Skús to znova."),
   T("Não deu para ler o arquivo. Tocando em HDR10.", "Súbor sa nepodarilo prečítať. Prehrávame v HDR10."),
+  T("Não deu para retomar o vídeo. Play continua de onde você parou", "Video sa nepodarilo obnoviť. Prehrať pokračuje tam, kde ste skončili"),
   T("Não deu para sincronizar", "Synchronizácia sa nepodarila"),
   T("Não deu para sincronizar a conta. Tento de novo sozinho.", "Účet sa nepodarilo synchronizovať. Skúsim to znova."),
   T("Não deu para sincronizar — usando %s", "Synchronizácia sa nepodarila — používajú sa %s"),

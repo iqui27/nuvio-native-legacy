@@ -3385,6 +3385,7 @@
   { "Não deu para converter o áudio DTS", "Couldn't convert the DTS audio" },
   { "Não deu para enviar o voto. Tente de novo.", "Couldn't send your vote. Try again." },
   { "Não deu para ler o arquivo. Tocando em HDR10.", "Couldn't read the file. Playing in HDR10." },
+  { "Não deu para retomar o vídeo. Play continua de onde você parou", "Couldn't resume the video. Play continues where you left off" },
   { "Não deu para sincronizar", "Couldn't sync" },
   { "Não deu para sincronizar a conta. Tento de novo sozinho.", "Couldn't sync your account. I'll try again on my own." },
   { "Não deu para sincronizar — usando %s", "Couldn't sync — using %s" },
