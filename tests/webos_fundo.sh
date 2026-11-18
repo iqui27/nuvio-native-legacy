@@ -192,6 +192,13 @@ int main(void) {
   tocandoEm(10); modoLoad = 1; OK(video_webos_fundo(-1.0, "window hidden") == 0, "live untouched");
   tocandoEm(10); falhou = 1; OK(video_webos_fundo(-1.0, "window hidden") == 0, "failed source untouched");
   tocandoEm(10); terminou = 1; OK(video_webos_fundo(-1.0, "window hidden") == 0, "ended title untouched");
+  /* Sair com o titulo seguinte ainda abrindo (sem duracao): a barra nao
+   * mostra a duracao do anterior. */
+  tocandoEm(80); video_webos_fundo(-1.0, "window hidden");   /* titulo 1: 7200 s */
+  fundoZerar();                                              /* video_tocar do titulo 2 */
+  durSeg = 0; pronto = 0; posSeg = 0;
+  video_webos_fundo(-1.0, "window hidden");
+  OK(fundoDur == 0, "no stale duration from the previous title");
   /* 10. Legenda externa volta pela URL. */
   tocandoEm(10); snprintf(legUrlAtual, sizeof legUrlAtual, "http://127.0.0.1/sub.srt");
   video_webos_fundo(-1.0, "window hidden"); fundoComecar();

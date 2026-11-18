@@ -2355,6 +2355,7 @@ static void fundoZerar(void) {
   fundoVoltouPend = fundoTent = fundoQuerTocar = fundoEraDts = fundoEraDv = 0;
   fundoAudio = fundoLeg = -1; fundoLegUrl[0] = 0; fundoDe = fundoVoltouDe = "";
   fundoPousouEm = 0; fundoDtsPend = 0;
+  fundoDur = 0.0;   // titulo novo: a duracao do anterior nao vale na barra
   __atomic_store_n(&fundoMudoPend, 0, __ATOMIC_RELEASE);
 }
 
