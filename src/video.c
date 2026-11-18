@@ -3553,9 +3553,12 @@ void video_pausar(int pausado) {
   ack_publicar();
 }
 
+// Fora da tela, reabrindo (mudo, seek pendente) ou depois de desistir nao ha
+// sessao para o "Manter o video pronto ao sair" segurar (como no .tpk).
 int video_pausa_confirmada(void) {
   return pausaPedida && pausaConfirmada && pronto && midia[0] &&
-         !falhou && !terminou && !video_reconectando();
+         !falhou && !terminou && !video_reconectando() &&
+         !fundoSusp && !fundoRet && !fundoDesistiu;
 }
 
 void video_volume(int pct) {

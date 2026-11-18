@@ -18,6 +18,8 @@ fim = src.index('void video_definir_reconexao(int sim)', ini)
 decl_ini = src.index('#ifndef FUNDO_PRAZO_MS')
 decl_fim = src.index('static Uint32 fundoEm, fundoRetEm, fundoPousouEm;', decl_ini)
 decl_fim = src.index('\n', decl_fim) + 1
+pc = src.index('int video_pausa_confirmada(void) {')
+pausa = src[pc:src.index('\n}\n', pc) + 3]
 Path(sys.argv[1]).write_text(r'''
 #include <assert.h>
 #include <math.h>
@@ -69,7 +71,7 @@ static int iniciarDts(int s) {
 }
 static int fundoQuerTocarDe(void);
 static void video_pausar(int p);
-''' + src[decl_ini:decl_fim] + src[ini:fim] + r'''
+''' + src[decl_ini:decl_fim] + src[ini:fim] + 'static int pausaConfirmada;\nstatic int video_reconectando(void) { return 0; }\n' + pausa + r'''
 static void video_pausar(int p) {
   if (fundoSusp) { fundoQuerTocar = !p; return; }
   if (fundoRet) { fundoQuerTocar = !p; if (recarregarPausa >= 0) recarregarPausa = !!p; pausaPedida = !!p; }
@@ -136,6 +138,13 @@ int main(void) {
   fundoVoltouPend = 0; fundoComecar();
   OK(fundoQuerTocar == 1 && recarregarPausa == 0, "Play pressed with the returning key is kept");
   midiaChegou(); carregou(7200); seekDone(); quadros(1); OK(!fundoRet && tocando, "and it ends playing");
+  /* "Manter o video pronto ao sair": nada a reter fora da tela nem reabrindo. */
+  tocandoEm(80); pausaPedida = 1; pausaConfirmada = 1; tocando = 0;
+  OK(video_pausa_confirmada(), "a normal paused session can be retained");
+  video_webos_fundo(-1.0, "window hidden"); fundoComecar(); video_webos_retomada_evento();
+  midiaChegou(); carregou(7200); pausaConfirmada = 1;
+  OK(!video_pausa_confirmada(), "no retained session while reopening (muted, seek pending)");
+  seekDone(); quadros(1); OK(!fundoRet && video_pausa_confirmada(), "retainable again once landed");
   /* 4. Erro: uma nova tentativa; o segundo erro desiste (evento 2). */
   tocandoEm(50); video_webos_fundo(-1.0, "window hidden"); fundoComecar(); video_webos_retomada_evento();
   reconErroPend = 1; quadros(1); OK(cargas == 2 && fundoRet, "one more try after an error");
