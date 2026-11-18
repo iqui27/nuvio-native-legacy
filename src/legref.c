@@ -19,12 +19,17 @@ static int contemSemCaixa(const char *h, const char *n) {
 
 #define LR_CABECA   (64L * 1024L)        // inicio do arquivo: EBML, SeekHead, Info, Tracks
 #define LR_TRACKS_MAX (2L * 1024L * 1024L)
-#define LR_CUES_MAX (8L * 1024L * 1024L)
+// Modo so indice: o Cues chega EM FLUXO (cuesComer) e nunca fica inteiro na
+// memoria, entao o teto e de rede, nao de RAM. 17/11 (dono): o 4K remux de
+// Fight Club (145 faixas, 137 de legenda) tem Cues de 9,35 MB e parava no
+// teto antigo de 8 MB (reason=budget) sem baixar nada.
+#define LR_CUES_MAX (16L * 1024L * 1024L)
+#define LR_CUES_BUF_MAX (8L * 1024L * 1024L)   // modo de sempre: Cues inteiro no buffer
 #define LR_BLOCO    2048L                // janela de um BlockGroup de legenda
 #define LR_BLOCO_MAX (64L * 1024L)
 #define LR_VAO      (8L * 1024L)         // junta Ranges vizinhos a menos disto
 #define LR_LEITURA_MAX (128L * 1024L)
-#define LR_FAIXAS   64
+#define LR_FAIXAS   192   // 64 ate 17/11 (remux com 145 faixas): ver mkv.h
 #define LR_EVENTOS_MAX 7999              // acima disto o AutoSync recusa de qualquer jeito
 
 // --- EBML -------------------------------------------------------------------
@@ -248,26 +253,34 @@ static void progresso(Job *j, int feitos, int total) {
   pthread_mutex_unlock(&r->m);
 }
 
-// Um Range, respeitando pausa, ritmo e orcamento. NULL com j->erro preenchido.
-static unsigned char *ler(Job *j, long long ini, long n, long *tam) {
-  LegRef *r = j->r; unsigned char *b; int st = 0;
+// Antes de cada Range: pausa, ritmo e orcamento. 1 = pode pedir (ja contado);
+// 0 com j->erro preenchido.
+static int porta(Job *j, long n) {
+  LegRef *r = j->r;
   long intervalo = j->p.orc.pedidosPorSeg > 0 ? 1000 / j->p.orc.pedidosPorSeg : 0;
   for (;;) {   // PAUSA: seek/buffer curto. Nao conta prazo nem orcamento.
     int pausa;
     pthread_mutex_lock(&r->m); pausa = r->pausado; pthread_mutex_unlock(&r->m);
     if (!pausa) break;
-    if (esperar(j, 200)) { j->erro = LEGREF_PARADO; return NULL; }
+    if (esperar(j, 200)) { j->erro = LEGREF_PARADO; return 0; }
   }
   if (j->temUltimo && intervalo > 0) {
     long passou = msDesde(&j->ultimo);
-    if (passou < intervalo && esperar(j, intervalo - passou)) { j->erro = LEGREF_PARADO; return NULL; }
+    if (passou < intervalo && esperar(j, intervalo - passou)) { j->erro = LEGREF_PARADO; return 0; }
   }
-  if (parou(j)) { j->erro = LEGREF_PARADO; return NULL; }
+  if (parou(j)) { j->erro = LEGREF_PARADO; return 0; }
   if (j->pedidos >= j->p.orc.maxPedidos || j->bytes + n > j->p.orc.maxBytes) {
-    j->erro = LEGREF_ORCAMENTO; return NULL;
+    j->erro = LEGREF_ORCAMENTO; return 0;
   }
   j->pedidos++;
   clock_gettime(CLOCK_MONOTONIC, &j->ultimo); j->temUltimo = 1;
+  return 1;
+}
+
+// Um Range, respeitando pausa, ritmo e orcamento. NULL com j->erro preenchido.
+static unsigned char *ler(Job *j, long long ini, long n, long *tam) {
+  LegRef *r = j->r; unsigned char *b; int st = 0;
+  if (!porta(j, n)) return NULL;
   *tam = 0;
   b = r->ler(r->lerU, j->urlFinal, ini, n, tam, &st, parou, j);
   if (b) j->bytes += *tam;
@@ -883,11 +896,198 @@ static int tipoIndice(const Faixa *f) {
 }
 static int cmpInt(const void *a, const void *b) { int x = *(const int *)a, y = *(const int *)b; return x < y ? -1 : x > y; }
 
+// --- CUES EM FLUXO (modo so indice) ---------------------------------------------
+// O Cues chega pedaco a pedaco e so os pontos das faixas que interessam ficam:
+// a contagem das faixas de texto de dialogo (a mediana do par do PGS) e as
+// linhas das LR_IDX_GUARDA primeiras candidatas. Um Range so, na mesma conexao,
+// sem esperar entre pedacos: a memoria e um CuePoint + as linhas, nunca o Cues.
+#define LR_IDX_GUARDA      12        // candidatas cujas linhas o fluxo guarda (o laco usa ate 8)
+#define LR_IDX_PONTOS_SOMA 131072    // soma das linhas guardadas (16 B cada: 2 MB no pior caso)
+#define LR_CUEPONTO_MAX    (64L * 1024L)   // um CuePoint; maior que isto e pulado
+#ifndef LR_FLUXO_PEDACO   // tests/legref.sh tambem roda com 7 bytes: costuras do fluxo
+#define LR_FLUXO_PEDACO    (256L * 1024L)  // leitor sem fluxo (testes): Range por pedaco
+#endif
+typedef struct { double inicio, dur; } PontoIdx;
+typedef struct {
+  int numero, contar, guardar, estourou, n, k, cap;
+  PontoIdx *v;
+} CuesFaixa;
+typedef struct {
+  double escala;
+  CuesFaixa f[LR_FAIXAS]; int nF;
+  long soma;                       // linhas guardadas, todas as faixas
+  unsigned char resto[LR_CUEPONTO_MAX + 16]; long nResto;
+  long long pular;                 // bytes de um elemento pulado ainda por vir
+  long long lidos;
+  int ruim, semMemoria, pulados;
+} CuesFluxo;
+
+static CuesFaixa *cuesFaixa(CuesFluxo *s, int numero) {
+  int i;
+  for (i = 0; i < s->nF; i++) if (s->f[i].numero == numero) return &s->f[i];
+  return NULL;
+}
+static void cuesLiberar(CuesFluxo *s) {
+  int i;
+  for (i = 0; i < s->nF; i++) { free(s->f[i].v); s->f[i].v = NULL; }
+}
+// Um CuePoint inteiro: o mesmo que lerCues(soTempo) faz, para todas as faixas
+// de uma vez.
+static void cuesPonto(CuesFluxo *s, const unsigned char *d, long t) {
+  It cp = { d, 0, t }, tp; unsigned long id2, id3; const unsigned char *d2, *d3; long t2, t3;
+  double tempo = -1;
+  while (prox(&cp, &id2, &d2, &t2)) if (id2 == 0xB3) tempo = (double)lerUint(d2, t2) * s->escala;
+  if (tempo < 0) return;
+  cp.o = 0;
+  while (prox(&cp, &id2, &d2, &t2)) {
+    int tr = 0; double dur = -1; CuesFaixa *f;
+    if (id2 != 0xB7) continue;
+    tp = (It){ d2, 0, t2 };
+    while (prox(&tp, &id3, &d3, &t3)) {
+      if (id3 == 0xF7) tr = (int)lerUint(d3, t3);
+      else if (id3 == 0xB2) dur = (double)lerUint(d3, t3) * s->escala;
+    }
+    f = cuesFaixa(s, tr);
+    if (!f || f->estourou) continue;
+    if (++f->n > LR_IDX_PONTOS_MAX) {   // como lerCues: faixa grande demais nao serve
+      f->estourou = 1; s->soma -= f->k; free(f->v); f->v = NULL; f->k = f->cap = 0; continue;
+    }
+    if (!f->guardar) continue;
+    if (s->soma >= LR_IDX_PONTOS_SOMA) {
+      f->estourou = 1; s->soma -= f->k; free(f->v); f->v = NULL; f->k = f->cap = 0; continue;
+    }
+    if (f->k == f->cap) {
+      int cap = f->cap ? f->cap * 2 : 256; PontoIdx *nv;
+      if (cap > LR_IDX_PONTOS_MAX) cap = LR_IDX_PONTOS_MAX;
+      nv = realloc(f->v, (size_t)cap * sizeof *nv);
+      if (!nv) { s->semMemoria = 1; return; }
+      f->v = nv; f->cap = cap;
+    }
+    f->v[f->k++] = (PontoIdx){ tempo, dur };
+    s->soma++;
+  }
+}
+// Elementos completos em b[0..n). Devolve os bytes consumidos; -1 = nao e um
+// Cues (lixo, tamanho desconhecido ou outro elemento: um 200 com o comeco do
+// arquivo cai aqui). O que sobra e um elemento ainda incompleto.
+static long cuesElementos(CuesFluxo *s, const unsigned char *b, long n) {
+  long o = 0;
+  while (o < n && !s->pular) {
+    unsigned long id; long long t; int a, c; long hdr, tem;
+    int la = largura(b[o]), lc;
+    if (la < 1 || la > 4) { s->ruim = 1; return -1; }
+    if (o + la >= n) break;
+    lc = largura(b[o + la]);
+    if (lc < 1 || lc > 8) { s->ruim = 1; return -1; }
+    if (o + la + lc > n) break;
+    a = lerId(b + o, n - o, &id); c = lerTam(b + o + a, n - o - a, &t);
+    if (!a || !c || t < 0 || (id != 0xBB && id != 0xEC && id != 0xBF)) { s->ruim = 1; return -1; }
+    hdr = a + c;
+    if (id != 0xBB || t > LR_CUEPONTO_MAX) {      // Void/CRC, ou CuePoint absurdo: pula
+      if (id == 0xBB) s->pulados++;
+      tem = n - o - hdr;
+      if (tem >= t) { o += hdr + (long)t; continue; }
+      s->pular = t - tem; return n;
+    }
+    if (n - o - hdr < t) break;
+    cuesPonto(s, b + o + hdr, (long)t);
+    if (s->semMemoria) return -1;
+    o += hdr + (long)t;
+  }
+  return o;
+}
+static int cuesComer(const unsigned char *p, long n, void *u) {
+  CuesFluxo *s = u;
+  s->lidos += n;
+  while (n > 0) {
+    long usado;
+    if (s->pular > 0) {
+      long k = s->pular < n ? (long)s->pular : n;
+      s->pular -= k; p += k; n -= k; continue;
+    }
+    if (s->nResto) {
+      long cabe = (long)sizeof s->resto - s->nResto, k = n < cabe ? n : cabe;
+      memcpy(s->resto + s->nResto, p, (size_t)k); s->nResto += k; p += k; n -= k;
+      usado = cuesElementos(s, s->resto, s->nResto);
+      if (usado < 0) return 0;
+      if (!usado && s->nResto == (long)sizeof s->resto) { s->ruim = 1; return 0; }
+      memmove(s->resto, s->resto + usado, (size_t)(s->nResto - usado)); s->nResto -= usado;
+      continue;
+    }
+    usado = cuesElementos(s, p, n);
+    if (usado < 0) return 0;
+    p += usado; n -= usado;
+    if (n > 0 && !s->pular) {           // cauda incompleta: no maximo um CuePoint
+      if (n > (long)sizeof s->resto) { s->ruim = 1; return 0; }
+      memcpy(s->resto, p, (size_t)n); s->nResto = n; n = 0;
+    }
+  }
+  return 1;
+}
+
+static unsigned char *lerHttp(void *u, const char *url, long long ini, long n, long *tam,
+                              int *status, int (*parar)(void *), void *pu);
+static int lerHttpFluxo(Job *j, long long ini, long n, int (*cb)(const unsigned char *, long, void *),
+                        void *u, long *recebidos);
+
+// Um Range entregue em pedacos a cb (que devolve 0 para parar). Conta como UM
+// pedido no orcamento, com os n bytes reservados antes. O leitor de verdade
+// (lerHttp) le em fluxo; um leitor injetado (testes) e servido em pedacos.
+static int lerFluxo(Job *j, long long ini, long n, int (*cb)(const unsigned char *, long, void *), void *u) {
+  LegRef *r = j->r; long feito = 0;
+  if (!porta(j, n)) return 0;
+  if (r->ler == lerHttp) {
+    int ok = lerHttpFluxo(j, ini, n, cb, u, &feito);
+    j->bytes += feito;
+    return ok;
+  }
+  while (feito < n) {
+    long k = n - feito < LR_FLUXO_PEDACO ? n - feito : LR_FLUXO_PEDACO, tam = 0; int st = 0, ok;
+    unsigned char *b = r->ler(r->lerU, j->urlFinal, ini + feito, k, &tam, &st, parou, j);
+    if (b) j->bytes += tam;
+    if (parou(j)) { free(b); j->erro = LEGREF_PARADO; return 0; }
+    if (!b) { if (j->erro != LEGREF_PARADO) j->erro = st == 200 ? LEGREF_SEM_RANGE : LEGREF_REDE; return 0; }
+    if (st != 206) { free(b); j->erro = LEGREF_SEM_RANGE; return 0; }
+    if (tam <= 0) { free(b); j->erro = LEGREF_INCOMPLETO; return 0; }
+    if (tam > k) tam = k;
+    ok = cb(b, tam, u); free(b);
+    if (!ok) { j->erro = LEGREF_SEM_INDICE; return 0; }
+    feito += tam;
+  }
+  return 1;
+}
+
+// O Cues em `abs`: o cabecalho (16 bytes) e depois o corpo em fluxo para s.
+static int lerCuesFluxo(Job *j, long long abs, CuesFluxo *s) {
+  long tam = 0; unsigned long id; long long t; int a, b;
+  unsigned char *h = ler(j, abs, 16, &tam);
+  if (!h) return 0;
+  a = lerId(h, tam, &id); b = a ? lerTam(h + a, tam - a, &t) : 0;
+  free(h);
+  if (!a || !b || id != 0x1C53BB6B || t < 0) { j->erro = LEGREF_SEM_INDICE; return 0; }
+  if (t > LR_CUES_MAX) {
+    fprintf(stderr, "[legref] cues size=%lld bytes over the %ld MB cap: not read\n", t, LR_CUES_MAX >> 20);
+    j->erro = LEGREF_ORCAMENTO; return 0;
+  }
+  if (!lerFluxo(j, abs + a + b, (long)t, cuesComer, s)) {
+    if (j->erro == LEGREF_ORCAMENTO)
+      fprintf(stderr, "[legref] cues size=%lld bytes over this read's budget (%lld bytes left): not read\n",
+              t, j->p.orc.maxBytes - j->bytes);
+    if (s->semMemoria) j->erro = LEGREF_MEMORIA;
+    else if (s->ruim && j->erro != LEGREF_PARADO && j->erro != LEGREF_SEM_RANGE) j->erro = LEGREF_SEM_INDICE;
+    return 0;
+  }
+  if (s->lidos != t || s->nResto || s->pular) { j->erro = LEGREF_INCOMPLETO; return 0; }
+  fprintf(stderr, "[legref] cues size=%lld bytes streamed in 1 range: %d track(s) followed, %ld line(s) kept%s\n",
+          t, s->nF, s->soma, s->pulados ? " (oversized CuePoints skipped)" : "");
+  return 1;
+}
+
 static LegendaDocumento *coletarIndice(Job *j, LegRefStatus *st, const Faixa *fx, int nF,
                                        long long segData, long long posCues, double escala) {
   const char *ids[LR_FAIXAS], *nms[LR_FAIXAS]; int ok[LR_FAIXAS], cand[LR_FAIXAS], nCand = 0, i, x;
-  int contagens[LR_FAIXAS], nCont = 0, pares = 0, nv = 0;
-  long oCu = 0, nCu = 0; unsigned char *cues = NULL; LegendaDocumento *doc = NULL;
+  int contagens[LR_FAIXAS], nCont = 0, pares = 0, nv = 0, foraGuarda = 0;
+  CuesFluxo *cf = NULL; LegendaDocumento *doc = NULL;
   Tempo *tv[8] = { 0 }; int nt[8] = { 0 }, est[8] = { 0 }, filt[8] = { 0 }, qual[8] = { 0 }, brutos[8] = { 0 };
   // Texto antes de PGS: a duracao de uma fala de texto vem do arquivo; a do
   // PGS sai do par exibe/limpa.
@@ -902,23 +1102,40 @@ static LegendaDocumento *coletarIndice(Job *j, LegRefStatus *st, const Faixa *fx
   if (!nCand) { j->erro = LEGREF_SEM_FAIXA; return NULL; }
   anunciar(j, st, fx[cand[0]].numero, fx[cand[0]].idioma, fx[cand[0]].codec);
   if (posCues < 0) { j->erro = LEGREF_SEM_INDICE; return NULL; }
-  cues = lerElemento(j, segData + posCues, 0x1C53BB6B, LR_CUES_MAX, &oCu, &nCu);
-  if (!cues) return NULL;
-  // Mediana das faixas de texto de dialogo (para o par do PGS), como no NuvioTV.
-  for (i = 0; i < nF; i++) {
-    LegRefPonto *pp = NULL; int np;
-    if (!textoIndice(&fx[i]) || fx[i].forced || comentario(fx[i].nome)) continue;
-    np = legref_cues_tempos(cues + oCu, nCu, fx[i].numero, escala, LR_IDX_PONTOS_MAX, &pp);
-    free(pp);
-    if (np >= LR_IDX_MIN_FALAS) contagens[nCont++] = np;
+  // As faixas que o fluxo segue: contagem das de texto de dialogo; linhas das
+  // LR_IDX_GUARDA primeiras candidatas, na ordem de preferencia.
+  cf = calloc(1, sizeof *cf);
+  if (!cf) { j->erro = LEGREF_MEMORIA; return NULL; }
+  cf->escala = escala;
+  for (i = 0; i < nF && cf->nF < LR_FAIXAS; i++)
+    if (textoIndice(&fx[i]) && !fx[i].forced && !comentario(fx[i].nome)) {
+      cf->f[cf->nF].numero = fx[i].numero; cf->f[cf->nF++].contar = 1;
+    }
+  for (x = 0; x < nCand && x < LR_IDX_GUARDA; x++) {
+    CuesFaixa *g = cuesFaixa(cf, fx[cand[x]].numero);
+    if (!g && cf->nF < LR_FAIXAS) { g = &cf->f[cf->nF++]; g->numero = fx[cand[x]].numero; }
+    if (g) g->guardar = 1;
   }
+  if (!lerCuesFluxo(j, segData + posCues, cf)) { cuesLiberar(cf); free(cf); return NULL; }
+  // Mediana das faixas de texto de dialogo (para o par do PGS), como no NuvioTV.
+  for (i = 0; i < cf->nF; i++)
+    if (cf->f[i].contar && !cf->f[i].estourou && cf->f[i].n >= LR_IDX_MIN_FALAS) contagens[nCont++] = cf->f[i].n;
   if (nCont) { qsort(contagens, (size_t)nCont, sizeof *contagens, cmpInt); pares = contagens[nCont / 2]; }
   // As linhas das candidatas (ate 8), na ordem de preferencia; as que nao
   // servem (poucas falas, span curto, falas demais para a engine) saem.
   for (x = 0; x < nCand && nv < 8; x++) {
     const Faixa *f = &fx[cand[x]]; LegRefPonto *pp = NULL; LegRefFala *fl = NULL; int np, k, e = 0, fi = 0;
-    np = legref_cues_tempos(cues + oCu, nCu, f->numero, escala, LR_IDX_PONTOS_MAX, &pp);
-    if (np < 0) { free(pp); continue; }
+    CuesFaixa *g = cuesFaixa(cf, f->numero);
+    if (!g || !g->guardar) { foraGuarda++; continue; }
+    if (g->estourou) continue;
+    np = g->k;
+    if (np > 0) {
+      int q;
+      pp = malloc((size_t)np * sizeof *pp);
+      if (!pp) { cuesLiberar(cf); free(cf); for (i = 0; i < nv; i++) free(tv[i]); j->erro = LEGREF_MEMORIA; return NULL; }
+      for (q = 0; q < np; q++) pp[q] = (LegRefPonto){ -1, -1, g->v[q].inicio, g->v[q].dur };
+    }
+    free(g->v); g->v = NULL; g->k = g->cap = 0;   // a linha desta faixa ja saiu do fluxo
     k = legref_indice_linha(pp, np, tipoIndice(f), pares, &fl, &e, &fi);
     free(pp);
     if (k < LR_IDX_MIN_FALAS || k > LR_EVENTOS_MAX || fl[k - 1].inicio - fl[0].inicio < LR_IDX_MIN_SPAN) {
@@ -928,7 +1145,9 @@ static LegendaDocumento *coletarIndice(Job *j, LegRefStatus *st, const Faixa *fx
     tv[nv] = (Tempo *)fl;   // LegRefFala e Tempo: o mesmo { inicio, fim }
     nt[nv] = k; est[nv] = e; filt[nv] = fi; qual[nv] = cand[x]; brutos[nv] = np; nv++;
   }
-  free(cues);
+  cuesLiberar(cf); free(cf);
+  if (foraGuarda && nv < 8)
+    fprintf(stderr, "[legref] index: %d candidate(s) past the first %d were not followed\n", foraGuarda, LR_IDX_GUARDA);
   if (!nv) { j->erro = LEGREF_SEM_INDICE; return NULL; }
   {
     int desc = 0;
@@ -1045,7 +1264,7 @@ static LegendaDocumento *coletar(Job *j, LegRefStatus *st) {
   anunciar(j, st, fx[escolhida].numero, fx[escolhida].idioma, fx[escolhida].codec);
   // 3. O indice.
   if (posCues < 0) { j->erro = LEGREF_SEM_INDICE; goto fim; }
-  cues = lerElemento(j, segData + posCues, 0x1C53BB6B, LR_CUES_MAX, &oCu, &nCu);
+  cues = lerElemento(j, segData + posCues, 0x1C53BB6B, LR_CUES_BUF_MAX, &oCu, &nCu);
   if (!cues) goto fim;
   // 3b. Validacao cruzada: o mesmo Cues traz os tempos das outras faixas de
   // texto (com CueDuration). Custa zero Range a mais.
@@ -1223,21 +1442,28 @@ static void *trabalhar(void *u) {
 }
 
 // --- HTTP -------------------------------------------------------------------------
-static unsigned char *lerHttp(void *u, const char *url, long long ini, long n, long *tam,
-                              int *status, int (*parar)(void *), void *pu) {
-  char range[80], linhas[2048]; const char *cab[18]; RedePedido p; RedeResposta r; unsigned char *b = NULL;
+// Range + os mesmos cabecalhos com que o player abre a fonte (proxyHeaders do
+// addon). range[80] e linhas[2048] sao do chamador. Devolve quantos.
+static int montarCabs(const Job *jb, long long ini, long n, char *range, char *linhas, const char **cab) {
   int k = 0; char *s, *nl;
-  (void)u;
-  snprintf(range, sizeof range, "Range: bytes=%lld-%lld", ini, ini + n - 1);
+  snprintf(range, 80, "Range: bytes=%lld-%lld", ini, ini + n - 1);
   cab[k++] = range;
-  // Os mesmos cabecalhos com que o player abre a fonte (proxyHeaders do addon).
-  snprintf(linhas, sizeof linhas, "%s", pu ? ((Job *)pu)->p.cabs : "");
+  snprintf(linhas, 2048, "%s", jb ? jb->p.cabs : "");
   for (s = linhas; *s && k < 17; s = nl) {
     nl = strchr(s, '\n');
     if (nl) *nl++ = 0; else nl = s + strlen(s);
     if (*s && strchr(s, ':') && strncasecmp(s, "Range:", 6)) cab[k++] = s;
   }
   cab[k] = NULL;
+  return k;
+}
+
+static unsigned char *lerHttp(void *u, const char *url, long long ini, long n, long *tam,
+                              int *status, int (*parar)(void *), void *pu) {
+  char range[80], linhas[2048]; const char *cab[18]; RedePedido p; RedeResposta r; unsigned char *b = NULL;
+  int k;
+  (void)u;
+  k = montarCabs(pu, ini, n, range, linhas, cab);
   memset(&p, 0, sizeof p);
   p.url = url; p.cabecalhos = cab; p.seguir = 1; p.rebaixar_midia = 1;
   p.prazo_ms = 20000u + (unsigned)(n / 64);
@@ -1264,6 +1490,42 @@ static unsigned char *lerHttp(void *u, const char *url, long long ini, long n, l
   }
   rede_resposta_limpar(&r);
   return b;
+}
+
+// Fluxo do lerFluxo: o corpo do Range vai direto ao parser, sem buffer.
+typedef struct { int (*cb)(const unsigned char *, long, void *); void *u; long n; int cortou; } FluxoHttp;
+static int fluxoHttp(const void *d, size_t n, void *u) {
+  FluxoHttp *f = u;
+  f->n += (long)n;
+  if (!f->cb((const unsigned char *)d, (long)n, f->u)) { f->cortou = 1; return 0; }
+  return 1;
+}
+static int lerHttpFluxo(Job *j, long long ini, long n, int (*cb)(const unsigned char *, long, void *),
+                        void *u, long *recebidos) {
+  char range[80], linhas[2048]; const char *cab[18]; RedePedido p; RedeResposta r;
+  FluxoHttp f = { cb, u, 0, 0 }; int k, ok = 0;
+  k = montarCabs(j, ini, n, range, linhas, cab);
+  memset(&p, 0, sizeof p);
+  p.url = j->urlFinal; p.cabecalhos = cab; p.seguir = 1; p.rebaixar_midia = 1;
+  p.prazo_ms = 20000u + (unsigned)(n / 64);
+  p.max_bytes = (size_t)n;
+  p.parar = parou; p.parar_usuario = j;
+  p.receber_corpo = fluxoHttp; p.corpo_usuario = &f;
+  rede_pedir(&p, &r);
+  *recebidos = f.n;
+  if (parou(j)) j->erro = LEGREF_PARADO;
+  else if (r.status == 200) j->erro = LEGREF_SEM_RANGE;     // o parser ja recusou o comeco do arquivo
+  else if (f.cortou) j->erro = LEGREF_SEM_INDICE;           // lerCuesFluxo refina (memoria)
+  else if (r.erro != REDE_OK || r.status != 206) {
+    j->erro = r.erro == REDE_CANCELADO ? LEGREF_PARADO : LEGREF_REDE;
+    fprintf(stderr, "[legref] stream failed reason=%s http=%d rede_error=%d curl_error=%d request_headers=%d bytes=%ld of %ld\n",
+            r.erro == REDE_PRAZO ? "deadline" : r.erro == REDE_LIMITE_CORPO ? "body_limit" :
+            r.erro == REDE_OK ? "invalid_range_response" : "request_failed",
+            r.status, (int)r.erro, r.curl_erro, k - 1, f.n, n);
+  } else if (f.n < n) j->erro = LEGREF_INCOMPLETO;
+  else ok = 1;
+  rede_resposta_limpar(&r);
+  return ok;
 }
 
 int legref_disponivel(void) {

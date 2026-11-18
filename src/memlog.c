@@ -77,6 +77,15 @@ long memlog_livre_mb(void) {
 #endif
 }
 
+long memlog_total_mb(void) {
+#if defined(__linux__) && !defined(__EMSCRIPTEN__)
+  long kb = lerKB("/proc/meminfo", "MemTotal:");
+  return kb >= 0 ? kb / 1024 : -1;
+#else
+  return -1;
+#endif
+}
+
 void memlog_evento(const char *evento) {
   char sufixo[96];
   memlog_amostra(sufixo, sizeof sufixo);

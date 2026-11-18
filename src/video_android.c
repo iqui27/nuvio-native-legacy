@@ -685,10 +685,10 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeFaixasFim(JN
   // ja escolheu fica.
   int releitura = (nAudio || nLeg) && !nNovasL && nLeg;
   (void)env; (void)cls; (void)selLeg;
-  memcpy(faixaAudio, novasA, sizeof novasA);
+  memcpy(faixaAudio, novasA, (size_t)nNovasA * sizeof *novasA);   // so as preenchidas
   audioAtual = selAudio >= 0 ? selAudio : 0;
   if (!releitura) {
-    memcpy(faixaLeg, novasL, sizeof novasL);
+    memcpy(faixaLeg, novasL, (size_t)nNovasL * sizeof *novasL);
     legAtual = -1;   // o Kotlin sobe com legenda desligada; quem liga e o app (faixas.c)
     nLeg = nNovasL;
   }

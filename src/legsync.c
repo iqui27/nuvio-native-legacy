@@ -10,7 +10,7 @@
 #include <string.h>
 
 #define LS_SESSAO_BYTES  (24LL * 1024 * 1024)  // todas as referencias de uma midia
-#define LS_LEITURA_BYTES (12LL * 1024 * 1024)  // uma faixa
+#define LS_LEITURA_BYTES (16LL * 1024 * 1024)  // uma faixa; = LR_CUES_MAX (o Cues vem em fluxo)
 #define LS_PEDIDOS       6000
 #ifndef LS_RITMO
 #define LS_RITMO         8                     // Ranges por segundo, como o mkvass
@@ -47,6 +47,10 @@ static struct {
   int excl[16], nExcl;
   long long bytesSessao;
   LegRefMotivo refMotivo;
+  // 17/11: motivo que nao muda trocando de legenda (o arquivo nao tem indice,
+  // nao aceita Range, o Cues passa do teto). Lembrado ate a midia mudar: sem
+  // ele cada nova escolha de legenda refazia os mesmos Ranges na CDN.
+  LegRefMotivo refFinal;
   char idiomaRef[24];
   // analise
   int querModo;                   // -1 nada; senao AutoSyncModo a pedir quando houver referencia
@@ -160,7 +164,7 @@ static void novaSessao(const char *url, int manterPrimaria) {
   autosync_iniciar(L.sync, L.sessao);
   legref_cancelar(L.ref);
   L.refPedido = 0; soltarRef();
-  L.nExcl = 0; L.bytesSessao = 0; L.refMotivo = LEGREF_OK; L.ultimaFaixa = 0;
+  L.nExcl = 0; L.bytesSessao = 0; L.refMotivo = LEGREF_OK; L.refFinal = LEGREF_OK; L.ultimaFaixa = 0;
   L.idiomaRef[0] = 0;
   zerarAnalise();
   pararAudio();
@@ -420,6 +424,11 @@ static void iniciarColeta(void) {
   LegRefOrcamento o;
   long long resta = LS_SESSAO_BYTES - L.bytesSessao;
   if (!L.ref) { L.refMotivo = LEGREF_PLATAFORMA; L.querModo = -1; return; }
+  if (L.refFinal != LEGREF_OK) {
+    printf("[legsync] reference not read again: this file already ended with reason=%s\n", legref_motivo(L.refFinal));
+    fflush(stdout);
+    L.refMotivo = L.refFinal; L.querModo = -1; return;
+  }
   if (resta < 512 * 1024) { L.refMotivo = LEGREF_ORCAMENTO; L.querModo = -1; return; }
   o.maxBytes = resta < LS_LEITURA_BYTES ? resta : LS_LEITURA_BYTES;
   o.maxPedidos = LS_PEDIDOS; o.pedidosPorSeg = LS_RITMO;
@@ -790,6 +799,11 @@ void legsync_passo(const char *url, double pos, double folga, int sensivel, unsi
       } else if (st.fase == LEGREF_INDISPONIVEL || st.fase == LEGREF_CANCELADO) {
         L.refMotivo = st.motivo; L.bytesSessao += st.bytes; L.refPedido = 0; L.querModo = -1;
         if (st.motivo == LEGREF_SEM_FAIXA && L.nExcl > 0) L.semOutra = 1;
+        // Com faixas excluidas ("outra referencia") a falta de faixa/indice e
+        // dessa escolha, nao do arquivo.
+        if (st.motivo == LEGREF_SEM_RANGE || st.motivo == LEGREF_NAO_MKV || st.motivo == LEGREF_ORCAMENTO ||
+            ((st.motivo == LEGREF_SEM_FAIXA || st.motivo == LEGREF_SEM_INDICE) && !L.nExcl))
+          L.refFinal = st.motivo;
       }
     }
   }

@@ -18,7 +18,10 @@
 #ifndef NV_MKV_H
 #define NV_MKV_H
 
-#define MKV_MAX_FAIXAS 64
+// 64 ate 17/11: o remux de Fight Club 4K do dono tem 145 faixas (137
+// legendas) e a legenda sueca de texto era a 93 — nunca entrava no menu.
+// So o que o arquivo tem e preenchido: o resto dos vetores nao e tocado.
+#define MKV_MAX_FAIXAS 192
 
 typedef struct {
   int  numero;        // TrackNumber (NAO e o `trackNum` da LG: ver mkv_casar_legendas)

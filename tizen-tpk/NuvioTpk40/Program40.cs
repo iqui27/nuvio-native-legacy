@@ -151,7 +151,9 @@ namespace NuvioTpk
 
         Window janelaVideo, janelaErro, janelaAviso;
         Video video;
-        bool rodando, fim, primeiroQuadro, teclasReservadas;
+        bool rodando, primeiroQuadro, teclasReservadas;
+        // volatile: the subtitle clock thread (Video.IniciaRelogio) reads it too.
+        volatile bool fim;
 
         protected override void OnCreate()
         {
@@ -191,6 +193,10 @@ namespace NuvioTpk
                 return;
             }
             carregado:;
+            // .NET errors into the app log, as on the Tizen 6+ host (NetLog.cs). Only
+            // after the load: LigaSimbolos pointed NetLog at nv_tpk_log_net by
+            // function pointer, the one route that works with both loaders here.
+            try { NetLog.Registrar(); } catch (Exception e) { Etapa("note netlog " + e.GetType().Name); }
 
             try
             {
@@ -252,6 +258,12 @@ namespace NuvioTpk
                           "log: " + Path.Combine(dados, "nuvio.log"));
                 return false;
             });
+            // Subtitle clock, as on the Tizen 6+ host (Program.cs): the TV position
+            // every 40 ms on its own thread instead of every 250 ms from the timer
+            // above (which then stands down, Video.Tique). The libass engine times
+            // its frames from these readings. One query in flight, only while
+            // Playing, so it is idle otherwise.
+            video.IniciaRelogio(() => fim);
         }
 
         // Fio principal, contexto GL corrente. true = a TVGLApplication troca
@@ -753,6 +765,7 @@ namespace NuvioTpk
             // obrigatorio, pois o DllImport-por-soname nao resolveria.
             NvVid.Ligar(resolve);
             Apps.Ligar(resolve);
+            NetLog.Ligar(resolve);
             return NvLib.Pronto;
         }
 

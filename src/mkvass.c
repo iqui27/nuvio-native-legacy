@@ -60,9 +60,18 @@
 // 60-200 bytes; 512 sobra e evita o segundo Range para completar.
 #define MKVASS_BLOCO       512L
 // Teto do elemento Cues. Um filme de 3 h com cue por bloco de legenda e por
-// quadro-chave de video fica em algumas centenas de KB.
-#define MKVASS_CUES_MAX    (4L * 1024 * 1024)
+// quadro-chave de video fica em algumas centenas de KB — mas um remux com 137
+// legendas indexadas (dono, 17/11: Fight Club 4K, 145 faixas) tem Cues de
+// 9,35 MB, e com o teto antigo de 4 MB a faixa ia para a varredura do arquivo
+// (Clusters de video baixados de novo, ao lado do video). O Cues agora chega
+// em PEDACOS de MKVASS_CUES_PEDACO, cada um lido e solto antes do proximo: a
+// memoria nao passa do que era o teto inteiro. MKVASS_CUES_MAX e teto de rede.
+#define MKVASS_CUES_MAX    (16L * 1024 * 1024)
+#define MKVASS_CUES_PEDACO (4L * 1024 * 1024)
 #define MKVASS_CUES_1      (256L * 1024)
+// Legendas de um arquivo (ordinal). Era 64 fixo: a sueca de texto do remux de
+// 145 faixas (17/11) tinha ordinal 85. O mesmo teto de MKV_MAX_FAIXAS.
+#define MKVASS_MAX_LEGENDAS 192
 // Teto do INDICE (pontos) e do CORPO (texto colhido). Sao coisas diferentes, e
 // trata-las como uma so foi o #384: o indice parava em 8000 pontos ("o mesmo
 // teto de legenda.c, mais que isto o overlay nao aceita") e, num anime com
@@ -1625,10 +1634,10 @@ static void lerInfo(Fio *f, const unsigned char *p, long n) {
 // Devolve 0 escolheu; -1 nada a colher (sem legenda, nada casou).
 static int escolherNoCabecalho(Fio *f, const unsigned char *p, long n) {
   Iter it = { p, n, 0 }; unsigned long id; const unsigned char *d; long t;
-  char idiomas[64][16];
-  const char *vetor[64];
+  char idiomas[MKVASS_MAX_LEGENDAS][16];
+  const char *vetor[MKVASS_MAX_LEGENDAS];
   int nLeg = 0, ord;
-  while (proximo(&it, &id, &d, &t) && nLeg < 64) {
+  while (proximo(&it, &id, &d, &t) && nLeg < MKVASS_MAX_LEGENDAS) {
     Iter j = { d, t, 0 }; unsigned long fid; const unsigned char *fd; long ft;
     int tipo = 0; char lang[16] = "", bcp[16] = "";
     if (id != ID_TRACKENTRY) continue;
@@ -2114,9 +2123,59 @@ static int cuesPorVarredura(Fio *f, const char *porque) {
   return MKVASS_NOGO_REDE;
 }
 
+// Um CuePoint: o ponto da faixa vai a f->pontos (e o Cluster a daFaixa); o
+// das outras so serve a varredura pela lista do video, e so enquanto a faixa
+// nao apareceu no indice (depois disso a lista nunca e usada) — e sem repetir
+// o Cluster do ponto anterior: num remux com 137 legendas indexadas eram
+// ~390 mil entradas (6 MB) para uns poucos milhares de Clusters. 0 = sem memoria.
+static int cuePontoLer(Fio *f, const unsigned char *d, long t,
+                       ClVarre **daFaixa, int *nFaixa, int *capFaixa,
+                       ClVarre **doVideo, int *nVideo, int *capVideo, int *semRel, int *cap) {
+  Iter j; unsigned long cid; const unsigned char *cd; long ct;
+  unsigned long tempo = 0;
+  j.p = d; j.n = t; j.o = 0;
+  while (proximo(&j, &cid, &cd, &ct)) {
+    if (cid == ID_CUETIME) tempo = lerUint(cd, ct);
+    else if (cid == ID_CUETRACKPOS) {
+      Iter k = { cd, ct, 0 }; unsigned long kid; const unsigned char *kd; long kt;
+      long trk = -1, rel = -1; Off cl = -1;
+      while (proximo(&k, &kid, &kd, &kt)) {
+        if (kid == ID_CUETRACK)   trk = (long)lerUint(kd, kt);
+        if (kid == ID_CUECLUSTER) cl  = lerPos(kd, kt);
+        if (kid == ID_CUERELPOS)  rel = (long)lerUint(kd, kt);
+      }
+      if (cl < 0 || cl > LLONG_MAX - f->segIni) continue;
+      if (trk != f->faixa) {
+        if (*nFaixa) continue;
+        if (*nVideo && (*doVideo)[*nVideo - 1].cluster == f->segIni + cl) continue;
+        if (!anexarClVarre(doVideo, nVideo, capVideo, f->segIni + cl, tempo)) return 0;
+        continue;
+      }
+      if (!*nFaixa) { free(*doVideo); *doVideo = NULL; *nVideo = *capVideo = 0; }
+      if (!anexarClVarre(daFaixa, nFaixa, capFaixa, f->segIni + cl, tempo)) return 0;
+      // Sem CueRelativePosition o ponto fica com rel = -1: o Cluster e
+      // conhecido e sera lido inteiro (colherCluster). Antes isto mandava a
+      // faixa TODA para a varredura.
+      if (rel < 0) (*semRel)++;
+      if (f->nPontos >= MKVASS_MAX_PONTOS) { f->indiceCortado = 1; continue; }
+      if (f->nPontos >= *cap) {
+        Ponto *nv = realloc(f->pontos, (size_t)*cap * 2 * sizeof *nv);
+        if (!nv) return 0;
+        f->pontos = nv; *cap *= 2;
+      }
+      f->pontos[f->nPontos].cluster = f->segIni + cl;
+      f->pontos[f->nPontos].rel = rel;
+      f->pontos[f->nPontos].tempo = tempo;
+      f->pontos[f->nPontos].colhido = 0;
+      f->nPontos++;
+    }
+  }
+  return 1;
+}
+
 static int lerCues(Fio *f) {
   long n = 0, tam; int ui = 0, ut = 0; unsigned char *p;
-  Iter it; unsigned long id; const unsigned char *d; long t;
+  unsigned long id;
   int semRel = 0, cap = 256, r = 0;
   // Clusters citados pelo indice: os da PROPRIA faixa (CuePoint sem
   // CueRelativePosition) e os das OUTRAS (o video). Servem a varredura quando
@@ -2167,67 +2226,75 @@ static int lerCues(Fio *f) {
   tam = lerTam(p + ui, n - ui, &ut);
   if (tam <= 0 || tam > MKVASS_CUES_MAX) {
     free(p);
+    // 17/11: sem esta linha o log so dizia "o indice nao aponta os blocos
+    // desta faixa", e o indice nem tinha sido lido.
+    if (tam > MKVASS_CUES_MAX)
+      printf("[mkvass] faixa %d: Cues de %ld bytes, acima do teto de %ld: o indice nao e lido e a faixa e varrida pelo arquivo\n",
+             f->faixa, tam, (long)MKVASS_CUES_MAX);
+    fflush(stdout);
     return armarVarreduraInteira(f) ? 0 : MKVASS_NOGO_SEM_INDICE;
   }
-  if (ui + ut + tam <= n) {
-    memmove(p, p + ui + ut, (size_t)tam);
-  } else {
-    long falta = ui + ut + tam - n, m = 0;
-    unsigned char *q = realloc(p, (size_t)(ui + ut + tam)), *resto;
-    if (!q) { free(p); return MKVASS_NOGO_REDE; }
-    p = q;
-    resto = rangeInsistir(f, f->posCues + n, falta, &m);
-    if (!resto || m < falta) {
-      free(resto); free(p);
-      return cuesPorVarredura(f, f->restoRecusado ? "resto recusado" : "o host corta Range");
-    }
-    memcpy(p + n, resto, (size_t)falta); free(resto);
-    memmove(p, p + ui + ut, (size_t)tam);
-  }
-  n = tam;
   f->pontos = calloc((size_t)cap, sizeof *f->pontos);
   if (!f->pontos) { free(p); return MKVASS_NOGO_REDE; }
-  it.p = p; it.n = tam; it.o = 0;
-  while (proximo(&it, &id, &d, &t)) {
-    Iter j; unsigned long cid; const unsigned char *cd; long ct;
-    unsigned long tempo = 0;
-    if (id != ID_CUEPOINT) continue;
-    j.p = d; j.n = t; j.o = 0;
-    while (proximo(&j, &cid, &cd, &ct)) {
-      if (cid == ID_CUETIME) tempo = lerUint(cd, ct);
-      else if (cid == ID_CUETRACKPOS) {
-        Iter k = { cd, ct, 0 }; unsigned long kid; const unsigned char *kd; long kt;
-        long trk = -1, rel = -1; Off cl = -1;
-        while (proximo(&k, &kid, &kd, &kt)) {
-          if (kid == ID_CUETRACK)   trk = (long)lerUint(kd, kt);
-          if (kid == ID_CUECLUSTER) cl  = lerPos(kd, kt);
-          if (kid == ID_CUERELPOS)  rel = (long)lerUint(kd, kt);
+  {
+    // EM PEDACOS: `p` guarda o que ainda nao fechou um CuePoint (a cauda) mais
+    // o pedaco novo; o que fecha e lido e sai. O primeiro pedaco e o que o
+    // Range de MKVASS_CUES_1 ja trouxe.
+    long hdr = ui + ut, nb = n - hdr, capP = n, pedacos = 0;
+    Off recebido;
+    int ruim = 0;
+    if (nb > tam) nb = tam;
+    memmove(p, p + hdr, (size_t)nb);
+    recebido = nb;
+    for (;;) {
+      long o = 0;
+      while (o < nb) {
+        int a = 0, b = 0; unsigned long eid = lerId(p + o, nb - o, &a); long et;
+        if (!eid) { if (larguraDe(p[o]) < 1 || larguraDe(p[o]) > 4) ruim = 1; break; }
+        et = lerTam(p + o + a, nb - o - a, &b);
+        if (et == -1 && nb - o - a >= 8) { ruim = 1; break; }   // lixo, nao "ainda nao chegou"
+        if (et == -2 || et > MKVASS_CUES_PEDACO) { ruim = 1; break; }
+        if (et < 0 || et > nb - o - a - b) break;               // incompleto: espera o proximo pedaco
+        if (eid == ID_CUEPOINT && !cuePontoLer(f, p + o + a + b, et, &daFaixa, &nFaixa, &capFaixa,
+                                               &doVideo, &nVideo, &capVideo, &semRel, &cap)) r = MKVASS_NOGO_REDE;
+        o += a + b + et;
+      }
+      if (ruim || r) break;
+      memmove(p, p + o, (size_t)(nb - o)); nb -= o;
+      if (recebido >= tam) break;
+      {
+        long quer = tam - recebido > MKVASS_CUES_PEDACO ? MKVASS_CUES_PEDACO : (long)(tam - recebido), m = 0;
+        unsigned char *q;
+        if (nb + quer > capP) {
+          unsigned char *nv = realloc(p, (size_t)(nb + quer));
+          if (!nv) { r = MKVASS_NOGO_REDE; break; }
+          p = nv; capP = nb + quer;
         }
-        if (cl < 0 || cl > LLONG_MAX - f->segIni) continue;
-        if (trk != f->faixa) {
-          if (!anexarClVarre(&doVideo, &nVideo, &capVideo, f->segIni + cl, tempo)) r = MKVASS_NOGO_REDE;
-          continue;
+        q = rangeInsistir(f, f->posCues + hdr + recebido, quer, &m);
+        if (!q || m < quer) {
+          free(q); free(p); free(daFaixa); free(doVideo);
+          free(f->pontos); f->pontos = NULL; f->nPontos = 0;
+          return cuesPorVarredura(f, f->restoRecusado ? "resto recusado" : "o host corta Range");
         }
-        if (!anexarClVarre(&daFaixa, &nFaixa, &capFaixa, f->segIni + cl, tempo)) r = MKVASS_NOGO_REDE;
-        // Sem CueRelativePosition o ponto fica com rel = -1: o Cluster e
-        // conhecido e sera lido inteiro (colherCluster). Antes isto mandava a
-        // faixa TODA para a varredura.
-        if (rel < 0) semRel++;
-        if (f->nPontos >= MKVASS_MAX_PONTOS) { f->indiceCortado = 1; continue; }
-        if (f->nPontos >= cap) {
-          Ponto *nv = realloc(f->pontos, (size_t)cap * 2 * sizeof *nv);
-          if (!nv) break;
-          f->pontos = nv; cap *= 2;
-        }
-        f->pontos[f->nPontos].cluster = f->segIni + cl;
-        f->pontos[f->nPontos].rel = rel;
-        f->pontos[f->nPontos].tempo = tempo;
-        f->pontos[f->nPontos].colhido = 0;
-        f->nPontos++;
+        memcpy(p + nb, q, (size_t)quer); free(q);
+        nb += quer; recebido += quer; pedacos++;
       }
     }
+    free(p);
+    if (!r && (ruim || nb)) {
+      printf("[mkvass] faixa %d: Cues de %ld bytes ilegivel a partir de %lld: varre o arquivo\n",
+             f->faixa, tam, (long long)(recebido - nb));
+      fflush(stdout);
+      free(daFaixa); free(doVideo);
+      free(f->pontos); f->pontos = NULL; f->nPontos = 0;
+      return armarVarreduraInteira(f) ? 0 : MKVASS_NOGO_SEM_INDICE;
+    }
+    if (pedacos) {
+      printf("[mkvass] faixa %d: Cues de %ld bytes lido em %ld pedaco(s) de ate %ld KB (nunca inteiro na memoria)\n",
+             f->faixa, tam, pedacos + 1, MKVASS_CUES_PEDACO / 1024);
+      fflush(stdout);
+    }
   }
-  free(p);
   if (r) { free(daFaixa); free(doVideo); return r; }
   if (f->nPontos) {
     free(daFaixa); free(doVideo);
@@ -3880,9 +3947,10 @@ static void *trabalhar(void *arg) {
     // o app NAO entregou a faixa a TV, esta varrendo.
     // Sem ';' dentro do formato: a varredura-i18n anda para tras ate o ';'
     // anterior para achar o printf, e um ';' no texto a deixava sem contexto.
-    printf("[mkvass] faixa %d: o indice nao aponta os blocos desta faixa — VARREDURA de %d trecho(s) "
+    printf("[mkvass] faixa %d: %s — VARREDURA de %d trecho(s) "
            "(lista=%s, baixa os Clusters e nao so as falas, Segment ate %lld)\n",
-           f->faixa, f->nPontos, f->varreEncadeia ? "cues-do-video" : "cues-da-faixa", f->segFim);
+           f->faixa, f->varreInteira ? "sem indice utilizavel" : "o indice nao aponta os blocos desta faixa", f->nPontos,
+           f->varreInteira ? "arquivo-inteiro" : f->varreEncadeia ? "cues-do-video" : "cues-da-faixa", f->segFim);
     fflush(stdout);
   }
 
@@ -4236,7 +4304,7 @@ void mkvass_iniciar(const char *url, int numeroFaixa) {
 }
 
 void mkvass_iniciar_ordinal(const char *url, int ordinalFaixa) {
-  if (ordinalFaixa < 0 || ordinalFaixa >= 64) return;
+  if (ordinalFaixa < 0 || ordinalFaixa >= MKVASS_MAX_LEGENDAS) return;
   iniciarFaixa(url, -ordinalFaixa - 1, 0, 0);
 }
 

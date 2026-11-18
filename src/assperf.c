@@ -244,6 +244,19 @@ int assperf_pesado(void) {
 #define AUTO_MIN75_S  5.0
 #define AUTO_MIN100_S 2.0
 static struct { int em75; double desde; } A;
+/* Render resolution Auto in a busy scene: 75 %; Tizen 4-6 50 % (owner,
+ * 16-17/11/2026: the 2019 Tizen 5 TV dropped to ~11 fps at 75 %, the 2021
+ * Tizen 6 TV rendered heavy signs at 118-192 ms per frame). "em75" = busy. */
+static int tvLenta;   /* __atomic: set once by video_tpk.c from the Tizen version */
+void assperf_tv_lenta_definir(int sim) { __atomic_store_n(&tvLenta, sim ? 1 : 0, __ATOMIC_RELAXED); }
+int assperf_tv_lenta(void) {
+#ifdef NV_TPK40
+  return 1;
+#else
+  return __atomic_load_n(&tvLenta, __ATOMIC_RELAXED);
+#endif
+}
+#define ESCALA_PESADA (assperf_tv_lenta() ? 0.5 : 0.75)
 
 static void auto_trocar_locked(int em75, double t) { A.em75 = em75; A.desde = t; }
 
@@ -261,7 +274,7 @@ double assperf_escala_quadro(void) {
   { int pesado = pesado_locked(t) || CG.prevCedo;
     if (!A.em75 && pesado && t - A.desde >= AUTO_MIN100_S) auto_trocar_locked(1, t);
     else if (A.em75 && !pesado && t - A.desde >= AUTO_MIN75_S) auto_trocar_locked(0, t); }
-  r = A.em75 ? 0.75 : 1.0;
+  r = A.em75 ? ESCALA_PESADA : 1.0;
   pthread_mutex_unlock(&autoTrava);
   return r;
 }
@@ -277,5 +290,5 @@ double assperf_escala(void) {
   int v = assperf_get(AP_ESCALA), em75;
   if (v != 5) return v == 2 ? 0.75 : 1.0;
   pthread_mutex_lock(&autoTrava); em75 = A.em75; pthread_mutex_unlock(&autoTrava);
-  return em75 ? 0.75 : 1.0;
+  return em75 ? ESCALA_PESADA : 1.0;
 }

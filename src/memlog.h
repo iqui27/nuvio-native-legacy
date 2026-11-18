@@ -8,6 +8,7 @@ void memlog_evento(const char *evento);
 int memlog_pouca_memoria(void);
 int memlog_android_fraco(void);   // Android com RAM total <= 3 GiB (box Onn); 0 fora
 long memlog_livre_mb(void);   // MemAvailable em MiB; -1 = desconhecido
+long memlog_total_mb(void);   // MemTotal in MiB; -1 = unknown
 // Abaixo disto o webOS fecha o app ("liberar memoria"); e o limiar do aviso.
 #define MEMLOG_PISO_MB 150
 void memlog_devolver(void);    // malloc_trim: heap livre de volta ao sistema

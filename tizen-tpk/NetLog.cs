@@ -23,6 +23,19 @@ namespace NuvioTpk
     static class NetLog
     {
         [DllImport("libnuvio.so")] static extern void nv_tpk_log_net(string linha);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void LinhaDel(string linha);
+
+        // Default: the P/Invoke above, by soname (Tizen 6+ hosts). The NuvioTpk40
+        // host (Tizen 4/5) loads the library by memfd or by its own ELF loader,
+        // where a DllImport by name may not resolve: it points this at the symbol
+        // with Ligar, like NvVid.Ligar. null = that library has no such export.
+        static LinhaDel nativo = nv_tpk_log_net;
+
+        public static void Ligar(Func<string, IntPtr> resolve)
+        {
+            IntPtr p = resolve("nv_tpk_log_net");
+            nativo = p != IntPtr.Zero ? Marshal.GetDelegateForFunctionPointer<LinhaDel>(p) : null;
+        }
 
         const int PrimeirasMax = 20;
         [ThreadStatic] static bool dentro;   // logging must never log itself
@@ -39,8 +52,9 @@ namespace NuvioTpk
 
         static void Linha(string l)
         {
-            if (semNet) return;
-            try { nv_tpk_log_net(l); }
+            LinhaDel f = nativo;
+            if (semNet || f == null) return;
+            try { f(l); }
             catch (EntryPointNotFoundException) { semNet = true; }   // older lib: no unredacted fallback
             catch (Exception) { }                                    // lib not loaded yet
         }

@@ -91,6 +91,52 @@ int  mkvfix_montar(const uint32_t *id, const int64_t *pos, int n, unsigned char 
 #define MKVFIX_TIPO_ESCONDIDA 0x20
 #define MKVFIX_OCULTAS 16
 int  mkvfix_legendas_texto(const unsigned char *b, long n, int64_t *off, int max);
+// The same, also giving each one's TrackNumber in `num` (0 = the entry has
+// none). Used by the Void mode below.
+int  mkvfix_legendas_texto_num(const unsigned char *b, long n, int64_t *off, uint64_t *num, int max);
+
+// HOW THE TV IS KEPT OFF THE ASS TRACKS (Tizen 4-6 playback damage, 16/11/2026).
+// 2.0.8 changes each text subtitle's TrackType to "control" (HIDDEN). Its
+// blocks stay in the Clusters, under a track the TV no longer has. Tizen 4-6
+// players show blocky damage in the video in ASS-heavy scenes since then
+// (2.0.7, which hid nothing, is clean); the S95C (Tizen 9) is fine.
+// VOID keeps the TrackEntry as it is and turns every block of those tracks
+// into an EBML Void element of the same size (its one-byte ID A0/A3 -> EC):
+// every Matroska reader skips Void, so the TV gets no ASS data and no block of
+// an unknown track. Void fixed it on a Tizen 6 TV (17/11/2026).
+enum { MKVFIX_ASS_ESCONDER = 1, MKVFIX_ASS_ANULAR = 2 };
+// Mode for the next probe (video_tpk.c picks it by the Tizen version).
+void mkvfix_modo_ass(int modo);
+int  mkvfix_modo_ass_atual(void);
+
+// The Void walker: follows the Clusters in the bytes going to the TV and
+// rewrites the ID of every SimpleBlock / BlockGroup of the given tracks to
+// Void. It only rewrites inside a Cluster it is sure of (walked from the file
+// start, or found by its ID + size + Timestamp child after a Range that starts
+// mid-file); anything it can't follow passes untouched. Bytes of a block
+// header still being read are held back (at most MKVFIX_VOID_HB) so the ID
+// byte is changed before it is sent.
+#define MKVFIX_VOID_HB 64
+typedef struct {
+  int st, ret;
+  int64_t pos;                 // absolute position of the next input byte
+  int64_t clFim;               // end of the current Cluster
+  int64_t segFim;              // end of the Segment (-1 unknown)
+  int64_t ate;                 // SKIP: end of what is skipped
+  uint32_t win;                // SCAN window
+  unsigned char cv[24]; int cvN;   // header being verified (already sent)
+  unsigned char hb[MKVFIX_VOID_HB]; int hbN;   // child header held back
+  uint64_t faixa[MKVFIX_OCULTAS]; int nf;
+  long anulados, indecisos, perdas, sincronias;   // counters (read by the caller)
+  int64_t bytesAnulados;
+} MkvfixVoid;
+void mkvfix_void_iniciar(MkvfixVoid *v, const uint64_t *faixas, int n, int64_t pos);
+// Consumes `n` bytes at v->pos; writes what can go out to `out` (room for
+// n + MKVFIX_VOID_HB). Returns the bytes written.
+long mkvfix_void_passar(MkvfixVoid *v, const unsigned char *in, long n, unsigned char *out);
+// End of the response: the held bytes, unchanged. Returns the bytes written.
+long mkvfix_void_fim(MkvfixVoid *v, unsigned char *out);
+
 // Posicao absoluta do Tracks a partir do inicio do arquivo ja lido (pelo
 // SeekHead ou pelos elementos do topo dentro de `n`); -1 se nao achou.
 int64_t mkvfix_tracks_pos(const unsigned char *b, long n, const MkvfixCab *c);
@@ -126,6 +172,15 @@ int  mkvfix_estado(void);
 // Legendas de texto que a sessao atual esconde da TV (0 = nenhuma ou sondando).
 // > 0: o arquivo deve tocar pelo servidor (mkvfix_url) desde a abertura.
 int  mkvfix_ocultas(void);
+// Relay measurements since the last call (the "[mkvfix] 10s" log line): bytes
+// sent to the TV, ms blocked sending (the TV not reading), ms waiting on the
+// CDN, blocks voided, Void walker resyncs / lost / undecided, connections open.
+typedef struct {
+  long long bytes, envioMs, cdnMs, bytesAnulados;
+  long anulados, sincronias, perdas, indecisos;
+  int conexoes;
+} MkvfixMedidas;
+void mkvfix_medidas(MkvfixMedidas *m);
 // O endereco local do arquivo consertado (sobe o servidor na primeira vez).
 // 0 se a sessao atual nao e MKVFIX_PRECISA nem esconde legendas, ou o servidor
 // nao subiu.

@@ -40,6 +40,7 @@
 #include "cdnlink.h"
 #include "debrid.h"
 #include "mkvfix.h"
+#include "assperf.h"
 #include <SDL2/SDL.h>
 #include <math.h>
 #include "tbburn.h"
@@ -71,7 +72,9 @@ static FnPos    hPos;
 typedef void (*FnEscolher)(int tipo, int idx);
 static FnEscolher hEscolher;
 
-#define MAX_FAIXAS 32
+// Era 32 (17/11): num remux com 62 legendas de texto o .tpk descartava as do
+// player depois da 32a, e nem as escrevia no log. O mesmo teto das outras.
+#define MAX_FAIXAS NV_FAIXA_MAX
 static VideoFaixa faixaAudio[MAX_FAIXAS], faixaLeg[MAX_FAIXAS];
 static volatile int nAudio, nLeg, audioAtual, legAtual = -1;
 static SDL_mutex *travaLeg;
@@ -166,6 +169,9 @@ static atomic_int buscaAlvoMs = -1;
 // celular no bone da menina, a caixa do INBOX fora do celular).
 static pthread_mutex_t amTrava = PTHREAD_MUTEX_INITIALIZER;
 static struct { unsigned seq; int valido, ms; double carimbo, incerteza; } am;
+/* Measurements for the libass log line (assrender.c, "[ass] 10s tv"): readings
+ * since the last video_tpk_leituras, under amTrava. */
+static struct { int n, fora, maxMs; long somaMs; } amMed;
 static double amBusca;                 // monoAgora do ultimo EV_BUSCOU (sob amTrava)
 static atomic_int posIncerta;          // 1 = seek feito, ainda sem leitura real
 static atomic_uint incertaTick;        // SDL_GetTicks do seek (1,5 s no maximo)
@@ -316,13 +322,24 @@ void nv_tpk_video_posicao(int ms, int motivo, int consultaMs, long long carimboN
   if (!ativo || ms < 0) return;
   if (c > agora + 0.05 || c < agora - 10.0) c = agora - inc;   // relogio diferente: o fim menos meia consulta
   pthread_mutex_lock(&amTrava);
+  amMed.n++;
+  if (consultaMs > 0) { amMed.somaMs += consultaMs; if (consultaMs > amMed.maxMs) amMed.maxMs = consultaMs; }
   /* Consulta que COMECOU antes do ultimo seek (chega depois do EV_BUSCOU, ate
    * 600 ms mais lenta): a posicao e a de antes do salto. Fora — ela tirava o
    * posIncerta com a posicao velha e a legenda da outra cena aparecia. */
-  if (c - inc < amBusca) { pthread_mutex_unlock(&amTrava); return; }
+  if (c - inc < amBusca) { amMed.fora++; pthread_mutex_unlock(&amTrava); return; }
   am.ms = ms; am.carimbo = c; am.incerteza = inc; am.seq++; am.valido = 1;
   pthread_mutex_unlock(&amTrava);
   if (motivo <= 1) atomic_store(&posIncerta, 0);   // a TV ja disse onde caiu depois do seek
+}
+
+/* Position readings since the last call (video.h): how many arrived, how many
+ * were dropped as older than the last seek, and the query time. Resets them. */
+void video_tpk_leituras(int *n, int *fora, long *somaMs, int *maxMs) {
+  pthread_mutex_lock(&amTrava);
+  *n = amMed.n; *fora = amMed.fora; *somaMs = amMed.somaMs; *maxMs = amMed.maxMs;
+  memset(&amMed, 0, sizeof amMed);
+  pthread_mutex_unlock(&amTrava);
 }
 
 void video_escolher_audio(int i);
@@ -405,10 +422,10 @@ void nv_tpk_video_faixas_fim(int selAudio, int selLeg) {
     montarListaQueimada();
     return;
   }
-  memcpy(faixaAudio, novasA, sizeof novasA);
+  memcpy(faixaAudio, novasA, (size_t)nNovasA * sizeof *novasA);   // so as preenchidas
   audioAtual = selAudio >= 0 ? selAudio : 0;
   if (!releitura) {
-    memcpy(faixaLeg, novasL, sizeof novasL);
+    memcpy(faixaLeg, novasL, (size_t)nNovasL * sizeof *novasL);
     legAtual = -1;   // a TV ate pode ter uma escolhida; quem liga e o app (faixas.c)
     nLeg = nNovasL;
   }
@@ -494,6 +511,7 @@ static struct {
 static char mfEspUrl[sizeof urlAtual], mfEspCab[sizeof cabecalhos];
 static int mfEsperarAntes(const char *url, const char *cab);
 static int tbSegurarAntes(const char *url, const char *cab);
+static int modoAss(void);   // mkvfix.h: Hidden / Void for this TV (below, next to tizenMaior)
 static atomic_int mfRecusas;   // EV_BUSCA_FALHOU (fio do host)
 static atomic_int mfAviso;     // video_tpk_aviso_busca consome
 static atomic_uint buscaFalhas;  // EV_BUSCA_FALHOU, so cresce (player.c: seek em voo)
@@ -797,6 +815,7 @@ static int mfPode(void) {
 static void mfSondar(void) {
   if (!mfPode()) return;
   mf.sondou = 1;
+  mkvfix_modo_ass(modoAss());
   if (cdn.arquivo) mkvfix_sondar_arquivo(hostUrl, hostCab, cdn.usenet, cdn.item, cdn.file);
   else mkvfix_sondar(hostUrl, hostCab, strcmp(urlAtual, hostUrl) ? urlAtual : NULL);
 }
@@ -1010,7 +1029,7 @@ static int tbSegurarAntes(const char *url, const char *cab) {
   }
   tb.preFeito = 1;
   listaDoArquivo(a, &na, l, &nl);
-  memcpy(faixaAudio, a, sizeof faixaAudio); memcpy(faixaLeg, l, sizeof faixaLeg);
+  memcpy(faixaAudio, a, (size_t)na * sizeof *a); memcpy(faixaLeg, l, (size_t)nl * sizeof *l);
   nAudio = na; nLeg = nl; audioAtual = 0; legAtual = -1;
   // The audio rule on the file's tracks: TorBox transcodes any of them.
   for (i = 0; i < na; i++) {
@@ -1301,6 +1320,7 @@ static int mfEsperarAntes(const char *url, const char *cab) {
   // mkvfix, cujo curl manda os cabecalhos em todo Range.
   int relay = cab && mkvfix_cab_fora_da_tv(cab);
   if (!relay && (mkvEstado != 3 || !mkvTemAss())) return 0;
+  mkvfix_modo_ass(modoAss());
   mf.sondou = 1; mf.esperando = 1; mf.esperaDesde = SDL_GetTicks();
   snprintf(mfEspUrl, sizeof mfEspUrl, "%s", url ? url : "");
   snprintf(mfEspCab, sizeof mfEspCab, "%s", cab ? cab : "");
@@ -1683,7 +1703,7 @@ static void montarListaConvertida(void) {
   int na, nl, i, sel = 0, ordLeg = legAtual >= 0 && legAtual < nLeg ? faixaLeg[legAtual].ordinalMkv : -1;
   listaDoArquivo(a, &na, l, &nl);
   for (i = 0; i < na; i++) if (a[i].stream_id == cv.track) sel = i;
-  memcpy(faixaAudio, a, sizeof faixaAudio); memcpy(faixaLeg, l, sizeof faixaLeg);
+  memcpy(faixaAudio, a, (size_t)na * sizeof *a); memcpy(faixaLeg, l, (size_t)nl * sizeof *l);
   audioAtual = sel; nAudio = na; nLeg = nl;
   if (legAtual >= nLeg) legAtual = -1;
   if (ordLeg >= 0) for (i = 0; i < nl; i++) if (l[i].ordinalMkv == ordLeg) legAtual = i;
@@ -1700,7 +1720,7 @@ static void legendasDoArquivo(void) {
   static VideoFaixa a[MAX_FAIXAS], l[MAX_FAIXAS];
   int na, nl, i, ordLeg = legAtual >= 0 && legAtual < nLeg ? faixaLeg[legAtual].ordinalMkv : -1;
   listaDoArquivo(a, &na, l, &nl);
-  memcpy(faixaLeg, l, sizeof faixaLeg);
+  memcpy(faixaLeg, l, (size_t)nl * sizeof *l);
   nLeg = nl;
   legAtual = -1;
   if (ordLeg >= 0) for (i = 0; i < nl; i++) if (l[i].ordinalMkv == ordLeg) legAtual = i;
@@ -1715,7 +1735,7 @@ static void montarListaQueimada(void) {
   static VideoFaixa a[MAX_FAIXAS], l[MAX_FAIXAS];
   int na, nl, i;
   listaDoArquivo(a, &na, l, &nl);
-  memcpy(faixaAudio, a, sizeof faixaAudio); memcpy(faixaLeg, l, sizeof faixaLeg);
+  memcpy(faixaAudio, a, (size_t)na * sizeof *a); memcpy(faixaLeg, l, (size_t)nl * sizeof *l);
   nAudio = na; nLeg = nl; audioAtual = 0; legAtual = -1;   // Main/Second are Nuvio's overlay (faixas.c)
   { int quer = tb.tba && tba_audio() >= 0 ? tba_audio() : tb.audio;   // Nuvio's track, else TorBox's
     for (i = 0; i < na; i++) if (tbIdxAudioDe(&a[i], i) == quer) audioAtual = i; }
@@ -1936,6 +1956,37 @@ static void avaliarAudioTv(void) {
   }
 }
 
+// 17/11 (remux de 145 faixas, 62 legendas de texto): legenda de TEXTO do
+// arquivo que nao veio na lista do player entra como faixa so do app (numero
+// < 0: o mkvass a colhe pelo ordinal e o overlay desenha, como no .tpk o texto
+// ja vai), a mesma regra da LG (#510). So quando TODA linha de texto do player
+// casou com o arquivo (tem codec): senao o ordinal dela e o do player e a
+// mesma faixa apareceria duas vezes. Player com MENOS linhas que o arquivo e
+// casamento que falhou: a lista de legendas passa a ser a do arquivo inteira
+// (desenhada pelo app) enquanto nada foi escolhido; com uma escolha feita, a
+// lista fica como esta e o log diz.
+static void legendasDeTextoDoArquivo(void) {
+  int k, jog = 0, semCodec = 0, arq = 0, antes = nLeg;
+  for (k = 0; k < nLeg; k++) if (faixaLeg[k].numero >= 0) { jog++; if (!faixaLeg[k].codec[0]) semCodec++; }
+  for (k = 0; k < mkvN; k++) if (mkvFx[k].tipo == 17 && faixasmkv_overlay(mkvFx[k].codec, 1)) arq++;
+  if (!semCodec) {
+    nLeg = faixasmkv_acrescentar_texto(faixaLeg, nLeg, MAX_FAIXAS, mkvFx, mkvN);
+    if (nLeg > antes)
+      printf("[mkv] %d legenda(s) de texto do arquivo fora da lista do player (%d linhas): entram desenhadas pelo app\n",
+             nLeg - antes, jog);
+  } else if (jog < arq && legAtual < 0) {
+    int r = 0;
+    for (k = 0; k < nLeg; k++) if (faixaLeg[k].numero < 0) faixaLeg[r++] = faixaLeg[k];   // as do app ficam
+    nLeg = faixasmkv_acrescentar_texto(faixaLeg, r, MAX_FAIXAS, mkvFx, mkvN);
+    printf("[mkv] o player listou %d legenda(s) de texto e o arquivo tem %d, sem casar (%d sem rotulo): "
+           "a lista passa a ser a do arquivo, desenhada pelo app\n", jog, arq, semCodec);
+  } else if (jog < arq) {
+    printf("[mkv] o player listou %d legenda(s) de texto e o arquivo tem %d, sem casar; ja ha uma escolhida: "
+           "a lista fica a do player\n", jog, arq);
+  }
+  fflush(stdout);
+}
+
 // Fio do app. Procura o cabecalho e, quando ha faixas novas, reescreve os
 // rotulos. Sem mutex, como o resto deste arquivo: o rotulo sai de uma vez so.
 static void sondaMkv(double pos) {
@@ -1988,6 +2039,7 @@ static void sondaMkv(double pos) {
     int m;
     faixasNovas = 0;
     m = faixasmkv_aplicar(faixaAudio, nAudio, faixaLeg, nLeg, mkvFx, mkvN);
+    legendasDeTextoDoArquivo();
     // PGS: o player nao lista; entra no fim da lista, com o ordinal do arquivo.
     nLeg = faixasmkv_acrescentar_imagem(faixaLeg, nLeg, MAX_FAIXAS, mkvFx, mkvN);
     if (legOcultas()) legendasDoArquivo();
@@ -2636,7 +2688,24 @@ static void encaixar(int x, int y, int w, int h, int *fx, int *fy, int *fw, int 
 }
 // Versao da Tizen (gpunivel.c le platform.version); so o maior importa.
 static int tizenMaior;
-void video_tpk_tizen_definir(const char *v) { tizenMaior = v ? atoi(v) : 0; }
+void video_tpk_tizen_definir(const char *v) {
+  tizenMaior = v ? atoi(v) : 0;
+  assperf_tv_lenta_definir(tizenMaior >= 4 && tizenMaior <= 6);   /* busy ASS scenes: 50 %, further ahead */
+}
+// How the TV is kept off the ASS tracks (mkvfix.h): Void on Tizen 4-6 (their
+// players broke up the video with 2.0.8's Hidden; Void confirmed on a Tizen 6
+// TV, 17/11/2026), Hidden on 7+ and when the version is unknown (the S95C is
+// fine with it).
+static int modoAss(void) {
+  static int logado = -1;
+  int m = tizenMaior >= 4 && tizenMaior <= 6 ? MKVFIX_ASS_ANULAR : MKVFIX_ASS_ESCONDER;
+  if (logado != m) {
+    logado = m;
+    printf("[mkvfix] ASS tracks and the TV: %s (Tizen %d)\n", m == MKVFIX_ASS_ANULAR ? "Void" : "Hidden", tizenMaior);
+    fflush(stdout);
+  }
+  return m;
+}
 // COVER NO CARTAO (#471): so na Tizen 6.x (a TV do relato, uma AU7000 6.0) ou com
 // o zoom experimental ligado. ROI com origem negativa nunca foi visto no 4/5 (#426)
 // e apaga o plano na Tizen 9 (#188), entao as demais familias ficam no quadro

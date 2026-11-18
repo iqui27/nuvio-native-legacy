@@ -17,6 +17,11 @@ if nm -u "$D/legref.o" | grep -E '_(mkvass_|legenda_carregar|legenda_definir|leg
 cc "${flags[@]}" -Isrc -O1 -g -Wall -Wextra src/legref.c src/legenda.c src/assrender.c tests/legref.c \
   -pthread -lm -o "$D/t"
 "$D/t" "$FX"
+# Cues em fluxo (modo so indice) servido em pedacos de 7 bytes: toda costura
+# de elemento/CuePoint cai no meio de um pedaco e o resultado tem de ser igual.
+cc "${flags[@]}" -DLR_FLUXO_PEDACO=7 -Isrc -O1 -g -Wall -Wextra src/legref.c src/legenda.c src/assrender.c tests/legref.c \
+  -pthread -lm -o "$D/t7"
+"$D/t7" "$FX" > "$D/t7.out" 2>&1 || { tail -20 "$D/t7.out"; echo "legref com pedacos de 7 bytes falhou"; exit 1; }
 # HTTP REAL (rede.c + libcurl) contra servidor Range local: completo, redirect
 # para outra origem, e servidor que ignora Range (recusa sem baixar o arquivo).
 cc -Isrc -I/opt/homebrew/include -O1 -g src/legref.c src/legenda.c src/assrender.c src/rede.c src/redeurl.c \
@@ -32,4 +37,10 @@ for i in $(seq 50); do nc -z 127.0.0.1 $((P + 1)) 2>/dev/null && nc -z 127.0.0.1
 # Fonte de addon com proxyHeaders: sem os cabecalhos do player o CDN recusa.
 "$D/http" "http://127.0.0.1:$P/ref/ff.mkv" 2>/dev/null | tee "$D/h4" | grep -q 'motivo=network' || { cat "$D/h4"; echo "http sem Referer devia falhar"; exit 1; }
 CABS=$'User-Agent: Nuvio\nReferer: https://addon.test/' "$D/http" "http://127.0.0.1:$P/ref/ff.mkv" 2>/dev/null | tee "$D/h5" | grep -q 'fase=2 motivo=ok doc=1 n=113' || { cat "$D/h5"; echo "http com Referer do addon falhou"; exit 1; }
-echo "legref http: completo, redirect, sem-Range e cabecalhos do addon ok"
+# Modo so indice pelo HTTP de verdade: o Cues chega em fluxo (receber_corpo).
+for u in f redir; do
+  LEGREF_INDICE=1 "$D/http" "http://127.0.0.1:$P/$u/ff.mkv" 2>/dev/null | tee "$D/i1" | grep -q 'fase=2 motivo=ok doc=1 n=113 pedidos=3' || { cat "$D/i1"; echo "http indice ($u) falhou"; exit 1; }
+done
+LEGREF_INDICE=1 "$D/http" "http://127.0.0.1:$((P + 1))/f/ff.mkv" 2>/dev/null | tee "$D/i3" | grep -q 'motivo=no_range doc=0' || { cat "$D/i3"; echo "http indice sem Range falhou"; exit 1; }
+CABS=$'User-Agent: Nuvio\nReferer: https://addon.test/' LEGREF_INDICE=1 "$D/http" "http://127.0.0.1:$P/ref/ff.mkv" 2>/dev/null | tee "$D/i5" | grep -q 'fase=2 motivo=ok doc=1 n=113' || { cat "$D/i5"; echo "http indice com Referer falhou"; exit 1; }
+echo "legref http: completo, redirect, sem-Range e cabecalhos do addon ok (tambem no modo so indice)"

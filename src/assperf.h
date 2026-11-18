@@ -80,6 +80,11 @@ void   assperf_carga_gl(double ms);          // GL thread: cost of a new frame (
 // 0.5 s ahead (render resolution Auto only, so it drops to 75 % just before).
 void   assperf_previsao(int inicios, long chars, int imagens, int iniciosCedo, long charsCedo);
 int    assperf_pesado(void);                 // 1 = busy scene now
+// Tizen 4-6 TVs (owner, 17/11/2026): busy scenes render at 50 % and further
+// ahead (assrender.c). Set by video_tpk.c from the Tizen version; always 1 in
+// the Tizen 4/5 library; 0 elsewhere (S95C and other platforms unchanged).
+void   assperf_tv_lenta_definir(int sim);
+int    assperf_tv_lenta(void);
 
 #ifdef NV_ASSPERF_TESTE
 void assperf_teste_definir(int id, int v);   // tests on the computer

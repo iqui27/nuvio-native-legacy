@@ -181,6 +181,7 @@ int mkvfix_montar(const uint32_t *id, const int64_t *pos, int n, unsigned char *
 #define ID_TRACKENTRY 0xAEu
 #define ID_TRACKTYPE  0x83u
 #define ID_CODECID    0x86u
+#define ID_TRACKNUMBER 0xD7u
 
 static int codecTexto(const char *c) {
   return !strncmp(c, "S_TEXT/", 7) || !strcmp(c, "S_ASS") || !strcmp(c, "S_SSA");
@@ -190,6 +191,10 @@ static int codecAss(const char *c) {
 }
 
 int mkvfix_legendas_texto(const unsigned char *b, long n, int64_t *off, int max) {
+  return mkvfix_legendas_texto_num(b, n, off, NULL, max);
+}
+
+int mkvfix_legendas_texto_num(const unsigned char *b, long n, int64_t *off, uint64_t *num, int max) {
   int ui = 0, us = 0, k = 0, ass = 0;
   int64_t s, o, ini;
   if (lerId(b, n, &ui) != ID_TRACKS) return -1;
@@ -205,7 +210,7 @@ int mkvfix_legendas_texto(const unsigned char *b, long n, int64_t *off, int max)
     if (s2 < 0 || o + a + c + s2 > s) return -1;
     if (id == ID_TRACKENTRY) {
       const unsigned char *v = b + ini + o + a + c;
-      int64_t q = 0, tipoEm = -1; uint64_t tipo = 0; char codec[40] = "";
+      int64_t q = 0, tipoEm = -1; uint64_t tipo = 0, numero = 0; char codec[40] = "";
       while (q < s2) {
         int x = 0, y = 0;
         uint32_t i3 = lerId(v + q, (long)(s2 - q), &x);
@@ -217,6 +222,7 @@ int mkvfix_legendas_texto(const unsigned char *b, long n, int64_t *off, int max)
           tipo = lerUint(v + q + x + y, s3);
           tipoEm = s3 == 1 ? (int64_t)(v - b) + q + x + y : -1;   // so o valor de 1 byte se troca
         }
+        else if (i3 == ID_TRACKNUMBER && s3 >= 1 && s3 <= 8) numero = lerUint(v + q + x + y, s3);
         else if (i3 == ID_CODECID && s3 < (int64_t)sizeof codec) {
           memcpy(codec, v + q + x + y, (size_t)s3); codec[s3] = 0;
         }
@@ -225,7 +231,7 @@ int mkvfix_legendas_texto(const unsigned char *b, long n, int64_t *off, int max)
       // TrackType 0x11 = legenda, num byte: vira 0x20 sem mexer em tamanho.
       if (tipo == MKVFIX_TIPO_LEGENDA && codecTexto(codec)) {
         if (codecAss(codec)) ass = 1;
-        if (tipoEm >= 0 && k < max) off[k++] = tipoEm;
+        if (tipoEm >= 0 && k < max) { if (num) num[k] = numero; off[k++] = tipoEm; }
       }
     }
     o += a + c + s2;
@@ -252,6 +258,202 @@ int64_t mkvfix_tracks_pos(const unsigned char *b, long n, const MkvfixCab *c) {
   return -1;
 }
 
+// ---- Void walker (see mkvfix.h, 16/11/2026) ---------------------------------
+#define ID_CLUSTER   0x1F43B675u
+#define ID_TIMESTAMP 0xE7u
+#define ID_BLOCKGROUP 0xA0u
+#define ID_BLOCK      0xA1u
+#define ID_SIMPLEBLOCK 0xA3u
+enum { MV_SCAN, MV_CLCAB, MV_TOPO, MV_FILHO, MV_PULA };
+
+static int mvNivel1(uint32_t id) {
+  return id == ID_SEEKHEAD || id == 0x1549A966u || id == ID_TRACKS || id == 0x1043A770u ||
+         id == ID_CUES || id == 0x1941A469u || id == 0x1254C367u || id == ID_VOID || id == 0xBFu;
+}
+
+void mkvfix_void_iniciar(MkvfixVoid *v, const uint64_t *faixas, int n, int64_t pos) {
+  memset(v, 0, sizeof *v);
+  if (n > MKVFIX_OCULTAS) n = MKVFIX_OCULTAS;
+  for (int i = 0; i < n; i++) v->faixa[i] = faixas[i];
+  v->nf = n > 0 ? n : 0;
+  v->pos = pos;
+  v->segFim = -1;
+  v->st = pos == 0 ? MV_TOPO : MV_SCAN;
+}
+
+// ID + size in h[0..n): 0 = needs more bytes, -1 = not EBML, else the header
+// length (*tam = -1: unknown size).
+static int mvCab(const unsigned char *h, int n, uint32_t *id, int64_t *tam) {
+  int wi, ws, todos = 1;
+  uint64_t t;
+  if (n < 1) return 0;
+  wi = largura(h[0]);
+  if (wi > 4) return -1;
+  if (n < wi + 1) return 0;
+  ws = largura(h[wi]);
+  if (ws > 8) return -1;
+  if (n < wi + ws) return 0;
+  *id = 0;
+  for (int i = 0; i < wi; i++) *id = (*id << 8) | h[i];
+  t = h[wi] & (0xFFu >> ws);
+  if (t != (uint64_t)(0xFFu >> ws)) todos = 0;
+  for (int i = 1; i < ws; i++) { t = (t << 8) | h[wi + i]; if (h[wi + i] != 0xFF) todos = 0; }
+  *tam = todos ? -1 : (int64_t)t;
+  return wi + ws;
+}
+// A vint (track number): 0 = needs more, -1 = invalid, else its width.
+static int mvVint(const unsigned char *h, int n, uint64_t *v) {
+  int w;
+  if (n < 1) return 0;
+  w = largura(h[0]);
+  if (w > 8) return -1;
+  if (n < w) return 0;
+  *v = h[0] & (0xFFu >> w);
+  for (int i = 1; i < w; i++) *v = (*v << 8) | h[i];
+  return w;
+}
+static int mvAlvo(const MkvfixVoid *v, uint64_t f) {
+  for (int i = 0; i < v->nf; i++) if (v->faixa[i] == f) return 1;
+  return 0;
+}
+static void mvPerdeu(MkvfixVoid *v) { v->perdas++; v->st = MV_SCAN; v->win = 0; v->cvN = 0; }
+
+// The child whose header is in hb: 1 = decided (void or not, in *anular),
+// 0 = needs more bytes, -1 = not followable (sent as is; *fim may be -1).
+static int mvDecidir(MkvfixVoid *v, int64_t ini, int *anular, int64_t *fim) {
+  uint32_t id = 0;
+  int64_t tam = 0;
+  uint64_t f = 0;
+  int r = mvCab(v->hb, v->hbN, &id, &tam), w;
+  *anular = 0; *fim = -1;
+  if (r == 0) return 0;
+  if (r < 0 || tam < 0) return -1;
+  *fim = ini + r + tam;
+  if (*fim > v->clFim) { *fim = -1; return -1; }
+  if (id == ID_SIMPLEBLOCK) {
+    w = mvVint(v->hb + r, v->hbN - r, &f);
+    if (w == 0) return v->pos >= *fim ? 1 : 0;
+    if (w > 0) *anular = mvAlvo(v, f);
+    return 1;
+  }
+  if (id == ID_BLOCKGROUP) {
+    int o = r;
+    while (ini + o < *fim) {
+      uint32_t i2 = 0; int64_t t2 = 0;
+      int r2 = mvCab(v->hb + o, v->hbN - o, &i2, &t2);
+      if (r2 == 0) return v->pos >= *fim ? 1 : 0;
+      if (r2 < 0 || t2 < 0 || ini + o + r2 + t2 > *fim) return 1;   // odd group: left as is
+      if (i2 == ID_BLOCK) {
+        w = mvVint(v->hb + o + r2, v->hbN - o - r2, &f);
+        if (w == 0) return v->pos >= *fim ? 1 : 0;
+        if (w > 0) *anular = mvAlvo(v, f);
+        return 1;
+      }
+      if ((int64_t)v->hbN < o + r2 + t2) return v->pos >= *fim ? 1 : 0;   // the small child before Block
+      o += r2 + (int)t2;
+    }
+    return 1;
+  }
+  return 1;   // any other child: nothing to change
+}
+
+long mkvfix_void_passar(MkvfixVoid *v, const unsigned char *in, long n, unsigned char *out) {
+  long i = 0, o = 0;
+  while (i < n) {
+    switch (v->st) {
+    case MV_PULA: {
+      int64_t k = v->ate - v->pos;
+      if (k > n - i) k = n - i;
+      memcpy(out + o, in + i, (size_t)k);
+      o += (long)k; i += (long)k; v->pos += k;
+      if (v->pos >= v->ate) v->st = v->ret;
+      break; }
+    case MV_SCAN:
+      while (i < n) {
+        unsigned char c = in[i++];
+        out[o++] = c; v->pos++;
+        v->win = (v->win << 8) | c;
+        if (v->win == ID_CLUSTER) { v->st = MV_CLCAB; v->cvN = 0; break; }
+      }
+      break;
+    case MV_CLCAB: {
+      // After a Cluster ID found by scanning: its size, then the Timestamp
+      // child (E7, a one-byte size of 1..8), optionally after a CRC-32 child
+      // (BF 84 + 4 bytes: FFmpeg writes one first). Only then is it believed.
+      unsigned char c = in[i++];
+      int ws, ts;
+      out[o++] = c; v->pos++;
+      v->cv[v->cvN++] = c;
+      ws = largura(v->cv[0]);
+      if (ws > 8) { v->st = MV_SCAN; v->win = c; break; }
+      if (v->cvN < ws + 2) break;
+      ts = ws;                                     // where E7 should be
+      if (v->cv[ws] == 0xBF) {
+        if (v->cv[ws + 1] != 0x84) { v->st = MV_SCAN; v->win = 0; break; }
+        ts = ws + 6;
+        if (v->cvN < ts + 2) break;
+      }
+      { uint64_t t = v->cv[0] & (0xFFu >> ws); int todos = t == (uint64_t)(0xFFu >> ws);
+        unsigned char tsTam = v->cv[ts + 1];
+        for (int k = 1; k < ws; k++) { t = (t << 8) | v->cv[k]; if (v->cv[k] != 0xFF) todos = 0; }
+        if (todos || v->cv[ts] != ID_TIMESTAMP || tsTam < 0x81 || tsTam > 0x88 || t < 3 || t > (1ull << 30)) {
+          v->st = MV_SCAN; v->win = 0; break;
+        }
+        v->clFim = v->pos - (v->cvN - ws) + (int64_t)t;   // data starts right after the size
+        v->sincronias++;
+        v->ate = v->pos + (tsTam & 0x7F); v->ret = MV_FILHO; v->st = MV_PULA;
+        if (v->ate > v->clFim) mvPerdeu(v);
+      }
+      break; }
+    case MV_TOPO: {
+      uint32_t id = 0; int64_t tam = 0; int r;
+      unsigned char c;
+      if (v->segFim >= 0 && v->pos >= v->segFim) { v->st = MV_SCAN; v->win = 0; break; }
+      c = in[i++];
+      out[o++] = c; v->pos++;
+      v->cv[v->cvN++] = c;
+      r = mvCab(v->cv, v->cvN, &id, &tam);
+      if (r == 0) { if (v->cvN >= (int)sizeof v->cv) mvPerdeu(v); break; }
+      v->cvN = 0;
+      if (r < 0) { mvPerdeu(v); break; }
+      if (id == ID_SEGMENT) { v->segFim = tam < 0 ? -1 : v->pos + tam; break; }   // its children are the top level
+      if (id == ID_CLUSTER) {
+        if (tam < 0) { mvPerdeu(v); break; }   // unknown size: rescan at the next Cluster
+        v->clFim = v->pos + tam; v->st = MV_FILHO;
+        break;
+      }
+      if ((id == ID_EBML || mvNivel1(id)) && tam >= 0) { v->ate = v->pos + tam; v->ret = MV_TOPO; v->st = MV_PULA; break; }
+      mvPerdeu(v);
+      break; }
+    case MV_FILHO: {
+      int anular = 0, d;
+      int64_t fim = -1, ini;
+      if (!v->hbN) {
+        if (v->pos == v->clFim) { v->st = MV_TOPO; v->cvN = 0; break; }
+        if (v->pos > v->clFim) { mvPerdeu(v); break; }
+      }
+      v->hb[v->hbN++] = in[i++]; v->pos++;
+      ini = v->pos - v->hbN;
+      d = mvDecidir(v, ini, &anular, &fim);
+      if (d == 0 && v->hbN < MKVFIX_VOID_HB) break;   // the rest of the header is in the next bytes
+      if (d == 0) v->indecisos++;
+      if (d > 0 && anular) { v->hb[0] = ID_VOID; v->anulados++; v->bytesAnulados += fim - ini; }
+      memcpy(out + o, v->hb, (size_t)v->hbN); o += v->hbN; v->hbN = 0;
+      if (fim < 0) { mvPerdeu(v); break; }
+      if (v->pos < fim) { v->ate = fim; v->ret = MV_FILHO; v->st = MV_PULA; }
+      break; }
+    default: mvPerdeu(v); break;
+    }
+  }
+  return o;
+}
+
+long mkvfix_void_fim(MkvfixVoid *v, unsigned char *out) {
+  long o = v->hbN;
+  if (o) { memcpy(out, v->hb, (size_t)o); v->hbN = 0; v->indecisos++; }
+  return o;
+}
+
 // ---- servidor ----------------------------------------------------------------
 #if defined(__EMSCRIPTEN__) || defined(NV_ANDROID) || defined(NV_MKVFIX_SEM_REDE)   // tests: no network
 void mkvfix_sondar(const char *u, const char *c, const char *o) { (void)u; (void)c; (void)o; }
@@ -262,6 +464,9 @@ void mkvfix_sondar_arquivo(const char *u, const char *c, int usenet, int item, i
 }
 int  mkvfix_estado(void) { return MKVFIX_NADA; }
 int  mkvfix_ocultas(void) { return 0; }
+void mkvfix_modo_ass(int m) { (void)m; }
+int  mkvfix_modo_ass_atual(void) { return MKVFIX_ASS_ESCONDER; }
+void mkvfix_medidas(MkvfixMedidas *m) { memset(m, 0, sizeof *m); }
 int  mkvfix_url(char *out, size_t n) { (void)out; (void)n; return 0; }
 int  mkvfix_e_url(const char *u) { (void)u; return 0; }
 void mkvfix_parar(void) {}
@@ -269,6 +474,13 @@ void mkvfix_parar(void) {}
 
 #include "rede.h"
 #include "debrid.h"
+#if defined(NV_TPK) && defined(__linux__)
+#include <sys/prctl.h>
+// Thread names for the CPU line ("[ass] 10s cpu", assrender.c).
+#define MF_NOMEAR(n) prctl(PR_SET_NAME, (unsigned long)(n), 0, 0, 0)
+#else
+#define MF_NOMEAR(n) ((void)0)
+#endif
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netinet/in.h>
@@ -306,6 +518,8 @@ typedef struct {
   unsigned char conserto[512];
   int64_t oculta[MKVFIX_OCULTAS];  // byte (absoluto) do valor do TrackType de cada legenda escondida
   int nOculta;                     // publicado antes do estado final
+  uint64_t vazia[MKVFIX_OCULTAS];  // Void mode: track numbers whose blocks become Void (mkvfix.h)
+  int nVazia;                      // publicado antes do estado final
   atomic_int estado;
   volatile int cancelar;
   atomic_int refs;
@@ -317,6 +531,31 @@ static Sess *atual;
 static unsigned proxId;
 static int sockOuvir = -1, porta;
 static atomic_int vivos;
+static atomic_int modoAss = MKVFIX_ASS_ESCONDER;
+void mkvfix_modo_ass(int m) {
+  if (m != MKVFIX_ASS_ANULAR) m = MKVFIX_ASS_ESCONDER;
+  atomic_store(&modoAss, m);
+}
+int mkvfix_modo_ass_atual(void) { return atomic_load(&modoAss); }
+// "[mkvfix] 10s" (mkvfix_medidas): everything the connections did since the last read.
+static atomic_llong mdBytes, mdEnvioUs, mdCdnUs, mdBytesAnulados;
+static atomic_long mdAnulados, mdSincronias, mdPerdas, mdIndecisos;
+void mkvfix_medidas(MkvfixMedidas *m) {
+  m->bytes = atomic_exchange(&mdBytes, 0);
+  m->envioMs = atomic_exchange(&mdEnvioUs, 0) / 1000;
+  m->cdnMs = atomic_exchange(&mdCdnUs, 0) / 1000;
+  m->bytesAnulados = atomic_exchange(&mdBytesAnulados, 0);
+  m->anulados = atomic_exchange(&mdAnulados, 0);
+  m->sincronias = atomic_exchange(&mdSincronias, 0);
+  m->perdas = atomic_exchange(&mdPerdas, 0);
+  m->indecisos = atomic_exchange(&mdIndecisos, 0);
+  m->conexoes = atomic_load(&vivos);
+}
+static uint64_t agoraUs(void) {
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return (uint64_t)t.tv_sec * 1000000u + (uint64_t)(t.tv_nsec / 1000);
+}
 
 static uint64_t agoraMs(void) {
   struct timespec t;
@@ -343,7 +582,7 @@ static Sess *sessPegarAtual(void) {
 // TrackEntry de legenda escondidas (mkvfix.h).
 static int servivel(Sess *s) {
   int e = atomic_load(&s->estado);
-  return s->total > 0 && (e == MKVFIX_PRECISA || s->relay || (e != MKVFIX_SONDANDO && s->nOculta > 0));
+  return s->total > 0 && (e == MKVFIX_PRECISA || s->relay || (e != MKVFIX_SONDANDO && (s->nOculta > 0 || s->nVazia > 0)));
 }
 
 static const char *nomeId(uint32_t id) {
@@ -414,19 +653,34 @@ static void sondaLegendas(Sess *s, const unsigned char *b, long n, const MkvfixC
     if (s->cancelar || !q) { free(q); return; }
     t = q;
   }
-  k = mkvfix_legendas_texto(t, m, off, MKVFIX_OCULTAS);
-  if (k > 0) {
-    for (int i = 0; i < k; i++) s->oculta[i] = tp + off[i];
-    s->nOculta = k;
-    printf("[mkvfix] subtitles: %d text subtitle track(s) with ASS/SSA hidden from the TV player (the app draws them); "
-           "the file plays through the local server\n", k);
-  } else if (k < 0) printf("[mkvfix] subtitles: Tracks element unreadable, subtitle tracks left to the TV\n");
+  { uint64_t num[MKVFIX_OCULTAS];
+    int modo = atomic_load(&modoAss), nv = 0;
+    k = mkvfix_legendas_texto_num(t, m, off, num, MKVFIX_OCULTAS);
+    if (k > 0 && modo == MKVFIX_ASS_ANULAR) {
+      for (int i = 0; i < k; i++) if (num[i]) s->vazia[nv++] = num[i];
+      if (nv == k) {
+        s->nVazia = nv;
+        printf("[mkvfix] subtitles: %d text subtitle track(s) with ASS/SSA kept in the header, their blocks sent to the TV "
+               "as Void (Void mode); the file plays through the local server\n", nv);
+        k = 0;
+      } else {   // a track without a TrackNumber: Void can't name it, so hide them all as 2.0.8 does
+        printf("[mkvfix] subtitles: Void mode, but %d of %d track(s) have no track number: hidden instead\n", k - nv, k);
+        modo = MKVFIX_ASS_ESCONDER;
+      }
+    }
+    if (k > 0 && modo == MKVFIX_ASS_ESCONDER) {
+      for (int i = 0; i < k; i++) s->oculta[i] = tp + off[i];
+      s->nOculta = k;
+      printf("[mkvfix] subtitles: %d text subtitle track(s) with ASS/SSA hidden from the TV player (the app draws them); "
+             "the file plays through the local server\n", k);
+    } else if (k < 0) printf("[mkvfix] subtitles: Tracks element unreadable, subtitle tracks left to the TV\n"); }
   fflush(stdout);
   free(q);
 }
 
 static void *fioSonda(void *u) {
   Sess *s = u;
+  MF_NOMEAR("nv-relaysonda");
   MkvfixCab c;
   long n = 0, m = 0;
   int st = 0, nSh2, nTodas = 0, entrou = 0, est = MKVFIX_NORMAL;
@@ -564,7 +818,7 @@ int mkvfix_estado(void) {
 int mkvfix_ocultas(void) {
   int k = 0;
   pthread_mutex_lock(&G);
-  if (atual && atomic_load(&atual->estado) != MKVFIX_SONDANDO) k = atual->nOculta;
+  if (atual && atomic_load(&atual->estado) != MKVFIX_SONDANDO) k = atual->nOculta + atual->nVazia;
   pthread_mutex_unlock(&G);
   return k;
 }
@@ -789,10 +1043,31 @@ typedef struct {
   int64_t ini, fim, prox;     // bytes [ini, fim] pedidos; prox = o proximo a mandar
   int cabFeito, head, parcial, falhouEnvio;
   unsigned nr;
+  MkvfixVoid vz;              // Void mode (s->nVazia > 0): the walker of this response
+  long vzAnul;                // blocks voided in this response (log line)
+  uint64_t fimRalo;           // end of the last ralo (CDN wait = gap to the next)
 #ifdef NV_TPK
   MfTap tap;
 #endif
 } Envio;
+
+// Sends `n` bytes and counts them for "[mkvfix] 10s" (time blocked = the TV not reading).
+static int enviarMedido(Envio *e, const unsigned char *b, size_t n) {
+  uint64_t t = agoraUs();
+  int r = enviar(e->sock, b, n, e->s);
+  atomic_fetch_add(&mdEnvioUs, (long long)(agoraUs() - t));
+  if (r) atomic_fetch_add(&mdBytes, (long long)n);
+  return r;
+}
+// Void mode: the walker's counters into the 10 s totals (and this response's).
+static void vzContar(Envio *e, const MkvfixVoid *antes) {
+  atomic_fetch_add(&mdAnulados, e->vz.anulados - antes->anulados);
+  atomic_fetch_add(&mdBytesAnulados, (long long)(e->vz.bytesAnulados - antes->bytesAnulados));
+  atomic_fetch_add(&mdSincronias, e->vz.sincronias - antes->sincronias);
+  atomic_fetch_add(&mdPerdas, e->vz.perdas - antes->perdas);
+  atomic_fetch_add(&mdIndecisos, e->vz.indecisos - antes->indecisos);
+  e->vzAnul += e->vz.anulados - antes->anulados;
+}
 
 static int enviarCab(Envio *e) {
   char c[512];
@@ -812,7 +1087,9 @@ static int enviarCab(Envio *e) {
 // O corpo que chega do CDN: troca os bytes da regiao do SeekHead e manda.
 static int ralo(void *u, const char *dados, size_t n) {
   Envio *e = u;
-  unsigned char tmp[16384];
+  unsigned char tmp[16384], vzOut[sizeof tmp + MKVFIX_VOID_HB];
+  uint64_t t0 = agoraUs();
+  if (e->fimRalo) atomic_fetch_add(&mdCdnUs, (long long)(t0 - e->fimRalo));
   if (e->s->cancelar) return 0;
   if (!e->cabFeito && !enviarCab(e)) { e->falhouEnvio = 1; return 0; }
   while (n && e->prox <= e->fim) {
@@ -827,12 +1104,27 @@ static int ralo(void *u, const char *dados, size_t n) {
     for (int i = 0; i < e->s->nOculta; i++)
       if (e->s->oculta[i] >= e->prox && e->s->oculta[i] < e->prox + (int64_t)k)
         tmp[e->s->oculta[i] - e->prox] = MKVFIX_TIPO_ESCONDIDA;
-    if (!enviar(e->sock, tmp, k, e->s)) { e->falhouEnvio = 1; return 0; }
+    if (e->s->nVazia > 0) {
+      // Void mode (mkvfix.h): the walker rewrites the subtitle blocks' IDs; a
+      // block header still being read waits in it for the next bytes.
+      MkvfixVoid antes = e->vz;
+      long w = mkvfix_void_passar(&e->vz, tmp, (long)k, vzOut);
+      vzContar(e, &antes);
+      if (w > 0 && !enviarMedido(e, vzOut, (size_t)w)) { e->falhouEnvio = 1; return 0; }
+    } else if (!enviarMedido(e, tmp, k)) { e->falhouEnvio = 1; return 0; }
 #ifdef NV_TPK
-    mtAlimentar(&e->tap, e->prox, tmp, k);
+    mtAlimentar(&e->tap, e->prox, tmp, k);   // the subtitle harvest reads the blocks as they were
 #endif
     e->prox += (int64_t)k; dados += k; n -= k;
   }
+  if (e->prox > e->fim && e->s->nVazia > 0) {   // the end of the Range: what the walker still holds
+    unsigned char resto[MKVFIX_VOID_HB];
+    MkvfixVoid antes = e->vz;
+    long w = mkvfix_void_fim(&e->vz, resto);
+    vzContar(e, &antes);
+    if (w > 0 && !enviarMedido(e, resto, (size_t)w)) { e->falhouEnvio = 1; return 0; }
+  }
+  e->fimRalo = agoraUs();
   return e->prox <= e->fim;
 }
 
@@ -888,6 +1180,7 @@ typedef struct { int sock; } Conexao;
 
 static void *atender(void *u) {
   Conexao *cx = u;
+  MF_NOMEAR("nv-relay");
   int sock = cx->sock;
   char b[MF_CAB], met[8] = "", alvo[256] = "", range[96] = "";
   size_t tot = 0;
@@ -931,6 +1224,7 @@ static void *atender(void *u) {
   }
   if (e.ini >= s->total) { responder(sock, 416, "Range Not Satisfiable", s->total); goto sai; }
   e.prox = e.ini;
+  if (s->nVazia > 0) mkvfix_void_iniciar(&e.vz, s->vazia, s->nVazia, e.ini);
   if (e.head) { enviarCab(&e); goto sai; }
   t0 = agoraMs();
   for (int tentativa = 0; tentativa < 2; tentativa++) {
@@ -955,6 +1249,9 @@ static void *atender(void *u) {
   { int64_t len = e.prox - e.ini;
     int tocou = s->regiaoN > 0 && e.ini < s->regiao + s->regiaoN && e.prox > s->regiao;
     for (int i = 0; i < s->nOculta; i++) if (s->oculta[i] >= e.ini && s->oculta[i] < e.prox) tocou = 2;
+    if (e.vzAnul > 0 || (s->nVazia > 0 && e.vz.sincronias == 0 && e.ini > 0 && e.prox - e.ini > 4 * 1024 * 1024))
+      printf("[mkvfix] #%u Void: %ld subtitle block(s) voided in bytes %lld-%lld (resync %ld, lost %ld, undecided %ld)\n",
+             e.nr, e.vzAnul, (long long)e.ini, (long long)e.prox - 1, e.vz.sincronias, e.vz.perdas, e.vz.indecisos);
     // Uma linha por pedido curto (cabecalho, Cues) e por pedido que tocou a
     // regiao; os longos (o video andando) so no fim, se pararem sem fim.
     if (tocou || (e.fim - e.ini) < 4 * 1024 * 1024 || e.nr <= 3)

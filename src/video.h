@@ -200,6 +200,10 @@ int      video_tpk_quadro(double *fps, int *hdr);
 // Colour of the playing MKV's video (Colour element): MatrixCoefficients and
 // Range as in the file (0 = not stated), and HDR. 0 = no MKV video track.
 int      video_tpk_cor(int *matriz, int *faixa, int *hdr);
+// Measurements for the libass log (assrender.c): position readings since the
+// last call. n = arrived, fora = dropped (query older than the last seek),
+// somaMs / maxMs = time the query took. Resets the counters.
+void     video_tpk_leituras(int *n, int *fora, long *somaMs, int *maxMs);
 #endif
 int    video_tocando(void);
 // Pausa comprovada pelo backend da sessao atual, nao a intencao local de
@@ -354,7 +358,8 @@ void video_simular_estatisticas(const VideoStats *s);   // capturas; NULL zera
 // total do arquivo nunca casa pelo ordinal (mkv_casar_legendas exige contagem
 // igual) — nenhuma faixa ASS ia ao overlay do app, todas ficavam com a TV. O
 // lado do arquivo (MKV_MAX_FAIXAS) ja era 64.
-#define NV_FAIXA_MAX 64
+// 192 (17/11): remux com 145 faixas, 137 legendas (ver mkv.h).
+#define NV_FAIXA_MAX 192
 
 typedef struct {
   char rotulo[48];   // "Ingles · Atmos 5.1" ou "Legenda 3"
