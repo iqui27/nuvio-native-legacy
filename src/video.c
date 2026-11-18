@@ -2484,9 +2484,15 @@ static void fundoDesistir(const char *porque) {
   printf("[fundo] resume gave up after %u ms: %s (target %.3f s, attempt %d): closing the player\n",
          (unsigned)(SDL_GetTicks() - fundoRetEm), porque, fundoAlvo, fundoTent + 1);
   fflush(stdout);
-  fundoRet = 0; fundoDesistiu = 1;
-  falhou = 0; reconErroPend = 0;   // o player fecha; nao e o cartao de erro de fonte
+  fundoRet = 0; fundoDesistiu = 1; fundoDtsPend = 0;
   nv_recon_zerar(&recon);
+  // Solta o que a reabertura carregou (mudo, parado): sem pipeline, o
+  // "Manter o video pronto ao sair" nao tem o que reter e nada fica mudo. A
+  // posicao fica no ponto, para o progresso gravado na saida do player.
+  __atomic_store_n(&fundoMudoPend, 0, __ATOMIC_RELEASE);
+  pararSessao();
+  posSeg = fundoAlvo;
+  falhou = 0; reconErroPend = 0;   // o player fecha; nao e o cartao de erro de fonte
   fundoEvento = 2;
 }
 

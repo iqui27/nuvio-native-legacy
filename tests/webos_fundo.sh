@@ -140,6 +140,12 @@ int main(void) {
   tocandoEm(50); video_webos_fundo(-1.0, "window hidden"); fundoComecar(); video_webos_retomada_evento();
   reconErroPend = 1; quadros(1); OK(cargas == 2 && fundoRet, "one more try after an error");
   reconErroPend = 1; quadros(1); OK(!fundoRet && fundoDesistiu && video_webos_retomada_evento() == 2, "second error gives up");
+  /* Desistir com o pipeline carregado (mudo): ele e solto, e a posicao fica
+   * no ponto para o progresso gravado na saida. */
+  tocandoEm(60); video_webos_fundo(-1.0, "window hidden"); fundoComecar(); video_webos_retomada_evento();
+  midiaChegou(); carregou(7200); reconErroPend = 1; quadros(1);
+  midiaChegou(); carregou(7200); posSeg = 3; reconErroPend = 1; quadros(1);
+  OK(fundoDesistiu && !pronto && !midia[0] && posSeg == 60, "give-up releases the loaded pipeline, position stays on the point");
   /* 5. Sem imagem em 20 s desiste; no caminho do DV, 45 s. */
   tocandoEm(50); video_webos_fundo(-1.0, "window hidden"); fundoComecar(); video_webos_retomada_evento();
   quadros(199); OK(fundoRet, "still waiting at 19.9 s"); quadros(2); OK(fundoDesistiu, "gives up at 20 s");
