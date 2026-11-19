@@ -8347,6 +8347,29 @@ static void temporadasDosEps(const CatEp *eps, int n, TempsPub *tp) {
   }
 }
 
+// Abas de temporada a partir do /meta inteiro, mesmo quando a lista publicada
+// corta em CAT_EP_MAX (#787 Daily Show: 31 temporadas, episodios alem do teto).
+static void temporadasDoCorpo(const char *corpo, TempsPub *tp) {
+  const char *p;
+  EpSet set = {0};
+  if (!tp || !corpo || js_videos_temporadas_falsas(corpo)) return;
+  tp->n = 0;
+  for (p = js_array(corpo, NULL, "videos"); p; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    int t = videoTemporada(p, f);
+    int e = t >= 0 ? (int)js_num(p, f, "episode", 0) : 0;
+    if (t < 0 || e <= 0 || !epSetNovo(&set, t, e)) continue;
+    int j, k;
+    for (j = 0; j < tp->n && tp->t[j] > 0 && (t == 0 || tp->t[j] < t); j++) {}
+    if (j < tp->n && tp->t[j] == t) continue;
+    if (tp->n >= CAT_TEMP_MAX) continue;
+    for (k = tp->n; k > j; k--) tp->t[k] = tp->t[k - 1];
+    tp->t[j] = t;
+    tp->n++;
+  }
+  free(set.v);
+}
+
 // Preserve the visible order using compact references into the old catalog and
 // the new array. Materialize the references in place; one saved episode breaks
 // cycles when two or more source slots must exchange places.
@@ -8414,7 +8437,8 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
   tmdbDescartarObsoleto();
   pthread_mutex_lock(&epMemoriaTrava);
   if (epPedidoSaiu()) { pthread_mutex_unlock(&epMemoriaTrava); return 0; }
-  cap = metaContarEpisodios(corpo, NULL);
+  { int totalNoCorpo = metaContarEpisodios(corpo, NULL);
+  cap = totalNoCorpo;
   if (cap > VIDEOS_MAX) cap = VIDEOS_MAX;
   if (cap <= 0) { pthread_mutex_unlock(&epMemoriaTrava); return 0; }
   if (epPedidoAtual() && !substituir) {
@@ -8424,7 +8448,10 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
   eps = malloc(sizeof(CatEp) * (size_t)cap);
   if (!eps) { pthread_mutex_unlock(&epMemoriaTrava); return 0; }
   n = parsearEpisodios(corpo, eps, cap);
-  if (tp && n) temporadasDosEps(eps, n, tp);
+  if (tp && n) {
+    if (totalNoCorpo > n) temporadasDoCorpo(corpo, tp);
+    else temporadasDosEps(eps, n, tp);
+  }
   if (sobre && n) mesclarEpisodiosJson(eps, n, sobre, modo);
   alvoItem = epPublicacaoIniciar(alvoItem);
   if (n && alvoItem >= 0 && (!cedo || !cat_n_episodios(alvoItem))) {
@@ -8446,7 +8473,7 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
       // continuous S1E13 and split S2E1 can be the same episode. Text/art
       // enrichment was already applied above to matching final pairs.
       descCatEpisodios(alvoItem, eps, n);
-      if (tp) temporadasDosEps(eps, n, tp);
+      if (tp && totalNoCorpo <= n) temporadasDosEps(eps, n, tp);
       if (cat_copiar_item(alvoItem, &atual)) {
         atual.epsParciais = provisorio;
         if (tp) {
@@ -8457,7 +8484,7 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
       }
     } else if (estavel && (estavel = mesclarEstavel(eps, n, cap, alvoItem, antigos)) > 0) {
       descCatEpisodios(alvoItem, eps, estavel);
-      if (tp) temporadasDosEps(eps, estavel, tp);
+      if (tp && totalNoCorpo <= estavel) temporadasDosEps(eps, estavel, tp);
     } else if (!antigos || !epPedidoAtual()) descCatEpisodios(alvoItem, eps, n);
     else if (tp) {
       // Sem memoria para mesclar, conserva a lista visivel e suas abas.

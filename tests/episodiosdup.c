@@ -614,9 +614,9 @@ int main(void) {
   if (getenv("NV_TEST_787")) {
     char *body = malloc(400000);
     assert(body);
-    for (int c = 0; c < 3; c++) {
-      int seasons = c == 0 ? 52 : c == 1 ? 31 : 50;
-      int per = c == 0 ? 20 : c == 1 ? 150 : 100;
+    for (int c = 0; c < 4; c++) {
+      int seasons = c == 0 ? 52 : c == 1 ? 31 : c == 2 ? 50 : 40;
+      int per = c == 0 ? 20 : c == 1 ? 150 : c == 2 ? 100 : 130;
       size_t k = (size_t)sprintf(body, "{\"videos\":[");
       TempsPub tp = {0};
       for (int t = 1; t <= seasons; t++)
@@ -626,12 +626,17 @@ int main(void) {
       sprintf(body + k, "]}");
       catalogoCom("tt787", "series", "Long series");
       snprintf(epAlvoId, sizeof epAlvoId, "%s", "tt787");
+      int total = seasons * per;
       int n = publicarEpisodiosEx(body, 0, "Long series", NULL, 0, &tp, 0);
-      fprintf(stderr, "#787: %d x %d -> %d episodes, %d seasons\n", seasons, per, n, tp.n);
-      assert(n == seasons * per && tp.n == seasons);
+      int esperado = total > 5000 ? 5000 : total;
+      fprintf(stderr, "#787: %d x %d -> %d episodes, %d seasons (total %d)\n", seasons, per, n, tp.n, total);
+      assert(n == esperado && tp.n == seasons);
       assert(cat_n_episodios(0) == n);
-      const CatEp *last = cat_episodio(0, n - 1);
-      assert(last && last->temporada == seasons && last->episodio == per);
+      assert(cat_item(0)->nTemporadas == seasons);
+      if (n == total) {
+        const CatEp *last = cat_episodio(0, n - 1);
+        assert(last && last->temporada == seasons && last->episodio == per);
+      }
     }
     free(body);
     return 0;
