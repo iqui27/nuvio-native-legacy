@@ -56,6 +56,7 @@ int  celular_disponivel(void);
 // i18n aqui) vai para o cabecalho da pagina. 1 = no ar; 0 = sem rede/sem IP.
 // Thread do app (usa i18n).
 int  celular_abrir(const char *titulo);
+int  celular_abrir_digitar(const char *titulo);
 /* Read-only sanitized snapshot. GET/HEAD only; same expiring LAN token. */
 int celular_abrir_relatorio(const char *snapshot);
 /* Diagnostics only: reuse this token (8 symbols of the token alphabet) and try

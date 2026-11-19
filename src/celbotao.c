@@ -78,7 +78,7 @@ static void abrirServidor(void) {
     } else { puts("[log-export] snapshot failed"); snprintf(motivoLog, sizeof motivoLog, "log snapshot failed"); }
   } else {
     tokenDigitar();
-    celular_abrir(titulo);
+    celular_abrir_digitar(titulo);
   }
 }
 
