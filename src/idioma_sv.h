@@ -5669,7 +5669,7 @@
   T("Uns segundos depois de abrir, o trailer toca sem som atrás do texto. Rolar a página ou sair volta para a arte.", "Några sekunder efter att sidan öppnats spelas trailern utan ljud bakom texten. Om du rullar eller lämnar sidan kommer bilden tillbaka."),
   T("Update notifications", "Uppdateringsaviseringar"),
   T("Uruguai", "Uruguay"),
-  T("Usa HLS nas conversões de DTS e Dolby Vision P7. A saída é Dolby Digital (AC-3). Pode ajudar em aparelhos antigos, mas aumentar o uso de internet. Use só se tiver problemas. Reabra o vídeo para aplicar.", "Använder HLS för konvertering av DTS och Dolby Vision P7. Ljudet matas ut i Dolby Digital (AC-3). Kan hjälpa på äldre enheter, men använda mer bandbredd. Slå bara på vid problem och öppna videon igen."),
+  T("Usa HLS nas conversões de DTS e Dolby Vision P7. A saída é Dolby Digital (AC-3). Pode ajudar em aparelhos antigos, mas exige mais largura de banda. Use só se tiver problemas. Reabra o vídeo para aplicar.", "Använder HLS för konvertering av DTS och Dolby Vision P7. Ljudet matas ut i Dolby Digital (AC-3). Kan hjälpa på äldre enheter, men kräver högre bandbredd. Slå bara på vid problem och öppna videon igen."),
   T("Usa a arte deitada (16:9) no lugar do cartaz em pé nas fileiras que têm as duas.", "Använder den liggande bilden (16:9) i stället för den stående affischen på rader som har båda."),
   T("Usa a imagem do próprio episódio no card, em vez da arte da série.", "Använder avsnittets egen bild på kortet i stället för seriens omslag."),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "Använder Quick Connect om servern tillåter det: godkänn koden i en annan Jellyfin-app. Annars frågas användarnamn och lösenord."),

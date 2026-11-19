@@ -5668,7 +5668,7 @@
   { "Uns segundos depois de abrir, o trailer toca sem som atrás do texto. Rolar a página ou sair volta para a arte.", "A few seconds after opening, the trailer plays muted behind the text. Scrolling or leaving brings the art back." },
   { "Update notifications", "Update notifications" },
   { "Uruguai", "Uruguay" },
-  { "Usa HLS nas conversões de DTS e Dolby Vision P7. A saída é Dolby Digital (AC-3). Pode ajudar em aparelhos antigos, mas aumentar o uso de internet. Use só se tiver problemas. Reabra o vídeo para aplicar.", "Use HLS for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Helps on older devices, but may increase bandwidth usage. Use only if you have issues. Reopen the video to apply." },
+  { "Usa HLS nas conversões de DTS e Dolby Vision P7. A saída é Dolby Digital (AC-3). Pode ajudar em aparelhos antigos, mas exige mais largura de banda. Use só se tiver problemas. Reabra o vídeo para aplicar.", "Use HLS for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on older devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply." },
   { "Usa a arte deitada (16:9) no lugar do cartaz em pé nas fileiras que têm as duas.", "Uses the landscape artwork (16:9) instead of the upright poster on rows that have both." },
   { "Usa a imagem do próprio episódio no card, em vez da arte da série.", "Uses the episode's own image on the card instead of the show's artwork." },
   { "Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "Uses Quick Connect if the server allows it: approve the code in another Jellyfin app. Otherwise asks for username and password." },

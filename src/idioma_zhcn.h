@@ -5669,7 +5669,7 @@
   T("Uns segundos depois de abrir, o trailer toca sem som atrás do texto. Rolar a página ou sair volta para a arte.", "打开几秒后，预告片会在文字后面静音播放。滚动或离开后会恢复为图片。"),
   T("Update notifications", "更新通知"),
   T("Uruguai", "乌拉圭"),
-  T("Usa HLS nas conversões de DTS e Dolby Vision P7. A saída é Dolby Digital (AC-3). Pode ajudar em aparelhos antigos, mas aumentar o uso de internet. Use só se tiver problemas. Reabra o vídeo para aplicar.", "使用 HLS 转换 DTS 和 Dolby Vision P7。音频以 Dolby Digital (AC-3) 输出。可能改善旧设备上的播放，但也可能增加带宽用量。仅在遇到问题时启用，然后重新打开视频。"),
+  T("Usa HLS nas conversões de DTS e Dolby Vision P7. A saída é Dolby Digital (AC-3). Pode ajudar em aparelhos antigos, mas exige mais largura de banda. Use só se tiver problemas. Reabra o vídeo para aplicar.", "使用 HLS 转换 DTS 和 Dolby Vision P7。音频以 Dolby Digital (AC-3) 输出。可能改善旧设备上的播放，但需要更高的网络带宽。仅在遇到问题时启用，然后重新打开视频。"),
   T("Usa a arte deitada (16:9) no lugar do cartaz em pé nas fileiras que têm as duas.", "在同时有两种图片的行中，用横版图片 (16:9) 代替竖版海报。"),
   T("Usa a imagem do próprio episódio no card, em vez da arte da série.", "卡片使用该集自己的图片，而不是剧集的图片。"),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "服务器允许时使用 Quick Connect：在另一个 Jellyfin 应用中批准代码。否则会询问用户名和密码。"),
