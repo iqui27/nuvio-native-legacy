@@ -114,7 +114,8 @@ enum {
   LEGENDA_DOC_COMPLETO = 1u << 0,
   LEGENDA_DOC_FORCED = 1u << 1,
   LEGENDA_DOC_SINAIS = 1u << 2,
-  LEGENDA_DOC_JANELA = 1u << 3 /* COMPLETO somente entre janelaInicio/Fim */
+  LEGENDA_DOC_JANELA = 1u << 3 /* COMPLETO somente entre janelaInicio/Fim */,
+  LEGENDA_DOC_FIM_ESTIMADO = 1u << 4
 };
 typedef struct {
   char idioma[24], origem[96], identidade[128];

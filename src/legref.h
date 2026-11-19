@@ -53,6 +53,7 @@ typedef struct {
   LegRefMotivo motivo;
   uint64_t pedido;
   int feitos, total, pedidos, faixa;
+  int alternativas;
   long long bytes;
   char idioma[24], codec[24];
 } LegRefStatus;
@@ -94,5 +95,11 @@ const char *legref_motivo(LegRefMotivo m);   // ingles estavel, para log
 typedef struct { long long pos; int rel; double inicio, dur; } LegRefPonto;
 int legref_cues(const unsigned char *p, long n, int faixa, double escalaSeg,
                 LegRefPonto **saida, int *semRel);
+int legref_cues_tempos(const unsigned char *p, long n, int faixa, double escalaSeg,
+                       int max, LegRefPonto **saida);
+enum { LEGREF_IDX_TEXTO = 0, LEGREF_IDX_ASS, LEGREF_IDX_PGS };
+typedef struct { double inicio, fim; } LegRefFala;
+int legref_indice_linha(const LegRefPonto *v, int n, int tipo, int pares,
+                        LegRefFala **saida, int *estimado, int *filtradas);
 
 #endif

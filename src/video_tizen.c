@@ -241,6 +241,22 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
           S.legTxt = text ? "" + text : "";
           S.legAte = S.legTxt && d > 0 ? S.posMs + d : 0;
           S.legN = (S.legN | 0) + 1;
+          try {
+            if (!S.leg786Log && S.legTxt) {
+              var t = S.legTxt, i, cp, ar = 0, n = 0;
+              for (i = 0; i < t.length; i++) {
+                cp = t.charCodeAt(i);
+                if (cp === 0xFEFF) continue;
+                n++;
+                if (cp >= 0x0600 && cp <= 0x06FF) ar = 1;
+              }
+              S.leg786Log = 1;
+              var cs = (n && !ar && /^[\x00-\x7F]*$/.test(t)) ? "ascii" : "utf-8";
+              if (ar) cs = "utf-8-arabic";
+              console.log("[legenda] #786 embutida: charset=" + cs + " arabic=" + (ar ? "yes" : "no") +
+                          " len=" + n);
+            }
+          } catch (e) {}
         },
         ondrmevent:          function () {}
       });
@@ -736,7 +752,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
   if (op === "faixa") {
     var p8 = pl();
     if (!p8 || !S.aberto) return 0;
-    if (s === "TEXT") { S.legTxt = ""; S.legAte = 0; }
+    if (s === "TEXT") { S.legTxt = ""; S.legAte = 0; S.leg786Log = 0; }
     try { p8.setSelectTrack(s, a | 0); } catch (e) { return 0; }
     return 1;
   }
