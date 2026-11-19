@@ -68,5 +68,21 @@ void testarHeranca(void) {
   ajustes_perfil_restaurar(2);
   assert(valor[AJ_VIDRO_OPAC] == valorPadrao[AJ_VIDRO_OPAC]);
 
+  // Opt-in: o padrao da opcao e Desligado — um principal novo, que nunca
+  // mexeu no ajuste, nao grava nem aplica a personalizacao em secundarios.
+  assert(valorPadrao[AJ_AJUSTES_DO_PRINCIPAL] == 1);
+  nvt_set(dir, sizeof dir, "/nuvio-herda-optin-XXXXXX");
+  assert(mkdtemp(dir));
+  setenv("NUVIO_DADOS", dir, 1);
+  dados_iniciar(dir);
+  ajustes_dir(dir);
+  memset(valor, 0, sizeof valor);
+  for (int i = 0; i < AJ_N; i++) valor[i] = valorPadrao[i];
+  valor[AJ_VIDRO_OPAC] = 4;                 // principal com personalizacao
+  ajustes_perfil_guardar(1);                // grava a flag no padrao (Desligado)
+  ajustes_perfil_restaurar(1);
+  ajustes_perfil_restaurar(2);              // secundario parcial/sem arquivo
+  assert(valor[AJ_VIDRO_OPAC] == valorPadrao[AJ_VIDRO_OPAC]);
+
   puts("ok ajustes_heranca_principal");
 }
