@@ -53,6 +53,7 @@ static int info(void *c, int o, ...) {
   va_start(ap, o);
   if (o == INFO_RESPONSE_CODE) *va_arg(ap, long *) = http;
   if (o == INFO_NUM_CONNECTS) *va_arg(ap, long *) = 1;
+  if (o == INFO_TEMPO_TCP) *va_arg(ap, double *) = 0;
   va_end(ap); return 0;
 }
 int main(void) {
@@ -96,13 +97,12 @@ int main(void) {
   assert(!r && v4Chamadas == 0);
   assert(!v4Marcado("https://tls.example/meta", relogio));
 
-  // V4 tambem falhando: o erro volta a quem chamou, e o host fica marcado —
-  // refazer sempre em v4 nao ajuda, mas nao piora (a familia muda, o connect
-  // e o mesmo).
+  // V4 tambem falhando: o erro volta a quem chamou; o host so e marcado quando
+  // o IPv4 conecta de verdade.
   chamadas = v4Chamadas = 0; erroDupla = 7; erroV4 = 7;
   r = rede_baixar_st("https://morto.example/meta", 10, NULL, &st);
   assert(!r && v4Chamadas >= 1);
-  assert(v4Marcado("https://morto.example/meta", relogio));
+  assert(!v4Marcado("https://morto.example/meta", relogio));
   erroV4 = 0;
 
   // Marca caduca: passado o prazo, o host volta a tentar dual-stack.
