@@ -606,6 +606,36 @@ const char *legenda_idioma(const char *idioma, const char *arquivo) {
   return "";
 }
 
+// So basename, sem query/fragmento (evita token em URL de addon no log).
+static void legenda_log_arquivo(const char *url, char *out, size_t cap) {
+  const char *s, *path, *last, *q, *end;
+  size_t n;
+  if (!out || cap < 2) return;
+  out[0] = 0;
+  if (!url || !*url) return;
+  s = url;
+  if (!strncasecmp(s, "https://", 8)) s += 8;
+  else if (!strncasecmp(s, "http://", 7)) s += 7;
+  path = strchr(s, '/');
+  if (!path || !path[1]) {
+    q = strpbrk(s, "?#");
+    n = q ? (size_t)(q - s) : strlen(s);
+    if (n >= cap) n = cap - 1;
+    memcpy(out, s, n);
+    out[n] = 0;
+    return;
+  }
+  end = strpbrk(path, "?#");
+  if (!end) end = path + strlen(path);
+  last = path + 1;
+  for (const char *p = path + 1; p < end; p++)
+    if (*p == '/') last = p + 1;
+  n = (size_t)(end - last);
+  if (n >= cap) n = cap - 1;
+  memcpy(out, last, n);
+  out[n] = 0;
+}
+
 char *legenda_utf8(const char *bytes, long n, const char **origem) {
   return legenda_utf8_idioma(bytes, n, NULL, NULL, origem);
 }
@@ -659,9 +689,11 @@ char *legenda_utf8_idioma(const char *bytes, long n, const char *idioma,
       if (ara) {
         static int log751;
         if (!log751) {
+          char arq[192];
+          legenda_log_arquivo(arquivo, arq, sizeof arq);
           log751 = 1;
           printf("[legenda] arabico: CP1256 (idioma=%s, arquivo=%s)\n",
-                 lang ? lang : "?", arquivo ? arquivo : "?");
+                 lang ? lang : "?", arq[0] ? arq : "?");
           fflush(stdout);
         }
       }
