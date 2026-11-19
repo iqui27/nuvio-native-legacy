@@ -86,12 +86,10 @@ static DtsPlayback *dtsSessao;
 #ifdef NV_WEBOS_HLS_TEST
 static atomic_int hlsActive;
 static struct {
-  int pending, tried, fallback, dts, dv7, ordinal, count;
+  int enabled, pending, played, paused, external, externalTrack;
   double pos, percent;
   Uint32 started;
-  char url[128];
-  DtsTrack track;
-  int known;
+  char url[128], subtitle[1024];
 } hls;
 
 static int hlsAtivo(void) { return atomic_load(&hlsActive); }
@@ -781,17 +779,14 @@ static int iniciarDts(int stream);
 #ifdef NV_WEBOS_HLS_TEST
 static void hlsBombear(void);
 static void hlsParar(void) {
-  if (hls.pending || hlsAtivo()) dts_tpk_fechar();
-  hls.pending = hls.fallback = 0;
+  if (hls.pending || hlsAtivo()) {
+    dts_tpk_fechar();
+    if (dtsEstado != VIDEO_DTS_FALHOU) dtsEstado = 0;
+  }
+  hls.pending = hls.played = hls.external = 0;
   atomic_store(&hlsActive, 0);
 }
 #endif
-static int dv7Selecionado(void) {
-#ifdef NV_WEBOS_HLS_TEST
-  if (hls.dv7) return 1;
-#endif
-  return ajustes_dv7();
-}
 static void bombearDts(void);
 static int dtsLiberadoNestaTv(void);
 // RECONEXAO (video_reconexao.h). O erro chega no fio do LS2 e so ANOTA
@@ -2364,7 +2359,7 @@ static void audioMkvPedidoBombear(void) {
   if(row<0)return;
   audioAtual=row;dvAudioMkvOrd=faixaAudio[row].ordinalMkv;
   dtsModoDv=!semDVForcado && nv_dv7_profile(dvMkvPerfil,dvMkvEl,dvMkvBl,dvMkvRpu) &&
-            nv_dv7_selected(dvMkvPerfil,ajustes_dv_mkv(),dv7Selecionado());
+            nv_dv7_selected(dvMkvPerfil,ajustes_dv_mkv(),ajustes_dv7());
   if(dtsModoDv)dvHabilitado=1;
   printf("[audio-mkv] start DTS track=%d ordinal=%d dvProfile=%d dv=%d\n",pedido,dvAudioMkvOrd,dvMkvPerfil,dtsModoDv);fflush(stdout);
   iniciarDts(-1);
@@ -2712,6 +2707,9 @@ static int recarregarMesmaFonte(double alvo, int aud, int leg, const char *legUr
 
 void video_definir_reconexao(int sim) { reconProxima = sim ? 1 : 0; }
 int video_recarregar(void) {
+#ifdef NV_WEBOS_HLS_TEST
+  if (hls.pending || hlsAtivo()) return 0;
+#endif
   double alvo = posNativa;
   int pausado = pausaPedida;
   if (!ligado || !midia[0] || !pronto || !urlAtual[0] || falhou || terminou ||
@@ -2763,8 +2761,7 @@ int video_tocar(const char *url) {
 #ifdef NV_WEBOS_HLS_TEST
   hlsParar();
   memset(&hls, 0, sizeof hls);
-  hls.dts = ajustes_webos_hls_dts();
-  hls.dv7 = dts_tpk_disponivel() && ajustes_webos_hls_dv7();
+  hls.enabled = ajustes_webos_hls();
 #endif
   audioMkvNovaFonte();
 #ifdef NV_NATIVE_SEEK_TEST
@@ -2859,6 +2856,28 @@ static void extReabrir(void) {
   if (!urlAtual[0] || modoLoad || falhou || terminou) { extReabrirPend = 0; return; }
   if (bindAtivo()) return;   // next pump
   quer = audioext_pedido(urlAtual);
+#ifdef NV_WEBOS_HLS_TEST
+  if (hls.pending) return;
+  if (hlsAtivo()) {
+    if (!pronto) return;
+    extReabrirPend = 0;
+    if (!quer && !hls.external) return;
+    if (quer && hls.external && !strcmp(audioext_url(), extUrlAplicada) &&
+        audioext_faixa() == hls.externalTrack && audioext_offset_geracao() == extGenAplicada) {
+      audioext_tocando_definir(tocando);
+      return;
+    }
+    if (!quer) {
+      extSoAudio = dtsTentou = dtsModoDv = 0;
+      dvAudioMkvOrd = dvAudioMkvAtual = -1;
+      dvHabilitado = dvLiberadoNestaTv();
+      if (!recarregarMesmaFonte(posSeg, -1, -1, legUrlAtual)) falhou = 1;
+      return;
+    }
+    iniciarDts(-1);
+    return;
+  }
+#endif
   if (dtsSessao) {
     if (!quer && !extAtivo) { extReabrirPend = 0; return; }
     extReabrirPend = 0;
@@ -3002,6 +3021,15 @@ void video_bombear(void) {
       else dts_playback_external_offset_live(dtsSessao, audioext_offset_ms());
     }
   }
+#ifdef NV_WEBOS_HLS_TEST
+  if (hlsAtivo() && hls.external) {
+    audioext_posicao(posSeg);
+    unsigned g = audioext_offset_geracao();
+    if (g != extGenVista) { extGenVista = g; extGenEm = SDL_GetTicks(); }
+    if (g != extGenAplicada && SDL_GetTicks() - extGenEm >= 700)
+      extReabrirPend = 1;   // new playlist token invalidates already buffered segments
+  }
+#endif
   if (dtsSessao) bombearDts();
 #ifdef NV_MP4_BD_TEST
   else if(mp4TestPending && ligado && !modoLoad && urlAtual[0] && !dtsTentou) {
@@ -3035,7 +3063,7 @@ void video_bombear(void) {
     forcar = knownDts && access("/tmp/nuvio-dts-forcar", F_OK) == 0;
 #endif
 #ifdef NV_WEBOS_HLS_TEST
-    if (hls.dts && !hls.tried && knownDts) forcar = 1;
+    if (hls.enabled && knownDts) forcar = 1;
 #endif
     // Toda LG de 2020 em diante (release >= 5, dts_tv.h) converte o DTS antes
     // de tocar, inclusive os modelos 2023/24 que tem DTS: nao da para detectar
@@ -3103,6 +3131,10 @@ void video_bombear(void) {
            seekEnvAlvo, (int)(posSeg * 1000.0), srcSeekable, srcTrickable);
     fflush(stdout);
   }
+#ifdef NV_WEBOS_HLS_TEST
+  // HLS owns pipeline errors; only an explicit request to force SDR may reload the source.
+  if ((hls.pending || hlsAtivo()) && !semDVForcado) return;
+#endif
   // RECUPERACAO DO PIPELINE, no fio principal. Ver a nota em `recuperando`.
   if (recuperando) {
     double alvo = retomarEm;
@@ -3635,9 +3667,6 @@ static int dvLiberadoNestaTv(void) {
 #ifdef NV_DTS_DEBUG
   forcado = access("/tmp/nuvio-dv-forcar", F_OK) == 0;
 #endif
-#ifdef NV_WEBOS_HLS_TEST
-  forcado |= ajustes_webos_hls_dv7();
-#endif
   if (!dts_playback_enabled() || (!ajustes_dv_mkv() && !ajustes_dv7() && !forcado)) return 0;
   if (!dvVersaoLiberada(webosMaior())) {
     printf("[dv] Dolby Vision in MKV unavailable on webOS %d\n", webosMaior()); fflush(stdout);
@@ -3680,7 +3709,7 @@ static int dvPronto(void) {
     if (mkvPendente && !fioMkvVivo) video_sondar_mkv_agora();
     return 0;
   }
-  if (dvMkvPerfil && !nv_dv7_selected(dvMkvPerfil,ajustes_dv_mkv(),dv7Selecionado())) {
+  if (dvMkvPerfil && !nv_dv7_selected(dvMkvPerfil,ajustes_dv_mkv(),ajustes_dv7())) {
     dvNao=VIDEO_DV_NAO_NATIVE;dvHabilitado=0;return 0;
   }
   if (!nv_dv7_profile(dvMkvPerfil, dvMkvEl, dvMkvBl, dvMkvRpu)) {
@@ -3722,6 +3751,10 @@ static int dvPronto(void) {
            tv ? tv->idioma : "-", tv ? tv->codec : "-", dvAudios);
     fflush(stdout);
   }
+#ifdef NV_WEBOS_HLS_TEST
+  // HLS can decode and convert TrueHD and other audio the packet path rejects.
+  if (hls.enabled && dvMkvPerfil == 7) return 1;
+#endif
   if (m >= 0) {
     const char *c = dvAudioCodec[m];
     if (!nv_dvaudio_alimentavel(c)) {
@@ -3773,6 +3806,27 @@ static void dvCaminhoNaoAbriu(void) {
   dvRecuoAviso = 2; dvNao = VIDEO_DV_NAO_FALHOU;
   dtsModoDv = 0; dvHabilitado = 0;
 }
+#ifdef NV_WEBOS_HLS_TEST
+static void hlsFalhar(const char *reason) {
+  char message[sizeof erroTexto];
+  int external = hls.external;
+  double pos = pronto ? (seekEm || seekEnvEm || seekRetryEm ? seekAlvo : posSeg) : hls.pos;
+  snprintf(message, sizeof message, "HLS: %s", reason && *reason ? reason : "stream error");
+  printf("[webos-hls] %s\n", message);
+  fflush(stdout);
+  pararSessao();
+  nv_recon_zerar(&recon);
+  dtsTentou = 1;
+  dtsHabilitado = 0;
+  dtsEstado = 0;
+  if (external) audioext_falhou(message);
+  dtsModoDv = dvHabilitado = 0;
+  posSeg = pos;
+  snprintf(erroTexto, sizeof erroTexto, "%s", message);
+  falhou = 1;
+  ack_publicar();
+}
+#endif
 static int iniciarDts(int stream) {
   /* Retry from the next pump before unloading or spawning a native worker.
    * The old bind must finish before its ACB handle can become MSE. */
@@ -3812,7 +3866,7 @@ static int iniciarDts(int stream) {
   int nativeDv=(dvMkvPerfil==5 || dvMkvPerfil==8) && video_tem_dolby_vision();
   if(!dtsModoDv && !semDVForcado && dvSondado &&
      ((nv_dv7_profile(dvMkvPerfil,dvMkvEl,dvMkvBl,dvMkvRpu) &&
-       nv_dv7_selected(dvMkvPerfil,ajustes_dv_mkv(),dv7Selecionado())) || nativeDv)) {
+       nv_dv7_selected(dvMkvPerfil,ajustes_dv_mkv(),ajustes_dv7())) || nativeDv)) {
     dtsModoDv=1;dvHabilitado=1;dvNao=0;
     printf("[audio-mkv] DTS fallback keeps DV routing profile=%d native=%d\n",dvMkvPerfil,nativeDv);fflush(stdout);
   }
@@ -3844,41 +3898,71 @@ static int iniciarDts(int stream) {
     ordinal = mkvAudio; count = dvAudios; trocada = 1;
   }
 #ifdef NV_WEBOS_HLS_TEST
-  if (hls.fallback) {
-    alvo = hls.pos;
-#ifdef NV_NATIVE_SEEK_TEST
-    resumePct = hls.percent;
-#endif
-    ordinal = hls.ordinal; count = hls.count;
-    selected = hls.track; trocada = hls.known;
-    if (!trocada) a = NULL;
-  } else if (!hls.tried && !modoLoad && !semDVForcado && !extSoAudio && !audioext_pedido(urlAtual)
-#ifdef NV_MP4_BD_TEST
-             && !mp4TestPending
-#endif
-  ) {
-    int dv7 = dtsModoDv && dvMkvPerfil == 7 && hls.dv7;
-    int dts = !dtsModoDv && hls.dts && !dtsDesligado &&
-              (a || trocada) && nv_audio_mkv_dts(selected.codec);
+  if (hls.enabled && !modoLoad && !semDVForcado) {
+    int external = audioext_pedido(urlAtual);
+    int dv7 = dtsModoDv && dvMkvPerfil == 7 && ajustes_dv7();
+    int ownDts = (a || trocada) && nv_audio_mkv_dts(selected.codec);
+    int dts = !dtsDesligado && (ownDts || (external && !dtsModoDv));
     if (dv7 || dts) {
-      hls.tried = 1;
-      if (dts_hls_webos_open(urlAtual, cabsHttp, ordinal, dv7, hls.dts && !dtsDesligado,
-                            ajustes_dv7_mapping(), hls.url, sizeof hls.url)) {
+      snprintf(hls.subtitle, sizeof hls.subtitle, "%s", legUrlAtual);
+      // Release the old read-ahead ring before allocating the HLS preset.
+      pararSessao();
+      nv_recon_zerar(&recon);
+      hls.pos = alvo; hls.paused = paused; hls.external = external;
+      DtsWebosHls options = {
+        .dv7 = dv7, .allow_dts = !dtsDesligado,
+        .preserve_mapping = ajustes_dv7_mapping(),
+        .buffer_mib = cacheboost_buffer_mb(ajustes_buffer_preset(), memlog_livre_mb()),
+      };
+      char langs[64];
+      DtsTrack hint = {0};
+      if (external) {
+        extIdiomas(langs, sizeof langs);
+        dts_engine_set_lang_match(ling_casa);
+        options.external_url = audioext_url();
+        options.external_headers = audioext_cabecalhos();
+        options.external_langs = langs;
+        options.external_stream = audioext_faixa();
+        options.external_offset_ms = audioext_offset_ms();
+        options.external_speed_ppm = audioext_velocidade();
+        options.external_only = audioext_so_audio();
+        options.external_buffer_mib = ajustes_audio_externo_bufor_mib();
+        AudioExtFaixa saved;
+        if (audioext_faixa_dica(&saved)) {
+          hint.stream_index = saved.stream;
+          hint.channels = saved.canais;
+          snprintf(hint.language, sizeof hint.language, "%s", saved.idioma);
+          snprintf(hint.codec, sizeof hint.codec, "%s", saved.codec);
+          snprintf(hint.title, sizeof hint.title, "%s", saved.titulo);
+          options.external_hint = &hint;
+        }
+      }
+      // A bare MKV probe has no selected native track yet. Let HLS prefer
+      // an available AC-3 track over a provisional first/TrueHD selection.
+      int hlsOrdinal = dv7 && !nativeCount && requestedOrdinal < 0 ? -1 : ordinal;
+      if (dts_hls_webos_open(urlAtual, cabsHttp, hlsOrdinal, &options, hls.url, sizeof hls.url)) {
         hls.pending = dtsTentou = 1;
         hls.started = SDL_GetTicks();
-        hls.ordinal = ordinal; hls.count = count;
-        hls.track = selected; hls.known = (a || trocada) != 0;
-        hls.pos = alvo;
+        hls.externalTrack = options.external_stream;
+        if (external) {
+          snprintf(extUrlAplicada, sizeof extUrlAplicada, "%s", options.external_url);
+          extGenAplicada = extGenVista = audioext_offset_geracao();
+          extGenEm = 0;
+          audioext_carregando_definir(1);
+        }
 #ifdef NV_NATIVE_SEEK_TEST
         hls.percent = resumePct;
 #endif
-        if (dts) {
+        if (dts && !external) {
           dtsEstado = VIDEO_DTS_PREPARANDO;
           snprintf(dtsSaida, sizeof dtsSaida, "DTS: preparing HLS / AC-3");
         }
-        marco(dv7 ? "HLS webOS: DV7 -> P8.1 / AC-3" : "HLS webOS: DTS -> AC-3");
+        marco(external ? "HLS webOS: audio from another source / AC-3" :
+              dv7 ? "HLS webOS: DV7 -> P8.1 / AC-3" : "HLS webOS: DTS -> AC-3");
         return 1;
       }
+      hlsFalhar("session could not start");
+      return 0;
     }
   }
 #endif
@@ -3915,10 +3999,10 @@ static int iniciarDts(int stream) {
   dts_playback_next_p7_mapping(ajustes_dv7_mapping());
 #endif
 #ifdef NV_MP4_BD_TEST
-  dts_playback_next_p7(dv7Selecionado() || mp4TestPending);
+  dts_playback_next_p7(ajustes_dv7() || mp4TestPending);
   dts_playback_next_mp4_test(mp4TestPending);
 #else
-  dts_playback_next_p7(dv7Selecionado());
+  dts_playback_next_p7(ajustes_dv7());
 #endif
 #ifdef NV_DV_FIXED_AUDIO_TEST
   dts_playback_next_dv_audio(dtsModoDv ? ajustes_dv_audio_fixo() : 0);
@@ -3996,21 +4080,19 @@ static void hlsBombear(void) {
   int state = dts_tpk_estado();
   int timeout = SDL_GetTicks() - hls.started >= 30000;
   int failed = state == DTSTPK_FALHOU ||
-               (hlsAtivo() && (falhou || reconErroPend || audioNaoSup || (recuperando && !semDVForcado)));
+               (hlsAtivo() && (falhou || reconErroPend || audioNaoSup || recuperando));
   if (failed || (timeout && (hls.pending || !pronto))) {
-    printf("[webos-hls] falling back to packet playback: %s\n",
-           state == DTSTPK_FALHOU ? dts_tpk_erro() : failed ? "native player error" : "startup timeout");
-    fflush(stdout);
-    if (hlsAtivo() && pronto) {
-      hls.pos = seekEm || seekEnvEm || seekRetryEm ? seekAlvo : posSeg;
-      hls.percent = 0;
-    }
-    hls.fallback = 1;
-    iniciarDts(-1);
+    const char *reason = state == DTSTPK_FALHOU ? dts_tpk_erro() : failed ? "native player error" : "startup timeout";
+    hlsFalhar(reason);
     return;
   }
   if (hlsAtivo()) {
-    if (!dtsModoDv && pronto && dtsEstado != VIDEO_DTS_CONVERTIDO) {
+    if (pronto && tocando) hls.played = 1;
+    if (hls.external && pronto && audioext_carregando()) {
+      audioext_carregando_definir(0);
+      audioext_tocando_definir(1);
+    }
+    if (!hls.external && !dtsModoDv && pronto && dtsEstado != VIDEO_DTS_CONVERTIDO) {
       dtsEstado = VIDEO_DTS_CONVERTIDO;
       snprintf(dtsSaida, sizeof dtsSaida, "DTS: HLS / Dolby Digital");
     }
@@ -4019,18 +4101,16 @@ static void hlsBombear(void) {
   if (state != DTSTPK_PRONTO) return;
   double alvo = hls.percent > 0 ? dts_tpk_duracao() * hls.percent / 100.0 : hls.pos;
   if (seekEm || seekEnvEm || seekRetryEm) alvo = seekAlvo;
-  int paused = pausaPedida;
-  char subtitle[sizeof legUrlAtual];
-  snprintf(subtitle, sizeof subtitle, "%s", legUrlAtual);
   hls.started = SDL_GetTicks();
   hls.pos = alvo;
   hls.percent = 0;
-  if (!tocarInternoRota(urlAtual, 0, 1)) { falhou = 1; return; }
+  if (!tocarInternoRota(urlAtual, 0, 1)) { hlsFalhar("player could not open the playlist"); return; }
   // The native load callback applies these after the HLS seekable range exists.
   if (alvo > 0) posAoCarregar = alvo;
-  if (paused) recarregarPausa = pausaPedida = 1;
-  snprintf(legUrlAoCarregar, sizeof legUrlAoCarregar, "%s", subtitle);
-  if (!dtsModoDv) dtsEstado = VIDEO_DTS_PREPARANDO;
+  if (hls.paused) recarregarPausa = pausaPedida = 1;
+  snprintf(legUrlAoCarregar, sizeof legUrlAoCarregar, "%s", hls.subtitle);
+  if (hls.external) audioext_carregando_definir(1);
+  if (!hls.external && !dtsModoDv) dtsEstado = VIDEO_DTS_PREPARANDO;
 }
 #endif
 
@@ -4627,10 +4707,16 @@ void video_buffer_test_text(char *out, size_t n) {
     if (b.ready_bytes > b.capacity_bytes) b.ready_bytes = b.capacity_bytes;
     cacheboost_buffer_texto(out, n, b.ready_bytes, b.capacity_bytes, ajustes_buffer_preset());
   } else cacheboost_buffer_texto(out, n, 0, 0, ajustes_buffer_preset());
-  if(out && n && b.http_workers>=1 && b.http_workers<=4) {
-    size_t used=strlen(out);
-    snprintf(out+used,n-used," · HTTP: %d (%s)",b.http_workers,dtsSessao?"DTS/DV":"Native");
+  if (!out || !n) return;
+  size_t used = strlen(out);
+#ifdef NV_WEBOS_HLS_TEST
+  if (hlsAtivo() && hls.played) {
+    snprintf(out + used, n - used, " · HLS");
+    return;
   }
+#endif
+  if (b.http_workers >= 1 && b.http_workers <= 4)
+    snprintf(out + used, n - used, " · HTTP: %d (%s)", b.http_workers, dtsSessao ? "DTS/DV" : "Native");
 }
 #endif
 // webOS: so o buffer em SEGUNDOS e real (bufferRange do uMS); bytes, conexoes

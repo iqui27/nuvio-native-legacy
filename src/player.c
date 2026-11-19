@@ -1016,6 +1016,13 @@ int video_tpk_aviso_busca(void);   // video_tpk.c (mkvfix.h)
 static void erroCausaDoPlayer(void) {
   int http = 0, causa = fontesonda_causa(video_erro_texto(), &http);
   const char *err = video_erro_texto();
+#ifdef NV_WEBOS_HLS_TEST
+  if (err && !strncmp(err, "HLS: ", 5)) {
+    snprintf(erroTitulo, sizeof erroTitulo, "%s", i18n("HLS playback failed"));
+    snprintf(erroDica, sizeof erroDica, "%s", i18n("Turn off HLS (experimental) and reopen the video to try the previous conversion method."));
+    return;
+  }
+#endif
   if (xtream_url_limitada(video_url_atual()) && err &&
       (strstr(err, "403") || strstr(err, "458") || strstr(err, "509"))) {
     snprintf(erroTitulo, sizeof erroTitulo, "%s", i18n("Esta linha está em uso em outra tela"));

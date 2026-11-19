@@ -1,4 +1,5 @@
 """Check the real loopback server and the muxed packets without a TV."""
+import array
 import contextlib
 import json
 import pathlib
@@ -14,9 +15,14 @@ origin = f"http://127.0.0.1:{(work / 'port').read_text()}/"
 
 
 @contextlib.contextmanager
-def playback(filename, dv7):
+def playback(filename, dv7, donor=None, buffer_mib=None, offset=0, speed=0, track=1):
+    cmd = [work / 'server', urljoin(origin, filename), str(dv7)]
+    if donor:
+        cmd += [urljoin(origin, donor), str(buffer_mib or 0), str(track), str(offset), str(speed)]
+    elif buffer_mib:
+        cmd += [str(buffer_mib)]
     process = subprocess.Popen(
-        [work / 'server', urljoin(origin, filename), str(dv7)],
+        cmd,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
     )
     try:
@@ -70,13 +76,16 @@ def hevc_nals(packet):
 
 
 with playback('dts.mkv', 0) as base:
-    assert b'v.m3u8' in get(base)
+    master = get(base)
+    assert b'v.m3u8' in master and re.search(rb'CODECS="avc1.[0-9a-f]{6},ac-3"', master)
+    assert b'#EXT-X-INDEPENDENT-SEGMENTS' not in master
     playlist = get(base, 'v.m3u8')
-    assert b'\nseg0.ts\n' in playlist and b'\nseg2.ts\n' in playlist
-    streams = probe('dts.ts', get(base, 'seg2.ts'))['streams']
+    assert b'\nseg0.m4s\n' in playlist and b'\nseg2.m4s\n' in playlist
+    assert b'#EXT-X-INDEPENDENT-SEGMENTS' not in playlist
+    streams = probe('dts.mp4', get(base, 'init.mp4') + get(base, 'seg2.m4s'))['streams']
     assert [s['codec_name'] for s in streams] == ['h264', 'ac3']
     assert streams[1]['channels'] == 6
-    print('DTS HLS MPEG-TS, AC-3 5.1 and out-of-order seek passed.')
+    print('DTS HLS fMP4, AC-3 5.1 and out-of-order seek passed.')
 
 with playback('indexed.mkv', 1) as base:
     assert b'CODECS="dvh1.08.06,ac-3"' in get(base)
@@ -107,6 +116,7 @@ with playback('indexed.mkv', 1) as base:
     assert 1.9 < segments[1] - segments[0] < 2.1, segments
     assert 3.9 < segments[2] - segments[0] < 4.1, segments
     print('DV7 HLS fMP4, converted P8.1 RPU, AC-3 5.1 and segment timestamps passed.')
+assert 'audio ac3 (audio 1 do arquivo)' in (work / 'indexed.mkv.log').read_text()
 
 with playback('plain.mkv', 1) as base:
     try:
@@ -115,3 +125,59 @@ with playback('plain.mkv', 1) as base:
         assert error.code == 503
     else:
         raise AssertionError('A source without P7 must be refused by the P7 HLS path')
+
+
+def decoded_audio(name, data):
+    media = work / name
+    media.write_bytes(data)
+    raw = subprocess.check_output(['ffmpeg', '-v', 'error', '-i', media, '-map', '0:a:0',
+                                   '-ac', '1', '-ar', '8000', '-f', 's16le', '-'])
+    samples = array.array('h', raw)
+    if sys.byteorder != 'little':
+        samples.byteswap()
+    return samples
+
+
+def tone(samples, start, duration=0.25):
+    section = samples[round(start * 8000):round((start + duration) * 8000)]
+    assert len(section) == round(duration * 8000)
+    return sum(a < 0 <= b for a, b in zip(section, section[1:])) / duration
+
+
+with playback('dts.mkv', 0, 'donor.m4a', 64, 750) as base:
+    init = get(base, 'init.mp4')
+    start = decoded_audio('external-0.mp4', init + get(base, 'seg0.m4s'))
+    assert max(map(abs, start[:4000])) < 150, 'positive offset should start with silence'
+    assert 860 < tone(start, 1) < 900, 'expected the selected 880 Hz donor track'
+    middle = decoded_audio('external-2.mp4', init + get(base, 'seg2.m4s'))
+    assert 860 < tone(middle, 0.5) < 900, 'expected donor audio after seek'
+    assert 6.8 < sum(map(float, re.findall(rb'#EXTINF:([0-9.]+)', get(base, 'v.m3u8')))) < 7.2
+log = (work / 'dts.mkv.log').read_text()
+assert 'input rings: video=48 MiB external=16 MiB, external track=1 offset=750 ms' in log
+assert re.search(r'reader rings peak 2 = 64 MiB', log)
+
+with playback('indexed.mkv', 1, 'donor.m4a', 128, -150, 40000) as base:
+    init = get(base, 'init.mp4')
+    middle = get(base, 'seg1.m4s')
+    info = probe('external-p8.mp4', init + middle)['streams']
+    assert info[0]['codec_tag_string'] == 'dvh1' and info[1]['codec_name'] == 'ac3'
+    assert 825 < tone(decoded_audio('external-p8.mp4', init + middle), 0.5) < 865
+log = (work / 'indexed.mkv.log').read_text()
+assert 'input rings: video=112 MiB external=16 MiB, external track=1 offset=-150 ms' in log
+assert re.search(r'reader rings peak 2 = 128 MiB', log)
+with playback('plain.mkv', 0, 'donor.mkv', 256, 3500, track=2) as base:
+    init = get(base, 'init.mp4')
+    silence = decoded_audio('external-silent.mp4', init + get(base, 'seg0.m4s'))
+    assert max(map(abs, silence)) < 150
+    later = decoded_audio('external-late.mp4', init + get(base, 'seg2.m4s'))
+    assert 860 < tone(later, 0.5) < 900
+log = (work / 'plain.mkv.log').read_text()
+assert 'input rings: video=240 MiB external=16 MiB, external track=2 offset=3500 ms' in log
+assert re.search(r'reader rings peak 2 = 256 MiB', log)
+
+with playback('dts.mkv', 0, buffer_mib=256) as base:
+    assert get(base, 'seg0.m4s')
+log = (work / 'dts.mkv.log').read_text()
+assert 'input ring: video=256 MiB' in log
+assert re.search(r'reader rings peak 1 = 256 MiB', log)
+print('External AAC -> AC-3 track, offsets, speed, out-of-order seek and 64/128/256 MiB presets passed.')

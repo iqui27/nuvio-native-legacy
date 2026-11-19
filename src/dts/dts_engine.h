@@ -220,6 +220,12 @@ void dts_engine_set_lang_match(int (*match)(const char *code, const char *pref))
  * header), valid until the next open or destroy. Cancel stays permanent. */
 int dts_engine_open_demux(DtsEngine *, const char *url, const char *headers);
 void *dts_engine_avformat(DtsEngine *);
+#ifdef NV_WEBOS_HLS_TEST
+/* Per-reader buffer for webOS HLS. The Samsung default remains adaptive. */
+void dts_engine_hls_read_ahead(DtsEngine *, int mib);
+int dts_engine_hls_audio(DtsEngine *, int stream, const char *langs, const DtsTrack *hint,
+                         int audio_only, int allow_dts);
+#endif
 int64_t dts_engine_size(DtsEngine *);
 /* Remux: on = 1 makes the read in progress (and the next ones) fail until it
  * is set back to 0; unlike cancel it is not permanent. Any thread. */

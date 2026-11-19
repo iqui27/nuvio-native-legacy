@@ -337,7 +337,13 @@ typedef struct Sessao {
   char token[12];
   char *url, *cabs;
   int track, stereo, modo;
-  int webos, dv7, preserveMapping;
+  int webos, dv7;
+#ifdef NV_WEBOS_HLS_TEST
+  DtsWebosHls hls;
+  DtsTrack externalHint;
+  char *externalUrl, *externalHeaders;
+  char externalLangs[64];
+#endif
   volatile int cancelar;
   pthread_mutex_t m;
   pthread_cond_t c;
@@ -372,6 +378,9 @@ static void sessaoDestruir(Sessao *s) {
   for (int i = 0; i < GERADORES; i++) dts_remux_gen_free(s->ger[i].g);
   dts_remux_close(s->rx);
   free(s->url); free(s->cabs); free(s->initMp4);
+#ifdef NV_WEBOS_HLS_TEST
+  free(s->externalUrl); free(s->externalHeaders);
+#endif
   pthread_cond_destroy(&s->c); pthread_mutex_destroy(&s->m);
   free(s);
 }
@@ -419,7 +428,7 @@ static void *fioSonda(void *u) {
   // The session can cancel its reader during both the probe and fMP4 init.
   DtsRemux *rx = dts_remux_new(&s->cancelar);
 #ifdef NV_WEBOS_HLS_TEST
-  if (rx && s->webos) dts_remux_set_webos(rx, s->webos, s->preserveMapping);
+  if (rx && s->webos) dts_remux_set_webos(rx, &s->hls);
 #endif
   pthread_mutex_lock(&s->m);
   s->rxSonda = rx;
@@ -429,7 +438,7 @@ static void *fioSonda(void *u) {
   const DtsRemuxInfo *in = probed ? dts_remux_info(rx) : NULL;
   int noIndex = in && s->modo == DTSTPK_HLS && (in->n_segments < 1 || !in->index_complete);
   int ready = probed && !noIndex;
-  if (ready && s->dv7) {
+  if (ready && s->webos) {
     s->initMp4 = malloc(INIT_MP4_MAX);
     initGen = s->initMp4 ? dts_remux_gen_new(rx, err, sizeof err) : NULL;
     ready = initGen && dts_remux_gen_run(initGen, 0, 0, "hls-init", saveInit, s,
@@ -709,14 +718,15 @@ static void playlist(Sessao *s, char *b, size_t n) {
   size_t p = 0;
   if (alvo < 1) alvo = 1;
   p += (size_t)snprintf(b + p, n - p, "#EXTM3U\n#EXT-X-VERSION:%d\n#EXT-X-TARGETDURATION:%d\n#EXT-X-MEDIA-SEQUENCE:0\n"
-                        "#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n",
-                        s->dv7 ? 7 : 3, alvo);
-  if (s->dv7) p += (size_t)snprintf(b + p, n - p, "#EXT-X-MAP:URI=\"init.mp4\"\n");
+                        "#EXT-X-PLAYLIST-TYPE:VOD\n",
+                        s->webos ? 7 : 3, alvo);
+  if (s->webos) p += (size_t)snprintf(b + p, n - p, "#EXT-X-MAP:URI=\"init.mp4\"\n");
+  else p += (size_t)snprintf(b + p, n - p, "#EXT-X-INDEPENDENT-SEGMENTS\n");
   for (k = 0; k < in->n_segments && p < n - 64; k++) {
     // Milissegundos inteiros: o LC_NUMERIC da TV nunca vira virgula aqui.
     long ms = lround(dts_remux_segment_duration(s->rx, k) * 1000.0);
     p += (size_t)snprintf(b + p, n - p, "#EXTINF:%ld.%03ld,\nseg%d.%s\n", ms / 1000, ms % 1000, k,
-                          s->dv7 ? "m4s" : "ts");
+                          s->webos ? "m4s" : "ts");
   }
   snprintf(b + p, n - p, "#EXT-X-ENDLIST\n");
 }
@@ -731,14 +741,18 @@ static void playlistMestre(Sessao *s, char *b, size_t n) {
   long fps = lround(in->fps * 1000.0);
   size_t p = 0;
   if (bw < 1000000L) bw = 1000000L;
-  p += (size_t)snprintf(b + p, n - p, "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n");
+  p += (size_t)snprintf(b + p, n - p, "#EXTM3U\n#EXT-X-VERSION:7\n");
+  if (!s->webos) p += (size_t)snprintf(b + p, n - p, "#EXT-X-INDEPENDENT-SEGMENTS\n");
   p += (size_t)snprintf(b + p, n - p, "#EXT-X-STREAM-INF:BANDWIDTH=%ld", bw);
   if (in->width > 0 && in->height > 0) p += (size_t)snprintf(b + p, n - p, ",RESOLUTION=%dx%d", in->width, in->height);
   if (fps > 0) p += (size_t)snprintf(b + p, n - p, ",FRAME-RATE=%ld.%03ld", fps / 1000, fps % 1000);
   if (s->dv7)
     p += (size_t)snprintf(b + p, n - p, ",VIDEO-RANGE=PQ,CODECS=\"dvh1.08.%02d,ac-3\"", in->dv_level);
-  else if (!strncmp(in->hdr, "PQ", 2) || !strcmp(in->hdr, "HLG"))
-    p += (size_t)snprintf(b + p, n - p, ",VIDEO-RANGE=%s", strncmp(in->hdr, "PQ", 2) ? "HLG" : "PQ");
+  else {
+    if (!strncmp(in->hdr, "PQ", 2) || !strcmp(in->hdr, "HLG"))
+      p += (size_t)snprintf(b + p, n - p, ",VIDEO-RANGE=%s", strncmp(in->hdr, "PQ", 2) ? "HLG" : "PQ");
+    if (in->hls_codec[0]) p += (size_t)snprintf(b + p, n - p, ",CODECS=\"%s,ac-3\"", in->hls_codec);
+  }
   snprintf(b + p, n - p, "\nv.m3u8\n");
 }
 
@@ -797,7 +811,7 @@ static int atenderPedido(int sock, const Pedido *pd, int manter) {
       }
     }
     fflush(stdout);
-  } else if (s->dv7 && !strcmp(resto, "init.mp4")) {
+  } else if (s->webos && !strcmp(resto, "init.mp4")) {
     char cab[256];
     snprintf(cab, sizeof cab, "HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\n"
              "Content-Length: %zu\r\nCache-Control: no-cache\r\nConnection: %s\r\n\r\n",
@@ -812,8 +826,8 @@ static int atenderPedido(int sock, const Pedido *pd, int manter) {
       printf("[dts-tpk] #%u <- 404 segmento %d fora da playlist\n", nr, k);
       fflush(stdout);
       r = manter;
-    } else r = servirFluxo(sock, s, pd, nr, k, 0, s->dv7 ? "mp4" : "mpegts",
-                           s->dv7 ? "video/mp4" : "video/mp2t", manter);
+    } else r = servirFluxo(sock, s, pd, nr, k, 0, s->webos ? "mp4" : "mpegts",
+                           s->webos ? "video/mp4" : "video/mp2t", manter);
   } else if (!s->webos && !strcmp(resto, "prog.ts")) {
     const char *q = strstr(pd->query, "t=");
     double t = q ? atof(q + 2) : 0.0;
@@ -1034,10 +1048,11 @@ static int urlDe(Sessao *s, double t, char *out, size_t n) {
 }
 
 static int openSession(const char *url, const char *headers, int track, int stereo, int modo,
-                       double inicio, char *out, size_t n, int webos, int dv7, int preserveMapping) {
+                       double inicio, char *out, size_t n, const DtsWebosHls *hls) {
   Sessao *s;
   pthread_t t;
   unsigned id;
+  int webos = hls != NULL;
   if (out && n) out[0] = 0;
   if (!url || !*url || !out || n < 64 || modo < 0 || modo >= DTSTPK_DESLIGADO || !dts_remux_available()) return 0;
   pthread_mutex_lock(&G);
@@ -1049,7 +1064,7 @@ static int openSession(const char *url, const char *headers, int track, int ster
     return 0;
   }
   dts_remux_set_queue_budget_mib(webos ? 48 : anelMib() == 16 ? 128 : 192);
-  dts_engine_set_ring_mib(webos ? 16 : anelMib());   // ring of the readers this session opens
+  if (!webos) dts_engine_set_ring_mib(anelMib());   // ring of the Samsung readers
   { static int monitor;
     pthread_t tm;
     if (!monitor && pthread_create(&tm, NULL, fioMemoria, NULL) == 0) { pthread_detach(tm); monitor = 1; } }
@@ -1060,7 +1075,28 @@ static int openSession(const char *url, const char *headers, int track, int ster
   gerarToken(s->token, 8);
   s->url = strdup(url); s->cabs = strdup(headers ? headers : "");
   s->track = track; s->stereo = stereo; s->modo = modo;
-  s->webos = webos; s->dv7 = dv7; s->preserveMapping = preserveMapping;
+  s->webos = webos;
+#ifdef NV_WEBOS_HLS_TEST
+  if (hls) {
+    s->dv7 = hls->dv7;
+    s->hls = *hls;
+    if (hls->external_url && *hls->external_url) {
+      s->externalUrl = strdup(hls->external_url);
+      s->externalHeaders = strdup(hls->external_headers ? hls->external_headers : "");
+      if (!s->externalUrl || !s->externalHeaders) {
+        pthread_mutex_unlock(&G); sessaoDestruir(s); return 0;
+      }
+      s->hls.external_url = s->externalUrl;
+      s->hls.external_headers = s->externalHeaders;
+      snprintf(s->externalLangs, sizeof s->externalLangs, "%s", hls->external_langs ? hls->external_langs : "");
+      s->hls.external_langs = s->externalLangs;
+      if (hls->external_hint) {
+        s->externalHint = *hls->external_hint;
+        s->hls.external_hint = &s->externalHint;
+      }
+    } else s->hls.external_url = NULL;
+  }
+#endif
   s->estado = DTSTPK_SONDANDO; s->inicioStream = -1;
   s->criadaMs = agoraMs();
   memInicio(s);
@@ -1086,14 +1122,14 @@ static int openSession(const char *url, const char *headers, int track, int ster
 
 int dts_tpk_abrir(const char *url, const char *headers, int track, int stereo, int modo,
                   double inicio, char *out, size_t n) {
-  return openSession(url, headers, track, stereo, modo, inicio, out, n, 0, 0, 0);
+  return openSession(url, headers, track, stereo, modo, inicio, out, n, NULL);
 }
 
 #ifdef NV_WEBOS_HLS_TEST
-int dts_hls_webos_open(const char *url, const char *headers, int track, int dv7, int allow_dts,
-                      int preserveMapping, char *out, size_t n) {
-  int mode = dv7 ? (allow_dts ? DTS_REMUX_WEBOS_DV7_DTS : DTS_REMUX_WEBOS_DV7) : DTS_REMUX_WEBOS_DTS;
-  return openSession(url, headers, track, 0, DTSTPK_HLS, 0, out, n, mode, dv7, preserveMapping);
+int dts_hls_webos_open(const char *url, const char *headers, int track, const DtsWebosHls *options,
+                      char *out, size_t n) {
+  if (!options) return 0;
+  return openSession(url, headers, track, 0, DTSTPK_HLS, 0, out, n, options);
 }
 #endif
 

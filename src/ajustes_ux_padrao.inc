@@ -375,3 +375,4 @@
   0, /* Other version buffer: 8 MB */
   1, /* DTS via HLS: Off */
   1, /* Dolby Vision P7 via HLS: Off */
+  0, /* Experimental HLS mode: Off */

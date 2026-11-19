@@ -73,7 +73,7 @@ void dts_remux_gen_interrupt(DtsRemuxGen *g) { (void)g; }
 double dts_remux_gen_start_s(const DtsRemuxGen *g) { (void)g; return 0; }
 void dts_remux_set_queue_budget_mib(int mib) { (void)mib; }
 #ifdef NV_WEBOS_HLS_TEST
-void dts_remux_set_webos(DtsRemux *r, int mode, int preserve) { (void)r; (void)mode; (void)preserve; }
+void dts_remux_set_webos(DtsRemux *r, const DtsWebosHls *o) { (void)r; (void)o; }
 #endif
 #else
 
@@ -187,9 +187,12 @@ static void qClear(Q *q) {
 struct DtsRemux {
   DtsRemuxInfo info;
   char *url, *headers;
-  DtsEngine *probe;                 /* reader of dts_remux_open, handed to the 1st generator */
+  DtsEngine *probe;                 /* readers are handed to the first generator */
+  DtsEngine *audioProbe;
   int vs, as, mov, stereo_aac;
-  int webos, dv7, preserveMapping;
+  int webos, dv7, preserveMapping, allowDts, videoMib, audioMib;
+  int64_t donorBase48, donorStart48;
+  double donorRatio;
   int audio_offset_ms;             /* stable across this source's segments and seeks */
   AVCodecParameters *vpar, *apar;
   AVRational vtb, atb, vfps;
@@ -205,14 +208,18 @@ struct DtsRemux {
   DtsEngine *engines[ENGINES_MAX]; int nEngines;
   volatile int *extCancel;
   int cancelled;
+#ifdef NV_WEBOS_HLS_TEST
+  DtsWebosHls hls;
+#endif
 };
 
 struct DtsRemuxGen {
   DtsRemux *src;
-  DtsEngine *eng;
+  DtsEngine *eng, *audioEng;
   atomic_int interrupted;           /* dts_remux_gen_interrupt during this run */
-  AVFormatContext *ic;
+  AVFormatContext *ic, *audioFmt;
   AVStream *V, *A;
+  int donorEof;
   AVCodecContext *dec, *enc;
   SwrContext *swr;
   AVChannelLayout swrIn, target; int swrRate, swrFmt;
@@ -435,28 +442,47 @@ DtsRemux *dts_remux_new(volatile int *cancel) {
   if (!r) return NULL;
   pthread_mutex_init(&r->lock, NULL);
   r->vs = r->as = -1;
+  r->donorRatio = 1;
   r->extCancel = cancel;
   r->audio_offset_ms = atomic_load(&audioOffsetMs);
   return r;
 }
 
 #ifdef NV_WEBOS_HLS_TEST
-void dts_remux_set_webos(DtsRemux *r, int mode, int preserveMapping) {
-  r->webos = mode;
-  r->preserveMapping = preserveMapping;
-  r->dv7 = mode != DTS_REMUX_WEBOS_DTS;
+void dts_remux_set_webos(DtsRemux *r, const DtsWebosHls *o) {
+  r->webos = 1;
+  r->hls = *o;
+  r->preserveMapping = o->preserve_mapping;
+  r->dv7 = o->dv7;
+  r->allowDts = o->allow_dts;
+  int total = o->buffer_mib == 64 || o->buffer_mib == 128 || o->buffer_mib == 256 ? o->buffer_mib : 16;
+  if (o->external_url) {
+    int requested = o->external_buffer_mib == 16 || o->external_buffer_mib == 32 ? o->external_buffer_mib : 8;
+    r->audioMib = requested < total / 2 ? requested : total / 2;
+    if (o->external_speed_ppm >= -200000 && o->external_speed_ppm <= 200000)
+      r->donorRatio = 1.0 + o->external_speed_ppm / 1e6;
+  }
+  r->videoMib = total - r->audioMib;
 }
 #endif
 
 static int audioSupported(const DtsRemux *r, enum AVCodecID codec) {
 #ifdef NV_WEBOS_HLS_TEST
   if (r->webos) {
-    if (codec == AV_CODEC_ID_DTS) return r->webos != DTS_REMUX_WEBOS_DV7;
-    return r->dv7 && (codec == AV_CODEC_ID_AC3 || codec == AV_CODEC_ID_EAC3 || codec == AV_CODEC_ID_AAC);
+    if (codec == AV_CODEC_ID_DTS) return r->allowDts;
+    return r->dv7 && avcodec_find_decoder(codec) &&
+           (codec == AV_CODEC_ID_AC3 || codec == AV_CODEC_ID_EAC3 || codec == AV_CODEC_ID_AAC ||
+            codec == AV_CODEC_ID_TRUEHD || codec == AV_CODEC_ID_MLP);
   }
 #endif
   (void)r;
   return isConvertible(codec);
+}
+
+static int audioRank(const DtsRemux *r, enum AVCodecID codec) {
+  if (!audioSupported(r, codec)) return 0;
+  if (r->dv7 && codec == AV_CODEC_ID_AC3) return 2;
+  return 1;
 }
 
 static int isCancelled(DtsRemux *r) {
@@ -477,8 +503,8 @@ DtsRemux *dts_remux_open(const char *url, const char *headers, int ordinal, int 
 
 int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordinal, int stereoAac,
                     double segTarget, char *err, size_t errn) {
-  AVFormatContext *ic;
-  int nAudio = 0, ordAs = -1, ordPedido = -1, primeiro = -1, primeiroOrd = -1;
+  AVFormatContext *ic, *audioFmt;
+  int nAudio = 0, ordAs = -1, ordPedido = -1, primeiro = -1, primeiroOrd = -1, bestAudio = 0;
   pthread_once(&logOnce, logInit);
   atomic_store(&logBudget, 40);
   if (err && errn) err[0] = 0;
@@ -489,6 +515,9 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
   r->probe = dts_engine_create();
   if (!r->url || !r->headers || !r->probe) { fail(err, errn, "Out of memory", 0); goto bad; }
   registerEngine(r, r->probe);   /* cancelled already: cancels it at once */
+#ifdef NV_WEBOS_HLS_TEST
+  if (r->webos) dts_engine_hls_read_ahead(r->probe, r->videoMib);
+#endif
   if (isCancelled(r)) { fail(err, errn, "Cancelled", 0); goto bad; }
   if (dts_engine_open_demux(r->probe, r->url, r->headers) < 0) {
     if (isCancelled(r)) fail(err, errn, "Cancelled", 0);
@@ -496,6 +525,44 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
     goto bad;
   }
   ic = dts_engine_avformat(r->probe);
+  audioFmt = ic;
+#ifdef NV_WEBOS_HLS_TEST
+  if (r->hls.external_url) {
+    r->audioProbe = dts_engine_create();
+    if (!r->audioProbe) { fail(err, errn, "External audio reader allocation", 0); goto bad; }
+    registerEngine(r, r->audioProbe);
+    dts_engine_hls_read_ahead(r->audioProbe, r->audioMib);
+    if (dts_engine_open_demux(r->audioProbe, r->hls.external_url, r->hls.external_headers) < 0) {
+      fail(err, errn, "Cannot open the external audio source", 0); goto bad;
+    }
+    audioFmt = dts_engine_avformat(r->audioProbe);
+    if (audioFmt->duration < ic->duration / 2) {
+      fail(err, errn, "External audio source is shorter than half the video", 0); goto bad;
+    }
+    r->as = dts_engine_hls_audio(r->audioProbe, r->hls.external_stream, r->hls.external_langs,
+                                 r->hls.external_hint, r->hls.external_only, r->allowDts);
+    if (r->as < 0) { fail(err, errn, "No usable external audio track", 0); goto bad; }
+    AVStream *donor = audioFmt->streams[r->as];
+    if (av_packet_side_data_get(donor->codecpar->coded_side_data, donor->codecpar->nb_coded_side_data,
+                                AV_PKT_DATA_ENCRYPTION_INIT_INFO) ||
+        donor->codecpar->codec_tag == MKTAG('e','n','c','a')) {
+      fail(err, errn, "Encrypted external audio", 0); goto bad;
+    }
+    double mainStart = ic->start_time == AV_NOPTS_VALUE ? 0 : ic->start_time / (double)AV_TIME_BASE;
+    double donorStart = audioFmt->start_time == AV_NOPTS_VALUE ? 0 : audioFmt->start_time / (double)AV_TIME_BASE;
+    int offset = r->hls.external_offset_ms;
+    if (offset < -DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS) offset = -DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS;
+    if (offset > DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS) offset = DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS;
+    r->donorStart48 = llround(mainStart * 48000) + (int64_t)offset * 48;
+    r->donorBase48 = r->donorStart48 - llround(donorStart * r->donorRatio * 48000);
+    printf("[webos-hls] input rings: video=%d MiB external=%d MiB, external track=%d offset=%d ms speed=%.6f\n",
+           r->videoMib, r->audioMib, r->as, offset, r->donorRatio);
+    fflush(stdout);
+  } else if (r->webos) {
+    printf("[webos-hls] input ring: video=%d MiB\n", r->videoMib);
+    fflush(stdout);
+  }
+#endif
   r->mov = ic->iformat && strstr(ic->iformat->name, "mov") != NULL;
   for (unsigned i = 0; i < ic->nb_streams; i++) {
     AVStream *s = ic->streams[i];
@@ -505,14 +572,15 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
       fail(err, errn, "Encrypted media", 0); goto bad;
     }
     if (p->codec_type == AVMEDIA_TYPE_VIDEO && r->vs < 0 && !(s->disposition & AV_DISPOSITION_ATTACHED_PIC)) r->vs = (int)i;
-    if (p->codec_type == AVMEDIA_TYPE_AUDIO) {
-      if (audioSupported(r, p->codec_id) && primeiro < 0) { primeiro = (int)i; primeiroOrd = nAudio; }
-      if (nAudio == ordinal) { ordPedido = (int)i; if (audioSupported(r, p->codec_id)) ordAs = (int)i; }
+    if (audioFmt == ic && p->codec_type == AVMEDIA_TYPE_AUDIO) {
+      int rank = audioRank(r, p->codec_id);
+      if (rank > bestAudio) { primeiro = (int)i; primeiroOrd = nAudio; bestAudio = rank; }
+      if (nAudio == ordinal) { ordPedido = (int)i; if (rank) ordAs = (int)i; }
       nAudio++;
     }
   }
   if (r->vs < 0) { fail(err, errn, "No video stream", 0); goto bad; }
-  if (ordinal >= 0 && ordAs < 0) {
+  if (audioFmt == ic && ordinal >= 0 && ordAs < 0) {
     if (r->webos) { fail(err, errn, "Selected audio cannot use this HLS mode", 0); goto bad; }
     /* The k-th audio of the app's MKV reader is not DTS/TrueHD here (FFmpeg
      * skipped a track it could not parse?): the first convertible one. */
@@ -520,13 +588,14 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
            ordPedido >= 0 ? avcodec_get_name(ic->streams[ordPedido]->codecpar->codec_id) : "ausente", nAudio, primeiroOrd);
     fflush(stdout);
   }
-  r->as = ordAs >= 0 ? ordAs : primeiro;
+  if (audioFmt == ic) r->as = ordAs >= 0 ? ordAs : primeiro;
   if (r->as < 0) { fail(err, errn, r->webos ? "No supported audio track" : "No DTS/TrueHD track", 0); goto bad; }
   { int k = 0;
-    for (unsigned i = 0; i < ic->nb_streams && (int)i < r->as; i++) if (ic->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) k++;
+    for (unsigned i = 0; i < audioFmt->nb_streams && (int)i < r->as; i++)
+      if (audioFmt->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) k++;
     r->info.audio_ordinal = k; }
   {
-    AVStream *V = ic->streams[r->vs], *A = ic->streams[r->as];
+    AVStream *V = ic->streams[r->vs], *A = audioFmt->streams[r->as];
     if (!videoOk(V->codecpar->codec_id)) {
       fail(err, errn, "Video codec not HEVC/H.264", 0); goto bad;
     }
@@ -535,7 +604,7 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
       free(r->hvccB); r->hvccB = NULL; r->hvccBN = 0;   /* unreadable hvcC: FFmpeg's filter does it, as before */
     }
     for (unsigned i = 0; i < ic->nb_streams; i++)
-      if ((int)i != r->vs && (int)i != r->as) ic->streams[i]->discard = AVDISCARD_ALL;
+      if ((int)i != r->vs && (audioFmt != ic || (int)i != r->as)) ic->streams[i]->discard = AVDISCARD_ALL;
     r->vpar = avcodec_parameters_alloc(); r->apar = avcodec_parameters_alloc();
     if (!r->vpar || !r->apar || avcodec_parameters_copy(r->vpar, V->codecpar) < 0 ||
         avcodec_parameters_copy(r->apar, A->codecpar) < 0) { fail(err, errn, "Out of memory", 0); goto bad; }
@@ -560,11 +629,16 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
         fail(err, errn, "DV7 HLS requires interleaved profile 7 in Matroska", 0); goto bad;
       }
       if (r->webos && !r->dv7 && c) {
-        fail(err, errn, "DTS HLS cannot preserve Dolby Vision; use the Dolby Vision P7 HLS mode", 0);
+        fail(err, errn, "This Dolby Vision source cannot use HLS without P7 conversion", 0);
         goto bad;
       }
     }
     snprintf(in->video_codec, sizeof in->video_codec, "%s", avcodec_get_name(V->codecpar->codec_id));
+    if (r->webos && V->codecpar->codec_id == AV_CODEC_ID_H264 &&
+        V->codecpar->extradata_size >= 4 && V->codecpar->extradata[0] == 1) {
+      const uint8_t *avcc = V->codecpar->extradata;
+      snprintf(in->hls_codec, sizeof in->hls_codec, "avc1.%02x%02x%02x", avcc[1], avcc[2], avcc[3]);
+    }
     snprintf(in->audio_codec, sizeof in->audio_codec, "%s", avcodec_get_name(A->codecpar->codec_id));
     /* Container flag only (no probe): many MKVs leave it to the bitstream. */
     snprintf(in->hdr, sizeof in->hdr, "%s", V->codecpar->color_trc == AVCOL_TRC_SMPTE2084 ? "PQ" :
@@ -660,6 +734,11 @@ void dts_remux_close(DtsRemux *r) {
   if (r->probe) { dts_engine_cancel(r->probe); unregisterEngine(r, r->probe); dts_engine_destroy(r->probe); }
   avcodec_parameters_free(&r->vpar); avcodec_parameters_free(&r->apar);
   free(r->kf); free(r->hvccB); free(r->segTs); free(r->segB48); free(r->segS);
+  if (r->audioProbe) {
+    dts_engine_cancel(r->audioProbe);
+    unregisterEngine(r, r->audioProbe);
+    dts_engine_destroy(r->audioProbe);
+  }
   free(r->url); free(r->headers);
   pthread_mutex_destroy(&r->lock);
   free(r);
@@ -712,27 +791,44 @@ DtsRemuxGen *dts_remux_gen_new(DtsRemux *r, char *err, size_t errn) {
   g->src = r; g->nextSeg = -1;
   pthread_mutex_lock(&r->lock);
   g->eng = r->probe; r->probe = NULL;
+  g->audioEng = r->audioProbe; r->audioProbe = NULL;
   pthread_mutex_unlock(&r->lock);
   if (!g->eng) {
     double t0 = now_s(CLOCK_MONOTONIC);
     g->eng = dts_engine_create();
     if (!g->eng) { fail(err, errn, "Out of memory", 0); free(g); return NULL; }
     registerEngine(r, g->eng);
+#ifdef NV_WEBOS_HLS_TEST
+    if (r->webos) dts_engine_hls_read_ahead(g->eng, r->videoMib);
+#endif
     if (dts_engine_open_demux(g->eng, r->url, r->headers) < 0) {
       fail(err, errn, dts_engine_error(g->eng), 0); dts_remux_gen_free(g); return NULL;
     }
     AVFormatContext *ic = dts_engine_avformat(g->eng);
-    if ((unsigned)r->vs >= ic->nb_streams || (unsigned)r->as >= ic->nb_streams) {
+    if ((unsigned)r->vs >= ic->nb_streams || (!r->audioMib && (unsigned)r->as >= ic->nb_streams)) {
       fail(err, errn, "Source changed between opens", 0); dts_remux_gen_free(g); return NULL;
     }
     for (unsigned i = 0; i < ic->nb_streams; i++)
-      if ((int)i != r->vs && (int)i != r->as) ic->streams[i]->discard = AVDISCARD_ALL;
+      if ((int)i != r->vs && (r->audioMib || (int)i != r->as)) ic->streams[i]->discard = AVDISCARD_ALL;
     printf("[dts-tpk] generator: own reader opened in %.0f ms (the first one reuses the probe's)\n",
            (now_s(CLOCK_MONOTONIC) - t0) * 1000.0);
     fflush(stdout);
   }
   g->ic = dts_engine_avformat(g->eng);
-  g->V = g->ic->streams[r->vs]; g->A = g->ic->streams[r->as];
+#ifdef NV_WEBOS_HLS_TEST
+  if (r->audioMib && !g->audioEng) {
+    g->audioEng = dts_engine_create();
+    if (!g->audioEng) { fail(err, errn, "External audio reader allocation", 0); dts_remux_gen_free(g); return NULL; }
+    registerEngine(r, g->audioEng);
+    dts_engine_hls_read_ahead(g->audioEng, r->audioMib);
+    if (dts_engine_open_demux(g->audioEng, r->hls.external_url, r->hls.external_headers) < 0 ||
+        dts_engine_hls_audio(g->audioEng, r->as, NULL, NULL, r->hls.external_only, r->allowDts) != r->as) {
+      fail(err, errn, "External audio source changed between opens", 0); dts_remux_gen_free(g); return NULL;
+    }
+  }
+#endif
+  g->audioFmt = g->audioEng ? dts_engine_avformat(g->audioEng) : g->ic;
+  g->V = g->ic->streams[r->vs]; g->A = g->audioFmt->streams[r->as];
   g->pk = av_packet_alloc(); g->op = av_packet_alloc(); g->fr = av_frame_alloc(); g->ef = av_frame_alloc();
   if (!g->pk || !g->op || !g->fr || !g->ef) { fail(err, errn, "Out of memory", 0); dts_remux_gen_free(g); return NULL; }
   if (openAudio(g, err, errn) < 0) { dts_remux_gen_free(g); return NULL; }
@@ -763,6 +859,11 @@ void dts_remux_gen_free(DtsRemuxGen *g) {
     unregisterEngine(g->src, g->eng);
     dts_engine_destroy(g->eng);
   }
+  if (g->audioEng) {
+    dts_engine_cancel(g->audioEng);
+    unregisterEngine(g->src, g->audioEng);
+    dts_engine_destroy(g->audioEng);
+  }
   free(g);
 }
 
@@ -771,6 +872,7 @@ void dts_remux_gen_interrupt(DtsRemuxGen *g) {
   if (!g) return;
   atomic_store(&g->interrupted, 1);
   dts_engine_interrupt(g->eng, 1);
+  if (g->audioEng) dts_engine_interrupt(g->audioEng, 1);
 }
 double dts_remux_gen_start_s(const DtsRemuxGen *g) { return g ? g->progStartS : 0.0; }
 
@@ -832,7 +934,7 @@ static int openMux(DtsRemuxGen *g, const char *fmt, int seg, char *err, size_t e
   g->oc->pb = buf ? avio_alloc_context(buf, 65536, 1, g, NULL, sinkWrite, NULL) : NULL;
   if (!g->oc->pb) { av_free(buf); fail(err, errn, "Out of memory", 0); return -1; }
   g->oc->avoid_negative_ts = AVFMT_AVOID_NEG_TS_DISABLED;
-  g->oc->output_ts_offset = (int64_t)TS_OFFSET_S * AV_TIME_BASE;
+  g->oc->output_ts_offset = (int64_t)(g->mp4Hls ? 1 : TS_OFFSET_S) * AV_TIME_BASE;
   g->hevcFix = !strcmp(fmt, "mpegts") && r->hvccBN > 0;
   if (g->mp4Hls) {
     av_dict_set(&o, "movflags", "frag_custom+empty_moov+default_base_moof+delay_moov+frag_discont+skip_trailer", 0);
@@ -958,6 +1060,7 @@ static int place(DtsRemuxGen *g, uint8_t **buf, int n, int64_t p, char *err, siz
 static int frameIn(DtsRemuxGen *g, AVFrame *f, char *err, size_t errn) {
   DtsRemux *r = g->src;
   int rate = f->sample_rate > 0 ? f->sample_rate : 48000, rr;
+  int resampleRate = (int)lround(rate / r->donorRatio);
   if (!g->swr || g->swrRate != rate || g->swrFmt != f->format || av_channel_layout_compare(&g->swrIn, &f->ch_layout)) {
     char d[64] = "?";
     av_channel_layout_describe(&f->ch_layout, d, sizeof d);
@@ -966,7 +1069,7 @@ static int frameIn(DtsRemuxGen *g, AVFrame *f, char *err, size_t errn) {
       fflush(stdout);
     }
     swr_free(&g->swr);
-    if ((rr = swr_alloc_set_opts2(&g->swr, &g->target, AV_SAMPLE_FMT_FLTP, 48000, &f->ch_layout, f->format, rate, 0, NULL)) < 0 ||
+    if ((rr = swr_alloc_set_opts2(&g->swr, &g->target, AV_SAMPLE_FMT_FLTP, 48000, &f->ch_layout, f->format, resampleRate, 0, NULL)) < 0 ||
         (rr = swr_init(g->swr)) < 0) { fail(err, errn, "Audio resampler", rr); return -1; }
     av_channel_layout_uninit(&g->swrIn); av_channel_layout_copy(&g->swrIn, &f->ch_layout);
     g->swrRate = rate; g->swrFmt = f->format;
@@ -1001,14 +1104,19 @@ static int frameIn(DtsRemuxGen *g, AVFrame *f, char *err, size_t errn) {
     psrc = praw;
   } else psrc = g->off + g->cum;
   g->cum += f->nb_samples;
-  int64_t p48 = av_rescale_rnd(psrc, 48000, rate, AV_ROUND_NEAR_INF) - swr_get_delay(g->swr, 48000);
-  int cap = (int)av_rescale_rnd(f->nb_samples, 48000, rate, AV_ROUND_UP) + 256;
+  int64_t p48 = av_rescale_rnd(psrc, 48000, resampleRate, AV_ROUND_NEAR_INF) +
+                r->donorBase48 - swr_get_delay(g->swr, 48000);
+  int cap = (int)av_rescale_rnd(f->nb_samples, 48000, resampleRate, AV_ROUND_UP) + 256;
   uint8_t **buf = NULL;
   if ((rr = av_samples_alloc_array_and_samples(&buf, NULL, r->info.out_channels, cap, AV_SAMPLE_FMT_FLTP, 0)) < 0) {
     fail(err, errn, "Audio buffer", rr); return -1;
   }
   int n = swr_convert(g->swr, buf, cap, (const uint8_t **)f->extended_data, f->nb_samples);
-  rr = n < 0 ? (fail(err, errn, "Audio resample", n), -1) : place(g, buf, n, p48, err, errn);
+  if (n > 0 && g->audioEng) {
+    int64_t remaining = llround(r->endS * 48000) - p48;
+    if (remaining < n) n = remaining > 0 ? (int)remaining : 0;
+  }
+  rr = n < 0 ? (fail(err, errn, "Audio resample", n), -1) : n > 0 ? place(g, buf, n, p48, err, errn) : 0;
   av_freep(&buf[0]); av_freep(&buf);
   if (rr < 0) return -1;
   return encodeReady(g, 0, err, errn);
@@ -1043,7 +1151,7 @@ static int audioPacket(DtsRemuxGen *g, AVPacket *p, char *err, size_t errn) {
 }
 
 /* End of the source: decoder, resampler and encoder drained into the queue. */
-static int audioEof(DtsRemuxGen *g, char *err, size_t errn) {
+static int audioEof(DtsRemuxGen *g, int finish, char *err, size_t errn) {
   double c0 = now_s(CLOCK_THREAD_CPUTIME_ID);
   int rr = 0;
   avcodec_send_packet(g->dec, NULL);
@@ -1058,9 +1166,11 @@ static int audioEof(DtsRemuxGen *g, char *err, size_t errn) {
       av_freep(&buf[0]); av_freep(&buf);
     }
   }
-  if (!rr) rr = encodeReady(g, 1, err, errn);
-  if (!rr) { avcodec_send_frame(g->enc, NULL); rr = drainEncoder(g, err, errn); }
-  g->encEof = 1;
+  if (finish) {
+    if (!rr) rr = encodeReady(g, 1, err, errn);
+    if (!rr) { avcodec_send_frame(g->enc, NULL); rr = drainEncoder(g, err, errn); }
+    g->encEof = 1;
+  }
   g->audioCpu += now_s(CLOCK_THREAD_CPUTIME_ID) - c0;
   return rr;
 }
@@ -1259,6 +1369,78 @@ static int emitAudio(DtsRemuxGen *g, int target, DtsRemuxStats *st, char *err, s
   return 0;
 }
 
+static int seekDonor(DtsRemuxGen *g, int64_t start48, char *err, size_t errn) {
+  DtsRemux *r = g->src;
+  AVFormatContext *ic = g->audioFmt;
+  double seconds = (start48 - r->donorBase48) / (48000.0 * r->donorRatio) - 0.20;
+  int64_t origin = ic->start_time == AV_NOPTS_VALUE ? 0 : ic->start_time;
+  int64_t ts = llround(seconds * AV_TIME_BASE);
+  int seekStream = r->as;
+  if (ic->iformat && strstr(ic->iformat->name, "matroska")) {
+    // Cues index the donor's video, even when only its audio is read out.
+    for (unsigned i = 0; i < ic->nb_streams; i++) {
+      AVStream *stream = ic->streams[i];
+      if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && !(stream->disposition & AV_DISPOSITION_ATTACHED_PIC)) {
+        seekStream = (int)i;
+        break;
+      }
+    }
+  }
+  if (ic->pb) { ic->pb->error = 0; ic->pb->eof_reached = 0; }
+  g->donorEof = ts >= origin + ic->duration;
+  if (g->donorEof) return 0;
+  if (ts < origin) ts = origin;
+  int64_t ticks = av_rescale_q(ts, AV_TIME_BASE_Q, ic->streams[seekStream]->time_base);
+  int rr = avformat_seek_file(ic, seekStream, INT64_MIN, ticks, ticks, AVSEEK_FLAG_BACKWARD);
+  if (rr < 0) rr = avformat_seek_file(ic, -1, INT64_MIN, ts, ts, AVSEEK_FLAG_BACKWARD);
+  if (rr < 0) { fail(err, errn, "External audio seek", rr); return -1; }
+  return 0;
+}
+
+static int donorSilence(DtsRemuxGen *g, int64_t until, char *err, size_t errn) {
+  while (g->grid + av_audio_fifo_size(g->fifo) < until) {
+    int64_t remain = until - g->grid - av_audio_fifo_size(g->fifo);
+    if (fifoSilence(g, remain > 4096 ? 4096 : remain) < 0) {
+      fail(err, errn, "External audio silence buffer", AVERROR(ENOMEM)); return -1;
+    }
+    if (encodeReady(g, 0, err, errn) < 0) return -1;
+  }
+  return 0;
+}
+
+static int readDonor(DtsRemuxGen *g, int seg, char *err, size_t errn) {
+  DtsRemux *r = g->src;
+  int last = seg + 1 >= r->nseg;
+  int64_t end = last ? llround(r->endS * 48000) : r->segB48[seg + 1] + 2 * g->frame;
+  if (g->donorEof || end < r->donorStart48) {
+    if (donorSilence(g, end, err, errn) < 0) return -1;
+    if (last) {
+      if (encodeReady(g, 1, err, errn) < 0) return -1;
+      avcodec_send_frame(g->enc, NULL);
+      if (drainEncoder(g, err, errn) < 0) return -1;
+      g->encEof = 1;
+    }
+    return 0;
+  }
+  if (donorSilence(g, r->donorStart48, err, errn) < 0) return -1;
+  int rr = av_read_frame(g->audioFmt, g->pk);
+  if (rr >= 0) {
+    if (g->pk->stream_index == r->as) {
+      int64_t pts = g->pk->pts == AV_NOPTS_VALUE ? g->pk->dts : g->pk->pts;
+      double mapped = pts == AV_NOPTS_VALUE ? 0 : pts * av_q2d(r->atb) * r->donorRatio + r->donorBase48 / 48000.0;
+      if (mapped > r->endS + 0.1) rr = AVERROR_EOF;
+      else rr = audioPacket(g, g->pk, err, errn);
+    }
+    av_packet_unref(g->pk);
+  }
+  if (rr == AVERROR_EOF) {
+    g->donorEof = 1;
+    return audioEof(g, 0, err, errn);
+  }
+  if (rr < 0 && (!err || !errn || !err[0])) fail(err, errn, "External audio read", rr);
+  return rr < 0 ? -1 : 0;
+}
+
 /* Seek to the keyframe `kf` (video time base); audio grid from b48. */
 static int freshStart(DtsRemuxGen *g, int64_t kf, int64_t b48, char *err, size_t errn) {
   int rr;
@@ -1283,6 +1465,7 @@ static int freshStart(DtsRemuxGen *g, int64_t kf, int64_t b48, char *err, size_t
     rr = avformat_seek_file(g->ic, -1, INT64_MIN, t, t, AVSEEK_FLAG_BACKWARD);
   }
   if (rr < 0) { fail(err, errn, "Container seek", rr); return -1; }
+  if (g->audioEng && seekDonor(g, b48 < 0 ? 0 : b48, err, errn) < 0) return -1;
   return 0;
 }
 
@@ -1332,7 +1515,7 @@ int dts_remux_gen_run(DtsRemuxGen *g, int seg, double startS, const char *fmt,
   dts_engine_metrics(g->eng, &m0);
   if (g->logWall <= 0) rollingLog(g, 0);   /* starts the 30 s window */
   g->w = w; g->wop = opaque; g->wfail = 0; g->bytes = 0;
-  g->mp4Hls = r->dv7 && seg >= 0;
+  g->mp4Hls = r->webos && seg >= 0;
   g->fragmentBytes = 0;
   g->sawRpu = 0;
   g->dropHeader = 0;
@@ -1341,6 +1524,7 @@ int dts_remux_gen_run(DtsRemuxGen *g, int seg, double startS, const char *fmt,
    * sets *stop first, then interrupts). */
   atomic_store(&g->interrupted, 0);
   dts_engine_interrupt(g->eng, 0);
+  if (g->audioEng) dts_engine_interrupt(g->audioEng, 0);
   if (stop && *stop) { rr = -2; goto out; }
   if (seg >= 0) {
     if (seg >= r->nseg) { fail(err, errn, "No such segment", 0); rr = -1; goto out; }
@@ -1377,10 +1561,12 @@ int dts_remux_gen_run(DtsRemuxGen *g, int seg, double startS, const char *fmt,
     int aDone = (g->aq.n > 0 && g->aq.v[0].seg > target) || (g->encEof && g->aq.n == 0);
     /* No audio past the boundary although the video is 4 s beyond it: the
      * track ended or has a hole. The segment goes out without it. */
-    if (vDone && !aDone && !g->prog && seg + 1 < r->nseg && g->lastDemuxV > r->segS[seg + 1] + 4.0) aDone = 1;
+    if (!g->audioEng && vDone && !aDone && !g->prog && seg + 1 < r->nseg && g->lastDemuxV > r->segS[seg + 1] + 4.0) aDone = 1;
     if (vDone && aDone) break;
+    if (g->audioEng && !aDone && (rr = readDonor(g, target, err, errn)) < 0) break;
+    if (g->audioEng && vDone) continue;
     if (g->demuxEof) {
-      if (!g->encEof) { if ((rr = audioEof(g, err, errn)) < 0) break; continue; }
+      if (!g->encEof) { if ((rr = audioEof(g, 1, err, errn)) < 0) break; continue; }
       break;
     }
     rr = av_read_frame(g->ic, g->pk);
@@ -1391,15 +1577,15 @@ int dts_remux_gen_run(DtsRemuxGen *g, int seg, double startS, const char *fmt,
       break;
     }
     if (g->pk->stream_index == r->vs) rr = videoPacket(g, g->pk, err, errn);
-    else if (g->pk->stream_index == r->as) rr = audioPacket(g, g->pk, err, errn);
+    else if (!g->audioEng && g->pk->stream_index == r->as) rr = audioPacket(g, g->pk, err, errn);
     av_packet_unref(g->pk);
     if (rr < 0) break;
   }
   if (rr >= 0) {
     rr = av_interleaved_write_frame(g->oc, NULL);
     if (rr >= 0 && g->mp4Hls && fresh) {
-      if (!st->audio_pkts || !st->video_pkts || (initOnly && !g->sawRpu)) {
-        fail(err, errn, "No video, AC-3 or converted RPU for HLS initialization", 0);
+      if (!st->audio_pkts || !st->video_pkts || (initOnly && r->dv7 && !g->sawRpu)) {
+        fail(err, errn, "Incomplete HLS initialization (video, AC-3 or Dolby Vision metadata)", 0);
         rr = -1;
         goto out;
       }
@@ -1421,7 +1607,7 @@ out:
    * error: no 500 for a client that is gone, no error in the summary. */
   if (rr == -1 && ((stop && *stop) || atomic_load(&g->interrupted) || (r->extCancel && *r->extCancel))) rr = -2;
   if (rr == -2) fail(err, errn, "Stopped", 0);
-  if (rr >= 0 && !initOnly && !g->prog && seg + 1 < r->nseg && !g->demuxEof) {
+  if (rr >= 0 && !initOnly && !g->prog && seg + 1 < r->nseg && (!g->demuxEof || g->audioEng)) {
     g->nextSeg = seg + 1;           /* continuation: muxer and queues stay */
   } else {
     closeMux(g, rr >= 0 && !initOnly);

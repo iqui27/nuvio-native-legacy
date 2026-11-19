@@ -51,16 +51,33 @@ No IPK is built and no upstream pull request is opened by this branch.
 
 ## Experimental HLS on webOS
 
-The HLS test build adds two device-local options under **Playback → More options →
-Audio and video on this TV**. Both are off by default and apply when opening a video.
+Under **Playback → More options → Audio and video on this TV**, set
+**HLS (experimental)** to **On** or **Off**. The switch is device-local,
+defaults to Off and applies when opening a video. Enable the existing DTS
+and Dolby Vision P7 conversion options for the formats you want to test.
+With HLS Off, those options use the existing converter.
 
-- **DTS via HLS** uses the Samsung loopback server and its MPEG-TS segment generator.
-  Select a DTS track and leave DTS conversion enabled. The output is AC-3, up to 5.1.
-- **Dolby Vision P7 via HLS** converts interleaved P7 MKV to single-layer P8.1 and
-  delivers fragmented MP4 with AC-3 audio. For an MKV whose selected track is DTS,
-  enable DTS via HLS as well. The experimental stream carries one audio track.
+With HLS On, the enabled conversions use the Samsung loopback server and
+fMP4 with AC-3 audio, up to 5.1. P7 MKV is converted to single-layer P8.1.
+Enable both conversions for a P7 source whose selected audio track is DTS.
+The stream carries one audio track.
 
-The test requires a seekable source with a keyframe index. An HLS startup or
-stream error retries the existing webOS converter. Test each mode separately
-on an LG C1 or C5 with the same file and track. Check sound, the TV's Dolby
-Vision indicator, seek/resume, and memory during a longer playback session.
+HLS requires a seekable source with a keyframe index. A startup or stream
+error stops playback and shows an HLS error. Turn HLS Off and reopen the
+video to use the existing converter. On an LG C1 or C5, check audio, the
+TV's Dolby Vision indicator, seek/resume and memory. **Show buffer data**
+adds an **HLS** label once the HLS player starts playing.
+
+The follow-up HLS build uses the existing **Buffer size** presets (64, 128 or
+256 MiB), with the same free-memory clamp. Automatic uses a 16 MiB input
+budget. With **From another source**, the selected audio and video share that
+budget. The separate **Other version buffer** preference determines the audio
+reader's share, capped at half the budget. The player and segment generation
+use memory outside the input rings.
+
+For HLS with **From another source**, choose the audio source as usual.
+Enable DTS conversion and HLS for H.264/HEVC playback, or Dolby Vision P7
+conversion and HLS for interleaved P7 MKV. The selected track, saved language,
+manual offset and stored speed are used for the AC-3 stream. Changing the source,
+track or offset reloads HLS at the current position. Continuous automatic
+alignment and **Match automatically** are available with HLS Off.

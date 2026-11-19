@@ -33,9 +33,10 @@ const char *dts_tpk_modo_nome(int modo);
 int dts_tpk_abrir(const char *url, const char *headers, int audio_ordinal, int stereo_aac,
                   int modo, double inicio, char *out, size_t n);
 #ifdef NV_WEBOS_HLS_TEST
+#include "dts_remux.h"
 /* HLS VOD with AC-3 audio. A P7 source uses fMP4 and the P8.1 converter. */
 int dts_hls_webos_open(const char *url, const char *headers, int audio_ordinal,
-                      int dv7, int allow_dts, int preserve_mapping, char *out, size_t n);
+                      const DtsWebosHls *options, char *out, size_t n);
 #endif
 /* Continuous TS: the URL that restarts the stream at s (same session). */
 int dts_tpk_url_em(double s, char *out, size_t n);

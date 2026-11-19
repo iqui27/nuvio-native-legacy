@@ -84,6 +84,12 @@ void dts_engine_cancel(DtsEngine *e) { (void)e; }
 void dts_engine_destroy(DtsEngine *e) { free(e); }
 const char *dts_engine_error(DtsEngine *e) { (void)e; return "DTS conversion not built"; }
 int dts_engine_open_demux(DtsEngine *e,const char *u,const char *h) { (void)e;(void)u;(void)h; return -1; }
+#ifdef NV_WEBOS_HLS_TEST
+void dts_engine_hls_read_ahead(DtsEngine *e,int mib) { (void)e;(void)mib; }
+int dts_engine_hls_audio(DtsEngine *e,int s,const char *l,const DtsTrack *h,int a,int d) {
+  (void)e;(void)s;(void)l;(void)h;(void)a;(void)d;return -1;
+}
+#endif
 void *dts_engine_avformat(DtsEngine *e) { (void)e; return NULL; }
 int64_t dts_engine_size(DtsEngine *e) { (void)e; return -1; }
 void dts_engine_interrupt(DtsEngine *e,int on) { (void)e; (void)on; }
@@ -284,6 +290,7 @@ struct DtsEngine {
   int64_t ext_base_ns;   /* this source's start minus the other's (MPEG-TS starts at ~1.4 s) */
   struct DtsEngine *ext, *parent;
   int fx_mib;                /* ring of this reader in MiB (0: g_fx_cap_mib) */
+  int hls_read_ahead;        /* use the full per-reader ring on webOS HLS */
   int ext_stream, ext_have, ext_eof;
   int ext_force;   /* donor stream + 1 chosen in the menu; 0 = by language */
   /* Series memory (owner 09/11): the track chosen in the last episode's
@@ -745,7 +752,7 @@ static uint64_t fx_now_ms(void) { return clock_ns(CLOCK_MONOTONIC)/1000000u; }
 /* Long-lived ring (native cache or the conversion test option): the ring is
  * the read-ahead buffer, and a jump outside it restarts the one request.
  * The Samsung remux keeps its short adaptive read-ahead. */
-static int fx_long(const DtsEngine *e) { return e->source_stream || e->conv_stream; }
+static int fx_long(const DtsEngine *e) { return e->source_stream || e->conv_stream || e->hls_read_ahead; }
 /* An MP4 converted with audio from another source (owner, 17/11: only there;
  * any other conversion and the TV player's path as before). */
 static int ext_mp4(const DtsEngine *e) {
@@ -2277,6 +2284,27 @@ static void ext_audio_only_start(DtsEngine *x,AVStream *as) {
     x->total>0?x->total/1048576.0:0);
   fflush(stdout);
 }
+#ifdef NV_WEBOS_HLS_TEST
+int dts_engine_hls_audio(DtsEngine *e,int stream,const char *langs,const DtsTrack *hint,
+                         int audio_only,int allow_dts) {
+  if(!e || !e->fmt)return -1;
+  e->dts_off=!allow_dts;
+  snprintf(e->ext_langs,sizeof e->ext_langs,"%s",langs?langs:"");
+  int chosen=stream;
+  if(chosen<0 && hint) {
+    dts_engine_external_track_hint(e,hint->stream_index,hint->language,hint->codec,hint->channels,hint->title);
+    chosen=ext_hint_pick(e,e->fmt);
+  }
+  if(chosen<0)chosen=ext_pick(e,e->fmt);
+  if(chosen<0 || (unsigned)chosen>=e->fmt->nb_streams ||
+     !ext_convertible(e,e->fmt->streams[chosen]->codecpar))return -1;
+  for(unsigned i=0;i<e->fmt->nb_streams;i++)
+    if((int)i!=chosen)e->fmt->streams[i]->discard=AVDISCARD_ALL;
+  if(audio_only)ext_audio_only_start(e,e->fmt->streams[chosen]);
+  return chosen;
+}
+#endif
+
 static double ext_fps(const AVStream *s) {
   AVRational r=s->avg_frame_rate.num>0?s->avg_frame_rate:s->r_frame_rate;
   return r.num>0 && r.den>0?(double)r.num/r.den:0;
@@ -2692,6 +2720,7 @@ int dts_engine_open_demux(DtsEngine *e,const char *url,const char *headers) {
   memset(&e->metrics,0,sizeof(e->metrics));
   e->pos=0; e->total=-1; e->cache_size=0; e->has_core=0;
   e->remux=1; e->range_bytes=RANGE_BYTES_DV; e->range_slots=RANGE_SLOTS_DV;
+  if(e->hls_read_ahead)e->fx_cap=(int64_t)e->hls_read_ahead<<20;
   e->final_url[0]=0; e->final_cross=0; e->passthrough=0;
   e->demux_eof=e->decoder_eof=e->resampler_eof=e->encoder_sent_eof=e->timeline=0;
   if (cancelled(e)) return fail(e,"Cancelled",0);
@@ -2736,6 +2765,11 @@ int dts_engine_open_demux(DtsEngine *e,const char *url,const char *headers) {
   return 0;
 }
 void *dts_engine_avformat(DtsEngine *e) { return e?e->fmt:NULL; }
+#ifdef NV_WEBOS_HLS_TEST
+void dts_engine_hls_read_ahead(DtsEngine *e,int mib) {
+  if(e)e->hls_read_ahead=mib>=4 && mib<=256?mib:0;
+}
+#endif
 void dts_engine_interrupt(DtsEngine *e,int on) {
   if(!e) return;
   __atomic_store_n(&e->interrupt,on?1:0,__ATOMIC_RELAXED);

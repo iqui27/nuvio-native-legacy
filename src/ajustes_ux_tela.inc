@@ -45,10 +45,7 @@ static const Item TELA[] = {
     ROT("Som e vídeo desta TV"),
       OPC(AJ_DTS_AC3),
 #if defined(NV_WEBOS) && defined(NV_WEBOS_HLS_TEST)
-      OPC(AJ_WEBOS_HLS_DTS),
-#ifdef NV_DV7_CONVERSION
-      OPC(AJ_WEBOS_HLS_DV7),
-#endif
+      OPC(AJ_WEBOS_HLS_MODE),
 #endif
 #ifdef NV_ANDROID
       OPC(AJ_TUNNELING),

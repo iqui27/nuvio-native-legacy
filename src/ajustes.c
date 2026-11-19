@@ -750,6 +750,7 @@ typedef enum {
   AJ_EXT_AUDIO_BUFOR,  // "From another source": memory kept ahead of the other version: 8 MB
   AJ_WEBOS_HLS_DTS,
   AJ_WEBOS_HLS_DV7,
+  AJ_WEBOS_HLS_MODE,
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -760,6 +761,7 @@ _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD =
 static const char *V_PROVEDORES_ESCOPO[] = { "Compartilhada neste aparelho", "Separada para este perfil" };
 static const char *V_HDR_UI[] = { "Automático", "Desligado" };
 static const char *V_LEG_MOSTRAR[] = { "Só meus idiomas", "Todas" };
+static const char *V_WEBOS_HLS_MODE[] = { "Desligado", "Ligado" };
 static const char *V_SELOS_PACOTE[] = { "Do Nuvio", "Pacote 1", "Pacote 2", "Pacote 3" };
 
 // Selo de assistido: a ordem e a do disco (0 = Ligado do V_LIGA antigo vira Icone,
@@ -1919,6 +1921,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Other version buffer", V_EXT_AUDIO_BUFOR, 3),
   ESC("DTS via HLS (experimental)", V_LIGA, 2),
   ESC("Dolby Vision P7 via HLS (experimental)", V_LIGA, 2),
+  ESC("HLS (experimental)", V_WEBOS_HLS_MODE, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2274,6 +2277,7 @@ static const char *CHAVE[] = {
   "externalAudioBufferLocal",
   "webosHlsDtsLocal",
   "webosHlsDv7Local",
+  "webosHlsModeLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3964,8 +3968,7 @@ int ajustes_dts_tpk_modo(void) {
 }
 int ajustes_dv_mkv(void)              { return lig(AJ_DV_MKV); }
 int ajustes_dv7(void) { return lig(AJ_DV7); }
-int ajustes_webos_hls_dts(void) { return lig(AJ_WEBOS_HLS_DTS); }
-int ajustes_webos_hls_dv7(void) { return lig(AJ_WEBOS_HLS_DV7); }
+int ajustes_webos_hls(void) { return valor[AJ_WEBOS_HLS_MODE] == 1; }
 int ajustes_dv_audio_fixo(void) {
 #if defined(NV_DV_FIXED_AUDIO_TEST) && defined(NV_WEBOS)
   int v=valor[AJ_DV_AUDIO_FIXO];return v==1 || v==2 ? v : 0;
@@ -4976,7 +4979,7 @@ void ajustes_dir(const char *dir) {
     int medidorAntigo = -1, viuMedidor = 0, resAntiga = -1, viuRes = 0, prazoAntigo = -1, viuEspera = 0;
     int focoAntigo = -1, viuFoco = 0;
     int sinopseAntiga = -1, sinopseQuatro = -1, viuSinopse = 0;
-    int dtsSaidaAntiga = -1, dtsModoAntigo = -1, viuDtsTpk = 0;
+    int dtsSaidaAntiga = -1, dtsModoAntigo = -1, viuDtsTpk = 0, viuHlsMode = 0;
     int leg2TamanhoAntigo = -1, viuLeg2Escala = 0;
   while (fgets(linha, sizeof linha, f)) {
     char chave[64]; int v, i, inicio = 0;
@@ -5070,6 +5073,8 @@ void ajustes_dir(const char *dir) {
       if (OPCOES[i].tipo == OP_LEITURA || OPCOES[i].tipo == OP_ACAO) continue;
       // Valor fora da faixa (arquivo de outra versao, ou editado a mao) cai no
       // padrao em vez de indexar fora do vetor.
+      // Previous builds stored Off, DTS, P7 and both in this same key.
+      if (i == AJ_WEBOS_HLS_MODE && v >= 2 && v <= 3) v = 1;
       valor[i] = limita(i, v);
       if (i == AJ_MEDIDOR) viuMedidor = 1;
       if (i == AJ_RESOLUCAO) viuRes = 1;
@@ -5080,10 +5085,13 @@ void ajustes_dir(const char *dir) {
       if (i == AJ_AUD_LINGUA) viuLingua[2] = 1;
       if (i == AJ_HERO_SINOPSE_TAM) viuSinopse = 1;
       if (i == AJ_DTS_AC3) viuDtsTpk = 1;
+      if (i == AJ_WEBOS_HLS_MODE) viuHlsMode = 1;
       if (i == AJ_LEG2_TAMANHO && v >= 0 && v < 27) viuLeg2Escala = 1;
       break;
     }
   }
+  if (!viuHlsMode)
+    valor[AJ_WEBOS_HLS_MODE] = lig(AJ_WEBOS_HLS_DTS) || lig(AJ_WEBOS_HLS_DV7);
   // Prefer the new default for ambiguous legacy 100% records: old saves
   // cannot distinguish factory defaults from explicit choices. Versioned
   // choices, including 100%, and other valid legacy scales are preserved.
@@ -5378,6 +5386,7 @@ static int gravar(void) {
       fprintf(f, "idiomaFonteLocal %d\n", idiomaFonteGravada);
       continue;
     }
+    if (i == AJ_WEBOS_HLS_DTS || i == AJ_WEBOS_HLS_DV7) continue;
     fprintf(f, "%s %d\n", CHAVE[i], vv[i]);
   }
   fprintf(f, "notaTituloFontes");
@@ -6228,7 +6237,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_PS_CONTINUAR:   /* o web nao tem este cartao; escolha desta TV */
     case AJ_AUDIO_OFFSET:   /* audio presentation calibration belongs to this TV */
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
-    case AJ_WEBOS_HLS_DTS: case AJ_WEBOS_HLS_DV7:
+    case AJ_WEBOS_HLS_DTS: case AJ_WEBOS_HLS_DV7: case AJ_WEBOS_HLS_MODE:
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
     case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
     case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: case AJ_EXT_AUDIO_ORDEM: case AJ_EXT_AUDIO_BUFOR:
@@ -6328,7 +6337,7 @@ static int soNaTv(int op) {
     case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: case AJ_RELOGIO_12H:
     case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
     case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: case AJ_EXT_AUDIO_ORDEM: case AJ_EXT_AUDIO_BUFOR:
-    case AJ_WEBOS_HLS_DTS: case AJ_WEBOS_HLS_DV7:
+    case AJ_WEBOS_HLS_DTS: case AJ_WEBOS_HLS_DV7: case AJ_WEBOS_HLS_MODE:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
     case AJ_TUNNELING: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO:
@@ -6918,10 +6927,9 @@ static int foraDestaPlataforma(int op) {
   if (op == AJ_DV_MKV) return 1;
   if (op == AJ_DV7) return 1;
 #endif
-#if !defined(NV_WEBOS_HLS_TEST) || !defined(NV_WEBOS)
   if (op == AJ_WEBOS_HLS_DTS || op == AJ_WEBOS_HLS_DV7) return 1;
-#elif !defined(NV_DV7_CONVERSION)
-  if (op == AJ_WEBOS_HLS_DV7) return 1;
+#if !defined(NV_WEBOS_HLS_TEST) || !defined(NV_WEBOS)
+  if (op == AJ_WEBOS_HLS_MODE) return 1;
 #endif
 #if !defined(NV_DV_FIXED_AUDIO_TEST) || !defined(NV_WEBOS)
   if(op==AJ_DV_AUDIO_FIXO) return 1;
@@ -8258,8 +8266,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_HIST_CONTA: return "Ligado (padrão): o que você assiste neste perfil sobe para a conta Nuvio, com o progresso e os vistos. Desligado: nada disso é enviado à conta; o Trakt e o Simkl vinculados a este perfil continuam recebendo. Vale só para este perfil.";
     case AJ_SOCIAL: return "Ligado (padrão): amigos, atividade deles e recomendações. Desligado: tudo isso some, com a fileira de amigos da Home, e o app para de falar com o serviço social. Salvos e Avisos continuam. Vale só para este perfil.";
     case AJ_DV_MKV: return "Arquivos MKV em Dolby Vision perfil 5 ou 8 tocam com o Dolby Vision ligado, em vez de HDR10. O áudio Dolby Digital e Dolby Digital Plus vai direto para a TV. Se a conexão não acompanhar, o vídeo continua em HDR10. Só em TVs LG com webOS 4 ou mais novo.";
-    case AJ_WEBOS_HLS_DTS: return "Try local HLS with DTS converted to Dolby Digital (AC-3). Select a DTS track and reopen the video to apply.";
-    case AJ_WEBOS_HLS_DV7: return "Try local HLS with Dolby Vision P7 converted to P8.1 and Dolby Digital (AC-3) audio. Reopen the video to apply.";
+    case AJ_WEBOS_HLS_MODE: return "Use HLS for the DTS and Dolby Vision P7 conversions enabled above. HLS outputs Dolby Digital (AC-3) and stops on error. Reopen the video to apply.";
     case AJ_DV7: return "Converte MKV Dolby Vision perfil 7 para 8.1. Mantém o vídeo base e os metadados dinâmicos; descarta a camada de melhoria, incluindo FEL. Vale para o próximo vídeo.";
     case AJ_DV_AUDIO_FIXO: return "Original audio may reload video when switching formats. AAC stereo / Dolby Digital 5.1 converts supported tracks for smoother switching. Conversion does not preserve lossless audio or Atmos/DTS:X metadata. Reopen the video to apply.";
     case AJ_MP4_BD_TEST: return "Helps play compatible Dolby Vision MP4 files that fail to open normally. Off by default. Reopen the video to apply.";
