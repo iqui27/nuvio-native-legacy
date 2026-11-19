@@ -3365,7 +3365,8 @@ int rede_sonda_tls(const char *url) {
     curl_setopt(c, OPT_URL, url);
     curl_setopt(c, OPT_CONNECT_ONLY, (long)1);
     curl_setopt(c, OPT_HTTP_VERSION, (long)2 /* CURL_HTTP_VERSION_1_1 */);
-    curl_setopt(c, OPT_CONNECTTIMEOUT_MS, (long)8000);
+    curl_setopt(c, OPT_CONNECTTIMEOUT_MS, (long)900);
+    curl_setopt(c, OPT_TIMEOUT_MS, (long)900);
     curl_setopt(c, OPT_NOSIGNAL, (long)1);
     // semca replica exatamente o que opcoesComuns faz no caminho do login; as
     // duas outras sao a hipotese CA ligada, com o PEM do pacote e sem ele.
@@ -3970,6 +3971,7 @@ int rede_fluxo64_tls(const char *u, const char *h, int64_t s, int (*sk)(void *, 
                      int64_t *t, int *st, volatile int *c, char *f, int *x, long ms, int64_t *b) {
   return rede_fluxo64(u,h,s,sk,o,t,st,c,f,x,ms,b);
 }
+int rede_sonda_tls(const char *url) { (void)url; return -1; }
 char *rede_baixar_trecho64_vigiado(const char *u,const char *h,int64_t s,int64_t e,
  long *n,int64_t *t,int *st,volatile int *c,char *f,int *x,volatile int *urgent,unsigned idle,int *stalled) {
  (void)urgent;(void)idle;if(stalled)*stalled=0;
