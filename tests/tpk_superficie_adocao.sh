@@ -6,4 +6,5 @@ grep -q 'eglQuerySurface' src/tpk.c
 grep -q 'tela adotada da superficie' src/tpk.c
 grep -q 'TAMANHO ERRADO' src/tpk.c
 grep -q 'NV_TPK40' src/tpk.c
-echo "PASS: tpk adota tamanho da superficie e marca mismatch (#754)"
+grep -q 'revalidarSuperficie' src/tpk.c
+echo "PASS: tpk adota tamanho da superficie e revalida EGL (#754)"

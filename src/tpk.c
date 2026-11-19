@@ -139,6 +139,7 @@ static char dirArte[512];
 static int esperaMs = 50, swapZero;
 static unsigned nQuadros, nPulados;
 static int contextoFalhou; // Render-thread only; do not poll the app thread's error buffer.
+static int revalidarSuperficie; // #754: 2o arranque EGL pode medir tela errada
 
 // Fio do app: devolve a vez ao framework e espera ela voltar.
 static int cicloPendente;
@@ -272,6 +273,13 @@ __attribute__((visibility("default")))
 int nv_tpk_quadro(void) {
   int r;
   if (contextoFalhou) return -1;
+  if (revalidarSuperficie) {
+    revalidarSuperficie = 0;
+    ctx = EGL_NO_CONTEXT;
+    dpy = EGL_NO_DISPLAY;
+    sup = EGL_NO_SURFACE;
+    nuiCorrente = 0;
+  }
   if (ctx == EGL_NO_CONTEXT) {
     dpy = eglGetCurrentDisplay();
     sup = eglGetCurrentSurface(EGL_DRAW);
@@ -330,6 +338,7 @@ int nv_tpk_quadro(void) {
         // 2.0.7: tela preta, reabrir as vezes resolve). Fica o tamanho do host.
         if (sw >= 640 && sh >= 360 && ((int)sw != telaW || (int)sh != telaH)) {
           telaW = (int)sw; telaH = (int)sh;
+          revalidarSuperficie = 1;
           printf("[tpk] tela adotada da superficie: %dx%d\n", telaW, telaH);
         }
       } else printf("[tpk] eglQuerySurface indisponivel\n");
@@ -462,6 +471,7 @@ void nv_tpk_ciclo(int memoria) {
   // Rendering may already be suspended: wake the app thread without needing GL.
   pthread_mutex_lock(&trava);
   cicloPendente = memoria ? 2 : 1;
+  if (!memoria) revalidarSuperficie = 1; /* #754: voltar do 2o plano remede o EGL */
   pthread_cond_broadcast(&mudou);
   pthread_mutex_unlock(&trava);
 }
