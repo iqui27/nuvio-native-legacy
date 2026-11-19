@@ -746,7 +746,8 @@ int main(void) {
       addon[0].temporada = 3; addon[0].episodio = 5;
       snprintf(addon[0].dataIso, sizeof addon[0].dataIso, "%s", "2024-10-01T00:00:00.000Z");
       desc_mesclar_episodios(b, 1, addon, 1, DESC_MESCLA_TEXTO);
-      assert(!strcmp(b[0].dataIso, "2024-10-01T00:00:00.000Z")); }
+      assert(!strcmp(b[0].dataIso, "2024-10-01T00:00:00.000Z"));
+      assert(b[0].data[0]); }
     { CatEp b[1], addon[1];
       memset(b, 0, sizeof b); memset(addon, 0, sizeof addon);
       b[0].temporada = 2; b[0].episodio = 1;
