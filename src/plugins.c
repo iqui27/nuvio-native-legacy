@@ -1068,15 +1068,17 @@ int plugins_consultar(const char *id, const char *tipo, int (*cancelado)(void *)
   } else pthread_mutex_unlock(&trava);
   free(r.res); free(r.nRes); free(r.lista);
   pthread_mutex_destroy(&r.m);
-  rede_job_soltar(r.job);
   if (descartar) {
+    int estRede = rede_job_estado(r.job);
+    rede_job_soltar(r.job);
     free(todos);
     printf("[plugins] #691: consulta descartada (rede=%d cancel=%d %d/%d scrapers)\n",
-           rede_job_estado(r.job), __atomic_load_n(&r.cancel, __ATOMIC_ACQUIRE),
+           estRede, __atomic_load_n(&r.cancel, __ATOMIC_ACQUIRE),
            r.terminados, r.n);
     fflush(stdout);
     return -1;
   }
+  rede_job_soltar(r.job);
   if (r.cancel == 2) printf("[plugins] corte aos %lu ms: fica o que terminou\n", agoraMsPlug() - t0);
   printf("[plugins] total %d\n", total);
   fflush(stdout);
