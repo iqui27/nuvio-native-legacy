@@ -1663,14 +1663,26 @@ static int colpinItens(const ColFolder *pasta, CatItem *uni, int teto,
                        const CatFileira *novas, int nNovas,
                        const CatItem *novosItens,
                        char mortas[][sizeof ((ColSource *)0)->base], int *nMortas) {
-  int n = 0, temGenero = 0;
+  int n = 0, temGenero = 0, temProv = 0;
   static CatItem fonteItens[DESC_ITENS_POR_FILEIRA];
   for (int s = 0; s < pasta->nSources; s++) {
     const ColSource *fonte = &pasta->sources[s];
     const char *base = fonte->base[0] ? fonte->base : addons_base_por_id(fonte->addonId);
     int got = 0, respondeu = 0;
-    if (fonte->prov[0] || fonte->filtros[0] || !base || !base[0]) return 0;
-    if (fonte->genre[0]) {
+    if (fonte->prov[0]) {
+      DescColecaoResultado r;
+      int lim = DESC_ITENS_POR_FILEIRA;
+      temProv = 1;
+      memset(&r, 0, sizeof r);
+      if (!desc_colecao_inicial(fonte, "", nv_perfil_sessao_ler(), fonteItens, lim, &r) ||
+          r.erro || r.n <= 0)
+        continue;
+      got = r.n > lim ? lim : r.n;
+    } else if (fonte->filtros[0]) {
+      continue;
+    } else if (!base || !base[0]) {
+      continue;
+    } else if (fonte->genre[0]) {
       temGenero = 1;
       for (int m = 0; m < *nMortas; m++) if (!strcmp(mortas[m], base)) return 0;
       got = lerCatalogo(base, fonte->type, fonte->catId, fonteItens,
@@ -1709,7 +1721,7 @@ static int colpinItens(const ColFolder *pasta, CatItem *uni, int teto,
       if (!repetido) uni[n++] = fonteItens[j];
     }
   }
-  if (!temGenero) return 0;        // pasta sem genero segue o cf_itens de sempre
+  if (!temGenero && !temProv) return 0;   // #741: pasta so com playlist TMDB/Trakt
   return n;
 }
 
