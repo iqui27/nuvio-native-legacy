@@ -520,6 +520,7 @@ int   ajustes_trailer_hero_vetado(void);
 // destaque e o do cartaz em foco nesta sessao, sem gravar. Uma linha no log.
 void  ajustes_trailer_hero_vetar(const char *gpu);
 int   ajustes_hero_deslizar(void);     // troca do destaque desliza de lado (senao esmaece)
+int   ajustes_hero_lista(void);        // #797: quantos titulos o carrossel percorre (5, 10 ou 20)
 // ARTE DO ADDON (locais, desligadas de fabrica). 1 = a imagem que o addon
 // mandou no meta vence a substituicao do app; sem ela, a fonte de sempre.
 //   poster:  vence o provedor de posteres (posterprov_card_addon)

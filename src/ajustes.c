@@ -817,6 +817,9 @@ typedef enum {
   AJ_BUFFER_NATIVE_CONNECTIONS, AJ_BUFFER_CONVERSION_CONNECTIONS,
   // Player buffer telemetry + remote toggles (Matis94 C3), append-only, local.
   AJ_BUFFER_DADOS, AJ_RAM_OVERLAY, AJ_RAM_VERDE, AJ_BUFFER_RAM_REDUZ,
+  // #797: quantos titulos o carrossel do destaque percorre (HOME_HERO_LISTA
+  // era fixo em 10). LOCAL, append-only.
+  AJ_HERO_LISTA,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -1192,6 +1195,10 @@ static const char *V_NOTAS[]     = { "Mostrar", "Ocultar" };
 // mesmo contrato — quem ja tinha 1..4 gravado continua lendo a mesma fonte.
 static const char *V_HERO_SINOPSE[] = { "Normal", "Grande" };
 static const char *V_HERO_TAMANHO[] = { "Normal", "Grande", "Muito grande" };
+// #797: quantos titulos o carrossel do destaque percorre (HOME_HERO_LISTA era
+// fixo em 10). O indice e o gravado ("heroListaLocal N"): novos tamanhos
+// entram NO FIM.
+static const char *V_HERO_LISTA[]  = { "10", "5", "20" };
 static const char *V_HERO_FONTE[] = {
   "Automático", "Catálogo / Cinemeta", "IMDb / Metahub", "TMDB", "Trakt",
   "Apple TV", "fanart.tv", "Anime (Kitsu / AniList)"
@@ -2041,6 +2048,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Memória RAM na tela", V_LIGA, 2),                    // local: ramOverlayLocal
   ESC("Botão verde mostra a RAM na tela", V_LIGA, 2),        // local: ramGreenLocal
   ESC("Reduzir o buffer com pouca memória", V_LIGA, 2),      // local: bufferRamReduzLocal
+  ESC("Títulos no carrossel do destaque", V_HERO_LISTA, 3), // local: heroListaLocal (#797)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2419,6 +2427,7 @@ static const char *CHAVE[] = {
   "externalAudioAutoMatchLocal",
   "nativeBufferConnectionsLocal", "conversionBufferConnectionsLocal", // fork keys
   "bufferDataLocal", "ramOverlayLocal", "ramGreenLocal", "bufferRamReduzLocal",
+  "heroListaLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -4063,6 +4072,14 @@ int   ajustes_trailer_hero_vetado(void) {
 // mudo de qualquer jeito (trailerfonte_com_som).
 int   ajustes_trailer_som(void)       { return lig(AJ_HERO_TRAILER_SOM); }
 int   ajustes_hero_deslizar(void)     { return valor[AJ_HERO_TRANSICAO] == 0; }
+// #797: 0 = 10 (padrao, o HOME_HERO_LISTA de sempre), 1 = 5, 2 = 20. Mais
+// titulos no carrossel = mais arte de 1920 pedida pela rede e mais RAM de
+// textura, entao a escolha e desta TV.
+int   ajustes_hero_lista(void) {
+  static const int n[] = { 10, 5, 20 };
+  int v = valor[AJ_HERO_LISTA];
+  return (v >= 0 && v < 3) ? n[v] : 10;
+}
 int   ajustes_poster_addon(void)      { return lig(AJ_ADDON_POSTER); }
 int   ajustes_fundo_addon(void)       { return lig(AJ_ADDON_FUNDO); }
 int   ajustes_logo_addon(void)        { return lig(AJ_ADDON_LOGO); }
@@ -6561,6 +6578,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_CW_MINIMO:      /* idem */
     case AJ_ADDONS_PRINCIPAL: /* escolha desta TV; a conta tem uses_primary_addons */
     case AJ_HERO_TRANSICAO: /* o web nao tem esta escolha */
+    case AJ_HERO_LISTA:     /* #797: idem — e RAM de textura desta TV */
     case AJ_ADDON_POSTER: case AJ_ADDON_FUNDO: case AJ_ADDON_LOGO:
     case AJ_DET_TRAILER_SOM: /* o web nao tem */
     case AJ_COL_ARTE_CONTA: /* arte do addon: o web nao tem estas escolhas */
@@ -8511,6 +8529,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_SELOS_PACOTE_REM: return "Tira desta TV o pacote escolhido. Pacote que veio da conta só se remove na conta, no Nuvio web.";
     case AJ_COL_ARTE_CONTA: return "As pastas de coleção que o app já traz com arte própria passam a usar a capa, o fundo e o logo que estão na sua conta (editor de coleções do site). O que a conta não tiver continua com a arte do app.";
     case AJ_HERO_TRANSICAO: return "Deslizar: quando o destaque troca de título, a arte e o texto saem para o lado e o próximo entra colado, como num carrossel. Esmaecer: a arte apaga e a nova aparece no lugar. Com Animações reduzidas a troca é sempre sem movimento.";
+    case AJ_HERO_LISTA: return "Quantos títulos o destaque percorre com a seta e na troca automática: 5, 10 ou 20. Mais títulos pedem mais arte pela rede e usam mais memória de imagem — em TV com 1 GB, 20 pode pesar.";
 #ifdef NV_ANDROID
     // FILEIRAS ILIMITADAS (dono, 2.0.4). Sem a folha de memoria: no Android ela
     // virou esta dica. O diario do modo seguro continua vigiando igual.
@@ -11705,6 +11724,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_HERO_ARTE_DIF: case AJ_HERO_TRAILER: case AJ_FIL_LIMITE:
     case AJ_ESPACO_FILEIRAS: case AJ_ESPACO_TITULOS:
     case AJ_HERO_TRAILER_SOM: case AJ_HERO_TRAILER_ESPERA: case AJ_HERO_TRANSICAO: case AJ_LOGO_TRAILER:
+    case AJ_HERO_LISTA:
     case AJ_ADDON_FUNDO: case AJ_ADDON_LOGO:
     case AJ_FIL_ORDEM: case AJ_RAIL: case AJ_RAIL_MODERNA: case AJ_MENU_TOPO: case AJ_ABAS_ESTILO:
     case AJ_RAIL_BLUR: case AJ_MIC_BUSCA: case AJ_HERO: case AJ_HERO_CATALOGOS: case AJ_HERO_GENERO:
