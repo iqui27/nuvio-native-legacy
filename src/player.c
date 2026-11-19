@@ -5318,8 +5318,13 @@ void player_atualizar(float dt, Uint32 agora) {
 #endif
                       ;
       relogio_taxa(&relLeg, velMed.efetiva / 100.0);
-      relogio_amostra(&relLeg, video_pos(), monoSeg(), !legParada);
-      // #772: salto so na linha do tempo da legenda (nao no video_pos).
+      relogio_amostra(&relLeg, video_pos(), monoSeg(), !legParada); }
+    // #772: salto na linha do tempo da legenda (bloco separado para merge com #728/#710).
+    { int legParada = !tocando || scrubbing || video_reconectando()
+#ifdef NV_TPK
+                      || video_busca_em_voo()
+#endif
+                      ;
       if (!legParada) {
         double m = monoSeg(), l0, l1;
         static double ultM;
