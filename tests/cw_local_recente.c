@@ -1,6 +1,5 @@
 // #731: com dois episodios da mesma obra no disco, continuarLocalLer fica com o
 // registro de lastWatchedMs mais novo (nao descarta o ultimo assistido).
-#include "catalogo.h"
 #include "idbase.h"
 #include <assert.h>
 #include <stdio.h>
