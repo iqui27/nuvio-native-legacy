@@ -3879,9 +3879,13 @@ int addons_motivo_vazio(char *dst, unsigned n) {
   if (!dst || !n || !r->valido) return 0;
   PlugResumo plugins;
   plugins_resumo(alvoId, alvoTipo, &plugins);
-  if (plugins.enfileirados && !r->comFontes)
+  if (plugins.enfileirados && !r->comFontes) {
+    printf("[addons] #765: sem fontes addon — scrapers %d/%d, add-ons instalados=%d ligados=%d\n",
+           plugins.terminados, plugins.enfileirados, r->instalados, r->ligadosComFonte);
+    fflush(stdout);
     snprintf(dst, n, i18n("Plugins não encontraram fontes (%d de %d scrapers verificados)"),
              plugins.terminados, plugins.enfileirados);
+  }
   // Other extra providers are absent from the Stremio summary. Let callers
   // use their generic source wording while one is active.
   else if (addons_origem_extra_ativa()) return 0;
