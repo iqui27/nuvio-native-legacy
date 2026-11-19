@@ -1171,6 +1171,9 @@ static void legendaAutomatica(Uint32 agora) {
   }
   r = ling_legenda_auto_tipo2(pref, audio, forcadaAuto, ajustes_legenda_evitar_sdh(),
                               emb, tipos, nEmb, embFechado, add, nAdd, addFechado);
+  if (ajustes_legenda_evitar_sdh() && r >= 0 && r < nEmb &&
+      tipos[r] == LING_LEG_SDH)
+    r = LING_AUTO_NADA;
   if (r == LING_AUTO_ESPERA) {
     // Passou do primeiro instante e ainda procura: a ilha diz o que esta fazendo.
     if (!soForcada && passou >= 1200u && pref[0] && strcasecmp(pref, "none")) pilBuscando(pref, agora);
@@ -1229,7 +1232,9 @@ static void legendaAutomatica(Uint32 agora) {
             w++;
           }
         if (w) nv = w;
+        else { free(v); v = NULL; r = LING_AUTO_NADA; }
       }
+      if (v) {
       int b = legauto_escolher(v, nv, pref, legauto_midia(video_url_atual()), NULL, 0, lem);
       if (b >= 0 && b < nv) {
         // O indice voltou da lista FILTRADA: achar a mesma URL na combinada.
