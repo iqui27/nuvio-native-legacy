@@ -7,7 +7,7 @@
 
 // ---- estado do mundo simulado ------------------------------------------
 static CatItem itemFalso;
-static char logoServ[512];
+static char logoServ[2048];
 
 const CatItem *cat_item(int i) { (void)i; return &itemFalso; }
 int player_com_video(void) { return 1; }
@@ -86,6 +86,18 @@ int main(void) {
 
   // https com query (chave pessoal no caminho) tambem nao sai.
   snprintf(logoServ, sizeof logoServ, "https://cdn.exemplo.tv/a.png?key=segredo");
+  assert(montar(&p));
+  assert(!strncmp(arteUrl, "https://images.metahub.space/", 29));
+
+  // https com userinfo na autoridade vaza credencial ao Discord: recusado.
+  snprintf(logoServ, sizeof logoServ, "https://usuario:credencial@cdn.exemplo.tv/a.png");
+  assert(montar(&p));
+  assert(!strncmp(arteUrl, "https://images.metahub.space/", 29));
+
+  // URL maior que o Pedido.a do fio de arte seria truncada no envio: recusada.
+  { size_t n = (size_t)snprintf(logoServ, sizeof logoServ, "https://cdn.exemplo.tv/");
+    while (n < 1100) logoServ[n++] = 'a';
+    snprintf(logoServ + n, sizeof logoServ - n, ".png"); }
   assert(montar(&p));
   assert(!strncmp(arteUrl, "https://images.metahub.space/", 29));
 

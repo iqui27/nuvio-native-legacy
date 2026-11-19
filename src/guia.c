@@ -8180,6 +8180,7 @@ int guia_canal_logo_url(const char *id, char *dst, size_t n) {
       if (!logo || !logo[0] || !strncmp(logo, "data:", 5)) return 0;
       if (!strncmp(logo, "https://", 8) || !strncmp(logo, "http://", 7)) {
         if (strchr(logo, '?')) return 0;
+        if (strlen(logo) >= n) return 0;   // #738: nunca entrega URL truncada
         snprintf(dst, n, "%s", logo);
         return 1;
       }

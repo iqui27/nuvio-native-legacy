@@ -547,11 +547,15 @@ static long long agoraMsEpoca(void) {
 // Only https artwork is eligible for third-party presence: any public CDN
 // host is fine (channel logos live wherever the playlist points). A URL with
 // query can carry a personal API key, and http/down-scheme is never sent.
+// Userinfo na autoridade (`https://usuario:senha@host/`) tambem nao: iria
+// vazar credencial da playlist ao endpoint de assets. E URL maior que o
+// Pedido.a do fio de arte e recusada, nunca truncada antes do envio.
 static int posterPublico(const char *u) {
   const char *fim;
   if (!u || strncmp(u, "https://", 8) || strchr(u, '?')) return 0;
   fim = strchr(u + 8, '/');
-  return fim && fim > u + 8;
+  return fim && fim > u + 8 && !memchr(u + 8, '@', (size_t)(fim - (u + 8))) &&
+         strlen(u) < sizeof ((Pedido *)0)->a;
 }
 
 // 1 se ha algo para mostrar; preenche `p`.
