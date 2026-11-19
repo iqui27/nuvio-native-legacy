@@ -249,8 +249,9 @@ static int fios(void) {   // threads of this process
   int n = 0;
   DIR *d = opendir("/proc/self/task");
   struct dirent *e;
-  while (d && (e = readdir(d))) if (e->d_name[0] != '.') n++;
-  if (d) closedir(d);
+  if (!d) return -1;
+  while ((e = readdir(d))) if (e->d_name[0] != '.') n++;
+  closedir(d);
   return n;
 }
 static int conectarEm(const char *ip, int porta) {
@@ -283,7 +284,8 @@ static void semFios(const char *nome, const char *ip, int porta, const char *bom
   for (i = 0; i < 12; i++) ociosas[i] = conectarEm(ip, porta);
   usleep(400 * 1000);
   f1 = fios();
-  CONFERE(f1 <= f0, "%s: 12 idle connections start no thread (%d -> %d)", nome, f0, f1);
+  if (f0 < 0 || f1 < 0) printf("skip %s: idle connection thread count unavailable (/proc/self/task)\n", nome);
+  else CONFERE(f1 <= f0, "%s: 12 idle connections start no thread (%d -> %d)", nome, f0, f1);
   for (i = 0; i < 12; i++) {
     int s = conectarEm(ip, porta), st = 0;
     char b[256] = "";
@@ -292,8 +294,10 @@ static void semFios(const char *nome, const char *ip, int porta, const char *bom
     if (s >= 0) close(s);
     if (st != 404) { CONFERE(0, "%s: wrong token answered %d", nome, st); break; }
   }
+  if (i == 12) CONFERE(1, "%s: 12 wrong-token requests get 404", nome);
   f2 = fios();
-  CONFERE(f2 <= f0, "%s: 12 wrong-token requests get 404 and start no thread (%d -> %d)", nome, f0, f2);
+  if (f0 < 0 || f2 < 0) printf("skip %s: wrong-token thread count unavailable (/proc/self/task)\n", nome);
+  else CONFERE(f2 <= f0, "%s: wrong-token requests start no thread (%d -> %d)", nome, f0, f2);
   { int s = conectarEm(ip, porta), st = 0;
     char b[512] = "";
     snprintf(req, sizeof req, "GET %s HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n", bom);
