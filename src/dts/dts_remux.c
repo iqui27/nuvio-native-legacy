@@ -91,6 +91,9 @@ void dts_remux_gen_buffer_info(const DtsRemuxGen *g, DtsBufferInfo *b) { (void)g
 #include <libavutil/opt.h>
 #include <libavutil/dovi_meta.h>
 #include <libavutil/intreadwrite.h>
+#ifdef NV_WEBOS_HLS_TEST
+#include <libavutil/parseutils.h>
+#endif
 #include "dv7.h"
 #include <libswresample/swresample.h>
 
@@ -518,27 +521,52 @@ DtsRemux *dts_remux_open(const char *url, const char *headers, int ordinal, int 
 }
 
 #ifdef NV_WEBOS_HLS_TEST
+static double mkvTrackDuration(const AVStream *stream) {
+  if (!stream) return -1.0;
+  if (stream->duration != AV_NOPTS_VALUE) return stream->duration * av_q2d(stream->time_base);
+  const AVDictionaryEntry *tag = av_dict_get(stream->metadata, "DURATION", NULL, 0);
+  int64_t duration;
+  if (tag && av_parse_time(&duration, tag->value, 1) == 0) return duration / (double)AV_TIME_BASE;
+  return -1.0;
+}
+
 /* Check a suspect Matroska tail by reading from its last indexed keyframe.
  * The credits can have a long GOP. A partial index can also omit later
  * keyframes, which this read adds. Keep probing bounded for remote sources. */
 static int verifyMkvTail(DtsRemux *r, AVFormatContext *ic) {
   const int64_t scanLimit = INT64_C(256) << 20;
-  const double deadline = now_s(CLOCK_MONOTONIC) + 12.0;
-  int64_t lastKey = r->kf[r->nkf - 1];
-  if (avformat_seek_file(ic, r->vs, INT64_MIN, lastKey, lastKey, AVSEEK_FLAG_BACKWARD) < 0)
-    return 0;
-  AVPacket *packet = av_packet_alloc();
-  if (!packet) return 0;
+  DtsEngineMetrics before, after;
+  dts_engine_metrics(r->probe, &before);
+  const double started = now_s(CLOCK_MONOTONIC), deadline = started + 12.0;
+  const AVStream *audio = r->audioProbe ? NULL : ic->streams[r->as];
   const double tb = av_q2d(r->vtb);
-  int64_t start = avio_tell(ic->pb);
-  double videoEnd = -1.0;
+  AVPacket *packet = NULL;
+  const char *stop = "seek-error";
+  int64_t lastKey = r->kf[r->nkf - 1];
+  int64_t start = -1;
+  double videoEnd = -1.0, audioEnd = -1.0;
   int capacity = r->nkf, result = 0;
-  while (!isCancelled(r) && now_s(CLOCK_MONOTONIC) < deadline &&
-         avio_tell(ic->pb) - start < scanLimit) {
-    int ret = av_read_frame(ic, packet);
-    if (ret < 0) {
-      if (ret == AVERROR_EOF && !ic->pb->error && videoEnd >= r->endS - 2.0)
-        result = 1;
+  int readRc = 0;
+  int seekRc = avformat_seek_file(ic, r->vs, INT64_MIN, lastKey, lastKey, AVSEEK_FLAG_BACKWARD);
+  if (seekRc < 0) goto done;
+  start = avio_tell(ic->pb);
+  packet = av_packet_alloc();
+  if (!packet) {
+    stop = "packet-allocation";
+    goto done;
+  }
+  for (;;) {
+    if (isCancelled(r)) { stop = "cancelled"; break; }
+    if (now_s(CLOCK_MONOTONIC) >= deadline) { stop = "time-limit"; break; }
+    if (avio_tell(ic->pb) - start >= scanLimit) { stop = "byte-limit"; break; }
+    readRc = av_read_frame(ic, packet);
+    if (readRc < 0) {
+      if (readRc == AVERROR_EOF && !ic->pb->error) {
+        stop = "demux-eof";
+        result = videoEnd >= r->endS - 2.0;
+      } else {
+        stop = isCancelled(r) ? "cancelled" : "read-error";
+      }
       break;
     }
     if (packet->stream_index == r->vs) {
@@ -548,25 +576,43 @@ static int verifyMkvTail(DtsRemux *r, AVFormatContext *ic) {
         if (end > videoEnd) videoEnd = end;
         if ((packet->flags & AV_PKT_FLAG_KEY) && pts > lastKey) {
           if (r->nkf == capacity) {
-            if (capacity > INT_MAX / 2) break;
+            if (capacity > INT_MAX / 2) { stop = "index-overflow"; break; }
             capacity *= 2;
             int64_t *keys = realloc(r->kf, (size_t)capacity * sizeof *keys);
-            if (!keys) break;
+            if (!keys) { stop = "index-allocation"; break; }
             r->kf = keys;
           }
           r->kf[r->nkf++] = lastKey = pts;
           if ((double)lastKey * tb >= r->endS - 60.0) {
+            stop = "keyframe-near-end";
             result = 1;
             break;
           }
         }
       }
+    } else if (audio && packet->stream_index == r->as) {
+      int64_t pts = packet->pts != AV_NOPTS_VALUE ? packet->pts : packet->dts;
+      if (pts != AV_NOPTS_VALUE) {
+        double end = ((double)pts + (double)packet->duration) * av_q2d(r->atb);
+        if (end > audioEnd) audioEnd = end;
+      }
     }
     av_packet_unref(packet);
   }
+done:
   av_packet_free(&packet);
-  printf("[webos-hls] MKV tail: %s, last keyframe %.3f s, video reached %.3f s, expected end %.3f s\n",
-         result ? "verified" : "unverified", (double)lastKey * tb, videoEnd, r->endS);
+  dts_engine_metrics(r->probe, &after);
+  printf("[webos-hls] MKV tail: %s, stop=%s, elapsed_ms=%.0f, "
+         "seek_rc=%d, read_rc=%d, io_error=%d, io_eof=%d, "
+         "scan_start=%lld, scan_end=%lld, file_bytes=%lld, fetched_bytes=%llu, "
+         "last keyframe %.3f s, video reached %.3f s, audio reached %.3f s, expected end %.3f s, "
+         "video_duration=%.3f s, audio_duration=%.3f s\n",
+         result ? "verified" : "unverified", stop, (now_s(CLOCK_MONOTONIC) - started) * 1000.0,
+         seekRc, readRc, ic->pb->error, ic->pb->eof_reached,
+         (long long)start, (long long)avio_tell(ic->pb), (long long)dts_engine_size(r->probe),
+         (unsigned long long)(after.range_bytes - before.range_bytes),
+         (double)lastKey * tb, videoEnd, audioEnd, r->endS,
+         mkvTrackDuration(ic->streams[r->vs]), mkvTrackDuration(audio));
   fflush(stdout);
   return result;
 }

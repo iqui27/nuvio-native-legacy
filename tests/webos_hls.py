@@ -97,7 +97,7 @@ with playback('long-tail.mkv', 0) as base:
     assert len(tail) > 48 * 1048576 and len(fragments) >= 4, (len(tail), fragments)
     assert fragments == [b'moof', b'mdat'] * (len(fragments) // 2), fragments
     assert [s['codec_name'] for s in probe('long-tail.mp4', init + tail)['streams']] == ['h264', 'ac3']
-assert 'MKV tail: verified' in (work / 'long-tail.mkv.log').read_text()
+assert 'MKV tail: verified, stop=demux-eof' in (work / 'long-tail.mkv.log').read_text()
 print('A long final GOP starts and streams several bounded fMP4 fragments.')
 
 with playback('short-source.mkv', 0) as base:
@@ -107,7 +107,7 @@ with playback('short-source.mkv', 0) as base:
         assert error.code == 503
     else:
         raise AssertionError('A tail ending before the declared duration must be refused')
-assert 'MKV tail: unverified' in (work / 'short-source.mkv.log').read_text()
+assert 'MKV tail: unverified, stop=demux-eof' in (work / 'short-source.mkv.log').read_text()
 
 
 with playback('indexed.mkv', 1) as base:
