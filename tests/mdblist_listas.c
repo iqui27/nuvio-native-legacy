@@ -75,6 +75,17 @@ int main(int argc, char **argv) {
   CONFERE(b && !strcmp(b->midia, "TV"), "mediatype show -> TV");
   free(j);
 
+  // Lista propria sem mediatype declarado: a midia fica vazia para os
+  // carregadores aceitarem os dois tipos do envelope {movies,shows} —
+  // gravar "MOVIE" aqui esconderia as series (achado da revisao).
+  { const LstLista *sem;
+    n = lst_teste_mdblist_listas("[{\"id\":99,\"name\":\"Mista\"}]");
+    CONFERE(n == 1, "lista sem mediatype ainda entra");
+    sem = lst_lista(0);
+    CONFERE(sem && sem->fonte == LST_MDB && !strcmp(sem->colId, "99"), "id 99");
+    CONFERE(sem && !sem->midia[0], "sem mediatype -> midia vazia (veio %s)",
+            sem ? sem->midia : ""); }
+
   printf("\n[#762] fixar e levar para a Home\n");
   { LstLista l = listaMdb("13914", "Oscar Winners", "MOVIE");
     const char *porque = "";

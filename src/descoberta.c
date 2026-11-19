@@ -9866,12 +9866,6 @@ static int deMetaMdblist(const char *p, const char *f, const char *midia,
   // serie. Sem ele vale a midia da fonte, como antes.
   serie = mt[0] ? (!strcasecmp(mt, "show") || !strcasecmp(mt, "tv"))
                : !strcasecmp(midia, "TV");
-  if (!serie && strcasecmp(midia, "TV") &&
-      (strcasecmp(mt, "show") == 0 || strcasecmp(mt, "tv") == 0))
-    return 0;
-  if (serie && strcasecmp(midia, "TV") &&
-      mt[0] && strcasecmp(mt, "show") && strcasecmp(mt, "tv"))
-    return 0;
   snprintf(d->tipo, sizeof d->tipo, "%s", serie ? "series" : "movie");
   snprintf(d->genero, sizeof d->genero, "%s", i18n(rotuloTipoSing(d->tipo)));
   if (js_texto(p, f, "poster", poster, sizeof poster) && poster[0])
@@ -10096,9 +10090,12 @@ static int colecaoArray(const char *corpo, const char *chave, const char **prime
 // sequencia so de itens. mdbVetores guarda o primeiro elemento de cada um
 // e devolve 1 quando o corpo tem o envelope (mesmo com os dois vazios —
 // pagina curta valida = fim, nao erro).
-static int mdbVetores(const char *corpo, const char *vet[2], const char **primeiro) {
-  vet[0] = js_array(corpo, NULL, "movies");
-  vet[1] = js_array(corpo, NULL, "shows");
+// `seriesPrimeiro` inverte a ordem para a midia da fonte vir na frente:
+// numa pasta TV o show abre a sequencia, como ja acontece numa lista pura.
+static int mdbVetores(const char *corpo, const char *vet[2], const char **primeiro,
+                      int seriesPrimeiro) {
+  vet[0] = js_array(corpo, NULL, seriesPrimeiro ? "shows" : "movies");
+  vet[1] = js_array(corpo, NULL, seriesPrimeiro ? "movies" : "shows");
   *primeiro = vet[0] ? vet[0] : vet[1];
   return vet[0] || vet[1] ||
          js_array_presente(corpo, NULL, "movies") ||
@@ -10147,12 +10144,23 @@ static int colecaoTeto(const char *id) {
 }
 
 static int colecaoTipo(const ColSource *fonte, const CatItem *item) {
+  // MDBList devolve {movies,shows} mistos e deMetaMdblist ja tipa pelo
+  // mediatype do item: filtrar pela midia da fonte esconderia metade da
+  // lista. Os outros provedores mantem o tipo da fonte como recorte.
+  if (fonte->prov[0] && !strcmp(fonte->prov, "mdblist"))
+    return !strcmp(item->tipo, "movie") || !strcmp(item->tipo, "series");
   const char *tipo = fonte->prov[0] ?
     (!strcasecmp(fonte->midia, "TV") ? "series" : "movie") : fonte->type;
   if (!strcmp(tipo, item->tipo)) return 1;
   if (!strcmp(tipo, "tv")) tipo = "series";
   return (strcmp(tipo, "movie") && strcmp(tipo, "series")) || !strcmp(tipo, item->tipo);
 }
+
+// Capacidade do lote por pagina nos carregadores de provedor (worker do
+// Ver tudo e leitor da Vitrine). O MDBList pede limit=50 por pagina — a
+// capacidade precisa cobrir a pagina inteira, senao raw para de contar
+// cedo e a paginacao encerra antes da hora. Trakt pede 40.
+#define VT_LOTE_MAX 50
 
 int desc_colecao_inicial(const ColSource *fonte, const char *base,
                          NvPerfilSessao sessao, CatItem *itens, int limite,
@@ -10248,7 +10256,7 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
     const char *mdbVet[2] = {NULL, NULL};
     int mdbOk = 0, v = 0;
     if (prov == 4) {
-      mdbOk = corpo ? mdbVetores(corpo, mdbVet, &p) : 0;
+      mdbOk = corpo ? mdbVetores(corpo, mdbVet, &p, !strcasecmp(f.midia, "TV")) : 0;
       if (!mdbOk) mdbOk = corpo && (colecaoArray(corpo, "items", &p) ||
                                   colecaoArray(corpo, NULL, &p));
     } else {
@@ -10269,7 +10277,7 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
         fim = !tp || pg >= tp;
       }
     }
-    for (; p && (!prov || aceitos < 48);
+    for (; p && (!prov || aceitos < VT_LOTE_MAX);
            p = prov == 4 ? mdbAvancar(js_fim(p), mdbVet, &v) : js_prox(js_fim(p))) {
       const char *fimItem = js_fim(p);
       int ok, visto, repetido = 0;
@@ -10310,9 +10318,11 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
                            !raw ? "empty_page" : !novos ? "no_new_items" : "ok");
     free(corpo);
     if ((prov == 2 && raw < 40) || (prov == 4 && raw < 50)) fim = 1;
-    r.mais = raw > 0 && novos > 0 && total < teto && !fim;
+    // Uma pagina cheia de filtrados ou repetidos nao pode ser lida como fim:
+    // o fim vem da pagina curta (fim=1), nao da ausencia de novidades nela.
+    r.mais = raw > 0 && total < teto && !fim;
     r.pagina = prov ? pagina + (r.mais ? 1 : 0) : skip + raw;
-    if (!raw || !novos || total >= teto || fim || !ocultar || visiveis) break;
+    if (!raw || total >= teto || fim || !ocultar || visiveis) break;
     skip += raw;
   }
   free(ids);
@@ -10378,10 +10388,10 @@ static void *fioVerTudo(void *u) {
   // do TMDB ou do Trakt, nao de um catalogo de addon. vtPagina aqui e o
   // NUMERO da pagina (comeca em 1), nao o skip de itens.
   if (prov) {
-    CatItem *lote=malloc(sizeof *lote*48); int nl=0, semMais=0, ok=0;
+    CatItem *lote=malloc(sizeof *lote*VT_LOTE_MAX); int nl=0, semMais=0, ok=0;
     // Extras da entrada (rank/listed_at/notes), amarrados ao imdb e NAO a
     // posicao: trakt_enfeitar_lote compacta o lote e um indice dessincroniza.
-    DescItemLista exLote[48]; char exImdb[48][64]; int nex=0;
+    DescItemLista exLote[VT_LOTE_MAX]; char exImdb[VT_LOTE_MAX][64]; int nex=0;
     if(!lote){pthread_mutex_lock(&vtTrava);vtErro=1;vtFioVivo=0;pthread_mutex_unlock(&vtTrava);return NULL;}
     corpo=NULL;
     if (prov==1) {
@@ -10390,7 +10400,7 @@ static void *fioVerTudo(void *u) {
       if (corpo) {
         const char *padrao=!strcasecmp(fonte.midia,"TV")?"series":"movie";
         const char *p=js_array(corpo,NULL,vetor);
-        for(;p&&nl<48;p=js_prox(js_fim(p))) {
+        for(;p&&nl<VT_LOTE_MAX;p=js_prox(js_fim(p))) {
           const char *f=js_fim(p);raw++;
           // DIRECTOR: a resposta e crew[] inteira e so entra quem tem
           // job=Director — o web filtra igual.
@@ -10431,12 +10441,12 @@ static void *fioVerTudo(void *u) {
         corpo=rede_baixar_com(url,12,cab);
         if (corpo) {
           const char *p=*corpo=='['?js_raiz_array(corpo):NULL;
-          for(;p&&nl<48;p=js_prox(js_fim(p))) {
+          for(;p&&nl<VT_LOTE_MAX;p=js_prox(js_fim(p))) {
             const char *f=js_fim(p);raw++;
             if (deMetaTrakt(p,f,fonte.midia,&lote[nl]) && colecaoTipo(&fonte, &lote[nl])) {
               if (descOcultaNaoLancado(&lote[nl])) ocultos++;
               else {
-                if (nex<48) {
+                if (nex<VT_LOTE_MAX) {
                   desc_trakt_extra_ler(p,f,&exLote[nex]);
                   snprintf(exImdb[nex],sizeof exImdb[nex],"%s",lote[nl].imdb);
                   nex++;
@@ -10463,11 +10473,11 @@ static void *fioVerTudo(void *u) {
           // Envelope padrao {movies,shows}; array raiz e "items" aceitos.
           const char *mdbVet[2] = {NULL, NULL}, *p = NULL;
           int v = 0;
-          if (!mdbVetores(corpo, mdbVet, &p) &&
+          if (!mdbVetores(corpo, mdbVet, &p, !strcasecmp(fonte.midia, "TV")) &&
               !colecaoArray(corpo, "items", &p) &&
               !colecaoArray(corpo, NULL, &p))
             p = *corpo=='[' ? js_raiz_array(corpo) : NULL;
-          for(;p&&nl<48;p=mdbAvancar(js_fim(p), mdbVet, &v)) {
+          for(;p&&nl<VT_LOTE_MAX;p=mdbAvancar(js_fim(p), mdbVet, &v)) {
             const char *f=js_fim(p); raw++;
             if (deMetaMdblist(p,f,fonte.midia,&lote[nl]) && colecaoTipo(&fonte, &lote[nl])) {
               if (descOcultaNaoLancado(&lote[nl])) ocultos++; else nl++;
@@ -10499,7 +10509,10 @@ static void *fioVerTudo(void *u) {
         }
       }
       vtErro=!ok;
-      if(ok){if(semMais||!added||vtN>=colecaoTeto(fonte.catId))vtFim=1;else vtPagina=skip+1;}
+      // O fim vem de semMais (pagina curta ou teto), nunca de uma pagina
+      // cheia que so trouxe filtrados/duplicados — added=0 com raw cheio
+      // ainda pode ter mais paginas atras.
+      if(ok){if(semMais||vtN>=colecaoTeto(fonte.catId))vtFim=1;else vtPagina=skip+1;}
       seguir = vtPaginaSoDeVistos(antes, added, paginas);
       if (!seguir) vtFioVivo=0; }
     pthread_mutex_unlock(&vtTrava);

@@ -478,9 +478,13 @@ static int lerListaMdblist(const char *p, const char *f, LstLista *d) {
     snprintf(d->colId, sizeof d->colId, "%ld", id); }
   if (!js_texto(p, f, "name", d->titulo, sizeof d->titulo) &&
       !js_texto(p, f, "title", d->titulo, sizeof d->titulo)) return 0;
-  if (js_texto(p, f, "mediatype", mt, sizeof mt) && !strcasecmp(mt, "show"))
-    snprintf(d->midia, sizeof d->midia, "TV");
-  else snprintf(d->midia, sizeof d->midia, "MOVIE");
+  // Lista do MDBList pode misturar filme e serie; sem mediatype=show claro
+  // declarar MOVIE faria os carregadores esconderem as series. O tipo real
+  // de cada item vem do mediatype dele no envelope (deMetaMdblist).
+  if (js_texto(p, f, "mediatype", mt, sizeof mt))
+    snprintf(d->midia, sizeof d->midia, "%s",
+             !strcasecmp(mt, "show") || !strcasecmp(mt, "tv") ? "TV" : "MOVIE");
+  else d->midia[0] = 0;
   d->propria = 1;
   return 1;
 }

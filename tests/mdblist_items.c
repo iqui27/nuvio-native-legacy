@@ -156,6 +156,8 @@ int main(void) {
 
   // 4. O corpo padrao do OpenAPI ({movies,shows}) alimenta os dois
   // carregadores reais: a Vitrine (desc_colecao_inicial) e o Ver tudo.
+  // Lista mista: o filme E a serie entram juntos, na ordem do envelope
+  // (a midia da fonte nao recorta mais — o tipo vem do mediatype do item).
   memset(&f, 0, sizeof f);
   snprintf(f.prov, sizeof f.prov, "mdblist");
   snprintf(f.catId, sizeof f.catId, "777");
@@ -164,28 +166,33 @@ int main(void) {
   assert(desc_colecao_inicial(&f, "", sessao, itens, 20, &r));
   assert(!r.erro);
   printf("openapi vitrine: n=%d\n", r.n);
-  assert(r.n == 1);                      // so o filme; a serie sai pelo midia
+  assert(r.n == 2);                      // filme e serie do mesmo envelope
   assert(!strcmp(itens[0].imdb, "tt2049403"));
   assert(!strcmp(itens[0].titulo, "Beetlejuice Beetlejuice"));
   assert(!strcmp(itens[0].meta, "2024"));  // release_year do envelope
+  assert(!strcmp(itens[1].imdb, "tt20782190"));
+  assert(!strcmp(itens[1].tipo, "series"));
 
   desc_vertudo_fonte(&f); esperar();
   assert(!desc_vertudo_erro());
   printf("openapi ver tudo (movie): n=%d fim=%d\n", desc_vertudo_n_bruto(), desc_vertudo_fim());
-  assert(desc_vertudo_n_bruto() == 1);
+  assert(desc_vertudo_n_bruto() == 2);
   assert(desc_vertudo_fim());
   { CatItem it;
-    assert(desc_vertudo_item_bruto(0, &it) && !strcmp(it.imdb, "tt2049403")); }
+    assert(desc_vertudo_item_bruto(0, &it) && !strcmp(it.imdb, "tt2049403"));
+    assert(desc_vertudo_item_bruto(1, &it) && !strcmp(it.imdb, "tt20782190")); }
 
-  // O mesmo envelope com midia TV entrega o show.
+  // O mesmo envelope com midia TV tambem entrega os dois — o show na frente
+  // porque a fonte e de series (a ordem segue a midia da fonte).
   snprintf(f.midia, sizeof f.midia, "TV");
   desc_vertudo_fonte(&f); esperar();
   assert(!desc_vertudo_erro());
   printf("openapi ver tudo (tv): n=%d\n", desc_vertudo_n_bruto());
-  assert(desc_vertudo_n_bruto() == 1);
+  assert(desc_vertudo_n_bruto() == 2);
   { CatItem it;
     assert(desc_vertudo_item_bruto(0, &it) && !strcmp(it.imdb, "tt20782190"));
-    assert(!strcmp(it.tipo, "series")); }
+    assert(!strcmp(it.tipo, "series"));
+    assert(desc_vertudo_item_bruto(1, &it) && !strcmp(it.imdb, "tt2049403")); }
 
   // 5. Envelope valido com itens invalidos: fim sem erro, sem crash.
   memset(&f, 0, sizeof f);
