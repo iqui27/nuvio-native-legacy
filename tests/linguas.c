@@ -77,11 +77,12 @@ int main(void) {
   ok("nome de bs", !strcmp(ling_nome("bs"), "Bósnio"));
   // #429: hr/sr/bs entraram NO FIM (regra de compatibilidade do ajustes.txt,
   // que grava o indice): 31, 32, 33 — nunca no meio da lista.
-  ok("opcao hr antes das variantes", !strcmp(ling_opcao_codigo(ling_opcao_n() - 5), "hr"));
-  ok("opcao sr antes das variantes", !strcmp(ling_opcao_codigo(ling_opcao_n() - 4), "sr"));
-  ok("opcao bs antes das variantes", !strcmp(ling_opcao_codigo(ling_opcao_n() - 3), "bs"));
-  ok("opcao es-419 no fim", !strcmp(ling_opcao_codigo(ling_opcao_n() - 2), "es-419"));
-  ok("opcao pt-pt no fim", !strcmp(ling_opcao_codigo(ling_opcao_n() - 1), "pt-pt"));
+  ok("opcao hr antes das variantes", !strcmp(ling_opcao_codigo(ling_opcao_n() - 6), "hr"));
+  ok("opcao sr antes das variantes", !strcmp(ling_opcao_codigo(ling_opcao_n() - 5), "sr"));
+  ok("opcao bs antes das variantes", !strcmp(ling_opcao_codigo(ling_opcao_n() - 4), "bs"));
+  ok("opcao es-419 no fim", !strcmp(ling_opcao_codigo(ling_opcao_n() - 3), "es-419"));
+  ok("opcao pt-pt no fim", !strcmp(ling_opcao_codigo(ling_opcao_n() - 2), "pt-pt"));
+  ok("opcao es-es no fim", !strcmp(ling_opcao_codigo(ling_opcao_n() - 1), "es-es"));
   // Indices JA GRAVADOS em ajustes.txt nao podem mudar: 16 e "id" (nao "hr")
   // e o "~" fica no indice LING_OPC_ORIGINAL, antes dos idiomas novos.
   ok("indice 16 continua id", !strcmp(ling_opcao_codigo(16), "id"));
