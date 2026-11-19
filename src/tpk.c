@@ -149,10 +149,17 @@ static void appEsperaVez(int entregou) {
   pthread_cond_broadcast(&mudou);
   while (vez != VEZ_APP || cicloPendente) {
     if (cicloPendente) {
-      Uint32 tipo = cicloPendente == 2 ? SDL_APP_LOWMEMORY : SDL_APP_WILLENTERBACKGROUND;
+      Uint32 tipo = cicloPendente == 2 ? SDL_APP_LOWMEMORY :
+                    cicloPendente == 3 ? SDL_APP_DIDENTERFOREGROUND :
+                    SDL_APP_WILLENTERBACKGROUND;
       cicloPendente = 0;
       pthread_mutex_unlock(&trava);
       player_ciclo_evento(tipo);
+      if (tipo == SDL_APP_DIDENTERFOREGROUND) {
+        SDL_Event ev = {0};
+        ev.type = SDL_APP_DIDENTERFOREGROUND;
+        SDL_PushEvent(&ev);
+      }
       pthread_mutex_lock(&trava);
       pthread_cond_broadcast(&mudou);
     } else pthread_cond_wait(&mudou, &trava);
@@ -462,6 +469,16 @@ void nv_tpk_ciclo(int memoria) {
   // Rendering may already be suspended: wake the app thread without needing GL.
   pthread_mutex_lock(&trava);
   cicloPendente = memoria ? 2 : 1;
+  pthread_cond_broadcast(&mudou);
+  pthread_mutex_unlock(&trava);
+}
+
+// #799: OnResume no host sem isto nao avisa o main(); a home podia desenhar
+// fileiras velhas e o overlay partido ao voltar do segundo plano.
+__attribute__((visibility("default")))
+void nv_tpk_retomou(void) {
+  pthread_mutex_lock(&trava);
+  cicloPendente = 3;
   pthread_cond_broadcast(&mudou);
   pthread_mutex_unlock(&trava);
 }
