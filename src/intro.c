@@ -1305,3 +1305,17 @@ int intro_auto_pular(int tipo,double fim,double dur,int pularAbertura,int pularR
   if(tipo==INTRO_CREDITOS)return pularCreditos&&dur>0.0&&fim<=dur-5.0;
   return (tipo==INTRO_ABERTURA&&pularAbertura)||(tipo==INTRO_RESUMO&&pularResumo);
 }
+
+// #494: diario local para futura contribuicao AniSkip/TheIntroDB (sem rede).
+void intro_contrib_registrar(const char *imdb, int tipo, int iniMs, int fimMs) {
+  FILE *f;
+  char path[600];
+  if (!imdb || !imdb[0] || iniMs < 0 || fimMs <= iniMs) return;
+  if (!dados_caminho(path, sizeof path, "skip-contrib-local.jsonl")) return;
+  f = fopen(path, "a");
+  if (!f) return;
+  fprintf(f, "{\"imdb\":\"%s\",\"tipo\":%d,\"ini\":%d,\"fim\":%d}\n", imdb, tipo, iniMs, fimMs);
+  fclose(f);
+  chmod(path, 0600);
+}
+

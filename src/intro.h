@@ -200,4 +200,6 @@ void intro_shot_definir(const IntroTrecho *v,int n);   // capturas: trechos fixo
 void intro_shot_marcas(const char *imdb,int t,int e,const IntroTrecho *v,int n,int origem);
 void intro_shot_rede(const IntroTrecho *v,int n,const IntroTrecho *lim,int nl);   // teste: trechos da rede   // capturas: trechos fixos
 #endif
+void intro_contrib_registrar(const char *imdb, int tipo, int iniMs, int fimMs);
 #endif
+
