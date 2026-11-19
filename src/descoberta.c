@@ -9510,9 +9510,45 @@ static int pendItem = -1, pendTemp;
 
 static CatItem  vtItens[VT_MAX];
 static VtStore vtAddon;
-static struct { char id[64], tipo[8]; } vtAddonId[VT_STORE_MAX];
-/* Dynamic payload budget excludes the fixed index and allocator overhead. */
-#define VT_ADDON_BYTES_MAX (8u * 1024u * 1024u)
+/* #789: dedup por hash. vtAddonId guarda (imdb,tipo) por posicao; vtIdSlot e
+ * uma tabela de enderecamento aberto para a posicao — varrer 14 mil itens com
+ * strcmp por item era O(n^2) e travava a paginacao inteira na TV. vtNovaId faz
+ * o mesmo para a lista em reconstrucao do recarregamento (item 3 da issue). */
+typedef struct { char id[64], tipo[8]; } VtId;
+static VtId vtAddonId[VT_STORE_MAX];
+static VtId vtNovaId[VT_STORE_MAX];
+#define VT_ID_SLOTS VT_STORE_MAX
+static int32_t vtIdSlot[VT_ID_SLOTS];
+static uint32_t vtIdHash(const char *id, const char *tipo) {
+  uint32_t h = 2166136261u;
+  for (const unsigned char *p = (const unsigned char *)id; *p; p++) { h ^= *p; h *= 16777619u; }
+  h ^= 0x9eu; h *= 16777619u;
+  for (const unsigned char *p = (const unsigned char *)tipo; *p; p++) { h ^= *p; h *= 16777619u; }
+  return h;
+}
+static int vtIdTem(const int32_t *slots, const VtId *ids, const char *id, const char *tipo) {
+  // Tabela cheia (catalogo no teto): uma volta inteira basta — um id novo
+  // numa tabela cheia nao existe e nao pode travar a paginacao.
+  uint32_t s = vtIdHash(id, tipo) % VT_ID_SLOTS;
+  for (int volta = 0; volta < VT_ID_SLOTS; volta++, s = (s + 1) % VT_ID_SLOTS) {
+    int i = slots[s];
+    if (i < 0) return 0;
+#ifdef NV_VT_DEDUP_MEDIDA
+    extern long vtDedupPares;   // os testes medem comparacoes, nao o relogio
+    vtDedupPares++;
+#endif
+    if (!strcmp(ids[i].id, id) && !strcmp(ids[i].tipo, tipo)) return 1;
+  }
+  return 0;
+}
+static void vtIdPoe(int32_t *slots, const VtId *ids, int i) {
+  for (uint32_t s = vtIdHash(ids[i].id, ids[i].tipo) % VT_ID_SLOTS; ; s = (s + 1) % VT_ID_SLOTS)
+    if (slots[s] < 0) { slots[s] = i; return; }
+}
+/* Dynamic payload budget excludes the fixed index and allocator overhead.
+ * #789: 14 mil itens a ~2,1 KB/item medem ~30 MB (ver tests/fv_pag_store.c);
+ * 32 MiB cobre o pior perfil medido com folga, ainda limitado. */
+#define VT_ADDON_BYTES_MAX (32u * 1024u * 1024u)
 static DescItemLista vtExtra[VT_MAX];   // paralela a vtItens; ver descoberta.h
 static int      vtN;
 static char     vtBase[NV_ADDON_URL_MAX], vtTipo[8], vtCat[96], vtGenre[96];
@@ -10217,20 +10253,23 @@ static void *fioVerTudo(void *u) {
     size_t livre = vtAddon.used < VT_ADDON_BYTES_MAX ? VT_ADDON_BYTES_MAX - vtAddon.used : 0;
     pthread_mutex_unlock(&vtTrava);
     snprintf(fonte.type, sizeof fonte.type, "%s", type); fonte.prov[0] = 0;
+    int32_t vtNovaSlot[VT_ID_SLOTS];
+    memset(vtNovaSlot, -1, sizeof vtNovaSlot);
+    memset(vtNovaId, 0, sizeof vtNovaId);
     for (const char *p = ok ? js_array(corpo, NULL, "metas") : NULL; p; p = js_prox(js_fim(p))) {
       const char *f = js_fim(p); CatItem it; raw++;
       hashAntes = hash; hash = vtHashItem(hash, p, f, type);
       if (!deMeta(p, f, type, &it) || !colecaoTipo(&fonte, &it)) continue;
       if (descOcultaNaoLancado(&it)) { avancou++; continue; }
       origemDaBase(base, it.origem, sizeof it.origem); it.ranking = skip + raw;
-      int dup = 0;
-      for (int i = 0; it.imdb[0] && i < nova.n; i++) {
-        CatItem old;
-        if (vt_store_get(&nova, i, &old) && !strcmp(old.imdb, it.imdb) && !strcmp(old.tipo, it.tipo)) { dup = 1; break; }
-      }
-      if (dup) continue;
+      if (it.imdb[0] && vtIdTem(vtNovaSlot, vtNovaId, it.imdb, it.tipo)) continue;
       if (nova.n >= cap) { if (cap == VT_STORE_MAX) parcial = 1; break; }
       if (!vt_store_append(&nova, &it, livre)) { ok = 0; break; }
+      if (it.imdb[0]) {
+        memcpy(vtNovaId[nova.n - 1].id, it.imdb, sizeof it.imdb);
+        memcpy(vtNovaId[nova.n - 1].tipo, it.tipo, sizeof it.tipo);
+        vtIdPoe(vtNovaSlot, vtNovaId, nova.n - 1);
+      }
       avancou++;
     }
     free(corpo);
@@ -10244,10 +10283,11 @@ static void *fioVerTudo(void *u) {
       vtReplay = parcial ? raw - 1 : 0; vtReplayHash = parcial ? hashAntes : 0;
       vtPaginaMudou = 0; vtGeracao++;
       vtFim = !parcial && (!raw || !avancou || (cap < VT_STORE_MAX && vtN >= cap));
+      memset(vtIdSlot, -1, sizeof vtIdSlot);
       for (int i = 0; i < vtN; i++) {
-        CatItem it; vt_store_get(&vtAddon, i, &it);
-        memcpy(vtAddonId[i].id, it.imdb, sizeof it.imdb);
-        memcpy(vtAddonId[i].tipo, it.tipo, sizeof it.tipo);
+        memcpy(vtAddonId[i].id, vtNovaId[i].id, sizeof vtAddonId[i].id);
+        memcpy(vtAddonId[i].tipo, vtNovaId[i].tipo, sizeof vtAddonId[i].tipo);
+        if (vtAddonId[i].id[0]) vtIdPoe(vtIdSlot, vtAddonId, i);
       }
     }
     vtErro = !ok || parcial; vtFioVivo = 0;
@@ -10280,12 +10320,14 @@ static void *fioVerTudo(void *u) {
       pthread_mutex_lock(&vtTrava);
       int duplicate=0;
       if (generation==vtGeracao && descSessaoAtual()) {
-        for(int i=0;i<vtN && it.imdb[0];i++)
-          if(!strcmp(vtAddonId[i].id,it.imdb) && !strcmp(vtAddonId[i].tipo,it.tipo)){duplicate=1;break;}
+        if (it.imdb[0]) duplicate = vtIdTem(vtIdSlot, vtAddonId, it.imdb, it.tipo);
         if (!duplicate && vtN < cap) {
           if (vt_store_append(&vtAddon, &it, VT_ADDON_BYTES_MAX)) {
-            memcpy(vtAddonId[vtN].id, it.imdb, sizeof it.imdb);
-            memcpy(vtAddonId[vtN].tipo, it.tipo, sizeof it.tipo);
+            if (it.imdb[0]) {
+              memcpy(vtAddonId[vtN].id, it.imdb, sizeof it.imdb);
+              memcpy(vtAddonId[vtN].tipo, it.tipo, sizeof it.tipo);
+              vtIdPoe(vtIdSlot, vtAddonId, vtN);
+            }
             vtN++; added++;
           }
           else semEspaco = 1;
@@ -10359,6 +10401,7 @@ void desc_vertudo_filtro_desde(const char *base, const char *tipo, const char *c
     return;
   }
   vt_store_free(&vtAddon);
+  memset(vtIdSlot, -1, sizeof vtIdSlot);   // #789: o zero e um indice valido
   snprintf(vtBase, sizeof vtBase, "%s", base);
   snprintf(vtTipo, sizeof vtTipo, "%s", tipo);
   snprintf(vtCat,  sizeof vtCat,  "%s", catId);
@@ -10386,6 +10429,7 @@ void desc_vertudo_fonte_desde(const ColSource *s, int pagina) {
     int k = caca_por_chave(s->catId + (s->catId[0] ? 1 : 0)), n;
     pthread_mutex_lock(&vtTrava);
     vt_store_free(&vtAddon);
+    memset(vtIdSlot, -1, sizeof vtIdSlot);
     vtFonte = copia;
     vtReload = vtPaginaMudou = vtReplay = 0;
     vtProvedor = 3;
@@ -10403,6 +10447,7 @@ void desc_vertudo_fonte_desde(const ColSource *s, int pagina) {
     return;
   }
   vt_store_free(&vtAddon);
+  memset(vtIdSlot, -1, sizeof vtIdSlot);
   vtFonte = copia;
   vtReload = vtPaginaMudou = vtReplay = 0;
   vtProvedor = !strcmp(s->prov, "trakt") ? 2 : 1;

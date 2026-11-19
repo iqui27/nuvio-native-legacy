@@ -93,6 +93,22 @@ WEAK void m3u_fontes_invalidar(void) {}
 WEAK void stalker_fontes_invalidar(void) {}
 WEAK void xtream_fontes_invalidar(void) {}
 WEAK int traktauth_desconectado(void) { return 0; }
+// Session/logout hooks sync.c calls; inert unless the real module is linked.
+WEAK void ajustes_edicao_encerrar(void) {}
+WEAK int ajustes_edicao_perfil(void) { return 0; }
+WEAK int ajustes_migrar_escopo(void) { return 0; }
+WEAK void diario_dono(const char *s) { (void)s; }
+WEAK void diario_esquecer(void) {}
+WEAK void g5ui_forget(void) {}
+WEAK void perfil_infantil_esquecer(void) {}
+WEAK char *rewatch_blob_costurar(const char *b) { (void)b; return NULL; }
+WEAK int rewatch_blob_ler(const char *b) { (void)b; return 0; }
+WEAK void rewatch_esquecer(void) {}
+WEAK void rewatch_sujar(void) {}
+WEAK int rewatch_sujo(void) { return 0; }
+WEAK void segfontes_animeskip_id_conta(const char *s) { (void)s; }
+WEAK void trava_definir_conta(const char *s) { (void)s; }
+WEAK void trava_esquecer(void) {}
 WEAK char *nuvem_addon_alternar(const char *query, int enabled, const char *bearer,
                                 unsigned deadline, int *status) {
   (void)query; (void)enabled; (void)bearer; (void)deadline;
