@@ -70,15 +70,19 @@ int main(void) {
     stat(path, &st); depois = st.st_size;
     assert(depois == antes); }
 
-  // Teto de tamanho: encheu, o atual vira .1 e a escrita segue no novo.
-  f = fopen(path, "a"); assert(f);
-  while ((stat(path, &st) == 0) && st.st_size < INTRO_CONTRIB_MAX)
-    fputs("{\"imdb\":\"ttPAD\",\"tipo\":1,\"ini\":0,\"fim\":1}.......................\n", f);
-  fclose(f);
+  // Teto de tamanho: um arquivo logo abaixo do limite gira ANTES de estoura-
+  // lo — a linha que nao cabe cai inteira no diario novo, sem se perder.
+  { long resto;
+    assert(stat(path, &st) == 0);
+    resto = (INTRO_CONTRIB_MAX - 1) - st.st_size;
+    f = fopen(path, "a"); assert(f);
+    while (resto-- > 0) fputc('.', f);
+    fclose(f);
+    assert(stat(path, &st) == 0 && st.st_size == INTRO_CONTRIB_MAX - 1); }
   intro_contrib_registrar("tt999", INTRO_ABERTURA, 1000, 2000);
   { char rot[300]; snprintf(rot, sizeof rot, "%s.1", path);
-    assert(stat(rot, &st) == 0);          // rotacionou
-    assert(stat(path, &st) == 0 && st.st_size < INTRO_CONTRIB_MAX); }
+    assert(stat(rot, &st) == 0 && st.st_size <= INTRO_CONTRIB_MAX); // .1 dentro do teto
+    assert(stat(path, &st) == 0 && st.st_size <= INTRO_CONTRIB_MAX); }
   f = fopen(path, "r"); assert(f && fgets(line, sizeof line, f));
   assert(strstr(line, "\"tt999\""));
   fclose(f);

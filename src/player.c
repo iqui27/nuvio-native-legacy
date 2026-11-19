@@ -502,6 +502,7 @@ static float duracaoSeg = PLR_DUR_PADRAO;
 // O fim ZERO do TheIntroDB quer dizer "ate o fim da midia" (intro.c): mirar
 // fim+0.25 ai seria um salto para o COMECO do arquivo — o alvo resolve o nulo.
 static double puloDestino(double fim) { return fim > 0.0 ? fim + .25 : duracaoSeg; }
+static const CatItem *item(void);
 // #494: diario local de marcadores pulados (AniSkip / TheIntroDB, futuro).
 // `ini` e a posicao onde o trecho comecou a ser pulado (posSeg antes do seek);
 // `intro_botao_visivel` devolve o FIM do marcador, nao o inicio — reutiliza-lo

@@ -1312,16 +1312,24 @@ int intro_auto_pular(int tipo,double fim,double dur,int pularAbertura,int pularR
 void intro_contrib_registrar(const char *imdb, int tipo, int iniMs, int fimMs) {
   FILE *f;
   char path[600], rot[616];
+  char linha[160];
+  int tam;
   struct stat st;
   if (!imdb || !imdb[0] || iniMs < 0 || fimMs <= iniMs) return;
   if (!dados_caminho(path, sizeof path, "skip-contrib-local.jsonl")) return;
-  if (!stat(path, &st) && st.st_size >= INTRO_CONTRIB_MAX) {
+  tam = snprintf(linha, sizeof linha, "{\"imdb\":\"%s\",\"tipo\":%d,\"ini\":%d,\"fim\":%d}\n",
+                 imdb, tipo, iniMs, fimMs);
+  if (tam <= 0 || tam >= (int)sizeof linha) return;
+  // Rotaciona ANTES de estourar o teto: se esta linha levaria o arquivo alem
+  // de INTRO_CONTRIB_MAX, o atual vira .1 e a escrita cai no diario novo —
+  // nenhum dos dois passa do limite.
+  if (!stat(path, &st) && st.st_size + tam > INTRO_CONTRIB_MAX) {
     snprintf(rot, sizeof rot, "%s.1", path);
     rename(path, rot);
   }
   f = fopen(path, "a");
   if (!f) return;
-  fprintf(f, "{\"imdb\":\"%s\",\"tipo\":%d,\"ini\":%d,\"fim\":%d}\n", imdb, tipo, iniMs, fimMs);
+  fputs(linha, f);
   fclose(f);
   chmod(path, 0600);
 }
