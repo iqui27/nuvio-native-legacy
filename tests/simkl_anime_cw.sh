@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 task_tmp=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-simkl-anime-XXXXXX")
 trap 'rm -rf "$task_tmp"' EXIT
-traxt_extra=src/trakt.c
+trakt_extra=src/trakt.c
 if [ "$(uname -s)" != Darwin ]; then trakt_extra=tests/simkl_trakt_link_stub.c; fi
 ld_extra=(-Wl,-dead_strip)
 if [ "$(uname -s)" != Darwin ]; then ld_extra=(); fi

@@ -121,6 +121,7 @@ static int lerObra(const char *oi, const char *of, CatItem *d, char *imdb,
 static int idNumOk(double v, long *out) {
   if (v <= 0.0 || v >= 2147483647.0) return 0;
   *out = (long)v;
+  if (*out <= 0) return 0;
   return 1;
 }
 
@@ -156,8 +157,17 @@ static int obraDeAssistindo(const char *p, const char *f, int anime,
     if (lerObra(*oi, *of, &d, imdb, sizeof imdb)) return 1;
     if (lerIdsSimkl(*oi, *of, imdb, sizeof imdb, NULL)) return 1;
   } else if (!anime) return 0;
-  if (anime && objetoRaiz(p, f, "show", oi, of)) return 1;
-  if (anime) { *oi = p; *of = f; return 1; }
+  if (anime && objetoRaiz(p, f, "show", oi, of)) {
+    imdb[0] = 0;
+    if (lerObra(*oi, *of, &d, imdb, sizeof imdb)) return 1;
+    if (lerIdsSimkl(*oi, *of, imdb, sizeof imdb, NULL)) return 1;
+    return 0;
+  }
+  if (anime && lerIdsSimkl(p, f, imdb, sizeof imdb, NULL)) {
+    *oi = p;
+    *of = f;
+    return 1;
+  }
   return 0;
 }
 
