@@ -264,22 +264,31 @@ class ParaleloDataSource(
         conferirCancelamento()
     }
 
+    private fun hostDebridLongo(host: String?): Boolean {
+        val h = host?.lowercase(java.util.Locale.US) ?: return false
+        return h == "real-debrid.com" || h.endsWith(".real-debrid.com")
+            || h == "alldebrid.com" || h.endsWith(".alldebrid.com")
+            || h == "torbox.app" || h.endsWith(".torbox.app")
+            || h == "premiumize.me" || h.endsWith(".premiumize.me")
+    }
+
     private fun timeoutsParaHost(host: String?): Pair<Int, Int> {
-        val h = host?.lowercase() ?: return 15000 to 20000
-        if (h.contains("real-debrid") || h.contains("alldebrid") || h.contains("debrid.") ||
-            h.contains("torbox")) return 25000 to 60000
+        if (hostDebridLongo(host)) return 25000 to 60000
         return 15000 to 20000
     }
 
-    private fun conectar1(u: URL, ini: Long, ultimo: Long): HttpURLConnection {
+    private fun conectar1(u: URL, ini: Long, ultimo: Long, orcamentoMs: Int = -1): HttpURLConnection {
         conferirCancelamento()
+        if (orcamentoMs >= 0 && orcamentoMs <= 0) throw IOException("debrid timeout total")
         val c = MediaHttpBudget.open(u, "player", novaConexao, ::conferirCancelamento)
         ativas.add(c)
         if (fechado) { desconectar(c); throw cancelado() }
         val (connectMs, readMs) = timeoutsParaHost(u.host)
-        c.connectTimeout = connectMs
-        c.readTimeout = readMs
-        if (connectMs > 15000) Log.i("ParaleloDataSource", "[debrid] timeouts connect=${connectMs}ms read=${readMs}ms host=${u.host}")
+        val connect = if (orcamentoMs >= 0) minOf(connectMs, orcamentoMs) else connectMs
+        val read = if (orcamentoMs >= 0) minOf(readMs, orcamentoMs) else readMs
+        c.connectTimeout = connect
+        c.readTimeout = read
+        if (connectMs > 15000) Log.i("ParaleloDataSource", "[debrid] timeouts connect=${connect}ms read=${read}ms host=${u.host}")
         // Redirecionamento seguido A MAO (conectar): o HttpURLConnection nao
         // segue troca de protocolo (https -> http), e o AIOStreams/ElfHosted faz
         // exatamente isso — a fonte ficava em "Opening source" com um 302.
@@ -294,15 +303,19 @@ class ParaleloDataSource(
 
     private fun conectar(u0: URL, ini: Long, ultimo: Long): HttpURLConnection {
         var u = u0
+        val t0 = android.os.SystemClock.elapsedRealtime()
+        val (connectCap, _) = timeoutsParaHost(u0.host)
+        val limiteMs = if (connectCap > 15000) connectCap else -1
         repeat(10) {
-            val t0 = android.os.SystemClock.elapsedRealtime()
-            val c = conectar1(u, ini, ultimo)
+            val restante = if (limiteMs >= 0) limiteMs - (android.os.SystemClock.elapsedRealtime() - t0).toInt() else -1
+            val t0hop = android.os.SystemClock.elapsedRealtime()
+            val c = conectar1(u, ini, ultimo, restante)
             val code = try { c.responseCode } catch (e: IOException) {
                 desconectar(c)
                 throw e
             }
             if (fechado) { desconectar(c); throw cancelado() }
-            Estat.primeiroByteMs = (android.os.SystemClock.elapsedRealtime() - t0).toInt()
+            Estat.primeiroByteMs = (android.os.SystemClock.elapsedRealtime() - t0hop).toInt()
             if (code in 300..399 && code != 304) {
                 val loc = c.getHeaderField("Location")
                 desconectar(c)
