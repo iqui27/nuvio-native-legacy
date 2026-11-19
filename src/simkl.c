@@ -3172,6 +3172,35 @@ static int chavesComparar(const void *a, const void *b) {
   return strcmp(*(char *const *)a, *(char *const *)b);
 }
 
+// THE NEWEST WATCH OF ANY ENTRY OF THIS SHOW, or 0. Simkl moves an anime's
+// next season to watching when the last one ends (One Punch Man S3 after S2),
+// and that entry has nothing watched, so no last_watched_at: dated 0, its
+// next-up sorted last and was the first one cut from a full row. The season
+// just finished, a separate entry with the same IMDb ID, has the date.
+static long long animeVistoNaSerie(const char *imdb, const char *a, const char *b) {
+  const char *listas[2] = { a, b }, *p;
+  char base[24];
+  long long maior = 0;
+  if (!baseImdb(imdb, base, sizeof base)) return 0;
+  for (int k = 0; k < 2; k++) {
+    if (!listas[k]) continue;
+    for (p = js_array(listas[k], NULL, "anime"); p && *p == '{'; p = js_prox(js_fim(p))) {
+      const char *f = js_fim(p), *oi, *of, *ii, *ifim;
+      char id[24] = "", quando[40] = "";
+      long long ms;
+      if (!objetoRaiz(p, f, "show", &oi, &of) && !objetoRaiz(p, f, "anime", &oi, &of))
+        continue;
+      if (!objetoRaiz(oi, of, "ids", &ii, &ifim)) continue;
+      js_texto(ii, ifim, "imdb", id, sizeof id);
+      if (strcmp(id, base)) continue;
+      if (!js_texto_raiz_em(p, f, "last_watched_at", quando, sizeof quando) || !quando[0])
+        continue;
+      if ((ms = js_ms_iso(quando)) > maior) maior = ms;
+    }
+  }
+  return maior;
+}
+
 static void chavesOrdenar(SmkChaves *s) {
   if (s->n > 1) qsort(s->v, (size_t)s->n, sizeof *s->v, chavesComparar);
 }
@@ -3635,6 +3664,14 @@ int simkl_continuar(CatItem *saida, int max) {
         anime->episodio = episodio;
         snprintf(anime->imdb, sizeof anime->imdb, "%s:%d:%d",
                  base, temporada, episodio);
+      }
+      if (anime->retomadoMs <= 0) {
+        long long ms = animeVistoNaSerie(anime->imdb, cAnime, cAnimeFeito);
+        if (ms > 0) {
+          anime->retomadoMs = ms;
+          printf("[simkl] anime watching id=%s: undated, takes the show's last watch\n",
+                 anime->imdb);
+        }
       }
       if (somenteSimkl || simklId > 0)
         printf("[simkl] anime details id=%ld title=%s poster=%s\n",

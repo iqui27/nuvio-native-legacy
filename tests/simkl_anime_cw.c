@@ -933,6 +933,37 @@ int main(void) {
     puts("PASS: a number missing from the episode list is not downloaded again");
   }
 
+  // Next season moved to watching by Simkl (One Punch Man S3 once S2 ended):
+  // nothing watched in it, so no last_watched_at of its own. It takes the
+  // finished season's date, the same IMDb ID, and sorts first instead of last.
+  {
+    const char *feitoAntes = FEITO_ANIME, *ptwAntes = PTW_ANIME;
+    bibEsperar();
+    simkl_esquecer();
+    free(bibTexto); bibTexto = NULL;
+    PLAYBACK = "[]";
+    WATCHING = "{\"shows\":[]}";
+    PTW_ANIME = "{\"anime\":[]}";
+    FEITO_ANIME = "{\"anime\":[{\"status\":\"completed\",\"watched_episodes_count\":12,"
+      "\"last_watched_at\":\"2026-11-19T21:02:49Z\",\"show\":{\"title\":\"Season two\","
+      "\"ids\":{\"imdb\":\"tt11034066\"}}}]}";
+    WATCHING_ANIME = "{\"anime\":["
+      "{\"status\":\"watching\",\"last_watched\":\"E4\",\"next_to_watch\":\"E5\","
+      "\"watched_episodes_count\":4,\"last_watched_at\":\"2026-11-03T20:50:45Z\","
+      "\"show\":{\"title\":\"Older show\",\"ids\":{\"tmdb\":777}}},"
+      "{\"status\":\"watching\",\"next_to_watch\":\"E1\",\"watched_episodes_count\":0,"
+      "\"show\":{\"title\":\"Season three\",\"ids\":{\"imdb\":\"tt11034066\"}}}]}";
+    snprintf(atividades, sizeof atividades, "{\"all\":\"2026-11-19T22:00:00Z\"}");
+    n = simkl_continuar(v, 16);
+    assert(n == 2);
+    assert(!strncmp(v[0].imdb, "tt11034066", 10));
+    assert(v[0].retomadoMs == js_ms_iso("2026-11-19T21:02:49Z"));
+    assert(!strcmp(v[1].imdb, "tmdb:777"));
+    FEITO_ANIME = feitoAntes;
+    PTW_ANIME = ptwAntes;
+    puts("PASS: an undated next season takes the finished season's date");
+  }
+
   proximoTeste = 0;
   assert(simkl_continuar(v, 16) == 0);
   puts("PASS: absolute anime provider mapping, title fallback, dedup and next-up setting");
