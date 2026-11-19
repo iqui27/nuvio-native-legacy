@@ -2752,12 +2752,13 @@ static void aplicarOrdemAudioMkv(void) {
     printf("[video] audio apos MKV (%s): %s (faixa %d de %d)\n", audioesc_origem_nome(o),
            faixaAudio[k].rotulo, k + 1, nAudio);
     fflush(stdout);
-    if (audioAoCarregar < 0 && !audioesc_tem_lembrada()) video_escolher_audio(k);
+    if (audioAoCarregar < 0) video_escolher_audio(k);
   }
 }
 
 static void audioMkvOmitidas(void) {
   static int antes = -1;
+  static unsigned sessaoVista;
   if (!dtsHabilitado || ajustes_dts_desligado() ||
       !__atomic_load_n(&audioMkvPronto, __ATOMIC_ACQUIRE)) return;
   int n = nv_audio_mkv_omitidas(faixaAudio, nAudio, NV_FAIXA_MAX, dvAudios,
@@ -2772,6 +2773,11 @@ static void audioMkvOmitidas(void) {
     nv_rotulo_faixa(f->rotulo, sizeof f->rotulo, lang, lang, sub);
   }
   { int mudou = n != antes;
+    if (dvSessaoN != sessaoVista) {
+      sessaoVista = dvSessaoN;
+      antes = -1;
+      mudou = 1;
+    }
     if (mudou) {
       printf("[dts] MKV omitted DTS tracks recovered: %d of %d rows\n", n - nativasAudio(), n);
       fflush(stdout);
