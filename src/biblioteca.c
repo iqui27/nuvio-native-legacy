@@ -3380,7 +3380,8 @@ static void desenhaLinhaTitulo(const CatItem *ci, int idx, float y, float f, flo
 }
 
 static const char *rotuloFonte(int f) {
-  return f == LST_TRAKT ? "TRAKT" : f == LST_SIMKL ? "SIMKL" : f == LST_SERVIDOR ? "Servidores pessoais" : "NUVIO";
+  return f == LST_TRAKT ? "TRAKT" : f == LST_SIMKL ? "SIMKL" : f == LST_MDB ? "MDBLIST"
+       : f == LST_SERVIDOR ? "Servidores pessoais" : "NUVIO";
 }
 
 // A MARCA DA FONTE SO APARECE QUANDO ELA INFORMA ALGO.
@@ -3743,8 +3744,12 @@ static int origemAtual(void) {
 static void origemDados(int i, const char **name, const char **description, int *count,
                         const char **icon, const char **logo) {
   static const char *logos[] = {"deploy/app/art/marcas/plex.png", "deploy/app/art/marcas/jellyfin.png", "deploy/app/art/marcas/emby.png"};
-  static const char *listSub[] = {"suas listas", "5 estados, sem nome", "pastas de coleção", "na Biblioteca", "do Trakt", "coleções do servidor", "coleções do servidor", "coleções do servidor"};
-  static const char *listIcons[] = {"aj_list-video", "aj_list-video", "aj_library", "aj_pin", "aj_globe", "aj_server", "aj_server", "aj_server"};
+  // Uma linha por FONTE_* do enum acima: a nona (Emby) existia no seletor mas
+  // nao nestas tabelas — origemDados lia fora delas ao desenhar a ultima linha.
+  static const char *listSub[] = {"suas listas", "5 estados, sem nome", "suas listas", "pastas de coleção", "na Biblioteca", "do Trakt", "coleções do servidor", "coleções do servidor", "coleções do servidor"};
+  static const char *listIcons[] = {"aj_list-video", "aj_list-video", "aj_list-video", "aj_library", "aj_pin", "aj_globe", "aj_server", "aj_server", "aj_server"};
+  _Static_assert(sizeof listSub / sizeof *listSub == BIB_N_FONTES, "listSub cobre todas as fontes");
+  _Static_assert(sizeof listIcons / sizeof *listIcons == BIB_N_FONTES, "listIcons cobre todas as fontes");
   static const char *sub[] = {"sem repetir títulos", "watchlist", "plano para ver", "salvos neste perfil"};
   *name = rotuloOrigem(i, modo == MODO_LISTAS); *logo = NULL; *count = -1;
   *description = ""; *icon = "aj_layers";

@@ -9839,7 +9839,7 @@ static int deMetaTrakt(const char *p, const char *f, const char *midia,
 
 static int deMetaMdblist(const char *p, const char *f, const char *midia,
                            CatItem *d) {
-  char imdb[24], mt[16], poster[512], v[256];
+  char imdb[24], mt[16], poster[512], v[256], ids[400];
   int serie;
   memset(d, 0, sizeof *d);
   imdb[0] = 0;
@@ -9848,6 +9848,10 @@ static int deMetaMdblist(const char *p, const char *f, const char *midia,
     long id = (long)js_num(p, f, "imdbid", 0);
     if (id > 0) snprintf(imdb, sizeof imdb, "tt%07ld", id);
   }
+  // O envelope do /lists/{id}/items traz os ids num objeto "ids" (o exemplo do
+  // OpenAPI tem ids.imdb mesmo quando imdb_id da raiz falta).
+  if (!imdb[0] && js_bruto(p, f, "ids", ids, sizeof ids))
+    js_texto(ids, ids + strlen(ids), "imdb", imdb, sizeof imdb);
   if (!imdb[0]) return 0;
   if (imdb[0] == 't') snprintf(d->imdb, sizeof d->imdb, "%s", imdb);
   else snprintf(d->imdb, sizeof d->imdb, "tt%s", imdb);
@@ -9857,8 +9861,11 @@ static int deMetaMdblist(const char *p, const char *f, const char *midia,
   mt[0] = 0;
   js_texto(p, f, "mediatype", mt, sizeof mt);
   if (!mt[0]) js_texto(p, f, "media_type", mt, sizeof mt);
-  serie = !strcasecmp(midia, "TV") || !strcasecmp(mt, "show") ||
-          !strcasecmp(mt, "tv");
+  // O mediatype do ITEM decide quando existe: o envelope {movies,shows} e
+  // misto e uma lista de filmes aberta como TV nao deve engolir o movie como
+  // serie. Sem ele vale a midia da fonte, como antes.
+  serie = mt[0] ? (!strcasecmp(mt, "show") || !strcasecmp(mt, "tv"))
+               : !strcasecmp(midia, "TV");
   if (!serie && strcasecmp(midia, "TV") &&
       (strcasecmp(mt, "show") == 0 || strcasecmp(mt, "tv") == 0))
     return 0;
@@ -9872,6 +9879,7 @@ static int deMetaMdblist(const char *p, const char *f, const char *midia,
   else if (js_texto(p, f, "poster_path", v, sizeof v) && v[0] == '/')
     snprintf(d->poster, sizeof d->poster, "https://image.tmdb.org/t/p/w342%s", v);
   { long ano = (long)js_num(p, f, "year", 0.0);
+    if (!ano) ano = (long)js_num(p, f, "release_year", 0.0);
     if (ano) snprintf(d->meta, sizeof d->meta, "%ld", ano); }
   d->tmdb = (long)js_num(p, f, "tmdbid", 0);
   if (!d->tmdb) d->tmdb = (long)js_num(p, f, "tmdb_id", 0);
@@ -10082,6 +10090,29 @@ static int colecaoArray(const char *corpo, const char *chave, const char **prime
   return 1;
 }
 
+// MDBList /lists/{id}/items: o HTTP 200 documentado e um OBJETO com dois
+// vetores, "movies" e "shows" — nao um array na raiz nem um "items". Uma
+// lista mista devolve as duas; os dois vetores, nesta ordem, viram uma
+// sequencia so de itens. mdbVetores guarda o primeiro elemento de cada um
+// e devolve 1 quando o corpo tem o envelope (mesmo com os dois vazios —
+// pagina curta valida = fim, nao erro).
+static int mdbVetores(const char *corpo, const char *vet[2], const char **primeiro) {
+  vet[0] = js_array(corpo, NULL, "movies");
+  vet[1] = js_array(corpo, NULL, "shows");
+  *primeiro = vet[0] ? vet[0] : vet[1];
+  return vet[0] || vet[1] ||
+         js_array_presente(corpo, NULL, "movies") ||
+         js_array_presente(corpo, NULL, "shows");
+}
+
+// Avanco do for sobre os itens do envelope: no fim de movies[] salta para
+// shows[]. *v marca o vetor corrente (0 = movies, 1 = shows).
+static const char *mdbAvancar(const char *fimAnterior, const char *const vet[2], int *v) {
+  const char *q = js_prox(fimAnterior);
+  if (!q && vet && *v == 0) { *v = 1; q = vet[1]; }
+  return q;
+}
+
 // Collection diagnostics deliberately omit the addon base/query and response body.
 static const char *colecaoLogCampo(const char *s) {
   return s && !strstr(s, "://") ? s : "<redacted>";
@@ -10181,9 +10212,10 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
       vetor = NULL;
       pronta = extras_mdblist_chave(mdbKey, sizeof mdbKey) && f.catId[0];
       if (pronta) {
+        // Paginacao documentada do /lists/{id}/items: offset+limit (nao page).
         w = snprintf(url, sizeof url,
-          "https://api.mdblist.com/lists/%s/items?apikey=%s&page=%d&limit=50",
-          f.catId, mdbKey, pagina);
+          "https://api.mdblist.com/lists/%s/items?apikey=%s&offset=%d&limit=50",
+          f.catId, mdbKey, (pagina - 1) * 50);
         pronta = w >= 0 && (size_t)w < sizeof url;
       }
     } else {
@@ -10209,8 +10241,21 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
     corpo = !prov ? colecaoBaixar(url, &status) :
             prov == 2 ? rede_baixar_com(url, 12, cab) : rede_baixar(url, 12);
     if (!descSessaoAtual()) { free(corpo); free(ids); return 0; }
-    if (!colecaoArray(corpo, vetor, &p) &&
-        !(prov == 4 && colecaoArray(corpo, "items", &p))) {
+    // Corpo padrao do /lists/{id}/items do MDBList: {movies:[...],shows:[...]}.
+    // Array na raiz e o campo "items" continuam aceitos (o servico tambem
+    // responde assim conforme os parametros do pedido). Um envelope vazio e
+    // uma pagina valida de zero itens — fim, nao erro.
+    const char *mdbVet[2] = {NULL, NULL};
+    int mdbOk = 0, v = 0;
+    if (prov == 4) {
+      mdbOk = corpo ? mdbVetores(corpo, mdbVet, &p) : 0;
+      if (!mdbOk) mdbOk = corpo && (colecaoArray(corpo, "items", &p) ||
+                                  colecaoArray(corpo, NULL, &p));
+    } else {
+      p = NULL;
+      mdbOk = corpo ? colecaoArray(corpo, vetor, &p) : 0;
+    }
+    if (!corpo || !mdbOk) {
       if (!prov) colecaoLog(f.title, origem, f.type, f.catId, f.genre, skip, status, 0,
                              corpo ? "invalid_metas" : "http_or_transport");
       free(corpo); r.erro = 1; break;
@@ -10224,7 +10269,8 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
         fim = !tp || pg >= tp;
       }
     }
-    for (; p && (!prov || aceitos < 48); p = js_prox(js_fim(p))) {
+    for (; p && (!prov || aceitos < 48);
+           p = prov == 4 ? mdbAvancar(js_fim(p), mdbVet, &v) : js_prox(js_fim(p))) {
       const char *fimItem = js_fim(p);
       int ok, visto, repetido = 0;
       raw++;
@@ -10408,15 +10454,20 @@ static void *fioVerTudo(void *u) {
     } else if (prov==4) {
       char mdbKey[120];
       if (extras_mdblist_chave(mdbKey, sizeof mdbKey) && fonte.catId[0]) {
+        // offset/limit documentados; skip aqui e o numero da pagina (1-based).
         snprintf(url,sizeof url,
-          "https://api.mdblist.com/lists/%s/items?apikey=%s&page=%d&limit=50",
-          fonte.catId, mdbKey, skip);
+          "https://api.mdblist.com/lists/%s/items?apikey=%s&offset=%d&limit=50",
+          fonte.catId, mdbKey, (skip - 1) * 50);
         corpo=rede_baixar(url,12);
         if (corpo) {
-          const char *p=NULL;
-          if (!colecaoArray(corpo, NULL, &p) && !colecaoArray(corpo, "items", &p))
+          // Envelope padrao {movies,shows}; array raiz e "items" aceitos.
+          const char *mdbVet[2] = {NULL, NULL}, *p = NULL;
+          int v = 0;
+          if (!mdbVetores(corpo, mdbVet, &p) &&
+              !colecaoArray(corpo, "items", &p) &&
+              !colecaoArray(corpo, NULL, &p))
             p = *corpo=='[' ? js_raiz_array(corpo) : NULL;
-          for(;p&&nl<48;p=js_prox(js_fim(p))) {
+          for(;p&&nl<48;p=mdbAvancar(js_fim(p), mdbVet, &v)) {
             const char *f=js_fim(p); raw++;
             if (deMetaMdblist(p,f,fonte.midia,&lote[nl]) && colecaoTipo(&fonte, &lote[nl])) {
               if (descOcultaNaoLancado(&lote[nl])) ocultos++; else nl++;

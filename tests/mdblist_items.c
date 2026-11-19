@@ -54,7 +54,8 @@ int servidores_pagina(const char *key, int start, int limit, CatItem *out, int m
 static char fixtureUrl[NV_ADDON_PEDIDO_MAX];
 // Duas paginas: a primeira com tres filmes (um sem imdb_id, que nao entra) e
 // a segunda curta, que encerra a paginacao pelo mesmo criterio do Trakt
-// (pagina menor que o limite = fim).
+// (pagina menor que o limite = fim). A lista "openapi" responde o exemplo
+// HTTP 200 documentado do endpoint: objeto com vetores movies[] e shows[].
 char *rede_baixar(const char *url, int timeout) {
   (void)timeout;
   if (strstr(url, "api.mdblist.com/lists/13914/items")) {
@@ -68,6 +69,26 @@ char *rede_baixar(const char *url, int timeout) {
   if (strstr(url, "api.mdblist.com/lists/20416/items")) {
     snprintf(fixtureUrl, sizeof fixtureUrl, "%s", url);
     return strdup("[{\"imdb_id\":\"tt0903747\",\"title\":\"Breaking Bad\",\"mediatype\":\"show\",\"year\":2008}]");
+  }
+  if (strstr(url, "api.mdblist.com/lists/777/items")) {
+    snprintf(fixtureUrl, sizeof fixtureUrl, "%s", url);
+    // Exemplo HTTP 200 do OpenAPI de /lists/{id}/items (evidencias
+    // sol-c2-720/openapi-extrato.json), com um item por vetor.
+    return strdup("{"
+      "\"movies\":[{\"adult\":0,\"country\":\"us\",\"id\":917496,"
+        "\"ids\":{\"imdb\":\"tt2049403\",\"mdblist\":\"m917496\",\"tmdb\":917496,\"tvdb\":null},"
+        "\"imdb_id\":\"tt2049403\",\"language\":\"en\",\"mediatype\":\"movie\",\"rank\":1,"
+        "\"release_year\":2024,\"spoken_language\":\"en\",\"title\":\"Beetlejuice Beetlejuice\","
+        "\"tvdb_id\":null}],"
+      "\"shows\":[{\"adult\":0,\"country\":\"us\",\"id\":258902,\"imdb_id\":\"tt20782190\","
+        "\"language\":\"en\",\"mediatype\":\"show\",\"rank\":1,\"release_year\":2024,"
+        "\"spoken_language\":\"en\",\"title\":\"English Teacher\",\"tvdb_id\":421968}]}");
+  }
+  if (strstr(url, "api.mdblist.com/lists/778/items")) {
+    snprintf(fixtureUrl, sizeof fixtureUrl, "%s", url);
+    // Mesmo envelope com um filme sem imdb: conta para raw mas nao entra —
+    // o fim vem pela pagina curta, nao pelos validos.
+    return strdup("{\"movies\":[{\"title\":\"Sem imdb\",\"release_year\":2001}],\"shows\":[]}");
   }
   return NULL;
 }
@@ -117,6 +138,9 @@ int main(void) {
     assert(desc_vertudo_item_bruto(2, &it) && !strcmp(it.imdb, "tt0050083"));
     assert(desc_vertudo_item_bruto(1, &it) && !strcmp(it.imdb, "tt0032148")); }
 
+  // O pedido usa offset/limit (paginacao documentada do endpoint).
+  assert(strstr(fixtureUrl, "offset=0&limit=50"));
+
   // 3. Lista de series (mediatype show) mantem o tipo.
   memset(&f, 0, sizeof f);
   snprintf(f.prov, sizeof f.prov, "mdblist");
@@ -129,6 +153,49 @@ int main(void) {
     assert(desc_vertudo_n_bruto() == 1);
     assert(desc_vertudo_item_bruto(0, &it) && !strcmp(it.imdb, "tt0903747"));
     assert(!strcmp(it.tipo, "series")); }
+
+  // 4. O corpo padrao do OpenAPI ({movies,shows}) alimenta os dois
+  // carregadores reais: a Vitrine (desc_colecao_inicial) e o Ver tudo.
+  memset(&f, 0, sizeof f);
+  snprintf(f.prov, sizeof f.prov, "mdblist");
+  snprintf(f.catId, sizeof f.catId, "777");
+  snprintf(f.title, sizeof f.title, "Mista");
+  snprintf(f.midia, sizeof f.midia, "MOVIE");
+  assert(desc_colecao_inicial(&f, "", sessao, itens, 20, &r));
+  assert(!r.erro);
+  printf("openapi vitrine: n=%d\n", r.n);
+  assert(r.n == 1);                      // so o filme; a serie sai pelo midia
+  assert(!strcmp(itens[0].imdb, "tt2049403"));
+  assert(!strcmp(itens[0].titulo, "Beetlejuice Beetlejuice"));
+  assert(!strcmp(itens[0].meta, "2024"));  // release_year do envelope
+
+  desc_vertudo_fonte(&f); esperar();
+  assert(!desc_vertudo_erro());
+  printf("openapi ver tudo (movie): n=%d fim=%d\n", desc_vertudo_n_bruto(), desc_vertudo_fim());
+  assert(desc_vertudo_n_bruto() == 1);
+  assert(desc_vertudo_fim());
+  { CatItem it;
+    assert(desc_vertudo_item_bruto(0, &it) && !strcmp(it.imdb, "tt2049403")); }
+
+  // O mesmo envelope com midia TV entrega o show.
+  snprintf(f.midia, sizeof f.midia, "TV");
+  desc_vertudo_fonte(&f); esperar();
+  assert(!desc_vertudo_erro());
+  printf("openapi ver tudo (tv): n=%d\n", desc_vertudo_n_bruto());
+  assert(desc_vertudo_n_bruto() == 1);
+  { CatItem it;
+    assert(desc_vertudo_item_bruto(0, &it) && !strcmp(it.imdb, "tt20782190"));
+    assert(!strcmp(it.tipo, "series")); }
+
+  // 5. Envelope valido com itens invalidos: fim sem erro, sem crash.
+  memset(&f, 0, sizeof f);
+  snprintf(f.prov, sizeof f.prov, "mdblist");
+  snprintf(f.catId, sizeof f.catId, "778");
+  snprintf(f.title, sizeof f.title, "Vazia util");
+  snprintf(f.midia, sizeof f.midia, "MOVIE");
+  desc_vertudo_fonte(&f); esperar();
+  assert(!desc_vertudo_erro());
+  assert(desc_vertudo_n_bruto() == 0 && desc_vertudo_fim());
 
   puts("mdblist_items: ok");
   return 0;
