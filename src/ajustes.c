@@ -2003,6 +2003,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Ocultar áudio incompatível", V_AUTO_LIGA, 3),
   ESC("Ocultar vídeo incompatível", V_AUTO_LIGA, 3),
   ESC("Mostrar na tela inicial do Android TV", V_LIGA, 2),
+  ACAO("URL do servidor Nuvio"),
   ESC("Tamanho dos perfis", V_PS_TAMANHO, 3),
   ESC("Agrupar variantes dos canais", V_LIGA, 2),
   ESC("Esportes", V_LIGA, 2),
@@ -7857,6 +7858,7 @@ static const char *textoLeitura(int op) {
   if (op >= AJ_PX_ENTRAR && op <= AJ_PX_SAIR) return pxTexto(op);
   if (op == AJ_P2P_URL) return p2pEndereco[0] ? p2pEndereco : i18n("Não configurado");
   if (op == AJ_CURADORIA_URL) return curadoria_url()[0] ? curadoria_url() : i18n("Não configurado");
+  if (op == AJ_NUVIO_BACKEND_URL) return nv_rec_url()[0] ? nv_rec_url() : i18n("Não configurado");
   if (op == AJ_P2P_TESTAR) return p2pTesteTexto();
   if (op >= AJ_POSTER_INST && op <= AJ_POSTER_TESTAR) return pstTexto(op);
   if (debIdx(op) >= 0) return debValor(op);
@@ -8681,6 +8683,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_P2P_DESTINO: return "Onde o motor P2P guarda o cache temporário enquanto toca. Interno usa o armazenamento da TV; Pendrive USB tenta um pendrive conectado e, se não houver ou falhar, volta para o interno. Não é download offline.";
     case AJ_P2P_TESTAR: return "Pergunta ao servidor se ele responde e qual a versão. Funciona mesmo com o P2P desligado, para conferir o endereço antes de ligar.";
     case AJ_CURADORIA_URL: return "A fileira Herói mostra um único cartão do tamanho da fileira. Com este endereço, o título vem da curadoria do Nuvio Legacy (um JSON com imdb e texto); sem resposta, o primeiro título da fileira. Vazio desliga.";
+    case AJ_NUVIO_BACKEND_URL: return "Endereço https do servidor Nuvio usado por recomendações e serviços desta build. Só aceita https, ou http em IP de rede local. Vazio volta ao padrão da build.";
     case AJ_POSTER_PROV: return "Troca os cartazes retrato por um pronto de um serviço externo, com notas, selos 4K/HDR e faixa Top 10 no próprio cartaz. SpatialPosters (instância pública ou a sua), RPDB (com chave) ou um modelo de URL seu. Só cartazes de card: o destaque e os fundos não mudam. Se o serviço não responde, volta ao cartaz normal.";
     case AJ_POSTER_INST: return "Endereço da instância do SpatialPosters. Vazio usa a pública (spatial-posters.vercel.app), que é gratuita e compartilhada; para muitos cartazes, rode a sua com Docker.";
     case AJ_POSTER_TOKEN: return "Opcional. Token de configuração do SpatialPosters, ou o endereço do manifest colado inteiro. Um token completo costuma ter mais de 500 letras e não cabe aqui; prefira os parâmetros curtos ao lado ou os padrões da sua instância.";
@@ -10896,7 +10899,7 @@ static void eventoTela(const SDL_Event *e) {
     }
     if (focoOp == AJ_NUVIO_BACKEND_URL) {
       stCampo = focoOp;
-      teclado_abrir_com("URL do servidor Nuvio", "https://seu-servidor — vazio usa o padrão da build. Pode descobrir por /.well-known/nuvio no mesmo host.",
+      teclado_abrir_com("URL do servidor Nuvio", "https://seu-servidor — vazio usa o padrão da build.",
                         299, CUR_ALFA_URL, nv_rec_url()[0] ? nv_rec_url() : NULL);
       return;
     }
@@ -11044,7 +11047,6 @@ void ajustes_atualizar(float dt, Uint32 agora) {
       }
       else if (stCampo == AJ_NUVIO_BACKEND_URL) {
         int e = nvbackend_definir_url(teclado_texto());
-        if (e && teclado_texto()[0]) nvbackend_descobrir(teclado_texto());
         uxNotificar(e ? "Ajuste salvo nesta TV." : "endereço inválido");
       }
       else if (stCampo == AJ_FILTRO_GRUPOS) ffGruposDefinir(teclado_texto());

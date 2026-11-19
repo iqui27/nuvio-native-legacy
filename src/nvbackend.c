@@ -3,6 +3,7 @@
 #include "js.h"
 #include "rede.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifndef NV_REC_URL
@@ -17,7 +18,7 @@ static void carregar(void) {
   url[0] = 0;
   if (t) {
     size_t i = 0;
-    while (t[i] == ' \t\n\r') i++;
+    while (t[i] == ' ' || t[i] == '\t' || t[i] == '\n' || t[i] == '\r') i++;
     snprintf(url, sizeof url, "%s", t + i);
     url[strcspn(url, " \t\n\r")] = 0;
     free(t);
@@ -30,15 +31,53 @@ const char *nv_rec_url(void) {
   return NV_REC_URL;
 }
 
+/* Extrai host de http(s) URL; 1 se há host utilizável. */
+static int host_valido(const char *u) {
+  const char *h;
+  size_t n;
+  if (!u || !u[0]) return 0;
+  if (!strncmp(u, "https://", 8)) h = u + 8;
+  else if (!strncmp(u, "http://", 7)) h = u + 7;
+  else return 0;
+  n = strcspn(h, "/:?#");
+  if (n == 0) return 0;
+  if (h[0] == '[') return 1; /* IPv6 literal */
+  for (size_t i = 0; i < n; i++)
+    if (h[i] != '.' && (h[i] < '0' || h[i] > '9') && h[i] != '-' && h[i] != ':')
+      return 1;
+  return 1; /* IP numérico ou localhost */
+}
+
+static int ip_lan(const char *host, size_t len) {
+  unsigned a, b, c, d;
+  char buf[64];
+  if (len >= sizeof buf) return 0;
+  memcpy(buf, host, len);
+  buf[len] = 0;
+  if (sscanf(buf, "%u.%u.%u.%u", &a, &b, &c, &d) != 4) return 0;
+  if (a == 10) return 1;
+  if (a == 172 && b >= 16 && b <= 31) return 1;
+  if (a == 192 && b == 168) return 1;
+  if (a == 127) return 1;
+  return 0;
+}
+
 static int normalizar(char *u, size_t n, const char *in) {
+  const char *host;
+  size_t hn;
   size_t i = 0;
-  if (!in || !in[0] || n < 8) return 0;
-  while (in[i] == ' \t') i++;
+  if (!in || !in[0] || n < 12) return 0;
+  while (in[i] == ' ' || in[i] == '\t') i++;
   snprintf(u, n, "%s", in + i);
   u[strcspn(u, " \t\n\r")] = 0;
   if (strncmp(u, "http://", 7) && strncmp(u, "https://", 8)) return 0;
   while (u[0] && u[strlen(u) - 1] == '/') u[strlen(u) - 1] = 0;
-  return u[0] != 0;
+  if (!host_valido(u)) return 0;
+  if (!strncmp(u, "https://", 8)) host = u + 8;
+  else host = u + 7;
+  hn = strcspn(host, "/:?#");
+  if (!strncmp(u, "http://", 7) && !ip_lan(host, hn)) return 0;
+  return 1;
 }
 
 int nvbackend_definir_url(const char *u) {

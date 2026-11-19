@@ -570,6 +570,7 @@ void rede_avisar_host(void (*f)(const char *url, int codigo, int http, unsigned 
 // recomenda.c, xtream.c, avisos.c, noticias.c, tex_cache.c): tools/env.sh so
 // emite o -D quando o servico de recomendacoes esta configurado, e uma build
 // sem ele nao pode falhar a compilar por causa disto.
+#include "nvbackend.h"
 #ifndef NV_REC_URL
 #define NV_REC_URL ""
 #endif

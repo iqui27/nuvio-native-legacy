@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "nvbackend.h"
 #ifndef NV_REC_URL
 #define NV_REC_URL ""
 #endif

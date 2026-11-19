@@ -20,6 +20,7 @@
 #include <unistd.h>
 #include <poll.h>
 #include <android/api-level.h>
+#include "nvbackend.h"
 
 #define AND_TAG "nuvio"
 
@@ -727,7 +728,7 @@ Java_space_nuvio_nativelegacy_NuvioActivity_nativeQuadros(JNIEnv *env, jobject a
 JNIEXPORT jstring JNICALL
 Java_space_nuvio_nativelegacy_NuvioActivity_nativeRecUrl(JNIEnv *env, jobject act) {
   (void)act;
-  return (*env)->NewStringUTF(env, NV_REC_URL);
+  return (*env)->NewStringUTF(env, nv_rec_url());
 }
 
 #endif
