@@ -105,7 +105,7 @@ class Lifecycle : BaseApp {
     void Etapa(string message) {}
     string Contagem() => "";
     void nv_tpk_ciclo(int state) {}
-    void SobeGl(string reason) { gl.Show(); gl.Raise(); }
+    void SobeGl(string reason) { gl?.Show(); gl?.Raise(); }
     void OnResume() { pausado = false; }
 ''' + method + '''
     static void Require(bool condition, string name) {
@@ -132,14 +132,39 @@ class Lifecycle : BaseApp {
             Require(NuiWindow.Instance.Raises == raises && NuiTimer.Timers.Count == 0,
                     "startup recovery runs once");
         }
-        foreach (string cancel in new[] { "exit", "disposed", "ended", "error", "key", "deadline", "resume" }) {
+        // #769: OnResume antes dos hides terminarem (o "later resume" do log
+        // do dono). Sem a correcao o timer cancelava e as janelas ficavam
+        // escondidas para sempre — processo vivo, TV na homescreen.
+        NuiWindow.Instance = new Window(); NuiTimer.Timers.Clear();
+        {
+            var app = new Lifecycle();
+            app.OnPause();
+            NuiWindow.Instance.Visible = false;
+            app.OnResume();                    // resume antes do hide do GL
+            app.gl.Visible = false;
+            NuiTimer.Pump();
+            Require(NuiWindow.Instance.Visible && app.gl.Visible && !app.pausado,
+                    "resume antes dos hides: recovery ainda sobe as janelas (#769)");
+            NuiTimer.Pump();
+            Require(NuiTimer.Timers.Count == 0, "timer encerrado apos recovery no resume");
+        }
+        // Resume COM as janelas visiveis (pausa cancelada de verdade): nada a fazer.
+        NuiWindow.Instance = new Window(); NuiTimer.Timers.Clear();
+        {
+            var app = new Lifecycle();
+            app.OnPause();
+            app.OnResume();
+            NuiTimer.Pump();
+            Require(NuiWindow.Instance.Raises == 0 && NuiTimer.Timers.Count == 0,
+                    "resume sem hide nao recupera");
+        }
+        foreach (string cancel in new[] { "exit", "disposed", "ended", "error", "key", "deadline" }) {
             NuiWindow.Instance = new Window(); NuiTimer.Timers.Clear();
             var app = new Lifecycle(); app.OnPause();
             app.saindo = cancel == "exit"; app.soltou = cancel == "disposed";
             app.fim = cancel == "ended"; app.erroNaTela = cancel == "error";
             app.primeiraTecla = cancel == "key";
             if (cancel == "deadline") app.relogio.ElapsedMilliseconds = 8000;
-            if (cancel == "resume") app.OnResume();
             NuiWindow.Instance.Visible = false; app.gl.Visible = false;
             NuiTimer.Pump();
             Require(NuiWindow.Instance.Raises == 0 && NuiTimer.Timers.Count == 0,
