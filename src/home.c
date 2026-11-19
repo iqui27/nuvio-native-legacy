@@ -3378,6 +3378,13 @@ static void sincronizarFileiras(void) {
     snprintf(v.titulo,sizeof v.titulo,"%s",pf->title);
     v.tipo=FILEIRA_CATALOGOS;
     v.forma=pf->forma>=0&&pf->forma<COL_FORMA_N?pf->forma:COL_FORMA_PAISAGEM;
+    // #700: a descoberta ja publicou esta chave com a janela do genero (no
+    // topo, sem base). Ela vem para ESTE lugar, o da fixada, com a forma da
+    // pasta: com ou sem genero, a fileira fica onde o cartao ficaria.
+    { int j; for(j=0;j<destino&&strcmp(fileiras[j].chave,v.chave);j++);
+      if(j<destino){ Fileira g=fileiras[j]; g.forma=v.forma;
+        memmove(fileiras+j,fileiras+j+1,sizeof *fileiras*(size_t)(destino-1-j));
+        fileiras[destino-1]=g; continue; } }
     v.n=cf_itens(pf,v.itens,MAX_CARDS-1);
     if(v.n) { v.tipo=FILEIRA_NORMAL;v.usaItens=1; }
     else { v.n=1;v.folders[0]=fi; }
