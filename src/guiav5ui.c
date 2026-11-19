@@ -3224,7 +3224,7 @@ static const char *gv_aj_title(int sub){
   return i18n(sub==1942?"Tamanho da prévia":sub==1944?"Quando iniciar a prévia":sub==1947?"Alcance do guia":sub==1937?"Gerenciar fontes":sub==1949?"Saúde do EPG":"Opções da grade");
 }
 static int gv_aj_selected(int sub){
-  return sub==1942?(ajustes_guia_previa_grande()?1942:1941):sub==1944?(ajustes_guia_previa_destacar()?1943:1944):sub==1947?(ajustes_guia_dias()==3?1947:1946):sub==1937?1955:1975;
+  return sub==1942?(ajustes_guia_previa_grande()?1942:1941):sub==1944?(ajustes_guia_previa_destacar()?1943:1944):sub==1947?(ajustes_guia_dias()==7?1958:ajustes_guia_dias()==3?1947:1946):sub==1937?1955:1975;
 }
 static void gv_aj_back(void){
   focus=gv_aj_sub;gv_aj_sub=0;gv_gfolha.ok=0;
@@ -3313,9 +3313,11 @@ static void gv_ajustes_sheet(void){
     if(sub==1942||sub==1944||sub==1947){
       const char *a=sub==1942?"Cartão":sub==1944?"Ao destacar":"Um dia";
       const char *b=sub==1942?"Grande":sub==1944?"Ao selecionar":"Três dias";
+      const char *c=sub==1947?"Sete dias":NULL;
       int first=sub==1942?1941:sub==1944?1943:1946;
       gv_aj_row(first,"aj_monitor",i18n(a),NULL,NULL,-1,sel==first,x,y+194,w);
       gv_aj_row(first+1,"aj_monitor",i18n(b),NULL,NULL,-1,sel==first+1,x,y+270,w);
+      if(c) gv_aj_row(first+2,"aj_monitor",i18n(c),NULL,NULL,-1,sel==first+2,x,y+346,w);
       if(sub!=1942)gv_label(TXT_ILHA_SUB,i18n(sub==1947?"Menos dias usam menos memória.":"Escolha quando um vídeo começa."),x+18,y+374,w-36,1);
     }else{
       GuiaFonteSaude source;int n=0;
@@ -3339,7 +3341,7 @@ static void gv_ajustes_sheet(void){
   gv_aj_row(1945,"aj_volume-2",i18n("Prévia sem som"),NULL,NULL,ajustes_guia_previa_sem_som(),0,x,y+372,w);
   gfx_cor((GfxRect){x+18,y+454,w-36,1},0,1,1,1,.08f);
   plrui_kicker(i18n("Aparência"),x+18,y+474,154,156,158,1);
-  gv_aj_row(1947,"aj_calendar-days",i18n("Alcance do guia"),i18n("Menos dias usam menos memória."),i18n(ajustes_guia_dias()==3?"Três dias":"Um dia"),-1,0,x,y+504,w);
+  gv_aj_row(1947,"aj_calendar-days",i18n("Alcance do guia"),i18n("Menos dias usam menos memória."),i18n(ajustes_guia_dias()==7?"Sete dias":ajustes_guia_dias()==3?"Três dias":"Um dia"),-1,0,x,y+504,w);
   gv_aj_row(1948,"aj_palette",i18n("Material Glass"),NULL,NULL,ajustes_vidro(),0,x,y+574,w);
   gfx_cor((GfxRect){x+18,y+656,w-36,1},0,1,1,1,.08f);
   plrui_kicker(i18n("Guia"),x+18,y+676,154,156,158,1);
@@ -3677,7 +3679,7 @@ static int gv_activate(void){
       else if(focus==1941)ajustes_definir_guia_previa_grande(0);
       else if(focus==1943||focus==1944)ajustes_definir_guia_previa_destacar(focus==1943);
       else if(focus==1945)ajustes_definir_guia_previa_sem_som(!ajustes_guia_previa_sem_som());
-      else if(focus==1946||focus==1947){ajustes_definir_guia_dias(focus==1947?3:1);gv_tdesl=0;gv_tfoc=0;gv_snap_force=1;}
+      else if(focus==1946||focus==1947||focus==1958){ajustes_definir_guia_dias(focus==1958?7:focus==1947?3:1);gv_tdesl=0;gv_tfoc=0;gv_snap_force=1;}
       else if(focus==1948)ajustes_definir_vidro(!ajustes_vidro());
       else if(focus==1949)gv_go("epg-saude");
       else if(focus==1937){sources_options=0;g5ui_open("fontes-gerenciar");}
@@ -3816,6 +3818,7 @@ static void gv_ajustes_move(SDL_Keycode k){
     ids[n++]=1936;
     if(gv_aj_sub==1942||gv_aj_sub==1944||gv_aj_sub==1947){
       int first=gv_aj_sub==1942?1941:gv_aj_sub==1944?1943:1946;ids[n++]=first;ids[n++]=first+1;
+      if(gv_aj_sub==1947)ids[n++]=first+2;
     }else{
       GuiaFonteSaude source;
       for(int i=0;i<6&&guia_fonte_saude(gv_aj_source_off+i,&source);i++)ids[n++]=1985+i;

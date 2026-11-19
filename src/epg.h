@@ -33,6 +33,8 @@
 typedef struct {
   time_t ini, fim;
   const char *titulo;
+  const char *desc;
+  const char *icon;
 } EpgProg;
 
 // Estado da carga. PARADO nunca tentou; BAIXANDO tem fio em voo; PRONTO tem

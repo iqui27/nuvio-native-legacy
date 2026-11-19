@@ -146,7 +146,7 @@ typedef struct {
 } EpgCanal;
 
 // 16 bytes em toda plataforma. `tit` e deslocamento na arena de titulos.
-typedef struct { int canal; int ini, fim; unsigned tit; } EpgEv;
+typedef struct { int canal; int ini, fim; unsigned tit, desc, pic; } EpgEv;
 
 // Indice de chave normalizada -> canal, para o casamento exato (M5): ordenado
 // por chave, busca binaria. Montado em wFechar.
@@ -552,13 +552,22 @@ static long wTitulo(EpgGrade *g, const char *s) {
   return d;
 }
 
-static int wAddEv(EpgGrade *g, int canal, long long ini, long long fim, const char *titulo) {
-  long copia;
+static int wAddEv(EpgGrade *g, int canal, long long ini, long long fim,
+                    const char *titulo, const char *desc, const char *icon) {
+  long copia, d = 0, ic = 0;
+  char db[384];
   if (!wReservarEv(g) || (copia = wTitulo(g, titulo)) < 0) { g->descartados++; return 0; }
+  if (desc && desc[0]) {
+    snprintf(db, sizeof db, "%.383s", desc);
+    if ((d = wTitulo(g, db)) < 0) d = 0;
+  }
+  if (icon && icon[0] && (ic = wTitulo(g, icon)) < 0) ic = 0;
   g->evs[g->nEvs].canal = canal;
   g->evs[g->nEvs].ini = (int)ini;
   g->evs[g->nEvs].fim = (int)fim;
   g->evs[g->nEvs].tit = (unsigned)copia;
+  g->evs[g->nEvs].desc = (unsigned)d;
+  g->evs[g->nEvs].pic = (unsigned)ic;
   g->nEvs++;
   return 1;
 }
@@ -665,7 +674,7 @@ static void cbIcone(const char *id, const char *src, void *u) {
 }
 
 static void cbPrograma(const char *canal, const char *ini, const char *fim,
-                       const char *titulo, void *u) {
+                       const char *titulo, const char *desc, const char *icon, void *u) {
   EpgProc *p = u;
   long long a, b;
   int ci = wCanalPorId(p->g, p->fonte, canal);
@@ -674,7 +683,7 @@ static void cbPrograma(const char *canal, const char *ini, const char *fim,
   b = fim[0] ? xmltv_tempo(fim) : 0;
   if (!a || (b && b <= a)) return;
   if (!aceitaHorario(a, b, p->agora)) { p->foraJanela++; return; }
-  if (wAddEv(p->g, ci, a, b, titulo)) p->programas++;
+  if (wAddEv(p->g, ci, a, b, titulo, desc, icon)) p->programas++;
 }
 
 // Alimenta uma grade inteira que ja esta na memoria (gz ou XML), em pedacos.
@@ -1057,7 +1066,7 @@ static int cacheXLer(const EpgExtraInt *e, EpgGrade *g, int fonte, int fresco, l
       if (!leStr(&p, fim, t, sizeof t)) break;
       if (loc[0] < 0 || loc[0] >= (int)u[2] || mapa[loc[0]] < 0) continue;
       if (!aceitaHorario(loc[1], loc[2], agora)) continue;
-      if (wAddEv(g, mapa[loc[0]], loc[1], loc[2], t)) prog++;
+      if (wAddEv(g, mapa[loc[0]], loc[1], loc[2], t, NULL, NULL)) prog++;
     }
   }
   free(mapa); free(b);
@@ -1614,7 +1623,10 @@ time_t epg_fim_url(const char *url) {
 }
 
 static void pubProg(long m, EpgProg *p) {
-  p->ini = (time_t)P.evs[m].ini; p->fim = (time_t)P.evs[m].fim; p->titulo = P.arena + P.evs[m].tit;
+  p->ini = (time_t)P.evs[m].ini; p->fim = (time_t)P.evs[m].fim;
+  p->titulo = P.arena + P.evs[m].tit;
+  p->desc = P.evs[m].desc ? P.arena + P.evs[m].desc : "";
+  p->icon = P.evs[m].pic ? P.arena + P.evs[m].pic : "";
 }
 
 static long pubPrimeiroVivo(int epg, time_t t) {

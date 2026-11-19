@@ -5750,8 +5750,16 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
   // "Canal: <nome do canal>" (outro addon, visto na C9 em 25/09) nao diz nada
   // que a linha do canal ja nao diga.
   { char eco[200];
+    const char *progDesc = p.desc && p.desc[0] ? p.desc : NULL;
     snprintf(eco, sizeof eco, "Canal: %s", c->nome);
-  if (c->desc[0] && strcmp(c->desc, eco)) {
+  if (progDesc) {
+    float descFim = gRetrato() ? proxY : G_PREVIEW_H - 104.0f;
+    int linhas = (int)((descFim - 22.0f - y) / 34.0f);
+    if (linhas > 3) linhas = 3;
+    if (linhas > 0)
+      txt_bloco_bruto(TXT_DET_SIN, progDesc, 172, 175, 184, x, y, w, 34.0f, ha * 0.95f, linhas);
+    y += (float)linhas * 34.0f + (linhas ? 20.0f : 0.0f);
+  } else if (c->desc[0] && strcmp(c->desc, eco)) {
     GDesc d;
     int molde = descMolde(c->desc, &d);
     const char *txt = molde ? d.resto : c->desc;
