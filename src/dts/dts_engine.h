@@ -45,6 +45,7 @@ typedef struct {
   int64_t ready_bytes, capacity_bytes, position, total;
   int64_t contiguous_bytes; /* Ready bytes up to the first missing range. */
   int http_workers; /* Pinned session download limit, not live TCP connections. */
+  uint64_t received_bytes; /* Input payload received since open (stream and audio-only readers). */
 } DtsBufferInfo;
 void dts_engine_buffer_info(DtsEngine *, DtsBufferInfo *);
 DtsEngine *dts_engine_source_create(const char *url, const char *headers, int mib);

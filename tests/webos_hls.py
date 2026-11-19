@@ -88,7 +88,9 @@ with playback('dts.mkv', 0) as base:
     print('DTS HLS fMP4, AC-3 5.1 and out-of-order seek passed.')
 
 with playback('indexed.mkv', 1) as base:
-    assert b'CODECS="dvh1.08.06,ac-3"' in get(base)
+    master = get(base)
+    assert re.search(rb'CODECS="hvc1\.[ABC]?\d+\.[0-9A-F]+\.[LH]\d+(?:\.[0-9A-F]{2})*,ac-3"', master)
+    assert b'VIDEO-RANGE=PQ' in master and b'SUPPLEMENTAL-CODECS="dvh1.08.06/db1p"' in master
     playlist = get(base, 'v.m3u8')
     assert b'#EXT-X-MAP:URI="init.mp4"' in playlist
     seg_names = re.findall(rb'^seg\d+\.m4s$', playlist, re.M)
@@ -101,7 +103,7 @@ with playback('indexed.mkv', 1) as base:
         assert boxes(seg) == [b'moof', b'mdat'], boxes(seg)
         info = probe(f'dv7-{i}.mp4', init + seg, packets=True)
         video, audio = info['streams']
-        assert video['codec_tag_string'] == 'dvh1'
+        assert video['codec_tag_string'] == 'hvc1'
         dv = next(s for s in video['side_data_list'] if s.get('dv_profile') == 8)
         assert dv['dv_bl_signal_compatibility_id'] == 1 and dv['el_present_flag'] == 0
         assert audio['codec_name'] == 'ac3' and audio['channels'] == 6
@@ -127,6 +129,14 @@ with playback('plain.mkv', 1) as base:
         raise AssertionError('A source without P7 must be refused by the P7 HLS path')
 
 
+def check_input_buffer(log, mib, readers):
+    match = re.search(r'input buffer: (\d+) / (\d+) bytes; (\d+) readers; (\d+) bytes received', log)
+    assert match, log
+    ready, capacity, count, received = map(int, match.groups())
+    assert capacity == mib * 1048576 and count == readers, match.group()
+    assert 0 <= ready <= capacity and received > 0, match.group()
+
+
 def decoded_audio(name, data):
     media = work / name
     media.write_bytes(data)
@@ -146,7 +156,9 @@ def tone(samples, start, duration=0.25):
 
 with playback('dts.mkv', 0, 'donor.m4a', 64, 750) as base:
     init = get(base, 'init.mp4')
-    start = decoded_audio('external-0.mp4', init + get(base, 'seg0.m4s'))
+    first = init + get(base, 'seg0.m4s')
+    assert probe('external-language.mp4', first)['streams'][1]['tags']['language'] == 'pol'
+    start = decoded_audio('external-0.mp4', first)
     assert max(map(abs, start[:4000])) < 150, 'positive offset should start with silence'
     assert 860 < tone(start, 1) < 900, 'expected the selected 880 Hz donor track'
     middle = decoded_audio('external-2.mp4', init + get(base, 'seg2.m4s'))
@@ -155,16 +167,19 @@ with playback('dts.mkv', 0, 'donor.m4a', 64, 750) as base:
 log = (work / 'dts.mkv.log').read_text()
 assert 'input rings: video=48 MiB external=16 MiB, external track=1 offset=750 ms' in log
 assert re.search(r'reader rings peak 2 = 64 MiB', log)
+check_input_buffer(log, 48 + 8, 2)  # sparse donor uses an 8 MiB cache
+assert 'input audio metadata: language=pol title=' in log
 
 with playback('indexed.mkv', 1, 'donor.m4a', 128, -150, 40000) as base:
     init = get(base, 'init.mp4')
     middle = get(base, 'seg1.m4s')
     info = probe('external-p8.mp4', init + middle)['streams']
-    assert info[0]['codec_tag_string'] == 'dvh1' and info[1]['codec_name'] == 'ac3'
+    assert info[0]['codec_tag_string'] == 'hvc1' and info[1]['codec_name'] == 'ac3'
     assert 825 < tone(decoded_audio('external-p8.mp4', init + middle), 0.5) < 865
 log = (work / 'indexed.mkv.log').read_text()
 assert 'input rings: video=112 MiB external=16 MiB, external track=1 offset=-150 ms' in log
 assert re.search(r'reader rings peak 2 = 128 MiB', log)
+check_input_buffer(log, 112 + 8, 2)
 with playback('plain.mkv', 0, 'donor.mkv', 256, 3500, track=2) as base:
     init = get(base, 'init.mp4')
     silence = decoded_audio('external-silent.mp4', init + get(base, 'seg0.m4s'))
@@ -174,10 +189,13 @@ with playback('plain.mkv', 0, 'donor.mkv', 256, 3500, track=2) as base:
 log = (work / 'plain.mkv.log').read_text()
 assert 'input rings: video=240 MiB external=16 MiB, external track=2 offset=3500 ms' in log
 assert re.search(r'reader rings peak 2 = 256 MiB', log)
+check_input_buffer(log, 256, 2)
+assert 'input audio metadata: language=pol title=Polski lektor' in log
 
 with playback('dts.mkv', 0, buffer_mib=256) as base:
     assert get(base, 'seg0.m4s')
 log = (work / 'dts.mkv.log').read_text()
 assert 'input ring: video=256 MiB' in log
 assert re.search(r'reader rings peak 1 = 256 MiB', log)
+check_input_buffer(log, 256, 1)
 print('External AAC -> AC-3 track, offsets, speed, out-of-order seek and 64/128/256 MiB presets passed.')

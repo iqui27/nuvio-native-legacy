@@ -59,6 +59,8 @@ With HLS Off, those options use the existing converter.
 
 With HLS On, the enabled conversions use the Samsung loopback server and
 fMP4 with AC-3 audio, up to 5.1. P7 MKV is converted to single-layer P8.1.
+The HLS variant advertises its HEVC base as `hvc1` and signals P8.1 through
+`SUPPLEMENTAL-CODECS` and the Dolby Vision configuration in the init segment.
 Enable both conversions for a P7 source whose selected audio track is DTS.
 The stream carries one audio track.
 
@@ -66,7 +68,8 @@ HLS requires a seekable source with a keyframe index. A startup or stream
 error stops playback and shows an HLS error. Turn HLS Off and reopen the
 video to use the existing converter. On an LG C1 or C5, check audio, the
 TV's Dolby Vision indicator, seek/resume and memory. **Show buffer data**
-adds an **HLS** label once the HLS player starts playing.
+shows the HLS source buffer, HTTP readers, and measured download rate once
+playback starts. The rate measures bytes received from the source readers.
 
 The follow-up HLS build uses the existing **Buffer size** presets (64, 128 or
 256 MiB), with the same free-memory clamp. Automatic uses a 16 MiB input

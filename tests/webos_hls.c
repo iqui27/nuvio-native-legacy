@@ -1,4 +1,5 @@
 #include "dts/dts_hls_tpk.h"
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -20,6 +21,13 @@ int main(int argc, char **argv) {
   printf("playlist %s\n", url);
   fflush(stdout);
   getchar();
+  DtsBufferInfo buffer;
+  dts_hls_webos_buffer_info(&buffer);
+  printf("input buffer: %" PRId64 " / %" PRId64 " bytes; %d readers; %" PRIu64 " bytes received\n",
+         buffer.ready_bytes, buffer.capacity_bytes, buffer.http_workers, buffer.received_bytes);
+  DtsTrack audio;
+  dts_hls_webos_audio_info(&audio);
+  printf("input audio metadata: language=%s title=%s\n", audio.language, audio.title);
   dts_tpk_fechar();
   return 0;
 }

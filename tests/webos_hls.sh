@@ -20,9 +20,11 @@ ffmpeg -v error -f lavfi -i testsrc2=s=64x64:r=25:d=7 \
 # Distinct AAC tones in an MP4 donor identify the explicitly chosen stream.
 ffmpeg -v error -f lavfi -i sine=frequency=330:sample_rate=48000:d=7 \
   -f lavfi -i sine=frequency=880:sample_rate=48000:d=7 \
-  -map 0:a -map 1:a -c:a aac -movflags +faststart "$work/donor.m4a"
+  -map 0:a -map 1:a -c:a aac -metadata:s:a:0 language=eng -metadata:s:a:1 language=pol \
+  -movflags +faststart "$work/donor.m4a"
 ffmpeg -v error -f lavfi -i color=s=64x64:r=25:d=7 -i "$work/donor.m4a" \
-  -map 0:v -map 1:a -c:v libx264 -preset ultrafast -g 25 -c:a copy "$work/donor.mkv"
+  -map 0:v -map 1:a -c:v libx264 -preset ultrafast -g 25 -c:a copy \
+  -metadata:s:a:1 title="Polski lektor" "$work/donor.mkv"
 # Reproduce the C5 log: the first track is TrueHD, followed by AC-3.
 ffmpeg -v error -i "$work/plain.mkv" -f lavfi -i sine=frequency=550:sample_rate=48000:d=7 \
   -map 0:v -map 1:a -map 0:a -c:v copy -c:a:0 truehd -ac:a:0 6 -c:a:1 copy \

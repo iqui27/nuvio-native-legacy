@@ -169,6 +169,9 @@ static void exFechar(void) {
 static int exAceitaSegurar(void) {
   return exPag == EXP_LISTA && exFoco >= 0 && exCandDaLinha(exFoco) && audioext_sonda_disponivel();
 }
+static const char *exIdiomaFaixa(const AudioExtFaixa *f) {
+  return !ling_tem_nome(f->idioma) && ling_tem_nome(exFxCand.idioma) ? exFxCand.idioma : f->idioma;
+}
 // "Polski · E-AC-3 5.1 · Dubbing": language, codec and channels, the track
 // name when short; "used for sync" on this file's language.
 static void exMontarFaixas(void) {
@@ -177,7 +180,7 @@ static void exMontarFaixas(void) {
   for (int k = 0; k < exFxN && k < AUDIOEXT_FAIXAS_MAX; k++) {
     const AudioExtFaixa *f = &exFx[k];
     /* No language in the file ("und"): the version's own from the list. */
-    const char *li = !ling_tem_nome(f->idioma) && ling_tem_nome(exFxCand.idioma) ? exFxCand.idioma : f->idioma;
+    const char *li = exIdiomaFaixa(f);
     const char *lg = li[0] ? i18n(ling_nome(li)) : i18n("Faixa"), *cd = f->codec;
     char ch[8] = "";
     for (size_t j = 0; j < sizeof m / sizeof *m; j++) if (!strcmp(f->codec, m[j][0])) cd = m[j][1];
@@ -475,8 +478,11 @@ static void corpoExt(GfxRect c, float a) {
                            : exFxN == 0 ? "No audio track this TV can play"
                            : exFxN < 0 ? "Could not read the audio tracks" : exFxRot[i];
         if (sel) plrui_linha_foco((GfxRect){ x0, y, w, IL_LN_H }, 22.0f, a);
-        rostoIdioma((GfxRect){ x0 + 22.0f, y + (IL_LN_H - 52.0f) * 0.5f, 52.0f, 52.0f }, NULL,
-                    exFxN > 0 || exFxN == -2 ? "pl_audio-lines" : "aj_triangle-alert", sel, a);
+        const char *lang = exFxN > 0 ? exIdiomaFaixa(&exFx[i]) : "";
+        int hasLanguage = ling_tem_nome(lang);
+        rostoIdioma((GfxRect){ x0 + 22.0f, y + (IL_LN_H - 52.0f) * 0.5f, 52.0f, 52.0f },
+                    hasLanguage ? lang : NULL, hasLanguage ? NULL :
+                    (exFxN > 0 || exFxN == -2 ? "pl_audio-lines" : "aj_triangle-alert"), sel, a);
         { TxtLinha l = txt_linha_corta(TXT_ILHA_FORTE, rotulo, cc, cc, cc - 2, 255, w - 92.0f - 22.0f);
           txt_desenhar_alpha(l, x0 + 92.0f, y + (IL_LN_H - (float)l.h) * 0.5f, a); }
       }

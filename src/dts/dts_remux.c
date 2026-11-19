@@ -74,6 +74,7 @@ double dts_remux_gen_start_s(const DtsRemuxGen *g) { (void)g; return 0; }
 void dts_remux_set_queue_budget_mib(int mib) { (void)mib; }
 #ifdef NV_WEBOS_HLS_TEST
 void dts_remux_set_webos(DtsRemux *r, const DtsWebosHls *o) { (void)r; (void)o; }
+void dts_remux_gen_buffer_info(const DtsRemuxGen *g, DtsBufferInfo *b) { (void)g; *b = (DtsBufferInfo){0}; }
 #endif
 #else
 
@@ -196,7 +197,6 @@ struct DtsRemux {
   int audio_offset_ms;             /* stable across this source's segments and seeks */
   AVCodecParameters *vpar, *apar;
   AVRational vtb, atb, vfps;
-  char lang[16];
   int64_t *kf; int nkf;             /* keyframe index (video time base), sorted */
   /* HEVC from Matroska/MP4 (hvcC): its NAL arrays in Annex B and the NAL
    * length size, for dts_remux_hevc_annexb. */
@@ -364,6 +364,21 @@ static int hvccAnnexB(const uint8_t *x, int xn, uint8_t **out, int *outN, int *l
   }
   *outN = k;
   return 1;
+}
+
+/* RFC 6381 HEVC name from the base layer's hvcC. The compatibility flags
+ * are written as a hex value with the first profile flag in the low bit. */
+static void hlsHevcCodec(char *out, size_t n, const uint8_t *hvcc) {
+  unsigned space = hvcc[1] >> 6;
+  const char *const prefixes[] = { "", "A", "B", "C" };
+  uint32_t flags = AV_RB32(hvcc + 2), compat = 0;
+  for (int i = 0; i < 32; i++, flags >>= 1) compat = (compat << 1) | (flags & 1);
+  size_t used = (size_t)snprintf(out, n, "hvc1.%s%u.%X.%c%u", prefixes[space], hvcc[1] & 31u,
+                                 (unsigned)compat, hvcc[1] & 32 ? 'H' : 'L', (unsigned)hvcc[12]);
+  int last = 11;
+  while (last >= 6 && !hvcc[last]) last--;
+  for (int i = 6; i <= last && used < n; i++)
+    used += (size_t)snprintf(out + used, n - used, ".%02X", (unsigned)hvcc[i]);
 }
 
 static int isConvertible(enum AVCodecID id) {
@@ -610,9 +625,11 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
         avcodec_parameters_copy(r->apar, A->codecpar) < 0) { fail(err, errn, "Out of memory", 0); goto bad; }
     r->vtb = V->time_base; r->atb = A->time_base;
     r->vfps = V->avg_frame_rate.num > 0 ? V->avg_frame_rate : V->r_frame_rate;
-    { AVDictionaryEntry *l = av_dict_get(A->metadata, "language", NULL, 0);
-      snprintf(r->lang, sizeof r->lang, "%s", l ? l->value : ""); }
     DtsRemuxInfo *in = &r->info;
+    const AVDictionaryEntry *lang = av_dict_get(A->metadata, "language", NULL, 0);
+    const AVDictionaryEntry *title = av_dict_get(A->metadata, "title", NULL, 0);
+    if (lang) snprintf(in->audio_language, sizeof in->audio_language, "%s", lang->value);
+    if (title) snprintf(in->audio_title, sizeof in->audio_title, "%s", title->value);
     in->duration_s = ic->duration / (double)AV_TIME_BASE;
     r->endS = (ic->start_time == AV_NOPTS_VALUE ? 0 : ic->start_time / (double)AV_TIME_BASE) + in->duration_s;
     in->width = V->codecpar->width; in->height = V->codecpar->height;
@@ -634,8 +651,10 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
       }
     }
     snprintf(in->video_codec, sizeof in->video_codec, "%s", avcodec_get_name(V->codecpar->codec_id));
-    if (r->webos && V->codecpar->codec_id == AV_CODEC_ID_H264 &&
-        V->codecpar->extradata_size >= 4 && V->codecpar->extradata[0] == 1) {
+    if (r->dv7) {
+      hlsHevcCodec(in->hls_codec, sizeof in->hls_codec, V->codecpar->extradata);
+    } else if (r->webos && V->codecpar->codec_id == AV_CODEC_ID_H264 &&
+               V->codecpar->extradata_size >= 4 && V->codecpar->extradata[0] == 1) {
       const uint8_t *avcc = V->codecpar->extradata;
       snprintf(in->hls_codec, sizeof in->hls_codec, "avc1.%02x%02x%02x", avcc[1], avcc[2], avcc[3]);
     }
@@ -876,6 +895,20 @@ void dts_remux_gen_interrupt(DtsRemuxGen *g) {
 }
 double dts_remux_gen_start_s(const DtsRemuxGen *g) { return g ? g->progStartS : 0.0; }
 
+#ifdef NV_WEBOS_HLS_TEST
+void dts_remux_gen_buffer_info(const DtsRemuxGen *g, DtsBufferInfo *b) {
+  DtsBufferInfo audio;
+  dts_engine_buffer_info(g->eng, b);
+  dts_engine_buffer_info(g->audioEng, &audio);
+  // Each HLS ring uses one sequential HTTP reader.
+  b->http_workers = (b->capacity_bytes > 0) + (audio.capacity_bytes > 0);
+  b->capacity_bytes += audio.capacity_bytes;
+  b->ready_bytes += audio.ready_bytes;
+  b->contiguous_bytes += audio.contiguous_bytes;
+  b->received_bytes += audio.received_bytes;
+}
+#endif
+
 static int sinkWrite(void *o, const uint8_t *b, int n) {
   DtsRemuxGen *g = o;
   if (g->wfail) return AVERROR(EPIPE);
@@ -925,11 +958,13 @@ static int openMux(DtsRemuxGen *g, const char *fmt, int seg, char *err, size_t e
     c->dv_profile = 8;
     c->el_present_flag = 0;
     c->dv_bl_signal_compatibility_id = 1;
-    g->ov->codecpar->codec_tag = MKTAG('d','v','h','1');
+    // webOS can recognize the P8.1 configuration on the compatible HEVC entry.
+    g->ov->codecpar->codec_tag = MKTAG('h','v','c','1');
     g->ov->codecpar->extradata[21] |= 3;   /* converted packets use four-byte NAL lengths */
     g->oc->strict_std_compliance = FF_COMPLIANCE_UNOFFICIAL;
   }
-  if (r->lang[0]) av_dict_set(&g->oa->metadata, "language", r->lang, 0);
+  if (r->info.audio_language[0]) av_dict_set(&g->oa->metadata, "language", r->info.audio_language, 0);
+  if (r->webos && r->info.audio_title[0]) av_dict_set(&g->oa->metadata, "handler_name", r->info.audio_title, 0);
   buf = av_malloc(65536);
   g->oc->pb = buf ? avio_alloc_context(buf, 65536, 1, g, NULL, sinkWrite, NULL) : NULL;
   if (!g->oc->pb) { av_free(buf); fail(err, errn, "Out of memory", 0); return -1; }

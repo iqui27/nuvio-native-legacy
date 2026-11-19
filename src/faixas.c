@@ -1118,7 +1118,8 @@ static void extUsar(const AudioExtCand *c, const AudioExtFaixa *faixa) {
   legsync_audio_trocou();
   // The pick first: the series memory takes the series from the mark it sets
   // (the first pick of an episode had none, and nothing was remembered).
-  audioext_escolher(st->url, st->cabecalhos, st->rotulo, c->idioma);
+  const char *idioma = faixa && ling_tem_nome(faixa->idioma) ? faixa->idioma : c->idioma;
+  audioext_escolher(st->url, st->cabecalhos, st->rotulo, idioma);
   // Another episode's version: kept out of the series memory (audioext.h).
   if (exEpN > 0) audioext_episodio_outro(exEpN);
   { AudioExtIdent id;
@@ -1126,7 +1127,7 @@ static void extUsar(const AudioExtCand *c, const AudioExtFaixa *faixa) {
     snprintf(id.grupo, sizeof id.grupo, "%s", st->bingeGroup);
     snprintf(id.addon, sizeof id.addon, "%s", st->provedor);
     audioext_nome_versao(st->rotulo, id.nome, sizeof id.nome);
-    snprintf(id.idioma, sizeof id.idioma, "%.7s", faixa && faixa->idioma[0] ? faixa->idioma : c->idioma);
+    snprintf(id.idioma, sizeof id.idioma, "%.7s", idioma);
     id.altura = st->altura; id.codec = en->codec;
     audioext_lembrar_serie(&id);
     if (faixa) audioext_lembrar_faixa_serie(faixa); }

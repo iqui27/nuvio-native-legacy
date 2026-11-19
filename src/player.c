@@ -7357,7 +7357,7 @@ static float fileiraFormato(Uint32 agora, float x, float y, float ac, int medir,
 #ifdef NV_HTTP_BUFFER_DIAG
 static void bufferDadosDesenhar(float direita,float y,float alpha) {
   if(!ajustes_buffer_dados())return;
-  char b[96];video_buffer_test_text(b,sizeof b);
+  char b[128];video_buffer_test_text(b,sizeof b);
   TxtLinha l=txt_linha(TXT_G19M,b,210,210,210,210);
   // Episode/title details use the left 60%; leave a gap before this column.
   float width=fmaxf(1.0f,(direita-PLR_MARGEM)*0.38f);

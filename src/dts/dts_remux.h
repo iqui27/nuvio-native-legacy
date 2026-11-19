@@ -19,12 +19,13 @@ typedef struct DtsRemuxGen DtsRemuxGen;  /* one generator: own reader, codecs, m
 typedef struct {
   double duration_s;
   int width, height;
-  char video_codec[16], audio_codec[16], hls_codec[24];
+  char video_codec[16], audio_codec[16], hls_codec[48];
   char hdr[48];                /* PQ, HLG, SDR or "not in the container" (container flags) */
   int audio_ordinal, stream_index; /* k-th audio track of the file (0-based), FFmpeg index */
   int in_channels, in_rate;    /* from the container header */
   int out_channels, out_bitrate;
   char out_codec[8];           /* "ac3" or "aac" */
+  char audio_language[16], audio_title[64]; /* metadata of the selected input track */
   char decoder_path[40];       /* "DTS core only", "TrueHD 5.1 presentation", ... */
   int n_keyframes, n_segments;
   int index_complete;          /* the keyframe index reaches the end (HLS needs it): no
@@ -79,8 +80,11 @@ typedef struct {
   int external_stream, external_only, external_offset_ms, external_speed_ppm;
 } DtsWebosHls;
 #ifdef NV_WEBOS_HLS_TEST
+#include "dts_engine.h"
 /* The session copies its strings and optional track hint before starting. */
 void dts_remux_set_webos(DtsRemux *, const DtsWebosHls *);
+/* Snapshot both source rings. The caller keeps the generator alive. */
+void dts_remux_gen_buffer_info(const DtsRemuxGen *, DtsBufferInfo *);
 #endif
 const DtsRemuxInfo *dts_remux_info(const DtsRemux *);
 double dts_remux_segment_start(const DtsRemux *, int seg);    /* seconds; segment 0 = 0 */

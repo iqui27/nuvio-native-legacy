@@ -1038,9 +1038,11 @@ static void sp_close(DtsEngine *e) {
   e->sp_stop=1; pthread_cond_broadcast(&e->range_wake);
   pthread_mutex_unlock(&e->range_lock);
   if(e->sp_thread_ok) pthread_join(e->sp_thread,NULL);
+  pthread_mutex_lock(&e->range_lock);
   for(int s=0;s<SP_SLOTS;s++) { free(e->sp_slot[s].data); e->sp_slot[s].data=NULL; e->sp_slot[s].state=0; }
   free(e->sp_pos); free(e->sp_size); e->sp_pos=NULL; e->sp_size=NULL;
   e->sp_n=e->sp_want=e->sp_err=e->sp_stop=e->sp_thread_ok=0;
+  pthread_mutex_unlock(&e->range_lock);
 }
 /* AVIO read in audio-only mode: an audio chunk from its slot; anything else
  * (headers, the index, a probe) as a small direct range. */
@@ -1704,8 +1706,21 @@ void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *b) {
   memset(b,0,sizeof *b);
   if(!e)return;
   pthread_mutex_lock(&e->range_lock);
-  if(fx_long(e)) {
+  if(e->hls_read_ahead && e->sp_n) {
+    b->http_workers=1;
+    b->received_bytes=e->metrics.range_bytes;
+    b->capacity_bytes=SP_BUDGET;
+    for(int i=0;i<SP_SLOTS;i++) {
+      if(!e->sp_slot[i].state)continue;
+      int idx=e->sp_slot[i].idx, size=e->sp_size[idx];
+      int64_t start=e->sp_pos[idx], end=start+size;
+      if(size>b->capacity_bytes)b->capacity_bytes=size;
+      if(e->sp_slot[i].state==2 && end>e->pos)
+        b->ready_bytes+=end-(start>e->pos?start:e->pos);
+    }
+  } else if(fx_long(e)) {
     b->http_workers=e->http_workers;
+    b->received_bytes=e->metrics.range_bytes;
     b->position=e->pos;b->total=e->total;b->capacity_bytes=e->fx_buf?e->fx_cap:0;
     if(e->fx_req<0 && e->pos>=e->fx_lo && e->pos<=e->fx_hi)b->ready_bytes=e->fx_hi-e->pos;
     else if(e->pf_buf && e->pos>=e->pf_lo && e->pos<e->pf_hi) {

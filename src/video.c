@@ -90,6 +90,11 @@ static struct {
   double pos, percent;
   Uint32 started;
   char url[128], subtitle[1024];
+#ifdef NV_HTTP_BUFFER_DIAG
+  DtsBufferInfo buffer;
+  Uint32 bufferSample;
+  double downloadMbps;
+#endif
 } hls;
 
 static int hlsAtivo(void) { return atomic_load(&hlsActive); }
@@ -784,6 +789,10 @@ static void hlsParar(void) {
     if (dtsEstado != VIDEO_DTS_FALHOU) dtsEstado = 0;
   }
   hls.pending = hls.played = hls.external = 0;
+#ifdef NV_HTTP_BUFFER_DIAG
+  hls.buffer = (DtsBufferInfo){0};
+  hls.downloadMbps = -1.0;
+#endif
   atomic_store(&hlsActive, 0);
 }
 #endif
@@ -1194,6 +1203,11 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
       q = strstr(p, "\"trickable\":");
       srcTrickable = q ? (strncmp(q + 12, "true", 4) == 0) : -1; }
     const char *q;
+#ifdef NV_WEBOS_HLS_TEST
+    DtsTrack hlsAudio = {0};
+    int hlsSource = hlsAtivo();
+    if (hlsSource) dts_hls_webos_audio_info(&hlsAudio);
+#endif
     pthread_mutex_lock(&audioMkvLock);
     nAudio = nLeg = 0;
     vidAtmos = 0;
@@ -1217,6 +1231,10 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
             f->idioma[k] = 0;
             if (!strcmp(f->idioma, "(null)")) f->idioma[0] = 0;
           } }
+#ifdef NV_WEBOS_HLS_TEST
+        if (hlsSource && nAudio == 0 && ling_tem_nome(hlsAudio.language))
+          snprintf(f->idioma, sizeof f->idioma, "%.7s", hlsAudio.language);
+#endif
         { const char *c2 = strstr(o, "\"codec\":\"");
           if (c2 && (!fo || c2 < fo)) {
             size_t k = 0; c2 += 9;
@@ -1253,6 +1271,18 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
                      imm[0] ? "  \xc2\xb7  " : (ch[0] ? "  \xc2\xb7  " : ""),
                      imm[0] ? "Atmos" : "",
                      (imm[0] && ch[0]) ? " " : "", ch); }
+#ifdef NV_WEBOS_HLS_TEST
+        if (hlsSource && nAudio == 0 && hlsAudio.title[0] &&
+            !nv_titulo_e_arquivo(hlsAudio.title) && !nv_titulo_tecnico(hlsAudio.title, ling_tem_nome)) {
+          char sub[88];
+          if (!audioinfo_texto(cod, f->canais, 0, sub, sizeof sub))
+            snprintf(sub, sizeof sub, "%s", cod);
+          size_t used = strlen(sub);
+          snprintf(sub + used, sizeof sub - used, "%s%.48s", used ? " \xc2\xb7 " : "", hlsAudio.title);
+          snprintf(f->nome, sizeof f->nome, "%s", hlsAudio.title);
+          idiomaRotulo(f->rotulo, sizeof f->rotulo, f->idioma, sub);
+        }
+#endif
         nAudio++;
         o = js_prox(fo);
       }
@@ -2761,6 +2791,9 @@ int video_tocar(const char *url) {
 #ifdef NV_WEBOS_HLS_TEST
   hlsParar();
   memset(&hls, 0, sizeof hls);
+#ifdef NV_HTTP_BUFFER_DIAG
+  hls.downloadMbps = -1.0;
+#endif
   hls.enabled = ajustes_webos_hls();
 #endif
   audioMkvNovaFonte();
@@ -4088,6 +4121,18 @@ static void hlsBombear(void) {
   }
   if (hlsAtivo()) {
     if (pronto && tocando) hls.played = 1;
+#ifdef NV_HTTP_BUFFER_DIAG
+    Uint32 now = SDL_GetTicks(), interval = now - hls.bufferSample;
+    if (!hls.buffer.capacity_bytes || interval >= 1000) {
+      DtsBufferInfo next;
+      dts_hls_webos_buffer_info(&next);
+      if (hls.buffer.capacity_bytes && next.capacity_bytes && next.received_bytes >= hls.buffer.received_bytes)
+        hls.downloadMbps = (next.received_bytes - hls.buffer.received_bytes) * 0.008 / interval;
+      else hls.downloadMbps = -1.0;
+      hls.buffer = next;
+      hls.bufferSample = now;
+    }
+#endif
     if (hls.external && pronto && audioext_carregando()) {
       audioext_carregando_definir(0);
       audioext_tocando_definir(1);
@@ -4697,6 +4742,13 @@ double video_buffer_fim(void) {
 #ifdef NV_HTTP_BUFFER_DIAG
 void video_buffer_test_text(char *out, size_t n) {
   DtsBufferInfo b = {0};
+  const char *route = dtsSessao ? "DTS/DV" : "Native";
+#ifdef NV_WEBOS_HLS_TEST
+  if (hlsAtivo() && hls.played) {
+    b = hls.buffer;
+    route = "HLS";
+  } else
+#endif
   if (dtsSessao) {
     DtsPlaybackStatus st={0};dts_playback_status(dtsSessao,&st);
     if(st.prepared && !st.failed)b=st.buffer;
@@ -4709,14 +4761,17 @@ void video_buffer_test_text(char *out, size_t n) {
   } else cacheboost_buffer_texto(out, n, 0, 0, ajustes_buffer_preset());
   if (!out || !n) return;
   size_t used = strlen(out);
+  if (b.http_workers >= 1 && b.http_workers <= 4)
+    snprintf(out + used, n - used, " · HTTP: %d (%s)", b.http_workers, route);
 #ifdef NV_WEBOS_HLS_TEST
   if (hlsAtivo() && hls.played) {
-    snprintf(out + used, n - used, " · HLS");
-    return;
+    used = strlen(out);
+    if (!b.http_workers)
+      snprintf(out + used, n - used, " · HLS");
+    else if (hls.downloadMbps >= 0.0)
+      snprintf(out + used, n - used, " · %.1f Mbps", hls.downloadMbps);
   }
 #endif
-  if (b.http_workers >= 1 && b.http_workers <= 4)
-    snprintf(out + used, n - used, " · HTTP: %d (%s)", b.http_workers, dtsSessao ? "DTS/DV" : "Native");
 }
 #endif
 // webOS: so o buffer em SEGUNDOS e real (bufferRange do uMS); bytes, conexoes

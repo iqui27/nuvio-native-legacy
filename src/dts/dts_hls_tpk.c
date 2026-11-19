@@ -747,7 +747,8 @@ static void playlistMestre(Sessao *s, char *b, size_t n) {
   if (in->width > 0 && in->height > 0) p += (size_t)snprintf(b + p, n - p, ",RESOLUTION=%dx%d", in->width, in->height);
   if (fps > 0) p += (size_t)snprintf(b + p, n - p, ",FRAME-RATE=%ld.%03ld", fps / 1000, fps % 1000);
   if (s->dv7)
-    p += (size_t)snprintf(b + p, n - p, ",VIDEO-RANGE=PQ,CODECS=\"dvh1.08.%02d,ac-3\"", in->dv_level);
+    p += (size_t)snprintf(b + p, n - p, ",VIDEO-RANGE=PQ,CODECS=\"%s,ac-3\","
+                       "SUPPLEMENTAL-CODECS=\"dvh1.08.%02d/db1p\"", in->hls_codec, in->dv_level);
   else {
     if (!strncmp(in->hdr, "PQ", 2) || !strcmp(in->hdr, "HLG"))
       p += (size_t)snprintf(b + p, n - p, ",VIDEO-RANGE=%s", strncmp(in->hdr, "PQ", 2) ? "HLG" : "PQ");
@@ -1130,6 +1131,35 @@ int dts_hls_webos_open(const char *url, const char *headers, int track, const Dt
                       char *out, size_t n) {
   if (!options) return 0;
   return openSession(url, headers, track, 0, DTSTPK_HLS, 0, out, n, options);
+}
+
+void dts_hls_webos_buffer_info(DtsBufferInfo *out) {
+  *out = (DtsBufferInfo){0};
+  pthread_mutex_lock(&G);
+  Sessao *s = atual;
+  if (s && s->webos) {
+    pthread_mutex_lock(&s->m);
+    if (s->estado == DTSTPK_PRONTO && s->ger[0].g)
+      dts_remux_gen_buffer_info(s->ger[0].g, out);
+    pthread_mutex_unlock(&s->m);
+  }
+  pthread_mutex_unlock(&G);
+}
+
+void dts_hls_webos_audio_info(DtsTrack *out) {
+  *out = (DtsTrack){0};
+  pthread_mutex_lock(&G);
+  Sessao *s = atual;
+  if (s && s->webos) {
+    pthread_mutex_lock(&s->m);
+    if (s->estado == DTSTPK_PRONTO && s->rx) {
+      const DtsRemuxInfo *in = dts_remux_info(s->rx);
+      snprintf(out->language, sizeof out->language, "%s", in->audio_language);
+      snprintf(out->title, sizeof out->title, "%s", in->audio_title);
+    }
+    pthread_mutex_unlock(&s->m);
+  }
+  pthread_mutex_unlock(&G);
 }
 #endif
 
