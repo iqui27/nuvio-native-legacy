@@ -132,15 +132,19 @@ int main(void) {
   assert(simkl_continuar(v, 16) == 0);
   // #714: Simkl watching/anime may use `show` or root-level ids (log 596HEG).
   assert(simkl_ler_assistindo(
-      "{\"anime\":[{\"next_to_watch\":\"E12\","
+      "{\"anime\":[{\"next_to_watch\":\"S01E12\","
       "\"show\":{\"title\":\"Cyberpunk\",\"ids\":{\"imdb\":\"tt11093726\"}}}]}"
       , mapped, 1) == 1);
-  assert(!strcmp(mapped[0].imdb, "tt11093726:0:12"));
+  assert(!strcmp(mapped[0].imdb, "tt11093726:1:12"));
   assert(simkl_ler_assistindo(
       "{\"anime\":[{\"next_to_watch\":\"S01E02\","
       "\"ids\":{\"tmdb\":105248},\"title\":\"Flat entry\"}]}"
       , mapped, 1) == 1);
   assert(!strcmp(mapped[0].imdb, "tmdb:105248:1:2"));
+  assert(simkl_ler_assistindo(
+      "{\"shows\":[{\"next_to_watch\":\"S01E02\","
+      "\"ids\":{\"tmdb\":105248},\"title\":\"Not anime\"}]}"
+      , mapped, 1) == 0);
   puts("PASS: absolute anime provider mapping, title fallback, dedup and next-up setting");
   return 0;
 }
