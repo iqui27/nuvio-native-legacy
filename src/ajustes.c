@@ -761,7 +761,6 @@ _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD =
 static const char *V_PROVEDORES_ESCOPO[] = { "Compartilhada neste aparelho", "Separada para este perfil" };
 static const char *V_HDR_UI[] = { "Automático", "Desligado" };
 static const char *V_LEG_MOSTRAR[] = { "Só meus idiomas", "Todas" };
-static const char *V_WEBOS_HLS_MODE[] = { "Desligado", "Ligado" };
 static const char *V_SELOS_PACOTE[] = { "Do Nuvio", "Pacote 1", "Pacote 2", "Pacote 3" };
 
 // Selo de assistido: a ordem e a do disco (0 = Ligado do V_LIGA antigo vira Icone,
@@ -1921,7 +1920,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Other version buffer", V_EXT_AUDIO_BUFOR, 3),
   ESC("DTS via HLS (experimental)", V_LIGA, 2),
   ESC("Dolby Vision P7 via HLS (experimental)", V_LIGA, 2),
-  ESC("HLS (experimental)", V_WEBOS_HLS_MODE, 2),
+  ESC("HLS (experimental)", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -3968,7 +3967,7 @@ int ajustes_dts_tpk_modo(void) {
 }
 int ajustes_dv_mkv(void)              { return lig(AJ_DV_MKV); }
 int ajustes_dv7(void) { return lig(AJ_DV7); }
-int ajustes_webos_hls(void) { return valor[AJ_WEBOS_HLS_MODE] == 1; }
+int ajustes_webos_hls(void) { return lig(AJ_WEBOS_HLS_MODE); }
 int ajustes_dv_audio_fixo(void) {
 #if defined(NV_DV_FIXED_AUDIO_TEST) && defined(NV_WEBOS)
   int v=valor[AJ_DV_AUDIO_FIXO];return v==1 || v==2 ? v : 0;
@@ -5073,8 +5072,8 @@ void ajustes_dir(const char *dir) {
       if (OPCOES[i].tipo == OP_LEITURA || OPCOES[i].tipo == OP_ACAO) continue;
       // Valor fora da faixa (arquivo de outra versao, ou editado a mao) cai no
       // padrao em vez de indexar fora do vetor.
-      // Previous builds stored Off, DTS, P7 and both in this same key.
-      if (i == AJ_WEBOS_HLS_MODE && v >= 2 && v <= 3) v = 1;
+      // Keep the stored 0=Off and 1=On values. Older modes 2 and 3 also enable HLS.
+      if (i == AJ_WEBOS_HLS_MODE && v >= 0 && v <= 3) v = v == 0;
       valor[i] = limita(i, v);
       if (i == AJ_MEDIDOR) viuMedidor = 1;
       if (i == AJ_RESOLUCAO) viuRes = 1;
@@ -5091,7 +5090,7 @@ void ajustes_dir(const char *dir) {
     }
   }
   if (!viuHlsMode)
-    valor[AJ_WEBOS_HLS_MODE] = lig(AJ_WEBOS_HLS_DTS) || lig(AJ_WEBOS_HLS_DV7);
+    valor[AJ_WEBOS_HLS_MODE] = !(lig(AJ_WEBOS_HLS_DTS) || lig(AJ_WEBOS_HLS_DV7));
   // Prefer the new default for ambiguous legacy 100% records: old saves
   // cannot distinguish factory defaults from explicit choices. Versioned
   // choices, including 100%, and other valid legacy scales are preserved.
@@ -5387,7 +5386,7 @@ static int gravar(void) {
       continue;
     }
     if (i == AJ_WEBOS_HLS_DTS || i == AJ_WEBOS_HLS_DV7) continue;
-    fprintf(f, "%s %d\n", CHAVE[i], vv[i]);
+    fprintf(f, "%s %d\n", CHAVE[i], i == AJ_WEBOS_HLS_MODE ? vv[i] == 0 : vv[i]);
   }
   fprintf(f, "notaTituloFontes");
   for (i = 0; i < EX_NFONTES; i++) fprintf(f, " %d", ajustes_nota_fonte(i));
@@ -11017,7 +11016,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_LEG_CONTORNO_COR:
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA:
     case AJ_QUALIDADE: case AJ_DV: case AJ_ATMOS: case AJ_LEG_LINGUA: case AJ_LEG_LINGUA2: case AJ_CACHE_SEEK: case AJ_BUFFER: case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: case AJ_ESTAT_TAMANHO: case AJ_ESTAT_LADO:
-    case AJ_DV_MKV:
+    case AJ_DV_MKV: case AJ_WEBOS_HLS_MODE:
     case AJ_LEG_FORCADA:
     case AJ_PAUSA_COMENTARIOS: case AJ_PAUSA_NOTAS: case AJ_PAUSA_ELENCO:
     case AJ_AUD_LINGUA: case AJ_AUD_LINGUA2: case AJ_PAUSA_OVERLAY: case AJ_PLR_CLASSIF: case AJ_TELA_ABERTURA: case AJ_ABERTURA_ADDON: case AJ_ABERTURA_FUNDO: case AJ_ABERTURA_ESTILO: case AJ_FONTE_MANUAL:
