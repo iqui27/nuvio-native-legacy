@@ -547,5 +547,7 @@ int rede_tls_tentar_enviar(RedeTls *t, const void *buf, size_t n, size_t *foi);
 // >0 bytes lidos, 0 nada chegou, -1 conexao caiu ou fechou.
 int rede_tls_receber(RedeTls *t, void *buf, size_t n, int esperaMs);
 void rede_tls_fechar(RedeTls *t);
+// Login TLS falhou: sonda CONNECT_ONLY (bundle/sistema/semca) so para log (#737).
+int rede_sonda_tls(const char *url);
 
 #endif

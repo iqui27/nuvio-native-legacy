@@ -2,6 +2,7 @@
 #include "trava.h"
 #include "idioma.h"
 #include "nuvem.h"
+#include "rede.h"
 #include "dados.h"
 #include "js.h"
 #include "jsw.h"
@@ -225,6 +226,11 @@ static char *loginPost(const char *etapa, const char *path, const char *body,
     printf("[login] stage=%s class=%s http=%d curl=%d attempt=%d utc=%lld backoff_ms=%d\n",
            etapa, loginClasse(*st), *st, r, tentativa, (long long)time(NULL), espera * 1000);
     fflush(stdout);
+    if (!espera && !*st && r == 35) {
+      char alvo[900];
+      snprintf(alvo, sizeof alvo, "%s/auth/v1/token", nuvem_url());
+      rede_sonda_tls(alvo);
+    }
     if (!espera) return resp;
     free(resp);
     { struct timespec restante = { espera, 0 };
