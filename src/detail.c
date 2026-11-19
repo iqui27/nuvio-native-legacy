@@ -26,9 +26,9 @@
 // Desktop content clears the pinned sidebar; the backdrop remains full bleed.
 #ifdef NV_DESKTOP_UI
 #undef NV_DETP_X
-#define NV_DETP_X (layout_desktop_ativo()?ANC(ajustes_conteudo_x()):96.0f)
+#define NV_DETP_X (layout_desktop_ativo()?ANC(ajustes_conteudo_x()-28):96.0f)
 #undef NV_DETW2_X
-#define NV_DETW2_X (layout_desktop_ativo()?ANC(ajustes_conteudo_x()):96.0f)
+#define NV_DETW2_X (layout_desktop_ativo()?ANC(ajustes_conteudo_x()-28):96.0f)
 #endif
 #include "srvidx.h"
 #include "biblioteca.h"
@@ -146,6 +146,9 @@ static int detalheRetratoFone(void) {
 }
 static int heroServidor(void);
 static float larguraTextoHero(void) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo() && !heroServidor()) return fminf(860, NV_TELA_W-NV_DETP_X-48);
+#endif
   if (heroServidor()) return 700.0f;
   return detalheRetrato() ? fminf(NV_DETW2_TEXTO_W, NV_TELA_W - 192.0f) :
     ajustes_detalhe_topo()==1 ? 900 : 1040;
@@ -1244,6 +1247,9 @@ static void recalcularLayout(void) {
   lastWidth=NV_TELA_W; lastHeight=NV_TELA_H;
   float y=heroServidor() ? NV_TELA_H + 60 : fone ? retPt(636) :
     layout_desktop_ativo() ? NV_TELA_H * .66f + 56 : ANC(NV_DET21_FIM + 56);
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo() && !heroServidor()) y=NV_TELA_H*.55f;
+#endif
   const int *order=ordemSecoes();
   for (int r=0;r<N_SECOES;r++) {
     topoSec[r]=conteudoSec[r]=y; dxSec[r]=0; wSec[r]=1728;
@@ -1255,6 +1261,15 @@ static void recalcularLayout(void) {
     if (r==SEC_EPISODIOS) continue;
     topoSec[r]=conteudoSec[r]=y;
     if (secaoN(r)<=0) continue;
+#ifdef NV_DESKTOP_UI
+    if (r==SEC_TEMPORADAS && layout_desktop_ativo() && !heroServidor()) {
+      conteudoSec[r]=y+44;
+      topoSec[SEC_EPISODIOS]=y;
+      conteudoSec[SEC_EPISODIOS]=y+112;
+      y=conteudoSec[SEC_EPISODIOS]+epCardH()+60;
+      continue;
+    }
+#endif
     if (r==SEC_TEMPORADAS && !epModerno()) {
       // Retrato do telefone: o heroi e mais alto que o da TV; a faixa de
       // temporadas/episodios desce pelo mesmo tanto (zero na TV).
@@ -2491,13 +2506,48 @@ static float secaoAlvo(int r) {
                               (nivel >= 1 && foco.fileira == SEC_EPISODIOS))) return 1.f;
   return nivel>=1 && foco.fileira!=r ? .42f : 1.f;
 }
-static int epModerno(void) { return ajustes_home_layout() == HOME_LAYOUT_MODERNA; }
-static int epApple(void) { return ajustes_home_layout() != HOME_LAYOUT_PADRAO; }
-static float epTempH(void) { return epModerno() ? NV_DETP_TEMP_H : 60.0f; }
-static float epCardW(void) { return epApple() ? 420.0f : NV_DETP_EP_W; }
-static float epCardH(void) { return epModerno() ? 530 : epApple() ? 500 : NV_DETP_EP_H; }
-static float epCardPasso(void) { return epModerno() ? 448 : epApple() ? 452 : NV_DETP_EP_PASSO; }
-static float epThumbH(void) { return epApple() ? 236.0f : NV_DETP_EP_THUMB_H; }
+static int epModerno(void) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) return 0;
+#endif
+  return ajustes_home_layout() == HOME_LAYOUT_MODERNA;
+}
+static int epApple(void) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) return 1;
+#endif
+  return ajustes_home_layout() != HOME_LAYOUT_PADRAO;
+}
+static float epTempH(void) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) return 48;
+#endif
+  return epModerno() ? NV_DETP_TEMP_H : 60.0f;
+}
+static float epCardW(void) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) return (NV_TELA_W-NV_DETP_X-ANC(48)-3*24)/4;
+#endif
+  return epApple() ? 420.0f : NV_DETP_EP_W;
+}
+static float epCardH(void) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) return epCardW()*9/16+200;
+#endif
+  return epModerno() ? 530 : epApple() ? 500 : NV_DETP_EP_H;
+}
+static float epCardPasso(void) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) return epCardW()+24;
+#endif
+  return epModerno() ? 448 : epApple() ? 452 : NV_DETP_EP_PASSO;
+}
+static float epThumbH(void) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) return epCardW()*9/16;
+#endif
+  return epApple() ? 236.0f : NV_DETP_EP_THUMB_H;
+}
 static float epAppleExtra(void) { return epApple() ? epCardH() - 414.0f : 0.0f; }
 // Bloco das Notas na serie (cabecalho + fileira + vao), que empurra abas e
 // elenco; 0 enquanto as notas nao chegaram.
@@ -2883,6 +2933,9 @@ static int temMais(void) {
   return 0;
 }
 static int nBotoesTodos(void) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) return 2 + temTrailer() + (temMais() ? 1 : 0);
+#endif
   if (!detalheRetrato()) return 2 + (temMais() ? 1 + (maisAcoes ? 1 + temJuntos() : 0) : 0);
   return (ehSerie() ? 3 : 4) + (temInicio() ? 1 : 0) + (temLembrar() ? 1 : 0)
          + (temMais() ? 1 : 0) + (temJuntos() ? 1 : 0) + (temTravar() ? 1 : 0);
@@ -2911,6 +2964,12 @@ enum { ACAO_PRIMARIO = 0, ACAO_LISTA = 1, ACAO_ASSISTIDO = 2, ACAO_FONTES = 3,
        ACAO_TRAVAR = 13 };
 static int acaoEm(int n) {
   if (n == 0) return ACAO_PRIMARIO;
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) {
+    if (temTrailer()) { if (n==1) return ACAO_TRAILER; n--; }
+    return n==1 ? ACAO_LISTA : ACAO_MAIS;
+  }
+#endif
   if (!detalheRetrato()) {
     if (n == 1) return ACAO_LISTA;
     if (maisAcoes && n == 2) return ACAO_NOTA;
@@ -3427,6 +3486,10 @@ static void detail_evento_(const SDL_Event *e) {
           rewatchui_abrir(ci, RW_ORIGEM_TITULO, 0, 0);
         else pedReproduzir = 1;
 
+#ifdef NV_DESKTOP_UI
+      } else if (acao == ACAO_TRAILER && layout_desktop_ativo()) {
+        tocarTrailerCheio(0);
+#endif
       } else if (acao == ACAO_INICIO) {
         // "Assistir do comeco" (issue #46): mesmo caminho do primario, mas o
         // roteador zera a retomada DESTA sessao depois de armar o episodio.
@@ -4759,6 +4822,22 @@ static void desenhaDicaBotao(GfxRect rc, const char *texto, float a) {
 
 // focado: 0..1 focus spring (hero row), 1 = focused; portrait keeps its boolean look.
 static void desenhaBotao(GfxRect r, const char *rot, int icone, float focado, float a) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) {
+    int play=icone==ACAO_PRIMARIO;
+    gfx_cor(r,.5f,play ? .95f : 1,play ? .015f : 1,play ? .16f : 1,
+            (play ? 1 : .10f+.10f*focado)*a);
+    if (!rot) gfx_icone((GfxRect){r.x+14,r.y+14,20,20},"aj_ellipsis",1,1,1,a);
+    else {
+      TxtLinha l=txt_linha(TXT_G20M,rot,243,242,239,255);
+      float group=l.w+(play ? 22 : 0), x=r.x+(r.w-group)*.5f;
+      if (play) gfx_rect((GfxRect){x,r.y+(r.h-14)*.5f,12,14},0,GFX_PLAY,0,0,0,0,1,1,1,a);
+      txt_desenhar_alpha(l,x+(play ? 22 : 0),r.y+(r.h-l.h)*.5f,a);
+    }
+    if (focado>.01f) gfx_anel(r,.5f,1,1,1,1,.25f*focado*a);
+    return;
+  }
+#endif
   // FOCO E TAMANHO, NAO ANEL.
   //
   // Aqui havia duas marcas de foco empilhadas e as duas falhavam no botao
@@ -5242,7 +5321,7 @@ static void esqueletoSinopse(float x, float y, float a) {
 // bloco inteiro — sem tocar nas medidas do resto da pagina.
 #pragma push_macro("NV_DETW2_X")
 #undef NV_DETW2_X
-#define NV_DETW2_X ((layout_desktop_ativo()?ANC(ajustes_conteudo_x()):heroServidor()?ANC(96.0f):96.0f) + heroDx)
+#define NV_DETW2_X ((layout_desktop_ativo()?ANC(ajustes_conteudo_x()-28):heroServidor()?ANC(96.0f):96.0f) + heroDx)
 // Unknown language is not evidence of a mismatch. Keep a loaded logo clean;
 // only a confirmed foreign image needs a caption. Missing images keep text.
 static int mostrarNomeLogo(const CatItem *ci, const char *url, int loaded,
@@ -5721,6 +5800,19 @@ static void heroWeb(float a, float desloc) {
     yVers = yAcoes + NV_DET21_BTN_H + 12;
   }
 
+#ifdef NV_DESKTOP_UI
+  // Approved Mac board: compact hero above a complete four-card episode row.
+  if (layout_desktop_ativo() && !heroServidor()) {
+    yAcoes = NV_TELA_H * .2633f;
+    yVers = yAcoes + 64;
+    ySin = yAcoes + 136 + hCaption;
+    hSin = sin ? txt_bloco_corta(TXT_G20M,sin,243,242,239,-1,0,
+                                 larguraTextoHero(),30,0,3) : 90;
+    yMeta1 = ySin + fmaxf(90,hSin) + 20;
+    yRetom = yMeta1 + 66;
+  }
+#endif
+
   // Sobe alguns pixels enquanto entra: continua o movimento da arte em vez de
   // aparecer pronto no lugar. `desloc` e a rolagem do documento.
   float sobe = (saindo ? (1.0f - a) * 26.0f : 0.0f) + desloc;
@@ -5769,10 +5861,16 @@ static void heroWeb(float a, float desloc) {
     // embaixo (sinopse, amigos, retomar, agenda). Quando uma dessas linhas
     // aparecia ou sumia, o logo trocava de tamanho num quadro ("cresce do
     // nada", dono, 05/10). Agora persegue o alvo como a altura da sinopse.
+#ifdef NV_DESKTOP_UI
+    if (layout_desktop_ativo() && !heroServidor()) baseLogo = yAcoes - 44 - hCaption;
+#endif
     static float hLogoVis;
     static Uint32 hLogoTick;
     static char hLogoDe[600];
     float hAlvo = fminf(detalheRetrato() ? (topoPessoal() ? 170.0f : 190.0f) : 228.0f, espacoLogo);
+#ifdef NV_DESKTOP_UI
+    if (layout_desktop_ativo() && !heroServidor()) hAlvo = 142;
+#endif
     { Uint32 agoraL = SDL_GetTicks();
       float dtL = hLogoTick ? (float)(Uint32)(agoraL - hLogoTick) : 0.0f;
       hLogoTick = agoraL;
@@ -5888,6 +5986,22 @@ static void heroWeb(float a, float desloc) {
     }
   }
 
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) {
+    float x=NV_DETW2_X;
+    for (int i=0;i<nBotoes();i++) {
+      int action=acaoEm(i);
+      const char *label=action==ACAO_PRIMARIO ? rot : action==ACAO_TRAILER ? i18n("Trailer") :
+        action==ACAO_LISTA ? i18n(ci && ci->naLista ? "Salvo" : "Salvar") : NULL;
+      float w=label ? txt_linha(TXT_G20M,label,243,242,239,255).w + (i ? 56 : 100) : 48;
+      GfxRect r={x,yAcoes,w,48};
+      desenhaBotao(r,label,action,focoBotao(i,nivel==0 && !focoVersao && botao==i),a);
+      if (action==ACAO_MAIS) maisAncora=r;
+      if (a>.3f) ponteiro_alvo(r.x,r.y,r.w,r.h,ponteiroDetalhe,NULL,-1,i);
+      x+=w+18;
+    }
+  } else
+#endif
   if (!detalheRetrato()) {
     float x = NV_DETW2_X, p = anim_clamp(acoesVis, 0, 1);
     float step = NV_DET21_CIRC + NV_DET21_BTN_GAP;
@@ -6100,10 +6214,21 @@ static void heroWeb(float a, float desloc) {
     int ink = (int)(160 + 38 * versaoFoco);
     TxtLinha quality = txt_linha_corta(TXT_ILHA_APOIO,texto,ink,ink,ink,255,larguraTextoHero()-40);
     versaoRect = (GfxRect){NV_DETW2_X,yV+12,quality.w+40,32};
+#ifdef NV_DESKTOP_UI
+    if (layout_desktop_ativo()) {
+      versaoRect.y=yV; versaoRect.w+=24;
+      gfx_cor(versaoRect,.15f,1,1,1,(.09f+.08f*versaoFoco)*aV);
+      txt_desenhar_alpha(quality,versaoRect.x+12,versaoRect.y+(versaoRect.h-quality.h)*.5f,aV);
+      gfx_icone((GfxRect){versaoRect.x+versaoRect.w-26,versaoRect.y+8,16,16},"aj_chevron-down",.85f,.85f,.85f,aV);
+    } else {
+#endif
     gfx_cor(versaoRect,.25f,1,1,1,.12f*versaoFoco*aV);
     int estado = vaiTocar.tem && vaiTocar.estado != FA_NADA ? vaiTocar.estado : FA_RUIM;
     vtui_estado_ponto(estado,versaoRect.x+8,versaoRect.y+11,aV);
     txt_desenhar_alpha(quality,versaoRect.x+28,versaoRect.y+(versaoRect.h-quality.h)*.5f,aV);
+#ifdef NV_DESKTOP_UI
+    }
+#endif
     if (aV>.3f) ponteiro_alvo(versaoRect.x,versaoRect.y,versaoRect.w,versaoRect.h,ponteiroDetalhe,NULL,-4,0);
   }
   if (pessoal[0]) {
@@ -6228,6 +6353,9 @@ static void heroWeb(float a, float desloc) {
   { float f = 1.0f, aS = a * kS;
     TxtEstilo style = heroServidor() ? TXT_CAPTION : TXT_DET_SIN;
     float leading = heroServidor() ? 34 : NV_DETW2_LD_SIN;
+#ifdef NV_DESKTOP_UI
+    if (layout_desktop_ativo() && !heroServidor()) { style=TXT_G20M; leading=30; }
+#endif
     if (sinTrocaDesde) {
       f = (float)(Uint32)(agoraH - sinTrocaDesde) / DET_TROCA_MS;
       if (f >= 1.0f) { f = 1.0f; sinTrocaDesde = 0; }
@@ -6281,6 +6409,9 @@ static void heroWeb(float a, float desloc) {
     float a = aHero * fMeta;   // o texto de meta entra esvanecendo quando chega
     float x = NV_DETW2_X, yc = yMeta1 + NV_DETW2_M1_H * 0.5f;
     const CatItem *badgeItem=cat_item(idx);
+#ifdef NV_DESKTOP_UI
+    if (!layout_desktop_ativo())
+#endif
     if(badgeItem)x+=badges_desenhar(badges_provedor(badgeItem->provNome),x,yc-14,150,28,a);
     int algo = 0;
     // GENEROS sem o primeiro campo. `genero` vem do catalogo como
@@ -6302,13 +6433,16 @@ static void heroWeb(float a, float desloc) {
             desenhaPonto(x + NV_DETW2_BULLET_SEP, yc, 0.702f, a);   // 179
             x += NV_DETW2_BULLET_SEP * 2 + NV_DETW2_PONTO_D;
           }
-          TxtLinha lt = txt_linha(TXT_DET_META_GEN, termo, 179, 179, 179, 255);
+          TxtLinha lt = txt_linha(layout_desktop_ativo() ? TXT_G20M : TXT_DET_META_GEN, termo, 179, 179, 179, 255);
           txt_desenhar_alpha(lt, x, yc - lt.h * 0.5f, a);
           x += lt.w; algo = 1;
         }
         p = fim;
       }
     }
+#ifdef NV_DESKTOP_UI
+    if (layout_desktop_ativo()) { x=NV_DETW2_X; yc+=32; algo=0; }
+#endif
     // ANO. Em serie a referencia escreve "2023-" e em filme a data cheia; o
     // catalogo so guarda o ano nos dois casos (descoberta.c corta o travessao
     // da serie de proposito), entao sai o ano. Vazio quando o metadado ainda
@@ -6316,7 +6450,7 @@ static void heroWeb(float a, float desloc) {
     if (ano[0]) {
       if (algo) { desenhaPonto(x + NV_DETW2_SEP, yc, 0.502f, a);    // 128
                   x += NV_DETW2_SEP * 2 + NV_DETW2_PONTO_D; }
-      TxtLinha la = txt_linha(TXT_DET_META_FORTE, ano, 255, 255, 255, 255);
+      TxtLinha la = txt_linha(layout_desktop_ativo() ? TXT_G20M : TXT_DET_META_FORTE, ano, 255, 255, 255, 255);
       txt_desenhar_alpha(la, x, yc - la.h * 0.5f, a);
       x += la.w; algo = 1;
     }
@@ -6329,7 +6463,7 @@ static void heroWeb(float a, float desloc) {
                     x += NV_DETW2_SEP * 2 + NV_DETW2_PONTO_D; }
         char col[32];
         snprintf(col,sizeof col,i18n(temps==1 ? "%d temporada" : "%d temporadas"),temps);
-        TxtLinha lt = txt_linha(TXT_DET_META_FORTE, col, 255, 255, 255, 255);
+        TxtLinha lt = txt_linha(layout_desktop_ativo() ? TXT_G20M : TXT_DET_META_FORTE, col, 255, 255, 255, 255);
         txt_desenhar_alpha(lt, x, yc - lt.h * 0.5f, a);
         x += lt.w; algo = 1;
       }
@@ -6337,7 +6471,7 @@ static void heroWeb(float a, float desloc) {
     if (!ehSerie() && dur[0]) {
       if (algo) { desenhaPonto(x + NV_DETW2_SEP, yc, 0.502f, a);
                   x += NV_DETW2_SEP * 2 + NV_DETW2_PONTO_D; }
-      TxtLinha ld = txt_linha(TXT_DET_META_FORTE, dur, 255, 255, 255, 255);
+      TxtLinha ld = txt_linha(layout_desktop_ativo() ? TXT_G20M : TXT_DET_META_FORTE, dur, 255, 255, 255, 255);
       txt_desenhar_alpha(ld, x, yc - ld.h * 0.5f, a);
       x += ld.w; algo = 1;
       // 2.1 mock: "termina às 22:47" right after the runtime.
@@ -6474,9 +6608,15 @@ static int epsDaTemporada(int c) {
 // Item do SEGMENTADO (.sg do mockup): 19/600 com 20 de cada lado e a
 // contagem de episodios em 16 depois de 9 px.
 static float larguraTemporada(int c) {
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo() && ehShuffle(c)) return 48;
+#endif
   if (ehShuffle(c)) return NV_DETP_TEMP_H;
   if (!epModerno()) {
     char rot[32]; rotuloTemporada(c, rot, sizeof rot);
+#ifdef NV_DESKTOP_UI
+    if (layout_desktop_ativo()) return txt_linha(TXT_G20M,rot,255,255,255,255).w+NV_DETP_TEMP_PADX*2;
+#endif
     return txt_linha(TXT_CALLOUT, rot, 255, 255, 255, 255).w + NV_DETP_TEMP_PADX * 2;
   }
   if (c < colTemp(nTemporadasReais())) {
@@ -6622,6 +6762,10 @@ static void resumoTemporada(float x, float yPilulas, float a) {
              i18n(futuros == 1 ? " · %d ainda não exibido"
                                : " · %d ainda não exibidos"), futuros);
   { TxtLinha l = txt_linha(TXT_DET_META2, linha, 190, 192, 200, 255);
+#ifdef NV_DESKTOP_UI
+    if (layout_desktop_ativo()) txt_desenhar_alpha(l,NV_TELA_W-ANC(48)-l.w,yPilulas-44,a*.7f);
+    else
+#endif
     if (epModerno()) txt_desenhar_alpha(l,NV_TELA_W-96-l.w,yPilulas-44,a*.55f);
     else txt_desenhar_alpha(l,x,yPilulas-NV_DETP_TEMP_RESUMO_DY-l.h,a); }
 }
@@ -6690,7 +6834,7 @@ static void desenhaTemporada(GfxRect r, int c, float f, float a) {
   int ink=f>.5f ? (int)(ti*255+.5f) : sel ? 243 : 160;
   if (!real && !temporadaLembrete(c)) {
     if (!epModerno()) {
-      TxtLinha l=txt_linha(TXT_CALLOUT,rot,ink,ink,ink,255);
+      TxtLinha l=txt_linha(layout_desktop_ativo() ? TXT_G20M : TXT_CALLOUT,rot,ink,ink,ink,255);
       txt_peso(l,r.x+(r.w-l.w)*.5f,r.y+(r.h-l.h)*.5f,a,.5f);
       return;
     }
@@ -6722,7 +6866,7 @@ static void desenhaTemporada(GfxRect r, int c, float f, float a) {
     }
     int color=ajustes_vidro() ? (f>.5f ? (int)(ti*255+.5f) : sel ? 245 : 179)
                              : (sel || f>.5f) ? (int)(ti*255+.5f) : 179;
-    TxtLinha l=txt_linha(TXT_CALLOUT,rot,color,color,color,255);
+    TxtLinha l=txt_linha(layout_desktop_ativo() ? TXT_G20M : TXT_CALLOUT,rot,color,color,color,255);
     txt_peso(l,r.x+(r.w-l.w)*.5f,r.y+(r.h-l.h)*.5f,a,.5f);
     return;
   }
@@ -6862,6 +7006,10 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
   // desligado, a miniatura cresce com a animacao do foco. O brilho e o
   // realce de profundidade seguem os mesmos Ajustes (Episodios).
   GfxRect thLayout = th;
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) th=detalheFoco(th,raioTh,f,.025f,a);
+  else
+#endif
   if (epModerno() && !detalheRetrato()) th=detalheFoco(th,raioTh,f,.05f,a);
   else if (!epApple()) { foco_anel(th, raioTh, f, a); th = foco_zoom(th, f); }
 
@@ -6907,6 +7055,9 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
   } else if (arte && !tex_falhou(arte))
     gfx_esqueleto(th, raioTh, 0.133f, 0.133f, 0.133f, a);
   else gfx_cor(th, raioTh, 0.133f, 0.133f, 0.133f, a);
+#ifdef NV_DESKTOP_UI
+  if (!layout_desktop_ativo())
+#endif
   if (!epModerno() || detalheRetrato()) veuEpisodio(th,a);
   if (epModerno() && !resumo) gfx_cor(th, raioTh, 0, 0, 0, .30f * (1 - anim_clamp(f, 0, 1)) * a);
   if (ajustes_vidro()) gfx_vidro_aro(th, raioTh, 1.5f, 1, 1, 1, 0.14f * a);   // vidro: aro fino na miniatura
@@ -6986,6 +7137,35 @@ static void desenhaEpisodioEm(GfxRect r, int c, float f, float a, Uint32 agora, 
     }
     return;
   }
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo()) {
+    float textY=r.y+epThumbH()+18;
+    char number[32]; snprintf(number,sizeof number,i18n("EPISÓDIO %d"),epNum);
+    txt_desenhar_alpha(txt_linha(TXT_CAPTION2,number,164,169,176,255),r.x,textY,a);
+    char fallback[40]; snprintf(fallback,sizeof fallback,i18n("Episódio %d"),epNum);
+    txt_desenhar_alpha(txt_linha_corta(TXT_G22M,epNome ? epNome : fallback,243,242,239,255,r.w),r.x,textY+28,a);
+    if (epSin) txt_bloco_corta(TXT_G20M,epOculto(ep) ? i18n("Sem spoilers") : epSin,
+                               171,177,185,r.x,textY+62,r.w,26,a,2);
+    char footer[180],remaining[64]="";
+    int current=serie && ep && serie->progresso>0 && serie->temporada==ep->temporada && serie->episodio==ep->episodio;
+    if (current && serie->restanteMin>0) snprintf(remaining,sizeof remaining,i18n("faltam %d min"),serie->restanteMin);
+    const char *date=epData;
+    if (date && !ajustes_data_completa() && strlen(date)>=4) date+=strlen(date)-4;
+    epMeta(footer,sizeof footer,current && remaining[0] ? NULL : date,
+           current && remaining[0] ? remaining : epDur,epNaoExibido(ep) ? i18n("NÃO EXIBIDO") : NULL);
+    txt_desenhar_alpha(txt_linha_corta(TXT_CAPTION2,footer,165,171,180,255,r.w),r.x,textY+126,a);
+    if (current) {
+      GfxRect track={th.x+16,th.y+th.h-10,th.w-32,4};
+      gfx_cor(track,.5f,1,1,1,.25f*a);
+      track.w*=serie->progresso/100.f; gfx_cor(track,.5f,1,1,1,.85f*a);
+    }
+    if (ep && serie && vt_pular_ligado()) {
+      int mk=vt_marcas_episodio(serie->imdb,ep->temporada,ep->episodio);
+      if (mk) vtui_chips_episodio(mk,th.x+12,th.y+th.h-38,a);
+    }
+    return;
+  }
+#endif
   if (epApple()) {
     float textX = r.x + 18.0f, textW = resumo ? fmaxf(48.0f, r.w - 36.0f) : r.w - 36.0f;
     float textY = r.y + epThumbH() + 18.0f;
@@ -8945,6 +9125,12 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
   // porque nao pertence a nenhuma pilula: e uma linha por FILEIRA. Em filme
   // secaoN(SEC_TEMPORADAS) ja devolveu 0 e nao se chega aqui.
   if (r == SEC_TEMPORADAS) {
+#ifdef NV_DESKTOP_UI
+    if (layout_desktop_ativo()) {
+      char caps[100]; idioma_maiusc_em(ajustes_idioma(),caps,sizeof caps,i18n("Episódios"));
+      txt_tracking(TXT_G20M,caps,243,242,239,NV_DETP_X,y-44,a*.9f,0);
+    }
+#endif
     if (epModerno()) {
       char caps[100]; idioma_maiusc_em(ajustes_idioma(),caps,sizeof caps,i18n("Episódios"));
       txt_tracking(TXT_G20M,caps,243,242,239,96,y-44,a*.6f,3.6f);
@@ -9475,6 +9661,16 @@ static void detail_desenhar_(Uint32 agora) {
   if (t > .99f && !saindo) ponteiro_rolagem(toqueDetalheRolar);
 #endif
   detalheFundo(s);
+#ifdef NV_DESKTOP_UI
+  if (layout_desktop_ativo() && !heroServidor() && !carDesenhaFundo() && trailerFade<.005f) {
+    // The Mac board keeps art above the fold and a quiet floor under captions.
+    // Use the existing dithered scrims and honor the background darkness setting.
+    float veil=s*ajustes_detalhe_veu(), edge=fmaxf(0,NV_TELA_H*.75f-scrollY);
+    gfx_veu_css((GfxRect){0,0,NV_TELA_W,NV_TELA_H},2,1,.78f,.82f*veil);
+    gfx_veu_css((GfxRect){0,-scrollY,NV_TELA_W,NV_TELA_H*.75f},0,0,.65f,.98f*veil);
+    gfx_cor((GfxRect){0,edge,NV_TELA_W,NV_TELA_H-edge},0,0,0,0,.98f*veil);
+  }
+#endif
   if (heroServidor()) {
     // Full-screen reading scrim follows the page reveal and scroll.
     gfx_cor((GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, 0,
