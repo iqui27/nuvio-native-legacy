@@ -5543,6 +5543,11 @@ void ajustes_dir(const char *dir) {
   // gravar() e DEPOIS do idioma restaurado: gravar antes levava ao disco o
   // idioma do arranque com a marca de automatico, e a escolha manual desta TV
   // se perdia no arranque seguinte.
+  // A migracao do provedor de poster ANTES de qualquer gravar() do arranque:
+  // prov= so pode ser persistido com o provedor efetivo ja resolvido — a
+  // gravacao abaixo (som do trailer) ia ao disco com o indice cru da versao
+  // antiga (3 = Modelo proprio) marcado como novo (3 = Posters+) (#739).
+  posterProvMigrar();
   if (lig(AJ_DET_TRAILER_SOM)) {
     valor[AJ_DET_TRAILER_SOM] = 1;
     if (!lig(AJ_HERO_TRAILER_SOM)) {
@@ -5553,7 +5558,6 @@ void ajustes_dir(const char *dir) {
   }
   }
   fclose(f);
-  posterProvMigrar();
   efeitos720Migrar(1);
   if (escalaVersao < 1) gravar();
   // "DINAMICA ESTILIZADA" SAIU (03/10/2026): a base tingida virou o Fundo
@@ -5830,6 +5834,9 @@ static int gravar(void) {
   // Posters+ (3) deixava o arquivo sem prov= e a migracao do boot seguinte
   // lia o 3 como o antigo "Modelo proprio" (#739).
   provAntes = pstProvArq;
+  // O valor persistido e o EFETIVO: no arranque, posterProvMigrar() ja rodou
+  // antes de qualquer gravar() (foi movida para antes da migracao do som do
+  // trailer), entao aqui valor[] ja e o provedor resolvido (#739).
   if (provAntes != valor[AJ_POSTER_PROV]) {
     pstProvArq = valor[AJ_POSTER_PROV];
     pstSalvar();

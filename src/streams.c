@@ -2590,26 +2590,24 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
     for (q = 0; q < nc; q++) if (c[q].indice == escolhida) { m = 1; break; }
     if (m) {
       FonteFalhaCandidata *u = calloc(1, sizeof *u);
-      Stream *f = malloc(sizeof *f);
-      if (u && f) {
-        Stream escolhidaCopia = fontes[c[q].indice];
+      if (u) {
         *u = c[q];
         u->identidade = strdup(c[q].identidade);
-        // Solta o vetor completo e as identidades das outras candidatas:
-        // o ponteiro velho de c virava lixo aqui e as strings iam junto.
+        // Solta as identidades das outras candidatas e o vetor delas — mas
+        // o vetor de fontes FICA INTEIRO: c[].indice e nfFontes continuam se
+        // referindo a lista completa. Trocar por um vetor de 1 fonte deixava
+        // nfFontes=N e indice=escolhida apontando fora da alocacao (OOB na
+        // primeira verificacao manual do ultimo indice, #784).
         for (int k = 0; k < nc; k++) free((void *)c[k].identidade);
-        free(c); free(fontes);
-        if (!u->identidade) { free(u); free(f); c = NULL; fontes = NULL; nc = 0; }
+        free(c);
+        if (!u->identidade) { free(u); c = NULL; nc = 0; }
         else {
-          *f = escolhidaCopia;
           // O indice continua sendo o DA LISTA (escolhida), nao a posicao 0
-          // do vetor de 1 fonte: conferenciaPublicar e *indice levam esse
+          // de um vetor cortado: conferenciaPublicar e *indice levam esse
           // numero ao app.c, que marca o estado na linha certa (#784).
           u->indice = escolhida;
-          c = u; fontes = f; nc = 1;
+          c = u; nc = 1;
         }
-      } else {
-        free(u); free(f);
       }
     }
   }

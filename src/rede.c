@@ -150,6 +150,7 @@ typedef struct {
   long teto;
   int restoRecusado;
   int lateral;
+  long cancelarMs;
   char erroTxt[200];
   char erroBuf[256];
 } RedeFio;
@@ -174,6 +175,7 @@ static RedeFio *redeFio(void) {
   return f;
 }
 long *rede_teto_ptr(void) { return &redeFio()->teto; }
+long *rede_cancelar_ms_ptr(void) { return &redeFio()->cancelarMs; }
 #define redeLimiteLocal   (redeFio()->limiteLocal)
 #define redeCancelLocal   (redeFio()->cancelLocal)
 #define redeParar (redeFio()->parar)
@@ -188,6 +190,7 @@ long *rede_teto_ptr(void) { return &redeFio()->teto; }
 #define usoHost           (redeFio()->usoHost)
 #define redeRestoRecusado (redeFio()->restoRecusado)
 #define redeLateral       (redeFio()->lateral)
+#define redeCancelarMs    (redeFio()->cancelarMs)
 #else
 /* Controle local da requisicao corrente. O estado nunca e compartilhado
  * entre sondagens: cada fio recebe seu teto e seu cancel token. */
@@ -200,6 +203,9 @@ static _Thread_local int redeCancelouLocal;
 static _Thread_local long redeBytesLocal;
 // 1 = este fio e leitura lateral ao video (rede_lateral, #385).
 static _Thread_local int redeLateral;
+// >0: LOW_SPEED_TIME em ms para o proximo pedido (cancela corpo parado
+// abaixo do tique de 1 s da vigia — ver rede_cancelar_ms, #775).
+#define redeCancelarMs      rede_cancelar_ms
 #endif
 RedePararEstado rede_parar_trocar(int (*parar)(void *), void *usuario) {
 #if defined(NV_TPK40) || defined(NV_UM_FIO)
@@ -480,6 +486,7 @@ static char *nv_http(const char *metodo, const char *url, const char *cabs,
 
 #ifndef NV_UM_FIO
 _Thread_local long rede_teto = 0;
+_Thread_local long rede_cancelar_ms = 0;
 // Destino do endereco final do proximo pedido (so rede_baixar_trecho_st liga).
 static _Thread_local char *redeFinalDst;
 static _Thread_local unsigned redeFinalTam;
@@ -1301,6 +1308,10 @@ static _Thread_local int redeParcialOk;
 // sobrou do prazo do pedido. Ver rede_baixar_interno2.
 #define OPT_TIMEOUT_MS        155
 #define OPT_CONNECTTIMEOUT_MS 156
+// LOW_SPEED_LIMIT/TIME: corte por corpo parado abaixo do tique da vigia
+// (~1 s). So rede_cancelar_ms liga, e so no GET curto do P2P (#775).
+#define OPT_LOW_SPEED_LIMIT   19
+#define OPT_LOW_SPEED_TIME    20
 // Vigia de progresso (7.32+): NOPROGRESS=0 liga o XFERINFOFUNCTION.
 #define OPT_NOPROGRESS         43
 #define OPT_XFERINFOFUNCTION 20219
@@ -1745,6 +1756,13 @@ static void opcoesComuns(void *c, unsigned long prazoMs) {
 #endif
   curl_setopt(c, OPT_TIMEOUT_MS, (long)prazoMs);
   curl_setopt(c, OPT_CONNECTTIMEOUT_MS, (long)conexaoMs(prazoMs));
+  // Pedido que pediu corte sub-segundo (rede_cancelar_ms): o XFERINFO so
+  // acorda uma vez por segundo; LOW_SPEED ve o corpo parado antes disso.
+  if (redeCancelarMs > 0 && redeCancelarMs <= 30000) {
+    curl_setopt(c, OPT_LOW_SPEED_LIMIT, (long)1);
+    curl_setopt(c, OPT_LOW_SPEED_TIME,
+                (long)(redeCancelarMs / 1000 + (redeCancelarMs % 1000 != 0)));
+  }
   // O app roda com fios; sem NOSIGNAL a libcurl usa alarmes para o timeout de
   // DNS e pode derrubar o processo inteiro a partir de um fio secundario.
   curl_setopt(c, OPT_NOSIGNAL, (long)1);
@@ -1871,6 +1889,7 @@ static size_t receberCab(void *dados, size_t tam, size_t qtd, void *u) {
 // inteiro, e nesse caso o cabecalho pedido nao limita nada.
 #ifndef NV_TPK40   // no NV_TPK40 e rede_teto_ptr() (rede.h)
 _Thread_local long rede_teto = 0;
+_Thread_local long rede_cancelar_ms = 0;
 #endif
 
 static size_t receber(void *dados, size_t tam, size_t qtd, void *u) {

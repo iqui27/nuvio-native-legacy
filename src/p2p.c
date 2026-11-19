@@ -334,9 +334,17 @@ int p2p_resolver(const char *hash, int fileIdx, const char *fontes, char *url, u
   { unsigned ger0 = atomic_load_explicit(&p2pCancelGer, memory_order_acquire);
   // 1) o servidor esta la e e o certo? Falhar aqui em 6 s evita esperar os 30 s
   // dos metadados para descobrir que o IP estava errado.
-  erro = p2p_testar(NULL, 0);
-  if (erro != P2P_OK) { printf("[p2p] servidor: erro %d\n", erro); return erro; }
+  // O GET /settings tambem obedece a geracao: sem o callback instalado aqui,
+  // cancelar so valia depois da resposta — um servidor externo lento segurava
+  // a troca de fonte pelo prazo inteiro do GET (#775).
+  { unsigned ger1 = ger0;
+    RedePararEstado ant = rede_parar_trocar(p2pPararCb, &ger1);
+    rede_cancelar_ms = 800;
+    erro = p2p_testar(NULL, 0);
+    rede_cancelar_ms = 0;
+    if (ant.instalado) rede_parar_trocar(ant.parar, ant.usuario); }
   if (p2pParado(ger0)) return ultimoErro = P2P_ERR_CANCELADO;
+  if (erro != P2P_OK) { printf("[p2p] servidor: erro %d\n", erro); return erro; }
   // 2) registrar o torrent e esperar os metadados.
   if (!p2p_corpo_criar(hash, fontes, corpo, sizeof corpo)) return ultimoErro = P2P_ERR_HASH;
   { char h[41]; int i;

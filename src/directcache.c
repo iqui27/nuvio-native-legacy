@@ -143,14 +143,16 @@ static void expurgarTeto(const char *dir, unsigned long long teto, const char *p
       if (nl > 5 && !strcmp(n + nl - 5, ".part")) continue; }
     if (jobRodando && jobDir[0] && jobPart[0] &&
         !strcmp(n, strrchr(jobPart, '/') ? strrchr(jobPart, '/') + 1 : jobPart)) continue;
-    if (proteger && !strcmp(n, proteger)) continue;
-    if (jobServindo[0] && !strcmp(n, jobServindo)) continue;
     snprintf(path, sizeof path, "%s/%s", dir, n);
     if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) continue;
+    total += (unsigned long long)st.st_size;
+    // proteger e jobServindo contam no total (senao o repouso ficava em ate
+    // 2x o teto) mas NUNCA entram na lista de remocao.
+    if (proteger && !strcmp(n, proteger)) continue;
+    if (jobServindo[0] && !strcmp(n, jobServindo)) continue;
     snprintf(ent[ne].nome, sizeof ent[ne].nome, "%s", n);
     ent[ne].mt = st.st_mtim;
     ent[ne].sz = (unsigned long long)st.st_size;
-    total += ent[ne].sz;
     ne++;
   }
   closedir(d);
