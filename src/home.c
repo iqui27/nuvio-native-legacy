@@ -490,7 +490,10 @@ static Uint32 heroUltTecla;
 // atravessava o catalogo inteiro (281 titulos na conta do dono) — invisivel
 // enquanto ninguem contava, mentira assim que aparece um "3 / 281" na tela e a
 // pessoa tenta chegar ao fim.
-#define HOME_HERO_LISTA 10
+// #797: o tamanho e ajuste ("Títulos no carrossel do destaque", 5/10/20);
+// heroListaN()_MAX e so a capacidade do vetor.
+#define heroListaN()_MAX 20
+static int heroListaN(void) { return ajustes_hero_lista(); }
 static int heroAtual = 0, heroAnterior = 0;
 // Candidato a heroi e desde quando ele e o candidato. Ver NV_HERO_REPOUSO_MS.
 static int    heroPendente = 0;
@@ -1100,14 +1103,14 @@ static int nAcervoHero(void) { int n = cat_n(); if (n) return n; return nBd ? nB
 // GUARDA OS INDICES, e nao um intervalo: a fileira escolhida pode encolher, o
 // catalogo pode ser republicado e o sorteio nao e contiguo por definicao. Um
 // intervalo sobreviveria a nenhum dos tres.
-static int heroSet[HOME_HERO_LISTA];
+static int heroSet[heroListaN()_MAX];
 static int heroSetN;
 // Assinatura do que a lista depende. Refazer a lista a cada quadro custaria o
 // strcmp da preferencia e uma varredura das fileiras; refazer so quando algo
 // mudou custa tres comparacoes de inteiro.
 static unsigned heroSetRev, heroSetFilRev, heroSetItensRev;
 static int heroSetOcultaVistos;
-static int heroSetCat, heroSetNFil;
+static int heroSetCat, heroSetNFil, heroSetListaN;
 
 // Sorteio ESTAVEL dentro da sessao: o embaralhamento usa uma semente propria
 // que so muda quando a lista e refeita. Sortear a cada quadro daria um destaque
@@ -1122,8 +1125,8 @@ static void heroMontarSet(void) {
   heroSetN = 0;
   if (fonte[0] == '*' && !fonte[1]) {
     // Sorteio sem repeticao: embaralha os `total` indices por Fisher-Yates
-    // parcial, usando so os HOME_HERO_LISTA primeiros passos.
-    int n = total < HOME_HERO_LISTA ? total : HOME_HERO_LISTA;
+    // parcial, usando so os heroListaN() primeiros passos.
+    int n = total < heroListaN() ? total : heroListaN();
     static int baralho[512];
     int m = total < (int)(sizeof baralho / sizeof *baralho)
           ? total : (int)(sizeof baralho / sizeof *baralho);
@@ -1149,7 +1152,7 @@ static void heroMontarSet(void) {
     for (i = 0; i < nFileiras; i++) {
       if (strcmp(fileiras[i].chave, fonte)) continue;
       { int k;
-        for (k = 0; k < fileiras[i].n && heroSetN < HOME_HERO_LISTA; k++) {
+        for (k = 0; k < fileiras[i].n && heroSetN < heroListaN(); k++) {
           int idx = fileiraItemIndice(&fileiras[i], k);
           if (idx >= 0 && idx < cat_n()) heroSet[heroSetN++] = idx;
         } }
@@ -1163,7 +1166,7 @@ static void heroMontarSet(void) {
         const CatFileira *cf = cat_fileira(i);
         int k;
         if (!cf || strcmp(cf->chave, fonte)) continue;
-        for (k = 0; k < cf->n && heroSetN < HOME_HERO_LISTA; k++)
+        for (k = 0; k < cf->n && heroSetN < heroListaN(); k++)
           if (cf->ini + k >= 0 && cf->ini + k < cat_n() &&
               !filmeVistoOculto(cat_item(cf->ini + k))) heroSet[heroSetN++] = cf->ini + k;
         break;
@@ -1171,7 +1174,7 @@ static void heroMontarSet(void) {
     }
     if (heroSetN) return;
   }
-  for (i = 0; i < total && heroSetN < HOME_HERO_LISTA; i++)
+  for (i = 0; i < total && heroSetN < heroListaN(); i++)
     if (!filmeVistoOculto(cat_item(i))) heroSet[heroSetN++] = i;
 }
 
@@ -1180,11 +1183,13 @@ static void heroSetGarantir(void) {
   int ocultar = ajustes_ocultar_filmes_vistos();
   unsigned ir = ocultar ? cat_revisao_itens() : 0;
   int cn = cat_n(), nf = nFileiras;
+  int lista = heroListaN();
   if (heroSetRev && fr == heroSetFilRev && cn == heroSetCat && nf == heroSetNFil &&
-      ocultar == heroSetOcultaVistos && ir == heroSetItensRev)
+      ocultar == heroSetOcultaVistos && ir == heroSetItensRev && lista == heroSetListaN)
     return;
+  if (heroSetRev && lista != heroSetListaN) heroSemente = 0; /* sorteio refeito (#797) */
   heroSetOcultaVistos = ocultar; heroSetItensRev = ir;
-  heroSetFilRev = fr; heroSetCat = cn; heroSetNFil = nf; heroSetRev = 1;
+  heroSetFilRev = fr; heroSetCat = cn; heroSetNFil = nf; heroSetListaN = lista; heroSetRev = 1;
   heroMontarSet();
   // Os candidatos ja sao conhecidos: completa em segundo plano a sinopse dos
   // que vieram rasos (lista do Trakt), antes de o carrossel chegar a eles.
