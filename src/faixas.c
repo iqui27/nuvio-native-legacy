@@ -1169,8 +1169,8 @@ static void legendaAutomatica(Uint32 agora) {
       return;
     }
   }
-  r = ling_legenda_auto_tipo(pref, audio, forcadaAuto,
-                             emb, tipos, nEmb, embFechado, add, nAdd, addFechado);
+  r = ling_legenda_auto_tipo2(pref, audio, forcadaAuto, ajustes_legenda_evitar_sdh(),
+                              emb, tipos, nEmb, embFechado, add, nAdd, addFechado);
   if (r == LING_AUTO_ESPERA) {
     // Passou do primeiro instante e ainda procura: a ilha diz o que esta fazendo.
     if (!soForcada && passou >= 1200u && pref[0] && strcasecmp(pref, "none")) pilBuscando(pref, agora);
@@ -1218,8 +1218,28 @@ static void legendaAutomatica(Uint32 agora) {
     if (v) {
       int nv = addons_legendas_copiar(v, LEG_MAX, NULL, NULL);
       uint64_t lem = ci ? legauto_lembrada(ci->imdb[0] ? ci->imdb : ci->titulo, pref) : 0;
+      // #743: "Evitar SDH" tambem vale para a escolha entre as do addon — o
+      // addon nao manda a flag, entao vale o nome do arquivo/rotulo. Se TODAS
+      // sao SDH, a lista fica como esta (melhor SDH que nada).
+      if (ajustes_legenda_evitar_sdh()) {
+        int w = 0;
+        for (i = 0; i < nv; i++)
+          if (!ling_nome_sdh(v[i].arquivo[0] ? v[i].arquivo : v[i].rotulo)) {
+            if (w != i) v[w] = v[i];
+            w++;
+          }
+        if (w) nv = w;
+      }
       int b = legauto_escolher(v, nv, pref, legauto_midia(video_url_atual()), NULL, 0, lem);
-      if (b >= 0 && b < nAdd) r = nEmb + b;
+      if (b >= 0 && b < nv) {
+        // O indice voltou da lista FILTRADA: achar a mesma URL na combinada.
+        const char *esc = v[b].url;
+        int k;
+        for (k = 0; k < nAdd; k++) {
+          const Legenda *l = addons_legenda(k);
+          if (l && !strcmp(l->url, esc)) { r = nEmb + k; break; }
+        }
+      }
       free(v);
     }
   }
