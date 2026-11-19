@@ -54,7 +54,8 @@ int main(void) {
   static CatFileira fs[1];
   const char *a;
   int i;
-  ajustes_aplicar_blob("{\"continueWatchingEnabled\":true,\"useEpisodeThumbnailsInCw\":true}");
+  assert(ajustes_shot_valor("continueWatchingEnabled", 0));
+  assert(ajustes_shot_valor("useEpisodeThumbnailsInCw", 0));
   for (i = 0; i < 2; i++) {
     snprintf(it[i].imdb, sizeof it[i].imdb, "tt%07d", 1000 + i);
     snprintf(it[i].titulo, sizeof it[i].titulo, "T%d", i);
@@ -90,7 +91,7 @@ int main(void) {
   assert(a && !strstr(a, "episodes.metahub.space"));
   puts("ok  filme: arte do titulo");
 
-  ajustes_aplicar_blob("{\"useEpisodeThumbnailsInCw\":false}");
+  assert(ajustes_shot_valor("useEpisodeThumbnailsInCw", 1));
   assert(!ajustes_cw_thumb_episodio());
   a = arte_por_identidade(0, 3);
   assert(a && !strstr(a, "episodes.metahub.space"));
