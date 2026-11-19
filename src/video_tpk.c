@@ -1917,6 +1917,16 @@ void video_bombear(void) {
     fflush(stdout);
     reconFaixasPend = 1;
     reconBuscarMs = recon.alvo > 1.0 ? (int)(recon.alvo * 1000.0) : -1;
+    if (!cv.ativo && recon.alvo >= 0) {
+      /* #728: sem o convertido o player reabre antes do seek — video_pos() nao
+       * pode cair para 0 e arrastar a legenda (igual ao #710 no .wgt). */
+      cv.reabrindo = 1;
+      cv.posMantida = recon.alvo > 1.0 ? recon.alvo : posReal();
+      cv.reabriuEm = SDL_GetTicks();
+      printf("[video] reconexao TPK: mantem pos %.1f s ate reabrir (tentativa %d)\n",
+             cv.posMantida, recon.tentativa);
+      fflush(stdout);
+    }
     if (cv.ativo) {
       double alvo = recon.alvo > 1.0 ? recon.alvo : cv.posConhecida;
       convReabrir(alvo, "reconexao");
