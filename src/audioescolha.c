@@ -119,14 +119,19 @@ static int parecenca(const AudioCand *c, const AudioLembrada *m) {
   return p + (rot ? 4 : 0) + (cod ? 2 : 0) + (ch ? 1 : 0);
 }
 
-// Num idioma: a primeira que nao e DTS/TrueHD; senao a primeira DTS/TrueHD.
+/* Preferencia regional (#777): entre faixas do mesmo idioma, ling_afinidade
+ * separa es-419 de es-ES (e pt-BR de pt-PT). */
 static int noIdioma(const AudioCand *c, int n, const char *pref) {
-  int i, dts = -1;
+  int i, dts = -1, melhor = -1, nota = 0, a;
   for (i = 0; i < n; i++) {
     if (!c[i].pode || !c[i].idioma || !c[i].idioma[0] || !ling_casa(c[i].idioma, pref)) continue;
-    if (!c[i].dts) return i;
+    if (!c[i].dts) {
+      a = ling_afinidade(c[i].idioma, pref);
+      if (a > nota) { nota = a; melhor = i; }
+    }
     if (dts < 0) dts = i;
   }
+  if (melhor >= 0) return melhor;
   return dts;
 }
 

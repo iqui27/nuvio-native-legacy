@@ -13,6 +13,8 @@ static const struct { const char *cod, *nome; } NOMES[] = {
   { "pt-br", "Português (BR)" }, { "ptb", "Português (BR)" }, { "br", "Português (BR)" },
   { "en", "Inglês" },     { "eng", "Inglês" },
   { "es", "Espanhol" },   { "spa", "Espanhol" }, { "esp", "Espanhol" },
+  { "es-419", "Espanhol (Latinoam\xc3\xa9rica)" }, { "es-es", "Espanhol (Espanha)" },
+  { "pt-pt", "Portugu\xc3\xas (Portugal)" },
   { "fr", "Francês" },    { "fre", "Francês" },  { "fra", "Francês" },
   { "de", "Alemão" },     { "ger", "Alemão" },   { "deu", "Alemão" },
   { "it", "Italiano" },   { "ita", "Italiano" },
@@ -206,6 +208,13 @@ const char *ling_selo(const char *cod) {
   if (!strcasecmp(cod, "pob") || !strcasecmp(cod, "pt-br") || !strcasecmp(cod, "pt_br") ||
       !strcasecmp(cod, "ptb") || !strcasecmp(cod, "br") || !strcasecmp(cod, "pb") ||
       !strcasecmp(cod, "ptbr")) return "PT-BR";
+  if (!strcasecmp(cod, "pt-pt") || !strcasecmp(cod, "pt_pt") || !strcasecmp(cod, "ptp"))
+    return "PT-PT";
+  if (!strcasecmp(cod, "es-419") || !strcasecmp(cod, "es_419") || !strcasecmp(cod, "es-mx") ||
+      !strcasecmp(cod, "es_mx"))
+    return "LA";
+  if (!strcasecmp(cod, "es-es") || !strcasecmp(cod, "es_es") || !strcasecmp(cod, "es-cast"))
+    return "ES";
   f = familia(cod, fam);
   for (k = 0; f[k] && k < 2; k++) d[k] = (char)(f[k] >= 'a' && f[k] <= 'z' ? f[k] - 32 : f[k]);
   d[k] = 0;
@@ -218,7 +227,29 @@ int ling_afinidade(const char *cod, const char *pref) {
   if (!pref || !*pref) return 1;
   if (!cod || !*cod || !ling_casa(cod, pref)) return 0;
   { char fam[8];
-    if (!strcmp(familia(pref, fam), "pt")) return !strcmp(ling_selo(cod), "PT-BR") ? 3 : 2; }
+    const char *fp = familia(pref, fam), *fc = familia(cod, fam);
+    if (!strcmp(fp, "pt")) {
+      if (!strcasecmp(pref, "pt-br") || !strcasecmp(pref, "pt_br"))
+        return !strcmp(ling_selo(cod), "PT-BR") ? 3 : (ling_casa(cod, "pt") ? 1 : 0);
+      if (!strcasecmp(pref, "pt-pt") || !strcasecmp(pref, "pt_pt"))
+        return !strcmp(ling_selo(cod), "PT-PT") ? 3 : (ling_casa(cod, "pt") ? 1 : 0);
+      return !strcmp(ling_selo(cod), "PT-BR") ? 3 : 2;
+    }
+    if (!strcmp(fp, "es") && !strcmp(fc, "es")) {
+      if (!strcasecmp(pref, "es-419") || !strcasecmp(pref, "es_419")) {
+        if (!strcasecmp(cod, "es-419") || !strcasecmp(cod, "es_419") || !strcasecmp(cod, "es-mx"))
+          return 3;
+        if (!strcasecmp(cod, "es-es") || !strcasecmp(cod, "es_es")) return 1;
+        return 2;
+      }
+      if (!strcasecmp(pref, "es-es") || !strcasecmp(pref, "es_es")) {
+        if (!strcasecmp(cod, "es-es") || !strcasecmp(cod, "es_es")) return 3;
+        if (!strcasecmp(cod, "es-419") || !strcasecmp(cod, "es_419") || !strcasecmp(cod, "es-mx"))
+          return 1;
+        return 2;
+      }
+    }
+  }
   return !strcasecmp(cod, pref) ? 3 : 2;
 }
 
@@ -371,7 +402,9 @@ static const char *OPCOES_COD[] = {
   // #429 (2.0.6): croata, servio e bosnio, adicionados NO FIM pela regra
   // acima. Ficam fora da ordem alfabetica de proposito — a ordem e
   // compatibilidade, nao estetica.
-  "hr", "sr", "bs"
+  "hr", "sr", "bs",
+  // #777: variantes regionais NO FIM (regra do ajustes.txt).
+  "es-419", "pt-pt"
 };
 // LING_OPC_ORIGINAL e o indice do "~": fixo por compatibilidade com todo
 // ajustes.txt ja gravado (ver o comentario acima). Os idiomas novos entram
