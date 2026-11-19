@@ -1,0 +1,21 @@
+[
+  {
+    "id": 13914,
+    "name": "Oscar Winners",
+    "description": "Every feature film that ever won Best Picture",
+    "mediatype": "movie",
+    "items": 301,
+    "user": { "name": "qualquer" },
+    "privacy": "private"
+  },
+  {
+    "id": 20416,
+    "name": "Top Series 2026",
+    "description": "",
+    "mediatype": "show",
+    "items": 42
+  },
+  {
+    "name": "Sem id, ignorada"
+  }
+]

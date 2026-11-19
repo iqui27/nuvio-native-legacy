@@ -9715,7 +9715,8 @@ static uint64_t vtHashItem(uint64_t h, const char *p, const char *fim, const cha
 static unsigned vtGeracao;
 static NvPerfilSessao vtSessao;
 // Fonte nao-addon aberta por desc_vertudo_fonte (issue #44): vtProvedor 1 e
-// TMDB, 2 e Trakt; vtFonte e uma copia zerada da ColSource para o memcmp de
+// TMDB, 2 e Trakt, 3 e caca, 4 e MDBList; vtFonte e uma copia zerada da
+// ColSource para o memcmp de
 // "mesma fonte" ser seguro (a struct tem preenchimento).
 static ColSource vtFonte;
 static int      vtProvedor;
@@ -9833,6 +9834,47 @@ static int deMetaTrakt(const char *p, const char *f, const char *midia,
     if (ano) snprintf(d->meta, sizeof d->meta, "%ld", ano); }
   snprintf(d->tipo, sizeof d->tipo, "%s", serie ? "series" : "movie");
   snprintf(d->genero, sizeof d->genero, "%s", i18n(rotuloTipoSing(d->tipo)));
+  return 1;
+}
+
+static int deMetaMdblist(const char *p, const char *f, const char *midia,
+                           CatItem *d) {
+  char imdb[24], mt[16], poster[512], v[256];
+  int serie;
+  memset(d, 0, sizeof *d);
+  imdb[0] = 0;
+  if (!js_texto(p, f, "imdb_id", imdb, sizeof imdb) &&
+      !js_texto(p, f, "imdbid", imdb, sizeof imdb)) {
+    long id = (long)js_num(p, f, "imdbid", 0);
+    if (id > 0) snprintf(imdb, sizeof imdb, "tt%07ld", id);
+  }
+  if (!imdb[0]) return 0;
+  if (imdb[0] == 't') snprintf(d->imdb, sizeof d->imdb, "%s", imdb);
+  else snprintf(d->imdb, sizeof d->imdb, "tt%s", imdb);
+  if (!js_texto(p, f, "title", d->titulo, sizeof d->titulo) &&
+      !js_texto(p, f, "name", d->titulo, sizeof d->titulo))
+    return 0;
+  mt[0] = 0;
+  js_texto(p, f, "mediatype", mt, sizeof mt);
+  if (!mt[0]) js_texto(p, f, "media_type", mt, sizeof mt);
+  serie = !strcasecmp(midia, "TV") || !strcasecmp(mt, "show") ||
+          !strcasecmp(mt, "tv");
+  if (!serie && strcasecmp(midia, "TV") &&
+      (strcasecmp(mt, "show") == 0 || strcasecmp(mt, "tv") == 0))
+    return 0;
+  if (serie && strcasecmp(midia, "TV") &&
+      mt[0] && strcasecmp(mt, "show") && strcasecmp(mt, "tv"))
+    return 0;
+  snprintf(d->tipo, sizeof d->tipo, "%s", serie ? "series" : "movie");
+  snprintf(d->genero, sizeof d->genero, "%s", i18n(rotuloTipoSing(d->tipo)));
+  if (js_texto(p, f, "poster", poster, sizeof poster) && poster[0])
+    snprintf(d->poster, sizeof d->poster, "%s", poster);
+  else if (js_texto(p, f, "poster_path", v, sizeof v) && v[0] == '/')
+    snprintf(d->poster, sizeof d->poster, "https://image.tmdb.org/t/p/w342%s", v);
+  { long ano = (long)js_num(p, f, "year", 0.0);
+    if (ano) snprintf(d->meta, sizeof d->meta, "%ld", ano); }
+  d->tmdb = (long)js_num(p, f, "tmdbid", 0);
+  if (!d->tmdb) d->tmdb = (long)js_num(p, f, "tmdb_id", 0);
   return 1;
 }
 
@@ -10096,7 +10138,8 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
       !descSessaoVincular(sessao)) return 0;
   f = *fonte;
   prov = !f.prov[0] ? 0 : !strcmp(f.prov, "tmdb") ? 1 :
-         !strcmp(f.prov, "trakt") ? 2 : -1;
+         !strcmp(f.prov, "trakt") ? 2 :
+         !strcmp(f.prov, "mdblist") ? 4 : -1;
   r.pagina = prov ? 1 : 0;
   snprintf(origem, sizeof origem, "%s", base ? base : f.base);
   if (prov < 0 || (!prov && (!origem[0] || !f.type[0] || !f.catId[0] ||
@@ -10132,6 +10175,17 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
         f.traktLista, !strcasecmp(f.midia, "TV") ? "show" : "movie", pagina,
         f.ordenar[0] ? f.ordenar : "rank", f.ordem[0] ? f.ordem : "asc");
       pronta = pronta && w >= 0 && (size_t)w < sizeof url;
+    } else if (prov == 4) {
+      char mdbKey[120];
+      int w;
+      vetor = NULL;
+      pronta = extras_mdblist_chave(mdbKey, sizeof mdbKey) && f.catId[0];
+      if (pronta) {
+        w = snprintf(url, sizeof url,
+          "https://api.mdblist.com/lists/%s/items?apikey=%s&page=%d&limit=50",
+          f.catId, mdbKey, pagina);
+        pronta = w >= 0 && (size_t)w < sizeof url;
+      }
     } else {
       char encoded[sizeof f.genre * 3 + 1], extra[340] = "";
       int z = 0, w;
@@ -10155,7 +10209,8 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
     corpo = !prov ? colecaoBaixar(url, &status) :
             prov == 2 ? rede_baixar_com(url, 12, cab) : rede_baixar(url, 12);
     if (!descSessaoAtual()) { free(corpo); free(ids); return 0; }
-    if (!colecaoArray(corpo, vetor, &p)) {
+    if (!colecaoArray(corpo, vetor, &p) &&
+        !(prov == 4 && colecaoArray(corpo, "items", &p))) {
       if (!prov) colecaoLog(f.title, origem, f.type, f.catId, f.genre, skip, status, 0,
                              corpo ? "invalid_metas" : "http_or_transport");
       free(corpo); r.erro = 1; break;
@@ -10182,7 +10237,9 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
         if (strcasecmp(trabalho, "director")) { nv_perfil_sessao_destravar(); continue; }
       }
       ok = prov == 1 ? deMetaTmdb(p, fimItem, !strcasecmp(f.midia, "TV") ? "series" : "movie", &item) :
-           prov == 2 ? deMetaTrakt(p, fimItem, f.midia, &item) : deMeta(p, fimItem, f.type, &item);
+           prov == 2 ? deMetaTrakt(p, fimItem, f.midia, &item) :
+           prov == 4 ? deMetaMdblist(p, fimItem, f.midia, &item) :
+           deMeta(p, fimItem, f.type, &item);
       if (!ok || !colecaoTipo(&f, &item)) { nv_perfil_sessao_destravar(); continue; }
       if (descOcultaNaoLancado(&item)) { novos++; nv_perfil_sessao_destravar(); continue; }
       if (!prov) origemDaBase(origem, item.origem, sizeof item.origem);
@@ -10206,7 +10263,7 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
     if (!prov) colecaoLog(f.title, origem, f.type, f.catId, f.genre, skip, status, aceitos,
                            !raw ? "empty_page" : !novos ? "no_new_items" : "ok");
     free(corpo);
-    if (prov == 2 && raw < 40) fim = 1;
+    if ((prov == 2 && raw < 40) || (prov == 4 && raw < 50)) fim = 1;
     r.mais = raw > 0 && novos > 0 && total < teto && !fim;
     r.pagina = prov ? pagina + (r.mais ? 1 : 0) : skip + raw;
     if (!raw || !novos || total >= teto || fim || !ocultar || visiveis) break;
@@ -10215,7 +10272,7 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
   free(ids);
   if (r.erro) r.mais = 0;
   if (!descSessaoAtual()) return 0;
-  if (prov == 2) {
+  if (prov == 2 || prov == 4) {
     // Somente as duas janelas que serao mostradas precisam de arte. O helper
     // usa o mesmo pedido de sessao e seus proprios fios/buffers de enfeite.
     if (r.n) r.n = descEnfeitar(itens, r.n);
@@ -10310,7 +10367,7 @@ static void *fioVerTudo(void *u) {
         }
         ok=1;
       }
-    } else {
+    } else if (prov==2) {
       // So listas vindas de /users/me/lists recebem o token da sessao.
       const char *cli=nuvem_trakt_cliente();
       if (cli[0]) {
@@ -10348,11 +10405,32 @@ static void *fioVerTudo(void *u) {
           ok=1;
         }
       }
+    } else if (prov==4) {
+      char mdbKey[120];
+      if (extras_mdblist_chave(mdbKey, sizeof mdbKey) && fonte.catId[0]) {
+        snprintf(url,sizeof url,
+          "https://api.mdblist.com/lists/%s/items?apikey=%s&page=%d&limit=50",
+          fonte.catId, mdbKey, skip);
+        corpo=rede_baixar(url,12);
+        if (corpo) {
+          const char *p=NULL;
+          if (!colecaoArray(corpo, NULL, &p) && !colecaoArray(corpo, "items", &p))
+            p = *corpo=='[' ? js_raiz_array(corpo) : NULL;
+          for(;p&&nl<48;p=js_prox(js_fim(p))) {
+            const char *f=js_fim(p); raw++;
+            if (deMetaMdblist(p,f,fonte.midia,&lote[nl]) && colecaoTipo(&fonte, &lote[nl])) {
+              if (descOcultaNaoLancado(&lote[nl])) ocultos++; else nl++;
+            }
+          }
+          if (raw<50) semMais=1;
+          ok=1;
+        }
+      }
     }
     free(corpo);
     // Itens do Trakt chegam sem poster: o lote inteiro ganha arte pelo
     // Cinemeta de uma vez, como a fileira "Continuar assistindo" ja faz.
-    if (prov==2&&nl) descEnfeitar(lote,nl);
+    if ((prov==2||prov==4)&&nl) descEnfeitar(lote,nl);
     pthread_mutex_lock(&vtTrava);
     if(generation!=vtGeracao || !descSessaoAtual()){pthread_mutex_unlock(&vtTrava);free(lote);continue;}
     int seguir = 0;
@@ -10599,7 +10677,8 @@ void desc_vertudo_fonte_desde(const ColSource *s, int pagina) {
   memset(vtIdSlot, -1, sizeof vtIdSlot);
   vtFonte = copia;
   vtReload = vtPaginaMudou = vtReplay = 0;
-  vtProvedor = !strcmp(s->prov, "trakt") ? 2 : 1;
+  vtProvedor = !strcmp(s->prov, "trakt") ? 2
+             : !strcmp(s->prov, "mdblist") ? 4 : 1;
   vtBase[0] = 0;
   vtN = 0; vtPagina = pagina; vtFim = 0; vtErro = 0; vtGeracao++;
   pthread_mutex_unlock(&vtTrava);
