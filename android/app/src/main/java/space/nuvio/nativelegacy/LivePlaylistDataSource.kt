@@ -143,9 +143,13 @@ internal class LivePlaylistDataSource private constructor(
         // the server advertises Content-Length. Keep the extractor loading.
         if (liveTsSpec != null) return C.LENGTH_UNSET.toLong()
         val http = dataSpec.uri.scheme.equals("http", true) || dataSpec.uri.scheme.equals("https", true)
-        val manifest = dataSpec.uri.path?.endsWith(".m3u8", true) == true || headers.any { (key, values) ->
+        val manifest = dataSpec.uri.path?.endsWith(".m3u8", true) == true ||
+            dataSpec.uri.path?.endsWith(".mpd", true) == true || headers.any { (key, values) ->
             key.equals("Content-Type", true) && values.any {
-                it.substringBefore(';').trim().lowercase() in setOf("application/vnd.apple.mpegurl", "application/x-mpegurl", "audio/mpegurl", "audio/x-mpegurl")
+                it.substringBefore(';').trim().lowercase() in setOf(
+                    "application/vnd.apple.mpegurl", "application/x-mpegurl", "audio/mpegurl", "audio/x-mpegurl",
+                    "application/dash+xml", "application/xml",  // live DASH (#802)
+                )
             }
         }
         if (!http || !manifest || dataSpec.httpMethod != DataSpec.HTTP_METHOD_GET ||
@@ -309,9 +313,13 @@ internal class LivePlaylistDataSource private constructor(
 
     companion object {
         // Only the Xtream continuous live endpoint; never VOD or HLS segments.
-        internal fun isLiveTs(uri: Uri): Boolean =
-            (uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) &&
-                uri.path?.matches(Regex("/live/[^/]+/[^/]+/[^/]+\\.ts", RegexOption.IGNORE_CASE)) == true
+                internal fun isLiveTs(uri: Uri): Boolean {
+            if (!(uri.scheme.equals("http", true) || uri.scheme.equals("https", true))) return false
+            val path = uri.path ?: return false
+            val lower = path.lowercase()
+            if (lower.endsWith(".ts") || lower.endsWith(".mpeg")) return true
+            return path.matches(Regex("(?i)/live/[^/]+/[^/]+/[^/]+\.ts$"))
+        }
 
         private const val MAX_MANIFEST_BYTES = 256 * 1024
         private fun readBounded(source: DataSource, check: () -> Unit = {}): ByteArray {
@@ -327,9 +335,16 @@ internal class LivePlaylistDataSource private constructor(
         }
 
         // Only a refresh hint; the bytes are still parsed and validated by Media3 unchanged.
+        internal fun isDashManifest(bytes: ByteArray): Boolean {
+            if (bytes.size > MAX_MANIFEST_BYTES) return false
+            val text = bytes.toString(Charsets.UTF_8).trimStart()
+            return text.startsWith("<?xml") && text.contains("<MPD") && text.contains("type=\"dynamic\"")
+        }
+
         private fun parse(bytes: ByteArray): Snapshot? {
             if (bytes.size > MAX_MANIFEST_BYTES) return null
             val text = bytes.toString(Charsets.UTF_8)
+            if (isDashManifest(bytes)) return null   // Media3 owns live DASH (#802); never rewrite
             if (!text.startsWith("#EXTM3U") || text.contains("#EXT-X-ENDLIST") ||
                 text.contains("#EXT-X-PLAYLIST-TYPE:VOD") || text.contains("#EXT-X-PART") ||
                 text.contains("#EXT-X-SKIP") || text.contains("CAN-BLOCK-RELOAD=YES")) return null
