@@ -150,6 +150,10 @@ int st_voz_iniciar(int d) {
     micTeclado = 1;
   }
 #endif
+  if (!ok && st_ime_disponivel()) {
+    ok = st_ime_abrir(d, "", 255);
+    if (ok) aviso = "Use o microfone do teclado do sistema.";
+  }
   if (!ok) aviso = "O ditado não respondeu. Tente de novo ou digite.";
   printf("[voice] %s (owner=%d, language=%s)\n", ok ? "requested" : "startup failed", d, desc_tmdb_idioma());
   fflush(stdout);
