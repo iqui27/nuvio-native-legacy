@@ -201,5 +201,7 @@ void intro_shot_marcas(const char *imdb,int t,int e,const IntroTrecho *v,int n,i
 void intro_shot_rede(const IntroTrecho *v,int n,const IntroTrecho *lim,int nl);   // teste: trechos da rede   // capturas: trechos fixos
 #endif
 void intro_contrib_registrar(const char *imdb, int tipo, int iniMs, int fimMs);
+// Teto do diario local (#494): cheio, gira para .1 e recomeca.
+#define INTRO_CONTRIB_MAX 262144L
 #endif
 
