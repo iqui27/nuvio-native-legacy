@@ -1321,15 +1321,16 @@ object NvPlayer {
             if (r.velocidadePcm != pcm) {
                 val pos = p.currentPosition
                 val play = p.playWhenReady
+                val sv = superficie
                 r.velocidadePcm = pcm
                 // Re-select the audio decoder against the new sink capabilities.
-                // stop/prepare is required; suppressVideoSurfaceClearingOnStop keeps the
-                // last frame visible during audio-sink rebuild (#740).
-                p.stop()
-                p.seekTo(pos)
+                // Media3 1.8 has no surface-preserving stop(); pause, flip PCM policy,
+                // and reattach the SurfaceView so the last frame stays visible (#740).
+                p.pause()
                 p.setPlaybackSpeed(v)
-                p.prepare()
-                p.playWhenReady = play
+                p.seekTo(pos)
+                sv?.let { p.setVideoSurfaceView(it) }
+                if (play) p.play() else p.playWhenReady = false
                 Log.i(TAG, "[speed] pcm policy flip pos=$pos playWhenReady=$play")
             } else p.setPlaybackSpeed(v)
             Log.i(TAG, "[speed] requested=$v parameters=${p.playbackParameters.speed} pcm=$pcm")
@@ -1565,8 +1566,6 @@ object NvPlayer {
             // Renderer teardown runs on Media3's playback thread. Bound UI waits.
             .setReleaseTimeoutMs(200)
             .setDetachSurfaceTimeoutMs(200)
-            // #740: speed changes rebuild the audio renderer; keep the video surface.
-            .setSuppressVideoSurfaceClearingOnStop(true)
         val seletor = if (r.idiomaAudio.isNotEmpty()) SeletorAudioPreparo(act, r.idiomaAudio)
                       else DefaultTrackSelector(act)
         seletor.parameters = seletor.parameters.buildUpon()

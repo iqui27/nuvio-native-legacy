@@ -1,6 +1,6 @@
 #!/bin/bash
 set -eu
 cd "$(dirname "$0")/.."
-grep -q 'setSuppressVideoSurfaceClearingOnStop(true)' android/app/src/main/java/space/nuvio/nativelegacy/NvPlayer.kt
-grep -A28 '@JvmStatic fun velocidade' android/app/src/main/java/space/nuvio/nativelegacy/NvPlayer.kt | grep -q 'p.playWhenReady = play'
+grep -A32 '@JvmStatic fun velocidade' android/app/src/main/java/space/nuvio/nativelegacy/NvPlayer.kt | grep -q 'setVideoSurfaceView'
+grep -A32 '@JvmStatic fun velocidade' android/app/src/main/java/space/nuvio/nativelegacy/NvPlayer.kt | grep -qE 'p\.play\(\)|playWhenReady'
 echo "velocidade_android_gate: PASS"

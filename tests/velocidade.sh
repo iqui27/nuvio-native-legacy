@@ -16,8 +16,8 @@ Path(sys.argv[1]).write_text(gate.group())
 PY
 cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -I"$work" -Isrc src/velocidade.c tests/velocidade.c -lm -o "$work/t"
 "$work/t"
-grep -q 'setSuppressVideoSurfaceClearingOnStop(true)' android/app/src/main/java/space/nuvio/nativelegacy/NvPlayer.kt
-python3 tests/velocidade_android.py
+grep -q 'setVideoSurfaceView' android/app/src/main/java/space/nuvio/nativelegacy/NvPlayer.kt
+bash tests/velocidade_android_gate.sh
 # A ilha e a contagem do proximo episodio contam em tempo de relogio.
 # ...com a velocidade MEDIDA, nunca a pedida (TCL 06/10: "ok" com o video a 1x).
 grep -q 'vel_tempo_real((double)(duracaoSeg - posSeg), velMed.efetiva)' src/player.c

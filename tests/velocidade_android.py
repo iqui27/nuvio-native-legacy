@@ -4,6 +4,8 @@ from pathlib import Path
 import os
 import subprocess
 import tempfile
+os.environ.setdefault("GRADLE_RO_DEP_CACHE", "/home/ubuntu/nuvio-qa-21/global/toolchains/gradle/caches")
+os.environ.setdefault("ANDROID_HOME", "/home/ubuntu/nuvio-qa-21/global/toolchains/android-sdk")
 
 root = Path(__file__).resolve().parents[1]
 kt = root / "android/app/src/main/java/space/nuvio/nativelegacy"
@@ -33,10 +35,11 @@ class FakePlayer {
     var playWhenReady = false
     var playbackParameters = Parameters()
     val calls = mutableListOf<String>()
-    fun stop() { calls.add("stop"); currentPosition = 0 }
+    fun pause() { calls.add("pause") }
+    fun play() { calls.add("play"); playWhenReady = true }
     fun seekTo(pos: Long) { calls.add("seek"); currentPosition = pos }
     fun setPlaybackSpeed(speed: Float) { calls.add("speed"); playbackParameters.speed = speed }
-    fun prepare() { calls.add("prepare") }
+    fun setVideoSurfaceView(sv: Any?) { calls.add("surface") }
 }
 class Resources { var velocidadePcm = false }
 object Bridge {
@@ -45,6 +48,7 @@ object Bridge {
     val pedidos = java.util.concurrent.atomic.AtomicInteger(1)
     var player: FakePlayer? = FakePlayer()
     var recursosAtuais: Resources? = Resources()
+    var superficie: Any? = Any()
     SPEED_METHOD
 }
 fun main() {
@@ -58,7 +62,7 @@ fun main() {
         check(p.playbackParameters.speed == speed / 100f)
         check(r.velocidadePcm == (speed != 100))
         check(p.currentPosition == 42000L && !p.playWhenReady)
-        check(p.calls == if (changed) listOf("stop", "seek", "speed", "prepare") else listOf("speed"))
+        check(p.calls == if (changed) listOf("pause", "speed", "seek", "surface") else listOf("speed"))
     }
     p.playWhenReady = true
     Bridge.velocidade(150); Bridge.principal.drain()
@@ -101,7 +105,8 @@ with tempfile.TemporaryDirectory(prefix="nuvio-speed-android-") as work:
     for name in ("media3-common", "media3-exoplayer"):
         deps.append(aar_jar("androidx.media3", name, "1.8.0", work))
     deps.append(jar("com.google.guava", "guava", "33.3.1-android"))
-    sources = [kt / "AudioSyncSink.kt", kt / "AudioSyncTap.kt"]
+    sources = [kt / "AudioSyncSink.kt", kt / "AudioSyncTap.kt",
+]
     for name, content in {
         "Replay.kt": fixture,
         "Log.kt": "package android.util\nobject Log { @JvmStatic fun i(tag: String, message: String) = 0 }",
