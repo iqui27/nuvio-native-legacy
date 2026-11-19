@@ -3788,6 +3788,7 @@
   T("Gargalo principal", "Главное узкое место"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Управлять"),
+  T("Gerenciar add-ons", "Управление аддонами"),
   T("Gerenciar conexões", "Управление подключениями"),
   T("Gerenciar fontes", "Управление шрифтами"),
   T("Gerenciar legendas no celular", "Управление субтитрами на телефоне"),

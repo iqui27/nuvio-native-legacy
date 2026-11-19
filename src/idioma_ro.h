@@ -3788,6 +3788,7 @@
   T("Gargalo principal", "Blocajul principal"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Gestionează"),
+  T("Gerenciar add-ons", "Gestionează addon-urile"),
   T("Gerenciar conexões", "Gestionează conexiunile"),
   T("Gerenciar fontes", "Gestionați fonturile"),
   T("Gerenciar legendas no celular", "Gestionați subtitrările pe telefon"),

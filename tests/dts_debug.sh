@@ -5,12 +5,15 @@ set -eu
 cd "$(dirname "$0")/.."
 TMP=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-dts-debug-test.XXXXXXXX)
 trap 'rm -rf "$TMP"' EXIT
+# Plain string (this script is /bin/sh): ld64 has no --gc-sections.
+GC_SECTIONS=-Wl,--gc-sections
+if [ "$(uname -s)" = Darwin ]; then GC_SECTIONS=-Wl,-dead_strip; fi
 for mode in production debug; do
   FLAGS=''
   if [ "$mode" = debug ]; then FLAGS='-DNV_DTS_DEBUG -DNV_APP_ID="space.nuvio.native.legacy.dtsdebug"'; fi
   ${CC:-cc} -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Isrc \
     -DNV_WEBOS -DNV_DTS_FFMPEG $FLAGS tests/dts_debug_identity.c src/dts/dts_playback.c \
-    -Wl,--gc-sections -pthread -lm -o "$TMP/identity"
+    $GC_SECTIONS -pthread -lm -o "$TMP/identity"
   "$TMP/identity"
   ${CC:-cc} -std=gnu11 -Wall -Wextra -Wno-format-truncation -Isrc $FLAGS \
     tests/dts_debug_data.c src/dados.c -pthread -o "$TMP/data"
@@ -23,13 +26,13 @@ done
 for FLAGS in '' '-DNV_WEBOS' '-DNV_DTS_FFMPEG'; do
   ${CC:-cc} -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Isrc \
     $FLAGS tests/dts_debug_identity.c src/dts/dts_playback.c \
-    -Wl,--gc-sections -pthread -lm -o "$TMP/platform"
+    $GC_SECTIONS -pthread -lm -o "$TMP/platform"
   "$TMP/platform"
 done
 printf 'DTS unavailable without webOS or FFmpeg, including legacy launch variables\n'
 ${CC:-cc} -std=gnu11 -ffunction-sections -fdata-sections -Isrc \
   -DNV_DTS_DEBUG '-DNV_APP_ID="space.nuvio.native.legacy.dtsdebug"' \
-  tests/dts_debug_updater.c -Wl,--gc-sections -lm -o "$TMP/updater"
+  tests/dts_debug_updater.c $GC_SECTIONS -lm -o "$TMP/updater"
 "$TMP/updater"
 # A debug binary cannot accidentally inherit the default production identity.
 if ${CC:-cc} -Isrc -DNV_DTS_DEBUG -x c -c -o "$TMP/invalid.o" - <<'C' 2>"$TMP/expected-error"

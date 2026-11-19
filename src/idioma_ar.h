@@ -3789,6 +3789,7 @@
   T("Gargalo principal", "عنق الزجاجة الرئيسي"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Manage"),
+  T("Gerenciar add-ons", "إدارة الإضافات"),
   T("Gerenciar conexões", "إدارة الاتصالات"),
   T("Gerenciar fontes", "إدارة المصادر"),
   T("Gerenciar legendas no celular", "إدارة الترجمات على الهاتف"),

@@ -3789,6 +3789,7 @@
   T("Gargalo principal", "Glavno usko grlo"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Upravljaj"),
+  T("Gerenciar add-ons", "Upravljaj dodacima"),
   T("Gerenciar conexões", "Upravljaj vezama"),
   T("Gerenciar fontes", "Upravljajte fontovima"),
   T("Gerenciar legendas no celular", "Upravljajte titlovima na telefonu"),

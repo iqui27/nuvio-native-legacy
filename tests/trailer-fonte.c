@@ -166,6 +166,37 @@ int main(void) {
 #else
   confere("sem NV_TPK: IMDb-primeiro da tela cheia desligado por padrao", trailerfonte_imdb_primeiro_cheia() == 0);
 #endif
+  trailerfonte_definir_imdb_primeiro_cheia(1);
+  c = todas(); c.appleIdiomaPreferido = 1;
+#ifdef NV_TPK
+  // Samsung/TPK (NV_TRAILER_SAMSUNG): the Apple variant is video-only, so a
+  // localized-but-silent Apple must NOT jump the IMDb-first-for-sound order.
+  confere("localized Apple never beats IMDb-with-audio on TPK",
+          trailerfonte_escolher_cheia(TRF_AUTO, 0, 1, &c, &u, &n) == TRF_ABRE && n == TRF_IMDB);
+  c = todas(); c.appleIdiomaPreferido = 1; c.imdb = NULL;
+  confere("localized Apple still plays when IMDb is absent on TPK",
+          trailerfonte_escolher_cheia(TRF_AUTO, 0, 1, &c, &u, &n) == TRF_ABRE && n == TRF_APPLE);
+#else
+  confere("localized Apple beats English IMDb on native TPK fullscreen",
+          trailerfonte_escolher_cheia(TRF_AUTO, 0, 1, &c, &u, &n) == TRF_ABRE && n == TRF_APPLE);
+#endif
+  c = todas(); c.appleIdiomaPreferido = 1;
+  confere("localized Apple respects a fixed IMDb provider",
+          escolhe(TRF_IMDB, 0, &c, &u) == TRF_IMDB);
+  c.appleIdiomaPreferido = -1; c.apple = NULL; c.appleRespondeu = 0;
+#ifndef NV_TPK
+  confere("wait for localized Apple before native TPK English default",
+          trailerfonte_escolher_cheia(TRF_AUTO, 0, 1, &c, &u, &n) == TRF_ESPERA);
+  c.appleRespondeu = 1;
+  confere("localized lookup deadline releases English fallback",
+          trailerfonte_escolher_cheia(TRF_AUTO, 0, 1, &c, &u, &n) == TRF_ABRE && n == TRF_IMDB);
+#else
+  confere("pending localized Apple does not stall IMDb-with-audio on TPK",
+          trailerfonte_escolher_cheia(TRF_AUTO, 0, 1, &c, &u, &n) == TRF_ABRE && n == TRF_IMDB);
+#endif
+  c = todas(); c.appleIdiomaPreferido = 1; c.appleFalhou = 1;
+  confere("failed localized Apple releases fallback",
+          trailerfonte_escolher_cheia(TRF_AUTO, 0, 1, &c, &u, &n) == TRF_ABRE && n == TRF_IMDB);
   trailerfonte_definir_imdb_primeiro_cheia(0);   // o que o .wgt e a LG compilam
   for (tz = 0; tz <= 1; tz++) {
     int aj, a[3], b[3], na, nb, k, igual;

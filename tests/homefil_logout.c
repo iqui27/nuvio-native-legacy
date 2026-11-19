@@ -4,6 +4,13 @@
 #undef main
 #include "homefil.h"
 #include "catalogo.h"
+#include "rede.h"
+#include <assert.h>
+
+// Real segfontes.c rides along with sync.c (logout clears the account
+// Anime-Skip id). Its transport must never run in this offline fixture.
+int rede_pedir(const RedePedido *p, RedeResposta *r) { (void)p; (void)r; assert(!"rede_pedir"); return 0; }
+void rede_resposta_limpar(RedeResposta *r) { (void)r; }
 
 void ajustes_edicao_encerrar(void) {}
 int ajustes_edicao_perfil(void) { return 0; }
@@ -17,6 +24,7 @@ int rewatch_blob_ler(const char *blob) { (void)blob; return 0; }
 void rewatch_esquecer(void) {}
 void rewatch_sujar(void) {}
 int rewatch_sujo(void) { return 0; }
+void segfontes_animeskip_id_conta(const char *id) { (void)id; }
 void trava_definir_conta(const char *owner) { (void)owner; }
 void trava_esquecer(void) {}
 

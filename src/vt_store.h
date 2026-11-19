@@ -8,6 +8,9 @@
 #ifndef NV_VT_STORE_ALLOC
 #define NV_VT_STORE_ALLOC malloc
 #endif
+#ifndef NV_VT_STORE_FREE
+#define NV_VT_STORE_FREE free
+#endif
 
 /* Lossless sparse byte storage; limit covers allocations, excluding allocator
  * overhead and the fixed index itself. This store is not yet used by the view. */
@@ -67,7 +70,7 @@ static int vt_store_get(const VtStore *s, int index, CatItem *out) {
   return 1;
 }
 static void vt_store_free(VtStore *s) {
-  for (int i = 0; i < s->n; i++) free(s->index[i]);
+  for (int i = 0; i < s->n; i++) NV_VT_STORE_FREE(s->index[i]);
   memset(s, 0, sizeof *s);
 }
 #endif

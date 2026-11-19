@@ -3789,6 +3789,7 @@
   T("Gargalo principal", "Κύριο σημείο συμφόρησης"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Διαχείριση"),
+  T("Gerenciar add-ons", "Διαχείριση πρόσθετων"),
   T("Gerenciar conexões", "Διαχείριση συνδέσεων"),
   T("Gerenciar fontes", "Διαχείριση γραμματοσειρών"),
   T("Gerenciar legendas no celular", "Διαχείριση υπότιτλων στο τηλέφωνο"),

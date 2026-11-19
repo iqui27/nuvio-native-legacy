@@ -11,7 +11,7 @@ flags=(-O1 -g -Isrc -pthread -I/opt/homebrew/include -I/opt/homebrew/include/SDL
        -Wall -Wno-deprecated-declarations -Wno-macro-redefined)
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 bin=${TMPDIR:-/tmp}/nuvio-contaoffline-tests
-cc "${flags[@]}" src/sync.c tests/stub_contapend.c src/catordem.c src/catordemcache.c src/contacache.c \
+cc "${flags[@]}" -DCONTAOFFLINE_DOUBLES_SYNC src/sync.c tests/stub_contapend.c src/catordem.c src/catordemcache.c src/contacache.c \
   src/js.c src/jsw.c tests/contaoffline.c -o "$bin"
 dir="$(mktemp -d)"
 trap 'rm -rf "$dir"' EXIT

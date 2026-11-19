@@ -3788,6 +3788,7 @@
   { "Gargalo principal", "Main bottleneck" },
   { "Gerar novo QR", "Generate new QR code" },
   { "Gerenciar", "Manage" },
+  { "Gerenciar add-ons", "Manage add-ons" },
   { "Gerenciar conexões", "Manage connections" },
   { "Gerenciar fontes", "Manage sources" },
   { "Gerenciar legendas no celular", "Manage subtitles on phone" },

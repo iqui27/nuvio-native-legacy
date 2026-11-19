@@ -30,12 +30,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self, head=False):
         if self.path.startswith('/hold/'):
-            log(f'hold-open {time.monotonic():.3f}')
+            log(f'hold-open {time.clock_gettime(time.CLOCK_MONOTONIC):.3f}')
             while True:   # until the client closes (or 60 s)
                 r, _, _ = select.select([self.connection], [], [], 60)
                 if not r or not self.connection.recv(4096):
                     break
-            log(f'hold-closed {time.monotonic():.3f}')
+            log(f'hold-closed {time.clock_gettime(time.CLOCK_MONOTONIC):.3f}')
             self.close_connection = True
             return
         target = root / self.path.lstrip('/')

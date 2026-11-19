@@ -3788,6 +3788,7 @@
   T("Gargalo principal", "Hauptengpass"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Verwalten"),
+  T("Gerenciar add-ons", "Addons verwalten"),
   T("Gerenciar conexões", "Verbindungen verwalten"),
   T("Gerenciar fontes", "Schriftarten verwalten"),
   T("Gerenciar legendas no celular", "Untertitel am Telefon verwalten"),

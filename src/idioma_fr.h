@@ -3788,6 +3788,7 @@
   T("Gargalo principal", "Principal goulot d'étranglement"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Gérer"),
+  T("Gerenciar add-ons", "Gérer les add-ons"),
   T("Gerenciar conexões", "Gérer les connexions"),
   T("Gerenciar fontes", "Gérer les polices"),
   T("Gerenciar legendas no celular", "Gérer les sous-titres sur téléphone"),

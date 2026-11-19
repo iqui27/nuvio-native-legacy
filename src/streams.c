@@ -82,6 +82,17 @@ static int navigationMove(SDL_Keycode);
 // player-mockup de 03/10): 820 de largura, a 40 das bordas, raio 36 — a
 // mesma folha dos Episodios no player.
 #include "telefoneui.h"
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+#include "desktop_native.h"
+#include "menu.h"
+#endif
+static inline int folhaDesktop(void) {
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+  return layout_desktop_ativo();
+#else
+  return 0;
+#endif
+}
 // Phone Sources extends beneath the system bar; content keeps its inset.
 #define FOLHA_MARGEM    40.0f
 static int folhaRelogio;
@@ -93,17 +104,26 @@ static inline int folhaFone(void) {
 #endif
 }
 static float folhaEscala(void) {
-  return folhaFone() ? NV_LAYOUT_REAL_W / 466.0f * .65f : gfx_escala_ui();
+  return folhaDesktop() ? 1.0f : folhaFone() ? NV_LAYOUT_REAL_W / 466.0f * .65f : gfx_escala_ui();
 }
 #undef NV_TELA_W
 #undef NV_TELA_H
 #define NV_TELA_W (NV_LAYOUT_REAL_W / folhaEscala())
 #define NV_TELA_H (NV_LAYOUT_REAL_H / folhaEscala())
 static inline float folhaLarg(void) {
+  if (folhaDesktop()) return fminf(1056.0f, NV_TELA_W - 80.0f);
   if (folhaFone()) return NV_TELA_W;
   return telefoneui_largura(820.0f, NV_TELA_W, FOLHA_MARGEM);
 }
 #define FOLHA_W        folhaLarg()
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+static GfxRect folhaDesktopRect(void) {
+  float h=fminf(972,NV_TELA_H-96);
+  float y=fminf(NV_TELA_H-h-48,(NV_TELA_H-h)*.5f+12);
+  float x=fminf(NV_TELA_W-FOLHA_W-40,(NV_TELA_W+NV_DESKTOP_RAIL_W-FOLHA_W)*.5f+8);
+  return (GfxRect){x,y,FOLHA_W,h};
+}
+#endif
 #define FOLHA_RAIO_IL   36.0f
 #define FOLHA_PAD_E     (folhaFone() ? 8.0f : 48.0f)  // da borda da folha ao cartao da linha
 #define FOLHA_PAD_D     (folhaFone() ? 112.0f : 56.0f)
@@ -143,8 +163,8 @@ static void medirCabecalho(void);
 #define FOLHA_ARQ_H     34.0f  // nome do arquivo, so na linha em foco
 #define FOLHA_FIT_H     32.0f  // StreamFit: evidencia da conexao, so na linha em foco
 #define FOLHA_FAIXA_H   28.0f  // idiomas declarados pelo addon, antes de reproduzir
-#define FOLHA_LINHA_GAP  4.0f
-#define FOLHA_SEC_H     64.0f  // cabecalho "4K  ULTRA HD ... 3 fontes"
+#define FOLHA_LINHA_GAP  (folhaDesktop() ? 18.0f : 4.0f)
+#define FOLHA_SEC_H     (folhaDesktop() ? 48.0f : 64.0f)  // cabecalho "4K  ULTRA HD ... 3 fontes"
 #define FOLHA_SEC_GAP   26.0f
 #define FOLHA_RAIO      22.0f
 #define FOLHA_ADDON_SELOS 36.0f
@@ -4917,7 +4937,9 @@ static int temMarca(int i, int automatica) {
 // Altura de uma linha: base, marca, e o nome do arquivo que abre por mola na
 // linha em foco. Usa nOrdem como o indice que a linha vai receber.
 static float alturaLinha(int i, int automatica, float abertura) {
-  float h = FOLHA_LINHA_H + (temMarca(i, automatica) ? FOLHA_MARCA_H : 0);
+  int mark=temMarca(i,automatica);
+  if(folhaDesktop() && i!=atual && i!=preferida && !fitPesada(i) && !lista[i].foraCache && stream_vod_falhou_ha(i)<0) mark=0;
+  float h = (folhaDesktop() ? 154.0f : FOLHA_LINHA_H) + (mark ? FOLHA_MARCA_H : 0);
   if (ajustes_fonte_texto_addon()) {
     float w = FOLHA_W-FOLHA_PAD_E-FOLHA_PAD_D-2*FOLHA_TXT;
     const Stream *s=&lista[i];
@@ -5062,7 +5084,7 @@ static void montarBase(int automatica) {
     m = saved;
     porLinha(m, &y, automatica);
     y += FOLHA_SEC_GAP - FOLHA_LINHA_GAP;
-  } else if (melhorFolha >= 0 && melhorFolha < n && !ehServidor(&lista[melhorFolha]) && !lista[melhorFolha].foraCache && passaFiltro(melhorFolha) && nFiltrados() > 1 &&
+  } else if (!folhaDesktop() && melhorFolha >= 0 && melhorFolha < n && !ehServidor(&lista[melhorFolha]) && !lista[melhorFolha].foraCache && passaFiltro(melhorFolha) && nFiltrados() > 1 &&
       (melhorFolha >= fitN || fitClasses[melhorFolha] != SF_PESADA)) {
     m = melhorFolha;
     porLinha(m, &y, automatica);
@@ -5256,10 +5278,16 @@ static void montar(int automatica) {
     if (r >= 0) foco = r;
   }
 }
-static int folhaIlha(void) { return player_aberto(); }
+static int folhaIlha(void) { return !folhaDesktop() && player_aberto(); }
 static float folhaIlhaH(void) { return NV_TELA_H - FOLHA_ILHA_Y - FOLHA_ILHA_CAB - FOLHA_ILHA_BASE; }
 static void folhaGeometria(void) {
-  if (folhaRelogio) {
+  if (folhaDesktop() && !canaisFolha) {
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+    GfxRect panel=folhaDesktopRect();
+    folhaOY = panel.y + 282.0f - (FOLHA_ABAS_Y + FOLHA_ABAS_H + 24.0f);
+    folhaBase = panel.y + panel.h - 136.0f;
+#endif
+  } else if (folhaRelogio) {
     // Island body (ilha_corpo): its top strip is the clock, the list starts below.
     folhaOY = NV_ILHA_Y + NV_ILHA_H + FOLHA_ILHA_PAD - 74.0f;
     folhaBase = NV_TELA_H - FOLHA_ILHA_BASE - 16.0f;
@@ -6951,7 +6979,14 @@ static void corpoIlhaFolha(GfxRect c, float a, void *u) {
   // Keep text at its final width, pinned to the clock edge; never squeeze it.
   corpoFolha(c.x + c.w - FOLHA_W, FOLHA_W, a * reveal, folhaAgora, 1);
 }
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+#include "streams_desktop.inc"
+#endif
 static void stream_folha_desenharCorpo_(Uint32 agora) {
+#if defined(NV_DESKTOP_UI) && defined(__APPLE__)
+  if (folhaDesktop() && !canaisFolha) { folhaDesktopDesenhar(agora); return; }
+  desktop_native_sources(NULL, 0, NULL, 0, 0, 0, 0, 0, 0);
+#endif
   if(anim<.005f) return;
   folhaGeometria();
   folhaAgora = agora;

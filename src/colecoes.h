@@ -129,6 +129,11 @@ unsigned col_revisao(void);
 // A complete account snapshot was accepted for this profile, even when empty.
 int col_tem_conta(void);
 const ColFolder *col_folder(int i);
+// COPIA de uma pasta (por id) sob a trava das colecoes, com as fontes copiadas
+// para `fontes` (COL_SOURCE_MAX posicoes; dst->sources aponta para la). Para
+// quem segura a pasta por segundos fora do laco principal (a rede da montagem,
+// #700): o sync refaz folders[] e libera o bloco de fontes no meio. 0 = sumiu.
+int col_copiar_pasta(const char *id, ColFolder *dst, ColSource *fontes);
 // IMPRESSAO DA ESTRUTURA das colecoes para o snapshot da Home (homeestado.c):
 // grupo, id e fontes de cada pasta, SEM arte (URL de arte muda sem criar
 // fileira nova). Calculada inteira sob a trava das colecoes (#203): pode ser
