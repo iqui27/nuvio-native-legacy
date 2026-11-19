@@ -521,9 +521,13 @@ DtsRemux *dts_remux_open(const char *url, const char *headers, int ordinal, int 
 }
 
 #ifdef NV_WEBOS_HLS_TEST
-static double mkvTrackDuration(const AVStream *stream) {
+static double mkvTrackEnd(const AVStream *stream) {
   if (!stream) return -1.0;
-  if (stream->duration != AV_NOPTS_VALUE) return stream->duration * av_q2d(stream->time_base);
+  if (stream->duration != AV_NOPTS_VALUE) {
+    int64_t start = stream->start_time == AV_NOPTS_VALUE ? 0 : stream->start_time;
+    return ((double)start + (double)stream->duration) * av_q2d(stream->time_base);
+  }
+  /* Matroska muxers can store the track's final timestamp in this tag. */
   const AVDictionaryEntry *tag = av_dict_get(stream->metadata, "DURATION", NULL, 0);
   int64_t duration;
   if (tag && av_parse_time(&duration, tag->value, 1) == 0) return duration / (double)AV_TIME_BASE;
@@ -540,6 +544,10 @@ static int verifyMkvTail(DtsRemux *r, AVFormatContext *ic) {
   const double started = now_s(CLOCK_MONOTONIC), deadline = started + 12.0;
   const AVStream *audio = r->audioProbe ? NULL : ic->streams[r->as];
   const double tb = av_q2d(r->vtb);
+  const double expectedEnd = r->endS, tolerance = 2.0;
+  const double videoTrackEnd = mkvTrackEnd(ic->streams[r->vs]);
+  const double audioTrackEnd = mkvTrackEnd(audio);
+  const int64_t size = dts_engine_size(r->probe);
   AVPacket *packet = NULL;
   const char *stop = "seek-error";
   int64_t lastKey = r->kf[r->nkf - 1];
@@ -563,7 +571,21 @@ static int verifyMkvTail(DtsRemux *r, AVFormatContext *ic) {
     if (readRc < 0) {
       if (readRc == AVERROR_EOF && !ic->pb->error) {
         stop = "demux-eof";
-        result = videoEnd >= r->endS - 2.0;
+        result = videoEnd >= expectedEnd - tolerance;
+        /* Some MKVs overstate the Segment duration. Check the physical EOF
+         * and corroborate the last packets with the playable track metadata
+         * before shortening the playlist. External audio has its own reader. */
+        double mediaStart = expectedEnd - r->info.duration_s;
+        if (!result && size > 0 && ic->pb->eof_reached && avio_tell(ic->pb) == size &&
+            videoEnd > mediaStart && videoTrackEnd > mediaStart &&
+            fabs(videoEnd - videoTrackEnd) <= tolerance &&
+            (!audio || (audioEnd > mediaStart && audioTrackEnd > mediaStart &&
+                        fabs(audioEnd - audioTrackEnd) <= tolerance &&
+                        fabs(audioEnd - videoEnd) <= tolerance))) {
+          r->endS = fmax(videoEnd, audioEnd);
+          r->info.duration_s = r->endS - mediaStart;
+          result = 1;
+        }
       } else {
         stop = isCancelled(r) ? "cancelled" : "read-error";
       }
@@ -606,13 +628,13 @@ done:
          "seek_rc=%d, read_rc=%d, io_error=%d, io_eof=%d, "
          "scan_start=%lld, scan_end=%lld, file_bytes=%lld, fetched_bytes=%llu, "
          "last keyframe %.3f s, video reached %.3f s, audio reached %.3f s, expected end %.3f s, "
-         "video_duration=%.3f s, audio_duration=%.3f s\n",
+         "video_track_end=%.3f s, audio_track_end=%.3f s, hls_end=%.3f s\n",
          result ? "verified" : "unverified", stop, (now_s(CLOCK_MONOTONIC) - started) * 1000.0,
          seekRc, readRc, ic->pb->error, ic->pb->eof_reached,
-         (long long)start, (long long)avio_tell(ic->pb), (long long)dts_engine_size(r->probe),
+         (long long)start, (long long)avio_tell(ic->pb), (long long)size,
          (unsigned long long)(after.range_bytes - before.range_bytes),
-         (double)lastKey * tb, videoEnd, audioEnd, r->endS,
-         mkvTrackDuration(ic->streams[r->vs]), mkvTrackDuration(audio));
+         (double)lastKey * tb, videoEnd, audioEnd, expectedEnd,
+         videoTrackEnd, audioTrackEnd, r->endS);
   fflush(stdout);
   return result;
 }

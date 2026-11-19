@@ -40,15 +40,22 @@ ffmpeg -v error -f lavfi -i testsrc2=s=256x144:r=10:d=82 \
   -f lavfi -i sine=sample_rate=48000:d=82 -ac 6 -c:a dca -strict experimental -b:a 768k \
   -c:v libx264 -preset ultrafast -g 1000 -sc_threshold 0 -force_key_frames 0,3 \
   -b:v 6000k -maxrate 6000k -bufsize 6000k -x264-params nal-hrd=cbr:filler=1 "$work/long-tail.mkv"
-# A source whose actual last packet cannot reach its declared end is refused.
+# Overstate the segment's duration, then also overstate the tracks' duration
+# in a second fixture to simulate a source cut short relative to its metadata.
 python3 - "$work" <<'PY_FIXTURE'
 from pathlib import Path
+import re
 import struct
 import sys
 root = Path(sys.argv[1])
 data = bytearray((root / 'long-tail.mkv').read_bytes())
 duration = data.index(b'\x44\x89\x88', 0, 1024) + 3
 data[duration:duration+8] = struct.pack('>d', 180000.0)
+(root / 'overstated-duration.mkv').write_bytes(data)
+header, count = re.subn(rb'(DURATION\x44\x87.)\d\d:\d\d:\d\d\.\d{9}',
+                        rb'\g<1>00:03:00.000000000', data[:4096])
+assert count == 2, count
+data[:4096] = header
 (root / 'short-source.mkv').write_bytes(data)
 PY_FIXTURE
 

@@ -100,6 +100,14 @@ with playback('long-tail.mkv', 0) as base:
 assert 'MKV tail: verified, stop=demux-eof' in (work / 'long-tail.mkv.log').read_text()
 print('A long final GOP starts and streams several bounded fMP4 fragments.')
 
+with playback('overstated-duration.mkv', 0) as base:
+    playlist = get(base, 'v.m3u8')
+    assert b'#EXT-X-ENDLIST' in playlist, playlist
+    lengths = re.findall(rb'^#EXTINF:([\d.]+),', playlist, re.M)
+    assert 82.0 <= sum(map(float, lengths)) < 82.1, playlist
+assert 'MKV tail: verified, stop=demux-eof' in (work / 'overstated-duration.mkv.log').read_text()
+print('An overstated MKV duration is corrected using the last packets and track metadata.')
+
 with playback('short-source.mkv', 0) as base:
     try:
         get(base)
