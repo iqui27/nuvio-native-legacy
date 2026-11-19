@@ -26,7 +26,7 @@ block = script[script.index("  SOURCES40="):script.index('\n  echo "  $(ls',
 assert 'NATIVE_FLAGS="$FLAGS -DNV_TPK40 ' in block
 assert re.search(r"gcc -shared -o /work/build/tpk/libnuvio-tpk40\.so .*--no-undefined", block)
 # Existing artifact guards reject compiler TLS even when its symbols resolve.
-assert 'readelf -lW "$L40"' in script and 'TLS\\s' in script
+assert 'readelf -lW "$L40"' in script and 'PT_TLS' in script
 assert 'readelf -rW "$L40"' in script and 'R_ARM_TLS_' in script
 assert 'readelf -sW --dyn-syms "$L40" | grep -q "__tls_get_addr"' in script
 print("PASS: rede_teto users recompiled with NV_TPK40; undefined-symbol and TLS guards retained")
