@@ -324,9 +324,9 @@ enum { ORIG_TODAS, ORIG_TRAKT, ORIG_SIMKL, ORIG_NUVIO, BIB_N_ORIG };
 static const char *ROT_ORIG[BIB_N_ORIG] = { "Todas", "Trakt", "Simkl", "Conta Nuvio" };
 // Seletor "Fonte", no modo Listas. "Públicas" e a busca — ela vive na mesma
 // roda porque e mais uma origem de listas, nao um lugar separado.
-enum { FONTE_TRAKT, FONTE_SIMKL, FONTE_NUVIO, FONTE_FIXADAS, FONTE_PUB, FONTE_PLEX, FONTE_JELLYFIN, FONTE_EMBY, BIB_N_FONTES };
+enum { FONTE_TRAKT, FONTE_SIMKL, FONTE_MDBLIST, FONTE_NUVIO, FONTE_FIXADAS, FONTE_PUB, FONTE_PLEX, FONTE_JELLYFIN, FONTE_EMBY, BIB_N_FONTES };
 static const char *ROT_FONTE[BIB_N_FONTES] =
-  { "Trakt", "Simkl", "Nuvio", "Fixadas", "Públicas", "Plex", "Jellyfin", "Emby" };
+  { "Trakt", "Simkl", "MDBList", "Nuvio", "Fixadas", "Públicas", "Plex", "Jellyfin", "Emby" };
 
 // Em que grade o foco esta. Nao e um modo a mais: e o mesmo modo Listas com uma
 // lista aberta por cima.
@@ -1294,6 +1294,7 @@ static void pedirFonte(void) {
   switch (fonte) {
     case FONTE_TRAKT:   lst_pedir(LST_TRAKT); break;
     case FONTE_SIMKL:   lst_pedir(LST_SIMKL); break;
+    case FONTE_MDBLIST: lst_pedir(LST_MDB); break;
     case FONTE_NUVIO:   lst_pedir(LST_NUVIO); break;
     case FONTE_FIXADAS: lst_pedir_fixadas();  break;
     default:            lst_buscar("");       break;   // tendencias
@@ -3585,7 +3586,10 @@ static void desenhaPainelLista(void) {
   float ga = gfx_opacidade_grupo;
   gfx_opacidade_grupo *= anim_suave(animPainelTroca);
   float x = p.x + 32, w = p.w - 64, y = p.y + 34;
-  snprintf(k, sizeof k, "%s · %s", i18n("Lista"), rotuloOrigem(l->fonte == LST_SIMKL ? FONTE_SIMKL : l->fonte == LST_NUVIO ? FONTE_NUVIO : FONTE_TRAKT, 1));
+  snprintf(k, sizeof k, "%s · %s", i18n("Lista"),
+           rotuloOrigem(l->fonte == LST_SIMKL ? FONTE_SIMKL
+                        : l->fonte == LST_MDB ? FONTE_MDBLIST
+                        : l->fonte == LST_NUVIO ? FONTE_NUVIO : FONTE_TRAKT, 1));
   if (l->fonte == LST_TRAKT) juntarApoio(k, sizeof k, i18n(l->privada ? "privada" : "pública"));
   plrui_kicker(k, x, y, 115, 117, 122, 1);
   y += 24;
@@ -3977,6 +3981,7 @@ static void desenhaCabecalho(void) {
         temAberta ? rotuloFonte(aberta.fonte)
       : modo == MODO_LISTAS ? (fonte == FONTE_NUVIO ? "NUVIO"
                              : fonte == FONTE_SIMKL ? "SIMKL"
+                             : fonte == FONTE_MDBLIST ? "MDBLIST"
                              : fonte == FONTE_FIXADAS ? "LOCAL"
                              : "TRAKT")
       : modo == MODO_COLECOES ? (trakt_ativo() ? "TRAKT" : "LOCAL")
