@@ -154,7 +154,11 @@ static int conexaoRecusada(int e) { return e == 6 || e == 7 || e == 35; }
 // janela de 90 s levou 49 s. Tres conexoes a mais (o pipeline ja usa uma ou
 // duas) triplicam o ritmo sem disputar banda: cada pedido e de ~1 KB.
 #ifndef MKVASS_PARALELOS
+#ifdef NV_TPK
+#define MKVASS_PARALELOS   2   // #709: menos disputa de rede/decoder no Tizen 6 com ASS
+#else
 #define MKVASS_PARALELOS   3
+#endif
 #endif
 #define MKVASS_PREBUSCA    8
 // VARREDURA (#92, webOS 25): quando o indice NAO tem CuePoint da faixa de
