@@ -10114,7 +10114,7 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
   int prov, nIds = 0, total = 0, prefixoVistos = 0, visiveis = 0;
   int ocultar, pagina, skip = 0, teto;
   if (resultado) *resultado = r;
-  if (!fonte || !itens || !resultado || limite < 1 || limite > 20 ||
+  if (!fonte || !itens || !resultado || limite < 1 || limite > DESC_ITENS_POR_FILEIRA ||
       !descSessaoVincular(sessao)) return 0;
   f = *fonte;
   prov = !f.prov[0] ? 0 : !strcmp(f.prov, "tmdb") ? 1 :
