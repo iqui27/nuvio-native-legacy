@@ -210,6 +210,7 @@ struct DtsRemux {
   atomic_int gopLogged;             /* GOP line already printed for this source */
   int64_t *segTs, *segB48; double *segS; int nseg;
   double endS;
+  int clipAudioAtVideoEnd;
   pthread_mutex_t lock;
   DtsEngine *engines[ENGINES_MAX]; int nEngines;
   volatile int *extCancel;
@@ -611,18 +612,18 @@ static int verifyMkvTail(DtsRemux *r, AVFormatContext *ic) {
       if (readRc == AVERROR_EOF && !ic->pb->error) {
         stop = "demux-eof";
         result = videoEnd >= expectedEnd - tolerance;
-        /* Some MKVs overstate the Segment duration. Check the physical EOF
-         * and corroborate the last packets with the playable track metadata
-         * before shortening the playlist. External audio has its own reader. */
+        /* Verify each observed track against its own declared end at the
+         * physical EOF. Alternate audio can extend past the picture, but
+         * the HLS playlist must end with the video for every audio choice. */
         double mediaStart = expectedEnd - r->info.duration_s;
         if (!result && size > 0 && ic->pb->eof_reached && avio_tell(ic->pb) == size &&
             videoEnd > mediaStart && videoTrackEnd > mediaStart &&
             fabs(videoEnd - videoTrackEnd) <= tolerance &&
             (!audio || (audioEnd > mediaStart && audioTrackEnd > mediaStart &&
-                        fabs(audioEnd - audioTrackEnd) <= tolerance &&
-                        fabs(audioEnd - videoEnd) <= tolerance))) {
-          r->endS = fmax(videoEnd, audioEnd);
+                        fabs(audioEnd - audioTrackEnd) <= tolerance))) {
+          r->endS = videoEnd;
           r->info.duration_s = r->endS - mediaStart;
+          r->clipAudioAtVideoEnd = 1;
           result = 1;
         }
       } else {
@@ -1232,6 +1233,11 @@ static int fifoSilence(DtsRemuxGen *g, int64_t n) {
 /* Puts n converted samples that start at 48 kHz position p into the fifo:
  * overlap trimmed, holes padded (a long hole skips ahead on the grid). */
 static int place(DtsRemuxGen *g, uint8_t **buf, int n, int64_t p, char *err, size_t errn) {
+  if (g->src->clipAudioAtVideoEnd || g->audioEng) {
+    int64_t remaining = llround(g->src->endS * 48000) - p;
+    if (remaining <= 0) return 0;
+    if (remaining < n) n = (int)remaining;
+  }
   int ch = g->src->info.out_channels, skip = 0;
   if (g->gridLazy) {
     /* Seek by time (no index there): the keyframe the demuxer found is not
@@ -1317,10 +1323,6 @@ static int frameIn(DtsRemuxGen *g, AVFrame *f, char *err, size_t errn) {
     fail(err, errn, "Audio buffer", rr); return -1;
   }
   int n = swr_convert(g->swr, buf, cap, (const uint8_t **)f->extended_data, f->nb_samples);
-  if (n > 0 && g->audioEng) {
-    int64_t remaining = llround(r->endS * 48000) - p48;
-    if (remaining < n) n = remaining > 0 ? (int)remaining : 0;
-  }
   rr = n < 0 ? (fail(err, errn, "Audio resample", n), -1) : n > 0 ? place(g, buf, n, p48, err, errn) : 0;
   av_freep(&buf[0]); av_freep(&buf);
   if (rr < 0) return -1;

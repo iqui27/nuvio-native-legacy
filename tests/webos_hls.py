@@ -16,7 +16,8 @@ origin = f"http://127.0.0.1:{(work / 'port').read_text()}/"
 
 
 @contextlib.contextmanager
-def playback(filename, dv7, donor=None, buffer_mib=None, offset=0, speed=0, track=1, ordinal=None, mapping=False):
+def playback(filename, dv7, donor=None, buffer_mib=None, offset=0, speed=0, track=1,
+             ordinal=None, mapping=False, allow_dts=False):
     cmd = [work / 'server', urljoin(origin, filename), str(dv7)]
     if donor:
         cmd += [urljoin(origin, donor), str(buffer_mib or 0), str(track), str(offset), str(speed)]
@@ -25,7 +26,8 @@ def playback(filename, dv7, donor=None, buffer_mib=None, offset=0, speed=0, trac
     elif buffer_mib:
         cmd += [str(buffer_mib)]
     process = subprocess.Popen(
-        cmd, env={**os.environ, 'NV_TEST_P7_MAPPING': str(int(mapping))},
+        cmd, env={**os.environ, 'NV_TEST_P7_MAPPING': str(int(mapping)),
+                  'NV_TEST_HLS_DTS': str(int(allow_dts))},
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
     )
     try:
@@ -239,6 +241,30 @@ def tone(samples, start, duration=0.25):
     assert len(section) == round(duration * 8000)
     return sum(a < 0 <= b for a, b in zip(section, section[1:])) / duration
 
+
+for ordinal, expected_hz in ((0, 440), (1, 770)):
+    with playback('p7-dts-tail.mkv', 1, ordinal=ordinal, mapping=True, allow_dts=True) as base:
+        playlist = get(base, 'v.m3u8')
+        lengths = re.findall(rb'^#EXTINF:([\d.]+),', playlist, re.M)
+        assert 6.9 < sum(map(float, lengths)) < 7.1, playlist
+        init = get(base, 'init.mp4')
+        middle = init + get(base, 'seg1.m4s')  # Resume after reopening with the chosen track.
+        assert abs(tone(decoded_audio(f'p7-tail-audio-{ordinal}.mp4', middle), 0.5) - expected_hz) < 20
+        last = re.findall(rb'^seg\d+\.m4s$', playlist, re.M)[-1].decode()
+        info = probe(f'p7-tail-end-{ordinal}.mp4', init + get(base, last), packets=True)
+        video, audio = info['streams']
+        assert any(sd.get('dv_profile') == 8 and sd.get('dv_bl_signal_compatibility_id') == 1
+                   for sd in video['side_data_list'])
+        assert audio['codec_name'] == 'ac3' and audio['channels'] == 6
+        ends = {kind: max(float(p['pts_time']) + float(p['duration_time'])
+                          for p in info['packets'] if p['codec_type'] == kind)
+                for kind in ('video', 'audio')}
+        assert abs(ends['audio'] - ends['video']) < 0.08, ends
+    log = (work / 'p7-dts-tail.mkv.log').read_text()
+    assert 'MKV tail: verified, stop=demux-eof' in log
+    if ordinal == 1:
+        assert 'input audio ordinal=1 stream=2 selected=1 codec=dts' in log
+print('Switching from AC-3 to longer DTS keeps P8.1 HLS seekable and ends with the picture.')
 
 with playback('indexed.mkv', 1, ordinal=0) as base:
     changed = get(base, 'init.mp4') + get(base, 'seg2.m4s')
