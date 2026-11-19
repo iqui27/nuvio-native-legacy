@@ -2,6 +2,7 @@
 #include "streams.h"
 #include <assert.h>
 #include <string.h>
+const char *i18n(const char *s) { return s; }
 void wsenvio_podar(void) {}
 #include "../src/streams.c"
 int main(void) {

@@ -1696,7 +1696,7 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO("Testar servidor P2P"),
   // POSTERES PERSONALIZADOS (posterprov.h). Desligado de fabrica. LOCAL: o web
   // nao tem esta escolha e o servico e por aparelho/rede.
-  ESC("Pôsteres personalizados",         V_POSTER_PROV, 4),   // local: posterProvLocal
+  ESC("Pôsteres personalizados",         V_POSTER_PROV, 5),   // local: posterProvLocal
   ACAO("Endereço do SpatialPosters"),
   ACAO("Token do SpatialPosters"),
   ACAO("Parâmetros do SpatialPosters"),
@@ -8166,7 +8166,7 @@ static int inativa(int op) {
       return !extras_mdblist_tem_chave();
     // Cada campo so vale para o provedor dele; o teste, para qualquer um ligado.
     case AJ_POSTER_INST: case AJ_POSTER_TOKEN: case AJ_POSTER_EXTRA:
-      return valor[AJ_POSTER_PROV] != PP_SPATIAL;
+      return valor[AJ_POSTER_PROV] != PP_SPATIAL && valor[AJ_POSTER_PROV] != PP_POSTERSPLUS;
     case AJ_POSTER_CHAVE:  return valor[AJ_POSTER_PROV] != PP_RPDB;
     case AJ_POSTER_MODELO: return valor[AJ_POSTER_PROV] != PP_MODELO;
     case AJ_POSTER_TESTAR: return valor[AJ_POSTER_PROV] == PP_DESLIGADO;

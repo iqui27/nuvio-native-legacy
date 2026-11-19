@@ -7418,6 +7418,11 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     if (y>NV_TELA_H) break;
     int i=ordem[row], sel=grupo==1&&foco==row;
     const Stream *s=i>=0?&lista[i]:NULL;
+    if (s && (selospacote_ativo() >= 0 || selospacote_embutidos_ok())) {
+      int ready = 1;
+      selosPacoteEstado((Stream *)s, &ready);
+      if (!ready) anim *= ajustes_fonte_carga_brilho_alto() ? 1.15f : 0.88f;
+    }
     uint64_t tira, logos;
     if(y+h<FOLHA_TOPO-8 || y>NV_TELA_H) continue;
     GfxRect r={lx,y,rw,h};
