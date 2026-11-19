@@ -390,3 +390,4 @@
   1, 1, 1, // bufferDataLocal/ramOverlayLocal/ramGreenLocal: Desligado
   0, // bufferRamReduzLocal: Ligado (reducao automatica mantem a protecao)
   0, // heroListaLocal: 10 titulos no carrossel do destaque (#797)
+  0, // showSkipCenaLocal: desligado (#342)

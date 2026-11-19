@@ -951,6 +951,7 @@ int ajustes_lembrar_perfil(void);
 int ajustes_show_skip_intro(void);
 int ajustes_show_skip_recap(void);
 int ajustes_show_skip_credits(void);
+int ajustes_show_skip_cena(void);
 #endif
 
 // External audio uses the webOS converter; disabled by default.

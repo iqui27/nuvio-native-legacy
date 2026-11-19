@@ -820,6 +820,8 @@ typedef enum {
   // #797: quantos titulos o carrossel do destaque percorre (HOME_HERO_LISTA
   // era fixo em 10). LOCAL, append-only.
   AJ_HERO_LISTA,
+  // Botao flutuante "Pular cena" em trechos pos-creditos. LOCAL, append-only (#342).
+  AJ_SHOW_SKIP_CENA,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -2049,6 +2051,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Botão verde mostra a RAM na tela", V_LIGA, 2),        // local: ramGreenLocal
   ESC("Reduzir o buffer com pouca memória", V_LIGA, 2),      // local: bufferRamReduzLocal
   ESC("Títulos no carrossel do destaque", V_HERO_LISTA, 3), // local: heroListaLocal (#797)
+  ESC("Botão flutuante para pular cenas", V_LIGA, 2),        // local: showSkipCenaLocal (#342)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2428,6 +2431,7 @@ static const char *CHAVE[] = {
   "nativeBufferConnectionsLocal", "conversionBufferConnectionsLocal", // fork keys
   "bufferDataLocal", "ramOverlayLocal", "ramGreenLocal", "bufferRamReduzLocal",
   "heroListaLocal",
+  "showSkipCenaLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3220,6 +3224,7 @@ int ajustes_pular_creditos(void)      { return lig(AJ_PULAR_CREDITOS); }
 int ajustes_show_skip_intro(void)     { return lig(AJ_SHOW_SKIP_INTRO); }
 int ajustes_show_skip_recap(void)     { return lig(AJ_SHOW_SKIP_RECAP); }
 int ajustes_show_skip_credits(void)   { return lig(AJ_SHOW_SKIP_CREDITS); }
+int ajustes_show_skip_cena(void)      { return lig(AJ_SHOW_SKIP_CENA); }
 int ajustes_update_notifications(void) { return lig(AJ_UPDATE_NOTIFICATIONS); }
 int ajustes_lembrar_perfil(void)      { return lig(AJ_REMEMBER_PROFILE); }
 int ajustes_capitulos(void)           { return lig(AJ_CAPITULOS); }
@@ -9042,6 +9047,7 @@ static const char *beneficioProprio(int op) {
     case AJ_PULAR_RESUMO: return "Pula o resumo do episódio anterior quando ele está marcado.";
     case AJ_SHOW_SKIP_INTRO: return "Mostra o botão Pular abertura quando há um trecho marcado. Desligado esconde só o botão, inclusive com os controles abertos; o pulo automático é outra opção.";
     case AJ_SHOW_SKIP_RECAP: return "Mostra o botão Pular resumo quando há um trecho marcado. Desligado esconde só este botão; o pulo automático do resumo é outra opção.";
+    case AJ_SHOW_SKIP_CENA: return "Mostra o botão Pular cena em trechos pós-créditos marcados no arquivo ou nas fontes de capítulos — conteúdo explícito ou cenas longas. Desligado, só abertura, resumo e créditos.";
     case AJ_SHOW_SKIP_CREDITS: return "Mostra o botão Pular créditos quando há um trecho marcado. Desligado esconde só o botão; o pulo automático e o episódio seguinte são outras opções.";
     case AJ_REMEMBER_PROFILE: return "Abre direto no último perfil usado ao ligar o app, se ele ainda existir e não tiver PIN. Desligado, a escolha de perfil aparece a cada sessão. Vale só nesta TV; perfis protegidos continuam pedindo PIN.";
     case AJ_PULAR_CREDITOS: return "Pula os créditos quando o marcador diz onde começam e acabam.";

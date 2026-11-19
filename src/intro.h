@@ -174,7 +174,7 @@ int  intro_botao(double posSeg,double agora,int osd,int focado,double *fim,int *
 // Same timed button, restricted to enabled manual types. Does not affect markers,
 // automatic skipping, credits detection or next-episode behavior.
 int  intro_botao_config(double posSeg,double agora,int osd,int focado,double *fim,int *tipo,
-                        int mostrarIntro,int mostrarResumo,int mostrarCreditos);
+                        int mostrarIntro,int mostrarResumo,int mostrarCreditos,int mostrarCena);
 int  intro_botao_visivel(double *fim,int *tipo);
 void intro_botao_esconder(double agora);
 // #329/#331: o trecho (tipo, fim) deve ser pulado sozinho? Abertura/resumo: ajuste ligado e
