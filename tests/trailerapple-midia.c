@@ -12,6 +12,7 @@
 
 char *dados_caminho(char *dst, unsigned tam, const char *nome) { (void)nome; if (tam) dst[0] = 0; return NULL; }
 void dados_marcar_sujo(int leve) { (void)leve; }
+void extras_trailer_audio_idioma(char *dst, unsigned cap) { snprintf(dst, cap, "en-US"); }
 int ajustes_trailer_qualidade(void) { return 0; }
 char *rede_baixar_com(const char *url, int segundos, const char *const *cab) { (void)url; (void)segundos; (void)cab; return NULL; }
 
@@ -46,14 +47,14 @@ static void confere(const char *nome, int ok) { printf("%s %s\n", ok ? "ok " : "
 int main(void) {
   char u[600];
   confere("sem teto: avc1 mais largo, primeiro pathway, sem \\r",
-          varianteMidia(MASTER, 0, u, sizeof u) && !strcmp(u, "https://vod-ap/avc-1920.m3u8"));
+          varianteMidia(MASTER, 0, "", u, sizeof u) && !strcmp(u, "https://vod-ap/avc-1920.m3u8"));
   confere("avc1 ganha de hvc1 mais largo e Dolby Vision fica fora", !strstr(u, "hvc") && !strstr(u, "dv-"));
   confere("teto 720: cabe em 1280 e URI relativa e descartada",
-          varianteMidia(MASTER, 720, u, sizeof u) && !strcmp(u, "https://vod-ap/avc-554.m3u8"));
-  confere("teto 1080 cabe em 1920", varianteMidia(MASTER, 1080, u, sizeof u) && !strcmp(u, "https://vod-ap/avc-1920.m3u8"));
+          varianteMidia(MASTER, 720, "", u, sizeof u) && !strcmp(u, "https://vod-ap/avc-554.m3u8"));
+  confere("teto 1080 cabe em 1920", varianteMidia(MASTER, 1080, "", u, sizeof u) && !strcmp(u, "https://vod-ap/avc-1920.m3u8"));
   confere("nunca devolve o master nem playlist de I-frames", !strstr(u, "iframe") && strncmp(u, "https://play-edge", 17));
-  confere("so hvc1: usa hvc1", varianteMidia(SO_HEVC, 0, u, sizeof u) && !strcmp(u, "https://vod/hvc-1186.m3u8"));
-  confere("master vazio ou nulo: nada", !varianteMidia("#EXTM3U\n", 0, u, sizeof u) && !varianteMidia(NULL, 0, u, sizeof u));
+  confere("so hvc1: usa hvc1", varianteMidia(SO_HEVC, 0, "", u, sizeof u) && !strcmp(u, "https://vod/hvc-1186.m3u8"));
+  confere("master vazio ou nulo: nada", !varianteMidia("#EXTM3U\n", 0, "", u, sizeof u) && !varianteMidia(NULL, 0, "", u, sizeof u));
   puts(falhas ? "trailerapple-midia: FALHOU" : "trailerapple-midia: tudo ok");
   return falhas ? 1 : 0;
 }

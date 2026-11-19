@@ -2,7 +2,7 @@
 # #414: parser + collection navigation + actual catalog loader, no network/window.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export TMPDIR=/Volumes/ExternalSSD/tmp/jobtmp
+export TMPDIR="${TMPDIR:-/Volumes/ExternalSSD/tmp/jobtmp}"
 work="$(mktemp -d "$TMPDIR/col414.XXXXXXXX")"
 trap 'rm -rf "$work"' EXIT
 flags=(-O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2

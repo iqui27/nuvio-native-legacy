@@ -3789,6 +3789,7 @@
   T("Gargalo principal", "主要瓶颈"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "管理"),
+  T("Gerenciar add-ons", "管理附加组件"),
   T("Gerenciar conexões", "管理连接"),
   T("Gerenciar fontes", "管理字体"),
   T("Gerenciar legendas no celular", "在手机上管理字幕"),

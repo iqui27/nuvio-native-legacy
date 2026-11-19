@@ -1828,6 +1828,14 @@ void sync_passo(unsigned agoraMs) {
   // fica fora daqui pelo filtro de contalib_aplicar_catalogo.
   // Prune only after accepting a fresh pull; cached or failed pulls provide
   // no evidence that the server has incorporated confirmed additions.
+  if (temBibBlob && bibBlob && !bibPullFresco && contalib_n() > 0) {
+    // A cached replay is only a fallback for a dead server. Applying it over
+    // a live mirror would delete account items the stale snapshot never saw
+    // (#639); they would reappear on the next fresh pull, seesawing salvos.
+    // Fresh pulls stay authoritative; a cold mirror still takes the cache.
+    printf("[sync] cached library snapshot not applied over live mirror\n");
+    free(bibBlob); bibBlob = NULL; temBibBlob = 0;
+  }
   if (temBibBlob && bibBlob) {
     int before = contalib_n(), kept = 0;
     for (int i = 0; i < before; i++) {
@@ -2336,7 +2344,9 @@ void sync_abrir_sessao(int antes) {
   // Validated account/profile envelopes restore only this profile's private
   // data. They remain useful while a cancelled older worker finishes HTTP.
   c = contacache_ler(CC_BIBLIOTECA, perfis_ativo(), sessao_usuario(), NULL);
-  if (c) { contalib_ler_biblioteca(c); free(c); }
+  // Same guard as the cycle publish (#639): a cached snapshot must not run
+  // its destructive replacement over a mirror that is still populated.
+  if (c) { if (contalib_n() == 0) contalib_ler_biblioteca(c); free(c); }
   c = contacache_ler(CC_VISTOS, perfis_ativo(), sessao_usuario(), NULL);
   if (c) { contalib_ler_vistos(c); if (!trakt_ativo()) contalib_aplicar_vistos(); free(c); }
   c = contacache_ler(CC_COLECOES, perfis_ativo(), sessao_usuario(), NULL);

@@ -252,7 +252,9 @@ int  desc_buscando(void);
 // Assincrono, como todo o resto: dispara e volta na hora. Quem desenha pergunta
 // quantos ja chegaram.
 #define VT_MAX 1000
-#define VT_ADDON_MAX 2000
+// #789: catalogos paginados de addon medidos com ~14.000 itens; o indice
+// esparso cobre isso inteiro sem ligar o teto ao orcamento de bytes.
+#define VT_ADDON_MAX 16384
 
 // ITENS POR FILEIRA DA HOME (#163: "da para passar de 12?"). Eram 12. O web
 // usa 15 no layout padrao e 24 no classico (HOME_MAX_ITEMS_PER_ROW_CLASSIC,

@@ -1,4 +1,7 @@
 // Exercise production event routing and return ownership without login or network.
+// Artifact-path contract: PNG output goes to $NAV21_OUT when the caller
+// (tests/nav21.sh) exports it non-empty; a direct binary run with the
+// variable unset or empty keeps the original fixed directory below.
 #include "../src/app.c"
 #include "shot_arte.h"
 #include "socialvis.h"
@@ -37,7 +40,9 @@ static void save(const char *dir, const char *name) {
   draw(); j4_save(path); printf("PNG: %s\n",path);
 }
 int main(void) {
-  const char *out = "/Volumes/ExternalSSD/tmp/rev/diretor21/redesign/social/fixed";
+  const char *env = getenv("NAV21_OUT");
+  const char *out = (env && *env) ? env
+    : "/Volumes/ExternalSSD/tmp/rev/diretor21/redesign/social/fixed";
   mkdir(out,0755);
   assert(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)==0);
   IMG_Init(IMG_INIT_PNG|IMG_INIT_JPG);

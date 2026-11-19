@@ -30,6 +30,7 @@ typedef struct {
   const char *apple;   int appleRespondeu, appleFalhou;
   const char *imdb;    int imdbRespondeu;
   const char *youtube; int youtubeRespondeu;
+  int appleIdiomaPreferido; // 1 verified requested audio; -1 lookup pending
   int youtubeIdiomaPreferido; // 1 youtube is in the chosen (non-English) trailer audio; -1 TMDB not answered yet
 } TrailerCandidatos;
 

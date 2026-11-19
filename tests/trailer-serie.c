@@ -182,6 +182,21 @@ int main(void) {
     check("automatic: playback preference (pt) over UI (en-US)",
           strstr(idiomas, "pt,en,null") != NULL);
     
+    extras_teste_audio_pref("de");
+    extras_trailer_audio_idioma(idiomas, sizeof idiomas);
+    check("native and TMDB use the same effective audio preference", !strcmp(idiomas,"de"));
+    extras_teste_audio_pref("*");
+    extras_trailer_audio_idioma(idiomas, sizeof idiomas);
+    check("All audio falls back to interface/metadata language", !strcmp(idiomas,"en-US"));
+    extras_teste_audio_pref("~");
+    extras_trailer_audio_idioma(idiomas, sizeof idiomas);
+    check("automatic honors local Original", !strcmp(idiomas,"~"));
+    extras_teste_idiomas_video("en-US","ja",idiomas,sizeof idiomas);
+    check("local Original requests the title language", !strcmp(idiomas,"ja,en,null"));
+    extras_teste_audio_pref("de"); extras_teste_trailer_audio("fr");
+    extras_trailer_audio_idioma(idiomas, sizeof idiomas);
+    check("explicit trailer override beats playback preference", !strcmp(idiomas,"fr"));
+    extras_teste_trailer_audio("");
     extras_teste_audio_pref("");          // Clear playback preference
     extras_teste_idiomas_video("en-US", "", idiomas, sizeof idiomas);
     check("automatic: fallback to UI language when no playback preference",

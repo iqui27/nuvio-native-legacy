@@ -1220,6 +1220,28 @@ void app_desktop_preview(const char *screen) {
     else if (!strcmp(screen+5,"name")) teclado_abrir_com("Nome da conta","",95,"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .-",NULL);
     else teclado_abrir_com("Servidor Xtream","",TECLADO_MAX,"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.:-/?=&%~_",NULL);
   }
+  else if (!strcmp(screen,"sources")) {
+    // Explicit offline fixture. Never read account data or request real streams.
+    const char *data=getenv("NUVIO_DADOS");
+    if(!data || !*data || !getenv("NV_CAPTURA_DIR")) return;
+    int title=cat_indice_por_imdb("tt12637874");
+    if(title<0) return;
+    menu_definir_destino(MENU_BIBLIOTECA);abrirPorIndice(title);
+    static Stream sources[20];
+    memset(sources,0,sizeof sources);
+    for(int i=0;i<20;i++) {
+      Stream *s=&sources[i];
+      snprintf(s->provedor,sizeof s->provedor,"%s",i<2?"AIOStreams":"Torrentio");
+      snprintf(s->rotulo,sizeof s->rotulo,"%s",i==0?"4K WEB-DL Dolby Vision HEVC":i==1?"4K WEB-DL HDR HEVC":i<18?"4K REMUX HDR10 Atmos":"1080p WEB-DL HEVC");
+      snprintf(s->url,sizeof s->url,"http://127.0.0.1:9/offline-%d.mkv",i);
+      s->altura=i<18?2160:1080;s->dolbyVision=i==0;s->fileIdx=-1;s->emCache=1;
+      s->tamanhoMB=i==0?6042:i==1?7578:14541-i*40;
+      s->badges=badges_detectar(s->rotulo);
+    }
+    stream_definir_alvo("tt12637874:1:3");stream_definir_lista(sources,20);
+    stream_folha_nome(cat_item(title)->titulo);stream_folha_item(title);
+    stream_folha_contexto("Fallout · T1:E3 · A cabeça");stream_folha_abrir();
+  }
   else if (!strcmp(screen,"guide")) { trocarTela(TELA_GUIA); }
   else if (!strcmp(screen,"sports")) { trocarTela(TELA_ESPORTES); }
   else if (!strcmp(screen,"achievements")) { menu_definir_destino(MENU_CONQUISTAS); conquistas_abrir(); }
@@ -6578,7 +6600,11 @@ void app_atualizar(float dt, Uint32 agora) {
           if (strcmp(pendAlvo, alvo)) { snprintf(pendAlvo, sizeof pendAlvo, "%s", alvo); pendDesde = SDL_GetTicks(); }
           esperaFoco = SDL_GetTicks() - pendDesde < 1200u;
         } }
-      if (!cwEspera && !player_visivel() && aguardandoFonte != 2 && ci && ci->imdb[0] && !esperaFoco &&
+      if (
+#ifdef NV_DESKTOP_UI
+          !uiPreview &&
+#endif
+          !cwEspera && !player_visivel() && aguardandoFonte != 2 && ci && ci->imdb[0] && !esperaFoco &&
           (strcmp(alvo, ultimoAlvo) || (detail_aberto() && ultimaVersao != addons_versao()))) {
         if (!strcmp(alvo, ultimoAlvo)) printf("[addons] lista mudou: refazendo a busca de fontes de %s\n", alvo);
         snprintf(ultimoAlvo, sizeof ultimoAlvo, "%s", alvo);

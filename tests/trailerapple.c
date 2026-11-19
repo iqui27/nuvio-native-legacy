@@ -15,6 +15,7 @@ char *dados_caminho(char *dst, unsigned tam, const char *nome) { snprintf(dst, t
 void dados_marcar_sujo(int leve) { (void)leve; }
 const char *dados_dir(void) { return nvt("/nuvio-trailerapple-teste"); }
 int qualidade = 0;
+void extras_trailer_audio_idioma(char *dst, unsigned cap) { snprintf(dst, cap, "en-US"); }
 int ajustes_trailer_qualidade(void) { return qualidade; }
 
 // --- TRANSPORTE DUBLE ------------------------------------------------------
@@ -46,7 +47,7 @@ static const char *FILME_TOMJERRY =
 
 static const char *MASTER =
   "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-INDEPENDENT-SEGMENTS\n"
-  "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud1\",NAME=\"fixture\",URI=\"http://127.0.0.1:9/trailer/a.m3u8\"\n"
+  "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud1\",NAME=\"fixture\",LANGUAGE=\"en\",URI=\"http://127.0.0.1:9/trailer/a.m3u8\"\n"
   "#EXT-X-STREAM-INF:RESOLUTION=1920x1080,CODECS=\"avc1.4d401f\",AUDIO=\"aud1\"\n"
   "http://127.0.0.1:9/trailer/v1080.m3u8\n"
   "#EXT-X-STREAM-INF:RESOLUTION=1280x720,CODECS=\"avc1.4d401f\",AUDIO=\"aud1\"\n"

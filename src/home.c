@@ -3378,6 +3378,13 @@ static void sincronizarFileiras(void) {
     snprintf(v.titulo,sizeof v.titulo,"%s",pf->title);
     v.tipo=FILEIRA_CATALOGOS;
     v.forma=pf->forma>=0&&pf->forma<COL_FORMA_N?pf->forma:COL_FORMA_PAISAGEM;
+    // #700: a descoberta ja publicou esta chave com a janela do genero (no
+    // topo, sem base). Ela vem para ESTE lugar, o da fixada, com a forma da
+    // pasta: com ou sem genero, a fileira fica onde o cartao ficaria.
+    { int j; for(j=0;j<destino&&strcmp(fileiras[j].chave,v.chave);j++);
+      if(j<destino){ Fileira g=fileiras[j]; g.forma=v.forma;
+        memmove(fileiras+j,fileiras+j+1,sizeof *fileiras*(size_t)(destino-1-j));
+        fileiras[destino-1]=g; continue; } }
     v.n=cf_itens(pf,v.itens,MAX_CARDS-1);
     if(v.n) { v.tipo=FILEIRA_NORMAL;v.usaItens=1; }
     else { v.n=1;v.folders[0]=fi; }
@@ -6641,6 +6648,14 @@ static void heroTrailerVetoLog(void) {
 // for the dubbed trailer (Trailer audio), ranked first, so a failed embed
 // falls back to Apple -> IMDb instead of keeping the art.
 static int heroTrailerDepois(int qual) {
+  unsigned falhas = heroTrailerFalhas;
+  if (qual > 0 && qual <= TRF_YOUTUBE) falhas |= 1u << qual;
+  if (trailerfonte_ajuste() == TRF_AUTO && (falhas & (1u << TRF_APPLE))) {
+    int ordem[3], n = trailerfonte_ordem_destaque(TRF_AUTO, trailerfonte_tizen(), ordem);
+    for (int i = 0; i < n; i++)
+      if (!(falhas & (1u << ordem[i]))) return ordem[i];
+    return 0;
+  }
 #ifdef __EMSCRIPTEN__
   if (qual == TRF_YOUTUBE || (heroTrailerFalhas & (1u << TRF_YOUTUBE)))
     return trailerfonte_depois_dublado(trailerfonte_ajuste(), trailerfonte_tizen(), qual);
@@ -6886,6 +6901,7 @@ static void home_trailer_passo_(int topo, float dt, Uint32 agora) {
     int qual = 0, venceu = decorrido >= heroTrailerMaxEspera();
     memset(&c, 0, sizeof c);
     c.apple = trailerapple_url(ci->imdb);
+    c.appleIdiomaPreferido = trailerapple_idioma_preferido(ci->imdb);
     c.appleRespondeu = trailerapple_respondeu(ci->imdb) || venceu;
     c.appleFalhou = heroTrailerAppleFalhou;
     if (!trailerfonte_tizen() || trailerfonte_imdb_tizen()) {

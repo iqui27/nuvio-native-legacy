@@ -243,6 +243,23 @@ const ColFolder *col_folder(int i) {
   pthread_mutex_unlock(&colTrava);
   return &PASTA(i);
 }
+int col_copiar_pasta(const char *id, ColFolder *dst, ColSource *fontes) {
+  int ok = 0;
+  if (!id || !id[0] || !dst || !fontes) return 0;
+  pthread_mutex_lock(&colTrava);
+  for (int i = 0; i < count && !ok; i++) {
+    if (strcmp(PASTA(i).id, id)) continue;
+    resolverBases(&PASTA(i));
+    *dst = PASTA(i);
+    if (dst->nSources < 0 || !dst->sources) dst->nSources = 0;
+    if (dst->nSources > COL_SOURCE_MAX) dst->nSources = COL_SOURCE_MAX;
+    if (dst->nSources) memcpy(fontes, dst->sources, sizeof *fontes * (size_t)dst->nSources);
+    dst->sources = fontes;
+    ok = 1;
+  }
+  pthread_mutex_unlock(&colTrava);
+  return ok;
+}
 // FNV-1a de 32 bits, igual ao de homeestado.c: o valor tem de bater com o do
 // hashColecoes que morava la, ou todo snapshot da Home ja gravado seria
 // descartado uma vez sem motivo.

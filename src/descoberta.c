@@ -12,6 +12,7 @@
 #include "homeestado.h"
 #include "sessao.h"
 #include "colecoes.h"
+#include "homefil.h"
 #include "marco.h"
 #include "metaprov.h"
 #include "armids.h"
@@ -1512,15 +1513,30 @@ static int deMeta(const char *ini, const char *fim, const char *tipo, CatItem *d
 // resposta e "o catalogo esta VAZIO hoje", 0 sem resposta e "o addon nao
 // respondeu em 8 s". Do lado de fora os dois viravam a mesma fileira ausente, e
 // era exatamente por isso que nao dava para dizer o que falhou num arranque.
+// `genero` (pode ser "" ou NULL) vai como extra `genre=<id>` no pedido: as
+// fileiras das colecoes fixadas pedem a janela do genero da fonte (#700).
 static int lerCatalogo(const char *base, const char *tipo, const char *id,
-                       CatItem *saida, int max, int quantos, int *respondeu) {
-  char url[NV_ADDON_PEDIDO_MAX];
+                       CatItem *saida, int max, int quantos, const char *genero,
+                       int *respondeu) {
+  char url[NV_ADDON_PEDIDO_MAX], extra[300] = "";
   char *corpo;
   const char *p;
   int n = 0;
   if (respondeu) *respondeu = 0;
   if (addons_base_desligada(base)) return 0;   // desligado na conta: nenhuma rede
-  if (!descPedidoCoube(base, catalogoUrl(url, sizeof url, base, tipo, id, ""),
+  if (genero && genero[0]) {
+    char encoded[300];
+    int z = 0;
+    // Mesma regra do vertudo/colecao (linha ~9950): alfanumerico, '-' e '_'.
+    for (const unsigned char *c = (const unsigned char *)genero; *c && z < (int)sizeof encoded - 3; c++) {
+      if ((*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') ||
+          (*c >= '0' && *c <= '9') || *c == '-' || *c == '_') encoded[z++] = (char)*c;
+      else { snprintf(encoded + z, 4, "%%%02X", *c); z += 3; }
+    }
+    encoded[z] = 0;
+    snprintf(extra, sizeof extra, "genre=%s", encoded);
+  }
+  if (!descPedidoCoube(base, catalogoUrl(url, sizeof url, base, tipo, id, extra),
                        sizeof url)) return 0;
   // 8 s e nao 25: um addon fora do ar segurava um dos tres fios por 25 s, e a
   // fileira dele atrasa TODAS as seguintes porque a montagem caminha em ordem.
@@ -1560,7 +1576,7 @@ static int lerCatalogoHomeParcial(const char *base, const char *tipo, const char
   int n = 0, visiveis = 0, skip = 0;
   char orig[96];
   if (!ajustes_ocultar_filmes_vistos() || strcmp(tipo, "movie"))
-    return lerCatalogo(base, tipo, id, saida, max, quantos, respondeu);
+    return lerCatalogo(base, tipo, id, saida, max, quantos, "", respondeu);
   if (max > HOME_VISTOS_MAX) max = HOME_VISTOS_MAX;
   if (respondeu) *respondeu = 0;
   if (addons_base_desligada(base)) return 0;
@@ -1610,6 +1626,91 @@ static int lerCatalogoHome(const char *base, const char *tipo, const char *id,
                            int paginavel, int *respondeu) {
   return lerCatalogoHomeParcial(base, tipo, id, saida, max, quantos,
                                paginavel, respondeu, NULL, NULL);
+}
+
+// --- fileira sintetica de colecao fixada (#700) ------------------------------
+// As fixadas moram em homefil.c. Quem liga a descoberta sem homefil.c (os
+// fixtures da montagem) fica com "nenhuma fixada", o comportamento de antes;
+// no app homefil.c entra e estes fracos nao valem (mesma regra de catalogo.c).
+__attribute__((weak)) int cf_n(void) { return 0; }
+__attribute__((weak)) const ColFolder *cf_pasta(int i) { (void)i; return NULL; }
+__attribute__((weak)) int cf_fixada(const char *pastaId) { (void)pastaId; return 0; }
+// A fonte de uma colecao carrega `genre` quando a pasta aponta para UM dos
+// generos do catalogo. cf_itens() devolve 0 para ela (nunca apresenta outro
+// genero como se fosse o da pasta) e a Home mostrava o card da pasta; a
+// alternativa antiga era pior: a janela (base,tipo,catId) sem genero serve
+// qualquer pasta e duas fixadas do mesmo catalogo partilhavam a MESMA lista.
+//
+// Aqui, junto com as fileiras de catalogo, monta-se UMA fileira por pasta
+// fixada que tenha fonte com genero: a uniao (sem repetir imdb+tipo) das
+// janelas de genero pedidas agora e das janelas sem genero ja publicadas
+// das fontes restantes. A chave e "colpin_<id>", a mesma da pseudo-fileira
+// que a Home monta pela pasta: o dedup por chave fica com esta (que tem os
+// itens certos) e descarta a outra. `base`/`catId` vazios de proposito — ela
+// nao e um catalogo, nao gasta vaga de rede e nao tem "Ver tudo".
+//
+// So publica quando TODAS as fontes resolvem, como cf_itens(): pasta com
+// provedor, filtros proprios, base irrecuperavel ou catalogo sem resposta
+// continua card. O card e a verdade que a pasta tem quando falta janela.
+// static: montar() roda num fio so; o buffer soma ~1 MB e nao vai pra pilha.
+// `novas`/`nNovas`/`novosItens` sao as fileiras do lote que montar() acabou
+// de buscar (a janela sem genero sai da mesma remessa, nao da volta anterior).
+// `pasta` e uma COPIA (col_copiar_pasta): a rede leva segundos e o sync pode
+// refazer as pastas no meio. `mortas` sao as bases que ja calaram nesta volta:
+// uma base fora do ar custa UM timeout de 8 s por montagem, nao um por pasta.
+#define COLPIN_MORTAS 8
+static int colpinItens(const ColFolder *pasta, CatItem *uni, int teto,
+                       const CatFileira *novas, int nNovas,
+                       const CatItem *novosItens,
+                       char mortas[][sizeof ((ColSource *)0)->base], int *nMortas) {
+  int n = 0, temGenero = 0;
+  static CatItem fonteItens[DESC_ITENS_POR_FILEIRA];
+  for (int s = 0; s < pasta->nSources; s++) {
+    const ColSource *fonte = &pasta->sources[s];
+    const char *base = fonte->base[0] ? fonte->base : addons_base_por_id(fonte->addonId);
+    int got = 0, respondeu = 0;
+    if (fonte->prov[0] || fonte->filtros[0] || !base || !base[0]) return 0;
+    if (fonte->genre[0]) {
+      temGenero = 1;
+      for (int m = 0; m < *nMortas; m++) if (!strcmp(mortas[m], base)) return 0;
+      got = lerCatalogo(base, fonte->type, fonte->catId, fonteItens,
+                        DESC_ITENS_POR_FILEIRA, DESC_ITENS_POR_FILEIRA,
+                        fonte->genre, &respondeu);
+      if (!respondeu) {            // timeout: sem janela propria, volta o card
+        if (*nMortas < COLPIN_MORTAS) snprintf(mortas[(*nMortas)++], sizeof *mortas, "%s", base);
+        return 0;
+      }
+    } else {
+      for (int r = 0; r < nNovas && !got; r++) {   // primeiro o lote novo...
+        const CatFileira *c = &novas[r];
+        if (!strcmp(c->base, base) && !strcmp(c->tipo, fonte->type) &&
+            !strcmp(c->catId, fonte->catId) && c->base[0])
+          for (int j = 0; j < c->n && got < DESC_ITENS_POR_FILEIRA; j++)
+            fonteItens[got++] = novosItens[c->ini + j];
+      }
+      for (int r = 0; r < cat_n_fileiras() && !got; r++) {   // ...senao a publicada
+        const CatFileira *c = cat_fileira(r);
+        if (c && !strcmp(c->base, base) && !strcmp(c->tipo, fonte->type) &&
+            !strcmp(c->catId, fonte->catId)) {
+          for (int j = 0; j < c->n && got < DESC_ITENS_POR_FILEIRA; j++) {
+            const CatItem *it = cat_item(c->ini + j);
+            if (it) fonteItens[got++] = *it;
+          }
+          break;
+        }
+      }
+      if (!got) return 0;          // sem resposta ou nao publicada: cf_itens ja da 0
+    }
+    for (int j = 0; j < got && n < teto; j++) {
+      int repetido = 0;
+      for (int k = 0; k < n; k++)
+        if (!strcmp(uni[k].imdb, fonteItens[j].imdb) &&
+            !strcmp(uni[k].tipo, fonteItens[j].tipo)) { repetido = 1; break; }
+      if (!repetido) uni[n++] = fonteItens[j];
+    }
+  }
+  if (!temGenero) return 0;        // pasta sem genero segue o cf_itens de sempre
+  return n;
 }
 
 // --- fileiras da home: catalogos declarados pelos addons ---------------------
@@ -2930,7 +3031,12 @@ static int fileiraPodeSerPreservada(const CatFileira *f) {
   // Personal-server rows come only from the live Jellyfin snapshot: after a
   // sign-out, token expiry or profile switch they must vanish, not be
   // re-attached from the previous Home.
-  return f && f->chave[0] && !servidores_chave_fileira(f->chave) && homeestado_contexto_valido() &&
+  if (!f || !f->chave[0]) return 0;
+  // Excecao: a fileira sintetica "colpin_<id>" (#700) so vale enquanto a pasta
+  // segue fixada. Desafixar entre voltas nao pode reanexa-la aqui.
+  if (!strncmp(f->chave, CF_PREFIXO, sizeof CF_PREFIXO - 1))
+    return cf_fixada(f->chave + sizeof CF_PREFIXO - 1);
+  return !servidores_chave_fileira(f->chave) && homeestado_contexto_valido() &&
          homeestado_tem_fileira(f->chave);
 }
 
@@ -5420,6 +5526,43 @@ static void *montar(void *u) {
           }
         }
       }
+      // #700: UMA fileira por pasta FIXADA que tenha fonte com genero. Fica
+      // aqui, depois dos catalogos e do alimento do destaque, porque as fontes
+      // sem genero da pasta leem as janelas que o laco acabou de publicar em
+      // fil[]/lote — e nao as da tela, que ainda sao as da volta anterior.
+      // A pasta vai COPIADA sob a trava (col_copiar_pasta) antes da rede; troca
+      // de perfil no meio condena a volta (CONDENADA) e nada disto publica.
+      // Fileira escondida pela pessoa nao faz pedido nenhum.
+      { int ncf = cf_n(), nMortas = 0;
+        static ColSource fontesCopia[COL_SOURCE_MAX];
+        static CatItem uni[DESC_ITENS_POR_FILEIRA];
+        static char mortas[COLPIN_MORTAS][sizeof fontesCopia[0].base];
+        static ColFolder copia;
+        for (int cf = 0; cf < ncf && nFil < CAT_FIL_MAX; cf++) {
+          const ColFolder *ref = cf_pasta(cf);
+          ColFolder *pasta = &copia;
+          char id[sizeof copia.id], chave[sizeof CF_PREFIXO + sizeof copia.id];
+          int got;
+          if (!ref) continue;
+          snprintf(id, sizeof id, "%s", ref->id);
+          if (!col_copiar_pasta(id, &copia, fontesCopia)) continue;
+          snprintf(chave, sizeof chave, "%s%s", CF_PREFIXO, copia.id);
+          if (fil_oculta(chave)) continue;
+          got = colpinItens(pasta, uni, DESC_ITENS_POR_FILEIRA, fil, nFil, lote,
+                            mortas, &nMortas);
+          if (CONDENADA("colecoes fixadas")) goto condenada;
+          if (!got) continue;
+          GARANTE(got);
+          if (got > cap - n) got = cap - n;
+          if (got <= 0) break;
+          CatFileira *f = &fil[nFil++];
+          memset(f, 0, sizeof *f);
+          snprintf(f->chave,  sizeof f->chave,  "%s%s", CF_PREFIXO, pasta->id);
+          snprintf(f->titulo, sizeof f->titulo, "%s", pasta->title);
+          memcpy(lote + n, uni, sizeof(CatItem) * (size_t)got);
+          f->ini = n; f->n = got;
+          n += got;
+        } }
       nFilsLote = nFil;
       memcpy(filsLote, fil, sizeof(CatFileira) * (size_t)nFil);
       // UMA LINHA QUE RESPONDE "o que falhou no arranque". As quatro contagens
@@ -5962,9 +6105,15 @@ void desc_remontar_fileiras(void) {
   int i, k, q, nCat = 0, nOut = 0, teto, engolidas = 0;
   if (nFileirasMontadas < 1) return;
 
-  // 1. as fixas primeiro, na ordem em que ja estavam.
-  for (i = 0; i < nFileirasMontadas && nOut < CAT_FIL_MAX; i++)
-    if (!filsMontadas[i].base[0]) saidaFil[nOut++] = filsMontadas[i];
+  // 1. as fixas primeiro, na ordem em que ja estavam. Excecao: a fileira
+  // sintetica "colpin_<id>" (#700) so vale enquanto a pasta segue fixada —
+  // desafixar nao pode deixar uma fileira orfa na home ate a proxima montagem.
+  for (i = 0; i < nFileirasMontadas && nOut < CAT_FIL_MAX; i++) {
+    const CatFileira *fixa = &filsMontadas[i];
+    if (!fixa->base[0] && !strncmp(fixa->chave, CF_PREFIXO, sizeof CF_PREFIXO - 1) &&
+        !cf_fixada(fixa->chave + sizeof CF_PREFIXO - 1)) continue;
+    if (!fixa->base[0]) saidaFil[nOut++] = filsMontadas[i];
+  }
 
   // 2. as de catalogo, filtradas pelas mesmas regras de desligada().
   for (i = 0; i < nFileirasMontadas; i++) {
@@ -9510,9 +9659,45 @@ static int pendItem = -1, pendTemp;
 
 static CatItem  vtItens[VT_MAX];
 static VtStore vtAddon;
-static struct { char id[64], tipo[8]; } vtAddonId[VT_STORE_MAX];
-/* Dynamic payload budget excludes the fixed index and allocator overhead. */
-#define VT_ADDON_BYTES_MAX (8u * 1024u * 1024u)
+/* #789: dedup por hash. vtAddonId guarda (imdb,tipo) por posicao; vtIdSlot e
+ * uma tabela de enderecamento aberto para a posicao — varrer 14 mil itens com
+ * strcmp por item era O(n^2) e travava a paginacao inteira na TV. vtNovaId faz
+ * o mesmo para a lista em reconstrucao do recarregamento (item 3 da issue). */
+typedef struct { char id[64], tipo[8]; } VtId;
+static VtId vtAddonId[VT_STORE_MAX];
+static VtId vtNovaId[VT_STORE_MAX];
+#define VT_ID_SLOTS VT_STORE_MAX
+static int32_t vtIdSlot[VT_ID_SLOTS];
+static uint32_t vtIdHash(const char *id, const char *tipo) {
+  uint32_t h = 2166136261u;
+  for (const unsigned char *p = (const unsigned char *)id; *p; p++) { h ^= *p; h *= 16777619u; }
+  h ^= 0x9eu; h *= 16777619u;
+  for (const unsigned char *p = (const unsigned char *)tipo; *p; p++) { h ^= *p; h *= 16777619u; }
+  return h;
+}
+static int vtIdTem(const int32_t *slots, const VtId *ids, const char *id, const char *tipo) {
+  // Tabela cheia (catalogo no teto): uma volta inteira basta — um id novo
+  // numa tabela cheia nao existe e nao pode travar a paginacao.
+  uint32_t s = vtIdHash(id, tipo) % VT_ID_SLOTS;
+  for (int volta = 0; volta < VT_ID_SLOTS; volta++, s = (s + 1) % VT_ID_SLOTS) {
+    int i = slots[s];
+    if (i < 0) return 0;
+#ifdef NV_VT_DEDUP_MEDIDA
+    extern long vtDedupPares;   // os testes medem comparacoes, nao o relogio
+    vtDedupPares++;
+#endif
+    if (!strcmp(ids[i].id, id) && !strcmp(ids[i].tipo, tipo)) return 1;
+  }
+  return 0;
+}
+static void vtIdPoe(int32_t *slots, const VtId *ids, int i) {
+  for (uint32_t s = vtIdHash(ids[i].id, ids[i].tipo) % VT_ID_SLOTS; ; s = (s + 1) % VT_ID_SLOTS)
+    if (slots[s] < 0) { slots[s] = i; return; }
+}
+/* Dynamic payload budget excludes the fixed index and allocator overhead.
+ * #789: 14 mil itens a ~2,1 KB/item medem ~30 MB (ver tests/fv_pag_store.c);
+ * 32 MiB cobre o pior perfil medido com folga, ainda limitado. */
+#define VT_ADDON_BYTES_MAX (32u * 1024u * 1024u)
 static DescItemLista vtExtra[VT_MAX];   // paralela a vtItens; ver descoberta.h
 static int      vtN;
 static char     vtBase[NV_ADDON_URL_MAX], vtTipo[8], vtCat[96], vtGenre[96];
@@ -10217,20 +10402,23 @@ static void *fioVerTudo(void *u) {
     size_t livre = vtAddon.used < VT_ADDON_BYTES_MAX ? VT_ADDON_BYTES_MAX - vtAddon.used : 0;
     pthread_mutex_unlock(&vtTrava);
     snprintf(fonte.type, sizeof fonte.type, "%s", type); fonte.prov[0] = 0;
+    int32_t vtNovaSlot[VT_ID_SLOTS];
+    memset(vtNovaSlot, -1, sizeof vtNovaSlot);
+    memset(vtNovaId, 0, sizeof vtNovaId);
     for (const char *p = ok ? js_array(corpo, NULL, "metas") : NULL; p; p = js_prox(js_fim(p))) {
       const char *f = js_fim(p); CatItem it; raw++;
       hashAntes = hash; hash = vtHashItem(hash, p, f, type);
       if (!deMeta(p, f, type, &it) || !colecaoTipo(&fonte, &it)) continue;
       if (descOcultaNaoLancado(&it)) { avancou++; continue; }
       origemDaBase(base, it.origem, sizeof it.origem); it.ranking = skip + raw;
-      int dup = 0;
-      for (int i = 0; it.imdb[0] && i < nova.n; i++) {
-        CatItem old;
-        if (vt_store_get(&nova, i, &old) && !strcmp(old.imdb, it.imdb) && !strcmp(old.tipo, it.tipo)) { dup = 1; break; }
-      }
-      if (dup) continue;
+      if (it.imdb[0] && vtIdTem(vtNovaSlot, vtNovaId, it.imdb, it.tipo)) continue;
       if (nova.n >= cap) { if (cap == VT_STORE_MAX) parcial = 1; break; }
       if (!vt_store_append(&nova, &it, livre)) { ok = 0; break; }
+      if (it.imdb[0]) {
+        memcpy(vtNovaId[nova.n - 1].id, it.imdb, sizeof it.imdb);
+        memcpy(vtNovaId[nova.n - 1].tipo, it.tipo, sizeof it.tipo);
+        vtIdPoe(vtNovaSlot, vtNovaId, nova.n - 1);
+      }
       avancou++;
     }
     free(corpo);
@@ -10244,10 +10432,11 @@ static void *fioVerTudo(void *u) {
       vtReplay = parcial ? raw - 1 : 0; vtReplayHash = parcial ? hashAntes : 0;
       vtPaginaMudou = 0; vtGeracao++;
       vtFim = !parcial && (!raw || !avancou || (cap < VT_STORE_MAX && vtN >= cap));
+      memset(vtIdSlot, -1, sizeof vtIdSlot);
       for (int i = 0; i < vtN; i++) {
-        CatItem it; vt_store_get(&vtAddon, i, &it);
-        memcpy(vtAddonId[i].id, it.imdb, sizeof it.imdb);
-        memcpy(vtAddonId[i].tipo, it.tipo, sizeof it.tipo);
+        memcpy(vtAddonId[i].id, vtNovaId[i].id, sizeof vtAddonId[i].id);
+        memcpy(vtAddonId[i].tipo, vtNovaId[i].tipo, sizeof vtAddonId[i].tipo);
+        if (vtAddonId[i].id[0]) vtIdPoe(vtIdSlot, vtAddonId, i);
       }
     }
     vtErro = !ok || parcial; vtFioVivo = 0;
@@ -10280,12 +10469,14 @@ static void *fioVerTudo(void *u) {
       pthread_mutex_lock(&vtTrava);
       int duplicate=0;
       if (generation==vtGeracao && descSessaoAtual()) {
-        for(int i=0;i<vtN && it.imdb[0];i++)
-          if(!strcmp(vtAddonId[i].id,it.imdb) && !strcmp(vtAddonId[i].tipo,it.tipo)){duplicate=1;break;}
+        if (it.imdb[0]) duplicate = vtIdTem(vtIdSlot, vtAddonId, it.imdb, it.tipo);
         if (!duplicate && vtN < cap) {
           if (vt_store_append(&vtAddon, &it, VT_ADDON_BYTES_MAX)) {
-            memcpy(vtAddonId[vtN].id, it.imdb, sizeof it.imdb);
-            memcpy(vtAddonId[vtN].tipo, it.tipo, sizeof it.tipo);
+            if (it.imdb[0]) {
+              memcpy(vtAddonId[vtN].id, it.imdb, sizeof it.imdb);
+              memcpy(vtAddonId[vtN].tipo, it.tipo, sizeof it.tipo);
+              vtIdPoe(vtIdSlot, vtAddonId, vtN);
+            }
             vtN++; added++;
           }
           else semEspaco = 1;
@@ -10359,6 +10550,7 @@ void desc_vertudo_filtro_desde(const char *base, const char *tipo, const char *c
     return;
   }
   vt_store_free(&vtAddon);
+  memset(vtIdSlot, -1, sizeof vtIdSlot);   // #789: o zero e um indice valido
   snprintf(vtBase, sizeof vtBase, "%s", base);
   snprintf(vtTipo, sizeof vtTipo, "%s", tipo);
   snprintf(vtCat,  sizeof vtCat,  "%s", catId);
@@ -10386,6 +10578,7 @@ void desc_vertudo_fonte_desde(const ColSource *s, int pagina) {
     int k = caca_por_chave(s->catId + (s->catId[0] ? 1 : 0)), n;
     pthread_mutex_lock(&vtTrava);
     vt_store_free(&vtAddon);
+    memset(vtIdSlot, -1, sizeof vtIdSlot);
     vtFonte = copia;
     vtReload = vtPaginaMudou = vtReplay = 0;
     vtProvedor = 3;
@@ -10403,6 +10596,7 @@ void desc_vertudo_fonte_desde(const ColSource *s, int pagina) {
     return;
   }
   vt_store_free(&vtAddon);
+  memset(vtIdSlot, -1, sizeof vtIdSlot);
   vtFonte = copia;
   vtReload = vtPaginaMudou = vtReplay = 0;
   vtProvedor = !strcmp(s->prov, "trakt") ? 2 : 1;

@@ -9,6 +9,8 @@ void gfx_arte_caminho(const char *rel, char *out, unsigned n);
 #import <objc/runtime.h>
 #include <SDL2/SDL_syswm.h>
 #include "desktop_native.h"
+#include "layout.h"
+#include "gfx.h"
 #include "menu.h"
 #include "colecoes.h"
 #include "home.h"
@@ -18,6 +20,103 @@ void gfx_arte_caminho(const char *rel, char *out, unsigned n);
 #include "tex_cache.h"
 static NSWindow *nativeWindow;
 static NSView *sidebar, *sidebarControls;
+static NSView *sourceControls;
+static BOOL sourceActive;
+static void (*sourceActivate)(int);
+@interface NVSourceControls : NSView
+@end
+@implementation NVSourceControls
+- (BOOL)isFlipped { return YES; }
+- (NSView *)hitTest:(NSPoint)p {
+  NSView *hit=[super hitTest:p];
+  return [hit isKindOfClass:NSControl.class] ? hit : nil;
+}
+- (void)activate:(NSButton *)sender { if(sourceActivate) sourceActivate((int)sender.tag); }
+@end
+unsigned desktop_native_sources(const DesktopSourceControl *controls, int count, void (*activate)(int),
+                                float x, float y, float w, float h, float scale, float alpha) {
+  static DesktopSourceControl previous[32];
+  static int previousCount=-1;
+  static float previousW, previousH;
+  static GLuint texture;
+  sourceActive=controls && count>0 && alpha>.005f;
+  if(!sourceActive) { sourceControls.hidden=YES; return 0; }
+  if(!nativeWindow || count>32 || scale<=0) return 0;
+  if(!sourceControls) {
+    sourceControls=[NVSourceControls new];
+    sourceControls.appearance=[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+    sourceControls.accessibilityLabel=[NSString stringWithUTF8String:i18n("Fontes")];
+    sourceControls.accessibilityRole=NSAccessibilityGroupRole;
+    [nativeWindow.contentView.superview addSubview:sourceControls positioned:NSWindowAbove relativeTo:sidebar];
+  }
+  sourceActivate=activate;
+  NSView *content=nativeWindow.contentView;
+  scale*=content.bounds.size.width/nv_layout_w;
+  NSRect local=NSMakeRect(x*scale,content.isFlipped?y*scale:content.bounds.size.height-(y+h)*scale,w*scale,h*scale);
+  sourceControls.frame=[content convertRect:local toView:sourceControls.superview];
+  sourceControls.bounds=NSMakeRect(0,0,w,h);
+  sourceControls.alphaValue=alpha;
+  sourceControls.hidden=getenv("NV_CAPTURA_GL")!=NULL;
+  BOOL changed=previousCount!=count || previousW!=w || previousH!=h || memcmp(previous,controls,sizeof(*controls)*count);
+  if(changed) {
+    NSArray *oldSubviews=[sourceControls.subviews copy];
+    for(NSView *v in oldSubviews) [v removeFromSuperview];
+    [oldSubviews release];
+    for(int i=0;i<count;i++) {
+      const DesktopSourceControl *c=&controls[i];
+      NSButton *b=[NSButton buttonWithTitle:[NSString stringWithUTF8String:c->title] target:sourceControls action:@selector(activate:)];
+      b.tag=c->action; b.frame=NSMakeRect(c->x,c->y,c->w,c->h);
+      b.font=[NSFont systemFontOfSize:18 weight:NSFontWeightMedium];
+      if(@available(macOS 26.0,*)) b.controlSize=NSControlSizeExtraLarge;
+      else if(@available(macOS 11.0,*)) b.controlSize=NSControlSizeLarge;
+      b.bezelStyle=c->kind==2?NSBezelStyleCircular:NSBezelStyleRounded;
+      if(c->kind==1) b.buttonType=NSButtonTypePushOnPushOff;
+      if(c->kind==2) { b.title=@""; b.image=[NSImage imageWithSystemSymbolName:@"xmark" accessibilityDescription:[NSString stringWithUTF8String:i18n("Fechar")]]; b.imagePosition=NSImageOnly; }
+      b.state=c->selected?NSControlStateValueOn:NSControlStateValueOff;
+      b.enabled=c->enabled; b.toolTip=[NSString stringWithUTF8String:c->title];
+      b.accessibilityLabel=b.toolTip;
+      b.contentTintColor=[NSColor colorWithSRGBRed:243/255. green:242/255. blue:239/255. alpha:1];
+      b.bezelColor=c->kind==3?NSColor.systemBlueColor:[NSColor colorWithWhite:c->selected?.30:.23 alpha:1];
+      [sourceControls addSubview:b];
+    }
+    memcpy(previous,controls,sizeof(*controls)*count); previousCount=count; previousW=w; previousH=h;
+    if(texture) { glDeleteTextures(1,&texture); texture=0; }
+  }
+  if(!getenv("NV_CAPTURA_GL")) return 0;
+  if(!texture) {
+    NSBitmapImageRep *bitmap=[[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:(NSInteger)w pixelsHigh:(NSInteger)h
+        bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace
+        bitmapFormat:0 bytesPerRow:(NSInteger)w*4 bitsPerPixel:32];
+    memset(bitmap.bitmapData,0,bitmap.bytesPerRow*bitmap.pixelsHigh);
+    // Covered windows may never display their layer tree. Draw the very same
+    // NSButtonCells into the readback texture without displaying/activating it.
+    [NSGraphicsContext saveGraphicsState];
+    NSGraphicsContext *context=[NSGraphicsContext graphicsContextWithBitmapImageRep:bitmap];
+    NSGraphicsContext.currentContext=context;
+    CGContextTranslateCTM(context.CGContext,0,h);CGContextScaleCTM(context.CGContext,1,-1);
+    [sourceControls.appearance performAsCurrentDrawingAppearance:^{
+      for(NSButton *button in sourceControls.subviews) [button.cell drawWithFrame:button.frame inView:sourceControls];
+    }];
+    [NSGraphicsContext restoreGraphicsState];
+    if(getenv("NV_CAPTURA_DIR")) {
+      NSString *path=[[NSString stringWithUTF8String:getenv("NV_CAPTURA_DIR")] stringByAppendingPathComponent:@"source-controls.png"];
+      [[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:path atomically:YES];
+    }
+    // AppKit bitmap contexts require premultiplied storage; GL UI uses straight alpha.
+    unsigned char *pixels=bitmap.bitmapData;
+    for(NSInteger i=0;i<bitmap.pixelsWide*bitmap.pixelsHigh;i++) {
+      unsigned a=pixels[4*i+3];
+      if(a) for(int c=0;c<3;c++) pixels[4*i+c]=MIN(255,(pixels[4*i+c]*255u+a/2)/a);
+    }
+    glActiveTexture(GL_TEXTURE0);glPixelStorei(GL_UNPACK_ALIGNMENT,1);
+    glGenTextures(1,&texture); glBindTexture(GL_TEXTURE_2D,texture);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR); glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,(GLsizei)w,(GLsizei)h,0,GL_RGBA,GL_UNSIGNED_BYTE,bitmap.bitmapData);
+    [bitmap release];
+    gfx_tex_esquecer(0);
+  }
+  return texture;
+}
 static int sidebarLanguage = -1;
 static NSMutableArray<NSTextField *> *groupLabels;
 static NSTextField *profileChevron;
@@ -375,7 +474,10 @@ void desktop_native_init(SDL_Window *window) {
     if(!sidebarToggle.hidden && NSPointInRect([sidebarToggle convertPoint:event.locationInWindow fromView:nil],sidebarToggle.bounds)) return event;
     menu_desktop_hover(p.x);
     NSPoint containerPoint=[sidebar.superview convertPoint:event.locationInWindow fromView:nil];
-    if([sidebar hitTest:containerPoint]) return event;
+    if(sourceActive) {
+      NSPoint q=[sourceControls.superview convertPoint:event.locationInWindow fromView:nil];
+      if(!sourceControls.hidden && [sourceControls hitTest:q]) return event;
+    } else if([sidebar hitTest:containerPoint]) return event;
     SDL_Event mouse={0};
     BOOL move=event.type==NSEventTypeMouseMoved || event.type==NSEventTypeLeftMouseDragged;
     float y=content.isFlipped?p.y:content.bounds.size.height-p.y;
@@ -402,7 +504,7 @@ void desktop_native_sidebar(float fraction, float reveal) {
   sidebarFraction=fraction; sidebarReveal=reveal;
 }
 void desktop_native_finish(void) {
-  float fraction=sidebarFraction;
+  float fraction=sourceActive?0:sidebarFraction;
   if (!sidebar) return;
   if(fraction<=0 || sidebarReveal<.001f) {sidebar.hidden=YES;return;}
   [CATransaction begin]; [CATransaction setDisableActions:YES];

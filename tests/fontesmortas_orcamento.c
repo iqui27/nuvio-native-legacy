@@ -10,6 +10,7 @@
 #include "stub_m3u.h"
 #include <assert.h>
 #include <unistd.h>
+#include "addonmodo.h"
 #include "consumir-fonte.h"
 
 void prepararOrcamento(int falhas);
@@ -25,6 +26,8 @@ const char *ajustes_qualidade(void) { return "Automatica"; }
 int ajustes_tamanho_max_gb(void) { return 0; }
 int ajustes_tamanho_min_gb(void) { return 0; }
 int badges_fonte_hdr_marca(uint64_t m) { (void)m; return 0; }
+uint64_t badges_bit(const char *s) { (void)s; return 0; }
+uint64_t badges_detectar(const char *s) { (void)s; return 0; }
 uint64_t streamfit_agora_ms(void) { return 0; }
 void streamfit_foto(StreamfitFoto *s, uint64_t ms) { (void)ms; memset(s, 0, sizeof *s); }
 StreamfitClasse streamfit_classificar(const StreamfitFoto *f, const char *u,
@@ -73,7 +76,9 @@ int player_indice(void) { return -1; }
 const CatItem *cat_item(int i) { (void)i; return NULL; }
 int detail_indice(void) { return -1; }
 void player_voltar_a_esperar(void) { }
-void stream_folha_abrir(void) { assert(!"nao abrir a folha"); }
+// 98a847766 (26/10): fontes esgotadas num VOD abrem a folha para a pessoa escolher.
+static int folhaAberta;
+void stream_folha_abrir(void) { folhaAberta++; }
 void stream_folha_nome(const char *s) { (void)s; }
 void stream_folha_canal(int c) { (void)c; }
 void stream_folha_item(int i) { (void)i; }
@@ -85,6 +90,25 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned lista, int escolhi
   assert(!"politica desligada nao pode substituir o worker legado");
   return FONTEFALHA_FIM;
 }
+AddonModo addonmodo_get(uint64_t id) { (void)id; return AM_AUTO; }
+int addonmodo_permite(uint64_t id, int direto, int debrid, int p2p) {
+  (void)id; (void)direto; (void)debrid; (void)p2p; return 1;
+}
+int addons_consultar_sessao(const char *id, const char *tipo, const char *base,
+                            int fios, int (*cancelado)(void *), void *ctx,
+                            Stream **out, uint64_t sessao) {
+  (void)id; (void)tipo; (void)base; (void)fios; (void)cancelado; (void)ctx;
+  (void)sessao; if (out) *out = NULL; return 0;
+}
+const char *guia_canal_origem(void) { return ""; }
+const char *guia_canal_tipo(void) { return "channel"; }
+int guia_variantes(const char *id, GuiaVariante *out, int max) {
+  (void)id; (void)out; (void)max; return 0;
+}
+void audioesc_fonte_binge(const char *binge) { (void)binge; }
+int juntos_precarregando(void) { return 0; }
+void juntos_preferir_reserva(void) { }
+int juntosui_escolhendo_filme(void) { return 0; }
 int ajustes_fonte_escopo(void) { return 0; }
 int ajustes_fonte_regex_modo(void) { return 0; }
 int ajustes_fonte_usar_outros(void) { return 0; }
@@ -179,6 +203,7 @@ int main(int argc, char **argv) {
   if (sucesso) {
     assert(fonteEscolhida == 2 && fonteVODTentativas == 3);
   } else assert(fonteEscolhida == -1 && "quarta candidata escolhida fora do orcamento");
+  assert(folhaAberta == (sucesso ? 0 : 1) && "a folha so abre, uma vez, quando nada serviu");
   assert(stream_automatico_disponivel(3));
   stream_definir_lista(NULL, 0);
   puts("fontesmortas: PASS (worker e consumidor reais, tres sondas, quarta intocada)");
