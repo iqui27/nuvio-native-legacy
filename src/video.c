@@ -2736,8 +2736,29 @@ static int nativasAudio(void) {
   for (int i = 0; i < nAudio; i++) if (!nv_audio_mkv_recuperado(&faixaAudio[i])) n++;
   return n;
 }
+static void aplicarOrdemAudioMkv(void) {
+  AudioCand c[NV_FAIXA_MAX];
+  int i, o, k;
+  if (nAudio < 1 || dtsSessao) return;
+  for (i = 0; i < nAudio; i++) {
+    c[i].idioma = faixaAudio[i].idioma; c[i].codec = faixaAudio[i].codec;
+    c[i].rotulo = faixaAudio[i].rotulo; c[i].canais = faixaAudio[i].canais;
+    c[i].dts = audioesc_dts_truehd(faixaAudio[i].codec, faixaAudio[i].rotulo);
+    c[i].pode = !nv_audio_mkv_recuperado(&faixaAudio[i]) || dtsHabilitado;
+    c[i].numero = video_audio_numero_memoria(&faixaAudio[i]);
+  }
+  k = audioesc_escolher(c, nAudio, &o);
+  if (k >= 0 && k != audioAtual && !modoLoad) {
+    printf("[video] audio apos MKV (%s): %s (faixa %d de %d)\n", audioesc_origem_nome(o),
+           faixaAudio[k].rotulo, k + 1, nAudio);
+    fflush(stdout);
+    if (audioAoCarregar < 0) video_escolher_audio(k);
+  }
+}
+
 static void audioMkvOmitidas(void) {
   static int antes = -1;
+  static unsigned sessaoVista;
   if (!dtsHabilitado || ajustes_dts_desligado() ||
       !__atomic_load_n(&audioMkvPronto, __ATOMIC_ACQUIRE)) return;
   int n = nv_audio_mkv_omitidas(faixaAudio, nAudio, NV_FAIXA_MAX, dvAudios,
@@ -2751,12 +2772,20 @@ static void audioMkvOmitidas(void) {
     if (!audioinfo_texto(dvAudioCodec[f->ordinalMkv], f->canais, 0, sub, sizeof sub)) snprintf(sub, sizeof sub, "DTS");
     nv_rotulo_faixa(f->rotulo, sizeof f->rotulo, lang, lang, sub);
   }
-  if (n != antes) {
-    printf("[dts] MKV omitted DTS tracks recovered: %d of %d rows\n", n - nativasAudio(), n);
-    fflush(stdout);
-    antes = n;
+  { int mudou = n != antes;
+    if (dvSessaoN != sessaoVista) {
+      sessaoVista = dvSessaoN;
+      antes = -1;
+      mudou = 1;
+    }
+    if (mudou) {
+      printf("[dts] MKV omitted DTS tracks recovered: %d of %d rows\n", n - nativasAudio(), n);
+      fflush(stdout);
+      antes = n;
+    }
+    nAudio = n;
+    if (mudou) aplicarOrdemAudioMkv();
   }
-  nAudio = n;
 }
 void video_bombear(void) {
   ack_publicar();
