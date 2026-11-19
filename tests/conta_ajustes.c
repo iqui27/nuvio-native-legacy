@@ -85,6 +85,12 @@ int main(void) {
   confere("blurUnwatchedEpisodes:true",                   ajustes_desfocar_nao_assistidos(), 1);
   confere("detailPageTrailerButtonEnabled:false",         ajustes_botao_trailer(), 0);
   confere("cardDepthEnabled:false",                       ajustes_profundidade(), 0);
+  // Chave camelCase solta (a forma que tests/cwthumb_home.c usava). false primeiro: o padrao ja e ligado,
+  // entao so o false prova que a chave foi reconhecida (cwthumb.sh deixou de cobrir isto).
+  ajustes_aplicar_blob("{\"useEpisodeThumbnailsInCw\":false}");
+  confere("useEpisodeThumbnailsInCw:false -> desligado",  ajustes_cw_thumb_episodio(), 0);
+  ajustes_aplicar_blob("{\"useEpisodeThumbnailsInCw\":true}");
+  confere("useEpisodeThumbnailsInCw:true -> ligado",      ajustes_cw_thumb_episodio(), 1);
 
   printf("\ncollapseSidebar:true = \"Recolhida\" (indice 0):\n");
   confere("rail recolhida",                               ajustes_rail_recolhida(), 1);
