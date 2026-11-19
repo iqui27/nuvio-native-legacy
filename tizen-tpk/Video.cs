@@ -444,9 +444,9 @@ namespace NuvioTpk
                 }
             });
             novo.Post(async _ => {
-                // #603: reset before yielding to decoder release. Trailer volume
-                // can arrive before this session has a Player; keep that request.
-                volAlvo = 1f; volPedido = false;
+                // #603/#717: Parar limpa o alvo; nova abertura preserva o volume que
+                // trailer.c ja postou no fio antes do Player existir.
+                if (abrir == null) { volAlvo = 1f; volPedido = false; }
                 if (await Task.WhenAny(soltar, Task.Delay(PrazoPararMs)) != soltar || !await soltar) {
                     Log("[video] tpk parar nao confirmou; player indisponivel, processo preservado");
                     lock (trocaTrava) { if (minha == sessao && geracao != 0) NvVid.ErroGeracao(geracao, -3, 0); }
