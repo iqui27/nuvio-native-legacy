@@ -8,7 +8,7 @@
 #     sem escrever fora do buffer (rc 0, sem global-buffer-overflow).
 set -eu
 cd "$(dirname "$0")/.."
-work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-colpin-vistos.XXXXXX")
+work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-colpin-vistos-f.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 awk '
  /^#define (COLPIN_MORTAS|TMDB |VT_VISTOS_PAGINAS_MAX)/ { print }
@@ -22,7 +22,7 @@ awk '
  extracting && /^}/ { extracting = 0; ids = 0 }
  ' src/descoberta.c > "$work/producao.inc"
 cc -g -O1 -fsanitize=address -fno-omit-frame-pointer -Isrc -I"$work" \
-  tests/colpin_vistos.c src/js.c -lm -o "$work/test"
+  tests/colpin_vistos_filtros.c src/js.c -lm -o "$work/test"
 "$work/test" discover 0 20
 "$work/test" discover 1 24
-echo ok colpin_vistos
+echo ok colpin_vistos_filtros

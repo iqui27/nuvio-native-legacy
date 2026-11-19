@@ -5,7 +5,7 @@
 // Funcoes de producao extraidas de src/descoberta.c por colpin_vistos.sh
 // (producao.inc); so transporte, conta e vistos sao dubles.
 //
-//   bash tests/colpin_vistos.sh
+//   bash tests/colpin_vistos_filtros.sh
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>

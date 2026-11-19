@@ -1664,7 +1664,7 @@ static int colpinItens(const ColFolder *pasta, CatItem *uni, int teto,
                        const CatItem *novosItens,
                        char mortas[][sizeof ((ColSource *)0)->base], int *nMortas) {
   int n = 0, temGenero = 0, temProv = 0;
-  static CatItem fonteItens[2 * DESC_ITENS_POR_FILEIRA];   // contrato: lim + reserva de nao vistos
+  static CatItem fonteItens[2 * DESC_ITENS_POR_FILEIRA];
   for (int s = 0; s < pasta->nSources; s++) {
     const ColSource *fonte = &pasta->sources[s];
     const char *base = fonte->base[0] ? fonte->base : addons_base_por_id(fonte->addonId);
