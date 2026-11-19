@@ -2882,7 +2882,10 @@ int rede_baixar_fluxo(const char *url, int segundos, const char *const *cab,
   anotarErro(r);
   if (lista) { curl_setopt(c, OPT_HTTPHEADER, (void *)0); if (slist_free) slist_free(lista); }
   soltarHandleR(c, r, url);
-  if (r == 23 && f.cortou) r = 0;            // o cb cortou de proposito
+  // O cb devolver 0 NAO e sucesso: e corte. Antes isto virava r=0 e, se o HTTP
+  // era 200, a funcao devolvia 1 — um ENOSPC/EFBIG no fwrite do consumidor
+  // (#764) era publicado como arquivo completo. O consumidor que corta de
+  // proposito (amostra, limite) sempre recebeu 0 aqui e continua recebendo.
   if (r != 0 || http < 200 || http >= 300) {
     char seg[120];
     printf("[rede] fluxo: curl %d, HTTP %ld, %lld bytes em %s%s\n", r, http, f.n,

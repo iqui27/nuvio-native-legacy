@@ -2587,7 +2587,9 @@ static int  nValores(int op);
 static int inativa(int op);
 static void pstAplicar(void);
 static void pstCarregar(void);
+static void pstSalvar(void);
 static void posterProvMigrar(void);
+static int pstProvArq = -1;
 static void pstDefinir(int op, const char *texto);
 static void pstAtivar(int op);
 static void pstTesteRecolher(void);
@@ -5763,7 +5765,7 @@ void ajustes_dir(const char *dir) {
 static int gravar(void) {
   char caminho[600], tmp[600];
   FILE *f;
-  int i, vv[AJ_N];
+  int i, vv[AJ_N], provAntes;
   if (!dirAjustes[0]) return 0;
   // 2.1: com a edicao de outro perfil em curso, o arquivo da TV leva os valores
   // do perfil ATIVO (edSalvo) nas chaves do perfil: se o app cair no meio, o
@@ -5823,6 +5825,15 @@ static int gravar(void) {
   // Provedor de poster ou idioma da interface mudaram? So reconfigura se a
   // configuracao final for outra (reconfigurar zera a memoria de falhas).
   pstAplicar();
+  // prov= tem de chegar a posteres.txt TAMBEM pela troca de provedor nos
+  // Ajustes (valor[] + gravar(), sem campo de texto): sem esta linha, escolher
+  // Posters+ (3) deixava o arquivo sem prov= e a migracao do boot seguinte
+  // lia o 3 como o antigo "Modelo proprio" (#739).
+  provAntes = pstProvArq;
+  if (provAntes != valor[AJ_POSTER_PROV]) {
+    pstProvArq = valor[AJ_POSTER_PROV];
+    pstSalvar();
+  }
   return 1;
 }
 
@@ -5838,8 +5849,8 @@ static char pstChave[PP_CHAVE_MAX], pstModelo[PP_MODELO_MAX];
 // Provedor gravado em posteres.txt pela versao NOVA (-1 = arquivo de versao
 // antiga ou ausente). Sem este marcador o indice 3 de posterProvLocal e
 // ambiguo: antes de Posters+ existir, 3 era "Modelo proprio"; agora e
-// Posters+. A versao nova sempre grava prov=, e so ela.
-static int pstProvArq = -1;
+// Posters+. A versao nova sempre grava prov=, e so ela. Definida adiante;
+// declarada no bloco de estaticas do topo porque gravar() tambem a usa.
 // Ultima recusa de um campo digitado (0 = nenhuma); aviso imediato e linha "Testar".
 enum { PST_OK = 0, PST_TOKEN_RUIM, PST_INST_RUIM, PST_EXTRA_RUIM, PST_CHAVE_RUIM, PST_MODELO_RUIM,
        PST_MODELO_LONGO };
@@ -6165,6 +6176,19 @@ int ajustes_teste_poster_migrar(int provGravado, const char *inst, const char *m
   return valor[AJ_POSTER_PROV];
 }
 void ajustes_teste_poster_definir_prov(int prov) { valor[AJ_POSTER_PROV] = prov; }
+// #739: o fluxo REAL — prov= tem de chegar a posteres.txt via gravar() da
+// troca de provedor, sem editar campo de texto. O teste muda valor[],
+// chama o mesmo gravar() que os Ajustes chamam, e le o arquivo de volta.
+int ajustes_teste_poster_prov_persiste(int prov) {
+  int out = -1;
+  valor[AJ_POSTER_PROV] = prov;
+  if (!dirAjustes[0]) return -2;
+  if (!gravar()) return -3;
+  { char *t = dados_ler("posteres.txt");
+    if (t && strstr(t, "prov=")) out = atoi(strstr(t, "prov=") + 5);
+    free(t); }
+  return out;
+}
 #endif
 
 

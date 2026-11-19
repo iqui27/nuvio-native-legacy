@@ -29,8 +29,10 @@ static const Item TELA[] = {
       // tem a geometria classica e ajustes_folha_classica() e fixo em 0 la.
 #ifndef __EMSCRIPTEN__
       OPC(AJ_FOLHA_CLASSICA),
-#endif
+      // #774/#457: no .wgt os getters sao fixos em 0 — a opcao visivel sem
+      // efeito era o mesmo seletor-morto que AJ_FOLHA_CLASSICA.
       OPC(AJ_FONTE_CARGA_BRILHO), OPC(AJ_DET_FONTE_ANTECIP),
+#endif
       OPC(AJ_LINK_REUSAR), OPC(AJ_LINK_PRAZO),
       // #310: o "Auto-play streams" do oficial (fonteregra.h).
       OPCA(AJ_FONTE_REGEX), OPCA(AJ_FONTE_REGEX_PADRAO), OPCA(AJ_FONTE_REGEX_MODELO),

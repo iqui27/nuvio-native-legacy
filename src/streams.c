@@ -2582,7 +2582,10 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
   if (!sessao || !url || !tam || falhaCancelada(geracao, cancelado, ctx) ||
       !falhaCandidatas(geracao, escolhida, fontefalha_tentativas(sessao) == 0,
                        &c, &fontes, &nc, &nfFontes)) return FONTEFALHA_FIM;
-  if (ajustes_fonte_manual() && escolhida >= 0) {
+  // O atalho "1 candidata" vale so para a PRIMEIRA verificacao da escolha a
+  // dedo: depois que ela falha, o failover tem de ver a fila inteira —
+  // cortar de novo aqui sempre devolvia FIM sem consultar as alternativas.
+  if (ajustes_fonte_manual() && escolhida >= 0 && fontefalha_tentativas(sessao) == 0) {
     int q, m = 0;
     for (q = 0; q < nc; q++) if (c[q].indice == escolhida) { m = 1; break; }
     if (m) {
@@ -2599,7 +2602,10 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
         if (!u->identidade) { free(u); free(f); c = NULL; fontes = NULL; nc = 0; }
         else {
           *f = escolhidaCopia;
-          u->indice = 0;       // posicao no vetor novo de UMA fonte
+          // O indice continua sendo o DA LISTA (escolhida), nao a posicao 0
+          // do vetor de 1 fonte: conferenciaPublicar e *indice levam esse
+          // numero ao app.c, que marca o estado na linha certa (#784).
+          u->indice = escolhida;
           c = u; fontes = f; nc = 1;
         }
       } else {
@@ -3016,6 +3022,36 @@ int stream_falha_aplicar_sessao(int indice, unsigned geracao, int servico,
 int stream_falha_aplicar(int indice, unsigned geracao, int servico, const char *url) {
   return stream_falha_aplicar_sessao(indice, geracao, servico, url,
                                    nv_perfil_sessao_ler());
+}
+
+// Escolha MANUAL ja resolvida pela folha (#784): semeia a sessao com a
+// identidade/URL reais da fonte para o failover seguinte nao repeti-la e
+// contar o primeiro link como tentativa consumida. 0 se a fonte nao existe.
+int stream_falha_semear_manual(FonteFalhaSessao *sessao, int indice,
+                              unsigned geracao, const char *url) {
+  FonteFalhaCandidata c;
+  char id[sizeof ((Stream *)0)->url + sizeof ((Stream *)0)->cabecalhos + 48];
+  int ok = 0;
+  if (!sessao || !url || !*url) return 0;
+  pthread_mutex_lock(&verTrava);
+  if (geracao == listaGeracao && indice >= 0 && indice < n) {
+    const Stream *s = &lista[indice];
+    memset(&c, 0, sizeof c);
+    stream_falha_identidade(s, id, sizeof id);
+    c.identidade = id;
+    c.indice = indice;
+    c.nativa = s->infoHash[0] != 0;
+    c.filtro = s->filtro;
+    c.ordemAddon = s->addonOrdem;
+    snprintf(c.addon, sizeof c.addon, "%s", s->addonChave);
+    int servico = s->infoHash[0] && s->debridServico > 0 ? s->debridServico - 1
+                                                       : FONTEFALHA_DIRETA;
+    // Semear so se nao tentada ainda: a mesma URL resolvida pela folha
+    // nao pode consumir uma segunda vaga do orcamento.
+    ok = fontefalha_semear(sessao, &c, servico, url);
+  }
+  pthread_mutex_unlock(&verTrava);
+  return ok;
 }
 
 // Chamar com verTrava: Play e descricao consultam a mesma fila, sem rede.
@@ -3956,12 +3992,28 @@ static const char *fraseVazioChips(void) {
 static int passaFiltro(int i) {
   if (i >= 0 && i < n && vt_copia_rep(i) != i) {
     // A deduplicacao esconde a copia na aba do OUTRO addon, mas nao em
-    // "Todas" quando a copia e a unica que passa nos chips: senao "Só MP4"
-    // some com a unica copia elegivel (a do addon B, cujo representante A
-    // foi reprovado no filtro). Chips primeiro, dedup depois.
-    if (filtro == 0 && passaChips(i)) {
-    } else if (filtro > 0 && filtro < nProvedores && doProvedor(&lista[i], filtro)) {
-    } else return 0;
+    // "Todas" — la ela some so quando a copia inteira (rep + irmaos) ficou
+    // fora dos filtros ativos: senao "Só MP4" escondia a unica copia elegivel
+    // (a do addon B, cujo representante A nao passa). Chips primeiro, dedup
+    // depois ENTRE OS QUE PASSAM: com chips desligados o grupo vira 1 linha.
+    if (filtro == 0) {
+      int k;
+      for (k = 0; k < n; k++) {
+        if (k == i) continue;
+        if (vt_copia_rep(k) != vt_copia_rep(i)) continue;
+        // Alguem do mesmo grupo passa nos filtros SEM ser copia escondida:
+        // a dedup decide pela ORDEM de exibicao (ORD), nao pelo indice.
+        int antesDe = 0, q;
+        for (q = 0; q < n; q++) { int o = ORD(q); if (o == k) { antesDe = 1; break; } if (o == i) break; }
+        if (!antesDe) continue;
+        if (filtroServidor >= 0) {
+          const char *pre[] = {"plex|", "jellyfin|", "emby|"};
+          if (strncmp(lista[k].bingeGroup, pre[filtroServidor], strlen(pre[filtroServidor]))) continue;
+        }
+        if (!passaChips(k)) continue;
+        return 0;                               // o irmao visivel cobre o grupo
+      }
+    } else if (!(filtro > 0 && filtro < nProvedores && doProvedor(&lista[i], filtro))) return 0;
   }
   if (filtro < 0) return 0;
   if (filtroServidor >= 0) {

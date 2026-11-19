@@ -927,6 +927,21 @@ static int iniciarPoliticaFonte(int preferida, int manual) {
   fonteFalhaEsperando = 0; fonteFalhaManual = manual ? preferida : -1;
   return fonteFalha != NULL;
 }
+// A escolha manual abre com a politica armada quando fontefalha_ativa():
+// a URL resolvida pela folha entra na sessao como primeira tentativa e a
+// falha de playback segue para a proxima candidata (#784). Sem isto a
+// escolha a dedo caia em player_erro_fonte() sem nunca consultar a fila.
+static int armarPoliticaFonteAberta(int indice, int manual, const char *url) {
+  if (!fontefalha_ativa() || indice < 0 || !url || !*url) return 0;
+  if (!fonteFalha && !iniciarPoliticaFonte(indice, manual)) return 0;
+  if (!stream_falha_semear_manual(fonteFalha, indice, fonteFalhaLista, url))
+    return 0;
+  fonteVODAutomatica = 1;
+  fonteVODTentativas = fontefalha_tentativas(fonteFalha);
+  fonteVODDesde = SDL_GetTicks();
+  player_definir_tentativa(fonteVODTentativas, fontefalha_teto(fonteFalha));
+  return 1;
+}
 #include "catalogo.h"
 #include "gfx.h"
 #include "catalogo.h"
@@ -2135,6 +2150,9 @@ static void cancelarFonteSeSaiu(void) {
     canalFonteIdx = -1;
     limparFontePendente();
     if (fonteFalha) { aguardandoFonte = 0; limparFonteVOD(); }
+    // POST de metadados do servidor P2P EXTERNO ("Sem limite" = 7 dias):
+    // Voltar tem de cortar na hora, nao so quando o motor embutido esta de pe.
+    p2p_cancelar();
   }
 }
 
@@ -2311,9 +2329,11 @@ static void vigiarMotorP2p(void) {
   // Player fechado (nem cheio nem mini): nada de baixar/compartilhar com
   // ninguem assistindo. Pedido em curso e cancelado (sai em <= 20 ms); depois
   // que ele sai, o motor para em fio solto e o cache e apagado.
-  if (!p2pmotor_segurado() && !player_aberto() && !player_mini_ativo() && p2pmotor_ativo()) {
-    if (fioTorrentVivo) { p2pmotor_cancelar(); p2p_cancelar(); }
-    else p2pmotor_parar_fundo();
+  if (!p2pmotor_segurado() && !player_aberto() && !player_mini_ativo()) {
+    // Motor embutido E servidor externo: o POST de metadados do externo nao
+    // depende de p2pmotor_ativo() (e 0 la), mas prende o fioTorrent por dias.
+    if (fioTorrentVivo) { if (p2pmotor_ativo()) p2pmotor_cancelar(); p2p_cancelar(); }
+    else if (p2pmotor_ativo()) p2pmotor_parar_fundo();
   }
   // A vigia parou o motor com o filme tocando: dizer por que.
   if ((m = p2pmotor_motivo_parada()) && player_aberto()) {
@@ -2361,8 +2381,15 @@ static void processarTorrentJob(void) {
       definirFonteVOD(j->url);
       // Com a politica manual aberta (#784), a URL resolvida entra nela: se
       // falhar ao tocar, o watchdog segue para a proxima candidata da sessao.
-      if (fonteFalha) fontefalha_url_registrar(fonteFalha, j->url);
-      // Torrent resolution retains the exact manual file, with no failover.
+      if (fonteFalha) {
+        // Semeia com o servico que resolveu de verdade (ou a rota direta):
+        // a proxima candidata nao repete o mesmo par torrent+servico.
+        if (armarPoliticaFonteAberta(j->indice, 1, j->url)) {
+          // O link ja aberto pela folha conta como tentativa consumida.
+          fonteVODTentativas = fontefalha_tentativas(fonteFalha);
+          player_definir_tentativa(fonteVODTentativas, fontefalha_teto(fonteFalha));
+        } else fontefalha_url_registrar(fonteFalha, j->url);
+      }
       if (!player_id_canal()[0]) fonteManualDesde = SDL_GetTicks();
     } else if (j->resultado == DEBRID_BAIXANDO) {
       addonguia_abrir(AG_DEBRID, stream_ordem_addon(j->indice), NULL);
@@ -3695,6 +3722,12 @@ static void abrirFonteManualDireta(const Stream *s) {
   video_definir_cabecalhos(s->cabecalhos);
   video_definir_mp4(stream_e_mp4(s));
   definirFonteVOD(s->url);
+  // Failover tambem protege a escolha a dedo: se esta URL direta nao abrir,
+  // a politica segue para a proxima candidata da lista (#784).
+  if (!armarPoliticaFonteAberta(stream_atual(), 1, s->url)) {
+    fonteVODAutomatica = 0;
+    fonteVODDesde = 0;
+  }
   fonteManualDesde = SDL_GetTicks();
   if (!fonteManualDesde) fonteManualDesde = 1;
 }
@@ -3995,6 +4028,7 @@ static void perfilEncerrarSessao(void) {
   fontevolta_esquecer("nova sessao de perfil");
   trailer_fechar();
   p2pmotor_cancelar();
+  p2p_cancelar();   // POST de metadados do servidor externo tambem morre com o perfil
   novaGeracaoFonte();
   fa_nova_rodada();
   limparFontePendente();

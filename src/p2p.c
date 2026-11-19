@@ -328,10 +328,15 @@ int p2p_resolver(const char *hash, int fileIdx, const char *fontes, char *url, u
     return ultimoErro = p2pmotor_resolver(hash, fileIdx, fontes, temp, ep, url, n);
   }
   snprintf(base, sizeof base, "%s", ajustes_p2p_url());
+  // A geracao e capturada ANTES de qualquer rede: um p2p_cancelar() durante
+  // p2p_testar (Voltar, troca de perfil) valeria para o POST de 7 dias — sem
+  // isto a janela entre testar e o POST engolia o cancelamento.
+  { unsigned ger0 = atomic_load_explicit(&p2pCancelGer, memory_order_acquire);
   // 1) o servidor esta la e e o certo? Falhar aqui em 6 s evita esperar os 30 s
   // dos metadados para descobrir que o IP estava errado.
   erro = p2p_testar(NULL, 0);
   if (erro != P2P_OK) { printf("[p2p] servidor: erro %d\n", erro); return erro; }
+  if (p2pParado(ger0)) return ultimoErro = P2P_ERR_CANCELADO;
   // 2) registrar o torrent e esperar os metadados.
   if (!p2p_corpo_criar(hash, fontes, corpo, sizeof corpo)) return ultimoErro = P2P_ERR_HASH;
   { char h[41]; int i;
@@ -339,7 +344,7 @@ int p2p_resolver(const char *hash, int fileIdx, const char *fontes, char *url, u
     h[40] = 0;
     snprintf(criar, sizeof criar, "%s/%s/create", base, h); }
   { int prazoHttp = P2P_PRAZO_METADADOS > 0 ? P2P_PRAZO_METADADOS : 7 * 24 * 3600;
-    unsigned ger = atomic_load_explicit(&p2pCancelGer, memory_order_acquire);
+    unsigned ger = ger0;
     RedePararEstado ant = rede_parar_trocar(p2pPararCb, &ger);
     r = rede_postar_st(criar, prazoHttp, cab, corpo, &st);
     if (ant.instalado) rede_parar_trocar(ant.parar, ant.usuario);
@@ -368,7 +373,11 @@ int p2p_resolver(const char *hash, int fileIdx, const char *fontes, char *url, u
   // e trava o player em "carregando" para sempre. 64 KB abrem a conexao com
   // peers e aquecem o cache do servidor para o pedido do player.
   st = 0;
-  pedaco = rede_baixar_trecho_st(url, P2P_PRAZO_BYTES, 0, 65535, &tam, &st, NULL, NULL, 0);
+  { unsigned ger2 = ger0;
+    RedePararEstado ant = rede_parar_trocar(p2pPararCb, &ger2);
+    pedaco = rede_baixar_trecho_st(url, P2P_PRAZO_BYTES, 0, 65535, &tam, &st, NULL, NULL, 0);
+    if (ant.instalado) rede_parar_trocar(ant.parar, ant.usuario); }
+  if (p2pParado(ger0)) { free(pedaco); url[0] = 0; return ultimoErro = P2P_ERR_CANCELADO; }
   if (!pedaco) {
     printf("[p2p] %.8s: arquivo %d sem bytes (HTTP %d)\n", hash, idx, st);
     url[0] = 0;
@@ -378,6 +387,7 @@ int p2p_resolver(const char *hash, int fileIdx, const char *fontes, char *url, u
   printf("[p2p] %.8s: arquivo %d pronto\n", hash, idx);
   return ultimoErro = P2P_OK;
 }
+  }
 
 int p2p_prazo_metadados_s(void) {
   int s = ajustes_p2p_prazo_metadados_s();
