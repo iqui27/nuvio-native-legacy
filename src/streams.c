@@ -1355,8 +1355,14 @@ static int incompatContar(void) {
 }
 static int incompatOculta(const Stream *s) {
   if (incompatRevelada || !incompatRegra(s)) return 0;
-  // Never empty a completed list. A later compatible arrival restores filtering.
-  return n > 0 && incompatContar() < n;
+  if (n > 0 && incompatContar() < n) {
+    int regra = incompatRegra(s);
+    if (regra && s->altura >= 2160 && badges_fonte_hdr_marca(s->badges) >= 0)
+      printf("[fonte-759] oculta 4K/HDR regra=%d telaHdr=%d telaDv=%d alt=%d\n",
+             regra, telaHdr, telaDv, s->altura);
+    return 1;
+  }
+  return 0;
 }
 
 #ifndef NV_STREAMS_LG

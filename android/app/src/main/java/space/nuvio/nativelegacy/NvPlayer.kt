@@ -1074,14 +1074,25 @@ object NvPlayer {
         try {
             @Suppress("DEPRECATION")
             val tipos = activity.windowManager.defaultDisplay.hdrCapabilities?.supportedHdrTypes
-            if (tipos == null || tipos.isEmpty()) { nativeTela(-1, -1); return }
+            if (tipos == null || tipos.isEmpty()) {
+                @Suppress("DEPRECATION")
+                val mode = activity.windowManager.defaultDisplay.mode
+                if (mode != null && mode.physicalHeight >= 2160) {
+                    Log.i(TAG, "[tv] hdr types empty; 4K panel -> hdr=1 dv=-1 (#759)")
+                    nativeTela(1, -1)
+                } else nativeTela(-1, -1)
+                return
+            }
             val decoderDv = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS)
                 .codecInfos.any { !it.isEncoder && it.supportedTypes.any { mime -> mime.equals("video/dolby-vision", true) } }
             val dv = if (decoderDv) {
                 if (tipos.contains(android.view.Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION)) 1 else -1
             } else 0
             nativeTela(1, dv)
-        } catch (e: Throwable) { Log.w(TAG, "informarTela: $e") }
+        } catch (e: Throwable) {
+            Log.w(TAG, "informarTela: $e")
+            nativeTela(-1, -1)   // #759: unknown display must not hide HDR sources
+        }
     }
 
     // Effective audio support includes the bundled FFmpeg renderer and the
