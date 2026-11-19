@@ -41,6 +41,7 @@ char *rede_baixar_trecho_st(const char *u, int s, long long a, long long b, long
   (void)u; (void)s; (void)a; (void)b; (void)t; (void)e; (void)f; (void)n; if (st) *st = 0; return NULL; }
 int rede_pedir(const RedePedido *p, RedeResposta *r) { (void)p; r->erro = REDE_INDISPONIVEL; return 0; }
 void rede_resposta_limpar(RedeResposta *r) { (void)r; }
+RedePararEstado rede_parar_trocar(int (*parar)(void *), void *usuario) { (void)parar; (void)usuario; return (RedePararEstado){ .instalado = 1 }; }
 
 // Motor falso minimo: p2pmotor_resumo so precisa de versao().
 static const char *vFake(void) { return "teste"; }

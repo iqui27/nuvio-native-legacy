@@ -2471,7 +2471,7 @@ void stream_falha_identidade(const Stream *s, char *dst, unsigned tam) {
   } else snprintf(dst, tam, "%s\n%s", s->url, s->cabecalhos);
 }
 static int falhaCandidatas(unsigned geracao, int escolhida, int primeira, FonteFalhaCandidata **saida,
-                           Stream **fontes, int *quantidade) {
+                           Stream **fontes, int *quantidade, int *totalFontes) {
   int total, nf = 0, pref = -1, livres = 0;
   int *ordem = NULL, *fila = NULL, *rk = NULL;
   long *pts = NULL;
@@ -2481,6 +2481,7 @@ static int falhaCandidatas(unsigned geracao, int escolhida, int primeira, FonteF
   FonteFalhaCandidata *c = NULL;
   FonteRegraCfg escopo = regraCfg();
   *saida = NULL; *fontes = NULL; *quantidade = 0;
+  if (totalFontes) *totalFontes = 0;
   pthread_mutex_lock(&verTrava);
   if (geracao != listaGeracao) { pthread_mutex_unlock(&verTrava); return 0; }
   total = n;
@@ -2540,6 +2541,7 @@ static int falhaCandidatas(unsigned geracao, int escolhida, int primeira, FonteF
     c[q].identidade = id;
   }
   *saida = c; c = NULL; *fontes = copia; copia = NULL; *quantidade = nf;
+  if (totalFontes) *totalFontes = total;
 fim:
   pthread_mutex_unlock(&verTrava);
   free(ordem); free(fila); free(rk); free(pts); free(acima); free(excl); free(grp);
@@ -2561,7 +2563,7 @@ int stream_falha_tem_proxima(const FonteFalhaSessao *sessao, unsigned geracao) {
   Stream *fontes = NULL;
   FonteFalhaRota rota;
   int nc = 0, tem = 0;
-  if (copia && falhaCandidatas(geracao, -1, 0, &c, &fontes, &nc))
+  if (copia && falhaCandidatas(geracao, -1, 0, &c, &fontes, &nc, NULL))
     tem = fontefalha_proxima(copia, c, nc, 1, &rota) == FONTEFALHA_PROXIMA;
   for (int i = 0; i < nc; i++) free((void *)c[i].identidade);
   free(c); free(fontes); fontefalha_sessao_liberar(copia);
@@ -2576,9 +2578,10 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
   if (indice) *indice = -1;
   if (servico) *servico = FONTEFALHA_DIRETA;
   if (url && tam) url[0] = 0;
+  int nfFontes = 0;
   if (!sessao || !url || !tam || falhaCancelada(geracao, cancelado, ctx) ||
       !falhaCandidatas(geracao, escolhida, fontefalha_tentativas(sessao) == 0,
-                       &c, &fontes, &nc)) return FONTEFALHA_FIM;
+                       &c, &fontes, &nc, &nfFontes)) return FONTEFALHA_FIM;
   if (ajustes_fonte_manual() && escolhida >= 0) {
     int q, m = 0;
     for (q = 0; q < nc; q++) if (c[q].indice == escolhida) { m = 1; break; }
@@ -2586,8 +2589,21 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
       FonteFalhaCandidata *u = calloc(1, sizeof *u);
       Stream *f = malloc(sizeof *f);
       if (u && f) {
-        *u = c[q]; u->identidade = strdup(c[q].identidade); u->indice = 0;
-        *f = fontes[c[q].indice]; fontes = f; c = u; nc = 1;
+        Stream escolhidaCopia = fontes[c[q].indice];
+        *u = c[q];
+        u->identidade = strdup(c[q].identidade);
+        // Solta o vetor completo e as identidades das outras candidatas:
+        // o ponteiro velho de c virava lixo aqui e as strings iam junto.
+        for (int k = 0; k < nc; k++) free((void *)c[k].identidade);
+        free(c); free(fontes);
+        if (!u->identidade) { free(u); free(f); c = NULL; fontes = NULL; nc = 0; }
+        else {
+          *f = escolhidaCopia;
+          u->indice = 0;       // posicao no vetor novo de UMA fonte
+          c = u; fontes = f; nc = 1;
+        }
+      } else {
+        free(u); free(f);
       }
     }
   }
@@ -2600,7 +2616,13 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
     if (falhaCancelada(geracao, cancelado, ctx)) break;
     resultado = fontefalha_proxima(sessao, c, nc, addons_estado() != ADD_BUSCANDO, &r);
     if (resultado != FONTEFALHA_PROXIMA) break;
-    const Stream *s = &fontes[r.candidata >= 0 && r.candidata < nc ? r.candidata : 0];
+    // A fila c[] pode estar reordenada e r.candidata e a POSICAO nela — a
+    // fonte certa e a do indice que falhaCandidatas gravou, nao a da posicao
+    // no vetor completo (com a fila comecando em 1, abria a fonte 0).
+    const Stream *s = (r.candidata >= 0 && r.candidata < nc &&
+                       c[r.candidata].indice >= 0 && c[r.candidata].indice < nfFontes)
+                      ? &fontes[c[r.candidata].indice] : NULL;
+    if (!s) { resultado = FONTEFALHA_FIM; break; }
     if (!fontefalha_tentar(sessao, &c[r.candidata], r.servico)) { resultado = FONTEFALHA_FIM; break; }
     if (falhaCancelada(geracao, cancelado, ctx)) { resultado = FONTEFALHA_FIM; break; }
     conferenciaPublicar(r.indice, geracao, FA_CONFERINDO);
@@ -3933,7 +3955,12 @@ static const char *fraseVazioChips(void) {
 }
 static int passaFiltro(int i) {
   if (i >= 0 && i < n && vt_copia_rep(i) != i) {
-    if (filtro > 0 && filtro < nProvedores && doProvedor(&lista[i], filtro)) {
+    // A deduplicacao esconde a copia na aba do OUTRO addon, mas nao em
+    // "Todas" quando a copia e a unica que passa nos chips: senao "Só MP4"
+    // some com a unica copia elegivel (a do addon B, cujo representante A
+    // foi reprovado no filtro). Chips primeiro, dedup depois.
+    if (filtro == 0 && passaChips(i)) {
+    } else if (filtro > 0 && filtro < nProvedores && doProvedor(&lista[i], filtro)) {
     } else return 0;
   }
   if (filtro < 0) return 0;

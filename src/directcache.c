@@ -28,9 +28,12 @@ void directcache_encerrar(void) {}
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 static char jobUrl[2048], jobPart[760], jobFinal[760], jobCab[4096];
 static pthread_t jobFio;
-static int jobAtivo, jobRodando, jobCancelar;
+static int jobAtivo, jobRodando, jobCancelar, jobJoinPend;
 static unsigned jobSeq;
 static unsigned long long jobEscrito;
+// O .part do job em curso, para o expurgo nao apagar o arquivo que o worker
+// ainda escreve. O expurgo de teto total roda sob `trava`.
+static char jobDir[760];
 
 static int httpUrl(const char *u) {
   return u && (!strncmp(u, "http://", 7) || !strncmp(u, "https://", 8));
@@ -76,6 +79,9 @@ static void cabSplit(const char *cab, char buf[4096], const char *out[], unsigne
 static int gravaCb(const char *dados, size_t tam, void *u) {
   FILE *f = u;
   if (!f || !dados || !tam) return 0;
+  pthread_mutex_lock(&trava);
+  if (jobCancelar) { pthread_mutex_unlock(&trava); return 0; }
+  pthread_mutex_unlock(&trava);
   if (fwrite(dados, 1, tam, f) != tam) return 0;
   pthread_mutex_lock(&trava);
   jobEscrito += tam;
@@ -83,12 +89,67 @@ static int gravaCb(const char *dados, size_t tam, void *u) {
   return 1;
 }
 
+// Cancelamento para o vigia de progresso do curl: sem isto, fechar ou trocar
+// de fonte num download pausado esperava a rede responder ou o prazo (60 s).
+static int dcParar(void *u) {
+  int c;
+  (void)u;
+  pthread_mutex_lock(&trava);
+  c = jobCancelar;
+  pthread_mutex_unlock(&trava);
+  return c;
+}
+
+// TETO TOTAL do cache (#764): o limite por transferencia nao basta — N filmes
+// de ate `max` bytes cada lotam o pendrive. Soma os arquivos finais e os
+// .part e remove os mais antigos ate caber. Nao toca no .part do job vivo.
+static void expurgarTeto(const char *dir, unsigned long long teto) {
+  DIR *d;
+  struct dirent *de;
+  char path[900];
+  struct stat st;
+  struct { char nome[64]; long long mt; unsigned long long sz; } ent[512];
+  int ne = 0;
+  unsigned long long total = 0;
+  if (!dir || !teto) return;
+  d = opendir(dir);
+  if (!d) return;
+  while ((de = readdir(d)) && ne < (int)(sizeof ent / sizeof ent[0])) {
+    const char *n = de->d_name;
+    if (n[0] == '.' || strchr(n, '/')) continue;
+    // Nao toca no .part do job vivo: o worker ainda escreve nele.
+    if (jobRodando && jobDir[0] && jobPart[0] &&
+        !strcmp(n, strrchr(jobPart, '/') ? strrchr(jobPart, '/') + 1 : jobPart)) continue;
+    snprintf(path, sizeof path, "%s/%s", dir, n);
+    if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) continue;
+    snprintf(ent[ne].nome, sizeof ent[ne].nome, "%s", n);
+    ent[ne].mt = (long long)st.st_mtime;
+    ent[ne].sz = (unsigned long long)st.st_size;
+    total += ent[ne].sz;
+    ne++;
+  }
+  closedir(d);
+  while (total > teto && ne > 0) {
+    int v = 0;
+    for (int i = 1; i < ne; i++) if (ent[i].mt < ent[v].mt) v = i;
+    snprintf(path, sizeof path, "%s/%s", dir, ent[v].nome);
+    if (unlink(path) != 0) total = 0;
+    else total -= ent[v].sz;
+    ent[v] = ent[--ne];
+  }
+}
+
+static unsigned long long dcTetoTotal(void) {
+  unsigned long long mb = (unsigned long long)ajustes_p2p_limite_mb();
+  return mb ? mb * 1024ull * 1024ull : DC_MAX_BYTES_PADRAO;
+}
+
 static void *fioGrava(void *u) {
   (void)u;
   FILE *f;
   const char *cab[48];
   char cabBuf[4096];
-  char part[760], final[760], url[2048], cabec[4096];
+  char part[760], final[760], url[2048], cabec[4096], dir[760];
   unsigned long long maxBytes = (unsigned long long)ajustes_p2p_limite_mb() * 1024ull * 1024ull;
   int ok = 0, cancel;
   if (!maxBytes) maxBytes = DC_MAX_BYTES_PADRAO;
@@ -97,16 +158,23 @@ static void *fioGrava(void *u) {
   snprintf(final, sizeof final, "%s", jobFinal);
   snprintf(url, sizeof url, "%s", jobUrl);
   snprintf(cabec, sizeof cabec, "%s", jobCab);
+  snprintf(dir, sizeof dir, "%s", jobDir);
   pthread_mutex_unlock(&trava);
   f = fopen(part, "wb");
   if (!f) goto fim;
   cabSplit(cabec, cabBuf, cab, 48);
+  rede_parar_quando(dcParar, NULL);
   ok = rede_baixar_fluxo(url, 0, cab, gravaCb, f, (long long)maxBytes, NULL, NULL);
+  rede_parar_quando(NULL, NULL);
   pthread_mutex_lock(&trava);
   cancel = jobCancelar;
   pthread_mutex_unlock(&trava);
   if (cancel) ok = 0;
-  fflush(f); fsync(fileno(f)); fclose(f);
+  // Erro em QUALQUER etapa da gravacao (escrita curta no cb ja cortou `ok`;
+  // aqui flush, fsync e close) apaga o parcial e NUNCA publica arquivo
+  // truncado como se fosse o objeto inteiro.
+  { int e1 = fflush(f) != 0, e2 = fsync(fileno(f)) != 0, e3 = fclose(f) != 0;
+    if (e1 || e2 || e3) ok = 0; }
   if (ok) {
     unlink(final);
     if (rename(part, final) != 0) { ok = 0; unlink(part); }
@@ -114,8 +182,18 @@ static void *fioGrava(void *u) {
 fim:
   pthread_mutex_lock(&trava);
   jobRodando = 0;
+  if (dir[0]) expurgarTeto(dir, dcTetoTotal());
   pthread_mutex_unlock(&trava);
   return NULL;
+}
+
+// O worker pode terminar SOZINHO (fim do arquivo, erro, teto): jobRodando
+// cai a 0 com o handle do pthread ainda por colher. Quem chega depois faz o
+// join aqui, senao cada transferencia vazava uma thread (thread leak no TSan).
+// So deve ser chamada com `trava` tomada; o join acontece com a trava solta,
+// entao quem chama precisa retomar a trava — feito inline nos dois pontos.
+static int colherSeMorto(void) {
+  return !jobRodando && jobAtivo && jobJoinPend;
 }
 
 static void jobIniciar(const char *url, const char *cab, const char *dir) {
@@ -130,16 +208,25 @@ static void jobIniciar(const char *url, const char *cab, const char *dir) {
     pthread_join(velho, NULL);
     pthread_mutex_lock(&trava);
     jobCancelar = 0;
+    jobJoinPend = 0;
+  } else if (colherSeMorto()) {
+    tinha = 1; velho = jobFio;
+    pthread_mutex_unlock(&trava);
+    pthread_join(velho, NULL);
+    pthread_mutex_lock(&trava);
+    jobJoinPend = 0;
   } else tinha = 0;
   (void)tinha;
   snprintf(jobUrl, sizeof jobUrl, "%s", url);
   snprintf(jobCab, sizeof jobCab, "%s", cab ? cab : "");
   jobEscrito = 0; jobRodando = 1; jobAtivo = 1;
+  jobJoinPend = 1;
   seq = ++jobSeq;
+  snprintf(jobDir, sizeof jobDir, "%s", dir);
   snprintf(jobPart, sizeof jobPart, "%s/%u-%u.part", dir, fnv(url), seq);
   snprintf(jobFinal, sizeof jobFinal, "%s/%u", dir, fnv(url));
   if (pthread_create(&jobFio, NULL, fioGrava, NULL)) {
-    jobRodando = 0; jobAtivo = 0;
+    jobRodando = 0; jobAtivo = 0; jobJoinPend = 0;
   }
   pthread_mutex_unlock(&trava);
 }
@@ -180,7 +267,7 @@ const char *directcache_preparar(const char *url, const char *cabecalhos,
 
 void directcache_encerrar(void) {
   pthread_t fio;
-  int rodando;
+  int rodando, pend;
   pthread_mutex_lock(&trava);
   rodando = jobRodando;
   fio = jobFio;
@@ -188,7 +275,12 @@ void directcache_encerrar(void) {
   pthread_mutex_unlock(&trava);
   if (rodando) pthread_join(fio, NULL);
   pthread_mutex_lock(&trava);
-  jobAtivo = jobRodando = 0; jobCancelar = 0;
+  pend = jobJoinPend && !rodando;
+  pthread_mutex_unlock(&trava);
+  // Worker que ja terminou sozinho: colhe o handle para nao vazar a thread.
+  if (pend) pthread_join(fio, NULL);
+  pthread_mutex_lock(&trava);
+  jobAtivo = jobRodando = 0; jobCancelar = 0; jobJoinPend = 0;
   jobUrl[0] = jobPart[0] = jobFinal[0] = 0;
   pthread_mutex_unlock(&trava);
 }

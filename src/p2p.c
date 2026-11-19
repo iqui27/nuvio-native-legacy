@@ -17,6 +17,24 @@
 static _Atomic int ultimoErro;
 int p2p_ultimo_erro(void) { return atomic_load(&ultimoErro); }
 
+// #775: cancelamento do pedido ao servidor EXTERNO. Com "Sem limite" o POST de
+// metadados podia durar 7 dias: Voltar ou outra escolha nao interrompia, e o
+// pedido velho prendia a fila do worker. Qualquer fio chama p2p_cancelar();
+// o fio bloqueado sai com P2P_ERR_CANCELADO e o POST e abortado na hora.
+static _Atomic int p2pCancelGer;
+
+void p2p_cancelar(void) {
+  atomic_fetch_add_explicit(&p2pCancelGer, 1, memory_order_release);
+}
+
+static int p2pParado(unsigned ger) {
+  return atomic_load_explicit(&p2pCancelGer, memory_order_acquire) != ger;
+}
+
+static int p2pPararCb(void *u) {
+  return p2pParado(*(unsigned *)u);
+}
+
 int p2p_ativo(void) {
   const char *u = ajustes_p2p_url();
   return ajustes_p2p_ligado() && ((u && u[0]) || p2pmotor_disponivel());
@@ -321,7 +339,11 @@ int p2p_resolver(const char *hash, int fileIdx, const char *fontes, char *url, u
     h[40] = 0;
     snprintf(criar, sizeof criar, "%s/%s/create", base, h); }
   { int prazoHttp = P2P_PRAZO_METADADOS > 0 ? P2P_PRAZO_METADADOS : 7 * 24 * 3600;
-    r = rede_postar_st(criar, prazoHttp, cab, corpo, &st); }
+    unsigned ger = atomic_load_explicit(&p2pCancelGer, memory_order_acquire);
+    RedePararEstado ant = rede_parar_trocar(p2pPararCb, &ger);
+    r = rede_postar_st(criar, prazoHttp, cab, corpo, &st);
+    if (ant.instalado) rede_parar_trocar(ant.parar, ant.usuario);
+    if (p2pParado(ger)) { free(r); return ultimoErro = P2P_ERR_CANCELADO; } }
   // Sem resposta: o servidor estava vivo um instante atras (passo 1), entao o
   // que faltou foram os metadados — torrent sem peers.
   if (!r && st == 0) {

@@ -65,6 +65,9 @@ char *rede_baixar_trecho_st(const char *url, int s, long long ini, long long fim
   if (tam) *tam = trechoOk ? 4 : 0;
   return trechoOk ? strdup("data") : NULL;
 }
+RedePararEstado rede_parar_trocar(int (*parar)(void *), void *usuario) {
+  (void)parar; (void)usuario; return (RedePararEstado){ .instalado = 1 };
+}
 
 static const char *SETTINGS = "{\"options\":[],\"values\":{\"serverVersion\":\"4.21.2\",\"cacheSize\":2147483648},\"baseUrl\":\"http://172.17.0.3:11470\"}";
 // Recorte do create real do Big Buck Bunny (idx 1 = o mp4).

@@ -25,7 +25,12 @@ static const Item TELA[] = {
       OPC(AJ_FONTE_MANUAL), OPC(AJ_FONTE_PRIORIDADE), OPC(AJ_FONTE_IDIOMA_AUDIO), OPC(AJ_FONTE_PRAZO),
       OPC(AJ_FONTE_REPOR), OPC(AJ_TAM_MAX),
       OPC(AJ_FONTE_GRUPO), OPC(AJ_FONTE_GRUPO_SESSOES),
-      OPC(AJ_FOLHA_CLASSICA), OPC(AJ_FONTE_CARGA_BRILHO), OPC(AJ_DET_FONTE_ANTECIP),
+      // #782: no .wgt o seletor nao pode ficar sem efeito — a folha WASM nao
+      // tem a geometria classica e ajustes_folha_classica() e fixo em 0 la.
+#ifndef __EMSCRIPTEN__
+      OPC(AJ_FOLHA_CLASSICA),
+#endif
+      OPC(AJ_FONTE_CARGA_BRILHO), OPC(AJ_DET_FONTE_ANTECIP),
       OPC(AJ_LINK_REUSAR), OPC(AJ_LINK_PRAZO),
       // #310: o "Auto-play streams" do oficial (fonteregra.h).
       OPCA(AJ_FONTE_REGEX), OPCA(AJ_FONTE_REGEX_PADRAO), OPCA(AJ_FONTE_REGEX_MODELO),

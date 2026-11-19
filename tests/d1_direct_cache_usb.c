@@ -22,6 +22,7 @@ int rede_baixar_fluxo(const char *url, int segundos, const char *const *cab,
                         int (*cb)(const char *dados, size_t n, void *u), void *u,
                         long long maxBytes, int *status, long long *bytes) {
   (void)url; (void)segundos; (void)cab; (void)cb; (void)u; (void)maxBytes; (void)status; (void)bytes; return 0; }
+void rede_parar_quando(int (*parar)(void *), void *usuario) { (void)parar; (void)usuario; }
 #include "../src/directcache.c"
 
 static void mkusb(void) {
@@ -44,6 +45,10 @@ int main(void) {
   assert(strstr(dir, "/wa"));
   assert(!strcmp(directcache_preparar("https://cdn.example/v.mp4", NULL, buf, sizeof buf),
                  "https://cdn.example/v.mp4"));
+  // O worker ja terminou sozinho (stub de rede devolve 0): encerrar tem de
+  // colher o handle sem travar — TSan flagrava thread leak aqui.
+  for (int i = 0; i < 200; i++) usleep(1000);
+  directcache_encerrar();
   puts("d1_direct_cache_usb: ok");
   return 0;
 }

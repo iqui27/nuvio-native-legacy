@@ -104,4 +104,9 @@ int p2p_ultimo_erro(void);
 // "Testar conexao" dos Ajustes: passo 1 sozinho. `detalhe` recebe a versao do
 // servidor quando P2P_OK ("4.21.2").
 int p2p_testar(char *detalhe, unsigned n);
+
+// Cancela o pedido ao servidor EXTERNO em curso (#775): o POST de metadados
+// sai na hora e p2p_resolver devolve P2P_ERR_CANCELADO. Qualquer fio, nunca
+// bloqueia — espelho do p2pmotor_cancelar() do motor embutido.
+void p2p_cancelar(void);
 #endif

@@ -5835,6 +5835,11 @@ static int gravar(void) {
 // aparecem mascarados ("····abcd"), como a chave do fanart.tv.
 static char pstInst[PP_INSTANCIA_MAX], pstToken[PP_TOKEN_MAX + 1], pstExtra[PP_EXTRA_MAX + 1];
 static char pstChave[PP_CHAVE_MAX], pstModelo[PP_MODELO_MAX];
+// Provedor gravado em posteres.txt pela versao NOVA (-1 = arquivo de versao
+// antiga ou ausente). Sem este marcador o indice 3 de posterProvLocal e
+// ambiguo: antes de Posters+ existir, 3 era "Modelo proprio"; agora e
+// Posters+. A versao nova sempre grava prov=, e so ela.
+static int pstProvArq = -1;
 // Ultima recusa de um campo digitado (0 = nenhuma); aviso imediato e linha "Testar".
 enum { PST_OK = 0, PST_TOKEN_RUIM, PST_INST_RUIM, PST_EXTRA_RUIM, PST_CHAVE_RUIM, PST_MODELO_RUIM,
        PST_MODELO_LONGO };
@@ -5866,16 +5871,18 @@ static void pstAplicar(void) {
 }
 static void pstSalvar(void) {
   char b[PP_INSTANCIA_MAX + PP_TOKEN_MAX + PP_EXTRA_MAX + PP_CHAVE_MAX + PP_MODELO_MAX + 64];
-  if (!pstInst[0] && !pstToken[0] && !pstExtra[0] && !pstChave[0] && !pstModelo[0]) {
-    dados_apagar("posteres.txt");
-    return;
-  }
-  snprintf(b, sizeof b, "inst=%s\ntoken=%s\nextra=%s\nchave=%s\nmodelo=%s\n",
-           pstInst, pstToken, pstExtra, pstChave, pstModelo);
+  // prov= vai SEMPRE: sem ele, um posterProvLocal=3 antigo (Modelo proprio,
+  // antes de Posters+ entrar no enum) e um 3 novo (Posters+) se confundem
+  // quando os campos de instancia e o modelo dividem o arquivo (#739).
+  snprintf(b, sizeof b, "prov=%d\ninst=%s\ntoken=%s\nextra=%s\nchave=%s\nmodelo=%s\n",
+           valor[AJ_POSTER_PROV], pstInst, pstToken, pstExtra, pstChave, pstModelo);
   dados_gravar("posteres.txt", b);
 }
 static void posterProvMigrar(void) {
-  if (valor[AJ_POSTER_PROV] == PP_POSTERSPLUS && pstModelo[0] && !pstInst[0] && !pstToken[0])
+  // Arquivo SEM prov= veio de versao antiga, em que o indice 3 so podia ser
+  // "Modelo proprio" — Posters+ nao existia. Arquivo COM prov= ja e da versao
+  // nova: o indice de ajustes.txt nao e ambiguo e fica como esta.
+  if (pstProvArq < 0 && valor[AJ_POSTER_PROV] == PP_POSTERSPLUS)
     valor[AJ_POSTER_PROV] = PP_MODELO;
 }
 
@@ -5883,6 +5890,7 @@ static void pstCarregar(void) {
   char *t = dados_ler("posteres.txt"), *p, *fim;
   char v[PP_MODELO_MAX + 8];
   pstInst[0] = pstToken[0] = pstExtra[0] = pstChave[0] = pstModelo[0] = 0;
+  pstProvArq = -1;
   for (p = t; p && *p; p = fim ? fim + 1 : NULL) {
     char *eq;
     size_t n;
@@ -5896,7 +5904,8 @@ static void pstCarregar(void) {
       if (nv && v[nv - 1] == '\r') v[nv - 1] = 0; }
     // Reaplica as MESMAS validacoes de quando se digita: arquivo editado a mao
     // ou de outra versao nao pode virar URL torta.
-    if (!strncmp(p, "inst=", 5)) { if (!posterprov_normalizar_instancia(v, pstInst, sizeof pstInst)) pstInst[0] = 0; }
+    if (!strncmp(p, "prov=", 5)) { int pv = atoi(v); pstProvArq = pv >= PP_DESLIGADO && pv <= PP_MODELO ? pv : -1; }
+    else if (!strncmp(p, "inst=", 5)) { if (!posterprov_normalizar_instancia(v, pstInst, sizeof pstInst)) pstInst[0] = 0; }
     else if (!strncmp(p, "token=", 6)) { if (!posterprov_extrair_token(v, pstToken, sizeof pstToken, NULL, 0)) pstToken[0] = 0; }
     else if (!strncmp(p, "extra=", 6)) { if (!posterprov_extra_normalizar(v, pstExtra, sizeof pstExtra)) pstExtra[0] = 0; }
     else if (!strncmp(p, "chave=", 6)) { pstCopia(pstChave, sizeof pstChave, v); }
@@ -6139,6 +6148,23 @@ void ajustes_teste_poster_recarregar(char *lido, size_t n) {
   pstCarregar();
   snprintf(lido, n, "%s", pstModelo);
 }
+// #739: prov= em posteres.txt decide se posterProvLocal=3 e Posters+ (novo)
+// ou o antigo "Modelo proprio". O teste grava o arquivo como cada versao e
+// le o indice final depois de pstCarregar + posterProvMigrar.
+int ajustes_teste_poster_migrar(int provGravado, const char *inst, const char *modelo) {
+  char b[PP_INSTANCIA_MAX + PP_MODELO_MAX + 64];
+  if (provGravado >= 0)
+    snprintf(b, sizeof b, "prov=%d\ninst=%s\ntoken=\nextra=\nchave=\nmodelo=%s\n",
+             provGravado, inst ? inst : "", modelo ? modelo : "");
+  else  // arquivo de versao antiga, sem prov=
+    snprintf(b, sizeof b, "inst=%s\ntoken=\nextra=\nchave=\nmodelo=%s\n",
+             inst ? inst : "", modelo ? modelo : "");
+  dados_gravar("posteres.txt", b);
+  pstCarregar();
+  posterProvMigrar();
+  return valor[AJ_POSTER_PROV];
+}
+void ajustes_teste_poster_definir_prov(int prov) { valor[AJ_POSTER_PROV] = prov; }
 #endif
 
 

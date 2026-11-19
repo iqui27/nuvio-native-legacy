@@ -2466,7 +2466,7 @@ static int montarDetalhes(LinhaDet *o, int max) {
       const Stream *s = stream_item(idx);
       char buf[320] = "";
       if (s) {
-        VaiTocar vt;
+        VaiTocar vt = {0};
         vt_descrever(s, &vt);
         vt_nome_amigavel(&vt, buf, sizeof buf);
         if (vt.tamanho[0]) {
