@@ -33,6 +33,7 @@ static int info(void *c, int o, ...) {
   else if (o == INFO_RESPONSE_CODE) *va_arg(ap, long *) = strstr(((Fake *)c)->url, "api.tmdb.org") && !falhaAlt ? 200 : http;
   else if (o == INFO_NUM_CONNECTS) *va_arg(ap, long *) = 1;
   else if (o == INFO_SIZE_DOWNLOAD) *va_arg(ap, double *) = 0;
+  else if (o == INFO_TEMPO_TCP) *va_arg(ap, double *) = 0;
   va_end(ap); return 0;
 }
 static void *append(void *l, const char *s) { (void)s; return l ? l : malloc(1); }

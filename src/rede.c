@@ -1261,6 +1261,8 @@ static _Thread_local unsigned redeFinalTam;
 // so trechoUmaVez liga. Ver a nota la.
 static _Thread_local int redeParcialOk;
 #endif
+static _Thread_local unsigned long redePrazoAtualMs;
+static _Thread_local int redeSemRecuoV4;
 
 // Constantes da libcurl escritas a mao: nao ha curl.h no SDK do aparelho, e
 // puxar o header inteiro so por meia duzia de numeros nao se paga. Os valores
@@ -1387,6 +1389,7 @@ static int urlSetopt(void *c, const char *url) {
 static int   (*curl_perform)(void *);
 // ROTA IPv6 QUEBRADA POR HOST (#707): a declaracao completa (com a vigia)
 // fica junto das do cancelVigia, logo depois das funcoes multi.
+static unsigned long conexaoMs(unsigned long prazoMs);
 static void  (*curl_cleanup)(void *);
 static int   (*curl_global)(long);
 static void *(*curl_multi_init)(void);
@@ -1741,11 +1744,14 @@ static int v4Vale(int r, void *c) {
   if (redeCancelouLocal || redeParou()) return 0;
   if (r == 6 || r == 7) return 1;
   if (r != 28) return 0;
-  if (!curl_getinfo) return 1;
+  if (!curl_getinfo) return 0;
   curl_getinfo(c, INFO_RESPONSE_CODE, &http);
-  return http == 0;
+  if (http != 0) return 0;
+  { double tcp = 0;
+    curl_getinfo(c, INFO_TEMPO_TCP, &tcp);
+    if (tcp > 0.0005) return 0; }
+  return 1;
 }
-
 // PERFORM COM VIGIA POR TENTATIVA (#707 + #775). A easy pode ja estar num
 // multi (v->multi, armado por cancelVigiaLigar ou adotado do pool do fio):
 // cada tentativa roda como um mini-cancelVigiaPerform — curl_multi_perform +
@@ -1808,13 +1814,21 @@ static void v4VigiaPegar(void *c, CancelVigia *v) {
 // tentativa, como sempre.
 static int performV4(void *c, const char *url, CancelVigia *v) {
   CancelVigia local;
-  unsigned long agora = redeAgoraMs();
-  int r, marcado = v4Marcado(url, agora);
+  unsigned long t0 = redeAgoraMs();
+  unsigned long agora, prazoMs = redePrazoAtualMs;
+  int r, marcado = v4Marcado(url, t0);
+  long restMs;
   if (!v) { v4VigiaPegar(c, &local); v = &local; }
   curl_setopt(c, OPT_IPRESOLVE, (long)marcado);
   r = v4Perform(c, v);
-  if (marcado || !v4Vale(r, c)) return r;
-  v4Marcar(url, agora);
+  if (marcado || redeSemRecuoV4 || !v4Vale(r, c)) return r;
+  agora = redeAgoraMs();
+  if (prazoMs > 0) {
+    restMs = (long)(t0 + prazoMs > agora ? t0 + prazoMs - agora : 0UL);
+    if (restMs < 500) return r;
+    curl_setopt(c, OPT_TIMEOUT_MS, restMs);
+    curl_setopt(c, OPT_CONNECTTIMEOUT_MS, (long)conexaoMs((unsigned long)restMs));
+  }
   { char seg[120];
     printf("[rede] conexao falhou (curl %d) em %s: de novo so em IPv4\n",
            r, rede_url_publica(url, seg, sizeof seg));
@@ -1824,6 +1838,7 @@ static int performV4(void *c, const char *url, CancelVigia *v) {
   { char seg[120];
     if (r) printf("[rede] IPv4 tambem falhou (curl %d) em %s\n",
                   r, rede_url_publica(url, seg, sizeof seg));
+    else v4Marcar(url, redeAgoraMs());
     fflush(stdout); }
   return r;
 }
@@ -2039,6 +2054,7 @@ static unsigned long conexaoMs(unsigned long prazoMs) {
   return m < prazoMs ? m : prazoMs;
 }
 static void opcoesComuns(void *c, unsigned long prazoMs) {
+  redePrazoAtualMs = prazoMs;
 #ifdef NV_TPK
   if (dnsShare) curl_setopt(c, 10100 /* CURLOPT_SHARE */, dnsShare);
 #endif
@@ -3376,7 +3392,9 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
     for (k = 0; cab && cab[k]; k++) lista = slist_append(lista, cab[k]);
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
+  redeSemRecuoV4 = 1;
   r = performTmdbCv(c, url, cvOn ? &cv : NULL);
+  redeSemRecuoV4 = 0;
   cancelVigiaSoltar(&cv, cvOn, c);
   redeCurlLocal = r;
   anotarErro(r);
