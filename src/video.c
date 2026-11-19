@@ -86,8 +86,10 @@ static DtsPlayback *dtsSessao;
 #ifdef NV_WEBOS_HLS_TEST
 static atomic_int hlsActive;
 static atomic_int hlsAudioRequest;   // source audio ordinal plus one, zero when idle
+enum { HLS_PROBING = 1, HLS_WAITING_FOR_READER };
 static struct {
   int enabled, pending, played, paused, dv7, external, externalTrack;
+  int ordinal;
   double pos, percent;
   Uint32 started;
   char url[128], subtitle[1024];
@@ -3873,12 +3875,24 @@ static void hlsFalhar(const char *reason) {
   ack_publicar();
 }
 
+static int hlsAbrir(void);
+
 static int hlsIniciar(int ordinal, int dv7, int external, double alvo, double resumePct, int paused) {
   snprintf(hls.subtitle, sizeof hls.subtitle, "%s", legUrlAtual);
-  // Release the old read-ahead ring before allocating the HLS preset.
   pararSessao();
   nv_recon_zerar(&recon);
   hls.pos = alvo; hls.paused = paused; hls.dv7 = dv7; hls.external = external;
+  hls.ordinal = ordinal;
+  hls.percent = resumePct;
+  dtsTentou = 1;
+  if (!dts_hls_webos_draining()) return hlsAbrir();
+  hls.started = SDL_GetTicks();
+  hls.pending = HLS_WAITING_FOR_READER;
+  return 1;
+}
+
+static int hlsAbrir(void) {
+  int dv7 = hls.dv7, external = hls.external;
   DtsWebosHls options = {
     .dv7 = dv7, .allow_dts = !dtsDesligado,
     .preserve_mapping = ajustes_dv7_mapping(),
@@ -3907,8 +3921,8 @@ static int hlsIniciar(int ordinal, int dv7, int external, double alvo, double re
       options.external_hint = &hint;
     }
   }
-  if (dts_hls_webos_open(urlAtual, cabsHttp, ordinal, &options, hls.url, sizeof hls.url)) {
-    hls.pending = dtsTentou = 1;
+  if (dts_hls_webos_open(urlAtual, cabsHttp, hls.ordinal, &options, hls.url, sizeof hls.url)) {
+    hls.pending = HLS_PROBING;
     hls.started = SDL_GetTicks();
     hls.externalTrack = options.external_stream;
     if (external) {
@@ -3917,7 +3931,6 @@ static int hlsIniciar(int ordinal, int dv7, int external, double alvo, double re
       extGenEm = 0;
       audioext_carregando_definir(1);
     }
-    hls.percent = resumePct;
     if (!dv7 && !external) {
       dtsEstado = VIDEO_DTS_PREPARANDO;
       snprintf(dtsSaida, sizeof dtsSaida, "DTS: preparing HLS / AC-3");
@@ -4127,8 +4140,15 @@ static int iniciarDts(int stream) {
 static void hlsBombear(void) {
   if ((!hls.pending && !hlsAtivo()) || bindAtivo()) return;
   if (semDVForcado) return;
-  int state = dts_tpk_estado();
   int timeout = SDL_GetTicks() - hls.started >= 30000;
+  if (hls.pending == HLS_WAITING_FOR_READER) {
+    // Closing a session cancels its readers immediately, but the buffers
+    // are freed by a worker. Sample MemAvailable after that worker finishes.
+    if (!dts_hls_webos_draining()) hlsAbrir();
+    else if (timeout) hlsFalhar("old HLS reader did not close");
+    return;
+  }
+  int state = dts_tpk_estado();
   int failed = state == DTSTPK_FALHOU ||
                (hlsAtivo() && (falhou || reconErroPend || audioNaoSup || recuperando));
   if (failed || (timeout && (hls.pending || !pronto))) {

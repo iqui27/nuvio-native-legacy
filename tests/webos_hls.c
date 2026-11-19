@@ -2,6 +2,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 int main(int argc, char **argv) {
   char url[128];
@@ -38,5 +39,12 @@ int main(int argc, char **argv) {
            tracks[i].ordinal, audio->stream_index, i == selected, audio->codec, audio->language, audio->title);
   }
   dts_tpk_fechar();
+  for (int i = 0; dts_hls_webos_draining() && i < 500; i++) usleep(10000);
+  DtsEngineRings rings;
+  dts_engine_rings(&rings, 0);
+  if (dts_hls_webos_draining() || rings.alive != 0) {
+    fprintf(stderr, "Retired HLS session still holds reader buffers\n");
+    return 1;
+  }
   return 0;
 }

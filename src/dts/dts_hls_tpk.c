@@ -340,6 +340,7 @@ typedef struct Sessao {
   int webos, dv7;
 #ifdef NV_WEBOS_HLS_TEST
   DtsWebosHls hls;
+  int retiring;
   DtsTrack externalHint;
   char *externalUrl, *externalHeaders;
   char externalLangs[64];
@@ -371,6 +372,9 @@ typedef struct Sessao {
 
 static pthread_mutex_t G = PTHREAD_MUTEX_INITIALIZER;
 static Sessao *atual;
+#ifdef NV_WEBOS_HLS_TEST
+static atomic_int webosRetiring;
+#endif
 static unsigned contador;
 static int sockLo = -1, portaLo;
 
@@ -380,6 +384,7 @@ static void sessaoDestruir(Sessao *s) {
   free(s->url); free(s->cabs); free(s->initMp4);
 #ifdef NV_WEBOS_HLS_TEST
   free(s->externalUrl); free(s->externalHeaders);
+  if (s->retiring) atomic_fetch_sub(&webosRetiring, 1);
 #endif
   pthread_cond_destroy(&s->c); pthread_mutex_destroy(&s->m);
   free(s);
@@ -1019,6 +1024,12 @@ static void *fioMemoria(void *u) {
 static void encerrarAtual(void) {   // sob G
   Sessao *s = atual;
   if (!s) return;
+#ifdef NV_WEBOS_HLS_TEST
+  if (s->webos) {
+    s->retiring = 1;
+    atomic_fetch_add(&webosRetiring, 1);
+  }
+#endif
   pthread_mutex_lock(&porteiroHls.m);
   atual = NULL;
   for (int i = 0; i < porteiroHls.maxVivos; i++) if (porteiroHls.conexoes[i]) {
@@ -1141,6 +1152,8 @@ int dts_hls_webos_open(const char *url, const char *headers, int track, const Dt
   if (!options) return 0;
   return openSession(url, headers, track, 0, DTSTPK_HLS, 0, out, n, options);
 }
+
+int dts_hls_webos_draining(void) { return atomic_load(&webosRetiring) > 0; }
 
 void dts_hls_webos_buffer_info(DtsBufferInfo *out) {
   *out = (DtsBufferInfo){0};
