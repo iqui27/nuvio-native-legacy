@@ -2,7 +2,6 @@
 #include "torboxbib.h"
 #include "debrid.h"
 #include "partes.h"
-#include "js.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
