@@ -3393,15 +3393,26 @@ int ajustes_vidro_contorno(void) {
   return lig(AJ_VIDRO_CONTORNO);
 }
 int ajustes_addons_do_principal(void) { return lig(AJ_ADDONS_PRINCIPAL); }
+#endif
 // #679: perfis secundarios recebem chaves locais dePerfil que ainda nao tinham gravado.
 int ajustes_personalizacao_do_principal(void) { return lig(AJ_AJUSTES_DO_PRINCIPAL); }
 
+// `v`/`tem` sao o que o arquivo do perfil DESTINO acabou de ler. Os valores
+// do PRINCIPAL — inclusive a flag, que e PERFIL_LOCAL gravada no arquivo dele —
+// sao lidos do disco (ou do valor[] quando o principal e o ativo e a memoria
+// e a verdade). Ler o valor[] global aqui sem esse cuidado devolvia o padrao
+// recem-posto por ajustes_perfil_padrao e a heranca nunca acontecia.
 static void ajustes_complementar_do_principal(int perfil, int *v, char *tem) {
-  int pri[AJ_N], ptem[AJ_N], i;
-  if (perfil <= 0 || perfil == perfis_principal() || !ajustes_personalizacao_do_principal()) return;
+  int pri[AJ_N], i;
+  char ptem[AJ_N];
+  if (perfil <= 0 || perfil == perfis_principal()) return;
   memcpy(pri, valorPadrao, sizeof pri);
-  if (perfis_principal() == perfis_ativo()) memcpy(pri, valor, sizeof pri);
-  else if (!perfilLerVetor(perfis_principal(), pri, ptem)) return;
+  memset(ptem, 0, sizeof ptem);
+  if (perfis_principal() == perfis_ativo()) {
+    memcpy(pri, valor, sizeof pri);
+    memset(ptem, 1, sizeof ptem);
+  } else if (!perfilLerVetor(perfis_principal(), pri, ptem)) return;
+  if (!ptem[AJ_AJUSTES_DO_PRINCIPAL] || pri[AJ_AJUSTES_DO_PRINCIPAL] != 0) return;
   for (i = 0; i < AJ_N; i++)
     if (dePerfil(i) && somenteDesteAparelho(i) && !tem[i]) { v[i] = pri[i]; tem[i] = 1; }
 }
