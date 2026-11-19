@@ -45,6 +45,7 @@
 #endif
 // Porta fixa do diagnostico (endereco de favorito no computador).
 #define CEL_RELATORIO_PORTA 47801
+#define CEL_DIGITAR_PORTA    47802
 #define CEL_CORPO_MAX  4096
 #define CEL_ERROS_MAX  30
 
