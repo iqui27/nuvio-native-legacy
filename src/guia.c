@@ -1077,6 +1077,7 @@ static int recInstalado(const GRec *r) {
 static int filtro = G_FILTRO_TODAS;
 static int focoLin, focoCol;           // definidos de novo no estado de tela
 static char filtroChave[LTV_CHAVE];   // a fonte do filtro sobrevive a republicacao
+static char filtroAddonBase[256];     // filtro por addon de canais (G_FILTRO_ADDON_BASE+)
 // Os grupos visiveis (indices em cats[]) e a ORDEM DE ZAP da vista: CH+/-, o
 // numero digitado e a faixa do mini guia andam dentro do que a tela mostra.
 static int *vis;  static int nVis, capVis;
@@ -1153,6 +1154,10 @@ static void vistaMontar(void) {
           if (varianteVisivel(j)) { vis[nVis++] = i; break; }
       }
   if (filtro == G_FILTRO_FAV) for (i = 0; i < nFavOrd; i++) zapL[nZapL++] = favOrd[i];
+  else if (filtro >= G_FILTRO_ADDON_BASE && filtroAddonBase[0])
+    for (i = 0; i < nCanais; i++)
+      if (varianteVisivel(i) && fonteVisivel(canais[i].fonte) && !categoriaOculta(canais[i].cat) &&
+          canais[i].base[0] && !strcmp(canais[i].base, filtroAddonBase)) zapL[nZapL++] = i;
   else
     for (i = 0; i < nCanais; i++)
       if (varianteVisivel(i) && fonteVisivel(canais[i].fonte) && !categoriaOculta(canais[i].cat) && (filtro < 0 || canais[i].fonte == filtro)) zapL[nZapL++] = i;
@@ -1160,7 +1165,10 @@ static void vistaMontar(void) {
 
 static void filtroDefinir(int f) {
   filtro = f;
+  filtroAddonBase[0] = 0;
   if (f >= 0 && f < nLtvF) snprintf(filtroChave, sizeof filtroChave, "%s", ltvF[f].chave);
+  else if (f >= G_FILTRO_ADDON_BASE && f - G_FILTRO_ADDON_BASE < nFontes)
+    snprintf(filtroAddonBase, sizeof filtroAddonBase, "%s", fontes[f - G_FILTRO_ADDON_BASE].base);
   vistaMontar();
 }
 
@@ -4143,10 +4151,23 @@ static int fopModo;
 static int sugN, sug[G_SUG];
 static void mapaDefinir(GCanal *c, const char *gf, const char *gid);
 static float fontesRol;
-static int barraVisivel(void) { return nLtvF > 0 && !overlay; }
-static int fontesN(void) { return 2 + nLtvF; }
-static int filtroDoChip(int i) { return i == 0 ? G_FILTRO_FAV : i == 1 ? G_FILTRO_TODAS : i - 2; }
-static int chipDoFiltro(void) { return filtro == G_FILTRO_FAV ? 0 : filtro == G_FILTRO_TODAS ? 1 : filtro + 2; }
+static int barraVisivel(void) { return (nLtvF > 0 || nFontes > 0) && !overlay; }
+static int fontesN(void) { return 2 + nLtvF + nFontes; }
+#define G_FILTRO_ADDON_BASE 1000
+static int filtroDoChip(int i) {
+  if (i == 0) return G_FILTRO_FAV;
+  if (i == 1) return G_FILTRO_TODAS;
+  if (i < 2 + nLtvF) return i - 2;
+  return G_FILTRO_ADDON_BASE + (i - 2 - nLtvF);
+}
+static int chipDoFiltro(void) {
+  if (filtro == G_FILTRO_FAV) return 0;
+  if (filtro == G_FILTRO_TODAS) return 1;
+  if (filtro >= 0 && filtro < nLtvF) return filtro + 2;
+  if (filtro >= G_FILTRO_ADDON_BASE && filtro < G_FILTRO_ADDON_BASE + nFontes)
+    return 2 + nLtvF + (filtro - G_FILTRO_ADDON_BASE);
+  return 1;
+}
 static void fontesEntrar(void) { focoFontes = 1; focoTopo = 0; fontesCol = chipDoFiltro(); fopAberto = 0; }
 static void fontesEscolher(int i) {
   filtroDefinir(filtroDoChip(i));
@@ -6029,7 +6050,8 @@ static void desenharFontes(float a) {
   for (i = 0; i < n; i++) {
     if (i == 0) snprintf(rot[i], sizeof rot[i], "\xe2\x98\x85 %s", i18n("Favoritos"));
     else if (i == 1) snprintf(rot[i], sizeof rot[i], "%s", i18n("Todas"));
-    else snprintf(rot[i], sizeof rot[i], "%s  %d", ltvF[i - 2].nome, ltvF[i - 2].nCanais);
+    else if (i < 2 + nLtvF) snprintf(rot[i], sizeof rot[i], "%s  %d", ltvF[i - 2].nome, ltvF[i - 2].nCanais);
+    else snprintf(rot[i], sizeof rot[i], "%s", fontes[i - 2 - nLtvF].nome);
     ws[i] = (float)txt_linha_bruta(TXT_PG_ROTULO, rot[i], 255, 255, 255, 255).w + 2.0f * G_CHIP_PAD + (i >= 2 ? 18.0f : 0.0f);
   }
   for (i = 0, x = 0.0f; i < n; i++) { xs[i] = x; x += ws[i] + 10.0f; }
