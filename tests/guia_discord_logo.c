@@ -19,7 +19,10 @@ float player_duracao_seg(void) { return 0.0f; }
 const char *player_linha_episodio(void) { return ""; }
 const char *player_id_canal(void) { return "canal:x"; }
 int guia_canal_logo_url(const char *id, char *dst, size_t n) {
-  (void)id; snprintf(dst, n, "%s", logoServ); return logoServ[0] != 0;
+  // Mesma regra de src/guia.c: nunca entrega URL truncada.
+  (void)id;
+  if (!logoServ[0] || strlen(logoServ) >= n) { dst[0] = 0; return 0; }
+  snprintf(dst, n, "%s", logoServ); return 1;
 }
 int perfis_ativo(void) { return 1; }
 const char *i18n(const char *s) { return s; }
