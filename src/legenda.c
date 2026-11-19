@@ -656,6 +656,15 @@ char *legenda_utf8_idioma(const char *bytes, long n, const char *idioma,
       cir = altos >= 8 && colados * 2 > altos;
       ara = cir && soRusso * 10 < altos && soltasArabe * 10 >= altos;
       if (ara) cir = 0;
+      if (ara) {
+        static int log751;
+        if (!log751) {
+          log751 = 1;
+          printf("[legenda] arabico: CP1256 (idioma=%s, arquivo=%s)\n",
+                 lang ? lang : "?", arquivo ? arquivo : "?");
+          fflush(stdout);
+        }
+      }
       o = ara ? "windows-1256" : cir ? "windows-1251" : "windows-1252";
       if (gre || tur) {
         ara = cir = 0;
