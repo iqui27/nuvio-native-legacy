@@ -7,6 +7,7 @@
 #include "dados.h"
 #include "imgsub.h"
 #include "pgs.h"
+#include "pgs_mkv_restore.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,7 +17,6 @@
 #include <unistd.h>
 #include <math.h>
 #include <limits.h>
-#include <zlib.h>
 
 // --- parametros --------------------------------------------------------------
 
@@ -3246,39 +3246,10 @@ static void guardarReferencia(Fio *f) {
 
 static int contarDesistidos(const Fio *f);
 
-// Restores a stored block. Returns a new buffer (caller frees) or NULL on failure.
 static unsigned char *pgsRestaurar(const Fio *f, const unsigned char *b, long n, size_t *saida) {
-  unsigned char *o;
-  if (f->pgsCodif == 2) {
-    if (n < 0 || (size_t)n > PGS_BLOCO_MAX - f->pgsTiraN) return NULL;
-    *saida = f->pgsTiraN + (size_t)n;
-    o = malloc(*saida ? *saida : 1);
-    if (!o) return NULL;
-    if (f->pgsTiraN) memcpy(o, f->pgsTira, (size_t)f->pgsTiraN);
-    memcpy(o + f->pgsTiraN, b, (size_t)n);
-    return o;
-  } else {
-    z_stream z;
-    size_t cap = 256u << 10;
-    int r;
-    memset(&z, 0, sizeof z);
-    o = malloc(cap);
-    if (!o) return NULL;
-    if (inflateInit(&z) != Z_OK) { free(o); return NULL; }
-    z.next_in = (Bytef *)b; z.avail_in = (uInt)n;
-    z.next_out = o; z.avail_out = (uInt)cap;
-    while ((r = inflate(&z, Z_NO_FLUSH)) == Z_OK && z.avail_out == 0 && cap < PGS_BLOCO_MAX) {
-      unsigned char *g = realloc(o, cap * 2);
-      if (!g) { r = Z_MEM_ERROR; break; }
-      o = g;
-      z.next_out = o + cap; z.avail_out = (uInt)cap;
-      cap *= 2;
-    }
-    *saida = z.total_out;
-    inflateEnd(&z);
-    if (r != Z_STREAM_END) { free(o); return NULL; }
-    return o;
-  }
+  if (n < 0 || (size_t)n > PGS_MKV_BLOCO_MAX) return NULL;
+  if (!f->pgsCodif) return NULL;
+  return pgs_mkv_restaurar(f->pgsCodif, f->pgsTira, f->pgsTiraN, b, (size_t)n, saida);
 }
 
 // Decodifica os blocos pendentes para o armazem do desenho. O corpo vazio so
