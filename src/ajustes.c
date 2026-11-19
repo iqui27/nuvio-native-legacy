@@ -107,6 +107,7 @@ static void navigationRange(float,float,float,float,float,float,PonteiroFn,Ponte
 #include "fundo.h"
 #include "p2p.h"
 #include "curadoria.h"
+#include "nvbackend.h"
 #include "p2pmotor.h"
 #include "pessoas.h"
 #include "recomenda.h"
@@ -773,6 +774,7 @@ typedef enum {
   AJ_GUIA_PREVIA_DESTACAR, AJ_GUIA_PREVIA_SOM, AJ_GUIA_DIAS,
   AJ_FONTE_OCULTAR_DV, AJ_FONTE_OCULTAR_AUDIO, AJ_FONTE_OCULTAR_VIDEO, // Device-local, append-only.
   AJ_TV_HOME, // Device-local, append-only; enabled by default.
+  AJ_NUVIO_BACKEND_URL, // Servidor Nuvio personalizado; nuvio-backend.txt; append-only.
   AJ_PS_TAMANHO, // Device-local profile avatar size; append-only.
   AJ_LIVETV_AGRUPAR, // Profile-local, append-only; enabled by default.
   AJ_MENU_ESPORTES, // Device-local menu visibility; append-only, enabled by default.
@@ -2387,6 +2389,7 @@ static const char *CHAVE[] = {
   "guiaPreviaDestacarLocal", "guiaPreviaSomV2Local", "guiaDiasLocal",
   "fonteOcultarDvLocal", "fonteOcultarAudioLocal", "fonteOcultarVideoLocal",
   "androidTvHomeLocal",
+  "-nuvioBackendUrl",
   "psTamanhoLocal",
   "liveTvGroupVariantsLocal",
   "menuEsportesLocal",
@@ -10891,6 +10894,12 @@ static void eventoTela(const SDL_Event *e) {
                         299, CUR_ALFA_URL, curadoria_url()[0] ? curadoria_url() : NULL);
       return;
     }
+    if (focoOp == AJ_NUVIO_BACKEND_URL) {
+      stCampo = focoOp;
+      teclado_abrir_com("URL do servidor Nuvio", "https://seu-servidor — vazio usa o padrão da build. Pode descobrir por /.well-known/nuvio no mesmo host.",
+                        299, CUR_ALFA_URL, nv_rec_url()[0] ? nv_rec_url() : NULL);
+      return;
+    }
     if (focoOp >= AJ_JF_SERVIDOR && focoOp <= AJ_JF_SAIR) { srvsetup_abrir(1); return; }
     if (focoOp >= AJ_EM_SERVIDOR && focoOp <= AJ_EM_SAIR) { srvsetup_abrir(2); return; }
     if (focoOp >= AJ_PX_ENTRAR && focoOp <= AJ_PX_SAIR) { srvsetup_abrir(0); return; }
@@ -11031,6 +11040,11 @@ void ajustes_atualizar(float dt, Uint32 agora) {
       }
       else if (stCampo == AJ_CURADORIA_URL) {
         int e = curadoria_definir_url(teclado_texto());
+        uxNotificar(e ? "Ajuste salvo nesta TV." : "endereço inválido");
+      }
+      else if (stCampo == AJ_NUVIO_BACKEND_URL) {
+        int e = nvbackend_definir_url(teclado_texto());
+        if (e && teclado_texto()[0]) nvbackend_descobrir(teclado_texto());
         uxNotificar(e ? "Ajuste salvo nesta TV." : "endereço inválido");
       }
       else if (stCampo == AJ_FILTRO_GRUPOS) ffGruposDefinir(teclado_texto());

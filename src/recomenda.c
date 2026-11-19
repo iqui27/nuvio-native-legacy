@@ -14,6 +14,7 @@
 // O QUE ELE NAO GUARDA: token. A identidade e montada a cada ciclo a partir de
 // trakt.c ou de sessao.c e vai so no cabecalho do pedido.
 #include "recomenda.h"
+#include "nvbackend.h"
 #include "travarede.h"
 #include "atividade.h"
 #include "dados.h"
@@ -362,7 +363,7 @@ static void avisarAlcance(void);
 
 // "Recursos sociais" desligado (por perfil, ajustes.h) tira o servico inteiro:
 // nenhuma chamada de rede, nenhuma tela. Cada funcao daqui ja começa por esta.
-int recomenda_ativo(void) { return NV_REC_URL[0] != 0 && ajustes_social(); }
+int recomenda_ativo(void) { return nv_rec_url()[0] != 0 && ajustes_social(); }
 int recomenda_aberta(void) { return cartaoAberto; }
 
 const char *recomenda_modelo(int i) {
@@ -1594,7 +1595,7 @@ static int identidade(const char **cab) {
 }
 
 static void url(const char *caminho) {
-  snprintf(fioUrl, sizeof fioUrl, "%s%s", NV_REC_URL, caminho);
+  snprintf(fioUrl, sizeof fioUrl, "%s%s", nv_rec_url(), caminho);
 }
 
 // Escapa para dentro de uma string JSON. So o necessario: aspas, barra e os
@@ -2585,7 +2586,7 @@ static int pedidoAcaoLaco(void *arg) {
     const char *cab[4] = { a->aut, a->via, a->perfil[0] ? a->perfil : NULL, NULL };
     char caminho[600], corpo[64];
     int st = 0;
-    snprintf(caminho, sizeof caminho, "%s/v1/pedidos/%s", NV_REC_URL,
+    snprintf(caminho, sizeof caminho, "%s/v1/pedidos/%s", nv_rec_url(),
              a->aceitar ? "aceitar" : "recusar");
     snprintf(corpo, sizeof corpo, "{\"pub\":\"%s\"}", a->pub);
     // Intencionalmente nao usa recPostar: esta acao pertence a identidade
@@ -3046,7 +3047,7 @@ static int lerFeedAmigos(CatItem *saida, int max) {
   int ident = identidadeEm(cab, aut, sizeof aut, via, sizeof via);
   perfis_sessao_destravar();
   if (!ident) return 0;
-  snprintf(url_, sizeof url_, "%s%s", NV_REC_URL, "/v1/amigos/atividade");
+  snprintf(url_, sizeof url_, "%s%s", nv_rec_url(), "/v1/amigos/atividade");
   r = recBaixar(url_, REC_TEMPO_REDE, cab, &st);
   if (!r || st < 200 || st >= 300) { free(r); return 0; }
   if (!perfis_sessao_travar(recSessaoFio())) { free(r); return 0; }
