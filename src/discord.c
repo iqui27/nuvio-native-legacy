@@ -548,14 +548,18 @@ static long long agoraMsEpoca(void) {
 // host is fine (channel logos live wherever the playlist points). A URL with
 // query can carry a personal API key, and http/down-scheme is never sent.
 // Userinfo na autoridade (`https://usuario:senha@host/`) tambem nao: iria
-// vazar credencial da playlist ao endpoint de assets. E URL maior que o
-// Pedido.a do fio de arte e recusada, nunca truncada antes do envio.
+// vazar credencial da playlist ao endpoint de assets. O veto cobre `@`
+// literal, `%` qualquer (host valido nao precisa de escape: `%40` esconde o
+// `@` antes do memchr ver) e `:` (senha ou porta nao sao host publico). URL
+// maior que o Pedido.a do fio de arte e recusada, nunca truncada.
 static int posterPublico(const char *u) {
-  const char *fim;
+  const char *fim, *c;
   if (!u || strncmp(u, "https://", 8) || strchr(u, '?')) return 0;
   fim = strchr(u + 8, '/');
-  return fim && fim > u + 8 && !memchr(u + 8, '@', (size_t)(fim - (u + 8))) &&
-         strlen(u) < sizeof ((Pedido *)0)->a;
+  if (!fim || fim <= u + 8 || strlen(u) >= sizeof ((Pedido *)0)->a) return 0;
+  for (c = u + 8; c < fim; c++)
+    if (*c == '@' || *c == ':' || *c == '%') return 0;
+  return 1;
 }
 
 // 1 se ha algo para mostrar; preenche `p`.

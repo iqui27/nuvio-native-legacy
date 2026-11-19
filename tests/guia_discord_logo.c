@@ -97,6 +97,32 @@ int main(void) {
   assert(montar(&p));
   assert(!strncmp(arteUrl, "https://images.metahub.space/", 29));
 
+  // `%40` na autoridade esconde o `@` do memchr literal: recusado igual.
+  snprintf(logoServ, sizeof logoServ, "https://usuario:credencial%%40cdn.exemplo.tv/a.png");
+  assert(montar(&p));
+  assert(!strncmp(arteUrl, "https://images.metahub.space/", 29));
+
+  // `%40` sem dois-pontos e `%` qualquer na autoridade: recusados.
+  snprintf(logoServ, sizeof logoServ, "https://a%%40b/a.png");
+  assert(montar(&p));
+  assert(!strncmp(arteUrl, "https://images.metahub.space/", 29));
+  snprintf(logoServ, sizeof logoServ, "https://a%%2Fb/a.png");
+  assert(montar(&p));
+  assert(!strncmp(arteUrl, "https://images.metahub.space/", 29));
+
+  // `:` na autoridade (senha ou porta) tambem nao e host publico: recusado.
+  snprintf(logoServ, sizeof logoServ, "https://usuario:senha@cdn.exemplo.tv:8443/a.png");
+  assert(montar(&p));
+  assert(!strncmp(arteUrl, "https://images.metahub.space/", 29));
+  snprintf(logoServ, sizeof logoServ, "https://cdn.exemplo.tv:8443/a.png");
+  assert(montar(&p));
+  assert(!strncmp(arteUrl, "https://images.metahub.space/", 29));
+
+  // `%40` no CAMINHO continua permitido: so a autoridade e vigiada.
+  snprintf(logoServ, sizeof logoServ, "https://cdn.exemplo.tv/a%%40b.png");
+  assert(montar(&p));
+  assert(!strncmp(arteUrl, "https://cdn.exemplo.tv/", 23));
+
   // URL maior que o Pedido.a do fio de arte seria truncada no envio: recusada.
   { size_t n = (size_t)snprintf(logoServ, sizeof logoServ, "https://cdn.exemplo.tv/");
     while (n < 1100) logoServ[n++] = 'a';
