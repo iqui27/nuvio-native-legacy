@@ -673,7 +673,7 @@ void gpun_relatar(double fps, double pior, double periodo, int cena, int cheia) 
   double alvo = periodo > 0 ? 1000.0 / periodo : 60.0;
   int automaticos = ajustes_efeitos_automaticos();
 #ifdef NV_TPK
-  if (cena && mkvfix_estado() == 2) {
+  if (mkvfix_estado() == MKVFIX_SONDANDO) {
     printf("[gpu-nivel] report ignored: mkvfix probe active (fps=%.1f)\n", fps);
     return;
   }

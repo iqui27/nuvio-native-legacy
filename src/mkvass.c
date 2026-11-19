@@ -155,7 +155,8 @@ static int conexaoRecusada(int e) { return e == 6 || e == 7 || e == 35; }
 // duas) triplicam o ritmo sem disputar banda: cada pedido e de ~1 KB.
 #ifndef MKVASS_PARALELOS
 #ifdef NV_TPK
-#define MKVASS_PARALELOS   2   // #709: menos disputa de rede/decoder no Tizen 6 com ASS
+#define MKVASS_PARALELOS   3
+#define MKVASS_PARALELOS_TPK60 2   /* #709: menos disputa no Tizen 6 com ASS */
 #else
 #define MKVASS_PARALELOS   3
 #endif
@@ -1759,6 +1760,11 @@ static int lerTracks(Fio *f, const unsigned char *p, long n) {
       return 1;
     }
     if (!ehAss || !priv) return -1;
+#ifdef NV_TPK
+    // #709: o teto de 2 pedidos vale so para a faixa ASS (anime no Tizen 6);
+    // texto/PGS e as outras geracoes seguem com MKVASS_PARALELOS.
+    if (f->paralelos > MKVASS_PARALELOS_TPK60) f->paralelos = MKVASS_PARALELOS_TPK60;
+#endif
     // O libass sobe aqui, com a faixa ASS ja achada, e nao quando o fio nasce:
     // o aquecimento le a pasta de fontes inteira para a memoria (106 MB na C9,
     // 2-12 s e +65-120 MB de RSS na webOS) e antes rodava em toda pre-busca,
