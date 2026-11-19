@@ -8168,3 +8168,23 @@ int guia_busca_programas(int i, time_t de, time_t ate, int pular, EpgProg *out, 
   if (i < 0 || i >= nCanais || !out || cap < 1 || pular < 0) return 0;
   return gFaixaDesde(&canais[i], de, ate, pular, out, cap);
 }
+
+int guia_canal_logo_url(const char *id, char *dst, size_t n) {
+  int i;
+  const char *logo;
+  if (!id || !id[0] || !dst || n < 2) return 0;
+  dst[0] = 0;
+  for (i = 0; i < nCanais; i++)
+    if (fonteAtiva(canais[i].fonte) && !strcmp(canais[i].id, id)) {
+      logo = logoDe(&canais[i]);
+      if (!logo || !logo[0] || !strncmp(logo, "data:", 5)) return 0;
+      if (!strncmp(logo, "https://", 8) || !strncmp(logo, "http://", 7)) {
+        if (strchr(logo, '?')) return 0;
+        snprintf(dst, n, "%s", logo);
+        return 1;
+      }
+      return 0;
+    }
+  return 0;
+}
+

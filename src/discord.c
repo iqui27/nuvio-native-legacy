@@ -3,6 +3,7 @@
 #include "discord.h"
 #include "discordws.h"
 #include "catalogo.h"
+#include "guia.h"
 #include "dados.h"
 #include "js.h"
 #include "jsw.h"
@@ -582,6 +583,12 @@ static int montar(Presenca *p) {
   }
   // Never forward rejected add-on URLs; derive artwork from a numeric IMDb ID.
   poster = ci->poster;
+  if (player_eh_canal()) {
+    char canalLogo[512];
+    if (guia_canal_logo_url(player_id_canal(), canalLogo, sizeof canalLogo) &&
+        posterPublico(canalLogo))
+      poster = canalLogo;
+  }
   if (!posterPublico(poster)) {
     size_t n = 2;
     publica[0] = 0;
