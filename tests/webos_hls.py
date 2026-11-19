@@ -15,10 +15,12 @@ origin = f"http://127.0.0.1:{(work / 'port').read_text()}/"
 
 
 @contextlib.contextmanager
-def playback(filename, dv7, donor=None, buffer_mib=None, offset=0, speed=0, track=1):
+def playback(filename, dv7, donor=None, buffer_mib=None, offset=0, speed=0, track=1, ordinal=None):
     cmd = [work / 'server', urljoin(origin, filename), str(dv7)]
     if donor:
         cmd += [urljoin(origin, donor), str(buffer_mib or 0), str(track), str(offset), str(speed)]
+    elif ordinal is not None:
+        cmd += [str(buffer_mib or 0), str(ordinal)]
     elif buffer_mib:
         cmd += [str(buffer_mib)]
     process = subprocess.Popen(
@@ -149,7 +151,9 @@ with playback('indexed.mkv', 1) as base:
     assert 1.9 < segments[1] - segments[0] < 2.1, segments
     assert 3.9 < segments[2] - segments[0] < 4.1, segments
     print('DV7 HLS fMP4, converted P8.1 RPU, AC-3 5.1 and segment timestamps passed.')
-assert 'audio ac3 (audio 1 do arquivo)' in (work / 'indexed.mkv.log').read_text()
+log = (work / 'indexed.mkv.log').read_text()
+assert 'input audio ordinal=0 stream=1 selected=0 codec=truehd' in log
+assert 'input audio ordinal=1 stream=2 selected=1 codec=ac3' in log
 
 with playback('plain.mkv', 1) as base:
     try:
@@ -185,6 +189,24 @@ def tone(samples, start, duration=0.25):
     return sum(a < 0 <= b for a, b in zip(section, section[1:])) / duration
 
 
+with playback('indexed.mkv', 1, ordinal=0) as base:
+    changed = get(base, 'init.mp4') + get(base, 'seg2.m4s')
+    video, audio = probe('alternate-p8.mp4', changed)['streams']
+    assert any(sd.get('dv_profile') == 8 for sd in video['side_data_list'])
+    assert audio['codec_name'] == 'ac3' and audio['channels'] == 6
+    assert 530 < tone(decoded_audio('alternate-p8.mp4', changed), 0.5) < 570
+log = (work / 'indexed.mkv.log').read_text()
+assert 'input audio ordinal=0 stream=1 selected=1 codec=truehd' in log
+print('The alternate P7 audio track plays as AC-3 at a nonzero segment with Dolby Vision P8.1.')
+
+with playback('dts.mkv', 0, ordinal=1) as base:
+    changed = get(base, 'init.mp4') + get(base, 'seg2.m4s')
+    assert probe('alternate-sdr.mp4', changed)['streams'][1]['codec_name'] == 'ac3'
+    assert 640 < tone(decoded_audio('alternate-sdr.mp4', changed), 0.5) < 680
+log = (work / 'dts.mkv.log').read_text()
+assert 'input audio ordinal=0 stream=1 selected=0 codec=dts' in log
+assert 'input audio ordinal=1 stream=2 selected=1 codec=aac language=pol' in log
+
 with playback('dts.mkv', 0, 'donor.m4a', 64, 750) as base:
     init = get(base, 'init.mp4')
     first = init + get(base, 'seg0.m4s')
@@ -199,7 +221,8 @@ log = (work / 'dts.mkv.log').read_text()
 assert 'input rings: video=48 MiB external=16 MiB, external track=1 offset=750 ms' in log
 assert re.search(r'reader rings peak 2 = 64 MiB', log)
 check_input_buffer(log, 48 + 8, 2)  # sparse donor uses an 8 MiB cache
-assert 'input audio metadata: language=pol title=' in log
+assert 'input audio ordinal=0 stream=0 selected=0 codec=aac language=eng' in log
+assert 'input audio ordinal=1 stream=1 selected=1 codec=aac language=pol' in log
 
 with playback('indexed.mkv', 1, 'donor.m4a', 128, -150, 40000) as base:
     init = get(base, 'init.mp4')
@@ -221,7 +244,7 @@ log = (work / 'plain.mkv.log').read_text()
 assert 'input rings: video=240 MiB external=16 MiB, external track=2 offset=3500 ms' in log
 assert re.search(r'reader rings peak 2 = 256 MiB', log)
 check_input_buffer(log, 256, 2)
-assert 'input audio metadata: language=pol title=Polski lektor' in log
+assert 'input audio ordinal=1 stream=2 selected=1 codec=aac language=pol title=Polski lektor' in log
 
 with playback('dts.mkv', 0, buffer_mib=256) as base:
     assert get(base, 'seg0.m4s')

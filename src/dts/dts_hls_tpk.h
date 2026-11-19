@@ -39,8 +39,8 @@ int dts_hls_webos_open(const char *url, const char *headers, int audio_ordinal,
                       const DtsWebosHls *options, char *out, size_t n);
 /* Input payload and ring occupancy, excluding local HLS output. */
 void dts_hls_webos_buffer_info(DtsBufferInfo *out);
-/* Metadata of the selected track, which the native HLS player can omit. */
-void dts_hls_webos_audio_info(DtsTrack *out);
+/* Input tracks for the audio menu. The TV receives only the selected track. */
+int dts_hls_webos_audio_tracks(DtsHlsAudioTrack *out, int max, int *selected);
 #endif
 /* Continuous TS: the URL that restarts the stream at s (same session). */
 int dts_tpk_url_em(double s, char *out, size_t n);

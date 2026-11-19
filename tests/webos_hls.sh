@@ -11,7 +11,9 @@ dv7=${NUVIO_DV7_ROOT:-"$work/dv7"}
 NUVIO_DV7_ROOT="$dv7" bash tools/build-dv7.sh
 
 ffmpeg -v error -f lavfi -i testsrc2=s=64x64:r=25:d=7 \
-  -f lavfi -i sine=sample_rate=48000:d=7 -ac 6 -c:a dca -strict experimental -b:a 768k \
+  -f lavfi -i sine=sample_rate=48000:d=7 -f lavfi -i sine=frequency=660:sample_rate=48000:d=7 \
+  -map 0:v -map 1:a -map 2:a -ac:a:0 6 -c:a:0 dca -strict experimental -b:a:0 768k \
+  -c:a:1 aac -metadata:s:a:1 language=pol \
   -c:v libx264 -preset ultrafast -g 25 -sc_threshold 0 "$work/dts.mkv"
 ffmpeg -v error -f lavfi -i testsrc2=s=64x64:r=25:d=7 \
   -f lavfi -i sine=sample_rate=48000:d=7 -ac 6 -c:a ac3 \

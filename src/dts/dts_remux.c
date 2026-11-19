@@ -74,6 +74,9 @@ double dts_remux_gen_start_s(const DtsRemuxGen *g) { (void)g; return 0; }
 void dts_remux_set_queue_budget_mib(int mib) { (void)mib; }
 #ifdef NV_WEBOS_HLS_TEST
 void dts_remux_set_webos(DtsRemux *r, const DtsWebosHls *o) { (void)r; (void)o; }
+int dts_remux_webos_audio_tracks(const DtsRemux *r, DtsHlsAudioTrack *out, int max, int *selected) {
+  (void)r; (void)out; (void)max; *selected = -1; return 0;
+}
 void dts_remux_gen_buffer_info(const DtsRemuxGen *g, DtsBufferInfo *b) { (void)g; *b = (DtsBufferInfo){0}; }
 #endif
 #else
@@ -213,6 +216,8 @@ struct DtsRemux {
   int cancelled;
 #ifdef NV_WEBOS_HLS_TEST
   DtsWebosHls hls;
+  DtsHlsAudioTrack audioTracks[DTS_TRACK_MAX];
+  int audioTrackCount;
 #endif
 };
 
@@ -487,12 +492,8 @@ void dts_remux_set_webos(DtsRemux *r, const DtsWebosHls *o) {
 
 static int audioSupported(const DtsRemux *r, enum AVCodecID codec) {
 #ifdef NV_WEBOS_HLS_TEST
-  if (r->webos) {
-    if (codec == AV_CODEC_ID_DTS) return r->allowDts;
-    return r->dv7 && avcodec_find_decoder(codec) &&
-           (codec == AV_CODEC_ID_AC3 || codec == AV_CODEC_ID_EAC3 || codec == AV_CODEC_ID_AAC ||
-            codec == AV_CODEC_ID_TRUEHD || codec == AV_CODEC_ID_MLP);
-  }
+  if (r->webos)
+    return (codec != AV_CODEC_ID_DTS || r->allowDts) && avcodec_find_decoder(codec);
 #endif
   (void)r;
   return isConvertible(codec);
@@ -501,6 +502,7 @@ static int audioSupported(const DtsRemux *r, enum AVCodecID codec) {
 static int audioRank(const DtsRemux *r, enum AVCodecID codec) {
   if (!audioSupported(r, codec)) return 0;
   if (r->dv7 && codec == AV_CODEC_ID_AC3) return 2;
+  if (r->webos && !r->dv7 && codec == AV_CODEC_ID_DTS) return 2;
   return 1;
 }
 
@@ -521,6 +523,43 @@ DtsRemux *dts_remux_open(const char *url, const char *headers, int ordinal, int 
 }
 
 #ifdef NV_WEBOS_HLS_TEST
+static void webosAudioTracks(DtsRemux *r, const AVFormatContext *fmt) {
+  int ordinal = 0;
+  for (unsigned i = 0; i < fmt->nb_streams; i++) {
+    const AVStream *stream = fmt->streams[i];
+    const AVCodecParameters *p = stream->codecpar;
+    if (p->codec_type != AVMEDIA_TYPE_AUDIO) continue;
+    int n = ordinal++;
+    if (!audioSupported(r, p->codec_id) || p->codec_tag == MKTAG('e','n','c','a') ||
+        av_packet_side_data_get(p->coded_side_data, p->nb_coded_side_data,
+                                AV_PKT_DATA_ENCRYPTION_INIT_INFO)) continue;
+    int row = r->audioTrackCount;
+    if (row == DTS_TRACK_MAX) {
+      if ((int)i != r->as) continue;
+      row--;
+    } else r->audioTrackCount++;
+    DtsHlsAudioTrack *audio = &r->audioTracks[row];
+    *audio = (DtsHlsAudioTrack){.ordinal = n,
+      .track = {.stream_index = (int)i, .stream_id = stream->id,
+                .kind = DTS_AUDIO, .channels = p->ch_layout.nb_channels}};
+    snprintf(audio->track.codec, sizeof audio->track.codec, "%s", avcodec_get_name(p->codec_id));
+    const AVDictionaryEntry *lang = av_dict_get(stream->metadata, "language", NULL, 0);
+    const AVDictionaryEntry *title = av_dict_get(stream->metadata, "title", NULL, 0);
+    if (lang) snprintf(audio->track.language, sizeof audio->track.language, "%s", lang->value);
+    if (title) snprintf(audio->track.title, sizeof audio->track.title, "%s", title->value);
+  }
+}
+
+int dts_remux_webos_audio_tracks(const DtsRemux *r, DtsHlsAudioTrack *out, int max, int *selected) {
+  int count = r->audioTrackCount < max ? r->audioTrackCount : max;
+  *selected = -1;
+  for (int i = 0; i < count; i++) {
+    out[i] = r->audioTracks[i];
+    if (out[i].track.stream_index == r->as) *selected = i;
+  }
+  return count;
+}
+
 static double mkvTrackEnd(const AVStream *stream) {
   if (!stream) return -1.0;
   if (stream->duration != AV_NOPTS_VALUE) {
@@ -822,6 +861,7 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
     /* A keyframe far from the reported end can mean a partial index. */
     in->index_complete = r->nkf > 0 && r->kf[r->nkf - 1] * av_q2d(r->vtb) >= r->endS - 60.0;
 #ifdef NV_WEBOS_HLS_TEST
+    if (r->webos) webosAudioTracks(r, audioFmt);
     if (!in->index_complete && r->webos && !r->mov && r->nkf > 1 &&
         ic->iformat && !strcmp(ic->iformat->name, "matroska,webm")) {
       in->index_complete = verifyMkvTail(r, ic);

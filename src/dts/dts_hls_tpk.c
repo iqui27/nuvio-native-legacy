@@ -1148,20 +1148,19 @@ void dts_hls_webos_buffer_info(DtsBufferInfo *out) {
   pthread_mutex_unlock(&G);
 }
 
-void dts_hls_webos_audio_info(DtsTrack *out) {
-  *out = (DtsTrack){0};
+int dts_hls_webos_audio_tracks(DtsHlsAudioTrack *out, int max, int *selected) {
+  int count = 0;
+  *selected = -1;
   pthread_mutex_lock(&G);
   Sessao *s = atual;
   if (s && s->webos) {
     pthread_mutex_lock(&s->m);
-    if (s->estado == DTSTPK_PRONTO && s->rx) {
-      const DtsRemuxInfo *in = dts_remux_info(s->rx);
-      snprintf(out->language, sizeof out->language, "%s", in->audio_language);
-      snprintf(out->title, sizeof out->title, "%s", in->audio_title);
-    }
+    if (s->estado == DTSTPK_PRONTO && s->rx)
+      count = dts_remux_webos_audio_tracks(s->rx, out, max, selected);
     pthread_mutex_unlock(&s->m);
   }
   pthread_mutex_unlock(&G);
+  return count;
 }
 #endif
 

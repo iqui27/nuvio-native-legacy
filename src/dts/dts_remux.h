@@ -81,8 +81,14 @@ typedef struct {
 } DtsWebosHls;
 #ifdef NV_WEBOS_HLS_TEST
 #include "dts_engine.h"
+typedef struct {
+  DtsTrack track;
+  int ordinal;                 /* position among all source audio tracks */
+} DtsHlsAudioTrack;
 /* The session copies its strings and optional track hint before starting. */
 void dts_remux_set_webos(DtsRemux *, const DtsWebosHls *);
+/* List convertible tracks from the active audio source. selected is a row index. */
+int dts_remux_webos_audio_tracks(const DtsRemux *, DtsHlsAudioTrack *, int max, int *selected);
 /* Snapshot both source rings. The caller keeps the generator alive. */
 void dts_remux_gen_buffer_info(const DtsRemuxGen *, DtsBufferInfo *);
 #endif

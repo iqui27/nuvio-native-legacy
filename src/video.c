@@ -85,8 +85,9 @@ void video_dv_guard_reiniciar(void) {
 static DtsPlayback *dtsSessao;
 #ifdef NV_WEBOS_HLS_TEST
 static atomic_int hlsActive;
+static atomic_int hlsAudioRequest;   // source audio ordinal plus one, zero when idle
 static struct {
-  int enabled, pending, played, paused, external, externalTrack;
+  int enabled, pending, played, paused, dv7, external, externalTrack;
   double pos, percent;
   Uint32 started;
   char url[128], subtitle[1024];
@@ -794,6 +795,7 @@ static void hlsParar(void) {
   hls.downloadMbps = -1.0;
 #endif
   atomic_store(&hlsActive, 0);
+  atomic_store(&hlsAudioRequest, 0);
 }
 #endif
 static void bombearDts(void);
@@ -1202,18 +1204,41 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
       srcSeekable = q ? (strncmp(q + 11, "true", 4) == 0) : -1;
       q = strstr(p, "\"trickable\":");
       srcTrickable = q ? (strncmp(q + 12, "true", 4) == 0) : -1; }
-    const char *q;
+    // Stay inside the audio array so videoTrackInfo cannot be mistaken for audio.
+    const char *q = js_array(p, NULL, "audioTrackInfo");
 #ifdef NV_WEBOS_HLS_TEST
-    DtsTrack hlsAudio = {0};
     int hlsSource = hlsAtivo();
-    if (hlsSource) dts_hls_webos_audio_info(&hlsAudio);
+    DtsHlsAudioTrack hlsTracks[NV_FAIXA_MAX];
+    int hlsSelected, hlsTracksCount = hlsSource ?
+      dts_hls_webos_audio_tracks(hlsTracks, NV_FAIXA_MAX, &hlsSelected) : 0;
 #endif
     pthread_mutex_lock(&audioMkvLock);
     nAudio = nLeg = 0;
     vidAtmos = 0;
-    // Empty strings/arrays mean no tracks. Stay inside each track array so
-    // the following videoTrackInfo cannot be mistaken for audio.
-    q = js_array(p, NULL, "audioTrackInfo");
+#ifdef NV_WEBOS_HLS_TEST
+    if (hlsTracksCount) {
+      for (int i = 0; i < hlsTracksCount; i++) {
+        const DtsTrack *a = &hlsTracks[i].track;
+        VideoFaixa *f = &faixaAudio[i];
+        *f = (VideoFaixa){.numero = hlsTracks[i].ordinal, .ordinalMkv = -1,
+          .stream_index = a->stream_index, .stream_id = a->stream_id, .canais = a->channels};
+        if (ling_tem_nome(a->language)) snprintf(f->idioma, sizeof f->idioma, "%.7s", a->language);
+        snprintf(f->codec, sizeof f->codec, "%s", a->codec);
+        char detail[88];
+        if (!audioinfo_texto(a->codec, a->channels, 0, detail, sizeof detail))
+          snprintf(detail, sizeof detail, "%s", a->codec);
+        if (a->title[0] && !nv_titulo_e_arquivo(a->title) && !nv_titulo_tecnico(a->title, ling_tem_nome)) {
+          size_t used = strlen(detail);
+          snprintf(f->nome, sizeof f->nome, "%s", a->title);
+          snprintf(detail + used, sizeof detail - used, " · %.48s", a->title);
+        }
+        idiomaRotulo(f->rotulo, sizeof f->rotulo, f->idioma, detail);
+      }
+      nAudio = hlsTracksCount;
+      audioAtual = hlsSelected;
+      q = NULL;
+    }
+#endif
     if (q) {
       const char *o = q;
       while (o && *o == '{' && nAudio < NV_FAIXA_MAX) {
@@ -1231,10 +1256,6 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
             f->idioma[k] = 0;
             if (!strcmp(f->idioma, "(null)")) f->idioma[0] = 0;
           } }
-#ifdef NV_WEBOS_HLS_TEST
-        if (hlsSource && nAudio == 0 && ling_tem_nome(hlsAudio.language))
-          snprintf(f->idioma, sizeof f->idioma, "%.7s", hlsAudio.language);
-#endif
         { const char *c2 = strstr(o, "\"codec\":\"");
           if (c2 && (!fo || c2 < fo)) {
             size_t k = 0; c2 += 9;
@@ -1271,18 +1292,6 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
                      imm[0] ? "  \xc2\xb7  " : (ch[0] ? "  \xc2\xb7  " : ""),
                      imm[0] ? "Atmos" : "",
                      (imm[0] && ch[0]) ? " " : "", ch); }
-#ifdef NV_WEBOS_HLS_TEST
-        if (hlsSource && nAudio == 0 && hlsAudio.title[0] &&
-            !nv_titulo_e_arquivo(hlsAudio.title) && !nv_titulo_tecnico(hlsAudio.title, ling_tem_nome)) {
-          char sub[88];
-          if (!audioinfo_texto(cod, f->canais, 0, sub, sizeof sub))
-            snprintf(sub, sizeof sub, "%s", cod);
-          size_t used = strlen(sub);
-          snprintf(sub + used, sizeof sub - used, "%s%.48s", used ? " \xc2\xb7 " : "", hlsAudio.title);
-          snprintf(f->nome, sizeof f->nome, "%s", hlsAudio.title);
-          idiomaRotulo(f->rotulo, sizeof f->rotulo, f->idioma, sub);
-        }
-#endif
         nAudio++;
         o = js_prox(fo);
       }
@@ -1359,7 +1368,11 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
     // DTS/TrueHD antes (DTS que a TV recusa converte, ver audioNaoSup). Sem
     // regra que decida, NAO se mexe: a escolha do pipeline (faixa 0) e melhor
     // que uma trocada por chute — quem quer outra abre a folha de faixas.
-    if (nAudio > 1) {
+    if (nAudio > 1
+#ifdef NV_WEBOS_HLS_TEST
+        && !hlsSource  // selecting an HLS track reopens playback
+#endif
+    ) {
       AudioCand c[NV_FAIXA_MAX];
       int i, o, k;
       for (i = 0; i < nAudio; i++) {
@@ -3859,6 +3872,63 @@ static void hlsFalhar(const char *reason) {
   falhou = 1;
   ack_publicar();
 }
+
+static int hlsIniciar(int ordinal, int dv7, int external, double alvo, double resumePct, int paused) {
+  snprintf(hls.subtitle, sizeof hls.subtitle, "%s", legUrlAtual);
+  // Release the old read-ahead ring before allocating the HLS preset.
+  pararSessao();
+  nv_recon_zerar(&recon);
+  hls.pos = alvo; hls.paused = paused; hls.dv7 = dv7; hls.external = external;
+  DtsWebosHls options = {
+    .dv7 = dv7, .allow_dts = !dtsDesligado,
+    .preserve_mapping = ajustes_dv7_mapping(),
+    .buffer_mib = cacheboost_buffer_mb(ajustes_buffer_preset(), memlog_livre_mb()),
+  };
+  char langs[64];
+  DtsTrack hint = {0};
+  if (external) {
+    extIdiomas(langs, sizeof langs);
+    dts_engine_set_lang_match(ling_casa);
+    options.external_url = audioext_url();
+    options.external_headers = audioext_cabecalhos();
+    options.external_langs = langs;
+    options.external_stream = audioext_faixa();
+    options.external_offset_ms = audioext_offset_ms();
+    options.external_speed_ppm = audioext_velocidade();
+    options.external_only = audioext_so_audio();
+    options.external_buffer_mib = ajustes_audio_externo_bufor_mib();
+    AudioExtFaixa saved;
+    if (audioext_faixa_dica(&saved)) {
+      hint.stream_index = saved.stream;
+      hint.channels = saved.canais;
+      snprintf(hint.language, sizeof hint.language, "%s", saved.idioma);
+      snprintf(hint.codec, sizeof hint.codec, "%s", saved.codec);
+      snprintf(hint.title, sizeof hint.title, "%s", saved.titulo);
+      options.external_hint = &hint;
+    }
+  }
+  if (dts_hls_webos_open(urlAtual, cabsHttp, ordinal, &options, hls.url, sizeof hls.url)) {
+    hls.pending = dtsTentou = 1;
+    hls.started = SDL_GetTicks();
+    hls.externalTrack = options.external_stream;
+    if (external) {
+      snprintf(extUrlAplicada, sizeof extUrlAplicada, "%s", options.external_url);
+      extGenAplicada = extGenVista = audioext_offset_geracao();
+      extGenEm = 0;
+      audioext_carregando_definir(1);
+    }
+    hls.percent = resumePct;
+    if (!dv7 && !external) {
+      dtsEstado = VIDEO_DTS_PREPARANDO;
+      snprintf(dtsSaida, sizeof dtsSaida, "DTS: preparing HLS / AC-3");
+    }
+    marco(external ? "HLS webOS: audio from another source / AC-3" :
+          dv7 ? "HLS webOS: DV7 -> P8.1 / AC-3" : "HLS webOS: DTS -> AC-3");
+    return 1;
+  }
+  hlsFalhar("session could not start");
+  return 0;
+}
 #endif
 static int iniciarDts(int stream) {
   /* Retry from the next pump before unloading or spawning a native worker.
@@ -3879,8 +3949,10 @@ static int iniciarDts(int stream) {
   // sonda): o caminho parte do ponto de partida, nao de onde a TV chegou.
   double alvo = dtsModoDv && dvSilencio ? dvEntradaSeg
               : (seekEm || seekEnvEm || seekRetryEm) ? seekAlvo : posSeg;
-#ifdef NV_NATIVE_SEEK_TEST
+#if defined(NV_NATIVE_SEEK_TEST) || defined(NV_WEBOS_HLS_TEST)
   double resumePct=0;
+#endif
+#ifdef NV_NATIVE_SEEK_TEST
   if(converterResumeRequested && !converterResumeUsed && !fonteTocou &&
      !seekEm && !seekEnvEm && !seekRetryEm) {
     alvo=converterResumeSeconds;resumePct=converterResumePct;converterResumeUsed=1;
@@ -3937,65 +4009,10 @@ static int iniciarDts(int stream) {
     int ownDts = (a || trocada) && nv_audio_mkv_dts(selected.codec);
     int dts = !dtsDesligado && (ownDts || (external && !dtsModoDv));
     if (dv7 || dts) {
-      snprintf(hls.subtitle, sizeof hls.subtitle, "%s", legUrlAtual);
-      // Release the old read-ahead ring before allocating the HLS preset.
-      pararSessao();
-      nv_recon_zerar(&recon);
-      hls.pos = alvo; hls.paused = paused; hls.external = external;
-      DtsWebosHls options = {
-        .dv7 = dv7, .allow_dts = !dtsDesligado,
-        .preserve_mapping = ajustes_dv7_mapping(),
-        .buffer_mib = cacheboost_buffer_mb(ajustes_buffer_preset(), memlog_livre_mb()),
-      };
-      char langs[64];
-      DtsTrack hint = {0};
-      if (external) {
-        extIdiomas(langs, sizeof langs);
-        dts_engine_set_lang_match(ling_casa);
-        options.external_url = audioext_url();
-        options.external_headers = audioext_cabecalhos();
-        options.external_langs = langs;
-        options.external_stream = audioext_faixa();
-        options.external_offset_ms = audioext_offset_ms();
-        options.external_speed_ppm = audioext_velocidade();
-        options.external_only = audioext_so_audio();
-        options.external_buffer_mib = ajustes_audio_externo_bufor_mib();
-        AudioExtFaixa saved;
-        if (audioext_faixa_dica(&saved)) {
-          hint.stream_index = saved.stream;
-          hint.channels = saved.canais;
-          snprintf(hint.language, sizeof hint.language, "%s", saved.idioma);
-          snprintf(hint.codec, sizeof hint.codec, "%s", saved.codec);
-          snprintf(hint.title, sizeof hint.title, "%s", saved.titulo);
-          options.external_hint = &hint;
-        }
-      }
-      // A bare MKV probe has no selected native track yet. Let HLS prefer
-      // an available AC-3 track over a provisional first/TrueHD selection.
+      // A bare MKV probe has no selected native track yet. Keep the HLS
+      // preference for AC-3 over a provisional first/TrueHD selection.
       int hlsOrdinal = dv7 && !nativeCount && requestedOrdinal < 0 ? -1 : ordinal;
-      if (dts_hls_webos_open(urlAtual, cabsHttp, hlsOrdinal, &options, hls.url, sizeof hls.url)) {
-        hls.pending = dtsTentou = 1;
-        hls.started = SDL_GetTicks();
-        hls.externalTrack = options.external_stream;
-        if (external) {
-          snprintf(extUrlAplicada, sizeof extUrlAplicada, "%s", options.external_url);
-          extGenAplicada = extGenVista = audioext_offset_geracao();
-          extGenEm = 0;
-          audioext_carregando_definir(1);
-        }
-#ifdef NV_NATIVE_SEEK_TEST
-        hls.percent = resumePct;
-#endif
-        if (dts && !external) {
-          dtsEstado = VIDEO_DTS_PREPARANDO;
-          snprintf(dtsSaida, sizeof dtsSaida, "DTS: preparing HLS / AC-3");
-        }
-        marco(external ? "HLS webOS: audio from another source / AC-3" :
-              dv7 ? "HLS webOS: DV7 -> P8.1 / AC-3" : "HLS webOS: DTS -> AC-3");
-        return 1;
-      }
-      hlsFalhar("session could not start");
-      return 0;
+      return hlsIniciar(hlsOrdinal, dv7, external, alvo, resumePct, paused);
     }
   }
 #endif
@@ -4120,6 +4137,16 @@ static void hlsBombear(void) {
     return;
   }
   if (hlsAtivo()) {
+    if (pronto && !hls.external) {
+      int requested = atomic_exchange(&hlsAudioRequest, 0);
+      if (requested) {
+        double alvo = (seekEm || seekEnvEm || seekRetryEm) ? seekAlvo : posSeg;
+        printf("[webos-hls] switch source audio ordinal=%d at %.3f s\n", requested - 1, alvo);
+        fflush(stdout);
+        hlsIniciar(requested - 1, hls.dv7, 0, alvo, 0, pausaPedida);
+        return;
+      }
+    }
     if (pronto && tocando) hls.played = 1;
 #ifdef NV_HTTP_BUFFER_DIAG
     Uint32 now = SDL_GetTicks(), interval = now - hls.bufferSample;
@@ -5005,6 +5032,26 @@ void video_definir_dv(int dv) { dvPedido = dv ? 1 : 0; }
 
 void video_escolher_audio(int i) {
   char b[192];
+#ifdef NV_WEBOS_HLS_TEST
+  if (hlsAtivo()) {
+    pthread_mutex_lock(&audioMkvLock);
+    const VideoFaixa *row = video_audio(i);
+    VideoFaixa chosen;
+    int selectable = row && row->stream_index >= 0 && i != audioAtual;
+    if (selectable) chosen = *row;
+    pthread_mutex_unlock(&audioMkvLock);
+    if (!selectable) return;
+    if (hls.external) {
+      AudioExtFaixa m = {.stream = chosen.stream_index, .canais = chosen.canais};
+      snprintf(m.codec, sizeof m.codec, "%s", chosen.codec);
+      snprintf(m.idioma, sizeof m.idioma, "%s", chosen.idioma);
+      snprintf(m.titulo, sizeof m.titulo, "%s", chosen.nome);
+      audioext_escolher_faixa(m.stream);
+      audioext_lembrar_faixa_serie(&m);
+    } else atomic_store(&hlsAudioRequest, chosen.numero + 1);
+    return;
+  }
+#endif
   const VideoFaixa *f = video_audio(i);
   // The audio of another version: the rows are that file's tracks. Another one
   // reopens with it (audioext_escolher_faixa); the playing one does nothing.
