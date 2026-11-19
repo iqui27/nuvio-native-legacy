@@ -87,6 +87,29 @@ with playback('dts.mkv', 0) as base:
     assert streams[1]['channels'] == 6
     print('DTS HLS fMP4, AC-3 5.1 and out-of-order seek passed.')
 
+with playback('long-tail.mkv', 0) as base:
+    playlist = get(base, 'v.m3u8')
+    assert b'#EXTINF:79.' in playlist and b'\nseg1.m4s\n' in playlist, playlist
+    init = get(base, 'init.mp4')
+    assert boxes(init) == [b'ftyp', b'moov']
+    tail = get(base, 'seg1.m4s')
+    fragments = boxes(tail)
+    assert len(tail) > 48 * 1048576 and len(fragments) >= 4, (len(tail), fragments)
+    assert fragments == [b'moof', b'mdat'] * (len(fragments) // 2), fragments
+    assert [s['codec_name'] for s in probe('long-tail.mp4', init + tail)['streams']] == ['h264', 'ac3']
+assert 'MKV tail: verified' in (work / 'long-tail.mkv.log').read_text()
+print('A long final GOP starts and streams several bounded fMP4 fragments.')
+
+with playback('short-source.mkv', 0) as base:
+    try:
+        get(base)
+    except HTTPError as error:
+        assert error.code == 503
+    else:
+        raise AssertionError('A tail ending before the declared duration must be refused')
+assert 'MKV tail: unverified' in (work / 'short-source.mkv.log').read_text()
+
+
 with playback('indexed.mkv', 1) as base:
     master = get(base)
     assert re.search(rb'CODECS="hvc1\.[ABC]?\d+\.[0-9A-F]+\.[LH]\d+(?:\.[0-9A-F]{2})*,ac-3"', master)

@@ -34,6 +34,24 @@ python3 tests/dv7_fixture.py "$work" --indexed
 # Remux adds Matroska Cues and retains the fixture's Dolby Vision track mapping.
 ffmpeg -v error -i "$work/fel.mkv" -map 0 -c copy -strict unofficial "$work/indexed.mkv"
 
+# More than 60 seconds without a video keyframe, with enough encoded data to
+# exceed the fMP4 fragment budget when everything is staged at once.
+ffmpeg -v error -f lavfi -i testsrc2=s=256x144:r=10:d=82 \
+  -f lavfi -i sine=sample_rate=48000:d=82 -ac 6 -c:a dca -strict experimental -b:a 768k \
+  -c:v libx264 -preset ultrafast -g 1000 -sc_threshold 0 -force_key_frames 0,3 \
+  -b:v 6000k -maxrate 6000k -bufsize 6000k -x264-params nal-hrd=cbr:filler=1 "$work/long-tail.mkv"
+# A source whose actual last packet cannot reach its declared end is refused.
+python3 - "$work" <<'PY_FIXTURE'
+from pathlib import Path
+import struct
+import sys
+root = Path(sys.argv[1])
+data = bytearray((root / 'long-tail.mkv').read_bytes())
+duration = data.index(b'\x44\x89\x88', 0, 1024) + 3
+data[duration:duration+8] = struct.pack('>d', 180000.0)
+(root / 'short-source.mkv').write_bytes(data)
+PY_FIXTURE
+
 "${CC:-cc}" -std=gnu11 -O1 -g -I"$prefix/include" -Isrc \
   -DNV_WEBOS -DNV_WEBOS_HLS_TEST -DNV_DTS_FFMPEG -DNV_DV7_CONVERSION \
   tests/webos_hls.c src/dts/dts_hls_tpk.c src/dts/dts_remux.c src/dts/dts_engine.c src/rede.c src/redeurl.c \

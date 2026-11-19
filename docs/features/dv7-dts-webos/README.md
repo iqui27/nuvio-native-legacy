@@ -64,8 +64,11 @@ The HLS variant advertises its HEVC base as `hvc1` and signals P8.1 through
 Enable both conversions for a P7 source whose selected audio track is DTS.
 The stream carries one audio track.
 
-HLS requires a seekable source with a keyframe index. A startup or stream
-error stops playback and shows an HLS error. Turn HLS Off and reopen the
+HLS requires a seekable source with a keyframe index. If a webOS MKV's last
+indexed keyframe is far from the reported end, the probe checks a bounded
+portion of the tail for later keyframes or video that reaches the end. A long
+HLS segment can carry several fMP4 fragments to limit the muxer's memory use.
+A startup or stream error stops playback and shows an HLS error. Turn HLS Off and reopen the
 video to use the existing converter. On an LG C1 or C5, check audio, the
 TV's Dolby Vision indicator, seek/resume and memory. **Show buffer data**
 shows the HLS source buffer, HTTP readers, and measured download rate once

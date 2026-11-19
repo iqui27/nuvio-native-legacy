@@ -243,7 +243,7 @@ struct DtsRemuxGen {
   int prog; int64_t progKf, progB48; double progStartS;
   /* muxer kept across consecutive segments (continuity counters run on) */
   AVFormatContext *oc; AVStream *ov, *oa;
-  int mp4Hls, dropHeader, sawRpu;
+  int mp4Hls, dropHeader, sawRpu, hlsHeaderPending;
   size_t fragmentBytes;
   int hevcFix;                      /* this muxer is MPEG-TS and the video is HEVC with hvcC */
   DtsRemuxWrite w; void *wop; int wfail; int64_t bytes;
@@ -423,6 +423,7 @@ static int floorIdx(const int64_t *t, int n, int64_t v) {
   return r;
 }
 
+
 static void buildSegments(DtsRemux *r, double target) {
   double tb = av_q2d(r->vtb);
   r->nseg = 0;
@@ -515,6 +516,61 @@ DtsRemux *dts_remux_open(const char *url, const char *headers, int ordinal, int 
   if (dts_remux_probe(r, url, headers, ordinal, stereoAac, segTarget, err, errn) < 0) { dts_remux_close(r); return NULL; }
   return r;
 }
+
+#ifdef NV_WEBOS_HLS_TEST
+/* Check a suspect Matroska tail by reading from its last indexed keyframe.
+ * The credits can have a long GOP. A partial index can also omit later
+ * keyframes, which this read adds. Keep probing bounded for remote sources. */
+static int verifyMkvTail(DtsRemux *r, AVFormatContext *ic) {
+  const int64_t scanLimit = INT64_C(256) << 20;
+  const double deadline = now_s(CLOCK_MONOTONIC) + 12.0;
+  int64_t lastKey = r->kf[r->nkf - 1];
+  if (avformat_seek_file(ic, r->vs, INT64_MIN, lastKey, lastKey, AVSEEK_FLAG_BACKWARD) < 0)
+    return 0;
+  AVPacket *packet = av_packet_alloc();
+  if (!packet) return 0;
+  const double tb = av_q2d(r->vtb);
+  int64_t start = avio_tell(ic->pb);
+  double videoEnd = -1.0;
+  int capacity = r->nkf, result = 0;
+  while (!isCancelled(r) && now_s(CLOCK_MONOTONIC) < deadline &&
+         avio_tell(ic->pb) - start < scanLimit) {
+    int ret = av_read_frame(ic, packet);
+    if (ret < 0) {
+      if (ret == AVERROR_EOF && !ic->pb->error && videoEnd >= r->endS - 2.0)
+        result = 1;
+      break;
+    }
+    if (packet->stream_index == r->vs) {
+      int64_t pts = packet->pts != AV_NOPTS_VALUE ? packet->pts : packet->dts;
+      if (pts != AV_NOPTS_VALUE) {
+        double end = (double)pts * tb + (double)packet->duration * tb;
+        if (end > videoEnd) videoEnd = end;
+        if ((packet->flags & AV_PKT_FLAG_KEY) && pts > lastKey) {
+          if (r->nkf == capacity) {
+            if (capacity > INT_MAX / 2) break;
+            capacity *= 2;
+            int64_t *keys = realloc(r->kf, (size_t)capacity * sizeof *keys);
+            if (!keys) break;
+            r->kf = keys;
+          }
+          r->kf[r->nkf++] = lastKey = pts;
+          if ((double)lastKey * tb >= r->endS - 60.0) {
+            result = 1;
+            break;
+          }
+        }
+      }
+    }
+    av_packet_unref(packet);
+  }
+  av_packet_free(&packet);
+  printf("[webos-hls] MKV tail: %s, last keyframe %.3f s, video reached %.3f s, expected end %.3f s\n",
+         result ? "verified" : "unverified", (double)lastKey * tb, videoEnd, r->endS);
+  fflush(stdout);
+  return result;
+}
+#endif
 
 int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordinal, int stereoAac,
                     double segTarget, char *err, size_t errn) {
@@ -695,11 +751,16 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
       for (int i = 1; i < r->nkf; i++) if (r->kf[i] != r->kf[u - 1]) r->kf[u++] = r->kf[i];
       r->nkf = u;
     }
-    in->n_keyframes = r->nkf;
-    /* A GOP is seconds long: an index whose last keyframe is a minute before
-     * the end does not cover the file (partial Cues, fragmented MP4 indexed
-     * only as far as the probe read). The playlist would end there. */
+    /* A keyframe far from the reported end can mean a partial index. */
     in->index_complete = r->nkf > 0 && r->kf[r->nkf - 1] * av_q2d(r->vtb) >= r->endS - 60.0;
+#ifdef NV_WEBOS_HLS_TEST
+    if (!in->index_complete && r->webos && !r->mov && r->nkf > 1 &&
+        ic->iformat && !strcmp(ic->iformat->name, "matroska,webm")) {
+      in->index_complete = verifyMkvTail(r, ic);
+      if (isCancelled(r)) { fail(err, errn, "Cancelled", 0); goto bad; }
+    }
+#endif
+    in->n_keyframes = r->nkf;
     buildSegments(r, segTarget > 0.5 ? segTarget : 6.0);
     in->n_segments = r->nseg;
     in->size_bytes = dts_engine_size(r->probe);
@@ -972,6 +1033,7 @@ static int openMux(DtsRemuxGen *g, const char *fmt, int seg, char *err, size_t e
   g->oc->output_ts_offset = (int64_t)(g->mp4Hls ? 1 : TS_OFFSET_S) * AV_TIME_BASE;
   g->hevcFix = !strcmp(fmt, "mpegts") && r->hvccBN > 0;
   if (g->mp4Hls) {
+    g->hlsHeaderPending = 1;
     av_dict_set(&o, "movflags", "frag_custom+empty_moov+default_base_moof+delay_moov+frag_discont+skip_trailer", 0);
     av_dict_set(&o, "use_editlist", "0", 0);
     av_dict_set_int(&o, "fragment_index", seg + 1, 0);
@@ -1258,11 +1320,34 @@ static int videoPacket(DtsRemuxGen *g, AVPacket *p, char *err, size_t errn) {
   return 0;
 }
 
+static int flushHlsFragment(DtsRemuxGen *g, int initOnly) {
+  int ret = av_interleaved_write_frame(g->oc, NULL);
+  if (ret >= 0 && g->hlsHeaderPending) {
+    /* delay_moov needs the first audio packet to build dac3. Flush just the
+     * initialization boxes before sending media from a fresh muxer. */
+    ret = av_write_frame(g->oc, NULL);
+    avio_flush(g->oc->pb);
+    g->hlsHeaderPending = g->dropHeader = 0;
+  }
+  if (ret >= 0 && !initOnly && g->fragmentBytes)
+    ret = av_write_frame(g->oc, NULL);
+  avio_flush(g->oc->pb);
+  g->fragmentBytes = 0;
+  return g->wfail ? AVERROR(EPIPE) : ret;
+}
+
 static int writePkt(DtsRemuxGen *g, AVPacket *p, AVRational tb, AVStream *os, DtsRemuxStats *st, int video) {
   int rr;
   if (g->mp4Hls) {
-    /* movenc stages the full fragment. Bound its separate allocation on TVs. */
-    g->fragmentBytes += (size_t)p->size;
+    /* movenc stages each fragment in RAM. A single HLS segment can contain
+     * several fMP4 fragments while retaining its original seek boundary. */
+    size_t incoming = (size_t)p->size;
+    if (g->fragmentBytes && g->fragmentBytes + incoming > (40u << 20) &&
+        (!g->hlsHeaderPending || (st->audio_pkts && st->video_pkts))) {
+      rr = flushHlsFragment(g, 0);
+      if (rr < 0) { av_packet_free(&p); return rr; }
+    }
+    g->fragmentBytes += incoming;
     if (g->fragmentBytes > (48u << 20)) { av_packet_free(&p); return AVERROR(ENOMEM); }
   }
   av_packet_rescale_ts(p, tb, os->time_base);
@@ -1591,6 +1676,7 @@ int dts_remux_gen_run(DtsRemuxGen *g, int seg, double startS, const char *fmt,
     if ((stop && *stop) || (r->extCancel && *r->extCancel)) { fail(err, errn, "Stopped", 0); rr = -2; break; }
     if ((rr = emitVideo(g, target, st, err, errn)) < 0) break;
     if ((rr = emitAudio(g, target, st, err, errn)) < 0) break;
+    if (initOnly && st->audio_pkts && st->video_pkts && (!r->dv7 || g->sawRpu)) break;
     rollingLog(g, 0);
     int vDone = (g->vq.n > 0 && g->vq.v[0].seg > target) || (g->demuxEof && g->vq.n == 0);
     int aDone = (g->aq.n > 0 && g->aq.v[0].seg > target) || (g->encEof && g->aq.n == 0);
@@ -1617,21 +1703,18 @@ int dts_remux_gen_run(DtsRemuxGen *g, int seg, double startS, const char *fmt,
     if (rr < 0) break;
   }
   if (rr >= 0) {
-    rr = av_interleaved_write_frame(g->oc, NULL);
-    if (rr >= 0 && g->mp4Hls && fresh) {
-      if (!st->audio_pkts || !st->video_pkts || (initOnly && r->dv7 && !g->sawRpu)) {
+    if (g->mp4Hls) {
+      if (fresh && (!st->audio_pkts || !st->video_pkts || (initOnly && r->dv7 && !g->sawRpu))) {
         fail(err, errn, "Incomplete HLS initialization (video, AC-3 or Dolby Vision metadata)", 0);
         rr = -1;
         goto out;
       }
-      /* delay_moov uses the first AC-3 packet for dac3. The first explicit
-       * flush writes just ftyp/moov; subsequent flushes write moof/mdat. */
-      rr = av_write_frame(g->oc, NULL);
-      avio_flush(g->oc->pb);
-      g->dropHeader = 0;
+      rr = flushHlsFragment(g, initOnly);
+    } else {
+      rr = av_interleaved_write_frame(g->oc, NULL);
+      if (rr >= 0) rr = av_write_frame(g->oc, NULL);
+      if (g->oc->pb) avio_flush(g->oc->pb);
     }
-    if (rr >= 0 && !initOnly) rr = av_write_frame(g->oc, NULL);
-    if (g->oc->pb) avio_flush(g->oc->pb);
     if (g->wfail) { fail(err, errn, "Client closed", 0); rr = -2; }
     else if (rr < 0) fail(err, errn, "Muxer flush", rr);
     else if (r->webos && !g->bytes) { fail(err, errn, "Empty HLS segment", 0); rr = -1; }

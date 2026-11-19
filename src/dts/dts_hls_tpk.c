@@ -451,7 +451,9 @@ static void *fioSonda(void *u) {
     snprintf(s->erro, sizeof s->erro, "cancelled");
   } else if (noIndex) {
     s->semIndice = 1;
-    snprintf(s->erro, sizeof s->erro, "no keyframe index to the end (no Cues): HLS impossible");
+    snprintf(s->erro, sizeof s->erro, "%s",
+             in->n_keyframes ? "Keyframe index does not cover the end of the source"
+                             : "Source has no usable keyframe index");
   } else if (!ready) {
     snprintf(s->erro, sizeof s->erro, "%s", err[0] ? err : "HLS initialization failed");
   }
