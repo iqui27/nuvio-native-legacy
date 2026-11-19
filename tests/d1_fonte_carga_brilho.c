@@ -1,5 +1,6 @@
 // #774: espelha brilho de fontes carregando.
 #include <assert.h>
+#include <stdio.h>
 enum { AJ_FONTE_CARGA_BRILHO = 125 };
 static int valor[256];
 static int ajustes_fonte_carga_brilho_alto(void) { return valor[AJ_FONTE_CARGA_BRILHO] != 0; }

@@ -2256,6 +2256,7 @@ static int travaFonte(const char *url) {
 
 static void tocarFonteInterno(const char *url);
 static void tocarFonteInterno(const char *url) {
+  directcache_encerrar();
   if (!travaFonte(url)) return;
   marco("abrir: url ao pipeline");
   skipLiberado = 0;
@@ -2685,6 +2686,7 @@ static void lembrarFonte(void) {
 }
 
 static void fecharSessao(int manter, int trocaFonte) {
+  directcache_encerrar();
   juntos_ao_voltar();
   saiuVisto = 0;
   imgsub_gl_limpar();

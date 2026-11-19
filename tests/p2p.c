@@ -21,6 +21,7 @@ static int ligado;
 static char base[200];
 int ajustes_p2p_ligado(void) { return ligado; }
 const char *ajustes_p2p_url(void) { return base; }
+int ajustes_p2p_prazo_metadados_s(void) { return 30; }
 static const char *episodioId = "tt1:1:2";
 void debrid_episodio(int *t, int *e) { idbase_episodio(episodioId, t, e); }
 uint64_t badges_detectar(const char *m) { (void)m; return 0; }

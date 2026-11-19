@@ -2461,12 +2461,25 @@ static int montarDetalhes(LinhaDet *o, int max) {
   // mora na linha do cabecalho das Notas; pais e status saem — o mockup e
   // explicito sobre o que cada linha diz.
   if (ajustes_det_fonte_antecipada()) {
-    VtEscolha esc;
-    if (vt_escolha(&esc)) {
-      char buf[320];
-      snprintf(buf, sizeof buf, "%s%s%s%s", esc.nome[0] ? esc.nome : "",
-               esc.tamanho[0] ? " · " : "", esc.tamanho, esc.prov[0] ? " · " : "");
-      if (buf[0] && esc.prov[0]) strncat(buf, esc.prov, sizeof buf - strlen(buf) - 1);
+    int est = FA_NADA, idx = stream_antecipada(&est);
+    if (idx >= 0 && est == FA_OK) {
+      const Stream *s = stream_item(idx);
+      char buf[320] = "";
+      if (s) {
+        VaiTocar vt;
+        vt_descrever(s, &vt);
+        vt_nome_amigavel(&vt, buf, sizeof buf);
+        if (vt.tamanho[0]) {
+          char tmp[sizeof buf];
+          snprintf(tmp, sizeof tmp, "%s · %s", buf, vt.tamanho);
+          snprintf(buf, sizeof buf, "%s", tmp);
+        }
+        if (s->provedor[0]) {
+          char tmp[sizeof buf];
+          snprintf(tmp, sizeof tmp, "%s%s%s", buf, buf[0] ? " · " : "", s->provedor);
+          snprintf(buf, sizeof buf, "%s", tmp);
+        }
+      }
       DET_POE("Fonte preparada", buf[0] ? buf : NULL);
     }
   }

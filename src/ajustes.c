@@ -2587,6 +2587,7 @@ static int  nValores(int op);
 static int inativa(int op);
 static void pstAplicar(void);
 static void pstCarregar(void);
+static void posterProvMigrar(void);
 static void pstDefinir(int op, const char *texto);
 static void pstAtivar(int op);
 static void pstTesteRecolher(void);
@@ -3787,6 +3788,11 @@ void ajustes_definir_vidro(int ligado) { int a = valor[AJ_VIDRO]; valor[AJ_VIDRO
 int ajustes_p2p_ligado(void) { return 0; }
 unsigned ajustes_p2p_limite_mb(void) { return 0; }
 int ajustes_p2p_usb(void) { return 0; }
+int ajustes_p2p_prazo_metadados_s(void) { return 30; }
+int ajustes_folha_classica(void) { return 0; }
+int ajustes_fonte_carga_brilho_alto(void) { return 0; }
+int ajustes_det_fonte_antecipada(void) { return 0; }
+int ajustes_direct_cache_usb(void) { return 0; }
 #else
 int ajustes_p2p_ligado(void) { return lig(AJ_P2P_LIGADO) && !SEGURO; }
 unsigned ajustes_p2p_limite_mb(void) {
@@ -5545,6 +5551,7 @@ void ajustes_dir(const char *dir) {
   }
   }
   fclose(f);
+  posterProvMigrar();
   efeitos720Migrar(1);
   if (escalaVersao < 1) gravar();
   // "DINAMICA ESTILIZADA" SAIU (03/10/2026): a base tingida virou o Fundo
@@ -5867,6 +5874,11 @@ static void pstSalvar(void) {
            pstInst, pstToken, pstExtra, pstChave, pstModelo);
   dados_gravar("posteres.txt", b);
 }
+static void posterProvMigrar(void) {
+  if (valor[AJ_POSTER_PROV] == PP_POSTERSPLUS && pstModelo[0] && !pstInst[0] && !pstToken[0])
+    valor[AJ_POSTER_PROV] = PP_MODELO;
+}
+
 static void pstCarregar(void) {
   char *t = dados_ler("posteres.txt"), *p, *fim;
   char v[PP_MODELO_MAX + 8];

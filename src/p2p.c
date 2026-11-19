@@ -320,7 +320,8 @@ int p2p_resolver(const char *hash, int fileIdx, const char *fontes, char *url, u
     for (i = 0; i < 40; i++) h[i] = (char)tolower((unsigned char)hash[i]);
     h[40] = 0;
     snprintf(criar, sizeof criar, "%s/%s/create", base, h); }
-  r = rede_postar_st(criar, P2P_PRAZO_METADADOS, cab, corpo, &st);
+  { int prazoHttp = P2P_PRAZO_METADADOS > 0 ? P2P_PRAZO_METADADOS : 7 * 24 * 3600;
+    r = rede_postar_st(criar, prazoHttp, cab, corpo, &st); }
   // Sem resposta: o servidor estava vivo um instante atras (passo 1), entao o
   // que faltou foram os metadados — torrent sem peers.
   if (!r && st == 0) {

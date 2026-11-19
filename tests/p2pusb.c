@@ -32,6 +32,7 @@ static char dados[700];
 static int p2pEnabled = 1;
 int ajustes_p2p_ligado(void) { return p2pEnabled; }
 const char *ajustes_p2p_url(void) { return ""; }
+int ajustes_p2p_prazo_metadados_s(void) { return 30; }
 void debrid_episodio(int *t, int *e) { *t = 0; *e = 0; }
 const char *dados_dir(void) { return dados; }
 char *rede_baixar_st(const char *u, int s, const char *const *c, int *st) { (void)u; (void)s; (void)c; if (st) *st = 0; return NULL; }

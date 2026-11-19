@@ -1,5 +1,6 @@
 // #457: espelha toggle da linha "Fonte preparada" na ficha.
 #include <assert.h>
+#include <stdio.h>
 enum { AJ_DET_FONTE_ANTECIP = 126 };
 static int valor[256];
 static int ajustes_det_fonte_antecipada(void) { return !valor[AJ_DET_FONTE_ANTECIP]; }

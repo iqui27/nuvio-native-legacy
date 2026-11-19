@@ -1,5 +1,6 @@
 // #782: espelha folha classica em ajustes.c.
 #include <assert.h>
+#include <stdio.h>
 enum { AJ_FOLHA_CLASSICA = 124 };
 static int valor[256];
 static int ajustes_folha_classica(void) { return valor[AJ_FOLHA_CLASSICA] != 0; }

@@ -1,5 +1,6 @@
 // #775: espelha prazo de metadados P2P (ajustes.c + p2p.c).
 #include <assert.h>
+#include <stdio.h>
 enum { AJ_P2P_PRAZO_META = 123 };
 static int valor[256];
 static int ajustes_p2p_prazo_metadados_s(void) {

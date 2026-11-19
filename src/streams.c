@@ -2586,7 +2586,7 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
       FonteFalhaCandidata *u = calloc(1, sizeof *u);
       Stream *f = malloc(sizeof *f);
       if (u && f) {
-        *u = c[q]; u->identidade = strdup(c[q].identidade);
+        *u = c[q]; u->identidade = strdup(c[q].identidade); u->indice = 0;
         *f = fontes[c[q].indice]; fontes = f; c = u; nc = 1;
       }
     }
@@ -2600,7 +2600,7 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
     if (falhaCancelada(geracao, cancelado, ctx)) break;
     resultado = fontefalha_proxima(sessao, c, nc, addons_estado() != ADD_BUSCANDO, &r);
     if (resultado != FONTEFALHA_PROXIMA) break;
-    const Stream *s = &fontes[r.indice];
+    const Stream *s = &fontes[r.candidata >= 0 && r.candidata < nc ? r.candidata : 0];
     if (!fontefalha_tentar(sessao, &c[r.candidata], r.servico)) { resultado = FONTEFALHA_FIM; break; }
     if (falhaCancelada(geracao, cancelado, ctx)) { resultado = FONTEFALHA_FIM; break; }
     conferenciaPublicar(r.indice, geracao, FA_CONFERINDO);
@@ -3932,7 +3932,10 @@ static const char *fraseVazioChips(void) {
   return frase;
 }
 static int passaFiltro(int i) {
-  if (i >= 0 && i < n && vt_copia_rep(i) != i) return 0;
+  if (i >= 0 && i < n && vt_copia_rep(i) != i) {
+    if (filtro > 0 && filtro < nProvedores && doProvedor(&lista[i], filtro)) {
+    } else return 0;
+  }
   if (filtro < 0) return 0;
   if (filtroServidor >= 0) {
     const char *pre[] = {"plex|", "jellyfin|", "emby|"};
@@ -5293,7 +5296,7 @@ static void montar(int automatica) {
     if (r >= 0) foco = r;
   }
 }
-static int folhaIlha(void) { return !folhaDesktop() && player_aberto(); }
+static int folhaIlha(void) { return !folhaDesktop() && player_aberto() && !ajustes_folha_classica(); }
 static float folhaIlhaH(void) { return NV_TELA_H - FOLHA_ILHA_Y - FOLHA_ILHA_CAB - FOLHA_ILHA_BASE; }
 static void folhaGeometria(void) {
   if (folhaDesktop() && !canaisFolha) {
@@ -7418,11 +7421,8 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     if (y>NV_TELA_H) break;
     int i=ordem[row], sel=grupo==1&&foco==row;
     const Stream *s=i>=0?&lista[i]:NULL;
-    if (s && (selospacote_ativo() >= 0 || selospacote_embutidos_ok())) {
-      int ready = 1;
-      selosPacoteEstado((Stream *)s, &ready);
-      if (!ready) anim *= ajustes_fonte_carga_brilho_alto() ? 1.15f : 0.88f;
-    }
+    if (s && stream_fonte_estado(i) == FA_CONFERINDO)
+      anim *= ajustes_fonte_carga_brilho_alto() ? 1.15f : 0.88f;
     uint64_t tira, logos;
     if(y+h<FOLHA_TOPO-8 || y>NV_TELA_H) continue;
     GfxRect r={lx,y,rw,h};
