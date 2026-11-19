@@ -1397,7 +1397,8 @@ object NvPlayer {
         val baixa = url.lowercase()
         val item = MediaItem.Builder().setUri(url)
         if (baixa.contains(".m3u8") || baixa.contains("m3u8?")) item.setMimeType(MimeTypes.APPLICATION_M3U8)
-        else if (baixa.contains(".mpd")) item.setMimeType(MimeTypes.APPLICATION_MPD)
+        else if (baixa.contains(".mpd") || baixa.contains("dash") || baixa.contains("manifest.mpd"))
+            item.setMimeType(MimeTypes.APPLICATION_MPD)
         return item.build()
     }
 
@@ -1545,7 +1546,7 @@ object NvPlayer {
                             !it.equals("If-None-Match", true) && !it.equals("If-Modified-Since", true)
                         }),
                     report = { Log.i(TAG, it) },
-                    liveTsUri = Uri.parse(url).takeIf { LivePlaylistDataSource.isLiveTs(it) },
+                    liveTsUri = Uri.parse(url).takeIf { live && LivePlaylistDataSource.isLiveTs(it) },
                 ))
             if (construir) construirPlayer(act, r)
             Log.i(TAG, "[player] buffer preset=$preset min=${minMs / 1000}s max=${maxMs / 1000}s teto=${bytes shr 20}MB preparo=$preparando")

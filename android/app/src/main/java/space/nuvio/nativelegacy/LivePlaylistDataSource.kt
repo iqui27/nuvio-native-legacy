@@ -313,12 +313,10 @@ internal class LivePlaylistDataSource private constructor(
 
     companion object {
         // Only the Xtream continuous live endpoint; never VOD or HLS segments.
-                internal fun isLiveTs(uri: Uri): Boolean {
+        internal fun isLiveTs(uri: Uri): Boolean {
             if (!(uri.scheme.equals("http", true) || uri.scheme.equals("https", true))) return false
             val path = uri.path ?: return false
-            val lower = path.lowercase()
-            if (lower.endsWith(".ts") || lower.endsWith(".mpeg")) return true
-            return path.matches(Regex("(?i)/live/[^/]+/[^/]+/[^/]+\.ts$"))
+            return Regex("(?i)^/live/[^/]+/[^/]+/[^/]+\\.ts$").matches(path)
         }
 
         private const val MAX_MANIFEST_BYTES = 256 * 1024
