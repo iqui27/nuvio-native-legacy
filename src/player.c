@@ -5308,6 +5308,19 @@ void player_atualizar(float dt, Uint32 agora) {
     // A legenda interpola na velocidade MEDIDA (relogio.h).
     relogio_taxa(&relLeg, velMed.efetiva / 100.0);
     relogio_amostra(&relLeg, video_pos(), monoSeg(), tocando && !scrubbing);
+    { double m = monoSeg(), v = video_pos(), l0, l1;
+      static double ultV, ultM, ultL;
+      l0 = ultM > 0 ? relogio_ler(&relLeg, ultM) : v;
+      l1 = relogio_ler(&relLeg, m);
+      if (tocando && !scrubbing && ultM > 0 && m - ultM < 0.6 &&
+          fabs(v - ultV) < 0.4 && fabs(l1 - l0) > 1.5) {
+        printf("[legenda] #772: salto ASS %.1fs com video +%.2fs — realinha\n",
+               l1 - l0, v - ultV);
+        fflush(stdout);
+        relogio_amostra(&relLeg, v, m, 1);
+        ultL = v;
+      } else ultL = l1;
+      if (tocando) { ultV = v; ultM = m; (void)ultL; } }
     // A cada 10 s: o numero cru do pipeline e o do relogio da legenda, no
     // mesmo instante. A diferenca e o que a interpolacao acrescenta (0..~250).
     { static double ultRel;
