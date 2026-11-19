@@ -33,6 +33,7 @@
 #include "video.h"
 #include "mediaurl.h"
 #include "ajustes.h"
+#include "barraspretas.h"
 #include "xtream.h"
 #include "capmkv.h"
 #include "audioinfo.h"
@@ -764,6 +765,11 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeCache(JNIEnv
 JNIEXPORT jboolean JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeTunneling(JNIEnv *env, jclass cls) {
   (void)env; (void)cls;
   return ajustes_tunneling();
+}
+
+JNIEXPORT jboolean JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeBarrasPretas(JNIEnv *env, jclass cls) {
+  (void)env; (void)cls;
+  return barraspretas_ativo();
 }
 
 // #641: 1 = match the panel refresh rate to the video frame rate.

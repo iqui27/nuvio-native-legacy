@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.net.Uri
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.view.PixelCopy
 import android.widget.ImageView
 import android.os.Handler
@@ -171,6 +172,7 @@ object NvPlayer {
     @JvmStatic external fun nativeIniciar()
     @JvmStatic external fun nativeLimitedStatus(): Int
     @JvmStatic external fun nativeTunneling(): Boolean
+    @JvmStatic external fun nativeBarrasPretas(): Boolean
     @JvmStatic external fun nativeAfr(): Int
     @JvmStatic external fun nativeEvento(tipo: Int, a: Int, b: Int)
     // flags (#287): 1 = forcada (SELECTION_FLAG_FORCED), 2 = SDH
@@ -2003,6 +2005,9 @@ object NvPlayer {
     private fun aplicarJanela() {
         val c = camada ?: return
         val sv = superficie ?: return
+        try {
+            c.setBackgroundColor(if (nativeBarrasPretas()) Color.BLACK else Color.TRANSPARENT)
+        } catch (_: UnsatisfiedLinkError) { c.setBackgroundColor(Color.TRANSPARENT) }
         var cw = c.width
         var ch = c.height
         if (cw < 1 || ch < 1) {

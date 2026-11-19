@@ -389,3 +389,4 @@
   0, // conversionBufferConnectionsLocal: 1, Standard continuous request (R14)
   1, 1, 1, // bufferDataLocal/ramOverlayLocal/ramGreenLocal: Desligado
   0, // bufferRamReduzLocal: Ligado (reducao automatica mantem a protecao)
+  1, /* barrasPretasLocal: Desligado */

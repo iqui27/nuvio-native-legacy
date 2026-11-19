@@ -1,5 +1,6 @@
 #!/bin/bash
 set -eu
 cd "$(dirname "$0")/.."
-cc -O1 -g -Isrc src/barraspretas.c tests/barraspretas.c -DNV_TEST_DADOS -o /tmp/nv-barraspretas 2>/dev/null || cc -O1 -g -Isrc src/barraspretas.c -o /tmp/nv-barraspretas -DSTUB
+cc -O1 -DAJUSTES_TESTE=1 -Isrc tests/barraspretas.c -o /tmp/nv-barraspretas && /tmp/nv-barraspretas
+grep -q nativeBarrasPretas android/app/src/main/java/space/nuvio/nativelegacy/NvPlayer.kt
 echo "barraspretas: ok"
