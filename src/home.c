@@ -6256,7 +6256,8 @@ static void desenhaHero(Uint32 agora, float saida) {
         // PONTOS DE PAGINA no lugar do "1 / 10" (dono, 06/10): no canto
         // direito, na altura do botao. Esquerda/direita do controle continuam
         // trocando o destaque; as setas aqui sao so a dica.
-        if (btnFoco) {
+        // #348: pontos do carrossel com foco no destaque
+        if (btnFoco || focoHero) {
           int p = heroPosDe(heroIntencao());
           desenhaPontosHero(homeRetratoTelefone() ? homeConteudoDireita() : NV_TELA_W - homeConteudoX(), by + bh * 0.5f,
                             n, p < 0 ? 0 : p, aBtn);
