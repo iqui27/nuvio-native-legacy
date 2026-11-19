@@ -1078,7 +1078,8 @@ static int ativoInterno(double pos,double*fim,int*tipo,int automatico){
     int dentro=trechos[i].fim>0.0
                ? (pos>=trechos[i].inicio&&pos<trechos[i].fim)
                : (pos>=trechos[i].inicio);
-    if(trechos[i].tipo==INTRO_PREVIA||trechos[i].tipo==INTRO_POS_CREDITOS)continue;   // sem botao proprio (CHAVES); a cena nunca se pula
+    if(trechos[i].tipo==INTRO_PREVIA)continue;
+    if(trechos[i].tipo==INTRO_POS_CREDITOS){if(!mostrarCena)continue;}   // sem botao proprio (CHAVES); a cena nunca se pula
     if(dentro&&valido(i)){
       // "Pular encerramento" cai no fim do proprio encerramento: a previa ou a
       // cena que vem depois e assistida (quem nao quer ve-la usa o cartao).
@@ -1116,15 +1117,16 @@ int intro_auto_ativo(double pos,double*fim,int*tipo){
 // 10 s se nao estiver focado, e so volta enquanto os controles (osd) estao de
 // pe dentro da janela. Chamado a cada quadro; `agora` em segundos monotonicos.
 int intro_botao(double pos,double agora,int osd,int focado,double*fim,int*tipo){
-  return intro_botao_config(pos,agora,osd,focado,fim,tipo,1,1,1);
+  return intro_botao_config(pos,agora,osd,focado,fim,tipo,1,1,1,0);
 }
 int intro_botao_config(double pos,double agora,int osd,int focado,double*fim,int*tipo,
-                       int mostrarIntro,int mostrarResumo,int mostrarCreditos){
+                       int mostrarIntro,int mostrarResumo,int mostrarCreditos,int mostrarCena){
   int i,idx=-1,vis=0;
   pthread_mutex_lock(&trava);
   for(i=0;i<nTrechos;i++){
     int dentro=trechos[i].fim>0.0?(pos>=trechos[i].inicio&&pos<trechos[i].fim):(pos>=trechos[i].inicio);
-    if(trechos[i].tipo==INTRO_PREVIA||trechos[i].tipo==INTRO_POS_CREDITOS)continue;
+    if(trechos[i].tipo==INTRO_PREVIA)continue;
+    if(trechos[i].tipo==INTRO_POS_CREDITOS){if(!mostrarCena)continue;}
     if(trechos[i].tipo==INTRO_ABERTURA&&!mostrarIntro)continue;
     if(trechos[i].tipo==INTRO_RESUMO&&!mostrarResumo)continue;
     if(trechos[i].tipo==INTRO_CREDITOS&&!mostrarCreditos)continue;
