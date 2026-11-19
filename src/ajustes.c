@@ -798,7 +798,6 @@ typedef enum {
   AJ_REMEMBER_PROFILE,
   // Matis94: botoes de pular por trecho, por perfil desta TV.
   AJ_SHOW_SKIP_INTRO, AJ_SHOW_SKIP_RECAP, AJ_SHOW_SKIP_CREDITS,
-  AJ_SHOW_SKIP_CENA,  /* #342 */
   // DIAGNOSTICO: cartao de download do registro (botao azul no painel do
   // registro), opt-in e so desta TV. Desligado, so o cartao some: o registro
   // comum e a pagina local continuam exatamente iguais.
@@ -818,6 +817,8 @@ typedef enum {
   AJ_BUFFER_NATIVE_CONNECTIONS, AJ_BUFFER_CONVERSION_CONNECTIONS,
   // Player buffer telemetry + remote toggles (Matis94 C3), append-only, local.
   AJ_BUFFER_DADOS, AJ_RAM_OVERLAY, AJ_RAM_VERDE, AJ_BUFFER_RAM_REDUZ,
+  // Botao flutuante "Pular cena" em trechos pos-creditos. LOCAL, append-only (#342).
+  AJ_SHOW_SKIP_CENA,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
