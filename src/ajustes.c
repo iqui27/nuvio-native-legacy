@@ -818,7 +818,6 @@ typedef enum {
   AJ_BUFFER_NATIVE_CONNECTIONS, AJ_BUFFER_CONVERSION_CONNECTIONS,
   // Player buffer telemetry + remote toggles (Matis94 C3), append-only, local.
   AJ_BUFFER_DADOS, AJ_RAM_OVERLAY, AJ_RAM_VERDE, AJ_BUFFER_RAM_REDUZ,
-  AJ_SHOW_SKIP_CENA,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
