@@ -9331,14 +9331,16 @@ static void *buscarEps(void *u) {
     // /meta/series/tt13293588 sao titulos DIFERENTES no Cinemeta: aberto uma
     // vez como filme, o corpo errado ficava no cache e a abertura seguinte,
     // ja como serie, lia "meta do cache" com 0 episodios (log 2043).
-    desc_meta_chave(chave, sizeof chave, tipos[ti], serie);
-    free(corpo);
-    corpo = metaCacheObter(chave);
-    marco(corpo ? "episodios: meta do cache" : "episodios: baixando meta");
-    if (!corpo) {
-      corpo = metaprov_meta(tipos[ti], serie, 25, NULL);   // Nuvio, depois Cinemeta
-      if (!corpo) { if (ultimo) break; continue; }
-      metaCacheGuardar(chave, corpo);
+    { int prefAddon = ajustes_meta_externo();
+      metaprov_chave_episodios(chave, sizeof chave, tipos[ti], serie, prefAddon);
+      free(corpo);
+      corpo = metaCacheObter(chave);
+      marco(corpo ? "episodios: meta do cache" : "episodios: baixando meta");
+      if (!corpo) {
+        corpo = metaprov_meta_ficha_episodios(tipos[ti], serie, 25, prefAddon, NULL);
+        if (!corpo) { if (ultimo) break; continue; }
+        metaCacheGuardar(chave, corpo);
+      }
     }
     ehFilme = strcmp(tipos[ti], "series") != 0;
     if (ultimo || desc_meta_tem_temporadas(corpo)) break;
@@ -9367,15 +9369,19 @@ static void *buscarEps(void *u) {
   if (!ehFilme && viaCatalogo)
     epsDoAddon = episodiosDoCatalogo(alvoItem, it->titulo, serie, &mf, &tp);
   else if (!ehFilme) {
-    int nCine = publicarEpisodiosPendentes(corpo, alvoItem, it->titulo, &tp);
+    int nCine = 0;
+    // #794: com preferencia pelo addon de metadados, nao publica a lista do Cinemeta.
+    if (!externo) {
+      nCine = publicarEpisodiosPendentes(corpo, alvoItem, it->titulo, &tp);
+      if (nCine >= VIDEOS_MAX) nCine = desc_meta_n_episodios(corpo);
+    }
     // Temporada e data de cada episodio para a reserva do still: quando o
     // TMDB divide a serie em outras temporadas (One Piece), e por elas que o
     // still do TMDB e achado (artereserva.h).
-    arte_reserva_episodios(serie, corpo);
+    if (corpo) arte_reserva_episodios(serie, corpo);
     // A disputa e de distintos contra distintos, os dois do corpo INTEIRO: o
     // nCine publicado para em VIDEOS_MAX, e contra ele uma lista com os mesmos
     // episodios acima do teto "sabia mais" so por nao estar cortada.
-    if (nCine >= VIDEOS_MAX) nCine = desc_meta_n_episodios(corpo);
     epsDoAddon = episodiosDoAddon(alvoItem, serie, it->titulo, corpo, nCine, aplicar, &tp);
   }
   // O MAPA DE EPISODIOS VISTOS NAO E PEDIDO AQUI, e essa linha existe para dizer

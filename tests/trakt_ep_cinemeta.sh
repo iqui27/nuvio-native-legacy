@@ -5,7 +5,14 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 dir=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-trakt-ep.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
+ld=(-Wl,-dead_strip)
+ff=(-ffunction-sections -fdata-sections)
+if [ "$(uname -s)" != Darwin ]; then
+  ld=(-Wl,--gc-sections)
+fi
+inc=(-Isrc)
+[ -d /opt/homebrew/include ] && inc+=(-I/opt/homebrew/include -I/opt/homebrew/include/SDL2)
 cc src/trakt.c src/metaep.c tests/stub_fichameta.c src/js.c src/metaprov.c tests/trakt_ep_cinemeta.c \
-  -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-  -o "$dir/teste" -O1 -g -Wall -Wextra -Wl,-dead_strip -lpthread
+  "${inc[@]}" "${ff[@]}" "${ld[@]}" \
+  -o "$dir/teste" -O1 -g -Wall -Wextra -lpthread
 "$dir/teste" | tail -3
