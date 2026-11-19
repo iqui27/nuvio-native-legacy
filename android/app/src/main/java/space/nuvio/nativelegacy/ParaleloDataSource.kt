@@ -264,13 +264,22 @@ class ParaleloDataSource(
         conferirCancelamento()
     }
 
+    private fun timeoutsParaHost(host: String?): Pair<Int, Int> {
+        val h = host?.lowercase() ?: return 15000 to 20000
+        if (h.contains("real-debrid") || h.contains("alldebrid") || h.contains("debrid.") ||
+            h.contains("torbox")) return 25000 to 60000
+        return 15000 to 20000
+    }
+
     private fun conectar1(u: URL, ini: Long, ultimo: Long): HttpURLConnection {
         conferirCancelamento()
         val c = MediaHttpBudget.open(u, "player", novaConexao, ::conferirCancelamento)
         ativas.add(c)
         if (fechado) { desconectar(c); throw cancelado() }
-        c.connectTimeout = 15000
-        c.readTimeout = 20000
+        val (connectMs, readMs) = timeoutsParaHost(u.host)
+        c.connectTimeout = connectMs
+        c.readTimeout = readMs
+        if (connectMs > 15000) Log.i("ParaleloDataSource", "[debrid] timeouts connect=${connectMs}ms read=${readMs}ms host=${u.host}")
         // Redirecionamento seguido A MAO (conectar): o HttpURLConnection nao
         // segue troca de protocolo (https -> http), e o AIOStreams/ElfHosted faz
         // exatamente isso — a fonte ficava em "Opening source" com um 302.
