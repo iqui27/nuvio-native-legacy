@@ -125,7 +125,12 @@ static int noIdioma(const AudioCand *c, int n, const char *pref) {
   int i, melhor = -1, nota = 0, dtsMelhor = -1, dtsNota = 0, a;
   for (i = 0; i < n; i++) {
     if (!c[i].pode || !c[i].idioma || !c[i].idioma[0] || !ling_casa(c[i].idioma, pref)) continue;
-    a = ling_afinidade(c[i].idioma, pref);
+    if (ling_prefere_regional(pref))
+      a = !strcasecmp(c[i].idioma, pref) ? 3
+        : (ling_afinidade(c[i].idioma, pref) > 2 ? 2 : 0);
+    else
+      a = !strcasecmp(c[i].idioma, pref) ? 3 : (ling_casa(c[i].idioma, pref) ? 1 : 0);
+    if (!a) continue;
     if (!c[i].dts) {
       if (a > nota) { nota = a; melhor = i; }
     } else if (a > dtsNota) {

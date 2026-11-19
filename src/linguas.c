@@ -233,7 +233,9 @@ int ling_afinidade(const char *cod, const char *pref) {
         return !strcmp(ling_selo(cod), "PT-BR") ? 3 : (ling_casa(cod, "pt") ? 1 : 0);
       if (!strcasecmp(pref, "pt-pt") || !strcasecmp(pref, "pt_pt"))
         return !strcmp(ling_selo(cod), "PT-PT") ? 3 : (ling_casa(cod, "pt") ? 1 : 0);
-      return 2;
+      /* Legenda com pref genérica pt: PT-BR (pob) ganha de pt genérico (#777). */
+      if (!strcmp(fc, "pt"))
+        return !strcmp(ling_selo(cod), "PT-BR") ? 3 : 2;
     }
     if (!strcmp(fp, "es") && !strcmp(fc, "es")) {
       if (!strcasecmp(pref, "es-419") || !strcasecmp(pref, "es_419")) {
@@ -252,6 +254,14 @@ int ling_afinidade(const char *cod, const char *pref) {
     }
   }
   return !strcasecmp(cod, pref) ? 3 : 2;
+}
+
+int ling_prefere_regional(const char *pref) {
+  if (!pref || !*pref) return 0;
+  return !strcasecmp(pref, "es-419") || !strcasecmp(pref, "es_419") ||
+         !strcasecmp(pref, "es-es") || !strcasecmp(pref, "es_es") ||
+         !strcasecmp(pref, "pt-br") || !strcasecmp(pref, "pt_br") ||
+         !strcasecmp(pref, "pt-pt") || !strcasecmp(pref, "pt_pt");
 }
 
 // ------------------------------------------------------------ preferencias
