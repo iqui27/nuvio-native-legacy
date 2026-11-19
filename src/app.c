@@ -6492,6 +6492,24 @@ void app_atualizar(float dt, Uint32 agora) {
       abrirPessoa(&pedPessoa);
     } else if (tela == TELA_BUSCA && busca_pediu_abrir(&idx)) {
       if (busca_item_focado(&it) && it.indice == idx) abrirTitulo(&it, 1, 1); else abrirPorIndice(idx);
+    } else if (tela == TELA_BIBLIOTECA && biblioteca_pediu_torbox_play()) {
+      int titulo = 0;
+      if (cat_n() < 1) {
+        CatItem z = {0};
+        snprintf(z.titulo, sizeof z.titulo, "%s", "TorBox");
+        snprintf(z.tipo, sizeof z.tipo, "movie");
+        titulo = cat_acrescentar(&z);
+        if (titulo < 0) titulo = 0;
+      }
+      stream_definir_atual(-1);
+      limparFonteVOD();
+      parteZerar();
+      parteDesde = SDL_GetTicks();
+      parteFase = PF_LINK;
+      partePos = -1;
+      reabrirTitulo(titulo);
+      player_abrir(titulo, NULL);
+      trocarTela(TELA_PLAYER);
     } else if (tela == TELA_BIBLIOTECA && biblioteca_pediu_abrir(&idx)) {
       abrirPorIndice(idx);
     } else if (tela == TELA_PERFIL) {
