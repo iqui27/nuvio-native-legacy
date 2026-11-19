@@ -417,6 +417,7 @@ namespace NuvioTpk
             lock (trocaTrava)
             {
                 minha = Interlocked.Increment(ref sessao);
+                if (abrir != null) { volAlvo = 1f; volPedido = false; }
                 fio?.Fechar();
                 var velho = player; player = null;
                 var prime = primer; primer = null; primerGen++;
@@ -444,9 +445,6 @@ namespace NuvioTpk
                 }
             });
             novo.Post(async _ => {
-                // #603/#717: Parar limpa o alvo; nova abertura preserva o volume que
-                // trailer.c ja postou no fio antes do Player existir.
-                if (abrir == null) { volAlvo = 1f; volPedido = false; }
                 if (await Task.WhenAny(soltar, Task.Delay(PrazoPararMs)) != soltar || !await soltar) {
                     Log("[video] tpk parar nao confirmou; player indisponivel, processo preservado");
                     lock (trocaTrava) { if (minha == sessao && geracao != 0) NvVid.ErroGeracao(geracao, -3, 0); }
@@ -454,6 +452,7 @@ namespace NuvioTpk
                 }
                 if (minha != Volatile.Read(ref sessao)) return;
                 Log("[video] tpk parar confirmado (fio video)");
+                if (abrir == null) { volAlvo = 1f; volPedido = false; }
                 if (abrir != null) abrir(minha);
             }, null);
         }
