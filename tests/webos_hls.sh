@@ -15,9 +15,11 @@ ffmpeg -v error -f lavfi -i testsrc2=s=64x64:r=25:d=7 \
   -map 0:v -map 1:a -map 2:a -ac:a:0 6 -c:a:0 dca -strict experimental -b:a:0 768k \
   -c:a:1 aac -metadata:s:a:1 language=pol \
   -c:v libx264 -preset ultrafast -g 25 -sc_threshold 0 "$work/dts.mkv"
+hdr10='hdr10=1:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:master-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1):max-cll=1000,400'
 ffmpeg -v error -f lavfi -i testsrc2=s=64x64:r=25:d=7 \
   -f lavfi -i sine=sample_rate=48000:d=7 -ac 6 -c:a ac3 \
-  -c:v libx265 -x265-params 'bframes=0:pools=1:frame-threads=1:log-level=error:keyint=25:scenecut=0' \
+  -c:v libx265 -pix_fmt yuv420p10le \
+  -x265-params "bframes=0:pools=1:frame-threads=1:log-level=error:keyint=25:scenecut=0:$hdr10" \
   "$work/plain.mkv"
 # Distinct AAC tones in an MP4 donor identify the explicitly chosen stream.
 ffmpeg -v error -f lavfi -i sine=frequency=330:sample_rate=48000:d=7 \
@@ -35,6 +37,7 @@ ffprobe -v error -show_streams -show_packets -show_data -of json "$work/dv-sourc
 python3 tests/dv7_fixture.py "$work" --indexed
 # Remux adds Matroska Cues and retains the fixture's Dolby Vision track mapping.
 ffmpeg -v error -i "$work/fel.mkv" -map 0 -c copy -strict unofficial "$work/indexed.mkv"
+ffmpeg -v error -i "$work/mel.mkv" -map 0 -c copy -strict unofficial "$work/indexed-mel.mkv"
 
 # More than 60 seconds without a video keyframe, with enough encoded data to
 # exceed the fMP4 fragment budget when everything is staged at once.
@@ -62,7 +65,7 @@ data[:4096] = header
 PY_FIXTURE
 
 "${CC:-cc}" -std=gnu11 -O1 -g -I"$prefix/include" -Isrc \
-  -DNV_WEBOS -DNV_WEBOS_HLS_TEST -DNV_DTS_FFMPEG -DNV_DV7_CONVERSION \
+  -DNV_WEBOS -DNV_WEBOS_HLS_TEST -DNV_DTS_FFMPEG -DNV_DV7_CONVERSION -DNV_DV7_MAPPING_TEST \
   tests/webos_hls.c src/dts/dts_hls_tpk.c src/dts/dts_remux.c src/dts/dts_engine.c src/rede.c src/redeurl.c \
   -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group \
   "$dv7/libnuvio_dv7.a" -lz -lm -lpthread -ldl -o "$work/server"

@@ -7,6 +7,8 @@ int main(int argc, char **argv) {
   char url[128];
   if (argc != 3 && argc != 4 && argc != 5 && argc != 8) return 1;
   DtsWebosHls options = { .dv7 = atoi(argv[2]), .allow_dts = !atoi(argv[2]) };
+  const char *mapping = getenv("NV_TEST_P7_MAPPING");
+  if (mapping) options.preserve_mapping = atoi(mapping);
   if (argc == 4 || argc == 5) options.buffer_mib = atoi(argv[3]);
   if (argc == 8) {
     options.external_url = argv[3];

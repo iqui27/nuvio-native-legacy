@@ -2,6 +2,7 @@
 import array
 import contextlib
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -15,7 +16,7 @@ origin = f"http://127.0.0.1:{(work / 'port').read_text()}/"
 
 
 @contextlib.contextmanager
-def playback(filename, dv7, donor=None, buffer_mib=None, offset=0, speed=0, track=1, ordinal=None):
+def playback(filename, dv7, donor=None, buffer_mib=None, offset=0, speed=0, track=1, ordinal=None, mapping=False):
     cmd = [work / 'server', urljoin(origin, filename), str(dv7)]
     if donor:
         cmd += [urljoin(origin, donor), str(buffer_mib or 0), str(track), str(offset), str(speed)]
@@ -24,7 +25,7 @@ def playback(filename, dv7, donor=None, buffer_mib=None, offset=0, speed=0, trac
     elif buffer_mib:
         cmd += [str(buffer_mib)]
     process = subprocess.Popen(
-        cmd,
+        cmd, env={**os.environ, 'NV_TEST_P7_MAPPING': str(int(mapping))},
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
     )
     try:
@@ -120,40 +121,90 @@ with playback('short-source.mkv', 0) as base:
 assert 'MKV tail: unverified, stop=demux-eof' in (work / 'short-source.mkv.log').read_text()
 
 
-with playback('indexed.mkv', 1) as base:
-    master = get(base)
-    assert re.search(rb'CODECS="hvc1\.[ABC]?\d+\.[0-9A-F]+\.[LH]\d+(?:\.[0-9A-F]{2})*,ac-3"', master)
-    assert b'VIDEO-RANGE=PQ' in master and b'SUPPLEMENTAL-CODECS="dvh1.08.06/db1p"' in master
-    playlist = get(base, 'v.m3u8')
-    assert b'#EXT-X-MAP:URI="init.mp4"' in playlist
-    seg_names = re.findall(rb'^seg\d+\.m4s$', playlist, re.M)
-    assert len(seg_names) >= 3, playlist
-    init = get(base, 'init.mp4')
-    assert boxes(init) == [b'ftyp', b'moov'], boxes(init)
-    segments = {}
-    for i in (2, 0, 1, 2):
-        seg = get(base, seg_names[i].decode())
-        assert boxes(seg) == [b'moof', b'mdat'], boxes(seg)
-        info = probe(f'dv7-{i}.mp4', init + seg, packets=True)
-        video, audio = info['streams']
-        assert video['codec_tag_string'] == 'hvc1'
-        dv = next(s for s in video['side_data_list'] if s.get('dv_profile') == 8)
-        assert dv['dv_bl_signal_compatibility_id'] == 1 and dv['el_present_flag'] == 0
-        assert audio['codec_name'] == 'ac3' and audio['channels'] == 6
-        packets = [p for p in info['packets'] if p['codec_type'] == 'video']
-        nals = list(hevc_nals(packets[0]))
-        assert all((nal[0] >> 1) & 63 != 63 for nal in nals)
-        assert (work / 'fel-output.nal').read_bytes() in nals
-        dts = float(packets[0]['dts_time'])
-        if i in segments:
-            assert abs(segments[i] - dts) < 0.05, (segments[i], dts)
-        segments[i] = dts
-    assert 1.9 < segments[1] - segments[0] < 2.1, segments
-    assert 3.9 < segments[2] - segments[0] < 4.1, segments
-    print('DV7 HLS fMP4, converted P8.1 RPU, AC-3 5.1 and segment timestamps passed.')
-log = (work / 'indexed.mkv.log').read_text()
-assert 'input audio ordinal=0 stream=1 selected=0 codec=truehd' in log
-assert 'input audio ordinal=1 stream=2 selected=1 codec=ac3' in log
+def nal_type(nal):
+    return (nal[0] >> 1) & 63
+
+
+def base_layer_frames(packets):
+    return [tuple(nal for nal in hevc_nals(packet)
+                  if nal_type(nal) < 32 and not (nal[0] & 1 or nal[1] >> 3))
+            for packet in packets if packet['codec_type'] == 'video']
+
+
+def hdr10_metadata(media):
+    frames = json.loads(subprocess.check_output([
+        'ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_frames',
+        '-show_entries', 'frame=color_transfer,color_primaries,side_data_list', '-of', 'json', media,
+    ]))['frames']
+    assert frames and all(frame.get('color_transfer') == 'smpte2084'
+                          and frame.get('color_primaries') == 'bt2020' for frame in frames)
+    names = {'Mastering display metadata', 'Content light level metadata'}
+    return {sd['side_data_type']: sd for frame in frames for sd in frame.get('side_data_list', [])
+            if sd['side_data_type'] in names}
+
+
+def check_dv7_playlist(filename, kind, mapping):
+    rpu_file = f'{kind}-mapping-output.nal' if mapping else f'{kind}-output.nal'
+    expected_rpu = (work / rpu_file).read_bytes()
+    source = json.loads(subprocess.check_output([
+        'ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_packets', '-show_data',
+        '-of', 'json', work / filename,
+    ]))
+    source_frames = base_layer_frames(source['packets'])
+    source_hdr10 = hdr10_metadata(work / filename)
+    assert 'Mastering display metadata' in source_hdr10
+    assert source_hdr10['Content light level metadata']['max_content'] == 1000
+    assert source_hdr10['Content light level metadata']['max_average'] == 400
+
+    with playback(filename, 1, mapping=mapping) as base:
+        master = get(base)
+        assert re.search(rb'CODECS="hvc1\.[ABC]?\d+\.[0-9A-F]+\.[LH]\d+(?:\.[0-9A-F]{2})*,ac-3"', master)
+        assert b'VIDEO-RANGE=PQ' in master and b'SUPPLEMENTAL-CODECS="dvh1.08.06/db1p"' in master
+        playlist = get(base, 'v.m3u8')
+        assert b'#EXT-X-MAP:URI="init.mp4"' in playlist
+        seg_names = re.findall(rb'^seg\d+\.m4s$', playlist, re.M)
+        assert len(seg_names) >= 3, playlist
+        init = get(base, 'init.mp4')
+        assert boxes(init) == [b'ftyp', b'moov'], boxes(init)
+        segments = {}
+        for i in (2, 0, 1, 2):
+            seg = get(base, seg_names[i].decode())
+            assert boxes(seg) == [b'moof', b'mdat'], boxes(seg)
+            media = f'{kind}-{int(mapping)}-{i}.mp4'
+            info = probe(media, init + seg, packets=True)
+            video, audio = info['streams']
+            assert video['codec_tag_string'] == 'hvc1'
+            dv = next(s for s in video['side_data_list'] if s.get('dv_profile') == 8)
+            assert dv['dv_bl_signal_compatibility_id'] == 1
+            assert dv['rpu_present_flag'] == dv['bl_present_flag'] == 1 and dv['el_present_flag'] == 0
+            assert audio['codec_name'] == 'ac3' and audio['channels'] == 6
+            packets = [p for p in info['packets'] if p['codec_type'] == 'video']
+            assert packets
+            for packet in packets:
+                nals = list(hevc_nals(packet))
+                assert all(nal_type(nal) != 63 and not (nal[0] & 1 or nal[1] >> 3) for nal in nals)
+                assert [nal for nal in nals if nal_type(nal) == 62] == [expected_rpu]
+            frames = base_layer_frames(packets)
+            assert all(frames) and any(source_frames[start:start + len(frames)] == frames
+                                       for start in range(len(source_frames) - len(frames) + 1))
+            if i not in segments:
+                assert hdr10_metadata(work / media) == source_hdr10
+            dts = float(packets[0]['dts_time'])
+            if i in segments:
+                assert abs(segments[i] - dts) < 0.05, (segments[i], dts)
+            segments[i] = dts
+        assert 1.9 < segments[1] - segments[0] < 2.1, segments
+        assert 3.9 < segments[2] - segments[0] < 4.1, segments
+    log = (work / f'{filename}.log').read_text()
+    assert 'input audio ordinal=0 stream=1 selected=0 codec=truehd' in log
+    assert 'input audio ordinal=1 stream=2 selected=1 codec=ac3' in log
+    print(f'P7 {kind.upper()} → P8.1 HLS, mapping {"on" if mapping else "off"}: '
+          'RPU, base layer, HDR10 metadata and seek passed.')
+
+
+for kind, fixture in (('fel', 'indexed.mkv'), ('mel', 'indexed-mel.mkv')):
+    for mapping in (False, True):
+        check_dv7_playlist(fixture, kind, mapping)
 
 with playback('plain.mkv', 1) as base:
     try:
