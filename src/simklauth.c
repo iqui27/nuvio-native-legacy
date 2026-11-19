@@ -1,4 +1,5 @@
 #include "simklauth.h"
+#include "simklbib.h"
 #include "perfisessao.h"
 #include "idioma.h"
 #include "nuvem.h"
@@ -97,6 +98,13 @@ static SmkNome arq(int p) {
   return n;
 }
 
+// A biblioteca guardada (simklbib.h) e do vinculo: sai junto com ele.
+static void bibliotecaApagar(int p) {
+  char n[40];
+  snprintf(n, sizeof n, SIMKLBIB_ARQ_FMT, p);
+  dados_apagar(n);
+}
+
 static void gravarEm(int p, const char *tk) {
   char buf[400];
   snprintf(buf, sizeof buf, "%s\n", tk);
@@ -166,6 +174,14 @@ int simklauth_carregar_perfil(int p) {
   return simklauth_carregar();
 }
 
+int simklauth_perfil(void) {
+  int p;
+  pthread_mutex_lock(&trava);
+  p = perfil;
+  pthread_mutex_unlock(&trava);
+  return p;
+}
+
 int simklauth_trocar_perfil(int p) {
   int antes;
   if (p <= 0) p = 1;
@@ -183,6 +199,7 @@ void simklauth_desconectar(void) {
   geracao++;
   zerarEstado();
   dados_gravar(arq(perfil).s, "!");
+  bibliotecaApagar(perfil);
   pthread_mutex_unlock(&trava);
 }
 
@@ -192,7 +209,7 @@ void simklauth_esquecer(void) {
   geracao++;
   zerarEstado();
   // LOGOUT: todos os perfis e o arquivo antigo.
-  for (p = 0; p <= SMK_PERFIS; p++) dados_apagar(arq(p).s);
+  for (p = 0; p <= SMK_PERFIS; p++) { dados_apagar(arq(p).s); bibliotecaApagar(p); }
   dados_apagar(SMK_ARQ_LEGADO);
   perfil = 1;
   pthread_mutex_unlock(&trava);
@@ -211,6 +228,7 @@ int simklauth_invalidar_se(unsigned long long cred) {
     geracao++;
     zerarEstado();
     dados_apagar(arq(perfil).s);
+    bibliotecaApagar(perfil);
   }
   pthread_mutex_unlock(&trava);
   return atual;

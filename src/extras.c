@@ -19,6 +19,8 @@
 #include "idiomacod.h"
 #include "linguas.h"
 extern void cat_historico_definir_id(const char *imdb, const char *tipo, int visto);
+extern int simkl_ativo(void) NV_PERFIL_OPCIONAL;
+extern int simkl_historico_aplicar(const char *imdb) NV_PERFIL_OPCIONAL;
 #include <pthread.h>
 #include <stdint.h>
 #include <string.h>
@@ -740,6 +742,9 @@ static void *buscar(void *arg) {
   const char *cabPub[3];
   char chavePub[140];
   int temChave = trakt_cabecalhos_publicos(cabPub, chavePub, sizeof chavePub);
+
+  if (parte != 1 && serie && simkl_ativo && simkl_ativo() && simkl_historico_aplicar)
+    simkl_historico_aplicar(id);
 
   // O QUE JA FOI VISTO VEM PRIMEIRO.
   //
@@ -1734,7 +1739,8 @@ void extras_pedir(const char *imdb, int serie, long tmdbId) {
   // produtoras e "Mais como este"; o MDBList alimenta as notas por fonte.
   // Antes o teste era so trakt_ativo — e uma conta sem Trakt perdia ate o
   // que nao depende dele.
-  if (!trakt_ativo() && !desc_chave_tmdb()[0] &&
+  if (!trakt_ativo() && !(simkl_ativo && simkl_ativo()) &&
+      !desc_chave_tmdb()[0] &&
       !(mdbChave[0] && ajustes_mdblist_ligado())) { esquecerPedido(); return; }
   // O campo do catalogo pode vir com episodio ("tt9737326:2:1"), que e o
   // formato que os addons de fonte usam. O Trakt so conhece o id do TITULO —

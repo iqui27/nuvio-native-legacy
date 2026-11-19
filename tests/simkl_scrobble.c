@@ -72,6 +72,9 @@ const char *simklauth_token(void) {
   if (!pthread_equal(pthread_self(), principal)) tokenLidoNoFio++;
   return tokenAtual;
 }
+// The saved Simkl library (simklbib.c) is not under test here.
+int simklauth_perfil(void) { return 1; }
+int dados_gravar_leve(const char *nome, const char *buf) { (void)nome; (void)buf; return 1; }
 unsigned long long simklauth_credencial_copiar(char *dst, size_t tam) {
   if (dst && tam) snprintf(dst, tam, "%s", tokenAtual);
   return credGeracao;

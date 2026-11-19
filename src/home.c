@@ -1403,8 +1403,8 @@ static const CatItem *cat_item_exato(int i) {
 // de "Continuar assistindo" (deitado, com o still do episodio quando a
 // "Miniatura do episodio" — useEpisodeThumbnailsInCw — esta ligada). O 3 e o
 // relato da Shield (teste 318.3): o ajuste existia sem nenhum chamador e o
-// card mostrava sempre o fundo da serie. Still que o cache sabe que nao vem
-// (404 do metahub) cai na arte do titulo, como no destaque.
+// card mostrava sempre o fundo da serie. Still do catalogo vence o Metahub;
+// sem um still valido, o card cai na arte do titulo.
 static const char *arte_card_retomada(const CatItem *item) {
   if (item && ajustes_cw_thumb_episodio() && !strcmp(item->tipo, "series")) {
     CatItem copia = *item;

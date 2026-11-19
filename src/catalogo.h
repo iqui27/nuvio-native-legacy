@@ -101,6 +101,7 @@ typedef struct {
   int  tvdbEp;
   int  restanteMin;
   char nomeEpisodio[120]; // titulo do episodio em andamento, nunca nome do arquivo
+  char thumbEpisodio[512]; // still do provedor para retomada quando o Metahub nao tem
   // Temporadas que a serie tem, na ordem. Sai do campo `videos` do Cinemeta,
   // buscado quando o titulo abre. 0 = ainda nao se sabe (ou e filme), e as
   // abas caem no padrao de 3 que existia fixo.

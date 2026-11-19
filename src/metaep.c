@@ -2,6 +2,7 @@
 #include "js.h"
 #include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 int metaep_temporada(const char *video, const char *fim) {
@@ -233,4 +234,93 @@ void metaep_scrobble_corpo(char *dst, size_t n, const char *showImdb,
   }
   snprintf(dst, n, "{\"movie\":{\"ids\":{\"imdb\":\"%s\"}},\"progress\":%.2f}",
            showImdb, pct);
+}
+
+typedef struct { int t, e; } MetaTE;
+
+static int metaTEComparar(const void *a, const void *b) {
+  const MetaTE *x = a, *y = b;
+  if (x->t != y->t) return x->t < y->t ? -1 : 1;
+  return (x->e > y->e) - (x->e < y->e);
+}
+
+int metaep_tvdb_indice(const char *corpo, MetaTvdbIndice *ix) {
+  const char *p;
+  MetaTE *v = NULL;
+  int n = 0, cap = 0, i;
+  if (!ix) return 0;
+  memset(ix, 0, sizeof *ix);
+  if (!corpo) return 0;
+  ix->falsas = js_videos_temporadas_falsas(corpo);
+  if (ix->falsas) return 1;
+  for (p = js_array(corpo, NULL, "videos"); p; p = js_prox(js_fim(p))) {
+    const char *fim = js_fim(p);
+    int t = metaep_temporada(p, fim), e = (int)js_num(p, fim, "episode", 0);
+    if (t < 0 || e <= 0) continue;
+    if (n == cap) {
+      MetaTE *nv = realloc(v, sizeof *v * (size_t)(cap ? cap * 2 : 256));
+      if (!nv) { free(v); return 0; }
+      v = nv;
+      cap = cap ? cap * 2 : 256;
+    }
+    v[n].t = t;
+    v[n].e = e;
+    n++;
+  }
+  if (!n) { free(v); return 1; }
+  qsort(v, (size_t)n, sizeof *v, metaTEComparar);
+  ix->faixas = calloc((size_t)n, sizeof *ix->faixas);
+  if (!ix->faixas) { free(v); return 0; }
+  for (i = 0; i < n;) {
+    MetaTempFaixa *f = &ix->faixas[ix->n++];
+    int proximo, parado = 0;
+    f->temporada = v[i].t;
+    f->primeiro = v[i].e;
+    proximo = v[i].e;
+    for (; i < n && v[i].t == f->temporada; i++) {
+      f->ultimo = v[i].e;
+      if (parado) continue;
+      if (v[i].e == proximo) proximo++;
+      else {
+        // A repeat ends the run at that number; a gap at the missing one.
+        f->contiguos = (v[i].e == proximo - 1 ? v[i].e : proximo) - f->primeiro;
+        parado = 1;
+      }
+    }
+    if (!parado) f->contiguos = proximo - f->primeiro;
+  }
+  free(v);
+  return 1;
+}
+
+static const MetaTempFaixa *metaFaixa(const MetaTvdbIndice *ix, int temporada) {
+  int lo = 0, hi = ix->n - 1;
+  while (lo <= hi) {
+    int m = (lo + hi) / 2;
+    if (ix->faixas[m].temporada == temporada) return &ix->faixas[m];
+    if (ix->faixas[m].temporada < temporada) lo = m + 1; else hi = m - 1;
+  }
+  return NULL;
+}
+
+int metaep_tvdb_global(const MetaTvdbIndice *ix, int temporada, int episodio,
+                       MetaEpInfo *out) {
+  const MetaTempFaixa *f, *ant;
+  if (!ix || ix->falsas || temporada <= 1 || episodio <= 0 || episodio > SHRT_MAX ||
+      !(f = metaFaixa(ix, temporada))) return 0;
+  ant = metaFaixa(ix, temporada - 1);
+  if (f->primeiro <= 1 || (ant ? ant->ultimo : 0) != f->primeiro - 1 ||
+      episodio > f->contiguos) return 0;
+  if (out) {
+    memset(out, 0, sizeof *out);
+    out->temporada = temporada;
+    out->episodio = f->primeiro + episodio - 1;
+  }
+  return 1;
+}
+
+void metaep_tvdb_indice_liberar(MetaTvdbIndice *ix) {
+  if (!ix) return;
+  free(ix->faixas);
+  memset(ix, 0, sizeof *ix);
 }

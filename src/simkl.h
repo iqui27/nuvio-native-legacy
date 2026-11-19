@@ -27,6 +27,8 @@
 //                                         episodes[{number}]}]}]; filme em
 //                                         movies[{ids}]; serie so com ids marca
 //                                         todos os episodios
+//   GET  /sync/all-items/all/all         historico com include_all_episodes e
+//                                         episode_watched_at por episodio
 //   POST /sync/history/remove             desmarcar, MESMA forma (remove-from-
 //                                         history). Sem seasons tira o titulo
 //                                         da biblioteca do Simkl;
@@ -41,8 +43,10 @@
 // mais e mais um nome que o CORS do servidor precisa aceitar. User-Agent sai
 // de rede.c.
 //
-// Anime next_to_watch 12, "12" or "E12" uses absolute numbering. Cached provider videos
-// map it to season/episode; missing mapping keeps a title-only CW entry.
+// Anime next_to_watch 12, "12" or "E12" uses absolute numbering. Simkl-only IDs
+// are expanded through /anime/{id}; available poster/external IDs are cached,
+// then provider videos map the absolute number to season/episode. Missing mappings
+// keep the title in CW without an episode.
 // Paused anime uses tvdb_season/tvdb_number from /sync/playback.
 // Scrobble (start/pause/stop) and history are declared below.
 //
@@ -165,6 +169,37 @@ int simkl_titulo_marcar_destino(const SimklDestino *, const char *, const char *
 int simkl_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd, int visto);
 int simkl_titulo_marcar(const char *imdb, const char *tipo, const int *temporadas,
                         int nt, int visto);
+
+// Importa os episodios vistos do Simkl para o mapa compartilhado do app.
+// A biblioteca vive na memoria da sessao: simkl_biblioteca_iniciar (ao abrir
+// o perfil) a traz em segundo plano — copia guardada (simklbib.h), e a rede so
+// quando /sync/activities mudou — e importa as series comuns. Nao bloqueia.
+void simkl_biblioteca_iniciar(void);
+// Uma lista de estado da biblioteca, na forma de /sync/all-items/<tipo>/<estado>
+// ({"<tipo>":[...]}, sem o historico de episodios): tipo "shows", "anime" ou
+// "movies"; estado "watching", "plantowatch", "hold", "completed", "dropped".
+// Bloqueia (fio de trabalho): a biblioteca conferida com o Simkl ha pouco.
+// NULL sem vinculo ou sem biblioteca. free pelo chamador.
+char *simkl_lista_corpo(const char *tipo, const char *estado);
+// 1 enquanto algum fio de carga roda (tambem o de uma sessao ja encerrada,
+// que so termina o pedido em voo e nao publica nada).
+int simkl_biblioteca_carregando(void);
+// A tela da serie, em fio de trabalho: as marcas DESTA serie (anime e o
+// recurso pelo TMDB precisam da serie aberta), sem pedido proprio; espera a
+// carga que estiver a caminho. Com a biblioteca de mais de dez minutos, pede
+// a conferencia das atividades em segundo plano. `_ler` aplica um JSON recebido.
+int simkl_historico_aplicar(const char *imdb);
+// A series' final episode list was published: if its numbering differs from
+// the one the Simkl anime history was mapped onto, map it again (own thread).
+void simkl_anime_lista_mudou(const char *imdb);
+// The episode after the last one watched on Simkl, in the numbering of the
+// final episode list now loaded for this series. 0 = unknown for this list.
+int simkl_anime_proximo(const char *imdb, int *t, int *e);
+// 1 when this series' watched marks were mapped from a Simkl anime entry in
+// this session: they follow the numbering of one episode list, and move when
+// another list replaces it.
+int simkl_anime_mapeado(const char *imdb);
+int simkl_historico_ler(const char *json, const char *imdb, uint64_t sessao);
 
 // --- scrobble do player (#459) ------------------------------------------------
 

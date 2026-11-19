@@ -14,6 +14,11 @@ void marco(const char *m) { (void)m; }
 static int nuvioGets, cineGets;
 static long long estreiaMs;
 static char estreiaId[48];
+static const char *simklProximo;
+
+int simkl_e_a_seguir(const char *id) {
+  return id && simklProximo && !strcmp(id, simklProximo);
+}
 
 static char *ler(const char *nome) {
   char path[200]; FILE *f; char *b; long n;
@@ -27,6 +32,12 @@ char *rede_baixar(const char *url, int s) {
   (void)s;
   if (strstr(url, "catalog.nuvio.tv") && strstr(url, "tt7587890")) {
     nuvioGets++; return ler("nuvio_the_rookie.json");
+  }
+  if (strstr(url, "catalog.nuvio.tv") && strstr(url, "tt0388629")) {
+    nuvioGets++;
+    return strdup("{\"meta\":{\"name\":\"One Piece\",\"videos\":["
+      "{\"season\":22,\"episode\":1124,"
+      "\"released\":\"2025-01-01T00:00:00Z\"}]}}");
   }
   if (strstr(url, "cinemeta") && strstr(url, "tt7587890")) {
     cineGets++; return ler("cinemeta_the_rookie.json");
@@ -80,6 +91,30 @@ int main(void) {
   assert(estreiaMs > 0);   // released do Cinemeta (2027)
   // Em nenhuma das duas: cai (nao ha S9E19 nem S10E1).
   assert(um(9, 19, &r) == 0);
+
+  // Without Simkl confirmation, a metadata guess at S22E1123 advances to the
+  // first listed global episode, E1124. Simkl's explicit next_to_watch is
+  // authoritative and must retain E1123 even if Nuvio omits it.
+  simklProximo = NULL;
+  memset(&r, 0, sizeof r);
+  snprintf(r.tipo, sizeof r.tipo, "series");
+  snprintf(r.imdb, sizeof r.imdb, "tt0388629:22:1123");
+  r.temporada = 22;
+  r.episodio = 1123;
+  assert(trakt_enfeitar_lote(&r, 1) == 1);
+  assert(r.temporada == 22 && r.episodio == 1124);
+
+  simklProximo = "tt0388629:22:1123";
+  memset(&r, 0, sizeof r);
+  snprintf(r.tipo, sizeof r.tipo, "series");
+  snprintf(r.imdb, sizeof r.imdb, "%s", simklProximo);
+  r.temporada = 22;
+  r.episodio = 1123;
+  assert(trakt_enfeitar_lote(&r, 1) == 1);
+  assert(r.temporada == 22 && r.episodio == 1123);
+  assert(!strcmp(r.imdb, simklProximo));
+  simklProximo = NULL;
+
   puts("trakt_ep_cinemeta: PASS");
   return 0;
 }

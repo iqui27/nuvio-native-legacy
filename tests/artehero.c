@@ -445,6 +445,12 @@ int main(void) {
     assert(!strcmp(artehero_url_episodio(&c),
                    "https://episodes.metahub.space/tt26545992/1/6/w1280.jpg")); }
   puts("ok  id de episodio: o :S:E nao entra na url");
+  { CatItem c = item("", "", "tt0388629:22:39");
+    c.temporada = 22; c.episodio = 39;
+    snprintf(c.thumbEpisodio, sizeof c.thumbEpisodio,
+             "https://image.tmdb.org/t/p/w500/episode.jpg");
+    assert(!strcmp(artehero_url_episodio(&c), c.thumbEpisodio)); }
+  puts("ok  still fornecido pelo catalogo substitui Metahub indisponivel");
 
   // O TAMANHO DO STILL SEGUE O NIVEL. Medido na C9: `original` chega a
   // 3840x2160 em varias series e custa 1,6 a 2,0 s de decodificacao; w1280

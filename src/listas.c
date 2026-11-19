@@ -3,6 +3,7 @@
 #include "musica.h"
 #include "trakt.h"
 #include "simklauth.h"
+#include "simkl.h"
 #include "nuvem.h"
 #include "descoberta.h"
 #include "colecoes.h"
@@ -706,34 +707,19 @@ static char     itEstado[16], itMidia[8];
 typedef struct {
   unsigned geracao;
   uint64_t sessao;
-  char estado[16], midia[8], cid[200], nome[120], token[400];
+  char estado[16], midia[8];
 } SimklTarefa;
-
-static char *fioSimklBaixar(const char *caminho, const SimklTarefa *t,
-                            const char *const *cab) {
-  char url[500];
-  snprintf(url, sizeof url,
-           "https://api.simkl.com%s?client_id=%s&app-name=%s"
-           "&app-version=1.0.1&extended=full",
-           caminho, t->cid, t->nome);
-  return rede_baixar_com(url, 20, cab);
-}
 
 static void *fioSimkl(void *u) {
   SimklTarefa *t = u;
-  char url[40], aut[430];
-  const char *cab[3];
   CatItem *lote = NULL;
   int n = 0, serie = !strcasecmp(t->midia, "TV");
-  snprintf(url, sizeof url, "/sync/all-items/%s/%s", serie ? "shows" : "movies",
-           t->estado);
-  snprintf(aut, sizeof aut, "Authorization: Bearer %s", t->token);
-  cab[0] = aut; cab[1] = "Accept: application/json"; cab[2] = NULL;
-  // All-items returns a complete snapshot. Size storage from the response,
-  // including anime's usual "show" envelope, rather than truncating at 120.
+  // The status list from the Simkl library in memory (simkl.c), not its own
+  // download: the same data as Continue watching and Saved. Size storage from
+  // it, including anime's usual "show" envelope, rather than truncating at 120.
   for (int part = 0; part < 2; part++) {
-    if (part) snprintf(url, sizeof url, "/sync/all-items/anime/%s", t->estado);
-    char *corpo = perfis_sessao_atual(t->sessao) ? fioSimklBaixar(url, t, cab) : NULL;
+    const char *tipo = part ? "anime" : serie ? "shows" : "movies";
+    char *corpo = perfis_sessao_atual(t->sessao) ? simkl_lista_corpo(tipo, t->estado) : NULL;
     if (!corpo) { free(lote); lote = NULL; n = 0; break; }
     int count = 0;
     static const char *keys[] = {"movies", "shows", "anime"};
@@ -804,10 +790,6 @@ void lst_abrir(const LstLista *l, const char *midia) {
     uint64_t sessao = perfis_sessao_geracao();
     if (!t || !perfis_sessao_travar(sessao)) { free(t); return; }
     t->sessao = sessao;
-    nuvem_url_escapar(nuvem_simkl_cliente(), t->cid, sizeof t->cid);
-    nuvem_url_escapar(nuvem_simkl_app()[0] ? nuvem_simkl_app() : "nuvio",
-                      t->nome, sizeof t->nome);
-    snprintf(t->token, sizeof t->token, "%s", simklauth_token());
     pthread_mutex_lock(&itTrava);
     t->geracao = itGeracao;
     snprintf(t->estado, sizeof t->estado, "%s", itEstado);
