@@ -271,15 +271,12 @@ void nv_tpk_config(int espera, int zero) { esperaMs = espera; swapZero = zero; }
 // pula ate ele devolver.
 __attribute__((visibility("default")))
 int nv_tpk_quadro(void) {
-  int r;
+  int r, refazSup = 0;
   if (contextoFalhou) return -1;
-  if (revalidarSuperficie) {
-    revalidarSuperficie = 0;
-    ctx = EGL_NO_CONTEXT;
-    dpy = EGL_NO_DISPLAY;
-    sup = EGL_NO_SURFACE;
-    nuiCorrente = 0;
-  }
+  pthread_mutex_lock(&trava);
+  refazSup = revalidarSuperficie;
+  if (refazSup && vez != VEZ_APP) revalidarSuperficie = 0;
+  pthread_mutex_unlock(&trava);
   if (ctx == EGL_NO_CONTEXT) {
     dpy = eglGetCurrentDisplay();
     sup = eglGetCurrentSurface(EGL_DRAW);
