@@ -22,10 +22,38 @@ int main(void) {
     fprintf(stderr, "es-ES deveria escolher faixa 0, veio %d\n", k);
     return 1;
   }
-  if (!ling_opcao_codigo(ling_opcao_n() - 2) || strcmp(ling_opcao_codigo(ling_opcao_n() - 2), "es-419")) {
-    fprintf(stderr, "es-419 nao esta no fim da lista de opcoes\n");
+  AudioCand dts[2];
+  memset(dts, 0, sizeof dts);
+  dts[0] = (AudioCand){ "es-ES", "dts", "Castellano DTS", 6, 1, 1, 0 };
+  dts[1] = (AudioCand){ "es-419", "dts", "Latino DTS", 6, 1, 1, 1 };
+  k = audioesc_escolher_com(dts, 2, NULL, "es-419", NULL, NULL, &o);
+  if (k != 1) {
+    fprintf(stderr, "es-419 com DTS deveria escolher faixa 1, veio %d\n", k);
     return 1;
   }
-  printf("audio_regional: es-419/pt variantes na lista e na ordem ok\n");
+  AudioCand pt[2];
+  memset(pt, 0, sizeof pt);
+  pt[0] = (AudioCand){ "por", "eac3", "Portugues PT", 6, 0, 1, 0 };
+  pt[1] = (AudioCand){ "pob", "eac3", "Portugues BR", 6, 0, 1, 1 };
+  k = audioesc_escolher_com(pt, 2, NULL, "pt", NULL, NULL, &o);
+  if (k != 0) {
+    fprintf(stderr, "pt generico deveria manter a primeira faixa, veio %d\n", k);
+    return 1;
+  }
+  const char *embEs[] = { "es-ES", "es-419" };
+  if (ling_legenda_auto("es-419", embEs, 2, 1, NULL, 0, 1) != 1) {
+    fprintf(stderr, "legenda embutida es-419 deveria escolher faixa 1\n");
+    return 1;
+  }
+  const char *embPt[] = { "pt-BR", "pt-PT" };
+  if (ling_legenda_auto("pt-pt", embPt, 2, 1, NULL, 0, 1) != 1) {
+    fprintf(stderr, "legenda embutida pt-pt deveria escolher faixa 1\n");
+    return 1;
+  }
+  if (!ling_opcao_codigo(ling_opcao_n() - 1) || strcmp(ling_opcao_codigo(ling_opcao_n() - 1), "es-es")) {
+    fprintf(stderr, "es-es nao esta nas opcoes regionais\n");
+    return 1;
+  }
+  printf("audio_regional: es-419/es-es/pt e legendas embutidas ok\n");
   return 0;
 }

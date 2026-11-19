@@ -233,11 +233,12 @@ int ling_afinidade(const char *cod, const char *pref) {
         return !strcmp(ling_selo(cod), "PT-BR") ? 3 : (ling_casa(cod, "pt") ? 1 : 0);
       if (!strcasecmp(pref, "pt-pt") || !strcasecmp(pref, "pt_pt"))
         return !strcmp(ling_selo(cod), "PT-PT") ? 3 : (ling_casa(cod, "pt") ? 1 : 0);
-      return !strcmp(ling_selo(cod), "PT-BR") ? 3 : 2;
+      return 2;
     }
     if (!strcmp(fp, "es") && !strcmp(fc, "es")) {
       if (!strcasecmp(pref, "es-419") || !strcasecmp(pref, "es_419")) {
-        if (!strcasecmp(cod, "es-419") || !strcasecmp(cod, "es_419") || !strcasecmp(cod, "es-mx"))
+        if (!strcasecmp(cod, "es-419") || !strcasecmp(cod, "es_419") || !strcasecmp(cod, "es-mx") ||
+            !strcasecmp(cod, "es_mx") || !strcasecmp(cod, "es_MX"))
           return 3;
         if (!strcasecmp(cod, "es-es") || !strcasecmp(cod, "es_es")) return 1;
         return 2;
@@ -404,7 +405,7 @@ static const char *OPCOES_COD[] = {
   // compatibilidade, nao estetica.
   "hr", "sr", "bs",
   // #777: variantes regionais NO FIM (regra do ajustes.txt).
-  "es-419", "pt-pt"
+  "es-419", "pt-pt", "es-es"
 };
 // LING_OPC_ORIGINAL e o indice do "~": fixo por compatibilidade com todo
 // ajustes.txt ja gravado (ver o comentario acima). Os idiomas novos entram
@@ -559,10 +560,37 @@ const char *ling_do_nome(const char *nome) {
 
 // ------------------------------------------------------------ legenda automatica
 
+static int melhorLegenda(const char *const *ids, int n, const char *pref, int forca) {
+  int i, melhor = -1, nota = -1, a;
+  for (i = 0; i < n; i++) {
+    if (!ids[i] || !ids[i][0] || ling_casa_forca(ids[i], pref) != forca) continue;
+    a = ling_afinidade(ids[i], pref);
+    if (a > nota) { nota = a; melhor = i; }
+  }
+  return melhor;
+}
+
+static int melhorLegendaEmbTipo(const char *const *emb, const int *tipoEmb, int nEmb,
+                                const char *pref, int forca, int tipo, int sdh) {
+  int i, melhor = -1, nota = -1, a;
+  for (i = 0; i < nEmb; i++) {
+    int t = tipoEmb ? tipoEmb[i] : LING_LEG_COMUM;
+    if (tipo >= 0) {
+      if (t != tipo) continue;
+    } else {
+      if (t == LING_LEG_FORCADA || t == LING_LEG_LETREIROS) continue;
+      if ((t == LING_LEG_SDH) != sdh) continue;
+    }
+    if (!emb[i] || !emb[i][0] || ling_casa_forca(emb[i], pref) != forca) continue;
+    a = ling_afinidade(emb[i], pref);
+    if (a > nota) { nota = a; melhor = i; }
+  }
+  return melhor;
+}
+
 int ling_legenda_auto(const char *pref,
                       const char *const *emb, int nEmb, int embFechado,
                       const char *const *add, int nAdd, int addFechado) {
-  int i;
   // Sem preferencia nao ha o que ligar: "sem filtro" nao e "ligue qualquer
   // uma". E "none" e a pessoa pedindo NENHUMA — ligar seria desobedecer.
   if (!pref || !*pref || !strcasecmp(pref, "none")) return LING_AUTO_NADA;
@@ -572,52 +600,51 @@ int ling_legenda_auto(const char *pref,
   // PREFERENCIA e vazia, e aqui ela nao e.
   // Dois passes (#205): quem pediu "hr" prefere a faixa "hr" a uma "hbs" que
   // apenas serve — o casamento EXATO de familia vem antes do conjunto.
-  { int forca;
-    for (forca = 1; forca >= 0; forca--)
-      for (i = 0; i < nEmb; i++)
-        if (emb[i] && emb[i][0] && ling_casa_forca(emb[i], pref) == forca) return i; }
+  { int forca, r;
+    for (forca = 1; forca >= 0; forca--) {
+      r = melhorLegenda(emb, nEmb, pref, forca);
+      if (r >= 0) return r;
+    } }
   // Os idiomas embutidos ainda podem chegar (a sonda do MKV nao voltou): pular
   // para o addon agora trocaria a legenda certa do arquivo por uma de fora.
   if (!embFechado) return LING_AUTO_ESPERA;
-  { int forca;
-    for (forca = 1; forca >= 0; forca--)
-      for (i = 0; i < nAdd; i++)
-        if (add[i] && add[i][0] && ling_casa_forca(add[i], pref) == forca) return nEmb + i; }
+  { int forca, r;
+    for (forca = 1; forca >= 0; forca--) {
+      r = melhorLegenda(add, nAdd, pref, forca);
+      if (r >= 0) return nEmb + r;
+    } }
   return addFechado ? LING_AUTO_NADA : LING_AUTO_ESPERA;
 }
 
 int ling_legenda_auto_tipo(const char *pref, const char *audio, int forcadaAuto,
                            const char *const *emb, const int *tipoEmb, int nEmb, int embFechado,
                            const char *const *add, int nAdd, int addFechado) {
-  int i, passo, forca;
+  int passo, forca;
   if (!pref || !*pref || !strcasecmp(pref, "none")) return LING_AUTO_NADA;
   // AUDIO NO IDIOMA DA LEGENDA: a forcada daquele idioma, ou nada. So a
   // embutida tem tipo; legenda de addon e sempre a inteira. Dentro de cada
   // tipo o casamento exato de familia vem antes do conjunto (#205).
   if (forcadaAuto && audio && *audio && ling_casa(audio, pref)) {
     for (passo = 0; passo < 2; passo++)
-      for (forca = 1; forca >= 0; forca--)
-        for (i = 0; i < nEmb; i++) {
-          int t = tipoEmb ? tipoEmb[i] : LING_LEG_COMUM;
-          if (t != (passo ? LING_LEG_LETREIROS : LING_LEG_FORCADA)) continue;
-          if (emb[i] && emb[i][0] && ling_casa_forca(emb[i], pref) == forca) return i;
-        }
+      for (forca = 1; forca >= 0; forca--) {
+        int r = melhorLegendaEmbTipo(emb, tipoEmb, nEmb, pref, forca,
+                                     passo ? LING_LEG_LETREIROS : LING_LEG_FORCADA, 0);
+        if (r >= 0) return r;
+      }
     // A forcada pode estar numa faixa cujo tipo ainda nao chegou (sonda do MKV).
     return embFechado ? LING_AUTO_NADA : LING_AUTO_ESPERA;
   }
   // A inteira: comum/completa primeiro, SDH so se nao houver outra — e, dentro
   // de cada tipo, familia exata antes do conjunto "hbs".
   for (passo = 0; passo < 2; passo++)
-    for (forca = 1; forca >= 0; forca--)
-      for (i = 0; i < nEmb; i++) {
-        int t = tipoEmb ? tipoEmb[i] : LING_LEG_COMUM;
-        if (t == LING_LEG_FORCADA || t == LING_LEG_LETREIROS) continue;
-        if ((t == LING_LEG_SDH) != passo) continue;
-        if (emb[i] && emb[i][0] && ling_casa_forca(emb[i], pref) == forca) return i;
-      }
+    for (forca = 1; forca >= 0; forca--) {
+      int r = melhorLegendaEmbTipo(emb, tipoEmb, nEmb, pref, forca, -1, passo);
+      if (r >= 0) return r;
+    }
   if (!embFechado) return LING_AUTO_ESPERA;
-  for (forca = 1; forca >= 0; forca--)
-    for (i = 0; i < nAdd; i++)
-      if (add[i] && add[i][0] && ling_casa_forca(add[i], pref) == forca) return nEmb + i;
+  for (forca = 1; forca >= 0; forca--) {
+    int r = melhorLegenda(add, nAdd, pref, forca);
+    if (r >= 0) return nEmb + r;
+  }
   return addFechado ? LING_AUTO_NADA : LING_AUTO_ESPERA;
 }
