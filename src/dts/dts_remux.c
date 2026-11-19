@@ -32,15 +32,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Real code only in the Samsung .tpk build with FFmpeg (and the host smoke
- * test). webOS also defines NV_DTS_FFMPEG but never remuxes: stubs there keep
- * its binary as it was. */
+/* Shared by the Samsung player, the webOS HLS experiment and host tests. */
 #include "../audsync.h"
 #include <stdatomic.h>
 static atomic_int audioOffsetMs;
 void dts_remux_set_audio_offset_ms(int ms) { atomic_store(&audioOffsetMs, audsync_offset_ms(ms)); }
 
-#if !defined(NV_DTS_FFMPEG) || !(defined(NV_TPK) || defined(NV_DTS_REMUX_TEST))
+#if !defined(NV_DTS_FFMPEG) || !(defined(NV_TPK) || defined(NV_DTS_REMUX_TEST) || defined(NV_WEBOS_HLS_TEST))
 int dts_remux_available(void) { return 0; }
 DtsRemux *dts_remux_open(const char *u, const char *h, int t, int s, double g, volatile int *c, char *err, size_t n) {
   (void)u; (void)h; (void)t; (void)s; (void)g; (void)c;
@@ -74,6 +72,9 @@ void dts_remux_gen_free(DtsRemuxGen *g) { (void)g; }
 void dts_remux_gen_interrupt(DtsRemuxGen *g) { (void)g; }
 double dts_remux_gen_start_s(const DtsRemuxGen *g) { (void)g; return 0; }
 void dts_remux_set_queue_budget_mib(int mib) { (void)mib; }
+#ifdef NV_WEBOS_HLS_TEST
+void dts_remux_set_webos(DtsRemux *r, int mode, int preserve) { (void)r; (void)mode; (void)preserve; }
+#endif
 #else
 
 #include <math.h>
@@ -88,6 +89,8 @@ void dts_remux_set_queue_budget_mib(int mib) { (void)mib; }
 #include <libavutil/channel_layout.h>
 #include <libavutil/opt.h>
 #include <libavutil/dovi_meta.h>
+#include <libavutil/intreadwrite.h>
+#include "dv7.h"
 #include <libswresample/swresample.h>
 
 #define LOOK 8                   /* video DTS lookahead (>= reorder depth) */
@@ -186,6 +189,7 @@ struct DtsRemux {
   char *url, *headers;
   DtsEngine *probe;                 /* reader of dts_remux_open, handed to the 1st generator */
   int vs, as, mov, stereo_aac;
+  int webos, dv7, preserveMapping;
   int audio_offset_ms;             /* stable across this source's segments and seeks */
   AVCodecParameters *vpar, *apar;
   AVRational vtb, atb, vfps;
@@ -232,6 +236,8 @@ struct DtsRemuxGen {
   int prog; int64_t progKf, progB48; double progStartS;
   /* muxer kept across consecutive segments (continuity counters run on) */
   AVFormatContext *oc; AVStream *ov, *oa;
+  int mp4Hls, dropHeader, sawRpu;
+  size_t fragmentBytes;
   int hevcFix;                      /* this muxer is MPEG-TS and the video is HEVC with hvcC */
   DtsRemuxWrite w; void *wop; int wfail; int64_t bytes;
   /* rolling log, every 30 s of media */
@@ -358,8 +364,13 @@ static int isConvertible(enum AVCodecID id) {
 }
 
 int dts_remux_available(void) {
+#ifdef NV_WEBOS_HLS_TEST
+  return avcodec_find_decoder(AV_CODEC_ID_DTS) && avcodec_find_encoder(AV_CODEC_ID_AC3) &&
+         av_guess_format("mpegts", NULL, NULL) && av_guess_format("mp4", NULL, NULL);
+#else
   return avcodec_find_decoder(AV_CODEC_ID_DTS) && avcodec_find_decoder(AV_CODEC_ID_TRUEHD) &&
          avcodec_find_encoder(AV_CODEC_ID_AC3) && av_guess_format("mpegts", NULL, NULL);
+#endif
 }
 
 static void registerEngine(DtsRemux *r, DtsEngine *e) {
@@ -429,6 +440,25 @@ DtsRemux *dts_remux_new(volatile int *cancel) {
   return r;
 }
 
+#ifdef NV_WEBOS_HLS_TEST
+void dts_remux_set_webos(DtsRemux *r, int mode, int preserveMapping) {
+  r->webos = mode;
+  r->preserveMapping = preserveMapping;
+  r->dv7 = mode != DTS_REMUX_WEBOS_DTS;
+}
+#endif
+
+static int audioSupported(const DtsRemux *r, enum AVCodecID codec) {
+#ifdef NV_WEBOS_HLS_TEST
+  if (r->webos) {
+    if (codec == AV_CODEC_ID_DTS) return r->webos != DTS_REMUX_WEBOS_DV7;
+    return r->dv7 && (codec == AV_CODEC_ID_AC3 || codec == AV_CODEC_ID_EAC3 || codec == AV_CODEC_ID_AAC);
+  }
+#endif
+  (void)r;
+  return isConvertible(codec);
+}
+
 static int isCancelled(DtsRemux *r) {
   int c;
   pthread_mutex_lock(&r->lock);
@@ -476,13 +506,14 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
     }
     if (p->codec_type == AVMEDIA_TYPE_VIDEO && r->vs < 0 && !(s->disposition & AV_DISPOSITION_ATTACHED_PIC)) r->vs = (int)i;
     if (p->codec_type == AVMEDIA_TYPE_AUDIO) {
-      if (isConvertible(p->codec_id) && primeiro < 0) { primeiro = (int)i; primeiroOrd = nAudio; }
-      if (nAudio == ordinal) { ordPedido = (int)i; if (isConvertible(p->codec_id)) ordAs = (int)i; }
+      if (audioSupported(r, p->codec_id) && primeiro < 0) { primeiro = (int)i; primeiroOrd = nAudio; }
+      if (nAudio == ordinal) { ordPedido = (int)i; if (audioSupported(r, p->codec_id)) ordAs = (int)i; }
       nAudio++;
     }
   }
   if (r->vs < 0) { fail(err, errn, "No video stream", 0); goto bad; }
   if (ordinal >= 0 && ordAs < 0) {
+    if (r->webos) { fail(err, errn, "Selected audio cannot use this HLS mode", 0); goto bad; }
     /* The k-th audio of the app's MKV reader is not DTS/TrueHD here (FFmpeg
      * skipped a track it could not parse?): the first convertible one. */
     printf("[dts-tpk] audio %d pedido nao e DTS/TrueHD no FFmpeg (%s, %d faixas de audio); usando a %d\n", ordinal,
@@ -490,7 +521,7 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
     fflush(stdout);
   }
   r->as = ordAs >= 0 ? ordAs : primeiro;
-  if (r->as < 0) { fail(err, errn, "No DTS/TrueHD track", 0); goto bad; }
+  if (r->as < 0) { fail(err, errn, r->webos ? "No supported audio track" : "No DTS/TrueHD track", 0); goto bad; }
   { int k = 0;
     for (unsigned i = 0; i < ic->nb_streams && (int)i < r->as; i++) if (ic->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) k++;
     r->info.audio_ordinal = k; }
@@ -521,7 +552,18 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
                                                            AV_PKT_DATA_DOVI_CONF);
       const AVDOVIDecoderConfigurationRecord *c = dv && dv->size >= (int)sizeof *c ? (const void *)dv->data : NULL;
       in->dv_profile = c ? c->dv_profile : -1;
-      in->dv_el = c ? c->el_present_flag : 0; in->dv_compat = c ? c->dv_bl_signal_compatibility_id : 0; }
+      in->dv_level = c ? c->dv_level : 0;
+      in->dv_el = c ? c->el_present_flag : 0; in->dv_compat = c ? c->dv_bl_signal_compatibility_id : 0;
+      if (r->dv7 && (!nv_dv7_available() || r->mov || V->codecpar->codec_id != AV_CODEC_ID_HEVC ||
+                     !c || c->dv_profile != 7 || !c->bl_present_flag || !c->rpu_present_flag ||
+                     !r->hvccLen || !r->hvccBN)) {
+        fail(err, errn, "DV7 HLS requires interleaved profile 7 in Matroska", 0); goto bad;
+      }
+      if (r->webos && !r->dv7 && c) {
+        fail(err, errn, "DTS HLS cannot preserve Dolby Vision; use the Dolby Vision P7 HLS mode", 0);
+        goto bad;
+      }
+    }
     snprintf(in->video_codec, sizeof in->video_codec, "%s", avcodec_get_name(V->codecpar->codec_id));
     snprintf(in->audio_codec, sizeof in->audio_codec, "%s", avcodec_get_name(A->codecpar->codec_id));
     /* Container flag only (no probe): many MKVs leave it to the bitstream. */
@@ -538,6 +580,8 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
     snprintf(in->out_codec, sizeof in->out_codec, "%s", stereoAac ? "aac" : "ac3");
     in->out_bitrate = in->out_channels > 2 ? 640000 : in->out_channels == 2 ? 192000 : 96000;
     if (A->codecpar->codec_id == AV_CODEC_ID_DTS) snprintf(in->decoder_path, sizeof in->decoder_path, "DTS core only");
+    else if (!isConvertible(A->codecpar->codec_id))
+      snprintf(in->decoder_path, sizeof in->decoder_path, "%s decode", in->audio_codec);
     else if (ic2 > in->out_channels || ic2 == 0)
       snprintf(in->decoder_path, sizeof in->decoder_path, "TrueHD %s presentation", in->out_channels == 6 ? "5.1" : "2.0");
     else snprintf(in->decoder_path, sizeof in->decoder_path, "TrueHD full decode");
@@ -640,7 +684,8 @@ static int openAudio(DtsRemuxGen *g, char *err, size_t errn) {
    * than AC3 640k carries; XLL would cost CPU for nothing (design 2.3).
    * TrueHD/MLP: ask for the presentation the studio authored at that width. */
   if (r->apar->codec_id == AV_CODEC_ID_DTS) av_opt_set_int(g->dec->priv_data, "core_only", 1, 0);
-  else if (r->info.in_channels == 0 || r->info.in_channels > r->info.out_channels)
+  else if (isConvertible(r->apar->codec_id) &&
+           (r->info.in_channels == 0 || r->info.in_channels > r->info.out_channels))
     av_opt_set_chlayout(g->dec->priv_data, "downmix", &g->target, 0);
   if ((rr = avcodec_open2(g->dec, dc, NULL)) < 0) { fail(err, errn, "Audio decoder open", rr); return -1; }
   g->enc = avcodec_alloc_context3(ec);
@@ -732,13 +777,13 @@ double dts_remux_gen_start_s(const DtsRemuxGen *g) { return g ? g->progStartS : 
 static int sinkWrite(void *o, const uint8_t *b, int n) {
   DtsRemuxGen *g = o;
   if (g->wfail) return AVERROR(EPIPE);
-  if (!g->w) return n;
+  if (!g->w || g->dropHeader) return n;
   if (g->w(g->wop, b, n) < 0) { g->wfail = 1; return AVERROR(EPIPE); }
   g->bytes += n;
   return n;
 }
 
-static int openMux(DtsRemuxGen *g, const char *fmt, char *err, size_t errn) {
+static int openMux(DtsRemuxGen *g, const char *fmt, int seg, char *err, size_t errn) {
   DtsRemux *r = g->src;
   AVDictionary *o = NULL;
   unsigned char *buf;
@@ -749,7 +794,10 @@ static int openMux(DtsRemuxGen *g, const char *fmt, char *err, size_t errn) {
   }
   g->ov = avformat_new_stream(g->oc, NULL); g->oa = avformat_new_stream(g->oc, NULL);
   if (!g->ov || !g->oa) { fail(err, errn, "Out of memory", 0); return -1; }
-  avcodec_parameters_copy(g->ov->codecpar, r->vpar);
+  if (avcodec_parameters_copy(g->ov->codecpar, r->vpar) < 0 ||
+      avcodec_parameters_from_context(g->oa->codecpar, g->enc) < 0) {
+    fail(err, errn, "Muxer codec parameters", AVERROR(ENOMEM)); return -1;
+  }
   g->ov->codecpar->codec_tag = 0;
   /* Only HDR10 static metadata goes along. No Dolby Vision configuration: the
    * S95C has no Dolby Vision, and the base layer plays as HDR10 like today. */
@@ -762,8 +810,23 @@ static int openMux(DtsRemuxGen *g, const char *fmt, char *err, size_t errn) {
                                       sd->type, c, sd->size, 0)) av_free(c);
   }
   g->ov->time_base = r->vtb;
-  avcodec_parameters_from_context(g->oa->codecpar, g->enc);
   g->oa->time_base = (AVRational){1, 48000};
+  if (r->dv7) {
+    const AVPacketSideData *dv = av_packet_side_data_get(r->vpar->coded_side_data, r->vpar->nb_coded_side_data,
+                                                        AV_PKT_DATA_DOVI_CONF);
+    AVPacketSideData *out = av_packet_side_data_new(&g->ov->codecpar->coded_side_data,
+                                                    &g->ov->codecpar->nb_coded_side_data,
+                                                    AV_PKT_DATA_DOVI_CONF, dv->size, 0);
+    if (!out) { fail(err, errn, "Dolby Vision configuration allocation", 0); return -1; }
+    memcpy(out->data, dv->data, dv->size);
+    AVDOVIDecoderConfigurationRecord *c = (void *)out->data;
+    c->dv_profile = 8;
+    c->el_present_flag = 0;
+    c->dv_bl_signal_compatibility_id = 1;
+    g->ov->codecpar->codec_tag = MKTAG('d','v','h','1');
+    g->ov->codecpar->extradata[21] |= 3;   /* converted packets use four-byte NAL lengths */
+    g->oc->strict_std_compliance = FF_COMPLIANCE_UNOFFICIAL;
+  }
   if (r->lang[0]) av_dict_set(&g->oa->metadata, "language", r->lang, 0);
   buf = av_malloc(65536);
   g->oc->pb = buf ? avio_alloc_context(buf, 65536, 1, g, NULL, sinkWrite, NULL) : NULL;
@@ -771,7 +834,12 @@ static int openMux(DtsRemuxGen *g, const char *fmt, char *err, size_t errn) {
   g->oc->avoid_negative_ts = AVFMT_AVOID_NEG_TS_DISABLED;
   g->oc->output_ts_offset = (int64_t)TS_OFFSET_S * AV_TIME_BASE;
   g->hevcFix = !strcmp(fmt, "mpegts") && r->hvccBN > 0;
-  if (!strcmp(fmt, "mp4")) av_dict_set(&o, "movflags", "frag_keyframe+empty_moov+default_base_moof+delay_moov", 0);
+  if (g->mp4Hls) {
+    av_dict_set(&o, "movflags", "frag_custom+empty_moov+default_base_moof+delay_moov+frag_discont+skip_trailer", 0);
+    av_dict_set(&o, "use_editlist", "0", 0);
+    av_dict_set_int(&o, "fragment_index", seg + 1, 0);
+  } else if (!strcmp(fmt, "mp4"))
+    av_dict_set(&o, "movflags", "frag_keyframe+empty_moov+default_base_moof+delay_moov", 0);
   rr = avformat_write_header(g->oc, &o);
   av_dict_free(&o);
   if (rr < 0) { fail(err, errn, g->wfail ? "Client closed" : "Muxer header", rr); return -1; }
@@ -1047,6 +1115,11 @@ static int videoPacket(DtsRemuxGen *g, AVPacket *p, char *err, size_t errn) {
 
 static int writePkt(DtsRemuxGen *g, AVPacket *p, AVRational tb, AVStream *os, DtsRemuxStats *st, int video) {
   int rr;
+  if (g->mp4Hls) {
+    /* movenc stages the full fragment. Bound its separate allocation on TVs. */
+    g->fragmentBytes += (size_t)p->size;
+    if (g->fragmentBytes > (48u << 20)) { av_packet_free(&p); return AVERROR(ENOMEM); }
+  }
   av_packet_rescale_ts(p, tb, os->time_base);
   if (!video && g->src->audio_offset_ms) {
     int64_t shift = av_rescale_q(g->src->audio_offset_ms, (AVRational){1, 1000}, os->time_base);
@@ -1058,6 +1131,51 @@ static int writePkt(DtsRemuxGen *g, AVPacket *p, AVRational tb, AVStream *os, Dt
   av_packet_free(&p);
   if (rr >= 0 && st) { if (video) st->video_pkts++; else st->audio_pkts++; }
   return rr;
+}
+
+/* Use the same P7 conversion as the native packet path. Matroska supplies
+ * length-prefixed NALs; the converter takes Annex B and emits four-byte
+ * start codes, which become the four-byte lengths used by the MP4 muxer. */
+static int convertDv7(DtsRemuxGen *g, AVPacket *p) {
+  size_t n = (size_t)p->size;
+  int len = g->src->hvccLen;
+  size_t expansion = len == 4 ? 1 : 4;
+  if (n > (INT_MAX - 8192) / expansion) return AVERROR_INVALIDDATA;
+  size_t cap = n * expansion + 8192, inSize = 0, outSize = 0;
+  uint8_t *annexb = av_malloc(cap);
+  AVPacket *out = av_packet_alloc();
+  int ret = AVERROR(ENOMEM);
+  if (!annexb || !out || av_new_packet(out, (int)cap) < 0) goto done;
+  for (size_t i = 0; i < n;) {
+    uint32_t bytes = 0;
+    ret = AVERROR_INVALIDDATA;
+    if (n - i < (size_t)len) goto done;
+    for (int j = 0; j < len; j++) bytes = (bytes << 8) | p->data[i++];
+    if (bytes < 2 || bytes > n - i) goto done;
+    AV_WB32(annexb + inSize, 1);
+    memcpy(annexb + inSize + 4, p->data + i, bytes);
+    inSize += 4 + bytes;
+    i += bytes;
+  }
+  ret = AVERROR_INVALIDDATA;
+  if (nv_dv7_packet_mode(annexb, inSize, out->data, cap, &outSize, g->src->preserveMapping) < 0) goto done;
+  if (!outSize) { ret = 0; goto done; }  /* enhancement-only packet */
+  for (size_t at = 0; at < outSize;) {
+    size_t prefix, next = nv_dv7_start(out->data, outSize, at + 4, &prefix);
+    if ((out->data[at + 4] >> 1 & 63) == 62) g->sawRpu = 1;
+    AV_WB32(out->data + at, next - at - 4);
+    at = next;
+  }
+  av_shrink_packet(out, (int)outSize);
+  ret = av_packet_copy_props(out, p);
+  if (ret < 0) goto done;
+  av_packet_unref(p);
+  av_packet_move_ref(p, out);
+  ret = 1;
+done:
+  av_free(annexb);
+  av_packet_free(&out);
+  return ret;
 }
 
 /* Video of segment `target` whose lookahead is complete. */
@@ -1098,6 +1216,15 @@ static int emitVideo(DtsRemuxGen *g, int target, DtsRemuxStats *st, char *err, s
     g->lastDts = d;
     AVPacket *p = qPop(&g->vq);
     p->dts = d;
+    if (g->src->dv7) {
+      int converted = convertDv7(g, p);
+      if (converted <= 0) {
+        av_packet_free(&p);
+        if (converted == 0) continue;
+        fail(err, errn, "DV7 RPU conversion failed", converted);
+        return -1;
+      }
+    }
     double ps = p->pts * tb, dur = p->duration * tb;
     if (st) {
       if (st->video_pkts == 0) st->first_pts_s = ps;
@@ -1191,6 +1318,7 @@ int dts_remux_gen_run(DtsRemuxGen *g, int seg, double startS, const char *fmt,
   DtsRemux *r;
   DtsRemuxStats local;
   int target, rr = 0, fresh;
+  int initOnly = fmt && !strcmp(fmt, "hls-init");
   double c0, w0;
   DtsEngineMetrics m0, m1;
   if (err && errn) err[0] = 0;
@@ -1204,6 +1332,10 @@ int dts_remux_gen_run(DtsRemuxGen *g, int seg, double startS, const char *fmt,
   dts_engine_metrics(g->eng, &m0);
   if (g->logWall <= 0) rollingLog(g, 0);   /* starts the 30 s window */
   g->w = w; g->wop = opaque; g->wfail = 0; g->bytes = 0;
+  g->mp4Hls = r->dv7 && seg >= 0;
+  g->fragmentBytes = 0;
+  g->sawRpu = 0;
+  g->dropHeader = 0;
   /* A previous interrupt is over: this run reads again. Cleared BEFORE *stop
    * is read, so an interrupt racing with the start is never lost (the caller
    * sets *stop first, then interrupts). */
@@ -1212,12 +1344,13 @@ int dts_remux_gen_run(DtsRemuxGen *g, int seg, double startS, const char *fmt,
   if (stop && *stop) { rr = -2; goto out; }
   if (seg >= 0) {
     if (seg >= r->nseg) { fail(err, errn, "No such segment", 0); rr = -1; goto out; }
-    fresh = g->nextSeg != seg || !g->oc;
+    fresh = initOnly || g->nextSeg != seg || !g->oc;
+    g->dropHeader = g->mp4Hls && fresh && !initOnly;
     st->fresh = fresh;
     g->prog = 0; target = seg;
     if (fresh && freshStart(g, r->segTs[seg], r->segB48[seg], err, errn) < 0) { rr = -1; goto out; }
-    if (fresh) { if (openMux(g, "mpegts", err, errn) < 0) { rr = g->wfail ? -2 : -1; goto out; } }
-    else av_opt_set(g->oc->priv_data, "mpegts_flags", "resend_headers", 0);  /* PAT/PMT open the segment */
+    if (fresh) { if (openMux(g, g->mp4Hls ? "mp4" : "mpegts", seg, err, errn) < 0) { rr = g->wfail ? -2 : -1; goto out; } }
+    else if (!g->mp4Hls) av_opt_set(g->oc->priv_data, "mpegts_flags", "resend_headers", 0);  /* PAT/PMT open the segment */
   } else {
     int64_t want = av_rescale_q((int64_t)llround(startS * 1000.0), (AVRational){1, 1000}, r->vtb);
     int k = r->nkf > 0 ? floorIdx(r->kf, r->nkf, want) : -1;
@@ -1233,7 +1366,7 @@ int dts_remux_gen_run(DtsRemuxGen *g, int seg, double startS, const char *fmt,
     g->progB48 = startS <= 0.05 ? UNSET : pastIdx ? GRID_LAZY : llround(g->progStartS * 48000.0);
     if (g->progStartS < 0) g->progStartS = 0;
     if (freshStart(g, kf, g->progB48, err, errn) < 0) { rr = -1; goto out; }
-    if (openMux(g, fmt && *fmt ? fmt : "mpegts", err, errn) < 0) { rr = g->wfail ? -2 : -1; goto out; }
+    if (openMux(g, fmt && *fmt ? fmt : "mpegts", -1, err, errn) < 0) { rr = g->wfail ? -2 : -1; goto out; }
   }
   for (;;) {
     if ((stop && *stop) || (r->extCancel && *r->extCancel)) { fail(err, errn, "Stopped", 0); rr = -2; break; }
@@ -1263,11 +1396,24 @@ int dts_remux_gen_run(DtsRemuxGen *g, int seg, double startS, const char *fmt,
     if (rr < 0) break;
   }
   if (rr >= 0) {
-    /* End of segment: interleaving queue and the TS muxer's PES buffers out. */
-    av_interleaved_write_frame(g->oc, NULL);
-    av_write_frame(g->oc, NULL);
+    rr = av_interleaved_write_frame(g->oc, NULL);
+    if (rr >= 0 && g->mp4Hls && fresh) {
+      if (!st->audio_pkts || !st->video_pkts || (initOnly && !g->sawRpu)) {
+        fail(err, errn, "No video, AC-3 or converted RPU for HLS initialization", 0);
+        rr = -1;
+        goto out;
+      }
+      /* delay_moov uses the first AC-3 packet for dac3. The first explicit
+       * flush writes just ftyp/moov; subsequent flushes write moof/mdat. */
+      rr = av_write_frame(g->oc, NULL);
+      avio_flush(g->oc->pb);
+      g->dropHeader = 0;
+    }
+    if (rr >= 0 && !initOnly) rr = av_write_frame(g->oc, NULL);
     if (g->oc->pb) avio_flush(g->oc->pb);
     if (g->wfail) { fail(err, errn, "Client closed", 0); rr = -2; }
+    else if (rr < 0) fail(err, errn, "Muxer flush", rr);
+    else if (r->webos && !g->bytes) { fail(err, errn, "Empty HLS segment", 0); rr = -1; }
   }
 out:
   /* Whatever failed while the player had already given up on this run (its
@@ -1275,10 +1421,10 @@ out:
    * error: no 500 for a client that is gone, no error in the summary. */
   if (rr == -1 && ((stop && *stop) || atomic_load(&g->interrupted) || (r->extCancel && *r->extCancel))) rr = -2;
   if (rr == -2) fail(err, errn, "Stopped", 0);
-  if (rr >= 0 && !g->prog && seg + 1 < r->nseg && !g->demuxEof) {
+  if (rr >= 0 && !initOnly && !g->prog && seg + 1 < r->nseg && !g->demuxEof) {
     g->nextSeg = seg + 1;           /* continuation: muxer and queues stay */
   } else {
-    closeMux(g, rr >= 0);
+    closeMux(g, rr >= 0 && !initOnly);
     g->nextSeg = -1;
   }
   st->bytes_out = g->bytes;

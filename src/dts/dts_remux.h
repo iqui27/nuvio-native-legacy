@@ -33,7 +33,7 @@ typedef struct {
   int mp4;                     /* source container is MP4/MOV */
   double fps;                  /* container frame rate, 0 = unknown (HLS master playlist) */
   int dv_profile;              /* Dolby Vision configuration in the container: profile, -1 = none */
-  int dv_el, dv_compat;        /* enhancement layer present; base-layer compatibility id */
+  int dv_el, dv_compat, dv_level;        /* enhancement layer present; base-layer compatibility id */
 } DtsRemuxInfo;
 
 typedef struct {
@@ -70,6 +70,10 @@ DtsRemux *dts_remux_open(const char *url, const char *headers, int audio_ordinal
 DtsRemux *dts_remux_new(volatile int *cancel);
 int dts_remux_probe(DtsRemux *, const char *url, const char *headers, int audio_ordinal, int stereo_aac,
                     double seg_target_s, char *err, size_t errn);
+#ifdef NV_WEBOS_HLS_TEST
+enum { DTS_REMUX_WEBOS_DTS = 1, DTS_REMUX_WEBOS_DV7 = 2, DTS_REMUX_WEBOS_DV7_DTS = 3 };
+void dts_remux_set_webos(DtsRemux *, int mode, int preserve_mapping);
+#endif
 const DtsRemuxInfo *dts_remux_info(const DtsRemux *);
 double dts_remux_segment_start(const DtsRemux *, int seg);    /* seconds; segment 0 = 0 */
 double dts_remux_segment_duration(const DtsRemux *, int seg);

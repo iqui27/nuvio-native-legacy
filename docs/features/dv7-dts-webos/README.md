@@ -48,3 +48,19 @@ HTTP payload/fallback, controller state, real HTTP faults and DTS conversion,
 P2P startup, DV7 fixtures, settings isolation and both Rust link modes.
 These checks do not replace ARM linking or physical LG/Samsung/Android tests.
 No IPK is built and no upstream pull request is opened by this branch.
+
+## Experimental HLS on webOS
+
+The HLS test build adds two device-local options under **Playback → More options →
+Audio and video on this TV**. Both are off by default and apply when opening a video.
+
+- **DTS via HLS** uses the Samsung loopback server and its MPEG-TS segment generator.
+  Select a DTS track and leave DTS conversion enabled. The output is AC-3, up to 5.1.
+- **Dolby Vision P7 via HLS** converts interleaved P7 MKV to single-layer P8.1 and
+  delivers fragmented MP4 with AC-3 audio. For an MKV whose selected track is DTS,
+  enable DTS via HLS as well. The experimental stream carries one audio track.
+
+The test requires a seekable source with a keyframe index. An HLS startup or
+stream error retries the existing webOS converter. Test each mode separately
+on an LG C1 or C5 with the same file and track. Check sound, the TV's Dolby
+Vision indicator, seek/resume, and memory during a longer playback session.

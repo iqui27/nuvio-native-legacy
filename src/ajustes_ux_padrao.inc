@@ -373,3 +373,5 @@
   0, /* Hide duplicates: On */
   1, /* Sort like the addons: Off (V_LIGA) */
   0, /* Other version buffer: 8 MB */
+  1, /* DTS via HLS: Off */
+  1, /* Dolby Vision P7 via HLS: Off */

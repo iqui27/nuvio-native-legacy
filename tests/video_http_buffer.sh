@@ -47,6 +47,11 @@ int main(void) {
   montarCarga(expected, sizeof expected, "file:///movie.mkv", 0, "", "", "window_id_dummy", 0, 4096);
   montarCarga(actual, sizeof actual, "file:///movie.mkv", 0, "", "", "window_id_dummy", 2, 4096);
   assert(!strcmp(actual, expected));
+  montarCarga(actual, sizeof actual, "http://127.0.0.1:8080/token/m.m3u8", 3,
+              "", "", "window_id_dummy", 2, 4096);
+  assert(strstr(actual, "\"mediaTransportType\":\"HLS\""));
+  assert(strstr(actual, "\"useSeekableRanges\":true"));
+  assert(!strstr(actual, "\"bufferControl\""));
   puts("video_http_buffer: ok");
 }
 ''')

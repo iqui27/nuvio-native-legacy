@@ -678,6 +678,8 @@ int   ajustes_amigos_estilo(void); // 0 Feed, 1 Live, 2 Stories, 3 Presence, 4 P
 int   ajustes_social(void);              // 1 = friends/social features on (per profile, default on)
 int   ajustes_dv_mkv(void);              // 1 = Dolby Vision MKV through our demux (webOS, local, default off)
 int   ajustes_dv7(void);
+int   ajustes_webos_hls_dts(void);
+int   ajustes_webos_hls_dv7(void);
 int   ajustes_dv7_mapping(void); // device-local P7 mapping test, default off
 int   ajustes_audio_externo(void);                     // audio from another version (webOS), default off
 int   ajustes_audio_externo_ocultar_fora_cache(void); // 1 = hide versions not in the debrid cache

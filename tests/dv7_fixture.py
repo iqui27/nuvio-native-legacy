@@ -32,7 +32,10 @@ def uint(tag, value):
 
 header = elem('1a45dfa3', uint('4286', 1) + uint('42f7', 1) + uint('42f2', 4)
               + uint('42f3', 8) + elem('4282', b'matroska') + uint('4287', 4) + uint('4285', 2))
-info = elem('1549a966', uint('2ad7b1', 1000000) + elem('4489', struct.pack('>d', 832.0)))
+indexed = '--indexed' in sys.argv[2:]
+duration = max(float(packet['pts_time']) + float(packet.get('duration_time', 0))
+               for packet in source['packets']) * 1000 if indexed else 832.0
+info = elem('1549a966', uint('2ad7b1', 1000000) + elem('4489', struct.pack('>d', duration)))
 hvcc = unhex(source['streams'][0]['extradata'])
 mapping = elem('41e4', uint('41f0', 1) + uint('41e7', int.from_bytes(b'dvcC', 'big'))
                + elem('41ed', bytes([1, 0, 7 << 1, (6 << 3) | 7, 6 << 4]) + bytes(19)))
@@ -68,7 +71,8 @@ for kind in ['mel', 'fel', 'p8']:
                     data += len(el).to_bytes(4, 'big') + el
                 data += len(nal).to_bytes(4, 'big') + nal
             ms = round(float(packet['pts_time'])*1000)
-            block = bytes([0x81+index]) + struct.pack('>h', ms) + bytes([0x80]) + data
+            flag = 0x80 if not indexed or 'K' in packet['flags'] else 0
+            block = bytes([0x81+index]) + struct.pack('>h', ms) + bytes([flag]) + data
             blocks += elem('a3', block)
         cluster = elem('1f43b675', uint('e7', 0) + blocks)
         (root / (kind + ('-bad' if corrupt else '') + '.mkv')).write_bytes(

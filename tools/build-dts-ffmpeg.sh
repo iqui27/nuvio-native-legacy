@@ -5,7 +5,8 @@ TMPDIR="${TMPDIR%/}"
 # network/TLS protocols or software video decoders enter the TV executable.
 #
 # NUVIO_DTS_TARGET picks the build:
-#   webos (default) cross build with the LG SDK (tools/Dockerfile); output unchanged.
+#   webos (default) cross build with the LG SDK (tools/Dockerfile).
+#                   NUVIO_WEBOS_HLS=1 adds the experimental loopback muxers.
 #   tpk             Samsung .tpk (tools/tpk.sh). ARM32 build inside the selected SDK
 #                   container, from the source tree tpk.sh already downloaded and checked on the
 #                   host (NUVIO_DTS_SRC; the container has no curl). Adds what the Samsung loopback
@@ -45,6 +46,11 @@ if [ "$TARGET" = tpk ]; then
       --cross-prefix=arm-linux-gnueabi-
   fi
 else
+  if [ "${NUVIO_WEBOS_HLS:-0}" = 1 ]; then
+    MUXERS=mpegts,mp4
+    PARSERS=$PARSERS,ac3
+    DECODERS=$DECODERS,ac3,eac3,aac
+  fi
   if [ "${NUVIO_DV_TRUEHD:-1}" = 1 ]; then
     # Support high-definition Dolby audio and transcoding donor audio on webOS.
     # A reduced SDK can opt out with NUVIO_DV_TRUEHD=0.
@@ -73,8 +79,7 @@ else
   fi
 fi
 # --enable-muxer must come AFTER --disable-everything and --enable-zlib after
-# --disable-autodetect (configure applies them in order). Unquoted on purpose:
-# MUXERS is empty for webOS.
+# --disable-autodetect (configure applies them in order). MUXERS is optional.
 "$SRC/configure" "$@" --prefix="$PREFIX" --disable-everything ${MUXERS:+--enable-muxer=$MUXERS} \
   --disable-autodetect $ZLIB --disable-shared --enable-static --enable-pic \
   --disable-programs --disable-doc --disable-debug --disable-network \
