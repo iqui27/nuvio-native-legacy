@@ -2,6 +2,8 @@
 // descoberta.h — limite vagas de prefixo canonico mais limite vagas de
 // reserva de itens nao vistos. Antes eram so 24 vagas e a reserva escrevia
 // em itens[24] com "Ocultar vistos" ativo (ASan global-buffer-overflow).
+// Volta 3: com Ocultar vistos ligado colpinItens consome a reserva — os 24
+// primeiros vistos sao pulados e o 25o inedito aparece na fileira fixada.
 // Funcoes de producao extraidas de src/descoberta.c por colpin_vistos.sh
 // (producao.inc); so transporte, conta e vistos sao dubles.
 //
@@ -126,6 +128,11 @@ int main(int argc, char **argv) {
   printf("pedidos=%d itens=%d primeiro=%s último=%s\n", requests, count, items[0].imdb,
          count ? items[count - 1].imdb : "");
   assert(count == expected && (!!requests == !!expected));
-  if (count)
+  if (count && !watched)
     assert(!strcmp(items[0].titulo, "Fixture 1"));
+  if (watched) {
+    // Os 24 primeiros sao vistos: a fileira publicada começa no 25º inédito.
+    assert(!strcmp(items[0].titulo, "Fixture 25"));
+    for (int i = 0; i < count; i++) assert(!desc_filme_visto(&items[i]));
+  }
 }

@@ -4,8 +4,10 @@
 # (producao.inc) e dirige uma fonte Discover filtrada com transporte
 # simulado:
 #   discover, Ocultar vistos desligado -> 20 itens da primeira pagina;
-#   discover, os 24 primeiros vistos   -> a reserva recebe o 25o inedito
-#     sem escrever fora do buffer (rc 0, sem global-buffer-overflow).
+#   discover, os 24 primeiros vistos   -> a reserva nao vista e consumida:
+#     a fileira publicada pula os vistos do prefixo e o 25o inedito aparece
+#     (discover pagina de 20: ids 25-40 = 16). Sem escrever fora do buffer
+#     (rc 0, sem global-buffer-overflow).
 set -eu
 cd "$(dirname "$0")/.."
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-colpin-vistos-f.XXXXXX")
@@ -24,5 +26,5 @@ awk '
 cc -g -O1 -fsanitize=address -fno-omit-frame-pointer -Isrc -I"$work" \
   tests/colpin_vistos_filtros.c src/js.c -lm -o "$work/test"
 "$work/test" discover 0 20
-"$work/test" discover 1 24
+"$work/test" discover 1 16
 echo ok colpin_vistos_filtros
