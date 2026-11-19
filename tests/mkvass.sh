@@ -5,7 +5,7 @@ TMPDIR="${TMPDIR%/}"
 #
 # Gera o MKV AQUI (ffmpeg do Homebrew: 2 min de testsrc2 + sine + um .ass com
 # 40 Dialogue, com \an8 e \pos), serve por tests/servidor_range.py e roda o
-# teste contra src/mkvass.c + src/legenda.c + src/rede.c + src/dados.c —
+# teste contra src/mkvass.c src/pgs_mkv_restore.c + src/legenda.c + src/rede.c + src/dados.c —
 # sem SDL. Nada de rede externa.
 #   bash tests/mkvass.sh
 set -eu
@@ -107,7 +107,7 @@ PORTA=$(awk '/porta/{print $2}' "$DIR/porta.txt")
 # casos em tempo real, passava de 7 min e escondia falhas. Compilar com
 # RPS maior acelera so o teste; o teto conferido e o compilado. O padrao de
 # producao e guardado aqui para ninguem mudar o default sem ver.
-grep -q '^#define MKVASS_RANGES_POR_SEG 3$' src/mkvass.c || { echo "mkvass.sh: default de MKVASS_RANGES_POR_SEG mudou; reveja o teto"; exit 1; }
+grep -q '^#define MKVASS_RANGES_POR_SEG 3$' src/mkvass.c src/pgs_mkv_restore.c || { echo "mkvass.sh: default de MKVASS_RANGES_POR_SEG mudou; reveja o teto"; exit 1; }
 RPS=${MKVASS_TESTE_RPS:-12}
 # Pausas e recuos do CDN encurtados (-D): na TV sao 10-60 s e 0,5-8 s; aqui a
 # pausa e o retorno da leitura ainda acontecem, so que em milissegundos.
@@ -116,7 +116,7 @@ RPS=${MKVASS_TESTE_RPS:-12}
 . tests/mkvcore_flag.sh
 cc ${MKVCORE_CC[@]+"${MKVCORE_CC[@]}"} -Isrc -DMKVASS_VARRE_JANELA_SEG=30.0 -DMKVASS_RANGES_POR_SEG=$RPS -DMKVASS_TESTE_ESCALA=${MKVASS_TESTE_ESCALA:-3}.0 \
   -DMKVASS_PAUSA_CDN_INI_MS=150L -DMKVASS_PAUSA_CDN_MAX_MS=600L \
-  -DMKVASS_RECUO_INI_MS=20L -DMKVASS_RECUO_MAX_MS=160L tests/mkvass.c src/mkvass.c src/imgsub.c src/pgs.c src/assrender.c src/legenda.c src/rede.c src/redeurl.c src/dados.c src/mkv.c -lz \
+  -DMKVASS_RECUO_INI_MS=20L -DMKVASS_RECUO_MAX_MS=160L tests/mkvass.c src/mkvass.c src/pgs_mkv_restore.c src/imgsub.c src/pgs.c src/assrender.c src/legenda.c src/rede.c src/redeurl.c src/dados.c src/mkv.c -lz \
   -o ${TMPDIR:-/tmp}/nuvio-mkvass-tests -O1 -g -Wall -I/opt/homebrew/include \
   -Wno-deprecated-declarations
 mkdir -p "$DIR/dados"

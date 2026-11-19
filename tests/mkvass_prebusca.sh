@@ -7,7 +7,7 @@ import re
 import subprocess
 
 failures = []
-args = ['cc', '-E', '-P', '-Isrc', 'src/mkvass.c']
+args = ['cc', '-E', '-P', '-Isrc', 'src/mkvass.c src/pgs_mkv_restore.c']
 normal = subprocess.check_output(args)
 legacy = subprocess.check_output(args + ['-DMKVASS_TESTE_DRENAR_PREBUSCA'])
 if normal != legacy or '-DMKVASS_TESTE_DRENAR_PREBUSCA' in open('tests/mkvass.sh').read():

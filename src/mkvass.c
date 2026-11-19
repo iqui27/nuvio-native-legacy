@@ -3247,7 +3247,7 @@ static void guardarReferencia(Fio *f) {
 static int contarDesistidos(const Fio *f);
 
 static unsigned char *pgsRestaurar(const Fio *f, const unsigned char *b, long n, size_t *saida) {
-  if (n < 0 || (size_t)n > PGS_MKV_BLOCO_MAX) return NULL;
+  if (n < 0) return NULL;
   if (!f->pgsCodif) return NULL;
   return pgs_mkv_restaurar(f->pgsCodif, f->pgsTira, f->pgsTiraN, b, (size_t)n, saida);
 }
