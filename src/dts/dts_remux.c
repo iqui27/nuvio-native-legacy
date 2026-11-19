@@ -1702,6 +1702,7 @@ static double genCpu(DtsRemuxGen *g) {
 }
 
 static void rollingLog(DtsRemuxGen *g, int force) {
+  if (g->src->webos) return;
   if (g->logWall > 0 && g->logMedia < 30.0 && !(force && g->logMedia > 1.0)) return;
   struct rusage ru;
   double cpu = genCpu(g), wall = now_s(CLOCK_MONOTONIC), proc = 0;

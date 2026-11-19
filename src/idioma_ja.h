@@ -5669,6 +5669,7 @@
   T("Uns segundos depois de abrir, o trailer toca sem som atrás do texto. Rolar a página ou sair volta para a arte.", "開いて数秒後、テキストの背後で予告編が音なしで再生されます。スクロールするか離れると、アートに戻ります。"),
   T("Update notifications", "アップデート通知"),
   T("Uruguai", "ウルグアイ"),
+  T("Usa HLS nas conversões de DTS e Dolby Vision P7. A saída é Dolby Digital (AC-3). Pode ajudar em aparelhos antigos, mas aumentar o uso de internet. Use só se tiver problemas. Reabra o vídeo para aplicar.", "DTS と Dolby Vision P7 の変換に HLS を使用します。音声出力は Dolby Digital (AC-3) です。古い機器で再生が改善する場合がありますが、通信量が増えることがあります。問題がある場合のみ有効にし、動画を開き直してください。"),
   T("Usa a arte deitada (16:9) no lugar do cartaz em pé nas fileiras que têm as duas.", "両方ある行では、縦長ポスターの代わりに横長アート（16:9）を使います。"),
   T("Usa a imagem do próprio episódio no card, em vez da arte da série.", "カードにシリーズのアートではなく、エピソード自身の画像を使います。"),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "サーバーが許可していれば Quick Connect を使います。別の Jellyfin アプリでコードを承認してください。使えない場合はユーザー名とパスワードを入力します。"),

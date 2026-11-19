@@ -5669,6 +5669,7 @@
   T("Uns segundos depois de abrir, o trailer toca sem som atrás do texto. Rolar a página ou sair volta para a arte.", "Açıldıktan birkaç saniye sonra fragman metnin arkasında sessiz oynar. Kaydırmak veya çıkmak görseli geri getirir."),
   T("Update notifications", "Güncelleme bildirimleri"),
   T("Uruguai", "Uruguay"),
+  T("Usa HLS nas conversões de DTS e Dolby Vision P7. A saída é Dolby Digital (AC-3). Pode ajudar em aparelhos antigos, mas aumentar o uso de internet. Use só se tiver problemas. Reabra o vídeo para aplicar.", "DTS ve Dolby Vision P7 dönüşümleri için HLS kullanır. Ses çıkışı Dolby Digital (AC-3) biçimindedir. Eski cihazlarda yardımcı olabilir ancak daha fazla bant genişliği kullanabilir. Yalnızca sorun varsa açın ve videoyu yeniden açın."),
   T("Usa a arte deitada (16:9) no lugar do cartaz em pé nas fileiras que têm as duas.", "İkisi de olan satırlarda dikey afiş yerine yatay görseli (16:9) kullanır."),
   T("Usa a imagem do próprio episódio no card, em vez da arte da série.", "Kartta dizinin görseli yerine bölümün kendi görselini kullanır."),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "Sunucu izin veriyorsa Quick Connect kullanır: kodu başka bir Jellyfin uygulamasında onaylayın. Aksi halde kullanıcı adı ve parola ister."),

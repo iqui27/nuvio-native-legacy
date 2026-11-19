@@ -187,17 +187,25 @@ static void ajDesenharInspetor(void) {
     y += ajBloco(TXT_V2_A3TIT, t, x, y, w, 56.0f, 1, 2); }
   y += 10.0f;
   { int maxL = (int)((fim - y) / 32.0f);
+    TxtEstilo estilo = TXT_V3_INSP;
+    float leading = 37.0f;
     if (maxL > 5) maxL = 5;   // a descricao inteira: cortar no meio da frase nao serve
+    if (op == AJ_WEBOS_HLS_MODE) {
+      // Give longer translations the available height before reducing the font.
+      float h = txt_bloco(estilo, uxResumo(op), 0, 0, 0, 0, 0, w, leading, 0, 0);
+      if (h > fim - y) { estilo = TXT_V3_BEN; leading = AJ2_LN_BEN; }
+      maxL = (int)((fim - y) / leading);
+    }
     if (maxL < 1) maxL = 1;
     if (naMais) {
       char resumo[400];
       maisContar(secAtual, resumo, sizeof resumo);
       y += ajBloco(TXT_V3_INSP, resumo, x, y, w, 37.0f, 0.70f, maxL);
     } else if (rtl)
-      y += txt_bloco_dir(TXT_V3_INSP, categoria ? SECAO_AJUDA[secAtual] : uxResumo(op),
-                        243, 242, 239, x + w, y, w, 37.0f, 0.70f, maxL);
+      y += txt_bloco_dir(estilo, categoria ? SECAO_AJUDA[secAtual] : uxResumo(op),
+                        243, 242, 239, x + w, y, w, leading, 0.70f, maxL);
     else
-      y += ajBloco(TXT_V3_INSP, categoria ? SECAO_AJUDA[secAtual] : uxResumo(op), x, y, w, 37.0f, 0.70f, maxL);
+      y += ajBloco(estilo, categoria ? SECAO_AJUDA[secAtual] : uxResumo(op), x, y, w, leading, 0.70f, maxL);
     if (op == AJ_TEMA) {   // a cor PENDENTE, como a previa
       int salvo = valor[AJ_TEMA];
       if (ajEditandoLinha(AJ_TEMA)) valor[AJ_TEMA] = uxPendente;

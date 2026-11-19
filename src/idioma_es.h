@@ -5668,6 +5668,7 @@
   T("Uns segundos depois de abrir, o trailer toca sem som atrás do texto. Rolar a página ou sair volta para a arte.", "Unos segundos después de abrir, el tráiler suena sin sonido detrás del texto. Desplazar la página o salir vuelve al arte."),
   T("Update notifications", "Notificaciones de actualización"),
   T("Uruguai", "Uruguay"),
+  T("Usa HLS nas conversões de DTS e Dolby Vision P7. A saída é Dolby Digital (AC-3). Pode ajudar em aparelhos antigos, mas aumentar o uso de internet. Use só se tiver problemas. Reabra o vídeo para aplicar.", "Usa HLS para convertir DTS y Dolby Vision P7. El audio se emite en Dolby Digital (AC-3). Puede ayudar en dispositivos antiguos, pero consumir más ancho de banda. Actívalo solo si hay problemas y vuelve a abrir el vídeo."),
   T("Usa a arte deitada (16:9) no lugar do cartaz em pé nas fileiras que têm as duas.", "Usa el arte apaisado (16:9) en lugar del póster vertical en las filas que tienen ambos."),
   T("Usa a imagem do próprio episódio no card, em vez da arte da série.", "Usa la imagen del propio episodio en la tarjeta, en lugar del arte de la serie."),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "Usa Quick Connect si el servidor lo permite: aprueba el código en otra app de Jellyfin. Si no, pide usuario y contraseña."),

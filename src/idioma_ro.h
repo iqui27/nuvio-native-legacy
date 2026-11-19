@@ -5668,6 +5668,7 @@
   T("Uns segundos depois de abrir, o trailer toca sem som atrás do texto. Rolar a página ou sair volta para a arte.", "La câteva secunde după deschidere, trailerul rulează fără sunet în spatele textului. Derularea sau ieșirea readuce imaginea."),
   T("Update notifications", "Notificări de actualizare"),
   T("Uruguai", "Uruguay"),
+  T("Usa HLS nas conversões de DTS e Dolby Vision P7. A saída é Dolby Digital (AC-3). Pode ajudar em aparelhos antigos, mas aumentar o uso de internet. Use só se tiver problemas. Reabra o vídeo para aplicar.", "Folosește HLS pentru conversiile DTS și Dolby Vision P7. Sunetul este redat în Dolby Digital (AC-3). Poate ajuta pe dispozitive mai vechi, dar poate crește traficul de date. Activează doar dacă ai probleme. Redeschide videoclipul."),
   T("Usa a arte deitada (16:9) no lugar do cartaz em pé nas fileiras que têm as duas.", "Folosește imaginea orizontală (16:9) în locul afișului vertical în rândurile care le au pe amândouă."),
   T("Usa a imagem do próprio episódio no card, em vez da arte da série.", "Folosește imaginea episodului însuși pe card, în locul imaginii serialului."),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "Folosește Quick Connect dacă serverul permite: aprobă codul în altă aplicație Jellyfin. Altfel cere utilizator și parolă."),

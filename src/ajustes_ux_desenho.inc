@@ -701,8 +701,8 @@ static float ajBeneficioH(int op) {
 #define AJ_AJUDA_META 40.0f
 static float ajAjudaLinhaW(void) { float w = aj2ListaR().w - 36.0f - 44.0f - 80.0f; return w > 1260.0f ? 1260.0f : w; }
 static float ajAjudaLinhaTxtH(int op) {
-  float h = txt_bloco(TXT_V3_BEN, uxResumo(op), 0, 0, 0, 0, -4000, ajAjudaLinhaW(), AJ2_LN_BEN, 0, 4);
-  return h < 1.0f ? 0.0f : h > 4 * AJ2_LN_BEN ? 4 * AJ2_LN_BEN : h;
+  int maxL = op == AJ_WEBOS_HLS_MODE ? 0 : 4;
+  return txt_bloco(TXT_V3_BEN, uxResumo(op), 0, 0, 0, 0, -4000, ajAjudaLinhaW(), AJ2_LN_BEN, 0, maxL);
 }
 static float ajAjudaLinhaH(int op) {
   return ajAjudaLinhaTxtH(op) + (uxTemPadrao(op) && op != AJ_TEMA ? 10.0f + AJ_AJUDA_META : 0.0f);
@@ -711,7 +711,8 @@ static int ajCusto(int op);
 static const char *ajCustoTexto(int c);
 static void ajAjudaLinhaDesenhar(int op, float x, float y, float a) {
   float h = ajAjudaLinhaTxtH(op);
-  txt_bloco(TXT_V3_BEN, uxResumo(op), 243, 242, 239, x, y, ajAjudaLinhaW(), AJ2_LN_BEN, 0.70f * a, 4);
+  int maxL = op == AJ_WEBOS_HLS_MODE ? 0 : 4;
+  txt_bloco(TXT_V3_BEN, uxResumo(op), 243, 242, 239, x, y, ajAjudaLinhaW(), AJ2_LN_BEN, 0.70f * a, maxL);
   if (uxTemPadrao(op) && op != AJ_TEMA) {
     char padrao[160];
     float yc = y + h + 10.0f + AJ_AJUDA_META * 0.5f, ar, ag, ab, xx = x;

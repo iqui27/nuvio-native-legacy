@@ -649,8 +649,10 @@ static int servirFluxo(int sock, Sessao *s, const Pedido *pd, unsigned nr, int s
     snprintf(cab, sizeof cab, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nCache-Control: no-cache\r\nConnection: %s\r\n\r\n",
              tipo, manter ? "keep-alive" : "close");
     enviarTudo(sock, cab, strlen(cab), &s->cancelar, NULL);
-    printf("[dts-tpk] #%u <- 200 HEAD (sem corpo)\n", nr);
-    fflush(stdout);
+    if (!s->webos) {
+      printf("[dts-tpk] #%u <- 200 HEAD (sem corpo)\n", nr);
+      fflush(stdout);
+    }
     return manter;
   }
   Gerador *ger = pegarGerador(s, seg < 0 ? -2 : seg, &continua, err, sizeof err);
@@ -666,7 +668,7 @@ static int servirFluxo(int sock, Sessao *s, const Pedido *pd, unsigned nr, int s
   }
   memset(&o, 0, sizeof o);
   o.sock = sock; o.manter = manter; o.tipo = tipo; o.s = s; o.ger = ger; o.t0 = t0;
-  if (pd->range[0] && strncmp(pd->range, "bytes=0-", 8))
+  if (!s->webos && pd->range[0] && strncmp(pd->range, "bytes=0-", 8))
     printf("[dts-tpk] #%u: Range ignorado (gera do inicio, 200 inteiro)\n", nr);
   rr = dts_remux_gen_run(ger->g, seg, t, fmt, saidaEscrever, &o, &ger->parar, &st, err, sizeof err);
   double streamStart = seg < 0 ? dts_remux_gen_start_s(ger->g) : 0.0;
@@ -697,6 +699,7 @@ static int servirFluxo(int sock, Sessao *s, const Pedido *pd, unsigned nr, int s
   }
   pthread_mutex_unlock(&s->m);
   soltarGerador(s, ger);
+  if (s->webos && (ok || rr == -2)) return ok && manter;
   uint64_t fim = agoraMs();
   char stTxt[8];                           // "-": nada saiu (o player fechou antes)
   if (status) snprintf(stTxt, sizeof stTxt, "%d", status); else snprintf(stTxt, sizeof stTxt, "-");
@@ -781,10 +784,12 @@ static int atenderPedido(int sock, const Pedido *pd, int manter) {
   int logAgente = !s->agente[0] && pd->agente[0];
   if (logAgente) snprintf(s->agente, sizeof s->agente, "%s", pd->agente);
   pthread_mutex_unlock(&s->m);
-  printf("[dts-tpk] #%u -> %s %s%s%s Range=%s Connection=%s (+%u ms desde a abertura)%s%s\n", nr, pd->metodo, resto,
-         pd->query[0] ? "?" : "", pd->query, pd->range[0] ? pd->range : "-", pd->conexao[0] ? pd->conexao : "-",
-         (unsigned)(agoraMs() - s->criadaMs), logAgente ? " UA=" : "", logAgente ? pd->agente : "");
-  fflush(stdout);
+  if (!s->webos) {
+    printf("[dts-tpk] #%u -> %s %s%s%s Range=%s Connection=%s (+%u ms desde a abertura)%s%s\n", nr, pd->metodo, resto,
+           pd->query[0] ? "?" : "", pd->query, pd->range[0] ? pd->range : "-", pd->conexao[0] ? pd->conexao : "-",
+           (unsigned)(agoraMs() - s->criadaMs), logAgente ? " UA=" : "", logAgente ? pd->agente : "");
+    fflush(stdout);
+  }
   int r = 0;
   if (!esperarPronta(s, sock, manter)) {
     if (s->semIndice) printf("[dts-tpk] #%u <- sem resposta: o app troca para o TS continuo\n", nr);
@@ -806,9 +811,11 @@ static int atenderPedido(int sock, const Pedido *pd, int manter) {
                    "Content-Length: %zu\r\nCache-Control: no-cache\r\nConnection: %s\r\n\r\n", strlen(b), manter ? "keep-alive" : "close");
           enviarTudo(sock, cab, strlen(cab), NULL, NULL);
         } else responderSimples(sock, 200, "OK", "application/vnd.apple.mpegurl", b, manter);
-        if (mestre) { const char *v = strstr(b, "BANDWIDTH"); v = v ? v : "";
-                      printf("[dts-tpk] #%u <- 200 playlist mestre: %.*s\n", nr, (int)strcspn(v, "\n"), v); }
-        else printf("[dts-tpk] #%u <- 200 playlist: %d segmento(s), %zu B\n", nr, dts_remux_info(s->rx)->n_segments, strlen(b));
+        if (!s->webos) {
+          if (mestre) { const char *v = strstr(b, "BANDWIDTH"); v = v ? v : "";
+                        printf("[dts-tpk] #%u <- 200 playlist mestre: %.*s\n", nr, (int)strcspn(v, "\n"), v); }
+          else printf("[dts-tpk] #%u <- 200 playlist: %d segmento(s), %zu B\n", nr, dts_remux_info(s->rx)->n_segments, strlen(b));
+        }
         free(b);
         r = manter;
       }

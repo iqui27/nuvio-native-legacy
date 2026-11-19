@@ -5669,6 +5669,7 @@
   T("Uns segundos depois de abrir, o trailer toca sem som atrás do texto. Rolar a página ou sair volta para a arte.", "Vài giây sau khi mở, trailer phát không tiếng phía sau chữ. Cuộn hoặc thoát thì hình ảnh quay lại."),
   T("Update notifications", "Thông báo cập nhật"),
   T("Uruguai", "Uruguay"),
+  T("Usa HLS nas conversões de DTS e Dolby Vision P7. A saída é Dolby Digital (AC-3). Pode ajudar em aparelhos antigos, mas aumentar o uso de internet. Use só se tiver problemas. Reabra o vídeo para aplicar.", "Dùng HLS để chuyển đổi DTS và Dolby Vision P7. Âm thanh đầu ra là Dolby Digital (AC-3). Có thể giúp thiết bị cũ phát tốt hơn nhưng tốn thêm băng thông. Chỉ bật khi gặp sự cố, rồi mở lại video."),
   T("Usa a arte deitada (16:9) no lugar do cartaz em pé nas fileiras que têm as duas.", "Dùng hình ngang (16:9) thay cho poster dọc ở các hàng có cả hai."),
   T("Usa a imagem do próprio episódio no card, em vez da arte da série.", "Dùng chính hình của tập trên thẻ thay cho hình của phim bộ."),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "Dùng Quick Connect nếu máy chủ cho phép: duyệt mã trong ứng dụng Jellyfin khác. Nếu không, sẽ hỏi tên người dùng và mật khẩu."),

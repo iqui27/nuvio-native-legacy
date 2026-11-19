@@ -5669,6 +5669,7 @@
   T("Uns segundos depois de abrir, o trailer toca sem som atrás do texto. Rolar a página ou sair volta para a arte.", "بعد ثوانٍ من الفتح، يُشغَّل الإعلان بلا صوت خلف النص. التمرير أو المغادرة يعيد الصورة الفنية."),
   T("Update notifications", "إشعارات التحديث"),
   T("Uruguai", "أوروغواي"),
+  T("Usa HLS nas conversões de DTS e Dolby Vision P7. A saída é Dolby Digital (AC-3). Pode ajudar em aparelhos antigos, mas aumentar o uso de internet. Use só se tiver problemas. Reabra o vídeo para aplicar.", "يستخدم HLS لتحويل DTS وDolby Vision P7. يخرج الصوت بتنسيق Dolby Digital (AC-3). قد يساعد على الأجهزة القديمة، لكنه قد يزيد استهلاك البيانات. فعّله فقط عند حدوث مشكلة وأعد فتح الفيديو."),
   T("Usa a arte deitada (16:9) no lugar do cartaz em pé nas fileiras que têm as duas.", "يستخدم الصورة الأفقية (16:9) بدلًا من الملصق العمودي في الصفوف التي فيها الاثنان."),
   T("Usa a imagem do próprio episódio no card, em vez da arte da série.", "يستخدم صورة الحلقة نفسها في البطاقة بدلًا من صورة المسلسل الفنية."),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "يستخدم Quick Connect إذا سمح الخادم: وافق على الرمز في تطبيق Jellyfin آخر. وإلا يطلب اسم المستخدم وكلمة المرور."),

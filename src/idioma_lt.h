@@ -5669,6 +5669,7 @@
   T("Uns segundos depois de abrir, o trailer toca sem som atrás do texto. Rolar a página ou sair volta para a arte.", "Po kelių sekundžių atidarius anonsas be garso groja už teksto. Slinkus ar išėjus vaizdas sugrįžta."),
   T("Update notifications", "Pranešimai apie atnaujinimus"),
   T("Uruguai", "Urugvajus"),
+  T("Usa HLS nas conversões de DTS e Dolby Vision P7. A saída é Dolby Digital (AC-3). Pode ajudar em aparelhos antigos, mas aumentar o uso de internet. Use só se tiver problemas. Reabra o vídeo para aplicar.", "DTS ir „Dolby Vision P7“ konvertavimui naudojamas HLS. Garsas perduodamas „Dolby Digital“ (AC-3) formatu. Gali padėti senesniuose įrenginiuose, bet naudoti daugiau duomenų. Įjunkite tik kilus problemų ir atverkite vaizdo įrašą iš naujo."),
   T("Usa a arte deitada (16:9) no lugar do cartaz em pé nas fileiras que têm as duas.", "Naudoja horizontalų vaizdą (16:9) vietoj stačio plakato eilutėse, kuriose yra abu."),
   T("Usa a imagem do próprio episódio no card, em vez da arte da série.", "Kortelėje naudoja paties epizodo vaizdą vietoj serialo vaizdo."),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "Naudoja Quick Connect, jei serveris leidžia: patvirtinkite kodą kitoje Jellyfin programoje. Kitaip paprašo naudotojo vardo ir slaptažodžio."),

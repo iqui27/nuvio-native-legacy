@@ -5669,6 +5669,7 @@
   T("Uns segundos depois de abrir, o trailer toca sem som atrás do texto. Rolar a página ou sair volta para a arte.", "Niekoľko sekúnd po otvorení sa za textom bez zvuku prehrá upútavka. Posunutím alebo odchodom sa grafika vráti."),
   T("Update notifications", "Upozornenia na aktualizácie"),
   T("Uruguai", "Uruguaj"),
+  T("Usa HLS nas conversões de DTS e Dolby Vision P7. A saída é Dolby Digital (AC-3). Pode ajudar em aparelhos antigos, mas aumentar o uso de internet. Use só se tiver problemas. Reabra o vídeo para aplicar.", "Používa HLS na konverziu DTS a Dolby Vision P7. Zvuk vystupuje vo formáte Dolby Digital (AC-3). Môže pomôcť na starších zariadeniach, ale zvýšiť nároky na pripojenie. Zapnite len pri problémoch a znova otvorte video."),
   T("Usa a arte deitada (16:9) no lugar do cartaz em pé nas fileiras que têm as duas.", "Použije grafiku na šírku (16:9) namiesto plagátu na výšku pri riadkoch, ktoré majú oboje."),
   T("Usa a imagem do próprio episódio no card, em vez da arte da série.", "Použije na karte vlastný obrázok epizódy namiesto artworku seriálu."),
   T("Usa o Quick Connect se o servidor permitir: aprove o código em outro app do Jellyfin. Senão, pede usuário e senha.", "Použije Quick Connect, ak to server dovolí: schváľte kód v inej aplikácii Jellyfin. Inak sa opýta na používateľa a heslo."),
