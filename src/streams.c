@@ -96,6 +96,7 @@ static inline int folhaDesktop(void) {
 // Phone Sources extends beneath the system bar; content keeps its inset.
 #define FOLHA_MARGEM    40.0f
 static int folhaRelogio;
+static int temAio(void);
 static inline int folhaFone(void) {
 #ifdef NV_TOUCH_UI
   return telefoneui_ativo() && nv_layout_h > nv_layout_w && !player_aberto() && !folhaRelogio;
@@ -113,7 +114,7 @@ static float folhaEscala(void) {
 static inline float folhaLarg(void) {
   if (folhaDesktop()) return fminf(1056.0f, NV_TELA_W - 80.0f);
   if (folhaFone()) return NV_TELA_W;
-  return telefoneui_largura(820.0f, NV_TELA_W, FOLHA_MARGEM);
+  return telefoneui_largura(temAio() && !ajustes_folha_classica() ? 1336.0f : 820.0f, NV_TELA_W, FOLHA_MARGEM);
 }
 #define FOLHA_W        folhaLarg()
 #if defined(NV_DESKTOP_UI) && defined(__APPLE__)
@@ -2578,6 +2579,19 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
   if (!sessao || !url || !tam || falhaCancelada(geracao, cancelado, ctx) ||
       !falhaCandidatas(geracao, escolhida, fontefalha_tentativas(sessao) == 0,
                        &c, &fontes, &nc)) return FONTEFALHA_FIM;
+  if (ajustes_fonte_manual() && escolhida >= 0) {
+    int q, m = 0;
+    for (q = 0; q < nc; q++) if (c[q].indice == escolhida) { m = 1; break; }
+    if (m) {
+      FonteFalhaCandidata *u = calloc(1, sizeof *u);
+      Stream *f = malloc(sizeof *f);
+      if (u && f) {
+        *u = c[q]; u->identidade = strdup(c[q].identidade);
+        *f = fontes[c[q].indice]; fontes = f; c = u; nc = 1;
+      }
+    }
+  }
+
   for (;;) {
     FonteFalhaRota r;
     char resolvida[NV_MEDIA_URL_MAX] = "", fim[NV_MEDIA_URL_MAX], mime[96] = "";
@@ -3918,6 +3932,7 @@ static const char *fraseVazioChips(void) {
   return frase;
 }
 static int passaFiltro(int i) {
+  if (i >= 0 && i < n && vt_copia_rep(i) != i) return 0;
   if (filtro < 0) return 0;
   if (filtroServidor >= 0) {
     const char *pre[] = {"plex|", "jellyfin|", "emby|"};

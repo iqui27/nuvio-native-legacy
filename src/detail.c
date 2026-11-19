@@ -2460,6 +2460,16 @@ static int montarDetalhes(LinhaDet *o, int max) {
   // serie, Canal e Episódios no lugar de No Brasil/Duração). A classificacao
   // mora na linha do cabecalho das Notas; pais e status saem — o mockup e
   // explicito sobre o que cada linha diz.
+  if (ajustes_det_fonte_antecipada()) {
+    VtEscolha esc;
+    if (vt_escolha(&esc)) {
+      char buf[320];
+      snprintf(buf, sizeof buf, "%s%s%s%s", esc.nome[0] ? esc.nome : "",
+               esc.tamanho[0] ? " · " : "", esc.tamanho, esc.prov[0] ? " · " : "");
+      if (buf[0] && esc.prov[0]) strncat(buf, esc.prov, sizeof buf - strlen(buf) - 1);
+      DET_POE("Fonte preparada", buf[0] ? buf : NULL);
+    }
+  }
   DET_POE("Original", extras_titulo_original());
   { const char *orig = extras_titulo_original();
     DET_POE("No Brasil", ci && ci->titulo[0] && strcmp(ci->titulo, orig) ? ci->titulo : NULL); }

@@ -584,6 +584,16 @@ typedef enum {
   AJ_P2P_LIMITE,
   // #205: cache do motor embutido em pendrive USB (cai para interno). LOCAL.
   AJ_P2P_DESTINO,
+  // #775: espera por metadados P2P. LOCAL.
+  AJ_P2P_PRAZO_META,
+  // #782: folha classica. LOCAL.
+  AJ_FOLHA_CLASSICA,
+  // #774: brilho fontes carregando. LOCAL.
+  AJ_FONTE_CARGA_BRILHO,
+  // #457: resumo fonte na ficha. LOCAL.
+  AJ_DET_FONTE_ANTECIP,
+  // #764: cache USB para direct/debrid. LOCAL.
+  AJ_DIRECT_CACHE_USB,
   // #400: LOCAL, deste aparelho. No fim: valor[]/CHAVE[] posicionais.
   AJ_FONTE_ORDEM_ADDON,
   AJ_LEG_SYNC_AUTO, // local, ligada de fábrica; append-only
@@ -977,6 +987,9 @@ static const char *V_CACHE_SEEK[] = { "Desligado", "256 MB", "512 MB", "1 GB" };
 static const char *V_P2P_LIMITE[] = { "Automático", "2 GB", "4 GB", "8 GB", "16 GB" };
 static const unsigned P2P_LIMITE_MB[] = { 0, 2048, 4096, 8192, 16384 };
 static const char *V_P2P_DESTINO[] = { "Interno", "Pendrive USB" };
+static const char *V_P2P_PRAZO_META[] = { "30 s (padrao)", "60 s", "2 min", "Sem limite" };
+static const char *V_FOLHA_FONTE[] = { "Nova (ilha)", "Classica Nuvio" };
+static const char *V_FONTE_CARGA[] = { "Padrao", "Mais claro" };
 // Only the Android player has an app-controlled disk cache (cacheboost.h);
 // LG/Samsung show the row with "Não disponível nesta TV". Compile-time, so the
 // many tests that compile ajustes.c alone need no extra source.
@@ -1018,7 +1031,7 @@ static const char *V_LIVETV_MODO[] = { "A (padrão)", "B (sem seleção de faixa
 static const char *V_HERO_TRANSICAO[] = { "Deslizar", "Esmaecer" };
 // Provedor dos posteres personalizados. O INDICE e o gravado ("posterProvLocal")
 // e o PP_* de posterprov.h: so acrescentar no fim.
-static const char *V_POSTER_PROV[] = { "Desligado", "SpatialPosters", "RPDB", "Modelo próprio" };
+static const char *V_POSTER_PROV[] = { "Desligado", "SpatialPosters", "RPDB", "Posters+", "Modelo próprio" };
 // LAYOUT DA HOME. O INDICE e o gravado (homeLayoutLocal) e o HOME_LAYOUT_* de
 // ajustes.h: 0 = Moderna (a de sempre, e o padrao), 1 = Padrao, 2 = Dinamica.
 //
@@ -1832,6 +1845,11 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Layout dos Ajustes",              V_LAYOUT_AJUSTES, 2),   // local: ajustesLayoutLocal (#339)
   ESC("Limite de espaço do P2P",         V_P2P_LIMITE, 5),   // local: p2pLimiteLocal (#334)
   ESC("Cache do P2P",                    V_P2P_DESTINO, 2),   // local: p2pDestinoLocal (#205)
+  ESC("Espera por metadados P2P",        V_P2P_PRAZO_META, 4),   // local: p2pPrazoMetaLocal (#775)
+  ESC("Folha de fontes",                 V_FOLHA_FONTE, 2),   // local: folhaFonteLocal (#782)
+  ESC("Fontes carregando",               V_FONTE_CARGA, 2),   // local: fonteCargaBrilhoLocal (#774)
+  ESC("Fonte na ficha do titulo",        V_LIGA, 2),   // local: detFonteAntecipLocal (#457)
+  ESC("Cache USB para links diretos",    V_LIGA, 2),   // local: directCacheUsbLocal (#764)
   ESC("Ordem das fontes", V_FONTE_ORDEM_ADDON, 2), // local (#400)
   ESC("Sincronia automática da legenda", V_LIGA, 2),
   ESC("Mostrar no player", V_LEG_MOSTRAR, 2),
@@ -2273,6 +2291,11 @@ static const char *CHAVE[] = {
   "ajustesLayoutLocal",
   "p2pLimiteLocal",
   "p2pDestinoLocal",
+  "p2pPrazoMetaLocal",
+  "folhaFonteLocal",
+  "fonteCargaBrilhoLocal",
+  "detFonteAntecipLocal",
+  "directCacheUsbLocal",
   "fonteOrdemLocal",
   "legendaSyncAutoLocal",
   "legendaMostrarLocal",
@@ -3770,6 +3793,15 @@ unsigned ajustes_p2p_limite_mb(void) {
   int v = valor[AJ_P2P_LIMITE];
   return v >= 0 && v < (int)(sizeof P2P_LIMITE_MB / sizeof *P2P_LIMITE_MB) ? P2P_LIMITE_MB[v] : 0;
 }
+int ajustes_p2p_prazo_metadados_s(void) {
+  static const unsigned prazos[] = {30, 60, 120, 0};
+  int v = valor[AJ_P2P_PRAZO_META];
+  return (v >= 0 && v < 4) ? (int)prazos[v] : 30;
+}
+int ajustes_folha_classica(void) { return valor[AJ_FOLHA_CLASSICA] != 0; }
+int ajustes_fonte_carga_brilho_alto(void) { return valor[AJ_FONTE_CARGA_BRILHO] != 0; }
+int ajustes_det_fonte_antecipada(void) { return !valor[AJ_DET_FONTE_ANTECIP]; }
+int ajustes_direct_cache_usb(void) { return !valor[AJ_DIRECT_CACHE_USB] && ajustes_p2p_usb(); }
 int ajustes_p2p_usb(void) { return valor[AJ_P2P_DESTINO] == 1; }
 #endif
 // Servidores pessoais: ligado E com HTTP estrito neste backend (o WGT nao tem:

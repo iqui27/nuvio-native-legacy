@@ -49,7 +49,9 @@ typedef enum {
 // cobre swarm pequeno sem deixar a TV parada. Os primeiros bytes incluem
 // conectar em peers e baixar a primeira peca (alguns MB em torrent mal semeado).
 #define P2P_PRAZO_TESTE     6
-#define P2P_PRAZO_METADADOS 30
+#define P2P_PRAZO_METADADOS_PADRAO 30
+int p2p_prazo_metadados_s(void);
+#define P2P_PRAZO_METADADOS p2p_prazo_metadados_s()
 #define P2P_PRAZO_BYTES     25
 
 // Normaliza o que a pessoa digitou: "192.168.1.5", "192.168.1.5:11470",

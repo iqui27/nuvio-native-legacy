@@ -355,3 +355,8 @@ int p2p_resolver(const char *hash, int fileIdx, const char *fontes, char *url, u
   printf("[p2p] %.8s: arquivo %d pronto\n", hash, idx);
   return ultimoErro = P2P_OK;
 }
+
+int p2p_prazo_metadados_s(void) {
+  int s = ajustes_p2p_prazo_metadados_s();
+  return s > 0 ? s : 0;
+}

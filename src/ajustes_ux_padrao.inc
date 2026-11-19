@@ -259,6 +259,11 @@
   0, /* Settings layout (#339): Painel = the card grid and the art beside the list */
   0, /* P2P space limit (#334): Automatico */
   0, /* P2P cache location (#205): Interno */
+  0, /* P2P metadata wait (#775): 30 s */
+  0, /* folha fontes (#782): ilha nova */
+  0, /* fontes carregando (#774): padrao */
+  1, /* fonte na ficha (#457): V_LIGA 1=desligado */
+  1, /* direct cache USB (#764): V_LIGA 1=desligado */
   0, /* Source display order (#400): Por qualidade, local */
   0, /* Sincronia automática da legenda: Ligado, local */
   0, /* Mostrar no player (#425): Só meus idiomas; sem preferencia, todas */
