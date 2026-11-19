@@ -3789,6 +3789,7 @@
   T("Gargalo principal", "Główne wąskie gardło"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "Zarządzaj"),
+  T("Gerenciar add-ons", "Zarządzaj dodatkami"),
   T("Gerenciar conexões", "Zarządzaj połączeniami"),
   T("Gerenciar fontes", "Zarządzaj czcionkami"),
   T("Gerenciar legendas no celular", "Zarządzaj napisami na telefonie"),

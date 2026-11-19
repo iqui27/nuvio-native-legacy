@@ -3789,6 +3789,7 @@
   T("Gargalo principal", "主なボトルネック"),
   T("Gerar novo QR", "Generate new QR code"),
   T("Gerenciar", "管理"),
+  T("Gerenciar add-ons", "アドオンを管理"),
   T("Gerenciar conexões", "接続を管理"),
   T("Gerenciar fontes", "フォントの管理"),
   T("Gerenciar legendas no celular", "電話で字幕を管理する"),
