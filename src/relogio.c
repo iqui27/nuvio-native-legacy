@@ -1,5 +1,7 @@
 #include "relogio.h"
 
+#include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 // Mais do que isto de diferenca entre a amostra e a previsao e salto (seek,
@@ -40,7 +42,10 @@ void relogio_amostra(Relogio *r, double posSeg, double agora, int tocando) {
     return;
   }
   if (!r->tocando) { r->tocando = 1; r->n = r->prox = 0; nova = 1; }
-  if (!nova) return;
+  if (!nova) {
+    if (r->n) relogio_salto_ass_passo(r, agora);
+    return;
+  }
   { double off = posSeg - agora * taxaDe(r);
     if (r->n && (off - maxOff(r) > REL_SALTO || maxOff(r) - off > REL_SALTO)) {
       r->n = r->prox = 0;
@@ -53,6 +58,7 @@ void relogio_amostra(Relogio *r, double posSeg, double agora, int tocando) {
     r->prox = (r->prox + 1) % RELOGIO_AMOSTRAS;
     if (r->n < RELOGIO_AMOSTRAS) r->n++; }
   r->ultPos = posSeg; r->ultAgora = agora; r->temAmostra = 1;
+  relogio_salto_ass_passo(r, agora);
 }
 
 double relogio_ler(Relogio *r, double agora) {
@@ -68,4 +74,19 @@ double relogio_ler(Relogio *r, double agora) {
   if (v < r->saida && r->saida - v < REL_RECUO) v = r->saida;
   r->saida = v;
   return v;
+}
+
+void relogio_salto_ass_passo(Relogio *r, double agora) {
+  double l0, l1;
+  static double ultM;
+  if (!r->tocando || !r->n) return;
+  l1 = relogio_ler(r, agora);
+  l0 = ultM > 0 ? relogio_ler(r, ultM) : l1;
+  if (ultM > 0 && agora - ultM < 0.6 && fabs(l1 - l0) > 1.5) {
+    printf("[legenda] #772: salto ASS %.1fs na linha do tempo — realinha\n", l1 - l0);
+    fflush(stdout);
+    relogio_amostra(r, l1, agora, 1);
+    return;
+  }
+  ultM = agora;
 }

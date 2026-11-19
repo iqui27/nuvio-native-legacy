@@ -5319,25 +5319,6 @@ void player_atualizar(float dt, Uint32 agora) {
                       ;
       relogio_taxa(&relLeg, velMed.efetiva / 100.0);
       relogio_amostra(&relLeg, video_pos(), monoSeg(), !legParada); }
-    // #772: salto na linha do tempo da legenda (bloco separado para merge com #728/#710).
-    { int legParada = !tocando || scrubbing || video_reconectando()
-#ifdef NV_TPK
-                      || video_busca_em_voo()
-#endif
-                      ;
-      if (!legParada) {
-        double m = monoSeg(), l0, l1;
-        static double ultM;
-        l1 = relogio_ler(&relLeg, m);
-        l0 = ultM > 0 ? relogio_ler(&relLeg, ultM) : l1;
-        if (ultM > 0 && m - ultM < 0.6 && fabs(l1 - l0) > 1.5) {
-          printf("[legenda] #772: salto ASS %.1fs na linha do tempo — realinha\n",
-                 l1 - l0);
-          fflush(stdout);
-          relogio_amostra(&relLeg, l1, m, 1);
-        }
-        ultM = m;
-      } }
     // A cada 10 s: o numero cru do pipeline e o do relogio da legenda, no
     // mesmo instante. A diferenca e o que a interpolacao acrescenta (0..~250).
     { static double ultRel;
