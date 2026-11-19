@@ -817,6 +817,7 @@ typedef enum {
   AJ_BUFFER_NATIVE_CONNECTIONS, AJ_BUFFER_CONVERSION_CONNECTIONS,
   // Player buffer telemetry + remote toggles (Matis94 C3), append-only, local.
   AJ_BUFFER_DADOS, AJ_RAM_OVERLAY, AJ_RAM_VERDE, AJ_BUFFER_RAM_REDUZ,
+  AJ_AJUSTES_DO_PRINCIPAL,  /* #679 append-only */
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -2041,6 +2042,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Memória RAM na tela", V_LIGA, 2),                    // local: ramOverlayLocal
   ESC("Botão verde mostra a RAM na tela", V_LIGA, 2),        // local: ramGreenLocal
   ESC("Reduzir o buffer com pouca memória", V_LIGA, 2),      // local: bufferRamReduzLocal
+  ESC("Personalização igual ao perfil principal", V_LIGA, 2),  // local: personalizacaoDoPerfilPrincipalLocal (#679)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2419,6 +2421,7 @@ static const char *CHAVE[] = {
   "externalAudioAutoMatchLocal",
   "nativeBufferConnectionsLocal", "conversionBufferConnectionsLocal", // fork keys
   "bufferDataLocal", "ramOverlayLocal", "ramGreenLocal", "bufferRamReduzLocal",
+  "personalizacaoDoPerfilPrincipalLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3390,7 +3393,18 @@ int ajustes_vidro_contorno(void) {
   return lig(AJ_VIDRO_CONTORNO);
 }
 int ajustes_addons_do_principal(void) { return lig(AJ_ADDONS_PRINCIPAL); }
-#endif
+// #679: perfis secundarios recebem chaves locais dePerfil que ainda nao tinham gravado.
+int ajustes_personalizacao_do_principal(void) { return lig(AJ_AJUSTES_DO_PRINCIPAL); }
+
+static void ajustes_complementar_do_principal(int perfil, int *v, char *tem) {
+  int pri[AJ_N], ptem[AJ_N], i;
+  if (perfil <= 0 || perfil == perfis_principal() || !ajustes_personalizacao_do_principal()) return;
+  memcpy(pri, valorPadrao, sizeof pri);
+  if (perfis_principal() == perfis_ativo()) memcpy(pri, valor, sizeof pri);
+  else if (!perfilLerVetor(perfis_principal(), pri, ptem)) return;
+  for (i = 0; i < AJ_N; i++)
+    if (dePerfil(i) && somenteDesteAparelho(i) && !tem[i]) { v[i] = pri[i]; tem[i] = 1; }
+}
 int ajustes_foco_acento(void) { return lig(AJ_FOCO_ACENTO); }
 float ajustes_vidro_opacidade(void) {
   static const float F[] = { 0.60f, 0.70f, 0.78f, 0.86f, 0.92f };
@@ -6559,6 +6573,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_VIDRO_CONTORNO:
     case AJ_CW_CONCLUIDO:   /* o web nao tem esta escolha */
     case AJ_CW_MINIMO:      /* idem */
+    case AJ_AJUSTES_DO_PRINCIPAL:
     case AJ_ADDONS_PRINCIPAL: /* escolha desta TV; a conta tem uses_primary_addons */
     case AJ_HERO_TRANSICAO: /* o web nao tem esta escolha */
     case AJ_ADDON_POSTER: case AJ_ADDON_FUNDO: case AJ_ADDON_LOGO:
@@ -6855,6 +6870,7 @@ int ajustes_perfil_restaurar(int perfil) {
   fonteregra_perfil_restaurar(perfil);
   memcpy(v, valor, sizeof v);
   int existe = perfilLerVetor(perfil, v, tem);
+  ajustes_complementar_do_principal(perfil, v, tem);
   if (!tem[AJ_MENU_TOPO]) { v[AJ_MENU_TOPO] = 0; tem[AJ_MENU_TOPO] = 1; }
   if (!tem[AJ_DET_TOPO]) { v[AJ_DET_TOPO] = 0; tem[AJ_DET_TOPO] = 1; }
   if (!tem[AJ_ABAS_ESTILO]) { v[AJ_ABAS_ESTILO] = 0; tem[AJ_ABAS_ESTILO] = 1; }
@@ -7515,6 +7531,7 @@ static const char *rotuloNovo(int op) {
     case AJ_PULAR_CREDITOS: return "Pular os créditos sozinho";
     case AJ_PROXIMO_AUTO: return "Tocar o próximo episódio sozinho";
     case AJ_REACAO_CREDITOS: return "Perguntar o que achou no fim";
+    case AJ_AJUSTES_DO_PRINCIPAL: return "Personalização igual ao perfil principal";
     case AJ_ADDONS_PRINCIPAL: return "Addons do perfil principal";
     case AJ_BUSCA_NUVIO: return "Catálogo do Nuvio na busca";
     case AJ_BUSCA_ORIGEM: return "Fonte nos resultados da busca";
@@ -8690,6 +8707,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_HOME_LAYOUT: return "Moderna: destaque atrás das fileiras. Padrão: destaque num banner no topo. Dinâmica: estilo Apple TV, com destaques grandes e Top 10.";
     case AJ_VIDRO: return "Painéis, botões e menus viram ilhas translúcidas que deixam a arte aparecer. Desligado, as mesmas ilhas ficam opacas. Só muda o visual; nada muda de lugar.";
     case AJ_PROVEDORES_ESCOPO: return "Compartilhada usa as mesmas contas de provedores neste aparelho. Separada guarda uma cópia para este perfil. Trocar de opção mantém as duas configurações.";
+    case AJ_AJUSTES_DO_PRINCIPAL: return "Ligado, cada perfil secundário desta conta herda da TV os ajustes locais de personalização que ainda não tiver salvos — o mesmo Hero, fileiras e visual do perfil principal. Desligado, só vale o que já estiver no arquivo do perfil.";
     case AJ_ADDONS_PRINCIPAL: return "Os outros perfis desta conta usam os addons do perfil principal. Desligado, cada perfil usa os seus — a não ser que a conta já diga para usar os do principal.";
     case AJ_VIDRO_CONTORNO: return "O contorno das linhas e dos cartões, inclusive o do foco. Desligado, o item em foco é marcado só por um fundo mais claro na cor de destaque.";
     case AJ_NT_EP: return "Qual nota aparece nos cartões de episódio. Como na linha do título segue os interruptores de Notas (IMDb, Trakt, TMDB). Só nesta TV.";
