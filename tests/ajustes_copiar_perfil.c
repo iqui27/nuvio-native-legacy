@@ -81,6 +81,7 @@ void testarHeranca(void) {
   valor[AJ_VIDRO_OPAC] = 4;                 // principal com personalizacao
   ajustes_perfil_guardar(1);                // grava a flag no padrao (Desligado)
   ajustes_perfil_restaurar(1);
+  ajustes_perfil_padrao();                  // sync_trocar_perfil faz isso antes de restaurar
   ajustes_perfil_restaurar(2);              // secundario parcial/sem arquivo
   assert(valor[AJ_VIDRO_OPAC] == valorPadrao[AJ_VIDRO_OPAC]);
 
