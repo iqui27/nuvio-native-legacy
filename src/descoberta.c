@@ -8053,6 +8053,106 @@ static void mesclarEpisodiosJson(CatEp *base, int nb, const char *corpo, int mod
 // titulo iam parar em outro. epAlvo re-resolve pelo id antes de cada escrita;
 // -1 = o titulo saiu do catalogo ou o pedido foi substituido.
 static char epAlvoId[64], epPedidoId[64];
+/* #787: corpo /meta inteiro para temporadas alem de VIDEOS_MAX carregarem sob demanda. */
+static char epCorpoId[64];
+static char *epCorpoCache;
+
+static void epCorpoLiberar(void) {
+  free(epCorpoCache);
+  epCorpoCache = NULL;
+  epCorpoId[0] = 0;
+}
+
+static void epCorpoGuardar(const char *id, const char *corpo) {
+  if (!id || !corpo || !metaContarEpisodios(corpo, NULL)) {
+    epCorpoLiberar();
+    return;
+  }
+  if (epCorpoCache && !strcmp(epCorpoId, id)) return;
+  epCorpoLiberar();
+  epCorpoCache = strdup(corpo);
+  if (epCorpoCache) snprintf(epCorpoId, sizeof epCorpoId, "%s", id);
+}
+
+static int epTempResidente(int item, int temporada) {
+  int n = cat_n_episodios(item), c = 0;
+  for (int i = 0; i < n; i++) {
+    const CatEp *ep = cat_episodio(item, i);
+    if (ep && ep->temporada == temporada && ep->episodio > 0) c++;
+  }
+  return c;
+}
+
+static int parsearUmaTemporada(const char *corpo, int temporada, CatEp *eps, int max) {
+  const char *p;
+  int n = 0;
+  if (!corpo || !eps || max <= 0 || temporada < 0) return 0;
+  for (p = js_array(corpo, NULL, "videos"); p && n < max; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    int t = videoTemporada(p, f);
+    int ne = t >= 0 ? (int)js_num(p, f, "episode", 0) : 0;
+    if (t != temporada || ne <= 0) continue;
+    CatEp *e = &eps[n++];
+    char d[24] = "";
+    memset(e, 0, sizeof *e);
+    e->temporada = t;
+    e->episodio = ne;
+    e->tvdbEp = metaep_tvdb_video(p, f);
+    js_texto_raiz_em(p, f, "name", e->nome, sizeof e->nome);
+    js_texto(p, f, "released", e->dataIso, sizeof e->dataIso);
+    js_texto(p, f, "released", d, sizeof d);
+    desc_data_extenso(d, e->data, sizeof e->data);
+  }
+  for (int i = 1; i < n; i++) {
+    CatEp k = eps[i];
+    int j;
+    for (j = i - 1; j >= 0 && eps[j].episodio > k.episodio; j--) eps[j + 1] = eps[j];
+    eps[j + 1] = k;
+  }
+  return n;
+}
+
+static int appendTemporadaCorpo(int item, int temporada) {
+  CatEp *novos, *base;
+  int nNov, nAnt, i, j, k = 0;
+  if (temporada <= 0 || !epCorpoCache || epCorpoId[0] == 0) return 0;
+  CatItem ci;
+  if (!cat_copiar_item(item, &ci) || strcmp(ci.imdb, epCorpoId)) return 0;
+  if (epTempResidente(item, temporada) > 0) return 0;
+  nAnt = cat_n_episodios(item);
+  novos = malloc(sizeof(CatEp) * (size_t)VIDEOS_MAX);
+  if (!novos) return 0;
+  nNov = parsearUmaTemporada(epCorpoCache, temporada, novos, VIDEOS_MAX);
+  if (nNov <= 0) { free(novos); return 0; }
+  if (nNov > VIDEOS_MAX) nNov = VIDEOS_MAX;
+  base = malloc(sizeof(CatEp) * (size_t)VIDEOS_MAX);
+  if (!base) { free(novos); return 0; }
+  for (i = 0; i < nAnt && k < VIDEOS_MAX; i++) {
+    const CatEp *ep = cat_episodio(item, i);
+    if (!ep) continue;
+    if (ep->temporada == temporada) continue;
+    base[k++] = *ep;
+  }
+  while (k + nNov > VIDEOS_MAX && k > 0) k--;
+  if (k + nNov > VIDEOS_MAX) { free(base); free(novos); return 0; }
+  for (i = 0; i < nNov; i++) base[k++] = novos[i];
+  for (i = 0; i < k; i++)
+    for (j = i + 1; j < k; j++)
+      if (base[j].temporada < base[i].temporada ||
+          (base[j].temporada == base[i].temporada && base[j].episodio < base[i].episodio)) {
+        CatEp t = base[i]; base[i] = base[j]; base[j] = t;
+      }
+  descCatEpisodios(item, base, k);
+  { CatItem edit;
+    if (cat_copiar_item(item, &edit)) {
+      edit.epsParciais = metaContarEpisodios(epCorpoCache, NULL) > k;
+      descCatAtualizar(cat_atualizar_item, item, &edit);
+    }
+  }
+  free(base);
+  free(novos);
+  return 1;
+}
 typedef struct { int item; unsigned geracao; char id[64]; CatItem base; NvPerfilSessao sessao; } EpPedido;
 static pthread_key_t epPedidoKey;
 static pthread_once_t epPedidoOnce = PTHREAD_ONCE_INIT;
@@ -8500,7 +8600,7 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
       if (cat_copiar_item(alvoItem, &edit)) {
         // Season tabs are ready before addon selection necessarily is.
         // Keep pending identities provisional until the selected list is final.
-        edit.epsParciais = provisorio;
+        edit.epsParciais = provisorio || (totalNoCorpo > n);
         edit.nTemporadas = tp->n;
         memcpy(edit.temporadas, tp->t, sizeof(int) * (size_t)tp->n);
         descCatAtualizar(cat_atualizar_item, alvoItem, &edit);
@@ -9371,6 +9471,7 @@ static void *buscarEps(void *u) {
     if (ultimo || desc_meta_tem_temporadas(corpo)) break;
   }
   if (!corpo || preCede(meuId)) { metaFontesLiberar(&mf); free(corpo); epConcluir(); return NULL; }
+  if (!ehFilme) epCorpoGuardar(serie, corpo);
   if (nTipos > 1) {
     const char *resolvido = ehFilme ? "movie" : "series";
     printf("[desc] %s: tipo '%s' do catalogo resolvido como '%s' pelo /meta\n",
@@ -9512,7 +9613,7 @@ static void *buscarEps(void *u) {
       }
     }
     // Publica texto, generos e temporadas antes do enriquecimento de imagens.
-    edit.epsParciais = 0;
+    edit.epsParciais = (!ehFilme && metaContarEpisodios(corpo, NULL) > cat_n_episodios(alvoItem));
     alvoItem = epPublicacaoIniciar(alvoItem);
     if (alvoItem >= 0) descCatAtualizar(cat_atualizar_item, alvoItem, &edit);
     pthread_mutex_unlock(&epPedidoTrava);
@@ -10692,6 +10793,9 @@ void desc_episodios(int indiceItem, int temporada) {
   // Uma lista antecipada continua visivel, mas precisa retomar a mescla.
   CatItem atual;
   if (!cat_copiar_item(indiceItem, &atual)) return;
+  if (temporada > 0 && cat_n_episodios(indiceItem) > 0 &&
+      epTempResidente(indiceItem, temporada) == 0)
+    appendTemporadaCorpo(indiceItem, temporada);
   if (cat_n_episodios(indiceItem) > 0 && !atual.epsParciais) return;
   EpPedido *p = calloc(1, sizeof *p);
   if (!p) return;

@@ -637,6 +637,13 @@ int main(void) {
         const CatEp *last = cat_episodio(0, n - 1);
         assert(last && last->temporada == seasons && last->episodio == per);
       }
+      if (seasons == 40 && per == 130 && n < total) {
+        epCorpoLiberar();
+        epCorpoGuardar("tt787", body);
+        assert(cat_item(0)->epsParciais);
+        assert(appendTemporadaCorpo(0, 40));
+        assert(epTempResidente(0, 40) == per);
+      }
     }
     free(body);
     return 0;
