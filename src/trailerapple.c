@@ -16,18 +16,21 @@
 #include "js.h"
 #include "dados.h"
 #include "ajustes.h"
+#include "extras.h"
 #include <SDL2/SDL.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <ctype.h>
 #include <time.h>
 #include <sys/stat.h>
 
 #define TA_MAX 32
 typedef struct {
-  char imdb[16];
+  char imdb[48];      // IMDb + requested language; isolates in-flight and disk caches
+  char audio[16];     // actual audio verified in the HLS master
   char url[1024];       // master da Apple (ABR completo)
   char toca[600];       // LG: file:// do master reduzido a UMA variante; Samsung: URL da playlist de midia dela (varianteMidia); ou vazio
   int  tocaQual;        // teto de qualidade com que `toca` foi montado
@@ -40,6 +43,61 @@ static SDL_mutex *mtx;
 
 #define UTS_HOST "https://tv.apple.com/api/uts/v3"
 #define UTS_QUERY "caller=web&sf=143441&v=76&pfm=appletv&locale=en-US&l=en&utsk=6e3013c6d6fae3c2::::::235656c069bb0efb"
+// Storefronts used by Apple's public TV catalog. Unknown locales keep the
+// existing US fallback; a localized page alone is not proof of dubbed audio.
+typedef struct { const char *iso, *locale; int sf; } Regiao;
+static const Regiao REGIOES[] = {
+  { "en", "en-US", 143441 }, { "de", "de-DE", 143443 },
+  { "fr", "fr-FR", 143442 }, { "es", "es-ES", 143454 },
+  { "it", "it-IT", 143450 }, { "pt", "pt-BR", 143503 },
+  { "pt-PT", "pt-PT", 143453 }, { "tr", "tr-TR", 143480 },
+  { "nl", "nl-NL", 143452 }, { "ja", "ja-JP", 143462 },
+  { "ko", "ko-KR", 143466 }, { "zh", "zh-CN", 143465 },
+  { "zh-TW", "zh-TW", 143470 }, { "pl", "pl-PL", 143478 },
+  { "sv", "sv-SE", 143456 }, { "da", "da-DK", 143458 },
+  { "no", "nb-NO", 143457 }, { "nb", "nb-NO", 143457 },
+  { "fi", "fi-FI", 143447 }, { "cs", "cs-CZ", 143489 },
+  { "sk", "sk-SK", 143496 }, { "hu", "hu-HU", 143482 },
+  { "ro", "ro-RO", 143487 }, { "el", "el-GR", 143448 },
+  { "ru", "ru-RU", 143469 }, { "uk", "uk-UA", 143492 },
+  { "ar", "ar-SA", 143479 }, { "hi", "hi-IN", 143467 },
+  { "id", "id-ID", 143476 }, { "vi", "vi-VN", 143471 },
+  { "th", "th-TH", 143475 }, { "he", "he-IL", 143491 }
+};
+static const Regiao *regiaoDe(const char *idioma) {
+  unsigned i;
+  for (i = 0; i < sizeof REGIOES / sizeof *REGIOES; i++)
+    if (!strcasecmp(idioma, REGIOES[i].iso)) return &REGIOES[i];
+  for (i = 0; i < sizeof REGIOES / sizeof *REGIOES; i++)
+    if (!strncasecmp(idioma, REGIOES[i].iso, 2)) return &REGIOES[i];
+  return &REGIOES[0];
+}
+static void consultaIdioma(const char *idioma, char *dst, unsigned cap) {
+  const Regiao *r = regiaoDe(idioma);
+  snprintf(dst, cap, "caller=web&sf=%d&v=76&pfm=appletv&locale=%s&l=%.2s&utsk=6e3013c6d6fae3c2::::::235656c069bb0efb",
+           r->sf, r->locale, r->locale);
+}
+static void chaveIdioma(const char *imdb, char *chave, unsigned cap, char *idioma, unsigned n) {
+  char pref[16];
+  extras_trailer_audio_idioma(pref, sizeof pref);
+  if (!strcmp(pref, "~")) snprintf(idioma, n, "~");
+  else {
+    const Regiao *r = regiaoDe(pref);
+    // Preserve an unsupported request in diagnostics/cache identity even
+    // though its catalog lookup can only use the existing English fallback.
+    if (strncasecmp(pref, "en", 2) && !strncmp(r->locale, "en", 2)) {
+      unsigned k = 0;
+      while (pref[k] && k + 1 < n &&
+             ((pref[k] >= 'a' && pref[k] <= 'z') || (pref[k] >= 'A' && pref[k] <= 'Z') || pref[k] == '-')) {
+        idioma[k] = pref[k]; k++;
+      }
+      idioma[k] = 0;
+      if (!k) snprintf(idioma, n, "en-US");
+    } else snprintf(idioma, n, "%s", r->locale);
+  }
+  snprintf(chave, cap, "%s%s%s", imdb, !strcmp(idioma, "en-US") ? "" : "-",
+           !strcmp(idioma, "en-US") ? "" : !strcmp(idioma, "~") ? "original" : idioma);
+}
 static const char *const CABS[] = { "Accept: application/json", "Origin: https://tv.apple.com", NULL };
 
 static void trancar(void)   { if (!mtx) mtx = SDL_CreateMutex(); SDL_LockMutex(mtx); }
@@ -75,11 +133,12 @@ static int lerDisco(Entrada *e) {
   if (!fgets(linha, sizeof linha, f)) { fclose(f); return 0; }
   e->expira = atol(linha);
   e->url[0] = 0;
-  if (fgets(linha, sizeof linha, f)) { linha[strcspn(linha, "\r\n")] = 0; if (strcmp(linha, "-")) snprintf(e->url, sizeof e->url, "%s", linha); }
-#ifdef NV_TRAILER_SAMSUNG
+  if (fgets(linha, sizeof linha, f)) { linha[strcspn(linha, "\r\n")] = 0; if (strcmp(linha, "-")) snprintf(e->url, sizeof e->url, "%.1023s", linha); }
   e->toca[0] = 0;
-  if (fgets(linha, sizeof linha, f)) { linha[strcspn(linha, "\r\n")] = 0; if (strcmp(linha, "-")) snprintf(e->toca, sizeof e->toca, "%s", linha); }
-#endif
+  if (fgets(linha, sizeof linha, f)) { linha[strcspn(linha, "\r\n")] = 0; if (strcmp(linha, "-")) snprintf(e->toca, sizeof e->toca, "%.599s", linha); }
+  e->tocaQual = -1;
+  snprintf(e->audio, sizeof e->audio, "en");
+  if (fgets(linha, sizeof linha, f)) { linha[strcspn(linha, "\r\n")] = 0; snprintf(e->audio, sizeof e->audio, "%.15s", linha); }
   fclose(f);
   return 1;
 }
@@ -91,7 +150,7 @@ static void gravarDisco(const Entrada *e) {
   // Terceira linha: a variante de midia da Samsung ("-" na LG, que monta o
   // reduzido do master em disco). Cache antigo sem ela e refeito (ver
   // trailerapple_pedir).
-  fprintf(f, "%ld\n%s\n%s\n", e->expira, e->url[0] ? e->url : "-", e->toca[0] && strncmp(e->toca, "file://", 7) ? e->toca : "-");
+  fprintf(f, "%ld\n%s\n%s\n%s\n", e->expira, e->url[0] ? e->url : "-", e->toca[0] && strncmp(e->toca, "file://", 7) ? e->toca : "-", e->audio);
   fclose(f);
   dados_marcar_sujo(1);   // IDBFS (Samsung): cache re-obtivel, descarga leve
 }
@@ -131,11 +190,13 @@ static int atributo(const char *linha, const char *nome, char *dst, unsigned tam
 }
 
 #ifndef NV_TRAILER_SAMSUNG   /* so a LG monta o reduzido em disco */
-static int montarReduzido(const char *imdb, int teto, char *saida, unsigned tam) {
+static int montarReduzido(const char *imdb, int teto, const char *audio, char *saida, unsigned tam) {
   char cm[600], cr[600], linha[2048];
   char melhorInf[2048] = "", melhorUri[1024] = "", melhorAudio[128] = "";
   int melhorW = 0, melhorAvc = 0;
   FILE *f, *g;
+  char grupos[32][128];
+  int nGrupos = 0;
 #ifdef NV_ANDROID
   // ANDROID: "Máxima" vira 1080p. Na TCL Smart TV Pro (Mali-G52) a variante
   // 3840px hvc1 travou a interface 8 s e depois 20 s ao abrir o trailer de
@@ -146,6 +207,18 @@ static int montarReduzido(const char *imdb, int teto, char *saida, unsigned tam)
   caminhoMaster(imdb, cm, sizeof cm, ".m3u8");
   caminhoMaster(imdb, cr, sizeof cr, "-play.m3u8");
   if (!cm[0] || !(f = fopen(cm, "r"))) return 0;
+  // Only video variants whose audio group contains the selected language.
+  // A master may expose German audio but attach the first/widest video to
+  // an English-only group; dropping that group's audio would make it silent.
+  while (audio[0] && fgets(linha, sizeof linha, f)) {
+    char lg[16], grp[128];
+    if (strncmp(linha, "#EXT-X-MEDIA:", 13) || !strstr(linha, "TYPE=AUDIO")) continue;
+    atributo(linha, "LANGUAGE", lg, sizeof lg);
+    atributo(linha, "GROUP-ID", grp, sizeof grp);
+    if (grp[0] && !strncasecmp(lg, audio, 2) && nGrupos < 32)
+      snprintf(grupos[nGrupos++], sizeof grupos[0], "%s", grp);
+  }
+  rewind(f);
   // Passo 1: escolher a variante.
   while (fgets(linha, sizeof linha, f)) {
     char res[32], cod[128], aud[128], uri[1024];
@@ -154,6 +227,11 @@ static int montarReduzido(const char *imdb, int teto, char *saida, unsigned tam)
     atributo(linha, "RESOLUTION", res, sizeof res);
     atributo(linha, "CODECS", cod, sizeof cod);
     atributo(linha, "AUDIO", aud, sizeof aud);
+    if (nGrupos) {
+      int k;
+      for (k = 0; k < nGrupos && strcmp(aud, grupos[k]); k++) {}
+      if (k == nGrupos) continue;
+    }
     w = atoi(res);
     if (w <= 0) continue;
     if (strstr(cod, "dvh1") || strstr(cod, "dvhe")) continue;
@@ -176,11 +254,13 @@ static int montarReduzido(const char *imdb, int teto, char *saida, unsigned tam)
   fprintf(g, "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-INDEPENDENT-SEGMENTS\n");
   rewind(f);
   while (fgets(linha, sizeof linha, f)) {
-    char grp[128];
+    char grp[128], lg[16];
     if (strncmp(linha, "#EXT-X-MEDIA:", 13)) continue;
     if (!strstr(linha, "TYPE=AUDIO")) continue;
     atributo(linha, "GROUP-ID", grp, sizeof grp);
-    if (melhorAudio[0] && !strcmp(grp, melhorAudio)) { fputs(linha, g); break; }
+    atributo(linha, "LANGUAGE", lg, sizeof lg);
+    if (melhorAudio[0] && !strcmp(grp, melhorAudio) &&
+        (!audio[0] || !lg[0] || !strncasecmp(audio, lg, 2))) { fputs(linha, g); break; }
   }
   fputs(melhorInf, g);
   fprintf(g, "%s\n", melhorUri);
@@ -223,13 +303,29 @@ static int montarReduzido(const char *imdb, int teto, char *saida, unsigned tam)
 // e e o que o emulador provou. hvc1 so quando o titulo nao tem avc1. As URIs
 // do master sao absolutas; relativa e descartada (resolver contra o master
 // seria refazer justamente o que o motor da Samsung erra).
-static int varianteMidia(const char *master, int teto, char *dst, unsigned tam) {
+static int grupoTemAudio(const char *master, const char *grupo, const char *audio) {
+  const char *p = master;
+  while ((p = strstr(p, "#EXT-X-MEDIA:"))) {
+    char linha[2048], tipo[24], grp[128], lg[16];
+    size_t n = strcspn(p, "\r\n");
+    if (n >= sizeof linha) n = sizeof linha - 1;
+    memcpy(linha, p, n); linha[n] = 0;
+    atributo(linha, "TYPE", tipo, sizeof tipo);
+    atributo(linha, "GROUP-ID", grp, sizeof grp);
+    atributo(linha, "LANGUAGE", lg, sizeof lg);
+    if (!strcmp(tipo, "AUDIO") && !strcmp(grp, grupo) && !strncasecmp(lg, audio, 2)) return 1;
+    p += n ? n : 1;
+  }
+  return 0;
+}
+
+static int varianteMidia(const char *master, int teto, const char *audio, char *dst, unsigned tam) {
   const char *p = master;
   char melhorUri[1024] = "";
   int melhorW = 0, melhorAvc = 0;
   if (!master) return 0;
   while ((p = strstr(p, "#EXT-X-STREAM-INF:")) != NULL) {
-    char linha[2048], res[32], cod[128], uri[1024];
+    char linha[2048], res[32], cod[128], uri[1024], aud[128];
     const char *fimLinha = strchr(p, '\n'), *u, *fimU;
     size_t n;
     int w, avc;
@@ -246,6 +342,8 @@ static int varianteMidia(const char *master, int teto, char *dst, unsigned tam) 
     p = fimLinha;
     atributo(linha, "RESOLUTION", res, sizeof res);
     atributo(linha, "CODECS", cod, sizeof cod);
+    atributo(linha, "AUDIO", aud, sizeof aud);
+    if (audio[0] && aud[0] && !grupoTemAudio(master, aud, audio)) continue;
     w = atoi(res);
     if (w <= 0 || strncmp(uri, "http", 4)) continue;
     if (strstr(cod, "dvh1") || strstr(cod, "dvhe")) continue;
@@ -412,20 +510,25 @@ static int escolherNaBusca(const char *corpo, const char *titulo, int ano, int s
   return 1;
 }
 
-static int buscarId(const char *titulo, int ano, int serie, char *id, unsigned tam,
-                    char *arte, unsigned tamArte) {
+static int buscarIdCom(const char *titulo, int ano, int serie, char *id, unsigned tam,
+                    char *arte, unsigned tamArte, const char *query) {
   char norm[256], enc[768], url[1100];
   char *corpo;
   int r;
   normalizar(titulo, norm, sizeof norm);
   if (!norm[0]) return 0;
   urlEncode(titulo, enc, sizeof enc);
-  snprintf(url, sizeof url, UTS_HOST "/search?" UTS_QUERY "&searchTerm=%s", enc);
+  snprintf(url, sizeof url, UTS_HOST "/search?%s&searchTerm=%s", query, enc);
   corpo = rede_baixar_com(url, 12, CABS);
   if (!corpo) return -1;
   r = escolherNaBusca(corpo, titulo, ano, serie, id, tam, arte, tamArte);
   free(corpo);
   return r;
+}
+
+static int buscarId(const char *titulo, int ano, int serie, char *id, unsigned tam,
+                    char *arte, unsigned tamArte) {
+  return buscarIdCom(titulo, ano, serie, id, tam, arte, tamArte, UTS_QUERY);
 }
 
 // ARTE POR IMDb + ano + tipo, inclusive a semeada pelo trailer: uma busca
@@ -474,86 +577,136 @@ int trailerapple_arte(const char *imdb, const char *titulo, int ano, int serie,
 // backgroundVideo primeiro (e o loop que a propria Apple toca atras do titulo
 // e traz o 4K mais vezes), movieClips depois. canvas.shelves NAO: e "mais como
 // este", trailer de OUTRO filme.
-static int hlsDe(const char *id, int serie, char *url, unsigned tam) {
+static const char *objetoTopo(const char *obj, const char *fim, const char *chave) {
+  const char *p = obj ? chaveTopo(obj, fim, chave) : NULL;
+  if (!p || !(p = strchr(p, ':'))) return NULL;
+  do { p++; } while (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t');
+  return p < fim && *p == '{' ? p : NULL;
+}
+
+static int hlsDe(const char *id, int serie, const char *query, char *url, unsigned tam,
+                 char *original, unsigned nOriginal) {
   char u[1100];
   char *corpo;
   const char *fim, *data, *content, *bg, *assets, *pl;
   int ok = 0;
-  snprintf(u, sizeof u, UTS_HOST "/%s/%s?" UTS_QUERY, serie ? "shows" : "movies", id);
+  url[0] = 0;
+  if (original && nOriginal) original[0] = 0;
+  snprintf(u, sizeof u, UTS_HOST "/%s/%s?%s", serie ? "shows" : "movies", id, query);
   corpo = rede_baixar_com(u, 12, CABS);
   if (!corpo) return -1;
   fim = corpo + strlen(corpo);
-  data = strstr(corpo, "\"data\"");
-  content = data ? strstr(data, "\"content\"") : NULL;
-  bg = content ? strstr(content, "\"backgroundVideo\"") : NULL;
-  assets = bg ? strstr(bg, "\"assets\"") : NULL;
-  if (assets && js_texto(assets, fim, "hlsUrl", url, tam) && url[0]) ok = 1;
+  data = objetoTopo(corpo, fim, "data");
+  content = data ? objetoTopo(data, js_fim(data), "content") : NULL;
+  bg = content ? objetoTopo(content, js_fim(content), "backgroundVideo") : NULL;
+  assets = bg ? objetoTopo(bg, js_fim(bg), "assets") : NULL;
+  if (original && nOriginal) {
+    const char *langs = content ? js_array(content, js_fim(content), "originalSpokenLanguages") : NULL;
+    original[0] = 0;
+    if (langs) js_texto(langs, js_fim(langs), "locale", original, nOriginal);
+  }
+  if (assets && js_texto(assets, js_fim(assets), "hlsUrl", url, tam) && url[0]) ok = 1;
   if (!ok) {
-    pl = data ? strstr(data, "\"playables\"") : NULL;
+    pl = data ? objetoTopo(data, js_fim(data), "playables") : NULL;
     if (pl) { const char *mc = strstr(pl, "\"movieClips\"");
-      if (mc && js_texto(mc, fim, "hlsUrl", url, tam) && url[0]) ok = 1; }
+      if (mc && js_texto(mc, js_fim(pl), "hlsUrl", url, tam) && url[0]) ok = 1; }
   }
   free(corpo);
   return ok;
 }
 
-typedef struct { char imdb[16], titulo[200], meta[96]; int serie; } Pedido;
+// Inspect the trailer's audio, not the movie's audioTrackLocales or the page
+// language (a Turkish storefront can still supply an English trailer).
+static int audioDoMaster(const char *master, const char *idioma, char *audio, unsigned tam) {
+  const char *p = master;
+  while (p && (p = strstr(p, "#EXT-X-MEDIA:"))) {
+    char linha[2048], tipo[24], lg[16];
+    size_t n = strcspn(p, "\r\n");
+    if (n >= sizeof linha) n = sizeof linha - 1;
+    memcpy(linha, p, n); linha[n] = 0;
+    atributo(linha, "TYPE", tipo, sizeof tipo);
+    atributo(linha, "LANGUAGE", lg, sizeof lg);
+    if (!strcmp(tipo, "AUDIO") && lg[0] && !strncasecmp(lg, idioma, 2)) {
+      snprintf(audio, tam, "%s", lg); return 1;
+    }
+    p += n ? n : 1;
+  }
+  return 0;
+}
+
+typedef struct { char imdb[16], chave[48], idioma[16], titulo[200], meta[96]; int serie; } Pedido;
 
 static void *buscar(void *arg) {
   Pedido *p = arg;
-  char id[80], url[1024] = "";
-  int ano = anoDe(p->meta), r = 0, semResposta = 0;
+  char id[80], url[1024] = "", query[240], audio[16] = "", alvo[16];
+  char *master = NULL;
+  int ano = anoDe(p->meta), r = 0, semResposta = 0, serie = p->serie;
   Entrada *e;
+  consultaIdioma(p->idioma, query, sizeof query);
+  snprintf(alvo, sizeof alvo, "%s", p->idioma);
   if (ano) {
-    int serie = p->serie;
     char arte[600] = "";
-    r = buscarId(p->titulo, ano, serie, id, sizeof id, arte, sizeof arte);
-    // O catalogo nem sempre etiqueta o tipo (item de "continuar assistindo"
-    // sem `tipo`, colecao): sem casar como pedido, tenta o outro tipo. Um
-    // filme e uma serie com o mesmo nome e ano e caso raro; nao achar o
-    // trailer de uma serie da Apple por falta de etiqueta era o caso comum.
-    if (r == 0) { serie = !serie; r = buscarId(p->titulo, ano, serie, id, sizeof id, arte, sizeof arte); }
+    // Search in the requested catalog so translated title names can match.
+    r = buscarIdCom(p->titulo, ano, serie, id, sizeof id, arte, sizeof arte, query);
+    if (r == 0 && strcmp(query, UTS_QUERY))
+      r = buscarId(p->titulo, ano, serie, id, sizeof id, arte, sizeof arte);
+    if (r == 0) {
+      serie = !serie;
+      r = buscarIdCom(p->titulo, ano, serie, id, sizeof id, arte, sizeof arte, query);
+      if (r == 0 && strcmp(query, UTS_QUERY))
+        r = buscarId(p->titulo, ano, serie, id, sizeof id, arte, sizeof arte);
+    }
     if (r >= 0) { pthread_mutex_lock(&arteTrava); guardarArte(p->imdb, ano, serie, r > 0 ? arte : ""); pthread_mutex_unlock(&arteTrava); }
     if (r < 0) semResposta = 1;
-    else if (r == 1) { r = hlsDe(id, serie, url, sizeof url); if (r < 0) semResposta = 1; }
+    else if (r == 1) {
+      char original[16] = "";
+      r = hlsDe(id, serie, query, url, sizeof url, original, sizeof original);
+      if (r < 0) semResposta = 1;
+      if (!strcmp(alvo, "~")) {
+        snprintf(alvo, sizeof alvo, "%s", original[0] ? original : "en");
+        consultaIdioma(alvo, query, sizeof query);
+        if (strncasecmp(alvo, "en", 2)) r = hlsDe(id, serie, query, url, sizeof url, NULL, 0);
+      }
+      if (url[0]) master = rede_baixar_com(url, 12, CABS);
+      // Explicit English fallback. Never describe an English track as dubbed.
+      if (master && !audioDoMaster(master, alvo, audio, sizeof audio) &&
+          !audioDoMaster(master, "en", audio, sizeof audio)) { free(master); master = NULL; }
+      if (!master && strcmp(query, UTS_QUERY)) {
+        r = hlsDe(id, serie, UTS_QUERY, url, sizeof url, NULL, 0);
+        if (url[0]) master = rede_baixar_com(url, 12, CABS);
+        if (master) audioDoMaster(master, "en", audio, sizeof audio);
+      }
+      if (r < 0 || (url[0] && !master)) semResposta = 1;
+    }
   }
 #ifdef NV_TRAILER_SAMSUNG
   char midia[600] = "";
-  if (url[0]) {
-    // Samsung: o master so e LIDO aqui, nunca entregue ao <video> (ver
-    // varianteMidia). Sem variante utilizavel a Apple conta como "sem
-    // trailer" e quem chama cai no YouTube.
-    char *m = rede_baixar_com(url, 12, NULL);
-    if (!m) semResposta = 1;
-    else if (!varianteMidia(m, ajustes_trailer_qualidade(), midia, sizeof midia)) url[0] = 0;
-    free(m);
-  }
+  if (master && !varianteMidia(master, ajustes_trailer_qualidade(), audio, midia, sizeof midia)) url[0] = 0;
 #else
-  if (url[0]) {
-    // O master vai para o disco: e dele que sai o reduzido de uma variante.
-    // (Na Samsung o master nao vai ao <video>: ver varianteMidia.)
+  if (master) {
     char cm[600];
-    char *m = rede_baixar_com(url, 12, CABS);
-    caminhoMaster(p->imdb, cm, sizeof cm, ".m3u8");
-    if (m && cm[0]) { FILE *g = fopen(cm, "w"); if (g) { fputs(m, g); fclose(g); } }
-    free(m);
+    caminhoMaster(p->chave, cm, sizeof cm, ".m3u8");
+    FILE *g = cm[0] ? fopen(cm, "w") : NULL;
+    if (g) { fputs(master, g); fclose(g); } else url[0] = 0;
   }
 #endif
-  printf("[trailer] apple %s (%s %d): %s\n", p->imdb, p->titulo, ano,
-         semResposta ? "sem resposta" : url[0] ? "HLS" : !ano ? "sem ano" : "sem trailer");
+  if (!master) url[0] = 0;
+  free(master);
+  printf("[trailer] apple %s (%s %d): pedido=%s audio=%s fallback=%d %s\n",
+         p->imdb, p->titulo, ano, p->idioma, audio[0] ? audio : "unknown",
+         audio[0] && strncasecmp(audio, alvo, 2) != 0,
+         url[0] ? "HLS" : semResposta ? "sem resposta" : !ano ? "sem ano" : "sem trailer");
   fflush(stdout);
   trancar();
-  e = reservar(p->imdb);
+  e = reservar(p->chave);
   e->emVoo = 0; e->respondeu = 1;
   snprintf(e->url, sizeof e->url, "%s", url);
+  snprintf(e->audio, sizeof e->audio, "%s", audio);
   e->toca[0] = 0; e->tocaQual = -1;
 #ifdef NV_TRAILER_SAMSUNG
-  // A variante vale pelo teto do momento da busca. Trocar o teto nos Ajustes
-  // so pega na proxima busca (acerto dura 1 h): guardar o master inteiro por
-  // titulo para refazer a escolha custaria ~80 KB x TA_MAX de heap na TV.
   if (url[0]) { snprintf(e->toca, sizeof e->toca, "%s", midia); e->tocaQual = ajustes_trailer_qualidade(); }
 #endif
-  e->expira = semResposta ? 0 : (long)time(NULL) + (url[0] ? 3600 : 12 * 3600);
+  e->expira = (long)time(NULL) + (url[0] ? semResposta ? 60 : 3600 : semResposta ? 0 : 12 * 3600);
   if (!semResposta) gravarDisco(e);
   destrancar();
   free(p);
@@ -563,17 +716,19 @@ static void *buscar(void *arg) {
 void trailerapple_pedir(const char *imdb, const char *titulo, const char *meta, int serie) {
   Entrada *e;
   Pedido *p;
+  char chave[48], idioma[16];
   pthread_t f;
   if (!imdb || !imdb[0] || !titulo || !titulo[0]) return;
+  chaveIdioma(imdb, chave, sizeof chave, idioma, sizeof idioma);
   trancar();
-  e = reservar(imdb);
+  e = reservar(chave);
   if (!e->respondeu && !e->emVoo && lerDisco(e)) {
     // Resposta do disco so vale com o master junto: sem ele nao ha reduzido,
     // e o master inteiro (ABR) nao serve — o quadro muda de tamanho no meio
     // e o recorte fica errado.
     char cm[600];
     struct stat st;
-    caminhoMaster(imdb, cm, sizeof cm, ".m3u8");
+    caminhoMaster(chave, cm, sizeof cm, ".m3u8");
 #ifdef NV_TRAILER_SAMSUNG
     // Cache de antes desta versao guarda so o master: sem variante de midia
     // ele nao serve (o master nao vai mais ao <video>), entao busca de novo.
@@ -586,8 +741,10 @@ void trailerapple_pedir(const char *imdb, const char *titulo, const char *meta, 
   e->emVoo = 1; e->respondeu = 0;
   destrancar();
   p = calloc(1, sizeof *p);
-  if (!p) return;
+  if (!p) { trancar(); e = achar(chave); if (e) e->emVoo = 0; destrancar(); return; }
   snprintf(p->imdb, sizeof p->imdb, "%s", imdb);
+  snprintf(p->chave, sizeof p->chave, "%s", chave);
+  snprintf(p->idioma, sizeof p->idioma, "%s", idioma);
   snprintf(p->titulo, sizeof p->titulo, "%s", titulo);
   snprintf(p->meta, sizeof p->meta, "%s", meta ? meta : "");
   p->serie = serie;
@@ -598,9 +755,11 @@ void trailerapple_pedir(const char *imdb, const char *titulo, const char *meta, 
 const char *trailerapple_url(const char *imdb) {
   Entrada *e;
   const char *r = NULL;
+  char chave[48], idioma[16];
   if (!imdb || !imdb[0]) return NULL;
+  chaveIdioma(imdb, chave, sizeof chave, idioma, sizeof idioma);
   trancar();
-  e = achar(imdb);
+  e = achar(chave);
   if (e && valido(e) && e->url[0]) {
 #ifdef NV_TRAILER_SAMSUNG
     r = e->toca[0] ? e->toca : NULL;
@@ -608,7 +767,7 @@ const char *trailerapple_url(const char *imdb) {
     int teto = ajustes_trailer_qualidade();
     if (e->tocaQual != teto) {
       e->tocaQual = teto;
-      if (!montarReduzido(imdb, teto, e->toca, sizeof e->toca)) e->toca[0] = 0;
+      if (!montarReduzido(chave, teto, e->audio, e->toca, sizeof e->toca)) e->toca[0] = 0;
     }
     // Sem reduzido, sem Apple: quem chama cai no IMDb.
     r = e->toca[0] ? e->toca : NULL;
@@ -621,10 +780,27 @@ const char *trailerapple_url(const char *imdb) {
 int trailerapple_respondeu(const char *imdb) {
   Entrada *e;
   int r;
+  char chave[48], idioma[16];
   if (!imdb || !imdb[0]) return 1;
+  chaveIdioma(imdb, chave, sizeof chave, idioma, sizeof idioma);
   trancar();
-  e = achar(imdb);
+  e = achar(chave);
   r = !e || e->respondeu;
+  destrancar();
+  return r;
+}
+
+int trailerapple_idioma_preferido(const char *imdb) {
+  char chave[48], idioma[16];
+  int r = 0;
+  if (!imdb || !imdb[0]) return 0;
+  chaveIdioma(imdb, chave, sizeof chave, idioma, sizeof idioma);
+  if (!strncasecmp(idioma, "en", 2)) return 0;
+  trancar();
+  Entrada *e = achar(chave);
+  if (e && !e->respondeu) r = -1;
+  else if (e && valido(e) && e->url[0] && e->audio[0])
+    r = !strcmp(idioma, "~") ? strncasecmp(e->audio, "en", 2) != 0 : !strncasecmp(e->audio, idioma, 2);
   destrancar();
   return r;
 }

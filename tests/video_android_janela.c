@@ -20,6 +20,11 @@ int xtream_conexoes_limitadas(void) { return 0; }
 int xtream_conta_ler(XtreamConta *c) { memset(c, 0, sizeof *c); return 0; }
 int juntos_precarregando(void) { return 0; }
 int stream_kbps_atual(void) { return 0; }
+// Session-source edges of video_tocar_retomada (player.c/streams.c are not
+// linked): a plain VOD with no saved source, as in the cacheboost fixture.
+int player_eh_canal(void) { return 0; }
+const Stream *stream_fonte_reproducao(const char *u, const char *c) { (void)u; (void)c; return NULL; }
+int stream_kbps(const Stream *s) { (void)s; return 0; }
 static int cap4k[4];
 void stream_definir_decoder4k(int h, int a, int v, int av) {
   cap4k[0] = h; cap4k[1] = a; cap4k[2] = v; cap4k[3] = av;

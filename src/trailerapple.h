@@ -15,7 +15,7 @@
 // permite, e nao ha licenca de conteudo promocional cobrindo isto. Se este
 // arquivo incomodar, apaga-lo deixa o resto da escada (IMDb, YouTube) de pe.
 //
-// Cache em memoria por IMDb e em disco (dados_dir()/trailer/<imdb>-apple):
+// Cache em memoria por IMDb + idioma e em disco (dados_dir()/trailer/<imdb>-apple):
 // acerto vale 1 h, falta vale 12 h ("este filme nao tem trailer na Apple" e
 // propriedade do catalogo, nao falha passageira).
 #ifndef NV_TRAILERAPPLE_H
@@ -26,6 +26,7 @@
 void        trailerapple_pedir(const char *imdb, const char *titulo, const char *meta, int serie);
 const char *trailerapple_url(const char *imdb);
 int         trailerapple_respondeu(const char *imdb);
+int         trailerapple_idioma_preferido(const char *imdb); // 1 verified requested audio; -1 pending
 
 // ARTE-CHAVE da Apple TV (fonte "Apple TV" do destaque): o modelo da url do
 // mzstatic ("...{w}x{h}.{f}") do item que a busca casou. Reusa a busca do

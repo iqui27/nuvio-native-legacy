@@ -12,6 +12,13 @@
 #ifndef NV_REC_URL
 #define NV_REC_URL ""
 #endif
+// On the Samsung-family builds (NV_TRAILER_SAMSUNG in trailerapple.c) the
+// Apple trailer is a VIDEO-ONLY media playlist (varianteMidia): promoting a
+// localized-but-silent Apple over IMDb-with-audio would regress the TPK
+// IMDb-first-for-sound rule (#717 class). Gate the promotion there.
+#if defined(__EMSCRIPTEN__) || defined(NV_TPK)
+#define NV_TF_APPLE_SOMENTE_VIDEO 1
+#endif
 static int imdbTizen = -1;   // -1: o que a build diz (NV_REC_URL)
 void trailerfonte_definir_imdb_tizen(int sim) { imdbTizen = sim ? 1 : 0; }
 int  trailerfonte_imdb_tizen(void) { return imdbTizen >= 0 ? imdbTizen : NV_REC_URL[0] != 0; }
@@ -115,6 +122,21 @@ static TrailerDecisao escolherNaOrdem(const int *ordem, int n, const TrailerCand
       if (qual) *qual = TRF_YOUTUBE;
       return TRF_ABRE;
     }
+  // Native TPK normally prefers IMDb for sound. A verified localized Apple
+  // trailer must win over that English default; fixed providers stay fixed.
+  // NAO na Samsung/TPK: la a variante da Apple e so video (ver acima).
+#ifndef NV_TF_APPLE_SOMENTE_VIDEO
+  if (n > 1 && c->appleIdiomaPreferido && !c->appleFalhou)
+    for (i = 0; i < n; i++) if (ordem[i] == TRF_APPLE) {
+      if (c->appleIdiomaPreferido < 0 && !c->appleRespondeu) return TRF_ESPERA;
+      if (c->appleIdiomaPreferido > 0 && c->apple && c->apple[0]) {
+        if (url) *url = c->apple;
+        if (qual) *qual = TRF_APPLE;
+        return TRF_ABRE;
+      }
+      break;
+    }
+#endif
   for (i = 0; i < n; i++) {
     const char *u = NULL;
     int respondeu = 1;

@@ -100,6 +100,7 @@ static int lastNoCartao, rectCalls;
 void trailer_no_cartao(int sim) { lastNoCartao = sim; }
 void trailer_rect(GfxRect r) { lastRect = r; rectCalls++; if (asyncGeometry) geometryReady = 0; }
 GfxRect trailer_retangulo(void) { return lastRect; }
+float gfx_escala_tela_txt(void) { return 1.0f; }
 float gfx_escala_txt_entrar(void) { return 1.0f; }
 void gfx_escala_sair(float anterior) { (void)anterior; }
 static int fraco;
@@ -118,6 +119,10 @@ void trailer_abrir(const char *source, GfxRect r, int som, int cheia) {
   opened = 1;
   playing = 0;
 }
+// home.c calls the preview entry point; keep it wired to the same stub.
+void trailer_abrir_preview_home(const char *source, GfxRect r, int som, int cheia) {
+  trailer_abrir(source, r, som, cheia);
+}
 
 void trailerapple_pedir(const char *imdb, const char *titulo, const char *meta, int serie) {
   (void)imdb; (void)titulo; (void)meta; (void)serie;
@@ -127,6 +132,8 @@ const char *trailerapple_url(const char *imdb) {
   (void)imdb;
   return appleReady ? "https://media.test/apple.m3u8" : NULL;
 }
+static int appleIdioma;
+int trailerapple_idioma_preferido(const char *imdb) { (void)imdb; return appleIdioma; }
 int trailerapple_respondeu(const char *imdb) { (void)imdb; return appleReady; }
 
 // IMDb (#136): na Samsung ele existe quando a build tem o servico de
@@ -190,7 +197,7 @@ static void resetState(const char *id) {
   fonteSetting = TRF_AUTO;
   lastSom = -1;
   somSetting = 0;
-  appleReady = 0;
+  appleReady = appleIdioma = 0;
   appleOpenFails = 0;
   imdbOpenFails = 0;layoutSetting = HOME_LAYOUT_PADRAO;
   youtubeReady = 0; youtubeIdioma = 0;
@@ -693,6 +700,16 @@ int main(void) {
   home_trailer_passo(1,.016f,start);home_trailer_passo(1,.016f,start+NV_TRAILER_HERO_ESPERA_MS);
   home_trailer_passo(1,.016f,start+NV_TRAILER_HERO_ESPERA_MS+1);
   rc|=check("native explicit IMDb never silently switches to Apple",!opened&&openedCount==1&&heroTrailerFonte==3);
+  resetState("tt687localized");trailerfonte_definir_imdb_primeiro_destaque(1);
+  appleReady=imdbReady=appleIdioma=1;
+  home_trailer_passo(1,.016f,start);home_trailer_passo(1,.016f,start+NV_TRAILER_HERO_ESPERA_MS);
+  // TPK Apple is video-only (trailerfonte.c gate): localized-but-silent
+  // Apple must NOT bypass IMDb-with-audio there.
+  rc|=check("localized Apple respects video-only IMDb-first on TPK",opened&&strstr(lastSource,"imdb")&&openedCount==1);
+  opened=playing=0;appleFailure=1;imdbOpenFails=1;
+  home_trailer_passo(1,.016f,start+NV_TRAILER_HERO_ESPERA_MS+1);
+  rc|=check("IMDb failure still falls back to localized Apple",opened&&strstr(lastSource,"apple")&&openedCount==2);
+
 #endif
 
   puts(rc ? "home-trailer-timer: FALHOU" : "home-trailer-timer: tudo ok");

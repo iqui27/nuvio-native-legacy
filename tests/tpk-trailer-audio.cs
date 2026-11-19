@@ -8,6 +8,7 @@ using Tizen.Multimedia;
 
 class TrailerAudioTest {
     static Video video;
+    static uint geracao; static int erros;
     static void Entry(string name, params object[] args) => ((Delegate)typeof(Video).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(video)).DynamicInvoke(args);
     static void Wait(Func<bool> ready) {
         var timer = Stopwatch.StartNew();
@@ -20,7 +21,7 @@ class TrailerAudioTest {
     }
     static void Open() {
         var url = Marshal.StringToHGlobalAnsi("https://fixture.invalid/trailer.mp4");
-        try { Entry("fAbrir", url, IntPtr.Zero); }
+        try { Entry("fAbrir", url, IntPtr.Zero, ++geracao); }
         finally { Marshal.FreeHGlobal(url); }
     }
     static void Drain() {
@@ -35,6 +36,7 @@ class TrailerAudioTest {
         NvVid.RegistrarFaixas = a => {}; NvVid.RegistrarAspecto = a => {};
         NvVid.Evento = (a,b,c) => {}; NvVid.Faixa = (a,b,c) => {}; NvVid.FaixasFim = (a,b) => {};
         NvVid.LogNativo = Console.WriteLine;
+        NvVid.RegistrarGeracao = a => {}; NvVid.ErroGeracao = (g,c,p) => Interlocked.Increment(ref erros);
         video = new Video(() => new Display(), a => a(), System.IO.Path.GetTempPath(), 1920, 1080);
         Open(); Wait(() => Player.All.Count == 1 && Player.All[0].Starts == 1);
         // A prior trailer/film still owns the decoder when C sends the next volume.
@@ -53,6 +55,7 @@ class TrailerAudioTest {
         trailer.DisposeRelease.Set();
         Wait(() => Player.All.Count == 3 && Player.All[2].Starts == 1); Drain();
         Check(!Player.All[2].Muted && Player.All[2].Volume == 1, "audible autoplay survives delayed release");
+        Check(erros == 0, "no generation errors reported");
         Entry("fParar");
         return 0;
     }

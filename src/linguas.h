@@ -73,6 +73,8 @@ const char *ling_audio(void);
 void ling_preferir_original(int ligado);
 int ling_prefere_original(void);
 const char *ling_audio_preferido(void);
+// Raw primary preference: preserves All/Original for per-title resolvers.
+const char *ling_audio_preferencia(void);
 // Segundo idioma de audio (audioescolha.h): ling_legenda2, a mesma regra.
 const char *ling_audio2(void);
 
