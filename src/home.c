@@ -490,9 +490,9 @@ static Uint32 heroUltTecla;
 // atravessava o catalogo inteiro (281 titulos na conta do dono) — invisivel
 // enquanto ninguem contava, mentira assim que aparece um "3 / 281" na tela e a
 // pessoa tenta chegar ao fim.
+#define HERO_LISTA_MAX 20
 // #797: o tamanho e ajuste ("Títulos no carrossel do destaque", 5/10/20);
-// heroListaN()_MAX e so a capacidade do vetor.
-#define heroListaN()_MAX 20
+// HERO_LISTA_MAX e so a capacidade do vetor.
 static int heroListaN(void) { return ajustes_hero_lista(); }
 static int heroAtual = 0, heroAnterior = 0;
 // Candidato a heroi e desde quando ele e o candidato. Ver NV_HERO_REPOUSO_MS.
@@ -1103,7 +1103,7 @@ static int nAcervoHero(void) { int n = cat_n(); if (n) return n; return nBd ? nB
 // GUARDA OS INDICES, e nao um intervalo: a fileira escolhida pode encolher, o
 // catalogo pode ser republicado e o sorteio nao e contiguo por definicao. Um
 // intervalo sobreviveria a nenhum dos tres.
-static int heroSet[heroListaN()_MAX];
+static int heroSet[HERO_LISTA_MAX];
 static int heroSetN;
 // Assinatura do que a lista depende. Refazer a lista a cada quadro custaria o
 // strcmp da preferencia e uma varredura das fileiras; refazer so quando algo
