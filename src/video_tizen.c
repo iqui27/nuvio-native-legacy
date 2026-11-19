@@ -1391,6 +1391,11 @@ void video_bombear(void) {
                            (unsigned)(SDL_GetTicks() - aberturaEm));
     lerFaixas();
     lerInfoFluxo();
+    /* #703: abrir cedo com ativo=1 pode falhar o rect no JS; prepared e o
+     * ultimo ponto seguro antes do play visivel (audio sem video). */
+    if (janW > 0 && janH > 0 && !aplicarRect(janX, janY, janW, janH))
+      printf("[video] #703: setDisplayRect ainda falhou apos prepared (%d,%d %dx%d)\n",
+             janX, janY, janW, janH);
   }
   if (pronto && !faixasLidas) lerFaixas();
   // A posicao da queda, depois das faixas (trocar faixa pode reiniciar o decode).
