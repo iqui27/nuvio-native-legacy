@@ -5306,7 +5306,12 @@ void player_atualizar(float dt, Uint32 agora) {
         velmed_pedir(&velMed, VEL_NORMAL);
       } }
     // A legenda interpola na velocidade MEDIDA (relogio.h).
-    // #710/#728: durante reconexao ou seek, nao amostrar posicao do pipeline.
+    // #710: enquanto a reconexao espera/recarrega (ou um seek ainda nao
+    // pousou), a posicao que o pipeline devolve e a de ANTES da queda, nao a
+    // do quadro no ar. Amostrar isso como "tocando" congela a legenda na
+    // posicao da queda (ou recua ao zero do reopen) e ela volta fora de
+    // sincronia; tratado como parado, o relogio segura a ultima posicao boa e
+    // o primeiro valor real depois do seek dispara o salto.
     { int legParada = !tocando || scrubbing || video_reconectando()
 #ifdef NV_TPK
                       || video_busca_em_voo()
@@ -5314,6 +5319,7 @@ void player_atualizar(float dt, Uint32 agora) {
                       ;
       relogio_taxa(&relLeg, velMed.efetiva / 100.0);
       relogio_amostra(&relLeg, video_pos(), monoSeg(), !legParada);
+      // #772: salto so na linha do tempo da legenda (nao no video_pos).
       if (!legParada) {
         double m = monoSeg(), l0, l1;
         static double ultM;
