@@ -4,8 +4,10 @@
 # (producao.inc) e dirige playlist TMDB e playlist Trakt com transporte
 # simulado:
 #   tmdb/trakt, Ocultar vistos desligado  -> 20/24 itens da primeira pagina;
-#   tmdb/trakt, os 24 primeiros vistos    -> a reserva recebe o 25o inedito
-#     sem escrever fora do buffer (rc 0, sem global-buffer-overflow).
+#   tmdb/trakt, os 24 primeiros vistos    -> a reserva nao vista e consumida:
+#     a fileira publicada pula os vistos do prefixo e o 25o inedito aparece
+#     (tmdb lista 20/pagina: ids 25-40 = 16; trakt manda 30/pagina: 6). Sem
+#     escrever fora do buffer (rc 0, sem global-buffer-overflow).
 set -eu
 cd "$(dirname "$0")/.."
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-colpin-vistos.XXXXXX")
@@ -25,6 +27,6 @@ cc -g -O1 -fsanitize=address -fno-omit-frame-pointer -Isrc -I"$work" \
   tests/colpin_vistos.c src/js.c -lm -o "$work/test"
 "$work/test" tmdb  0 20
 "$work/test" trakt 0 24
-"$work/test" tmdb  1 24
-"$work/test" trakt 1 24
+"$work/test" tmdb  1 16
+"$work/test" trakt 1 6
 echo ok colpin_vistos
