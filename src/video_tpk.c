@@ -1607,8 +1607,8 @@ static void vigiarPlayer(double pos) {
     vigiaAtiva = 1; progressoPos = pos; progressoEm = agora; return;
   }
   if (agora - progressoEm < TPK_PRESO_MS) return;
-  printf("[video] tpk preso: relogio %.3fs sem andar ha %u ms; parar e recuperar\n",
-         pos, (unsigned)(agora - progressoEm));
+  printf("[video] tpk preso: relogio %.3fs sem andar ha %u ms (tentativa %d, recon %d); parar e recuperar\n",
+         pos, (unsigned)(agora - progressoEm), recon.tentativa, recon.pendente ? 1 : 0);
   fflush(stdout);
   // Mesma maquina limitada da reconexao: nao cria um loop paralelo infinito.
   recuperarPlayer(-1);
@@ -1758,13 +1758,15 @@ static void reabrindoVigiar(void) {
     cv.reabrindo = 0; return;
   }
   if (!pronto || !tocando || cv.buscarMs >= 0 || reconBuscarMs >= 0 || recon.pendente ||
+      atomic_load(&buscaAlvoMs) >= 0 || (cv.ativo && cv.seekPend) ||
       (cv.ativo && cv.prog && !cv.deslocOk)) { cv.reabTocandoEm = 0; return; }
   if (!cv.reabTocandoEm) cv.reabTocandoEm = agora ? agora : 1u;   // "| 1" passava agora (par) e virava 4 G ms
   p = posReal();
   // Com sinal: no quadro em que foi marcado, `agora | 1` pode passar de agora
   // por 1 ms, e a conta sem sinal dava 4 bilhoes (soltava em posicao 0).
   if (p < 0.3 && (int)(agora - cv.reabTocandoEm) < 10000) return;
-  if (fabs(p - cv.posMantida) > 20.0 && (int)(agora - cv.reabTocandoEm) < 10000) return;
+  // #728: so aceita posicao do host perto do alvo ou depois de esperar o seek.
+  if (fabs(p - cv.posMantida) > 2.5 && (int)(agora - cv.reabTocandoEm) < 30000) return;
   printf("%s reaberto em %u ms: posicao %.2f s (alvo %.1f s)\n", cv.ativo ? "[dts-tpk]" : "[fonte-cdn]",
          (unsigned)(agora - cv.reabriuEm), p, cv.posMantida);
   fflush(stdout);
@@ -1827,6 +1829,7 @@ void video_bombear(void) {
   // depois do prepare, e um seek no meio disso concorre com ele.
   if (reconBuscarMs >= 0 && pronto && tocando) {
     int ms = reconBuscarMs;
+    atomic_store(&buscaAlvoMs, ms);
     reconBuscarMs = -1;
     if (cv.ativo && cv.prog) {
       // Progressivo: o seek pendente reabre o fluxo no alvo (?t=); o TS nao tem
