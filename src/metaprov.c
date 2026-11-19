@@ -1,5 +1,6 @@
 #include "metaprov.h"
 #include "ajustes.h"
+#include "ajustes.h"
 #include "rede.h"
 #include "marco.h"
 #include <SDL2/SDL.h>
@@ -175,7 +176,8 @@ char *metaprov_meta_com(const char *tipo, const char *id, int seg_cine,
   if (!get) get = metaprov_get_rede;
   if (prov) *prov = -1;
   if (!tipo || !id || !id[0]) return NULL;
-  if (idDoNuvio(id) && !nuvioPausado()) {
+  // #794: with "prefer metadata add-on detail", skip catalog.nuvio.tv for /meta.
+  if (idDoNuvio(id) && !nuvioPausado() && !ajustes_meta_externo()) {
     metaprov_url_meta(url, sizeof url, METAPROV_NUVIO, tipo, id, metaprov_idioma());
     c = get(url, segN, &st, ctx);
     if (c && metaprov_meta_valido(c)) {
