@@ -8433,11 +8433,11 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
                                        int modo, TempsPub *tp, int cedo,
                                        int substituir, int pendente) {
   CatEp *eps;
-  int n = 0, cap;
+  int n = 0, cap, totalNoCorpo;
   tmdbDescartarObsoleto();
   pthread_mutex_lock(&epMemoriaTrava);
   if (epPedidoSaiu()) { pthread_mutex_unlock(&epMemoriaTrava); return 0; }
-  { int totalNoCorpo = metaContarEpisodios(corpo, NULL);
+  totalNoCorpo = metaContarEpisodios(corpo, NULL);
   cap = totalNoCorpo;
   if (cap > VIDEOS_MAX) cap = VIDEOS_MAX;
   if (cap <= 0) { pthread_mutex_unlock(&epMemoriaTrava); return 0; }
