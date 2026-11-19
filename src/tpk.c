@@ -141,7 +141,9 @@ static unsigned nQuadros, nPulados;
 static int contextoFalhou; // Render-thread only; do not poll the app thread's error buffer.
 
 // Fio do app: devolve a vez ao framework e espera ela voltar.
-static int cicloPendente;
+// #799: bits independentes (1=pausa, 2=pouca memoria, 4=retomada). Dois avisos
+// antes do consumo nao se sobrescrevem; a ordem pausa→retomada fica preservada.
+static unsigned cicloPendente;
 static void appEsperaVez(int entregou) {
   pthread_mutex_lock(&trava);
   if (entregou) { vez = VEZ_NUI; pendente = 1; pthread_cond_broadcast(&mudou); }
@@ -149,10 +151,10 @@ static void appEsperaVez(int entregou) {
   pthread_cond_broadcast(&mudou);
   while (vez != VEZ_APP || cicloPendente) {
     if (cicloPendente) {
-      Uint32 tipo = cicloPendente == 2 ? SDL_APP_LOWMEMORY :
-                    cicloPendente == 3 ? SDL_APP_DIDENTERFOREGROUND :
-                    SDL_APP_WILLENTERBACKGROUND;
-      cicloPendente = 0;
+      Uint32 tipo;
+      if (cicloPendente & 1u) { tipo = SDL_APP_WILLENTERBACKGROUND; cicloPendente &= ~1u; }
+      else if (cicloPendente & 2u) { tipo = SDL_APP_LOWMEMORY; cicloPendente &= ~2u; }
+      else { tipo = SDL_APP_DIDENTERFOREGROUND; cicloPendente &= ~4u; }
       pthread_mutex_unlock(&trava);
       player_ciclo_evento(tipo);
       if (tipo == SDL_APP_DIDENTERFOREGROUND) {
@@ -468,7 +470,7 @@ __attribute__((visibility("default")))
 void nv_tpk_ciclo(int memoria) {
   // Rendering may already be suspended: wake the app thread without needing GL.
   pthread_mutex_lock(&trava);
-  cicloPendente = memoria ? 2 : 1;
+  cicloPendente |= memoria ? 2u : 1u;
   pthread_cond_broadcast(&mudou);
   pthread_mutex_unlock(&trava);
 }
@@ -478,7 +480,7 @@ void nv_tpk_ciclo(int memoria) {
 __attribute__((visibility("default")))
 void nv_tpk_retomou(void) {
   pthread_mutex_lock(&trava);
-  cicloPendente = 3;
+  cicloPendente |= 4u;
   pthread_cond_broadcast(&mudou);
   pthread_mutex_unlock(&trava);
 }
