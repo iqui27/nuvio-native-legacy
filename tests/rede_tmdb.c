@@ -92,7 +92,12 @@ int main(void) {
     for (i = 0; i < 4; i++) {
       chamadas = alternativos = 0; erro = codigos[i];
       r = rede_postar_st(OLD, 5, NULL, "{}", &st); assert(!r);
-      assert(chamadas == 2 && alternativos == 1);
+      /* #707 r2: a resposta PERDIDA (52) ou o corpo cortado no retorno (56)
+       * podem ja ter aplicado o POST — so falha de conexao (35, 7) repete. */
+      if (codigos[i] == 52 || codigos[i] == 56)
+        assert(chamadas == 1 && alternativos == 0);
+      else
+        assert(chamadas == 2 && alternativos == 1);
     }
     /* Timeout (28) ja gastou o prazo do pedido: alias dobraria a espera. */
     chamadas = alternativos = 0; erro = 28;
