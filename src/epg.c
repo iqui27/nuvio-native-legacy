@@ -131,7 +131,7 @@ static void nomesFonte(const char *arq, char *url, size_t nu, char *xml, char *g
 // teto para cache velho), e o que comeca depois de 7 dias tambem: grade de
 // provedor com um mes inteiro nao cabe numa TV e ninguem rola tanto.
 #define EPG_JANELA_PASSADO (48 * 3600)
-#define EPG_JANELA_FUTURO  (7 * 86400)
+#define EPG_JANELA_FUTURO  (7 * 86400)   /* teto; ajustes_guia_dias() afina */
 // Prazo da grade por URL: 5 min no total, e o vigia da rede corta corpo parado.
 #define EPG_PRAZO_FLUXO_S 300
 
@@ -146,7 +146,7 @@ typedef struct {
 } EpgCanal;
 
 // 16 bytes em toda plataforma. `tit` e deslocamento na arena de titulos.
-typedef struct { int canal; int ini, fim; unsigned tit, desc, pic; } EpgEv;
+typedef struct { int canal; int ini, fim; unsigned tit, desc; } EpgEv;
 
 // Indice de chave normalizada -> canal, para o casamento exato (M5): ordenado
 // por chave, busca binaria. Montado em wFechar.
@@ -197,10 +197,13 @@ void epg_memoria_definir(int modo, long ramMB) {
 }
 
 static int aceitaHorario(long long ini, long long fim, time_t agora) {
+  extern int ajustes_guia_dias(void);   /* declarado sem ajustes.h (SDL pesado) */
   if (carga.memoriaBaixa) return (fim ? fim : ini + 1800) > (long long)agora &&
                                       ini < (long long)agora + 24 * 3600;
+  // O "Alcance do guia" dos Ajustes governa a carga e o cache (#776): menos
+  // dias, menos programas guardados.
   return (fim ? fim : ini + 1800) >= (long long)agora - EPG_JANELA_PASSADO &&
-         ini <= (long long)agora + EPG_JANELA_FUTURO;
+         ini <= (long long)agora + (long long)ajustes_guia_dias() * 86400;
 }
 
 static int cargaAtual(void) {
@@ -553,21 +556,19 @@ static long wTitulo(EpgGrade *g, const char *s) {
 }
 
 static int wAddEv(EpgGrade *g, int canal, long long ini, long long fim,
-                    const char *titulo, const char *desc, const char *icon) {
-  long copia, d = 0, ic = 0;
+                    const char *titulo, const char *desc) {
+  long copia, d = 0;
   char db[384];
   if (!wReservarEv(g) || (copia = wTitulo(g, titulo)) < 0) { g->descartados++; return 0; }
   if (desc && desc[0]) {
     snprintf(db, sizeof db, "%.383s", desc);
     if ((d = wTitulo(g, db)) < 0) d = 0;
   }
-  if (icon && icon[0] && (ic = wTitulo(g, icon)) < 0) ic = 0;
   g->evs[g->nEvs].canal = canal;
   g->evs[g->nEvs].ini = (int)ini;
   g->evs[g->nEvs].fim = (int)fim;
   g->evs[g->nEvs].tit = (unsigned)copia;
   g->evs[g->nEvs].desc = (unsigned)d;
-  g->evs[g->nEvs].pic = (unsigned)ic;
   g->nEvs++;
   return 1;
 }
@@ -683,7 +684,8 @@ static void cbPrograma(const char *canal, const char *ini, const char *fim,
   b = fim[0] ? xmltv_tempo(fim) : 0;
   if (!a || (b && b <= a)) return;
   if (!aceitaHorario(a, b, p->agora)) { p->foraJanela++; return; }
-  if (wAddEv(p->g, ci, a, b, titulo, desc, icon)) p->programas++;
+  (void)icon;   /* fanart do programa: sem consumidor na UI, fora do escopo */
+  if (wAddEv(p->g, ci, a, b, titulo, desc)) p->programas++;
 }
 
 // Alimenta uma grade inteira que ja esta na memoria (gz ou XML), em pedacos.
@@ -968,7 +970,7 @@ void epg_fonte_extra(const char *url) {
 // milissegundos e sem reabrir XML. Cabecalho com o hash da URL e do filtro:
 // trocou o provedor ou a lista, o cache nao vale.
 #define EPGX_MAGIA 0x3245564eu   /* "NVE2" */
-#define EPGX_VERSAO 2u   /* 2: <icon src> por canal */
+#define EPGX_VERSAO 3u   /* 3: <desc> por programa (2: icon por canal) */
 static void nomeCacheX(const char *chave, char *d, size_t n) { snprintf(d, n, "epg-x-%s-p%d.bin", chave[0] ? chave : "geral", carga.perfil > 0 ? carga.perfil : 1); }
 
 static int escreveStr(FILE *f, const char *s) {
@@ -1007,7 +1009,8 @@ static void cacheXGravar(const EpgExtraInt *e, const EpgGrade *g, int c0, int e0
   for (i = e0; ok && i < g->nEvs; i++) {
     int loc[3];
     loc[0] = g->evs[i].canal - c0; loc[1] = g->evs[i].ini; loc[2] = g->evs[i].fim;
-    ok = fwrite(loc, sizeof loc, 1, f) == 1 && escreveStr(f, g->arena + g->evs[i].tit);
+    ok = fwrite(loc, sizeof loc, 1, f) == 1 && escreveStr(f, g->arena + g->evs[i].tit) &&
+         escreveStr(f, g->evs[i].desc ? g->arena + g->evs[i].desc : "");
   }
   ok = (fclose(f) == 0) && ok;
   if (!ok || rename(tmp, cam) != 0) remove(tmp);
@@ -1041,7 +1044,7 @@ static int cacheXLer(const EpgExtraInt *e, EpgGrade *g, int fonte, int fresco, l
   *idade = (long)((long long)time(NULL) - ts);
   if (fresco && (carga.forcarRede || hf != e->hFiltro || *idade >= EPG_CACHE_SEG || *idade < 0)) { free(b); return -1; }
   if (u[2] > EPG_MAX_CANAL || u[3] > EPG_EVS_MAX ||
-      (unsigned long long)u[2] * 4 + (unsigned long long)u[3] * 14 > (unsigned long long)(fim-p)) {
+      (unsigned long long)u[2] * 4 + (unsigned long long)u[3] * 16 > (unsigned long long)(fim-p)) {
     free(b); return -1;
   }
   mapa = malloc(sizeof(int) * (u[2] ? u[2] : 1));
@@ -1060,13 +1063,13 @@ static int cacheXLer(const EpgExtraInt *e, EpgGrade *g, int fonte, int fresco, l
   if (i == (int)u[2]) {
     time_t agora = time(NULL);
     for (i = 0; i < (int)u[3]; i++) {
-      int loc[3]; char t[240];
+      int loc[3]; char t[240], dc[384];
       if (p + sizeof loc > fim) break;
       memcpy(loc, p, sizeof loc); p += sizeof loc;
-      if (!leStr(&p, fim, t, sizeof t)) break;
+      if (!leStr(&p, fim, t, sizeof t) || !leStr(&p, fim, dc, sizeof dc)) break;
       if (loc[0] < 0 || loc[0] >= (int)u[2] || mapa[loc[0]] < 0) continue;
       if (!aceitaHorario(loc[1], loc[2], agora)) continue;
-      if (wAddEv(g, mapa[loc[0]], loc[1], loc[2], t, NULL, NULL)) prog++;
+      if (wAddEv(g, mapa[loc[0]], loc[1], loc[2], t, dc)) prog++;
     }
   }
   free(mapa); free(b);
@@ -1626,7 +1629,6 @@ static void pubProg(long m, EpgProg *p) {
   p->ini = (time_t)P.evs[m].ini; p->fim = (time_t)P.evs[m].fim;
   p->titulo = P.arena + P.evs[m].tit;
   p->desc = P.evs[m].desc ? P.arena + P.evs[m].desc : "";
-  p->icon = P.evs[m].pic ? P.arena + P.evs[m].pic : "";
 }
 
 static long pubPrimeiroVivo(int epg, time_t t) {
