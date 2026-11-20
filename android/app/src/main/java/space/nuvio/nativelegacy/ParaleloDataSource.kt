@@ -308,6 +308,7 @@ class ParaleloDataSource(
         val limiteMs = if (connectCap > 15000) connectCap else -1
         repeat(10) {
             val restante = if (limiteMs >= 0) limiteMs - (android.os.SystemClock.elapsedRealtime() - t0).toInt() else -1
+            if (limiteMs >= 0 && restante <= 0) throw IOException("debrid timeout total")
             val t0hop = android.os.SystemClock.elapsedRealtime()
             val c = conectar1(u, ini, ultimo, restante)
             val code = try { c.responseCode } catch (e: IOException) {
@@ -320,6 +321,8 @@ class ParaleloDataSource(
                 val loc = c.getHeaderField("Location")
                 desconectar(c)
                 if (loc.isNullOrEmpty()) throw IOException("HTTP $code sem Location")
+                val rest2 = if (limiteMs >= 0) limiteMs - (android.os.SystemClock.elapsedRealtime() - t0).toInt() else -1
+                if (limiteMs >= 0 && rest2 <= 0) throw IOException("debrid timeout total")
                 u = URL(u, loc)
                 return@repeat
             }
