@@ -7,9 +7,12 @@ import re
 import subprocess
 
 failures = []
-args = ['cc', '-E', '-P', '-Isrc', 'src/mkvass.c']
-normal = subprocess.check_output(args)
-legacy = subprocess.check_output(args + ['-DMKVASS_TESTE_DRENAR_PREBUSCA'])
+fontes = ['src/mkvass.c', 'src/pgs_mkv_restore.c']
+def preproc(extra):
+    return b''.join(subprocess.check_output(['cc', '-E', '-P', '-Isrc', f] + extra)
+                    for f in fontes)
+normal = preproc([])
+legacy = preproc(['-DMKVASS_TESTE_DRENAR_PREBUSCA'])
 if normal != legacy or '-DMKVASS_TESTE_DRENAR_PREBUSCA' in open('tests/mkvass.sh').read():
     failures.append('prefetch readiness changes under the legacy test define')
 
