@@ -7,6 +7,7 @@
 #include "dados.h"
 #include "imgsub.h"
 #include "pgs.h"
+#include "video.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1763,7 +1764,10 @@ static int lerTracks(Fio *f, const unsigned char *p, long n) {
 #ifdef NV_TPK
     // #709: o teto de 2 pedidos vale so para a faixa ASS (anime no Tizen 6);
     // texto/PGS e as outras geracoes seguem com MKVASS_PARALELOS.
-    if (f->paralelos > MKVASS_PARALELOS_TPK60) f->paralelos = MKVASS_PARALELOS_TPK60;
+    // A libnuvio.so e compartilhada pelos pacotes 60/65/8/9 e o TPK40 herda os
+    // mesmos objetos: a decisao e em tempo de execucao, pela versao da Tizen.
+    if (video_tpk_tizen_maior() == 6 && f->paralelos > MKVASS_PARALELOS_TPK60)
+      f->paralelos = MKVASS_PARALELOS_TPK60;
 #endif
     // O libass sobe aqui, com a faixa ASS ja achada, e nao quando o fio nasce:
     // o aquecimento le a pasta de fontes inteira para a memoria (106 MB na C9,

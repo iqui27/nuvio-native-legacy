@@ -314,6 +314,7 @@ int    video_tpk_cartao_cover(void);       // 1 = o cartao recebe cover (recorte
 void   video_tpk_cartao_destino(float x, float y, float w, float h, float *ox, float *oy, float *ow, float *oh);
 void   video_tpk_cartao_furo(float x, float y, float w, float h, float *ox, float *oy, float *ow, float *oh);
 void   video_tpk_tizen_definir(const char *versao);   // gpunivel.c: platform.version
+int    video_tpk_tizen_maior(void);                   // versao maior da Tizen em execucao (0 = desconhecida)
 int    video_recorte_fonte_trailer(void);   // so o trailer: o ajuste em execucao
 #else
 static inline int video_recorte_fonte_trailer(void) { return video_recorte_fonte(); }

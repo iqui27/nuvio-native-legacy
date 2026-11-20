@@ -2109,6 +2109,7 @@ static void encaixar(int x, int y, int w, int h, int *fx, int *fy, int *fw, int 
 // Versao da Tizen (gpunivel.c le platform.version); so o maior importa.
 static int tizenMaior;
 void video_tpk_tizen_definir(const char *v) { tizenMaior = v ? atoi(v) : 0; }
+int video_tpk_tizen_maior(void) { return tizenMaior; }
 // COVER NO CARTAO (#471): so na Tizen 6.x (a TV do relato, uma AU7000 6.0) ou com
 // o zoom experimental ligado. ROI com origem negativa nunca foi visto no 4/5 (#426)
 // e apaga o plano na Tizen 9 (#188), entao as demais familias ficam no quadro
