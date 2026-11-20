@@ -1397,7 +1397,7 @@ object NvPlayer {
         val baixa = url.lowercase()
         val item = MediaItem.Builder().setUri(url)
         if (baixa.contains(".m3u8") || baixa.contains("m3u8?")) item.setMimeType(MimeTypes.APPLICATION_M3U8)
-        else if (baixa.contains(".mpd") || baixa.contains("dash") || baixa.contains("manifest.mpd"))
+        else if (android.net.Uri.parse(url).path?.endsWith(".mpd", true) == true)
             item.setMimeType(MimeTypes.APPLICATION_MPD)
         return item.build()
     }
@@ -1488,7 +1488,8 @@ object NvPlayer {
                 if (checked.compareAndSet(false, true)) nativeLimitedStatus() else 0
             } else if (live) liveHttp else http
             val baixa = url.lowercase()
-            val adaptativo = baixa.contains(".m3u8") || baixa.contains("m3u8?") || baixa.contains(".mpd")
+            val adaptativo = baixa.contains(".m3u8") || baixa.contains("m3u8?") ||
+                Uri.parse(url).path?.endsWith(".mpd", true) == true
             // Cache off or not applicable for a VOD: whatever was kept is stale.
             if (pedidoCache <= 0 || limited) { r.cacheEstado = CacheSessao.DESLIGADO; if (titulo.isNotEmpty()) CacheMidia.descartar("setting off") }
             else if (adaptativo || !ParaleloDataSource.serve(Uri.parse(url))) {
