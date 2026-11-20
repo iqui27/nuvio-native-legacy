@@ -30,6 +30,7 @@ int player_indice(void) { return 0; }
 const char *player_id_canal(void) { return ""; }
 const CatItem *cat_item(int i) { (void)i; return &item; }
 int ajustes_legenda_forcada_auto(void) { return 0; }
+int ajustes_legenda_evitar_sdh(void) { return 0; }   // #743: desligado neste teste
 Uint32 SDL_GetTicks(void) { return 0; }
 void legsync_primaria_externa(const char *u, const char *i, const char *p) {
   (void)i; (void)p; snprintf(selecionada, sizeof selecionada, "%s", u);

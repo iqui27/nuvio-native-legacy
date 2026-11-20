@@ -20,6 +20,7 @@ static VideoLegendaEstilo estilo = { 120, 0, 0, 3, 1, 0, 0, 0, 0 };
 static int caps = REDE_CAP_CORPO;
 static int todas;
 int ajustes_legendas_todas(void) { return todas; }
+int ajustes_legenda_evitar_sdh(void) { return 0; }   // #743: desligado neste teste
 static int segundaPct;
 int ajustes_leg2_tamanho(void) { return segundaPct; }
 int ajustes_leg2_cor(void) { return -1; }
