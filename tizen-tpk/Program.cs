@@ -49,6 +49,7 @@ namespace NuvioTpk
         [DllImport("libnuvio.so")] static extern void nv_tpk_tecla(string nome, int apertou);
         [DllImport("libnuvio.so")] static extern void nv_tpk_log(string linha);
         [DllImport("libnuvio.so")] static extern void nv_tpk_ciclo(int memoria);
+        [DllImport("libnuvio.so")] static extern void nv_tpk_retomou();
         [DllImport("libdl.so.2")] static extern IntPtr dlopen(string path, int flags);
         [DllImport("libdl.so.2")] static extern IntPtr dlerror();
         [DllImport("libcapi-appfw-application.so.0")] static extern IntPtr app_get_data_path();
@@ -1061,6 +1062,7 @@ namespace NuvioTpk
             // #783: retomada real (foreground) pede a reconexao nativa da
             // sessao que a Home parou; sem sessao parada pelo sistema e no-op.
             try { video?.RetomarDoSistema(); } catch { }
+            try { nv_tpk_retomou(); } catch (EntryPointNotFoundException) { }
             base.OnResume();
         }
 
