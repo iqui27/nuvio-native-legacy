@@ -4648,6 +4648,7 @@
   T("Menos ajustes.\nMais diversão.", "Менше\nкоригувань. Веселіше."),
   T("Menos antecipação, fontes mais leves e resolução menor quando houver ganho comprovado.", "Менше попереднього завантаження, легші джерела й нижча роздільна здатність, коли виграш підтверджено."),
   T("Menos dias usam menos memória.", "Fewer days use less memory."),
+  T("Menos dias usam menos memória. Em Automático com pouca RAM, o guia mostra só as próximas 24 horas.", "Менше днів — менше пам'яті. В автоматичному режимі на пристроях із малим обсягом ОЗП гід показує лише наступні 24 години."),
   T("Menos espera, menos surpresa", "Менше очікування, менше сюрпризів"),
   T("Menos recursos sem ganho claro no reteste", "Менше ресурсів без явного виграшу при повторному тесті"),
   T("Menos tempo restante", "Найменше часу лишилось"),

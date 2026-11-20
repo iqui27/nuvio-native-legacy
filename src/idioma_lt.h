@@ -4649,6 +4649,7 @@
   T("Menos ajustes.\nMais diversão.", "Mažiau\nkoregavimų. Linksmiau."),
   T("Menos antecipação, fontes mais leves e resolução menor quando houver ganho comprovado.", "Mažiau išankstinio įkėlimo, lengvesni šaltiniai ir žemesnė skiriamoji geba, kai įrodytas pranašumas."),
   T("Menos dias usam menos memória.", "Fewer days use less memory."),
+  T("Menos dias usam menos memória. Em Automático com pouca RAM, o guia mostra só as próximas 24 horas.", "Mažiau dienų naudoja mažiau atminties. Automatiniame režime įrenginiuose su mažai RAM vadovas rodo tik artimiausias 24 valandas."),
   T("Menos espera, menos surpresa", "Mažiau laukimo, mažiau staigmenų"),
   T("Menos recursos sem ganho claro no reteste", "Mažiau išteklių be aiškaus pranašumo pakartotiniame teste"),
   T("Menos tempo restante", "Mažiausiai likusio laiko"),

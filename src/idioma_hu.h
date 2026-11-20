@@ -4649,6 +4649,7 @@
   T("Menos ajustes.\nMais diversão.", "Kevesebb\nbeállítás. Szórakoztatóbb."),
   T("Menos antecipação, fontes mais leves e resolução menor quando houver ganho comprovado.", "Kevesebb előtöltés, könnyebb források és alacsonyabb felbontás, ha bizonyított a nyereség."),
   T("Menos dias usam menos memória.", "Fewer days use less memory."),
+  T("Menos dias usam menos memória. Em Automático com pouca RAM, o guia mostra só as próximas 24 horas.", "Kevesebb nap kevesebb memóriát használ. Automatikus módban kevés RAM-mal rendelkező eszközökön az útmutató csak a következő 24 órát mutatja."),
   T("Menos espera, menos surpresa", "Kevesebb várakozás, kevesebb meglepetés"),
   T("Menos recursos sem ganho claro no reteste", "Kevesebb erőforrás egyértelmű nyereség nélkül az újratesztben"),
   T("Menos tempo restante", "Legkevesebb hátralévő idő"),

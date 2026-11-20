@@ -211,6 +211,13 @@ void epg_memoria_definir(int modo, long ramMB) {
   pthread_mutex_unlock(&trava);
 }
 
+int epg_memoria_baixa(void) {
+  pthread_mutex_lock(&trava);
+  int baixa = epgMemoriaBaixa;
+  pthread_mutex_unlock(&trava);
+  return baixa;
+}
+
 static int aceitaHorario(long long ini, long long fim, time_t agora) {
   // O instantaneo `carga.dias` vem de epg_iniciar() sob a trava: o worker nao
   // le `valor[AJ_GUIA_DIAS]` (escrito pelo fio da UI) durante o parse.
@@ -423,9 +430,12 @@ static int wAbrir(EpgGrade *g) {
   g->darena = malloc((size_t)g->darenaCap);
   g->kCap = 256 * 1024;
   g->k = malloc((size_t)g->kCap);
-  if (!g->evs || !g->arena || !g->darena || !g->k) { gradeSoltar(g); return 0; }
+  // A arena de sinopses e opcional: se nao couber no aparelho, a grade sobe
+  // sem descricao — nunca derruba os programas por falta dela.
+  if (!g->evs || !g->arena || !g->k) { gradeSoltar(g); return 0; }
   g->k[0] = 0; g->kN = 1;              // deslocamento 0 = ""
-  g->darena[0] = 0; g->darenaN = 1;    // idem: deslocamento 0 = sem sinopse
+  if (g->darena) { g->darena[0] = 0; g->darenaN = 1; }
+  else { g->darenaCap = 0; }           // idem: deslocamento 0 = sem sinopse
   return 1;
 }
 
@@ -585,8 +595,20 @@ static int wAddEv(EpgGrade *g, int canal, long long ini, long long fim,
   if (!wReservarEv(g) || (copia = wTitulo(g, titulo)) < 0) { g->descartados++; return 0; }
   if (desc && desc[0]) {
     long n = (long)strnlen(desc, EPG_DESC_MAX) + 1;
+    // O corte em EPG_DESC_MAX nao pode partir um caractere: recua ate a
+    // fronteira para a sinopse guardada continuar UTF-8 valido.
+    if (n - 1 == EPG_DESC_MAX && desc[n - 1]) {
+      long corte = n - 1;                        // primeiro byte fora do corte
+      while (corte > 0 && (desc[corte] & 0xC0) == 0x80) corte--;
+      if ((unsigned char)desc[corte] >= 0x80) {
+        int esperado = ((desc[corte] & 0xE0) == 0xC0) ? 2 :
+                       ((desc[corte] & 0xF0) == 0xE0) ? 3 :
+                       ((desc[corte] & 0xF8) == 0xF0) ? 4 : 1;
+        if (corte + esperado > n - 1) n = corte + 1;
+      }
+    }
     if (g->darenaN + n > g->darenaCap) {
-      long cap = g->darenaCap;
+      long cap = g->darenaCap ? g->darenaCap : EPG_DARENA_INI;
       while (cap < g->darenaN + n && cap < EPG_DARENA_MAX) cap *= 2;
       if (cap > EPG_DARENA_MAX) cap = EPG_DARENA_MAX;
       if (cap >= g->darenaN + n) {
@@ -1219,7 +1241,13 @@ static void *fioEpg(void *u) {
     extraMontar(&copia[nx++], "ma00000000", legadoM3uUrl, NULL, 0, NULL, 0);
   for (i = 0; i < nx; i++) {
     char janela[16];
-    snprintf(janela, sizeof janela, "%dh", (carga.memoriaBaixa ? 1 : carga.dias) * 24);
+    // O hash cobre a janela efetiva completa (passado + futuro) e o perfil:
+    // baixa guarda so as proximas 24 h; completa mantem EPG_JANELA_PASSADO
+    // atras ate o alcance pedido. Trocar de perfil ou de dias tem de
+    // invalidar o cache — o Completo recupera o passado que o baixo omite.
+    snprintf(janela, sizeof janela, "%s:%dh",
+             carga.memoriaBaixa ? "24h" : "48h",
+             (carga.memoriaBaixa ? 1 : (carga.dias > 0 ? carga.dias : 7)) * 24);
     copia[i].hFiltro = hashTexto(copia[i].hFiltro, janela);
   }
   if (carga.soProvedores) nArq = 0;

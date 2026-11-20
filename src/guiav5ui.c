@@ -3349,7 +3349,7 @@ static void gv_ajustes_sheet(void){
   gv_aj_row(1945,"aj_volume-2",i18n("Prévia sem som"),NULL,NULL,ajustes_guia_previa_sem_som(),0,x,y+372,w);
   gfx_cor((GfxRect){x+18,y+454,w-36,1},0,1,1,1,.08f);
   plrui_kicker(i18n("Aparência"),x+18,y+474,154,156,158,1);
-  gv_aj_row(1947,"aj_calendar-days",i18n("Alcance do guia"),i18n("Menos dias usam menos memória."),i18n(ajustes_guia_dias()==7?"Sete dias":ajustes_guia_dias()==3?"Três dias":"Um dia"),-1,0,x,y+504,w);
+  gv_aj_row(1947,"aj_calendar-days",i18n("Alcance do guia"),i18n(epg_memoria_baixa()?"Menos dias usam menos memória. Em Automático com pouca RAM, o guia mostra só as próximas 24 horas.":"Menos dias usam menos memória."),i18n(ajustes_guia_dias()==7?"Sete dias":ajustes_guia_dias()==3?"Três dias":"Um dia"),-1,0,x,y+504,w);
   gv_aj_row(1948,"aj_palette",i18n("Material Glass"),NULL,NULL,ajustes_vidro(),0,x,y+574,w);
   gfx_cor((GfxRect){x+18,y+656,w-36,1},0,1,1,1,.08f);
   plrui_kicker(i18n("Guia"),x+18,y+676,154,156,158,1);

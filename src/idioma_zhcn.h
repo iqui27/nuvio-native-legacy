@@ -4649,6 +4649,7 @@
   T("Menos ajustes.\nMais diversão.", "调整较少。更有趣。\n"),
   T("Menos antecipação, fontes mais leves e resolução menor quando houver ganho comprovado.", "减少预取，选用更轻的片源，并在确有收益时降低分辨率。"),
   T("Menos dias usam menos memória.", "Fewer days use less memory."),
+  T("Menos dias usam menos memória. Em Automático com pouca RAM, o guia mostra só as próximas 24 horas.", "天数越少，占用内存越少。在内存较低的设备上启用自动模式时，指南仅显示未来24小时。"),
   T("Menos espera, menos surpresa", "更少等待，更少意外"),
   T("Menos recursos sem ganho claro no reteste", "复测时没有明显收益，因此减少了占用的资源"),
   T("Menos tempo restante", "剩余时间最少"),

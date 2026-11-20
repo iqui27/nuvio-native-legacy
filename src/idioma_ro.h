@@ -4648,6 +4648,7 @@
   T("Menos ajustes.\nMais diversão.", "Mai puține ajustări.\nMai multă distracție."),
   T("Menos antecipação, fontes mais leves e resolução menor quando houver ganho comprovado.", "Mai puțină anticipare, surse mai ușoare și rezoluție mai mică atunci când câștigul e dovedit."),
   T("Menos dias usam menos memória.", "Fewer days use less memory."),
+  T("Menos dias usam menos memória. Em Automático com pouca RAM, o guia mostra só as próximas 24 horas.", "Mai puține zile folosesc mai puțină memorie. În modul Automat pe dispozitive cu RAM redus, ghidul arată doar următoarele 24 de ore."),
   T("Menos espera, menos surpresa", "Mai puțină așteptare, mai puține surprize"),
   T("Menos recursos sem ganho claro no reteste", "Mai puține resurse fără câștig clar la retestare"),
   T("Menos tempo restante", "Cel mai puțin timp rămas"),

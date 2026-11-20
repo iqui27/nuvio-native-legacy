@@ -4649,6 +4649,7 @@
   T("Menos ajustes.\nMais diversão.", "Manje\npodešavanja. Zabavnije."),
   T("Menos antecipação, fontes mais leves e resolução menor quando houver ganho comprovado.", "Manje prethodnog učitavanja, lakši izvori i niža rezolucija kada postoji dokazan dobitak."),
   T("Menos dias usam menos memória.", "Fewer days use less memory."),
+  T("Menos dias usam menos memória. Em Automático com pouca RAM, o guia mostra só as próximas 24 horas.", "Manje dana koristi manje memorije. U automatskom režimu na uređajima s malo RAM-a vodič prikazuje samo sledeća 24 sata."),
   T("Menos espera, menos surpresa", "Manje čekanja, manje iznenađenja"),
   T("Menos recursos sem ganho claro no reteste", "Manje resursa bez jasnog dobitka u ponovnom testu"),
   T("Menos tempo restante", "Najmanje preostalog vremena"),
