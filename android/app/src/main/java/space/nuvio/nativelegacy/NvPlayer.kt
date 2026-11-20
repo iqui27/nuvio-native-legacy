@@ -1402,12 +1402,17 @@ object NvPlayer {
     }
 
     // .mpd no fim do path ou no fim de um valor de query param
-    // (/api/live?file=canal.mpd). Nao bate em "dash" solto nem em dominio.
-    private fun isMpdUri(url: String): Boolean {
+    // (/api/live?file=canal.mpd). O valor chega decodificado e sem a query ou
+    // o fragmento aninhados, entao file=canal.mpd%3Ftoken%3Dabc (MPD assinado)
+    // tambem casa. Nao bate em "dash" solto nem em dominio.
+    internal fun isMpdUri(url: String): Boolean {
         val uri = android.net.Uri.parse(url)
         if (uri.path?.endsWith(".mpd", true) == true) return true
-        val query = uri.encodedQuery?.lowercase() ?: return false
-        return query.split('&').any { it.substringAfter('=', it).endsWith(".mpd") }
+        val query = uri.query ?: return false
+        return query.split('&').any {
+            val valor = it.substringAfter('=', it)
+            Uri.parse(valor).path?.endsWith(".mpd", true) == true
+        }
     }
 
     private fun decoderDolby(nome: String): Boolean {
