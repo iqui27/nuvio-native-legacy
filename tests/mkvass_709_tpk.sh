@@ -20,23 +20,29 @@ corpo = m.group(1)
 Path(sys.argv[1], 'repro709.c').write_text('''
 #include <stdlib.h>
 #include <assert.h>
+#include <stdio.h>
 #define NV_TPK 1
 #define MKVASS_PARALELOS 3
 #define MKVASS_PARALELOS_TPK60 2
 typedef struct { int paralelos; } Fio;
 static int tizenMaior;
-static void video_tpk_tizen_definir(const char *v) { tizenMaior = v ? atoi(v) : 0; }
+static int tizenMenor;
+static void video_tpk_tizen_definir(const char *v) {
+  tizenMaior = 0; tizenMenor = 0;
+  if (v) sscanf(v, "%%d.%%d", &tizenMaior, &tizenMenor);
+}
 static int video_tpk_tizen_maior(void) { return tizenMaior; }
+static int video_tpk_tizen_menor(void) { return tizenMenor; }
 static int decide(Fio *f) {
 %s
   return f->paralelos;
 }
 int main(void) {
   Fio f;
-  const char *comCap[] = { "6.0", "6.5" };
-  const char *semCap[] = { "4.0", "5.0", "5.5", "8.0", "9.0", "0", 0 };
+  const char *comCap[] = { "6.0" };
+  const char *semCap[] = { "4.0", "5.0", "5.5", "6.5", "7.0", "8.0", "9.0", "0", 0 };
   int i;
-  for (i = 0; i < 2; i++) {
+  for (i = 0; i < 1; i++) {
     f.paralelos = 3; video_tpk_tizen_definir(comCap[i]);
     assert(decide(&f) == 2);
   }

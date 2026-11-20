@@ -1766,7 +1766,9 @@ static int lerTracks(Fio *f, const unsigned char *p, long n) {
     // texto/PGS e as outras geracoes seguem com MKVASS_PARALELOS.
     // A libnuvio.so e compartilhada pelos pacotes 60/65/8/9 e o TPK40 herda os
     // mesmos objetos: a decisao e em tempo de execucao, pela versao da Tizen.
-    if (video_tpk_tizen_maior() == 6 && f->paralelos > MKVASS_PARALELOS_TPK60)
+    // So a 6.0 exata: "6.5" tambem vira 6 por atoi e o TPK65 perderia um pedido.
+    if (video_tpk_tizen_maior() == 6 && video_tpk_tizen_menor() == 0 &&
+        f->paralelos > MKVASS_PARALELOS_TPK60)
       f->paralelos = MKVASS_PARALELOS_TPK60;
 #endif
     // O libass sobe aqui, com a faixa ASS ja achada, e nao quando o fio nasce:

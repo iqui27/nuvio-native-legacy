@@ -315,6 +315,7 @@ void   video_tpk_cartao_destino(float x, float y, float w, float h, float *ox, f
 void   video_tpk_cartao_furo(float x, float y, float w, float h, float *ox, float *oy, float *ow, float *oh);
 void   video_tpk_tizen_definir(const char *versao);   // gpunivel.c: platform.version
 int    video_tpk_tizen_maior(void);                   // versao maior da Tizen em execucao (0 = desconhecida)
+int    video_tpk_tizen_menor(void);                   // versao menor ("6.5" -> 5; atoi puro perderia)
 int    video_recorte_fonte_trailer(void);   // so o trailer: o ajuste em execucao
 #else
 static inline int video_recorte_fonte_trailer(void) { return video_recorte_fonte(); }
