@@ -146,6 +146,8 @@ typedef struct {
   char *finalDst;
   unsigned finalTam;
   int parcialOk;
+  unsigned long prazoAtualMs;
+  int semRecuoV4;
   UsoHost usoHost[REDE_HOSTS_POR_FIO];
   long teto;
   int restoRecusado;
@@ -185,6 +187,8 @@ long *rede_teto_ptr(void) { return &redeFio()->teto; }
 #define redeFinalDst      (redeFio()->finalDst)
 #define redeFinalTam      (redeFio()->finalTam)
 #define redeParcialOk     (redeFio()->parcialOk)
+#define redePrazoAtualMs  (redeFio()->prazoAtualMs)
+#define redeSemRecuoV4    (redeFio()->semRecuoV4)
 #define usoHost           (redeFio()->usoHost)
 #define redeRestoRecusado (redeFio()->restoRecusado)
 #define redeLateral       (redeFio()->lateral)
@@ -1261,8 +1265,10 @@ static _Thread_local unsigned redeFinalTam;
 // so trechoUmaVez liga. Ver a nota la.
 static _Thread_local int redeParcialOk;
 #endif
+#if !defined(NV_TPK40) && !defined(NV_UM_FIO)
 static _Thread_local unsigned long redePrazoAtualMs;
 static _Thread_local int redeSemRecuoV4;
+#endif
 
 // Constantes da libcurl escritas a mao: nao ha curl.h no SDK do aparelho, e
 // puxar o header inteiro so por meia duzia de numeros nao se paga. Os valores
@@ -1465,6 +1471,11 @@ static int tmdbFallback(void *c, int r, const char *pedido, void *cv) {
   long http = 0;
   if (!(r == 35 || r == 7 || r == 56 || r == 52) ||
       redeCancelouLocal || !curl_getinfo) return r;
+  // ESCRITA que pode ja ter sido aplicada nao repete no alias: resposta
+  // perdida (52: o servidor recebeu e calou) ou corpo cortado no retorno (56)
+  // deixam o POST no servidor — reenviar duplicaria a acao (#707 r2). O flag
+  // e o mesmo que ja barra o recuo IPv4 no caminho do POST.
+  if (redeSemRecuoV4 && (r == 52 || r == 56)) return r;
   // Um redirect de outro host ao TMDB nao autoriza reenviar seus cabecalhos.
   origem = tmdbUrl(pedido);
   if (!origem) return r;
@@ -4124,7 +4135,9 @@ static char *range64(const char *url, const char *headers,
     uint64_t hop_ms = pedidoAgoraMs();
     unsigned active = __atomic_add_fetch(&rangeDiagActive, 1, __ATOMIC_RELAXED);
 #endif
-    result = performTmdb(c, url);
+    // O hop manual segue `current` (o redirect ja aplicado): marcar a familia
+    // pelo host realmente alcancado, nao pela URL original (#707 r2).
+    result = performTmdb(c, current);
 #ifdef NV_HTTP_BUFFER_DIAG
     __atomic_sub_fetch(&rangeDiagActive, 1, __ATOMIC_RELAXED);
 #endif
@@ -4307,6 +4320,10 @@ static int fluxo64(const char *url, const char *headers, int64_t start,
     if (!c) return -1;
     opcoesComuns(c, 15000);                 /* connect deadline from here...      */
     curl_setopt(c, OPT_TIMEOUT_MS, (long)0); /* ...but no limit on the whole body */
+    /* O recuo IPv4 do #707 le redePrazoAtualMs como prazo total do pedido: um
+     * stream longo com dados chegando nao pode ganhar os 15 s de opcoesComuns
+     * (regressao da r2). 0 = sem teto, igual ao OPT_TIMEOUT_MS acima. */
+    redePrazoAtualMs = 0;
     curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
     curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
     if (discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
@@ -4326,7 +4343,9 @@ static int fluxo64(const char *url, const char *headers, int64_t start,
     uint64_t hop_ms = pedidoAgoraMs();
     unsigned active = __atomic_add_fetch(&rangeDiagActive, 1, __ATOMIC_RELAXED);
 #endif
-    result = performTmdb(c, url);
+    // O hop manual segue `current` (o redirect ja aplicado): marcar a familia
+    // pelo host realmente alcancado, nao pela URL original (#707 r2).
+    result = performTmdb(c, current);
 #ifdef NV_HTTP_BUFFER_DIAG
     __atomic_sub_fetch(&rangeDiagActive, 1, __ATOMIC_RELAXED);
 #endif
