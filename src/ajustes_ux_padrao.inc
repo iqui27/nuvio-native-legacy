@@ -391,3 +391,4 @@
   0, // bufferRamReduzLocal: Ligado (reducao automatica mantem a protecao)
   0, // heroListaLocal: 10 titulos no carrossel do destaque (#797)
   0, // showSkipCenaLocal: desligado (#342)
+  1, // personalizacaoDoPerfilPrincipalLocal: Desligado (#679) — opt-in
