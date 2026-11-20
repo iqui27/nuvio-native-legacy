@@ -1663,14 +1663,43 @@ static int colpinItens(const ColFolder *pasta, CatItem *uni, int teto,
                        const CatFileira *novas, int nNovas,
                        const CatItem *novosItens,
                        char mortas[][sizeof ((ColSource *)0)->base], int *nMortas) {
-  int n = 0, temGenero = 0;
-  static CatItem fonteItens[DESC_ITENS_POR_FILEIRA];
+  int n = 0, temGenero = 0, temProv = 0;
+  static CatItem fonteItens[2 * DESC_ITENS_POR_FILEIRA];
+  int ocultar = ajustes_ocultar_filmes_vistos();
   for (int s = 0; s < pasta->nSources; s++) {
     const ColSource *fonte = &pasta->sources[s];
     const char *base = fonte->base[0] ? fonte->base : addons_base_por_id(fonte->addonId);
-    int got = 0, respondeu = 0;
-    if (fonte->prov[0] || fonte->filtros[0] || !base || !base[0]) return 0;
-    if (fonte->genre[0]) {
+    int got = 0, extra = 0, respondeu = 0;
+    if (fonte->prov[0]) {
+      DescColecaoResultado r;
+      int lim = DESC_ITENS_POR_FILEIRA;
+      temProv = 1;
+      memset(&r, 0, sizeof r);
+      if (!desc_colecao_inicial(fonte, "", nv_perfil_sessao_ler(), fonteItens, lim, &r) ||
+          r.erro || r.n <= 0)
+        continue;
+      got = r.n > lim ? lim : r.n;
+      // #741: o prefixo conserva os vistos; com Ocultar vistos ligado eles
+      // sao pulados na copia abaixo e a reserva nao vista repoe o 25o
+      // inedito (vertudo.c:1549 consome brutoN + extraN da mesma forma).
+      if (ocultar) extra = r.extraN;
+    } else if (fonte->filtros[0]) {
+      ColSource ftmp = *fonte;
+      DescColecaoResultado r;
+      int lim = DESC_ITENS_POR_FILEIRA;
+      temProv = 1;
+      if (!ftmp.prov[0]) snprintf(ftmp.prov, sizeof ftmp.prov, "tmdb");
+      if (!ftmp.midia[0]) snprintf(ftmp.midia, sizeof ftmp.midia, "MOVIE");
+      memset(&r, 0, sizeof r);
+      if (!desc_colecao_inicial(&ftmp, "", nv_perfil_sessao_ler(), fonteItens, lim, &r) ||
+          r.erro || r.n <= 0)
+        continue;
+      got = r.n > lim ? lim : r.n;
+      // #788: mesma reserva nao vista do ramo prov acima (descoberta.h).
+      if (ocultar) extra = r.extraN;
+    } else if (!base || !base[0]) {
+      continue;
+    } else if (fonte->genre[0]) {
       temGenero = 1;
       for (int m = 0; m < *nMortas; m++) if (!strcmp(mortas[m], base)) return 0;
       got = lerCatalogo(base, fonte->type, fonte->catId, fonteItens,
@@ -1701,15 +1730,18 @@ static int colpinItens(const ColFolder *pasta, CatItem *uni, int teto,
       }
       if (!got) return 0;          // sem resposta ou nao publicada: cf_itens ja da 0
     }
-    for (int j = 0; j < got && n < teto; j++) {
+    for (int j = 0; j < got + extra && n < teto; j++) {
+      const CatItem *cand = j < got ? &fonteItens[j]
+                                  : &fonteItens[DESC_ITENS_POR_FILEIRA + j - got];
       int repetido = 0;
+      if (ocultar && desc_filme_visto(cand)) continue;
       for (int k = 0; k < n; k++)
-        if (!strcmp(uni[k].imdb, fonteItens[j].imdb) &&
-            !strcmp(uni[k].tipo, fonteItens[j].tipo)) { repetido = 1; break; }
-      if (!repetido) uni[n++] = fonteItens[j];
+        if (!strcmp(uni[k].imdb, cand->imdb) &&
+            !strcmp(uni[k].tipo, cand->tipo)) { repetido = 1; break; }
+      if (!repetido) uni[n++] = *cand;
     }
   }
-  if (!temGenero) return 0;        // pasta sem genero segue o cf_itens de sempre
+  if (!temGenero && !temProv) return 0;   // #741/#788: playlist TMDB/Trakt ou discover com filtros
   return n;
 }
 
@@ -10092,7 +10124,7 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
   int prov, nIds = 0, total = 0, prefixoVistos = 0, visiveis = 0;
   int ocultar, pagina, skip = 0, teto;
   if (resultado) *resultado = r;
-  if (!fonte || !itens || !resultado || limite < 1 || limite > 20 ||
+  if (!fonte || !itens || !resultado || limite < 1 || limite > DESC_ITENS_POR_FILEIRA ||
       !descSessaoVincular(sessao)) return 0;
   f = *fonte;
   prov = !f.prov[0] ? 0 : !strcmp(f.prov, "tmdb") ? 1 :

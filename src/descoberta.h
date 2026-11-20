@@ -279,8 +279,9 @@ void desc_vertudo_fonte_desde(const ColSource *s, int pagina);
 void desc_vertudo_filtro_desde(const char *base, const char *tipo, const char *catId, const char *genre, int pagina);
 int desc_vertudo_pagina(void);
 // Primeira carga independente de uma fileira da Vitrine. Nao altera o
-// carregador de abas acima. `itens` tem 2*limite vagas (limite de 1 a 20):
-// prefixo canonico em [0,n), reserva nao vista em [limite,limite+extraN).
+// carregador de abas acima. `itens` tem 2*limite vagas (limite de 1 a
+// DESC_ITENS_POR_FILEIRA): prefixo canonico em [0,n), reserva nao vista em
+// [limite,limite+extraN).
 // 1 = terminou nesta sessao (erro distingue falha de lista vazia); 0 = pedido
 // invalido ou de sessao antiga. Quem chama possui fonte/base/buffers.
 typedef struct { int n, extraN, erro, pagina, mais; } DescColecaoResultado;
