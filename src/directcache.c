@@ -151,7 +151,11 @@ static void expurgarTeto(const char *dir, unsigned long long teto, const char *p
     if (proteger && !strcmp(n, proteger)) continue;
     if (jobServindo[0] && !strcmp(n, jobServindo)) continue;
     snprintf(ent[ne].nome, sizeof ent[ne].nome, "%s", n);
+#ifdef __APPLE__
+    ent[ne].mt = st.st_mtimespec;  /* macOS: so nos testes do Mac */
+#else
     ent[ne].mt = st.st_mtim;
+#endif
     ent[ne].sz = (unsigned long long)st.st_size;
     ne++;
   }
