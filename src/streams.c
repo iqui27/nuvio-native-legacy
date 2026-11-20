@@ -1356,8 +1356,10 @@ static int incompatContar(void) {
 }
 static int incompatOculta(const Stream *s) {
   if (incompatRevelada || !incompatRegra(s)) return 0;
-  // Never empty a completed list. A later compatible arrival restores filtering.
-  return n > 0 && incompatContar() < n;
+  if (n > 0 && incompatContar() < n) {
+    return 1;
+  }
+  return 0;
 }
 
 #ifndef NV_STREAMS_LG
