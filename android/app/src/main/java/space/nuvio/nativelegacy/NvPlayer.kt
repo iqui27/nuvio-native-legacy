@@ -1397,9 +1397,17 @@ object NvPlayer {
         val baixa = url.lowercase()
         val item = MediaItem.Builder().setUri(url)
         if (baixa.contains(".m3u8") || baixa.contains("m3u8?")) item.setMimeType(MimeTypes.APPLICATION_M3U8)
-        else if (android.net.Uri.parse(url).path?.endsWith(".mpd", true) == true)
-            item.setMimeType(MimeTypes.APPLICATION_MPD)
+        else if (isMpdUri(url)) item.setMimeType(MimeTypes.APPLICATION_MPD)
         return item.build()
+    }
+
+    // .mpd no fim do path ou no fim de um valor de query param
+    // (/api/live?file=canal.mpd). Nao bate em "dash" solto nem em dominio.
+    private fun isMpdUri(url: String): Boolean {
+        val uri = android.net.Uri.parse(url)
+        if (uri.path?.endsWith(".mpd", true) == true) return true
+        val query = uri.encodedQuery?.lowercase() ?: return false
+        return query.split('&').any { it.substringAfter('=', it).endsWith(".mpd") }
     }
 
     private fun decoderDolby(nome: String): Boolean {
@@ -1489,7 +1497,7 @@ object NvPlayer {
             } else if (live) liveHttp else http
             val baixa = url.lowercase()
             val adaptativo = baixa.contains(".m3u8") || baixa.contains("m3u8?") ||
-                Uri.parse(url).path?.endsWith(".mpd", true) == true
+                isMpdUri(url)
             // Cache off or not applicable for a VOD: whatever was kept is stale.
             if (pedidoCache <= 0 || limited) { r.cacheEstado = CacheSessao.DESLIGADO; if (titulo.isNotEmpty()) CacheMidia.descartar("setting off") }
             else if (adaptativo || !ParaleloDataSource.serve(Uri.parse(url))) {

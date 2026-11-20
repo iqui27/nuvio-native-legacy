@@ -13,9 +13,16 @@ def mime_da_producao(url: str):
         # regra antiga: substring em qualquer parte da URL
         b = url.lower()
         return 'application/dash+xml' if ('.mpd' in b or 'dash' in b or 'manifest.mpd' in b) else None
-    m = re.search(r'else if \(android\.net\.Uri\.parse\(url\)\.path\?\.endsWith\("([^"]+)"', bloco)
-    assert m, 'itemMidia: regra DASH nao reconhecida; ajuste o teste'
-    return 'application/dash+xml' if urllib.parse.urlparse(url).path.lower().endswith(m.group(1)) else None
+    assert 'isMpdUri(url)' in bloco, 'itemMidia: regra DASH nao reconhecida; ajuste o teste'
+    # isMpdUri: .mpd no fim do path OU no fim de um valor de query param
+    parsed = urllib.parse.urlparse(url)
+    if parsed.path.lower().endswith('.mpd'):
+        return 'application/dash+xml'
+    for par in parsed.query.lower().split('&'):
+        valor = par.split('=', 1)[-1] if '=' in par else par
+        if valor.endswith('.mpd'):
+            return 'application/dash+xml'
+    return None
 
 CASOS = [
     # (url, mime esperado)
@@ -25,7 +32,10 @@ CASOS = [
     ('https://media.example/dispatch?format=dashboard', None),
     ('https://media.example/vod/manifest.mpd', 'application/dash+xml'),
     ('https://media.example/live/sessao.MPD?token=abc', 'application/dash+xml'),
+    ('https://media.example/api/live?file=canal.mpd', 'application/dash+xml'),
+    ('https://media.example/api/live?file=canal.mpd&x=1', 'application/dash+xml'),
     ('https://media.example/mp4/arquivo.mp4?sig=xyz', None),
+    ('https://media.example/api/live?file=canal.mpdx', None),
 ]
 rc = 0
 for url, esperado in CASOS:
