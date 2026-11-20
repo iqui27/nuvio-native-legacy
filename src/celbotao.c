@@ -52,6 +52,14 @@ static char texQrDe[QR_MAX_BYTES + 1];
 // dados; a porta e CEL_RELATORIO_PORTA. O servidor so existe com o cartao
 // aberto, como antes.
 #define CB_TOKEN_DIAG "diag_lan_token.txt"
+#define CB_TOKEN_DIGITAR "celular_lan_token.txt"
+static void tokenDigitar(void) {
+  char t[16] = "", *salvo = dados_ler(CB_TOKEN_DIGITAR);
+  if (salvo) { snprintf(t, sizeof t, "%.8s", salvo); free(salvo); }
+  if (strlen(t) != 8 && celular_gerar_token(t, sizeof t)) dados_gravar(CB_TOKEN_DIGITAR, t);
+  celular_relatorio_fixo(t, CEL_DIGITAR_PORTA);
+  memset(t, 0, sizeof t);
+}
 static void tokenDiagnostico(void) {
   char t[16] = "", *salvo = dados_ler(CB_TOKEN_DIAG);
   if (salvo) { snprintf(t, sizeof t, "%.8s", salvo); free(salvo); }
@@ -68,7 +76,10 @@ static void abrirServidor(void) {
     if (logexport_create(registro_arquivo(), logSnapshot, sizeof logSnapshot)) {
       if (!celular_abrir_relatorio(logSnapshot)) snprintf(motivoLog, sizeof motivoLog, "%s", celular_motivo());
     } else { puts("[log-export] snapshot failed"); snprintf(motivoLog, sizeof motivoLog, "log snapshot failed"); }
-  } else celular_abrir(titulo);
+  } else {
+    tokenDigitar();
+    celular_abrir_digitar(titulo);
+  }
 }
 
 int celb_disponivel(void) { return celular_disponivel(); }
