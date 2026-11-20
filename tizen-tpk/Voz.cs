@@ -42,6 +42,7 @@ namespace NuvioTpk
         [DllImport("libnuvio.so")] static extern void nv_tpk_voz_registrar(IntPtr iniciar, IntPtr parar, int microfone);
         [DllImport("libnuvio.so")] static extern void nv_tpk_texto_valor(string valor);
         [DllImport("libnuvio.so")] static extern void nv_tpk_texto_fim(int confirmou);
+        [DllImport("libnuvio.so")] static extern IntPtr nv_tpk_voz_inicial();
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnSemArgs();
 
@@ -73,6 +74,16 @@ namespace NuvioTpk
         }
 
         void Log(string s) { try { log("[texto] host voz " + s); } catch { } }
+
+        static string PtrToUtf8Safe(IntPtr p)
+        {
+            if (p == IntPtr.Zero) return "";
+            int n = 0;
+            while (Marshal.ReadByte(p, n) != 0) n++;
+            var b = new byte[n];
+            Marshal.Copy(p, b, 0, n);
+            return System.Text.Encoding.UTF8.GetString(b);
+        }
 
         // 1 = tem, 0 = nao tem, -1 = a TV nao respondeu.
         int Microfone()
@@ -147,8 +158,9 @@ namespace NuvioTpk
             }
             try
             {
-                // Limpo ANTES de abrir: TextChanged nao apaga a busca do app.
-                campo.Text = "";
+                // Semeia com o texto da busca (#704): a pessoa dita em cima do
+                // que ja digitou; TextChanged devolve o campo inteiro ao C.
+                campo.Text = PtrToUtf8Safe(nv_tpk_voz_inicial());
                 aberto = true;
                 viuPainel = false;
                 campo.Focusable = true;

@@ -139,10 +139,37 @@ static char dirArte[512];
 static int esperaMs = 50, swapZero;
 static unsigned nQuadros, nPulados;
 static int contextoFalhou; // Render-thread only; do not poll the app thread's error buffer.
-static int revalidarSuperficie; // #754: 2o arranque EGL pode medir tela errada
 
 // Fio do app: devolve a vez ao framework e espera ela voltar.
-static int cicloPendente;
+// #799: fila FIFO de avisos de ciclo (pausa, pouca memoria, retomada) em ordem
+// de chegada. Uma mascara de bits deduplicava e reordenava: retomada seguida
+// de nova pausa era entregue invertida, e pausa→retomada→pausa→retomada virava
+// um ciclo so. Teto de 16: sobra para qualquer rajada real; se estourar, a
+// retomada mais recente ainda entra (nunca perde foreground).
+#define CICLO_FILA 16
+static Uint32 cicloFila[CICLO_FILA];
+static int cicloIni, cicloN;
+static unsigned cicloPendente; // 1 enquanto ha itens na fila (guarda do while)
+static void cicloEmpurrar(Uint32 tipo) {
+  if (cicloN < CICLO_FILA) {
+    cicloFila[(cicloIni + cicloN) % CICLO_FILA] = tipo;
+    cicloN++;
+  } else if (tipo == SDL_APP_DIDENTERFOREGROUND) {
+    // Fila cheia: descarta o mais antigo, nunca a retomada nova.
+    cicloIni = (cicloIni + 1) % CICLO_FILA;
+    cicloFila[(cicloIni + cicloN - 1) % CICLO_FILA] = tipo;
+  }
+  cicloPendente = cicloN > 0;
+}
+static int cicloTirar(Uint32 *tipo) {
+  if (!cicloN) { cicloPendente = 0; return 0; }
+  *tipo = cicloFila[cicloIni];
+  cicloIni = (cicloIni + 1) % CICLO_FILA;
+  cicloN--;
+  cicloPendente = cicloN > 0;
+  return 1;
+}
+static int revalidarSuperficie; // #754: 2o arranque EGL pode medir tela errada
 static void appEsperaVez(int entregou) {
   pthread_mutex_lock(&trava);
   if (entregou) { vez = VEZ_NUI; pendente = 1; pthread_cond_broadcast(&mudou); }
@@ -150,10 +177,15 @@ static void appEsperaVez(int entregou) {
   pthread_cond_broadcast(&mudou);
   while (vez != VEZ_APP || cicloPendente) {
     if (cicloPendente) {
-      Uint32 tipo = cicloPendente == 2 ? SDL_APP_LOWMEMORY : SDL_APP_WILLENTERBACKGROUND;
-      cicloPendente = 0;
+      Uint32 tipo;
+      if (!cicloTirar(&tipo)) continue;
       pthread_mutex_unlock(&trava);
       player_ciclo_evento(tipo);
+      if (tipo == SDL_APP_DIDENTERFOREGROUND) {
+        SDL_Event ev = {0};
+        ev.type = SDL_APP_DIDENTERFOREGROUND;
+        SDL_PushEvent(&ev);
+      }
       pthread_mutex_lock(&trava);
       pthread_cond_broadcast(&mudou);
     } else pthread_cond_wait(&mudou, &trava);
@@ -467,8 +499,18 @@ __attribute__((visibility("default")))
 void nv_tpk_ciclo(int memoria) {
   // Rendering may already be suspended: wake the app thread without needing GL.
   pthread_mutex_lock(&trava);
-  cicloPendente = memoria ? 2 : 1;
+  cicloEmpurrar(memoria ? SDL_APP_LOWMEMORY : SDL_APP_WILLENTERBACKGROUND);
   if (!memoria) revalidarSuperficie = 1; /* #754: voltar do 2o plano remede o EGL */
+  pthread_cond_broadcast(&mudou);
+  pthread_mutex_unlock(&trava);
+}
+
+// #799: OnResume no host sem isto nao avisa o main(); a home podia desenhar
+// fileiras velhas e o overlay partido ao voltar do segundo plano.
+__attribute__((visibility("default")))
+void nv_tpk_retomou(void) {
+  pthread_mutex_lock(&trava);
+  cicloEmpurrar(SDL_APP_DIDENTERFOREGROUND);
   pthread_cond_broadcast(&mudou);
   pthread_mutex_unlock(&trava);
 }

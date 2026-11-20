@@ -433,6 +433,17 @@ static int temPalavra(const char *nome, const char *w) {
   return 0;
 }
 
+// #743: nome de faixa ou de arquivo de legenda INDICA SDH/CC? Os radicais sao
+// os do classificador de tipo (abaixo) — "cc" so como palavra inteira, senao
+// "access" e "account" casavam.
+int ling_nome_sdh(const char *nome) {
+  static const char *const SURDO[] = { "sdh", "hearing", "surdo", "deaf" };
+  size_t i;
+  if (!nome) return 0;
+  for (i = 0; i < sizeof SURDO / sizeof *SURDO; i++) if (temRadical(nome, SURDO[i])) return 1;
+  return temPalavra(nome, "cc");
+}
+
 int ling_tipo_legenda(const char *nome, int forcado, int sdh) {
   // "forçad" em bytes, e nao como literal: a varredura de i18n (tools/)
   // acusaria um radical de busca como texto de tela sem traducao.
@@ -556,6 +567,16 @@ int ling_legenda_auto(const char *pref,
 int ling_legenda_auto_tipo(const char *pref, const char *audio, int forcadaAuto,
                            const char *const *emb, const int *tipoEmb, int nEmb, int embFechado,
                            const char *const *add, int nAdd, int addFechado) {
+  return ling_legenda_auto_tipo2(pref, audio, forcadaAuto, 0,
+                                 emb, tipoEmb, nEmb, embFechado, add, nAdd, addFechado);
+}
+
+// `evitaSdh` (#743): SDH/CC nunca e escolha automatica — nem como ultimo
+// recurso da lista embutida. E o que a pessoa pede quando o arquivo so traz a
+// faixa para surdos e ela prefere a do addon (ou nenhuma) a ler "[trovao]".
+int ling_legenda_auto_tipo2(const char *pref, const char *audio, int forcadaAuto, int evitaSdh,
+                            const char *const *emb, const int *tipoEmb, int nEmb, int embFechado,
+                            const char *const *add, int nAdd, int addFechado) {
   int i, passo, forca;
   if (!pref || !*pref || !strcasecmp(pref, "none")) return LING_AUTO_NADA;
   // AUDIO NO IDIOMA DA LEGENDA: a forcada daquele idioma, ou nada. So a
@@ -580,6 +601,7 @@ int ling_legenda_auto_tipo(const char *pref, const char *audio, int forcadaAuto,
         int t = tipoEmb ? tipoEmb[i] : LING_LEG_COMUM;
         if (t == LING_LEG_FORCADA || t == LING_LEG_LETREIROS) continue;
         if ((t == LING_LEG_SDH) != passo) continue;
+        if (evitaSdh && t == LING_LEG_SDH) continue;
         if (emb[i] && emb[i][0] && ling_casa_forca(emb[i], pref) == forca) return i;
       }
   if (!embFechado) return LING_AUTO_ESPERA;

@@ -3,6 +3,7 @@
 #include "discord.h"
 #include "discordws.h"
 #include "catalogo.h"
+#include "guia.h"
 #include "dados.h"
 #include "js.h"
 #include "jsw.h"
@@ -543,19 +544,29 @@ static long long agoraMsEpoca(void) {
   return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
-// Only known public artwork CDNs are eligible for third-party presence.
-// A configured add-on poster can contain a personal API key in its path/query.
+// Only https artwork is eligible for third-party presence: any public CDN
+// host is fine (channel logos live wherever the playlist points). A URL with
+// query can carry a personal API key, and http/down-scheme is never sent.
+// Userinfo na autoridade (`https://usuario:senha@host/`) tambem nao: iria
+// vazar credencial da playlist ao endpoint de assets. O veto cobre `@`
+// literal, `%` qualquer (host valido nao precisa de escape: `%40` esconde o
+// `@` antes do memchr ver) e `:` (senha ou porta nao sao host publico). URL
+// maior que o Pedido.a do fio de arte e recusada, nunca truncada.
 static int posterPublico(const char *u) {
-  return u && !strchr(u, '?') &&
-      (!strncmp(u, "https://image.tmdb.org/", 23) ||
-       !strncmp(u, "https://images.metahub.space/", 29));
+  const char *fim, *c;
+  if (!u || strncmp(u, "https://", 8) || strchr(u, '?')) return 0;
+  fim = strchr(u + 8, '/');
+  if (!fim || fim <= u + 8 || strlen(u) >= sizeof ((Pedido *)0)->a) return 0;
+  for (c = u + 8; c < fim; c++)
+    if (*c == '@' || *c == ':' || *c == '%') return 0;
+  return 1;
 }
 
 // 1 se ha algo para mostrar; preenche `p`.
 static int montar(Presenca *p) {
   const CatItem *ci;
   const char *ep, *poster;
-  char publica[128];
+  char publica[128], logoBuf[512];
   float pos, dur;
   memset(p, 0, sizeof *p);
   if (!player_com_video()) return 0;
@@ -581,7 +592,13 @@ static int montar(Presenca *p) {
     if (dur > 60.0f && dur > pos) p->fim = p->ini + (long long)(dur * 1000.0f);
   }
   // Never forward rejected add-on URLs; derive artwork from a numeric IMDb ID.
+  // `logoBuf` vive ate a copia em arteUrl mais abaixo: declarado junto dos
+  // outros locais de `montar` (o buffer do bloco expirava antes do uso, ASan).
   poster = ci->poster;
+  if (player_eh_canal() &&
+      guia_canal_logo_url(player_id_canal(), logoBuf, sizeof logoBuf) &&
+      posterPublico(logoBuf))
+    poster = logoBuf;
   if (!posterPublico(poster)) {
     size_t n = 2;
     publica[0] = 0;

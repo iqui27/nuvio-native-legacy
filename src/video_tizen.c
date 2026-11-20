@@ -1278,7 +1278,11 @@ static void *lerMkv(void *arg) {
 // apagar as faixas guardadas antes da recarga.
 static int reabrirMesmaFonte(double alvo) {
   pronto = tocando = 0; faixasLidas = 0;
-  nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; posSeg = 0; seekEm = 0;
+  nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; seekEm = 0;
+  // #710: posSeg fica no ponto da queda (nao em 0) ate o seek pos-prepared
+  // pousar. O relogio da legenda lia 0 e recuava ao inicio do video entre o
+  // reopen e o buscar — "legenda fora de sincronia" depois da reconexao.
+  posSeg = alvo;
   reconFaixasPend = 1; reconBuscar = alvo;
   if (AVS("abrir", urlAtual) < 1) {
     logarErro("reabrir"); return 0;

@@ -176,8 +176,8 @@ int main(void) {
     vt_store_free(&s);
   }
   /* Home: lerCatalogo */
-  ocultar=0;{int r=lerCatalogo("https://a.invalid","movie","rank",lin,8,8,&resp);assert(r==2);}
-  ocultar=1;assert(lerCatalogo("https://a.invalid","movie","rank",lin,8,8,&resp)==1&&!strcmp(lin[0].imdb,"tt2"));
+  ocultar=0;{int r=lerCatalogo("https://a.invalid","movie","rank",lin,8,8,"",&resp);assert(r==2);}
+  ocultar=1;assert(lerCatalogo("https://a.invalid","movie","rank",lin,8,8,"",&resp)==1&&!strcmp(lin[0].imdb,"tt2"));
   /* Colecao / Ver tudo: desligado mostra tudo (3 paginas) */
   ocultar=0;
   desc_vertudo_abrir("https://off.invalid","movie","rank");waitDone();

@@ -883,6 +883,7 @@ static Uint32 bufferandoDesde;
 static double bufferandoPos;
 static unsigned bufferandoAvancos;
 static unsigned dtsRefillMs;
+static Uint32 bufferClockLogEm;
 static Uint32 dtsRefillEm;
 // Seek pendente neste instante (o seekView do fork virou seekEm/seekRetry aqui).
 static void bufferandoFim(void);
@@ -900,6 +901,16 @@ static void bufferandoClock(double actual) {
       bufferandoSeekPendente() || !isfinite(step) || step < 0.01 ||
       step > 1.5 || bufferSeg < actual + 0.5) {
     bufferandoAvancos = 0;
+#if defined(NV_WEBOS) || defined(NV_HTTP_BUFFER_DIAG)
+    { Uint32 now = SDL_GetTicks();
+      if (now - bufferClockLogEm >= 5000u) {
+        bufferClockLogEm = now;
+        printf("[video] buffering clock reset step=%.3f buf=%.3f actual=%.3f (%s)\n",
+               step, bufferSeg, actual,
+               step > 1.5 ? "large-step" : "no-ahead");
+      }
+    }
+#endif
     return;
   }
   if (++bufferandoAvancos >= 2) {
@@ -1512,11 +1523,23 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
   // Carimba quanto do buffer havia no instante: e o numero que separa "a fonte
   // nao entrega" de "o decoder engasgou".
   if (strstr(p, "bufferingStart")) {
-    char m[64];
+    char m[96];
     // So o PRIMEIRO de uma sequencia carimba. O uMS repete o bufferingStart
     // enquanto nao enche; reiniciar o relogio a cada repeticao daria um "faz
     // 0 ms que travou" eterno, que e exatamente o caso que se quer detectar.
-    if (!bufferandoDesde) { bufferandoDesde = SDL_GetTicks(); bufferandoPos = posNativa; bufferandoAvancos = 0; }
+    if (!bufferandoDesde) {
+      char urlHost[64] = "local";
+      bufferandoDesde = SDL_GetTicks(); bufferandoPos = posNativa; bufferandoAvancos = 0;
+      if (urlAtual[0]) {
+        if (!strncmp(urlAtual, "http://", 7) || !strncmp(urlAtual, "https://", 8))
+          snprintf(urlHost, sizeof urlHost, "net");
+        else if (strncmp(urlAtual, "file:", 5))
+          snprintf(urlHost, sizeof urlHost, "app");
+      }
+      printf("[webos-buffer] start pos=%.1fs ahead=%.1fs dts=%d dv=%d urlHost=%s\n",
+             posSeg, bufferSeg - posSeg, dtsModoDv, dvHabilitado, urlHost);
+      fflush(stdout);
+    }
     snprintf(m, sizeof m, "buffering INICIO (buffer %+.1fs a frente)",
              bufferSeg - posSeg);
     marco(m);
@@ -2736,8 +2759,29 @@ static int nativasAudio(void) {
   for (int i = 0; i < nAudio; i++) if (!nv_audio_mkv_recuperado(&faixaAudio[i])) n++;
   return n;
 }
+static void aplicarOrdemAudioMkv(void) {
+  AudioCand c[NV_FAIXA_MAX];
+  int i, o, k;
+  if (nAudio < 1 || dtsSessao) return;
+  for (i = 0; i < nAudio; i++) {
+    c[i].idioma = faixaAudio[i].idioma; c[i].codec = faixaAudio[i].codec;
+    c[i].rotulo = faixaAudio[i].rotulo; c[i].canais = faixaAudio[i].canais;
+    c[i].dts = audioesc_dts_truehd(faixaAudio[i].codec, faixaAudio[i].rotulo);
+    c[i].pode = !nv_audio_mkv_recuperado(&faixaAudio[i]) || dtsHabilitado;
+    c[i].numero = video_audio_numero_memoria(&faixaAudio[i]);
+  }
+  k = audioesc_escolher(c, nAudio, &o);
+  if (k >= 0 && k != audioAtual && !modoLoad) {
+    printf("[video] audio apos MKV (%s): %s (faixa %d de %d)\n", audioesc_origem_nome(o),
+           faixaAudio[k].rotulo, k + 1, nAudio);
+    fflush(stdout);
+    if (audioAoCarregar < 0) video_escolher_audio(k);
+  }
+}
+
 static void audioMkvOmitidas(void) {
   static int antes = -1;
+  static unsigned sessaoVista;
   if (!dtsHabilitado || ajustes_dts_desligado() ||
       !__atomic_load_n(&audioMkvPronto, __ATOMIC_ACQUIRE)) return;
   int n = nv_audio_mkv_omitidas(faixaAudio, nAudio, NV_FAIXA_MAX, dvAudios,
@@ -2751,12 +2795,20 @@ static void audioMkvOmitidas(void) {
     if (!audioinfo_texto(dvAudioCodec[f->ordinalMkv], f->canais, 0, sub, sizeof sub)) snprintf(sub, sizeof sub, "DTS");
     nv_rotulo_faixa(f->rotulo, sizeof f->rotulo, lang, lang, sub);
   }
-  if (n != antes) {
-    printf("[dts] MKV omitted DTS tracks recovered: %d of %d rows\n", n - nativasAudio(), n);
-    fflush(stdout);
-    antes = n;
+  { int mudou = n != antes;
+    if (dvSessaoN != sessaoVista) {
+      sessaoVista = dvSessaoN;
+      antes = -1;
+      mudou = 1;
+    }
+    if (mudou) {
+      printf("[dts] MKV omitted DTS tracks recovered: %d of %d rows\n", n - nativasAudio(), n);
+      fflush(stdout);
+      antes = n;
+    }
+    nAudio = n;
+    if (mudou) aplicarOrdemAudioMkv();
   }
-  nAudio = n;
 }
 void video_bombear(void) {
   ack_publicar();
@@ -3453,7 +3505,8 @@ static int dvPronto(void) {
     }
     // Keep the selected TrueHD track; the opt-in DV path converts its audio.
     if (nv_dts_truehd_codec(c) && !ajustes_dts_desligado()) {
-      printf("[dv] audio %s converted to keep Dolby Vision\n", c); fflush(stdout);
+      printf("[webos-audio] TrueHD track %d (%s) routed through DV converter (#749)\n",
+             m + 1, c); fflush(stdout);
       dvAudioMkvOrd = m; dvTruehd = 1; return 1;
     }
     if (!nv_dvaudio_alimentavel(c)) {

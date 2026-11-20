@@ -52,6 +52,11 @@ int  extras_mdblist_tem_chave(void);
 // quem o montou.
 void extras_definir_chave(const char *chave);
 
+// Copia a chave EM VIGOR (conta ou pacote) para `dst`. Devolve 0 sem chave.
+// As listas do MDBList (#762) sao um recurso de conta, como as notas: sem a
+// chave nao ha o que pedir, entao quem monta o pedido precisa do valor.
+int  extras_mdblist_chave(char *dst, unsigned n);
+
 // Nota da fonte, CRUA multiplicada por 10 (o imdb vem com uma casa decimal e
 // precisa caber em inteiro). 0 = nao ha. Divida por 10 e use
 // extras_fonte_percentual() para saber se o resultado e "6.2" ou "66%".

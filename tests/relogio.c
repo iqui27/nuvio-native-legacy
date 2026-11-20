@@ -93,6 +93,12 @@ int main(void) {
     ok(fabs(relogio_ler(&q, 1.6) - 10.8) < 0.001, "depois da troca interpola a 1,5x");
     relogio_taxa(&q, 1.5);
     ok(q.n == 1, "a mesma taxa de novo nao zera"); }
+  // [8] #710: durante reconexao (tocando=0) o relogio segura a posicao da queda.
+  { Relogio q; double queda = 412.0, t;
+    relogio_zerar(&q);
+    relogio_amostra(&q, queda, 10.0, 1);
+    for (t = 10.5; t < 14.0; t += 1.0 / 60.0) relogio_amostra(&q, queda, t, 0);
+    ok(fabs(relogio_ler(&q, 13.9) - queda) < 0.02, "reconexao: relogio segura a posicao da queda (#710)"); }
   printf("\n%s\n", falhas ? "FALHOU" : "relogio: ok");
   return falhas != 0;
 }

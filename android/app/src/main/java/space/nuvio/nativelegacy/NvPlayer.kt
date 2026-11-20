@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.net.Uri
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.view.PixelCopy
 import android.widget.ImageView
 import android.os.Handler
@@ -171,6 +172,7 @@ object NvPlayer {
     @JvmStatic external fun nativeIniciar()
     @JvmStatic external fun nativeLimitedStatus(): Int
     @JvmStatic external fun nativeTunneling(): Boolean
+    @JvmStatic external fun nativeBarrasPretas(): Boolean
     @JvmStatic external fun nativeAfr(): Int
     @JvmStatic external fun nativeEvento(tipo: Int, a: Int, b: Int)
     // flags (#287): 1 = forcada (SELECTION_FLAG_FORCED), 2 = SDH
@@ -1073,15 +1075,34 @@ object NvPlayer {
     private fun informarTela(activity: Activity) {
         try {
             @Suppress("DEPRECATION")
-            val tipos = activity.windowManager.defaultDisplay.hdrCapabilities?.supportedHdrTypes
-            if (tipos == null || tipos.isEmpty()) { nativeTela(-1, -1); return }
+            var tipos = activity.windowManager.defaultDisplay.hdrCapabilities?.supportedHdrTypes
+            if (tipos == null || tipos.isEmpty()) {
+                // Alguns aparelhos (ex.: Google TV em modo basico) deixam o
+                // default display sem tipos HDR; o painel real aparece pelo
+                // DisplayManager. Qualquer display com tipos conta (#759).
+                val dm = activity.getSystemService(Context.DISPLAY_SERVICE) as? android.hardware.display.DisplayManager
+                var unidos = intArrayOf()
+                for (d in dm?.displays ?: emptyArray()) {
+                    val t = d.hdrCapabilities?.supportedHdrTypes ?: continue
+                    if (t.isNotEmpty()) unidos = (unidos.toList() + t.toList()).toIntArray()
+                }
+                if (unidos.isNotEmpty()) tipos = unidos.distinct().toIntArray()
+            }
+            if (tipos == null || tipos.isEmpty()) {
+                Log.i(TAG, "[tv] hdr types empty -> hdr=-1 dv=-1 (#759)")
+                nativeTela(-1, -1)
+                return
+            }
             val decoderDv = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS)
                 .codecInfos.any { !it.isEncoder && it.supportedTypes.any { mime -> mime.equals("video/dolby-vision", true) } }
             val dv = if (decoderDv) {
                 if (tipos.contains(android.view.Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION)) 1 else -1
             } else 0
             nativeTela(1, dv)
-        } catch (e: Throwable) { Log.w(TAG, "informarTela: $e") }
+        } catch (e: Throwable) {
+            Log.w(TAG, "informarTela: $e")
+            nativeTela(-1, -1)   // #759: unknown display must not hide HDR sources
+        }
     }
 
     // Effective audio support includes the bundled FFmpeg renderer and the
@@ -1320,13 +1341,18 @@ object NvPlayer {
             val pcm = v != 1f
             if (r.velocidadePcm != pcm) {
                 val pos = p.currentPosition
+                val play = p.playWhenReady
+                val sv = superficie
                 r.velocidadePcm = pcm
                 // Re-select the audio decoder against the new sink capabilities.
-                // stop/prepare keeps the media source, track overrides and pause.
-                p.stop()
-                p.seekTo(pos)
+                // Media3 1.8 has no surface-preserving stop(); pause, flip PCM policy,
+                // and reattach the SurfaceView so the last frame stays visible (#740).
+                p.pause()
                 p.setPlaybackSpeed(v)
-                p.prepare()
+                p.seekTo(pos)
+                sv?.let { p.setVideoSurfaceView(it) }
+                if (play) p.play() else p.playWhenReady = false
+                Log.i(TAG, "[speed] pcm policy flip pos=$pos playWhenReady=$play")
             } else p.setPlaybackSpeed(v)
             Log.i(TAG, "[speed] requested=$v parameters=${p.playbackParameters.speed} pcm=$pcm")
         }
@@ -1397,8 +1423,64 @@ object NvPlayer {
         val baixa = url.lowercase()
         val item = MediaItem.Builder().setUri(url)
         if (baixa.contains(".m3u8") || baixa.contains("m3u8?")) item.setMimeType(MimeTypes.APPLICATION_M3U8)
-        else if (baixa.contains(".mpd")) item.setMimeType(MimeTypes.APPLICATION_MPD)
+        else if (isMpdUri(url)) item.setMimeType(MimeTypes.APPLICATION_MPD)
         return item.build()
+    }
+
+    // .mpd no fim do path ou no fim de um valor de query param
+    // (/api/live?file=canal.mpd). O valor chega decodificado e sem a query ou
+    // o fragmento aninhados, entao file=canal.mpd%3Ftoken%3Dabc (MPD assinado)
+    // e ate file=canal.mpd%3Fexpires%3D...T...%3A59Z (ISO 8601) tambem casam.
+    // Funcao pura sobre String: o valor decodificado NAO pode ir ao
+    // Uri.parse, que leria o primeiro ':' de "2026-11-20T23:59:59Z" como
+    // esquema e devolveria path nulo. Nao bate em "dash" solto nem em dominio.
+    internal fun isMpdUri(url: String): Boolean {
+        // .mpd no fim do caminho da URL propria (sem query nem fragmento).
+        // O fragmento EXTERNO sai primeiro: o Uri real devolve query nula
+        // para film.mp4#t=10?file=canal%2Empd, entao so a query da propria
+        // URL pode ser lida; procurar '?' antes de cortar '#' transformava
+        // fragmento em query e forcava DASH num MP4 progressivo.
+        val semFragmento = url.substringBefore('#')
+        val caminho = semFragmento.substringBefore('?')
+        if (caminho.endsWith(".mpd", true)) return true
+        // .mpd no fim do valor decodificado de um param de query: corta no
+        // primeiro '?' ou '#' ANINHADO (a query do valor) e testa o sufixo.
+        // O '?'/'#' de corte e o que vem codificado no proprio valor
+        // (canal.mpd%3Ftoken%3Dabc -> "canal.mpd?token=abc" -> "canal.mpd");
+        // o separador de params da URL externa ('&' cru) sai antes, no split.
+        val query = semFragmento.substringAfter('?', "")
+        if (query.isEmpty()) return false
+        return query.split('&').any {
+            val valor = it.substringAfter('=', it)
+            decodifica(valor).substringBefore('?').substringBefore('#').endsWith(".mpd", true)
+        }
+    }
+
+    // Escape invalido nao pode descartar o valor inteiro: canal.mpd%3Ftoken%3D%ZZ
+    // estoura no URLDecoder, mas o "%3F" valido ainda esconde a query aninhada
+    // que separa o MPD da assinatura. Primeiro a decodificacao estrita; so se
+    // falhar entra a variante que deixa o '%' invalido literal.
+    private fun decodifica(valor: String): String = try {
+        java.net.URLDecoder.decode(valor, "UTF-8")
+    } catch (e: Exception) {
+        val out = StringBuilder(valor.length)
+        val bytes = java.io.ByteArrayOutputStream()
+        fun flush() {
+            if (bytes.size() > 0) { out.append(bytes.toString("UTF-8")); bytes.reset() }
+        }
+        var i = 0
+        while (i < valor.length) {
+            val c = valor[i]
+            if (c == '+') { flush(); out.append(' '); i++ }
+            else if (c == '%' && i + 2 < valor.length) {
+                val hi = Character.digit(valor[i + 1], 16)
+                val lo = Character.digit(valor[i + 2], 16)
+                if (hi >= 0 && lo >= 0) { bytes.write(hi shl 4 or lo); i += 3 }
+                else { flush(); out.append('%'); i++ }
+            } else { flush(); out.append(c); i++ }
+        }
+        flush()
+        out.toString()
     }
 
     private fun decoderDolby(nome: String): Boolean {
@@ -1487,7 +1569,8 @@ object NvPlayer {
                 if (checked.compareAndSet(false, true)) nativeLimitedStatus() else 0
             } else if (live) liveHttp else http
             val baixa = url.lowercase()
-            val adaptativo = baixa.contains(".m3u8") || baixa.contains("m3u8?") || baixa.contains(".mpd")
+            val adaptativo = baixa.contains(".m3u8") || baixa.contains("m3u8?") ||
+                isMpdUri(url)
             // Cache off or not applicable for a VOD: whatever was kept is stale.
             if (pedidoCache <= 0 || limited) { r.cacheEstado = CacheSessao.DESLIGADO; if (titulo.isNotEmpty()) CacheMidia.descartar("setting off") }
             else if (adaptativo || !ParaleloDataSource.serve(Uri.parse(url))) {
@@ -1545,7 +1628,7 @@ object NvPlayer {
                             !it.equals("If-None-Match", true) && !it.equals("If-Modified-Since", true)
                         }),
                     report = { Log.i(TAG, it) },
-                    liveTsUri = Uri.parse(url).takeIf { LivePlaylistDataSource.isLiveTs(it) },
+                    liveTsUri = Uri.parse(url).takeIf { live && LivePlaylistDataSource.isLiveTs(it) },
                 ))
             if (construir) construirPlayer(act, r)
             Log.i(TAG, "[player] buffer preset=$preset min=${minMs / 1000}s max=${maxMs / 1000}s teto=${bytes shr 20}MB preparo=$preparando")
@@ -2003,6 +2086,9 @@ object NvPlayer {
     private fun aplicarJanela() {
         val c = camada ?: return
         val sv = superficie ?: return
+        try {
+            c.setBackgroundColor(if (nativeBarrasPretas()) Color.BLACK else Color.TRANSPARENT)
+        } catch (_: UnsatisfiedLinkError) { c.setBackgroundColor(Color.TRANSPARENT) }
         var cw = c.width
         var ch = c.height
         if (cw < 1 || ch < 1) {

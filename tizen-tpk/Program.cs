@@ -49,6 +49,7 @@ namespace NuvioTpk
         [DllImport("libnuvio.so")] static extern void nv_tpk_tecla(string nome, int apertou);
         [DllImport("libnuvio.so")] static extern void nv_tpk_log(string linha);
         [DllImport("libnuvio.so")] static extern void nv_tpk_ciclo(int memoria);
+        [DllImport("libnuvio.so")] static extern void nv_tpk_retomou();
         [DllImport("libdl.so.2")] static extern IntPtr dlopen(string path, int flags);
         [DllImport("libdl.so.2")] static extern IntPtr dlerror();
         [DllImport("libcapi-appfw-application.so.0")] static extern IntPtr app_get_data_path();
@@ -1024,16 +1025,24 @@ namespace NuvioTpk
             {
                 // Firmware hides the main window and then GL after OnPause.
                 // Wait for both events; an immediate raise is undone by that hide.
+                // #769 (QN90B, 6.5): a OnResume pode chegar ANTES dos hides
+                // ("pause/window events followed by a later resume" no log).
+                // Cancelar a recuperacao ali deixava as janelas escondidas
+                // para sempre: processo vivo em RAM desenhando nada, a TV na
+                // homescreen; reabrir subia as janelas pelo AppControl e o app
+                // "entrava instantaneo". Um resume com janela ainda escondida
+                // recupera agora, nao cancela.
                 var t = new NuiTimer(100);
                 t.Tick += (s, e) => {
                     if (saindo || soltou || fim || erroNaTela || primeiraTecla ||
-                        !pausado || relogio.ElapsedMilliseconds >= 8000) return false;
-                    if (principalVisivel || (!JanelaUnica && glVisivel)) return true;
+                        relogio.ElapsedMilliseconds >= 8000) return false;
+                    if (!pausado && principalVisivel && (JanelaUnica || glVisivel)) return false;
+                    if (pausado && (principalVisivel || (!JanelaUnica && gl != null && glVisivel))) return true;
                     Etapa("note recovering startup pause" + Contagem());
                     try { NuiWindow.Instance.Show(); NuiWindow.Instance.Raise(); }
                     catch (Exception x) { Etapa("note startup raise failed " + x.GetType().Name + ": " + x.Message); }
                     SobeGl("startup pause");
-                    OnResume();
+                    if (pausado) OnResume();
                     return false;
                 };
                 t.Start();
@@ -1053,6 +1062,7 @@ namespace NuvioTpk
             // #783: retomada real (foreground) pede a reconexao nativa da
             // sessao que a Home parou; sem sessao parada pelo sistema e no-op.
             try { video?.RetomarDoSistema(); } catch { }
+            try { nv_tpk_retomou(); } catch (EntryPointNotFoundException) { }
             base.OnResume();
         }
 

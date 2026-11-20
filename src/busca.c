@@ -855,7 +855,7 @@ static int vozBusca(void) {
 }
 static void campoOk(void) {
   if (campoFoco == 3) { st_fechar(ST_BUSCA); celb_abrir(CELB_BUSCA, "Buscar filmes e séries"); }
-  else if (campoFoco == 2) st_voz_iniciar(ST_BUSCA);
+  else if (campoFoco == 2) { st_voz_teclado_inicial(consulta); st_voz_iniciar(ST_BUSCA); }
   else st_ime_abrir(ST_BUSCA, consulta, BU_MAX_CONSULTA - 1);
 }
 static void voltarCampo(void) {
