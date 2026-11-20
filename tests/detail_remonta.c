@@ -56,6 +56,13 @@ int main(void) {
     w[1] = v[0]; w[2] = v[1]; w[3] = v[2];
     cat_definir_tudo(w, 4, NULL, 0); }
   printf("--- remontou de verdade\n"); fflush(stdout);
+  // The router (app.c) reads detail_indice() for the source search and Play
+  // BEFORE detail_atualizar runs in the same frame. Read right after the
+  // rebuild, it must already follow the title, not whoever took its old slot:
+  // otherwise that frame asks the addons for another title's sources and Play
+  // can start the wrong one (a deep-linked title, appended at the end, then
+  // shifted by the start-up "Continue watching" rebuild).
+  assert(detail_indice() == 2);
   quadros(60);
   assert(detail_indice() == 2);
   assert(!strcmp(cat_item(detail_indice())->titulo, "Twilight Zone"));
