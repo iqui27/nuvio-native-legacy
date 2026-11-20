@@ -1419,8 +1419,8 @@ typedef struct { void *multi; int ligado; } CancelVigia;
 static int cancelVigiaPerform(CancelVigia *v, void *c);
 static int cancelVigiaLigar(void *c, CancelVigia *v);
 static void cancelVigiaSoltar(CancelVigia *v, int ligado, void *c);
-// O recuo IPv4 do #707 pede a easy associada e uma vigia por tentativa —
-// ver performV4 logo depois de hostDaUrl. v->multi NULL cai no easy perform.
+// O recuo IPv4 do #707 roda cada tentativa por cancelVigiaPerform — ver
+// performV4 logo depois de hostDaUrl. v->multi NULL cai no easy perform.
 static int performV4(void *c, const char *url, CancelVigia *v);
 
 #ifdef NV_TPK
@@ -1763,44 +1763,6 @@ static int v4Vale(int r, void *c) {
     if (tcp > 0.0005) return 0; }
   return 1;
 }
-// PERFORM COM VIGIA POR TENTATIVA (#707 + #775). A easy pode ja estar num
-// multi (v->multi, armado por cancelVigiaLigar ou adotado do pool do fio):
-// cada tentativa roda como um mini-cancelVigiaPerform — curl_multi_perform +
-// poll de 20 ms com redeParou() a cada volta — e sai do multi ao fim para o
-// recuo reconfigurar a easy. Sem multi (v NULL ou libcurl antiga) cai no
-// curl_easy_perform de sempre, como cancelVigiaPerform faz.
-static int v4Perform(void *c, CancelVigia *v) {
-  void *m;
-  int ainda = 1, r = 23 /* CURLE_WRITE_ERROR */, achou = 0;
-  if (!v || !v->multi) return curl_perform(c);
-  m = v->multi;
-  if (v->ligado) { curl_multi_remove(m, c); v->ligado = 0; }
-  if (curl_multi_add(m, c)) return curl_perform(c);
-  v->ligado = 1;
-  while (curl_multi_perform(m, &ainda) == 0 /* CURLM_OK */) {
-    if (redeParou()) {
-      redeCancelouLocal = 1;
-      curl_multi_remove(m, c);
-      v->ligado = 0;
-      return 42 /* CURLE_ABORTED_BY_CALLBACK */;
-    }
-    if (!ainda) break;
-    /* poll existe na 7.66+; wait cobre as libcurl das TVs (7.45+/7.53). */
-    if (curl_multi_poll) curl_multi_poll(m, NULL, 0, 20, NULL);
-    else curl_multi_wait(m, NULL, 0, 20, NULL);
-  }
-  { /* CURLMsg: { CURLMSG msg; CURL *easy_handle; union { ... CURLcode result } data } */
-    typedef struct { int msg; void *easy; union { void *p; int result; } data; } NvCurlMsg;
-    NvCurlMsg *info;
-    int naFila;
-    while ((info = (NvCurlMsg *)curl_multi_info_read(m, &naFila)) != NULL)
-      if (info->msg == 1 /* CURLMSG_DONE */ && info->easy == c)
-        { r = info->data.result; achou = 1; } }
-  curl_multi_remove(m, c);
-  v->ligado = 0;
-  return achou ? r : 56 /* CURLE_RECV_ERROR */;
-}
-
 // A easy do pedido cancelavel esta associada ao multi do FIO (pool); uma
 // vigia temporaria em cima dele deixa cada tentativa cancelavel sem mexer no
 // fluxo de cancelVigiaLigar/Soltar de quem chamou — o multi volta para o pool
@@ -1818,7 +1780,10 @@ static void v4VigiaPegar(void *c, CancelVigia *v) {
 }
 
 // curl_easy_perform com o recuo IPv6->IPv4 do #707 e a vigia de cancelamento
-// do #775 por tentativa. Vale para TODO caminho que passa por aqui: sonda de
+// do #775 por tentativa: cada tentativa (dual-stack e, se valer, so IPv4) e um
+// cancelVigiaPerform no mesmo multi — a 1a usa a easy ja associada por
+// cancelVigiaLigar, a 2a a reassocia; redeParou() vale nas duas. Sem multi
+// (v NULL sem pool, libcurl antiga) cai no curl_easy_perform de sempre. Vale para TODO caminho que passa por aqui: sonda de
 // fonte, GET/POST, aquecimento, Range lateral — todos o chamam direto ou pelo
 // performTmdb/performTmdbCv. A marca e do host DO URL DO PEDIDO: um
 // redirecionamento que a libcurl segue internamente herda a familia desta
@@ -1831,7 +1796,7 @@ static int performV4(void *c, const char *url, CancelVigia *v) {
   long restMs;
   if (!v) { v4VigiaPegar(c, &local); v = &local; }
   curl_setopt(c, OPT_IPRESOLVE, (long)marcado);
-  r = v4Perform(c, v);
+  r = cancelVigiaPerform(v, c);
   if (marcado || redeSemRecuoV4 || !v4Vale(r, c)) return r;
   agora = redeAgoraMs();
   if (prazoMs > 0) {
@@ -1845,7 +1810,7 @@ static int performV4(void *c, const char *url, CancelVigia *v) {
            r, rede_url_publica(url, seg, sizeof seg));
     fflush(stdout); }
   curl_setopt(c, OPT_IPRESOLVE, (long)1);
-  r = v4Perform(c, v);
+  r = cancelVigiaPerform(v, c);
   { char seg[120];
     if (r) printf("[rede] IPv4 tambem falhou (curl %d) em %s\n",
                   r, rede_url_publica(url, seg, sizeof seg));
