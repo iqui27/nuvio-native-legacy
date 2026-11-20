@@ -492,7 +492,8 @@ static int skipDisponivel(void), skipLiberado;
 static int skipBotaoPermitido(int tipo) {
   return tipo == INTRO_ABERTURA ? ajustes_show_skip_intro() :
          tipo == INTRO_RESUMO ? ajustes_show_skip_recap() :
-         tipo == INTRO_CREDITOS ? ajustes_show_skip_credits() : 0;
+         tipo == INTRO_CREDITOS ? ajustes_show_skip_credits() :
+         tipo == INTRO_POS_CREDITOS ? ajustes_show_skip_cena() : 0;
 }
 static int trechoPulavel(double *fim) {
   int tipo;
@@ -6278,7 +6279,7 @@ static void desenharAcoesEpisodioCorpo(void){
   if (!skipDisponivel() || capFoco) { skipFoco = 0; return; }
   intro_definir_duracao(duracaoReal ? (double)duracaoSeg : 0.0, epE <= 0);
   int trecho=intro_botao_config(posSeg,monoSeg(),visivel,skipFoco&&visivel,&fim,&tipo,
-    ajustes_show_skip_intro(),ajustes_show_skip_recap(),ajustes_show_skip_credits());
+    ajustes_show_skip_intro(),ajustes_show_skip_recap(),ajustes_show_skip_credits(),ajustes_show_skip_cena());
   // A CAIXA DE "Próximo episódio" QUE FICAVA AQUI FOI APAGADA. Era um retangulo
   // de posicao fixa em {420,720} que caia por cima da barra de tempo, sem foco
   // e sem parecer clicavel — o dono fotografou. O proximo episodio agora e um
@@ -6298,7 +6299,8 @@ static void desenharAcoesEpisodioCorpo(void){
     int paraCena=tipo==INTRO_CREDITOS&&intro_cena_pos(duracaoSeg,NULL,NULL,NULL);
     // Rotulos do NuvioTV: "Skip Ending" no fim de episodio, "Skip Credits" so
     // em filme (epE <= 0), e "Post credits" so com cena de verdade depois.
-    const char *rot=tipo==INTRO_RESUMO?"Pular resumo":
+    const char *rot=tipo==INTRO_POS_CREDITOS?"Pular cena":
+                    tipo==INTRO_RESUMO?"Pular resumo":
                     paraCena?"P\xc3\xb3s-cr\xc3\xa9" "ditos":
                     tipo==INTRO_CREDITOS&&epE<=0?"Pular cr\xc3\xa9" "ditos":
                     tipo==INTRO_CREDITOS?"Pular encerramento":"Pular abertura";
