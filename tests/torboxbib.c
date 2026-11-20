@@ -28,12 +28,18 @@ void partes_arquivo_definir(const char *alvo, int usenet, int item, int arquivo)
 }
 
 int main(void) {
-  int u = -1, it = -1;
+  int u = -1, it = -1, arq = -1;
   // id NUMERICO e usenet booleano, como o TorBox devolve (probe do revisor).
+  // O arquivo pedido e o id real do maior video de "files" — um torrent cujo
+  // unico arquivo tem id 10 nao pode pedir o id 0 (achado sol-f29r2).
   snprintf(ultimoJson, sizeof ultimoJson,
     "{\"success\":true,\"data\":["
-    "{\"id\":41,\"name\":\"Filme 41\",\"hash\":\"aa\",\"usenet\":false},"
-    "{\"id\":7,\"name\":\"Usenet 7\",\"hash\":\"bb\",\"usenet\":true}]}");
+    "{\"id\":41,\"name\":\"Filme 41\",\"hash\":\"aa\",\"usenet\":false,"
+      "\"files\":[{\"id\":10,\"name\":\"F41/filme.mkv\",\"size\":500000000}]},"
+    "{\"id\":7,\"name\":\"Usenet 7\",\"hash\":\"bb\",\"usenet\":true,"
+      "\"files\":[{\"id\":3,\"name\":\"u7/leia.txt\",\"size\":40},"
+                  "{\"id\":9,\"name\":\"u7/parte1.mkv\",\"size\":900000000},"
+                  "{\"id\":8,\"name\":\"u7/parte2.mkv\",\"size\":200000000}]}");
 
   torboxbib_ui_entrar();
   // A busca e assincrona: nenhuma chamada pode ter saida no fio da UI ainda,
@@ -52,9 +58,9 @@ int main(void) {
 
   // A escolha devolve o item certo; quem chama dispara o link DEPOIS de
   // limpar o estado (parteZerar cancela pedidos em voo).
-  assert(torboxbib_ui_escolher(0, &u, &it) == 1 && it == 41 && u == 0);
-  assert(torboxbib_ui_escolher(1, &u, &it) == 1 && it == 7 && u == 1);
-  assert(torboxbib_ui_escolher(9, NULL, NULL) == 0);
+  assert(torboxbib_ui_escolher(0, &u, &it, &arq) == 1 && it == 41 && u == 0 && arq == 10);
+  assert(torboxbib_ui_escolher(1, &u, &it, &arq) == 1 && it == 7 && u == 1 && arq == 9);
+  assert(torboxbib_ui_escolher(9, NULL, NULL, NULL) == 0);
 
   // Repetidas atualizacoes NAO disparam busca nova enquanto a lista esta cheia.
   torboxbib_ui_atualizar();

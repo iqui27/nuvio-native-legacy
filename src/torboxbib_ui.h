@@ -13,8 +13,9 @@ const char *torboxbib_ui_status(void);
 int torboxbib_ui_item_id(int i);
 int torboxbib_ui_usenet(int i);
 /* Pedido do item i: grava o alvo "torbox:bib" para o Airlock e devolve o
-   usenet/item escolhidos para o chamador disparar o link DEPOIS de limpar o
-   estado anterior (parteZerar cancela qualquer pedido em voo). */
-int torboxbib_ui_escolher(int i, int *usenet, int *item);
+   usenet/item escolhidos e o arquivo principal (o maior video de "files"),
+   para o chamador disparar o link DEPOIS de limpar o estado anterior
+   (parteZerar cancela qualquer pedido em voo). */
+int torboxbib_ui_escolher(int i, int *usenet, int *item, int *arquivo);
 
 #endif

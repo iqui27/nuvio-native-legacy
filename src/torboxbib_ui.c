@@ -13,6 +13,7 @@
 
 static struct {
   int itemId;
+  int arquivoId;         // o video principal do item (maior "files".id)
   int usenet;
   char nome[160];
   char hash[48];
@@ -53,6 +54,43 @@ static void limpar(void) {
   status[0] = 0;
 }
 
+static int tbVideo(const char *nome) {
+  static const char *ext[] = { ".mkv", ".mp4", ".m4v", ".avi", ".mov", ".ts", ".m2ts", ".webm", ".wmv", NULL };
+  size_t L = strlen(nome);
+  for (int i = 0; ext[i]; i++) {
+    size_t e = strlen(ext[i]);
+    if (L > e && !strcasecmp(nome + L - e, ext[i])) return 1;
+  }
+  return 0;
+}
+
+// O arquivo que o item vai tocar: o MAIOR video de "files" (mesmo criterio do
+// item de um video so — o partes.c exige o id real; 0 nao existe como id).
+static int arquivoPrincipal(const char *item, const char *fim) {
+  const char *fa, *el;
+  int id = 0;
+  double maior = -1;
+  fa = strstr(item, "\"files\"");
+  if (!fa || fa >= fim) return 0;
+  fa = strchr(fa, '[');
+  if (!fa || fa >= fim) return 0;
+  el = fa + 1;
+  while (el < fim && (*el == ' ' || *el == '\t' || *el == '\n' || *el == '\r')) el++;
+  for (; el && el < fim && *el == '{'; el = js_prox(js_fim(el))) {
+    const char *ef = js_fim(el);
+    char nome[512];
+    double tam;
+    if (!ef || ef > fim) break;
+    nome[0] = 0;
+    if (!js_texto_raiz_em(el, ef, "short_name", nome, sizeof nome) || !nome[0])
+      js_texto_raiz_em(el, ef, "name", nome, sizeof nome);
+    if (!tbVideo(nome)) continue;
+    tam = js_num(el, ef, "size", 0);
+    if (tam > maior) { maior = tam; id = (int)js_num(el, ef, "id", 0); }
+  }
+  return id;
+}
+
 static void parseData(const char *json) {
   const char *p, *f;
   limpar();
@@ -65,7 +103,7 @@ static void parseData(const char *json) {
   while (*p && nItens < TBUI_MAX) {
     while (*p && *p != '{') p++;
     if (*p != '{') break;
-    f = strchr(p, '}');
+    f = js_fim(p);
     if (!f) break;
     {
       char idb[24], nome[160], hash[48];
@@ -83,6 +121,7 @@ static void parseData(const char *json) {
         usenet = js_num(p, f, "usenet", -1) == 1 || (ub && ub < f && strstr(ub, "true") && strstr(ub, "true") < f); }
       if (!nome[0]) snprintf(nome, sizeof nome, "Item %d", id);
       itens[nItens].itemId = id;
+      itens[nItens].arquivoId = arquivoPrincipal(p, f);
       itens[nItens].usenet = usenet;
       snprintf(itens[nItens].nome, sizeof itens[nItens].nome, "%s", nome);
       snprintf(itens[nItens].hash, sizeof itens[nItens].hash, "%s", hash);
@@ -143,11 +182,12 @@ int torboxbib_ui_usenet(int i) {
   return i >= 0 && i < nItens ? itens[i].usenet : 0;
 }
 
-int torboxbib_ui_escolher(int i, int *usenet, int *item) {
+int torboxbib_ui_escolher(int i, int *usenet, int *item, int *arquivo) {
   if (i < 0 || i >= nItens || itens[i].itemId <= 0) return 0;
-  partes_arquivo_definir("torbox:bib", itens[i].usenet, itens[i].itemId, 0);
+  partes_arquivo_definir("torbox:bib", itens[i].usenet, itens[i].itemId, itens[i].arquivoId);
   if (usenet) *usenet = itens[i].usenet;
   if (item) *item = itens[i].itemId;
+  if (arquivo) *arquivo = itens[i].arquivoId;
   return 1;
 }
 

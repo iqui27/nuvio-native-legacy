@@ -5513,7 +5513,7 @@ static void recuperarErroFonte(void) {
 }
 
 void app_atualizar(float dt, Uint32 agora) {
-  static int tbPlayU, tbPlayItem;
+  static int tbPlayU, tbPlayItem, tbPlayArq;
   static const char *tbPlayTit;
 #ifdef NV_ANDROID
   android_tv_home(tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL);
@@ -6494,7 +6494,7 @@ void app_atualizar(float dt, Uint32 agora) {
       abrirPessoa(&pedPessoa);
     } else if (tela == TELA_BUSCA && busca_pediu_abrir(&idx)) {
       if (busca_item_focado(&it) && it.indice == idx) abrirTitulo(&it, 1, 1); else abrirPorIndice(idx);
-    } else if (tela == TELA_BIBLIOTECA && biblioteca_pediu_torbox_play(&tbPlayU, &tbPlayItem, &tbPlayTit)) {
+    } else if (tela == TELA_BIBLIOTECA && biblioteca_pediu_torbox_play(&tbPlayU, &tbPlayItem, &tbPlayArq, &tbPlayTit)) {
       int titulo = 0;
       { CatItem z = {0};
         // Titulo do ITEM escolhido na aba, nao um indice fixo do catalogo:
@@ -6512,7 +6512,7 @@ void app_atualizar(float dt, Uint32 agora) {
       parteDesde = SDL_GetTicks();
       parteFase = PF_LINK;
       partePos = -1;
-      partes_link_pedir(tbPlayU, tbPlayItem, 0, 1);
+      partes_link_pedir(tbPlayU, tbPlayItem, tbPlayArq, 1);
       reabrirTitulo(titulo);
       player_abrir(titulo, NULL);
       trocarTela(TELA_PLAYER);

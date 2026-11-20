@@ -401,7 +401,6 @@ static int torboxAba(void) { return modo == MODO_LISTAS && listaTab == 4 && torb
 #else
 #define BIB_N_LISTA_TAB 4
 static const char *ROT_LISTA_TAB[] = { "Minhas listas", "Seguindo", "Explorar", "Trilhas" };
-static int torboxAba(void) { return 0; }
 #endif
 static int fonteSalvos = -1;
 static int pickSel = 0;          // qual dos seletores esta em foco
@@ -490,7 +489,7 @@ static int toqueLivre;
 static float velY = 0.0f;
 static int sair = 0, pedido = -1, pediuTorbox = 0;
 #ifdef NV_TPK
-static int torboxUsenet, torboxItem;
+static int torboxUsenet, torboxItem, torboxArquivo;
 static char torboxTitulo[160];
 #endif
 static int pediuRelogio;
@@ -1064,7 +1063,8 @@ static int emAndamento(const CatItem *c) {
 // Quantos seletores a faixa tem: "Para ver" ganha o quarto, "Origem".
 // "Listas" ganha o quarto na fonte Trakt: "Nova lista".
 static int bibNPicks(void) {
-  return modo == MODO_LISTAS ? 6 : modo == MODO_ASSISTIDOS ? 5 : 6;
+  // MODO_LISTAS: as abas (4 ou 5 com TorBox) + Procurar + "+ Nova lista".
+  return modo == MODO_LISTAS ? BIB_N_LISTA_TAB + 2 : modo == MODO_ASSISTIDOS ? 5 : 6;
 }
 // 6D keeps one chip: the Origens panel is the source, the rows are the view.
 // Trakt creates ("Nova lista"); other sources search public lists.
@@ -1397,16 +1397,18 @@ int biblioteca_pediu_abrir(int *indiceCatalogo) {
   return 1;
 }
 
-int biblioteca_pediu_torbox_play(int *usenet, int *item, const char **titulo) {
+int biblioteca_pediu_torbox_play(int *usenet, int *item, int *arquivo, const char **titulo) {
   int v = pediuTorbox;
   pediuTorbox = 0;
 #ifdef NV_TPK
   if (usenet) *usenet = torboxUsenet;
   if (item) *item = torboxItem;
+  if (arquivo) *arquivo = torboxArquivo;
   if (titulo) *titulo = torboxTitulo;
 #else
   if (usenet) *usenet = 0;
   if (item) *item = 0;
+  if (arquivo) *arquivo = 0;
   if (titulo) *titulo = "";
 #endif
   return v;
@@ -1702,7 +1704,7 @@ static void okNaCelula(int i) {
   }
 #ifdef NV_TPK
   if (torboxAba()) {
-    if (torboxbib_ui_escolher(i, &torboxUsenet, &torboxItem)) {
+    if (torboxbib_ui_escolher(i, &torboxUsenet, &torboxItem, &torboxArquivo)) {
       const char *nm = torboxbib_ui_nome(i);
       snprintf(torboxTitulo, sizeof torboxTitulo, "%s", nm && nm[0] ? nm : "TorBox");
       pediuTorbox = 1;
@@ -2601,7 +2603,7 @@ static void desenhaModos(void) {
 
 static void pickerTexto(int p, const char **rot, const char **val) {
   if (modo == MODO_LISTAS) {
-    *rot = p < 4 ? ROT_LISTA_TAB[p] : p == 4 ? "Procurar" : "+ Nova lista";
+    *rot = p < BIB_N_LISTA_TAB ? ROT_LISTA_TAB[p] : p == BIB_N_LISTA_TAB ? "Procurar" : "+ Nova lista";
     *val = "";
   } else if (modo == MODO_ASSISTIDOS) {
     *rot = p == 0 ? "Origem" : p == 1 ? "Tipo" : p == 2 ? "Ordem" : "";
@@ -2623,7 +2625,7 @@ static void pickerTexto(int p, const char **rot, const char **val) {
 // "Esconder assistidos" ligado: o ponto (7) e o vao (10) antes do rotulo.
 static int pickerPonto(int p) { return modo != MODO_LISTAS && modo != MODO_ASSISTIDOS && p == 3 && esconderVistos; }
 static float pickerLarguraNat(int p) {
-  if (modo == MODO_LISTAS) return txt_linha(TXT_AJ_SEG, p < 4 ? ROT_LISTA_TAB[p] : p == 4 ? "Procurar" : "+ Nova lista", 243, 242, 239, 255).w + 44;
+  if (modo == MODO_LISTAS) return txt_linha(TXT_AJ_SEG, p < BIB_N_LISTA_TAB ? ROT_LISTA_TAB[p] : p == BIB_N_LISTA_TAB ? "Procurar" : "+ Nova lista", 243, 242, 239, 255).w + 44;
   if (modo != MODO_LISTAS && p >= bibViewStart()) return BIB_VIS_W;
   const char *rot, *val;
   pickerTexto(p, &rot, &val);
@@ -2717,12 +2719,12 @@ static void desenhaPicker(int p, float f) {
   if (bibControlesSistema() && modo != MODO_LISTAS) return;
   ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroPicker, NULL, p, 0);
   if (modo == MODO_LISTAS) {
-    if (p < 4) return; // The shared segmented control owns labels and focus.
+    if (p < BIB_N_LISTA_TAB) return; // The shared segmented control owns labels and focus.
     plrui_botao_repouso(r, 1);
     if (listaTab == p) plrui_linha_foco(r, .5f, 1 - v);
-    if (p >= 4) plrui_pilula_foco(r, v);
+    if (p >= BIB_N_LISTA_TAB) plrui_pilula_foco(r, v);
     int t = v > .5f ? ajustes_tinta_foco() : listaTab == p ? 243 : 140;
-    TxtLinha label = txt_linha(TXT_AJ_SEG, p < 4 ? ROT_LISTA_TAB[p] : p == 4 ? "Procurar" : "+ Nova lista", t, t, t, 255);
+    TxtLinha label = txt_linha(TXT_AJ_SEG, p < BIB_N_LISTA_TAB ? ROT_LISTA_TAB[p] : p == BIB_N_LISTA_TAB ? "Procurar" : "+ Nova lista", t, t, t, 255);
     txt_desenhar(label, r.x + 22, r.y + (r.h - label.h) * .5f);
     return;
   }
