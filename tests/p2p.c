@@ -21,6 +21,7 @@ static int ligado;
 static char base[200];
 int ajustes_p2p_ligado(void) { return ligado; }
 const char *ajustes_p2p_url(void) { return base; }
+int ajustes_p2p_prazo_metadados_s(void) { return 30; }
 static const char *episodioId = "tt1:1:2";
 void debrid_episodio(int *t, int *e) { idbase_episodio(episodioId, t, e); }
 uint64_t badges_detectar(const char *m) { (void)m; return 0; }
@@ -63,6 +64,9 @@ char *rede_baixar_trecho_st(const char *url, int s, long long ini, long long fim
   if (st) *st = trechoOk ? 206 : stTrecho;
   if (tam) *tam = trechoOk ? 4 : 0;
   return trechoOk ? strdup("data") : NULL;
+}
+RedePararEstado rede_parar_trocar(int (*parar)(void *), void *usuario) {
+  (void)parar; (void)usuario; return (RedePararEstado){ .instalado = 1 };
 }
 
 static const char *SETTINGS = "{\"options\":[],\"values\":{\"serverVersion\":\"4.21.2\",\"cacheSize\":2147483648},\"baseUrl\":\"http://172.17.0.3:11470\"}";

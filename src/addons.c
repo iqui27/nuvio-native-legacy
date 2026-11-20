@@ -3871,6 +3871,15 @@ int addons_busca_incompleta(void) {
   return resumo.semResposta || resumo.extraIncompleta;
 }
 
+static void addons_log765_scrapers(int term, int enq, int inst, int lig) {
+  static int uTerm = -1, uEnq = -1, uInst = -1, uLig = -1;
+  if (term == uTerm && enq == uEnq && inst == uInst && lig == uLig) return;
+  uTerm = term; uEnq = enq; uInst = inst; uLig = lig;
+  printf("[addons] #765: sem fontes addon — scrapers %d/%d, add-ons instalados=%d ligados=%d\n",
+         term, enq, inst, lig);
+  fflush(stdout);
+}
+
 int addons_motivo_vazio(char *dst, unsigned n) {
   const Resumo *r = &resumo;
   int canal = !strcmp(alvoTipo, "tv") || !strcmp(alvoTipo, "channel") ||
@@ -3879,9 +3888,12 @@ int addons_motivo_vazio(char *dst, unsigned n) {
   if (!dst || !n || !r->valido) return 0;
   PlugResumo plugins;
   plugins_resumo(alvoId, alvoTipo, &plugins);
-  if (plugins.enfileirados && !r->comFontes)
+  if (plugins.enfileirados && !r->comFontes) {
+    addons_log765_scrapers(plugins.terminados, plugins.enfileirados,
+                           r->instalados, r->ligadosComFonte);
     snprintf(dst, n, i18n("Plugins não encontraram fontes (%d de %d scrapers verificados)"),
              plugins.terminados, plugins.enfileirados);
+  }
   // Other extra providers are absent from the Stremio summary. Let callers
   // use their generic source wording while one is active.
   else if (addons_origem_extra_ativa()) return 0;

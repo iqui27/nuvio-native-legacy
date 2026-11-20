@@ -203,6 +203,12 @@ void nv_tpk_voz_registrar(FnVoz iniciar, FnVoz parar, int microfone) {
   printf("[texto] host registrou o botao de microfone (microfone=%d)\n", microfone);
   fflush(stdout);
 }
+
+// O texto inicial do teclado aberto PELO BOTAO DE MICROFONE (a callback
+// iniciar() nao leva argumento): o host o le aqui para semear o campo
+// (#704). Vale o `atual` do ultimo texto_sistema_abrir.
+__attribute__((visibility("default")))
+const char *nv_tpk_voz_inicial(void) { return valor; }
 #endif
 
 #if defined(NV_TPK) || defined(__EMSCRIPTEN__)

@@ -181,4 +181,22 @@ class LivePlaylistDataSourceTest {
             h.now = 18000; assertEquals(h.body, h.read())
         }
     }
+
+    @Test fun isLiveTs_onlyXtreamLivePath() {
+        val live = Uri.parse("http://x.tv/live/u/p/1.ts")
+        val vod = Uri.parse("http://x.tv/movie/u/p/file.ts")
+        assertTrue(LivePlaylistDataSource.isLiveTs(live))
+        assertFalse(LivePlaylistDataSource.isLiveTs(vod))
+        assertFalse(LivePlaylistDataSource.isLiveTs(Uri.parse("http://x.tv/file.mpeg")))
+    }
+
+    @Test fun dashWithoutExtensionUsesManifestContentType() {
+        val h = Harness()
+        h.body = "<?xml version=\"1.0\"?><MPD xmlns=\"urn:mpeg:dash:schema:mpd:2011\"></MPD>"
+        h.contentType = "application/dash+xml"
+        h.redirect = Uri.parse("https://cdn.test/stream")
+        val spec = DataSpec(Uri.parse("https://example.test/live/noext?k=1"))
+        val out = h.read(spec)
+        assertTrue(out.contains("MPD"))
+    }
 }

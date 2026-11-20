@@ -182,6 +182,9 @@ static int reconPausa = -1;
 // Seek enviado sem confirmacao do host: a recuperacao retoma nele.
 static atomic_int buscaAlvoMs = -1;
 static int reconAlvoMs = -1;
+// #710: enquanto a sessao reabre ou o host ainda devolve 0, o relogio da legenda
+// segue o ponto da queda (como o player trata reconexao parada).
+static double posReconLeg = -1.0;
 
 // CABECALHO DO MKV (#206). O player do host so da o idioma de cada faixa; o
 // Name ("Forced", "DD 5.1"), a FlagForced e os canais estao nas TrackEntry, e
@@ -504,8 +507,14 @@ void nv_tpk_video_evento(int tipo, int a, int b) {
       break;
     }
     case EV_BUSCOU:
-      if (atomic_compare_exchange_strong(&buscaAlvoMs, &a, -1))
+      if (atomic_compare_exchange_strong(&buscaAlvoMs, &a, -1)) {
         atomic_store(&legSeekChegou, 1);
+        // #710: o ack confirma o alvo enviado. Um seek do usuario para outro
+        // ponto (ex.: 0 s durante a recuperacao em 12 s) invalida a posicao
+        // mantida; o relogio passa a seguir o host.
+        if (a >= 1000 || (posReconLeg >= 0.0 && a != (int)(posReconLeg * 1000.0)))
+          posReconLeg = -1.0;
+      }
       break;
     case EV_CONSULTA_LENTA: atomic_store(&consultaLentaEm, SDL_GetTicks() | 1u); break;
     case EV_PRONTO:  durMs = a; pronto = 1; break;
@@ -1588,6 +1597,8 @@ static void escolhasPendentes(void) {
 
 static void recuperarPlayer(int alvoMs) {
   if (reconErroPend) return; // ja ha recuperacao/erro neste quadro: um hParar so
+  { double p = progressoPos > 0.5 ? progressoPos : video_pos();
+    if (p > 0.5) posReconLeg = p; }
   reconAlvoMs = alvoMs >= 0 ? alvoMs : buscaAlvoMs;
   reconPausa = pausaPedida;
   reconErroCod = -2; reconErroPend = 1; reconLinhaRede = 1; reconIniciou = 1;
@@ -1828,6 +1839,7 @@ void video_bombear(void) {
   if (reconBuscarMs >= 0 && pronto && tocando) {
     int ms = reconBuscarMs;
     reconBuscarMs = -1;
+    atomic_store(&buscaAlvoMs, ms);
     if (cv.ativo && cv.prog) {
       // Progressivo: o seek pendente reabre o fluxo no alvo (?t=); o TS nao tem
       // seek cru. Sem URL do servidor, fica no ponto atual.
@@ -1915,6 +1927,8 @@ void video_bombear(void) {
   if (nv_recon_vencida(&recon, SDL_GetTicks())) {
     printf("[video] reconectando: alvo %.0fs, tentativa %d\n", recon.alvo, recon.tentativa);
     fflush(stdout);
+    if (recon.alvo > 0.5) posReconLeg = recon.alvo;
+    else if (progressoPos > 0.5) posReconLeg = progressoPos;
     reconFaixasPend = 1;
     reconBuscarMs = recon.alvo > 1.0 ? (int)(recon.alvo * 1000.0) : -1;
     if (cv.ativo) {
@@ -1956,6 +1970,7 @@ void video_parar(void) {
   nv_recon_zerar(&recon);
   reconErroPend = 0; reconFaixasPend = 0; reconBuscarMs = -1; reconPausa = -1;
   reconAlvoMs = buscaAlvoMs = -1;
+  posReconLeg = -1.0;
   atomic_store(&playerPreso, -2); // aviso de antes da saida nao reabre o video
   if (ativo && hParar) hParar();
   ativo = pronto = tocando = 0;
@@ -2106,9 +2121,15 @@ static void encaixar(int x, int y, int w, int h, int *fx, int *fy, int *fw, int 
   else eh = (int)((double)w * altura / largura + 0.5) & ~1;
   *fx = x + (w - ew) / 2; *fy = y + (h - eh) / 2; *fw = ew; *fh = eh;
 }
-// Versao da Tizen (gpunivel.c le platform.version); so o maior importa.
-static int tizenMaior;
-void video_tpk_tizen_definir(const char *v) { tizenMaior = v ? atoi(v) : 0; }
+// Versao da Tizen (gpunivel.c le platform.version). Maior e menor entram na
+// conta: "6.5" nao pode virar 6 (#709 capa o ASS so na 6.0).
+static int tizenMaior, tizenMenor;
+void video_tpk_tizen_definir(const char *v) {
+  tizenMaior = 0; tizenMenor = 0;
+  if (v) sscanf(v, "%d.%d", &tizenMaior, &tizenMenor);
+}
+int video_tpk_tizen_maior(void) { return tizenMaior; }
+int video_tpk_tizen_menor(void) { return tizenMenor; }
 // COVER NO CARTAO (#471): so na Tizen 6.x (a TV do relato, uma AU7000 6.0) ou com
 // o zoom experimental ligado. ROI com origem negativa nunca foi visto no 4/5 (#426)
 // e apaga o plano na Tizen 9 (#188), entao as demais familias ficam no quadro
@@ -2256,8 +2277,18 @@ int video_busca_em_voo(void) {
 }
 unsigned video_busca_falhas(void) { return atomic_load(&buscaFalhas); }
 double video_pos(void) {
+  double p;
   if (terminou && video_duracao() > 0) return video_duracao();
-  return cv.reabrindo ? cv.posMantida : posReal();
+  if (cv.reabrindo) return cv.posMantida;
+  p = posReal();
+#ifdef NV_TPK
+  if (posReconLeg >= 0.0) {
+    if (!video_pronto() || p < 0.25 || p + 2.0 < posReconLeg || video_busca_em_voo())
+      return posReconLeg;
+    posReconLeg = -1.0;
+  }
+#endif
+  return p;
 }
 double video_duracao(void) {
   // Progressivo: o player ve um fluxo sem fim; a duracao e a da fonte.

@@ -477,6 +477,17 @@ static int temPalavra(const char *nome, const char *w) {
   return 0;
 }
 
+// #743: nome de faixa ou de arquivo de legenda INDICA SDH/CC? Os radicais sao
+// os do classificador de tipo (abaixo) — "cc" so como palavra inteira, senao
+// "access" e "account" casavam.
+int ling_nome_sdh(const char *nome) {
+  static const char *const SURDO[] = { "sdh", "hearing", "surdo", "deaf" };
+  size_t i;
+  if (!nome) return 0;
+  for (i = 0; i < sizeof SURDO / sizeof *SURDO; i++) if (temRadical(nome, SURDO[i])) return 1;
+  return temPalavra(nome, "cc");
+}
+
 int ling_tipo_legenda(const char *nome, int forcado, int sdh) {
   // "forçad" em bytes, e nao como literal: a varredura de i18n (tools/)
   // acusaria um radical de busca como texto de tela sem traducao.
@@ -581,7 +592,7 @@ static int melhorLegenda(const char *const *ids, int n, const char *pref, int fo
 }
 
 static int melhorLegendaEmbTipo(const char *const *emb, const int *tipoEmb, int nEmb,
-                                const char *pref, int forca, int tipo, int sdh) {
+                                const char *pref, int forca, int tipo, int sdh, int evitaSdh) {
   int i, melhor = -1, nota = -1, a;
   for (i = 0; i < nEmb; i++) {
     int t = tipoEmb ? tipoEmb[i] : LING_LEG_COMUM;
@@ -590,6 +601,7 @@ static int melhorLegendaEmbTipo(const char *const *emb, const int *tipoEmb, int 
     } else {
       if (t == LING_LEG_FORCADA || t == LING_LEG_LETREIROS) continue;
       if ((t == LING_LEG_SDH) != sdh) continue;
+      if (evitaSdh && t == LING_LEG_SDH) continue;
     }
     if (!emb[i] || !emb[i][0] || ling_casa_forca(emb[i], pref) != forca) continue;
     a = ling_afinidade(emb[i], pref);
@@ -629,6 +641,16 @@ int ling_legenda_auto(const char *pref,
 int ling_legenda_auto_tipo(const char *pref, const char *audio, int forcadaAuto,
                            const char *const *emb, const int *tipoEmb, int nEmb, int embFechado,
                            const char *const *add, int nAdd, int addFechado) {
+  return ling_legenda_auto_tipo2(pref, audio, forcadaAuto, 0,
+                                 emb, tipoEmb, nEmb, embFechado, add, nAdd, addFechado);
+}
+
+// `evitaSdh` (#743): SDH/CC nunca e escolha automatica — nem como ultimo
+// recurso da lista embutida. E o que a pessoa pede quando o arquivo so traz a
+// faixa para surdos e ela prefere a do addon (ou nenhuma) a ler "[trovao]".
+int ling_legenda_auto_tipo2(const char *pref, const char *audio, int forcadaAuto, int evitaSdh,
+                            const char *const *emb, const int *tipoEmb, int nEmb, int embFechado,
+                            const char *const *add, int nAdd, int addFechado) {
   int passo, forca;
   if (!pref || !*pref || !strcasecmp(pref, "none")) return LING_AUTO_NADA;
   // AUDIO NO IDIOMA DA LEGENDA: a forcada daquele idioma, ou nada. So a
@@ -638,7 +660,7 @@ int ling_legenda_auto_tipo(const char *pref, const char *audio, int forcadaAuto,
     for (passo = 0; passo < 2; passo++)
       for (forca = 1; forca >= 0; forca--) {
         int r = melhorLegendaEmbTipo(emb, tipoEmb, nEmb, pref, forca,
-                                     passo ? LING_LEG_LETREIROS : LING_LEG_FORCADA, 0);
+                                     passo ? LING_LEG_LETREIROS : LING_LEG_FORCADA, 0, 0);
         if (r >= 0) return r;
       }
     // A forcada pode estar numa faixa cujo tipo ainda nao chegou (sonda do MKV).
@@ -648,7 +670,7 @@ int ling_legenda_auto_tipo(const char *pref, const char *audio, int forcadaAuto,
   // de cada tipo, familia exata antes do conjunto "hbs".
   for (passo = 0; passo < 2; passo++)
     for (forca = 1; forca >= 0; forca--) {
-      int r = melhorLegendaEmbTipo(emb, tipoEmb, nEmb, pref, forca, -1, passo);
+      int r = melhorLegendaEmbTipo(emb, tipoEmb, nEmb, pref, forca, -1, passo, evitaSdh);
       if (r >= 0) return r;
     }
   if (!embFechado) return LING_AUTO_ESPERA;

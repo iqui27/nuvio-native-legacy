@@ -35,6 +35,7 @@ typedef enum {
   PP_DESLIGADO = 0,     // ordem = a de V_POSTER_PROV em ajustes.c e a gravada
   PP_SPATIAL,
   PP_RPDB,
+  PP_POSTERSPLUS,
   PP_MODELO
 } PosterProv;
 

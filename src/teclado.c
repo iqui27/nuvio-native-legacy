@@ -688,7 +688,7 @@ static void okBarra(void) {
     return;
   }
   celb_fechar_dono(CELB_TECLADO);   // um modo de cada vez
-  if (coluna == TE_B_FALAR) st_voz_iniciar(ST_TECLADO);
+  if (coluna == TE_B_FALAR) { st_voz_teclado_inicial(texto); st_voz_iniciar(ST_TECLADO); }
   else abrirImeAgora();
 }
 

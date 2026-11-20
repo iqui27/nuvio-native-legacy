@@ -7,6 +7,8 @@
 #include "dados.h"
 #include "imgsub.h"
 #include "pgs.h"
+#include "video.h"
+#include "pgs_mkv_restore.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,7 +18,6 @@
 #include <unistd.h>
 #include <math.h>
 #include <limits.h>
-#include <zlib.h>
 
 // --- parametros --------------------------------------------------------------
 
@@ -154,7 +155,12 @@ static int conexaoRecusada(int e) { return e == 6 || e == 7 || e == 35; }
 // janela de 90 s levou 49 s. Tres conexoes a mais (o pipeline ja usa uma ou
 // duas) triplicam o ritmo sem disputar banda: cada pedido e de ~1 KB.
 #ifndef MKVASS_PARALELOS
+#ifdef NV_TPK
 #define MKVASS_PARALELOS   3
+#define MKVASS_PARALELOS_TPK60 2   /* #709: menos disputa no Tizen 6 com ASS */
+#else
+#define MKVASS_PARALELOS   3
+#endif
 #endif
 #define MKVASS_PREBUSCA    8
 // VARREDURA (#92, webOS 25): quando o indice NAO tem CuePoint da faixa de
@@ -1755,6 +1761,16 @@ static int lerTracks(Fio *f, const unsigned char *p, long n) {
       return 1;
     }
     if (!ehAss || !priv) return -1;
+#ifdef NV_TPK
+    // #709: o teto de 2 pedidos vale so para a faixa ASS (anime no Tizen 6);
+    // texto/PGS e as outras geracoes seguem com MKVASS_PARALELOS.
+    // A libnuvio.so e compartilhada pelos pacotes 60/65/8/9 e o TPK40 herda os
+    // mesmos objetos: a decisao e em tempo de execucao, pela versao da Tizen.
+    // So a 6.0 exata: "6.5" tambem vira 6 por atoi e o TPK65 perderia um pedido.
+    if (video_tpk_tizen_maior() == 6 && video_tpk_tizen_menor() == 0 &&
+        f->paralelos > MKVASS_PARALELOS_TPK60)
+      f->paralelos = MKVASS_PARALELOS_TPK60;
+#endif
     // O libass sobe aqui, com a faixa ASS ja achada, e nao quando o fio nasce:
     // o aquecimento le a pasta de fontes inteira para a memoria (106 MB na C9,
     // 2-12 s e +65-120 MB de RSS na webOS) e antes rodava em toda pre-busca,
@@ -3246,39 +3262,10 @@ static void guardarReferencia(Fio *f) {
 
 static int contarDesistidos(const Fio *f);
 
-// Restores a stored block. Returns a new buffer (caller frees) or NULL on failure.
 static unsigned char *pgsRestaurar(const Fio *f, const unsigned char *b, long n, size_t *saida) {
-  unsigned char *o;
-  if (f->pgsCodif == 2) {
-    if (n < 0 || (size_t)n > PGS_BLOCO_MAX - f->pgsTiraN) return NULL;
-    *saida = f->pgsTiraN + (size_t)n;
-    o = malloc(*saida ? *saida : 1);
-    if (!o) return NULL;
-    if (f->pgsTiraN) memcpy(o, f->pgsTira, (size_t)f->pgsTiraN);
-    memcpy(o + f->pgsTiraN, b, (size_t)n);
-    return o;
-  } else {
-    z_stream z;
-    size_t cap = 256u << 10;
-    int r;
-    memset(&z, 0, sizeof z);
-    o = malloc(cap);
-    if (!o) return NULL;
-    if (inflateInit(&z) != Z_OK) { free(o); return NULL; }
-    z.next_in = (Bytef *)b; z.avail_in = (uInt)n;
-    z.next_out = o; z.avail_out = (uInt)cap;
-    while ((r = inflate(&z, Z_NO_FLUSH)) == Z_OK && z.avail_out == 0 && cap < PGS_BLOCO_MAX) {
-      unsigned char *g = realloc(o, cap * 2);
-      if (!g) { r = Z_MEM_ERROR; break; }
-      o = g;
-      z.next_out = o + cap; z.avail_out = (uInt)cap;
-      cap *= 2;
-    }
-    *saida = z.total_out;
-    inflateEnd(&z);
-    if (r != Z_STREAM_END) { free(o); return NULL; }
-    return o;
-  }
+  if (n < 0) return NULL;
+  if (!f->pgsCodif) return NULL;
+  return pgs_mkv_restaurar(f->pgsCodif, f->pgsTira, f->pgsTiraN, b, (size_t)n, saida);
 }
 
 // Decodifica os blocos pendentes para o armazem do desenho. O corpo vazio so

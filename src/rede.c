@@ -1305,6 +1305,8 @@ static _Thread_local int redeParcialOk;
 #define OPT_NOPROGRESS         43
 #define OPT_XFERINFOFUNCTION 20219
 #define OPT_XFERINFODATA     10057
+#define OPT_SOCKOPTFUNCTION  20148
+#define OPT_SOCKOPTDATA      10149
 // Keepalive de TCP (7.25+) nas conexoes guardadas no cache do handle.
 #define OPT_TCP_KEEPALIVE     213
 #define OPT_TCP_KEEPIDLE      214
@@ -1314,6 +1316,10 @@ static _Thread_local int redeParcialOk;
 #define INFO_NUM_CONNECTS  2097178
 #define INFO_REDIRECT_URL 1048607
 #define INFO_SIZE_DOWNLOAD 3145736
+// CURLINFO_LASTSOCKET = CURLINFO_LONG + 29. ACTIVESOCKET (7.45+) seria o certo,
+// mas LASTSOCKET existe em toda versao que estas TVs trazem e devolve o mesmo
+// descritor quando ha uma conexao so (ver rede_tls_abrir e a CancelVigia).
+#define INFO_LASTSOCKET  2097181
 #define OPT_CAINFO 10065
 #define OPT_ERRORBUFFER 10010
 #define OPT_POSTFIELDSIZE 60
@@ -1378,11 +1384,27 @@ static int urlSetopt(void *c, const char *url) {
 static int   (*curl_perform)(void *);
 static void  (*curl_cleanup)(void *);
 static int   (*curl_global)(long);
+static void *(*curl_multi_init)(void);
+static int   (*curl_multi_add)(void *, void *);
+static int   (*curl_multi_remove)(void *, void *);
+static int   (*curl_multi_perform)(void *, int *);
+static int   (*curl_multi_poll)(void *, void *, unsigned, int, int *);
+static int   (*curl_multi_wait)(void *, void *, unsigned, int, int *);
+static int   (*curl_multi_cleanup)(void *);
+static int   (*curl_multi_setopt)(void *, int, ...);
+static void *(*curl_multi_info_read)(void *, int *);
 static void *(*slist_append)(void *, const char *);
 static void  (*slist_free)(void *);
 static int   (*curl_getinfo)(void *, int, ...);
 static void  (*curl_reset)(void *);
 static time_t (*curl_getdate_fn)(const char *, const time_t *);
+
+// Definida com a vigia de cancelamento mais abaixo (#775); o tmdbFallback a
+// usa quando o pedido ja esta num multi proprio.
+typedef struct { void *multi; int ligado; } CancelVigia;
+static int cancelVigiaPerform(CancelVigia *v, void *c);
+static int cancelVigiaLigar(void *c, CancelVigia *v);
+static void cancelVigiaSoltar(CancelVigia *v, int ligado, void *c);
 
 #ifdef NV_TPK
 static void *dnsShare;
@@ -1427,7 +1449,7 @@ static void prepararDns(void *h, const char *ares) {
 // gasto inteiro, e a tentativa no alias dobraria a espera maxima de quem
 // chamou — o mesmo principio de valeRepetir logo abaixo ("o que ja custou o
 // prazo inteiro nao repete").
-static int tmdbFallback(void *c, int r, const char *pedido) {
+static int tmdbFallback(void *c, int r, const char *pedido, void *cv) {
   char *url = NULL, *alias, *origem;
   long http = 0;
   if (!(r == 35 || r == 7 || r == 56 || r == 52) ||
@@ -1439,13 +1461,31 @@ static int tmdbFallback(void *c, int r, const char *pedido) {
   if (curl_getinfo(c, INFO_RESPONSE_CODE, &http) || http ||
       curl_getinfo(c, INFO_URL_FINAL, &url) || !(alias = tmdbUrl(url))) return r;
   if (!curl_setopt_f(c, OPT_URL, alias)) {
-    r = curl_perform(c); /* uma unica tentativa, sem recursao */
+    r = cancelVigiaPerform((CancelVigia *)cv, c); /* uma unica tentativa, sem recursao */
     if (!r) tmdbLigou();
   }
   free(alias);
   return r;
 }
-static int performTmdb(void *c, const char *url) { return tmdbFallback(c, curl_perform(c), url); }
+static int performTmdbCv(void *c, const char *url, void *cv) {
+  return tmdbFallback(c,
+           cv ? cancelVigiaPerform((CancelVigia *)cv, c) : curl_perform(c),
+           url, cv);
+}
+// TODA perform sem vigia propria vai pelo multi do fio quando a interface
+// existe (pre-aquecimento, sondas, rede_pedido.inc): o cache de conexoes fica
+// no multi, que o fio guarda e que viaja no estacionamento JUNTO com a easy.
+// Com curl_easy_perform a conexao ficaria na easy de um fio e o fio consumidor
+// a associaria ao proprio multi — o HEAD aquecido nunca seria reusado. Sem a
+// interface multi (libcurl antiga), cancelVigiaPerform cai no easy perform.
+static int performTmdb(void *c, const char *url) {
+  CancelVigia cv;
+  int on, r;
+  on = cancelVigiaLigar(c, &cv);
+  r = tmdbFallback(c, cancelVigiaPerform(&cv, c), url, on ? &cv : NULL);
+  cancelVigiaSoltar(&cv, on, c);
+  return r;
+}
 
 static int retrySegundos(const char *s, size_t n) {
   char b[128], *fim;
@@ -1493,9 +1533,52 @@ static int    pronto;
 //
 // Bonus: `curl_easy_cleanup` era onde o OpenSSL 1.0 morria (ver
 // prepararOpenSSL); agora ele so roda no fim do fio.
+// HANDLE + MULTI POR FIO (#775). O handle pode sair do handleChave quando a
+// conexao esta presa ao multi de cancelamento persistente do fio: quem
+// desassociar a easy no meio do pedido nao pode deixar o multi apontando para
+// um handle limpo/destruido, entao a dupla vive junta nesta caixinha e morre
+// junta (multi primeiro: libcurl devolve as conexoes ociosas dele; easy
+// depois). O multi tem o PROPRIO cache de conexoes — o que preserva o reuso
+// entre pedidos cancelaveis e nao cancelaveis sem CURLSHARE CONNECT.
+typedef struct { void *c; void *multi; } HandlePool;
 static pthread_key_t handleChave;
 static pthread_once_t handleUma = PTHREAD_ONCE_INIT;
-static void handleSoltar(void *c) { if (c && curl_cleanup) curl_cleanup(c); }
+static void handleCriarChave(void);
+// Guarda o multi de cancelamento no pool do handle do fio corrente. O cache
+// de conexoes do pedido cancelavel vai junto: e ele (e nao o da easy) que
+// mantinha as conexoes abertas, e um multi temporario por pedido as fechava
+// ao fim — GET cancelavel virava sempre conexao nova. Devolve 1 se guardou;
+// com 0 quem chama faz o curl_multi_cleanup de sempre.
+static int redeMultiGuardar(void *m) {
+  HandlePool *p;
+  if (!curl_reset) return 0;      // sem pool de handle, nao ha onde guardar
+  pthread_once(&handleUma, handleCriarChave);
+  p = (HandlePool *)pthread_getspecific(handleChave);
+  if (!p) {
+    p = (HandlePool *)calloc(1, sizeof *p);
+    if (!p || pthread_setspecific(handleChave, p) != 0) { free(p); return 0; }
+  }
+  if (p->multi) curl_multi_cleanup(p->multi);   // nunca deveria sobrar
+  p->multi = m;
+  return 1;
+}
+static void *redeMultiPegar(void) {
+  HandlePool *p = (HandlePool *)pthread_getspecific(handleChave);
+  void *m = p ? p->multi : NULL;
+  if (p) p->multi = NULL;
+  return m;
+}
+// Destrutor da chave: a easy sai do multi ANTES de qualquer cleanup — uma easy
+// associada a um multi destruido quebra a proxima perform, e destruir a easy
+// associada tambem e proibido.
+static void handleSoltar(void *pv) {
+  HandlePool *p = (HandlePool *)pv;
+  if (!p) return;
+  if (p->multi && p->c && curl_multi_remove) curl_multi_remove(p->multi, p->c);
+  if (p->multi && curl_multi_cleanup) curl_multi_cleanup(p->multi);
+  if (p->c && curl_cleanup) curl_cleanup(p->c);
+  free(p);
+}
 static void handleCriarChave(void) { pthread_key_create(&handleChave, handleSoltar); }
 // QUANTAS CONEXOES CADA FIO GUARDA. O padrao da libcurl e 5, e um fio de
 // arte fala com mais hosts que isso numa volta so: metahub, api e image do
@@ -1592,7 +1675,10 @@ static int hostOcioso(const char *url, unsigned long agora) {
 #define REDE_ESTAC_MAX 3
 #define REDE_ESTAC_HOSTS 6
 #define REDE_ESTAC_VALE_MS 15000UL
-typedef struct { void *c; unsigned long ms; int nh; char h[REDE_ESTAC_HOSTS][96]; } Estac;
+// O par easy+multi viaja junto: o cache de conexoes do pre-aquecimento mora no
+// multi (performTmdb passa por ele), e o fio consumidor precisa DOS DOIS para
+// reusar o HEAD aquecido — a easy sozinha chegaria sem conexao nenhuma.
+typedef struct { void *c; void *multi; unsigned long ms; int nh; char h[REDE_ESTAC_HOSTS][96]; } Estac;
 static Estac estac[REDE_ESTAC_MAX];
 static pthread_mutex_t estacTrava = PTHREAD_MUTEX_INITIALIZER;
 // Chamar com estacTrava: joga fora os que passaram da validade.
@@ -1600,11 +1686,13 @@ static void estacVelhos(unsigned long agora) {
   int i;
   for (i = 0; i < REDE_ESTAC_MAX; i++)
     if (estac[i].c && agora - estac[i].ms > REDE_ESTAC_VALE_MS) {
+      if (estac[i].multi && curl_multi_cleanup) curl_multi_cleanup(estac[i].multi);
       if (curl_cleanup) curl_cleanup(estac[i].c);
       estac[i].c = NULL;
+      estac[i].multi = NULL;
     }
 }
-static void estacionar(void *c, char h[][96], int nh) {
+static void estacionar(void *c, void *multi, char h[][96], int nh) {
   unsigned long agora = redeAgoraMs();
   int i, livre = -1, velho = 0;
   pthread_mutex_lock(&estacTrava);
@@ -1613,46 +1701,81 @@ static void estacionar(void *c, char h[][96], int nh) {
     if (!estac[i].c) { livre = i; break; }
     if (estac[i].ms < estac[velho].ms) velho = i;
   }
-  if (livre < 0) { livre = velho; if (curl_cleanup) curl_cleanup(estac[livre].c); }
-  estac[livre].c = c; estac[livre].ms = agora; estac[livre].nh = nh;
+  if (livre < 0) { livre = velho;
+    if (estac[livre].multi && curl_multi_cleanup) curl_multi_cleanup(estac[livre].multi);
+    if (curl_cleanup) curl_cleanup(estac[livre].c); }
+  estac[livre].c = c; estac[livre].multi = multi;
+  estac[livre].ms = agora; estac[livre].nh = nh;
   for (i = 0; i < nh && i < REDE_ESTAC_HOSTS; i++) snprintf(estac[livre].h[i], 96, "%s", h[i]);
   pthread_mutex_unlock(&estacTrava);
 }
-static void *estacTomar(const char *url) {
+static void *estacTomar(const char *url, void **multi) {
   char h[96];
   unsigned long agora = redeAgoraMs();
   void *c = NULL;
   int i, k;
+  if (multi) *multi = NULL;
   hostDaUrl(url, h, sizeof h);
   if (!h[0]) return NULL;
   pthread_mutex_lock(&estacTrava);
   estacVelhos(agora);
   for (i = 0; i < REDE_ESTAC_MAX && !c; i++)
     for (k = 0; estac[i].c && k < estac[i].nh; k++)
-      if (!strcmp(estac[i].h[k], h)) { c = estac[i].c; estac[i].c = NULL; break; }
+      if (!strcmp(estac[i].h[k], h)) { c = estac[i].c;
+        if (multi) *multi = estac[i].multi;
+        estac[i].c = NULL; estac[i].multi = NULL; break; }
   pthread_mutex_unlock(&estacTrava);
   return c;
 }
 
 static void *pegarHandle(const char *url) {
-  void *c;
+  void *c, *multi = NULL;
+  HandlePool *p;
   if (!curl_reset) return curl_init();     // libcurl sem reset: como antes
   pthread_once(&handleUma, handleCriarChave);
-  c = pthread_getspecific(handleChave);
+  p = (HandlePool *)pthread_getspecific(handleChave);
+  c = p ? p->c : NULL;
   if (!c) {
-    c = estacTomar(url);
-    if (c) pthread_setspecific(handleChave, c);
+    c = estacTomar(url, &multi);
+    if (c) {
+      if (!p) {
+        p = (HandlePool *)calloc(1, sizeof *p);
+        if (p && pthread_setspecific(handleChave, p) != 0) { free(p); p = NULL; }
+      }
+      if (p) {
+        p->c = c;
+        if (p->multi && p->multi != multi && curl_multi_cleanup)
+          curl_multi_cleanup(p->multi);      // nunca deveria sobrar
+        p->multi = multi;
+      } else {
+        if (multi && curl_multi_cleanup) curl_multi_cleanup(multi);
+        curl_cleanup(c); c = NULL;
+      }
+    }
   }
   if (c && hostOcioso(url, redeAgoraMs())) {
+    // O par inteiro vai embora: o cache de conexoes mora no multi e o socket
+    // morto deste host esta la — manter o multi reusiaria essa conexao no
+    // proximo pedido e o prazo inteiro seria gasto esperando resposta que
+    // nao vem (rede_parada.sh, curl 28). Descartar o multi fecha TODAS as
+    // conexoes do fio, como a base que derrubava o handle unico.
+    if (p && p->multi) curl_multi_remove(p->multi, c);
     curl_cleanup(c);
-    pthread_setspecific(handleChave, NULL);
+    if (p && p->multi) { curl_multi_cleanup(p->multi); p->multi = NULL; }
+    if (p) p->c = NULL;
     hostsEsquecer();
     c = NULL;
   }
   if (c) curl_reset(c);
   else {
     c = curl_init();
-    if (c) pthread_setspecific(handleChave, c);
+    if (c) {
+      if (!p) {
+        p = (HandlePool *)calloc(1, sizeof *p);
+        if (p && pthread_setspecific(handleChave, p) != 0) { free(p); p = NULL; }
+      }
+      if (p) p->c = c; else { curl_cleanup(c); c = NULL; }
+    }
   }
   // Depois do reset: curl_easy_reset volta MAXCONNECTS ao padrao.
   if (c) curl_setopt(c, OPT_MAXCONNECTS, REDE_CONEXOES_POR_FIO);
@@ -1667,9 +1790,22 @@ static void *pegarHandle(const char *url) {
 // reaproveitado (e o ganho de 0,5-0,8 s por imagem). Conexao que fica anota o
 // host (e o do fim dos redirecionamentos) para o limite de ociosidade.
 static void descartarHandle(void *c) {
+  HandlePool *p;
+  // Se a easy esta associada ao multi do fio (cancelamento), tira antes de
+  // limpar: a libcurl proibe cleanup de easy associada. O multi morre JUNTO:
+  // e nele que ficou o cache de conexoes, e a conexao que falhou esta la —
+  // manter o multi entregaria o socket morto ao proximo pedido.
+  if (curl_reset) {
+    p = (HandlePool *)pthread_getspecific(handleChave);
+    if (p) {
+      if (p->multi && curl_multi_remove) curl_multi_remove(p->multi, c);
+      if (p->multi && curl_multi_cleanup) curl_multi_cleanup(p->multi);
+      p->multi = NULL;
+      p->c = NULL;
+    }
+  }
   curl_cleanup(c);
   if (curl_reset) {
-    pthread_setspecific(handleChave, NULL);
     hostsEsquecer();
   }
 }
@@ -1814,6 +1950,96 @@ static void ligarVigia(void *c, Vigia *v, unsigned long prazoMs) {
   curl_setopt(c, OPT_XFERINFOFUNCTION, vigiar);
   curl_setopt(c, OPT_XFERINFODATA, v);
   curl_setopt(c, OPT_NOPROGRESS, (long)0);
+}
+
+// CANCELAMENTO SEM FIO EXTRA (#775). O XFERINFO so acorda ~1x/s num pedido
+// parado, entao um cancelamento pelo callback de geracao (p2pPararCb,
+// rede_parar_trocar) esperava o tique inteiro. Quando ha parar instalado e a
+// libcurl tem a interface multi, o pedido vai por um multi proprio no MESMO
+// fio: um laço curl_multi_perform + poll de 20 ms recheca o criterio a cada
+// volta e sai com curl_multi_remove_handle — sem tocar em socket alheio, sem
+// shutdown() e sem prazo extra: um /settings que pensa 1,5 s responde normal
+// e o cancelamento volta em dezenas de ms. O fim checa redeParou() de novo no
+// fio do pedido para marcar redeCancelouLocal. Sem multi (libcurl antiga) o
+// pedido fica com o XFERINFO de sempre.
+static int cancelVigiaLigar(void *c, CancelVigia *v) {
+  v->multi = NULL;
+  v->ligado = 0;
+  if (!curl_multi_init || !curl_multi_add || !curl_multi_remove ||
+      !curl_multi_perform || !curl_multi_cleanup || !curl_multi_info_read ||
+      !(curl_multi_poll || curl_multi_wait)) return 0;
+  // O pedido SEMPRE vai pelo multi do fio quando a interface existe: o cache
+  // de conexoes mora la, e e o que faz um GET sem cancelamento (/warm) abrir
+  // a conexao que o proximo pedido cancelavel (/settings) reusa — mesma porta,
+  // conexoes_novas=0. Sem parar instalado o laco so nao tem o que disparar.
+  v->multi = redeMultiPegar();      // multi do fio, com o cache de conexoes
+  if (!v->multi) v->multi = curl_multi_init();
+  if (!v->multi) return 0;
+  /* O cache de conexoes fica no MULTI enquanto a easy esta associada. Sem
+     CURLMOPT_MAXCONNECTS ele guardaria so 4 — metade do orcamento do fio. */
+  if (curl_multi_setopt)
+    curl_multi_setopt(v->multi, 6 /* CURLMOPT_MAXCONNECTS */, REDE_CONEXOES_POR_FIO);
+  if (curl_multi_add(v->multi, c)) { curl_multi_cleanup(v->multi); v->multi = NULL; return 0; }
+  v->ligado = 1;
+  return 1;
+}
+// ADOTA o multi do pedido no multi persistente do fio e solta a easy: o cache
+// de conexoes (DNS + TCP + TLS ociosos) vive no multi, entao guardar o multi e
+// o que preserva o reuso entre pedidos cancelaveis — com um multi temporario
+// por pedido, como era antes, cada GET cancelavel abria conexao nova.
+// Conexao que continua viva passa a valer no proximo pedido do fio; se a easy
+// for descartada (falha de transporte), as conexoes dela sao fechadas com o
+// multi, como o descarte do handle ja fazia. O multi adotado morre quando o
+// handle do fio morre (handleSoltar), sem CURLSHARE CONNECT (libcurl das TVs
+// < 7.57).
+static void cancelVigiaSoltar(CancelVigia *v, int ligado, void *c) {
+  if (!ligado || !v->multi) return;
+  if (v->ligado) { curl_multi_remove(v->multi, c); v->ligado = 0; }
+  // Sem handle no fio (curl_easy_reset ausente ou calloc/setspecific falho) o
+  // multi nao tem onde morar: cleanup aqui, como no multi temporario de antes,
+  // em vez de perder o ponteiro e vazar multi + conexoes.
+  if (!redeMultiGuardar(v->multi)) curl_multi_cleanup(v->multi);
+  v->multi = NULL;
+}
+// Substitui curl_easy_perform quando a vigia esta ligada: a easy ja foi
+// adicionada ao multi em cancelVigiaLigar. Devolve o CURLE da transferencia.
+static int cancelVigiaPerform(CancelVigia *v, void *c) {
+  int ainda = 1, r = 23 /* CURLE_WRITE_ERROR */, achou = 0;
+  /* Chamadores sem vigia (sonda e POST sem parar instalado, retry do proprio
+     tmdbFallback com cv == NULL) caem no curl_easy_perform de sempre — v ou
+     v->multi NULL nunca e desreferenciado. */
+  if (!v || !v->multi) return curl_perform(c);
+  /* O retry do alias TMDB vem depois do remove do fim da 1a perform: reassocia
+     a easy ao MESMO multi para ela continuar cancelavel (e no cache dele). */
+  if (!v->ligado) {
+    if (curl_multi_add(v->multi, c)) return curl_perform(c);
+    v->ligado = 1;
+  }
+  while (curl_multi_perform(v->multi, &ainda) == 0 /* CURLM_OK */) {
+    if (redeParou()) {
+      redeCancelouLocal = 1;
+      curl_multi_remove(v->multi, c);
+      v->ligado = 0;
+      return 42 /* CURLE_ABORTED_BY_CALLBACK */;
+    }
+    if (!ainda) break;
+    /* poll existe na 7.66+; wait cobre as libcurl das TVs (7.45+/7.53). */
+    if (curl_multi_poll) curl_multi_poll(v->multi, NULL, 0, 20, NULL);
+    else curl_multi_wait(v->multi, NULL, 0, 20, NULL);
+  }
+  { /* CURLMsg: { CURLMSG msg; CURL *easy_handle; union { ... CURLcode result } data } */
+    typedef struct { int msg; void *easy; union { void *p; int result; } data; } NvCurlMsg;
+    NvCurlMsg *info;
+    int naFila;
+    while ((info = (NvCurlMsg *)curl_multi_info_read(v->multi, &naFila)) != NULL)
+      if (info->msg == 1 /* CURLMSG_DONE */ && info->easy == c)
+        { r = info->data.result; achou = 1; } }
+  curl_multi_remove(v->multi, c);
+  v->ligado = 0;
+  /* Sem mensagem DONE (a multi falhou ou a easy sumiu sem resultado) a
+     transferencia nao completou: reporta erro de recepcao como o easy faria,
+     nunca um CURLE_WRITE_ERROR espurio. */
+  return achou ? r : 56 /* CURLE_RECV_ERROR */;
 }
 
 typedef struct { char *p; size_t n, cap; } Balde;
@@ -2091,6 +2317,15 @@ static int abrirReal(void) {
   *(void **)(&curl_getdate_fn) = dlsym(h, "curl_getdate");
   *(void **)(&curl_send)    = dlsym(h, "curl_easy_send");
   *(void **)(&curl_recv)    = dlsym(h, "curl_easy_recv");
+  *(void **)(&curl_multi_init)     = dlsym(h, "curl_multi_init");
+  *(void **)(&curl_multi_add)      = dlsym(h, "curl_multi_add_handle");
+  *(void **)(&curl_multi_remove)   = dlsym(h, "curl_multi_remove_handle");
+  *(void **)(&curl_multi_perform)  = dlsym(h, "curl_multi_perform");
+  *(void **)(&curl_multi_poll)     = dlsym(h, "curl_multi_poll");
+  *(void **)(&curl_multi_wait)     = dlsym(h, "curl_multi_wait");
+  *(void **)(&curl_multi_cleanup)  = dlsym(h, "curl_multi_cleanup");
+  *(void **)(&curl_multi_setopt)   = dlsym(h, "curl_multi_setopt");
+  *(void **)(&curl_multi_info_read)= dlsym(h, "curl_multi_info_read");
   // O REUSO NUNCA LIGOU ATE AQUI (23/09/2026). pegarHandle e soltarHandle
   // existem desde 5eb8bd2, mas este dlsym nao: `curl_reset` ficava NULL, e o
   // ramo "libcurl sem reset: como antes" criava e destruia um handle por
@@ -2454,8 +2689,9 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
   Balde b = {0};
   CacaCab caca;
   Vigia vigia;
+  CancelVigia cv;
   void *c, *lista = NULL;
-  int r = 0, tentativa, reusada = 0;
+  int r = 0, tentativa, reusada = 0, cvOn = 0;
   unsigned long inicio, prazoMs, gasto = 0;
   unsigned primeiraMs = 0;
   caca.dst = (etag && tamEtag > 1) ? etag : NULL;
@@ -2465,6 +2701,9 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
   if (etag && tamEtag) etag[0] = 0;
   if (status) *status = 0;
   if (!url || !*url) return NULL;
+  // Marca do pedido CANCELADO anterior deste fio: e do pedido que parou, nao
+  // deste — sem limpar aqui o corpo deste e descartado na saida (#775).
+  redeCancelouLocal = 0;
   // Endereco de API de metadados que ja respondeu "nao existe" (ou host em
   // recuo por timeout): nao pede de novo — ver negcache.h.
   if (!status && negcache_barra(url, (long)time(NULL))) return NULL;
@@ -2500,6 +2739,7 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
     curl_setopt(c, OPT_FOLLOWLOCATION, (long)1);
     opcoesComuns(c, resta);
     ligarVigia(c, &vigia, prazoMs);
+    cvOn = cancelVigiaLigar(c, &cv);
     curl_setopt(c, OPT_ACCEPT_ENCODING, "");   // "" = todas as que a lib suporta
     if (cab && slist_append) {
       int k;
@@ -2515,13 +2755,13 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
         primeira = 0;
         snprintf(m, sizeof m, "begin https-1 %s", rede_url_publica(url, seg, sizeof seg));
         nv_tpk40_etapa(m);
-        r = curl_perform(c);
+        r = cancelVigiaPerform(&cv, c);
         { long http = 0; if (curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &http);
           snprintf(m, sizeof m, "ok https-1 curl=%d http=%ld", r, http); }
         nv_tpk40_etapa(m);
-      } else r = curl_perform(c); }
+      } else r = cancelVigiaPerform(&cv, c); }
 #else
-    r = curl_perform(c);
+    r = cancelVigiaPerform(&cv, c);
 #endif
     { long novas = -1;
       if (curl_getinfo) curl_getinfo(c, INFO_NUM_CONNECTS, &novas);
@@ -2534,6 +2774,7 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
              r, rede_url_publica(url, seg, sizeof seg), reusada ? "reusada" : "nova",
              (long)b.n, gasto);
       fflush(stdout);
+      cancelVigiaSoltar(&cv, cvOn, c);
       if (lista) { curl_setopt(c, OPT_HTTPHEADER, (void *)0); if (slist_free) slist_free(lista); lista = NULL; }
       // #382: conta so o resultado final, mas preserva a janela da primeira falha.
       primeiraMs = (unsigned)(inicio + gasto);
@@ -2546,7 +2787,11 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
       if (etag && tamEtag) etag[0] = 0;
       continue;
     }
-    r = tmdbFallback(c, r == 42 && vigia.parou ? 28 : r, url);
+    /* O retry no alias TMDB tem de seguir cancelavel: roda enquanto a vigia
+       ainda esta armada, com o MESMO multi (cancelVigiaPerform reassocia a
+       easy que a 1a perform removeu). cv == NULL cai no easy perform. */
+    r = tmdbFallback(c, r == 42 && vigia.parou ? 28 : r, url, cvOn ? &cv : NULL);
+    cancelVigiaSoltar(&cv, cvOn, c);
     break;
   }
   redeCurlLocal = r;
@@ -2651,16 +2896,18 @@ int rede_url_final_tipo(const char *url, int segundos, const char *const *cab,
                         char *mime, unsigned mimeTam, long *corpo) {
   UrlSonda s = {0};
   Vigia vigia;
+  CancelVigia cv;
   void *c, *lista = NULL;
   char *fim = NULL;
   long http = 0;
   unsigned long prazoMs;
-  int r, ok, k;
+  int r, ok, k, cvOn;
   if (status) *status = 0;
   if (mime && mimeTam) mime[0] = 0;
   if (corpo) *corpo = -1;
   if (dst && tam) dst[0] = 0;
   if (!url || !*url || !dst || !tam || tam > INT_MAX || !abrir() || !curl_getinfo) return 0;
+  redeCancelouLocal = 0;
   if (cab && cab[0] && (!slist_append || !slist_free)) return 0;
   c = pegarHandle(url);
   if (!c) return 0;
@@ -2671,16 +2918,19 @@ int rede_url_final_tipo(const char *url, int segundos, const char *const *cab,
   prazoMs = (unsigned long)(segundos > 0 ? segundos : 20) * 1000UL;
   opcoesComuns(c, prazoMs);
   ligarVigia(c, &vigia, prazoMs);
+  cvOn = cancelVigiaLigar(c, &cv);
   // Um pedaco minusculo em vez de HEAD: varios servidores de debrid respondem
   // HEAD com 405 ou mentem no redirecionamento, mas honram Range.
   curl_setopt(c, OPT_RANGE, "0-63");
   for (k = 0; cab && cab[k]; k++) {
     void *nova = slist_append(lista, cab[k]);
-    if (!nova) { if (lista) slist_free(lista); soltarHandleR(c, 1, url); return 0; }
+    if (!nova) { if (lista) slist_free(lista);
+                 cancelVigiaSoltar(&cv, cvOn, c); soltarHandleR(c, 1, url); return 0; }
     lista = nova;
   }
   if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
-  r = performTmdb(c, url);
+  r = performTmdbCv(c, url, cvOn ? &cv : NULL);
+  cancelVigiaSoltar(&cv, cvOn, c);
   curl_getinfo(c, INFO_RESPONSE_CODE, &http);
   curl_getinfo(c, INFO_URL_FINAL, &fim);
   if (status) *status = (int)http;
@@ -2770,13 +3020,22 @@ int rede_aquecer_job(const char *const *origens, int n, unsigned *ms, RedeJob *j
       if (nok < REDE_ESTAC_HOSTS) snprintf(ok[nok++], 96, "%s", h);
     }
   }
-  // O handle, com as conexoes que abriu, sai deste fio e vai para o estacionamento.
-  c = pthread_getspecific(handleChave);
-  if (c && nok > 0) {
-    pthread_setspecific(handleChave, NULL);
-    hostsEsquecer();
-    estacionar(c, ok, nok);
-  }
+  // O PAR easy+multi, com as conexoes que abriu, sai deste fio e vai para o
+  // estacionamento: o cache das conexoes aquecidas mora no multi (o HEAD de
+  // cada origem passou por performTmdb, que o usa), entao estacionar so a
+  // easy entregaria um handle SEM conexao ao fio consumidor.
+  { HandlePool *p = (HandlePool *)pthread_getspecific(handleChave);
+    void *m = NULL;
+    c = p ? p->c : NULL;
+    if (c && nok > 0) {
+      m = p->multi;
+      p->c = NULL;
+      p->multi = NULL;
+    } else c = NULL;
+    if (c) {
+      hostsEsquecer();
+      estacionar(c, m, ok, nok);
+    } }
   return abriu;
 }
 int rede_aquecer_lote(const char *const *origens, int n, unsigned *ms) {
@@ -2849,13 +3108,15 @@ int rede_baixar_fluxo(const char *url, int segundos, const char *const *cab,
                       long long maxBytes, int *status, long long *bytes) {
   Fluxo f;
   Vigia vigia;
+  CancelVigia cv;
   void *c, *lista = NULL;
   unsigned long prazoMs;
   long http = 0;
-  int r;
+  int r, cvOn;
   if (status) *status = 0;
   if (bytes) *bytes = 0;
   if (!url || !*url || !cb || !abrir()) return 0;
+  redeCancelouLocal = 0;
   memset(&f, 0, sizeof f);
   f.cb = cb; f.u = u; f.max = maxBytes;
   c = pegarHandle(url);
@@ -2867,13 +3128,15 @@ int rede_baixar_fluxo(const char *url, int segundos, const char *const *cab,
   prazoMs = (unsigned long)(segundos > 0 ? segundos : 60) * 1000UL;
   opcoesComuns(c, prazoMs);
   ligarVigia(c, &vigia, prazoMs);
+  cvOn = cancelVigiaLigar(c, &cv);
   curl_setopt(c, OPT_ACCEPT_ENCODING, "");
   if (cab && slist_append) {
     int k;
     for (k = 0; cab[k]; k++) lista = slist_append(lista, cab[k]);
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
-  r = curl_perform(c);
+  r = cancelVigiaPerform(&cv, c);
+  cancelVigiaSoltar(&cv, cvOn, c);
   if (r == 42 && vigia.parou) r = 28;
   if (curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &http);
   if (status) *status = (int)http;
@@ -2882,7 +3145,10 @@ int rede_baixar_fluxo(const char *url, int segundos, const char *const *cab,
   anotarErro(r);
   if (lista) { curl_setopt(c, OPT_HTTPHEADER, (void *)0); if (slist_free) slist_free(lista); }
   soltarHandleR(c, r, url);
-  if (r == 23 && f.cortou) r = 0;            // o cb cortou de proposito
+  // O cb devolver 0 NAO e sucesso: e corte. Antes isto virava r=0 e, se o HTTP
+  // era 200, a funcao devolvia 1 — um ENOSPC/EFBIG no fwrite do consumidor
+  // (#764) era publicado como arquivo completo. O consumidor que corta de
+  // proposito (amostra, limite) sempre recebeu 0 aqui e continua recebendo.
   if (r != 0 || http < 200 || http >= 300) {
     char seg[120];
     printf("[rede] fluxo: curl %d, HTTP %ld, %lld bytes em %s%s\n", r, http, f.n,
@@ -2905,11 +3171,13 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
   Balde b = {0};
   CacaCab respostaCab = { NULL, 0, retryAfter };
   Vigia vigia;
+  CancelVigia cv;
   if (retryAfter) *retryAfter = 0;
   void *c, *lista = NULL;
-  int r;
+  int r, cvOn;
   if (status) *status = 0;
   redeCurlLocal = 0;
+  redeCancelouLocal = 0;
   anotarErro(0);
   if (!url || !*url) { anotarErro(3); return NULL; }
   if (!abrir()) { anotarErro(2); return NULL; }
@@ -2920,6 +3188,7 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
   curl_setopt(c, OPT_WRITEDATA, &b);
   opcoesComuns(c, (unsigned long)(segundos > 0 ? segundos : 20) * 1000UL);
   if(redeParar)ligarVigia(c,&vigia,(unsigned long)(segundos > 0 ? segundos : 20)*1000UL);
+  cvOn = cancelVigiaLigar(c, &cv);
   if (seguro) {
     // OAuth credentials require authenticated TLS and never follow redirects.
     curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
@@ -2944,7 +3213,8 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
     for (k = 0; cab && cab[k]; k++) lista = slist_append(lista, cab[k]);
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
-  r = performTmdb(c, url);
+  r = performTmdbCv(c, url, cvOn ? &cv : NULL);
+  cancelVigiaSoltar(&cv, cvOn, c);
   redeCurlLocal = r;
   anotarErro(r);
   if (r != 0) { char seg[120];
@@ -3147,6 +3417,7 @@ int rede_medir_vazao(const char *url, const char *const *cab, int segundos,
   if (res) memset(res, 0, sizeof *res);
   if (final && tamFinal) final[0] = 0;
   if (!url || !*url || !abrir()) { if (res) res->erro = 2; return 0; }
+  redeCancelouLocal = 0;
   if (segundos < 1) segundos = 1;
   ct.janelaMs = (unsigned long)segundos * 1000UL;
   ct.maxBytes = maxBytes;
@@ -3223,10 +3494,6 @@ int rede_medir_vazao(const char *url, const char *const *cab, int segundos,
 // vai para o cache de pegarHandle: uma conexao de websocket nao e reaproveitavel.
 #define OPT_CONNECT_ONLY      141
 #define OPT_HTTP_VERSION       84
-// CURLINFO_LASTSOCKET = CURLINFO_LONG + 29. ACTIVESOCKET (7.45+) seria o certo,
-// mas LASTSOCKET existe em toda versao que estas TVs trazem e devolve o mesmo
-// descritor quando ha uma conexao so — que e o caso de um handle CONNECT_ONLY.
-#define INFO_LASTSOCKET  2097181
 #define CURLE_AGAIN_ 81
 
 #include <sys/select.h>
@@ -3269,7 +3536,10 @@ RedeTls *rede_tls_abrir(const char *url, int segundos) {
   curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
   curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
   if (discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
-  r = performTmdb(c, url);
+  /* CONNECT_ONLY nao passa pelo multi/vigia: performTmdb removeria a easy
+     antes do CURLINFO_LASTSOCKET, e o curl_easy_send/recv do websocket
+     precisam dela associada a conexao que o CONNECT_ONLY abriu. */
+  r = tmdbFallback(c, curl_perform(c), url, NULL);
   if (r == 0 && curl_getinfo) curl_getinfo(c, INFO_LASTSOCKET, &fd);
   if (r != 0 || fd < 0) {
     printf("[rede] tls: falhou (curl %d)\n", r);
@@ -3332,6 +3602,67 @@ void rede_tls_fechar(RedeTls *t) {
   if (!t) return;
   curl_cleanup(t->c);
   free(t);
+}
+
+
+// SONDA TLS (#737). O curl 35 do login nao diz O QUE o aperto de mao perdeu:
+// cadeia de CA velha (a TV 2018 tem o store de fabrica, sem a ISRG Root X1),
+// cifra/versao que a libcurl 7.53.1 nao negocia mais com o servidor, ou SNI.
+// A sonda separa os tres com DUAS tentativas no MESMO host, ambas CONNECT_ONLY
+// (nenhum byte de HTTP sai): primeiro com a verificacao LIGADA e o CAINFO do
+// pacote (a prova "o bundle Mozilla do .ipk resolve a cadeia?"), depois sem
+// verificar (a prova "o aperto de mao em si fecha?"). Os resultados se leem:
+//   bundle=0  e  semca=<TLS>     -> servidor/lib nao se entendem (cifra/SNI);
+//                                   mexer no CA nao ajuda.
+//   bundle=<TLS>  e  semca=0     -> cifra/SNI ok; e a CADEIA. Falta a raiz no
+//                                   store do aparelho E no bundle embarcado.
+//   bundle=60/51/77  e  semca=0  -> mesma leitura: aperto ok, rejeicao do cert.
+//   bundle=0                    -> o login devia passar: o bundle embarcado
+//                                   cobre o host e o problema e transitorio.
+// Sem CAINFO o "bundle" e o store de fabrica do webOS — o que distingue "a
+// .ipk nao trouxe o PEM" de "o PEM nao cobre a cadeia do servidor".
+// Nao vai a tela nem muda comportamento: e so o log, para o relato que chega
+// sem in-app. Uma so chamada por tentativa de login com TLS; quem chama regula.
+int rede_sonda_tls(const char *url) {
+  static const int N = 3;
+  const char *rotulo[3] = { "bundle", "sistema", "semca" };
+  int r[3], i, base;
+  void *c;
+  if (!url || strncmp(url, "https://", 8) || !abrir()) return -1;
+  for (i = 0; i < N; i++) {
+    c = curl_init();
+    if (!c) { r[i] = -2; continue; }
+    curl_setopt(c, OPT_URL, url);
+    curl_setopt(c, OPT_CONNECT_ONLY, (long)1);
+    curl_setopt(c, OPT_HTTP_VERSION, (long)2 /* CURL_HTTP_VERSION_1_1 */);
+    curl_setopt(c, OPT_CONNECTTIMEOUT_MS, (long)900);
+    curl_setopt(c, OPT_TIMEOUT_MS, (long)900);
+    curl_setopt(c, OPT_NOSIGNAL, (long)1);
+    // semca replica exatamente o que opcoesComuns faz no caminho do login; as
+    // duas outras sao a hipotese CA ligada, com o PEM do pacote e sem ele.
+    if (i == 2) {
+      curl_setopt(c, OPT_SSL_VERIFYPEER, (long)0);
+      curl_setopt(c, OPT_SSL_VERIFYHOST, (long)0);
+    } else {
+      curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
+      curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
+      if (i == 0 && discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
+    }
+    r[i] = curl_perform(c);
+    curl_cleanup(c);
+  }
+  { char seg[120];
+    printf("[rede] sonda tls %s: %s=%d %s=%d %s=%d\n",
+           rede_url_publica(url, seg, sizeof seg),
+           rotulo[0], r[0], rotulo[1], r[1], rotulo[2], r[2]);
+    fflush(stdout); }
+  // Resumo: 0 = o aperto de mao em si falhou nas duas (cifra/SNI/rede);
+  // 1 = fecha sem verificar mas nao com CA (cadeia/certificado);
+  // 2 = fecha verificando (o problema do login e outro ou transitorio).
+  base = r[2] == 0;
+  if (!base) return 0;
+  if (r[0] == 0 || r[1] == 0) return 2;
+  return 1;
 }
 
 
@@ -3910,6 +4241,7 @@ int rede_fluxo64_tls(const char *u, const char *h, int64_t s, int (*sk)(void *, 
                      int64_t *t, int *st, volatile int *c, char *f, int *x, long ms, int64_t *b) {
   return rede_fluxo64(u,h,s,sk,o,t,st,c,f,x,ms,b);
 }
+int rede_sonda_tls(const char *url) { (void)url; return -1; }
 char *rede_baixar_trecho64_vigiado(const char *u,const char *h,int64_t s,int64_t e,
  long *n,int64_t *t,int *st,volatile int *c,char *f,int *x,volatile int *urgent,unsigned idle,int *stalled) {
  (void)urgent;(void)idle;if(stalled)*stalled=0;

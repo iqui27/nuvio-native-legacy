@@ -129,6 +129,7 @@ int ajustes_animacoes_reduzidas_usuario(void);
 int ajustes_esmaecer(void);
 int ajustes_brilho_player(void);
 int ajustes_tunneling(void); // Android-only tunneled playback; default off.
+int ajustes_barras_pretas(void); // Android-only black letterbox bars; default off.
 int ajustes_afr(void);       // #641 Android-only display refresh-rate match; default off.
 int ajustes_hdr_interface(void); // Experimental Android HDR output; default off.
 int ajustes_hdr_ui(void);   // #205: 1 = Automatico (padrao), 0 = Desligado
@@ -237,6 +238,11 @@ int ajustes_fonte_hdr(void);
 // 1 = a escolha automatica prefere fontes que anunciam o Idioma do audio
 // (ling_audio) ou audio duplo, na mesma resolucao; nunca filtra (fontenota.h).
 int ajustes_fonte_idioma_audio(void);
+int ajustes_p2p_prazo_metadados_s(void);
+int ajustes_folha_classica(void);
+int ajustes_fonte_carga_brilho_alto(void);
+int ajustes_det_fonte_antecipada(void);
+int ajustes_direct_cache_usb(void);
 
 // Idioma da interface: um IDIOMA_* de idiomacod.h (pt, en, ro, uk, ru, fr, de, es). Valor
 // gravado fora do intervalo (arquivo editado a mao) cai em portugues.
@@ -520,6 +526,7 @@ int   ajustes_trailer_hero_vetado(void);
 // destaque e o do cartaz em foco nesta sessao, sem gravar. Uma linha no log.
 void  ajustes_trailer_hero_vetar(const char *gpu);
 int   ajustes_hero_deslizar(void);     // troca do destaque desliza de lado (senao esmaece)
+int   ajustes_hero_lista(void);        // #797: quantos titulos o carrossel percorre (5, 10 ou 20)
 // ARTE DO ADDON (locais, desligadas de fabrica). 1 = a imagem que o addon
 // mandou no meta vence a substituicao do app; sem ela, a fonte de sempre.
 //   poster:  vence o provedor de posteres (posterprov_card_addon)
@@ -640,6 +647,7 @@ int ajustes_leg2_posicao(void); // -1 keeps the existing Top/Stacked placement
 int ajustes_leg2_atraso(void);
 int ajustes_leg2_definir_atraso(int ms);
 int   ajustes_legenda_forcada_auto(void);    // #287: 1 = audio in the subtitle language -> only the forced track (local, default on)
+int   ajustes_legenda_evitar_sdh(void);      // #743: 1 = auto-pick skips SDH/CC tracks (local, default off)
 int   ajustes_legenda_sync_auto(void);       // local, ligada por padrão
 int   ajustes_audio_original(void);
 int   ajustes_audio_normalizar(void);
@@ -950,6 +958,7 @@ int ajustes_lembrar_perfil(void);
 int ajustes_show_skip_intro(void);
 int ajustes_show_skip_recap(void);
 int ajustes_show_skip_credits(void);
+int ajustes_show_skip_cena(void);
 #endif
 
 // External audio uses the webOS converter; disabled by default.

@@ -164,6 +164,7 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "miniatura_android.h"
 #include "neste.h"
 #include "cacheboost.h"
+#include "directcache.h"
 #include "audioinfo.h"
 #include "playinfo.h"
 #include "central.h"
@@ -492,7 +493,8 @@ static int skipDisponivel(void), skipLiberado;
 static int skipBotaoPermitido(int tipo) {
   return tipo == INTRO_ABERTURA ? ajustes_show_skip_intro() :
          tipo == INTRO_RESUMO ? ajustes_show_skip_recap() :
-         tipo == INTRO_CREDITOS ? ajustes_show_skip_credits() : 0;
+         tipo == INTRO_CREDITOS ? ajustes_show_skip_credits() :
+         tipo == INTRO_POS_CREDITOS ? ajustes_show_skip_cena() : 0;
 }
 static int trechoPulavel(double *fim) {
   int tipo;
@@ -502,6 +504,17 @@ static float duracaoSeg = PLR_DUR_PADRAO;
 // O fim ZERO do TheIntroDB quer dizer "ate o fim da midia" (intro.c): mirar
 // fim+0.25 ai seria um salto para o COMECO do arquivo — o alvo resolve o nulo.
 static double puloDestino(double fim) { return fim > 0.0 ? fim + .25 : duracaoSeg; }
+static const CatItem *item(void);
+// #494: diario local de marcadores pulados (AniSkip / TheIntroDB, futuro).
+// `ini` e a posicao onde o trecho comecou a ser pulado (posSeg antes do seek);
+// `intro_botao_visivel` devolve o FIM do marcador, nao o inicio — reutiliza-lo
+// como saida aqui zerava a linha inteira (fimMs <= iniMs descarta).
+static void contribAoPular(int tipo, double fim) {
+  const CatItem *ci = item();
+  double ini = posSeg;
+  if (!ci || !ci->imdb[0] || !(fim > ini)) return;
+  intro_contrib_registrar(ci->imdb, tipo, (int)(ini * 1000.0), (int)(fim * 1000.0));
+}
 // O PULO OFICIAL do app (botao e automatico) conta como tocado: pular a
 // abertura de um episodio curto nao pode custar o visto (#205). Seek manual nao.
 // So credita e move posSeg; quem chama faz a busca (usuario ou automatica).
@@ -2053,12 +2066,15 @@ void player_abrir(int indiceCatalogo, const char *url) {
   armarTituloGuardado();
   cacheboost_backend_buffer(cacheboost_buffer_mb(ajustes_buffer_preset(), memlog_livre_mb()));
   loadEm = SDL_GetTicks();
-  { char px[96];
+  { char px[96], dc[NV_MEDIA_URL_MAX];
     if (url && *url) { memlog_evento("load"); memQuadroPendente = 1; }
     const CatItem *c = item();
     int bloqueado = c && !strcmp(c->tipo, "series") && travaui_segura(c->imdb, idxAtual(),
         c->temporada > 0 ? c->temporada : 1, c->episodio > 0 ? c->episodio : 1, NULL, NULL);
-    comVideo = (url && *url && !bloqueado && video_tocar(proxyts_resolver(url, px, sizeof px))); }
+    if (url && *url && !bloqueado) {
+      const char *u = directcache_preparar(url, video_cabecalhos(), dc, sizeof dc);
+      comVideo = video_tocar(proxyts_resolver(u, px, sizeof px));
+    } else comVideo = 0; }
   zerarAssistido();
   mkvass_video_aberto(comVideo);
   legsync_auto_habilitar(ajustes_legenda_sync_auto());
@@ -2252,6 +2268,7 @@ static int travaFonte(const char *url) {
 
 static void tocarFonteInterno(const char *url);
 static void tocarFonteInterno(const char *url) {
+  directcache_encerrar();
   if (!travaFonte(url)) return;
   marco("abrir: url ao pipeline");
   skipLiberado = 0;
@@ -2264,7 +2281,8 @@ static void tocarFonteInterno(const char *url) {
   armarTituloGuardado();
   memlog_evento("load"); memQuadroPendente = 1;
   cacheboost_backend_buffer(cacheboost_buffer_mb(ajustes_buffer_preset(), memlog_livre_mb()));
-  { char px[96];
+  { char px[96], dc[NV_MEDIA_URL_MAX];
+    const char *playUrl = url && *url ? directcache_preparar(url, video_cabecalhos(), dc, sizeof dc) : url;
 #ifdef NV_ANDROID
     // app.c define episodio e "do inicio" antes de entregar a fonte. O
     // instante viaja junto da URL, nunca numa variavel pendente do Kotlin.
@@ -2279,12 +2297,12 @@ static void tocarFonteInterno(const char *url) {
       if (ponto > 0.0) marco("abrir: ponto salvo vai na abertura (segundos)");
       else marco("abrir: ponto salvo vai na abertura (percentual)");
     }
-    comVideo = video_tocar_retomada(proxyts_resolver(url, px, sizeof px),
+    comVideo = video_tocar_retomada(proxyts_resolver(playUrl, px, sizeof px),
                                     retomadaNaPreparacao ? ponto : 0.0,
                                     retomadaNaPreparacao && retomarFonteSeg < 0.0 && ponto <= 0.0 ? retomarPct : 0.0);
     if (!comVideo) retomadaNaPreparacao = 0;
 #else
-    comVideo = video_tocar(proxyts_resolver(url, px, sizeof px));
+    comVideo = video_tocar(proxyts_resolver(playUrl, px, sizeof px));
 #endif
   }
   if (comVideo && juntos_precarregando()) player_juntos_pausar(1);
@@ -2680,6 +2698,7 @@ static void lembrarFonte(void) {
 }
 
 static void fecharSessao(int manter, int trocaFonte) {
+  directcache_encerrar();
   juntos_ao_voltar();
   saiuVisto = 0;
   imgsub_gl_limpar();
@@ -4690,8 +4709,9 @@ void player_evento(const SDL_Event *e) {
       // O proximo episodio NAO e mais tratado aqui: posplay_evento roda antes
       // de tudo em player_evento e ja consome o OK enquanto o cartao esta no
       // ar. Manter esta linha faria o OK disparar a troca duas vezes.
-      { double fim;if(trechoPulavel(&fim)){
-          { int tp=0;if(intro_botao_visivel(NULL,&tp)&&tp==INTRO_CREDITOS)player_aprender_creditos(); }
+      { double fim;int tp=0;if(trechoPulavel(&fim)){
+          { intro_botao_visivel(NULL,&tp);if(tp==INTRO_CREDITOS)player_aprender_creditos(); }
+          contribAoPular(tp,fim);
           pularTrecho(puloDestino(fim));if(comVideo)buscarUsuario(posSeg);return; } }
       // O OK com os controles escondidos e o Play/Pause: os controles sobem
       // com o foco NO PLAY, nao onde ficou da ultima vez (Legendas, Audio,
@@ -4756,6 +4776,7 @@ void player_evento(const SDL_Event *e) {
     double fim;
     if (!trechoPulavel(&fim)) skipFoco = 0;          // o trecho acabou por baixo do foco
     else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
+      { int tp=0;intro_botao_visivel(NULL,&tp);contribAoPular(tp,fim); }
       pularTrecho(puloDestino(fim)); if (comVideo) buscarUsuario(posSeg);
       skipFoco = 0; acordar(); return;
     } else if (k == SDLK_DOWN) { skipFoco = 0; acordar(); return; }
@@ -5306,8 +5327,19 @@ void player_atualizar(float dt, Uint32 agora) {
         velmed_pedir(&velMed, VEL_NORMAL);
       } }
     // A legenda interpola na velocidade MEDIDA (relogio.h).
-    relogio_taxa(&relLeg, velMed.efetiva / 100.0);
-    relogio_amostra(&relLeg, video_pos(), monoSeg(), tocando && !scrubbing);
+    // #710: enquanto a reconexao espera/recarrega (ou um seek ainda nao
+    // pousou), a posicao que o pipeline devolve e a de ANTES da queda, nao a
+    // do quadro no ar. Amostrar isso como "tocando" congela a legenda na
+    // posicao da queda (ou recua ao zero do reopen) e ela volta fora de
+    // sincronia; tratado como parado, o relogio segura a ultima posicao boa e
+    // o primeiro valor real depois do seek dispara o salto.
+    { int legParada = !tocando || scrubbing || video_reconectando()
+#ifdef NV_TPK
+                      || video_busca_em_voo()
+#endif
+                      ;
+      relogio_taxa(&relLeg, velMed.efetiva / 100.0);
+      relogio_amostra(&relLeg, video_pos(), monoSeg(), !legParada); }
     // A cada 10 s: o numero cru do pipeline e o do relogio da legenda, no
     // mesmo instante. A diferenca e o que a interpolacao acrescenta (0..~250).
     { static double ultRel;
@@ -5466,6 +5498,7 @@ void player_atualizar(float dt, Uint32 agora) {
                          ajustes_pular_creditos() && !creditosAuto.fonteMudou) &&
         !intro_auto_ja(tipoT, fimT)) {
       intro_auto_marcar(tipoT, fimT);
+      contribAoPular(tipoT,fimT);
       pularTrecho(tipoT == INTRO_CREDITOS ? fimT : puloDestino(fimT));
       creditosauto_buscar(&creditosAuto, posSeg);
       video_buscar(posSeg);
@@ -6278,7 +6311,7 @@ static void desenharAcoesEpisodioCorpo(void){
   if (!skipDisponivel() || capFoco) { skipFoco = 0; return; }
   intro_definir_duracao(duracaoReal ? (double)duracaoSeg : 0.0, epE <= 0);
   int trecho=intro_botao_config(posSeg,monoSeg(),visivel,skipFoco&&visivel,&fim,&tipo,
-    ajustes_show_skip_intro(),ajustes_show_skip_recap(),ajustes_show_skip_credits());
+    ajustes_show_skip_intro(),ajustes_show_skip_recap(),ajustes_show_skip_credits(),ajustes_show_skip_cena());
   // A CAIXA DE "Próximo episódio" QUE FICAVA AQUI FOI APAGADA. Era um retangulo
   // de posicao fixa em {420,720} que caia por cima da barra de tempo, sem foco
   // e sem parecer clicavel — o dono fotografou. O proximo episodio agora e um
@@ -6298,7 +6331,8 @@ static void desenharAcoesEpisodioCorpo(void){
     int paraCena=tipo==INTRO_CREDITOS&&intro_cena_pos(duracaoSeg,NULL,NULL,NULL);
     // Rotulos do NuvioTV: "Skip Ending" no fim de episodio, "Skip Credits" so
     // em filme (epE <= 0), e "Post credits" so com cena de verdade depois.
-    const char *rot=tipo==INTRO_RESUMO?"Pular resumo":
+    const char *rot=tipo==INTRO_POS_CREDITOS?"Pular cena":
+                    tipo==INTRO_RESUMO?"Pular resumo":
                     paraCena?"P\xc3\xb3s-cr\xc3\xa9" "ditos":
                     tipo==INTRO_CREDITOS&&epE<=0?"Pular cr\xc3\xa9" "ditos":
                     tipo==INTRO_CREDITOS?"Pular encerramento":"Pular abertura";

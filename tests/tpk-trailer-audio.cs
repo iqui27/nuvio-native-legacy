@@ -55,6 +55,13 @@ class TrailerAudioTest {
         trailer.DisposeRelease.Set();
         Wait(() => Player.All.Count == 3 && Player.All[2].Starts == 1); Drain();
         Check(!Player.All[2].Muted && Player.All[2].Volume == 1, "audible autoplay survives delayed release");
+        trailer.BlockDispose = true;
+        Open(); Wait(() => trailer.DisposeEntered.IsSet);
+        trailer.DisposeRelease.Set();
+        Wait(() => Player.All.Count == 4 && Player.All[3].Starts == 1); Drain();
+        Check(!Player.All[3].Muted, "open without fVolume defaults audible");
+        Entry("fParar"); Open(); Wait(() => Player.All.Count == 5 && Player.All[4].Starts == 1); Drain();
+        Check(!Player.All[4].Muted, "Parar then open without fVolume does not inherit mute");
         Check(erros == 0, "no generation errors reported");
         Entry("fParar");
         return 0;
