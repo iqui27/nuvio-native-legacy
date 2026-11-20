@@ -62,7 +62,8 @@ fMP4 with AC-3 audio, up to 5.1. P7 MKV is converted to single-layer P8.1.
 The HLS variant advertises its HEVC base as `hvc1` and signals P8.1 through
 `SUPPLEMENTAL-CODECS` and the Dolby Vision configuration in the init segment.
 Enable both conversions for a P7 source whose selected audio track is DTS.
-The stream carries one audio track.
+The stream carries one audio track. Other Dolby Vision sources (P5, P8, or P7
+without the P7 conversion) keep the existing converter when HLS is On.
 
 HLS requires a seekable source with a keyframe index. If a webOS MKV's last
 indexed keyframe is far from the reported end, the probe checks a bounded
@@ -79,7 +80,8 @@ The follow-up HLS build uses the existing **Buffer size** presets (64, 128 or
 budget. With **From another source**, the selected audio and video share that
 budget. The separate **Other version buffer** preference determines the audio
 reader's share, capped at half the budget. The player and segment generation
-use memory outside the input rings.
+use memory outside the input rings; the free-memory clamp reserves 96 MiB for
+the remux queue and one staged fMP4 fragment before it sizes the rings.
 
 For HLS with **From another source**, choose the audio source as usual.
 Enable DTS conversion and HLS for H.264/HEVC playback, or Dolby Vision P7

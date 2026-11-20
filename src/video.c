@@ -3802,7 +3802,8 @@ static int dvPronto(void) {
   }
 #ifdef NV_WEBOS_HLS_TEST
   // HLS can decode and convert TrueHD and other audio the packet path rejects.
-  if (hls.enabled && dvMkvPerfil == 7) return 1;
+  // Only where iniciarDts will actually take the HLS route.
+  if (hls.enabled && dvMkvPerfil == 7 && !modoLoad && !semDVForcado) return 1;
 #endif
   if (m >= 0) {
     const char *c = dvAudioCodec[m];
@@ -3878,6 +3879,16 @@ static void hlsFalhar(const char *reason) {
 
 static int hlsAbrir(void);
 
+/* The input rings follow the Buffer size preset and its free-memory clamp.
+ * HLS also keeps the remux queue (48 MiB) and one staged fMP4 fragment (up to
+ * 48 MiB) outside the rings, so the clamp sees the memory left after them. */
+#define HLS_OUTPUT_RESERVE_MB 96
+static int hlsBufferMib(void) {
+  long freeMb = memlog_livre_mb();
+  if (freeMb >= 0) freeMb = freeMb > HLS_OUTPUT_RESERVE_MB ? freeMb - HLS_OUTPUT_RESERVE_MB : 0;
+  return cacheboost_buffer_mb(ajustes_buffer_preset(), freeMb);
+}
+
 static int hlsIniciar(int ordinal, int dv7, int external, double alvo, double resumePct, int paused) {
   DtsHlsVideoEnd videoEnd = {0};
   int switchingAudio = hlsAtivo() && !external && !hls.external;
@@ -3903,7 +3914,7 @@ static int hlsAbrir(void) {
   DtsWebosHls options = {
     .dv7 = dv7, .allow_dts = !dtsDesligado,
     .preserve_mapping = ajustes_dv7_mapping(),
-    .buffer_mib = cacheboost_buffer_mb(ajustes_buffer_preset(), memlog_livre_mb()),
+    .buffer_mib = hlsBufferMib(),
     .resume_s = hls.switchingAudio ? hls.pos : 0,
     .video_end = hls.videoEnd,
   };
@@ -4030,6 +4041,14 @@ static int iniciarDts(int stream) {
     int dv7 = dtsModoDv && dvMkvPerfil == 7 && ajustes_dv7();
     int ownDts = (a || trocada) && nv_audio_mkv_dts(selected.codec);
     int dts = !dtsDesligado && (ownDts || (external && !dtsModoDv));
+    // HLS carries Dolby Vision only through the P7 -> P8.1 conversion, and its
+    // probe rejects any other Dolby Vision source. P5/P8, or P7 without that
+    // conversion, keep the existing converter instead of ending in an HLS error.
+    if (dts && !dv7 && dvMkvPerfil) {
+      printf("[webos-hls] Dolby Vision profile %d without P7 conversion: existing converter\n", dvMkvPerfil);
+      fflush(stdout);
+      dts = 0;
+    }
     if (dv7 || dts) {
       // A bare MKV probe has no selected native track yet. Keep the HLS
       // preference for AC-3 over a provisional first/TrueHD selection.
