@@ -76,7 +76,7 @@ cc ${MKVCORE_CC[@]+"${MKVCORE_CC[@]}"} -Isrc -I/opt/homebrew/include -O1 -g -Wal
   -DMKVASS_RECUO_INI_MS=20L -DMKVASS_RECUO_MAX_MS=160L \
   -DREDE_CALMA_INI_MS=600UL -DREDE_CALMA_MAX_MS=2400UL \
   tests/mkvass_recusa.c src/mkvass.c src/pgs_mkv_restore.c src/imgsub.c src/pgs.c src/assrender.c src/legenda.c tests/mkvass_i18n.c src/rede.c src/redeurl.c \
-  src/dados.c src/mkv.c -lz -o "$DIR/test" -lpthread
+  src/dados.c src/mkv.c -lz -lm -o "$DIR/test" -lpthread
 mkdir "$DIR/dados"
 set +e
 NUVIO_DADOS="$DIR/dados" "$DIR/test" "http://127.0.0.1:$PORTA" > "$DIR/saida.txt" 2>&1

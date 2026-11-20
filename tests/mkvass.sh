@@ -10,7 +10,15 @@ TMPDIR="${TMPDIR%/}"
 #   bash tests/mkvass.sh
 set -eu
 cd "$(dirname "$0")/.."
-cc -I/opt/homebrew/include tests/video_url.c src/video.c -o ${TMPDIR:-/tmp}/nuvio-video-url-test
+awk '
+ /^static char  urlAtual\[/ || /^const char \*video_url_atual\(void\)/ ||
+ /^static VideoSimulacao SIM;/ ||
+ /^int  video_tocar\(const char \*u\) \{ snprintf\(urlAtual/ {
+     printf "#line %d \"src/video.c\"\n%s\n", NR, $0
+ }
+ ' src/video.c > tests/video_url.inc
+trap 'rm -f tests/video_url.inc' EXIT
+cc -I/opt/homebrew/include -Itests tests/video_url.c -o ${TMPDIR:-/tmp}/nuvio-video-url-test
 ${TMPDIR:-/tmp}/nuvio-video-url-test
 FFMPEG=${FFMPEG:-/opt/homebrew/bin/ffmpeg}
 [ -x "$FFMPEG" ] || { echo "mkvass.sh: ffmpeg nao encontrado em $FFMPEG"; exit 1; }
@@ -117,7 +125,7 @@ RPS=${MKVASS_TESTE_RPS:-12}
 cc ${MKVCORE_CC[@]+"${MKVCORE_CC[@]}"} -Isrc -DMKVASS_VARRE_JANELA_SEG=30.0 -DMKVASS_RANGES_POR_SEG=$RPS -DMKVASS_TESTE_ESCALA=${MKVASS_TESTE_ESCALA:-3}.0 \
   -DMKVASS_PAUSA_CDN_INI_MS=150L -DMKVASS_PAUSA_CDN_MAX_MS=600L \
   -DMKVASS_RECUO_INI_MS=20L -DMKVASS_RECUO_MAX_MS=160L tests/mkvass.c src/mkvass.c src/pgs_mkv_restore.c src/imgsub.c src/pgs.c src/assrender.c src/legenda.c src/rede.c src/redeurl.c src/dados.c src/mkv.c -lz \
-  -o ${TMPDIR:-/tmp}/nuvio-mkvass-tests -O1 -g -Wall -I/opt/homebrew/include \
+  -o ${TMPDIR:-/tmp}/nuvio-mkvass-tests -O1 -g -Wall -I/opt/homebrew/include -lm \
   -Wno-deprecated-declarations
 mkdir -p "$DIR/dados"
 if [ "${NUVIO_MKVASS_LLDB:-0}" = "1" ]; then
