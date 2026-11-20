@@ -509,7 +509,11 @@ void nv_tpk_video_evento(int tipo, int a, int b) {
     case EV_BUSCOU:
       if (atomic_compare_exchange_strong(&buscaAlvoMs, &a, -1)) {
         atomic_store(&legSeekChegou, 1);
-        if (a >= 1000) posReconLeg = -1.0;
+        // #710: o ack confirma o alvo enviado. Um seek do usuario para outro
+        // ponto (ex.: 0 s durante a recuperacao em 12 s) invalida a posicao
+        // mantida; o relogio passa a seguir o host.
+        if (a >= 1000 || (posReconLeg >= 0.0 && a != (int)(posReconLeg * 1000.0)))
+          posReconLeg = -1.0;
       }
       break;
     case EV_CONSULTA_LENTA: atomic_store(&consultaLentaEm, SDL_GetTicks() | 1u); break;
