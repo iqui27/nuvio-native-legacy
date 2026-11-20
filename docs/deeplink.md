@@ -38,6 +38,18 @@ adb shell am start -a android.intent.action.VIEW -d 'nuvio-legacy://search?q=the
 
 ## webOS / Tizen
 
-TODO: not wired. webOS passes launch params (JSON, `relaunch` event / `webOSLaunch`)
-to the page; the app should pass a `url` field to `deeplink_postar()`. The C side
-is platform-neutral already.
+**Tizen (.tpk):** another app launches `NuvioTV002.Nuvio` with an app control whose
+extra data `contentTarget` (or whose uri) is one of the links above, e.g. from a web app:
+
+```js
+var ctl = new tizen.ApplicationControl('http://tizen.org/appcontrol/operation/default', null, null, null,
+    [new tizen.ApplicationControlData('contentTarget', ['nuvio-legacy://meta/movie/603'])]);
+tizen.application.launchAppControl(ctl, 'NuvioTV002.Nuvio', ok, fail);
+```
+
+`tizen-tpk/Program.cs` keeps the link until `nv_tpk_iniciar` has run, then hands it
+to `nv_tpk_link()` (`deeplink_postar()`). Cold and warm starts both arrive as
+`OnAppControlReceived`.
+
+**webOS:** TODO: not wired. webOS passes launch params (JSON, `relaunch` event /
+`webOSLaunch`) to the page; the app should pass a `url` field to `deeplink_postar()`.
