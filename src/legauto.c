@@ -1,6 +1,7 @@
 #include "legauto.h"
 #include "legsync.h"
 #include "linguas.h"
+#include "ajustes.h"
 #include <ctype.h>
 #include <string.h>
 #include <strings.h>
@@ -108,6 +109,11 @@ int legauto_escolher(const Legenda *v, int n, const char *pref, const char *midi
     h = legsync_hash_url(v[i].url);
     for (k = 0; k < nExcl; k++) if (excl[k] == h) jaFoi = 1;
     if (jaFoi) continue;
+    // #743: nome do arquivo E rotulo contam — "movie.srt" com rotulo "SDH"
+    // e tao SDH quanto "movie.SDH.srt".
+    if (ajustes_legenda_evitar_sdh() &&
+        (ling_nome_sdh(v[i].arquivo) || ling_nome_sdh(v[i].rotulo)))
+      continue;
     ok[i] = 1; elegiveis++;
     c = casados(v[i].arquivo, m, nm);
     for (j = 0; j < nm; j++) if (c >> j & 1) df[j]++;

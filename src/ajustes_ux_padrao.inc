@@ -397,3 +397,5 @@
   0, // heroListaLocal: 10 titulos no carrossel do destaque (#797)
   0, // showSkipCenaLocal: desligado (#342)
   1, // personalizacaoDoPerfilPrincipalLocal: Desligado (#679) — opt-in
+
+  1, // legendaEvitarSdhLocal: Desligado (V_LIGA 1)
