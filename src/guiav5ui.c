@@ -2283,8 +2283,10 @@ typedef struct {
   char id[80], nome[140], logo[480], grupo[64], base[256];
   int num, fav, np;
   EpgProg p[GV_PROGS];
-  /* Own titles across the two-second cache: EPG publication frees the arena. */
+  /* Own titles and synopsis across the two-second cache: EPG publication
+   * frees the arenas. */
   char titulo[GV_PROGS][240];
+  char descr[GV_PROGS][384];
 } GVCh;
 /* gv_ch is a window of the filtered list starting at gv_off; gv_lin, gv_top
  * and gv_match count the whole filtered list, so every channel is reachable. */
@@ -2352,6 +2354,8 @@ static void gv_copia(GVCh *c,int i,const char *id,const char *nome,const char *l
   for(int k=0;k<c->np;k++){
     snprintf(c->titulo[k],sizeof c->titulo[k],"%s",c->p[k].titulo?c->p[k].titulo:"");
     c->p[k].titulo=c->titulo[k];
+    snprintf(c->descr[k],sizeof c->descr[k],"%s",c->p[k].desc?c->p[k].desc:"");
+    c->p[k].desc=c->descr[k];
   }
 }
 /* Recolhe os canais, contagens e categorias do guia publicado. Barato: o
@@ -2814,6 +2818,8 @@ static void gv_hero(float base){
   EpgProg next;
   if(guia_programa_proximo(c->id,p?p->ini:time(NULL),0,&next)){
     snprintf(buf,sizeof buf,i18n("A seguir: %s"),next.titulo);gv_label(TXT_ILHA_CORPO,buf,x,r.y+anim_mistura(126,180,k),iw,1);}
+  if(p&&p->desc&&p->desc[0])
+    gv_label(TXT_ILHA_CORPO,p->desc,x,r.y+anim_mistura(156,216,k),iw,1);
   if(player_mini_no_guia_ativo())player_mini_no_guia(pv.x,pv.y,pv.w,pv.h);
   if(gv_zone==2&&!gv_overlay()){
     focus=1314;plrui_linha_foco(pv,20,1);
@@ -2847,6 +2853,8 @@ static void gv_hero_compact(float base){
     snprintf(meta,sizeof meta,"%s · %s · %s",i18n("A SEGUIR"),hi,next.titulo);
     gv_label(TXT_ILHA_CORPO,meta,r.x+32,r.y+140,iw,1);
   }else gv_label(TXT_ILHA_CORPO,i18n("Sem descrição no guia."),r.x+32,r.y+140,iw,1);
+  if(p&&p->desc&&p->desc[0])
+    gv_label(TXT_ILHA_CORPO,p->desc,r.x+32,r.y+172,iw,1);
 }
 /* --- canais fixados (os favoritos, na ordem do guia) ---------------------- */
 static GVCh *gv_pin_ch(int i){return i>=0&&i<gv_npins?&gv_pins[i]:NULL;}

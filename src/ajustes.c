@@ -8868,7 +8868,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_GUIA_PREVIA_DESTACAR: return "Quando a prévia do canal começa no Guia de TV: ao destacar ou só ao selecionar. Ao destacar é mais rápido; ao selecionar poupa rede e evita a prévia enquanto você só passa pela lista.";
     case AJ_GUIA_PREVIA_SOM: return "A prévia do canal no Guia de TV toca sem som. Desligado, o áudio do canal entra junto com a prévia.";
     case AJ_LIVETV_AGRUPAR: return "Mostra um canal por linha e reúne as qualidades e codecs na lista de fontes. Desligue para mostrar cada variante separadamente.";
-    case AJ_GUIA_DIAS: return "Quantos dias de programação o Guia de TV carrega e guarda. Um dia é mais leve e abre mais rápido; três dias deixam ver o que vem nos próximos dias.";
+    case AJ_GUIA_DIAS: return "Quantos dias de programação o Guia de TV carrega e guarda. Um dia é mais leve e abre mais rápido; três ou sete dias deixam ver o que vem nos próximos dias. Em TVs com pouca memória, o Guia pode limitar a grade a 24 horas para não faltar espaço.";
     default: return "Use as setas laterais para escolher. A preferência é aplicada ao alterar o valor.";
   }
 }
