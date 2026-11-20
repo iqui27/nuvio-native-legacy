@@ -9703,6 +9703,7 @@ static int      vtN;
 static char     vtBase[NV_ADDON_URL_MAX], vtTipo[8], vtCat[96], vtGenre[96];
 static int      vtPagina, vtPaginaInicial, vtFim, vtFioVivo, vtErro, vtReplay, vtReload, vtPaginaMudou;
 static int      vtPagSemProgresso;   // paginas seguidas sem item novo (prov MDBList)
+static int      vtBrutosVistos;      // itens crus somados nas paginas MDBList
 static uint64_t vtReplayHash;
 #define VT_HASH_INICIO UINT64_C(14695981039346656037)
 static uint64_t vtHashItem(uint64_t h, const char *p, const char *fim, const char *tipo) {
@@ -9760,10 +9761,6 @@ static int vtProjetar(void) {
 // algo para mostrar. O teto torna esse preenchimento limitado mesmo quando um
 // addon ignora skip; duplicatas e os limites crus ainda encerram a leitura.
 #define VT_VISTOS_PAGINAS_MAX 3
-// Teto absoluto de paginas no worker do Ver tudo: cobre o colecaoTeto mais
-// largo (VT_MAX=1000 itens, 20 paginas de 50) com folga, e impede laço num
-// provedor que sempre devolve pagina cheia sem item novo.
-#define VT_PAGINAS_MAX 25
 static int vtPaginaSoDeVistos(int antes, int adicionados, int paginas) {
   return ajustes_ocultar_filmes_vistos() && adicionados > 0 && !vtFim &&
          !vtErro && paginas < VT_VISTOS_PAGINAS_MAX && vtProjetar() == antes;
@@ -10526,7 +10523,11 @@ static void *fioVerTudo(void *u) {
           // pagina 2 pode trazer o resto — mas paginas seguidas sem item
           // novo e um teto absoluto encerram a paginacao.
           if(added)vtPagSemProgresso=0;else vtPagSemProgresso++;
-          if(vtPagSemProgresso>=2||skip>=VT_PAGINAS_MAX)vtFim=1;else vtPagina=skip+1;
+          vtBrutosVistos+=raw;
+          // O fim real e a falta de progresso, o teto de itens ou a pagina
+          // curta. O teto de brutos e so rede de seguranca (4x o teto de
+          // itens) — nunca corta uma lista que ainda enche colecaoTeto.
+          if(vtPagSemProgresso>=2||vtBrutosVistos>=4*colecaoTeto(fonte.catId))vtFim=1;else vtPagina=skip+1;
         } else if(!added)vtFim=1;else vtPagina=skip+1;
       }
       seguir = vtPaginaSoDeVistos(antes, added, paginas);
@@ -10714,7 +10715,7 @@ void desc_vertudo_filtro_desde(const char *base, const char *tipo, const char *c
   snprintf(vtCat,  sizeof vtCat,  "%s", catId);
   snprintf(vtGenre,sizeof vtGenre,"%s",genre?genre:"");
   vtProvedor=0;
-  vtN = 0; vtPagina = vtPaginaInicial = pagina; vtReplay = vtReload = vtPaginaMudou = 0; vtPagSemProgresso = 0; vtFim = 0;vtErro=0;vtGeracao++;
+  vtN = 0; vtPagina = vtPaginaInicial = pagina; vtReplay = vtReload = vtPaginaMudou = 0; vtPagSemProgresso = 0; vtBrutosVistos = 0; vtFim = 0;vtErro=0;vtGeracao++;
   pthread_mutex_unlock(&vtTrava);
   vtDisparar();
 }
@@ -10760,7 +10761,7 @@ void desc_vertudo_fonte_desde(const ColSource *s, int pagina) {
   vtProvedor = !strcmp(s->prov, "trakt") ? 2
              : !strcmp(s->prov, "mdblist") ? 4 : 1;
   vtBase[0] = 0;
-  vtN = 0; vtPagina = pagina; vtPagSemProgresso = 0; vtFim = 0; vtErro = 0; vtGeracao++;
+  vtN = 0; vtPagina = pagina; vtPagSemProgresso = 0; vtBrutosVistos = 0; vtFim = 0; vtErro = 0; vtGeracao++;
   pthread_mutex_unlock(&vtTrava);
   vtDisparar();
 }
@@ -10770,7 +10771,7 @@ void desc_vertudo_invalidar_lista(long id) {
   pthread_mutex_lock(&vtTrava);
   recarregar = id > 0 && vtProvedor == 2 && vtFonte.traktLista == id;
   if (recarregar) {
-    vtN = 0; vtPagina = 1; vtPagSemProgresso = 0; vtFim = 0; vtErro = 0; vtGeracao++;
+    vtN = 0; vtPagina = 1; vtPagSemProgresso = 0; vtBrutosVistos = 0; vtFim = 0; vtErro = 0; vtGeracao++;
   }
   pthread_mutex_unlock(&vtTrava);
   if (recarregar) vtDisparar();
