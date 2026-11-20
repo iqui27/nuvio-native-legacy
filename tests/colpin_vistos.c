@@ -29,6 +29,7 @@ const char *desc_chave_tmdb(void) { return "fixture"; }
 const char *desc_tmdb_idioma(void) { return "pt-BR"; }
 const char *nuvem_trakt_cliente(void) { return "fixture"; }
 int ajustes_ocultar_filmes_vistos(void) { return watched; }
+int extras_mdblist_chave(char *dst, unsigned n) { (void)dst; (void)n; return 0; }
 int desc_filme_visto(const CatItem *item) {
   return watched && (item->tmdb ? item->tmdb : strtol(item->imdb + 2, NULL, 10)) <= 24;
 }

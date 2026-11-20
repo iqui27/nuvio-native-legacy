@@ -13,8 +13,8 @@ cd "$(dirname "$0")/.."
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-colpin-vistos.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 awk '
- /^#define (COLPIN_MORTAS|TMDB |VT_VISTOS_PAGINAS_MAX)/ { print }
- /^static (int ehCanal|int colpinItens|const char \*rotuloTipoSing|int deMetaTmdb|int deMetaTrakt|void tmdbFiltros|const char \*tmdbMontarUrl|const char \*colecaoTextoFim|int colecaoArray|char \*colecaoBaixar|int colecaoTeto|int colecaoTipo)\(/ || /^int desc_colecao_inicial\(/ {
+ /^#define (COLPIN_MORTAS|TMDB |VT_VISTOS_PAGINAS_MAX|VT_LOTE_MAX)/ { print }
+ /^static (int ehCanal|int colpinItens|const char \*rotuloTipoSing|int deMetaTmdb|int deMetaTrakt|int deMetaMdblist|int mdbVetores|const char \*mdbAvancar|void tmdbFiltros|const char \*tmdbMontarUrl|const char \*colecaoTextoFim|int colecaoArray|char \*colecaoBaixar|int colecaoTeto|int colecaoTipo)\(/ || /^int desc_colecao_inicial\(/ {
      extracting = 1
      printf "#line %d \"src/descoberta.c\"\n", NR
  }
@@ -23,7 +23,7 @@ awk '
  extracting { print }
  extracting && /^}/ { extracting = 0; ids = 0 }
  ' src/descoberta.c > "$work/producao.inc"
-cc -g -O1 -fsanitize=address -fno-omit-frame-pointer -Isrc -I"$work" \
+cc -g -O1 -fsanitize=address -fno-omit-frame-pointer -Isrc -I"$work" -DNV_DUBLE_SESSAO \
   tests/colpin_vistos.c src/js.c -lm -o "$work/test"
 "$work/test" tmdb  0 20
 "$work/test" trakt 0 24
