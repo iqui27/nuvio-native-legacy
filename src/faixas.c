@@ -1222,12 +1222,13 @@ static void legendaAutomatica(Uint32 agora) {
       int nv = addons_legendas_copiar(v, LEG_MAX, NULL, NULL);
       uint64_t lem = ci ? legauto_lembrada(ci->imdb[0] ? ci->imdb : ci->titulo, pref) : 0;
       // #743: "Evitar SDH" tambem vale para a escolha entre as do addon — o
-      // addon nao manda a flag, entao vale o nome do arquivo/rotulo. Se TODAS
-      // sao SDH, a lista fica como esta (melhor SDH que nada).
+      // addon nao manda a flag, entao vale o nome do arquivo E o rotulo: um
+      // "movie.srt" anonimo pode vir marcado "SDH" no rotulo. Se TODAS sao
+      // SDH, a decisao e NADA (a preferida e a comum, nao a de surdos).
       if (ajustes_legenda_evitar_sdh()) {
         int w = 0;
         for (i = 0; i < nv; i++)
-          if (!ling_nome_sdh(v[i].arquivo[0] ? v[i].arquivo : v[i].rotulo)) {
+          if (!ling_nome_sdh(v[i].arquivo) && !ling_nome_sdh(v[i].rotulo)) {
             if (w != i) v[w] = v[i];
             w++;
           }
@@ -1236,6 +1237,10 @@ static void legendaAutomatica(Uint32 agora) {
       }
       if (v) {
       int b = legauto_escolher(v, nv, pref, legauto_midia(video_url_atual()), NULL, 0, lem);
+      // "Evitar SDH" ja filtrou as de surdos acima: se o ranqueador nao acha
+      // nenhuma do idioma, a comum filtrada ainda vale mais que a SDH que o
+      // tipo2 tinha apontado (ex.: pref "eng", addon so tem eng SDH + spa).
+      if (b < 0 && ajustes_legenda_evitar_sdh() && nv > 0) b = 0;
       if (b >= 0 && b < nv) {
         // O indice voltou da lista FILTRADA: achar a mesma URL na combinada.
         const char *esc = v[b].url;
@@ -1247,6 +1252,18 @@ static void legendaAutomatica(Uint32 agora) {
       }
       free(v);
     }
+    }
+  }
+  // "Evitar SDH" sem nenhuma comum: decisao NADA nunca indexa emb/tipos/add.
+  if (r == LING_AUTO_NADA) {
+    pilBusca = 0;
+    if (pref[0] && strcasecmp(pref, "none")) {
+      pilFalhou(pref, agora);
+      printf("[legenda] automatica: nada em '%s' (%d embutida(s), %d de addon)\n",
+             pref, nEmb, nAdd);
+    }
+    fflush(stdout);
+    return;
   }
   if (origem == LEGMEM_DE_TITULO || origem == LEGMEM_DE_ULTIMA)
     printf("[legenda] automatica: ultima escolha '%s' -> %s %d (%s%s) aos %u ms\n", pref,
