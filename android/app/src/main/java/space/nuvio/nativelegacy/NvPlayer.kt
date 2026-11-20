@@ -1402,8 +1402,64 @@ object NvPlayer {
         val baixa = url.lowercase()
         val item = MediaItem.Builder().setUri(url)
         if (baixa.contains(".m3u8") || baixa.contains("m3u8?")) item.setMimeType(MimeTypes.APPLICATION_M3U8)
-        else if (baixa.contains(".mpd")) item.setMimeType(MimeTypes.APPLICATION_MPD)
+        else if (isMpdUri(url)) item.setMimeType(MimeTypes.APPLICATION_MPD)
         return item.build()
+    }
+
+    // .mpd no fim do path ou no fim de um valor de query param
+    // (/api/live?file=canal.mpd). O valor chega decodificado e sem a query ou
+    // o fragmento aninhados, entao file=canal.mpd%3Ftoken%3Dabc (MPD assinado)
+    // e ate file=canal.mpd%3Fexpires%3D...T...%3A59Z (ISO 8601) tambem casam.
+    // Funcao pura sobre String: o valor decodificado NAO pode ir ao
+    // Uri.parse, que leria o primeiro ':' de "2026-11-20T23:59:59Z" como
+    // esquema e devolveria path nulo. Nao bate em "dash" solto nem em dominio.
+    internal fun isMpdUri(url: String): Boolean {
+        // .mpd no fim do caminho da URL propria (sem query nem fragmento).
+        // O fragmento EXTERNO sai primeiro: o Uri real devolve query nula
+        // para film.mp4#t=10?file=canal%2Empd, entao so a query da propria
+        // URL pode ser lida; procurar '?' antes de cortar '#' transformava
+        // fragmento em query e forcava DASH num MP4 progressivo.
+        val semFragmento = url.substringBefore('#')
+        val caminho = semFragmento.substringBefore('?')
+        if (caminho.endsWith(".mpd", true)) return true
+        // .mpd no fim do valor decodificado de um param de query: corta no
+        // primeiro '?' ou '#' ANINHADO (a query do valor) e testa o sufixo.
+        // O '?'/'#' de corte e o que vem codificado no proprio valor
+        // (canal.mpd%3Ftoken%3Dabc -> "canal.mpd?token=abc" -> "canal.mpd");
+        // o separador de params da URL externa ('&' cru) sai antes, no split.
+        val query = semFragmento.substringAfter('?', "")
+        if (query.isEmpty()) return false
+        return query.split('&').any {
+            val valor = it.substringAfter('=', it)
+            decodifica(valor).substringBefore('?').substringBefore('#').endsWith(".mpd", true)
+        }
+    }
+
+    // Escape invalido nao pode descartar o valor inteiro: canal.mpd%3Ftoken%3D%ZZ
+    // estoura no URLDecoder, mas o "%3F" valido ainda esconde a query aninhada
+    // que separa o MPD da assinatura. Primeiro a decodificacao estrita; so se
+    // falhar entra a variante que deixa o '%' invalido literal.
+    private fun decodifica(valor: String): String = try {
+        java.net.URLDecoder.decode(valor, "UTF-8")
+    } catch (e: Exception) {
+        val out = StringBuilder(valor.length)
+        val bytes = java.io.ByteArrayOutputStream()
+        fun flush() {
+            if (bytes.size() > 0) { out.append(bytes.toString("UTF-8")); bytes.reset() }
+        }
+        var i = 0
+        while (i < valor.length) {
+            val c = valor[i]
+            if (c == '+') { flush(); out.append(' '); i++ }
+            else if (c == '%' && i + 2 < valor.length) {
+                val hi = Character.digit(valor[i + 1], 16)
+                val lo = Character.digit(valor[i + 2], 16)
+                if (hi >= 0 && lo >= 0) { bytes.write(hi shl 4 or lo); i += 3 }
+                else { flush(); out.append('%'); i++ }
+            } else { flush(); out.append(c); i++ }
+        }
+        flush()
+        out.toString()
     }
 
     private fun decoderDolby(nome: String): Boolean {
@@ -1492,7 +1548,8 @@ object NvPlayer {
                 if (checked.compareAndSet(false, true)) nativeLimitedStatus() else 0
             } else if (live) liveHttp else http
             val baixa = url.lowercase()
-            val adaptativo = baixa.contains(".m3u8") || baixa.contains("m3u8?") || baixa.contains(".mpd")
+            val adaptativo = baixa.contains(".m3u8") || baixa.contains("m3u8?") ||
+                isMpdUri(url)
             // Cache off or not applicable for a VOD: whatever was kept is stale.
             if (pedidoCache <= 0 || limited) { r.cacheEstado = CacheSessao.DESLIGADO; if (titulo.isNotEmpty()) CacheMidia.descartar("setting off") }
             else if (adaptativo || !ParaleloDataSource.serve(Uri.parse(url))) {
@@ -1550,7 +1607,7 @@ object NvPlayer {
                             !it.equals("If-None-Match", true) && !it.equals("If-Modified-Since", true)
                         }),
                     report = { Log.i(TAG, it) },
-                    liveTsUri = Uri.parse(url).takeIf { LivePlaylistDataSource.isLiveTs(it) },
+                    liveTsUri = Uri.parse(url).takeIf { live && LivePlaylistDataSource.isLiveTs(it) },
                 ))
             if (construir) construirPlayer(act, r)
             Log.i(TAG, "[player] buffer preset=$preset min=${minMs / 1000}s max=${maxMs / 1000}s teto=${bytes shr 20}MB preparo=$preparando")
