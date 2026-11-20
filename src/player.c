@@ -503,6 +503,17 @@ static float duracaoSeg = PLR_DUR_PADRAO;
 // O fim ZERO do TheIntroDB quer dizer "ate o fim da midia" (intro.c): mirar
 // fim+0.25 ai seria um salto para o COMECO do arquivo — o alvo resolve o nulo.
 static double puloDestino(double fim) { return fim > 0.0 ? fim + .25 : duracaoSeg; }
+static const CatItem *item(void);
+// #494: diario local de marcadores pulados (AniSkip / TheIntroDB, futuro).
+// `ini` e a posicao onde o trecho comecou a ser pulado (posSeg antes do seek);
+// `intro_botao_visivel` devolve o FIM do marcador, nao o inicio — reutiliza-lo
+// como saida aqui zerava a linha inteira (fimMs <= iniMs descarta).
+static void contribAoPular(int tipo, double fim) {
+  const CatItem *ci = item();
+  double ini = posSeg;
+  if (!ci || !ci->imdb[0] || !(fim > ini)) return;
+  intro_contrib_registrar(ci->imdb, tipo, (int)(ini * 1000.0), (int)(fim * 1000.0));
+}
 // O PULO OFICIAL do app (botao e automatico) conta como tocado: pular a
 // abertura de um episodio curto nao pode custar o visto (#205). Seek manual nao.
 // So credita e move posSeg; quem chama faz a busca (usuario ou automatica).
@@ -4691,8 +4702,9 @@ void player_evento(const SDL_Event *e) {
       // O proximo episodio NAO e mais tratado aqui: posplay_evento roda antes
       // de tudo em player_evento e ja consome o OK enquanto o cartao esta no
       // ar. Manter esta linha faria o OK disparar a troca duas vezes.
-      { double fim;if(trechoPulavel(&fim)){
-          { int tp=0;if(intro_botao_visivel(NULL,&tp)&&tp==INTRO_CREDITOS)player_aprender_creditos(); }
+      { double fim;int tp=0;if(trechoPulavel(&fim)){
+          { intro_botao_visivel(NULL,&tp);if(tp==INTRO_CREDITOS)player_aprender_creditos(); }
+          contribAoPular(tp,fim);
           pularTrecho(puloDestino(fim));if(comVideo)buscarUsuario(posSeg);return; } }
       // O OK com os controles escondidos e o Play/Pause: os controles sobem
       // com o foco NO PLAY, nao onde ficou da ultima vez (Legendas, Audio,
@@ -4757,6 +4769,7 @@ void player_evento(const SDL_Event *e) {
     double fim;
     if (!trechoPulavel(&fim)) skipFoco = 0;          // o trecho acabou por baixo do foco
     else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
+      { int tp=0;intro_botao_visivel(NULL,&tp);contribAoPular(tp,fim); }
       pularTrecho(puloDestino(fim)); if (comVideo) buscarUsuario(posSeg);
       skipFoco = 0; acordar(); return;
     } else if (k == SDLK_DOWN) { skipFoco = 0; acordar(); return; }
@@ -5467,6 +5480,7 @@ void player_atualizar(float dt, Uint32 agora) {
                          ajustes_pular_creditos() && !creditosAuto.fonteMudou) &&
         !intro_auto_ja(tipoT, fimT)) {
       intro_auto_marcar(tipoT, fimT);
+      contribAoPular(tipoT,fimT);
       pularTrecho(tipoT == INTRO_CREDITOS ? fimT : puloDestino(fimT));
       creditosauto_buscar(&creditosAuto, posSeg);
       video_buscar(posSeg);
