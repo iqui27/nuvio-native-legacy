@@ -8015,8 +8015,12 @@ void desc_mesclar_episodios(CatEp *base, int nb, const CatEp *outro, int no, int
     // dois modos: uma lista sem imagem e pior que uma com imagem em ingles.
     if (!base[i].thumb[0])   snprintf(base[i].thumb, sizeof base[i].thumb, "%s", outro[j].thumb);
     if (!base[i].duracao[0]) snprintf(base[i].duracao, sizeof base[i].duracao, "%s", outro[j].duracao);
-    if (!base[i].data[0])    snprintf(base[i].data, sizeof base[i].data, "%s", outro[j].data);
-    if (!base[i].dataIso[0]) snprintf(base[i].dataIso, sizeof base[i].dataIso, "%s", outro[j].dataIso);
+    if (!base[i].data[0] && modo != DESC_MESCLA_TEXTO)
+      snprintf(base[i].data, sizeof base[i].data, "%s", outro[j].data);
+    if (outro[j].dataIso[0] && (modo == DESC_MESCLA_TEXTO || !base[i].dataIso[0])) {
+      snprintf(base[i].dataIso, sizeof base[i].dataIso, "%s", outro[j].dataIso);
+      desc_data_extenso(outro[j].dataIso, base[i].data, sizeof base[i].data);
+    }
     if (!base[i].notaImdb) base[i].notaImdb = outro[j].notaImdb;
     i++; j++;
   }
