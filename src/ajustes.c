@@ -7858,7 +7858,10 @@ static const char *textoLeitura(int op) {
   if (op >= AJ_PX_ENTRAR && op <= AJ_PX_SAIR) return pxTexto(op);
   if (op == AJ_P2P_URL) return p2pEndereco[0] ? p2pEndereco : i18n("Não configurado");
   if (op == AJ_CURADORIA_URL) return curadoria_url()[0] ? curadoria_url() : i18n("Não configurado");
-  if (op == AJ_NUVIO_BACKEND_URL) return nv_rec_url()[0] ? nv_rec_url() : i18n("Não configurado");
+  if (op == AJ_NUVIO_BACKEND_URL) {
+    static char recUrl[400];
+    return nv_rec_url_copiar(recUrl, sizeof recUrl) ? recUrl : i18n("Não configurado");
+  }
   if (op == AJ_P2P_TESTAR) return p2pTesteTexto();
   if (op >= AJ_POSTER_INST && op <= AJ_POSTER_TESTAR) return pstTexto(op);
   if (debIdx(op) >= 0) return debValor(op);
@@ -10899,8 +10902,9 @@ static void eventoTela(const SDL_Event *e) {
     }
     if (focoOp == AJ_NUVIO_BACKEND_URL) {
       stCampo = focoOp;
-      teclado_abrir_com("URL do servidor Nuvio", "https://seu-servidor — vazio usa o padrão da build.",
-                        299, CUR_ALFA_URL, nv_rec_url()[0] ? nv_rec_url() : NULL);
+      { char rec[400]; nv_rec_url_copiar(rec, sizeof rec);
+        teclado_abrir_com("URL do servidor Nuvio", "https://seu-servidor — vazio usa o padrão da build.",
+                          299, CUR_ALFA_URL, rec[0] ? rec : NULL); }
       return;
     }
     if (focoOp >= AJ_JF_SERVIDOR && focoOp <= AJ_JF_SAIR) { srvsetup_abrir(1); return; }
@@ -10982,6 +10986,9 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   valor[AJ_PERFIL_INFANTIL] = perfil_infantil_ativo() ? 0 : 1;
   pfVigiar();
   p2pTesteRecolher();
+  { int desc = nvbackend_descobrir_estado();
+    if (desc == 2) { uxNotificar("Servidor Nuvio descoberto e salvo."); nvbackend_descobrir_limpar(); }
+    else if (desc == -1) { uxNotificar("Descoberta falhou; mantido o endereço digitado."); nvbackend_descobrir_limpar(); } }
   pstTesteRecolher();
   adTesteRecolher();
   skTesteRecolher();
@@ -11047,6 +11054,9 @@ void ajustes_atualizar(float dt, Uint32 agora) {
       }
       else if (stCampo == AJ_NUVIO_BACKEND_URL) {
         int e = nvbackend_definir_url(teclado_texto());
+        // A descoberta roda num fio proprio (nvbackend_descobrir_iniciar):
+        // o teclado nunca espera rede. Com campo vazio nao ha origem.
+        if (e && teclado_texto()[0]) nvbackend_descobrir_iniciar(teclado_texto());
         uxNotificar(e ? "Ajuste salvo nesta TV." : "endereço inválido");
       }
       else if (stCampo == AJ_FILTRO_GRUPOS) ffGruposDefinir(teclado_texto());

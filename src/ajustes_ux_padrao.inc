@@ -366,6 +366,7 @@
   1, 1, 0, /* Guide: start on OK, audible, one day. */
   2, 2, 2, /* Capability exclusions: automatic defaults, resolved per device; unknown stays off. */
   0, /* Android TV home: enabled. */
+  0, /* Servidor Nuvio: acao; o valor mora em nuvio-backend.txt, nao em valor[] */
   1, /* Profile picker avatar size: Medium. */
   0, /* Group channel variants: enabled. */
   0, /* Sports menu entry: enabled. */

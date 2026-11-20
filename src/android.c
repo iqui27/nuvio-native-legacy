@@ -728,7 +728,9 @@ Java_space_nuvio_nativelegacy_NuvioActivity_nativeQuadros(JNIEnv *env, jobject a
 JNIEXPORT jstring JNICALL
 Java_space_nuvio_nativelegacy_NuvioActivity_nativeRecUrl(JNIEnv *env, jobject act) {
   (void)act;
-  return (*env)->NewStringUTF(env, nv_rec_url());
+  char rec[400];
+  nv_rec_url_copiar(rec, sizeof rec);
+  return (*env)->NewStringUTF(env, rec);
 }
 
 #endif

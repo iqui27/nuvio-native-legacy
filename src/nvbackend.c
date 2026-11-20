@@ -2,6 +2,8 @@
 #include "dados.h"
 #include "js.h"
 #include "rede.h"
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,27 +11,6 @@
 #ifndef NV_REC_URL
 #define NV_REC_URL ""
 #endif
-
-static char url[400];
-static int urlLida;
-
-static void carregar(void) {
-  char *t = dados_ler("nuvio-backend.txt");
-  url[0] = 0;
-  if (t) {
-    size_t i = 0;
-    while (t[i] == ' ' || t[i] == '\t' || t[i] == '\n' || t[i] == '\r') i++;
-    snprintf(url, sizeof url, "%s", t + i);
-    url[strcspn(url, " \t\n\r")] = 0;
-    free(t);
-  }
-}
-
-const char *nv_rec_url(void) {
-  if (!urlLida) { carregar(); urlLida = 1; }
-  if (url[0]) return url;
-  return NV_REC_URL;
-}
 
 /* Extrai host de http(s) URL; 1 se há host utilizável. */
 static int host_valido(const char *u) {
@@ -80,28 +61,113 @@ static int normalizar(char *u, size_t n, const char *in) {
   return 1;
 }
 
+// Estado proprio: o getter nao pode devolver ponteiro para um buffer global
+// mutavel enquanto o teclado e os workers leem ao mesmo tempo. A trava vale
+// para o par {url,urlLida}; quem precisa do texto copia para o proprio buffer.
+static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
+static char url[400];
+static int urlLida;
+
+static void carregar_travado(void) {
+  char *t = dados_ler("nuvio-backend.txt");
+  char nova[sizeof url] = "";
+  if (t) {
+    // Mesma validacao da gravacao: um arquivo editado por fora nao pode
+    // reintroduzir um endereco que normalizar() recusaria.
+    if (!normalizar(nova, sizeof nova, t)) nova[0] = 0;
+    free(t);
+  }
+  snprintf(url, sizeof url, "%s", nova);
+}
+
+size_t nv_rec_url_copiar(char *dst, size_t tam) {
+  const char *fonte;
+  size_t n;
+  if (!dst || !tam) return 0;
+  pthread_mutex_lock(&trava);
+  if (!urlLida) { carregar_travado(); urlLida = 1; }
+  fonte = url[0] ? url : NV_REC_URL;
+  n = strlen(fonte);
+  snprintf(dst, tam, "%s", fonte);
+  pthread_mutex_unlock(&trava);
+  return n < tam ? n : tam - 1;
+}
+
+int nv_rec_url_ativo(void) {
+  char tmp[8];
+  nv_rec_url_copiar(tmp, sizeof tmp);
+  return tmp[0] != 0;
+}
+
 int nvbackend_definir_url(const char *u) {
   char nova[sizeof url] = "";
   if (u && u[0] && !normalizar(nova, sizeof nova, u)) return 0;
+  // Memoria e disco tem de concordar: so adota a nova URL se a gravacao
+  // persistiu; caso contrario quem reinicia veria outro valor.
+  if (nova[0]) {
+    if (!dados_gravar("nuvio-backend.txt", nova)) return 0;
+  } else {
+    char *velho = dados_ler("nuvio-backend.txt");
+    free(velho);
+    // So exige sucesso quando havia algo gravado: apagar o inexistente ja e
+    // o estado desejado (dados_apagar devolve 0 no remove() falho).
+    if (velho && !dados_apagar("nuvio-backend.txt")) return 0;
+  }
+  pthread_mutex_lock(&trava);
   snprintf(url, sizeof url, "%s", nova);
   urlLida = 1;
-  dados_gravar("nuvio-backend.txt", nova);
+  pthread_mutex_unlock(&trava);
   return 1;
 }
 
-int nvbackend_descobrir(const char *origin) {
-  char base[280], pedido[320], *corpo;
-  char found[sizeof url];
+// Descoberta /.well-known/nuvio: a rede fica num fio proprio para o teclado
+// nunca esperar. Um fio por vez; ajustes_atualizar() recolhe o resultado.
+static pthread_t descFio;
+static int descFioVivo;
+static _Atomic int descEstado;   // 0 livre, 1 descobrindo, 2 ok, -1 falha
+static char descOrigin[280];
+
+static void *descFioMain(void *u) {
+  char base[280], pedido[320], *corpo, found[400];
   int st = 0;
-  if (!origin || !origin[0]) return 0;
-  if (!normalizar(base, sizeof base, origin)) return 0;
+  (void)u;
+  snprintf(base, sizeof base, "%s", descOrigin);
   snprintf(pedido, sizeof pedido, "%s/.well-known/nuvio", base);
   corpo = rede_baixar_st(pedido, 12, NULL, &st);
-  if (!corpo || st < 200 || st >= 300) { free(corpo); return 0; }
   found[0] = 0;
-  if (!js_texto_raiz(corpo, "backend_url", found, sizeof found) || !found[0])
-    js_texto_raiz(corpo, "url", found, sizeof found);
+  if (corpo && st >= 200 && st < 300) {
+    if (!js_texto_raiz(corpo, "backend_url", found, sizeof found) || !found[0])
+      js_texto_raiz(corpo, "url", found, sizeof found);
+  }
   free(corpo);
-  if (!found[0]) return 0;
-  return nvbackend_definir_url(found);
+  atomic_store_explicit(&descEstado, found[0] && nvbackend_definir_url(found) ? 2 : -1,
+                        memory_order_release);
+  return NULL;
 }
+
+int nvbackend_descobrir_iniciar(const char *origin) {
+  char base[sizeof descOrigin];
+  if (!origin || !origin[0] || !normalizar(base, sizeof base, origin)) return 0;
+  if (descFioVivo) return 1;
+  atomic_store_explicit(&descEstado, 1, memory_order_release);
+  snprintf(descOrigin, sizeof descOrigin, "%s", base);
+  if (pthread_create(&descFio, NULL, descFioMain, NULL) != 0) {
+    atomic_store_explicit(&descEstado, -1, memory_order_release);
+    return 0;
+  }
+  descFioVivo = 1;
+  return 1;
+}
+
+// 0 nunca pediu, 1 descobrindo, 2 encontrou e gravou, -1 falhou.
+int nvbackend_descobrir_estado(void) {
+  int e = atomic_load_explicit(&descEstado, memory_order_acquire);
+  if (descFioVivo && e != 1) { pthread_join(descFio, NULL); descFioVivo = 0; }
+  return e;
+}
+
+void nvbackend_descobrir_limpar(void) {
+  if (descFioVivo) { pthread_join(descFio, NULL); descFioVivo = 0; }
+  atomic_store_explicit(&descEstado, 0, memory_order_release);
+}
+
