@@ -399,3 +399,4 @@
   1, // personalizacaoDoPerfilPrincipalLocal: Desligado (#679) — opt-in
 
   1, // legendaEvitarSdhLocal: Desligado (V_LIGA 1)
+  1, /* barrasPretasLocal: Desligado */

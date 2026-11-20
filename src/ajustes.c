@@ -25,6 +25,7 @@
 #include "dados.h"
 #include "androidcache.h"
 #include "extplayer.h"
+#include "barraspretas.h"
 #include "resolucao.h"
 #include "gpunivel.h"
 #include "painel.h"
@@ -838,6 +839,8 @@ typedef enum {
   // comum/completa do mesmo idioma; se so houver SDH, cai na de addon em vez
   // dela. A escolha a mao continua livre. LOCAL, desligado, append-only.
   AJ_LEG_EVITAR_SDH,
+  // Android-only: black letterbox bars on Surface margins (#768), local, off.
+  AJ_BARRAS_PRETAS,
   AJ_N
 } OpcaoId;
 #define AJ_OPENSEEK_ULT AJ_OPENSEEK_REJEITAR
@@ -2078,6 +2081,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Botão flutuante para pular cenas", V_LIGA, 2),        // local: showSkipCenaLocal (#342)
   ESC("Personalização igual ao perfil principal", V_LIGA, 2),  // local: personalizacaoDoPerfilPrincipalLocal (#679)
   ESC("Evitar legendas SDH", V_LIGA, 2),                    // local: legendaEvitarSdhLocal (#743)
+  ESC("Tarjas pretas no player", V_LIGA, 2),                 // local: barrasPretasLocal (#768)
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2465,6 +2469,7 @@ static const char *CHAVE[] = {
   "showSkipCenaLocal",
   "personalizacaoDoPerfilPrincipalLocal",
   "legendaEvitarSdhLocal",
+  "barrasPretasLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3292,6 +3297,13 @@ int ajustes_tunneling(void) {
   return 0;
 #endif
 }
+int ajustes_barras_pretas(void) {
+#ifdef NV_ANDROID
+  return valor[AJ_BARRAS_PRETAS] == 0; /* V_LIGA: 0=Ligado, 1=Desligado */
+#else
+  return 0;
+#endif
+}
 // #641: 1 = trocar o modo da tela para o fps do video (preferredDisplayModeId).
 int ajustes_afr(void) {
 #ifdef NV_ANDROID
@@ -3594,7 +3606,7 @@ static int ajOpcaoDisponivel(int op) {
   if (op == AJ_HDR_INTERFACE) return 0;
 #ifndef NV_ANDROID
 #ifndef AJUSTES_TESTE
-  if (op == AJ_FONTE_PRECARREGAR || op == AJ_TUNNELING || op == AJ_AFR) return 0;
+  if (op == AJ_FONTE_PRECARREGAR || op == AJ_TUNNELING || op == AJ_AFR || op == AJ_BARRAS_PRETAS) return 0;
 #endif
 #endif
 #ifndef NV_TOUCH_UI
@@ -6788,6 +6800,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_LOGO_TRAILER:   /* so a protecao de OLED desta TV */
     case AJ_LEG_MOSTRAR:
     case AJ_TUNNELING:     /* Hardware playback capabilities belong to this device. */
+    case AJ_BARRAS_PRETAS: /* Letterbox fill on this Android TV. */
     case AJ_AFR:          /* Display modes belong to this panel. */
     case AJ_HDR_INTERFACE: /* HDR output belongs to this panel. */
     case AJ_HDR_UI:         /* o painel e desta TV */
@@ -6878,7 +6891,7 @@ static int soNaTv(int op) {
     case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
     case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_BUFFER_RAM_REDUZ:
     case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
-    case AJ_TUNNELING: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO: case AJ_AFR:
+    case AJ_TUNNELING: case AJ_BARRAS_PRETAS: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO: case AJ_AFR:
     case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: case AJ_VIDRO_QUALIDADE:
     case AJ_DET_SO_CINEMETA: case AJ_BUSCA_CINEMETA:
     case AJ_FONTE_MANUAL: case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_TEXTO: case AJ_FONTE_PRAZO:
@@ -7495,7 +7508,7 @@ static int foraDestaPlataforma(int op) {
 #ifndef NV_ANDROID
   if (op == AJ_MINIATURA_RES || op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO || op == AJ_LIMPAR_CACHE) return 1;
 #ifndef AJUSTES_TESTE
-  if (op == AJ_TUNNELING || op == AJ_AFR) return 1;
+  if (op == AJ_TUNNELING || op == AJ_AFR || op == AJ_BARRAS_PRETAS) return 1;
 #endif
 #endif
 #if defined(NV_ANDROID) && !defined(NV_P2P_MOTOR)
@@ -8891,6 +8904,7 @@ static const char *ajudaOpcaoTv(int op) {
     case AJ_ESPACO_FILEIRAS: return "O espaço vertical entre uma fileira da Home e a seguinte. Com menos cabem mais fileiras na tela, com mais a Home fica mais arejada.";
     case AJ_ESPACO_TITULOS: return "O espaço horizontal entre os cartazes de uma fileira da Home.";
     case AJ_TUNNELING: return "Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.";
+    case AJ_BARRAS_PRETAS: return "Pinta de preto a área fora do vídeo (tarjas). Útil em HDR/Dolby Vision quando o fundo vaza cor. Vale no player Android TV.";
     case AJ_TV_HOME: return "Mostra Continuar assistindo e o canal Nuvio no Android TV. Perfis infantis ficam ocultos. Desligar remove os itens publicados. Vale só nesta TV.";
     case AJ_AFR: return "Troca a taxa de atualização da TV para a do vídeo (24 Hz, 50 Hz...), reduzindo trepidação. Automático aplica a melhor correspondência ao abrir o vídeo e restaura ao sair; se a TV não oferecer um modo compatível, nada muda. Só Android TV.";
     case AJ_HDR_INTERFACE: return "HDR experimental para os menus. Branco limitado a 203 nits. Reinicie o app após mudar. Sem suporte, usa SDR.";
@@ -10671,6 +10685,7 @@ static int definirValorDireto(int op, int novo) {
   if (op == AJ_LEG_LINGUA || op == AJ_LEG_LINGUA2 || op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2) aplicarIdioma(op);
   if (op == AJ_IDIOMA) { idiomaEscolhido(); desc_repetir(); }
   if (op == AJ_PREVIA_PROVEDOR) previaAplicar();
+  if (op == AJ_BARRAS_PRETAS) barraspretas_invalidar();
   if (op == AJ_TAMANHO_UI) gfx_escala_ui_definir(ajustes_tamanho_ui());
   if (op == AJ_ESCALA_TEXTO) gfx_escala_txt_definir(ajustes_escala_texto());
   if (op == AJ_INTERFACE_MODO) {
