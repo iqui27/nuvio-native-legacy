@@ -3536,7 +3536,10 @@ RedeTls *rede_tls_abrir(const char *url, int segundos) {
   curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
   curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
   if (discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
-  r = performTmdb(c, url);
+  /* CONNECT_ONLY nao passa pelo multi/vigia: performTmdb removeria a easy
+     antes do CURLINFO_LASTSOCKET, e o curl_easy_send/recv do websocket
+     precisam dela associada a conexao que o CONNECT_ONLY abriu. */
+  r = tmdbFallback(c, curl_perform(c), url, NULL);
   if (r == 0 && curl_getinfo) curl_getinfo(c, INFO_LASTSOCKET, &fd);
   if (r != 0 || fd < 0) {
     printf("[rede] tls: falhou (curl %d)\n", r);
