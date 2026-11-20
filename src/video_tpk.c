@@ -2121,9 +2121,15 @@ static void encaixar(int x, int y, int w, int h, int *fx, int *fy, int *fw, int 
   else eh = (int)((double)w * altura / largura + 0.5) & ~1;
   *fx = x + (w - ew) / 2; *fy = y + (h - eh) / 2; *fw = ew; *fh = eh;
 }
-// Versao da Tizen (gpunivel.c le platform.version); so o maior importa.
-static int tizenMaior;
-void video_tpk_tizen_definir(const char *v) { tizenMaior = v ? atoi(v) : 0; }
+// Versao da Tizen (gpunivel.c le platform.version). Maior e menor entram na
+// conta: "6.5" nao pode virar 6 (#709 capa o ASS so na 6.0).
+static int tizenMaior, tizenMenor;
+void video_tpk_tizen_definir(const char *v) {
+  tizenMaior = 0; tizenMenor = 0;
+  if (v) sscanf(v, "%d.%d", &tizenMaior, &tizenMenor);
+}
+int video_tpk_tizen_maior(void) { return tizenMaior; }
+int video_tpk_tizen_menor(void) { return tizenMenor; }
 // COVER NO CARTAO (#471): so na Tizen 6.x (a TV do relato, uma AU7000 6.0) ou com
 // o zoom experimental ligado. ROI com origem negativa nunca foi visto no 4/5 (#426)
 // e apaga o plano na Tizen 9 (#188), entao as demais familias ficam no quadro

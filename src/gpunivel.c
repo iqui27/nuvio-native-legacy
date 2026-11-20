@@ -6,6 +6,7 @@
 #include "ajustes.h"
 #ifdef NV_TPK
 #include "video.h"
+#include "mkvfix.h"
 #endif
 #ifdef NV_ANDROID
 #include "android.h"
@@ -671,6 +672,12 @@ int gpun_janela_elegivel(double *fps, double pior, int cena, int cheia) {
 void gpun_relatar(double fps, double pior, double periodo, int cena, int cheia) {
   double alvo = periodo > 0 ? 1000.0 / periodo : 60.0;
   int automaticos = ajustes_efeitos_automaticos();
+#ifdef NV_TPK
+  if (mkvfix_estado() == MKVFIX_SONDANDO) {
+    printf("[gpu-nivel] report ignored: mkvfix probe active (fps=%.1f)\n", fps);
+    return;
+  }
+#endif
   int limpa = gpun_janela_elegivel(&fps, pior, cena, cheia);
   medidaTransiente = 0;
   medidaMs = medidaRuim = 0; medidaN = 0;
