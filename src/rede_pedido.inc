@@ -388,7 +388,11 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
 #undef PEDIDO_OPT
     strcpy(r->final, url);
     rede_url_publica(url, r->host, sizeof r->host);
-    r->curl_erro = performTmdb(curl, url);
+    /* Easy perform direto: esta easy e do pedido (fora do pool do fio) e o
+       multi de performTmdb tirava a associacao antes de getinfo/intervalo
+       final — a geracao avancada no callback de intervalo nao era mais
+       vista (tests/rede_pedido.c /late, REDE_GERACAO). */
+    r->curl_erro = tmdbFallback(curl, curl_perform(curl), url, NULL);
     { char *final = NULL;
       if (!curl_getinfo(curl, INFO_URL_FINAL, &final) && final)
         snprintf(r->final, sizeof r->final, "%s", final);

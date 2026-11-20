@@ -584,6 +584,16 @@ typedef enum {
   AJ_P2P_LIMITE,
   // #205: cache do motor embutido em pendrive USB (cai para interno). LOCAL.
   AJ_P2P_DESTINO,
+  // #775: espera por metadados P2P. LOCAL.
+  AJ_P2P_PRAZO_META,
+  // #782: folha classica. LOCAL.
+  AJ_FOLHA_CLASSICA,
+  // #774: brilho fontes carregando. LOCAL.
+  AJ_FONTE_CARGA_BRILHO,
+  // #457: resumo fonte na ficha. LOCAL.
+  AJ_DET_FONTE_ANTECIP,
+  // #764: cache USB para direct/debrid. LOCAL.
+  AJ_DIRECT_CACHE_USB,
   // #400: LOCAL, deste aparelho. No fim: valor[]/CHAVE[] posicionais.
   AJ_FONTE_ORDEM_ADDON,
   AJ_LEG_SYNC_AUTO, // local, ligada de fábrica; append-only
@@ -983,6 +993,9 @@ static const char *V_CACHE_SEEK[] = { "Desligado", "256 MB", "512 MB", "1 GB" };
 static const char *V_P2P_LIMITE[] = { "Automático", "2 GB", "4 GB", "8 GB", "16 GB" };
 static const unsigned P2P_LIMITE_MB[] = { 0, 2048, 4096, 8192, 16384 };
 static const char *V_P2P_DESTINO[] = { "Interno", "Pendrive USB" };
+static const char *V_P2P_PRAZO_META[] = { "30 s (padrao)", "60 s", "2 min", "Sem limite" };
+static const char *V_FOLHA_FONTE[] = { "Nova (ilha)", "Classica Nuvio" };
+static const char *V_FONTE_CARGA[] = { "Padrao", "Mais claro" };
 // Only the Android player has an app-controlled disk cache (cacheboost.h);
 // LG/Samsung show the row with "Não disponível nesta TV". Compile-time, so the
 // many tests that compile ajustes.c alone need no extra source.
@@ -1024,7 +1037,7 @@ static const char *V_LIVETV_MODO[] = { "A (padrão)", "B (sem seleção de faixa
 static const char *V_HERO_TRANSICAO[] = { "Deslizar", "Esmaecer" };
 // Provedor dos posteres personalizados. O INDICE e o gravado ("posterProvLocal")
 // e o PP_* de posterprov.h: so acrescentar no fim.
-static const char *V_POSTER_PROV[] = { "Desligado", "SpatialPosters", "RPDB", "Modelo próprio" };
+static const char *V_POSTER_PROV[] = { "Desligado", "SpatialPosters", "RPDB", "Posters+", "Modelo próprio" };
 // LAYOUT DA HOME. O INDICE e o gravado (homeLayoutLocal) e o HOME_LAYOUT_* de
 // ajustes.h: 0 = Moderna (a de sempre, e o padrao), 1 = Padrao, 2 = Dinamica.
 //
@@ -1693,7 +1706,7 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO("Testar servidor P2P"),
   // POSTERES PERSONALIZADOS (posterprov.h). Desligado de fabrica. LOCAL: o web
   // nao tem esta escolha e o servico e por aparelho/rede.
-  ESC("Pôsteres personalizados",         V_POSTER_PROV, 4),   // local: posterProvLocal
+  ESC("Pôsteres personalizados",         V_POSTER_PROV, 5),   // local: posterProvLocal
   ACAO("Endereço do SpatialPosters"),
   ACAO("Token do SpatialPosters"),
   ACAO("Parâmetros do SpatialPosters"),
@@ -1842,6 +1855,11 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Layout dos Ajustes",              V_LAYOUT_AJUSTES, 2),   // local: ajustesLayoutLocal (#339)
   ESC("Limite de espaço do P2P",         V_P2P_LIMITE, 5),   // local: p2pLimiteLocal (#334)
   ESC("Cache do P2P",                    V_P2P_DESTINO, 2),   // local: p2pDestinoLocal (#205)
+  ESC("Espera por metadados P2P",        V_P2P_PRAZO_META, 4),   // local: p2pPrazoMetaLocal (#775)
+  ESC("Folha de fontes",                 V_FOLHA_FONTE, 2),   // local: folhaFonteLocal (#782)
+  ESC("Fontes carregando",               V_FONTE_CARGA, 2),   // local: fonteCargaBrilhoLocal (#774)
+  ESC("Fonte na ficha do titulo",        V_LIGA, 2),   // local: detFonteAntecipLocal (#457)
+  ESC("Cache USB para links diretos",    V_LIGA, 2),   // local: directCacheUsbLocal (#764)
   ESC("Ordem das fontes", V_FONTE_ORDEM_ADDON, 2), // local (#400)
   ESC("Sincronia automática da legenda", V_LIGA, 2),
   ESC("Mostrar no player", V_LEG_MOSTRAR, 2),
@@ -2286,6 +2304,11 @@ static const char *CHAVE[] = {
   "ajustesLayoutLocal",
   "p2pLimiteLocal",
   "p2pDestinoLocal",
+  "p2pPrazoMetaLocal",
+  "folhaFonteLocal",
+  "fonteCargaBrilhoLocal",
+  "detFonteAntecipLocal",
+  "directCacheUsbLocal",
   "fonteOrdemLocal",
   "legendaSyncAutoLocal",
   "legendaMostrarLocal",
@@ -2580,6 +2603,9 @@ static int  nValores(int op);
 static int inativa(int op);
 static void pstAplicar(void);
 static void pstCarregar(void);
+static void pstSalvar(void);
+static void posterProvMigrar(void);
+static int pstProvArq = -1;
 static void pstDefinir(int op, const char *texto);
 static void pstAtivar(int op);
 static void pstTesteRecolher(void);
@@ -3803,12 +3829,26 @@ void ajustes_definir_vidro(int ligado) { int a = valor[AJ_VIDRO]; valor[AJ_VIDRO
 int ajustes_p2p_ligado(void) { return 0; }
 unsigned ajustes_p2p_limite_mb(void) { return 0; }
 int ajustes_p2p_usb(void) { return 0; }
+int ajustes_p2p_prazo_metadados_s(void) { return 30; }
+int ajustes_folha_classica(void) { return 0; }
+int ajustes_fonte_carga_brilho_alto(void) { return 0; }
+int ajustes_det_fonte_antecipada(void) { return 0; }
+int ajustes_direct_cache_usb(void) { return 0; }
 #else
 int ajustes_p2p_ligado(void) { return lig(AJ_P2P_LIGADO) && !SEGURO; }
 unsigned ajustes_p2p_limite_mb(void) {
   int v = valor[AJ_P2P_LIMITE];
   return v >= 0 && v < (int)(sizeof P2P_LIMITE_MB / sizeof *P2P_LIMITE_MB) ? P2P_LIMITE_MB[v] : 0;
 }
+int ajustes_p2p_prazo_metadados_s(void) {
+  static const unsigned prazos[] = {30, 60, 120, 0};
+  int v = valor[AJ_P2P_PRAZO_META];
+  return (v >= 0 && v < 4) ? (int)prazos[v] : 30;
+}
+int ajustes_folha_classica(void) { return valor[AJ_FOLHA_CLASSICA] != 0; }
+int ajustes_fonte_carga_brilho_alto(void) { return valor[AJ_FONTE_CARGA_BRILHO] != 0; }
+int ajustes_det_fonte_antecipada(void) { return !valor[AJ_DET_FONTE_ANTECIP]; }
+int ajustes_direct_cache_usb(void) { return !valor[AJ_DIRECT_CACHE_USB] && ajustes_p2p_usb(); }
 int ajustes_p2p_usb(void) { return valor[AJ_P2P_DESTINO] == 1; }
 #endif
 // Servidores pessoais: ligado E com HTTP estrito neste backend (o WGT nao tem:
@@ -5550,6 +5590,11 @@ void ajustes_dir(const char *dir) {
   // gravar() e DEPOIS do idioma restaurado: gravar antes levava ao disco o
   // idioma do arranque com a marca de automatico, e a escolha manual desta TV
   // se perdia no arranque seguinte.
+  // A migracao do provedor de poster ANTES de qualquer gravar() do arranque:
+  // prov= so pode ser persistido com o provedor efetivo ja resolvido — a
+  // gravacao abaixo (som do trailer) ia ao disco com o indice cru da versao
+  // antiga (3 = Modelo proprio) marcado como novo (3 = Posters+) (#739).
+  posterProvMigrar();
   if (lig(AJ_DET_TRAILER_SOM)) {
     valor[AJ_DET_TRAILER_SOM] = 1;
     if (!lig(AJ_HERO_TRAILER_SOM)) {
@@ -5771,7 +5816,7 @@ void ajustes_dir(const char *dir) {
 static int gravar(void) {
   char caminho[600], tmp[600];
   FILE *f;
-  int i, vv[AJ_N];
+  int i, vv[AJ_N], provAntes;
   if (!dirAjustes[0]) return 0;
   // 2.1: com a edicao de outro perfil em curso, o arquivo da TV leva os valores
   // do perfil ATIVO (edSalvo) nas chaves do perfil: se o app cair no meio, o
@@ -5831,6 +5876,18 @@ static int gravar(void) {
   // Provedor de poster ou idioma da interface mudaram? So reconfigura se a
   // configuracao final for outra (reconfigurar zera a memoria de falhas).
   pstAplicar();
+  // prov= tem de chegar a posteres.txt TAMBEM pela troca de provedor nos
+  // Ajustes (valor[] + gravar(), sem campo de texto): sem esta linha, escolher
+  // Posters+ (3) deixava o arquivo sem prov= e a migracao do boot seguinte
+  // lia o 3 como o antigo "Modelo proprio" (#739).
+  provAntes = pstProvArq;
+  // O valor persistido e o EFETIVO: no arranque, posterProvMigrar() ja rodou
+  // antes de qualquer gravar() (foi movida para antes da migracao do som do
+  // trailer), entao aqui valor[] ja e o provedor resolvido (#739).
+  if (provAntes != valor[AJ_POSTER_PROV]) {
+    pstProvArq = valor[AJ_POSTER_PROV];
+    pstSalvar();
+  }
   return 1;
 }
 
@@ -5843,6 +5900,11 @@ static int gravar(void) {
 // aparecem mascarados ("····abcd"), como a chave do fanart.tv.
 static char pstInst[PP_INSTANCIA_MAX], pstToken[PP_TOKEN_MAX + 1], pstExtra[PP_EXTRA_MAX + 1];
 static char pstChave[PP_CHAVE_MAX], pstModelo[PP_MODELO_MAX];
+// Provedor gravado em posteres.txt pela versao NOVA (-1 = arquivo de versao
+// antiga ou ausente). Sem este marcador o indice 3 de posterProvLocal e
+// ambiguo: antes de Posters+ existir, 3 era "Modelo proprio"; agora e
+// Posters+. A versao nova sempre grava prov=, e so ela. Definida adiante;
+// declarada no bloco de estaticas do topo porque gravar() tambem a usa.
 // Ultima recusa de um campo digitado (0 = nenhuma); aviso imediato e linha "Testar".
 enum { PST_OK = 0, PST_TOKEN_RUIM, PST_INST_RUIM, PST_EXTRA_RUIM, PST_CHAVE_RUIM, PST_MODELO_RUIM,
        PST_MODELO_LONGO };
@@ -5874,18 +5936,26 @@ static void pstAplicar(void) {
 }
 static void pstSalvar(void) {
   char b[PP_INSTANCIA_MAX + PP_TOKEN_MAX + PP_EXTRA_MAX + PP_CHAVE_MAX + PP_MODELO_MAX + 64];
-  if (!pstInst[0] && !pstToken[0] && !pstExtra[0] && !pstChave[0] && !pstModelo[0]) {
-    dados_apagar("posteres.txt");
-    return;
-  }
-  snprintf(b, sizeof b, "inst=%s\ntoken=%s\nextra=%s\nchave=%s\nmodelo=%s\n",
-           pstInst, pstToken, pstExtra, pstChave, pstModelo);
+  // prov= vai SEMPRE: sem ele, um posterProvLocal=3 antigo (Modelo proprio,
+  // antes de Posters+ entrar no enum) e um 3 novo (Posters+) se confundem
+  // quando os campos de instancia e o modelo dividem o arquivo (#739).
+  snprintf(b, sizeof b, "prov=%d\ninst=%s\ntoken=%s\nextra=%s\nchave=%s\nmodelo=%s\n",
+           valor[AJ_POSTER_PROV], pstInst, pstToken, pstExtra, pstChave, pstModelo);
   dados_gravar("posteres.txt", b);
 }
+static void posterProvMigrar(void) {
+  // Arquivo SEM prov= veio de versao antiga, em que o indice 3 so podia ser
+  // "Modelo proprio" — Posters+ nao existia. Arquivo COM prov= ja e da versao
+  // nova: o indice de ajustes.txt nao e ambiguo e fica como esta.
+  if (pstProvArq < 0 && valor[AJ_POSTER_PROV] == PP_POSTERSPLUS)
+    valor[AJ_POSTER_PROV] = PP_MODELO;
+}
+
 static void pstCarregar(void) {
   char *t = dados_ler("posteres.txt"), *p, *fim;
   char v[PP_MODELO_MAX + 8];
   pstInst[0] = pstToken[0] = pstExtra[0] = pstChave[0] = pstModelo[0] = 0;
+  pstProvArq = -1;
   for (p = t; p && *p; p = fim ? fim + 1 : NULL) {
     char *eq;
     size_t n;
@@ -5899,7 +5969,8 @@ static void pstCarregar(void) {
       if (nv && v[nv - 1] == '\r') v[nv - 1] = 0; }
     // Reaplica as MESMAS validacoes de quando se digita: arquivo editado a mao
     // ou de outra versao nao pode virar URL torta.
-    if (!strncmp(p, "inst=", 5)) { if (!posterprov_normalizar_instancia(v, pstInst, sizeof pstInst)) pstInst[0] = 0; }
+    if (!strncmp(p, "prov=", 5)) { int pv = atoi(v); pstProvArq = pv >= PP_DESLIGADO && pv <= PP_MODELO ? pv : -1; }
+    else if (!strncmp(p, "inst=", 5)) { if (!posterprov_normalizar_instancia(v, pstInst, sizeof pstInst)) pstInst[0] = 0; }
     else if (!strncmp(p, "token=", 6)) { if (!posterprov_extrair_token(v, pstToken, sizeof pstToken, NULL, 0)) pstToken[0] = 0; }
     else if (!strncmp(p, "extra=", 6)) { if (!posterprov_extra_normalizar(v, pstExtra, sizeof pstExtra)) pstExtra[0] = 0; }
     else if (!strncmp(p, "chave=", 6)) { pstCopia(pstChave, sizeof pstChave, v); }
@@ -6141,6 +6212,36 @@ void ajustes_teste_poster_recarregar(char *lido, size_t n) {
   pstModelo[0] = 0;
   pstCarregar();
   snprintf(lido, n, "%s", pstModelo);
+}
+// #739: prov= em posteres.txt decide se posterProvLocal=3 e Posters+ (novo)
+// ou o antigo "Modelo proprio". O teste grava o arquivo como cada versao e
+// le o indice final depois de pstCarregar + posterProvMigrar.
+int ajustes_teste_poster_migrar(int provGravado, const char *inst, const char *modelo) {
+  char b[PP_INSTANCIA_MAX + PP_MODELO_MAX + 64];
+  if (provGravado >= 0)
+    snprintf(b, sizeof b, "prov=%d\ninst=%s\ntoken=\nextra=\nchave=\nmodelo=%s\n",
+             provGravado, inst ? inst : "", modelo ? modelo : "");
+  else  // arquivo de versao antiga, sem prov=
+    snprintf(b, sizeof b, "inst=%s\ntoken=\nextra=\nchave=\nmodelo=%s\n",
+             inst ? inst : "", modelo ? modelo : "");
+  dados_gravar("posteres.txt", b);
+  pstCarregar();
+  posterProvMigrar();
+  return valor[AJ_POSTER_PROV];
+}
+void ajustes_teste_poster_definir_prov(int prov) { valor[AJ_POSTER_PROV] = prov; }
+// #739: o fluxo REAL — prov= tem de chegar a posteres.txt via gravar() da
+// troca de provedor, sem editar campo de texto. O teste muda valor[],
+// chama o mesmo gravar() que os Ajustes chamam, e le o arquivo de volta.
+int ajustes_teste_poster_prov_persiste(int prov) {
+  int out = -1;
+  valor[AJ_POSTER_PROV] = prov;
+  if (!dirAjustes[0]) return -2;
+  if (!gravar()) return -3;
+  { char *t = dados_ler("posteres.txt");
+    if (t && strstr(t, "prov=")) out = atoi(strstr(t, "prov=") + 5);
+    free(t); }
+  return out;
 }
 #endif
 
@@ -8185,7 +8286,7 @@ static int inativa(int op) {
       return !extras_mdblist_tem_chave();
     // Cada campo so vale para o provedor dele; o teste, para qualquer um ligado.
     case AJ_POSTER_INST: case AJ_POSTER_TOKEN: case AJ_POSTER_EXTRA:
-      return valor[AJ_POSTER_PROV] != PP_SPATIAL;
+      return valor[AJ_POSTER_PROV] != PP_SPATIAL && valor[AJ_POSTER_PROV] != PP_POSTERSPLUS;
     case AJ_POSTER_CHAVE:  return valor[AJ_POSTER_PROV] != PP_RPDB;
     case AJ_POSTER_MODELO: return valor[AJ_POSTER_PROV] != PP_MODELO;
     case AJ_POSTER_TESTAR: return valor[AJ_POSTER_PROV] == PP_DESLIGADO;

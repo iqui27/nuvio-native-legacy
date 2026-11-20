@@ -295,6 +295,10 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned lista, int escolhi
                            int *indice, int *servico, char *url, unsigned tam);
 int stream_falha_aplicar(int indice, unsigned lista, int servico, const char *url);
 int stream_falha_aplicar_sessao(int indice, unsigned lista, int servico, const char *url, uint64_t sessao);
+// Semeia a sessao com a fonte manual ja resolvida (folha); evita que o
+// failover repita a mesma URL e conta a tentativa no orcamento da politica.
+int stream_falha_semear_manual(FonteFalhaSessao *sessao, int indice,
+                              unsigned lista, const char *url);
 // Renova somente a rota ja escolhida, sem reservar outra tentativa na
 // politica. O consumidor aceita e publica a URL depois de validar o alvo.
 // Fresh, independent addon query for the same VOD file; never replaces the list.

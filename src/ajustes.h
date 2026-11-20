@@ -237,6 +237,11 @@ int ajustes_fonte_hdr(void);
 // 1 = a escolha automatica prefere fontes que anunciam o Idioma do audio
 // (ling_audio) ou audio duplo, na mesma resolucao; nunca filtra (fontenota.h).
 int ajustes_fonte_idioma_audio(void);
+int ajustes_p2p_prazo_metadados_s(void);
+int ajustes_folha_classica(void);
+int ajustes_fonte_carga_brilho_alto(void);
+int ajustes_det_fonte_antecipada(void);
+int ajustes_direct_cache_usb(void);
 
 // Idioma da interface: um IDIOMA_* de idiomacod.h (pt, en, ro, uk, ru, fr, de, es). Valor
 // gravado fora do intervalo (arquivo editado a mao) cai em portugues.

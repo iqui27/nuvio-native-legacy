@@ -25,6 +25,14 @@ static const Item TELA[] = {
       OPC(AJ_FONTE_MANUAL), OPC(AJ_FONTE_PRIORIDADE), OPC(AJ_FONTE_IDIOMA_AUDIO), OPC(AJ_FONTE_PRAZO),
       OPC(AJ_FONTE_REPOR), OPC(AJ_TAM_MAX),
       OPC(AJ_FONTE_GRUPO), OPC(AJ_FONTE_GRUPO_SESSOES),
+      // #782: no .wgt o seletor nao pode ficar sem efeito — a folha WASM nao
+      // tem a geometria classica e ajustes_folha_classica() e fixo em 0 la.
+#ifndef __EMSCRIPTEN__
+      OPC(AJ_FOLHA_CLASSICA),
+      // #774/#457: no .wgt os getters sao fixos em 0 — a opcao visivel sem
+      // efeito era o mesmo seletor-morto que AJ_FOLHA_CLASSICA.
+      OPC(AJ_FONTE_CARGA_BRILHO), OPC(AJ_DET_FONTE_ANTECIP),
+#endif
       OPC(AJ_LINK_REUSAR), OPC(AJ_LINK_PRAZO),
       // #310: o "Auto-play streams" do oficial (fonteregra.h).
       OPCA(AJ_FONTE_REGEX), OPCA(AJ_FONTE_REGEX_PADRAO), OPCA(AJ_FONTE_REGEX_MODELO),
@@ -87,7 +95,7 @@ static const Item TELA[] = {
     // #205: Android tambem lista o pendrive (NuvioActivity.volumesExternos).
     ROT("P2P"), OPC(AJ_P2P_LIGADO), OPC(AJ_P2P_URL), OPC(AJ_P2P_TESTAR),
 #if !defined(NV_ANDROID) || defined(NV_P2P_MOTOR)
-    OPC(AJ_P2P_LIMITE), OPC(AJ_P2P_DESTINO),
+    OPC(AJ_P2P_LIMITE), OPC(AJ_P2P_DESTINO), OPC(AJ_P2P_PRAZO_META), OPC(AJ_DIRECT_CACHE_USB),
 #endif
 #endif
 

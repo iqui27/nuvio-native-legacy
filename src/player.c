@@ -164,6 +164,7 @@ extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
 #include "miniatura_android.h"
 #include "neste.h"
 #include "cacheboost.h"
+#include "directcache.h"
 #include "audioinfo.h"
 #include "playinfo.h"
 #include "central.h"
@@ -2065,12 +2066,15 @@ void player_abrir(int indiceCatalogo, const char *url) {
   armarTituloGuardado();
   cacheboost_backend_buffer(cacheboost_buffer_mb(ajustes_buffer_preset(), memlog_livre_mb()));
   loadEm = SDL_GetTicks();
-  { char px[96];
+  { char px[96], dc[NV_MEDIA_URL_MAX];
     if (url && *url) { memlog_evento("load"); memQuadroPendente = 1; }
     const CatItem *c = item();
     int bloqueado = c && !strcmp(c->tipo, "series") && travaui_segura(c->imdb, idxAtual(),
         c->temporada > 0 ? c->temporada : 1, c->episodio > 0 ? c->episodio : 1, NULL, NULL);
-    comVideo = (url && *url && !bloqueado && video_tocar(proxyts_resolver(url, px, sizeof px))); }
+    if (url && *url && !bloqueado) {
+      const char *u = directcache_preparar(url, video_cabecalhos(), dc, sizeof dc);
+      comVideo = video_tocar(proxyts_resolver(u, px, sizeof px));
+    } else comVideo = 0; }
   zerarAssistido();
   mkvass_video_aberto(comVideo);
   legsync_auto_habilitar(ajustes_legenda_sync_auto());
@@ -2264,6 +2268,7 @@ static int travaFonte(const char *url) {
 
 static void tocarFonteInterno(const char *url);
 static void tocarFonteInterno(const char *url) {
+  directcache_encerrar();
   if (!travaFonte(url)) return;
   marco("abrir: url ao pipeline");
   skipLiberado = 0;
@@ -2276,7 +2281,8 @@ static void tocarFonteInterno(const char *url) {
   armarTituloGuardado();
   memlog_evento("load"); memQuadroPendente = 1;
   cacheboost_backend_buffer(cacheboost_buffer_mb(ajustes_buffer_preset(), memlog_livre_mb()));
-  { char px[96];
+  { char px[96], dc[NV_MEDIA_URL_MAX];
+    const char *playUrl = url && *url ? directcache_preparar(url, video_cabecalhos(), dc, sizeof dc) : url;
 #ifdef NV_ANDROID
     // app.c define episodio e "do inicio" antes de entregar a fonte. O
     // instante viaja junto da URL, nunca numa variavel pendente do Kotlin.
@@ -2291,12 +2297,12 @@ static void tocarFonteInterno(const char *url) {
       if (ponto > 0.0) marco("abrir: ponto salvo vai na abertura (segundos)");
       else marco("abrir: ponto salvo vai na abertura (percentual)");
     }
-    comVideo = video_tocar_retomada(proxyts_resolver(url, px, sizeof px),
+    comVideo = video_tocar_retomada(proxyts_resolver(playUrl, px, sizeof px),
                                     retomadaNaPreparacao ? ponto : 0.0,
                                     retomadaNaPreparacao && retomarFonteSeg < 0.0 && ponto <= 0.0 ? retomarPct : 0.0);
     if (!comVideo) retomadaNaPreparacao = 0;
 #else
-    comVideo = video_tocar(proxyts_resolver(url, px, sizeof px));
+    comVideo = video_tocar(proxyts_resolver(playUrl, px, sizeof px));
 #endif
   }
   if (comVideo && juntos_precarregando()) player_juntos_pausar(1);
@@ -2692,6 +2698,7 @@ static void lembrarFonte(void) {
 }
 
 static void fecharSessao(int manter, int trocaFonte) {
+  directcache_encerrar();
   juntos_ao_voltar();
   saiuVisto = 0;
   imgsub_gl_limpar();
