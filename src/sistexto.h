@@ -71,6 +71,7 @@ int   st_ime_abrir(int dono, const char *inicial, int max);
 enum { ST_IME_TEXTO = 0, ST_IME_EMAIL = 1, ST_IME_SENHA = 2 };
 void  st_ime_tipo(int tipo);
 // Comeca o ditado (permissao, reconhecedor do app, ou os degraus de reserva).
+void  st_voz_teclado_inicial(const char *texto);
 int   st_voz_iniciar(int dono);
 // Fecha o teclado e para a voz, se forem desse dono.
 void  st_fechar(int dono);
