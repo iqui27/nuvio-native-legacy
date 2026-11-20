@@ -6966,7 +6966,7 @@
   T("Quem está usando a TV agora", "Хто зараз користується телевізором"),
   T("Quem faz as miniaturas. Seekr.tv: um serviço na internet, por título. OpenSeek: um servidor seu na rede de casa, que tira os quadros do próprio vídeo que está tocando. O endereço do vídeo vai só para ele, por conexão segura fixada no pareamento.", "Who makes the previews. Seekr.tv: an internet service, per title. OpenSeek: your own server on your home network, which takes the frames from the very video that is playing. The video address goes only to it, over a secure connection pinned at pairing."),
   T("Quem faz o quê, e a que preço", "Хто що робить і якою ціною"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Той, хто зібрав .ipk, має вказати URL і ключ проєкту."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Той, хто зібрав пакет, має вказати URL і ключ проєкту."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Хто вже переглянув фільм чи серіал, видно на постері, в hero та на сторінці."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Ті, хто ввімкнув «Профіль у пошуку»; спершу нещодавно активні."),
   T("Quem mandou, e o que disse", "Хто надіслав і що сказав"),

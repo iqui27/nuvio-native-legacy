@@ -6967,7 +6967,7 @@
   T("Quem está usando a TV agora", "現在誰在使用電視"),
   T("Quem faz as miniaturas. Seekr.tv: um serviço na internet, por título. OpenSeek: um servidor seu na rede de casa, que tira os quadros do próprio vídeo que está tocando. O endereço do vídeo vai só para ele, por conexão segura fixada no pareamento.", "Who makes the previews. Seekr.tv: an internet service, per title. OpenSeek: your own server on your home network, which takes the frames from the very video that is playing. The video address goes only to it, over a secure connection pinned at pairing."),
   T("Quem faz o quê, e a que preço", "誰做了什麼,代價幾何"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "建置 .ipk 的人必須提供專案 URL 和金鑰。"),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "建置套件的人必須提供專案 URL 和金鑰。"),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "已看過某部作品的人會顯示在海報、主視覺和作品頁上。"),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "開啟可搜尋的個人檔案的人，最近活躍的排在前面。"),
   T("Quem mandou, e o que disse", "誰傳的，說了什麼"),

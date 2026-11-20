@@ -6967,7 +6967,7 @@
   T("Quem está usando a TV agora", "Vem använder TV:n nu"),
   T("Quem faz as miniaturas. Seekr.tv: um serviço na internet, por título. OpenSeek: um servidor seu na rede de casa, que tira os quadros do próprio vídeo que está tocando. O endereço do vídeo vai só para ele, por conexão segura fixada no pareamento.", "Who makes the previews. Seekr.tv: an internet service, per title. OpenSeek: your own server on your home network, which takes the frames from the very video that is playing. The video address goes only to it, over a secure connection pinned at pairing."),
   T("Quem faz o quê, e a que preço", "Vem gör vad, och till vilket pris"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Den som byggde .ipk-filen måste ange projektets URL och nyckel."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Den som byggde paketet måste ange projektets URL och nyckel."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Den som redan sett en titel syns på affischen, i hero och på titelsidan."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "De som har Sökbar profil på, senast aktiva först."),
   T("Quem mandou, e o que disse", "Vem som skickade den, och vad de sa"),

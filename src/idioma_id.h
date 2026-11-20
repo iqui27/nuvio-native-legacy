@@ -6967,7 +6967,7 @@
   T("Quem está usando a TV agora", "Siapa yang menggunakan TV sekarang"),
   T("Quem faz as miniaturas. Seekr.tv: um serviço na internet, por título. OpenSeek: um servidor seu na rede de casa, que tira os quadros do próprio vídeo que está tocando. O endereço do vídeo vai só para ele, por conexão segura fixada no pareamento.", "Who makes the previews. Seekr.tv: an internet service, per title. OpenSeek: your own server on your home network, which takes the frames from the very video that is playing. The video address goes only to it, over a secure connection pinned at pairing."),
   T("Quem faz o quê, e a que preço", "Siapa melakukan apa, dan dengan harga berapa"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Siapa pun yang membuat .ipk harus memberikan URL dan kunci proyek."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Siapa pun yang membuat paket harus memberikan URL dan kunci proyek."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Siapa pun yang sudah menonton judul tampil di poster, di hero, dan di halaman judul."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Yang menyalakan Profil yang bisa dicari, yang terakhir aktif lebih dulu."),
   T("Quem mandou, e o que disse", "Siapa yang mengirim dan apa katanya"),

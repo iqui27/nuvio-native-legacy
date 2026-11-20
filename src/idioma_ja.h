@@ -6967,7 +6967,7 @@
   T("Quem está usando a TV agora", "今テレビを使っているのは誰ですか"),
   T("Quem faz as miniaturas. Seekr.tv: um serviço na internet, por título. OpenSeek: um servidor seu na rede de casa, que tira os quadros do próprio vídeo que está tocando. O endereço do vídeo vai só para ele, por conexão segura fixada no pareamento.", "Who makes the previews. Seekr.tv: an internet service, per title. OpenSeek: your own server on your home network, which takes the frames from the very video that is playing. The video address goes only to it, over a secure connection pinned at pairing."),
   T("Quem faz o quê, e a que preço", "誰が何を、どんな代償で"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", ".ipk をビルドした人が、プロジェクトの URL とキーを指定する必要があります。"),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "パッケージをビルドした人が、プロジェクトの URL とキーを指定する必要があります。"),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "視聴済みの人は、ポスター、ヒーロー、タイトルのページに表示されます。"),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "検索可能なプロフィールをオンにした人。最近アクティブな人から表示。"),
   T("Quem mandou, e o que disse", "誰が送ったか、何と言ったか"),

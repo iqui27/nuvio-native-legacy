@@ -6966,7 +6966,7 @@
   { "Quem está usando a TV agora", "Who is using the TV now" },
   { "Quem faz as miniaturas. Seekr.tv: um serviço na internet, por título. OpenSeek: um servidor seu na rede de casa, que tira os quadros do próprio vídeo que está tocando. O endereço do vídeo vai só para ele, por conexão segura fixada no pareamento.", "Who makes the previews. Seekr.tv: an internet service, per title. OpenSeek: your own server on your home network, which takes the frames from the very video that is playing. The video address goes only to it, over a secure connection pinned at pairing." },
   { "Quem faz o quê, e a que preço", "Who does what, and at what cost" },
-  { "Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Whoever built the .ipk must supply the project URL and key." },
+  { "Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Whoever built the package must supply the project URL and key." },
   { "Quem já viu um título aparece no pôster, no hero e na página do título.", "Whoever has already watched a title shows on the poster, in the hero and on the title page." },
   { "Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "People with Searchable profile on, most recently active first." },
   { "Quem mandou, e o que disse", "Who sent it, and what they said" },

@@ -6967,7 +6967,7 @@
   T("Quem está usando a TV agora", "Quem está a usar a TV agora"),
   T("Quem faz as miniaturas. Seekr.tv: um serviço na internet, por título. OpenSeek: um servidor seu na rede de casa, que tira os quadros do próprio vídeo que está tocando. O endereço do vídeo vai só para ele, por conexão segura fixada no pareamento.", "Quem faz as miniaturas. Seekr.tv: um serviço na internet, por título. OpenSeek: um servidor seu na rede de casa, que tira os quadros do próprio vídeo que está tocando. O endereço do vídeo vai só para ele, por conexão segura fixada no pareamento."),
   T("Quem faz o quê, e a que preço", "Quem faz o quê, e a que preço"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Quem gerou o .ipk tem de indicar o URL e a chave do projeto."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Quem gerou o pacote tem de indicar o URL e a chave do projeto."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Quem já viu um título aparece no póster, no hero e na página do título."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Quem ligou o Perfil pesquisável, com atividade mais recente primeiro."),
   T("Quem mandou, e o que disse", "Quem enviou, e o que disse"),
