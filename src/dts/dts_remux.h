@@ -72,12 +72,20 @@ DtsRemux *dts_remux_open(const char *url, const char *headers, int audio_ordinal
 DtsRemux *dts_remux_new(volatile int *cancel);
 int dts_remux_probe(DtsRemux *, const char *url, const char *headers, int audio_ordinal, int stereo_aac,
                     double seg_target_s, char *err, size_t errn);
+/* Matroska video end verified against packets at the physical EOF. */
+typedef struct {
+  int64_t size_bytes, last_keyframe;
+  int keyframes, time_base_num, time_base_den;
+  double declared_end, track_end, verified_end;
+} DtsHlsVideoEnd;
 typedef struct {
   int dv7, allow_dts, preserve_mapping;
   int buffer_mib, external_buffer_mib;
   const char *external_url, *external_headers, *external_langs;
   const DtsTrack *external_hint;
   int external_stream, external_only, external_offset_ms, external_speed_ppm;
+  double resume_s;
+  DtsHlsVideoEnd video_end;
 } DtsWebosHls;
 #ifdef NV_WEBOS_HLS_TEST
 #include "dts_engine.h"
@@ -87,6 +95,8 @@ typedef struct {
 } DtsHlsAudioTrack;
 /* The session copies its strings and optional track hint before starting. */
 void dts_remux_set_webos(DtsRemux *, const DtsWebosHls *);
+/* Excludes unverified or changed sources. The result contains no reader. */
+void dts_remux_webos_video_end(const DtsRemux *, DtsHlsVideoEnd *);
 /* List convertible tracks from the active audio source. selected is a row index. */
 int dts_remux_webos_audio_tracks(const DtsRemux *, DtsHlsAudioTrack *, int max, int *selected);
 /* Snapshot both source rings. The caller keeps the generator alive. */

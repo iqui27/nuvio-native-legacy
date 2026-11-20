@@ -7141,6 +7141,11 @@ static const char *rotuloNovo(int op) {
   }
 }
 static const char *rotuloOpcao(int op) {
+  if (op == AJ_WEBOS_HLS_MODE) {
+    static char hls[96];
+    snprintf(hls, sizeof hls, "HLS (%s)", i18n("Experimental"));
+    return hls;
+  }
   if(op==AJ_IPTV_ACOES)return iptvAlvo.nome;
   if(op==AJ_IPTV_CANCELAR && !iptvForm.nova)return "Voltar";
   if (op == AJ_FALHA_ADDON_LIMITE && faAddonEditar[0]) return faAddonTitulo;

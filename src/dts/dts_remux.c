@@ -574,6 +574,25 @@ static double mkvTrackEnd(const AVStream *stream) {
   return -1.0;
 }
 
+void dts_remux_webos_video_end(const DtsRemux *r, DtsHlsVideoEnd *out) {
+  *out = r->hls.video_end;
+}
+
+static void useVerifiedVideoEnd(DtsRemux *r, double end) {
+  r->info.duration_s += end - r->endS;
+  r->endS = end;
+  r->clipAudioAtVideoEnd = 1;
+}
+
+static int reuseMkvTail(DtsRemux *r, AVFormatContext *ic) {
+  const DtsHlsVideoEnd *end = &r->hls.video_end;
+  return end->verified_end > 0 && end->size_bytes == dts_engine_size(r->probe) &&
+         end->keyframes == r->nkf && end->last_keyframe == r->kf[r->nkf - 1] &&
+         end->time_base_num == r->vtb.num && end->time_base_den == r->vtb.den &&
+         fabs(end->declared_end - r->endS) < 0.001 &&
+         fabs(end->track_end - mkvTrackEnd(ic->streams[r->vs])) < 0.001;
+}
+
 /* Check a suspect Matroska tail by reading from its last indexed keyframe.
  * The credits can have a long GOP. A partial index can also omit later
  * keyframes, which this read adds. Keep probing bounded for remote sources. */
@@ -582,17 +601,15 @@ static int verifyMkvTail(DtsRemux *r, AVFormatContext *ic) {
   DtsEngineMetrics before, after;
   dts_engine_metrics(r->probe, &before);
   const double started = now_s(CLOCK_MONOTONIC), deadline = started + 12.0;
-  const AVStream *audio = r->audioProbe ? NULL : ic->streams[r->as];
   const double tb = av_q2d(r->vtb);
   const double expectedEnd = r->endS, tolerance = 2.0;
   const double videoTrackEnd = mkvTrackEnd(ic->streams[r->vs]);
-  const double audioTrackEnd = mkvTrackEnd(audio);
   const int64_t size = dts_engine_size(r->probe);
   AVPacket *packet = NULL;
   const char *stop = "seek-error";
   int64_t lastKey = r->kf[r->nkf - 1];
   int64_t start = -1;
-  double videoEnd = -1.0, audioEnd = -1.0;
+  double videoEnd = -1.0;
   int capacity = r->nkf, result = 0;
   int readRc = 0;
   int seekRc = avformat_seek_file(ic, r->vs, INT64_MIN, lastKey, lastKey, AVSEEK_FLAG_BACKWARD);
@@ -612,18 +629,19 @@ static int verifyMkvTail(DtsRemux *r, AVFormatContext *ic) {
       if (readRc == AVERROR_EOF && !ic->pb->error) {
         stop = "demux-eof";
         result = videoEnd >= expectedEnd - tolerance;
-        /* Verify each observed track against its own declared end at the
-         * physical EOF. Alternate audio can extend past the picture, but
-         * the HLS playlist must end with the video for every audio choice. */
+        /* At the physical EOF, require the last video packet and the
+         * video track's declared end to agree. Audio can end on either
+         * side of the picture, or be absent from this part of the file. */
         double mediaStart = expectedEnd - r->info.duration_s;
         if (!result && size > 0 && ic->pb->eof_reached && avio_tell(ic->pb) == size &&
             videoEnd > mediaStart && videoTrackEnd > mediaStart &&
-            fabs(videoEnd - videoTrackEnd) <= tolerance &&
-            (!audio || (audioEnd > mediaStart && audioTrackEnd > mediaStart &&
-                        fabs(audioEnd - audioTrackEnd) <= tolerance))) {
-          r->endS = videoEnd;
-          r->info.duration_s = r->endS - mediaStart;
-          r->clipAudioAtVideoEnd = 1;
+            fabs(videoEnd - videoTrackEnd) <= tolerance) {
+          r->hls.video_end = (DtsHlsVideoEnd){
+            .size_bytes = size, .last_keyframe = lastKey, .keyframes = r->nkf,
+            .time_base_num = r->vtb.num, .time_base_den = r->vtb.den,
+            .declared_end = expectedEnd, .track_end = videoTrackEnd, .verified_end = videoEnd,
+          };
+          useVerifiedVideoEnd(r, videoEnd);
           result = 1;
         }
       } else {
@@ -652,12 +670,6 @@ static int verifyMkvTail(DtsRemux *r, AVFormatContext *ic) {
           }
         }
       }
-    } else if (audio && packet->stream_index == r->as) {
-      int64_t pts = packet->pts != AV_NOPTS_VALUE ? packet->pts : packet->dts;
-      if (pts != AV_NOPTS_VALUE) {
-        double end = ((double)pts + (double)packet->duration) * av_q2d(r->atb);
-        if (end > audioEnd) audioEnd = end;
-      }
     }
     av_packet_unref(packet);
   }
@@ -667,14 +679,13 @@ done:
   printf("[webos-hls] MKV tail: %s, stop=%s, elapsed_ms=%.0f, "
          "seek_rc=%d, read_rc=%d, io_error=%d, io_eof=%d, "
          "scan_start=%lld, scan_end=%lld, file_bytes=%lld, fetched_bytes=%llu, "
-         "last keyframe %.3f s, video reached %.3f s, audio reached %.3f s, expected end %.3f s, "
-         "video_track_end=%.3f s, audio_track_end=%.3f s, hls_end=%.3f s\n",
+         "last keyframe %.3f s, video reached %.3f s, expected end %.3f s, "
+         "video_track_end=%.3f s, hls_end=%.3f s\n",
          result ? "verified" : "unverified", stop, (now_s(CLOCK_MONOTONIC) - started) * 1000.0,
          seekRc, readRc, ic->pb->error, ic->pb->eof_reached,
          (long long)start, (long long)avio_tell(ic->pb), (long long)size,
          (unsigned long long)(after.range_bytes - before.range_bytes),
-         (double)lastKey * tb, videoEnd, audioEnd, expectedEnd,
-         videoTrackEnd, audioTrackEnd, r->endS);
+         (double)lastKey * tb, videoEnd, expectedEnd, videoTrackEnd, r->endS);
   fflush(stdout);
   return result;
 }
@@ -865,9 +876,16 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
     if (r->webos) webosAudioTracks(r, audioFmt);
     if (!in->index_complete && r->webos && !r->mov && r->nkf > 1 &&
         ic->iformat && !strcmp(ic->iformat->name, "matroska,webm")) {
-      in->index_complete = verifyMkvTail(r, ic);
+      if (reuseMkvTail(r, ic)) {
+        useVerifiedVideoEnd(r, r->hls.video_end.verified_end);
+        in->index_complete = 1;
+        printf("[webos-hls] MKV tail: reused verified video end %.3f s\n", r->endS);
+      } else {
+        r->hls.video_end = (DtsHlsVideoEnd){0};
+        in->index_complete = verifyMkvTail(r, ic);
+      }
       if (isCancelled(r)) { fail(err, errn, "Cancelled", 0); goto bad; }
-    }
+    } else r->hls.video_end = (DtsHlsVideoEnd){0};
 #endif
     in->n_keyframes = r->nkf;
     buildSegments(r, segTarget > 0.5 ? segTarget : 6.0);

@@ -732,6 +732,12 @@ static void playlist(Sessao *s, char *b, size_t n) {
                         s->webos ? 7 : 3, alvo);
   if (s->webos) p += (size_t)snprintf(b + p, n - p, "#EXT-X-MAP:URI=\"init.mp4\"\n");
   else p += (size_t)snprintf(b + p, n - p, "#EXT-X-INDEPENDENT-SEGMENTS\n");
+#ifdef NV_WEBOS_HLS_TEST
+  if (s->webos && s->hls.resume_s >= 0.001 && s->hls.resume_s < in->duration_s) {
+    long ms = lround(s->hls.resume_s * 1000.0);
+    p += (size_t)snprintf(b + p, n - p, "#EXT-X-START:TIME-OFFSET=%ld.%03ld,PRECISE=YES\n", ms / 1000, ms % 1000);
+  }
+#endif
   for (k = 0; k < in->n_segments && p < n - 64; k++) {
     // Milissegundos inteiros: o LC_NUMERIC da TV nunca vira virgula aqui.
     long ms = lround(dts_remux_segment_duration(s->rx, k) * 1000.0);
@@ -1154,6 +1160,18 @@ int dts_hls_webos_open(const char *url, const char *headers, int track, const Dt
 }
 
 int dts_hls_webos_draining(void) { return atomic_load(&webosRetiring) > 0; }
+
+void dts_hls_webos_video_end(const char *url, const char *headers, DtsHlsVideoEnd *out) {
+  *out = (DtsHlsVideoEnd){0};
+  pthread_mutex_lock(&G);
+  Sessao *s = atual;
+  if (s && s->webos && !strcmp(s->url, url) && !strcmp(s->cabs, headers ? headers : "")) {
+    pthread_mutex_lock(&s->m);
+    if (s->estado == DTSTPK_PRONTO) dts_remux_webos_video_end(s->rx, out);
+    pthread_mutex_unlock(&s->m);
+  }
+  pthread_mutex_unlock(&G);
+}
 
 void dts_hls_webos_buffer_info(DtsBufferInfo *out) {
   *out = (DtsBufferInfo){0};

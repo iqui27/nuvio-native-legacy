@@ -4,6 +4,18 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+static int close_session(void) {
+  dts_tpk_fechar();
+  for (int i = 0; dts_hls_webos_draining() && i < 500; i++) usleep(10000);
+  DtsEngineRings rings;
+  dts_engine_rings(&rings, 0);
+  if (dts_hls_webos_draining() || rings.alive != 0) {
+    fprintf(stderr, "Retired HLS session still holds reader buffers\n");
+    return 0;
+  }
+  return 1;
+}
+
 int main(int argc, char **argv) {
   char url[128];
   if (argc != 3 && argc != 4 && argc != 5 && argc != 8) return 1;
@@ -26,6 +38,15 @@ int main(int argc, char **argv) {
   if (!dts_hls_webos_open(argv[1], NULL, ordinal, &options, url, sizeof url)) return 1;
   printf("playlist %s\n", url);
   fflush(stdout);
+  const char *change = getenv("NV_TEST_HLS_SWITCH_ORDINAL");
+  if (change && getchar() == '\n') {
+    dts_hls_webos_video_end(argv[1], NULL, &options.video_end);
+    if (!close_session() || !options.video_end.verified_end) return 1;
+    options.resume_s = 2.25;
+    if (!dts_hls_webos_open(argv[1], NULL, atoi(change), &options, url, sizeof url)) return 1;
+    printf("playlist %s\n", url);
+    fflush(stdout);
+  }
   getchar();
   DtsBufferInfo buffer;
   dts_hls_webos_buffer_info(&buffer);
@@ -38,13 +59,5 @@ int main(int argc, char **argv) {
     printf("input audio ordinal=%d stream=%d selected=%d codec=%s language=%s title=%s\n",
            tracks[i].ordinal, audio->stream_index, i == selected, audio->codec, audio->language, audio->title);
   }
-  dts_tpk_fechar();
-  for (int i = 0; dts_hls_webos_draining() && i < 500; i++) usleep(10000);
-  DtsEngineRings rings;
-  dts_engine_rings(&rings, 0);
-  if (dts_hls_webos_draining() || rings.alive != 0) {
-    fprintf(stderr, "Retired HLS session still holds reader buffers\n");
-    return 1;
-  }
-  return 0;
+  return close_session() ? 0 : 1;
 }

@@ -38,10 +38,11 @@ python3 tests/dv7_fixture.py "$work" --indexed
 # Remux adds Matroska Cues and retains the fixture's Dolby Vision track mapping.
 ffmpeg -v error -i "$work/fel.mkv" -map 0 -c copy -strict unofficial "$work/indexed.mkv"
 ffmpeg -v error -i "$work/mel.mkv" -map 0 -c copy -strict unofficial "$work/indexed-mel.mkv"
-# The LG log has a P7 picture and AC-3 which end together, and a longer
-# alternate DTS track. The container duration overstates both lengths.
+# The LG log has a P7 picture and AC-3 which end together, a longer DTS
+# track, and an alternate AC-3 not observed during the video tail scan.
 ffmpeg -v error -i "$work/indexed.mkv" -f lavfi -i sine=frequency=770:sample_rate=48000:d=12 \
-  -map 0:v -map 0:a:1 -map 1:a -c:v copy -c:a:0 copy -ac:a:1 6 -c:a:1 dca -b:a:1 768k \
+  -f lavfi -i sine=frequency=990:sample_rate=48000:d=5 \
+  -map 0:v -map 0:a:1 -map 1:a -map 2:a -c:v copy -c:a:0 copy -ac:a:1 6 -c:a:1 dca -b:a:1 768k -c:a:2 ac3 \
   -strict experimental "$work/p7-dts-tail.mkv"
 
 # More than 60 seconds without a video keyframe, with enough encoded data to

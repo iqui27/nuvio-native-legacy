@@ -89,7 +89,8 @@ static atomic_int hlsAudioRequest;   // source audio ordinal plus one, zero when
 enum { HLS_PROBING = 1, HLS_WAITING_FOR_READER };
 static struct {
   int enabled, pending, played, paused, dv7, external, externalTrack;
-  int ordinal;
+  int ordinal, switchingAudio;
+  DtsHlsVideoEnd videoEnd;
   double pos, percent;
   Uint32 started;
   char url[128], subtitle[1024];
@@ -3878,11 +3879,17 @@ static void hlsFalhar(const char *reason) {
 static int hlsAbrir(void);
 
 static int hlsIniciar(int ordinal, int dv7, int external, double alvo, double resumePct, int paused) {
+  DtsHlsVideoEnd videoEnd = {0};
+  int switchingAudio = hlsAtivo() && !external && !hls.external;
+  if (switchingAudio)
+    dts_hls_webos_video_end(urlAtual, cabsHttp, &videoEnd);
   snprintf(hls.subtitle, sizeof hls.subtitle, "%s", legUrlAtual);
   pararSessao();
   nv_recon_zerar(&recon);
   hls.pos = alvo; hls.paused = paused; hls.dv7 = dv7; hls.external = external;
   hls.ordinal = ordinal;
+  hls.switchingAudio = switchingAudio;
+  hls.videoEnd = videoEnd;
   hls.percent = resumePct;
   dtsTentou = 1;
   if (!dts_hls_webos_draining()) return hlsAbrir();
@@ -3897,6 +3904,8 @@ static int hlsAbrir(void) {
     .dv7 = dv7, .allow_dts = !dtsDesligado,
     .preserve_mapping = ajustes_dv7_mapping(),
     .buffer_mib = cacheboost_buffer_mb(ajustes_buffer_preset(), memlog_livre_mb()),
+    .resume_s = hls.switchingAudio ? hls.pos : 0,
+    .video_end = hls.videoEnd,
   };
   char langs[64];
   DtsTrack hint = {0};

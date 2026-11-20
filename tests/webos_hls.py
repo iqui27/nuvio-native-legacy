@@ -17,7 +17,7 @@ origin = f"http://127.0.0.1:{(work / 'port').read_text()}/"
 
 @contextlib.contextmanager
 def playback(filename, dv7, donor=None, buffer_mib=None, offset=0, speed=0, track=1,
-             ordinal=None, mapping=False, allow_dts=False):
+             ordinal=None, mapping=False, allow_dts=False, switch_to=None):
     cmd = [work / 'server', urljoin(origin, filename), str(dv7)]
     if donor:
         cmd += [urljoin(origin, donor), str(buffer_mib or 0), str(track), str(offset), str(speed)]
@@ -25,21 +25,33 @@ def playback(filename, dv7, donor=None, buffer_mib=None, offset=0, speed=0, trac
         cmd += [str(buffer_mib or 0), str(ordinal)]
     elif buffer_mib:
         cmd += [str(buffer_mib)]
+    env = {**os.environ, 'NV_TEST_P7_MAPPING': str(int(mapping)),
+           'NV_TEST_HLS_DTS': str(int(allow_dts))}
+    if switch_to is not None:
+        env['NV_TEST_HLS_SWITCH_ORDINAL'] = str(switch_to)
     process = subprocess.Popen(
-        cmd, env={**os.environ, 'NV_TEST_P7_MAPPING': str(int(mapping)),
-                  'NV_TEST_HLS_DTS': str(int(allow_dts))},
+        cmd, env=env,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
     )
+    earlier = []
     try:
         for line in process.stdout:
             if line.startswith('playlist '):
-                yield line.split()[1]
+                base = line.split()[1]
+                if switch_to is not None:
+                    get(base, 'v.m3u8')
+                    process.stdin.write('\n')
+                    process.stdin.flush()
+                    switch_to = None
+                    continue
+                yield base
                 break
+            earlier.append(line)
         else:
             raise AssertionError('Server did not start')
     finally:
         process.stdin.close()
-        output = process.stdout.read()
+        output = ''.join(earlier) + process.stdout.read()
         assert process.wait(timeout=10) == 0, output
         (work / f'{filename}.log').write_text(output)
         if sys.exc_info()[0] is not None:
@@ -265,6 +277,21 @@ for ordinal, expected_hz in ((0, 440), (1, 770)):
     if ordinal == 1:
         assert 'input audio ordinal=1 stream=2 selected=1 codec=dts' in log
 print('Switching from AC-3 to longer DTS keeps P8.1 HLS seekable and ends with the picture.')
+
+for initial in (2, 0):
+    with playback('p7-dts-tail.mkv', 1, ordinal=initial, mapping=True, allow_dts=True,
+                  switch_to=2 if initial == 0 else None) as base:
+        playlist = get(base, 'v.m3u8')
+        assert 6.9 < sum(map(float, re.findall(rb'^#EXTINF:([\d.]+),', playlist, re.M))) < 7.1
+        if initial == 0:
+            assert b'#EXT-X-START:TIME-OFFSET=2.250,PRECISE=YES' in playlist
+        data = get(base, 'init.mp4') + get(base, 'seg1.m4s')
+        assert abs(tone(decoded_audio('p7-short-ac3.mp4', data), 0.5) - 990) < 20
+    log = (work / 'p7-dts-tail.mkv.log').read_text()
+    assert log.count('MKV tail: verified, stop=demux-eof') == 1
+    assert ('MKV tail: reused verified video end' in log) == (initial == 0)
+    assert 'input audio ordinal=2 stream=3 selected=1 codec=ac3' in log
+print('A short AC-3 track plays from the requested position without rescanning the verified video tail.')
 
 with playback('indexed.mkv', 1, ordinal=0) as base:
     changed = get(base, 'init.mp4') + get(base, 'seg2.m4s')

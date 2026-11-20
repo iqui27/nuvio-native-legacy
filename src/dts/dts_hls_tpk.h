@@ -39,6 +39,8 @@ int dts_hls_webos_open(const char *url, const char *headers, int audio_ordinal,
                       const DtsWebosHls *options, char *out, size_t n);
 /* The old session's workers still own their reader buffers. */
 int dts_hls_webos_draining(void);
+/* Snapshot a verified end for an audio change within the same source. */
+void dts_hls_webos_video_end(const char *url, const char *headers, DtsHlsVideoEnd *);
 /* Input payload and ring occupancy, excluding local HLS output. */
 void dts_hls_webos_buffer_info(DtsBufferInfo *out);
 /* Input tracks for the audio menu. The TV receives only the selected track. */
