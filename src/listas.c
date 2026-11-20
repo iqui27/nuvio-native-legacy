@@ -14,6 +14,7 @@
 #include "perfis.h"
 #include "recomenda.h"
 #include "rede.h"
+#include "extras.h"
 #include "js.h"
 #include "servidores.h"
 #include "idioma.h"
@@ -33,8 +34,8 @@ static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 // UMA TABELA POR ORIGEM (#202): a resposta do Trakt nao apaga o Simkl, e uma
 // busca publica nao apaga "Minhas listas". A aba escolhida decide qual `tab`
 // a tela le; as outras ficam prontas para a volta.
-enum { LST_TAB_TRAKT = 0, LST_TAB_SIMKL, LST_TAB_NUVIO, LST_TAB_FIXADAS,
-       LST_TAB_PUBLICAS, LST_TAB_TRILHAS, LST_TAB_N };
+enum { LST_TAB_TRAKT = 0, LST_TAB_SIMKL, LST_TAB_NUVIO, LST_TAB_MDB,
+       LST_TAB_FIXADAS, LST_TAB_PUBLICAS, LST_TAB_TRILHAS, LST_TAB_N };
 typedef struct {
   LstLista v[LST_MAX];
   int n;
@@ -47,7 +48,8 @@ static int fonteAtual = LST_TAB_TRAKT;
 
 // O QUE ESTE FIO FOI PEDIR. Copiado sob trava antes de sair, para o fio nunca
 // ler um pedido que a pessoa ja trocou.
-enum { PED_NADA = 0, PED_TRAKT_MINHAS, PED_TRAKT_BUSCA, PED_SIMKL_ITENS, PED_SERVIDORES };
+enum { PED_NADA = 0, PED_TRAKT_MINHAS, PED_TRAKT_BUSCA, PED_SIMKL_ITENS, PED_SERVIDORES,
+       PED_MDB_MINHAS };
 enum { LST_TAB_SERVIDOR = LST_TAB_N };
 static char termoBusca[96];
 
@@ -100,17 +102,20 @@ static void limpo(char *dst, size_t tam, const char *s) {
 static void chaveDe(const LstLista *l, char *dst, size_t n) {
   if (!l) { if (n) dst[0] = 0; return; }
   if (l->fonte == LST_TRAKT)      snprintf(dst, n, "%ld", l->traktId);
-  else if (l->fonte == LST_NUVIO || l->fonte == LST_SERVIDOR) snprintf(dst, n, "%s", l->colId);
+  else if (l->fonte == LST_NUVIO || l->fonte == LST_SERVIDOR || l->fonte == LST_MDB)
+                                  snprintf(dst, n, "%s", l->colId);
   else                            snprintf(dst, n, "%s", l->estado);
 }
 
 static const char *nomeFonte(int f) {
-  return f == LST_TRAKT ? "trakt" : f == LST_SIMKL ? "simkl" : f == LST_SERVIDOR ? "servidor" : "nuvio";
+  return f == LST_TRAKT ? "trakt" : f == LST_SIMKL ? "simkl" : f == LST_SERVIDOR ? "servidor"
+       : f == LST_MDB ? "mdblist" : "nuvio";
 }
 static int fonteDeNome(const char *s) {
   if (!strcmp(s, "trakt")) return LST_TRAKT;
   if (!strcmp(s, "simkl")) return LST_SIMKL;
   if (!strcmp(s, "servidor")) return LST_SERVIDOR;
+  if (!strcmp(s, "mdblist")) return LST_MDB;
   return LST_NUVIO;
 }
 
@@ -242,6 +247,13 @@ int lst_aceita_home(const LstLista *l, const char **porque) {
     if (porque) *porque = "Este pacote não tem a chave do Trakt";
     return 0;
   }
+  if (l->fonte == LST_MDB) {
+    if (!l->colId[0]) { if (porque) *porque = "Esta lista não tem id no MDBList"; return 0; }
+    if (!extras_mdblist_tem_chave()) {
+      if (porque) *porque = "Este pacote não tem a chave do MDBList";
+      return 0;
+    }
+  }
   return 1;
 }
 
@@ -258,18 +270,25 @@ static void aplicarHome(void) {
   int n = 0, i;
   for (i = 0; i < nFixas && n < LST_FIX_MAX; i++) {
     ColFolder *v;
-    if (!fixas[i].naHome || fixas[i].fonte != LST_TRAKT) continue;
+    if (!fixas[i].naHome || (fixas[i].fonte != LST_TRAKT && fixas[i].fonte != LST_MDB)) continue;
     v = &pastas[n];
     memset(v, 0, sizeof *v);
     memset(&fontes[n], 0, sizeof fontes[n]);
     v->sources = &fontes[n];
     snprintf(v->group, sizeof v->group, "%s", LST_GRUPO_HOME);
     snprintf(v->groupId, sizeof v->groupId, "%s", "listas_fixadas");
-    snprintf(v->id, sizeof v->id, "lista_trakt_%s", fixas[i].id);
+    snprintf(v->id, sizeof v->id, "lista_%s_%s", nomeFonte(fixas[i].fonte), fixas[i].id);
     snprintf(v->title, sizeof v->title, "%s", fixas[i].titulo);
     { ColSource *s = &v->sources[0];
-      snprintf(s->prov, sizeof s->prov, "trakt");
-      s->traktLista = atol(fixas[i].id);
+      if (fixas[i].fonte == LST_MDB) {
+        // MDBList (#762): o id numerico da lista vai no catId do provider
+        // "mdblist", resolvido por desc_vertudo_fonte como o "trakt" ja e.
+        snprintf(s->prov, sizeof s->prov, "mdblist");
+        snprintf(s->catId, sizeof s->catId, "%s", fixas[i].id);
+      } else {
+        snprintf(s->prov, sizeof s->prov, "trakt");
+        s->traktLista = atol(fixas[i].id);
+      }
       snprintf(s->title, sizeof s->title, "%s", fixas[i].titulo);
       snprintf(s->midia, sizeof s->midia, "%s",
                fixas[i].midia[0] ? fixas[i].midia : "MOVIE");
@@ -445,6 +464,39 @@ static int lerListaTrakt(const char *p, const char *f, LstLista *d) {
   // o caminho de busca nao faz.
   snprintf(d->midia, sizeof d->midia, "MOVIE");
   return 1;
+}
+
+// Listas proprias do MDBList (#762): o GET /lists/user devolve objetos planos.
+static int lerListaMdblist(const char *p, const char *f, LstLista *d) {
+  char mt[24] = "";
+  memset(d, 0, sizeof *d);
+  d->fonte = LST_MDB;
+  d->itens = -1;
+  d->curtidas = -1;
+  { long id = (long)js_num(p, f, "id", 0);
+    if (id <= 0) return 0;
+    snprintf(d->colId, sizeof d->colId, "%ld", id); }
+  if (!js_texto(p, f, "name", d->titulo, sizeof d->titulo) &&
+      !js_texto(p, f, "title", d->titulo, sizeof d->titulo)) return 0;
+  // Lista do MDBList pode misturar filme e serie; sem mediatype=show claro
+  // declarar MOVIE faria os carregadores esconderem as series. O tipo real
+  // de cada item vem do mediatype dele no envelope (deMetaMdblist).
+  if (js_texto(p, f, "mediatype", mt, sizeof mt))
+    snprintf(d->midia, sizeof d->midia, "%s",
+             !strcasecmp(mt, "show") || !strcasecmp(mt, "tv") ? "TV" : "MOVIE");
+  else d->midia[0] = 0;
+  d->propria = 1;
+  return 1;
+}
+
+static int lerVetorMdblist(const char *json, LstLista *dst, int max) {
+  const char *p = json ? js_raiz_array(json) : NULL;
+  int n = 0;
+  for (; p && *p == '{' && n < max; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    if (lerListaMdblist(p, f, &dst[n])) n++;
+  }
+  return n;
 }
 
 static int lerVetor(const char *json, int envelope, LstLista *dst, int max) {
@@ -671,6 +723,24 @@ static int montarSimkl(void) {
   return n;
 }
 
+static void montarMdbAviso(const char *msg) {
+  LstFonteTab *tab = &tabs[LST_TAB_MDB];
+  pthread_mutex_lock(&trava);
+  tab->n = 0;
+  snprintf(tab->aviso, sizeof tab->aviso, "%s", msg);
+  pthread_mutex_unlock(&trava);
+}
+
+int lst_teste_mdblist_listas(const char *json) {
+  LstFonteTab *tab = &tabs[LST_TAB_MDB];
+  pthread_mutex_lock(&trava);
+  fonteAtual = LST_TAB_MDB;
+  tab->n = lerVetorMdblist(json, tab->v, LST_MAX);
+  tab->aviso[0] = 0;
+  pthread_mutex_unlock(&trava);
+  return tab->n;
+}
+
 static int montarFixadas(void) {
   LstFonteTab *tab = &tabs[LST_TAB_FIXADAS];
   int i, n = 0;
@@ -688,7 +758,8 @@ static int montarFixadas(void) {
       d->traktId = atol(fixas[i].id);
       d->propria = fixas[i].propria;
     }
-    else if (fixas[i].fonte == LST_NUVIO || fixas[i].fonte == LST_SERVIDOR) snprintf(d->colId, sizeof d->colId, "%s", fixas[i].id);
+    else if (fixas[i].fonte == LST_NUVIO || fixas[i].fonte == LST_SERVIDOR ||
+             fixas[i].fonte == LST_MDB) snprintf(d->colId, sizeof d->colId, "%s", fixas[i].id);
     else                                  snprintf(d->estado, sizeof d->estado, "%s", fixas[i].id);
   }
   tab->n = n;
@@ -809,6 +880,49 @@ static void *fioListas(void *u) {
     }
     pthread_mutex_unlock(&trava);
     memset(t, 0, sizeof *t); free(t); return NULL;
+  }
+  if (qual == PED_MDB_MINHAS) {
+    LstLista *parsed = NULL;
+    int count = 0;
+    if (!t->chave[0]) montarMdbAviso("Este pacote não tem a chave do MDBList");
+    else if (perfis_sessao_atual(t->sessao)) {
+      snprintf(url, sizeof url,
+               "https://api.mdblist.com/lists/user?apikey=%s", t->chave);
+      corpo = rede_baixar_st_retry(url, 15, NULL, &st, NULL);
+      if (corpo && (st < 200 || st > 299)) { free(corpo); corpo = NULL; }
+      parsed = corpo ? calloc(LST_MAX, sizeof *parsed) : NULL;
+      count = parsed ? lerVetorMdblist(corpo, parsed, LST_MAX) : 0;
+    }
+    if (!perfis_sessao_travar(t->sessao)) {
+      pthread_mutex_lock(&trava);
+      if (t->geracao == tab->geracao && tab->fioVivo > 0) tab->fioVivo--;
+      pthread_mutex_unlock(&trava);
+    } else {
+      pthread_mutex_lock(&trava);
+      if (t->geracao == tab->geracao) {
+        if (corpo) {
+          tab->n = count;
+          if (count) memcpy(tab->v, parsed, sizeof *parsed * (size_t)count);
+          tab->aviso[0] = 0;
+          if (!tab->n) snprintf(tab->aviso, sizeof tab->aviso,
+                                "Você ainda não criou listas no MDBList");
+        } else if (!tab->n) {
+          const char *why = !t->chave[0]
+            ? "Este pacote não tem a chave do MDBList"
+            : st == 401 ? "A chave do MDBList foi recusada"
+            : "Não foi possível carregar listas. Verifique a conexão e tente novamente.";
+          snprintf(tab->aviso, sizeof tab->aviso, "%s", why);
+        }
+        if (tab->fioVivo > 0) tab->fioVivo--;
+      }
+      pthread_mutex_unlock(&trava);
+      perfis_sessao_destravar();
+    }
+    free(parsed);
+    free(corpo);
+    memset(t, 0, sizeof *t);
+    free(t);
+    return NULL;
   }
   if (perfis_sessao_atual(t->sessao)) {
     const char *cab[4];
@@ -936,12 +1050,15 @@ static void disparar(int qual) {
   uint64_t sessao = perfis_sessao_geracao();
   if (!t || !perfis_sessao_travar(sessao)) { free(t); return; }
   t->qual = qual; t->sessao = sessao;
-  t->tab = qual == PED_TRAKT_MINHAS ? LST_TAB_TRAKT : LST_TAB_PUBLICAS;
+  t->tab = qual == PED_TRAKT_MINHAS ? LST_TAB_TRAKT
+         : qual == PED_MDB_MINHAS ? LST_TAB_MDB : LST_TAB_PUBLICAS;
   // Capturar identidade e pedido ANTES de criar o fio. Um fio atrasado nao
   // pode ler as credenciais nem a geracao do pedido seguinte.
   if (qual == PED_TRAKT_MINHAS) {
     const char *cab[4];
     trakt_cabecalhos(cab, t->aut, sizeof t->aut, t->chave, sizeof t->chave);
+  } else if (qual == PED_MDB_MINHAS) {
+    extras_mdblist_chave(t->chave, sizeof t->chave);
   } else if (nuvem_trakt_cliente()[0]) {
     snprintf(t->chave, sizeof t->chave, "trakt-api-key: %s", nuvem_trakt_cliente());
   }
@@ -958,12 +1075,24 @@ static void disparar(int qual) {
 
 void lst_pedir(int fonte) {
   int tab = fonte == LST_NUVIO ? LST_TAB_NUVIO
-          : fonte == LST_SIMKL ? LST_TAB_SIMKL : LST_TAB_TRAKT;
+          : fonte == LST_SIMKL ? LST_TAB_SIMKL
+          : fonte == LST_MDB ? LST_TAB_MDB : LST_TAB_TRAKT;
   pthread_mutex_lock(&trava);
   fonteAtual = tab;
   pthread_mutex_unlock(&trava);
   if (tab == LST_TAB_NUVIO)      { montarNuvio(); return; }
   if (tab == LST_TAB_SIMKL)      { montarSimkl(); return; }
+  if (tab == LST_TAB_MDB) {
+    int pronta, semChave;
+    pthread_mutex_lock(&trava);
+    pronta = tabs[LST_TAB_MDB].n > 0 || tabs[LST_TAB_MDB].fioVivo;
+    semChave = !extras_mdblist_tem_chave();
+    pthread_mutex_unlock(&trava);
+    if (pronta) return;
+    if (semChave) { montarMdbAviso("Este pacote não tem a chave do MDBList"); return; }
+    disparar(PED_MDB_MINHAS);
+    return;
+  }
   pthread_mutex_lock(&trava);
   { int pronta = tabs[tab].n > 0;
     pthread_mutex_unlock(&trava);
@@ -1284,6 +1413,14 @@ void lst_abrir(const LstLista *l, const char *midia) {
     snprintf(s.midia, sizeof s.midia, "%s", midia && midia[0] ? midia : l->midia);
     snprintf(s.ordenar, sizeof s.ordenar, "rank");
     snprintf(s.ordem, sizeof s.ordem, "asc");
+    desc_vertudo_fonte(&s);
+    return;
+  }
+  if (l->fonte == LST_MDB) {
+    snprintf(s.prov, sizeof s.prov, "mdblist");
+    snprintf(s.catId, sizeof s.catId, "%s", l->colId);
+    snprintf(s.title, sizeof s.title, "%s", l->titulo);
+    snprintf(s.midia, sizeof s.midia, "%s", midia && midia[0] ? midia : l->midia);
     desc_vertudo_fonte(&s);
     return;
   }

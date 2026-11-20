@@ -9734,6 +9734,8 @@ static DescItemLista vtExtra[VT_MAX];   // paralela a vtItens; ver descoberta.h
 static int      vtN;
 static char     vtBase[NV_ADDON_URL_MAX], vtTipo[8], vtCat[96], vtGenre[96];
 static int      vtPagina, vtPaginaInicial, vtFim, vtFioVivo, vtErro, vtReplay, vtReload, vtPaginaMudou;
+static int      vtPagSemProgresso;   // paginas seguidas sem item novo (prov MDBList)
+static int      vtBrutosVistos;      // itens crus somados nas paginas MDBList
 static uint64_t vtReplayHash;
 #define VT_HASH_INICIO UINT64_C(14695981039346656037)
 static uint64_t vtHashItem(uint64_t h, const char *p, const char *fim, const char *tipo) {
@@ -9747,7 +9749,8 @@ static uint64_t vtHashItem(uint64_t h, const char *p, const char *fim, const cha
 static unsigned vtGeracao;
 static NvPerfilSessao vtSessao;
 // Fonte nao-addon aberta por desc_vertudo_fonte (issue #44): vtProvedor 1 e
-// TMDB, 2 e Trakt; vtFonte e uma copia zerada da ColSource para o memcmp de
+// TMDB, 2 e Trakt, 3 e caca, 4 e MDBList; vtFonte e uma copia zerada da
+// ColSource para o memcmp de
 // "mesma fonte" ser seguro (a struct tem preenchimento).
 static ColSource vtFonte;
 static int      vtProvedor;
@@ -9865,6 +9868,49 @@ static int deMetaTrakt(const char *p, const char *f, const char *midia,
     if (ano) snprintf(d->meta, sizeof d->meta, "%ld", ano); }
   snprintf(d->tipo, sizeof d->tipo, "%s", serie ? "series" : "movie");
   snprintf(d->genero, sizeof d->genero, "%s", i18n(rotuloTipoSing(d->tipo)));
+  return 1;
+}
+
+static int deMetaMdblist(const char *p, const char *f, const char *midia,
+                           CatItem *d) {
+  char imdb[24], mt[16], poster[512], v[256], ids[400];
+  int serie;
+  memset(d, 0, sizeof *d);
+  imdb[0] = 0;
+  if (!js_texto(p, f, "imdb_id", imdb, sizeof imdb) &&
+      !js_texto(p, f, "imdbid", imdb, sizeof imdb)) {
+    long id = (long)js_num(p, f, "imdbid", 0);
+    if (id > 0) snprintf(imdb, sizeof imdb, "tt%07ld", id);
+  }
+  // O envelope do /lists/{id}/items traz os ids num objeto "ids" (o exemplo do
+  // OpenAPI tem ids.imdb mesmo quando imdb_id da raiz falta).
+  if (!imdb[0] && js_bruto(p, f, "ids", ids, sizeof ids))
+    js_texto(ids, ids + strlen(ids), "imdb", imdb, sizeof imdb);
+  if (!imdb[0]) return 0;
+  if (imdb[0] == 't') snprintf(d->imdb, sizeof d->imdb, "%s", imdb);
+  else snprintf(d->imdb, sizeof d->imdb, "tt%s", imdb);
+  if (!js_texto(p, f, "title", d->titulo, sizeof d->titulo) &&
+      !js_texto(p, f, "name", d->titulo, sizeof d->titulo))
+    return 0;
+  mt[0] = 0;
+  js_texto(p, f, "mediatype", mt, sizeof mt);
+  if (!mt[0]) js_texto(p, f, "media_type", mt, sizeof mt);
+  // O mediatype do ITEM decide quando existe: o envelope {movies,shows} e
+  // misto e uma lista de filmes aberta como TV nao deve engolir o movie como
+  // serie. Sem ele vale a midia da fonte, como antes.
+  serie = mt[0] ? (!strcasecmp(mt, "show") || !strcasecmp(mt, "tv"))
+               : !strcasecmp(midia, "TV");
+  snprintf(d->tipo, sizeof d->tipo, "%s", serie ? "series" : "movie");
+  snprintf(d->genero, sizeof d->genero, "%s", i18n(rotuloTipoSing(d->tipo)));
+  if (js_texto(p, f, "poster", poster, sizeof poster) && poster[0])
+    snprintf(d->poster, sizeof d->poster, "%s", poster);
+  else if (js_texto(p, f, "poster_path", v, sizeof v) && v[0] == '/')
+    snprintf(d->poster, sizeof d->poster, "https://image.tmdb.org/t/p/w342%s", v);
+  { long ano = (long)js_num(p, f, "year", 0.0);
+    if (!ano) ano = (long)js_num(p, f, "release_year", 0.0);
+    if (ano) snprintf(d->meta, sizeof d->meta, "%ld", ano); }
+  d->tmdb = (long)js_num(p, f, "tmdbid", 0);
+  if (!d->tmdb) d->tmdb = (long)js_num(p, f, "tmdb_id", 0);
   return 1;
 }
 
@@ -10072,6 +10118,32 @@ static int colecaoArray(const char *corpo, const char *chave, const char **prime
   return 1;
 }
 
+// MDBList /lists/{id}/items: o HTTP 200 documentado e um OBJETO com dois
+// vetores, "movies" e "shows" — nao um array na raiz nem um "items". Uma
+// lista mista devolve as duas; os dois vetores, nesta ordem, viram uma
+// sequencia so de itens. mdbVetores guarda o primeiro elemento de cada um
+// e devolve 1 quando o corpo tem o envelope (mesmo com os dois vazios —
+// pagina curta valida = fim, nao erro).
+// `seriesPrimeiro` inverte a ordem para a midia da fonte vir na frente:
+// numa pasta TV o show abre a sequencia, como ja acontece numa lista pura.
+static int mdbVetores(const char *corpo, const char *vet[2], const char **primeiro,
+                      int seriesPrimeiro) {
+  vet[0] = js_array(corpo, NULL, seriesPrimeiro ? "shows" : "movies");
+  vet[1] = js_array(corpo, NULL, seriesPrimeiro ? "movies" : "shows");
+  *primeiro = vet[0] ? vet[0] : vet[1];
+  return vet[0] || vet[1] ||
+         js_array_presente(corpo, NULL, "movies") ||
+         js_array_presente(corpo, NULL, "shows");
+}
+
+// Avanco do for sobre os itens do envelope: no fim de movies[] salta para
+// shows[]. *v marca o vetor corrente (0 = movies, 1 = shows).
+static const char *mdbAvancar(const char *fimAnterior, const char *const vet[2], int *v) {
+  const char *q = js_prox(fimAnterior);
+  if (!q && vet && *v == 0) { *v = 1; q = vet[1]; }
+  return q;
+}
+
 // Collection diagnostics deliberately omit the addon base/query and response body.
 static const char *colecaoLogCampo(const char *s) {
   return s && !strstr(s, "://") ? s : "<redacted>";
@@ -10106,12 +10178,23 @@ static int colecaoTeto(const char *id) {
 }
 
 static int colecaoTipo(const ColSource *fonte, const CatItem *item) {
+  // MDBList devolve {movies,shows} mistos e deMetaMdblist ja tipa pelo
+  // mediatype do item: filtrar pela midia da fonte esconderia metade da
+  // lista. Os outros provedores mantem o tipo da fonte como recorte.
+  if (fonte->prov[0] && !strcmp(fonte->prov, "mdblist"))
+    return !strcmp(item->tipo, "movie") || !strcmp(item->tipo, "series");
   const char *tipo = fonte->prov[0] ?
     (!strcasecmp(fonte->midia, "TV") ? "series" : "movie") : fonte->type;
   if (!strcmp(tipo, item->tipo)) return 1;
   if (!strcmp(tipo, "tv")) tipo = "series";
   return (strcmp(tipo, "movie") && strcmp(tipo, "series")) || !strcmp(tipo, item->tipo);
 }
+
+// Capacidade do lote por pagina nos carregadores de provedor (worker do
+// Ver tudo e leitor da Vitrine). O MDBList pede limit=50 por pagina — a
+// capacidade precisa cobrir a pagina inteira, senao raw para de contar
+// cedo e a paginacao encerra antes da hora. Trakt pede 40.
+#define VT_LOTE_MAX 50
 
 int desc_colecao_inicial(const ColSource *fonte, const char *base,
                          NvPerfilSessao sessao, CatItem *itens, int limite,
@@ -10128,7 +10211,8 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
       !descSessaoVincular(sessao)) return 0;
   f = *fonte;
   prov = !f.prov[0] ? 0 : !strcmp(f.prov, "tmdb") ? 1 :
-         !strcmp(f.prov, "trakt") ? 2 : -1;
+         !strcmp(f.prov, "trakt") ? 2 :
+         !strcmp(f.prov, "mdblist") ? 4 : -1;
   r.pagina = prov ? 1 : 0;
   snprintf(origem, sizeof origem, "%s", base ? base : f.base);
   if (prov < 0 || (!prov && (!origem[0] || !f.type[0] || !f.catId[0] ||
@@ -10164,6 +10248,18 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
         f.traktLista, !strcasecmp(f.midia, "TV") ? "show" : "movie", pagina,
         f.ordenar[0] ? f.ordenar : "rank", f.ordem[0] ? f.ordem : "asc");
       pronta = pronta && w >= 0 && (size_t)w < sizeof url;
+    } else if (prov == 4) {
+      char mdbKey[120];
+      int w;
+      vetor = NULL;
+      pronta = extras_mdblist_chave(mdbKey, sizeof mdbKey) && f.catId[0];
+      if (pronta) {
+        // Paginacao documentada do /lists/{id}/items: offset+limit (nao page).
+        w = snprintf(url, sizeof url,
+          "https://api.mdblist.com/lists/%s/items?apikey=%s&offset=%d&limit=50",
+          f.catId, mdbKey, (pagina - 1) * 50);
+        pronta = w >= 0 && (size_t)w < sizeof url;
+      }
     } else {
       char encoded[sizeof f.genre * 3 + 1], extra[340] = "";
       int z = 0, w;
@@ -10187,7 +10283,21 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
     corpo = !prov ? colecaoBaixar(url, &status) :
             prov == 2 ? rede_baixar_com(url, 12, cab) : rede_baixar(url, 12);
     if (!descSessaoAtual()) { free(corpo); free(ids); return 0; }
-    if (!colecaoArray(corpo, vetor, &p)) {
+    // Corpo padrao do /lists/{id}/items do MDBList: {movies:[...],shows:[...]}.
+    // Array na raiz e o campo "items" continuam aceitos (o servico tambem
+    // responde assim conforme os parametros do pedido). Um envelope vazio e
+    // uma pagina valida de zero itens — fim, nao erro.
+    const char *mdbVet[2] = {NULL, NULL};
+    int mdbOk = 0, v = 0;
+    if (prov == 4) {
+      mdbOk = corpo ? mdbVetores(corpo, mdbVet, &p, !strcasecmp(f.midia, "TV")) : 0;
+      if (!mdbOk) mdbOk = corpo && (colecaoArray(corpo, "items", &p) ||
+                                  colecaoArray(corpo, NULL, &p));
+    } else {
+      p = NULL;
+      mdbOk = corpo ? colecaoArray(corpo, vetor, &p) : 0;
+    }
+    if (!corpo || !mdbOk) {
       if (!prov) colecaoLog(f.title, origem, f.type, f.catId, f.genre, skip, status, 0,
                              corpo ? "invalid_metas" : "http_or_transport");
       free(corpo); r.erro = 1; break;
@@ -10201,7 +10311,8 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
         fim = !tp || pg >= tp;
       }
     }
-    for (; p && (!prov || aceitos < 48); p = js_prox(js_fim(p))) {
+    for (; p && (!prov || aceitos < VT_LOTE_MAX);
+           p = prov == 4 ? mdbAvancar(js_fim(p), mdbVet, &v) : js_prox(js_fim(p))) {
       const char *fimItem = js_fim(p);
       int ok, visto, repetido = 0;
       raw++;
@@ -10214,7 +10325,9 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
         if (strcasecmp(trabalho, "director")) { nv_perfil_sessao_destravar(); continue; }
       }
       ok = prov == 1 ? deMetaTmdb(p, fimItem, !strcasecmp(f.midia, "TV") ? "series" : "movie", &item) :
-           prov == 2 ? deMetaTrakt(p, fimItem, f.midia, &item) : deMeta(p, fimItem, f.type, &item);
+           prov == 2 ? deMetaTrakt(p, fimItem, f.midia, &item) :
+           prov == 4 ? deMetaMdblist(p, fimItem, f.midia, &item) :
+           deMeta(p, fimItem, f.type, &item);
       if (!ok || !colecaoTipo(&f, &item)) { nv_perfil_sessao_destravar(); continue; }
       if (descOcultaNaoLancado(&item)) { novos++; nv_perfil_sessao_destravar(); continue; }
       if (!prov) origemDaBase(origem, item.origem, sizeof item.origem);
@@ -10238,16 +10351,18 @@ int desc_colecao_inicial(const ColSource *fonte, const char *base,
     if (!prov) colecaoLog(f.title, origem, f.type, f.catId, f.genre, skip, status, aceitos,
                            !raw ? "empty_page" : !novos ? "no_new_items" : "ok");
     free(corpo);
-    if (prov == 2 && raw < 40) fim = 1;
-    r.mais = raw > 0 && novos > 0 && total < teto && !fim;
+    if ((prov == 2 && raw < 40) || (prov == 4 && raw < 50)) fim = 1;
+    // Uma pagina cheia de filtrados ou repetidos nao pode ser lida como fim:
+    // o fim vem da pagina curta (fim=1), nao da ausencia de novidades nela.
+    r.mais = raw > 0 && total < teto && !fim;
     r.pagina = prov ? pagina + (r.mais ? 1 : 0) : skip + raw;
-    if (!raw || !novos || total >= teto || fim || !ocultar || visiveis) break;
+    if (!raw || total >= teto || fim || !ocultar || visiveis) break;
     skip += raw;
   }
   free(ids);
   if (r.erro) r.mais = 0;
   if (!descSessaoAtual()) return 0;
-  if (prov == 2) {
+  if (prov == 2 || prov == 4) {
     // Somente as duas janelas que serao mostradas precisam de arte. O helper
     // usa o mesmo pedido de sessao e seus proprios fios/buffers de enfeite.
     if (r.n) r.n = descEnfeitar(itens, r.n);
@@ -10307,10 +10422,10 @@ static void *fioVerTudo(void *u) {
   // do TMDB ou do Trakt, nao de um catalogo de addon. vtPagina aqui e o
   // NUMERO da pagina (comeca em 1), nao o skip de itens.
   if (prov) {
-    CatItem *lote=malloc(sizeof *lote*48); int nl=0, semMais=0, ok=0;
+    CatItem *lote=malloc(sizeof *lote*VT_LOTE_MAX); int nl=0, semMais=0, ok=0;
     // Extras da entrada (rank/listed_at/notes), amarrados ao imdb e NAO a
     // posicao: trakt_enfeitar_lote compacta o lote e um indice dessincroniza.
-    DescItemLista exLote[48]; char exImdb[48][64]; int nex=0;
+    DescItemLista exLote[VT_LOTE_MAX]; char exImdb[VT_LOTE_MAX][64]; int nex=0;
     if(!lote){pthread_mutex_lock(&vtTrava);vtErro=1;vtFioVivo=0;pthread_mutex_unlock(&vtTrava);return NULL;}
     corpo=NULL;
     if (prov==1) {
@@ -10319,7 +10434,7 @@ static void *fioVerTudo(void *u) {
       if (corpo) {
         const char *padrao=!strcasecmp(fonte.midia,"TV")?"series":"movie";
         const char *p=js_array(corpo,NULL,vetor);
-        for(;p&&nl<48;p=js_prox(js_fim(p))) {
+        for(;p&&nl<VT_LOTE_MAX;p=js_prox(js_fim(p))) {
           const char *f=js_fim(p);raw++;
           // DIRECTOR: a resposta e crew[] inteira e so entra quem tem
           // job=Director — o web filtra igual.
@@ -10342,7 +10457,7 @@ static void *fioVerTudo(void *u) {
         }
         ok=1;
       }
-    } else {
+    } else if (prov==2) {
       // So listas vindas de /users/me/lists recebem o token da sessao.
       const char *cli=nuvem_trakt_cliente();
       if (cli[0]) {
@@ -10360,12 +10475,12 @@ static void *fioVerTudo(void *u) {
         corpo=rede_baixar_com(url,12,cab);
         if (corpo) {
           const char *p=*corpo=='['?js_raiz_array(corpo):NULL;
-          for(;p&&nl<48;p=js_prox(js_fim(p))) {
+          for(;p&&nl<VT_LOTE_MAX;p=js_prox(js_fim(p))) {
             const char *f=js_fim(p);raw++;
             if (deMetaTrakt(p,f,fonte.midia,&lote[nl]) && colecaoTipo(&fonte, &lote[nl])) {
               if (descOcultaNaoLancado(&lote[nl])) ocultos++;
               else {
-                if (nex<48) {
+                if (nex<VT_LOTE_MAX) {
                   desc_trakt_extra_ler(p,f,&exLote[nex]);
                   snprintf(exImdb[nex],sizeof exImdb[nex],"%s",lote[nl].imdb);
                   nex++;
@@ -10380,11 +10495,37 @@ static void *fioVerTudo(void *u) {
           ok=1;
         }
       }
+    } else if (prov==4) {
+      char mdbKey[120];
+      if (extras_mdblist_chave(mdbKey, sizeof mdbKey) && fonte.catId[0]) {
+        // offset/limit documentados; skip aqui e o numero da pagina (1-based).
+        snprintf(url,sizeof url,
+          "https://api.mdblist.com/lists/%s/items?apikey=%s&offset=%d&limit=50",
+          fonte.catId, mdbKey, (skip - 1) * 50);
+        corpo=rede_baixar(url,12);
+        if (corpo) {
+          // Envelope padrao {movies,shows}; array raiz e "items" aceitos.
+          const char *mdbVet[2] = {NULL, NULL}, *p = NULL;
+          int v = 0;
+          if (!mdbVetores(corpo, mdbVet, &p, !strcasecmp(fonte.midia, "TV")) &&
+              !colecaoArray(corpo, "items", &p) &&
+              !colecaoArray(corpo, NULL, &p))
+            p = *corpo=='[' ? js_raiz_array(corpo) : NULL;
+          for(;p&&nl<VT_LOTE_MAX;p=mdbAvancar(js_fim(p), mdbVet, &v)) {
+            const char *f=js_fim(p); raw++;
+            if (deMetaMdblist(p,f,fonte.midia,&lote[nl]) && colecaoTipo(&fonte, &lote[nl])) {
+              if (descOcultaNaoLancado(&lote[nl])) ocultos++; else nl++;
+            }
+          }
+          if (raw<50) semMais=1;
+          ok=1;
+        }
+      }
     }
     free(corpo);
     // Itens do Trakt chegam sem poster: o lote inteiro ganha arte pelo
     // Cinemeta de uma vez, como a fileira "Continuar assistindo" ja faz.
-    if (prov==2&&nl) descEnfeitar(lote,nl);
+    if ((prov==2||prov==4)&&nl) descEnfeitar(lote,nl);
     pthread_mutex_lock(&vtTrava);
     if(generation!=vtGeracao || !descSessaoAtual()){pthread_mutex_unlock(&vtTrava);free(lote);continue;}
     int seguir = 0;
@@ -10402,7 +10543,25 @@ static void *fioVerTudo(void *u) {
         }
       }
       vtErro=!ok;
-      if(ok){if(semMais||!added||vtN>=colecaoTeto(fonte.catId))vtFim=1;else vtPagina=skip+1;}
+      // TMDB/Trakt terminam como na base: pagina sem nenhum item novo
+      // encerra (!added). So o MDBList (prov==4) insiste numa pagina cheia
+      // sem progresso — a pagina 50+1 pode vir atras de paginas de shows
+      // filtrados — mas com contador e teto absoluto para nao laçar numa
+      // pagina repetida.
+      if(ok){
+        if(semMais||vtN>=colecaoTeto(fonte.catId))vtFim=1;
+        else if(prov==4){
+          // MDBList: pagina cheia de filtrados/repetidos nao prova fim —
+          // pagina 2 pode trazer o resto — mas paginas seguidas sem item
+          // novo e um teto absoluto encerram a paginacao.
+          if(added)vtPagSemProgresso=0;else vtPagSemProgresso++;
+          vtBrutosVistos+=raw;
+          // O fim real e a falta de progresso, o teto de itens ou a pagina
+          // curta. O teto de brutos e so rede de seguranca (4x o teto de
+          // itens) — nunca corta uma lista que ainda enche colecaoTeto.
+          if(vtPagSemProgresso>=2||vtBrutosVistos>=4*colecaoTeto(fonte.catId))vtFim=1;else vtPagina=skip+1;
+        } else if(!added)vtFim=1;else vtPagina=skip+1;
+      }
       seguir = vtPaginaSoDeVistos(antes, added, paginas);
       if (!seguir) vtFioVivo=0; }
     pthread_mutex_unlock(&vtTrava);
@@ -10588,7 +10747,7 @@ void desc_vertudo_filtro_desde(const char *base, const char *tipo, const char *c
   snprintf(vtCat,  sizeof vtCat,  "%s", catId);
   snprintf(vtGenre,sizeof vtGenre,"%s",genre?genre:"");
   vtProvedor=0;
-  vtN = 0; vtPagina = vtPaginaInicial = pagina; vtReplay = vtReload = vtPaginaMudou = 0; vtFim = 0;vtErro=0;vtGeracao++;
+  vtN = 0; vtPagina = vtPaginaInicial = pagina; vtReplay = vtReload = vtPaginaMudou = 0; vtPagSemProgresso = 0; vtBrutosVistos = 0; vtFim = 0;vtErro=0;vtGeracao++;
   pthread_mutex_unlock(&vtTrava);
   vtDisparar();
 }
@@ -10631,9 +10790,10 @@ void desc_vertudo_fonte_desde(const ColSource *s, int pagina) {
   memset(vtIdSlot, -1, sizeof vtIdSlot);
   vtFonte = copia;
   vtReload = vtPaginaMudou = vtReplay = 0;
-  vtProvedor = !strcmp(s->prov, "trakt") ? 2 : 1;
+  vtProvedor = !strcmp(s->prov, "trakt") ? 2
+             : !strcmp(s->prov, "mdblist") ? 4 : 1;
   vtBase[0] = 0;
-  vtN = 0; vtPagina = pagina; vtFim = 0; vtErro = 0; vtGeracao++;
+  vtN = 0; vtPagina = pagina; vtPagSemProgresso = 0; vtBrutosVistos = 0; vtFim = 0; vtErro = 0; vtGeracao++;
   pthread_mutex_unlock(&vtTrava);
   vtDisparar();
 }
@@ -10643,7 +10803,7 @@ void desc_vertudo_invalidar_lista(long id) {
   pthread_mutex_lock(&vtTrava);
   recarregar = id > 0 && vtProvedor == 2 && vtFonte.traktLista == id;
   if (recarregar) {
-    vtN = 0; vtPagina = 1; vtFim = 0; vtErro = 0; vtGeracao++;
+    vtN = 0; vtPagina = 1; vtPagSemProgresso = 0; vtBrutosVistos = 0; vtFim = 0; vtErro = 0; vtGeracao++;
   }
   pthread_mutex_unlock(&vtTrava);
   if (recarregar) vtDisparar();
