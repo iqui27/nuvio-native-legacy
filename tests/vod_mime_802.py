@@ -18,13 +18,18 @@ def mime_da_producao(url: str):
     # Funcao pura sobre String: o valor decodificado NAO vai a urlparse/Uri.parse
     # (o ':' de ISO 8601 seria lido como esquema); corta no primeiro '?' ou '#'
     # aninhado e testa o sufixo. Espelha a mesma logica do Kotlin.
-    caminho = url.split('?', 1)[0].split('#', 1)[0]
+    # O fragmento EXTERNO sai primeiro (Uri real: query nula em
+    # film.mp4#t=10?file=...): so a query da propria URL conta.
+    sem_fragmento = url.split('#', 1)[0]
+    caminho = sem_fragmento.split('?', 1)[0]
     if caminho.lower().endswith('.mpd'):
         return 'application/dash+xml'
-    q = url.split('?', 1)[1].split('#', 1)[0] if '?' in url else ''
+    q = sem_fragmento.split('?', 1)[1] if '?' in sem_fragmento else ''
     for par in q.split('&'):
         valor = par.split('=', 1)[-1] if '=' in par else par
-        dec = urllib.parse.unquote(valor).split('?', 1)[0].split('#', 1)[0]
+        # Espelha decodifica(): '%' invalido fica literal (unquote ja faz)
+        # e '+' vira espaco como no URLDecoder.
+        dec = urllib.parse.unquote(valor.replace('+', ' ')).split('?', 1)[0].split('#', 1)[0]
         if dec.lower().endswith('.mpd'):
             return 'application/dash+xml'
     return None
@@ -50,6 +55,10 @@ CASOS = [
     ('https://media.example/mp4/arquivo.mp4?sig=xyz', None),
     ('https://media.example/api/live?file=canal.mpdx', None),
     ('https://media.example/api/live?file=canal.mpdx%3Ftoken%3Dabc', None),
+    # fragmento externo: o que vem depois de '#' nao e query
+    ('https://media.example/film.mp4#t=10?file=canal%2Empd', None),
+    # escape invalido na assinatura aninhada: decode tolerante mantem DASH
+    ('https://media.example/api/live?file=canal.mpd%3Ftoken%3D%ZZ', 'application/dash+xml'),
 ]
 rc = 0
 for url, esperado in CASOS:

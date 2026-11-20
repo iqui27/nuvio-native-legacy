@@ -1410,24 +1410,51 @@ object NvPlayer {
     // esquema e devolveria path nulo. Nao bate em "dash" solto nem em dominio.
     internal fun isMpdUri(url: String): Boolean {
         // .mpd no fim do caminho da URL propria (sem query nem fragmento).
-        val caminho = url.substringBefore('?').substringBefore('#')
+        // O fragmento EXTERNO sai primeiro: o Uri real devolve query nula
+        // para film.mp4#t=10?file=canal%2Empd, entao so a query da propria
+        // URL pode ser lida; procurar '?' antes de cortar '#' transformava
+        // fragmento em query e forcava DASH num MP4 progressivo.
+        val semFragmento = url.substringBefore('#')
+        val caminho = semFragmento.substringBefore('?')
         if (caminho.endsWith(".mpd", true)) return true
         // .mpd no fim do valor decodificado de um param de query: corta no
         // primeiro '?' ou '#' ANINHADO (a query do valor) e testa o sufixo.
         // O '?'/'#' de corte e o que vem codificado no proprio valor
         // (canal.mpd%3Ftoken%3Dabc -> "canal.mpd?token=abc" -> "canal.mpd");
         // o separador de params da URL externa ('&' cru) sai antes, no split.
-        val query = url.substringAfter('?', "").substringBefore('#')
+        val query = semFragmento.substringAfter('?', "")
         if (query.isEmpty()) return false
         return query.split('&').any {
             val valor = it.substringAfter('=', it)
-            val dec = try {
-                java.net.URLDecoder.decode(valor, "UTF-8")
-            } catch (e: Exception) {
-                valor
-            }
-            dec.substringBefore('?').substringBefore('#').endsWith(".mpd", true)
+            decodifica(valor).substringBefore('?').substringBefore('#').endsWith(".mpd", true)
         }
+    }
+
+    // Escape invalido nao pode descartar o valor inteiro: canal.mpd%3Ftoken%3D%ZZ
+    // estoura no URLDecoder, mas o "%3F" valido ainda esconde a query aninhada
+    // que separa o MPD da assinatura. Primeiro a decodificacao estrita; so se
+    // falhar entra a variante que deixa o '%' invalido literal.
+    private fun decodifica(valor: String): String = try {
+        java.net.URLDecoder.decode(valor, "UTF-8")
+    } catch (e: Exception) {
+        val out = StringBuilder(valor.length)
+        val bytes = java.io.ByteArrayOutputStream()
+        fun flush() {
+            if (bytes.size() > 0) { out.append(bytes.toString("UTF-8")); bytes.reset() }
+        }
+        var i = 0
+        while (i < valor.length) {
+            val c = valor[i]
+            if (c == '+') { flush(); out.append(' '); i++ }
+            else if (c == '%' && i + 2 < valor.length) {
+                val hi = Character.digit(valor[i + 1], 16)
+                val lo = Character.digit(valor[i + 2], 16)
+                if (hi >= 0 && lo >= 0) { bytes.write(hi shl 4 or lo); i += 3 }
+                else { flush(); out.append('%'); i++ }
+            } else { flush(); out.append(c); i++ }
+        }
+        flush()
+        out.toString()
     }
 
     private fun decoderDolby(nome: String): Boolean {

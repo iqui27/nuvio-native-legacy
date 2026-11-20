@@ -29,6 +29,9 @@ class MpdUriRouteTest {
             // Horario ISO 8601 assinado: o ':' de 23:59:59 nao pode ser lido
             // como esquema por um re-parse do valor decodificado.
             "https://media.example/api/live?file=canal.mpd%3Fexpires%3D2026-11-20T23%3A59%3A59Z%26sig%3Dabc",
+            // Escape invalido dentro da assinatura aninhada: o decode
+            // tolerante ainda enxerga o ".mpd" antes do "%3F" decodificado.
+            "https://media.example/api/live?file=canal.mpd%3Ftoken%3D%ZZ",
         )) assertEquals("esperava DASH: $url", C.CONTENT_TYPE_DASH, route(url))
     }
 
@@ -58,6 +61,8 @@ class MpdUriRouteTest {
             "https://media.example/api/live?file=?",
             "https://media.example/api/live?file=%3F",
             "https://media.example/api/live?",
+            // O Uri real devolve query nula: tudo apos o '#' e fragmento.
+            "https://media.example/film.mp4#t=10?file=canal%2Empd",
         )) assertEquals("esperava progressivo: $url", C.CONTENT_TYPE_OTHER, route(url))
     }
 }
