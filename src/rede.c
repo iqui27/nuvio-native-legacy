@@ -1403,6 +1403,8 @@ static time_t (*curl_getdate_fn)(const char *, const time_t *);
 // usa quando o pedido ja esta num multi proprio.
 typedef struct { void *multi; int ligado; } CancelVigia;
 static int cancelVigiaPerform(CancelVigia *v, void *c);
+static int cancelVigiaLigar(void *c, CancelVigia *v);
+static void cancelVigiaSoltar(CancelVigia *v, int ligado, void *c);
 
 #ifdef NV_TPK
 static void *dnsShare;
@@ -1470,7 +1472,20 @@ static int performTmdbCv(void *c, const char *url, void *cv) {
            cv ? cancelVigiaPerform((CancelVigia *)cv, c) : curl_perform(c),
            url, cv);
 }
-static int performTmdb(void *c, const char *url) { return tmdbFallback(c, curl_perform(c), url, NULL); }
+// TODA perform sem vigia propria vai pelo multi do fio quando a interface
+// existe (pre-aquecimento, sondas, rede_pedido.inc): o cache de conexoes fica
+// no multi, que o fio guarda e que viaja no estacionamento JUNTO com a easy.
+// Com curl_easy_perform a conexao ficaria na easy de um fio e o fio consumidor
+// a associaria ao proprio multi — o HEAD aquecido nunca seria reusado. Sem a
+// interface multi (libcurl antiga), cancelVigiaPerform cai no easy perform.
+static int performTmdb(void *c, const char *url) {
+  CancelVigia cv;
+  int on, r;
+  on = cancelVigiaLigar(c, &cv);
+  r = tmdbFallback(c, cancelVigiaPerform(&cv, c), url, on ? &cv : NULL);
+  cancelVigiaSoltar(&cv, on, c);
+  return r;
+}
 
 static int retrySegundos(const char *s, size_t n) {
   char b[128], *fim;
@@ -1660,7 +1675,10 @@ static int hostOcioso(const char *url, unsigned long agora) {
 #define REDE_ESTAC_MAX 3
 #define REDE_ESTAC_HOSTS 6
 #define REDE_ESTAC_VALE_MS 15000UL
-typedef struct { void *c; unsigned long ms; int nh; char h[REDE_ESTAC_HOSTS][96]; } Estac;
+// O par easy+multi viaja junto: o cache de conexoes do pre-aquecimento mora no
+// multi (performTmdb passa por ele), e o fio consumidor precisa DOS DOIS para
+// reusar o HEAD aquecido — a easy sozinha chegaria sem conexao nenhuma.
+typedef struct { void *c; void *multi; unsigned long ms; int nh; char h[REDE_ESTAC_HOSTS][96]; } Estac;
 static Estac estac[REDE_ESTAC_MAX];
 static pthread_mutex_t estacTrava = PTHREAD_MUTEX_INITIALIZER;
 // Chamar com estacTrava: joga fora os que passaram da validade.
@@ -1668,11 +1686,13 @@ static void estacVelhos(unsigned long agora) {
   int i;
   for (i = 0; i < REDE_ESTAC_MAX; i++)
     if (estac[i].c && agora - estac[i].ms > REDE_ESTAC_VALE_MS) {
+      if (estac[i].multi && curl_multi_cleanup) curl_multi_cleanup(estac[i].multi);
       if (curl_cleanup) curl_cleanup(estac[i].c);
       estac[i].c = NULL;
+      estac[i].multi = NULL;
     }
 }
-static void estacionar(void *c, char h[][96], int nh) {
+static void estacionar(void *c, void *multi, char h[][96], int nh) {
   unsigned long agora = redeAgoraMs();
   int i, livre = -1, velho = 0;
   pthread_mutex_lock(&estacTrava);
@@ -1681,49 +1701,67 @@ static void estacionar(void *c, char h[][96], int nh) {
     if (!estac[i].c) { livre = i; break; }
     if (estac[i].ms < estac[velho].ms) velho = i;
   }
-  if (livre < 0) { livre = velho; if (curl_cleanup) curl_cleanup(estac[livre].c); }
-  estac[livre].c = c; estac[livre].ms = agora; estac[livre].nh = nh;
+  if (livre < 0) { livre = velho;
+    if (estac[livre].multi && curl_multi_cleanup) curl_multi_cleanup(estac[livre].multi);
+    if (curl_cleanup) curl_cleanup(estac[livre].c); }
+  estac[livre].c = c; estac[livre].multi = multi;
+  estac[livre].ms = agora; estac[livre].nh = nh;
   for (i = 0; i < nh && i < REDE_ESTAC_HOSTS; i++) snprintf(estac[livre].h[i], 96, "%s", h[i]);
   pthread_mutex_unlock(&estacTrava);
 }
-static void *estacTomar(const char *url) {
+static void *estacTomar(const char *url, void **multi) {
   char h[96];
   unsigned long agora = redeAgoraMs();
   void *c = NULL;
   int i, k;
+  if (multi) *multi = NULL;
   hostDaUrl(url, h, sizeof h);
   if (!h[0]) return NULL;
   pthread_mutex_lock(&estacTrava);
   estacVelhos(agora);
   for (i = 0; i < REDE_ESTAC_MAX && !c; i++)
     for (k = 0; estac[i].c && k < estac[i].nh; k++)
-      if (!strcmp(estac[i].h[k], h)) { c = estac[i].c; estac[i].c = NULL; break; }
+      if (!strcmp(estac[i].h[k], h)) { c = estac[i].c;
+        if (multi) *multi = estac[i].multi;
+        estac[i].c = NULL; estac[i].multi = NULL; break; }
   pthread_mutex_unlock(&estacTrava);
   return c;
 }
 
 static void *pegarHandle(const char *url) {
-  void *c;
+  void *c, *multi = NULL;
   HandlePool *p;
   if (!curl_reset) return curl_init();     // libcurl sem reset: como antes
   pthread_once(&handleUma, handleCriarChave);
   p = (HandlePool *)pthread_getspecific(handleChave);
   c = p ? p->c : NULL;
   if (!c) {
-    c = estacTomar(url);
+    c = estacTomar(url, &multi);
     if (c) {
       if (!p) {
         p = (HandlePool *)calloc(1, sizeof *p);
         if (p && pthread_setspecific(handleChave, p) != 0) { free(p); p = NULL; }
       }
-      if (p) p->c = c; else { curl_cleanup(c); c = NULL; }
+      if (p) {
+        p->c = c;
+        if (p->multi && p->multi != multi && curl_multi_cleanup)
+          curl_multi_cleanup(p->multi);      // nunca deveria sobrar
+        p->multi = multi;
+      } else {
+        if (multi && curl_multi_cleanup) curl_multi_cleanup(multi);
+        curl_cleanup(c); c = NULL;
+      }
     }
   }
   if (c && hostOcioso(url, redeAgoraMs())) {
-    // O handle vai embora mas o multi do fio FICA: as conexoes de OUTROS hosts
-    // que ele guarda continuam validas e reusaveis. So a easy e descartada.
+    // O par inteiro vai embora: o cache de conexoes mora no multi e o socket
+    // morto deste host esta la — manter o multi reusiaria essa conexao no
+    // proximo pedido e o prazo inteiro seria gasto esperando resposta que
+    // nao vem (rede_parada.sh, curl 28). Descartar o multi fecha TODAS as
+    // conexoes do fio, como a base que derrubava o handle unico.
     if (p && p->multi) curl_multi_remove(p->multi, c);
     curl_cleanup(c);
+    if (p && p->multi) { curl_multi_cleanup(p->multi); p->multi = NULL; }
     if (p) p->c = NULL;
     hostsEsquecer();
     c = NULL;
@@ -1754,12 +1792,15 @@ static void *pegarHandle(const char *url) {
 static void descartarHandle(void *c) {
   HandlePool *p;
   // Se a easy esta associada ao multi do fio (cancelamento), tira antes de
-  // limpar: a libcurl proibe cleanup de easy associada, e o multi nao pode
-  // ficar apontando para um handle morto.
+  // limpar: a libcurl proibe cleanup de easy associada. O multi morre JUNTO:
+  // e nele que ficou o cache de conexoes, e a conexao que falhou esta la —
+  // manter o multi entregaria o socket morto ao proximo pedido.
   if (curl_reset) {
     p = (HandlePool *)pthread_getspecific(handleChave);
     if (p) {
       if (p->multi && curl_multi_remove) curl_multi_remove(p->multi, c);
+      if (p->multi && curl_multi_cleanup) curl_multi_cleanup(p->multi);
+      p->multi = NULL;
       p->c = NULL;
     }
   }
@@ -1954,7 +1995,10 @@ static int cancelVigiaLigar(void *c, CancelVigia *v) {
 static void cancelVigiaSoltar(CancelVigia *v, int ligado, void *c) {
   if (!ligado || !v->multi) return;
   if (v->ligado) { curl_multi_remove(v->multi, c); v->ligado = 0; }
-  redeMultiGuardar(v->multi);
+  // Sem handle no fio (curl_easy_reset ausente ou calloc/setspecific falho) o
+  // multi nao tem onde morar: cleanup aqui, como no multi temporario de antes,
+  // em vez de perder o ponteiro e vazar multi + conexoes.
+  if (!redeMultiGuardar(v->multi)) curl_multi_cleanup(v->multi);
   v->multi = NULL;
 }
 // Substitui curl_easy_perform quando a vigia esta ligada: a easy ja foi
@@ -2976,19 +3020,22 @@ int rede_aquecer_job(const char *const *origens, int n, unsigned *ms, RedeJob *j
       if (nok < REDE_ESTAC_HOSTS) snprintf(ok[nok++], 96, "%s", h);
     }
   }
-  // O handle, com as conexoes que abriu, sai deste fio e vai para o estacionamento.
+  // O PAR easy+multi, com as conexoes que abriu, sai deste fio e vai para o
+  // estacionamento: o cache das conexoes aquecidas mora no multi (o HEAD de
+  // cada origem passou por performTmdb, que o usa), entao estacionar so a
+  // easy entregaria um handle SEM conexao ao fio consumidor.
   { HandlePool *p = (HandlePool *)pthread_getspecific(handleChave);
+    void *m = NULL;
     c = p ? p->c : NULL;
     if (c && nok > 0) {
-      // So a easy viaja para o estacionamento; o multi de cancelamento fica
-      // no fio (as conexoes dele nao sao das origens aquecidas aqui).
-      if (p->multi) curl_multi_remove(p->multi, c);
+      m = p->multi;
       p->c = NULL;
-    } else c = NULL; }
-  if (c) {
-    hostsEsquecer();
-    estacionar(c, ok, nok);
-  }
+      p->multi = NULL;
+    } else c = NULL;
+    if (c) {
+      hostsEsquecer();
+      estacionar(c, m, ok, nok);
+    } }
   return abriu;
 }
 int rede_aquecer_lote(const char *const *origens, int n, unsigned *ms) {
