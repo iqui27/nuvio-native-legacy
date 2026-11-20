@@ -3254,7 +3254,12 @@ static int continuarLocalLer(CatItem *saida, int max, int enriquecer) {
     // Uma serie com varios episodios gravados entra UMA vez, no mais recente.
     for (j = 0; j < n; j++) {
       size_t L = idbase_len(saida[j].imdb);   // "kitsu:41370" inteiro, nao "kitsu"
-      if (L == strlen(r->contentId) && !strncmp(saida[j].imdb, r->contentId, L)) { repetido = 1; break; }
+      if (L != strlen(r->contentId) || strncmp(saida[j].imdb, r->contentId, L)) continue;
+      if (r->lastWatchedMs <= saida[j].retomadoMs) { repetido = 1; break; }
+      // Registro mais novo do mesmo contentId: substitui o cartao antigo (#731).
+      n--;
+      if (j < n) memmove(&saida[j], &saida[j + 1], (size_t)(n - j) * sizeof *saida);
+      break;
     }
     if (repetido) continue;
     d = &saida[n];
