@@ -4499,7 +4499,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "Който въведе вашия код, се присъединява към вашия списък, а вие — към неговия. Никой от вас не трябва да го прави два пъти."),
   T("Quem está assistindo?", "Кой гледа?"),
   T("Quem faz o quê, e a que preço", "Кой какво прави и на каква цена"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Който е изградил .ipk, трябва да предостави URL адреса и ключа на проекта."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Който е изградил пакета, трябва да предостави URL адреса и ключа на проекта."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Който вече е гледал заглавието, се вижда на плаката, в hero и на страницата на заглавието."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Хората с включен „Профил за търсене“, първо скоро активните."),
   T("Quem mandou, e o que disse", "Кой го е изпратил и какво е казал"),

@@ -4499,7 +4499,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "Ko unese vaš kod pridružuje se vašoj listi, a vi se pridružujete njegovoj. Nijedan od vas ne mora to raditi dvaput."),
   T("Quem está assistindo?", "Ko gleda?"),
   T("Quem faz o quê, e a que preço", "Ko šta radi, i po koju cijenu"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Ko je izgradio .ipk mora dostaviti URL projekta i ključ."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Ko je izgradio paket mora dostaviti URL projekta i ključ."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Ko je naslov već gledao, vidi se na posteru, u hero i na stranici naslova."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Oni s uključenim Pretraživim profilom, prvo nedavno aktivni."),
   T("Quem mandou, e o que disse", "Ko je poslao i šta je rekao"),

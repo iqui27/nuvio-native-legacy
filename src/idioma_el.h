@@ -4499,7 +4499,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "Όποιος πληκτρολογήσει τον δικό σου μπαίνει στη λίστα σου, και εσύ στη δική του. Κανείς από τους δύο δεν χρειάζεται να το κάνει δύο φορές."),
   T("Quem está assistindo?", "Ποιος βλέπει;"),
   T("Quem faz o quê, e a que preço", "Ποιος κάνει τι, και με τι τίμημα"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Όποιος έφτιαξε το .ipk πρέπει να δώσει το URL και το κλειδί του έργου."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Όποιος έφτιαξε το πακέτο πρέπει να δώσει το URL και το κλειδί του έργου."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Όποιος έχει δει ήδη έναν τίτλο εμφανίζεται στην αφίσα, στο hero και στη σελίδα του τίτλου."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Όσοι έχουν ενεργό Προφίλ με αναζήτηση, πρώτα οι πιο πρόσφατα ενεργοί."),
   T("Quem mandou, e o que disse", "Ποιος το έστειλε και τι είπε"),

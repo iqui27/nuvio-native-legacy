@@ -4499,7 +4499,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "Seninkini kim yazarsa senin listene katılır, sen de onunkine. İkinizin de bunu iki kez yapması gerekmez."),
   T("Quem está assistindo?", "Kim izliyor?"),
   T("Quem faz o quê, e a que preço", "Kim ne yapıyor, hangi bedelle"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", ".ipk'yi kim derlediyse proje URL'sini ve anahtarı o vermeli."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Paketi kim derlediyse proje URL'sini ve anahtarı o vermeli."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Bir yapımı izlemiş olanlar afişte, hero'da ve yapım sayfasında görünür."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Aranabilir profili açık olanlar; en son aktif olanlar önce."),
   T("Quem mandou, e o que disse", "Kim gönderdi ve ne dedi"),

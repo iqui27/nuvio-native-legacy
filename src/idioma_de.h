@@ -4498,7 +4498,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "Wer deinen eingibt, kommt in deine Liste, und du in seine. Niemand muss den Weg zurück gehen."),
   T("Quem está assistindo?", "Wer schaut?"),
   T("Quem faz o quê, e a que preço", "Wer was tut, und zu welchem Preis"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Wer die .ipk erstellt hat, muss die URL und den Schlüssel des Projekts angeben."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Wer das Paket erstellt hat, muss die URL und den Schlüssel des Projekts angeben."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Wer einen Titel schon gesehen hat, erscheint auf dem Poster, im Hero und auf der Titelseite."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Alle mit Auffindbarem Profil, zuletzt aktive zuerst."),
   T("Quem mandou, e o que disse", "Wer es geschickt hat und was er gesagt hat"),

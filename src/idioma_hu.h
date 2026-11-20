@@ -4499,7 +4499,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "Aki beírja a tiédet, csatlakozik a listádhoz, te pedig az övéhez. Egyikőtöknek sem kell kétszer megtennie."),
   T("Quem está assistindo?", "Ki nézi?"),
   T("Quem faz o quê, e a que preço", "Ki mit tesz, és milyen áron"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Aki az .ipk-t építette, annak meg kell adnia a projekt URL-jét és a kulcsot."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Aki a csomagot építette, annak meg kell adnia a projekt URL-jét és a kulcsot."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Aki már látta a címet, megjelenik a poszteren, a hero-ban és a cím oldalán."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Akiknél be van kapcsolva a Kereshető profil, elöl a legutóbb aktívak."),
   T("Quem mandou, e o que disse", "Ki küldte, és mit mondott"),

@@ -4499,7 +4499,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "Kas įves jūsų kodą, prisijungia prie jūsų sąrašo, o jūs prisijungiate prie jo. Nė vienam nereikia to daryti du kartus."),
   T("Quem está assistindo?", "Kas žiūri?"),
   T("Quem faz o quê, e a que preço", "Kas ką daro ir kokia kaina"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Tas, kas sukūrė .ipk, turi pateikti projekto URL ir raktą."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Tas, kas sukūrė paketą, turi pateikti projekto URL ir raktą."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Kas pavadinimą jau matė, rodomas ant plakato, hero ir pavadinimo puslapyje."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Tie, kurie įjungė Ieškomą profilį; pirmiausia neseniai aktyvūs."),
   T("Quem mandou, e o que disse", "Kas atsiuntė ir ką pasakė"),

@@ -4499,7 +4499,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "Ai nhập mã của bạn sẽ vào danh sách của bạn, và bạn vào danh sách của họ. Không ai phải làm hai lần."),
   T("Quem está assistindo?", "Ai đang xem?"),
   T("Quem faz o quê, e a que preço", "Ai làm gì, và phải trả giá ra sao"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Người dựng .ipk phải cung cấp URL và khóa của dự án."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Người dựng gói phải cung cấp URL và khóa của dự án."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Ai đã xem một tựa phim sẽ hiện trên poster, trong hero và trên trang của tựa phim."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Những ai bật Hồ sơ có thể tìm kiếm, ai hoạt động gần đây xếp trước."),
   T("Quem mandou, e o que disse", "Ai đã gửi và họ đã nói gì"),

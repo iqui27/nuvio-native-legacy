@@ -4499,7 +4499,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "Den som skriver in din kod hamnar i din lista och du hamnar i deras. Ingen behöver göra vägen tillbaka."),
   T("Quem está assistindo?", "Vem tittar?"),
   T("Quem faz o quê, e a que preço", "Vem gör vad, och till vilket pris"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Den som byggde .ipk-filen måste ange projektets URL och nyckel."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Den som byggde paketet måste ange projektets URL och nyckel."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Den som redan sett en titel syns på affischen, i hero och på titelsidan."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "De som har Sökbar profil på, senast aktiva först."),
   T("Quem mandou, e o que disse", "Vem som skickade den, och vad de sa"),

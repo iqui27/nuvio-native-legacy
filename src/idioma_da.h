@@ -4499,7 +4499,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "Den, der indtaster din kode, kommer på din liste, og du kommer på deres. Ingen behøver at gøre det to gange."),
   T("Quem está assistindo?", "Hvem ser med?"),
   T("Quem faz o quê, e a que preço", "Hvem gør hvad, og til hvilken pris"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Den, der har bygget .ipk-filen, skal angive projektets URL og nøgle."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Den, der har bygget pakken, skal angive projektets URL og nøgle."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Den, der allerede har set en titel, vises på plakaten, i hero og på titelsiden."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Dem med Søgbar profil slået til, senest aktive først."),
   T("Quem mandou, e o que disse", "Hvem der sendte den, og hvad de sagde"),

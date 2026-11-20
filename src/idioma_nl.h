@@ -4499,7 +4499,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "Wie de jouwe intypt, komt op je lijst, en jij komt op de zijne. Geen van beiden hoeft het twee keer te doen."),
   T("Quem está assistindo?", "Wie kijkt er?"),
   T("Quem faz o quê, e a que preço", "Wie doet wat, en tegen welke prijs"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Wie de .ipk heeft gebouwd, moet de project-URL en sleutel opgeven."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Wie het pakket heeft gebouwd, moet de project-URL en sleutel opgeven."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Wie een titel al gezien heeft, verschijnt op de poster, in de hero en op de titelpagina."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Iedereen met Doorzoekbaar profiel aan, recent actieve mensen eerst."),
   T("Quem mandou, e o que disse", "Wie het stuurde en wat die zei"),

@@ -4498,7 +4498,7 @@
   { "Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "Whoever types yours joins your list, and you join theirs. Neither of you has to do it twice." },
   { "Quem está assistindo?", "Who's watching?" },
   { "Quem faz o quê, e a que preço", "Who does what, and at what cost" },
-  { "Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Whoever built the .ipk must supply the project URL and key." },
+  { "Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Whoever built the package must supply the project URL and key." },
   { "Quem já viu um título aparece no pôster, no hero e na página do título.", "Whoever has already watched a title shows on the poster, in the hero and on the title page." },
   { "Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "People with Searchable profile on, most recently active first." },
   { "Quem mandou, e o que disse", "Who sent it, and what they said" },

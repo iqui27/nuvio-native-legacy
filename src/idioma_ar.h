@@ -4499,7 +4499,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "من يكتب رمزك ينضم إلى قائمتك، وتنضم أنت إلى قائمته. لا يحتاج أي منكما إلى فعل ذلك مرتين."),
   T("Quem está assistindo?", "من يشاهد؟"),
   T("Quem faz o quê, e a que preço", "من يفعل ماذا، وبأي تكلفة"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "يجب على من بنى ملف .ipk أن يوفر عنوان URL للمشروع ومفتاحه."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "يجب على من بنى الحزمة أن يوفر عنوان URL للمشروع ومفتاحه."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "من شاهد عنوانًا بالفعل يظهر على الملصق وفي الواجهة وفي صفحة العنوان."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "الأشخاص الذين فعّلوا الملف القابل للبحث، الأحدث نشاطًا أولًا."),
   T("Quem mandou, e o que disse", "من أرسله، وماذا قال"),

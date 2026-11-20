@@ -4499,7 +4499,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "Quem escrever o teu código entra na tua lista e tu entras na dele. Ninguém precisa de fazer o caminho de volta."),
   T("Quem está assistindo?", "Quem está a ver?"),
   T("Quem faz o quê, e a que preço", "Quem faz o quê, e a que preço"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Quem gerou o .ipk tem de indicar o URL e a chave do projeto."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Quem gerou o pacote tem de indicar o URL e a chave do projeto."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Quem já viu um título aparece no póster, no hero e na página do título."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Quem ligou o Perfil pesquisável, com atividade mais recente primeiro."),
   T("Quem mandou, e o que disse", "Quem enviou, e o que disse"),

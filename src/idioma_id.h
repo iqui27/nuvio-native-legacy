@@ -4499,7 +4499,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "Siapa pun yang mengetik kodemu masuk ke daftarmu, dan kamu masuk ke daftarnya. Tidak ada dari kalian yang perlu melakukannya dua kali."),
   T("Quem está assistindo?", "Siapa yang menonton?"),
   T("Quem faz o quê, e a que preço", "Siapa melakukan apa, dan dengan harga berapa"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Siapa pun yang membuat .ipk harus memberikan URL dan kunci proyek."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Siapa pun yang membuat paket harus memberikan URL dan kunci proyek."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Siapa pun yang sudah menonton judul tampil di poster, di hero, dan di halaman judul."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Yang menyalakan Profil yang bisa dicari, yang terakhir aktif lebih dulu."),
   T("Quem mandou, e o que disse", "Siapa yang mengirim dan apa katanya"),

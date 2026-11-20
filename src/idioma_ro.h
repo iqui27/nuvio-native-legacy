@@ -4498,7 +4498,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "Cine îl introduce pe al tău intră în lista ta, iar tu intri în a lui. Niciunul nu trebuie să facă drumul de întoarcere."),
   T("Quem está assistindo?", "Cine se uită?"),
   T("Quem faz o quê, e a que preço", "Cine ce face și cu ce preț"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Cine a construit .ipk trebuie să furnizeze URL-ul și cheia proiectului."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Cine a construit pachetul trebuie să furnizeze URL-ul și cheia proiectului."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Cine a văzut deja un titlu apare pe afiș, în hero și pe pagina titlului."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Cei cu Profil căutabil activat, cei mai recent activi primii."),
   T("Quem mandou, e o que disse", "Cine l-a trimis și ce a spus"),

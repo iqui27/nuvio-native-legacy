@@ -4499,7 +4499,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "あなたのコードを入力した人はあなたのリストに加わり、あなたも相手のリストに加わります。どちらも 2 回操作する必要はありません。"),
   T("Quem está assistindo?", "誰が見ていますか?"),
   T("Quem faz o quê, e a que preço", "誰が何を、どんな代償で"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", ".ipk をビルドした人が、プロジェクトの URL とキーを指定する必要があります。"),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "パッケージをビルドした人が、プロジェクトの URL とキーを指定する必要があります。"),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "視聴済みの人は、ポスター、ヒーロー、タイトルのページに表示されます。"),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "検索可能なプロフィールをオンにした人。最近アクティブな人から表示。"),
   T("Quem mandou, e o que disse", "誰が送ったか、何と言ったか"),

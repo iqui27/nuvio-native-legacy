@@ -392,7 +392,7 @@ void login_desenhar(Uint32 agora) {
     linhaCentrada(TXT_HEADLINE, "Este pacote foi montado sem servidor.",
                   236, 108, 108, y, 1.0f);
     linhaCentrada(TXT_BODY,
-                  "Quem gerou o .ipk precisa informar a URL e a chave do projeto.",
+                  "Quem gerou o pacote precisa informar a URL e a chave do projeto.",
                   176, 178, 186, y + 62.0f, 1.0f);
     return;
   }

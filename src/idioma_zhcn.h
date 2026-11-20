@@ -4499,7 +4499,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "谁输入了你的代码，谁就加入你的列表，你也会加入对方的列表。双方都不必操作两次。"),
   T("Quem está assistindo?", "谁在观看？"),
   T("Quem faz o quê, e a que preço", "谁做了什么,代价几何"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "构建 .ipk 的人必须提供项目 URL 和密钥。"),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "构建软件包的人必须提供项目 URL 和密钥。"),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "已看过某个作品的人会显示在海报、主视觉和作品页上。"),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "开启了可搜索的资料的人，最近活跃的排在前面。"),
   T("Quem mandou, e o que disse", "谁发的，说了什么"),

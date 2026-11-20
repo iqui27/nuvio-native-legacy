@@ -4498,7 +4498,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "Хто введе ваш код, потрапляє до вашого списку, а ви — до його. Нікому не потрібно проходити зворотний шлях."),
   T("Quem está assistindo?", "Хто дивиться?"),
   T("Quem faz o quê, e a que preço", "Хто що робить і якою ціною"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Той, хто зібрав .ipk, має вказати URL і ключ проєкту."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Той, хто зібрав пакет, має вказати URL і ключ проєкту."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Хто вже переглянув фільм чи серіал, видно на постері, в hero та на сторінці."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Ті, хто ввімкнув «Профіль у пошуку»; спершу нещодавно активні."),
   T("Quem mandou, e o que disse", "Хто надіслав і що сказав"),

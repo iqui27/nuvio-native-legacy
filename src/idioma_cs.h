@@ -4499,7 +4499,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "Kdo zadá váš, přidá se do vašeho seznamu a vy do jeho. Nikdo z vás to nemusí dělat dvakrát."),
   T("Quem está assistindo?", "Kdo se dívá?"),
   T("Quem faz o quê, e a que preço", "Kdo co dělá a za jakou cenu"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Kdo sestavil .ipk, musí dodat URL projektu a klíč."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Kdo sestavil balíček, musí dodat URL projektu a klíč."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Kdo titul už viděl, objeví se na plakátu, v hero a na stránce titulu."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Lidé se zapnutým Vyhledatelným profilem, nejdřív ti naposledy aktivní."),
   T("Quem mandou, e o que disse", "Kdo to poslal a co řekl"),

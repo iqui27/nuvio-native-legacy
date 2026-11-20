@@ -4499,7 +4499,7 @@
   T("Quem digitar o seu entra na sua lista e você entra na dele. Ninguém precisa fazer o caminho de volta.", "Kto wpisze Twój kod, dołącza do Twojej listy, a Ty do jego. Żadne z Was nie musi robić tego dwa razy."),
   T("Quem está assistindo?", "Kto ogląda?"),
   T("Quem faz o quê, e a que preço", "Kto co robi i za jaką cenę"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Kto zbudował plik .ipk, musi podać adres URL projektu i klucz."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Kto zbudował pakiet, musi podać adres URL projektu i klucz."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Kto już obejrzał tytuł, pojawia się na plakacie, w hero i na stronie tytułu."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Osoby z włączonym Profilem do wyszukania, najpierw ostatnio aktywne."),
   T("Quem mandou, e o que disse", "Kto to wysłał i co powiedział"),
