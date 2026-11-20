@@ -1404,14 +1404,29 @@ object NvPlayer {
     // .mpd no fim do path ou no fim de um valor de query param
     // (/api/live?file=canal.mpd). O valor chega decodificado e sem a query ou
     // o fragmento aninhados, entao file=canal.mpd%3Ftoken%3Dabc (MPD assinado)
-    // tambem casa. Nao bate em "dash" solto nem em dominio.
+    // e ate file=canal.mpd%3Fexpires%3D...T...%3A59Z (ISO 8601) tambem casam.
+    // Funcao pura sobre String: o valor decodificado NAO pode ir ao
+    // Uri.parse, que leria o primeiro ':' de "2026-11-20T23:59:59Z" como
+    // esquema e devolveria path nulo. Nao bate em "dash" solto nem em dominio.
     internal fun isMpdUri(url: String): Boolean {
-        val uri = android.net.Uri.parse(url)
-        if (uri.path?.endsWith(".mpd", true) == true) return true
-        val query = uri.query ?: return false
+        // .mpd no fim do caminho da URL propria (sem query nem fragmento).
+        val caminho = url.substringBefore('?').substringBefore('#')
+        if (caminho.endsWith(".mpd", true)) return true
+        // .mpd no fim do valor decodificado de um param de query: corta no
+        // primeiro '?' ou '#' ANINHADO (a query do valor) e testa o sufixo.
+        // O '?'/'#' de corte e o que vem codificado no proprio valor
+        // (canal.mpd%3Ftoken%3Dabc -> "canal.mpd?token=abc" -> "canal.mpd");
+        // o separador de params da URL externa ('&' cru) sai antes, no split.
+        val query = url.substringAfter('?', "").substringBefore('#')
+        if (query.isEmpty()) return false
         return query.split('&').any {
             val valor = it.substringAfter('=', it)
-            Uri.parse(valor).path?.endsWith(".mpd", true) == true
+            val dec = try {
+                java.net.URLDecoder.decode(valor, "UTF-8")
+            } catch (e: Exception) {
+                valor
+            }
+            dec.substringBefore('?').substringBefore('#').endsWith(".mpd", true)
         }
     }
 

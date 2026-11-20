@@ -26,6 +26,9 @@ class MpdUriRouteTest {
         for (url in listOf(
             "https://media.example/api/live?file=canal.mpd%3Ftoken%3Dabc",
             "https://media.example/api/live?file=https%3A%2F%2Fcdn.example%2Fx%2Fcanal.mpd%3Ft%3D1",
+            // Horario ISO 8601 assinado: o ':' de 23:59:59 nao pode ser lido
+            // como esquema por um re-parse do valor decodificado.
+            "https://media.example/api/live?file=canal.mpd%3Fexpires%3D2026-11-20T23%3A59%3A59Z%26sig%3Dabc",
         )) assertEquals("esperava DASH: $url", C.CONTENT_TYPE_DASH, route(url))
     }
 
@@ -49,6 +52,12 @@ class MpdUriRouteTest {
             "https://media.example/api/live?file=canal.mpdx",
             "https://media.example/api/live?file=canal.mpdx%3Ftoken%3Dabc",
             "https://media.example/api/live?provider=abc",
+            "https://media.example/api/live?file=%ZZ",
+            "https://media.example/api/live?file=%",
+            "https://media.example/api/live?file=",
+            "https://media.example/api/live?file=?",
+            "https://media.example/api/live?file=%3F",
+            "https://media.example/api/live?",
         )) assertEquals("esperava progressivo: $url", C.CONTENT_TYPE_OTHER, route(url))
     }
 }

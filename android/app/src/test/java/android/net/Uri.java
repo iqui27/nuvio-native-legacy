@@ -89,8 +89,9 @@ public class Uri {
         int i = 0;
         while (i < v.length()) {
             char c = v.charAt(i);
-            if (c == '%' && i + 2 < v.length()) {
+            if (c == '%') {
                 bytes.reset();
+                int start = i;
                 while (i + 2 < v.length() && v.charAt(i) == '%') {
                     int hi = Character.digit(v.charAt(i + 1), 16);
                     int lo = Character.digit(v.charAt(i + 2), 16);
@@ -98,7 +99,16 @@ public class Uri {
                     bytes.write((hi << 4) | lo);
                     i += 3;
                 }
-                out.append(new String(bytes.toByteArray(), java.nio.charset.StandardCharsets.UTF_8));
+                if (i == start) {
+                    // Malformed escape: the real UriCodec appends U+FFFD once
+                    // and consumes '%' plus only the first offending hex char
+                    // ("%ZZ" -> "�Z", "%" at end -> "�"). Never hang on '%'.
+                    out.append('�');
+                    i++;
+                    if (i < v.length() && v.charAt(i) != '%') i++;
+                } else {
+                    out.append(new String(bytes.toByteArray(), java.nio.charset.StandardCharsets.UTF_8));
+                }
             } else {
                 out.append(c);
                 i++;
