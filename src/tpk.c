@@ -20,6 +20,7 @@
 #include "layout.h"
 #include <SDL2/SDL.h>
 #include "tpk_egl.h"
+#include "deeplink.h"
 #include <GLES2/gl2.h>
 #include <time.h>
 #include <dlfcn.h>
@@ -232,6 +233,11 @@ int nv_tpk_iniciar(const char *arte, const char *dados, int w, int h) {
   pthread_detach(t);
   return 0;
 }
+
+// Deep link from a Tizen app control (tizen-tpk/Program.cs): handed to the same
+// platform-neutral router Android uses (docs/deeplink.md).
+__attribute__((visibility("default")))
+void nv_tpk_link(const char *url) { if (url && *url) deeplink_postar(url); }
 
 // Linha do host (.NET) no mesmo nuvio.log do app: e o log que o painel da TV
 // (tecla vermelha) mostra e o que o envio automatico sobe.

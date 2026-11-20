@@ -48,6 +48,7 @@ namespace NuvioTpk
         [DllImport("libnuvio.so")] static extern void nv_tpk_config(int esperaMs, int swapZero);
         [DllImport("libnuvio.so")] static extern void nv_tpk_tecla(string nome, int apertou);
         [DllImport("libnuvio.so")] static extern void nv_tpk_log(string linha);
+        [DllImport("libnuvio.so")] static extern void nv_tpk_link(string url);
         [DllImport("libnuvio.so")] static extern void nv_tpk_ciclo(int memoria);
         [DllImport("libdl.so.2")] static extern IntPtr dlopen(string path, int flags);
         [DllImport("libdl.so.2")] static extern IntPtr dlerror();
@@ -340,6 +341,8 @@ namespace NuvioTpk
                 nv_tpk_config(50, 1);
 #endif
                 if (nv_tpk_iniciar(arte, dados, W, H) != 0) throw new Exception("nv_tpk_iniciar failed");
+                iniciou = true;
+                PostaLink();
             }
             catch (Exception e)
             {
@@ -1061,6 +1064,33 @@ namespace NuvioTpk
             base.OnTerminate();
         }
 
+        // Deep links (docs/deeplink.md) from other apps: the link comes as the app
+        // control's extra data "contentTarget" (as the official Nuvio web app reads
+        // it) or as its uri. It waits until nv_tpk_iniciar has run, so the native
+        // library is never touched before OnCreate loaded it.
+        bool iniciou;
+        string linkPendente;
+        void GuardaLink(Tizen.Applications.ReceivedAppControl ac)
+        {
+            if (ac == null) return;
+            string url = null;
+            try { if (ac.ExtraData.TryGet("contentTarget", out string v)) url = v; } catch { }
+            if (string.IsNullOrEmpty(url)) { try { url = ac.Uri; } catch { } }
+            if (string.IsNullOrEmpty(url) || url.Length > 512) return;
+            linkPendente = url;
+            Etapa("note deeplink received");
+            if (iniciou) PostaLink();
+        }
+        void PostaLink()
+        {
+            string url = linkPendente;
+            if (url == null) return;
+            linkPendente = null;
+            try { nv_tpk_link(url); }
+            catch (EntryPointNotFoundException) { Etapa("note deeplink: libnuvio has no nv_tpk_link"); }
+            catch (Exception x) { Etapa("note deeplink failed " + x.GetType().Name); }
+        }
+
         protected override void OnAppControlReceived(Tizen.Applications.AppControlReceivedEventArgs e)
         {
             string op = "?";
@@ -1076,6 +1106,7 @@ namespace NuvioTpk
                 Exit();
                 return;
             }
+            GuardaLink(e?.ReceivedAppControl);
             if (JanelaUnica) { Janela("appcontrol: janela unica (GLView), nada a subir"); return; }
             if (!JANELA_SOBE_GL_APPCONTROL || gl == null) return;
 #if NV_API8
