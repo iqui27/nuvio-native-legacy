@@ -17,6 +17,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <sys/socket.h>
 
 static const char *logPath;
@@ -156,7 +157,8 @@ int main(int argc, char **argv) {
     a.sin_family = AF_INET; a.sin_port = htons(porta);
     a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     for (k = 0; k < 3; k++) {
-      int s = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+      int s = socket(AF_INET, SOCK_STREAM, 0);
+      (void)fcntl(s, F_SETFL, fcntl(s, F_GETFL, 0) | O_NONBLOCK);
       (void)connect(s, (struct sockaddr *)&a, sizeof a);
     }
     usleep(100000);
