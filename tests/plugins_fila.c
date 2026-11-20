@@ -31,7 +31,7 @@ char *dados_ler(const char *nome) {
   return strdup(text);
 }
 int dados_gravar(const char *nome, const char *text) { (void)nome; free(saved); saved = strdup(text); return 1; }
-void dados_gravar_leve(const char *nome, const char *text) { dados_gravar(nome, text); }
+int dados_gravar_leve(const char *nome, const char *text) { return dados_gravar(nome, text); }
 size_t pj_pilha(void) { return 1024 * 1024; }
 int pj_executar(const PjPedido *p, PjResultado *r) {
   memset(r, 0, sizeof *r);
