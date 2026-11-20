@@ -6966,7 +6966,7 @@
   T("Quem está usando a TV agora", "Cine folosește televizorul acum"),
   T("Quem faz as miniaturas. Seekr.tv: um serviço na internet, por título. OpenSeek: um servidor seu na rede de casa, que tira os quadros do próprio vídeo que está tocando. O endereço do vídeo vai só para ele, por conexão segura fixada no pareamento.", "Who makes the previews. Seekr.tv: an internet service, per title. OpenSeek: your own server on your home network, which takes the frames from the very video that is playing. The video address goes only to it, over a secure connection pinned at pairing."),
   T("Quem faz o quê, e a que preço", "Cine ce face și cu ce preț"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Cine a construit .ipk trebuie să furnizeze URL-ul și cheia proiectului."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Cine a construit pachetul trebuie să furnizeze URL-ul și cheia proiectului."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Cine a văzut deja un titlu apare pe afiș, în hero și pe pagina titlului."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Cei cu Profil căutabil activat, cei mai recent activi primii."),
   T("Quem mandou, e o que disse", "Cine l-a trimis și ce a spus"),

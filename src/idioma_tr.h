@@ -6967,7 +6967,7 @@
   T("Quem está usando a TV agora", "Şu anda TV'yi kim kullanıyor?"),
   T("Quem faz as miniaturas. Seekr.tv: um serviço na internet, por título. OpenSeek: um servidor seu na rede de casa, que tira os quadros do próprio vídeo que está tocando. O endereço do vídeo vai só para ele, por conexão segura fixada no pareamento.", "Who makes the previews. Seekr.tv: an internet service, per title. OpenSeek: your own server on your home network, which takes the frames from the very video that is playing. The video address goes only to it, over a secure connection pinned at pairing."),
   T("Quem faz o quê, e a que preço", "Kim ne yapıyor, hangi bedelle"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", ".ipk'yi kim derlediyse proje URL'sini ve anahtarı o vermeli."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Paketi kim derlediyse proje URL'sini ve anahtarı o vermeli."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Bir yapımı izlemiş olanlar afişte, hero'da ve yapım sayfasında görünür."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Aranabilir profili açık olanlar; en son aktif olanlar önce."),
   T("Quem mandou, e o que disse", "Kim gönderdi ve ne dedi"),

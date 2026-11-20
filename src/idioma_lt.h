@@ -6967,7 +6967,7 @@
   T("Quem está usando a TV agora", "Kas dabar naudojasi televizoriumi"),
   T("Quem faz as miniaturas. Seekr.tv: um serviço na internet, por título. OpenSeek: um servidor seu na rede de casa, que tira os quadros do próprio vídeo que está tocando. O endereço do vídeo vai só para ele, por conexão segura fixada no pareamento.", "Who makes the previews. Seekr.tv: an internet service, per title. OpenSeek: your own server on your home network, which takes the frames from the very video that is playing. The video address goes only to it, over a secure connection pinned at pairing."),
   T("Quem faz o quê, e a que preço", "Kas ką daro ir kokia kaina"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Tas, kas sukūrė .ipk, turi pateikti projekto URL ir raktą."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Tas, kas sukūrė paketą, turi pateikti projekto URL ir raktą."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Kas pavadinimą jau matė, rodomas ant plakato, hero ir pavadinimo puslapyje."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Tie, kurie įjungė Ieškomą profilį; pirmiausia neseniai aktyvūs."),
   T("Quem mandou, e o que disse", "Kas atsiuntė ir ką pasakė"),

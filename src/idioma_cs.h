@@ -6967,7 +6967,7 @@
   T("Quem está usando a TV agora", "Kdo nyní používá televizi"),
   T("Quem faz as miniaturas. Seekr.tv: um serviço na internet, por título. OpenSeek: um servidor seu na rede de casa, que tira os quadros do próprio vídeo que está tocando. O endereço do vídeo vai só para ele, por conexão segura fixada no pareamento.", "Who makes the previews. Seekr.tv: an internet service, per title. OpenSeek: your own server on your home network, which takes the frames from the very video that is playing. The video address goes only to it, over a secure connection pinned at pairing."),
   T("Quem faz o quê, e a que preço", "Kdo co dělá a za jakou cenu"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Kdo sestavil .ipk, musí dodat URL projektu a klíč."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Kdo sestavil balíček, musí dodat URL projektu a klíč."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Kdo titul už viděl, objeví se na plakátu, v hero a na stránce titulu."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Lidé se zapnutým Vyhledatelným profilem, nejdřív ti naposledy aktivní."),
   T("Quem mandou, e o que disse", "Kdo to poslal a co řekl"),

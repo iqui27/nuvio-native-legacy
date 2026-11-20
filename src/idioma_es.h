@@ -6966,7 +6966,7 @@
   T("Quem está usando a TV agora", "¿Quién usa la televisión ahora?"),
   T("Quem faz as miniaturas. Seekr.tv: um serviço na internet, por título. OpenSeek: um servidor seu na rede de casa, que tira os quadros do próprio vídeo que está tocando. O endereço do vídeo vai só para ele, por conexão segura fixada no pareamento.", "Who makes the previews. Seekr.tv: an internet service, per title. OpenSeek: your own server on your home network, which takes the frames from the very video that is playing. The video address goes only to it, over a secure connection pinned at pairing."),
   T("Quem faz o quê, e a que preço", "Quién hace qué, y a qué precio"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Quien generó el .ipk debe indicar la URL y la clave del proyecto."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Quien generó el paquete debe indicar la URL y la clave del proyecto."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Quien ya vio un título aparece en el póster, en el hero y en la página del título."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Quienes activaron Perfil buscable, primero los más activos recientemente."),
   T("Quem mandou, e o que disse", "Quién lo envió y qué dijo"),

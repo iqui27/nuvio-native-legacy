@@ -6967,7 +6967,7 @@
   T("Quem está usando a TV agora", "Ai đang sử dụng TV bây giờ"),
   T("Quem faz as miniaturas. Seekr.tv: um serviço na internet, por título. OpenSeek: um servidor seu na rede de casa, que tira os quadros do próprio vídeo que está tocando. O endereço do vídeo vai só para ele, por conexão segura fixada no pareamento.", "Who makes the previews. Seekr.tv: an internet service, per title. OpenSeek: your own server on your home network, which takes the frames from the very video that is playing. The video address goes only to it, over a secure connection pinned at pairing."),
   T("Quem faz o quê, e a que preço", "Ai làm gì, và phải trả giá ra sao"),
-  T("Quem gerou o .ipk precisa informar a URL e a chave do projeto.", "Người dựng .ipk phải cung cấp URL và khóa của dự án."),
+  T("Quem gerou o pacote precisa informar a URL e a chave do projeto.", "Người dựng gói phải cung cấp URL và khóa của dự án."),
   T("Quem já viu um título aparece no pôster, no hero e na página do título.", "Ai đã xem một tựa phim sẽ hiện trên poster, trong hero và trên trang của tựa phim."),
   T("Quem ligou o Perfil pesquisável, com atividade mais recente primeiro.", "Những ai bật Hồ sơ có thể tìm kiếm, ai hoạt động gần đây xếp trước."),
   T("Quem mandou, e o que disse", "Ai đã gửi và họ đã nói gì"),
