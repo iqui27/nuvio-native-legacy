@@ -1320,13 +1320,18 @@ object NvPlayer {
             val pcm = v != 1f
             if (r.velocidadePcm != pcm) {
                 val pos = p.currentPosition
+                val play = p.playWhenReady
+                val sv = superficie
                 r.velocidadePcm = pcm
                 // Re-select the audio decoder against the new sink capabilities.
-                // stop/prepare keeps the media source, track overrides and pause.
-                p.stop()
-                p.seekTo(pos)
+                // Media3 1.8 has no surface-preserving stop(); pause, flip PCM policy,
+                // and reattach the SurfaceView so the last frame stays visible (#740).
+                p.pause()
                 p.setPlaybackSpeed(v)
-                p.prepare()
+                p.seekTo(pos)
+                sv?.let { p.setVideoSurfaceView(it) }
+                if (play) p.play() else p.playWhenReady = false
+                Log.i(TAG, "[speed] pcm policy flip pos=$pos playWhenReady=$play")
             } else p.setPlaybackSpeed(v)
             Log.i(TAG, "[speed] requested=$v parameters=${p.playbackParameters.speed} pcm=$pcm")
         }
