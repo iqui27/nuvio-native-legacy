@@ -3605,6 +3605,67 @@ void rede_tls_fechar(RedeTls *t) {
 }
 
 
+// SONDA TLS (#737). O curl 35 do login nao diz O QUE o aperto de mao perdeu:
+// cadeia de CA velha (a TV 2018 tem o store de fabrica, sem a ISRG Root X1),
+// cifra/versao que a libcurl 7.53.1 nao negocia mais com o servidor, ou SNI.
+// A sonda separa os tres com DUAS tentativas no MESMO host, ambas CONNECT_ONLY
+// (nenhum byte de HTTP sai): primeiro com a verificacao LIGADA e o CAINFO do
+// pacote (a prova "o bundle Mozilla do .ipk resolve a cadeia?"), depois sem
+// verificar (a prova "o aperto de mao em si fecha?"). Os resultados se leem:
+//   bundle=0  e  semca=<TLS>     -> servidor/lib nao se entendem (cifra/SNI);
+//                                   mexer no CA nao ajuda.
+//   bundle=<TLS>  e  semca=0     -> cifra/SNI ok; e a CADEIA. Falta a raiz no
+//                                   store do aparelho E no bundle embarcado.
+//   bundle=60/51/77  e  semca=0  -> mesma leitura: aperto ok, rejeicao do cert.
+//   bundle=0                    -> o login devia passar: o bundle embarcado
+//                                   cobre o host e o problema e transitorio.
+// Sem CAINFO o "bundle" e o store de fabrica do webOS — o que distingue "a
+// .ipk nao trouxe o PEM" de "o PEM nao cobre a cadeia do servidor".
+// Nao vai a tela nem muda comportamento: e so o log, para o relato que chega
+// sem in-app. Uma so chamada por tentativa de login com TLS; quem chama regula.
+int rede_sonda_tls(const char *url) {
+  static const int N = 3;
+  const char *rotulo[3] = { "bundle", "sistema", "semca" };
+  int r[3], i, base;
+  void *c;
+  if (!url || strncmp(url, "https://", 8) || !abrir()) return -1;
+  for (i = 0; i < N; i++) {
+    c = curl_init();
+    if (!c) { r[i] = -2; continue; }
+    curl_setopt(c, OPT_URL, url);
+    curl_setopt(c, OPT_CONNECT_ONLY, (long)1);
+    curl_setopt(c, OPT_HTTP_VERSION, (long)2 /* CURL_HTTP_VERSION_1_1 */);
+    curl_setopt(c, OPT_CONNECTTIMEOUT_MS, (long)900);
+    curl_setopt(c, OPT_TIMEOUT_MS, (long)900);
+    curl_setopt(c, OPT_NOSIGNAL, (long)1);
+    // semca replica exatamente o que opcoesComuns faz no caminho do login; as
+    // duas outras sao a hipotese CA ligada, com o PEM do pacote e sem ele.
+    if (i == 2) {
+      curl_setopt(c, OPT_SSL_VERIFYPEER, (long)0);
+      curl_setopt(c, OPT_SSL_VERIFYHOST, (long)0);
+    } else {
+      curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
+      curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
+      if (i == 0 && discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
+    }
+    r[i] = curl_perform(c);
+    curl_cleanup(c);
+  }
+  { char seg[120];
+    printf("[rede] sonda tls %s: %s=%d %s=%d %s=%d\n",
+           rede_url_publica(url, seg, sizeof seg),
+           rotulo[0], r[0], rotulo[1], r[1], rotulo[2], r[2]);
+    fflush(stdout); }
+  // Resumo: 0 = o aperto de mao em si falhou nas duas (cifra/SNI/rede);
+  // 1 = fecha sem verificar mas nao com CA (cadeia/certificado);
+  // 2 = fecha verificando (o problema do login e outro ou transitorio).
+  base = r[2] == 0;
+  if (!base) return 0;
+  if (r[0] == 0 || r[1] == 0) return 2;
+  return 1;
+}
+
+
 /* One response, bounded independently of the generic download TLS state. */
 typedef struct {
   Balde body;
@@ -4180,6 +4241,7 @@ int rede_fluxo64_tls(const char *u, const char *h, int64_t s, int (*sk)(void *, 
                      int64_t *t, int *st, volatile int *c, char *f, int *x, long ms, int64_t *b) {
   return rede_fluxo64(u,h,s,sk,o,t,st,c,f,x,ms,b);
 }
+int rede_sonda_tls(const char *url) { (void)url; return -1; }
 char *rede_baixar_trecho64_vigiado(const char *u,const char *h,int64_t s,int64_t e,
  long *n,int64_t *t,int *st,volatile int *c,char *f,int *x,volatile int *urgent,unsigned idle,int *stalled) {
  (void)urgent;(void)idle;if(stalled)*stalled=0;
