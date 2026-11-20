@@ -11,7 +11,7 @@ cc -std=gnu11 -O1 -g -Wall -Wextra -Wno-unused-function -Wno-unused-variable -Wn
 "$work/test"
 cc -std=gnu11 -O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -ffunction-sections -fdata-sections tests/juntos_cliente.c src/juntosfonte.c \
-  src/juntosmotor.c src/juntosproto.c src/juntossync.c src/js.c \
+  src/juntosmotor.c src/juntosproto.c src/juntossync.c src/js.c tests/nvbackend_stub.c -DNV_REC_URL='"http://fixture.invalid"' \
   -L/opt/homebrew/lib -lSDL2 -Wl,-dead_strip -o "$work/client"
 "$work/client"
 python3 - <<'PY'

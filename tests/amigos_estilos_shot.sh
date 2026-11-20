@@ -18,7 +18,7 @@ for source in src/*.c src/dts/*.c; do
 done
 flags=()
 if [ "${NV_AMIGOS_BEFORE:-0}" != 1 ]; then flags+=(-DNV_AMIGOSFIL_TESTE); fi
-cc "${sources[@]}" tests/amigos_estilos_shot.c -Isrc -o "$NUVIO_DADOS/shot"   -O1 -g -DNV_SOCIALVIS_DEMO "${flags[@]}" -I/opt/homebrew/include -I/opt/homebrew/include/SDL2   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL   -Wno-deprecated-declarations -Wno-macro-redefined >"$saida/build.log" 2>&1 || { tail -60 "$saida/build.log"; exit 1; }
+cc "${sources[@]}" tests/amigos_estilos_shot.c -Isrc -DNV_REC_URL='"http://127.0.0.1:8799"' -o "$NUVIO_DADOS/shot"   -O1 -g -DNV_SOCIALVIS_DEMO "${flags[@]}" -I/opt/homebrew/include -I/opt/homebrew/include/SDL2   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL   -Wno-deprecated-declarations -Wno-macro-redefined >"$saida/build.log" 2>&1 || { tail -60 "$saida/build.log"; exit 1; }
 "$NUVIO_DADOS/shot" "$saida/s" >"$saida/test.log" 2>&1 || { tail -40 "$saida/test.log"; exit 1; }
 for f in "$saida"/s-*.bmp; do
   [ -e "$f" ] || continue

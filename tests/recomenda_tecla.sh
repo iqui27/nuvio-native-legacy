@@ -14,7 +14,7 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/recomenda.c) continue;; esac
   sources+=("$source")
 done
-cc "${sources[@]}" tests/recomenda_tecla.c -Isrc -o "$BIN" -O1 -g \
+cc "${sources[@]}" tests/recomenda_tecla.c -Isrc -DNV_REC_URL='"http://127.0.0.1:8799"' -o "$BIN" -O1 -g \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
