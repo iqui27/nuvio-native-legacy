@@ -606,33 +606,28 @@ const char *legenda_idioma(const char *idioma, const char *arquivo) {
   return "";
 }
 
-// So basename, sem query/fragmento (evita token em URL de addon no log).
+// So host e caminho da URL, sem o ultimo segmento: ele pode ser a chave, e
+// query/fragmento (token de addon) e userinfo (usuario:senha@) ficam de fora.
+// O corte de "?"/"#" precede a busca por '/' para uma URL dentro da query nao
+// chegar ao log.
 static void legenda_log_arquivo(const char *url, char *out, size_t cap) {
-  const char *s, *path, *last, *q, *end;
+  const char *s, *esq, *h, *at, *e, *fim;
   size_t n;
   if (!out || cap < 2) return;
   out[0] = 0;
   if (!url || !*url) return;
   s = url;
-  if (!strncasecmp(s, "https://", 8)) s += 8;
-  else if (!strncasecmp(s, "http://", 7)) s += 7;
-  path = strchr(s, '/');
-  if (!path || !path[1]) {
-    q = strpbrk(s, "?#");
-    n = q ? (size_t)(q - s) : strlen(s);
-    if (n >= cap) n = cap - 1;
-    memcpy(out, s, n);
-    out[n] = 0;
-    return;
-  }
-  end = strpbrk(path, "?#");
-  if (!end) end = path + strlen(path);
-  last = path + 1;
-  for (const char *p = path + 1; p < end; p++)
-    if (*p == '/') last = p + 1;
-  n = (size_t)(end - last);
+  if ((esq = strstr(s, "://")) != NULL) s = esq + 3;
+  e = strpbrk(s, "?#");
+  if (!e) e = s + strlen(s);
+  for (h = s, at = NULL; h < e && *h != '/'; h++)
+    if (*h == '@') at = h;
+  if (at) s = at + 1;   // o ultimo '@' da autoridade separa userinfo do host
+  fim = e;
+  while (fim > h && fim[-1] != '/') fim--;
+  n = (size_t)(fim - s);
   if (n >= cap) n = cap - 1;
-  memcpy(out, last, n);
+  memcpy(out, s, n);
   out[n] = 0;
 }
 
