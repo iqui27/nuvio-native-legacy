@@ -298,7 +298,8 @@ int assperf_resolucao_quadro(double *texto, double *blur) {
   t = agoraS();
   pthread_mutex_lock(&autoTrava);
   { int pesado = pesado_locked(t) || CG.prevCedo;
-    if (!A.em75 && pesado && t - A.desde >= AUTO_MIN100_S) auto_trocar_locked(1, t);
+    if (!A.em75 && pesado) auto_trocar_locked(1, t);
+    else if (A.em75 && pesado) A.desde = t;
     else if (A.em75 && !pesado && t - A.desde >= AUTO_MIN75_S) auto_trocar_locked(0, t); }
   if (A.em75) escalas_reduzidas(v, texto, blur);
   else *texto = *blur = 1.0;

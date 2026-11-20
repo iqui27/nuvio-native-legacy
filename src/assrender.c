@@ -141,6 +141,28 @@ char *assrender_marcar_tailandes(const char *txt) {
 #include <signal.h>
 #endif
 
+#ifdef NV_TPK
+/* How many CPUs this process may actually run on, not how many the TV has:
+ * a Tizen 4/5 sandbox starts the app inside a cpuset pinned to one CPU while
+ * sysconf still reports all of them. */
+static int ass_usable_cpus(void) {
+#if defined(__linux__) && defined(SYS_sched_getaffinity)
+  unsigned long mask[16];
+  memset(mask, 0, sizeof mask);
+  long r = syscall(SYS_sched_getaffinity, 0, sizeof mask, mask);
+  if (r > 0) {
+    int n = 0;
+    size_t words = (size_t)r / sizeof mask[0];
+    if (words > sizeof mask / sizeof mask[0]) words = sizeof mask / sizeof mask[0];
+    for (size_t i = 0; i < words; i++) n += __builtin_popcountl(mask[i]);
+    if (n > 0) return n;
+  }
+#endif
+  long onln = sysconf(_SC_NPROCESSORS_ONLN);
+  return onln > 0 ? (int)onln : 1;
+}
+#endif
+
 #define ASS_TEX_INICIAL 64
 
 typedef struct {
@@ -150,11 +172,12 @@ typedef struct {
 
 
 typedef struct {
-  int x, y, w, h, stride, type;
+  int x, y, w, h, stride, type, rgba;
   unsigned color;
   unsigned char *bitmap;
   unsigned long long chave;   // assperf: conteudo (bitmap + w + h); 0 = nao calculada
   float esc;                  // the soft (blur) pass: its own pixels per layout unit; 0 = the frame's
+  float subX, subY;           // fractional offset in this image's pixel space (rigid cache)
 } AssCpuImage;
 
 typedef struct {
@@ -780,6 +803,8 @@ static void ass_borda_estilo(ASS_Style *s, const PlainAssStyle *p, int resY, dou
   s->Shadow = p->border == 2 ? 4 : 0;
 }
 
+static unsigned assTrackStyleVer;
+
 static void ass_plain_style_locked(const PlainAssStyle *p) {
   ASS_Style *s;
   if (!assTrack || !assTrack->n_styles) return;
@@ -821,7 +846,7 @@ static void ass_plain_style_locked(const PlainAssStyle *p) {
     /* Flush cached event layout after an explicit style change or reset. */
     ass_set_selective_style_override_enabled(assRenderer, ASS_OVERRIDE_BIT_MARGINS);
     ass_set_selective_style_override_enabled(assRenderer, 0);
-    plainApl = *p; plainAplValido = 1;
+    plainApl = *p; plainAplValido = 1; assTrackStyleVer++;
     return;
   }
   s = &assTrack->styles[assTrack->default_style];
@@ -850,7 +875,258 @@ static void ass_plain_style_locked(const PlainAssStyle *p) {
   ass_set_selective_style_override_enabled(assRenderer, 0);
   ass_set_selective_style_override(assRenderer, s);
   ass_set_selective_style_override_enabled(assRenderer, ASS_OVERRIDE_BIT_MARGINS);
-  plainApl = *p; plainAplValido = 1;
+  plainApl = *p; plainAplValido = 1; assTrackStyleVer++;
+}
+
+#define ASS_RIGID_CACHE_MAX 384
+#define ASS_RIGID_FRAME_MAX 128
+#define ASS_RIGID_MISS_MAX 8
+#define ASS_RIGID_BYTES_MAX (32u * 1024u * 1024u)
+
+typedef struct {
+  int x, y, w, h, stride;
+  int isB;
+  uint32_t color;
+  int type;
+  float esc;
+  unsigned long long chave;
+  unsigned long long lowKey;
+  unsigned char *bitmap;
+} AssRigidImg;
+
+typedef struct {
+  uint64_t sig;
+  unsigned generation, styleVer;
+  int lw, lh, lwB, lhB, vw, vh;
+  int playResX, playResY;
+  int dividir;
+  double esc;
+  double refPx, refPy;
+  unsigned tick;
+  int count;
+  size_t bytes;
+  AssRigidImg *imgs;
+} AssRigidEntry;
+
+typedef struct {
+  uint64_t sig;
+  double px, py;
+  int layer, readOrder, mode;
+} AssRigidHit;
+
+typedef struct {
+  ASS_Event ev;
+  uint64_t sig;
+  double px, py;
+  int layer, readOrder, mode;
+  long long t;
+} AssRigidMiss;
+
+typedef struct {
+  ASS_Track *snapTrack;
+  ASS_Event *snapEvents;
+  int snapCap;
+  ASS_Track *rigidTrack;
+  ASS_Event rigidEvent;
+  unsigned snapGen, snapStyleVer;
+  AssRigidHit hits[ASS_RIGID_FRAME_MAX];
+  int hitN;
+  AssRigidMiss misses[ASS_RIGID_MISS_MAX];
+  int missN;
+} AssRigidCtx;
+
+static AssRigidEntry assRigid[ASS_RIGID_CACHE_MAX];
+static size_t assRigidBytes;
+static unsigned assRigidTick;
+static long assRigidHits, assRigidMisses;
+static pthread_mutex_t assRigidTrava = PTHREAD_MUTEX_INITIALIZER;
+#define ASS_RIGID_SEEN_MAX 512
+static uint64_t assRigidSeen[ASS_RIGID_SEEN_MAX];
+static uint64_t assRigidBanned[ASS_RIGID_SEEN_MAX];
+static long long assRigidRetry[ASS_RIGID_SEEN_MAX];
+static AssRigidCtx assRigidCtx;
+
+static void ass_rigid_entry_free(AssRigidEntry *e) {
+  int i;
+  if (!e->imgs) return;
+  for (i = 0; i < e->count; i++) free(e->imgs[i].bitmap);
+  free(e->imgs);
+  if (assRigidBytes >= e->bytes) assRigidBytes -= e->bytes;
+  else assRigidBytes = 0;
+  memset(e, 0, sizeof *e);
+}
+
+static void ass_rigid_clear(void) {
+  int i;
+  pthread_mutex_lock(&assRigidTrava);
+  for (i = 0; i < ASS_RIGID_CACHE_MAX; i++) ass_rigid_entry_free(&assRigid[i]);
+  assRigidBytes = 0;
+  memset(assRigidSeen, 0, sizeof assRigidSeen);
+  memset(assRigidBanned, 0, sizeof assRigidBanned);
+  memset(assRigidRetry, 0, sizeof assRigidRetry);
+  pthread_mutex_unlock(&assRigidTrava);
+}
+
+static int ass_rigid_should_cache(uint64_t sig, long long nowMs) {
+  unsigned slot = (unsigned)((sig ^ (sig >> 32)) & (ASS_RIGID_SEEN_MAX - 1));
+  int hit = 0;
+  pthread_mutex_lock(&assRigidTrava);
+  if (assRigidBanned[slot] == sig) {
+    pthread_mutex_unlock(&assRigidTrava);
+    return 0;
+  }
+  if (assRigidSeen[slot] == sig) {
+    if (assRigidRetry[slot] > nowMs && assRigidRetry[slot] - nowMs < 2000) {
+      pthread_mutex_unlock(&assRigidTrava);
+      return 0;
+    }
+    assRigidRetry[slot] = 0;
+    hit = 1;
+  } else {
+    assRigidSeen[slot] = sig;
+    assRigidRetry[slot] = 0;
+  }
+  pthread_mutex_unlock(&assRigidTrava);
+  return hit;
+}
+
+static void ass_rigid_defer(uint64_t sig, long long retryAfterMs) {
+  unsigned slot = (unsigned)((sig ^ (sig >> 32)) & (ASS_RIGID_SEEN_MAX - 1));
+  pthread_mutex_lock(&assRigidTrava);
+  if (assRigidBanned[slot] != sig) {
+    assRigidSeen[slot] = sig;
+    assRigidRetry[slot] = retryAfterMs;
+  }
+  pthread_mutex_unlock(&assRigidTrava);
+}
+
+static void ass_rigid_ban(uint64_t sig) {
+  unsigned slot = (unsigned)((sig ^ (sig >> 32)) & (ASS_RIGID_SEEN_MAX - 1));
+  pthread_mutex_lock(&assRigidTrava);
+  assRigidBanned[slot] = sig;
+  assRigidRetry[slot] = 0;
+  pthread_mutex_unlock(&assRigidTrava);
+}
+
+static const AssRigidEntry *ass_rigid_lookup_locked(uint64_t sig, unsigned gen, unsigned styleVer,
+                                                    int lw, int lh, int lwB, int lhB,
+                                                    int vw, int vh, int dividir, double esc) {
+  int i;
+  for (i = 0; i < ASS_RIGID_CACHE_MAX; i++) {
+    AssRigidEntry *e = &assRigid[i];
+    if (e->sig == sig && e->imgs && e->generation == gen && e->styleVer == styleVer &&
+        e->lw == lw && e->lh == lh && e->lwB == lwB && e->lhB == lhB &&
+        e->vw == vw && e->vh == vh && e->dividir == dividir && fabs(e->esc - esc) < 1e-4) {
+      e->tick = ++assRigidTick;
+      return e;
+    }
+  }
+  return NULL;
+}
+
+static int ass_rigid_has(uint64_t sig, unsigned gen, unsigned styleVer,
+                         int lw, int lh, int lwB, int lhB,
+                         int vw, int vh, int dividir, double esc) {
+  int found;
+  pthread_mutex_lock(&assRigidTrava);
+  found = ass_rigid_lookup_locked(sig, gen, styleVer, lw, lh, lwB, lhB, vw, vh, dividir, esc) != NULL;
+  if (found) assRigidHits++;
+  pthread_mutex_unlock(&assRigidTrava);
+  return found;
+}
+
+static void ass_rigid_store(uint64_t sig, unsigned gen, unsigned styleVer,
+                            int lw, int lh, int lwB, int lhB,
+                            int vw, int vh, int playResX, int playResY,
+                            int dividir, double esc,
+                            double refPx, double refPy,
+                            const ASS_Image *headA, const ASS_Image *headB, float escB) {
+  const ASS_Image *cur;
+  AssRigidImg *imgs = NULL;
+  int count = 0, idx = 0, i, slot = -1;
+  size_t bytes = 0;
+  for (cur = headA; cur; cur = cur->next) if (cur->w > 0 && cur->h > 0 && cur->bitmap) count++;
+  for (cur = headB; cur; cur = cur->next) if (cur->w > 0 && cur->h > 0 && cur->bitmap) count++;
+  if (count <= 0 || count > 64) return;
+  imgs = (AssRigidImg *)calloc((size_t)count, sizeof *imgs);
+  if (!imgs) return;
+  for (i = 0; i < 2; i++) {
+    float passEsc = i == 0 ? 0.0f : escB;
+    for (cur = i == 0 ? headA : headB; cur; cur = cur->next) {
+      size_t sz;
+      if (cur->w <= 0 || cur->h <= 0 || !cur->bitmap) continue;
+      sz = (size_t)cur->w * (size_t)cur->h;
+      if (bytes + sz > 4u * 1024u * 1024u) {
+        int j;
+        for (j = 0; j < idx; j++) free(imgs[j].bitmap);
+        free(imgs);
+        return;
+      }
+      imgs[idx].bitmap = (unsigned char *)malloc(sz);
+      if (!imgs[idx].bitmap) {
+        int j;
+        for (j = 0; j < idx; j++) free(imgs[j].bitmap);
+        free(imgs);
+        return;
+      }
+      { int y;
+        for (y = 0; y < cur->h; y++)
+          memcpy(imgs[idx].bitmap + (size_t)y * (size_t)cur->w,
+                 cur->bitmap + (size_t)y * (size_t)cur->stride, (size_t)cur->w); }
+      imgs[idx].w = cur->w;
+      imgs[idx].h = cur->h;
+      imgs[idx].stride = cur->w;
+      imgs[idx].x = cur->dst_x;
+      imgs[idx].y = cur->dst_y;
+      imgs[idx].isB = i;
+      imgs[idx].color = cur->color;
+      imgs[idx].type = cur->type;
+      imgs[idx].esc = passEsc;
+      imgs[idx].chave = ass_chave_bitmap(imgs[idx].bitmap, cur->w, cur->h, cur->w);
+#if ASS_DIVIDIR
+      imgs[idx].lowKey = ass_nv_image_key(cur) & 0xFFFFULL;
+#else
+      imgs[idx].lowKey = 0ULL;
+#endif
+      bytes += sz;
+      idx++;
+    }
+  }
+  pthread_mutex_lock(&assRigidTrava);
+  if (ass_rigid_lookup_locked(sig, gen, styleVer, lw, lh, lwB, lhB, vw, vh, dividir, esc)) {
+    pthread_mutex_unlock(&assRigidTrava);
+    for (i = 0; i < idx; i++) free(imgs[i].bitmap);
+    free(imgs);
+    return;
+  }
+  while (assRigidBytes + bytes > ASS_RIGID_BYTES_MAX) {
+    int oldest = -1;
+    for (i = 0; i < ASS_RIGID_CACHE_MAX; i++)
+      if (assRigid[i].imgs && (oldest < 0 || assRigid[i].tick < assRigid[oldest].tick)) oldest = i;
+    if (oldest < 0) break;
+    ass_rigid_entry_free(&assRigid[oldest]);
+  }
+  for (i = 0; i < ASS_RIGID_CACHE_MAX; i++) {
+    if (!assRigid[i].imgs) { slot = i; break; }
+    if (slot < 0 || assRigid[i].tick < assRigid[slot].tick) slot = i;
+  }
+  if (slot >= 0) {
+    AssRigidEntry *e = &assRigid[slot];
+    ass_rigid_entry_free(e);
+    e->sig = sig; e->generation = gen; e->styleVer = styleVer;
+    e->lw = lw; e->lh = lh; e->lwB = lwB; e->lhB = lhB;
+    e->vw = vw; e->vh = vh; e->playResX = playResX; e->playResY = playResY;
+    e->dividir = dividir; e->esc = esc;
+    e->refPx = refPx; e->refPy = refPy;
+    e->tick = ++assRigidTick;
+    e->count = idx; e->bytes = bytes; e->imgs = imgs;
+    assRigidBytes += bytes;
+    assRigidMisses++;
+  } else {
+    for (i = 0; i < idx; i++) free(imgs[i].bitmap);
+    free(imgs);
+  }
+  pthread_mutex_unlock(&assRigidTrava);
 }
 
 static void ass_plain_reflow_locked(long long t) {
@@ -907,19 +1183,20 @@ static void ass_aplicar_assperf_locked(void) {
       feito = 1;
       ass_nv_set_engine(assRenderer, 1);
       assfios_nome_trocar("nv-assblur", nomeAnt);
+      int usable = ass_usable_cpus();
 #ifdef NV_TPK40
-      ass_nv_set_threads(2);   /* Tizen 4/5: 2 blur threads, one core left to the TV (owner, 16/11) */
+      ass_nv_set_threads(usable <= 1 ? 1 : 2);
 #else
-      ass_nv_set_threads(ASSPERF_FIOS);
+      ass_nv_set_threads(usable <= 1 ? 1 : ASSPERF_FIOS);
 #endif
       assfios_nome_voltar(nomeAnt);
       /* WHAT THIS TV IS, once per session (libass on the Tizen 4/5 .tpk, 09/11):
        * the engine's values are the S95C's on every .tpk, so a 2018-2020 TV's
        * "[ass] 10s" lines are read against its cores and memory. */
-      printf("[ass] tv: cores=%ld online of %ld | RAM=%ldMB total, %ldMB free | "
+      printf("[ass] tv: cores=%ld online of %ld (usable=%d) | RAM=%ldMB total, %ldMB free | "
              "bitmap engine=%s, blur threads=%d | render ahead=%dms, lines dropped after=%lds, "
              "attached fonts up to=%luMB, relay park=%ldMB\n",
-             sysconf(_SC_NPROCESSORS_ONLN), sysconf(_SC_NPROCESSORS_CONF),
+             sysconf(_SC_NPROCESSORS_ONLN), sysconf(_SC_NPROCESSORS_CONF), usable,
              memlog_total_mb(), memlog_livre_mb(),
              ass_nv_get_engine(assRenderer) ? "NEON" : "C", ass_nv_get_threads(),
              (int)ASSPERF_ADIANTE_MS, (long)(ASSPERF_PODA_MS / 1000L),
@@ -988,16 +1265,524 @@ static void ass_marcar_sinais_locked(unsigned g, long long t) {
 #endif
 
 
+static void ass_rigid_free_ctx_locked(void) {
+  int i, n = assRigidCtx.snapTrack ? assRigidCtx.snapTrack->n_events : 0;
+  /* libass keeps per-event collision state in render_priv and frees it in
+   * ass_free_event. These copies never go through that, so release it here.
+   * Only the slots in use: past n_events the array is uninitialised. */
+  for (i = 0; i < n; i++) free(assRigidCtx.snapEvents[i].render_priv);
+  free(assRigidCtx.snapEvents); assRigidCtx.snapEvents = NULL; assRigidCtx.snapCap = 0;
+  free(assRigidCtx.rigidEvent.render_priv);
+  assRigidCtx.rigidEvent.render_priv = NULL;
+  if (assRigidCtx.snapTrack) {
+    assRigidCtx.snapTrack->events = NULL; assRigidCtx.snapTrack->n_events = 0; assRigidCtx.snapTrack->max_events = 0;
+    ass_free_track(assRigidCtx.snapTrack); assRigidCtx.snapTrack = NULL;
+  }
+  if (assRigidCtx.rigidTrack) {
+    assRigidCtx.rigidTrack->events = NULL; assRigidCtx.rigidTrack->n_events = 0; assRigidCtx.rigidTrack->max_events = 0;
+    ass_free_track(assRigidCtx.rigidTrack); assRigidCtx.rigidTrack = NULL;
+  }
+  assRigidCtx.snapGen = 0; assRigidCtx.snapStyleVer = 0;
+  assRigidCtx.hitN = 0; assRigidCtx.missN = 0;
+}
+
+static int ass_track_copy_header_locked(ASS_Track *dst, const ASS_Track *src) {
+  int i;
+  while (dst->n_styles > 0) {
+    dst->n_styles--;
+    ass_free_style(dst, dst->n_styles);
+  }
+  dst->PlayResX = src->PlayResX;
+  dst->PlayResY = src->PlayResY;
+  dst->Timer = src->Timer;
+  dst->WrapStyle = src->WrapStyle;
+  dst->ScaledBorderAndShadow = src->ScaledBorderAndShadow;
+  dst->Kerning = src->Kerning;
+  dst->YCbCrMatrix = src->YCbCrMatrix;
+  dst->default_style = src->default_style;
+  dst->track_type = src->track_type;
+  free(dst->Language);
+  dst->Language = src->Language ? strdup(src->Language) : NULL;
+  for (i = 0; i < src->n_styles; i++) {
+    int sid = ass_alloc_style(dst);
+    const ASS_Style *ss = &src->styles[i];
+    ASS_Style *ds;
+    if (sid < 0) return 0;
+    ds = &dst->styles[sid];
+    *ds = *ss;
+    ds->Name = ss->Name ? strdup(ss->Name) : NULL;
+    ds->FontName = ss->FontName ? strdup(ss->FontName) : NULL;
+  }
+  return 1;
+}
+
+static int ass_rigid_ensure_locked(AssRigidCtx *w) {
+  if (!assLib) return 0;
+  if (!w->snapTrack) {
+    w->snapTrack = ass_new_track(assLib);
+    if (!w->snapTrack) return 0;
+    w->snapGen = 0;
+  }
+  if (!w->rigidTrack) {
+    w->rigidTrack = ass_new_track(assLib);
+    if (!w->rigidTrack) return 0;
+  }
+  return 1;
+}
+
 /* Evento que muda SOZINHO entre Start e End: \t, \move, \fad/\fade,
  * karaoke (\k, \kf, \ko, \K) ou Effect (Banner/Scroll). */
 static int ass_evento_anima(const ASS_Event *e) {
   const char *p;
-  if (e->Effect && e->Effect[0]) return 1;
+  if (e->Effect && (!strncasecmp(e->Effect, "Banner", 6) || !strncasecmp(e->Effect, "Scroll", 6)))
+    return 1;
   if (!e->Text) return 0;
   for (p = strchr(e->Text, '\\'); p; p = strchr(p + 1, '\\'))
     if (!strncmp(p, "\\t(", 3) || !strncmp(p, "\\move", 5) || !strncmp(p, "\\fad", 4) || p[1] == 'k' || p[1] == 'K')
       return 1;
   return 0;
+}
+
+static uint64_t ass_fnv_bytes(uint64_t h, const char *p, size_t n) {
+  size_t i;
+  for (i = 0; i < n; i++) h = (h ^ (unsigned char)p[i]) * UINT64_C(1099511628211);
+  return h;
+}
+
+static uint64_t ass_fnv_i64(uint64_t h, long long v) {
+  uint64_t u = (uint64_t)v;
+  int i;
+  for (i = 0; i < 8; i++) { h = (h ^ (u & 0xFFu)) * UINT64_C(1099511628211); u >>= 8; }
+  return h;
+}
+
+static int ass_evento_anima_nao_move(const ASS_Event *e) {
+  const char *p;
+  if (e->Effect && (!strncasecmp(e->Effect, "Banner", 6) || !strncasecmp(e->Effect, "Scroll", 6)))
+    return 1;
+  if (!e->Text) return 0;
+  for (p = strchr(e->Text, '\\'); p; p = strchr(p + 1, '\\'))
+    if (!strncmp(p, "\\t(", 3) || !strncmp(p, "\\fad", 4) || p[1] == 'k' || p[1] == 'K')
+      return 1;
+  return 0;
+}
+
+/* Detect rigid/static layers eligible for bitmap caching:
+ * mode 0: short-duration (<=150ms) non-clipped rigid \pos(x,y) layer
+ * mode 1: static positioned layer (>150ms, no animation, may be clipped)
+ * mode 2: non-clipped rigid \move(x1,y1,x2,y2[,t1,t2]) without \org/\frx/\fry. */
+static int ass_rigid_parse(const ASS_Event *e, long long t, int playResX, int playResY,
+                           uint64_t *outSig, double *outPx, double *outPy, int *outMode) {
+  const char *txt = e->Text, *p, *posEnd = NULL, *orgEnd = NULL, *moveEnd = NULL;
+  double px = 0.0, py = 0.0, ox = 0.0, oy = 0.0;
+  int hasPos = 0, hasOrg = 0, hasMove = 0, hasRot = 0, has3d = 0, hasClip = 0;
+  uint64_t h = UINT64_C(1469598103934665603);
+  if (!txt || !txt[0] || e->Duration <= 0 || playResX <= 0 || playResY <= 0) return 0;
+  if (ass_evento_anima_nao_move(e)) return 0;
+
+  h = ass_fnv_i64(h, e->Style);
+  h = ass_fnv_i64(h, e->Layer);
+  h = ass_fnv_i64(h, e->MarginL);
+  h = ass_fnv_i64(h, e->MarginR);
+  h = ass_fnv_i64(h, e->MarginV);
+#ifdef ASS_NV_API
+  /* Authored tracks only, so this is the .tpk's libass: a stock header (webOS,
+   * the .wgt, the host tests) has no nv_sign. */
+  h = ass_fnv_i64(h, e->nv_sign > 0 ? 1 : 0);
+#endif
+
+  if (e->Duration > 150 && !strstr(txt, "\\move(")) {
+    if (!strstr(txt, "\\pos(")) return 0;
+    h = ass_fnv_i64(h, 0x55);
+    h = ass_fnv_bytes(h, txt, strlen(txt));
+    *outSig = h ? h : 1;
+    *outPx = 0.0; *outPy = 0.0;
+    *outMode = 1;
+    return 1;
+  }
+
+  for (p = strchr(txt, '\\'); p; p = strchr(p + 1, '\\')) {
+    if (!strncmp(p, "\\clip", 5) || !strncmp(p, "\\iclip", 6)) { hasClip = 1; break; }
+    if (!strncmp(p, "\\frx", 4) || !strncmp(p, "\\fry", 4)) has3d = 1;
+    if (!strncmp(p, "\\fr", 3) || !strncmp(p, "\\fa", 3)) hasRot = 1;
+    if (!hasPos && !strncmp(p, "\\pos(", 5)) {
+      char *end1 = NULL, *end2 = NULL;
+      px = strtod(p + 5, &end1);
+      if (end1 && *end1 == ',') py = strtod(end1 + 1, &end2);
+      if (end2 && *end2 == ')') { hasPos = 1; posEnd = end2 + 1; }
+    } else if (!hasMove && !strncmp(p, "\\move(", 6)) {
+      char *e1 = NULL, *e2 = NULL, *e3 = NULL, *e4 = NULL, *e5 = NULL, *e6 = NULL;
+      double x1 = strtod(p + 6, &e1), y1 = 0, x2 = 0, y2 = 0;
+      if (e1 && *e1 == ',') y1 = strtod(e1 + 1, &e2);
+      if (e2 && *e2 == ',') x2 = strtod(e2 + 1, &e3);
+      if (e3 && *e3 == ',') y2 = strtod(e3 + 1, &e4);
+      if (e4 && (*e4 == ')' || *e4 == ',')) {
+        double t1 = 0.0, t2 = (double)e->Duration;
+        const char *endP = NULL;
+        if (*e4 == ')') endP = e4;
+        else {
+          t1 = strtod(e4 + 1, &e5);
+          if (e5 && *e5 == ',') t2 = strtod(e5 + 1, &e6);
+          if (e6 && *e6 == ')') endP = e6;
+        }
+        if (endP) {
+          double rel = (double)(t - e->Start);
+          if (rel <= t1 || t2 <= t1) { px = x1; py = y1; }
+          else if (rel >= t2) { px = x2; py = y2; }
+          else { double u = (rel - t1) / (t2 - t1); px = x1 + (x2 - x1) * u; py = y1 + (y2 - y1) * u; }
+          hasMove = 1; moveEnd = endP + 1;
+        }
+      }
+    } else if (!hasOrg && !strncmp(p, "\\org(", 5)) {
+      char *end1 = NULL, *end2 = NULL;
+      ox = strtod(p + 5, &end1);
+      if (end1 && *end1 == ',') oy = strtod(end1 + 1, &end2);
+      if (end2 && *end2 == ')') { hasOrg = 1; orgEnd = end2 + 1; }
+    }
+  }
+  if (hasClip) return 0;
+  if (hasMove) {
+    if (hasPos || hasOrg || has3d) return 0;
+    h = ass_fnv_i64(h, 0x77);
+  } else {
+    if (!hasPos || e->Duration > 150) return 0;
+    if (hasRot && !hasOrg) { ox = px; oy = py; }
+    if (hasOrg) {
+      h = ass_fnv_i64(h, llround(ox - px));
+      h = ass_fnv_i64(h, llround(oy - py));
+    }
+  }
+  p = txt;
+  while (*p) {
+    if (hasPos && !strncmp(p, "\\pos(", 5) && posEnd) {
+      h = ass_fnv_bytes(h, "\\pos()", 6);
+      p = posEnd;
+      continue;
+    }
+    if (hasMove && !strncmp(p, "\\move(", 6) && moveEnd) {
+      h = ass_fnv_bytes(h, "\\move()", 7);
+      p = moveEnd;
+      continue;
+    }
+    if (hasOrg && !strncmp(p, "\\org(", 5) && orgEnd) {
+      h = ass_fnv_bytes(h, "\\org()", 6);
+      p = orgEnd;
+      continue;
+    }
+    h = (h ^ (unsigned char)*p) * UINT64_C(1099511628211);
+    p++;
+  }
+  *outSig = h ? h : 1;
+  *outPx = px; *outPy = py;
+  *outMode = hasMove ? 2 : 0;
+  return 1;
+}
+
+static int ass_snap_build_locked(AssRigidCtx *w, unsigned generation, long long t,
+                                 int lw, int lh, int lwB, int lhB, int vw, int vh,
+                                 int dividir, double esc,
+                                 long long *validoDe, long long *validoAte, long long *prox,
+                                 int *nIni, long *chars, int *nIniC, long *charsC,
+                                 long long *inicioMax) {
+  int i, activeN = 0, anima = 0;
+  *validoDe = t; *validoAte = LLONG_MAX; *prox = LLONG_MAX;
+  *nIni = *nIniC = 0; *chars = *charsC = 0; *inicioMax = -1;
+  w->hitN = 0; w->missN = 0;
+  if (!assTrack || !w->snapTrack || !w->rigidTrack) return 0;
+  if (w->snapGen != generation || w->snapStyleVer != assTrackStyleVer ||
+      w->snapTrack->n_styles != assTrack->n_styles) {
+    if (!ass_track_copy_header_locked(w->snapTrack, assTrack)) return 0;
+    if (!ass_track_copy_header_locked(w->rigidTrack, assTrack)) return 0;
+    w->snapGen = generation;
+    w->snapStyleVer = assTrackStyleVer;
+  }
+  for (i = 0; i < assTrack->n_events; i++) {
+    const ASS_Event *ev = &assTrack->events[i];
+    long long ini = ev->Start, fimE = ini + ev->Duration;
+    if (ini > t && ini < *prox) *prox = ini;
+    if (ASS_NOVO && ini >= t && ini < t + 2200) {
+      long n = ev->Text ? (long)strlen(ev->Text) : 0;
+      if (ini < t + 1000) { (*nIni)++; *chars += n; }
+      if (ini >= t + 500) { (*nIniC)++; *charsC += n; }
+    }
+    if (ini > t) {
+      if (ini < *validoAte) *validoAte = ini;
+    } else if (fimE > t) {
+      uint64_t rSig = 0;
+      int rMode = 0;
+      double rPx = 0.0, rPy = 0.0;
+      if (fimE < *validoAte) *validoAte = fimE;
+      if (!anima && ass_evento_anima(ev)) anima = 1;
+      if (ini > *inicioMax) *inicioMax = ini;
+      if (ASS_NOVO && w->hitN < ASS_RIGID_FRAME_MAX &&
+          ass_rigid_parse(ev, t, assTrack->PlayResX, assTrack->PlayResY,
+                          &rSig, &rPx, &rPy, &rMode)) {
+        if (ass_rigid_has(rSig, generation, assTrackStyleVer, lw, lh, lwB, lhB, vw, vh, dividir, esc)) {
+          AssRigidHit *hit = &w->hits[w->hitN++];
+          hit->sig = rSig; hit->px = rPx; hit->py = rPy;
+          hit->layer = ev->Layer; hit->readOrder = ev->ReadOrder; hit->mode = rMode;
+          continue;
+        }
+        int inView = rMode != 2 || (rPx >= 80.0 && rPx <= (double)assTrack->PlayResX - 80.0 &&
+                                    rPy >= 40.0 && rPy <= (double)assTrack->PlayResY - 40.0);
+        if (inView && w->missN < ASS_RIGID_MISS_MAX && ass_rigid_should_cache(rSig, t)) {
+          AssRigidMiss *ms = &w->misses[w->missN++];
+          ms->ev = *ev; ms->ev.render_priv = NULL;
+          ms->sig = rSig; ms->px = rPx; ms->py = rPy;
+          ms->layer = ev->Layer; ms->readOrder = ev->ReadOrder; ms->mode = rMode;
+          ms->t = t;
+          continue;
+        }
+      }
+      if (activeN >= w->snapCap) {
+        int nc = w->snapCap ? w->snapCap * 2 : 256;
+        ASS_Event *ne = (ASS_Event *)realloc(w->snapEvents, (size_t)nc * sizeof *ne);
+        if (!ne) return 0;
+        /* The new tail must start zeroed: the release path walks these. */
+        memset(ne + w->snapCap, 0, (size_t)(nc - w->snapCap) * sizeof *ne);
+        w->snapEvents = ne; w->snapCap = nc;
+      }
+      /* libass reuses render_priv only while render_id matches, and that id is
+       * per renderer, so a slot reused for a different event would keep the
+       * old event's collision box. Clear it as before, but release it first:
+       * the copy is never handed back to libass for freeing, so the old one
+       * would be unreachable. */
+      free(w->snapEvents[activeN].render_priv);
+      w->snapEvents[activeN] = *ev;
+      w->snapEvents[activeN].render_priv = NULL;
+      activeN++;
+    }
+  }
+  if (anima) *validoAte = t;
+  w->snapTrack->events = w->snapEvents;
+  w->snapTrack->n_events = activeN;
+  w->snapTrack->max_events = w->snapCap;
+  return 1;
+}
+
+static void ass_rigid_render_misses(AssRigidCtx *w, unsigned generation,
+                                    int lw, int lh, int lwB, int lhB,
+                                    int vw, int vh, int dividir, double esc, float escB) {
+  int i;
+  for (i = 0; i < w->missN; i++) {
+    AssRigidMiss *m = &w->misses[i];
+    if (!ass_rigid_has(m->sig, generation, w->snapStyleVer, lw, lh, lwB, lhB, vw, vh, dividir, esc)) {
+      int chA = 0, chB = 0;
+      ASS_Image *imA = NULL, *imB = NULL;
+      w->rigidEvent = m->ev;
+      /* A different event every miss, so nothing can be carried over: libass
+       * will give this copy its own collision state, released at the end of
+       * the loop below. */
+      w->rigidEvent.render_priv = NULL;
+      w->rigidTrack->events = &w->rigidEvent;
+      w->rigidTrack->n_events = 1;
+      w->rigidTrack->max_events = 1;
+      imA = ass_render_frame(assRenderer, w->rigidTrack, m->t, &chA);
+#if ASS_DIVIDIR
+      if (dividir && assRendererB)
+        imB = ass_render_frame(assRendererB, w->rigidTrack, m->t, &chB);
+#else
+      (void)chB;
+#endif
+      int touched = 0, spans = 0, mx = lw / 32, my = lh / 24;
+      if (mx < 2) mx = 2;
+      if (my < 2) my = 2;
+      if (m->mode != 1 && lw > 4 && lh > 4) {
+        const ASS_Image *p;
+        for (p = imA; p; p = p->next) {
+          if (p->w <= 0 || p->h <= 0) continue;
+          if (p->dst_x <= mx || p->dst_x + p->w >= lw - mx ||
+              p->dst_y <= my || p->dst_y + p->h >= lh - my)
+            touched = 1;
+          if (p->w >= lw - 4 || p->h >= lh - 4) spans = 1;
+        }
+        if (dividir && lwB > 4 && lhB > 4) {
+          int mxB = lwB / 32, myB = lhB / 24;
+          if (mxB < 2) mxB = 2;
+          if (myB < 2) myB = 2;
+          for (p = imB; p; p = p->next) {
+            if (p->w <= 0 || p->h <= 0) continue;
+            if (p->dst_x <= mxB || p->dst_x + p->w >= lwB - mxB ||
+                p->dst_y <= myB || p->dst_y + p->h >= lhB - myB)
+              touched = 1;
+            if (p->w >= lwB - 4 || p->h >= lhB - 4) spans = 1;
+          }
+        }
+      }
+      if (m->mode != 1 && (touched || (!imA && !imB))) {
+        if (spans) ass_rigid_ban(m->sig);
+        else ass_rigid_defer(m->sig, m->t + 160);
+        if (w->snapTrack->n_events >= w->snapCap) {
+          int nc = w->snapCap ? w->snapCap * 2 : 256;
+          ASS_Event *ne = (ASS_Event *)realloc(w->snapEvents, (size_t)nc * sizeof *ne);
+          if (ne) { memset(ne + w->snapCap, 0, (size_t)(nc - w->snapCap) * sizeof *ne);
+                    w->snapEvents = ne; w->snapCap = nc; w->snapTrack->events = ne; w->snapTrack->max_events = nc; }
+        }
+        if (w->snapTrack->n_events < w->snapCap) {
+          free(w->snapEvents[w->snapTrack->n_events].render_priv);
+          w->snapEvents[w->snapTrack->n_events] = m->ev;
+          w->snapEvents[w->snapTrack->n_events++].render_priv = NULL;
+        }
+        continue;
+      }
+      ass_rigid_store(m->sig, generation, w->snapStyleVer, lw, lh, lwB, lhB, vw, vh,
+                      w->rigidTrack->PlayResX, w->rigidTrack->PlayResY,
+                      dividir, esc, m->px, m->py, imA, imB, escB);
+    }
+    if (w->hitN < ASS_RIGID_FRAME_MAX) {
+      AssRigidHit *hit = &w->hits[w->hitN++];
+      hit->sig = m->sig; hit->px = m->px; hit->py = m->py;
+      hit->layer = m->layer; hit->readOrder = m->readOrder; hit->mode = m->mode;
+    }
+  }
+  w->rigidTrack->events = NULL;
+  w->rigidTrack->n_events = 0;
+  w->rigidTrack->max_events = 0;
+  free(w->rigidEvent.render_priv);
+  w->rigidEvent.render_priv = NULL;
+}
+
+typedef struct {
+  unsigned long long stackKey;
+  int seq;
+  int fromRigid;
+  const ASS_Image *im;
+  float esc;
+  const AssRigidImg *rim;
+  double dx, dy;
+} AssMergeItem;
+
+static unsigned long long ass_event_stack_key(int layer, int readOrder) {
+  long long l = (long long)layer + 32768;
+  l = l < 0 ? 0 : l > 0xFFFF ? 0xFFFF : l;
+  return ((unsigned long long)l << 48) | ((unsigned long long)((unsigned)readOrder ^ 0x80000000u) << 16);
+}
+
+static int ass_merge_cmp(const void *pa, const void *pb) {
+  const AssMergeItem *a = (const AssMergeItem *)pa;
+  const AssMergeItem *b = (const AssMergeItem *)pb;
+  if (a->stackKey != b->stackKey) return a->stackKey < b->stackKey ? -1 : 1;
+  return a->seq < b->seq ? -1 : (a->seq > b->seq ? 1 : 0);
+}
+
+static int ass_frame_merge_rigid(AssRigidCtx *w, unsigned generation,
+                                 int lw, int lh, int lwB, int lhB,
+                                 int vw, int vh, int dividir, double esc,
+                                 ASS_Image *headA, ASS_Image *headB,
+                                 float escB, AssCpuFrame *dst, int *outTotalImgs) {
+  int count = 0, idx = 0, i, j, seq = 0;
+  size_t totalBytes = 0;
+  const ASS_Image *cur;
+  AssMergeItem *items = NULL;
+  if (w->hitN <= 0) {
+    for (cur = headA; cur; cur = cur->next) count++;
+    for (cur = headB; cur; cur = cur->next) count++;
+    *outTotalImgs = count;
+    return dividir ? ass_frame_copiar2(headA, headB, escB, dst, ASS_NOVO)
+                   : ass_frame_copiar(headA, dst, ASS_NOVO);
+  }
+  ass_frame_liberar(dst);
+  for (cur = headA; cur; cur = cur->next) if (cur->w > 0 && cur->h > 0 && cur->bitmap) count++;
+  for (cur = headB; cur; cur = cur->next) if (cur->w > 0 && cur->h > 0 && cur->bitmap) count++;
+  pthread_mutex_lock(&assRigidTrava);
+  for (i = 0; i < w->hitN; i++) {
+    const AssRigidEntry *e = ass_rigid_lookup_locked(w->hits[i].sig, generation, w->snapStyleVer,
+                                                     lw, lh, lwB, lhB, vw, vh, dividir, esc);
+    if (e) count += e->count;
+  }
+  *outTotalImgs = count;
+  if (count <= 0) { pthread_mutex_unlock(&assRigidTrava); return 1; }
+  items = (AssMergeItem *)malloc((size_t)count * sizeof *items);
+  if (!items) { pthread_mutex_unlock(&assRigidTrava); return 0; }
+  for (i = 0; i < 2; i++) {
+    float passEsc = i == 0 ? 0.0f : escB;
+    for (cur = i == 0 ? headA : headB; cur; cur = cur->next) {
+      if (cur->w <= 0 || cur->h <= 0 || !cur->bitmap) continue;
+#if ASS_DIVIDIR
+      items[idx].stackKey = ass_nv_image_key(cur);
+#else
+      items[idx].stackKey = 0ULL;
+#endif
+      items[idx].seq = seq++;
+      items[idx].fromRigid = 0; items[idx].im = cur; items[idx].esc = passEsc;
+      items[idx].rim = NULL; items[idx].dx = 0.0; items[idx].dy = 0.0;
+      idx++;
+    }
+  }
+  for (i = 0; i < w->hitN; i++) {
+    unsigned long long evKey = ass_event_stack_key(w->hits[i].layer, w->hits[i].readOrder);
+    const AssRigidEntry *e = ass_rigid_lookup_locked(w->hits[i].sig, generation, w->snapStyleVer,
+                                                     lw, lh, lwB, lhB, vw, vh, dividir, esc);
+    if (!e) continue;
+    double sxA = e->playResX > 0 ? (double)lw / (double)e->playResX : 1.0;
+    double syA = e->playResY > 0 ? (double)lh / (double)e->playResY : 1.0;
+    double sxB = (dividir && lwB > 0 && e->playResX > 0) ? (double)lwB / (double)e->playResX : sxA;
+    double syB = (dividir && lhB > 0 && e->playResY > 0) ? (double)lhB / (double)e->playResY : syA;
+    for (j = 0; j < e->count; j++) {
+      double sx = e->imgs[j].isB ? sxB : sxA;
+      double sy = e->imgs[j].isB ? syB : syA;
+      items[idx].stackKey = evKey | e->imgs[j].lowKey;
+      items[idx].seq = seq++;
+      items[idx].fromRigid = 1;
+      items[idx].im = NULL; items[idx].esc = e->imgs[j].esc;
+      items[idx].rim = &e->imgs[j];
+      items[idx].dx = w->hits[i].mode == 1 ? 0.0 : (w->hits[i].px - e->refPx) * sx;
+      items[idx].dy = w->hits[i].mode == 1 ? 0.0 : (w->hits[i].py - e->refPy) * sy;
+      idx++;
+    }
+  }
+  qsort(items, (size_t)idx, sizeof *items, ass_merge_cmp);
+  dst->images = (AssCpuImage *)calloc((size_t)idx, sizeof *dst->images);
+  if (!dst->images) { free(items); pthread_mutex_unlock(&assRigidTrava); return 0; }
+  dst->count = idx;
+  for (i = 0; i < idx; i++) {
+    AssCpuImage *out = &dst->images[i];
+    if (!items[i].fromRigid) {
+      const ASS_Image *im = items[i].im;
+      size_t sz = (size_t)im->w * (size_t)im->h;
+      if (totalBytes + sz > 32u * 1024u * 1024u) {
+        free(items); pthread_mutex_unlock(&assRigidTrava); ass_frame_liberar(dst); return 0;
+      }
+      out->bitmap = (unsigned char *)malloc(sz);
+      if (!out->bitmap) {
+        free(items); pthread_mutex_unlock(&assRigidTrava); ass_frame_liberar(dst); return 0;
+      }
+      { int y;
+        for (y = 0; y < im->h; y++)
+          memcpy(out->bitmap + (size_t)y * (size_t)im->w,
+                 im->bitmap + (size_t)y * (size_t)im->stride, (size_t)im->w); }
+      out->w = im->w; out->h = im->h; out->stride = im->w;
+      out->x = im->dst_x; out->y = im->dst_y;
+      out->subX = 0.0f; out->subY = 0.0f;
+      out->color = im->color; out->type = im->type; out->esc = items[i].esc;
+      out->chave = sz <= 256u * 1024u ? ass_chave_bitmap(out->bitmap, out->w, out->h, out->stride) : 0ULL;
+      totalBytes += sz;
+    } else {
+      const AssRigidImg *rim = items[i].rim;
+      size_t sz = (size_t)rim->w * (size_t)rim->h;
+      if (totalBytes + sz > 32u * 1024u * 1024u) {
+        free(items); pthread_mutex_unlock(&assRigidTrava); ass_frame_liberar(dst); return 0;
+      }
+      out->bitmap = (unsigned char *)malloc(sz);
+      if (!out->bitmap) {
+        free(items); pthread_mutex_unlock(&assRigidTrava); ass_frame_liberar(dst); return 0;
+      }
+      memcpy(out->bitmap, rim->bitmap, sz);
+      out->w = rim->w; out->h = rim->h; out->stride = rim->w;
+      { int ix = (int)llround(items[i].dx), iy = (int)llround(items[i].dy);
+        out->x = rim->x + ix;
+        out->y = rim->y + iy;
+        out->subX = (float)(items[i].dx - (double)ix);
+        out->subY = (float)(items[i].dy - (double)iy); }
+      out->color = rim->color; out->type = rim->type; out->esc = rim->esc;
+      out->chave = rim->chave;
+      totalBytes += sz;
+    }
+  }
+  dst->bytes = totalBytes;
+  free(items);
+  pthread_mutex_unlock(&assRigidTrava);
+  return 1;
 }
 
 static double ass_ms_entre(const struct timespec *a, const struct timespec *b) {
@@ -1015,6 +1800,144 @@ static long long ass_grade_desde(long long ms);
 // an implicit one (a warning on the SDK's compiler, an error on gcc 14).
 extern int pthread_getattr_np(pthread_t fio, pthread_attr_t *attr);
 #endif
+#if ASS_NOVO
+static void ass_cor_final(const AssCpuImage *im, int corAtiva, int cr, int cg, int cb,
+                          double gama, double contraste, float *r, float *g, float *b, float *op);
+
+/* Flatten high-overdraw or high-quad-count frames into one straight-RGBA image
+ * on the worker so the GL thread draws 1 quad instead of 17-60+ quads.
+ * `corAtiva` is the viewer's dialogue colour override: when it is on, this
+ * hands the frame back untouched, because that colour is applied per image at
+ * draw time and a flattened frame could not follow it changing. */
+static void ass_frame_flatten(AssCpuFrame *f, int frameW, int frameH, int corAtiva) {
+  static uint32_t invAlpha[256];
+  static int invInit;
+  int i, minX, minY, maxX, maxY, outW, outH;
+  size_t sumArea = 0, outBytes;
+  unsigned char *rgba;
+  double gama, contraste;
+  if (!f || f->count <= 16 || !f->images || frameW <= 0 || frameH <= 0) return;
+  minX = frameW; minY = frameH; maxX = 0; maxY = 0;
+  for (i = 0; i < f->count; i++) {
+    const AssCpuImage *im = &f->images[i];
+    int x0, y0, x1, y1;
+    if (im->rgba || !im->bitmap || im->w <= 0 || im->h <= 0) return;
+    /* The viewer's dialogue colour is applied per image at draw time on the
+     * normal path, so a flattened frame could not follow it changing. Hand
+     * these frames back to that path instead of baking a colour. */
+    if (corAtiva && im->type == IMAGE_TYPE_CHARACTER) return;
+    if (im->esc > 0.01f && fabsf(im->esc - f->esc) >= 0.01f) return;
+    sumArea += (size_t)im->w * (size_t)im->h;
+    x0 = im->x < 0 ? 0 : im->x;
+    y0 = im->y < 0 ? 0 : im->y;
+    x1 = im->x + im->w > frameW ? frameW : im->x + im->w;
+    y1 = im->y + im->h > frameH ? frameH : im->y + im->h;
+    if (x0 < x1 && y0 < y1) {
+      if (x0 < minX) minX = x0;
+      if (y0 < minY) minY = y0;
+      if (x1 > maxX) maxX = x1;
+      if (y1 > maxY) maxY = y1;
+    }
+  }
+  outW = maxX - minX; outH = maxY - minY;
+  if (outW <= 0 || outH <= 0) return;
+  outBytes = (size_t)outW * (size_t)outH * 4u;
+  if (outBytes > 1920u * 1080u * 4u) return;
+  int highOverdraw = f->count > 24 && sumArea > (size_t)frameW * (size_t)frameH;
+  int smallBatch = f->count > 16 && outBytes <= 512u * 1024u;
+  if (!highOverdraw && !smallBatch) return;
+  if (!invInit) {
+    for (int a = 1; a < 255; a++)
+      invAlpha[a] = (255u * 65536u + (unsigned)a / 2u) / (unsigned)a;
+    invInit = 1;
+  }
+  rgba = (unsigned char *)calloc(outBytes, 1);
+  if (!rgba) return;
+  gama = assperf_gama(); contraste = assperf_contraste();
+  for (i = 0; i < f->count; i++) {
+    const AssCpuImage *im = &f->images[i];
+    float rf, gf, bf, opf;
+    unsigned lr, lg, lb, lop;
+    int x0 = im->x < minX ? minX : im->x;
+    int y0 = im->y < minY ? minY : im->y;
+    int x1 = im->x + im->w > maxX ? maxX : im->x + im->w;
+    int y1 = im->y + im->h > maxY ? maxY : im->y + im->h;
+    int y;
+    if (x0 >= x1 || y0 >= y1) continue;
+    ass_cor_final(im, 0, 0, 0, 0, gama, contraste, &rf, &gf, &bf, &opf);
+    lr = (unsigned)lroundf(rf * 255.0f);
+    lg = (unsigned)lroundf(gf * 255.0f);
+    lb = (unsigned)lroundf(bf * 255.0f);
+    lop = (unsigned)lroundf(opf * 255.0f);
+    if (lop == 0) continue;
+    for (y = y0; y < y1; y++) {
+      const unsigned char *src = im->bitmap + (size_t)(y - im->y) * (size_t)im->stride + (size_t)(x0 - im->x);
+      unsigned char *dst = rgba + ((size_t)(y - minY) * (size_t)outW + (size_t)(x0 - minX)) * 4u;
+      int w = x1 - x0, x;
+      if (lop == 255u) {
+        for (x = 0; x < w; x++, dst += 4) {
+          unsigned sa = src[x];
+          if (sa == 0u) continue;
+          if (sa == 255u) {
+            dst[0] = (unsigned char)lr; dst[1] = (unsigned char)lg;
+            dst[2] = (unsigned char)lb; dst[3] = 255u;
+          } else {
+            unsigned inv = 255u - sa;
+            unsigned r = lr * sa + (unsigned)dst[0] * inv + 128u;
+            unsigned g = lg * sa + (unsigned)dst[1] * inv + 128u;
+            unsigned b = lb * sa + (unsigned)dst[2] * inv + 128u;
+            unsigned a = (unsigned)dst[3] * inv + 128u;
+            dst[0] = (unsigned char)((r + (r >> 8)) >> 8);
+            dst[1] = (unsigned char)((g + (g >> 8)) >> 8);
+            dst[2] = (unsigned char)((b + (b >> 8)) >> 8);
+            dst[3] = (unsigned char)(sa + ((a + (a >> 8)) >> 8));
+          }
+        }
+      } else {
+        for (x = 0; x < w; x++, dst += 4) {
+          unsigned sv = src[x];
+          if (sv == 0u) continue;
+          unsigned st = sv * lop + 128u;
+          unsigned sa = (st + (st >> 8)) >> 8;
+          if (sa == 0u) continue;
+          unsigned inv = 255u - sa;
+          unsigned r = lr * sa + (unsigned)dst[0] * inv + 128u;
+          unsigned g = lg * sa + (unsigned)dst[1] * inv + 128u;
+          unsigned b = lb * sa + (unsigned)dst[2] * inv + 128u;
+          unsigned a = (unsigned)dst[3] * inv + 128u;
+          dst[0] = (unsigned char)((r + (r >> 8)) >> 8);
+          dst[1] = (unsigned char)((g + (g >> 8)) >> 8);
+          dst[2] = (unsigned char)((b + (b >> 8)) >> 8);
+          dst[3] = (unsigned char)(sa + ((a + (a >> 8)) >> 8));
+        }
+      }
+    }
+  }
+  /* Unpremultiply for straight-RGBA GFX_TEXTO blending via reciprocal table. */
+  { size_t p, nPx = (size_t)outW * (size_t)outH;
+    unsigned char *px = rgba;
+    for (p = 0; p < nPx; p++, px += 4) {
+      unsigned a = px[3];
+      if (a > 0u && a < 255u) {
+        uint32_t inv = invAlpha[a];
+        unsigned r = ((uint32_t)px[0] * inv + 32768u) >> 16;
+        unsigned g = ((uint32_t)px[1] * inv + 32768u) >> 16;
+        unsigned b = ((uint32_t)px[2] * inv + 32768u) >> 16;
+        px[0] = (unsigned char)(r > 255u ? 255u : r);
+        px[1] = (unsigned char)(g > 255u ? 255u : g);
+        px[2] = (unsigned char)(b > 255u ? 255u : b);
+      }
+    } }
+  for (i = 0; i < f->count; i++) free(f->images[i].bitmap);
+  { AssCpuImage *one = (AssCpuImage *)realloc(f->images, sizeof *one);
+    if (!one) one = f->images;
+    memset(one, 0, sizeof *one);
+    one->x = minX; one->y = minY; one->w = outW; one->h = outH;
+    one->stride = outW * 4; one->rgba = 1; one->bitmap = rgba;
+    f->images = one; f->count = 1; f->bytes = outBytes; }
+}
+#endif
+
 static void *ass_worker_loop(void *unused) {
   (void)unused;
   assfios_nomear("nv-assrender");
@@ -1046,10 +1969,14 @@ static void *ass_worker_loop(void *unused) {
   /* TIZEN 4/5 (owner, 16/11/2026, after the UE55RU7170 log of 10/11: frames
    * of 65-107 ms in a sign-heavy scene): the TV's player comes first. This
    * worker and the blur helpers it starts (they inherit it) run at nice 10. */
-  if (setpriority(PRIO_PROCESS, 0, 10) == 0)
-    printf("[ass] tizen 4/5: subtitle worker and blur threads at low priority (nice 10)\n");
-  else
-    printf("[ass] tizen 4/5: could not lower the subtitle threads' priority\n");
+  if (ass_usable_cpus() > 1) {
+    if (setpriority(PRIO_PROCESS, 0, 10) == 0)
+      printf("[ass] tizen 4/5: subtitle worker and blur threads at low priority (nice 10)\n");
+    else
+      printf("[ass] tizen 4/5: could not lower the subtitle threads' priority\n");
+  } else {
+    printf("[ass] tizen 4/5: 1-core sandbox, subtitle worker at normal priority (nice 0)\n");
+  }
   fflush(stdout);
 #endif
   for (;;) {
@@ -1100,7 +2027,8 @@ static void *ass_worker_loop(void *unused) {
     }
     serial = ++assSerial;   // cada quadro publicado e outro (as texturas sobem de novo)
     assPedidoForcado = 0;
-    ox = layPedX; oy = layPedY; lw = layPedW; lh = layPedH; k = layPedK;
+    int baseW = layPedW, baseH = layPedH;
+    ox = layPedX; oy = layPedY; lw = baseW; lh = baseH; k = layPedK;
     /* assperf: resolucao do render. O quadro sai `resol` do tamanho do alvo e
      * o desenho amplia (esc = k x resol pixels por unidade). 1 = como antes. */
     /* Auto 50 / Auto 75 (owner 19/11/2026): busy frames in two passes, the
@@ -1111,11 +2039,11 @@ static void *ass_worker_loop(void *unused) {
     dividir = 0; resolB = 0.0;
 #endif
     if (dividir) {
-      lwB = (int)lround((double)lw * k * resolB); lhB = (int)lround((double)lh * k * resolB);
+      lwB = (int)lround((double)baseW * k * resolB); lhB = (int)lround((double)baseH * k * resolB);
       if (lwB < 16) lwB = 16;
       if (lhB < 16) lhB = 16;
     }
-    lw = (int)lround((double)lw * k * resol); lh = (int)lround((double)lh * k * resol);   /* libass renderiza em pixels do alvo, nao em unidades de layout */
+    lw = (int)lround((double)baseW * k * resol); lh = (int)lround((double)baseH * k * resol);   /* libass renderiza em pixels do alvo, nao em unidades de layout */
     if (lw < 16) lw = 16;
     if (lh < 16) lh = 16;
     vw = layPedVW; vh = layPedVH; esc = layPedEscala;
@@ -1130,6 +2058,32 @@ static void *ass_worker_loop(void *unused) {
         generation == assTrackGeracao &&
         assTrack && assRenderer) {
       long long t = (long long)llround(ms);
+      if (ASS_NOVO && ass_estilo_autor_locked() && !assperf_pesado()) {
+        int nP = 0, nCP = 0;
+        long cP = 0, cCP = 0;
+        for (int pi = 0; pi < assTrack->n_events; pi++) {
+          const ASS_Event *pev = &assTrack->events[pi];
+          if (pev->Start < t || pev->Start >= t + 2200) continue;
+          long plen = pev->Text ? (long)strlen(pev->Text) : 0;
+          if (pev->Start < t + 1000) { nP++; cP += plen; }
+          if (pev->Start >= t + 500) { nCP++; cCP += plen; }
+        }
+        if (nP >= 300 || cP >= 400000L || nCP >= 300 || cCP >= 400000L) {
+          assperf_previsao(nP, cP, 25, nCP, cCP);
+          dividir = assperf_resolucao_quadro(&resol, &resolB);
+#if !ASS_DIVIDIR
+          dividir = 0; resolB = 0.0;
+#endif
+          if (dividir) {
+            lwB = (int)lround((double)baseW * k * resolB); lhB = (int)lround((double)baseH * k * resolB);
+            if (lwB < 16) lwB = 16;
+            if (lhB < 16) lhB = 16;
+          }
+          lw = (int)lround((double)baseW * k * resol); lh = (int)lround((double)baseH * k * resol);
+          if (lw < 16) lw = 16;
+          if (lh < 16) lh = 16;
+        }
+      }
       ass_aplicar_assperf_locked();
       if (lw != layAplW || lh != layAplH) {
         ass_set_frame_size(assRenderer, lw, lh);
@@ -1144,8 +2098,7 @@ static void *ass_worker_loop(void *unused) {
         layAplEscala = esc;
       }
       if (plainValid) {
-        PlainAssStyle ps = plain;
-        if (ass_estilo_autor_locked()) ps.overrides = 0;   // estilos do autor de volta
+        PlainAssStyle ps = ass_estilo_autor_locked() ? (PlainAssStyle){0} : plain;
         ass_plain_style_locked(&ps);
       }
       if (ass_estilo_autor_locked())
@@ -1170,19 +2123,28 @@ static void *ass_worker_loop(void *unused) {
       }
       if (ass_estilo_autor_locked()) ass_marcar_sinais_locked(generation, t);
 #endif
+      int useRigid = ASS_NOVO && !__atomic_load_n(&assTextoSimples, __ATOMIC_ACQUIRE);
+      long long prox = LLONG_MAX, inicioMax = -1;
+      int nIni = 0, nIniC = 0, nImg = 0, snapOk = 0;
+      long chars = 0, charsC = 0;
+      if (useRigid && ass_rigid_ensure_locked(&assRigidCtx)) {
+        snapOk = ass_snap_build_locked(&assRigidCtx, generation, t, lw, lh, lwB, lhB, vw, vh, dividir, esc,
+                                       &validoDe, &validoAte, &prox, &nIni, &chars, &nIniC, &charsC, &inicioMax);
+      }
 #ifdef NV_TPK
       /* Crash capture (owner 14/11): what libass is asked to draw, once per
        * track and per style change, flushed BEFORE the render. A crash right
        * after this line is inside libass on that frame. */
       { static unsigned gerLog = ~0u; static PlainAssStyle psLog; static int psLogOk;
-        int novo = generation != gerLog || (plainValid && (!psLogOk || memcmp(&plain, &psLog, sizeof plain)));
+        int simples = __atomic_load_n(&assTextoSimples, __ATOMIC_ACQUIRE);
+        int novo = generation != gerLog || (simples && plainValid && (!psLogOk || memcmp(&plain, &psLog, sizeof plain)));
         if (novo && assTrack->n_styles > 0) {
           const ASS_Style *st = &assTrack->styles[assTrack->default_style];
           gerLog = generation;
           if (plainValid) { psLog = plain; psLogOk = 1; }
           printf("[ass] render first frame: t=%lld ms, %s, events %d, frame %dx%d storage %dx%d scale %.3f | "
                  "style %s %.1f bold %d BorderStyle %d Outline %.2f Shadow %.2f Blur %.3f ScaleX %.0f | engine %d, %d blur thread(s)\n",
-                 t, __atomic_load_n(&assTextoSimples, __ATOMIC_ACQUIRE) ? "plain RTL text" : "authored ASS", assTrack->n_events,
+                 t, simples ? "plain RTL text" : "authored ASS", assTrack->n_events,
                  lw, lh, vw, vh, esc, st->FontName ? st->FontName : "-", st->FontSize, st->Bold, st->BorderStyle,
                  st->Outline, st->Shadow, st->Blur, st->ScaleX * 100.0,
 #ifdef ASS_NV_API
@@ -1194,6 +2156,44 @@ static void *ass_worker_loop(void *unused) {
           fflush(stdout);
         } }
 #endif
+      if (snapOk) {
+        struct timespec pa, pb;
+        if (assRigidCtx.missN > 0) {
+          ass_rigid_render_misses(&assRigidCtx, generation, lw, lh, lwB, lhB,
+                                  vw, vh, dividir, esc, (float)((double)k * resolB));
+        }
+        clock_gettime(CLOCK_MONOTONIC, &pa);
+        images = ass_render_frame(assRenderer, assRigidCtx.snapTrack, t, &changed);
+        clock_gettime(CLOCK_MONOTONIC, &pb);
+        msPassA = ass_ms_entre(&pa, &pb);
+#if ASS_DIVIDIR
+        if (dividir) {
+          int changedB = 0;
+          imagesB = ass_render_frame(assRendererB, assRigidCtx.snapTrack, t, &changedB);
+          clock_gettime(CLOCK_MONOTONIC, &pa);
+          msPassB = ass_ms_entre(&pb, &pa);
+          if (changedB > changed) changed = changedB;
+        }
+#endif
+#ifdef NV_TPK
+        __atomic_store_n(&assProxInicio, prox, __ATOMIC_RELAXED);
+#endif
+        pronto = ass_frame_merge_rigid(&assRigidCtx, generation, lw, lh, lwB, lhB, vw, vh,
+                                       dividir, esc, images, imagesB,
+                                       (float)((double)k * resolB), &frame, &nImg);
+        if (ASS_NOVO) assperf_previsao(nIni, chars, nImg, nIniC, charsC);
+        if (dividir && pronto) {
+          const ASS_Image *im;
+          divImgsA = divImgsB = 0;
+          for (im = images; im; im = im->next) divImgsA++;
+          for (im = imagesB; im; im = im->next) divImgsB++;
+          divOk = 1;
+        }
+        frame.ms = t; frame.inicioMax = inicioMax;
+        frame.ox = ox; frame.oy = oy; frame.k = k;
+        frame.esc = (float)((double)k * resol);
+        goto rigid_done;
+      }
       { struct timespec pa, pb;
         clock_gettime(CLOCK_MONOTONIC, &pa);
         images = ass_render_frame(assRenderer, assTrack, t, &changed);
@@ -1230,7 +2230,7 @@ static void *ass_worker_loop(void *unused) {
         for (i = 0; i < assTrack->n_events; i++) {
           const ASS_Event *ev = &assTrack->events[i];
           long n;
-          if (ev->Start < t || ev->Start >= t + 1500) continue;   /* text length only inside the window */
+          if (ev->Start < t || ev->Start >= t + 2200) continue;   /* text length only inside the window */
           n = ev->Text ? (long)strlen(ev->Text) : 0;
           if (ev->Start < t + 1000) { nIni++; chars += n; }
           if (ev->Start >= t + 500) { nIniC++; charsC += n; }
@@ -1275,8 +2275,14 @@ static void *ass_worker_loop(void *unused) {
               frame.inicioMax = ini;
           } }
       }
+      rigid_done:;
     }
     pthread_mutex_unlock(&assTrava);
+#if ASS_NOVO
+    /* Read atomically: the GL thread writes these when the viewer picks a color. */
+    if (pronto) ass_frame_flatten(&frame, lw, lh,
+                                  __atomic_load_n(&assCorAtiva, __ATOMIC_ACQUIRE));
+#endif
     clock_gettime(CLOCK_MONOTONIC, &b);
     if (ASS_NOVO && pronto) assperf_escala_custo(ass_ms_entre(&c0, &b));
 
@@ -1536,6 +2542,17 @@ static GLuint *assMainTex;       // textura de cada imagem do assMain
 static int *assMainIdx;          // e o indice dela em assTc
 static int assMainTexCap, assMainEnviado;
 static int assMainResetar;       // assrender_aplicar_invalidacao consumiu um assTexResetar
+#define ASS_FLAT_RING 3
+static GLuint assFlatTex[ASS_FLAT_RING];
+static int assFlatW[ASS_FLAT_RING], assFlatH[ASS_FLAT_RING];
+static int assFlatCur;
+
+static int ass_flat_bucket(int v) {
+  if (v <= 16) return 16;
+  if (v <= 64) return (v + 15) & ~15;
+  if (v <= 256) return (v + 31) & ~31;
+  return (v + 63) & ~63;
+}
 
 static size_t ass_tc_tam(int w, int h) { return (size_t)w * (size_t)h; }
 
@@ -1544,6 +2561,11 @@ static void ass_tc_apagar(void) {
   for (i = 0; i < assTcN; i++)
     if (assTc[i].tex) { gfx_tex_esquecer(assTc[i].tex); glDeleteTextures(1, &assTc[i].tex); }
   free(assTc); assTc = NULL; assTcN = assTcCap = 0; assTcBytes = 0;
+  for (i = 0; i < ASS_FLAT_RING; i++) {
+    if (assFlatTex[i]) { gfx_tex_esquecer(assFlatTex[i]); glDeleteTextures(1, &assFlatTex[i]); assFlatTex[i] = 0; }
+    assFlatW[i] = assFlatH[i] = 0;
+  }
+  assFlatCur = 0;
   assMainEnviado = 0;
 }
 
@@ -1667,6 +2689,49 @@ static int ass_main_desenhar_corpo(float x, float y, float alpha, int corAtiva, 
   int i;
   float kk = assMain.k > 1 ? (float)assMain.k : 1.0f, esc = assMain.esc > 0.01f ? assMain.esc : kk;
   assGlQuadro++;
+  if (assMain.count == 1 && assMain.images[0].rgba) {
+    const AssCpuImage *im = &assMain.images[0];
+    if (quadroNovo || !assMainEnviado) {
+      struct timespec t0, t1;
+      clock_gettime(CLOCK_MONOTONIC, &t0);
+      if (quadroNovo) assFlatCur = (assFlatCur + 1) % ASS_FLAT_RING;
+      int s = assFlatCur;
+      if (!assFlatTex[s]) glGenTextures(1, &assFlatTex[s]);
+      if (assFlatTex[s]) {
+        int bw = ass_flat_bucket(im->w), bh = ass_flat_bucket(im->h);
+        if (bw < assFlatW[s]) bw = assFlatW[s];
+        if (bh < assFlatH[s]) bh = assFlatH[s];
+        glBindTexture(GL_TEXTURE_2D, assFlatTex[s]);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        if (bw != assFlatW[s] || bh != assFlatH[s]) {
+          glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, bw, bh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+          glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+          glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+          glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+          glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+          assFlatW[s] = bw; assFlatH[s] = bh;
+        }
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, im->w, im->h, GL_RGBA, GL_UNSIGNED_BYTE, im->bitmap);
+        gfx_tex_esquecer(0);
+      }
+      clock_gettime(CLOCK_MONOTONIC, &t1);
+      assMainEnviado = 1;
+      if (quadroNovo) assperf_carga_gl(ass_ms_entre(&t0, &t1));
+    }
+    int s = assFlatCur;
+    if (assFlatTex[s] && assFlatW[s] > 0 && assFlatH[s] > 0) {
+      float dx = roundf((x + assMain.ox) * kk) / kk + (float)im->x / esc;
+      float dy = roundf((y + assMain.oy) * kk) / kk + (float)im->y / esc;
+      float parx = (float)im->w / (float)assFlatW[s];
+      float pary = (float)im->h / (float)assFlatH[s];
+      int minDim = assFlatW[s] < assFlatH[s] ? assFlatW[s] : assFlatH[s];
+      float inset = 0.5f / (float)minDim;
+      gfx_tex_aspect_atual = 0.0f;
+      gfx_rect((GfxRect){ dx, dy, (float)im->w / esc, (float)im->h / esc }, assFlatTex[s], GFX_TEXTO,
+               0, parx, pary, inset, 1, 1, 1, alpha);
+    }
+    return 1;
+  }
   if (quadroNovo || !assMainEnviado) {
     struct timespec t0, t1;
     clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -1730,8 +2795,8 @@ static int ass_main_desenhar_corpo(float x, float y, float alpha, int corAtiva, 
      * quadro do libass (esc = kk x resolucao), ampliada quando esc < kk.
      * Split frames: the soft pass's images have their own scale. */
     { float e = im->esc > 0.01f ? im->esc : esc;
-      dx = roundf((x + assMain.ox) * kk) / kk + (float)im->x / e;
-      dy = roundf((y + assMain.oy) * kk) / kk + (float)im->y / e;
+      dx = roundf((x + assMain.ox) * kk) / kk + ((float)im->x + im->subX) / e;
+      dy = roundf((y + assMain.oy) * kk) / kk + ((float)im->y + im->subY) / e;
       ass_cor_final(im, corAtiva, cr, cg, cb, gama, contraste, &r, &g, &b, &op);
       gfx_rect((GfxRect){ dx, dy, (float)im->w / e, (float)im->h / e }, tex, GFX_MARCA,
                0, 0, 0, 0, r, g, b, alpha * op); }
@@ -2001,6 +3066,7 @@ static int ass_inc_lote(const char *corpo, size_t tamanho, unsigned geracao) {
     incPronto = 0;
     goto fim;
   }
+  long long minNewStart = LLONG_MAX;
   { int antes = assTrack->n_events, k;
     for (k = 0; k < nNovas; k++) {
       int n0 = assTrack->n_events;
@@ -2009,7 +3075,12 @@ static int ass_inc_lote(const char *corpo, size_t tamanho, unsigned geracao) {
         /* ReadOrder = ordem de chegada. Antes ficava 0 em todas e o libass
          * empatava pela posicao no vetor: igual, mas uma fala devolvida pela
          * poda ia para o fim e mudava quem sobe na colisao. */
-        while (incEvN < assTrack->n_events) { assTrack->events[incEvN].ReadOrder = ++assLeituraSeq; incEv[incEvN++] = novasH[k]; }
+        while (incEvN < assTrack->n_events) {
+          if (assTrack->events[incEvN].Start < minNewStart)
+            minNewStart = assTrack->events[incEvN].Start;
+          assTrack->events[incEvN].ReadOrder = ++assLeituraSeq;
+          incEv[incEvN++] = novasH[k];
+        }
         aceitas++;
       } else if (assTrack->n_events != incEvN) {
         /* Sem memoria para o hash: perde o alinhamento, refaz depois. */
@@ -2050,9 +3121,10 @@ static int ass_inc_lote(const char *corpo, size_t tamanho, unsigned geracao) {
     } }
   incPronto = !desalinhou && incEvN == assTrack->n_events;
   pthread_mutex_unlock(&assTrava);
-  if (aceitas || removidos || reconstruir) {
+  if (reconstruir || aceitas) {
     pthread_mutex_lock(&assFilaTrava);
-    assTemUltimoPedido = 0;   // o worker ve o documento novo mesmo pausado
+    if (reconstruir || minNewStart <= (long long)assPedidoMs + 100)
+      assTemUltimoPedido = 0;   // o worker ve o documento novo mesmo pausado
     pthread_mutex_unlock(&assFilaTrava);
   }
   ok = 1;
@@ -2102,8 +3174,11 @@ static int ass_carregar(const char *corpo, size_t tamanho, unsigned geracao, int
     pthread_mutex_unlock(&assTrava); return 0;
   }
   ass_authored_styles_free();
+  ass_rigid_free_ctx_locked();
+  ass_rigid_clear();
   if (assTrack) ass_free_track(assTrack);
   assTrack = track;
+  assTrackStyleVer++;
   { int fb = __atomic_load_n(&assFallbacks, __ATOMIC_RELAXED);
     if (assFonteNovaTarde && fb > 0) {
       struct timespec a, b;
@@ -2136,7 +3211,7 @@ static int ass_carregar(const char *corpo, size_t tamanho, unsigned geracao, int
   pthread_mutex_unlock(&assTrava);
   if (!ass_worker_iniciar()) {
     pthread_mutex_lock(&assTrava);
-    if (assTrack == track) { ass_authored_styles_free(); ass_free_track(assTrack); assTrack = NULL; }
+    if (assTrack == track) { ass_authored_styles_free(); ass_rigid_free_ctx_locked(); ass_rigid_clear(); ass_free_track(assTrack); assTrack = NULL; }
     assEventos = 0;
     __atomic_store_n(&assTrackAtivo, 0, __ATOMIC_RELEASE);
     ass_diag("libass: worker de render indisponivel");
@@ -2289,7 +3364,9 @@ void assrender_definir_texto_estilo(const PlainAssStyle *style) {
   pthread_mutex_lock(&assFilaTrava);
   if (!plainPedValido || memcmp(style, &plainPed, sizeof *style)) {
     plainPed = *style; plainPedValido = 1;
-    ++assEpoch; assTemUltimoPedido = 0;
+    if (!ASS_NOVO || __atomic_load_n(&assTextoSimples, __ATOMIC_ACQUIRE)) {
+      ++assEpoch; assTemUltimoPedido = 0;
+    }
   }
   pthread_mutex_unlock(&assFilaTrava);
 }
@@ -2311,6 +3388,8 @@ void assrender_limpar(void) {
   assperf_escala_reset();   // Render resolution Auto: a new track starts at 100 %
   pthread_mutex_lock(&assTrava);
   ass_authored_styles_free();
+  ass_rigid_free_ctx_locked();
+  ass_rigid_clear();
   if (assTrack) { ass_free_track(assTrack); assTrack = NULL; }
   __atomic_store_n(&assTrackMatriz, -1, __ATOMIC_RELEASE);
   assEventos = 0;
@@ -2333,6 +3412,8 @@ void assrender_limpar_fontes(void) {
   pthread_mutex_lock(&assTrava);
   ass_atuais_limpar_locked();
   ass_authored_styles_free();
+  ass_rigid_free_ctx_locked();
+  ass_rigid_clear();
   if (assTrack) { ass_free_track(assTrack); assTrack = NULL; }
   __atomic_store_n(&assTrackMatriz, -1, __ATOMIC_RELEASE);
   assEventos = 0; assFontes = 0; assResolucaoFonte = 0;
@@ -2585,13 +3666,19 @@ static void ass_medir_locked(long long agora, int temTexto, long long inicioMax)
   } else assMed.vazios++;
   assMed.textoAnterior = temTexto;
   if (m - assMed.ultimoRelatorio >= 10.0) {
-    if (assMed.ultimoRelatorio > 0)
+    if (assMed.ultimoRelatorio > 0) {
+      long rHits = 0, rMiss = 0;
+      pthread_mutex_lock(&assRigidTrava);
+      rHits = assRigidHits; rMiss = assRigidMisses;
+      assRigidHits = assRigidMisses = 0;
+      pthread_mutex_unlock(&assRigidTrava);
       printf("[ass] 10s: quadros=%ld trocas=%ld renders=%ld iguais=%ld render medio=%.1fms max=%.1fms "
-             "piscas=%ld (vazios=%ld) falas=%ld atraso medio=%lldms max=%lldms eventos=%d\n",
+             "piscas=%ld (vazios=%ld) falas=%ld atraso medio=%lldms max=%lldms eventos=%d rigid=%ld/%ld\n",
              assMed.quadros, assMed.trocas, assMed.renders, assMed.iguais,
              assMed.renders ? assMed.renderSomaUs / 1000.0 / assMed.renders : 0.0,
              assMed.renderMaxUs / 1000.0, assMed.piscas, assMed.vaziosPisca, assMed.falas,
-             assMed.falas ? assMed.atrasoSoma / assMed.falas : 0, assMed.atrasoMax, assEventos);
+             assMed.falas ? assMed.atrasoSoma / assMed.falas : 0, assMed.atrasoMax, assEventos, rHits, rMiss);
+    }
 #if defined(NV_TPK) && ASS_NOVO
     /* The TV's side of the same window (libass on the Tizen 4/5 .tpk, 09/11):
      * how often the position arrives and what a query costs (the 40 ms clock

@@ -681,6 +681,13 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "    }\n"
   "    gl_FragColor = vec4(rgb / max(g.a, 0.00001) * (1.0-uFoco), g.a); return;\n"
   "  }\n"
+  // Positive uPar.y enables sub-rect UV scaling (uPar = active/bucket scale,
+  // uRaio = half-texel inset) for bucketed RGBA subtitle textures.
+  "  if (uPar.y > 0.0) {\n"
+  "    vec2 uv = min(vUv * uPar, max(uPar - vec2(uRaio), vec2(0.0)));\n"
+  "    g = texture2D(uTex, uv);\n"
+  "    gl_FragColor = vec4(g.rgb * (1.0 - uFoco), g.a * uCor.a); return;\n"
+  "  }\n"
   // uPar.x liga o tint RGB do texto em cache; logos mantem a cor original.
   "  vec3 tint = uPar.x > 0.5 ? uCor.rgb : vec3(1.0);\n"
   "  gl_FragColor = vec4(g.rgb * tint * (1.0 - uFoco), g.a * uCor.a);\n"
