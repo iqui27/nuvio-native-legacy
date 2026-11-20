@@ -1146,10 +1146,16 @@ static int canalPassaFiltro(int i) {
 
 static void vistaMontar(void) {
   int i;
-  if (filtro >= 0 && filtro < nLtvF) {
-    // A fonte do filtro pela CHAVE: a republicacao pode mudar o indice.
+  // A fonte do filtro pela CHAVE, sempre: a republicacao pode remover a
+  // playlist selecionada (o indice antigo fica >= nLtvF) ou mudar a ordem.
+  // Sem esta resolucao a grade e o zapping ficavam vazios ate a pessoa trocar
+  // de chip — a fonte sumida vira Todas.
+  if (filtro >= 0 && filtro < G_FILTRO_ADDON_BASE) {
     for (i = 0; i < nLtvF && strcmp(ltvF[i].chave, filtroChave); i++) {}
     filtro = i < nLtvF ? i : G_FILTRO_TODAS;
+  } else if (filtro >= G_FILTRO_ADDON_BASE && filtroAddonBase[0]) {
+    for (i = 0; i < nFontes && strcmp(fontes[i].base, filtroAddonBase); i++) {}
+    filtro = i < nFontes ? G_FILTRO_ADDON_BASE + i : G_FILTRO_TODAS;
   }
   categoriasGarantir();
   nFavOrd=0;
@@ -3562,7 +3568,7 @@ int guia_numero_canal(int numero, CatItem *saida, char *fonte, size_t nf, int ap
   if (estado != G_PRONTO || nCanais < 1 || numero <= 0) return 0;
   if (numero == cNum && filtro == cFiltro && nCanais == cN && canais == cLista) { idx = cIdx; amb = cAmb; }
   else {
-    int i, f = filtro >= 0 ? filtro : -1;
+    int i, f = filtro >= 0 && filtro < G_FILTRO_ADDON_BASE ? filtro : -1;
     if (nCanais > capBuf) {
       LtvNum *no = realloc(buf, sizeof *no * (size_t)nCanais);
       if (!no) return 0;
@@ -4178,9 +4184,17 @@ static int filtroDoChip(int i) {
 static int chipDoFiltro(void) {
   if (filtro == G_FILTRO_FAV) return 0;
   if (filtro == G_FILTRO_TODAS) return 1;
-  if (filtro >= 0 && filtro < nLtvF) return filtro + 2;
-  if (filtro >= G_FILTRO_ADDON_BASE && filtro < G_FILTRO_ADDON_BASE + nFontes)
-    return 2 + nLtvF + (filtro - G_FILTRO_ADDON_BASE);
+  if (filtro >= 0 && filtro < nLtvF) {
+    // A chave e a identidade estavel: a republicacao pode reordenar ltvF.
+    int i;
+    for (i = 0; i < nLtvF && strcmp(ltvF[i].chave, filtroChave); i++) {}
+    return i < nLtvF ? i + 2 : 1;
+  }
+  if (filtro >= G_FILTRO_ADDON_BASE && filtroAddonBase[0]) {
+    int i;
+    for (i = 0; i < nFontes && strcmp(fontes[i].base, filtroAddonBase); i++) {}
+    return i < nFontes ? 2 + nLtvF + i : 1;
+  }
   return 1;
 }
 static void fontesEntrar(void) { focoFontes = 1; focoTopo = 0; fontesCol = chipDoFiltro(); fopAberto = 0; }
@@ -5209,7 +5223,7 @@ void guia_atualizar(float dt, Uint32 agora) {
   // OK segurado num chip de fonte: as opcoes da fonte (Todas/Favoritos nao tem).
   if (fontesOkDesde && !fontesOkLongo && agora - fontesOkDesde >= NV_HOLD_MS) {
     fontesOkLongo = 1;
-    if (focoFontes && fontesCol >= 2) { fopAberto = 1; fopModo = FOP_FONTE; fopFoco = 0; }
+    if (focoFontes && fontesCol >= 2 && fontesCol < 2 + nLtvF) { fopAberto = 1; fopModo = FOP_FONTE; fopFoco = 0; }
   }
   if (!okLongo && segurar_venceu(agora, okDesde, "guia")) {
     GCanal *c = linhaItem(focoLin, focoCol);
@@ -6062,7 +6076,10 @@ static void haQuanto(long long quando, char *d, size_t n) {
 static void desenharFontes(float a) {
   float x0 = G_INFO_X, xm = G_INFO_X + G_INFO_W, y = gRetrato() ? G_HERO_Y + G_INFO_H - 112.0f : G_PREVIEW_H - 82.0f, h = 40.0f, x, alvo, xf = 0, wf = 0;
   int i, n = fontesN(), sel = chipDoFiltro(), tf = ajustes_tinta_foco(), nChip = n;
-  if (nChip > 2 + G_MAX_LTV) nChip = 2 + G_MAX_LTV;
+  // O teto dos chips e o teto dos DADOS (ltvF + fontes), nao so de ltvF: com a
+  // lista de contas cheia os addons ainda tem chip, e a navegacao (RIGHT em
+  // fontesEvento) percorre todos os fontesN().
+  if (nChip > 2 + G_MAX_LTV + G_MAX_FONTE) nChip = 2 + G_MAX_LTV + G_MAX_FONTE;
   float xs[2 + G_MAX_LTV + G_MAX_FONTE], ws[2 + G_MAX_LTV + G_MAX_FONTE];
   char rot[2 + G_MAX_LTV + G_MAX_FONTE][96];
   if (!barraVisivel()) return;
@@ -6161,7 +6178,7 @@ static void desenharFontes(float a) {
     }
   }
   // AS OPCOES DA FONTE (segurar OK): um cartao sob o chip.
-  if (fopAberto && fopModo == FOP_FONTE && fontesCol >= 2) {
+  if (fopAberto && fopModo == FOP_FONTE && fontesCol >= 2 && fontesCol < 2 + nLtvF) {
     const GFonteLtv *F = &ltvF[fontesCol - 2];
     LtvPref *p = ltv_pref(F->chave, 0);
     char it[FOP_N][120];
