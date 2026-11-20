@@ -280,7 +280,13 @@ class ParaleloDataSource(
     private fun conectar1(u: URL, ini: Long, ultimo: Long, orcamentoMs: Int = -1): HttpURLConnection {
         conferirCancelamento()
         if (orcamentoMs >= 0 && orcamentoMs <= 0) throw IOException("debrid timeout total")
-        val c = MediaHttpBudget.open(u, "player", novaConexao, ::conferirCancelamento)
+        val inicioCon = android.os.SystemClock.elapsedRealtime()
+        val c = MediaHttpBudget.open(u, "player", novaConexao) {
+            conferirCancelamento()
+            if (orcamentoMs >= 0 &&
+                android.os.SystemClock.elapsedRealtime() - inicioCon >= orcamentoMs)
+                throw IOException("debrid timeout total")
+        }
         ativas.add(c)
         if (fechado) { desconectar(c); throw cancelado() }
         val (connectMs, readMs) = timeoutsParaHost(u.host)
