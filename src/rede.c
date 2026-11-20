@@ -1300,6 +1300,8 @@ static _Thread_local int redeSemRecuoV4;
 #define INFO_TEMPO_DNS       3145732
 #define INFO_TEMPO_TCP       3145733
 #define INFO_TEMPO_TLS       3145761
+// CURLINFO_PRIMARY_IP = CURLINFO_STRING (0x100000) + 32: IP do socket conectado.
+#define INFO_IP_PRIMARIO     1048608
 // Cabecalhos de RESPOSTA. So rede_baixar_etag os pede; ver a nota la.
 #define OPT_HEADERFUNCTION  20079
 #define OPT_HEADERDATA      10029
@@ -1745,6 +1747,19 @@ static void v4Marcar(const char *url, unsigned long agora) {
   pthread_mutex_unlock(&v4Trava);
 }
 
+// A conexao TCP abriu? Sinal da libcurl, nunca limiar de tempo: loopback e
+// LAN conectam em dezenas de us, e um 28 com o TLS parado nao e rota v6.
+// CONNECT_TIME > 0 = connect fechado nesta tentativa; IP primario preenchido =
+// havia socket conectado (a 8.x zera o CONNECT_TIME de conexao REUSADA que
+// estoura, mas mantem o IP). Sem conexao (6, 7, connect engolido) as duas
+// vem zeradas. Getinfo que falha conta como "abriu": na duvida nao recua.
+static int v4TcpAbriu(void *c) {
+  double tcp = 0;
+  char *ip = NULL;
+  if (curl_getinfo(c, INFO_TEMPO_TCP, &tcp) || tcp != 0.0) return 1;
+  if (curl_getinfo(c, INFO_IP_PRIMARIO, &ip)) return 1;
+  return ip && ip[0];
+}
 // Conexao que nem abriu e a rota v6 pode ser a culpada: o nome nao resolveu
 // (6, o AAAA que morre no caminho v6 quebrado), o connect caiu (7: sem rota,
 // recusa, blackhole que responde RST tarde) ou o prazo morreu sem nenhuma
@@ -1758,10 +1773,7 @@ static int v4Vale(int r, void *c) {
   if (!curl_getinfo) return 0;
   curl_getinfo(c, INFO_RESPONSE_CODE, &http);
   if (http != 0) return 0;
-  { double tcp = 0;
-    curl_getinfo(c, INFO_TEMPO_TCP, &tcp);
-    if (tcp > 0.0005) return 0; }
-  return 1;
+  return !v4TcpAbriu(c);
 }
 // A easy do pedido cancelavel esta associada ao multi do FIO (pool); uma
 // vigia temporaria em cima dele deixa cada tentativa cancelavel sem mexer no
