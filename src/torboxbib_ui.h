@@ -12,6 +12,9 @@ const char *torboxbib_ui_nome(int i);
 const char *torboxbib_ui_status(void);
 int torboxbib_ui_item_id(int i);
 int torboxbib_ui_usenet(int i);
-void torboxbib_ui_play_index(int i);
+/* Pedido do item i: grava o alvo "torbox:bib" para o Airlock e devolve o
+   usenet/item escolhidos para o chamador disparar o link DEPOIS de limpar o
+   estado anterior (parteZerar cancela qualquer pedido em voo). */
+int torboxbib_ui_escolher(int i, int *usenet, int *item);
 
 #endif

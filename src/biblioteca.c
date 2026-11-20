@@ -393,7 +393,9 @@ static const char *generosEn[] = { "", "Drama", "Comedy", "Action", "Animation",
 static int fonte = FONTE_TRAKT;
 static int listaTab;
 #ifdef NV_TPK
-#define BIB_N_LISTA_TAB 5
+// TorBox so ocupa a aba 4 quando a conta responde (torboxbib_disponivel); sem
+// ela ha 4 abas e os controles Procurar/+Nova lista ficam nos indices 4 e 5.
+#define BIB_N_LISTA_TAB (torboxbib_disponivel() ? 5 : 4)
 static const char *ROT_LISTA_TAB[] = { "Minhas listas", "Seguindo", "Explorar", "Trilhas", "TorBox" };
 static int torboxAba(void) { return modo == MODO_LISTAS && listaTab == 4 && torboxbib_disponivel(); }
 #else
@@ -487,6 +489,10 @@ static int toqueLivre;
 // aqui partia na velocidade maxima e o primeiro quadro ja saltava 12%.
 static float velY = 0.0f;
 static int sair = 0, pedido = -1, pediuTorbox = 0;
+#ifdef NV_TPK
+static int torboxUsenet, torboxItem;
+static char torboxTitulo[160];
+#endif
 static int pediuRelogio;
 static int nCelulas = 0;         // celulas da grade do estado atual
 // Para que o teclado modal esta na tela; o resultado e lido em
@@ -917,7 +923,9 @@ static int ehSerie(const CatItem *ci) {
 // e aqui que elas se encontram, para o mapa de foco e a rolagem serem um so.
 static int contarCelulas(void) {
   int n;
+#ifdef NV_TPK
   if (torboxAba()) return torboxbib_ui_n();
+#endif
   if (estado() == EST_TITULOS) return nFiltro;
   if (estado() == EST_LISTAS)  return lst_n();
   n = lst_itens_n();
@@ -1389,9 +1397,18 @@ int biblioteca_pediu_abrir(int *indiceCatalogo) {
   return 1;
 }
 
-int biblioteca_pediu_torbox_play(void) {
+int biblioteca_pediu_torbox_play(int *usenet, int *item, const char **titulo) {
   int v = pediuTorbox;
   pediuTorbox = 0;
+#ifdef NV_TPK
+  if (usenet) *usenet = torboxUsenet;
+  if (item) *item = torboxItem;
+  if (titulo) *titulo = torboxTitulo;
+#else
+  if (usenet) *usenet = 0;
+  if (item) *item = 0;
+  if (titulo) *titulo = "";
+#endif
   return v;
 }
 
@@ -1683,11 +1700,16 @@ static void okNaCelula(int i) {
     teclado_abrir_com("Nota do título", "Vazio apaga a nota.", 190, ALFA_TEXTO, x.nota);
     return;
   }
+#ifdef NV_TPK
   if (torboxAba()) {
-    torboxbib_ui_play_index(i);
-    pediuTorbox = 1;
+    if (torboxbib_ui_escolher(i, &torboxUsenet, &torboxItem)) {
+      const char *nm = torboxbib_ui_nome(i);
+      snprintf(torboxTitulo, sizeof torboxTitulo, "%s", nm && nm[0] ? nm : "TorBox");
+      pediuTorbox = 1;
+    }
     return;
   }
+#endif
   if (estado() == EST_LISTAS) { abrirLista(i); return; }
   if (estado() == EST_ITENS) { abrirItemDaLista(i); return; }
   { int idx = indiceDaCelula(i);
@@ -2833,11 +2855,15 @@ static void desenhaVazio(void) {
       kind = T21_ERROR; l1 = "Não foi possível carregar. OK para tentar novamente."; l2 = NULL;
     } else { l1 = "Nada nesta lista";
            l2 = "Uma lista do Trakt vem por tipo: experimente trocar entre Filmes e Séries."; }
-  } else if (torboxAba()) {
+  }
+#ifdef NV_TPK
+  else if (torboxAba()) {
     const char *av = torboxbib_ui_status();
     if (av[0] && !torboxbib_ui_n()) { kind = T21_EMPTY; l1 = "TorBox"; l2 = av; }
     else if (!torboxbib_ui_n()) { l1 = "Nada na conta TorBox"; l2 = "Envie torrents ou usenet para a sua conta."; }
-  } else if (estado() == EST_LISTAS) {
+  }
+#endif
+  else if (estado() == EST_LISTAS) {
     // O AVISO DA FONTE VEM DO MODULO e diz o que falta (sem conta do Trakt, sem
     // vinculo do Simkl, nada fixado). Uma frase generica aqui esconderia
     // exatamente a informacao que resolve.
@@ -3470,6 +3496,7 @@ static float seloFonte(const LstLista *l, float x, float y, float h,
 // CARTAO DE LISTA. Ver a nota das medidas no topo para o que saiu e por que.
 // O que sobrou responde a unica pergunta que a grade faz — "e esta?": o NOME,
 // em ate duas linhas, e o tamanho da lista com o dono.
+#ifdef NV_TPK
 static void desenhaLinhaTorbox(int i, float y, float f, float a) {
   const char *nome = torboxbib_ui_nome(i);
   if (!nome || !nome[0]) return;
@@ -3481,6 +3508,7 @@ static void desenhaLinhaTorbox(int i, float y, float f, float a) {
   TxtLinha sub = txt_linha(TXT_CAPTION2, i18n("TorBox"), sr, sg, sb, 255);
   txt_desenhar_alpha(sub, r.x + r.w - (float)sub.w - 24, y + (BIB_LL_H - (float)sub.h) * 0.5f, a * 0.9f);
 }
+#endif
 
 static void desenhaCartaoLista(const LstLista *l, GfxRect r, float f, float a) {
   if (!telefoneui_ativo()) {
@@ -4454,11 +4482,8 @@ static void biblioteca_desenhar_(Uint32 agora) {
     else {
       desenhaModos();
       if (modo == MODO_LISTAS) {
-        int counts[BIB_N_LISTA_TAB];
+        int counts[5];
         int nt = BIB_N_LISTA_TAB;
-#ifdef NV_TPK
-        if (!torboxbib_disponivel()) nt = BIB_N_LISTA_TAB - 1;
-#endif
         for (int i = 0; i < nt; i++) counts[i] = -1;
         plrui_seg_ex(ROT_LISTA_TAB, counts, nt, listaTab, animListaTab,
           anim_clamp(animPick[0] + animPick[1] + animPick[2] + animPick[3], 0, 1),
@@ -4607,6 +4632,7 @@ static void biblioteca_desenhar_(Uint32 agora) {
         }
         if (ac <= 0.005f) continue;
 
+#ifdef NV_TPK
         if (torboxAba()) {
           if (modoLinha())
             desenhaLinhaTorbox(i, ty, f, ac);
@@ -4620,6 +4646,7 @@ static void biblioteca_desenhar_(Uint32 agora) {
           }
           continue;
         }
+#endif
         if (estado() == EST_LISTAS) {
           const LstLista *l = lst_lista(i);
           if (modoLinha()) {

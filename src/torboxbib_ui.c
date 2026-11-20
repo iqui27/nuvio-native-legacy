@@ -2,6 +2,9 @@
 #include "torboxbib.h"
 #include "debrid.h"
 #include "partes.h"
+#include "js.h"
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,8 +17,36 @@ static struct {
   char nome[160];
   char hash[48];
 } itens[TBUI_MAX];
-static int nItens, pagina, carregando;
+static int nItens, pagina;
 static char status[96];
+// A lista chega num fio proprio: debrid_tb_mylist pode custar 20 s e a aba
+// atualiza a cada quadro (biblioteca.c chama atualizar() sem esperar). O fio
+// publica o corpo; parseData roda no fio da UI, uma vez por resposta.
+static pthread_t fio;
+static int fioVivo;
+static _Atomic int respostaPronta;   // 0 nada, 1 ha corpo para recolher
+static char *respostaJson;
+static int respostaSt;
+static void *fioCarregar(void *u) {
+  int st = 0, pag = *(int *)u;
+  char *json;
+  free(u);
+  json = torboxbib_carregar_json(pag, &st);
+  respostaJson = json; respostaSt = st;
+  atomic_store_explicit(&respostaPronta, 1, memory_order_release);
+  return NULL;
+}
+static void disparar(void) {
+  int *pag;
+  if (fioVivo) return;
+  pag = malloc(sizeof *pag);
+  if (!pag) return;
+  *pag = pagina;
+  atomic_store_explicit(&respostaPronta, 0, memory_order_release);
+  respostaJson = NULL;
+  if (pthread_create(&fio, NULL, fioCarregar, pag) != 0) { free(pag); return; }
+  fioVivo = 1;
+}
 
 static void limpar(void) {
   nItens = 0;
@@ -40,11 +71,16 @@ static void parseData(const char *json) {
       char idb[24], nome[160], hash[48];
       int id = 0, usenet = 0;
       nome[0] = hash[0] = idb[0] = 0;
-      if (js_texto_raiz(p, "name", nome, sizeof nome) && nome[0]) { /* */ }
-      js_texto_raiz(p, "hash", hash, sizeof hash);
-      if (js_texto_raiz(p, "id", idb, sizeof idb)) id = atoi(idb);
-      js_texto_raiz(p, "usenet", idb, sizeof idb);
-      if (idb[0] == '1' || (idb[0] == 't' && idb[1] == 'r')) usenet = 1;
+      js_texto_raiz_em(p, f, "name", nome, sizeof nome);
+      js_texto_raiz_em(p, f, "hash", hash, sizeof hash);
+      // id e usenet sao NUMEROS/booleanos no JSON do TorBox, nao strings:
+      // js_texto_raiz so aceita string e um "id":41 saia como 0 — o OK pedia
+      // sempre o arquivo do item 0.
+      id = (int)js_num(p, f, "id", 0);
+      // usenet pode vir numero (0/1) ou booleano (true/false); js_num so le
+      // numero, entao o booleano se confere no texto do campo.
+      { const char *ub = strstr(p, "\"usenet\"");
+        usenet = js_num(p, f, "usenet", -1) == 1 || (ub && ub < f && strstr(ub, "true") && strstr(ub, "true") < f); }
       if (!nome[0]) snprintf(nome, sizeof nome, "Item %d", id);
       itens[nItens].itemId = id;
       itens[nItens].usenet = usenet;
@@ -57,28 +93,29 @@ static void parseData(const char *json) {
 }
 
 void torboxbib_ui_atualizar(void) {
-  int st = 0;
-  char *json;
   if (!torboxbib_disponivel()) {
     limpar();
     snprintf(status, sizeof status, "TorBox não configurado");
     return;
   }
-  if (carregando) return;
-  carregando = 1;
-  json = torboxbib_carregar_json(pagina, &st);
-  carregando = 0;
-  if (!json) {
-    limpar();
-    snprintf(status, sizeof status, st ? "Erro HTTP %d" : "Falha na lista", st);
+  if (fioVivo && atomic_load_explicit(&respostaPronta, memory_order_acquire)) {
+    char *json = respostaJson;
+    int st = respostaSt;
+    pthread_join(fio, NULL);
+    fioVivo = 0;
+    respostaJson = NULL;
+    atomic_store_explicit(&respostaPronta, 0, memory_order_release);
+    if (!json) {
+      limpar();
+      snprintf(status, sizeof status, st ? "Erro HTTP %d" : "Falha na lista", st);
+    } else {
+      parseData(json);
+      free(json);
+      snprintf(status, sizeof status, nItens == 0 ? "Lista vazia" : "%d itens", nItens);
+    }
     return;
   }
-  parseData(json);
-  free(json);
-  if (nItens == 0)
-    snprintf(status, sizeof status, "Lista vazia");
-  else
-    snprintf(status, sizeof status, "%d itens", nItens);
+  if (!fioVivo && nItens == 0 && !status[0]) disparar();
 }
 
 int torboxbib_ui_visivel(void) { return torboxbib_disponivel(); }
@@ -94,7 +131,8 @@ const char *torboxbib_ui_status(void) { return status; }
 void torboxbib_ui_pagina_set(int p) {
   if (p < 0) p = 0;
   pagina = p;
-  torboxbib_ui_atualizar();
+  limpar();
+  disparar();
 }
 
 int torboxbib_ui_item_id(int i) {
@@ -105,13 +143,16 @@ int torboxbib_ui_usenet(int i) {
   return i >= 0 && i < nItens ? itens[i].usenet : 0;
 }
 
-void torboxbib_ui_play_index(int i) {
-  if (i < 0 || i >= nItens) return;
+int torboxbib_ui_escolher(int i, int *usenet, int *item) {
+  if (i < 0 || i >= nItens || itens[i].itemId <= 0) return 0;
   partes_arquivo_definir("torbox:bib", itens[i].usenet, itens[i].itemId, 0);
-  partes_link_pedir(itens[i].usenet, itens[i].itemId, 0, 1);
+  if (usenet) *usenet = itens[i].usenet;
+  if (item) *item = itens[i].itemId;
+  return 1;
 }
 
 void torboxbib_ui_entrar(void) {
   pagina = 0;
-  torboxbib_ui_atualizar();
+  limpar();
+  disparar();
 }
