@@ -344,6 +344,7 @@ typedef struct Sessao {
   DtsTrack externalHint;
   char *externalUrl, *externalHeaders;
   char externalLangs[64];
+  int lastSegment;                // TEMP-NETLOG: last segment sent in full
 #endif
   volatile int cancelar;
   pthread_mutex_t m;
@@ -704,6 +705,19 @@ static int servirFluxo(int sock, Sessao *s, const Pedido *pd, unsigned nr, int s
   }
   pthread_mutex_unlock(&s->m);
   soltarGerador(s, ger);
+#ifdef NV_WEBOS_HLS_TEST
+  /* TEMP-NETLOG: restarts and early closes are what can make HLS read the source twice:
+   * a restart seeks back to the segment's keyframe. */
+  if (s->webos && seg >= 0 && (ok || rr == -2) && (st.fresh || !ok)) {
+    char after[24] = "first in this session";
+    if (s->lastSegment >= 0) snprintf(after, sizeof after, "after seg %d", s->lastSegment);
+    printf("[webos-hls] seg %d %s, %s: %.1f MB sent in %u ms\n", seg,
+           ok ? "restarted from its keyframe" : "closed by the player", after,
+           enviados / 1e6, (unsigned)(agoraMs() - t0));
+    fflush(stdout);
+  }
+  if (s->webos && seg >= 0 && ok) s->lastSegment = seg;
+#endif
   if (s->webos && (ok || rr == -2)) return ok && manter;
   uint64_t fim = agoraMs();
   char stTxt[8];                           // "-": nada saiu (o player fechou antes)
@@ -1107,6 +1121,7 @@ static int openSession(const char *url, const char *headers, int track, int ster
   if (hls) {
     s->dv7 = hls->dv7;
     s->hls = *hls;
+    s->lastSegment = -1;
     if (hls->external_url && *hls->external_url) {
       s->externalUrl = strdup(hls->external_url);
       s->externalHeaders = strdup(hls->external_headers ? hls->external_headers : "");
