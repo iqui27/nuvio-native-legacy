@@ -141,7 +141,7 @@ int st_voz_iniciar(int d) {
 #ifdef NV_ANDROID
   ok = android_st_ditar(desc_tmdb_idioma());
 #else
-  if (pelaPlataforma()) { texto_sistema_abrir("", 1); ok = texto_sistema_aberto(); }
+  if (pelaPlataforma()) { texto_sistema_abrir(vozTecladoBuf, 1); ok = texto_sistema_aberto(); }
   else ok = 1;
 #endif
   estado = ok ? ST_OUVINDO : ST_PARADO;
