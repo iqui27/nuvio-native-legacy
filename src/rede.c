@@ -1384,11 +1384,24 @@ static int urlSetopt(void *c, const char *url) {
 static int   (*curl_perform)(void *);
 static void  (*curl_cleanup)(void *);
 static int   (*curl_global)(long);
+static void *(*curl_multi_init)(void);
+static int   (*curl_multi_add)(void *, void *);
+static int   (*curl_multi_remove)(void *, void *);
+static int   (*curl_multi_perform)(void *, int *);
+static int   (*curl_multi_poll)(void *, void *, unsigned, int, int *);
+static int   (*curl_multi_wait)(void *, void *, unsigned, int, int *);
+static int   (*curl_multi_cleanup)(void *);
+static void *(*curl_multi_info_read)(void *, int *);
 static void *(*slist_append)(void *, const char *);
 static void  (*slist_free)(void *);
 static int   (*curl_getinfo)(void *, int, ...);
 static void  (*curl_reset)(void *);
 static time_t (*curl_getdate_fn)(const char *, const time_t *);
+
+// Definida com a vigia de cancelamento mais abaixo (#775); o tmdbFallback a
+// usa quando o pedido ja esta num multi proprio.
+typedef struct { void *multi; } CancelVigia;
+static int cancelVigiaPerform(CancelVigia *v, void *c);
 
 #ifdef NV_TPK
 static void *dnsShare;
@@ -1433,7 +1446,7 @@ static void prepararDns(void *h, const char *ares) {
 // gasto inteiro, e a tentativa no alias dobraria a espera maxima de quem
 // chamou — o mesmo principio de valeRepetir logo abaixo ("o que ja custou o
 // prazo inteiro nao repete").
-static int tmdbFallback(void *c, int r, const char *pedido) {
+static int tmdbFallback(void *c, int r, const char *pedido, void *cv) {
   char *url = NULL, *alias, *origem;
   long http = 0;
   if (!(r == 35 || r == 7 || r == 56 || r == 52) ||
@@ -1445,13 +1458,18 @@ static int tmdbFallback(void *c, int r, const char *pedido) {
   if (curl_getinfo(c, INFO_RESPONSE_CODE, &http) || http ||
       curl_getinfo(c, INFO_URL_FINAL, &url) || !(alias = tmdbUrl(url))) return r;
   if (!curl_setopt_f(c, OPT_URL, alias)) {
-    r = curl_perform(c); /* uma unica tentativa, sem recursao */
+    r = cancelVigiaPerform((CancelVigia *)cv, c); /* uma unica tentativa, sem recursao */
     if (!r) tmdbLigou();
   }
   free(alias);
   return r;
 }
-static int performTmdb(void *c, const char *url) { return tmdbFallback(c, curl_perform(c), url); }
+static int performTmdbCv(void *c, const char *url, void *cv) {
+  return tmdbFallback(c,
+           cv ? cancelVigiaPerform((CancelVigia *)cv, c) : curl_perform(c),
+           url, cv);
+}
+static int performTmdb(void *c, const char *url) { return tmdbFallback(c, curl_perform(c), url, NULL); }
 
 static int retrySegundos(const char *s, size_t n) {
   char b[128], *fim;
@@ -1822,67 +1840,68 @@ static void ligarVigia(void *c, Vigia *v, unsigned long prazoMs) {
   curl_setopt(c, OPT_NOPROGRESS, (long)0);
 }
 
-// VIGIA DE CANCELAMENTO (#775). O XFERINFO so acorda ~1x/s num pedido parado,
-// entao um cancelamento pelo callback de geracao (p2pPararCb, rede_parar_trocar)
-// esperava o tique inteiro. Enquanto ha um parar instalado, um fio leve le o
-// MESMO criterio a cada ~20 ms e derruba o socket ativo com shutdown(): a
-// libcurl volta na hora com erro de recepcao, sem encurtar nenhum prazo do
-// pedido — um /settings valido que pensa 1,5 s responde normal.
-//
-// O fd vem de SOCKOPTFUNCTION (socket novo) ou de INFO_LASTSOCKET (conexao
-// reusada, que nao passa no callback). O fio NAO pode ler o estado por fio
-// (redeParar e TLS): os ponteiros vao copiados no ctx. O fim checa redeParou()
-// de novo no fio do pedido para marcar redeCancelouLocal.
-#include <sys/socket.h>
-typedef struct {
-  pthread_t fio;
-  int fd;            /* -1 ate o socket existir; int e atomico na pratica */
-  int fim;
-  int parou;
-  int (*parar)(void *);
-  void *pararUsuario;
-  volatile int *cancel;
-} CancelVigia;
-static int cancelSock(void *u, int fd, int uso) {
-  (void)uso;
-  ((CancelVigia *)u)->fd = fd;
-  return 0;
-}
-static void *cancelVigiaFio(void *u) {
-  CancelVigia *v = (CancelVigia *)u;
-  struct timespec pausa = { 0, 20 * 1000 * 1000 };
-  while (!v->fim) {
-    int parou = (v->cancel && *v->cancel) ||
-                (v->parar && v->parar(v->pararUsuario));
-    if (parou) {
-      v->parou = 1;
-      // O socket pode nascer DEPOIS do cancel (conexao nova ainda no DNS/TLS):
-      // continua derrubando o fd registrado ate o pedido encerrar.
-      if (v->fd >= 0) shutdown(v->fd, SHUT_RDWR);
-    }
-    nanosleep(&pausa, NULL);
-  }
-  return NULL;
-}
+// CANCELAMENTO SEM FIO EXTRA (#775). O XFERINFO so acorda ~1x/s num pedido
+// parado, entao um cancelamento pelo callback de geracao (p2pPararCb,
+// rede_parar_trocar) esperava o tique inteiro. Quando ha parar instalado e a
+// libcurl tem a interface multi, o pedido vai por um multi proprio no MESMO
+// fio: um laço curl_multi_perform + poll de 20 ms recheca o criterio a cada
+// volta e sai com curl_multi_remove_handle — sem tocar em socket alheio, sem
+// shutdown() e sem prazo extra: um /settings que pensa 1,5 s responde normal
+// e o cancelamento volta em dezenas de ms. O fim checa redeParou() de novo no
+// fio do pedido para marcar redeCancelouLocal. Sem multi (libcurl antiga) o
+// pedido fica com o XFERINFO de sempre.
 static int cancelVigiaLigar(void *c, CancelVigia *v) {
+  v->multi = NULL;
   if (!redeParar && !redeCancelLocal) return 0;
-  memset(v, 0, sizeof *v);
-  v->fd = -1;
-  v->parar = redeParar; v->pararUsuario = redePararUsuario;
-  v->cancel = redeCancelLocal;
-  // Conexao reusada nao dispara o sockopt: o fd da ULTIMA transferencia deste
-  // handle e o mesmo socket de uma conexao que sobreviveu.
-  if (curl_getinfo) { long s = -1; curl_getinfo(c, INFO_LASTSOCKET, &s); v->fd = (int)s; }
-  if (pthread_create(&v->fio, NULL, cancelVigiaFio, v) != 0) return 0;
-  curl_setopt(c, OPT_SOCKOPTFUNCTION, cancelSock);
-  curl_setopt(c, OPT_SOCKOPTDATA, v);
+  if (!curl_multi_init || !curl_multi_add || !curl_multi_remove ||
+      !curl_multi_perform || !curl_multi_cleanup || !curl_multi_info_read ||
+      !(curl_multi_poll || curl_multi_wait)) return 0;
+  v->multi = curl_multi_init();
+  if (!v->multi) return 0;
+  if (curl_multi_add(v->multi, c)) { curl_multi_cleanup(v->multi); v->multi = NULL; return 0; }
   return 1;
 }
-static void cancelVigiaSoltar(CancelVigia *v, int ligado) {
-  if (!ligado) return;
-  v->fim = 1;
-  pthread_join(v->fio, NULL);
-  if (v->parou) redeCancelouLocal = 1;
+// So fecha o multi. O handle continua do pedido: quem chamou decide entre
+// reuso e descarte depois de ler o resultado, como antes. Se a easy ainda
+// estiver associada (saida por erro/abort antes do fim da transferencia)
+// tira antes, senao a easy fica presa ao multi morto e a proxima perform do
+// mesmo handle nao transfere.
+static void cancelVigiaSoltar(CancelVigia *v, int ligado, void *c) {
+  void *m;
+  if (!ligado || !v->multi) return;
+  m = v->multi;
+  v->multi = NULL;
+  curl_multi_remove(m, c);          /* idempotente: ja removida = CURLM_OK */
+  curl_multi_cleanup(m);
+}
+// Substitui curl_easy_perform quando a vigia esta ligada: a easy ja foi
+// adicionada ao multi em cancelVigiaLigar. Devolve o CURLE da transferencia.
+static int cancelVigiaPerform(CancelVigia *v, void *c) {
+  int ainda = 1, r = 23 /* CURLE_WRITE_ERROR */, achou = 0;
+  if (!v->multi) return curl_perform(c);
+  while (curl_multi_perform(v->multi, &ainda) == 0 /* CURLM_OK */) {
+    if (redeParou()) {
+      redeCancelouLocal = 1;
+      curl_multi_remove(v->multi, c);
+      return 42 /* CURLE_ABORTED_BY_CALLBACK */;
+    }
+    if (!ainda) break;
+    /* poll existe na 7.66+; wait cobre as libcurl das TVs (7.45+/7.53). */
+    if (curl_multi_poll) curl_multi_poll(v->multi, NULL, 0, 20, NULL);
+    else curl_multi_wait(v->multi, NULL, 0, 20, NULL);
+  }
+  { /* CURLMsg: { CURLMSG msg; CURL *easy_handle; union { ... CURLcode result } data } */
+    typedef struct { int msg; void *easy; union { void *p; int result; } data; } NvCurlMsg;
+    NvCurlMsg *info;
+    int naFila;
+    while ((info = (NvCurlMsg *)curl_multi_info_read(v->multi, &naFila)) != NULL)
+      if (info->msg == 1 /* CURLMSG_DONE */ && info->easy == c)
+        { r = info->data.result; achou = 1; } }
+  curl_multi_remove(v->multi, c);
+  /* Sem mensagem DONE (a multi falhou ou a easy sumiu sem resultado) a
+     transferencia nao completou: reporta erro de recepcao como o easy faria,
+     nunca um CURLE_WRITE_ERROR espurio. */
+  return achou ? r : 56 /* CURLE_RECV_ERROR */;
 }
 
 typedef struct { char *p; size_t n, cap; } Balde;
@@ -2160,6 +2179,14 @@ static int abrirReal(void) {
   *(void **)(&curl_getdate_fn) = dlsym(h, "curl_getdate");
   *(void **)(&curl_send)    = dlsym(h, "curl_easy_send");
   *(void **)(&curl_recv)    = dlsym(h, "curl_easy_recv");
+  *(void **)(&curl_multi_init)     = dlsym(h, "curl_multi_init");
+  *(void **)(&curl_multi_add)      = dlsym(h, "curl_multi_add_handle");
+  *(void **)(&curl_multi_remove)   = dlsym(h, "curl_multi_remove_handle");
+  *(void **)(&curl_multi_perform)  = dlsym(h, "curl_multi_perform");
+  *(void **)(&curl_multi_poll)     = dlsym(h, "curl_multi_poll");
+  *(void **)(&curl_multi_wait)     = dlsym(h, "curl_multi_wait");
+  *(void **)(&curl_multi_cleanup)  = dlsym(h, "curl_multi_cleanup");
+  *(void **)(&curl_multi_info_read)= dlsym(h, "curl_multi_info_read");
   // O REUSO NUNCA LIGOU ATE AQUI (23/09/2026). pegarHandle e soltarHandle
   // existem desde 5eb8bd2, mas este dlsym nao: `curl_reset` ficava NULL, e o
   // ramo "libcurl sem reset: como antes" criava e destruia um handle por
@@ -2558,7 +2585,7 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
   for (tentativa = 0; ; tentativa++) {
     unsigned long resta = prazoMs - gasto;
     c = pegarHandle(url);
-    if (!c) { cancelVigiaSoltar(&cv, cvOn); return NULL; }
+    if (!c) return NULL;
     curl_setopt(c, OPT_URL, url);
     // SO QUANDO ALGUEM PEDIU. O handle e reusado por fio (pegarHandle) e
     // curl_easy_reset limpa as opcoes entre pedidos, entao deixar o recebedor
@@ -2573,7 +2600,7 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
     curl_setopt(c, OPT_FOLLOWLOCATION, (long)1);
     opcoesComuns(c, resta);
     ligarVigia(c, &vigia, prazoMs);
-    if (!cvOn) cvOn = cancelVigiaLigar(c, &cv);
+    cvOn = cancelVigiaLigar(c, &cv);
     curl_setopt(c, OPT_ACCEPT_ENCODING, "");   // "" = todas as que a lib suporta
     if (cab && slist_append) {
       int k;
@@ -2589,17 +2616,18 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
         primeira = 0;
         snprintf(m, sizeof m, "begin https-1 %s", rede_url_publica(url, seg, sizeof seg));
         nv_tpk40_etapa(m);
-        r = curl_perform(c);
+        r = cancelVigiaPerform(&cv, c);
         { long http = 0; if (curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &http);
           snprintf(m, sizeof m, "ok https-1 curl=%d http=%ld", r, http); }
         nv_tpk40_etapa(m);
-      } else r = curl_perform(c); }
+      } else r = cancelVigiaPerform(&cv, c); }
 #else
-    r = curl_perform(c);
+    r = cancelVigiaPerform(&cv, c);
 #endif
     { long novas = -1;
       if (curl_getinfo) curl_getinfo(c, INFO_NUM_CONNECTS, &novas);
       reusada = novas == 0; }
+    cancelVigiaSoltar(&cv, cvOn, c);
     gasto = redeAgoraMs() - inicio;
     if (tentativa == 0 && r != 0 && valeRepetir(r, &vigia, b.n) &&
         (gasto + 1000 < prazoMs || (reusada && b.n == 0))) {
@@ -2620,10 +2648,9 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
       if (etag && tamEtag) etag[0] = 0;
       continue;
     }
-    r = tmdbFallback(c, r == 42 && vigia.parou ? 28 : r, url);
+    r = tmdbFallback(c, r == 42 && vigia.parou ? 28 : r, url, NULL);
     break;
   }
-  cancelVigiaSoltar(&cv, cvOn);
   redeCurlLocal = r;
   anotarErro(r);
   if (redeFinalDst && redeFinalTam && curl_getinfo) {
@@ -2754,13 +2781,13 @@ int rede_url_final_tipo(const char *url, int segundos, const char *const *cab,
   curl_setopt(c, OPT_RANGE, "0-63");
   for (k = 0; cab && cab[k]; k++) {
     void *nova = slist_append(lista, cab[k]);
-    if (!nova) { if (lista) slist_free(lista); soltarHandleR(c, 1, url);
-                 cancelVigiaSoltar(&cv, cvOn); return 0; }
+    if (!nova) { if (lista) slist_free(lista);
+                 cancelVigiaSoltar(&cv, cvOn, c); soltarHandleR(c, 1, url); return 0; }
     lista = nova;
   }
   if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
-  r = performTmdb(c, url);
-  cancelVigiaSoltar(&cv, cvOn);
+  r = performTmdbCv(c, url, cvOn ? &cv : NULL);
+  cancelVigiaSoltar(&cv, cvOn, c);
   curl_getinfo(c, INFO_RESPONSE_CODE, &http);
   curl_getinfo(c, INFO_URL_FINAL, &fim);
   if (status) *status = (int)http;
@@ -2956,8 +2983,8 @@ int rede_baixar_fluxo(const char *url, int segundos, const char *const *cab,
     for (k = 0; cab[k]; k++) lista = slist_append(lista, cab[k]);
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
-  r = curl_perform(c);
-  cancelVigiaSoltar(&cv, cvOn);
+  r = cancelVigiaPerform(&cv, c);
+  cancelVigiaSoltar(&cv, cvOn, c);
   if (r == 42 && vigia.parou) r = 28;
   if (curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &http);
   if (status) *status = (int)http;
@@ -3034,8 +3061,8 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
     for (k = 0; cab && cab[k]; k++) lista = slist_append(lista, cab[k]);
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
-  r = performTmdb(c, url);
-  cancelVigiaSoltar(&cv, cvOn);
+  r = performTmdbCv(c, url, cvOn ? &cv : NULL);
+  cancelVigiaSoltar(&cv, cvOn, c);
   redeCurlLocal = r;
   anotarErro(r);
   if (r != 0) { char seg[120];
