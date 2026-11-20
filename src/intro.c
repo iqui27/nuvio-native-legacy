@@ -1061,6 +1061,11 @@ static double fimEmendado(int i){
 // comeco de uma PREVIA que comece dentro dele (rede "ate o fim" + capitulo
 // "PV"/"Preview"). Quem pula o encerramento quer ver a previa; quem nao quer usa
 // o cartao do proximo. Chamar com a trava.
+// Se o botao de cena estiver ligado, o trecho POS_CREDITOS pode ser pulado
+// manualmente pelo botao (o automatico nunca o pula). Chamado a cada quadro.
+static int cenaBotaoLigado=0;
+void intro_cena_botao_definir(int ligado){pthread_mutex_lock(&trava);cenaBotaoLigado=!!ligado;pthread_mutex_unlock(&trava);}
+
 static double fimPulo(int i){
   double f=trechos[i].fim;
   if(trechos[i].tipo!=INTRO_CREDITOS)return f;
@@ -1116,15 +1121,16 @@ int intro_auto_ativo(double pos,double*fim,int*tipo){
 // 10 s se nao estiver focado, e so volta enquanto os controles (osd) estao de
 // pe dentro da janela. Chamado a cada quadro; `agora` em segundos monotonicos.
 int intro_botao(double pos,double agora,int osd,int focado,double*fim,int*tipo){
-  return intro_botao_config(pos,agora,osd,focado,fim,tipo,1,1,1);
+  return intro_botao_config(pos,agora,osd,focado,fim,tipo,1,1,1,0);
 }
 int intro_botao_config(double pos,double agora,int osd,int focado,double*fim,int*tipo,
-                       int mostrarIntro,int mostrarResumo,int mostrarCreditos){
+                       int mostrarIntro,int mostrarResumo,int mostrarCreditos,int mostrarCena){
   int i,idx=-1,vis=0;
   pthread_mutex_lock(&trava);
   for(i=0;i<nTrechos;i++){
     int dentro=trechos[i].fim>0.0?(pos>=trechos[i].inicio&&pos<trechos[i].fim):(pos>=trechos[i].inicio);
-    if(trechos[i].tipo==INTRO_PREVIA||trechos[i].tipo==INTRO_POS_CREDITOS)continue;
+    if(trechos[i].tipo==INTRO_PREVIA)continue;
+    if(trechos[i].tipo==INTRO_POS_CREDITOS){if(!mostrarCena)continue;}
     if(trechos[i].tipo==INTRO_ABERTURA&&!mostrarIntro)continue;
     if(trechos[i].tipo==INTRO_RESUMO&&!mostrarResumo)continue;
     if(trechos[i].tipo==INTRO_CREDITOS&&!mostrarCreditos)continue;
