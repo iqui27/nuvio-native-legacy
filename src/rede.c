@@ -1391,6 +1391,7 @@ static int   (*curl_multi_perform)(void *, int *);
 static int   (*curl_multi_poll)(void *, void *, unsigned, int, int *);
 static int   (*curl_multi_wait)(void *, void *, unsigned, int, int *);
 static int   (*curl_multi_cleanup)(void *);
+static int   (*curl_multi_setopt)(void *, int, ...);
 static void *(*curl_multi_info_read)(void *, int *);
 static void *(*slist_append)(void *, const char *);
 static void  (*slist_free)(void *);
@@ -1400,7 +1401,7 @@ static time_t (*curl_getdate_fn)(const char *, const time_t *);
 
 // Definida com a vigia de cancelamento mais abaixo (#775); o tmdbFallback a
 // usa quando o pedido ja esta num multi proprio.
-typedef struct { void *multi; } CancelVigia;
+typedef struct { void *multi; int ligado; } CancelVigia;
 static int cancelVigiaPerform(CancelVigia *v, void *c);
 
 #ifdef NV_TPK
@@ -1517,9 +1518,52 @@ static int    pronto;
 //
 // Bonus: `curl_easy_cleanup` era onde o OpenSSL 1.0 morria (ver
 // prepararOpenSSL); agora ele so roda no fim do fio.
+// HANDLE + MULTI POR FIO (#775). O handle pode sair do handleChave quando a
+// conexao esta presa ao multi de cancelamento persistente do fio: quem
+// desassociar a easy no meio do pedido nao pode deixar o multi apontando para
+// um handle limpo/destruido, entao a dupla vive junta nesta caixinha e morre
+// junta (multi primeiro: libcurl devolve as conexoes ociosas dele; easy
+// depois). O multi tem o PROPRIO cache de conexoes — o que preserva o reuso
+// entre pedidos cancelaveis e nao cancelaveis sem CURLSHARE CONNECT.
+typedef struct { void *c; void *multi; } HandlePool;
 static pthread_key_t handleChave;
 static pthread_once_t handleUma = PTHREAD_ONCE_INIT;
-static void handleSoltar(void *c) { if (c && curl_cleanup) curl_cleanup(c); }
+static void handleCriarChave(void);
+// Guarda o multi de cancelamento no pool do handle do fio corrente. O cache
+// de conexoes do pedido cancelavel vai junto: e ele (e nao o da easy) que
+// mantinha as conexoes abertas, e um multi temporario por pedido as fechava
+// ao fim — GET cancelavel virava sempre conexao nova. Devolve 1 se guardou;
+// com 0 quem chama faz o curl_multi_cleanup de sempre.
+static int redeMultiGuardar(void *m) {
+  HandlePool *p;
+  if (!curl_reset) return 0;      // sem pool de handle, nao ha onde guardar
+  pthread_once(&handleUma, handleCriarChave);
+  p = (HandlePool *)pthread_getspecific(handleChave);
+  if (!p) {
+    p = (HandlePool *)calloc(1, sizeof *p);
+    if (!p || pthread_setspecific(handleChave, p) != 0) { free(p); return 0; }
+  }
+  if (p->multi) curl_multi_cleanup(p->multi);   // nunca deveria sobrar
+  p->multi = m;
+  return 1;
+}
+static void *redeMultiPegar(void) {
+  HandlePool *p = (HandlePool *)pthread_getspecific(handleChave);
+  void *m = p ? p->multi : NULL;
+  if (p) p->multi = NULL;
+  return m;
+}
+// Destrutor da chave: a easy sai do multi ANTES de qualquer cleanup — uma easy
+// associada a um multi destruido quebra a proxima perform, e destruir a easy
+// associada tambem e proibido.
+static void handleSoltar(void *pv) {
+  HandlePool *p = (HandlePool *)pv;
+  if (!p) return;
+  if (p->multi && p->c && curl_multi_remove) curl_multi_remove(p->multi, p->c);
+  if (p->multi && curl_multi_cleanup) curl_multi_cleanup(p->multi);
+  if (p->c && curl_cleanup) curl_cleanup(p->c);
+  free(p);
+}
 static void handleCriarChave(void) { pthread_key_create(&handleChave, handleSoltar); }
 // QUANTAS CONEXOES CADA FIO GUARDA. O padrao da libcurl e 5, e um fio de
 // arte fala com mais hosts que isso numa volta so: metahub, api e image do
@@ -1660,23 +1704,40 @@ static void *estacTomar(const char *url) {
 
 static void *pegarHandle(const char *url) {
   void *c;
+  HandlePool *p;
   if (!curl_reset) return curl_init();     // libcurl sem reset: como antes
   pthread_once(&handleUma, handleCriarChave);
-  c = pthread_getspecific(handleChave);
+  p = (HandlePool *)pthread_getspecific(handleChave);
+  c = p ? p->c : NULL;
   if (!c) {
     c = estacTomar(url);
-    if (c) pthread_setspecific(handleChave, c);
+    if (c) {
+      if (!p) {
+        p = (HandlePool *)calloc(1, sizeof *p);
+        if (p && pthread_setspecific(handleChave, p) != 0) { free(p); p = NULL; }
+      }
+      if (p) p->c = c; else { curl_cleanup(c); c = NULL; }
+    }
   }
   if (c && hostOcioso(url, redeAgoraMs())) {
+    // O handle vai embora mas o multi do fio FICA: as conexoes de OUTROS hosts
+    // que ele guarda continuam validas e reusaveis. So a easy e descartada.
+    if (p && p->multi) curl_multi_remove(p->multi, c);
     curl_cleanup(c);
-    pthread_setspecific(handleChave, NULL);
+    if (p) p->c = NULL;
     hostsEsquecer();
     c = NULL;
   }
   if (c) curl_reset(c);
   else {
     c = curl_init();
-    if (c) pthread_setspecific(handleChave, c);
+    if (c) {
+      if (!p) {
+        p = (HandlePool *)calloc(1, sizeof *p);
+        if (p && pthread_setspecific(handleChave, p) != 0) { free(p); p = NULL; }
+      }
+      if (p) p->c = c; else { curl_cleanup(c); c = NULL; }
+    }
   }
   // Depois do reset: curl_easy_reset volta MAXCONNECTS ao padrao.
   if (c) curl_setopt(c, OPT_MAXCONNECTS, REDE_CONEXOES_POR_FIO);
@@ -1691,9 +1752,19 @@ static void *pegarHandle(const char *url) {
 // reaproveitado (e o ganho de 0,5-0,8 s por imagem). Conexao que fica anota o
 // host (e o do fim dos redirecionamentos) para o limite de ociosidade.
 static void descartarHandle(void *c) {
+  HandlePool *p;
+  // Se a easy esta associada ao multi do fio (cancelamento), tira antes de
+  // limpar: a libcurl proibe cleanup de easy associada, e o multi nao pode
+  // ficar apontando para um handle morto.
+  if (curl_reset) {
+    p = (HandlePool *)pthread_getspecific(handleChave);
+    if (p) {
+      if (p->multi && curl_multi_remove) curl_multi_remove(p->multi, c);
+      p->c = NULL;
+    }
+  }
   curl_cleanup(c);
   if (curl_reset) {
-    pthread_setspecific(handleChave, NULL);
     hostsEsquecer();
   }
 }
@@ -1852,37 +1923,59 @@ static void ligarVigia(void *c, Vigia *v, unsigned long prazoMs) {
 // pedido fica com o XFERINFO de sempre.
 static int cancelVigiaLigar(void *c, CancelVigia *v) {
   v->multi = NULL;
-  if (!redeParar && !redeCancelLocal) return 0;
+  v->ligado = 0;
   if (!curl_multi_init || !curl_multi_add || !curl_multi_remove ||
       !curl_multi_perform || !curl_multi_cleanup || !curl_multi_info_read ||
       !(curl_multi_poll || curl_multi_wait)) return 0;
-  v->multi = curl_multi_init();
+  // O pedido SEMPRE vai pelo multi do fio quando a interface existe: o cache
+  // de conexoes mora la, e e o que faz um GET sem cancelamento (/warm) abrir
+  // a conexao que o proximo pedido cancelavel (/settings) reusa — mesma porta,
+  // conexoes_novas=0. Sem parar instalado o laco so nao tem o que disparar.
+  v->multi = redeMultiPegar();      // multi do fio, com o cache de conexoes
+  if (!v->multi) v->multi = curl_multi_init();
   if (!v->multi) return 0;
+  /* O cache de conexoes fica no MULTI enquanto a easy esta associada. Sem
+     CURLMOPT_MAXCONNECTS ele guardaria so 4 — metade do orcamento do fio. */
+  if (curl_multi_setopt)
+    curl_multi_setopt(v->multi, 6 /* CURLMOPT_MAXCONNECTS */, REDE_CONEXOES_POR_FIO);
   if (curl_multi_add(v->multi, c)) { curl_multi_cleanup(v->multi); v->multi = NULL; return 0; }
+  v->ligado = 1;
   return 1;
 }
-// So fecha o multi. O handle continua do pedido: quem chamou decide entre
-// reuso e descarte depois de ler o resultado, como antes. Se a easy ainda
-// estiver associada (saida por erro/abort antes do fim da transferencia)
-// tira antes, senao a easy fica presa ao multi morto e a proxima perform do
-// mesmo handle nao transfere.
+// ADOTA o multi do pedido no multi persistente do fio e solta a easy: o cache
+// de conexoes (DNS + TCP + TLS ociosos) vive no multi, entao guardar o multi e
+// o que preserva o reuso entre pedidos cancelaveis — com um multi temporario
+// por pedido, como era antes, cada GET cancelavel abria conexao nova.
+// Conexao que continua viva passa a valer no proximo pedido do fio; se a easy
+// for descartada (falha de transporte), as conexoes dela sao fechadas com o
+// multi, como o descarte do handle ja fazia. O multi adotado morre quando o
+// handle do fio morre (handleSoltar), sem CURLSHARE CONNECT (libcurl das TVs
+// < 7.57).
 static void cancelVigiaSoltar(CancelVigia *v, int ligado, void *c) {
-  void *m;
   if (!ligado || !v->multi) return;
-  m = v->multi;
+  if (v->ligado) { curl_multi_remove(v->multi, c); v->ligado = 0; }
+  redeMultiGuardar(v->multi);
   v->multi = NULL;
-  curl_multi_remove(m, c);          /* idempotente: ja removida = CURLM_OK */
-  curl_multi_cleanup(m);
 }
 // Substitui curl_easy_perform quando a vigia esta ligada: a easy ja foi
 // adicionada ao multi em cancelVigiaLigar. Devolve o CURLE da transferencia.
 static int cancelVigiaPerform(CancelVigia *v, void *c) {
   int ainda = 1, r = 23 /* CURLE_WRITE_ERROR */, achou = 0;
-  if (!v->multi) return curl_perform(c);
+  /* Chamadores sem vigia (sonda e POST sem parar instalado, retry do proprio
+     tmdbFallback com cv == NULL) caem no curl_easy_perform de sempre — v ou
+     v->multi NULL nunca e desreferenciado. */
+  if (!v || !v->multi) return curl_perform(c);
+  /* O retry do alias TMDB vem depois do remove do fim da 1a perform: reassocia
+     a easy ao MESMO multi para ela continuar cancelavel (e no cache dele). */
+  if (!v->ligado) {
+    if (curl_multi_add(v->multi, c)) return curl_perform(c);
+    v->ligado = 1;
+  }
   while (curl_multi_perform(v->multi, &ainda) == 0 /* CURLM_OK */) {
     if (redeParou()) {
       redeCancelouLocal = 1;
       curl_multi_remove(v->multi, c);
+      v->ligado = 0;
       return 42 /* CURLE_ABORTED_BY_CALLBACK */;
     }
     if (!ainda) break;
@@ -1898,6 +1991,7 @@ static int cancelVigiaPerform(CancelVigia *v, void *c) {
       if (info->msg == 1 /* CURLMSG_DONE */ && info->easy == c)
         { r = info->data.result; achou = 1; } }
   curl_multi_remove(v->multi, c);
+  v->ligado = 0;
   /* Sem mensagem DONE (a multi falhou ou a easy sumiu sem resultado) a
      transferencia nao completou: reporta erro de recepcao como o easy faria,
      nunca um CURLE_WRITE_ERROR espurio. */
@@ -2186,6 +2280,7 @@ static int abrirReal(void) {
   *(void **)(&curl_multi_poll)     = dlsym(h, "curl_multi_poll");
   *(void **)(&curl_multi_wait)     = dlsym(h, "curl_multi_wait");
   *(void **)(&curl_multi_cleanup)  = dlsym(h, "curl_multi_cleanup");
+  *(void **)(&curl_multi_setopt)   = dlsym(h, "curl_multi_setopt");
   *(void **)(&curl_multi_info_read)= dlsym(h, "curl_multi_info_read");
   // O REUSO NUNCA LIGOU ATE AQUI (23/09/2026). pegarHandle e soltarHandle
   // existem desde 5eb8bd2, mas este dlsym nao: `curl_reset` ficava NULL, e o
@@ -2627,7 +2722,6 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
     { long novas = -1;
       if (curl_getinfo) curl_getinfo(c, INFO_NUM_CONNECTS, &novas);
       reusada = novas == 0; }
-    cancelVigiaSoltar(&cv, cvOn, c);
     gasto = redeAgoraMs() - inicio;
     if (tentativa == 0 && r != 0 && valeRepetir(r, &vigia, b.n) &&
         (gasto + 1000 < prazoMs || (reusada && b.n == 0))) {
@@ -2636,6 +2730,7 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
              r, rede_url_publica(url, seg, sizeof seg), reusada ? "reusada" : "nova",
              (long)b.n, gasto);
       fflush(stdout);
+      cancelVigiaSoltar(&cv, cvOn, c);
       if (lista) { curl_setopt(c, OPT_HTTPHEADER, (void *)0); if (slist_free) slist_free(lista); lista = NULL; }
       // #382: conta so o resultado final, mas preserva a janela da primeira falha.
       primeiraMs = (unsigned)(inicio + gasto);
@@ -2648,7 +2743,11 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
       if (etag && tamEtag) etag[0] = 0;
       continue;
     }
-    r = tmdbFallback(c, r == 42 && vigia.parou ? 28 : r, url, NULL);
+    /* O retry no alias TMDB tem de seguir cancelavel: roda enquanto a vigia
+       ainda esta armada, com o MESMO multi (cancelVigiaPerform reassocia a
+       easy que a 1a perform removeu). cv == NULL cai no easy perform. */
+    r = tmdbFallback(c, r == 42 && vigia.parou ? 28 : r, url, cvOn ? &cv : NULL);
+    cancelVigiaSoltar(&cv, cvOn, c);
     break;
   }
   redeCurlLocal = r;
@@ -2878,9 +2977,15 @@ int rede_aquecer_job(const char *const *origens, int n, unsigned *ms, RedeJob *j
     }
   }
   // O handle, com as conexoes que abriu, sai deste fio e vai para o estacionamento.
-  c = pthread_getspecific(handleChave);
-  if (c && nok > 0) {
-    pthread_setspecific(handleChave, NULL);
+  { HandlePool *p = (HandlePool *)pthread_getspecific(handleChave);
+    c = p ? p->c : NULL;
+    if (c && nok > 0) {
+      // So a easy viaja para o estacionamento; o multi de cancelamento fica
+      // no fio (as conexoes dele nao sao das origens aquecidas aqui).
+      if (p->multi) curl_multi_remove(p->multi, c);
+      p->c = NULL;
+    } else c = NULL; }
+  if (c) {
     hostsEsquecer();
     estacionar(c, ok, nok);
   }
