@@ -150,7 +150,6 @@ typedef struct {
   long teto;
   int restoRecusado;
   int lateral;
-  long cancelarMs;
   char erroTxt[200];
   char erroBuf[256];
 } RedeFio;
@@ -175,7 +174,6 @@ static RedeFio *redeFio(void) {
   return f;
 }
 long *rede_teto_ptr(void) { return &redeFio()->teto; }
-long *rede_cancelar_ms_ptr(void) { return &redeFio()->cancelarMs; }
 #define redeLimiteLocal   (redeFio()->limiteLocal)
 #define redeCancelLocal   (redeFio()->cancelLocal)
 #define redeParar (redeFio()->parar)
@@ -190,7 +188,6 @@ long *rede_cancelar_ms_ptr(void) { return &redeFio()->cancelarMs; }
 #define usoHost           (redeFio()->usoHost)
 #define redeRestoRecusado (redeFio()->restoRecusado)
 #define redeLateral       (redeFio()->lateral)
-#define redeCancelarMs    (redeFio()->cancelarMs)
 #else
 /* Controle local da requisicao corrente. O estado nunca e compartilhado
  * entre sondagens: cada fio recebe seu teto e seu cancel token. */
@@ -203,9 +200,6 @@ static _Thread_local int redeCancelouLocal;
 static _Thread_local long redeBytesLocal;
 // 1 = este fio e leitura lateral ao video (rede_lateral, #385).
 static _Thread_local int redeLateral;
-// >0: LOW_SPEED_TIME em ms para o proximo pedido (cancela corpo parado
-// abaixo do tique de 1 s da vigia — ver rede_cancelar_ms, #775).
-#define redeCancelarMs      rede_cancelar_ms
 #endif
 RedePararEstado rede_parar_trocar(int (*parar)(void *), void *usuario) {
 #if defined(NV_TPK40) || defined(NV_UM_FIO)
@@ -486,7 +480,6 @@ static char *nv_http(const char *metodo, const char *url, const char *cabs,
 
 #ifndef NV_UM_FIO
 _Thread_local long rede_teto = 0;
-_Thread_local long rede_cancelar_ms = 0;
 // Destino do endereco final do proximo pedido (so rede_baixar_trecho_st liga).
 static _Thread_local char *redeFinalDst;
 static _Thread_local unsigned redeFinalTam;
@@ -1308,14 +1301,12 @@ static _Thread_local int redeParcialOk;
 // sobrou do prazo do pedido. Ver rede_baixar_interno2.
 #define OPT_TIMEOUT_MS        155
 #define OPT_CONNECTTIMEOUT_MS 156
-// LOW_SPEED_LIMIT/TIME: corte por corpo parado abaixo do tique da vigia
-// (~1 s). So rede_cancelar_ms liga, e so no GET curto do P2P (#775).
-#define OPT_LOW_SPEED_LIMIT   19
-#define OPT_LOW_SPEED_TIME    20
 // Vigia de progresso (7.32+): NOPROGRESS=0 liga o XFERINFOFUNCTION.
 #define OPT_NOPROGRESS         43
 #define OPT_XFERINFOFUNCTION 20219
 #define OPT_XFERINFODATA     10057
+#define OPT_SOCKOPTFUNCTION  20148
+#define OPT_SOCKOPTDATA      10149
 // Keepalive de TCP (7.25+) nas conexoes guardadas no cache do handle.
 #define OPT_TCP_KEEPALIVE     213
 #define OPT_TCP_KEEPIDLE      214
@@ -1325,6 +1316,10 @@ static _Thread_local int redeParcialOk;
 #define INFO_NUM_CONNECTS  2097178
 #define INFO_REDIRECT_URL 1048607
 #define INFO_SIZE_DOWNLOAD 3145736
+// CURLINFO_LASTSOCKET = CURLINFO_LONG + 29. ACTIVESOCKET (7.45+) seria o certo,
+// mas LASTSOCKET existe em toda versao que estas TVs trazem e devolve o mesmo
+// descritor quando ha uma conexao so (ver rede_tls_abrir e a CancelVigia).
+#define INFO_LASTSOCKET  2097181
 #define OPT_CAINFO 10065
 #define OPT_ERRORBUFFER 10010
 #define OPT_POSTFIELDSIZE 60
@@ -1756,13 +1751,6 @@ static void opcoesComuns(void *c, unsigned long prazoMs) {
 #endif
   curl_setopt(c, OPT_TIMEOUT_MS, (long)prazoMs);
   curl_setopt(c, OPT_CONNECTTIMEOUT_MS, (long)conexaoMs(prazoMs));
-  // Pedido que pediu corte sub-segundo (rede_cancelar_ms): o XFERINFO so
-  // acorda uma vez por segundo; LOW_SPEED ve o corpo parado antes disso.
-  if (redeCancelarMs > 0 && redeCancelarMs <= 30000) {
-    curl_setopt(c, OPT_LOW_SPEED_LIMIT, (long)1);
-    curl_setopt(c, OPT_LOW_SPEED_TIME,
-                (long)(redeCancelarMs / 1000 + (redeCancelarMs % 1000 != 0)));
-  }
   // O app roda com fios; sem NOSIGNAL a libcurl usa alarmes para o timeout de
   // DNS e pode derrubar o processo inteiro a partir de um fio secundario.
   curl_setopt(c, OPT_NOSIGNAL, (long)1);
@@ -1834,6 +1822,69 @@ static void ligarVigia(void *c, Vigia *v, unsigned long prazoMs) {
   curl_setopt(c, OPT_NOPROGRESS, (long)0);
 }
 
+// VIGIA DE CANCELAMENTO (#775). O XFERINFO so acorda ~1x/s num pedido parado,
+// entao um cancelamento pelo callback de geracao (p2pPararCb, rede_parar_trocar)
+// esperava o tique inteiro. Enquanto ha um parar instalado, um fio leve le o
+// MESMO criterio a cada ~20 ms e derruba o socket ativo com shutdown(): a
+// libcurl volta na hora com erro de recepcao, sem encurtar nenhum prazo do
+// pedido — um /settings valido que pensa 1,5 s responde normal.
+//
+// O fd vem de SOCKOPTFUNCTION (socket novo) ou de INFO_LASTSOCKET (conexao
+// reusada, que nao passa no callback). O fio NAO pode ler o estado por fio
+// (redeParar e TLS): os ponteiros vao copiados no ctx. O fim checa redeParou()
+// de novo no fio do pedido para marcar redeCancelouLocal.
+#include <sys/socket.h>
+typedef struct {
+  pthread_t fio;
+  int fd;            /* -1 ate o socket existir; int e atomico na pratica */
+  int fim;
+  int parou;
+  int (*parar)(void *);
+  void *pararUsuario;
+  volatile int *cancel;
+} CancelVigia;
+static int cancelSock(void *u, int fd, int uso) {
+  (void)uso;
+  ((CancelVigia *)u)->fd = fd;
+  return 0;
+}
+static void *cancelVigiaFio(void *u) {
+  CancelVigia *v = (CancelVigia *)u;
+  struct timespec pausa = { 0, 20 * 1000 * 1000 };
+  while (!v->fim) {
+    int parou = (v->cancel && *v->cancel) ||
+                (v->parar && v->parar(v->pararUsuario));
+    if (parou) {
+      v->parou = 1;
+      // O socket pode nascer DEPOIS do cancel (conexao nova ainda no DNS/TLS):
+      // continua derrubando o fd registrado ate o pedido encerrar.
+      if (v->fd >= 0) shutdown(v->fd, SHUT_RDWR);
+    }
+    nanosleep(&pausa, NULL);
+  }
+  return NULL;
+}
+static int cancelVigiaLigar(void *c, CancelVigia *v) {
+  if (!redeParar && !redeCancelLocal) return 0;
+  memset(v, 0, sizeof *v);
+  v->fd = -1;
+  v->parar = redeParar; v->pararUsuario = redePararUsuario;
+  v->cancel = redeCancelLocal;
+  // Conexao reusada nao dispara o sockopt: o fd da ULTIMA transferencia deste
+  // handle e o mesmo socket de uma conexao que sobreviveu.
+  if (curl_getinfo) { long s = -1; curl_getinfo(c, INFO_LASTSOCKET, &s); v->fd = (int)s; }
+  if (pthread_create(&v->fio, NULL, cancelVigiaFio, v) != 0) return 0;
+  curl_setopt(c, OPT_SOCKOPTFUNCTION, cancelSock);
+  curl_setopt(c, OPT_SOCKOPTDATA, v);
+  return 1;
+}
+static void cancelVigiaSoltar(CancelVigia *v, int ligado) {
+  if (!ligado) return;
+  v->fim = 1;
+  pthread_join(v->fio, NULL);
+  if (v->parou) redeCancelouLocal = 1;
+}
+
 typedef struct { char *p; size_t n, cap; } Balde;
 
 /* Durante o download a capacidade cresce geometricamente. Antes de devolver
@@ -1889,7 +1940,6 @@ static size_t receberCab(void *dados, size_t tam, size_t qtd, void *u) {
 // inteiro, e nesse caso o cabecalho pedido nao limita nada.
 #ifndef NV_TPK40   // no NV_TPK40 e rede_teto_ptr() (rede.h)
 _Thread_local long rede_teto = 0;
-_Thread_local long rede_cancelar_ms = 0;
 #endif
 
 static size_t receber(void *dados, size_t tam, size_t qtd, void *u) {
@@ -2473,8 +2523,9 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
   Balde b = {0};
   CacaCab caca;
   Vigia vigia;
+  CancelVigia cv;
   void *c, *lista = NULL;
-  int r = 0, tentativa, reusada = 0;
+  int r = 0, tentativa, reusada = 0, cvOn = 0;
   unsigned long inicio, prazoMs, gasto = 0;
   unsigned primeiraMs = 0;
   caca.dst = (etag && tamEtag > 1) ? etag : NULL;
@@ -2484,6 +2535,9 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
   if (etag && tamEtag) etag[0] = 0;
   if (status) *status = 0;
   if (!url || !*url) return NULL;
+  // Marca do pedido CANCELADO anterior deste fio: e do pedido que parou, nao
+  // deste — sem limpar aqui o corpo deste e descartado na saida (#775).
+  redeCancelouLocal = 0;
   // Endereco de API de metadados que ja respondeu "nao existe" (ou host em
   // recuo por timeout): nao pede de novo — ver negcache.h.
   if (!status && negcache_barra(url, (long)time(NULL))) return NULL;
@@ -2504,7 +2558,7 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
   for (tentativa = 0; ; tentativa++) {
     unsigned long resta = prazoMs - gasto;
     c = pegarHandle(url);
-    if (!c) return NULL;
+    if (!c) { cancelVigiaSoltar(&cv, cvOn); return NULL; }
     curl_setopt(c, OPT_URL, url);
     // SO QUANDO ALGUEM PEDIU. O handle e reusado por fio (pegarHandle) e
     // curl_easy_reset limpa as opcoes entre pedidos, entao deixar o recebedor
@@ -2519,6 +2573,7 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
     curl_setopt(c, OPT_FOLLOWLOCATION, (long)1);
     opcoesComuns(c, resta);
     ligarVigia(c, &vigia, prazoMs);
+    if (!cvOn) cvOn = cancelVigiaLigar(c, &cv);
     curl_setopt(c, OPT_ACCEPT_ENCODING, "");   // "" = todas as que a lib suporta
     if (cab && slist_append) {
       int k;
@@ -2568,6 +2623,7 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
     r = tmdbFallback(c, r == 42 && vigia.parou ? 28 : r, url);
     break;
   }
+  cancelVigiaSoltar(&cv, cvOn);
   redeCurlLocal = r;
   anotarErro(r);
   if (redeFinalDst && redeFinalTam && curl_getinfo) {
@@ -2670,16 +2726,18 @@ int rede_url_final_tipo(const char *url, int segundos, const char *const *cab,
                         char *mime, unsigned mimeTam, long *corpo) {
   UrlSonda s = {0};
   Vigia vigia;
+  CancelVigia cv;
   void *c, *lista = NULL;
   char *fim = NULL;
   long http = 0;
   unsigned long prazoMs;
-  int r, ok, k;
+  int r, ok, k, cvOn;
   if (status) *status = 0;
   if (mime && mimeTam) mime[0] = 0;
   if (corpo) *corpo = -1;
   if (dst && tam) dst[0] = 0;
   if (!url || !*url || !dst || !tam || tam > INT_MAX || !abrir() || !curl_getinfo) return 0;
+  redeCancelouLocal = 0;
   if (cab && cab[0] && (!slist_append || !slist_free)) return 0;
   c = pegarHandle(url);
   if (!c) return 0;
@@ -2690,16 +2748,19 @@ int rede_url_final_tipo(const char *url, int segundos, const char *const *cab,
   prazoMs = (unsigned long)(segundos > 0 ? segundos : 20) * 1000UL;
   opcoesComuns(c, prazoMs);
   ligarVigia(c, &vigia, prazoMs);
+  cvOn = cancelVigiaLigar(c, &cv);
   // Um pedaco minusculo em vez de HEAD: varios servidores de debrid respondem
   // HEAD com 405 ou mentem no redirecionamento, mas honram Range.
   curl_setopt(c, OPT_RANGE, "0-63");
   for (k = 0; cab && cab[k]; k++) {
     void *nova = slist_append(lista, cab[k]);
-    if (!nova) { if (lista) slist_free(lista); soltarHandleR(c, 1, url); return 0; }
+    if (!nova) { if (lista) slist_free(lista); soltarHandleR(c, 1, url);
+                 cancelVigiaSoltar(&cv, cvOn); return 0; }
     lista = nova;
   }
   if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   r = performTmdb(c, url);
+  cancelVigiaSoltar(&cv, cvOn);
   curl_getinfo(c, INFO_RESPONSE_CODE, &http);
   curl_getinfo(c, INFO_URL_FINAL, &fim);
   if (status) *status = (int)http;
@@ -2868,13 +2929,15 @@ int rede_baixar_fluxo(const char *url, int segundos, const char *const *cab,
                       long long maxBytes, int *status, long long *bytes) {
   Fluxo f;
   Vigia vigia;
+  CancelVigia cv;
   void *c, *lista = NULL;
   unsigned long prazoMs;
   long http = 0;
-  int r;
+  int r, cvOn;
   if (status) *status = 0;
   if (bytes) *bytes = 0;
   if (!url || !*url || !cb || !abrir()) return 0;
+  redeCancelouLocal = 0;
   memset(&f, 0, sizeof f);
   f.cb = cb; f.u = u; f.max = maxBytes;
   c = pegarHandle(url);
@@ -2886,6 +2949,7 @@ int rede_baixar_fluxo(const char *url, int segundos, const char *const *cab,
   prazoMs = (unsigned long)(segundos > 0 ? segundos : 60) * 1000UL;
   opcoesComuns(c, prazoMs);
   ligarVigia(c, &vigia, prazoMs);
+  cvOn = cancelVigiaLigar(c, &cv);
   curl_setopt(c, OPT_ACCEPT_ENCODING, "");
   if (cab && slist_append) {
     int k;
@@ -2893,6 +2957,7 @@ int rede_baixar_fluxo(const char *url, int segundos, const char *const *cab,
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
   r = curl_perform(c);
+  cancelVigiaSoltar(&cv, cvOn);
   if (r == 42 && vigia.parou) r = 28;
   if (curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &http);
   if (status) *status = (int)http;
@@ -2927,11 +2992,13 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
   Balde b = {0};
   CacaCab respostaCab = { NULL, 0, retryAfter };
   Vigia vigia;
+  CancelVigia cv;
   if (retryAfter) *retryAfter = 0;
   void *c, *lista = NULL;
-  int r;
+  int r, cvOn;
   if (status) *status = 0;
   redeCurlLocal = 0;
+  redeCancelouLocal = 0;
   anotarErro(0);
   if (!url || !*url) { anotarErro(3); return NULL; }
   if (!abrir()) { anotarErro(2); return NULL; }
@@ -2942,6 +3009,7 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
   curl_setopt(c, OPT_WRITEDATA, &b);
   opcoesComuns(c, (unsigned long)(segundos > 0 ? segundos : 20) * 1000UL);
   if(redeParar)ligarVigia(c,&vigia,(unsigned long)(segundos > 0 ? segundos : 20)*1000UL);
+  cvOn = cancelVigiaLigar(c, &cv);
   if (seguro) {
     // OAuth credentials require authenticated TLS and never follow redirects.
     curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
@@ -2967,6 +3035,7 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
   r = performTmdb(c, url);
+  cancelVigiaSoltar(&cv, cvOn);
   redeCurlLocal = r;
   anotarErro(r);
   if (r != 0) { char seg[120];
@@ -3169,6 +3238,7 @@ int rede_medir_vazao(const char *url, const char *const *cab, int segundos,
   if (res) memset(res, 0, sizeof *res);
   if (final && tamFinal) final[0] = 0;
   if (!url || !*url || !abrir()) { if (res) res->erro = 2; return 0; }
+  redeCancelouLocal = 0;
   if (segundos < 1) segundos = 1;
   ct.janelaMs = (unsigned long)segundos * 1000UL;
   ct.maxBytes = maxBytes;
@@ -3245,10 +3315,6 @@ int rede_medir_vazao(const char *url, const char *const *cab, int segundos,
 // vai para o cache de pegarHandle: uma conexao de websocket nao e reaproveitavel.
 #define OPT_CONNECT_ONLY      141
 #define OPT_HTTP_VERSION       84
-// CURLINFO_LASTSOCKET = CURLINFO_LONG + 29. ACTIVESOCKET (7.45+) seria o certo,
-// mas LASTSOCKET existe em toda versao que estas TVs trazem e devolve o mesmo
-// descritor quando ha uma conexao so — que e o caso de um handle CONNECT_ONLY.
-#define INFO_LASTSOCKET  2097181
 #define CURLE_AGAIN_ 81
 
 #include <sys/select.h>

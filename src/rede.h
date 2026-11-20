@@ -281,18 +281,6 @@ typedef struct { int (*parar)(void *); void *usuario; int instalado; } RedeParar
 /* Replace the worker/fiber hook and return the previous hook for restoration. */
 RedePararEstado rede_parar_trocar(int (*parar)(void *), void *usuario);
 
-// Corte sub-segundo para o PROXIMO pedido deste fio (0 = desligado): a vigia
-// de progresso so acorda ~1x/s; com isto o LOW_SPEED da libcurl ve o corpo
-// parado em `ms`. So o GET /settings do P2P usa (#775). Lvalue por fio.
-#if defined(NV_TPK40) || defined(NV_UM_FIO)
-long *rede_cancelar_ms_ptr(void);
-#define rede_cancelar_ms (*rede_cancelar_ms_ptr())
-#elif defined(__GNUC__)
-extern _Thread_local long rede_cancelar_ms;
-#else
-extern long rede_cancelar_ms;
-#endif
-
 // Teto de bytes da transferencia corrente (0 = sem teto). E interno ao modulo;
 // esta exposto so porque rede_baixar_trecho o usa. Nao mexer de fora.
 //

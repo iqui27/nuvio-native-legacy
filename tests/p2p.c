@@ -65,7 +65,6 @@ char *rede_baixar_trecho_st(const char *url, int s, long long ini, long long fim
   if (tam) *tam = trechoOk ? 4 : 0;
   return trechoOk ? strdup("data") : NULL;
 }
-_Thread_local long rede_cancelar_ms;
 RedePararEstado rede_parar_trocar(int (*parar)(void *), void *usuario) {
   (void)parar; (void)usuario; return (RedePararEstado){ .instalado = 1 };
 }

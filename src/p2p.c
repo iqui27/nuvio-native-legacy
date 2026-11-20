@@ -336,12 +336,11 @@ int p2p_resolver(const char *hash, int fileIdx, const char *fontes, char *url, u
   // dos metadados para descobrir que o IP estava errado.
   // O GET /settings tambem obedece a geracao: sem o callback instalado aqui,
   // cancelar so valia depois da resposta — um servidor externo lento segurava
-  // a troca de fonte pelo prazo inteiro do GET (#775).
+  // a troca de fonte pelo prazo inteiro do GET. A vigia de cancelamento da
+  // rede derruba o socket em ~20 ms sem encurtar o prazo do pedido (#775).
   { unsigned ger1 = ger0;
     RedePararEstado ant = rede_parar_trocar(p2pPararCb, &ger1);
-    rede_cancelar_ms = 800;
     erro = p2p_testar(NULL, 0);
-    rede_cancelar_ms = 0;
     if (ant.instalado) rede_parar_trocar(ant.parar, ant.usuario); }
   if (p2pParado(ger0)) return ultimoErro = P2P_ERR_CANCELADO;
   if (erro != P2P_OK) { printf("[p2p] servidor: erro %d\n", erro); return erro; }
