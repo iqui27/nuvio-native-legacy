@@ -260,10 +260,13 @@ namespace NuvioTpk
         // pede eglSwapBuffer ao framework — inclusive sem superficie corrente
         // (o achado do F59-r2) — e o false cancela o callback de quadro (tela
         // preta, Tizen 5.0, 28/09). Nao existe "vivo sem swap" naquele
-        // contrato. Neste overload a TVGLApplication passa o display e a
-        // superficie vivos do quadro e o swap e nosso ("User Should call
-        // eglSwapBuffer"): r>0 e ha superficie -> eglSwapBuffers aqui; r==0 ->
-        // nada troca e o callback segue vivo; r<0 -> fim.
+        // contrato. Neste overload a TVGLApplication passa os ENDERECOS das
+        // variaveis onde o GLApplication::Run guarda o display e a superficie
+        // do quadro (lea nos dois argumentos; o swap antigo le os valores): o
+        // swap e nosso ("User Should call eglSwapBuffer") mas pede os
+        // handles, nao os ponteiros. r>0 e ha superficie -> desreferencia e
+        // eglSwapBuffers aqui; r==0 -> nada troca e o callback segue vivo;
+        // r<0 -> fim.
         protected override void OnUpdate(IntPtr eglDisplay, IntPtr eglSurface)
         {
             if (fim) return;
@@ -275,8 +278,11 @@ namespace NuvioTpk
             if (r < 0) { fim = true; return; }
             if (r > 0)
             {
-                if (!primeiroQuadro) { primeiroQuadro = true; Etapa("ok first-frame"); }
-                if (eglSurface != IntPtr.Zero) eglSwapBuffers(eglDisplay, eglSurface);
+                IntPtr display = Marshal.ReadIntPtr(eglDisplay);
+                IntPtr superficie = Marshal.ReadIntPtr(eglSurface);
+                if (display != IntPtr.Zero && superficie != IntPtr.Zero &&
+                    eglSwapBuffers(display, superficie) != 0 &&
+                    !primeiroQuadro) { primeiroQuadro = true; Etapa("ok first-frame"); }
             }
         }
 
