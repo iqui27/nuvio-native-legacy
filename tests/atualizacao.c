@@ -66,26 +66,62 @@ int main(int argc, char **argv) {
 
   // Sem anexo nenhum nao ha o que instalar, e isso NAO e erro: release de
   // codigo-fonte apenas, ou alvo que nao instala.
-  { char url[64], hash[80];
+  { char url[512], hash[80];
     CONFERE(!acharIpk("{\"assets\":[]}", url, sizeof url, hash, sizeof hash, AT_SUFIXO),
             "sem anexo devolve 0");
     CONFERE(url[0] == 0, "e a url fica vazia");
-    CONFERE(!acharIpk("{\"assets\":[{\"browser_download_url\":\"https://x/y.wgt\"}]}",
+    CONFERE(!acharIpk("{\"assets\":[{\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/y.wgt\"}]}",
                       url, sizeof url, hash, sizeof hash, AT_SUFIXO), "so .wgt tambem devolve 0"); }
 
   // O DIGEST DO ANEXO CERTO. Sem ele o instalador do Homebrew Channel recusa
   // com "Invalid file checksum", e o digest do .wgt (que vem ANTES no JSON)
   // seria o erro facil de cometer.
-  { char url[128], hash[80];
+  { char url[512], hash[80];
     const char *j =
       "{\"assets\":["
-      "{\"digest\":\"sha256:aaaa\",\"browser_download_url\":\"https://x/a.wgt\"},"
-      "{\"digest\":\"sha256:bbbb\",\"browser_download_url\":\"https://x/b_arm.ipk\"}]}";
+      "{\"digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/a.wgt\"},"
+      "{\"digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/b_arm.ipk\"}]}";
     { int achou = acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO);
       CONFERE(achou, "achou o ipk");
-      CONFERE(!strcmp(url, "https://x/b_arm.ipk"), "url do ipk: [%s]", url);
-      CONFERE(!strcmp(hash, "bbbb"), "digest do MESMO anexo, sem o prefixo: [%s]", hash); }
+      CONFERE(!strcmp(url, "https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/b_arm.ipk"), "url do ipk: [%s]", url);
+      CONFERE(!strcmp(hash, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), "digest do MESMO anexo, sem o prefixo: [%s]", hash); }
   }
+
+  // O digest tem de ser DO PROPRIO ANEXO (F89). Um .ipk sem digest depois de
+  // um anexo COM digest nao pode herdar o do vizinho — era o que a busca
+  // "ultimo digest desde o comeco do JSON ate a URL" fazia: o .ipk ia ao
+  // instalador com o sha256 do .wgt e a atualizacao legitima virava erro de
+  // checksum no Homebrew Channel.
+  { char url[512], hash[80];
+    const char *j =
+      "{\"assets\":["
+      "{\"digest\":\"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/nuvio.wgt\"},"
+      "{\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/nuvio_arm.ipk\"}]}";
+    CONFERE(!acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO),
+            ".ipk sem digest proprio apos anexo com digest: recusado");
+    CONFERE(url[0] == 0 && hash[0] == 0, "e saem vazios: [%s] [%s]", url, hash); }
+
+  // A delimitacao e do objeto JSON do anexo: "digest" dentro de objeto
+  // aninhado (uploader) ou dentro de STRING do proprio anexo nao conta; um
+  // "}" em string nao fecha o anexo; e o digest vale em qualquer posicao do
+  // objeto — inclusive DEPOIS da browser_download_url, como o GitHub ja fez.
+  { char url[512], hash[80];
+    const char *H = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+    const char *j =
+      "{\"assets\":[{\"name\":\"a_arm.ipk\",\"label\":\"fechou } aqui\","
+      "\"uploader\":{\"login\":\"x\",\"digest\":\"sha256:9999999999999999999999999999999999999999999999999999999999999999\"},"
+      "\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/a_arm.ipk\","
+      "\"digest\":\"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"}]}";
+    CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO) && !strcmp(hash, H),
+            "digest depois da URL, ignorando o do uploader e o } em string: [%s]", hash); }
+
+  // "digest" dentro de uma string do anexo NAO e o campo.
+  { char url[512], hash[80];
+    const char *j =
+      "{\"assets\":[{\"label\":\"sem \\\"digest\\\":sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa aqui\","
+      "\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/a_arm.ipk\"}]}";
+    CONFERE(!acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO),
+            "digest dentro de string nao e campo: recusado"); }
 
   // A VARIANTE CERTA ENTRE OS TRES ANEXOS, NA ORDEM REAL DO GITHUB.
   //
@@ -94,40 +130,73 @@ int main(int argc, char **argv) {
   // ANTES de "_arm.ipk" porque '-' e menor que '.'. Toda LG que apertasse
   // "Atualizar agora" trocava para a build de cache grande sem saber — o id do
   // pacote e a versao sao iguais nos dois, entao nada denunciava a troca.
-  { char url[160], hash[80];
+  { char url[512], hash[80];
     const char *j =
       "{\"assets\":["
-      "{\"digest\":\"sha256:1111\",\"browser_download_url\":\"https://x/NuvioTV-1.1.3-tizen.wgt\"},"
-      "{\"digest\":\"sha256:2222\",\"browser_download_url\":\"https://x/space.nuvio_1.1.3_arm-highcache.ipk\"},"
-      "{\"digest\":\"sha256:3333\",\"browser_download_url\":\"https://x/space.nuvio_1.1.3_arm.ipk\"}]}";
+      "{\"digest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/NuvioTV-1.1.3-tizen.wgt\"},"
+      "{\"digest\":\"sha256:2222222222222222222222222222222222222222222222222222222222222222\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/space.nuvio_1.1.3_arm-highcache.ipk\"},"
+      "{\"digest\":\"sha256:3333333333333333333333333333333333333333333333333333333333333333\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/space.nuvio_1.1.3_arm.ipk\"}]}";
     CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO), "achou o anexo da variante");
     CONFERE(strstr(url, AT_SUFIXO) != NULL, "e o sufixo desta build (%s): [%s]", AT_SUFIXO, url);
     CONFERE(strstr(url, "highcache") == NULL, "build NAO leva a highcache, nem a de cache grande: [%s]", url);
-    CONFERE(!strcmp(hash, "3333"), "digest do anexo normal: [%s]", hash);
+    CONFERE(!strcmp(hash, "3333333333333333333333333333333333333333333333333333333333333333"), "digest do anexo normal: [%s]", hash);
   }
 
   // OS NOMES DAS RELEASES 1.3.1/1.3.2 ("NuvioTV-1.3.2-webos.ipk"): a LG normal
   // ficou duas versoes sem botao porque "-webos.ipk" nao termina em "_arm.ipk".
   // Agora os dois nomes valem, e a normal continua sem pegar a highcache.
-  { char url[160], hash[80];
+  { char url[512], hash[80];
     const char *j =
       "{\"assets\":["
-      "{\"digest\":\"sha256:aaaa\",\"browser_download_url\":\"https://x/NuvioTV-1.3.2-tizen.wgt\"},"
-      "{\"digest\":\"sha256:bbbb\",\"browser_download_url\":\"https://x/NuvioTV-1.3.2-webos-highcache.ipk\"},"
-      "{\"digest\":\"sha256:cccc\",\"browser_download_url\":\"https://x/NuvioTV-1.3.2-webos.ipk\"}]}";
+      "{\"digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/NuvioTV-1.3.2-tizen.wgt\"},"
+      "{\"digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/NuvioTV-1.3.2-webos-highcache.ipk\"},"
+      "{\"digest\":\"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/NuvioTV-1.3.2-webos.ipk\"}]}";
     CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO), "nome NuvioTV-*-webos: achou a variante");
-    CONFERE(!strcmp(hash, "cccc") && !strstr(url, "highcache"), "normal pelo nome novo, sem highcache: [%s]", url);
+    CONFERE(!strcmp(hash, "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc") && !strstr(url, "highcache"), "normal pelo nome novo, sem highcache: [%s]", url);
   }
 
   // RELEASE SO COM A HIGHCACHE (so acontece em release antiga ou de teste): a
   // build nao instala nada, porque o .ipk normal nao existe nela. Trocar de
   // variante calada e o defeito; mandar para a pagina e a saida honesta.
-  { char url[160], hash[80];
+  { char url[512], hash[80];
     const char *so_highcache =
-      "{\"assets\":[{\"browser_download_url\":\"https://x/space.nuvio_1.1.3_arm-highcache.ipk\"}]}";
+      "{\"assets\":[{\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/space.nuvio_1.1.3_arm-highcache.ipk\"}]}";
     CONFERE(!acharIpk(so_highcache, url, sizeof url, hash, sizeof hash, AT_SUFIXO),
             "so a highcache devolve 0");
     CONFERE(url[0] == 0, "e a url fica vazia"); }
+
+  // O JSON da release e nao confiavel: so o anexo oficial deste repositorio e
+  // um sha256 hex de 64 caracteres entram; nada que quebre o comando de shell.
+  { const char *H = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const char *OK = "https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/space.nuvio_1.0_arm.ipk";
+    char j[1024], url[512], hash[80];
+    snprintf(j, sizeof j, "{\"assets\":[{\"digest\":\"sha256:%s\",\"browser_download_url\":\"%s\"}]}", H, OK);
+    CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO) && !strcmp(url, OK) && !strcmp(hash, H),
+            "anexo oficial com sha256 valido passa");
+    snprintf(j, sizeof j, "{\"assets\":[{\"digest\":\"sha256:%s\",\"browser_download_url\":\"https://evil.example/space.nuvio_1.0_arm.ipk\"}]}", H);
+    CONFERE(!acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO), "outro host: recusado");
+    CONFERE(url[0] == 0, "e a url fica vazia: [%s]", url);
+    snprintf(j, sizeof j, "{\"assets\":[{\"digest\":\"sha256:%s\",\"browser_download_url\":\"https://github.com.evil.example/iqui27/nuvio-native-legacy/releases/download/v1/space.nuvio_1.0_arm.ipk\"}]}", H);
+    CONFERE(!acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO), "host parecido: recusado");
+    snprintf(j, sizeof j, "{\"assets\":[{\"digest\":\"sha256:%s\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/x';touch${IFS}/tmp/pwn;'_arm.ipk\"}]}", H);
+    CONFERE(!acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO), "aspas/ponto-e-virgula na URL: recusado");
+    snprintf(j, sizeof j, "{\"assets\":[{\"digest\":\"sha256:%s\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/../../x/space.nuvio_1.0_arm.ipk\"}]}", H);
+    CONFERE(!acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO), "'..' na URL: recusado");
+    snprintf(j, sizeof j, "{\"assets\":[{\"digest\":\"sha256:abc'; id; '\",\"browser_download_url\":\"%s\"}]}", OK);
+    CONFERE(!acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO),
+            "digest que nao e sha256 hex: anexo descartado");
+    // Sem o campo digest vale o mesmo: sem hash nao ha candidato — o .ipk
+    // instalava sem ipkHash e o Homebrew Channel recusava o checksum.
+    snprintf(j, sizeof j, "{\"assets\":[{\"browser_download_url\":\"%s\"}]}", OK);
+    CONFERE(!acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO),
+            ".ipk sem digest: anexo descartado");
+    // Um SEGUNDO .ipk com digest continua valendo quando o primeiro nao tem.
+    snprintf(j, sizeof j, "{\"assets\":[{\"browser_download_url\":\"%s\"},"
+      "{\"digest\":\"sha256:%s\",\"browser_download_url\":\"https://github.com/iqui27/nuvio-native-legacy/releases/download/v1/d_arm.ipk\"}]}",
+      OK, H);
+    CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO) &&
+            strstr(url, "d_arm.ipk") && !strcmp(hash, H),
+            "primeiro .ipk sem digest: passa ao proximo com digest"); }
 
   // JSON com escapes variados
   { char d[64];

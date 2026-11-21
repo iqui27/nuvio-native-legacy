@@ -1003,6 +1003,11 @@ char *rede_baixar(const char *url, int segundos) {
 char *rede_baixar_bin(const char *url, int segundos, long *tam) {
   return pedir("GET", url, segundos, NULL, NULL, NULL, tam, NULL);
 }
+char *rede_baixar_bin_seguro(const char *url, int segundos, long *tam) {
+  // No navegador (.wgt) o TLS e sempre verificado pela plataforma — mesma
+  // funcao; so o nativo tem o caminho publico sem verificacao.
+  return rede_baixar_bin(url, segundos, tam);
+}
 
 char *rede_baixar_com(const char *url, int segundos, const char *const *cab) {
   return pedir("GET", url, segundos, cab, NULL, NULL, NULL, NULL);
@@ -1428,6 +1433,11 @@ static _Thread_local int redeSemRecuoV4;
 #define OPT_CAINFO 10065
 #define OPT_ERRORBUFFER 10010
 #define OPT_POSTFIELDSIZE 60
+// CURLOPT_REDIR_PROTOCOLS em bitmask (7.19.4+): o *_STR da libcurl 7.85 nao
+// existe nas libcurl antigas das TVs. CURLPROTO_HTTPS = 2.
+#define OPT_REDIR_PROTOCOLS 182
+// CURLOPT_MAXREDIRS: teto de saltos de uma cadeia de redirects.
+#define OPT_MAXREDIRS        68
 #define OPT_PROTOCOLS 181
 // CURLOPT_IPRESOLVE (7.10.8+): 0 = qualquer familia, 1 = so IPv4, 2 = so IPv6.
 // Ver o "v6 ruim" por host junto de performV4.
@@ -2136,6 +2146,101 @@ static unsigned long conexaoMs(unsigned long prazoMs) {
   if (m > 10000) m = 10000;
   return m < prazoMs ? m : prazoMs;
 }
+// 1 quando algum cabecalho do pedido carrega credencial do dono. Usado para
+// verificar o TLS e nao seguir redirect (ver rede_baixar_interno3).
+static int carregaCredencial(const char *const *cab) {
+  static const char *const nomes[] = { "authorization:", "apikey:", "x-api-key:", "trakt-api-key:",
+    "x-emby-token:", "x-plex-token:", "x-mediabrowser-token:", "cookie:", NULL };
+  int k, i;
+  for (k = 0; cab && cab[k]; k++)
+    for (i = 0; nomes[i]; i++)
+      if (!strncasecmp(cab[k], nomes[i], strlen(nomes[i]))) return 1;
+  return 0;
+}
+// 1 quando a QUERY da URL leva credencial do dono: ?token= no requestdl do
+// TorBox, ?api_key= do TMDB/fanart, ?apikey= do mdblist, ?password= dos
+// paineis Xtream, ?key= e nomes de token/segredo de outras APIs. O nome do
+// parametro casa INTEIRO (depois de ? ou &) e a comparacao ignora maiuscula
+// — "monkey=1" ou "tokenize=1" nao contam. Ficam de fora de proposito os
+// parametros de assinatura de conteudo (sig, signature, expires): protegem o
+// recurso, nao a conta, e alargar o freio ao GET publico quebra midia de
+// addon que redireciona.
+static int credencialNaQuery(const char *url) {
+  static const char *const nomes[] = { "token", "apikey", "api_key", "api-key",
+    "key", "access_token", "auth_token", "refresh_token", "id_token",
+    "client_secret", "secret", "password", "passwd", "auth", NULL };
+  const char *q = url ? strchr(url, '?') : NULL;
+  const char *frag = url ? strchr(url, '#') : NULL;
+  // O `?` tem de ser da QUERY DE VERDADE: um `#` antes dele o deixa dentro do
+  // fragmento, e o fragmento nao sai no pedido — ?token= ali nao e credencial
+  // (media de addon com #help?token= perdia o redirect e o TLS aberto).
+  if (!q || (frag && frag < q)) return 0;
+  for (q++; *q && *q != '#';) {
+    const char *e, *f = q;
+    size_t n;
+    int i;
+    while (*f && *f != '&' && *f != '#') f++;
+    for (e = q; e < f && *e != '='; e++) {}
+    n = (size_t)(e - q);
+    for (i = 0; nomes[i]; i++)
+      if (strlen(nomes[i]) == n && !strncasecmp(q, nomes[i], n)) return 1;
+    if (*f != '&') break;
+    q = f + 1;
+  }
+  return 0;
+}
+// Pedido sensivel: credencial no cabecalho OU na query — nos dois casos o TLS
+// e verificado e o redirect fica desligado (ver rede_baixar_interno3).
+static int pedidoComCredencial(const char *url, const char *const *cab) {
+  return carregaCredencial(cab) || credencialNaQuery(url);
+}
+// Prefixo oficial de anexos de release — o MESMO de AT_DL_PREFIXO em
+// atualizacao.c. O GitHub responde 302 do releases/download ao CDN de assets,
+// entao no caminho binario verificado (rede_baixar_bin_seguro) o redirect so
+// vale para URL daqui.
+static int urlAnexoOficial(const char *url) {
+  static const char prefixo[] =
+    "https://github.com/iqui27/nuvio-native-legacy/releases/download/";
+  return !strncmp(url, prefixo, sizeof prefixo - 1);
+}
+// DESTINO permitido de um redirect do download verificado. O prefixo so
+// controla a URL INICIAL; sem esta lista um 302 levava o artefato para onde o
+// transporte quisesse. So https:// e so os hosts que o GitHub usa para servir
+// os anexos: o proprio github.com (o releases/download que responde o 302) e
+// os CDNs de assets. Host EXATO com porta opcional — comparacao de prefixo
+// deixaria passar github.com.evil.test; URL relativa ou com credencial
+// (user@host) nao casa e o salto e recusado.
+static int destinoAnexoOk(const char *url) {
+  static const char *const hosts[] = {
+    "github.com",
+    "release-assets.githubusercontent.com",
+    "objects.githubusercontent.com", NULL };
+  const char *h, *f, *r, *p;
+  int i;
+  if (!url || strncasecmp(url, "https://", 8)) return 0;
+  // Espaco, CR/LF, tab e controles nao cabem num salto: a linha do cabecalho
+  // os traz crus (caminho com espaco) ou a reserva os resolve de um valor
+  // dobrado — e o transporte seguiria mesmo assim, com o caminho saindo
+  // codificado no segundo GET ou o destino costurado fora do lido. A recusa
+  // e ANTES de seguir e vale nos dois caminhos verificados (receberCab e
+  // viaAndroidSeguro), mesma politica dos dois lados.
+  for (p = url; *p; p++)
+    if (*(const unsigned char *)p <= 0x20 || *(const unsigned char *)p == 0x7f)
+      return 0;
+  h = url + 8;
+  f = h + strcspn(h, "/?#");
+  // userinfo nao entra: https://oficial@evil tem autoridade valida para a
+  // libcurl (host = evil) mesmo que o prefixo case num host oficial.
+  if (memchr(h, '@', (size_t)(f - h))) return 0;
+  for (i = 0; hosts[i]; i++) {
+    size_t n = strlen(hosts[i]);
+    if (strncasecmp(h, hosts[i], n)) continue;
+    r = h + n;
+    if (r == f) return 1;
+    if (*r == ':' && r + 1 < f && r + 1 + strspn(r + 1, "0123456789") == f) return 1;
+  }
+  return 0;
+}
 static void opcoesComuns(void *c, unsigned long prazoMs) {
   redePrazoAtualMs = prazoMs;
 #ifdef NV_TPK
@@ -2323,14 +2428,16 @@ static char *rede_baixar_interno2(const char *url, int segundos, long *tam,
                                   char *etag, unsigned tamEtag);
 static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
                                   const char *const *cab, int *status,
-                                  char *etag, unsigned tamEtag, int *retry);
+                                  char *etag, unsigned tamEtag, int *retry, int bin);
 
-// Onde o ETag da resposta e anotado, quando alguem o pediu.
-typedef struct { char *dst; unsigned tam; int *retry; } CacaCab;
+// Onde o ETag da resposta e anotado, quando alguem o pediu. `confereDestino`
+// liga o filtro de Location do download verificado (rede_baixar_interno3).
+typedef struct { char *dst; unsigned tam; int *retry; int confereDestino; } CacaCab;
 
 // A libcurl entrega UMA linha de cabecalho por chamada, com o CRLF no fim. So
 // o ETag interessa; devolver menos bytes do que recebeu abortaria a
-// transferencia, entao o retorno e sempre o tamanho inteiro.
+// transferencia, entao o retorno e sempre o tamanho inteiro — EXCETO o
+// Location recusado do download verificado, que e justamente o aborto.
 static size_t receberCab(void *dados, size_t tam, size_t qtd, void *u) {
   CacaCab *c = (CacaCab *)u;
   const char *s = (const char *)dados;
@@ -2338,6 +2445,39 @@ static size_t receberCab(void *dados, size_t tam, size_t qtd, void *u) {
   if (bytes >= 5 && !strncasecmp(s, "HTTP/", 5)) {
     if (c && c->retry) *c->retry = 0;
     if (c && c->dst && c->tam) c->dst[0] = 0;
+  }
+  if (c && c->confereDestino) {
+    // CONTINUACAO DOBRADA (obs-fold): uma linha que COMECA com espaco ou tab
+    // estende o cabecalho anterior — e nao ha como provar qual era. Dobrado,
+    // um Location mau cabe em duas linhas: a 1a com a parte que passa no
+    // filtro e a continuacao com o resto, que a libcurl costura e segue.
+    // No caminho verificado QUALQUER dobra recusa a resposta (GitHub e os
+    // CDNs de anexo nao dobram; a RFC 7230 proibe obs-fold novo).
+    if (bytes && (*s == ' ' || *s == '\t')) return 0;
+    if (bytes > 9 && !strncasecmp(s, "location:", 9)) {
+      // Cada salto do download verificado e conferido ANTES de ser seguido:
+      // so https:// e so host oficial (destinoAnexoOk). Fora da lista a linha
+      // volta curta, a libcurl aborta com write-error e o 302 nao e seguido —
+      // e o que impede a cadeia de levar o artefato a http:// ou a outro CDN.
+      // A conferencia vale so para a linha INTEIRA (mesmo limite do alvo da
+      // reserva segura): um Location maior que a copia nao pode ser validado
+      // por pedaco — o corte pode ler "host oficial + porta decimal" de uma
+      // autoridade que continua (userinfo, outro host) e a libcurl segue a
+      // linha completa. Nao coube, o salto e recusado.
+      char loc[2048];
+      s += 9; bytes -= 9;
+      while (bytes && (*s == ' ' || *s == '\t')) { s++; bytes--; }
+      while (bytes && (s[bytes - 1] == '\r' || s[bytes - 1] == '\n' ||
+                       s[bytes - 1] == ' ')) bytes--;
+      n = bytes < sizeof loc ? bytes : sizeof loc - 1;
+      memcpy(loc, s, n); loc[n] = 0;
+      if (n < bytes || !destinoAnexoOk(loc)) {
+        char seg[120];
+        printf("[rede] redirect recusado: %s\n", rede_url_publica(loc, seg, sizeof seg));
+        fflush(stdout);
+        return 0;
+      }
+    }
   }
   if (c && c->retry && bytes > 12 && !strncasecmp(s, "retry-after:", 12)) {
     *c->retry = retrySegundos(s + 12, bytes - 12);
@@ -2773,6 +2913,96 @@ static char *viaAndroid(const char *verbo, const char *url, int segundos,
   redeBytesLocal = bytes;
   return r;
 }
+// RESERVA SEGURA do download verificado (F94, rede_baixar_bin_seguro). A
+// reserva comum nao serve para o artefato de release: o httpPedir liga
+// instanceFollowRedirects e um 302 levaria o binario para fora da lista. O
+// httpPedirSeguro faz UM salto por chamada — o redirect fica desligado no
+// Java e, num 3xx, o "corpo" devolvido e o Location ja resolvido contra a URL
+// do salto. Quem decide o proximo passo e aqui, com a MESMA regra do caminho
+// libcurl: a URL inicial e https, salto so quando ela esta no prefixo oficial
+// de anexos (e sem credencial no pedido), cada destino conferido por
+// destinoAnexoOk (so https, so host oficial) e no maximo 5 saltos. O TLS e
+// verificado pela pilha do proprio Android em cada salto.
+static char *viaAndroidSeguro(const char *url, int segundos, const char *const *cab,
+                              int *status, long *tam, int *retryAfter) {
+  redeBytesLocal = 0;
+  if (status) *status = 0;
+  if (retryAfter) *retryAfter = 0;
+#ifdef NV_ANDROID
+  { char *cabs, *r = NULL, erro[200] = "", h[96], alvo[2048];
+    size_t n = 1;
+    int k, st = 0, saltos = 0, segue;
+    long bytes = 0;
+    unsigned long t0 = redeAgoraMs();
+    static int logados;
+    if (strncmp(url, "https://", 8) || strlen(url) >= sizeof alvo) return NULL;
+    // A regra do segredo precede, como no caminho libcurl: com credencial no
+    // pedido nenhum salto e seguido (e o prefixo oficial so libera a URL
+    // inicial — cada Location continua conferida pela lista).
+    segue = urlAnexoOficial(url) && !pedidoComCredencial(url, cab);
+    for (k = 0; cab && cab[k]; k++) n += strlen(cab[k]) + 1;
+    cabs = (char *)malloc(n);
+    if (!cabs) return NULL;
+    cabs[0] = 0;
+    for (k = 0; cab && cab[k]; k++) { strcat(cabs, cab[k]); strcat(cabs, "\n"); }
+    snprintf(alvo, sizeof alvo, "%s", url);
+    for (;;) {
+      long nb = 0;
+      free(r); r = NULL;
+      if (redeCancelouLocal || redeParou()) break;
+      st = 0;
+      r = android_http_seguro("GET", alvo, cabs, NULL,
+                              (segundos > 0 ? segundos : 20) * 1000,
+                              &st, retryAfter, &nb, erro, sizeof erro);
+      if (!r) break;
+      bytes = nb;
+      if (st < 300 || st >= 400) break;
+      // Num 3xx o "corpo" e o Location ABSOLUTO resolvido pelo host — o unico
+      // dado de fora que ainda nao passou pela lista. Recusa: salto proibido
+      // (fora do prefixo ou com credencial), 3xx sem Location, mais de 5
+      // saltos, destino fora da lista ou comprido demais.
+      if (!segue || !nb || ++saltos > 5 || !destinoAnexoOk(r) ||
+          strlen(r) >= sizeof alvo) {
+        char seg[120];
+        printf("[rede] reserva segura: salto recusado%s%s\n",
+               nb ? " para " : " (3xx sem Location)",
+               nb ? rede_url_publica(r, seg, sizeof seg) : "");
+        fflush(stdout);
+        free(r); r = NULL; st = 0;
+        break;
+      }
+      snprintf(alvo, sizeof alvo, "%s", r);
+    }
+    free(cabs);
+    hostDaUrl(alvo, h, sizeof h);
+    if (__atomic_add_fetch(&logados, 1, __ATOMIC_RELAXED) <= 12 || !r) {
+      printf("[rede] via Android seguro GET %s: http=%d em %lu ms%s%s\n",
+             h[0] ? h : "?", st, redeAgoraMs() - t0, r ? "" : " FALHOU: ", r ? "" : erro);
+      fflush(stdout);
+    }
+    if (!r) { snprintf(redeErroTxt, sizeof redeErroTxt, "android: %.180s", erro); return NULL; }
+    redeErroTxt[0] = 0;
+    redeBytesLocal = bytes;
+    if (st == 401 && aviso401) aviso401(alvo);
+    if (status) *status = st;
+    else if (st < 200 || st > 299) { free(r); return NULL; }
+    if (tam) *tam = bytes;
+    return r;
+  }
+#else
+  // Host sem o modo salto-a-salto (iOS usa a mesma trilha): o caminho
+  // verificado falha de proposito em vez de cair na reserva comum, que
+  // seguiria redirect sem a lista. Nenhum chamador do download verificado
+  // existe nessas plataformas hoje.
+  { char seg[120];
+    printf("[rede] reserva segura indisponivel neste host: %s\n",
+           rede_url_publica(url, seg, sizeof seg));
+    fflush(stdout); }
+  snprintf(redeErroTxt, sizeof redeErroTxt, "curl %d", 5);
+  (void)segundos; (void)cab; (void)tam;
+  return NULL;
+#endif
+}
 // 1 = este pedido simples vai direto pelo Android (sem tocar na libcurl).
 static int androidPrimeiro(void) {
   if (__atomic_load_n(&curlRuim, __ATOMIC_ACQUIRE)) return 1;
@@ -2826,6 +3056,12 @@ void rede_preparar(void) { abrir(); }
 
 char *rede_baixar_bin(const char *url, int segundos, long *tam) {
   return rede_baixar_interno(url, segundos, tam, NULL);
+}
+char *rede_baixar_bin_seguro(const char *url, int segundos, long *tam) {
+  // bin=1: download verificado so para artefato de release (.so do .tpk,
+  // .apk) — ver o bloco `bin` em rede_baixar_interno3. Legenda, cartaz e
+  // fonte seguem no caminho publico de rede_baixar_bin.
+  return rede_baixar_interno3(url, segundos, tam, NULL, NULL, NULL, 0, NULL, 1);
 }
 
 char *rede_baixar(const char *url, int segundos) {
@@ -2906,7 +3142,7 @@ char *rede_baixar_st(const char *url, int segundos, const char *const *cab,
 }
 char *rede_baixar_st_retry(const char *url, int segundos, const char *const *cab,
                            int *status, int *retryAfter) {
-  return rede_baixar_interno3(url, segundos, NULL, cab, status, NULL, 0, retryAfter);
+  return rede_baixar_interno3(url, segundos, NULL, cab, status, NULL, 0, retryAfter, 0);
 }
 
 char *rede_baixar_etag(const char *url, int segundos, const char *const *cab,
@@ -2943,11 +3179,11 @@ static int valeRepetir(int r, const Vigia *v, size_t bytes) {
 static char *rede_baixar_interno2(const char *url, int segundos, long *tam,
                                   const char *const *cab, int *status,
                                   char *etag, unsigned tamEtag) {
-  return rede_baixar_interno3(url, segundos, tam, cab, status, etag, tamEtag, NULL);
+  return rede_baixar_interno3(url, segundos, tam, cab, status, etag, tamEtag, NULL, 0);
 }
 static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
                                   const char *const *cab, int *status,
-                                  char *etag, unsigned tamEtag, int *retry) {
+                                  char *etag, unsigned tamEtag, int *retry, int bin) {
   Balde b = {0};
   CacaCab caca;
   Vigia vigia;
@@ -2971,7 +3207,13 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
   if (!status && negcache_barra(url, (long)time(NULL))) return NULL;
 #ifdef NV_HTTP_HOST
   // libcurl nunca ficou pronta: GET simples (catalogo, imagem) pelo Android.
-  if (!abrir()) return viaAndroid("GET", url, segundos, cab, NULL, status, tam, retry, "libcurl fora");
+  if (!abrir()) {
+    // O DOWNLOAD VERIFICADO nao pode cair na reserva comum: o httpPedir segue o
+    // 302 sozinho e sairia da lista oficial. Salto a salto com a mesma regra
+    // do receberCab — ver viaAndroidSeguro.
+    if (bin) return viaAndroidSeguro(url, segundos, cab, status, tam, retry);
+    return viaAndroid("GET", url, segundos, cab, NULL, status, tam, retry, "libcurl fora");
+  }
 #else
   if (!abrir()) return NULL;
 #endif
@@ -2992,7 +3234,13 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
     // curl_easy_reset limpa as opcoes entre pedidos, entao deixar o recebedor
     // instalado aqui nao respinga no pedido seguinte do mesmo fio — mas tambem
     // nao ha por que pagar uma chamada por cabecalho em todo download de imagem.
-    if (caca.dst || caca.retry) {
+    // A EXCECAO e o download verificado do anexo oficial: a resposta pode
+    // trazer um Location para o CDN e cada salto precisa ser conferido
+    // (ver receberCab). Pedido com credencial fica de fora: o redirect dele
+    // esta desligado no ramo abaixo, entao nao ha salto a conferir.
+    caca.confereDestino = bin && !strncmp(url, "https://", 8) &&
+                          !pedidoComCredencial(url, cab) && urlAnexoOficial(url);
+    if (caca.dst || caca.retry || caca.confereDestino) {
       curl_setopt(c, OPT_HEADERFUNCTION, receberCab);
       curl_setopt(c, OPT_HEADERDATA, &caca);
     }
@@ -3000,6 +3248,38 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
     curl_setopt(c, OPT_WRITEDATA, &b);
     curl_setopt(c, OPT_FOLLOWLOCATION, (long)1);
     opcoesComuns(c, resta);
+    // Pedido que leva credencial (Authorization, apikey, token) NO CABECALHO
+    // OU NA QUERY: TLS verificado e nenhum redirect — um 3xx reenviaria os
+    // cabecalhos do dono (apikey, trakt-api-key...) a outro host, e sem
+    // verificar qualquer um no caminho le a senha/token, em cabecalho ou na
+    // URL (?token= do requestdl do TorBox, ?api_key= do TMDB, ?password= dos
+    // paineis Xtream). As APIs (Supabase, Trakt, debrid) nao redirecionam.
+    if (pedidoComCredencial(url, cab) && !strncmp(url, "https://", 8)) {
+      curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
+      curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
+      if (discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
+      curl_setopt(c, OPT_FOLLOWLOCATION, (long)0);
+    } else if (bin && !strncmp(url, "https://", 8)) {
+      // DOWNLOAD BINARIO VERIFICADO (rede_baixar_bin_seguro): e o caminho dos
+      // artefatos da release (.so do .tpk, .apk), que viram codigo nativo —
+      // certificado e hostname conferidos pela CA do pacote, como no pedido
+      // com credencial. O redirect fica ligado SO no prefixo oficial de
+      // anexos: o GitHub responde 302 do releases/download ao CDN de assets,
+      // e sem credencial no pedido nada vaza ao host seguinte. Fora do
+      // prefixo um 3xx volta como esta, sem seguir.
+      curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
+      curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
+      if (discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
+      if (!urlAnexoOficial(url)) curl_setopt(c, OPT_FOLLOWLOCATION, (long)0);
+      else {
+        // O prefixo so libera a URL INICIAL; a cadeia tem regra propria:
+        // saltos so em https (bitmask — a *_STR da 7.85 nao existe nas
+        // libcurl das TVs), teto de saltos, e cada Location conferida pelo
+        // receberCab contra a lista oficial de hosts (destinoAnexoOk).
+        curl_setopt(c, OPT_REDIR_PROTOCOLS, (long)2 /* CURLPROTO_HTTPS */);
+        curl_setopt(c, OPT_MAXREDIRS, (long)5);
+      }
+    }
     ligarVigia(c, &vigia, prazoMs);
     cvOn = cancelVigiaLigar(c, &cv);
     curl_setopt(c, OPT_ACCEPT_ENCODING, "");   // "" = todas as que a lib suporta
@@ -3324,6 +3604,16 @@ char *rede_apagar(const char *url, int segundos, const char *const *cab,
   curl_setopt(c, OPT_WRITEFUNCTION, receber);
   curl_setopt(c, OPT_WRITEDATA, &b);
   opcoesComuns(c, (unsigned long)(segundos > 0 ? segundos : 20) * 1000UL);
+  // DELETE autenticado (Trakt /sync/playback leva Authorization): mesmo
+  // tratamento do GET com credencial — TLS verificado e sem redirect, que
+  // numa alca reusada do pool pode vir ligado de um GET anterior. A
+  // credencial na query vale igual (ex.: ?token=).
+  if (pedidoComCredencial(url, cab) && !strncmp(url, "https://", 8)) {
+    curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
+    curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
+    if (discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
+    curl_setopt(c, OPT_FOLLOWLOCATION, (long)0);
+  }
   curl_setopt(c, OPT_CUSTOMREQUEST, "DELETE");
   if (slist_append) {
     int k;
@@ -3431,7 +3721,7 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
                           const char *corpo, int *status, int seguro, int *retryAfter,
                           const char *verbo) {
   Balde b = {0};
-  CacaCab respostaCab = { NULL, 0, retryAfter };
+  CacaCab respostaCab = { .retry = retryAfter };
   Vigia vigia;
   CancelVigia cv;
   if (retryAfter) *retryAfter = 0;
@@ -3451,6 +3741,16 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
   opcoesComuns(c, (unsigned long)(segundos > 0 ? segundos : 20) * 1000UL);
   if(redeParar)ligarVigia(c,&vigia,(unsigned long)(segundos > 0 ? segundos : 20)*1000UL);
   cvOn = cancelVigiaLigar(c, &cv);
+  // POST de API (login, token, sync): o corpo e/ou os cabecalhos levam senha,
+  // refresh token ou chave. opcoesComuns desliga a verificacao para a MIDIA
+  // publica dos addons; aqui o destino e sempre uma API com certificado valido.
+  if (!strncmp(url, "https://", 8)) {
+    curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
+    curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
+    if (discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
+    if (pedidoComCredencial(url, cab))
+      curl_setopt(c, OPT_FOLLOWLOCATION, (long)0);
+  }
   if (seguro) {
     // OAuth credentials require authenticated TLS and never follow redirects.
     curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);

@@ -54,6 +54,10 @@ char *android_http(const char *v, const char *u, const char *c, const char *b, i
   } else { assert(!strcmp(u, OLD)); *st = androidHttp; }
   snprintf(erroTxt, ne, "reset"); return NULL;
 }
+char *android_http_seguro(const char *v, const char *u, const char *c, const char *b, int p,
+                          int *st, int *retryAfter, long *n, char *erroTxt, size_t ne) {
+  return android_http(v, u, c, b, p, st, retryAfter, n, erroTxt, ne);
+}
 void android_etapa(const char *s) { (void)s; }
 void android_quadro(void) {}
 #endif

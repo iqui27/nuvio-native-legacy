@@ -69,6 +69,14 @@ void android_etapa(const char *nome);
 char *android_http(const char *verbo, const char *url, const char *cabs,
                    const char *corpo, int prazoMs, int *status, int *retryAfter, long *n,
                    char *erro, size_t nErro);
+// Variante VERIFICADA (F94, NuvioActivity.httpPedirSeguro): mesmo contrato, mas
+// o redirect fica DESLIGADO no Java e, numa resposta 3xx, o "corpo" devolvido
+// e o Location ja resolvido contra a URL do salto (vazio sem Location). O
+// proximo salto e decidido no C (rede.c, viaAndroidSeguro) contra a lista
+// oficial de anexos — reservado ao download verificado de artefato de release.
+char *android_http_seguro(const char *verbo, const char *url, const char *cabs,
+                          const char *corpo, int prazoMs, int *status, int *retryAfter,
+                          long *n, char *erro, size_t nErro);
 void android_quadro(void);
 #endif
 #endif
