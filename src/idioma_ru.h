@@ -4391,6 +4391,7 @@
   T("Pouco espaço", "Мало места"),
   T("Poucos dados · %d de %d", "Мало данных · %d из %d"),
   T("Pra pensar depois", "Есть над чем подумать"),
+  T("Precisa desligar \"%s\" — OK troca", "Нужно выключить «%s» — OK переключит"),
   T("Precisa ligar \"%s\" — OK liga", "Нужно включить «%s» — OK включит"),
   T("Precisa ligar \"%s\" — OK liga as duas", "Нужно включить «%s» — OK включит обе"),
   T("Preencha o e-mail e a senha.", "Введите эл. почту и пароль."),

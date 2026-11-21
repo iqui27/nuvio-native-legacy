@@ -4392,6 +4392,7 @@
   T("Pouco espaço", "Λίγος χώρος"),
   T("Poucos dados · %d de %d", "Λίγα δεδομένα · %d από %d"),
   T("Pra pensar depois", "Για να το σκεφτείς"),
+  T("Precisa desligar \"%s\" — OK troca", "Χρειάζεται «%s» ανενεργό — το OK εναλλάσσει"),
   T("Precisa ligar \"%s\" — OK liga", "Χρειάζεται «%s» ενεργό — το OK το ενεργοποιεί"),
   T("Precisa ligar \"%s\" — OK liga as duas", "Χρειάζεται «%s» ενεργό — το OK ενεργοποιεί και τα δύο"),
   T("Preencha o e-mail e a senha.", "Συμπλήρωσε email και κωδικό."),

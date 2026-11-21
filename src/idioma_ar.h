@@ -4392,6 +4392,7 @@
   T("Pouco espaço", "مساحة قليلة"),
   T("Poucos dados · %d de %d", "بيانات غير كافية · %d من %d"),
   T("Pra pensar depois", "غذاء للفكر"),
+  T("Precisa desligar \"%s\" — OK troca", "يحتاج إلى إيقاف \"%s\" — OK يبدّل"),
   T("Precisa ligar \"%s\" — OK liga", "يحتاج إلى تفعيل \"%s\" — OK يفعّله"),
   T("Precisa ligar \"%s\" — OK liga as duas", "يحتاج إلى تفعيل \"%s\" — OK يفعّل الاثنين"),
   T("Preencha o e-mail e a senha.", "أدخل بريدك الإلكتروني وكلمة المرور."),

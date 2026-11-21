@@ -4392,6 +4392,7 @@
   T("Pouco espaço", "Малко място"),
   T("Poucos dados · %d de %d", "Твърде малко данни · %d от %d"),
   T("Pra pensar depois", "За размисъл"),
+  T("Precisa desligar \"%s\" — OK troca", "Трябва да изключите „%s“ — OK превключва"),
   T("Precisa ligar \"%s\" — OK liga", "Трябва да включите „%s“ — OK го включва"),
   T("Precisa ligar \"%s\" — OK liga as duas", "Трябва да включите „%s“ — OK включва двете"),
   T("Preencha o e-mail e a senha.", "Въведете имейл и парола."),

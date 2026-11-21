@@ -4392,6 +4392,7 @@
   T("Pouco espaço", "Málo místa"),
   T("Poucos dados · %d de %d", "Málo dat · %d z %d"),
   T("Pra pensar depois", "K zamyšlení"),
+  T("Precisa desligar \"%s\" — OK troca", "Je třeba vypnout „%s“ — OK přepne"),
   T("Precisa ligar \"%s\" — OK liga", "Je třeba zapnout „%s“ — OK ji zapne"),
   T("Precisa ligar \"%s\" — OK liga as duas", "Je třeba zapnout „%s“ — OK zapne obě"),
   T("Preencha o e-mail e a senha.", "Vyplňte e-mail a heslo."),

@@ -4392,6 +4392,7 @@
   T("Pouco espaço", "Mažai vietos"),
   T("Poucos dados · %d de %d", "Per mažai duomenų · %d iš %d"),
   T("Pra pensar depois", "Apmąstymams"),
+  T("Precisa desligar \"%s\" — OK troca", "Reikia išjungti „%s“ — OK perjungs"),
   T("Precisa ligar \"%s\" — OK liga", "Reikia įjungti „%s“ — OK įjungs"),
   T("Precisa ligar \"%s\" — OK liga as duas", "Reikia įjungti „%s“ — OK įjungs abi"),
   T("Preencha o e-mail e a senha.", "Įveskite el. paštą ir slaptažodį."),

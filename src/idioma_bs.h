@@ -4392,6 +4392,7 @@
   T("Pouco espaço", "Malo prostora"),
   T("Poucos dados · %d de %d", "Premalo podataka · %d od %d"),
   T("Pra pensar depois", "Za razmišljanje"),
+  T("Precisa desligar \"%s\" — OK troca", "Treba isključiti „%s” — OK prebacuje"),
   T("Precisa ligar \"%s\" — OK liga", "Treba uključiti „%s” — OK je uključuje"),
   T("Precisa ligar \"%s\" — OK liga as duas", "Treba uključiti „%s” — OK uključuje obje"),
   T("Preencha o e-mail e a senha.", "Unesite e-mail i lozinku."),

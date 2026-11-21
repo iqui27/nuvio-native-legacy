@@ -4391,6 +4391,7 @@
   T("Pouco espaço", "Poco espacio"),
   T("Poucos dados · %d de %d", "Pocos datos · %d de %d"),
   T("Pra pensar depois", "Para pensar después"),
+  T("Precisa desligar \"%s\" — OK troca", "Hay que desactivar «%s» — OK cambia"),
   T("Precisa ligar \"%s\" — OK liga", "Hay que activar «%s» — OK lo activa"),
   T("Precisa ligar \"%s\" — OK liga as duas", "Hay que activar «%s» — OK activa las dos"),
   T("Preencha o e-mail e a senha.", "Escribe el correo y la contraseña."),

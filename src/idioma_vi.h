@@ -4392,6 +4392,7 @@
   T("Pouco espaço", "Ít dung lượng"),
   T("Poucos dados · %d de %d", "Ít dữ liệu · %d/%d"),
   T("Pra pensar depois", "Để suy ngẫm"),
+  T("Precisa desligar \"%s\" — OK troca", "Cần tắt \"%s\" — OK để chuyển"),
   T("Precisa ligar \"%s\" — OK liga", "Cần bật \"%s\" — OK để bật"),
   T("Precisa ligar \"%s\" — OK liga as duas", "Cần bật \"%s\" — OK bật cả hai"),
   T("Preencha o e-mail e a senha.", "Hãy nhập email và mật khẩu."),

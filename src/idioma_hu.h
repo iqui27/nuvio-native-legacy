@@ -4392,6 +4392,7 @@
   T("Pouco espaço", "Kevés hely"),
   T("Poucos dados · %d de %d", "Kevés adat · %d/%d"),
   T("Pra pensar depois", "Elgondolkodtató"),
+  T("Precisa desligar \"%s\" — OK troca", "Ki kell kapcsolni: „%s” — az OK átvált"),
   T("Precisa ligar \"%s\" — OK liga", "Be kell kapcsolni: „%s” — az OK bekapcsolja"),
   T("Precisa ligar \"%s\" — OK liga as duas", "Be kell kapcsolni: „%s” — az OK mindkettőt bekapcsolja"),
   T("Preencha o e-mail e a senha.", "Add meg az e-mailt és a jelszót."),

@@ -4391,6 +4391,7 @@
   T("Pouco espaço", "Spațiu redus"),
   T("Poucos dados · %d de %d", "Prea puține date · %d din %d"),
   T("Pra pensar depois", "De gândit mai târziu"),
+  T("Precisa desligar \"%s\" — OK troca", "Trebuie oprit „%s” — OK le comută"),
   T("Precisa ligar \"%s\" — OK liga", "Trebuie pornit „%s” — OK îl pornește"),
   T("Precisa ligar \"%s\" — OK liga as duas", "Trebuie pornit „%s” — OK le pornește pe amândouă"),
   T("Preencha o e-mail e a senha.", "Completează e-mailul și parola."),

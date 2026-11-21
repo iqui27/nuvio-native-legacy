@@ -4392,6 +4392,7 @@
   T("Pouco espaço", "Málo miesta"),
   T("Poucos dados · %d de %d", "Málo údajov · %d z %d"),
   T("Pra pensar depois", "Na zamyslenie"),
+  T("Precisa desligar \"%s\" — OK troca", "Treba vypnúť „%s“ — OK prepne"),
   T("Precisa ligar \"%s\" — OK liga", "Treba zapnúť „%s“ — OK ju zapne"),
   T("Precisa ligar \"%s\" — OK liga as duas", "Treba zapnúť „%s“ — OK zapne obe"),
   T("Preencha o e-mail e a senha.", "Vyplňte e-mail a heslo."),

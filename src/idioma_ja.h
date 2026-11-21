@@ -4392,6 +4392,7 @@
   T("Pouco espaço", "空き容量不足"),
   T("Poucos dados · %d de %d", "データ不足 · %d/%d"),
   T("Pra pensar depois", "後から考えたくなる"),
+  T("Precisa desligar \"%s\" — OK troca", "「%s」をオフにする必要あり — OK で切り替え"),
   T("Precisa ligar \"%s\" — OK liga", "「%s」をオンにする必要あり — OK でオン"),
   T("Precisa ligar \"%s\" — OK liga as duas", "「%s」をオンにする必要あり — OK で両方オン"),
   T("Preencha o e-mail e a senha.", "メールとパスワードを入力してください。"),

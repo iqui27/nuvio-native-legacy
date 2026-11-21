@@ -4392,6 +4392,7 @@
   T("Pouco espaço", "Az alan"),
   T("Poucos dados · %d de %d", "Yetersiz veri · %d / %d"),
   T("Pra pensar depois", "Sonra düşünmelik"),
+  T("Precisa desligar \"%s\" — OK troca", "\"%s\" kapalı olmalı — OK değiştirir"),
   T("Precisa ligar \"%s\" — OK liga", "\"%s\" açık olmalı — OK açar"),
   T("Precisa ligar \"%s\" — OK liga as duas", "\"%s\" açık olmalı — OK ikisini de açar"),
   T("Preencha o e-mail e a senha.", "E-postayı ve şifreyi gir."),

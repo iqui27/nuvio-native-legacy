@@ -4392,6 +4392,7 @@
   T("Pouco espaço", "Ruang sedikit"),
   T("Poucos dados · %d de %d", "Data kurang · %d dari %d"),
   T("Pra pensar depois", "Bahan renungan"),
+  T("Precisa desligar \"%s\" — OK troca", "Perlu mematikan \"%s\" — OK menukar"),
   T("Precisa ligar \"%s\" — OK liga", "Perlu menyalakan \"%s\" — OK menyalakannya"),
   T("Precisa ligar \"%s\" — OK liga as duas", "Perlu menyalakan \"%s\" — OK menyalakan keduanya"),
   T("Preencha o e-mail e a senha.", "Isi email dan kata sandi."),

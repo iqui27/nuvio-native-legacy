@@ -4391,6 +4391,7 @@
   { "Pouco espaço", "Low space" },
   { "Poucos dados · %d de %d", "Not enough data · %d of %d" },
   { "Pra pensar depois", "Food for thought" },
+  { "Precisa desligar \"%s\" — OK troca", "Needs \"%s\" off — OK switches" },
   { "Precisa ligar \"%s\" — OK liga", "Needs \"%s\" on — OK turns it on" },
   { "Precisa ligar \"%s\" — OK liga as duas", "Needs \"%s\" on — OK turns both on" },
   { "Preencha o e-mail e a senha.", "Enter your email and password." },

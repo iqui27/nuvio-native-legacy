@@ -4392,6 +4392,7 @@
   T("Pouco espaço", "Lidt plads"),
   T("Poucos dados · %d de %d", "For få data · %d af %d"),
   T("Pra pensar depois", "Til eftertanke"),
+  T("Precisa desligar \"%s\" — OK troca", "\"%s\" skal være slået fra — OK skifter"),
   T("Precisa ligar \"%s\" — OK liga", "\"%s\" skal være slået til — OK slår den til"),
   T("Precisa ligar \"%s\" — OK liga as duas", "\"%s\" skal være slået til — OK slår begge til"),
   T("Preencha o e-mail e a senha.", "Udfyld e-mail og adgangskode."),

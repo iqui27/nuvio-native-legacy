@@ -4392,6 +4392,7 @@
   T("Pouco espaço", "Lite utrymme"),
   T("Poucos dados · %d de %d", "För lite data · %d av %d"),
   T("Pra pensar depois", "Att fundera på"),
+  T("Precisa desligar \"%s\" — OK troca", "\"%s\" måste vara av — OK växlar"),
   T("Precisa ligar \"%s\" — OK liga", "\"%s\" måste vara på — OK slår på den"),
   T("Precisa ligar \"%s\" — OK liga as duas", "\"%s\" måste vara på — OK slår på båda"),
   T("Preencha o e-mail e a senha.", "Fyll i e-post och lösenord."),

@@ -46,6 +46,24 @@ static void uxListarDiferencas(void) {
         (TELA[i].op != AJ_ICONE_APP || apoiador_ativo())) uxDifs[uxNDifs++] = TELA[i].op;
   if (uxDifFoco >= uxNDifs) uxDifFoco = uxNDifs ? uxNDifs - 1 : 0;
 }
+// HLS fMP4 or HLS MPEG-TS, one at a time (owner 21/11): the dimmed one says
+// which to turn off, and OK switches, like the requisites' "OK turns it on".
+static int uxConflito(int op) {
+  if (!inativa(op)) return -1;
+  if (op == AJ_WEBOS_HLS_MODE) return AJ_WEBOS_HLS_TS;
+  if (op == AJ_WEBOS_HLS_TS) return AJ_WEBOS_HLS_MODE;
+  return -1;
+}
+static int uxTrocarConflito(int op) {
+  int outro = uxConflito(op);
+  if (outro < 0) return 0;
+  if (!definirValorDireto(outro, 1) || !definirValorDireto(op, 0)) {
+    uxNotificar("Não foi possível salvar. O valor anterior foi mantido.");
+    return 1;
+  }
+  uxNotificar("Ajuste salvo nesta TV.");
+  return 1;
+}
 static int uxRequisito(int op) {
   switch (op) {
     case AJ_PROXIMO_CONTAGEM: return AJ_PROXIMO_AUTO;
@@ -632,6 +650,7 @@ static int uxEvento(SDL_Keycode k) {
   // e Voltar devolve aqui. A modal de dependencia ficou para os atalhos.
   if (uxOk(k) && focoOp >= 0 && inativa(focoOp)) {
     int req = uxRequisito(focoOp);
+    if (uxTrocarConflito(focoOp)) return 1;
     if (uxLigarRequisitos(focoOp, 1)) return 1;
     if (req >= 0) { int op = focoOp; uxCancelar(); focarOpcao(req); uxRetornarOp = op; return 1; }
     uxAbrirEditor(focoOp); return 1;

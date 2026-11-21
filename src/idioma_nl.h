@@ -4392,6 +4392,7 @@
   T("Pouco espaço", "Weinig ruimte"),
   T("Poucos dados · %d de %d", "Te weinig gegevens · %d van %d"),
   T("Pra pensar depois", "Om over na te denken"),
+  T("Precisa desligar \"%s\" — OK troca", "\"%s\" moet uit — OK wisselt"),
   T("Precisa ligar \"%s\" — OK liga", "\"%s\" moet aan — OK zet het aan"),
   T("Precisa ligar \"%s\" — OK liga as duas", "\"%s\" moet aan — OK zet beide aan"),
   T("Preencha o e-mail e a senha.", "Vul e-mail en wachtwoord in."),

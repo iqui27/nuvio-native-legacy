@@ -4391,6 +4391,7 @@
   T("Pouco espaço", "Мало місця"),
   T("Poucos dados · %d de %d", "Замало даних · %d з %d"),
   T("Pra pensar depois", "Є над чим подумати"),
+  T("Precisa desligar \"%s\" — OK troca", "Потрібно вимкнути «%s» — OK перемкне"),
   T("Precisa ligar \"%s\" — OK liga", "Потрібно ввімкнути «%s» — OK увімкне"),
   T("Precisa ligar \"%s\" — OK liga as duas", "Потрібно ввімкнути «%s» — OK увімкне обидві"),
   T("Preencha o e-mail e a senha.", "Введіть ел. пошту та пароль."),

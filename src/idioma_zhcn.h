@@ -4392,6 +4392,7 @@
   T("Pouco espaço", "空间不足"),
   T("Poucos dados · %d de %d", "数据不足 · %d/%d"),
   T("Pra pensar depois", "值得回味"),
+  T("Precisa desligar \"%s\" — OK troca", "需要关闭“%s”— 按 OK 切换"),
   T("Precisa ligar \"%s\" — OK liga", "需要开启“%s”— 按 OK 开启"),
   T("Precisa ligar \"%s\" — OK liga as duas", "需要开启“%s”— 按 OK 两项都开启"),
   T("Preencha o e-mail e a senha.", "请填写邮箱和密码。"),
