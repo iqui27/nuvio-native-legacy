@@ -635,20 +635,33 @@ int dados_apagar(const char *nome) {
   return 1;
 }
 
+// Semeadura UMA vez por pthread_once — nativo ate sob NV_UM_FIO, igual a
+// clienteIdUmaVez — e sorteio com estado LOCAL por chamada: uuidChamadas so e
+// tocada por __atomic e a semente do rand_r vive na pilha do chamador. Sem
+// nenhum estatico mutavel fora da once, o primeiro UUID do worker de add-ons
+// (clienteIdIniciar) pode correr com a chamada direta da tela de Diagnostico:
+// o estatico semeado e o srand/rand globais corriam sem sincronizacao entre
+// esses dois chamadores (regressao apontada na revisao r3 do Farol 10).
+static pthread_once_t uuidUmaVez = PTHREAD_ONCE_INIT;
+static unsigned uuidSemente, uuidChamadas;
+static void uuidSemear(void) {
+  uuidSemente = (unsigned)time(NULL) ^ (unsigned)getpid() ^
+                (unsigned)(size_t)&uuidSemente;
+}
+
 void dados_uuid(char *dst, unsigned tam) {
   static const char *hex = "0123456789abcdef";
-  static int semeado;
   int i;
+  unsigned s;
   if (tam < 37) { if (tam) dst[0] = 0; return; }
-  if (!semeado) {
-    srand((unsigned)time(NULL) ^ (unsigned)getpid() ^ (unsigned)(size_t)dst);
-    semeado = 1;
-  }
+  pthread_once(&uuidUmaVez, uuidSemear);
+  s = uuidSemente ^
+      __atomic_add_fetch(&uuidChamadas, 1, __ATOMIC_RELAXED) * 2654435761u;
   for (i = 0; i < 36; i++) {
     if (i == 8 || i == 13 || i == 18 || i == 23) { dst[i] = '-'; continue; }
     if (i == 14) { dst[i] = '4'; continue; }              // versao
-    if (i == 19) { dst[i] = hex[8 + (rand() & 3)]; continue; }  // variante
-    dst[i] = hex[rand() & 15];
+    if (i == 19) { dst[i] = hex[8 + (rand_r(&s) & 3)]; continue; }  // variante
+    dst[i] = hex[rand_r(&s) & 15];
   }
   dst[36] = 0;
 }
