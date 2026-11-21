@@ -6082,7 +6082,8 @@ static void desenharLegendaPrincipal(float *topoPilha){
   int atraso = legsync_offset_ms(legEstilo.atrasoMs);
   // Escala/trechos aceitos: o instante na legenda, nao no video (o mesmo
   // para libass e para o desenho do app).
-  double posLeg = legsync_posicao(posLegenda());
+  double posBruta = posLegenda();
+  double posLeg = legsync_posicao(posBruta);
   assrender_aplicar_invalidacao();
   assrender_definir_cor(0, 0, 0, 0);
   if (overlay && assrender_ativo()) {
@@ -6122,6 +6123,10 @@ static void desenharLegendaPrincipal(float *topoPilha){
                              assrender_texto_simples() ? 1920 : video_largura(),
                              assrender_texto_simples() ? 1080 : video_altura(),
                              assrender_texto_simples() ? 1.0 : escalaFonteAss());
+    // #772/F83: a guarda de divergencia do renderer compara a leitura BRUTA
+    // do relogio (antes do mapa legsync) com o numero do video — posLeg ja
+    // sai escalada pelo AutoSync e diverge dele sem salto nenhum.
+    assrender_posicao_legenda(posBruta);
     assrender_desenhar(posLeg, atraso, alpha,
                         0, 0, NV_TELA_W, NV_TELA_H);
     // R4: libass nao informa onde pintou. Estima duas linhas no tamanho da

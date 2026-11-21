@@ -67,6 +67,14 @@ int  assrender_desenhar(double posSeg, int atrasoMs, float alpha,
  * estar parada (reconexao, busca em voo). */
 void assrender_posicao_video(double posSeg);
 
+/* #772/F83: a leitura do relogio da legenda ANTES do mapa legsync (escala,
+ * trechos), a cada quadro. E ela — e nao o posSeg ja mapeado do desenhar —
+ * que a guarda de divergencia compara com o numero do video: com mapa, o
+ * mapeado fica a varios segundos do numero cru sem salto nenhum e suprimiria
+ * falas validas. Quem nunca a chama segue medindo a divergencia pelo posSeg
+ * do desenhar — sem mapa as duas sao a mesma leitura. */
+void assrender_posicao_legenda(double posSeg);
+
 /* 1 quando libass aceitou o documento atual. Sem a biblioteca compilada, o
  * retorno e 0 e legenda.c continua sendo o fallback SRT/VTT/ASS reduzido. */
 int  assrender_ativo(void);

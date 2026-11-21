@@ -177,6 +177,13 @@ static int assTemUltimoPedido;
  * legenda — a leitura dele e limitada (relogio_ler) e durante a reconexao
  * ou a busca em voo nem anda. Sob assFilaTrava. */
 static double assPosVideoAnt = -1.0;
+/* Leitura do relogio da legenda ANTES do mapa do AutoSync (escala/trechos),
+ * ultima chamada de assrender_posicao_legenda (#772/F83). A guarda de
+ * divergencia do desenhar compara ESTA leitura com o numero do video: o
+ * posSeg do desenhar ja vai mapeado para a trilha e, com mapa de escala ou
+ * de trechos, diverge do numero cru em varios segundos sem salto nenhum
+ * (25 vs 23,976 fps => 104,27 s aos 100 s de video). Sob assFilaTrava. */
+static double assPosLegBruta = -1.0;
 static int assEventos, assFontes, assResolucaoFonte;
 static long long assCoberturaIni, assCoberturaFim;
 static ASS_Library *assLib;
@@ -1316,6 +1323,12 @@ void assrender_posicao_video(double posSeg) {
   }
 }
 
+void assrender_posicao_legenda(double posSeg) {
+  pthread_mutex_lock(&assFilaTrava);
+  assPosLegBruta = posSeg;
+  pthread_mutex_unlock(&assFilaTrava);
+}
+
 int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
                        float x, float y, float w, float h) {
   unsigned generation;
@@ -1344,8 +1357,14 @@ int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
    * origem ate o relogio alcancar o destino. Enquanto a leitura divergir
    * do numero do VIDEO, nao ha pedido nem promocao: o quadro fica limpo e
    * a fala certa entra assim que o relogio chega. O atraso manual da
-   * pessoa nao conta — a divergencia e medida no posSeg, sem ele. */
-  parado = assPosVideoAnt >= 0.0 && fabs(posSeg - assPosVideoAnt) > 1.5;
+   * pessoa nao conta — a divergencia e medida sem ele. F83: a divergencia
+   * usa a leitura ANTES do mapa (assPosLegBruta), nao o posSeg ja mapeado —
+   * com escala/trechos do AutoSync o mapeado fica a mais de 1,5 s do numero
+   * cru do video em reproducao normal e suprimia falas validas. Sem a
+   * leitura registrada (chamadas antigas) recai no posSeg, que ali e a
+   * propria leitura — nao ha mapa. */
+  parado = assPosVideoAnt >= 0.0 &&
+           fabs((assPosLegBruta >= 0.0 ? assPosLegBruta : posSeg) - assPosVideoAnt) > 1.5;
   if (!parado &&
       (!assTemUltimoPedido || assUltimoPedidoGeracao != generation ||
        fabs((double)agora - assUltimoPedidoMs) >= 5.0)) {
@@ -1511,6 +1530,7 @@ void assrender_definir_layout(float x, float y, float w, float h,
 }
 void assrender_pixels_por_unidade(float f) { (void)f; }
 void assrender_posicao_video(double posSeg) { (void)posSeg; }
+void assrender_posicao_legenda(double posSeg) { (void)posSeg; }
 int assrender_ativo(void) { return 0; }
 int assrender_quadro_cpu(double posSeg) { (void)posSeg; return -1; }
 const char *assrender_diagnostico(void) { return assDiag; }
