@@ -48,6 +48,9 @@ static void pedidoValor(char *dst, size_t cap, const char *s, size_t n) {
   if (n >= cap) n = cap - 1;
   memcpy(dst, s, n); dst[n] = 0;
 }
+static int pedidoEhRedirect(int st) {
+  return st == 301 || st == 302 || st == 303 || st == 307 || st == 308;
+}
 static size_t pedidoCab(void *b, size_t size, size_t count, void *u) {
   PedidoCtx *c = u;
   const char *s = b;
@@ -72,7 +75,9 @@ static size_t pedidoCab(void *b, size_t size, size_t count, void *u) {
     fim = strchr(c->r->mime, ';'); if (fim) *fim = 0;
   } else if (n > 12 && !strncasecmp(s, "Retry-After:", 12)) {
     c->r->retry_after_s = retrySegundos(s + 12, n - 12);
-  } else if (!c->head && !c->p->janela_corpo_ms && n > 15 && !strncasecmp(s, "Content-Length:", 15)) {
+  } else if (!c->head && !c->p->janela_corpo_ms &&
+             !(c->p->seguir && pedidoEhRedirect(c->status)) &&
+             n > 15 && !strncasecmp(s, "Content-Length:", 15)) {
     size_t i = 15, valor = 0;
     while (i < n && (s[i] == ' ' || s[i] == '\t')) i++;
     while (i < n && isdigit((unsigned char)s[i])) {
@@ -95,8 +100,16 @@ static size_t pedidoCorpo(void *b, size_t size, size_t count, void *u) {
   if (size && count > SIZE_MAX / size) { c->r->erro = REDE_LIMITE_CORPO; return 0; }
   n = size * count;
   if (pedidoParar(c)) return 0;
-  if (c->p->janela_corpo_ms && !(c->p->seguir &&
-      (c->status == 301 || c->status == 302 || c->status == 303 || c->status == 307 || c->status == 308))) {
+  /* A body on a followed redirect is dropped at the hop: skimmed without
+   * being stored, so a padded 302 does not spend the body cap before
+   * Location is followed. Past the skim bound the hop fails like any
+   * overflow. */
+  if (c->p->seguir && pedidoEhRedirect(c->status)) {
+    if (n > 16384 - c->descartado) { c->r->erro = REDE_LIMITE_CORPO; return 0; }
+    c->descartado += n;
+    return n;
+  }
+  if (c->p->janela_corpo_ms) {
     uint64_t agora = pedidoAgoraMs();
     size_t prefixo;
     if (c->primeiro && agora - c->primeiro >= c->p->janela_corpo_ms) {
@@ -129,9 +142,6 @@ static size_t pedidoCorpo(void *b, size_t size, size_t count, void *u) {
   ok = pedidoGuardar(&c->r->corpo, &c->r->n_corpo, &c->corpoCap, c->tetoCorpo, b, n);
   if (ok != 1) { c->r->erro = ok ? REDE_MEMORIA : REDE_LIMITE_CORPO; return 0; }
   return n;
-}
-static int pedidoEhRedirect(int st) {
-  return st == 301 || st == 302 || st == 303 || st == 307 || st == 308;
 }
 static void pedidoIntervalo(PedidoCtx *c, uint64_t agora, int final) {
   RedeIntervalo v;

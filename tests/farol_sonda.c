@@ -7,8 +7,9 @@
 #include <time.h>
 #include <unistd.h>
 
-static int aberto;
+static int aberto, mini;
 int player_aberto(void) { return aberto; }
+int player_mini_ativo(void) { return mini; }
 static long agora(void) {
   struct timespec t;
   clock_gettime(CLOCK_MONOTONIC, &t);
@@ -43,8 +44,10 @@ int main(int argc, char **argv) {
     return 0;
   }
   char url[256];
-  const char *paths[] = {"/range", "/ignored", "/forbidden", "/slow"};
-  const int statuses[] = {206, 200, 403, 0};
+  const char *paths[] = {"/range", "/ignored", "/forbidden", "/slow",
+                         "/redirect-empty", "/redirect-body"};
+  const int statuses[] = {206, 200, 403, 0, 206, 206};
+  const int ranges[] = {1, 0, 0, -1, 1, 1};
   FarolSonda s;
   assert(farolsonda_estado(&s));
   assert(s.range == -1 && s.dns_ms == -1 && s.tls_ms == -1);
@@ -52,7 +55,10 @@ int main(int argc, char **argv) {
   aberto = 1;
   assert(!farolsonda_iniciar(argv[1], NULL));
   aberto = 0;
-  for (int i = 0; i < 4; i++) {
+  mini = 1;
+  assert(!farolsonda_iniciar(argv[1], NULL));
+  mini = 0;
+  for (int i = 0; i < 6; i++) {
     snprintf(url, sizeof url, "%s%s", argv[1], paths[i]);
     char header[] = "X-Probe: synthetic";
     const char *headers[] = {header, NULL};
@@ -64,22 +70,24 @@ int main(int argc, char **argv) {
     s = esperar();
     assert(s.http == statuses[i]);
     assert(s.internet_http == 200);
-    assert(s.range == (i == 0 ? 1 : i == 3 ? -1 : 0));
+    assert(s.range == ranges[i]);
     assert(!s.cancelada);
     assert(agora() - inicio < (i == 3 ? 2500 : 2000));
     if (i == 3) assert(agora() - inicio >= 1800);
   }
   snprintf(url, sizeof url, "%s/slow", argv[1]);
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < 3; i++) {
     assert(farolsonda_iniciar(url, NULL));
     usleep(100000);
     long inicio = agora();
-    if (i) aberto = 1;
+    if (i == 2) mini = 1;
+    else if (i) aberto = 1;
     else farolsonda_cancelar();
     s = esperar();
     assert(agora() - inicio < 300);
     assert(s.cancelada);
     aberto = 0;
+    mini = 0;
   }
   farolsonda_cancelar();
   return 0;

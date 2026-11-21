@@ -23,8 +23,24 @@ text = open(sys.argv[1]).read()
 assert sys.argv[2] not in text
 assert 'synthetic' not in text
 PY
+# A build de producao define NV_REC_URL (tools/env.sh), nao o override do teste.
+"${CC:-cc}" "${flags[@]}" "-DNV_REC_URL=\"$base\"" tests/farol_sonda.c src/farolsonda.c src/farolanel.c src/rede.c src/redeurl.c -o "$tmp/recurl"
+"$tmp/recurl" "$base" >"$tmp/log-recurl" 2>&1
+python3 - "$tmp/log-recurl" "$base" <<'PY'
+import sys
+text = open(sys.argv[1]).read()
+assert sys.argv[2] not in text
+assert 'synthetic' not in text
+PY
 "${CC:-cc}" "${flags[@]}" "-DFAROL_SONDA_WORKER=\"$base/slow\"" tests/farol_sonda.c src/farolsonda.c src/farolanel.c src/rede.c src/redeurl.c -o "$tmp/lento"
 "$tmp/lento" "$base/slow" slow-worker
+"${CC:-cc}" "${flags[@]}" tests/farol_sonda_wgt.c -o "$tmp/wgt"
+"$tmp/wgt"
 "${CC:-cc}" "${flags[@]}" -D__EMSCRIPTEN__ tests/farol_sonda_wasm.c src/farolsonda.c -o "$tmp/wasm"
 "$tmp/wasm"
+node tests/farol_sonda_wgt.cjs
+if command -v emcc >/dev/null 2>&1; then
+  emcc -fsyntax-only -Wall -Isrc src/farolsonda.c
+  emcc -fsyntax-only -Wall -Isrc src/rede.c
+fi
 echo 'farol_sonda: tudo ok'

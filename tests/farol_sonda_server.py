@@ -11,6 +11,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == '/slow':
             time.sleep(10)
         status = 200
+        location = None
+        length = '10000000'
+        body = b'x' * 65536
         if self.path == '/range':
             if self.headers.get('Range') != 'bytes=0-1':
                 status = 400
@@ -18,13 +21,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 status = 401
             else:
                 status = 206
+                length = '2'
+                body = b'ok'
         if self.path == '/forbidden':
             status = 403
+        if self.path == '/redirect-empty':
+            status = 302
+            location = '/range'
+            length = '0'
+            body = b''
+        if self.path == '/redirect-body':
+            status = 302
+            location = '/range'
+            length = '8'
+            body = b'redirect'
         self.send_response(status)
-        self.send_header('Content-Length', '2' if status == 206 else '10000000')
+        if location:
+            self.send_header('Location', location)
+        self.send_header('Content-Length', length)
         self.end_headers()
         try:
-            self.wfile.write(b'ok' if status == 206 else b'x' * 65536)
+            self.wfile.write(body)
         except (BrokenPipeError, ConnectionResetError):
             pass
 

@@ -248,6 +248,7 @@ static long redeLimiteAtual(void) {
 #include <emscripten.h>
 #include <emscripten/threading.h>
 #include "fio1.h"   // so tem corpo com NV_UM_FIO; nv_http troca de implementacao abaixo
+#include "redepedido_wgt.h"
 
 // Faz a requisicao e devolve um buffer de malloc com o corpo (com um NUL extra
 // no fim, para quem trata como texto). Escreve o tamanho em *tam e o status
@@ -276,7 +277,7 @@ EM_JS(int, nv_http_iniciar_bruto, (const char *metodo, const char *url,
     else if (xhr) xhr.abort();
   };
   var reg = { pronto: false, erro: false, status: 0, url: "", etag: "", bytes: null,
-              mime: "", tamanho: -1, retry: 0, limitado: false,
+              mime: "", tamanho: -1, retry: 0, limitado: false, ttfb: -1,
               abortar: function () { reg.erro = true; abortar(); terminar(); } };
   Module.nvFioReqs[id] = reg;
   var terminar = function () {
@@ -291,7 +292,9 @@ EM_JS(int, nv_http_iniciar_bruto, (const char *metodo, const char *url,
   if (controle) init.signal = controle.signal;
   if (corpo) init.body = UTF8ToString(corpo);
   teto = teto > 0 ? teto : 33554432;
+  var inicio = Date.now();
   var cabecalhos = function (res) {
+    if (reg.ttfb < 0) reg.ttfb = Date.now() - inicio;
     reg.status = res.status;
     reg.url = res.headers.get("x-nuvio-url-final") || res.url || "";
     reg.etag = res.headers.get("etag") || "";
@@ -344,6 +347,7 @@ EM_JS(int, nv_http_iniciar_bruto, (const char *metodo, const char *url,
     } catch (e) { reg.erro = true; terminar(); abortar(); }
     return id;
   }
+  try {
   fetch(UTF8ToString(url), init).then(async function (res) {
     if (reg.pronto) {
       if (res.body) res.body.cancel().catch(function () {});
@@ -375,6 +379,7 @@ EM_JS(int, nv_http_iniciar_bruto, (const char *metodo, const char *url,
     parts.forEach(function (p) { reg.bytes.set(p, offset); offset += p.length; });
   }).catch(function () { if (!reg.pronto) reg.erro = true; })
     .then(terminar, terminar);
+  } catch (e) { reg.erro = true; terminar(); }
   return id;
 });
 
@@ -451,9 +456,26 @@ EM_JS(void, nv_http_abortar, (int id), {
   var reg = Module.nvFioReqs && Module.nvFioReqs[id];
   if (reg && !reg.pronto) reg.abortar();
 });
+EM_JS(int, nv_http_ttfb, (int id), {
+  var reg = Module.nvFioReqs && Module.nvFioReqs[id];
+  return reg && reg.ttfb >= 0 ? reg.ttfb : 0;
+});
 static void nv_http_esperar(int id) {
   while (!nv_http_pronto_assinc(id)) {
     if(redeParou()){redeCancelouLocal=1;nv_http_abortar(id);break;}
+#ifdef NV_UM_FIO
+    fio1_ceder();
+#else
+    emscripten_sleep(1);
+#endif
+  }
+}
+// A mesma espera, conferindo tambem o `parar` por pedido (rede_pedir).
+static void nv_http_esperar_pedido(const RedePedido *p, int id) {
+  while (!nv_http_pronto_assinc(id)) {
+    if (redeParou() || (p->parar && p->parar(p->parar_usuario))) {
+      redeCancelouLocal = 1; nv_http_abortar(id); break;
+    }
 #ifdef NV_UM_FIO
     fio1_ceder();
 #else
@@ -519,6 +541,7 @@ EM_ASYNC_JS(int, nv_http_fluxo, (const char *url, unsigned prazo, unsigned teto,
   } catch (e) { return expirou ? 5 : 4; }
   finally { clearTimeout(timer); controle.abort(); _free(bloco); }
 });
+static char *juntarCabs(const char *const *cab, const char *extra);
 int rede_pedir(const RedePedido *p, RedeResposta *r) {
   if (!r) return 0;
   memset(r, 0, sizeof *r);
@@ -534,6 +557,33 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
         (int)p->receber_corpo,p->corpo_usuario,&r->status,&total);
     r->n_corpo=total;
     return r->erro==REDE_OK;
+  }
+  /* Sonda/diagnostico: GET com cabecalhos cujos redirects o proprio fetch
+   * segue; o corpo e contado e cortado no teto (modo 2), nunca guardado. O
+   * `parar` do pedido vale durante a espera, como no caminho nativo. */
+  if (rede_pedido_wgt_sonda(p)) {
+    char *cabs = juntarCabs(p->cabecalhos, NULL);
+    unsigned long ini;
+    int id, n = 0;
+    if (!cabs && p->cabecalhos) { r->erro = REDE_MEMORIA; return 0; }
+    redeCancelouLocal = 0;
+    ini = redeAgoraMs();
+    id = nv_http_iniciar_assinc("GET", p->url, cabs, NULL,
+        (int)(p->prazo_ms ? p->prazo_ms : 15000),
+        (int)(p->max_bytes ? p->max_bytes : REDE_CORPO_PADRAO), 2);
+    free(cabs);
+    nv_http_esperar_pedido(p, id);
+    r->primeiro_byte_ms = (unsigned)nv_http_ttfb(id);
+    if (!nv_http_colher_assinc(id, &n, &r->status, NULL, 0,
+                               NULL, 0, NULL, NULL, NULL, 0, NULL, 2)) {
+      r->erro = redeCancelouLocal ? REDE_CANCELADO : REDE_TRANSPORTE;
+      return 0;
+    }
+    r->n_corpo = (size_t)n;
+    r->bytes_fio = (uint64_t)n;
+    r->ms = (unsigned)(redeAgoraMs() - ini);
+    r->erro = REDE_OK;
+    return 1;
   }
   r->erro = REDE_INDISPONIVEL;
   return 0; /* nenhum XHR: nao prometer teto, timeout ou cancel inexistentes */

@@ -7,14 +7,15 @@
 #include <time.h>
 
 #ifndef FAROL_SONDA_WORKER
-#ifdef NUVIO_REC_URL
-#define FAROL_SONDA_WORKER NUVIO_REC_URL
+#ifdef NV_REC_URL
+#define FAROL_SONDA_WORKER NV_REC_URL
 #else
 #define FAROL_SONDA_WORKER ""
 #endif
 #endif
 
 extern int player_aberto(void);
+extern int player_mini_ativo(void);
 
 typedef struct {
   char *url;
@@ -85,7 +86,8 @@ static void *executar(void *u) {
 }
 
 int farolsonda_iniciar(const char *url, const char *const *cab) {
-  if (!url || !*url || strlen(url) > 16384 || player_aberto()) return 0;
+  if (!url || !*url || strlen(url) > 16384 || player_aberto() ||
+      player_mini_ativo()) return 0;
   pthread_mutex_lock(&trava);
   if (rodando) { pthread_mutex_unlock(&trava); return 0; }
   Pedido *p = calloc(1, sizeof *p);
@@ -120,7 +122,7 @@ int farolsonda_iniciar(const char *url, const char *const *cab) {
 }
 
 int farolsonda_estado(FarolSonda *out) {
-  if (player_aberto()) farolsonda_cancelar();
+  if (player_aberto() || player_mini_ativo()) farolsonda_cancelar();
   pthread_mutex_lock(&trava);
   if (out) *out = resultado;
   int pronta = !rodando;
