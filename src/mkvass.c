@@ -530,6 +530,8 @@ typedef struct {
   // BlockDuration; sem ele o quadro fica na tela ate o proximo.
   MkvassDiagnostico diag;
   long     scanNext;
+  double   ritmoPos;       // playhead na ultima verificacao do ritmo (seek = salto)
+  long     ritmoMs;        // instante dessa verificacao (0 = ainda nao houve)
   int      diagLog;        // copia de s->diagLog feita sob trava nesta geracao
   int      imagem, durCerta;
   Pgs     *pgs;
@@ -2628,6 +2630,17 @@ static long varreTam(const Fio *f, Off o, Off fim, long precisa) {
   return len;
 }
 
+// Teto de um pedido DENTRO de um Cluster de tamanho desconhecido: a borda
+// real so se conhece lendo, e o limite que varreFim devolve (proxima Cue ou
+// fim do Segment) NAO e ela — pode haver outro Cluster sem Cue antes dele.
+// Cada Range fica em MKVASS_PGS_SCAN_BYTES a partir de `o` (ou no fim do
+// trecho, se menor): um pedido de varreCh inteiro atravessaria a borda
+// baixando video do Cluster seguinte.
+static Off limIndefinido(Off o, Off fim) {
+  Off lim = o + MKVASS_PGS_SCAN_BYTES;
+  return fim > 0 && fim < lim ? fim : lim;
+}
+
 // Fim do trecho do ponto i: o Cluster do ponto seguinte, ou o fim do Segment
 // (0 = desconhecido: le ate o servidor devolver menos do que o pedido).
 static Off varreFim(const Fio *f, int i) {
@@ -2645,11 +2658,20 @@ static int ritmoPgs(Fio *f, Off o, long *len, long precisa) {
   if (!f->imagem) return 1;
   while (minhaVez(f)) {
     double folga, pos;
-    long wait;
+    long wait, agora = agoraMs();
     pthread_mutex_lock(&estadoDoFio(f)->trava);
     folga = estadoDoFio(f)->folga; pos = estadoDoFio(f)->pos;
     pthread_mutex_unlock(&estadoDoFio(f)->trava);
-    // Seek: o ritmo recomeca — a divida de scanNext era da posicao velha.
+    // Seek: o ritmo recomeca — a divida de scanNext e o fim de Cluster em
+    // varreClFim eram da posicao velha, e segurar o 1o Range do destino por
+    // eles atrasa a PGS vigente. Qualquer salto que o avanco do playhead nao
+    // explica (nem a 4x) e seek, nao so um acima de MKVASS_VARRE_ATRAS_SEG;
+    // o passo continuo da reproducao nao e (ritmoPos acompanha a cada Range).
+    if (f->ritmoMs > 0 &&
+        fabs(pos - f->ritmoPos) > (agora - f->ritmoMs) / 1000.0 * 4.0 + 0.75) {
+      f->scanNext = 0; f->varreClFim = -1;
+    }
+    f->ritmoPos = pos; f->ritmoMs = agora;
     if (fabs(pos - f->posRef) > MKVASS_VARRE_ATRAS_SEG) { f->scanNext = 0; return 0; }
     f->diag.throttled = folga >= 0 && folga < MKVASS_VARRE_FOLGA_SEG;
     // O Cluster em que o playhead JA entrou pode trazer a PGS vigente:
@@ -2660,9 +2682,12 @@ static int ritmoPgs(Fio *f, Off o, long *len, long precisa) {
     // A excecao cobre so pedidos inteiros DENTRO do Cluster dono de varreTs:
     // o cabecalho do Cluster seguinte e pedido antes de o Timestamp dele
     // entrar em varreTs, entao o Range que comeca no fim ou cruza o fim fica
-    // no orcamento normal. Fim desconhecido (<=0) conta como futuro.
+    // no orcamento normal. Fim desconhecido (<=0): a borda real so aparece
+    // lendo e o Cluster pode ser o do playhead, entao o ritmo livre vale
+    // enquanto varreTs <= pos (o proximo Timestamp publicado > pos recolhe
+    // o orcamento de volta).
     if (f->varreTs >= 0.0 && f->varreTs <= pos &&
-        o + *len <= f->varreClFim) f->diag.throttled = 0;
+        (f->varreClFim <= 0 || o + *len <= f->varreClFim)) f->diag.throttled = 0;
     f->diag.scan_state = MKVASS_SCAN_BUDGET;
     publicarDiagnostico(f);
     if (!f->diag.throttled) return 1;
@@ -2890,16 +2915,22 @@ static int varrerTrecho(Fio *f, int i, double tLim) {
       o += ui + ut + tam; continue;
     }
     dados = o + ui + ut;
-    clFim = tam == -2 ? fim : dados + tam;
-    if (fim > 0 && (clFim <= 0 || clFim > fim)) clFim = fim;
+    // Tamanho desconhecido (-2): o fim real NAO e o limite de varreFim (a
+    // proxima Cue ou o fim do Segment) — pode haver outro Cluster sem Cue
+    // antes dele e um Range ate aquele limite atravessaria a borda EBML.
+    // Fica 0: cada pedido para em limIndefinido e a borda aparece quando o
+    // laco interno ve o id do proximo Cluster.
+    clFim = tam == -2 ? 0 : dados + tam;
+    if (clFim > 0 && fim > 0 && clFim > fim) clFim = fim;
     cl.pos = o; cl.hdr = ui + ut; cl.ts = 0; cl.temTs = 0;
     // O Timestamp e o primeiro filho: decide AQUI se o Cluster ainda esta na
     // janela. Fora dela, o cursor fica no comeco do Cluster e o fio dorme.
     { long ctam2, cab2; int cui2 = 0, cut2 = 0;
-      g = garantir(f, wp, dados, 16, clFim > 0 ? clFim : fim, &p, &disp);
+      Off limCab = clFim > 0 ? clFim : limIndefinido(dados, fim);
+      g = garantir(f, wp, dados, 16, limCab, &p, &disp);
       if (g == 1 && lerId(p, disp, &cui2) == ID_TIMESTAMP) {
         ctam2 = lerTam(p + cui2, disp - cui2, &cut2); cab2 = cui2 + cut2;
-        if (ctam2 > 0 && ctam2 <= 8 && garantir(f, wp, dados, cab2 + ctam2, clFim > 0 ? clFim : fim, &p, &disp) == 1) {
+        if (ctam2 > 0 && ctam2 <= 8 && garantir(f, wp, dados, cab2 + ctam2, limCab, &p, &disp) == 1) {
           double ts = segundosDe(f, lerUint(p + cab2, ctam2));
           if (tLim > 0.0 && ts > tLim) {
             f->pontos[i].cursor = cl.pos; f->pontos[i].cursorTs = ts;
@@ -2914,13 +2945,16 @@ static int varrerTrecho(Fio *f, int i, double tLim) {
     o = dados;
     while (clFim <= 0 || o < clFim) {
       long ctam, cab; Off cfim; int cui = 0, cut = 0; unsigned long cid;
-      Off lim = clFim > 0 ? clFim : fim;
+      Off lim = clFim > 0 ? clFim : limIndefinido(o, fim);
       if (!minhaVez(f)) goto sair;
       g = garantir(f, wp, o, 16, lim, &p, &disp);
       if (g == 2) { o = clFim > 0 ? clFim : o; if (clFim <= 0) fim = o; break; }
       if (g != 1) { r = g; goto sair; }
       cid = lerId(p, disp, &cui);
       if (!cid) { if (f->diagLog) f->diag.parse_errors++; o = clFim > 0 ? clFim : o; if (clFim <= 0) fim = o; break; }
+      // Borda real do Cluster de tamanho desconhecido: outro Cluster nao
+      // pode ser filho deste — o id aqui e o COMECO do proximo Cluster.
+      if (clFim <= 0 && cid == ID_CLUSTER) { clFim = o; f->varreClFim = o; break; }
       ctam = lerTam(p + cui, disp - cui, &cut);
       if (ctam < 0) { if (f->diagLog) f->diag.parse_errors++; o = clFim > 0 ? clFim : o; if (clFim <= 0) fim = o; break; }
       cab = cui + cut; cfim = o + cab + ctam;
