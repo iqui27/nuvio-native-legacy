@@ -30,6 +30,8 @@ int ajustes_hdr10p_strip(void) { return 0; }
 void dts_engine_set_normalize(int on) { (void)on; }
 void dts_remux_set_hdr10p_strip(int on) { (void)on; }
 int ling_prefere_original(void) { return 0; }
+int ling_prefere_regional(const char *pref) { (void)pref; return 0; }
+int ling_afinidade(const char *cod, const char *pref) { (void)cod; (void)pref; return 0; }
 const char *ling_audio_preferido(void) { return ""; }
 int video_taxa_efetiva(void) { return 100; }
 void dts_remux_set_audio_offset_ms(int ms) { (void)ms; }
