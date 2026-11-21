@@ -1,6 +1,6 @@
 // Farol — faroltexto_aceita() filtra o texto livre "x" da cena (PLANO-GOSTO
 // 4.1, issue 35). Roda a funcao de producao de src/faroltexto.c sobre 74
-// frases boas e 89 ruins, uma de cada trava: largura, 3a linha, UTF-8
+// frases boas e 99 ruins, uma de cada trava: largura, 3a linha, UTF-8
 // quebrado, controle, URL, emoji e cada palavra da lista "nunca diz" do
 // ALMA 2 — em pt e em en, com e sem acento.
 //
@@ -225,10 +225,25 @@ int main(void) {
   // pontuacao arabe tambem e separador
   RUIM("شاهد هنا،www.exemplo.com، ثم اختر.");
   RUIM("هل نجرب؟Hello! الفيلم جاهز.");
+  // separador tokeniza palavra, nao apaga rotulo: sinal imediatamente a
+  // esquerda do ponto ainda conta como rotulo — dominio sem esquema que
+  // termina em pontuacao ou geometrico segue fora
+  RUIM("Veja ○○.com/filme.");
+  RUIM("Veja ●.com/filme.");
+  RUIM("Veja filme○.com/filme.");
+  RUIM("Veja ֆիլմ։.com/filme.");
+  RUIM("Veja ֆילմ֊.com/filme.");
+  RUIM("Veja filme،.com/filme.");
+  // lacunas herdadas que a mesma regra fecha: a marca encerra o rotulo
+  RUIM("Veja 人々.com/filme.");
+  RUIM("Veja 映画〆.com/filme.");
+  RUIM("Veja example.coⓂ/filme.");              // IDNA: example.com
+  // U+2E2F segue letra, mas nao alonga o TLD: dominio emoldurado e dominio
+  RUIM("Veja ⸯexample.comⸯ agora.");
 
   printf("farol_aceita: %d boas aceitas, %d ruins recusadas", boas, ruins);
-  if (boas != 74 || ruins != 89) {
-    printf(" — ERRO: esperado 74+89\n");
+  if (boas != 74 || ruins != 99) {
+    printf(" — ERRO: esperado 74+99\n");
     return 1;
   }
   if (falhas) { printf(" — %d falha(s)\n", falhas); return 1; }

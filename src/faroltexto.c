@@ -145,15 +145,26 @@ static char ft_base_latim(long cp) {
 // examina o texto INTEIRO — nada fica atras de um corte cedo.
 static void ft_dobrar(const char *in, char *out, size_t cap) {
   size_t o = 0;
-  int pend = 0;                            // separador ainda nao emitido
+  int pend = 0;                            // separador ainda nao emitido:
+  // 0 nenhum, 1 branco, 2 pontuacao — a classe do ultimo separador conta
+  // quando o proximo caractere e um ponto de dominio
   const char *p = in;
   while (*p && o + 5 < cap) {
     const char *ini = p;
     long cp = ft_utf8(&p);
     if (cp < 0) break;                     // nao acontece: ja foi validada
-    if (ft_branco(cp) || ft_pontuacao(cp)) { if (o) pend = 1; continue; }
+    if (ft_branco(cp))    { pend = 1; continue; }
+    if (ft_pontuacao(cp)) { pend = 2; continue; }
     if (ft_combinante(cp)) continue;
-    if (pend) { out[o++] = ' '; pend = 0; }
+    if (pend) {
+      if (o) out[o++] = ' ';
+      // Separador tokeniza palavra, nao apaga rotulo: quando o caractere
+      // imediatamente a esquerda do ponto era sinal (e nao branco), o
+      // ponto tem rotulo — o 'x' segura o lugar dele para o ".TLD" de
+      // "○○.com", "filme،.com" e "人々.com" cair como URL.
+      if (pend == 2 && cp == '.') out[o++] = 'x';
+      pend = 0;
+    }
     if (cp < 0x80) {
       char c = (char)cp;
       out[o++] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
@@ -161,6 +172,11 @@ static void ft_dobrar(const char *in, char *out, size_t cap) {
     }
     char base = ft_base_latim(cp);
     if (base) { out[o++] = base; continue; }
+    // Letras emolduradas dobram para a base, como o IDNA faz — assim
+    // "example.coⓂ" chega ao ".com" que ele esconde.
+    if (cp >= 0x249C && cp <= 0x24B5) { out[o++] = (char)('a' + cp - 0x249C); continue; }
+    if (cp >= 0x24B6 && cp <= 0x24CF) { out[o++] = (char)('a' + cp - 0x24B6); continue; }
+    if (cp >= 0x24D0 && cp <= 0x24E9) { out[o++] = (char)('a' + cp - 0x24D0); continue; }
     while (ini < p && o + 1 < cap) out[o++] = *ini++;   // cru: pesa como letra
   }
   out[o] = 0;
@@ -223,6 +239,14 @@ static const char *FT_PROIBIDAS[] = {
 // caem, mas "ard.de" e "nü.de" caem pelo ccTLD de 2 letras e "电影.com"
 // cai porque byte >= 0x80 conta como letra de rotulo. Aplicativos do dia
 // a dia nao mandam link para a tela; link e canal de dados, nao de fala.
+// U+2E2F pesa letra na fronteira de palavra, mas nao alonga rotulo de
+// TLD: depois de ".com" ele e moldura ("example.comⸯ"), nao mais um
+// caractere de rotulo — senao o til emoldurado escondia o dominio.
+static int ft_til_vertical(const char *p) {
+  return (unsigned char)p[0] == 0xE2 && (unsigned char)p[1] == 0xB8 &&
+         (unsigned char)p[2] == 0xAF;
+}
+
 static int ft_tem_url(const char *d) {
   static const char *TLDS[] = {
     ".com", ".net", ".org", ".br", ".io", ".tv", ".me", ".app",
@@ -255,11 +279,11 @@ static int ft_tem_url(const char *d) {
       while (t[n]) n++;
       for (size_t j = 0; j < n; j++)
         if (p[j] != t[j]) { bate = 0; break; }
-      if (bate && !ft_letra(p[n])) return 1;
+      if (bate && (!ft_letra(p[n]) || ft_til_vertical(p + n))) return 1;
     }
     // ccTLD: "." + 2 letras ascii com fronteira depois (ard.de, nü.de)
     if (p[1] >= 'a' && p[1] <= 'z' && p[2] >= 'a' && p[2] <= 'z' &&
-        !ft_letra(p[3])) return 1;
+        (!ft_letra(p[3]) || ft_til_vertical(p + 3))) return 1;
   }
   return 0;
 }

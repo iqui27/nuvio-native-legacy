@@ -142,9 +142,14 @@ static void dobrar(const char *in, char *out, size_t cap) {
     const char *ini = p;
     long cp = ft_utf8(&p);
     if (cp < 0) break;
-    if (ft_branco(cp) || ft_pontuacao(cp)) { if (o) pend = 1; continue; }
+    if (ft_branco(cp))    { pend = 1; continue; }
+    if (ft_pontuacao(cp)) { pend = 2; continue; }
     if (ft_combinante(cp)) continue;
-    if (pend) { out[o++] = ' '; pend = 0; }
+    if (pend) {
+      if (o) out[o++] = ' ';
+      if (pend == 2 && cp == '.') out[o++] = 'x';
+      pend = 0;
+    }
     if (cp < 0x80) {
       char c = (char)cp;
       out[o++] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
@@ -152,6 +157,9 @@ static void dobrar(const char *in, char *out, size_t cap) {
     }
     char base = ft_base_latim(cp);
     if (base) { out[o++] = base; continue; }
+    if (cp >= 0x249C && cp <= 0x24B5) { out[o++] = (char)('a' + cp - 0x249C); continue; }
+    if (cp >= 0x24B6 && cp <= 0x24CF) { out[o++] = (char)('a' + cp - 0x24B6); continue; }
+    if (cp >= 0x24D0 && cp <= 0x24E9) { out[o++] = (char)('a' + cp - 0x24D0); continue; }
     while (ini < p && o + 1 < cap) out[o++] = *ini++;
   }
   out[o] = 0;
@@ -360,7 +368,10 @@ static void confere_duas_noites_hu(void) {
 // "○exemplo.com○" nao esconde dominio nem saudacao; o esquema de URL e a
 // faixa [a-z0-9+.-] com letra antes de "://" — "...ftp://" e "-ftp://"
 // contam, "://" solto e "123://" nao; a pontuacao arabe (، ؛ ؟) tambem e
-// separador; e U+2E2F (ⸯ, letra Lm) segue letra.
+// separador; e U+2E2F (ⸯ, letra Lm) segue letra — mas nao alonga TLD.
+// O separador tokeniza palavra, nao apaga rotulo: pontuacao ou geometrico
+// imediatamente a esquerda do ponto ainda conta como rotulo, e dominio
+// sem esquema como "○○.com" ou "filme،.com" segue fora do texto.
 static void confere_filtro_pontuacao(void) {
   static const struct { const char *s; int ok; } C[] = {
     { "Veja «exemplo.com» para saber mais.", 0 },
@@ -378,11 +389,23 @@ static void confere_filtro_pontuacao(void) {
     { "候補はこちら：○Hello!○", 0 },
     { "شاهد هنا،www.exemplo.com، ثم اختر.", 0 },
     { "هل نجرب؟Hello! الفيلم جاهز.", 0 },
+    { "Veja ○○.com/filme.", 0 },
+    { "Veja ●.com/filme.", 0 },
+    { "Veja filme○.com/filme.", 0 },
+    { "Veja ֆילմ։.com/filme.", 0 },
+    { "Veja ֆילմ֊.com/filme.", 0 },
+    { "Veja filme،.com/filme.", 0 },
+    { "Veja 人々.com/filme.", 0 },
+    { "Veja 映画〆.com/filme.", 0 },
+    { "Veja example.coⓂ/filme.", 0 },
+    { "Veja ⸯexample.comⸯ agora.", 0 },
+    { "Veja 例ⸯ.com/filme.", 0 },
     { "今夜の候補は○で印をつけました。", 1 },
     { "A resenha diz «imperdível».", 1 },
     { "O título é Łoi.", 1 },
     { "O título é ⸯHello.", 1 },
     { "Use apenas o sinal 123://", 1 },
+    { "Veja .com/filme.", 1 },
   };
   for (size_t i = 0; i < sizeof C / sizeof *C; i++)
     if (!!faroltexto_aceita(C[i].s) != C[i].ok) {
