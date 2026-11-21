@@ -498,6 +498,12 @@ test("dedupe atomico cobre a janela inteira de 24 h, inclusive a virada UTC", as
   const linhas = q(sqlite, "SELECT id, criado, vezes FROM farol_registro");
   assert.equal(linhas.length, 1);
   assert.equal(linhas[0].vezes, 2);
+  // Qualquer um dos dois pedidos paralelos pode vencer o UPSERT: o criado
+  // persistido e o do vencedor — um dos dois instantes — e e exatamente o
+  // que o slot de dedupe guarda (flake pre-existente da asserção fixa).
+  assert.ok(linhas[0].criado === dia - 1 || linhas[0].criado === dia,
+    `criado ${linhas[0].criado} fora de {${dia - 1}, ${dia}}`);
+  assert.equal(q(sqlite, "SELECT criado, registro FROM farol_dedup")[0].criado, linhas[0].criado);
   // Passadas 24 h nao e mais reenvio: e OCORRENCIA NOVA — linha e codigo
   // novos, e a linha do recibo original fica intacta ate a retencao de 30
   // dias (o codigo antigo continua resolvendo o mesmo registro).
@@ -505,7 +511,7 @@ test("dedupe atomico cobre a janela inteira de 24 h, inclusive a virada UTC", as
   assert.equal(c.status, 200);
   const depois = q(sqlite, "SELECT criado, vezes FROM farol_registro ORDER BY criado");
   assert.equal(depois.length, 2);
-  assert.equal(depois[0].criado, dia - 1);
+  assert.equal(depois[0].criado, linhas[0].criado);
   assert.equal(depois[0].vezes, 2);
   assert.equal(depois[1].criado, dia + 86401);
   assert.equal(depois[1].vezes, 1);
@@ -931,4 +937,86 @@ test("pedido da hora anterior em voo nao reabre a cota da hora nova", async (t) 
   assert.equal(setimo.status, 429);
   assert.equal(
     q(sqlite, "SELECT count(*) AS n FROM farol_registro WHERE criado >= ?", horaNova)[0].n, 6);
+});
+
+// --- correcao farol5e ---------------------------------------------------------
+// O bloqueio da revisao r5 (sonda trocarSlot com barreiras no D1): um reenvio
+// da janela anterior, pendurado na resposta do UPSERT, acordava depois de um
+// POST legitimo retomar o slot e gravar a ocorrencia nova. A adocao com
+// "criado >=" escolhia a linha NOVA e a confirmacao era forjada em memoria
+// com o UPDATE descartado — 200 com o codigo alheio, vencimento 24 h antes
+// do certo e vezes++ no recibo dos outros. No pai o reenvio sai 409.
+
+test("troca de slot: reenvio da janela anterior nao adota o recibo da ocorrencia nova", async (t) => {
+  const { sqlite, env } = cenario(t);
+  const corpo = pacoteEmitido();
+  const t0 = 20000 * 86400;
+  // 1. O envio original grava a linha e morre na confirmacao (gatilho no D1
+  //    falso, como a falha injetada da sonda): 503, linha orfa, slot pendente.
+  sqlite.exec(`CREATE TRIGGER sonda_falha BEFORE UPDATE OF confirmado ON farol_dedup
+    WHEN NEW.confirmado = 1 BEGIN SELECT RAISE(ABORT, 'sonda: confirmacao interrompida'); END;`);
+  let primeiro;
+  try { primeiro = await chamadaFarol(env, corpo, t0); }
+  finally { sqlite.exec("DROP TRIGGER sonda_falha"); }
+  assert.equal(primeiro.status, 503);
+  assert.equal(q(sqlite, "SELECT count(*) AS n FROM farol_registro")[0].n, 1);
+  // 2. O reenvio em t0+24h-1s reclama o slot pendente (toques=2, criado=t0)
+  //    e fica com a RESPOSTA do UPSERT pendurada — a barreira da sonda.
+  let seguraReenvio = true, marcouReenvio, soltaReenvio;
+  const reenvioNoSlot = new Promise((r) => { marcouReenvio = r; });
+  const travaReenvio = new Promise((r) => { soltaReenvio = r; });
+  d1EmPar(env.DB, (sql) => sql.startsWith("INSERT INTO farol_dedup"), async () => {
+    if (seguraReenvio) { seguraReenvio = false; marcouReenvio(); await travaReenvio; }
+  });
+  const emReenvio = chamadaFarol(env, corpo, t0 + 86399);
+  await reenvioNoSlot;
+  // 3. O POST legitimo em t0+24h retoma o slot (criado=t0+86400), grava a
+  //    linha da ocorrencia nova e fica com a confirmacao pendurada.
+  let seguraNovo = true, marcouNovo, soltaNovo;
+  const novoNaConfirmacao = new Promise((r) => { marcouNovo = r; });
+  const travaNovo = new Promise((r) => { soltaNovo = r; });
+  const preparar = env.DB.prepare.bind(env.DB);
+  env.DB.prepare = (sql) => {
+    const stm = preparar(sql);
+    if (!sql.startsWith("UPDATE farol_dedup")) return stm;
+    const bind = stm.bind.bind(stm);
+    stm.bind = (...args) => {
+      const bound = bind(...args);
+      const run = bound.run.bind(bound);
+      bound.run = async () => {
+        if (seguraNovo) { seguraNovo = false; marcouNovo(); await travaNovo; }
+        return run();
+      };
+      return bound;
+    };
+    return stm;
+  };
+  const emNovo = chamadaFarol(env, corpo, t0 + 86400);
+  await novoNaConfirmacao;
+  // 4. Libera o reenvio antigo com o slot ja retomado e ainda pendente:
+  //    NUNCA 200 com o recibo da ocorrencia nova nem vezes++ na linha dela.
+  soltaReenvio();
+  const reenvio = await emReenvio;
+  const durante = q(sqlite, "SELECT id, criado, vezes FROM farol_registro ORDER BY criado");
+  soltaNovo();
+  const novo = await emNovo;
+  assert.equal(reenvio.status, 409, JSON.stringify(reenvio));
+  assert.equal(durante.length, 2);
+  assert.equal(durante[0].criado, t0);
+  assert.equal(durante[0].vezes, 1);
+  assert.equal(durante[1].criado, t0 + 86400);
+  assert.equal(durante[1].vezes, 1, "o reenvio nao incrementa o recibo alheio");
+  // O POST legitimo conclui com o proprio recibo e o vencimento dele.
+  assert.equal(novo.status, 200);
+  assert.equal(novo.body.codigo, codigoRegistro(durante[1].id));
+  assert.equal(novo.body.vence, t0 + 86400 + 30 * 86400);
+  const slot = q(sqlite, "SELECT criado, registro, confirmado FROM farol_dedup")[0];
+  assert.equal(slot.criado, t0 + 86400);
+  assert.equal(slot.registro, durante[1].id);
+  assert.equal(slot.confirmado, 1);
+  // E o reenvio seguinte ja cai no dedup normal da ocorrencia confirmada.
+  const depois = await chamadaFarol(env, corpo, t0 + 86400 + 5);
+  assert.equal(depois.status, 200);
+  assert.equal(depois.body.codigo, novo.body.codigo);
+  assert.equal(depois.body.vence, novo.body.vence);
 });

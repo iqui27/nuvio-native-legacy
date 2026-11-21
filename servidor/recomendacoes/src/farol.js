@@ -405,21 +405,33 @@ export async function rotaFarolRegistro(env, quem, corpo, h, limitar, codigoRegi
     // Excecao: o envio original gravou a LINHA mas morreu antes do UPDATE de
     // confirmacao (uma falha ali devolvia 503 e deixava slot pendente sem
     // `registro` — reenvios batiam em 409 ate o slot vencer). Esse orfao e
-    // ADOTADO: o slot conclui com a linha que ja existe desta rodada
-    // (criado >= o do slot; as mais antigas sao recibos de outra janela) e o
-    // reenvio devolve o MESMO codigo, sem novo debito de cota.
+    // ADOTADO: o slot conclui com a linha gravada pela MESMA reclamacao —
+    // criado igual ao do slot, nao ">=" (a linha mais nova pode ser da
+    // ocorrencia seguinte, que tomou o slot depois das 24 h). E a escrita
+    // so vale se o slot ainda for o que este pedido reclamou: com
+    // meta.changes = 0 o slot ja e de outra reclamacao ou foi confirmado
+    // pelo dono — a releitura decide; a confirmacao NUNCA e forjada em
+    // memoria nem devolve recibo de outra janela.
     for (let espera = 0; ded && ded.toques > 1 && !ded.confirmado && espera < 20; espera++) {
+      const criado = ded.criado;
       const orfao = await env.DB.prepare(
-        "SELECT id FROM farol_registro WHERE pessoa_h = ? AND fp = ? AND criado >= ? " +
-        "ORDER BY criado DESC, id DESC LIMIT 1"
-      ).bind(pessoa_h, fp, ded.criado).first().catch(() => null);
+        "SELECT id FROM farol_registro WHERE pessoa_h = ? AND fp = ? AND criado = ?"
+      ).bind(pessoa_h, fp, criado).first().catch(() => null);
       if (orfao?.id) {
-        await env.DB.prepare(
+        const conf = await env.DB.prepare(
           "UPDATE farol_dedup SET registro = ?, confirmado = 1 " +
           "WHERE pessoa_h = ? AND fp = ? AND confirmado = 0 AND criado = ?"
-        ).bind(orfao.id, pessoa_h, fp, ded.criado).run().catch(() => {});
-        ded = { ...ded, registro: orfao.id, confirmado: 1 };
-        break;
+        ).bind(orfao.id, pessoa_h, fp, criado).run().catch(() => null);
+        if (conf?.meta?.changes) {
+          ded = { ...ded, registro: orfao.id, confirmado: 1 };
+          break;
+        }
+        // O slot virou: rele e sai — o fluxo abaixo deduplica num recibo ja
+        // confirmado, responde 409 se ele esta pendente de outro pedido ou
+        // segue como envio proprio se o slot recomecou vazio. Slot intacto
+        // (mesmo criado, ainda pendente): falha transitoria, volta a espera.
+        ded = await reclamar();
+        if (!ded || ded.criado !== criado || ded.confirmado) break;
       }
       await new Promise((resolve) => setTimeout(resolve, 25));
       ded = await reclamar();
