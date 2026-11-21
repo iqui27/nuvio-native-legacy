@@ -3970,7 +3970,8 @@ int ajustes_dts_tpk_modo(void) {
 }
 int ajustes_dv_mkv(void)              { return lig(AJ_DV_MKV); }
 int ajustes_dv7(void) { return lig(AJ_DV7); }
-int ajustes_webos_hls(void) { return lig(AJ_WEBOS_HLS_MODE); }
+// HLS on with either option: fMP4 (HLS) or MPEG-TS, one at a time.
+int ajustes_webos_hls(void) { return lig(AJ_WEBOS_HLS_MODE) || lig(AJ_WEBOS_HLS_TS); }
 int ajustes_webos_hls_ts(void) { return lig(AJ_WEBOS_HLS_TS); }
 int ajustes_dv_audio_fixo(void) {
 #if defined(NV_DV_FIXED_AUDIO_TEST) && defined(NV_WEBOS)
@@ -7641,6 +7642,10 @@ static int inativa(int op) {
     case AJ_CW_BLUR_PROX: return !ajustes_cw_ligado() || !ajustes_cw_thumb_episodio();
     case AJ_EXPANDIR_ATRASO: return !ajustes_expandir_poster();
     case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE: return !lig(AJ_SEEKR_LIGADO);
+    // HLS fMP4 or HLS MPEG-TS, one at a time (owner 21/11): the other one is
+    // dimmed while one is on. Both on (from before) stay switchable.
+    case AJ_WEBOS_HLS_MODE: return lig(AJ_WEBOS_HLS_TS) && !lig(AJ_WEBOS_HLS_MODE);
+    case AJ_WEBOS_HLS_TS: return lig(AJ_WEBOS_HLS_MODE) && !lig(AJ_WEBOS_HLS_TS);
     case AJ_FONTE_GRUPO_SESSOES: return !lig(AJ_FONTE_GRUPO);
     case AJ_LINK_PRAZO: return !lig(AJ_LINK_REUSAR);
     // Remover so vale para o pacote escolhido que foi posto nesta TV.
@@ -7845,6 +7850,8 @@ static const char *ajudaOpcaoBase(int op) {
       if (!ajustes_ampliar_app()) return "Só vale com a resolução em 1080p ou 720p: o app amplia a interface para a tela (usa mais GPU). Na Automática e na 4K quem amplia é a TV. Reinicie o app depois de mudar.";
       return "Sem ampliação ativa nesta sessão. Escolha 720p ou 1080p abaixo da saída da TV e reinicie o app. O vídeo não muda.";
     }
+    if (op == AJ_WEBOS_HLS_MODE) return "Turn off HLS: MPEG-TS (Experimental) to use HLS fMP4. Only one of the two can be on.";
+    if (op == AJ_WEBOS_HLS_TS) return "Turn off HLS (Experimental) to use HLS MPEG-TS. Only one of the two can be on.";
     if (op == AJ_VIDRO_CONTORNO) return "Ative a interface de vidro para ajustar o contorno.";
     if (op == AJ_VIDRO_OPAC || op == AJ_VIDRO_FOSCO || op == AJ_VIDRO_QUALIDADE) return "Ative a interface de vidro para ajustar o vidro.";
     if (op == AJ_RAIL) return "Desative a barra lateral moderna para escolher entre recolhida e fixa.";
@@ -8279,8 +8286,8 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_HIST_CONTA: return "Ligado (padrão): o que você assiste neste perfil sobe para a conta Nuvio, com o progresso e os vistos. Desligado: nada disso é enviado à conta; o Trakt e o Simkl vinculados a este perfil continuam recebendo. Vale só para este perfil.";
     case AJ_SOCIAL: return "Ligado (padrão): amigos, atividade deles e recomendações. Desligado: tudo isso some, com a fileira de amigos da Home, e o app para de falar com o serviço social. Salvos e Avisos continuam. Vale só para este perfil.";
     case AJ_DV_MKV: return "Arquivos MKV em Dolby Vision perfil 5 ou 8 tocam com o Dolby Vision ligado, em vez de HDR10. O áudio Dolby Digital e Dolby Digital Plus vai direto para a TV. Se a conexão não acompanhar, o vídeo continua em HDR10. Só em TVs LG com webOS 4 ou mais novo.";
-    case AJ_WEBOS_HLS_TS: return "Use HLS MPEG-TS for the DTS and Dolby Vision P7 conversions (requires HLS on). For older LG TVs with webOS 6 and earlier. Reopen the video to apply.";
-    case AJ_WEBOS_HLS_MODE: return "Use HLS fMP4 for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on older devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply.";
+    case AJ_WEBOS_HLS_TS: return "Use HLS MPEG-TS for the DTS and Dolby Vision P7 conversions. For older LG TVs with webOS 6 and earlier. Reopen the video to apply.";
+    case AJ_WEBOS_HLS_MODE: return "Use HLS fMP4 for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices, but requires more bandwidth. Use only if you have issues. Reopen the video to apply.";
     case AJ_DV7: return "Converte MKV Dolby Vision perfil 7 para 8.1. Mantém o vídeo base e os metadados dinâmicos; descarta a camada de melhoria, incluindo FEL. Vale para o próximo vídeo.";
     case AJ_DV_AUDIO_FIXO: return "Original audio may reload video when switching formats. AAC stereo / Dolby Digital 5.1 converts supported tracks for smoother switching. Conversion does not preserve lossless audio or Atmos/DTS:X metadata. Reopen the video to apply.";
     case AJ_MP4_BD_TEST: return "Helps play compatible Dolby Vision MP4 files that fail to open normally. Off by default. Reopen the video to apply.";
