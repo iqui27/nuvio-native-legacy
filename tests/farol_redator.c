@@ -1,5 +1,6 @@
 #include "farolredator.h"
 #include "farolnativo.h"
+#include "farolerro.h"
 #include "sha256.h"
 #include <assert.h>
 #include <ctype.h>
@@ -24,7 +25,8 @@ static const char *canarios[] = {
  "OLED55CANARIO1", "QN55CANARIO1", "webos-4-starfish-CANARIO21-mkv-hevc10-dv-eac3",
  "12345", "123456", "1234567", "12345678",
  "127.0.1", "10.1", "127.0.0.1", "0xc633642a", "0xc6.0x33.0x64.0x2a",
- "0300.0263.0100.0052", "3232235521", "m3_sol4_private"
+ "0300.0263.0100.0052", "3232235521", "m3_sol4_private",
+ "av_CANARIO_PRIVADO", "addon_10472911", "PLAYER_ERROR_CANARIO_PRIVADO"
 };
 static const FarolCampo *schema;
 static size_t n_schema;
@@ -192,6 +194,18 @@ static void hashes(void) {
   farolredator_hash_host("http://0xc6.51.100.42/", sal, c); assert(!strcmp(c, "x"));
   farolredator_hash_host("http://3232235521/", sal, c); assert(!strcmp(c, "x"));
   farolredator_hash_host("http://127.0.1/", sal, c); assert(!strcmp(c, "x"));
+  // Bordas do parser WHATWG (todas leem como IPv4 em Node/Deno/browser):
+  // "0x" sozinho vale 0 e zeros a esquerda nao tem teto de comprimento.
+  farolredator_hash_host("http://0x/", sal, c); assert(!strcmp(c, "x"));
+  farolredator_hash_host("http://0x.0x.0x.0x1/", sal, c); assert(!strcmp(c, "x"));
+  farolredator_hash_host("http://0x000c633642a/", sal, c); assert(!strcmp(c, "x"));
+  farolredator_hash_host("http://0x00000000c633642a/", sal, c); assert(!strcmp(c, "x"));
+  farolredator_hash_host("http://000000000000000000000000000000000001.0x1/", sal, c); assert(!strcmp(c, "x"));
+  farolredator_hash_host("http://0x000000000000000000000000000000000000000001/", sal, c); assert(!strcmp(c, "x"));
+  // Termina em numero mas falha o parse: host invalido, nao dominio — sai "x".
+  farolredator_hash_host("http://1.2.3.4.5/", sal, c); assert(!strcmp(c, "x"));
+  farolredator_hash_host("http://0x100000000/", sal, c); assert(!strcmp(c, "x"));
+  farolredator_hash_host("http://nas.2015/", sal, c); assert(!strcmp(c, "x"));
   farolredator_hash_host(NULL, sal, c); assert(!strcmp(c, "x"));
   farolredator_hash_host("exemplo.invalid", NULL, c); assert(!strcmp(c, "x"));
   assert(farolredator_host_publico("API.TRAKT.TV"));
@@ -274,32 +288,67 @@ static void colisoes(void) {
   assert(escrever_em(&j, "aparelho", "so", FT_VERSAO, "4.9-webos"));
   memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
   assert(escrever_em(&j, "cliente", "versao", FT_VERSAO, "2.1.0-ipk"));
+  memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
+  assert(escrever_em(&j, "cliente", "versao", FT_VERSAO, "2.1.0-tpk65"));
+  memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
+  assert(escrever_em(&j, "cliente", "versao", FT_VERSAO, "14-apk"));
+  // O rotulo e de lista fechada: PIN ("4.9-7362194") e titulo
+  // ("2.1.0-segreditulo") nao viram sufixo de versao.
+  const char *sufs[] = {"4.9-7362194", "2.1.0-segreditulo", "2.1.0-1234",
+    "1.0-webosx", "4.9-", "2.1.0-CANARIO", "6.5-tpk99"};
+  for (size_t k = 0; k < sizeof campos / sizeof *campos; k++)
+    for (size_t i = 0; i < sizeof sufs / sizeof *sufs; i++) {
+      memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
+      assert(!escrever_em(&j, campos[k][0], campos[k][1], FT_VERSAO, sufs[i]) &&
+             j.campos_recusados == 1);
+      assert(!strstr(buf, sufs[i]));
+    }
 }
 static void codigos(void) {
   FarolJson j; char buf[4096], fp[160];
   // Todo codigo que farolerro_ler (farol-3) emite entra em erro.nativo e no
-  // terceiro componente do fingerprint — os dois leem a mesma gramatica de
-  // farolnativo.h.
+  // terceiro componente do fingerprint — os dois leem a mesma gramatica.
+  // A lista fixa e a do produtor (farolerro_codigos, exportada por
+  // farolerro.h); a esperada fica copiada AQUI, nome a nome, para que uma
+  // remocao na fonte quebre este teste em vez de iterar a lista alterada.
+  static const char *const esperados[] = {
+    "ums_pipeline", "ums_faixa_audio", "ls2_permissao",
+    "m3_parado", "m3_audio", "av_conexao",
+    "tpk_conexao", "tpk_audio", "tpk_conflito", "tpk_preso",
+    "ums_rede", "m3_rede", "gen_rede",
+    "ums_http", "av_http", "tpk_http", "m3_http", "gen_http",
+    "ums_formato", "av_formato", "tpk_formato", "m3_formato", "gen_formato",
+    "ums_outro", "av_outro", "tpk_outro", "m3_outro", "gen_outro",
+  };
   const char *todos[] = {
     "ums_100", "ums_200", "ums_204", "ums_210", "ums_300", "ums_40000",
     "ums_40403", "ums_49999", "m3_2000", "m3_2004", "m3_2008", "m3_3000",
-    "m3_4003", "m3_4999", "av_not_supported_format", "av_connection_failed",
-    "av_fatal2",
+    "m3_4003", "m3_4999",
+    // os 11 nomes do enum AVPlayError documentado pela Samsung
+    "av_none", "av_invalid_parameter", "av_no_such_file",
+    "av_invalid_operation", "av_seek_failed", "av_invalid_state",
+    "av_not_supported_file", "av_not_supported_format", "av_invalid_uri",
+    "av_connection_failed", "av_genereic",
   };
-  for (size_t i = 0; i < FAROLNATIVO_FIXOS_N; i++)
-    assert(farolnativo_cod_ok(farolnativo_fixos[i]));
+  assert(farolerro_codigos_n == (int)(sizeof esperados / sizeof *esperados));
+  for (int i = 0; i < farolerro_codigos_n; i++) {
+    assert(!strcmp(farolerro_codigos[i], esperados[i]));
+    assert(farolnativo_cod_ok(esperados[i]));
+  }
   for (size_t i = 0; i < sizeof todos / sizeof *todos; i++)
     assert(farolnativo_cod_ok(todos[i]));
   const char *fora[] = {"ums_99", "ums_301", "ums_39999", "ums_50000",
     "m3_1999", "m3_2003", "m3_2007", "m3_5000", "m3_sol4", "gen_xyz",
-    "ls2_outro", "av_", "av_123456789012345678901"};
+    "ls2_outro", "av_", "av_123456789012345678901",
+    // texto livre depois de "player_error" e nome fora do enum nao entram
+    "av_canario_privado", "av_fatal2", "av_none_x", "av_connection_failed2"};
   for (size_t i = 0; i < sizeof fora / sizeof *fora; i++)
     assert(!farolnativo_cod_ok(fora[i]));
-  for (size_t i = 0; i < FAROLNATIVO_FIXOS_N; i++) {
+  for (size_t i = 0; i < sizeof esperados / sizeof *esperados; i++) {
     memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
-    assert(escrever_em(&j, "erro", "nativo", FT_TOKEN, farolnativo_fixos[i]));
+    assert(escrever_em(&j, "erro", "nativo", FT_TOKEN, esperados[i]));
     snprintf(fp, sizeof fp, "webos-4-starfish-%s-mkv-hevc10-dv-eac3",
-             farolnativo_fixos[i]);
+             esperados[i]);
     memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
     assert(escrever_em(&j, "erro", "fingerprint", FT_TOKEN, fp));
   }
@@ -310,8 +359,11 @@ static void codigos(void) {
     memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
     assert(escrever_em(&j, "erro", "fingerprint", FT_TOKEN, fp));
   }
-  // Token composto do produtor de fonte e o pseudonimo de add-on com sal.
-  const char *ks[][2] = {{"1080p_sdr_nodv_outro", "1"}, {"addon_9c1e77ab", "1"},
+  // Token composto do produtor de fonte e o pseudonimo de add-on COM sal —
+  // h:<8 hex> de farolredator_hash_host, o mesmo do host. O addon_<8 hex>
+  // sem sal do produtor antigo e recusado.
+  const char *ks[][2] = {{"1080p_sdr_nodv_outro", "1"}, {"h:9c1e77ab", "1"},
+                         {"addon_9c1e77ab", "0"}, {"addon_160c7391", "0"},
                          {"addon_canario00", "0"}, {"1080p_sol4_nodv_outro", "0"}};
   for (size_t k = 0; k < sizeof ks / sizeof *ks; k++) {
     int zero = 0;
@@ -326,6 +378,32 @@ static void codigos(void) {
     while (j.prof) assert(farolredator_fechar(&j));
     assert(!strstr(buf, "canario") && !strstr(buf, "sol4"));
   }
+}
+// A mensagem do AVPlay pode embutir texto livre — a sonda da revisao usou uma
+// URL com PLAYER_ERROR_CANARIO_PRIVADO. O classificador (farolerro_ler,
+// farol-3) extrai o nome cru; o redator so deixa sair os nomes do enum.
+static void avplay(void) {
+  FarolJson j; char buf[1024], fp[160];
+  FarolErro erro;
+  assert(farolerro_ler(FP_TIZEN_WGT,
+    "prepare: https://example.invalid/PLAYER_ERROR_CANARIO_PRIVADO?chave=test",
+    0, &erro));
+  assert(!strcmp(erro.cod, "av_canario_privado"));
+  j.buf = buf; j.tam = sizeof buf;
+  assert(!escrever_em(&j, "erro", "nativo", FT_TOKEN, erro.cod));
+  assert(j.campos_recusados == 1 && !strstr(buf, "canario"));
+  snprintf(fp, sizeof fp, "tizen_wgt-4-avplay-%s-mkv-hevc10-dv-eac3", erro.cod);
+  memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
+  assert(!escrever_em(&j, "erro", "fingerprint", FT_TOKEN, fp));
+  assert(j.campos_recusados == 1 && !strstr(buf, "canario"));
+  // Nome real do enum segue entrando nos dois campos.
+  assert(farolerro_ler(FP_TIZEN_WGT, "PLAYER_ERROR_INVALID_STATE", 0, &erro));
+  assert(!strcmp(erro.cod, "av_invalid_state"));
+  memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
+  assert(escrever_em(&j, "erro", "nativo", FT_TOKEN, erro.cod));
+  snprintf(fp, sizeof fp, "tizen_wgt-4-avplay-%s-mkv-hevc10-dv-eac3", erro.cod);
+  memset(&j, 0, sizeof j); j.buf = buf; j.tam = sizeof buf;
+  assert(escrever_em(&j, "erro", "fingerprint", FT_TOKEN, fp));
 }
 static void pacote_dourado(void) {
   FarolJson j; char buf[FAROL_JSON_N], esperado[FAROL_JSON_N + 16];
@@ -481,7 +559,7 @@ static void pacote_dourado(void) {
   assert(!strcmp(buf, esperado));
 }
 int main(void) {
-  pacote(); tokens(); hashes(); colisoes(); codigos(); pacote_dourado(); limites();
-  puts("farol_redator: schema, canarios, tokens, hash, colisoes, codigos, dourado e limites ok");
+  pacote(); tokens(); hashes(); colisoes(); codigos(); avplay(); pacote_dourado(); limites();
+  puts("farol_redator: schema, canarios, tokens, hash, colisoes, codigos, avplay, dourado e limites ok");
   return 0;
 }

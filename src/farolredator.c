@@ -96,49 +96,75 @@ static int hexval(const char *s, size_t min, size_t max) {
   size_t n = strlen(s);
   return n >= min && n <= max && strspn(s, "0123456789abcdef") == n;
 }
-// 1 quando um parser de URL WHATWG leria s como endereco IPv4: 1-4 partes
-// decimais, octais (0...) ou hex (0x...), a ultima expandindo para os octetos
-// que faltam ("127.0.1" = 127.0.0.1, "0xc633642a" = 198.51.100.42).
-static int ipv4_whatwg(const char *s) {
-  char copia[32];
-  size_t n = strlen(s);
-  const char *p;
-  int partes = 0;
-  unsigned long long ultimo = 0;
-  if (!n || n >= sizeof copia) return 0;
-  strcpy(copia, s);
-  if (copia[n-1] == '.') copia[--n] = 0;
+// Um pedaco IPv4 do parser WHATWG: "0x"/"0X" abre hexadecimal ("0x" sozinho
+// vale 0), "0" seguido de mais digitos abre octal, o resto e decimal. Zeros a
+// esquerda sao livres, sem teto de comprimento; valor acima de 32 bits satura
+// — todo valor grande falha igual, mas um digito invalido mais a frente ainda
+// invalida o pedaco inteiro.
+static int ipv4_numero(const char *p, size_t n, unsigned long long *out) {
+  unsigned long long v = 0;
+  int base = 10;
+  size_t i = 0;
   if (!n) return 0;
-  for (p = copia; ; ) {
-    const char *fim = strchr(p, '.');
-    size_t len = fim ? (size_t)(fim - p) : strlen(p), i = 0;
-    int base = 10;
-    unsigned long long v = 0;
-    if (++partes > 4 || !len || len > 10) return 0;
-    if (len > 2 && p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) { base = 16; i = 2; }
-    else if (len > 1 && p[0] == '0') { base = 8; i = 1; }
-    if (i == len) return 0;
-    for (; i < len; i++) {
-      int d;
-      char c = p[i];
-      if (c >= '0' && c <= '9') d = c - '0';
-      else if (base == 16 && c >= 'a' && c <= 'f') d = c - 'a' + 10;
-      else if (base == 16 && c >= 'A' && c <= 'F') d = c - 'A' + 10;
-      else return 0;
-      if (d >= base) return 0;
-      v = v * (unsigned)base + (unsigned)d;
-      if (v > 0xffffffffULL) return 0;
-    }
-    if (!fim) { ultimo = v; break; }
-    if (v > 255) return 0;
-    p = fim + 1;
+  if (p[0] == '0' && n > 1) {
+    if (p[1] == 'x' || p[1] == 'X') { base = 16; i = 2; }
+    else { base = 8; i = 1; }
   }
-  return ultimo < (1ULL << (8 * (5 - partes)));
+  for (; i < n; i++) {
+    int d;
+    char c = p[i];
+    if (c >= '0' && c <= '9') d = c - '0';
+    else if (base == 16 && c >= 'a' && c <= 'f') d = c - 'a' + 10;
+    else if (base == 16 && c >= 'A' && c <= 'F') d = c - 'A' + 10;
+    else return 0;
+    if (d >= base) return 0;
+    if (v <= 0xffffffffULL) {
+      v = v * (unsigned)base + (unsigned)d;
+      if (v > 0xffffffffULL) v = 0x100000000ULL;
+    }
+  }
+  *out = v;
+  return 1;
+}
+// 1 quando s nao e um dominio valido para um parser de URL WHATWG: ou o
+// parser le como IPv4 — 1-4 partes decimais/octais/hex, a ultima expandindo
+// para os octetos que faltam ("127.0.1" = 127.0.0.1, "0x" = 0,
+// "0x000c633642a" = 198.51.100.42) — ou a ultima parte e um "numero" e o
+// parse falha, o que o WHATWG marca como host invalido, nao dominio. Nas
+// duas saidas o trecho nao sai, nem com hash.
+static int ipv4_whatwg(const char *s) {
+  size_t n = strlen(s), len;
+  const char *p, *fim, *ultimo;
+  unsigned long long v;
+  int partes = 0;
+  if (!n) return 0;
+  if (s[n-1] == '.') n--;              // ponto final nao conta
+  if (!n) return 0;
+  fim = s + n;
+  // "Termina em numero": so a ultima parte decide se o WHATWG tenta IPv4 —
+  // senao e dominio de verdade e sai normalmente (com hash).
+  ultimo = fim;
+  while (ultimo > s && ultimo[-1] != '.') ultimo--;
+  len = (size_t)(fim - ultimo);
+  if (!len || (!ipv4_numero(ultimo, len, &v) &&
+               strspn(ultimo, "0123456789") != len))
+    return 0;
+  for (p = s; ; ) {
+    const char *q = memchr(p, '.', (size_t)(fim - p));
+    len = q ? (size_t)(q - p) : (size_t)(fim - p);
+    if (++partes > 4 || !len || !ipv4_numero(p, len, &v)) return 1;
+    if (!q) break;
+    if (v > 255) return 1;
+    p = q + 1;
+  }
+  return 1;
 }
 // "2.1", "2.1.0-ipk", "4.9-webos": parte numerica (1-3 partes de ate 4
-// digitos) mais rotulo opcional "-<a-z0-9>". O rotulo e a forma nao ambigua:
-// a numerica pura que um parser de URL le como IPv4 ("4.9", "127.0.1",
-// "10.1") e recusada — o coletor envia a versao com o rotulo de origem.
+// digitos) mais rotulo opcional "-tag". O rotulo e da lista fechada de
+// origens — qualquer outro texto atras do "-" e recusado: um sufixo livre
+// deixaria passar PIN ("4.9-7362194") e titulo ("2.1.0-segreditulo").
+// A numerica pura que um parser de URL le como IPv4 ("4.9", "127.0.1",
+// "10.1") tambem e recusada — o coletor envia a versao com o rotulo.
 static int versao(const char *s) {
   const char *tag = strchr(s, '-');
   char num[24];
@@ -147,8 +173,8 @@ static int versao(const char *s) {
   if (!*s || strlen(s) > 23) return 0;
   n = tag ? (size_t)(tag - s) : strlen(s);
   if (!n || n >= sizeof num) return 0;
-  if (tag && (strlen(tag + 1) > 12 ||
-              strspn(tag + 1, "abcdefghijklmnopqrstuvwxyz0123456789") != strlen(tag + 1)))
+  if (tag && !lista(tag + 1,
+        "ipk|webos|tizen|wgt|tpk|tpk40|tpk60|tpk65|apk|android|dev|debug"))
     return 0;
   memcpy(num, s, n); num[n] = 0;
   if (!strchr(num, '.') && n > 2) return 0;
@@ -235,9 +261,11 @@ static int token_seguro(const char *s) {
   if (!strncmp(s, "h:", 2)) return hexval(s + 2, 8, 8);
   if (farolnativo_cod_ok(s)) return 1;
   if (token_fonte(s)) return 1;
-  // addon_<8 hex>: pseudonimo do add-on, hash do identificador com o sal da
-  // instalacao (a mesma funcao do host, farolredator_hash_host).
-  if (!strncmp(s, "addon_", 6)) return hexval(s + 6, 8, 8);
+  // O pseudonimo do add-on e o "h:" de cima: hash do identificador com o sal
+  // da instalacao (a mesma funcao do host, farolredator_hash_host — PLANO
+  // 2.5 "nome de add-on fora da lista publica: idem"). O formato addon_<8hex>
+  // era o FNV-1a sem sal do produtor antigo (src/addons.c): estavel entre
+  // instalacoes, virava identificador — recusado.
   return 0;
 }
 static int recusar(FarolJson *j) {
