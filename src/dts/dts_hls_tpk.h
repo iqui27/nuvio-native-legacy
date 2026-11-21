@@ -45,6 +45,10 @@ void dts_hls_webos_video_end(const char *url, const char *headers, DtsHlsVideoEn
 void dts_hls_webos_buffer_info(DtsBufferInfo *out);
 /* Input tracks for the audio menu. The TV receives only the selected track. */
 int dts_hls_webos_audio_tracks(DtsHlsAudioTrack *out, int max, int *selected);
+/* Change the audio track of the open session from its next segment, keeping
+ * the playlist, init segment and reader. The caller then seeks the player to
+ * flush its segments. 0 = not possible here (reopen instead). */
+int dts_hls_webos_switch_audio(const char *url, const char *headers, int audio_ordinal);
 #endif
 /* Continuous TS: the URL that restarts the stream at s (same session). */
 int dts_tpk_url_em(double s, char *out, size_t n);

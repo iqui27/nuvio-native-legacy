@@ -101,6 +101,9 @@ void dts_remux_webos_video_end(const DtsRemux *, DtsHlsVideoEnd *);
 int dts_remux_webos_audio_tracks(const DtsRemux *, DtsHlsAudioTrack *, int max, int *selected);
 /* Snapshot both source rings. The caller keeps the generator alive. */
 void dts_remux_gen_buffer_info(const DtsRemuxGen *, DtsBufferInfo *);
+/* Use another listed track of the same file from the next segment on. The
+ * AC-3 output keeps its layout, so the init segment stays valid. 1 = accepted. */
+int dts_remux_webos_select_audio(DtsRemux *, int ordinal);
 #endif
 const DtsRemuxInfo *dts_remux_info(const DtsRemux *);
 double dts_remux_segment_start(const DtsRemux *, int seg);    /* seconds; segment 0 = 0 */

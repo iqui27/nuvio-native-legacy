@@ -62,7 +62,10 @@ fMP4 with AC-3 audio, up to 5.1. P7 MKV is converted to single-layer P8.1.
 The HLS variant advertises its HEVC base as `hvc1` and signals P8.1 through
 `SUPPLEMENTAL-CODECS` and the Dolby Vision configuration in the init segment.
 Enable both conversions for a P7 source whose selected audio track is DTS.
-The stream carries one audio track. Other Dolby Vision sources (P5, P8, or P7
+The stream carries one audio track, always as AC-3 5.1 (mono and stereo
+fill the front channels). Choosing another track of the same file keeps the
+HLS session: the next segments use that track and the player seeks to the
+current position, so the picture stops briefly, as for a seek. Other Dolby Vision sources (P5, P8, or P7
 without the P7 conversion) keep the existing converter when HLS is On.
 
 HLS requires a seekable source with a keyframe index. If a webOS MKV's last

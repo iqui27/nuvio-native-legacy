@@ -1201,6 +1201,21 @@ void dts_hls_webos_buffer_info(DtsBufferInfo *out) {
   pthread_mutex_unlock(&G);
 }
 
+int dts_hls_webos_switch_audio(const char *url, const char *headers, int ordinal) {
+  int ok = 0;
+  pthread_mutex_lock(&G);
+  Sessao *s = atual;
+  if (s && s->webos && !s->externalUrl && url && !strcmp(s->url, url) &&
+      !strcmp(s->cabs, headers ? headers : "")) {
+    pthread_mutex_lock(&s->m);
+    if (s->estado == DTSTPK_PRONTO && s->rx) ok = dts_remux_webos_select_audio(s->rx, ordinal);
+    if (ok) s->track = ordinal;
+    pthread_mutex_unlock(&s->m);
+  }
+  pthread_mutex_unlock(&G);
+  return ok;
+}
+
 int dts_hls_webos_audio_tracks(DtsHlsAudioTrack *out, int max, int *selected) {
   int count = 0;
   *selected = -1;

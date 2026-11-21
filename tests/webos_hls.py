@@ -17,7 +17,7 @@ origin = f"http://127.0.0.1:{(work / 'port').read_text()}/"
 
 @contextlib.contextmanager
 def playback(filename, dv7, donor=None, buffer_mib=None, offset=0, speed=0, track=1,
-             ordinal=None, mapping=False, allow_dts=False, switch_to=None):
+             ordinal=None, mapping=False, allow_dts=False, switch_to=None, inplace_to=None):
     cmd = [work / 'server', urljoin(origin, filename), str(dv7)]
     if donor:
         cmd += [urljoin(origin, donor), str(buffer_mib or 0), str(track), str(offset), str(speed)]
@@ -29,6 +29,8 @@ def playback(filename, dv7, donor=None, buffer_mib=None, offset=0, speed=0, trac
            'NV_TEST_HLS_DTS': str(int(allow_dts))}
     if switch_to is not None:
         env['NV_TEST_HLS_SWITCH_ORDINAL'] = str(switch_to)
+    if inplace_to is not None:
+        env['NV_TEST_HLS_INPLACE_ORDINAL'] = str(inplace_to)
     process = subprocess.Popen(
         cmd, env=env,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
@@ -44,6 +46,7 @@ def playback(filename, dv7, donor=None, buffer_mib=None, offset=0, speed=0, trac
                     process.stdin.flush()
                     switch_to = None
                     continue
+                playback.process, playback.earlier = process, earlier
                 yield base
                 break
             earlier.append(line)
@@ -56,6 +59,17 @@ def playback(filename, dv7, donor=None, buffer_mib=None, offset=0, speed=0, trac
         (work / f'{filename}.log').write_text(output)
         if sys.exc_info()[0] is not None:
             print(output)
+
+
+def switch_in_place():
+    process = playback.process
+    process.stdin.write('s\n')
+    process.stdin.flush()
+    for line in process.stdout:
+        if line.startswith('switched '):
+            return int(line.split()[1])
+        playback.earlier.append(line)
+    raise AssertionError('No in-place switch result')
 
 
 def get(base, path=''):
@@ -310,6 +324,34 @@ with playback('dts.mkv', 0, ordinal=1) as base:
 log = (work / 'dts.mkv.log').read_text()
 assert 'input audio ordinal=0 stream=1 selected=0 codec=dts' in log
 assert 'input audio ordinal=1 stream=2 selected=1 codec=aac language=pol' in log
+
+with playback('dts.mkv', 0, ordinal=0, inplace_to=1) as base:
+    init = get(base, 'init.mp4')
+    before = init + get(base, 'seg2.m4s')
+    assert abs(tone(decoded_audio('inplace-dts.mp4', before), 0.5) - 440) < 20
+    assert switch_in_place() == 1
+    assert get(base, 'init.mp4') == init
+    after = init + get(base, 'seg1.m4s')
+    assert probe('inplace-aac.mp4', after)['streams'][1]['channels'] == 6
+    assert 640 < tone(decoded_audio('inplace-aac.mp4', after), 0.5) < 680
+    # The following segment continues the same generator with the new track.
+    assert 640 < tone(decoded_audio('inplace-aac-next.mp4', init + get(base, 'seg2.m4s')), 0.5) < 680
+log = (work / 'dts.mkv.log').read_text()
+assert 'audio switched in place: ordinal 1, stream 2, aac 1 ch' in log
+assert 'input audio ordinal=1 stream=2 selected=1 codec=aac language=pol' in log
+
+with playback('p7-dts-tail.mkv', 1, ordinal=0, mapping=True, allow_dts=True, inplace_to=1) as base:
+    init = get(base, 'init.mp4')
+    assert abs(tone(decoded_audio('inplace-p7-ac3.mp4', init + get(base, 'seg1.m4s')), 0.5) - 440) < 20
+    assert switch_in_place() == 1
+    assert get(base, 'init.mp4') == init
+    after = init + get(base, 'seg1.m4s')
+    video, audio = probe('inplace-p7-dts.mp4', after)['streams']
+    assert any(sd.get('dv_profile') == 8 for sd in video['side_data_list'])
+    assert abs(tone(decoded_audio('inplace-p7-dts.mp4', after), 0.5) - 770) < 20
+log = (work / 'p7-dts-tail.mkv.log').read_text()
+assert 'audio switched in place: ordinal 1, stream 2, dts 6 ch' in log
+print('An audio track change in the same HLS session keeps the init segment and the picture.')
 
 with playback('dts.mkv', 0, 'donor.m4a', 64, 750) as base:
     init = get(base, 'init.mp4')

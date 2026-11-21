@@ -47,6 +47,14 @@ int main(int argc, char **argv) {
     printf("playlist %s\n", url);
     fflush(stdout);
   }
+  const char *inplace = getenv("NV_TEST_HLS_INPLACE_ORDINAL");
+  if (inplace) {
+    char line[16];
+    if (fgets(line, sizeof line, stdin) && line[0] == 's') {
+      printf("switched %d\n", dts_hls_webos_switch_audio(argv[1], NULL, atoi(inplace)));
+      fflush(stdout);
+    }
+  }
   getchar();
   DtsBufferInfo buffer;
   dts_hls_webos_buffer_info(&buffer);

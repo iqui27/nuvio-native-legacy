@@ -78,6 +78,7 @@ int dts_remux_webos_audio_tracks(const DtsRemux *r, DtsHlsAudioTrack *out, int m
   (void)r; (void)out; (void)max; *selected = -1; return 0;
 }
 void dts_remux_gen_buffer_info(const DtsRemuxGen *g, DtsBufferInfo *b) { (void)g; *b = (DtsBufferInfo){0}; }
+int dts_remux_webos_select_audio(DtsRemux *r, int ordinal) { (void)r; (void)ordinal; return 0; }
 #endif
 #else
 
@@ -211,6 +212,7 @@ struct DtsRemux {
   int64_t *segTs, *segB48; double *segS; int nseg;
   double endS;
   int clipAudioAtVideoEnd;
+  int pendingAs;                    /* webOS HLS: next audio stream, -1 = none (under lock) */
   pthread_mutex_t lock;
   DtsEngine *engines[ENGINES_MAX]; int nEngines;
   volatile int *extCancel;
@@ -466,7 +468,7 @@ DtsRemux *dts_remux_new(volatile int *cancel) {
   DtsRemux *r = calloc(1, sizeof *r);
   if (!r) return NULL;
   pthread_mutex_init(&r->lock, NULL);
-  r->vs = r->as = -1;
+  r->vs = r->as = r->pendingAs = -1;
   r->donorRatio = 1;
   r->extCancel = cancel;
   r->audio_offset_ms = atomic_load(&audioOffsetMs);
@@ -553,12 +555,28 @@ static void webosAudioTracks(DtsRemux *r, const AVFormatContext *fmt) {
 
 int dts_remux_webos_audio_tracks(const DtsRemux *r, DtsHlsAudioTrack *out, int max, int *selected) {
   int count = r->audioTrackCount < max ? r->audioTrackCount : max;
+  pthread_mutex_t *lock = (pthread_mutex_t *)&r->lock;
+  pthread_mutex_lock(lock);
+  int current = r->pendingAs >= 0 ? r->pendingAs : r->as;   /* a chosen track shows at once */
+  pthread_mutex_unlock(lock);
   *selected = -1;
   for (int i = 0; i < count; i++) {
     out[i] = r->audioTracks[i];
-    if (out[i].track.stream_index == r->as) *selected = i;
+    if (out[i].track.stream_index == current) *selected = i;
   }
   return count;
+}
+
+int dts_remux_webos_select_audio(DtsRemux *r, int ordinal) {
+  int stream = -1;
+  if (!r || !r->webos || r->audioMib) return 0;   /* audio from another source reopens */
+  for (int i = 0; i < r->audioTrackCount; i++)
+    if (r->audioTracks[i].ordinal == ordinal) stream = r->audioTracks[i].track.stream_index;
+  if (stream < 0) return 0;
+  pthread_mutex_lock(&r->lock);
+  r->pendingAs = stream == r->as ? -1 : stream;
+  pthread_mutex_unlock(&r->lock);
+  return 1;
 }
 
 static double mkvTrackEnd(const AVStream *stream) {
@@ -845,6 +863,9 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
     in->in_channels = A->codecpar->ch_layout.nb_channels; in->in_rate = A->codecpar->sample_rate;
     int ic2 = in->in_channels;
     in->out_channels = stereoAac ? 2 : ic2 == 1 ? 1 : ic2 == 2 ? 2 : 6;
+    /* webOS HLS: one AC-3 layout for every track, so a track change keeps
+     * the init segment. Mono and stereo fill the front channels. */
+    if (r->webos) in->out_channels = 6;
     snprintf(in->out_codec, sizeof in->out_codec, "%s", stereoAac ? "aac" : "ac3");
     in->out_bitrate = in->out_channels > 2 ? 640000 : in->out_channels == 2 ? 192000 : 96000;
     if (A->codecpar->codec_id == AV_CODEC_ID_DTS) snprintf(in->decoder_path, sizeof in->decoder_path, "DTS core only");
@@ -1744,6 +1765,51 @@ static void rollingLog(DtsRemuxGen *g, int force) {
   g->logBlocked = blocked; g->logMedia = 0;
 }
 
+#ifdef NV_WEBOS_HLS_TEST
+/* Generator thread, before a segment: take a track chosen during playback.
+ * The next run starts fresh, and freshStart opens the decoder for it. */
+static int applyAudioSwitch(DtsRemuxGen *g, char *err, size_t errn) {
+  DtsRemux *r = g->src;
+  pthread_mutex_lock(&r->lock);
+  int next = r->pendingAs;
+  r->pendingAs = -1;
+  pthread_mutex_unlock(&r->lock);
+  if (next < 0 || next == r->as || g->audioEng || (unsigned)next >= g->ic->nb_streams) return 0;
+  AVStream *A = g->ic->streams[next];
+  if (avcodec_parameters_copy(r->apar, A->codecpar) < 0) { fail(err, errn, "Out of memory", 0); return -1; }
+  g->ic->streams[r->as]->discard = AVDISCARD_ALL;
+  A->discard = AVDISCARD_DEFAULT;
+  pthread_mutex_lock(&r->lock);
+  r->as = next;
+  pthread_mutex_unlock(&r->lock);
+  r->atb = A->time_base;
+  g->A = A;
+  g->nextSeg = -1;
+  DtsRemuxInfo *in = &r->info;
+  enum AVCodecID id = A->codecpar->codec_id;
+  in->stream_index = next;
+  in->in_channels = A->codecpar->ch_layout.nb_channels;
+  in->in_rate = A->codecpar->sample_rate;
+  snprintf(in->audio_codec, sizeof in->audio_codec, "%s", avcodec_get_name(id));
+  in->audio_language[0] = in->audio_title[0] = 0;
+  for (int i = 0; i < r->audioTrackCount; i++) {
+    const DtsHlsAudioTrack *t = &r->audioTracks[i];
+    if (t->track.stream_index != next) continue;
+    in->audio_ordinal = t->ordinal;
+    snprintf(in->audio_language, sizeof in->audio_language, "%s", t->track.language);
+    snprintf(in->audio_title, sizeof in->audio_title, "%s", t->track.title);
+  }
+  if (id == AV_CODEC_ID_DTS) snprintf(in->decoder_path, sizeof in->decoder_path, "DTS core only");
+  else if (!isConvertible(id)) snprintf(in->decoder_path, sizeof in->decoder_path, "%s decode", in->audio_codec);
+  else snprintf(in->decoder_path, sizeof in->decoder_path, "%s",
+                in->in_channels > 6 || in->in_channels == 0 ? "TrueHD 5.1 presentation" : "TrueHD full decode");
+  printf("[webos-hls] audio switched in place: ordinal %d, stream %d, %s %d ch\n",
+         in->audio_ordinal, next, in->audio_codec, in->in_channels);
+  fflush(stdout);
+  return 0;
+}
+#endif
+
 int dts_remux_gen_run(DtsRemuxGen *g, int seg, double startS, const char *fmt,
                       DtsRemuxWrite w, void *opaque, volatile int *stop,
                       DtsRemuxStats *st, char *err, size_t errn) {
@@ -1775,6 +1841,9 @@ int dts_remux_gen_run(DtsRemuxGen *g, int seg, double startS, const char *fmt,
   dts_engine_interrupt(g->eng, 0);
   if (g->audioEng) dts_engine_interrupt(g->audioEng, 0);
   if (stop && *stop) { rr = -2; goto out; }
+#ifdef NV_WEBOS_HLS_TEST
+  if (seg >= 0 && r->webos && !initOnly && applyAudioSwitch(g, err, errn) < 0) { rr = -1; goto out; }
+#endif
   if (seg >= 0) {
     if (seg >= r->nseg) { fail(err, errn, "No such segment", 0); rr = -1; goto out; }
     fresh = initOnly || g->nextSeg != seg || !g->oc;

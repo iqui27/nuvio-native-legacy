@@ -4321,9 +4321,25 @@ static void hlsBombear(void) {
       int requested = atomic_exchange(&hlsAudioRequest, 0);
       if (requested) {
         double alvo = (seekEm || seekEnvEm || seekRetryEm) ? seekAlvo : posSeg;
-        printf("[webos-hls] switch source audio ordinal=%d at %.3f s\n", requested - 1, alvo);
+        int ordinal = requested - 1;
+        // Same session: the generator changes track at its next segment, and a
+        // seek to the current position makes the player drop the segments it
+        // already holds. The picture stops briefly, as for any seek.
+        if (dts_hls_webos_switch_audio(urlAtual, cabsHttp, ordinal)) {
+          printf("[webos-hls] switch source audio ordinal=%d in place at %.3f s\n", ordinal, alvo);
+          fflush(stdout);
+          hls.ordinal = ordinal;
+          pthread_mutex_lock(&audioMkvLock);
+          for (int i = 0; i < nAudio; i++) if (faixaAudio[i].numero == ordinal) audioAtual = i;
+          pthread_mutex_unlock(&audioMkvLock);
+          video_buscar(alvo);
+          seekEm = 0;
+          seekAgora(alvo);
+          return;
+        }
+        printf("[webos-hls] switch source audio ordinal=%d at %.3f s (reload)\n", ordinal, alvo);
         fflush(stdout);
-        hlsIniciar(requested - 1, hls.dv7, 0, alvo, 0, pausaPedida);
+        hlsIniciar(ordinal, hls.dv7, 0, alvo, 0, pausaPedida);
         return;
       }
     }
