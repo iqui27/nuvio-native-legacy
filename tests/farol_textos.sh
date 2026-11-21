@@ -6,10 +6,12 @@
 # idiomas.py cobre ordem, marcadores, escrita e cobertura de glifo.
 set -eu
 cd "$(dirname "$0")/.."
+dir="$(mktemp -d "${TMPDIR:-/tmp}/nuvio-farol-textos.XXXXXX")"
+bin="$dir/t"
+trap 'rm -rf "$dir"' EXIT
 cc -Wall -Wextra -O1 -g tests/farol_textos.c src/idioma.c src/faroltexto.c -Isrc \
-   -I/opt/homebrew/include -o /tmp/nuvio-farol-textos
-/tmp/nuvio-farol-textos
-rm -f /tmp/nuvio-farol-textos
+   -I/opt/homebrew/include -o "$bin"
+"$bin"
 python3 - <<'PY'
 import re, sys
 sys.path.insert(0, "tools")

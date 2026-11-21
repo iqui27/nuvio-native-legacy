@@ -8068,6 +8068,7 @@
   T("Suas fontes estão desligadas", "Your sources are turned off"),
   T("Suas fontes estão indisponíveis", "Your sources are unavailable"),
   T("Suas pastas", "Your folders"),
+  T("Suave", "Hafif"),
   T("Suaviza os degradês da interface", "Arayüz geçişlerini yumuşatır"),
   T("Suavizar degradês", "Renk geçişlerini yumuşat"),
   T("Suba ou desça os add-ons instalados e ajuste o total de links de cada instância. Add-ons com o mesmo nome continuam separados. Os limites recomeçam a cada provedor Debrid.", "Yüklü eklentileri yukarı veya aşağı taşıyın ve her örneğin toplam bağlantı sayısını ayarlayın. Aynı ada sahip eklentiler ayrı kalır. Sayaç her Debrid sağlayıcısı için yeniden başlar."),

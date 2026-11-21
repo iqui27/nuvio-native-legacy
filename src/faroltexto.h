@@ -569,7 +569,7 @@
 #define FT_ESC_TEMPO_FILME      "Um filme inteiro"
 #define FT_ESC_TEMPO_NOITE      "A noite toda"
 #define FT_ESC_PESO             "Leve ou intenso?"
-#define FT_ESC_PESO_LEVE        "Leve"              // ja existe
+#define FT_ESC_PESO_LEVE        "Suave"             // chave propria: filme leve, nao a severidade
 #define FT_ESC_PESO_INTENSO     "Intenso"
 #define FT_ESC_COMPANHIA        "Com quem você vai ver?"
 #define FT_ESC_SO_EU            "Só eu"

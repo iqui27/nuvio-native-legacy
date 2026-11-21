@@ -8068,6 +8068,7 @@
   T("Suas fontes estão desligadas", "Your sources are turned off"),
   T("Suas fontes estão indisponíveis", "Your sources are unavailable"),
   T("Suas pastas", "Your folders"),
+  T("Suave", "Nhẹ"),
   T("Suaviza os degradês da interface", "Làm mịn độ dốc giao diện"),
   T("Suavizar degradês", "Làm mịn chuyển màu"),
   T("Suba ou desça os add-ons instalados e ajuste o total de links de cada instância. Add-ons com o mesmo nome continuam separados. Os limites recomeçam a cada provedor Debrid.", "Di chuyển các tiện ích đã cài lên hoặc xuống và đặt tổng số liên kết cho từng bản cài. Các tiện ích trùng tên vẫn được tách riêng. Số đếm bắt đầu lại với mỗi nhà cung cấp Debrid."),

@@ -67,39 +67,81 @@ static void confere_linhas(const char *nome, const char *s) {
 }
 
 // ---- "nunca diz": dobra acento -> ascii, minuscula, fronteira de palavra --
-static char dobra(unsigned char c) {
-  // blocos latinos 1: A-grave..z-tilde e cedilhas, mapeados pela paridade.
-  if (c >= 'A' && c <= 'Z') return (char)(c + 32);
-  return (char)c;
+// A MESMA dobradura de src/faroltexto.c (o filtro do texto livre): ponto de
+// codigo por vez, latim-1 na base, marcas combinantes fora, branco e
+// pontuacao larga num so ' ' e o resto cru — com byte >= 0x80 pesando como
+// letra, para "Łoi"/"Þoi" nao abrirem fronteira e "o×i" nao virar "oi".
+static long ft_utf8(const char **p) {
+  const unsigned char *s = (const unsigned char *)*p;
+  unsigned char c = s[0];
+  long cp;
+  int extra;
+  if (c < 0x80) { *p += 1; return c; }
+  if (c >= 0xC2 && c <= 0xDF)      { cp = c & 0x1F; extra = 1; }
+  else if (c >= 0xE0 && c <= 0xEF) { cp = c & 0x0F; extra = 2; }
+  else if (c >= 0xF0 && c <= 0xF4) { cp = c & 0x07; extra = 3; }
+  else return -1;
+  for (int i = 1; i <= extra; i++) {
+    if ((s[i] & 0xC0) != 0x80) return -1;
+    cp = (cp << 6) | (s[i] & 0x3F);
+  }
+  if ((extra == 2 && cp < 0x800) || (extra == 3 && cp < 0x10000)) return -1;
+  if (cp >= 0xD800 && cp <= 0xDFFF) return -1;
+  if (cp > 0x10FFFF) return -1;
+  *p += extra + 1;
+  return cp;
+}
+static int ft_combinante(long cp) {
+  return (cp >= 0x0300 && cp <= 0x036F) || (cp >= 0x1AB0 && cp <= 0x1AFF) ||
+         (cp >= 0x20D0 && cp <= 0x20FF) || (cp >= 0xFE20 && cp <= 0xFE2F);
+}
+static int ft_branco(long cp) {
+  return cp == ' ' || cp == '\n' || cp == 0xA0 ||
+         cp == 0x2028 || cp == 0x2029 || cp == 0x202F || cp == 0x3000;
+}
+static int ft_pontuacao(long cp) {
+  return (cp >= 0x2000 && cp <= 0x206F) || (cp >= 0x3001 && cp <= 0x303F) ||
+         (cp >= 0xFE30 && cp <= 0xFE4F) || (cp >= 0xFF61 && cp <= 0xFF65);
+}
+static char ft_base_latim(long cp) {
+  static const char T[0x40] = {
+    'a','a','a','a','a','a', 0 ,'c',
+    'e','e','e','e','i','i','i','i',
+     0 ,'n','o','o','o','o','o', 0 ,
+     0 ,'u','u','u','u','y', 0 , 0 ,
+    'a','a','a','a','a','a', 0 ,'c',
+    'e','e','e','e','i','i','i','i',
+     0 ,'n','o','o','o','o','o', 0 ,
+     0 ,'u','u','u','u','y', 0 ,'y',
+  };
+  return (cp >= 0xC0 && cp <= 0xFF) ? T[cp - 0xC0] : 0;
 }
 static void dobrar(const char *in, char *out, size_t cap) {
   size_t o = 0;
-  for (const unsigned char *p = (const unsigned char *)in; *p && o + 2 < cap; p++) {
-    unsigned char c = *p;
-    if (c == 0xC3 && p[1]) {          // U+00C0..U+00FF em UTF-8
-      unsigned char d = p[1] & 0x3F;  // ponto dentro do bloco
-      char base;
-      if (d <= 0x05 || (d >= 0x20 && d <= 0x25)) base = 'a';
-      else if (d == 0x07 || d == 0x27) base = 'c';
-      else if (d <= 0x0B || (d >= 0x28 && d <= 0x2B)) base = 'e';
-      else if (d <= 0x0F || (d >= 0x2C && d <= 0x2F)) base = 'i';
-      else if (d == 0x11 || d == 0x31) base = 'n';
-      else if (d >= 0x12 && d <= 0x16) base = 'o';
-      else if (d >= 0x32 && d <= 0x36) base = 'o';
-      else if (d >= 0x19 && d <= 0x1C) base = 'u';
-      else if (d >= 0x39 && d <= 0x3C) base = 'u';
-      else if (d == 0x1D || d == 0x3D || d == 0x3F) base = 'y';
-      else base = 0;
-      p++;
-      if (!base) continue;
-      out[o++] = base;
+  int pend = 0;
+  const char *p = in;
+  while (*p && o + 5 < cap) {
+    const char *ini = p;
+    long cp = ft_utf8(&p);
+    if (cp < 0) break;
+    if (ft_branco(cp) || ft_pontuacao(cp)) { if (o) pend = 1; continue; }
+    if (ft_combinante(cp)) continue;
+    if (pend) { out[o++] = ' '; pend = 0; }
+    if (cp < 0x80) {
+      char c = (char)cp;
+      out[o++] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
       continue;
     }
-    out[o++] = dobra(c);
+    char base = ft_base_latim(cp);
+    if (base) { out[o++] = base; continue; }
+    while (ini < p && o + 1 < cap) out[o++] = *ini++;
   }
   out[o] = 0;
 }
-static int letra(char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'); }
+static int letra(int c) {
+  unsigned char u = (unsigned char)c;
+  return (u >= 'a' && u <= 'z') || (u >= '0' && u <= '9') || u >= 0x80;
+}
 static int tem_palavra(const char *dobrada, const char *agulha) {
   size_t n = strlen(agulha);
   for (const char *p = dobrada; (p = strstr(p, agulha)); p += n) {
@@ -122,6 +164,13 @@ static const char *PROIBIDAS[] = {
   "inesperado", "inesperada", "unexpected",
   "estou aqui para ajudar", "how can i help", "how may i help",
   "tudo certinho",
+  // jargao cru na primeira linha (ALMA 2: nada de MEDIA_ERR_DECODE,
+  // "HTTP 206 Partial Content", HEVC Main10 DV P5 ou ring buffer)
+  "http", "https", "media_err_decode", "hevc", "main10", "dv p5",
+  "partial content", "ring buffer", "mediacodec", "dns", "tls",
+  // culpa ao usuario (ALMA 2: nada de "sua internet esta ruim" nem
+  // "voce escolheu uma fonte incompativel" — o fato neutro, sim)
+  "internet esta ruim", "internet caiu", "fonte incompativel",
 };
 
 static void confere_proibidas(const char *nome, const char *s) {
@@ -217,12 +266,13 @@ static int tempo_ao_lado(const char *buf, const char *sinal) {
   return 0;
 }
 
+static const char *const COD[IDIOMA_N] = {
+  "pt", "en", "ro", "uk", "ru", "fr", "de", "es", "it", "nl", "pl", "tr",
+  "ptpt", "sv", "da", "no", "cs", "sk", "sl", "hu", "lt", "bs", "sr",
+  "bg", "el", "id", "vi", "ja", "zhcn", "zhtw", "ar",
+};
+
 static void confere_fonte_trocada(void) {
-  static const char *const cod[IDIOMA_N] = {
-    "pt", "en", "ro", "uk", "ru", "fr", "de", "es", "it", "nl", "pl", "tr",
-    "ptpt", "sv", "da", "no", "cs", "sk", "sl", "hu", "lt", "bs", "sr",
-    "bg", "el", "id", "vi", "ja", "zhcn", "zhtw", "ar",
-  };
   char buf[256];
   int lg;
   for (lg = 0; lg < IDIOMA_N; lg++) {
@@ -230,12 +280,151 @@ static void confere_fonte_trocada(void) {
     snprintf(buf, sizeof buf, i18n(FT_FONTE_TROCADA), "ZZFMTZZ");
     if (!strstr(buf, "ZZFMTZZ")) {
       printf("FALHOU: %s FT_FONTE_TROCADA sem o formato: \"%s\"\n",
-             cod[lg], buf);
+             COD[lg], buf);
       falhas++;
     } else if (tempo_ao_lado(buf, "ZZFMTZZ")) {
       printf("FALHOU: %s FT_FONTE_TROCADA le o formato como tempo "
-             "decorrido: \"%s\"\n", cod[lg], buf);
+             "decorrido: \"%s\"\n", COD[lg], buf);
       falhas++;
+    }
+  }
+}
+
+// ---- semantica dos argumentos 2x%d, renderizada pela i18n de verdade ----
+//
+// FT_ACHA_CURTOS_L1 recebe (quantidade, teto de minutos). A revisao pegou o
+// ja ligando a contagem na clausula de tempo e os minutos no contador:
+// "(3, 100)" rendia "3 分未満の短編 100 本" — 100 curtas de menos de 3
+// minutos. A regra: o numero imediatamente antes do contador 本 e a
+// quantidade; o que precede 分 e o teto de minutos.
+static int numero_antes(const char *buf, const char *marc) {
+  const char *p = strstr(buf, marc);
+  int v = 0;
+  if (!p) return -1;
+  while (p > buf && p[-1] == ' ') p--;
+  if (p == buf || p[-1] < '0' || p[-1] > '9') return -1;
+  while (p > buf && p[-1] >= '0' && p[-1] <= '9') p--;
+  while (*p >= '0' && *p <= '9') v = v * 10 + (*p++ - '0');
+  return v;
+}
+
+static void confere_acha_curtos_ja(void) {
+  char buf[256];
+  lg_teste = IDIOMA_JA;
+  snprintf(buf, sizeof buf, i18n(FT_ACHA_CURTOS_L1), 3, 100);
+  if (numero_antes(buf, "本") != 3 || numero_antes(buf, "分") != 100) {
+    printf("FALHOU: ja FT_ACHA_CURTOS_L1 troca contagem e duracao: \"%s\"\n",
+           buf);
+    falhas++;
+  }
+}
+
+// FT_INFO_DUAS_NOITES recebe (noites, minutos por noite). A revisao pegou o
+// hu lendo a duracao como frequencia: "(2, 50)" rendia "2 este, 50
+// percenként." — "a cada 50 minutos". A regra: os minutos medem a noite,
+// nao a frequencia ("percenként" e "por minuto", nao "por noite").
+static void confere_duas_noites_hu(void) {
+  char buf[256];
+  lg_teste = IDIOMA_HU;
+  snprintf(buf, sizeof buf, i18n(FT_INFO_DUAS_NOITES), 2, 50);
+  if (strstr(buf, "percenként") || !strstr(buf, "50 perc")) {
+    printf("FALHOU: hu FT_INFO_DUAS_NOITES le duracao como frequencia: "
+           "\"%s\"\n", buf);
+    falhas++;
+  }
+}
+
+// ---- largura e aceitacao dos modelos do gosto nas 31 linguas -------------
+//
+// A cauda de FAROL_FRASES (de FT_FIL_PORQUE_TERMINOU em diante) e o lote da
+// issue 35: a revisao conferiu os 122 modelos x 31 idiomas e so o grego
+// passava de 62 (FT_INFO_SOBE, 71 pontos de codigo). Aqui vai a mesma regra
+// em C: literal e renderizado com os valores da spec tem de caber em 2
+// linhas de 62 e passar por faroltexto_aceita().
+
+// Argumentos da spec (PLANO-GOSTO 4.2); o que nao esta aqui renderiza com
+// %d=2 e %s="Duna", como a auditoria da revisao.
+static const struct {
+  const char *pt;
+  int d[4];
+  const char *s[4];
+  int nd, ns;
+} GOSTO_ARGS[] = {
+  { FT_ACHA_CURTOS_L1,    {3, 100},    {0},                                  2, 0 },
+  { FT_INFO_SOBE,         {2, 6, 45},  {0},                                  3, 0 },
+  { FT_INFO_DUAS_NOITES,  {2, 50},     {0},                                  2, 0 },
+  { FT_INFO_QUALI,        {0},         {"4K", "Dolby Vision", "português"},  0, 3 },
+  { FT_INFO_QUALI_AUDIO,  {0},         {"4K", "português"},                  0, 2 },
+  { FT_INFO_TERMINA,      {0},         {"23:40"},                            0, 1 },
+  { FT_INFO_RETOMADA,     {2, 4},      {"7 semanas"},                        2, 1 },
+  { FT_MOT_AMIGO,         {8},         {"Ana"},                              1, 1 },
+  { FT_MOT_TERMINOU_TEMA, {0},         {"Ruptura", "mistério de escritório"}, 0, 2 },
+  { FT_MOT_DIRETOR,       {2},         {"Duna"},                             1, 1 },
+  { FT_DICA_PAROU_L1,     {2, 4},      {"Dark"},                             2, 1 },
+  { FT_DICA_PAROU_L2,     {5},         {0},                                  1, 0 },
+  { FT_DICA_SALVO_L1,     {0},         {"5 meses"},                          0, 1 },
+  { FT_DICA_SALVO_L2,     {0},         {"1h32"},                             0, 1 },
+  { FT_DICA_FALTA_L1,     {2, 3},      {"Dark"},                             2, 1 },
+  { FT_FIL_PESSOA,        {0},         {"Frances McDormand"},                0, 1 },
+  { FT_FIL_SUB_TEMA,      {0},         {"viagem no tempo"},                  0, 1 },
+  { FT_ESC_PASSO,         {1, 3},      {0},                                  2, 0 },
+};
+
+// renderiza fmt com os pares (d,s) acima; %d e %s consomem na ordem
+static void render_fmt(const char *fmt, const int *d, int nd,
+                       const char *const *s, int ns, char *out, size_t cap) {
+  size_t o = 0;
+  int a = 0, b = 0;
+  for (const char *p = fmt; *p && o + 1 < cap; p++) {
+    if (p[0] == '%' && p[1] == 'd') {
+      o += snprintf(out + o, cap - o, "%d", a < nd ? d[a] : 2);
+      a++;
+      p++;
+      continue;
+    }
+    if (p[0] == '%' && p[1] == 's') {
+      o += snprintf(out + o, cap - o, "%s", b < ns ? s[b] : "Duna");
+      b++;
+      p++;
+      continue;
+    }
+    out[o++] = *p;
+  }
+  out[o] = 0;
+}
+
+static void confere_gosto_idiomas(const char *const *FRASES, size_t n,
+                                  size_t gosto_ini) {
+  char buf[512], nome[96];
+  for (int lg = 0; lg < IDIOMA_N; lg++) {
+    lg_teste = lg;
+    for (size_t i = gosto_ini; i < n; i++) {
+      const char *t = i18n(FRASES[i]);
+      const int *d = NULL;
+      const char *const *s = NULL;
+      int nd = 0, ns = 0;
+      snprintf(nome, sizeof nome, "%s FT[%zu]", COD[lg], i);
+      confere_linhas(nome, t);
+      if (!faroltexto_aceita(t)) {
+        printf("FALHOU: %s literal reprovada por faroltexto_aceita: \"%s\"\n",
+               nome, t);
+        falhas++;
+      }
+      for (size_t j = 0; j < sizeof GOSTO_ARGS / sizeof *GOSTO_ARGS; j++)
+        if (!strcmp(FRASES[i], GOSTO_ARGS[j].pt)) {
+          d = GOSTO_ARGS[j].d;
+          s = GOSTO_ARGS[j].s;
+          nd = GOSTO_ARGS[j].nd;
+          ns = GOSTO_ARGS[j].ns;
+          break;
+        }
+      render_fmt(t, d, nd, s, ns, buf, sizeof buf);
+      confere_linhas(nome, buf);
+      if (!faroltexto_aceita(buf)) {
+        printf("FALHOU: %s renderizada reprovada por faroltexto_aceita: "
+               "\"%s\"\n", nome, buf);
+        falhas++;
+      }
     }
   }
 }
@@ -302,6 +491,18 @@ int main(void) {
 
   confere_acha_zh(IDIOMA_ZHCN, "zhcn");
   confere_acha_zh(IDIOMA_ZHTW, "zhtw");
+  confere_acha_curtos_ja();
+  confere_duas_noites_hu();
+  // a cauda de FAROL_FRASES e o lote do gosto (issue 35)
+  size_t gosto_ini = n;
+  for (size_t i = 0; i < n; i++)
+    if (!strcmp(FRASES[i], FT_FIL_PORQUE_TERMINOU)) { gosto_ini = i; break; }
+  if (gosto_ini == n) {
+    printf("FALHOU: FT_FIL_PORQUE_TERMINOU fora de FAROL_FRASES\n");
+    falhas++;
+  } else {
+    confere_gosto_idiomas(FRASES, n, gosto_ini);
+  }
   confere_fonte_trocada();
 
   if (falhas) { printf("farol_textos: %d falha(s)\n", falhas); return 1; }

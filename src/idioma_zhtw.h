@@ -8068,6 +8068,7 @@
   T("Suas fontes estão desligadas", "Your sources are turned off"),
   T("Suas fontes estão indisponíveis", "Your sources are unavailable"),
   T("Suas pastas", "Your folders"),
+  T("Suave", "輕鬆"),
   T("Suaviza os degradês da interface", "平滑界面漸變"),
   T("Suavizar degradês", "平滑漸層"),
   T("Suba ou desça os add-ons instalados e ajuste o total de links de cada instância. Add-ons com o mesmo nome continuam separados. Os limites recomeçam a cada provedor Debrid.", "上下移動已安裝的外掛，並設定每個實例的連結總數。同名外掛仍保持獨立。每個Debrid服務商都會重新開始計數。"),

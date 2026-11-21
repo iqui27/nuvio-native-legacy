@@ -8068,6 +8068,7 @@
   T("Suas fontes estão desligadas", "Your sources are turned off"),
   T("Suas fontes estão indisponíveis", "Your sources are unavailable"),
   T("Suas pastas", "Your folders"),
+  T("Suave", "Lengvas"),
   T("Suaviza os degradês da interface", "Išlygina sąsajos gradientus"),
   T("Suavizar degradês", "Glotninti gradientus"),
   T("Suba ou desça os add-ons instalados e ajuste o total de links de cada instância. Add-ons com o mesmo nome continuam separados. Os limites recomeçam a cada provedor Debrid.", "Perkelkite įdiegtus priedus aukštyn arba žemyn ir nustatykite bendrą kiekvieno egzemplioriaus nuorodų skaičių. Vienodo pavadinimo priedai lieka atskiri. Skaičiavimas pradedamas iš naujo kiekvienam Debrid teikėjui."),

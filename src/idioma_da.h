@@ -8068,6 +8068,7 @@
   T("Suas fontes estão desligadas", "Your sources are turned off"),
   T("Suas fontes estão indisponíveis", "Your sources are unavailable"),
   T("Suas pastas", "Your folders"),
+  T("Suave", "Let"),
   T("Suaviza os degradês da interface", "Udglatter grænsefladegradienter"),
   T("Suavizar degradês", "Udjævn farveovergange"),
   T("Suba ou desça os add-ons instalados e ajuste o total de links de cada instância. Add-ons com o mesmo nome continuam separados. Os limites recomeçam a cada provedor Debrid.", "Flyt de installerede tilføjelser op eller ned, og indstil det samlede antal links for hver instans. Tilføjelser med samme navn forbliver adskilte. Optællingen starter forfra for hver Debrid-udbyder."),

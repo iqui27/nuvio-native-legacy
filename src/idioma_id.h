@@ -8068,6 +8068,7 @@
   T("Suas fontes estão desligadas", "Your sources are turned off"),
   T("Suas fontes estão indisponíveis", "Your sources are unavailable"),
   T("Suas pastas", "Your folders"),
+  T("Suave", "Ringan"),
   T("Suaviza os degradês da interface", "Menghaluskan gradien antarmuka"),
   T("Suavizar degradês", "Haluskan gradasi"),
   T("Suba ou desça os add-ons instalados e ajuste o total de links de cada instância. Add-ons com o mesmo nome continuam separados. Os limites recomeçam a cada provedor Debrid.", "Pindahkan pengaya yang terpasang ke atas atau ke bawah dan atur jumlah total tautan untuk setiap instans. Pengaya dengan nama yang sama tetap terpisah. Penghitungan dimulai ulang untuk setiap penyedia Debrid."),

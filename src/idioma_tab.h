@@ -8067,6 +8067,7 @@
   { "Suas fontes estão desligadas", "Your sources are turned off" },
   { "Suas fontes estão indisponíveis", "Your sources are unavailable" },
   { "Suas pastas", "Your folders" },
+  { "Suave", "Light" },
   { "Suaviza os degradês da interface", "Smoothes interface gradients" },
   { "Suavizar degradês", "Smooth gradients" },
   { "Suba ou desça os add-ons instalados e ajuste o total de links de cada instância. Add-ons com o mesmo nome continuam separados. Os limites recomeçam a cada provedor Debrid.", "Move installed add-ons up or down and set the total links for each instance. Add-ons with the same name remain separate. Link counts reset for each Debrid provider." },

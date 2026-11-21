@@ -21,6 +21,19 @@ static void caso(const char *s, int espera, const char *porque) {
 
 int main(void) {
   int boas = 0, ruins = 0;
+  // Duas linhas validas de 62 ideogramas de 4 bytes: 497 bytes antes do
+  // NUL — mais que os 382 que a dobra examinava. A cauda fica fora do
+  // alcance de quem corta cedo demais.
+  static char cauda_palavra[600], cauda_url[600];
+  {
+    char *w = cauda_palavra;
+    for (int i = 0; i < 62; i++) { memcpy(w, "\xF0\xA0\x80\x80", 4); w += 4; }
+    *w++ = '\n';
+    for (int i = 0; i < 34; i++) { memcpy(w, "\xF0\xA0\x80\x80", 4); w += 4; }
+    strcpy(w, " Hello!");
+    memcpy(cauda_url, cauda_palavra, (size_t)(w - cauda_palavra));
+    strcpy(cauda_url + (w - cauda_palavra), " x.com");
+  }
 #define BOM(s)   do { caso((s), 1, "boa");   boas++; } while (0)
 #define RUIM(s)  do { caso((s), 0, "ruim");  ruins++; } while (0)
 
@@ -85,6 +98,15 @@ int main(void) {
   BOM("週末にぴったりの映画。");                          // japones idem
   BOM("للمشاهدة الليلة.");                              // arabe idem
   BOM("Duração · Nota · Amigos · Onde ver");
+  BOM("O título é ÞOi.");                                // "oi" dentro de ÞOi nao e palavra
+  BOM("O título é Łoi.");                                // idem: Ł e letra, nao fronteira
+  BOM("O arquivo awww.tmp foi salvo.");                  // "www." no meio da palavra
+  BOM("Exemplo de pontuação ://");                      // "://" solto, sem esquema antes
+  BOM("A etiqueta diz título.comédia.");                // ".com" colado em letra nao e TLD
+  BOM("Marque o×i.");                                    // "×" nao vira "oi" na dobra
+  BOM("അവന്‍");                                    // ZWJ e ortografia legitima (malayalam)
+  BOM("Curto para hoje Ⓜ");                             // simbolo de apresentacao textual
+  BOM("葛󠄀");                                          // seletor ideografico e CJK legitimo
 
   // ------------------------------- 60 ruins ------------------------------
   RUIM(NULL);                                          // nada
@@ -154,10 +176,32 @@ int main(void) {
   RUIM("How may I help?");
   RUIM("Ficou tudo certinho agora.");
   RUIM("a palavra OI no meio");
+  // atras do antigo corte da dobra (382 bytes): duas linhas de pontos de
+  // codigo de 4 bytes deixavam a cauda sem exame — " Hello!" e " x.com"
+  // no fim da segunda linha passavam
+  RUIM(cauda_palavra);
+  RUIM(cauda_url);
+  // frase proibida quebrada entre linhas ou com espaco duplo
+  RUIM("Great\nchoice!");
+  RUIM("Great  choice!");
+  // dominios que a lista de TLDs nao cobria
+  RUIM("Veja em ard.de/filme.");                          // ccTLD de 2 letras
+  RUIM("Veja em nü.de.");                                 // idem, apos a dobra de ü
+  RUIM("Veja em 电影.com.");                              // rotulo nao ascii + TLD
+  // palavra proibida com acento solto (NFD): E + U+0301 vira "É"
+  RUIM("PARABE\xCC\x81NS!");
+  // jargao cru e culpa ao usuario, exemplos literais do ALMA 2
+  RUIM("HTTP 206 Partial Content");
+  RUIM("Sua internet está ruim.");
+  // controles e separadores que nao contavam
+  RUIM("Curto\xC2\x85para hoje.");                        // NEL (C1)
+  RUIM("Uma\xE2\x80\xA8" "duas\xE2\x80\xA8" "três");      // U+2028 = quebra (3 linhas)
+  RUIM(" \nCurto para hoje.");                            // linha so de espacos
+  RUIM("Curto para hoje \xE2\x97\xBD");                   // ◽ emoji de apresentacao padrao
 
   printf("farol_aceita: %d boas aceitas, %d ruins recusadas", boas, ruins);
-  if (boas != 60 || ruins != 60) {
-    printf(" — ERRO: esperado 60+60\n");
+  if (boas != 69 || ruins != 74) {
+    printf(" — ERRO: esperado 69+74\n");
     return 1;
   }
   if (falhas) { printf(" — %d falha(s)\n", falhas); return 1; }

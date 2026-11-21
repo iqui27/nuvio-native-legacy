@@ -8068,6 +8068,7 @@
   T("Suas fontes estão desligadas", "Your sources are turned off"),
   T("Suas fontes estão indisponíveis", "Your sources are unavailable"),
   T("Suas pastas", "Your folders"),
+  T("Suave", "Ľahký"),
   T("Suaviza os degradês da interface", "Vyhladzuje prechody rozhrania"),
   T("Suavizar degradês", "Vyhladenie prechodov"),
   T("Suba ou desça os add-ons instalados e ajuste o total de links de cada instância. Add-ons com o mesmo nome continuam separados. Os limites recomeçam a cada provedor Debrid.", "Posuňte nainštalované doplnky nahor alebo nadol a nastavte celkový počet odkazov pre každú inštanciu. Doplnky s rovnakým názvom zostávajú oddelené. Počítanie začína znova pre každého poskytovateľa Debrid."),
