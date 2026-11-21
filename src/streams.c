@@ -3065,7 +3065,9 @@ int stream_falha_semear_manual(FonteFalhaSessao *sessao, int indice,
     c.identidade = id;
     c.indice = indice;
     c.nativa = s->infoHash[0] != 0;
-    c.filtro = s->filtro;
+    // O snapshot do parse nao tem o estado de cache vivo; a folha exibe com
+    // stream_filtro_dados, entao a semeadura usa o mesmo dado (F67).
+    stream_filtro_dados(s, &c.filtro);
     c.ordemAddon = s->addonOrdem;
     snprintf(c.addon, sizeof c.addon, "%s", s->addonChave);
     int servico = s->infoHash[0] && s->debridServico > 0 ? s->debridServico - 1
