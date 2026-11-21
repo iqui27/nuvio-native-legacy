@@ -5884,7 +5884,7 @@ int stream_escolher_indice(int indice) {
 // does) and, where TorBox lists the files, "Files of this version". With the
 // setting off, or on a source the converter cannot read, the hold opens the
 // files list exactly as before.
-enum { FM_AUDIO = 0, FM_FAIXAS, FM_ARQUIVOS, FM_SYNC };
+enum { FM_AUDIOEXT = 0, FM_FAIXAS, FM_ARQUIVOS, FM_SYNC };
 static int fmAberto, fmN, fmFoco, fmAcoes[4], fmMarcada, fmPrimeiro;   // labels frozen at open (they fade out unchanged)
 static int fmIndice = -1;   // the source the menu is for
 // "Choose audio track…": the version's header is read on a thread
@@ -5958,7 +5958,7 @@ static void fonteMenuAbrir(int i) {
   fmIndice = i;
   audioext_idioma_principal_definir(ling_audio());
   fmModoFaixas = 0; fmSondaN = -2;
-  fmAcoes[fmN++] = FM_AUDIO;
+  fmAcoes[fmN++] = FM_AUDIOEXT;
   if (audioext_sonda_disponivel()) fmAcoes[fmN++] = FM_FAIXAS;
   if (linhaAceitaPartes(i)) fmAcoes[fmN++] = FM_ARQUIVOS;
   if (audioext_tocando()) fmAcoes[fmN++] = FM_SYNC;
@@ -6047,7 +6047,7 @@ static void fonteMenuEscolher(void) {
   fmAberto = 0;
   if (acao == FM_SYNC) { audioext_dopasuj_pedir(); return; }
   if (i < 0) return;
-  if (acao == FM_AUDIO) fonteMarcarAudio(i);
+  if (acao == FM_AUDIOEXT) fonteMarcarAudio(i);
   else if (acao == FM_ARQUIVOS && linhaAceitaPartes(i)) partesAbrirPainel(i);
 }
 static const char *fonteMenuRotulo(int r, const char **icone) {
