@@ -160,9 +160,12 @@ function codNativoOk(s) {
 // token_seguro: o que erro.nativo e linha[].k podem trazer — a lista de
 // rotulos, "h:" + 8 hex (pseudonimo com sal), codigo nativo ou o token de
 // fonte "<res>_<sdr|hdr>_<dv|nodv>_<ac3|eac3|dts|outro>" que o produtor monta
-// de enums (farol-10). Tudo fora disso e texto livre: recusado.
+// de enums (farol-10). Tudo fora disso e texto livre: recusado. A lista e a
+// MESMA do token_seguro do redator (b29addd8a:src/farolredator.c): busca e o
+// FE_ADDON_BUSCA de addons.c, proxima o FE_FONTE_PROXIMA de streams.c,
+// mem_baixa o FE_MEM_BAIXA de memlog.c e mpv o FE_ABRIR do player desktop.
 const TOK_ROTULOS = new Set(
-  "x starfish avplay tpk media3 dns tls prazo recusa sem_plano fora_cache 2160p_hdr_dv_eac3".split(" "));
+  "x starfish avplay tpk media3 mpv dns tls prazo recusa sem_plano fora_cache busca proxima mem_baixa 2160p_hdr_dv_eac3".split(" "));
 const TOK_FONTE = ["sd|480p|720p|1080p|2160p", "sdr|hdr", "dv|nodv", "ac3|eac3|dts|outro"]
   .map((l) => new Set(l.split("|")));
 function tokOk(v) {
@@ -329,26 +332,35 @@ async function sha256Hex(s) {
   return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 
-// Dedupe atomico na janela MOVEL inteira de 24 h (FAROL_DEDUP_JANELA): a chave
-// unica e (pessoa_h, fp) — SEM o dia UTC, que era o furo da virada — e o ON
-// CONFLICT decide na propria instrucao. A linha existente ainda dentro da
-// janela = reenvio da mesma falha: soma `vezes` e preserva o criado (o
-// vencimento e do recibo ORIGINAL, nao do reenvio). Fora da janela ou
-// inexistente = registro novo: criado e vezes novos. O RETURNING diz o que
-// aconteceu com ESTE pedido: vezes 1 = criou a linha (debita cota); vezes
-// maior = dedupe (mesmo codigo do primeiro envio, sem debitar).
-const DEDUP_COLS = ["criado", "janela", "versao", "plataforma", "so_maior", "codigo", "fingerprint", "json"];
-const DEDUP_CASO = (c) =>
-  `${c} = CASE WHEN farol_registro.criado > excluded.criado - ${FAROL_DEDUP_JANELA} ` +
-  `THEN farol_registro.${c} ELSE excluded.${c} END`;
-const FAROL_UPSERT =
-  "INSERT INTO farol_registro (criado, janela, pessoa_h, versao, plataforma, so_maior, codigo, fp, fingerprint, vezes, json) " +
-  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?) " +
+// Dedupe atomico na janela MOVEL inteira de 24 h (FAROL_DEDUP_JANELA) — mas o
+// slot vivo de (pessoa_h, fp) mora na farol_dedup, NAO na farol_registro. Com
+// a chave unica na propria tabela de registros a versao anterior nao dava
+// conta de duas coisas ao mesmo tempo: a linha pendente de cota ja era
+// visivel ao dedupe (um reenvio concorrente virava 200 e efetivava registro
+// acima do teto) e a ocorrencia passadas 24 h reescrevia a linha — quando a
+// cota estourava o 429 apagava o JSON de um recibo ainda valido. Com o estado
+// separado: reclamacao e linha sao coisas distintas, o recibo anterior so sai
+// pela retencao de 30 dias e a ocorrencia nova e um registro NOVO (id e
+// codigo novos, linha anterior intacta).
+//
+// O UPSERT abaixo e uma instrucao so. `toques` no RETURNING diz quem tomou o
+// slot: 1 = ESTE pedido (slot vazio ou vencido ha mais de 24 h — criado,
+// registro e confirmado zerados na retomada); maior = o slot ja era de outro
+// pedido, confirmado devolve o recibo do registro vivo, pendente e envio
+// ainda em voo e NUNCA pode virar 200.
+const FAROL_RECLAMAR =
+  "INSERT INTO farol_dedup (pessoa_h, fp, criado, registro, confirmado, toques) " +
+  "VALUES (?, ?, ?, NULL, 0, 1) " +
   "ON CONFLICT(pessoa_h, fp) DO UPDATE SET " +
-  `vezes = CASE WHEN farol_registro.criado > excluded.criado - ${FAROL_DEDUP_JANELA} ` +
-  "THEN farol_registro.vezes + 1 ELSE 1 END, " +
-  DEDUP_COLS.map(DEDUP_CASO).join(", ") +
-  " RETURNING id, criado, vezes";
+  `toques = CASE WHEN farol_dedup.criado > excluded.criado - ${FAROL_DEDUP_JANELA} ` +
+  "THEN farol_dedup.toques + 1 ELSE 1 END, " +
+  `criado = CASE WHEN farol_dedup.criado > excluded.criado - ${FAROL_DEDUP_JANELA} ` +
+  "THEN farol_dedup.criado ELSE excluded.criado END, " +
+  `registro = CASE WHEN farol_dedup.criado > excluded.criado - ${FAROL_DEDUP_JANELA} ` +
+  "THEN farol_dedup.registro ELSE NULL END, " +
+  `confirmado = CASE WHEN farol_dedup.criado > excluded.criado - ${FAROL_DEDUP_JANELA} ` +
+  "THEN farol_dedup.confirmado ELSE 0 END " +
+  "RETURNING criado, registro, confirmado, toques";
 
 // `quem` e a conta ja verificada por quemE (a mesma autenticacao de
 // /v1/registro), NUNCA uma pessoa criada por `registrar`: a rota do Farol nao
@@ -375,37 +387,78 @@ export async function rotaFarolRegistro(env, quem, corpo, h, limitar, codigoRegi
     const pessoa_h = await hmacHex(env.FAROL_SAL, conta);
     const fp = (await sha256Hex(fingerprint)).slice(0, 16);
 
-    const janela = Math.floor(t / FAROL_DEDUP_JANELA);
-    const lin = await env.DB.prepare(FAROL_UPSERT).bind(
-      t, janela, pessoa_h,
-      String(corpo?.cliente?.versao || "").slice(0, 48),
-      String(corpo?.aparelho?.plataforma || "").slice(0, 48),
-      intOk(corpo?.aparelho?.so_maior) ? corpo.aparelho.so_maior : 0,
-      codigo, fp, fingerprint,
-      JSON.stringify(corpo)
-    ).first();
-    if (!lin?.id) return erro("falha ao gravar", 500);
-    // vezes > 1 = reenvio dentro da janela (este pedido ou um concorrente):
-    // devolve o codigo do primeiro envio, sem gastar cota — reenvio
-    // deduplicado nunca debita.
-    if (lin.vezes > 1)
-      return json({ ok: 1, codigo: codigoRegistro(lin.id), vence: lin.criado + FAROL_RETENCAO, dedup: 1 });
+    const janela = Math.floor(t / 86400);
+    const reclamar = () =>
+      env.DB.prepare(FAROL_RECLAMAR).bind(pessoa_h, fp, t).first();
+    // Soltar so devolve o slot DESTE pedido: o AND criado poupa o marcador de
+    // um envio concorrente (outro criado) ou ja confirmado por ele.
+    const soltar = () => env.DB.prepare(
+      "DELETE FROM farol_dedup WHERE pessoa_h = ? AND fp = ? AND confirmado = 0 AND criado = ?"
+    ).bind(pessoa_h, fp, t).run().catch(() => {});
+    let ded = await reclamar();
+    // Slot pendente de OUTRO pedido (o reenvio chegou enquanto o primeiro
+    // envio ainda passa pela cota): espera a confirmacao — sao duas
+    // instrucoes — e devolve o MESMO recibo. Persistindo pendente, o envio
+    // morreu no meio: 409 para a TV reenviar; o marcador velho e retomado
+    // como ocorrencia nova. Pendente NUNCA vira 200.
+    for (let espera = 0; ded && ded.toques > 1 && !ded.confirmado && espera < 20; espera++) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      ded = await reclamar();
+    }
+    if (ded?.toques > 1) {
+      if (!ded.confirmado || !ded.registro) return erro("envio em andamento", 409);
+      // Reenvio deduplicado: o codigo e o do primeiro envio, o vencimento e o
+      // do criado ORIGINAL e nenhuma cota e debitada.
+      await env.DB.prepare("UPDATE farol_registro SET vezes = vezes + 1 WHERE id = ?")
+        .bind(ded.registro).run();
+      return json({ ok: 1, codigo: codigoRegistro(ded.registro),
+                    vence: ded.criado + FAROL_RETENCAO, dedup: 1 });
+    }
+    if (!ded) return erro("falha ao gravar", 500);
 
-    // Cotas atomicas: `limitar` faz INSERT ON CONFLICT ... RETURNING n numa
-    // instrucao so, entao dois envios simultaneos nao passam do teto por
-    // corrida — um deles le o contador ja incrementado. O resultado e
-    // HONRADO: estourou, a linha recem-criada sai junto com o 429 (recusa nao
-    // deixa registro nem cobra recibo de ninguem; o AND vezes = 1 poupa a
-    // linha se um reenvio ja a deduplicou).
+    // Cotas atomicas reservadas ANTES de a linha existir (`limitar` e um
+    // UPSERT com RETURNING n numa instrucao so, entao dois envios simultaneos
+    // nao passam do teto por corrida). Estourou, o 429 leva so o marcador:
+    // nao ha linha escrita acima da cota e a linha de um recibo ja emitido
+    // nem e consultada. O debito do pedido recusado volta em cada contador —
+    // recusa nao consome cota — e a janela no WHERE impede mexer na contagem
+    // de um ciclo que virou no meio.
     const cotas = [["farol:h:" + pessoa_h, FAROL_HORA, 3600],
                    ["farol:d:" + pessoa_h, FAROL_DIA, 86400],
                    ["farol:dia", FAROL_DIA_GLOBAL, 86400]];
+    const debitos = [];
+    const devolver = async (extra) => {
+      for (const [c, jj] of debitos.concat(extra || []))
+        await env.DB.prepare("UPDATE limite SET n = MAX(0, n - 1) WHERE chave = ? AND janela = ?")
+          .bind(c, jj).run().catch(() => {});
+    };
     for (const [chave, max, jan] of cotas) {
-      if (await limitar(env, chave, max, jan, t)) continue;
-      await env.DB.prepare("DELETE FROM farol_registro WHERE id = ? AND vezes = 1").bind(lin.id).run();
+      const j = Math.floor(t / jan);
+      if (await limitar(env, chave, max, jan, t)) { debitos.push([chave, j]); continue; }
+      await devolver([[chave, j]]);
+      await soltar();
       return erro(max === FAROL_HORA ? "limite" : "limite diario", 429);
     }
-    return json({ ok: 1, codigo: codigoRegistro(lin.id), vence: lin.criado + FAROL_RETENCAO });
+    let lin;
+    try {
+      lin = await env.DB.prepare(
+        "INSERT INTO farol_registro (criado, janela, pessoa_h, versao, plataforma, so_maior, codigo, fp, fingerprint, vezes, json) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?) RETURNING id"
+      ).bind(
+        t, janela, pessoa_h,
+        String(corpo?.cliente?.versao || "").slice(0, 48),
+        String(corpo?.aparelho?.plataforma || "").slice(0, 48),
+        intOk(corpo?.aparelho?.so_maior) ? corpo.aparelho.so_maior : 0,
+        codigo, fp, fingerprint,
+        JSON.stringify(corpo)
+      ).first();
+    } catch (e) { await devolver(); await soltar(); throw e; }
+    if (!lin?.id) { await devolver(); await soltar(); return erro("falha ao gravar", 500); }
+    await env.DB.prepare(
+      "UPDATE farol_dedup SET registro = ?, confirmado = 1 " +
+      "WHERE pessoa_h = ? AND fp = ? AND confirmado = 0 AND criado = ?"
+    ).bind(lin.id, pessoa_h, fp, t).run();
+    return json({ ok: 1, codigo: codigoRegistro(lin.id), vence: t + FAROL_RETENCAO });
   } catch (e) {
     // Falha de armazenamento/configuracao responde 5xx no MESMO envelope JSON
     // da API — nunca texto solto nem a excecao do D1 (tabela ausente, BigInt).
@@ -424,4 +477,11 @@ export async function limparFarol(env, t) {
     ).bind(t - FAROL_RETENCAO, FAROL_LOTE).run();
     if ((r.meta?.changes || 0) < FAROL_LOTE) break;
   }
+  // Marcadores de dedupe sem registro vivo na retencao nao apontam mais para
+  // recibo nenhum — saem junto (um slot velho ja seria retomado de qualquer
+  // jeito; isso so evita a tabela crescer). O NOT IN poupa os pendentes, que
+  // tem registro NULL e nao casam na subconsulta.
+  await env.DB.prepare("DELETE FROM farol_dedup WHERE criado < ?").bind(t - FAROL_RETENCAO).run();
+  await env.DB.prepare(
+    "DELETE FROM farol_dedup WHERE registro NOT IN (SELECT id FROM farol_registro)").run();
 }

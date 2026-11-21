@@ -258,6 +258,9 @@ test("dois POSTs da mesma falha viram uma linha; reenvio promete o vencimento ce
   // Reenvio sequencial de uma linha de 1 h atras: o vencimento prometido e
   // criado + 30 dias — o MESMO relogio que a limpeza usa — nao reenvio + 30.
   sqlite.prepare("UPDATE farol_registro SET criado = ?, vezes = 1").run(agora() - 3600);
+  // A farol_dedup guarda o criado do registro vivo — envelhecer a linha exige
+  // envelhecer o slot junto, como ocorre de verdade (o pai nao tinha tabela).
+  try { sqlite.prepare("UPDATE farol_dedup SET criado = ?").run(agora() - 3600); } catch { /* sem a tabela */ }
   const r = await post(pacote());
   assert.equal(r.status, 200);
   const linha = q(sqlite, "SELECT id, criado, vezes FROM farol_registro")[0];
@@ -495,15 +498,22 @@ test("dedupe atomico cobre a janela inteira de 24 h, inclusive a virada UTC", as
   const linhas = q(sqlite, "SELECT id, criado, vezes FROM farol_registro");
   assert.equal(linhas.length, 1);
   assert.equal(linhas[0].vezes, 2);
-  // Reenvio fora da janela reinicia o registro na mesma linha: criado e vezes
-  // novos, e o codigo (id) se mantem para a mesma falha da mesma conta.
+  // Passadas 24 h nao e mais reenvio: e OCORRENCIA NOVA — linha e codigo
+  // novos, e a linha do recibo original fica intacta ate a retencao de 30
+  // dias (o codigo antigo continua resolvendo o mesmo registro).
   const c = await chamadaFarol(env, corpo, dia + 86401);
   assert.equal(c.status, 200);
-  const depois = q(sqlite, "SELECT criado, vezes FROM farol_registro");
-  assert.equal(depois.length, 1);
-  assert.equal(depois[0].criado, dia + 86401);
-  assert.equal(depois[0].vezes, 1);
-  assert.equal(c.body.codigo, a.body.codigo);
+  const depois = q(sqlite, "SELECT criado, vezes FROM farol_registro ORDER BY criado");
+  assert.equal(depois.length, 2);
+  assert.equal(depois[0].criado, dia - 1);
+  assert.equal(depois[0].vezes, 2);
+  assert.equal(depois[1].criado, dia + 86401);
+  assert.equal(depois[1].vezes, 1);
+  assert.notEqual(c.body.codigo, a.body.codigo);
+  // O reenvio deduplica na ocorrencia NOVA (o slot vivo aponta para ela).
+  const d = await chamadaFarol(env, corpo, dia + 86402);
+  assert.equal(d.status, 200);
+  assert.equal(d.body.codigo, c.body.codigo);
 });
 
 test("a cota de 6/h e atomica: o setimo envio simultaneo le o contador incrementado", async (t) => {
@@ -551,11 +561,14 @@ test("reenvio deduplicado devolve o mesmo codigo sem debitar cota", async (t) =>
   assert.equal(debitos.length, 3);
 });
 
-test("migracao sobre a 018 antiga: aplica sem perder dados e e reaplicavel", (t) => {
+test("migracao sobre a 018 antiga: funde so a mesma janela, nunca dias distintos", (t) => {
   const sqlite = new DatabaseSync(":memory:");
   t.after(() => sqlite.close());
-  // A 018 de 705a519ac: tabela SEM `janela` e sem indice de dedupe, com uma
-  // pessoa e DUAS linhas do mesmo (pessoa_h, fp) — a 018 sem dedupe deixava.
+  // A 018 de 705a519ac: tabela SEM `janela` e sem dedupe — e ela que deixava
+  // linhas repetidas do mesmo (pessoa_h, fp). Cenario: dois reenvios da MESMA
+  // janela (T e T+100 s) MAIS uma ocorrencia legitima 48 h depois (a linha
+  // 536870916 que a consolidacao cega apagava, junto do recibo dela) e um
+  // segundo fingerprint intocado.
   sqlite.exec(`CREATE TABLE pessoa (id TEXT PRIMARY KEY, criado INTEGER NOT NULL, visto INTEGER NOT NULL);
     CREATE TABLE farol_registro (
       id INTEGER PRIMARY KEY AUTOINCREMENT, criado INTEGER NOT NULL,
@@ -567,9 +580,19 @@ test("migracao sobre a 018 antiga: aplica sem perder dados e e reaplicavel", (t)
     CREATE INDEX farol_criado ON farol_registro (criado);`);
   sqlite.exec(`INSERT INTO pessoa VALUES ('nuvio:qa-legado', 1700000000, 1700000000);
     INSERT INTO farol_registro (criado, pessoa_h, versao, plataforma, codigo, fp, fingerprint, json)
-      VALUES (1700000000, 'h', '2.1.0-ipk', 'webos', 'TV_FORMATO', '0123456789abcdef', 'fp-a', '{}');
+      VALUES (1700000000, 'h', '2.1.0-ipk', 'webos', 'TV_FORMATO', '0123456789abcdef', 'fp-a', '{"sintoma":"nao_comeca"}');
     INSERT INTO farol_registro (criado, pessoa_h, versao, plataforma, codigo, fp, fingerprint, vezes, json)
-      VALUES (1700000100, 'h', '2.1.0-ipk', 'webos', 'TV_FORMATO', '0123456789abcdef', 'fp-a', 3, '{}');`);
+      VALUES (1700000100, 'h', '2.1.0-ipk', 'webos', 'TV_FORMATO', '0123456789abcdef', 'fp-a', 3, '{"sintoma":"reenvio"}');
+    INSERT INTO farol_registro (criado, pessoa_h, versao, plataforma, codigo, fp, fingerprint, json)
+      VALUES (1700172900, 'h', '2.1.0-ipk', 'webos', 'REDE_FORA', '0123456789abcdef', 'fp-a', '{"sintoma":"48h"}');
+    INSERT INTO farol_registro (criado, pessoa_h, versao, plataforma, codigo, fp, fingerprint, json)
+      VALUES (1700000200, 'h', '2.1.0-ipk', 'webos', 'TV_FORMATO', 'fedcba9876543210', 'fp-b', '{"sintoma":"outro"}');
+    INSERT INTO farol_registro (criado, pessoa_h, versao, plataforma, codigo, fp, fingerprint, json)
+      VALUES (1700000000, 'h', '2.1.0-ipk', 'webos', 'TV_FORMATO', 'aaaaaaaabbbbcccc', 'fp-c', '{"sintoma":"corrente0"}');
+    INSERT INTO farol_registro (criado, pessoa_h, versao, plataforma, codigo, fp, fingerprint, vezes, json)
+      VALUES (1700050000, 'h', '2.1.0-ipk', 'webos', 'TV_FORMATO', 'aaaaaaaabbbbcccc', 'fp-c', 2, '{"sintoma":"corrente1"}');
+    INSERT INTO farol_registro (criado, pessoa_h, versao, plataforma, codigo, fp, fingerprint, json)
+      VALUES (1700090000, 'h', '2.1.0-ipk', 'webos', 'TV_FORMATO', 'aaaaaaaabbbbcccc', 'fp-c', '{"sintoma":"corrente2"}');`);
   const aplica = (arquivo) => {
     for (const cmd of readFileSync(new URL(arquivo, import.meta.url), "utf8").split(/;\s*\n/)) {
       const c = cmd.replace(/^\s*--.*$/gm, "").trim();
@@ -581,19 +604,167 @@ test("migracao sobre a 018 antiga: aplica sem perder dados e e reaplicavel", (t)
   const colunas = sqlite.prepare("SELECT name FROM pragma_table_info('farol_registro')").all().map((r) => r.name);
   assert.ok(colunas.includes("janela"), "a 019 cria a coluna que faltava");
   const dedup = sqlite.prepare("SELECT sql FROM sqlite_schema WHERE name = 'farol_dedup'").get();
-  assert.ok(dedup, "indice de dedupe existe");
-  assert.match(dedup.sql, /\(pessoa_h, fp\)/);
-  // Dados preservados: a fusao somou os vezes na linha mais antiga (o recibo
-  // original), repovoou a janela e nao tocou na pessoa.
-  const linhas = sqlite.prepare("SELECT criado, janela, vezes FROM farol_registro").all();
-  assert.equal(linhas.length, 1);
+  assert.ok(dedup, "a tabela de dedupe existe");
+  assert.match(dedup.sql, /PRIMARY KEY \(pessoa_h, fp\)/);
+  // Os dois reenvios fundem na linha mais antiga (vezes somado, recibo e JSON
+  // ORIGINAIS); a ocorrencia de 48 h depois e o outro fingerprint ficam.
+  // A corrente fp-c prova a janela FIXA na ancora: T+50000 s funde em T, mas
+  // T+90000 s (> ancora+86400) e registro NOVO mesmo estando a 40000 s do
+  // anterior — uma fusao por "alguma linha em ate 24 h" o apagaria.
+  const linhas = sqlite.prepare("SELECT criado, janela, fp, vezes, json FROM farol_registro ORDER BY criado, id").all();
+  assert.equal(linhas.length, 5);
   assert.equal(linhas[0].criado, 1700000000);
-  assert.equal(linhas[0].janela, Math.floor(1700000000 / 86400));
+  assert.equal(linhas[0].fp, "0123456789abcdef");
   assert.equal(linhas[0].vezes, 4);
+  assert.equal(JSON.parse(linhas[0].json).sintoma, "nao_comeca");
+  assert.equal(linhas[1].criado, 1700000000);
+  assert.equal(linhas[1].fp, "aaaaaaaabbbbcccc");
+  assert.equal(linhas[1].vezes, 3);
+  assert.equal(JSON.parse(linhas[1].json).sintoma, "corrente0");
+  assert.equal(linhas[2].criado, 1700000200);
+  assert.equal(linhas[2].vezes, 1);
+  assert.equal(linhas[3].criado, 1700090000);
+  assert.equal(linhas[3].vezes, 1);
+  assert.equal(JSON.parse(linhas[3].json).sintoma, "corrente2");
+  assert.equal(linhas[4].criado, 1700172900);
+  assert.equal(linhas[4].vezes, 1);
+  assert.equal(JSON.parse(linhas[4].json).sintoma, "48h");
+  assert.equal(linhas[0].janela, Math.floor(1700000000 / 86400));
+  // O slot de dedupe aponta para a linha MAIS NOVA de cada par (a que ainda
+  // recebe reenvio na janela movel).
+  const slots = sqlite.prepare("SELECT criado, confirmado FROM farol_dedup ORDER BY criado").all();
+  assert.deepEqual(slots.map((s) => [s.criado, s.confirmado]),
+    [[1700000200, 1], [1700090000, 1], [1700172900, 1]]);
   assert.equal(sqlite.prepare("SELECT count(*) AS n FROM pessoa").get().n, 1);
-  // Reaplicavel: a 018 roda limpa de novo; a 019 so repete o "duplicate
-  // column" que o preparar-local.sh trata como "ja aplicada".
+  // Reaplicavel: 018 E 019 rodam limpas de novo, sem excecao — a 019 nao
+  // depende mais do "duplicate column" tolerado pelo preparo.
   aplica("migracao-018-farol.sql");
-  assert.throws(() => aplica("migracao-019-farol-janela.sql"), /duplicate column/);
-  assert.equal(sqlite.prepare("SELECT count(*) AS n FROM farol_registro").get().n, 1);
+  aplica("migracao-019-farol-janela.sql");
+  assert.equal(sqlite.prepare("SELECT count(*) AS n FROM farol_registro").get().n, 5);
+});
+
+test("a 019 em banco novo e idempotente: janela preenchida, reaplicacao limpa", (t) => {
+  // Banco NOVO (schema.sql + todas as migracoes, como o banco() faz): a 019
+  // roda de novo sem erro e `janela` continua igual a criado/86400.
+  const { sqlite } = cenario(t);
+  const aplica = (arquivo) => {
+    for (const cmd of readFileSync(new URL(arquivo, import.meta.url), "utf8").split(/;\s*\n/)) {
+      const c = cmd.replace(/^\s*--.*$/gm, "").trim();
+      if (c) sqlite.exec(c);
+    }
+  };
+  sqlite.prepare("INSERT INTO farol_registro (criado, janela, pessoa_h, versao, plataforma, codigo, fp, fingerprint, json) VALUES (1700000000, 0, 'h', 'v', 'p', 'c', 'f1', 'fp', '{}')").run();
+  sqlite.prepare("INSERT INTO farol_registro (criado, janela, pessoa_h, versao, plataforma, codigo, fp, fingerprint, json) VALUES (1700172900, 0, 'h', 'v', 'p', 'c', 'f2', 'fp', '{}')").run();
+  aplica("migracao-019-farol-janela.sql");
+  aplica("migracao-019-farol-janela.sql");
+  const linhas = sqlite.prepare("SELECT criado, janela FROM farol_registro ORDER BY criado").all();
+  assert.equal(linhas.length, 2);
+  for (const l of linhas) assert.equal(l.janela, Math.floor(l.criado / 86400));
+  // A sequencia reservada nao desce abaixo do piso nem de id ja gravado.
+  const seq = sqlite.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'farol_registro'").all();
+  assert.equal(seq.length, 1);
+  assert.ok(seq[0].seq >= 536870912);
+});
+
+// --- correcao farol5c ---------------------------------------------------------
+// Os quatro bloqueios da revisao r3: tokens do redator rejeitados, reenvio que
+// efetivava registro acima da cota, ocorrencia apos 24 h que destruia o recibo
+// anterior e migracao que fundia janelas distintas / nao reaplicavel.
+
+test("a lista de token_seguro do Worker e a MESMA do redator C", async (t) => {
+  // A lista fixa do token_seguro (b29addd8a:src/farolredator.c:259-271),
+  // literal — o teste quebra se as duas divergirem de novo.
+  const fonte = readFileSync(new URL("src/farol.js", import.meta.url), "utf8");
+  const lista = fonte.match(/TOK_ROTULOS = new Set\(\s*"([^"]+)"/)[1].split(" ").sort();
+  const doC = "x|starfish|avplay|tpk|media3|mpv|dns|tls|prazo|recusa|sem_plano|fora_cache|busca|proxima|mem_baixa|2160p_hdr_dv_eac3"
+    .split("|").sort();
+  assert.deepEqual(lista, doC);
+  // E os quatro rotulos que o redator de fato emite em linha[].k e
+  // erro.nativo (busca/addons.c, proxima/streams.c, mem_baixa/memlog.c,
+  // mpv/player.c) passam 200 — em 3e2983dcd davam 422 nos oito pacotes. Oito
+  // envios da mesma conta estourariam a cota de 6/h, entao cada um leva sua
+  // hora no relogio injetado.
+  const { sqlite, env } = cenario(t);
+  let n = 0;
+  const base = () => {
+    const p = pacoteEmitido();
+    p.erro.fingerprint = `webos-4-starfish-ums_${230 + (n++)}-mkv-hevc10-dv-eac3`;
+    p.erro.fp = fpDe(p.erro.fingerprint);
+    return p;
+  };
+  for (const tok of ["busca", "proxima", "mem_baixa", "mpv"]) {
+    const linha = base(); linha.linha[0].k = tok;
+    assert.equal((await chamadaFarol(env, linha, 1700000000 + n * 3600)).status, 200, `linha[].k ${tok}`);
+    const nativo = base(); nativo.erro.nativo = tok;
+    assert.equal((await chamadaFarol(env, nativo, 1700000000 + n * 3600)).status, 200, `erro.nativo ${tok}`);
+  }
+  assert.equal(q(sqlite, "SELECT count(*) AS n FROM farol_registro")[0].n, 8);
+});
+
+test("reenvio concorrente com 429 nao efetiva registro acima da cota", async (t) => {
+  const { sqlite, env } = cenario(t);
+  const t0 = 86400100;
+  const pacoteN = (i) => {
+    const p = pacoteEmitido();
+    p.erro.fingerprint = `webos-4-starfish-ums_${240 + i}-mkv-hevc10-dv-eac3`;
+    p.erro.fp = fpDe(p.erro.fingerprint);
+    return p;
+  };
+  for (let i = 0; i < 6; i++)
+    assert.equal((await chamadaFarol(env, pacoteN(i), t0)).status, 200, "envio " + i);
+  // O setimo reclama o slot e fica PENDENTE, travado na reserva da cota: e o
+  // instante em que a versao anterior ja expunha a linha ao dedupe. O reenvio
+  // do mesmo fingerprint nao pode virar 200 — espera e sai 409 para a TV
+  // reenviar depois.
+  let soltarCota;
+  const trava = new Promise((r) => { soltarCota = r; });
+  const limSegurado = async (e, chave, max, jan, tt) => {
+    if (String(chave).startsWith("farol:h:")) await trava;
+    return limitar(e, chave, max, jan, tt);
+  };
+  const primeiro = chamadaFarol(env, pacoteN(6), t0, limSegurado);
+  const reenvio = await chamadaFarol(env, pacoteN(6), t0);
+  soltarCota();
+  const recusado = await primeiro;
+  assert.equal(recusado.status, 429);
+  assert.notEqual(reenvio.status, 200, "reenvio de linha pendente nao vira 200");
+  // Seis linhas, cotas nos seis debitados: a recusa nao deixa linha, nao
+  // incrementa vezes de ninguem e devolve o debito que tentou.
+  assert.equal(q(sqlite, "SELECT count(*) AS n FROM farol_registro")[0].n, 6);
+  assert.deepEqual(
+    q(sqlite, "SELECT n FROM limite WHERE chave LIKE 'farol:%' ORDER BY chave").map((r) => r.n),
+    [6, 6, 6]);
+  // E o reenvio DEPOIS do 429 continua recusado na cota, sem deixar linha.
+  assert.equal((await chamadaFarol(env, pacoteN(6), t0)).status, 429);
+  assert.equal(q(sqlite, "SELECT count(*) AS n FROM farol_registro")[0].n, 6);
+});
+
+test("ocorrencia apos 24 h gera registro novo e o 429 nunca toca o recibo anterior", async (t) => {
+  const { sqlite, env } = cenario(t);
+  const corpo = pacoteEmitido();
+  const t0 = 1700000100;
+  const original = await chamadaFarol(env, corpo, t0);
+  assert.equal(original.status, 200);
+  const idOriginal = q(sqlite, "SELECT id FROM farol_registro")[0].id;
+  // 48 h depois com a cota DIARIA cheia: o 429 nao pode apagar nem
+  // sobrescrever a linha do recibo original (ainda com 28 dias de retencao).
+  sqlite.prepare("UPDATE limite SET n = 20, janela = ? WHERE chave LIKE 'farol:d:%'")
+    .run(Math.floor((t0 + 48 * 3600) / 86400));
+  const recusado = await chamadaFarol(env, corpo, t0 + 48 * 3600);
+  assert.equal(recusado.status, 429);
+  const depois = q(sqlite, "SELECT id, criado, vezes, json FROM farol_registro");
+  assert.equal(depois.length, 1);
+  assert.equal(depois[0].id, idOriginal);
+  assert.equal(depois[0].criado, t0);
+  assert.equal(depois[0].vezes, 1);
+  assert.equal(JSON.parse(depois[0].json).erro.fingerprint, corpo.erro.fingerprint);
+  // Com a cota livre, a mesma falha passadas 24 h e um REGISTRO NOVO: id e
+  // codigo novos, a linha anterior intacta com o prazo original.
+  sqlite.exec("DELETE FROM limite");
+  const nova = await chamadaFarol(env, corpo, t0 + 49 * 3600);
+  assert.equal(nova.status, 200);
+  assert.notEqual(nova.body.codigo, original.body.codigo);
+  assert.equal(q(sqlite, "SELECT count(*) AS n FROM farol_registro")[0].n, 2);
+  const antiga = q(sqlite, "SELECT criado FROM farol_registro WHERE id = ?", idOriginal);
+  assert.equal(antiga[0].criado, t0);
 });

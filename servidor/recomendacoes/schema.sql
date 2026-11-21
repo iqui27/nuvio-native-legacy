@@ -95,20 +95,45 @@ CREATE TABLE IF NOT EXISTS farol_registro (
 );
 CREATE INDEX IF NOT EXISTS farol_fp ON farol_registro (fp, criado);
 CREATE INDEX IF NOT EXISTS farol_criado ON farol_registro (criado);
--- Dedupe atomico por (pessoa_h, fp), sem dia UTC — a janela de 24 h entra no
--- ON CONFLICT da gravacao. A fusao e a mesma da migracao-018: sobra a linha
--- mais antiga com a soma dos `vezes`, entao o indice nunca esbarra em
--- repeticao vinda da 018 sem dedupe.
-UPDATE farol_registro AS r SET vezes = r.vezes + COALESCE((
-  SELECT SUM(o.vezes) FROM farol_registro AS o
-  WHERE o.pessoa_h = r.pessoa_h AND o.fp = r.fp AND o.id > r.id), 0)
-WHERE EXISTS (
-  SELECT 1 FROM farol_registro AS o
-  WHERE o.pessoa_h = r.pessoa_h AND o.fp = r.fp AND o.id > r.id);
-DELETE FROM farol_registro WHERE id NOT IN (
-  SELECT MIN(id) FROM farol_registro GROUP BY pessoa_h, fp);
+-- Dedupe por (pessoa_h, fp) na janela MOVEL de 24 h: o slot vivo mora na
+-- farol_dedup (decidido no ON CONFLICT do src/farol.js), porque uma
+-- ocorrencia passadas 24 h e registro NOVO e o recibo anterior fica aqui ate
+-- a retencao. A fusao e a mesma da migracao-018: so reenvios da mesma janela
+-- somam `vezes` na ancora do intervalo — ocorrencias de dias diferentes sao
+-- linhas distintas, nunca fundidas.
+UPDATE farol_registro AS o SET vezes = o.vezes + COALESCE((
+  SELECT SUM(d.vezes) FROM farol_registro AS d
+  WHERE d.pessoa_h = o.pessoa_h AND d.fp = o.fp
+    AND ((d.criado > o.criado AND d.criado < o.criado + 86400)
+         OR (d.criado = o.criado AND d.id > o.id))), 0)
+WHERE NOT EXISTS (
+  SELECT 1 FROM farol_registro AS a
+  WHERE a.pessoa_h = o.pessoa_h AND a.fp = o.fp
+    AND a.criado > o.criado - 86400
+    AND (a.criado < o.criado OR (a.criado = o.criado AND a.id < o.id)));
+DELETE FROM farol_registro WHERE EXISTS (
+  SELECT 1 FROM farol_registro AS a
+  WHERE a.pessoa_h = farol_registro.pessoa_h AND a.fp = farol_registro.fp
+    AND a.criado > farol_registro.criado - 86400
+    AND (a.criado < farol_registro.criado
+         OR (a.criado = farol_registro.criado AND a.id < farol_registro.id)));
 DROP INDEX IF EXISTS farol_dedup;
-CREATE UNIQUE INDEX farol_dedup ON farol_registro (pessoa_h, fp);
+CREATE TABLE IF NOT EXISTS farol_dedup (
+  pessoa_h   TEXT NOT NULL,
+  fp         TEXT NOT NULL,
+  criado     INTEGER NOT NULL,
+  registro   INTEGER,
+  confirmado INTEGER NOT NULL DEFAULT 0,
+  toques     INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (pessoa_h, fp)
+);
+INSERT OR IGNORE INTO farol_dedup (pessoa_h, fp, criado, registro, confirmado, toques)
+  SELECT r.pessoa_h, r.fp, r.criado, r.id, 1, r.vezes
+  FROM farol_registro AS r
+  WHERE NOT EXISTS (
+    SELECT 1 FROM farol_registro AS n
+    WHERE n.pessoa_h = r.pessoa_h AND n.fp = r.fp
+      AND (n.criado > r.criado OR (n.criado = r.criado AND n.id > r.id)));
 -- Ids a partir de 2^29, reservados ANTES da primeira gravacao.
 INSERT INTO sqlite_sequence (name, seq)
   SELECT 'farol_registro', MAX(536870912, COALESCE((SELECT MAX(id) FROM farol_registro), 0))
