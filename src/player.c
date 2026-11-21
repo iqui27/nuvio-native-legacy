@@ -52,6 +52,8 @@
 #include "audioescolha.h"
 #include "idioma.h"
 #include "fontesonda.h"
+#include "farolanel.h"
+#include "farolerro.h"
 #include "posplay.h"
 #include "extras.h"
 #include "video.h"
@@ -1003,6 +1005,24 @@ const CatEp *player_proximo_episodio(void) {
 // este canal agora"). Vazio = as frases genericas. Ja traduzido por quem
 // chama; txt_linha tenta traduzir de novo, nao acha chave e deixa como esta.
 static char erroTitulo[160], erroDica[160];
+// FAROL (issue 7; PLANO 2.2): o alvo compilado vira (FarolPlat, token do
+// backend) — os FE_* nao carregam texto livre, so estes tokens de enum.
+#if defined(NV_ANDROID)
+#  define NV_FAROL_PLAT FP_ANDROID
+#  define NV_FAROL_BACKEND "media3"
+#elif defined(NV_TPK)
+#  define NV_FAROL_PLAT FP_TIZEN_TPK
+#  define NV_FAROL_BACKEND "tpk"
+#elif defined(__EMSCRIPTEN__)
+#  define NV_FAROL_PLAT FP_TIZEN_WGT
+#  define NV_FAROL_BACKEND "avplay"
+#elif defined(NV_DESKTOP_MPV)
+#  define NV_FAROL_PLAT FP_OUTRA
+#  define NV_FAROL_BACKEND "mpv"
+#else
+#  define NV_FAROL_PLAT FP_WEBOS
+#  define NV_FAROL_BACKEND "starfish"
+#endif
 #ifdef NV_TOUCH_UI
 static int (*modalToqueGuarda)(void);
 static int avToqueQuadro, avToqueErro, avToqueElegivel;
@@ -1101,6 +1121,12 @@ void player_erro_fonte(void) {
   erroTitulo[0] = erroDica[0] = 0;   // erro sem motivo nao herda o do anterior
   resolverregra_falha_registrar(RES_T_FONTE, i18n("Não foi possível abrir a fonte"), "", linhaEp, (long)time(NULL));
   erroCausaDoPlayer();
+  // FAROL: a causa classificada e o codigo normalizado; nunca a URL nem o titulo.
+  { int http = 0, causa = fontesonda_causa(video_erro_texto(), &http);
+    FarolErro fe;
+    farolerro_ler(NV_FAROL_PLAT, video_erro_texto(),
+                  video_registro_negado() ? -1027 : 0, &fe);
+    farol_ev(FM_PLAYER, FE_ERRO_FONTE, 2, causa, http, fe.cod); }
 }
 void player_erro_fonte_motivo(const char *titulo, const char *dica) {
   player_erro_fonte();
@@ -2271,6 +2297,7 @@ static void tocarFonteInterno(const char *url) {
   directcache_encerrar();
   if (!travaFonte(url)) return;
   marco("abrir: url ao pipeline");
+  farol_ev(FM_PLAYER, FE_ABRIR, 0, tentativaN, tentativaM, NV_FAROL_BACKEND);
   skipLiberado = 0;
   loadEm = SDL_GetTicks();   // #202: do pipeline ao primeiro quadro ("[player] load->1o quadro")
   video_definir_reconexao(!ehCanal());
@@ -2310,6 +2337,12 @@ static void tocarFonteInterno(const char *url) {
   mkvass_video_aberto(comVideo);
   aspArmar();
   if (!comVideo) {
+    // FAROL: recusa sincrona na abertura — causa e codigo, nunca a URL.
+    { int http = 0, causa = fontesonda_causa(video_erro_texto(), &http);
+      FarolErro fe;
+      farolerro_ler(NV_FAROL_PLAT, video_erro_texto(),
+                    video_registro_negado() ? -1027 : 0, &fe);
+      farol_ev(FM_FONTE, FE_RECUSA_SINC, 2, causa, http, fe.cod); }
     fontesonda_recusa(url, video_erro_texto(), 1);
     erroSemVideo();
   }
@@ -5072,6 +5105,8 @@ void player_atualizar(float dt, Uint32 agora) {
   }
   if (!inicioImagem && comVideo && video_pronto()) {
     inicioImagem = agora; acordar();
+    farol_ev(FM_PLAYER, FE_PRONTO, 0,
+             (int32_t)(SDL_GetTicks() - abertoEm), retomarPct, NULL);
     if (medirAbertura && !ehCanal()) {
       printf("[player] pronto em %u ms desde a abertura (retomada %d%%)\n",
              (unsigned)(SDL_GetTicks() - abertoEm), retomarPct);
@@ -5167,6 +5202,7 @@ void player_atualizar(float dt, Uint32 agora) {
       // parada: nao conta.
       else if (vodPosEm && (unsigned)(agora - vodPosEm) >= 8000u && !vodLogado && !pausaPessoa) {
         vodLogado = 1;
+        farol_ev(FM_PLAYER, FE_PARADO, 1, (int32_t)(agora - vodPosEm), (int32_t)buf, NULL);
         { int itens = 0; long bytes = 0; char mem[96] = "";
           tex_estatisticas(&itens, NULL, &bytes, NULL, NULL);
           memlog_amostra(mem, sizeof mem);
