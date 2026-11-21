@@ -645,6 +645,40 @@ int main(void) {
         assert(epTempResidente(0, 40) == per);
       }
     }
+    // CAMINHO DE PRODUCAO (#787 volta 3): /meta de 40x130 publica o teto, e a
+    // aba pedida por desc_episodios completa do corpo guardado — a truncada
+    // (39) e a ausente (40) — sem que um buscarEps posterior as apague.
+    {
+      char *meta = malloc(400000);
+      size_t kk = (size_t)snprintf(meta, 400000,
+        "{\"meta\":{\"id\":\"tt13293588\",\"type\":\"series\",\"name\":\"Series\",\"videos\":[");
+      assert(meta);
+      for (int t = 1; t <= 40; t++)
+        for (int e = 1; e <= 130; e++)
+          kk += (size_t)snprintf(meta + kk, 400000 - kk,
+                "%s{\"id\":\"tt13293588:%d:%d\",\"season\":%d,\"episode\":%d}",
+                t == 1 && e == 1 ? "" : ",", t, e, t, e);
+      snprintf(meta + kk, 400000 - kk, "]}}");
+      nFake = 0; nRotas = 0; addonMeta = 0; addonResp = NULL;
+      cineSerie = meta;
+      limparCacheMeta();
+      epCorpoLiberar();
+      catalogoCom("tt13293588", "series", "Series");
+      abrir();
+      assert(cat_n_episodios(0) == 5000);
+      assert(epTempResidente(0, 39) == 60 && epTempResidente(0, 40) == 0);
+      assert(cat_item(0)->nTemporadas == 40 && cat_item(0)->epsParciais);
+      fioEpVivo = 0;   // o fio da abertura terminou, como na pagina real
+      int pedidos0 = nPedidos;
+      desc_episodios(0, 39);
+      assert(epTempResidente(0, 39) == 130);
+      assert(nPedidos == pedidos0 && !fioEpVivo);
+      desc_episodios(0, 40);
+      assert(epTempResidente(0, 40) == 130 && epTempResidente(0, 39) == 130);
+      assert(nPedidos == pedidos0 && !fioEpVivo);
+      cineSerie = NULL; free(meta);
+      puts("ok  #787: aba truncada e aba ausente completam do corpo, sem rebuscar");
+    }
     free(body);
     return 0;
   }

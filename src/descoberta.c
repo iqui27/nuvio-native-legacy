@@ -8112,19 +8112,37 @@ static int parsearUmaTemporada(const char *corpo, int temporada, CatEp *eps, int
   return n;
 }
 
+// Quantos episodios da temporada o /meta guardado conhece; 0 quando o corpo
+// nao cobre o item ou nao tem a temporada.
+static int epCorpoTempEpisodios(int item, int temporada) {
+  CatItem ci;
+  const char *p;
+  int n = 0;
+  if (temporada <= 0 || !epCorpoCache || epCorpoId[0] == 0) return 0;
+  if (!cat_copiar_item(item, &ci) || strcmp(ci.imdb, epCorpoId)) return 0;
+  for (p = js_array(epCorpoCache, NULL, "videos"); p; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p);
+    int t = videoTemporada(p, f);
+    int e = t >= 0 ? (int)js_num(p, f, "episode", 0) : 0;
+    if (t == temporada && e > 0) n++;
+  }
+  return n;
+}
+
 static int appendTemporadaCorpo(int item, int temporada) {
   CatEp *novos, *base;
   int nNov, nAnt, i, j, k = 0;
   if (temporada <= 0 || !epCorpoCache || epCorpoId[0] == 0) return 0;
   CatItem ci;
   if (!cat_copiar_item(item, &ci) || strcmp(ci.imdb, epCorpoId)) return 0;
-  if (epTempResidente(item, temporada) > 0) return 0;
   nAnt = cat_n_episodios(item);
   novos = malloc(sizeof(CatEp) * (size_t)VIDEOS_MAX);
   if (!novos) return 0;
   nNov = parsearUmaTemporada(epCorpoCache, temporada, novos, VIDEOS_MAX);
   if (nNov <= 0) { free(novos); return 0; }
-  if (nNov > VIDEOS_MAX) nNov = VIDEOS_MAX;
+  // Temporada ja inteira na tela: nada a completar. Abaixo disso a guarda
+  // antiga recusava qualquer residente, e a truncada nunca completava.
+  if (epTempResidente(item, temporada) >= nNov) { free(novos); return 0; }
   base = malloc(sizeof(CatEp) * (size_t)VIDEOS_MAX);
   if (!base) { free(novos); return 0; }
   for (i = 0; i < nAnt && k < VIDEOS_MAX; i++) {
@@ -8133,7 +8151,21 @@ static int appendTemporadaCorpo(int item, int temporada) {
     if (ep->temporada == temporada) continue;
     base[k++] = *ep;
   }
-  while (k + nNov > VIDEOS_MAX && k > 0) k--;
+  // Sem lugar para a temporada inteira (a lista bateu no teto): sai quem esta
+  // mais longe da pedida, nunca ela nem a vizinhanca que a pessoa percorre.
+  if (k + nNov > VIDEOS_MAX) {
+    for (i = 1; i < k; i++) {
+      CatEp t2 = base[i];
+      int d2 = t2.temporada - temporada; if (d2 < 0) d2 = -d2;
+      for (j = i - 1; j >= 0; j--) {
+        int d = base[j].temporada - temporada; if (d < 0) d = -d;
+        if (d <= d2) break;
+        base[j + 1] = base[j];
+      }
+      base[j + 1] = t2;
+    }
+    while (k + nNov > VIDEOS_MAX && k > 0) k--;
+  }
   if (k + nNov > VIDEOS_MAX) { free(base); free(novos); return 0; }
   for (i = 0; i < nNov; i++) base[k++] = novos[i];
   for (i = 0; i < k; i++)
@@ -10793,9 +10825,16 @@ void desc_episodios(int indiceItem, int temporada) {
   // Uma lista antecipada continua visivel, mas precisa retomar a mescla.
   CatItem atual;
   if (!cat_copiar_item(indiceItem, &atual)) return;
-  if (temporada > 0 && cat_n_episodios(indiceItem) > 0 &&
-      epTempResidente(indiceItem, temporada) == 0)
-    appendTemporadaCorpo(indiceItem, temporada);
+  // A TEMPORADA PEDIDA SAI DO /META GUARDADO (#787): ausente ou truncada pelo
+  // teto da lista, o append a completa so ela. Inteira na tela, repedir a
+  // serie so republicaria a lista cortada e a apagaria de novo.
+  if (temporada > 0 && cat_n_episodios(indiceItem) > 0) {
+    int noCorpo = epCorpoTempEpisodios(indiceItem, temporada);
+    if (noCorpo > 0 && epTempResidente(indiceItem, temporada) < noCorpo)
+      appendTemporadaCorpo(indiceItem, temporada);
+    if (noCorpo > 0 && epTempResidente(indiceItem, temporada) >= noCorpo)
+      return;
+  }
   if (cat_n_episodios(indiceItem) > 0 && !atual.epsParciais) return;
   EpPedido *p = calloc(1, sizeof *p);
   if (!p) return;
