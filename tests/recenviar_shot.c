@@ -4,6 +4,13 @@
 // recenviar_atualizar, step by step, like on the TV.
 //
 // RE_FONTE lets the same script photograph an older recenviar.c (before/after).
+#define amigosperfis_carregar fx_perfis_carregar
+#define amigosperfis_estado fx_perfis_estado
+#define amigosperfis_listar fx_perfis_listar
+#define amigosperfis_adicionar fx_perfis_adicionar
+#define perfis_n fx_perfis_n
+#define perfis_sessao_geracao fx_sessao
+#define perfis_sessao_atual fx_sessao_atual
 #define recomenda_ativo        fx_ativo
 #define recomenda_contatos     fx_contatos
 #define recomenda_meu_codigo   fx_codigo
@@ -23,7 +30,29 @@
 #include <assert.h>
 
 static RecContato fxC[REC_CONTATOS_MAX];
-static int fxN, fxEstado;
+static int fxN, fxEstado, fxTemPerfis, fxAdicionou, fxSettings;
+static uint64_t fxSessao=1;
+int fx_perfis_carregar(void) { return 1; }
+int fx_perfis_estado(void) { return AP_PRONTO; }
+int fx_perfis_n(void) { return fxTemPerfis?5:0; }
+uint64_t fx_sessao(void) { return fxSessao; }
+int fx_sessao_atual(uint64_t s) { return s==fxSessao; }
+int fx_perfis_listar(AmigoPerfil *out,int cap) {
+  assert(cap>=4);memset(out,0,4*sizeof *out);
+  const char *nomes[]={"Alice","Bob","Charlie","Another connected profile"};
+  const int estados[]={AP_DISPONIVEL,AP_AMIGO,AP_BLOQUEADO,AP_AMIGO};
+  for(int i=0;i<4;i++) {
+    out[i].perfil.indice=i+2;out[i].estado=estados[i];
+    snprintf(out[i].perfil.nome,sizeof out[i].perfil.nome,"%s",nomes[i]);
+    snprintf(out[i].id,sizeof out[i].id,"nuvio:fixture:%d",i+2);
+  }
+  return 4;
+}
+int fx_perfis_adicionar(int indice) {
+  assert(indice==2);fxAdicionou++;
+  assert(fxN<REC_CONTATOS_MAX);RecContato *c=&fxC[fxN++];memset(c,0,sizeof *c);
+  strcpy(c->id,"nuvio:fixture:2");strcpy(c->nome,"Alice");return 1;
+}
 static char fxCod[8] = "uv8scv";
 int fx_ativo(void) { return 1; }
 int fx_contatos(RecContato *s, int max) {
@@ -65,6 +94,7 @@ static void quadros(int n) {
     relogio += 16;
     SDL_PumpEvents(); txt_novo_quadro(); tex_novo_quadro();
     tex_bombear(6); gfx_novo_quadro();
+    if(fxSettings)ajustes_atualizar(1.0f/60.0f,relogio);
     recenviar_atualizar(1.0f / 60.0f, relogio);
   }
 }
@@ -76,9 +106,11 @@ static void captura(const char *dir, const char *nome, SDL_Window *win) {
     relogio += 16;
     SDL_PumpEvents(); txt_novo_quadro(); tex_novo_quadro();
     tex_bombear(6); gfx_novo_quadro();
+    if(fxSettings)ajustes_atualizar(1.0f/60.0f,relogio);
     recenviar_atualizar(1.0f / 60.0f, relogio);
     glClearColor(.03f,.03f,.035f,1); glClear(GL_COLOR_BUFFER_BIT);
     if (vidroFundoAtivo()) vidroFundoDesenhar(); else shot_arte_desenhar(0);
+    if(fxSettings)ajustes_desenhar(relogio);
     recenviar_desenhar(relogio);
     if (q == 69) {
       unsigned char *pix = malloc(1920*1080*4);
@@ -141,7 +173,12 @@ int main(int argc,char **argv) {
           getenv("NUVIO_SHOT_SOLIDO")?1:0); fclose(f);
   ajustes_dir(dir); ajustes_teste_vidro_env();
   assert(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)==0); IMG_Init(IMG_INIT_JPG|IMG_INIT_PNG);
+  #ifdef NV_LINUX_DESKTOP
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,SDL_GL_CONTEXT_PROFILE_ES);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,3);SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,0);
+#else
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2); SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
+#endif
   win=SDL_CreateWindow("Nuvio: Send modal",0,0,1920,1080,SDL_WINDOW_OPENGL|SDL_WINDOW_SHOWN);assert(win);
   gl=SDL_GL_CreateContext(win);assert(gl);SDL_GL_SetSwapInterval(0);
   glViewport(0,0,1920,1080);gfx_tamanho_alvo(1920,1080);
@@ -154,6 +191,39 @@ int main(int argc,char **argv) {
   snprintf(fxItem.backdrop,sizeof fxItem.backdrop,"deploy/app/art/00.jpg");
   snprintf(fxItem.poster,sizeof fxItem.poster,"deploy/app/art/poster/00.jpg");
   if (getenv("NUVIO_VIDRO_ILHA")) return ilhaTeste(win);
+  if (getenv("NUVIO_SHOT_PROFILE_FRIENDS")) {
+    fxTemPerfis=1;fxN=0;
+    extern int ajustes_teste_op_por_chave(const char *);
+    extern int ajustes_teste_focar_opcao(int);
+    ajustes_iniciar();
+    int op=ajustes_teste_op_por_chave("-amigosPerfis");assert(op>=0);
+    assert(ajustes_teste_focar_opcao(op));fxSettings=1;
+    captura(out,"settings-entry",win);
+    SDL_Event click={0};click.type=SDL_KEYDOWN;click.key.keysym.sym=SDLK_RETURN;
+    ajustes_evento(&click);quadros(3);
+    assert(aberto && pagina==RE_PAG_PERFIS && perfisDireto && nLinhas()==4);
+    captura(out,"settings-picker",win);
+    tecla(SDLK_AC_BACK);assert(!recenviar_aberto());fxSettings=0;
+    recenviar_abrir_amigos();quadros(3);
+    assert(nLinhas()==3 && linhaTipo(2)==RL_PERFIS);
+    teclaN(SDLK_DOWN,2);tecla(SDLK_RETURN);
+    assert(pagina==RE_PAG_PERFIS && nLinhas()==4);
+    captura(out,"profile-friends",win);
+    tecla(SDLK_RETURN);
+    assert(fxAdicionou==1 && fxN==1 && perfisConta[0].estado==AP_AMIGO);
+    tecla(SDLK_RETURN);assert(fxAdicionou==1);
+    tecla(SDLK_DOWN);tecla(SDLK_RETURN);assert(fxAdicionou==1);
+    tecla(SDLK_DOWN);tecla(SDLK_RETURN);assert(fxAdicionou==1 && aviso[0]);
+    tecla(SDLK_DOWN);tecla(SDLK_RETURN);assert(fxAdicionou==1);
+    captura(out,"profile-friends-status",win);
+    gfx_escala_ui_definir(1.5f);captura(out,"profile-friends-zoom150",win);gfx_escala_ui_definir(1);
+    tecla(SDLK_AC_BACK);assert(pagina==RE_PAG_AMIGOS && foco==2);
+    // The same focus callback used by touch selects the right new action.
+    ponteiroLinha(2,0);tecla(SDLK_RETURN);assert(pagina==RE_PAG_PERFIS);
+    fxSessao++;quadros(1);assert(!recenviar_aberto());
+    puts("PASS: profile picker navigation, selected add, duplicate/blocked rows, Back, touch focus and session invalidation");
+    goto fim;
+  }
 
 
   // 1-2. Open with friends; then a friend in focus.
@@ -222,6 +292,7 @@ int main(int argc,char **argv) {
   captura(out,"friends-zoom130",win);
   assert(gfx_escala()==1.0f);
   gfx_escala_ui_definir(1.0f);
+fim:
   tex_encerrar();txt_encerrar();gfx_encerrar();SDL_GL_DeleteContext(gl);SDL_DestroyWindow(win);SDL_Quit();
   return 0;
 }

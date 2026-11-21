@@ -30,6 +30,7 @@
 // modal, e esta modal so le o resultado — o mesmo contrato que o resto do app
 // usa para camadas empilhadas.
 #include "recenviar.h"
+#include "amigosperfis.h"
 #include "recomenda.h"
 #include "teclado.h"
 #include "gfx.h"
@@ -92,13 +93,13 @@
 #define RE_LOGO_W   300.0f
 #define RE_LOGO_H    72.0f
 
-enum { RE_PAG_CONTATOS = 0, RE_PAG_MODELOS, RE_PAG_AMIGOS, RE_PAG_ENVIO };
+enum { RE_PAG_CONTATOS = 0, RE_PAG_MODELOS, RE_PAG_AMIGOS, RE_PAG_ENVIO, RE_PAG_PERFIS };
 enum { RE_ENV_INDO = 1, RE_ENV_OK, RE_ENV_FALHA };
 // O QUE CADA LINHA E. Contar e rotular saem de linhaTipo, e o desenho e o
 // evento usam a mesma resposta: a linha extra de "Adicionar um amigo" (ou de
 // "Tentar de novo" sem servico) nao tem de ser lembrada em dois lugares.
 enum { RL_NADA = 0, RL_CONTATO, RL_ADICIONAR, RL_TENTAR, RL_FRASE,
-       RL_TRAKT, RL_CODIGO, RL_AMIGO, RL_REENVIAR };
+       RL_TRAKT, RL_CODIGO, RL_AMIGO, RL_REENVIAR, RL_PERFIS, RL_PERFIL, RL_VAZIO };
 
 static int   aberto, pagina, foco, topo;
 static float anim;
@@ -107,6 +108,10 @@ static int   voltaParaContatos;    // "Amigos" veio de dentro do envio
 static CatItem item;               // COPIA; ver recenviar.h
 static RecContato ctts[REC_CONTATOS_MAX];
 static int   nCtts;
+static AmigoPerfil perfisConta[CONTA_PERFIL_MAX];
+static int nPerfisConta, temPerfisConta, perfisDireto;
+static uint64_t aberturaSessao;
+static int primeiroAmigo(void) { return 2 + temPerfisConta; }
 static char  alvoId[96], alvoNome[64], alvoAvatar[256], alvoIdCor[96];
 static int   focoContato;          // para onde o Voltar devolve o foco
 static int   modeloEsc;            // a frase que foi (indice)
@@ -223,6 +228,10 @@ static int semServico(void) {
 int recenviar_aberto(void) { return aberto; }
 
 static void abrirComum(void) {
+  aberturaSessao=perfis_sessao_geracao();
+  temPerfisConta=perfis_n()>1;
+  nPerfisConta=0;
+  perfisDireto=0;
   aberto = 1;
   foco = 0; topo = 0;
   alvoId[0] = 0; alvoNome[0] = 0; alvoAvatar[0] = 0; alvoIdCor[0] = 0;
@@ -264,13 +273,21 @@ int recenviar_abrir_amigos(void) {
   return 1;
 }
 
+int recenviar_abrir_perfis(void) {
+  if (!recenviar_abrir_amigos()) return 0;
+  pagina=RE_PAG_PERFIS; perfisDireto=1;
+  amigosperfis_carregar();
+  return 1;
+}
+
 // --- LINHAS DE CADA PAGINA ---------------------------------------------------
 
 static int nLinhas(void) {
   if (pagina == RE_PAG_CONTATOS) return semServico() ? 2 : nCtts + 1;
   if (pagina == RE_PAG_MODELOS)  return REC_MODELOS;
   if (pagina == RE_PAG_ENVIO)    return envEstado == RE_ENV_FALHA ? 1 : 0;
-  return 2 + nCtts;   // procurar no Trakt, digitar codigo, e cada contato
+  if (pagina == RE_PAG_PERFIS) return nPerfisConta ? nPerfisConta : 1;
+  return primeiroAmigo() + nCtts;   // procurar no Trakt, digitar codigo, e cada contato
 }
 
 static int linhaTipo(int i) {
@@ -284,8 +301,10 @@ static int linhaTipo(int i) {
   }
   if (pagina == RE_PAG_MODELOS) return RL_FRASE;
   if (pagina == RE_PAG_ENVIO)   return RL_REENVIAR;
+  if (pagina == RE_PAG_PERFIS) return nPerfisConta ? RL_PERFIL : RL_VAZIO;
   if (i == 0) return RL_TRAKT;
   if (i == 1) return RL_CODIGO;
+  if (i == 2 && primeiroAmigo() > 2) return RL_PERFIS;
   return RL_AMIGO;
 }
 
@@ -293,7 +312,7 @@ static int linhaTipo(int i) {
 static const RecContato *contatoDaLinha(int i) {
   int t = linhaTipo(i);
   if (t == RL_CONTATO) return &ctts[i];
-  if (t == RL_AMIGO && i - 2 < nCtts) return &ctts[i - 2];
+  if (t == RL_AMIGO && i - primeiroAmigo() < nCtts) return &ctts[i - primeiroAmigo()];
   return NULL;
 }
 
@@ -302,7 +321,7 @@ static float alturaLinha(int i) {
 }
 
 static int janela(void) {
-  return pagina == RE_PAG_AMIGOS ? RE_JANELA_AM : RE_JANELA;
+  return pagina == RE_PAG_AMIGOS || pagina == RE_PAG_PERFIS ? RE_JANELA_AM : RE_JANELA;
 }
 
 static void ajustarJanela(void) {
@@ -378,8 +397,26 @@ static void aplicar(void) {
       teclado_abrir("Código do amigo",
                     "Seis letras ou números, como ele te passou.", 6);
       return;
+    case RL_PERFIS:
+      amigosperfis_carregar();
+      nPerfisConta=0;
+      irPara(RE_PAG_PERFIS,0);
+      return;
+    case RL_PERFIL: {
+      const AmigoPerfil *p=&perfisConta[foco];
+      if (p->estado==AP_DISPONIVEL) {
+        if (!amigosperfis_adicionar(p->perfil.indice))
+          snprintf(aviso,sizeof aviso,"%s",i18n("Não foi possível adicionar. Tente novamente."));
+      } else if (p->estado==AP_AMIGO)
+        snprintf(aviso,sizeof aviso,"%s",i18n("Já é seu amigo"));
+      else
+        snprintf(aviso,sizeof aviso,"%s",i18n("Indisponível"));
+      return; }
+    case RL_VAZIO:
+      amigosperfis_carregar();
+      return;
     case RL_AMIGO: {
-      int c = foco - 2;
+      int c = foco - primeiroAmigo();
       if (c < 0 || c >= nCtts) return;
       // DUAS CONFIRMACOES PARA APAGAR, e a segunda e a propria linha: um OK
       // distraido numa lista de nomes nao pode desfazer um vinculo que custou
@@ -397,6 +434,7 @@ static void aplicar(void) {
 void recenviar_evento(const SDL_Event *e) {
   SDL_Keycode k;
   if (!aberto) return;
+  if (!perfis_sessao_atual(aberturaSessao)) { aberto=0; anim=0; return; }
   if (teclado_aberto()) { teclado_evento(e); return; }
   if (e->type != SDL_KEYDOWN) return;
 #ifdef NV_TOUCH_UI
@@ -415,6 +453,11 @@ void recenviar_evento(const SDL_Event *e) {
     if (confirmandoRemover >= 0) { confirmandoRemover = -1; return; }
     if (pagina == RE_PAG_ENVIO && envEstado == RE_ENV_FALHA) {
       irPara(RE_PAG_MODELOS, modeloEsc);
+      return;
+    }
+    if (pagina == RE_PAG_PERFIS) {
+      if (perfisDireto) aberto=0;
+      else irPara(RE_PAG_AMIGOS,2);
       return;
     }
     if (pagina == RE_PAG_MODELOS)  { irPara(RE_PAG_CONTATOS, focoContato); return; }
@@ -454,7 +497,7 @@ static float listaAltura(int ini, int max) {
   float h = 0.0f;
   for (i = ini; i < n && i - ini < max; i++) {
     if (i > ini) h += RE_L_GAP;
-    if (pagina == RE_PAG_AMIGOS && i == 2 && nCtts > 0) h += RE_SECAO;
+    if (pagina == RE_PAG_AMIGOS && i == primeiroAmigo() && nCtts > 0) h += RE_SECAO;
     h += alturaLinha(i);
   }
   return h;
@@ -491,7 +534,11 @@ static float blocoCodigoH(void) {
 static void medir(ReGeo *g) {
   float corpo;
   memset(g, 0, sizeof *g);
-  if (pagina == RE_PAG_AMIGOS) {
+  if (pagina == RE_PAG_PERFIS) {
+    g->w = RE_W_AMIGOS;
+    g->listaY = RE_PAD + RE_CAB + 84.0f;
+    corpo = g->listaY - RE_PAD + listaAltura(topo,janela());
+  } else if (pagina == RE_PAG_AMIGOS) {
     g->w = RE_W_AMIGOS;
     g->listaY = RE_PAD + RE_CAB + blocoCodigoH() + 24.0f;
     corpo = g->listaY - RE_PAD + listaAltura(topo, janela());
@@ -563,6 +610,9 @@ static void resultadoEnvio(Uint32 agora) {
 
 void recenviar_atualizar(float dt, Uint32 agora) {
   int est, red = ajustes_animacoes_reduzidas();
+  if (aberto && !perfis_sessao_atual(aberturaSessao)) {
+    aberto=0; anim=0; nPerfisConta=0; return;
+  }
   resultadoEnvio(agora);
   if (!aberto && anim < 0.002f) { anim = 0.0f; return; }
   anim = red ? (aberto ? 1.0f : 0.0f)
@@ -581,6 +631,11 @@ void recenviar_atualizar(float dt, Uint32 agora) {
   // ser digitado. Custa um mutex e um memcpy de ate 40 registros, so enquanto
   // a modal esta em pe.
   recarregarContatos();
+  if (pagina==RE_PAG_PERFIS) nPerfisConta=amigosperfis_listar(perfisConta,CONTA_PERFIL_MAX);
+  if (pagina==RE_PAG_PERFIS)
+    for (int i=0;i<nPerfisConta;i++)
+      for (int j=0;j<nCtts;j++)
+        if (perfisConta[i].id[0] && !strcmp(perfisConta[i].id,ctts[j].id)) perfisConta[i].estado=AP_AMIGO;
 
   // O CODIGO DIGITADO VIRA UM PEDIDO SO QUANDO O TECLADO FECHA, e nao a cada
   // tecla: teclado_resultado() e consumido na leitura, entao este bloco roda
@@ -594,13 +649,14 @@ void recenviar_atualizar(float dt, Uint32 agora) {
   // e o transforma na frase curta acima do rodape.
   est = recomenda_vinculo_estado();
   if (est == REC_VINC_INDO) {
-    snprintf(aviso, sizeof aviso, "%s", i18n("Procurando esse código..."));
+    snprintf(aviso, sizeof aviso, "%s", i18n(pagina==RE_PAG_PERFIS?"Aguarde...":"Procurando esse código..."));
   } else if (est == REC_VINC_OK) {
     const char *nome = recomenda_vinculo_nome();
     snprintf(aviso, sizeof aviso, i18n("%s agora é seu amigo"),
              nome[0] && !nomeDeReserva(nome, NULL) ? nome : i18n("Seu amigo"));
     recomenda_vinculo_limpar();
     recarregarContatos();
+    if (pagina==RE_PAG_PERFIS) nPerfisConta=amigosperfis_listar(perfisConta,CONTA_PERFIL_MAX);
   } else if (est == REC_VINC_NAO_ACHOU) {
     snprintf(aviso, sizeof aviso, "%s",
              i18n("Ninguém tem esse código. Confira as 6 letras."));
@@ -695,12 +751,21 @@ static void desenhaLinha(int i, float x, float y, float w, float a) {
   GfxRect r = { x - cresce, y, w + 2.0f * cresce, h };
   float tx, fim = x + w - 20.0f;
   const RecContato *c = contatoDaLinha(i);
-  int remover = t == RL_AMIGO && confirmandoRemover == i - 2;
+  int remover = t == RL_AMIGO && confirmandoRemover == i - primeiroAmigo();
   char nome[160], sub[160];
   const char *icone = NULL;
   nome[0] = sub[0] = 0;
   plrui_linha_foco(r, h * .5f, k * a);
-  if (c) {
+  if (t == RL_PERFIL) {
+    const AmigoPerfil *p=&perfisConta[i];
+    GfxRect av={x+12.0f,y+(h-RE_AV)*.5f,RE_AV,RE_AV};
+    rec_avatar_estilo(av,p->perfil.avatarUrl,p->perfil.nome,p->id[0]?p->id:p->perfil.nome,a,TXT_ILHA_INICIAL);
+    snprintf(nome,sizeof nome,"%s",p->perfil.nome);
+    const char *estado=p->estado==AP_AMIGO?"Já é seu amigo"
+      :p->estado==AP_BLOQUEADO?"Indisponível":"Adicionar um amigo";
+    snprintf(sub,sizeof sub,"%s",i18n(estado));
+    tx=av.x+RE_AV+18.0f;
+  } else if (c) {
     GfxRect av = { x + 12.0f, y + (h - RE_AV) * .5f, RE_AV, RE_AV };
     rosto(av, c, (.85f + .15f * k) * a);
     nomesDe(c, nome, sizeof nome, sub, sizeof sub);
@@ -724,6 +789,12 @@ static void desenhaLinha(int i, float x, float y, float w, float a) {
       case RL_TENTAR:    rot = "Tentar de novo";                  icone = "aj_rotate-cw"; break;
       case RL_REENVIAR:  rot = "Tentar de novo";                  icone = "aj_rotate-cw"; break;
       case RL_TRAKT:     rot = "Procurar amigos do Trakt agora";  icone = "aj_search"; break;
+      case RL_PERFIS:    rot = "Perfis desta conta";                icone = "aj_user-plus"; break;
+      case RL_VAZIO:
+        rot=amigosperfis_estado()==AP_CARREGANDO?"Aguarde..."
+          :amigosperfis_estado()==AP_INDISPONIVEL?"O serviço ainda não oferece esta opção."
+          :amigosperfis_estado()==AP_CONTA_NUVIO?"Vincule este perfil à sua conta Nuvio.":"Tentar de novo";
+        icone="aj_rotate-cw";break;
       case RL_CODIGO:    rot = "Digitar o código de um amigo";    icone = "aj_keyboard"; break;
       default: break;
     }
@@ -772,7 +843,7 @@ static void toqueRetomar(void) {
     float ponto = rolar * toquePasso + toque.regiao.h * 0.35f, y = 0.0f;
     int i;
     for (i = 0; i + 1 < nLinhas(); i++) {
-      if (pagina == RE_PAG_AMIGOS && i == 2 && nCtts > 0) y += RE_SECAO;
+      if (pagina == RE_PAG_AMIGOS && i == primeiroAmigo() && nCtts > 0) y += RE_SECAO;
       if (y + alturaLinha(i) >= ponto) break;
       y += alturaLinha(i) + RE_L_GAP;
     }
@@ -812,7 +883,7 @@ static void desenhaLista(float x, float y, float w, float a) {
   { float yy = y - (float)topo * passo - desl;
     for (i = 0; i < n; i++) {
       float h = alturaLinha(i);
-      if (pagina == RE_PAG_AMIGOS && i == 2 && nCtts > 0) {
+      if (pagina == RE_PAG_AMIGOS && i == primeiroAmigo() && nCtts > 0) {
         if (yy + RE_SECAO > y - passo && yy < y + visH + passo)
           plrui_kicker("Seus amigos", x + 12.0f, yy + 12.0f, 243, 242, 239, .45f * a);
         yy += RE_SECAO;
@@ -996,7 +1067,15 @@ static void recenviar_desenharCorpo_(Uint32 agora) {
   x = cx - g.w * 0.5f + (1.0f - troca) * 24.0f * (float)trocaDir;
   y = cy - g.h * 0.5f;
 
-  if (pagina == RE_PAG_AMIGOS) {
+  if (pagina == RE_PAG_PERFIS) {
+    float lx=x+RE_PAD, ly=y+RE_PAD;
+    plrui_kicker("Amigos",lx,ly+2.0f,243,242,239,.45f*ac);
+    txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_TITULO,"Perfis desta conta",
+      243,242,239,255,RE_IW_AMIGOS),lx,ly+26.0f,ac);
+    txt_bloco_corta(TXT_ILHA_TEXTO,"Escolha um perfil para adicionar aos seus amigos.",
+      243,242,239,lx,ly+RE_CAB,RE_IW_AMIGOS,30.0f,.62f*ac,2);
+    desenhaLista(lx,y+g.listaY,RE_IW_AMIGOS,ac);
+  } else if (pagina == RE_PAG_AMIGOS) {
     float lx = x + RE_PAD, ly = y + RE_PAD, cyy;
     plrui_kicker("Amigos", lx, ly + 2.0f, 243, 242, 239, .45f * ac);
     txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_TITULO,
@@ -1059,7 +1138,7 @@ static void recenviar_desenharCorpo_(Uint32 agora) {
   }
   { const char *teclas[] = { "↑ ↓", "OK", "Voltar" };
     // "Fechar" onde o Voltar fecha a ilha; "Voltar" onde ele volta um passo.
-    int volta = pagina == RE_PAG_MODELOS ||
+    int volta = pagina == RE_PAG_MODELOS || pagina == RE_PAG_PERFIS ||
                 (pagina == RE_PAG_AMIGOS && voltaParaContatos) ||
                 (pagina == RE_PAG_ENVIO && envEstado == RE_ENV_FALHA);
     const char *rotulos[] = { "Navegar",

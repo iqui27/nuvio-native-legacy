@@ -10,6 +10,7 @@
 // e-mail, IP. A identidade e um identificador estavel e um nome de exibicao.
 
 import { rotaXtream } from "./xtream.js";
+import { rotaPerfisContatos } from "./perfis-contatos.js";
 import { routeAioPair } from "./aiopair.js";
 export { AioPair } from "./aiopair.js";
 import { codigoRegistro } from "./codigo.js";
@@ -461,7 +462,7 @@ async function rotaContatosLer(env, quem) {
       ...(seloDe(env, x.id) ? { selo: seloDe(env, x.id) } : {}),
       avatar: x.avatar || "",
       origem: x.id.startsWith("trakt:") ? "trakt" : "nuvio",
-      // desde quando e contato e por onde (codigo|trakt|sugestao|pedido|"")
+      // desde quando e contato e por onde (codigo|trakt|sugestao|pedido|perfil|"")
       desde: x.desde || 0, via: x.via || "",
       ids: x.ids ? String(x.ids).split(" ").filter(Boolean) : [],
     })),
@@ -1109,6 +1110,8 @@ export default {
     if (rota === "/v1/feed" && req.method === "GET") return rotaFeed(env, quem, url, req, h, garantirPerfil);
     if (rota === "/v1/amigo" && req.method === "GET") return rotaAmigo(env, quem, url, h, garantirPerfil);
 
+    const perfisContatos = await rotaPerfisContatos(req, env, quem, quemToken, corpo, h, registrar, bloqueadoPar);
+    if (perfisContatos) return perfisContatos;
     if (rota === "/v1/contatos" && req.method === "GET")  return rotaContatosLer(env, quem);
     if (rota === "/v1/contatos" && req.method === "POST") return rotaContatosVincular(env, quem, corpo);
     if (rota === "/v1/contatos/trakt" && req.method === "POST") return rotaContatosTrakt(env, quem, corpo);
