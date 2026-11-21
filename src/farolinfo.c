@@ -3,7 +3,7 @@
 //
 // Modelos citados (dono: src/faroltexto.h, issue 35):
 //   FT_INFO_QUALI / QUALI_AUDIO / IDIOMA / LEGENDA   (qualidade)
-//   FT_INFO_SOBE / CAI / FALTAM / MESMO_NIVEL        (continuar)
+//   FT_INFO_SOBE / FALTAM / MESMO_NIVEL              (continuar)
 //   FT_INFO_TERMINA / DUAS_NOITES                    (tempo)
 //   FT_INFO_ONDE                                     (onde)
 //   FT_INFO_AMIGOS_TERM / AMIGO_TERM / AMIGOS_GOST   (amigos)
@@ -14,8 +14,12 @@
 //   FT_INFO_QUALI_SO  "Tem em %s."            (res+fmt sem audio declarado)
 //   FT_INFO_SOBE_SO   "A T%d sobe de nota."   (sobe, sem faltam/minutos)
 //   FT_INFO_AMIGO_GOST "%s gostou."           (1 amigo, so reacao)
+//   FT_INFO_NOTA_CAI  "A T%d cai de nota."    (so a queda; quem para
+//     de assistir nao e dado que este modulo recebe — a FT_INFO_CAI da
+//     35 afirma abandono e NAO pode sair daqui)
 
 #include "farolinfo.h"
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -41,6 +45,20 @@ static void cabeca(FarolInfoLinha *l, int k, const char *m) {
 static void arg(FarolInfoLinha *l, int i, const char *v) {
   if (i < 0 || i >= FI_ARGS) return;
   snprintf(l->a[i], sizeof l->a[i], "%s", v);
+  {
+    // Se a copia cortou uma sequencia UTF-8 no meio, recua ate o inicio
+    // dela: o byte de inicio (>= C0) sem todos os bytes de continuacao
+    // (80..BF) que o caractere pede nao pode fechar a linha.
+    size_t len = strlen(l->a[i]), ini = len;
+    while (ini > 0 && (unsigned char)l->a[i][ini - 1] >= 0x80 &&
+           (unsigned char)l->a[i][ini - 1] < 0xC0)
+      ini--;
+    if (ini > 0 && (unsigned char)l->a[i][ini - 1] >= 0xC0) {
+      unsigned char c = (unsigned char)l->a[i][ini - 1];
+      size_t tam = (c >= 0xF0) ? 4 : (c >= 0xE0) ? 3 : 2;
+      if (len - (ini - 1) < tam) l->a[i][ini - 1] = '\0';
+    }
+  }
   if (i + 1 > l->na) l->na = i + 1;
 }
 
@@ -68,12 +86,14 @@ int farolinfo_qualidade(FarolInfoLinha *sai, int max,
   const char *fmt, *audio, *leg;
 
   if (!sai || max < 1 || !f || n <= 0) return 0;
-  // A melhor fonte TOCARIA nesta TV: maior altura; no desempate, DV/HDR que a
-  // TV toca de verdade e idioma declarado (a linha cita o que ela toca, e a
+  // So entra fonte que a TV CONFIRMOU tocar (toca == 1): desconhecida
+  // (-1) nao gera linha nem vence uma confirmada — a linha so afirma o
+  // que esta TV toca. Maior altura; no desempate, DV/HDR que a TV toca
+  // de verdade e idioma declarado (a linha cita o que ela toca, e a
   // preferencia ja desempata para a fonte que da a melhor linha honesta).
   for (i = 0; i < n; i++) {
     long p;
-    if (f[i].toca == 0) continue;
+    if (f[i].toca != 1) continue;
     p = (long)f[i].altura * 100;
     if (tv && tv->dv == 1 && f[i].dv)  p += 20;
     if (tv && tv->hdr == 1 && f[i].hdr) p += 10;
@@ -84,8 +104,11 @@ int farolinfo_qualidade(FarolInfoLinha *sai, int max,
   if (bi < 0) return 0;
 
   resNome(f[bi].altura, res, sizeof res);
+  // Rotulo de formato so com a evidencia exata: DV e um campo proprio;
+  // f[].hdr e o indicador GENERICO — sem distincao HDR10/HLG aqui a casa
+  // usa "HDR" (mesma categoria de src/vaitocar.c), nunca "HDR10".
   fmt   = (f[bi].dv && tv && tv->dv == 1) ? "Dolby Vision"
-        : (f[bi].hdr && tv && tv->hdr == 1) ? "HDR10" : "";
+        : (f[bi].hdr && tv && tv->hdr == 1) ? "HDR" : "";
   audio = f[bi].audio;
   leg   = f[bi].legenda;
 
@@ -135,9 +158,10 @@ int farolinfo_continuar(FarolInfoLinha *sai,
     v[j] = x;
   }
   // Vale o par mais recente: e o trecho que a pessoa esta vendo agora.
+  // Consecutivo por DIFERENCA (numero == INT_MAX nao estoura o +1).
   for (i = 1; i < nv; i++) {
     int d;
-    if (v[i].numero != v[i - 1].numero + 1) continue;
+    if (v[i].numero - v[i - 1].numero != 1) continue;
     if (v[i - 1].comNota < FI_MIN_NOTAS || v[i].comNota < FI_MIN_NOTAS) continue;
     if (v[i - 1].notaX10 <= 0 || v[i].notaX10 <= 0) continue;
     pares++;
@@ -146,7 +170,9 @@ int farolinfo_continuar(FarolInfoLinha *sai,
     else if (d <= -FI_DIF_MIN) { dir = -1; tRef = v[i].numero; }
   }
   if (dir < 0) {
-    cabeca(sai, FI_K_CONTINUAR, "FT_INFO_CAI");
+    // O dado prova a QUEDA DE NOTA, nao o abandono: FT_INFO_CAI da 35 diz
+    // "muita gente para aqui", que exige outro dado. Fato novo, so a nota.
+    cabeca(sai, FI_K_CONTINUAR, "FT_INFO_NOTA_CAI");
     argNum(sai, 0, tRef);
     return 1;
   }
@@ -177,20 +203,25 @@ int farolinfo_continuar(FarolInfoLinha *sai,
 
 int farolinfo_tempo(FarolInfoLinha *sai, const struct tm *agora,
                     int h12, int minutos, int minNoite) {
-  long s;
+  long long s;
   int hh, mm;
 
   if (!sai || !agora || minutos <= 0) return 0;
   if (minNoite > 0 && minutos > minNoite) {
     // Cabe uma noite destas? Nao: a conta e em noites de `minNoite` minutos.
+    // A soma vai em 64 bits e satura: com INT_MAX minutos +1 estouraria int.
+    long long noites = ((long long)minutos + minNoite - 1) / minNoite;
+    if (noites > INT_MAX) noites = INT_MAX;
     cabeca(sai, FI_K_TEMPO, "FT_INFO_DUAS_NOITES");
-    argNum(sai, 0, (minutos + minNoite - 1) / minNoite);
+    argNum(sai, 0, (long)noites);
     argNum(sai, 1, minNoite);
     return 1;
   }
   // O fim dentro do mesmo relogio de parede: a virada do dia e o mod 24 h.
-  s = (long)agora->tm_hour * 3600 + agora->tm_min * 60 + agora->tm_sec
-      + (long)minutos * 60;
+  // minutos * 60 vai em 64 bits: no WASM `long` tem 32 e estoura com
+  // duracoes de anos (o modulo aceita qualquer minutos > 0).
+  s = (long long)agora->tm_hour * 3600 + agora->tm_min * 60 + agora->tm_sec
+      + (long long)minutos * 60;
   s %= 86400;
   if (s < 0) s += 86400;
   hh = (int)(s / 3600);

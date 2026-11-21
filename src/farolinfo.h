@@ -49,12 +49,13 @@ const char *farolinfo_k_nome(int k);
 // --- entradas --------------------------------------------------------------
 
 // Uma fonte resumida pelo chamador a partir do Stream carregado (o modulo
-// nao conhece streams.h, que puxa SDL). toca: -1 nao se sabe (conta como
-// tocavel, a convencao de stream_definir_tela), 0 a TV nao toca, 1 toca.
+// nao conhece streams.h, que puxa SDL). toca: -1 nao se sabe (NUNCA gera
+// linha nesta P6 — a linha afirma, e "nao se sabe" nao e fato), 0 a TV
+// nao toca, 1 a TV toca confirmado.
 typedef struct {
   int  altura;             // 2160, 1080, 720... 0 = desconhecida
   int  dv;                 // 1 = Dolby Vision declarado na fonte
-  int  hdr;                // 1 = HDR (nao DV) declarado
+  int  hdr;                // 1 = HDR (nao DV) declarado — generico
   int  toca;               // -1 desconhecido, 0 nao toca nesta TV, 1 toca
   char audio[12];          // ISO do idioma de audio principal; "" = nao dito
   char legenda[12];        // idem legenda
@@ -85,9 +86,12 @@ typedef struct {
 // Cada funcao devolve quantas linhas escreveu (0 = fato ausente). `sai` tem
 // espaco para o maximo indicado no comentario.
 
-// qualidade: a melhor fonte tocavel (maior altura; desempate prefere DV/HDR
-// que a TV toca e audio declarado). Ate 2 linhas: a principal e a de
-// legenda. DV entra no texto SO quando tv->dv == 1; HDR so com tv->hdr == 1.
+// qualidade: a melhor fonte CONFIRMADA tocavel nesta TV (toca == 1 — fonte
+// desconhecida nao entra nem desempata; maior altura; desempate prefere
+// DV/HDR que a TV toca e audio declarado). Ate 2 linhas: a principal e a
+// de legenda. DV entra no texto SO quando tv->dv == 1; HDR so com
+// tv->hdr == 1 e sai "HDR" — o campo e o indicador generico, entao
+// HDR10/HLG so entrariam com evidencia do formato (ver src/vaitocar.c).
 int farolinfo_qualidade(FarolInfoLinha *sai, int max,
                         const FarolInfoFonte *f, int n, const FarolInfoCaps *tv);
 

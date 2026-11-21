@@ -1,6 +1,6 @@
 #!/bin/bash
 # Fatos da informacao relevante, peca P6 (lote sense, issue 47).
-# Ver tests/farol_info.c — tabela de 40+ casos, um por regra do aceite.
+# Ver tests/farol_info.c — tabela de casos, um por regra do aceite.
 #   bash tests/farol_info.sh                  (ASan+UBSan, o padrao)
 #   SANITIZE=0 bash tests/farol_info.sh       (sem sanitizador: so os asserts)
 set -eu
@@ -30,13 +30,20 @@ if grep -nE '\b(time|localtime|localtime_r|gmtime|strftime|gettimeofday|clock_ge
   echo "farol_info: FALHA (relogio lido no modulo; deve ser injetado)" >&2
   exit 1
 fi
-if grep -nE '\b(printf|fprintf|syslog|NSLog|LOGD)\(' src/farolinfo.c; then
+if grep -nE '\b(printf|fprintf|syslog|NSLog|LOGD|puts|fputs)\(' src/farolinfo.c; then
   echo "farol_info: FALHA (log em src/farolinfo.c)" >&2
   exit 1
 fi
 # Sem texto livre: o modulo so cita chaves FT_*, nunca literal de fala.
 if grep -nE '"[^"]*[A-Za-z][^"]* (voc|sua|TV|est|Tem|Falta|Dá|termin)' src/farolinfo.c; then
   echo "farol_info: FALHA (literal de fala no modulo; frases sao da 35)" >&2
+  exit 1
+fi
+# Frase livre fora do vocabulario: literal que FECHA como frase (pontuacao
+# final) em linha de codigo. Comentarios FALTA_TEXTO citam exemplos com
+# ponto e ficam de fora.
+if grep -nE '"[^"]*[A-Za-z][.!?]"' src/farolinfo.c | grep -vE '^[0-9]+:[[:space:]]*//'; then
+  echo "farol_info: FALHA (frase livre no modulo; frases sao da 35)" >&2
   exit 1
 fi
 echo "farol_info: tudo ok"

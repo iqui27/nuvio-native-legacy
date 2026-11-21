@@ -1,11 +1,12 @@
 // Fatos da peca P6 (issue 47): tests/farol_info.sh compila so
-// src/farolinfo.c. Tabela de 40+ casos por linha: cada assert confere o k,
+// src/farolinfo.c. Tabela de casos por linha: cada assert confere o k,
 // o modelo FT_* e os argumentos — a prova e o codigo produzido, nao grep.
 //
 //   bash tests/farol_info.sh                  (ASan+UBSan, o padrao)
 //   SANITIZE=0 bash tests/farol_info.sh       (so os asserts)
 #include "../src/farolinfo.h"
 #include <assert.h>
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -68,10 +69,11 @@ static void t_qualidade(void) {
   /* 6: tv.dv == -1 (desconhecido) tambem nao afirma */
   assert(qual(l, uma, 1, -1, -1) == 1);
   linha(&l[0], FI_K_QUALIDADE, "FT_INFO_QUALI_AUDIO", 2); casos++;
-  /* 7: HDR citado so com tv.hdr == 1 */
+  /* 7: HDR citado so com tv.hdr == 1 — e o indicador GENERICO sai "HDR",
+     nunca "HDR10" (o formato exato nao e dado que a fonte carrega) */
   assert(qual(l, uma + 1, 1, 1, 0) == 1);
   linha(&l[0], FI_K_QUALIDADE, "FT_INFO_QUALI", 3);
-  arg(&l[0], 0, "4K"); arg(&l[0], 1, "HDR10"); arg(&l[0], 2, "en"); casos++;
+  arg(&l[0], 0, "4K"); arg(&l[0], 1, "HDR"); arg(&l[0], 2, "en"); casos++;
   assert(qual(l, uma + 1, 1, 0, 0) == 1);
   linha(&l[0], FI_K_QUALIDADE, "FT_INFO_QUALI_AUDIO", 2); casos++;
   /* 8-9: sem audio declarado cai no modelo curto */
@@ -89,7 +91,8 @@ static void t_qualidade(void) {
   linha(&l[0], FI_K_QUALIDADE, "FT_INFO_IDIOMA", 1);
   arg(&l[0], 0, "pt");                           casos++;
   assert(qual(l, uma + 4, 1, 1, 1) == 0);        casos++;
-  /* 12: fonte que a TV nao toca nao entra */
+  /* 12: fonte que a TV nao toca nao entra — e a desconhecida (-1) tambem
+     nao: a linha so afirma o que esta TV toca de verdade */
   assert(qual(l, uma + 5, 1, 1, 1) == 0);        casos++;
   {
     FarolInfoFonte par[] = { F(2160, 0, 0, 0, "en", ""),
@@ -97,18 +100,31 @@ static void t_qualidade(void) {
     assert(qual(l, par, 2, 1, 1) == 1);
     arg(&l[0], 0, "1080p");                      casos++;
   }
+  {
+    /* 4K desconhecido + 1080p confirmado (audio pt nos dois): a linha e
+       da 1080p — a desconhecida nao vence nem entra */
+    FarolInfoFonte mista[] = { F(2160, 0, 0, -1, "pt", ""),
+                               F(1080, 0, 0, 1, "pt", "") };
+    assert(qual(l, mista, 2, 1, 1) == 1);
+    linha(&l[0], FI_K_QUALIDADE, "FT_INFO_QUALI_AUDIO", 2);
+    arg(&l[0], 0, "1080p"); arg(&l[0], 1, "pt"); casos++;
+  }
   /* 13-14: a melhor da lista e a de maior altura */
   assert(qual(l, lista, 3, 1, 1) == 2);
   linha(&l[0], FI_K_QUALIDADE, "FT_INFO_QUALI_AUDIO", 2);
   arg(&l[0], 0, "4K"); arg(&l[0], 1, "pt");
   linha(&l[1], FI_K_QUALIDADE, "FT_INFO_LEGENDA", 1);
   arg(&l[1], 0, "pt");                           casos += 2;
-  /* 15: legenda declarada vira a segunda linha */
+  /* 15: legenda declarada vira a segunda linha — mas so ate `max` */
   assert(qual(l, leg, 1, 0, 0) == 2);
   linha(&l[1], FI_K_QUALIDADE, "FT_INFO_LEGENDA", 1); casos++;
-  /* 16: rotulos de resolucao */
-  assert(qual(l, so8k, 1, 1, 1) == 1);
-  arg(&l[0], 0, "8K");                           casos++;
+  {
+    FarolInfoCaps c = { 0, 0 };
+    assert(farolinfo_qualidade(l, 1, leg, 1, &c) == 1);
+    linha(&l[0], FI_K_QUALIDADE, "FT_INFO_QUALI_AUDIO", 2); casos++;
+  }
+  /* 16: resolucao de fonte desconhecida nao entra — nem o 8K */
+  assert(qual(l, so8k, 1, 1, 1) == 0);           casos++;
 }
 
 static void t_continuar(void) {
@@ -132,9 +148,10 @@ static void t_continuar(void) {
   assert(farolinfo_continuar(&l, sobe, 2, 6, 45) == 1);
   linha(&l, FI_K_CONTINUAR, "FT_INFO_SOBE", 3);
   arg(&l, 0, "2"); arg(&l, 1, "6"); arg(&l, 2, "45");    casos++;
-  /* 21: queda -> "a T2 cai bastante" */
+  /* 21: queda -> fato NOVO que so afirma a nota (nunca FT_INFO_CAI: ela
+     diz "muita gente para aqui", abandono que o modulo nao mede) */
   assert(farolinfo_continuar(&l, cai, 2, 6, 45) == 1);
-  linha(&l, FI_K_CONTINUAR, "FT_INFO_CAI", 1);
+  linha(&l, FI_K_CONTINUAR, "FT_INFO_NOTA_CAI", 1);
   arg(&l, 0, "2");                                       casos++;
   /* 22: mesmo nivel + faltam -> faltam primeiro */
   assert(farolinfo_continuar(&l, nivel, 2, 6, 45) == 1);
@@ -143,8 +160,12 @@ static void t_continuar(void) {
   /* 23: mesmo nivel sem faltam -> "seguem no mesmo nivel" */
   assert(farolinfo_continuar(&l, nivel, 2, 0, 0) == 1);
   linha(&l, FI_K_CONTINUAR, "FT_INFO_MESMO_NIVEL", 0);   casos++;
-  /* 24: menos de 5 com nota nao sustenta comparacao */
+  /* 24: menos de 5 com nota nao sustenta comparacao — em NENHUM dos lados */
   assert(farolinfo_continuar(&l, pouca, 2, 0, 0) == 0);  casos++;
+  {
+    FarolInfoTemp pouca1[] = { {1, 80, 4}, {2, 90, 5} };
+    assert(farolinfo_continuar(&l, pouca1, 2, 0, 0) == 0); casos++;
+  }
   /* 25: diferenca exata de 0,4 conta */
   assert(farolinfo_continuar(&l, exato, 2, 3, 40) == 1);
   linha(&l, FI_K_CONTINUAR, "FT_INFO_SOBE", 3);          casos++;
@@ -157,21 +178,47 @@ static void t_continuar(void) {
   linha(&l, FI_K_CONTINUAR, "FT_INFO_SOBE", 3);          casos++;
   /* 28: vale o par mais recente */
   assert(farolinfo_continuar(&l, tres, 3, 6, 45) == 1);
-  linha(&l, FI_K_CONTINUAR, "FT_INFO_CAI", 1);
+  linha(&l, FI_K_CONTINUAR, "FT_INFO_NOTA_CAI", 1);
   arg(&l, 0, "3");                                       casos++;
   /* 29: sobe sem faltam -> forma curta */
   assert(farolinfo_continuar(&l, sobe, 2, 0, 0) == 1);
   linha(&l, FI_K_CONTINUAR, "FT_INFO_SOBE_SO", 1);       casos++;
+  /* o limiar |0,4| vale nos dois sentidos: +-0,3 nao e subida nem queda */
+  {
+    FarolInfoTemp sobe03[] = { {1, 80, 6}, {2, 83, 6} };
+    FarolInfoTemp cai04[]  = { {1, 80, 5}, {2, 76, 5} };
+    FarolInfoTemp cai03[]  = { {1, 80, 6}, {2, 77, 6} };
+    FarolInfoTemp queda76[] = { {1, 80, 5}, {2, 76, 5} };
+    assert(farolinfo_continuar(&l, sobe03, 2, 0, 0) == 1);
+    linha(&l, FI_K_CONTINUAR, "FT_INFO_MESMO_NIVEL", 0);   casos++;
+    /* 8,0 -> 7,6 exato: cai — e sai NOTA_CAI, nao a chave de abandono */
+    assert(farolinfo_continuar(&l, cai04, 2, 0, 0) == 1);
+    linha(&l, FI_K_CONTINUAR, "FT_INFO_NOTA_CAI", 1);
+    arg(&l, 0, "2");                                       casos++;
+    assert(strcmp(l.m, "FT_INFO_CAI") != 0);               casos++;
+    assert(farolinfo_continuar(&l, cai03, 2, 0, 0) == 1);
+    linha(&l, FI_K_CONTINUAR, "FT_INFO_MESMO_NIVEL", 0);   casos++;
+    assert(farolinfo_continuar(&l, queda76, 2, 6, 45) == 1);
+    linha(&l, FI_K_CONTINUAR, "FT_INFO_NOTA_CAI", 1);      casos++;
+  }
+  /* numero == INT_MAX nao estoura o teste de consecutivo */
+  {
+    FarolInfoTemp ultimas[] = { {INT_MAX, 80, 5}, {INT_MAX, 84, 5} };
+    assert(farolinfo_continuar(&l, ultimas, 2, 0, 0) == 0); casos++;
+  }
 }
 
 static void t_tempo(void) {
   FarolInfoLinha l;
   struct tm a = { 0 };
 
-  /* 30-31: sem duracao ou sem relogio, sem linha */
+  /* 30-31: sem duracao ou sem relogio, sem linha — duracao negativa
+     tambem nao vira linha */
   a.tm_hour = 21;
   assert(farolinfo_tempo(&l, &a, 0, 0, 0) == 0);          casos++;
   assert(farolinfo_tempo(&l, NULL, 0, 90, 0) == 0);       casos++;
+  assert(farolinfo_tempo(&l, &a, 0, -30, 0) == 0);        casos++;
+  assert(farolinfo_tempo(&l, &a, 0, INT_MIN, 0) == 0);    casos++;
   /* 32: termina hoje, 24 h */
   assert(farolinfo_tempo(&l, &a, 0, 90, 0) == 1);
   linha(&l, FI_K_TEMPO, "FT_INFO_TERMINA", 1);
@@ -208,6 +255,15 @@ static void t_tempo(void) {
   /* 38: exatamente uma noite ainda e "termina as" */
   assert(farolinfo_tempo(&l, &a, 0, 140, 140) == 1);
   linha(&l, FI_K_TEMPO, "FT_INFO_TERMINA", 1);           casos++;
+  /* sem estouro de int nem de long: INT_MAX minutos satura a conta de
+     noites e o relogio de parede mod 24 h (no WASM `long` tem 32 bits) */
+  a.tm_hour = 23; a.tm_min = 59; a.tm_sec = 0;
+  assert(farolinfo_tempo(&l, &a, 0, INT_MAX, 50) == 1);
+  linha(&l, FI_K_TEMPO, "FT_INFO_DUAS_NOITES", 2);
+  arg(&l, 0, "42949673"); arg(&l, 1, "50");              casos++;
+  assert(farolinfo_tempo(&l, &a, 0, INT_MAX, 0) == 1);
+  linha(&l, FI_K_TEMPO, "FT_INFO_TERMINA", 1);
+  arg(&l, 0, "02:06");                                   casos++;
 }
 
 static void t_onde(void) {
@@ -218,6 +274,18 @@ static void t_onde(void) {
   arg(&l, 0, "Netflix");                                 casos++;
   assert(farolinfo_onde(&l, "") == 0);                    casos++;
   assert(farolinfo_onde(&l, NULL) == 0);                  casos++;
+  /* o argumento nao corta caractere UTF-8 no meio: servico de 64 B
+     terminado em "é" sai sem o caractere incompleto */
+  {
+    char servico[65], esperado[64];
+    memset(servico, 'a', 62);
+    memcpy(servico + 62, "\xc3\xa9", 2);
+    servico[64] = '\0';
+    memset(esperado, 'a', 62);
+    esperado[62] = '\0';
+    assert(farolinfo_onde(&l, servico) == 1);
+    arg(&l, 0, esperado);                                casos++;
+  }
 }
 
 static void t_amigos(void) {
