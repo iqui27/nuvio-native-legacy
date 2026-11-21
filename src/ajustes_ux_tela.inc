@@ -301,7 +301,7 @@ OPC(AJ_RESOLUCAO), OPC(AJ_GPU_EFEITOS), OPC(AJ_AMPLIAR_UI), OPC(AJ_AMPLIACAO_ALG
 #ifdef NV_ANDROID
       OPC(AJ_BAIXAR_REGISTRO),
 #endif
-#if defined(NV_TPK) || defined(AJUSTES_TESTE)
+#if defined(NV_TPK) || defined(NV_ASS_NOVO) || defined(AJUSTES_TESTE)
       { IT_OPC, AJ_ASS_MOTOR, NULL, NULL, NULL, 0 },   /* PR 734 etapa D: FIM da lista — motor antigo de ASS */
 #endif
 };

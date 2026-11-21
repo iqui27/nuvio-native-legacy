@@ -7504,7 +7504,7 @@ static int foraDestaPlataforma(int op) {
   if (op == AJ_DV_MKV) return 1;
   if (op == AJ_DV_AUDIO) return 1;
 #endif
-#ifndef NV_TPK
+#if !defined(NV_TPK) && !defined(NV_ASS_NOVO) && !defined(AJUSTES_TESTE)
   if (op == AJ_ASS_MOTOR) return 1;   // so o .tpk tem o motor novo de ASS
 #endif
 #if defined(NV_TPK) || defined(NV_ANDROID) || !defined(NV_DV7_CONVERSION)
