@@ -6,6 +6,7 @@
 #include "legfontes.h"
 #include "rede.h"
 #include "dados.h"
+#include "fio1.h"
 #include <SDL2/SDL.h>
 #include <pthread.h>
 #include <stdatomic.h>
@@ -49,10 +50,23 @@ static int gravarStaging(Download *d,const void *corpo,size_t nCorpo) {
   dados_fs_travar();
   int fd=open(d->caminho,O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC|O_NOFOLLOW,0600);
   size_t pos=0;int ok=fd>=0;
+#ifdef NV_UM_FIO
+  // No cooperativo esta gravacao corre numa fibra fio1: pre-alocar o arquivo
+  // (um realloc so no MEMFS) e gravar em fatias cedendo, para que um corpo de
+  // 32 MiB nao segure um passo inteiro do escalonador.
+  if(ok && ftruncate(fd,(off_t)nCorpo))ok=0;
+#endif
   while(ok && pos<nCorpo) {
-    ssize_t n=write(fd,(const char*)corpo+pos,nCorpo-pos);
+    size_t pedaco=nCorpo-pos;
+#ifdef NV_UM_FIO
+    if(pedaco>(size_t)(1u<<20))pedaco=(size_t)(1u<<20);
+#endif
+    ssize_t n=write(fd,(const char*)corpo+pos,pedaco);
     if(n<0 && errno==EINTR)continue;
     if(n<=0)ok=0;else pos+=(size_t)n;
+#ifdef NV_UM_FIO
+    if(pos<nCorpo)fio1_ceder();
+#endif
   }
   if(fd>=0 && close(fd))ok=0;
   if(!ok) {

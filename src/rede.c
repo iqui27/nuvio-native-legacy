@@ -562,8 +562,10 @@ EM_JS(int, nv_http_fluxo_colher, (int id, int *status, unsigned *total), {
   if (total) HEAPU32[total >> 2] = reg.n;
   return reg.codigo;
 });
-// Entrega o corpo em fatias DEPOIS do fim do fetch (a memoria alta fica no
-// lado JS; no C nao entra copia extra do corpo inteiro). 0 = esgotado.
+// Entrega as fatias ja lidas pelo fetch, na ordem em que chegaram (a fila
+// alta fica no lado JS; no C nao entra copia extra do corpo inteiro). O
+// rede_pedir drena isto DURANTE a espera cooperativa — nao so depois do EOF.
+// 0 = esgotado.
 EM_JS(int, nv_http_fluxo_pedaco, (int id, void *dst, unsigned cap), {
   var reg = Module.nvFioReqs && Module.nvFioReqs[id];
   if (!reg || !reg.parts) return 0;
@@ -594,15 +596,26 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
     int id = nv_http_fluxo_iniciar(p->url, p->prazo_ms?p->prazo_ms:15000,
         p->max_bytes?p->max_bytes:REDE_CORPO_PADRAO);
     if (id <= 0) { r->erro = REDE_INDISPONIVEL; return 0; }
-    nv_http_esperar(id);
+    // A espera cooperativa tambem DRENA o fluxo: cada fatia vai ao
+    // receber_corpo assim que o fetch a entrega (contrato de rede.h), e o
+    // retorno 0 aborta o fetch NA HORA — igual ao nv_http_fluxo do build com
+    // pthread. fio1_ceder entre fatias mantem o passo do escalonador curto
+    // mesmo drenando um corpo de 32 MiB.
+    unsigned char bloco[16384];
+    int k, recusou = 0;
+    for (;;) {
+      while ((k = nv_http_fluxo_pedaco(id, bloco, sizeof bloco)) > 0) {
+        if (!p->receber_corpo(bloco, (size_t)k, p->corpo_usuario)) { recusou = 1; break; }
+        fio1_ceder();
+      }
+      if (recusou) { nv_http_abortar(id); break; }
+      if (nv_http_pronto_assinc(id)) break;
+      if (redeParou()) { redeCancelouLocal = 1; nv_http_abortar(id); break; }
+      fio1_ceder();
+    }
     r->erro = nv_http_fluxo_colher(id, &r->status, &total);
     r->n_corpo = total;
-    if (r->erro == REDE_OK) {
-      unsigned char bloco[16384];
-      int k;
-      while ((k = nv_http_fluxo_pedaco(id, bloco, sizeof bloco)) > 0)
-        if (!p->receber_corpo(bloco, (size_t)k, p->corpo_usuario)) { r->erro = REDE_TRANSPORTE; break; }
-    }
+    if (recusou) r->erro = REDE_TRANSPORTE;
     nv_http_fluxo_soltar(id);
     return r->erro==REDE_OK;
 #else
