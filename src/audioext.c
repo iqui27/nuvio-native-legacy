@@ -55,6 +55,11 @@ static int velocidadePpm;
 static int kandN, kandMs[3], kandPct[3];   // the last match's best places
 // The donor's audio stream picked in the menu (-1 = by language), for the mark.
 static int faixaMarca = -1;
+// The marked version came from another episode's source list (the two
+// releases number the episodes differently, owner's log 21/11, Farscape):
+// that episode's number, 0 = this episode. Nothing of it goes to the series
+// memory: the next episode keeps its own numbering.
+static int epOutro;
 // One remembered series at a time (test build, not saved).
 static struct { char serie[64], episodio[64]; AudioExtIdent id; int offset, velocidade, ativo, temFaixa; AudioExtFaixa faixa; } memo;
 // This episode came from the series memory with a remembered track (owner
@@ -75,7 +80,7 @@ void audioext_limpar(void) {
   urlMarca[0] = cabMarca[0] = nomeMarca[0] = alvoMarca[0] = idiomaMarca[0] = 0;
   offsetMs = 0; offsetGeracao++; offsetSuave = 0; posAtual = -1; velocidadePpm = 0; kandN = 0;
   pendente = 0; faixaMarca = -1; carregando = 0; dicaAtiva = 0; offsetLembrado = 0;
-  dopasujPedido = dopasujAtivo = 0;
+  dopasujPedido = dopasujAtivo = 0; epOutro = 0;
 }
 // "tt123" and "tt123:1:2" are the same title: the detail page stamps the raw
 // id before the episode list arrives (addons.c). Another episode is not.
@@ -114,7 +119,7 @@ int audioext_alternar(const char *url, const char *cabecalhos, const char *nome)
   snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
   idiomaMarca[0] = 0;
   offsetMs = 0; offsetGeracao++; offsetSuave = 0; posAtual = -1; velocidadePpm = 0; kandN = 0;
-  pendente = 0; faixaMarca = -1; dicaAtiva = 0; offsetLembrado = 0;
+  pendente = 0; faixaMarca = -1; dicaAtiva = 0; offsetLembrado = 0; epOutro = 0;
   // The name is the add-on's label, never the URL (signed links stay out of logs).
   printf("[ext-audio] audio source marked: %.80s (target %s)\n", nomeMarca, alvoMarca);
   fflush(stdout);
@@ -134,6 +139,7 @@ void audioext_escolher(const char *url, const char *cabecalhos, const char *nome
     offsetMs = 0; offsetGeracao++; offsetSuave = 0; posAtual = -1; velocidadePpm = 0; kandN = 0; kandN = 0; velocidadePpm = 0;
     faixaMarca = -1; dicaAtiva = 0; offsetLembrado = 0;
   }
+  epOutro = 0;   // audioext_episodio_outro after the pick, for another episode's version
   // The same file can come from two add-ons under two names: the row picked.
   snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
   snprintf(idiomaMarca, sizeof idiomaMarca, "%s", idioma ? idioma : "");
@@ -280,7 +286,7 @@ int audioext_offset_definir(int ms) {
   if (offsetMs < -AUDIOEXT_OFFSET_MAX) offsetMs = -AUDIOEXT_OFFSET_MAX;
   offsetGeracao++; offsetSuave = 0;
   { char sr[64]; serieDe(alvoMarca, sr, sizeof sr);
-    if (memo.ativo && sr[0] && !strcmp(sr, memo.serie) && memoAceita()) memo.offset = offsetMs; }
+    if (memo.ativo && !epOutro && sr[0] && !strcmp(sr, memo.serie) && memoAceita()) memo.offset = offsetMs; }
   return offsetMs;
 }
 unsigned audioext_offset_geracao(void) { return offsetGeracao; }
@@ -324,7 +330,7 @@ void audioext_dopasuj_resultado(int ok, const AudioExtDopasuj *r) {
     if (r->ppm != velocidadePpm) { velocidadePpm = r->ppm; pedidoGeracao++; }
     { char sr[64]; serieDe(alvoMarca, sr, sizeof sr);
       if (memo.ativo && sr[0] && !strcmp(sr, memo.serie)) {
-        if (!r->pozniej && memoAceita()) memo.offset = offsetMs;
+        if (!r->pozniej && !epOutro && memoAceita()) memo.offset = offsetMs;
         memo.velocidade = velocidadePpm;
       } }
   }
@@ -529,6 +535,10 @@ void audioext_lembrar_serie(const AudioExtIdent *id) {
   // No mark yet (the pick being made now): the episode on screen.
   serieDe(alvoMarca[0] ? alvoMarca : alvoAtual, sr, sizeof sr);
   if (!prefSerie || !id || !sr[0]) return;
+  if (epOutro) {
+    printf("[ext-audio] series memory: not changed, the audio is episode %d's\n", epOutro); fflush(stdout);
+    return;
+  }
   memset(&memo, 0, sizeof memo);
   snprintf(memo.serie, sizeof memo.serie, "%s", sr);
   snprintf(memo.episodio, sizeof memo.episodio, "%s", alvoMarca[0] ? alvoMarca : alvoAtual);
@@ -555,7 +565,7 @@ void audioext_serie_achou(const char *url, const char *cabecalhos, const char *n
   snprintf(idiomaMarca, sizeof idiomaMarca, "%s", memo.id.idioma);
   snprintf(memo.episodio, sizeof memo.episodio, "%s", alvoAtual);
   offsetMs = memo.offset; offsetGeracao++; offsetSuave = 0; velocidadePpm = memo.velocidade;
-  faixaMarca = -1;
+  faixaMarca = -1; epOutro = 0;
   dicaAtiva = memo.temFaixa; if (dicaAtiva) dica = memo.faixa;
   offsetLembrado = 1;
   pedidoGeracao++;
@@ -563,10 +573,32 @@ void audioext_serie_achou(const char *url, const char *cabecalhos, const char *n
   fflush(stdout);
 }
 void audioext_serie_esquecer(void) { memo.ativo = 0; }
+void audioext_episodio_outro(int episodio) {
+  if (!urlMarca[0]) return;
+  epOutro = episodio > 0 ? episodio : 0;
+  if (epOutro) { printf("[ext-audio] the audio is episode %d's (target %s)\n", epOutro, alvoMarca); fflush(stdout); }
+}
+int audioext_episodio_outro_atual(void) { return urlMarca[0] ? epOutro : 0; }
+// "tt123:1:2" -> base "tt123", season 1, episode 2. IMDb ids only: other
+// catalogues (kitsu:ID:EP) number their own way.
+int audioext_alvo_episodio(char *base, unsigned tam, int *temporada, int *episodio) {
+  const char *a = alvoAtual, *c1 = strchr(a, ':'), *c2 = c1 ? strchr(c1 + 1, ':') : NULL;
+  char *fim;
+  long t, e;
+  if (strncmp(a, "tt", 2) || !c1 || !c2 || strchr(c2 + 1, ':')) return 0;
+  t = strtol(c1 + 1, &fim, 10);
+  if (fim != c2 || t < 0) return 0;
+  e = strtol(c2 + 1, &fim, 10);
+  if (*fim || e < 1 || e > 999) return 0;
+  if (base) snprintf(base, tam, "%.*s", (int)(c1 - a), a);
+  if (temporada) *temporada = (int)t;
+  if (episodio) *episodio = (int)e;
+  return 1;
+}
 void audioext_lembrar_faixa_serie(const AudioExtFaixa *f) {
   char sr[64];
   serieDe(alvoMarca, sr, sizeof sr);
-  if (!f || !prefSerie || !memo.ativo || !sr[0] || strcmp(sr, memo.serie)) return;
+  if (!f || !prefSerie || !memo.ativo || epOutro || !sr[0] || strcmp(sr, memo.serie)) return;
   memo.faixa = *f; memo.temFaixa = 1;
   printf("[ext-audio] series memory: track %d (%s %s %dch \"%.40s\")\n", f->stream, f->idioma, f->codec, f->canais, f->titulo);
   fflush(stdout);

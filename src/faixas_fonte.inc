@@ -29,6 +29,56 @@ static int exFxN = -2, exFxFoco;
 static int exFxTentativa;
 static Uint32 exFxDe;
 static AudioExtFaixa exFx[AUDIOEXT_FAIXAS_MAX];
+// THE EPISODE ROW (owner's log 21/11, Farscape: IMDb numbers the episodes in
+// broadcast order, the Polish releases in production order, so the audio of
+// episode 2 is in episode 3's list). Above the language bar on a series
+// episode: LEFT/RIGHT picks the episode whose versions are listed (exEpN,
+// faixas.c; 0 = the one on screen). Asked of the add-ons a moment after the
+// last press (EX_EP_ESPERA_MS), not on every one.
+#define EX_EP_ESPERA_MS 700u
+#define EX_EP_MAX 199
+static int exEpEsta, exEpT;          // the episode on screen (0: not a series episode)
+static char exEpBase[24], exEpTela[64];
+static Uint32 exEpDe;                // the last press, the list asked when it is old enough
+static int exEpVisivel(void) { return exEpEsta > 0 && extMenu(); }
+static int exEpMostrado(void) { return exEpN > 0 ? exEpN : exEpEsta; }
+static void exEpPedir(void) {
+  char alvo[64];
+  if (exEpN <= 0) { audioextep_pedir(NULL); return; }
+  snprintf(alvo, sizeof alvo, "%s:%d:%d", exEpBase, exEpT, exEpN);
+  audioextep_pedir(alvo);
+}
+// On opening: the episode on screen. Another episode now than at the last
+// opening: back to its own list; a version of another episode marked: that
+// episode's list again.
+static void exEpPreparar(void) {
+  char base[24], tela[64];
+  int t, e;
+  if (!audioext_alvo_episodio(base, sizeof base, &t, &e)) {
+    exEpEsta = 0; exEpTela[0] = 0;
+    if (exEpN) { exEpN = 0; exEpDe = 0; audioextep_pedir(NULL); }
+    return;
+  }
+  snprintf(tela, sizeof tela, "%s:%d:%d", base, t, e);
+  if (strcmp(tela, exEpTela)) {
+    snprintf(exEpTela, sizeof exEpTela, "%s", tela);
+    exEpN = 0; exEpDe = 0; audioextep_pedir(NULL);
+  }
+  snprintf(exEpBase, sizeof exEpBase, "%s", base);
+  exEpT = t; exEpEsta = e;
+  { int outro = audioext_episodio_outro_atual();
+    if (!exEpN && outro > 0 && outro != exEpEsta) { exEpN = outro; exEpDe = 0; exEpPedir(); } }
+}
+static void exEpMudar(int d) {
+  int ep = exEpMostrado() + d;
+  if (ep < 1 || ep > EX_EP_MAX) return;
+  exEpN = ep == exEpEsta ? 0 : ep;
+  exEpDe = SDL_GetTicks();
+  if (!exEpDe) exEpDe = 1;
+  if (!exEpN) { exEpDe = 0; audioextep_pedir(NULL); }
+  printf("[ext-audio] another episode: the versions of episode %d%s\n", ep, exEpN ? "" : " (this one)"); fflush(stdout);
+  extMontar(1);
+}
 static char exFxRot[AUDIOEXT_FAIXAS_MAX][120];
 static AudioExtCand exFxCand;
 
@@ -79,11 +129,18 @@ static void exMontarLinhas(int focIdx) {
   exLinN = exBalN ? exBal[exLingua].cont : 0;
   exFoco = 0;
   for (int i = 0; i < exLinN; i++) { const AudioExtCand *c = exCandDaLinha(i); if (c && c->indice == focIdx) { exFoco = i; break; } }
+  // Nothing to list (another episode's versions on their way): the episode row.
+  if (!exLinN && exEpVisivel()) exFoco = -1;
   if (exRol > exFoco) exRol = exFoco;
+  if (exRol < 0) exRol = 0;
 }
 // The version in focus (-1 none), to find it again after a rebuild.
 static int exFocoIndice(void) { const AudioExtCand *c = exCandDaLinha(exFoco); return c ? c->indice : -1; }
-static void exReconstruir(void) { exMontarLinhas(exFocoIndice()); }
+static void exReconstruir(void) {
+  int naLinhaEp = exFoco < 0 && exEpVisivel();
+  exMontarLinhas(exFocoIndice());
+  if (naLinhaEp) exFoco = -1;
+}
 static int exPagAtiva(void) { return exPag != EXP_NADA; }
 static float exAreaMax(void) { return IL_VIS * (IL_LN_H + IL_LN_VAO) - IL_LN_VAO; }
 static void exAjustar(void) {
@@ -101,14 +158,15 @@ static void exAbrir(void) {
   extMontar(1);
   exIr(EXP_LISTA);
   exGuardarLingua();
-  printf("[ext-audio] from another source: opened, %d versions in %d languages\n", extAllN, exBalN); fflush(stdout);
+  printf("[ext-audio] from another source: opened, %d versions in %d languages%s\n", extAllN, exBalN,
+         exEpN > 0 ? " (another episode)" : ""); fflush(stdout);
 }
 static void exFechar(void) {
   exPag = EXP_NADA;
   ctxhold_cancelar(&exHold);
 }
 static int exAceitaSegurar(void) {
-  return exPag == EXP_LISTA && exCandDaLinha(exFoco) && audioext_sonda_disponivel();
+  return exPag == EXP_LISTA && exFoco >= 0 && exCandDaLinha(exFoco) && audioext_sonda_disponivel();
 }
 // "Polski · E-AC-3 5.1 · Dubbing": language, codec and channels, the track
 // name when short; "used for sync" on this file's language.
@@ -181,10 +239,18 @@ static void exTecla(SDL_Keycode k) {
     else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) exOk();
     return;
   }
-  if (k == SDLK_LEFT || k == SDLK_RIGHT) { exMudarLingua(k == SDLK_RIGHT ? 1 : -1); return; }
-  if (k == SDLK_UP) { if (exFoco > 0) exFoco--; exAjustar(); return; }
+  if (k == SDLK_LEFT || k == SDLK_RIGHT) {
+    if (exFoco < 0) exEpMudar(k == SDLK_RIGHT ? 1 : -1);
+    else exMudarLingua(k == SDLK_RIGHT ? 1 : -1);
+    return;
+  }
+  if (k == SDLK_UP) {
+    if (exFoco > 0) exFoco--;
+    else if (exFoco == 0 && exEpVisivel()) exFoco = -1;
+    exAjustar(); return;
+  }
   if (k == SDLK_DOWN) { if (exFoco < exLinN - 1) exFoco++; exAjustar(); return; }
-  if (k == SDLK_RETURN || k == SDLK_KP_ENTER) exOk();
+  if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && exFoco >= 0) exOk();
 }
 static void exEvento(const SDL_Event *e) {
   if (exPag == EXP_LISTA) {
@@ -201,6 +267,7 @@ static void exEvento(const SDL_Event *e) {
 // Per frame: the hold crossing its threshold, and the header read coming back.
 static void exPasso(Uint32 agora) {
   if (!aberta) { if (exPag) exFechar(); return; }
+  if (exEpDe && agora - exEpDe >= EX_EP_ESPERA_MS) { exEpDe = 0; exEpPedir(); extMontar(1); }
   if (exPag == EXP_LISTA && ctxhold_passo(&exHold, agora, 1)) exAbrirFaixas();
   if (exPag == EXP_FAIXAS && exFxN == -2 && exFxDe && agora - exFxDe >= AUDIOEXT_ESPERA_MS) {
     const Stream *st = extFonteIdx(exFxCand.indice);
@@ -240,6 +307,7 @@ static float exConteudoH(void) {
 }
 static float alturaExt(void) {
   float h = IL_PAD_Y + IL_TIT_H + 14.0f;
+  if (exPag == EXP_LISTA && exEpVisivel()) h += EX_SEG_H + 12.0f;
   if (exPag == EXP_LISTA && exBalN) h += EX_SEG_H + 12.0f;
   return h + exConteudoH() + 14.0f + IL_PE_H + IL_PAD_Y;
 }
@@ -276,6 +344,16 @@ static void exLinhaCand(const AudioExtCand *c, float x, float y, float w, int se
     ajustes_acento(&ar, &ag, &ab);
     gfx_icone((GfxRect){ x + w - 22.0f - 28.0f, y + (IL_LN_H - 28.0f) * 0.5f, 28.0f, 28.0f }, "pl_check", ar, ag, ab, a);
   }
+}
+// "‹  Audio of episode 3  ›": the episode whose versions are listed.
+static void exLinhaEp(float x, float y, float w, float a) {
+  int sel = exFoco < 0, cc = sel ? 255 : 219;
+  char t[128], q[160];
+  if (sel) plrui_linha_foco((GfxRect){ x, y, w, EX_SEG_H }, 22.0f, a);
+  snprintf(t, sizeof t, i18n(exEpN > 0 ? "Audio of episode %d" : "Audio of episode %d (this one)"), exEpMostrado());
+  snprintf(q, sizeof q, "%s%s%s", exEpMostrado() > 1 ? "\xe2\x80\xb9  " : "", t, exEpMostrado() < EX_EP_MAX ? "  \xe2\x80\xba" : "");
+  { TxtLinha l = txt_linha_corta(TXT_ILHA_FORTE, q, cc, cc, cc - 2, 255, w - 44.0f);
+    txt_desenhar_alpha(l, x + 22.0f, y + (EX_SEG_H - (float)l.h) * 0.5f, exEpN > 0 || sel ? a : a * 0.8f); }
 }
 // The name of a language on the bar ("Unknown" for the versions without one).
 static const char *exNomeBalde(int b) {
@@ -318,6 +396,10 @@ static void corpoExt(GfxRect c, float a) {
       txt_desenhar_alpha(l, lx, ly, a);
       if (filtro) gfx_icone((GfxRect){ lx - 26.0f, ly + ((float)l.h - 20.0f) * 0.5f, 20.0f, 20.0f }, "aj_funnel", 1, 1, 1, 0.6f * a); } }
   y += IL_TIT_H + 14.0f;
+  if (exPag == EXP_LISTA && exEpVisivel()) {
+    exLinhaEp(x0, y, w, a);
+    y += EX_SEG_H + 12.0f;
+  }
   if (exPag == EXP_LISTA && exBalN) {
     exBarraLinguas(x0 + 10.0f, y, w - 20.0f, a);
     y += EX_SEG_H + 12.0f;
@@ -343,8 +425,16 @@ static void corpoExt(GfxRect c, float a) {
           txt_desenhar_alpha(l, x0 + 92.0f, y + (IL_LN_H - (float)l.h) * 0.5f, a); }
       }
     } else if (!exLinN) {
-      txt_bloco(TXT_ILHA_TEXTO, "No other version of this title can lend its audio.", 160, 160, 158,
-                x0 + 10.0f, y + 12.0f, w - 20.0f, 28, a, 2);
+      char vazio[160];
+      int st = exEpN > 0 ? audioextep_estado() : AEXTEP_NADA;
+      if (exEpN > 0 && (exEpDe || st == AEXTEP_BUSCANDO))
+        snprintf(vazio, sizeof vazio, i18n("Loading the versions of episode %d\xe2\x80\xa6"), exEpN);
+      else if (exEpN > 0 && st == AEXTEP_FALHOU)
+        snprintf(vazio, sizeof vazio, i18n("The add-ons did not answer for episode %d."), exEpN);
+      else if (exEpN > 0)
+        snprintf(vazio, sizeof vazio, i18n("No version of episode %d can lend its audio."), exEpN);
+      else snprintf(vazio, sizeof vazio, "%s", i18n("No other version of this title can lend its audio."));
+      txt_bloco(TXT_ILHA_TEXTO, vazio, 160, 160, 158, x0 + 10.0f, y + 12.0f, w - 20.0f, 28, a, 2);
     } else {
       exAjustar();
       for (int i = exRol; i < exLinN && i < exRol + IL_VIS; i++, y += IL_LN_H + IL_LN_VAO) {
@@ -372,12 +462,13 @@ static void corpoExt(GfxRect c, float a) {
       const char *k[3], *rt[3];
       int n = 0, ini = 0;
       float livre = w - 20.0f - (float)txt_largura(TXT_ILHA_APOIO, q) - 24.0f;
-      if (exBalN > 1) { k[n] = "\xe2\x86\x90 \xe2\x86\x92"; rt[n] = "Language"; n++; }
+      if (exFoco < 0) { k[n] = "\xe2\x86\x90 \xe2\x86\x92"; rt[n] = "Episódio"; n++; }
+      else if (exBalN > 1) { k[n] = "\xe2\x86\x90 \xe2\x86\x92"; rt[n] = "Language"; n++; }
       if (exCandDaLinha(exFoco)) { k[n] = "OK"; rt[n] = "Use"; n++; }
       if (exCandDaLinha(exFoco) && audioext_sonda_disponivel()) { k[n] = "Hold OK"; rt[n] = "Pick track"; n++; }
       /* x < 0: measured only */
       while (n - ini > 1 && plrui_dicas(k + ini, rt + ini, n - ini, -1.0f, yc, 1, a) > livre) {
-        if (ini == 0 && exBalN > 1) ini = 1; else n--;
+        if (ini == 0 && (exBalN > 1 || exFoco < 0)) ini = 1; else n--;
       }
       if (n - ini > 0) plrui_dicas(k + ini, rt + ini, n - ini, x0 + w - 10.0f, yc, 1, a);
     } }

@@ -32,6 +32,7 @@
 #include "audioext.h"
 #include "audioextlista.h"
 #include "audioextaddons.h"
+#include "audioextep.h"
 #include "ctxlista.h"
 #include "streams.h"
 #include "idiomacod.h"
@@ -77,6 +78,7 @@ static void exAbrir(void);
 static int exPagAtiva(void);
 static void exEvento(const SDL_Event *e);
 static void exPasso(Uint32 agora);
+static void exEpPreparar(void);
 static float anim;
 // 0..1: a folha de legenda virando a BARRA DE ESTILO no topo (barra_desenhar).
 static float animTopo;
@@ -533,6 +535,7 @@ void faixas_abrir_em(int col) {
   volFoco = 0; velFoco = 0; sincEd = 0;
   exFechar();
   foco[0] = video_audio_atual();
+  exEpPreparar();
   if (!modo) extMontar(1);
   // A legenda pode estar desligada (-1); a primeira linha da coluna e sempre
   // "Desativada", entao o indice da lista e deslocado em um.
@@ -627,6 +630,14 @@ static char (*extVersao)[40];
 static int extEntN;
 static unsigned extGeracao, extRevisao, extAddonsVer;
 static int extListaN = -1;
+// The episode whose versions the pages list (faixas_fonte.inc): 0 = the one
+// on screen, from the player's own source list; another one, from its own
+// list asked of the add-ons (audioextep.h).
+static int exEpN;
+static int extEpVisto = -1;
+static unsigned extEpGerVisto;
+static int extFontesN(void) { return exEpN > 0 ? audioextep_n() : stream_n(); }
+static const Stream *extFonte(int i) { return exEpN > 0 ? audioextep_item(i) : stream_item(i); }
 static int extMenu(void) {
 #if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
   return ajustes_audio_externo() && !player_id_canal()[0];
@@ -635,17 +646,20 @@ static int extMenu(void) {
 #endif
 }
 static void extMontar(int forcar) {
-  int n = stream_n(), atual = stream_atual();
-  const char *urlVideo = video_url_atual();
+  int n, atual = exEpN > 0 ? -1 : stream_atual();
+  const char *urlVideo = exEpN > 0 ? "" : video_url_atual();
   AudioExtOpcoes o;
   if (!extMenu() || !stream_lista_do_alvo_atual()) { extAllN = 0; extListaN = -1; return; }
+  if (exEpN > 0) audioextep_estado();   // takes in the list that came back
+  n = extFontesN();
   // A source's state changed too (marked not cached after a debrid
   // placeholder), or Settings > Addons.
   if (!forcar && extGeracao == stream_lista_geracao() && extListaN == n && extRevisao == stream_revisao() &&
-      extAddonsVer == audioext_addons_versao()) return;
+      extAddonsVer == audioext_addons_versao() && extEpVisto == exEpN && extEpGerVisto == audioextep_geracao()) return;
   extGeracao = stream_lista_geracao(); extRevisao = stream_revisao(); extAddonsVer = audioext_addons_versao();
+  extEpVisto = exEpN; extEpGerVisto = audioextep_geracao();
   extListaN = n; extAllN = 0;
-  if (n <= 0) return;
+  if (n <= 0) { exReconstruir(); return; }
   if (n > extEntN) {
     AudioExtEntrada *e2 = realloc(extEnt, (size_t)n * sizeof *e2);
     if (!e2) return;
@@ -656,7 +670,7 @@ static void extMontar(int forcar) {
     extEntN = n;
   }
   for (int i = 0; i < n; i++) {
-    const Stream *st = stream_item(i);
+    const Stream *st = extFonte(i);
     stream_audioext_entrada(st, &extEnt[i]);
     extEnt[i].atual = i == atual || (st && urlVideo && urlVideo[0] && !strcmp(st->url, urlVideo));
     stream_audioext_versao(st, extVersao[i], sizeof extVersao[i]);
@@ -677,7 +691,7 @@ static void extMontar(int forcar) {
   exReconstruir();
 }
 static int extEntradaVisivel(void) {
-  return extMenu() && (extAllN > 0 || audioext_tocando() || audioext_carregando());
+  return extMenu() && (extAllN > 0 || exEpN > 0 || audioext_tocando() || audioext_carregando());
 }
 static int nExtras(void) {
   if (!extMenu()) return 0;
@@ -700,7 +714,7 @@ static int tipoLinha(int i, int *k) {
   return FXA_ENTRADA;
 }
 static const Stream *extFonteIdx(int indice) {
-  return indice >= 0 && indice < extEntN && indice < stream_n() ? stream_item(indice) : NULL;
+  return indice >= 0 && indice < extEntN && indice < extFontesN() ? extFonte(indice) : NULL;
 }
 static const AudioExtEntrada *extEntIdx(int indice) {
   return indice >= 0 && indice < extEntN ? &extEnt[indice] : NULL;
@@ -1103,6 +1117,8 @@ static void extUsar(const AudioExtCand *c, const AudioExtFaixa *faixa) {
   // The pick first: the series memory takes the series from the mark it sets
   // (the first pick of an episode had none, and nothing was remembered).
   audioext_escolher(st->url, st->cabecalhos, st->rotulo, c->idioma);
+  // Another episode's version: kept out of the series memory (audioext.h).
+  if (exEpN > 0) audioext_episodio_outro(exEpN);
   { AudioExtIdent id;
     memset(&id, 0, sizeof id);
     snprintf(id.grupo, sizeof id.grupo, "%s", st->bingeGroup);

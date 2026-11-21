@@ -71,6 +71,12 @@ int audioext_serie_procura(const char *alvo, AudioExtIdent *id);
 // the remembered sync, as if chosen in the menu.
 void audioext_serie_achou(const char *url, const char *cabecalhos, const char *nome);
 void audioext_serie_esquecer(void);
+// The marked version is another episode's (the releases number the episodes
+// differently): kept out of the series memory. 0 = this episode's.
+void audioext_episodio_outro(int episodio);
+int audioext_episodio_outro_atual(void);
+// The episode on screen: 1 for an IMDb series episode ("tt123:1:2").
+int audioext_alvo_episodio(char *base, unsigned tam, int *temporada, int *episodio);
 // Preferences the UI copies here every frame (the player has no settings).
 void audioext_preferencias(int soAudio, int serie);
 int audioext_so_audio(void);

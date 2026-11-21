@@ -348,6 +348,40 @@ int main(void) {
     { int km[3], kp[3]; assert(audioext_kandydatos(km, kp, 3) == 0); }
     audioext_limpar();
   }
+  // Another episode's audio (owner's log 21/11, Farscape: the releases number
+  // the episodes differently): the episode on screen is parsed, and that
+  // pick changes nothing of the series memory.
+  { char base[24]; int t = 0, e = 0;
+    audioext_preferencias(0, 1);
+    audioext_alvo("tt0187636:1:2");
+    assert(audioext_alvo_episodio(base, sizeof base, &t, &e) && !strcmp(base, "tt0187636") && t == 1 && e == 2);
+    audioext_alvo("tt5"); assert(!audioext_alvo_episodio(NULL, 0, NULL, NULL));
+    audioext_alvo("kitsu:12:3"); assert(!audioext_alvo_episodio(NULL, 0, NULL, NULL));
+    audioext_alvo("tt5:1:x"); assert(!audioext_alvo_episodio(NULL, 0, NULL, NULL));
+    // Episode 1: a normal pick, remembered with its offset.
+    audioext_alvo("tt7:1:1");
+    audioext_escolher("https://c/pl-e1.mkv", "", "PL", "pl");
+    memset(&id, 0, sizeof id); snprintf(id.grupo, sizeof id.grupo, "grp-pl"); snprintf(id.idioma, sizeof id.idioma, "pl");
+    audioext_lembrar_serie(&id);
+    audioext_offset_definir(400);
+    // Episode 2 on screen, the audio of episode 3's version.
+    audioext_alvo("tt7:1:2");
+    audioext_escolher("https://c/pl-e3.mkv", "", "PL E3", "pl");
+    audioext_episodio_outro(3);
+    assert(audioext_episodio_outro_atual() == 3);
+    { AudioExtIdent o; memset(&o, 0, sizeof o); snprintf(o.grupo, sizeof o.grupo, "other"); audioext_lembrar_serie(&o); }
+    audioext_offset_definir(-9000);
+    { AudioExtFaixa f = { 1, 2, "ac3", "pol", "" }; audioext_lembrar_faixa_serie(&f); }
+    // Episode 4 still finds episode 1's version and offset, nothing of episode 3's.
+    audioext_alvo("tt7:1:4");
+    assert(audioext_episodio_outro_atual() == 0);   // the mark went with episode 2
+    assert(audioext_serie_procura("tt7:1:4", &got) && !strcmp(got.grupo, "grp-pl"));
+    audioext_serie_achou("https://c/pl-e4.mkv", "", "PL E4");
+    assert(audioext_offset_ms() == 400 && !audioext_faixa_dica(NULL));
+    // A new pick is this episode's again.
+    audioext_escolher("https://c/pl-e4b.mkv", "", "PL", "pl");
+    assert(audioext_episodio_outro_atual() == 0);
+    audioext_limpar(); }
   puts("audioext: marks, menu requests, offsets, series memory and matching passed");
   return 0;
 }

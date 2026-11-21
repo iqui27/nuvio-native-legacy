@@ -4628,7 +4628,7 @@ static void introTmdbTardio(Uint32 agora) {
 void player_atualizar(float dt, Uint32 agora) {
   { // Test build: say when the audio of another source starts, and why not.
     static int extVisto;
-    char falha[160], t[224];
+    char falha[160], t[384];
     // Settings > Audio from another version turned off: no mark survives.
     if (!ajustes_audio_externo() && audioext_tem_marca()) audioext_limpar();
     audioext_preferencias(ajustes_audio_externo_so_audio(), ajustes_audio_externo_serie());
@@ -4664,6 +4664,17 @@ void player_atualizar(float dt, Uint32 agora) {
       /* ...unless the offset is the series memory's (owner, 11/11): kept, nothing to say. */
       else if (a < 0 && d.automatico && audioext_offset_lembrado()) {
         printf("[ext-audio] automatic match not sure: the series memory's offset stays\n"); fflush(stdout); }
+      /* A series episode whose lengths differ and nothing matched (owner's log
+       * 21/11, Farscape): most likely another episode, numbered differently
+       * by the two releases. The episode row of From another source lists
+       * another episode's versions. */
+      else if (a < 0 && d.dica_ms && audioext_alvo_episodio(NULL, 0, NULL, NULL)) {
+        int s = d.dica_ms < 0 ? -d.dica_ms / 1000 : d.dica_ms / 1000;
+        snprintf(t, sizeof t, i18n(d.dica_ms < 0
+          ? "Could not match: this version is %d s longer. It may be another episode (the releases number them differently): pick the episode in the audio menu, From another source."
+          : "Could not match: this version is %d s shorter. It may be another episode (the releases number them differently): pick the episode in the audio menu, From another source."), s);
+        player_toast_ex(t, 9000, "aj_triangle-alert", 1);
+      }
       else if (a < 0 && (d.nkand || d.dica_ms))
         player_toast_ex(i18n("Could not match for sure: try the candidates in Audio sync (audio menu, OK on Audio sync)."), 7000, "aj_triangle-alert", 1);
       else if (a < 0 && d.pesado)
