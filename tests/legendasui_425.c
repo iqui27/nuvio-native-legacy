@@ -182,6 +182,15 @@ int main(int argc, char **argv) {
     mudarAtraso(90000); assert(secOffset == 60000);
     mudarAtraso(-150000); assert(secOffset == -60000);
   }
+  if (!strcmp(caso, "duplicada")) {
+    // Two addons returning the same file (same provider + URL) share an id and
+    // a row key: DOWN past the second copy used to snap back to the first.
+    addon(3, "pt", "OpenSubtitles", "Show.S01E01.WEB.srt", "https://h.invalid/1");
+    todas = 1; legendasui_abrir(); todas = 0;
+    focar(0);
+    for (int i = 0; i < nLinhasV + 2; i++) { tecla(SDLK_DOWN); montarLinhas(); }
+    assert(foco == nLinhasV - 1);
+  }
   if (!strcmp(caso, "ponteiro")) {
     // Same row-hover, chevron and menu activation callbacks registered for Magic Remote.
     ponteiroLinha(1, 0); assert(foco == 1);
